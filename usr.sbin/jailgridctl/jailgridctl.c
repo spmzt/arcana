@@ -26,6 +26,7 @@
 
 #define	PATH_SOCKET	"unix:/var/run/jailgridd.sock"
 #define	MAX_FRAME	(8 * 1024 * 1024)
+#define	MAX_ATTRS	(1024 * 1024)
 #define	TIMEOUT_MS	(15 * 60 * 1000)
 
 static const char *state_names[] = {
@@ -717,6 +718,7 @@ main(int argc, char *argv[])
 	if ((error = cbl_ctx_new(&ctx)) != 0)
 		xo_errx(1, "cbl_ctx_new: %s", strerror(error));
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_FRAME, MAX_FRAME);
+	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_ATTRS, MAX_ATTRS);
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_REQUEST_MS, TIMEOUT_MS);
 	if ((error = cbl_conn_new(ctx, uri, 0, &conn)) != 0)
 		xo_errx(1, "%s: %s", uri, strerror(error));

@@ -386,6 +386,29 @@ address_refused_cleanup()
 	stop_daemon
 }
 
+atf_test_case many_jails cleanup
+many_jails_head()
+{
+	atf_set "descr" "a listing of hundreds of jails with their parameters fits a reply"
+}
+many_jails_body()
+{
+	start_daemon
+	i=0
+	while [ $i -lt 400 ]; do
+		printf 'j%d {\n\tip4.addr = 10.1.%d.%d;\n\thost.hostname = j%d.lab;\n\tallow.raw_sockets;\n\tmount.devfs;\n\texec.start = "/bin/sh /etc/rc";\n\texec.stop = "/bin/sh /etc/rc.shutdown";\n}\n' \
+		    $i $((i / 250)) $((i % 250)) $i >> etc/jail.conf
+		i=$((i + 1))
+	done
+	atf_check -o save:many.out "$JGC" -c "$SOCK" list
+	atf_check -o match:'^j399 ' cat many.out
+	atf_check -o inline:'405\n' sh -c "grep -c '' many.out"
+}
+many_jails_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case services cleanup
 services_head()
 {
@@ -512,6 +535,7 @@ atf_init_test_cases()
 	atf_add_test_case address_dry_run
 	atf_add_test_case address_persist
 	atf_add_test_case address_refused
+	atf_add_test_case many_jails
 	atf_add_test_case services
 	atf_add_test_case service_actions
 	atf_add_test_case service_config

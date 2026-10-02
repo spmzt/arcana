@@ -29,6 +29,8 @@
 #define	PATH_PIDFILE	"/var/run/jailgridd.pid"
 #define	MAX_LISTEN	8
 #define	MAX_FRAME	(8 * 1024 * 1024)
+/* A list of many jails with their parameters is many attributes. */
+#define	MAX_ATTRS	(1024 * 1024)
 
 struct opts opts = {
 	.jail_conf = PATH_JAIL_CONF,
@@ -238,6 +240,7 @@ main(int argc, char *argv[])
 	if ((error = cbl_ctx_new(&ctx)) != 0)
 		fatal(pfh, "cbl_ctx_new: %s", strerror(error));
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_FRAME, MAX_FRAME);
+	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_ATTRS, MAX_ATTRS);
 	if ((error = jg_register(ctx, NULL, &fam)) != 0)
 		fatal(pfh, "registering the %s family: %s", JG_FAMILY_NAME,
 		    strerror(error));

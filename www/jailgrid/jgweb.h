@@ -35,6 +35,7 @@
 #define	SESSIONS		8
 #define	CHALLENGE_TTL		120
 #define	CBLINK_MAX_FRAME	(8 * 1024 * 1024)
+#define	CBLINK_MAX_ATTRS	(1024 * 1024)
 #define	CBLINK_TIMEOUT_MS	(15 * 60 * 1000)
 
 /* config.c: web.conf, a UCL file named by $JAILGRID_WEB_CONF. */
