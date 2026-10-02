@@ -192,6 +192,9 @@ attribute-sets:
         doc: What the program printed with --libxo json, as it is.
         checks:
           max-len: max-json
+      - name: stats
+        type: nest
+        nested-attributes: stats
       - name: commands
         type: text
         multi-attr: true
@@ -313,6 +316,51 @@ attribute-sets:
       - name: remove
         type: flag
         doc: In a request, unset the variable instead (sysrc -x).
+
+  - name: stats
+    doc: How busy the host is, at this moment.
+    attributes:
+      - name: cpu-pct
+        type: float
+        doc: Of all CPUs, since the previous sample (kern.cp_time).
+      - name: load1
+        type: float
+      - name: load5
+        type: float
+      - name: load15
+        type: float
+      - name: mem-total
+        type: u64
+        doc: Bytes.
+      - name: mem-used
+        type: u64
+        doc: Active, wired and laundry pages.
+      - name: mem-inactive
+        type: u64
+      - name: mem-free
+        type: u64
+      - name: swap-total
+        type: u64
+      - name: swap-used
+        type: u64
+      - name: pools
+        type: nest
+        nested-attributes: pool
+        multi-attr: true
+        doc: ZFS pools, from zpool list.
+
+  - name: pool
+    attributes:
+      - name: name
+        type: text
+      - name: size
+        type: u64
+      - name: alloc
+        type: u64
+      - name: free
+        type: u64
+      - name: health
+        type: text
 
   - name: conf-error
     attributes:
@@ -497,4 +545,16 @@ operations:
           - ok
           - error
           - json
+          - trace
+
+  - name: stats
+    attribute-set: jailgrid
+    auth: true
+    doc: CPU, memory, swap and ZFS pool usage of the host.
+    do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - stats
           - trace

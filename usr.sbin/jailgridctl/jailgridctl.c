@@ -20,7 +20,9 @@
 #include <unistd.h>
 #include <vis.h>
 
-#include "jailgrid.h"
+/* Generated into the object directory; <> so that a stale copy next
+ * to the sources is never picked up. */
+#include <jailgrid.h>
 
 #define	PATH_SOCKET	"unix:/var/run/jailgridd.sock"
 #define	MAX_FRAME	(8 * 1024 * 1024)
@@ -61,6 +63,7 @@ static int	cmd_action(struct jg_client *, uint8_t, int, char **);
 static int	cmd_address(struct jg_client *, int, char **);
 static int	cmd_services(struct jg_client *);
 static int	cmd_net(struct jg_client *, int, char **);
+static int	cmd_stats(struct jg_client *);
 static int	cmd_service(struct jg_client *, int, char **);
 static void	emit_service(const struct jg_service *, bool);
 
@@ -79,7 +82,8 @@ usage(void)
 	    "    service name start | stop | restart | reload | enable | "
 	    "disable\n"
 	    "    service name config [-x key ...] [key=value ...]\n"
-	    "    net routes | nexthops | connections | sockets [-4 | -6]\n");
+	    "    net routes | nexthops | connections | sockets [-4 | -6]\n"
+	    "    stats\n");
 	exit(2);
 }
 
@@ -622,6 +626,51 @@ cmd_net(struct jg_client *cl, int argc, char **argv)
 	return (error);
 }
 
+static int
+cmd_stats(struct jg_client *cl)
+{
+	struct jg_stats_rsp	*rsp;
+	const struct jg_stats	*st;
+	size_t			 i;
+	int			 error;
+
+	if ((error = jg_stats(cl, &rsp)) != 0)
+		fail(cl, error, "stats");
+	if ((st = rsp->stats) != NULL) {
+		xo_open_container("stats");
+		xo_emit("{Lwc:CPU}{:cpu-pct/%.1f}%\n", st->cpu_pct);
+		xo_emit("{Lwc:Load}{:load1/%.2f} {:load5/%.2f} {:load15/%.2f}\n",
+		    st->load1, st->load5, st->load15);
+		xo_emit("{Lwc:Memory}{:mem-used/%ju} used, {:mem-inactive/%ju} "
+		    "inactive, {:mem-free/%ju} free of {:mem-total/%ju} MiB\n",
+		    (uintmax_t)(st->mem_used >> 20),
+		    (uintmax_t)(st->mem_inactive >> 20),
+		    (uintmax_t)(st->mem_free >> 20),
+		    (uintmax_t)(st->mem_total >> 20));
+		xo_emit("{Lwc:Swap}{:swap-used/%ju} of {:swap-total/%ju} MiB\n",
+		    (uintmax_t)(st->swap_used >> 20),
+		    (uintmax_t)(st->swap_total >> 20));
+		xo_open_list("pool");
+		for (i = 0; i < st->pools.n; i++) {
+			xo_open_instance("pool");
+			xo_emit("{Lwc:Pool}{:name/%s} {:alloc/%ju} of {:size/%ju} "
+			    "GiB, {:health/%s}\n", st->pools.v[i].name,
+			    (uintmax_t)(st->pools.v[i].alloc >> 30),
+			    (uintmax_t)(st->pools.v[i].size >> 30),
+			    st->pools.v[i].health);
+			xo_close_instance("pool");
+		}
+		xo_close_list("pool");
+		xo_close_container("stats");
+	}
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("stats: %s", rsp->error != NULL ? rsp->error : "failed");
+	jg_stats_rsp_free(rsp);
+	return (error);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -710,6 +759,8 @@ main(int argc, char *argv[])
 		rc = cmd_service(&cl, argc, argv);
 	else if (strcmp(argv[0], "net") == 0)
 		rc = cmd_net(&cl, argc, argv);
+	else if (strcmp(argv[0], "stats") == 0 && argc == 1)
+		rc = cmd_stats(&cl);
 	else
 		usage();
 	xo_close_container("jailgrid");

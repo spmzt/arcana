@@ -171,6 +171,7 @@ worker(void *arg)
 	struct jg_service_action_rsp sar;
 	struct jg_service_config_rsp scr;
 	struct jg_network_rsp	 nr;
+	struct jg_stats_rsp	 str;
 	const char		*what, *error;
 	bool			 ok;
 	int			 root, rc;
@@ -203,6 +204,17 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &ar.trace.v, &ar.trace.n);
 		rc = jg_action_reply(j->req, &ar);
+		break;
+	case JG_CMD_STATS:
+		what = "stats";
+		root = step_begin(&w, JG_STEP_KIND_DAEMON, "jailgridd", "stats");
+		memset(&str, 0, sizeof(str));
+		do_stats(&w, &str);
+		ok = str.ok;
+		error = str.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &str.trace.v, &str.trace.n);
+		rc = jg_stats_reply(j->req, &str);
 		break;
 	case JG_CMD_NETWORK:
 		what = wfmt(&w, "network %s%s", net_kind_names[j->action],
@@ -484,5 +496,17 @@ jg_network_doit(cbl_req *req, const struct jg_network_req *rq,
 	j->cmd = JG_CMD_NETWORK;
 	j->action = rq->net_kind;
 	j->family = rq->has_net_family ? rq->net_family : JG_NET_FAMILY_ALL;
+	return (start(j));
+}
+
+int
+jg_stats_doit(cbl_req *req, void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = JG_CMD_STATS;
 	return (start(j));
 }

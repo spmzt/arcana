@@ -21,7 +21,9 @@
 #include <kore/tasks.h>
 #include <ucl.h>
 
-#include "jailgrid.h"
+/* Generated into the object directory; <> so that a stale copy next
+ * to the sources is never picked up. */
+#include <jailgrid.h>
 
 #define	JGW_VERSION		"0.1.0"
 #define	JGW_CONF		"/usr/local/etc/jailgrid/web.conf"

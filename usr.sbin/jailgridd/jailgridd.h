@@ -13,7 +13,9 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "jailgrid.h"
+/* Generated into the object directory; <> so that a stale copy next
+ * to the sources is never picked up. */
+#include <jailgrid.h>
 
 #define	JAILGRIDD_VERSION	"0.1.0"
 
@@ -25,6 +27,8 @@
 #define	PATH_SYSRC_BIN		"/usr/sbin/sysrc"
 #define	PATH_NETSTAT_BIN	"/usr/bin/netstat"
 #define	PATH_SOCKSTAT_BIN	"/usr/bin/sockstat"
+#define	PATH_SWAPINFO_BIN	"/usr/sbin/swapinfo"
+#define	PATH_ZPOOL_BIN		"/sbin/zpool"
 
 /* jail -e separator: ASCII unit separator, never in a jail.conf value. */
 #define	JAIL_E_SEP		"\037"
@@ -42,6 +46,8 @@ struct opts {
 	const char	*sysrc_bin;
 	const char	*netstat_bin;
 	const char	*sockstat_bin;
+	const char	*swapinfo_bin;
+	const char	*zpool_bin;
 	bool		 debug;
 };
 
@@ -189,6 +195,9 @@ int		 do_service_config(struct work *,
 /* network.c */
 int		 do_network(struct work *, uint8_t, uint8_t,
 		    struct jg_network_rsp *);
+
+/* stats.c */
+int		 do_stats(struct work *, struct jg_stats_rsp *);
 
 /* main.c */
 void		 logmsg(int, const char *, ...) __printflike(2, 3);
