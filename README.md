@@ -212,6 +212,10 @@ authenticator offers one, so security keys keep working as before.
   and, while something happens to them, starting, stopping, restarting;
   unknown when the host does not answer, and dimmed when the data is
   stale.
+- **Services**, the second tab of a server: its rc.d scripts, enabled or
+  not, running or not, with start, stop, restart, reload, enable and
+  disable; a service's drawer edits its `rc.conf` variables through
+  `sysrc(8)` and shows what the script says of itself.
 - A jail's **drawer** has its actions, addresses, configuration as jail(8)
   reads it, and its history. Addresses change live (jail_setv(3) and the
   interface alias), persistently (its block in `jail.conf`, edited in

@@ -15,7 +15,10 @@ definitions:
     value: 4096
   - name: max-steps
     type: const
-    value: 256
+    value: 1024
+  - name: max-services
+    type: const
+    value: 1024
   - name: max-output
     type: const
     value: 262144
@@ -34,6 +37,17 @@ definitions:
       - stopped
       - dying
       - absent
+  - name: service-action
+    type: enum
+    entries:
+      - start
+      - stop
+      - restart
+      - reload
+      - name: enable
+        doc: sysrc(8) sets the service's rcvar to YES.
+      - name: disable
+        doc: sysrc(8) sets the service's rcvar to NO.
   - name: step-kind
     type: enum
     entries:
@@ -120,6 +134,37 @@ attribute-sets:
         multi-attr: true
         checks:
           max-count: max-steps
+      - name: service
+        type: text
+        doc: An rc.d script's name.
+        checks:
+          min-len: 1
+          max-len: 64
+      - name: service-action
+        type: u8
+        enum: service-action
+      - name: services
+        type: nest
+        nested-attributes: service
+        multi-attr: true
+        checks:
+          max-count: max-services
+      - name: service-result
+        type: nest
+        nested-attributes: service
+        doc: The service as it is after the operation.
+      - name: variables
+        type: nest
+        nested-attributes: variable
+        multi-attr: true
+        doc: rc.conf variables of a service, to set or as they are.
+      - name: description
+        type: text
+        doc: What the script says of itself (service describe).
+      - name: commands
+        type: text
+        multi-attr: true
+        doc: The script's extra commands (service extracommands).
 
   - name: host
     attributes:
@@ -206,6 +251,37 @@ attribute-sets:
       - name: values
         type: text
         multi-attr: true
+
+  - name: service
+    attributes:
+      - name: name
+        type: text
+      - name: path
+        type: text
+        doc: The script, in /etc/rc.d or /usr/local/etc/rc.d.
+      - name: rcvar
+        type: text
+        doc: The rc.conf variable that enables it, if it has one.
+      - name: enabled
+        type: bool
+      - name: running
+        type: bool
+        doc: What "service <name> status" says; absent when not asked.
+      - name: pid
+        type: u32
+      - name: status
+        type: text
+        doc: The status line, as the script printed it.
+
+  - name: variable
+    attributes:
+      - name: key
+        type: text
+      - name: value
+        type: text
+      - name: remove
+        type: flag
+        doc: In a request, unset the variable instead (sysrc -x).
 
   - name: conf-error
     attributes:
@@ -315,4 +391,59 @@ operations:
           - error
           - result
           - diff
+          - trace
+
+  - name: services
+    attribute-set: jailgrid
+    auth: true
+    doc: |
+      The rc.d scripts of the host with whether they are enabled, and for
+      the enabled ones whether they run.
+    do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - services
+          - trace
+
+  - name: service-action
+    attribute-set: jailgrid
+    auth: true
+    do:
+      request:
+        attributes:
+          - service
+          - service-action
+        required:
+          - service
+          - service-action
+      reply:
+        attributes:
+          - ok
+          - error
+          - service-result
+          - trace
+
+  - name: service-config
+    attribute-set: jailgrid
+    auth: true
+    doc: |
+      A service's rc.conf variables, read through sysrc(8); with
+      variables in the request, set or unset them first.
+    do:
+      request:
+        attributes:
+          - service
+          - variables
+        required:
+          - service
+      reply:
+        attributes:
+          - ok
+          - error
+          - service-result
+          - variables
+          - description
+          - commands
           - trace

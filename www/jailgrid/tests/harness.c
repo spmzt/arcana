@@ -172,8 +172,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 {
 	char	 cwd[MAXPATHLEN], buf[4096], so[MAXPATHLEN], routes[MAXPATHLEN];
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
+	char	 rcd[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[16];
+	char	*argv[20];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -210,6 +211,38 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-jail", "#!/bin/sh\nfor a; do [ \"$a\" = -e ] && "
 	    "exec /usr/sbin/jail \"$@\"; done\necho \"fake-jail: $*\"\n");
 	ATF_REQUIRE(chmod("fake-jail", 0755) == 0);
+	/* An rc.d of two scripts and stand-ins for service(8) and
+	 * sysrc(8) working from ./rc.conf, as the daemon's tests have. */
+	ATF_REQUIRE(mkdir("rc.d", 0755) == 0);
+	put("rc.d/sshd", "#!/bin/sh\n");
+	put("rc.d/ntpd", "#!/bin/sh\n");
+	ATF_REQUIRE(chmod("rc.d/sshd", 0755) == 0);
+	ATF_REQUIRE(chmod("rc.d/ntpd", 0755) == 0);
+	put("rc.conf", "sshd_enable=\"YES\"\nsshd_flags=\"-4\"\n");
+	snprintf(buf, sizeof(buf), "#!/bin/sh\nconf=%s/rc.conf\n"
+	    "case \"$1\" in\n"
+	    "-a) sed -e 's/=\"\\(.*\\)\"$/: \\1/' \"$conf\" ;;\n"
+	    "-x) grep -v \"^$2=\" \"$conf\" > c.new; mv c.new \"$conf\" ;;\n"
+	    "*=*) k=${1%%%%=*}; v=${1#*=}; grep -v \"^$k=\" \"$conf\" > c.new; "
+	    "printf '%%s=\"%%s\"\\n' \"$k\" \"$v\" >> c.new; mv c.new \"$conf\" ;;\n"
+	    "esac\n", cwd);
+	put("fake-sysrc", buf);
+	ATF_REQUIRE(chmod("fake-sysrc", 0755) == 0);
+	snprintf(buf, sizeof(buf), "#!/bin/sh\nconf=%s/rc.conf\n"
+	    "if [ \"$1\" = -e ]; then for f in %s/rc.d/*; do n=${f##*/}; "
+	    "grep -q \"^${n}_enable=\\\"YES\\\"\" \"$conf\" && echo \"$f\"; "
+	    "done; exit 0; fi\n"
+	    "case \"$2\" in\n"
+	    "rcvar) echo \"${1}_enable=\\\"NO\\\"\" ;;\n"
+	    "status) [ -f running.$1 ] && { echo \"$1 is running as pid 7.\"; "
+	    "exit 0; }; echo \"$1 is not running.\"; exit 1 ;;\n"
+	    "start|restart) touch running.$1 ;;\n"
+	    "stop) rm -f running.$1 ;;\n"
+	    "describe) echo \"The $1 daemon.\" ;;\n"
+	    "extracommands) echo reload ;;\n"
+	    "esac\n", cwd, cwd);
+	put("fake-service", buf);
+	ATF_REQUIRE(chmod("fake-service", 0755) == 0);
 
 	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n%s", RP_ID,
@@ -242,7 +275,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[7] = (char *)(uintptr_t)"etc/jail.conf.d";
 	argv[8] = (char *)(uintptr_t)"-j";
 	argv[9] = (char *)(uintptr_t)"./fake-jail";
-	argv[10] = NULL;
+	argv[10] = (char *)(uintptr_t)"-R";
+	argv[11] = rcd;
+	argv[12] = (char *)(uintptr_t)"-s";
+	argv[13] = (char *)(uintptr_t)"./fake-service";
+	argv[14] = (char *)(uintptr_t)"-y";
+	argv[15] = (char *)(uintptr_t)"./fake-sysrc";
+	argv[16] = NULL;
+	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "jailgridd.out");
 	ATF_REQUIRE((fp = fopen("jailgridd.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);

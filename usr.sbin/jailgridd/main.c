@@ -34,6 +34,9 @@ struct opts opts = {
 	.jail_conf = PATH_JAIL_CONF,
 	.jail_conf_d = PATH_JAIL_CONF_D,
 	.jail_bin = PATH_JAIL_BIN,
+	.rc_dirs = PATH_RC_DIRS,
+	.service_bin = PATH_SERVICE_BIN,
+	.sysrc_bin = PATH_SYSRC_BIN,
 };
 
 static bool	foreground;
@@ -50,7 +53,8 @@ usage(void)
 	fprintf(stderr, "usage: jailgridd [-dF] [-A cafile] [-C certfile] "
 	    "[-K keyfile] [-D confdir]\n"
 	    "                 [-f jail.conf] [-g group] [-j jail] "
-	    "[-l uri] [-p pidfile]\n");
+	    "[-l uri] [-p pidfile]\n"
+	    "                 [-R rc.d dirs] [-s service] [-y sysrc]\n");
 	exit(2);
 }
 
@@ -117,7 +121,7 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	while ((ch = getopt(argc, argv, "A:C:D:dFf:g:j:K:l:p:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:C:D:dFf:g:j:K:l:p:R:s:y:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -155,6 +159,15 @@ main(int argc, char *argv[])
 			break;
 		case 'p':
 			pidpath = optarg;
+			break;
+		case 'R':
+			opts.rc_dirs = optarg;
+			break;
+		case 's':
+			opts.service_bin = optarg;
+			break;
+		case 'y':
+			opts.sysrc_bin = optarg;
 			break;
 		default:
 			usage();

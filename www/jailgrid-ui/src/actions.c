@@ -222,6 +222,8 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			continue;
 		if (old[i].list != NULL)
 			ucl_object_unref(old[i].list);
+		if (old[i].services != NULL)
+			ucl_object_unref(old[i].services);
 		free(old[i].jui);
 	}
 	app.servers_loaded = true;
@@ -366,6 +368,205 @@ jail_action(const char *jail, const char *action)
 	    jail);
 	snprintf(body, sizeof(body), "{\"action\":\"%s\"}", action);
 	api("POST", url, body, action_cb, c);
+}
+
+static void
+services_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+	struct server	*s;
+	struct op	*op;
+
+	c = arg;
+	op = c->op != 0 ? op_find(c->op) : NULL;
+	if ((s = server_by_id(c->sid)) == NULL) {
+		free(c);
+		return;
+	}
+	s->services_loading = false;
+	if (status == 200) {
+		if (s->services != NULL)
+			ucl_object_unref(s->services);
+		s->services = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+		s->services_fetched = jg_now();
+		s->services_error[0] = '\0';
+		op_done(op, jbool(o, "ok"), o, jstr(o, "error"));
+	} else {
+		snprintf(s->services_error, sizeof(s->services_error), "%s",
+		    err != NULL ? err : "no answer from the console");
+		op_done(op, false, o, s->services_error);
+		if (c->user)
+			toast(true, "%s: %s", s->name, s->services_error);
+	}
+	free(c);
+}
+
+/* The rc.d services of a server; a manual refresh goes into the log. */
+void
+refresh_services(struct server *s, bool user)
+{
+	struct ctx	*c;
+	struct op	*op;
+	char		 url[128];
+
+	if (!app.online || s->services_loading)
+		return;
+	s->services_loading = true;
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	c->user = user;
+	if (user) {
+		op = op_new("list services", s->name);
+		c->op = op->id;
+		app.trace_op = op->id;
+	}
+	snprintf(url, sizeof(url), "/api/servers/%s/services", s->id);
+	api("GET", url, NULL, services_cb, c);
+}
+
+/* Replace the service of the same name in the server's list. */
+static void
+merge_service(struct server *s, const ucl_object_t *j)
+{
+	ucl_object_t		*arr, *old;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*name;
+	unsigned int		 i;
+
+	if (s->services == NULL || j == NULL || (name = jstr(j, "name")) ==
+	    NULL)
+		return;
+	arr = (ucl_object_t *)(uintptr_t)jget(s->services, "services");
+	it = NULL;
+	i = 0;
+	while (arr != NULL && (e = ucl_object_iterate(arr, &it, true)) != NULL) {
+		if (jstr(e, "name") != NULL && strcmp(jstr(e, "name"),
+		    name) == 0) {
+			old = ucl_array_replace_index(arr,
+			    ucl_object_ref((ucl_object_t *)(uintptr_t)j), i);
+			if (old != NULL)
+				ucl_object_unref(old);
+			return;
+		}
+		i++;
+	}
+}
+
+static void
+service_action_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	struct ctx	*c;
+	struct server	*s;
+	struct op	*op;
+	bool		 ok;
+
+	c = arg;
+	op = op_find(c->op);
+	ok = status == 200 && jbool(o, "ok");
+	if (status == 200 && !ok)
+		err = jstr(o, "error");
+	op_done(op, ok, o, err);
+	app.service_busy[0] = '\0';
+	if ((s = server_by_id(c->sid)) != NULL) {
+		merge_service(s, jget(o, "service"));
+		if (ok)
+			toast(false, "%s: %s", c->jail, op != NULL ? op->title :
+			    "done");
+		else
+			toast(true, "%s: %s", c->jail, err != NULL ? err :
+			    "failed");
+	}
+	free(c);
+}
+
+/* start, stop, restart, reload, enable or disable a service. */
+void
+service_action(const char *name, const char *action)
+{
+	struct server	*s;
+	struct ctx	*c;
+	struct op	*op;
+	char		 url[512], title[160], body[64];
+
+	if ((s = cur_server()) == NULL)
+		return;
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->jail, sizeof(c->jail), "%s", name);
+	snprintf(title, sizeof(title), "service %s %s", name, action);
+	op = op_new(title, s->name);
+	c->op = op->id;
+	app.trace_op = op->id;
+	app.trace_step = -1;
+	snprintf(app.service_busy, sizeof(app.service_busy), "%s", name);
+	snprintf(url, sizeof(url), "/api/servers/%s/services/%s/action",
+	    s->id, name);
+	snprintf(body, sizeof(body), "{\"action\":\"%s\"}", action);
+	api("POST", url, body, service_action_cb, c);
+}
+
+static void
+service_config_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	struct ctx	*c;
+	struct server	*s;
+	struct op	*op;
+	bool		 ok;
+
+	c = arg;
+	op = c->op != 0 ? op_find(c->op) : NULL;
+	app.svc_loading = false;
+	ok = status == 200 && jbool(o, "ok");
+	if (status == 200 && !ok)
+		err = jstr(o, "error");
+	op_done(op, ok, o, err);
+	if (status == 200 && strcmp(app.service, c->jail) == 0) {
+		if (app.svc_config != NULL)
+			ucl_object_unref(app.svc_config);
+		app.svc_config = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	}
+	snprintf(app.svc_error, sizeof(app.svc_error), "%s", ok ? "" :
+	    err != NULL ? err : "failed");
+	if ((s = server_by_id(c->sid)) != NULL)
+		merge_service(s, jget(o, "service"));
+	if (c->user)
+		toast(ok ? false : true, "%s: %s", c->jail, ok ? "configured" :
+		    err != NULL ? err : "failed");
+	free(c);
+}
+
+/*
+ * A service's rc.conf variables: read them (body NULL), or change them
+ * with {"set": {...}, "unset": [...]} and read them back.
+ */
+void
+service_config(const char *name, const char *body)
+{
+	struct server	*s;
+	struct ctx	*c;
+	struct op	*op;
+	char		 url[512], title[160];
+
+	if ((s = cur_server()) == NULL)
+		return;
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->jail, sizeof(c->jail), "%s", name);
+	c->user = body != NULL;
+	if (body != NULL) {
+		snprintf(title, sizeof(title), "service %s configure", name);
+		op = op_new(title, s->name);
+		c->op = op->id;
+		app.trace_op = op->id;
+	}
+	app.svc_loading = true;
+	app.svc_error[0] = '\0';
+	snprintf(url, sizeof(url), "/api/servers/%s/services/%s/config",
+	    s->id, name);
+	api(body != NULL ? "POST" : "GET", url, body, service_config_cb, c);
 }
 
 static void

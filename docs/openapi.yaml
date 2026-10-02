@@ -329,6 +329,103 @@ paths:
         "200": { $ref: "#/components/responses/Servers" }
         "404": { $ref: "#/components/responses/Error" }
 
+  /api/servers/{server}/services:
+    get:
+      tags: [servers]
+      summary: The host's rc.d services
+      description: One `service <name> status` per enabled script; the
+        reply carries the trace.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The services.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  services:
+                    type: array
+                    items: { $ref: "#/components/schemas/Service" }
+                  trace: { type: array }
+        "502": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/services/{service}/action:
+    post:
+      tags: [servers]
+      summary: start, stop, restart, reload, enable or disable a service
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: service
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [start, stop, restart, reload, enable, disable]
+      responses:
+        "200":
+          description: The outcome, with the service as it is now.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  service: { $ref: "#/components/schemas/Service" }
+                  trace: { type: array }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/services/{service}/config:
+    get:
+      tags: [servers]
+      summary: A service's rc.conf variables
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: service
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/ServiceConfig" }
+    post:
+      tags: [servers]
+      summary: Set or unset variables with sysrc(8), then read them
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: service
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                set:
+                  type: object
+                  additionalProperties: { type: string }
+                  example: { sshd_flags: "-4" }
+                unset:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/ServiceConfig" }
+
   /api/servers/{server}/hello:
     get:
       tags: [servers]
@@ -497,6 +594,24 @@ components:
           jids).
 
   responses:
+    ServiceConfig:
+      description: The variables, the description and the extra commands.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean }
+              error: { type: string, nullable: true }
+              service: { $ref: "#/components/schemas/Service" }
+              variables:
+                type: object
+                additionalProperties: { type: string }
+              description: { type: string, nullable: true }
+              commands:
+                type: array
+                items: { type: string }
+              trace: { type: array }
     Error:
       description: The request was refused.
       content:
@@ -566,6 +681,19 @@ components:
           schema: { $ref: "#/components/schemas/JailChangeReply" }
 
   schemas:
+    Service:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+        rcvar: { type: string, nullable: true }
+        enabled: { type: boolean, nullable: true }
+        running:
+          type: boolean
+          nullable: true
+          description: Null when the script was not asked (not enabled).
+        pid: { type: integer, nullable: true }
+        status: { type: string, nullable: true }
     Error:
       type: object
       required: [error]

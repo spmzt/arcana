@@ -21,6 +21,9 @@
 .Op Fl j Ar jail
 .Op Fl l Ar uri
 .Op Fl p Ar pidfile
+.Op Fl R Ar rc.d dirs
+.Op Fl s Ar service
+.Op Fl y Ar sysrc
 .Sh DESCRIPTION
 .Nm
 serves the
@@ -129,6 +132,20 @@ Default
 .It Fl p Ar pidfile
 Default
 .Pa /var/run/jailgridd.pid .
+.It Fl R Ar rc.d dirs
+The directories whose scripts are the host's services, colon separated.
+Default
+.Pa /etc/rc.d:/usr/local/etc/rc.d .
+.It Fl s Ar service
+The
+.Xr service 8
+program, which lists, queries and changes services.
+.It Fl y Ar sysrc
+The
+.Xr sysrc 8
+program, which reads and writes their
+.Xr rc.conf 5
+variables.
 .El
 .Sh FILES
 .Bl -tag -width Ds -compact

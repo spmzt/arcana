@@ -42,6 +42,9 @@ policies, client wrappers and server glue from it.
 | `list` | running and configured jails | jail_getv(3), procstat_getprocs(3), `jail -f scope -e sep` |
 | `action` | start, stop, restart, kill | jail(8) `-c`, `-r`, `-rc`; jail_remove(2) for kill |
 | `address` | add or remove an IP, live and/or persistent | jail_setv(3), SIOCAIFADDR ioctls, libjailconf |
+| `services` | the host's rc.d scripts, enabled and running | the rc.d directories, `service -e`, `service <name> status` |
+| `service-action` | start, stop, restart, reload, enable, disable | `service <name> <verb>`; `sysrc <rcvar>=YES/NO` |
+| `service-config` | a service's rc.conf variables, read and set | `sysrc -a`, `sysrc key=value`, `sysrc -x key`, `service <name> describe` |
 
 Every operation requires an authenticated peer: a client certificate
 from the jailgrid CA over TCP, or access to the 0600 AF_UNIX socket.
@@ -131,6 +134,20 @@ configuration is read through `jail -e`, any request that reads
 configuration has one.  Program output reaches the browser with
 unprintable characters as vis(3) escapes (the `-e` separator shows as
 `\037`).
+
+## Services
+
+The daemon never reads or writes `rc.conf` itself.  It lists the
+executable scripts of `/etc/rc.d` and `/usr/local/etc/rc.d`, asks
+`service -e` which are enabled and `service <name> status` whether the
+enabled ones run, and changes things with `service <name> <verb>` and
+`sysrc(8)`, so quoting, `rc.conf.d` and `rc.conf.local` mean what they
+mean to the system.  A service's variables are those `sysrc -a` lists
+whose names start with the script's name or its rcvar's stem; only such
+names can be set, and nothing is passed through a shell.  Every program
+run is a step in the trace with its output; listing a host with many
+enabled services takes one `status` run per service, so the console
+fetches the list only when the Services tab is opened or refreshed.
 
 ## Addresses and aliases
 

@@ -539,6 +539,72 @@ ATF_TC_BODY(jails, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(services, "Services listed, acted on and configured through "
+    "service(8) and sysrc(8)")
+ATF_TC_BODY(services, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		path[160], base[128], cwd[MAXPATHLEN], body[MAXPATHLEN];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(base, sizeof(base), "/api/servers/%s/services", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+
+	http("GET", base, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ntpd", jstr(&r, "services.0.name"));
+	ATF_CHECK_STREQ("false", jstr(&r, "services.0.enabled"));
+	ATF_CHECK_STREQ("sshd", jstr(&r, "services.1.name"));
+	ATF_CHECK_STREQ("true", jstr(&r, "services.1.enabled"));
+	ATF_CHECK_STREQ("false", jstr(&r, "services.1.running"));
+	ATF_CHECK(jstr(&r, "trace.3.label") != NULL);
+	resp_free(&r);
+
+	snprintf(path, sizeof(path), "%s/sshd/action", base);
+	http("POST", path, "{\"action\":\"start\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("true", jstr(&r, "service.running"));
+	ATF_CHECK_STREQ("7", jstr(&r, "service.pid"));
+	resp_free(&r);
+	http("POST", path, "{\"action\":\"dance\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%s/ntpd/action", base);
+	http("POST", path, "{\"action\":\"enable\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "service.enabled"));
+	resp_free(&r);
+
+	snprintf(path, sizeof(path), "%s/sshd/config", base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("-4", jstr(&r, "variables.sshd_flags"));
+	ATF_CHECK_STREQ("The sshd daemon.", jstr(&r, "description"));
+	ATF_CHECK_STREQ("reload", jstr(&r, "commands.0"));
+	resp_free(&r);
+	http("POST", path, "{\"set\":{\"sshd_flags\":\"-6\"},\"unset\":"
+	    "[\"sshd_nothing\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("-6", jstr(&r, "variables.sshd_flags"));
+	resp_free(&r);
+	http("POST", path, "{\"set\":{\"ntpd_flags\":\"x\"}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK_MSG(strstr(jstr(&r, "error"), "not a variable") != NULL,
+	    "%s", jstr(&r, "error"));
+	resp_free(&r);
+}
+
 CONSOLE_TC(unreachable, "A server that does not answer is reported")
 ATF_TC_BODY(unreachable, tc)
 {
@@ -861,6 +927,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, second_key);
 	ATF_TP_ADD_TC(tp, csrf);
 	ATF_TP_ADD_TC(tp, jails);
+	ATF_TP_ADD_TC(tp, services);
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, enrol);

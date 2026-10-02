@@ -71,6 +71,34 @@ only showing what would change.
 names the interface for the alias when the jail has no
 .Va interface
 parameter.
+.It Cm services
+The host's rc.d scripts: whether
+.Xr rc.conf 5
+enables them, and for the enabled ones whether they run, as
+.Xr service 8
+reports.
+.It Cm service Ar name Cm start | stop | restart | reload | enable | disable
+Change a service:
+.Cm start ,
+.Cm stop ,
+.Cm restart
+and
+.Cm reload
+through
+.Xr service 8 ,
+.Cm enable
+and
+.Cm disable
+by setting its rcvar with
+.Xr sysrc 8 .
+.It Cm service Ar name Cm config Oo Fl x Ar key Oc ... Oo Ar key Ns = Ns Ar value Oc ...
+The service's
+.Xr rc.conf 5
+variables, with what the script says of itself and its extra commands.
+.Ar key Ns = Ns Ar value
+sets one first,
+.Fl x
+unsets one; only the service's own variables are accepted.
 .El
 .Sh EXIT STATUS
 0 when the request succeeded, 1 when it failed, 2 for usage errors.

@@ -493,6 +493,16 @@ stage(struct html *h)
 		return;
 	}
 	hostbar(h, s);
+	h_fmt(h, "<nav class=\"tabs\"><button class=\"tab%s\" data-act=\"tab\" "
+	    "data-arg=\"jails\">Jails</button><button class=\"tab%s\" "
+	    "data-act=\"tab\" data-arg=\"services\">Services</button></nav>",
+	    app.tab == TAB_JAILS ? " on" : "", app.tab == TAB_SERVICES ?
+	    " on" : "");
+	if (app.tab == TAB_SERVICES) {
+		view_services(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (s->list != NULL && ucl_array_size(jget(s->list,
 	    "conf_errors")) > 0) {
 		h_raw(h, "<div class=\"notice warn\"><b>Configuration "
@@ -978,14 +988,242 @@ view(struct html *h)
 	h_raw(h, "<div class=\"shell\">");
 	topbar(h);
 	banner(h);
-	h_fmt(h, "<div class=\"body%s\">", app.jail[0] != '\0' ?
-	    " with-drawer" : "");
+	h_fmt(h, "<div class=\"body%s\">", (app.tab == TAB_JAILS ?
+	    app.jail[0] : app.service[0]) != '\0' ? " with-drawer" : "");
 	rail(h);
 	stage(h);
-	drawer(h);
+	if (app.tab == TAB_SERVICES)
+		view_service_drawer(h, cur_server());
+	else
+		drawer(h);
 	h_raw(h, "</div>");
 	dock(h);
 	h_raw(h, "</div>");
 	modal(h);
 	toasts(h);
+}
+
+/* One rc.d service as a row. */
+static void
+service_row(struct html *h, const ucl_object_t *sv)
+{
+	const ucl_object_t	*en, *run;
+	const char		*name, *state;
+	bool			 enabled, running, known, busy;
+
+	name = jstr(sv, "name");
+	en = jget(sv, "enabled");
+	run = jget(sv, "running");
+	enabled = en != NULL && ucl_object_type(en) == UCL_BOOLEAN &&
+	    ucl_object_toboolean(en);
+	known = run != NULL && ucl_object_type(run) == UCL_BOOLEAN;
+	running = known && ucl_object_toboolean(run);
+	state = !known ? "unknown" : running ? "running" : "stopped";
+	busy = strcmp(app.service_busy, name) == 0;
+	h_fmt(h, "<li class=\"svc s-%s%s%s\"", state, enabled ? " enabled" : "",
+	    strcmp(app.service, name) == 0 ? " open" : "");
+	h_raw(h, " data-act=\"open-svc\"");
+	h_attr(h, "data-arg", name);
+	h_raw(h, "><i class=\"led\"></i><span class=\"name\">");
+	h_txt(h, name);
+	h_raw(h, "</span><span class=\"flags\">");
+	h_raw(h, enabled ? "<b class=\"on\">enabled</b>" : "<b>disabled</b>");
+	if (known) {
+		h_raw(h, running ? " <b class=\"on\">running" : " <b>stopped");
+		if (jget(sv, "pid") != NULL && ucl_object_type(jget(sv,
+		    "pid")) == UCL_INT)
+			h_fmt(h, " · pid %lld", (long long)jint(sv, "pid", 0));
+		h_raw(h, "</b>");
+	}
+	h_raw(h, "</span><span class=\"acts\">");
+	if (known && !running)
+		h_fmt(h, "<button class=\"act go\" data-act=\"svc\" "
+		    "data-value=\"start\"%s", busy ? " disabled" : "");
+	else
+		h_fmt(h, "<button class=\"act\" data-act=\"svc\" "
+		    "data-value=\"stop\"%s", busy ? " disabled" : "");
+	h_attr(h, "data-arg", name);
+	h_raw(h, known && !running ? ">Start</button>" : ">Stop</button>");
+	h_fmt(h, "<button class=\"act\" data-act=\"svc\" data-value=\"restart\""
+	    "%s", busy ? " disabled" : "");
+	h_attr(h, "data-arg", name);
+	h_raw(h, ">Restart</button>");
+	h_fmt(h, "<button class=\"act\" data-act=\"svc\" data-value=\"%s\"%s",
+	    enabled ? "disable" : "enable", busy ? " disabled" : "");
+	h_attr(h, "data-arg", name);
+	h_raw(h, enabled ? ">Disable</button>" : ">Enable</button>");
+	h_raw(h, "</span></li>");
+}
+
+/* The services tab: the rc.d scripts of the server. */
+void
+view_services(struct html *h, struct server *s)
+{
+	const ucl_object_t	*sv;
+	ucl_object_iter_t	 it;
+	char			 age[32];
+	int			 shown, n, en, run;
+
+	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
+	    "data-input=\"filter\" placeholder=\"Filter services\" "
+	    "autocomplete=\"off\" spellcheck=\"false\"");
+	h_attr(h, "value", app.filter);
+	h_raw(h, ">");
+	if (s->services != NULL) {
+		n = en = run = 0;
+		it = NULL;
+		while ((sv = ucl_object_iterate(jget(s->services, "services"),
+		    &it, true)) != NULL) {
+			n++;
+			if (jbool(sv, "enabled"))
+				en++;
+			if (jbool(sv, "running"))
+				run++;
+		}
+		fmt_age(age, sizeof(age), s->services_fetched);
+		h_fmt(h, "<span class=\"tally\"><b class=\"c-run\">%d</b> running "
+		    "· <b>%d</b> enabled · <b>%d</b> scripts · ", run, en, n);
+		h_txt(h, age);
+		h_raw(h, "</span>");
+	}
+	h_raw(h, "</div>");
+	if (s->services_error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, s->services_error);
+		h_raw(h, "</div>");
+	}
+	if (s->services == NULL) {
+		h_raw(h, s->services_loading ? "<div class=\"empty\"><div "
+		    "class=\"loader\"></div><p class=\"dim\">service(8) is "
+		    "asking every enabled script for its status…</p></div>" :
+		    "<div class=\"empty\"><h2>No data</h2><p>The host has not "
+		    "answered yet.</p></div>");
+		return;
+	}
+	h_raw(h, "<ul class=\"services\">");
+	shown = 0;
+	it = NULL;
+	while ((sv = ucl_object_iterate(jget(s->services, "services"), &it,
+	    true)) != NULL) {
+		if (jstr(sv, "name") == NULL || (app.filter[0] != '\0' &&
+		    strstr(jstr(sv, "name"), app.filter) == NULL))
+			continue;
+		service_row(h, sv);
+		shown++;
+	}
+	h_raw(h, "</ul>");
+	if (shown == 0)
+		h_raw(h, "<div class=\"empty\"><p>Nothing matches.</p></div>");
+}
+
+/* The drawer of the open service: its rc.conf variables, editable. */
+void
+view_service_drawer(struct html *h, struct server *s)
+{
+	const ucl_object_t	*sv, *vars, *v, *c;
+	ucl_object_iter_t	 it;
+	const char		*name;
+	char			 fname[160];
+
+	name = app.service;
+	if (name[0] == '\0' || s == NULL) {
+		h_raw(h, "<aside class=\"drawer\"></aside>");
+		return;
+	}
+	sv = app.svc_config != NULL ? jget(app.svc_config, "service") : NULL;
+	h_fmt(h, "<aside class=\"drawer open s-%s\"><header><i class=\"led\">"
+	    "</i><h2>", sv == NULL ? "unknown" : jbool(sv, "running") ?
+	    "running" : "stopped");
+	h_txt(h, name);
+	h_raw(h, "</h2><span class=\"state\">");
+	h_txt(h, sv == NULL ? "" : jbool(sv, "enabled") ? "enabled" :
+	    "disabled");
+	h_raw(h, "</span><button class=\"icon\" data-act=\"close-drawer\" "
+	    "title=\"Close\">×</button></header><div class=\"drawer-body\">");
+	if (app.svc_config == NULL) {
+		h_raw(h, app.svc_loading ? "<div class=\"loader\"></div>" : "");
+		if (app.svc_error[0] != '\0') {
+			h_raw(h, "<p class=\"err\">");
+			h_txt(h, app.svc_error);
+			h_raw(h, "</p>");
+		}
+		h_raw(h, "</div></aside>");
+		return;
+	}
+	if (jstr(app.svc_config, "description") != NULL) {
+		h_raw(h, "<p class=\"dim\">");
+		h_txt(h, jstr(app.svc_config, "description"));
+		h_raw(h, "</p>");
+	}
+	if (sv != NULL) {
+		h_raw(h, "<dl class=\"kv\"><dt>script</dt><dd class=\"mono\">");
+		h_txt(h, jstr(sv, "path"));
+		h_raw(h, "</dd>");
+		if (jstr(sv, "status") != NULL) {
+			h_raw(h, "<dt>status</dt><dd>");
+			h_txt(h, jstr(sv, "status"));
+			h_raw(h, "</dd>");
+		}
+		h_raw(h, "</dl>");
+	}
+	h_raw(h, "<div class=\"actions big\">");
+	{
+		static const char *verbs[] = { "start", "stop", "restart",
+		    "reload", "enable", "disable" };
+		size_t i;
+
+		for (i = 0; i < 6; i++) {
+			h_fmt(h, "<button class=\"act%s\" data-act=\"svc\" "
+			    "data-value=\"%s\"%s", i == 0 ? " go" : "", verbs[i],
+			    strcmp(app.service_busy, name) == 0 ? " disabled" :
+			    "");
+			h_attr(h, "data-arg", name);
+			h_raw(h, ">");
+			h_txt(h, verbs[i]);
+			h_raw(h, "</button>");
+		}
+	}
+	c = jget(app.svc_config, "commands");
+	if (ucl_array_size(c) > 0) {
+		h_raw(h, "<span class=\"dim\">also: ");
+		it = NULL;
+		while ((v = ucl_object_iterate(c, &it, true)) != NULL) {
+			h_raw(h, "<code>");
+			h_txt(h, ucl_object_tostring(v));
+			h_raw(h, "</code> ");
+		}
+		h_raw(h, "</span>");
+	}
+	h_raw(h, "</div>");
+	if (app.svc_error[0] != '\0') {
+		h_raw(h, "<p class=\"err\">");
+		h_txt(h, app.svc_error);
+		h_raw(h, "</p>");
+	}
+
+	h_raw(h, "<h4>rc.conf <span class=\"dim\">through sysrc(8)</span></h4>"
+	    "<form data-form=\"svc-config\" class=\"vars\">");
+	vars = jget(app.svc_config, "variables");
+	it = NULL;
+	while ((v = ucl_object_iterate(vars, &it, true)) != NULL) {
+		snprintf(fname, sizeof(fname), "v:%s", ucl_object_key(v));
+		h_raw(h, "<label class=\"var\"><span class=\"mono\">");
+		h_txt(h, ucl_object_key(v));
+		h_raw(h, "</span><input spellcheck=\"false\"");
+		h_attr(h, "name", fname);
+		h_attr(h, "value", ucl_object_tostring_forced(v));
+		h_raw(h, "><button type=\"button\" class=\"icon\" "
+		    "data-act=\"svc-unset\" title=\"Remove from rc.conf\"");
+		h_attr(h, "data-arg", ucl_object_key(v));
+		h_raw(h, ">×</button></label>");
+	}
+	h_raw(h, "<label class=\"var new\"><input name=\"key\" "
+	    "spellcheck=\"false\"");
+	snprintf(fname, sizeof(fname), "%s_…", name);
+	h_attr(h, "placeholder", fname);
+	h_raw(h, "><input name=\"value\" placeholder=\"value\" "
+	    "spellcheck=\"false\"></label>");
+	h_fmt(h, "<div class=\"buttons\"><button class=\"primary\"%s>Apply"
+	    "</button></div></form></div></aside>", app.svc_loading ?
+	    " disabled" : "");
 }

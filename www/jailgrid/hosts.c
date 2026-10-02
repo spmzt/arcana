@@ -27,6 +27,9 @@ enum op {
 	OP_LIST,
 	OP_ACTION,
 	OP_ADDRESS,
+	OP_SERVICES,
+	OP_SERVICE_ACTION,
+	OP_SERVICE_CONFIG,
 };
 
 struct call {
@@ -45,6 +48,8 @@ struct call {
 	struct jg_address_req	 addr;
 	char			 address[65];
 	char			 ifname[16];
+	struct jg_variable	*vars;		/* service-config: to set */
+	size_t			 nvars;
 	char			*json;		/* the reply, from the thread */
 	int			 status;
 };
@@ -79,6 +84,15 @@ static const char *action_names[] = {
 	[JG_ACTION_KILL] = "kill",
 };
 
+static const char *service_action_names[] = {
+	[JG_SERVICE_ACTION_START] = "start",
+	[JG_SERVICE_ACTION_STOP] = "stop",
+	[JG_SERVICE_ACTION_RESTART] = "restart",
+	[JG_SERVICE_ACTION_RELOAD] = "reload",
+	[JG_SERVICE_ACTION_ENABLE] = "enable",
+	[JG_SERVICE_ACTION_DISABLE] = "disable",
+};
+
 static uint64_t	 now_us(void);
 static void	 put(ucl_object_t *, const char *, ucl_object_t *);
 static void	 put_str(ucl_object_t *, const char *, const char *);
@@ -86,6 +100,8 @@ static ucl_object_t *strs(const char *const *, size_t);
 static ucl_object_t *output(const struct cbl_bytes *);
 static ucl_object_t *host_object(const struct jg_host *);
 static ucl_object_t *jail_object(const struct jg_jail *);
+static ucl_object_t *service_object(const struct jg_service *);
+static void	 call_free_vars(struct call *);
 static ucl_object_t *step_object(int, int, const char *, const char *,
 		    const char *, bool, uint64_t);
 static ucl_object_t *trace_object(struct call *, const struct jg_step *,
@@ -231,6 +247,39 @@ jail_object(const struct jg_jail *j)
 }
 
 static ucl_object_t *
+service_object(const struct jg_service *s)
+{
+	ucl_object_t	*o;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put_str(o, "name", s->name);
+	put_str(o, "path", s->path);
+	put_str(o, "rcvar", s->rcvar);
+	put(o, "enabled", s->has_enabled ? ucl_object_frombool(s->enabled) :
+	    ucl_object_typed_new(UCL_NULL));
+	put(o, "running", s->has_running ? ucl_object_frombool(s->running) :
+	    ucl_object_typed_new(UCL_NULL));
+	put(o, "pid", s->has_pid ? ucl_object_fromint(s->pid) :
+	    ucl_object_typed_new(UCL_NULL));
+	put_str(o, "status", s->status);
+	return (o);
+}
+
+static void
+call_free_vars(struct call *c)
+{
+	size_t	i;
+
+	for (i = 0; i < c->nvars; i++) {
+		kore_free((char *)(uintptr_t)c->vars[i].key);
+		kore_free((char *)(uintptr_t)c->vars[i].value);
+	}
+	kore_free(c->vars);
+	c->vars = NULL;
+	c->nvars = 0;
+}
+
+static ucl_object_t *
 step_object(int id, int parent, const char *kind, const char *label,
     const char *detail, bool ok, uint64_t us)
 {
@@ -262,7 +311,10 @@ trace_object(struct call *c, const struct jg_step *v, size_t n,
 	bool		 ok;
 
 	fn = c->op == OP_HELLO ? "jg_hello" : c->op == OP_LIST ? "jg_list" :
-	    c->op == OP_ACTION ? "jg_action" : "jg_address";
+	    c->op == OP_ACTION ? "jg_action" : c->op == OP_ADDRESS ?
+	    "jg_address" : c->op == OP_SERVICES ? "jg_services" :
+	    c->op == OP_SERVICE_ACTION ? "jg_service_action" :
+	    "jg_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
 	for (i = 0; i < n; i++)
@@ -305,6 +357,11 @@ call_run(struct kore_task *t)
 	struct jg_action_req	 aq;
 	struct jg_action_rsp	*ar;
 	struct jg_address_rsp	*dr;
+	struct jg_services_rsp	*sr;
+	struct jg_service_action_req saq;
+	struct jg_service_action_rsp *sar;
+	struct jg_service_config_req scq;
+	struct jg_service_config_rsp *scr;
 	const struct jg_step	*steps;
 	ucl_object_t		*top, *srv, *a, *e;
 	cbl_conn		*conn;
@@ -332,6 +389,9 @@ call_run(struct kore_task *t)
 	lr = NULL;
 	ar = NULL;
 	dr = NULL;
+	sr = NULL;
+	sar = NULL;
+	scr = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
 	snprintf(detail, sizeof(detail), "%s, %s", c->uri, local ?
@@ -414,7 +474,7 @@ call_run(struct kore_task *t)
 		steps = ar->trace.v;
 		nsteps = ar->trace.n;
 		break;
-	default:
+	case OP_ADDRESS:
 		if ((error = jg_address(&cl, &c->addr, &dr)) != 0)
 			goto rpcfail;
 		ok = dr->ok;
@@ -424,6 +484,53 @@ call_run(struct kore_task *t)
 			put(top, "jail", jail_object(dr->result));
 		steps = dr->trace.v;
 		nsteps = dr->trace.n;
+		break;
+	case OP_SERVICES:
+		if ((error = jg_services(&cl, &sr)) != 0)
+			goto rpcfail;
+		ok = sr->ok;
+		put_str(top, "error", sr->error);
+		a = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < sr->services.n; i++)
+			ucl_array_append(a, service_object(&sr->services.v[i]));
+		put(top, "services", a);
+		steps = sr->trace.v;
+		nsteps = sr->trace.n;
+		break;
+	case OP_SERVICE_ACTION:
+		memset(&saq, 0, sizeof(saq));
+		saq.service = c->jail;
+		saq.has_service_action = true;
+		saq.service_action = c->action;
+		if ((error = jg_service_action(&cl, &saq, &sar)) != 0)
+			goto rpcfail;
+		ok = sar->ok;
+		put_str(top, "error", sar->error);
+		if (sar->service_result != NULL)
+			put(top, "service", service_object(sar->service_result));
+		steps = sar->trace.v;
+		nsteps = sar->trace.n;
+		break;
+	default:
+		memset(&scq, 0, sizeof(scq));
+		scq.service = c->jail;
+		scq.variables.v = c->vars;
+		scq.variables.n = c->nvars;
+		if ((error = jg_service_config(&cl, &scq, &scr)) != 0)
+			goto rpcfail;
+		ok = scr->ok;
+		put_str(top, "error", scr->error);
+		if (scr->service_result != NULL)
+			put(top, "service", service_object(scr->service_result));
+		e = ucl_object_typed_new(UCL_OBJECT);
+		for (i = 0; i < scr->variables.n; i++)
+			put_str(e, scr->variables.v[i].key,
+			    scr->variables.v[i].value);
+		put(top, "variables", e);
+		put_str(top, "description", scr->description);
+		put(top, "commands", strs(scr->commands.v, scr->commands.n));
+		steps = scr->trace.v;
+		nsteps = scr->trace.n;
 		break;
 	}
 	us = now_us() - t1;
@@ -462,6 +569,12 @@ done:
 		jg_action_rsp_free(ar);
 	if (dr != NULL)
 		jg_address_rsp_free(dr);
+	if (sr != NULL)
+		jg_services_rsp_free(sr);
+	if (sar != NULL)
+		jg_service_action_rsp_free(sar);
+	if (scr != NULL)
+		jg_service_config_rsp_free(scr);
 	if (cl.conn != NULL)
 		jg_client_fini(&cl);
 	cbl_conn_free(conn);
@@ -482,7 +595,9 @@ call_new(struct http_request *req, enum op op)
 	char			 sid[16];
 
 	t0 = now_us();
-	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS))
+	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
+	    op == OP_SERVICE_ACTION || (op == OP_SERVICE_CONFIG &&
+	    req->method == HTTP_METHOD_POST)))
 		return (NULL);
 	t1 = now_us();
 	if (!capture(req, 3, sid, sizeof(sid)) || (s = server_find(sid)) ==
@@ -555,6 +670,112 @@ api_call_free(struct http_request *req)
 	kore_free(c->uri);
 	kore_free(c->peer);
 	c->sname = c->uri = c->peer = NULL;
+	call_free_vars(c);
+}
+
+/* GET /api/servers/<id>/services */
+int
+api_services(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_SERVICES)) == NULL)
+		return (KORE_RESULT_OK);
+	return (call_start(req, c));
+}
+
+/* POST /api/servers/<id>/services/<name>/action {"action": "restart"} */
+int
+api_service_action(struct http_request *req)
+{
+	ucl_object_t	*body;
+	struct call	*c;
+	const char	*a;
+	size_t		 i;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_SERVICE_ACTION)) == NULL)
+		return (KORE_RESULT_OK);
+	body = read_json(req);
+	a = body != NULL ? ucl_str(body, "action") : NULL;
+	for (i = 0; a != NULL && i < nitems(service_action_names); i++)
+		if (strcmp(a, service_action_names[i]) == 0)
+			break;
+	ucl_object_unref(body);
+	if (a == NULL || i == nitems(service_action_names) ||
+	    !capture(req, 5, c->jail, sizeof(c->jail))) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "action is one of "
+		    "start, stop, restart, reload, enable, disable"));
+	}
+	c->action = (uint8_t)i;
+	return (call_start(req, c));
+}
+
+/*
+ * GET /api/servers/<id>/services/<name>/config: the variables.
+ * POST, {"set": {"sshd_flags": "-4"}, "unset": ["sshd_x"]}: change them
+ * first.
+ */
+int
+api_service_config(struct http_request *req)
+{
+	ucl_object_t		*body;
+	const ucl_object_t	*set, *unset, *v;
+	ucl_object_iter_t	 it;
+	struct call		*c;
+	size_t			 n;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_SERVICE_CONFIG)) == NULL)
+		return (KORE_RESULT_OK);
+	if (!capture(req, 5, c->jail, sizeof(c->jail))) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "bad service name"));
+	}
+	if (req->method == HTTP_METHOD_POST && (body = read_json(req)) != NULL) {
+		set = ucl_object_lookup(body, "set");
+		unset = ucl_object_lookup(body, "unset");
+		n = ucl_array_size(unset);
+		it = NULL;
+		while (set != NULL && ucl_object_type(set) == UCL_OBJECT &&
+		    ucl_object_iterate(set, &it, true) != NULL)
+			n++;
+		if (n > 0 && n <= 64) {
+			c->vars = kore_calloc(n, sizeof(*c->vars));
+			it = NULL;
+			while (set != NULL && ucl_object_type(set) == UCL_OBJECT &&
+			    (v = ucl_object_iterate(set, &it, true)) != NULL) {
+				c->vars[c->nvars].key =
+				    kore_strdup(ucl_object_key(v));
+				c->vars[c->nvars].value = kore_strdup(
+				    ucl_object_tostring_forced(v));
+				c->nvars++;
+			}
+			it = NULL;
+			while ((v = ucl_object_iterate(unset, &it, true)) != NULL &&
+			    c->nvars < n) {
+				if (ucl_object_type(v) != UCL_STRING)
+					continue;
+				c->vars[c->nvars].key =
+				    kore_strdup(ucl_object_tostring(v));
+				c->vars[c->nvars].remove = true;
+				c->nvars++;
+			}
+		}
+		ucl_object_unref(body);
+	}
+	return (call_start(req, c));
 }
 
 /* GET /api/servers/<id>/hello */

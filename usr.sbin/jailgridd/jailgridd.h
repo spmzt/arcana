@@ -20,6 +20,9 @@
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
 #define	PATH_JAIL_BIN		"/usr/sbin/jail"
+#define	PATH_RC_DIRS		"/etc/rc.d:/usr/local/etc/rc.d"
+#define	PATH_SERVICE_BIN	"/usr/sbin/service"
+#define	PATH_SYSRC_BIN		"/usr/sbin/sysrc"
 
 /* jail -e separator: ASCII unit separator, never in a jail.conf value. */
 #define	JAIL_E_SEP		"\037"
@@ -32,6 +35,9 @@ struct opts {
 	const char	*jail_conf;
 	const char	*jail_conf_d;
 	const char	*jail_bin;
+	const char	*rc_dirs;	/* colon separated */
+	const char	*service_bin;
+	const char	*sysrc_bin;
 	bool		 debug;
 };
 
@@ -167,6 +173,14 @@ int		 do_action(struct work *, const char *, uint8_t,
 		    struct jg_action_rsp *);
 int		 do_address(struct work *, const struct jg_address_req *,
 		    struct jg_address_rsp *);
+
+/* services.c */
+int		 do_services(struct work *, struct jg_services_rsp *);
+int		 do_service_action(struct work *, const char *, uint8_t,
+		    struct jg_service_action_rsp *);
+int		 do_service_config(struct work *,
+		    const struct jg_service_config_req *,
+		    struct jg_service_config_rsp *);
 
 /* main.c */
 void		 logmsg(int, const char *, ...) __printflike(2, 3);

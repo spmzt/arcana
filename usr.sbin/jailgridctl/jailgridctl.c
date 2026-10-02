@@ -59,6 +59,9 @@ static int	cmd_hello(struct jg_client *);
 static int	cmd_list(struct jg_client *, int, char **);
 static int	cmd_action(struct jg_client *, uint8_t, int, char **);
 static int	cmd_address(struct jg_client *, int, char **);
+static int	cmd_services(struct jg_client *);
+static int	cmd_service(struct jg_client *, int, char **);
+static void	emit_service(const struct jg_service *, bool);
 
 static void
 usage(void)
@@ -70,7 +73,11 @@ usage(void)
 	    "    hello\n"
 	    "    list [-c]\n"
 	    "    start | stop | restart | kill jail\n"
-	    "    address add | remove [-lnp] [-i interface] jail address\n");
+	    "    address add | remove [-lnp] [-i interface] jail address\n"
+	    "    services\n"
+	    "    service name start | stop | restart | reload | enable | "
+	    "disable\n"
+	    "    service name config [-x key ...] [key=value ...]\n");
 	exit(2);
 }
 
@@ -412,6 +419,154 @@ cmd_address(struct jg_client *cl, int argc, char **argv)
 	return (error);
 }
 
+static void
+emit_service(const struct jg_service *s, bool table)
+{
+
+	if (table) {
+		xo_open_instance("service");
+		xo_emit("{k:name/%-24s/%s} {:enabled/%-8s/%s} ", s->name,
+		    !s->has_enabled ? "?" : s->enabled ? "enabled" : "-");
+		if (s->has_running)
+			xo_emit("{:running/%-8s/%s} ", s->running ? "running" :
+			    "stopped");
+		else
+			xo_emit("{P:/%-8s} ", "");
+		if (s->has_pid)
+			xo_emit("{:pid/%u}", s->pid);
+		xo_emit("{e:path/%s}\n", s->path);
+		xo_close_instance("service");
+		return;
+	}
+	xo_open_container("service");
+	xo_emit("{Lwc:Service}{:name/%s} ({:path/%s})\n", s->name, s->path);
+	if (s->has_enabled)
+		xo_emit("{Lwc:Enabled}{:enabled/%s}\n", s->enabled ? "yes" :
+		    "no");
+	if (s->has_running)
+		xo_emit("{Lwc:Running}{:running/%s}", s->running ? "yes" : "no");
+	if (s->has_pid)
+		xo_emit(" ({Lw:pid}{:pid/%u})", s->pid);
+	if (s->has_running)
+		xo_emit("\n");
+	if (s->status != NULL)
+		xo_emit("{Lwc:Status}{:status/%s}\n", s->status);
+	xo_close_container("service");
+}
+
+static int
+cmd_services(struct jg_client *cl)
+{
+	struct jg_services_rsp	*rsp;
+	size_t			 i;
+	int			 error;
+
+	if ((error = jg_services(cl, &rsp)) != 0)
+		fail(cl, error, "services");
+	xo_emit("{T:/%-24s} {T:/%-8s} {T:/%-8s} {T:/%s}\n", "NAME", "ENABLED",
+	    "STATE", "PID");
+	xo_open_list("service");
+	for (i = 0; i < rsp->services.n; i++)
+		emit_service(&rsp->services.v[i], true);
+	xo_close_list("service");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("%s", rsp->error != NULL ? rsp->error : "failed");
+	jg_services_rsp_free(rsp);
+	return (error);
+}
+
+/* service name verb, or service name config [-x key] [key=value] */
+static int
+cmd_service(struct jg_client *cl, int argc, char **argv)
+{
+	static const char *verbs[] = { "start", "stop", "restart", "reload",
+	    "enable", "disable" };
+	struct jg_service_action_req	 areq;
+	struct jg_service_action_rsp	*arsp;
+	struct jg_service_config_req	 creq;
+	struct jg_service_config_rsp	*crsp;
+	struct jg_variable		*vars;
+	size_t				 i, nv;
+	char				*eq;
+	int				 error;
+
+	if (argc < 3)
+		usage();
+	for (i = 0; i < nitems(verbs); i++)
+		if (strcmp(argv[2], verbs[i]) == 0)
+			break;
+	if (i < nitems(verbs)) {
+		if (argc != 3)
+			usage();
+		memset(&areq, 0, sizeof(areq));
+		areq.service = argv[1];
+		areq.has_service_action = true;
+		areq.service_action = (uint8_t)i;
+		if ((error = jg_service_action(cl, &areq, &arsp)) != 0)
+			fail(cl, error, argv[2]);
+		if (arsp->service_result != NULL)
+			emit_service(arsp->service_result, false);
+		emit_trace(arsp->trace.v, arsp->trace.n);
+		error = arsp->ok ? 0 : 1;
+		if (!arsp->ok)
+			xo_warnx("service %s %s: %s", argv[1], argv[2],
+			    arsp->error != NULL ? arsp->error : "failed");
+		jg_service_action_rsp_free(arsp);
+		return (error);
+	}
+	if (strcmp(argv[2], "config") != 0)
+		usage();
+	memset(&creq, 0, sizeof(creq));
+	creq.service = argv[1];
+	if ((vars = calloc((size_t)argc, sizeof(*vars))) == NULL)
+		xo_err(1, "calloc");
+	nv = 0;
+	for (i = 3; i < (size_t)argc; i++) {
+		if (strcmp(argv[i], "-x") == 0 && i + 1 < (size_t)argc) {
+			vars[nv].key = argv[++i];
+			vars[nv].remove = true;
+		} else if ((eq = strchr(argv[i], '=')) != NULL) {
+			*eq = '\0';
+			vars[nv].key = argv[i];
+			vars[nv].value = eq + 1;
+		} else
+			usage();
+		nv++;
+	}
+	creq.variables.v = vars;
+	creq.variables.n = nv;
+	if ((error = jg_service_config(cl, &creq, &crsp)) != 0)
+		fail(cl, error, "config");
+	if (crsp->service_result != NULL)
+		emit_service(crsp->service_result, false);
+	if (crsp->description != NULL)
+		xo_emit("{Lwc:Describe}{:description/%s}\n", crsp->description);
+	if (crsp->commands.n > 0)
+		xo_emit("{Lwc:Commands}{d:/%s}\n", join(crsp->commands.v,
+		    crsp->commands.n));
+	for (i = 0; i < crsp->commands.n; i++)
+		xo_emit("{el:command/%s}", crsp->commands.v[i]);
+	xo_open_list("variable");
+	for (i = 0; i < crsp->variables.n; i++) {
+		xo_open_instance("variable");
+		xo_emit("{P:  }{k:key/%s}{D:=}{:value/%s}\n",
+		    crsp->variables.v[i].key, crsp->variables.v[i].value !=
+		    NULL ? crsp->variables.v[i].value : "");
+		xo_close_instance("variable");
+	}
+	xo_close_list("variable");
+	emit_trace(crsp->trace.v, crsp->trace.n);
+	error = crsp->ok ? 0 : 1;
+	if (!crsp->ok)
+		xo_warnx("service %s config: %s", argv[1],
+		    crsp->error != NULL ? crsp->error : "failed");
+	jg_service_config_rsp_free(crsp);
+	free(vars);
+	return (error);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -494,6 +649,10 @@ main(int argc, char *argv[])
 		rc = cmd_action(&cl, JG_ACTION_KILL, argc, argv);
 	else if (strcmp(argv[0], "address") == 0)
 		rc = cmd_address(&cl, argc, argv);
+	else if (strcmp(argv[0], "services") == 0 && argc == 1)
+		rc = cmd_services(&cl);
+	else if (strcmp(argv[0], "service") == 0)
+		rc = cmd_service(&cl, argc, argv);
 	else
 		usage();
 	xo_close_container("jailgrid");

@@ -30,6 +30,7 @@ struct job {
 	char			*jail;
 	uint8_t			 action;
 	struct jg_address_req	 addr;
+	struct jg_service_config_req svc;
 	char			*peer;
 };
 
@@ -42,8 +43,18 @@ static const char *action_names[] = {
 	[JG_ACTION_KILL] = "kill",
 };
 
+static const char *service_action_names[] = {
+	[JG_SERVICE_ACTION_START] = "start",
+	[JG_SERVICE_ACTION_STOP] = "stop",
+	[JG_SERVICE_ACTION_RESTART] = "restart",
+	[JG_SERVICE_ACTION_RELOAD] = "reload",
+	[JG_SERVICE_ACTION_ENABLE] = "enable",
+	[JG_SERVICE_ACTION_DISABLE] = "disable",
+};
+
 static bool	valid_jail(const char *);
 static bool	valid_ifname(const char *);
+static bool	valid_service(const char *);
 static char	*peer_name(cbl_req *);
 static void	*worker(void *);
 static int	start(struct job *);
@@ -81,6 +92,19 @@ valid_ifname(const char *s)
 		return (false);
 	for (; *s != '\0'; s++)
 		if (!isalnum((unsigned char)*s) && *s != '_' && *s != '.')
+			return (false);
+	return (true);
+}
+
+/* rc.d script names: letters, digits, '_', '-', '.'; not hidden. */
+static bool
+valid_service(const char *s)
+{
+
+	if (*s == '\0' || *s == '.' || *s == '-' || strlen(s) > 64)
+		return (false);
+	for (; *s != '\0'; s++)
+		if (!isalnum((unsigned char)*s) && strchr("_.-", *s) == NULL)
 			return (false);
 	return (true);
 }
@@ -135,6 +159,9 @@ worker(void *arg)
 	struct jg_list_rsp	 lr;
 	struct jg_action_rsp	 ar;
 	struct jg_address_rsp	 dr;
+	struct jg_services_rsp	 sr;
+	struct jg_service_action_rsp sar;
+	struct jg_service_config_rsp scr;
 	const char		*what, *error;
 	bool			 ok;
 	int			 root, rc;
@@ -167,6 +194,48 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &ar.trace.v, &ar.trace.n);
 		rc = jg_action_reply(j->req, &ar);
+		break;
+	case JG_CMD_SERVICES:
+		root = step_begin(&w, JG_STEP_KIND_DAEMON, "jailgridd",
+		    "services");
+		what = "services";
+		memset(&sr, 0, sizeof(sr));
+		do_services(&w, &sr);
+		ok = sr.ok;
+		error = sr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sr.trace.v, &sr.trace.n);
+		rc = jg_services_reply(j->req, &sr);
+		break;
+	case JG_CMD_SERVICE_ACTION:
+		what = wfmt(&w, "service %s %s", j->jail,
+		    service_action_names[j->action]);
+		root = step_begin(&w, JG_STEP_KIND_DAEMON, "jailgridd", "%s",
+		    what);
+		memset(&sar, 0, sizeof(sar));
+		pthread_mutex_lock(&change_lock);
+		do_service_action(&w, j->jail, j->action, &sar);
+		pthread_mutex_unlock(&change_lock);
+		ok = sar.ok;
+		error = sar.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sar.trace.v, &sar.trace.n);
+		rc = jg_service_action_reply(j->req, &sar);
+		break;
+	case JG_CMD_SERVICE_CONFIG:
+		what = wfmt(&w, "service %s config%s", j->jail,
+		    j->svc.variables.n > 0 ? " (set)" : "");
+		root = step_begin(&w, JG_STEP_KIND_DAEMON, "jailgridd", "%s",
+		    what);
+		memset(&scr, 0, sizeof(scr));
+		pthread_mutex_lock(&change_lock);
+		do_service_config(&w, &j->svc, &scr);
+		pthread_mutex_unlock(&change_lock);
+		ok = scr.ok;
+		error = scr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &scr.trace.v, &scr.trace.n);
+		rc = jg_service_config_reply(j->req, &scr);
 		break;
 	default:
 		what = wfmt(&w, "address %s %s %s%s%s%s", j->addr.jail,
@@ -202,7 +271,13 @@ worker(void *arg)
 static void
 job_free(struct job *j)
 {
+	size_t	i;
 
+	for (i = 0; i < j->svc.variables.n; i++) {
+		free((char *)(uintptr_t)j->svc.variables.v[i].key);
+		free((char *)(uintptr_t)j->svc.variables.v[i].value);
+	}
+	free((void *)(uintptr_t)j->svc.variables.v);
 	free(j->jail);
 	free((char *)(uintptr_t)j->addr.jail);
 	free((char *)(uintptr_t)j->addr.address);
@@ -303,5 +378,69 @@ jg_address_doit(cbl_req *req, const struct jg_address_req *rq,
 	j->addr.jail = xstrdup(rq->jail);
 	j->addr.address = xstrdup(rq->address);
 	j->addr.interface = xstrdup(rq->interface);
+	return (start(j));
+}
+
+int
+jg_services_doit(cbl_req *req, void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = JG_CMD_SERVICES;
+	return (start(j));
+}
+
+int
+jg_service_action_doit(cbl_req *req, const struct jg_service_action_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (!valid_service(rq->service))
+		return (reject(req, "invalid service name"));
+	if (rq->service_action >= nitems(service_action_names))
+		return (reject(req, "invalid action"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = JG_CMD_SERVICE_ACTION;
+	j->jail = xstrdup(rq->service);
+	j->action = rq->service_action;
+	return (start(j));
+}
+
+int
+jg_service_config_doit(cbl_req *req, const struct jg_service_config_req *rq,
+    void *arg __unused)
+{
+	struct jg_variable	*v;
+	struct job		*j;
+	size_t			 i;
+
+	if (!valid_service(rq->service))
+		return (reject(req, "invalid service name"));
+	for (i = 0; i < rq->variables.n; i++)
+		if (rq->variables.v[i].key == NULL)
+			return (reject(req, "a variable without a key"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = JG_CMD_SERVICE_CONFIG;
+	j->jail = xstrdup(rq->service);
+	j->svc.service = j->jail;
+	if (rq->variables.n > 0) {
+		if ((v = calloc(rq->variables.n, sizeof(*v))) == NULL)
+			err(1, "calloc");
+		for (i = 0; i < rq->variables.n; i++) {
+			v[i].key = xstrdup(rq->variables.v[i].key);
+			v[i].value = xstrdup(rq->variables.v[i].value);
+			v[i].remove = rq->variables.v[i].remove;
+		}
+		j->svc.variables.v = v;
+		j->svc.variables.n = rq->variables.n;
+	}
 	return (start(j));
 }

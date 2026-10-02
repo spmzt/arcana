@@ -34,6 +34,7 @@ static void	tick(void *);
 static void	confirm(const char *, const char *, const char *, bool,
 		    const char *, const char *, const char *, const char *);
 static void	dispatch(const char *, const char *, const char *);
+static void	close_service(void);
 static void	submit(const char *, const ucl_object_t *);
 
 void
@@ -199,6 +200,18 @@ confirm(const char *title, const char *body, const char *button,
 	app.modal_error[0] = '\0';
 }
 
+/* The service drawer closes: its configuration goes. */
+static void
+close_service(void)
+{
+
+	app.service[0] = '\0';
+	app.svc_error[0] = '\0';
+	if (app.svc_config != NULL)
+		ucl_object_unref(app.svc_config);
+	app.svc_config = NULL;
+}
+
 static void
 close_modal(void)
 {
@@ -231,6 +244,33 @@ submit(const char *form, const ucl_object_t *f)
 	} else if (strcmp(form, "enrol-host") == 0) {
 		enrol_host(jstr(f, "name") != NULL ? jstr(f, "name") : "",
 		    jstr(f, "host") != NULL ? jstr(f, "host") : "");
+	} else if (strcmp(form, "svc-config") == 0 && app.service[0] != '\0') {
+		/* Fields v:<key> are the variables; key/value add one. */
+		const ucl_object_t *f2;
+		ucl_object_iter_t it;
+		ucl_object_t *set, *top;
+		char *b;
+
+		set = ucl_object_typed_new(UCL_OBJECT);
+		it = NULL;
+		while ((f2 = ucl_object_iterate(f, &it, true)) != NULL) {
+			const char *k = ucl_object_key(f2);
+
+			if (k != NULL && strncmp(k, "v:", 2) == 0 &&
+			    ucl_object_type(f2) == UCL_STRING)
+				ucl_object_insert_key(set, ucl_object_copy(f2),
+				    k + 2, 0, true);
+		}
+		if ((s = jstr(f, "key")) != NULL && *s != '\0')
+			ucl_object_insert_key(set, ucl_object_fromstring(
+			    jstr(f, "value") != NULL ? jstr(f, "value") : ""),
+			    s, 0, true);
+		top = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(top, set, "set", 0, false);
+		b = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(top);
+		service_config(app.service, b);
+		free(b);
 	} else if (strcmp(form, "add-key") == 0) {
 		add_key(jstr(f, "name") != NULL ? jstr(f, "name") : "");
 	} else if (strcmp(form, "address") == 0) {
@@ -276,16 +316,58 @@ dispatch(const char *act, const char *arg, const char *value)
 			if (strcmp(app.servers[i].id, arg) == 0)
 				app.sel = i;
 		app.jail[0] = '\0';
-		if ((s = cur_server()) != NULL)
+		close_service();
+		if ((s = cur_server()) != NULL) {
 			refresh_jails(s, false);
+			if (app.tab == TAB_SERVICES && s->services == NULL)
+				refresh_services(s, false);
+		}
+	} else if (strcmp(act, "tab") == 0 && s != NULL) {
+		app.tab = strcmp(arg, "services") == 0 ? TAB_SERVICES :
+		    TAB_JAILS;
+		app.jail[0] = '\0';
+		close_service();
+		if (app.tab == TAB_SERVICES && s->services == NULL)
+			refresh_services(s, false);
 	} else if (strcmp(act, "open-jail") == 0) {
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 	} else if (strcmp(act, "close-drawer") == 0) {
 		app.jail[0] = '\0';
+		close_service();
 	} else if (strcmp(act, "refresh") == 0 && s != NULL) {
-		s->loading = false;
-		refresh_jails(s, true);
+		if (app.tab == TAB_SERVICES) {
+			s->services_loading = false;
+			refresh_services(s, true);
+		} else {
+			s->loading = false;
+			refresh_jails(s, true);
+		}
 		app.trace_op = app.nops > 0 ? app.ops[0].id : -1;
+	} else if (strcmp(act, "open-svc") == 0) {
+		close_service();
+		snprintf(app.service, sizeof(app.service), "%s", arg);
+		service_config(arg, NULL);
+	} else if (strcmp(act, "svc") == 0) {
+		/* value: the verb; stop and restart ask first. */
+		if (strcmp(value, "stop") == 0 || strcmp(value, "restart") == 0) {
+			snprintf(body, sizeof(body), "service %s %s: the "
+			    "service's own rc.d script does it, as from the "
+			    "shell.", arg, value);
+			confirm(strcmp(value, "stop") == 0 ? "Stop service" :
+			    "Restart service", body, strcmp(value, "stop") == 0 ?
+			    "Stop" : "Restart", false, "", "do-svc", arg, value);
+		} else
+			service_action(arg, value);
+	} else if (strcmp(act, "do-svc") == 0) {
+		service_action(arg, value);
+	} else if (strcmp(act, "svc-unset") == 0 && app.service[0] != '\0') {
+		char *q = json_quote(arg), *b;
+
+		if (asprintf(&b, "{\"unset\":[%s]}", q) == -1)
+			abort();
+		service_config(app.service, b);
+		free(q);
+		free(b);
 	} else if (strcmp(act, "start") == 0) {
 		jail_action(arg, "start");
 	} else if (strcmp(act, "stop") == 0) {
@@ -381,6 +463,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			close_modal();
 		else if (app.jail[0] != '\0')
 			app.jail[0] = '\0';
+		else if (app.service[0] != '\0')
+			close_service();
 	} else if (strcmp(act, "toast") == 0) {
 		i = atoi(arg);
 		if (i >= 0 && i < app.ntoasts) {
