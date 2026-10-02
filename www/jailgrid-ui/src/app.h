@@ -24,6 +24,7 @@
 #define	HEALTH_MS		15000
 #define	REFRESH_MS		10000
 #define	STALE_MS		30000
+#define	AGE_STEP_MS		10000	/* how often ages are redrawn */
 
 /* bridge.js */
 void		 jg_patch(const char *, const char *);

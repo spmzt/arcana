@@ -28,7 +28,7 @@ struct app app = {
 	.raw_op = -1,
 };
 
-static double	last_health, last_refresh;
+static double	last_health, last_refresh, last_tick_render;
 
 static void	tick(void *);
 static void	confirm(const char *, const char *, const char *, bool,
@@ -128,21 +128,29 @@ op_find(int id)
 	return (NULL);
 }
 
-/* Once a second: toasts expire, ages tick, data is kept fresh. */
+/*
+ * Once a second: toasts expire, data is kept fresh.  The page is only
+ * rebuilt when something it shows changed: a toast went, or enough time
+ * passed for an age or a stale mark to read differently.  Replies and
+ * actions render on their own.
+ */
 static void
 tick(void *arg)
 {
 	struct server	*s;
 	double		 now;
+	bool		 changed;
 	int		 i;
 
 	now = jg_now();
+	changed = false;
 	for (i = 0; i < app.ntoasts; ) {
 		if (app.toasts[i].until < now) {
 			memmove(&app.toasts[i], &app.toasts[i + 1],
 			    (size_t)(app.ntoasts - i - 1) *
 			    sizeof(app.toasts[0]));
 			app.ntoasts--;
+			changed = true;
 		} else
 			i++;
 	}
@@ -159,7 +167,10 @@ tick(void *arg)
 		if ((s = cur_server()) != NULL)
 			refresh_jails(s, false);
 	}
-	render();
+	if (changed || now - last_tick_render >= AGE_STEP_MS) {
+		last_tick_render = now;
+		render();
+	}
 }
 
 static void

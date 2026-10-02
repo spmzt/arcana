@@ -49,10 +49,10 @@ fmt_age(char *buf, size_t len, double ms)
 	double	s;
 
 	s = (jg_now() - ms) / 1000;
-	if (s < 5)
+	if (s < 15)
 		snprintf(buf, len, "just now");
 	else if (s < 60)
-		snprintf(buf, len, "%.0fs ago", s);
+		snprintf(buf, len, "%.0fs ago", s - (double)((int)s % 10));
 	else if (s < 3600)
 		snprintf(buf, len, "%.0fm ago", s / 60);
 	else
