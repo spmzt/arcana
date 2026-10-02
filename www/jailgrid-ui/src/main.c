@@ -368,7 +368,9 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "retry") == 0) {
 		auth_status();
 	} else if (strcmp(act, "login") == 0) {
-		login();
+		login(false);
+	} else if (strcmp(act, "login-passkey") == 0) {
+		login(true);
 	} else if (strcmp(act, "logout") == 0) {
 		logout();
 	} else if (strcmp(act, "fx") == 0) {

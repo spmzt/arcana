@@ -537,15 +537,17 @@ login_begin_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	free(opts);
 }
 
+/* With passkey, the authenticator picks the credential itself. */
 void
-login(void)
+login(bool passkey)
 {
 
 	if (app.auth_busy)
 		return;
 	app.auth_busy = true;
 	app.auth_error[0] = '\0';
-	api("POST", "/api/auth/login/begin", "{}", login_begin_cb, NULL);
+	api("POST", "/api/auth/login/begin", passkey ?
+	    "{\"discoverable\":true}" : "{}", login_begin_cb, NULL);
 }
 
 /* After create(): add the key's name and finish the registration. */

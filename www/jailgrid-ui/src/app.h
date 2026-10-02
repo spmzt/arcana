@@ -230,7 +230,7 @@ void		 address_change(const char *, const char *, bool, bool, bool,
 void		 check_health(void);
 void		 check_update(void);
 void		 auth_status(void);
-void		 login(void);
+void		 login(bool);
 void		 enrol(const char *, const char *);
 void		 add_key(const char *);
 void		 logout(void);

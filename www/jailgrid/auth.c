@@ -490,8 +490,10 @@ api_register_begin(struct http_request *req)
 		ucl_array_append(excl, e);
 	}
 	put(pk, "excludeCredentials", excl);
+	/* A discoverable credential where the authenticator offers one: a
+	 * phone's passkey logs in without the credential list. */
 	sel = ucl_object_typed_new(UCL_OBJECT);
-	put(sel, "residentKey", ucl_object_fromstring("discouraged"));
+	put(sel, "residentKey", ucl_object_fromstring("preferred"));
 	put(sel, "userVerification", ucl_object_fromstring("preferred"));
 	put(pk, "authenticatorSelection", sel);
 	put(pk, "attestation", ucl_object_fromstring("none"));
@@ -608,24 +610,33 @@ out:
 	return (status_reply(req, true));
 }
 
-/* Options for navigator.credentials.get(). */
+/*
+ * Options for navigator.credentials.get().  {"discoverable": true} asks
+ * for a passkey: no credential list, the authenticator picks one of
+ * its own for this RP; the id it answers with is looked up as usual.
+ */
 int
 api_login_begin(struct http_request *req)
 {
 	const ucl_object_t	*c, *t;
-	ucl_object_t		*o, *pk, *allow, *e;
+	ucl_object_t		*o, *pk, *allow, *e, *body;
 	ucl_object_iter_t	 it;
+	bool			 discoverable;
 
 	if (ucl_array_size(cred_list()) == 0)
 		return (reply_error(req, 409, "setup_required",
 		    "no security key registered yet"));
+	body = read_json(req);
+	discoverable = body != NULL && ucl_flag(body, "discoverable");
+	ucl_object_unref(body);
 	challenge_new(&login_chal);
 	pk = ucl_object_typed_new(UCL_OBJECT);
 	put(pk, "challenge", ucl_object_fromstring(login_chal.value));
 	put(pk, "rpId", ucl_object_fromstring(cfg.rp_id));
 	allow = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
-	while ((c = ucl_object_iterate(cred_list(), &it, true)) != NULL) {
+	while (!discoverable &&
+	    (c = ucl_object_iterate(cred_list(), &it, true)) != NULL) {
 		e = ucl_object_typed_new(UCL_OBJECT);
 		put(e, "type", ucl_object_fromstring("public-key"));
 		put(e, "id", ucl_object_fromstring(ucl_str(c, "id")));

@@ -391,7 +391,7 @@ CONSOLE_TC(second_key, "A spare Ed25519 key, added from a session")
 ATF_TC_BODY(second_key, tc)
 {
 	struct authn	a, b;
-	struct resp	r;
+	struct resp	r, pk;
 	char		path[256];
 
 	start(tc, 0, NULL);
@@ -401,6 +401,12 @@ ATF_TC_BODY(second_key, tc)
 	EXPECT(&r, 200);
 	resp_free(&r);
 	cookie[0] = '\0';
+	/* A passkey login names no credentials: the authenticator picks. */
+	http("POST", "/api/auth/login/begin", "{\"discoverable\":true}", &pk);
+	EXPECT(&pk, 200);
+	ATF_CHECK(jstr(&pk, "publicKey.allowCredentials.0.id") == NULL);
+	ATF_CHECK(jstr(&pk, "publicKey.rpId") != NULL);
+	resp_free(&pk);
 	do_login(&b, 0, ORIGIN, RP_ID, NULL, false, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);

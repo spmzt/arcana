@@ -196,6 +196,14 @@ paste the token, touch your security key: that registers it and logs you
 in, and the token is gone. Add a spare key from **Keys** afterwards. On
 Android, Chrome offers to install the console as an app.
 
+A phone's passkey works as a second key: open the console on the phone,
+log in once with the security key (Chrome can use it over USB or NFC, or
+the passkey of another device nearby), and register from **Keys**;
+Android stores a synced passkey. From then on **Use a passkey** on the
+login screen logs in with it, on the phone or, through the phone, on
+any browser. Registration asks for a discoverable credential where the
+authenticator offers one, so security keys keep working as before.
+
 ## Using it
 
 - **Servers** on the left: add one by name and URI

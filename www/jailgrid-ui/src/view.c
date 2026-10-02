@@ -843,8 +843,11 @@ modal(struct html *h)
 			h_attr(h, "data-arg", jstr(k, "id"));
 			h_raw(h, ">×</button></li>");
 		}
-		h_raw(h, "</ul><label>Add a spare key<input name=\"name\" "
-		    "placeholder=\"Spare YubiKey\" maxlength=\"64\"></label>");
+		h_raw(h, "</ul><p class=\"dim\">A spare security key, or a "
+		    "passkey: open the console on the phone, log in here once, "
+		    "and register from there.</p><label>Add a spare key<input "
+		    "name=\"name\" placeholder=\"Spare YubiKey, or Pixel\" "
+		    "maxlength=\"64\"></label>");
 		break;
 	case MODAL_RAW:
 		view_trace(h, NULL);
@@ -951,6 +954,9 @@ auth_screen(struct html *h)
 		    "%s>%s</button>", app.auth_busy ? " disabled" : "",
 		    app.auth_busy ? "Touch your key…" : "Log in with your "
 		    "security key");
+		h_fmt(h, "<button class=\"ghost\" data-act=\"login-passkey\"%s "
+		    "title=\"A passkey on this device, or on a phone nearby\">"
+		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
 	}
 	if (app.auth_error[0] != '\0') {
 		h_raw(h, "<p class=\"err\">");
