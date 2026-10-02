@@ -1,0 +1,114 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+ */
+
+/*
+ * jailgrid.so: the Kore module that serves the jailgrid console.
+ */
+
+#ifndef _JGWEB_H_
+#define _JGWEB_H_
+
+#include <sys/types.h>
+
+#include <stdbool.h>
+#include <stdint.h>
+
+#include <kore/kore.h>
+#include <kore/http.h>
+#include <kore/tasks.h>
+#include <ucl.h>
+
+#include "jailgrid.h"
+
+#define	JGW_VERSION		"0.1.0"
+#define	JGW_CONF		"/usr/local/etc/jailgrid/web.conf"
+
+#define	SESSION_COOKIE		"jg_session"
+#define	SESSION_IDLE		(30 * 60)
+#define	SESSION_MAX		(12 * 60 * 60)
+#define	SESSIONS		8
+#define	CHALLENGE_TTL		120
+#define	CBLINK_MAX_FRAME	(8 * 1024 * 1024)
+#define	CBLINK_TIMEOUT_MS	(15 * 60 * 1000)
+
+/* config.c: web.conf, a UCL file named by $JAILGRID_WEB_CONF. */
+struct config {
+	char		*rp_id;		/* WebAuthn relying party: host name */
+	char		*rp_name;
+	char		*origin;	/* "https://console.example" */
+	char		*datadir;	/* credentials, servers, setup token */
+	bool		 cookie_secure;
+	char		*tls_ca;	/* CA of the jailgridd certificates */
+	char		*tls_ca_key;	/* its key, to enrol hosts; or NULL */
+	char		*tls_cert;	/* this console's client certificate */
+	char		*tls_key;
+	bool		 tls_own;	/* no tls {}: the console's own CA */
+};
+
+extern struct config cfg;
+
+int		 config_load(const char *);
+int		 config_check_certs(void);
+
+/* store.c: small JSON documents in the data directory. */
+ucl_object_t	*store_load(const char *);
+int		 store_save(const char *, const ucl_object_t *);
+
+/* api.c: HTTP plumbing shared by the handlers. */
+int		 reply_json(struct http_request *, int, ucl_object_t *);
+int		 reply_error(struct http_request *, int, const char *,
+		    const char *, ...) __printflike(4, 5);
+ucl_object_t	*read_json(struct http_request *);
+bool		 guard(struct http_request *, bool);
+bool		 capture(struct http_request *, int, char *, size_t);
+const char	*ucl_str(const ucl_object_t *, const char *);
+bool		 ucl_flag(const ucl_object_t *, const char *);
+
+/* auth.c: WebAuthn and sessions. */
+void		 auth_init(void);
+bool		 session_valid(struct http_request *);
+
+/* servers.c: the registry of jailgridd instances. */
+struct server {
+	char	id[9];
+	char	*name;
+	char	*uri;
+	char	*peer_name;
+};
+
+void		 servers_init(void);
+int		 servers_add(const char *, const char *, const char *);
+const struct server *server_find(const char *);
+
+/* pki.c: the console's CA and host enrolment. */
+int		 pki_init(void);
+
+/* hosts.c: requests to jailgridd over cblink, in Kore task threads. */
+int		 hosts_init(void);
+
+/* Route handlers, named in the Kore configuration. */
+int		 api_health(struct http_request *);
+int		 api_auth_status(struct http_request *);
+int		 api_register_begin(struct http_request *);
+int		 api_register_finish(struct http_request *);
+int		 api_login_begin(struct http_request *);
+int		 api_login_finish(struct http_request *);
+int		 api_logout(struct http_request *);
+int		 api_credentials(struct http_request *);
+int		 api_credential(struct http_request *);
+int		 api_servers(struct http_request *);
+int		 api_server(struct http_request *);
+int		 api_enrol_tokens(struct http_request *);
+int		 api_enrol(struct http_request *);
+int		 api_hello(struct http_request *);
+int		 api_jails(struct http_request *);
+int		 api_action(struct http_request *);
+int		 api_address(struct http_request *);
+void		 api_call_free(struct http_request *);
+
+int		 jgw_onload(int);
+
+#endif /* !_JGWEB_H_ */

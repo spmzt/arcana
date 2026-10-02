@@ -1,0 +1,15 @@
+jailgrid is a console for FreeBSD jails on several hosts, published as
+geass.  A progressive web app, logged in to with a security key
+(WebAuthn), shows every jail of every host, starts, stops and restarts
+them, and changes their addresses live, in jail.conf, or both, with a
+diff to preview first.  Every action comes with its workflow as a graph:
+the library calls, system calls and programs it used, and the programs'
+raw output.
+
+Each jail host runs jailgridd(8), which manages its jails with libjail,
+libprocstat and jail(8), and serves them over cblink with mutual TLS.
+The console is a Kore module, unprivileged.  jailconf(8) changes one
+value in jail.conf in place, like sysrc(8) does for rc.conf, and
+jailgridctl(8) talks to a jailgridd from a shell.
+
+Without the CONSOLE option only the jail host's programs are built.

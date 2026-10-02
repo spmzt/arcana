@@ -1,0 +1,21 @@
+[
+{ type: install
+  message: <<EOM
+jailgridd runs on each jail host, as root; see jailgridd(8) and the
+certificates section of the README at https://github.com/spmzt/geass:
+
+  sysrc jailgridd_enable=YES jailgridd_flags="-l tcp://192.0.2.10:4310 ..."
+  service jailgridd start
+
+The console (CONSOLE option) runs kore(1) as an unprivileged user:
+
+  pw useradd jailgrid -d /var/db/jailgrid -s /usr/sbin/nologin
+  install -d -o jailgrid -m 0700 /var/db/jailgrid
+  edit %%PREFIX%%/etc/jailgrid/kore.conf and web.conf
+  sysrc jailgrid_enable=YES && service jailgrid start
+
+Its TLS certificate must be RSA: Kore's key manager signs nothing else.
+The first login needs the token in /var/db/jailgrid/setup-token.
+EOM
+}
+]

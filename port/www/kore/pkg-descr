@@ -1,0 +1,7 @@
+Kore is a web application platform for writing scalable, concurrent
+web APIs in C.  Applications are modules loaded into kore(1), which
+runs them in privilege-separated worker processes with TLS 1.3, a key
+manager that keeps private keys out of the workers, HTTP routing with
+parameter validation, websockets, file serving and background tasks.
+
+kodev(1) creates, builds and runs Kore applications.

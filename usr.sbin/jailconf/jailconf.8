@@ -1,0 +1,114 @@
+.\"-
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+.\"
+.Dd October 2, 2026
+.Dt JAILCONF 8
+.Os
+.Sh NAME
+.Nm jailconf
+.Nd add or remove a value of a jail parameter in jail.conf
+.Sh SYNOPSIS
+.Nm
+.Op Fl nv
+.Op Fl f Ar file
+.Ar jail
+.Ar parameter Ns Cm += Ns Ar value
+.Nm
+.Op Fl nv
+.Op Fl f Ar file
+.Ar jail
+.Ar parameter Ns Cm -= Ns Ar value
+.Sh DESCRIPTION
+.Nm
+changes one value of one parameter of
+.Ar jail
+in its
+.Xr jail.conf 5
+file, in place: every other byte of the file, comments and layout
+included, stays as it was.
+It does for
+.Xr jail.conf 5
+what
+.Xr sysrc 8
+does for
+.Xr rc.conf 5 .
+.Pp
+.Cm +=
+adds
+.Ar value
+to the parameter: to the end of the jail's own list when it has one,
+otherwise as a new statement in the jail's block, written with
+.Cm +=
+when every jail inherits values of the parameter from global statements
+or
+.Ql *
+blocks.
+.Cm -=
+removes
+.Ar value
+from the jail's own statements; the statement goes away with its last
+value.
+Values that the jail inherits are not touched.
+.Pp
+For
+.Va ip4.addr
+and
+.Va ip6.addr
+values compare as addresses, so
+.Ql em0|10.0.0.1/24
+matches
+.Ql 10.0.0.1 ;
+other parameters compare as text.
+.Pp
+The new text is parsed again before it is written, and written by
+renaming a temporary file over the old one.
+.Pp
+The options are:
+.Bl -tag -width Ds
+.It Fl f Ar file
+The configuration file that defines
+.Ar jail ,
+or includes the file that does.
+By default
+.Pa /etc/jail.conf.d/ Ns Ar jail Ns Pa .conf
+if it exists, otherwise
+.Pa /etc/jail.conf ,
+as
+.Pa /etc/rc.d/jail
+chooses.
+.It Fl n
+Do not write anything; print the change as a unified diff.
+.It Fl v
+Print the change as a unified diff after writing it.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh EXAMPLES
+Give the jail
+.Ql web
+another address:
+.Bd -literal -offset indent
+# jailconf web ip4.addr+=10.0.0.12
+.Ed
+.Pp
+See what removing one would change:
+.Bd -literal -offset indent
+# jailconf -n web ip4.addr-=10.0.0.10
+--- /etc/jail.conf
++++ /etc/jail.conf
+@@ -1,3 +1,3 @@
+ web {
+-	ip4.addr = 10.0.0.10, 10.0.0.12;
++	ip4.addr = 10.0.0.12;
+ }
+.Ed
+.Sh SEE ALSO
+.Xr jail.conf 5 ,
+.Xr jail 8 ,
+.Xr sysrc 8
+.Sh CAVEATS
+A value written with a variable, such as
+.Ql $ip ,
+matches only that literal text.

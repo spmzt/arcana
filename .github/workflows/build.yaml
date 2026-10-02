@@ -1,0 +1,74 @@
+name: FreeBSD OCI Image
+
+on:
+  push:
+    branches: [ "main" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Free disk space
+        uses: endersonmenezes/free-disk-space@v3
+        with:
+          remove_tool_cache: true
+          remove_android: true
+          remove_dotnet: true
+          remove_haskell: true
+          remove_swap: true
+          remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable firefox mono-complete"
+          remove_packages_one_command: true
+          rm_cmd: rmz
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # The image build compiles geass and runs its test suite, so a
+      # pull request is checked the same way; only pushes publish the
+      # image.
+      - name: build oci image
+        uses: vmactions/freebsd-vm@v1.4.8
+        env:
+          AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          USERNAME: ${{ github.actor }}
+          REGISTRY: ghcr.io
+          IMAGE: ghcr.io/${{ github.repository_owner }}/geass
+          PUBLISH: ${{ github.event_name != 'pull_request' }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        with:
+          usesh: true
+          #debug-on-error: true
+          #vnc-password: ${{ secrets.VNC_PASSWORD }}
+          envs: "AUTH_TOKEN USERNAME REGISTRY IMAGE PUBLISH REF_TYPE REF_NAME"
+          prepare: |
+            pkg install -y podman-suite
+          run: |
+            set -eu
+            # latest and the date, as in spmzt/images; a v* tag adds its
+            # version (v1.0.0 -> 1.0.0).
+            tags="${IMAGE}:$(date -I)"
+            if [ "${REF_TYPE}" = tag ]; then
+                tags="${tags} ${IMAGE}:${REF_NAME#v}"
+            else
+                tags="${tags} ${IMAGE}:latest"
+            fi
+            set --
+            for t in ${tags}; do
+                set -- "$@" -t "${t}"
+            done
+            buildah build -f Containerfile --network=host --layers "$@" .
+            if [ "${PUBLISH}" = true ]; then
+                echo "${AUTH_TOKEN}" | buildah login "${REGISTRY}" \
+                    -u "${USERNAME}" --password-stdin
+                for t in ${tags}; do
+                    buildah push "${t}"
+                done
+            fi

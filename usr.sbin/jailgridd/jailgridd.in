@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# PROVIDE: jailgridd
+# REQUIRE: LOGIN jail
+# KEYWORD: shutdown
+#
+# Add these lines to /etc/rc.conf to enable jailgridd:
+#
+# jailgridd_enable (bool):	Set to "YES" to run jailgridd.
+# jailgridd_flags (str):	Listeners and certificates, for example
+#				"-g jailgrid -l unix:/var/run/jailgridd.sock
+#				 -l tcp://192.0.2.10:4310
+#				 -A %%PREFIX%%/etc/jailgrid/ca.pem
+#				 -C %%PREFIX%%/etc/jailgrid/host.pem
+#				 -K %%PREFIX%%/etc/jailgrid/host.key"
+
+. /etc/rc.subr
+
+name="jailgridd"
+rcvar="jailgridd_enable"
+
+load_rc_config $name
+
+: ${jailgridd_enable:="NO"}
+
+command="%%PREFIX%%/sbin/jailgridd"
+pidfile="/var/run/jailgridd.pid"
+
+run_rc_command "$1"

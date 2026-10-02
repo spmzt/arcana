@@ -1,0 +1,318 @@
+# SPDX-License-Identifier: BSD-2-Clause
+---
+name: jailgrid
+version: 1
+c-prefix: jg
+doc: |
+  Jails on one host: what runs, what is configured, and changes to both.
+  Served by jailgridd(8).  Every operation needs an authenticated peer.
+  Replies report failures in ok/error and always carry a trace, so the
+  output of a failed jail(8) run still reaches the client.
+
+definitions:
+  - name: max-jails
+    type: const
+    value: 4096
+  - name: max-steps
+    type: const
+    value: 256
+  - name: max-output
+    type: const
+    value: 262144
+  - name: action
+    type: enum
+    entries:
+      - start
+      - stop
+      - restart
+      - name: kill
+        doc: Remove the jail with jail_remove(2), without its stop scripts.
+  - name: jail-state
+    type: enum
+    entries:
+      - running
+      - stopped
+      - dying
+      - absent
+  - name: step-kind
+    type: enum
+    entries:
+      - daemon
+      - lib
+      - syscall
+      - file
+      - exec
+  - name: step-status
+    type: enum
+    entries:
+      - ok
+      - failed
+      - incomplete
+
+attribute-sets:
+  - name: jailgrid
+    attributes:
+      - name: jail
+        type: text
+        checks:
+          min-len: 1
+          max-len: 255
+      - name: action
+        type: u8
+        enum: action
+      - name: address
+        type: text
+        doc: An IPv4 or IPv6 address, optionally with /prefixlen.
+        checks:
+          min-len: 2
+          max-len: 64
+      - name: interface
+        type: text
+        checks:
+          min-len: 1
+          max-len: 15
+      - name: remove
+        type: flag
+        doc: Remove the address instead of adding it.
+      - name: live
+        type: flag
+        doc: Change the running jail.
+      - name: persist
+        type: flag
+        doc: Change the jail's configuration file.
+      - name: dry-run
+        type: flag
+        doc: Change nothing; report the plan and the diff.
+      - name: config-only
+        type: flag
+        doc: List configured jails without looking at running ones.
+      - name: ok
+        type: bool
+      - name: error
+        type: text
+      - name: host
+        type: nest
+        nested-attributes: host
+      - name: jails
+        type: nest
+        nested-attributes: jail
+        multi-attr: true
+        checks:
+          max-count: max-jails
+      - name: result
+        type: nest
+        nested-attributes: jail
+        doc: The jail as it is after the operation.
+      - name: diff
+        type: text
+        doc: Unified diff of the configuration change.
+      - name: scopes
+        type: text
+        multi-attr: true
+        doc: Configuration files jail(8) is run with (-f).
+      - name: conf-errors
+        type: nest
+        nested-attributes: conf-error
+        multi-attr: true
+      - name: trace
+        type: nest
+        nested-attributes: step
+        multi-attr: true
+        checks:
+          max-count: max-steps
+
+  - name: host
+    attributes:
+      - name: hostname
+        type: text
+      - name: sysname
+        type: text
+      - name: release
+        type: text
+      - name: machine
+        type: text
+      - name: osreldate
+        type: u32
+      - name: ncpu
+        type: u32
+      - name: physmem
+        type: u64
+      - name: boottime
+        type: s64
+      - name: time
+        type: s64
+      - name: securelevel
+        type: s32
+      - name: privileged
+        type: bool
+      - name: version
+        type: text
+        doc: jailgridd version.
+
+  - name: jail
+    attributes:
+      - name: name
+        type: text
+      - name: state
+        type: u8
+        enum: jail-state
+      - name: jid
+        type: u32
+      - name: configured
+        type: bool
+      - name: scope
+        type: text
+        doc: The configuration file that defines the jail.
+      - name: hostname
+        type: text
+      - name: path
+        type: text
+      - name: ip4
+        type: text
+        multi-attr: true
+      - name: ip6
+        type: text
+        multi-attr: true
+      - name: vnet
+        type: bool
+      - name: osrelease
+        type: text
+      - name: persist
+        type: bool
+      - name: securelevel
+        type: s32
+      - name: parent
+        type: u32
+      - name: children
+        type: u32
+      - name: nproc
+        type: u32
+      - name: rss-kb
+        type: u64
+      - name: cpu-pct
+        type: float
+      - name: interface
+        type: text
+      - name: params
+        type: nest
+        nested-attributes: param
+        multi-attr: true
+        doc: Configured parameters as jail(8) resolves them.
+
+  - name: param
+    attributes:
+      - name: key
+        type: text
+      - name: values
+        type: text
+        multi-attr: true
+
+  - name: conf-error
+    attributes:
+      - name: scope
+        type: text
+      - name: message
+        type: text
+
+  - name: step
+    attributes:
+      - name: id
+        type: u32
+      - name: parent
+        type: s32
+        doc: Index of the parent step, -1 for the root.
+      - name: kind
+        type: u8
+        enum: step-kind
+      - name: label
+        type: text
+      - name: detail
+        type: text
+      - name: status
+        type: u8
+        enum: step-status
+      - name: duration-us
+        type: u64
+      - name: argv
+        type: text
+        multi-attr: true
+      - name: exit
+        type: s32
+      - name: output
+        type: bytes
+        doc: What the program wrote to standard output.
+        checks:
+          max-len: max-output
+      - name: error-output
+        type: bytes
+        doc: What the program wrote to standard error.
+        checks:
+          max-len: max-output
+
+operations:
+  - name: hello
+    attribute-set: jailgrid
+    auth: true
+    do:
+      reply:
+        attributes:
+          - host
+
+  - name: list
+    attribute-set: jailgrid
+    auth: true
+    do:
+      request:
+        attributes:
+          - config-only
+      reply:
+        attributes:
+          - ok
+          - error
+          - host
+          - jails
+          - scopes
+          - conf-errors
+          - trace
+
+  - name: action
+    attribute-set: jailgrid
+    auth: true
+    do:
+      request:
+        attributes:
+          - jail
+          - action
+        required:
+          - jail
+          - action
+      reply:
+        attributes:
+          - ok
+          - error
+          - result
+          - trace
+
+  - name: address
+    attribute-set: jailgrid
+    auth: true
+    do:
+      request:
+        attributes:
+          - jail
+          - address
+          - interface
+          - remove
+          - live
+          - persist
+          - dry-run
+        required:
+          - jail
+          - address
+      reply:
+        attributes:
+          - ok
+          - error
+          - result
+          - diff
+          - trace

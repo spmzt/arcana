@@ -1,0 +1,105 @@
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+.\"
+.Dd October 2, 2026
+.Dt JAILGRID-ENROL 8
+.Os
+.Sh NAME
+.Nm jailgrid-enrol
+.Nd join this host to a jailgrid console
+.Sh SYNOPSIS
+.Nm
+.Op Fl s
+.Op Fl a Ar address
+.Op Fl p Ar port
+.Op Fl d Ar directory
+.Op Fl n Ar name
+.Ar console-url token
+.Sh DESCRIPTION
+.Nm
+gets this host a certificate from the jailgrid console's certificate
+authority, so that
+.Xr jailgridd 8
+can serve the console over mutual TLS.
+It makes an EC P-256 key and a certificate request, sends the request to
+.Ar console-url
+with the one-time
+.Ar token
+the console issued for this host, and writes what comes back:
+.Pp
+.Bl -tag -width "host.key" -compact -offset indent
+.It Pa host.key
+the private key, mode 0600;
+.It Pa host.pem
+the certificate, for the name the token was made for;
+.It Pa ca.pem
+the console's CA, which signs the console's own client certificate.
+.El
+.Pp
+The files go to
+.Pa /usr/local/etc/jailgrid .
+The console adds this host to its server list at the same time, as
+.Pa tcp://host:port .
+Then
+.Nm
+prints the
+.Xr rc.conf 5
+lines that run
+.Xr jailgridd 8
+with the files, or sets them itself with
+.Fl s .
+.Pp
+The options are:
+.Bl -tag -width indent
+.It Fl a Ar address
+The address
+.Xr jailgridd 8
+is to listen on, in the printed or applied flags.
+The default is
+.Li 0.0.0.0 .
+.It Fl d Ar directory
+Write the files there instead of
+.Pa /usr/local/etc/jailgrid .
+.It Fl n Ar name
+The name in the certificate request.
+The console ignores it and names the certificate after the token's host;
+the default is this host's name.
+.It Fl p Ar port
+The port in the flags.
+The default is 4310, the port the console will connect to unless the
+token was made with another.
+.It Fl s
+Enable and start
+.Xr jailgridd 8
+with
+.Xr sysrc 8
+and
+.Xr service 8 .
+.El
+.Sh EXAMPLES
+In the console, add a server with
+.Dq Enrol a host ,
+giving it a name and the host name or address the console reaches it by.
+The console shows a command like
+.Bd -literal -offset indent
+jailgrid-enrol https://console.example 3f1c...
+.Ed
+.Pp
+Run it on the host as root, with
+.Fl s
+to have
+.Xr jailgridd 8
+running right away.
+The token works once and for an hour.
+.Sh SEE ALSO
+.Xr jailgridctl 8 ,
+.Xr jailgridd 8
+.Sh SECURITY
+The console's own HTTPS certificate is checked by
+.Xr fetch 3
+against the system's trusted CAs.
+Over plain HTTP, or with
+.Ev SSL_NO_VERIFY_PEER
+set, whoever can read the connection can take the token and have the
+certificate issued to a key of their own.

@@ -1,0 +1,94 @@
+.\"-
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+.\"
+.Dd October 2, 2026
+.Dt JAILGRIDCTL 8
+.Os
+.Sh NAME
+.Nm jailgridctl
+.Nd command-line client for jailgridd
+.Sh SYNOPSIS
+.Nm
+.Op Fl -libxo Ar options
+.Op Fl t
+.Op Fl c Ar uri
+.Op Fl A Ar cafile Fl C Ar certfile Fl K Ar keyfile
+.Op Fl N Ar name
+.Ar command
+.Sh DESCRIPTION
+.Nm
+sends one request to a
+.Xr jailgridd 8
+and prints the answer.
+Output goes through
+.Xr libxo 3 ,
+so
+.Fl -libxo Ns = Ns Ar json
+and the other styles work.
+.Pp
+The options are:
+.Bl -tag -width Ds
+.It Fl A Ar cafile , Fl C Ar certfile , Fl K Ar keyfile
+The certificate authority that issued the server's certificate, and
+this client's certificate and key, for network URIs.
+.It Fl c Ar uri
+The daemon to talk to.
+Default
+.Ql unix:/var/run/jailgridd.sock .
+.It Fl N Ar name
+The name the server's certificate must carry, when it differs from the
+host in
+.Ar uri .
+.It Fl t
+Also print the trace: every library call, system call, file and
+program the daemon used, with the programs' output.
+.El
+.Pp
+The commands are:
+.Bl -tag -width Ds
+.It Cm hello
+Show the host.
+.It Cm list Op Fl c
+List running and configured jails.
+With
+.Fl c ,
+only configured ones.
+.It Cm start | stop | restart | kill Ar jail
+Change the jail's state.
+.Cm kill
+removes the jail without running its stop scripts.
+.It Cm address add | remove Oo Fl lnp Oc Oo Fl i Ar interface Oc Ar jail Ar address Ns Op / Ns Ar len
+Add or remove an address:
+.Fl l
+in the running jail (the default),
+.Fl p
+in its configuration file,
+.Fl n
+only showing what would change.
+.Fl i
+names the interface for the alias when the jail has no
+.Va interface
+parameter.
+.El
+.Sh EXIT STATUS
+0 when the request succeeded, 1 when it failed, 2 for usage errors.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+# jailgridctl list
+NAME             STATE     JID ADDRESSES                       HOSTNAME
+web              running     3 10.0.0.10,10.0.0.11             web.lab.example
+# jailgridctl -t restart web
+# jailgridctl address add -lp web 10.0.0.12
+# jailgridctl -c tcp://host1:4310 -A ca.pem -C me.pem -K me.key list
+.Ed
+.Sh SEE ALSO
+.Xr libxo 3 ,
+.Xr jailconf 8 ,
+.Xr jailgridd 8
+.Sh BUGS
+.Xr libxo 3
+writes tab characters into JSON strings unescaped, so JSON output
+containing them, such as program output in a trace, is not strictly
+valid JSON.
