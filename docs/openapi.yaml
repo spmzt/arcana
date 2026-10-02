@@ -274,7 +274,7 @@ paths:
                   command:
                     type: string
                     description: What to run on the host.
-                    example: jailgrid-enrol https://console.example 3f1c…
+                    example: jailgrid-enrol -s https://console.example 3f1c…
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }

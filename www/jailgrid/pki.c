@@ -389,7 +389,8 @@ api_enrol_tokens(struct http_request *req)
 	kore_log(LOG_NOTICE, "enrolment token for %s (%s) made", t->host,
 	    t->name);
 
-	snprintf(cmd, sizeof(cmd), "jailgrid-enrol%s%s %s %s",
+	/* Options first: getopt(3) stops at the first argument. */
+	snprintf(cmd, sizeof(cmd), "jailgrid-enrol -s%s%s %s %s",
 	    port != DEFAULT_PORT ? " -p " : "", port != DEFAULT_PORT ?
 	    ucl_object_tostring_forced(v) : "", cfg.origin, t->value);
 	o = ucl_object_typed_new(UCL_OBJECT);

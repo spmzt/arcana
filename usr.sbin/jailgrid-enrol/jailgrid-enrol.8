@@ -86,14 +86,17 @@ In the console, add a server with
 giving it a name and the host name or address the console reaches it by.
 The console shows a command like
 .Bd -literal -offset indent
-jailgrid-enrol https://console.example 3f1c...
+jailgrid-enrol -s https://console.example 3f1c...
 .Ed
 .Pp
-Run it on the host as root, with
+Run it on the host as root;
 .Fl s
-to have
+has
 .Xr jailgridd 8
-running right away.
+enabled and running right away.
+Options go before the URL, as
+.Xr getopt 3
+stops at the first argument.
 The token works once and for an hour.
 .Sh SEE ALSO
 .Xr jailgridctl 8 ,

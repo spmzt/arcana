@@ -825,7 +825,9 @@ modal(struct html *h)
 			h_raw(h, "<p>Run as root on the host, within an hour:"
 			    "</p><pre class=\"diff\">");
 			h_txt(h, app.enrol_cmd);
-			h_raw(h, " -s</pre>");
+			h_raw(h, "</pre><p class=\"dim\">-s enables and starts "
+			    "jailgridd there; leave it out to only write the "
+			    "certificate.</p>");
 		}
 		break;
 	case MODAL_ADDRESS:

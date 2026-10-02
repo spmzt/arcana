@@ -882,7 +882,7 @@ ATF_TC_BODY(enrol, tc)
 	EXPECT(&r, 200);
 	ATF_REQUIRE(jstr(&r, "token") != NULL);
 	snprintf(tok, sizeof(tok), "%s", jstr(&r, "token"));
-	ATF_CHECK_MSG(strstr(jstr(&r, "command"), "jailgrid-enrol http://"
+	ATF_CHECK_MSG(strstr(jstr(&r, "command"), "jailgrid-enrol -s http://"
 	    "localhost:") != NULL, "%s", jstr(&r, "command"));
 	resp_free(&r);
 	http("POST", "/api/enrol", "{\"token\":\"nope\",\"csr\":\"\"}", &r);
