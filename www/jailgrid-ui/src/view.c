@@ -976,30 +976,80 @@ auth_screen(struct html *h)
 	h_raw(h, "</div></div>");
 }
 
+/*
+ * The console is a fixed skeleton of regions (view_shell), each filled
+ * by view_region(); render() patches only the regions whose markup
+ * changed, so a reply that touches the dock does not re-diff the grid.
+ */
+const char *const view_regions[VIEW_REGIONS] = {
+	"r-topbar", "r-banner", "r-rail", "r-stage", "r-drawer", "r-dock",
+	"r-modal", "r-toasts",
+};
+
+void
+view_shell(struct html *h)
+{
+
+	h_raw(h, "<div class=\"shell\"><div id=\"r-topbar\" class=\"region\">"
+	    "</div><div id=\"r-banner\" class=\"region\"></div>"
+	    "<div class=\"body\" id=\"body\"><div id=\"r-rail\" class=\"region\">"
+	    "</div><div id=\"r-stage\" class=\"region\"></div>"
+	    "<div id=\"r-drawer\" class=\"region\"></div></div>"
+	    "<div id=\"r-dock\" class=\"region\"></div></div>"
+	    "<div id=\"r-modal\" class=\"region\"></div>"
+	    "<div id=\"r-toasts\" class=\"region\"></div>");
+}
+
+/* Is the drawer open?  The body lays out differently. */
+bool
+view_with_drawer(void)
+{
+
+	return ((app.tab == TAB_JAILS ? app.jail[0] : app.service[0]) !=
+	    '\0');
+}
+
+void
+view_region(struct html *h, int r)
+{
+
+	switch (r) {
+	case 0:
+		topbar(h);
+		break;
+	case 1:
+		banner(h);
+		break;
+	case 2:
+		rail(h);
+		break;
+	case 3:
+		stage(h);
+		break;
+	case 4:
+		if (app.tab == TAB_SERVICES)
+			view_service_drawer(h, cur_server());
+		else
+			drawer(h);
+		break;
+	case 5:
+		dock(h);
+		break;
+	case 6:
+		modal(h);
+		break;
+	default:
+		toasts(h);
+		break;
+	}
+}
+
+/* The login screens: one piece, small. */
 void
 view(struct html *h)
 {
 
-	if (app.screen != SCREEN_CONSOLE) {
-		auth_screen(h);
-		toasts(h);
-		return;
-	}
-	h_raw(h, "<div class=\"shell\">");
-	topbar(h);
-	banner(h);
-	h_fmt(h, "<div class=\"body%s\">", (app.tab == TAB_JAILS ?
-	    app.jail[0] : app.service[0]) != '\0' ? " with-drawer" : "");
-	rail(h);
-	stage(h);
-	if (app.tab == TAB_SERVICES)
-		view_service_drawer(h, cur_server());
-	else
-		drawer(h);
-	h_raw(h, "</div>");
-	dock(h);
-	h_raw(h, "</div>");
-	modal(h);
+	auth_screen(h);
 	toasts(h);
 }
 

@@ -56,15 +56,24 @@ addToLibrary({
 			return;
 		morphdom(el, "<div>" + html + "</div>", {
 			childrenOnly: true,
+			/* Keep the field being typed in; otherwise let
+			 * morphdom walk: isEqualNode() on every node costs
+			 * more than the walk, in Firefox several times. */
 			onBeforeElUpdated: function (from, to) {
-				if (from === document.activeElement &&
+				return (!(from === document.activeElement &&
 				    (from.tagName === "INPUT" ||
 				    from.tagName === "TEXTAREA" ||
-				    from.tagName === "SELECT"))
-					return (false);
-				return (!from.isEqualNode(to));
+				    from.tagName === "SELECT")));
 			}
 		});
+	},
+
+	jg_set_class__deps: ["$UTF8ToString"],
+	jg_set_class: function (idp, clsp, on) {
+		var el = document.getElementById(UTF8ToString(idp));
+
+		if (el !== null)
+			el.classList.toggle(UTF8ToString(clsp), on !== 0);
 	},
 
 	jg_focus__deps: ["$UTF8ToString"],

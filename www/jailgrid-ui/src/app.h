@@ -29,6 +29,7 @@
 
 /* bridge.js */
 void		 jg_patch(const char *, const char *);
+void		 jg_set_class(const char *, const char *, int);
 void		 jg_focus(const char *);
 void		 jg_events_init(void);
 void		 jg_http(int, const char *, const char *, const char *);
@@ -259,7 +260,12 @@ void		 enrol_host(const char *, const char *);
 void		 delete_server(const char *);
 
 /* view.c, graph.c */
+#define	VIEW_REGIONS		8
+extern const char *const view_regions[VIEW_REGIONS];
 void		 view(struct html *);
+void		 view_shell(struct html *);
+void		 view_region(struct html *, int);
+bool		 view_with_drawer(void);
 void		 view_trace(struct html *, const struct op *);
 void		 view_services(struct html *, struct server *);
 void		 view_service_drawer(struct html *, struct server *);

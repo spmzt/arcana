@@ -269,6 +269,9 @@ label {
 }
 
 /* The shell. */
+/* Region wrappers take no part in layout. */
+.region { display: contents; }
+
 .shell {
 	display: flex;
 	flex-direction: column;

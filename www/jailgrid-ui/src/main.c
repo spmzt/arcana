@@ -37,16 +37,48 @@ static void	dispatch(const char *, const char *, const char *);
 static void	close_service(void);
 static void	submit(const char *, const ucl_object_t *);
 
+/*
+ * Rebuild the page.  On the console, each region is rebuilt in C (cheap)
+ * and handed to the browser only when its markup differs from what it
+ * got last time: patching the DOM is what costs, in Firefox most of all.
+ */
 void
 render(void)
 {
 	static struct html	h;
+	static char		*last[VIEW_REGIONS];
+	static bool		 shell;
 	struct server		*s;
 	char			 title[128];
+	int			 r;
 
-	h_reset(&h);
-	view(&h);
-	jg_patch("app", h.s);
+	if (app.screen != SCREEN_CONSOLE) {
+		h_reset(&h);
+		view(&h);
+		jg_patch("app", h.s);
+		shell = false;
+	} else {
+		if (!shell) {
+			h_reset(&h);
+			view_shell(&h);
+			jg_patch("app", h.s);
+			shell = true;
+			for (r = 0; r < VIEW_REGIONS; r++) {
+				free(last[r]);
+				last[r] = NULL;
+			}
+		}
+		for (r = 0; r < VIEW_REGIONS; r++) {
+			h_reset(&h);
+			view_region(&h, r);
+			if (last[r] != NULL && strcmp(last[r], h.s) == 0)
+				continue;
+			jg_patch(view_regions[r], h.s);
+			free(last[r]);
+			last[r] = strdup(h.s);
+		}
+		jg_set_class("body", "with-drawer", view_with_drawer());
+	}
 	s = cur_server();
 	snprintf(title, sizeof(title), "%s%s%s", s != NULL &&
 	    app.screen == SCREEN_CONSOLE ? s->name : "",
