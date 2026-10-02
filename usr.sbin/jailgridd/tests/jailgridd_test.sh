@@ -83,7 +83,7 @@ write_rc()
 #!/bin/sh
 conf=$(pwd)/rc.conf
 case "\$1" in
--a)	sed -e 's/="\(.*\)"\$/: \1/' "\$conf" ;;
+-a|-A)	sed -e 's/="\(.*\)"\$/: \1/' "\$conf" ;;
 -x)	grep -q "^\$2=" "\$conf" || exit 1
 	grep -v "^\$2=" "\$conf" > "\$conf.new"; mv "\$conf.new" "\$conf" ;;
 *=*)	key=\${1%%=*}; val=\${1#*=}
@@ -401,7 +401,8 @@ services_body()
 	atf_check -o not-match:'README' cat services.out
 	# One listing, one status per enabled service, in the trace.
 	atf_check -o save:trace.out "$JGC" -t -c "$SOCK" services
-	atf_check -o match:'fake-service -e' cat trace.out
+	atf_check -o match:'fake-sysrc -A' cat trace.out
+	atf_check -o not-match:'fake-service -e' cat trace.out
 	atf_check -o match:'fake-service sshd status' cat trace.out
 	atf_check -o not-match:'fake-service ntpd status' cat trace.out
 }
@@ -481,12 +482,17 @@ network_body()
 	atf_check -o match:'"route-table"' cat routes.out
 	atf_check -o match:'fake-netstat --libxo json -rnW -f inet6' \
 	    "$JGC" -t -c "$SOCK" net routes -6
-	atf_check -o match:'fake-netstat --libxo json -onW$' \
-	    "$JGC" -t -c "$SOCK" net nexthops
+	# Both families: a run each, the entries joined.
+	atf_check -o save:nh.out "$JGC" -t -c "$SOCK" net nexthops
+	atf_check -o match:'fake-netstat --libxo json -onW -f inet$' cat nh.out
+	atf_check -o match:'fake-netstat --libxo json -onW -f inet6$' cat nh.out
+	atf_check -o match:'"rt-family"' cat nh.out
 	atf_check -o match:'fake-netstat --libxo json -n -f inet$' \
 	    "$JGC" -t -c "$SOCK" net connections -4
-	atf_check -o match:'"sockstat"' -o match:'fake-sockstat --libxo json -46' \
-	    "$JGC" -t -c "$SOCK" net sockets
+	atf_check -o save:so.out "$JGC" -t -c "$SOCK" net sockets
+	atf_check -o match:'fake-sockstat --libxo json -4$' cat so.out
+	atf_check -o match:'fake-sockstat --libxo json -6$' cat so.out
+	atf_check -o match:'"sshd".*"sshd"' cat so.out
 	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" net tables
 }
 network_cleanup()

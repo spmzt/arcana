@@ -42,10 +42,10 @@ policies, client wrappers and server glue from it.
 | `list` | running and configured jails | jail_getv(3), procstat_getprocs(3), `jail -f scope -e sep` |
 | `action` | start, stop, restart, kill | jail(8) `-c`, `-r`, `-rc`; jail_remove(2) for kill |
 | `address` | add or remove an IP, live and/or persistent | jail_setv(3), SIOCAIFADDR ioctls, libjailconf |
-| `services` | the host's rc.d scripts, enabled and running | the rc.d directories, `service -e`, `service <name> status` |
+| `services` | the host's rc.d scripts, enabled and running | the rc.d directories, `<name>_enable` in `sysrc -A`, `service <name> status` |
 | `service-action` | start, stop, restart, reload, enable, disable | `service <name> <verb>`; `sysrc <rcvar>=YES/NO` |
 | `service-config` | a service's rc.conf variables, read and set | `sysrc -a`, `sysrc key=value`, `sysrc -x key`, `service <name> describe` |
-| `network` | routes, nexthops, connections, sockets | `netstat --libxo json -rnW / -onW / -n`, `sockstat --libxo json`; the JSON passes through |
+| `network` | routes, nexthops, connections, sockets | `netstat --libxo json -rnW / -onW / -n -f <family>`, `sockstat --libxo json -4/-6`; one run per family, joined |
 | `stats` | CPU, load, memory, swap, ZFS pools | `kern.cp_time` between requests, `vm.loadavg`, `vm.stats.vm.*`, `swapinfo -k`, `zpool list -Hp` |
 
 Every operation requires an authenticated peer: a client certificate
@@ -140,9 +140,11 @@ unprintable characters as vis(3) escapes (the `-e` separator shows as
 ## Services
 
 The daemon never reads or writes `rc.conf` itself.  It lists the
-executable scripts of `/etc/rc.d` and `/usr/local/etc/rc.d`, asks
-`service -e` which are enabled and `service <name> status` whether the
-enabled ones run, and changes things with `service <name> <verb>` and
+executable scripts of `/etc/rc.d` and `/usr/local/etc/rc.d`, reads
+`<name>_enable` from `sysrc -A` (which evaluates the configuration
+without running any script; `service -e` runs every one, and scripts
+with no default for their rcvar warn each time) and asks `service
+<name> status` whether the enabled ones run, and changes things with `service <name> <verb>` and
 `sysrc(8)`, so quoting, `rc.conf.d` and `rc.conf.local` mean what they
 mean to the system.  A service's variables are those `sysrc -a` lists
 whose names start with the script's name or its rcvar's stem; only such

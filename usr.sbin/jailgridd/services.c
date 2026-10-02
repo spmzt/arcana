@@ -7,10 +7,12 @@
 /*
  * rc.d services, through service(8) and sysrc(8) so that what the host
  * does is what an administrator at the console would do: the scripts of
- * the rc.d directories, whether rc.conf enables them ("service -e"),
- * whether the enabled ones run ("service x status"), and their rc.conf
- * variables read and written by sysrc(8).  Every program run is a step
- * in the trace with its output.
+ * the rc.d directories, whether rc.conf enables them (<name>_enable in
+ * "sysrc -A", which reads the configuration without running a single
+ * script: "service -e" runs them all, and scripts without a default
+ * for their rcvar warn each time), whether the enabled ones run
+ * ("service x status"), and their rc.conf variables read and written by
+ * sysrc(8).  Every program run is a step in the trace with its output.
  */
 
 #include <sys/param.h>
@@ -43,6 +45,7 @@ static int	svc_run(struct work *, const char *, const char *,
 static void	svc_status(struct work *, struct jg_service *);
 static const char *svc_rcvar(struct work *, const char *, const char **);
 static bool	enabled_in(const struct execres *, const char *);
+static int	sysrc_all(struct work *, struct execres *);
 static const char *last_line(struct work *, const char *, size_t);
 
 static int
@@ -174,20 +177,40 @@ last_line(struct work *w, const char *s, size_t len)
 	return (wtext(w, wstrndup(w, p, (size_t)(s + len - p))));
 }
 
-/* Is path (or the script's name) in the output of "service -e"? */
-static bool
-enabled_in(const struct execres *res, const char *path)
+/* "sysrc -A": every variable with its value, defaults included. */
+static int
+sysrc_all(struct work *w, struct execres *res)
 {
-	const char	*p, *e;
-	size_t		 len, l;
+	char	*argv[3];
 
-	len = strlen(path);
+	argv[0] = (char *)(uintptr_t)opts.sysrc_bin;
+	argv[1] = (char *)(uintptr_t)"-A";
+	argv[2] = NULL;
+	return (run_exec(w, argv, res));
+}
+
+/*
+ * Does "sysrc -A" ("key: value" lines) say <name>_enable is yes?  The
+ * rcvar of nearly every script is its name and _enable; the few that
+ * differ show as disabled until looked at, where rcvar is asked.
+ */
+static bool
+enabled_in(const struct execres *res, const char *name)
+{
+	const char	*p, *e, *v;
+	size_t		 len;
+
+	len = strlen(name);
 	for (p = res->out; p != NULL && *p != '\0'; p = e != NULL ? e + 1 :
 	    NULL) {
 		e = strchr(p, '\n');
-		l = e != NULL ? (size_t)(e - p) : strlen(p);
-		if (l == len && strncmp(p, path, len) == 0)
-			return (true);
+		if (strncmp(p, name, len) != 0 || strncmp(p + len, "_enable: ",
+		    9) != 0)
+			continue;
+		v = p + len + 9;
+		return (strncasecmp(v, "yes", 3) == 0 ||
+		    strncasecmp(v, "true", 4) == 0 || strncasecmp(v, "on", 2) ==
+		    0 || *v == '1');
 	}
 	return (false);
 }
@@ -245,9 +268,9 @@ do_services(struct work *w, struct jg_services_rsp *rsp)
 	rsp->has_ok = true;
 	rsp->ok = true;
 	scan_scripts(w, &sc, &n);
-	if (svc_run(w, NULL, "-e", &res) != 0) {
+	if (sysrc_all(w, &res) != 0) {
 		rsp->ok = false;
-		rsp->error = wtext(w, exec_error(w, &res, "service -e"));
+		rsp->error = wtext(w, exec_error(w, &res, "sysrc -A"));
 		return (0);
 	}
 	v = wcalloc(w, n + 1, sizeof(*v));
@@ -255,7 +278,7 @@ do_services(struct work *w, struct jg_services_rsp *rsp)
 		v[i].name = wtext(w, sc[i].name);
 		v[i].path = wtext(w, sc[i].path);
 		v[i].has_enabled = true;
-		v[i].enabled = enabled_in(&res, sc[i].path);
+		v[i].enabled = enabled_in(&res, sc[i].name);
 		if (v[i].enabled)
 			svc_status(w, &v[i]);
 	}
@@ -274,9 +297,9 @@ svc_current(struct work *w, const struct script *sc)
 	s = wcalloc(w, 1, sizeof(*s));
 	s->name = wtext(w, sc->name);
 	s->path = wtext(w, sc->path);
-	if (svc_run(w, NULL, "-e", &res) == 0) {
+	if (sysrc_all(w, &res) == 0) {
 		s->has_enabled = true;
-		s->enabled = enabled_in(&res, sc->path);
+		s->enabled = enabled_in(&res, sc->name);
 	}
 	svc_status(w, s);
 	return (s);

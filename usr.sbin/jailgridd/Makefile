@@ -8,10 +8,10 @@ MAN=		jailgridd.8
 CBLINK_SPECS=	${JG_SPEC}
 CBLINK_PARTS=	h,c,server
 
-CFLAGS+=	${JAILCONF_CFLAGS}
+CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
-LDADD+=		-ljail -lprocstat -lutil -lpthread
+LDADD+=		-ljail -lprocstat -lutil -lpthread ${UCL_LIBS}
 
 # The rc.d(8) script.
 FILESGROUPS+=	RC

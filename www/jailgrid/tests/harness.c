@@ -221,7 +221,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("rc.conf", "sshd_enable=\"YES\"\nsshd_flags=\"-4\"\n");
 	snprintf(buf, sizeof(buf), "#!/bin/sh\nconf=%s/rc.conf\n"
 	    "case \"$1\" in\n"
-	    "-a) sed -e 's/=\"\\(.*\\)\"$/: \\1/' \"$conf\" ;;\n"
+	    "-a|-A) sed -e 's/=\"\\(.*\\)\"$/: \\1/' \"$conf\" ;;\n"
 	    "-x) grep -v \"^$2=\" \"$conf\" > c.new; mv c.new \"$conf\" ;;\n"
 	    "*=*) k=${1%%%%=*}; v=${1#*=}; grep -v \"^$k=\" \"$conf\" > c.new; "
 	    "printf '%%s=\"%%s\"\\n' \"$k\" \"$v\" >> c.new; mv c.new \"$conf\" ;;\n"
