@@ -457,6 +457,46 @@ paths:
                   trace: { type: array }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/servers/{server}/stats:
+    get:
+      tags: [servers]
+      summary: CPU, load, memory, swap and ZFS pool usage of the host
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The figures; bytes for sizes, percent for CPU.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  stats:
+                    type: object
+                    properties:
+                      cpu_pct: { type: number }
+                      load1: { type: number }
+                      load5: { type: number }
+                      load15: { type: number }
+                      mem_total: { type: integer }
+                      mem_used: { type: integer }
+                      mem_inactive: { type: integer }
+                      mem_free: { type: integer }
+                      swap_total: { type: integer }
+                      swap_used: { type: integer }
+                      pools:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name: { type: string }
+                            size: { type: integer }
+                            alloc: { type: integer }
+                            free: { type: integer }
+                            health: { type: string }
+                  trace: { type: array }
+
   /api/servers/{server}/hello:
     get:
       tags: [servers]

@@ -216,6 +216,10 @@ authenticator offers one, so security keys keep working as before.
   not, running or not, with start, stop, restart, reload, enable and
   disable; a service's drawer edits its `rc.conf` variables through
   `sysrc(8)` and shows what the script says of itself.
+- **Gauges** under the host bar: CPU, memory in use and ZFS allocation,
+  each with its recent history, sampled every 10 s while the server is
+  selected. CPU is `kern.cp_time` between samples, memory the active,
+  wired and laundry pages, ZFS the pools' allocation from `zpool list`.
 - **Network**, the third tab: the routing table, the nexthops, active
   connections and open sockets, per address family, as `netstat -rnW`,
   `netstat -onW`, `netstat -n` and `sockstat` print them on the host

@@ -46,6 +46,7 @@ policies, client wrappers and server glue from it.
 | `service-action` | start, stop, restart, reload, enable, disable | `service <name> <verb>`; `sysrc <rcvar>=YES/NO` |
 | `service-config` | a service's rc.conf variables, read and set | `sysrc -a`, `sysrc key=value`, `sysrc -x key`, `service <name> describe` |
 | `network` | routes, nexthops, connections, sockets | `netstat --libxo json -rnW / -onW / -n`, `sockstat --libxo json`; the JSON passes through |
+| `stats` | CPU, load, memory, swap, ZFS pools | `kern.cp_time` between requests, `vm.loadavg`, `vm.stats.vm.*`, `swapinfo -k`, `zpool list -Hp` |
 
 Every operation requires an authenticated peer: a client certificate
 from the jailgrid CA over TCP, or access to the 0600 AF_UNIX socket.

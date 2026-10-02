@@ -31,6 +31,7 @@ enum op {
 	OP_SERVICE_ACTION,
 	OP_SERVICE_CONFIG,
 	OP_NETWORK,
+	OP_STATS,
 };
 
 struct call {
@@ -323,7 +324,8 @@ trace_object(struct call *c, const struct jg_step *v, size_t n,
 	    c->op == OP_ACTION ? "jg_action" : c->op == OP_ADDRESS ?
 	    "jg_address" : c->op == OP_SERVICES ? "jg_services" :
 	    c->op == OP_SERVICE_ACTION ? "jg_service_action" :
-	    c->op == OP_NETWORK ? "jg_network" : "jg_service_config";
+	    c->op == OP_NETWORK ? "jg_network" : c->op == OP_STATS ?
+	    "jg_stats" : "jg_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
 	for (i = 0; i < n; i++)
@@ -373,6 +375,7 @@ call_run(struct kore_task *t)
 	struct jg_service_config_rsp *scr;
 	struct jg_network_req	 nq;
 	struct jg_network_rsp	*nr;
+	struct jg_stats_rsp	*str;
 	const struct jg_step	*steps;
 	ucl_object_t		*top, *srv, *a, *e;
 	cbl_conn		*conn;
@@ -404,6 +407,7 @@ call_run(struct kore_task *t)
 	sar = NULL;
 	scr = NULL;
 	nr = NULL;
+	str = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
 	snprintf(detail, sizeof(detail), "%s, %s", c->uri, local ?
@@ -523,6 +527,51 @@ call_run(struct kore_task *t)
 		steps = sar->trace.v;
 		nsteps = sar->trace.n;
 		break;
+	case OP_STATS:
+		if ((error = jg_stats(&cl, &str)) != 0)
+			goto rpcfail;
+		ok = str->ok;
+		put_str(top, "error", str->error);
+		e = ucl_object_typed_new(UCL_OBJECT);
+		if (str->stats != NULL) {
+			const struct jg_stats *st = str->stats;
+			ucl_object_t *pl, *po;
+
+			put(e, "cpu_pct", ucl_object_fromdouble(st->cpu_pct));
+			put(e, "load1", ucl_object_fromdouble(st->load1));
+			put(e, "load5", ucl_object_fromdouble(st->load5));
+			put(e, "load15", ucl_object_fromdouble(st->load15));
+			put(e, "mem_total", ucl_object_fromint((int64_t)
+			    st->mem_total));
+			put(e, "mem_used", ucl_object_fromint((int64_t)
+			    st->mem_used));
+			put(e, "mem_inactive", ucl_object_fromint((int64_t)
+			    st->mem_inactive));
+			put(e, "mem_free", ucl_object_fromint((int64_t)
+			    st->mem_free));
+			put(e, "swap_total", ucl_object_fromint((int64_t)
+			    st->swap_total));
+			put(e, "swap_used", ucl_object_fromint((int64_t)
+			    st->swap_used));
+			pl = ucl_object_typed_new(UCL_ARRAY);
+			for (i = 0; i < st->pools.n; i++) {
+				po = ucl_object_typed_new(UCL_OBJECT);
+				put_str(po, "name", st->pools.v[i].name);
+				put(po, "size", ucl_object_fromint((int64_t)
+				    st->pools.v[i].size));
+				put(po, "alloc", ucl_object_fromint((int64_t)
+				    st->pools.v[i].alloc));
+				put(po, "free", ucl_object_fromint((int64_t)
+				    st->pools.v[i].free));
+				put_str(po, "health", st->pools.v[i].health);
+				ucl_array_append(pl, po);
+			}
+			put(e, "pools", pl);
+		}
+		put(top, "stats", e);
+		steps = str->trace.v;
+		nsteps = str->trace.n;
+		break;
 	case OP_NETWORK:
 		memset(&nq, 0, sizeof(nq));
 		nq.has_net_kind = true;
@@ -614,6 +663,8 @@ done:
 		jg_service_config_rsp_free(scr);
 	if (nr != NULL)
 		jg_network_rsp_free(nr);
+	if (str != NULL)
+		jg_stats_rsp_free(str);
 	if (cl.conn != NULL)
 		jg_client_fini(&cl);
 	cbl_conn_free(conn);
@@ -952,5 +1003,18 @@ api_network(struct http_request *req)
 		else if (strstr(req->query_string, "family=inet") != NULL)
 			c->family = JG_NET_FAMILY_INET;
 	}
+	return (call_start(req, c));
+}
+
+/* GET /api/servers/<id>/stats */
+int
+api_stats(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_STATS)) == NULL)
+		return (KORE_RESULT_OK);
 	return (call_start(req, c));
 }

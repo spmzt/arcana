@@ -202,8 +202,10 @@ tick(void *arg)
 	if (app.screen == SCREEN_CONSOLE && app.visible && app.online &&
 	    now - last_refresh > REFRESH_MS) {
 		last_refresh = now;
-		if ((s = cur_server()) != NULL)
+		if ((s = cur_server()) != NULL) {
 			refresh_jails(s, false);
+			refresh_stats(s);
+		}
 	}
 	if (changed || now - last_tick_render >= AGE_STEP_MS) {
 		last_tick_render = now;
@@ -351,6 +353,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		close_service();
 		if ((s = cur_server()) != NULL) {
 			refresh_jails(s, false);
+			refresh_stats(s);
 			if (app.tab == TAB_SERVICES && s->services == NULL)
 				refresh_services(s, false);
 			if (app.tab == TAB_NETWORK)

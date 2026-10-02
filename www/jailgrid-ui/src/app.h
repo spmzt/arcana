@@ -21,6 +21,7 @@
 #define	MAX_SERVERS		64
 #define	MAX_OPS			40
 #define	MAX_TOASTS		4
+#define	HISTORY			48	/* usage samples kept per server */
 #define	HEALTH_MS		15000
 #define	REFRESH_MS		10000
 #define	STALE_MS		30000
@@ -147,6 +148,11 @@ struct server {
 	char		 error[256];
 	struct jailui	*jui;
 	size_t		 njui;
+	ucl_object_t	*stats;		/* last usage reply */
+	double		 stats_fetched;
+	bool		 stats_loading;
+	float		 hist[3][HISTORY];	/* cpu, memory, zfs, in % */
+	int		 nhist;		/* samples in hist, newest last */
 	ucl_object_t	*services;	/* last good services reply */
 	double		 services_fetched;
 	bool		 services_loading;
@@ -265,6 +271,7 @@ void		 refresh_services(struct server *, bool);
 void		 service_action(const char *, const char *);
 void		 service_config(const char *, const char *);
 void		 refresh_network(struct server *, bool);
+void		 refresh_stats(struct server *);
 void		 address_change(const char *, const char *, bool, bool, bool,
 		    bool);
 void		 check_health(void);
@@ -291,6 +298,7 @@ void		 view_trace(struct html *, const struct op *);
 void		 view_services(struct html *, struct server *);
 void		 view_service_drawer(struct html *, struct server *);
 void		 view_network(struct html *, struct server *);
+void		 view_gauges(struct html *, struct server *);
 const char	*state_class(const struct server *, const ucl_object_t *,
 		    const struct jailui *);
 void		 fmt_age(char *, size_t, double);

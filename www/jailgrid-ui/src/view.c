@@ -504,6 +504,7 @@ stage(struct html *h)
 		return;
 	}
 	hostbar(h, s);
+	view_gauges(h, s);
 	h_fmt(h, "<nav class=\"tabs\"><button class=\"tab%s\" data-act=\"tab\" "
 	    "data-arg=\"jails\">Jails</button><button class=\"tab%s\" "
 	    "data-act=\"tab\" data-arg=\"services\">Services</button>"
@@ -1294,4 +1295,99 @@ view_service_drawer(struct html *h, struct server *s)
 	h_fmt(h, "<div class=\"buttons\"><button class=\"primary\"%s>Apply"
 	    "</button></div></form></div></aside>", app.svc_loading ?
 	    " disabled" : "");
+}
+
+/*
+ * A gauge: the figure, and the recent samples as a line with the area
+ * under it, drawn as inline SVG in a 120x36 box.
+ */
+static void
+gauge(struct html *h, const char *label, const char *cls, const float *v,
+    int n, double value, const char *unit, const char *detail)
+{
+	char	buf[32];
+	int	i;
+	double	x, y;
+
+	h_fmt(h, "<div class=\"gauge g-%s\"", cls);
+	h_attr(h, "title", detail);
+	h_raw(h, "><div class=\"gl\">");
+	h_txt(h, label);
+	h_raw(h, "</div><div class=\"gv\">");
+	snprintf(buf, sizeof(buf), "%.0f", value);
+	h_txt(h, buf);
+	h_raw(h, "<small>");
+	h_txt(h, unit);
+	h_raw(h, "</small></div><svg class=\"spark\" viewBox=\"0 0 120 36\" "
+	    "preserveAspectRatio=\"none\" aria-hidden=\"true\">");
+	if (n > 1) {
+		h_raw(h, "<path class=\"area\" d=\"M0 36 ");
+		for (i = 0; i < n; i++) {
+			x = 120.0 * i / (n - 1);
+			y = 36 - 34 * (v[i] > 100 ? 100 : v[i] < 0 ? 0 : v[i]) /
+			    100;
+			h_fmt(h, "L%.1f %.1f ", x, y);
+		}
+		h_raw(h, "L120 36 Z\"/><path class=\"line\" d=\"");
+		for (i = 0; i < n; i++) {
+			x = 120.0 * i / (n - 1);
+			y = 36 - 34 * (v[i] > 100 ? 100 : v[i] < 0 ? 0 : v[i]) /
+			    100;
+			h_fmt(h, "%s%.1f %.1f ", i == 0 ? "M" : "L", x, y);
+		}
+		h_raw(h, "\"/>");
+	}
+	h_raw(h, "</svg><i class=\"bar\"");
+	snprintf(buf, sizeof(buf), "--v:%.3f", (value > 100 ? 100 : value) /
+	    100);
+	h_attr(h, "style", buf);
+	h_raw(h, "></i></div>");
+}
+
+/* CPU, memory and ZFS of the server, each with its recent history. */
+void
+view_gauges(struct html *h, struct server *s)
+{
+	const ucl_object_t	*st, *p;
+	ucl_object_iter_t	 it;
+	char			 d1[160], d2[200], d3[400], tmp[96];
+	double			 total, used, inact, size;
+	float			 cpu, mem, zfs;
+	int			 n;
+
+	if (s->stats == NULL || s->nhist == 0)
+		return;
+	st = jget(s->stats, "stats");
+	n = s->nhist;
+	cpu = s->hist[0][n - 1];
+	mem = s->hist[1][n - 1];
+	zfs = s->hist[2][n - 1];
+	snprintf(d1, sizeof(d1), "load %.2f %.2f %.2f, over the last %d "
+	    "samples", jnum(st, "load1", 0), jnum(st, "load5", 0),
+	    jnum(st, "load15", 0), n);
+	total = jnum(st, "mem_total", 0) / 1048576;
+	used = jnum(st, "mem_used", 0) / 1048576;
+	inact = jnum(st, "mem_inactive", 0) / 1048576;
+	snprintf(d2, sizeof(d2), "%.0f of %.0f MiB in use (active, wired, "
+	    "laundry); %.0f inactive; swap %.0f of %.0f MiB", used, total,
+	    inact, jnum(st, "swap_used", 0) / 1048576,
+	    jnum(st, "swap_total", 0) / 1048576);
+	d3[0] = '\0';
+	size = 0;
+	it = NULL;
+	while ((p = ucl_object_iterate(jget(st, "pools"), &it, true)) != NULL) {
+		snprintf(tmp, sizeof(tmp), "%s%s: %.0f of %.0f GiB, %s",
+		    d3[0] != '\0' ? "; " : "", jstr(p, "name") != NULL ?
+		    jstr(p, "name") : "?", jnum(p, "alloc", 0) / 1073741824,
+		    jnum(p, "size", 0) / 1073741824, jstr(p, "health") != NULL ?
+		    jstr(p, "health") : "");
+		strlcat(d3, tmp, sizeof(d3));
+		size += jnum(p, "size", 0);
+	}
+	h_raw(h, "<section class=\"gauges\">");
+	gauge(h, "CPU", "cpu", s->hist[0], n, cpu, "%", d1);
+	gauge(h, "RAM", "mem", s->hist[1], n, mem, "%", d2);
+	if (size > 0)
+		gauge(h, "ZFS", "zfs", s->hist[2], n, zfs, "%", d3);
+	h_raw(h, "</section>");
 }

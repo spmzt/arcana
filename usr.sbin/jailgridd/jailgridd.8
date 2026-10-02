@@ -26,6 +26,8 @@
 .Op Fl y Ar sysrc
 .Op Fl N Ar netstat
 .Op Fl X Ar sockstat
+.Op Fl W Ar swapinfo
+.Op Fl Z Ar zpool
 .Sh DESCRIPTION
 .Nm
 serves the
@@ -156,6 +158,12 @@ and
 programs, run with
 .Fl -libxo Cm json
 for the network tables.
+.It Fl W Ar swapinfo , Fl Z Ar zpool
+The
+.Xr swapinfo 8
+and
+.Xr zpool 8
+programs, for the usage figures; a host without ZFS reports no pools.
 .El
 .Sh FILES
 .Bl -tag -width Ds -compact

@@ -604,6 +604,16 @@ ATF_TC_BODY(services, tc)
 	    "%s", jstr(&r, "error"));
 	resp_free(&r);
 
+	/* Usage figures: real sysctls, a zpool(8) that may not be there. */
+	snprintf(path, sizeof(path), "%.*s/stats",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "stats.cpu_pct") != NULL);
+	ATF_CHECK(atoll(jstr(&r, "stats.mem_total")) > 0);
+	resp_free(&r);
+
 	/* The network tables: netstat's JSON, inside ours. */
 	snprintf(path, sizeof(path), "%.*s/net/routes?family=inet",
 	    (int)(strlen(base) - strlen("/services")), base);

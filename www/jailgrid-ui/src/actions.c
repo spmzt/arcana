@@ -226,6 +226,8 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			ucl_object_unref(old[i].list);
 		if (old[i].services != NULL)
 			ucl_object_unref(old[i].services);
+		if (old[i].stats != NULL)
+			ucl_object_unref(old[i].stats);
 		free(old[i].jui);
 	}
 	app.servers_loaded = true;
@@ -569,6 +571,69 @@ service_config(const char *name, const char *body)
 	snprintf(url, sizeof(url), "/api/servers/%s/services/%s/config",
 	    s->id, name);
 	api(body != NULL ? "POST" : "GET", url, body, service_config_cb, c);
+}
+
+static void
+stats_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx		*c;
+	struct server		*s;
+	const ucl_object_t	*st, *p;
+	ucl_object_iter_t	 it;
+	double			 total, alloc, size, used;
+	int			 i;
+
+	c = arg;
+	if ((s = server_by_id(c->sid)) == NULL) {
+		free(c);
+		return;
+	}
+	s->stats_loading = false;
+	if (status != 200 || !jbool(o, "ok")) {
+		free(c);
+		return;
+	}
+	if (s->stats != NULL)
+		ucl_object_unref(s->stats);
+	s->stats = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	s->stats_fetched = jg_now();
+	st = jget(o, "stats");
+	/* One sample each: CPU %, memory in use %, ZFS allocated %. */
+	if (s->nhist == HISTORY) {
+		for (i = 0; i < 3; i++)
+			memmove(&s->hist[i][0], &s->hist[i][1],
+			    (HISTORY - 1) * sizeof(float));
+		s->nhist--;
+	}
+	total = jnum(st, "mem_total", 0);
+	used = jnum(st, "mem_used", 0);
+	alloc = size = 0;
+	it = NULL;
+	while ((p = ucl_object_iterate(jget(st, "pools"), &it, true)) != NULL) {
+		alloc += jnum(p, "alloc", 0);
+		size += jnum(p, "size", 0);
+	}
+	s->hist[0][s->nhist] = (float)jnum(st, "cpu_pct", 0);
+	s->hist[1][s->nhist] = total > 0 ? (float)(100 * used / total) : 0;
+	s->hist[2][s->nhist] = size > 0 ? (float)(100 * alloc / size) : 0;
+	s->nhist++;
+	free(c);
+}
+
+/* A usage sample from the server; quiet, no log entry. */
+void
+refresh_stats(struct server *s)
+{
+	struct ctx	*c;
+	char		 url[128];
+
+	if (!app.online || s->stats_loading)
+		return;
+	s->stats_loading = true;
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(url, sizeof(url), "/api/servers/%s/stats", s->id);
+	api("GET", url, NULL, stats_cb, c);
 }
 
 static void
