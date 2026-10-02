@@ -25,6 +25,7 @@
 #define	REFRESH_MS		10000
 #define	STALE_MS		30000
 #define	AGE_STEP_MS		10000	/* how often ages are redrawn */
+#define	UPDATE_MS		(6 * 3600 * 1000)
 
 /* bridge.js */
 void		 jg_patch(const char *, const char *);
@@ -36,6 +37,8 @@ void		 jg_sw_register(void);
 double		 jg_now(void);
 void		 jg_title(const char *);
 char		*jg_hostname(void);
+int		 jg_fx_get(void);
+void		 jg_fx_set(int);
 
 /* Called from bridge.js. */
 void		 jg_on_action(char *, char *, char *);
@@ -172,7 +175,11 @@ struct app {
 	bool		 online;	/* navigator.onLine */
 	enum link	 api;		/* /api/health */
 	bool		 visible;
+	bool		 fx;		/* blur and idle animations */
 	bool		 setup_required;
+	char		 version[32];	/* the console's, from /api/health */
+	char		 update_latest[64];	/* a newer release, or "" */
+	char		 update_url[512];
 	char		 auth_error[256];
 	bool		 auth_busy;
 
@@ -221,6 +228,7 @@ void		 jail_action(const char *, const char *);
 void		 address_change(const char *, const char *, bool, bool, bool,
 		    bool);
 void		 check_health(void);
+void		 check_update(void);
 void		 auth_status(void);
 void		 login(void);
 void		 enrol(const char *, const char *);

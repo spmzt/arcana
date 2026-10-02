@@ -213,6 +213,22 @@ Android, Chrome offers to install the console as an app.
   the cblink request to each call jailgridd made. When a program ran, a
   **Raw output** button shows its argv, exit status and output.
 
+## Updating
+
+The console asks GitHub's release feed every six hours and shows a
+banner when a newer version is out; `update_check = false` in `web.conf`
+turns that off. It does not replace itself, since it runs unprivileged:
+
+- the container image carries `io.containers.autoupdate=registry`, so
+  `podman auto-update` (from cron, say) pulls a newer `ghcr.io/spmzt/geass`
+  and restarts the container;
+- a native install is updated with `pkg upgrade jailgrid`, or
+  `make install` from a newer tree, then `service jailgrid restart`.
+
+Jail hosts update `jailgridd` the same way; the console marks a host
+whose `jailgridd` is not its own version. Certificates stay valid across
+updates.
+
 ## TODO
 
 - EC keys for the console's own HTTPS certificate: Kore's key manager

@@ -187,8 +187,12 @@ topbar(struct html *h)
 	    s->failed ? LINK_DOWN : LINK_UP;
 	link_led(h, "HOST", host, s == NULL ? "No server selected" :
 	    s->failed ? s->error : "jailgridd answers");
-	h_raw(h, "</div><div class=\"who\">"
-	    "<button class=\"ghost\" data-act=\"keys\">Keys</button>"
+	h_raw(h, "</div><div class=\"who\">");
+	h_fmt(h, "<button class=\"ghost%s\" data-act=\"fx\" title=\"Blur and "
+	    "idle animations: %s. Off is lighter on slow browsers; the "
+	    "choice stays in this browser.\">FX</button>", app.fx ? " on" :
+	    "", app.fx ? "on" : "off");
+	h_raw(h, "<button class=\"ghost\" data-act=\"keys\">Keys</button>"
 	    "<button class=\"ghost\" data-act=\"logout\">Log out</button>"
 	    "</div></header>");
 }
@@ -205,6 +209,23 @@ banner(struct html *h)
 		h_raw(h, "<div class=\"banner bad\"><b>The console does not "
 		    "answer.</b> Showing the last known state; it will "
 		    "reconnect by itself.</div>");
+	else if (app.update_latest[0] != '\0') {
+		h_raw(h, "<div class=\"banner info\"><b>Jailgrid ");
+		h_txt(h, app.update_latest);
+		h_raw(h, " is out</b> (this console is ");
+		h_txt(h, app.version[0] != '\0' ? app.version : "older");
+		h_raw(h, "). In the container: <code>podman auto-update</code>; "
+		    "from the package: <code>pkg upgrade jailgrid</code>; then "
+		    "<code>jailgrid-enrol</code> hosts again only if told so in "
+		    "the ");
+		if (app.update_url[0] != '\0') {
+			h_raw(h, "<a target=\"_blank\" rel=\"noopener\"");
+			h_attr(h, "href", app.update_url);
+			h_raw(h, ">release notes</a>");
+		} else
+			h_raw(h, "release notes");
+		h_raw(h, ".</div>");
+	}
 }
 
 static void
@@ -287,6 +308,14 @@ hostbar(struct html *h, struct server *s)
 			h_raw(h, "<span class=\"warn\" title=\"jailgridd is "
 			    "not running as root: changes will fail\">"
 			    "unprivileged</span>");
+		if (jstr(host, "version") != NULL) {
+			h_raw(h, app.version[0] != '\0' && strcmp(jstr(host,
+			    "version"), app.version) != 0 ? "<span class=\"warn\" "
+			    "title=\"Not the console's version: update jailgridd "
+			    "on this host\">jailgridd " : "<span>jailgridd ");
+			h_txt(h, jstr(host, "version"));
+			h_raw(h, "</span>");
+		}
 	} else {
 		h_raw(h, "<span>");
 		h_txt(h, s->uri);

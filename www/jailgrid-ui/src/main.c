@@ -28,7 +28,7 @@ struct app app = {
 	.raw_op = -1,
 };
 
-static double	last_health, last_refresh, last_tick_render;
+static double	last_health, last_refresh, last_tick_render, last_update;
 
 static void	tick(void *);
 static void	confirm(const char *, const char *, const char *, bool,
@@ -160,6 +160,11 @@ tick(void *arg)
 		/* Offline at start: try to reach the console again. */
 		if (app.screen == SCREEN_OFFLINE && app.online)
 			auth_status();
+	}
+	if (app.screen == SCREEN_CONSOLE && app.online &&
+	    now - last_update > UPDATE_MS) {
+		last_update = now;
+		check_update();
 	}
 	if (app.screen == SCREEN_CONSOLE && app.visible && app.online &&
 	    now - last_refresh > REFRESH_MS) {
@@ -366,6 +371,9 @@ dispatch(const char *act, const char *arg, const char *value)
 		login();
 	} else if (strcmp(act, "logout") == 0) {
 		logout();
+	} else if (strcmp(act, "fx") == 0) {
+		app.fx = !app.fx;
+		jg_fx_set(app.fx ? 1 : 0);
 	} else if (strcmp(act, "close") == 0 || strcmp(act, "escape") == 0) {
 		if (app.modal != MODAL_NONE)
 			close_modal();
@@ -431,6 +439,7 @@ main(void)
 
 	jg_events_init();
 	jg_sw_register();
+	app.fx = jg_fx_get() != 0;
 	render();
 	check_health();
 	last_health = last_refresh = jg_now();

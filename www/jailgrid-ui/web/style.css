@@ -285,7 +285,6 @@ label {
 	border-bottom: 1px solid var(--line);
 	background: linear-gradient(180deg, rgba(4, 9, 16, .96),
 	    rgba(4, 9, 16, .82));
-	backdrop-filter: blur(10px);
 }
 
 .topbar::after {
@@ -374,6 +373,7 @@ label {
 .who button {
 	white-space: nowrap;
 }
+.who button.on { color: var(--cyan); border-color: var(--cyan); }
 
 .banner {
 	padding: .5rem 1rem;
@@ -390,6 +390,11 @@ label {
 	background: rgba(255, 61, 110, .1);
 	color: #ffc2d1;
 }
+.banner.info {
+	background: rgba(59, 232, 255, .08);
+	color: #bfeffa;
+}
+.banner.info a { color: inherit; }
 
 .body {
 	flex: 1;
@@ -780,7 +785,7 @@ label {
 
 /* States. */
 .s-running { --c: var(--cyan); }
-.s-running .led { animation: breathe 2.8s ease-in-out infinite; }
+.s-running .led { box-shadow: 0 0 8px var(--c); }
 .s-stopped { --c: var(--slate); }
 .s-stopped .led { box-shadow: 0 0 0 2px rgba(0, 0, 0, .35); }
 .s-dying { --c: var(--amber); }
@@ -867,7 +872,6 @@ label {
 	overflow: hidden;
 	border-left: 1px solid var(--line);
 	background: rgba(4, 10, 18, .9);
-	backdrop-filter: blur(12px);
 }
 
 .drawer.open {
@@ -1018,7 +1022,6 @@ label {
 	z-index: 4;
 	border-top: 1px solid var(--line);
 	background: rgba(3, 7, 13, .94);
-	backdrop-filter: blur(12px);
 }
 
 .dock::before {
@@ -1148,6 +1151,8 @@ label {
 	stroke: rgba(59, 232, 255, .45);
 	stroke-width: 1.4;
 	stroke-dasharray: 5 4;
+}
+.o-running .edges path {
 	animation: flow 1.2s linear infinite;
 }
 
@@ -1275,7 +1280,6 @@ pre.diff {
 	inset: 0;
 	z-index: 20;
 	background: rgba(1, 4, 8, .7);
-	backdrop-filter: blur(3px);
 	animation: fade .2s both;
 }
 
@@ -1543,6 +1547,16 @@ pre.diff {
 }
 
 /* Motion. */
+/*
+ * Effects: the blur behind the bars and the idle animations.  They cost
+ * a repaint per frame, so a viewer can turn them off (the FX button);
+ * the choice is kept in this browser.
+ */
+html.fx .topbar, html.fx .drawer, html.fx .dock { backdrop-filter: blur(10px); }
+html.fx .scrim { backdrop-filter: blur(3px); }
+html.fx .s-running .led { animation: breathe 2.8s ease-in-out infinite; }
+html.fx .edges path { animation: flow 1.2s linear infinite; }
+
 @keyframes breathe {
 	0%, 100% { opacity: 1; }
 	50% { opacity: .45; }

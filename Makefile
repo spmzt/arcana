@@ -3,6 +3,7 @@
 #	make && make check
 #	make install [DESTDIR=dir] [PREFIX=/usr/local]
 #
+# Build products go to obj/, mirroring the tree (share/mk/jailgrid.mk).
 # Needs cblink (libcblink, cblink-gen, cblink.mk), and for the console
 # Kore's headers and emcc(1); see config.mk.sample to point at copies not
 # installed in ${LOCALBASE}.  WITHOUT_CONSOLE=yes builds only the jail
@@ -45,5 +46,9 @@ check: .PHONY
 	    --verbose --results-filter broken,failed | awk '/^===> /{ \
 	    ctx = $$0 == "===> Execution context" } !ctx'; exit 1; }
 .endfor
+
+# Everything built is under obj/.
+clean cleandir: .PHONY
+	rm -rf ${JG_TOP}/obj
 
 .include <bsd.subdir.mk>

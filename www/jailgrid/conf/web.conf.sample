@@ -23,3 +23,9 @@ cookie_secure = true;
 #	cert = "/usr/local/etc/jailgrid/client.pem";
 #	key = "/usr/local/etc/jailgrid/client.key";
 #}
+
+# The console asks GitHub's release feed for the newest version every
+# few hours and says in the UI when there is one; it does not replace
+# itself.  Turn the checks off, or point them elsewhere:
+#update_check = false;
+#update_url = "https://api.github.com/repos/spmzt/geass/releases/latest";

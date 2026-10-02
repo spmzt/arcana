@@ -136,6 +136,30 @@ health_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
 	app.api = status == 200 ? LINK_UP : LINK_DOWN;
+	if (status == 200 && jstr(o, "version") != NULL)
+		snprintf(app.version, sizeof(app.version), "%s",
+		    jstr(o, "version"));
+}
+
+static void
+update_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	app.update_latest[0] = '\0';
+	if (status == 200 && jbool(o, "newer") && jstr(o, "latest") != NULL) {
+		snprintf(app.update_latest, sizeof(app.update_latest), "%s",
+		    jstr(o, "latest"));
+		snprintf(app.update_url, sizeof(app.update_url), "%s",
+		    jstr(o, "url") != NULL ? jstr(o, "url") : "");
+	}
+}
+
+/* Is there a newer release?  The console asks the feed and remembers. */
+void
+check_update(void)
+{
+
+	api("GET", "/api/update", NULL, update_cb, NULL);
 }
 
 void

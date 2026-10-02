@@ -7,6 +7,20 @@ __<jailgrid.mk>__:
 
 JG_TOP:=	${.PARSEDIR:tA:H:H}
 
+# Build products go to ${JG_TOP}/obj, mirroring the tree, unless
+# MAKEOBJDIRPREFIX or MAKEOBJDIR in the environment says where else.
+.if !defined(MAKEOBJDIRPREFIX) && !defined(MAKEOBJDIR)
+.if ${.CURDIR:tA} == ${JG_TOP}
+JG_OBJDIR=	${JG_TOP}/obj
+.else
+JG_OBJDIR=	${JG_TOP}/obj/${.CURDIR:tA:S,^${JG_TOP}/,,}
+.endif
+.if ${.OBJDIR:tA} != ${JG_OBJDIR}
+__objdir!=	mkdir -p ${JG_OBJDIR} && echo ${JG_OBJDIR}
+.OBJDIR:	${JG_OBJDIR}
+.endif
+.endif
+
 .include <bsd.opts.mk>
 
 # WITHOUT_CONSOLE builds only what a jail host runs (jailgridd, jailconf,

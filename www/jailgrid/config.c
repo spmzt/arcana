@@ -45,6 +45,8 @@ get(const ucl_object_t *top, const char *path, const char *def)
  *
  * Without tls, the console runs its own CA from datadir (pki.c).  With
  * it, tls.ca_key names the CA's key when the console is to enrol hosts.
+ * update_check = false stops the release checks; update_url names
+ * another feed in GitHub's releases/latest shape.
  */
 int
 config_load(const char *path)
@@ -74,6 +76,9 @@ config_load(const char *path)
 	cfg.tls_cert = get(top, "tls.cert", NULL);
 	cfg.tls_key = get(top, "tls.key", NULL);
 	cfg.tls_own = ucl_object_lookup(top, "tls") == NULL;
+	o = ucl_object_lookup(top, "update_check");
+	cfg.update_url = o != NULL && !ucl_object_toboolean(o) ? NULL :
+	    get(top, "update_url", JGW_RELEASES);
 	ucl_object_unref(top);
 
 	if (cfg.rp_id == NULL || cfg.origin == NULL) {

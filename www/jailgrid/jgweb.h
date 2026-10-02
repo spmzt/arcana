@@ -25,6 +25,7 @@
 
 #define	JGW_VERSION		"0.1.0"
 #define	JGW_CONF		"/usr/local/etc/jailgrid/web.conf"
+#define	JGW_RELEASES		"https://api.github.com/repos/spmzt/geass/releases/latest"
 
 #define	SESSION_COOKIE		"jg_session"
 #define	SESSION_IDLE		(30 * 60)
@@ -46,6 +47,7 @@ struct config {
 	char		*tls_cert;	/* this console's client certificate */
 	char		*tls_key;
 	bool		 tls_own;	/* no tls {}: the console's own CA */
+	char		*update_url;	/* release feed, or NULL: no checks */
 };
 
 extern struct config cfg;
@@ -103,6 +105,7 @@ int		 api_servers(struct http_request *);
 int		 api_server(struct http_request *);
 int		 api_enrol_tokens(struct http_request *);
 int		 api_enrol(struct http_request *);
+int		 api_update(struct http_request *);
 int		 api_hello(struct http_request *);
 int		 api_jails(struct http_request *);
 int		 api_action(struct http_request *);

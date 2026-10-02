@@ -235,6 +235,23 @@ addToLibrary({
 		document.title = UTF8ToString(p);
 	},
 
+	/* Visual effects on or off, kept per browser; index.html applies
+	 * the class before the first paint. */
+	jg_fx_get: function () {
+		try {
+			return (localStorage.getItem("jg_fx") !== "0" ? 1 : 0);
+		} catch (e) {
+			return (1);
+		}
+	},
+	jg_fx_set: function (on) {
+		try {
+			localStorage.setItem("jg_fx", on ? "1" : "0");
+		} catch (e) {
+		}
+		document.documentElement.classList.toggle("fx", on !== 0);
+	},
+
 	jg_hostname__deps: ["$jgStr"],
 	jg_hostname: function () {
 		return (jgStr(location.host));

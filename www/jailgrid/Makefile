@@ -1,7 +1,7 @@
 # jailgrid.so: the Kore module serving the console and its API.
 
 SHLIB_NAME=	jailgrid.so
-SRCS=		api.c auth.c config.c hosts.c pki.c servers.c store.c
+SRCS=		api.c auth.c config.c hosts.c pki.c servers.c store.c update.c
 LIBDIR?=	${PREFIX}/lib/jailgrid
 MAN=
 
@@ -14,7 +14,7 @@ CBLINK_PARTS=	h,c,client
 .error Kore must be built with tasks (TASKS=1): KORE_FEATURES is "${KORE_FEATURES}"
 .endif
 CFLAGS+=	-I${KORE_INCLUDE} ${KORE_FEATURES} ${UCL_CFLAGS} ${SSL_CFLAGS}
-LDADD+=		${UCL_LIBS} ${SSL_LDFLAGS} -lcrypto
+LDADD+=		${UCL_LIBS} ${SSL_LDFLAGS} -lcrypto -lfetch
 
 # Configuration samples, the routes, and the rc.d(8) script.
 FILESGROUPS+=	CONF RC

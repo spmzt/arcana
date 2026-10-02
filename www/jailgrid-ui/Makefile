@@ -41,15 +41,17 @@ FONTS=		jetbrains-mono-latin-400-normal.woff2 \
 ICONS=		icon.svg icon-192.png icon-512.png icon-maskable-512.png
 STATIC=		index.html style.css manifest.webmanifest
 
+# Objects by their full path, so none is picked up from the source
+# directory through .PATH.
 OBJS=
 .for _s in ${APP_SRCS}
-OBJS+=		${_s:R}.wo
-${_s:R}.wo: ${.CURDIR}/src/${_s} ${.CURDIR}/src/app.h
+OBJS+=		${.OBJDIR}/${_s:R}.wo
+${.OBJDIR}/${_s:R}.wo: ${.CURDIR}/src/${_s} ${.CURDIR}/src/app.h
 	${EMCC} ${EMCFLAGS} -c ${.CURDIR}/src/${_s} -o ${.TARGET}
 .endfor
 .for _s in ${UCL_SRCS}
-OBJS+=		${_s:R}.wo
-${_s:R}.wo: ${LIBUCL_SRC}/src/${_s}
+OBJS+=		${.OBJDIR}/${_s:R}.wo
+${.OBJDIR}/${_s:R}.wo: ${LIBUCL_SRC}/src/${_s}
 	${EMCC} ${UCLFLAGS} -c ${LIBUCL_SRC}/src/${_s} -o ${.TARGET}
 .endfor
 
@@ -57,21 +59,22 @@ all: ${DIST}/sw.js
 
 ${DIST}/jailgrid.js: ${OBJS} ${.CURDIR}/js/bridge.js
 	mkdir -p ${DIST}
-	${EMCC} ${EMLDOPT} ${EMLDFLAGS} ${.ALLSRC:M*.wo} -o ${.TARGET}
+	${EMCC} ${EMLDOPT} ${EMLDFLAGS} ${OBJS} -o ${.TARGET}
 
 # The icon, drawn by a small native program.
-mkicon: ${.CURDIR}/tools/mkicon.c
+MKICON=		${.OBJDIR}/mkicon
+${MKICON}: ${.CURDIR}/tools/mkicon.c
 	${CC} -O2 ${LDFLAGS} -o ${.TARGET} ${.CURDIR}/tools/mkicon.c -lz -lm
 
-${DIST}/icons/icon-192.png: mkicon
+${DIST}/icons/icon-192.png: ${MKICON}
 	mkdir -p ${DIST}/icons
-	${.ALLSRC:tA} 192 ${.TARGET}
-${DIST}/icons/icon-512.png: mkicon
+	${MKICON} 192 ${.TARGET}
+${DIST}/icons/icon-512.png: ${MKICON}
 	mkdir -p ${DIST}/icons
-	${.ALLSRC:tA} 512 ${.TARGET}
-${DIST}/icons/icon-maskable-512.png: mkicon
+	${MKICON} 512 ${.TARGET}
+${DIST}/icons/icon-maskable-512.png: ${MKICON}
 	mkdir -p ${DIST}/icons
-	${.ALLSRC:tA} -m 512 ${.TARGET}
+	${MKICON} -m 512 ${.TARGET}
 
 SHELL_FILES=	${STATIC:S,^,${DIST}/,} ${DIST}/jailgrid.js \
 		${DIST}/morphdom-umd.min.js ${FONTS:S,^,${DIST}/fonts/,} \
@@ -104,6 +107,6 @@ install: .PHONY
 	    sw.js; do ${INSTALL} -m 0444 $$f ${DESTDIR}${WWWDIR}/$$f; done
 
 clean: .PHONY
-	rm -rf ${OBJS} mkicon ${DIST}
+	rm -rf ${OBJS} ${MKICON} ${DIST}
 
 .include <bsd.obj.mk>

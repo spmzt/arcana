@@ -86,7 +86,8 @@ LABEL org.opencontainers.image.source="https://github.com/spmzt/geass" \
     org.opencontainers.image.title="geass" \
     org.opencontainers.image.description="Console for FreeBSD jails on several hosts: a PWA with WebAuthn login, served by Kore" \
     org.opencontainers.image.licenses="BSD-2-Clause" \
-    org.opencontainers.image.authors="spmzt"
+    org.opencontainers.image.authors="spmzt" \
+    io.containers.autoupdate=registry
 # The build stage's base can be newer than the cblink image's.
 RUN env IGNORE_OSVERSION=yes pkg upgrade -y && \
     pkg clean -ay && \
