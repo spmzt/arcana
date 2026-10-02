@@ -134,7 +134,7 @@ instead:
 ```sh
 sysrc jailgridd_enable=YES
 sysrc jailgridd_flags="-l unix:/var/run/jailgridd.sock \
-    -l tcp://0.0.0.0:4310 -A /usr/local/etc/jailgrid/ca.pem \
+    -l tcp://0.0.0.0:4310 -l 'tcp://[::]:4310' -A /usr/local/etc/jailgrid/ca.pem \
     -C /usr/local/etc/jailgrid/host.pem -K /usr/local/etc/jailgrid/host.key"
 service jailgridd start
 ```

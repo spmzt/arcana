@@ -11,7 +11,7 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl s
-.Op Fl a Ar address
+.Op Fl a Ar address ...
 .Op Fl p Ar port
 .Op Fl d Ar directory
 .Op Fl n Ar name
@@ -53,11 +53,14 @@ with the files, or sets them itself with
 The options are:
 .Bl -tag -width indent
 .It Fl a Ar address
-The address
+An address
 .Xr jailgridd 8
-is to listen on, in the printed or applied flags.
-The default is
-.Li 0.0.0.0 .
+is to listen on, in the printed or applied flags; may be given more
+than once.
+The default is every address, over IPv4 and IPv6 both:
+.Li 0.0.0.0
+and
+.Li \&:: .
 .It Fl d Ar directory
 Write the files there instead of
 .Pa /usr/local/etc/jailgrid .

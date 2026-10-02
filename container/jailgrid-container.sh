@@ -91,6 +91,7 @@ if [ ! -f "${conf}" ]; then
 	cat > "${conf}" <<EOF
 server console {
 	bind		0.0.0.0 ${port}
+	bind		:: ${port}
 	tls		${tls}
 }
 

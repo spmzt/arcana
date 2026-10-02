@@ -53,7 +53,7 @@ static void
 usage(void)
 {
 
-	fprintf(stderr, "usage: jailgrid-enrol [-s] [-a address] [-p port] "
+	fprintf(stderr, "usage: jailgrid-enrol [-s] [-a address ...] [-p port] "
 	    "[-d directory] [-n name]\n"
 	    "                     console-url token\n");
 	exit(2);
@@ -196,12 +196,15 @@ main(int argc, char *argv[])
 	ucl_object_t		*o, *body;
 	const ucl_object_t	*v;
 	EVP_PKEY		*key;
-	const char		*dir, *addr, *name, *url, *token, *cert, *ca;
+	const char		*dir, *name, *url, *token, *cert, *ca;
+	const char		*addrs[8];
+	size_t			 naddrs, i;
 	const char		*host;
 	char			*e;
 	char			 hostname[MAXHOSTNAMELEN], api[1024], *csr;
 	char			 capath[MAXPATHLEN], certpath[MAXPATHLEN];
 	char			 keypath[MAXPATHLEN], flags[1024], *reply;
+	char			 listen[256];
 	char			*sysrc[4], *service[4];
 	unsigned char		*json;
 	long			 port;
@@ -209,14 +212,16 @@ main(int argc, char *argv[])
 	int			 ch;
 
 	dir = PATH_ETC;
-	addr = "0.0.0.0";
+	naddrs = 0;
 	name = NULL;
 	port = DEFAULT_PORT;
 	start = false;
 	while ((ch = getopt(argc, argv, "a:d:n:p:s")) != -1) {
 		switch (ch) {
 		case 'a':
-			addr = optarg;
+			if (naddrs == nitems(addrs))
+				errx(1, "at most %zu addresses", nitems(addrs));
+			addrs[naddrs++] = optarg;
 			break;
 		case 'd':
 			dir = optarg;
@@ -299,10 +304,21 @@ main(int argc, char *argv[])
 	printf("enrolled as %s; certificate in %s, key in %s, CA in %s\n", host,
 	    certpath, keypath, capath);
 
-	snprintf(flags, sizeof(flags), "-l unix:/var/run/jailgridd.sock "
-	    "-l tcp://%s%s%s:%ld -A %s -C %s -K %s", strchr(addr, ':') != NULL ?
-	    "[" : "", addr, strchr(addr, ':') != NULL ? "]" : "", port, capath,
-	    certpath, keypath);
+	/* Every address family by default: v6only is on in FreeBSD. */
+	if (naddrs == 0) {
+		addrs[naddrs++] = "0.0.0.0";
+		addrs[naddrs++] = "::";
+	}
+	snprintf(flags, sizeof(flags), "-l unix:/var/run/jailgridd.sock");
+	for (i = 0; i < naddrs; i++) {
+		snprintf(listen, sizeof(listen), " -l tcp://%s%s%s:%ld",
+		    strchr(addrs[i], ':') != NULL ? "[" : "", addrs[i],
+		    strchr(addrs[i], ':') != NULL ? "]" : "", port);
+		strlcat(flags, listen, sizeof(flags));
+	}
+	snprintf(listen, sizeof(listen), " -A %s -C %s -K %s", capath, certpath,
+	    keypath);
+	strlcat(flags, listen, sizeof(flags));
 	if (!start) {
 		printf("to run jailgridd with them:\n"
 		    "  sysrc jailgridd_enable=YES\n"
@@ -326,7 +342,7 @@ main(int argc, char *argv[])
 		    flags);
 	if (!run(service))
 		errx(1, "service jailgridd restart failed");
-	printf("jailgridd is enabled and running on %s:%ld\n", addr, port);
+	printf("jailgridd is enabled and running on port %ld\n", port);
 	free(sysrc[2]);
 	ucl_object_unref(o);
 	free(reply);

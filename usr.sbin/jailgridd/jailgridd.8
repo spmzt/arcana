@@ -142,7 +142,8 @@ socket:
 # jailgridd -A /usr/local/etc/jailgrid/ca.pem \e
     -C /usr/local/etc/jailgrid/host.pem \e
     -K /usr/local/etc/jailgrid/host.key \e
-    -l unix:/var/run/jailgridd.sock -l tcp://192.0.2.10:4310
+    -l unix:/var/run/jailgridd.sock \e
+    -l tcp://0.0.0.0:4310 -l 'tcp://[::]:4310'
 .Ed
 .Sh SEE ALSO
 .Xr cblink 3 ,

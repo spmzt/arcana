@@ -8,6 +8,7 @@
 
 server console {
 	bind		0.0.0.0 443
+	bind		:: 443
 	tls		yes
 }
 
