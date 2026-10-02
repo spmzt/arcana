@@ -224,6 +224,10 @@ authenticator offers one, so security keys keep working as before.
   connections and open sockets, per address family, as `netstat -rnW`,
   `netstat -onW`, `netstat -n` and `sockstat` print them on the host
   (through `--libxo json`), filterable.
+- **Packages**, the fourth tab: what `pkg` can upgrade on the host or in
+  any running jail (`pkg -j`), with **Check** (`pkg update` first), a
+  dry run, and **Upgrade** of the selected packages or of all; the
+  output of `pkg upgrade` is in the activity trace.
 - A jail's **drawer** has its actions, addresses, configuration as jail(8)
   reads it, and its history. Addresses change live (jail_setv(3) and the
   interface alias), persistently (its block in `jail.conf`, edited in

@@ -637,6 +637,115 @@ refresh_stats(struct server *s)
 }
 
 static void
+packages_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+	struct op	*op;
+	bool		 ok;
+
+	c = arg;
+	op = c->op != 0 ? op_find(c->op) : NULL;
+	ok = status == 200 && jbool(o, "ok");
+	if (status == 200 && !ok)
+		err = jstr(o, "error");
+	op_done(op, ok, o, err);
+	if (strcmp(app.pkg.sid, c->sid) == 0 &&
+	    strcmp(app.pkg.jail, c->jail) == 0) {
+		app.pkg.loading = false;
+		app.pkg.busy = false;
+		if (ok) {
+			if (app.pkg.data != NULL)
+				ucl_object_unref(app.pkg.data);
+			app.pkg.data = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+			app.pkg.fetched = jg_now();
+			app.pkg.error[0] = '\0';
+			if (jget(o, "upgraded") != NULL && c->user)
+				snprintf(app.pkg.result, sizeof(app.pkg.result),
+				    "%s: %lld package%s%s", c->jail[0] != '\0' ?
+				    c->jail : "host", (long long)jint(o,
+				    "upgraded", 0), jint(o, "upgraded", 0) == 1 ?
+				    "" : "s", c->dry_run ? " would be upgraded" :
+				    " upgraded");
+		} else
+			snprintf(app.pkg.error, sizeof(app.pkg.error), "%s",
+			    err != NULL ? err : "no answer from the console");
+	}
+	if (c->user)
+		toast(ok ? false : true, "%s: %s", c->jail[0] != '\0' ? c->jail :
+		    "host", ok ? (op != NULL ? op->title : "done") : err != NULL ?
+		    err : "failed");
+	free(c);
+}
+
+/* Pending upgrades of app.pkg.jail on the server; refresh: pkg update. */
+void
+refresh_packages(struct server *s, bool refresh)
+{
+	struct ctx	*c;
+	struct op	*op;
+	char		 url[512], title[160];
+
+	if (!app.online)
+		return;
+	if (strcmp(app.pkg.sid, s->id) != 0) {
+		if (app.pkg.data != NULL)
+			ucl_object_unref(app.pkg.data);
+		app.pkg.data = NULL;
+		app.pkg.error[0] = '\0';
+		app.pkg.result[0] = '\0';
+	}
+	snprintf(app.pkg.sid, sizeof(app.pkg.sid), "%s", s->id);
+	app.pkg.loading = true;
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->jail, sizeof(c->jail), "%s", app.pkg.jail);
+	if (refresh) {
+		snprintf(title, sizeof(title), "pkg update%s%s",
+		    app.pkg.jail[0] != '\0' ? " in " : "", app.pkg.jail);
+		op = op_new(title, s->name);
+		c->op = op->id;
+		app.trace_op = op->id;
+	}
+	snprintf(url, sizeof(url), "/api/servers/%s/packages?jail=%s%s", s->id,
+	    app.pkg.jail, refresh ? "&refresh=1" : "");
+	api("GET", url, NULL, packages_cb, c);
+}
+
+/* pkg upgrade of the named packages (JSON array text), or of all. */
+void
+pkg_upgrade(struct server *s, const char *names, bool dry_run)
+{
+	struct ctx	*c;
+	struct op	*op;
+	char		 url[160], title[160], *qj, *body;
+
+	if (!app.online || app.pkg.busy)
+		return;
+	app.pkg.busy = true;
+	app.pkg.result[0] = '\0';
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->jail, sizeof(c->jail), "%s", app.pkg.jail);
+	c->user = true;
+	c->dry_run = dry_run;
+	snprintf(title, sizeof(title), "pkg upgrade%s%s%s%s", dry_run ?
+	    " (dry run)" : "", app.pkg.jail[0] != '\0' ? " in " : "",
+	    app.pkg.jail, names != NULL ? " of some" : "");
+	op = op_new(title, s->name);
+	c->op = op->id;
+	app.trace_op = op->id;
+	app.trace_step = -1;
+	qj = json_quote(app.pkg.jail);
+	if (asprintf(&body, "{\"jail\":%s,\"packages\":%s,\"dry_run\":%s}",
+	    qj, names != NULL ? names : "[]", dry_run ? "true" : "false") == -1)
+		abort();
+	snprintf(url, sizeof(url), "/api/servers/%s/packages/upgrade", s->id);
+	api("POST", url, body, packages_cb, c);
+	free(qj);
+	free(body);
+}
+
+static void
 network_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	struct ctx	*c;

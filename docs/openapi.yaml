@@ -497,6 +497,72 @@ paths:
                             health: { type: string }
                   trace: { type: array }
 
+  /api/servers/{server}/packages:
+    get:
+      tags: [servers]
+      summary: Packages with a newer version in the repository
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: jail
+          in: query
+          schema: { type: string }
+          description: A running jail; the host without it.
+        - name: refresh
+          in: query
+          schema: { type: string, enum: ["1"] }
+          description: pkg update first.
+      responses:
+        "200":
+          description: The pending upgrades.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  packages:
+                    type: array
+                    items: { $ref: "#/components/schemas/Package" }
+                  trace: { type: array }
+
+  /api/servers/{server}/packages/upgrade:
+    post:
+      tags: [servers]
+      summary: pkg upgrade -y of named packages or of all
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jail: { type: string, description: A running jail, or
+                    absent for the host. }
+                packages:
+                  type: array
+                  items: { type: string }
+                  description: None means all pending ones.
+                dry_run: { type: boolean }
+      responses:
+        "200":
+          description: What pkg did, and what is still pending.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  upgraded: { type: integer, nullable: true }
+                  packages:
+                    type: array
+                    items: { $ref: "#/components/schemas/Package" }
+                  trace: { type: array }
+        "400": { $ref: "#/components/responses/Error" }
+
   /api/servers/{server}/hello:
     get:
       tags: [servers]
@@ -752,6 +818,12 @@ components:
           schema: { $ref: "#/components/schemas/JailChangeReply" }
 
   schemas:
+    Package:
+      type: object
+      properties:
+        name: { type: string }
+        installed: { type: string }
+        available: { type: string, nullable: true }
     Service:
       type: object
       properties:

@@ -114,6 +114,21 @@ for one address family or both.
 .It Cm stats
 CPU busy share since the previous request, load averages, memory, swap
 and the ZFS pools.
+.It Cm packages Oo Fl r Oc Op Ar jail
+Packages of the host, or of the running
+.Ar jail ,
+that the repository has newer versions of
+.Pq Nm pkg version Fl vRl '<' ;
+.Fl r
+fetches the catalogue first
+.Pq Nm pkg update .
+.It Cm pkg-upgrade Oo Fl n Oc Oo Fl j Ar jail Oc Op Ar package ...
+.Nm pkg upgrade Fl y
+of the named packages, or of all of them, on the host or in the running
+.Ar jail ;
+.Fl n
+only shows what would be done.
+What is still pending follows.
 .El
 .Sh EXIT STATUS
 0 when the request succeeded, 1 when it failed, 2 for usage errors.

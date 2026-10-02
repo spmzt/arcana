@@ -14,6 +14,7 @@
 
 #include <sys/types.h>
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -32,6 +33,8 @@ enum op {
 	OP_SERVICE_CONFIG,
 	OP_NETWORK,
 	OP_STATS,
+	OP_PACKAGES,
+	OP_PKG_UPGRADE,
 };
 
 struct call {
@@ -51,6 +54,10 @@ struct call {
 	char			 address[65];
 	char			 ifname[16];
 	uint8_t			 family;	/* network */
+	bool			 refresh;	/* packages */
+	bool			 dry_run;	/* pkg-upgrade */
+	char			**names;	/* pkg-upgrade: packages */
+	size_t			 nnames;
 	struct jg_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
 	char			*json;		/* the reply, from the thread */
@@ -326,7 +333,8 @@ trace_object(struct call *c, const struct jg_step *v, size_t n,
 	    "jg_address" : c->op == OP_SERVICES ? "jg_services" :
 	    c->op == OP_SERVICE_ACTION ? "jg_service_action" :
 	    c->op == OP_NETWORK ? "jg_network" : c->op == OP_STATS ?
-	    "jg_stats" : "jg_service_config";
+	    "jg_stats" : c->op == OP_PACKAGES ? "jg_packages" :
+	    c->op == OP_PKG_UPGRADE ? "jg_pkg_upgrade" : "jg_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
 	for (i = 0; i < n; i++)
@@ -377,6 +385,10 @@ call_run(struct kore_task *t)
 	struct jg_network_req	 nq;
 	struct jg_network_rsp	*nr;
 	struct jg_stats_rsp	*str;
+	struct jg_packages_req	 pq;
+	struct jg_packages_rsp	*pr;
+	struct jg_pkg_upgrade_req uq;
+	struct jg_pkg_upgrade_rsp *ur;
 	const struct jg_step	*steps;
 	ucl_object_t		*top, *srv, *a, *e;
 	cbl_conn		*conn;
@@ -409,6 +421,8 @@ call_run(struct kore_task *t)
 	scr = NULL;
 	nr = NULL;
 	str = NULL;
+	pr = NULL;
+	ur = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
 	snprintf(detail, sizeof(detail), "%s, %s", c->uri, local ?
@@ -527,6 +541,51 @@ call_run(struct kore_task *t)
 			put(top, "service", service_object(sar->service_result));
 		steps = sar->trace.v;
 		nsteps = sar->trace.n;
+		break;
+	case OP_PACKAGES:
+		memset(&pq, 0, sizeof(pq));
+		pq.jail = c->jail[0] != '\0' ? c->jail : NULL;
+		pq.refresh = c->refresh;
+		if ((error = jg_packages(&cl, &pq, &pr)) != 0)
+			goto rpcfail;
+		ok = pr->ok;
+		put_str(top, "error", pr->error);
+		a = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < pr->packages.n; i++) {
+			e = ucl_object_typed_new(UCL_OBJECT);
+			put_str(e, "name", pr->packages.v[i].name);
+			put_str(e, "installed", pr->packages.v[i].installed);
+			put_str(e, "available", pr->packages.v[i].available);
+			ucl_array_append(a, e);
+		}
+		put(top, "packages", a);
+		steps = pr->trace.v;
+		nsteps = pr->trace.n;
+		break;
+	case OP_PKG_UPGRADE:
+		memset(&uq, 0, sizeof(uq));
+		uq.jail = c->jail[0] != '\0' ? c->jail : NULL;
+		uq.dry_run = c->dry_run;
+		uq.names.v = (const char *const *)c->names;
+		uq.names.n = c->nnames;
+		if ((error = jg_pkg_upgrade(&cl, &uq, &ur)) != 0)
+			goto rpcfail;
+		ok = ur->ok;
+		put_str(top, "error", ur->error);
+		put(top, "upgraded", ur->has_upgraded ?
+		    ucl_object_fromint(ur->upgraded) :
+		    ucl_object_typed_new(UCL_NULL));
+		a = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < ur->packages.n; i++) {
+			e = ucl_object_typed_new(UCL_OBJECT);
+			put_str(e, "name", ur->packages.v[i].name);
+			put_str(e, "installed", ur->packages.v[i].installed);
+			put_str(e, "available", ur->packages.v[i].available);
+			ucl_array_append(a, e);
+		}
+		put(top, "packages", a);
+		steps = ur->trace.v;
+		nsteps = ur->trace.n;
 		break;
 	case OP_STATS:
 		if ((error = jg_stats(&cl, &str)) != 0)
@@ -666,6 +725,10 @@ done:
 		jg_network_rsp_free(nr);
 	if (str != NULL)
 		jg_stats_rsp_free(str);
+	if (pr != NULL)
+		jg_packages_rsp_free(pr);
+	if (ur != NULL)
+		jg_pkg_upgrade_rsp_free(ur);
 	if (cl.conn != NULL)
 		jg_client_fini(&cl);
 	cbl_conn_free(conn);
@@ -687,8 +750,8 @@ call_new(struct http_request *req, enum op op)
 
 	t0 = now_us();
 	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
-	    op == OP_SERVICE_ACTION || (op == OP_SERVICE_CONFIG &&
-	    req->method == HTTP_METHOD_POST)))
+	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
+	    (op == OP_SERVICE_CONFIG && req->method == HTTP_METHOD_POST)))
 		return (NULL);
 	t1 = now_us();
 	if (!capture(req, 3, sid, sizeof(sid)) || (s = server_find(sid)) ==
@@ -752,6 +815,7 @@ void
 api_call_free(struct http_request *req)
 {
 	struct call	*c;
+	size_t		 i;
 
 	if ((c = req->hdlr_extra) == NULL || !kore_task_finished(&c->task))
 		return;
@@ -762,6 +826,11 @@ api_call_free(struct http_request *req)
 	kore_free(c->peer);
 	c->sname = c->uri = c->peer = NULL;
 	call_free_vars(c);
+	for (i = 0; i < c->nnames; i++)
+		kore_free(c->names[i]);
+	kore_free(c->names);
+	c->names = NULL;
+	c->nnames = 0;
 }
 
 /* GET /api/servers/<id>/services */
@@ -1017,5 +1086,107 @@ api_stats(struct http_request *req)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_STATS)) == NULL)
 		return (KORE_RESULT_OK);
+	return (call_start(req, c));
+}
+
+/* A query string parameter's value, raw (no %-decoding needed here). */
+static bool
+query_param(struct http_request *req, const char *name, char *buf, size_t len)
+{
+	const char	*q, *e;
+	size_t		 nl;
+
+	buf[0] = '\0';
+	nl = strlen(name);
+	for (q = req->query_string; q != NULL && *q != '\0'; q = e != NULL ?
+	    e + 1 : NULL) {
+		e = strchr(q, '&');
+		if (strncmp(q, name, nl) == 0 && q[nl] == '=') {
+			snprintf(buf, len, "%.*s", (int)(e != NULL ?
+			    (size_t)(e - q) - nl - 1 : strlen(q + nl + 1)),
+			    q + nl + 1);
+			return (true);
+		}
+	}
+	return (false);
+}
+
+/* The jail named by ?jail=<name> or by the body, into the call. */
+static bool
+pick_jail(struct call *c, const char *name)
+{
+	const char	*p;
+
+	if (name == NULL || *name == '\0')
+		return (true);
+	for (p = name; *p != '\0'; p++)
+		if (!isalnum((unsigned char)*p) && strchr("_.-", *p) == NULL)
+			return (false);
+	return (strlcpy(c->jail, name, sizeof(c->jail)) < sizeof(c->jail));
+}
+
+/* GET /api/servers/<id>/packages[?jail=<name>&refresh=1] */
+int
+api_packages(struct http_request *req)
+{
+	struct call	*c;
+	char		 jail[256], v[8];
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_PACKAGES)) == NULL)
+		return (KORE_RESULT_OK);
+	query_param(req, "jail", jail, sizeof(jail));
+	c->refresh = query_param(req, "refresh", v, sizeof(v)) &&
+	    strcmp(v, "1") == 0;
+	if (!pick_jail(c, jail)) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "bad jail name"));
+	}
+	return (call_start(req, c));
+}
+
+/*
+ * POST /api/servers/<id>/packages/upgrade
+ * {"jail": "web", "packages": ["pimd"], "dry_run": false}
+ */
+int
+api_pkg_upgrade(struct http_request *req)
+{
+	ucl_object_t		*body;
+	const ucl_object_t	*a, *v;
+	ucl_object_iter_t	 it;
+	struct call		*c;
+	size_t			 n;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_PKG_UPGRADE)) == NULL)
+		return (KORE_RESULT_OK);
+	body = read_json(req);
+	if (body == NULL || !pick_jail(c, ucl_str(body, "jail"))) {
+		ucl_object_unref(body);
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "a JSON object with "
+		    "an optional jail and packages"));
+	}
+	c->dry_run = ucl_flag(body, "dry_run");
+	a = ucl_object_lookup(body, "packages");
+	if ((n = ucl_array_size(a)) > 0) {
+		c->names = kore_calloc(n, sizeof(*c->names));
+		it = NULL;
+		while ((v = ucl_object_iterate(a, &it, true)) != NULL &&
+		    c->nnames < n)
+			if (ucl_object_type(v) == UCL_STRING)
+				c->names[c->nnames++] =
+				    kore_strdup(ucl_object_tostring(v));
+	}
+	ucl_object_unref(body);
 	return (call_start(req, c));
 }

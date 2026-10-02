@@ -32,6 +32,8 @@ struct job {
 	struct jg_address_req	 addr;
 	struct jg_service_config_req svc;
 	uint8_t			 family;
+	struct jg_pkg_upgrade_req pkg;
+	bool			 refresh;
 	char			*peer;
 };
 
@@ -172,6 +174,8 @@ worker(void *arg)
 	struct jg_service_config_rsp scr;
 	struct jg_network_rsp	 nr;
 	struct jg_stats_rsp	 str;
+	struct jg_packages_rsp	 pr;
+	struct jg_pkg_upgrade_rsp ur;
 	const char		*what, *error;
 	bool			 ok;
 	int			 root, rc;
@@ -204,6 +208,39 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &ar.trace.v, &ar.trace.n);
 		rc = jg_action_reply(j->req, &ar);
+		break;
+	case JG_CMD_PACKAGES:
+		what = wfmt(&w, "packages%s%s%s", j->jail != NULL ? " of jail " :
+		    "", j->jail != NULL ? j->jail : "", j->refresh ?
+		    " (refresh)" : "");
+		root = step_begin(&w, JG_STEP_KIND_DAEMON, "jailgridd", "%s",
+		    what);
+		memset(&pr, 0, sizeof(pr));
+		pthread_mutex_lock(&change_lock);
+		do_packages(&w, j->jail, j->refresh, &pr);
+		pthread_mutex_unlock(&change_lock);
+		ok = pr.ok;
+		error = pr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &pr.trace.v, &pr.trace.n);
+		rc = jg_packages_reply(j->req, &pr);
+		break;
+	case JG_CMD_PKG_UPGRADE:
+		what = wfmt(&w, "pkg upgrade%s%s%s%s", j->jail != NULL ?
+		    " in jail " : "", j->jail != NULL ? j->jail : "",
+		    j->pkg.names.n > 0 ? " (some)" : " (all)",
+		    j->pkg.dry_run ? " dry-run" : "");
+		root = step_begin(&w, JG_STEP_KIND_DAEMON, "jailgridd", "%s",
+		    what);
+		memset(&ur, 0, sizeof(ur));
+		pthread_mutex_lock(&change_lock);
+		do_pkg_upgrade(&w, &j->pkg, &ur);
+		pthread_mutex_unlock(&change_lock);
+		ok = ur.ok;
+		error = ur.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &ur.trace.v, &ur.trace.n);
+		rc = jg_pkg_upgrade_reply(j->req, &ur);
 		break;
 	case JG_CMD_STATS:
 		what = "stats";
@@ -313,6 +350,9 @@ job_free(struct job *j)
 		free((char *)(uintptr_t)j->svc.variables.v[i].value);
 	}
 	free((void *)(uintptr_t)j->svc.variables.v);
+	for (i = 0; i < j->pkg.names.n; i++)
+		free((char *)(uintptr_t)j->pkg.names.v[i]);
+	free((void *)(uintptr_t)j->pkg.names.v);
 	free(j->jail);
 	free((char *)(uintptr_t)j->addr.jail);
 	free((char *)(uintptr_t)j->addr.address);
@@ -508,5 +548,53 @@ jg_stats_doit(cbl_req *req, void *arg __unused)
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = JG_CMD_STATS;
+	return (start(j));
+}
+
+int
+jg_packages_doit(cbl_req *req, const struct jg_packages_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = JG_CMD_PACKAGES;
+	j->jail = xstrdup(rq->jail);
+	j->refresh = rq->refresh;
+	return (start(j));
+}
+
+int
+jg_pkg_upgrade_doit(cbl_req *req, const struct jg_pkg_upgrade_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+	const char	**v;
+	size_t		 i;
+
+	if (rq->jail != NULL && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	for (i = 0; i < rq->names.n; i++)
+		if (rq->names.v[i] == NULL)
+			return (reject(req, "a package without a name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = JG_CMD_PKG_UPGRADE;
+	j->jail = xstrdup(rq->jail);
+	j->pkg.jail = j->jail;
+	j->pkg.dry_run = rq->dry_run;
+	if (rq->names.n > 0) {
+		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL)
+			err(1, "calloc");
+		for (i = 0; i < rq->names.n; i++)
+			v[i] = xstrdup(rq->names.v[i]);
+		j->pkg.names.v = v;
+		j->pkg.names.n = rq->names.n;
+	}
 	return (start(j));
 }

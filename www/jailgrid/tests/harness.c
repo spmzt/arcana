@@ -174,7 +174,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[20];
+	char	*argv[24];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -248,6 +248,22 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\"rt-entry\": [{\"destination\": \"default\", \"gateway\": "
 	    "\"10.0.0.1\", \"flags\": \"UGS\", \"interface-name\": \"em0\"}]}]}}}}'\n");
 	ATF_REQUIRE(chmod("fake-netstat", 0755) == 0);
+	/* pkg(8): ./pending holds "name-version remote" lines; upgrade -y
+	 * removes the named ones, or all. */
+	put("pending", "aria2-1.37.0_1 1.37.0_2\npimd-3.1.0 3.2.0\n");
+	put("fake-pkg", "#!/bin/sh\n[ \"$1\" = -j ] && shift 2\n"
+	    "case \"$1\" in\n"
+	    "update) exit 0 ;;\n"
+	    "version) [ -s pending ] || exit 1; while read nv r; do "
+	    "printf '%s < needs updating (remote has %s)\\n' \"$nv\" \"$r\"; "
+	    "done < pending ;;\n"
+	    "upgrade) shift; d=no; [ \"$1\" = -n ] && d=yes; shift; "
+	    "while read nv r; do n=${nv%-*}; if [ $# -eq 0 ] || echo \" $* \" | "
+	    "grep -q \" $n \"; then echo \"Upgrading $n to $r\"; [ $d = yes ] || "
+	    "{ grep -v \"^$nv \" pending > p.new; mv p.new pending; }; fi; "
+	    "done < pending ;;\n"
+	    "esac\n");
+	ATF_REQUIRE(chmod("fake-pkg", 0755) == 0);
 
 	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n%s", RP_ID,
@@ -288,7 +304,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[15] = (char *)(uintptr_t)"./fake-sysrc";
 	argv[16] = (char *)(uintptr_t)"-N";
 	argv[17] = (char *)(uintptr_t)"./fake-netstat";
-	argv[18] = NULL;
+	argv[18] = (char *)(uintptr_t)"-P";
+	argv[19] = (char *)(uintptr_t)"./fake-pkg";
+	argv[20] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "jailgridd.out");
 	ATF_REQUIRE((fp = fopen("jailgridd.pid", "w")) != NULL);

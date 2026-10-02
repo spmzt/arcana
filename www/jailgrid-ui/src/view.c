@@ -509,9 +509,11 @@ stage(struct html *h)
 	    "data-arg=\"jails\">Jails</button><button class=\"tab%s\" "
 	    "data-act=\"tab\" data-arg=\"services\">Services</button>"
 	    "<button class=\"tab%s\" data-act=\"tab\" data-arg=\"network\">"
-	    "Network</button></nav>",
+	    "Network</button><button class=\"tab%s\" data-act=\"tab\" "
+	    "data-arg=\"packages\">Packages</button></nav>",
 	    app.tab == TAB_JAILS ? " on" : "", app.tab == TAB_SERVICES ?
-	    " on" : "", app.tab == TAB_NETWORK ? " on" : "");
+	    " on" : "", app.tab == TAB_NETWORK ? " on" : "",
+	    app.tab == TAB_PACKAGES ? " on" : "");
 	if (app.tab == TAB_SERVICES) {
 		view_services(h, s);
 		h_raw(h, "</main>");
@@ -519,6 +521,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_NETWORK) {
 		view_network(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_PACKAGES) {
+		view_packages(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1390,4 +1397,99 @@ view_gauges(struct html *h, struct server *s)
 	if (size > 0)
 		gauge(h, "ZFS", "zfs", s->hist[2], n, zfs, "%", d3);
 	h_raw(h, "</section>");
+}
+
+/* The packages tab: the host or a running jail, and what pkg can upgrade. */
+void
+view_packages(struct html *h, struct server *s)
+{
+	const ucl_object_t	*j, *p;
+	ucl_object_iter_t	 it;
+	char			 age[32], fname[300];
+	int			 n;
+	bool			 mine;
+
+	mine = app.pkg.data != NULL && strcmp(app.pkg.sid, s->id) == 0;
+	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"pkg-target\" "
+	    "data-arg=\"\">host</button>", app.pkg.jail[0] == '\0' ? " on" : "");
+	it = NULL;
+	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL) {
+		if (jstr(j, "name") == NULL || jstr(j, "state") == NULL ||
+		    strcmp(jstr(j, "state"), "running") != 0)
+			continue;
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"pkg-target\"",
+		    strcmp(app.pkg.jail, jstr(j, "name")) == 0 ? " on" : "");
+		h_attr(h, "data-arg", jstr(j, "name"));
+		h_raw(h, ">");
+		h_txt(h, jstr(j, "name"));
+		h_raw(h, "</button>");
+	}
+	h_raw(h, "</nav>");
+	h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-check\"%s "
+	    "title=\"pkg update, then list what has a newer version\">Check"
+	    "</button>", app.pkg.loading || app.pkg.busy ? " disabled" : "");
+	if (mine) {
+		fmt_age(age, sizeof(age), app.pkg.fetched);
+		h_raw(h, "<span class=\"tally\">");
+		h_txt(h, age);
+		h_raw(h, "</span>");
+	}
+	h_raw(h, "</div>");
+	if (app.pkg.error[0] != '\0' && strcmp(app.pkg.sid, s->id) == 0) {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, app.pkg.error);
+		h_raw(h, "</div>");
+	}
+	if (app.pkg.result[0] != '\0' && mine) {
+		h_raw(h, "<div class=\"notice\">");
+		h_txt(h, app.pkg.result);
+		h_raw(h, "</div>");
+	}
+	if (!mine) {
+		h_raw(h, app.pkg.loading ? "<div class=\"empty\"><div class="
+		    "\"loader\"></div><p class=\"dim\">pkg version against the "
+		    "repository…</p></div>" : "<div class=\"empty\"><h2>No data"
+		    "</h2><p>The host has not answered yet.</p></div>");
+		return;
+	}
+	n = 0;
+	h_raw(h, "<form data-form=\"packages\" class=\"pkgs\">"
+	    "<table class=\"net\"><thead><tr><th></th><th>Package</th>"
+	    "<th>Installed</th><th>Available</th></tr></thead><tbody>");
+	it = NULL;
+	while ((p = ucl_object_iterate(jget(app.pkg.data, "packages"), &it,
+	    true)) != NULL) {
+		if (jstr(p, "name") == NULL || (app.filter[0] != '\0' &&
+		    strstr(jstr(p, "name"), app.filter) == NULL))
+			continue;
+		snprintf(fname, sizeof(fname), "p:%s", jstr(p, "name"));
+		h_raw(h, "<tr><td><input type=\"checkbox\"");
+		h_attr(h, "name", fname);
+		h_raw(h, "></td><td>");
+		h_txt(h, jstr(p, "name"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(p, "installed"));
+		h_raw(h, "</td><td class=\"c-run\">");
+		h_txt(h, jstr(p, "available"));
+		h_raw(h, "</td></tr>");
+		n++;
+	}
+	h_raw(h, "</tbody></table>");
+	if (n == 0)
+		h_raw(h, "<div class=\"empty\"><p>Everything is up to date."
+		    "</p></div>");
+	else
+		h_fmt(h, "<div class=\"buttons\"><span class=\"dim\">%d pending; "
+		    "none selected means all</span><button class=\"ghost\" "
+		    "value=\"dry\"%s>Dry run</button><button class=\"danger\" "
+		    "value=\"go\"%s>Upgrade</button></div>", n,
+		    app.pkg.busy ? " disabled" : "", app.pkg.busy ?
+		    " disabled" : "");
+	h_raw(h, "</form>");
+	if (app.pkg.busy)
+		h_raw(h, "<div class=\"notice\"><div class=\"loader\"></div>"
+		    "pkg upgrade is running; its output lands in the activity "
+		    "trace.</div>");
 }

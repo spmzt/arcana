@@ -19,6 +19,9 @@ definitions:
   - name: max-services
     type: const
     value: 1024
+  - name: max-packages
+    type: const
+    value: 16384
   - name: max-json
     type: const
     value: 4194304
@@ -195,6 +198,25 @@ attribute-sets:
       - name: stats
         type: nest
         nested-attributes: stats
+      - name: packages
+        type: nest
+        nested-attributes: package
+        multi-attr: true
+        doc: Packages with a newer version in the repository.
+        checks:
+          max-count: max-packages
+      - name: names
+        type: text
+        multi-attr: true
+        doc: Package names to upgrade; none means all of them.
+        checks:
+          max-count: max-packages
+      - name: refresh
+        type: flag
+        doc: Fetch the repository catalogue first (pkg update).
+      - name: upgraded
+        type: u32
+        doc: How many packages pkg upgrade reported.
       - name: commands
         type: text
         multi-attr: true
@@ -348,6 +370,17 @@ attribute-sets:
         nested-attributes: pool
         multi-attr: true
         doc: ZFS pools, from zpool list.
+
+  - name: package
+    attributes:
+      - name: name
+        type: text
+      - name: installed
+        type: text
+        doc: The installed version.
+      - name: available
+        type: text
+        doc: The repository's version.
 
   - name: pool
     attributes:
@@ -557,4 +590,43 @@ operations:
           - ok
           - error
           - stats
+          - trace
+
+  - name: packages
+    attribute-set: jailgrid
+    auth: true
+    doc: |
+      Packages of the host, or of a running jail, that the repository has
+      newer versions of (pkg version -vRl '<'), after pkg update with
+      refresh.
+    do:
+      request:
+        attributes:
+          - jail
+          - refresh
+      reply:
+        attributes:
+          - ok
+          - error
+          - packages
+          - trace
+
+  - name: pkg-upgrade
+    attribute-set: jailgrid
+    auth: true
+    doc: |
+      pkg upgrade -y on the host or in a running jail, of the named
+      packages or of all; dry-run only shows what pkg would do.
+    do:
+      request:
+        attributes:
+          - jail
+          - names
+          - dry-run
+      reply:
+        attributes:
+          - ok
+          - error
+          - upgraded
+          - packages
           - trace

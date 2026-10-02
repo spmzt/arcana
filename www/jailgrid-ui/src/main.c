@@ -265,6 +265,7 @@ close_modal(void)
 static void
 submit(const char *form, const ucl_object_t *f)
 {
+	struct server	*s2;
 	const char	*s;
 	bool		 dry;
 
@@ -305,6 +306,43 @@ submit(const char *form, const ucl_object_t *f)
 		ucl_object_unref(top);
 		service_config(app.service, b);
 		free(b);
+	} else if (strcmp(form, "packages") == 0) {
+		/* Checked boxes p:<name>; the button says dry run or not. */
+		const ucl_object_t *f2;
+		ucl_object_iter_t it;
+		ucl_object_t *arr;
+		char *names;
+		bool any;
+
+		if ((s2 = cur_server()) == NULL)
+			return;
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		any = false;
+		it = NULL;
+		while ((f2 = ucl_object_iterate(f, &it, true)) != NULL) {
+			const char *k = ucl_object_key(f2);
+
+			if (k != NULL && strncmp(k, "p:", 2) == 0 &&
+			    ucl_object_type(f2) == UCL_BOOLEAN &&
+			    ucl_object_toboolean(f2)) {
+				ucl_array_append(arr,
+				    ucl_object_fromstring(k + 2));
+				any = true;
+			}
+		}
+		names = (char *)ucl_object_emit(arr, UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(arr);
+		dry = jstr(f, "__submit") != NULL &&
+		    strcmp(jstr(f, "__submit"), "dry") == 0;
+		if (dry)
+			pkg_upgrade(s2, any ? names : NULL, true);
+		else if (any)
+			confirm("Upgrade packages", "pkg upgrade -y of the "
+			    "selected packages; services may restart.",
+			    "Upgrade", true, "", "do-pkg-upgrade", "", names);
+		else
+			dispatch("pkg-upgrade-all", "", "");
+		free(names);
 	} else if (strcmp(form, "add-key") == 0) {
 		add_key(jstr(f, "name") != NULL ? jstr(f, "name") : "");
 	} else if (strcmp(form, "address") == 0) {
@@ -358,10 +396,13 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_services(s, false);
 			if (app.tab == TAB_NETWORK)
 				refresh_network(s, false);
+			if (app.tab == TAB_PACKAGES)
+				refresh_packages(s, false);
 		}
 	} else if (strcmp(act, "tab") == 0 && s != NULL) {
 		app.tab = strcmp(arg, "services") == 0 ? TAB_SERVICES :
-		    strcmp(arg, "network") == 0 ? TAB_NETWORK : TAB_JAILS;
+		    strcmp(arg, "network") == 0 ? TAB_NETWORK :
+		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES : TAB_JAILS;
 		app.jail[0] = '\0';
 		close_service();
 		if (app.tab == TAB_SERVICES && s->services == NULL)
@@ -369,6 +410,27 @@ dispatch(const char *act, const char *arg, const char *value)
 		if (app.tab == TAB_NETWORK && (app.net.data == NULL ||
 		    strcmp(app.net.sid, s->id) != 0))
 			refresh_network(s, false);
+		if (app.tab == TAB_PACKAGES && (app.pkg.data == NULL ||
+		    strcmp(app.pkg.sid, s->id) != 0))
+			refresh_packages(s, false);
+	} else if (strcmp(act, "pkg-target") == 0 && s != NULL) {
+		snprintf(app.pkg.jail, sizeof(app.pkg.jail), "%s", arg);
+		if (app.pkg.data != NULL)
+			ucl_object_unref(app.pkg.data);
+		app.pkg.data = NULL;
+		app.pkg.result[0] = '\0';
+		refresh_packages(s, false);
+	} else if (strcmp(act, "pkg-check") == 0 && s != NULL) {
+		refresh_packages(s, true);
+	} else if (strcmp(act, "pkg-upgrade-all") == 0 && s != NULL) {
+		snprintf(body, sizeof(body), "pkg upgrade -y %s%s: every "
+		    "package with a newer version in the repository is "
+		    "replaced; services may restart.", app.pkg.jail[0] != '\0' ?
+		    "in jail " : "on the host", app.pkg.jail);
+		confirm("Upgrade all packages", body, "Upgrade", true, "",
+		    "do-pkg-upgrade", "", "");
+	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {
+		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false);
 	} else if (strcmp(act, "net-kind") == 0 && s != NULL) {
 		app.net.kind = strcmp(arg, "nexthops") == 0 ? NET_NEXTHOPS :
 		    strcmp(arg, "connections") == 0 ? NET_CONNECTIONS :
@@ -391,6 +453,9 @@ dispatch(const char *act, const char *arg, const char *value)
 		} else if (app.tab == TAB_NETWORK) {
 			app.net.loading = false;
 			refresh_network(s, true);
+		} else if (app.tab == TAB_PACKAGES) {
+			app.pkg.loading = false;
+			refresh_packages(s, true);
 		} else {
 			s->loading = false;
 			refresh_jails(s, true);

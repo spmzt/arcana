@@ -28,6 +28,7 @@
 .Op Fl X Ar sockstat
 .Op Fl W Ar swapinfo
 .Op Fl Z Ar zpool
+.Op Fl P Ar pkg
 .Sh DESCRIPTION
 .Nm
 serves the
@@ -164,6 +165,13 @@ The
 and
 .Xr zpool 8
 programs, for the usage figures; a host without ZFS reports no pools.
+.It Fl P Ar pkg
+The
+.Xr pkg 8
+program, for pending upgrades and upgrading, on the host and with
+.Fl j
+in running jails.
+Upgrades may run for up to an hour.
 .El
 .Sh FILES
 .Bl -tag -width Ds -compact

@@ -101,6 +101,19 @@ enum tab {
 	TAB_JAILS,
 	TAB_SERVICES,
 	TAB_NETWORK,
+	TAB_PACKAGES,
+};
+
+/* The packages tab: pending upgrades of the host or of one jail. */
+struct pkgview {
+	char		 sid[9];	/* the server they came from */
+	char		 jail[256];	/* "" for the host */
+	ucl_object_t	*data;		/* the reply, or NULL */
+	double		 fetched;
+	bool		 loading;
+	bool		 busy;		/* an upgrade runs */
+	char		 error[256];
+	char		 result[256];	/* what the last upgrade said */
 };
 
 enum netkind {
@@ -230,6 +243,7 @@ struct app {
 	bool		 svc_loading;
 	char		 svc_error[256];
 	struct netview	 net;
+	struct pkgview	 pkg;
 	bool		 servers_loaded;
 
 	struct op	 ops[MAX_OPS];	/* newest first */
@@ -272,6 +286,8 @@ void		 service_action(const char *, const char *);
 void		 service_config(const char *, const char *);
 void		 refresh_network(struct server *, bool);
 void		 refresh_stats(struct server *);
+void		 refresh_packages(struct server *, bool);
+void		 pkg_upgrade(struct server *, const char *, bool);
 void		 address_change(const char *, const char *, bool, bool, bool,
 		    bool);
 void		 check_health(void);
@@ -299,6 +315,7 @@ void		 view_services(struct html *, struct server *);
 void		 view_service_drawer(struct html *, struct server *);
 void		 view_network(struct html *, struct server *);
 void		 view_gauges(struct html *, struct server *);
+void		 view_packages(struct html *, struct server *);
 const char	*state_class(const struct server *, const ucl_object_t *,
 		    const struct jailui *);
 void		 fmt_age(char *, size_t, double);

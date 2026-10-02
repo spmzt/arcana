@@ -29,11 +29,12 @@
 #define	PATH_SOCKSTAT_BIN	"/usr/bin/sockstat"
 #define	PATH_SWAPINFO_BIN	"/usr/sbin/swapinfo"
 #define	PATH_ZPOOL_BIN		"/sbin/zpool"
+#define	PATH_PKG_BIN		"/usr/sbin/pkg"
 
 /* jail -e separator: ASCII unit separator, never in a jail.conf value. */
 #define	JAIL_E_SEP		"\037"
 
-#define	EXEC_TIMEOUT_SEC	600
+#define	EXEC_TIMEOUT_SEC	3600	/* a pkg upgrade can take a while */
 #define	TRACE_MAX		JG_MAX_STEPS
 #define	TRACE_DEPTH		16
 
@@ -48,6 +49,7 @@ struct opts {
 	const char	*sockstat_bin;
 	const char	*swapinfo_bin;
 	const char	*zpool_bin;
+	const char	*pkg_bin;
 	bool		 debug;
 };
 
@@ -198,6 +200,12 @@ int		 do_network(struct work *, uint8_t, uint8_t,
 
 /* stats.c */
 int		 do_stats(struct work *, struct jg_stats_rsp *);
+
+/* packages.c */
+int		 do_packages(struct work *, const char *, bool,
+		    struct jg_packages_rsp *);
+int		 do_pkg_upgrade(struct work *, const struct jg_pkg_upgrade_req *,
+		    struct jg_pkg_upgrade_rsp *);
 
 /* main.c */
 void		 logmsg(int, const char *, ...) __printflike(2, 3);

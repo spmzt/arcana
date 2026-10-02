@@ -614,6 +614,42 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK(atoll(jstr(&r, "stats.mem_total")) > 0);
 	resp_free(&r);
 
+	/* Packages: pending upgrades, a dry run, an upgrade of one. */
+	snprintf(path, sizeof(path), "%.*s/packages?refresh=1",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("aria2", jstr(&r, "packages.0.name"));
+	ATF_CHECK_STREQ("1.37.0_2", jstr(&r, "packages.0.available"));
+	ATF_CHECK_STREQ("pimd", jstr(&r, "packages.1.name"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/packages?jail=web",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK_MSG(strstr(jstr(&r, "error"), "not running") != NULL, "%s",
+	    jstr(&r, "error"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/packages/upgrade",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"packages\":[\"pimd\"],\"dry_run\":true}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("pimd", jstr(&r, "packages.1.name"));
+	resp_free(&r);
+	http("POST", path, "{\"packages\":[\"pimd\"]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("1", jstr(&r, "upgraded"));
+	ATF_CHECK(jstr(&r, "packages.1.name") == NULL);
+	ATF_CHECK_STREQ("aria2", jstr(&r, "packages.0.name"));
+	resp_free(&r);
+	http("POST", path, "{\"jail\":\"../x\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
 	/* The network tables: netstat's JSON, inside ours. */
 	snprintf(path, sizeof(path), "%.*s/net/routes?family=inet",
 	    (int)(strlen(base) - strlen("/services")), base);

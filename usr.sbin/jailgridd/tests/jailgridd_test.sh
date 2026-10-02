@@ -142,6 +142,42 @@ EOS
 	chmod +x fake-netstat fake-sockstat
 }
 
+# pkg(8) stand-in: the pending upgrades live in ./pending, one per line
+# as "name-installed remote"; upgrade -y removes the named ones (or all).
+write_pkg()
+{
+	printf 'aria2-1.37.0_1 1.37.0_2
+pimd-3.1.0 3.2.0
+' > pending
+	cat > fake-pkg <<'EOS'
+#!/bin/sh
+echo "fake-pkg $*" >&2
+[ "$1" = -j ] && shift 2
+case "$1" in
+update)	exit 0 ;;
+version)
+	[ -s pending ] || exit 1
+	while read nv remote; do
+		printf '%-30s <   needs updating (remote has %s)
+' "$nv" "$remote"
+	done < pending ;;
+upgrade)
+	shift; dry=no; [ "$1" = -n ] && dry=yes; shift
+	[ -s pending ] || { echo "Your packages are up to date."; exit $([ $dry = yes ] && echo 1 || echo 0); }
+	while read nv remote; do
+		name=${nv%-*}
+		if [ $# -eq 0 ] || echo " $* " | grep -q " $name "; then
+			echo "Upgrading $name from ${nv##*-} to $remote..."
+			[ $dry = yes ] || grep -v "^$nv " pending > pending.new
+			[ $dry = yes ] || mv pending.new pending
+		fi
+	done < pending ;;
+*)	exit 2 ;;
+esac
+EOS
+	chmod +x fake-pkg
+}
+
 # Start jailgridd on ./s.sock and wait until it answers.
 start_daemon()
 {
@@ -152,11 +188,12 @@ start_daemon()
 	SOCK="unix:$(pwd)/s.sock"
 	write_rc
 	write_net
+	write_pkg
 	"$JGD" -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \
 	    -D "$(pwd)/etc/jail.conf.d" -j "$(pwd)/fake-jail" \
 	    -R "$(pwd)/rc.d:$(pwd)/local/rc.d" -s "$(pwd)/fake-service" \
 	    -y "$(pwd)/fake-sysrc" -N "$(pwd)/fake-netstat" \
-	    -X "$(pwd)/fake-sockstat" > daemon.out 2>&1 &
+	    -X "$(pwd)/fake-sockstat" -P "$(pwd)/fake-pkg" > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
@@ -523,6 +560,43 @@ network_cleanup()
 	stop_daemon
 }
 
+atf_test_case packages cleanup
+packages_head()
+{
+	atf_set "descr" "pending upgrades and pkg upgrade, on the host and in a jail, through pkg(8)"
+}
+packages_body()
+{
+	start_daemon
+	atf_check -o save:pk.out "$JGC" -t -c "$SOCK" packages -r
+	atf_check -o match:'^aria2 +1\.37\.0_1 +1\.37\.0_2' cat pk.out
+	atf_check -o match:'^pimd +3\.1\.0 +3\.2\.0' cat pk.out
+	atf_check -o match:'fake-pkg update -q' cat pk.out
+	atf_check -o match:"fake-pkg version -vRl <" cat pk.out
+	# No refresh: no pkg update.
+	atf_check -o not-match:'fake-pkg update' "$JGC" -t -c "$SOCK" packages
+	# A jail must be running for pkg -j; web is not.
+	atf_check -s exit:1 -o ignore -e match:"jail 'web' is not running" \
+	    "$JGC" -c "$SOCK" packages web
+	atf_check -s exit:1 -e match:'invalid jail name' \
+	    "$JGC" -c "$SOCK" packages ../x
+	# Dry run changes nothing; a real one upgrades, then nothing pends.
+	atf_check -o match:'fake-pkg upgrade -n pimd' -o match:'^pimd ' \
+	    "$JGC" -t -c "$SOCK" pkg-upgrade -n pimd
+	atf_check -o save:up.out "$JGC" -t -c "$SOCK" pkg-upgrade pimd
+	atf_check -o match:'Upgraded: 1' cat up.out
+	atf_check -o match:'fake-pkg upgrade -y pimd' cat up.out
+	atf_check -o match:'^aria2 ' -o not-match:'^pimd ' cat up.out
+	atf_check -o match:'Upgraded: 1' -o match:'nothing to upgrade' \
+	    "$JGC" -c "$SOCK" pkg-upgrade
+	atf_check -s exit:1 -o ignore -e match:"'a;b' is not a package name" \
+	    "$JGC" -c "$SOCK" pkg-upgrade 'a;b'
+}
+packages_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case hello
@@ -540,4 +614,5 @@ atf_init_test_cases()
 	atf_add_test_case service_actions
 	atf_add_test_case service_config
 	atf_add_test_case network
+	atf_add_test_case packages
 }

@@ -43,6 +43,7 @@ struct opts opts = {
 	.sockstat_bin = PATH_SOCKSTAT_BIN,
 	.swapinfo_bin = PATH_SWAPINFO_BIN,
 	.zpool_bin = PATH_ZPOOL_BIN,
+	.pkg_bin = PATH_PKG_BIN,
 };
 
 static bool	foreground;
@@ -62,7 +63,7 @@ usage(void)
 	    "[-l uri] [-p pidfile]\n"
 	    "                 [-R rc.d dirs] [-s service] [-y sysrc]\n"
 	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
-	    "[-Z zpool]\n");
+	    "[-Z zpool] [-P pkg]\n");
 	exit(2);
 }
 
@@ -129,7 +130,7 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	while ((ch = getopt(argc, argv, "A:C:D:dFf:g:j:K:l:N:p:R:s:W:X:y:Z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:C:D:dFf:g:j:K:l:N:P:p:R:s:W:X:y:Z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -188,6 +189,9 @@ main(int argc, char *argv[])
 			break;
 		case 'Z':
 			opts.zpool_bin = optarg;
+			break;
+		case 'P':
+			opts.pkg_bin = optarg;
 			break;
 		default:
 			usage();

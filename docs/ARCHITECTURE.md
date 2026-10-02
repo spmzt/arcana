@@ -47,6 +47,8 @@ policies, client wrappers and server glue from it.
 | `service-config` | a service's rc.conf variables, read and set | `sysrc -a`, `sysrc key=value`, `sysrc -x key`, `service <name> describe` |
 | `network` | routes, nexthops, connections, sockets | `netstat --libxo json -rnW / -onW / -n -f <family>`, `sockstat --libxo json -4/-6`; one run per family, joined |
 | `stats` | CPU, load, memory, swap, ZFS pools | `kern.cp_time` between requests, `vm.loadavg`, `vm.stats.vm.*`, `swapinfo -k`, `zpool list -Hp` |
+| `packages` | pending upgrades of the host or a running jail | `pkg [-j jail] update -q`, `pkg [-j jail] version -vRl '<'` |
+| `pkg-upgrade` | upgrade all or named packages, or show what would be | `pkg [-j jail] upgrade -y|-n [names]`, then `pkg version` again |
 
 Every operation requires an authenticated peer: a client certificate
 from the jailgrid CA over TCP, or access to the 0600 AF_UNIX socket.

@@ -65,6 +65,9 @@ static int	cmd_address(struct jg_client *, int, char **);
 static int	cmd_services(struct jg_client *);
 static int	cmd_net(struct jg_client *, int, char **);
 static int	cmd_stats(struct jg_client *);
+static int	cmd_packages(struct jg_client *, int, char **);
+static int	cmd_pkg_upgrade(struct jg_client *, int, char **);
+static void	emit_packages(const struct jg_package *, size_t);
 static int	cmd_service(struct jg_client *, int, char **);
 static void	emit_service(const struct jg_service *, bool);
 
@@ -84,7 +87,9 @@ usage(void)
 	    "disable\n"
 	    "    service name config [-x key ...] [key=value ...]\n"
 	    "    net routes | nexthops | connections | sockets [-4 | -6]\n"
-	    "    stats\n");
+	    "    stats\n"
+	    "    packages [-r] [jail]\n"
+	    "    pkg-upgrade [-n] [-j jail] [package ...]\n");
 	exit(2);
 }
 
@@ -672,6 +677,105 @@ cmd_stats(struct jg_client *cl)
 	return (error);
 }
 
+static void
+emit_packages(const struct jg_package *v, size_t n)
+{
+	size_t	i;
+
+	if (n == 0) {
+		xo_emit("{P:nothing to upgrade}\n");
+		return;
+	}
+	xo_emit("{T:/%-40s} {T:/%-20s} {T:/%s}\n", "PACKAGE", "INSTALLED",
+	    "AVAILABLE");
+	xo_open_list("package");
+	for (i = 0; i < n; i++) {
+		xo_open_instance("package");
+		xo_emit("{k:name/%-40s/%s} {:installed/%-20s/%s} "
+		    "{:available/%s}\n", v[i].name, v[i].installed,
+		    v[i].available != NULL ? v[i].available : "");
+		xo_close_instance("package");
+	}
+	xo_close_list("package");
+}
+
+/* packages [-r] [jail]: what has a newer version in the repository. */
+static int
+cmd_packages(struct jg_client *cl, int argc, char **argv)
+{
+	struct jg_packages_req	 req;
+	struct jg_packages_rsp	*rsp;
+	int			 ch, error;
+
+	memset(&req, 0, sizeof(req));
+	optind = 1;
+	while ((ch = getopt(argc, argv, "r")) != -1) {
+		switch (ch) {
+		case 'r':
+			req.refresh = true;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc - optind > 1)
+		usage();
+	if (argc - optind == 1)
+		req.jail = argv[optind];
+	if ((error = jg_packages(cl, &req, &rsp)) != 0)
+		fail(cl, error, "packages");
+	if (rsp->ok)
+		emit_packages(rsp->packages.v, rsp->packages.n);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("packages: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	jg_packages_rsp_free(rsp);
+	return (error);
+}
+
+/* pkg-upgrade [-n] [-j jail] [package ...] */
+static int
+cmd_pkg_upgrade(struct jg_client *cl, int argc, char **argv)
+{
+	struct jg_pkg_upgrade_req	 req;
+	struct jg_pkg_upgrade_rsp	*rsp;
+	int				 ch, error;
+
+	memset(&req, 0, sizeof(req));
+	optind = 1;
+	while ((ch = getopt(argc, argv, "j:n")) != -1) {
+		switch (ch) {
+		case 'j':
+			req.jail = optarg;
+			break;
+		case 'n':
+			req.dry_run = true;
+			break;
+		default:
+			usage();
+		}
+	}
+	req.names.v = (const char *const *)(argv + optind);
+	req.names.n = (size_t)(argc - optind);
+	if ((error = jg_pkg_upgrade(cl, &req, &rsp)) != 0)
+		fail(cl, error, "pkg-upgrade");
+	if (rsp->ok) {
+		if (rsp->has_upgraded)
+			xo_emit("{Lwc:Upgraded}{:upgraded/%u}\n", rsp->upgraded);
+		xo_emit("{T:Still pending}:\n");
+		emit_packages(rsp->packages.v, rsp->packages.n);
+	}
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("pkg-upgrade: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	jg_pkg_upgrade_rsp_free(rsp);
+	return (error);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -763,6 +867,10 @@ main(int argc, char *argv[])
 		rc = cmd_net(&cl, argc, argv);
 	else if (strcmp(argv[0], "stats") == 0 && argc == 1)
 		rc = cmd_stats(&cl);
+	else if (strcmp(argv[0], "packages") == 0)
+		rc = cmd_packages(&cl, argc, argv);
+	else if (strcmp(argv[0], "pkg-upgrade") == 0)
+		rc = cmd_pkg_upgrade(&cl, argc, argv);
 	else
 		usage();
 	xo_close_container("jailgrid");
