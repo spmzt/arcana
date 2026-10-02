@@ -254,7 +254,18 @@ rail(struct html *h)
 		h_txt(h, s->name);
 		h_raw(h, "</span><span class=\"uri\">");
 		h_txt(h, s->uri);
-		h_raw(h, "</span></div>");
+		h_raw(h, "</span>");
+		if (s->list != NULL && jstr(s->list, "host.version") != NULL) {
+			const char *ver = jstr(s->list, "host.version");
+
+			h_raw(h, app.version[0] != '\0' && strcmp(ver,
+			    app.version) != 0 ? "<span class=\"ver warn\" "
+			    "title=\"Not the console's version\">" :
+			    "<span class=\"ver\">");
+			h_txt(h, ver);
+			h_raw(h, "</span>");
+		}
+		h_raw(h, "</div>");
 		if (s->list != NULL) {
 			snprintf(buf, sizeof(buf), "%d/%d", run, all);
 			h_raw(h, "<span class=\"count\" title=\"running/"
@@ -495,11 +506,18 @@ stage(struct html *h)
 	hostbar(h, s);
 	h_fmt(h, "<nav class=\"tabs\"><button class=\"tab%s\" data-act=\"tab\" "
 	    "data-arg=\"jails\">Jails</button><button class=\"tab%s\" "
-	    "data-act=\"tab\" data-arg=\"services\">Services</button></nav>",
+	    "data-act=\"tab\" data-arg=\"services\">Services</button>"
+	    "<button class=\"tab%s\" data-act=\"tab\" data-arg=\"network\">"
+	    "Network</button></nav>",
 	    app.tab == TAB_JAILS ? " on" : "", app.tab == TAB_SERVICES ?
-	    " on" : "");
+	    " on" : "", app.tab == TAB_NETWORK ? " on" : "");
 	if (app.tab == TAB_SERVICES) {
 		view_services(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_NETWORK) {
+		view_network(h, s);
 		h_raw(h, "</main>");
 		return;
 	}

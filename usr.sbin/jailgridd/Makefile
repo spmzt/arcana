@@ -1,6 +1,6 @@
 PROG=		jailgridd
 SRCS=		main.c handlers.c actions.c work.c exec.c jails.c confread.c \
-		host.c jail.c services.c
+		host.c jail.c services.c network.c
 MAN=		jailgridd.8
 
 .include "${.CURDIR}/../../share/mk/jailgrid.mk"

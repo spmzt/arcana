@@ -99,6 +99,25 @@ enum screen {
 enum tab {
 	TAB_JAILS,
 	TAB_SERVICES,
+	TAB_NETWORK,
+};
+
+enum netkind {
+	NET_ROUTES,
+	NET_NEXTHOPS,
+	NET_CONNECTIONS,
+	NET_SOCKETS,
+};
+
+/* The network tab's one table: what is shown, from which server. */
+struct netview {
+	enum netkind	 kind;
+	int		 family;	/* 0 all, 4, 6 */
+	char		 sid[9];	/* the server it came from */
+	ucl_object_t	*data;		/* the reply, or NULL */
+	double		 fetched;
+	bool		 loading;
+	char		 error[256];
 };
 
 enum pending {
@@ -204,6 +223,7 @@ struct app {
 	ucl_object_t	*svc_config;	/* the open service's config reply */
 	bool		 svc_loading;
 	char		 svc_error[256];
+	struct netview	 net;
 	bool		 servers_loaded;
 
 	struct op	 ops[MAX_OPS];	/* newest first */
@@ -244,6 +264,7 @@ void		 jail_action(const char *, const char *);
 void		 refresh_services(struct server *, bool);
 void		 service_action(const char *, const char *);
 void		 service_config(const char *, const char *);
+void		 refresh_network(struct server *, bool);
 void		 address_change(const char *, const char *, bool, bool, bool,
 		    bool);
 void		 check_health(void);
@@ -269,6 +290,7 @@ bool		 view_with_drawer(void);
 void		 view_trace(struct html *, const struct op *);
 void		 view_services(struct html *, struct server *);
 void		 view_service_drawer(struct html *, struct server *);
+void		 view_network(struct html *, struct server *);
 const char	*state_class(const struct server *, const ucl_object_t *,
 		    const struct jailui *);
 void		 fmt_age(char *, size_t, double);

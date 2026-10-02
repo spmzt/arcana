@@ -45,6 +45,7 @@ policies, client wrappers and server glue from it.
 | `services` | the host's rc.d scripts, enabled and running | the rc.d directories, `service -e`, `service <name> status` |
 | `service-action` | start, stop, restart, reload, enable, disable | `service <name> <verb>`; `sysrc <rcvar>=YES/NO` |
 | `service-config` | a service's rc.conf variables, read and set | `sysrc -a`, `sysrc key=value`, `sysrc -x key`, `service <name> describe` |
+| `network` | routes, nexthops, connections, sockets | `netstat --libxo json -rnW / -onW / -n`, `sockstat --libxo json`; the JSON passes through |
 
 Every operation requires an authenticated peer: a client certificate
 from the jailgrid CA over TCP, or access to the 0600 AF_UNIX socket.

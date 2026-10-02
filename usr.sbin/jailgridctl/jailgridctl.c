@@ -60,6 +60,7 @@ static int	cmd_list(struct jg_client *, int, char **);
 static int	cmd_action(struct jg_client *, uint8_t, int, char **);
 static int	cmd_address(struct jg_client *, int, char **);
 static int	cmd_services(struct jg_client *);
+static int	cmd_net(struct jg_client *, int, char **);
 static int	cmd_service(struct jg_client *, int, char **);
 static void	emit_service(const struct jg_service *, bool);
 
@@ -77,7 +78,8 @@ usage(void)
 	    "    services\n"
 	    "    service name start | stop | restart | reload | enable | "
 	    "disable\n"
-	    "    service name config [-x key ...] [key=value ...]\n");
+	    "    service name config [-x key ...] [key=value ...]\n"
+	    "    net routes | nexthops | connections | sockets [-4 | -6]\n");
 	exit(2);
 }
 
@@ -567,6 +569,59 @@ cmd_service(struct jg_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/* The program's libxo JSON, printed as it came. */
+static int
+cmd_net(struct jg_client *cl, int argc, char **argv)
+{
+	static const char *kinds[] = { "routes", "nexthops", "connections",
+	    "sockets" };
+	struct jg_network_req	 req;
+	struct jg_network_rsp	*rsp;
+	size_t			 i;
+	int			 ch, error;
+
+	if (argc < 2)
+		usage();
+	for (i = 0; i < nitems(kinds); i++)
+		if (strcmp(argv[1], kinds[i]) == 0)
+			break;
+	if (i == nitems(kinds))
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.has_net_kind = true;
+	req.net_kind = (uint8_t)i;
+	req.has_net_family = true;
+	req.net_family = JG_NET_FAMILY_ALL;
+	argc--;
+	argv++;
+	optind = 1;
+	while ((ch = getopt(argc, argv, "46")) != -1) {
+		switch (ch) {
+		case '4':
+			req.net_family = JG_NET_FAMILY_INET;
+			break;
+		case '6':
+			req.net_family = JG_NET_FAMILY_INET6;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (optind != argc)
+		usage();
+	if ((error = jg_network(cl, &req, &rsp)) != 0)
+		fail(cl, error, "net");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("net %s: %s", kinds[i], rsp->error != NULL ?
+		    rsp->error : "failed");
+	jg_network_rsp_free(rsp);
+	return (error);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -653,6 +708,8 @@ main(int argc, char *argv[])
 		rc = cmd_services(&cl);
 	else if (strcmp(argv[0], "service") == 0)
 		rc = cmd_service(&cl, argc, argv);
+	else if (strcmp(argv[0], "net") == 0)
+		rc = cmd_net(&cl, argc, argv);
 	else
 		usage();
 	xo_close_container("jailgrid");

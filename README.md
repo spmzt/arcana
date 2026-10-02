@@ -216,6 +216,10 @@ authenticator offers one, so security keys keep working as before.
   not, running or not, with start, stop, restart, reload, enable and
   disable; a service's drawer edits its `rc.conf` variables through
   `sysrc(8)` and shows what the script says of itself.
+- **Network**, the third tab: the routing table, the nexthops, active
+  connections and open sockets, per address family, as `netstat -rnW`,
+  `netstat -onW`, `netstat -n` and `sockstat` print them on the host
+  (through `--libxo json`), filterable.
 - A jail's **drawer** has its actions, addresses, configuration as jail(8)
   reads it, and its history. Addresses change live (jail_setv(3) and the
   interface alias), persistently (its block in `jail.conf`, edited in

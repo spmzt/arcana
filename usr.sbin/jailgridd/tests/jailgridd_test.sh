@@ -121,6 +121,27 @@ EOS
 	chmod +x fake-service
 }
 
+# netstat(1) and sockstat(1) stand-ins: a little JSON, and the arguments
+# they were given, on standard error for the trace.
+write_net()
+{
+	cat > fake-netstat <<'EOS'
+#!/bin/sh
+echo "fake-netstat $*" >&2
+case "$*" in
+*-rnW*)	echo '{"statistics": {"route-information": {"route-table": {"rt-family": [{"address-family": "Internet6", "rt-entry": [{"destination": "::1", "gateway": "link#2", "flags": "UHS", "interface-name": "lo0"}]}]}}}}' ;;
+*-onW*)	echo '{"statistics": {"route-nhop-information": {"nhop-table": {"rt-family": []}}}}' ;;
+*)	echo '{"statistics": {"socket": [{"protocol": "tcp4", "local": {"address": "10.0.0.1", "port": "22"}, "remote": {"address": "10.0.0.2", "port": "4000"}, "tcp-state": "ESTABLISHED"}]}}' ;;
+esac
+EOS
+	cat > fake-sockstat <<'EOS'
+#!/bin/sh
+echo "fake-sockstat $*" >&2
+echo '{"__version": "1", "sockstat": {"socket": [{"user": "root", "command": "sshd", "pid": 1, "fd": 3, "proto": "tcp4", "local": {"address": "*", "port": 22}, "foreign": {"address": "*", "port": "*"}}]}}'
+EOS
+	chmod +x fake-netstat fake-sockstat
+}
+
 # Start jailgridd on ./s.sock and wait until it answers.
 start_daemon()
 {
@@ -130,10 +151,12 @@ start_daemon()
 	write_conf
 	SOCK="unix:$(pwd)/s.sock"
 	write_rc
+	write_net
 	"$JGD" -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \
 	    -D "$(pwd)/etc/jail.conf.d" -j "$(pwd)/fake-jail" \
 	    -R "$(pwd)/rc.d:$(pwd)/local/rc.d" -s "$(pwd)/fake-service" \
-	    -y "$(pwd)/fake-sysrc" > daemon.out 2>&1 &
+	    -y "$(pwd)/fake-sysrc" -N "$(pwd)/fake-netstat" \
+	    -X "$(pwd)/fake-sockstat" > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
@@ -446,6 +469,31 @@ service_config_cleanup()
 	stop_daemon
 }
 
+atf_test_case network cleanup
+network_head()
+{
+	atf_set "descr" "routes, nexthops, connections and sockets as the programs' libxo JSON"
+}
+network_body()
+{
+	start_daemon
+	atf_check -o save:routes.out "$JGC" -c "$SOCK" net routes -6
+	atf_check -o match:'"route-table"' cat routes.out
+	atf_check -o match:'fake-netstat --libxo json -rnW -f inet6' \
+	    "$JGC" -t -c "$SOCK" net routes -6
+	atf_check -o match:'fake-netstat --libxo json -onW$' \
+	    "$JGC" -t -c "$SOCK" net nexthops
+	atf_check -o match:'fake-netstat --libxo json -n -f inet$' \
+	    "$JGC" -t -c "$SOCK" net connections -4
+	atf_check -o match:'"sockstat"' -o match:'fake-sockstat --libxo json -46' \
+	    "$JGC" -t -c "$SOCK" net sockets
+	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" net tables
+}
+network_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case hello
@@ -461,4 +509,5 @@ atf_init_test_cases()
 	atf_add_test_case services
 	atf_add_test_case service_actions
 	atf_add_test_case service_config
+	atf_add_test_case network
 }

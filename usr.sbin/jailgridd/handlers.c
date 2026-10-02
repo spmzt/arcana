@@ -31,6 +31,7 @@ struct job {
 	uint8_t			 action;
 	struct jg_address_req	 addr;
 	struct jg_service_config_req svc;
+	uint8_t			 family;
 	char			*peer;
 };
 
@@ -41,6 +42,13 @@ static const char *action_names[] = {
 	[JG_ACTION_STOP] = "stop",
 	[JG_ACTION_RESTART] = "restart",
 	[JG_ACTION_KILL] = "kill",
+};
+
+static const char *net_kind_names[] = {
+	[JG_NET_KIND_ROUTES] = "routes",
+	[JG_NET_KIND_NEXTHOPS] = "nexthops",
+	[JG_NET_KIND_CONNECTIONS] = "connections",
+	[JG_NET_KIND_SOCKETS] = "sockets",
 };
 
 static const char *service_action_names[] = {
@@ -162,6 +170,7 @@ worker(void *arg)
 	struct jg_services_rsp	 sr;
 	struct jg_service_action_rsp sar;
 	struct jg_service_config_rsp scr;
+	struct jg_network_rsp	 nr;
 	const char		*what, *error;
 	bool			 ok;
 	int			 root, rc;
@@ -194,6 +203,20 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &ar.trace.v, &ar.trace.n);
 		rc = jg_action_reply(j->req, &ar);
+		break;
+	case JG_CMD_NETWORK:
+		what = wfmt(&w, "network %s%s", net_kind_names[j->action],
+		    j->family == JG_NET_FAMILY_INET ? " inet" :
+		    j->family == JG_NET_FAMILY_INET6 ? " inet6" : "");
+		root = step_begin(&w, JG_STEP_KIND_DAEMON, "jailgridd", "%s",
+		    what);
+		memset(&nr, 0, sizeof(nr));
+		do_network(&w, j->action, j->family, &nr);
+		ok = nr.ok;
+		error = nr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &nr.trace.v, &nr.trace.n);
+		rc = jg_network_reply(j->req, &nr);
 		break;
 	case JG_CMD_SERVICES:
 		root = step_begin(&w, JG_STEP_KIND_DAEMON, "jailgridd",
@@ -442,5 +465,24 @@ jg_service_config_doit(cbl_req *req, const struct jg_service_config_req *rq,
 		j->svc.variables.v = v;
 		j->svc.variables.n = rq->variables.n;
 	}
+	return (start(j));
+}
+
+int
+jg_network_doit(cbl_req *req, const struct jg_network_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->net_kind >= nitems(net_kind_names))
+		return (reject(req, "invalid kind"));
+	if (rq->has_net_family && rq->net_family > JG_NET_FAMILY_INET6)
+		return (reject(req, "invalid family"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = JG_CMD_NETWORK;
+	j->action = rq->net_kind;
+	j->family = rq->has_net_family ? rq->net_family : JG_NET_FAMILY_ALL;
 	return (start(j));
 }

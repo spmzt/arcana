@@ -243,6 +243,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "esac\n", cwd, cwd);
 	put("fake-service", buf);
 	ATF_REQUIRE(chmod("fake-service", 0755) == 0);
+	put("fake-netstat", "#!/bin/sh\necho '{\"statistics\": {\"route-information\": "
+	    "{\"route-table\": {\"rt-family\": [{\"address-family\": \"Internet\", "
+	    "\"rt-entry\": [{\"destination\": \"default\", \"gateway\": "
+	    "\"10.0.0.1\", \"flags\": \"UGS\", \"interface-name\": \"em0\"}]}]}}}}'\n");
+	ATF_REQUIRE(chmod("fake-netstat", 0755) == 0);
 
 	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n%s", RP_ID,
@@ -281,7 +286,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[13] = (char *)(uintptr_t)"./fake-service";
 	argv[14] = (char *)(uintptr_t)"-y";
 	argv[15] = (char *)(uintptr_t)"./fake-sysrc";
-	argv[16] = NULL;
+	argv[16] = (char *)(uintptr_t)"-N";
+	argv[17] = (char *)(uintptr_t)"./fake-netstat";
+	argv[18] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "jailgridd.out");
 	ATF_REQUIRE((fp = fopen("jailgridd.pid", "w")) != NULL);

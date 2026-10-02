@@ -99,6 +99,18 @@ variables, with what the script says of itself and its extra commands.
 sets one first,
 .Fl x
 unsets one; only the service's own variables are accepted.
+.It Cm net routes | nexthops | connections | sockets Op Fl 4 | Fl 6
+The host's routing table
+.Pq Nm netstat Fl rnW ,
+nexthop table
+.Pq Nm netstat Fl onW ,
+active connections
+.Pq Nm netstat Fl n
+or open sockets
+.Pq Nm sockstat ,
+as the program printed them with
+.Fl -libxo Cm json ,
+for one address family or both.
 .El
 .Sh EXIT STATUS
 0 when the request succeeded, 1 when it failed, 2 for usage errors.

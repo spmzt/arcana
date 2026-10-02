@@ -426,6 +426,37 @@ paths:
       responses:
         "200": { $ref: "#/components/responses/ServiceConfig" }
 
+  /api/servers/{server}/net/{kind}:
+    get:
+      tags: [servers]
+      summary: A network table of the host, as its program printed it
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [routes, nexthops, connections, sockets]
+          description: netstat -rnW, netstat -onW, netstat -n, sockstat.
+        - name: family
+          in: query
+          schema: { type: string, enum: [inet, inet6] }
+          description: One address family; both without it.
+      responses:
+        "200":
+          description: The program's `--libxo json` document under `data`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  data: { type: object, nullable: true }
+                  trace: { type: array }
+        "400": { $ref: "#/components/responses/Error" }
+
   /api/servers/{server}/hello:
     get:
       tags: [servers]

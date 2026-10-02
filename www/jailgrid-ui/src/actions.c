@@ -22,6 +22,8 @@ struct ctx {
 	bool	user;
 	bool	dry_run;
 	enum pending pend;
+	int	net_kind;	/* the network table asked for */
+	int	op_family;	/* and its family */
 };
 
 static struct ctx *ctx_new(void);
@@ -567,6 +569,75 @@ service_config(const char *name, const char *body)
 	snprintf(url, sizeof(url), "/api/servers/%s/services/%s/config",
 	    s->id, name);
 	api(body != NULL ? "POST" : "GET", url, body, service_config_cb, c);
+}
+
+static void
+network_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+	struct op	*op;
+	bool		 ok;
+
+	c = arg;
+	op = c->op != 0 ? op_find(c->op) : NULL;
+	ok = status == 200 && jbool(o, "ok");
+	if (status == 200 && !ok)
+		err = jstr(o, "error");
+	op_done(op, ok, o, err);
+	/* Still the table that was asked for? */
+	if (strcmp(app.net.sid, c->sid) == 0 && (int)app.net.kind == c->net_kind &&
+	    app.net.family == c->op_family) {
+		app.net.loading = false;
+		if (ok) {
+			if (app.net.data != NULL)
+				ucl_object_unref(app.net.data);
+			app.net.data = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+			app.net.fetched = jg_now();
+			app.net.error[0] = '\0';
+		} else
+			snprintf(app.net.error, sizeof(app.net.error), "%s",
+			    err != NULL ? err : "no answer from the console");
+	}
+	free(c);
+}
+
+/* The network table the tab shows, from the server; user: log it. */
+void
+refresh_network(struct server *s, bool user)
+{
+	static const char *kinds[] = { "routes", "nexthops", "connections",
+	    "sockets" };
+	struct ctx	*c;
+	struct op	*op;
+	char		 url[160], title[160];
+
+	if (!app.online)
+		return;
+	if (strcmp(app.net.sid, s->id) != 0 || app.net.loading) {
+		if (app.net.data != NULL)
+			ucl_object_unref(app.net.data);
+		app.net.data = NULL;
+		app.net.error[0] = '\0';
+	}
+	snprintf(app.net.sid, sizeof(app.net.sid), "%s", s->id);
+	app.net.loading = true;
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	c->net_kind = (int)app.net.kind;
+	c->op_family = app.net.family;
+	c->user = user;
+	if (user) {
+		snprintf(title, sizeof(title), "net %s%s", kinds[app.net.kind],
+		    app.net.family == 4 ? " inet" : app.net.family == 6 ?
+		    " inet6" : "");
+		op = op_new(title, s->name);
+		c->op = op->id;
+		app.trace_op = op->id;
+	}
+	snprintf(url, sizeof(url), "/api/servers/%s/net/%s%s", s->id,
+	    kinds[app.net.kind], app.net.family == 4 ? "?family=inet" :
+	    app.net.family == 6 ? "?family=inet6" : "");
+	api("GET", url, NULL, network_cb, c);
 }
 
 static void

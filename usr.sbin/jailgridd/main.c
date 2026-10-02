@@ -37,6 +37,8 @@ struct opts opts = {
 	.rc_dirs = PATH_RC_DIRS,
 	.service_bin = PATH_SERVICE_BIN,
 	.sysrc_bin = PATH_SYSRC_BIN,
+	.netstat_bin = PATH_NETSTAT_BIN,
+	.sockstat_bin = PATH_SOCKSTAT_BIN,
 };
 
 static bool	foreground;
@@ -54,7 +56,8 @@ usage(void)
 	    "[-K keyfile] [-D confdir]\n"
 	    "                 [-f jail.conf] [-g group] [-j jail] "
 	    "[-l uri] [-p pidfile]\n"
-	    "                 [-R rc.d dirs] [-s service] [-y sysrc]\n");
+	    "                 [-R rc.d dirs] [-s service] [-y sysrc]\n"
+	    "                 [-N netstat] [-X sockstat]\n");
 	exit(2);
 }
 
@@ -121,7 +124,7 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	while ((ch = getopt(argc, argv, "A:C:D:dFf:g:j:K:l:p:R:s:y:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:C:D:dFf:g:j:K:l:N:p:R:s:X:y:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -168,6 +171,12 @@ main(int argc, char *argv[])
 			break;
 		case 'y':
 			opts.sysrc_bin = optarg;
+			break;
+		case 'N':
+			opts.netstat_bin = optarg;
+			break;
+		case 'X':
+			opts.sockstat_bin = optarg;
 			break;
 		default:
 			usage();

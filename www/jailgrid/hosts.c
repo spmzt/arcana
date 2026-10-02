@@ -30,6 +30,7 @@ enum op {
 	OP_SERVICES,
 	OP_SERVICE_ACTION,
 	OP_SERVICE_CONFIG,
+	OP_NETWORK,
 };
 
 struct call {
@@ -48,6 +49,7 @@ struct call {
 	struct jg_address_req	 addr;
 	char			 address[65];
 	char			 ifname[16];
+	uint8_t			 family;	/* network */
 	struct jg_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
 	char			*json;		/* the reply, from the thread */
@@ -82,6 +84,13 @@ static const char *action_names[] = {
 	[JG_ACTION_STOP] = "stop",
 	[JG_ACTION_RESTART] = "restart",
 	[JG_ACTION_KILL] = "kill",
+};
+
+static const char *net_kind_names[] = {
+	[JG_NET_KIND_ROUTES] = "routes",
+	[JG_NET_KIND_NEXTHOPS] = "nexthops",
+	[JG_NET_KIND_CONNECTIONS] = "connections",
+	[JG_NET_KIND_SOCKETS] = "sockets",
 };
 
 static const char *service_action_names[] = {
@@ -314,7 +323,7 @@ trace_object(struct call *c, const struct jg_step *v, size_t n,
 	    c->op == OP_ACTION ? "jg_action" : c->op == OP_ADDRESS ?
 	    "jg_address" : c->op == OP_SERVICES ? "jg_services" :
 	    c->op == OP_SERVICE_ACTION ? "jg_service_action" :
-	    "jg_service_config";
+	    c->op == OP_NETWORK ? "jg_network" : "jg_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
 	for (i = 0; i < n; i++)
@@ -362,6 +371,8 @@ call_run(struct kore_task *t)
 	struct jg_service_action_rsp *sar;
 	struct jg_service_config_req scq;
 	struct jg_service_config_rsp *scr;
+	struct jg_network_req	 nq;
+	struct jg_network_rsp	*nr;
 	const struct jg_step	*steps;
 	ucl_object_t		*top, *srv, *a, *e;
 	cbl_conn		*conn;
@@ -392,6 +403,7 @@ call_run(struct kore_task *t)
 	sr = NULL;
 	sar = NULL;
 	scr = NULL;
+	nr = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
 	snprintf(detail, sizeof(detail), "%s, %s", c->uri, local ?
@@ -511,6 +523,31 @@ call_run(struct kore_task *t)
 		steps = sar->trace.v;
 		nsteps = sar->trace.n;
 		break;
+	case OP_NETWORK:
+		memset(&nq, 0, sizeof(nq));
+		nq.has_net_kind = true;
+		nq.net_kind = c->action;
+		nq.has_net_family = true;
+		nq.net_family = c->family;
+		if ((error = jg_network(&cl, &nq, &nr)) != 0)
+			goto rpcfail;
+		ok = nr->ok;
+		put_str(top, "error", nr->error);
+		/* The program's JSON becomes part of ours. */
+		e = NULL;
+		if (nr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, nr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		put(top, "data", e != NULL ? e : ucl_object_typed_new(UCL_NULL));
+		steps = nr->trace.v;
+		nsteps = nr->trace.n;
+		break;
 	default:
 		memset(&scq, 0, sizeof(scq));
 		scq.service = c->jail;
@@ -575,6 +612,8 @@ done:
 		jg_service_action_rsp_free(sar);
 	if (scr != NULL)
 		jg_service_config_rsp_free(scr);
+	if (nr != NULL)
+		jg_network_rsp_free(nr);
 	if (cl.conn != NULL)
 		jg_client_fini(&cl);
 	cbl_conn_free(conn);
@@ -878,5 +917,40 @@ api_address(struct http_request *req)
 	c->addr.persist = ucl_flag(body, "persist");
 	c->addr.dry_run = ucl_flag(body, "dry_run");
 	ucl_object_unref(body);
+	return (call_start(req, c));
+}
+
+/* GET /api/servers/<id>/net/<kind>[?family=inet|inet6] */
+int
+api_network(struct http_request *req)
+{
+	struct call	*c;
+	char		 kind[16];
+	size_t		 i;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_NETWORK)) == NULL)
+		return (KORE_RESULT_OK);
+	for (i = 0; i < nitems(net_kind_names); i++)
+		if (capture(req, 5, kind, sizeof(kind)) &&
+		    strcmp(kind, net_kind_names[i]) == 0)
+			break;
+	if (i == nitems(net_kind_names)) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "kind is one of "
+		    "routes, nexthops, connections, sockets"));
+	}
+	c->action = (uint8_t)i;
+	c->family = JG_NET_FAMILY_ALL;
+	if (req->query_string != NULL) {
+		if (strstr(req->query_string, "family=inet6") != NULL)
+			c->family = JG_NET_FAMILY_INET6;
+		else if (strstr(req->query_string, "family=inet") != NULL)
+			c->family = JG_NET_FAMILY_INET;
+	}
 	return (call_start(req, c));
 }

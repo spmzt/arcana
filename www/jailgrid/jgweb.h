@@ -113,6 +113,7 @@ int		 api_address(struct http_request *);
 int		 api_services(struct http_request *);
 int		 api_service_action(struct http_request *);
 int		 api_service_config(struct http_request *);
+int		 api_network(struct http_request *);
 void		 api_call_free(struct http_request *);
 
 int		 jgw_onload(int);

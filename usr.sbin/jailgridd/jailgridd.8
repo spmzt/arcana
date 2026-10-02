@@ -24,6 +24,8 @@
 .Op Fl R Ar rc.d dirs
 .Op Fl s Ar service
 .Op Fl y Ar sysrc
+.Op Fl N Ar netstat
+.Op Fl X Ar sockstat
 .Sh DESCRIPTION
 .Nm
 serves the
@@ -146,6 +148,14 @@ The
 program, which reads and writes their
 .Xr rc.conf 5
 variables.
+.It Fl N Ar netstat , Fl X Ar sockstat
+The
+.Xr netstat 1
+and
+.Xr sockstat 1
+programs, run with
+.Fl -libxo Cm json
+for the network tables.
 .El
 .Sh FILES
 .Bl -tag -width Ds -compact

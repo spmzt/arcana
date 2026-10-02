@@ -603,6 +603,18 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_MSG(strstr(jstr(&r, "error"), "not a variable") != NULL,
 	    "%s", jstr(&r, "error"));
 	resp_free(&r);
+
+	/* The network tables: netstat's JSON, inside ours. */
+	snprintf(path, sizeof(path), "%.*s/net/routes?family=inet",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("default", jstr(&r, "data.statistics.route-information."
+	    "route-table.rt-family.0.rt-entry.0.destination"));
+	ATF_CHECK_MSG(strstr(jstr(&r, "trace.4.label"), "-f inet") != NULL,
+	    "%s", jstr(&r, "trace.4.label"));
+	resp_free(&r);
 }
 
 CONSOLE_TC(unreachable, "A server that does not answer is reported")

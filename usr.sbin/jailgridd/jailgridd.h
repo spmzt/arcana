@@ -23,6 +23,8 @@
 #define	PATH_RC_DIRS		"/etc/rc.d:/usr/local/etc/rc.d"
 #define	PATH_SERVICE_BIN	"/usr/sbin/service"
 #define	PATH_SYSRC_BIN		"/usr/sbin/sysrc"
+#define	PATH_NETSTAT_BIN	"/usr/bin/netstat"
+#define	PATH_SOCKSTAT_BIN	"/usr/bin/sockstat"
 
 /* jail -e separator: ASCII unit separator, never in a jail.conf value. */
 #define	JAIL_E_SEP		"\037"
@@ -38,6 +40,8 @@ struct opts {
 	const char	*rc_dirs;	/* colon separated */
 	const char	*service_bin;
 	const char	*sysrc_bin;
+	const char	*netstat_bin;
+	const char	*sockstat_bin;
 	bool		 debug;
 };
 
@@ -181,6 +185,10 @@ int		 do_service_action(struct work *, const char *, uint8_t,
 int		 do_service_config(struct work *,
 		    const struct jg_service_config_req *,
 		    struct jg_service_config_rsp *);
+
+/* network.c */
+int		 do_network(struct work *, uint8_t, uint8_t,
+		    struct jg_network_rsp *);
 
 /* main.c */
 void		 logmsg(int, const char *, ...) __printflike(2, 3);

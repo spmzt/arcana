@@ -19,6 +19,26 @@ definitions:
   - name: max-services
     type: const
     value: 1024
+  - name: max-json
+    type: const
+    value: 4194304
+  - name: net-kind
+    type: enum
+    entries:
+      - name: routes
+        doc: The routing table, netstat -rnW.
+      - name: nexthops
+        doc: The nexthop table, netstat -onW.
+      - name: connections
+        doc: Active connections, netstat -n.
+      - name: sockets
+        doc: Open sockets with their owners, sockstat.
+  - name: net-family
+    type: enum
+    entries:
+      - name: all
+      - name: inet
+      - name: inet6
   - name: max-output
     type: const
     value: 262144
@@ -161,6 +181,17 @@ attribute-sets:
       - name: description
         type: text
         doc: What the script says of itself (service describe).
+      - name: net-kind
+        type: u8
+        enum: net-kind
+      - name: net-family
+        type: u8
+        enum: net-family
+      - name: json
+        type: text
+        doc: What the program printed with --libxo json, as it is.
+        checks:
+          max-len: max-json
       - name: commands
         type: text
         multi-attr: true
@@ -446,4 +477,24 @@ operations:
           - variables
           - description
           - commands
+          - trace
+
+  - name: network
+    attribute-set: jailgrid
+    auth: true
+    doc: |
+      The host's routing table, nexthops, connections or sockets, as
+      netstat(1) and sockstat(1) print them with --libxo json.
+    do:
+      request:
+        attributes:
+          - net-kind
+          - net-family
+        required:
+          - net-kind
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
           - trace
