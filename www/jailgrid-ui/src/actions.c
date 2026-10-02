@@ -560,12 +560,11 @@ service_config(const char *name, const char *body)
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	snprintf(c->jail, sizeof(c->jail), "%s", name);
 	c->user = body != NULL;
-	if (body != NULL) {
-		snprintf(title, sizeof(title), "service %s configure", name);
-		op = op_new(title, s->name);
-		c->op = op->id;
-		app.trace_op = op->id;
-	}
+	snprintf(title, sizeof(title), "service %s %s", name, body != NULL ?
+	    "configure" : "config");
+	op = op_new(title, s->name);
+	c->op = op->id;
+	app.trace_op = op->id;
 	app.svc_loading = true;
 	app.svc_error[0] = '\0';
 	snprintf(url, sizeof(url), "/api/servers/%s/services/%s/config",
@@ -699,13 +698,13 @@ refresh_packages(struct server *s, bool refresh)
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	snprintf(c->jail, sizeof(c->jail), "%s", app.pkg.jail);
-	if (refresh) {
-		snprintf(title, sizeof(title), "pkg update%s%s",
-		    app.pkg.jail[0] != '\0' ? " in " : "", app.pkg.jail);
-		op = op_new(title, s->name);
-		c->op = op->id;
-		app.trace_op = op->id;
-	}
+	snprintf(title, sizeof(title), "%s%s%s", refresh ? "pkg update, " :
+	    "", "pending packages", app.pkg.jail[0] != '\0' ? " of jail " :
+	    "");
+	strlcat(title, app.pkg.jail, sizeof(title));
+	op = op_new(title, s->name);
+	c->op = op->id;
+	app.trace_op = op->id;
 	snprintf(url, sizeof(url), "/api/servers/%s/packages?jail=%s%s", s->id,
 	    app.pkg.jail, refresh ? "&refresh=1" : "");
 	api("GET", url, NULL, packages_cb, c);

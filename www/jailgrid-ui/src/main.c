@@ -393,9 +393,9 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_jails(s, false);
 			refresh_stats(s);
 			if (app.tab == TAB_SERVICES && s->services == NULL)
-				refresh_services(s, false);
+				refresh_services(s, true);
 			if (app.tab == TAB_NETWORK)
-				refresh_network(s, false);
+				refresh_network(s, true);
 			if (app.tab == TAB_PACKAGES)
 				refresh_packages(s, false);
 		}
@@ -406,10 +406,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.jail[0] = '\0';
 		close_service();
 		if (app.tab == TAB_SERVICES && s->services == NULL)
-			refresh_services(s, false);
+			refresh_services(s, true);
 		if (app.tab == TAB_NETWORK && (app.net.data == NULL ||
 		    strcmp(app.net.sid, s->id) != 0))
-			refresh_network(s, false);
+			refresh_network(s, true);
 		if (app.tab == TAB_PACKAGES && (app.pkg.data == NULL ||
 		    strcmp(app.pkg.sid, s->id) != 0))
 			refresh_packages(s, false);
@@ -436,11 +436,11 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "connections") == 0 ? NET_CONNECTIONS :
 		    strcmp(arg, "sockets") == 0 ? NET_SOCKETS : NET_ROUTES;
 		app.net.loading = false;
-		refresh_network(s, false);
+		refresh_network(s, true);
 	} else if (strcmp(act, "net-family") == 0 && s != NULL) {
 		app.net.family = atoi(arg);
 		app.net.loading = false;
-		refresh_network(s, false);
+		refresh_network(s, true);
 	} else if (strcmp(act, "open-jail") == 0) {
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 	} else if (strcmp(act, "close-drawer") == 0) {
