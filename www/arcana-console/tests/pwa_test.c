@@ -496,6 +496,15 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.peek-box .close').click()");
 	wait_js("!document.querySelector('.peek-box')", 5);
 
+	/*
+	 * The page keeps itself current without being asked: a host is
+	 * read again every few seconds while the page is in view.
+	 */
+	run("window.listed = 0; const of2 = window.fetch; window.fetch = "
+	    "function (u, o) { if (String(u).endsWith('/jails')) "
+	    "window.listed++; return of2.call(this, u, o); };");
+	wait_js("window.listed >= 1", 15);
+
 	/* The fleet page lists it, and leads back to it. */
 	run("document.querySelector('.tree .titem.fleet').click()");
 	wait_js("document.querySelector('.hosts .hostcard')", 5);

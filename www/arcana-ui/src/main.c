@@ -30,6 +30,9 @@ struct app app = {
 };
 
 static double	last_health, last_refresh, last_tick_render, last_update;
+static int	others_turn;	/* refreshes since the other hosts were read */
+
+#define	OTHERS_EVERY	3	/* the hosts not selected: every third refresh */
 
 static void	tick(void *);
 static void	confirm(const char *, const char *, const char *, bool,
@@ -220,6 +223,18 @@ tick(void *arg)
 			refresh_stats(s);
 			if (app.tab == TAB_JOBS)
 				refresh_jobs(s);
+		}
+		/*
+		 * The tree shows every host: its state, its jails, its
+		 * agent's version.  The others are read too, less often,
+		 * or an agent updated or restarted elsewhere would show
+		 * its old self until the page is loaded again.
+		 */
+		if (app.node != NODE_FLEET && ++others_turn >= OTHERS_EVERY) {
+			others_turn = 0;
+			for (i = 0; i < app.nservers; i++)
+				if (i != app.sel)
+					refresh_jails(&app.servers[i], false);
 		}
 	}
 	if (changed || now - last_tick_render >= AGE_STEP_MS) {
