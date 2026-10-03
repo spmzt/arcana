@@ -875,7 +875,7 @@ agent_restart_body()
 cd $(pwd)
 ./installed -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \\
     -D "$(pwd)/etc/jail.conf.d" -j "$(pwd)/fake-jail" \\
-    -s "$(pwd)/rc-service" >> daemon.out 2>&1 &
+    -R "$(pwd)/rc.d" -s "$(pwd)/rc-service" >> daemon.out 2>&1 &
 echo \$! > daemon.pid
 EOS
 	cat > rc-service <<EOS
@@ -910,6 +910,23 @@ EOS
 	atf_check -o match:"Build: +$new" "$JGC" -c "$SOCK" hello
 	atf_check test "$(cat daemon.pid)" != "$first"
 	atf_check -o match:"stopped $first" cat restarts
+
+	# The daemon restarted through itself, as a job: it does not wait
+	# for the service(8) that waits for it.
+	mkdir -p rc.d
+	printf '#!/bin/sh\n' > rc.d/arcana_agent
+	chmod +x rc.d/arcana_agent
+	second=$(cat daemon.pid)
+	atf_check -o match:'queued' "$JGC" -q -c "$SOCK" service arcana_agent restart
+	for i in $(seq 1 100); do
+		[ "$(cat daemon.pid)" != "$second" ] &&
+		    "$JGC" -c "$SOCK" hello > /dev/null 2>&1 && break
+		sleep 0.1
+	done
+	[ "$(cat daemon.pid)" != "$second" ] ||
+	    atf_fail "not restarted: $("$JGC" -t -c "$SOCK" job 1 2>&1)"
+	atf_check -o match:"stopped $second" cat restarts
+	atf_check -o match:'^Host:' "$JGC" -c "$SOCK" hello
 }
 agent_restart_cleanup()
 {

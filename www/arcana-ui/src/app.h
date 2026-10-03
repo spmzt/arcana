@@ -320,7 +320,6 @@ struct app {
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
 	char		 service[65];	/* open in the drawer, or "" */
-	char		 service_busy[65];	/* an action in flight */
 	ucl_object_t	*svc_config;	/* the open service's config reply */
 	bool		 svc_loading;
 	int		 svc_sort;	/* SVC_SORT_*: running first at start */
@@ -399,6 +398,8 @@ void		 op_cancel(struct op *);
 void		 if_address(struct server *, const char *, const char *, bool);
 void		 if_state(struct server *, const char *, bool);
 void		 route_change(struct server *, const char *, const char *, bool);
+bool		 service_busy(const struct server *, const char *);
+bool		 packages_busy(const struct server *);
 void		 load_settings(void);
 void		 save_settings(const ucl_object_t *);
 void		 load_schema(void);

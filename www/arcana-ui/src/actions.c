@@ -176,8 +176,6 @@ job_finished(struct op *op, bool ok, const char *err)
 		break;
 	case JOB_SERVICE:
 	case JOB_SERVICE_CONFIG:
-		if (strcmp(app.service_busy, op->target) == 0)
-			app.service_busy[0] = '\0';
 		s->services_loading = false;
 		if (s->services != NULL)
 			refresh_services(s, false);
@@ -785,9 +783,6 @@ service_action(const char *name, const char *action)
 	    "\"action\":\"%s\"}", qn, action) == -1)
 		abort();
 	free(qn);
-	if (!app.queue_on)
-		snprintf(app.service_busy, sizeof(app.service_busy), "%s",
-		    name);
 	job_send(s, json, title, JOB_SERVICE, name);
 }
 
@@ -2041,5 +2036,43 @@ route_change(struct server *s, const char *destination, const char *gateway,
 	snprintf(title, sizeof(title), "route %s %s%s%s", remove ? "delete" :
 	    "add", destination, gateway[0] != '\0' ? " via " : "", gateway);
 	job_send(s, json, title, JOB_IFACE, destination);
+}
+
+/*
+ * An action on service name of host s is under way.  Asked of the
+ * entries of the activity list, which know their host: a service of
+ * the same name on another host is another service.
+ */
+bool
+service_busy(const struct server *s, const char *name)
+{
+	const struct op	*o;
+	int		 i;
+
+	for (i = 0; i < app.nops; i++) {
+		o = &app.ops[i];
+		if (o->state == OP_RUNNING && (o->what == JOB_SERVICE ||
+		    o->what == JOB_SERVICE_CONFIG) && strcmp(o->sid, s->id) ==
+		    0 && strcmp(o->target, name) == 0)
+			return (true);
+	}
+	return (false);
+}
+
+/* An upgrade of the packages shown, of this host or jail, is under way. */
+bool
+packages_busy(const struct server *s)
+{
+	const struct op	*o;
+	int		 i;
+
+	for (i = 0; i < app.nops; i++) {
+		o = &app.ops[i];
+		if (o->state == OP_RUNNING && o->what == JOB_PACKAGES &&
+		    strcmp(o->sid, s->id) == 0 && strcmp(o->target,
+		    app.pkg.jail) == 0)
+			return (true);
+	}
+	return (false);
 }
 

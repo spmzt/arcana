@@ -242,7 +242,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "rcvar) echo \"${1}_enable=\\\"NO\\\"\" ;;\n"
 	    "status) [ -f running.$1 ] && { echo \"$1 is running as pid 7.\"; "
 	    "exit 0; }; echo \"$1 is not running.\"; exit 1 ;;\n"
-	    "start|restart) touch running.$1 ;;\n"
+	    "start|restart) [ -f slow ] && sleep 3; touch running.$1 ;;\n"
 	    "stop) rm -f running.$1 ;;\n"
 	    "describe) echo \"The $1 daemon.\" ;;\n"
 	    "extracommands) echo reload ;;\n"

@@ -255,6 +255,15 @@ program, for pending upgrades and upgrading, on the host and with
 in running jails.
 Upgrades may run for up to an hour.
 .El
+.Sh ITS OWN SERVICE
+A stop or restart of
+.Nm arcana_agent
+asked of the daemon itself, as a service action, is not run and waited
+for as other services' are:
+.Xr service 8
+would wait for the daemon to stop while the daemon waits for it to end.
+It is handed to a process of its own, the request is answered, and the
+daemon is stopped by that process a moment later.
 .Sh STOPPING
 On
 .Dv SIGTERM

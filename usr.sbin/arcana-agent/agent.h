@@ -18,7 +18,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.6.6"
+#define	ARCANA_AGENT_VERSION	"0.6.7"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -34,6 +34,7 @@
 #define	PATH_GIT_BIN		"/usr/local/bin/git"
 #define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
 #define	PATH_ROUTE_BIN		"/sbin/route"
+#define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
 #define	PATH_KEYSCAN_BIN	"/usr/bin/ssh-keyscan"
 #define	PATH_KEYGEN_BIN		"/usr/bin/ssh-keygen"
@@ -289,6 +290,7 @@ int		 do_console_update(struct work *, const char *, const char *,
 int		 do_agent_update(struct work *, const uint8_t *, size_t,
 		    const char *, struct arc_agent_update_rsp *);
 void		 service_restart(const char *);
+void		 service_detached(const char *, const char *);
 
 bool		 change_note(const char *, ...) __printflike(1, 2);
 void		 changes_stop(bool);

@@ -1663,7 +1663,7 @@ service_row(struct html *h, const ucl_object_t *sv)
 	known = run != NULL && ucl_object_type(run) == UCL_BOOLEAN;
 	running = known && ucl_object_toboolean(run);
 	state = !known ? "unknown" : running ? "running" : "stopped";
-	busy = strcmp(app.service_busy, name) == 0;
+	busy = cur_server() != NULL && service_busy(cur_server(), name);
 	h_fmt(h, "<li class=\"svc s-%s%s%s\"", state, enabled ? " enabled" : "",
 	    strcmp(app.service, name) == 0 ? " open" : "");
 	h_raw(h, " data-act=\"open-svc\"");
@@ -1871,8 +1871,8 @@ view_service_drawer(struct html *h, struct server *s)
 		for (i = 0; i < 6; i++) {
 			h_fmt(h, "<button class=\"act%s\" data-act=\"svc\" "
 			    "data-value=\"%s\"%s", i == 0 ? " go" : "", verbs[i],
-			    strcmp(app.service_busy, name) == 0 ? " disabled" :
-			    "");
+			    cur_server() != NULL && service_busy(cur_server(),
+			    name) ? " disabled" : "");
 			h_attr(h, "data-arg", name);
 			h_raw(h, ">");
 			h_txt(h, verbs[i]);
@@ -2049,7 +2049,7 @@ view_packages(struct html *h, struct server *s)
 	h_raw(h, "</nav>");
 	h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-check\"%s "
 	    "title=\"pkg update, then list what has a newer version\">Check"
-	    "</button>", app.pkg.loading || app.pkg.busy ? " disabled" : "");
+	    "</button>", app.pkg.loading || packages_busy(s) ? " disabled" : "");
 	if (mine) {
 		fmt_age(age, sizeof(age), app.pkg.fetched);
 		h_raw(h, "<span class=\"tally\">");
@@ -2105,10 +2105,10 @@ view_packages(struct html *h, struct server *s)
 		    "none selected means all</span><button class=\"ghost\" "
 		    "value=\"dry\"%s>Dry run</button><button class=\"danger\" "
 		    "value=\"go\"%s>Upgrade</button></div>", n,
-		    app.pkg.busy ? " disabled" : "", app.pkg.busy ?
+		    packages_busy(s) ? " disabled" : "", packages_busy(s) ?
 		    " disabled" : "");
 	h_raw(h, "</form>");
-	if (app.pkg.busy)
+	if (packages_busy(s))
 		h_raw(h, "<div class=\"notice\"><div class=\"loader\"></div>"
 		    "pkg upgrade is running; its output lands in the activity "
 		    "trace.</div>");

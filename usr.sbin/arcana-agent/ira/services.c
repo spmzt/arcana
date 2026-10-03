@@ -344,6 +344,23 @@ do_service_action(struct work *w, const char *name, uint8_t action,
 		verb = action == ARC_SERVICE_ACTION_START ? "start" :
 		    action == ARC_SERVICE_ACTION_STOP ? "stop" :
 		    action == ARC_SERVICE_ACTION_RESTART ? "restart" : "reload";
+		/*
+		 * The daemon's own service, stopped or restarted: service(8)
+		 * waits for the daemon to go, and the daemon would wait for
+		 * service(8), which it runs, to end.  So it is handed to a
+		 * process of its own, and this is answered first.
+		 */
+		if (strcmp(name, OWN_SERVICE) == 0 && (action ==
+		    ARC_SERVICE_ACTION_STOP || action ==
+		    ARC_SERVICE_ACTION_RESTART)) {
+			n = (size_t)step_begin(w, ARC_STEP_KIND_DAEMON,
+			    "own service", "service %s %s", name, verb);
+			service_detached(name, verb);
+			step_end(w, (int)n, true, "handed to a process of its "
+			    "own: this daemon is stopped by it in a moment");
+			rsp->ok = true;
+			break;
+		}
 		if (svc_run(w, name, verb, &res) == 0)
 			rsp->ok = true;
 		else

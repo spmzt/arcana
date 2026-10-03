@@ -131,6 +131,19 @@ do_agent_update(struct work *w, const uint8_t *data, size_t len,
 void
 service_restart(const char *name)
 {
+
+	service_detached(name, "restart");
+}
+
+/*
+ * service(8) name verb, from a process of its own that outlives this
+ * daemon.  For what is done to the daemon's own service: run and waited
+ * for like any other, service(8) would wait for the daemon to stop
+ * while the daemon waits for service(8) to end.
+ */
+void
+service_detached(const char *name, const char *verb)
+{
 	struct timespec	 ts = { 1, 0 };
 	sigset_t	 none;
 	pid_t		 pid;
@@ -157,14 +170,14 @@ service_restart(const char *name)
 	 * nothing else would say why the old program still runs.
 	 */
 	if ((pid = fork()) == 0) {
-		execl(opts.service_bin, opts.service_bin, name, "restart",
+		execl(opts.service_bin, opts.service_bin, name, verb,
 		    (char *)NULL);
 		_exit(127);
 	}
 	if (pid == -1 || waitpid(pid, &status, 0) == -1 ||
 	    !WIFEXITED(status) || WEXITSTATUS(status) != 0)
 		execl("/usr/bin/logger", "logger", "-t", "arcana-agent", "-p",
-		    "daemon.err", "restart: service(8) could not restart",
-		    name, "(is it enabled in rc.conf?)", (char *)NULL);
+		    "daemon.err", "service(8) failed:", name, verb,
+		    "(is it enabled in rc.conf?)", (char *)NULL);
 	_exit(0);
 }

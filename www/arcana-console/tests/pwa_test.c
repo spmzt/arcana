@@ -786,6 +786,46 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.hosts .hostcard').click()");
 	phone(false);
 
+	/*
+	 * Two hosts with a service of the same name: an action on the one
+	 * leaves the other's alone.  The second host here is the same
+	 * agent, reached by another name of its socket.
+	 */
+	ATF_REQUIRE(symlink("jgd.sock", "jgd2.sock") == 0);
+	run("document.querySelector('button[data-act=add-server]').click()");
+	wait_js("document.querySelector('form[data-form=add-server]')", 5);
+	snprintf(script, sizeof(script), "const f = document.querySelector("
+	    "'form[data-form=add-server]'); f.name.value = 'lab2'; f.uri.value "
+	    "= 'unix:%s/jgd2.sock'; f.requestSubmit();", cwd);
+	run(script);
+	wait_js("document.querySelector('.tree .titem.server.selected .name') "
+	    "&& document.querySelector('.tree .titem.server.selected .name')"
+	    ".textContent === 'lab2'", 20);
+	ATF_REQUIRE((fp = fopen("slow", "w")) != NULL);
+	fclose(fp);
+	run("document.querySelector('button.tab[data-arg=services]').click()");
+	wait_js("document.querySelector('.svc[data-arg=sshd] button"
+	    "[data-value=restart]')", 20);
+	run("document.querySelector('.svc[data-arg=sshd] button"
+	    "[data-value=restart]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')"
+	    ".requestSubmit()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('.svc[data-arg=sshd] button"
+	    "[disabled]')", 10);
+	run("document.querySelectorAll('.tree .titem.server')[0].click()");
+	wait_js("document.querySelector('.tree .titem.server.selected .name')"
+	    ".textContent === 'lab' && document.querySelector("
+	    "'.svc[data-arg=sshd] button[data-value=restart]')", 20);
+	ATF_CHECK_MSG(!js_true("document.querySelector('.svc[data-arg=sshd] "
+	    "button[disabled]')"), "sshd on lab is held by lab2's action");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('service sshd restart: done'))", 20);
+	(void)unlink("slow");
+	run("document.querySelector('.dock > header').click()");
+
 	/* Log out, and in again with the key. */
 	run("document.querySelector('button[data-act=logout]').click()");
 	wait_js("document.querySelector('button[data-act=login]')", 10);
