@@ -55,6 +55,10 @@ The console is laid out as a tree and tabs.
     packages or of all.
   - **Jobs**: the host's own record of what it was asked to change, by
     this console or with `arcanactl -q`; a row opens its workflow.
+    Above the list it says what the agent is doing now that is not a
+    job, a request somebody waits for such as a check of the packages,
+    since when, and whether the agent was told to stop and waits for
+    it: the same as its log says.
 - A **jail** has its page: actions, addresses (changed live with
   jail_setv(3) and the interface alias, persistently in its `jail.conf`
   block with a diff to preview, or both), its configuration as jail(8)

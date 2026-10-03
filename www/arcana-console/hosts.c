@@ -876,6 +876,12 @@ call_run(struct kore_task *t)
 			ucl_array_append(a, job_object(c, &jlr->jobs.v[i], false,
 			    0));
 		put(top, "jobs", a);
+		/* What the agent is at that is not a job. */
+		if (jlr->activity != NULL) {
+			put_str(top, "activity", jlr->activity);
+			put(top, "since", ucl_object_fromint(jlr->since));
+		}
+		put(top, "stopping", ucl_object_frombool(jlr->stopping));
 		break;
 	case OP_JOB:
 		memset(&jq, 0, sizeof(jq));

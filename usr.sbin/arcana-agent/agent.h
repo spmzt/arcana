@@ -18,7 +18,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.6.4"
+#define	ARCANA_AGENT_VERSION	"0.6.5"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -296,6 +296,7 @@ void		 changes_log(int);
 void		 jobs_log(int);
 void		 jobs_wake(void);
 bool		 changes_stopping(void);
+const char	*changes_current(struct work *, time_t *);
 
 extern pthread_mutex_t	change_lock;	/* one change at a time */
 

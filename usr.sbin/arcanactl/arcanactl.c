@@ -1208,6 +1208,15 @@ cmd_jobs(struct arc_client *cl)
 	for (i = 0; i < rsp->jobs.n; i++)
 		emit_job(&rsp->jobs.v[i]);
 	xo_close_list("job");
+	/* What is under way that is not a job, and a stop that waits. */
+	if (rsp->activity != NULL)
+		xo_emit("{Lwc:Under way}{:activity/%s}{d:/ (%jd s)}"
+		    "{e:since/%jd}\n", rsp->activity, (intmax_t)(time(NULL) -
+		    rsp->since), (intmax_t)rsp->since);
+	if (rsp->stopping)
+		xo_emit("{Lwc:Stopping}{:stopping/%s}\n", rsp->activity !=
+		    NULL || rsp->jobs.n > 0 ? "when what is under way ends" :
+		    "now");
 	arc_jobs_rsp_free(rsp);
 	return (0);
 }

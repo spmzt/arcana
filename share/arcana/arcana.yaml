@@ -319,6 +319,15 @@ attribute-sets:
       - name: truncated
         type: flag
         doc: More rows matched than the reply carries.
+      - name: activity
+        type: text
+        doc: What holds the daemon's change lock now, if it is not a job.
+      - name: since
+        type: s64
+        doc: Unix time activity began.
+      - name: stopping
+        type: flag
+        doc: The daemon was told to stop and waits for what is under way.
       - name: host-keys
         type: text
         doc: |
@@ -902,12 +911,18 @@ operations:
   - name: jobs
     attribute-set: arcana
     auth: true
-    doc: The queued, running and recent jobs, without their traces.
+    doc: |
+      The queued, running and recent jobs, without their traces; and
+      what the daemon is doing now that is not a job: a request a client
+      waits for, which holds up changes and a stop as a job does.
     do:
       reply:
         attributes:
           - ok
           - jobs
+          - activity
+          - since
+          - stopping
 
   - name: job
     attribute-set: arcana

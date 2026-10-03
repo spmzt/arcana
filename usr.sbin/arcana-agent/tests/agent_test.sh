@@ -1059,10 +1059,16 @@ stop_body()
 	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
 	change=$!
 	sleep 0.5
+	# What is under way and is not a job is said with the jobs.
+	atf_check -o match:'Under way: +service sshd restart' \
+	    -o not-match:'Stopping' "$JGC" -c "$SOCK" jobs
 	atf_check -o ignore "$JGC" -q -c "$SOCK" start web
 	kill "$pid"
 	sleep 0.5
 	atf_check -s exit:0 kill -0 "$pid"
+	atf_check -o match:'Under way: +service sshd restart' \
+	    -o match:'Stopping: +when what is under way ends' \
+	    "$JGC" -c "$SOCK" jobs
 	atf_check -o match:'a change is under way' \
 	    -o match:'under way: service sshd restart' \
 	    -o match:'queued, will not run: job 1: start web' cat daemon.out

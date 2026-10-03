@@ -333,6 +333,27 @@ view_jobs(struct html *h, struct server *s)
 		h_raw(h, "<div class=\"empty\"><div class=\"loader\"></div></div>");
 		return;
 	}
+	/*
+	 * What the agent is at now that is not a job: a request somebody
+	 * waits for.  It holds up the jobs, and a stop, as a job does.
+	 */
+	if (jstr(s->jobs, "activity") != NULL || jbool(s->jobs, "stopping")) {
+		h_raw(h, "<div class=\"notice warn now\">");
+		if (jstr(s->jobs, "activity") != NULL) {
+			h_raw(h, "<b>Under way now:</b> ");
+			h_txt(h, jstr(s->jobs, "activity"));
+			fmt_age(buf, sizeof(buf), (double)jint(s->jobs, "since",
+			    0) * 1000);
+			h_raw(h, " <span class=\"dim\">· since ");
+			h_txt(h, buf);
+			h_raw(h, " · not a job: it ends when its program does, "
+			    "and jobs wait for it</span>");
+		}
+		if (jbool(s->jobs, "stopping"))
+			h_raw(h, "<br><b>The agent was told to stop</b> and "
+			    "does when this has ended; it takes nothing new.");
+		h_raw(h, "</div>");
+	}
 	arr = jget(s->jobs, "jobs");
 	if ((n = ucl_array_size(arr)) == 0) {
 		h_raw(h, "<div class=\"empty\"><p>No jobs yet.</p></div>");

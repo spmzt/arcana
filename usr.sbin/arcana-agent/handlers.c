@@ -56,6 +56,7 @@ static pthread_mutex_t build_lock = PTHREAD_MUTEX_INITIALIZER;
 /* What holds change_lock now, for the log when asked to stop. */
 static pthread_mutex_t	note_lock = PTHREAD_MUTEX_INITIALIZER;
 static char		note[256];
+static time_t		note_since;
 static bool		stopping;
 
 static const char *action_names[] = {
@@ -200,6 +201,7 @@ change_note(const char *fmt, ...)
 		va_start(ap, fmt);
 		vsnprintf(note, sizeof(note), fmt, ap);
 		va_end(ap);
+		note_since = time(NULL);
 	}
 	pthread_mutex_unlock(&note_lock);
 	return (go);
@@ -224,6 +226,23 @@ changes_stopping(void)
 	on = stopping;
 	pthread_mutex_unlock(&note_lock);
 	return (on);
+}
+
+/*
+ * What holds the change lock now and since when, for those who ask for
+ * the jobs; NULL when nothing does.  A job says so itself in the list.
+ */
+const char *
+changes_current(struct work *w, time_t *sincep)
+{
+	const char	*s;
+
+	pthread_mutex_lock(&note_lock);
+	s = note[0] != '\0' && strncmp(note, "job ", 4) != 0 ? wstrdup(w,
+	    note) : NULL;
+	*sincep = note_since;
+	pthread_mutex_unlock(&note_lock);
+	return (s);
 }
 
 /* The change under way and the jobs that wait, to the log. */
@@ -978,6 +997,7 @@ arc_jobs_doit(cbl_req *req, void *arg __unused)
 {
 	struct arc_jobs_rsp	rsp;
 	struct work		w;
+	time_t			since;
 	int			error;
 
 	work_init(&w);
@@ -985,6 +1005,11 @@ arc_jobs_doit(cbl_req *req, void *arg __unused)
 	rsp.has_ok = true;
 	rsp.ok = true;
 	jobs_list(&w, &rsp.jobs.v, &rsp.jobs.n);
+	if ((rsp.activity = changes_current(&w, &since)) != NULL) {
+		rsp.has_since = true;
+		rsp.since = since;
+	}
+	rsp.stopping = changes_stopping();
 	error = arc_jobs_reply(req, &rsp);
 	work_free(&w);
 	return (error);
