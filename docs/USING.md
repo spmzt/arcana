@@ -11,6 +11,7 @@ The console is laid out as a tree and tabs.
 - **All hosts**: every host as a card with CPU, memory and ZFS, how many
   jails run, and the fleet as a graph from the console through the
   hosts to their jails; nodes are links.
+- **Network**: the fleet as a map; see [The network](#the-network).
 - A **host** has tabs:
   - **Summary**: usage gauges with their recent history, counts, the ZFS
     pools, and the host's jails as a graph; a jail picked in a graph,
@@ -33,15 +34,30 @@ The console is laid out as a tree and tabs.
     search the whole table for it.
     In the routes, **+ route** adds a static route (a destination and
     a gateway, an address or an interface), and the cross on a static
-    route deletes it; both run `route(8)`, live only.
+    route deletes it; both run `route(8)`. **fib** picks the routing
+    table shown and changed, when the host has more than one.
+    **Lookup** asks the host for the route to the address typed in the
+    filter: what it would take, as `route get` tells it, and every
+    other route that covers the address, the most specific first.
     **Interfaces** lists the host's interfaces as the agent reads them
     with getifaddrs(3): state and link, addresses, MTU, hardware
-    address, a tunnel's two ends, and traffic. An address is added
-    with **+ address** and taken off with its cross; **Up** and
-    **Down** change the interface's state. These are jobs that run
-    `ifconfig(8)`, live only: `rc.conf` is not touched, so they do not
-    survive a boot.
-    Changes to interfaces and routes are made in **safe mode**: once
+    address, a tunnel's two ends, traffic in all and as it is now. An
+    address is added with **+ address** and taken off with its cross;
+    **Up** and **Down** change the interface's state, **Edit** its MTU
+    and description. **+ interface** creates a cloned one: an epair, a
+    gif, gre, ipsec or vxlan tunnel with its two ends, a VLAN on its
+    parent, a bridge, and the rest; the cross on a cloned interface
+    destroys it. These are jobs that run `ifconfig(8)`. A change is
+    made live, and with **Keep it in rc.conf** also written there
+    through `sysrc(8)`, to be there after a boot: an address as the
+    next `ifconfig_<if>_alias<n>`, a route under a name of its own in
+    `static_routes`, an interface in `cloned_interfaces`.
+    **Netgraph** draws the host's netgraph(4) nodes and the hooks that
+    join them, from `ngctl list -l`; a node is picked for its hooks,
+    which are removed with their cross, shut down, or given a new peer;
+    dragging the dot on a node onto another connects a hook of each.
+    Changes to interfaces, routes, a jail's address made here and
+    service variables are made in **safe mode** where they can be: once
     the change is made, the host waits a minute to hear from the
     console again, which the console does by reading the job. If the
     change cut the host off, nothing arrives, and the host undoes it by
@@ -125,3 +141,38 @@ The console is laid out as a tree and tabs.
   for a browser to subscribe. **Settings** lists the devices
   (`push.json`) and removes one; a device whose browser dropped the
   subscription is forgotten by itself. Up to 16 devices.
+
+## The network
+
+**Network** in the tree shows the fleet as a map. Nothing is configured
+for it: the console reads each host's interfaces every few seconds and
+works the links out.
+
+- A **link** is drawn only between hosts of this console: a tunnel
+  whose far end is an address of another host, a point-to-point address
+  whose peer is one, or two hosts with addresses in the same network.
+  Three or more hosts in one network join a node of its own. A link
+  carries its traffic: its width and the dots that run along it follow
+  the rate of the interface behind it.
+- A **host** is dragged to where it should be, and stays there in that
+  browser; the map is dragged to move it and the wheel zooms. **Fit**
+  shows every host, **Arrange** puts them back on a circle.
+- A host or a link is picked for its **details** beside the map: the
+  host's interfaces with their addresses and a chart of each one's
+  traffic, in above the line and out below it; a link's two ends.
+  With nothing picked, the busiest interfaces of the fleet.
+- A **tunnel is made by drawing it**: drag the dot on a host's edge
+  onto another host. The console offers the outer addresses the two
+  reach each other by and a free pair of inner ones, asks for the kind
+  (gif, gre, vxlan), and creates an interface on each host, the two
+  ends of one tunnel. Each is made in safe mode, and kept in `rc.conf`
+  unless told otherwise. A tunnel picked on the map is destroyed with
+  one button, both ends.
+- **Route between hosts** asks each host on the way which route it
+  takes to an address (the agent's `route-lookup`), follows the gateway
+  to the host that has its address, and draws the way over the map hop
+  by hop, until the address is reached, the way leaves the hosts of this
+  console, or it comes back to where it was. Beside each hop are the
+  routes that would be taken in its place when the best one goes, drawn
+  dashed.
+

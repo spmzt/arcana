@@ -733,6 +733,58 @@ ATF_TC_BODY(pwa, tc)
 	    "route.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
+	/*
+	 * The route to an address, looked up on the host: what it takes,
+	 * in a box over the table.  And an interface's traffic and its
+	 * MTU, in the interfaces.
+	 */
+	run("const i = document.querySelector('#filter'); i.value = "
+	    "'10.77.5.5'; i.dispatchEvent(new Event('input', { bubbles: true "
+	    "}));");
+	run("document.querySelector('button[data-act=net-lookup]').click()");
+	wait_js("document.querySelector('.notice.lookup') && document."
+	    "querySelector('.notice.lookup').textContent.includes('10.0.0.1')",
+	    10);
+	shot("7a-lookup");
+	run("document.querySelector('button[data-act=net-lookup-clear]')"
+	    ".click()");
+	run("const i = document.querySelector('#filter'); i.value = ''; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]').click()");
+	wait_js("document.querySelector('tr[data-if=lo0] button[data-act="
+	    "if-edit]')", 20);
+	run("document.querySelector('tr[data-if=lo0] button[data-act=if-edit]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=if-set]')", 5);
+	run("const f = document.querySelector('form[data-form=if-set]'); "
+	    "f.mtu.value = '9000'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('lo0: set: done'))", 20);
+	ATF_CHECK(system("grep -q '^lo0 mtu 9000$' ifconfig.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/* Netgraph: the nodes as a graph, with the hooks that join them. */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=netgraph]').click()");
+	wait_js("document.querySelectorAll('.ngmap .tnode').length === 2 && "
+	    "document.querySelector('.ngmap .tlink .lbl')", 20);
+	ATF_CHECK(js_true("document.querySelector('.ngmap .tlink .lbl')."
+	    "textContent.includes('lower')"));
+	run("window.ptr = (el, type, x, y) => { const r = el."
+	    "getBoundingClientRect(); (type === 'pointerdown' ? el : document)"
+	    ".dispatchEvent(new PointerEvent(type, { bubbles: true, button: "
+	    "0, clientX: x === undefined ? r.x + r.width / 2 : x, clientY: "
+	    "y === undefined ? r.y + r.height / 2 : y })); };");
+	run("const n = document.querySelector('.ngmap .tnode .box'); "
+	    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
+	wait_js("document.querySelector('.ngmap .tnode.sel') && document."
+	    "querySelector('.ngmap button[data-act=ng-rmhook]')", 5);
+	shot("7b-netgraph");
+
 	/* The host's own record of jobs has the start that was done. */
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
 	run("document.querySelector('#j-db').click()");
@@ -849,6 +901,91 @@ ATF_TC_BODY(pwa, tc)
 	    "t.textContent.includes('service sshd restart: done'))", 20);
 	(void)unlink("slow");
 	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * The network: every host a node of a map, joined to the others
+	 * as its interfaces join it.  Both agents here read the same
+	 * machine, so they share its networks.
+	 */
+	run("window.ptr = (el, type, x, y) => { const r = el."
+	    "getBoundingClientRect(); (type === 'pointerdown' ? el : document)"
+	    ".dispatchEvent(new PointerEvent(type, { bubbles: true, button: "
+	    "0, clientX: x === undefined ? r.x + r.width / 2 : x, clientY: "
+	    "y === undefined ? r.y + r.height / 2 : y })); };");
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelectorAll('svg.topo .tnode.up').length === 2",
+	    30);
+	wait_js("document.querySelector('.map-panel .facts')", 10);
+	shot("8-network");
+	/* A host is picked: its interfaces, with their addresses. */
+	run("const n = document.querySelector('svg.topo .tnode .box'); "
+	    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
+	wait_js("document.querySelector('svg.topo .tnode.sel') && document."
+	    "querySelector('.map-panel .iflist li')", 5);
+	ATF_CHECK(js_true("document.querySelector('.map-panel .iflist')."
+	    "textContent.includes('lo0')"));
+	/* And dragged: it is where it was put, and stays there. */
+	run("window.was = document.querySelector('svg.topo .tnode')."
+	    "getAttribute('transform'); const n = document.querySelector("
+	    "'svg.topo .tnode .box'), r = n.getBoundingClientRect(); "
+	    "ptr(n, 'pointerdown'); ptr(n, 'pointermove', r.x + 150, r.y + "
+	    "90);");
+	wait_js("document.querySelector('svg.topo .tnode').getAttribute("
+	    "'transform') !== window.was", 5);
+	run("const r = document.querySelector('svg.topo .tnode .box')."
+	    "getBoundingClientRect(); ptr(document.body, 'pointerup', r.x + "
+	    "10, r.y + 10);");
+	wait_js("(localStorage.getItem('arc_topo') || '').split('\\n')."
+	    "length >= 2", 5);
+	/* The traffic of an interface, once it was read twice. */
+	wait_js("document.querySelector('.map-panel svg.bw path.in')", 30);
+	shot("8a-host-panel");
+
+	/*
+	 * A tunnel is drawn: from one host's port onto the other.  That
+	 * asks for its details, with addresses offered, and makes its two
+	 * ends, one on each host.
+	 */
+	run("const ns = document.querySelectorAll('svg.topo .tnode'), p = "
+	    "ns[0].querySelector('.port'), b = ns[1].querySelector('.box')."
+	    "getBoundingClientRect(); window.bx = b.x + b.width / 2; "
+	    "window.by = b.y + b.height / 2; ptr(p, 'pointerdown'); "
+	    "ptr(p, 'pointermove', window.bx, window.by);");
+	wait_js("document.querySelector('svg.topo .tdraft')", 5);
+	run("ptr(document.body, 'pointerup', window.bx, window.by);");
+	wait_js("document.querySelector('form[data-form=tunnel]')", 5);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=tunnel]')."
+	    "inner_a.value === '10.255.0.1/30'"));
+	shot("8b-tunnel");
+	run("document.querySelector('form[data-form=tunnel]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].filter(t => "
+	    "t.textContent.includes('create gif0')).length >= 1", 20);
+	for (int k = 0; k < 100 && system("test \"$(grep -c '^gif0 inet "
+	    "10.255.0' ifconfig.log)\" = 2") != 0; k++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^gif0 inet 10.255.0.1/30 10.255.0.2$' "
+	    "ifconfig.log && grep -q '^gif0 inet 10.255.0.2/30 10.255.0.1$' "
+	    "ifconfig.log && test \"$(grep -c '^gif0 tunnel ' ifconfig.log)\" "
+	    "= 2") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/* The route from a host to an address: asked of the host, drawn
+	 * over the map, and told hop by hop. */
+	run("const i = document.querySelector('#topo-addr'); i.value = "
+	    "'10.77.5.5'; i.dispatchEvent(new Event('input', { bubbles: true "
+	    "}));");
+	run("document.querySelector('button[data-act=topo-trace]').click()");
+	wait_js("document.querySelector('.hops li') && document.querySelector("
+	    "'svg.topo .tpath.best')", 15);
+	ATF_CHECK(js_true("document.querySelector('.hops').textContent."
+	    "includes('10.0.0.1') && document.querySelector('.hops')."
+	    "textContent.includes('leaves the fleet')"));
+	shot("8c-path");
+	run("document.querySelector('li[data-act=select-server]').click()");
+	wait_js("document.querySelector('button.tab[data-arg=jails]')", 10);
 
 	/* Log out, and in again with the key. */
 	run("document.querySelector('button[data-act=logout]').click()");

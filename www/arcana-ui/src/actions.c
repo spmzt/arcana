@@ -192,8 +192,11 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_IFACE:
 		/* The interfaces as they are now, if they are on show. */
 		if ((app.net.kind == NET_INTERFACES || app.net.kind ==
-		    NET_ROUTES) && strcmp(app.net.sid, s->id) == 0)
+		    NET_ROUTES || app.net.kind == NET_NETGRAPH) &&
+		    strcmp(app.net.sid, s->id) == 0 && app.node == NODE_HOST)
 			refresh_network(s, false);
+		/* And for the map, which draws its links from them. */
+		topo_poll(s);
 		break;
 	default:
 		app.pkg.busy = false;
@@ -1156,10 +1159,10 @@ void
 refresh_network(struct server *s, bool user)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets", "interfaces" };
+	    "sockets", "interfaces", "netgraph" };
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[320], title[160];
+	char		 url[320], title[160], fib[24];
 
 	if (!app.online)
 		return;
@@ -1184,11 +1187,15 @@ refresh_network(struct server *s, bool user)
 		c->op = op->id;
 		app.trace_op = op->id;
 	}
-	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=%s%s%s",
+	fib[0] = '\0';
+	if (app.net.fib > 0 && (app.net.kind == NET_ROUTES || app.net.kind ==
+	    NET_NEXTHOPS))
+		snprintf(fib, sizeof(fib), "&fib=%d", app.net.fib);
+	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=%s%s%s%s",
 	    s->id, kinds[app.net.kind], app.net.family == 4 ? "inet" :
 	    app.net.family == 6 ? "inet6" : "all", app.net.kind ==
 	    NET_ROUTES && app.net.host_filter[0] != '\0' ? "&filter=" : "",
-	    app.net.kind == NET_ROUTES ? app.net.host_filter : "");
+	    app.net.kind == NET_ROUTES ? app.net.host_filter : "", fib);
 	op_wait(c->op, api("GET", url, NULL, network_cb, c));
 }
 
@@ -1995,15 +2002,15 @@ save_settings(const ucl_object_t *f)
 /* Add address to interface ifname of s as an alias, or take it off. */
 void
 if_address(struct server *s, const char *ifname, const char *address,
-    bool remove)
+    bool remove, bool persist)
 {
 	char	*qi, *qa, *json, title[160];
 
 	qi = json_quote(ifname);
 	qa = json_quote(address);
 	if (asprintf(&json, "{\"kind\":\"if-address\",\"interface\":%s,"
-	    "\"address\":%s,\"remove\":%s,\"safe\":true}", qi, qa, remove ?
-	    "true" : "false") == -1)
+	    "\"address\":%s,\"remove\":%s,\"persist\":%s,\"safe\":true}", qi,
+	    qa, remove ? "true" : "false", persist ? "true" : "false") == -1)
 		abort();
 	free(qi);
 	free(qa);
@@ -2030,7 +2037,7 @@ if_state(struct server *s, const char *ifname, bool up)
 /* Add a static route on s, or delete the one to destination. */
 void
 route_change(struct server *s, const char *destination, const char *gateway,
-    bool remove)
+    bool remove, bool persist, int fib)
 {
 	char	*qd, *qg, *json, title[200];
 
@@ -2038,10 +2045,10 @@ route_change(struct server *s, const char *destination, const char *gateway,
 	qg = json_quote(gateway);
 	/* Safe, unless it is a delete that could not be put back. */
 	if (asprintf(&json, "{\"kind\":\"route\",\"destination\":%s%s%s,"
-	    "\"remove\":%s,\"safe\":%s}", qd, gateway[0] != '\0' ?
-	    ",\"gateway\":" : "", gateway[0] != '\0' ? qg : "", remove ?
-	    "true" : "false", !remove || gateway[0] != '\0' ? "true" :
-	    "false") == -1)
+	    "\"remove\":%s,\"persist\":%s,\"fib\":%d,\"safe\":%s}", qd,
+	    gateway[0] != '\0' ? ",\"gateway\":" : "", gateway[0] != '\0' ?
+	    qg : "", remove ? "true" : "false", persist ? "true" : "false",
+	    fib, !remove || gateway[0] != '\0' ? "true" : "false") == -1)
 		abort();
 	free(qd);
 	free(qg);

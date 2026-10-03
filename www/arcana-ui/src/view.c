@@ -356,7 +356,8 @@ rail(struct html *h)
 	    "<button class=\"ghost small rail-toggle\" data-act=\""
 	    "rail-toggle\" title=\"Hosts and jails\">%s ", app.rail_open ?
 	    " open" : "", app.rail_open ? "▴" : "▾");
-	h_txt(h, app.node == NODE_FLEET || s == NULL ? "All hosts" : s->name);
+	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node ==
+	    NODE_FLEET || s == NULL ? "All hosts" : s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
 		h_raw(h, " / ");
 		h_txt(h, app.jail);
@@ -368,8 +369,11 @@ rail(struct html *h)
 	    "title=\"Add a server\">+</button></div><ul class=\"tree\">");
 	h_fmt(h, "<li class=\"titem fleet%s\" data-act=\"select-fleet\">"
 	    "<span class=\"twig\">◈</span><span class=\"name\">All hosts</span>"
-	    "<span class=\"count\">%d</span></li>", app.node == NODE_FLEET ?
-	    " selected" : "", app.nservers);
+	    "<span class=\"count\">%d</span></li>"
+	    "<li class=\"titem fleet netnode%s\" data-act=\"select-network\">"
+	    "<span class=\"twig\">⌬</span><span class=\"name\">Network</span>"
+	    "</li>", app.node == NODE_FLEET ? " selected" : "", app.nservers,
+	    app.node == NODE_NETWORK ? " selected" : "");
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
@@ -761,6 +765,11 @@ stage(struct html *h)
 	if (app.node == NODE_FLEET) {
 		view_fleet(h);
 		peek_box(h);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.node == NODE_NETWORK) {
+		view_netmap(h);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1181,11 +1190,23 @@ modal(struct html *h)
 			    "certificate.</p>");
 		}
 		break;
+	case MODAL_TUNNEL:
+	case MODAL_IF_CREATE:
+	case MODAL_IF_SET:
+	case MODAL_NG_CONNECT:
+	case MODAL_NG_MKPEER:
+		if (!topo_modal(h))
+			return;
+		break;
 	case MODAL_ROUTE:
-		h_raw(h, "<form data-form=\"route\"><h2>Add a static route</h2>"
-		    "<p>With <code>route add</code>, now. The change is live "
-		    "only: <code>rc.conf</code> is not touched, and the route "
-		    "is gone at the next boot.</p>"
+		h_fmt(h, "<form data-form=\"route\"><h2>Add a static route%s"
+		    "</h2>", app.net.fib > 0 ? " to this routing table" : "");
+		h_raw(h, "<p>With <code>route add</code>, now, in safe mode: "
+		    "unless the host is reached again afterwards, it takes "
+		    "the route back.</p><label class=\"toggle\"><input type="
+		    "\"checkbox\" name=\"persist\" checked><span>Keep it in "
+		    "<code>rc.conf</code>, to be there after a boot</span>"
+		    "</label>"
 		    "<label>Destination<input name=\"destination\" "
 		    "spellcheck=\"false\" autocomplete=\"off\" "
 		    "placeholder=\"10.20.0.0/16\" autofocus><small>A network "
@@ -1198,9 +1219,12 @@ modal(struct html *h)
 	case MODAL_IF_ADDRESS:
 		h_raw(h, "<form data-form=\"if-address\"><h2>Add an address to ");
 		h_txt(h, app.confirm.arg);
-		h_raw(h, "</h2><p>As an alias, with <code>ifconfig</code>, now. "
-		    "The change is live only: <code>rc.conf</code> is not "
-		    "touched, and the address is gone at the next boot.</p>"
+		h_raw(h, "</h2><p>As an alias, with <code>ifconfig</code>, now, "
+		    "in safe mode: unless the host is reached again "
+		    "afterwards, it takes the address off.</p><label class=\""
+		    "toggle\"><input type=\"checkbox\" name=\"persist\" checked>"
+		    "<span>Keep it in <code>rc.conf</code>, to be there after "
+		    "a boot</span></label>"
 		    "<label>Address<input name=\"address\" spellcheck=\"false\" "
 		    "autocomplete=\"off\" placeholder=\"10.0.0.5/24\" autofocus>"
 		    "<small>IPv4 or IPv6, with its prefix length; without one "
@@ -1500,6 +1524,17 @@ modal(struct html *h)
 		case MODAL_IF_ADDRESS:
 		case MODAL_ROUTE:
 			h_raw(h, "<button class=\"primary\">Add</button>");
+			break;
+		case MODAL_TUNNEL:
+		case MODAL_IF_CREATE:
+		case MODAL_NG_MKPEER:
+			h_raw(h, "<button class=\"primary\">Create</button>");
+			break;
+		case MODAL_IF_SET:
+			h_raw(h, "<button class=\"primary\">Set</button>");
+			break;
+		case MODAL_NG_CONNECT:
+			h_raw(h, "<button class=\"primary\">Connect</button>");
 			break;
 		case MODAL_HOST_KEY:
 			h_fmt(h, "<button class=\"%s\">%s</button>",

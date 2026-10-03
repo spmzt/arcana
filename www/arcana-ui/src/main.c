@@ -35,11 +35,10 @@ static int	others_turn;	/* refreshes since the other hosts were read */
 #define	OTHERS_EVERY	3	/* the hosts not selected: every third refresh */
 
 static void	tick(void *);
-static void	confirm(const char *, const char *, const char *, bool,
-		    const char *, const char *, const char *, const char *);
 static void	dispatch(const char *, const char *, const char *);
 static void	close_service(void);
 static void	submit(const char *, const ucl_object_t *);
+static void	submit_form(const char *, const ucl_object_t *);
 
 /*
  * Rebuild the page.  On the console, each region is rebuilt in C (cheap)
@@ -204,6 +203,8 @@ tick(void *arg)
 	if (app.screen == SCREEN_CONSOLE) {
 		jobs_poll();
 		agent_restarts(now);
+		if (app.visible && app.online)
+			topo_tick(now);
 	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
 	    now - last_update > UPDATE_MS) {
@@ -214,11 +215,14 @@ tick(void *arg)
 	    now - last_refresh > REFRESH_MS) {
 		last_refresh = now;
 		/* The fleet page watches every host, a host page its own. */
-		for (i = 0; app.node == NODE_FLEET && i < app.nservers; i++) {
+		for (i = 0; (app.node == NODE_FLEET || app.node ==
+		    NODE_NETWORK) && i < app.nservers; i++) {
 			refresh_jails(&app.servers[i], false);
-			refresh_stats(&app.servers[i]);
+			if (app.node == NODE_FLEET)
+				refresh_stats(&app.servers[i]);
 		}
-		if (app.node != NODE_FLEET && (s = cur_server()) != NULL) {
+		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
+		    (s = cur_server()) != NULL) {
 			refresh_jails(s, false);
 			refresh_stats(s);
 			if (app.tab == TAB_JOBS)
@@ -230,7 +234,8 @@ tick(void *arg)
 		 * or an agent updated or restarted elsewhere would show
 		 * its old self until the page is loaded again.
 		 */
-		if (app.node != NODE_FLEET && ++others_turn >= OTHERS_EVERY) {
+		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
+		    ++others_turn >= OTHERS_EVERY) {
 			others_turn = 0;
 			for (i = 0; i < app.nservers; i++)
 				if (i != app.sel)
@@ -243,7 +248,7 @@ tick(void *arg)
 	}
 }
 
-static void
+void
 confirm(const char *title, const char *body, const char *button,
     bool danger, const char *typed, const char *act, const char *arg,
     const char *value)
@@ -294,6 +299,14 @@ close_modal(void)
 /* Forms: their fields arrive as one JSON object. */
 static void
 submit(const char *form, const ucl_object_t *f)
+{
+	if (topo_form(form, f))
+		return;
+	submit_form(form, f);
+}
+
+static void
+submit_form(const char *form, const ucl_object_t *f)
 {
 	struct server	*s2;
 	const char	*s;
@@ -404,7 +417,8 @@ submit(const char *form, const ucl_object_t *f)
 		}
 		app.modal = MODAL_NONE;
 		if ((s2 = cur_server()) != NULL)
-			route_change(s2, s, jstr(f, "gateway"), false);
+			route_change(s2, s, jstr(f, "gateway"), false, jbool(f,
+			    "persist"), app.net.fib);
 	} else if (strcmp(form, "if-address") == 0) {
 		s = jstr(f, "address") != NULL ? jstr(f, "address") : "";
 		if (strlen(s) < 2 || strchr(s, ' ') != NULL) {
@@ -415,7 +429,8 @@ submit(const char *form, const ucl_object_t *f)
 		}
 		app.modal = MODAL_NONE;
 		if ((s2 = cur_server()) != NULL)
-			if_address(s2, app.confirm.arg, s, false);
+			if_address(s2, app.confirm.arg, s, false, jbool(f,
+			    "persist"));
 	} else if (strcmp(form, "host-key") == 0) {
 		/* Confirmed: build again, with the keys shown as trusted;
 		 * or just again, once the deploy key is allowed. */
@@ -455,6 +470,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	int			 i;
 
 	s = cur_server();
+	if (topo_action(act, arg, value) || ng_action(act, arg, value))
+		return;
 	if (strcmp(act, "fold") == 0) {
 		arc_open_set(arg, !arc_open_get(arg));
 	} else if (strcmp(act, "tree-more") == 0) {
@@ -576,7 +593,9 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "connections") == 0 ? NET_CONNECTIONS :
 		    strcmp(arg, "sockets") == 0 ? NET_SOCKETS :
 		    strcmp(arg, "interfaces") == 0 ? NET_INTERFACES :
-		    NET_ROUTES;
+		    strcmp(arg, "netgraph") == 0 ? NET_NETGRAPH : NET_ROUTES;
+		if (app.net.kind == NET_INTERFACES)
+			topo_poll(s);
 		app.net.loading = false;
 		refresh_network(s, true);
 	} else if (strcmp(act, "net-search") == 0 && s != NULL) {
@@ -609,7 +628,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		char body[400];
 
 		snprintf(body, sizeof(body), "route delete %s%s%s, on %s. %s "
-		    "The change is live only: rc.conf is not touched.", arg,
+		    "If rc.conf keeps the route, it is forgotten there too.", arg,
 		    value[0] != '\0' ? " " : "", value, s->name, value[0] !=
 		    '\0' ? "If that cuts the host off from the console, the "
 		    "host puts the route back by itself after a minute." :
@@ -619,7 +638,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		confirm("Delete the route", body, "Delete", true, "",
 		    "do-route-delete", arg, value);
 	} else if (strcmp(act, "do-route-delete") == 0 && s != NULL) {
-		route_change(s, arg, value, true);
+		route_change(s, arg, value, true, true, app.net.fib);
 	} else if (strcmp(act, "if-addr-add") == 0 && s != NULL) {
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
 		app.modal = MODAL_IF_ADDRESS;
@@ -629,13 +648,13 @@ dispatch(const char *act, const char *arg, const char *value)
 
 		snprintf(body, sizeof(body), "ifconfig %s %s -alias, on %s. "
 		    "If that cuts the host off from the console, the host "
-		    "puts the address back by itself after a minute. The "
-		    "change is live only: rc.conf is not touched.", arg, value,
-		    s->name);
+		    "puts the address back by itself after a minute. If "
+		    "rc.conf keeps the address, it is forgotten there too.",
+		    arg, value, s->name);
 		confirm("Remove the address", body, "Remove", true, "",
 		    "do-if-addr-remove", arg, value);
 	} else if (strcmp(act, "do-if-addr-remove") == 0 && s != NULL) {
-		if_address(s, arg, value, true);
+		if_address(s, arg, value, true, true);
 	} else if (strcmp(act, "if-up") == 0 && s != NULL) {
 		if_state(s, arg, true);
 	} else if (strcmp(act, "if-down") == 0 && s != NULL) {
@@ -649,6 +668,40 @@ dispatch(const char *act, const char *arg, const char *value)
 		    arg, "do-if-down", arg, "");
 	} else if (strcmp(act, "do-if-down") == 0 && s != NULL) {
 		if_state(s, arg, false);
+	} else if (strcmp(act, "if-edit") == 0 && s != NULL) {
+		/* value: "mtu description", as the row has them now. */
+		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
+		snprintf(app.confirm.value, sizeof(app.confirm.value), "%d",
+		    atoi(value));
+		snprintf(app.confirm.body, sizeof(app.confirm.body), "%s",
+		    strchr(value, ' ') != NULL ? strchr(value, ' ') + 1 : "");
+		app.modal = MODAL_IF_SET;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "if-destroy") == 0 && s != NULL) {
+		snprintf(body, sizeof(body), "ifconfig %s destroy, on %s, and "
+		    "it is forgotten in rc.conf. This cannot be undone; the "
+		    "host refuses when the console reaches it through this "
+		    "interface.", arg, s->name);
+		confirm("Destroy the interface", body, "Destroy", true, arg,
+		    "do-if-destroy", arg, "");
+	} else if (strcmp(act, "do-if-destroy") == 0 && s != NULL) {
+		char *q = json_quote(arg), *json;
+
+		if (asprintf(&json, "{\"kind\":\"if-destroy\",\"interface\":"
+		    "%s,\"persist\":true}", q) == -1)
+			abort();
+		free(q);
+		snprintf(body, sizeof(body), "destroy %s", arg);
+		job_send(s, json, body, JOB_IFACE, arg);
+	} else if (strcmp(act, "net-lookup") == 0 && s != NULL) {
+		topo_lookup(s, app.filter, app.net.fib);
+	} else if (strcmp(act, "net-lookup-clear") == 0) {
+		topo_lookup_clear();
+	} else if (strcmp(act, "input:net-fib") == 0 && s != NULL) {
+		app.net.fib = atoi(value) > 0 && atoi(value) < 65536 ?
+		    atoi(value) : 0;
+		app.net.loading = false;
+		refresh_network(s, false);
 	} else if (strcmp(act, "net-family") == 0 && s != NULL) {
 		app.net.family = atoi(arg);
 		app.net.loading = false;

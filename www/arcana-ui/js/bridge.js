@@ -132,6 +132,107 @@ addToLibrary({
 			if (e.key === "Escape")
 				act("escape", "", "");
 		});
+
+		/*
+		 * Things dragged inside a drawing: an element with data-drag
+		 * names what it is, and the page hears of it as
+		 * <name>-start where it was taken hold of, <name>-move
+		 * while it is dragged, <name>-end when let go,
+		 * with what it was dropped on (the nearest data-drop), or
+		 * <name>-click when it was not moved.  The value is
+		 * "x,y,cx,cy,k[,drop]": where in the drawing, where on the
+		 * screen, and how much of the drawing a pixel is.
+		 */
+		var drag = null;
+
+		function where(e) {
+			var m = drag.svg.getScreenCTM(), p;
+
+			if (!m)
+				return ("0,0," + e.clientX + "," + e.clientY + ",1");
+			p = new DOMPoint(e.clientX, e.clientY)
+			    .matrixTransform(m.inverse());
+			return (p.x.toFixed(1) + "," + p.y.toFixed(1) + "," +
+			    e.clientX + "," + e.clientY + "," +
+			    (1 / m.a).toFixed(4));
+		}
+		document.addEventListener("pointerdown", function (e) {
+			var t = e.target.closest ? e.target.closest(
+			    "[data-drag]") : null, svg;
+
+			if (t === null || e.button > 0)
+				return;
+			svg = t.closest("svg");
+			if (svg === null)
+				return;
+			drag = { name: t.dataset.drag, arg: t.dataset.arg || "",
+			    svg: svg, x: e.clientX, y: e.clientY, moved: false,
+			    last: null, frame: 0 };
+			e.preventDefault();
+		});
+		document.addEventListener("pointermove", function (e) {
+			if (drag === null)
+				return;
+			if (!drag.moved && Math.abs(e.clientX - drag.x) +
+			    Math.abs(e.clientY - drag.y) < 5)
+				return;
+			if (!drag.moved) {
+				/* Where it was taken hold of, before it moves. */
+				drag.moved = true;
+				act(drag.name + "-start", drag.arg, where({
+				    clientX: drag.x, clientY: drag.y }));
+				if (drag === null)
+					return;
+			}
+			drag.last = e;
+			/* Once a frame is as often as it can be drawn. */
+			if (drag.frame === 0)
+				drag.frame = requestAnimationFrame(function () {
+					if (drag === null)
+						return;
+					drag.frame = 0;
+					if (!document.contains(drag.svg))
+						drag.svg = document.querySelector(
+						    "svg.topo") || drag.svg;
+					act(drag.name + "-move", drag.arg,
+					    where(drag.last));
+				});
+		});
+		function drop(e) {
+			var d = drag, el, on;
+
+			if (d === null)
+				return;
+			drag = null;
+			if (d.frame !== 0)
+				cancelAnimationFrame(d.frame);
+			if (!d.moved) {
+				act(d.name + "-click", d.arg, "");
+				return;
+			}
+			if (!document.contains(d.svg))
+				d.svg = document.querySelector("svg.topo") || d.svg;
+			drag = d;
+			el = document.elementFromPoint(e.clientX, e.clientY);
+			on = el && el.closest ? el.closest("[data-drop]") : null;
+			el = where(e) + "," + (on ? on.dataset.drop : "");
+			drag = null;
+			act(d.name + "-end", d.arg, el);
+		}
+		document.addEventListener("pointerup", drop);
+		document.addEventListener("pointercancel", drop);
+		document.addEventListener("wheel", function (e) {
+			var svg = e.target.closest ? e.target.closest(
+			    "svg[data-wheel]") : null, m, p;
+
+			if (svg === null || !(m = svg.getScreenCTM()))
+				return;
+			e.preventDefault();
+			p = new DOMPoint(e.clientX, e.clientY)
+			    .matrixTransform(m.inverse());
+			act(svg.dataset.wheel, "", e.deltaY + "," +
+			    p.x.toFixed(1) + "," + p.y.toFixed(1));
+		}, { passive: false });
 		window.addEventListener("resize", function () {
 			act("resize", "", "");
 		});
@@ -403,6 +504,26 @@ addToLibrary({
 	arc_push_here__deps: ["$arcPush", "$arcStr"],
 	arc_push_here: function () {
 		return (arcStr(arcPush.endpoint));
+	},
+
+	/* A text kept in this browser under a name; "" when there is none. */
+	arc_store_get__deps: ["$arcStr", "$UTF8ToString"],
+	arc_store_get: function (keyp) {
+		var v = "";
+
+		try {
+			v = localStorage.getItem(UTF8ToString(keyp)) || "";
+		} catch (e) {
+		}
+		return (arcStr(v));
+	},
+	arc_store_set__deps: ["$UTF8ToString"],
+	arc_store_set: function (keyp, valuep) {
+		try {
+			localStorage.setItem(UTF8ToString(keyp),
+			    UTF8ToString(valuep));
+		} catch (e) {
+		}
 	},
 
 	/*

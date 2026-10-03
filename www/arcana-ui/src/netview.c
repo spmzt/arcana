@@ -68,7 +68,8 @@ static int	table(struct html *, const ucl_object_t *, const struct column *,
 		    size_t, const char *);
 static void	route_delete(struct html *, const ucl_object_t *, const char *);
 static int	cmp_rows(const void *, const void *);
-static int	interfaces(struct html *, const ucl_object_t *);
+static int	interfaces(struct html *, const struct server *,
+		    const ucl_object_t *);
 static void	fmt_bytes(char *, size_t, int64_t);
 
 /* What qsort(3) compares by: the sorted column of the table drawn. */
@@ -220,13 +221,31 @@ fmt_bytes(char *buf, size_t len, int64_t n)
 	snprintf(buf, len, u == 0 ? "%.0f %s" : "%.1f %s", v, units[u]);
 }
 
+/* Is name an interface that was made, and so can be destroyed? */
+static bool
+cloned(const char *name)
+{
+	static const char *const types[] = { "epair", "gif", "gre", "ipsec",
+	    "me", "vxlan", "vlan", "bridge", "lagg", "tap", "tun", "wg",
+	    "ovpn" };
+	size_t	i, len;
+
+	for (i = 0; i < sizeof(types) / sizeof(types[0]); i++) {
+		len = strlen(types[i]);
+		if (strncmp(name, types[i], len) == 0 && name[len] >= '0' &&
+		    name[len] <= '9')
+			return (true);
+	}
+	return (strncmp(name, "lo", 2) == 0 && name[2] > '0' && name[2] <= '9');
+}
+
 /*
  * The interfaces: one row each, with its addresses as chips that can be
  * taken off, a way to add one, and to bring it up or down.  The filter
  * matches the name, the description and the addresses.
  */
 static int
-interfaces(struct html *h, const ucl_object_t *arr)
+interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 {
 	const ucl_object_t	*o, *a;
 	ucl_object_iter_t	 it, ait;
@@ -237,7 +256,7 @@ interfaces(struct html *h, const ucl_object_t *arr)
 
 	h_raw(h, "<table class=\"net ifaces\"><thead><tr><th>Interface</th>"
 	    "<th>State</th><th>Addresses</th><th>MTU</th><th>Ether</th>"
-	    "<th>In / out</th><th></th></tr></thead><tbody>");
+	    "<th>In / out</th><th>Now</th><th></th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
 	while ((o = ucl_object_iterate(arr, &it, true)) != NULL) {
@@ -333,10 +352,27 @@ interfaces(struct html *h, const ucl_object_t *arr)
 			h_txt(h, buf);
 			h_raw(h, "</small>");
 		}
-		h_fmt(h, "</td><td><button class=\"ghost small\" "
+		h_raw(h, "</td><td>");
+		topo_spark(h, s, name);
+		h_fmt(h, "</td><td class=\"acts\"><button class=\"ghost small\" "
 		    "data-act=\"%s\"", up ? "if-down" : "if-up");
 		h_attr(h, "data-arg", name);
-		h_fmt(h, ">%s</button></td></tr>", up ? "Down" : "Up");
+		h_fmt(h, ">%s</button><button class=\"ghost small\" "
+		    "data-act=\"if-edit\" title=\"MTU and description\"", up ?
+		    "Down" : "Up");
+		h_attr(h, "data-arg", name);
+		snprintf(buf, sizeof(buf), "%lld %s", (long long)jint(o, "mtu",
+		    0), jstr(o, "description") != NULL ? jstr(o,
+		    "description") : "");
+		h_attr(h, "data-value", buf);
+		h_raw(h, ">Edit</button>");
+		if (cloned(name)) {
+			h_raw(h, "<button class=\"icon\" data-act=\""
+			    "if-destroy\" title=\"Destroy this interface\"");
+			h_attr(h, "data-arg", name);
+			h_raw(h, ">×</button>");
+		}
+		h_raw(h, "</td></tr>");
 	}
 	h_raw(h, "</tbody></table>");
 	return (n);
@@ -350,7 +386,7 @@ view_network(struct html *h, struct server *s)
 	} kinds[] = {
 		{ "routes", "Routes" }, { "nexthops", "Nexthops" },
 		{ "connections", "Connections" }, { "sockets", "Sockets" },
-		{ "interfaces", "Interfaces" },
+		{ "interfaces", "Interfaces" }, { "netgraph", "Netgraph" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -360,7 +396,7 @@ view_network(struct html *h, struct server *s)
 
 	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0;
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < 6; i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
@@ -374,8 +410,24 @@ view_network(struct html *h, struct server *s)
 		    "inet" : "inet6");
 	}
 	h_raw(h, "</nav>");
+	if (app.net.kind == NET_INTERFACES)
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "topo-if-create\" data-arg=\"\" title=\"Create an epair, a "
+		    "tunnel, a bridge, a VLAN…\">+ interface</button>");
+	if (app.net.kind == NET_ROUTES || app.net.kind == NET_NEXTHOPS) {
+		h_raw(h, "<label class=\"fib\" title=\"The routing table "
+		    "(FIB) shown and changed\">fib<input data-input=\""
+		    "net-fib\" inputmode=\"numeric\" size=\"2\"");
+		if (app.net.fib > 0)
+			h_fmt(h, " value=\"%d\"", app.net.fib);
+		h_raw(h, " placeholder=\"0\"></label>");
+	}
 	if (app.net.kind == NET_ROUTES)
-		h_raw(h, "<button class=\"ghost small\" data-act=\"route-add\" "
+		h_raw(h, "<button class=\"ghost small\" data-act=\"net-lookup\" "
+		    "title=\"The route this host takes to the address typed "
+		    "in the filter, and the others that cover it\">Lookup"
+		    "</button>"
+		    "<button class=\"ghost small\" data-act=\"route-add\" "
 		    "title=\"Add a static route\">+ route</button>"
 		    "<button class=\"ghost small\" data-act=\"net-search\" "
 		    "title=\"Search the whole table on the host for the text "
@@ -398,6 +450,8 @@ view_network(struct html *h, struct server *s)
 		h_txt(h, app.net.error);
 		h_raw(h, "</div>");
 	}
+	if (app.net.kind == NET_ROUTES)
+		view_lookup(h, s);
 	if (!mine) {
 		h_raw(h, app.net.loading ? "<div class=\"empty\"><div class="
 		    "\"loader\"></div></div>" : "<div class=\"empty\"><h2>No "
@@ -453,8 +507,11 @@ view_network(struct html *h, struct server *s)
 		    conn_cols, 6, NULL);
 		break;
 	case NET_INTERFACES:
-		shown = interfaces(h, jget(app.net.data, "data.interfaces"));
+		shown = interfaces(h, s, jget(app.net.data, "data.interfaces"));
 		break;
+	case NET_NETGRAPH:
+		view_netgraph(h, s, jget(app.net.data, "data.nodes"));
+		return;
 	default:
 		shown = table(h, jget(app.net.data, "data.sockstat.socket"),
 		    sock_cols, 7, NULL);

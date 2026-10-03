@@ -8,18 +8,6 @@
 - WireGuard: `wg` interfaces are made, but their keys and peers are not
   set.
 
-## Planned
-
-- A section for the network, once interfaces and routes are managed: the
-  servers as nodes of a graph, joined as their configuration joins them.
-  The console works out which interface or tunnel of one server leads
-  to which other, and draws a link if and only if the far end is a
-  server on its own list.
-
-- After the network section: creating interfaces, epair(4) and the
-  tunnels (gif, gre, wg and the like), not only changing the ones that
-  are there.
-
 ## Not yet verified
 
 Written and tested with stand-ins, never run for real:
@@ -30,6 +18,13 @@ Written and tested with stand-ins, never run for real:
 - The agent's restart after an update against a real rc(8)-managed
   service; the tests use a stand-in for service(8).
 - The agent's tests that need root, since the rename to Arcana.
+- Creating, setting and destroying interfaces, routing tables, what is
+  kept in rc.conf, and netgraph, against a real ifconfig(8), route(8),
+  sysrc(8) and ngctl(8) as root; the tests use stand-ins. The interfaces
+  themselves and the route lookup's parsing were checked against this
+  machine's real output.
+- The network map with real tunnels between real hosts: the test has two
+  names for one agent, so its links are the networks they share.
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.

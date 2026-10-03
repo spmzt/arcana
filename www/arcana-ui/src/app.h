@@ -43,6 +43,8 @@ void		 arc_push_sync(void);
 void		 arc_push_send(const char *, const char *);
 void		 arc_push_remove(const char *);
 char		*arc_push_here(void);
+char		*arc_store_get(const char *);
+void		 arc_store_set(const char *, const char *);
 char		*arc_theme_get(void);
 void		 arc_theme_set(const char *);
 void		 arc_webauthn(int, int, const char *);
@@ -128,6 +130,7 @@ enum node {
 	NODE_FLEET,
 	NODE_HOST,
 	NODE_JAIL,
+	NODE_NETWORK,		/* the fleet's network, as a map */
 };
 
 enum tab {
@@ -157,6 +160,7 @@ enum netkind {
 	NET_CONNECTIONS,
 	NET_SOCKETS,
 	NET_INTERFACES,
+	NET_NETGRAPH,
 };
 
 /* The network tab's one table: what is shown, from which server. */
@@ -170,6 +174,7 @@ struct netview {
 	char		 error[256];	int		 sort;		/* column sorted by, or -1 */
 	bool		 sort_desc;
 	char		 host_filter[129]; /* routes: searched for on the host */
+	int		 fib;		/* the routing table shown; 0 the first */
 };
 
 enum pending {
@@ -277,6 +282,11 @@ enum modal {
 	MODAL_HOST_KEY,
 	MODAL_IF_ADDRESS,
 	MODAL_ROUTE,
+	MODAL_TUNNEL,
+	MODAL_IF_CREATE,
+	MODAL_IF_SET,
+	MODAL_NG_CONNECT,
+	MODAL_NG_MKPEER,
 };
 
 struct confirm {
@@ -380,6 +390,8 @@ struct server	*cur_server(void);
 struct jailui	*jailui(struct server *, const char *);
 const ucl_object_t *find_jail(const struct server *, const char *);
 struct op	*op_find(int);
+void		 confirm(const char *, const char *, const char *, bool,
+		    const char *, const char *, const char *, const char *);
 
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
@@ -400,9 +412,11 @@ void		 agent_update(struct server *, bool);
 void		 agent_build(struct server *, const char *, bool);
 void		 agent_restarts(double);
 void		 op_cancel(struct op *);
-void		 if_address(struct server *, const char *, const char *, bool);
+void		 if_address(struct server *, const char *, const char *, bool,
+		    bool);
 void		 if_state(struct server *, const char *, bool);
-void		 route_change(struct server *, const char *, const char *, bool);
+void		 route_change(struct server *, const char *, const char *, bool,
+		    bool, int);
 bool		 service_busy(const struct server *, const char *);
 bool		 packages_busy(const struct server *);
 void		 load_settings(void);
@@ -446,6 +460,23 @@ void		 view_packages(struct html *, struct server *);
 void		 view_fleet(struct html *);
 void		 view_summary(struct html *, struct server *);
 void		 view_jobs(struct html *, struct server *);
+
+/* topo.c: the fleet's network as a map, traffic, routes, netgraph. */
+void		 view_netmap(struct html *);
+void		 view_netgraph(struct html *, struct server *,
+		    const ucl_object_t *);
+void		 view_lookup(struct html *, const struct server *);
+void		 topo_open(void);
+void		 topo_tick(double);
+void		 topo_poll(struct server *);
+void		 topo_spark(struct html *, const struct server *, const char *);
+void		 topo_lookup(struct server *, const char *, int);
+void		 topo_lookup_clear(void);
+bool		 topo_action(const char *, const char *, const char *);
+bool		 ng_action(const char *, const char *, const char *);
+bool		 topo_form(const char *, const ucl_object_t *);
+bool		 topo_modal(struct html *);
+void		 fmt_rate(char *, size_t, double);
 const char	*state_class(const struct server *, const ucl_object_t *,
 		    const struct jailui *);
 void		 fmt_age(char *, size_t, double);
