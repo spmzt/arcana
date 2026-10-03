@@ -141,6 +141,268 @@ merge_jail(struct server *s, const ucl_object_t *j)
 	}
 }
 
+static void	job_finished(struct op *, bool, const char *);
+
+/* The job is over: what showed it as pending is cleared and re-read. */
+static void
+job_finished(struct op *op, bool ok, const char *err)
+{
+	struct server	*s;
+	struct jailui	*ju;
+
+	op->job = 0;
+	if ((s = server_by_id(op->sid)) == NULL)
+		return;
+	switch (op->what) {
+	case JOB_JAIL:
+	case JOB_ADDRESS:
+		ju = jailui(s, op->target);
+		ju->pending = PEND_NONE;
+		ju->error[0] = '\0';
+		if (!ok)
+			snprintf(ju->error, sizeof(ju->error), "%s", err != NULL ?
+			    err : "failed");
+		s->loading = false;
+		refresh_jails(s, false);
+		break;
+	case JOB_SERVICE:
+	case JOB_SERVICE_CONFIG:
+		if (strcmp(app.service_busy, op->target) == 0)
+			app.service_busy[0] = '\0';
+		s->services_loading = false;
+		if (s->services != NULL)
+			refresh_services(s, false);
+		if (op->what == JOB_SERVICE_CONFIG &&
+		    strcmp(app.service, op->target) == 0) {
+			app.svc_loading = false;
+			snprintf(app.svc_error, sizeof(app.svc_error), "%s",
+			    ok ? "" : err != NULL ? err : "failed");
+			service_config(op->target, NULL);
+		}
+		break;
+	default:
+		app.pkg.busy = false;
+		if (strcmp(app.pkg.sid, s->id) == 0 &&
+		    strcmp(app.pkg.jail, op->target) == 0) {
+			snprintf(app.pkg.result, sizeof(app.pkg.result),
+			    "%s: pkg upgrade %s", op->target[0] != '\0' ?
+			    op->target : "host", ok ? "finished" : "failed");
+			refresh_packages(s, false);
+		}
+		break;
+	}
+	toast(!ok, "%s: %s", op->title, ok ? "done" : err != NULL ? err :
+	    "failed");
+}
+
+static void
+job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx		*c;
+	struct op		*op;
+	const ucl_object_t	*t;
+	const char		*st;
+	bool			 ok;
+
+	c = arg;
+	op = op_find(c->op);
+	free(c);
+	if (op == NULL || op->job == 0)
+		return;
+	op->polling = false;
+	op->next_poll = jg_now() + JOB_POLL_MS;
+	if (status != 200 || jget(o, "job") == NULL) {
+		/* The console or the host is away; the job is not. */
+		if (status == 200 && !jbool(o, "ok")) {
+			op_done(op, false, o, jstr(o, "error"));
+			job_finished(op, false, jstr(o, "error"));
+			return;
+		}
+		op->waiting = true;
+		op->next_poll = jg_now() + 2 * JOB_POLL_MS;
+		return;
+	}
+	op->waiting = false;
+	if ((t = jget(o, "job.trace")) != NULL) {
+		if (op->trace != NULL)
+			ucl_object_unref(op->trace);
+		op->trace = ucl_object_ref((ucl_object_t *)(uintptr_t)t);
+	}
+	st = jstr(o, "job.state");
+	if (st == NULL || (strcmp(st, "done") != 0 &&
+	    strcmp(st, "cancelled") != 0))
+		return;
+	ok = strcmp(st, "done") == 0 && jbool(o, "job.ok");
+	err = strcmp(st, "cancelled") == 0 ? "cancelled" :
+	    jstr(o, "job.error");
+	op->state = ok ? OP_OK : OP_FAILED;
+	op->finished = jg_now();
+	if (!ok)
+		snprintf(op->error, sizeof(op->error), "%s", err != NULL ? err :
+		    "failed");
+	if (op->finished - op->started >= NOTIFY_MS) {
+		char body[256];
+
+		snprintf(body, sizeof(body), "%s on %s: %s", op->title,
+		    op->server, ok ? "done" : op->error);
+		jg_notify(ok ? "Jailgrid: done" : "Jailgrid: failed", body);
+	}
+	job_finished(op, ok, err);
+}
+
+/* Read every running job that is due; called from the clock. */
+void
+jobs_poll(void)
+{
+	struct ctx	*c;
+	struct op	*op;
+	char		 url[128];
+	double		 now;
+	int		 i;
+
+	if (!app.online)
+		return;
+	now = jg_now();
+	for (i = 0; i < app.nops; i++) {
+		op = &app.ops[i];
+		if (op->job == 0 || op->polling || now < op->next_poll)
+			continue;
+		op->polling = true;
+		c = ctx_new();
+		c->op = op->id;
+		snprintf(url, sizeof(url), "/api/servers/%s/jobs/%lld", op->sid,
+		    op->job);
+		api("GET", url, NULL, job_poll_cb, c);
+	}
+}
+
+struct submit {
+	int	nops;
+	int	ops[MAX_BATCH];
+};
+
+static void
+job_submit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct submit	*sub;
+	struct op	*op;
+	char		 path[32];
+	int		 i;
+
+	sub = arg;
+	for (i = 0; i < sub->nops; i++) {
+		if ((op = op_find(sub->ops[i])) == NULL)
+			continue;
+		snprintf(path, sizeof(path), "jobs.%d.id", i);
+		if (status == 200 && jbool(o, "ok") && jget(o, path) != NULL) {
+			op->job = jint(o, path, 0);
+			op->next_poll = jg_now();
+			continue;
+		}
+		if (status == 200)
+			err = jstr(o, "error");
+		op_done(op, false, o, err);
+		op->job = -1;
+		job_finished(op, false, err);
+	}
+	free(sub);
+	jobs_poll();
+}
+
+/* Send the batch (n jobs, with an op each) to the server. */
+static void
+jobs_submit(struct server *s, struct queued *q, int n)
+{
+	struct submit	*sub;
+	struct op	*op;
+	char		*body, *p, url[128];
+	size_t		 len;
+	int		 i;
+
+	if ((sub = calloc(1, sizeof(*sub))) == NULL)
+		abort();
+	len = 16;
+	for (i = 0; i < n; i++)
+		len += strlen(q[i].json) + 1;
+	if ((body = malloc(len)) == NULL)
+		abort();
+	p = body + sprintf(body, "{\"jobs\":[");
+	/* Ops are newest first: make them in reverse, the first job last. */
+	for (i = 0; i < n; i++)
+		p += sprintf(p, "%s%s", i > 0 ? "," : "", q[i].json);
+	sprintf(p, "]}");
+	for (i = 0; i < n; i++) {
+		op = op_new(q[i].title, s->name);
+		snprintf(op->sid, sizeof(op->sid), "%s", s->id);
+		op->what = q[i].what;
+		snprintf(op->target, sizeof(op->target), "%s", q[i].target);
+		sub->ops[sub->nops++] = op->id;
+		if (i == 0) {
+			app.trace_op = op->id;
+			app.trace_step = -1;
+		}
+	}
+	snprintf(url, sizeof(url), "/api/servers/%s/jobs", s->id);
+	api("POST", url, body, job_submit_cb, sub);
+	free(body);
+}
+
+/*
+ * A change for the server, as the jobs API takes it: sent as a job now,
+ * or held in the queue when queueing is on.  json is taken over.
+ */
+void
+job_send(struct server *s, char *json, const char *title, int what,
+    const char *target)
+{
+	struct queued	q;
+
+	memset(&q, 0, sizeof(q));
+	q.json = json;
+	snprintf(q.title, sizeof(q.title), "%s", title);
+	q.what = what;
+	snprintf(q.target, sizeof(q.target), "%s", target);
+	if (app.queue_on) {
+		if (app.nbatch == MAX_BATCH) {
+			toast(true, "The queue holds %d changes at most",
+			    MAX_BATCH);
+			free(json);
+			return;
+		}
+		app.batch[app.nbatch++] = q;
+		toast(false, "Queued: %s", title);
+		return;
+	}
+	jobs_submit(s, &q, 1);
+	free(json);
+}
+
+/* Send everything held, in the order it was added. */
+void
+queue_run(void)
+{
+	struct server	*s;
+	int		 i;
+
+	if ((s = cur_server()) == NULL || app.nbatch == 0)
+		return;
+	jobs_submit(s, app.batch, app.nbatch);
+	for (i = 0; i < app.nbatch; i++)
+		free(app.batch[i].json);
+	app.nbatch = 0;
+	app.dock_open = true;
+}
+
+void
+queue_clear(void)
+{
+	int	i;
+
+	for (i = 0; i < app.nbatch; i++)
+		free(app.batch[i].json);
+	app.nbatch = 0;
+}
+
 static void
 health_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -318,68 +580,28 @@ refresh_jails(struct server *s, bool user)
 	api("GET", url, NULL, jails_cb, c);
 }
 
-static void
-action_cb(int status, const ucl_object_t *o, const char *err, void *arg)
-{
-	struct ctx	*c;
-	struct server	*s;
-	struct jailui	*ju;
-	struct op	*op;
-	bool		 ok;
-
-	c = arg;
-	op = op_find(c->op);
-	ok = status == 200 && jbool(o, "ok");
-	if (status == 200 && !ok)
-		err = jstr(o, "error");
-	op_done(op, ok, o, err);
-	if ((s = server_by_id(c->sid)) != NULL) {
-		ju = jailui(s, c->jail);
-		ju->pending = PEND_NONE;
-		ju->error[0] = '\0';
-		if (!ok)
-			snprintf(ju->error, sizeof(ju->error), "%s",
-			    err != NULL ? err : "failed");
-		merge_jail(s, jget(o, "jail"));
-		if (ok)
-			toast(false, "%s: %s", c->jail, op != NULL ?
-			    op->title : "done");
-		else
-			toast(true, "%s: %s", c->jail, err != NULL ? err :
-			    "failed");
-		s->loading = false;
-		refresh_jails(s, false);
-	}
-	free(c);
-}
-
-/* start, stop, restart or kill a jail of the selected server. */
+/* start, stop, restart or kill a jail of the selected server: a job. */
 void
 jail_action(const char *jail, const char *action)
 {
 	struct server	*s;
-	struct ctx	*c;
-	struct op	*op;
-	char		 url[512], title[160], body[64];
+	char		 title[160], *qj, *json;
 
 	if ((s = cur_server()) == NULL)
 		return;
-	c = ctx_new();
-	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
-	snprintf(c->jail, sizeof(c->jail), "%s", jail);
 	snprintf(title, sizeof(title), "%s %s", action, jail);
-	op = op_new(title, s->name);
-	c->op = op->id;
-	app.trace_op = op->id;
-	app.trace_step = -1;
-	jailui(s, jail)->pending = strcmp(action, "start") == 0 ? PEND_START :
-	    strcmp(action, "stop") == 0 ? PEND_STOP :
-	    strcmp(action, "restart") == 0 ? PEND_RESTART : PEND_KILL;
-	jailui(s, jail)->error[0] = '\0';
-	snprintf(url, sizeof(url), "/api/servers/%s/jails/%s/action", s->id,
-	    jail);
-	snprintf(body, sizeof(body), "{\"action\":\"%s\"}", action);
-	api("POST", url, body, action_cb, c);
+	qj = json_quote(jail);
+	if (asprintf(&json, "{\"kind\":\"jail-action\",\"jail\":%s,"
+	    "\"action\":\"%s\"}", qj, action) == -1)
+		abort();
+	free(qj);
+	if (!app.queue_on) {
+		jailui(s, jail)->pending = strcmp(action, "start") == 0 ?
+		    PEND_START : strcmp(action, "stop") == 0 ? PEND_STOP :
+		    strcmp(action, "restart") == 0 ? PEND_RESTART : PEND_KILL;
+		jailui(s, jail)->error[0] = '\0';
+	}
+	job_send(s, json, title, JOB_JAIL, jail);
 }
 
 static void
@@ -465,58 +687,25 @@ merge_service(struct server *s, const ucl_object_t *j)
 	}
 }
 
-static void
-service_action_cb(int status, const ucl_object_t *o, const char *err,
-    void *arg)
-{
-	struct ctx	*c;
-	struct server	*s;
-	struct op	*op;
-	bool		 ok;
-
-	c = arg;
-	op = op_find(c->op);
-	ok = status == 200 && jbool(o, "ok");
-	if (status == 200 && !ok)
-		err = jstr(o, "error");
-	op_done(op, ok, o, err);
-	app.service_busy[0] = '\0';
-	if ((s = server_by_id(c->sid)) != NULL) {
-		merge_service(s, jget(o, "service"));
-		if (ok)
-			toast(false, "%s: %s", c->jail, op != NULL ? op->title :
-			    "done");
-		else
-			toast(true, "%s: %s", c->jail, err != NULL ? err :
-			    "failed");
-	}
-	free(c);
-}
-
-/* start, stop, restart, reload, enable or disable a service. */
+/* start, stop, restart, reload, enable or disable a service: a job. */
 void
 service_action(const char *name, const char *action)
 {
 	struct server	*s;
-	struct ctx	*c;
-	struct op	*op;
-	char		 url[512], title[160], body[64];
+	char		 title[160], *qn, *json;
 
 	if ((s = cur_server()) == NULL)
 		return;
-	c = ctx_new();
-	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
-	snprintf(c->jail, sizeof(c->jail), "%s", name);
 	snprintf(title, sizeof(title), "service %s %s", name, action);
-	op = op_new(title, s->name);
-	c->op = op->id;
-	app.trace_op = op->id;
-	app.trace_step = -1;
-	snprintf(app.service_busy, sizeof(app.service_busy), "%s", name);
-	snprintf(url, sizeof(url), "/api/servers/%s/services/%s/action",
-	    s->id, name);
-	snprintf(body, sizeof(body), "{\"action\":\"%s\"}", action);
-	api("POST", url, body, service_action_cb, c);
+	qn = json_quote(name);
+	if (asprintf(&json, "{\"kind\":\"service-action\",\"service\":%s,"
+	    "\"action\":\"%s\"}", qn, action) == -1)
+		abort();
+	free(qn);
+	if (!app.queue_on)
+		snprintf(app.service_busy, sizeof(app.service_busy), "%s",
+		    name);
+	job_send(s, json, title, JOB_SERVICE, name);
 }
 
 static void
@@ -564,6 +753,20 @@ service_config(const char *name, const char *body)
 
 	if ((s = cur_server()) == NULL)
 		return;
+	if (body != NULL) {
+		/* {"set": ..} becomes {"kind": .., "service": .., "set": ..}. */
+		char *qn = json_quote(name), *json;
+
+		snprintf(title, sizeof(title), "service %s configure", name);
+		if (asprintf(&json, "{\"kind\":\"service-config\","
+		    "\"service\":%s,%s", qn, body + 1) == -1)
+			abort();
+		free(qn);
+		if (!app.queue_on)
+			app.svc_loading = true;
+		job_send(s, json, title, JOB_SERVICE_CONFIG, name);
+		return;
+	}
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	snprintf(c->jail, sizeof(c->jail), "%s", name);
@@ -728,6 +931,26 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run)
 
 	if (!app.online || app.pkg.busy)
 		return;
+	if (!dry_run) {
+		char *json;
+
+		qj = json_quote(app.pkg.jail);
+		snprintf(title, sizeof(title), "pkg upgrade%s%s%s",
+		    app.pkg.jail[0] != '\0' ? " in " : "", app.pkg.jail,
+		    names != NULL ? " of some" : "");
+		if (asprintf(&json, "{\"kind\":\"pkg-upgrade\"%s%s,"
+		    "\"packages\":%s}", app.pkg.jail[0] != '\0' ? ",\"jail\":" :
+		    "", app.pkg.jail[0] != '\0' ? qj : "", names != NULL ?
+		    names : "[]") == -1)
+			abort();
+		free(qj);
+		if (!app.queue_on) {
+			app.pkg.busy = true;
+			app.pkg.result[0] = '\0';
+		}
+		job_send(s, json, title, JOB_PACKAGES, app.pkg.jail);
+		return;
+	}
 	app.pkg.busy = true;
 	app.pkg.result[0] = '\0';
 	c = ctx_new();
@@ -880,6 +1103,29 @@ address_change(const char *jail, const char *address, bool remove, bool live,
 
 	if ((s = cur_server()) == NULL)
 		return;
+	if (!dry_run) {
+		char *json, *qjail;
+
+		snprintf(title, sizeof(title), "%s %s %s %s%s",
+		    remove ? "remove" : "add", address, remove ? "from" : "to",
+		    jail, persist && !live ? " (config)" : live && persist ?
+		    " (live + config)" : "");
+		qa = json_quote(address);
+		qjail = json_quote(jail);
+		if (asprintf(&json, "{\"kind\":\"address\",\"jail\":%s,"
+		    "\"address\":%s,\"remove\":%s,\"live\":%s,\"persist\":%s}",
+		    qjail, qa, remove ? "true" : "false", live ? "true" :
+		    "false", persist ? "true" : "false") == -1)
+			abort();
+		free(qa);
+		free(qjail);
+		if (!app.queue_on)
+			jailui(s, jail)->pending = PEND_ADDRESS;
+		if (app.modal == MODAL_ADDRESS)
+			app.modal = MODAL_NONE;
+		job_send(s, json, title, JOB_ADDRESS, jail);
+		return;
+	}
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	snprintf(c->jail, sizeof(c->jail), "%s", jail);

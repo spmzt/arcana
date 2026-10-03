@@ -241,6 +241,11 @@ authenticator offers one, so security keys keep working as before.
   reads it, and its history. Addresses change live (jail_setv(3) and the
   interface alias), persistently (its block in `jail.conf`, edited in
   place, previewed as a diff first), or both.
+- Changes are **jobs** the host runs on its own: the activity graph
+  fills in stage by stage while one runs, and a change that cuts the
+  console off (restarting its own jail) still completes; the entry shows
+  the outcome when the host answers again. **Queue** in the activity
+  bar holds changes and sends them as one batch, run in order.
 - **Activity** at the bottom: every action and manual refresh, with its
   workflow as a graph, from the API call through the session check and
   the cblink request to each call jailgridd made. When a program ran, a
@@ -266,10 +271,6 @@ updates.
 
 Planned, in rough order:
 
-- Jobs in the daemon: every change a job that shows its stages as they
-  happen, keeps running when the console is unreachable (a restart of
-  the jail or interface the console depends on), and can be queued and
-  sent in batches.
 - A console laid out for a fleet: a tree of hosts and jails, summary
   pages with graphs, more use of the workflow graph.
 - New names for the programs, after the naming guide in

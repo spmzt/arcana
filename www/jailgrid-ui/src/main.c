@@ -195,6 +195,9 @@ tick(void *arg)
 		if (app.screen == SCREEN_OFFLINE && app.online)
 			auth_status();
 	}
+	/* Running jobs: read them, and redraw when their trace grew. */
+	if (app.screen == SCREEN_CONSOLE)
+		jobs_poll();
 	if (app.screen == SCREEN_CONSOLE && app.online &&
 	    now - last_update > UPDATE_MS) {
 		last_update = now;
@@ -432,6 +435,13 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "do-pkg-upgrade", "", "");
 	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {
 		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false);
+	} else if (strcmp(act, "queue") == 0) {
+		app.queue_on = !app.queue_on;
+		app.dock_open = true;
+	} else if (strcmp(act, "queue-run") == 0) {
+		queue_run();
+	} else if (strcmp(act, "queue-clear") == 0) {
+		queue_clear();
 	} else if (strcmp(act, "net-sort") == 0) {
 		/* The same column again turns the order round. */
 		if (app.net.sort == atoi(arg))

@@ -99,9 +99,15 @@ jailgridctl -c tcp://host1.example:4310 \
 | `stats` | CPU, load, memory, swap, ZFS pools. |
 | `packages [-r]` [*jail*] | Packages with newer versions; `-r` runs `pkg update` first. |
 | `pkg-upgrade [-n] [-j jail]` [*package* …] | `pkg upgrade -y`, of all or of the named ones; `-n` a dry run. |
+| `jobs` | Queued, running and recent jobs. |
+| `job [-w]` *id* | A job with its trace so far; `-w` waits for the end. |
+| `job-cancel` *id* | Take a queued job back. |
 
 Global options: `-c uri` (default the local socket), `-A`/`-C`/`-K` for
-TCP, `-N name` when the certificate's name is not the URI's host, `-t`.
+TCP, `-N name` when the certificate's name is not the URI's host, `-t`,
+and `-q`: queue the change as a job and return its number instead of
+waiting. The host runs jobs in order whether or not the client stays,
+which is what `jailgridctl -q restart <the jail you are in>` needs.
 Exit status 0 on success, 1 when the host refused or failed, 2 for
 usage.
 

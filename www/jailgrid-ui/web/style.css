@@ -1335,6 +1335,16 @@ table.net tbody tr:hover { background: rgba(59, 232, 255, .05); }
 	box-shadow: 0 0 22px -8px var(--k);
 }
 
+/* A step still running in a job: its stage shows before it ends. */
+.node.st-incomplete {
+	border-color: var(--amber);
+	border-style: dashed;
+}
+html.fx .node.st-incomplete { animation: breathe 1.2s ease-in-out infinite; }
+.op.o-queued { --c: var(--slate); opacity: .75; }
+.dock header button.small { margin-left: .4rem; }
+.dock header button.on { color: var(--cyan); border-color: var(--cyan); }
+
 .node.st-failed {
 	border-color: var(--red);
 	box-shadow: 0 0 20px -8px var(--red);

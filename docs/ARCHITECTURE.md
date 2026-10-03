@@ -49,6 +49,8 @@ policies, client wrappers and server glue from it.
 | `stats` | CPU, load, memory, swap, ZFS pools | `kern.cp_time` between requests, `vm.loadavg`, `vm.stats.vm.*`, `swapinfo -k`, `zpool list -Hp` |
 | `packages` | pending upgrades of the host or a running jail | `pkg [-j jail] update -q`, `pkg [-j jail] version -vRl '<'` |
 | `pkg-upgrade` | upgrade all or named packages, or show what would be | `pkg [-j jail] upgrade -y|-n [names]`, then `pkg version` again |
+| `job-submit` | queue a batch of changes | the job queue, below |
+| `jobs`, `job`, `job-cancel` | list jobs, read one with its trace so far, take a queued one back | the job queue |
 
 Every operation requires an authenticated peer: a client certificate
 from the jailgrid CA over TCP, or access to the 0600 AF_UNIX socket.
@@ -138,6 +140,31 @@ configuration is read through `jail -e`, any request that reads
 configuration has one.  Program output reaches the browser with
 unprintable characters as vis(3) escapes (the `-e` separator shows as
 `\037`).
+
+## Jobs
+
+A change that is asked for and waited on dies with its connection. That
+is wrong for exactly the changes that matter most: restarting the jail
+the console runs in, or the interface it is reached through. So every
+change can instead be **queued as a job** (`job-submit`, one or a batch
+of up to 64).
+
+The daemon keeps a queue and one thread that runs it, in the order
+given, under the same lock as direct changes. A job belongs to the
+daemon, not to the connection that queued it: the client may leave, and
+the job and those behind it still run to their end. Each job has its own
+trace, changed under a lock, so `job` returns the steps done so far
+while it runs; a step that has begun and not ended has the status
+`incomplete`. A queued job can be cancelled; a running one cannot. The
+last 64 finished jobs are kept in memory, and all are forgotten when
+the daemon restarts.
+
+The console sends every change as a job and reads it once a second, so
+the workflow graph grows stage by stage; when the host stops answering,
+the entry says so and keeps trying, and shows the outcome when the host
+is back. With **Queue** on, changes are held in the browser and sent
+together as one batch. Reads (lists, tables, dry runs, previews) stay
+direct calls.
 
 ## Services
 

@@ -27,6 +27,8 @@
 #define	STALE_MS		30000
 #define	AGE_STEP_MS		10000	/* how often ages are redrawn */
 #define	NOTIFY_MS		10000	/* a task this long is announced */
+#define	JOB_POLL_MS		1000	/* a running job is read this often */
+#define	MAX_BATCH		64	/* changes held in the queue */
 #define	UPDATE_MS		(6 * 3600 * 1000)
 
 /* bridge.js */
@@ -194,6 +196,30 @@ struct op {
 	ucl_object_t	*trace;
 	char		*diff;
 	char		 error[512];
+	/* A job on a host: read until it is done. */
+	char		 sid[9];
+	long long	 job;		/* its number there, 0 if not a job */
+	double		 next_poll;
+	bool		 polling;
+	bool		 waiting;	/* the host does not answer; it runs on */
+	int		 what;		/* JOB_*: what to refresh when done */
+	char		 target[256];	/* the jail or service */
+};
+
+enum {
+	JOB_JAIL,
+	JOB_ADDRESS,
+	JOB_SERVICE,
+	JOB_SERVICE_CONFIG,
+	JOB_PACKAGES,
+};
+
+/* A change held back to be sent with others as one batch. */
+struct queued {
+	char		*json;		/* the job, as the API takes it */
+	char		 title[160];
+	int		 what;
+	char		 target[256];
 };
 
 enum modal {
@@ -252,6 +278,9 @@ struct app {
 	struct pkgview	 pkg;
 	bool		 servers_loaded;
 
+	bool		 queue_on;	/* changes are held, not sent */
+	struct queued	 batch[MAX_BATCH];
+	int		 nbatch;
 	struct op	 ops[MAX_OPS];	/* newest first */
 	int		 nops;
 	int		 nextop;
@@ -285,6 +314,11 @@ struct op	*op_find(int);
 
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
+void		 job_send(struct server *, char *, const char *, int,
+		    const char *);
+void		 queue_run(void);
+void		 queue_clear(void);
+void		 jobs_poll(void);
 void		 refresh_jails(struct server *, bool);
 void		 jail_action(const char *, const char *);
 void		 refresh_services(struct server *, bool);

@@ -35,6 +35,10 @@ enum op {
 	OP_STATS,
 	OP_PACKAGES,
 	OP_PKG_UPGRADE,
+	OP_JOB_SUBMIT,
+	OP_JOBS,
+	OP_JOB,
+	OP_JOB_CANCEL,
 };
 
 struct call {
@@ -58,6 +62,9 @@ struct call {
 	bool			 dry_run;	/* pkg-upgrade */
 	char			**names;	/* pkg-upgrade: packages */
 	size_t			 nnames;
+	struct jg_job_spec	*specs;		/* job-submit: the batch */
+	size_t			 nspecs;
+	uint64_t		 jobid;		/* job, job-cancel */
 	struct jg_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
 	char			*json;		/* the reply, from the thread */
@@ -119,6 +126,11 @@ static ucl_object_t *host_object(const struct jg_host *);
 static ucl_object_t *jail_object(const struct jg_jail *);
 static ucl_object_t *service_object(const struct jg_service *);
 static void	 call_free_vars(struct call *);
+static ucl_object_t *job_object(struct call *, const struct jg_job *, bool,
+		    uint64_t);
+static const char *spec_from_json(const ucl_object_t *, struct jg_job_spec *);
+static void	 spec_free(struct jg_job_spec *);
+static char	*jdup(const ucl_object_t *, const char *);
 static ucl_object_t *step_object(int, int, const char *, const char *,
 		    const char *, bool, uint64_t);
 static ucl_object_t *trace_object(struct call *, const struct jg_step *,
@@ -334,7 +346,10 @@ trace_object(struct call *c, const struct jg_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "jg_service_action" :
 	    c->op == OP_NETWORK ? "jg_network" : c->op == OP_STATS ?
 	    "jg_stats" : c->op == OP_PACKAGES ? "jg_packages" :
-	    c->op == OP_PKG_UPGRADE ? "jg_pkg_upgrade" : "jg_service_config";
+	    c->op == OP_PKG_UPGRADE ? "jg_pkg_upgrade" :
+	    c->op == OP_JOB_SUBMIT ? "jg_job_submit" : c->op == OP_JOBS ?
+	    "jg_jobs" : c->op == OP_JOB ? "jg_job" : c->op == OP_JOB_CANCEL ?
+	    "jg_job_cancel" : "jg_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
 	for (i = 0; i < n; i++)
@@ -389,6 +404,13 @@ call_run(struct kore_task *t)
 	struct jg_packages_rsp	*pr;
 	struct jg_pkg_upgrade_req uq;
 	struct jg_pkg_upgrade_rsp *ur;
+	struct jg_job_submit_req jsq;
+	struct jg_job_submit_rsp *jsr;
+	struct jg_jobs_rsp	*jlr;
+	struct jg_job_req	 jq;
+	struct jg_job_rsp	*jr;
+	struct jg_job_cancel_req jcq;
+	struct jg_job_cancel_rsp *jcr;
 	const struct jg_step	*steps;
 	ucl_object_t		*top, *srv, *a, *e;
 	cbl_conn		*conn;
@@ -423,6 +445,10 @@ call_run(struct kore_task *t)
 	str = NULL;
 	pr = NULL;
 	ur = NULL;
+	jsr = NULL;
+	jlr = NULL;
+	jr = NULL;
+	jcr = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
 	snprintf(detail, sizeof(detail), "%s, %s", c->uri, local ?
@@ -587,6 +613,58 @@ call_run(struct kore_task *t)
 		steps = ur->trace.v;
 		nsteps = ur->trace.n;
 		break;
+	case OP_JOB_SUBMIT:
+		memset(&jsq, 0, sizeof(jsq));
+		jsq.batch.v = c->specs;
+		jsq.batch.n = c->nspecs;
+		if ((error = jg_job_submit(&cl, &jsq, &jsr)) != 0)
+			goto rpcfail;
+		ok = jsr->ok;
+		put_str(top, "error", jsr->error);
+		a = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < jsr->jobs.n; i++)
+			ucl_array_append(a, job_object(c, &jsr->jobs.v[i], false,
+			    0));
+		put(top, "jobs", a);
+		break;
+	case OP_JOBS:
+		if ((error = jg_jobs(&cl, &jlr)) != 0)
+			goto rpcfail;
+		ok = jlr->ok;
+		a = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < jlr->jobs.n; i++)
+			ucl_array_append(a, job_object(c, &jlr->jobs.v[i], false,
+			    0));
+		put(top, "jobs", a);
+		break;
+	case OP_JOB:
+		memset(&jq, 0, sizeof(jq));
+		jq.has_id = true;
+		jq.id = c->jobid;
+		if ((error = jg_job(&cl, &jq, &jr)) != 0)
+			goto rpcfail;
+		ok = jr->ok;
+		put_str(top, "error", jr->error);
+		if (jr->job != NULL) {
+			put(top, "job", job_object(c, jr->job, true,
+			    now_us() - t1));
+			/* The job's own trace is the reply's. */
+			put(top, "ok", ucl_object_frombool(ok));
+			c->status = 200;
+			goto done;
+		}
+		break;
+	case OP_JOB_CANCEL:
+		memset(&jcq, 0, sizeof(jcq));
+		jcq.has_id = true;
+		jcq.id = c->jobid;
+		if ((error = jg_job_cancel(&cl, &jcq, &jcr)) != 0)
+			goto rpcfail;
+		ok = jcr->ok;
+		put_str(top, "error", jcr->error);
+		if (jcr->job != NULL)
+			put(top, "job", job_object(c, jcr->job, false, 0));
+		break;
 	case OP_STATS:
 		if ((error = jg_stats(&cl, &str)) != 0)
 			goto rpcfail;
@@ -729,6 +807,14 @@ done:
 		jg_packages_rsp_free(pr);
 	if (ur != NULL)
 		jg_pkg_upgrade_rsp_free(ur);
+	if (jsr != NULL)
+		jg_job_submit_rsp_free(jsr);
+	if (jlr != NULL)
+		jg_jobs_rsp_free(jlr);
+	if (jr != NULL)
+		jg_job_rsp_free(jr);
+	if (jcr != NULL)
+		jg_job_cancel_rsp_free(jcr);
 	if (cl.conn != NULL)
 		jg_client_fini(&cl);
 	cbl_conn_free(conn);
@@ -751,6 +837,7 @@ call_new(struct http_request *req, enum op op)
 	t0 = now_us();
 	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
+	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL ||
 	    (op == OP_SERVICE_CONFIG && req->method == HTTP_METHOD_POST)))
 		return (NULL);
 	t1 = now_us();
@@ -768,7 +855,8 @@ call_new(struct http_request *req, enum op op)
 	c->uri = kore_strdup(s->uri);
 	c->peer = s->peer_name != NULL ? kore_strdup(s->peer_name) : NULL;
 	snprintf(c->route, sizeof(c->route), "%s %s",
-	    req->method == HTTP_METHOD_GET ? "GET" : "POST", req->path);
+	    req->method == HTTP_METHOD_GET ? "GET" :
+	    req->method == HTTP_METHOD_DELETE ? "DELETE" : "POST", req->path);
 	return (c);
 }
 
@@ -831,6 +919,11 @@ api_call_free(struct http_request *req)
 	kore_free(c->names);
 	c->names = NULL;
 	c->nnames = 0;
+	for (i = 0; i < c->nspecs; i++)
+		spec_free(&c->specs[i]);
+	kore_free(c->specs);
+	c->specs = NULL;
+	c->nspecs = 0;
 }
 
 /* GET /api/servers/<id>/services */
@@ -1188,5 +1281,255 @@ api_pkg_upgrade(struct http_request *req)
 				    kore_strdup(ucl_object_tostring(v));
 	}
 	ucl_object_unref(body);
+	return (call_start(req, c));
+}
+
+static const char *job_kind_names[] = {
+	[JG_JOB_KIND_JAIL_ACTION] = "jail-action",
+	[JG_JOB_KIND_ADDRESS] = "address",
+	[JG_JOB_KIND_SERVICE_ACTION] = "service-action",
+	[JG_JOB_KIND_SERVICE_CONFIG] = "service-config",
+	[JG_JOB_KIND_PKG_UPGRADE] = "pkg-upgrade",
+};
+
+static const char *job_state_names[] = {
+	[JG_JOB_STATE_QUEUED] = "queued",
+	[JG_JOB_STATE_RUNNING] = "running",
+	[JG_JOB_STATE_DONE] = "done",
+	[JG_JOB_STATE_CANCELLED] = "cancelled",
+};
+
+/* A job; with its trace, under the console's own steps. */
+static ucl_object_t *
+job_object(struct call *c, const struct jg_job *j, bool trace, uint64_t us)
+{
+	ucl_object_t	*o;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "id", ucl_object_fromint((int64_t)j->id));
+	put_str(o, "kind", j->has_kind && j->kind < nitems(job_kind_names) ?
+	    job_kind_names[j->kind] : NULL);
+	put_str(o, "title", j->title);
+	put_str(o, "state", j->has_state && j->state <
+	    nitems(job_state_names) ? job_state_names[j->state] : "unknown");
+	put(o, "ok", j->has_ok ? ucl_object_frombool(j->ok) :
+	    ucl_object_typed_new(UCL_NULL));
+	put_str(o, "error", j->error);
+	put_str(o, "peer", j->peer);
+	put(o, "created", ucl_object_fromint(j->created));
+	put(o, "started", j->has_started ? ucl_object_fromint(j->started) :
+	    ucl_object_typed_new(UCL_NULL));
+	put(o, "finished", j->has_finished ? ucl_object_fromint(j->finished) :
+	    ucl_object_typed_new(UCL_NULL));
+	if (trace)
+		put(o, "trace", trace_object(c, j->trace.v, j->trace.n, c->uri,
+		    true, us));
+	return (o);
+}
+
+static void
+spec_free(struct jg_job_spec *sp)
+{
+	size_t	i;
+
+	kore_free((char *)(uintptr_t)sp->jail);
+	kore_free((char *)(uintptr_t)sp->address);
+	kore_free((char *)(uintptr_t)sp->interface);
+	kore_free((char *)(uintptr_t)sp->service);
+	for (i = 0; i < sp->variables.n; i++) {
+		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
+		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
+	}
+	kore_free((void *)(uintptr_t)sp->variables.v);
+	for (i = 0; i < sp->names.n; i++)
+		kore_free((char *)(uintptr_t)sp->names.v[i]);
+	kore_free((void *)(uintptr_t)sp->names.v);
+	memset(sp, 0, sizeof(*sp));
+}
+
+static char *
+jdup(const ucl_object_t *o, const char *key)
+{
+	const char	*s;
+
+	return ((s = ucl_str(o, key)) != NULL && *s != '\0' ? kore_strdup(s) :
+	    NULL);
+}
+
+/*
+ * {"kind": "jail-action", "jail": "web", "action": "restart"} and its
+ * siblings into a spec; NULL, or what is wrong.  The daemon checks the
+ * names again.
+ */
+static const char *
+spec_from_json(const ucl_object_t *o, struct jg_job_spec *sp)
+{
+	const ucl_object_t	*set, *unset, *names, *v;
+	ucl_object_iter_t	 it;
+	struct jg_variable	*vars;
+	const char		**nv, *kind, *a;
+	size_t			 i, n;
+
+	memset(sp, 0, sizeof(*sp));
+	if (ucl_object_type(o) != UCL_OBJECT || (kind = ucl_str(o, "kind")) ==
+	    NULL)
+		return ("every job is an object with a kind");
+	for (i = 0; i < nitems(job_kind_names); i++)
+		if (strcmp(kind, job_kind_names[i]) == 0)
+			break;
+	if (i == nitems(job_kind_names))
+		return ("unknown kind of job");
+	sp->has_kind = true;
+	sp->kind = (uint8_t)i;
+	sp->jail = jdup(o, "jail");
+	sp->address = jdup(o, "address");
+	sp->interface = jdup(o, "interface");
+	sp->service = jdup(o, "service");
+	sp->remove = ucl_flag(o, "remove");
+	sp->live = ucl_flag(o, "live");
+	sp->persist = ucl_flag(o, "persist");
+	a = ucl_str(o, "action");
+	switch (sp->kind) {
+	case JG_JOB_KIND_JAIL_ACTION:
+		for (i = 0; a != NULL && i < nitems(action_names); i++)
+			if (strcmp(a, action_names[i]) == 0)
+				break;
+		if (a == NULL || i == nitems(action_names) || sp->jail == NULL)
+			return ("a jail-action needs a jail and an action");
+		sp->has_action = true;
+		sp->action = (uint8_t)i;
+		break;
+	case JG_JOB_KIND_ADDRESS:
+		if (sp->jail == NULL || sp->address == NULL)
+			return ("an address job needs a jail and an address");
+		break;
+	case JG_JOB_KIND_SERVICE_ACTION:
+		for (i = 0; a != NULL && i < nitems(service_action_names); i++)
+			if (strcmp(a, service_action_names[i]) == 0)
+				break;
+		if (a == NULL || i == nitems(service_action_names) ||
+		    sp->service == NULL)
+			return ("a service-action needs a service and an "
+			    "action");
+		sp->has_service_action = true;
+		sp->service_action = (uint8_t)i;
+		break;
+	case JG_JOB_KIND_SERVICE_CONFIG:
+		if (sp->service == NULL)
+			return ("a service-config needs a service");
+		set = ucl_object_lookup(o, "set");
+		unset = ucl_object_lookup(o, "unset");
+		n = ucl_array_size(unset);
+		it = NULL;
+		while (set != NULL && ucl_object_type(set) == UCL_OBJECT &&
+		    ucl_object_iterate(set, &it, true) != NULL)
+			n++;
+		if (n == 0 || n > 64)
+			return ("a service-config needs variables to set");
+		vars = kore_calloc(n, sizeof(*vars));
+		sp->variables.v = vars;
+		it = NULL;
+		while (set != NULL && ucl_object_type(set) == UCL_OBJECT &&
+		    (v = ucl_object_iterate(set, &it, true)) != NULL) {
+			vars[sp->variables.n].key = kore_strdup(ucl_object_key(v));
+			vars[sp->variables.n].value =
+			    kore_strdup(ucl_object_tostring_forced(v));
+			sp->variables.n++;
+		}
+		it = NULL;
+		while ((v = ucl_object_iterate(unset, &it, true)) != NULL &&
+		    sp->variables.n < n) {
+			if (ucl_object_type(v) != UCL_STRING)
+				continue;
+			vars[sp->variables.n].key =
+			    kore_strdup(ucl_object_tostring(v));
+			vars[sp->variables.n].remove = true;
+			sp->variables.n++;
+		}
+		break;
+	default:
+		names = ucl_object_lookup(o, "packages");
+		if ((n = ucl_array_size(names)) > 0) {
+			nv = kore_calloc(n, sizeof(*nv));
+			sp->names.v = nv;
+			it = NULL;
+			while ((v = ucl_object_iterate(names, &it, true)) !=
+			    NULL && sp->names.n < n)
+				if (ucl_object_type(v) == UCL_STRING)
+					nv[sp->names.n++] =
+					    kore_strdup(ucl_object_tostring(v));
+		}
+		break;
+	}
+	return (NULL);
+}
+
+/*
+ * GET /api/servers/<id>/jobs: the host's jobs.
+ * POST, {"jobs": [{"kind": ...}, ...]}: queue them, in that order.
+ */
+int
+api_jobs(struct http_request *req)
+{
+	ucl_object_t		*body;
+	const ucl_object_t	*a, *v;
+	ucl_object_iter_t	 it;
+	struct call		*c;
+	const char		*e;
+	size_t			 n;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, req->method == HTTP_METHOD_POST ?
+	    OP_JOB_SUBMIT : OP_JOBS)) == NULL)
+		return (KORE_RESULT_OK);
+	if (req->method != HTTP_METHOD_POST)
+		return (call_start(req, c));
+	e = NULL;
+	body = read_json(req);
+	a = body != NULL ? ucl_object_lookup(body, "jobs") : NULL;
+	if ((n = ucl_array_size(a)) == 0 || n > JG_MAX_BATCH)
+		e = "jobs is a list of 1 to 64 jobs";
+	else {
+		c->specs = kore_calloc(n, sizeof(*c->specs));
+		it = NULL;
+		while (e == NULL && (v = ucl_object_iterate(a, &it, true)) !=
+		    NULL)
+			e = spec_from_json(v, &c->specs[c->nspecs++]);
+	}
+	ucl_object_unref(body);
+	if (e != NULL) {
+		for (n = 0; n < c->nspecs; n++)
+			spec_free(&c->specs[n]);
+		kore_free(c->specs);
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "%s", e));
+	}
+	return (call_start(req, c));
+}
+
+/* GET /api/servers/<id>/jobs/<n>: a job with its trace; DELETE: cancel. */
+int
+api_job(struct http_request *req)
+{
+	struct call	*c;
+	char		 id[24];
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, req->method == HTTP_METHOD_DELETE ?
+	    OP_JOB_CANCEL : OP_JOB)) == NULL)
+		return (KORE_RESULT_OK);
+	if (!capture(req, 5, id, sizeof(id))) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "bad job number"));
+	}
+	c->jobid = strtoull(id, NULL, 10);
 	return (call_start(req, c));
 }

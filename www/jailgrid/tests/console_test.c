@@ -546,6 +546,7 @@ ATF_TC_BODY(services, tc)
 	struct authn	a;
 	struct resp	r;
 	char		path[160], base[128], cwd[MAXPATHLEN], body[MAXPATHLEN];
+	int		i;
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	start(tc, 0, NULL);
@@ -612,6 +613,50 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK(jstr(&r, "stats.cpu_pct") != NULL);
 	ATF_CHECK(atoll(jstr(&r, "stats.mem_total")) > 0);
+	resp_free(&r);
+
+	/* Jobs: a batch is queued, runs in order, and can be read back. */
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"service-action\","
+	    "\"service\":\"sshd\",\"action\":\"stop\"},{\"kind\":"
+	    "\"jail-action\",\"jail\":\"web\",\"action\":\"start\"}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("service sshd stop", jstr(&r, "jobs.0.title"));
+	ATF_CHECK_STREQ("start web", jstr(&r, "jobs.1.title"));
+	ATF_REQUIRE(jstr(&r, "jobs.1.id") != NULL);
+	snprintf(body, sizeof(body), "%s/%s", path, jstr(&r, "jobs.1.id"));
+	resp_free(&r);
+	for (i = 0; i < 100; i++) {
+		http("GET", body, NULL, &r);
+		EXPECT(&r, 200);
+		if (strcmp(jstr(&r, "job.state"), "done") == 0)
+			break;
+		resp_free(&r);
+		usleep(50000);
+	}
+	ATF_REQUIRE_MSG(i < 100, "the job did not finish");
+	ATF_CHECK_STREQ("true", jstr(&r, "job.ok"));
+	ATF_CHECK_STREQ("api", jstr(&r, "job.trace.0.kind"));
+	ATF_CHECK_MSG(strstr(jstr(&r, "job.trace.3.detail"), "start web") !=
+	    NULL, "%s", jstr(&r, "job.trace.3.detail"));
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("done", jstr(&r, "jobs.0.state"));
+	ATF_CHECK_STREQ("done", jstr(&r, "jobs.1.state"));
+	resp_free(&r);
+	http("DELETE", body, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	resp_free(&r);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"dance\"}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"jail-action\","
+	    "\"jail\":\"../x\",\"action\":\"start\"}]}", &r);
+	EXPECT(&r, 502);
 	resp_free(&r);
 
 	/* Packages: pending upgrades, a dry run, an upgrade of one. */

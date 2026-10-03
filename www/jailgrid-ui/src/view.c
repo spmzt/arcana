@@ -728,10 +728,26 @@ dock(struct html *h)
 		h_txt(h, o->title);
 		h_raw(h, "</span>");
 	}
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"queue\" title=\""
+	    "Hold changes in a queue and send them together: the host runs "
+	    "them in order, also when it loses the console\">Queue%s</button>",
+	    app.queue_on ? " on" : "", app.queue_on ? " on" : "");
+	if (app.nbatch > 0)
+		h_fmt(h, "<button class=\"primary small\" data-act=\"queue-run\">"
+		    "Run %d</button><button class=\"ghost small\" "
+		    "data-act=\"queue-clear\">Clear</button>", app.nbatch);
 	h_fmt(h, "<span class=\"chev\">%s</span></header>",
 	    app.dock_open ? "▾" : "▴");
 	if (app.dock_open) {
 		h_raw(h, "<div class=\"dock-body\"><ol class=\"ops\">");
+		/* What waits in the queue, in the order it will run. */
+		for (i = 0; i < app.nbatch; i++) {
+			h_fmt(h, "<li class=\"op o-queued\"><i class=\"led\"></i>"
+			    "<span class=\"t\">%d. ", i + 1);
+			h_txt(h, app.batch[i].title);
+			h_raw(h, "</span><span class=\"s\">queued here</span>"
+			    "</li>");
+		}
 		for (i = 0; i < app.nops; i++) {
 			o = &app.ops[i];
 			h_fmt(h, "<li class=\"op o-%s%s\" data-act=\"trace\" "
@@ -743,6 +759,9 @@ dock(struct html *h)
 			h_txt(h, o->title);
 			h_raw(h, "</span><span class=\"s\">");
 			h_txt(h, o->server);
+			if (o->job > 0)
+				h_fmt(h, " · job %lld%s", o->job, o->waiting ?
+				    ", host away, it runs on there" : "");
 			h_raw(h, "</span>");
 			if (o->state != OP_RUNNING) {
 				fmt_dur(dur, sizeof(dur), (int64_t)

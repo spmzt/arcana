@@ -12,7 +12,7 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl -libxo Ar options
-.Op Fl t
+.Op Fl qt
 .Op Fl c Ar uri
 .Op Fl A Ar cafile Fl C Ar certfile Fl K Ar keyfile
 .Op Fl N Ar name
@@ -41,6 +41,8 @@ Default
 The name the server's certificate must carry, when it differs from the
 host in
 .Ar uri .
+.It Fl q
+Queue the change as a job; see the end of the command list.
 .It Fl t
 Also print the trace: every library call, system call, file and
 program the daemon used, with the programs' output.
@@ -129,7 +131,32 @@ of the named packages, or of all of them, on the host or in the running
 .Fl n
 only shows what would be done.
 What is still pending follows.
+.It Cm jobs
+The host's queued, running and recently finished jobs.
+.It Cm job Oo Fl w Oc Ar id
+One job with the trace of what it has done so far;
+.Fl w
+waits until it has finished.
+.It Cm job-cancel Ar id
+Take a job that has not started out of the queue.
 .El
+.Pp
+With
+.Fl q ,
+.Cm start ,
+.Cm stop ,
+.Cm restart ,
+.Cm kill ,
+.Cm address ,
+.Cm service
+actions and variable changes, and
+.Cm pkg-upgrade
+are queued as a job instead of waited for:
+.Nm
+prints the job's number and returns.
+The host runs its jobs one after another in the order they were queued,
+whether or not anyone stays connected, which is what a change that cuts
+the connection it was asked over needs.
 .Sh EXIT STATUS
 0 when the request succeeded, 1 when it failed, 2 for usage errors.
 .Sh EXAMPLES

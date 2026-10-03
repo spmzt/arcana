@@ -497,6 +497,129 @@ paths:
                             health: { type: string }
                   trace: { type: array }
 
+  /api/servers/{server}/jobs:
+    get:
+      tags: [servers]
+      summary: The host's queued, running and recent jobs
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The jobs, oldest first, without traces.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  jobs:
+                    type: array
+                    items: { $ref: "#/components/schemas/Job" }
+    post:
+      tags: [servers]
+      summary: Queue a batch of changes
+      description: |
+        The host runs them one after another in this order, whether or
+        not the console stays connected.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobs]
+              properties:
+                jobs:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  items:
+                    type: object
+                    required: [kind]
+                    properties:
+                      kind:
+                        type: string
+                        enum: [jail-action, address, service-action,
+                          service-config, pkg-upgrade]
+                      jail: { type: string }
+                      action: { type: string, description: For jail-action
+                          and service-action. }
+                      address: { type: string }
+                      interface: { type: string }
+                      remove: { type: boolean }
+                      live: { type: boolean }
+                      persist: { type: boolean }
+                      service: { type: string }
+                      set:
+                        type: object
+                        additionalProperties: { type: string }
+                      unset: { type: array, items: { type: string } }
+                      packages: { type: array, items: { type: string } }
+            example:
+              jobs:
+                - { kind: service-action, service: nginx, action: stop }
+                - { kind: jail-action, jail: web, action: restart }
+      responses:
+        "200":
+          description: The queued jobs with their numbers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  jobs:
+                    type: array
+                    items: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/jobs/{job}:
+    get:
+      tags: [servers]
+      summary: One job with its trace so far
+      description: Read it again while `state` is `queued` or `running`;
+        a step that has begun and not ended has status `incomplete`.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: job
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  job: { $ref: "#/components/schemas/Job" }
+    delete:
+      tags: [servers]
+      summary: Take a queued job out of the queue
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: job
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: ok false with the reason when it already runs or
+            has finished.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  job: { $ref: "#/components/schemas/Job" }
+
   /api/servers/{server}/packages:
     get:
       tags: [servers]
@@ -818,6 +941,22 @@ components:
           schema: { $ref: "#/components/schemas/JailChangeReply" }
 
   schemas:
+    Job:
+      type: object
+      properties:
+        id: { type: integer }
+        kind: { type: string }
+        title: { type: string }
+        state:
+          type: string
+          enum: [queued, running, done, cancelled]
+        ok: { type: boolean, nullable: true, description: With done. }
+        error: { type: string, nullable: true }
+        peer: { type: string, description: Who queued it. }
+        created: { type: integer }
+        started: { type: integer, nullable: true }
+        finished: { type: integer, nullable: true }
+        trace: { type: array, description: Only when one job is read. }
     Package:
       type: object
       properties:
