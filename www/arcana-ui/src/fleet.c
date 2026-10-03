@@ -141,7 +141,7 @@ view_fleet(struct html *h)
 {
 	struct server	*s;
 	char		 buf[64];
-	int		 i, row, rows, up, jails, running;
+	int		 i, row, rows, up, jails, running, behind;
 
 	up = jails = running = 0;
 	rows = 0;
@@ -165,7 +165,17 @@ view_fleet(struct html *h)
 	}
 	h_raw(h, "<section class=\"hostbar\"><div class=\"host-id\"><h1>Fleet"
 	    "</h1><div class=\"facts\"><span>The Seven Archives of FreeBSD"
-	    "</span></div></div></section><div class=\"tiles\">");
+	    "</span>");
+	behind = 0;
+	for (i = 0; i < app.nservers; i++)
+		if (agent_outdated(&app.servers[i]))
+			behind++;
+	if (behind > 0)
+		h_fmt(h, "<button class=\"ghost small\" data-act=\""
+		    "agent-update\" title=\"Send the console's arcana-agent to "
+		    "the hosts that run another version\">Update %d agent%s"
+		    "</button>", behind, behind == 1 ? "" : "s");
+	h_raw(h, "</div></div></section><div class=\"tiles\">");
 	snprintf(buf, sizeof(buf), "%d/%d", up, app.nservers);
 	tile(h, buf, "hosts answering", up == app.nservers ? "ok" : "warn");
 	snprintf(buf, sizeof(buf), "%d/%d", running, jails);

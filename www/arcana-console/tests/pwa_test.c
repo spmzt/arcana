@@ -376,11 +376,14 @@ ATF_TC_BODY(pwa, tc)
 	 * of its jails; the tree has the host and the jails under it. */
 	wait_js("document.querySelector('.tree .titem.server.selected')", 20);
 	wait_js("document.querySelector('.topo .tnode.s-stopped')", 20);
-	ATF_CHECK(js_true("document.querySelector('.tree .titem.leaf')"));
-	/* Its jails fold away and come back; the choice is kept. */
+	/* Its jails are folded away until asked for; the choice is kept. */
+	ATF_CHECK(!js_true("document.querySelector('.tree .titem.leaf')"));
+	run("document.querySelector('.tree button[data-act=fold]').click()");
+	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 3 "
+	    "&& localStorage.getItem('arc_open').includes('\"')", 5);
 	run("document.querySelector('.tree button[data-act=fold]').click()");
 	wait_js("!document.querySelector('.tree .titem.leaf') && "
-	    "localStorage.getItem('arc_fold').includes('\"')", 5);
+	    "localStorage.getItem('arc_open') === '[]'", 5);
 	run("document.querySelector('.tree button[data-act=fold]').click()");
 	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 3",
 	    5);
@@ -413,12 +416,18 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
 	wait_js("document.querySelector('#j-web.s-stopped')", 20);
 	ATF_CHECK(js_true("document.querySelector('#j-db')"));
+	/* A change waits in the queue until it is sent. */
+	ATF_CHECK(js_true("document.querySelector('button[data-act=queue].on')"));
 	run("document.querySelector('#j-web button[data-act=start]').click()");
-	wait_js("document.querySelector('.dock .last.o-ok')", 20);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	ATF_CHECK(js_true("document.querySelector('#j-web.s-stopped')"));
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('.dock .last.o-ok') && "
+	    "!document.querySelector('button[data-act=queue-run]')", 20);
 
-	/* The workflow and the raw output of jail(8). */
-	run("document.querySelector('.dock > header').click()");
-	wait_js("document.querySelector('.graph .node.k-exec')", 5);
+	/* The workflow and the raw output of jail(8): sending the queue
+	 * opened the dock, and the graph fills in as the job runs. */
+	wait_js("document.querySelector('.graph .node.k-exec')", 20);
 	shot("3-jails-and-workflow");
 	ATF_CHECK(js_true("document.querySelector('.graph .node.k-daemon')"));
 	ATF_CHECK(js_true("document.querySelector('.graph .node.k-auth')"));
@@ -444,6 +453,10 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('pre.diff') && document.querySelector("
 	    "'pre.diff').textContent.includes('\"10.0.0.21\"')", 10);
 	run("document.querySelector('.modal button[data-act=close]').click()");
+	/* Nothing to update while the host runs the console's version. */
+	ATF_CHECK(!js_true("document.querySelector("
+	    "'button[data-act=agent-update]')"));
+
 	/* The host's own record of jobs has the start that was done. */
 	run("document.querySelector('.jail-page button[data-act=close-drawer]')"
 	    ".click()");

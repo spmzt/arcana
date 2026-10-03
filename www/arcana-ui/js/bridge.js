@@ -270,30 +270,51 @@ addToLibrary({
 		    leaf.offsetHeight : 27))));
 	},
 
-	/* The hosts whose jails are folded away in the tree, per browser. */
-	$arcFolds: function () {
+	/*
+	 * The hosts whose jails are shown in the tree, per browser: a host
+	 * starts folded, so a long fleet is a short list.
+	 */
+	$arcOpen: function () {
 		try {
-			var v = JSON.parse(localStorage.getItem("arc_fold"));
+			var v = JSON.parse(localStorage.getItem("arc_open"));
 
 			return (Array.isArray(v) ? v : []);
 		} catch (e) {
 			return ([]);
 		}
 	},
-	arc_fold_get__deps: ["$arcFolds", "$UTF8ToString"],
-	arc_fold_get: function (idp) {
-		return (arcFolds().indexOf(UTF8ToString(idp)) !== -1 ? 1 : 0);
+	arc_open_get__deps: ["$arcOpen", "$UTF8ToString"],
+	arc_open_get: function (idp) {
+		return (arcOpen().indexOf(UTF8ToString(idp)) !== -1 ? 1 : 0);
 	},
-	arc_fold_set__deps: ["$arcFolds", "$UTF8ToString"],
-	arc_fold_set: function (idp, on) {
-		var id = UTF8ToString(idp), v = arcFolds().filter(function (x) {
+	arc_open_set__deps: ["$arcOpen", "$UTF8ToString"],
+	arc_open_set: function (idp, on) {
+		var id = UTF8ToString(idp), v = arcOpen().filter(function (x) {
 			return (x !== id);
 		});
 
 		if (on)
 			v.push(id);
 		try {
-			localStorage.setItem("arc_fold", JSON.stringify(v));
+			localStorage.setItem("arc_open", JSON.stringify(v));
+		} catch (e) {
+		}
+	},
+
+	/*
+	 * Changes are held in the queue until sent, unless this browser
+	 * turned that off: a slip of the finger changes nothing by itself.
+	 */
+	arc_queue_get: function () {
+		try {
+			return (localStorage.getItem("arc_queue") !== "0" ? 1 : 0);
+		} catch (e) {
+			return (1);
+		}
+	},
+	arc_queue_set: function (on) {
+		try {
+			localStorage.setItem("arc_queue", on ? "1" : "0");
 		} catch (e) {
 		}
 	},

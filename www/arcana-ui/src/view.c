@@ -295,7 +295,7 @@ tree_caps(int *cap)
 		s = &app.servers[i];
 		n[i] = count_state(s, NULL);
 		cap[i] = n[i];
-		if (n[i] == 0 || arc_fold_get(s->id) != 0)
+		if (n[i] == 0 || arc_open_get(s->id) == 0)
 			n[i] = 0;
 		else if (s->tree_all) {
 			room -= n[i] + 1;
@@ -355,7 +355,7 @@ rail(struct html *h)
 		h_raw(h, " data-act=\"select-server\"");
 		h_attr(h, "data-arg", s->id);
 		h_raw(h, ">");
-		folded = arc_fold_get(s->id) != 0;
+		folded = arc_open_get(s->id) == 0;
 		if (all > 0) {
 			h_fmt(h, "<button class=\"icon fold\" data-act=\"fold\" "
 			    "title=\"%s its jails\"", folded ? "Show" : "Hide");
@@ -494,6 +494,15 @@ hostbar(struct html *h, struct server *s)
 			    "on this host\">arcana-agent " : "<span>arcana-agent ");
 			h_txt(h, jstr(host, "version"));
 			h_raw(h, "</span>");
+		}
+		if (agent_outdated(s)) {
+			h_raw(h, "<button class=\"ghost small\" "
+			    "data-act=\"agent-update\"");
+			h_attr(h, "data-arg", s->id);
+			h_raw(h, " title=\"Send this host the console's "
+			    "arcana-agent\">Update agent to ");
+			h_txt(h, app.version);
+			h_raw(h, "</button>");
 		}
 	} else {
 		h_raw(h, "<span>");
@@ -932,9 +941,10 @@ dock(struct html *h)
 		h_raw(h, "</span>");
 	}
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"queue\" title=\""
-	    "Hold changes in a queue and send them together: the host runs "
-	    "them in order, also when it loses the console\">Queue%s</button>",
-	    app.queue_on ? " on" : "", app.queue_on ? " on" : "");
+	    "Changes are held in a queue until you press Run, and sent "
+	    "together: the host runs them in order, also when it loses the "
+	    "console. Off, a change is sent at once.\">Queue%s</button>",
+	    app.queue_on ? " on" : "", app.queue_on ? " on" : " off");
 	if (app.nbatch > 0)
 		h_fmt(h, "<button class=\"primary small\" data-act=\"queue-run\">"
 		    "Run %d</button><button class=\"ghost small\" "
@@ -997,6 +1007,7 @@ modal(struct html *h)
 	const ucl_object_t *k;
 	ucl_object_iter_t it;
 	bool		 add;
+	int		 i, n;
 
 	if (app.modal == MODAL_NONE)
 		return;
@@ -1057,6 +1068,38 @@ modal(struct html *h)
 			    "arcana-agent there; leave it out to only write the "
 			    "certificate.</p>");
 		}
+		break;
+	case MODAL_AGENT_UPDATE:
+		h_raw(h, "<form data-form=\"agent-update\"><h2>Update "
+		    "arcana-agent</h2><p>The console sends its own arcana-agent");
+		if (app.version[0] != '\0') {
+			h_raw(h, " (");
+			h_txt(h, app.version);
+			h_raw(h, ")");
+		}
+		h_raw(h, " to ");
+		if (app.confirm.arg[0] != '\0') {
+			for (i = 0; i < app.nservers; i++)
+				if (strcmp(app.servers[i].id, app.confirm.arg) ==
+				    0)
+					h_txt(h, app.servers[i].name);
+		} else {
+			n = 0;
+			for (i = 0; i < app.nservers; i++)
+				if (agent_outdated(&app.servers[i])) {
+					h_raw(h, n++ > 0 ? ", " : "");
+					h_txt(h, app.servers[i].name);
+				}
+		}
+		h_raw(h, ". Each host checks that the program runs there "
+		    "before it replaces the one installed, which it keeps "
+		    "beside it as <code>arcana-agent.old</code>.</p>"
+		    "<fieldset class=\"toggles\"><label class=\"toggle\">"
+		    "<input type=\"checkbox\" name=\"restart\" checked>"
+		    "<span>Restart the agent now <em>otherwise the new "
+		    "program runs from the next start of the service; a "
+		    "restart drops the jobs still queued on the host</em>"
+		    "</span></label></fieldset>");
 		break;
 	case MODAL_ADDRESS:
 		add = strcmp(app.confirm.act, "add") == 0;
@@ -1145,6 +1188,9 @@ modal(struct html *h)
 			    app.modal_busy ? " disabled" : "",
 			    app.enrol_cmd[0] != '\0' ? "New token" :
 			    "Make a token");
+			break;
+		case MODAL_AGENT_UPDATE:
+			h_raw(h, "<button class=\"primary\">Update</button>");
 			break;
 		case MODAL_ADDRESS:
 			h_fmt(h, "<button class=\"ghost\" value=\"preview\"%s>"

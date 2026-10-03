@@ -24,11 +24,14 @@
 .Op Fl R Ar rc.d dirs
 .Op Fl s Ar service
 .Op Fl y Ar sysrc
+.Op Fl U Ar program
 .Op Fl N Ar netstat
 .Op Fl X Ar sockstat
 .Op Fl W Ar swapinfo
 .Op Fl Z Ar zpool
 .Op Fl P Ar pkg
+.Nm
+.Fl V
 .Sh DESCRIPTION
 .Nm
 serves the
@@ -194,6 +197,11 @@ The
 program, which reads and writes their
 .Xr rc.conf 5
 variables.
+.It Fl U Ar program
+The file an update replaces.
+The default is the running program.
+.It Fl V
+Print the version and exit.
 .It Fl N Ar netstat , Fl X Ar sockstat
 The
 .Xr netstat 1
@@ -216,6 +224,26 @@ program, for pending upgrades and upgrading, on the host and with
 in running jails.
 Upgrades may run for up to an hour.
 .El
+.Sh UPDATES
+A client may send a new
+.Nm :
+the console does, and
+.Xr arcanactl 8
+with
+.Cm agent-update .
+The program is checked against the SHA-256 sent with it, written beside
+the installed one, and run with
+.Fl V ;
+one that does not run on this host is dropped.
+It then takes the place of the installed program, which is kept with
+the suffix
+.Pa .old .
+When asked to, the daemon has
+.Xr service 8
+restart
+.Nm arcana_agent
+after it has replied; jobs still queued are lost, one that is running
+ends first.
 .Sh RC.CONF VARIABLES
 The service
 .Nm arcana_agent

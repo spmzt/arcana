@@ -575,6 +575,40 @@ paths:
                     items: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/servers/{server}/agent-update:
+    post:
+      tags: [servers]
+      summary: Send the host the console's arcana-agent
+      description: The host checks the program against its SHA-256 and by
+        running it with -V, puts it in place of the one installed (kept
+        as arcana-agent.old), and with `restart` restarts its service
+        after replying.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                restart: { type: boolean }
+      responses:
+        "200":
+          description: What the host did.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  version:
+                    type: string
+                    description: The version the program in place reports.
+                  restarting: { type: boolean }
+                  trace: { type: object }
+        "502": { $ref: "#/components/responses/Error" }
+
   /api/servers/{server}/jobs/{job}:
     get:
       tags: [servers]

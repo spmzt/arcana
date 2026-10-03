@@ -52,6 +52,8 @@ certificate from that CA.
 | `-f`, `-D` | `jail.conf` and `jail.conf.d`, if not in `/etc`. |
 | `-p pidfile` | Default `/var/run/arcana-agent.pid`. |
 | `-j`, `-s`, `-y`, `-N`, `-X`, `-W`, `-Z`, `-P` | The `jail`, `service`, `sysrc`, `netstat`, `sockstat`, `swapinfo`, `zpool` and `pkg` programs, if not the system's; `-R` the rc.d directories. Used by the tests. |
+| `-U` *program* | The file an update replaces, if not the running program. |
+| `-V` | Print the version and exit. |
 
 What each operation runs on the host is in
 [ARCHITECTURE.md](ARCHITECTURE.md#the-arcana-family).
@@ -110,6 +112,7 @@ arcanactl -c tcp://host1.example:4310 \
 | `jobs` | Queued, running and recent jobs. |
 | `job [-w]` *id* | A job with its trace so far; `-w` waits for the end. |
 | `job-cancel` *id* | Take a queued job back. |
+| `agent-update` [`-r`] *program* | Put a new `arcana-agent` in place on the host, checked there by running it with `-V`; `-r` restarts the service. The one before stays as `arcana-agent.old`. |
 
 Global options: `-c uri` (default the local socket), `-A`/`-C`/`-K` for
 TCP, `-N name` when the certificate's name is not the URI's host, `-t`,
@@ -163,6 +166,7 @@ cat /var/db/arcana/setup-token   # for the first login
 | `cookie_secure` | Mark the session cookie Secure. | `true` |
 | `tls { ca, cert, key, ca_key }` | Your own CA for arcana-agent over TCP; `ca_key` to enrol hosts with it. Without the block the console runs its own CA. | none |
 | `update_check`, `update_url` | Ask the release feed for newer versions. | on, GitHub |
+| `agent_binary` | The `arcana-agent` the console sends to hosts when asked to update them. | `/usr/local/sbin/arcana-agent` |
 
 rc.conf variables: `arcana_console_enable`, `arcana_console_config` (the
 `kore.conf`), `arcana_console_web_conf`. The HTTP API is in

@@ -79,6 +79,7 @@ config_load(const char *path)
 	o = ucl_object_lookup(top, "update_check");
 	cfg.update_url = o != NULL && !ucl_object_toboolean(o) ? NULL :
 	    get(top, "update_url", ARCW_RELEASES);
+	cfg.agent_binary = get(top, "agent_binary", ARCW_AGENT_BINARY);
 	ucl_object_unref(top);
 
 	if (cfg.rp_id == NULL || cfg.origin == NULL) {

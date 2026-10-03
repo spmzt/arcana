@@ -66,6 +66,10 @@ definitions:
       - name: all
       - name: inet
       - name: inet6
+  - name: max-binary
+    type: const
+    doc: The largest arcana-agent an update carries; a frame is 8 MiB.
+    value: 6291456
   - name: max-output
     type: const
     value: 262144
@@ -263,6 +267,27 @@ attribute-sets:
         type: text
         multi-attr: true
         doc: The script's extra commands (service extracommands).
+      - name: binary
+        type: bytes
+        doc: A new arcana-agent, for this host's system and machine.
+        checks:
+          max-len: max-binary
+      - name: sha256
+        type: text
+        doc: The SHA-256 of binary, in hex.
+        checks:
+          max-len: 64
+      - name: restart
+        type: flag
+        doc: Restart the service once the new program is in place.
+      - name: restarting
+        type: flag
+        doc: The service is being restarted; the connection will drop.
+      - name: agent-version
+        type: text
+        doc: The version the program in place reports.
+        checks:
+          max-len: 64
 
   - name: host
     attributes:
@@ -809,3 +834,30 @@ operations:
           - ok
           - error
           - job
+
+  - name: agent-update
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Replace arcana-agent with the program sent.  It is checked against
+      its SHA-256 and by running it with -V, on this host, before it
+      takes the place of the one installed, which is kept beside it
+      with the suffix .old.  With restart the service is restarted
+      after the reply; otherwise the new program runs from the next
+      start.
+    do:
+      request:
+        attributes:
+          - binary
+          - sha256
+          - restart
+        required:
+          - binary
+          - sha256
+      reply:
+        attributes:
+          - ok
+          - error
+          - agent-version
+          - restarting
+          - trace

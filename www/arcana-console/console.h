@@ -28,6 +28,7 @@
 #define	ARCW_VERSION		"0.1.0"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
+#define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
 
 #define	SESSION_COOKIE		"arc_session"
 #define	SESSION_IDLE		(30 * 60)
@@ -51,6 +52,7 @@ struct config {
 	char		*tls_key;
 	bool		 tls_own;	/* no tls {}: the console's own CA */
 	char		*update_url;	/* release feed, or NULL: no checks */
+	char		*agent_binary;	/* the arcana-agent sent to hosts */
 };
 
 extern struct config cfg;
@@ -116,6 +118,7 @@ int		 api_address(struct http_request *);
 int		 api_services(struct http_request *);
 int		 api_service_action(struct http_request *);
 int		 api_service_config(struct http_request *);
+int		 api_agent_update(struct http_request *);
 int		 api_network(struct http_request *);
 int		 api_stats(struct http_request *);
 int		 api_packages(struct http_request *);

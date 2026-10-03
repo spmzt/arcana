@@ -205,7 +205,8 @@ start_daemon()
 	    -D "$(pwd)/etc/jail.conf.d" -j "$(pwd)/fake-jail" \
 	    -R "$(pwd)/rc.d:$(pwd)/local/rc.d" -s "$(pwd)/fake-service" \
 	    -y "$(pwd)/fake-sysrc" -N "$(pwd)/fake-netstat" \
-	    -X "$(pwd)/fake-sockstat" -P "$(pwd)/fake-pkg" > daemon.out 2>&1 &
+	    -X "$(pwd)/fake-sockstat" -P "$(pwd)/fake-pkg" \
+	    -U "$(pwd)/installed-agent" > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
@@ -667,8 +668,44 @@ jobs_cleanup()
 	stop_daemon
 }
 
+atf_test_case agent_update cleanup
+agent_update_head()
+{
+	atf_set "descr" "A new agent is checked, put in place, and restarted"
+}
+agent_update_body()
+{
+	start_daemon
+	echo old > installed-agent
+	# Something that is not arcana-agent never replaces the program.
+	printf '#!/bin/sh\necho hello\n' > bogus
+	atf_check -s exit:1 -e match:'does not run on this host' -o ignore \
+	    "$JGC" -c "$SOCK" agent-update bogus
+	atf_check -o inline:'old\n' cat installed-agent
+	atf_check test ! -e installed-agent.new
+	# The real one does, and the one before is kept.
+	atf_check -o match:'^Agent: +[0-9]+\.[0-9]+.* in place' \
+	    "$JGC" -c "$SOCK" agent-update "$JGD"
+	atf_check cmp -s "$JGD" installed-agent
+	atf_check -o inline:'old\n' cat installed-agent.old
+	atf_check test ! -e running.arcana_agent
+	# With -r the service is restarted, after the reply.
+	atf_check -o match:'"restarting":"true"' -o match:'replace' \
+	    "$JGC" --libxo json -t -c "$SOCK" agent-update -r "$JGD"
+	for i in $(seq 1 60); do
+		[ -e running.arcana_agent ] && break
+		sleep 0.1
+	done
+	atf_check test -e running.arcana_agent
+}
+agent_update_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case agent_update
 	atf_add_test_case hello
 	atf_add_test_case socket_mode
 	atf_add_test_case list

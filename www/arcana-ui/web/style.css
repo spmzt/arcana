@@ -630,6 +630,11 @@ label {
 	color: var(--cyan);
 }
 
+.facts button.small {
+	padding: .1rem .55rem;
+	font-size: .68rem;
+}
+
 /* The resource tree. */
 .tree {
 	list-style: none;

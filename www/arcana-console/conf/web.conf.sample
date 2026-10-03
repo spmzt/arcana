@@ -29,3 +29,7 @@ cookie_secure = true;
 # itself.  Turn the checks off, or point them elsewhere:
 #update_check = false;
 #update_url = "https://api.github.com/repos/spmzt/arcana/releases/latest";
+
+# The arcana-agent sent to hosts when the console is asked to update
+# them: by default the one installed with it.
+#agent_binary = "/usr/local/sbin/arcana-agent";

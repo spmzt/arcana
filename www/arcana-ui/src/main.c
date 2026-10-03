@@ -279,6 +279,7 @@ submit(const char *form, const ucl_object_t *f)
 	struct server	*s2;
 	const char	*s;
 	bool		 dry;
+	int		 i;
 
 	if (strcmp(form, "enrol") == 0) {
 		enrol(jstr(f, "token") != NULL ? jstr(f, "token") : "",
@@ -373,6 +374,14 @@ submit(const char *form, const ucl_object_t *f)
 		address_change(app.jail, s, jstr(f, "mode") != NULL &&
 		    strcmp(jstr(f, "mode"), "remove") == 0, jbool(f, "live"),
 		    jbool(f, "persist"), dry);
+	} else if (strcmp(form, "agent-update") == 0) {
+		app.modal = MODAL_NONE;
+		for (i = 0; i < app.nservers; i++) {
+			s2 = &app.servers[i];
+			if (app.confirm.arg[0] != '\0' ? strcmp(s2->id,
+			    app.confirm.arg) == 0 : agent_outdated(s2))
+				agent_update(s2, jbool(f, "restart"));
+		}
 	} else if (strcmp(form, "confirm") == 0) {
 		if (app.confirm.typed[0] != '\0' && (jstr(f, "typed") == NULL ||
 		    strcmp(jstr(f, "typed"), app.confirm.typed) != 0)) {
@@ -395,7 +404,7 @@ dispatch(const char *act, const char *arg, const char *value)
 
 	s = cur_server();
 	if (strcmp(act, "fold") == 0) {
-		arc_fold_set(arg, !arc_fold_get(arg));
+		arc_open_set(arg, !arc_open_get(arg));
 	} else if (strcmp(act, "tree-more") == 0) {
 		for (i = 0; i < app.nservers; i++)
 			if (strcmp(app.servers[i].id, arg) == 0)
@@ -459,6 +468,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false);
 	} else if (strcmp(act, "queue") == 0) {
 		app.queue_on = !app.queue_on;
+		arc_queue_set(app.queue_on ? 1 : 0);
 		app.dock_open = true;
 	} else if (strcmp(act, "queue-run") == 0) {
 		queue_run();
@@ -629,6 +639,11 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "do-delete-server", arg, "");
 	} else if (strcmp(act, "do-delete-server") == 0) {
 		delete_server(arg);
+	} else if (strcmp(act, "agent-update") == 0) {
+		/* arg: a host, or none for every host that is behind. */
+		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
+		app.modal = MODAL_AGENT_UPDATE;
+		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "keys") == 0) {
 		app.modal = MODAL_KEYS;
 		app.modal_error[0] = '\0';
@@ -730,6 +745,7 @@ main(void)
 	app.fx = arc_fx_get() != 0;
 	app.notify = arc_notify_state();
 	app.install = arc_install_state();
+	app.queue_on = arc_queue_get() != 0;
 	render();
 	check_health();
 	last_health = last_refresh = arc_now();

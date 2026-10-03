@@ -139,6 +139,19 @@ One job with the trace of what it has done so far;
 waits until it has finished.
 .It Cm job-cancel Ar id
 Take a job that has not started out of the queue.
+.It Cm agent-update Oo Fl r Oc Ar program
+Put
+.Ar program
+in place of the host's
+.Xr arcana-agent 8 .
+The host checks it against its SHA-256 and by running it with
+.Fl V
+before it replaces the one installed, which it keeps with the suffix
+.Pa .old .
+With
+.Fl r
+the service is restarted; otherwise the new program runs from its next
+start.
 .El
 .Pp
 With

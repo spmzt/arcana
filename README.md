@@ -237,8 +237,8 @@ The console is laid out as a tree and tabs.
 
 - The **tree** on the left: the fleet, its hosts, and each host's jails.
   What you select decides the page. **Enrol a host** and **Add a server**
-  are at its top. The arrow on a host folds its jails away, and the
-  browser remembers that. When the jails do not fit in the space under
+  are at its top. A host's jails are folded away until you open them
+  with the arrow on the host, and the browser remembers which are open. When the jails do not fit in the space under
   the hosts, each host shows what fits and a **+N more…** row that
   shows the rest.
 - **All hosts**: every host as a card with CPU, memory and ZFS, how many
@@ -270,8 +270,10 @@ The console is laid out as a tree and tabs.
   request to each call the agent made; when a program ran, **Raw
   output** shows its argv, exit status and output. Changes are jobs the
   host runs on its own: the graph fills in stage by stage, and a change
-  that cuts the console off still completes. **Queue** holds changes and
-  sends them as one batch, run in order.
+  that cuts the console off still completes. **Queue** is on unless
+  you turn it off in that browser: a change waits in the activity bar
+  until you press **Run**, and what waits is sent as one batch, run in
+  order; off, a change is sent at once.
 - In the top bar: **FX** turns the blur and idle animations off for this
   browser, **Notify** allows a desktop notification when a task that
   took more than ten seconds ends, **Keys** manages security keys and
@@ -289,9 +291,35 @@ turns that off. It does not replace itself, since it runs unprivileged:
 - a native install is updated with `pkg upgrade arcana`, or
   `make install` from a newer tree, then `service arcana_console restart`.
 
-Hosts update `arcana-agent` the same way; the console marks a host
-whose `arcana-agent` is not its own version. Certificates stay valid across
-updates.
+Certificates stay valid across updates.
+
+### Updating the agents
+
+The console marks a host whose `arcana-agent` is not its own version,
+and can update it: **Update agent** beside the version on the host's
+page, or **Update N agents** on the fleet page for every host that is
+behind. The console sends the `arcana-agent` installed with it
+(`agent_binary` in `web.conf` names another). Each host
+
+1. checks the program against the SHA-256 sent with it,
+2. writes it beside the installed one and runs it with `-V`: a program
+   built for another machine or FreeBSD version does not run, and is
+   dropped,
+3. puts it in place of the installed one, which stays as
+   `arcana-agent.old`.
+
+With **Restart the agent now**, on by default, the host then restarts
+its `arcana_agent` service, and shows the new version at the next
+refresh; without it, the new program runs from the next start of the
+service. A restart drops jobs still queued on the host; one that is
+running finishes first. From a shell, `arcanactl agent-update [-r]
+program` does the same for one host.
+
+The program has to suit the host: the same architecture and a FreeBSD
+version it runs on, with `libcblink` there as before. Hosts that differ
+from the console's machine are updated with `pkg upgrade arcana`
+instead, which the Packages tab can do. If an update goes wrong, put
+`arcana-agent.old` back and restart the service.
 
 ## TODO
 

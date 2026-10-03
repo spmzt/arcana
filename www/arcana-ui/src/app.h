@@ -45,8 +45,10 @@ char		*arc_hostname(void);
 char		*arc_origin(void);
 int		 arc_fx_get(void);
 int		 arc_tree_room(void);
-int		 arc_fold_get(const char *);
-void		 arc_fold_set(const char *, int);
+int		 arc_open_get(const char *);
+void		 arc_open_set(const char *, int);
+int		 arc_queue_get(void);
+void		 arc_queue_set(int);
 void		 arc_fx_set(int);
 void		 arc_notify(const char *, const char *);
 int		 arc_notify_state(void);
@@ -251,6 +253,7 @@ enum modal {
 	MODAL_ENROL,
 	MODAL_KEYS,
 	MODAL_ADDRESS,
+	MODAL_AGENT_UPDATE,
 };
 
 struct confirm {
@@ -350,6 +353,8 @@ void		 service_action(const char *, const char *);
 void		 service_config(const char *, const char *);
 void		 refresh_network(struct server *, bool);
 void		 refresh_stats(struct server *);
+bool		 agent_outdated(const struct server *);
+void		 agent_update(struct server *, bool);
 void		 refresh_jobs(struct server *);
 void		 open_job(struct server *, long long, const char *);
 void		 refresh_packages(struct server *, bool);

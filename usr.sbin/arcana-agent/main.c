@@ -9,6 +9,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/sysctl.h>
 
 #include <err.h>
 #include <errno.h>
@@ -65,7 +66,8 @@ usage(void)
 	    "[-K keyfile] [-D confdir]\n"
 	    "                 [-f jail.conf] [-g group] [-j jail] "
 	    "[-l uri] [-p pidfile]\n"
-	    "                 [-R rc.d dirs] [-s service] [-y sysrc]\n"
+	    "                 [-R rc.d dirs] [-s service] [-y sysrc] "
+	    "[-U program]\n"
 	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
 	exit(2);
@@ -180,7 +182,7 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	while ((ch = getopt(argc, argv, "A:C:D:dFf:g:j:K:l:N:P:p:R:s:W:X:y:Z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:C:D:dFf:g:j:K:l:N:P:p:R:s:U:VW:X:y:Z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -243,12 +245,28 @@ main(int argc, char *argv[])
 		case 'P':
 			opts.pkg_bin = optarg;
 			break;
+		case 'U':
+			opts.self_path = optarg;
+			break;
+		case 'V':
+			printf("arcana-agent %s\n", ARCANA_AGENT_VERSION);
+			return (0);
 		default:
 			usage();
 		}
 	}
 	if (optind != argc)
 		usage();
+	if (opts.self_path == NULL) {
+		static char	self[MAXPATHLEN];
+		size_t		len = sizeof(self);
+		int		mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME,
+				    -1 };
+
+		if (sysctl(mib, 4, self, &len, NULL, 0) == -1)
+			err(1, "sysctl kern.proc.pathname");
+		opts.self_path = self;
+	}
 	if (nl == 0)
 		uris[nl++] = PATH_SOCKET;
 

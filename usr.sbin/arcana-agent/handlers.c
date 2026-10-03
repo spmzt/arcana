@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
+#include <unistd.h>
 
 #include "agent.h"
 
@@ -34,8 +35,14 @@ struct job {
 	uint8_t			 family;
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
+	uint8_t			*binary;	/* agent-update */
+	size_t			 binlen;
+	char			*sha256;
+	bool			 restart;
 	char			*peer;
 };
+
+#define	RESTART_WAIT	10	/* s, for service(8) to stop the daemon */
 
 pthread_mutex_t	change_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -177,12 +184,15 @@ worker(void *arg)
 	struct arc_stats_rsp	 str;
 	struct arc_packages_rsp	 pr;
 	struct arc_pkg_upgrade_rsp ur;
+	struct arc_agent_update_rsp aur;
 	const char		*what, *error;
+	bool			 restart;
 	bool			 ok;
 	int			 root, rc;
 
 	j = arg;
 	work_init(&w);
+	restart = false;
 	switch (j->cmd) {
 	case ARC_CMD_LIST:
 		what = j->config_only ? "list (configuration only)" : "list";
@@ -295,6 +305,25 @@ worker(void *arg)
 		trace_steps(&w, &sar.trace.v, &sar.trace.n);
 		rc = arc_service_action_reply(j->req, &sar);
 		break;
+	case ARC_CMD_AGENT_UPDATE:
+		what = wfmt(&w, "agent update%s", j->restart ?
+		    " and restart" : "");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&aur, 0, sizeof(aur));
+		/* Not while a job changes the host: a restart would cut
+		 * it short. */
+		pthread_mutex_lock(&change_lock);
+		do_agent_update(&w, j->binary, j->binlen, j->sha256, &aur);
+		pthread_mutex_unlock(&change_lock);
+		ok = aur.ok;
+		error = aur.error;
+		restart = ok && j->restart;
+		aur.restarting = restart;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &aur.trace.v, &aur.trace.n);
+		rc = arc_agent_update_reply(j->req, &aur);
+		break;
 	case ARC_CMD_SERVICE_CONFIG:
 		what = wfmt(&w, "service %s config%s", j->jail,
 		    j->svc.variables.n > 0 ? " (set)" : "");
@@ -338,6 +367,20 @@ worker(void *arg)
 	(void)cbl_req_complete(j->req, rc);
 	work_free(&w);
 	job_free(j);
+	if (restart) {
+		/*
+		 * No change starts while the service is on its way to
+		 * stop this daemon.  Still here after a while, it did
+		 * not: the daemon is not run by the service.
+		 */
+		pthread_mutex_lock(&change_lock);
+		agent_restart();
+		sleep(RESTART_WAIT);
+		pthread_mutex_unlock(&change_lock);
+		logmsg(LOG_ERR, "restart: still running after %d s; is "
+		    "arcana_agent the service that runs this daemon?",
+		    RESTART_WAIT);
+	}
 	return (NULL);
 }
 
@@ -355,6 +398,8 @@ job_free(struct job *j)
 		free((char *)(uintptr_t)j->pkg.names.v[i]);
 	free((void *)(uintptr_t)j->pkg.names.v);
 	free(j->jail);
+	free(j->binary);
+	free(j->sha256);
 	free((char *)(uintptr_t)j->addr.jail);
 	free((char *)(uintptr_t)j->addr.address);
 	free((char *)(uintptr_t)j->addr.interface);
@@ -485,6 +530,27 @@ arc_service_action_doit(cbl_req *req, const struct arc_service_action_req *rq,
 	j->cmd = ARC_CMD_SERVICE_ACTION;
 	j->jail = xstrdup(rq->service);
 	j->action = rq->service_action;
+	return (start(j));
+}
+
+int
+arc_agent_update_doit(cbl_req *req, const struct arc_agent_update_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->binary.len == 0 || strlen(rq->sha256) != 64)
+		return (reject(req, "a program and its SHA-256 are needed"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_AGENT_UPDATE;
+	if ((j->binary = malloc(rq->binary.len)) == NULL)
+		err(1, "malloc");
+	memcpy(j->binary, rq->binary.p, rq->binary.len);
+	j->binlen = rq->binary.len;
+	j->sha256 = xstrdup(rq->sha256);
+	j->restart = rq->restart;
 	return (start(j));
 }
 

@@ -540,6 +540,42 @@ ATF_TC_BODY(jails, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(agent_update, "The console sends its arcana-agent to a host, "
+    "which puts it in place and restarts on request")
+ATF_TC_BODY(agent_update, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		path[160], cwd[MAXPATHLEN], body[MAXPATHLEN];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/servers/%s/agent-update", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+
+	ATF_REQUIRE(access("installed-agent", F_OK) == -1);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("false", jstr(&r, "restarting"));
+	ATF_CHECK(jstr(&r, "version") != NULL);
+	ATF_CHECK(access("installed-agent", X_OK) == 0);
+	resp_free(&r);
+
+	http("POST", path, "{\"restart\":true}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("true", jstr(&r, "restarting"));
+	ATF_CHECK(access("installed-agent.old", F_OK) == 0);
+	resp_free(&r);
+}
+
 CONSOLE_TC(services, "Services listed, acted on and configured through "
     "service(8) and sysrc(8)")
 ATF_TC_BODY(services, tc)
@@ -1032,6 +1068,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, csrf);
 	ATF_TP_ADD_TC(tp, jails);
 	ATF_TP_ADD_TC(tp, services);
+	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, enrol);

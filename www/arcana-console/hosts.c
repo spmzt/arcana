@@ -13,13 +13,19 @@
  */
 
 #include <sys/types.h>
+#include <sys/stat.h>
 
 #include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 #include <vis.h>
+
+#include <openssl/evp.h>
 
 #include "console.h"
 
@@ -39,6 +45,7 @@ enum op {
 	OP_JOBS,
 	OP_JOB,
 	OP_JOB_CANCEL,
+	OP_AGENT_UPDATE,
 };
 
 struct call {
@@ -65,6 +72,7 @@ struct call {
 	struct arc_job_spec	*specs;		/* job-submit: the batch */
 	size_t			 nspecs;
 	uint64_t		 jobid;		/* job, job-cancel */
+	bool			 restart;	/* agent-update */
 	struct arc_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
 	char			*json;		/* the reply, from the thread */
@@ -349,7 +357,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
 	    "arc_jobs" : c->op == OP_JOB ? "arc_job" : c->op == OP_JOB_CANCEL ?
-	    "arc_job_cancel" : "arc_service_config";
+	    "arc_job_cancel" : c->op == OP_AGENT_UPDATE ? "arc_agent_update" :
+	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
 	for (i = 0; i < n; i++)
@@ -381,6 +390,49 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 }
 
 /* In a task thread: one cblink request, its reply as JSON. */
+/*
+ * The arcana-agent this console hands to hosts: the one installed with
+ * it.  Returns what is wrong, or NULL with the program, to be freed,
+ * and its SHA-256 in hex.
+ */
+static const char *
+agent_binary(uint8_t **binp, size_t *lenp, char sha[65])
+{
+	struct stat	 sb;
+	unsigned char	 md[EVP_MAX_MD_SIZE];
+	uint8_t		*bin;
+	ssize_t		 n;
+	size_t		 off;
+	unsigned int	 i, mdlen;
+	int		 fd;
+
+	if ((fd = open(cfg.agent_binary, O_RDONLY | O_CLOEXEC)) == -1)
+		return (errno == ENOENT ? "the console has no arcana-agent to "
+		    "send: agent_binary in web.conf names none" :
+		    "the console cannot read its arcana-agent");
+	if (fstat(fd, &sb) == -1 || !S_ISREG(sb.st_mode) || sb.st_size == 0 ||
+	    sb.st_size > ARC_MAX_BINARY || (bin = malloc((size_t)sb.st_size)) ==
+	    NULL) {
+		close(fd);
+		return ("the console's arcana-agent is not a program an "
+		    "update can carry");
+	}
+	for (off = 0; off < (size_t)sb.st_size; off += (size_t)n)
+		if ((n = read(fd, bin + off, (size_t)sb.st_size - off)) <= 0)
+			break;
+	close(fd);
+	if (off < (size_t)sb.st_size || EVP_Digest(bin, off, md, &mdlen,
+	    EVP_sha256(), NULL) != 1) {
+		free(bin);
+		return ("the console cannot read its arcana-agent");
+	}
+	for (i = 0; i < mdlen; i++)
+		snprintf(sha + 2 * i, 3, "%02x", md[i]);
+	*binp = bin;
+	*lenp = off;
+	return (NULL);
+}
+
 static int
 call_run(struct kore_task *t)
 {
@@ -411,6 +463,11 @@ call_run(struct kore_task *t)
 	struct arc_job_rsp	*jr;
 	struct arc_job_cancel_req jcq;
 	struct arc_job_cancel_rsp *jcr;
+	struct arc_agent_update_req auq;
+	struct arc_agent_update_rsp *aur;
+	uint8_t			*bin;
+	size_t			 binlen;
+	char			 sha[65];
 	const struct arc_step	*steps;
 	ucl_object_t		*top, *srv, *a, *e;
 	cbl_conn		*conn;
@@ -449,6 +506,8 @@ call_run(struct kore_task *t)
 	jlr = NULL;
 	jr = NULL;
 	jcr = NULL;
+	aur = NULL;
+	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
 	snprintf(detail, sizeof(detail), "%s, %s", c->uri, local ?
@@ -735,6 +794,26 @@ call_run(struct kore_task *t)
 		steps = nr->trace.v;
 		nsteps = nr->trace.n;
 		break;
+	case OP_AGENT_UPDATE:
+		if ((msg = agent_binary(&bin, &binlen, sha)) != NULL) {
+			ok = false;
+			put_str(top, "error", msg);
+			break;
+		}
+		memset(&auq, 0, sizeof(auq));
+		auq.binary.p = bin;
+		auq.binary.len = binlen;
+		auq.sha256 = sha;
+		auq.restart = c->restart;
+		if ((error = arc_agent_update(&cl, &auq, &aur)) != 0)
+			goto rpcfail;
+		ok = aur->ok;
+		put_str(top, "error", aur->error);
+		put_str(top, "version", aur->agent_version);
+		put(top, "restarting", ucl_object_frombool(aur->restarting));
+		steps = aur->trace.v;
+		nsteps = aur->trace.n;
+		break;
 	default:
 		memset(&scq, 0, sizeof(scq));
 		scq.service = c->jail;
@@ -815,6 +894,9 @@ done:
 		arc_job_rsp_free(jr);
 	if (jcr != NULL)
 		arc_job_cancel_rsp_free(jcr);
+	if (aur != NULL)
+		arc_agent_update_rsp_free(aur);
+	free(bin);
 	if (cl.conn != NULL)
 		arc_client_fini(&cl);
 	cbl_conn_free(conn);
@@ -838,6 +920,7 @@ call_new(struct http_request *req, enum op op)
 	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL ||
+	    op == OP_AGENT_UPDATE ||
 	    (op == OP_SERVICE_CONFIG && req->method == HTTP_METHOD_POST)))
 		return (NULL);
 	t1 = now_us();
@@ -968,6 +1051,28 @@ api_service_action(struct http_request *req)
 		    "start, stop, restart, reload, enable, disable"));
 	}
 	c->action = (uint8_t)i;
+	return (call_start(req, c));
+}
+
+/*
+ * POST /api/servers/<id>/agent-update, {"restart": true}: send the host
+ * the console's arcana-agent; with restart, have it restart its service.
+ */
+int
+api_agent_update(struct http_request *req)
+{
+	ucl_object_t	*body;
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_AGENT_UPDATE)) == NULL)
+		return (KORE_RESULT_OK);
+	if ((body = read_json(req)) != NULL) {
+		c->restart = ucl_object_toboolean(ucl_object_lookup(body,
+		    "restart"));
+		ucl_object_unref(body);
+	}
 	return (call_start(req, c));
 }
 

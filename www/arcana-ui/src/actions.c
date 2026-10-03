@@ -1594,3 +1594,62 @@ delete_server(const char *id)
 	snprintf(url, sizeof(url), "/api/servers/%s", id);
 	api("DELETE", url, NULL, servers_cb, NULL);
 }
+
+/* The host answers with an arcana-agent that is not the console's. */
+bool
+agent_outdated(const struct server *s)
+{
+	const char	*v;
+
+	return (app.version[0] != '\0' && s->list != NULL && !s->failed &&
+	    (v = jstr(s->list, "host.version")) != NULL &&
+	    strcmp(v, app.version) != 0);
+}
+
+static void
+agent_update_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+	struct server	*s;
+	bool		 ok;
+
+	c = arg;
+	ok = status == 200 && jbool(o, "ok");
+	if (status == 200 && !ok)
+		err = jstr(o, "error");
+	op_done(op_find(c->op), ok, o, err);
+	if (!ok)
+		toast(true, "%s: agent not updated: %s", c->name, err != NULL ?
+		    err : "failed");
+	else if (jbool(o, "restarting"))
+		toast(false, "%s: arcana-agent %s in place, restarting", c->name,
+		    jstr(o, "version") != NULL ? jstr(o, "version") : "");
+	else
+		toast(false, "%s: arcana-agent %s in place; it runs from the "
+		    "next start of the service", c->name, jstr(o, "version") !=
+		    NULL ? jstr(o, "version") : "");
+	/* A restarted agent shows its version at the next refresh. */
+	if (ok && !jbool(o, "restarting") && (s = server_by_id(c->sid)) != NULL)
+		refresh_jails(s, false);
+	free(c);
+}
+
+/* Send s the console's arcana-agent; restart its service with restart. */
+void
+agent_update(struct server *s, bool restart)
+{
+	struct ctx	*c;
+	struct op	*op;
+	char		 url[128];
+
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->name, sizeof(c->name), "%s", s->name);
+	op = op_new(restart ? "update agent and restart" : "update agent",
+	    s->name);
+	c->op = op->id;
+	app.trace_op = op->id;
+	snprintf(url, sizeof(url), "/api/servers/%s/agent-update", s->id);
+	api("POST", url, restart ? "{\"restart\":true}" : "{}",
+	    agent_update_cb, c);
+}

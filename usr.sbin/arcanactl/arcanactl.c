@@ -9,9 +9,12 @@
  */
 
 #include <sys/param.h>
+#include <sys/stat.h>
 
 #include <err.h>
+#include <fcntl.h>
 #include <libxo/xo.h>
+#include <sha256.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -106,6 +109,7 @@ usage(void)
 	    "    jobs\n"
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
+	    "    agent-update [-r] program\n"
 	    "with -q, start, stop, restart, kill, address, service (but "
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
 	    "instead of waited for.\n");
@@ -647,6 +651,60 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/* agent-update [-r] program: put a new arcana-agent in place. */
+static int
+cmd_agent_update(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_agent_update_req	 req;
+	struct arc_agent_update_rsp	*rsp;
+	struct stat			 sb;
+	char				 hex[SHA256_DIGEST_STRING_LENGTH];
+	uint8_t				*data;
+	ssize_t				 n;
+	size_t				 off;
+	int				 ch, error, fd;
+
+	memset(&req, 0, sizeof(req));
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "r")) != -1) {
+		if (ch != 'r')
+			usage();
+		req.restart = true;
+	}
+	if (argc - optind != 1)
+		usage();
+	if ((fd = open(argv[optind], O_RDONLY)) == -1 || fstat(fd, &sb) == -1)
+		xo_err(1, "%s", argv[optind]);
+	if (sb.st_size == 0 || sb.st_size > ARC_MAX_BINARY)
+		xo_errx(1, "%s: not a program an update can carry",
+		    argv[optind]);
+	if ((data = malloc((size_t)sb.st_size)) == NULL)
+		xo_err(1, "malloc");
+	for (off = 0; off < (size_t)sb.st_size; off += (size_t)n)
+		if ((n = read(fd, data + off, (size_t)sb.st_size - off)) <= 0)
+			xo_err(1, "%s", argv[optind]);
+	close(fd);
+	req.binary.p = data;
+	req.binary.len = off;
+	req.sha256 = SHA256_Data(data, off, hex);
+	if ((error = arc_agent_update(cl, &req, &rsp)) != 0)
+		fail(cl, error, "agent-update");
+	if (rsp->ok)
+		xo_emit("{Lwc:Agent}{:agent-version/%s}{d:restarting/%s}\n",
+		    rsp->agent_version != NULL ? rsp->agent_version : "?",
+		    rsp->restarting ? ", restarting" :
+		    " in place; it runs from the next start");
+	xo_emit("{e:restarting/%s}", rsp->restarting ? "true" : "false");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("agent-update: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_agent_update_rsp_free(rsp);
+	free(data);
+	return (error);
+}
+
 /* The program's libxo JSON, printed as it came. */
 static int
 cmd_net(struct arc_client *cl, int argc, char **argv)
@@ -1096,6 +1154,8 @@ main(int argc, char *argv[])
 		rc = cmd_job_cancel(&cl, argc, argv);
 	else if (strcmp(argv[0], "pkg-upgrade") == 0)
 		rc = cmd_pkg_upgrade(&cl, argc, argv);
+	else if (strcmp(argv[0], "agent-update") == 0)
+		rc = cmd_agent_update(&cl, argc, argv);
 	else
 		usage();
 	xo_close_container("arcana");

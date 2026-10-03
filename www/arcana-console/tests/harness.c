@@ -266,8 +266,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("fake-pkg", 0755) == 0);
 
 	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
-	    "datadir = \"%s/data\";\ncookie_secure = false;\n%s", RP_ID,
-	    harness_origin, cwd, harness_webconf);
+	    "datadir = \"%s/data\";\ncookie_secure = false;\n"
+	    "agent_binary = \"%s\";\n%s", RP_ID, harness_origin, cwd, jgd,
+	    harness_webconf);
 	put("web.conf", buf);
 	if (port != 0)
 		snprintf(listen, sizeof(listen), "bind 127.0.0.1 %d", port);
@@ -306,7 +307,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[17] = (char *)(uintptr_t)"./fake-netstat";
 	argv[18] = (char *)(uintptr_t)"-P";
 	argv[19] = (char *)(uintptr_t)"./fake-pkg";
-	argv[20] = NULL;
+	argv[20] = (char *)(uintptr_t)"-U";
+	argv[21] = (char *)(uintptr_t)"./installed-agent";
+	argv[22] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

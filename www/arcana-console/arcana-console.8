@@ -106,6 +106,13 @@ Default true.
 .It Va update_url
 Another feed, in the shape of GitHub's
 .Pa releases/latest .
+.It Va agent_binary
+The
+.Xr arcana-agent 8
+the console sends to hosts when asked to update them.
+Default
+.Pa /usr/local/sbin/arcana-agent ,
+the one installed with the console.
 .El
 .Pp
 The module checks every certificate it is configured with when it

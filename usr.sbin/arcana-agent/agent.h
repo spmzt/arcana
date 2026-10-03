@@ -51,6 +51,7 @@ struct opts {
 	const char	*swapinfo_bin;
 	const char	*zpool_bin;
 	const char	*pkg_bin;
+	const char	*self_path;	/* the program an update replaces */
 	bool		 debug;
 };
 
@@ -228,6 +229,11 @@ const struct arc_job *jobs_get(struct work *, uint64_t);
 const struct arc_job *jobs_cancel(struct work *, uint64_t, const char **);
 
 /* handlers.c */
+/* update.c */
+int		 do_agent_update(struct work *, const uint8_t *, size_t,
+		    const char *, struct arc_agent_update_rsp *);
+void		 agent_restart(void);
+
 extern pthread_mutex_t	change_lock;	/* one change at a time */
 
 /* main.c */
