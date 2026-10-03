@@ -893,13 +893,18 @@ components:
         application/json:
           schema:
             type: object
-            required: [authenticated, setup_required, rp_id]
+            required: [authenticated, setup_required, rp_id, origin]
             properties:
               authenticated: { type: boolean }
               setup_required:
                 type: boolean
                 description: No key is registered yet.
               rp_id: { type: string }
+              origin:
+                type: string
+                description: >-
+                  The origin the console is configured for; security keys
+                  work only when the page is open there.
     Credentials:
       description: The registered keys.
       content:

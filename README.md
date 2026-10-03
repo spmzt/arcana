@@ -213,6 +213,16 @@ login screen logs in with it, on the phone or, through the phone, on
 any browser. Registration asks for a discoverable credential where the
 authenticator offers one, so security keys keep working as before.
 
+Security keys work only at the address the console is configured for:
+`rp_id` must be the host name in the address bar (or a parent domain of
+it), `origin` the exact origin, and the page HTTPS unless it is on
+localhost. Anywhere else the browser refuses with "SecurityError" ("The
+operation is insecure" in Firefox), and the login screen says which
+address the console is set up for. Keys are bound to the `rp_id` they
+were registered under: after changing it, remove
+`/var/db/arcana/credentials.json` and enrol again with the new setup
+token.
+
 ## Using it
 
 The console is laid out as a tree and tabs.

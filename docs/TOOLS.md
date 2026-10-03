@@ -148,8 +148,8 @@ cat /var/db/arcana/setup-token   # for the first login
 
 | Key | Meaning | Default |
 |---|---|---|
-| `rp_id` | The console's host name, as the browser sees it. | required |
-| `origin` | The exact origin, `https://console.example`. | required |
+| `rp_id` | The console's host name, as the browser sees it, or a parent domain. Keys are bound to it. | required |
+| `origin` | The exact origin, `https://console.example`. Opened anywhere else, security keys fail with "SecurityError"; the login screen says so. | required |
 | `rp_name` | The name security keys show. | `Arcana` |
 | `datadir` | Keys, servers, setup token, the console's own CA. | `/var/db/arcana` |
 | `cookie_secure` | Mark the session cookie Secure. | `true` |

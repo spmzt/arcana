@@ -55,11 +55,19 @@ is the console's, in UCL:
 .Bl -tag -width "update_check"
 .It Va rp_id
 The WebAuthn relying party: the console's host name as the browser sees
-it.
+it, or a parent domain of it.
+Keys are bound to the
+.Va rp_id
+they were registered under: after changing it, enrol again.
 Required.
 .It Va origin
 The exact origin the browser uses, such as
 .Ql https://console.example .
+Opened at any other address, or without HTTPS other than on localhost,
+the browser refuses security keys with a
+.Dq SecurityError
+.Pq Do The operation is insecure Dc in Firefox ;
+the login screen then says which address the console is set up for.
 Required.
 .It Va rp_name
 The name security keys show.
