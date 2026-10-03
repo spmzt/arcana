@@ -12,12 +12,14 @@
  * steps are put on top of the daemon's trace.
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,6 +48,7 @@ enum op {
 	OP_JOB,
 	OP_JOB_CANCEL,
 	OP_AGENT_UPDATE,
+	OP_AGENT_BUILD,
 };
 
 struct call {
@@ -359,6 +362,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
 	    "arc_jobs" : c->op == OP_JOB ? "arc_job" : c->op == OP_JOB_CANCEL ?
 	    "arc_job_cancel" : c->op == OP_AGENT_UPDATE ? "arc_agent_update" :
+	    c->op == OP_AGENT_BUILD ? "arc_agent_build" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
@@ -392,9 +396,26 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 
 /* In a task thread: one cblink request, its reply as JSON. */
 /*
- * The arcana-agent this console hands to hosts: the one installed with
- * it.  Returns what is wrong, or NULL with the program, to be freed,
- * and its SHA-256 in hex.
+ * The arcana-agent this console hands to hosts: the one a host built
+ * for it from agent_source, once there is one, and otherwise the one
+ * installed with it.
+ */
+static const char *
+agent_path(bool *builtp)
+{
+	static char	built[MAXPATHLEN];
+	bool		isbuilt;
+
+	snprintf(built, sizeof(built), "%s/agent/arcana-agent", cfg.datadir);
+	isbuilt = cfg.agent_source != NULL && access(built, R_OK) == 0;
+	if (builtp != NULL)
+		*builtp = isbuilt;
+	return (isbuilt ? built : cfg.agent_binary);
+}
+
+/*
+ * Returns what is wrong, or NULL with the program, to be freed, and its
+ * SHA-256 in hex.
  */
 static const char *
 agent_binary(uint8_t **binp, size_t *lenp, char sha[65])
@@ -407,7 +428,7 @@ agent_binary(uint8_t **binp, size_t *lenp, char sha[65])
 	unsigned int	 i, mdlen;
 	int		 fd;
 
-	if ((fd = open(cfg.agent_binary, O_RDONLY | O_CLOEXEC)) == -1)
+	if ((fd = open(agent_path(NULL), O_RDONLY | O_CLOEXEC)) == -1)
 		return (errno == ENOENT ? "the console has no arcana-agent to "
 		    "send: agent_binary in web.conf names none" :
 		    "the console cannot read its arcana-agent");
@@ -434,34 +455,147 @@ agent_binary(uint8_t **binp, size_t *lenp, char sha[65])
 	return (NULL);
 }
 
+/* What "<program> -V" prints after "arcana-agent ", or nothing. */
+static void
+version_of(const char *path, char *buf, size_t len)
+{
+	posix_spawn_file_actions_t	 fa;
+	char				*argv[3], *env[1] = { NULL };
+	char				 out[128];
+	ssize_t				 n;
+	pid_t				 pid;
+	int				 p[2], status;
+
+	buf[0] = '\0';
+	if (pipe2(p, O_CLOEXEC) == -1)
+		return;
+	argv[0] = (char *)(uintptr_t)path;
+	argv[1] = (char *)(uintptr_t)"-V";
+	argv[2] = NULL;
+	posix_spawn_file_actions_init(&fa);
+	posix_spawn_file_actions_addopen(&fa, STDIN_FILENO, "/dev/null",
+	    O_RDONLY, 0);
+	posix_spawn_file_actions_adddup2(&fa, p[1], STDOUT_FILENO);
+	posix_spawn_file_actions_addopen(&fa, STDERR_FILENO, "/dev/null",
+	    O_WRONLY, 0);
+	if (posix_spawn(&pid, path, &fa, NULL, argv, env) == 0) {
+		close(p[1]);
+		p[1] = -1;
+		if ((n = read(p[0], out, sizeof(out) - 1)) > 0) {
+			out[n] = '\0';
+			out[strcspn(out, "\n")] = '\0';
+			if (strncmp(out, "arcana-agent ", 13) == 0)
+				strlcpy(buf, out + 13, len);
+		}
+		while (waitpid(pid, &status, 0) == -1 && errno == EINTR)
+			;
+	}
+	posix_spawn_file_actions_destroy(&fa);
+	close(p[0]);
+	if (p[1] != -1)
+		close(p[1]);
+}
+
 /*
- * The SHA-256 of the arcana-agent the console would send, for the page
- * to tell which hosts run another build; NULL when there is none.  Kept
- * until the file changes.
+ * The SHA-256 and the version of the arcana-agent the console would
+ * send, for the page to tell which hosts run another build; kept until
+ * the file changes.  The version of one a host built is what that host
+ * said: it need not run on this machine.
  */
+static char	agent_sha[65], agent_ver[64];
+
+static bool
+agent_refresh(void)
+{
+	static struct timespec	 mtime;
+	static off_t		 size;
+	static ino_t		 ino;
+	struct stat		 sb;
+	const char		*path;
+	char			 vpath[MAXPATHLEN];
+	uint8_t			*bin;
+	size_t			 len;
+	bool			 built;
+	FILE			*fp;
+
+	path = agent_path(&built);
+	if (stat(path, &sb) == -1)
+		return (false);
+	if (agent_sha[0] != '\0' && sb.st_ino == ino && sb.st_size == size &&
+	    sb.st_mtim.tv_sec == mtime.tv_sec && sb.st_mtim.tv_nsec ==
+	    mtime.tv_nsec)
+		return (true);
+	if (agent_binary(&bin, &len, agent_sha) != NULL) {
+		agent_sha[0] = '\0';
+		return (false);
+	}
+	free(bin);
+	agent_ver[0] = '\0';
+	if (built) {
+		snprintf(vpath, sizeof(vpath), "%s/agent/version", cfg.datadir);
+		if ((fp = fopen(vpath, "r")) != NULL) {
+			if (fgets(agent_ver, sizeof(agent_ver), fp) != NULL)
+				agent_ver[strcspn(agent_ver, "\n")] = '\0';
+			fclose(fp);
+		}
+	} else
+		version_of(path, agent_ver, sizeof(agent_ver));
+	ino = sb.st_ino;
+	size = sb.st_size;
+	mtime = sb.st_mtim;
+	return (true);
+}
+
 const char *
 agent_build(void)
 {
-	static char		 sha[65];
-	static struct timespec	 mtime;
-	static off_t		 size;
-	struct stat		 sb;
-	uint8_t			*bin;
-	size_t			 len;
 
-	if (stat(cfg.agent_binary, &sb) == -1)
-		return (NULL);
-	if (sha[0] != '\0' && sb.st_size == size && sb.st_mtim.tv_sec ==
-	    mtime.tv_sec && sb.st_mtim.tv_nsec == mtime.tv_nsec)
-		return (sha);
-	if (agent_binary(&bin, &len, sha) != NULL) {
-		sha[0] = '\0';
-		return (NULL);
+	return (agent_refresh() ? agent_sha : NULL);
+}
+
+const char *
+agent_version(void)
+{
+
+	return (agent_refresh() && agent_ver[0] != '\0' ? agent_ver : NULL);
+}
+
+/*
+ * Keep the arcana-agent a host built, with the version it reported, in
+ * datadir/agent.  Returns what went wrong, or NULL.
+ */
+static const char *
+agent_keep(const void *bin, size_t len, const char *version)
+{
+	char	 dir[MAXPATHLEN], tmp[MAXPATHLEN], path[MAXPATHLEN];
+	FILE	*fp;
+	int	 fd;
+
+	snprintf(dir, sizeof(dir), "%s/agent", cfg.datadir);
+	snprintf(tmp, sizeof(tmp), "%s/arcana-agent.new", dir);
+	snprintf(path, sizeof(path), "%s/arcana-agent", dir);
+	if (mkdir(dir, 0755) == -1 && errno != EEXIST)
+		return ("the console cannot make its agent directory");
+	(void)unlink(tmp);
+	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC,
+	    0755)) == -1)
+		return ("the console cannot write the program");
+	if (write(fd, bin, len) != (ssize_t)len || fsync(fd) == -1) {
+		close(fd);
+		(void)unlink(tmp);
+		return ("the console cannot write the program");
 	}
-	free(bin);
-	size = sb.st_size;
-	mtime = sb.st_mtim;
-	return (sha);
+	close(fd);
+	if (rename(tmp, path) == -1) {
+		(void)unlink(tmp);
+		return ("the console cannot put the program in place");
+	}
+	snprintf(tmp, sizeof(tmp), "%s/version", dir);
+	if ((fp = fopen(tmp, "w")) != NULL) {
+		fprintf(fp, "%s\n", version != NULL ? version : "");
+		fclose(fp);
+	}
+	return (NULL);
 }
 
 static int
@@ -496,9 +630,13 @@ call_run(struct kore_task *t)
 	struct arc_job_cancel_rsp *jcr;
 	struct arc_agent_update_req auq;
 	struct arc_agent_update_rsp *aur;
+	struct arc_agent_build_req abq;
+	struct arc_agent_build_rsp *abr;
 	uint8_t			*bin;
 	size_t			 binlen;
 	char			 sha[65];
+	unsigned char		 md[EVP_MAX_MD_SIZE];
+	unsigned int		 mdlen;
 	const struct arc_step	*steps;
 	ucl_object_t		*top, *srv, *a, *e;
 	cbl_conn		*conn;
@@ -538,6 +676,7 @@ call_run(struct kore_task *t)
 	jr = NULL;
 	jcr = NULL;
 	aur = NULL;
+	abr = NULL;
 	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
@@ -825,6 +964,41 @@ call_run(struct kore_task *t)
 		steps = nr->trace.v;
 		nsteps = nr->trace.n;
 		break;
+	case OP_AGENT_BUILD:
+		memset(&abq, 0, sizeof(abq));
+		abq.source = cfg.agent_source;
+		abq.ref = cfg.agent_ref;
+		if ((error = arc_agent_build(&cl, &abq, &abr)) != 0)
+			goto rpcfail;
+		ok = abr->ok;
+		put_str(top, "error", abr->error);
+		steps = abr->trace.v;
+		nsteps = abr->trace.n;
+		if (!ok)
+			break;
+		/* What arrived has to be what the host says it built. */
+		if (abr->sha256 == NULL || abr->binary.len == 0 ||
+		    EVP_Digest(abr->binary.p, abr->binary.len, md, &mdlen,
+		    EVP_sha256(), NULL) != 1) {
+			ok = false;
+			put_str(top, "error", "the host sent no program");
+			break;
+		}
+		for (i = 0; i < mdlen; i++)
+			snprintf(sha + 2 * i, 3, "%02x", md[i]);
+		if (strcmp(sha, abr->sha256) != 0)
+			msg = "the program does not match its SHA-256";
+		else
+			msg = agent_keep(abr->binary.p, abr->binary.len,
+			    abr->agent_version);
+		if (msg != NULL) {
+			ok = false;
+			put_str(top, "error", msg);
+			break;
+		}
+		put_str(top, "version", abr->agent_version);
+		put_str(top, "sha256", sha);
+		break;
 	case OP_AGENT_UPDATE:
 		if ((msg = agent_binary(&bin, &binlen, sha)) != NULL) {
 			ok = false;
@@ -927,6 +1101,8 @@ done:
 		arc_job_cancel_rsp_free(jcr);
 	if (aur != NULL)
 		arc_agent_update_rsp_free(aur);
+	if (abr != NULL)
+		arc_agent_build_rsp_free(abr);
 	free(bin);
 	if (cl.conn != NULL)
 		arc_client_fini(&cl);
@@ -951,7 +1127,7 @@ call_new(struct http_request *req, enum op op)
 	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL ||
-	    op == OP_AGENT_UPDATE ||
+	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
 	    (op == OP_SERVICE_CONFIG && req->method == HTTP_METHOD_POST)))
 		return (NULL);
 	t1 = now_us();
@@ -1082,6 +1258,25 @@ api_service_action(struct http_request *req)
 		    "start, stop, restart, reload, enable, disable"));
 	}
 	c->action = (uint8_t)i;
+	return (call_start(req, c));
+}
+
+/*
+ * POST /api/servers/<id>/agent-build: have the host build arcana-agent
+ * from agent_source, and keep it as the one the console sends.
+ */
+int
+api_agent_build(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if (cfg.agent_source == NULL)
+		return (reply_error(req, 409, "unconfigured", "agent_source "
+		    "in web.conf names no repository to build from"));
+	if ((c = call_new(req, OP_AGENT_BUILD)) == NULL)
+		return (KORE_RESULT_OK);
 	return (call_start(req, c));
 }
 

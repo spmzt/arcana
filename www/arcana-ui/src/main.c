@@ -646,6 +646,25 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "do-delete-server", arg, "");
 	} else if (strcmp(act, "do-delete-server") == 0) {
 		delete_server(arg);
+	} else if (strcmp(act, "agent-build") == 0 && s != NULL) {
+		char body[512];
+
+		snprintf(body, sizeof(body), "%s clones %s and builds "
+		    "arcana-agent there, without installing it. The console "
+		    "keeps the program and offers it to the hosts that run "
+		    "another build. This can take a few minutes.", s->name,
+		    app.agent_source);
+		confirm("Build arcana-agent", body, "Build", false, "",
+		    "do-agent-build", s->id, "");
+	} else if (strcmp(act, "do-agent-build") == 0) {
+		for (i = 0; i < app.nservers; i++)
+			if (strcmp(app.servers[i].id, arg) == 0)
+				agent_build(&app.servers[i]);
+	} else if (strcmp(act, "jail-sort") == 0) {
+		i = strcmp(arg, "name") == 0 ? JAIL_SORT_NAME :
+		    JAIL_SORT_RUNNING;
+		app.jail_sort_desc = app.jail_sort == i && !app.jail_sort_desc;
+		app.jail_sort = i;
 	} else if (strcmp(act, "agent-update") == 0) {
 		/* arg: a host, or none for every host that is behind. */
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);

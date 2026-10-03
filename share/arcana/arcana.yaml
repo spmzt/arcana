@@ -277,6 +277,16 @@ attribute-sets:
         doc: The SHA-256 of binary, in hex.
         checks:
           max-len: 64
+      - name: source
+        type: text
+        doc: A git repository with the Arcana tree, as git clone takes it.
+        checks:
+          max-len: 1024
+      - name: ref
+        type: text
+        doc: The branch or tag to build; the repository's default if absent.
+        checks:
+          max-len: 128
       - name: restart
         type: flag
         doc: Restart the service once the new program is in place.
@@ -868,3 +878,28 @@ operations:
           - agent-version
           - restarting
           - trace
+
+  - name: agent-build
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Build arcana-agent from a git repository on this host and return
+      the program.  The tree is cloned afresh into the build directory
+      and built with make(1), as an unprivileged user when the daemon
+      is root; nothing is installed.
+    do:
+      request:
+        attributes:
+          - source
+          - ref
+        required:
+          - source
+      reply:
+        attributes:
+          - ok
+          - error
+          - binary
+          - sha256
+          - agent-version
+          - trace
+

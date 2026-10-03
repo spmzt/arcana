@@ -206,7 +206,9 @@ start_daemon()
 	    -R "$(pwd)/rc.d:$(pwd)/local/rc.d" -s "$(pwd)/fake-service" \
 	    -y "$(pwd)/fake-sysrc" -N "$(pwd)/fake-netstat" \
 	    -X "$(pwd)/fake-sockstat" -P "$(pwd)/fake-pkg" \
-	    -U "$(pwd)/installed-agent" > daemon.out 2>&1 &
+	    -U "$(pwd)/installed-agent" -B "$(pwd)/build" \
+	    -c "$(pwd)/build.mk" -G "$(pwd)/fake-git" -M "$(pwd)/fake-make" \
+	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
@@ -668,6 +670,55 @@ jobs_cleanup()
 	stop_daemon
 }
 
+atf_test_case agent_build cleanup
+agent_build_head()
+{
+	atf_set "descr" "arcana-agent is built from a repository and sent back"
+}
+agent_build_body()
+{
+	programs
+	# git clone makes the tree; make "builds" by copying the agent.
+	cat > fake-git <<EOS
+#!/bin/sh
+[ "\$1" = clone ] || exit 2
+for a; do last=\$a; done
+case " \$* " in *" --branch nope "*) echo "fatal: no such branch" >&2; exit 128 ;; esac
+mkdir -p "\$last/lib/libjailconf" "\$last/usr.sbin/arcana-agent"
+echo "\$*" > "\$last/CLONED"
+EOS
+	cat > fake-make <<EOS
+#!/bin/sh
+dir=\$2
+case " \$* " in
+*" -V .OBJDIR "*) echo "\$dir/obj" ;;
+*/usr.sbin/arcana-agent*) mkdir -p "\$dir/obj" && cp "$JGD" "\$dir/obj/arcana-agent" ;;
+esac
+EOS
+	chmod +x fake-git fake-make
+	echo 'CBLINK_PREFIX= /opt/cblink' > build.mk
+	start_daemon
+
+	atf_check -o match:'^Built: +[0-9]+\.[0-9]+' \
+	    -o match:'git clone --depth 1 --branch main -- https://example.org/arcana.git' \
+	    "$JGC" -t -c "$SOCK" agent-build -o built https://example.org/arcana.git main
+	atf_check cmp -s "$JGD" built
+	atf_check test -x built
+	# The host's own settings went into the tree.
+	atf_check -o match:'CBLINK_PREFIX' cat build/src/config.mk
+	# A build that fails says why, and nothing is written.
+	atf_check -s exit:1 -e match:'no such branch' -o ignore \
+	    "$JGC" -c "$SOCK" agent-build -o other https://example.org/arcana.git nope
+	atf_check test ! -e other
+	# What git would take as an option is not a repository.
+	atf_check -s exit:1 -e match:'not a repository' -o ignore \
+	    "$JGC" -c "$SOCK" agent-build -- --upload-pack=x
+}
+agent_build_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case stop cleanup
 stop_head()
 {
@@ -771,6 +822,7 @@ agent_update_cleanup()
 atf_init_test_cases()
 {
 	atf_add_test_case agent_update
+	atf_add_test_case agent_build
 	atf_add_test_case stop
 	atf_add_test_case hello
 	atf_add_test_case socket_mode

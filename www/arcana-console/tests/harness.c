@@ -177,7 +177,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[24];
+	char	*argv[32];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -268,6 +268,17 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "esac\n");
 	ATF_REQUIRE(chmod("fake-pkg", 0755) == 0);
 
+	/* git clone makes a tree; make "builds" by copying the agent. */
+	put("fake-git", "#!/bin/sh\n[ \"$1\" = clone ] || exit 2\n"
+	    "for a; do last=$a; done\n"
+	    "mkdir -p \"$last/lib/libjailconf\" \"$last/usr.sbin/arcana-agent\"\n");
+	ATF_REQUIRE(chmod("fake-git", 0755) == 0);
+	snprintf(buf, sizeof(buf), "#!/bin/sh\ndir=$2\ncase \" $* \" in\n"
+	    "*\" -V .OBJDIR \"*) echo \"$dir/obj\" ;;\n"
+	    "*/usr.sbin/arcana-agent*) mkdir -p \"$dir/obj\" && "
+	    "cp '%s' \"$dir/obj/arcana-agent\" ;;\nesac\n", jgd);
+	put("fake-make", buf);
+	ATF_REQUIRE(chmod("fake-make", 0755) == 0);
 	snprintf(send, sizeof(send), "%s", jgd);
 	if (harness_other_agent) {
 		/* The same program with a byte after it: it runs, and its
@@ -321,7 +332,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[19] = (char *)(uintptr_t)"./fake-pkg";
 	argv[20] = (char *)(uintptr_t)"-U";
 	argv[21] = (char *)(uintptr_t)"./installed-agent";
-	argv[22] = NULL;
+	argv[22] = (char *)(uintptr_t)"-B";
+	argv[23] = (char *)(uintptr_t)"./build";
+	argv[24] = (char *)(uintptr_t)"-G";
+	argv[25] = (char *)(uintptr_t)"./fake-git";
+	argv[26] = (char *)(uintptr_t)"-M";
+	argv[27] = (char *)(uintptr_t)"./fake-make";
+	argv[28] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

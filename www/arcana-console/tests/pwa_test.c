@@ -431,6 +431,18 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
 	wait_js("document.querySelector('#j-web.s-stopped')", 20);
 	ATF_CHECK(js_true("document.querySelector('#j-db')"));
+	/* Jails: those running first, by name within; by name when asked,
+	 * and the other way round when asked again. */
+	ATF_CHECK(js_true("document.querySelector('.sorts button.on')."
+	    "dataset.arg === 'running'"));
+	ATF_CHECK(js_true("document.querySelector('.grid > *').id === "
+	    "'j-cache'"));
+	run("document.querySelector('.sorts button[data-arg=name]').click()");
+	run("document.querySelector('.sorts button[data-arg=name]').click()");
+	wait_js("document.querySelector('.grid > *').id === 'j-web'", 5);
+	run("document.querySelector('.sorts button[data-arg=running]')"
+	    ".click()");
+	wait_js("document.querySelector('.grid > *').id === 'j-cache'", 5);
 	/* A change waits in the queue until it is sent. */
 	ATF_CHECK(js_true("document.querySelector('button[data-act=queue].on')"));
 	run("document.querySelector('#j-web button[data-act=start]').click()");

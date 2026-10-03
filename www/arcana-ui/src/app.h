@@ -113,6 +113,7 @@ enum screen {
 };
 
 /* What is selected in the tree: the fleet, a host, or a jail of it. */
+enum jail_sort { JAIL_SORT_RUNNING, JAIL_SORT_NAME };
 enum svc_sort { SVC_SORT_RUNNING, SVC_SORT_ENABLED, SVC_SORT_NAME };
 
 enum node {
@@ -286,6 +287,8 @@ struct app {
 	bool		 setup_required;
 	char		 version[32];	/* the console's, from /api/health */
 	char		 agent_build[65]; /* of the arcana-agent it sends */
+	char		 agent_version[32]; /* and its version */
+	char		 agent_source[256]; /* repository a host builds it from */
 	char		 update_latest[64];	/* a newer release, or "" */
 	char		 update_url[512];
 	char		 auth_error[256];
@@ -305,6 +308,8 @@ struct app {
 	bool		 svc_loading;
 	int		 svc_sort;	/* SVC_SORT_*: running first at start */
 	bool		 svc_sort_desc;
+	int		 jail_sort;	/* JAIL_SORT_*: running first at start */
+	bool		 jail_sort_desc;
 	char		 svc_error[256];
 	struct netview	 net;
 	struct pkgview	 pkg;
@@ -360,6 +365,7 @@ void		 refresh_network(struct server *, bool);
 void		 refresh_stats(struct server *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);
+void		 agent_build(struct server *);
 void		 refresh_jobs(struct server *);
 void		 open_job(struct server *, long long, const char *);
 void		 refresh_packages(struct server *, bool);

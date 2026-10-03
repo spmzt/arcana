@@ -52,6 +52,10 @@ struct opts opts = {
 	.swapinfo_bin = PATH_SWAPINFO_BIN,
 	.zpool_bin = PATH_ZPOOL_BIN,
 	.pkg_bin = PATH_PKG_BIN,
+	.git_bin = PATH_GIT_BIN,
+	.make_bin = PATH_MAKE_BIN,
+	.build_dir = PATH_BUILD_DIR,
+	.build_conf = PATH_BUILD_CONF,
 };
 
 static bool	foreground;
@@ -75,6 +79,8 @@ usage(void)
 	    "[-l uri] [-p pidfile]\n"
 	    "                 [-R rc.d dirs] [-s service] [-y sysrc] "
 	    "[-U program]\n"
+	    "                 [-B build dir] [-c config.mk] [-G git] "
+	    "[-M make]\n"
 	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
 	exit(2);
@@ -264,7 +270,7 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	while ((ch = getopt(argc, argv, "A:C:D:dFf:g:j:K:l:N:P:p:R:s:U:VW:X:y:Z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:B:C:c:D:dFf:G:g:j:K:l:M:N:P:p:R:s:U:VW:X:y:Z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -329,6 +335,18 @@ main(int argc, char *argv[])
 			break;
 		case 'U':
 			opts.self_path = optarg;
+			break;
+		case 'B':
+			opts.build_dir = optarg;
+			break;
+		case 'c':
+			opts.build_conf = optarg;
+			break;
+		case 'G':
+			opts.git_bin = optarg;
+			break;
+		case 'M':
+			opts.make_bin = optarg;
 			break;
 		case 'V':
 			printf("arcana-agent %s\n", ARCANA_AGENT_VERSION);

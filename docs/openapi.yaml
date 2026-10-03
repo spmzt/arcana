@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.1.0
+  version: 0.2.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -575,6 +575,32 @@ paths:
                     items: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/servers/{server}/agent-build:
+    post:
+      tags: [servers]
+      summary: Have the host build arcana-agent from agent_source
+      description: The host clones the repository named by agent_source
+        in web.conf, builds arcana-agent and sends it back; the console
+        keeps it and sends it to hosts from then on. 409 when no
+        repository is configured.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: What the host built.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  version: { type: string }
+                  sha256: { type: string }
+                  trace: { type: object }
+        "409": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+
   /api/servers/{server}/agent-update:
     post:
       tags: [servers]
@@ -608,8 +634,10 @@ paths:
                   restarting: { type: boolean }
                   trace: { type: object }
       x-note: >-
-        GET /api/health carries agent_build, the SHA-256 of the program
-        the console would send; a host reports its own as host.build.
+        GET /api/health carries agent_build and agent_version, the
+        SHA-256 and version of the program the console would send, and
+        agent_source and agent_ref when a host can be asked to build it;
+        a host reports its own build as host.build.
         "502": { $ref: "#/components/responses/Error" }
 
   /api/servers/{server}/jobs/{job}:

@@ -113,6 +113,19 @@ the console sends to hosts when asked to update them.
 Default
 .Pa /usr/local/sbin/arcana-agent ,
 the one installed with the console.
+.It Va agent_source
+A git repository with the Arcana tree.
+When set, a host can be asked to build
+.Xr arcana-agent 8
+from it; the console keeps what the host sends back in
+.Pa agent/
+under
+.Va datadir
+and sends that instead of
+.Va agent_binary .
+.It Va agent_ref
+The branch or tag to build.
+Default: the repository's own.
 .El
 .Pp
 The module checks every certificate it is configured with when it

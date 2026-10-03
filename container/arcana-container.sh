@@ -16,6 +16,10 @@
 # ARCANA_ORIGIN	The exact origin the browser uses.
 #			Default: https://${ARCANA_RP_ID}
 # ARCANA_PORT		The port to listen on.  Default: 8443
+# ARCANA_AGENT_SOURCE	A git repository a host can be asked to build
+#			arcana-agent from, and ARCANA_AGENT_REF, a
+#			branch or tag of it.  Default: none; the console
+#			sends the arcana-agent in the image.
 #
 # and from the files in /usr/local/etc/arcana:
 #
@@ -55,11 +59,19 @@ if [ ! -f "${web}" ]; then
 	case "${origin#*://}" in
 	*[!A-Za-z0-9.:\[\]-]*)	die "ARCANA_ORIGIN: not an http(s) origin" ;;
 	esac
+	case "${ARCANA_AGENT_SOURCE:-}${ARCANA_AGENT_REF:-}" in
+	*[!A-Za-z0-9._:/@~+-]*)	die "ARCANA_AGENT_SOURCE or ARCANA_AGENT_REF: "\
+"not a repository and a branch" ;;
+	esac
 	web=${run}/web.conf
 	{
 		printf 'rp_id = "%s";\n' "${ARCANA_RP_ID}"
 		printf 'origin = "%s";\n' "${origin}"
 		printf 'datadir = "/var/db/arcana";\n'
+		[ -z "${ARCANA_AGENT_SOURCE:-}" ] ||
+		    printf 'agent_source = "%s";\n' "${ARCANA_AGENT_SOURCE}"
+		[ -z "${ARCANA_AGENT_REF:-}" ] ||
+		    printf 'agent_ref = "%s";\n' "${ARCANA_AGENT_REF}"
 		if [ -f ${etc}/client.pem ]; then
 			printf 'tls {\n'
 			printf '\tca = "%s/ca.pem";\n' ${etc}

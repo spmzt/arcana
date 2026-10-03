@@ -501,6 +501,12 @@ hostbar(struct html *h, struct server *s)
 			h_raw(h, " title=\"Send this host the console's "
 			    "arcana-agent\">Update agent</button>");
 		}
+		if (app.agent_source[0] != '\0') {
+			h_raw(h, "<button class=\"ghost small\" "
+			    "data-act=\"agent-build\"");
+			h_attr(h, "title", app.agent_source);
+			h_raw(h, ">Build agent here</button>");
+		}
 	} else {
 		h_raw(h, "<span>");
 		h_txt(h, s->uri);
@@ -653,13 +659,41 @@ card(struct html *h, struct server *s, const ucl_object_t *j)
 	h_raw(h, "</article>");
 }
 
+static const char *jail_sorts[] = {
+	[JAIL_SORT_RUNNING] = "running",
+	[JAIL_SORT_NAME] = "name",
+};
+
+/* Jails with those running first, or by name; within a state by name. */
+static int
+jail_cmp(const void *ap, const void *bp)
+{
+	const ucl_object_t	*a, *b;
+	const char		*sa, *sb;
+	int			 run, r;
+
+	a = *(const ucl_object_t *const *)ap;
+	b = *(const ucl_object_t *const *)bp;
+	sa = jstr(a, "state");
+	sb = jstr(b, "state");
+	run = (int)(sb != NULL && strcmp(sb, "running") == 0) -
+	    (int)(sa != NULL && strcmp(sa, "running") == 0);
+	r = strcmp(jstr(a, "name"), jstr(b, "name"));
+	if (app.jail_sort == JAIL_SORT_NAME)
+		return (app.jail_sort_desc ? -r : r);
+	if (app.jail_sort_desc)
+		run = -run;
+	return (run != 0 ? run : r);
+}
+
 static void
 stage(struct html *h)
 {
 	const ucl_object_t	*j, *e;
 	ucl_object_iter_t	 it;
+	const ucl_object_t	**rows;
 	struct server		*s;
-	int			 shown;
+	int			 shown, n;
 
 	h_raw(h, "<main class=\"stage\">");
 	if (!app.servers_loaded) {
@@ -751,9 +785,15 @@ stage(struct html *h)
 	    "autocomplete=\"off\" spellcheck=\"false\"");
 	h_attr(h, "value", app.filter);
 	h_fmt(h, "><span class=\"tally\"><b class=\"c-run\">%d</b> running · "
-	    "<b>%d</b> stopped · <b>%d</b> total</span></div>",
-	    count_state(s, "running"), count_state(s, "stopped"),
-	    count_state(s, NULL));
+	    "<b>%d</b> stopped · <b>%d</b> total</span>"
+	    "<span class=\"sorts\">Sort", count_state(s, "running"),
+	    count_state(s, "stopped"), count_state(s, NULL));
+	for (n = 0; n <= JAIL_SORT_NAME; n++)
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"jail-sort\" "
+		    "data-arg=\"%s\">%s%s</button>", app.jail_sort == n ?
+		    " on" : "", jail_sorts[n], jail_sorts[n],
+		    app.jail_sort != n ? "" : app.jail_sort_desc ? " ▴" : " ▾");
+	h_raw(h, "</span></div>");
 	if (s->list == NULL) {
 		h_raw(h, s->failed ? "<div class=\"empty\"><h2>No data</h2>"
 		    "<p>The host has not answered yet.</p></div>" :
@@ -761,7 +801,10 @@ stage(struct html *h)
 		h_raw(h, "</main>");
 		return;
 	}
-	h_fmt(h, "<div class=\"grid%s\">", stale(s) ? " is-stale" : "");
+	/* Those that match, in the order asked for. */
+	n = (int)ucl_array_size(jget(s->list, "jails"));
+	if ((rows = calloc(n > 0 ? n : 1, sizeof(*rows))) == NULL)
+		abort();
 	shown = 0;
 	it = NULL;
 	while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
@@ -770,10 +813,14 @@ stage(struct html *h)
 		if (jstr(j, "name") == NULL || (app.filter[0] != '\0' &&
 		    strstr(jstr(j, "name"), app.filter) == NULL))
 			continue;
-		card(h, s, j);
-		shown++;
+		rows[shown++] = j;
 	}
+	qsort(rows, shown, sizeof(*rows), jail_cmp);
+	h_fmt(h, "<div class=\"grid%s\">", stale(s) ? " is-stale" : "");
+	for (n = 0; n < shown; n++)
+		card(h, s, rows[n]);
 	h_raw(h, "</div>");
+	free(rows);
 	if (shown == 0)
 		h_raw(h, app.filter[0] != '\0' ? "<div class=\"empty\"><p>"
 		    "Nothing matches the filter.</p></div>" :
@@ -1068,10 +1115,10 @@ modal(struct html *h)
 		break;
 	case MODAL_AGENT_UPDATE:
 		h_raw(h, "<form data-form=\"agent-update\"><h2>Update "
-		    "arcana-agent</h2><p>The console sends its own arcana-agent");
-		if (app.version[0] != '\0') {
+		    "arcana-agent</h2><p>The console sends its arcana-agent");
+		if (app.agent_version[0] != '\0') {
 			h_raw(h, " (");
-			h_txt(h, app.version);
+			h_txt(h, app.agent_version);
 			h_raw(h, ")");
 		}
 		h_raw(h, " to ");

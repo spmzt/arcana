@@ -1,5 +1,5 @@
 PROG=		arcana-agent
-SRCS=		main.c update.c handlers.c actions.c work.c exec.c jails.c confread.c \
+SRCS=		main.c build.c update.c handlers.c actions.c work.c exec.c jails.c confread.c \
 		host.c jail.c services.c network.c stats.c packages.c jobs.c
 MAN=		arcana-agent.8
 

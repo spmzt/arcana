@@ -33,3 +33,9 @@ cookie_secure = true;
 # The arcana-agent sent to hosts when the console is asked to update
 # them: by default the one installed with it.
 #agent_binary = "/usr/local/sbin/arcana-agent";
+
+# Or have a host build it: with a repository named here, a host's page
+# offers "Build agent here", and what it builds is what the console
+# sends from then on.
+#agent_source = "https://github.com/spmzt/arcana.git";
+#agent_ref = "main";

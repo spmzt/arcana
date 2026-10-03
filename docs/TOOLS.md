@@ -58,6 +58,7 @@ certificate from that CA.
 | `-p pidfile` | Default `/var/run/arcana-agent.pid`. |
 | `-j`, `-s`, `-y`, `-N`, `-X`, `-W`, `-Z`, `-P` | The `jail`, `service`, `sysrc`, `netstat`, `sockstat`, `swapinfo`, `zpool` and `pkg` programs, if not the system's; `-R` the rc.d directories. Used by the tests. |
 | `-U` *program* | The file an update replaces, if not the running program. |
+| `-B` *dir*, `-c` *config.mk* | Where a tree is cloned and built when the console asks for a build (`/var/cache/arcana-build`), and this host's settings for it (`/usr/local/etc/arcana/config.mk`). `-G` and `-M` name `git` and `make`. |
 | `-V` | Print the version and exit. |
 
 What each operation runs on the host is in
@@ -117,6 +118,7 @@ arcanactl -c tcp://host1.example:4310 \
 | `jobs` | Queued, running and recent jobs. |
 | `job [-w]` *id* | A job with its trace so far; `-w` waits for the end. |
 | `job-cancel` *id* | Take a queued job back. |
+| `agent-build` [`-o` *file*] *repository* [*ref*] | Have the host clone the repository, build `arcana-agent` there and send it back; it is saved as *file* (`arcana-agent`). |
 | `agent-update` [`-r`] *program* | Put a new `arcana-agent` in place on the host, checked there by running it with `-V`; `-r` restarts the service. The one before stays as `arcana-agent.old`. |
 
 Global options: `-c uri` (default the local socket), `-A`/`-C`/`-K` for
@@ -172,6 +174,7 @@ cat /var/db/arcana/setup-token   # for the first login
 | `tls { ca, cert, key, ca_key }` | Your own CA for arcana-agent over TCP; `ca_key` to enrol hosts with it. Without the block the console runs its own CA. | none |
 | `update_check`, `update_url` | Ask the release feed for newer versions. | on, GitHub |
 | `agent_binary` | The `arcana-agent` the console sends to hosts when asked to update them. | `/usr/local/sbin/arcana-agent` |
+| `agent_source`, `agent_ref` | A git repository, and a branch or tag, a host can be asked to build `arcana-agent` from; what it builds is sent instead of `agent_binary`. | none |
 
 rc.conf variables: `arcana_console_enable`, `arcana_console_config` (the
 `kore.conf`), `arcana_console_web_conf`. The HTTP API is in
@@ -189,6 +192,7 @@ as the image's unprivileged user.
 | `ARCANA_RP_ID` | The console's host name. Required without a mounted `web.conf`. |
 | `ARCANA_ORIGIN` | Default `https://` and the RP ID. |
 | `ARCANA_PORT` | Default 8443. |
+| `ARCANA_AGENT_SOURCE`, `ARCANA_AGENT_REF` | A git repository, and a branch or tag, a host can be asked to build `arcana-agent` from. |
 
 With `console.pem` and `console.key` (RSA) mounted it serves HTTPS,
 otherwise plain HTTP for a reverse proxy. The console's CA and data

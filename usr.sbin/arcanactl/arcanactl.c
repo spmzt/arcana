@@ -110,6 +110,7 @@ usage(void)
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
 	    "    agent-update [-r] program\n"
+	    "    agent-build [-o file] repository [ref]\n"
 	    "with -q, start, stop, restart, kill, address, service (but "
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
 	    "instead of waited for.\n");
@@ -651,6 +652,56 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/*
+ * agent-build [-o file] repository [ref]: have the host build
+ * arcana-agent from a git repository, and keep what it sends back.
+ */
+static int
+cmd_agent_build(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_agent_build_req	 req;
+	struct arc_agent_build_rsp	*rsp;
+	const char			*out;
+	char				 hex[SHA256_DIGEST_STRING_LENGTH];
+	int				 ch, error, fd;
+
+	memset(&req, 0, sizeof(req));
+	out = "arcana-agent";
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "o:")) != -1) {
+		if (ch != 'o')
+			usage();
+		out = optarg;
+	}
+	if (argc - optind < 1 || argc - optind > 2)
+		usage();
+	req.source = argv[optind];
+	req.ref = argv[optind + 1];
+	if ((error = arc_agent_build(cl, &req, &rsp)) != 0)
+		fail(cl, error, "agent-build");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	if (rsp->ok) {
+		/* What arrived is what the host says it built. */
+		if (rsp->sha256 == NULL || strcmp(SHA256_Data(rsp->binary.p,
+		    rsp->binary.len, hex), rsp->sha256) != 0)
+			xo_errx(1, "agent-build: the program does not match "
+			    "its SHA-256");
+		(void)unlink(out);
+		if ((fd = open(out, O_WRONLY | O_CREAT | O_EXCL, 0755)) == -1 ||
+		    write(fd, rsp->binary.p, rsp->binary.len) !=
+		    (ssize_t)rsp->binary.len || close(fd) == -1)
+			xo_err(1, "%s", out);
+		xo_emit("{Lwc:Built}{:agent-version/%s}{P: }{:sha256/%s}"
+		    "{P: }{:file/%s}\n", rsp->agent_version != NULL ?
+		    rsp->agent_version : "?", hex, out);
+	} else
+		xo_warnx("agent-build: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	error = rsp->ok ? 0 : 1;
+	arc_agent_build_rsp_free(rsp);
+	return (error);
+}
+
 /* agent-update [-r] program: put a new arcana-agent in place. */
 static int
 cmd_agent_update(struct arc_client *cl, int argc, char **argv)
@@ -1156,6 +1207,8 @@ main(int argc, char *argv[])
 		rc = cmd_pkg_upgrade(&cl, argc, argv);
 	else if (strcmp(argv[0], "agent-update") == 0)
 		rc = cmd_agent_update(&cl, argc, argv);
+	else if (strcmp(argv[0], "agent-build") == 0)
+		rc = cmd_agent_build(&cl, argc, argv);
 	else
 		usage();
 	xo_close_container("arcana");

@@ -574,6 +574,13 @@ ATF_TC_BODY(agent_update, tc)
 	ATF_CHECK_STREQ(body, jstr(&r, "host.build"));
 	resp_free(&r);
 
+	/* With no repository named, there is nothing to build from. */
+	snprintf(jails, sizeof(jails), "%.*s/agent-build", (int)(strrchr(path,
+	    '/') - path), path);
+	http("POST", jails, "{}", &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+
 	ATF_REQUIRE(access("installed-agent", F_OK) == -1);
 	http("POST", path, "{}", &r);
 	EXPECT(&r, 200);
@@ -588,6 +595,56 @@ ATF_TC_BODY(agent_update, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("true", jstr(&r, "restarting"));
 	ATF_CHECK(access("installed-agent.old", F_OK) == 0);
+	resp_free(&r);
+}
+
+CONSOLE_TC(agent_build, "A host builds arcana-agent from the repository "
+    "the console names, and the console keeps it to send")
+ATF_TC_BODY(agent_build, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		path[160], cwd[MAXPATHLEN], body[MAXPATHLEN], sha[65];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	harness_other_agent = true;
+	snprintf(harness_webconf, sizeof(harness_webconf), "agent_source = "
+	    "\"https://example.org/arcana.git\";\nagent_ref = \"main\";\n");
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/servers/%s/agent-build", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+
+	/* Before: the one installed with the console, another build. */
+	http("GET", "/api/health", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("https://example.org/arcana.git", jstr(&r,
+	    "agent_source"));
+	ATF_CHECK_STREQ("main", jstr(&r, "agent_ref"));
+	ATF_CHECK(jstr(&r, "agent_version") != NULL);
+	strlcpy(sha, jstr(&r, "agent_build"), sizeof(sha));
+	resp_free(&r);
+
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "version") != NULL);
+	ATF_REQUIRE(jstr(&r, "sha256") != NULL);
+	ATF_CHECK(strcmp(sha, jstr(&r, "sha256")) != 0);
+	strlcpy(sha, jstr(&r, "sha256"), sizeof(sha));
+	resp_free(&r);
+	ATF_CHECK(access("data/agent/arcana-agent", X_OK) == 0);
+
+	/* After: what the host built is what the console sends. */
+	http("GET", "/api/health", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(sha, jstr(&r, "agent_build"));
+	ATF_CHECK(jstr(&r, "agent_version") != NULL);
 	resp_free(&r);
 }
 
@@ -1084,6 +1141,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, jails);
 	ATF_TP_ADD_TC(tp, services);
 	ATF_TP_ADD_TC(tp, agent_update);
+	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, enrol);

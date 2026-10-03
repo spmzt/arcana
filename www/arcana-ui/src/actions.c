@@ -419,6 +419,15 @@ health_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(app.agent_build, sizeof(app.agent_build), "%s",
 		    jstr(o, "agent_build") != NULL ? jstr(o, "agent_build") :
 		    "");
+	if (status == 200) {
+		snprintf(app.agent_version, sizeof(app.agent_version), "%s",
+		    jstr(o, "agent_version") != NULL ? jstr(o,
+		    "agent_version") : "");
+		snprintf(app.agent_source, sizeof(app.agent_source), "%s%s%s",
+		    jstr(o, "agent_source") != NULL ? jstr(o, "agent_source") :
+		    "", jstr(o, "agent_ref") != NULL ? " at " : "",
+		    jstr(o, "agent_ref") != NULL ? jstr(o, "agent_ref") : "");
+	}
 }
 
 static void
@@ -1662,4 +1671,46 @@ agent_update(struct server *s, bool restart)
 	snprintf(url, sizeof(url), "/api/servers/%s/agent-update", s->id);
 	api("POST", url, restart ? "{\"restart\":true}" : "{}",
 	    agent_update_cb, c);
+}
+
+static void
+agent_build_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+	bool		 ok;
+
+	c = arg;
+	ok = status == 200 && jbool(o, "ok");
+	if (status == 200 && !ok)
+		err = jstr(o, "error");
+	op_done(op_find(c->op), ok, o, err);
+	if (ok)
+		toast(false, "%s built arcana-agent %s: the console sends it "
+		    "from now on", c->name, jstr(o, "version") != NULL ?
+		    jstr(o, "version") : "");
+	else
+		toast(true, "%s: agent not built: %s", c->name, err != NULL ?
+		    err : "failed");
+	/* Which build the console has decides who is offered an update. */
+	check_health();
+	free(c);
+}
+
+/* Have s build arcana-agent from the console's repository. */
+void
+agent_build(struct server *s)
+{
+	struct ctx	*c;
+	struct op	*op;
+	char		 url[128];
+
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(c->name, sizeof(c->name), "%s", s->name);
+	op = op_new("build agent", s->name);
+	c->op = op->id;
+	app.trace_op = op->id;
+	app.dock_open = true;
+	snprintf(url, sizeof(url), "/api/servers/%s/agent-build", s->id);
+	api("POST", url, "{}", agent_build_cb, c);
 }

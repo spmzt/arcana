@@ -18,7 +18,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.1.0"
+#define	ARCANA_AGENT_VERSION	"0.2.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -31,6 +31,10 @@
 #define	PATH_SWAPINFO_BIN	"/usr/sbin/swapinfo"
 #define	PATH_ZPOOL_BIN		"/sbin/zpool"
 #define	PATH_PKG_BIN		"/usr/sbin/pkg"
+#define	PATH_GIT_BIN		"/usr/local/bin/git"
+#define	PATH_MAKE_BIN		"/usr/bin/make"
+#define	PATH_BUILD_DIR		"/var/cache/arcana-build"
+#define	PATH_BUILD_CONF		"/usr/local/etc/arcana/config.mk"
 
 /* jail -e separator: ASCII unit separator, never in a jail.conf value. */
 #define	JAIL_E_SEP		"\037"
@@ -52,6 +56,10 @@ struct opts {
 	const char	*zpool_bin;
 	const char	*pkg_bin;
 	const char	*self_path;	/* the program an update replaces */
+	const char	*git_bin;
+	const char	*make_bin;
+	const char	*build_dir;	/* where a tree is cloned and built */
+	const char	*build_conf;	/* this host's config.mk for it */
 	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
@@ -230,6 +238,10 @@ const struct arc_job *jobs_get(struct work *, uint64_t);
 const struct arc_job *jobs_cancel(struct work *, uint64_t, const char **);
 
 /* handlers.c */
+/* build.c */
+int		 do_agent_build(struct work *, const char *, const char *,
+		    struct arc_agent_build_rsp *);
+
 /* update.c */
 int		 do_agent_update(struct work *, const uint8_t *, size_t,
 		    const char *, struct arc_agent_update_rsp *);

@@ -249,7 +249,8 @@ The console is laid out as a tree and tabs.
     pools, and the host's jails as a graph.
   - **Jails**: their state (running, stopped, dying; starting, stopping,
     restarting while something happens to them; unknown when the host
-    does not answer), with start, stop, restart and kill.
+    does not answer), with start, stop, restart and kill. Those running
+    come first; **Sort** orders by running or by name.
   - **Services**: the rc.d scripts, enabled or not, running or not, with
     start, stop, restart, reload, enable and disable; a service's drawer
     edits its `rc.conf` variables through `sysrc(8)`. Those running come
@@ -323,6 +324,39 @@ version it runs on, with `libcblink` there as before. Hosts that differ
 from the console's machine are updated with `pkg upgrade arcana`
 instead, which the Packages tab can do. If an update goes wrong, put
 `arcana-agent.old` back and restart the service.
+
+### Building the agent on a host
+
+The console need not have the agent it sends: it can have a host build
+it. Name the repository in `web.conf`,
+
+```
+agent_source = "https://github.com/spmzt/arcana.git";
+agent_ref = "main";            # a branch or tag; optional
+```
+
+and each host's header gets **Build agent here**. That host clones the
+repository afresh into `/var/cache/arcana-build`, builds `libjailconf`
+and `arcana-agent` with `make`, and sends the program back; nothing is
+installed there. The console checks it against its SHA-256, keeps it in
+`agent/` under its data directory, and sends that one from then on, so
+the hosts that run another build are offered the update. The build is
+in the activity bar with the output of git and make.
+
+The host that builds needs what the build needs: `git`, the base
+compiler, and `devel/cblink` with its `libcbor`. If cblink or the linker
+are somewhere else on it, `/usr/local/etc/arcana/config.mk` there is
+copied into the tree as its `config.mk`. When the agent is root, git
+and make run as `nobody`. From a shell, `arcanactl agent-build [-o
+file] repository [ref]` builds and saves the program.
+
+### Versions
+
+The agent and the console have versions of their own, and every change
+to one bumps it: `ARCANA_AGENT_VERSION` in
+`usr.sbin/arcana-agent/agent.h`, `ARCW_VERSION` in
+`www/arcana-console/console.h`. A host's header and the tree show the
+agent's; the update dialog shows the one the console would send.
 
 ## TODO
 

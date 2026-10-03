@@ -139,6 +139,18 @@ One job with the trace of what it has done so far;
 waits until it has finished.
 .It Cm job-cancel Ar id
 Take a job that has not started out of the queue.
+.It Cm agent-build Oo Fl o Ar file Oc Ar repository Op Ar ref
+Have the host clone the git
+.Ar repository ,
+at the branch or tag
+.Ar ref
+if given, build
+.Xr arcana-agent 8
+there and send it back.
+It is saved as
+.Ar file ,
+.Pa arcana-agent
+by default, after a check against its SHA-256.
 .It Cm agent-update Oo Fl r Oc Ar program
 Put
 .Ar program

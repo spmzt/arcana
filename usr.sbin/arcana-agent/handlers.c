@@ -40,6 +40,8 @@ struct job {
 	size_t			 binlen;
 	char			*sha256;
 	bool			 restart;
+	char			*source;	/* agent-build */
+	char			*ref;
 	char			*peer;
 };
 
@@ -47,6 +49,7 @@ struct job {
 #define	RESTART_WAIT	10	/* s, for service(8) to stop the daemon */
 
 pthread_mutex_t	change_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t build_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* What holds change_lock now, for the log when asked to stop. */
 static pthread_mutex_t	note_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -239,6 +242,7 @@ worker(void *arg)
 	struct arc_packages_rsp	 pr;
 	struct arc_pkg_upgrade_rsp ur;
 	struct arc_agent_update_rsp aur;
+	struct arc_agent_build_rsp abr;
 	const char		*what, *error;
 	bool			 restart;
 	bool			 ok;
@@ -383,6 +387,22 @@ worker(void *arg)
 		trace_steps(&w, &sar.trace.v, &sar.trace.n);
 		rc = arc_service_action_reply(j->req, &sar);
 		break;
+	case ARC_CMD_AGENT_BUILD:
+		what = wfmt(&w, "agent build from %s%s%s", j->source,
+		    j->ref != NULL ? " at " : "", j->ref != NULL ? j->ref : "");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&abr, 0, sizeof(abr));
+		/* One build at a time: they share the directory. */
+		pthread_mutex_lock(&build_lock);
+		do_agent_build(&w, j->source, j->ref, &abr);
+		pthread_mutex_unlock(&build_lock);
+		ok = abr.ok;
+		error = abr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &abr.trace.v, &abr.trace.n);
+		rc = arc_agent_build_reply(j->req, &abr);
+		break;
 	case ARC_CMD_AGENT_UPDATE:
 		what = wfmt(&w, "agent update%s", j->restart ?
 		    " and restart" : "");
@@ -498,6 +518,8 @@ job_free(struct job *j)
 	free(j->jail);
 	free(j->binary);
 	free(j->sha256);
+	free(j->source);
+	free(j->ref);
 	free((char *)(uintptr_t)j->addr.jail);
 	free((char *)(uintptr_t)j->addr.address);
 	free((char *)(uintptr_t)j->addr.interface);
@@ -628,6 +650,22 @@ arc_service_action_doit(cbl_req *req, const struct arc_service_action_req *rq,
 	j->cmd = ARC_CMD_SERVICE_ACTION;
 	j->jail = xstrdup(rq->service);
 	j->action = rq->service_action;
+	return (start(j));
+}
+
+int
+arc_agent_build_doit(cbl_req *req, const struct arc_agent_build_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_AGENT_BUILD;
+	j->source = xstrdup(rq->source);
+	j->ref = rq->ref != NULL && rq->ref[0] != '\0' ? xstrdup(rq->ref) :
+	    NULL;
 	return (start(j));
 }
 

@@ -25,6 +25,10 @@
 .Op Fl s Ar service
 .Op Fl y Ar sysrc
 .Op Fl U Ar program
+.Op Fl B Ar dir
+.Op Fl c Ar config.mk
+.Op Fl G Ar git
+.Op Fl M Ar make
 .Op Fl N Ar netstat
 .Op Fl X Ar sockstat
 .Op Fl W Ar swapinfo
@@ -200,6 +204,21 @@ variables.
 .It Fl U Ar program
 The file an update replaces.
 The default is the running program.
+.It Fl B Ar dir
+Where a tree is cloned and built.
+Default
+.Pa /var/cache/arcana-build .
+.It Fl c Ar config.mk
+This host's settings for a build, copied into the tree when the file
+exists.
+Default
+.Pa /usr/local/etc/arcana/config.mk .
+.It Fl G Ar git , Fl M Ar make
+The
+.Xr git 1
+and
+.Xr make 1
+programs.
 .It Fl V
 Print the version and exit.
 .It Fl N Ar netstat , Fl X Ar sockstat
@@ -238,6 +257,27 @@ the change has ended, reporting again every 30 seconds while it waits.
 The jobs that had not started are lost.
 A second signal stops it at once, and the log says what was cut short.
 A program a change had started keeps running in that case.
+.Sh BUILDS
+A client may ask for
+.Nm
+to be built from a git repository: the console does when
+.Va agent_source
+is set, and
+.Xr arcanactl 8
+with
+.Cm agent-build .
+The repository is cloned afresh, without history, into the build
+directory, and
+.Pa lib/libjailconf
+and
+.Pa usr.sbin/arcana-agent
+are built there with
+.Xr make 1 .
+When the daemon is root, git and make run as
+.Li nobody .
+The program is sent back with its SHA-256 and the version it reports;
+nothing is installed.
+One build runs at a time.
 .Sh UPDATES
 A client may send a new
 .Nm :
