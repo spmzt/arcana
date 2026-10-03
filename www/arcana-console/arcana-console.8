@@ -128,6 +128,28 @@ The branch or tag to build.
 Default: the repository's own.
 .El
 .Pp
+The settings
+.Va rp_name ,
+.Va update_check ,
+.Va update_url ,
+.Va agent_binary ,
+.Va agent_source
+and
+.Va agent_ref
+can also be changed from the console, under Settings.
+What is set there is kept in
+.Pa settings.json
+in
+.Va datadir
+and overrides
+.Pa web.conf ;
+a value put back to that of
+.Pa web.conf
+follows it again.
+The others are read once, when the console starts, from
+.Pa web.conf
+alone.
+.Pp
 The module checks every certificate it is configured with when it
 loads, and refuses to start with the reason in the log; Kore serves
 HTTPS only with an RSA certificate.

@@ -174,6 +174,7 @@ cat /var/db/arcana/setup-token   # for the first login
 | `tls { ca, cert, key, ca_key }` | Your own CA for arcana-agent over TCP; `ca_key` to enrol hosts with it. Without the block the console runs its own CA. | none |
 | `update_check`, `update_url` | Ask the release feed for newer versions. | on, GitHub |
 | `agent_binary` | The `arcana-agent` the console sends to hosts when asked to update them. | `/usr/local/sbin/arcana-agent` |
+| `settings.json` in `datadir` | What **Settings** in the console changed: `rp_name`, `update_check`, `update_url`, `agent_binary`, `agent_source`, `agent_ref`. It overrides `web.conf` for those. | none |
 | `agent_source`, `agent_ref` | A git repository, and a branch or tag, a host can be asked to build `arcana-agent` from; what it builds is sent instead of `agent_binary`. | none |
 
 rc.conf variables: `arcana_console_enable`, `arcana_console_config` (the

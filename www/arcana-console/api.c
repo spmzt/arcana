@@ -110,6 +110,7 @@ guard(struct http_request *req, bool mutate)
 {
 	const char	*v;
 
+	config_refresh();
 	if (!session_valid(req)) {
 		reply_error(req, 401, "unauthenticated", "log in first");
 		return (false);
@@ -184,6 +185,7 @@ api_health(struct http_request *req)
 	ucl_object_t	*o;
 	const char	*build;
 
+	config_refresh();
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromstring(ARCW_VERSION),

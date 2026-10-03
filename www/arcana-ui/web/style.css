@@ -684,6 +684,17 @@ label {
 	font-size: .68rem;
 }
 
+/* The settings dialog. */
+form.settings label small {
+	display: block;
+	margin-top: .25rem;
+	color: var(--dim);
+	font-size: .68rem;
+	line-height: 1.4;
+}
+form.settings h4 { margin: 1.1rem 0 .3rem; font-size: .8rem; }
+form.settings dl.kv { font-size: .74rem; }
+
 /* The resource tree. */
 .tree {
 	list-style: none;
@@ -1741,6 +1752,7 @@ pre.diff {
 	background: linear-gradient(180deg, #0a1624, #060d17);
 	box-shadow: 0 30px 80px -20px #000, 0 0 40px -18px var(--cyan);
 	animation: pop .25s var(--ease) both;
+	overflow-x: hidden;
 }
 
 .modal h2 {

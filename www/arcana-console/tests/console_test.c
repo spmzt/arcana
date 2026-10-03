@@ -648,6 +648,73 @@ ATF_TC_BODY(agent_build, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(settings, "Settings are changed from the console, kept in the "
+    "data directory, and override web.conf")
+ATF_TC_BODY(settings, tc)
+{
+	struct authn	a;
+	struct resp	r;
+
+	start(tc, 0, NULL);
+	http("GET", "/api/settings", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	enrol(&a);
+
+	http("GET", "/api/settings", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("rp_name", jstr(&r, "settings.0.key"));
+	ATF_CHECK_STREQ("Arcana", jstr(&r, "settings.0.value"));
+	ATF_CHECK_STREQ("true", jstr(&r, "settings.0.editable"));
+	ATF_CHECK_STREQ("false", jstr(&r, "settings.0.overridden"));
+	resp_free(&r);
+	http("GET", "/api/health", NULL, &r);
+	ATF_CHECK(jstr(&r, "agent_source") == NULL);
+	resp_free(&r);
+
+	/* What is not a value for a setting, or not a setting to change
+	 * here, changes nothing. */
+	http("POST", "/api/settings", "{\"set\":{\"agent_source\":"
+	    "\"--upload-pack=x\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"rp_id\":\"evil.example\"}}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"rp_name\":\"Lab\","
+	    "\"update_url\":\"http://plain.example/\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	ATF_CHECK(access("data/settings.json", F_OK) == -1);
+
+	http("POST", "/api/settings", "{\"set\":{\"rp_name\":\"Lab\","
+	    "\"agent_source\":\"https://example.org/arcana.git\","
+	    "\"agent_ref\":\"main\",\"update_check\":false}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("Lab", jstr(&r, "settings.0.value"));
+	ATF_CHECK_STREQ("Arcana", jstr(&r, "settings.0.base"));
+	ATF_CHECK_STREQ("true", jstr(&r, "settings.0.overridden"));
+	ATF_CHECK_STREQ("false", jstr(&r, "settings.1.value"));
+	resp_free(&r);
+	ATF_CHECK(access("data/settings.json", R_OK) == 0);
+	http("GET", "/api/health", NULL, &r);
+	ATF_CHECK_STREQ("https://example.org/arcana.git", jstr(&r,
+	    "agent_source"));
+	ATF_CHECK_STREQ("main", jstr(&r, "agent_ref"));
+	resp_free(&r);
+
+	/* Back at web.conf's value, or null: the override goes. */
+	http("POST", "/api/settings", "{\"set\":{\"rp_name\":\"Arcana\","
+	    "\"agent_source\":null,\"agent_ref\":\"\"}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "settings.0.overridden"));
+	resp_free(&r);
+	http("GET", "/api/health", NULL, &r);
+	ATF_CHECK(jstr(&r, "agent_source") == NULL);
+	resp_free(&r);
+}
+
 CONSOLE_TC(services, "Services listed, acted on and configured through "
     "service(8) and sysrc(8)")
 ATF_TC_BODY(services, tc)
@@ -1142,6 +1209,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, services);
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);
+	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, enrol);

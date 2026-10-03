@@ -52,6 +52,16 @@ The console is laid out as a tree and tabs.
 - The tree, the activity bar, the list of tasks in it and the service
   drawer are resized by dragging their edge; the browser keeps the
   sizes, and a double click on the edge goes back to the usual one.
+- **Settings** in the top bar changes the console's own settings: the
+  name keys show, the release check and its feed, the `arcana-agent` it
+  sends, and the repository and branch a host builds it from. They are
+  kept in `settings.json` in the data directory and override `web.conf`;
+  a field put back to `web.conf`'s value follows it again. The relying
+  party, the origin, the data directory and the certificates are shown
+  there and changed only in `web.conf`: keys are bound to the first two,
+  and all are read once, at the start. Whoever can log in can set the
+  repository, and so decides what is built and sent to every host as
+  root.
 - In the top bar: **FX** turns the blur and idle animations off for this
   browser, **Notify** allows a desktop notification when a task that
   took more than ten seconds ends, **Keys** manages security keys and

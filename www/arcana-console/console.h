@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.4.0"
+#define	ARCW_VERSION		"0.5.0"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -61,6 +61,11 @@ extern struct config cfg;
 
 int		 config_load(const char *);
 int		 config_check_certs(void);
+
+/* settings.c: the settings changed from the console. */
+void		 settings_init(const char *, const char *);
+void		 config_refresh(void);
+int		 api_settings(struct http_request *);
 
 /* store.c: small JSON documents in the data directory. */
 ucl_object_t	*store_load(const char *);

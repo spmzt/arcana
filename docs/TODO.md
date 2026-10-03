@@ -15,11 +15,6 @@
   when **Run** is pressed, also when it was queued while another host
   was selected. It should hold each change with its host, and send each
   host its own batch.
-- The repository an agent is built from (`agent_source`) is set in
-  `web.conf` only. Setting it from the page would let whoever is logged
-  in decide what is built and sent to every host as root, so it stays
-  with whoever administers the console machine unless decided
-  otherwise.
 
 ## Not yet verified
 

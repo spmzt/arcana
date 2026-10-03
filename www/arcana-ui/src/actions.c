@@ -1714,3 +1714,78 @@ agent_build(struct server *s)
 	snprintf(url, sizeof(url), "/api/servers/%s/agent-build", s->id);
 	api("POST", url, "{}", agent_build_cb, c);
 }
+
+static void
+settings_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	bool	saved;
+
+	saved = arg != NULL;
+	app.modal_busy = false;
+	if (status != 200 || jget(o, "settings") == NULL) {
+		if (status != 401)
+			snprintf(app.modal_error, sizeof(app.modal_error), "%s",
+			    err != NULL ? err : "cannot load the settings");
+		return;
+	}
+	if (app.settings != NULL)
+		ucl_object_unref(app.settings);
+	app.settings = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	app.modal_error[0] = '\0';
+	if (saved) {
+		app.modal = MODAL_NONE;
+		toast(false, "Settings saved");
+		/* What the console sends and checks may have changed. */
+		check_health();
+		check_update();
+	}
+}
+
+void
+load_settings(void)
+{
+
+	api("GET", "/api/settings", NULL, settings_cb, NULL);
+}
+
+/* Send every setting of the form; the console keeps what differs. */
+void
+save_settings(const ucl_object_t *f)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	struct html		 b;
+	const char		*key;
+	char			*q;
+	bool			 first;
+
+	memset(&b, 0, sizeof(b));
+	h_raw(&b, "{\"set\":{");
+	first = true;
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(app.settings, "settings"), &it,
+	    true)) != NULL) {
+		if (!jbool(e, "editable") || (key = jstr(e, "key")) == NULL)
+			continue;
+		q = json_quote(key);
+		h_raw(&b, first ? "" : ",");
+		h_raw(&b, q);
+		free(q);
+		h_raw(&b, ":");
+		if (jstr(e, "type") != NULL && strcmp(jstr(e, "type"),
+		    "bool") == 0)
+			h_raw(&b, jbool(f, key) ? "true" : "false");
+		else {
+			q = json_quote(jstr(f, key) != NULL ? jstr(f, key) : "");
+			h_raw(&b, q);
+			free(q);
+		}
+		first = false;
+	}
+	h_raw(&b, "}}");
+	app.modal_busy = true;
+	app.modal_error[0] = '\0';
+	api("POST", "/api/settings", b.s, settings_cb, &app.settings);
+	free(b.s);
+}
+

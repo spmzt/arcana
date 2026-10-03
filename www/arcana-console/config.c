@@ -54,6 +54,8 @@ config_load(const char *path)
 	struct ucl_parser	*p;
 	ucl_object_t		*top;
 	const ucl_object_t	*o;
+	char			*url;
+	bool			 check;
 
 	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
 	    UCL_PARSER_DISABLE_MACRO);
@@ -77,8 +79,8 @@ config_load(const char *path)
 	cfg.tls_key = get(top, "tls.key", NULL);
 	cfg.tls_own = ucl_object_lookup(top, "tls") == NULL;
 	o = ucl_object_lookup(top, "update_check");
-	cfg.update_url = o != NULL && !ucl_object_toboolean(o) ? NULL :
-	    get(top, "update_url", ARCW_RELEASES);
+	check = o == NULL || ucl_object_toboolean(o);
+	url = get(top, "update_url", ARCW_RELEASES);
 	cfg.agent_binary = get(top, "agent_binary", ARCW_AGENT_BINARY);
 	cfg.agent_source = get(top, "agent_source", NULL);
 	cfg.agent_ref = get(top, "agent_ref", NULL);
@@ -88,6 +90,8 @@ config_load(const char *path)
 		kore_log(LOG_ERR, "%s: rp_id and origin are required", path);
 		return (-1);
 	}
+	/* What the console itself changed overrides some of that. */
+	settings_init(check ? "true" : "false", url);
 	return (0);
 }
 

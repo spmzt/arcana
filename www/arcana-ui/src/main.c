@@ -374,6 +374,8 @@ submit(const char *form, const ucl_object_t *f)
 		address_change(app.jail, s, jstr(f, "mode") != NULL &&
 		    strcmp(jstr(f, "mode"), "remove") == 0, jbool(f, "live"),
 		    jbool(f, "persist"), dry);
+	} else if (strcmp(form, "settings") == 0) {
+		save_settings(f);
 	} else if (strcmp(form, "agent-update") == 0) {
 		app.modal = MODAL_NONE;
 		for (i = 0; i < app.nservers; i++) {
@@ -672,6 +674,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
 		app.modal = MODAL_AGENT_UPDATE;
 		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "settings") == 0) {
+		app.modal = MODAL_SETTINGS;
+		app.modal_error[0] = '\0';
+		load_settings();
 	} else if (strcmp(act, "keys") == 0) {
 		app.modal = MODAL_KEYS;
 		app.modal_error[0] = '\0';

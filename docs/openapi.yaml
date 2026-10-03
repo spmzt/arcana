@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.4.0
+  version: 0.5.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -575,6 +575,48 @@ paths:
                     items: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/settings:
+    get:
+      tags: [console]
+      summary: The console's settings
+      description: Every setting with its value, what web.conf says
+        (`base`), whether the console overrides it, and whether it can be
+        changed here. rp_id, origin, datadir, cookie_secure and the
+        certificates are shown and not changed.
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+    post:
+      tags: [console]
+      summary: Change settings
+      description: Kept in settings.json in the data directory, where
+        they override web.conf. A value equal to web.conf's, or null,
+        drops the override. All of a request is checked before any of
+        it is kept.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [set]
+              properties:
+                set:
+                  type: object
+                  description: rp_name, update_check, update_url,
+                    agent_binary, agent_source, agent_ref.
+                  additionalProperties: true
+      responses:
+        "200":
+          description: The settings as they are now.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/Error" }
+
   /api/servers/{server}/agent-build:
     post:
       tags: [servers]
@@ -1011,6 +1053,23 @@ components:
           schema: { $ref: "#/components/schemas/JailChangeReply" }
 
   schemas:
+    Settings:
+      type: object
+      properties:
+        file: { type: string, description: Where overrides are kept. }
+        settings:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              label: { type: string }
+              help: { type: string }
+              type: { type: string, enum: [text, bool] }
+              value: { type: string }
+              base: { type: string, description: What web.conf says. }
+              overridden: { type: boolean }
+              editable: { type: boolean }
     Job:
       type: object
       properties:

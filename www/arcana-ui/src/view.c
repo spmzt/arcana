@@ -200,7 +200,9 @@ topbar(struct html *h)
 		    "ends: %s\">Notify</button>", app.notify == 1 ? " on" : "",
 		    app.notify == 1 ? "on" : app.notify == 2 ?
 		    "blocked in the browser's settings" : "off, press to allow");
-	h_raw(h, "<button class=\"ghost\" data-act=\"keys\">Keys</button>"
+	h_raw(h, "<button class=\"ghost\" data-act=\"settings\" title=\""
+	    "The console's settings\">Settings</button>"
+	    "<button class=\"ghost\" data-act=\"keys\">Keys</button>"
 	    "<button class=\"ghost\" data-act=\"logout\">Log out</button>"
 	    "</div></header>");
 }
@@ -1119,6 +1121,73 @@ modal(struct html *h)
 			    "certificate.</p>");
 		}
 		break;
+	case MODAL_SETTINGS:
+		h_raw(h, "<form data-form=\"settings\" class=\"settings\">"
+		    "<h2>Settings</h2>");
+		if (app.settings == NULL) {
+			h_raw(h, "<div class=\"loader\"></div>");
+			break;
+		}
+		h_raw(h, "<p>What is set here is kept in <code>");
+		h_txt(h, jstr(app.settings, "file"));
+		h_raw(h, "</code> and takes the place of <code>web.conf</code>"
+		    "'s value; a field put back to that value follows "
+		    "<code>web.conf</code> again.</p>");
+		it = NULL;
+		while ((k = ucl_object_iterate(jget(app.settings, "settings"),
+		    &it, true)) != NULL) {
+			if (!jbool(k, "editable"))
+				continue;
+			if (jstr(k, "type") != NULL && strcmp(jstr(k, "type"),
+			    "bool") == 0) {
+				h_raw(h, "<fieldset class=\"toggles\"><label "
+				    "class=\"toggle\"><input type=\"checkbox\"");
+				h_attr(h, "name", jstr(k, "key"));
+				h_raw(h, jstr(k, "value") != NULL && strcmp(jstr(k,
+				    "value"), "true") == 0 ? " checked" : "");
+				h_raw(h, "><span>");
+				h_txt(h, jstr(k, "label"));
+				h_raw(h, " <em>");
+				h_txt(h, jstr(k, "help"));
+				h_raw(h, "</em></span></label></fieldset>");
+				continue;
+			}
+			h_raw(h, "<label>");
+			h_txt(h, jstr(k, "label"));
+			h_raw(h, "<input spellcheck=\"false\" "
+			    "autocomplete=\"off\"");
+			h_attr(h, "name", jstr(k, "key"));
+			h_attr(h, "value", jstr(k, "value"));
+			h_attr(h, "placeholder", jstr(k, "base"));
+			h_raw(h, "><small>");
+			h_txt(h, jstr(k, "help"));
+			if (jbool(k, "overridden")) {
+				h_raw(h, " web.conf says: ");
+				h_txt(h, jstr(k, "base") != NULL && jstr(k,
+				    "base")[0] != '\0' ? jstr(k, "base") :
+				    "nothing");
+				h_raw(h, ".");
+			}
+			h_raw(h, "</small></label>");
+		}
+		h_raw(h, "<h4>Set in web.conf only</h4><p class=\"dim\">Every "
+		    "registered key is bound to the relying party and the "
+		    "origin, and these are read once, when the console "
+		    "starts: a wrong value locks everyone out.</p>"
+		    "<dl class=\"kv\">");
+		it = NULL;
+		while ((k = ucl_object_iterate(jget(app.settings, "settings"),
+		    &it, true)) != NULL) {
+			if (jbool(k, "editable"))
+				continue;
+			h_raw(h, "<dt>");
+			h_txt(h, jstr(k, "label"));
+			h_raw(h, "</dt><dd class=\"mono\">");
+			h_txt(h, jstr(k, "value"));
+			h_raw(h, "</dd>");
+		}
+		h_raw(h, "</dl>");
+		break;
 	case MODAL_AGENT_UPDATE:
 		h_raw(h, "<form data-form=\"agent-update\"><h2>Update "
 		    "arcana-agent</h2><p>The console sends its arcana-agent");
@@ -1241,6 +1310,11 @@ modal(struct html *h)
 			break;
 		case MODAL_AGENT_UPDATE:
 			h_raw(h, "<button class=\"primary\">Update</button>");
+			break;
+		case MODAL_SETTINGS:
+			h_fmt(h, "<button class=\"primary\"%s>Save</button>",
+			    app.modal_busy || app.settings == NULL ?
+			    " disabled" : "");
 			break;
 		case MODAL_ADDRESS:
 			h_fmt(h, "<button class=\"ghost\" value=\"preview\"%s>"

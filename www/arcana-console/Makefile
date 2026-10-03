@@ -1,7 +1,8 @@
 # arcana-console.so: the Kore module serving the console and its API.
 
 SHLIB_NAME=	arcana-console.so
-SRCS=		api.c auth.c config.c hosts.c pki.c servers.c store.c update.c
+SRCS=		api.c auth.c config.c hosts.c pki.c servers.c settings.c store.c \
+		update.c
 LIBDIR?=	${PREFIX}/lib/arcana
 MAN=		arcana-console.8
 

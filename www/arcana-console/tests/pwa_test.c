@@ -335,6 +335,21 @@ ATF_TC_BODY(pwa, tc)
 	 * Content-Security-Policy must let it run. */
 	ATF_CHECK(js_true("document.documentElement.classList.contains('fx')"));
 
+	/* Settings: a repository to build the agent from is set from the
+	 * page, kept by the console, and what web.conf fixes is shown. */
+	run("document.querySelector('button[data-act=settings]').click()");
+	wait_js("document.querySelector('form[data-form=settings] "
+	    "input[name=agent_source]')", 10);
+	ATF_CHECK(js_true("document.querySelector('form.settings dl.kv')."
+	    "textContent.includes('localhost')"));
+	shot("0a-settings");
+	run("const f = document.querySelector('form[data-form=settings]'); "
+	    "f.agent_source.value = 'https://example.org/arcana.git'; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=settings]') && "
+	    "[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('Settings saved'))", 10);
+
 	/* A desktop browser is not asked to install the console; a phone
 	 * is, with the browser's own prompt, and can say not now. */
 	ATF_CHECK(!js_true("document.querySelector('.banner.install')"));
@@ -415,6 +430,9 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.hostbar button[data-act=agent-update]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=agent-update]')", 5);
+	/* With the repository set, the host can be asked to build. */
+	ATF_CHECK(js_true("document.querySelector('.hostbar button[data-act="
+	    "agent-build]')"));
 	shot("1b-agent-update");
 	run("const f = document.querySelector('form[data-form=agent-update]'); "
 	    "f.restart.checked = false; f.requestSubmit();");
