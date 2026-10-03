@@ -38,6 +38,7 @@ void		 arc_focus(const char *);
 void		 arc_events_init(void);
 void		 arc_http(int, const char *, const char *, const char *);
 void		 arc_http_abort(int);
+void		 arc_reload(void);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
@@ -162,6 +163,7 @@ struct netview {
 	bool		 loading;
 	char		 error[256];	int		 sort;		/* column sorted by, or -1 */
 	bool		 sort_desc;
+	char		 host_filter[129]; /* routes: searched for on the host */
 };
 
 enum pending {
@@ -298,6 +300,7 @@ struct app {
 	int		 install;	/* 0 no offer, 1 prompt, 2 iOS, 3 menu */
 	bool		 setup_required;
 	char		 version[32];	/* the console's, from /api/health */
+	double		 health_retry;	/* ms: ask for its health again then; 0 no */
 	char		 agent_build[65]; /* of the arcana-agent it sends */
 	char		 agent_version[32]; /* and its version */
 	char		 agent_source[256]; /* repository a host builds it from */

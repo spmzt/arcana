@@ -706,6 +706,12 @@ form.hostkey pre.deploy-key {
 	user-select: all;
 }
 
+.notice.info {
+	border-color: var(--line-2);
+	background: rgba(59, 232, 255, .06);
+	color: var(--fg-2);
+}
+
 /* The interfaces of a host. */
 table.ifaces td { vertical-align: top; }
 table.ifaces td small { display: block; color: var(--dim); font-size: .68rem; }
@@ -713,6 +719,15 @@ table.ifaces tr.iface { --c: var(--slate); }
 table.ifaces tr.iface.up { --c: var(--cyan); }
 table.ifaces tr.iface .led { margin-right: .5rem; }
 table.ifaces ul.chips { margin: 0; }
+
+.brand .version {
+	color: var(--dim);
+	font-size: .66rem;
+	letter-spacing: .04em;
+	align-self: flex-end;
+	padding-bottom: .1rem;
+}
+form.settings p.versions { color: var(--fg-2); font-size: .76rem; margin-top: -.4rem; }
 
 /* The settings dialog. */
 form.settings label small {

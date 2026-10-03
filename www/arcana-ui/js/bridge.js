@@ -250,6 +250,41 @@ addToLibrary({
 	 * HTTP to the console's own API.  status 0 means the request did
 	 * not get an answer at all.
 	 */
+	/*
+	 * Load the page again, as the one a newer console serves.  The
+	 * service worker is asked for its update first and given a moment
+	 * to take over, or the reload would get the old shell from its
+	 * cache.
+	 */
+	arc_reload: function () {
+		var done = false;
+
+		function go() {
+			if (!done) {
+				done = true;
+				location.reload();
+			}
+		}
+		setTimeout(go, 6000);
+		if (!navigator.serviceWorker ||
+		    !navigator.serviceWorker.getRegistration) {
+			go();
+			return;
+		}
+		navigator.serviceWorker.addEventListener("controllerchange",
+		    go);
+		navigator.serviceWorker.getRegistration().then(function (r) {
+			if (!r)
+				go();
+			else
+				r.update().then(function () {
+					/* Nothing newer to install. */
+					if (!r.installing && !r.waiting)
+						go();
+				}).catch(go);
+		}).catch(go);
+	},
+
 	/* The requests in flight that can be given up: id to its abort. */
 	$arcAborts: {},
 	arc_http_abort__deps: ["$arcAborts"],

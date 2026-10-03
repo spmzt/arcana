@@ -143,6 +143,8 @@ static void	 call_free_vars(struct call *);
 static ucl_object_t *job_object(struct call *, const struct arc_job *, bool,
 		    uint64_t);
 static const char *spec_from_json(const ucl_object_t *, struct arc_job_spec *);
+static bool	 query_param(struct http_request *, const char *, char *,
+		    size_t);
 static void	 spec_free(struct arc_job_spec *);
 static char	*jdup(const ucl_object_t *, const char *);
 static ucl_object_t *step_object(int, int, const char *, const char *,
@@ -968,10 +970,17 @@ call_run(struct kore_task *t)
 		nq.net_kind = c->action;
 		nq.has_net_family = true;
 		nq.net_family = c->family;
+		/* The text searched for is kept where a jail's name is. */
+		nq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
 		if ((error = arc_network(&cl, &nq, &nr)) != 0)
 			goto rpcfail;
 		ok = nr->ok;
 		put_str(top, "error", nr->error);
+		/* A table too large to send: how large, and whether cut. */
+		if (nr->has_total) {
+			put(top, "total", ucl_object_fromint((int64_t)nr->total));
+			put(top, "truncated", ucl_object_frombool(nr->truncated));
+		}
 		/* The program's JSON becomes part of ours. */
 		e = NULL;
 		if (nr->json != NULL) {
@@ -1546,6 +1555,7 @@ int
 api_network(struct http_request *req)
 {
 	struct call	*c;
+	const char	*q;
 	char		 kind[16];
 	size_t		 i;
 
@@ -1572,6 +1582,24 @@ api_network(struct http_request *req)
 			c->family = ARC_NET_FAMILY_INET6;
 		else if (strstr(req->query_string, "family=inet") != NULL)
 			c->family = ARC_NET_FAMILY_INET;
+	}
+	/*
+	 * ?filter=text searches the routes on the host.  It is taken as
+	 * it is, so only what needs no escaping in a URL is taken.
+	 */
+	if (query_param(req, "filter", c->jail, sizeof(c->jail))) {
+		for (q = c->jail; *q != '\0'; q++)
+			if (!isalnum((unsigned char)*q) && strchr(".:/_-",
+			    *q) == NULL)
+				break;
+		if (*q != '\0' || strlen(c->jail) > 128) {
+			kore_free(c->sname);
+			kore_free(c->uri);
+			kore_free(c->peer);
+			kore_free(c);
+			return (reply_error(req, 400, "invalid", "the text to "
+			    "search for is letters, digits and . : / _ -"));
+		}
 	}
 	return (call_start(req, c));
 }

@@ -188,7 +188,9 @@ tick(void *arg)
 		} else
 			i++;
 	}
-	if (now - last_health > HEALTH_MS) {
+	if (now - last_health > HEALTH_MS || (app.health_retry != 0 &&
+	    now > app.health_retry)) {
+		app.health_retry = 0;
 		last_health = now;
 		check_health();
 		/* Offline at start: try to reach the console again. */
@@ -553,6 +555,29 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "sockets") == 0 ? NET_SOCKETS :
 		    strcmp(arg, "interfaces") == 0 ? NET_INTERFACES :
 		    NET_ROUTES;
+		app.net.loading = false;
+		refresh_network(s, true);
+	} else if (strcmp(act, "net-search") == 0 && s != NULL) {
+		/* The text in the filter, searched for on the host. */
+		const char *p;
+
+		for (p = app.filter; *p != '\0'; p++)
+			if (!((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <=
+			    'z') || (*p >= 'A' && *p <= 'Z') || strchr(".:/_-",
+			    *p) != NULL))
+				break;
+		if (*p != '\0' || strlen(app.filter) > 128) {
+			toast(true, "The host is searched for letters, digits "
+			    "and . : / _ - only");
+		} else {
+			snprintf(app.net.host_filter,
+			    sizeof(app.net.host_filter), "%s", app.filter);
+			app.filter[0] = '\0';
+			app.net.loading = false;
+			refresh_network(s, true);
+		}
+	} else if (strcmp(act, "net-search-clear") == 0 && s != NULL) {
+		app.net.host_filter[0] = '\0';
 		app.net.loading = false;
 		refresh_network(s, true);
 	} else if (strcmp(act, "route-add") == 0 && s != NULL) {

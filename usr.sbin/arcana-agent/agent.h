@@ -18,7 +18,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.6.1"
+#define	ARCANA_AGENT_VERSION	"0.6.2"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -148,6 +148,8 @@ struct execres {
 
 int		 run_exec(struct work *, char *const [], struct execres *);
 void		 exec_set_home(struct work *, const char *);
+int		 run_exec_lines(struct work *, char *const [],
+		    void (*)(const char *, void *), void *);
 int		 run_exec_max(struct work *, char *const [], struct execres *,
 		    size_t);
 const char	*exec_error(struct work *, const struct execres *,
@@ -227,7 +229,7 @@ int		 do_service_config(struct work *,
 		    struct arc_service_config_rsp *);
 
 /* invidia/network.c */
-int		 do_network(struct work *, uint8_t, uint8_t,
+int		 do_network(struct work *, uint8_t, uint8_t, const char *,
 		    struct arc_network_rsp *);
 
 /* invidia/interfaces.c */

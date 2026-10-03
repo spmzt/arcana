@@ -114,6 +114,7 @@ arcanactl -c tcp://host1.example:4310 \
 | `service` *name* `start\|stop\|restart\|reload\|enable\|disable` | Through `service(8)`; enable and disable through `sysrc(8)`. |
 | `service` *name* `config [-x key] [key=value]` | The service's `rc.conf` variables; set or unset some first. |
 | `net routes\|nexthops\|connections\|sockets\|interfaces [-4\|-6]` | `netstat`/`sockstat` output as libxo JSON; the interfaces as the agent reads them, as JSON. |
+| `net routes [-4\|-6]` *text* | The routes that contain *text*, searched for on the host; a table too large to send comes as its first 2000 rows otherwise. |
 | `stats` | CPU, load, memory, swap, ZFS pools. |
 | `packages [-r]` [*jail*] | Packages with newer versions; `-r` runs `pkg update` first. |
 | `pkg-upgrade [-n] [-j jail]` [*package* …] | `pkg upgrade -y`, of all or of the named ones; `-n` a dry run. |

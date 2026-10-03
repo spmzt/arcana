@@ -729,6 +729,68 @@ ATF_TC_BODY(session_restart, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(load, "The console keeps answering under many requests at once, "
+    "some of them abandoned")
+ATF_TC_BODY(load, tc)
+{
+	static const char *what[] = { "jails", "stats", "services",
+	    "net/interfaces", "net/routes", "packages", "jobs" };
+	struct authn	a;
+	struct resp	r;
+	char		base[96], path[160], cwd[MAXPATHLEN], body[MAXPATHLEN];
+	pid_t		pids[8];
+	int		i, k, status, bad;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(base, sizeof(base), "/api/servers/%s", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+
+	/* Eight clients at once, each asking for everything in turn and
+	 * walking away from every third request. */
+	for (k = 0; k < 8; k++) {
+		if ((pids[k] = fork()) == 0) {
+			bad = 0;
+			for (i = 0; i < 42; i++) {
+				snprintf(path, sizeof(path), "%s/%s", base,
+				    what[(i + k) % 7]);
+				if (i % 3 == 2) {
+					http_abandon(path);
+					continue;
+				}
+				http("GET", path, NULL, &r);
+				if (r.status != 200)
+					bad++;
+				resp_free(&r);
+				http("GET", "/api/health", NULL, &r);
+				if (r.status != 200)
+					bad++;
+				resp_free(&r);
+			}
+			_exit(bad > 250 ? 250 : bad);
+		}
+		ATF_REQUIRE(pids[k] > 0);
+	}
+	for (k = 0; k < 8; k++) {
+		ATF_REQUIRE(waitpid(pids[k], &status, 0) == pids[k]);
+		ATF_CHECK_MSG(WIFEXITED(status) && WEXITSTATUS(status) == 0,
+		    "client %d: %d requests failed", k, WIFEXITED(status) ?
+		    WEXITSTATUS(status) : -1);
+	}
+	/* It is the same process still, and it answers. */
+	http("GET", "/api/health", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("! grep -Ei 'exited|signal|crash|fatal' kore.out") ==
+	    0);
+}
+
 CONSOLE_TC(settings, "Settings are changed from the console, kept in the "
     "data directory, and override web.conf")
 ATF_TC_BODY(settings, tc)
@@ -962,6 +1024,21 @@ ATF_TC_BODY(services, tc)
 	    "route-table.rt-family.0.rt-entry.0.destination"));
 	ATF_CHECK_MSG(strstr(jstr(&r, "trace.4.label"), "-f inet") != NULL,
 	    "%s", jstr(&r, "trace.4.label"));
+	resp_free(&r);
+
+	/* The routes searched on the host: the text goes through, and
+	 * what is not a text to search for is refused. */
+	snprintf(path, sizeof(path), "%.*s/net/routes?family=inet&filter="
+	    "10.0.0.", (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "total") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/net/routes?filter=a%%20b",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
 	resp_free(&r);
 
 	/* The interfaces, read by the agent itself; and a change to one,
@@ -1365,6 +1442,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, settings);
+	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);

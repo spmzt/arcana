@@ -306,6 +306,19 @@ attribute-sets:
         doc: The branch or tag to build; the repository's default if absent.
         checks:
           max-len: 128
+      - name: net-filter
+        type: text
+        doc: |
+          For the routes: keep the rows that contain this text, searched
+          for on the host, which a table too large to send needs.
+        checks:
+          max-len: 128
+      - name: total
+        type: u64
+        doc: Rows in the table on the host, when not all were sent.
+      - name: truncated
+        type: flag
+        doc: More rows matched than the reply carries.
       - name: host-keys
         type: text
         doc: |
@@ -804,6 +817,7 @@ operations:
         attributes:
           - net-kind
           - net-family
+          - net-filter
         required:
           - net-kind
       reply:
@@ -811,6 +825,8 @@ operations:
           - ok
           - error
           - json
+          - total
+          - truncated
           - trace
 
   - name: stats

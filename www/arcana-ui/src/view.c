@@ -167,8 +167,14 @@ topbar(struct html *h)
 	h_raw(h, "<header class=\"topbar\"><div class=\"brand\">"
 	    "<span class=\"logo\">");
 	h_raw(h, icon_grid);
-	h_raw(h, "</span><span class=\"wordmark\">ARCANA</span></div>"
-	    "<nav class=\"crumbs\">");
+	h_raw(h, "</span><span class=\"wordmark\">ARCANA</span>");
+	if (app.version[0] != '\0') {
+		h_raw(h, "<span class=\"version\" title=\"The console's "
+		    "version\">");
+		h_txt(h, app.version);
+		h_raw(h, "</span>");
+	}
+	h_raw(h, "</div><nav class=\"crumbs\">");
 	if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
 		h_txt(h, s->name);
@@ -1218,7 +1224,13 @@ modal(struct html *h)
 		break;
 	case MODAL_SETTINGS:
 		h_raw(h, "<form data-form=\"settings\" class=\"settings\">"
-		    "<h2>Settings</h2>");
+		    "<h2>Settings</h2><p class=\"versions\">Arcana console ");
+		h_txt(h, app.version[0] != '\0' ? app.version : "?");
+		if (app.agent_version[0] != '\0') {
+			h_raw(h, " · sends arcana-agent ");
+			h_txt(h, app.agent_version);
+		}
+		h_raw(h, "</p>");
 		if (app.settings == NULL) {
 			h_raw(h, "<div class=\"loader\"></div>");
 			break;

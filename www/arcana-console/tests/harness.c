@@ -415,6 +415,25 @@ restart_console(void)
 	wait_for("k.sock");
 }
 
+/*
+ * A request the client walks away from: sent, and the connection
+ * closed without reading the answer, as a browser does when a page is
+ * reloaded or a request aborted.
+ */
+void
+http_abandon(const char *path)
+{
+	char	*req;
+	int	 s;
+
+	s = console_socket();
+	ATF_REQUIRE(asprintf(&req, "GET %s HTTP/1.1\r\nHost: localhost:8443\r\n"
+	    "Cookie: %s\r\n\r\n", path, cookie) != -1);
+	(void)write(s, req, strlen(req));
+	free(req);
+	close(s);
+}
+
 /* SIGTERM the process in pidfile and wait up to 5 s for it to finish. */
 static void
 terminate(const char *pidfile)

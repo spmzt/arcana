@@ -16,6 +16,7 @@
 
 #define	RESTART_WATCH_MS	45000	/* an agent to be back, updated */
 #define	RESTART_ASK_MS		3000
+#define	HEALTH_RETRY_MS		2000	/* a missed health check is asked again */
 
 struct ctx {
 	char	sid[9];
@@ -440,11 +441,34 @@ queue_clear(void)
 	app.nbatch = 0;
 }
 
+static int	health_misses;
+
 static void
 health_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
-	app.api = status == 200 ? LINK_UP : LINK_DOWN;
+	/*
+	 * One check without an answer is a hiccup: a busy moment, a
+	 * connection the server closed.  It is asked again at once, and
+	 * only a second miss says the console is away.
+	 */
+	if (status == 200) {
+		health_misses = 0;
+		app.api = LINK_UP;
+	} else if (status != 429 && ++health_misses >= 2)
+		app.api = LINK_DOWN;
+	else if (status != 429)
+		app.health_retry = arc_now() + HEALTH_RETRY_MS;
+	/*
+	 * Another version than the page was loaded from: the console was
+	 * updated and has restarted.  The page loads itself again, to be
+	 * the one that goes with it.
+	 */
+	if (status == 200 && jstr(o, "version") != NULL && app.version[0] !=
+	    '\0' && strcmp(app.version, jstr(o, "version")) != 0) {
+		arc_reload();
+		return;
+	}
 	if (status == 200 && jstr(o, "version") != NULL)
 		snprintf(app.version, sizeof(app.version), "%s",
 		    jstr(o, "version"));
@@ -507,7 +531,7 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	if (status != 200) {
 		if (status == 0)
-			app.api = LINK_DOWN;
+			check_health();
 		if (status != 401)
 			toast(true, "Servers: %s", err != NULL ? err :
 			    "no answer");
@@ -600,8 +624,9 @@ jails_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		s->error[0] = '\0';
 		op_done(op, jbool(o, "ok"), o, jstr(o, "error"));
 	} else {
+		/* Whether the console is away is the health check's to say. */
 		if (status == 0)
-			app.api = LINK_DOWN;
+			check_health();
 		s->failed = true;
 		snprintf(s->error, sizeof(s->error), "%s", err != NULL ? err :
 		    "no answer from the console");
@@ -1131,7 +1156,7 @@ refresh_network(struct server *s, bool user)
 	    "sockets", "interfaces" };
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[160], title[160];
+	char		 url[320], title[160];
 
 	if (!app.online)
 		return;
@@ -1156,9 +1181,11 @@ refresh_network(struct server *s, bool user)
 		c->op = op->id;
 		app.trace_op = op->id;
 	}
-	snprintf(url, sizeof(url), "/api/servers/%s/net/%s%s", s->id,
-	    kinds[app.net.kind], app.net.family == 4 ? "?family=inet" :
-	    app.net.family == 6 ? "?family=inet6" : "");
+	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=%s%s%s",
+	    s->id, kinds[app.net.kind], app.net.family == 4 ? "inet" :
+	    app.net.family == 6 ? "inet6" : "all", app.net.kind ==
+	    NET_ROUTES && app.net.host_filter[0] != '\0' ? "&filter=" : "",
+	    app.net.kind == NET_ROUTES ? app.net.host_filter : "");
 	op_wait(c->op, api("GET", url, NULL, network_cb, c));
 }
 

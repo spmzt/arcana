@@ -27,6 +27,10 @@ The console is laid out as a tree and tabs.
   - **Network**: the routing table, nexthops, connections and sockets,
     per address family, as `netstat` and `sockstat` print them
     (`--libxo json`); filter the rows, click a column to sort.
+    A routing table too large to send, a full BGP table say, comes as
+    its first 2000 rows with how many it has; type a prefix or an
+    interface in the filter and press **Search host** to have the host
+    search the whole table for it.
     In the routes, **+ route** adds a static route (a destination and
     a gateway, an address or an interface), and the cross on a static
     route deletes it; both run `route(8)`, live only.

@@ -376,7 +376,11 @@ view_network(struct html *h, struct server *s)
 	h_raw(h, "</nav>");
 	if (app.net.kind == NET_ROUTES)
 		h_raw(h, "<button class=\"ghost small\" data-act=\"route-add\" "
-		    "title=\"Add a static route\">+ route</button>");
+		    "title=\"Add a static route\">+ route</button>"
+		    "<button class=\"ghost small\" data-act=\"net-search\" "
+		    "title=\"Search the whole table on the host for the text "
+		    "in the filter: for tables too large to send\">Search "
+		    "host</button>");
 	h_raw(h, "<input class=\"filter\" id=\"filter\" data-input="
 	    "\"filter\" placeholder=\"Filter rows\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
@@ -399,6 +403,29 @@ view_network(struct html *h, struct server *s)
 		    "\"loader\"></div></div>" : "<div class=\"empty\"><h2>No "
 		    "data</h2><p>The host has not answered yet.</p></div>");
 		return;
+	}
+	/*
+	 * A routing table too large to send: say how large, and that the
+	 * host can be searched; and say what it was searched for.
+	 */
+	if (app.net.kind == NET_ROUTES && (jget(app.net.data, "total") !=
+	    NULL || app.net.host_filter[0] != '\0')) {
+		h_raw(h, "<div class=\"notice info routes-cut\">");
+		if (jget(app.net.data, "total") != NULL)
+			h_fmt(h, "The table has <b>%lld</b> routes, too many to "
+			    "send. ", (long long)jint(app.net.data, "total", 0));
+		if (app.net.host_filter[0] != '\0') {
+			h_raw(h, "These are the rows containing <code>");
+			h_txt(h, app.net.host_filter);
+			h_fmt(h, "</code>%s. <button class=\"ghost small\" "
+			    "data-act=\"net-search-clear\">Clear</button>",
+			    jbool(app.net.data, "truncated") ? ", the first "
+			    "2000 of them" : "");
+		} else
+			h_raw(h, "These are its first 2000. Type what to look "
+			    "for in the filter, a prefix or an interface, and "
+			    "press <b>Search host</b>.");
+		h_raw(h, "</div>");
 	}
 	shown = 0;
 	switch (app.net.kind) {

@@ -22,8 +22,13 @@ privsep worker {
 load		/usr/local/lib/arcana/arcana-console.so arcw_onload
 pidfile		/var/run/arcana-console.pid
 
+# One worker: the logins being made, the servers and the enrolment
+# tokens live in its memory, and a second worker would not have them.
+# What takes time, talking to the hosts, does not run in the worker but
+# in its task threads, one per request under way: raise their number
+# for a larger fleet or for many pages open at once.
 workers			1
-task_threads		8
+task_threads		32
 http_body_max		65536
 http_media_type		application/wasm wasm
 http_media_type		application/manifest+json webmanifest

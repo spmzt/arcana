@@ -17,7 +17,7 @@
 
 #include "app.h"
 
-#define	MAX_PENDING	64
+#define	MAX_PENDING	256
 
 struct inflight {
 	int		 id;
@@ -64,8 +64,10 @@ api(const char *method, const char *url, const char *body, api_cb *cb,
 	struct inflight	*p;
 	int		 id;
 
+	/* Not sent is not "no answer": the console is not to blame. */
 	if ((p = slot()) == NULL) {
-		cb(0, NULL, "too many requests in flight", arg);
+		cb(429, NULL, "too many requests in flight here; try again",
+		    arg);
 		return (0);
 	}
 	p->cb = cb;

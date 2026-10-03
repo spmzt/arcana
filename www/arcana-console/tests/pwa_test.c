@@ -264,6 +264,22 @@ go(const char *path)
 		ucl_object_unref(v);
 }
 
+/* The viewport of a phone, or the window's own again. */
+static void
+phone(bool on)
+{
+	ucl_object_t	*v;
+
+	v = wd("POST", "/session/goog/cdp/execute", on ?
+	    "{\"cmd\":\"Emulation.setDeviceMetricsOverride\",\"params\":{"
+	    "\"width\":390,\"height\":844,\"deviceScaleFactor\":2,"
+	    "\"mobile\":true}}" :
+	    "{\"cmd\":\"Emulation.clearDeviceMetricsOverride\",\"params\":{}}");
+	if (v != NULL)
+		ucl_object_unref(v);
+	usleep(300000);
+}
+
 static void
 offline(bool off)
 {
@@ -693,6 +709,45 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.tab[data-arg=jobs]').click()");
 	wait_js("document.querySelector('table.jobs tr.j-done')", 10);
 	shot("5-jobs");
+
+	/*
+	 * On a phone: nothing is wider than the screen, on any of the
+	 * pages, and what is pressed is large enough to press.
+	 */
+	phone(true);
+	{
+		static const char *tabs[] = { "summary", "jails", "services",
+		    "network", "packages", "jobs" };
+		char name[32];
+		size_t t;
+
+		for (t = 0; t < 6; t++) {
+			snprintf(script, sizeof(script), "document.querySelector("
+			    "'button.tab[data-arg=%s]').click()", tabs[t]);
+			run(script);
+			usleep(700000);
+			snprintf(name, sizeof(name), "m%zu-%s", t, tabs[t]);
+			shot(name);
+			ATF_CHECK_MSG(js_true("document.documentElement."
+			    "scrollWidth <= window.innerWidth + 1"),
+			    "the %s tab is wider than a phone", tabs[t]);
+		}
+	}
+	run("document.querySelector('.tree .titem.fleet').click()");
+	usleep(500000);
+	shot("m6-fleet");
+	ATF_CHECK(js_true("document.documentElement.scrollWidth <= "
+	    "window.innerWidth + 1"));
+	run("document.querySelector('.dock > header').click()");
+	usleep(500000);
+	shot("m7-activity");
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=settings]').click()");
+	wait_js("document.querySelector('form[data-form=settings] input')", 10);
+	shot("m8-settings");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	run("document.querySelector('.hosts .hostcard').click()");
+	phone(false);
 
 	/* Log out, and in again with the key. */
 	run("document.querySelector('button[data-act=logout]').click()");

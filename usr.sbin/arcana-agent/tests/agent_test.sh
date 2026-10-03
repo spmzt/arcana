@@ -129,6 +129,18 @@ write_net()
 	cat > fake-netstat <<'EOS'
 #!/bin/sh
 echo "fake-netstat $*" >&2
+# With ./huge, a table too large to hold: the libxo document is cut
+# short, and the plain listing has 3000 routes to read line by line.
+if [ -f huge ] && [ "$*" = "--libxo json -rnW -f inet" ]; then
+	printf '{"statistics": {"route-information": {"route-table": {"rt-family": [{"address-family": "Internet", "rt-entry": ['
+	head -c 5000000 /dev/zero | tr '\0' ' '
+	exit 0
+fi
+if [ -f huge ] && [ "$*" = "-rnW -f inet" ]; then
+	printf 'Routing tables\n\nInternet:\nDestination        Gateway            Flags   Nhop#    Mtu            Netif   Metric Expire\n'
+	jot 3000 0 | awk '{ printf "10.%d.%d.0/24      192.0.2.1          UGS  %8d   1500              em0       1\n", int($1 / 250), $1 % 250, $1 }'
+	exit 0
+fi
 # With ./big, an IPv4 routing table of 6000 routes: over a megabyte.
 if [ -f big ] && [ "$*" = "--libxo json -rnW -f inet" ]; then
 	printf '{"statistics": {"route-information": {"route-table": {"rt-family": [{"address-family": "Internet", "rt-entry": ['
@@ -584,6 +596,23 @@ network_body()
 	atf_check -o save:big.out "$JGC" -c "$SOCK" net routes -4
 	atf_check -o match:'"destination":"10.99.99.99/32"' cat big.out
 	atf_check -o match:'last-entry' cat big.out
+
+	# A table too large to send whole: its first rows come, with how
+	# many there are; and it can be searched on the host.
+	rm big
+	touch huge
+	atf_check -o save:huge.out -e match:'the table has 3000 rows' \
+	    "$JGC" -c "$SOCK" net routes -4
+	atf_check -o match:'"destination":"10.0.0.0/24"' \
+	    -o match:'"destination":"10.7.249.0/24"' \
+	    -o not-match:'"destination":"10.8.0.0/24"' \
+	    -o match:'"interface-name":"em0"' cat huge.out
+	atf_check -o save:found.out "$JGC" -c "$SOCK" net routes -4 10.11.249.
+	atf_check -o match:'"destination":"10.11.249.0/24"' \
+	    -o not-match:'"destination":"10.0.0.0/24"' cat found.out
+	atf_check -o match:'"total":3000' -o match:'"truncated":"false"' \
+	    "$JGC" --libxo json -c "$SOCK" net routes -4 10.11.249.
+	rm huge
 }
 network_cleanup()
 {

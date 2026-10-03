@@ -233,3 +233,78 @@ exec_error(struct work *w, const struct execres *res, const char *prog)
 	return (wfmt(w, "%s exited with status %d: %.*s", prog,
 	    res->status, (int)(res->err + len - p), p));
 }
+
+/*
+ * Run a program for its lines: each goes to fn as it comes and none is
+ * kept, for output too large to hold.  Standard error is dropped.
+ * Returns the exit status, or -1 if the program could not be started.
+ */
+int
+run_exec_lines(struct work *w, char *const argv[],
+    void (*fn)(const char *, void *), void *arg)
+{
+	posix_spawn_file_actions_t	 fa;
+	posix_spawnattr_t		 sa;
+	sigset_t			 none, dfl;
+	static char			 pathenv[] =
+	    "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin";
+	char				*env[] = { pathenv, NULL };
+	const char			*cmdline;
+	char				*line;
+	size_t				 cap, i, lines;
+	ssize_t				 len;
+	FILE				*fp;
+	pid_t				 pid;
+	int				 op[2], status, rc, step;
+
+	cmdline = wvis(w, argv[0]);
+	for (i = 1; argv[i] != NULL; i++)
+		cmdline = wfmt(w, "%s %s", cmdline, wvis(w, argv[i]));
+	step = step_begin(w, ARC_STEP_KIND_EXEC, cmdline,
+	    "posix_spawn(3), no shell; read line by line");
+	if (pipe2(op, O_CLOEXEC) == -1)
+		err(1, "pipe2");
+	posix_spawn_file_actions_init(&fa);
+	posix_spawn_file_actions_addopen(&fa, STDIN_FILENO, "/dev/null",
+	    O_RDONLY, 0);
+	posix_spawn_file_actions_adddup2(&fa, op[1], STDOUT_FILENO);
+	posix_spawn_file_actions_addopen(&fa, STDERR_FILENO, "/dev/null",
+	    O_WRONLY, 0);
+	sigemptyset(&none);
+	sigemptyset(&dfl);
+	sigaddset(&dfl, SIGTERM);
+	sigaddset(&dfl, SIGINT);
+	posix_spawnattr_init(&sa);
+	posix_spawnattr_setsigmask(&sa, &none);
+	posix_spawnattr_setsigdefault(&sa, &dfl);
+	posix_spawnattr_setflags(&sa, POSIX_SPAWN_SETSIGMASK |
+	    POSIX_SPAWN_SETSIGDEF);
+	rc = posix_spawn(&pid, argv[0], &fa, &sa, argv, env);
+	posix_spawnattr_destroy(&sa);
+	posix_spawn_file_actions_destroy(&fa);
+	close(op[1]);
+	if (rc != 0 || (fp = fdopen(op[0], "r")) == NULL) {
+		close(op[0]);
+		step_end(w, step, false, "%s", strerror(rc != 0 ? rc : errno));
+		return (-1);
+	}
+	line = NULL;
+	cap = 0;
+	lines = 0;
+	while ((len = getline(&line, &cap, fp)) > 0) {
+		if (line[len - 1] == '\n')
+			line[len - 1] = '\0';
+		fn(line, arg);
+		lines++;
+	}
+	free(line);
+	fclose(fp);
+	while (waitpid(pid, &status, 0) == -1)
+		if (errno != EINTR)
+			err(1, "waitpid");
+	rc = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
+	step_end(w, step, rc == 0, "exit status %d, %zu lines read", rc,
+	    lines);
+	return (rc);
+}
+

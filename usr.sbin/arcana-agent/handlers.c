@@ -363,7 +363,7 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
 		    what);
 		memset(&nr, 0, sizeof(nr));
-		do_network(&w, j->action, j->family, &nr);
+		do_network(&w, j->action, j->family, j->source, &nr);
 		ok = nr.ok;
 		error = nr.error;
 		step_end(&w, root, ok, NULL);
@@ -798,6 +798,9 @@ arc_network_doit(cbl_req *req, const struct arc_network_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_NETWORK;
+	/* The text to search for rides where a build's source does. */
+	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
+	    xstrdup(rq->net_filter) : NULL;
 	j->action = rq->net_kind;
 	j->family = rq->has_net_family ? rq->net_family : ARC_NET_FAMILY_ALL;
 	return (start(j));

@@ -107,6 +107,7 @@ usage(void)
 	    "    service name config [-x key ...] [key=value ...]\n"
 	    "    net routes | nexthops | connections | sockets | interfaces "
 	    "[-4 | -6]\n"
+	    "    net routes [-4 | -6] text\n"
 	    "    interface name up | down\n"
 	    "    interface name add | remove address\n"
 	    "    route add destination gateway\n"
@@ -971,12 +972,22 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 			usage();
 		}
 	}
-	if (optind != argc)
+	/* A text to search the routes for, on the host. */
+	if (argc - optind == 1 && req.net_kind == ARC_NET_KIND_ROUTES)
+		req.net_filter = argv[optind];
+	else if (optind != argc)
 		usage();
 	if ((error = arc_network(cl, &req, &rsp)) != 0)
 		fail(cl, error, "net");
 	if (rsp->json != NULL)
 		xo_emit("{:json/%s}", rsp->json);
+	if (rsp->has_total)
+		xo_emit("{e:total/%ju}{e:truncated/%s}", (uintmax_t)rsp->total,
+		    rsp->truncated ? "true" : "false");
+	if (rsp->truncated)
+		xo_warnx("net %s: the table has %ju rows, more than a reply "
+		    "carries: these are the first; give a text to search for",
+		    kinds[i], (uintmax_t)rsp->total);
 	emit_trace(rsp->trace.v, rsp->trace.n);
 	error = rsp->ok ? 0 : 1;
 	if (!rsp->ok)
