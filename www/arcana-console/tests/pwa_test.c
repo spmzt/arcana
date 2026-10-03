@@ -317,6 +317,11 @@ ATF_TC_BODY(pwa, tc)
 	if (access(web, R_OK) == -1)
 		atf_tc_skip("no built PWA at %s", web);
 	harness_other_agent = true;
+	/* A copy of the shell, for the test of its update to change. */
+	snprintf(script, sizeof(script), "cp -R '%s' www-copy", web);
+	ATF_REQUIRE(system(script) == 0);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(web, sizeof(web), "%s/www-copy", cwd);
 	shots = atf_tc_has_config_var(tc, "shots") ?
 	    atf_tc_get_config_var(tc, "shots") : NULL;
 	start(tc, free_port(), web);
@@ -844,6 +849,24 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.auth .offline')", 20);
 	offline(false);
 	wait_js("document.querySelector('.shell')", 30);
+
+	/*
+	 * A newer shell on the console: the page finds it when it comes
+	 * back into view, takes it and loads itself again, still logged
+	 * in, and what it shows is the new files, not copies it kept.
+	 */
+	ATF_REQUIRE((fp = fopen("www-copy/style.css", "a")) != NULL);
+	fprintf(fp, "\n/* v2 */\n");
+	fclose(fp);
+	ATF_REQUIRE(system("sed -i '' 's/const CACHE = \"arcana-/const CACHE "
+	    "= \"arcana-2-/' www-copy/sw.js") == 0);
+	run("window.before = true; "
+	    "document.dispatchEvent(new Event('visibilitychange'));");
+	wait_js("window.before === undefined && "
+	    "document.querySelector('.shell')", 40);
+	run("fetch('style.css').then(r => r.text()).then(t => { "
+	    "window.v2 = t.includes('/* v2 */'); });");
+	wait_js("window.v2 === true", 10);
 }
 ATF_TC_CLEANUP(pwa, tc)
 {

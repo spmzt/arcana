@@ -14,8 +14,14 @@ const CACHE = "arcana-__BUILD__";
 const SHELL = __FILES__;
 
 self.addEventListener("install", (e) => {
+	/*
+	 * From the server, not from the browser's own cache: the files
+	 * come without a lifetime, so the browser keeps them as long as
+	 * it sees fit, and a new shell made of old files is no update.
+	 */
 	e.waitUntil(caches.open(CACHE)
-	    .then((c) => c.addAll(SHELL))
+	    .then((c) => c.addAll(SHELL.map((u) =>
+	    new Request(u, { cache: "reload" }))))
 	    .then(() => self.skipWaiting()));
 });
 
@@ -34,7 +40,8 @@ self.addEventListener("fetch", (e) => {
 		return;
 	/* Pages: the network first, the cached shell when offline. */
 	if (e.request.mode === "navigate") {
-		e.respondWith(fetch(e.request).catch(() =>
+		e.respondWith(fetch(e.request.url, { cache: "no-cache",
+		    credentials: "same-origin" }).catch(() =>
 		    caches.match("index.html")));
 		return;
 	}

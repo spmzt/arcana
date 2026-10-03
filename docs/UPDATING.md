@@ -12,6 +12,16 @@ turns that off. It does not replace itself, since it runs unprivileged:
 
 Certificates stay valid across updates.
 
+## The page and the installed app
+
+The page keeps its files in the browser, through a service worker, so
+that it opens without a network. It looks for a newer set on the
+console whenever it comes back into view, which for the app installed
+on a phone is every time it is opened, and every half hour while it
+stays open. When there is one it takes it and loads itself again; there
+is nothing to reinstall. The new files are fetched from the console
+itself, past the browser's own cache.
+
 ## Updating the console from the repository
 
 With a repository set (`agent_source`, under **Settings**), the header

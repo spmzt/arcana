@@ -410,12 +410,44 @@ addToLibrary({
 		});
 	},
 
+	/*
+	 * The service worker keeps the shell for when there is no network.
+	 * A newer shell on the console is looked for whenever the page
+	 * comes back into view, which for an installed app is every time it
+	 * is opened, and now and then while it stays open; when a newer
+	 * worker has taken over, the page loads itself again as the new
+	 * one.  Without that an installed app, which is resumed rather
+	 * than loaded, would stay what it was when it was installed.
+	 */
 	arc_sw_register: function () {
-		if ("serviceWorker" in navigator)
-			navigator.serviceWorker.register("sw.js")
-			    .catch(function (e) {
-				console.warn("service worker:", e);
+		var had, reloading = false;
+
+		if (!("serviceWorker" in navigator))
+			return;
+		had = !!navigator.serviceWorker.controller;
+		navigator.serviceWorker.addEventListener("controllerchange",
+		    function () {
+			/* The first worker of all changes nothing shown. */
+			if (had && !reloading) {
+				reloading = true;
+				location.reload();
+			}
+			had = true;
+		});
+		navigator.serviceWorker.register("sw.js",
+		    { updateViaCache: "none" }).then(function (reg) {
+			function check() {
+				reg.update().catch(function () {});
+			}
+			document.addEventListener("visibilitychange",
+			    function () {
+				if (!document.hidden)
+					check();
 			});
+			setInterval(check, 30 * 60 * 1000);
+		}).catch(function (e) {
+			console.warn("service worker:", e);
+		});
 	},
 
 	arc_now: function () {
