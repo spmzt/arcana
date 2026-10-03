@@ -202,8 +202,11 @@ instead, mount `ca.pem`, `client.pem` and `client.key` into
 With no key registered, the console writes a one-time token to
 `/var/db/arcana/setup-token` and logs that it did. Open the console,
 paste the token, touch your security key: that registers it and logs you
-in, and the token is gone. Add a spare key from **Keys** afterwards. On
-Android, Chrome offers to install the console as an app.
+in, and the token is gone. Add a spare key from **Keys** afterwards. Opened
+in the browser of a phone or tablet, the console offers to install
+itself as an app: with the browser's own prompt on Android, and with
+where to tap in Safari on iOS and in Firefox. **Not now** stops the
+offer in that browser.
 
 A phone's passkey works as a second key: open the console on the phone,
 log in once with the security key (Chrome can use it over USB or NFC, or

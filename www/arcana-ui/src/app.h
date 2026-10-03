@@ -48,6 +48,9 @@ void		 arc_fx_set(int);
 void		 arc_notify(const char *, const char *);
 int		 arc_notify_state(void);
 void		 arc_notify_ask(void);
+int		 arc_install_state(void);
+void		 arc_install_prompt(void);
+void		 arc_install_dismiss(void);
 
 /* Called from bridge.js. */
 void		 arc_on_action(char *, char *, char *);
@@ -270,6 +273,7 @@ struct app {
 	bool		 visible;
 	bool		 fx;		/* blur and idle animations */
 	int		 notify;	/* 0 not asked, 1 granted, 2 denied, 3 none */
+	int		 install;	/* 0 no offer, 1 prompt, 2 iOS, 3 menu */
 	bool		 setup_required;
 	char		 version[32];	/* the console's, from /api/health */
 	char		 update_latest[64];	/* a newer release, or "" */

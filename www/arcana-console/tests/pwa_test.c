@@ -333,6 +333,30 @@ ATF_TC_BODY(pwa, tc)
 	/* The effects class comes from a script in the head: the page's
 	 * Content-Security-Policy must let it run. */
 	ATF_CHECK(js_true("document.documentElement.classList.contains('fx')"));
+
+	/* A desktop browser is not asked to install the console; a phone
+	 * is, with the browser's own prompt, and can say not now. */
+	ATF_CHECK(!js_true("document.querySelector('.banner.install')"));
+	run("Object.defineProperty(navigator, 'userAgent', { get: () => "
+	    "'Mozilla/5.0 (Linux; Android 14) Chrome/126 Mobile' }); "
+	    "const e = new Event('beforeinstallprompt'); "
+	    "e.prompt = () => { window.prompted = true; }; "
+	    "e.userChoice = Promise.resolve({ outcome: 'dismissed' }); "
+	    "window.dispatchEvent(e);");
+	wait_js("document.querySelector('.banner.install button"
+	    "[data-act=install]')", 5);
+	shot("0-install-offer");
+	run("document.querySelector('button[data-act=install]').click()");
+	wait_js("window.prompted === true && "
+	    "!document.querySelector('.banner.install')", 5);
+	run("const e = new Event('beforeinstallprompt'); e.prompt = () => {}; "
+	    "e.userChoice = Promise.resolve({ outcome: 'dismissed' }); "
+	    "window.dispatchEvent(e);");
+	wait_js("document.querySelector('.banner.install')", 5);
+	run("document.querySelector('button[data-act=install-dismiss]')"
+	    ".click()");
+	wait_js("!document.querySelector('.banner.install') && "
+	    "localStorage.getItem('arc_install') === '0'", 5);
 	ATF_CHECK_MSG(access("data/setup-token", F_OK) == -1,
 	    "setup token not consumed");
 

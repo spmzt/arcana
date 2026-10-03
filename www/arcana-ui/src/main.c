@@ -639,6 +639,14 @@ dispatch(const char *act, const char *arg, const char *value)
 		login(true);
 	} else if (strcmp(act, "logout") == 0) {
 		logout();
+	} else if (strcmp(act, "install") == 0) {
+		arc_install_prompt();
+		app.install = arc_install_state();
+	} else if (strcmp(act, "install-dismiss") == 0) {
+		arc_install_dismiss();
+		app.install = 0;
+	} else if (strcmp(act, "install-changed") == 0) {
+		app.install = arc_install_state();
 	} else if (strcmp(act, "fx") == 0) {
 		app.fx = !app.fx;
 		arc_fx_set(app.fx ? 1 : 0);
@@ -712,6 +720,7 @@ main(void)
 	arc_sw_register();
 	app.fx = arc_fx_get() != 0;
 	app.notify = arc_notify_state();
+	app.install = arc_install_state();
 	render();
 	check_health();
 	last_health = last_refresh = arc_now();

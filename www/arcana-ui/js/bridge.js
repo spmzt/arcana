@@ -262,6 +262,77 @@ addToLibrary({
 	},
 
 	/*
+	 * Installing the console as an app, offered on a phone or tablet
+	 * that has it open in the browser.  Chromium hands over an event to
+	 * prompt with, which can come before the program has started: the
+	 * listeners are set when this file loads.  State: 0 nothing to
+	 * offer (installed, dismissed, or not a mobile browser), 1 a prompt
+	 * is ready, 2 Safari on iOS, where it is done from the Share menu,
+	 * 3 another mobile browser, where it is in the browser's menu.
+	 */
+	$arcInstall: { ev: null, ready: false },
+	$arcInstall__deps: ["$arcStr"],
+	$arcInstall__postset: "(function () {" +
+	    "function tell() {" +
+	    "if (arcInstall.ready) Module._arc_on_action(" +
+	    "arcStr('install-changed'), arcStr(''), arcStr('')); }" +
+	    "window.addEventListener('beforeinstallprompt', function (e) {" +
+	    "e.preventDefault(); arcInstall.ev = e; tell(); });" +
+	    "window.addEventListener('appinstalled', function () {" +
+	    "arcInstall.ev = null; arcInstall.done = true; tell(); });" +
+	    "})();",
+	arc_install_state__deps: ["$arcInstall"],
+	arc_install_state: function () {
+		var ua = navigator.userAgent, ios;
+
+		arcInstall.ready = true;
+		if (arcInstall.done || navigator.standalone === true ||
+		    matchMedia("(display-mode: standalone)").matches)
+			return (0);
+		try {
+			if (localStorage.getItem("arc_install") === "0")
+				return (0);
+		} catch (e) {
+		}
+		/* An iPad says it is a Mac, but a Mac has no touch screen. */
+		ios = /iPhone|iPad|iPod/.test(ua) ||
+		    (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+		if (!ios && !/Android/.test(ua) &&
+		    !(navigator.userAgentData && navigator.userAgentData.mobile))
+			return (0);
+		if (arcInstall.ev !== null)
+			return (1);
+		if (ios)
+			return (2);
+		return (/Firefox/.test(ua) ? 3 : 0);
+	},
+	arc_install_prompt__deps: ["$arcInstall", "$arcStr"],
+	arc_install_prompt: function () {
+		var ev = arcInstall.ev;
+
+		if (ev === null)
+			return;
+		/* The event prompts once; the browser sends another when
+		 * the app can be offered again. */
+		arcInstall.ev = null;
+		ev.prompt();
+		ev.userChoice.then(function (c) {
+			if (c && c.outcome === "accepted")
+				arcInstall.done = true;
+		}).catch(function () {
+		}).then(function () {
+			Module._arc_on_action(arcStr("install-changed"),
+			    arcStr(""), arcStr(""));
+		});
+	},
+	arc_install_dismiss: function () {
+		try {
+			localStorage.setItem("arc_install", "0");
+		} catch (e) {
+		}
+	},
+
+	/*
 	 * Desktop notifications for tasks that took long: 0 not asked yet,
 	 * 1 granted, 2 denied, 3 the browser has none.  Shown through the
 	 * service worker where there is one, as installed apps need.

@@ -28,6 +28,7 @@ static const char *icon_refresh =
 
 static void	topbar(struct html *);
 static void	banner(struct html *);
+static void	install_offer(struct html *);
 static void	rail(struct html *);
 static void	stage(struct html *);
 static void	hostbar(struct html *, struct server *);
@@ -203,9 +204,42 @@ topbar(struct html *h)
 	    "</div></header>");
 }
 
+/*
+ * On a phone or tablet with the console open in the browser: offer to
+ * install it as an app, with the browser's prompt where it has one and
+ * the way through its menus where it does not.
+ */
+static void
+install_offer(struct html *h)
+{
+
+	if (app.install == 0)
+		return;
+	h_raw(h, "<div class=\"banner info install\"><span><b>Install "
+	    "Arcana on this device.</b> ");
+	if (app.install == 1)
+		h_raw(h, "It opens full screen from the home screen, like an "
+		    "app.");
+	else if (app.install == 2)
+		h_raw(h, "In Safari, tap Share, then <q>Add to Home Screen"
+		    "</q>.");
+	else
+		h_raw(h, "In the browser's menu, tap <q>Add app to Home screen"
+		    "</q>.");
+	h_raw(h, "</span>");
+	if (app.install == 1)
+		h_raw(h, "<button class=\"primary\" data-act=\"install\">"
+		    "Install</button>");
+	h_raw(h, "<button class=\"ghost\" data-act=\"install-dismiss\" "
+	    "title=\"Do not offer again in this browser\">Not now</button>"
+	    "</div>");
+}
+
 static void
 banner(struct html *h)
 {
+
+	install_offer(h);
 
 	if (!app.online)
 		h_raw(h, "<div class=\"banner warn\"><b>Offline.</b> The "
@@ -1091,6 +1125,7 @@ auth_screen(struct html *h)
 		    "title=\"A passkey on this device, or on a phone nearby\">"
 		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
 	}
+	install_offer(h);
 	if (app.origin_error[0] != '\0') {
 		h_raw(h, "<p class=\"err origin\">");
 		h_txt(h, app.origin_error);
