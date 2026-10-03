@@ -361,6 +361,11 @@ ATF_TC_BODY(pwa, tc)
 	    "setup token not consumed");
 
 	/* A server, its jails, and starting one. */
+	/* A third jail, so the tree has something to leave out. */
+	ATF_REQUIRE((fp = fopen("etc/jail.conf.d/cache.conf", "w")) != NULL);
+	fprintf(fp, "cache {\n\tpath = \"/jails/cache\";\n\tip4.addr = "
+	    "10.0.0.30;\n}\n");
+	fclose(fp);
 	run("document.querySelector('button[data-act=add-server]').click()");
 	wait_js("document.querySelector('form[data-form=add-server]')", 5);
 	snprintf(script, sizeof(script), "const f = document.querySelector("
@@ -372,6 +377,31 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.tree .titem.server.selected')", 20);
 	wait_js("document.querySelector('.topo .tnode.s-stopped')", 20);
 	ATF_CHECK(js_true("document.querySelector('.tree .titem.leaf')"));
+	/* Its jails fold away and come back; the choice is kept. */
+	run("document.querySelector('.tree button[data-act=fold]').click()");
+	wait_js("!document.querySelector('.tree .titem.leaf') && "
+	    "localStorage.getItem('arc_fold').includes('\"')", 5);
+	run("document.querySelector('.tree button[data-act=fold]').click()");
+	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 3",
+	    5);
+	ATF_CHECK(!js_true("document.querySelector('.tree .titem.more')"));
+	/* With no room under the hosts, a row stands for the rest and
+	 * shows them when asked. */
+	ucl_object_unref(wd("POST", "/session/window/rect",
+	    "{\"width\":1280,\"height\":330}"));
+	wait_js("document.querySelector('.tree .titem.more') && "
+	    "document.querySelectorAll('.tree .titem.leaf:not(.more)').length "
+	    "=== 1", 5);
+	shot("1a-tree-more");
+	run("document.querySelector('.tree .titem.more').click()");
+	wait_js("document.querySelectorAll('.tree .titem.leaf:not(.more)')."
+	    "length === 3 && document.querySelector('.tree .titem.more')."
+	    "textContent.includes('fewer')", 5);
+	run("document.querySelector('.tree .titem.more').click()");
+	ucl_object_unref(wd("POST", "/session/window/rect",
+	    "{\"width\":1280,\"height\":800}"));
+	wait_js("!document.querySelector('.tree .titem.more') && "
+	    "document.querySelectorAll('.tree .titem.leaf').length === 3", 5);
 	ATF_CHECK(js_true("document.querySelector('.tiles .tile')"));
 	shot("1-host-summary");
 	/* The fleet page lists it, and leads back to it. */

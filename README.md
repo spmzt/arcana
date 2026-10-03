@@ -232,7 +232,10 @@ The console is laid out as a tree and tabs.
 
 - The **tree** on the left: the fleet, its hosts, and each host's jails.
   What you select decides the page. **Enrol a host** and **Add a server**
-  are at its top.
+  are at its top. The arrow on a host folds its jails away, and the
+  browser remembers that. When the jails do not fit in the space under
+  the hosts, each host shows what fits and a **+N more…** row that
+  shows the rest.
 - **All hosts**: every host as a card with CPU, memory and ZFS, how many
   jails run, and the fleet as a graph from the console through the
   hosts to their jails; nodes are links.

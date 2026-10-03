@@ -636,6 +636,8 @@ label {
 	margin: 0;
 	padding: 0 .4rem .6rem;
 	overflow-y: auto;
+	flex: 1;
+	min-height: 0;
 }
 .tree .titem {
 	display: flex;
@@ -673,6 +675,15 @@ label {
 .tree .titem.leaf { padding: .22rem .55rem .22rem 1.9rem; font-size: .8rem; }
 .tree .titem.leaf .name { flex: 1; }
 .tree .titem .del { opacity: 0; }
+.tree .titem .fold {
+	width: 1.1rem;
+	margin: 0 -.25rem 0 -.3rem;
+	padding: 0;
+	color: var(--dim);
+}
+.tree .titem .fold:hover { color: var(--cyan); }
+.tree .titem.leaf.more { color: var(--dim); font-size: .74rem; }
+.tree .titem.leaf.more:hover { color: var(--cyan); }
 .tree .titem:hover .del { opacity: 1; }
 .tree .titem.up { --c: var(--cyan); }
 .tree .titem.down { --c: var(--red); }
@@ -1956,6 +1967,11 @@ html.fx .edges path { animation: flow 1.2s linear infinite; }
 
 	.rail-head {
 		display: none;
+	}
+
+	.tree {
+		flex: none;
+		max-height: 34vh;
 	}
 
 	.servers {

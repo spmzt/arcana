@@ -132,6 +132,9 @@ addToLibrary({
 			if (e.key === "Escape")
 				act("escape", "", "");
 		});
+		window.addEventListener("resize", function () {
+			act("resize", "", "");
+		});
 		window.addEventListener("online", function () {
 			Module._arc_on_net(1);
 		});
@@ -242,6 +245,57 @@ addToLibrary({
 	arc_title__deps: ["$UTF8ToString"],
 	arc_title: function (p) {
 		document.title = UTF8ToString(p);
+	},
+
+	/*
+	 * How many jail rows the tree has room for, besides its other
+	 * rows: the free space under the hosts.  -1 before it is drawn.
+	 * It depends on the tree's height and on the rows that are always
+	 * there, not on the jails shown, so it does not feed on itself.
+	 */
+	arc_tree_room: function () {
+		var tree = document.querySelector(".tree"), leaf, max, h, used;
+
+		if (tree === null)
+			return (-1);
+		max = parseFloat(getComputedStyle(tree).maxHeight);
+		h = isNaN(max) ? tree.clientHeight : max;
+		used = 0;
+		tree.querySelectorAll(".titem:not(.leaf)").forEach(function (e) {
+			used += e.offsetHeight;
+		});
+		leaf = tree.querySelector(".titem.leaf");
+		return (Math.max(0, Math.floor((h - used - 8) /
+		    (leaf !== null && leaf.offsetHeight > 0 ?
+		    leaf.offsetHeight : 27))));
+	},
+
+	/* The hosts whose jails are folded away in the tree, per browser. */
+	$arcFolds: function () {
+		try {
+			var v = JSON.parse(localStorage.getItem("arc_fold"));
+
+			return (Array.isArray(v) ? v : []);
+		} catch (e) {
+			return ([]);
+		}
+	},
+	arc_fold_get__deps: ["$arcFolds", "$UTF8ToString"],
+	arc_fold_get: function (idp) {
+		return (arcFolds().indexOf(UTF8ToString(idp)) !== -1 ? 1 : 0);
+	},
+	arc_fold_set__deps: ["$arcFolds", "$UTF8ToString"],
+	arc_fold_set: function (idp, on) {
+		var id = UTF8ToString(idp), v = arcFolds().filter(function (x) {
+			return (x !== id);
+		});
+
+		if (on)
+			v.push(id);
+		try {
+			localStorage.setItem("arc_fold", JSON.stringify(v));
+		} catch (e) {
+		}
 	},
 
 	/* Visual effects on or off, kept per browser; index.html applies

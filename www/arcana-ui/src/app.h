@@ -44,6 +44,9 @@ void		 arc_title(const char *);
 char		*arc_hostname(void);
 char		*arc_origin(void);
 int		 arc_fx_get(void);
+int		 arc_tree_room(void);
+int		 arc_fold_get(const char *);
+void		 arc_fold_set(const char *, int);
 void		 arc_fx_set(int);
 void		 arc_notify(const char *, const char *);
 int		 arc_notify_state(void);
@@ -188,6 +191,7 @@ struct server {
 	int		 nhist;		/* samples in hist, newest last */
 	ucl_object_t	*jobs;		/* the host's own list of jobs */
 	bool		 jobs_loading;
+	bool		 tree_all;	/* every jail in the tree, room or not */
 	ucl_object_t	*services;	/* last good services reply */
 	double		 services_fetched;
 	bool		 services_loading;

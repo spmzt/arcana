@@ -42,6 +42,7 @@ static void	toasts(struct html *);
 static void	auth_screen(struct html *);
 static void	fmt_kb(char *, size_t, int64_t);
 static int	count_state(const struct server *, const char *);
+static void	tree_caps(int *);
 static bool	stale(const struct server *);
 
 void
@@ -272,6 +273,56 @@ banner(struct html *h)
  * The resource tree: the fleet, its hosts, and under each host its
  * jails.  What is selected here decides what the stage shows.
  */
+#define	TREE_MIN	2	/* rows a host with more jails than room gets */
+
+/*
+ * How many rows each host's jails get in the tree: all of them while
+ * they fit in the room under the hosts, a fair share of it otherwise,
+ * what a small host leaves going to the larger ones.  A host shown in
+ * full takes its rows first; a folded one takes none.
+ */
+static void
+tree_caps(int *cap)
+{
+	struct server	*s;
+	int		 n[MAX_SERVERS];
+	int		 i, room, open, share;
+	bool		 again;
+
+	room = arc_tree_room();
+	open = 0;
+	for (i = 0; i < app.nservers; i++) {
+		s = &app.servers[i];
+		n[i] = count_state(s, NULL);
+		cap[i] = n[i];
+		if (n[i] == 0 || arc_fold_get(s->id) != 0)
+			n[i] = 0;
+		else if (s->tree_all) {
+			room -= n[i] + 1;
+			n[i] = 0;
+		} else
+			open++;
+	}
+	if (room < 0 && arc_tree_room() < 0)
+		return;			/* not drawn yet: no limit */
+	/* Hosts that fit in a share take what they need. */
+	do {
+		again = false;
+		share = open > 0 ? (room > 0 ? room : 0) / open : 0;
+		for (i = 0; i < app.nservers; i++)
+			if (n[i] > 0 && n[i] <= share) {
+				room -= n[i];
+				n[i] = 0;
+				open--;
+				again = true;
+			}
+	} while (again && open > 0);
+	/* The rest get a share each: at least a jail and the "more" row. */
+	for (i = 0; i < app.nservers; i++)
+		if (n[i] > 0)
+			cap[i] = share < TREE_MIN ? TREE_MIN : share;
+}
+
 static void
 rail(struct html *h)
 {
@@ -280,8 +331,11 @@ rail(struct html *h)
 	struct server		*s;
 	const char		*cls, *name, *st;
 	char			 buf[64];
-	int			 i, run, all;
+	int			 cap[MAX_SERVERS];
+	int			 i, run, all, idx, sidx, lim;
+	bool			 folded, selhere;
 
+	tree_caps(cap);
 	h_raw(h, "<aside class=\"rail\"><div class=\"rail-head\">"
 	    "<span class=\"label\">Fleet</span>"
 	    "<button class=\"icon\" data-act=\"enrol\" title=\"Enrol a host\">"
@@ -300,7 +354,15 @@ rail(struct html *h)
 		    app.node == NODE_HOST ? " selected" : "");
 		h_raw(h, " data-act=\"select-server\"");
 		h_attr(h, "data-arg", s->id);
-		h_raw(h, "><i class=\"led\"></i><div class=\"meta\">"
+		h_raw(h, ">");
+		folded = arc_fold_get(s->id) != 0;
+		if (all > 0) {
+			h_fmt(h, "<button class=\"icon fold\" data-act=\"fold\" "
+			    "title=\"%s its jails\"", folded ? "Show" : "Hide");
+			h_attr(h, "data-arg", s->id);
+			h_fmt(h, ">%s</button>", folded ? "▸" : "▾");
+		}
+		h_raw(h, "<i class=\"led\"></i><div class=\"meta\">"
 		    "<span class=\"name\">");
 		h_txt(h, s->name);
 		h_raw(h, "</span><span class=\"uri\">");
@@ -328,23 +390,60 @@ rail(struct html *h)
 		    "\" title=\"Remove\"");
 		h_attr(h, "data-arg", s->id);
 		h_raw(h, ">×</button></li>");
-		/* Its jails, as leaves. */
+		if (folded)
+			continue;
+		/*
+		 * Its jails, as leaves: as many as there is room for, the
+		 * selected one among them, and a row that shows the rest.
+		 */
+		selhere = i == app.sel && app.node == NODE_JAIL;
+		sidx = -1;
+		idx = 0;
+		it = NULL;
+		while (selhere && s->list != NULL && (j = ucl_object_iterate(
+		    jget(s->list, "jails"), &it, true)) != NULL) {
+			if ((name = jstr(j, "name")) == NULL)
+				continue;
+			if (strcmp(app.jail, name) == 0)
+				sidx = idx;
+			idx++;
+		}
+		lim = all;
+		if (!s->tree_all && cap[i] < all) {
+			lim = cap[i] - 1;	/* a row is the "more" one */
+			if (sidx >= lim)
+				lim--;
+		}
+		idx = 0;
 		it = NULL;
 		while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
 		    "jails"), &it, true)) != NULL) {
 			if ((name = jstr(j, "name")) == NULL)
 				continue;
+			if (idx++ >= lim && idx - 1 != sidx)
+				continue;
 			st = s->failed ? "unknown" : h_word(jstr(j, "state"),
 			    "unknown");
 			h_fmt(h, "<li class=\"titem leaf s-%s%s\" "
-			    "data-act=\"open-jail\"", st, i == app.sel &&
-			    app.node == NODE_JAIL && strcmp(app.jail, name) ==
-			    0 ? " selected" : "");
+			    "data-act=\"open-jail\"", st, selhere &&
+			    strcmp(app.jail, name) == 0 ? " selected" : "");
 			h_attr(h, "data-arg", name);
 			h_attr(h, "data-value", s->id);
 			h_raw(h, "><i class=\"led\"></i><span class=\"name\">");
 			h_txt(h, name);
 			h_raw(h, "</span></li>");
+		}
+		if (s->tree_all || cap[i] < all) {
+			h_raw(h, "<li class=\"titem leaf more\" "
+			    "data-act=\"tree-more\"");
+			h_attr(h, "data-arg", s->id);
+			if (s->tree_all)
+				h_raw(h, "><span class=\"name\">show fewer"
+				    "</span></li>");
+			else
+				h_fmt(h, "><span class=\"name\">+%d more…"
+				    "</span></li>", all - lim - (sidx >= lim ?
+				    1 : 0));
 		}
 	}
 	h_raw(h, "</ul></aside>");
