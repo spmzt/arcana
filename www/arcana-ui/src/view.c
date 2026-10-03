@@ -371,9 +371,8 @@ rail(struct html *h)
 		if (s->list != NULL && jstr(s->list, "host.version") != NULL) {
 			const char *ver = jstr(s->list, "host.version");
 
-			h_raw(h, app.version[0] != '\0' && strcmp(ver,
-			    app.version) != 0 ? "<span class=\"ver warn\" "
-			    "title=\"Not the console's version\">" :
+			h_raw(h, agent_outdated(s) ? "<span class=\"ver warn\" "
+			    "title=\"Not the console's arcana-agent\">" :
 			    "<span class=\"ver\">");
 			h_txt(h, ver);
 			h_raw(h, "</span>");
@@ -488,10 +487,10 @@ hostbar(struct html *h, struct server *s)
 			    "not running as root: changes will fail\">"
 			    "unprivileged</span>");
 		if (jstr(host, "version") != NULL) {
-			h_raw(h, app.version[0] != '\0' && strcmp(jstr(host,
-			    "version"), app.version) != 0 ? "<span class=\"warn\" "
-			    "title=\"Not the console's version: update arcana-agent "
-			    "on this host\">arcana-agent " : "<span>arcana-agent ");
+			h_raw(h, agent_outdated(s) ? "<span class=\"warn\" "
+			    "title=\"Not the arcana-agent this console has: "
+			    "another build, or another version\">arcana-agent " :
+			    "<span>arcana-agent ");
 			h_txt(h, jstr(host, "version"));
 			h_raw(h, "</span>");
 		}
@@ -500,9 +499,7 @@ hostbar(struct html *h, struct server *s)
 			    "data-act=\"agent-update\"");
 			h_attr(h, "data-arg", s->id);
 			h_raw(h, " title=\"Send this host the console's "
-			    "arcana-agent\">Update agent to ");
-			h_txt(h, app.version);
-			h_raw(h, "</button>");
+			    "arcana-agent\">Update agent</button>");
 		}
 	} else {
 		h_raw(h, "<span>");

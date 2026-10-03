@@ -119,6 +119,7 @@ int		 api_services(struct http_request *);
 int		 api_service_action(struct http_request *);
 int		 api_service_config(struct http_request *);
 int		 api_agent_update(struct http_request *);
+const char	*agent_build(void);
 int		 api_network(struct http_request *);
 int		 api_stats(struct http_request *);
 int		 api_packages(struct http_request *);

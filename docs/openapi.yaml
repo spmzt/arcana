@@ -607,6 +607,9 @@ paths:
                     description: The version the program in place reports.
                   restarting: { type: boolean }
                   trace: { type: object }
+      x-note: >-
+        GET /api/health carries agent_build, the SHA-256 of the program
+        the console would send; a host reports its own as host.build.
         "502": { $ref: "#/components/responses/Error" }
 
   /api/servers/{server}/jobs/{job}:

@@ -31,6 +31,7 @@ extern const char	*origin_hdr;
 extern char		 harness_origin[64];
 extern int		 harness_port;
 extern char		 harness_webconf[1024];
+extern bool		 harness_other_agent;
 
 const char	*locate(const atf_tc_t *, const char *, const char *,
 		    const char *);

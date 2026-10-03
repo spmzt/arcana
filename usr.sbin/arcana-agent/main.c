@@ -25,6 +25,7 @@
 #include <unistd.h>
 
 #include <openssl/err.h>
+#include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
 
@@ -216,6 +217,30 @@ check_tls_files(const char *cafile, const char *certfile, const char *keyfile)
 	EVP_PKEY_free(key);
 }
 
+/* The SHA-256 of the program at path into opts.build; none if unread. */
+static void
+build_id(const char *path)
+{
+	EVP_MD_CTX	*md;
+	unsigned char	 buf[65536], sum[EVP_MAX_MD_SIZE];
+	unsigned int	 i, n;
+	size_t		 r;
+	FILE		*fp;
+
+	if ((fp = fopen(path, "r")) == NULL)
+		return;
+	if ((md = EVP_MD_CTX_new()) != NULL && EVP_DigestInit_ex(md,
+	    EVP_sha256(), NULL) == 1) {
+		while ((r = fread(buf, 1, sizeof(buf), fp)) > 0)
+			EVP_DigestUpdate(md, buf, r);
+		if (!ferror(fp) && EVP_DigestFinal_ex(md, sum, &n) == 1)
+			for (i = 0; i < n; i++)
+				snprintf(opts.build + 2 * i, 3, "%02x", sum[i]);
+	}
+	EVP_MD_CTX_free(md);
+	fclose(fp);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -314,7 +339,7 @@ main(int argc, char *argv[])
 	}
 	if (optind != argc)
 		usage();
-	if (opts.self_path == NULL) {
+	{
 		static char	self[MAXPATHLEN];
 		size_t		len = sizeof(self);
 		int		mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME,
@@ -322,7 +347,10 @@ main(int argc, char *argv[])
 
 		if (sysctl(mib, 4, self, &len, NULL, 0) == -1)
 			err(1, "sysctl kern.proc.pathname");
-		opts.self_path = self;
+		if (opts.self_path == NULL)
+			opts.self_path = self;
+		/* Which build this is, before an update changes the file. */
+		build_id(self);
 	}
 	if (nl == 0)
 		uris[nl++] = PATH_SOCKET;

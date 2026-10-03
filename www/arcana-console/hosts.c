@@ -240,6 +240,7 @@ host_object(const struct arc_host *h)
 	put(o, "securelevel", ucl_object_fromint(h->securelevel));
 	put(o, "privileged", ucl_object_frombool(h->privileged));
 	put_str(o, "version", h->version);
+	put_str(o, "build", h->build);
 	return (o);
 }
 
@@ -431,6 +432,36 @@ agent_binary(uint8_t **binp, size_t *lenp, char sha[65])
 	*binp = bin;
 	*lenp = off;
 	return (NULL);
+}
+
+/*
+ * The SHA-256 of the arcana-agent the console would send, for the page
+ * to tell which hosts run another build; NULL when there is none.  Kept
+ * until the file changes.
+ */
+const char *
+agent_build(void)
+{
+	static char		 sha[65];
+	static struct timespec	 mtime;
+	static off_t		 size;
+	struct stat		 sb;
+	uint8_t			*bin;
+	size_t			 len;
+
+	if (stat(cfg.agent_binary, &sb) == -1)
+		return (NULL);
+	if (sha[0] != '\0' && sb.st_size == size && sb.st_mtim.tv_sec ==
+	    mtime.tv_sec && sb.st_mtim.tv_nsec == mtime.tv_nsec)
+		return (sha);
+	if (agent_binary(&bin, &len, sha) != NULL) {
+		sha[0] = '\0';
+		return (NULL);
+	}
+	free(bin);
+	size = sb.st_size;
+	mtime = sb.st_mtim;
+	return (sha);
 }
 
 static int

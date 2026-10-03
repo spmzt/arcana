@@ -52,6 +52,7 @@ struct opts {
 	const char	*zpool_bin;
 	const char	*pkg_bin;
 	const char	*self_path;	/* the program an update replaces */
+	char		 build[65];	/* SHA-256 of the running program */
 	bool		 debug;
 };
 

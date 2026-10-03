@@ -295,10 +295,11 @@ Certificates stay valid across updates.
 
 ### Updating the agents
 
-The console marks a host whose `arcana-agent` is not its own version,
+The console marks a host whose `arcana-agent` is not the one it has,
 and can update it: **Update agent** beside the version on the host's
-page, or **Update N agents** on the fleet page for every host that is
-behind. The console sends the `arcana-agent` installed with it
+page, or **Update N agents** on the fleet page for every such host.
+Builds are told apart by the program's SHA-256, which each agent
+reports, so a rebuilt agent of the same version counts as another. The console sends the `arcana-agent` installed with it
 (`agent_binary` in `web.conf` names another). Each host
 
 1. checks the program against the SHA-256 sent with it,

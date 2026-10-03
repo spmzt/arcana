@@ -70,4 +70,6 @@ host_info(struct work *w, struct arc_host *h)
 	h->has_privileged = true;
 	h->privileged = geteuid() == 0;
 	h->version = ARCANA_AGENT_VERSION;
+	if (opts.build[0] != '\0')
+		h->build = opts.build;
 }

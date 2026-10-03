@@ -546,7 +546,7 @@ ATF_TC_BODY(agent_update, tc)
 {
 	struct authn	a;
 	struct resp	r;
-	char		path[160], cwd[MAXPATHLEN], body[MAXPATHLEN];
+	char		path[160], jails[160], cwd[MAXPATHLEN], body[MAXPATHLEN];
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	start(tc, 0, NULL);
@@ -557,6 +557,21 @@ ATF_TC_BODY(agent_update, tc)
 	EXPECT(&r, 200);
 	snprintf(path, sizeof(path), "/api/servers/%s/agent-update", jstr(&r,
 	    "servers.0.id"));
+	resp_free(&r);
+
+	/* The console says which build it sends; the host runs that one
+	 * here, so the page has nothing to offer. */
+	http("GET", "/api/health", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "agent_build") != NULL);
+	strlcpy(body, jstr(&r, "agent_build"), sizeof(body));
+	ATF_CHECK_EQ(64, strlen(body));
+	resp_free(&r);
+	snprintf(jails, sizeof(jails), "%.*s/jails", (int)(strrchr(path, '/') -
+	    path), path);
+	http("GET", jails, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(body, jstr(&r, "host.build"));
 	resp_free(&r);
 
 	ATF_REQUIRE(access("installed-agent", F_OK) == -1);

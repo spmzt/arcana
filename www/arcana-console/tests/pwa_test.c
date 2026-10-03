@@ -300,6 +300,7 @@ ATF_TC_BODY(pwa, tc)
 	    "webroot", "/usr/local/www/arcana-console"));
 	if (access(web, R_OK) == -1)
 		atf_tc_skip("no built PWA at %s", web);
+	harness_other_agent = true;
 	shots = atf_tc_has_config_var(tc, "shots") ?
 	    atf_tc_get_config_var(tc, "shots") : NULL;
 	start(tc, free_port(), web);
@@ -407,6 +408,20 @@ ATF_TC_BODY(pwa, tc)
 	    "document.querySelectorAll('.tree .titem.leaf').length === 3", 5);
 	ATF_CHECK(js_true("document.querySelector('.tiles .tile')"));
 	shot("1-host-summary");
+	/* The host runs another build of arcana-agent than the console
+	 * has: the page offers to send its own, here without a restart. */
+	wait_js("document.querySelector('.hostbar button[data-act="
+	    "agent-update]')", 10);
+	run("document.querySelector('.hostbar button[data-act=agent-update]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=agent-update]')", 5);
+	shot("1b-agent-update");
+	run("const f = document.querySelector('form[data-form=agent-update]'); "
+	    "f.restart.checked = false; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('in place'))", 20);
+	ATF_CHECK(access("installed-agent", X_OK) == 0);
+
 	/* The fleet page lists it, and leads back to it. */
 	run("document.querySelector('.tree .titem.fleet').click()");
 	wait_js("document.querySelector('.hosts .hostcard')", 5);
@@ -453,10 +468,6 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('pre.diff') && document.querySelector("
 	    "'pre.diff').textContent.includes('\"10.0.0.21\"')", 10);
 	run("document.querySelector('.modal button[data-act=close]').click()");
-	/* Nothing to update while the host runs the console's version. */
-	ATF_CHECK(!js_true("document.querySelector("
-	    "'button[data-act=agent-update]')"));
-
 	/* The host's own record of jobs has the start that was done. */
 	run("document.querySelector('.jail-page button[data-act=close-drawer]')"
 	    ".click()");

@@ -415,6 +415,10 @@ health_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (status == 200 && jstr(o, "version") != NULL)
 		snprintf(app.version, sizeof(app.version), "%s",
 		    jstr(o, "version"));
+	if (status == 200)
+		snprintf(app.agent_build, sizeof(app.agent_build), "%s",
+		    jstr(o, "agent_build") != NULL ? jstr(o, "agent_build") :
+		    "");
 }
 
 static void
@@ -1595,15 +1599,21 @@ delete_server(const char *id)
 	api("DELETE", url, NULL, servers_cb, NULL);
 }
 
-/* The host answers with an arcana-agent that is not the console's. */
+/*
+ * The host answers with an arcana-agent that is not the one the console
+ * would send: another build, told by its SHA-256, since two builds can
+ * carry one version.  A console with no arcana-agent to send has
+ * nothing to offer.
+ */
 bool
 agent_outdated(const struct server *s)
 {
-	const char	*v;
+	const char	*b;
 
-	return (app.version[0] != '\0' && s->list != NULL && !s->failed &&
-	    (v = jstr(s->list, "host.version")) != NULL &&
-	    strcmp(v, app.version) != 0);
+	if (app.agent_build[0] == '\0' || s->list == NULL || s->failed)
+		return (false);
+	return ((b = jstr(s->list, "host.build")) == NULL ||
+	    strcmp(b, app.agent_build) != 0);
 }
 
 static void

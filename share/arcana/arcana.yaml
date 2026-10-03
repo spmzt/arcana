@@ -316,6 +316,13 @@ attribute-sets:
       - name: version
         type: text
         doc: arcana-agent version.
+      - name: build
+        type: text
+        doc: |
+          The SHA-256 of the running arcana-agent, in hex: two builds of
+          one version differ in it.
+        checks:
+          max-len: 64
 
   - name: jail
     attributes:

@@ -283,6 +283,7 @@ struct app {
 	int		 install;	/* 0 no offer, 1 prompt, 2 iOS, 3 menu */
 	bool		 setup_required;
 	char		 version[32];	/* the console's, from /api/health */
+	char		 agent_build[65]; /* of the arcana-agent it sends */
 	char		 update_latest[64];	/* a newer release, or "" */
 	char		 update_url[512];
 	char		 auth_error[256];

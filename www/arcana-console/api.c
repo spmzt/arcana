@@ -182,6 +182,7 @@ int
 api_health(struct http_request *req)
 {
 	ucl_object_t	*o;
+	const char	*build;
 
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_frombool(true), "ok", 0, false);
@@ -189,6 +190,10 @@ api_health(struct http_request *req)
 	    "version", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromint(time(NULL)), "time", 0,
 	    false);
+	/* The build of the arcana-agent this console hands to hosts. */
+	if ((build = agent_build()) != NULL)
+		ucl_object_insert_key(o, ucl_object_fromstring(build),
+		    "agent_build", 0, false);
 	return (reply_json(req, 200, o));
 }
 

@@ -36,6 +36,8 @@ const char	*origin_hdr = ORIGIN;
 char		 harness_origin[64] = ORIGIN;
 int		 harness_port;
 char		 harness_webconf[1024];	/* appended to web.conf */
+/* The console sends another build of arcana-agent than the host runs. */
+bool		 harness_other_agent;
 
 extern char	**environ;
 
@@ -172,6 +174,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 {
 	char	 cwd[MAXPATHLEN], buf[4096], so[MAXPATHLEN], routes[MAXPATHLEN];
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
+	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN];
 	const char *kore, *dh;
 	char	*argv[24];
@@ -265,9 +268,18 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "esac\n");
 	ATF_REQUIRE(chmod("fake-pkg", 0755) == 0);
 
+	snprintf(send, sizeof(send), "%s", jgd);
+	if (harness_other_agent) {
+		/* The same program with a byte after it: it runs, and its
+		 * SHA-256 is another. */
+		snprintf(send, sizeof(send), "%s/other-agent", cwd);
+		snprintf(buf, sizeof(buf), "cp '%s' '%s' && printf x >> '%s'",
+		    jgd, send, send);
+		ATF_REQUIRE(system(buf) == 0);
+	}
 	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n"
-	    "agent_binary = \"%s\";\n%s", RP_ID, harness_origin, cwd, jgd,
+	    "agent_binary = \"%s\";\n%s", RP_ID, harness_origin, cwd, send,
 	    harness_webconf);
 	put("web.conf", buf);
 	if (port != 0)
