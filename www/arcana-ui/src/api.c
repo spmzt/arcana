@@ -78,6 +78,7 @@ arc_on_http(int id, int status, char *text)
 	struct inflight	 p, *pp;
 	ucl_object_t	*o;
 	const char	*err;
+	char		 why[320];
 
 	if ((pp = lookup(id)) == NULL) {
 		free(text);
@@ -102,8 +103,20 @@ arc_on_http(int id, int status, char *text)
 		snprintf(app.auth_error, sizeof(app.auth_error),
 		    "Your session ended. Touch your key to continue.");
 	}
-	p.cb(status, o, err != NULL ? err : (status >= 400 ?
-	    "request failed" : NULL), p.arg);
+	/*
+	 * An error without a reason of ours did not come from the console's
+	 * own handlers: a proxy in front of it, or Kore itself.  Say what
+	 * came, so that it can be looked for.
+	 */
+	if (err == NULL && status >= 400) {
+		snprintf(why, sizeof(why), "HTTP %d without a reason%s%.120s",
+		    status, text != NULL && text[0] != '\0' && o == NULL ?
+		    "; it said: " : " (not from the console's own code: a "
+		    "proxy in front of it, or its server)", text != NULL &&
+		    o == NULL ? text : "");
+		err = why;
+	}
+	p.cb(status, o, err, p.arg);
 	if (o != NULL)
 		ucl_object_unref(o);
 	free(text);
