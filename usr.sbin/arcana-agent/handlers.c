@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h>
 #include <syslog.h>
 #include <unistd.h>
 
@@ -42,9 +43,15 @@ struct job {
 	char			*peer;
 };
 
+#define	STOPPING	"not done: arcana-agent is stopping"
 #define	RESTART_WAIT	10	/* s, for service(8) to stop the daemon */
 
 pthread_mutex_t	change_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* What holds change_lock now, for the log when asked to stop. */
+static pthread_mutex_t	note_lock = PTHREAD_MUTEX_INITIALIZER;
+static char		note[256];
+static bool		stopping;
 
 static const char *action_names[] = {
 	[ARC_ACTION_START] = "start",
@@ -169,6 +176,53 @@ reject(cbl_req *req, const char *msg)
 	return (EINVAL);
 }
 
+/*
+ * Say what the holder of change_lock is about to do; NULL when it is
+ * done.  False when the daemon is stopping: the change must not start.
+ */
+bool
+change_note(const char *fmt, ...)
+{
+	va_list	ap;
+	bool	go;
+
+	pthread_mutex_lock(&note_lock);
+	go = fmt != NULL && !stopping;
+	if (!go)
+		note[0] = '\0';
+	else {
+		va_start(ap, fmt);
+		vsnprintf(note, sizeof(note), fmt, ap);
+		va_end(ap);
+	}
+	pthread_mutex_unlock(&note_lock);
+	return (go);
+}
+
+/* The daemon was told to stop: no change starts from here on. */
+void
+changes_stop(void)
+{
+
+	pthread_mutex_lock(&note_lock);
+	stopping = true;
+	pthread_mutex_unlock(&note_lock);
+}
+
+/* The change under way and the jobs that wait, to the log. */
+void
+changes_log(int pri)
+{
+	char	now[sizeof(note)];
+
+	pthread_mutex_lock(&note_lock);
+	strlcpy(now, note, sizeof(now));
+	pthread_mutex_unlock(&note_lock);
+	if (now[0] != '\0')
+		logmsg(pri, "under way: %s", now);
+	jobs_log(pri);
+}
+
 static void *
 worker(void *arg)
 {
@@ -212,7 +266,13 @@ worker(void *arg)
 		    what);
 		memset(&ar, 0, sizeof(ar));
 		pthread_mutex_lock(&change_lock);
-		do_action(&w, j->jail, j->action, &ar);
+		if (change_note("%s", what))
+			do_action(&w, j->jail, j->action, &ar);
+		else {
+			ar.has_ok = true;
+			ar.error = STOPPING;
+		}
+		(void)change_note(NULL);
 		pthread_mutex_unlock(&change_lock);
 		ok = ar.ok;
 		error = ar.error;
@@ -228,7 +288,13 @@ worker(void *arg)
 		    what);
 		memset(&pr, 0, sizeof(pr));
 		pthread_mutex_lock(&change_lock);
-		do_packages(&w, j->jail, j->refresh, &pr);
+		if (change_note("%s", what))
+			do_packages(&w, j->jail, j->refresh, &pr);
+		else {
+			pr.has_ok = true;
+			pr.error = STOPPING;
+		}
+		(void)change_note(NULL);
 		pthread_mutex_unlock(&change_lock);
 		ok = pr.ok;
 		error = pr.error;
@@ -245,7 +311,13 @@ worker(void *arg)
 		    what);
 		memset(&ur, 0, sizeof(ur));
 		pthread_mutex_lock(&change_lock);
-		do_pkg_upgrade(&w, &j->pkg, &ur);
+		if (change_note("%s", what))
+			do_pkg_upgrade(&w, &j->pkg, &ur);
+		else {
+			ur.has_ok = true;
+			ur.error = STOPPING;
+		}
+		(void)change_note(NULL);
 		pthread_mutex_unlock(&change_lock);
 		ok = ur.ok;
 		error = ur.error;
@@ -297,7 +369,13 @@ worker(void *arg)
 		    what);
 		memset(&sar, 0, sizeof(sar));
 		pthread_mutex_lock(&change_lock);
-		do_service_action(&w, j->jail, j->action, &sar);
+		if (change_note("%s", what))
+			do_service_action(&w, j->jail, j->action, &sar);
+		else {
+			sar.has_ok = true;
+			sar.error = STOPPING;
+		}
+		(void)change_note(NULL);
 		pthread_mutex_unlock(&change_lock);
 		ok = sar.ok;
 		error = sar.error;
@@ -314,7 +392,13 @@ worker(void *arg)
 		/* Not while a job changes the host: a restart would cut
 		 * it short. */
 		pthread_mutex_lock(&change_lock);
-		do_agent_update(&w, j->binary, j->binlen, j->sha256, &aur);
+		if (change_note("%s", what))
+			do_agent_update(&w, j->binary, j->binlen, j->sha256, &aur);
+		else {
+			aur.has_ok = true;
+			aur.error = STOPPING;
+		}
+		(void)change_note(NULL);
 		pthread_mutex_unlock(&change_lock);
 		ok = aur.ok;
 		error = aur.error;
@@ -331,7 +415,13 @@ worker(void *arg)
 		    what);
 		memset(&scr, 0, sizeof(scr));
 		pthread_mutex_lock(&change_lock);
-		do_service_config(&w, &j->svc, &scr);
+		if (change_note("%s", what))
+			do_service_config(&w, &j->svc, &scr);
+		else {
+			scr.has_ok = true;
+			scr.error = STOPPING;
+		}
+		(void)change_note(NULL);
 		pthread_mutex_unlock(&change_lock);
 		ok = scr.ok;
 		error = scr.error;
@@ -349,7 +439,13 @@ worker(void *arg)
 		    what);
 		memset(&dr, 0, sizeof(dr));
 		pthread_mutex_lock(&change_lock);
-		do_address(&w, &j->addr, &dr);
+		if (change_note("%s", what))
+			do_address(&w, &j->addr, &dr);
+		else {
+			dr.has_ok = true;
+			dr.error = STOPPING;
+		}
+		(void)change_note(NULL);
 		pthread_mutex_unlock(&change_lock);
 		ok = dr.ok;
 		error = dr.error;
@@ -374,8 +470,10 @@ worker(void *arg)
 		 * not: the daemon is not run by the service.
 		 */
 		pthread_mutex_lock(&change_lock);
+		(void)change_note("restarting the service after an update");
 		agent_restart();
 		sleep(RESTART_WAIT);
+		(void)change_note(NULL);
 		pthread_mutex_unlock(&change_lock);
 		logmsg(LOG_ERR, "restart: still running after %d s; is "
 		    "arcana_agent the service that runs this daemon?",

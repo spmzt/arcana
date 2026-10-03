@@ -80,6 +80,8 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
     size_t max)
 {
 	posix_spawn_file_actions_t	 fa;
+	posix_spawnattr_t		 sa;
+	sigset_t			 none, dfl;
 	struct pollfd			 pfd[2];
 	struct capture			 out, eout;
 	static char			 pathenv[] =
@@ -110,7 +112,18 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	    O_RDONLY, 0);
 	posix_spawn_file_actions_adddup2(&fa, op[1], STDOUT_FILENO);
 	posix_spawn_file_actions_adddup2(&fa, ep[1], STDERR_FILENO);
-	rc = posix_spawn(&pid, argv[0], &fa, NULL, argv, env);
+	/* The daemon keeps its stop signals blocked; a program does not. */
+	sigemptyset(&none);
+	sigemptyset(&dfl);
+	sigaddset(&dfl, SIGTERM);
+	sigaddset(&dfl, SIGINT);
+	posix_spawnattr_init(&sa);
+	posix_spawnattr_setsigmask(&sa, &none);
+	posix_spawnattr_setsigdefault(&sa, &dfl);
+	posix_spawnattr_setflags(&sa, POSIX_SPAWN_SETSIGMASK |
+	    POSIX_SPAWN_SETSIGDEF);
+	rc = posix_spawn(&pid, argv[0], &fa, &sa, argv, env);
+	posix_spawnattr_destroy(&sa);
 	posix_spawn_file_actions_destroy(&fa);
 	close(op[1]);
 	close(ep[1]);

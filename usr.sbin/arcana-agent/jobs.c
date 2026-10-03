@@ -32,6 +32,7 @@ struct qjob {
 	uint64_t		 id;
 	uint8_t			 state;		/* ARC_JOB_STATE_* */
 	bool			 ok;
+	bool			 begun;		/* has the lock, is at work */
 	char			*title;
 	char			*peer;
 	const char		*error;		/* in w's pool */
@@ -202,14 +203,22 @@ run(struct qjob *j)
 	struct arc_pkg_upgrade_rsp	 ur;
 	const struct arc_job_spec	*sp;
 	const char			*error;
-	bool				 ok;
+	bool				 ok, go;
 	int				 root;
 
 	sp = &j->spec;
 	root = step_begin(&j->w, ARC_STEP_KIND_DAEMON, "arcana-agent", "job %ju: %s",
 	    (uintmax_t)j->id, j->title);
 	pthread_mutex_lock(&change_lock);
-	switch (sp->kind) {
+	go = change_note("job %ju: %s, from %s", (uintmax_t)j->id, j->title,
+	    j->peer);
+	pthread_mutex_lock(&jobs_lock);
+	j->begun = go;
+	pthread_mutex_unlock(&jobs_lock);
+	if (!go) {
+		ok = false;
+		error = "not run: arcana-agent was stopping";
+	} else switch (sp->kind) {
 	case ARC_JOB_KIND_JAIL_ACTION:
 		memset(&ar, 0, sizeof(ar));
 		do_action(&j->w, sp->jail, sp->action, &ar);
@@ -256,6 +265,7 @@ run(struct qjob *j)
 		error = ur.error;
 		break;
 	}
+	(void)change_note(NULL);
 	pthread_mutex_unlock(&change_lock);
 	step_end(&j->w, root, ok, NULL);
 
@@ -444,4 +454,19 @@ jobs_cancel(struct work *w, uint64_t id, const char **errp)
 	}
 	pthread_mutex_unlock(&jobs_lock);
 	return (o);
+}
+
+/* The jobs that have not started, to the log: they go with the daemon. */
+void
+jobs_log(int pri)
+{
+	struct qjob	*j;
+
+	pthread_mutex_lock(&jobs_lock);
+	TAILQ_FOREACH(j, &jobs, link)
+		if (j->state == ARC_JOB_STATE_QUEUED ||
+		    (j->state == ARC_JOB_STATE_RUNNING && !j->begun))
+			logmsg(pri, "queued, will not run: job %ju: %s, from %s",
+			    (uintmax_t)j->id, j->title, j->peer);
+	pthread_mutex_unlock(&jobs_lock);
 }

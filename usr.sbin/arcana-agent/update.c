@@ -18,6 +18,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -131,6 +132,7 @@ void
 agent_restart(void)
 {
 	struct timespec	 ts = { 1, 0 };
+	sigset_t	 none;
 	pid_t		 pid;
 
 	if ((pid = fork()) == -1) {
@@ -144,6 +146,8 @@ agent_restart(void)
 	if (fork() != 0)
 		_exit(0);
 	(void)setsid();
+	sigemptyset(&none);
+	(void)sigprocmask(SIG_SETMASK, &none, NULL);
 	closefrom(3);
 	(void)nanosleep(&ts, NULL);
 	execl(opts.service_bin, opts.service_bin, "arcana_agent", "restart",

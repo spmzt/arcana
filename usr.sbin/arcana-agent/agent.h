@@ -234,6 +234,11 @@ int		 do_agent_update(struct work *, const uint8_t *, size_t,
 		    const char *, struct arc_agent_update_rsp *);
 void		 agent_restart(void);
 
+bool		 change_note(const char *, ...) __printflike(1, 2);
+void		 changes_stop(void);
+void		 changes_log(int);
+void		 jobs_log(int);
+
 extern pthread_mutex_t	change_lock;	/* one change at a time */
 
 /* main.c */

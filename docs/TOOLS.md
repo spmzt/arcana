@@ -27,6 +27,11 @@ sysrc arcana_agent_listen="tcp://0.0.0.0:4310 tcp://[::]:4310"
 service arcana_agent start
 ```
 
+Stopping it (`service arcana_agent stop`, SIGTERM or SIGINT) does not
+cut a change short: the agent logs what is under way and which jobs wait
+behind it, starts nothing more, and stops when that change has ended.
+Jobs that had not started are lost. A second signal stops it at once.
+
 | `rc.conf` variable | Meaning | Default |
 |---|---|---|
 | `arcana_agent_enable` | Run the agent. | `NO` |

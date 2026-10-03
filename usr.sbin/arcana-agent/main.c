@@ -36,6 +36,8 @@
 #define	MAX_FRAME	(8 * 1024 * 1024)
 /* A list of many jails with their parameters is many attributes. */
 #define	MAX_ATTRS	(1024 * 1024)
+#define	STOP_GRACE	5	/* s, for the loop to stop */
+#define	STOP_REMIND	30	/* s, between reports while waiting */
 
 struct opts opts = {
 	.jail_conf = PATH_JAIL_CONF,
@@ -56,7 +58,11 @@ static bool	foreground;
 static void	usage(void) __dead2;
 static void	fatal(struct pidfh *, const char *, ...) __dead2
 		    __printflike(2, 3);
-static void	on_signal(int, void *);
+static void	stop_now(void *);
+static void	*stopper(void *) __no_lock_analysis;
+
+static cbl_loop		*stop_loop;
+static struct pidfh	*stop_pfh;
 
 static void
 usage(void)
@@ -108,11 +114,60 @@ fatal(struct pidfh *pfh, const char *fmt, ...)
 }
 
 static void
-on_signal(int sig, void *arg)
+stop_now(void *arg __unused)
 {
 
-	logmsg(LOG_INFO, "signal %d, stopping", sig);
-	(void)cbl_loop_stop(arg);
+	(void)cbl_loop_stop(stop_loop);
+}
+
+/*
+ * SIGTERM and SIGINT are blocked in every thread and taken here, so a
+ * stop does not depend on what the loop or a request is busy with.
+ *
+ * A change under way is not cut short: the log says what it is and what
+ * waits behind it, and the daemon stops when it ends, keeping the lock
+ * so that nothing else starts.  A second signal stops it at once.  If
+ * the loop does not wind down after that, the process exits anyway.
+ */
+static void *
+stopper(void *arg __unused)
+{
+	struct timespec	one = { 1, 0 };
+	sigset_t	set;
+	int		sig, waited;
+	bool		cut;
+
+	sigemptyset(&set);
+	sigaddset(&set, SIGTERM);
+	sigaddset(&set, SIGINT);
+	while (sigwait(&set, &sig) != 0)
+		;
+	logmsg(LOG_NOTICE, "signal %d, stopping", sig);
+	changes_stop();
+	cut = false;
+	for (waited = 0; pthread_mutex_trylock(&change_lock) != 0; waited++) {
+		if (waited == 0)
+			logmsg(LOG_NOTICE, "a change is under way: stopping "
+			    "when it ends; signal again to stop at once");
+		if (waited % STOP_REMIND == 0)
+			changes_log(LOG_NOTICE);
+		if (sigtimedwait(&set, NULL, &one) > 0) {
+			logmsg(LOG_WARNING, "signalled again: stopping at "
+			    "once, with this cut short");
+			cut = true;
+			break;
+		}
+	}
+	changes_log(cut ? LOG_WARNING : LOG_NOTICE);
+	if (cbl_loop_post(stop_loop, stop_now, NULL) != 0)
+		(void)cbl_loop_stop(stop_loop);
+	/* main() ends the process when the loop has stopped. */
+	sleep(STOP_GRACE);
+	logmsg(LOG_NOTICE, "the loop did not stop in %d s; exiting",
+	    STOP_GRACE);
+	if (stop_pfh != NULL)
+		pidfile_remove(stop_pfh);
+	_exit(cut ? 1 : 0);
 }
 
 /*
@@ -175,6 +230,8 @@ main(int argc, char *argv[])
 	const char	*pidpath;
 	gid_t		 gid;
 	pid_t		 other;
+	pthread_t	 tid;
+	sigset_t	 stopset;
 	bool		 network;
 	int		 ch, i, nl, error;
 
@@ -274,6 +331,12 @@ main(int argc, char *argv[])
 	if (setlocale(LC_CTYPE, "C.UTF-8") == NULL)
 		errx(1, "no C.UTF-8 locale");
 	signal(SIGPIPE, SIG_IGN);
+	/* Before any thread: they all inherit the mask. */
+	sigemptyset(&stopset);
+	sigaddset(&stopset, SIGTERM);
+	sigaddset(&stopset, SIGINT);
+	if ((error = pthread_sigmask(SIG_BLOCK, &stopset, NULL)) != 0)
+		errc(1, error, "pthread_sigmask");
 
 	network = false;
 	for (i = 0; i < nl; i++)
@@ -341,8 +404,11 @@ main(int argc, char *argv[])
 	}
 	jobs_init();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);
-	(void)cbl_loop_signal(loop, SIGINT, on_signal, loop);
-	(void)cbl_loop_signal(loop, SIGTERM, on_signal, loop);
+	stop_loop = loop;
+	stop_pfh = pfh;
+	if ((error = pthread_create(&tid, NULL, stopper, NULL)) != 0)
+		fatal(pfh, "pthread_create: %s", strerror(error));
+	(void)pthread_detach(tid);
 
 	error = cbl_loop_run(loop);
 

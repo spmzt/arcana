@@ -224,6 +224,20 @@ program, for pending upgrades and upgrading, on the host and with
 in running jails.
 Upgrades may run for up to an hour.
 .El
+.Sh STOPPING
+On
+.Dv SIGTERM
+or
+.Dv SIGINT ,
+as from
+.Ql service arcana_agent stop ,
+the daemon stops.
+A change that is under way is not cut short: the daemon logs what it
+is and which jobs wait behind it, starts nothing more, and stops when
+the change has ended, reporting again every 30 seconds while it waits.
+The jobs that had not started are lost.
+A second signal stops it at once, and the log says what was cut short.
+A program a change had started keeps running in that case.
 .Sh UPDATES
 A client may send a new
 .Nm :

@@ -668,6 +668,71 @@ jobs_cleanup()
 	stop_daemon
 }
 
+atf_test_case stop cleanup
+stop_head()
+{
+	atf_set "descr" "A stop waits for the change under way and logs it"
+}
+stop_body()
+{
+	start_daemon
+	pid=$(cat daemon.pid)
+	# Idle, it stops at once.
+	kill "$pid"
+	for i in $(seq 1 40); do
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -e ignore kill -0 "$pid"
+	atf_check -o match:'signal 15, stopping' cat daemon.out
+
+	# In the middle of a change, with more queued: the change ends
+	# first, and the log says what it is and what will not run.
+	start_daemon
+	pid=$(cat daemon.pid)
+	touch slow
+	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
+	change=$!
+	sleep 0.5
+	atf_check -o ignore "$JGC" -q -c "$SOCK" start web
+	kill "$pid"
+	sleep 0.5
+	atf_check -s exit:0 kill -0 "$pid"
+	atf_check -o match:'a change is under way' \
+	    -o match:'under way: service sshd restart' \
+	    -o match:'queued, will not run: job 1: start web' cat daemon.out
+	wait $change
+	atf_check -o match:'sshd' cat change.out
+	for i in $(seq 1 60); do
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -e ignore kill -0 "$pid"
+	atf_check test -e running.sshd
+	# The queued job did not start behind the change.
+	atf_check -o not-match:'job 1: start web: ok' cat daemon.out
+
+	# Signalled twice, it does not wait.
+	start_daemon
+	pid=$(cat daemon.pid)
+	"$JGC" -c "$SOCK" service sshd restart > /dev/null 2>&1 &
+	sleep 0.5
+	kill "$pid"
+	sleep 0.3
+	kill "$pid"
+	for i in $(seq 1 15); do
+		kill -0 "$pid" 2>/dev/null || break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -e ignore kill -0 "$pid"
+	atf_check -o match:'signalled again' cat daemon.out
+	wait
+}
+stop_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case agent_update cleanup
 agent_update_head()
 {
@@ -706,6 +771,7 @@ agent_update_cleanup()
 atf_init_test_cases()
 {
 	atf_add_test_case agent_update
+	atf_add_test_case stop
 	atf_add_test_case hello
 	atf_add_test_case socket_mode
 	atf_add_test_case list
