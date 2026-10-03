@@ -1220,6 +1220,48 @@ address_change(const char *jail, const char *address, bool remove, bool live,
 	free(body);
 }
 
+/*
+ * WebAuthn works only at the origin the console is configured for: its
+ * rp_id must be this page's host or a parent domain of it, and the page
+ * must be the configured origin.  The browser says only "SecurityError"
+ * (Firefox: "The operation is insecure"), so say what is wrong here.
+ */
+static void
+origin_check(const char *origin, const char *rp_id)
+{
+	char	*here, *host;
+	size_t	 hl, rl;
+	bool	 suffix;
+
+	app.origin_error[0] = '\0';
+	if (origin == NULL || rp_id == NULL)
+		return;
+	here = arc_origin();
+	host = arc_hostname();
+	/* The host without its port, against rp_id as a domain suffix. */
+	hl = strcspn(host, ":");
+	if (host[0] == '[')
+		hl = strcspn(host, "]") + 1;
+	rl = strlen(rp_id);
+	suffix = hl >= rl && strncmp(host + hl - rl, rp_id, rl) == 0 &&
+	    (hl == rl || host[hl - rl - 1] == '.');
+	if (strcmp(here, origin) != 0 || !suffix)
+		snprintf(app.origin_error, sizeof(app.origin_error),
+		    "This console is set up for %s (rp_id %s), but it is open "
+		    "at %s. Security keys work only there: open it at that "
+		    "address, or set rp_id and origin in web.conf "
+		    "(ARCANA_RP_ID and ARCANA_ORIGIN in the container) to this "
+		    "one. Keys are bound to the rp_id they were registered "
+		    "under.", origin, rp_id, here);
+	else if (strncmp(here, "https://", 8) != 0 &&
+	    strncmp(host, "localhost", 9) != 0)
+		snprintf(app.origin_error, sizeof(app.origin_error),
+		    "Security keys need HTTPS (or localhost); this page is "
+		    "open at %s.", here);
+	free(here);
+	free(host);
+}
+
 static void
 status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -1240,6 +1282,7 @@ status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	app.setup_required = jbool(o, "setup_required");
+	origin_check(jstr(o, "origin"), jstr(o, "rp_id"));
 	if (jbool(o, "authenticated")) {
 		app.screen = SCREEN_CONSOLE;
 		app.auth_error[0] = '\0';

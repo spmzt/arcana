@@ -1091,6 +1091,11 @@ auth_screen(struct html *h)
 		    "title=\"A passkey on this device, or on a phone nearby\">"
 		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
 	}
+	if (app.origin_error[0] != '\0') {
+		h_raw(h, "<p class=\"err origin\">");
+		h_txt(h, app.origin_error);
+		h_raw(h, "</p>");
+	}
 	if (app.auth_error[0] != '\0') {
 		h_raw(h, "<p class=\"err\">");
 		h_txt(h, app.auth_error);

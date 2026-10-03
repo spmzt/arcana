@@ -42,6 +42,7 @@ void		 arc_sw_register(void);
 double		 arc_now(void);
 void		 arc_title(const char *);
 char		*arc_hostname(void);
+char		*arc_origin(void);
 int		 arc_fx_get(void);
 void		 arc_fx_set(int);
 void		 arc_notify(const char *, const char *);
@@ -274,6 +275,7 @@ struct app {
 	char		 update_latest[64];	/* a newer release, or "" */
 	char		 update_url[512];
 	char		 auth_error[256];
+	char		 origin_error[400];	/* opened at the wrong address */
 	bool		 auth_busy;
 
 	struct server	 servers[MAX_SERVERS];

@@ -417,6 +417,9 @@ status_reply(struct http_request *req, bool authenticated)
 	put(o, "setup_required", ucl_object_frombool(
 	    ucl_array_size(cred_list()) == 0));
 	put(o, "rp_id", ucl_object_fromstring(cfg.rp_id));
+	/* The browser checks both against its address before any key is
+	 * asked: the page says so when they do not match. */
+	put(o, "origin", ucl_object_fromstring(cfg.origin));
 	return (reply_json(req, 200, o));
 }
 

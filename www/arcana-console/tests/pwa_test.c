@@ -306,9 +306,19 @@ ATF_TC_BODY(pwa, tc)
 	browser_start(tc);
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 
+	/* Opened at an address it is not set up for, the console says so
+	 * before the browser can only say "SecurityError". */
+	snprintf(script, sizeof(script), "{\"url\":\"http://127.0.0.1:%d/\"}",
+	    harness_port);
+	ucl_object_unref(wd("POST", "/session/url", script));
+	wait_js("document.querySelector('.err.origin') && document."
+	    "querySelector('.err.origin').textContent.includes('rp_id "
+	    "localhost')", 20);
+
 	/* Enrol: the setup token and the (virtual) security key. */
 	go("/");
 	wait_js("document.querySelector('form[data-form=enrol]')", 20);
+	ATF_CHECK(!js_true("document.querySelector('.err.origin')"));
 	ATF_REQUIRE((fp = fopen("data/setup-token", "r")) != NULL);
 	ATF_REQUIRE((token = calloc(1, 128)) != NULL);
 	ATF_REQUIRE(fgets(token, 128, fp) != NULL);

@@ -254,6 +254,7 @@ ATF_TC_BODY(unauthenticated, tc)
 	resp_free(&r);
 	http("GET", "/api/auth/status", NULL, &r);
 	ATF_CHECK_STREQ("true", jstr(&r, "setup_required"));
+	ATF_CHECK_STREQ(harness_origin, jstr(&r, "origin"));
 	ATF_CHECK_STREQ("false", jstr(&r, "authenticated"));
 	resp_free(&r);
 	http("GET", "/api/servers", NULL, &r);

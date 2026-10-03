@@ -302,6 +302,11 @@ addToLibrary({
 			new Notification(title, opts);
 	},
 
+	arc_origin__deps: ["$arcStr"],
+	arc_origin: function () {
+		return (arcStr(location.origin));
+	},
+
 	arc_hostname__deps: ["$arcStr"],
 	arc_hostname: function () {
 		return (arcStr(location.host));
