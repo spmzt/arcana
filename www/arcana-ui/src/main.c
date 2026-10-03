@@ -614,11 +614,11 @@ dispatch(const char *act, const char *arg, const char *value)
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 		close_service();
 	} else if (strcmp(act, "peek-jail") == 0) {
-		/* From a host's summary: the jail in a box over the page. */
+		/* From a graph, the fleet's or a host's: the jail in a box
+		 * over the page, which stays the page it is. */
 		for (i = 0; value[0] != '\0' && i < app.nservers; i++)
 			if (strcmp(app.servers[i].id, value) == 0)
 				app.sel = i;
-		app.node = NODE_HOST;
 		app.peek = true;
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 	} else if (strcmp(act, "close-drawer") == 0) {

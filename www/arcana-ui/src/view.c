@@ -34,6 +34,7 @@ static void	stage(struct html *);
 static void	hostbar(struct html *, struct server *);
 static void	card(struct html *, struct server *, const ucl_object_t *);
 static void	jail_page(struct html *);
+static void	peek_box(struct html *);
 static void	actions(struct html *, struct server *, const ucl_object_t *,
 		    const struct jailui *, bool);
 static void	dock(struct html *);
@@ -701,6 +702,19 @@ jail_cmp(const void *ap, const void *bp)
 	return (run != 0 ? run : r);
 }
 
+/* A jail picked in a graph: in a box over the page it was picked on. */
+static void
+peek_box(struct html *h)
+{
+
+	if (!app.peek || app.jail[0] == '\0')
+		return;
+	h_raw(h, "<div class=\"scrim peek\" data-act=\"close-drawer\"></div>"
+	    "<div class=\"peek-box\" role=\"dialog\" aria-modal=\"true\">");
+	jail_page(h);
+	h_raw(h, "</div>");
+}
+
 static void
 stage(struct html *h)
 {
@@ -729,6 +743,7 @@ stage(struct html *h)
 	}
 	if (app.node == NODE_FLEET) {
 		view_fleet(h);
+		peek_box(h);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -757,14 +772,7 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_SUMMARY) {
 		view_summary(h, s);
-		/* A jail picked in the graph: in a box over the summary. */
-		if (app.peek && app.jail[0] != '\0') {
-			h_raw(h, "<div class=\"scrim peek\" data-act=\""
-			    "close-drawer\"></div><div class=\"peek-box\" "
-			    "role=\"dialog\" aria-modal=\"true\">");
-			jail_page(h);
-			h_raw(h, "</div>");
-		}
+		peek_box(h);
 		h_raw(h, "</main>");
 		return;
 	}

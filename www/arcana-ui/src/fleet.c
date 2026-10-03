@@ -122,11 +122,9 @@ topology(struct html *h, struct server *s, int col, int row, int parent_y)
 			break;
 		}
 		st = s->failed ? "unknown" : h_word(jstr(j, "state"), "unknown");
-		/* On a host's own summary the jail opens over the page;
-		 * from the fleet, on its page. */
+		/* In a graph a jail opens in a box over the page. */
 		h_fmt(h, "<div class=\"tnode s-%s\" style=\"left:%dpx;top:%dpx\" "
-		    "data-act=\"%s\"", st, jx, jy, parent_y < 0 ? "peek-jail" :
-		    "open-jail");
+		    "data-act=\"peek-jail\"", st, jx, jy);
 		h_attr(h, "data-arg", name);
 		h_attr(h, "data-value", s->id);
 		h_raw(h, "><i class=\"led\"></i>");

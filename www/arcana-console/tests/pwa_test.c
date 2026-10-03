@@ -483,6 +483,14 @@ ATF_TC_BODY(pwa, tc)
 	/* The fleet page lists it, and leads back to it. */
 	run("document.querySelector('.tree .titem.fleet').click()");
 	wait_js("document.querySelector('.hosts .hostcard')", 5);
+	/* In the fleet's graph too, a jail opens over the page. */
+	run("document.querySelector('.topo .tnode[data-act=peek-jail]')"
+	    ".click()");
+	wait_js("document.querySelector('.peek-box .jail-page') && "
+	    "document.querySelector('.hosts .hostcard')", 5);
+	run("document.querySelector('.peek-box .close').click()");
+	wait_js("!document.querySelector('.peek-box') && "
+	    "document.querySelector('.hosts .hostcard')", 5);
 	shot("2-fleet");
 	run("document.querySelector('.hosts .hostcard').click()");
 	wait_js("document.querySelector('.tree .titem.server.selected')", 5);
