@@ -286,7 +286,7 @@ git_error(struct work *w, const struct execres *res)
 {
 	const char	*p, *nl, *end;
 	char		*out;
-	size_t		 n;
+	size_t		 n, len;
 
 	out = wmalloc(w, res->errlen + 64);
 	n = (size_t)sprintf(out, "git clone failed (status %d)", res->status);
@@ -294,12 +294,16 @@ git_error(struct work *w, const struct execres *res)
 	for (p = res->err; p < end; p = nl + 1) {
 		if ((nl = memchr(p, '\n', (size_t)(end - p))) == NULL)
 			nl = end;
+		/* ssh ends its lines with a carriage return too. */
+		len = (size_t)(nl - p);
+		while (len > 0 && (p[len - 1] == '\r' || p[len - 1] == ' '))
+			len--;
 		/* Not the progress line, and not the advice. */
-		if (nl > p && strncmp(p, "Cloning into", 12) != 0 &&
+		if (len > 0 && strncmp(p, "Cloning into", 12) != 0 &&
 		    strncmp(p, "Please make sure", 16) != 0 &&
 		    strncmp(p, "and the repository exists", 25) != 0) {
 			n += (size_t)sprintf(out + n, "%s%.*s", n > 0 ? ": " :
-			    "", (int)(nl - p), p);
+			    "", (int)len, p);
 		}
 		if (nl == end)
 			break;
