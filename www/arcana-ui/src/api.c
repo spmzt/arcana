@@ -57,19 +57,22 @@ lookup(int id)
  * Send a request.  cb gets the HTTP status (0: no answer), the parsed
  * JSON reply and the error message, if any.
  */
-void
+int
 api(const char *method, const char *url, const char *body, api_cb *cb,
     void *arg)
 {
 	struct inflight	*p;
+	int		 id;
 
 	if ((p = slot()) == NULL) {
 		cb(0, NULL, "too many requests in flight", arg);
-		return;
+		return (0);
 	}
 	p->cb = cb;
 	p->arg = arg;
-	arc_http(p->id, method, url, body);
+	id = p->id;
+	arc_http(id, method, url, body);
+	return (id);
 }
 
 EMSCRIPTEN_KEEPALIVE void

@@ -65,7 +65,13 @@ The console is laid out as a tree and tabs.
   (`share/arcana/arcana.yaml`); **{ } Schema** turns it off and on. When
   a program ran, **Raw output** shows its argv, exit status and output. Changes are jobs the
   host runs on its own: the graph fills in stage by stage, and a change
-  that cuts the console off still completes. **Queue** is on unless
+  that cuts the console off still completes. An entry still under way
+  has a cross: for a job, it takes the job out of the host's queue if
+  it has not started (one that runs is left to finish: stopping a
+  change half way is what would not be safe); for a reading, it stops
+  waiting for it. A reading that takes long, such as the packages, is
+  asked for once: leaving its tab and coming back waits for the same
+  answer. **Queue** is on unless
   you turn it off in that browser: a change waits in the activity bar
   until you press **Run**, and what waits is sent to each host as one
   batch, run in order, whichever host is selected then; a change can be

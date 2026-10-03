@@ -459,9 +459,13 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_stats(s);
 			if (app.tab == TAB_SERVICES && s->services == NULL)
 				refresh_services(s, true);
-			if (app.tab == TAB_NETWORK)
+			if (app.tab == TAB_NETWORK && (strcmp(app.net.sid,
+			    s->id) != 0 || (app.net.data == NULL &&
+			    !app.net.loading)))
 				refresh_network(s, true);
-			if (app.tab == TAB_PACKAGES)
+			if (app.tab == TAB_PACKAGES && (strcmp(app.pkg.sid,
+			    s->id) != 0 || (app.pkg.data == NULL &&
+			    !app.pkg.loading)))
 				refresh_packages(s, false);
 		}
 	} else if (strcmp(act, "tab") == 0 && s != NULL) {
@@ -477,11 +481,17 @@ dispatch(const char *act, const char *arg, const char *value)
 		close_service();
 		if (app.tab == TAB_SERVICES && s->services == NULL)
 			refresh_services(s, true);
-		if (app.tab == TAB_NETWORK && (app.net.data == NULL ||
-		    strcmp(app.net.sid, s->id) != 0))
+		/* What is on its way for this host is waited for, not asked
+		 * for again; what is here is shown. */
+		if (app.tab == TAB_NETWORK && strcmp(app.net.sid, s->id) != 0)
 			refresh_network(s, true);
-		if (app.tab == TAB_PACKAGES && (app.pkg.data == NULL ||
-		    strcmp(app.pkg.sid, s->id) != 0))
+		else if (app.tab == TAB_NETWORK && app.net.data == NULL &&
+		    !app.net.loading)
+			refresh_network(s, true);
+		if (app.tab == TAB_PACKAGES && strcmp(app.pkg.sid, s->id) != 0)
+			refresh_packages(s, false);
+		else if (app.tab == TAB_PACKAGES && app.pkg.data == NULL &&
+		    !app.pkg.loading)
 			refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-target") == 0 && s != NULL) {
 		snprintf(app.pkg.jail, sizeof(app.pkg.jail), "%s", arg);
@@ -724,6 +734,11 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.dock_open = true;
 	} else if (strcmp(act, "schema") == 0) {
 		app.trace_schema = !app.trace_schema;
+	} else if (strcmp(act, "op-cancel") == 0) {
+		struct op *o;
+
+		if ((o = op_find(atoi(arg))) != NULL)
+			op_cancel(o);
 	} else if (strcmp(act, "step") == 0) {
 		app.trace_step = app.trace_step == atoi(arg) ? -1 : atoi(arg);
 	} else if (strcmp(act, "dock") == 0) {

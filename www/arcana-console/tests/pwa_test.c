@@ -611,6 +611,37 @@ ATF_TC_BODY(pwa, tc)
 	    "'sshd'", 5);
 	shot("6-services");
 
+	/*
+	 * A reading that takes its time is waited for once: leaving its
+	 * tab and coming back does not ask again.  And it can be given
+	 * up from the activity list.
+	 */
+	ATF_REQUIRE((fp = fopen("fake-pkg", "r")) != NULL);
+	fclose(fp);
+	ATF_REQUIRE(system("cp fake-pkg fake-pkg.fast && "
+	    "{ echo '#!/bin/sh'; echo 'sleep 3'; echo 'exec ./fake-pkg.fast "
+	    "\"$@\"'; } > fake-pkg.slow && chmod +x fake-pkg.slow && "
+	    "mv fake-pkg.slow fake-pkg") == 0);
+	run("window.pkgAsked = 0; const of = window.fetch; window.fetch = "
+	    "function (u, o) { if (String(u).includes('/packages')) "
+	    "window.pkgAsked++; return of.call(this, u, o); };");
+	run("document.querySelector('button.tab[data-arg=packages]').click()");
+	wait_js("window.pkgAsked === 1", 5);
+	run("document.querySelector('button.tab[data-arg=jails]').click()");
+	run("document.querySelector('button.tab[data-arg=packages]').click()");
+	run("document.querySelector('button.tab[data-arg=summary]').click()");
+	run("document.querySelector('button.tab[data-arg=packages]').click()");
+	ATF_CHECK(js_true("window.pkgAsked === 1"));
+	/* Given up: the entry ends as cancelled, and the tab says so. */
+	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelector('.ops button[data-act=op-cancel]')", 5);
+	shot("6a-cancel");
+	run("document.querySelector('.ops button[data-act=op-cancel]').click()");
+	wait_js("!document.querySelector('.ops button[data-act=op-cancel]') && "
+	    "document.querySelector('.ops .op.o-failed')", 5);
+	run("document.querySelector('.dock > header').click()");
+	ATF_REQUIRE(system("mv fake-pkg.fast fake-pkg") == 0);
+
 	/* The interfaces, in the network tab: an address is added to one
 	 * through the queue, as any change is. */
 	run("document.querySelector('button.tab[data-arg=network]').click()");

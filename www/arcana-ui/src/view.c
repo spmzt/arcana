@@ -1062,7 +1062,13 @@ dock(struct html *h)
 				h_raw(h, "<span class=\"d\">");
 				h_txt(h, dur);
 				h_raw(h, "</span>");
-			}
+			} else if (o->job > 0 || o->req != 0)
+				h_fmt(h, "<button class=\"icon\" "
+				    "data-act=\"op-cancel\" data-arg=\"%d\" "
+				    "title=\"%s\">×</button>", o->id, o->job > 0 ?
+				    "Take the job out of the host's queue, if it "
+				    "has not started" : "Stop waiting for this; "
+				    "the host may still finish it");
 			h_raw(h, "</li>");
 		}
 		if (app.nops == 0)

@@ -250,9 +250,20 @@ addToLibrary({
 	 * HTTP to the console's own API.  status 0 means the request did
 	 * not get an answer at all.
 	 */
-	arc_http__deps: ["$UTF8ToString", "$arcStr"],
+	/* The requests in flight that can be given up: id to its abort. */
+	$arcAborts: {},
+	arc_http_abort__deps: ["$arcAborts"],
+	arc_http_abort: function (id) {
+		if (arcAborts[id]) {
+			arcAborts[id].gaveUp = true;
+			arcAborts[id].abort();
+		}
+	},
+
+	arc_http__deps: ["$arcAborts", "$arcStr", "$UTF8ToString"],
 	arc_http: function (id, methodp, urlp, bodyp) {
 		var method = UTF8ToString(methodp), body = null, opts;
+		var ctl = new AbortController();
 
 		if (bodyp !== 0)
 			body = UTF8ToString(bodyp);
@@ -261,16 +272,21 @@ addToLibrary({
 			credentials: "same-origin",
 			cache: "no-store",
 			headers: { "Content-Type": "application/json",
-			    "X-Arcana": "1" }
+			    "X-Arcana": "1" },
+			signal: ctl.signal
 		};
 		if (body !== null)
 			opts.body = body;
+		arcAborts[id] = ctl;
 		fetch(UTF8ToString(urlp), opts).then(function (r) {
 			return (r.text().then(function (t) {
+				delete arcAborts[id];
 				Module._arc_on_http(id, r.status, arcStr(t));
 			}));
 		}).catch(function (err) {
-			Module._arc_on_http(id, 0, arcStr(String(err)));
+			delete arcAborts[id];
+			Module._arc_on_http(id, 0, arcStr(ctl.gaveUp ?
+			    "cancelled" : String(err)));
 		});
 	},
 

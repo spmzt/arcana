@@ -37,6 +37,7 @@ void		 arc_set_class(const char *, const char *, int);
 void		 arc_focus(const char *);
 void		 arc_events_init(void);
 void		 arc_http(int, const char *, const char *, const char *);
+void		 arc_http_abort(int);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
@@ -92,7 +93,7 @@ char		*json_quote(const char *);
 /* api.c: requests to the console's API with a callback each. */
 typedef void	 api_cb(int, const ucl_object_t *, const char *, void *);
 
-void		 api(const char *, const char *, const char *, api_cb *,
+int		 api(const char *, const char *, const char *, api_cb *,
 		    void *);
 void		 webauthn(bool, const char *, void (*)(bool, const char *,
 		    void *), void *);
@@ -225,6 +226,7 @@ struct op {
 	char		 error[512];
 	/* A job on a host: read until it is done. */
 	char		 sid[9];
+	int		 req;		/* the request it waits for, if it can be given up */
 	long long	 job;		/* its number there, 0 if not a job */
 	long long	 watched;	/* the number, kept after it is done */
 	double		 next_poll;
@@ -386,6 +388,7 @@ bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);
 void		 agent_build(struct server *, const char *, bool);
 void		 agent_restarts(double);
+void		 op_cancel(struct op *);
 void		 if_address(struct server *, const char *, const char *, bool);
 void		 if_state(struct server *, const char *, bool);
 void		 route_change(struct server *, const char *, const char *, bool);

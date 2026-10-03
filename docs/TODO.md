@@ -26,6 +26,10 @@
   to which other, and draws a link if and only if the far end is a
   server on its own list.
 
+- After the network section: creating interfaces, epair(4) and the
+  tunnels (gif, gre, wg and the like), not only changing the ones that
+  are there.
+
 ## Not yet verified
 
 Written and tested with stand-ins, never run for real:

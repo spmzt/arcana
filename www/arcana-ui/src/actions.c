@@ -145,6 +145,7 @@ merge_jail(struct server *s, const ucl_object_t *j)
 }
 
 static void	job_finished(struct op *, bool, const char *);
+static void	op_wait(int, int);
 
 /* The job is over: what showed it as pending is cleared and re-read. */
 static void
@@ -584,6 +585,12 @@ jails_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	s->loading = false;
+	/* Given up here: that says nothing about the host. */
+	if (status == 0 && err != NULL && strcmp(err, "cancelled") == 0) {
+		op_done(op, false, o, err);
+		free(c);
+		return;
+	}
 	if (status == 200) {
 		if (s->list != NULL)
 			ucl_object_unref(s->list);
@@ -628,7 +635,7 @@ refresh_jails(struct server *s, bool user)
 		c->op = op->id;
 	}
 	snprintf(url, sizeof(url), "/api/servers/%s/jails", s->id);
-	api("GET", url, NULL, jails_cb, c);
+	op_wait(c->op, api("GET", url, NULL, jails_cb, c));
 }
 
 /* start, stop, restart or kill a jail of the selected server: a job. */
@@ -706,7 +713,7 @@ refresh_services(struct server *s, bool user)
 		app.trace_op = op->id;
 	}
 	snprintf(url, sizeof(url), "/api/servers/%s/services", s->id);
-	api("GET", url, NULL, services_cb, c);
+	op_wait(c->op, api("GET", url, NULL, services_cb, c));
 }
 
 /* Replace the service of the same name in the server's list. */
@@ -1029,7 +1036,7 @@ refresh_packages(struct server *s, bool refresh)
 	app.trace_op = op->id;
 	snprintf(url, sizeof(url), "/api/servers/%s/packages?jail=%s%s", s->id,
 	    app.pkg.jail, refresh ? "&refresh=1" : "");
-	api("GET", url, NULL, packages_cb, c);
+	op_wait(c->op, api("GET", url, NULL, packages_cb, c));
 }
 
 /* pkg upgrade of the named packages (JSON array text), or of all. */
@@ -1152,7 +1159,7 @@ refresh_network(struct server *s, bool user)
 	snprintf(url, sizeof(url), "/api/servers/%s/net/%s%s", s->id,
 	    kinds[app.net.kind], app.net.family == 4 ? "?family=inet" :
 	    app.net.family == 6 ? "?family=inet6" : "");
-	api("GET", url, NULL, network_cb, c);
+	op_wait(c->op, api("GET", url, NULL, network_cb, c));
 }
 
 static void
@@ -1638,6 +1645,57 @@ delete_server(const char *id)
 
 	snprintf(url, sizeof(url), "/api/servers/%s", id);
 	api("DELETE", url, NULL, servers_cb, NULL);
+}
+
+/* op waits for request req, which can be given up. */
+static void
+op_wait(int opid, int req)
+{
+	struct op	*op;
+
+	if (opid != 0 && (op = op_find(opid)) != NULL)
+		op->req = req;
+}
+
+static void
+job_cancel_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+
+	c = arg;
+	/* Taken back, the next reading of the job ends its entry. */
+	if (status != 200 || !jbool(o, "ok"))
+		toast(true, "%s: not cancelled: %s", c->name, status == 200 &&
+		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+		    err : "failed");
+	free(c);
+}
+
+/*
+ * Give up what an entry of the activity list waits for, where that is
+ * safe.  A job that has not started is taken out of the host's queue;
+ * one that runs is left to finish, as stopping a change half way is
+ * what would not be safe.  A reading still on its way is no longer
+ * waited for: the host may finish it, and nothing was to change.
+ */
+void
+op_cancel(struct op *op)
+{
+	struct ctx	*c;
+	char		 url[128];
+
+	if (op->state != OP_RUNNING)
+		return;
+	if (op->job > 0) {
+		c = ctx_new();
+		snprintf(c->name, sizeof(c->name), "%s", op->title);
+		snprintf(url, sizeof(url), "/api/servers/%s/jobs/%lld", op->sid,
+		    op->job);
+		api("DELETE", url, NULL, job_cancel_cb, c);
+		return;
+	}
+	if (op->req != 0)
+		arc_http_abort(op->req);
 }
 
 /*
