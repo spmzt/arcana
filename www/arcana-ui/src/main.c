@@ -450,6 +450,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "resize") == 0) {
 		/* Only drawn again: the tree fits itself to its room. */
 	} else if (strcmp(act, "select-server") == 0) {
+		app.rail_open = false;
 		for (i = 0; i < app.nservers; i++)
 			if (strcmp(app.servers[i].id, arg) == 0)
 				app.sel = i;
@@ -632,6 +633,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.net.loading = false;
 		refresh_network(s, true);
 	} else if (strcmp(act, "select-fleet") == 0) {
+		app.rail_open = false;
 		app.node = NODE_FLEET;
 		app.jail[0] = '\0';
 		close_service();
@@ -640,6 +642,7 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_stats(&app.servers[i]);
 		}
 	} else if (strcmp(act, "open-jail") == 0) {
+		app.rail_open = false;
 		/* value: the server, when the jail is picked in the tree. */
 		for (i = 0; value[0] != '\0' && i < app.nservers; i++)
 			if (strcmp(app.servers[i].id, value) == 0)
@@ -825,6 +828,11 @@ dispatch(const char *act, const char *arg, const char *value)
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
 		app.modal = MODAL_AGENT_UPDATE;
 		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "theme") == 0) {
+		snprintf(app.theme, sizeof(app.theme), "%s", arg);
+		arc_theme_set(app.theme);
+	} else if (strcmp(act, "rail-toggle") == 0) {
+		app.rail_open = !app.rail_open;
 	} else if (strcmp(act, "settings") == 0) {
 		app.modal = MODAL_SETTINGS;
 		app.modal_error[0] = '\0';
@@ -934,6 +942,12 @@ main(void)
 	app.notify = arc_notify_state();
 	app.install = arc_install_state();
 	app.queue_on = arc_queue_get() != 0;
+	{
+		char *t = arc_theme_get();
+
+		snprintf(app.theme, sizeof(app.theme), "%s", t);
+		free(t);
+	}
 	app.trace_schema = true;
 	render();
 	check_health();

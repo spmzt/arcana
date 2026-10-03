@@ -88,6 +88,10 @@ installed there. The console checks it against its SHA-256, keeps it in
 the hosts that run another build are offered the update. The build is
 in the activity bar with the output of git and make.
 
+When git fails, the entry in the activity bar says everything git said
+(its last line alone is only the end of its advice), and **Raw output**
+has it verbatim.
+
 A repository reached over SSH (`git@host:path`, `ssh://…`) takes two
 more things, since git runs there as a user with no known hosts and no
 key:

@@ -285,6 +285,36 @@ addToLibrary({
 		}).catch(go);
 	},
 
+	/*
+	 * The theme, kept per browser: a name the stylesheet knows, or
+	 * none for the default.  The bar of the installed app follows the
+	 * page's background.
+	 */
+	arc_theme_get__deps: ["$arcStr"],
+	arc_theme_get: function () {
+		return (arcStr(document.documentElement.dataset.theme || ""));
+	},
+	arc_theme_set__deps: ["$UTF8ToString"],
+	arc_theme_set: function (namep) {
+		var name = UTF8ToString(namep), meta;
+
+		if (name === "")
+			delete document.documentElement.dataset.theme;
+		else
+			document.documentElement.dataset.theme = name;
+		try {
+			if (name === "")
+				localStorage.removeItem("arc_theme");
+			else
+				localStorage.setItem("arc_theme", name);
+		} catch (e) {
+		}
+		meta = document.querySelector("meta[name=theme-color]");
+		if (meta)
+			meta.content = getComputedStyle(document.documentElement)
+			    .getPropertyValue("--bg").trim() || meta.content;
+	},
+
 	/* The requests in flight that can be given up: id to its abort. */
 	$arcAborts: {},
 	arc_http_abort__deps: ["$arcAborts"],

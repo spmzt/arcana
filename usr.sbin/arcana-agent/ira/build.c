@@ -277,6 +277,38 @@ offer_host_keys(struct work *w, bool unpriv, const char *name,
 }
 
 /*
+ * What git said, all of it that says something: its last line alone is
+ * "and the repository exists.", the end of its advice, and the reason
+ * is in the lines before.
+ */
+static const char *
+git_error(struct work *w, const struct execres *res)
+{
+	const char	*p, *nl, *end;
+	char		*out;
+	size_t		 n;
+
+	out = wmalloc(w, res->errlen + 64);
+	n = (size_t)sprintf(out, "git clone failed (status %d)", res->status);
+	end = res->err + res->errlen;
+	for (p = res->err; p < end; p = nl + 1) {
+		if ((nl = memchr(p, '\n', (size_t)(end - p))) == NULL)
+			nl = end;
+		/* Not the progress line, and not the advice. */
+		if (nl > p && strncmp(p, "Cloning into", 12) != 0 &&
+		    strncmp(p, "Please make sure", 16) != 0 &&
+		    strncmp(p, "and the repository exists", 25) != 0) {
+			n += (size_t)sprintf(out + n, "%s%.*s", n > 0 ? ": " :
+			    "", (int)(nl - p), p);
+		}
+		if (nl == end)
+			break;
+	}
+	out[n] = '\0';
+	return (wtext(w, out));
+}
+
+/*
  * A fresh clone of the repository in the build directory, with this
  * host's config.mk in it.  False with f->error when there is none; over
  * SSH that may be for want of a person: f then has the server's host
@@ -442,7 +474,7 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 	argv[n++] = src;
 	argv[n] = NULL;
 	if (run_as(w, unpriv, argv, &res) != 0) {
-		rsp->error = wtext(w, exec_error(w, &res, "git clone"));
+		rsp->error = git_error(w, &res);
 		if (!ssh || res.err == NULL)
 			return (false);
 		/*
@@ -457,11 +489,11 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 			rsp->error = wfmt(w, "THE SSH HOST KEY OF %s HAS "
 			    "CHANGED since it was confirmed: someone may be "
 			    "in between, or the server was reinstalled", name);
-		} else if (memmem(res.err, res.errlen, "Permission denied",
-		    17) != NULL)
+		} else if (memmem(res.err, res.errlen, "Permission denied (",
+		    19) != NULL)
 			rsp->error = wfmt(w, "%s did not accept this host's "
-			    "key: allow the deploy key there, read-only",
-			    name);
+			    "key: allow the deploy key there, read-only (%s)",
+			    name, git_error(w, &res));
 		return (false);
 	}
 

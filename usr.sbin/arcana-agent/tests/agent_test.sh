@@ -930,7 +930,7 @@ agent_build_body()
 [ "\$1" = -c ] && shift 2
 [ "\$1" = clone ] || exit 2
 for a; do last=\$a; done
-case " \$* " in *" --branch nope "*) echo "fatal: no such branch" >&2; exit 128 ;; esac
+case " \$* " in *" --branch nope "*) printf "Cloning into 'x'...\nfatal: no such branch\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n" >&2; exit 128 ;; esac
 mkdir -p "\$last/lib/libjailconf" "\$last/usr.sbin/arcana-agent"
 echo "\$*" > "\$last/CLONED"
 EOS
@@ -969,7 +969,8 @@ EOS
 	# The host's own settings went into the tree.
 	atf_check -o match:'CBLINK_PREFIX' cat build/src/config.mk
 	# A build that fails says why, and nothing is written.
-	atf_check -s exit:1 -e match:'no such branch' -o ignore \
+	atf_check -s exit:1 -e match:'status 128.*no such branch.*Could not read' \
+	    -e not-match:'repository exists' -o ignore \
 	    "$JGC" -c "$SOCK" agent-build -o other https://example.org/arcana.git nope
 	atf_check test ! -e other
 	# Over SSH the server's host key is not taken on trust: the first

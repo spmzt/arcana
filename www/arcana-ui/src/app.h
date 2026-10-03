@@ -39,6 +39,8 @@ void		 arc_events_init(void);
 void		 arc_http(int, const char *, const char *, const char *);
 void		 arc_http_abort(int);
 void		 arc_reload(void);
+char		*arc_theme_get(void);
+void		 arc_theme_set(const char *);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
@@ -324,6 +326,8 @@ struct app {
 	int		 svc_sort;	/* SVC_SORT_*: running first at start */
 	bool		 svc_sort_desc;
 	bool		 peek;		/* app.jail is shown in a box over the page */
+	bool		 rail_open;	/* the tree, on a narrow screen, is unfolded */
+	char		 theme[16];	/* "" for the default */
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
 	ucl_object_t	*build_reply;	/* a build that needs the user: host keys */
 	char		 build_sid[9];	/* and the host it was asked of */

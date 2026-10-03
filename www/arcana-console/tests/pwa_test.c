@@ -733,9 +733,24 @@ ATF_TC_BODY(pwa, tc)
 			    "the %s tab is wider than a phone", tabs[t]);
 		}
 	}
+	/* The tree is one line until unfolded, and folds again when
+	 * something in it is picked. */
+	ATF_CHECK(js_true("getComputedStyle(document.querySelector('.tree'))"
+	    ".display === 'none'"));
+	run("document.querySelector('button[data-act=rail-toggle]').click()");
+	wait_js("getComputedStyle(document.querySelector('.tree')).display "
+	    "!== 'none'", 5);
+	shot("m5a-tree");
 	run("document.querySelector('.tree .titem.fleet').click()");
+	wait_js("getComputedStyle(document.querySelector('.tree')).display "
+	    "=== 'none' && document.querySelector('.hosts .hostcard')", 5);
 	usleep(500000);
 	shot("m6-fleet");
+	/* Every control of the top bar can be reached. */
+	ATF_CHECK(js_true("(() => { const b = document.querySelector("
+	    "'button[data-act=logout]'); b.scrollIntoView(); const r = "
+	    "b.getBoundingClientRect(); return r.left >= 0 && r.right <= "
+	    "innerWidth + 1; })()"));
 	ATF_CHECK(js_true("document.documentElement.scrollWidth <= "
 	    "window.innerWidth + 1"));
 	run("document.querySelector('.dock > header').click()");
@@ -745,6 +760,19 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button[data-act=settings]').click()");
 	wait_js("document.querySelector('form[data-form=settings] input')", 10);
 	shot("m8-settings");
+	/* A theme is picked there, takes at once, and is kept. */
+	run("document.querySelector('button.theme[data-arg=amber]').click()");
+	wait_js("document.documentElement.dataset.theme === 'amber' && "
+	    "localStorage.getItem('arc_theme') === 'amber' && "
+	    "getComputedStyle(document.documentElement).getPropertyValue("
+	    "'--cyan').trim() === '#ffb547'", 5);
+	shot("m9-amber");
+	run("document.querySelector('button.theme[data-arg=paper]').click()");
+	wait_js("document.documentElement.dataset.theme === 'paper'", 5);
+	shot("m10-paper");
+	run("document.querySelector('button.theme[data-arg=\"\"]').click()");
+	wait_js("!document.documentElement.dataset.theme && "
+	    "localStorage.getItem('arc_theme') === null", 5);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.hosts .hostcard').click()");
 	phone(false);

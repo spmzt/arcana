@@ -15,3 +15,12 @@ try {
 } catch (e) {
 	document.documentElement.classList.add("fx");
 }
+
+/* The theme chosen in this browser; none is the default one. */
+try {
+	var arcTheme = localStorage.getItem("arc_theme");
+
+	if (arcTheme)
+		document.documentElement.dataset.theme = arcTheme;
+} catch (e) {
+}

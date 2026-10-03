@@ -350,7 +350,18 @@ rail(struct html *h)
 	bool			 folded, selhere;
 
 	tree_caps(cap);
-	h_raw(h, "<aside class=\"rail\"><div class=\"rail-head\">"
+	/* On a narrow screen the tree is one line until it is unfolded. */
+	s = cur_server();
+	h_fmt(h, "<aside class=\"rail%s\"><div class=\"rail-head\">"
+	    "<button class=\"ghost small rail-toggle\" data-act=\""
+	    "rail-toggle\" title=\"Hosts and jails\">%s ", app.rail_open ?
+	    " open" : "", app.rail_open ? "▴" : "▾");
+	h_txt(h, app.node == NODE_FLEET || s == NULL ? "All hosts" : s->name);
+	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
+		h_raw(h, " / ");
+		h_txt(h, app.jail);
+	}
+	h_raw(h, "</button>"
 	    "<span class=\"label\">Fleet</span>"
 	    "<button class=\"icon\" data-act=\"enrol\" title=\"Enrol a host\">"
 	    "⇄</button><button class=\"icon\" data-act=\"add-server\" "
@@ -1092,6 +1103,14 @@ dock(struct html *h)
 	h_raw(h, "</section>");
 }
 
+/* The themes of the stylesheet: html[data-theme], "" the default. */
+static const struct {
+	const char	*name, *title;
+} themes[] = {
+	{ "", "Tron" }, { "amber", "Amber" }, { "matrix", "Matrix" },
+	{ "synth", "Synth" }, { "slate", "Slate" }, { "paper", "Paper" },
+};
+
 static void
 modal(struct html *h)
 {
@@ -1230,7 +1249,15 @@ modal(struct html *h)
 			h_raw(h, " · sends arcana-agent ");
 			h_txt(h, app.agent_version);
 		}
-		h_raw(h, "</p>");
+		h_raw(h, "</p><h4>Look</h4><div class=\"themes\">");
+		for (i = 0; i < (int)(sizeof(themes) / sizeof(themes[0])); i++)
+			h_fmt(h, "<button type=\"button\" class=\"theme t-%s%s\" "
+			    "data-act=\"theme\" data-arg=\"%s\"><i></i>%s</button>",
+			    themes[i].name[0] != '\0' ? themes[i].name : "tron",
+			    strcmp(app.theme, themes[i].name) == 0 ? " on" : "",
+			    themes[i].name, themes[i].title);
+		h_raw(h, "</div><p class=\"dim\">Kept in this browser.</p>"
+		    "<h4>Console</h4>");
 		if (app.settings == NULL) {
 			h_raw(h, "<div class=\"loader\"></div>");
 			break;
