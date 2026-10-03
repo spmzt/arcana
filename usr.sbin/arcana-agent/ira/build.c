@@ -162,6 +162,37 @@ valid_host_keys(const char *keys, const char *name)
 	return (lines > 0);
 }
 
+/*
+ * The key lines for name in what ssh-keyscan printed: it also prints
+ * the server's banner as comments, on standard output in some versions.
+ */
+static const char *
+key_lines(struct work *w, const char *out, size_t len, const char *name)
+{
+	const char	*p, *nl, *end;
+	char		*buf;
+	size_t		 nlen, n;
+
+	buf = wmalloc(w, len + 2);
+	nlen = strlen(name);
+	n = 0;
+	end = out + len;
+	for (p = out; p < end; p = nl + 1) {
+		if ((nl = memchr(p, '\n', (size_t)(end - p))) == NULL)
+			nl = end;
+		if ((size_t)(nl - p) > nlen && strncmp(p, name, nlen) == 0 &&
+		    p[nlen] == ' ') {
+			memcpy(buf + n, p, (size_t)(nl - p));
+			n += (size_t)(nl - p);
+			buf[n++] = '\n';
+		}
+		if (nl == end)
+			break;
+	}
+	buf[n] = '\0';
+	return (buf);
+}
+
 static int
 write_text(const char *path, const char *text)
 {
@@ -192,6 +223,7 @@ offer_host_keys(struct work *w, bool unpriv, const char *name,
 
 	n = 0;
 	argv[n++] = opts.keyscan_bin;
+	argv[n++] = "-q";
 	argv[n++] = "-T";
 	argv[n++] = "10";
 	if (port != NULL) {
@@ -208,7 +240,7 @@ offer_host_keys(struct work *w, bool unpriv, const char *name,
 		    "reachable from this host?", name);
 		return;
 	}
-	rsp->host_keys = wtext(w, wstrndup(w, res.out, res.outlen));
+	rsp->host_keys = key_lines(w, res.out, res.outlen, name);
 	if (!valid_host_keys(rsp->host_keys, name)) {
 		rsp->host_keys = NULL;
 		rsp->error = wfmt(w, "%s gave no host keys that can be kept",

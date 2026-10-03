@@ -70,6 +70,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_NEXTHOPS] = "nexthops",
 	[ARC_NET_KIND_CONNECTIONS] = "connections",
 	[ARC_NET_KIND_SOCKETS] = "sockets",
+	[ARC_NET_KIND_INTERFACES] = "interfaces",
 };
 
 static const char *service_action_names[] = {
@@ -204,14 +205,25 @@ change_note(const char *fmt, ...)
 	return (go);
 }
 
-/* The daemon was told to stop: no change starts from here on. */
+/* The daemon is about to stop: no change starts while that holds. */
 void
-changes_stop(void)
+changes_stop(bool on)
 {
 
 	pthread_mutex_lock(&note_lock);
-	stopping = true;
+	stopping = on;
 	pthread_mutex_unlock(&note_lock);
+}
+
+bool
+changes_stopping(void)
+{
+	bool	on;
+
+	pthread_mutex_lock(&note_lock);
+	on = stopping;
+	pthread_mutex_unlock(&note_lock);
+	return (on);
 }
 
 /* The change under way and the jobs that wait, to the log. */
@@ -511,19 +523,20 @@ worker(void *arg)
 		service_restart("arcana_console");
 	if (restart) {
 		/*
-		 * No change starts while the service is on its way to
-		 * stop this daemon.  Still here after a while, it did
-		 * not: the daemon is not run by the service.
+		 * No change starts while the service is on its way to stop
+		 * this daemon, and nothing is held that would keep it from
+		 * stopping.  Still here after a while, the service did not
+		 * stop it: say so, and take changes again.
 		 */
-		pthread_mutex_lock(&change_lock);
-		(void)change_note("restarting the service after an update");
+		changes_stop(true);
 		service_restart("arcana_agent");
 		sleep(RESTART_WAIT);
-		(void)change_note(NULL);
-		pthread_mutex_unlock(&change_lock);
-		logmsg(LOG_ERR, "restart: still running after %d s; is "
-		    "arcana_agent the service that runs this daemon?",
-		    RESTART_WAIT);
+		changes_stop(false);
+		logmsg(LOG_ERR, "restart: still running %d s after an update: "
+		    "\"service arcana_agent restart\" did not stop this "
+		    "daemon; is the service enabled, and is it what runs it? "
+		    "The new program is in place and runs from the next "
+		    "start", RESTART_WAIT);
 	}
 	return (NULL);
 }
@@ -856,7 +869,7 @@ check_spec(const struct arc_job_spec *sp)
 {
 	size_t	i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PKG_UPGRADE)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_ROUTE)
 		return ("a job needs a kind");
 	switch (sp->kind) {
 	case ARC_JOB_KIND_JAIL_ACTION:
@@ -875,6 +888,32 @@ check_spec(const struct arc_job_spec *sp)
 			return ("invalid interface name");
 		if (!sp->live && !sp->persist)
 			return ("say live, persist or both");
+		break;
+	case ARC_JOB_KIND_IF_ADDRESS:
+		if (sp->interface == NULL || !valid_ifname(sp->interface))
+			return ("invalid interface name");
+		if (sp->address == NULL || strlen(sp->address) < 2)
+			return ("invalid address");
+		break;
+	case ARC_JOB_KIND_IF_STATE:
+		if (sp->interface == NULL || !valid_ifname(sp->interface))
+			return ("invalid interface name");
+		if (!sp->has_up)
+			return ("say up or down");
+		break;
+	case ARC_JOB_KIND_ROUTE:
+		if (sp->destination == NULL || sp->destination[0] == '\0' ||
+		    sp->destination[0] == '-')
+			return ("a route needs a destination");
+		if (sp->safe && sp->remove && (sp->gateway == NULL ||
+		    sp->gateway[0] == '\0'))
+			return ("to delete a route safely, name its gateway: "
+			    "it is what puts the route back");
+		if (sp->gateway != NULL && sp->gateway[0] == '-')
+			return ("invalid gateway");
+		if (!sp->remove && (sp->gateway == NULL ||
+		    sp->gateway[0] == '\0'))
+			return ("a route to add needs a gateway");
 		break;
 	case ARC_JOB_KIND_SERVICE_ACTION:
 		if (sp->service == NULL || !valid_service(sp->service))
@@ -964,6 +1003,26 @@ arc_job_doit(cbl_req *req, const struct arc_job_req *rq, void *arg __unused)
 		rsp.error = "no such job; the daemon keeps the last finished "
 		    "ones and forgets all when it restarts";
 	error = arc_job_reply(req, &rsp);
+	work_free(&w);
+	return (error);
+}
+
+int
+arc_job_confirm_doit(cbl_req *req, const struct arc_job_confirm_req *rq,
+    void *arg __unused)
+{
+	struct arc_job_confirm_rsp	rsp;
+	struct work			w;
+	int				error;
+
+	work_init(&w);
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.has_ok = true;
+	rsp.job = jobs_confirm(&w, rq->id, &rsp.error);
+	rsp.ok = rsp.job != NULL;
+	if (rsp.ok)
+		rsp.error = NULL;
+	error = arc_job_confirm_reply(req, &rsp);
 	work_free(&w);
 	return (error);
 }

@@ -53,6 +53,9 @@ struct opts opts = {
 	.zpool_bin = PATH_ZPOOL_BIN,
 	.pkg_bin = PATH_PKG_BIN,
 	.git_bin = PATH_GIT_BIN,
+	.ifconfig_bin = PATH_IFCONFIG_BIN,
+	.route_bin = PATH_ROUTE_BIN,
+	.safe_wait = 60,
 	.make_bin = PATH_MAKE_BIN,
 	.keyscan_bin = PATH_KEYSCAN_BIN,
 	.keygen_bin = PATH_KEYGEN_BIN,
@@ -83,7 +86,9 @@ usage(void)
 	    "[-U program]\n"
 	    "                 [-B build dir] [-c config.mk] [-G git] "
 	    "[-M make]\n"
-	    "                 [-Y ssh-keyscan] [-E ssh-keygen]\n"
+	    "                 [-Y ssh-keyscan] [-E ssh-keygen] "
+	    "[-I ifconfig]\n"
+	    "                 [-r route] [-w seconds]\n"
 	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
 	exit(2);
@@ -153,7 +158,8 @@ stopper(void *arg __unused)
 	while (sigwait(&set, &sig) != 0)
 		;
 	logmsg(LOG_NOTICE, "signal %d, stopping", sig);
-	changes_stop();
+	changes_stop(true);
+	jobs_wake();
 	cut = false;
 	for (waited = 0; pthread_mutex_trylock(&change_lock) != 0; waited++) {
 		if (waited == 0)
@@ -261,7 +267,7 @@ main(int argc, char *argv[])
 	cbl_ctx		*ctx;
 	cbl_tls		*tls;
 	const char	*uris[MAX_LISTEN], *cafile, *certfile, *keyfile;
-	const char	*pidpath;
+	const char	*pidpath, *errstr;
 	gid_t		 gid;
 	pid_t		 other;
 	pthread_t	 tid;
@@ -273,7 +279,7 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	while ((ch = getopt(argc, argv, "A:B:C:c:D:dE:Ff:G:g:j:K:l:M:N:P:p:R:s:U:VW:X:Y:y:Z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:B:C:c:D:dE:Ff:G:g:I:j:K:l:M:N:P:p:R:r:s:U:Vw:W:X:Y:y:Z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -347,6 +353,17 @@ main(int argc, char *argv[])
 			break;
 		case 'E':
 			opts.keygen_bin = optarg;
+			break;
+		case 'I':
+			opts.ifconfig_bin = optarg;
+			break;
+		case 'r':
+			opts.route_bin = optarg;
+			break;
+		case 'w':
+			opts.safe_wait = (int)strtonum(optarg, 1, 3600, &errstr);
+			if (errstr != NULL)
+				errx(1, "-w %s: %s", optarg, errstr);
 			break;
 		case 'Y':
 			opts.keyscan_bin = optarg;

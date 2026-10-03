@@ -37,6 +37,16 @@ definitions:
       - name: service-config
         doc: service and variables to set or unset.
       - name: pkg-upgrade
+      - name: if-address
+        doc: |
+          With interface and address, add the address to the interface
+          as an alias, or with remove take it off.  Live, with ifconfig(8).
+      - name: if-state
+        doc: With interface and up, bring the interface up or down.
+      - name: route
+        doc: |
+          With destination and gateway, add a static route, or with
+          remove delete it.  Live, with route(8).
   - name: job-state
     type: enum
     entries:
@@ -46,6 +56,10 @@ definitions:
         doc: Finished; ok says how.
       - name: cancelled
         doc: Removed from the queue before it ran.
+      - name: unconfirmed
+        doc: |
+          The change is made and waits for job-confirm; without it in
+          time, it is undone.
   - name: max-json
     type: const
     value: 4194304
@@ -60,6 +74,11 @@ definitions:
         doc: Active connections, netstat -n.
       - name: sockets
         doc: Open sockets with their owners, sockstat.
+      - name: interfaces
+        doc: |
+          The network interfaces with their addresses, flags, link and
+          counters, from getifaddrs(3), as a JSON object with the array
+          "interfaces".
   - name: net-family
     type: enum
     entries:
@@ -524,6 +543,29 @@ attribute-sets:
       - name: names
         type: text
         multi-attr: true
+      - name: up
+        type: bool
+        doc: For if-state.
+      - name: safe
+        type: flag
+        doc: |
+          For if-address, if-state and route.  Undo the change unless
+          job-confirm comes for the job within the time the daemon
+          allows.  A client that can still reach the daemon after the
+          change confirms; one the change cut off cannot, and the host
+          comes back by itself.
+      - name: destination
+        type: text
+        doc: |
+          For route, as default, a network with its prefix length, or a
+          host address.
+        checks:
+          max-len: 64
+      - name: gateway
+        type: text
+        doc: For route, an address, or the name of an interface.
+        checks:
+          max-len: 64
 
   - name: job
     attributes:
@@ -553,6 +595,9 @@ attribute-sets:
       - name: peer
         type: text
         doc: Who queued it.
+      - name: confirm-by
+        type: s64
+        doc: With state unconfirmed, the Unix time it is undone at.
       - name: trace
         type: nest
         nested-attributes: step
@@ -868,6 +913,24 @@ operations:
     attribute-set: arcana
     auth: true
     doc: Take a job that has not started out of the queue.
+    do:
+      request:
+        attributes:
+          - id
+        required:
+          - id
+      reply:
+        attributes:
+          - ok
+          - error
+          - job
+
+  - name: job-confirm
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Confirm a job that is unconfirmed: the change stays.  That the
+      request arrived is the point: the client still reaches the host.
     do:
       request:
         attributes:

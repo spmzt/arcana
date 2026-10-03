@@ -97,6 +97,9 @@ do_network(struct work *w, uint8_t kind, uint8_t family,
 	unsigned char		*json;
 	bool			 ok4, ok6;
 
+	/* The interfaces are read here, not printed by a program. */
+	if (kind == ARC_NET_KIND_INTERFACES)
+		return (do_interfaces(w, family, rsp));
 	rsp->has_ok = true;
 	rsp->ok = false;
 	if (family != ARC_NET_FAMILY_ALL) {

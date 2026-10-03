@@ -2,12 +2,21 @@
 
 ## Waiting for approval before any work
 
-- Managing interfaces and their addresses.
+- Interfaces, the rest: what is there lists them and changes them live
+  (an address on or off, up or down). Not yet: keeping a change in
+  `rc.conf` (`ifconfig_<if>_alias<n>`, whose numbers must stay without
+  gaps), MTU and description, creating and destroying cloned interfaces,
+  and refusing a change that would cut off the address the console
+  comes in by.
 - BIRD: neighbours and protocols, status, restart, clear.
-- Route management, possibly through netlink with its attributes mapped
-  to CBOR.
-- A safe mode that rolls a configuration change back when the agent
-  loses the console, for the changes that can be rolled back.
+- Routes, the rest: static routes are added and deleted live with
+  route(8). Not yet: keeping one in `rc.conf` (`static_routes`), FIBs,
+  and doing it through netlink with its attributes mapped to CBOR
+  instead of running a program.
+- Safe mode, the rest: changes to interfaces and routes are undone by
+  the host when the console does not reach it again within a minute.
+  Not yet: the same for a jail's address, for services and for what is
+  kept in configuration files.
 
 ## Planned
 
@@ -16,13 +25,6 @@
   The console works out which interface or tunnel of one server leads
   to which other, and draws a link if and only if the far end is a
   server on its own list.
-
-## To fix
-
-- The queue belongs to no host: what waits is sent to the host selected
-  when **Run** is pressed, also when it was queued while another host
-  was selected. It should hold each change with its host, and send each
-  host its own batch.
 
 ## Not yet verified
 

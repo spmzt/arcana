@@ -208,7 +208,8 @@ start_daemon()
 	    -X "$(pwd)/fake-sockstat" -P "$(pwd)/fake-pkg" \
 	    -U "$(pwd)/installed-agent" -B "$(pwd)/build" \
 	    -c "$(pwd)/build.mk" -G "$(pwd)/fake-git" -M "$(pwd)/fake-make" \
-	    -Y "$(pwd)/fake-keyscan" \
+	    -Y "$(pwd)/fake-keyscan" -I "$(pwd)/fake-ifconfig" \
+	    -r "$(pwd)/fake-route" -w 2 \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -679,6 +680,213 @@ jobs_cleanup()
 	stop_daemon
 }
 
+atf_test_case interfaces cleanup
+interfaces_head()
+{
+	atf_set "descr" "Interfaces are listed, and changed with ifconfig(8)"
+}
+interfaces_body()
+{
+	# ifconfig(8) for changes: what it was run with, and a refusal.
+	cat > fake-ifconfig <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/ifconfig.log
+case " \$* " in *" 10.9.9.9"*) echo "ifconfig: ioctl (SIOCAIFADDR): File exists" >&2; exit 1 ;; esac
+exit 0
+EOS
+	cat > fake-route <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/route.log
+case " \$* " in *" 10.66.0.0/16 "*) echo "route: message indicates error: File exists" >&2; exit 1 ;; esac
+echo "add net \$4: gateway \$5"
+EOS
+	chmod +x fake-ifconfig fake-route
+	start_daemon
+	# The loopback is on every host: with its addresses and flags.
+	atf_check -o save:if.json "$JGC" -c "$SOCK" net interfaces
+	atf_check -o match:'"name":"lo0"' -o match:'LOOPBACK' \
+	    -o match:'"address":"127.0.0.1"' -o match:'"prefixlen":8' \
+	    -o match:'"family":"inet6"' -o match:'"mtu":' cat if.json
+	atf_check -o match:'"address":"127.0.0.1"' -o not-match:'"inet6"' \
+	    "$JGC" -c "$SOCK" net interfaces -4
+
+	# An alias on, and off again: ifconfig is run as one would run it.
+	atf_check -o match:'done' -o match:'lo0: add 10.9.0.5/24' \
+	    -o match:'fake-ifconfig lo0 inet 10.9.0.5/24 alias' \
+	    "$JGC" -c "$SOCK" interface lo0 add 10.9.0.5/24
+	atf_check -o match:'fake-ifconfig lo0 inet 10.9.0.5 -alias' \
+	    "$JGC" -c "$SOCK" interface lo0 remove 10.9.0.5/24
+	atf_check -o match:'fake-ifconfig lo0 inet6 2001:db8::5/128 alias' \
+	    "$JGC" -c "$SOCK" interface lo0 add 2001:db8::5
+	atf_check -o match:'fake-ifconfig lo0 down' \
+	    "$JGC" -c "$SOCK" interface lo0 down
+	atf_check -o match:'^ +[0-9]+ queued +lo0: up' \
+	    "$JGC" -q -c "$SOCK" interface lo0 up
+	# What ifconfig refuses fails the job, with its words.
+	atf_check -s exit:1 -o match:'File exists' \
+	    "$JGC" -c "$SOCK" interface lo0 add 10.9.9.9/32
+	# What is not an interface or an address never reaches ifconfig.
+	atf_check -s exit:1 -o match:'no interface nope0' \
+	    "$JGC" -c "$SOCK" interface nope0 up
+	atf_check -s exit:1 -o match:'not an IPv4 or IPv6 address' \
+	    "$JGC" -c "$SOCK" interface lo0 add 10.0.0.300
+	atf_check -s exit:1 -o match:'not an IPv4 or IPv6 address' \
+	    "$JGC" -c "$SOCK" interface lo0 add '10.0.0.1;reboot'
+	atf_check -o not-match:'nope0' -o not-match:'300' -o not-match:'reboot' \
+	    cat ifconfig.log
+
+	# Static routes: route(8) is run as one would run it.
+	atf_check -o match:'route add 10.77.0.0/16 via 10.0.0.1' \
+	    -o match:'fake-route -n add -inet 10.77.0.0/16 10.0.0.1' \
+	    "$JGC" -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
+	atf_check -o match:'fake-route -n add -inet6 2001:db8:7::/48 2001:db8::1' \
+	    "$JGC" -c "$SOCK" route add 2001:db8:7::/48 2001:db8::1
+	atf_check -o match:'fake-route -n add -inet 10.78.0.0/16 -iface lo0' \
+	    "$JGC" -c "$SOCK" route add 10.78.0.0/16 lo0
+	atf_check -o match:'fake-route -n add -inet6 default 2001:db8::1' \
+	    "$JGC" -c "$SOCK" route add ::/0 2001:db8::1
+	atf_check -o match:'fake-route -n delete -inet 10.77.0.0/16:' \
+	    "$JGC" -c "$SOCK" route delete 10.77.0.0/16
+	atf_check -o match:'^ +[0-9]+ queued +route delete default via 10.0.0.1' \
+	    "$JGC" -q -c "$SOCK" route delete default 10.0.0.1
+	atf_check -s exit:1 -o match:'File exists' \
+	    "$JGC" -c "$SOCK" route add 10.66.0.0/16 10.0.0.1
+	atf_check -s exit:1 -o match:'not a destination' \
+	    "$JGC" -c "$SOCK" route add 10.0.0.0/33 10.0.0.1
+	atf_check -s exit:1 -o match:'neither an address nor an interface' \
+	    "$JGC" -c "$SOCK" route add 10.79.0.0/16 nope0
+	atf_check -s exit:1 -e match:'needs a gateway' -o ignore \
+	    "$JGC" -q -c "$SOCK" route add 10.79.0.0/16 ''
+	atf_check -o not-match:'10.79' -o not-match:'/33' cat route.log
+}
+interfaces_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case safe_mode cleanup
+safe_mode_head()
+{
+	atf_set "descr" "A safe change stays when confirmed, and is undone when not"
+	atf_set "timeout" "60"
+}
+safe_mode_body()
+{
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	printf '#!/bin/sh\necho "$*" >> %s/route.log\n' "$(pwd)" > fake-route
+	chmod +x fake-ifconfig fake-route
+	start_daemon
+
+	# A client that waits for the job is heard from again: it stays.
+	atf_check -o match:'done' -o match:'safe mode' \
+	    -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" interface lo0 add 10.9.0.6/24
+	atf_check -o match:'^lo0 inet 10.9.0.6/24 alias$' \
+	    -o not-match:'10.9.0.6 -alias' cat ifconfig.log
+
+	# One that is not heard from again: each change is taken back.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 add 10.9.0.8/24
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 down
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 remove 127.0.0.1
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" route delete 10.78.0.0/16 10.0.0.1
+	# While the first waits, it says so, and until when.
+	sleep 1
+	atf_check -o match:'unconfirmed' "$JGC" -c "$SOCK" jobs
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
+	    "$JGC" -c "$SOCK" job 2
+	atf_check -o match:'^lo0 inet 10.9.0.8/24 alias$' \
+	    -o match:'^lo0 inet 10.9.0.8 -alias$' \
+	    -o match:'^lo0 down$' -o match:'^lo0 up$' \
+	    -o match:'^lo0 inet 127.0.0.1 -alias$' \
+	    -o match:'^lo0 inet 127.0.0.1/8 alias$' cat ifconfig.log
+	atf_check -o match:'^-n add -inet 10.77.0.0/16 10.0.0.1$' \
+	    -o match:'^-n delete -inet 10.77.0.0/16 10.0.0.1$' \
+	    -o match:'^-n delete -inet 10.78.0.0/16 10.0.0.1$' \
+	    -o match:'^-n add -inet 10.78.0.0/16 10.0.0.1$' cat route.log
+	atf_check -o match:'not confirmed in time: undoing it' cat daemon.out
+
+	# A route deleted without its gateway could not be put back.
+	atf_check -s exit:1 -e match:'name its gateway' -o ignore \
+	    "$JGC" -q -s -c "$SOCK" route delete 10.79.0.0/16
+	# Confirming what does not wait is refused.
+}
+safe_mode_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case agent_restart cleanup
+agent_restart_head()
+{
+	atf_set "descr" "After an update the service really runs the new program"
+	atf_set "timeout" "90"
+}
+agent_restart_body()
+{
+	programs
+	write_conf
+	write_rc
+	write_net
+	write_pkg
+	SOCK="unix:$(pwd)/s.sock"
+	# The installed program, and a newer build of it.
+	cp "$JGD" installed
+	cp "$JGD" newer
+	printf x >> newer
+	# service(8) for arcana_agent as rc.subr does it: stop the daemon
+	# by its pid, wait for it to go, start the installed program.
+	cat > run-agent <<EOS
+#!/bin/sh
+cd $(pwd)
+./installed -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \\
+    -D "$(pwd)/etc/jail.conf.d" -j "$(pwd)/fake-jail" \\
+    -s "$(pwd)/rc-service" >> daemon.out 2>&1 &
+echo \$! > daemon.pid
+EOS
+	cat > rc-service <<EOS
+#!/bin/sh
+cd $(pwd)
+[ "\$1 \$2" = "arcana_agent restart" ] || exit 2
+pid=\$(cat daemon.pid)
+kill "\$pid"
+while kill -0 "\$pid" 2>/dev/null; do sleep 0.1; done
+echo "stopped \$pid" >> restarts
+exec ./run-agent
+EOS
+	chmod +x run-agent rc-service
+	./run-agent
+	for i in $(seq 1 100); do
+		grep -q ready daemon.out 2>/dev/null && break
+		sleep 0.05
+	done
+	old=$(sha256 -q installed)
+	new=$(sha256 -q newer)
+	atf_check -o match:"Build: +$old" "$JGC" -c "$SOCK" hello
+	first=$(cat daemon.pid)
+
+	atf_check -o match:'restarting' "$JGC" -c "$SOCK" agent-update -r newer
+	atf_check cmp -s newer installed
+	# The daemon that answers next is another process, the new build.
+	for i in $(seq 1 300); do
+		[ -f restarts ] && "$JGC" -c "$SOCK" hello 2>/dev/null |
+		    grep -q "Build: *$new" && break
+		sleep 0.1
+	done
+	atf_check -o match:"Build: +$new" "$JGC" -c "$SOCK" hello
+	atf_check test "$(cat daemon.pid)" != "$first"
+	atf_check -o match:"stopped $first" cat restarts
+}
+agent_restart_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case agent_build cleanup
 agent_build_head()
 {
@@ -715,6 +923,8 @@ EOS
 port=
 for a; do [ "\$prev" = -p ] && port=\$a; prev=\$a; last=\$a; done
 [ -n "\$port" ] && last="[\$last]:\$port"
+# As newer ssh-keyscan(1) does: the banner, as a comment, with the keys.
+echo "# \$last SSH-2.0-OpenSSH_10.0 ''"
 echo "\$last \$(cut -d' ' -f1,2 $(pwd)/hostkey.pub)"
 EOS
 	chmod +x fake-git fake-make fake-keyscan
@@ -892,7 +1102,10 @@ agent_update_cleanup()
 
 atf_init_test_cases()
 {
+	atf_add_test_case interfaces
+	atf_add_test_case safe_mode
 	atf_add_test_case agent_update
+	atf_add_test_case agent_restart
 	atf_add_test_case agent_build
 	atf_add_test_case stop
 	atf_add_test_case hello

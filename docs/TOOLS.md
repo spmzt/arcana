@@ -60,6 +60,8 @@ certificate from that CA.
 | `-U` *program* | The file an update replaces, if not the running program. |
 | `-B` *dir*, `-c` *config.mk* | Where a tree is cloned and built when the console asks for a build (`/var/cache/arcana-build`), and this host's settings for it (`/usr/local/etc/arcana/config.mk`). `-G` and `-M` name `git` and `make`, `-Y` and `-E` `ssh-keyscan` and `ssh-keygen`. |
 | `-V` | Print the version and exit. |
+| `-w` *seconds* | How long a safe change waits to be confirmed before it is undone. Default 60. |
+| `-I` *ifconfig*, `-r` *route* | The `ifconfig` and `route` programs. |
 
 What each operation runs on the host is in
 [ARCHITECTURE.md](ARCHITECTURE.md#the-arcana-family).
@@ -111,13 +113,18 @@ arcanactl -c tcp://host1.example:4310 \
 | `services` | rc.d scripts: enabled, running, pid. |
 | `service` *name* `start\|stop\|restart\|reload\|enable\|disable` | Through `service(8)`; enable and disable through `sysrc(8)`. |
 | `service` *name* `config [-x key] [key=value]` | The service's `rc.conf` variables; set or unset some first. |
-| `net routes\|nexthops\|connections\|sockets [-4\|-6]` | `netstat`/`sockstat` output as libxo JSON. |
+| `net routes\|nexthops\|connections\|sockets\|interfaces [-4\|-6]` | `netstat`/`sockstat` output as libxo JSON; the interfaces as the agent reads them, as JSON. |
 | `stats` | CPU, load, memory, swap, ZFS pools. |
 | `packages [-r]` [*jail*] | Packages with newer versions; `-r` runs `pkg update` first. |
 | `pkg-upgrade [-n] [-j jail]` [*package* …] | `pkg upgrade -y`, of all or of the named ones; `-n` a dry run. |
 | `jobs` | Queued, running and recent jobs. |
 | `job [-w]` *id* | A job with its trace so far; `-w` waits for the end. |
 | `job-cancel` *id* | Take a queued job back. |
+| `interface` *name* `up` \| `down` | Bring an interface up or down, with `ifconfig(8)`; waited for, or queued with `-q`. |
+| `interface` *name* `add` \| `remove` *address* | Add an address to an interface as an alias, or take it off. Live only. |
+| `route add` *destination* *gateway* | Add a static route with `route(8)`; the gateway is an address or an interface. Live only. |
+| `route delete` *destination* [*gateway*] | Delete a route. |
+| `-s` before `interface` or `route` | Safe mode: the host undoes the change unless it hears from the client again within its wait (`-w`, 60 s). `arcanactl` confirms by waiting for the job; with `-q` nobody does, and the change is undone. |
 | `agent-build` [`-y`] [`-i` *key*] [`-o` *file*] *repository* [*ref*] | Have the host clone the repository, build `arcana-agent` there and send it back; it is saved as *file* (`arcana-agent`). Over SSH the server's host key fingerprints are printed and nothing is built until `-y` confirms them; `-i` names a private key on the host for git. |
 | `console-update` [`-y`] [`-i` *key*] *repository* [*ref*] | Have the host build all of Arcana from the repository, install it and restart the `arcana_console` service: the console's own update, on the host it runs on. |
 | `agent-update` [`-r`] *program* | Put a new `arcana-agent` in place on the host, checked there by running it with `-V`; `-r` restarts the service. The one before stays as `arcana-agent.old`. |

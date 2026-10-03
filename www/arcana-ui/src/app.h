@@ -148,6 +148,7 @@ enum netkind {
 	NET_NEXTHOPS,
 	NET_CONNECTIONS,
 	NET_SOCKETS,
+	NET_INTERFACES,
 };
 
 /* The network tab's one table: what is shown, from which server. */
@@ -196,6 +197,8 @@ struct server {
 	int		 nhist;		/* samples in hist, newest last */
 	ucl_object_t	*jobs;		/* the host's own list of jobs */
 	bool		 jobs_loading;
+	double		 restart_until;	/* ms: its agent is restarting after an update; 0 none */
+	double		 restart_asked;	/* ms: when it was last asked how it is */
 	bool		 tree_all;	/* every jail in the tree, room or not */
 	ucl_object_t	*services;	/* last good services reply */
 	double		 services_fetched;
@@ -238,11 +241,14 @@ enum {
 	JOB_SERVICE,
 	JOB_SERVICE_CONFIG,
 	JOB_PACKAGES,
+	JOB_IFACE,
 };
 
 /* A change held back to be sent with others as one batch. */
 struct queued {
 	char		*json;		/* the job, as the API takes it */
+	char		 sid[9];	/* the host it is for */
+	char		 host[64];	/* and its name, for the list */
 	char		 title[160];
 	int		 what;
 	char		 target[256];
@@ -259,6 +265,8 @@ enum modal {
 	MODAL_AGENT_UPDATE,
 	MODAL_SETTINGS,
 	MODAL_HOST_KEY,
+	MODAL_IF_ADDRESS,
+	MODAL_ROUTE,
 };
 
 struct confirm {
@@ -377,6 +385,10 @@ void		 refresh_stats(struct server *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);
 void		 agent_build(struct server *, const char *, bool);
+void		 agent_restarts(double);
+void		 if_address(struct server *, const char *, const char *, bool);
+void		 if_state(struct server *, const char *, bool);
+void		 route_change(struct server *, const char *, const char *, bool);
 void		 load_settings(void);
 void		 save_settings(const ucl_object_t *);
 void		 load_schema(void);

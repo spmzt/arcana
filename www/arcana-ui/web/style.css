@@ -706,6 +706,14 @@ form.hostkey pre.deploy-key {
 	user-select: all;
 }
 
+/* The interfaces of a host. */
+table.ifaces td { vertical-align: top; }
+table.ifaces td small { display: block; color: var(--dim); font-size: .68rem; }
+table.ifaces tr.iface { --c: var(--slate); }
+table.ifaces tr.iface.up { --c: var(--cyan); }
+table.ifaces tr.iface .led { margin-right: .5rem; }
+table.ifaces ul.chips { margin: 0; }
+
 /* The settings dialog. */
 form.settings label small {
 	display: block;
@@ -903,7 +911,7 @@ form.settings dl.kv { font-size: .74rem; }
 
 /* The host's job list. */
 table.jobs tr.job { cursor: pointer; }
-table.jobs tr.j-running .st { color: var(--amber); }
+table.jobs tr.j-running .st, table.jobs tr.j-unconfirmed .st { color: var(--amber); }
 table.jobs tr.j-done .st { color: var(--cyan); }
 table.jobs tr.j-failed .st { color: var(--red); }
 table.jobs tr.j-cancelled .st, table.jobs tr.j-queued .st { color: var(--dim); }

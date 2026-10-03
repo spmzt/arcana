@@ -922,6 +922,80 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_MSG(strstr(jstr(&r, "trace.4.label"), "-f inet") != NULL,
 	    "%s", jstr(&r, "trace.4.label"));
 	resp_free(&r);
+
+	/* The interfaces, read by the agent itself; and a change to one,
+	 * which is a job that runs ifconfig(8). */
+	snprintf(path, sizeof(path), "%.*s/net/interfaces",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "data.interfaces.0.name") != NULL);
+	ATF_CHECK(jstr(&r, "data.interfaces.0.up") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"if-address\","
+	    "\"interface\":\"lo0\",\"address\":\"10.9.0.5/24\"},"
+	    "{\"kind\":\"if-state\",\"interface\":\"lo0\",\"up\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("lo0: add 10.9.0.5/24", jstr(&r, "jobs.0.title"));
+	ATF_CHECK_STREQ("lo0: up", jstr(&r, "jobs.1.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && access("ifconfig.log", F_OK) == -1; i++)
+		usleep(50000);
+	usleep(300000);
+	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.5/24 alias$' ifconfig.log "
+	    "&& grep -q '^lo0 up$' ifconfig.log") == 0);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"if-state\","
+	    "\"interface\":\"lo0\"}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/*
+	 * A safe change waits to hear from the console again; reading
+	 * the job is that, so the change stays.
+	 */
+	http("POST", path, "{\"jobs\":[{\"kind\":\"if-address\","
+	    "\"interface\":\"lo0\",\"address\":\"10.9.0.6/24\","
+	    "\"safe\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "jobs.0.id") != NULL);
+	snprintf(body, sizeof(body), "%s/%s", path, jstr(&r, "jobs.0.id"));
+	resp_free(&r);
+	for (i = 0; i < 200; i++) {
+		http("GET", body, NULL, &r);
+		EXPECT(&r, 200);
+		if (strcmp(jstr(&r, "job.state"), "done") == 0)
+			break;
+		resp_free(&r);
+		usleep(50000);
+	}
+	ATF_REQUIRE_MSG(i < 200, "the safe job did not finish");
+	ATF_CHECK_STREQ("true", jstr(&r, "job.ok"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.6/24 alias$' ifconfig.log "
+	    "&& ! grep -q '10.9.0.6 -alias' ifconfig.log") == 0);
+
+	/* A static route, added and deleted with route(8). */
+	http("POST", path, "{\"jobs\":[{\"kind\":\"route\",\"destination\":"
+	    "\"10.77.0.0/16\",\"gateway\":\"10.0.0.1\"},{\"kind\":\"route\","
+	    "\"destination\":\"10.77.0.0/16\",\"remove\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("route add 10.77.0.0/16 via 10.0.0.1", jstr(&r,
+	    "jobs.0.title"));
+	ATF_CHECK_STREQ("route delete 10.77.0.0/16", jstr(&r, "jobs.1.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q delete route.log 2>/dev/null") !=
+	    0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^-n add -inet 10.77.0.0/16 10.0.0.1$' "
+	    "route.log && grep -q '^-n delete -inet 10.77.0.0/16$' route.log")
+	    == 0);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"route\",\"destination\":"
+	    "\"10.77.0.0/16\"}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 }
 
 CONSOLE_TC(unreachable, "A server that does not answer is reported")

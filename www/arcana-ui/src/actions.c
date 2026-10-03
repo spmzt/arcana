@@ -14,6 +14,9 @@
 
 #include "app.h"
 
+#define	RESTART_WATCH_MS	45000	/* an agent to be back, updated */
+#define	RESTART_ASK_MS		3000
+
 struct ctx {
 	char	sid[9];
 	char	jail[256];
@@ -183,6 +186,12 @@ job_finished(struct op *op, bool ok, const char *err)
 			    ok ? "" : err != NULL ? err : "failed");
 			service_config(op->target, NULL);
 		}
+		break;
+	case JOB_IFACE:
+		/* The interfaces as they are now, if they are on show. */
+		if ((app.net.kind == NET_INTERFACES || app.net.kind ==
+		    NET_ROUTES) && strcmp(app.net.sid, s->id) == 0)
+			refresh_network(s, false);
 		break;
 	default:
 		app.pkg.busy = false;
@@ -366,6 +375,8 @@ job_send(struct server *s, char *json, const char *title, int what,
 	snprintf(q.title, sizeof(q.title), "%s", title);
 	q.what = what;
 	snprintf(q.target, sizeof(q.target), "%s", target);
+	snprintf(q.sid, sizeof(q.sid), "%s", s->id);
+	snprintf(q.host, sizeof(q.host), "%s", s->name);
 	if (app.queue_on) {
 		if (app.nbatch == MAX_BATCH) {
 			toast(true, "The queue holds %d changes at most",
@@ -385,12 +396,33 @@ job_send(struct server *s, char *json, const char *title, int what,
 void
 queue_run(void)
 {
+	struct queued	 part[MAX_BATCH];
 	struct server	*s;
-	int		 i;
+	bool		 sent[MAX_BATCH];
+	int		 i, k, n;
 
-	if ((s = cur_server()) == NULL || app.nbatch == 0)
-		return;
-	jobs_submit(s, app.batch, app.nbatch);
+	/*
+	 * Each host gets what was queued for it, as one batch, in the
+	 * order it was added: whichever host is selected now.
+	 */
+	memset(sent, 0, sizeof(sent));
+	for (i = 0; i < app.nbatch; i++) {
+		if (sent[i])
+			continue;
+		n = 0;
+		for (k = i; k < app.nbatch; k++)
+			if (!sent[k] && strcmp(app.batch[k].sid,
+			    app.batch[i].sid) == 0) {
+				part[n++] = app.batch[k];
+				sent[k] = true;
+			}
+		if ((s = server_by_id(app.batch[i].sid)) != NULL)
+			jobs_submit(s, part, n);
+		else
+			toast(true, "%s is no longer a server: %d queued "
+			    "change%s dropped", app.batch[i].host, n, n == 1 ?
+			    "" : "s");
+	}
 	for (i = 0; i < app.nbatch; i++)
 		free(app.batch[i].json);
 	app.nbatch = 0;
@@ -1089,7 +1121,7 @@ void
 refresh_network(struct server *s, bool user)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets" };
+	    "sockets", "interfaces" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[160], title[160];
@@ -1640,9 +1672,15 @@ agent_update_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (!ok)
 		toast(true, "%s: agent not updated: %s", c->name, err != NULL ?
 		    err : "failed");
-	else if (jbool(o, "restarting"))
+	else if (jbool(o, "restarting")) {
 		toast(false, "%s: arcana-agent %s in place, restarting", c->name,
 		    jstr(o, "version") != NULL ? jstr(o, "version") : "");
+		/* Watched until it answers as the new build, or does not. */
+		if ((s = server_by_id(c->sid)) != NULL) {
+			s->restart_until = arc_now() + RESTART_WATCH_MS;
+			s->restart_asked = arc_now();
+		}
+	}
 	else
 		toast(false, "%s: arcana-agent %s in place; it runs from the "
 		    "next start of the service", c->name, jstr(o, "version") !=
@@ -1651,6 +1689,46 @@ agent_update_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (ok && !jbool(o, "restarting") && (s = server_by_id(c->sid)) != NULL)
 		refresh_jails(s, false);
 	free(c);
+}
+
+/*
+ * The hosts whose agent was told to restart after an update: ask each
+ * how it is every few seconds, and say when it answers as the build the
+ * console sent, or when it has not after a while.  "In place" is not
+ * "running": a service that is not enabled does not restart.
+ */
+void
+agent_restarts(double now)
+{
+	struct server	*s;
+	int		 i;
+
+	for (i = 0; i < app.nservers; i++) {
+		s = &app.servers[i];
+		if (s->restart_until == 0)
+			continue;
+		if (s->list != NULL && !s->failed && !agent_outdated(s) &&
+		    now - s->restart_asked > 500) {
+			s->restart_until = 0;
+			toast(false, "%s now runs arcana-agent %s", s->name,
+			    jstr(s->list, "host.version") != NULL ? jstr(s->list,
+			    "host.version") : "");
+			continue;
+		}
+		if (now > s->restart_until) {
+			s->restart_until = 0;
+			toast(true, "%s still runs the agent from before the "
+			    "update: its service did not restart. The new "
+			    "program is in place; on the host, see the log, "
+			    "check arcana_agent_enable, and run \"service "
+			    "arcana_agent restart\".", s->name);
+			continue;
+		}
+		if (now - s->restart_asked >= RESTART_ASK_MS) {
+			s->restart_asked = now;
+			refresh_jails(s, false);
+		}
+	}
 }
 
 /* Send s the console's arcana-agent; restart its service with restart. */
@@ -1820,5 +1898,63 @@ save_settings(const ucl_object_t *f)
 	app.modal_error[0] = '\0';
 	api("POST", "/api/settings", b.s, settings_cb, &app.settings);
 	free(b.s);
+}
+
+/* Add address to interface ifname of s as an alias, or take it off. */
+void
+if_address(struct server *s, const char *ifname, const char *address,
+    bool remove)
+{
+	char	*qi, *qa, *json, title[160];
+
+	qi = json_quote(ifname);
+	qa = json_quote(address);
+	if (asprintf(&json, "{\"kind\":\"if-address\",\"interface\":%s,"
+	    "\"address\":%s,\"remove\":%s,\"safe\":true}", qi, qa, remove ?
+	    "true" : "false") == -1)
+		abort();
+	free(qi);
+	free(qa);
+	snprintf(title, sizeof(title), "%s: %s %s", ifname, remove ? "remove" :
+	    "add", address);
+	job_send(s, json, title, JOB_IFACE, ifname);
+}
+
+/* Bring interface ifname of s up or down. */
+void
+if_state(struct server *s, const char *ifname, bool up)
+{
+	char	*qi, *json, title[160];
+
+	qi = json_quote(ifname);
+	if (asprintf(&json, "{\"kind\":\"if-state\",\"interface\":%s,"
+	    "\"up\":%s,\"safe\":true}", qi, up ? "true" : "false") == -1)
+		abort();
+	free(qi);
+	snprintf(title, sizeof(title), "%s: %s", ifname, up ? "up" : "down");
+	job_send(s, json, title, JOB_IFACE, ifname);
+}
+
+/* Add a static route on s, or delete the one to destination. */
+void
+route_change(struct server *s, const char *destination, const char *gateway,
+    bool remove)
+{
+	char	*qd, *qg, *json, title[200];
+
+	qd = json_quote(destination);
+	qg = json_quote(gateway);
+	/* Safe, unless it is a delete that could not be put back. */
+	if (asprintf(&json, "{\"kind\":\"route\",\"destination\":%s%s%s,"
+	    "\"remove\":%s,\"safe\":%s}", qd, gateway[0] != '\0' ?
+	    ",\"gateway\":" : "", gateway[0] != '\0' ? qg : "", remove ?
+	    "true" : "false", !remove || gateway[0] != '\0' ? "true" :
+	    "false") == -1)
+		abort();
+	free(qd);
+	free(qg);
+	snprintf(title, sizeof(title), "route %s %s%s%s", remove ? "delete" :
+	    "add", destination, gateway[0] != '\0' ? " via " : "", gateway);
+	job_send(s, json, title, JOB_IFACE, destination);
 }
 

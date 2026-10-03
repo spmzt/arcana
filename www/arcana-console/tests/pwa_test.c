@@ -603,6 +603,48 @@ ATF_TC_BODY(pwa, tc)
 	    "'sshd'", 5);
 	shot("6-services");
 
+	/* The interfaces, in the network tab: an address is added to one
+	 * through the queue, as any change is. */
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]')", 10);
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]').click()");
+	wait_js("document.querySelector('table.ifaces tr[data-if=lo0] .chip')",
+	    20);
+	shot("7-interfaces");
+	run("document.querySelector('tr[data-if=lo0] button[data-act="
+	    "if-addr-add]').click()");
+	wait_js("document.querySelector('form[data-form=if-address]')", 5);
+	run("const f = document.querySelector('form[data-form=if-address]'); "
+	    "f.address.value = '10.9.0.7/24'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('lo0: add 10.9.0.7/24: done'))", 20);
+	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.7/24 alias$' ifconfig.log")
+	    == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/* A static route, from the routes table: asked for in a dialog,
+	 * queued, and run with route(8). */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=routes]').click()");
+	wait_js("document.querySelector('button[data-act=route-add]')", 10);
+	run("document.querySelector('button[data-act=route-add]').click()");
+	wait_js("document.querySelector('form[data-form=route]')", 5);
+	run("const f = document.querySelector('form[data-form=route]'); "
+	    "f.destination.value = '10.88.0.0/16'; f.gateway.value = "
+	    "'10.0.0.1'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('route add 10.88.0.0/16 via 10.0.0.1: "
+	    "done'))", 20);
+	ATF_CHECK(system("grep -q '^-n add -inet 10.88.0.0/16 10.0.0.1$' "
+	    "route.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+
 	/* The host's own record of jobs has the start that was done. */
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
 	run("document.querySelector('#j-db').click()");

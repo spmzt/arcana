@@ -47,8 +47,11 @@ reports, so a rebuilt agent of the same version counts as another. The console s
    `arcana-agent.old`.
 
 With **Restart the agent now**, on by default, the host then restarts
-its `arcana_agent` service, and shows the new version at the next
-refresh; without it, the new program runs from the next start of the
+its `arcana_agent` service. The console watches for it to answer as the
+new build and says when it does; if it has not after 45 seconds, it
+says the service did not restart, which is what happens when
+`arcana_agent_enable` is not set or the agent was started by hand (the
+host's log says which); without it, the new program runs from the next start of the
 service. A restart drops jobs still queued on the host; one that is
 running finishes first. From a shell, `arcanactl agent-update [-r]
 program` does the same for one host.

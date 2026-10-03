@@ -27,6 +27,25 @@ The console is laid out as a tree and tabs.
   - **Network**: the routing table, nexthops, connections and sockets,
     per address family, as `netstat` and `sockstat` print them
     (`--libxo json`); filter the rows, click a column to sort.
+    In the routes, **+ route** adds a static route (a destination and
+    a gateway, an address or an interface), and the cross on a static
+    route deletes it; both run `route(8)`, live only.
+    **Interfaces** lists the host's interfaces as the agent reads them
+    with getifaddrs(3): state and link, addresses, MTU, hardware
+    address, a tunnel's two ends, and traffic. An address is added
+    with **+ address** and taken off with its cross; **Up** and
+    **Down** change the interface's state. These are jobs that run
+    `ifconfig(8)`, live only: `rc.conf` is not touched, so they do not
+    survive a boot.
+    Changes to interfaces and routes are made in **safe mode**: once
+    the change is made, the host waits a minute to hear from the
+    console again, which the console does by reading the job. If the
+    change cut the host off, nothing arrives, and the host undoes it by
+    itself: the address is put back with its prefix length, the
+    interface brought back up, the route added or deleted again. The
+    job then reads "not confirmed within 60 s: undone". Only a route
+    deleted without a gateway cannot be put back, and the console says
+    so before it does it.
   - **Packages**: what `pkg` can upgrade on the host or in a running
     jail, with **Check**, a dry run, and **Upgrade** of the selected
     packages or of all.
@@ -48,8 +67,9 @@ The console is laid out as a tree and tabs.
   host runs on its own: the graph fills in stage by stage, and a change
   that cuts the console off still completes. **Queue** is on unless
   you turn it off in that browser: a change waits in the activity bar
-  until you press **Run**, and what waits is sent as one batch, run in
-  order; off, a change is sent at once.
+  until you press **Run**, and what waits is sent to each host as one
+  batch, run in order, whichever host is selected then; a change can be
+  taken out of the queue with its cross; off, a change is sent at once.
 - The tree, the activity bar, the list of tasks in it and the service
   drawer are resized by dragging their edge; the browser keeps the
   sizes, and a double click on the edge goes back to the usual one.

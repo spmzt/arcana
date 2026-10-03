@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.7.0
+  version: 0.9.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -437,7 +437,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, connections, sockets]
+            enum: [routes, nexthops, connections, sockets, interfaces]
           description: netstat -rnW, netstat -onW, netstat -n, sockstat.
         - name: family
           in: query
@@ -542,13 +542,24 @@ paths:
                       kind:
                         type: string
                         enum: [jail-action, address, service-action,
-                          service-config, pkg-upgrade]
+                          service-config, pkg-upgrade, if-address,
+                          if-state, route]
                       jail: { type: string }
                       action: { type: string, description: For jail-action
                           and service-action. }
                       address: { type: string }
                       interface: { type: string }
                       remove: { type: boolean }
+                      up: { type: boolean, description: For if-state. }
+                      safe:
+                        type: boolean
+                        description: For if-address, if-state and route.
+                          The host undoes the change unless the console
+                          reaches it again in time; reading the job
+                          (GET …/jobs/{job}) is that.
+                      destination: { type: string, description: For route. }
+                      gateway: { type: string, description: For route; an
+                          address or an interface. }
                       live: { type: boolean }
                       persist: { type: boolean }
                       service: { type: string }
@@ -1108,7 +1119,7 @@ components:
         title: { type: string }
         state:
           type: string
-          enum: [queued, running, done, cancelled]
+          enum: [queued, running, done, cancelled, unconfirmed]
         ok: { type: boolean, nullable: true, description: With done. }
         error: { type: string, nullable: true }
         peer: { type: string, description: Who queued it. }

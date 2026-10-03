@@ -33,6 +33,9 @@ struct qjob {
 	uint8_t			 state;		/* ARC_JOB_STATE_* */
 	bool			 ok;
 	bool			 begun;		/* has the lock, is at work */
+	bool			 confirmed;	/* a safe change may stay */
+	time_t			 confirm_by;	/* or is undone at this time */
+	const char		*undo_address;	/* in w's pool, or NULL */
 	char			*title;
 	char			*peer;
 	const char		*error;		/* in w's pool */
@@ -47,6 +50,7 @@ struct qjob {
 static TAILQ_HEAD(, qjob) jobs = TAILQ_HEAD_INITIALIZER(jobs);
 static pthread_mutex_t	jobs_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t	jobs_cv = PTHREAD_COND_INITIALIZER;
+static pthread_cond_t	confirm_cv = PTHREAD_COND_INITIALIZER;
 static uint64_t		nextid = 1;
 
 static char	*xdup(const char *);
@@ -55,6 +59,8 @@ static void	 spec_copy(struct arc_job_spec *, const struct arc_job_spec *);
 static void	 job_free(struct qjob *);
 static void	 trim(void);
 static void	 run(struct qjob *);
+static bool	 await_confirm(struct qjob *);
+static const char *undo(struct qjob *);
 static void	*runner(void *);
 static void	 fill(struct work *, struct arc_job *, struct qjob *, bool);
 
@@ -98,6 +104,19 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_SERVICE_CONFIG:
 		rc = asprintf(&t, "service %s configure", sp->service);
 		break;
+	case ARC_JOB_KIND_IF_ADDRESS:
+		rc = asprintf(&t, "%s: %s %s", sp->interface, sp->remove ?
+		    "remove" : "add", sp->address);
+		break;
+	case ARC_JOB_KIND_IF_STATE:
+		rc = asprintf(&t, "%s: %s", sp->interface, sp->up ? "up" :
+		    "down");
+		break;
+	case ARC_JOB_KIND_ROUTE:
+		rc = asprintf(&t, "route %s %s%s%s", sp->remove ? "delete" :
+		    "add", sp->destination, sp->gateway != NULL ? " via " : "",
+		    sp->gateway != NULL ? sp->gateway : "");
+		break;
 	default:
 		rc = asprintf(&t, "pkg upgrade%s%s%s", sp->jail != NULL ?
 		    " in " : "", sp->jail != NULL ? sp->jail : "",
@@ -121,6 +140,8 @@ spec_copy(struct arc_job_spec *d, const struct arc_job_spec *s)
 	d->address = xdup(s->address);
 	d->interface = xdup(s->interface);
 	d->service = xdup(s->service);
+	d->destination = xdup(s->destination);
+	d->gateway = xdup(s->gateway);
 	d->variables.v = NULL;
 	d->names.v = NULL;
 	if (s->variables.n > 0) {
@@ -159,6 +180,8 @@ job_free(struct qjob *j)
 	free((char *)(uintptr_t)j->spec.address);
 	free((char *)(uintptr_t)j->spec.interface);
 	free((char *)(uintptr_t)j->spec.service);
+	free((char *)(uintptr_t)j->spec.destination);
+	free((char *)(uintptr_t)j->spec.gateway);
 	free(j->title);
 	free(j->peer);
 	work_free(&j->w);
@@ -187,6 +210,70 @@ trim(void)
 		job_free(j);
 		n--;
 	}
+}
+
+/*
+ * The change is made: wait for the client to confirm it.  True when it
+ * did; false when the time allowed passed without it, or the daemon is
+ * stopping.
+ */
+static bool
+await_confirm(struct qjob *j)
+{
+	struct timespec	ts;
+	bool		confirmed;
+	int		step;
+
+	step = step_begin(&j->w, ARC_STEP_KIND_DAEMON, "safe mode",
+	    "the change is made; waiting %d s to hear from the client again",
+	    opts.safe_wait);
+	clock_gettime(CLOCK_REALTIME, &ts);
+	ts.tv_sec += opts.safe_wait;
+	pthread_mutex_lock(&jobs_lock);
+	j->state = ARC_JOB_STATE_UNCONFIRMED;
+	j->confirm_by = ts.tv_sec;
+	while (!j->confirmed && !changes_stopping())
+		if (pthread_cond_timedwait(&confirm_cv, &jobs_lock, &ts) != 0)
+			break;
+	confirmed = j->confirmed;
+	j->state = ARC_JOB_STATE_RUNNING;
+	pthread_mutex_unlock(&jobs_lock);
+	step_end(&j->w, step, confirmed, confirmed ? "confirmed: it stays" :
+	    "not confirmed");
+	logmsg(confirmed ? LOG_INFO : LOG_WARNING, "job %ju: %s: %s",
+	    (uintmax_t)j->id, j->title, confirmed ? "confirmed" :
+	    "not confirmed in time: undoing it");
+	return (confirmed);
+}
+
+/* Take a safe change back; returns what to say of the job. */
+static const char *
+undo(struct qjob *j)
+{
+	const struct arc_job_spec	*sp;
+	const char			*e;
+	int				 rc;
+
+	sp = &j->spec;
+	e = NULL;
+	switch (sp->kind) {
+	case ARC_JOB_KIND_IF_ADDRESS:
+		rc = do_if_address(&j->w, sp->interface, j->undo_address != NULL ?
+		    j->undo_address : sp->address, !sp->remove, &e);
+		break;
+	case ARC_JOB_KIND_IF_STATE:
+		rc = do_if_state(&j->w, sp->interface, !sp->up, &e);
+		break;
+	default:
+		rc = do_route(&j->w, sp->destination, sp->gateway, !sp->remove,
+		    &e);
+		break;
+	}
+	if (rc != 0)
+		return (wfmt(&j->w, "not confirmed within %d s, and it could "
+		    "not be undone: %s", opts.safe_wait, e != NULL ? e :
+		    "failed"));
+	return (wfmt(&j->w, "not confirmed within %d s: undone", opts.safe_wait));
 }
 
 /* Do what the job says; its outcome goes into the job. */
@@ -244,6 +331,24 @@ run(struct qjob *j)
 		ok = sar.ok;
 		error = sar.error;
 		break;
+	case ARC_JOB_KIND_IF_ADDRESS:
+		error = NULL;
+		/* To put an address back, its prefix length is needed. */
+		if (sp->safe && sp->remove)
+			j->undo_address = if_address_with_prefix(&j->w,
+			    sp->interface, sp->address);
+		ok = do_if_address(&j->w, sp->interface, sp->address,
+		    sp->remove, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IF_STATE:
+		error = NULL;
+		ok = do_if_state(&j->w, sp->interface, sp->up, &error) == 0;
+		break;
+	case ARC_JOB_KIND_ROUTE:
+		error = NULL;
+		ok = do_route(&j->w, sp->destination, sp->gateway, sp->remove,
+		    &error) == 0;
+		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
 		memset(&scq, 0, sizeof(scq));
 		memset(&scr, 0, sizeof(scr));
@@ -264,6 +369,11 @@ run(struct qjob *j)
 		ok = ur.ok;
 		error = ur.error;
 		break;
+	}
+	/* A safe change stays only when the client is heard from again. */
+	if (ok && go && sp->safe && !await_confirm(j)) {
+		ok = false;
+		error = undo(j);
 	}
 	(void)change_note(NULL);
 	pthread_mutex_unlock(&change_lock);
@@ -339,6 +449,10 @@ fill(struct work *w, struct arc_job *o, struct qjob *j, bool trace)
 	    j->state != ARC_JOB_STATE_CANCELLED) {
 		o->has_started = true;
 		o->started = j->started;
+	}
+	if (j->state == ARC_JOB_STATE_UNCONFIRMED) {
+		o->has_confirm_by = true;
+		o->confirm_by = j->confirm_by;
 	}
 	if (j->state == ARC_JOB_STATE_DONE) {
 		o->has_ok = true;
@@ -470,3 +584,41 @@ jobs_log(int pri)
 			    (uintmax_t)j->id, j->title, j->peer);
 	pthread_mutex_unlock(&jobs_lock);
 }
+
+/* The client is still there: an unconfirmed job's change stays. */
+const struct arc_job *
+jobs_confirm(struct work *w, uint64_t id, const char **errp)
+{
+	struct arc_job	*o;
+	struct qjob	*j;
+
+	o = NULL;
+	*errp = "no such job";
+	pthread_mutex_lock(&jobs_lock);
+	TAILQ_FOREACH(j, &jobs, link) {
+		if (j->id != id)
+			continue;
+		if (j->state != ARC_JOB_STATE_UNCONFIRMED) {
+			*errp = "the job is not waiting to be confirmed";
+			break;
+		}
+		j->confirmed = true;
+		pthread_cond_broadcast(&confirm_cv);
+		o = wcalloc(w, 1, sizeof(*o));
+		fill(w, o, j, false);
+		break;
+	}
+	pthread_mutex_unlock(&jobs_lock);
+	return (o);
+}
+
+/* The daemon is stopping: those who wait for a confirmation stop. */
+void
+jobs_wake(void)
+{
+
+	pthread_mutex_lock(&jobs_lock);
+	pthread_cond_broadcast(&confirm_cv);
+	pthread_mutex_unlock(&jobs_lock);
+}
+

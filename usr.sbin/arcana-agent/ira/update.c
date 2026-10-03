@@ -134,6 +134,7 @@ service_restart(const char *name)
 	struct timespec	 ts = { 1, 0 };
 	sigset_t	 none;
 	pid_t		 pid;
+	int		 status;
 
 	if ((pid = fork()) == -1) {
 		logmsg(LOG_ERR, "restart: fork: %s", strerror(errno));
@@ -150,7 +151,20 @@ service_restart(const char *name)
 	(void)sigprocmask(SIG_SETMASK, &none, NULL);
 	closefrom(3);
 	(void)nanosleep(&ts, NULL);
-	execl(opts.service_bin, opts.service_bin, name, "restart",
-	    (char *)NULL);
-	_exit(127);
+	/*
+	 * service(8) runs in a child, so that its failing is not lost:
+	 * a service that is not enabled, or not there, refuses, and
+	 * nothing else would say why the old program still runs.
+	 */
+	if ((pid = fork()) == 0) {
+		execl(opts.service_bin, opts.service_bin, name, "restart",
+		    (char *)NULL);
+		_exit(127);
+	}
+	if (pid == -1 || waitpid(pid, &status, 0) == -1 ||
+	    !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		execl("/usr/bin/logger", "logger", "-t", "arcana-agent", "-p",
+		    "daemon.err", "restart: service(8) could not restart",
+		    name, "(is it enabled in rc.conf?)", (char *)NULL);
+	_exit(0);
 }

@@ -55,12 +55,14 @@ static const char *status_names[] = {
 
 static bool	show_trace;
 static bool	queue;		/* -q: submit as a job */
+static bool	safe;		/* -s: undo the change unless confirmed */
 
 static const char *job_states[] = {
 	[ARC_JOB_STATE_QUEUED] = "queued",
 	[ARC_JOB_STATE_RUNNING] = "running",
 	[ARC_JOB_STATE_DONE] = "done",
 	[ARC_JOB_STATE_CANCELLED] = "cancelled",
+	[ARC_JOB_STATE_UNCONFIRMED] = "unconfirmed",
 };
 
 static void	usage(void) __dead2;
@@ -83,6 +85,7 @@ static int	submit(struct arc_client *, struct arc_job_spec *);
 static void	emit_job(const struct arc_job *);
 static int	cmd_jobs(struct arc_client *);
 static int	cmd_job(struct arc_client *, int, char **);
+static int	cmd_interface(struct arc_client *, int, char **);
 static int	cmd_job_cancel(struct arc_client *, int, char **);
 static int	cmd_service(struct arc_client *, int, char **);
 static void	emit_service(const struct arc_service *, bool);
@@ -91,7 +94,7 @@ static void
 usage(void)
 {
 
-	xo_error("usage: arcanactl [-qt] [-c uri] [-A cafile -C certfile "
+	xo_error("usage: arcanactl [-qst] [-c uri] [-A cafile -C certfile "
 	    "-K keyfile] [-N name] command\n"
 	    "commands:\n"
 	    "    hello\n"
@@ -102,7 +105,12 @@ usage(void)
 	    "    service name start | stop | restart | reload | enable | "
 	    "disable\n"
 	    "    service name config [-x key ...] [key=value ...]\n"
-	    "    net routes | nexthops | connections | sockets [-4 | -6]\n"
+	    "    net routes | nexthops | connections | sockets | interfaces "
+	    "[-4 | -6]\n"
+	    "    interface name up | down\n"
+	    "    interface name add | remove address\n"
+	    "    route add destination gateway\n"
+	    "    route delete destination [gateway]\n"
 	    "    stats\n"
 	    "    packages [-r] [jail]\n"
 	    "    pkg-upgrade [-n] [-j jail] [package ...]\n"
@@ -331,6 +339,8 @@ cmd_hello(struct arc_client *cl)
 	xo_emit("{Lwc:Privileged}{n:privileged/%s}\n",
 	    h->privileged ? "true" : "false");
 	xo_emit("{Lwc:arcana-agent}{:version/%s}\n", h->version);
+	if (h->build != NULL)
+		xo_emit("{Lwc:Build}{:build/%s}\n", h->build);
 	xo_close_container("host");
 	arc_hello_rsp_free(rsp);
 	return (0);
@@ -856,12 +866,79 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/*
+ * interface name up | down, interface name add | remove address: a job,
+ * waited for unless it is only queued (-q).
+ */
+static int
+cmd_interface(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_submit_req	 sreq;
+	struct arc_job_submit_rsp	*srsp;
+	struct arc_job_spec		 sp;
+	char				 id[24], *jargv[4];
+	int				 error;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	if (strcmp(argv[0], "route") == 0) {
+		/* route add destination gateway | delete destination [gw] */
+		sp.kind = ARC_JOB_KIND_ROUTE;
+		sp.remove = strcmp(argv[1], "delete") == 0;
+		if ((!sp.remove && (strcmp(argv[1], "add") != 0 || argc != 4)) ||
+		    (sp.remove && argc > 4))
+			usage();
+		sp.destination = argv[2];
+		sp.gateway = argc == 4 ? argv[3] : NULL;
+		goto send;
+	}
+	sp.interface = argv[1];
+	if ((strcmp(argv[2], "up") == 0 || strcmp(argv[2], "down") == 0) &&
+	    argc == 3) {
+		sp.kind = ARC_JOB_KIND_IF_STATE;
+		sp.has_up = true;
+		sp.up = strcmp(argv[2], "up") == 0;
+	} else if ((strcmp(argv[2], "add") == 0 || strcmp(argv[2],
+	    "remove") == 0) && argc == 4) {
+		sp.kind = ARC_JOB_KIND_IF_ADDRESS;
+		sp.address = argv[3];
+		sp.remove = strcmp(argv[2], "remove") == 0;
+	} else
+		usage();
+send:
+	sp.safe = safe;
+	if (queue)
+		return (submit(cl, &sp));
+	memset(&sreq, 0, sizeof(sreq));
+	sreq.batch.v = &sp;
+	sreq.batch.n = 1;
+	if ((error = arc_job_submit(cl, &sreq, &srsp)) != 0)
+		fail(cl, error, "interface");
+	if (!srsp->ok || srsp->jobs.n != 1) {
+		xo_warnx("%s %s: %s", argv[0], argv[1], srsp->error != NULL ?
+		    srsp->error : "not accepted");
+		arc_job_submit_rsp_free(srsp);
+		return (1);
+	}
+	snprintf(id, sizeof(id), "%ju", (uintmax_t)srsp->jobs.v[0].id);
+	arc_job_submit_rsp_free(srsp);
+	/* The job, read until it is done, as "job -w id". */
+	jargv[0] = (char *)(uintptr_t)"job";
+	jargv[1] = (char *)(uintptr_t)"-w";
+	jargv[2] = id;
+	jargv[3] = NULL;
+	optreset = 1;
+	return (cmd_job(cl, 3, jargv));
+}
+
 /* The program's libxo JSON, printed as it came. */
 static int
 cmd_net(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets" };
+	    "sockets", "interfaces" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -1130,6 +1207,8 @@ cmd_job(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_job_req	 req;
 	struct arc_job_rsp	*rsp;
+	struct arc_job_confirm_req creq;
+	struct arc_job_confirm_rsp *crsp;
 	bool			 wait, done, ok;
 	int			 ch, error;
 
@@ -1162,6 +1241,17 @@ cmd_job(struct arc_client *cl, int argc, char **argv)
 		    rsp->job->state == ARC_JOB_STATE_CANCELLED;
 		if (done || !wait)
 			break;
+		/*
+		 * A safe change is made and waits to hear from us: that
+		 * this request gets through is what it waits for.
+		 */
+		if (rsp->job->state == ARC_JOB_STATE_UNCONFIRMED) {
+			memset(&creq, 0, sizeof(creq));
+			creq.has_id = true;
+			creq.id = req.id;
+			if (arc_job_confirm(cl, &creq, &crsp) == 0)
+				arc_job_confirm_rsp_free(crsp);
+		}
 		arc_job_rsp_free(rsp);
 		usleep(300000);
 	}
@@ -1215,7 +1305,7 @@ main(int argc, char *argv[])
 		exit(2);
 	uri = PATH_SOCKET;
 	cafile = certfile = keyfile = name = NULL;
-	while ((ch = getopt(argc, argv, "+A:C:c:K:N:qt")) != -1) {
+	while ((ch = getopt(argc, argv, "+A:C:c:K:N:qst")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -1234,6 +1324,9 @@ main(int argc, char *argv[])
 			break;
 		case 'q':
 			queue = true;
+			break;
+		case 's':
+			safe = true;
 			break;
 		case 't':
 			show_trace = true;
@@ -1291,6 +1384,9 @@ main(int argc, char *argv[])
 		rc = cmd_services(&cl);
 	else if (strcmp(argv[0], "service") == 0)
 		rc = cmd_service(&cl, argc, argv);
+	else if (strcmp(argv[0], "interface") == 0 ||
+	    strcmp(argv[0], "route") == 0)
+		rc = cmd_interface(&cl, argc, argv);
 	else if (strcmp(argv[0], "net") == 0)
 		rc = cmd_net(&cl, argc, argv);
 	else if (strcmp(argv[0], "stats") == 0 && argc == 1)

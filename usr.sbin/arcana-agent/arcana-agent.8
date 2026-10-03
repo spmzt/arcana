@@ -29,6 +29,9 @@
 .Op Fl c Ar config.mk
 .Op Fl G Ar git
 .Op Fl M Ar make
+.Op Fl I Ar ifconfig
+.Op Fl r Ar route
+.Op Fl w Ar seconds
 .Op Fl N Ar netstat
 .Op Fl X Ar sockstat
 .Op Fl W Ar swapinfo
@@ -221,6 +224,15 @@ and
 programs.
 .It Fl V
 Print the version and exit.
+.It Fl w Ar seconds
+How long a change made in safe mode waits to be confirmed.
+Default 60.
+.It Fl I Ar ifconfig , Fl r Ar route
+The
+.Xr ifconfig 8
+and
+.Xr route 8
+programs.
 .It Fl N Ar netstat , Fl X Ar sockstat
 The
 .Xr netstat 1
@@ -257,6 +269,30 @@ the change has ended, reporting again every 30 seconds while it waits.
 The jobs that had not started are lost.
 A second signal stops it at once, and the log says what was cut short.
 A program a change had started keeps running in that case.
+.Sh INTERFACES
+The network interfaces are read with
+.Xr getifaddrs 3
+and a few ioctls, as
+.Xr ifconfig 8
+reads them: flags, link state, MTU, hardware address, description, the
+two ends of a tunnel, counters and addresses.
+They are changed by jobs that run
+.Xr ifconfig 8 :
+an address added as an alias or taken off, an interface brought up or
+down.
+Static routes are added and deleted by jobs that run
+.Xr route 8 .
+The changes are live only.
+.Pp
+A job of these kinds may ask for safe mode.
+The change is made, and the job waits, in the state
+.Li unconfirmed ,
+for the client to confirm it; reaching the daemon again is the point.
+Without that within the wait
+.Pq Fl w , 60 seconds
+the daemon undoes the change, as it also does when it is stopped while
+waiting: an address is put back with the prefix length it had, an
+interface brought back up or down, a route deleted or added again.
 .Sh BUILDS
 A client may ask for
 .Nm

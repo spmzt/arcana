@@ -18,7 +18,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.4.0"
+#define	ARCANA_AGENT_VERSION	"0.6.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -32,6 +32,8 @@
 #define	PATH_ZPOOL_BIN		"/sbin/zpool"
 #define	PATH_PKG_BIN		"/usr/sbin/pkg"
 #define	PATH_GIT_BIN		"/usr/local/bin/git"
+#define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
+#define	PATH_ROUTE_BIN		"/sbin/route"
 #define	PATH_MAKE_BIN		"/usr/bin/make"
 #define	PATH_KEYSCAN_BIN	"/usr/bin/ssh-keyscan"
 #define	PATH_KEYGEN_BIN		"/usr/bin/ssh-keygen"
@@ -58,6 +60,9 @@ struct opts {
 	const char	*zpool_bin;
 	const char	*pkg_bin;
 	const char	*self_path;	/* the program an update replaces */
+	const char	*ifconfig_bin;
+	const char	*route_bin;
+	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
 	const char	*keyscan_bin;	/* ssh-keyscan(1) */
 	const char	*keygen_bin;	/* ssh-keygen(1) */
@@ -224,6 +229,18 @@ int		 do_service_config(struct work *,
 int		 do_network(struct work *, uint8_t, uint8_t,
 		    struct arc_network_rsp *);
 
+/* invidia/interfaces.c */
+int		 do_interfaces(struct work *, uint8_t, struct arc_network_rsp *);
+int		 do_if_address(struct work *, const char *, const char *, bool,
+		    const char **);
+int		 do_if_state(struct work *, const char *, bool, const char **);
+const char	*if_address_with_prefix(struct work *, const char *,
+		    const char *);
+
+/* invidia/routes.c */
+int		 do_route(struct work *, const char *, const char *, bool,
+		    const char **);
+
 /* gula/stats.c */
 int		 do_stats(struct work *, struct arc_stats_rsp *);
 
@@ -240,6 +257,7 @@ int		 jobs_submit(const struct arc_job_spec *, size_t, const char *,
 void		 jobs_list(struct work *, const struct arc_job **, size_t *);
 const struct arc_job *jobs_get(struct work *, uint64_t);
 const struct arc_job *jobs_cancel(struct work *, uint64_t, const char **);
+const struct arc_job *jobs_confirm(struct work *, uint64_t, const char **);
 
 /* handlers.c */
 /* invidia/address.c, superbia/confedit.c */
@@ -270,9 +288,11 @@ int		 do_agent_update(struct work *, const uint8_t *, size_t,
 void		 service_restart(const char *);
 
 bool		 change_note(const char *, ...) __printflike(1, 2);
-void		 changes_stop(void);
+void		 changes_stop(bool);
 void		 changes_log(int);
 void		 jobs_log(int);
+void		 jobs_wake(void);
+bool		 changes_stopping(void);
 
 extern pthread_mutex_t	change_lock;	/* one change at a time */
 

@@ -196,8 +196,10 @@ tick(void *arg)
 			auth_status();
 	}
 	/* Running jobs: read them, and redraw when their trace grew. */
-	if (app.screen == SCREEN_CONSOLE)
+	if (app.screen == SCREEN_CONSOLE) {
 		jobs_poll();
+		agent_restarts(now);
+	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
 	    now - last_update > UPDATE_MS) {
 		last_update = now;
@@ -374,6 +376,29 @@ submit(const char *form, const ucl_object_t *f)
 		address_change(app.jail, s, jstr(f, "mode") != NULL &&
 		    strcmp(jstr(f, "mode"), "remove") == 0, jbool(f, "live"),
 		    jbool(f, "persist"), dry);
+	} else if (strcmp(form, "route") == 0) {
+		s = jstr(f, "destination") != NULL ? jstr(f, "destination") :
+		    "";
+		if (s[0] == '\0' || jstr(f, "gateway") == NULL ||
+		    jstr(f, "gateway")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Give a destination and a gateway");
+			return;
+		}
+		app.modal = MODAL_NONE;
+		if ((s2 = cur_server()) != NULL)
+			route_change(s2, s, jstr(f, "gateway"), false);
+	} else if (strcmp(form, "if-address") == 0) {
+		s = jstr(f, "address") != NULL ? jstr(f, "address") : "";
+		if (strlen(s) < 2 || strchr(s, ' ') != NULL) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Give an address, such as 10.0.0.5/24 or "
+			    "2001:db8::5/64");
+			return;
+		}
+		app.modal = MODAL_NONE;
+		if ((s2 = cur_server()) != NULL)
+			if_address(s2, app.confirm.arg, s, false);
 	} else if (strcmp(form, "host-key") == 0) {
 		/* Confirmed: build again, with the keys shown as trusted;
 		 * or just again, once the deploy key is allowed. */
@@ -484,6 +509,14 @@ dispatch(const char *act, const char *arg, const char *value)
 		queue_run();
 	} else if (strcmp(act, "queue-clear") == 0) {
 		queue_clear();
+	} else if (strcmp(act, "queue-drop") == 0) {
+		i = atoi(arg);
+		if (i >= 0 && i < app.nbatch) {
+			free(app.batch[i].json);
+			memmove(&app.batch[i], &app.batch[i + 1],
+			    (size_t)(app.nbatch - i - 1) * sizeof(app.batch[0]));
+			app.nbatch--;
+		}
 	} else if (strcmp(act, "svc-sort") == 0) {
 		/* The same key again turns the order round. */
 		i = strcmp(arg, "name") == 0 ? SVC_SORT_NAME :
@@ -507,9 +540,58 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.net.sort = -1;
 		app.net.kind = strcmp(arg, "nexthops") == 0 ? NET_NEXTHOPS :
 		    strcmp(arg, "connections") == 0 ? NET_CONNECTIONS :
-		    strcmp(arg, "sockets") == 0 ? NET_SOCKETS : NET_ROUTES;
+		    strcmp(arg, "sockets") == 0 ? NET_SOCKETS :
+		    strcmp(arg, "interfaces") == 0 ? NET_INTERFACES :
+		    NET_ROUTES;
 		app.net.loading = false;
 		refresh_network(s, true);
+	} else if (strcmp(act, "route-add") == 0 && s != NULL) {
+		app.modal = MODAL_ROUTE;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "route-delete") == 0 && s != NULL) {
+		char body[400];
+
+		snprintf(body, sizeof(body), "route delete %s%s%s, on %s. %s "
+		    "The change is live only: rc.conf is not touched.", arg,
+		    value[0] != '\0' ? " " : "", value, s->name, value[0] !=
+		    '\0' ? "If that cuts the host off from the console, the "
+		    "host puts the route back by itself after a minute." :
+		    "This route has no gateway to put it back by: if the "
+		    "console reaches the host through it, the host is cut "
+		    "off.");
+		confirm("Delete the route", body, "Delete", true, "",
+		    "do-route-delete", arg, value);
+	} else if (strcmp(act, "do-route-delete") == 0 && s != NULL) {
+		route_change(s, arg, value, true);
+	} else if (strcmp(act, "if-addr-add") == 0 && s != NULL) {
+		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
+		app.modal = MODAL_IF_ADDRESS;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "if-addr-remove") == 0 && s != NULL) {
+		char body[400];
+
+		snprintf(body, sizeof(body), "ifconfig %s %s -alias, on %s. "
+		    "If that cuts the host off from the console, the host "
+		    "puts the address back by itself after a minute. The "
+		    "change is live only: rc.conf is not touched.", arg, value,
+		    s->name);
+		confirm("Remove the address", body, "Remove", true, "",
+		    "do-if-addr-remove", arg, value);
+	} else if (strcmp(act, "do-if-addr-remove") == 0 && s != NULL) {
+		if_address(s, arg, value, true);
+	} else if (strcmp(act, "if-up") == 0 && s != NULL) {
+		if_state(s, arg, true);
+	} else if (strcmp(act, "if-down") == 0 && s != NULL) {
+		char body[400];
+
+		snprintf(body, sizeof(body), "ifconfig %s down, on %s. If "
+		    "that cuts the host off from the console, the host "
+		    "brings the interface back up by itself after a minute.",
+		    arg, s->name);
+		confirm("Bring the interface down", body, "Bring down", true,
+		    arg, "do-if-down", arg, "");
+	} else if (strcmp(act, "do-if-down") == 0 && s != NULL) {
+		if_state(s, arg, false);
 	} else if (strcmp(act, "net-family") == 0 && s != NULL) {
 		app.net.family = atoi(arg);
 		app.net.loading = false;

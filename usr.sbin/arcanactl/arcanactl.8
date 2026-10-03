@@ -12,7 +12,7 @@
 .Sh SYNOPSIS
 .Nm
 .Op Fl -libxo Ar options
-.Op Fl qt
+.Op Fl qst
 .Op Fl c Ar uri
 .Op Fl A Ar cafile Fl C Ar certfile Fl K Ar keyfile
 .Op Fl N Ar name
@@ -101,7 +101,7 @@ variables, with what the script says of itself and its extra commands.
 sets one first,
 .Fl x
 unsets one; only the service's own variables are accepted.
-.It Cm net routes | nexthops | connections | sockets Op Fl 4 | Fl 6
+.It Cm net routes | nexthops | connections | sockets | interfaces Op Fl 4 | Fl 6
 The host's routing table
 .Pq Nm netstat Fl rnW ,
 nexthop table
@@ -139,6 +139,46 @@ One job with the trace of what it has done so far;
 waits until it has finished.
 .It Cm job-cancel Ar id
 Take a job that has not started out of the queue.
+.It Cm interface Ar name Cm up | down
+Bring a network interface up or down.
+.It Cm interface Ar name Cm add | remove Ar address
+Add an IPv4 or IPv6
+.Ar address ,
+with its prefix length, to an interface as an alias, or take it off.
+.It Cm route add Ar destination gateway
+Add a static route to
+.Ar destination ,
+which is
+.Li default ,
+a network with its prefix length or a host address, by
+.Ar gateway ,
+an address or the name of an interface.
+.Li ::/0
+is the default route of IPv6.
+.It Cm route delete Ar destination Op Ar gateway
+Delete the route to
+.Ar destination .
+.Pp
+With the option
+.Fl s
+before the command, the change is made in safe mode: the host undoes it
+unless it hears from the client again within the time it allows.
+.Nm
+confirms by waiting for the job, so the change stays when the host is
+still reachable afterwards, and is undone when the change cut it off.
+With
+.Fl q
+nobody confirms.
+.Pp
+These run
+.Xr ifconfig 8
+and
+.Xr route 8
+on the host as a job, which is waited for unless
+.Fl q
+only queues it, and change the running system only:
+.Xr rc.conf 5
+is not touched.
 .It Cm agent-build Oo Fl y Oc Oo Fl i Ar key Oc Oo Fl o Ar file Oc Ar repository Op Ar ref
 Have the host clone the git
 .Ar repository ,

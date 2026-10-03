@@ -119,6 +119,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_NEXTHOPS] = "nexthops",
 	[ARC_NET_KIND_CONNECTIONS] = "connections",
 	[ARC_NET_KIND_SOCKETS] = "sockets",
+	[ARC_NET_KIND_INTERFACES] = "interfaces",
 };
 
 static const char *service_action_names[] = {
@@ -631,6 +632,8 @@ call_run(struct kore_task *t)
 	struct arc_job_rsp	*jr;
 	struct arc_job_cancel_req jcq;
 	struct arc_job_cancel_rsp *jcr;
+	struct arc_job_confirm_req jfq;
+	struct arc_job_confirm_rsp *jfr;
 	struct arc_agent_update_req auq;
 	struct arc_agent_update_rsp *aur;
 	struct arc_agent_build_req abq;
@@ -880,6 +883,20 @@ call_run(struct kore_task *t)
 			goto rpcfail;
 		ok = jr->ok;
 		put_str(top, "error", jr->error);
+		/*
+		 * A safe change waits to hear from the console again, and
+		 * here the console is: the change stays.  Had it cut the
+		 * host off, this would not have got through, and the host
+		 * would undo it by itself.
+		 */
+		if (jr->job != NULL && jr->job->state ==
+		    ARC_JOB_STATE_UNCONFIRMED) {
+			memset(&jfq, 0, sizeof(jfq));
+			jfq.has_id = true;
+			jfq.id = c->jobid;
+			if (arc_job_confirm(&cl, &jfq, &jfr) == 0)
+				arc_job_confirm_rsp_free(jfr);
+		}
 		if (jr->job != NULL) {
 			put(top, "job", job_object(c, jr->job, true,
 			    now_us() - t1));
@@ -1680,6 +1697,9 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_SERVICE_ACTION] = "service-action",
 	[ARC_JOB_KIND_SERVICE_CONFIG] = "service-config",
 	[ARC_JOB_KIND_PKG_UPGRADE] = "pkg-upgrade",
+	[ARC_JOB_KIND_IF_ADDRESS] = "if-address",
+	[ARC_JOB_KIND_IF_STATE] = "if-state",
+	[ARC_JOB_KIND_ROUTE] = "route",
 };
 
 static const char *job_state_names[] = {
@@ -1687,6 +1707,7 @@ static const char *job_state_names[] = {
 	[ARC_JOB_STATE_RUNNING] = "running",
 	[ARC_JOB_STATE_DONE] = "done",
 	[ARC_JOB_STATE_CANCELLED] = "cancelled",
+	[ARC_JOB_STATE_UNCONFIRMED] = "unconfirmed",
 };
 
 /* A job; with its trace, under the console's own steps. */
@@ -1726,6 +1747,8 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->address);
 	kore_free((char *)(uintptr_t)sp->interface);
 	kore_free((char *)(uintptr_t)sp->service);
+	kore_free((char *)(uintptr_t)sp->destination);
+	kore_free((char *)(uintptr_t)sp->gateway);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -1775,7 +1798,10 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->address = jdup(o, "address");
 	sp->interface = jdup(o, "interface");
 	sp->service = jdup(o, "service");
+	sp->destination = jdup(o, "destination");
+	sp->gateway = jdup(o, "gateway");
 	sp->remove = ucl_flag(o, "remove");
+	sp->safe = ucl_flag(o, "safe");
 	sp->live = ucl_flag(o, "live");
 	sp->persist = ucl_flag(o, "persist");
 	a = ucl_str(o, "action");
@@ -1803,6 +1829,25 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			    "action");
 		sp->has_service_action = true;
 		sp->service_action = (uint8_t)i;
+		break;
+	case ARC_JOB_KIND_IF_ADDRESS:
+		if (sp->interface == NULL || sp->address == NULL)
+			return ("an if-address job needs an interface and an "
+			    "address");
+		break;
+	case ARC_JOB_KIND_ROUTE:
+		if (sp->destination == NULL || (!sp->remove && sp->gateway ==
+		    NULL))
+			return ("a route job needs a destination, and a "
+			    "gateway to add one");
+		break;
+	case ARC_JOB_KIND_IF_STATE:
+		if (sp->interface == NULL || (v = ucl_object_lookup(o,
+		    "up")) == NULL || ucl_object_type(v) != UCL_BOOLEAN)
+			return ("an if-state job needs an interface and up, "
+			    "true or false");
+		sp->has_up = true;
+		sp->up = ucl_object_toboolean(v);
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
 		if (sp->service == NULL)

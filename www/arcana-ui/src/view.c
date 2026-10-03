@@ -1027,8 +1027,11 @@ dock(struct html *h)
 			h_fmt(h, "<li class=\"op o-queued\"><i class=\"led\"></i>"
 			    "<span class=\"t\">%d. ", i + 1);
 			h_txt(h, app.batch[i].title);
-			h_raw(h, "</span><span class=\"s\">queued here</span>"
-			    "</li>");
+			h_raw(h, "</span><span class=\"s\">");
+			h_txt(h, app.batch[i].host);
+			h_fmt(h, " · queued here</span><button class=\"icon\" "
+			    "data-act=\"queue-drop\" data-arg=\"%d\" title=\""
+			    "Take it out of the queue\">×</button></li>", i);
 		}
 		for (i = 0; i < app.nops; i++) {
 			o = &app.ops[i];
@@ -1137,6 +1140,31 @@ modal(struct html *h)
 			    "arcana-agent there; leave it out to only write the "
 			    "certificate.</p>");
 		}
+		break;
+	case MODAL_ROUTE:
+		h_raw(h, "<form data-form=\"route\"><h2>Add a static route</h2>"
+		    "<p>With <code>route add</code>, now. The change is live "
+		    "only: <code>rc.conf</code> is not touched, and the route "
+		    "is gone at the next boot.</p>"
+		    "<label>Destination<input name=\"destination\" "
+		    "spellcheck=\"false\" autocomplete=\"off\" "
+		    "placeholder=\"10.20.0.0/16\" autofocus><small>A network "
+		    "with its prefix length, a host address, or default "
+		    "(::/0 for IPv6's).</small></label>"
+		    "<label>Gateway<input name=\"gateway\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"10.0.0.1\"><small>An "
+		    "address, or the name of an interface.</small></label>");
+		break;
+	case MODAL_IF_ADDRESS:
+		h_raw(h, "<form data-form=\"if-address\"><h2>Add an address to ");
+		h_txt(h, app.confirm.arg);
+		h_raw(h, "</h2><p>As an alias, with <code>ifconfig</code>, now. "
+		    "The change is live only: <code>rc.conf</code> is not "
+		    "touched, and the address is gone at the next boot.</p>"
+		    "<label>Address<input name=\"address\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"10.0.0.5/24\" autofocus>"
+		    "<small>IPv4 or IPv6, with its prefix length; without one "
+		    "it is /32 or /128.</small></label>");
 		break;
 	case MODAL_HOST_KEY:
 		k = app.build_reply;
@@ -1363,6 +1391,10 @@ modal(struct html *h)
 			break;
 		case MODAL_AGENT_UPDATE:
 			h_raw(h, "<button class=\"primary\">Update</button>");
+			break;
+		case MODAL_IF_ADDRESS:
+		case MODAL_ROUTE:
+			h_raw(h, "<button class=\"primary\">Add</button>");
 			break;
 		case MODAL_HOST_KEY:
 			h_fmt(h, "<button class=\"%s\">%s</button>",

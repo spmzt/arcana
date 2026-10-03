@@ -177,7 +177,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[32];
+	char	*argv[40];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -282,6 +282,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-keyscan", "#!/bin/sh\nfor a; do last=$a; done\n"
 	    "echo \"$last $(cut -d' ' -f1,2 hostkey.pub)\"\n");
 	ATF_REQUIRE(chmod("fake-keyscan", 0755) == 0);
+	/* ifconfig(8), for changes: what it was run with. */
+	put("fake-ifconfig", "#!/bin/sh\necho \"$*\" >> ifconfig.log\n");
+	put("fake-route", "#!/bin/sh\necho \"$*\" >> route.log\n");
+	ATF_REQUIRE(chmod("fake-route", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-ifconfig", 0755) == 0);
 	put("fake-make", buf);
 	ATF_REQUIRE(chmod("fake-make", 0755) == 0);
 	snprintf(send, sizeof(send), "%s", jgd);
@@ -345,7 +350,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[27] = (char *)(uintptr_t)"./fake-make";
 	argv[28] = (char *)(uintptr_t)"-Y";
 	argv[29] = (char *)(uintptr_t)"./fake-keyscan";
-	argv[30] = NULL;
+	argv[30] = (char *)(uintptr_t)"-I";
+	argv[31] = (char *)(uintptr_t)"./fake-ifconfig";
+	argv[32] = (char *)(uintptr_t)"-r";
+	argv[33] = (char *)(uintptr_t)"./fake-route";
+	argv[34] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
