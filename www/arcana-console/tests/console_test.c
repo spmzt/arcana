@@ -673,6 +673,22 @@ ATF_TC_BODY(agent_build, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	resp_free(&r);
 	ATF_CHECK(access("build/known_hosts", R_OK) == 0);
+	/* Without a key named, the host shows its own. */
+	ATF_CHECK(system("grep -q 'ssh -i .*/build/id_ed25519 ' git.log") == 0);
+
+	/* The key named in Settings is the one git is told to show. */
+	snprintf(body, sizeof(body), "{\"set\":{\"agent_ssh_key\":"
+	    "\"%s/hostkey\"}}", cwd);
+	http("POST", "/api/settings", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "grep -q 'ssh -i %s/hostkey ' git.log",
+	    cwd);
+	ATF_CHECK(system(body) == 0);
 
 	/*
 	 * The console's own update, through the agent of its host: the

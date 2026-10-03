@@ -272,7 +272,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("fake-pkg", 0755) == 0);
 
 	/* git clone makes a tree; make "builds" by copying the agent. */
-	put("fake-git", "#!/bin/sh\n[ \"$1\" = -c ] && shift 2\n"
+	put("fake-git", "#!/bin/sh\necho \"$*\" >> git.log\n"
+	    "[ \"$1\" = -c ] && shift 2\n"
 	    "[ \"$1\" = clone ] || exit 2\n"
 	    "for a; do last=$a; done\n"
 	    "mkdir -p \"$last/lib/libjailconf\" \"$last/usr.sbin/arcana-agent\"\n");
