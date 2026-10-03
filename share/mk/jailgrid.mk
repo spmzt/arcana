@@ -81,11 +81,15 @@ jg-dirs: .PHONY
 	    ${DESTDIR}${PREFIX}/etc/rc.d
 beforeinstall: jg-dirs
 
-# The directories FILESGROUPS create belong to root unless told
-# otherwise; follow SHAREOWN, which an unprivileged staging sets.
+# The files and directories FILESGROUPS install belong to root unless
+# told otherwise; follow SHAREOWN, which an unprivileged staging sets.
 .for _d in CONFDIR RCDIR
 ${_d}_OWN?=	${SHAREOWN}
 ${_d}_GRP?=	${SHAREGRP}
+.endfor
+.for _g in CONF RC
+${_g}OWN?=	${SHAREOWN}
+${_g}GRP?=	${SHAREGRP}
 .endfor
 
 # atf.test.mk only knows LDADD_atf_c inside the source tree; base ships
