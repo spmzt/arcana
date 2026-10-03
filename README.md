@@ -1,42 +1,44 @@
-# geass
+# Arcana
 
-jailgrid, a console for FreeBSD jails on several hosts: a progressive
-web app you log in to with a security key, that shows every jail of
-every host, starts and stops them, changes their addresses live or in
-`jail.conf`, and shows exactly which library calls, system calls and
-programs each action used.
+**The Seven Archives of FreeBSD.** A FreeBSD-native fleet manager: an
+agent on every host, and a console you log in to with a security key or
+a passkey. It shows every host's jails, services, packages, network
+tables and resource usage, changes them, and shows exactly which
+library calls, system calls and programs each change used. Its
+vocabulary, and where it is going, are in
+[docs/NAMING.md](docs/NAMING.md).
 
-Home: <https://github.com/spmzt/geass>
+Home: <https://github.com/spmzt/arcana>
 
 ```
- browser (PWA, C → wasm) ──HTTPS──▶ kore + jailgrid.so ──cblink/mTLS──▶ jailgridd ──▶ jails
-                                      (console host)                     (each jail host)
+ browser (PWA, C → wasm) ──HTTPS──▶ kore + arcana-console.so ──cblink/mTLS──▶ arcana-agent ──▶ jails
+                                      (console host)                     (each host)
 ```
 
 | | |
 |---|---|
-| `usr.sbin/jailgridd` | The daemon on each jail host: libjail(3), libprocstat(3), jail(8), served over cblink with mutual TLS. The only privileged part. |
-| `www/jailgrid` | The console: a Kore module with WebAuthn login (libcrypto), the server list, and the JSON API ([OpenAPI](docs/openapi.yaml)). |
-| `www/jailgrid-ui` | The PWA: C compiled with Emscripten, base libucl for JSON, installable and usable offline as a shell. |
+| `usr.sbin/arcana-agent` | The daemon on each host: libjail(3), libprocstat(3), jail(8), served over cblink with mutual TLS. The only privileged part. |
+| `www/arcana-console` | The console: a Kore module with WebAuthn login (libcrypto), the server list, and the JSON API ([OpenAPI](docs/openapi.yaml)). |
+| `www/arcana-ui` | The PWA: C compiled with Emscripten, base libucl for JSON, installable and usable offline as a shell. |
 | `usr.sbin/jailconf` | `jailconf(8)`: change one value of a jail parameter in `jail.conf` in place, like `sysrc(8)` for `rc.conf`. |
-| `usr.sbin/jailgridctl` | `jailgridctl(8)`: talk to a jailgridd from a shell, with libxo(3) output. |
-| `usr.sbin/jailgrid-enrol` | `jailgrid-enrol(8)`: join a jail host to the console with a one-time token; it gets its certificate from the console's CA. |
+| `usr.sbin/arcanactl` | `arcanactl(8)`: talk to an arcana-agent from a shell, with libxo(3) output. |
+| `usr.sbin/arcana-enrol` | `arcana-enrol(8)`: join a host to the console with a one-time token; it gets its certificate from the console's CA. |
 | `lib/libjailconf` | The in-place editor behind both. |
-| `share/jailgrid/jailgrid.yaml` | The cblink family: the contract between jailgridd and its clients. |
+| `share/arcana/arcana.yaml` | The cblink family: the contract between arcana-agent and its clients. |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the design and the
 trust boundaries; [docs/NAMING.md](docs/NAMING.md) is the naming design
 the project is growing into; [docs/TOOLS.md](docs/TOOLS.md) describes
 every program
-with its options and examples, and each has a man page: `jailgridd(8)`,
-`jailgridctl(8)`, `jailgrid-enrol(8)`, `jailconf(8)` and `jailgrid(8)`
+with its options and examples, and each has a man page: `arcana-agent(8)`,
+`arcanactl(8)`, `arcana-enrol(8)`, `jailconf(8)` and `arcana-console(8)`
 for the console.
 
 ## Building
 
 Base `make(1)` and `bsd.*.mk`, on FreeBSD 14 or later.
 
-For the jail host's programs (jailgridd, jailgridctl, jailgrid-enrol,
+For the host's programs (arcana-agent, arcanactl, arcana-enrol,
 jailconf):
 
 - [cblink](https://github.com/spmzt/cblink): libcblink, `cblink-gen` and
@@ -74,23 +76,23 @@ make check                        # the test suite, with kyua(1)
 make install                      # PREFIX=/usr/local by default
 ```
 
-`make WITHOUT_CONSOLE=yes` builds only what a jail host runs, without
+`make WITHOUT_CONSOLE=yes` builds only what a host runs, without
 Kore, emscripten or libucl's sources. The ports,
-`port/sysutils/jailgrid` (with a `CONSOLE` option) and `port/www/kore`,
+`port/sysutils/arcana` (with a `CONSOLE` option) and `port/www/kore`,
 build the same way; `devel/cblink` comes from cblink's own tree.
 
 `make check` skips the tests that need root; run it as root to drive a
-throwaway jail (`jailgrid-test`, on `127.0.10.0/24` on `lo0`) through
+throwaway jail (`arcana-test`, on `127.0.10.0/24` on `lo0`) through
 jail(8) for real.
 
 ## Setting it up
 
 ### Certificates
 
-The console talks to every jailgridd over TLS 1.3 with client
+The console talks to every arcana-agent over TLS 1.3 with client
 certificates. Without a `tls { }` block in `web.conf` the console runs
 a CA of its own: at first start it writes `ca.pem`, `ca.key`,
-`console.pem` and `console.key` to its data directory, and jail hosts
+`console.pem` and `console.key` to its data directory, and hosts
 get their certificates from it by enrolling (below). Nothing else is
 needed.
 
@@ -99,12 +101,12 @@ client certificate in `web.conf`'s `tls { }` block; add `ca_key` there
 if the console is still to enrol hosts. With base `openssl(1)`:
 
 ```sh
-cd /usr/local/etc/jailgrid
+cd /usr/local/etc/arcana
 openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
-    -keyout ca.key -out ca.pem -days 3650 -subj "/CN=jailgrid CA" \
+    -keyout ca.key -out ca.pem -days 3650 -subj "/CN=arcana CA" \
     -addext basicConstraints=critical,CA:TRUE
 
-# One per jail host, named as the console will reach it.
+# One per host, named as the console will reach it.
 openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
     -keyout host1.key -out host1.csr -subj "/CN=host1.example"
 printf 'subjectAltName=DNS:host1.example\nextendedKeyUsage=serverAuth\n' \
@@ -116,9 +118,9 @@ openssl x509 -req -in host1.csr -CA ca.pem -CAkey ca.key -CAcreateserial \
 # extendedKeyUsage=clientAuth, as client.pem and client.key.
 ```
 
-Keep `ca.key` off the jail hosts.
+Keep `ca.key` off the hosts.
 
-### On each jail host
+### On each host
 
 Install the host's programs, then enrol the host from the console:
 **Enrol a host** (also offered when adding a server) takes a name and
@@ -126,24 +128,24 @@ the host name or address the console reaches it by, and shows a
 one-time command. Run it on the host as root:
 
 ```sh
-make install WITHOUT_CONSOLE=yes           # jailgridd, jailconf, jailgridctl, jailgrid-enrol
-jailgrid-enrol -s https://console.example 3f1c…   # from the console
-jailgridctl list                           # over the local socket
+make install WITHOUT_CONSOLE=yes           # arcana-agent, jailconf, arcanactl, arcana-enrol
+arcana-enrol -s https://console.example 3f1c…   # from the console
+arcanactl list                           # over the local socket
 ```
 
-`jailgrid-enrol(8)` makes a key, has the console's CA sign a certificate
-for the host, writes both and the CA to `/usr/local/etc/jailgrid`, and
-with `-s` enables and starts `jailgridd` on port 4310 with them; the
+`arcana-enrol(8)` makes a key, has the console's CA sign a certificate
+for the host, writes both and the CA to `/usr/local/etc/arcana`, and
+with `-s` enables and starts `arcana-agent` on port 4310 with them; the
 console adds the host to its servers at the same time. The token works
 once and for an hour. Without `-s` it prints the `rc.conf` lines
 instead:
 
 ```sh
-sysrc jailgridd_enable=YES
-sysrc jailgridd_flags="-l unix:/var/run/jailgridd.sock \
-    -l tcp://0.0.0.0:4310 -l 'tcp://[::]:4310' -A /usr/local/etc/jailgrid/ca.pem \
-    -C /usr/local/etc/jailgrid/host.pem -K /usr/local/etc/jailgrid/host.key"
-service jailgridd start
+sysrc arcana_agent_enable=YES
+sysrc arcana_agent_flags="-l unix:/var/run/arcana-agent.sock \
+    -l tcp://0.0.0.0:4310 -l 'tcp://[::]:4310' -A /usr/local/etc/arcana/ca.pem \
+    -C /usr/local/etc/arcana/host.pem -K /usr/local/etc/arcana/host.key"
+service arcana_agent start
 ```
 
 A host with certificates from your own CA is added as a server by name
@@ -157,18 +159,18 @@ Encrypt. The certificate must be RSA: Kore's key manager, which keeps
 the private key out of the worker, signs with nothing else.
 
 ```sh
-pw useradd jailgrid -d /var/db/jailgrid -s /usr/sbin/nologin
-install -d -o jailgrid -m 0700 /var/db/jailgrid
-cd /usr/local/etc/jailgrid
+pw useradd arcana -d /var/db/arcana -s /usr/sbin/nologin
+install -d -o arcana -m 0700 /var/db/arcana
+cd /usr/local/etc/arcana
 cp kore.conf.sample kore.conf      # domain, certificate, bind address
 cp web.conf.sample web.conf        # rp_id, origin, client certificate
-sysrc jailgrid_enable=YES
-service jailgrid start
+sysrc arcana_console_enable=YES
+service arcana_console start
 ```
 
-If the console host has jails too, run its jailgridd with
-`-g jailgrid -l unix:/var/run/jailgridd.sock` and add it as
-`unix:/var/run/jailgridd.sock`: the console stays unprivileged and reaches
+If the console host has jails too, run its arcana-agent with
+`-g arcana -l unix:/var/run/arcana-agent.sock` and add it as
+`unix:/var/run/arcana-agent.sock`: the console stays unprivileged and reaches
 it through a socket only its group can open.
 
 ### The console in a container
@@ -177,28 +179,28 @@ it through a socket only its group can open.
 (the base toolchain and emscripten, from
 [spmzt/images](https://github.com/spmzt/images)) and ships it on the
 cblink image; the workflow in `.github/workflows` publishes it as
-`ghcr.io/spmzt/geass`. It runs Kore unprivileged (uid 4310) on port 8443:
+`ghcr.io/spmzt/arcana`. It runs Kore unprivileged (uid 4310) on port 8443:
 HTTPS with an RSA certificate mounted as `console.pem` and `console.key`
-in `/usr/local/etc/jailgrid`, plain HTTP for a reverse proxy without one.
+in `/usr/local/etc/arcana`, plain HTTP for a reverse proxy without one.
 
 ```sh
-podman run -d --name geass -p 8443:8443 \
-    -e JAILGRID_RP_ID=console.example \
-    -v geass:/var/db/jailgrid \
-    ghcr.io/spmzt/geass
-podman exec geass cat /var/db/jailgrid/setup-token
+podman run -d --name arcana -p 8443:8443 \
+    -e ARCANA_RP_ID=console.example \
+    -v arcana:/var/db/arcana \
+    ghcr.io/spmzt/arcana
+podman exec arcana cat /var/db/arcana/setup-token
 ```
 
-`JAILGRID_ORIGIN` (default `https://` and the RP ID) and `JAILGRID_PORT`
+`ARCANA_ORIGIN` (default `https://` and the RP ID) and `ARCANA_PORT`
 change the rest; a mounted `web.conf` or `kore.conf` replaces the
-generated one. The CA lives in the `geass` volume; to use your own
+generated one. The CA lives in the `arcana` volume; to use your own
 instead, mount `ca.pem`, `client.pem` and `client.key` into
-`/usr/local/etc/jailgrid`, readable by uid 4310.
+`/usr/local/etc/arcana`, readable by uid 4310.
 
 ### First login
 
 With no key registered, the console writes a one-time token to
-`/var/db/jailgrid/setup-token` and logs that it did. Open the console,
+`/var/db/arcana/setup-token` and logs that it did. Open the console,
 paste the token, touch your security key: that registers it and logs you
 in, and the token is gone. Add a spare key from **Keys** afterwards. On
 Android, Chrome offers to install the console as an app.
@@ -248,7 +250,7 @@ authenticator offers one, so security keys keep working as before.
   bar holds changes and sends them as one batch, run in order.
 - **Activity** at the bottom: every action and manual refresh, with its
   workflow as a graph, from the API call through the session check and
-  the cblink request to each call jailgridd made. When a program ran, a
+  the cblink request to each call arcana-agent made. When a program ran, a
   **Raw output** button shows its argv, exit status and output.
 
 ## Updating
@@ -258,13 +260,13 @@ banner when a newer version is out; `update_check = false` in `web.conf`
 turns that off. It does not replace itself, since it runs unprivileged:
 
 - the container image carries `io.containers.autoupdate=registry`, so
-  `podman auto-update` (from cron, say) pulls a newer `ghcr.io/spmzt/geass`
+  `podman auto-update` (from cron, say) pulls a newer `ghcr.io/spmzt/arcana`
   and restarts the container;
-- a native install is updated with `pkg upgrade jailgrid`, or
-  `make install` from a newer tree, then `service jailgrid restart`.
+- a native install is updated with `pkg upgrade arcana`, or
+  `make install` from a newer tree, then `service arcana_console restart`.
 
-Jail hosts update `jailgridd` the same way; the console marks a host
-whose `jailgridd` is not its own version. Certificates stay valid across
+Hosts update `arcana-agent` the same way; the console marks a host
+whose `arcana-agent` is not its own version. Certificates stay valid across
 updates.
 
 ## TODO
@@ -273,9 +275,8 @@ Planned, in rough order:
 
 - A console laid out for a fleet: a tree of hosts and jails, summary
   pages with graphs, more use of the workflow graph.
-- New names for the programs, after the naming guide in
-  [docs/NAMING.md](docs/NAMING.md): `jailgridd` is no longer only about
-  jails.
+- The agent's sources organised by Archive, after
+  [docs/NAMING.md](docs/NAMING.md).
 
 Waiting for approval before any work:
 
@@ -294,6 +295,6 @@ Known limits:
 
 ## Licence
 
-BSD-2-Clause. The fonts in `www/jailgrid-ui/vendor/fonts` are under the
+BSD-2-Clause. The fonts in `www/arcana-ui/vendor/fonts` are under the
 SIL Open Font License 1.1 and morphdom under the MIT licence; see
-`www/jailgrid-ui/vendor/README`.
+`www/arcana-ui/vendor/README`.

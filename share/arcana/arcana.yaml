@@ -1,0 +1,811 @@
+# SPDX-License-Identifier: BSD-2-Clause
+---
+name: arcana
+version: 1
+c-prefix: arc
+doc: |
+  One FreeBSD host, as the Arcana agent serves it: its jails, services,
+  packages, network tables and usage, and changes to them.
+  Served by arcana-agent(8).  Every operation needs an authenticated peer.
+  Replies report failures in ok/error and always carry a trace, so the
+  output of a failed jail(8) run still reaches the client.
+
+definitions:
+  - name: max-jails
+    type: const
+    value: 4096
+  - name: max-steps
+    type: const
+    value: 1024
+  - name: max-services
+    type: const
+    value: 1024
+  - name: max-packages
+    type: const
+    value: 16384
+  - name: max-batch
+    type: const
+    value: 64
+  - name: job-kind
+    type: enum
+    entries:
+      - name: jail-action
+        doc: jail and action, as the action operation.
+      - name: address
+        doc: As the address operation, without dry-run.
+      - name: service-action
+      - name: service-config
+        doc: service and variables to set or unset.
+      - name: pkg-upgrade
+  - name: job-state
+    type: enum
+    entries:
+      - queued
+      - running
+      - name: done
+        doc: Finished; ok says how.
+      - name: cancelled
+        doc: Removed from the queue before it ran.
+  - name: max-json
+    type: const
+    value: 4194304
+  - name: net-kind
+    type: enum
+    entries:
+      - name: routes
+        doc: The routing table, netstat -rnW.
+      - name: nexthops
+        doc: The nexthop table, netstat -onW.
+      - name: connections
+        doc: Active connections, netstat -n.
+      - name: sockets
+        doc: Open sockets with their owners, sockstat.
+  - name: net-family
+    type: enum
+    entries:
+      - name: all
+      - name: inet
+      - name: inet6
+  - name: max-output
+    type: const
+    value: 262144
+  - name: action
+    type: enum
+    entries:
+      - start
+      - stop
+      - restart
+      - name: kill
+        doc: Remove the jail with jail_remove(2), without its stop scripts.
+  - name: jail-state
+    type: enum
+    entries:
+      - running
+      - stopped
+      - dying
+      - absent
+  - name: service-action
+    type: enum
+    entries:
+      - start
+      - stop
+      - restart
+      - reload
+      - name: enable
+        doc: sysrc(8) sets the service's rcvar to YES.
+      - name: disable
+        doc: sysrc(8) sets the service's rcvar to NO.
+  - name: step-kind
+    type: enum
+    entries:
+      - daemon
+      - lib
+      - syscall
+      - file
+      - exec
+  - name: step-status
+    type: enum
+    entries:
+      - ok
+      - failed
+      - incomplete
+
+attribute-sets:
+  - name: arcana
+    attributes:
+      - name: jail
+        type: text
+        checks:
+          min-len: 1
+          max-len: 255
+      - name: action
+        type: u8
+        enum: action
+      - name: address
+        type: text
+        doc: An IPv4 or IPv6 address, optionally with /prefixlen.
+        checks:
+          min-len: 2
+          max-len: 64
+      - name: interface
+        type: text
+        checks:
+          min-len: 1
+          max-len: 15
+      - name: remove
+        type: flag
+        doc: Remove the address instead of adding it.
+      - name: live
+        type: flag
+        doc: Change the running jail.
+      - name: persist
+        type: flag
+        doc: Change the jail's configuration file.
+      - name: dry-run
+        type: flag
+        doc: Change nothing; report the plan and the diff.
+      - name: config-only
+        type: flag
+        doc: List configured jails without looking at running ones.
+      - name: ok
+        type: bool
+      - name: error
+        type: text
+      - name: host
+        type: nest
+        nested-attributes: host
+      - name: jails
+        type: nest
+        nested-attributes: jail
+        multi-attr: true
+        checks:
+          max-count: max-jails
+      - name: result
+        type: nest
+        nested-attributes: jail
+        doc: The jail as it is after the operation.
+      - name: diff
+        type: text
+        doc: Unified diff of the configuration change.
+      - name: scopes
+        type: text
+        multi-attr: true
+        doc: Configuration files jail(8) is run with (-f).
+      - name: conf-errors
+        type: nest
+        nested-attributes: conf-error
+        multi-attr: true
+      - name: trace
+        type: nest
+        nested-attributes: step
+        multi-attr: true
+        checks:
+          max-count: max-steps
+      - name: service
+        type: text
+        doc: An rc.d script's name.
+        checks:
+          min-len: 1
+          max-len: 64
+      - name: service-action
+        type: u8
+        enum: service-action
+      - name: services
+        type: nest
+        nested-attributes: service
+        multi-attr: true
+        checks:
+          max-count: max-services
+      - name: service-result
+        type: nest
+        nested-attributes: service
+        doc: The service as it is after the operation.
+      - name: variables
+        type: nest
+        nested-attributes: variable
+        multi-attr: true
+        doc: rc.conf variables of a service, to set or as they are.
+      - name: description
+        type: text
+        doc: What the script says of itself (service describe).
+      - name: net-kind
+        type: u8
+        enum: net-kind
+      - name: net-family
+        type: u8
+        enum: net-family
+      - name: json
+        type: text
+        doc: What the program printed with --libxo json, as it is.
+        checks:
+          max-len: max-json
+      - name: stats
+        type: nest
+        nested-attributes: stats
+      - name: batch
+        type: nest
+        nested-attributes: job-spec
+        multi-attr: true
+        doc: Jobs to queue, run in this order.
+        checks:
+          min-count: 1
+          max-count: max-batch
+      - name: jobs
+        type: nest
+        nested-attributes: job
+        multi-attr: true
+      - name: job
+        type: nest
+        nested-attributes: job
+      - name: id
+        type: u64
+        doc: A job's number, unique while the daemon runs.
+      - name: packages
+        type: nest
+        nested-attributes: package
+        multi-attr: true
+        doc: Packages with a newer version in the repository.
+        checks:
+          max-count: max-packages
+      - name: names
+        type: text
+        multi-attr: true
+        doc: Package names to upgrade; none means all of them.
+        checks:
+          max-count: max-packages
+      - name: refresh
+        type: flag
+        doc: Fetch the repository catalogue first (pkg update).
+      - name: upgraded
+        type: u32
+        doc: How many packages pkg upgrade reported.
+      - name: commands
+        type: text
+        multi-attr: true
+        doc: The script's extra commands (service extracommands).
+
+  - name: host
+    attributes:
+      - name: hostname
+        type: text
+      - name: sysname
+        type: text
+      - name: release
+        type: text
+      - name: machine
+        type: text
+      - name: osreldate
+        type: u32
+      - name: ncpu
+        type: u32
+      - name: physmem
+        type: u64
+      - name: boottime
+        type: s64
+      - name: time
+        type: s64
+      - name: securelevel
+        type: s32
+      - name: privileged
+        type: bool
+      - name: version
+        type: text
+        doc: arcana-agent version.
+
+  - name: jail
+    attributes:
+      - name: name
+        type: text
+      - name: state
+        type: u8
+        enum: jail-state
+      - name: jid
+        type: u32
+      - name: configured
+        type: bool
+      - name: scope
+        type: text
+        doc: The configuration file that defines the jail.
+      - name: hostname
+        type: text
+      - name: path
+        type: text
+      - name: ip4
+        type: text
+        multi-attr: true
+      - name: ip6
+        type: text
+        multi-attr: true
+      - name: vnet
+        type: bool
+      - name: osrelease
+        type: text
+      - name: persist
+        type: bool
+      - name: securelevel
+        type: s32
+      - name: parent
+        type: u32
+      - name: children
+        type: u32
+      - name: nproc
+        type: u32
+      - name: rss-kb
+        type: u64
+      - name: cpu-pct
+        type: float
+      - name: interface
+        type: text
+      - name: params
+        type: nest
+        nested-attributes: param
+        multi-attr: true
+        doc: Configured parameters as jail(8) resolves them.
+
+  - name: param
+    attributes:
+      - name: key
+        type: text
+      - name: values
+        type: text
+        multi-attr: true
+
+  - name: service
+    attributes:
+      - name: name
+        type: text
+      - name: path
+        type: text
+        doc: The script, in /etc/rc.d or /usr/local/etc/rc.d.
+      - name: rcvar
+        type: text
+        doc: The rc.conf variable that enables it, if it has one.
+      - name: enabled
+        type: bool
+      - name: running
+        type: bool
+        doc: What "service <name> status" says; absent when not asked.
+      - name: pid
+        type: u32
+      - name: status
+        type: text
+        doc: The status line, as the script printed it.
+
+  - name: variable
+    attributes:
+      - name: key
+        type: text
+      - name: value
+        type: text
+      - name: remove
+        type: flag
+        doc: In a request, unset the variable instead (sysrc -x).
+
+  - name: stats
+    doc: How busy the host is, at this moment.
+    attributes:
+      - name: cpu-pct
+        type: float
+        doc: Of all CPUs, since the previous sample (kern.cp_time).
+      - name: load1
+        type: float
+      - name: load5
+        type: float
+      - name: load15
+        type: float
+      - name: mem-total
+        type: u64
+        doc: Bytes.
+      - name: mem-used
+        type: u64
+        doc: Active, wired and laundry pages.
+      - name: mem-inactive
+        type: u64
+      - name: mem-free
+        type: u64
+      - name: swap-total
+        type: u64
+      - name: swap-used
+        type: u64
+      - name: pools
+        type: nest
+        nested-attributes: pool
+        multi-attr: true
+        doc: ZFS pools, from zpool list.
+
+  - name: job-spec
+    doc: One change to queue; the attributes its kind needs.
+    attributes:
+      - name: kind
+        type: u8
+        enum: job-kind
+      - name: jail
+        type: text
+        checks:
+          max-len: 255
+      - name: action
+        type: u8
+        enum: action
+      - name: address
+        type: text
+        checks:
+          max-len: 64
+      - name: interface
+        type: text
+        checks:
+          max-len: 15
+      - name: remove
+        type: flag
+      - name: live
+        type: flag
+      - name: persist
+        type: flag
+      - name: service
+        type: text
+        checks:
+          max-len: 64
+      - name: service-action
+        type: u8
+        enum: service-action
+      - name: variables
+        type: nest
+        nested-attributes: variable
+        multi-attr: true
+      - name: names
+        type: text
+        multi-attr: true
+
+  - name: job
+    attributes:
+      - name: id
+        type: u64
+      - name: kind
+        type: u8
+        enum: job-kind
+      - name: title
+        type: text
+        doc: What it does, in words.
+      - name: state
+        type: u8
+        enum: job-state
+      - name: ok
+        type: bool
+        doc: With state done, whether it succeeded.
+      - name: error
+        type: text
+      - name: created
+        type: s64
+        doc: Unix time it was queued.
+      - name: started
+        type: s64
+      - name: finished
+        type: s64
+      - name: peer
+        type: text
+        doc: Who queued it.
+      - name: trace
+        type: nest
+        nested-attributes: step
+        multi-attr: true
+        doc: The steps so far; it grows while the job runs.
+
+  - name: package
+    attributes:
+      - name: name
+        type: text
+      - name: installed
+        type: text
+        doc: The installed version.
+      - name: available
+        type: text
+        doc: The repository's version.
+
+  - name: pool
+    attributes:
+      - name: name
+        type: text
+      - name: size
+        type: u64
+      - name: alloc
+        type: u64
+      - name: free
+        type: u64
+      - name: health
+        type: text
+
+  - name: conf-error
+    attributes:
+      - name: scope
+        type: text
+      - name: message
+        type: text
+
+  - name: step
+    attributes:
+      - name: id
+        type: u32
+      - name: parent
+        type: s32
+        doc: Index of the parent step, -1 for the root.
+      - name: kind
+        type: u8
+        enum: step-kind
+      - name: label
+        type: text
+      - name: detail
+        type: text
+      - name: status
+        type: u8
+        enum: step-status
+      - name: duration-us
+        type: u64
+      - name: argv
+        type: text
+        multi-attr: true
+      - name: exit
+        type: s32
+      - name: output
+        type: bytes
+        doc: What the program wrote to standard output.
+        checks:
+          max-len: max-output
+      - name: error-output
+        type: bytes
+        doc: What the program wrote to standard error.
+        checks:
+          max-len: max-output
+
+operations:
+  - name: hello
+    attribute-set: arcana
+    auth: true
+    do:
+      reply:
+        attributes:
+          - host
+
+  - name: list
+    attribute-set: arcana
+    auth: true
+    do:
+      request:
+        attributes:
+          - config-only
+      reply:
+        attributes:
+          - ok
+          - error
+          - host
+          - jails
+          - scopes
+          - conf-errors
+          - trace
+
+  - name: action
+    attribute-set: arcana
+    auth: true
+    do:
+      request:
+        attributes:
+          - jail
+          - action
+        required:
+          - jail
+          - action
+      reply:
+        attributes:
+          - ok
+          - error
+          - result
+          - trace
+
+  - name: address
+    attribute-set: arcana
+    auth: true
+    do:
+      request:
+        attributes:
+          - jail
+          - address
+          - interface
+          - remove
+          - live
+          - persist
+          - dry-run
+        required:
+          - jail
+          - address
+      reply:
+        attributes:
+          - ok
+          - error
+          - result
+          - diff
+          - trace
+
+  - name: services
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The rc.d scripts of the host with whether they are enabled, and for
+      the enabled ones whether they run.
+    do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - services
+          - trace
+
+  - name: service-action
+    attribute-set: arcana
+    auth: true
+    do:
+      request:
+        attributes:
+          - service
+          - service-action
+        required:
+          - service
+          - service-action
+      reply:
+        attributes:
+          - ok
+          - error
+          - service-result
+          - trace
+
+  - name: service-config
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A service's rc.conf variables, read through sysrc(8); with
+      variables in the request, set or unset them first.
+    do:
+      request:
+        attributes:
+          - service
+          - variables
+        required:
+          - service
+      reply:
+        attributes:
+          - ok
+          - error
+          - service-result
+          - variables
+          - description
+          - commands
+          - trace
+
+  - name: network
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The host's routing table, nexthops, connections or sockets, as
+      netstat(1) and sockstat(1) print them with --libxo json.
+    do:
+      request:
+        attributes:
+          - net-kind
+          - net-family
+        required:
+          - net-kind
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: stats
+    attribute-set: arcana
+    auth: true
+    doc: CPU, memory, swap and ZFS pool usage of the host.
+    do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - stats
+          - trace
+
+  - name: packages
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Packages of the host, or of a running jail, that the repository has
+      newer versions of (pkg version -vRl '<'), after pkg update with
+      refresh.
+    do:
+      request:
+        attributes:
+          - jail
+          - refresh
+      reply:
+        attributes:
+          - ok
+          - error
+          - packages
+          - trace
+
+  - name: pkg-upgrade
+    attribute-set: arcana
+    auth: true
+    doc: |
+      pkg upgrade -y on the host or in a running jail, of the named
+      packages or of all; dry-run only shows what pkg would do.
+    do:
+      request:
+        attributes:
+          - jail
+          - names
+          - dry-run
+      reply:
+        attributes:
+          - ok
+          - error
+          - upgraded
+          - packages
+          - trace
+
+  - name: job-submit
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Queue changes.  The daemon runs them one after another in the order
+      given, whether or not the client stays connected, and keeps their
+      outcome for job and jobs.
+    do:
+      request:
+        attributes:
+          - batch
+        required:
+          - batch
+      reply:
+        attributes:
+          - ok
+          - error
+          - jobs
+
+  - name: jobs
+    attribute-set: arcana
+    auth: true
+    doc: The queued, running and recent jobs, without their traces.
+    do:
+      reply:
+        attributes:
+          - ok
+          - jobs
+
+  - name: job
+    attribute-set: arcana
+    auth: true
+    doc: One job with its trace so far.
+    do:
+      request:
+        attributes:
+          - id
+        required:
+          - id
+      reply:
+        attributes:
+          - ok
+          - error
+          - job
+
+  - name: job-cancel
+    attribute-set: arcana
+    auth: true
+    doc: Take a job that has not started out of the queue.
+    do:
+      request:
+        attributes:
+          - id
+        required:
+          - id
+      reply:
+        attributes:
+          - ok
+          - error
+          - job

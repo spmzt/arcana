@@ -1,0 +1,112 @@
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+.\"
+.Dd October 2, 2026
+.Dt ARCANA-ENROL 8
+.Os
+.Sh NAME
+.Nm arcana-enrol
+.Nd join this host to a arcana console
+.Sh SYNOPSIS
+.Nm
+.Op Fl s
+.Op Fl a Ar address ...
+.Op Fl p Ar port
+.Op Fl d Ar directory
+.Op Fl n Ar name
+.Ar console-url token
+.Sh DESCRIPTION
+.Nm
+gets this host a certificate from the arcana console's certificate
+authority, so that
+.Xr arcana-agent 8
+can serve the console over mutual TLS.
+It makes an EC P-256 key and a certificate request, sends the request to
+.Ar console-url
+with the one-time
+.Ar token
+the console issued for this host, and writes what comes back:
+.Pp
+.Bl -tag -width "host.key" -compact -offset indent
+.It Pa host.key
+the private key, mode 0600;
+.It Pa host.pem
+the certificate, for the name the token was made for;
+.It Pa ca.pem
+the console's CA, which signs the console's own client certificate.
+.El
+.Pp
+The files go to
+.Pa /usr/local/etc/arcana .
+The console adds this host to its server list at the same time, as
+.Pa tcp://host:port .
+Then
+.Nm
+prints the
+.Xr rc.conf 5
+lines that run
+.Xr arcana-agent 8
+with the files, or sets them itself with
+.Fl s .
+.Pp
+The options are:
+.Bl -tag -width indent
+.It Fl a Ar address
+An address
+.Xr arcana-agent 8
+is to listen on, in the printed or applied flags; may be given more
+than once.
+The default is every address, over IPv4 and IPv6 both:
+.Li 0.0.0.0
+and
+.Li \&:: .
+.It Fl d Ar directory
+Write the files there instead of
+.Pa /usr/local/etc/arcana .
+.It Fl n Ar name
+The name in the certificate request.
+The console ignores it and names the certificate after the token's host;
+the default is this host's name.
+.It Fl p Ar port
+The port in the flags.
+The default is 4310, the port the console will connect to unless the
+token was made with another.
+.It Fl s
+Enable and start
+.Xr arcana-agent 8
+with
+.Xr sysrc 8
+and
+.Xr service 8 .
+.El
+.Sh EXAMPLES
+In the console, add a server with
+.Dq Enrol a host ,
+giving it a name and the host name or address the console reaches it by.
+The console shows a command like
+.Bd -literal -offset indent
+arcana-enrol -s https://console.example 3f1c...
+.Ed
+.Pp
+Run it on the host as root;
+.Fl s
+has
+.Xr arcana-agent 8
+enabled and running right away.
+Options go before the URL, as
+.Xr getopt 3
+stops at the first argument.
+The token works once and for an hour.
+.Sh SEE ALSO
+.Xr arcana-agent 8 ,
+.Xr arcana-console 8 ,
+.Xr arcanactl 8
+.Sh SECURITY
+The console's own HTTPS certificate is checked by
+.Xr fetch 3
+against the system's trusted CAs.
+Over plain HTTP, or with
+.Ev SSL_NO_VERIFY_PEER
+set, whoever can read the connection can take the token and have the
+certificate issued to a key of their own.

@@ -1,6 +1,6 @@
-.include "${.CURDIR}/../../../share/mk/jailgrid.mk"
+.include "${.CURDIR}/../../../share/mk/arcana.mk"
 
-TESTSDIR=	${TESTSBASE}/jailgrid/jailconf
+TESTSDIR=	${TESTSBASE}/arcana/jailconf
 ATF_TESTS_SH=	jailconf_test
 
 # No mtree(8) hierarchy outside the tree: create the directory first.

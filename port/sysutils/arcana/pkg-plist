@@ -1,0 +1,30 @@
+%%CONSOLE%%@sample %%ETCDIR%%/kore.conf.sample
+%%CONSOLE%%%%ETCDIR%%/routes.conf
+%%CONSOLE%%@sample %%ETCDIR%%/web.conf.sample
+%%CONSOLE%%etc/rc.d/arcana_console
+etc/rc.d/arcana_agent
+%%CONSOLE%%lib/arcana/arcana-console.so
+sbin/jailconf
+sbin/arcana-enrol
+sbin/arcanactl
+sbin/arcana-agent
+share/man/man8/jailconf.8.gz
+share/man/man8/arcana-enrol.8.gz
+%%CONSOLE%%share/man/man8/arcana-console.8.gz
+share/man/man8/arcanactl.8.gz
+share/man/man8/arcana-agent.8.gz
+%%CONSOLE%%%%WWWDIR%%/fonts/jetbrains-mono-latin-400-normal.woff2
+%%CONSOLE%%%%WWWDIR%%/fonts/jetbrains-mono-latin-500-normal.woff2
+%%CONSOLE%%%%WWWDIR%%/fonts/jetbrains-mono-latin-700-normal.woff2
+%%CONSOLE%%%%WWWDIR%%/fonts/orbitron-latin-700-normal.woff2
+%%CONSOLE%%%%WWWDIR%%/icons/icon-192.png
+%%CONSOLE%%%%WWWDIR%%/icons/icon-512.png
+%%CONSOLE%%%%WWWDIR%%/icons/icon-maskable-512.png
+%%CONSOLE%%%%WWWDIR%%/icons/icon.svg
+%%CONSOLE%%%%WWWDIR%%/index.html
+%%CONSOLE%%%%WWWDIR%%/arcana.js
+%%CONSOLE%%%%WWWDIR%%/arcana.wasm
+%%CONSOLE%%%%WWWDIR%%/manifest.webmanifest
+%%CONSOLE%%%%WWWDIR%%/morphdom-umd.min.js
+%%CONSOLE%%%%WWWDIR%%/style.css
+%%CONSOLE%%%%WWWDIR%%/sw.js

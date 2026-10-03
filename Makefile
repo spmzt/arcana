@@ -1,9 +1,9 @@
-# jailgrid, built with base make(1) and bsd.*.mk:
+# arcana, built with base make(1) and bsd.*.mk:
 #
 #	make && make check
 #	make install [DESTDIR=dir] [PREFIX=/usr/local]
 #
-# Build products go to obj/, mirroring the tree (share/mk/jailgrid.mk).
+# Build products go to obj/, mirroring the tree (share/mk/arcana.mk).
 # Needs cblink (libcblink, cblink-gen, cblink.mk), and for the console
 # Kore's headers and emcc(1); see config.mk.sample to point at copies not
 # installed in ${LOCALBASE}.  WITHOUT_CONSOLE=yes builds only the jail
@@ -11,24 +11,24 @@
 # that need root are skipped unless it runs as root, the browser test
 # unless Chromium and chromedriver are installed.
 
-.include "share/mk/jailgrid.mk"
+.include "share/mk/arcana.mk"
 
 SUBDIR=		lib/libjailconf \
 		usr.sbin/jailconf \
-		usr.sbin/jailgrid-enrol \
-		usr.sbin/jailgridd \
-		usr.sbin/jailgridctl
-SUBDIR.${MK_CONSOLE}+= www/jailgrid-ui \
-		www/jailgrid
+		usr.sbin/arcana-enrol \
+		usr.sbin/arcana-agent \
+		usr.sbin/arcanactl
+SUBDIR.${MK_CONSOLE}+= www/arcana-ui \
+		www/arcana-console
 SUBDIR.${MK_TESTS}+= tests
 SUBDIR_DEPEND_usr.sbin/jailconf=	lib/libjailconf
-SUBDIR_DEPEND_usr.sbin/jailgridd=	lib/libjailconf
+SUBDIR_DEPEND_usr.sbin/arcana-agent=	lib/libjailconf
 
 TESTDIRS=	lib/libjailconf/tests \
 		usr.sbin/jailconf/tests \
-		usr.sbin/jailgridd/tests
+		usr.sbin/arcana-agent/tests
 .if ${MK_CONSOLE} != "no"
-TESTDIRS+=	www/jailgrid/tests
+TESTDIRS+=	www/arcana-console/tests
 .endif
 
 # A failed or broken test fails the target, with kyua's report on it
@@ -49,6 +49,6 @@ check: .PHONY
 
 # Everything built is under obj/.
 clean cleandir: .PHONY
-	rm -rf ${JG_TOP}/obj
+	rm -rf ${ARC_TOP}/obj
 
 .include <bsd.subdir.mk>

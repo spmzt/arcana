@@ -19,6 +19,6 @@ obj
 **/*.debug
 **/*.wo
 **/.depend*
-**/jailgrid.[ch]
-**/jailgrid_client.c
-**/jailgrid_server.c
+**/arcana.[ch]
+**/arcana_client.c
+**/arcana_server.c

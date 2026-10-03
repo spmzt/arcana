@@ -1,0 +1,20 @@
+[
+{ type: install
+  message: <<EOM
+arcana-agent runs on each host, as root; see arcana-agent(8).  The short
+way is to enrol the host from the console, which gives a one-time command:
+
+  arcana-enrol -s https://console.example <token>
+
+The console (CONSOLE option) runs kore(1) as an unprivileged user:
+
+  pw useradd arcana -d /var/db/arcana -s /usr/sbin/nologin
+  install -d -o arcana -m 0700 /var/db/arcana
+  edit %%PREFIX%%/etc/arcana/kore.conf and web.conf
+  sysrc arcana_console_enable=YES && service arcana_console start
+
+Its TLS certificate must be RSA: Kore's key manager signs nothing else.
+The first login needs the token in /var/db/arcana/setup-token.
+EOM
+}
+]

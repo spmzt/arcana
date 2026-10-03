@@ -1,0 +1,42 @@
+# kore(1) configuration for the arcana console.
+#
+#	ARCANA_WEB_CONF=/usr/local/etc/arcana/web.conf \
+#	    kore -c /usr/local/etc/arcana/kore.conf
+#
+# One worker: sessions and WebAuthn challenges live in its memory.
+# Requests to arcana-agent run on task threads.
+
+server console {
+	bind		0.0.0.0 443
+	bind		:: 443
+	tls		yes
+}
+
+privsep worker {
+	runas		arcana
+	# Sockets of a local arcana-agent and the data directory must stay
+	# reachable, so no chroot.
+	skip		chroot
+}
+
+load		/usr/local/lib/arcana/arcana-console.so arcw_onload
+pidfile		/var/run/arcana-console.pid
+
+workers			1
+task_threads		8
+http_body_max		65536
+http_media_type		application/wasm wasm
+http_media_type		application/manifest+json webmanifest
+http_media_type		image/svg+xml svg
+http_media_type		font/woff2 woff2
+http_media_type		image/x-icon ico
+filemap_index		index.html
+
+# The certificate must be RSA: Kore's key manager signs nothing else.
+domain console.example {
+	attach		console
+	certfile	/usr/local/etc/arcana/console.pem
+	certkey		/usr/local/etc/arcana/console.key
+	include		/usr/local/etc/arcana/routes.conf
+	filemap		/ /usr/local/www/arcana-console
+}

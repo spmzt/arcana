@@ -2,8 +2,9 @@
 
 This is the project's naming design. It records how components are to
 be named as the system grows from a jail console into a FreeBSD-native
-fleet orchestration and agent-based management system. Nothing in the
-tree has been renamed to it yet; see [Status](#status) at the end.
+fleet orchestration and agent-based management system. The project and
+its programs carry the names; see [Programs](#programs) and
+[Status](#status) at the end.
 
 ## Purpose
 
@@ -247,24 +248,42 @@ coordinates them across the fleet. The definitions are guiding
 concepts, not rigid ones: build a coherent technical system first and
 let the terminology emerge around it.
 
+## Programs
+
+Programs are named for what the operator does with them, under one
+prefix; Archives name what is *inside* them. A tool called
+`superbia-enrol` would make you recall which Archive owns a task before
+you could type it, and seven families of tools would multiply that. So:
+
+| Program | Role | Was |
+|---|---|---|
+| `arcana-agent` | the Agent: the daemon on every host, the only privileged part | `jailgridd` |
+| `arcana-console` | the Orchestrator's first form: the web console, one user, many hosts | `jailgrid` |
+| `arcanactl` | a shell's way to one agent | `jailgridctl` |
+| `arcana-enrol` | joins a host to the console; a Superbia task (identity, trust) | `jailgrid-enrol` |
+| `jailconf` | a general `jail.conf` editor; not Arcana-specific, so not renamed | |
+
+Each stays a small tool that does one thing. The Archive a tool or an
+operation belongs to is said in its manual and here, and is the name to
+reach for when a module, an operation group or a log tag inside the
+system needs one.
+
+The service names are `arcana_agent` and `arcana_console` (rc.d names
+take no hyphen), the configuration lives in `/usr/local/etc/arcana`, the
+console's data in `/var/db/arcana`, and the cblink family is `arcana`.
+
 ## Status
 
-How today's operations fall under the Archives (the cblink family in
-`share/jailgrid/jailgrid.yaml`); none of the code carries these names
-yet:
+How the agent's operations (the cblink family in
+`share/arcana/arcana.yaml`) fall under the Archives today. The code is
+not yet organised by Archive; this is the map to do it by.
 
-| Today | Role or Archive |
+| Operations | Archive |
 |---|---|
-| `jailgridd` | the Agent |
-| the Kore module and the PWA (`jailgrid`) | the Orchestrator's first form: one user, many hosts |
-| `list`, `action` (jails), `services`, `service-action`, `pkg-upgrade` | Ira |
-| `service-config`, `address` with persist, enrolment and certificates | Superbia |
+| `list`, `action` (jails), `services`, `service-action`, `pkg-upgrade`, `packages`, the job queue | Ira |
+| `service-config`, `address` with persist, enrolment and certificates (`arcana-enrol`, the console's CA) | Superbia |
 | `network` (routes, nexthops, connections, sockets), `address` live | Invidia |
 | `stats`: memory, swap, CPU | Avaritia for what is allocated, Gula for what is measured |
 | `stats`: ZFS pools | Acedia |
-| the trace of every call, the activity log | Gula |
+| the trace of every call, the activity log, job traces | Gula |
 | update check, browser notifications | Luxuria |
-
-The names of the programs themselves (the Agent, the Orchestrator and
-the tools around them) are not chosen yet; when they are, this section
-lists them and the old names are dropped.

@@ -1,19 +1,19 @@
 openapi: 3.1.0
 info:
-  title: Jailgrid console API
+  title: Arcana console API
   version: 0.1.0
-  summary: The JSON API of jailgrid.so, the console's Kore module.
+  summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
-    the console sets an HttpOnly, SameSite=Strict `jg_session` cookie;
+    the console sets an HttpOnly, SameSite=Strict `arc_session` cookie;
     every route below except health, auth status and the four ceremony
     routes requires it.
 
     Requests that change something (POST, DELETE) on a protected route
-    also need the header `X-Jailgrid: 1` and, when the browser sends one,
+    also need the header `X-Arcana: 1` and, when the browser sends one,
     an `Origin` equal to the console's configured origin.
 
-    Replies about a host carry a `trace`: what the console and jailgridd(8)
+    Replies about a host carry a `trace`: what the console and arcana-agent(8)
     did, step by step.  Steps of kind `exec` are programs that ran, with
     their argv, exit status and output; nothing else ran any program.
 
@@ -26,7 +26,7 @@ info:
 
 externalDocs:
   description: Source, architecture and setup
-  url: https://github.com/spmzt/geass
+  url: https://github.com/spmzt/arcana
 
 servers:
   - url: https://console.example
@@ -40,9 +40,9 @@ tags:
   - name: auth
     description: WebAuthn ceremonies and sessions.
   - name: servers
-    description: The jailgridd instances the console knows.
+    description: The arcana-agent instances the console knows.
   - name: jails
-    description: Jail state and changes, through jailgridd.
+    description: Jail state and changes, through arcana-agent.
 
 paths:
   /api/health:
@@ -222,11 +222,11 @@ paths:
                 uri:
                   type: string
                   description: |
-                    `unix:/path` for a jailgridd on the console's host,
+                    `unix:/path` for an arcana-agent on the console's host,
                     `tcp://host:port` for others (mutual TLS with the
                     certificate in web.conf).
                   examples: ["tcp://host1.example:4310",
-                    "unix:/var/run/jailgridd.sock"]
+                    "unix:/var/run/arcana-agent.sock"]
                 peer_name:
                   type: string
                   description: The name the server certificate must carry,
@@ -239,7 +239,7 @@ paths:
   /api/enrol/tokens:
     post:
       tags: [servers]
-      summary: A one-time token for a host to join with jailgrid-enrol(8)
+      summary: A one-time token for a host to join with arcana-enrol(8)
       description: |
         Needs a session. The console's CA signs the host's certificate
         when the token comes back with a certificate request; without a
@@ -274,7 +274,7 @@ paths:
                   command:
                     type: string
                     description: What to run on the host.
-                    example: jailgrid-enrol -s https://console.example 3f1c…
+                    example: arcana-enrol -s https://console.example 3f1c…
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
@@ -789,7 +789,7 @@ paths:
         (SIOCAIFADDR) when the jail has an `interface` parameter.
         Persistent: the jail's block in its configuration file is edited
         in place (libjailconf), the previous file kept as
-        `<file>.jailgrid.bak`, and the result read back with jail(8) -e; if
+        `<file>.arcana.bak`, and the result read back with jail(8) -e; if
         jail(8) disagrees, the previous version is restored.  With
         `dry_run` nothing changes and `diff` shows the edit.
       parameters:
@@ -834,7 +834,7 @@ components:
     session:
       type: apiKey
       in: cookie
-      name: jg_session
+      name: arc_session
       description: Set by register/finish and login/finish.
 
   parameters:
@@ -1040,8 +1040,8 @@ components:
         securelevel: { type: integer }
         privileged:
           type: boolean
-          description: jailgridd runs as root; without it changes fail.
-        version: { type: string, description: jailgridd's. }
+          description: arcana-agent runs as root; without it changes fail.
+        version: { type: string, description: arcana-agent's. }
 
     Jail:
       type: object

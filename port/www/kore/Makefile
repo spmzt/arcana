@@ -33,7 +33,7 @@ JSONRPC_LIB_DEPENDS=	libyajl.so:devel/yajl
 JSONRPC_MAKE_ARGS=	JSONRPC=1
 PGSQL_USES=	pgsql
 PGSQL_MAKE_ARGS=	PGSQL=1
-TASKS_DESC=	Background tasks on threads (needed by sysutils/jailgrid)
+TASKS_DESC=	Background tasks on threads (needed by sysutils/arcana)
 TASKS_MAKE_ARGS=	TASKS=1
 
 post-install:

@@ -1,0 +1,31 @@
+# The arcana console (arcana-console.so), in UCL.  Named by ARCANA_WEB_CONF.
+
+# WebAuthn relying party: the console's host name, and the exact origin
+# the browser uses.  WebAuthn needs HTTPS except on localhost.
+rp_id = "console.example";
+rp_name = "Arcana";
+origin = "https://console.example";
+
+# Registered keys, servers and the one-time setup token.  Mode 0700,
+# owned by the user the worker runs as.
+datadir = "/var/db/arcana";
+
+cookie_secure = true;
+
+# Certificates for arcana-agent over TCP.  Without this block the console
+# runs a CA of its own in datadir and enrols hosts with it (see
+# arcana-enrol(8)).  With it: the CA that issued the arcana-agent
+# certificates, the console's client certificate, and the CA's key if
+# the console is still to enrol hosts.
+#tls {
+#	ca = "/usr/local/etc/arcana/ca.pem";
+#	ca_key = "/usr/local/etc/arcana/ca.key";
+#	cert = "/usr/local/etc/arcana/client.pem";
+#	key = "/usr/local/etc/arcana/client.key";
+#}
+
+# The console asks GitHub's release feed for the newest version every
+# few hours and says in the UI when there is one; it does not replace
+# itself.  Turn the checks off, or point them elsewhere:
+#update_check = false;
+#update_url = "https://api.github.com/repos/spmzt/arcana/releases/latest";

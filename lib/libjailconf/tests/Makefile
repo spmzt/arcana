@@ -1,6 +1,6 @@
-.include "${.CURDIR}/../../../share/mk/jailgrid.mk"
+.include "${.CURDIR}/../../../share/mk/arcana.mk"
 
-TESTSDIR=	${TESTSBASE}/jailgrid/libjailconf
+TESTSDIR=	${TESTSBASE}/arcana/libjailconf
 ATF_TESTS_C=	jailconf_test
 
 CFLAGS+=	-I${.CURDIR}/..

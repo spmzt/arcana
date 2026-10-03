@@ -1,0 +1,19 @@
+Arcana, The Seven Archives of FreeBSD: an agent for every FreeBSD host
+and a web console for the fleet.  The console, a progressive web app
+logged in to with a security key or a passkey (WebAuthn), shows each
+host's jails, rc.d services, packages, network tables and resource
+usage, and changes them: jails are started and stopped, addresses
+changed live or in jail.conf, services driven and configured, packages
+upgraded on hosts and in jails.  Changes run as jobs on the host, which
+finish even when the console is cut off, and each comes with its
+workflow as a graph: the library calls, system calls and programs it
+used, with the programs' output.
+
+Each host runs arcana-agent(8), the only privileged part, served over
+cblink with mutual TLS; arcana-enrol(8) joins a host to the console with
+a one-time token.  The console, arcana-console(8), is a Kore module and
+runs unprivileged.  arcanactl(8) talks to an agent from a shell, and
+jailconf(8) changes one value in jail.conf in place, like sysrc(8) does
+for rc.conf.
+
+Without the CONSOLE option only the host's programs are built.

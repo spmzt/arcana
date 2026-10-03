@@ -1,21 +1,21 @@
-# geass: the jailgrid console on FreeBSD, kore(1) with jailgrid.so and
+# arcana: the arcana console on FreeBSD, kore(1) with arcana-console.so and
 # the PWA, unprivileged, on the cblink image.
 #
-#	buildah build -f Containerfile --network=host -t geass .
-#	podman run -d --name geass -p 8443:8443 \
-#	    -e JAILGRID_RP_ID=console.example -v geass:/var/db/jailgrid \
-#	    geass
+#	buildah build -f Containerfile --network=host -t arcana .
+#	podman run -d --name arcana -p 8443:8443 \
+#	    -e ARCANA_RP_ID=console.example -v arcana:/var/db/arcana \
+#	    arcana
 #
 # It serves HTTPS on 8443 with a mounted RSA certificate, or plain HTTP
-# for a reverse proxy that terminates TLS; container/jailgrid-container.sh
+# for a reverse proxy that terminates TLS; container/arcana-container.sh
 # lists its settings.
 #
 # The first stage builds Kore and the tree on the emscripten image (base
 # toolchain and emcc, from spmzt/images) with cblink taken from its
 # image, runs the test suite as an unprivileged user (a failing test
-# fails the build; set JAILGRID_TESTS=no to skip it) and installs the
+# fails the build; set ARCANA_TESTS=no to skip it) and installs the
 # runtime files; the second has only those, on the cblink image.
-# jailgridd(8) runs on each jail host itself: it manages that host's jails.
+# arcana-agent(8) runs on each host itself: it manages that host's jails.
 
 ARG CBLINK_IMAGE=ghcr.io/spmzt/cblink:latest
 ARG EMSCRIPTEN_IMAGE=ghcr.io/spmzt/freebsd-emscripten:latest
@@ -23,7 +23,7 @@ ARG EMSCRIPTEN_IMAGE=ghcr.io/spmzt/freebsd-emscripten:latest
 FROM ${CBLINK_IMAGE} AS cblink
 
 FROM ${EMSCRIPTEN_IMAGE} AS build
-ARG JAILGRID_TESTS=yes
+ARG ARCANA_TESTS=yes
 ARG KORE_VERSION=4.3.0
 ARG KORE_SHA256=94f767eb113f2c97a133b9609c78c4e3795c420dc8726154edce49965df6b8ed
 # The libucl release base imports; the PWA compiles it to wasm.
@@ -39,7 +39,7 @@ COPY --from=cblink /usr/local/share/cblink/ /usr/local/share/cblink/
 RUN ln -s libcblink.so.1 /usr/local/lib/libcblink.so && \
     ldconfig -m /usr/local/lib
 
-# Kore, with tasks, as jailgrid.so needs it.  It builds as C99 with
+# Kore, with tasks, as arcana-console.so needs it.  It builds as C99 with
 # -Werror, and base's basename(3) is a C11 _Generic macro.  The port's
 # patch has it share memory between its processes with mmap(2): SysV
 # shared memory is not there in a jail without sysvshm, as a container is.
@@ -65,42 +65,42 @@ RUN fetch -o libucl.tar.gz \
         "${LIBUCL_SHA256}" ] && \
     tar -xzf libucl.tar.gz --strip-components 1 && rm libucl.tar.gz
 
-COPY . /usr/src/jailgrid
-WORKDIR /usr/src/jailgrid
+COPY . /usr/src/arcana
+WORKDIR /usr/src/arcana
 RUN make -j "$(sysctl -n hw.ncpu)" LIBUCL_SRC=/usr/src/libucl
 # The tests that need root drive real jails; as another user they are
 # skipped, as is the browser test without Chromium.
-RUN if [ "${JAILGRID_TESTS}" = yes ]; then \
-        pw useradd -n jgtest -m -s /bin/sh && \
-        chown -R jgtest /usr/src/jailgrid && \
-        su jgtest -c 'make -C /usr/src/jailgrid check \
+RUN if [ "${ARCANA_TESTS}" = yes ]; then \
+        pw useradd -n arctest -m -s /bin/sh && \
+        chown -R arctest /usr/src/arcana && \
+        su arctest -c 'make -C /usr/src/arcana check \
             LIBUCL_SRC=/usr/src/libucl'; \
     fi
 RUN make install WITHOUT_TESTS=yes WITHOUT_DEBUG_FILES=yes DESTDIR=/dist && \
     install -d /dist/usr/local/libexec && \
-    install -m 0555 container/jailgrid-container.sh \
-        /dist/usr/local/libexec/jailgrid-container
+    install -m 0555 container/arcana-container.sh \
+        /dist/usr/local/libexec/arcana-container
 
 FROM cblink
-LABEL org.opencontainers.image.source="https://github.com/spmzt/geass" \
-    org.opencontainers.image.title="geass" \
-    org.opencontainers.image.description="Console for FreeBSD jails on several hosts: a PWA with WebAuthn login, served by Kore" \
+LABEL org.opencontainers.image.source="https://github.com/spmzt/arcana" \
+    org.opencontainers.image.title="arcana" \
+    org.opencontainers.image.description="Arcana, The Seven Archives of FreeBSD: the fleet console, a PWA with WebAuthn login, served by Kore" \
     org.opencontainers.image.licenses="BSD-2-Clause" \
     org.opencontainers.image.authors="spmzt" \
     io.containers.autoupdate=registry
 # The build stage's base can be newer than the cblink image's.
 RUN env IGNORE_OSVERSION=yes pkg upgrade -y && \
     pkg clean -ay && \
-    pw groupadd jailgrid -g 4310 && \
-    pw useradd jailgrid -u 4310 -g jailgrid -c "jailgrid console" \
-        -d /var/db/jailgrid -s /usr/sbin/nologin && \
-    install -d -o jailgrid -g jailgrid -m 0700 /var/db/jailgrid && \
-    install -d -o jailgrid -g jailgrid -m 0755 /var/run/jailgrid
+    pw groupadd arcana -g 4310 && \
+    pw useradd arcana -u 4310 -g arcana -c "arcana console" \
+        -d /var/db/arcana -s /usr/sbin/nologin && \
+    install -d -o arcana -g arcana -m 0700 /var/db/arcana && \
+    install -d -o arcana -g arcana -m 0755 /var/run/arcana
 COPY --from=build /usr/local/bin/kore /usr/local/bin/kore
 COPY --from=build /usr/local/share/kore/ffdhe4096.pem /usr/local/share/kore/
 COPY --from=build /dist/usr/local/ /usr/local/
-USER jailgrid
-WORKDIR /var/db/jailgrid
-VOLUME /var/db/jailgrid
+USER arcana
+WORKDIR /var/db/arcana
+VOLUME /var/db/arcana
 EXPOSE 8443
-CMD ["/usr/local/libexec/jailgrid-container"]
+CMD ["/usr/local/libexec/arcana-container"]

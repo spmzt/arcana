@@ -1,0 +1,31 @@
+#!/bin/sh
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# PROVIDE: arcana_agent
+# REQUIRE: LOGIN jail
+# KEYWORD: shutdown
+#
+# Add these lines to /etc/rc.conf to enable arcana-agent:
+#
+# arcana_agent_enable (bool):	Set to "YES" to run arcana-agent.
+# arcana_agent_flags (str):	Listeners and certificates, for example
+#				"-g arcana -l unix:/var/run/arcana-agent.sock
+#				 -l tcp://0.0.0.0:4310 -l tcp://[::]:4310
+#				 -A %%PREFIX%%/etc/arcana/ca.pem
+#				 -C %%PREFIX%%/etc/arcana/host.pem
+#				 -K %%PREFIX%%/etc/arcana/host.key"
+
+. /etc/rc.subr
+
+name="arcana_agent"
+rcvar="arcana_agent_enable"
+
+load_rc_config $name
+
+: ${arcana_agent_enable:="NO"}
+
+command="%%PREFIX%%/sbin/arcana-agent"
+pidfile="/var/run/arcana-agent.pid"
+
+run_rc_command "$1"

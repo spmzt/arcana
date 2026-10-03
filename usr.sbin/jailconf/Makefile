@@ -1,7 +1,7 @@
 PROG=		jailconf
 MAN=		jailconf.8
 
-.include "${.CURDIR}/../../share/mk/jailgrid.mk"
+.include "${.CURDIR}/../../share/mk/arcana.mk"
 
 CFLAGS+=	${JAILCONF_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
