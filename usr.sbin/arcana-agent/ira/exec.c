@@ -71,6 +71,20 @@ run_exec(struct work *w, char *const argv[], struct execres *res)
 }
 
 /*
+ * HOME for the programs this thread runs, or none.  A build sets it to
+ * its directory: compilers keep caches under it (emcc refuses to run
+ * without one), and the build user has no home of its own.
+ */
+static _Thread_local char	*exec_home;
+
+void
+exec_set_home(struct work *w, const char *dir)
+{
+
+	exec_home = dir != NULL ? wfmt(w, "HOME=%s", dir) : NULL;
+}
+
+/*
  * As run_exec(), keeping up to max bytes of standard output for the
  * caller; the trace step still carries at most ARC_MAX_OUTPUT of them.
  * res->truncated says the program printed more than was kept.
@@ -86,7 +100,7 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	struct capture			 out, eout;
 	static char			 pathenv[] =
 	    "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin";
-	char				*env[] = { pathenv, NULL };
+	char				*env[] = { pathenv, exec_home, NULL };
 	const char			*cmdline;
 	size_t				 i;
 	time_t				 deadline;

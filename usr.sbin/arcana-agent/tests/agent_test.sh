@@ -909,6 +909,7 @@ EOS
 #!/bin/sh
 dir=\$2
 echo "\$*" >> $(pwd)/made
+echo "HOME=\$HOME" >> $(pwd)/made
 [ -f $(pwd)/make-fails ] && exit 1
 case " \$* " in
 *" -V .OBJDIR "*) echo "\$dir/obj" ;;
@@ -977,6 +978,8 @@ EOS
 	    "$JGC" -t -c "$SOCK" console-update https://example.org/arcana.git
 	atf_check -o match:'build/src MK_TESTS=no$' \
 	    -o match:'build/src MK_TESTS=no install$' cat made
+	# A build's programs have a home: emcc will not run without one.
+	atf_check -o match:"^HOME=$(pwd)/build\$" cat made
 	for i in $(seq 1 60); do
 		[ -e running.arcana_console ] && break
 		sleep 0.1

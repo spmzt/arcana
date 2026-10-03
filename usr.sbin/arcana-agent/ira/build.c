@@ -483,8 +483,8 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 	return (true);
 }
 
-int
-do_agent_build(struct work *w, const char *source, const char *ref,
+static int
+agent_build(struct work *w, const char *source, const char *ref,
     const char *accepted, const char *sshkey,
     struct arc_agent_build_rsp *rsp)
 {
@@ -595,8 +595,8 @@ do_agent_build(struct work *w, const char *source, const char *ref,
  * user, make install as the daemon.  The caller restarts the console's
  * service once the reply has left.
  */
-int
-do_console_update(struct work *w, const char *source, const char *ref,
+static int
+console_update(struct work *w, const char *source, const char *ref,
     const char *accepted, const char *sshkey,
     struct arc_console_update_rsp *rsp)
 {
@@ -636,5 +636,32 @@ do_console_update(struct work *w, const char *source, const char *ref,
 	}
 	rsp->ok = true;
 	return (0);
+}
+
+/* The builds, with the build directory as the home of what they run. */
+int
+do_agent_build(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey,
+    struct arc_agent_build_rsp *rsp)
+{
+	int	rc;
+
+	exec_set_home(w, opts.build_dir);
+	rc = agent_build(w, source, ref, accepted, sshkey, rsp);
+	exec_set_home(w, NULL);
+	return (rc);
+}
+
+int
+do_console_update(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey,
+    struct arc_console_update_rsp *rsp)
+{
+	int	rc;
+
+	exec_set_home(w, opts.build_dir);
+	rc = console_update(w, source, ref, accepted, sshkey, rsp);
+	exec_set_home(w, NULL);
+	return (rc);
 }
 

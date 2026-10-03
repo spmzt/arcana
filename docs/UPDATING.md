@@ -24,6 +24,11 @@ service; the page reconnects by itself. A repository over SSH asks for
 its host key as a build does. From a shell: `arcanactl console-update
 [-y] [-i key] repository [ref]`.
 
+The build's programs run with the build directory
+(`/var/cache/arcana-build`) as their home: emcc keeps its cache there,
+and builds its system libraries into it the first time, which takes a
+few minutes more.
+
 It needs on that host what building Arcana needs (see the README),
 Emscripten included, and its settings in
 `/usr/local/etc/arcana/config.mk`. A console in a container is updated
