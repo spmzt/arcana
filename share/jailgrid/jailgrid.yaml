@@ -22,6 +22,29 @@ definitions:
   - name: max-packages
     type: const
     value: 16384
+  - name: max-batch
+    type: const
+    value: 64
+  - name: job-kind
+    type: enum
+    entries:
+      - name: jail-action
+        doc: jail and action, as the action operation.
+      - name: address
+        doc: As the address operation, without dry-run.
+      - name: service-action
+      - name: service-config
+        doc: service and variables to set or unset.
+      - name: pkg-upgrade
+  - name: job-state
+    type: enum
+    entries:
+      - queued
+      - running
+      - name: done
+        doc: Finished; ok says how.
+      - name: cancelled
+        doc: Removed from the queue before it ran.
   - name: max-json
     type: const
     value: 4194304
@@ -198,6 +221,24 @@ attribute-sets:
       - name: stats
         type: nest
         nested-attributes: stats
+      - name: batch
+        type: nest
+        nested-attributes: job-spec
+        multi-attr: true
+        doc: Jobs to queue, run in this order.
+        checks:
+          min-count: 1
+          max-count: max-batch
+      - name: jobs
+        type: nest
+        nested-attributes: job
+        multi-attr: true
+      - name: job
+        type: nest
+        nested-attributes: job
+      - name: id
+        type: u64
+        doc: A job's number, unique while the daemon runs.
       - name: packages
         type: nest
         nested-attributes: package
@@ -370,6 +411,82 @@ attribute-sets:
         nested-attributes: pool
         multi-attr: true
         doc: ZFS pools, from zpool list.
+
+  - name: job-spec
+    doc: One change to queue; the attributes its kind needs.
+    attributes:
+      - name: kind
+        type: u8
+        enum: job-kind
+      - name: jail
+        type: text
+        checks:
+          max-len: 255
+      - name: action
+        type: u8
+        enum: action
+      - name: address
+        type: text
+        checks:
+          max-len: 64
+      - name: interface
+        type: text
+        checks:
+          max-len: 15
+      - name: remove
+        type: flag
+      - name: live
+        type: flag
+      - name: persist
+        type: flag
+      - name: service
+        type: text
+        checks:
+          max-len: 64
+      - name: service-action
+        type: u8
+        enum: service-action
+      - name: variables
+        type: nest
+        nested-attributes: variable
+        multi-attr: true
+      - name: names
+        type: text
+        multi-attr: true
+
+  - name: job
+    attributes:
+      - name: id
+        type: u64
+      - name: kind
+        type: u8
+        enum: job-kind
+      - name: title
+        type: text
+        doc: What it does, in words.
+      - name: state
+        type: u8
+        enum: job-state
+      - name: ok
+        type: bool
+        doc: With state done, whether it succeeded.
+      - name: error
+        type: text
+      - name: created
+        type: s64
+        doc: Unix time it was queued.
+      - name: started
+        type: s64
+      - name: finished
+        type: s64
+      - name: peer
+        type: text
+        doc: Who queued it.
+      - name: trace
+        type: nest
+        nested-attributes: step
+        multi-attr: true
+        doc: The steps so far; it grows while the job runs.
 
   - name: package
     attributes:
@@ -630,3 +747,64 @@ operations:
           - upgraded
           - packages
           - trace
+
+  - name: job-submit
+    attribute-set: jailgrid
+    auth: true
+    doc: |
+      Queue changes.  The daemon runs them one after another in the order
+      given, whether or not the client stays connected, and keeps their
+      outcome for job and jobs.
+    do:
+      request:
+        attributes:
+          - batch
+        required:
+          - batch
+      reply:
+        attributes:
+          - ok
+          - error
+          - jobs
+
+  - name: jobs
+    attribute-set: jailgrid
+    auth: true
+    doc: The queued, running and recent jobs, without their traces.
+    do:
+      reply:
+        attributes:
+          - ok
+          - jobs
+
+  - name: job
+    attribute-set: jailgrid
+    auth: true
+    doc: One job with its trace so far.
+    do:
+      request:
+        attributes:
+          - id
+        required:
+          - id
+      reply:
+        attributes:
+          - ok
+          - error
+          - job
+
+  - name: job-cancel
+    attribute-set: jailgrid
+    auth: true
+    doc: Take a job that has not started out of the queue.
+    do:
+      request:
+        attributes:
+          - id
+        required:
+          - id
+      reply:
+        attributes:
+          - ok
+          - error
+          - job

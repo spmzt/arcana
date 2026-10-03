@@ -51,6 +51,14 @@ static const char *status_names[] = {
 };
 
 static bool	show_trace;
+static bool	queue;		/* -q: submit as a job */
+
+static const char *job_states[] = {
+	[JG_JOB_STATE_QUEUED] = "queued",
+	[JG_JOB_STATE_RUNNING] = "running",
+	[JG_JOB_STATE_DONE] = "done",
+	[JG_JOB_STATE_CANCELLED] = "cancelled",
+};
 
 static void	usage(void) __dead2;
 static void	fail(struct jg_client *, int, const char *) __dead2;
@@ -68,6 +76,11 @@ static int	cmd_stats(struct jg_client *);
 static int	cmd_packages(struct jg_client *, int, char **);
 static int	cmd_pkg_upgrade(struct jg_client *, int, char **);
 static void	emit_packages(const struct jg_package *, size_t);
+static int	submit(struct jg_client *, struct jg_job_spec *);
+static void	emit_job(const struct jg_job *);
+static int	cmd_jobs(struct jg_client *);
+static int	cmd_job(struct jg_client *, int, char **);
+static int	cmd_job_cancel(struct jg_client *, int, char **);
 static int	cmd_service(struct jg_client *, int, char **);
 static void	emit_service(const struct jg_service *, bool);
 
@@ -75,7 +88,7 @@ static void
 usage(void)
 {
 
-	xo_error("usage: jailgridctl [-t] [-c uri] [-A cafile -C certfile "
+	xo_error("usage: jailgridctl [-qt] [-c uri] [-A cafile -C certfile "
 	    "-K keyfile] [-N name] command\n"
 	    "commands:\n"
 	    "    hello\n"
@@ -89,7 +102,13 @@ usage(void)
 	    "    net routes | nexthops | connections | sockets [-4 | -6]\n"
 	    "    stats\n"
 	    "    packages [-r] [jail]\n"
-	    "    pkg-upgrade [-n] [-j jail] [package ...]\n");
+	    "    pkg-upgrade [-n] [-j jail] [package ...]\n"
+	    "    jobs\n"
+	    "    job [-w] id\n"
+	    "    job-cancel id\n"
+	    "with -q, start, stop, restart, kill, address, service (but "
+	    "config without\nvalues) and pkg-upgrade are queued as a job "
+	    "instead of waited for.\n");
 	exit(2);
 }
 
@@ -360,6 +379,17 @@ cmd_action(struct jg_client *cl, uint8_t action, int argc, char **argv)
 
 	if (argc != 2)
 		usage();
+	if (queue) {
+		struct jg_job_spec sp;
+
+		memset(&sp, 0, sizeof(sp));
+		sp.has_kind = true;
+		sp.kind = JG_JOB_KIND_JAIL_ACTION;
+		sp.jail = argv[1];
+		sp.has_action = true;
+		sp.action = action;
+		return (submit(cl, &sp));
+	}
 	memset(&req, 0, sizeof(req));
 	req.jail = argv[1];
 	req.has_action = true;
@@ -416,6 +446,20 @@ cmd_address(struct jg_client *cl, int argc, char **argv)
 		req.live = true;
 	req.jail = argv[optind];
 	req.address = argv[optind + 1];
+	if (queue && !req.dry_run) {
+		struct jg_job_spec sp;
+
+		memset(&sp, 0, sizeof(sp));
+		sp.has_kind = true;
+		sp.kind = JG_JOB_KIND_ADDRESS;
+		sp.jail = req.jail;
+		sp.address = req.address;
+		sp.interface = req.interface;
+		sp.remove = req.remove;
+		sp.live = req.live;
+		sp.persist = req.persist;
+		return (submit(cl, &sp));
+	}
 	if ((error = jg_address(cl, &req, &rsp)) != 0)
 		fail(cl, error, "address");
 	if (rsp->diff != NULL)
@@ -512,6 +556,17 @@ cmd_service(struct jg_client *cl, int argc, char **argv)
 	if (i < nitems(verbs)) {
 		if (argc != 3)
 			usage();
+		if (queue) {
+			struct jg_job_spec sp;
+
+			memset(&sp, 0, sizeof(sp));
+			sp.has_kind = true;
+			sp.kind = JG_JOB_KIND_SERVICE_ACTION;
+			sp.service = argv[1];
+			sp.has_service_action = true;
+			sp.service_action = (uint8_t)i;
+			return (submit(cl, &sp));
+		}
 		memset(&areq, 0, sizeof(areq));
 		areq.service = argv[1];
 		areq.has_service_action = true;
@@ -549,6 +604,19 @@ cmd_service(struct jg_client *cl, int argc, char **argv)
 	}
 	creq.variables.v = vars;
 	creq.variables.n = nv;
+	if (queue && nv > 0) {
+		struct jg_job_spec sp;
+
+		memset(&sp, 0, sizeof(sp));
+		sp.has_kind = true;
+		sp.kind = JG_JOB_KIND_SERVICE_CONFIG;
+		sp.service = argv[1];
+		sp.variables.v = vars;
+		sp.variables.n = nv;
+		error = submit(cl, &sp);
+		free(vars);
+		return (error);
+	}
 	if ((error = jg_service_config(cl, &creq, &crsp)) != 0)
 		fail(cl, error, "config");
 	if (crsp->service_result != NULL)
@@ -759,6 +827,17 @@ cmd_pkg_upgrade(struct jg_client *cl, int argc, char **argv)
 	}
 	req.names.v = (const char *const *)(argv + optind);
 	req.names.n = (size_t)(argc - optind);
+	if (queue && !req.dry_run) {
+		struct jg_job_spec sp;
+
+		memset(&sp, 0, sizeof(sp));
+		sp.has_kind = true;
+		sp.kind = JG_JOB_KIND_PKG_UPGRADE;
+		sp.jail = req.jail;
+		sp.names.v = req.names.v;
+		sp.names.n = req.names.n;
+		return (submit(cl, &sp));
+	}
 	if ((error = jg_pkg_upgrade(cl, &req, &rsp)) != 0)
 		fail(cl, error, "pkg-upgrade");
 	if (rsp->ok) {
@@ -776,6 +855,143 @@ cmd_pkg_upgrade(struct jg_client *cl, int argc, char **argv)
 	return (error);
 }
 
+static void
+emit_job(const struct jg_job *j)
+{
+	const char	*st;
+
+	st = j->has_state && j->state < nitems(job_states) ?
+	    job_states[j->state] : "?";
+	if (j->has_state && j->state == JG_JOB_STATE_DONE && !j->ok)
+		st = "failed";
+	xo_open_instance("job");
+	xo_emit("{k:id/%4ju} {:state/%-9s/%s} {:title/%s}", (uintmax_t)j->id,
+	    st, j->title);
+	if (j->error != NULL)
+		xo_emit(": {:error/%s}", j->error);
+	xo_emit("{e:peer/%s}{e:created/%jd}\n", j->peer != NULL ? j->peer : "",
+	    (intmax_t)j->created);
+	xo_close_instance("job");
+}
+
+/* Queue one job and say its number. */
+static int
+submit(struct jg_client *cl, struct jg_job_spec *sp)
+{
+	struct jg_job_submit_req	 req;
+	struct jg_job_submit_rsp	*rsp;
+	size_t				 i;
+	int				 error;
+
+	memset(&req, 0, sizeof(req));
+	req.batch.v = sp;
+	req.batch.n = 1;
+	if ((error = jg_job_submit(cl, &req, &rsp)) != 0)
+		fail(cl, error, "queue");
+	xo_open_list("job");
+	for (i = 0; i < rsp->jobs.n; i++)
+		emit_job(&rsp->jobs.v[i]);
+	xo_close_list("job");
+	error = rsp->ok ? 0 : 1;
+	jg_job_submit_rsp_free(rsp);
+	return (error);
+}
+
+static int
+cmd_jobs(struct jg_client *cl)
+{
+	struct jg_jobs_rsp	*rsp;
+	size_t			 i;
+	int			 error;
+
+	if ((error = jg_jobs(cl, &rsp)) != 0)
+		fail(cl, error, "jobs");
+	xo_emit("{T:/%4s} {T:/%-9s} {T:/%s}\n", "ID", "STATE", "JOB");
+	xo_open_list("job");
+	for (i = 0; i < rsp->jobs.n; i++)
+		emit_job(&rsp->jobs.v[i]);
+	xo_close_list("job");
+	jg_jobs_rsp_free(rsp);
+	return (0);
+}
+
+/* job [-w] id: the job and its trace; -w waits for it to finish. */
+static int
+cmd_job(struct jg_client *cl, int argc, char **argv)
+{
+	struct jg_job_req	 req;
+	struct jg_job_rsp	*rsp;
+	bool			 wait, done, ok;
+	int			 ch, error;
+
+	wait = false;
+	optind = 1;
+	while ((ch = getopt(argc, argv, "w")) != -1) {
+		switch (ch) {
+		case 'w':
+			wait = true;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc - optind != 1)
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.has_id = true;
+	req.id = strtoull(argv[optind], NULL, 10);
+	for (;;) {
+		if ((error = jg_job(cl, &req, &rsp)) != 0)
+			fail(cl, error, "job");
+		if (!rsp->ok || rsp->job == NULL) {
+			xo_warnx("job %s: %s", argv[optind], rsp->error != NULL ?
+			    rsp->error : "not found");
+			jg_job_rsp_free(rsp);
+			return (1);
+		}
+		done = rsp->job->state == JG_JOB_STATE_DONE ||
+		    rsp->job->state == JG_JOB_STATE_CANCELLED;
+		if (done || !wait)
+			break;
+		jg_job_rsp_free(rsp);
+		usleep(300000);
+	}
+	xo_open_list("job");
+	emit_job(rsp->job);
+	xo_close_list("job");
+	show_trace = true;
+	emit_trace(rsp->job->trace.v, rsp->job->trace.n);
+	ok = !done || (rsp->job->state == JG_JOB_STATE_DONE && rsp->job->ok);
+	jg_job_rsp_free(rsp);
+	return (ok ? 0 : 1);
+}
+
+static int
+cmd_job_cancel(struct jg_client *cl, int argc, char **argv)
+{
+	struct jg_job_cancel_req	 req;
+	struct jg_job_cancel_rsp	*rsp;
+	int				 error;
+
+	if (argc != 2)
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.has_id = true;
+	req.id = strtoull(argv[1], NULL, 10);
+	if ((error = jg_job_cancel(cl, &req, &rsp)) != 0)
+		fail(cl, error, "job-cancel");
+	if (rsp->ok && rsp->job != NULL) {
+		xo_open_list("job");
+		emit_job(rsp->job);
+		xo_close_list("job");
+	} else
+		xo_warnx("job %s: %s", argv[1], rsp->error != NULL ?
+		    rsp->error : "failed");
+	error = rsp->ok ? 0 : 1;
+	jg_job_cancel_rsp_free(rsp);
+	return (error);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -790,7 +1006,7 @@ main(int argc, char *argv[])
 		exit(2);
 	uri = PATH_SOCKET;
 	cafile = certfile = keyfile = name = NULL;
-	while ((ch = getopt(argc, argv, "+A:C:c:K:N:t")) != -1) {
+	while ((ch = getopt(argc, argv, "+A:C:c:K:N:qt")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -806,6 +1022,9 @@ main(int argc, char *argv[])
 			break;
 		case 'N':
 			name = optarg;
+			break;
+		case 'q':
+			queue = true;
 			break;
 		case 't':
 			show_trace = true;
@@ -869,6 +1088,12 @@ main(int argc, char *argv[])
 		rc = cmd_stats(&cl);
 	else if (strcmp(argv[0], "packages") == 0)
 		rc = cmd_packages(&cl, argc, argv);
+	else if (strcmp(argv[0], "jobs") == 0 && argc == 1)
+		rc = cmd_jobs(&cl);
+	else if (strcmp(argv[0], "job") == 0)
+		rc = cmd_job(&cl, argc, argv);
+	else if (strcmp(argv[0], "job-cancel") == 0)
+		rc = cmd_job_cancel(&cl, argc, argv);
 	else if (strcmp(argv[0], "pkg-upgrade") == 0)
 		rc = cmd_pkg_upgrade(&cl, argc, argv);
 	else

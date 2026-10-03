@@ -111,7 +111,8 @@ status)		[ -f "running.\$name" ] && { echo "\$name is running as pid 4242."; exi
 		echo "\$name is not running."; exit 1 ;;
 start)		touch "running.\$name"; echo "Starting \$name." ;;
 stop)		rm -f "running.\$name"; echo "Stopping \$name." ;;
-restart)	touch "running.\$name"; echo "Restarting \$name." ;;
+restart)	[ -f slow ] && sleep 2
+		touch "running.\$name"; echo "Restarting \$name." ;;
 reload)		echo "Reloading \$name." ;;
 describe)	echo "The \$name daemon." ;;
 extracommands)	echo "reload configtest" ;;
@@ -613,6 +614,59 @@ packages_cleanup()
 	stop_daemon
 }
 
+atf_test_case jobs cleanup
+jobs_head()
+{
+	atf_set "descr" "queued changes run in order, without their client, with a trace that grows"
+}
+jobs_body()
+{
+	start_daemon
+	# A slow job, then two behind it; every client leaves at once.
+	touch slow
+	atf_check -o match:'^ +1 queued +service sshd restart' \
+	    "$JGC" -q -c "$SOCK" service sshd restart
+	atf_check -o match:'^ +2 queued +start web' "$JGC" -q -c "$SOCK" start web
+	atf_check -o match:'^ +3 queued +service ntpd enable' \
+	    "$JGC" -q -c "$SOCK" service ntpd enable
+	# While the first runs: its trace so far, the rest waiting.
+	sleep 0.5
+	atf_check -o save:running.out "$JGC" -c "$SOCK" job 1
+	atf_check -o match:'^ +1 running ' cat running.out
+	atf_check -o match:'job 1: service sshd restart' cat running.out
+	atf_check -o match:'fake-service sshd restart.*incomplete' cat running.out
+	atf_check -o match:'^ +2 queued ' -o match:'^ +3 queued ' \
+	    "$JGC" -c "$SOCK" jobs
+	# One still queued can be taken back; a running one cannot.
+	atf_check -o match:'^ +3 cancelled ' "$JGC" -c "$SOCK" job-cancel 3
+	atf_check -s exit:1 -e match:'is running' "$JGC" -c "$SOCK" job-cancel 1
+	# Wait for the second: both ran, in order, with nobody attached.
+	atf_check -o save:done.out "$JGC" -c "$SOCK" job -w 2
+	atf_check -o match:'^ +2 done +start web' cat done.out
+	atf_check -o match:'fake-jail .* -c web' cat done.out
+	atf_check -o match:'^ +1 done ' -o match:'^ +2 done ' \
+	    -o match:'^ +3 cancelled ' "$JGC" -c "$SOCK" jobs
+	atf_check test -f running.sshd
+	atf_check -o match:'^ntpd_enable="NO"' cat rc.conf
+	# A job that fails says why, and the next still runs.
+	rm slow
+	touch fail
+	atf_check -o ignore "$JGC" -q -c "$SOCK" start db
+	atf_check -o ignore "$JGC" -q -c "$SOCK" service ntpd enable
+	atf_check -s exit:1 -o match:'^ +4 failed +start db: jail exited' \
+	    "$JGC" -c "$SOCK" job -w 4
+	atf_check -o match:'^ +5 done ' "$JGC" -c "$SOCK" job -w 5
+	atf_check -o match:'^ntpd_enable="YES"' cat rc.conf
+	# What a job may be is checked when it is queued.
+	atf_check -s exit:1 -e match:'invalid jail name' \
+	    "$JGC" -q -c "$SOCK" start ../x
+	atf_check -s exit:1 -e match:'no such job' "$JGC" -c "$SOCK" job 99
+}
+jobs_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case hello
@@ -631,4 +685,5 @@ atf_init_test_cases()
 	atf_add_test_case service_config
 	atf_add_test_case network
 	atf_add_test_case packages
+	atf_add_test_case jobs
 }

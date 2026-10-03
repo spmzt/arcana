@@ -9,6 +9,7 @@
 
 #include <sys/types.h>
 
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -86,6 +87,12 @@ struct work {
 	int		 nsteps;
 	int		 stack[TRACE_DEPTH];
 	int		 depth;
+	/*
+	 * A job's trace is read by other threads while the job runs: the
+	 * step functions change it under this lock, and trace_copy() of
+	 * this work into another reads it under it.
+	 */
+	pthread_mutex_t	 lock;
 };
 
 void		 work_init(struct work *);
@@ -106,6 +113,8 @@ void		 step_end(struct work *, int, bool, const char *, ...)
 void		 step_exec(struct work *, int, char *const [], int,
 		    const char *, size_t, const char *, size_t);
 void		 trace_steps(struct work *, const struct jg_step **, size_t *);
+void		 trace_copy(struct work *, struct work *,
+		    const struct jg_step **, size_t *);
 uint64_t	 now_us(void);
 
 /* exec.c: run a program without a shell, capturing its output. */
@@ -209,6 +218,17 @@ int		 do_packages(struct work *, const char *, bool,
 		    struct jg_packages_rsp *);
 int		 do_pkg_upgrade(struct work *, const struct jg_pkg_upgrade_req *,
 		    struct jg_pkg_upgrade_rsp *);
+
+/* jobs.c: queued changes, run in order whoever is or is not connected. */
+void		 jobs_init(void);
+int		 jobs_submit(const struct jg_job_spec *, size_t, const char *,
+		    struct work *, const struct jg_job **, size_t *);
+void		 jobs_list(struct work *, const struct jg_job **, size_t *);
+const struct jg_job *jobs_get(struct work *, uint64_t);
+const struct jg_job *jobs_cancel(struct work *, uint64_t, const char **);
+
+/* handlers.c */
+extern pthread_mutex_t	change_lock;	/* one change at a time */
 
 /* main.c */
 void		 logmsg(int, const char *, ...) __printflike(2, 3);

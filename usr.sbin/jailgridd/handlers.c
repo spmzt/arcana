@@ -37,7 +37,7 @@ struct job {
 	char			*peer;
 };
 
-static pthread_mutex_t	change_lock = PTHREAD_MUTEX_INITIALIZER;
+pthread_mutex_t	change_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static const char *action_names[] = {
 	[JG_ACTION_START] = "start",
@@ -71,6 +71,7 @@ static int	start(struct job *);
 static int	reject(cbl_req *, const char *);
 static char	*xstrdup(const char *);
 static void	job_free(struct job *);
+static const char *check_spec(const struct jg_job_spec *);
 
 /*
  * Jail names: letters, digits, '_', '-', and '.' for hierarchical jails.
@@ -597,4 +598,142 @@ jg_pkg_upgrade_doit(cbl_req *req, const struct jg_pkg_upgrade_req *rq,
 		j->pkg.names.n = rq->names.n;
 	}
 	return (start(j));
+}
+
+/* Is the spec complete and are its names fit?  NULL, or what is wrong. */
+static const char *
+check_spec(const struct jg_job_spec *sp)
+{
+	size_t	i;
+
+	if (!sp->has_kind || sp->kind > JG_JOB_KIND_PKG_UPGRADE)
+		return ("a job needs a kind");
+	switch (sp->kind) {
+	case JG_JOB_KIND_JAIL_ACTION:
+		if (sp->jail == NULL || !valid_jail(sp->jail))
+			return ("invalid jail name");
+		if (!sp->has_action || sp->action >= nitems(action_names))
+			return ("invalid action");
+		break;
+	case JG_JOB_KIND_ADDRESS:
+		if (sp->jail == NULL || !valid_jail(sp->jail))
+			return ("invalid jail name");
+		if (sp->address == NULL || strlen(sp->address) < 2 ||
+		    strchr(sp->address, '|') != NULL)
+			return ("invalid address");
+		if (sp->interface != NULL && !valid_ifname(sp->interface))
+			return ("invalid interface name");
+		if (!sp->live && !sp->persist)
+			return ("say live, persist or both");
+		break;
+	case JG_JOB_KIND_SERVICE_ACTION:
+		if (sp->service == NULL || !valid_service(sp->service))
+			return ("invalid service name");
+		if (!sp->has_service_action ||
+		    sp->service_action >= nitems(service_action_names))
+			return ("invalid action");
+		break;
+	case JG_JOB_KIND_SERVICE_CONFIG:
+		if (sp->service == NULL || !valid_service(sp->service))
+			return ("invalid service name");
+		if (sp->variables.n == 0)
+			return ("nothing to set");
+		for (i = 0; i < sp->variables.n; i++)
+			if (sp->variables.v[i].key == NULL)
+				return ("a variable without a key");
+		break;
+	default:
+		if (sp->jail != NULL && !valid_jail(sp->jail))
+			return ("invalid jail name");
+		for (i = 0; i < sp->names.n; i++)
+			if (sp->names.v[i] == NULL)
+				return ("a package without a name");
+		break;
+	}
+	return (NULL);
+}
+
+/* Jobs are queued, listed and read on the loop: none of it waits. */
+int
+jg_job_submit_doit(cbl_req *req, const struct jg_job_submit_req *rq,
+    void *arg __unused)
+{
+	struct jg_job_submit_rsp	 rsp;
+	struct work			 w;
+	const char			*e;
+	char				*peer;
+	size_t				 i;
+	int				 error;
+
+	for (i = 0; i < rq->batch.n; i++)
+		if ((e = check_spec(&rq->batch.v[i])) != NULL)
+			return (reject(req, e));
+	work_init(&w);
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.has_ok = true;
+	rsp.ok = true;
+	peer = peer_name(req);
+	jobs_submit(rq->batch.v, rq->batch.n, peer, &w, &rsp.jobs.v,
+	    &rsp.jobs.n);
+	free(peer);
+	error = jg_job_submit_reply(req, &rsp);
+	work_free(&w);
+	return (error);
+}
+
+int
+jg_jobs_doit(cbl_req *req, void *arg __unused)
+{
+	struct jg_jobs_rsp	rsp;
+	struct work		w;
+	int			error;
+
+	work_init(&w);
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.has_ok = true;
+	rsp.ok = true;
+	jobs_list(&w, &rsp.jobs.v, &rsp.jobs.n);
+	error = jg_jobs_reply(req, &rsp);
+	work_free(&w);
+	return (error);
+}
+
+int
+jg_job_doit(cbl_req *req, const struct jg_job_req *rq, void *arg __unused)
+{
+	struct jg_job_rsp	rsp;
+	struct work		w;
+	int			error;
+
+	work_init(&w);
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.has_ok = true;
+	rsp.job = jobs_get(&w, rq->id);
+	rsp.ok = rsp.job != NULL;
+	if (!rsp.ok)
+		rsp.error = "no such job; the daemon keeps the last finished "
+		    "ones and forgets all when it restarts";
+	error = jg_job_reply(req, &rsp);
+	work_free(&w);
+	return (error);
+}
+
+int
+jg_job_cancel_doit(cbl_req *req, const struct jg_job_cancel_req *rq,
+    void *arg __unused)
+{
+	struct jg_job_cancel_rsp	rsp;
+	struct work			w;
+	int				error;
+
+	work_init(&w);
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.has_ok = true;
+	rsp.job = jobs_cancel(&w, rq->id, &rsp.error);
+	rsp.ok = rsp.job != NULL;
+	if (rsp.ok)
+		rsp.error = NULL;
+	error = jg_job_cancel_reply(req, &rsp);
+	work_free(&w);
+	return (error);
 }

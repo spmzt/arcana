@@ -270,6 +270,7 @@ main(int argc, char *argv[])
 			    cbl_listener_errstr(ls[i]));
 		logmsg(LOG_INFO, "listening on %s", uris[i]);
 	}
+	jobs_init();
 	logmsg(LOG_INFO, "version %s ready", JAILGRIDD_VERSION);
 	(void)cbl_loop_signal(loop, SIGINT, on_signal, loop);
 	(void)cbl_loop_signal(loop, SIGTERM, on_signal, loop);
