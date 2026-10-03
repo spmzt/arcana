@@ -630,6 +630,16 @@ label {
 	color: var(--cyan);
 }
 
+.sorts {
+	display: flex;
+	align-items: center;
+	gap: .35rem;
+	margin-left: auto;
+	color: var(--dim);
+	font-size: .74rem;
+}
+.sorts button.small { padding: .15rem .55rem; font-size: .68rem; }
+
 .facts button.small {
 	padding: .1rem .55rem;
 	font-size: .68rem;

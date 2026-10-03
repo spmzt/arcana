@@ -468,7 +468,28 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('pre.diff') && document.querySelector("
 	    "'pre.diff').textContent.includes('\"10.0.0.21\"')", 10);
 	run("document.querySelector('.modal button[data-act=close]').click()");
+	/* Services: those running first, then those enabled; by name when
+	 * asked, and the other way round when asked again. */
+	run("document.querySelector('.jail-page button[data-act=close-drawer]')"
+	    ".click()");
+	run("document.querySelector('button.tab[data-arg=services]').click()");
+	wait_js("document.querySelectorAll('.services .svc').length === 2", 20);
+	ATF_CHECK(js_true("document.querySelector('.sorts button.on')."
+	    "dataset.arg === 'running'"));
+	ATF_CHECK(js_true("document.querySelector('.services .svc')."
+	    "dataset.arg === 'sshd'"));
+	run("document.querySelector('.sorts button[data-arg=name]').click()");
+	wait_js("document.querySelector('.services .svc').dataset.arg === "
+	    "'ntpd'", 5);
+	run("document.querySelector('.sorts button[data-arg=name]').click()");
+	wait_js("document.querySelector('.services .svc').dataset.arg === "
+	    "'sshd'", 5);
+	shot("6-services");
+
 	/* The host's own record of jobs has the start that was done. */
+	run("document.querySelector('button.tab[data-arg=jails]').click()");
+	run("document.querySelector('#j-db').click()");
+	wait_js("document.querySelector('.jail-page')", 5);
 	run("document.querySelector('.jail-page button[data-act=close-drawer]')"
 	    ".click()");
 	run("document.querySelector('button.tab[data-arg=jobs]').click()");

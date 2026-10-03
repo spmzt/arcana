@@ -474,6 +474,13 @@ dispatch(const char *act, const char *arg, const char *value)
 		queue_run();
 	} else if (strcmp(act, "queue-clear") == 0) {
 		queue_clear();
+	} else if (strcmp(act, "svc-sort") == 0) {
+		/* The same key again turns the order round. */
+		i = strcmp(arg, "name") == 0 ? SVC_SORT_NAME :
+		    strcmp(arg, "enabled") == 0 ? SVC_SORT_ENABLED :
+		    SVC_SORT_RUNNING;
+		app.svc_sort_desc = app.svc_sort == i && !app.svc_sort_desc;
+		app.svc_sort = i;
 	} else if (strcmp(act, "net-sort") == 0) {
 		/* The same column again turns the order round. */
 		if (app.net.sort == atoi(arg))

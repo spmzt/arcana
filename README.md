@@ -252,7 +252,9 @@ The console is laid out as a tree and tabs.
     does not answer), with start, stop, restart and kill.
   - **Services**: the rc.d scripts, enabled or not, running or not, with
     start, stop, restart, reload, enable and disable; a service's drawer
-    edits its `rc.conf` variables through `sysrc(8)`.
+    edits its `rc.conf` variables through `sysrc(8)`. Those running come
+    first, then those enabled; **Sort** orders by running, enabled or
+    name, and the other way round when pressed again.
   - **Network**: the routing table, nexthops, connections and sockets,
     per address family, as `netstat` and `sockstat` print them
     (`--libxo json`); filter the rows, click a column to sort.

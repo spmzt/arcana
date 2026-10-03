@@ -113,6 +113,8 @@ enum screen {
 };
 
 /* What is selected in the tree: the fleet, a host, or a jail of it. */
+enum svc_sort { SVC_SORT_RUNNING, SVC_SORT_ENABLED, SVC_SORT_NAME };
+
 enum node {
 	NODE_FLEET,
 	NODE_HOST,
@@ -301,6 +303,8 @@ struct app {
 	char		 service_busy[65];	/* an action in flight */
 	ucl_object_t	*svc_config;	/* the open service's config reply */
 	bool		 svc_loading;
+	int		 svc_sort;	/* SVC_SORT_*: running first at start */
+	bool		 svc_sort_desc;
 	char		 svc_error[256];
 	struct netview	 net;
 	struct pkgview	 pkg;

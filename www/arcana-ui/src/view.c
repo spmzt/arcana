@@ -1411,10 +1411,47 @@ service_row(struct html *h, const ucl_object_t *sv)
 }
 
 /* The services tab: the rc.d scripts of the server. */
+static const char *svc_sorts[] = {
+	[SVC_SORT_RUNNING] = "running",
+	[SVC_SORT_ENABLED] = "enabled",
+	[SVC_SORT_NAME] = "name",
+};
+
+/*
+ * Services in the order asked for: those running first, or those
+ * enabled first, or by name.  The key alone is turned round when the
+ * order is; within it the other state decides, then the name.
+ */
+static int
+svc_cmp(const void *ap, const void *bp)
+{
+	const ucl_object_t	*a, *b;
+	int			 run, en, r;
+
+	a = *(const ucl_object_t *const *)ap;
+	b = *(const ucl_object_t *const *)bp;
+	run = (int)jbool(b, "running") - (int)jbool(a, "running");
+	en = (int)jbool(b, "enabled") - (int)jbool(a, "enabled");
+	r = strcmp(jstr(a, "name"), jstr(b, "name"));
+	if (app.svc_sort_desc) {
+		if (app.svc_sort == SVC_SORT_RUNNING)
+			run = -run;
+		else if (app.svc_sort == SVC_SORT_ENABLED)
+			en = -en;
+		else
+			r = -r;
+	}
+	if (app.svc_sort == SVC_SORT_NAME)
+		return (r);
+	if (app.svc_sort == SVC_SORT_ENABLED)
+		return (en != 0 ? en : run != 0 ? run : r);
+	return (run != 0 ? run : en != 0 ? en : r);
+}
+
 void
 view_services(struct html *h, struct server *s)
 {
-	const ucl_object_t	*sv;
+	const ucl_object_t	*sv, **rows;
 	ucl_object_iter_t	 it;
 	char			 age[32];
 	int			 shown, n, en, run;
@@ -1439,6 +1476,13 @@ view_services(struct html *h, struct server *s)
 		h_fmt(h, "<span class=\"tally\"><b class=\"c-run\">%d</b> running "
 		    "· <b>%d</b> enabled · <b>%d</b> scripts · ", run, en, n);
 		h_txt(h, age);
+		h_raw(h, "</span><span class=\"sorts\">Sort");
+		for (n = 0; n <= SVC_SORT_NAME; n++)
+			h_fmt(h, "<button class=\"ghost small%s\" "
+			    "data-act=\"svc-sort\" data-arg=\"%s\">%s%s</button>",
+			    app.svc_sort == n ? " on" : "", svc_sorts[n],
+			    svc_sorts[n], app.svc_sort != n ? "" :
+			    app.svc_sort_desc ? " ▴" : " ▾");
 		h_raw(h, "</span>");
 	}
 	h_raw(h, "</div>");
@@ -1455,7 +1499,10 @@ view_services(struct html *h, struct server *s)
 		    "answered yet.</p></div>");
 		return;
 	}
-	h_raw(h, "<ul class=\"services\">");
+	/* Those that match, in the order asked for. */
+	n = (int)ucl_array_size(jget(s->services, "services"));
+	if ((rows = calloc(n > 0 ? n : 1, sizeof(*rows))) == NULL)
+		abort();
 	shown = 0;
 	it = NULL;
 	while ((sv = ucl_object_iterate(jget(s->services, "services"), &it,
@@ -1463,10 +1510,14 @@ view_services(struct html *h, struct server *s)
 		if (jstr(sv, "name") == NULL || (app.filter[0] != '\0' &&
 		    strstr(jstr(sv, "name"), app.filter) == NULL))
 			continue;
-		service_row(h, sv);
-		shown++;
+		rows[shown++] = sv;
 	}
+	qsort(rows, shown, sizeof(*rows), svc_cmp);
+	h_raw(h, "<ul class=\"services\">");
+	for (n = 0; n < shown; n++)
+		service_row(h, rows[n]);
 	h_raw(h, "</ul>");
+	free(rows);
 	if (shown == 0)
 		h_raw(h, "<div class=\"empty\"><p>Nothing matches.</p></div>");
 }
