@@ -491,9 +491,10 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 			    "in between, or the server was reinstalled", name);
 		} else if (memmem(res.err, res.errlen, "Permission denied (",
 		    19) != NULL)
-			rsp->error = wfmt(w, "%s did not accept this host's "
-			    "key: allow the deploy key there, read-only (%s)",
-			    name, git_error(w, &res));
+			rsp->error = wfmt(w, "%s refused the key %s of this "
+			    "host; its public half has to be allowed there "
+			    "for this repository. %s", name, key,
+			    git_error(w, &res));
 		return (false);
 	}
 

@@ -1117,7 +1117,7 @@ modal(struct html *h)
 	struct confirm	*c;
 	const ucl_object_t *k;
 	ucl_object_iter_t it;
-	bool		 add;
+	bool		 add, changed;
 	int		 i, n;
 
 	if (app.modal == MODAL_NONE)
@@ -1208,12 +1208,26 @@ modal(struct html *h)
 	case MODAL_HOST_KEY:
 		k = app.build_reply;
 		add = jstr(k, "host_keys") != NULL;	/* a key to confirm */
+		changed = add && jstr(k, "error") != NULL && strstr(jstr(k,
+		    "error"), "CHANGED") != NULL;
+		/*
+		 * Three different things to say, each under its own name:
+		 * a host key to confirm, one that changed, and a server
+		 * that knows the host but refuses its key.
+		 */
 		h_fmt(h, "<form data-form=\"host-key\" class=\"hostkey%s\">"
-		    "<h2>%s</h2><p>", add && jstr(k, "error") != NULL &&
-		    strstr(jstr(k, "error"), "CHANGED") != NULL ? " danger" : "",
-		    add ? "Confirm the SSH host key" : "Allow the deploy key");
+		    "<h2>%s</h2><p>", changed ? " danger" : "", changed ?
+		    "The server's SSH host key changed" : add ?
+		    "Confirm the SSH host key" :
+		    "The git server refused the host's key");
 		h_txt(h, jstr(k, "error"));
-		h_raw(h, ".</p>");
+		h_raw(h, "</p>");
+		if (!add)
+			h_raw(h, "<p>The server's host key is confirmed and "
+			    "kept; this is about who the build host is to "
+			    "the server. Pressing <b>Build again</b> before "
+			    "the key is allowed there asks the same and gets "
+			    "the same answer.</p>");
 		if (add) {
 			h_raw(h, "<p>The repository's server showed these keys "
 			    "to the host that builds. Compare a fingerprint "
@@ -1233,9 +1247,12 @@ modal(struct html *h)
 		if (jstr(app.build_reply, "deploy_key") != NULL) {
 			h_raw(h, add ? "<p>The host shows the server this key "
 			    "of its own; allow it there, read-only, if it is "
-			    "not yet:</p>" : "<p>Add this key of the host's to "
-			    "the repository's server as a read-only deploy "
-			    "key, then build again:</p>");
+			    "not yet:</p>" : "<p>This is the public half of "
+			    "the key the host showed. Add it to the "
+			    "repository on the server as a read-only deploy "
+			    "key (or to a user who may read it), then build "
+			    "again. To use another key, name its path in "
+			    "Settings, <q>SSH key for git</q>.</p>");
 			h_raw(h, "<pre class=\"out deploy-key\">");
 			h_txt(h, jstr(app.build_reply, "deploy_key"));
 			h_raw(h, "</pre>");
