@@ -205,7 +205,9 @@ main(int argc, char *argv[])
 	char			 capath[MAXPATHLEN], certpath[MAXPATHLEN];
 	char			 keypath[MAXPATHLEN], flags[1024], *reply;
 	char			 listen[256];
-	char			*sysrc[4], *service[4];
+	char			*sysrc[8], *service[4];
+	const char		*quote;
+	int			 ns;
 	unsigned char		*json;
 	long			 port;
 	bool			 start;
@@ -309,41 +311,49 @@ main(int argc, char *argv[])
 		addrs[naddrs++] = "0.0.0.0";
 		addrs[naddrs++] = "::";
 	}
-	snprintf(flags, sizeof(flags), "-l unix:/var/run/arcana-agent.sock");
+	/* The local socket is the service's own; these are the rest. */
+	flags[0] = '\0';
 	for (i = 0; i < naddrs; i++) {
-		snprintf(listen, sizeof(listen), " -l tcp://%s%s%s:%ld",
-		    strchr(addrs[i], ':') != NULL ? "[" : "", addrs[i],
-		    strchr(addrs[i], ':') != NULL ? "]" : "", port);
+		snprintf(listen, sizeof(listen), "%stcp://%s%s%s:%ld",
+		    i > 0 ? " " : "", strchr(addrs[i], ':') != NULL ? "[" : "",
+		    addrs[i], strchr(addrs[i], ':') != NULL ? "]" : "", port);
 		strlcat(flags, listen, sizeof(flags));
 	}
-	snprintf(listen, sizeof(listen), " -A %s -C %s -K %s", capath, certpath,
-	    keypath);
-	strlcat(flags, listen, sizeof(flags));
+	/* The files are named only where the service would not look. */
+	ns = 0;
+	if ((sysrc[ns++] = strdup("sysrc")) == NULL ||
+	    (sysrc[ns++] = strdup("arcana_agent_enable=YES")) == NULL ||
+	    asprintf(&sysrc[ns++], "arcana_agent_listen=%s", flags) == -1)
+		err(1, "asprintf");
+	if (strcmp(dir, PATH_ETC) != 0 && (
+	    asprintf(&sysrc[ns++], "arcana_agent_ca=%s", capath) == -1 ||
+	    asprintf(&sysrc[ns++], "arcana_agent_cert=%s", certpath) == -1 ||
+	    asprintf(&sysrc[ns++], "arcana_agent_key=%s", keypath) == -1))
+		err(1, "asprintf");
+	sysrc[ns] = NULL;
 	if (!start) {
-		printf("to run arcana-agent with them:\n"
-		    "  sysrc arcana_agent_enable=YES\n"
-		    "  sysrc arcana_agent_flags=\"%s\"\n"
-		    "  service arcana_agent restart\n", flags);
+		printf("to run arcana-agent with them:\n ");
+		for (i = 0; i < (size_t)ns; i++) {
+			quote = strchr(sysrc[i], ' ') != NULL ? "'" : "";
+			printf(" %s%s%s", quote, sysrc[i], quote);
+		}
+		printf("\n  service arcana_agent restart\n");
 		ucl_object_unref(o);
 		free(reply);
 		return (0);
 	}
-	sysrc[0] = (char *)(uintptr_t)"sysrc";
-	sysrc[1] = (char *)(uintptr_t)"arcana_agent_enable=YES";
-	if (asprintf(&sysrc[2], "arcana_agent_flags=%s", flags) == -1)
-		err(1, "asprintf");
-	sysrc[3] = NULL;
 	service[0] = (char *)(uintptr_t)"service";
 	service[1] = (char *)(uintptr_t)"arcana_agent";
 	service[2] = (char *)(uintptr_t)"restart";
 	service[3] = NULL;
 	if (!run(sysrc))
-		errx(1, "sysrc failed; set arcana_agent_flags=\"%s\" by hand",
+		errx(1, "sysrc failed; set arcana_agent_listen=\"%s\" by hand",
 		    flags);
 	if (!run(service))
 		errx(1, "service arcana_agent restart failed");
 	printf("arcana-agent is enabled and running on port %ld\n", port);
-	free(sysrc[2]);
+	for (i = 0; i < (size_t)ns; i++)
+		free(sysrc[i]);
 	ucl_object_unref(o);
 	free(reply);
 	return (0);

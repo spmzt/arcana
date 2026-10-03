@@ -23,12 +23,20 @@ for the console and for `arcanactl`, over cblink.
 
 ```sh
 sysrc arcana_agent_enable=YES
-sysrc arcana_agent_flags="-l unix:/var/run/arcana-agent.sock \
-    -l tcp://0.0.0.0:4310 -l 'tcp://[::]:4310' \
-    -A /usr/local/etc/arcana/ca.pem \
-    -C /usr/local/etc/arcana/host.pem -K /usr/local/etc/arcana/host.key"
+sysrc arcana_agent_listen="tcp://0.0.0.0:4310 tcp://[::]:4310"
 service arcana_agent start
 ```
+
+| `rc.conf` variable | Meaning | Default |
+|---|---|---|
+| `arcana_agent_enable` | Run the agent. | `NO` |
+| `arcana_agent_socket` | The local socket, always listened on. | `/var/run/arcana-agent.sock` |
+| `arcana_agent_group` | A group whose members may use the socket. | none, root only |
+| `arcana_agent_listen` | Network listeners, separated by spaces. | none |
+| `arcana_agent_ca` | The CA of client certificates, for network listeners. | `/usr/local/etc/arcana/ca.pem` |
+| `arcana_agent_cert` | The host's certificate. | `/usr/local/etc/arcana/host.pem` |
+| `arcana_agent_key` | Its key. | `/usr/local/etc/arcana/host.key` |
+| `arcana_agent_flags` | More flags, added to those above. | none |
 
 `arcana-enrol -s` writes those flags for you. Without `-l` it listens
 only on `unix:/var/run/arcana-agent.sock`, mode 0600 (0660 with `-g
@@ -65,7 +73,7 @@ once, for an hour. Options go before the URL.
 
 | Option | Meaning |
 |---|---|
-| `-s` | Set `arcana_agent_enable` and `arcana_agent_flags` with `sysrc(8)` and restart the service. Without it the `rc.conf` lines are printed. |
+| `-s` | Set `arcana_agent_enable` and `arcana_agent_listen` with `sysrc(8)` and restart the service. Without it the `rc.conf` lines are printed. |
 | `-a address` | An address for `arcana-agent` to listen on; repeatable. Default `0.0.0.0` and `::`. |
 | `-p port` | Default 4310. |
 | `-d directory` | Where the files go. |

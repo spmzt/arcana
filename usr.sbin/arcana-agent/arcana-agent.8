@@ -216,6 +216,42 @@ program, for pending upgrades and upgrading, on the host and with
 in running jails.
 Upgrades may run for up to an hour.
 .El
+.Sh RC.CONF VARIABLES
+The service
+.Nm arcana_agent
+always listens on its local socket; network listeners are added to it.
+.Bl -tag -width "arcana_agent_listen"
+.It Va arcana_agent_enable
+Run the agent.
+.It Va arcana_agent_socket
+The local socket.
+Default
+.Pa /var/run/arcana-agent.sock .
+.It Va arcana_agent_group
+A group whose members may use the socket
+.Pq Fl g .
+Default: none, root only.
+.It Va arcana_agent_listen
+Network listeners, separated by spaces, such as
+.Ql tcp://0.0.0.0:4310 tcp://[::]:4310 .
+Default: none.
+.It Va arcana_agent_ca , arcana_agent_cert , arcana_agent_key
+The files for
+.Fl A ,
+.Fl C
+and
+.Fl K ,
+used when there are network listeners.
+Default:
+.Pa ca.pem ,
+.Pa host.pem
+and
+.Pa host.key
+in
+.Pa /usr/local/etc/arcana .
+.It Va arcana_agent_flags
+More flags, added to those the variables above give.
+.El
 .Sh FILES
 .Bl -tag -width Ds -compact
 .It Pa /var/run/arcana-agent.sock

@@ -9,12 +9,18 @@
 # Add these lines to /etc/rc.conf to enable arcana-agent:
 #
 # arcana_agent_enable (bool):	Set to "YES" to run arcana-agent.
-# arcana_agent_flags (str):	Listeners and certificates, for example
-#				"-g arcana -l unix:/var/run/arcana-agent.sock
-#				 -l tcp://0.0.0.0:4310 -l tcp://[::]:4310
-#				 -A %%PREFIX%%/etc/arcana/ca.pem
-#				 -C %%PREFIX%%/etc/arcana/host.pem
-#				 -K %%PREFIX%%/etc/arcana/host.key"
+# arcana_agent_socket (str):	The local socket, always listened on.
+#				Default: /var/run/arcana-agent.sock
+# arcana_agent_group (str):	A group whose members may use the socket.
+#				Default: none, root only.
+# arcana_agent_listen (str):	Network listeners, separated by spaces, for
+#				example "tcp://0.0.0.0:4310 tcp://[::]:4310".
+#				Default: none, the local socket only.
+# arcana_agent_ca (str):	The CA of client certificates, the host's
+# arcana_agent_cert (str):	certificate and its key, used with network
+# arcana_agent_key (str):	listeners.  Default: ca.pem, host.pem and
+#				host.key in %%PREFIX%%/etc/arcana
+# arcana_agent_flags (str):	More flags, added to those above.
 
 . /etc/rc.subr
 
@@ -24,8 +30,27 @@ rcvar="arcana_agent_enable"
 load_rc_config $name
 
 : ${arcana_agent_enable:="NO"}
+: ${arcana_agent_socket:="/var/run/arcana-agent.sock"}
+: ${arcana_agent_group:=""}
+: ${arcana_agent_listen:=""}
+: ${arcana_agent_ca:="%%PREFIX%%/etc/arcana/ca.pem"}
+: ${arcana_agent_cert:="%%PREFIX%%/etc/arcana/host.pem"}
+: ${arcana_agent_key:="%%PREFIX%%/etc/arcana/host.key"}
 
 command="%%PREFIX%%/sbin/arcana-agent"
 pidfile="/var/run/arcana-agent.pid"
+
+command_args="-l unix:${arcana_agent_socket}"
+if [ -n "${arcana_agent_group}" ]; then
+	command_args="-g ${arcana_agent_group} ${command_args}"
+fi
+if [ -n "${arcana_agent_listen}" ]; then
+	for _l in ${arcana_agent_listen}; do
+		command_args="${command_args} -l ${_l}"
+	done
+	command_args="${command_args} -A ${arcana_agent_ca}"
+	command_args="${command_args} -C ${arcana_agent_cert}"
+	command_args="${command_args} -K ${arcana_agent_key}"
+fi
 
 run_rc_command "$1"

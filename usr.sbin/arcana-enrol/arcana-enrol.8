@@ -78,7 +78,19 @@ Enable and start
 with
 .Xr sysrc 8
 and
-.Xr service 8 .
+.Xr service 8 :
+it sets
+.Va arcana_agent_enable
+and the network listeners in
+.Va arcana_agent_listen ,
+and, with
+.Fl d ,
+where the files are in
+.Va arcana_agent_ca ,
+.Va arcana_agent_cert
+and
+.Va arcana_agent_key .
+Without it the command to do so is printed.
 .El
 .Sh EXAMPLES
 In the console, add a server with

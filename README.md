@@ -142,11 +142,16 @@ instead:
 
 ```sh
 sysrc arcana_agent_enable=YES
-sysrc arcana_agent_flags="-l unix:/var/run/arcana-agent.sock \
-    -l tcp://0.0.0.0:4310 -l 'tcp://[::]:4310' -A /usr/local/etc/arcana/ca.pem \
-    -C /usr/local/etc/arcana/host.pem -K /usr/local/etc/arcana/host.key"
+sysrc arcana_agent_listen="tcp://0.0.0.0:4310 tcp://[::]:4310"
 service arcana_agent start
 ```
+
+The service always listens on its local socket,
+`/var/run/arcana-agent.sock`; `arcana_agent_listen` adds network
+listeners. Their certificate files are `ca.pem`, `host.pem` and
+`host.key` in `/usr/local/etc/arcana` unless `arcana_agent_ca`,
+`arcana_agent_cert` or `arcana_agent_key` say otherwise, and
+`arcana_agent_flags` is added to all of that.
 
 A host with certificates from your own CA is added as a server by name
 and URI, with no enrolment.
