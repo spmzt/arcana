@@ -97,6 +97,14 @@ op_done(struct op *o, bool ok, const ucl_object_t *reply, const char *err)
 		return;
 	o->state = ok ? OP_OK : OP_FAILED;
 	o->finished = jg_now();
+	/* A task that took a while is worth announcing. */
+	if (o->finished - o->started >= NOTIFY_MS) {
+		char body[256];
+
+		snprintf(body, sizeof(body), "%s on %s: %s", o->title,
+		    o->server, ok ? "done" : err != NULL ? err : "failed");
+		jg_notify(ok ? "Jailgrid: done" : "Jailgrid: failed", body);
+	}
 	if (reply != NULL && (t = jget(reply, "trace")) != NULL)
 		o->trace = ucl_object_ref((ucl_object_t *)(uintptr_t)t);
 	if (err != NULL)

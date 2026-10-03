@@ -26,6 +26,7 @@
 #define	REFRESH_MS		10000
 #define	STALE_MS		30000
 #define	AGE_STEP_MS		10000	/* how often ages are redrawn */
+#define	NOTIFY_MS		10000	/* a task this long is announced */
 #define	UPDATE_MS		(6 * 3600 * 1000)
 
 /* bridge.js */
@@ -41,6 +42,9 @@ void		 jg_title(const char *);
 char		*jg_hostname(void);
 int		 jg_fx_get(void);
 void		 jg_fx_set(int);
+void		 jg_notify(const char *, const char *);
+int		 jg_notify_state(void);
+void		 jg_notify_ask(void);
 
 /* Called from bridge.js. */
 void		 jg_on_action(char *, char *, char *);
@@ -131,7 +135,8 @@ struct netview {
 	ucl_object_t	*data;		/* the reply, or NULL */
 	double		 fetched;
 	bool		 loading;
-	char		 error[256];
+	char		 error[256];	int		 sort;		/* column sorted by, or -1 */
+	bool		 sort_desc;
 };
 
 enum pending {
@@ -224,6 +229,7 @@ struct app {
 	enum link	 api;		/* /api/health */
 	bool		 visible;
 	bool		 fx;		/* blur and idle animations */
+	int		 notify;	/* 0 not asked, 1 granted, 2 denied, 3 none */
 	bool		 setup_required;
 	char		 version[32];	/* the console's, from /api/health */
 	char		 update_latest[64];	/* a newer release, or "" */

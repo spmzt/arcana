@@ -192,6 +192,12 @@ topbar(struct html *h)
 	    "idle animations: %s. Off is lighter on slow browsers; the "
 	    "choice stays in this browser.\">FX</button>", app.fx ? " on" :
 	    "", app.fx ? "on" : "off");
+	if (app.notify != 3)
+		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
+		    "Notify when a task that took more than ten seconds "
+		    "ends: %s\">Notify</button>", app.notify == 1 ? " on" : "",
+		    app.notify == 1 ? "on" : app.notify == 2 ?
+		    "blocked in the browser's settings" : "off, press to allow");
 	h_raw(h, "<button class=\"ghost\" data-act=\"keys\">Keys</button>"
 	    "<button class=\"ghost\" data-act=\"logout\">Log out</button>"
 	    "</div></header>");

@@ -25,7 +25,9 @@ Home: <https://github.com/spmzt/geass>
 | `share/jailgrid/jailgrid.yaml` | The cblink family: the contract between jailgridd and its clients. |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the design and the
-trust boundaries; [docs/TOOLS.md](docs/TOOLS.md) describes every program
+trust boundaries; [docs/NAMING.md](docs/NAMING.md) is the naming design
+the project is growing into; [docs/TOOLS.md](docs/TOOLS.md) describes
+every program
 with its options and examples, and each has a man page: `jailgridd(8)`,
 `jailgridctl(8)`, `jailgrid-enrol(8)`, `jailconf(8)` and `jailgrid(8)`
 for the console.
@@ -227,8 +229,10 @@ authenticator offers one, so security keys keep working as before.
   wired and laundry pages, ZFS the pools' allocation from `zpool list`.
 - **Network**, the third tab: the routing table, the nexthops, active
   connections and open sockets, per address family, as `netstat -rnW`,
-  `netstat -onW`, `netstat -n` and `sockstat` print them on the host
-  (through `--libxo json`), filterable.
+  `netstat -onW`, `netstat -nW` and `sockstat -w` print them on the host
+  (through `--libxo json`); filter the rows, click a column to sort.
+- **Notify**, in the top bar: a desktop notification when a task that
+  took more than ten seconds ends.
 - **Packages**, the fourth tab: what `pkg` can upgrade on the host or in
   any running jail (`pkg -j`), with **Check** (`pkg update` first), a
   dry run, and **Upgrade** of the selected packages or of all; the
@@ -259,6 +263,29 @@ whose `jailgridd` is not its own version. Certificates stay valid across
 updates.
 
 ## TODO
+
+Planned, in rough order:
+
+- Jobs in the daemon: every change a job that shows its stages as they
+  happen, keeps running when the console is unreachable (a restart of
+  the jail or interface the console depends on), and can be queued and
+  sent in batches.
+- A console laid out for a fleet: a tree of hosts and jails, summary
+  pages with graphs, more use of the workflow graph.
+- New names for the programs, after the naming guide in
+  [docs/NAMING.md](docs/NAMING.md): `jailgridd` is no longer only about
+  jails.
+
+Waiting for approval before any work:
+
+- Managing interfaces and their addresses.
+- BIRD: neighbours and protocols, status, restart, clear.
+- Route management, possibly through netlink with its attributes mapped
+  to CBOR.
+- A safe mode that rolls a configuration change back when the daemon
+  loses the console, for the changes that can be rolled back.
+
+Known limits:
 
 - EC keys for the console's own HTTPS certificate: Kore's key manager
   signs with RSA only, so `console.pem` must be RSA until Kore (or a

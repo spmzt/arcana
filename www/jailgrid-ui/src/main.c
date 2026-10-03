@@ -26,6 +26,7 @@ struct app app = {
 	.trace_op = -1,
 	.trace_step = -1,
 	.raw_op = -1,
+	.net = { .sort = -1 },
 };
 
 static double	last_health, last_refresh, last_tick_render, last_update;
@@ -431,7 +432,20 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "do-pkg-upgrade", "", "");
 	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {
 		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false);
+	} else if (strcmp(act, "net-sort") == 0) {
+		/* The same column again turns the order round. */
+		if (app.net.sort == atoi(arg))
+			app.net.sort_desc = !app.net.sort_desc;
+		else {
+			app.net.sort = atoi(arg);
+			app.net.sort_desc = false;
+		}
+	} else if (strcmp(act, "notify") == 0) {
+		jg_notify_ask();
+	} else if (strcmp(act, "notify-changed") == 0) {
+		app.notify = jg_notify_state();
 	} else if (strcmp(act, "net-kind") == 0 && s != NULL) {
+		app.net.sort = -1;
 		app.net.kind = strcmp(arg, "nexthops") == 0 ? NET_NEXTHOPS :
 		    strcmp(arg, "connections") == 0 ? NET_CONNECTIONS :
 		    strcmp(arg, "sockets") == 0 ? NET_SOCKETS : NET_ROUTES;
@@ -644,6 +658,7 @@ main(void)
 	jg_events_init();
 	jg_sw_register();
 	app.fx = jg_fx_get() != 0;
+	app.notify = jg_notify_state();
 	render();
 	check_health();
 	last_health = last_refresh = jg_now();

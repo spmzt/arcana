@@ -41,3 +41,10 @@ self.addEventListener("fetch", (e) => {
 	e.respondWith(caches.match(e.request, { ignoreSearch: true })
 	    .then((hit) => hit || fetch(e.request)));
 });
+
+/* A notification of a finished task brings the console forward. */
+self.addEventListener("notificationclick", (e) => {
+	e.notification.close();
+	e.waitUntil(self.clients.matchAll({ type: "window" }).then((cs) =>
+	    cs.length > 0 ? cs[0].focus() : self.clients.openWindow("./")));
+});

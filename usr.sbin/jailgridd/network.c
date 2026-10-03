@@ -27,7 +27,7 @@ static const char *array_path(uint8_t);
 static int
 run_kind(struct work *w, uint8_t kind, uint8_t family, struct execres *res)
 {
-	char	*argv[8];
+	char	*argv[9];
 	int	 i;
 
 	i = 0;
@@ -35,6 +35,7 @@ run_kind(struct work *w, uint8_t kind, uint8_t family, struct execres *res)
 		argv[i++] = (char *)(uintptr_t)opts.sockstat_bin;
 		argv[i++] = (char *)(uintptr_t)"--libxo";
 		argv[i++] = (char *)(uintptr_t)"json";
+		argv[i++] = (char *)(uintptr_t)"-w";
 		argv[i++] = (char *)(uintptr_t)(family == JG_NET_FAMILY_INET ?
 		    "-4" : "-6");
 	} else {
@@ -42,13 +43,14 @@ run_kind(struct work *w, uint8_t kind, uint8_t family, struct execres *res)
 		argv[i++] = (char *)(uintptr_t)"--libxo";
 		argv[i++] = (char *)(uintptr_t)"json";
 		argv[i++] = (char *)(uintptr_t)(kind == JG_NET_KIND_ROUTES ?
-		    "-rnW" : kind == JG_NET_KIND_NEXTHOPS ? "-onW" : "-n");
+		    "-rnW" : kind == JG_NET_KIND_NEXTHOPS ? "-onW" : "-nW");
 		argv[i++] = (char *)(uintptr_t)"-f";
 		argv[i++] = (char *)(uintptr_t)(family == JG_NET_FAMILY_INET ?
 		    "inet" : "inet6");
 	}
 	argv[i] = NULL;
-	return (run_exec(w, argv, res));
+	/* The whole table, not the 256 KB a trace step keeps. */
+	return (run_exec_max(w, argv, res, JG_MAX_JSON));
 }
 
 static ucl_object_t *
@@ -104,10 +106,10 @@ do_network(struct work *w, uint8_t kind, uint8_t family,
 			    "netstat"));
 			return (0);
 		}
-		if (res.outlen > JG_MAX_JSON) {
-			rsp->error = wfmt(w, "the program printed %zu bytes, "
-			    "more than the %d a reply carries", res.outlen,
-			    JG_MAX_JSON);
+		if (res.truncated) {
+			rsp->error = wfmt(w, "the table is larger than the %d "
+			    "bytes a reply carries; narrow it to one family or "
+			    "ask the host directly", JG_MAX_JSON);
 			return (0);
 		}
 		rsp->json = wtext(w, res.out);
@@ -121,6 +123,11 @@ do_network(struct work *w, uint8_t kind, uint8_t family,
 	if (!ok4 && !ok6) {
 		rsp->error = wtext(w, exec_error(w, &res,
 		    kind == JG_NET_KIND_SOCKETS ? "sockstat" : "netstat"));
+		return (0);
+	}
+	if ((ok4 && res.truncated) || (ok6 && res6.truncated)) {
+		rsp->error = wfmt(w, "the table is larger than the %d bytes a "
+		    "reply carries; ask for one family", JG_MAX_JSON);
 		return (0);
 	}
 	o = ok4 ? parse(res.out, res.outlen) : NULL;

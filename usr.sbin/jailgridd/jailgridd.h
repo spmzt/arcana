@@ -115,9 +115,12 @@ struct execres {
 	size_t		 outlen;
 	const char	*err;
 	size_t		 errlen;
+	bool		 truncated;	/* more output than was kept */
 };
 
 int		 run_exec(struct work *, char *const [], struct execres *);
+int		 run_exec_max(struct work *, char *const [], struct execres *,
+		    size_t);
 const char	*exec_error(struct work *, const struct execres *,
 		    const char *);
 

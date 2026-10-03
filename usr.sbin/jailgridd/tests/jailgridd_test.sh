@@ -128,6 +128,17 @@ write_net()
 	cat > fake-netstat <<'EOS'
 #!/bin/sh
 echo "fake-netstat $*" >&2
+# With ./big, an IPv4 routing table of 6000 routes: over a megabyte.
+if [ -f big ] && [ "$*" = "--libxo json -rnW -f inet" ]; then
+	printf '{"statistics": {"route-information": {"route-table": {"rt-family": [{"address-family": "Internet", "rt-entry": ['
+	i=0
+	while [ $i -lt 6000 ]; do
+		printf '{"destination":"10.%d.%d.0/24","gateway":"192.0.2.1","flags":"UGS","flags_pretty":["up","gateway","static"],"nhop":%d,"mtu":1500,"interface-name":"em0"},' $((i / 250)) $((i % 250)) $i
+		i=$((i + 1))
+	done
+	echo '{"destination":"10.99.99.99/32","gateway":"last-entry","flags":"UH","interface-name":"lo0"}]}]}}}}'
+	exit 0
+fi
 case "$*" in
 *-rnW*)	echo '{"statistics": {"route-information": {"route-table": {"rt-family": [{"address-family": "Internet6", "rt-entry": [{"destination": "::1", "gateway": "link#2", "flags": "UHS", "interface-name": "lo0"}]}]}}}}' ;;
 *-onW*)	echo '{"statistics": {"route-nhop-information": {"nhop-table": {"rt-family": []}}}}' ;;
@@ -547,13 +558,18 @@ network_body()
 	atf_check -o match:'fake-netstat --libxo json -onW -f inet$' cat nh.out
 	atf_check -o match:'fake-netstat --libxo json -onW -f inet6$' cat nh.out
 	atf_check -o match:'"rt-family"' cat nh.out
-	atf_check -o match:'fake-netstat --libxo json -n -f inet$' \
+	atf_check -o match:'fake-netstat --libxo json -nW -f inet$' \
 	    "$JGC" -t -c "$SOCK" net connections -4
 	atf_check -o save:so.out "$JGC" -t -c "$SOCK" net sockets
-	atf_check -o match:'fake-sockstat --libxo json -4$' cat so.out
-	atf_check -o match:'fake-sockstat --libxo json -6$' cat so.out
+	atf_check -o match:'fake-sockstat --libxo json -w -4$' cat so.out
+	atf_check -o match:'fake-sockstat --libxo json -w -6$' cat so.out
 	atf_check -o match:'"sshd".*"sshd"' cat so.out
 	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" net tables
+	# A table far larger than what a trace step keeps arrives whole.
+	touch big
+	atf_check -o save:big.out "$JGC" -c "$SOCK" net routes -4
+	atf_check -o match:'"destination":"10.99.99.99/32"' cat big.out
+	atf_check -o match:'last-entry' cat big.out
 }
 network_cleanup()
 {

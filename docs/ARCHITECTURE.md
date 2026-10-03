@@ -45,7 +45,7 @@ policies, client wrappers and server glue from it.
 | `services` | the host's rc.d scripts, enabled and running | the rc.d directories, `<name>_enable` in `sysrc -A`, `service <name> status` |
 | `service-action` | start, stop, restart, reload, enable, disable | `service <name> <verb>`; `sysrc <rcvar>=YES/NO` |
 | `service-config` | a service's rc.conf variables, read and set | `sysrc -a`, `sysrc key=value`, `sysrc -x key`, `service <name> describe` |
-| `network` | routes, nexthops, connections, sockets | `netstat --libxo json -rnW / -onW / -n -f <family>`, `sockstat --libxo json -4/-6`; one run per family, joined |
+| `network` | routes, nexthops, connections, sockets | `netstat --libxo json -rnW / -onW / -nW -f <family>`, `sockstat --libxo json -w -4/-6`; one run per family, joined |
 | `stats` | CPU, load, memory, swap, ZFS pools | `kern.cp_time` between requests, `vm.loadavg`, `vm.stats.vm.*`, `swapinfo -k`, `zpool list -Hp` |
 | `packages` | pending upgrades of the host or a running jail | `pkg [-j jail] update -q`, `pkg [-j jail] version -vRl '<'` |
 | `pkg-upgrade` | upgrade all or named packages, or show what would be | `pkg [-j jail] upgrade -y|-n [names]`, then `pkg version` again |
@@ -199,7 +199,7 @@ usr.sbin/jailgridctl/ jailgridctl(8)
 usr.sbin/jailgrid-enrol/ jailgrid-enrol(8)
 www/jailgrid/        Kore module
 www/jailgrid-ui/     the PWA
-docs/                this file, TOOLS.md, openapi.yaml
+docs/                this file, TOOLS.md, NAMING.md, openapi.yaml
 tests/               the top of the installed test suite
 ```
 

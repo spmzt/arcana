@@ -9,7 +9,7 @@
  * stdout and stderr and recording it as an exec step.
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
 #include <sys/wait.h>
 
 #include <err.h>
@@ -29,6 +29,7 @@
 struct capture {
 	char	*buf;
 	size_t	 len;
+	size_t	 max;
 	bool	 truncated;
 };
 
@@ -46,8 +47,8 @@ capture_read(int *fd, struct capture *c)
 		*fd = -1;
 		return;
 	}
-	if (c->len + (size_t)n > JG_MAX_OUTPUT) {
-		n = (ssize_t)(JG_MAX_OUTPUT - c->len);
+	if (c->len + (size_t)n > c->max) {
+		n = (ssize_t)(c->max - c->len);
 		c->truncated = true;
 	}
 	if (n > 0) {
@@ -64,6 +65,19 @@ capture_read(int *fd, struct capture *c)
  */
 int
 run_exec(struct work *w, char *const argv[], struct execres *res)
+{
+
+	return (run_exec_max(w, argv, res, JG_MAX_OUTPUT));
+}
+
+/*
+ * As run_exec(), keeping up to max bytes of standard output for the
+ * caller; the trace step still carries at most JG_MAX_OUTPUT of them.
+ * res->truncated says the program printed more than was kept.
+ */
+int
+run_exec_max(struct work *w, char *const argv[], struct execres *res,
+    size_t max)
 {
 	posix_spawn_file_actions_t	 fa;
 	struct pollfd			 pfd[2];
@@ -87,6 +101,8 @@ run_exec(struct work *w, char *const argv[], struct execres *res)
 
 	memset(&out, 0, sizeof(out));
 	memset(&eout, 0, sizeof(eout));
+	out.max = max;
+	eout.max = JG_MAX_OUTPUT;
 	if (pipe2(op, O_CLOEXEC) == -1 || pipe2(ep, O_CLOEXEC) == -1)
 		err(1, "pipe2");
 	posix_spawn_file_actions_init(&fa);
@@ -162,10 +178,11 @@ run_exec(struct work *w, char *const argv[], struct execres *res)
 	res->outlen = out.len;
 	res->err = eout.len > 0 ? wstrndup(w, eout.buf, eout.len) : "";
 	res->errlen = eout.len;
+	res->truncated = out.truncated;
 	free(out.buf);
 	free(eout.buf);
-	step_exec(w, step, argv, rc, res->out, res->outlen, res->err,
-	    res->errlen);
+	step_exec(w, step, argv, rc, res->out, MIN(res->outlen,
+	    (size_t)JG_MAX_OUTPUT), res->err, res->errlen);
 	step_end(w, step, rc == 0, "exit status %d%s", rc,
 	    out.truncated || eout.truncated ? ", output truncated" : "");
 	return (rc);

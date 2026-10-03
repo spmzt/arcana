@@ -261,6 +261,47 @@ addToLibrary({
 		document.documentElement.classList.toggle("fx", on !== 0);
 	},
 
+	/*
+	 * Desktop notifications for tasks that took long: 0 not asked yet,
+	 * 1 granted, 2 denied, 3 the browser has none.  Shown through the
+	 * service worker where there is one, as installed apps need.
+	 */
+	jg_notify_state: function () {
+		if (!("Notification" in window))
+			return (3);
+		return (Notification.permission === "granted" ? 1 :
+		    Notification.permission === "denied" ? 2 : 0);
+	},
+	jg_notify_ask__deps: ["$jgStr"],
+	jg_notify_ask: function () {
+		if (!("Notification" in window))
+			return;
+		Notification.requestPermission().then(function () {
+			Module._jg_on_action(jgStr("notify-changed"),
+			    jgStr(""), jgStr(""));
+		});
+	},
+	jg_notify__deps: ["$UTF8ToString"],
+	jg_notify: function (titlep, bodyp) {
+		var title = UTF8ToString(titlep), opts = {
+			body: UTF8ToString(bodyp),
+			icon: "icons/icon-192.png",
+			tag: "jailgrid"
+		};
+
+		if (!("Notification" in window) ||
+		    Notification.permission !== "granted")
+			return;
+		if (navigator.serviceWorker && navigator.serviceWorker.ready)
+			navigator.serviceWorker.ready.then(function (r) {
+				return (r.showNotification(title, opts));
+			}).catch(function () {
+				new Notification(title, opts);
+			});
+		else
+			new Notification(title, opts);
+	},
+
 	jg_hostname__deps: ["$jgStr"],
 	jg_hostname: function () {
 		return (jgStr(location.host));

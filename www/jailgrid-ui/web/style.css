@@ -765,6 +765,10 @@ table.net th, table.net td {
 	white-space: nowrap;
 }
 table.net th { color: var(--dim); font-weight: 500; }
+table.net th.sortable { cursor: pointer; user-select: none; }
+table.net th.sortable:hover { color: var(--fg-2); }
+table.net th.asc::after { content: " ▲"; color: var(--cyan); }
+table.net th.desc::after { content: " ▼"; color: var(--cyan); }
 table.net tbody tr:hover { background: rgba(59, 232, 255, .05); }
 
 /* Jails. */

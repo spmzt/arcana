@@ -66,6 +66,34 @@ static const struct column sock_cols[] = {
 static void	cell(struct html *, const ucl_object_t *, const struct column *);
 static int	table(struct html *, const ucl_object_t *, const struct column *,
 		    size_t);
+static int	cmp_rows(const void *, const void *);
+
+/* What qsort(3) compares by: the sorted column of the table drawn. */
+static const struct column	*sort_col;
+static bool			 sort_desc;
+
+/* Numbers as numbers, everything else as text. */
+static int
+cmp_rows(const void *a, const void *b)
+{
+	const ucl_object_t	*x, *y;
+	const char		*sx, *sy;
+	char			*ex, *ey;
+	double			 dx, dy;
+	int			 r;
+
+	x = jget(*(const ucl_object_t *const *)a, sort_col->path);
+	y = jget(*(const ucl_object_t *const *)b, sort_col->path);
+	sx = x != NULL ? ucl_object_tostring_forced(x) : "";
+	sy = y != NULL ? ucl_object_tostring_forced(y) : "";
+	dx = strtod(sx, &ex);
+	dy = strtod(sy, &ey);
+	if (*sx != '\0' && *sy != '\0' && *ex == '\0' && *ey == '\0')
+		r = dx < dy ? -1 : dx > dy ? 1 : 0;
+	else
+		r = strcmp(sx, sy);
+	return (sort_desc ? -r : r);
+}
 
 /* One cell: the value at path, or "a:b" with path2, as text. */
 static void
@@ -89,19 +117,25 @@ static int
 table(struct html *h, const ucl_object_t *arr, const struct column *cols,
     size_t ncols)
 {
-	const ucl_object_t	*e;
+	const ucl_object_t	*e, **rows;
 	ucl_object_iter_t	 it;
-	size_t			 i;
-	int			 n;
+	size_t			 i, c, n, cap;
+	bool			 sorted;
 
+	sorted = app.net.sort >= 0 && (size_t)app.net.sort < ncols;
 	h_raw(h, "<table class=\"net\"><thead><tr>");
 	for (i = 0; i < ncols; i++) {
-		h_raw(h, "<th>");
+		h_fmt(h, "<th class=\"sortable%s\" data-act=\"net-sort\" "
+		    "data-arg=\"%zu\" title=\"Sort by this column\">",
+		    sorted && (size_t)app.net.sort == i ? app.net.sort_desc ?
+		    " desc" : " asc" : "", i);
 		h_txt(h, cols[i].title);
 		h_raw(h, "</th>");
 	}
 	h_raw(h, "</tr></thead><tbody>");
-	n = 0;
+	/* The rows that pass the filter, then in the order asked for. */
+	rows = NULL;
+	n = cap = 0;
 	it = NULL;
 	while ((e = ucl_object_iterate(arr, &it, true)) != NULL) {
 		if (app.filter[0] != '\0') {
@@ -114,14 +148,28 @@ table(struct html *h, const ucl_object_t *arr, const struct column *cols,
 			if (!hit)
 				continue;
 		}
-		h_raw(h, "<tr>");
-		for (i = 0; i < ncols; i++)
-			cell(h, e, &cols[i]);
-		h_raw(h, "</tr>");
-		n++;
+		if (n == cap) {
+			cap = cap == 0 ? 256 : cap * 2;
+			if ((rows = reallocarray(rows, cap, sizeof(*rows))) ==
+			    NULL)
+				abort();
+		}
+		rows[n++] = e;
 	}
+	if (sorted && n > 1) {
+		sort_col = &cols[app.net.sort];
+		sort_desc = app.net.sort_desc;
+		qsort(rows, n, sizeof(*rows), cmp_rows);
+	}
+	for (i = 0; i < n; i++) {
+		h_raw(h, "<tr>");
+		for (c = 0; c < ncols; c++)
+			cell(h, rows[i], &cols[c]);
+		h_raw(h, "</tr>");
+	}
+	free(rows);
 	h_raw(h, "</tbody></table>");
-	return (n);
+	return ((int)n);
 }
 
 void
