@@ -1458,7 +1458,7 @@ auth_screen(struct html *h)
 	    "<div class=\"brand big\"><span class=\"logo\">");
 	h_raw(h, icon_grid);
 	h_raw(h, "</span><span class=\"wordmark\">ARCANA</span></div>"
-	    "<p class=\"sub\">FreeBSD jail console</p>");
+	    "<p class=\"sub\">The Seven Archives of FreeBSD</p>");
 	if (app.screen == SCREEN_BOOT) {
 		h_raw(h, "<div class=\"loader\"></div>");
 	} else if (app.screen == SCREEN_OFFLINE) {
