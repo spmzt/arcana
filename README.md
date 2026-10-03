@@ -233,160 +233,23 @@ token.
 
 ## Using it
 
-The console is laid out as a tree and tabs.
-
-- The **tree** on the left: the fleet, its hosts, and each host's jails.
-  What you select decides the page. **Enrol a host** and **Add a server**
-  are at its top. A host's jails are folded away until you open them
-  with the arrow on the host, and the browser remembers which are open. When the jails do not fit in the space under
-  the hosts, each host shows what fits and a **+N more…** row that
-  shows the rest.
-- **All hosts**: every host as a card with CPU, memory and ZFS, how many
-  jails run, and the fleet as a graph from the console through the
-  hosts to their jails; nodes are links.
-- A **host** has tabs:
-  - **Summary**: usage gauges with their recent history, counts, the ZFS
-    pools, and the host's jails as a graph.
-  - **Jails**: their state (running, stopped, dying; starting, stopping,
-    restarting while something happens to them; unknown when the host
-    does not answer), with start, stop, restart and kill. Those running
-    come first; **Sort** orders by running or by name.
-  - **Services**: the rc.d scripts, enabled or not, running or not, with
-    start, stop, restart, reload, enable and disable; a service's drawer
-    edits its `rc.conf` variables through `sysrc(8)`. Those running come
-    first, then those enabled; **Sort** orders by running, enabled or
-    name, and the other way round when pressed again.
-  - **Network**: the routing table, nexthops, connections and sockets,
-    per address family, as `netstat` and `sockstat` print them
-    (`--libxo json`); filter the rows, click a column to sort.
-  - **Packages**: what `pkg` can upgrade on the host or in a running
-    jail, with **Check**, a dry run, and **Upgrade** of the selected
-    packages or of all.
-  - **Jobs**: the host's own record of what it was asked to change, by
-    this console or with `arcanactl -q`; a row opens its workflow.
-- A **jail** has its page: actions, addresses (changed live with
-  jail_setv(3) and the interface alias, persistently in its `jail.conf`
-  block with a diff to preview, or both), its configuration as jail(8)
-  reads it, and its history.
-- **Activity** at the bottom: every call to a host, with its workflow as
-  a graph from the API call through the session check and the cblink
-  request to each call the agent made; a box picked in the graph shows
-  its details in a pane beside the graph, which stays in view while the
-  graph scrolls. The same pane shows the operation's **CBOR schema**:
-  its request and reply as maps keyed by attribute number, in CDDL, with
-  the attribute sets they nest, taken from the family's own description
-  (`share/arcana/arcana.yaml`); **{ } Schema** turns it off and on. When
-  a program ran, **Raw output** shows its argv, exit status and output. Changes are jobs the
-  host runs on its own: the graph fills in stage by stage, and a change
-  that cuts the console off still completes. **Queue** is on unless
-  you turn it off in that browser: a change waits in the activity bar
-  until you press **Run**, and what waits is sent as one batch, run in
-  order; off, a change is sent at once.
-- The tree, the activity bar, the list of tasks in it and the service
-  drawer are resized by dragging their edge; the browser keeps the
-  sizes, and a double click on the edge goes back to the usual one.
-- In the top bar: **FX** turns the blur and idle animations off for this
-  browser, **Notify** allows a desktop notification when a task that
-  took more than ten seconds ends, **Keys** manages security keys and
-  passkeys.
+The console is a tree and tabs: the fleet, its hosts and their jails on
+the left; a host's Summary, Jails, Services, Network, Packages and Jobs;
+and an activity bar that shows each call as a graph, with its CBOR
+schema. [docs/USING.md](docs/USING.md) goes through all of it.
 
 ## Updating
 
-The console asks GitHub's release feed every six hours and shows a
-banner when a newer version is out; `update_check = false` in `web.conf`
-turns that off. It does not replace itself, since it runs unprivileged:
-
-- the container image carries `io.containers.autoupdate=registry`, so
-  `podman auto-update` (from cron, say) pulls a newer `ghcr.io/spmzt/arcana`
-  and restarts the container;
-- a native install is updated with `pkg upgrade arcana`, or
-  `make install` from a newer tree, then `service arcana_console restart`.
-
-Certificates stay valid across updates.
-
-### Updating the agents
-
-The console marks a host whose `arcana-agent` is not the one it has,
-and can update it: **Update agent** beside the version on the host's
-page, or **Update N agents** on the fleet page for every such host.
-Builds are told apart by the program's SHA-256, which each agent
-reports, so a rebuilt agent of the same version counts as another. The console sends the `arcana-agent` installed with it
-(`agent_binary` in `web.conf` names another). Each host
-
-1. checks the program against the SHA-256 sent with it,
-2. writes it beside the installed one and runs it with `-V`: a program
-   built for another machine or FreeBSD version does not run, and is
-   dropped,
-3. puts it in place of the installed one, which stays as
-   `arcana-agent.old`.
-
-With **Restart the agent now**, on by default, the host then restarts
-its `arcana_agent` service, and shows the new version at the next
-refresh; without it, the new program runs from the next start of the
-service. A restart drops jobs still queued on the host; one that is
-running finishes first. From a shell, `arcanactl agent-update [-r]
-program` does the same for one host.
-
-The program has to suit the host: the same architecture and a FreeBSD
-version it runs on, with `libcblink` there as before. Hosts that differ
-from the console's machine are updated with `pkg upgrade arcana`
-instead, which the Packages tab can do. If an update goes wrong, put
-`arcana-agent.old` back and restart the service.
-
-### Building the agent on a host
-
-The console need not have the agent it sends: it can have a host build
-it. Name the repository in `web.conf`,
-
-```
-agent_source = "https://github.com/spmzt/arcana.git";
-agent_ref = "main";            # a branch or tag; optional
-```
-
-and each host's header gets **Build agent here**. That host clones the
-repository afresh into `/var/cache/arcana-build`, builds `libjailconf`
-and `arcana-agent` with `make`, and sends the program back; nothing is
-installed there. The console checks it against its SHA-256, keeps it in
-`agent/` under its data directory, and sends that one from then on, so
-the hosts that run another build are offered the update. The build is
-in the activity bar with the output of git and make.
-
-The host that builds needs what the build needs: `git`, the base
-compiler, and `devel/cblink` with its `libcbor`. If cblink or the linker
-are somewhere else on it, `/usr/local/etc/arcana/config.mk` there is
-copied into the tree as its `config.mk`. When the agent is root, git
-and make run as `nobody`. From a shell, `arcanactl agent-build [-o
-file] repository [ref]` builds and saves the program.
-
-### Versions
-
-The agent and the console have versions of their own, and every change
-to one bumps it: `ARCANA_AGENT_VERSION` in
-`usr.sbin/arcana-agent/agent.h`, `ARCW_VERSION` in
-`www/arcana-console/console.h`. A host's header and the tree show the
-agent's; the update dialog shows the one the console would send.
+The console says when a newer release is out, and can update the agents
+itself: it sends its own `arcana-agent` to the hosts that run another
+build, or has a host build one from a git repository first.
+[docs/UPDATING.md](docs/UPDATING.md) has the details, and how versions
+are numbered.
 
 ## TODO
 
-Planned, in rough order:
-
-- The agent's sources organised by Archive, after
-  [docs/NAMING.md](docs/NAMING.md).
-
-Waiting for approval before any work:
-
-- Managing interfaces and their addresses.
-- BIRD: neighbours and protocols, status, restart, clear.
-- Route management, possibly through netlink with its attributes mapped
-  to CBOR.
-- A safe mode that rolls a configuration change back when the daemon
-  loses the console, for the changes that can be rolled back.
-
-Known limits:
-
-- EC keys for the console's own HTTPS certificate: Kore's key manager
-  signs with RSA only, so `console.pem` must be RSA until Kore (or a
-  patch like the one in `port/www/kore/files`) handles ECDSA.
+What is planned, what waits for approval, what is known not to work and
+what has never been run for real is in [docs/TODO.md](docs/TODO.md).
 
 ## Licence
 

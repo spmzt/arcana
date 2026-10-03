@@ -1,6 +1,18 @@
 PROG=		arcana-agent
-SRCS=		main.c build.c update.c handlers.c actions.c work.c exec.c jails.c confread.c \
-		host.c jail.c services.c network.c stats.c packages.c jobs.c
+# The Agent itself, then what it does by Archive (docs/NAMING.md).
+SRCS=		main.c handlers.c work.c
+# Superbia: identity, configuration, what is true of the host.
+SRCS+=		confedit.c confread.c host.c
+# Invidia: the network.
+SRCS+=		address.c network.c
+# Ira: action and execution.
+SRCS+=		build.c exec.c jail.c jails.c jobs.c lifecycle.c packages.c \
+		services.c update.c
+# Acedia: storage.  Avaritia: resources.  Gula: observation.
+SRCS+=		pools.c resources.c stats.c trace.c
+.PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
+		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula
+CFLAGS+=	-I${.CURDIR}
 MAN=		arcana-agent.8
 
 .include "${.CURDIR}/../../share/mk/arcana.mk"

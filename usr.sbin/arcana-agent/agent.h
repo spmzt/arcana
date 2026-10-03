@@ -18,7 +18,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.2.0"
+#define	ARCANA_AGENT_VERSION	"0.2.1"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -127,7 +127,7 @@ void		 trace_copy(struct work *, struct work *,
 		    const struct arc_step **, size_t *);
 uint64_t	 now_us(void);
 
-/* exec.c: run a program without a shell, capturing its output. */
+/* ira/exec.c: run a program without a shell, capturing its output. */
 struct execres {
 	int		 status;	/* exit status, 128 + signal, or -1 */
 	const char	*out;
@@ -143,7 +143,7 @@ int		 run_exec_max(struct work *, char *const [], struct execres *,
 const char	*exec_error(struct work *, const struct execres *,
 		    const char *);
 
-/* jails.c: running jails (libjail) and their processes (libprocstat). */
+/* ira/jails.c: running jails (libjail) and their processes (libprocstat). */
 struct jinfo {
 	int		 jid;
 	const char	*name;
@@ -168,7 +168,7 @@ int		 jails_running(struct work *, struct jinfo **, size_t *,
 void		 jails_procstats(struct work *, struct jinfo *, size_t);
 int		 jail_lookup(struct work *, const char *);
 
-/* confread.c: configured jails, as jail(8) -e resolves them. */
+/* superbia/confread.c: configured jails, as jail(8) -e resolves them. */
 struct cjail {
 	const char	*name;
 	const char	*scope;		/* file to give jail(8) -f */
@@ -192,23 +192,23 @@ const struct cjail *conf_jail(const struct cconf *, const char *);
 const struct arc_param *cjail_param(const struct cjail *, const char *);
 const char	*cjail_param1(const struct cjail *, const char *);
 
-/* host.c */
+/* superbia/host.c */
 void		 host_info(struct work *, struct arc_host *);
 
-/* jail.c: one jail record from runtime and configured state. */
+/* ira/jail.c: one jail record from runtime and configured state. */
 void		 jail_record(struct work *, struct arc_jail *, const char *,
 		    const struct jinfo *, const struct cjail *);
 struct arc_jail	*jail_current(struct work *, const char *,
 		    const struct cconf *);
 
-/* actions.c */
+/* ira/lifecycle.c, invidia/address.c */
 int		 do_list(struct work *, bool, struct arc_list_rsp *);
 int		 do_action(struct work *, const char *, uint8_t,
 		    struct arc_action_rsp *);
 int		 do_address(struct work *, const struct arc_address_req *,
 		    struct arc_address_rsp *);
 
-/* services.c */
+/* ira/services.c */
 int		 do_services(struct work *, struct arc_services_rsp *);
 int		 do_service_action(struct work *, const char *, uint8_t,
 		    struct arc_service_action_rsp *);
@@ -216,20 +216,20 @@ int		 do_service_config(struct work *,
 		    const struct arc_service_config_req *,
 		    struct arc_service_config_rsp *);
 
-/* network.c */
+/* invidia/network.c */
 int		 do_network(struct work *, uint8_t, uint8_t,
 		    struct arc_network_rsp *);
 
-/* stats.c */
+/* gula/stats.c */
 int		 do_stats(struct work *, struct arc_stats_rsp *);
 
-/* packages.c */
+/* ira/packages.c */
 int		 do_packages(struct work *, const char *, bool,
 		    struct arc_packages_rsp *);
 int		 do_pkg_upgrade(struct work *, const struct arc_pkg_upgrade_req *,
 		    struct arc_pkg_upgrade_rsp *);
 
-/* jobs.c: queued changes, run in order whoever is or is not connected. */
+/* ira/jobs.c: queued changes, run in order whoever is or is not connected. */
 void		 jobs_init(void);
 int		 jobs_submit(const struct arc_job_spec *, size_t, const char *,
 		    struct work *, const struct arc_job **, size_t *);
@@ -238,11 +238,26 @@ const struct arc_job *jobs_get(struct work *, uint64_t);
 const struct arc_job *jobs_cancel(struct work *, uint64_t, const char **);
 
 /* handlers.c */
-/* build.c */
+/* invidia/address.c, superbia/confedit.c */
+int		 ifaddr_change(struct work *, const char *, int, const void *,
+		    int, bool, const char **);
+const char	*list_edit(struct work *, const char *, const char *,
+		    const char *, bool);
+bool		 list_has(const char *, const char *, const char *);
+int		 write_backup(struct work *, const char *, const char *, size_t,
+		    const char **);
+bool		 verify_jail8(struct work *, const char *, const char *,
+		    const char *, const char *, bool);
+
+/* avaritia/resources.c, acedia/pools.c */
+void		 resources_measure(struct work *, struct arc_stats *);
+void		 pools_measure(struct work *, struct arc_stats *);
+
+/* ira/build.c */
 int		 do_agent_build(struct work *, const char *, const char *,
 		    struct arc_agent_build_rsp *);
 
-/* update.c */
+/* ira/update.c */
 int		 do_agent_update(struct work *, const uint8_t *, size_t,
 		    const char *, struct arc_agent_update_rsp *);
 void		 agent_restart(void);

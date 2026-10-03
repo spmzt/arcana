@@ -274,16 +274,34 @@ console's data in `/var/db/arcana`, and the cblink family is `arcana`.
 
 ## Status
 
-How the agent's operations (the cblink family in
-`share/arcana/arcana.yaml`) fall under the Archives today. The code is
-not yet organised by Archive; this is the map to do it by.
+The agent's sources are laid out by Archive, in
+`usr.sbin/arcana-agent`:
+
+| Directory | Archive | What is in it |
+|---|---|---|
+| (top) | the Agent | `main.c` (start, listeners, stopping), `handlers.c` (the family's requests, one thread each), `work.c` (a request's memory) |
+| `superbia/` | Superbia | `host.c` (what the host is), `confread.c` (the jails as configured, as jail(8) resolves them), `confedit.c` (changing a jail's configuration, with a backup and a read-back) |
+| `invidia/` | Invidia | `network.c` (routes, nexthops, connections, sockets), `address.c` (a jail's addresses, live and persistent) |
+| `ira/` | Ira | `lifecycle.c` (list, start, stop, restart, kill), `jails.c`, `jail.c` (running jails), `services.c`, `packages.c`, `jobs.c` (the queue), `exec.c` (running a program), `update.c`, `build.c` (the agent's own program) |
+| `acedia/` | Acedia | `pools.c` (ZFS pools) |
+| `avaritia/` | Avaritia | `resources.c` (CPU, memory, swap) |
+| `gula/` | Gula | `trace.c` (the steps of every request), `stats.c` (the host's figures, gathered) |
+| | Luxuria | nothing in the agent yet |
+
+One feature can touch several: changing a jail's address is Invidia's
+operation, done live through the kernel and persistently through
+Superbia's edit of the configuration, and traced by Gula. A file is
+where its main concern lives.
+
+How the operations (the cblink family in `share/arcana/arcana.yaml`)
+fall under the Archives:
 
 | Operations | Archive |
 |---|---|
-| `list`, `action` (jails), `services`, `service-action`, `pkg-upgrade`, `packages`, the job queue | Ira |
+| `list`, `action` (jails), `services`, `service-action`, `pkg-upgrade`, `packages`, the job queue, `agent-update`, `agent-build` | Ira |
 | `service-config`, `address` with persist, enrolment and certificates (`arcana-enrol`, the console's CA) | Superbia |
 | `network` (routes, nexthops, connections, sockets), `address` live | Invidia |
 | `stats`: memory, swap, CPU | Avaritia for what is allocated, Gula for what is measured |
 | `stats`: ZFS pools | Acedia |
 | the trace of every call, the activity log, job traces | Gula |
-| update check, browser notifications | Luxuria |
+| update check, browser notifications (in the console) | Luxuria |
