@@ -749,6 +749,14 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_SUMMARY) {
 		view_summary(h, s);
+		/* A jail picked in the graph: in a box over the summary. */
+		if (app.peek && app.jail[0] != '\0') {
+			h_raw(h, "<div class=\"scrim peek\" data-act=\""
+			    "close-drawer\"></div><div class=\"peek-box\" "
+			    "role=\"dialog\" aria-modal=\"true\">");
+			jail_page(h);
+			h_raw(h, "</div>");
+		}
 		h_raw(h, "</main>");
 		return;
 	}
@@ -866,9 +874,10 @@ jail_page(struct html *h)
 	h_txt(h, cls);
 	h_raw(h, "</span><span class=\"dim\">on ");
 	h_txt(h, s->name);
-	h_raw(h, "</span><button class=\"ghost small\" "
-	    "data-act=\"close-drawer\" title=\"Back to the host\">← host"
-	    "</button></header><div class=\"jail-body\">");
+	h_fmt(h, "</span><button class=\"%s\" data-act=\"close-drawer\" "
+	    "title=\"%s\">%s</button></header><div class=\"jail-body\">",
+	    app.peek ? "icon close" : "ghost small", app.peek ? "Close" :
+	    "Back to the host", app.peek ? "×" : "← host");
 	actions(h, s, j, u, true);
 	if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
 	    "running") == 0) {

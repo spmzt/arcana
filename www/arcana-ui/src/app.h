@@ -310,6 +310,7 @@ struct app {
 	bool		 svc_loading;
 	int		 svc_sort;	/* SVC_SORT_*: running first at start */
 	bool		 svc_sort_desc;
+	bool		 peek;		/* app.jail is shown in a box over the page */
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
 	ucl_object_t	*build_reply;	/* a build that needs the user: host keys */
 	char		 build_sid[9];	/* and the host it was asked of */

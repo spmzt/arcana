@@ -13,7 +13,8 @@ The console is laid out as a tree and tabs.
   hosts to their jails; nodes are links.
 - A **host** has tabs:
   - **Summary**: usage gauges with their recent history, counts, the ZFS
-    pools, and the host's jails as a graph.
+    pools, and the host's jails as a graph; a jail picked there opens
+    in a box over the summary.
   - **Jails**: their state (running, stopped, dying; starting, stopping,
     restarting while something happens to them; unknown when the host
     does not answer), with start, stop, restart and kill. Those running

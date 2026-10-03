@@ -872,6 +872,24 @@ form.settings dl.kv { font-size: .74rem; }
 .tnode.down { --c: var(--red); }
 .tnode.more { color: var(--dim); }
 
+/* A jail in a box over the host's summary. */
+.scrim.peek { z-index: 12; }
+.peek-box {
+	position: fixed;
+	z-index: 13;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: min(760px, calc(100vw - 2rem));
+	max-height: calc(100vh - 6rem);
+	overflow: auto;
+	padding: 1.2rem 1.4rem;
+	border: 1px solid var(--line-2);
+	background: rgba(6, 12, 20, .98);
+	box-shadow: 0 30px 80px -20px #000, 0 0 40px -18px var(--cyan);
+}
+.peek-box .jail-page > header .close { margin-left: auto; }
+
 /* The page of one jail. */
 .jail-page > header {
 	display: flex;

@@ -528,11 +528,21 @@ dispatch(const char *act, const char *arg, const char *value)
 			if (strcmp(app.servers[i].id, value) == 0)
 				app.sel = i;
 		app.node = NODE_JAIL;
+		app.peek = false;
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 		close_service();
+	} else if (strcmp(act, "peek-jail") == 0) {
+		/* From a host's summary: the jail in a box over the page. */
+		for (i = 0; value[0] != '\0' && i < app.nservers; i++)
+			if (strcmp(app.servers[i].id, value) == 0)
+				app.sel = i;
+		app.node = NODE_HOST;
+		app.peek = true;
+		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 	} else if (strcmp(act, "close-drawer") == 0) {
 		if (app.node == NODE_JAIL)
 			app.node = NODE_HOST;
+		app.peek = false;
 		app.jail[0] = '\0';
 		close_service();
 	} else if (strcmp(act, "jail-packages") == 0 && s != NULL) {
@@ -719,7 +729,10 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "close") == 0 || strcmp(act, "escape") == 0) {
 		if (app.modal != MODAL_NONE)
 			close_modal();
-		else if (app.node == NODE_JAIL) {
+		else if (app.peek) {
+			app.peek = false;
+			app.jail[0] = '\0';
+		} else if (app.node == NODE_JAIL) {
 			app.node = NODE_HOST;
 			app.jail[0] = '\0';
 		} else if (app.service[0] != '\0')

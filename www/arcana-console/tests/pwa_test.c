@@ -463,6 +463,20 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("!document.querySelector('.hostbar button[data-act="
 	    "agent-update]')", 10);
 
+	/* A jail picked in the summary's graph opens in a box over it,
+	 * and the page under it stays the summary. */
+	run("document.querySelector('.topo .tnode[data-act=peek-jail]')"
+	    ".click()");
+	wait_js("document.querySelector('.peek-box .jail-page')", 5);
+	ATF_CHECK(js_true("document.querySelector('.tiles .tile') && "
+	    "document.querySelector('button.tab.on, button.tab.active, "
+	    "button.tab[aria-selected=true]') !== undefined"));
+	ATF_CHECK(js_true("document.querySelector('.peek-box button[data-act="
+	    "address-add]')"));
+	shot("1d-jail-overlay");
+	run("document.querySelector('.peek-box .close').click()");
+	wait_js("!document.querySelector('.peek-box')", 5);
+
 	/* The fleet page lists it, and leads back to it. */
 	run("document.querySelector('.tree .titem.fleet').click()");
 	wait_js("document.querySelector('.hosts .hostcard')", 5);
