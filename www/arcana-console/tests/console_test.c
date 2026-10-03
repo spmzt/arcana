@@ -673,6 +673,19 @@ ATF_TC_BODY(agent_build, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	resp_free(&r);
 	ATF_CHECK(access("build/known_hosts", R_OK) == 0);
+
+	/*
+	 * The console's own update, through the agent of its host: the
+	 * tree is built and installed, and the console's service asked
+	 * to restart.
+	 */
+	snprintf(body, sizeof(body), "%.*s/console-update", (int)(strrchr(path,
+	    '/') - path), path);
+	http("POST", body, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("true", jstr(&r, "restarting"));
+	resp_free(&r);
 }
 
 CONSOLE_TC(settings, "Settings are changed from the console, kept in the "

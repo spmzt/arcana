@@ -288,6 +288,15 @@ there, or the one the client names.
 The program is sent back with its SHA-256 and the version it reports;
 nothing is installed.
 One build runs at a time.
+.Pp
+With
+.Cm console-update
+the whole tree is built, as the unprivileged user, and installed with
+.Ql make install
+as the daemon; the
+.Nm arcana_console
+service is restarted after the reply.
+That is how a console updates itself, through the agent of its host.
 .Sh UPDATES
 A client may send a new
 .Nm :

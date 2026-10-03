@@ -459,6 +459,9 @@ ATF_TC_BODY(pwa, tc)
 	    ".requestSubmit()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('built arcana-agent'))", 30);
+	/* The console's own update is offered on the host it runs on. */
+	ATF_CHECK(js_true("document.querySelector('.hostbar button[data-act="
+	    "console-update]')"));
 	/* What was built is the host's own build here: nothing to send. */
 	wait_js("!document.querySelector('.hostbar button[data-act="
 	    "agent-update]')", 10);

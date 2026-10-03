@@ -119,6 +119,7 @@ arcanactl -c tcp://host1.example:4310 \
 | `job [-w]` *id* | A job with its trace so far; `-w` waits for the end. |
 | `job-cancel` *id* | Take a queued job back. |
 | `agent-build` [`-y`] [`-i` *key*] [`-o` *file*] *repository* [*ref*] | Have the host clone the repository, build `arcana-agent` there and send it back; it is saved as *file* (`arcana-agent`). Over SSH the server's host key fingerprints are printed and nothing is built until `-y` confirms them; `-i` names a private key on the host for git. |
+| `console-update` [`-y`] [`-i` *key*] *repository* [*ref*] | Have the host build all of Arcana from the repository, install it and restart the `arcana_console` service: the console's own update, on the host it runs on. |
 | `agent-update` [`-r`] *program* | Put a new `arcana-agent` in place on the host, checked there by running it with `-V`; `-r` restarts the service. The one before stays as `arcana-agent.old`. |
 
 Global options: `-c uri` (default the local socket), `-A`/`-C`/`-K` for

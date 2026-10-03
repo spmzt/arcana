@@ -111,6 +111,7 @@ usage(void)
 	    "    job-cancel id\n"
 	    "    agent-update [-r] program\n"
 	    "    agent-build [-y] [-i key] [-o file] repository [ref]\n"
+	    "    console-update [-y] [-i key] repository [ref]\n"
 	    "with -q, start, stop, restart, kill, address, service (but "
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
 	    "instead of waited for.\n");
@@ -737,6 +738,70 @@ again:
 	return (error);
 }
 
+/*
+ * console-update [-y] [-i key] repository [ref]: have the host build
+ * the whole tree, install it and restart the console's service.
+ */
+static int
+cmd_console_update(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_console_update_req	 req;
+	struct arc_console_update_rsp	*rsp;
+	char				*keys;
+	size_t				 i;
+	bool				 trust;
+	int				 ch, error;
+
+	memset(&req, 0, sizeof(req));
+	trust = false;
+	keys = NULL;
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "i:y")) != -1) {
+		switch (ch) {
+		case 'i':
+			req.ssh_key = optarg;
+			break;
+		case 'y':
+			trust = true;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc - optind < 1 || argc - optind > 2)
+		usage();
+	req.source = argv[optind];
+	req.ref = argv[optind + 1];
+again:
+	if ((error = arc_console_update(cl, &req, &rsp)) != 0)
+		fail(cl, error, "console-update");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	if (!rsp->ok && rsp->host_keys != NULL) {
+		for (i = 0; i < rsp->fingerprints.n; i++)
+			xo_emit("{Lwc:Host key}{l:fingerprint/%s}\n",
+			    rsp->fingerprints.v[i]);
+		if (trust && keys == NULL) {
+			if ((keys = strdup(rsp->host_keys)) == NULL)
+				xo_err(1, "strdup");
+			req.host_keys = keys;
+			arc_console_update_rsp_free(rsp);
+			goto again;
+		}
+	}
+	if (!rsp->ok && rsp->deploy_key != NULL)
+		xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n", rsp->deploy_key);
+	if (rsp->ok)
+		xo_emit("{Lwc:Console}{:console/installed}{d:restarting/%s}\n",
+		    rsp->restarting ? ", restarting" : "");
+	else
+		xo_warnx("console-update: %s", rsp->error != NULL ?
+		    rsp->error : "failed");
+	error = rsp->ok ? 0 : 1;
+	arc_console_update_rsp_free(rsp);
+	free(keys);
+	return (error);
+}
+
 /* agent-update [-r] program: put a new arcana-agent in place. */
 static int
 cmd_agent_update(struct arc_client *cl, int argc, char **argv)
@@ -1244,6 +1309,8 @@ main(int argc, char *argv[])
 		rc = cmd_agent_update(&cl, argc, argv);
 	else if (strcmp(argv[0], "agent-build") == 0)
 		rc = cmd_agent_build(&cl, argc, argv);
+	else if (strcmp(argv[0], "console-update") == 0)
+		rc = cmd_console_update(&cl, argc, argv);
 	else
 		usage();
 	xo_close_container("arcana");

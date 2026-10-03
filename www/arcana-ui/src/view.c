@@ -513,6 +513,14 @@ hostbar(struct html *h, struct server *s)
 			    "data-act=\"agent-build\"");
 			h_attr(h, "title", app.agent_source);
 			h_raw(h, ">Build agent here</button>");
+			/* The console's own update: on the host it runs
+			 * on, which is the one reached by a local socket. */
+			if (strncmp(s->uri, "unix:", 5) == 0) {
+				h_raw(h, "<button class=\"ghost small\" "
+				    "data-act=\"console-update\"");
+				h_attr(h, "title", app.agent_source);
+				h_raw(h, ">Update console</button>");
+			}
 		}
 	} else {
 		h_raw(h, "<span>");

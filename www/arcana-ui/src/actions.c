@@ -1684,7 +1684,10 @@ agent_build_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (status == 200 && !ok)
 		err = jstr(o, "error");
 	op_done(op_find(c->op), ok, o, err);
-	if (ok)
+	if (ok && c->dry_run)
+		toast(false, "%s installed the console from the repository; "
+		    "it restarts, and this page reconnects", c->name);
+	else if (ok)
 		toast(false, "%s built arcana-agent %s: the console sends it "
 		    "from now on", c->name, jstr(o, "version") != NULL ?
 		    jstr(o, "version") : "");
@@ -1698,11 +1701,13 @@ agent_build_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			ucl_object_unref(app.build_reply);
 		app.build_reply = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
 		snprintf(app.build_sid, sizeof(app.build_sid), "%s", c->sid);
+		app.build_console = c->dry_run;
 		app.modal = MODAL_HOST_KEY;
 		app.modal_error[0] = '\0';
 	} else
-		toast(true, "%s: agent not built: %s", c->name, err != NULL ?
-		    err : "failed");
+		toast(true, "%s: %s: %s", c->name, c->dry_run ? "console not "
+		    "updated" : "agent not built", err != NULL ? err :
+		    "failed");
 	/* Which build the console has decides who is offered an update. */
 	check_health();
 	free(c);
@@ -1711,9 +1716,11 @@ agent_build_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 /*
  * Have s build arcana-agent from the console's repository; host_keys,
  * if not NULL, are the SSH host keys of its server the user confirmed.
+ * With console, it is the whole tree, installed there, and the console
+ * restarted: its own update, on the host it runs on.
  */
 void
-agent_build(struct server *s, const char *host_keys)
+agent_build(struct server *s, const char *host_keys, bool console)
 {
 	struct ctx	*c;
 	struct op	*op;
@@ -1722,11 +1729,13 @@ agent_build(struct server *s, const char *host_keys)
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	snprintf(c->name, sizeof(c->name), "%s", s->name);
-	op = op_new("build agent", s->name);
+	c->dry_run = console;		/* which of the two this is */
+	op = op_new(console ? "update console" : "build agent", s->name);
 	c->op = op->id;
 	app.trace_op = op->id;
 	app.dock_open = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/agent-build", s->id);
+	snprintf(url, sizeof(url), "/api/servers/%s/%s", s->id, console ?
+	    "console-update" : "agent-build");
 	if (host_keys == NULL) {
 		api("POST", url, "{}", agent_build_cb, c);
 		return;

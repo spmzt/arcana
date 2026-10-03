@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.6.1
+  version: 0.7.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -644,6 +644,34 @@ paths:
                   trace: { type: object }
         "409": { $ref: "#/components/responses/Error" }
         "502": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/console-update:
+    post:
+      tags: [servers]
+      summary: Update the console itself from agent_source
+      description: Through the agent of the host the console runs on,
+        a server added by its local socket (409 for another). The agent
+        builds all of Arcana from the repository, installs it and
+        restarts the console's service. Host keys are confirmed as for
+        agent-build.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: What the host did.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  restarting: { type: boolean }
+                  host_keys: { type: string, nullable: true }
+                  fingerprints: { type: array, items: { type: string } }
+                  deploy_key: { type: string, nullable: true }
+                  trace: { type: object }
+        "409": { $ref: "#/components/responses/Error" }
 
   /api/servers/{server}/agent-update:
     post:

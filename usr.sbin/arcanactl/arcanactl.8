@@ -160,6 +160,18 @@ sends those keys back as confirmed, and the host keeps them.
 .Fl i
 names a private key on the host for git to use instead of the host's
 own.
+.It Cm console-update Oo Fl y Oc Oo Fl i Ar key Oc Ar repository Op Ar ref
+Have the host clone the git
+.Ar repository ,
+build all of Arcana there, install it over what is installed and
+restart the
+.Nm arcana_console
+service: the console's own update, on the host it runs on.
+.Fl y
+and
+.Fl i
+are as for
+.Cm agent-build .
 .It Cm agent-update Oo Fl r Oc Ar program
 Put
 .Ar program

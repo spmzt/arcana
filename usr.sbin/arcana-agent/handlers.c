@@ -245,14 +245,16 @@ worker(void *arg)
 	struct arc_pkg_upgrade_rsp ur;
 	struct arc_agent_update_rsp aur;
 	struct arc_agent_build_rsp abr;
+	struct arc_console_update_rsp cur;
 	const char		*what, *error;
+	bool			 console;
 	bool			 restart;
 	bool			 ok;
 	int			 root, rc;
 
 	j = arg;
 	work_init(&w);
-	restart = false;
+	restart = console = false;
 	switch (j->cmd) {
 	case ARC_CMD_LIST:
 		what = j->config_only ? "list (configuration only)" : "list";
@@ -389,6 +391,24 @@ worker(void *arg)
 		trace_steps(&w, &sar.trace.v, &sar.trace.n);
 		rc = arc_service_action_reply(j->req, &sar);
 		break;
+	case ARC_CMD_CONSOLE_UPDATE:
+		what = wfmt(&w, "console update from %s%s%s", j->source,
+		    j->ref != NULL ? " at " : "", j->ref != NULL ? j->ref : "");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&cur, 0, sizeof(cur));
+		pthread_mutex_lock(&build_lock);
+		do_console_update(&w, j->source, j->ref, j->host_keys,
+		    j->ssh_key, &cur);
+		pthread_mutex_unlock(&build_lock);
+		ok = cur.ok;
+		error = cur.error;
+		console = ok;
+		cur.restarting = console;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &cur.trace.v, &cur.trace.n);
+		rc = arc_console_update_reply(j->req, &cur);
+		break;
 	case ARC_CMD_AGENT_BUILD:
 		what = wfmt(&w, "agent build from %s%s%s", j->source,
 		    j->ref != NULL ? " at " : "", j->ref != NULL ? j->ref : "");
@@ -486,6 +506,9 @@ worker(void *arg)
 	(void)cbl_req_complete(j->req, rc);
 	work_free(&w);
 	job_free(j);
+	/* The console's own service, once it has its answer. */
+	if (console)
+		service_restart("arcana_console");
 	if (restart) {
 		/*
 		 * No change starts while the service is on its way to
@@ -494,7 +517,7 @@ worker(void *arg)
 		 */
 		pthread_mutex_lock(&change_lock);
 		(void)change_note("restarting the service after an update");
-		agent_restart();
+		service_restart("arcana_agent");
 		sleep(RESTART_WAIT);
 		(void)change_note(NULL);
 		pthread_mutex_unlock(&change_lock);
@@ -668,6 +691,24 @@ arc_agent_build_doit(cbl_req *req, const struct arc_agent_build_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_AGENT_BUILD;
+	j->source = xstrdup(rq->source);
+	j->ref = rq->ref != NULL && rq->ref[0] != '\0' ? xstrdup(rq->ref) :
+	    NULL;
+	j->host_keys = rq->host_keys != NULL ? xstrdup(rq->host_keys) : NULL;
+	j->ssh_key = rq->ssh_key != NULL ? xstrdup(rq->ssh_key) : NULL;
+	return (start(j));
+}
+
+int
+arc_console_update_doit(cbl_req *req, const struct arc_console_update_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_CONSOLE_UPDATE;
 	j->source = xstrdup(rq->source);
 	j->ref = rq->ref != NULL && rq->ref[0] != '\0' ? xstrdup(rq->ref) :
 	    NULL;

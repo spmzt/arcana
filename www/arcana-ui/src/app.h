@@ -314,6 +314,7 @@ struct app {
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
 	ucl_object_t	*build_reply;	/* a build that needs the user: host keys */
 	char		 build_sid[9];	/* and the host it was asked of */
+	bool		 build_console;	/* it was the console's own update */
 	ucl_object_t	*schema;	/* the family's, from schema.json */
 	bool		 schema_loading;
 	bool		 schema_failed;
@@ -375,7 +376,7 @@ void		 refresh_network(struct server *, bool);
 void		 refresh_stats(struct server *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);
-void		 agent_build(struct server *, const char *);
+void		 agent_build(struct server *, const char *, bool);
 void		 load_settings(void);
 void		 save_settings(const ucl_object_t *);
 void		 load_schema(void);

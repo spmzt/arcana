@@ -9,6 +9,14 @@
 - A safe mode that rolls a configuration change back when the agent
   loses the console, for the changes that can be rolled back.
 
+## Planned
+
+- A section for the network, once interfaces and routes are managed: the
+  servers as nodes of a graph, joined as their configuration joins them.
+  The console works out which interface or tunnel of one server leads
+  to which other, and draws a link if and only if the far end is a
+  server on its own list.
+
 ## To fix
 
 - The queue belongs to no host: what waits is sent to the host selected

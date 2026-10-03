@@ -381,7 +381,7 @@ submit(const char *form, const ucl_object_t *f)
 		for (i = 0; i < app.nservers; i++)
 			if (strcmp(app.servers[i].id, app.build_sid) == 0)
 				agent_build(&app.servers[i], jstr(app.build_reply,
-				    "host_keys"));
+				    "host_keys"), app.build_console);
 	} else if (strcmp(form, "settings") == 0) {
 		save_settings(f);
 	} else if (strcmp(form, "agent-update") == 0) {
@@ -678,10 +678,21 @@ dispatch(const char *act, const char *arg, const char *value)
 		    app.agent_source);
 		confirm("Build arcana-agent", body, "Build", false, "",
 		    "do-agent-build", s->id, "");
+	} else if (strcmp(act, "console-update") == 0 && s != NULL) {
+		char body[640];
+
+		snprintf(body, sizeof(body), "%s clones %s, builds all of "
+		    "Arcana there and installs it over what is installed: the "
+		    "console, the page and the agent. The console's service "
+		    "is then restarted and this page reconnects. This can "
+		    "take several minutes.", s->name, app.agent_source);
+		confirm("Update the console", body, "Update", true, "",
+		    "do-agent-build", s->id, "console");
 	} else if (strcmp(act, "do-agent-build") == 0) {
 		for (i = 0; i < app.nservers; i++)
 			if (strcmp(app.servers[i].id, arg) == 0)
-				agent_build(&app.servers[i], NULL);
+				agent_build(&app.servers[i], NULL, value[0] !=
+				    '\0');
 	} else if (strcmp(act, "jail-sort") == 0) {
 		i = strcmp(arg, "name") == 0 ? JAIL_SORT_NAME :
 		    JAIL_SORT_RUNNING;

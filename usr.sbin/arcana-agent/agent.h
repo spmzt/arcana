@@ -18,7 +18,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.3.0"
+#define	ARCANA_AGENT_VERSION	"0.4.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -261,10 +261,13 @@ void		 pools_measure(struct work *, struct arc_stats *);
 int		 do_agent_build(struct work *, const char *, const char *,
 		    const char *, const char *, struct arc_agent_build_rsp *);
 
+int		 do_console_update(struct work *, const char *, const char *,
+		    const char *, const char *, struct arc_console_update_rsp *);
+
 /* ira/update.c */
 int		 do_agent_update(struct work *, const uint8_t *, size_t,
 		    const char *, struct arc_agent_update_rsp *);
-void		 agent_restart(void);
+void		 service_restart(const char *);
 
 bool		 change_note(const char *, ...) __printflike(1, 2);
 void		 changes_stop(void);

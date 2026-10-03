@@ -700,6 +700,8 @@ EOS
 	cat > fake-make <<EOS
 #!/bin/sh
 dir=\$2
+echo "\$*" >> $(pwd)/made
+[ -f $(pwd)/make-fails ] && exit 1
 case " \$* " in
 *" -V .OBJDIR "*) echo "\$dir/obj" ;;
 */usr.sbin/arcana-agent*) mkdir -p "\$dir/obj" && cp "$JGD" "\$dir/obj/arcana-agent" ;;
@@ -758,6 +760,27 @@ EOS
 	atf_check -o match:"ssh -i $(pwd)/hostkey " \
 	    "$JGC" -t -c "$SOCK" agent-build -i "$(pwd)/hostkey" -o viassh \
 	    git@git.example.org:me/arcana.git
+	# The console's update: the whole tree is built and installed,
+	# and the console's service restarted after the answer.
+	atf_check -o match:'^Console: +installed, restarting' \
+	    -o match:'fake-make -C .*/build/src MK_TESTS=no install' \
+	    "$JGC" -t -c "$SOCK" console-update https://example.org/arcana.git
+	atf_check -o match:'build/src MK_TESTS=no$' \
+	    -o match:'build/src MK_TESTS=no install$' cat made
+	for i in $(seq 1 60); do
+		[ -e running.arcana_console ] && break
+		sleep 0.1
+	done
+	atf_check test -e running.arcana_console
+	# A build that fails installs nothing and restarts nothing.
+	rm running.arcana_console made
+	touch make-fails
+	atf_check -s exit:1 -e match:'make exited with status 1' -o ignore \
+	    "$JGC" -c "$SOCK" console-update https://example.org/arcana.git
+	atf_check -o not-match:'install' cat made
+	sleep 1.5
+	atf_check test ! -e running.arcana_console
+	rm make-fails
 	# What git would take as an option is not a repository.
 	atf_check -s exit:1 -e match:'not a repository' -o ignore \
 	    "$JGC" -c "$SOCK" agent-build -- --upload-pack=x

@@ -49,6 +49,7 @@ enum op {
 	OP_JOB_CANCEL,
 	OP_AGENT_UPDATE,
 	OP_AGENT_BUILD,
+	OP_CONSOLE_UPDATE,
 };
 
 struct call {
@@ -364,6 +365,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    "arc_jobs" : c->op == OP_JOB ? "arc_job" : c->op == OP_JOB_CANCEL ?
 	    "arc_job_cancel" : c->op == OP_AGENT_UPDATE ? "arc_agent_update" :
 	    c->op == OP_AGENT_BUILD ? "arc_agent_build" :
+	    c->op == OP_CONSOLE_UPDATE ? "arc_console_update" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
@@ -633,6 +635,8 @@ call_run(struct kore_task *t)
 	struct arc_agent_update_rsp *aur;
 	struct arc_agent_build_req abq;
 	struct arc_agent_build_rsp *abr;
+	struct arc_console_update_req cuq;
+	struct arc_console_update_rsp *cur;
 	uint8_t			*bin;
 	size_t			 binlen;
 	char			 sha[65];
@@ -678,6 +682,7 @@ call_run(struct kore_task *t)
 	jcr = NULL;
 	aur = NULL;
 	abr = NULL;
+	cur = NULL;
 	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
@@ -965,6 +970,25 @@ call_run(struct kore_task *t)
 		steps = nr->trace.v;
 		nsteps = nr->trace.n;
 		break;
+	case OP_CONSOLE_UPDATE:
+		memset(&cuq, 0, sizeof(cuq));
+		cuq.source = cfg.agent_source;
+		cuq.ref = cfg.agent_ref;
+		cuq.ssh_key = cfg.agent_ssh_key;
+		cuq.host_keys = c->host_keys;
+		if ((error = arc_console_update(&cl, &cuq, &cur)) != 0)
+			goto rpcfail;
+		ok = cur->ok;
+		put_str(top, "error", cur->error);
+		put_str(top, "host_keys", cur->host_keys);
+		if (cur->fingerprints.n > 0)
+			put(top, "fingerprints", strs(cur->fingerprints.v,
+			    cur->fingerprints.n));
+		put_str(top, "deploy_key", cur->deploy_key);
+		put(top, "restarting", ucl_object_frombool(cur->restarting));
+		steps = cur->trace.v;
+		nsteps = cur->trace.n;
+		break;
 	case OP_AGENT_BUILD:
 		memset(&abq, 0, sizeof(abq));
 		abq.source = cfg.agent_source;
@@ -1113,6 +1137,8 @@ done:
 		arc_agent_update_rsp_free(aur);
 	if (abr != NULL)
 		arc_agent_build_rsp_free(abr);
+	if (cur != NULL)
+		arc_console_update_rsp_free(cur);
 	free(bin);
 	if (cl.conn != NULL)
 		arc_client_fini(&cl);
@@ -1138,6 +1164,7 @@ call_new(struct http_request *req, enum op op)
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL ||
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
+	    op == OP_CONSOLE_UPDATE ||
 	    (op == OP_SERVICE_CONFIG && req->method == HTTP_METHOD_POST)))
 		return (NULL);
 	t1 = now_us();
@@ -1289,8 +1316,19 @@ api_agent_build(struct http_request *req)
 	if (cfg.agent_source == NULL)
 		return (reply_error(req, 409, "unconfigured", "agent_source "
 		    "in web.conf names no repository to build from"));
-	if ((c = call_new(req, OP_AGENT_BUILD)) == NULL)
+	/* The same repository, for the console itself, where it runs. */
+	if ((c = call_new(req, strstr(req->path, "/console-update") != NULL ?
+	    OP_CONSOLE_UPDATE : OP_AGENT_BUILD)) == NULL)
 		return (KORE_RESULT_OK);
+	if (c->op == OP_CONSOLE_UPDATE && strncmp(c->uri, "unix:", 5) != 0) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 409, "remote", "the console is "
+		    "updated through the agent of the host it runs on: a "
+		    "server added by its local socket"));
+	}
 	/* {"host_keys": "..."}: the lines the user confirmed. */
 	if ((body = read_json(req)) != NULL) {
 		if ((v = ucl_object_lookup(body, "host_keys")) != NULL &&

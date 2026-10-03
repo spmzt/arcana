@@ -85,7 +85,7 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	struct pollfd			 pfd[2];
 	struct capture			 out, eout;
 	static char			 pathenv[] =
-	    "PATH=/sbin:/bin:/usr/sbin:/usr/bin";
+	    "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin";
 	char				*env[] = { pathenv, NULL };
 	const char			*cmdline;
 	size_t				 i;

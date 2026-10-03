@@ -936,3 +936,32 @@ operations:
           - deploy-key
           - trace
 
+  - name: console-update
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Build the whole tree from a git repository on this host and install
+      it, then restart the console's service: how a console updates
+      itself, through the agent of the host it runs on.  The build runs
+      as an unprivileged user when the daemon is root; make install runs
+      as the daemon.  The repository is fetched as agent-build fetches
+      it, host keys and all.
+    do:
+      request:
+        attributes:
+          - source
+          - ref
+          - host-keys
+          - ssh-key
+        required:
+          - source
+      reply:
+        attributes:
+          - ok
+          - error
+          - host-keys
+          - fingerprints
+          - deploy-key
+          - restarting
+          - trace
+

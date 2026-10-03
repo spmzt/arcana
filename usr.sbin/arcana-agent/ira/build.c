@@ -32,6 +32,17 @@
 #define	VERSION_PREFIX	"arcana-agent "
 #define	MAX_ARGS	20
 
+/* What fetching a tree came to, when it did not come to a tree. */
+struct fetched {
+	const char	*error;
+	const char	*host_keys;	/* for a person to confirm */
+	const char	*deploy_key;	/* this host's, for the server */
+	struct {
+		const char *const	*v;
+		size_t			 n;
+	} fingerprints;
+};
+
 static int	run_as(struct work *, bool, const char *const *,
 		    struct execres *);
 static bool	valid_source(const char *);
@@ -171,7 +182,7 @@ write_text(const char *path, const char *text)
  */
 static void
 offer_host_keys(struct work *w, bool unpriv, const char *name,
-    const char *host, const char *port, struct arc_agent_build_rsp *rsp)
+    const char *host, const char *port, struct fetched *rsp)
 {
 	struct execres	 res;
 	const char	*argv[MAX_ARGS], **fps, *p, *nl;
@@ -233,38 +244,35 @@ offer_host_keys(struct work *w, bool unpriv, const char *name,
 	}
 }
 
-int
-do_agent_build(struct work *w, const char *source, const char *ref,
-    const char *accepted, const char *sshkey,
-    struct arc_agent_build_rsp *rsp)
+/*
+ * A fresh clone of the repository in the build directory, with this
+ * host's config.mk in it.  False with f->error when there is none; over
+ * SSH that may be for want of a person: f then has the server's host
+ * keys to confirm, or this host's key to allow there.
+ */
+static bool
+tree_fetch(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey, bool unpriv, char **srcp,
+    struct fetched *rsp)
 {
 	struct execres	 res;
 	struct passwd	*pw;
-	struct stat	 sb;
-	unsigned char	 md[EVP_MAX_MD_SIZE];
-	const char	*argv[MAX_ARGS], *nl, *name, *host, *port, *sshcmd;
-	char		*src, *objdir, *prog, *sha, *conf, *kh, *key, *pub;
+	const char	*argv[MAX_ARGS], *name, *host, *port, *sshcmd;
+	char		*src, *conf, *kh, *key, *pub;
 	char		 line[1024];
 	FILE		*fp;
 	bool		 ssh;
-	uint8_t		*bin;
-	ssize_t		 r;
-	size_t		 off;
-	unsigned int	 i, mdlen;
-	bool		 unpriv;
-	int		 fd, n, s;
+	int		 n, s;
 
-	rsp->has_ok = true;
-	rsp->ok = false;
+	memset(rsp, 0, sizeof(*rsp));
 	if (!valid_source(source)) {
 		rsp->error = "not a repository git clone can take";
-		return (0);
+		return (false);
 	}
 	if (ref != NULL && !valid_ref(ref)) {
 		rsp->error = "not a branch or tag name";
-		return (0);
+		return (false);
 	}
-	unpriv = geteuid() == 0;
 	src = wfmt(w, "%s/src", opts.build_dir);
 
 	/* The build directory, the build user's when there is one. */
@@ -272,13 +280,13 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 	if (mkdir(opts.build_dir, 0755) == -1 && errno != EEXIST) {
 		step_end(w, s, false, "%s", strerror(errno));
 		rsp->error = wfmt(w, "%s: %s", opts.build_dir, strerror(errno));
-		return (0);
+		return (false);
 	}
 	if (unpriv && ((pw = getpwnam(BUILD_USER)) == NULL ||
 	    chown(opts.build_dir, pw->pw_uid, pw->pw_gid) == -1)) {
 		step_end(w, s, false, "no user %s to build as", BUILD_USER);
 		rsp->error = "no user to build as";
-		return (0);
+		return (false);
 	}
 	step_end(w, s, true, unpriv ? "owned by " BUILD_USER : NULL);
 
@@ -290,7 +298,7 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 	argv[n] = NULL;
 	if (run_as(w, unpriv, argv, &res) != 0) {
 		rsp->error = wtext(w, exec_error(w, &res, "rm"));
-		return (0);
+		return (false);
 	}
 	/*
 	 * Over SSH, git runs ssh as the build user, who has no known
@@ -308,7 +316,7 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 			if (sshkey[0] != '/' || !valid_source(sshkey)) {
 				rsp->error = "the SSH key is not an absolute "
 				    "path";
-				return (0);
+				return (false);
 			}
 			argv[0] = "/bin/test";
 			argv[1] = "-r";
@@ -319,7 +327,7 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 				    "there, or not readable by %s, whom git "
 				    "runs as", sshkey, unpriv ? BUILD_USER :
 				    "the agent");
-				return (0);
+				return (false);
 			}
 			key = wstrdup(w, sshkey);
 		}
@@ -340,7 +348,7 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 			if (run_as(w, unpriv, argv, &res) != 0) {
 				rsp->error = wtext(w, exec_error(w, &res,
 				    "ssh-keygen"));
-				return (0);
+				return (false);
 			}
 		}
 		if ((fp = fopen(pub, "r")) != NULL) {
@@ -358,7 +366,7 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 				    name);
 				rsp->error = wfmt(w, "those are not host keys "
 				    "of %s that can be kept", name);
-				return (0);
+				return (false);
 			}
 			step_end(w, s, true, "the host keys of %s, as "
 			    "confirmed", name);
@@ -377,7 +385,7 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 			if (rsp->host_keys != NULL)
 				rsp->error = wfmt(w, "this host does not know "
 				    "the SSH host key of %s: confirm it", name);
-			return (0);
+			return (false);
 		}
 		sshcmd = wfmt(w, "core.sshCommand=ssh -i %s -o IdentitiesOnly="
 		    "yes -o UserKnownHostsFile=%s -o GlobalKnownHostsFile="
@@ -404,7 +412,7 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 	if (run_as(w, unpriv, argv, &res) != 0) {
 		rsp->error = wtext(w, exec_error(w, &res, "git clone"));
 		if (!ssh || res.err == NULL)
-			return (0);
+			return (false);
 		/*
 		 * The server showing another key than the one confirmed is
 		 * not something to pass over: say so, and offer the new
@@ -422,7 +430,7 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 			rsp->error = wfmt(w, "%s did not accept this host's "
 			    "key: allow the deploy key there, read-only",
 			    name);
-		return (0);
+		return (false);
 	}
 
 	/* This host's settings for the build, where it has any. */
@@ -435,8 +443,42 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 		argv[n] = NULL;
 		if (run_as(w, unpriv, argv, &res) != 0) {
 			rsp->error = wtext(w, exec_error(w, &res, "cp"));
-			return (0);
+			return (false);
 		}
+	}
+
+	*srcp = src;
+	return (true);
+}
+
+int
+do_agent_build(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey,
+    struct arc_agent_build_rsp *rsp)
+{
+	struct fetched	 f;
+	struct execres	 res;
+	struct stat	 sb;
+	unsigned char	 md[EVP_MAX_MD_SIZE];
+	const char	*argv[MAX_ARGS], *nl;
+	char		*src, *objdir, *prog, *sha;
+	uint8_t		*bin;
+	ssize_t		 r;
+	size_t		 off;
+	unsigned int	 i, mdlen;
+	bool		 unpriv;
+	int		 fd, n, s;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	unpriv = geteuid() == 0;
+	if (!tree_fetch(w, source, ref, accepted, sshkey, unpriv, &src, &f)) {
+		rsp->error = f.error;
+		rsp->host_keys = f.host_keys;
+		rsp->deploy_key = f.deploy_key;
+		rsp->fingerprints.v = f.fingerprints.v;
+		rsp->fingerprints.n = f.fingerprints.n;
+		return (0);
 	}
 
 	/* The library the agent links, then the agent; no tests. */
@@ -514,3 +556,53 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 	rsp->ok = true;
 	return (0);
 }
+
+/*
+ * The whole tree built and installed on this host from the repository,
+ * for the console to update itself where it runs: make as the build
+ * user, make install as the daemon.  The caller restarts the console's
+ * service once the reply has left.
+ */
+int
+do_console_update(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey,
+    struct arc_console_update_rsp *rsp)
+{
+	struct fetched	 f;
+	struct execres	 res;
+	const char	*argv[MAX_ARGS];
+	char		*src;
+	bool		 unpriv;
+	int		 n;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	unpriv = geteuid() == 0;
+	if (!tree_fetch(w, source, ref, accepted, sshkey, unpriv, &src, &f)) {
+		rsp->error = f.error;
+		rsp->host_keys = f.host_keys;
+		rsp->deploy_key = f.deploy_key;
+		rsp->fingerprints.v = f.fingerprints.v;
+		rsp->fingerprints.n = f.fingerprints.n;
+		return (0);
+	}
+	n = 0;
+	argv[n++] = opts.make_bin;
+	argv[n++] = "-C";
+	argv[n++] = src;
+	argv[n++] = "MK_TESTS=no";
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) != 0) {
+		rsp->error = wtext(w, exec_error(w, &res, "make"));
+		return (0);
+	}
+	argv[n++] = "install";
+	argv[n] = NULL;
+	if (run_as(w, false, argv, &res) != 0) {
+		rsp->error = wtext(w, exec_error(w, &res, "make install"));
+		return (0);
+	}
+	rsp->ok = true;
+	return (0);
+}
+

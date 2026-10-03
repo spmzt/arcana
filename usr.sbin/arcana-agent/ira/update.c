@@ -129,7 +129,7 @@ do_agent_update(struct work *w, const uint8_t *data, size_t len,
  * waits a moment first, for the reply to leave.
  */
 void
-agent_restart(void)
+service_restart(const char *name)
 {
 	struct timespec	 ts = { 1, 0 };
 	sigset_t	 none;
@@ -150,7 +150,7 @@ agent_restart(void)
 	(void)sigprocmask(SIG_SETMASK, &none, NULL);
 	closefrom(3);
 	(void)nanosleep(&ts, NULL);
-	execl(opts.service_bin, opts.service_bin, "arcana_agent", "restart",
+	execl(opts.service_bin, opts.service_bin, name, "restart",
 	    (char *)NULL);
 	_exit(127);
 }

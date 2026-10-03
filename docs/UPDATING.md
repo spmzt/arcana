@@ -12,6 +12,24 @@ turns that off. It does not replace itself, since it runs unprivileged:
 
 Certificates stay valid across updates.
 
+## Updating the console from the repository
+
+With a repository set (`agent_source`, under **Settings**), the header
+of the host the console runs on, the one added by its local socket
+(`unix:/var/run/arcana-agent.sock`), has **Update console**. The agent
+there clones the repository, builds all of Arcana as `nobody`, runs
+`make install` as root over what is installed (the console's module,
+the page, the agent and the tools), and restarts the `arcana_console`
+service; the page reconnects by itself. A repository over SSH asks for
+its host key as a build does. From a shell: `arcanactl console-update
+[-y] [-i key] repository [ref]`.
+
+It needs on that host what building Arcana needs (see the README),
+Emscripten included, and its settings in
+`/usr/local/etc/arcana/config.mk`. A console in a container is updated
+with its image instead. The agent on that host is installed too, and
+runs from its next restart.
+
 ## Updating the agents
 
 The console marks a host whose `arcana-agent` is not the one it has,
