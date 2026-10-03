@@ -320,6 +320,9 @@ ATF_TC_BODY(pwa, tc)
 	free(token);
 	run(script);
 	wait_js("document.querySelector('.shell')", 20);
+	/* The effects class comes from a script in the head: the page's
+	 * Content-Security-Policy must let it run. */
+	ATF_CHECK(js_true("document.documentElement.classList.contains('fx')"));
 	ATF_CHECK_MSG(access("data/setup-token", F_OK) == -1,
 	    "setup token not consumed");
 

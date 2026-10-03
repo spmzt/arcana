@@ -21,6 +21,7 @@ share/man/man8/arcana-agent.8.gz
 %%CONSOLE%%%%WWWDIR%%/icons/icon-512.png
 %%CONSOLE%%%%WWWDIR%%/icons/icon-maskable-512.png
 %%CONSOLE%%%%WWWDIR%%/icons/icon.svg
+%%CONSOLE%%%%WWWDIR%%/fx.js
 %%CONSOLE%%%%WWWDIR%%/index.html
 %%CONSOLE%%%%WWWDIR%%/arcana.js
 %%CONSOLE%%%%WWWDIR%%/arcana.wasm

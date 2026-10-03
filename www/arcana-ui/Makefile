@@ -39,7 +39,7 @@ FONTS=		jetbrains-mono-latin-400-normal.woff2 \
 		jetbrains-mono-latin-700-normal.woff2 \
 		orbitron-latin-700-normal.woff2
 ICONS=		icon.svg icon-192.png icon-512.png icon-maskable-512.png
-STATIC=		index.html style.css manifest.webmanifest
+STATIC=		index.html style.css manifest.webmanifest fx.js
 
 # Objects by their full path, so none is picked up from the source
 # directory through .PATH.
