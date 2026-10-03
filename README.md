@@ -270,13 +270,18 @@ The console is laid out as a tree and tabs.
   reads it, and its history.
 - **Activity** at the bottom: every call to a host, with its workflow as
   a graph from the API call through the session check and the cblink
-  request to each call the agent made; when a program ran, **Raw
-  output** shows its argv, exit status and output. Changes are jobs the
+  request to each call the agent made; a box picked in the graph shows
+  its details in a pane beside the graph, which stays in view while the
+  graph scrolls. When a program ran, **Raw output** shows its argv, exit
+  status and output. Changes are jobs the
   host runs on its own: the graph fills in stage by stage, and a change
   that cuts the console off still completes. **Queue** is on unless
   you turn it off in that browser: a change waits in the activity bar
   until you press **Run**, and what waits is sent as one batch, run in
   order; off, a change is sent at once.
+- The tree, the activity bar, the list of tasks in it and the service
+  drawer are resized by dragging their edge; the browser keeps the
+  sizes, and a double click on the edge goes back to the usual one.
 - In the top bar: **FX** turns the blur and idle animations off for this
   browser, **Notify** allows a desktop notification when a task that
   took more than ten seconds ends, **Keys** manages security keys and

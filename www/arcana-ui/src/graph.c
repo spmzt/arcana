@@ -212,6 +212,7 @@ view_trace(struct html *h, const struct op *o)
 	const char		*kind, *st, *ps;
 	char			 dur[32];
 	int			 i, p, x, y, px, py, w, ht;
+	bool			 sel;
 
 	if (o == NULL) {
 		raw(h, op_find(app.raw_op));
@@ -258,8 +259,14 @@ view_trace(struct html *h, const struct op *o)
 	layout(&l, o->trace);
 	w = PAD * 2 + l.cols * (NODE_W + GAP_X) - GAP_X;
 	ht = PAD * 2 + l.rows * (NODE_H + GAP_Y) - GAP_Y;
-	h_fmt(h, "<div class=\"graph-scroll\"><div class=\"graph\" "
-	    "style=\"width:%dpx;height:%dpx\">", w, ht);
+	sel = app.trace_step >= 0 && app.trace_step < l.n;
+	/*
+	 * The step picked shows beside the graph and stays in view while
+	 * the graph scrolls: a long trace is not scrolled past to read it.
+	 */
+	h_fmt(h, "<div class=\"trace-main%s\"><div class=\"graph-scroll\">"
+	    "<div class=\"graph\" style=\"width:%dpx;height:%dpx\">",
+	    sel ? " has-step" : "", w, ht);
 	/* Edges first, under the nodes. */
 	h_fmt(h, "<svg class=\"edges\" width=\"%d\" height=\"%d\" "
 	    "aria-hidden=\"true\">", w, ht);
@@ -298,8 +305,11 @@ view_trace(struct html *h, const struct op *o)
 		h_raw(h, "</div></div>");
 	}
 	h_raw(h, "</div></div>");
-	if (app.trace_step >= 0 && app.trace_step < l.n) {
+	if (sel) {
 		s = l.step[app.trace_step];
+		h_fmt(h, "<aside class=\"step-pane\"><button class=\"icon "
+		    "close\" data-act=\"step\" data-arg=\"%d\" title=\"Close\">"
+		    "×</button>", app.trace_step);
 		step_details(h, s);
 		if (jstr(s, "kind") != NULL && strcmp(jstr(s, "kind"),
 		    "exec") == 0) {
@@ -307,7 +317,9 @@ view_trace(struct html *h, const struct op *o)
 			lines(h, jstr(s, "error_output"), "out err preview",
 			    12);
 		}
+		h_raw(h, "</aside>");
 	}
+	h_raw(h, "</div>");
 	if (o->diff != NULL) {
 		h_raw(h, "<pre class=\"diff\">");
 		h_txt(h, o->diff);

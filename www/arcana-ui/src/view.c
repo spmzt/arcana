@@ -273,6 +273,11 @@ banner(struct html *h)
  * The resource tree: the fleet, its hosts, and under each host its
  * jails.  What is selected here decides what the stage shows.
  */
+/* A handle that drags the edge of a part of the page; bridge.js. */
+#define	RESIZER(axis, what)						\
+	"<div class=\"resizer " axis "\" data-resize=\"" what "\" "	\
+	"title=\"Drag to resize; double-click for the usual size\"></div>"
+
 #define	TREE_MIN	2	/* rows a host with more jails than room gets */
 
 /*
@@ -445,7 +450,7 @@ rail(struct html *h)
 				    1 : 0));
 		}
 	}
-	h_raw(h, "</ul></aside>");
+	h_raw(h, "</ul>" RESIZER("x", "rail") "</aside>");
 }
 
 static void
@@ -973,9 +978,9 @@ dock(struct html *h)
 	char		 dur[32];
 	int		 i;
 
-	h_fmt(h, "<section class=\"dock%s\"><header data-act=\"dock\">"
+	h_fmt(h, "<section class=\"dock%s\">%s<header data-act=\"dock\">"
 	    "<span class=\"label\">Activity</span>", app.dock_open ?
-	    " open" : "");
+	    " open" : "", app.dock_open ? RESIZER("y", "dock") : "");
 	if (app.nops > 0) {
 		o = &app.ops[0];
 		h_fmt(h, "<span class=\"last o-%s\"><i class=\"led\"></i>",
@@ -996,7 +1001,8 @@ dock(struct html *h)
 	h_fmt(h, "<span class=\"chev\">%s</span></header>",
 	    app.dock_open ? "▾" : "▴");
 	if (app.dock_open) {
-		h_raw(h, "<div class=\"dock-body\"><ol class=\"ops\">");
+		h_raw(h, "<div class=\"dock-body\">" RESIZER("x", "ops")
+		    "<ol class=\"ops\">");
 		/* What waits in the queue, in the order it will run. */
 		for (i = 0; i < app.nbatch; i++) {
 			h_fmt(h, "<li class=\"op o-queued\"><i class=\"led\"></i>"
@@ -1584,7 +1590,8 @@ view_service_drawer(struct html *h, struct server *s)
 		return;
 	}
 	sv = app.svc_config != NULL ? jget(app.svc_config, "service") : NULL;
-	h_fmt(h, "<aside class=\"drawer open s-%s\"><header><i class=\"led\">"
+	h_fmt(h, "<aside class=\"drawer open s-%s\">" RESIZER("x", "drawer")
+	    "<header><i class=\"led\">"
 	    "</i><h2>", sv == NULL ? "unknown" : jbool(sv, "running") ?
 	    "running" : "stopped");
 	h_txt(h, name);

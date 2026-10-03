@@ -452,11 +452,45 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.dock .last.o-ok') && "
 	    "!document.querySelector('button[data-act=queue-run]')", 20);
 
+	/* The tree and the dock are resized by dragging their edges; the
+	 * browser keeps the sizes, and a double click drops them. */
+	run("const drag = (sel, x, y) => { const h = document.querySelector("
+	    "sel); h.dispatchEvent(new PointerEvent('pointerdown', { bubbles: "
+	    "true, button: 0 })); window.dispatchEvent(new PointerEvent("
+	    "'pointermove', { clientX: x, clientY: y })); window.dispatchEvent("
+	    "new PointerEvent('pointerup', {})); }; "
+	    "drag('.rail > .resizer', 400, 300); "
+	    "drag('.dock > .resizer', 600, 200);");
+	wait_js("Math.round(document.querySelector('.rail')."
+	    "getBoundingClientRect().width) === 400 && Math.abs(document."
+	    "querySelector('.dock-body').getBoundingClientRect().top - 200) < 3"
+	    " && JSON.parse(localStorage.getItem('arc_sizes')).rail === 400", 5);
+	shot("3a-resized");
+	run("document.querySelector('.rail > .resizer').dispatchEvent("
+	    "new MouseEvent('dblclick', { bubbles: true }));"
+	    "document.querySelector('.dock > .resizer').dispatchEvent("
+	    "new MouseEvent('dblclick', { bubbles: true }));");
+	wait_js("Math.round(document.querySelector('.rail')."
+	    "getBoundingClientRect().width) === 250 && "
+	    "localStorage.getItem('arc_sizes') === '{}'", 5);
+
 	/* The workflow and the raw output of jail(8): sending the queue
 	 * opened the dock, and the graph fills in as the job runs. */
 	wait_js("document.querySelector('.graph .node.k-exec')", 20);
 	shot("3-jails-and-workflow");
 	ATF_CHECK(js_true("document.querySelector('.graph .node.k-daemon')"));
+	/* A step picked shows beside the graph, in view whatever the
+	 * graph's length, and goes when closed. */
+	run("document.querySelector('.graph .node.k-exec').click()");
+	wait_js("document.querySelector('.trace-main.has-step .step-pane "
+	    ".step-detail')", 5);
+	ATF_CHECK(js_true("(() => { const p = document.querySelector("
+	    "'.step-pane').getBoundingClientRect(), d = document.querySelector("
+	    "'.dock').getBoundingClientRect(); return p.top >= d.top && "
+	    "p.top < d.bottom - 40; })()"));
+	shot("3b-step");
+	run("document.querySelector('.step-pane .close').click()");
+	wait_js("!document.querySelector('.step-pane')", 5);
 	ATF_CHECK(js_true("document.querySelector('.graph .node.k-auth')"));
 	run("document.querySelector('.trace button[data-act=raw]').click()");
 	wait_js("document.querySelector('.terminal')", 5);

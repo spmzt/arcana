@@ -410,20 +410,59 @@ label {
 .body {
 	flex: 1;
 	display: grid;
-	grid-template-columns: 250px minmax(0, 1fr) 0;
+	grid-template-columns: var(--rail-w, 250px) minmax(0, 1fr) 0;
 	min-height: 0;
 	transition: grid-template-columns .35s var(--ease);
 }
 
 .body.with-drawer {
-	grid-template-columns: 250px minmax(0, 1fr) min(430px, 40vw);
+	grid-template-columns: var(--rail-w, 250px) minmax(0, 1fr)
+	    var(--drawer-w, min(430px, 40vw));
 }
+
+/* Handles that drag the edge of a part of the page. */
+.resizer {
+	position: absolute;
+	z-index: 6;
+	touch-action: none;
+}
+.resizer.x {
+	top: 0;
+	bottom: 0;
+	width: 9px;
+	cursor: col-resize;
+}
+.resizer.y {
+	left: 0;
+	right: 0;
+	height: 9px;
+	cursor: row-resize;
+}
+.resizer::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+	margin: auto;
+	background: var(--cyan);
+	opacity: 0;
+	transition: opacity .15s;
+}
+.resizer.x::after { width: 2px; height: 100%; }
+.resizer.y::after { height: 2px; width: 100%; }
+.resizer:hover::after, .resizing .resizer:hover::after { opacity: .7; }
+.rail > .resizer { right: -5px; }
+.drawer > .resizer { left: -4px; }
+.dock > .resizer { top: -5px; }
+.dock-body > .resizer { left: calc(var(--ops-w, 300px) - 5px); }
+.resizing, .resizing * { user-select: none; }
+.resizing .body { transition: none; }
 
 /* Servers. */
 .rail {
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
+	position: relative;
 	border-right: 1px solid var(--line);
 	background: rgba(3, 8, 14, .55);
 }
@@ -1416,8 +1455,9 @@ table.net tbody tr:hover { background: rgba(59, 232, 255, .05); }
 
 .dock-body {
 	display: grid;
-	grid-template-columns: 300px minmax(0, 1fr);
-	height: min(46vh, 460px);
+	position: relative;
+	grid-template-columns: var(--ops-w, 300px) minmax(0, 1fr);
+	height: var(--dock-h, min(46vh, 460px));
 	border-top: 1px solid var(--line);
 	padding-bottom: var(--bottom);
 }
@@ -1596,6 +1636,29 @@ html.fx .node.st-incomplete { animation: breathe 1.2s ease-in-out infinite; }
 	opacity: .55;
 	animation: pulse 1.4s ease-in-out infinite;
 }
+
+/* The graph, and beside it the step picked, which stays in view. */
+.trace-main.has-step {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(260px, 36%);
+	gap: .8rem;
+	align-items: start;
+}
+.step-pane {
+	position: sticky;
+	top: 0;
+	max-height: calc(var(--dock-h, min(46vh, 460px)) - 4.5rem);
+	overflow: auto;
+	padding-right: .2rem;
+}
+.step-pane > .close {
+	position: absolute;
+	top: .35rem;
+	right: .5rem;
+	z-index: 1;
+}
+.step-pane .step-detail { margin-top: 0; }
+.step-pane pre.out { max-width: 100%; overflow-x: auto; }
 
 .step-detail {
 	margin-top: .8rem;
@@ -1797,8 +1860,9 @@ pre.diff {
 .toasts {
 	position: fixed;
 	z-index: 30;
-	right: 1rem;
-	bottom: 3.6rem;
+	left: 50%;
+	transform: translateX(-50%);
+	top: calc(3.4rem + var(--top));
 	display: grid;
 	gap: .5rem;
 	width: min(380px, calc(100vw - 2rem));
@@ -2029,7 +2093,24 @@ html.fx .edges path { animation: flow 1.2s linear infinite; }
 	.dock-body {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-rows: 30% 70%;
-		height: 62vh;
+		height: var(--dock-h, 62vh);
+	}
+
+	/* The step picked lies over the foot of the graph instead. */
+	.trace-main.has-step {
+		display: block;
+	}
+	.step-pane {
+		top: auto;
+		bottom: 0;
+		max-height: 45%;
+		background: rgba(3, 7, 13, .97);
+		box-shadow: 0 -14px 24px -12px #000;
+	}
+
+	/* One column: only the dock's height is there to drag. */
+	.resizer.x {
+		display: none;
 	}
 
 	.ops {

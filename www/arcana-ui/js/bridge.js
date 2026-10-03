@@ -135,6 +135,105 @@ addToLibrary({
 		window.addEventListener("resize", function () {
 			act("resize", "", "");
 		});
+
+		/*
+		 * The parts of the page are resized by dragging a handle
+		 * (.resizer, data-resize): the tree, the activity dock, the
+		 * list of tasks in it, and the service drawer.  A size is a
+		 * custom property on the root element, kept per browser;
+		 * a double click goes back to the usual one.
+		 */
+		var sizes = {}, drag = null, root = document.documentElement;
+		var props = { rail: "--rail-w", dock: "--dock-h", ops: "--ops-w",
+		    drawer: "--drawer-w" };
+
+		function applySizes() {
+			Object.keys(props).forEach(function (k) {
+				if (typeof sizes[k] === "number")
+					root.style.setProperty(props[k],
+					    sizes[k] + "px");
+				else
+					root.style.removeProperty(props[k]);
+			});
+		}
+		function saveSizes() {
+			try {
+				localStorage.setItem("arc_sizes",
+				    JSON.stringify(sizes));
+			} catch (e) {
+			}
+			/* The tree fits its jails to the room it has. */
+			act("resize", "", "");
+		}
+		function clamp(v, lo, hi) {
+			return (Math.round(Math.max(lo, Math.min(hi, v))));
+		}
+		try {
+			sizes = JSON.parse(localStorage.getItem("arc_sizes")) || {};
+		} catch (e) {
+			sizes = {};
+		}
+		applySizes();
+		document.addEventListener("pointerdown", function (e) {
+			var t = e.target.closest ? e.target.closest(".resizer") :
+			    null;
+
+			if (t === null || e.button > 0)
+				return;
+			e.preventDefault();
+			drag = t.dataset.resize;
+			root.classList.add("resizing");
+		});
+		window.addEventListener("pointermove", function (e) {
+			var r, w = window.innerWidth, h = window.innerHeight, el;
+
+			if (drag === null)
+				return;
+			if (drag === "rail") {
+				r = document.getElementById("body")
+				    .getBoundingClientRect();
+				sizes.rail = clamp(e.clientX - r.left, 150, w * .6);
+			} else if (drag === "drawer") {
+				r = document.getElementById("body")
+				    .getBoundingClientRect();
+				sizes.drawer = clamp(r.right - e.clientX, 280,
+				    w * .7);
+			} else if (drag === "ops") {
+				el = document.querySelector(".dock-body");
+				if (el === null)
+					return;
+				r = el.getBoundingClientRect();
+				sizes.ops = clamp(e.clientX - r.left, 140,
+				    r.width * .7);
+			} else if (drag === "dock") {
+				el = document.querySelector(".dock-body");
+				if (el === null)
+					return;
+				r = el.getBoundingClientRect();
+				sizes.dock = clamp(r.bottom - e.clientY, 120,
+				    h - 160);
+			}
+			applySizes();
+		});
+		function endDrag() {
+			if (drag === null)
+				return;
+			drag = null;
+			root.classList.remove("resizing");
+			saveSizes();
+		}
+		window.addEventListener("pointerup", endDrag);
+		window.addEventListener("pointercancel", endDrag);
+		document.addEventListener("dblclick", function (e) {
+			var t = e.target.closest ? e.target.closest(".resizer") :
+			    null;
+
+			if (t === null)
+				return;
+			delete sizes[t.dataset.resize];
+			applySizes();
+			saveSizes();
+		});
 		window.addEventListener("online", function () {
 			Module._arc_on_net(1);
 		});
