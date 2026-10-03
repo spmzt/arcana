@@ -153,6 +153,10 @@ job_finished(struct op *op, bool ok, const char *err)
 	op->job = 0;
 	if ((s = server_by_id(op->sid)) == NULL)
 		return;
+	if (s->jobs != NULL)
+		refresh_jobs(s);
+	if (op->what == JOB_WATCH)
+		return;
 	switch (op->what) {
 	case JOB_JAIL:
 	case JOB_ADDRESS:
@@ -295,7 +299,7 @@ job_submit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			continue;
 		snprintf(path, sizeof(path), "jobs.%d.id", i);
 		if (status == 200 && jbool(o, "ok") && jget(o, path) != NULL) {
-			op->job = jint(o, path, 0);
+			op->job = op->watched = jint(o, path, 0);
 			op->next_poll = arc_now();
 			continue;
 		}
@@ -498,6 +502,8 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			ucl_object_unref(old[i].services);
 		if (old[i].stats != NULL)
 			ucl_object_unref(old[i].stats);
+		if (old[i].jobs != NULL)
+			ucl_object_unref(old[i].jobs);
 		free(old[i].jui);
 	}
 	app.servers_loaded = true;
@@ -828,6 +834,66 @@ stats_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	s->hist[2][s->nhist] = size > 0 ? (float)(100 * alloc / size) : 0;
 	s->nhist++;
 	free(c);
+}
+
+static void
+jobs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct ctx	*c;
+	struct server	*s;
+
+	c = arg;
+	if ((s = server_by_id(c->sid)) != NULL) {
+		s->jobs_loading = false;
+		if (status == 200 && jget(o, "jobs") != NULL) {
+			if (s->jobs != NULL)
+				ucl_object_unref(s->jobs);
+			s->jobs = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+		}
+	}
+	free(c);
+}
+
+/* The host's own record of jobs, whoever queued them; quiet. */
+void
+refresh_jobs(struct server *s)
+{
+	struct ctx	*c;
+	char		 url[128];
+
+	if (!app.online || s->jobs_loading)
+		return;
+	s->jobs_loading = true;
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	snprintf(url, sizeof(url), "/api/servers/%s/jobs", s->id);
+	api("GET", url, NULL, jobs_cb, c);
+}
+
+/* Show a job of the host in the activity dock, and follow it. */
+void
+open_job(struct server *s, long long id, const char *title)
+{
+	struct op	*op;
+	int		 i;
+
+	for (i = 0; i < app.nops; i++)
+		if (strcmp(app.ops[i].sid, s->id) == 0 &&
+		    app.ops[i].watched == id)
+			break;
+	if (i < app.nops)
+		op = &app.ops[i];
+	else {
+		op = op_new(title, s->name);
+		snprintf(op->sid, sizeof(op->sid), "%s", s->id);
+		op->what = JOB_WATCH;
+		op->job = op->watched = id;
+		op->next_poll = arc_now();
+	}
+	app.trace_op = op->id;
+	app.trace_step = -1;
+	app.dock_open = true;
+	jobs_poll();
 }
 
 /* A usage sample from the server; quiet, no log entry. */
@@ -1414,8 +1480,12 @@ server_added_cb(int status, const ucl_object_t *o, const char *err,
 	app.modal = MODAL_NONE;
 	toast(false, "Server added");
 	servers_cb(status, o, err, arg);
-	if (app.nservers > 0)
+	if (app.nservers > 0) {
 		app.sel = app.nservers - 1;
+		app.node = NODE_HOST;
+		app.tab = TAB_SUMMARY;
+		refresh_stats(&app.servers[app.sel]);
+	}
 }
 
 void

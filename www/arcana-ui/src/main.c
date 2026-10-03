@@ -206,9 +206,16 @@ tick(void *arg)
 	if (app.screen == SCREEN_CONSOLE && app.visible && app.online &&
 	    now - last_refresh > REFRESH_MS) {
 		last_refresh = now;
-		if ((s = cur_server()) != NULL) {
+		/* The fleet page watches every host, a host page its own. */
+		for (i = 0; app.node == NODE_FLEET && i < app.nservers; i++) {
+			refresh_jails(&app.servers[i], false);
+			refresh_stats(&app.servers[i]);
+		}
+		if (app.node != NODE_FLEET && (s = cur_server()) != NULL) {
 			refresh_jails(s, false);
 			refresh_stats(s);
+			if (app.tab == TAB_JOBS)
+				refresh_jobs(s);
 		}
 	}
 	if (changed || now - last_tick_render >= AGE_STEP_MS) {
@@ -391,6 +398,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		for (i = 0; i < app.nservers; i++)
 			if (strcmp(app.servers[i].id, arg) == 0)
 				app.sel = i;
+		app.node = NODE_HOST;
 		app.jail[0] = '\0';
 		close_service();
 		if ((s = cur_server()) != NULL) {
@@ -406,8 +414,13 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "tab") == 0 && s != NULL) {
 		app.tab = strcmp(arg, "services") == 0 ? TAB_SERVICES :
 		    strcmp(arg, "network") == 0 ? TAB_NETWORK :
-		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES : TAB_JAILS;
+		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
+		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
+		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
+		app.node = NODE_HOST;
 		app.jail[0] = '\0';
+		if (app.tab == TAB_JOBS)
+			refresh_jobs(s);
 		close_service();
 		if (app.tab == TAB_SERVICES && s->services == NULL)
 			refresh_services(s, true);
@@ -465,11 +478,40 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.net.family = atoi(arg);
 		app.net.loading = false;
 		refresh_network(s, true);
-	} else if (strcmp(act, "open-jail") == 0) {
-		snprintf(app.jail, sizeof(app.jail), "%s", arg);
-	} else if (strcmp(act, "close-drawer") == 0) {
+	} else if (strcmp(act, "select-fleet") == 0) {
+		app.node = NODE_FLEET;
 		app.jail[0] = '\0';
 		close_service();
+		for (i = 0; i < app.nservers; i++) {
+			refresh_jails(&app.servers[i], false);
+			refresh_stats(&app.servers[i]);
+		}
+	} else if (strcmp(act, "open-jail") == 0) {
+		/* value: the server, when the jail is picked in the tree. */
+		for (i = 0; value[0] != '\0' && i < app.nservers; i++)
+			if (strcmp(app.servers[i].id, value) == 0)
+				app.sel = i;
+		app.node = NODE_JAIL;
+		snprintf(app.jail, sizeof(app.jail), "%s", arg);
+		close_service();
+	} else if (strcmp(act, "close-drawer") == 0) {
+		if (app.node == NODE_JAIL)
+			app.node = NODE_HOST;
+		app.jail[0] = '\0';
+		close_service();
+	} else if (strcmp(act, "jail-packages") == 0 && s != NULL) {
+		/* The jail's packages: the host's tab, aimed at the jail. */
+		snprintf(app.pkg.jail, sizeof(app.pkg.jail), "%s", arg);
+		if (app.pkg.data != NULL)
+			ucl_object_unref(app.pkg.data);
+		app.pkg.data = NULL;
+		app.pkg.result[0] = '\0';
+		app.node = NODE_HOST;
+		app.tab = TAB_PACKAGES;
+		app.jail[0] = '\0';
+		refresh_packages(s, false);
+	} else if (strcmp(act, "open-job") == 0 && s != NULL) {
+		open_job(s, atoll(arg), value);
 	} else if (strcmp(act, "refresh") == 0 && s != NULL) {
 		if (app.tab == TAB_SERVICES) {
 			s->services_loading = false;
@@ -603,9 +645,10 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "close") == 0 || strcmp(act, "escape") == 0) {
 		if (app.modal != MODAL_NONE)
 			close_modal();
-		else if (app.jail[0] != '\0')
+		else if (app.node == NODE_JAIL) {
+			app.node = NODE_HOST;
 			app.jail[0] = '\0';
-		else if (app.service[0] != '\0')
+		} else if (app.service[0] != '\0')
 			close_service();
 	} else if (strcmp(act, "toast") == 0) {
 		i = atoi(arg);

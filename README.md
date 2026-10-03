@@ -215,43 +215,46 @@ authenticator offers one, so security keys keep working as before.
 
 ## Using it
 
-- **Servers** on the left: add one by name and URI
-  (`tcp://host1.example:4310`).
-- **Jails** in the middle, with their state: running, stopped, dying,
-  and, while something happens to them, starting, stopping, restarting;
-  unknown when the host does not answer, and dimmed when the data is
-  stale.
-- **Services**, the second tab of a server: its rc.d scripts, enabled or
-  not, running or not, with start, stop, restart, reload, enable and
-  disable; a service's drawer edits its `rc.conf` variables through
-  `sysrc(8)` and shows what the script says of itself.
-- **Gauges** under the host bar: CPU, memory in use and ZFS allocation,
-  each with its recent history, sampled every 10 s while the server is
-  selected. CPU is `kern.cp_time` between samples, memory the active,
-  wired and laundry pages, ZFS the pools' allocation from `zpool list`.
-- **Network**, the third tab: the routing table, the nexthops, active
-  connections and open sockets, per address family, as `netstat -rnW`,
-  `netstat -onW`, `netstat -nW` and `sockstat -w` print them on the host
-  (through `--libxo json`); filter the rows, click a column to sort.
-- **Notify**, in the top bar: a desktop notification when a task that
-  took more than ten seconds ends.
-- **Packages**, the fourth tab: what `pkg` can upgrade on the host or in
-  any running jail (`pkg -j`), with **Check** (`pkg update` first), a
-  dry run, and **Upgrade** of the selected packages or of all; the
-  output of `pkg upgrade` is in the activity trace.
-- A jail's **drawer** has its actions, addresses, configuration as jail(8)
-  reads it, and its history. Addresses change live (jail_setv(3) and the
-  interface alias), persistently (its block in `jail.conf`, edited in
-  place, previewed as a diff first), or both.
-- Changes are **jobs** the host runs on its own: the activity graph
-  fills in stage by stage while one runs, and a change that cuts the
-  console off (restarting its own jail) still completes; the entry shows
-  the outcome when the host answers again. **Queue** in the activity
-  bar holds changes and sends them as one batch, run in order.
-- **Activity** at the bottom: every action and manual refresh, with its
-  workflow as a graph, from the API call through the session check and
-  the cblink request to each call arcana-agent made. When a program ran, a
-  **Raw output** button shows its argv, exit status and output.
+The console is laid out as a tree and tabs.
+
+- The **tree** on the left: the fleet, its hosts, and each host's jails.
+  What you select decides the page. **Enrol a host** and **Add a server**
+  are at its top.
+- **All hosts**: every host as a card with CPU, memory and ZFS, how many
+  jails run, and the fleet as a graph from the console through the
+  hosts to their jails; nodes are links.
+- A **host** has tabs:
+  - **Summary**: usage gauges with their recent history, counts, the ZFS
+    pools, and the host's jails as a graph.
+  - **Jails**: their state (running, stopped, dying; starting, stopping,
+    restarting while something happens to them; unknown when the host
+    does not answer), with start, stop, restart and kill.
+  - **Services**: the rc.d scripts, enabled or not, running or not, with
+    start, stop, restart, reload, enable and disable; a service's drawer
+    edits its `rc.conf` variables through `sysrc(8)`.
+  - **Network**: the routing table, nexthops, connections and sockets,
+    per address family, as `netstat` and `sockstat` print them
+    (`--libxo json`); filter the rows, click a column to sort.
+  - **Packages**: what `pkg` can upgrade on the host or in a running
+    jail, with **Check**, a dry run, and **Upgrade** of the selected
+    packages or of all.
+  - **Jobs**: the host's own record of what it was asked to change, by
+    this console or with `arcanactl -q`; a row opens its workflow.
+- A **jail** has its page: actions, addresses (changed live with
+  jail_setv(3) and the interface alias, persistently in its `jail.conf`
+  block with a diff to preview, or both), its configuration as jail(8)
+  reads it, and its history.
+- **Activity** at the bottom: every call to a host, with its workflow as
+  a graph from the API call through the session check and the cblink
+  request to each call the agent made; when a program ran, **Raw
+  output** shows its argv, exit status and output. Changes are jobs the
+  host runs on its own: the graph fills in stage by stage, and a change
+  that cuts the console off still completes. **Queue** holds changes and
+  sends them as one batch, run in order.
+- In the top bar: **FX** turns the blur and idle animations off for this
+  browser, **Notify** allows a desktop notification when a task that
+  took more than ten seconds ends, **Keys** manages security keys and
+  passkeys.
 
 ## Updating
 
@@ -273,8 +276,6 @@ updates.
 
 Planned, in rough order:
 
-- A console laid out for a fleet: a tree of hosts and jails, summary
-  pages with graphs, more use of the workflow graph.
 - The agent's sources organised by Archive, after
   [docs/NAMING.md](docs/NAMING.md).
 

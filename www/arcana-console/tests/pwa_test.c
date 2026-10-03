@@ -19,6 +19,8 @@
 
 #include <netinet/in.h>
 
+#include <openssl/evp.h>
+
 #include <atf-c.h>
 #include <signal.h>
 #include <stdio.h>
@@ -76,6 +78,45 @@ wd(const char *method, const char *path, const char *body)
 	out = v != NULL ? ucl_object_ref((ucl_object_t *)(uintptr_t)v) : NULL;
 	resp_free(&r);
 	return (out);
+}
+
+/*
+ * With the configuration variable "shots" naming a directory, keep a
+ * picture of the page there as <name>.png: for looking at a change of
+ * layout, which no assertion sees.
+ */
+static const char	*shots;
+
+static void
+shot(const char *name)
+{
+	ucl_object_t	*v;
+	const char	*b64;
+	unsigned char	*png;
+	char		 path[MAXPATHLEN];
+	size_t		 len;
+	FILE		*fp;
+	int		 n;
+
+	if (shots == NULL)
+		return;
+	usleep(400000);		/* let transitions end */
+	if ((v = wd("GET", "/session/screenshot", NULL)) == NULL)
+		return;
+	b64 = ucl_object_tostring(v);
+	len = strlen(b64);
+	if ((png = malloc(len)) != NULL && (n = EVP_DecodeBlock(png,
+	    (const unsigned char *)b64, (int)len)) > 0) {
+		while (len > 0 && b64[--len] == '=')
+			n--;
+		snprintf(path, sizeof(path), "%s/%s.png", shots, name);
+		if ((fp = fopen(path, "w")) != NULL) {
+			fwrite(png, 1, (size_t)n, fp);
+			fclose(fp);
+		}
+	}
+	free(png);
+	ucl_object_unref(v);
 }
 
 /* Run script in the page; returns its result. */
@@ -259,6 +300,8 @@ ATF_TC_BODY(pwa, tc)
 	    "webroot", "/usr/local/www/arcana-console"));
 	if (access(web, R_OK) == -1)
 		atf_tc_skip("no built PWA at %s", web);
+	shots = atf_tc_has_config_var(tc, "shots") ?
+	    atf_tc_get_config_var(tc, "shots") : NULL;
 	start(tc, free_port(), web);
 	browser_start(tc);
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
@@ -287,6 +330,20 @@ ATF_TC_BODY(pwa, tc)
 	    "'form[data-form=add-server]'); f.name.value = 'lab'; f.uri.value "
 	    "= 'unix:%s/jgd.sock'; f.requestSubmit();", cwd);
 	run(script);
+	/* The new host is selected: its summary, with usage and a graph
+	 * of its jails; the tree has the host and the jails under it. */
+	wait_js("document.querySelector('.tree .titem.server.selected')", 20);
+	wait_js("document.querySelector('.topo .tnode.s-stopped')", 20);
+	ATF_CHECK(js_true("document.querySelector('.tree .titem.leaf')"));
+	ATF_CHECK(js_true("document.querySelector('.tiles .tile')"));
+	shot("1-host-summary");
+	/* The fleet page lists it, and leads back to it. */
+	run("document.querySelector('.tree .titem.fleet').click()");
+	wait_js("document.querySelector('.hosts .hostcard')", 5);
+	shot("2-fleet");
+	run("document.querySelector('.hosts .hostcard').click()");
+	wait_js("document.querySelector('.tree .titem.server.selected')", 5);
+	run("document.querySelector('button.tab[data-arg=jails]').click()");
 	wait_js("document.querySelector('#j-web.s-stopped')", 20);
 	ATF_CHECK(js_true("document.querySelector('#j-db')"));
 	run("document.querySelector('#j-web button[data-act=start]').click()");
@@ -295,6 +352,7 @@ ATF_TC_BODY(pwa, tc)
 	/* The workflow and the raw output of jail(8). */
 	run("document.querySelector('.dock > header').click()");
 	wait_js("document.querySelector('.graph .node.k-exec')", 5);
+	shot("3-jails-and-workflow");
 	ATF_CHECK(js_true("document.querySelector('.graph .node.k-daemon')"));
 	ATF_CHECK(js_true("document.querySelector('.graph .node.k-auth')"));
 	run("document.querySelector('.trace button[data-act=raw]').click()");
@@ -306,8 +364,10 @@ ATF_TC_BODY(pwa, tc)
 
 	/* Previewing a persistent address change shows the diff. */
 	run("document.querySelector('#j-db').click()");
-	wait_js("document.querySelector('.drawer.open')", 5);
-	run("document.querySelector('.drawer button[data-act=address-add]')"
+	wait_js("document.querySelector('.jail-page')", 5);
+	shot("4-jail-page");
+	ATF_CHECK(js_true("document.querySelector('.tree .titem.leaf.selected')"));
+	run("document.querySelector('.jail-page button[data-act=address-add]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=address]')", 5);
 	run("const f = document.querySelector('form[data-form=address]'); "
@@ -317,6 +377,12 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('pre.diff') && document.querySelector("
 	    "'pre.diff').textContent.includes('\"10.0.0.21\"')", 10);
 	run("document.querySelector('.modal button[data-act=close]').click()");
+	/* The host's own record of jobs has the start that was done. */
+	run("document.querySelector('.jail-page button[data-act=close-drawer]')"
+	    ".click()");
+	run("document.querySelector('button.tab[data-arg=jobs]').click()");
+	wait_js("document.querySelector('table.jobs tr.j-done')", 10);
+	shot("5-jobs");
 
 	/* Log out, and in again with the key. */
 	run("document.querySelector('button[data-act=logout]').click()");

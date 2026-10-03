@@ -622,6 +622,168 @@ label {
 	color: var(--cyan);
 }
 
+/* The resource tree. */
+.tree {
+	list-style: none;
+	margin: 0;
+	padding: 0 .4rem .6rem;
+	overflow-y: auto;
+}
+.tree .titem {
+	display: flex;
+	align-items: center;
+	gap: .55rem;
+	padding: .4rem .55rem;
+	border: 1px solid transparent;
+	border-radius: 6px;
+	cursor: pointer;
+}
+.tree .titem:hover { background: rgba(59, 232, 255, .05); }
+.tree .titem.selected {
+	border-color: var(--line-2);
+	background: rgba(59, 232, 255, .08);
+}
+.tree .titem .meta { flex: 1; min-width: 0; }
+.tree .titem .name {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.tree .titem .uri, .tree .titem .ver {
+	display: block;
+	color: var(--dim);
+	font-size: .68rem;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.tree .titem .ver.warn { color: var(--amber); }
+.tree .titem .count { color: var(--dim); font-size: .72rem; }
+.tree .titem .twig { color: var(--cyan); }
+.tree .titem.fleet .name { flex: 1; font-family: var(--display); font-size: .74rem; letter-spacing: .1em; }
+.tree .titem.leaf { padding: .22rem .55rem .22rem 1.9rem; font-size: .8rem; }
+.tree .titem.leaf .name { flex: 1; }
+.tree .titem .del { opacity: 0; }
+.tree .titem:hover .del { opacity: 1; }
+.tree .titem.up { --c: var(--cyan); }
+.tree .titem.down { --c: var(--red); }
+.tree .titem.unknown { --c: var(--slate); }
+
+/* Summary tiles, host cards and topology graphs. */
+.tiles {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+	gap: .6rem;
+	margin: 0 0 1rem;
+}
+.tile {
+	padding: .6rem .8rem;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: rgba(8, 14, 24, .7);
+}
+.tile b {
+	display: block;
+	font-family: var(--display);
+	font-size: 1.25rem;
+	font-weight: 500;
+	color: var(--fg);
+}
+.tile.ok b { color: var(--cyan); }
+.tile.warn b { color: var(--amber); }
+.tile span { color: var(--dim); font-size: .72rem; }
+.hosts {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+	gap: .7rem;
+	margin: 0 0 1.2rem;
+}
+.hostcard {
+	--c: var(--slate);
+	padding: .7rem .85rem;
+	border: 1px solid var(--line);
+	border-radius: 8px;
+	background: rgba(8, 14, 24, .7);
+	cursor: pointer;
+}
+.hostcard.up { --c: var(--cyan); }
+.hostcard.down { --c: var(--red); }
+.hostcard:hover { border-color: var(--line-2); }
+.hostcard header { display: flex; align-items: center; gap: .5rem; margin-bottom: .5rem; }
+.hostcard h3 { margin: 0; flex: 1; font-size: .92rem; }
+.hostcard footer { margin-top: .5rem; color: var(--dim); font-size: .74rem; }
+.hostcard footer b { color: var(--cyan); font-weight: 500; }
+.mini {
+	display: grid;
+	grid-template-columns: minmax(2.4rem, auto) 1fr 3rem;
+	align-items: center;
+	gap: .5rem;
+	font-size: .72rem;
+	color: var(--dim);
+	margin: .2rem 0;
+}
+.mini .bar {
+	height: 4px;
+	border-radius: 2px;
+	background: linear-gradient(90deg, var(--cyan) calc(var(--v) * 100%),
+	    var(--line) 0);
+}
+.mini em { font-style: normal; text-align: right; color: var(--fg-2); }
+.pools .mini { grid-template-columns: minmax(16rem, auto) 1fr 3rem; }
+.topo { position: relative; }
+.topo svg.edges {
+	position: absolute;
+	width: 100%;
+	height: 100%;
+	pointer-events: none;
+	overflow: visible;
+}
+.topo svg.edges path { animation: none; stroke-dasharray: none; stroke: var(--line-2); }
+.tnode {
+	--c: var(--slate);
+	position: absolute;
+	width: 150px;
+	height: 34px;
+	display: flex;
+	align-items: center;
+	gap: .5rem;
+	padding: 0 .65rem;
+	border: 1px solid var(--line);
+	border-left: 2px solid var(--c);
+	border-radius: 6px;
+	background: rgba(8, 14, 24, .92);
+	font-size: .78rem;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	cursor: pointer;
+}
+.tnode:hover { border-color: var(--c); }
+.tnode.root, .tnode.host { font-family: var(--display); font-size: .7rem; letter-spacing: .06em; }
+.tnode.root { --c: var(--cyan); }
+.tnode.up { --c: var(--cyan); }
+.tnode.down { --c: var(--red); }
+.tnode.more { color: var(--dim); }
+
+/* The page of one jail. */
+.jail-page > header {
+	display: flex;
+	align-items: center;
+	gap: .8rem;
+	margin-bottom: 1rem;
+}
+.jail-page > header h1 { margin: 0; font-size: 1.2rem; }
+.jail-page > header .dim { flex: 1; }
+.jail-body { max-width: 60rem; }
+
+/* The host's job list. */
+table.jobs tr.job { cursor: pointer; }
+table.jobs tr.j-running .st { color: var(--amber); }
+table.jobs tr.j-done .st { color: var(--cyan); }
+table.jobs tr.j-failed .st { color: var(--red); }
+table.jobs tr.j-cancelled .st, table.jobs tr.j-queued .st { color: var(--dim); }
+
 /* Usage gauges: a figure, a bar and the recent samples. */
 .gauges {
 	display: grid;
@@ -1602,7 +1764,7 @@ pre.diff {
 	position: fixed;
 	z-index: 30;
 	right: 1rem;
-	top: calc(4.2rem + var(--top));
+	bottom: 3.6rem;
 	display: grid;
 	gap: .5rem;
 	width: min(380px, calc(100vw - 2rem));

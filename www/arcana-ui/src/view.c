@@ -32,7 +32,7 @@ static void	rail(struct html *);
 static void	stage(struct html *);
 static void	hostbar(struct html *, struct server *);
 static void	card(struct html *, struct server *, const ucl_object_t *);
-static void	drawer(struct html *);
+static void	jail_page(struct html *);
 static void	actions(struct html *, struct server *, const ucl_object_t *,
 		    const struct jailui *, bool);
 static void	dock(struct html *);
@@ -234,25 +234,36 @@ banner(struct html *h)
 	}
 }
 
+/*
+ * The resource tree: the fleet, its hosts, and under each host its
+ * jails.  What is selected here decides what the stage shows.
+ */
 static void
 rail(struct html *h)
 {
-	struct server	*s;
-	const char	*cls;
-	char		 buf[64];
-	int		 i, run, all;
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it;
+	struct server		*s;
+	const char		*cls, *name, *st;
+	char			 buf[64];
+	int			 i, run, all;
 
 	h_raw(h, "<aside class=\"rail\"><div class=\"rail-head\">"
-	    "<span class=\"label\">Servers</span>"
-	    "<button class=\"icon\" data-act=\"add-server\" title=\"Add a "
-	    "server\">+</button></div><ul class=\"servers\">");
+	    "<span class=\"label\">Fleet</span>"
+	    "<button class=\"icon\" data-act=\"enrol\" title=\"Enrol a host\">"
+	    "⇄</button><button class=\"icon\" data-act=\"add-server\" "
+	    "title=\"Add a server\">+</button></div><ul class=\"tree\">");
+	h_fmt(h, "<li class=\"titem fleet%s\" data-act=\"select-fleet\">"
+	    "<span class=\"twig\">◈</span><span class=\"name\">All hosts</span>"
+	    "<span class=\"count\">%d</span></li>", app.node == NODE_FLEET ?
+	    " selected" : "", app.nservers);
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
 		all = count_state(s, NULL);
 		cls = s->failed ? "down" : s->list != NULL ? "up" : "unknown";
-		h_fmt(h, "<li class=\"server %s%s\"", cls, i == app.sel ?
-		    " selected" : "");
+		h_fmt(h, "<li class=\"titem server %s%s\"", cls, i == app.sel &&
+		    app.node == NODE_HOST ? " selected" : "");
 		h_raw(h, " data-act=\"select-server\"");
 		h_attr(h, "data-arg", s->id);
 		h_raw(h, "><i class=\"led\"></i><div class=\"meta\">"
@@ -283,6 +294,24 @@ rail(struct html *h)
 		    "\" title=\"Remove\"");
 		h_attr(h, "data-arg", s->id);
 		h_raw(h, ">×</button></li>");
+		/* Its jails, as leaves. */
+		it = NULL;
+		while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+		    "jails"), &it, true)) != NULL) {
+			if ((name = jstr(j, "name")) == NULL)
+				continue;
+			st = s->failed ? "unknown" : h_word(jstr(j, "state"),
+			    "unknown");
+			h_fmt(h, "<li class=\"titem leaf s-%s%s\" "
+			    "data-act=\"open-jail\"", st, i == app.sel &&
+			    app.node == NODE_JAIL && strcmp(app.jail, name) ==
+			    0 ? " selected" : "");
+			h_attr(h, "data-arg", name);
+			h_attr(h, "data-value", s->id);
+			h_raw(h, "><i class=\"led\"></i><span class=\"name\">");
+			h_txt(h, name);
+			h_raw(h, "</span></li>");
+		}
 	}
 	h_raw(h, "</ul></aside>");
 }
@@ -500,26 +529,54 @@ stage(struct html *h)
 		return;
 	}
 	if ((s = cur_server()) == NULL) {
-		h_raw(h, "<div class=\"empty\"><h2>No servers yet</h2><p>Add "
-		    "a host running <code>arcana-agent(8)</code>: "
+		h_raw(h, "<div class=\"empty\"><h2>No hosts yet</h2><p>Enrol a "
+		    "host running <code>arcana-agent(8)</code>, or add one that "
+		    "already has its certificates: "
 		    "<code>unix:/var/run/arcana-agent.sock</code> for this "
 		    "machine, <code>tcp://host:4310</code> for others.</p>"
-		    "<button class=\"primary\" data-act=\"add-server\">Add a "
-		    "server</button> <button class=\"ghost\" data-act=\"enrol\">"
-		    "Enrol a host</button></div></main>");
+		    "<button class=\"primary\" data-act=\"enrol\">Enrol a host"
+		    "</button> <button class=\"ghost\" data-act=\"add-server\">"
+		    "Add a server</button></div></main>");
+		return;
+	}
+	if (app.node == NODE_FLEET) {
+		view_fleet(h);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.node == NODE_JAIL) {
+		jail_page(h);
+		h_raw(h, "</main>");
 		return;
 	}
 	hostbar(h, s);
-	view_gauges(h, s);
-	h_fmt(h, "<nav class=\"tabs\"><button class=\"tab%s\" data-act=\"tab\" "
-	    "data-arg=\"jails\">Jails</button><button class=\"tab%s\" "
-	    "data-act=\"tab\" data-arg=\"services\">Services</button>"
-	    "<button class=\"tab%s\" data-act=\"tab\" data-arg=\"network\">"
-	    "Network</button><button class=\"tab%s\" data-act=\"tab\" "
-	    "data-arg=\"packages\">Packages</button></nav>",
-	    app.tab == TAB_JAILS ? " on" : "", app.tab == TAB_SERVICES ?
-	    " on" : "", app.tab == TAB_NETWORK ? " on" : "",
-	    app.tab == TAB_PACKAGES ? " on" : "");
+	{
+		static const struct {
+			const char	*arg, *title;
+		} tabs[] = {
+			{ "summary", "Summary" }, { "jails", "Jails" },
+			{ "services", "Services" }, { "network", "Network" },
+			{ "packages", "Packages" }, { "jobs", "Jobs" },
+		};
+		int t;
+
+		h_raw(h, "<nav class=\"tabs\">");
+		for (t = 0; t < 6; t++)
+			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
+			    "data-arg=\"%s\">%s</button>", (int)app.tab == t ?
+			    " on" : "", tabs[t].arg, tabs[t].title);
+		h_raw(h, "</nav>");
+	}
+	if (app.tab == TAB_SUMMARY) {
+		view_summary(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_JOBS) {
+		view_jobs(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (app.tab == TAB_SERVICES) {
 		view_services(h, s);
 		h_raw(h, "</main>");
@@ -587,8 +644,9 @@ stage(struct html *h)
 	h_raw(h, "</main>");
 }
 
+/* The page of the jail selected in the tree. */
 static void
-drawer(struct html *h)
+jail_page(struct html *h)
 {
 	const ucl_object_t	*j, *p, *v;
 	ucl_object_iter_t	 it, vit;
@@ -601,19 +659,31 @@ drawer(struct html *h)
 	s = cur_server();
 	if (app.jail[0] == '\0' || s == NULL ||
 	    (j = find_jail(s, app.jail)) == NULL) {
-		h_raw(h, "<aside class=\"drawer\"></aside>");
+		h_raw(h, "<div class=\"empty\"><h2>No such jail</h2><p>It is "
+		    "neither running nor configured on this host any more."
+		    "</p></div>");
 		return;
 	}
 	u = jailui(s, app.jail);
 	cls = state_class(s, j, u);
-	h_fmt(h, "<aside class=\"drawer open s-%s\"><header>"
-	    "<i class=\"led\"></i><h2>", cls);
+	h_fmt(h, "<section class=\"jail-page s-%s\"><header>"
+	    "<i class=\"led\"></i><h1>", cls);
 	h_txt(h, app.jail);
-	h_raw(h, "</h2><span class=\"state\">");
+	h_raw(h, "</h1><span class=\"state\">");
 	h_txt(h, cls);
-	h_raw(h, "</span><button class=\"icon\" data-act=\"close-drawer\" "
-	    "title=\"Close\">×</button></header><div class=\"drawer-body\">");
+	h_raw(h, "</span><span class=\"dim\">on ");
+	h_txt(h, s->name);
+	h_raw(h, "</span><button class=\"ghost small\" "
+	    "data-act=\"close-drawer\" title=\"Back to the host\">← host"
+	    "</button></header><div class=\"jail-body\">");
 	actions(h, s, j, u, true);
+	if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+	    "running") == 0) {
+		h_raw(h, "<button class=\"ghost small\" "
+		    "data-act=\"jail-packages\"");
+		h_attr(h, "data-arg", app.jail);
+		h_raw(h, ">Packages of this jail</button>");
+	}
 	if (u->error[0] != '\0') {
 		h_raw(h, "<p class=\"err\">");
 		h_txt(h, u->error);
@@ -707,7 +777,7 @@ drawer(struct html *h)
 	}
 	if (k == 0)
 		h_raw(h, "<li class=\"dim\">Nothing done from here yet.</li>");
-	h_raw(h, "</ul></div></aside>");
+	h_raw(h, "</ul></div></section>");
 }
 
 static void
@@ -1053,13 +1123,13 @@ view_shell(struct html *h)
 	    "<div id=\"r-toasts\" class=\"region\"></div>");
 }
 
-/* Is the drawer open?  The body lays out differently. */
+/* Is the service drawer open?  The body lays out differently. */
 bool
 view_with_drawer(void)
 {
 
-	return ((app.tab == TAB_JAILS ? app.jail[0] : app.service[0]) !=
-	    '\0');
+	return (app.node == NODE_HOST && app.tab == TAB_SERVICES &&
+	    app.service[0] != '\0');
 }
 
 void
@@ -1080,10 +1150,10 @@ view_region(struct html *h, int r)
 		stage(h);
 		break;
 	case 4:
-		if (app.tab == TAB_SERVICES)
+		if (app.node == NODE_HOST && app.tab == TAB_SERVICES)
 			view_service_drawer(h, cur_server());
 		else
-			drawer(h);
+			h_raw(h, "<aside class=\"drawer\"></aside>");
 		break;
 	case 5:
 		dock(h);

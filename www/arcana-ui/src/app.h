@@ -103,11 +103,20 @@ enum screen {
 	SCREEN_OFFLINE,		/* the shell, without the console */
 };
 
+/* What is selected in the tree: the fleet, a host, or a jail of it. */
+enum node {
+	NODE_FLEET,
+	NODE_HOST,
+	NODE_JAIL,
+};
+
 enum tab {
+	TAB_SUMMARY,
 	TAB_JAILS,
 	TAB_SERVICES,
 	TAB_NETWORK,
 	TAB_PACKAGES,
+	TAB_JOBS,
 };
 
 /* The packages tab: pending upgrades of the host or of one jail. */
@@ -173,6 +182,8 @@ struct server {
 	bool		 stats_loading;
 	float		 hist[3][HISTORY];	/* cpu, memory, zfs, in % */
 	int		 nhist;		/* samples in hist, newest last */
+	ucl_object_t	*jobs;		/* the host's own list of jobs */
+	bool		 jobs_loading;
 	ucl_object_t	*services;	/* last good services reply */
 	double		 services_fetched;
 	bool		 services_loading;
@@ -199,6 +210,7 @@ struct op {
 	/* A job on a host: read until it is done. */
 	char		 sid[9];
 	long long	 job;		/* its number there, 0 if not a job */
+	long long	 watched;	/* the number, kept after it is done */
 	double		 next_poll;
 	bool		 polling;
 	bool		 waiting;	/* the host does not answer; it runs on */
@@ -207,6 +219,7 @@ struct op {
 };
 
 enum {
+	JOB_WATCH = -1,		/* a job looked at, not sent from here */
 	JOB_JAIL,
 	JOB_ADDRESS,
 	JOB_SERVICE,
@@ -268,6 +281,7 @@ struct app {
 	int		 sel;		/* selected server, or -1 */
 	char		 jail[256];	/* open in the drawer, or "" */
 	char		 filter[64];
+	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
 	char		 service[65];	/* open in the drawer, or "" */
 	char		 service_busy[65];	/* an action in flight */
@@ -326,6 +340,8 @@ void		 service_action(const char *, const char *);
 void		 service_config(const char *, const char *);
 void		 refresh_network(struct server *, bool);
 void		 refresh_stats(struct server *);
+void		 refresh_jobs(struct server *);
+void		 open_job(struct server *, long long, const char *);
 void		 refresh_packages(struct server *, bool);
 void		 pkg_upgrade(struct server *, const char *, bool);
 void		 address_change(const char *, const char *, bool, bool, bool,
@@ -356,6 +372,9 @@ void		 view_service_drawer(struct html *, struct server *);
 void		 view_network(struct html *, struct server *);
 void		 view_gauges(struct html *, struct server *);
 void		 view_packages(struct html *, struct server *);
+void		 view_fleet(struct html *);
+void		 view_summary(struct html *, struct server *);
+void		 view_jobs(struct html *, struct server *);
 const char	*state_class(const struct server *, const ucl_object_t *,
 		    const struct jailui *);
 void		 fmt_age(char *, size_t, double);

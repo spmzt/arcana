@@ -15,7 +15,7 @@ WWWDIR?=	${PREFIX}/www/arcana-console
 
 DIST=		${.OBJDIR}/dist
 
-APP_SRCS=	main.c actions.c api.c graph.c html.c json.c netview.c view.c
+APP_SRCS=	main.c actions.c api.c fleet.c graph.c html.c json.c netview.c view.c
 UCL_SRCS=	ucl_emitter_streamline.c ucl_emitter_utils.c ucl_emitter.c \
 		ucl_hash.c ucl_msgpack.c ucl_parser.c ucl_schema.c ucl_sexp.c \
 		ucl_util.c
