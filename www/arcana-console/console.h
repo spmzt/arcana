@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.9.3"
+#define	ARCW_VERSION		"0.9.4"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -34,6 +34,8 @@
 #define	SESSION_IDLE		(30 * 60)
 #define	SESSION_MAX		(12 * 60 * 60)
 #define	SESSIONS		8
+#define	SESSIONS_FILE		"sessions.json"
+#define	SESSION_SAVE		60	/* s, between writes of the time of use */
 #define	CHALLENGE_TTL		120
 #define	CBLINK_MAX_FRAME	(8 * 1024 * 1024)
 #define	CBLINK_MAX_ATTRS	(1024 * 1024)

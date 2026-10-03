@@ -688,6 +688,47 @@ ATF_TC_BODY(agent_build, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(session_restart, "A login outlives a restart of the console; a "
+    "logout does not")
+ATF_TC_BODY(session_restart, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	FILE		*fp;
+	char		 buf[512];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* What is kept is the cookie's hash, for its user alone. */
+	ATF_REQUIRE((fp = fopen("data/sessions.json", "r")) != NULL);
+	ATF_REQUIRE(fread(buf, 1, sizeof(buf) - 1, fp) > 0);
+	fclose(fp);
+	ATF_CHECK(strstr(buf, "\"hash\"") != NULL);
+	ATF_CHECK(strstr(buf, cookie + 12) == NULL);
+	ATF_CHECK(system("test \"$(stat -f %Lp data/sessions.json)\" = 600")
+	    == 0);
+
+	restart_console();
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
+	/* Logged out, the session is gone from the file too, and stays
+	 * gone over a restart. */
+	strlcpy(buf, cookie, sizeof(buf));
+	http("POST", "/api/auth/logout", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	strlcpy(cookie, buf, sizeof(cookie));
+	restart_console();
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+}
+
 CONSOLE_TC(settings, "Settings are changed from the console, kept in the "
     "data directory, and override web.conf")
 ATF_TC_BODY(settings, tc)
@@ -1324,6 +1365,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, settings);
+	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);
 	ATF_TP_ADD_TC(tp, mtls);
 	ATF_TP_ADD_TC(tp, enrol);

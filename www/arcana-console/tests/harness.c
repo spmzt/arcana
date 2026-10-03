@@ -36,6 +36,9 @@ const char	*origin_hdr = ORIGIN;
 char		 harness_origin[64] = ORIGIN;
 int		 harness_port;
 char		 harness_webconf[1024];	/* appended to web.conf */
+static char	 kore_path[MAXPATHLEN];
+
+static void	 terminate(const char *);
 /* The console sends another build of arcana-agent than the host runs. */
 bool		 harness_other_agent;
 
@@ -370,6 +373,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[4] = (char *)(uintptr_t)"-c";
 	argv[5] = (char *)(uintptr_t)"kore.conf";
 	argv[6] = NULL;
+	snprintf(kore_path, sizeof(kore_path), "%s", kore);
 	pid = spawn_server(argv, "kore.out");
 	ATF_REQUIRE((fp = fopen("kore.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);
@@ -381,6 +385,34 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	cookie[0] = '\0';
 	send_xjg = true;
 	origin_hdr = harness_origin;
+}
+
+/*
+ * Stop the console and start it again, as a restart of its service
+ * does; the agent, the data directory and the test's cookie stay.
+ * For a console on ./k.sock.
+ */
+void
+restart_console(void)
+{
+	char	*argv[7];
+	FILE	*fp;
+	pid_t	 pid;
+
+	terminate("kore.pid");
+	(void)unlink("k.sock");
+	argv[0] = kore_path;
+	argv[1] = (char *)(uintptr_t)"-f";
+	argv[2] = (char *)(uintptr_t)"-n";
+	argv[3] = (char *)(uintptr_t)"-r";
+	argv[4] = (char *)(uintptr_t)"-c";
+	argv[5] = (char *)(uintptr_t)"kore.conf";
+	argv[6] = NULL;
+	pid = spawn_server(argv, "kore.out");
+	ATF_REQUIRE((fp = fopen("kore.pid", "w")) != NULL);
+	fprintf(fp, "%d\n", (int)pid);
+	fclose(fp);
+	wait_for("k.sock");
 }
 
 /* SIGTERM the process in pidfile and wait up to 5 s for it to finish. */

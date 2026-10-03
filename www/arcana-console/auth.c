@@ -62,6 +62,7 @@ static ucl_object_t	*creds;		/* the credentials document */
 static char		 setup_token[65];
 static struct challenge	 reg_chal, login_chal;
 static struct session	 sessions[SESSIONS];
+static time_t		 sessions_saved;	/* when the file was last written */
 
 static char	*b64url(const void *, size_t);
 static uint8_t	*unb64url(const char *, size_t *);
@@ -78,6 +79,8 @@ static bool	 key_matches(int, const uint8_t *, size_t);
 static ucl_object_t *cred_list(void);
 static const ucl_object_t *cred_find(const char *);
 static void	 session_start(struct http_request *);
+static void	 sessions_save(void);
+static void	 sessions_load(void);
 static void	 setup_token_init(void);
 static void	 put(ucl_object_t *, const char *, ucl_object_t *);
 static int	 status_reply(struct http_request *, bool);
@@ -341,7 +344,84 @@ auth_init(void)
 	}
 	if (cred_list() == NULL)
 		put(creds, "credentials", ucl_object_typed_new(UCL_ARRAY));
+	sessions_load();
 	setup_token_init();
+}
+
+/*
+ * The sessions outlive the console's process: it can be restarted from
+ * its own page, and that should not log everyone out.  They are kept
+ * in the data directory, readable by the console's user alone, as the
+ * hash of each cookie with its times: what is on disk does not log
+ * anyone in.
+ */
+static void
+sessions_save(void)
+{
+	ucl_object_t	*o, *a, *e;
+	char		 hex[65];
+	int		 i, k;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	a = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < SESSIONS; i++) {
+		if (!sessions[i].used)
+			continue;
+		for (k = 0; k < 32; k++)
+			snprintf(hex + 2 * k, 3, "%02x", sessions[i].hash[k]);
+		e = ucl_object_typed_new(UCL_OBJECT);
+		put(e, "hash", ucl_object_fromstring(hex));
+		put(e, "created", ucl_object_fromint(sessions[i].created));
+		put(e, "last", ucl_object_fromint(sessions[i].last));
+		ucl_array_append(a, e);
+	}
+	put(o, "sessions", a);
+	(void)store_save(SESSIONS_FILE, o);
+	ucl_object_unref(o);
+	sessions_saved = time(NULL);
+}
+
+/* Those of the file that have not run out. */
+static void
+sessions_load(void)
+{
+	ucl_object_t		*o;
+	const ucl_object_t	*e, *h;
+	ucl_object_iter_t	 it;
+	const char		*hex;
+	struct session		*s;
+	unsigned int		 b;
+	time_t			 now;
+	int			 n, k;
+
+	memset(sessions, 0, sizeof(sessions));
+	if ((o = store_load(SESSIONS_FILE)) == NULL)
+		return;
+	now = time(NULL);
+	n = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(o, "sessions"), &it,
+	    true)) != NULL && n < SESSIONS) {
+		if ((h = ucl_object_lookup(e, "hash")) == NULL ||
+		    (hex = ucl_object_tostring(h)) == NULL || strlen(hex) != 64)
+			continue;
+		s = &sessions[n];
+		for (k = 0; k < 32; k++) {
+			if (sscanf(hex + 2 * k, "%2x", &b) != 1)
+				break;
+			s->hash[k] = (uint8_t)b;
+		}
+		s->created = ucl_object_toint(ucl_object_lookup(e, "created"));
+		s->last = ucl_object_toint(ucl_object_lookup(e, "last"));
+		if (k < 32 || s->created > now || now - s->last > SESSION_IDLE ||
+		    now - s->created > SESSION_MAX) {
+			memset(s, 0, sizeof(*s));
+			continue;
+		}
+		s->used = true;
+		n++;
+	}
+	ucl_object_unref(o);
 }
 
 bool
@@ -366,9 +446,14 @@ session_valid(struct http_request *req)
 		if (now - s->last > SESSION_IDLE ||
 		    now - s->created > SESSION_MAX) {
 			memset(s, 0, sizeof(*s));
+			sessions_save();
 			return (false);
 		}
 		s->last = now;
+		/* The time of use, written now and then, not at every
+		 * request. */
+		if (now - sessions_saved >= SESSION_SAVE)
+			sessions_save();
 		return (true);
 	}
 	return (false);
@@ -405,6 +490,7 @@ session_start(struct http_request *req)
 	    SESSION_MAX, cfg.cookie_secure ? "; Secure" : "");
 	http_response_header(req, "set-cookie", cookie);
 	explicit_bzero(token, sizeof(token));
+	sessions_save();
 }
 
 static int
@@ -747,6 +833,7 @@ api_logout(struct http_request *req)
 		for (i = 0; i < SESSIONS; i++)
 			if (memcmp(sessions[i].hash, h, sizeof(h)) == 0)
 				memset(&sessions[i], 0, sizeof(sessions[i]));
+		sessions_save();
 	}
 	snprintf(clear, sizeof(clear), "%s=; Path=/; HttpOnly; "
 	    "SameSite=Strict; Max-Age=0", SESSION_COOKIE);

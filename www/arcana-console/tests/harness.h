@@ -42,6 +42,7 @@ void		 wait_for(const char *);
 bool		 run_prog(char *const []);
 void		 start(const atf_tc_t *, int, const char *);
 void		 stop(void);
+void		 restart_console(void);
 int		 tcp_socket(int);
 void		 http(const char *, const char *, const char *, struct resp *);
 void		 http_on(int, const char *, const char *, const char *,
