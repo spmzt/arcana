@@ -268,7 +268,7 @@ banner(struct html *h)
 		    "from the package: <code>pkg upgrade arcana</code>; then "
 		    "<code>arcana-enrol</code> hosts again only if told so in "
 		    "the ");
-		if (app.update_url[0] != '\0') {
+		if (strncmp(app.update_url, "https://", 8) == 0) {
 			h_raw(h, "<a target=\"_blank\" rel=\"noopener\"");
 			h_attr(h, "href", app.update_url);
 			h_raw(h, ">release notes</a>");

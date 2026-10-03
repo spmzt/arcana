@@ -55,6 +55,7 @@ struct job {
 
 #define	STOPPING	"not done: arcana-agent is stopping"
 #define	RESTART_WAIT	10	/* s, for service(8) to stop the daemon */
+#define	JOBS_WAITING_MAX 256	/* jobs queued or running, at most */
 
 pthread_mutex_t	change_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t build_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -1020,9 +1021,14 @@ check_spec(const struct arc_job_spec *sp)
 			return ("invalid service name");
 		if (sp->variables.n == 0)
 			return ("nothing to set");
-		for (i = 0; i < sp->variables.n; i++)
-			if (sp->variables.v[i].key == NULL)
-				return ("a variable without a key");
+		for (i = 0; i < sp->variables.n; i++) {
+			if (!rc_name_ok(sp->variables.v[i].key))
+				return ("a variable's name is letters, digits "
+				    "and _");
+			if (!rc_value_ok(sp->variables.v[i].value))
+				return ("a variable's value has a quote, $, ` "
+				    "or \\: rc.conf would read it as more");
+		}
 		break;
 	default:
 		if (sp->jail != NULL && !valid_jail(sp->jail))
@@ -1106,6 +1112,9 @@ arc_job_submit_doit(cbl_req *req, const struct arc_job_submit_req *rq,
 		if ((e = check_spec(&rq->batch.v[i])) != NULL ||
 		    (e = cuts_off(req, &rq->batch.v[i])) != NULL)
 			return (reject(req, e));
+	if (jobs_waiting() + rq->batch.n > JOBS_WAITING_MAX)
+		return (reject(req, "too many jobs wait already: let some "
+		    "finish, or cancel them"));
 	work_init(&w);
 	memset(&rsp, 0, sizeof(rsp));
 	rsp.has_ok = true;

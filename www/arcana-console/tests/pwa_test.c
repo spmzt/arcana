@@ -940,6 +940,12 @@ ATF_TC_BODY(pwa, tc)
 	/* The traffic of an interface, once it was read twice. */
 	wait_js("document.querySelector('.map-panel svg.bw path.in')", 30);
 	shot("8a-host-panel");
+	/* Nothing picked: the fleet's traffic; and the jails, when asked. */
+	run("document.querySelector('button[data-act=topo-unselect]').click()");
+	run("document.querySelector('button[data-act=topo-jails]').click()");
+	wait_js("document.querySelector('button[data-act=topo-jails].on') && "
+	    "document.querySelector('.map-panel .io-now')", 30);
+	shot("8a-overview");
 
 	/*
 	 * A tunnel is drawn: from one host's port onto the other.  That
@@ -984,6 +990,13 @@ ATF_TC_BODY(pwa, tc)
 	    "includes('10.0.0.1') && document.querySelector('.hops')."
 	    "textContent.includes('leaves the fleet')"));
 	shot("8c-path");
+	/* On a phone the map is above its panel, each as wide as the screen. */
+	phone(true);
+	wait_js("document.querySelector('.map-wrap').getBoundingClientRect()"
+	    ".width <= window.innerWidth && document.documentElement."
+	    "scrollWidth <= window.innerWidth + 1", 10);
+	shot("m11-network");
+	phone(false);
 	run("document.querySelector('li[data-act=select-server]').click()");
 	wait_js("document.querySelector('button.tab[data-arg=jails]')", 10);
 

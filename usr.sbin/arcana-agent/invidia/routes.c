@@ -156,7 +156,11 @@ do_route(struct work *w, const char *destination, const char *gateway,
 	if (rc_set(w, wfmt(w, "%sroute_%s", af == AF_INET ? "" : "ipv6_", name),
 	    "=", wfmt(w, "%s%s %s%s%s", dest, iface ? " -iface" : "", gateway,
 	    fib != 0 ? " -fib " : "", fib != 0 ? wfmt(w, "%u", fib) : ""),
-	    errp) != 0 || rc_set(w, list, "+=", name, errp) != 0)
+	    errp) != 0 || rc_set(w, list, "+=", name, errp) != 0) {
+		/* Not kept: not left half done either. */
+		e = NULL;
+		(void)do_route(w, destination, gateway, true, fib, false, &e);
 		return (-1);
+	}
 	return (0);
 }

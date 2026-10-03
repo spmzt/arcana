@@ -26,6 +26,8 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -127,6 +129,10 @@ endpoint_parse(const char *url, char *host, size_t hostlen, const char **path)
 
 	if (strncmp(url, "https://", 8) != 0)
 		return (false);
+	/* It goes into a request line: no space, nothing that ends one. */
+	for (p = url; *p != '\0'; p++)
+		if ((unsigned char)*p <= 0x20 || *p == 0x7f)
+			return (false);
 	p = url + 8;
 	e = p + strcspn(p, "/:");
 	n = (size_t)(e - p);
@@ -148,50 +154,90 @@ endpoint_parse(const char *url, char *host, size_t hostlen, const char **path)
 	return (true);
 }
 
+/* A connection to host's port 443, made within the time allowed. */
+static int
+connect_to(const char *host)
+{
+	struct addrinfo	 hints, *res, *ai;
+	struct timeval	 tv = { PUSH_TIMEOUT, 0 };
+	struct pollfd	 pfd;
+	socklen_t	 len;
+	int		 fd, flags, error;
+
+	memset(&hints, 0, sizeof(hints));
+	hints.ai_socktype = SOCK_STREAM;
+	if (getaddrinfo(host, "443", &hints, &res) != 0)
+		return (-1);
+	fd = -1;
+	for (ai = res; ai != NULL; ai = ai->ai_next) {
+		if ((fd = socket(ai->ai_family, ai->ai_socktype | SOCK_CLOEXEC,
+		    ai->ai_protocol)) == -1)
+			continue;
+		flags = fcntl(fd, F_GETFL);
+		(void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+		error = 0;
+		if (connect(fd, ai->ai_addr, ai->ai_addrlen) == -1) {
+			pfd.fd = fd;
+			pfd.events = POLLOUT;
+			len = sizeof(error);
+			if (errno != EINPROGRESS || poll(&pfd, 1, PUSH_TIMEOUT *
+			    1000) != 1 || getsockopt(fd, SOL_SOCKET, SO_ERROR,
+			    &error, &len) == -1)
+				error = -1;
+		}
+		if (error == 0) {
+			/* From here on it waits, but never for long. */
+			(void)fcntl(fd, F_SETFL, flags);
+			(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv,
+			    sizeof(tv));
+			(void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv,
+			    sizeof(tv));
+			break;
+		}
+		close(fd);
+		fd = -1;
+	}
+	freeaddrinfo(res);
+	return (fd);
+}
+
 /*
  * POST body to an HTTPS address with the headers given; the status the
  * server answers with, or -1.  The certificate is checked against the
- * system's and the name asked for.  In a task thread: it waits.
+ * system's and the name asked for.  In a task thread: it waits, for
+ * the connection, the handshake and the answer, each for a time.
  */
 static int
 https_post(const char *url, const char *headers, const uint8_t *body,
     size_t len, char *said, size_t saidlen)
 {
-	struct timeval	 tv = { PUSH_TIMEOUT, 0 };
 	SSL_CTX		*ctx;
 	SSL		*ssl;
-	BIO		*bio;
 	const char	*path;
-	char		 host[256], target[300], *req, line[1024], *b;
+	char		 host[256], *req, line[1024], *b;
 	int		 n, status, fd, reqlen;
 
 	status = -1;
 	said[0] = '\0';
-	bio = NULL;
+	ssl = NULL;
+	fd = -1;
 	if (!endpoint_parse(url, host, sizeof(host), &path) ||
 	    (ctx = SSL_CTX_new(TLS_client_method())) == NULL)
 		return (-1);
 	SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
 	if (SSL_CTX_set_default_verify_paths(ctx) != 1 ||
-	    (bio = BIO_new_ssl_connect(ctx)) == NULL)
+	    (fd = connect_to(host)) == -1 || (ssl = SSL_new(ctx)) == NULL ||
+	    SSL_set_tlsext_host_name(ssl, host) != 1 ||
+	    SSL_set1_host(ssl, host) != 1 || SSL_set_fd(ssl, fd) != 1 ||
+	    SSL_connect(ssl) != 1)
 		goto out;
-	BIO_get_ssl(bio, &ssl);
-	snprintf(target, sizeof(target), "%s:443", host);
-	if (ssl == NULL || SSL_set_tlsext_host_name(ssl, host) != 1 ||
-	    SSL_set1_host(ssl, host) != 1 ||
-	    BIO_set_conn_hostname(bio, target) != 1 || BIO_do_connect(bio) != 1)
-		goto out;
-	if ((fd = (int)BIO_get_fd(bio, NULL)) != -1) {
-		(void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-		(void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-	}
 	if ((reqlen = asprintf(&req, "POST %s HTTP/1.1\r\nHost: %s\r\n%s"
 	    "Content-Length: %zu\r\nConnection: close\r\n\r\n", path, host,
 	    headers, len)) == -1)
 		goto out;
-	if (BIO_write(bio, req, reqlen) == reqlen && (len == 0 ||
-	    BIO_write(bio, body, (int)len) == (int)len) &&
-	    (n = BIO_read(bio, line, sizeof(line) - 1)) > 12) {
+	if (SSL_write(ssl, req, reqlen) == reqlen && (len == 0 ||
+	    SSL_write(ssl, body, (int)len) == (int)len) &&
+	    (n = SSL_read(ssl, line, sizeof(line) - 1)) > 12) {
 		line[n] = '\0';
 		if (strncmp(line, "HTTP/1.", 7) == 0)
 			status = atoi(line + 9);
@@ -202,7 +248,12 @@ https_post(const char *url, const char *headers, const uint8_t *body,
 	free(req);
 out:
 	ERR_clear_error();
-	BIO_free_all(bio);
+	if (ssl != NULL) {
+		(void)SSL_shutdown(ssl);
+		SSL_free(ssl);
+	}
+	if (fd != -1)
+		close(fd);
 	SSL_CTX_free(ctx);
 	return (status);
 }
@@ -265,14 +316,30 @@ send_free(struct send *s)
 		free(s->targets[i].p256dh);
 		free(s->targets[i].auth);
 	}
+	s->ntargets = 0;
 	free(s->payload);
+	s->payload = NULL;
+}
+
+/*
+ * The request is going away, answered or given up by its browser: what
+ * the send held is released, once its task has ended.
+ */
+void
+api_push_free(struct http_request *req)
+{
+	struct send	*s;
+
+	if ((s = req->hdlr_extra) != NULL && kore_task_finished(&s->task))
+		send_free(s);
 }
 
 /* Remove the subscription with this address; true if there was one. */
 static bool
 sub_remove(const char *endpoint)
 {
-	const ucl_object_t	*e, *v;
+	const ucl_object_t	*e;
+	const char		*s;
 	ucl_object_t		*list, *keep;
 	ucl_object_iter_t	 it;
 	bool			 found;
@@ -281,8 +348,8 @@ sub_remove(const char *endpoint)
 	found = false;
 	it = NULL;
 	while ((e = ucl_object_iterate(sub_list(), &it, true)) != NULL) {
-		v = ucl_object_lookup(e, "endpoint");
-		if (v != NULL && strcmp(ucl_object_tostring(v), endpoint) == 0)
+		s = ucl_str(e, "endpoint");
+		if (s != NULL && strcmp(s, endpoint) == 0)
 			found = true;
 		else
 			ucl_array_append(keep, ucl_object_ref(
@@ -343,7 +410,6 @@ int
 api_push_subscribe(struct http_request *req)
 {
 	ucl_object_t		*body, *e;
-	const ucl_object_t	*v;
 	const char		*endpoint, *p256dh, *auth, *name, *path;
 	char			 host[256];
 	uint8_t			*raw;
@@ -356,8 +422,7 @@ api_push_subscribe(struct http_request *req)
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON body is "
 		    "needed"));
-	endpoint = (v = ucl_object_lookup(body, "endpoint")) != NULL ?
-	    ucl_object_tostring(v) : NULL;
+	endpoint = ucl_str(body, "endpoint");
 	if (endpoint == NULL || strlen(endpoint) > 1024 ||
 	    !endpoint_parse(endpoint, host, sizeof(host), &path)) {
 		ucl_object_unref(body);
@@ -370,12 +435,10 @@ api_push_subscribe(struct http_request *req)
 		ucl_object_unref(body);
 		return (api_push_list(req));
 	}
-	p256dh = (v = ucl_object_lookup(body, "p256dh")) != NULL ?
-	    ucl_object_tostring(v) : NULL;
-	auth = (v = ucl_object_lookup(body, "auth")) != NULL ?
-	    ucl_object_tostring(v) : NULL;
-	name = (v = ucl_object_lookup(body, "name")) != NULL ?
-	    ucl_object_tostring(v) : "a browser";
+	p256dh = ucl_str(body, "p256dh");
+	auth = ucl_str(body, "auth");
+	if ((name = ucl_str(body, "name")) == NULL)
+		name = "a browser";
 	/* The keys have to be what they are said to be. */
 	if (p256dh == NULL || (raw = wp_unb64url(p256dh, &len)) == NULL ||
 	    len != 65 || raw[0] != 0x04) {
@@ -433,7 +496,7 @@ int
 api_push_send(struct http_request *req)
 {
 	ucl_object_t		*body, *o, *msg, *res, *one;
-	const ucl_object_t	*e, *v;
+	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	struct send		*s;
 	struct target		*tg;
@@ -493,12 +556,12 @@ api_push_send(struct http_request *req)
 	if ((body = read_json(req)) == NULL)
 		return (reply_error(req, 400, "invalid", "a JSON body is "
 		    "needed"));
-	title = (v = ucl_object_lookup(body, "title")) != NULL ?
-	    ucl_object_tostring(v) : "Arcana";
-	text = (v = ucl_object_lookup(body, "body")) != NULL ?
-	    ucl_object_tostring(v) : "";
-	except = (v = ucl_object_lookup(body, "except")) != NULL ?
-	    ucl_object_tostring(v) : "";
+	if ((title = ucl_str(body, "title")) == NULL)
+		title = "Arcana";
+	if ((text = ucl_str(body, "body")) == NULL)
+		text = "";
+	if ((except = ucl_str(body, "except")) == NULL)
+		except = "";
 	s = kore_calloc(1, sizeof(*s));
 	msg = ucl_object_typed_new(UCL_OBJECT);
 	put(msg, "title", ucl_object_fromlstring(title, strnlen(title, 120)));
@@ -508,12 +571,9 @@ api_push_send(struct http_request *req)
 	it = NULL;
 	while ((e = ucl_object_iterate(sub_list(), &it, true)) != NULL &&
 	    s->ntargets < PUSH_MAX) {
-		ep = (v = ucl_object_lookup(e, "endpoint")) != NULL ?
-		    ucl_object_tostring(v) : NULL;
-		k = (v = ucl_object_lookup(e, "p256dh")) != NULL ?
-		    ucl_object_tostring(v) : NULL;
-		a = (v = ucl_object_lookup(e, "auth")) != NULL ?
-		    ucl_object_tostring(v) : NULL;
+		ep = ucl_str(e, "endpoint");
+		k = ucl_str(e, "p256dh");
+		a = ucl_str(e, "auth");
 		if (ep == NULL || k == NULL || a == NULL || strcmp(ep,
 		    except) == 0)
 			continue;

@@ -1380,13 +1380,18 @@ api_agent_build(struct http_request *req)
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
-	if (cfg.agent_source == NULL)
-		return (reply_error(req, 409, "unconfigured", "agent_source "
-		    "in web.conf names no repository to build from"));
 	/* The same repository, for the console itself, where it runs. */
 	if ((c = call_new(req, strstr(req->path, "/console-update") != NULL ?
 	    OP_CONSOLE_UPDATE : OP_AGENT_BUILD)) == NULL)
 		return (KORE_RESULT_OK);
+	if (cfg.agent_source == NULL) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 409, "unconfigured", "agent_source "
+		    "in web.conf names no repository to build from"));
+	}
 	if (c->op == OP_CONSOLE_UPDATE && strncmp(c->uri, "unix:", 5) != 0) {
 		kore_free(c->sname);
 		kore_free(c->uri);

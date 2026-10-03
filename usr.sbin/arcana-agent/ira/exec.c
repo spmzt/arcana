@@ -100,7 +100,12 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	struct capture			 out, eout;
 	static char			 pathenv[] =
 	    "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin";
-	char				*env[] = { pathenv, exec_home, NULL };
+	/* git reads no configuration but the repository's own. */
+	static char			 gitglobal[] =
+	    "GIT_CONFIG_GLOBAL=/dev/null";
+	static char			 gitsystem[] = "GIT_CONFIG_NOSYSTEM=1";
+	char				*env[] = { pathenv, gitglobal, gitsystem,
+					    exec_home, NULL };
 	const char			*cmdline;
 	size_t				 i;
 	time_t				 deadline;

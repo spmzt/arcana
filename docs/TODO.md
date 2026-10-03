@@ -37,6 +37,26 @@ Written and tested with stand-ins, never run for real:
 
 ## Known limits
 
+From a review of the whole code for flaws of security and design; what
+it found and could be fixed was, and this is what stays:
+
+- The build of the agent on a host runs as `nobody`, in a directory
+  `nobody` owns and that outlives the build, and `make install` of a
+  console update then runs as root from that tree. Any other process
+  running as `nobody` on that host can change what is built. A user of
+  its own for the build, a fresh directory for each, and the host keys
+  and deploy key kept where the build cannot write would close it.
+- A security key is asked for its owner's presence, not for a PIN or a
+  fingerprint: keys without either still work, and a key found works
+  for whoever found it. Sessions are not tied to the key they were made
+  with: one made with a key since removed lasts until it ends.
+- Somebody who can log in can make the console connect to port 443 of
+  any host by naming it as a push service's address; the certificate
+  must be valid for the name, and nothing of the answer is shown but a
+  status and the start of an error.
+- A change made in safe mode that fails half way (the MTU set, the
+  description refused) reports the failure and leaves what was done.
+
 - EC keys for the console's own HTTPS certificate: Kore's key manager
   signs with RSA only, so `console.pem` must be RSA until Kore (or a
   patch like the one in `port/www/kore/files`) handles ECDSA.

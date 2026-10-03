@@ -41,6 +41,8 @@ struct qjob {
 	const char		*made;		/* if-create: the name it got */
 	struct arc_variable	*undo_vars;	/* service-config: as they were */
 	size_t			 undo_nvars;
+	bool			 undo_none;	/* it changed nothing: as it was */
+	bool			 undo_live;	/* rc.conf had it before: keep that */
 	char			*title;
 	char			*peer;
 	const char		*error;		/* in w's pool */
@@ -302,14 +304,47 @@ undo_prepare(struct qjob *j)
 	const char			*v;
 	char				 descr[256];
 	size_t				 i;
+	bool				 running, enabled, up;
 
+	/*
+	 * What is undone is what the job changed, not what it was asked:
+	 * an interface that was up already is not brought down for having
+	 * been told to come up.
+	 */
 	sp = &j->spec;
 	switch (sp->kind) {
 	case ARC_JOB_KIND_IF_ADDRESS:
 		/* To put an address back, its prefix length is needed. */
+		j->undo_address = if_address_with_prefix(&j->w, sp->interface,
+		    sp->address);
+		if (!sp->remove && j->undo_address != NULL)
+			j->undo_none = true;
+		break;
+	case ARC_JOB_KIND_IF_STATE:
+		if (if_is_up(sp->interface, &up) && up == sp->up)
+			j->undo_none = true;
+		break;
+	case ARC_JOB_KIND_IF_CREATE:
+		/* A name rc.conf sets up already keeps what it has there. */
+		if (rc_get(&j->w, wfmt(&j->w, "ifconfig_%s", rc_ifname(&j->w,
+		    sp->interface))) != NULL)
+			j->undo_live = true;
+		break;
+	case ARC_JOB_KIND_ADDRESS:
+		/* With the prefix length it has on whichever interface. */
 		if (sp->remove)
-			j->undo_address = if_address_with_prefix(&j->w,
-			    sp->interface, sp->address);
+			j->undo_address = if_address_with_prefix(&j->w, NULL,
+			    sp->address);
+		break;
+	case ARC_JOB_KIND_SERVICE_ACTION:
+		service_state(&j->w, sp->service, &running, &enabled);
+		if ((sp->service_action == ARC_SERVICE_ACTION_START &&
+		    running) || (sp->service_action ==
+		    ARC_SERVICE_ACTION_STOP && !running) ||
+		    (sp->service_action == ARC_SERVICE_ACTION_ENABLE &&
+		    enabled) || (sp->service_action ==
+		    ARC_SERVICE_ACTION_DISABLE && !enabled))
+			j->undo_none = true;
 		break;
 	case ARC_JOB_KIND_IF_SET:
 		if_current(sp->interface, &j->undo_mtu, descr, sizeof(descr));
@@ -346,6 +381,9 @@ undo(struct qjob *j)
 
 	sp = &j->spec;
 	e = NULL;
+	if (j->undo_none)
+		return (wfmt(&j->w, "not confirmed within %d s; it was so "
+		    "before, and is left so", opts.safe_wait));
 	switch (sp->kind) {
 	case ARC_JOB_KIND_IF_ADDRESS:
 		rc = do_if_address(&j->w, sp->interface, j->undo_address != NULL ?
@@ -362,13 +400,14 @@ undo(struct qjob *j)
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
 		rc = do_if_destroy(&j->w, j->made != NULL ? j->made :
-		    sp->interface, sp->persist, &e);
+		    sp->interface, sp->persist && !j->undo_live, &e);
 		break;
 	case ARC_JOB_KIND_ADDRESS:
 		memset(&dq, 0, sizeof(dq));
 		memset(&dr, 0, sizeof(dr));
 		dq.jail = sp->jail;
-		dq.address = sp->address;
+		dq.address = j->undo_address != NULL ? j->undo_address :
+		    sp->address;
 		dq.interface = sp->interface;
 		dq.remove = !sp->remove;
 		dq.live = sp->live;
@@ -526,6 +565,10 @@ run(struct qjob *j)
 	pthread_mutex_unlock(&change_lock);
 	step_end(&j->w, root, ok, NULL);
 
+	/* Said while the job is still ours: once done, it may be forgotten. */
+	logmsg(ok ? LOG_INFO : LOG_NOTICE, "%s: job %ju: %s: %s", j->peer,
+	    (uintmax_t)j->id, j->title, ok ? "ok" : error != NULL ? error :
+	    "failed");
 	pthread_mutex_lock(&jobs_lock);
 	j->ok = ok;
 	j->error = error;
@@ -533,9 +576,6 @@ run(struct qjob *j)
 	j->state = ARC_JOB_STATE_DONE;
 	trim();
 	pthread_mutex_unlock(&jobs_lock);
-	logmsg(ok ? LOG_INFO : LOG_NOTICE, "%s: job %ju: %s: %s", j->peer,
-	    (uintmax_t)j->id, j->title, ok ? "ok" : error != NULL ? error :
-	    "failed");
 }
 
 static void *
@@ -646,6 +686,23 @@ jobs_submit(const struct arc_job_spec *specs, size_t n, const char *peer,
 	*vp = v;
 	*np = n;
 	return (0);
+}
+
+/* The jobs that have not finished: each holds its trace in memory. */
+size_t
+jobs_waiting(void)
+{
+	struct qjob	*j;
+	size_t		 n;
+
+	n = 0;
+	pthread_mutex_lock(&jobs_lock);
+	TAILQ_FOREACH(j, &jobs, link)
+		if (j->state != ARC_JOB_STATE_DONE &&
+		    j->state != ARC_JOB_STATE_CANCELLED)
+			n++;
+	pthread_mutex_unlock(&jobs_lock);
+	return (n);
 }
 
 /* Every job known, oldest first, without traces. */

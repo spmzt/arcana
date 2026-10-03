@@ -372,11 +372,9 @@ ATF_TC_BODY(login_refused, tc)
 	ATF_CHECK_MSG(strstr(r.body, "signature") != NULL, "%s", r.body);
 	resp_free(&r);
 
-	/* A challenge works once. */
-	http("POST", "/api/auth/login/begin", "{}", &b);
-	strlcpy(old, jstr(&b, "publicKey.challenge"), sizeof(old));
-	resp_free(&b);
-	do_login(&a, 8, ORIGIN, RP_ID, old, false, &r);
+	/* A challenge the console did not make, or made too long ago. */
+	do_login(&a, 8, ORIGIN, RP_ID, "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	    "AAA", false, &r);
 	EXPECT(&r, 401);
 	ATF_CHECK_MSG(strstr(r.body, "challenge") != NULL, "%s", r.body);
 	resp_free(&r);
@@ -386,6 +384,27 @@ ATF_TC_BODY(login_refused, tc)
 	EXPECT(&r, 401);
 	resp_free(&r);
 	ATF_CHECK_STREQ("", cookie);
+
+	/*
+	 * Others asking to log in meanwhile do not take one's challenge
+	 * away: nobody can keep the rest out by asking often.  And a
+	 * challenge works once.
+	 */
+	http("POST", "/api/auth/login/begin", "{}", &b);
+	strlcpy(old, jstr(&b, "publicKey.challenge"), sizeof(old));
+	resp_free(&b);
+	for (int i = 0; i < 100; i++) {
+		http("POST", "/api/auth/login/begin", "{}", &b);
+		EXPECT(&b, 200);
+		resp_free(&b);
+	}
+	do_login(&a, 9, ORIGIN, RP_ID, old, false, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	do_login(&a, 10, ORIGIN, RP_ID, old, false, &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_MSG(strstr(r.body, "challenge") != NULL, "%s", r.body);
+	resp_free(&r);
 }
 
 CONSOLE_TC(second_key, "A spare Ed25519 key, added from a session")
@@ -611,6 +630,12 @@ ATF_TC_BODY(agent_build, tc)
 	snprintf(harness_webconf, sizeof(harness_webconf), "agent_source = "
 	    "\"https://example.org/arcana.git\";\nagent_ref = \"main\";\n");
 	start(tc, 0, NULL);
+	/* Where the agent is built from is not told to who is not in. */
+	http("GET", "/api/health", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "agent_source") == NULL);
+	ATF_CHECK(jstr(&r, "agent_ref") == NULL);
+	resp_free(&r);
 	enrol(&a);
 	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
 	    "jgd.sock\"}", cwd);
@@ -893,6 +918,30 @@ ATF_TC_BODY(push, tc)
 	ATF_CHECK_STREQ("0", jstr(&r, "sent"));
 	resp_free(&r);
 
+	/*
+	 * What is not a text where one is meant is not taken for one, and
+	 * an address that would add to the request sent to it is refused.
+	 */
+	http("POST", "/api/push/send", "{\"title\":1,\"body\":2,\"except\":3}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"endpoint\":\"https://localhost/c\","
+	    "\"p256dh\":\"%s\",\"auth\":\"%s\",\"name\":7}", key, auth);
+	http("POST", "/api/push/subscribe", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/push/unsubscribe", "{\"endpoint\":"
+	    "\"https://localhost/c\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"endpoint\":\"https://localhost/x "
+	    "HTTP/1.1\\r\\nHost: other\",\"p256dh\":\"%s\",\"auth\":\"%s\"}",
+	    key, auth);
+	http("POST", "/api/push/subscribe", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
 	/* The devices outlive a restart. */
 	restart_console();
 	http("GET", "/api/push", NULL, &r);
@@ -924,6 +973,24 @@ ATF_TC_BODY(settings, tc)
 	http("GET", "/api/health", NULL, &r);
 	ATF_CHECK(jstr(&r, "agent_source") == NULL);
 	resp_free(&r);
+
+	/* The program sent to hosts is never one of the console's own
+	 * files: its keys are in the data directory. */
+	{
+		char cwd[MAXPATHLEN], body[MAXPATHLEN + 64];
+
+		ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+		snprintf(body, sizeof(body), "{\"set\":{\"agent_binary\":"
+		    "\"%s/data/ca.key\"}}", cwd);
+		http("POST", "/api/settings", body, &r);
+		EXPECT(&r, 400);
+		resp_free(&r);
+		snprintf(body, sizeof(body), "{\"set\":{\"agent_binary\":"
+		    "\"%s/data/../data/agent/arcana-agent\"}}", cwd);
+		http("POST", "/api/settings", body, &r);
+		EXPECT(&r, 400);
+		resp_free(&r);
+	}
 
 	/* What is not a value for a setting, or not a setting to change
 	 * here, changes nothing. */
@@ -1505,6 +1572,13 @@ ATF_TC_BODY(enrol, tc)
 	snprintf(tok, sizeof(tok), "%s", jstr(&r, "token"));
 	ATF_CHECK_MSG(strstr(jstr(&r, "command"), "arcana-enrol -s http://"
 	    "localhost:") != NULL, "%s", jstr(&r, "command"));
+	resp_free(&r);
+	/* Another port than the usual is in the command for the host. */
+	http("POST", "/api/enrol/tokens", "{\"name\":\"lab\",\"host\":"
+	    "\"127.0.0.1\",\"port\":4311}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(jstr(&r, "command"), "arcana-enrol -s -p 4311 "
+	    "http://") != NULL, "%s", jstr(&r, "command"));
 	resp_free(&r);
 	http("POST", "/api/enrol", "{\"token\":\"nope\",\"csr\":\"\"}", &r);
 	EXPECT(&r, 403);

@@ -19,9 +19,12 @@
  */
 
 #include <sys/param.h>
+#include <sys/endian.h>
 #include <sys/stat.h>
 
+#include <openssl/crypto.h>
 #include <openssl/evp.h>
+#include <openssl/hmac.h>
 #include <openssl/x509.h>
 
 #include <errno.h>
@@ -60,7 +63,18 @@ struct session {
 
 static ucl_object_t	*creds;		/* the credentials document */
 static char		 setup_token[65];
-static struct challenge	 reg_chal, login_chal;
+static struct challenge	 reg_chal;
+
+/*
+ * Login challenges are not kept.  Anyone may ask for one, and one kept
+ * for each asker would let whoever asks most push the others' out.  A
+ * challenge says when it ends and carries a MAC of the console's over
+ * that; it is noted only once used, to be used once.
+ */
+#define	USED_CHALS	64
+static uint8_t		 chal_key[32];
+static bool		 chal_keyed;
+static struct challenge	 used_chals[USED_CHALS];
 static struct session	 sessions[SESSIONS];
 static time_t		 sessions_saved;	/* when the file was last written */
 
@@ -139,6 +153,67 @@ challenge_new(struct challenge *c)
 	c->expires = time(NULL) + CHALLENGE_TTL;
 }
 
+/* A login challenge: 12 random bytes, when it ends, and the MAC. */
+static void
+login_challenge(char *out, size_t len)
+{
+	uint8_t		 raw[32], mac[32];
+	unsigned int	 n;
+	char		*s;
+
+	if (!chal_keyed) {
+		arc4random_buf(chal_key, sizeof(chal_key));
+		chal_keyed = true;
+	}
+	arc4random_buf(raw, 12);
+	be32enc(raw + 12, (uint32_t)(time(NULL) + CHALLENGE_TTL));
+	HMAC(EVP_sha256(), chal_key, sizeof(chal_key), raw, 16, mac, &n);
+	memcpy(raw + 16, mac, 16);
+	s = b64url(raw, sizeof(raw));
+	strlcpy(out, s, len);
+	kore_free(s);
+}
+
+/* Is value a login challenge of ours, in time, and not used before? */
+static bool
+login_challenge_take(const char *value)
+{
+	struct challenge	*slot;
+	uint8_t			*raw, mac[32];
+	size_t			 len;
+	unsigned int		 n;
+	time_t			 now, expires;
+	int			 i;
+	bool			 ok;
+
+	if (!chal_keyed || strlen(value) >= sizeof(slot->value) ||
+	    (raw = unb64url(value, &len)) == NULL)
+		return (false);
+	ok = len == 32;
+	if (ok) {
+		HMAC(EVP_sha256(), chal_key, sizeof(chal_key), raw, 16, mac,
+		    &n);
+		ok = CRYPTO_memcmp(mac, raw + 16, 16) == 0;
+	}
+	now = time(NULL);
+	expires = ok ? (time_t)be32dec(raw + 12) : 0;
+	kore_free(raw);
+	if (!ok || now > expires)
+		return (false);
+	/* Used once: noted until it would have ended anyway. */
+	slot = &used_chals[0];
+	for (i = 0; i < USED_CHALS; i++) {
+		if (used_chals[i].expires >= now && strcmp(used_chals[i].value,
+		    value) == 0)
+			return (false);
+		if (used_chals[i].expires < slot->expires)
+			slot = &used_chals[i];
+	}
+	strlcpy(slot->value, value, sizeof(slot->value));
+	slot->expires = expires;
+	return (true);
+}
+
 /* Use the challenge up: it matches at most once. */
 static bool
 challenge_take(struct challenge *c, const char *value)
@@ -175,7 +250,8 @@ check_client_data(const uint8_t *cd, size_t len, const char *type,
 	if ((s = ucl_str(o, "type")) == NULL || strcmp(s, type) != 0)
 		err = "wrong clientData type";
 	else if ((s = ucl_str(o, "challenge")) == NULL ||
-	    !challenge_take(chal, s))
+	    !(chal != NULL ? challenge_take(chal, s) :
+	    login_challenge_take(s)))
 		err = "unknown or expired challenge";
 	else if ((s = ucl_str(o, "origin")) == NULL ||
 	    strcmp(s, cfg.origin) != 0)
@@ -710,6 +786,7 @@ api_login_begin(struct http_request *req)
 	const ucl_object_t	*c, *t;
 	ucl_object_t		*o, *pk, *allow, *e, *body;
 	ucl_object_iter_t	 it;
+	char			 chal[48];
 	bool			 discoverable;
 
 	if (ucl_array_size(cred_list()) == 0)
@@ -718,9 +795,9 @@ api_login_begin(struct http_request *req)
 	body = read_json(req);
 	discoverable = body != NULL && ucl_flag(body, "discoverable");
 	ucl_object_unref(body);
-	challenge_new(&login_chal);
+	login_challenge(chal, sizeof(chal));
 	pk = ucl_object_typed_new(UCL_OBJECT);
-	put(pk, "challenge", ucl_object_fromstring(login_chal.value));
+	put(pk, "challenge", ucl_object_fromstring(chal));
 	put(pk, "rpId", ucl_object_fromstring(cfg.rp_id));
 	allow = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
@@ -773,8 +850,8 @@ api_login_finish(struct http_request *req)
 		err = "missing or malformed fields";
 		goto out;
 	}
-	if ((err = check_client_data(cd, cdlen, "webauthn.get",
-	    &login_chal)) != NULL ||
+	if ((err = check_client_data(cd, cdlen, "webauthn.get", NULL)) !=
+	    NULL ||
 	    (err = check_auth_data(ad, adlen, &flags, &count)) != NULL)
 		goto out;
 	/* The signature covers authenticatorData || SHA-256(clientData). */

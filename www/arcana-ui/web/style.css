@@ -2817,6 +2817,14 @@ svg.bw .out { fill: rgba(var(--amber-rgb), .3); stroke: var(--amber); stroke-wid
 }
 .busy .amount { color: var(--amber); white-space: nowrap; }
 
+.tjail path { stroke: var(--line-2); stroke-width: 1; fill: none; }
+.tjail circle { fill: var(--bg); stroke: var(--green); stroke-width: 1.4; }
+.tjail text { font-size: 8.5px; text-anchor: middle; fill: var(--dim); }
+.io-now { display: flex; gap: 1rem; font-size: .8rem; }
+.io-now .in { color: var(--cyan); }
+.io-now .out { color: var(--amber); }
+.pane > svg.bw { height: 70px; }
+
 .ngmap { height: auto; margin-bottom: 1rem; }
 .ngmap .map-wrap { min-height: 420px; }
 .tnode.ng .box { stroke: rgba(var(--violet-rgb), .6); }

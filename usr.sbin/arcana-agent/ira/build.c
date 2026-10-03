@@ -197,10 +197,21 @@ static int
 write_text(const char *path, const char *text)
 {
 	FILE	*fp;
+	int	 fd;
 
+	/*
+	 * The directory is one the build user writes in: a name that is
+	 * there, or put there meanwhile, a link above all, is not written
+	 * through.
+	 */
 	(void)unlink(path);
-	if ((fp = fopen(path, "w")) == NULL)
+	if ((fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
+	    O_CLOEXEC, 0644)) == -1)
 		return (-1);
+	if ((fp = fdopen(fd, "w")) == NULL) {
+		close(fd);
+		return (-1);
+	}
 	fputs(text, fp);
 	if (text[0] != '\0' && text[strlen(text) - 1] != '\n')
 		fputc('\n', fp);
@@ -288,7 +299,8 @@ git_error(struct work *w, const struct execres *res)
 	char		*out;
 	size_t		 n, len;
 
-	out = wmalloc(w, res->errlen + 64);
+	/* Each line kept grows by one: ": " for its newline. */
+	out = wmalloc(w, 2 * res->errlen + 64);
 	n = (size_t)sprintf(out, "git clone failed (status %d)", res->status);
 	end = res->err + res->errlen;
 	for (p = res->err; p < end; p = nl + 1) {
@@ -381,9 +393,12 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 		key = wfmt(w, "%s/id_ed25519", opts.build_dir);
 		if (sshkey != NULL && sshkey[0] != '\0') {
 			/* A key the administrator keeps on this host. */
-			if (sshkey[0] != '/' || !valid_source(sshkey)) {
-				rsp->error = "the SSH key is not an absolute "
-				    "path";
+			/* It goes into a command git gives to sh(1). */
+			if (sshkey[0] != '/' || sshkey[strspn(sshkey,
+			    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+			    "0123456789._/-")] != '\0') {
+				rsp->error = "the SSH key is an absolute path "
+				    "of letters, digits and . _ / -";
 				return (false);
 			}
 			argv[0] = "/bin/test";

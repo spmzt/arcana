@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.14.0"
+#define	ARCW_VERSION		"0.14.1"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -71,6 +71,7 @@ int		 api_push(struct http_request *);
 int		 api_push_list(struct http_request *);
 int		 api_push_subscribe(struct http_request *);
 int		 api_push_send(struct http_request *);
+void		 api_push_free(struct http_request *);
 
 /* settings.c: the settings changed from the console. */
 void		 settings_init(const char *, const char *);

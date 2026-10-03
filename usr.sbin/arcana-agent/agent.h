@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.7.0"
+#define	ARCANA_AGENT_VERSION	"0.7.1"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -231,6 +231,7 @@ int		 do_service_action(struct work *, const char *, uint8_t,
 int		 do_service_config(struct work *,
 		    const struct arc_service_config_req *,
 		    struct arc_service_config_rsp *);
+void		 service_state(struct work *, const char *, bool *, bool *);
 
 /* invidia/network.c */
 int		 do_network(struct work *, uint8_t, uint8_t, const char *,
@@ -249,6 +250,7 @@ int		 do_if_create(struct work *, const struct arc_job_spec *,
 		    const char **, const char **);
 int		 do_if_destroy(struct work *, const char *, bool, const char **);
 void		 if_current(const char *, unsigned int *, char *, size_t);
+bool		 if_is_up(const char *, bool *);
 bool		 if_owning(const struct sockaddr *, char *, size_t);
 const char	*if_address_with_prefix(struct work *, const char *,
 		    const char *);
@@ -258,6 +260,9 @@ int		 do_route(struct work *, const char *, const char *, bool,
 		    uint32_t, bool, const char **);
 
 /* invidia/rcconf.c: what of the network rc.conf keeps. */
+bool		 rc_name_ok(const char *);
+bool		 rc_value_ok(const char *);
+const char	*rc_ifname(struct work *, const char *);
 const char	*rc_get(struct work *, const char *);
 int		 rc_set(struct work *, const char *, const char *, const char *,
 		    const char **);
@@ -288,6 +293,7 @@ void		 jobs_init(void);
 int		 jobs_submit(const struct arc_job_spec *, size_t, const char *,
 		    struct work *, const struct arc_job **, size_t *);
 void		 jobs_list(struct work *, const struct arc_job **, size_t *);
+size_t		 jobs_waiting(void);
 const struct arc_job *jobs_get(struct work *, uint64_t);
 const struct arc_job *jobs_cancel(struct work *, uint64_t, const char **);
 const struct arc_job *jobs_confirm(struct work *, uint64_t, const char **);

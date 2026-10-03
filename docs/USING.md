@@ -61,7 +61,8 @@ The console is laid out as a tree and tabs.
     the change is made, the host waits a minute to hear from the
     console again, which the console does by reading the job. If the
     change cut the host off, nothing arrives, and the host undoes it by
-    itself: the address is put back with its prefix length, the
+    itself, and only what the change changed (an interface that was up
+    already is not brought down for having been told to come up): the address is put back with its prefix length, the
     interface brought back up, the route added or deleted again. The
     job then reads "not confirmed within 60 s: undone". Only a route
     deleted without a gateway cannot be put back, and the console says
@@ -160,7 +161,9 @@ works the links out.
 - A host or a link is picked for its **details** beside the map: the
   host's interfaces with their addresses and a chart of each one's
   traffic, in above the line and out below it; a link's two ends.
-  With nothing picked, the busiest interfaces of the fleet.
+  With nothing picked, what the whole fleet receives and sends over
+  time, and its busiest interfaces. **Jails** hangs each host's running
+  jails under it.
 - A **tunnel is made by drawing it**: drag the dot on a host's edge
   onto another host. The console offers the outer addresses the two
   reach each other by and a free pair of inner ones, asks for the kind

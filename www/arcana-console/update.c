@@ -32,6 +32,7 @@ struct check {
 	char			 latest[64];
 	char			 url[512];
 	char			 error[256];
+	char			 feed[1024];	/* asked of: cfg may change */
 };
 
 static struct {
@@ -81,7 +82,7 @@ check_run(struct kore_task *t)
 	size_t			 len, n;
 
 	c = (struct check *)t;
-	if ((fp = fetchGetURL(cfg.update_url, "")) == NULL) {
+	if ((fp = fetchGetURL(c->feed, "")) == NULL) {
 		snprintf(c->error, sizeof(c->error), "%s", fetchLastErrString);
 		return (KORE_RESULT_OK);
 	}
@@ -106,7 +107,7 @@ check_run(struct kore_task *t)
 	url = o != NULL ? ucl_str(o, "html_url") : NULL;
 	if (tag == NULL || !isdigit((unsigned char)tag[*tag == 'v']))
 		snprintf(c->error, sizeof(c->error), "%s: no release tag in "
-		    "the answer", cfg.update_url);
+		    "the answer", c->feed);
 	else {
 		strlcpy(c->latest, tag, sizeof(c->latest));
 		strlcpy(c->url, url != NULL ? url : "", sizeof(c->url));
@@ -169,6 +170,9 @@ api_update(struct http_request *req)
 	    time(NULL) - cache.checked < UPDATE_CACHE)
 		return (reply(req));
 	c = kore_calloc(1, sizeof(*c));
+	strlcpy(c->feed, cfg.update_url, sizeof(c->feed));
+	/* A feed that takes the connection and says nothing is given up. */
+	fetchTimeout = 30;
 	req->hdlr_extra = c;
 	kore_task_create(&c->task, check_run);
 	kore_task_bind_request(&c->task, req);

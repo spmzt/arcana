@@ -24,7 +24,9 @@
 #include <sys/stat.h>
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -37,6 +39,7 @@ enum kind { K_TEXT, K_BOOL };
 static const char	*v_name(const char *);
 static const char	*v_url(const char *);
 static const char	*v_path(const char *);
+static const char	*v_binary(const char *);
 static const char	*v_source(const char *);
 static const char	*v_ref(const char *);
 static const char	*v_keypath(const char *);
@@ -61,7 +64,7 @@ static struct setting {
 	    NULL },
 	{ "agent_binary", K_TEXT, "arcana-agent to send",
 	    "The program sent to hosts when they are updated, until a host "
-	    "has built one from the repository below.", v_path, NULL, NULL },
+	    "has built one from the repository below.", v_binary, NULL, NULL },
 	{ "agent_source", K_TEXT, "Repository to build arcana-agent from",
 	    "A git repository with the Arcana tree. With one set, a host can "
 	    "be asked to build the agent; empty for none. Whoever sets this "
@@ -111,6 +114,33 @@ v_path(const char *s)
 	for (; *s != '\0'; s++)
 		if ((unsigned char)*s < 0x20 || *s == 0x7f)
 			return ("an absolute path");
+	return (NULL);
+}
+
+/*
+ * The program sent to hosts: a file of its own, never one of the
+ * console's.  What is in the data directory is its keys, and the agent
+ * a host built, which the console must not run.
+ */
+static const char *
+v_binary(const char *s)
+{
+	struct stat	st;
+	char		real[PATH_MAX], data[PATH_MAX];
+	size_t		len;
+
+	if (v_path(s) != NULL)
+		return ("an absolute path");
+	if (realpath(s, real) == NULL)
+		strlcpy(real, s, sizeof(real));
+	else if (stat(real, &st) == 0 && !S_ISREG(st.st_mode))
+		return ("a program, not a directory or a device");
+	if (realpath(cfg.datadir, data) == NULL)
+		strlcpy(data, cfg.datadir, sizeof(data));
+	len = strlen(data);
+	if (strncmp(real, data, len) == 0 && (real[len] == '/' || real[len] ==
+	    '\0'))
+		return ("a program outside the console's data directory");
 	return (NULL);
 }
 

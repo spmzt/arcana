@@ -891,7 +891,7 @@ EOS
 	atf_check -s exit:1 -o match:'Invalid argument' \
 	    "$JGC" -c "$SOCK" interface lo0 mtu 9999
 	atf_check -s exit:1 -o match:'without quotes' \
-	    "$JGC" -c "$SOCK" interface lo0 description 'a"; reboot'
+	    "$JGC" -p -c "$SOCK" interface lo0 description 'a"; reboot'
 
 	# Addresses kept as aliases: numbered from 0, and without gaps
 	# when one in the middle goes.
@@ -1107,6 +1107,24 @@ safe_mode_body()
 	atf_check -o not-match:'gif4' -o not-match:'sshd_extra' \
 	    -o not-match:'10.9.0.30' -o match:'^sshd_flags="-4"$' cat rc.conf
 	atf_check test -f running.sshd
+	# What was so already is left so: an interface that was up is not
+	# brought down for having been told to come up, a service that
+	# ran is not stopped for having been started.
+	: > ifconfig.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 up
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 \
+	    add 127.0.0.1/8
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" service sshd start
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^lo0 up$' -o not-match:'down' \
+	    -o not-match:'127.0.0.1 -alias' cat ifconfig.log
+	atf_check test -f running.sshd
+	atf_check -o match:'it was so before, and is left so' \
+	    "$JGC" -c "$SOCK" jobs
 	# And stays when confirmed.
 	atf_check -o match:'confirmed: it stays' \
 	    "$JGC" -s -c "$SOCK" service sshd config sshd_flags=-6
@@ -1118,6 +1136,35 @@ safe_mode_body()
 	    "$JGC" -q -s -c "$SOCK" interface gif4 destroy
 	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" ng shutdown em0:
+
+	# A variable's name is given to sysrc(8), which evaluates it: one
+	# that is more than a name never gets there, in a job or without;
+	# nor does a value rc.conf would read as more than a value.
+	: > sysrc.log
+	atf_check -s exit:1 -e match:"name is letters, digits and _" -o ignore \
+	    "$JGC" -q -s -c "$SOCK" service sshd config 'x:-$(id)=1'
+	atf_check -s exit:1 -e match:"name is letters, digits and _" -o ignore \
+	    "$JGC" -q -s -c "$SOCK" service sshd config -x '-a'
+	atf_check -s exit:1 -e match:'rc.conf would read it as more' -o ignore \
+	    "$JGC" -q -c "$SOCK" service sshd config 'sshd_flags=a"; id; "'
+	atf_check -s exit:1 -e match:'is not a variable of sshd' -o ignore \
+	    "$JGC" -c "$SOCK" service sshd config 'x:-$(id)=1'
+	atf_check -s exit:1 -e match:'rc.conf would read it as more' -o ignore \
+	    "$JGC" -c "$SOCK" service sshd config 'sshd_flags=$(id)'
+	# One that is refused leaves the ones before it unwritten.
+	atf_check -s exit:1 -e match:'is not a variable of sshd' -o ignore \
+	    "$JGC" -c "$SOCK" service sshd config sshd_first=1 other_x=2
+	atf_check -o not-match:'id' -o not-match:'sshd_first' cat rc.conf
+	atf_check -o not-match:'id' -o not-match:'x:' cat sysrc.log
+
+	# The queue has an end: jobs that wait hold memory.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 down
+	for i in $(seq 1 255); do
+		"$JGC" -q -c "$SOCK" interface lo0 up > /dev/null ||
+		    atf_fail "job $i was refused"
+	done
+	atf_check -s exit:1 -e match:'too many jobs wait already' -o ignore \
+	    "$JGC" -q -c "$SOCK" interface lo0 up
 	# Confirming what does not wait is refused.
 }
 safe_mode_cleanup()
@@ -1222,6 +1269,7 @@ agent_build_body()
 [ "\$1" = -c ] && shift 2
 [ "\$1" = clone ] || exit 2
 for a; do last=\$a; done
+case " \$* " in *" --branch chatty "*) jot 400 | sed 's/^/remote: line /' >&2; exit 128 ;; esac
 case " \$* " in *" --branch nope "*) printf "Cloning into 'x'...\nfatal: no such branch\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n" >&2; exit 128 ;; esac
 mkdir -p "\$last/lib/libjailconf" "\$last/usr.sbin/arcana-agent"
 echo "\$*" > "\$last/CLONED"
@@ -1319,6 +1367,16 @@ EOS
 	# What git would take as an option is not a repository.
 	atf_check -s exit:1 -e match:'not a repository' -o ignore \
 	    "$JGC" -c "$SOCK" agent-build -- --upload-pack=x
+	# A server that has much to say: all of it is told, and the daemon
+	# is there afterwards.
+	atf_check -s exit:1 -e match:'remote: line 1: remote: line 2' \
+	    -e match:'remote: line 400' -o ignore \
+	    "$JGC" -c "$SOCK" agent-build https://example.org/arcana.git chatty
+	atf_check -o match:'^Host:' "$JGC" -c "$SOCK" hello
+	# A key's path goes into a command the shell reads.
+	atf_check -s exit:1 -e match:'letters, digits and' -o ignore \
+	    "$JGC" -c "$SOCK" agent-build -i '/tmp/k;id' \
+	    git@git.example.org:me/arcana.git
 }
 agent_build_cleanup()
 {

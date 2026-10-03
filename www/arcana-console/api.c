@@ -199,11 +199,14 @@ api_health(struct http_request *req)
 	if ((build = agent_version()) != NULL)
 		ucl_object_insert_key(o, ucl_object_fromstring(build),
 		    "agent_version", 0, false);
-	/* Where a host can be asked to build it from. */
-	if (cfg.agent_source != NULL)
+	/*
+	 * Where a host can be asked to build it from: for those who are
+	 * logged in, as a repository's address may say more than its name.
+	 */
+	if (cfg.agent_source != NULL && session_valid(req))
 		ucl_object_insert_key(o, ucl_object_fromstring(
 		    cfg.agent_source), "agent_source", 0, false);
-	if (cfg.agent_ref != NULL)
+	if (cfg.agent_ref != NULL && session_valid(req))
 		ucl_object_insert_key(o, ucl_object_fromstring(cfg.agent_ref),
 		    "agent_ref", 0, false);
 	return (reply_json(req, 200, o));

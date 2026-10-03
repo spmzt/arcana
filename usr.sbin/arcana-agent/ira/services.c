@@ -235,6 +235,23 @@ svc_status(struct work *w, struct arc_service *s)
 	}
 }
 
+/*
+ * Whether a service runs and whether it is enabled, now: what a change
+ * made in safe mode is put back to.
+ */
+void
+service_state(struct work *w, const char *name, bool *running, bool *enabled)
+{
+	struct arc_service	s;
+	struct execres		res;
+
+	memset(&s, 0, sizeof(s));
+	s.name = name;
+	svc_status(w, &s);
+	*running = s.running;
+	*enabled = sysrc_all(w, &res) == 0 && enabled_in(&res, name);
+}
+
 /* "service <name> rcvar": the first variable it names, or NULL. */
 static const char *
 svc_rcvar(struct work *w, const char *name, const char **errp)
@@ -411,6 +428,7 @@ do_service_config(struct work *w, const struct arc_service_config_req *rq,
 	}
 	namelen = strlen(name);
 
+	/* All of them are looked at before the first is written. */
 	for (i = 0; i < rq->variables.n; i++) {
 		const struct arc_variable *var = &rq->variables.v[i];
 
@@ -422,6 +440,16 @@ do_service_config(struct work *w, const struct arc_service_config_req *rq,
 			    var->key != NULL ? var->key : "", name);
 			goto out;
 		}
+		if (!var->remove && !rc_value_ok(var->value)) {
+			rsp->error = wfmt(w, "the value of %s has a quote, $, "
+			    "` or \\: rc.conf would read it as more than a "
+			    "value", var->key);
+			goto out;
+		}
+	}
+	for (i = 0; i < rq->variables.n; i++) {
+		const struct arc_variable *var = &rq->variables.v[i];
+
 		argv[0] = (char *)(uintptr_t)opts.sysrc_bin;
 		if (var->remove) {
 			argv[1] = (char *)(uintptr_t)"-x";

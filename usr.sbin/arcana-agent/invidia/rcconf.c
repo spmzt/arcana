@@ -12,6 +12,7 @@
 
 #include <sys/types.h>
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,12 +21,62 @@
 
 #define	ALIAS_MAX	256	/* aliases of one interface looked through */
 
+/*
+ * A name sysrc(8) may be given: it evaluates what it is asked for, so
+ * nothing but what a variable of sh(1) is made of.
+ */
+bool
+rc_name_ok(const char *s)
+{
+
+	if (s == NULL || *s == '\0' || isdigit((unsigned char)*s) ||
+	    strlen(s) > 128)
+		return (false);
+	for (; *s != '\0'; s++)
+		if (!isalnum((unsigned char)*s) && *s != '_')
+			return (false);
+	return (true);
+}
+
+/*
+ * A value rc.conf can hold between double quotes as it is: nothing
+ * sh(1) would expand, end the quotes with, or read as another line.
+ */
+bool
+rc_value_ok(const char *s)
+{
+
+	if (s == NULL)
+		return (true);
+	for (; *s != '\0'; s++)
+		if ((unsigned char)*s < 0x20 || *s == 0x7f || strchr("\"`$\\",
+		    *s) != NULL)
+			return (false);
+	return (true);
+}
+
+/* An interface in the name of a variable, as rc(8) spells it: em0_100. */
+const char *
+rc_ifname(struct work *w, const char *ifname)
+{
+	char	*s, *p;
+
+	s = wstrdup(w, ifname);
+	for (p = s; *p != '\0'; p++)
+		if (!isalnum((unsigned char)*p))
+			*p = '_';
+	return (s);
+}
+
 /* The value of name, or NULL when rc.conf does not set it. */
 const char *
 rc_get(struct work *w, const char *name)
 {
 	struct execres	 res;
 	char		*argv[5], *v;
+
+	if (!rc_name_ok(name))
+		return (NULL);
 
 	argv[0] = (char *)(uintptr_t)opts.sysrc_bin;
 	argv[1] = (char *)(uintptr_t)"-i";
@@ -46,6 +97,12 @@ rc_set(struct work *w, const char *name, const char *op, const char *value,
 	struct execres	 res;
 	char		*argv[3];
 
+	if (!rc_name_ok(name) || !rc_value_ok(value)) {
+		*errp = wfmt(w, "%s cannot be kept in rc.conf as it is: a "
+		    "name is letters, digits and _, a value has no quote, $, "
+		    "` or \\", name);
+		return (-1);
+	}
 	argv[0] = (char *)(uintptr_t)opts.sysrc_bin;
 	argv[1] = wfmt(w, "%s%s%s", name, op, value);
 	argv[2] = NULL;
@@ -63,6 +120,8 @@ rc_unset(struct work *w, const char *name)
 	struct execres	 res;
 	char		*argv[5];
 
+	if (!rc_name_ok(name))
+		return;
 	argv[0] = (char *)(uintptr_t)opts.sysrc_bin;
 	argv[1] = (char *)(uintptr_t)"-i";
 	argv[2] = (char *)(uintptr_t)"-x";
@@ -100,6 +159,7 @@ rc_alias(struct work *w, const char *ifname, const char *af, const char *addr,
 	const char	*v, *next;
 	int		 n, at;
 
+	ifname = rc_ifname(w, ifname);
 	at = -1;
 	for (n = 0; n < ALIAS_MAX; n++) {
 		if ((v = rc_get(w, wfmt(w, "ifconfig_%s_alias%d", ifname,
@@ -142,7 +202,7 @@ rc_mtu(struct work *w, const char *ifname, unsigned int mtu,
 	const char	*v, *p, *e;
 	char		*name;
 
-	name = wfmt(w, "ifconfig_%s", ifname);
+	name = wfmt(w, "ifconfig_%s", rc_ifname(w, ifname));
 	if ((v = rc_get(w, name)) == NULL)
 		return (rc_set(w, name, "=", wfmt(w, "mtu %u", mtu), errp));
 	for (p = v; (p = strstr(p, "mtu ")) != NULL; p += 4) {
@@ -161,6 +221,7 @@ rc_forget_if(struct work *w, const char *ifname)
 {
 	int	n;
 
+	ifname = rc_ifname(w, ifname);
 	rc_unset(w, wfmt(w, "ifconfig_%s", ifname));
 	rc_unset(w, wfmt(w, "ifconfig_%s_descr", ifname));
 	rc_unset(w, wfmt(w, "ifconfig_%s_ipv6", ifname));

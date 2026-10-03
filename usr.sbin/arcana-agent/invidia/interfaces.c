@@ -318,9 +318,29 @@ parse_addr(struct work *w, const char *s, int *afp, const char **addrp,
 	return (true);
 }
 
+/* Is the interface up?  False when it could not be told. */
+bool
+if_is_up(const char *ifname, bool *upp)
+{
+	struct ifreq	ifr;
+	int		s;
+	bool		ok;
+
+	if ((s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1 &&
+	    (s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
+		return (false);
+	memset(&ifr, 0, sizeof(ifr));
+	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+	if ((ok = ioctl(s, SIOCGIFFLAGS, &ifr) == 0))
+		*upp = (ifr.ifr_flags & IFF_UP) != 0;
+	close(s);
+	return (ok);
+}
+
 /*
  * address as the interface has it now, with its prefix length: what
  * puts it back after it was taken off.  NULL when it is not there.
+ * Without an interface named, as whichever interface has it.
  */
 const char *
 if_address_with_prefix(struct work *w, const char *ifname, const char *address)
@@ -336,7 +356,7 @@ if_address_with_prefix(struct work *w, const char *ifname, const char *address)
 	out = NULL;
 	for (ifa = ifap; ifa != NULL && out == NULL; ifa = ifa->ifa_next) {
 		if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != af ||
-		    strcmp(ifa->ifa_name, ifname) != 0 ||
+		    (ifname != NULL && strcmp(ifa->ifa_name, ifname) != 0) ||
 		    numeric(ifa->ifa_addr, buf, sizeof(buf)) == NULL)
 			continue;
 		buf[strcspn(buf, "%")] = '\0';
@@ -382,9 +402,15 @@ do_if_address(struct work *w, const char *ifname, const char *address,
 		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
 		return (-1);
 	}
-	if (persist)
-		return (rc_alias(w, ifname, af == AF_INET ? "inet" : "inet6",
-		    addr, wfmt(w, "%s/%d", addr, plen), remove, errp));
+	if (persist && rc_alias(w, ifname, af == AF_INET ? "inet" : "inet6",
+	    addr, wfmt(w, "%s/%d", addr, plen), remove, errp) != 0) {
+		/* Not kept: not left half done either. */
+		argv[3] = remove ? wfmt(w, "%s/%d", addr, plen) :
+		    (char *)(uintptr_t)addr;
+		argv[4] = (char *)(uintptr_t)(remove ? "alias" : "-alias");
+		(void)run_exec(w, argv, &res);
+		return (-1);
+	}
 	return (0);
 }
 
@@ -464,8 +490,10 @@ do_if_set(struct work *w, const char *ifname, unsigned int mtu,
 		*errp = wfmt(w, "no interface %s on this host", ifname);
 		return (-1);
 	}
-	if (descr != NULL && !valid_descr(descr)) {
-		*errp = "a description is plain text, without quotes, $ or \\";
+	/* ifconfig takes any text; rc.conf not what sh(1) reads as more. */
+	if (descr != NULL && persist && !valid_descr(descr)) {
+		*errp = "a description kept in rc.conf is plain text, without "
+		    "quotes, $ or \\";
 		return (-1);
 	}
 	if (mtu != 0 && (mtu < 68 || mtu > 65535)) {
@@ -495,9 +523,10 @@ do_if_set(struct work *w, const char *ifname, unsigned int mtu,
 			return (-1);
 		}
 		if (persist && descr[0] == '\0')
-			rc_unset(w, wfmt(w, "ifconfig_%s_descr", ifname));
+			rc_unset(w, wfmt(w, "ifconfig_%s_descr", rc_ifname(w,
+			    ifname)));
 		else if (persist && rc_set(w, wfmt(w, "ifconfig_%s_descr",
-		    ifname), "=", descr, errp) != 0)
+		    rc_ifname(w, ifname)), "=", descr, errp) != 0)
 			return (-1);
 	}
 	return (0);
@@ -585,9 +614,12 @@ do_if_destroy(struct work *w, const char *ifname, bool persist,
 	if (persist) {
 		e = NULL;
 		(void)rc_set(w, "cloned_interfaces", "-=", base, &e);
-		rc_forget_if(w, ifname);
-		if (base != ifname)
+		/* Of a pair, both sides: whichever was named. */
+		if (base != ifname) {
+			rc_forget_if(w, wfmt(w, "%sa", base));
 			rc_forget_if(w, wfmt(w, "%sb", base));
+		} else
+			rc_forget_if(w, ifname);
 	}
 	return (0);
 }
@@ -605,7 +637,9 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	const char	*name, *addr, *rcif, *e;
 	char		*argv[12], *create, *alias;
 	int		 how, n, af, plen;
+	bool		 wrote;
 
+	wrote = false;
 	*namep = NULL;
 	if ((how = cloner_of(sp->interface)) == -1) {
 		*errp = wfmt(w, "%s is not an interface that can be made: "
@@ -703,6 +737,12 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 		name = how == CL_PAIR && sp->interface[strlen(sp->interface) -
 		    1] != 'a' ? wfmt(w, "%sa", sp->interface) : sp->interface;
 	*namep = name;
+	/* What rc.conf sets up under that name already is not replaced. */
+	if (sp->persist && rc_get(w, wfmt(w, "ifconfig_%s", name)) != NULL) {
+		e = wfmt(w, "rc.conf sets up %s already: take that out first, "
+		    "or do not keep this one", name);
+		goto undo_said;
+	}
 
 	argv[1] = (char *)(uintptr_t)name;
 	if (how == CL_TUNNEL) {
@@ -774,6 +814,7 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	/* As rc(8) will make it again: the clone, its arguments, its setup. */
 	rcif = name;
 	e = NULL;
+	wrote = true;
 	if (rc_set(w, "cloned_interfaces", "+=", clone_base(w, name), &e) != 0)
 		goto undo_said;
 	if (create != NULL && rc_set(w, wfmt(w, "create_args_%s", name), "=",
@@ -798,9 +839,10 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 undo:
 	e = wtext(w, exec_error(w, &res, "ifconfig"));
 undo_said:
+	/* It goes again, and from rc.conf only what was put there now. */
 	*errp = e;
 	e = NULL;
-	(void)do_if_destroy(w, name, sp->persist, &e);
+	(void)do_if_destroy(w, name, wrote, &e);
 	return (-1);
 }
 

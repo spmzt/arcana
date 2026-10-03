@@ -115,6 +115,7 @@ static struct {
 	double	zoom, panx, pany;
 	double	lastcx, lastcy;		/* a pan under way: where it was */
 	bool	fitted;			/* shown whole once, at first */
+	bool	jails;			/* each host's running jails around it */
 	char	sel[9];			/* the host picked, or "" */
 	char	sel_if[16];		/* and its interface charted */
 	char	sel_link[80];		/* or the link picked */
@@ -903,6 +904,40 @@ map_nodes(struct html *h)
 		h_txt(h, segs[k].net);
 		h_raw(h, "</text></g>");
 	}
+	/* The running jails of each host, hung under it. */
+	for (i = 0; tp.jails && i < app.nservers; i++) {
+		const ucl_object_t	*j;
+		double			 jx, jy;
+		int			 nj, m;
+
+		s = &app.servers[i];
+		if ((t = thost(s->id, false)) == NULL || s->list == NULL)
+			continue;
+		nj = 0;
+		it = NULL;
+		while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
+		    true)) != NULL)
+			if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+			    "running") == 0)
+				nj++;
+		m = 0;
+		it = NULL;
+		while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
+		    true)) != NULL && m < 12) {
+			if (jstr(j, "state") == NULL || strcmp(jstr(j, "state"),
+			    "running") != 0 || jstr(j, "name") == NULL)
+				continue;
+			jx = t->x + (m - ((nj > 12 ? 12 : nj) - 1) / 2.0) * 46;
+			jy = t->y + NODE_H / 2 + 34 + (m % 2) * 16;
+			h_fmt(h, "<g class=\"tjail\"><path d=\"M%.1f %.1f L%.1f "
+			    "%.1f\"/><circle cx=\"%.1f\" cy=\"%.1f\" r=\"5\"/>"
+			    "<text x=\"%.1f\" y=\"%.1f\">", t->x, t->y +
+			    NODE_H / 2, jx, jy, jx, jy, jx, jy + 15);
+			h_txt(h, jstr(j, "name"));
+			h_raw(h, "</text></g>");
+			m++;
+		}
+	}
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		if ((t = thost(s->id, false)) == NULL)
@@ -985,8 +1020,11 @@ map(struct html *h)
 	    "<button class=\"ghost small\" data-act=\"topo-fit\" "
 	    "title=\"Show every host\">Fit</button>"
 	    "<button class=\"ghost small\" data-act=\"topo-arrange\" "
-	    "title=\"Put the hosts back on a circle\">Arrange</button>"
-	    "</div><ul class=\"map-legend\"><li class=\"tunnel\">tunnel</li>"
+	    "title=\"Put the hosts back on a circle\">Arrange</button>");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-jails\" "
+	    "title=\"Each host's running jails\">Jails</button>", tp.jails ?
+	    " on" : "");
+	h_raw(h, "</div><ul class=\"map-legend\"><li class=\"tunnel\">tunnel</li>"
 	    "<li class=\"p2p\">point to point</li><li class=\"lan\">same "
 	    "network</li><li class=\"best\">route</li><li class=\"alt\">"
 	    "instead</li></ul></div>");
@@ -1249,13 +1287,14 @@ static void
 panel_overview(struct html *h)
 {
 	struct { struct thost *t; struct ifrate *r; double v; } top[6], cur;
+	struct ifrate sum;
 	char	rate[24];
 	double	max;
 	int	i, k, m, n, kinds[3];
 
 	memset(kinds, 0, sizeof(kinds));
 	for (i = 0; i < nlinks; i++)
-		kinds[links[i].kind]++;
+		kinds[links[i].kind] += 1 + links[i].more;
 	h_fmt(h, "<section class=\"pane\"><h4>The fleet's network</h4>"
 	    "<div class=\"facts\"><div><b>%d</b><span>hosts</span></div>"
 	    "<div><b>%d</b><span>tunnels</span></div><div><b>%d</b><span>"
@@ -1265,6 +1304,41 @@ panel_overview(struct html *h)
 	    "host to join the two with a tunnel. Pick a host or a link for "
 	    "its details.</p></section>", app.nservers, kinds[LK_TUNNEL],
 	    kinds[LK_P2P], kinds[LK_LAN]);
+	/* Everything every host receives and sends, over time. */
+	memset(&sum, 0, sizeof(sum));
+	for (i = 0; i < nhosts; i++) {
+		if (server_index(hosts[i].sid) == -1)
+			continue;
+		for (k = 0; k < hosts[i].nr; k++) {
+			const struct ifrate *r = &hosts[i].r[k];
+
+			if (strncmp(r->name, "lo", 2) == 0)
+				continue;
+			/* The newest readings line up; older ones may lack. */
+			for (m = 0; m < r->n; m++) {
+				sum.in[TOPO_HIST - r->n + m] += r->in[m];
+				sum.out[TOPO_HIST - r->n + m] += r->out[m];
+			}
+			if (r->n > sum.n)
+				sum.n = r->n;
+		}
+	}
+	if (sum.n > 1) {
+		memmove(sum.in, sum.in + TOPO_HIST - sum.n, sizeof(sum.in[0]) *
+		    (size_t)sum.n);
+		memmove(sum.out, sum.out + TOPO_HIST - sum.n,
+		    sizeof(sum.out[0]) * (size_t)sum.n);
+		fmt_rate(rate, sizeof(rate), sum.in[sum.n - 1]);
+		h_raw(h, "<section class=\"pane\"><h4>Fleet traffic</h4><p "
+		    "class=\"io-now\"><span class=\"in\">↓ ");
+		h_txt(h, rate);
+		fmt_rate(rate, sizeof(rate), sum.out[sum.n - 1]);
+		h_raw(h, "</span> <span class=\"out\">↑ ");
+		h_txt(h, rate);
+		h_raw(h, "</span></p>");
+		chart(h, &sum, 260, 70);
+		h_raw(h, "</section>");
+	}
 	n = 0;
 	for (i = 0; i < nhosts; i++) {
 		if (server_index(hosts[i].sid) == -1)
@@ -1908,7 +1982,8 @@ tunnel_create(const ucl_object_t *f)
 	unsigned char	 ra[16], rb[16];
 	const char	*type, *ia, *ib, *la, *lb;
 	char		 na[16], nb[16], title[160], pa[80], pb[80];
-	char		*qla, *qlb, *mtu, *vni, *inner_a, *inner_b;
+	char		*qla, *qlb, *qia, *qib, *qpa, *qpb, *mtu, *vni, *inner_a,
+			*inner_b;
 	bool		 vx, keep;
 	int		 a, b, fa, fb;
 
@@ -1957,14 +2032,19 @@ tunnel_create(const ucl_object_t *f)
 	qlb = json_quote(lb);
 	mtu = number(f, "mtu", "mtu");
 	vni = vx ? number(f, "vni", "id") : strdup("");
+	/* Everything typed goes into the job quoted, as JSON wants it. */
+	qia = json_quote(ia);
+	qib = json_quote(ib);
+	qpa = json_quote(pa);
+	qpb = json_quote(pb);
 	if (ia[0] != '\0' && !vx) {
-		if (asprintf(&inner_a, ",\"address\":\"%s\",\"destination\":"
-		    "\"%s\"", ia, pb) == -1 || asprintf(&inner_b, ",\"address"
-		    "\":\"%s\",\"destination\":\"%s\"", ib, pa) == -1)
+		if (asprintf(&inner_a, ",\"address\":%s,\"destination\":%s",
+		    qia, qpb) == -1 || asprintf(&inner_b, ",\"address\":%s,"
+		    "\"destination\":%s", qib, qpa) == -1)
 			abort();
 	} else if (ia[0] != '\0') {
-		if (asprintf(&inner_a, ",\"address\":\"%s\"", ia) == -1 ||
-		    asprintf(&inner_b, ",\"address\":\"%s\"", ib) == -1)
+		if (asprintf(&inner_a, ",\"address\":%s", qia) == -1 ||
+		    asprintf(&inner_b, ",\"address\":%s", qib) == -1)
 			abort();
 	} else {
 		inner_a = strdup("");
@@ -1982,6 +2062,10 @@ tunnel_create(const ucl_object_t *f)
 	    inner_b, mtu, vni, keep ? "true" : "false");
 	free(qla);
 	free(qlb);
+	free(qia);
+	free(qib);
+	free(qpa);
+	free(qpb);
 	free(mtu);
 	free(vni);
 	free(inner_a);
@@ -2024,6 +2108,7 @@ topo_form(const char *form, const ucl_object_t *f)
 		i = number(f, "mtu", "mtu");
 		k = number(f, "id", "id");
 		snprintf(title, sizeof(title), "create %s", name);
+		/* name is letters and digits: checked above. */
 		if_job(s, title, name, "{\"kind\":\"if-create\",\"interface\":"
 		    "\"%s\"%s%s%s%s%s%s%s%s,\"persist\":%s,\"safe\":true}", name,
 		    a, b, c, d, e, g, i, k, jbool(f, "persist") ? "true" :
@@ -2176,7 +2261,7 @@ topo_action(const char *act, const char *arg, const char *value)
 	static double	 grab_x, grab_y;
 	struct thost	*t;
 	struct server	*s;
-	char		 drop[64], body[400];
+	char		 drop[64], body[400], *q;
 	double		 x, y, cx, cy, k;
 	int		 i, n;
 
@@ -2264,6 +2349,8 @@ topo_action(const char *act, const char *arg, const char *value)
 		zoom_by(0.8, tp.panx, tp.pany);
 	} else if (strcmp(act, "topo-fit") == 0) {
 		fit();
+	} else if (strcmp(act, "topo-jails") == 0) {
+		tp.jails = !tp.jails;
 	} else if (strcmp(act, "topo-arrange") == 0) {
 		for (i = 0; i < nhosts; i++)
 			hosts[i].placed = false;
@@ -2338,15 +2425,18 @@ topo_action(const char *act, const char *arg, const char *value)
 				break;
 		if (i == nlinks || links[i].b < 0)
 			return (true);
+		q = json_quote(links[i].ifa);
 		snprintf(body, sizeof(body), "destroy %s", links[i].ifa);
 		if_job(&app.servers[links[i].a], body, links[i].ifa, "{\"kind\":"
-		    "\"if-destroy\",\"interface\":\"%s\",\"persist\":true}",
-		    links[i].ifa);
+		    "\"if-destroy\",\"interface\":%s,\"persist\":true}", q);
+		free(q);
 		if (links[i].ifb[0] != '\0') {
+			q = json_quote(links[i].ifb);
 			snprintf(body, sizeof(body), "destroy %s", links[i].ifb);
 			if_job(&app.servers[links[i].b], body, links[i].ifb,
-			    "{\"kind\":\"if-destroy\",\"interface\":\"%s\","
-			    "\"persist\":true}", links[i].ifb);
+			    "{\"kind\":\"if-destroy\",\"interface\":%s,"
+			    "\"persist\":true}", q);
+			free(q);
 		}
 		tp.sel_link[0] = '\0';
 		tp.last_poll = 0;

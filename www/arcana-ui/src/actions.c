@@ -38,6 +38,24 @@ static void	merge_jail(struct server *, const ucl_object_t *);
 static char	*emit(const ucl_object_t *);
 static api_cb	 key_added_cb;
 
+/*
+ * A name a host gave, to go into the path of a request: only what
+ * leaves the path the one that was meant.
+ */
+static bool
+url_word(const char *s)
+{
+
+	if (s == NULL || s[0] == '\0' || s[0] == '.')
+		return (false);
+	for (; *s != '\0'; s++)
+		if (!((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') ||
+		    (*s >= '0' && *s <= '9') || *s == '_' || *s == '-' ||
+		    *s == '.'))
+			return (false);
+	return (true);
+}
+
 static struct ctx *
 ctx_new(void)
 {
@@ -867,6 +885,12 @@ service_config(const char *name, const char *body)
 	app.trace_op = op->id;
 	app.svc_loading = true;
 	app.svc_error[0] = '\0';
+	/* A name goes into the address as it is: none that changes it. */
+	if (!url_word(name)) {
+		op_done(op, false, NULL, "not a service's name");
+		free(c);
+		return;
+	}
 	snprintf(url, sizeof(url), "/api/servers/%s/services/%s/config",
 	    s->id, name);
 	api(body != NULL ? "POST" : "GET", url, body, service_config_cb, c);
@@ -1066,7 +1090,8 @@ refresh_packages(struct server *s, bool refresh)
 	c->op = op->id;
 	app.trace_op = op->id;
 	snprintf(url, sizeof(url), "/api/servers/%s/packages?jail=%s%s", s->id,
-	    app.pkg.jail, refresh ? "&refresh=1" : "");
+	    url_word(app.pkg.jail) ? app.pkg.jail : "", refresh ?
+	    "&refresh=1" : "");
 	op_wait(c->op, api("GET", url, NULL, packages_cb, c));
 }
 
@@ -1297,7 +1322,7 @@ address_change(const char *jail, const char *address, bool remove, bool live,
 	app.modal_busy = true;
 	app.modal_error[0] = '\0';
 	snprintf(url, sizeof(url), "/api/servers/%s/jails/%s/address", s->id,
-	    jail);
+	    url_word(jail) ? jail : "-");
 	qa = json_quote(address);
 	if (asprintf(&body, "{\"address\":%s,\"remove\":%s,\"live\":%s,"
 	    "\"persist\":%s,\"dry_run\":%s}", qa, remove ? "true" : "false",

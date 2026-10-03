@@ -343,7 +343,7 @@ api_enrol_tokens(struct http_request *req)
 	const ucl_object_t	*v;
 	const char		*name, *host;
 	uint8_t			 raw[32];
-	char			 cmd[512];
+	char			 cmd[512], portstr[16];
 	int64_t			 port;
 	int			 i;
 
@@ -385,6 +385,7 @@ api_enrol_tokens(struct http_request *req)
 	strlcpy(t->host, host, sizeof(t->host));
 	t->port = (int)port;
 	t->expires = time(NULL) + TOKEN_TTL;
+	snprintf(portstr, sizeof(portstr), "%d", t->port);
 	ucl_object_unref(body);
 	kore_log(LOG_NOTICE, "enrolment token for %s (%s) made", t->host,
 	    t->name);
@@ -392,7 +393,7 @@ api_enrol_tokens(struct http_request *req)
 	/* Options first: getopt(3) stops at the first argument. */
 	snprintf(cmd, sizeof(cmd), "arcana-enrol -s%s%s %s %s",
 	    port != DEFAULT_PORT ? " -p " : "", port != DEFAULT_PORT ?
-	    ucl_object_tostring_forced(v) : "", cfg.origin, t->value);
+	    portstr : "", cfg.origin, t->value);
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, ucl_object_fromstring(t->value), "token", 0,
 	    false);
