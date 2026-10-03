@@ -4,7 +4,7 @@ SRCS=		main.c handlers.c work.c
 # Superbia: identity, configuration, what is true of the host.
 SRCS+=		confedit.c confread.c host.c
 # Invidia: the network.
-SRCS+=		address.c interfaces.c network.c routes.c
+SRCS+=		address.c interfaces.c netgraph.c network.c rcconf.c routes.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jobs.c lifecycle.c packages.c \
 		services.c update.c

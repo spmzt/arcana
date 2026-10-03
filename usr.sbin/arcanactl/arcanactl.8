@@ -41,8 +41,21 @@ Default
 The name the server's certificate must carry, when it differs from the
 host in
 .Ar uri .
+.It Fl F Ar fib
+The routing table that
+.Cm route
+and
+.Cm net routes
+work in, when not the first.
+.It Fl p
+Keep a change to an interface or a route in
+.Xr rc.conf 5
+as well, so that it is there after a boot.
 .It Fl q
 Queue the change as a job; see the end of the command list.
+.It Fl s
+Make the change in safe mode; see
+.Cm route .
 .It Fl t
 Also print the trace: every library call, system call, file and
 program the daemon used, with the programs' output.
@@ -101,7 +114,7 @@ variables, with what the script says of itself and its extra commands.
 sets one first,
 .Fl x
 unsets one; only the service's own variables are accepted.
-.It Cm net routes | nexthops | connections | sockets | interfaces Op Fl 4 | Fl 6
+.It Cm net routes | nexthops | connections | sockets | interfaces | netgraph Op Fl 4 | Fl 6
 The host's routing table
 .Pq Nm netstat Fl rnW ,
 nexthop table
@@ -158,6 +171,42 @@ is the default route of IPv6.
 .It Cm route delete Ar destination Op Ar gateway
 Delete the route to
 .Ar destination .
+.It Cm route get Ar address
+The route the host would send a packet to
+.Ar address
+by, as
+.Xr route 8
+get tells it, and the other routes of the table that cover the address,
+each with the length of its prefix: what is left when the best goes.
+.It Cm interface Ar name Cm mtu Ar number
+.It Cm interface Ar name Cm description Ar text
+Set an interface's MTU or its description; an empty text takes the
+description off.
+.It Cm interface Ar name Cm create Oo Cm tunnel Ar local remote Oc Oo Cm address Ar address Oo Cm peer Ar address Oc Oc Oo Cm mtu Ar number Oc Oo Cm description Ar text Oc Oo Cm id Ar number Oc Oo Cm parent Ar interface Oc
+Create a cloned interface and set it up.
+.Ar name
+is a type with its unit, as
+.Ql gif0 ,
+or a type alone, for the kernel to pick the unit: epair, gif, gre,
+ipsec, me, vxlan, vlan, bridge, lagg, tap, tun, lo, wg or ovpn.
+.Cm tunnel
+gives a tunnel's outer ends,
+.Cm address
+and
+.Cm peer
+its inner ones,
+.Cm id
+a VLAN's tag or a VXLAN's identifier, and
+.Cm parent
+the interface a VLAN rides or a bridge takes in.
+What cannot be finished is destroyed again.
+.It Cm interface Ar name Cm destroy
+Destroy a cloned interface.
+.It Cm ng mkpeer | connect | rmhook | shutdown | name Ar argument ...
+Change the
+.Xr netgraph 4
+graph: the command and its arguments are given to
+.Xr ngctl 8 .
 .Pp
 With the option
 .Fl s
@@ -169,6 +218,12 @@ still reachable afterwards, and is undone when the change cut it off.
 With
 .Fl q
 nobody confirms.
+Safe mode is for what can be taken back: an address, an interface's
+state, MTU and description, an interface made, a route, a jail's
+address, a service's variables, and a service started, stopped, enabled
+or disabled.
+A change that would take away the address the request came in by is
+refused unless it is made in safe mode.
 .Pp
 These run
 .Xr ifconfig 8
@@ -176,9 +231,16 @@ and
 .Xr route 8
 on the host as a job, which is waited for unless
 .Fl q
-only queues it, and change the running system only:
+only queues it, and change the running system; with
+.Fl p
+they are kept in
 .Xr rc.conf 5
-is not touched.
+as well: an address as the next
+.Va ifconfig_ Ns Ar interface Ns Va _alias Ns Ar n ,
+a route under a name of its own in
+.Va static_routes ,
+an interface made in
+.Va cloned_interfaces .
 .It Cm agent-build Oo Fl y Oc Oo Fl i Ar key Oc Oo Fl o Ar file Oc Ar repository Op Ar ref
 Have the host clone the git
 .Ar repository ,

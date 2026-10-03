@@ -82,10 +82,28 @@ write_rc()
 	cat > fake-sysrc <<EOS
 #!/bin/sh
 conf=$(pwd)/rc.conf
+echo "\$*" >> $(pwd)/sysrc.log
+ign=no
+[ "\$1" = -i ] && { ign=yes; shift; }
+put()
+{
+	grep -v "^\$1=" "\$conf" > "\$conf.new"
+	[ -n "\$2" ] && printf '%s="%s"\n' "\$1" "\$2" >> "\$conf.new"
+	mv "\$conf.new" "\$conf"
+}
 case "\$1" in
 -a|-A)	sed -e 's/="\(.*\)"\$/: \1/' "\$conf" ;;
--x)	grep -q "^\$2=" "\$conf" || exit 1
+-n)	grep -q "^\$2=" "\$conf" || exit 1
+	sed -n "s/^\$2=\"\(.*\)\"\\\$/\1/p" "\$conf" ;;
+-x)	grep -q "^\$2=" "\$conf" || { [ \$ign = yes ] && exit 0; exit 1; }
 	grep -v "^\$2=" "\$conf" > "\$conf.new"; mv "\$conf.new" "\$conf" ;;
+*+=*)	key=\${1%%+=*}; val=\${1#*+=}
+	old=\$(sed -n "s/^\$key=\"\(.*\)\"\\\$/\1/p" "\$conf")
+	put "\$key" "\${old:+\$old }\$val"; echo "\$key: \$old -> \$val" ;;
+*-=*)	key=\${1%%-=*}; val=\${1#*-=}
+	old=\$(sed -n "s/^\$key=\"\(.*\)\"\\\$/\1/p" "\$conf")
+	new=\$(echo " \$old " | sed -e "s/ \$val / /" -e 's/^ *//' -e 's/ *\$//')
+	put "\$key" "\$new" ;;
 *=*)	key=\${1%%=*}; val=\${1#*=}
 	grep -v "^\$key=" "\$conf" > "\$conf.new"
 	printf '%s="%s"\n' "\$key" "\$val" >> "\$conf.new"
@@ -221,7 +239,7 @@ start_daemon()
 	    -U "$(pwd)/installed-agent" -B "$(pwd)/build" \
 	    -c "$(pwd)/build.mk" -G "$(pwd)/fake-git" -M "$(pwd)/fake-make" \
 	    -Y "$(pwd)/fake-keyscan" -I "$(pwd)/fake-ifconfig" \
-	    -r "$(pwd)/fake-route" -w 2 \
+	    -r "$(pwd)/fake-route" -n "$(pwd)/fake-ngctl" -w 2 \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -793,6 +811,229 @@ interfaces_cleanup()
 	stop_daemon
 }
 
+atf_test_case network_more cleanup
+network_more_head()
+{
+	atf_set "descr" "Interfaces made, set and destroyed, changes kept in rc.conf, routing tables, route lookup, netgraph"
+}
+network_more_body()
+{
+	cat > fake-ifconfig <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/ifconfig.log
+case " \$* " in
+*" create"*) case "\$1" in epair*) echo "\${1}a" ;; gif) echo gif7 ;; *) echo "\$1" ;; esac ;;
+*" mtu 9999 "*) echo "ifconfig: ioctl SIOCSIFMTU (set mtu): Invalid argument" >&2; exit 1 ;;
+esac
+exit 0
+EOS
+	cat > fake-route <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/route.log
+if [ "\$2" = get ]; then
+	case "\$*" in *203.0.113.*) echo "route: route has not been found" >&2; exit 1 ;; esac
+	printf '   route to: %s\ndestination: 10.77.0.0\n       mask: 255.255.0.0\n    gateway: 10.0.0.1\n        fib: 0\n  interface: em0\n      flags: <UP,GATEWAY,DONE,STATIC>\n recvpipe  sendpipe\n       0         0\n' "\$4"
+fi
+exit 0
+EOS
+	cat > fake-ngctl <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/ngctl.log
+case "\$1" in
+list)	cat <<EOL
+There are 3 total nodes:
+  Name: em0             Type: ether           ID: 00000002   Num hooks: 1
+  Local hook      Peer name       Peer type    Peer ID         Peer hook      
+  ----------      ---------       ---------    -------         ---------      
+  lower           bridge0         bridge       0000000c        link0          
+  Name: bridge0         Type: bridge          ID: 0000000c   Num hooks: 1
+  Local hook      Peer name       Peer type    Peer ID         Peer hook      
+  ----------      ---------       ---------    -------         ---------      
+  link0           em0             ether        00000002        lower          
+  Name: ngctl1234       Type: socket          ID: 00000010   Num hooks: 0
+EOL
+	;;
+shutdown) [ "\$2" = gone: ] && { echo "ngctl: send msg: No such file or directory" >&2; exit 1; } ;;
+esac
+exit 0
+EOS
+	chmod +x fake-ifconfig fake-route fake-ngctl
+	start_daemon
+	# The plain routing table, for the routes that cover an address.
+	cat > fake-netstat <<'EOS'
+#!/bin/sh
+echo "fake-netstat $*" >&2
+case "$*" in
+"-rnW -f inet"*)
+	printf 'Routing tables\n\nInternet:\nDestination        Gateway            Flags   Nhop#    Mtu      Netif Expire\n'
+	printf 'default            192.0.2.1          UGS         1   1500        em0\n'
+	printf '10.77.0.0/16       10.0.0.1           UGS         2   1500        em0\n'
+	printf '10.77.5.0/24       10.0.0.9           UGS         3   1500        em1\n'
+	printf '10.78.0.0/16       10.0.0.1           UGS         4   1500        em0\n'
+	printf '10.77.5.5          link#3             UH          5   1500        lo0\n' ;;
+*)	echo '{"statistics": {"route-information": {"route-table": {"rt-family": []}}}}' ;;
+esac
+EOS
+
+	# An MTU and a description, live; and kept, in rc.conf.
+	atf_check -o match:'fake-ifconfig lo0 mtu 9000' \
+	    "$JGC" -c "$SOCK" interface lo0 mtu 9000
+	atf_check -o not-match:'ifconfig_lo0' cat rc.conf
+	atf_check -o match:'fake-ifconfig lo0 description uplink to core' \
+	    "$JGC" -p -c "$SOCK" interface lo0 description 'uplink to core'
+	atf_check -o match:'^ifconfig_lo0_descr="uplink to core"$' cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 mtu 1400
+	atf_check -o match:'^ifconfig_lo0="mtu 1400"$' cat rc.conf
+	sed -i '' -e 's|^ifconfig_lo0=.*|ifconfig_lo0="inet 127.0.0.1/8 mtu 1400 up"|' rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 mtu 1300
+	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' \
+	    cat rc.conf
+	atf_check -s exit:1 -o match:'Invalid argument' \
+	    "$JGC" -c "$SOCK" interface lo0 mtu 9999
+	atf_check -s exit:1 -o match:'without quotes' \
+	    "$JGC" -c "$SOCK" interface lo0 description 'a"; reboot'
+
+	# Addresses kept as aliases: numbered from 0, and without gaps
+	# when one in the middle goes.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 add 10.9.0.1/24
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 add 10.9.0.2/24
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 add 2001:db8::3/64
+	atf_check -o match:'^ifconfig_lo0_alias0="inet 10.9.0.1/24"$' \
+	    -o match:'^ifconfig_lo0_alias1="inet 10.9.0.2/24"$' \
+	    -o match:'^ifconfig_lo0_alias2="inet6 2001:db8::3/64"$' cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 remove 10.9.0.1
+	atf_check -o match:'^ifconfig_lo0_alias0="inet 10.9.0.2/24"$' \
+	    -o match:'^ifconfig_lo0_alias1="inet6 2001:db8::3/64"$' \
+	    -o not-match:'alias2' -o not-match:'10.9.0.1/' cat rc.conf
+	# 10.9.0.2 is not 10.9.0.20: only the address itself is forgotten.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 add 10.9.0.20/24
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface lo0 remove 10.9.0.2
+	atf_check -o match:'10.9.0.20/24' -o not-match:'10.9.0.2/24' cat rc.conf
+
+	# A tunnel: created, given its ends, its addresses, brought up.
+	atf_check -o match:'create gif7 to 198.51.100.2' \
+	    -o match:'fake-ifconfig gif7 create' \
+	    -o match:'fake-ifconfig gif7 tunnel 192.0.2.1 198.51.100.2' \
+	    -o match:'fake-ifconfig gif7 inet 10.255.0.1/30 10.255.0.2' \
+	    -o match:'fake-ifconfig gif7 mtu 1400' \
+	    -o match:'fake-ifconfig gif7 description to lab' \
+	    -o match:'fake-ifconfig gif7 up' \
+	    "$JGC" -p -c "$SOCK" interface gif7 create tunnel 192.0.2.1 \
+	    198.51.100.2 address 10.255.0.1/30 peer 10.255.0.2 mtu 1400 \
+	    description 'to lab'
+	atf_check -o match:'^cloned_interfaces="gif7"$' \
+	    -o match:'^ifconfig_gif7="tunnel 192.0.2.1 198.51.100.2 mtu 1400 up"$' \
+	    -o match:'^ifconfig_gif7_alias0="inet 10.255.0.1/30 10.255.0.2"$' \
+	    -o match:'^ifconfig_gif7_descr="to lab"$' cat rc.conf
+	# The kernel picks the unit of a type alone, and says which.
+	atf_check -o match:'fake-ifconfig gif create' \
+	    -o match:'fake-ifconfig gif7 tunnel 2001:db8::1 2001:db8::2' \
+	    -o match:'fake-ifconfig gif7 inet6 fd00::1 fd00::2 prefixlen 128' \
+	    "$JGC" -c "$SOCK" interface gif create tunnel 2001:db8::1 \
+	    2001:db8::2 address fd00::1 peer fd00::2
+	# A pair is two, kept under one name; a VLAN and a VXLAN take their
+	# arguments at creation.
+	atf_check -o match:'fake-ifconfig epair3 create' \
+	    -o match:'fake-ifconfig epair3a up' \
+	    "$JGC" -p -c "$SOCK" interface epair3 create
+	atf_check -o match:'^cloned_interfaces="gif7 epair3"$' \
+	    -o match:'^ifconfig_epair3a="up"$' cat rc.conf
+	atf_check -o match:'fake-ifconfig vlan5 create vlan 5 vlandev lo0' \
+	    "$JGC" -p -c "$SOCK" interface vlan5 create id 5 parent lo0
+	atf_check -o match:'^create_args_vlan5="vlan 5 vlandev lo0"$' cat rc.conf
+	atf_check -o match:'vxlan9 create vxlanid 42 vxlanlocal 192.0.2.1 vxlanremote 192.0.2.9' \
+	    "$JGC" -c "$SOCK" interface vxlan9 create id 42 tunnel 192.0.2.1 192.0.2.9
+	# What cannot be finished is destroyed again, and not kept.
+	atf_check -s exit:1 -o match:'Invalid argument' \
+	    -o match:'fake-ifconfig gre1 destroy' \
+	    "$JGC" -p -c "$SOCK" interface gre1 create tunnel 192.0.2.1 \
+	    192.0.2.2 mtu 9999
+	atf_check -o not-match:'gre1' cat rc.conf
+	# What is not asked for as it must be never reaches ifconfig.
+	atf_check -s exit:1 -o match:'needs both its ends' \
+	    "$JGC" -c "$SOCK" interface gif8 create
+	atf_check -s exit:1 -o match:'not an interface that can be made' \
+	    "$JGC" -c "$SOCK" interface em9 create
+	atf_check -s exit:1 -o match:"a tunnel's ends are addresses" \
+	    "$JGC" -c "$SOCK" interface gif8 create tunnel 192.0.2.1 '-vnet'
+	atf_check -s exit:1 -o match:'needs its tag' \
+	    "$JGC" -c "$SOCK" interface vlan6 create parent lo0
+	atf_check -o not-match:'gif8' -o not-match:'em9' -o not-match:'vlan6' \
+	    cat ifconfig.log
+	# Destroyed, and forgotten; only what was made can be.
+	atf_check -o match:'fake-ifconfig gif7 destroy' \
+	    "$JGC" -p -c "$SOCK" interface gif7 destroy
+	atf_check -o not-match:'gif7' -o match:'^cloned_interfaces="epair3 vlan5"$' \
+	    cat rc.conf
+	atf_check -o match:'fake-ifconfig epair3a destroy' \
+	    "$JGC" -p -c "$SOCK" interface epair3a destroy
+	atf_check -o not-match:'epair3' cat rc.conf
+	atf_check -s exit:1 -o match:'only cloned ones are destroyed' \
+	    "$JGC" -c "$SOCK" interface em0 destroy
+
+	# Routes: in a routing table of their own, and kept by a name.
+	atf_check -o match:'fake-route -n add -inet 10.77.0.0/16 10.0.0.1 -fib 2' \
+	    "$JGC" -F 2 -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 2001:db8:7::/48 2001:db8::1
+	atf_check -o ignore "$JGC" -p -F 3 -c "$SOCK" route add 10.80.0.0/16 lo0
+	atf_check -o match:'^static_routes="arc_10_77_0_0_16 arc_10_80_0_0_16_fib3"$' \
+	    -o match:'^route_arc_10_77_0_0_16="10.77.0.0/16 10.0.0.1"$' \
+	    -o match:'^route_arc_10_80_0_0_16_fib3="10.80.0.0/16 -iface lo0 -fib 3"$' \
+	    -o match:'^ipv6_static_routes="arc_2001_db8_7___48"$' \
+	    -o match:'^ipv6_route_arc_2001_db8_7___48="2001:db8:7::/48 2001:db8::1"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" route delete 10.77.0.0/16
+	atf_check -o match:'^static_routes="arc_10_80_0_0_16_fib3"$' \
+	    -o not-match:'route_arc_10_77' cat rc.conf
+	atf_check -o match:'fake-netstat --libxo json -rnW -f inet -F 2' \
+	    "$JGC" -t -F 2 -c "$SOCK" net routes -4
+
+	# The route to an address: the one taken, and those that cover it,
+	# each with the length of its prefix.
+	atf_check -o save:get.out "$JGC" -c "$SOCK" route get 10.77.5.5
+	atf_check -o match:'"best":\{"to":"10.77.5.5","destination":"10.77.0.0","mask":"255.255.0.0","gateway":"10.0.0.1","fib":"0","interface":"em0"' \
+	    -o match:'"destination":"default".*"prefixlen":0' \
+	    -o match:'"destination":"10.77.0.0/16".*"prefixlen":16' \
+	    -o match:'"destination":"10.77.5.0/24","gateway":"10.0.0.9".*"prefixlen":24' \
+	    -o match:'"destination":"10.77.5.5".*"prefixlen":32' \
+	    -o not-match:'10.78.0.0' cat get.out
+	# No route is an answer: nothing is best, the default still covers.
+	atf_check -o not-match:'"best"' -o match:'"destination":"default"' \
+	    "$JGC" -c "$SOCK" route get 203.0.113.9
+	atf_check -s exit:1 -e match:'not an IPv4 or IPv6 address' -o ignore \
+	    "$JGC" -c "$SOCK" route get '10.0.0.1;id'
+	atf_check -o match:'get -inet 10.77.5.5 -fib 4' \
+	    "$JGC" -t -F 4 -c "$SOCK" route get 10.77.5.5
+
+	# Netgraph: the nodes with their hooks, and the few commands.
+	atf_check -o match:'"name":"em0","type":"ether","id":"00000002","hooks":\[\{"hook":"lower","peer":"bridge0","peer-type":"bridge","peer-id":"0000000c","peer-hook":"link0"\}\]' \
+	    -o match:'"name":"ngctl1234","type":"socket","id":"00000010","hooks":\[\]' \
+	    "$JGC" -c "$SOCK" net netgraph
+	atf_check -o match:'fake-ngctl mkpeer em0: bridge lower link0' \
+	    "$JGC" -c "$SOCK" ng mkpeer em0: bridge lower link0
+	atf_check -o match:'fake-ngctl connect em1: bridge0: lower link1' \
+	    "$JGC" -c "$SOCK" ng connect em1: bridge0: lower link1
+	atf_check -o match:'fake-ngctl rmhook em0: lower' \
+	    "$JGC" -c "$SOCK" ng rmhook em0: lower
+	atf_check -o match:'fake-ngctl name \[c\]: br' \
+	    "$JGC" -c "$SOCK" ng name '[c]:' br
+	atf_check -s exit:1 -o match:'No such file' \
+	    "$JGC" -c "$SOCK" ng shutdown gone:
+	atf_check -s exit:1 -e match:'mkpeer, connect, rmhook, shutdown or name' \
+	    "$JGC" -c "$SOCK" ng msg em0: setpromisc 1
+	atf_check -s exit:1 -e match:'letters, digits' \
+	    "$JGC" -c "$SOCK" ng shutdown 'em0:;reboot'
+	atf_check -s exit:1 -e match:'letters, digits' \
+	    "$JGC" -c "$SOCK" ng mkpeer em0: bridge lower -f
+	atf_check -o not-match:'msg' -o not-match:'reboot' -o not-match:' -f' \
+	    cat ngctl.log
+}
+network_more_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case safe_mode cleanup
 safe_mode_head()
 {
@@ -843,6 +1084,40 @@ safe_mode_body()
 	# A route deleted without its gateway could not be put back.
 	atf_check -s exit:1 -e match:'name its gateway' -o ignore \
 	    "$JGC" -q -s -c "$SOCK" route delete 10.79.0.0/16
+
+	# The same for what else can be taken back: an interface made, a
+	# service stopped, its variables, each put back as it was; and
+	# what was kept in rc.conf with the change is forgotten with it.
+	: > ifconfig.log
+	touch running.sshd
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" interface gif4 \
+	    create tunnel 192.0.2.1 192.0.2.2
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" service sshd stop
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" service sshd \
+	    config sshd_flags=-6 sshd_extra=yes
+	atf_check -o match:'queued' "$JGC" -q -s -p -c "$SOCK" interface lo0 \
+	    add 10.9.0.30/24
+	for i in $(seq 1 200); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^gif4 create$' -o match:'^gif4 destroy$' \
+	    cat ifconfig.log
+	atf_check -o not-match:'gif4' -o not-match:'sshd_extra' \
+	    -o not-match:'10.9.0.30' -o match:'^sshd_flags="-4"$' cat rc.conf
+	atf_check test -f running.sshd
+	# And stays when confirmed.
+	atf_check -o match:'confirmed: it stays' \
+	    "$JGC" -s -c "$SOCK" service sshd config sshd_flags=-6
+	atf_check -o match:'^sshd_flags="-6"$' cat rc.conf
+	# What cannot be taken back is not taken in safe mode.
+	atf_check -s exit:1 -e match:'cannot be undone' -o ignore \
+	    "$JGC" -q -s -c "$SOCK" service sshd restart
+	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
+	    "$JGC" -q -s -c "$SOCK" interface gif4 destroy
+	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
+	    "$JGC" -q -s -c "$SOCK" ng shutdown em0:
 	# Confirming what does not wait is refused.
 }
 safe_mode_cleanup()
@@ -1159,6 +1434,7 @@ agent_update_cleanup()
 atf_init_test_cases()
 {
 	atf_add_test_case interfaces
+	atf_add_test_case network_more
 	atf_add_test_case safe_mode
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart

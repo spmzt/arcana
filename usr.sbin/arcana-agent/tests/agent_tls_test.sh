@@ -55,7 +55,8 @@ start_daemon()
 	PORT=$(( 20000 + $$ % 20000 ))
 	"$JGD" -F -l "tcp://127.0.0.1:$PORT" -A ca.pem -C server.pem \
 	    -K server.key -f "$(pwd)/etc/jail.conf" \
-	    -D "$(pwd)/etc/jail.conf.d" > daemon.out 2>&1 &
+	    -D "$(pwd)/etc/jail.conf.d" -I /usr/bin/false \
+	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
 		grep -q ready daemon.out 2>/dev/null && return
@@ -98,6 +99,17 @@ mtls_body()
 	# A client that trusts another CA does not trust this server.
 	atf_check -s exit:1 -e not-empty -o ignore \
 	    "$JGC" -c "$URI" -A rogue.pem -C client.pem -K client.key hello
+	# Taking away the address the request came in by would cut the
+	# client off: refused, unless in safe mode; another address is not.
+	atf_check -s exit:1 -e match:'would cut you off' -o ignore \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key \
+	    interface lo0 remove 127.0.0.1
+	atf_check -s exit:1 -e match:'would cut you off' -o ignore \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key \
+	    interface lo0 down
+	atf_check -s exit:1 -o match:'failed' -o not-match:'cut you off' \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key \
+	    interface lo0 remove 127.0.0.9
 }
 mtls_cleanup()
 {

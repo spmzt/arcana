@@ -8,6 +8,7 @@
 #define _AGENT_H_
 
 #include <sys/types.h>
+#include <sys/socket.h>
 
 #include <pthread.h>
 #include <stdarg.h>
@@ -18,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.6.7"
+#define	ARCANA_AGENT_VERSION	"0.7.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -34,6 +35,7 @@
 #define	PATH_GIT_BIN		"/usr/local/bin/git"
 #define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
 #define	PATH_ROUTE_BIN		"/sbin/route"
+#define	PATH_NGCTL_BIN		"/usr/sbin/ngctl"
 #define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
 #define	PATH_KEYSCAN_BIN	"/usr/bin/ssh-keyscan"
@@ -63,6 +65,7 @@ struct opts {
 	const char	*self_path;	/* the program an update replaces */
 	const char	*ifconfig_bin;
 	const char	*route_bin;
+	const char	*ngctl_bin;
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
 	const char	*keyscan_bin;	/* ssh-keyscan(1) */
@@ -231,18 +234,44 @@ int		 do_service_config(struct work *,
 
 /* invidia/network.c */
 int		 do_network(struct work *, uint8_t, uint8_t, const char *,
-		    struct arc_network_rsp *);
+		    uint32_t, struct arc_network_rsp *);
+int		 do_route_lookup(struct work *, const char *, uint32_t,
+		    struct arc_route_lookup_rsp *);
 
 /* invidia/interfaces.c */
 int		 do_interfaces(struct work *, uint8_t, struct arc_network_rsp *);
 int		 do_if_address(struct work *, const char *, const char *, bool,
-		    const char **);
+		    bool, const char **);
 int		 do_if_state(struct work *, const char *, bool, const char **);
+int		 do_if_set(struct work *, const char *, unsigned int,
+		    const char *, bool, const char **);
+int		 do_if_create(struct work *, const struct arc_job_spec *,
+		    const char **, const char **);
+int		 do_if_destroy(struct work *, const char *, bool, const char **);
+void		 if_current(const char *, unsigned int *, char *, size_t);
+bool		 if_owning(const struct sockaddr *, char *, size_t);
 const char	*if_address_with_prefix(struct work *, const char *,
 		    const char *);
 
 /* invidia/routes.c */
 int		 do_route(struct work *, const char *, const char *, bool,
+		    uint32_t, bool, const char **);
+
+/* invidia/rcconf.c: what of the network rc.conf keeps. */
+const char	*rc_get(struct work *, const char *);
+int		 rc_set(struct work *, const char *, const char *, const char *,
+		    const char **);
+void		 rc_unset(struct work *, const char *);
+int		 rc_alias(struct work *, const char *, const char *,
+		    const char *, const char *, bool, const char **);
+int		 rc_mtu(struct work *, const char *, unsigned int,
+		    const char **);
+void		 rc_forget_if(struct work *, const char *);
+
+/* invidia/netgraph.c */
+int		 do_netgraph(struct work *, struct arc_network_rsp *);
+const char	*ng_check(const char *, const char *const *, size_t);
+int		 do_ng(struct work *, const char *, const char *const *, size_t,
 		    const char **);
 
 /* gula/stats.c */

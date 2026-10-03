@@ -1224,6 +1224,64 @@ ATF_TC_BODY(services, tc)
 	    "\"10.77.0.0/16\"}]}", &r);
 	EXPECT(&r, 400);
 	resp_free(&r);
+
+	/*
+	 * A tunnel made, an MTU set, a route in a routing table of its
+	 * own, a netgraph hook: each a job with what it needs.
+	 */
+	http("POST", path, "{\"jobs\":[{\"kind\":\"if-create\",\"interface\":"
+	    "\"gif3\",\"tunnel_local\":\"192.0.2.1\",\"tunnel_remote\":"
+	    "\"192.0.2.2\",\"address\":\"10.255.0.1/30\",\"destination\":"
+	    "\"10.255.0.2\",\"mtu\":1400,\"description\":\"to lab\"},"
+	    "{\"kind\":\"if-set\",\"interface\":\"lo0\",\"mtu\":9000},"
+	    "{\"kind\":\"route\",\"destination\":\"10.88.0.0/16\",\"gateway\":"
+	    "\"10.0.0.1\",\"fib\":2},{\"kind\":\"netgraph\",\"verb\":"
+	    "\"mkpeer\",\"args\":[\"em0:\",\"bridge\",\"lower\",\"link0\"]},"
+	    "{\"kind\":\"if-destroy\",\"interface\":\"gif3\"}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("create gif3 to 192.0.2.2 with 10.255.0.1/30", jstr(&r,
+	    "jobs.0.title"));
+	ATF_CHECK_STREQ("if-create", jstr(&r, "jobs.0.kind"));
+	ATF_CHECK_STREQ("netgraph", jstr(&r, "jobs.3.kind"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'gif3 destroy' ifconfig.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^gif3 tunnel 192.0.2.1 192.0.2.2$' "
+	    "ifconfig.log && grep -q '^gif3 inet 10.255.0.1/30 10.255.0.2$' "
+	    "ifconfig.log && grep -q '^gif3 description to lab$' ifconfig.log "
+	    "&& grep -q '^lo0 mtu 9000$' ifconfig.log && grep -q "
+	    "'^-n add -inet 10.88.0.0/16 10.0.0.1 -fib 2$' route.log && "
+	    "grep -q '^mkpeer em0: bridge lower link0$' ngctl.log") == 0);
+	/* What ngctl is not to be given the agent refuses to queue. */
+	http("POST", path, "{\"jobs\":[{\"kind\":\"netgraph\",\"verb\":"
+	    "\"msg\",\"args\":[\"em0:\",\"x\"]}]}", &r);
+	EXPECT(&r, 502);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q msg ngctl.log") != 0);
+
+	/* The route to an address, and the netgraph nodes. */
+	snprintf(path, sizeof(path), "%.*s/net/lookup?to=10.77.5.5&fib=1",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("10.0.0.1", jstr(&r, "data.best.gateway"));
+	ATF_CHECK_STREQ("em0", jstr(&r, "data.best.interface"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^-n get -inet 10.77.5.5 -fib 1$' route.log")
+	    == 0);
+	snprintf(path, sizeof(path), "%.*s/net/lookup?to=10.0.0.1;id",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/net/netgraph",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("em0", jstr(&r, "data.nodes.0.name"));
+	ATF_CHECK_STREQ("bridge0", jstr(&r, "data.nodes.0.hooks.0.peer"));
+	resp_free(&r);
 }
 
 CONSOLE_TC(unreachable, "A server that does not answer is reported")

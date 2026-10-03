@@ -7,8 +7,9 @@
 /*
  * Invidia: static routes, added and deleted by running route(8), whose
  * argv and output the trace keeps.  The table itself is read through
- * netstat(1) (network.c).  Changes are live only: nothing here touches
- * rc.conf.
+ * netstat(1) (network.c).  A change is made live, and when asked also
+ * kept in rc.conf: a route this daemon keeps is named after its
+ * destination in static_routes, or in ipv6_static_routes.
  */
 
 #include <sys/param.h>
@@ -18,6 +19,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,18 +66,33 @@ parse_dest(struct work *w, const char *s, int *afp, const char **destp)
 	return (true);
 }
 
+/* The name rc.conf knows the route to dest by: arc_10_77_0_0_16. */
+static char *
+route_name(struct work *w, const char *dest, uint32_t fib)
+{
+	char	*name, *p;
+
+	name = fib != 0 ? wfmt(w, "arc_%s_fib%u", dest, fib) : wfmt(w, "arc_%s",
+	    dest);
+	for (p = name; *p != '\0'; p++)
+		if (!isalnum((unsigned char)*p))
+			*p = '_';
+	return (name);
+}
+
 /*
  * Add a static route to destination by gateway, an address or the name
- * of an interface, or delete the route to destination.
+ * of an interface, or delete the route to destination; in the routing
+ * table fib, and with persist in rc.conf as well.
  */
 int
 do_route(struct work *w, const char *destination, const char *gateway,
-    bool remove, const char **errp)
+    bool remove, uint32_t fib, bool persist, const char **errp)
 {
 	struct execres	 res;
 	unsigned char	 raw[16];
-	const char	*dest;
-	char		*argv[9];
+	const char	*dest, *name, *list, *e;
+	char		*argv[11];
 	bool		 iface;
 	int		 af, gaf, n;
 
@@ -115,10 +132,31 @@ do_route(struct work *w, const char *destination, const char *gateway,
 		argv[n++] = (char *)(uintptr_t)"-iface";
 	if (gateway != NULL && gateway[0] != '\0')
 		argv[n++] = (char *)(uintptr_t)gateway;
+	if (fib != 0) {
+		argv[n++] = (char *)(uintptr_t)"-fib";
+		argv[n++] = wfmt(w, "%u", fib);
+	}
 	argv[n] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "route"));
 		return (-1);
 	}
+	if (!persist)
+		return (0);
+	/* route_<name> is what rc(8) gives route add, the family aside. */
+	name = route_name(w, dest, fib);
+	list = af == AF_INET ? "static_routes" : "ipv6_static_routes";
+	if (remove) {
+		e = NULL;
+		(void)rc_set(w, list, "-=", name, &e);
+		rc_unset(w, wfmt(w, "%sroute_%s", af == AF_INET ? "" : "ipv6_",
+		    name));
+		return (0);
+	}
+	if (rc_set(w, wfmt(w, "%sroute_%s", af == AF_INET ? "" : "ipv6_", name),
+	    "=", wfmt(w, "%s%s %s%s%s", dest, iface ? " -iface" : "", gateway,
+	    fib != 0 ? " -fib " : "", fib != 0 ? wfmt(w, "%u", fib) : ""),
+	    errp) != 0 || rc_set(w, list, "+=", name, errp) != 0)
+		return (-1);
 	return (0);
 }

@@ -50,6 +50,7 @@ enum op {
 	OP_AGENT_UPDATE,
 	OP_AGENT_BUILD,
 	OP_CONSOLE_UPDATE,
+	OP_ROUTE_LOOKUP,
 };
 
 struct call {
@@ -69,6 +70,7 @@ struct call {
 	char			 address[65];
 	char			 ifname[16];
 	uint8_t			 family;	/* network */
+	uint32_t		 fib;		/* network, route lookup */
 	bool			 refresh;	/* packages */
 	bool			 dry_run;	/* pkg-upgrade */
 	char			**names;	/* pkg-upgrade: packages */
@@ -120,6 +122,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_CONNECTIONS] = "connections",
 	[ARC_NET_KIND_SOCKETS] = "sockets",
 	[ARC_NET_KIND_INTERFACES] = "interfaces",
+	[ARC_NET_KIND_NETGRAPH] = "netgraph",
 };
 
 static const char *service_action_names[] = {
@@ -369,6 +372,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    "arc_job_cancel" : c->op == OP_AGENT_UPDATE ? "arc_agent_update" :
 	    c->op == OP_AGENT_BUILD ? "arc_agent_build" :
 	    c->op == OP_CONSOLE_UPDATE ? "arc_console_update" :
+	    c->op == OP_ROUTE_LOOKUP ? "arc_route_lookup" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
@@ -622,6 +626,8 @@ call_run(struct kore_task *t)
 	struct arc_service_config_rsp *scr;
 	struct arc_network_req	 nq;
 	struct arc_network_rsp	*nr;
+	struct arc_route_lookup_req rlq;
+	struct arc_route_lookup_rsp *rlr;
 	struct arc_stats_rsp	*str;
 	struct arc_packages_req	 pq;
 	struct arc_packages_rsp	*pr;
@@ -678,6 +684,7 @@ call_run(struct kore_task *t)
 	sar = NULL;
 	scr = NULL;
 	nr = NULL;
+	rlr = NULL;
 	str = NULL;
 	pr = NULL;
 	ur = NULL;
@@ -978,6 +985,8 @@ call_run(struct kore_task *t)
 		nq.net_family = c->family;
 		/* The text searched for is kept where a jail's name is. */
 		nq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
+		nq.has_net_fib = c->fib != 0;
+		nq.net_fib = c->fib;
 		if ((error = arc_network(&cl, &nq, &nr)) != 0)
 			goto rpcfail;
 		ok = nr->ok;
@@ -1001,6 +1010,30 @@ call_run(struct kore_task *t)
 		put(top, "data", e != NULL ? e : ucl_object_typed_new(UCL_NULL));
 		steps = nr->trace.v;
 		nsteps = nr->trace.n;
+		break;
+	case OP_ROUTE_LOOKUP:
+		memset(&rlq, 0, sizeof(rlq));
+		rlq.lookup = c->address;
+		rlq.has_net_fib = c->fib != 0;
+		rlq.net_fib = c->fib;
+		if ((error = arc_route_lookup(&cl, &rlq, &rlr)) != 0)
+			goto rpcfail;
+		ok = rlr->ok;
+		put_str(top, "error", rlr->error);
+		e = NULL;
+		if (rlr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, rlr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = rlr->trace.v;
+		nsteps = rlr->trace.n;
 		break;
 	case OP_CONSOLE_UPDATE:
 		memset(&cuq, 0, sizeof(cuq));
@@ -1151,6 +1184,8 @@ done:
 		arc_service_config_rsp_free(scr);
 	if (nr != NULL)
 		arc_network_rsp_free(nr);
+	if (rlr != NULL)
+		arc_route_lookup_rsp_free(rlr);
 	if (str != NULL)
 		arc_stats_rsp_free(str);
 	if (pr != NULL)
@@ -1556,7 +1591,23 @@ api_address(struct http_request *req)
 	return (call_start(req, c));
 }
 
-/* GET /api/servers/<id>/net/<kind>[?family=inet|inet6] */
+/* ?fib=N into the call; false when it is not a number of a table. */
+static bool
+pick_fib(struct http_request *req, struct call *c)
+{
+	const char	*errstr;
+	char		 buf[16];
+
+	if (!query_param(req, "fib", buf, sizeof(buf)) || buf[0] == '\0')
+		return (true);
+	c->fib = (uint32_t)strtonum(buf, 0, 65535, &errstr);
+	return (errstr == NULL);
+}
+
+/*
+ * GET /api/servers/<id>/net/<kind>[?family=inet|inet6&fib=N]
+ * GET /api/servers/<id>/net/lookup?to=<address>[&fib=N]
+ */
 int
 api_network(struct http_request *req)
 {
@@ -1564,22 +1615,39 @@ api_network(struct http_request *req)
 	const char	*q;
 	char		 kind[16];
 	size_t		 i;
+	bool		 lookup;
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
-	if ((c = call_new(req, OP_NETWORK)) == NULL)
+	lookup = capture(req, 5, kind, sizeof(kind)) && strcmp(kind,
+	    "lookup") == 0;
+	if ((c = call_new(req, lookup ? OP_ROUTE_LOOKUP : OP_NETWORK)) == NULL)
 		return (KORE_RESULT_OK);
+	if (lookup) {
+		/* An address is hex digits, dots and colons: no escaping. */
+		(void)query_param(req, "to", c->address, sizeof(c->address));
+		if (c->address[0] == '\0' || c->address[strspn(c->address,
+		    "0123456789abcdefABCDEF.:")] != '\0' || !pick_fib(req, c)) {
+			kore_free(c->sname);
+			kore_free(c->uri);
+			kore_free(c->peer);
+			kore_free(c);
+			return (reply_error(req, 400, "invalid", "to is an "
+			    "IPv4 or IPv6 address, fib a number"));
+		}
+		return (call_start(req, c));
+	}
 	for (i = 0; i < nitems(net_kind_names); i++)
-		if (capture(req, 5, kind, sizeof(kind)) &&
-		    strcmp(kind, net_kind_names[i]) == 0)
+		if (strcmp(kind, net_kind_names[i]) == 0)
 			break;
-	if (i == nitems(net_kind_names)) {
+	if (i == nitems(net_kind_names) || !pick_fib(req, c)) {
 		kore_free(c->sname);
 		kore_free(c->uri);
 		kore_free(c->peer);
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "kind is one of "
-		    "routes, nexthops, connections, sockets"));
+		    "routes, nexthops, connections, sockets, interfaces, "
+		    "netgraph, lookup; fib a number"));
 	}
 	c->action = (uint8_t)i;
 	c->family = ARC_NET_FAMILY_ALL;
@@ -1734,6 +1802,10 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_IF_ADDRESS] = "if-address",
 	[ARC_JOB_KIND_IF_STATE] = "if-state",
 	[ARC_JOB_KIND_ROUTE] = "route",
+	[ARC_JOB_KIND_IF_SET] = "if-set",
+	[ARC_JOB_KIND_IF_CREATE] = "if-create",
+	[ARC_JOB_KIND_IF_DESTROY] = "if-destroy",
+	[ARC_JOB_KIND_NETGRAPH] = "netgraph",
 };
 
 static const char *job_state_names[] = {
@@ -1783,6 +1855,11 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->service);
 	kore_free((char *)(uintptr_t)sp->destination);
 	kore_free((char *)(uintptr_t)sp->gateway);
+	kore_free((char *)(uintptr_t)sp->tunnel_local);
+	kore_free((char *)(uintptr_t)sp->tunnel_remote);
+	kore_free((char *)(uintptr_t)sp->parent);
+	kore_free((char *)(uintptr_t)sp->verb);
+	kore_free((char *)(uintptr_t)sp->description);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -1834,6 +1911,28 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->service = jdup(o, "service");
 	sp->destination = jdup(o, "destination");
 	sp->gateway = jdup(o, "gateway");
+	sp->tunnel_local = jdup(o, "tunnel_local");
+	sp->tunnel_remote = jdup(o, "tunnel_remote");
+	sp->parent = jdup(o, "parent");
+	sp->verb = jdup(o, "verb");
+	/* A description may be empty: that takes it off. */
+	if ((kind = ucl_str(o, "description")) != NULL)
+		sp->description = kore_strdup(kind);
+	if ((v = ucl_object_lookup(o, "mtu")) != NULL && ucl_object_toint(v) >
+	    0 && ucl_object_toint(v) <= 65535) {
+		sp->has_mtu = true;
+		sp->mtu = (uint32_t)ucl_object_toint(v);
+	}
+	if ((v = ucl_object_lookup(o, "fib")) != NULL && ucl_object_toint(v) >
+	    0 && ucl_object_toint(v) <= 65535) {
+		sp->has_fib = true;
+		sp->fib = (uint32_t)ucl_object_toint(v);
+	}
+	if ((v = ucl_object_lookup(o, "id")) != NULL && ucl_object_toint(v) >=
+	    0 && ucl_object_toint(v) <= 16777215) {
+		sp->has_id = true;
+		sp->id = (uint32_t)ucl_object_toint(v);
+	}
 	sp->remove = ucl_flag(o, "remove");
 	sp->safe = ucl_flag(o, "safe");
 	sp->live = ucl_flag(o, "live");
@@ -1874,6 +1973,26 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		    NULL))
 			return ("a route job needs a destination, and a "
 			    "gateway to add one");
+		break;
+	case ARC_JOB_KIND_IF_SET:
+	case ARC_JOB_KIND_IF_CREATE:
+	case ARC_JOB_KIND_IF_DESTROY:
+		if (sp->interface == NULL)
+			return ("the job needs an interface");
+		break;
+	case ARC_JOB_KIND_NETGRAPH:
+		names = ucl_object_lookup(o, "args");
+		if (sp->verb == NULL || (n = ucl_array_size(names)) == 0 ||
+		    n > 4)
+			return ("a netgraph job needs a verb and its args");
+		nv = kore_calloc(n, sizeof(*nv));
+		sp->names.v = nv;
+		it = NULL;
+		while ((v = ucl_object_iterate(names, &it, true)) != NULL &&
+		    sp->names.n < n)
+			if (ucl_object_type(v) == UCL_STRING)
+				nv[sp->names.n++] =
+				    kore_strdup(ucl_object_tostring(v));
 		break;
 	case ARC_JOB_KIND_IF_STATE:
 		if (sp->interface == NULL || (v = ucl_object_lookup(o,

@@ -31,6 +31,7 @@
 .Op Fl M Ar make
 .Op Fl I Ar ifconfig
 .Op Fl r Ar route
+.Op Fl n Ar ngctl
 .Op Fl w Ar seconds
 .Op Fl N Ar netstat
 .Op Fl X Ar sockstat
@@ -227,11 +228,12 @@ Print the version and exit.
 .It Fl w Ar seconds
 How long a change made in safe mode waits to be confirmed.
 Default 60.
-.It Fl I Ar ifconfig , Fl r Ar route
+.It Fl I Ar ifconfig , Fl r Ar route , Fl n Ar ngctl
 The
-.Xr ifconfig 8
-and
+.Xr ifconfig 8 ,
 .Xr route 8
+and
+.Xr ngctl 8
 programs.
 .It Fl N Ar netstat , Fl X Ar sockstat
 The

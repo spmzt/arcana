@@ -56,6 +56,8 @@ static const char *status_names[] = {
 static bool	show_trace;
 static bool	queue;		/* -q: submit as a job */
 static bool	safe;		/* -s: undo the change unless confirmed */
+static bool	persist;	/* -p: keep the change in rc.conf too */
+static uint32_t	fib;		/* -F: the routing table */
 
 static const char *job_states[] = {
 	[ARC_JOB_STATE_QUEUED] = "queued",
@@ -94,8 +96,8 @@ static void
 usage(void)
 {
 
-	xo_error("usage: arcanactl [-qst] [-c uri] [-A cafile -C certfile "
-	    "-K keyfile] [-N name] command\n"
+	xo_error("usage: arcanactl [-pqst] [-F fib] [-c uri] [-A cafile "
+	    "-C certfile -K keyfile]\n                 [-N name] command\n"
 	    "commands:\n"
 	    "    hello\n"
 	    "    list [-c]\n"
@@ -105,13 +107,21 @@ usage(void)
 	    "    service name start | stop | restart | reload | enable | "
 	    "disable\n"
 	    "    service name config [-x key ...] [key=value ...]\n"
-	    "    net routes | nexthops | connections | sockets | interfaces "
-	    "[-4 | -6]\n"
+	    "    net routes | nexthops | connections | sockets | interfaces | "
+	    "netgraph\n        [-4 | -6]\n"
 	    "    net routes [-4 | -6] text\n"
-	    "    interface name up | down\n"
+	    "    interface name up | down | destroy\n"
 	    "    interface name add | remove address\n"
+	    "    interface name mtu number\n"
+	    "    interface name description text\n"
+	    "    interface name create [tunnel local remote] [address "
+	    "address [peer address]]\n        [mtu number] [description "
+	    "text] [id number] [parent interface]\n"
 	    "    route add destination gateway\n"
 	    "    route delete destination [gateway]\n"
+	    "    route get address\n"
+	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
+	    "...\n"
 	    "    stats\n"
 	    "    packages [-r] [jail]\n"
 	    "    pkg-upgrade [-n] [-j jail] [package ...]\n"
@@ -123,7 +133,9 @@ usage(void)
 	    "    console-update [-y] [-i key] repository [ref]\n"
 	    "with -q, start, stop, restart, kill, address, service (but "
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
-	    "instead of waited for.\n");
+	    "instead of waited for.\n-p keeps a change to an interface or a "
+	    "route in rc.conf too, -s has it undone\nunless this program "
+	    "reaches the host again, -F names a routing table.\n");
 	exit(2);
 }
 
@@ -463,7 +475,7 @@ cmd_address(struct arc_client *cl, int argc, char **argv)
 		req.live = true;
 	req.jail = argv[optind];
 	req.address = argv[optind + 1];
-	if (queue && !req.dry_run) {
+	if ((queue || safe) && !req.dry_run) {
 		struct arc_job_spec sp;
 
 		memset(&sp, 0, sizeof(sp));
@@ -573,7 +585,7 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 	if (i < nitems(verbs)) {
 		if (argc != 3)
 			usage();
-		if (queue) {
+		if (queue || safe) {
 			struct arc_job_spec sp;
 
 			memset(&sp, 0, sizeof(sp));
@@ -621,7 +633,7 @@ cmd_service(struct arc_client *cl, int argc, char **argv)
 	}
 	creq.variables.v = vars;
 	creq.variables.n = nv;
-	if (queue && nv > 0) {
+	if ((queue || safe) && nv > 0) {
 		struct arc_job_spec sp;
 
 		memset(&sp, 0, sizeof(sp));
@@ -871,22 +883,61 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
  * interface name up | down, interface name add | remove address: a job,
  * waited for unless it is only queued (-q).
  */
+/* route get address: the route the host would take, and the others. */
+static int
+cmd_route_get(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_route_lookup_req	 req;
+	struct arc_route_lookup_rsp	*rsp;
+	int				 error;
+
+	if (argc != 3)
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.lookup = argv[2];
+	req.has_net_fib = fib != 0;
+	req.net_fib = fib;
+	if ((error = arc_route_lookup(cl, &req, &rsp)) != 0)
+		fail(cl, error, "route get");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("route get %s: %s", argv[2], rsp->error != NULL ?
+		    rsp->error : "failed");
+	arc_route_lookup_rsp_free(rsp);
+	return (error);
+}
+
 static int
 cmd_interface(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_job_submit_req	 sreq;
-	struct arc_job_submit_rsp	*srsp;
 	struct arc_job_spec		 sp;
-	char				 id[24], *jargv[4];
-	int				 error;
+	const char			*errstr;
+	uint32_t			 num;
+	int				 i;
 
 	if (argc < 3)
 		usage();
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
+	sp.persist = persist;
+	if (strcmp(argv[0], "ng") == 0) {
+		sp.kind = ARC_JOB_KIND_NETGRAPH;
+		sp.verb = argv[1];
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = (size_t)argc - 2;
+		sp.persist = false;
+		goto send;
+	}
+	if (strcmp(argv[0], "route") == 0 && strcmp(argv[1], "get") == 0)
+		return (cmd_route_get(cl, argc, argv));
 	if (strcmp(argv[0], "route") == 0) {
 		/* route add destination gateway | delete destination [gw] */
 		sp.kind = ARC_JOB_KIND_ROUTE;
+		sp.has_fib = fib != 0;
+		sp.fib = fib;
 		sp.remove = strcmp(argv[1], "delete") == 0;
 		if ((!sp.remove && (strcmp(argv[1], "add") != 0 || argc != 4)) ||
 		    (sp.remove && argc > 4))
@@ -906,32 +957,56 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 		sp.kind = ARC_JOB_KIND_IF_ADDRESS;
 		sp.address = argv[3];
 		sp.remove = strcmp(argv[2], "remove") == 0;
+	} else if (strcmp(argv[2], "destroy") == 0 && argc == 3) {
+		sp.kind = ARC_JOB_KIND_IF_DESTROY;
+	} else if (strcmp(argv[2], "mtu") == 0 && argc == 4) {
+		sp.kind = ARC_JOB_KIND_IF_SET;
+		sp.has_mtu = true;
+		sp.mtu = (uint32_t)strtonum(argv[3], 68, 65535, &errstr);
+		if (errstr != NULL)
+			xo_errx(2, "mtu %s: %s", argv[3], errstr);
+	} else if (strcmp(argv[2], "description") == 0 && argc == 4) {
+		sp.kind = ARC_JOB_KIND_IF_SET;
+		sp.description = argv[3];
+	} else if (strcmp(argv[2], "create") == 0) {
+		/* Words and what follows each, in any order. */
+		sp.kind = ARC_JOB_KIND_IF_CREATE;
+		for (i = 3; i < argc; i++) {
+			if (strcmp(argv[i], "tunnel") == 0 && i + 2 < argc) {
+				sp.tunnel_local = argv[++i];
+				sp.tunnel_remote = argv[++i];
+			} else if (strcmp(argv[i], "address") == 0 &&
+			    i + 1 < argc)
+				sp.address = argv[++i];
+			else if (strcmp(argv[i], "peer") == 0 && i + 1 < argc)
+				sp.destination = argv[++i];
+			else if (strcmp(argv[i], "description") == 0 &&
+			    i + 1 < argc)
+				sp.description = argv[++i];
+			else if (strcmp(argv[i], "parent") == 0 && i + 1 < argc)
+				sp.parent = argv[++i];
+			else if ((strcmp(argv[i], "mtu") == 0 || strcmp(argv[i],
+			    "id") == 0) && i + 1 < argc) {
+				num = (uint32_t)strtonum(argv[i + 1], 0,
+				    16777215, &errstr);
+				if (errstr != NULL)
+					xo_errx(2, "%s %s: %s", argv[i],
+					    argv[i + 1], errstr);
+				if (argv[i][0] == 'm') {
+					sp.has_mtu = true;
+					sp.mtu = num;
+				} else {
+					sp.has_id = true;
+					sp.id = num;
+				}
+				i++;
+			} else
+				usage();
+		}
 	} else
 		usage();
 send:
-	sp.safe = safe;
-	if (queue)
-		return (submit(cl, &sp));
-	memset(&sreq, 0, sizeof(sreq));
-	sreq.batch.v = &sp;
-	sreq.batch.n = 1;
-	if ((error = arc_job_submit(cl, &sreq, &srsp)) != 0)
-		fail(cl, error, "interface");
-	if (!srsp->ok || srsp->jobs.n != 1) {
-		xo_warnx("%s %s: %s", argv[0], argv[1], srsp->error != NULL ?
-		    srsp->error : "not accepted");
-		arc_job_submit_rsp_free(srsp);
-		return (1);
-	}
-	snprintf(id, sizeof(id), "%ju", (uintmax_t)srsp->jobs.v[0].id);
-	arc_job_submit_rsp_free(srsp);
-	/* The job, read until it is done, as "job -w id". */
-	jargv[0] = (char *)(uintptr_t)"job";
-	jargv[1] = (char *)(uintptr_t)"-w";
-	jargv[2] = id;
-	jargv[3] = NULL;
-	optreset = 1;
-	return (cmd_job(cl, 3, jargv));
+	return (submit(cl, &sp));
 }
 
 /* The program's libxo JSON, printed as it came. */
@@ -939,7 +1014,7 @@ static int
 cmd_net(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets", "interfaces" };
+	    "sockets", "interfaces", "netgraph" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -957,6 +1032,8 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	req.net_kind = (uint8_t)i;
 	req.has_net_family = true;
 	req.net_family = ARC_NET_FAMILY_ALL;
+	req.has_net_fib = fib != 0;
+	req.net_fib = fib;
 	argc--;
 	argv++;
 	optind = 1;
@@ -1171,20 +1248,42 @@ emit_job(const struct arc_job *j)
 	xo_close_instance("job");
 }
 
-/* Queue one job and say its number. */
+/*
+ * Queue one job.  With -q say its number and leave; without, read the
+ * job until it is done, as "job -w id", which is also what confirms a
+ * change made in safe mode.
+ */
 static int
 submit(struct arc_client *cl, struct arc_job_spec *sp)
 {
 	struct arc_job_submit_req	 req;
 	struct arc_job_submit_rsp	*rsp;
+	char				 id[24], *jargv[4];
 	size_t				 i;
 	int				 error;
 
+	sp->safe = safe;
 	memset(&req, 0, sizeof(req));
 	req.batch.v = sp;
 	req.batch.n = 1;
 	if ((error = arc_job_submit(cl, &req, &rsp)) != 0)
 		fail(cl, error, "queue");
+	if (!queue) {
+		if (!rsp->ok || rsp->jobs.n != 1) {
+			xo_warnx("%s", rsp->error != NULL ? rsp->error :
+			    "not accepted");
+			arc_job_submit_rsp_free(rsp);
+			return (1);
+		}
+		snprintf(id, sizeof(id), "%ju", (uintmax_t)rsp->jobs.v[0].id);
+		arc_job_submit_rsp_free(rsp);
+		jargv[0] = (char *)(uintptr_t)"job";
+		jargv[1] = (char *)(uintptr_t)"-w";
+		jargv[2] = id;
+		jargv[3] = NULL;
+		optreset = 1;
+		return (cmd_job(cl, 3, jargv));
+	}
 	xo_open_list("job");
 	for (i = 0; i < rsp->jobs.n; i++)
 		emit_job(&rsp->jobs.v[i]);
@@ -1318,14 +1417,14 @@ main(int argc, char *argv[])
 	cbl_conn		*conn;
 	cbl_ctx			*ctx;
 	cbl_tls			*tls;
-	const char		*uri, *cafile, *certfile, *keyfile, *name;
+	const char		*uri, *cafile, *certfile, *keyfile, *name, *errstr;
 	int			 ch, error, rc;
 
 	if ((argc = xo_parse_args(argc, argv)) < 0)
 		exit(2);
 	uri = PATH_SOCKET;
 	cafile = certfile = keyfile = name = NULL;
-	while ((ch = getopt(argc, argv, "+A:C:c:K:N:qst")) != -1) {
+	while ((ch = getopt(argc, argv, "+A:C:c:F:K:N:pqst")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -1341,6 +1440,14 @@ main(int argc, char *argv[])
 			break;
 		case 'N':
 			name = optarg;
+			break;
+		case 'F':
+			fib = (uint32_t)strtonum(optarg, 0, 65535, &errstr);
+			if (errstr != NULL)
+				xo_errx(2, "-F %s: %s", optarg, errstr);
+			break;
+		case 'p':
+			persist = true;
 			break;
 		case 'q':
 			queue = true;
@@ -1405,7 +1512,7 @@ main(int argc, char *argv[])
 	else if (strcmp(argv[0], "service") == 0)
 		rc = cmd_service(&cl, argc, argv);
 	else if (strcmp(argv[0], "interface") == 0 ||
-	    strcmp(argv[0], "route") == 0)
+	    strcmp(argv[0], "route") == 0 || strcmp(argv[0], "ng") == 0)
 		rc = cmd_interface(&cl, argc, argv);
 	else if (strcmp(argv[0], "net") == 0)
 		rc = cmd_net(&cl, argc, argv);

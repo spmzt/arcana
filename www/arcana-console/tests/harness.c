@@ -287,8 +287,23 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "echo \"$last $(cut -d' ' -f1,2 hostkey.pub)\"\n");
 	ATF_REQUIRE(chmod("fake-keyscan", 0755) == 0);
 	/* ifconfig(8), for changes: what it was run with. */
-	put("fake-ifconfig", "#!/bin/sh\necho \"$*\" >> ifconfig.log\n");
-	put("fake-route", "#!/bin/sh\necho \"$*\" >> route.log\n");
+	put("fake-ifconfig", "#!/bin/sh\necho \"$*\" >> ifconfig.log\n"
+	    "[ \"$2\" = create ] && echo \"$1\"\nexit 0\n");
+	put("fake-route", "#!/bin/sh\necho \"$*\" >> route.log\n"
+	    "[ \"$2\" = get ] && printf '   route to: %s\\ndestination: "
+	    "10.77.0.0\\n       mask: 255.255.0.0\\n    gateway: 10.0.0.1\\n"
+	    "        fib: 0\\n  interface: em0\\n      flags: <UP,GATEWAY>"
+	    "\\n' \"$4\"\nexit 0\n");
+	put("fake-ngctl", "#!/bin/sh\necho \"$*\" >> ngctl.log\n"
+	    "[ \"$1\" = list ] && printf '  Name: em0  Type: ether  ID: "
+	    "00000002  Num hooks: 1\\n  Local hook  Peer name  Peer type  "
+	    "Peer ID  Peer hook\\n  ----------  ---------  ---------  "
+	    "-------  ---------\\n  lower  bridge0  bridge  0000000c  link0"
+	    "\\n  Name: bridge0  Type: bridge  ID: 0000000c  Num hooks: 1\\n"
+	    "  Local hook  Peer name  Peer type  Peer ID  Peer hook\\n"
+	    "  ----------  ---------  ---------  -------  ---------\\n"
+	    "  link0  em0  ether  00000002  lower\\n'\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-ngctl", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-route", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-ifconfig", 0755) == 0);
 	put("fake-make", buf);
@@ -358,7 +373,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[31] = (char *)(uintptr_t)"./fake-ifconfig";
 	argv[32] = (char *)(uintptr_t)"-r";
 	argv[33] = (char *)(uintptr_t)"./fake-route";
-	argv[34] = NULL;
+	argv[34] = (char *)(uintptr_t)"-n";
+	argv[35] = (char *)(uintptr_t)"./fake-ngctl";
+	argv[36] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

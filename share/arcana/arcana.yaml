@@ -40,13 +40,36 @@ definitions:
       - name: if-address
         doc: |
           With interface and address, add the address to the interface
-          as an alias, or with remove take it off.  Live, with ifconfig(8).
+          as an alias, or with remove take it off.  Live, with
+          ifconfig(8); with persist, also in rc.conf, as the next
+          ifconfig_<interface>_alias<n>, which stay without gaps.
       - name: if-state
         doc: With interface and up, bring the interface up or down.
       - name: route
         doc: |
           With destination and gateway, add a static route, or with
-          remove delete it.  Live, with route(8).
+          remove delete it, in the routing table fib names.  Live, with
+          route(8); with persist, also in rc.conf (static_routes).
+      - name: if-set
+        doc: |
+          With interface, set its mtu, its description, or both; an
+          empty description takes it off.  With persist, also in rc.conf.
+      - name: if-create
+        doc: |
+          Create the cloned interface named by interface, a name with
+          its unit (gif0) or a type alone (gif), of one of the types the
+          daemon knows.  tunnel-local and tunnel-remote are a tunnel's
+          outer ends, address and destination its inner ones, id a VLAN
+          tag or a VXLAN identifier, parent the interface a VLAN rides
+          or a bridge's first member.  What cannot be finished is
+          destroyed again.  With persist, also in rc.conf.
+      - name: if-destroy
+        doc: Destroy a cloned interface; with persist, forget it in rc.conf.
+      - name: netgraph
+        doc: |
+          Change the netgraph(4) graph with ngctl(8).  verb is one of
+          mkpeer, connect, rmhook, shutdown and name, and names its
+          arguments in order.
   - name: job-state
     type: enum
     entries:
@@ -78,7 +101,12 @@ definitions:
         doc: |
           The network interfaces with their addresses, flags, link and
           counters, from getifaddrs(3), as a JSON object with the array
-          "interfaces".
+          "interfaces" and "time", the milliseconds of a clock that only
+          runs forward, to make rates of the counters.
+      - name: netgraph
+        doc: |
+          The netgraph(4) nodes with their hooks, from ngctl(8) list -l,
+          as a JSON object with the array "nodes".
   - name: net-family
     type: enum
     entries:
@@ -313,6 +341,15 @@ attribute-sets:
           for on the host, which a table too large to send needs.
         checks:
           max-len: 128
+      - name: net-fib
+        type: u32
+        doc: The routing table to read or look in; 0 when not given.
+      - name: lookup
+        type: text
+        doc: An IPv4 or IPv6 address to find the route to.
+        checks:
+          min-len: 2
+          max-len: 64
       - name: total
         type: u64
         doc: Rows in the table on the host, when not all were sent.
@@ -571,11 +608,13 @@ attribute-sets:
       - name: safe
         type: flag
         doc: |
-          For if-address, if-state and route.  Undo the change unless
-          job-confirm comes for the job within the time the daemon
-          allows.  A client that can still reach the daemon after the
-          change confirms; one the change cut off cannot, and the host
-          comes back by itself.
+          Undo the change unless job-confirm comes for the job within
+          the time the daemon allows.  A client that can still reach the
+          daemon after the change confirms; one the change cut off
+          cannot, and the host comes back by itself.  For the changes
+          that can be taken back: if-address, if-state, if-set,
+          if-create, route, address, service-config, and a service's
+          start, stop, enable and disable.
       - name: destination
         type: text
         doc: |
@@ -588,6 +627,40 @@ attribute-sets:
         doc: For route, an address, or the name of an interface.
         checks:
           max-len: 64
+      - name: fib
+        type: u32
+        doc: For route, the routing table; 0 when not given.
+      - name: mtu
+        type: u32
+        doc: For if-set and if-create.
+      - name: description
+        type: text
+        doc: For if-set and if-create.
+        checks:
+          max-len: 64
+      - name: tunnel-local
+        type: text
+        doc: For if-create, a tunnel's outer address on this host.
+        checks:
+          max-len: 64
+      - name: tunnel-remote
+        type: text
+        doc: For if-create, a tunnel's outer address at the far end.
+        checks:
+          max-len: 64
+      - name: id
+        type: u32
+        doc: For if-create, a VLAN tag or a VXLAN identifier.
+      - name: parent
+        type: text
+        doc: For if-create, the interface a VLAN rides or a bridge takes in.
+        checks:
+          max-len: 15
+      - name: verb
+        type: text
+        doc: For netgraph, the ngctl(8) command.
+        checks:
+          max-len: 16
 
   - name: job
     attributes:
@@ -827,6 +900,7 @@ operations:
           - net-kind
           - net-family
           - net-filter
+          - net-fib
         required:
           - net-kind
       reply:
@@ -1057,5 +1131,28 @@ operations:
           - fingerprints
           - deploy-key
           - restarting
+          - trace
+
+  - name: route-lookup
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The route this host would send a packet to an address by, as
+      route(8) get tells it, and the other routes of its table that
+      cover the address, which are what is left when the best one goes:
+      a JSON object with "best" and the array "candidates", each with
+      its prefix length.
+    do:
+      request:
+        attributes:
+          - lookup
+          - net-fib
+        required:
+          - lookup
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
           - trace
 

@@ -11,6 +11,11 @@
  */
 
 #include <sys/param.h>
+#include <sys/socket.h>
+
+#include <net/if.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <ctype.h>
 #include <err.h>
@@ -34,6 +39,7 @@ struct job {
 	struct arc_address_req	 addr;
 	struct arc_service_config_req svc;
 	uint8_t			 family;
+	uint32_t		 fib;
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
 	uint8_t			*binary;	/* agent-update */
@@ -72,6 +78,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_CONNECTIONS] = "connections",
 	[ARC_NET_KIND_SOCKETS] = "sockets",
 	[ARC_NET_KIND_INTERFACES] = "interfaces",
+	[ARC_NET_KIND_NETGRAPH] = "netgraph",
 };
 
 static const char *service_action_names[] = {
@@ -93,6 +100,7 @@ static int	reject(cbl_req *, const char *);
 static char	*xstrdup(const char *);
 static void	job_free(struct job *);
 static const char *check_spec(const struct arc_job_spec *);
+static const char *cuts_off(cbl_req *, const struct arc_job_spec *);
 
 /*
  * Jail names: letters, digits, '_', '-', and '.' for hierarchical jails.
@@ -271,6 +279,7 @@ worker(void *arg)
 	struct arc_service_action_rsp sar;
 	struct arc_service_config_rsp scr;
 	struct arc_network_rsp	 nr;
+	struct arc_route_lookup_rsp rlr;
 	struct arc_stats_rsp	 str;
 	struct arc_packages_rsp	 pr;
 	struct arc_pkg_upgrade_rsp ur;
@@ -382,12 +391,24 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
 		    what);
 		memset(&nr, 0, sizeof(nr));
-		do_network(&w, j->action, j->family, j->source, &nr);
+		do_network(&w, j->action, j->family, j->source, j->fib, &nr);
 		ok = nr.ok;
 		error = nr.error;
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &nr.trace.v, &nr.trace.n);
 		rc = arc_network_reply(j->req, &nr);
+		break;
+	case ARC_CMD_ROUTE_LOOKUP:
+		what = wfmt(&w, "route to %s", j->source);
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&rlr, 0, sizeof(rlr));
+		do_route_lookup(&w, j->source, j->fib, &rlr);
+		ok = rlr.ok;
+		error = rlr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &rlr.trace.v, &rlr.trace.n);
+		rc = arc_route_lookup_reply(j->req, &rlr);
 		break;
 	case ARC_CMD_SERVICES:
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
@@ -822,6 +843,24 @@ arc_network_doit(cbl_req *req, const struct arc_network_req *rq,
 	    xstrdup(rq->net_filter) : NULL;
 	j->action = rq->net_kind;
 	j->family = rq->has_net_family ? rq->net_family : ARC_NET_FAMILY_ALL;
+	j->fib = rq->has_net_fib ? rq->net_fib : 0;
+	return (start(j));
+}
+
+int
+arc_route_lookup_doit(cbl_req *req, const struct arc_route_lookup_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->lookup == NULL || rq->lookup[0] == '-')
+		return (reject(req, "an address to look up is needed"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_ROUTE_LOOKUP;
+	j->source = xstrdup(rq->lookup);
+	j->fib = rq->has_net_fib ? rq->net_fib : 0;
 	return (start(j));
 }
 
@@ -891,7 +930,7 @@ check_spec(const struct arc_job_spec *sp)
 {
 	size_t	i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_ROUTE)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_NETGRAPH)
 		return ("a job needs a kind");
 	switch (sp->kind) {
 	case ARC_JOB_KIND_JAIL_ACTION:
@@ -899,6 +938,9 @@ check_spec(const struct arc_job_spec *sp)
 			return ("invalid jail name");
 		if (!sp->has_action || sp->action >= nitems(action_names))
 			return ("invalid action");
+		if (sp->safe)
+			return ("what a jail was doing cannot be put back: not "
+			    "in safe mode");
 		break;
 	case ARC_JOB_KIND_ADDRESS:
 		if (sp->jail == NULL || !valid_jail(sp->jail))
@@ -923,6 +965,30 @@ check_spec(const struct arc_job_spec *sp)
 		if (!sp->has_up)
 			return ("say up or down");
 		break;
+	case ARC_JOB_KIND_IF_SET:
+		if (sp->interface == NULL || !valid_ifname(sp->interface))
+			return ("invalid interface name");
+		if ((!sp->has_mtu || sp->mtu == 0) && sp->description == NULL)
+			return ("say what to set: mtu, description or both");
+		break;
+	case ARC_JOB_KIND_IF_CREATE:
+		if (sp->interface == NULL || !valid_ifname(sp->interface))
+			return ("invalid interface name");
+		if (sp->parent != NULL && !valid_ifname(sp->parent))
+			return ("invalid interface name");
+		break;
+	case ARC_JOB_KIND_IF_DESTROY:
+		if (sp->interface == NULL || !valid_ifname(sp->interface))
+			return ("invalid interface name");
+		if (sp->safe)
+			return ("an interface destroyed cannot be made again "
+			    "as it was: not in safe mode");
+		break;
+	case ARC_JOB_KIND_NETGRAPH:
+		if (sp->safe)
+			return ("netgraph changes cannot be undone: not in "
+			    "safe mode");
+		return (ng_check(sp->verb, sp->names.v, sp->names.n));
 	case ARC_JOB_KIND_ROUTE:
 		if (sp->destination == NULL || sp->destination[0] == '\0' ||
 		    sp->destination[0] == '-')
@@ -943,6 +1009,11 @@ check_spec(const struct arc_job_spec *sp)
 		if (!sp->has_service_action ||
 		    sp->service_action >= nitems(service_action_names))
 			return ("invalid action");
+		if (sp->safe && (sp->service_action ==
+		    ARC_SERVICE_ACTION_RESTART || sp->service_action ==
+		    ARC_SERVICE_ACTION_RELOAD))
+			return ("a restart or a reload cannot be undone: not "
+			    "in safe mode");
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
 		if (sp->service == NULL || !valid_service(sp->service))
@@ -959,9 +1030,64 @@ check_spec(const struct arc_job_spec *sp)
 		for (i = 0; i < sp->names.n; i++)
 			if (sp->names.v[i] == NULL)
 				return ("a package without a name");
+		if (sp->safe)
+			return ("an upgrade cannot be undone: not in safe mode");
 		break;
 	}
 	return (NULL);
+}
+
+/*
+ * Would the change take away the address this request came in by?  It
+ * would cut off the one who asks, who could then not take it back: it
+ * is done only in safe mode, where the host takes it back itself.
+ */
+static const char *
+cuts_off(cbl_req *req, const struct arc_job_spec *sp)
+{
+	struct sockaddr_storage	 ss;
+	socklen_t		 len;
+	unsigned char		 raw[16], *mine;
+	char			 ifname[IF_NAMESIZE], addr[65];
+	bool			 hit;
+	int			 fd;
+
+	if (sp->safe || (sp->kind != ARC_JOB_KIND_IF_ADDRESS &&
+	    sp->kind != ARC_JOB_KIND_IF_STATE && sp->kind !=
+	    ARC_JOB_KIND_IF_DESTROY))
+		return (NULL);
+	len = sizeof(ss);
+	if ((fd = cbl_conn_fd(cbl_req_conn(req))) == -1 || getsockname(fd,
+	    (struct sockaddr *)&ss, &len) == -1 || (ss.ss_family != AF_INET &&
+	    ss.ss_family != AF_INET6) || !if_owning((struct sockaddr *)&ss,
+	    ifname, sizeof(ifname)))
+		return (NULL);
+	hit = false;
+	if (sp->kind == ARC_JOB_KIND_IF_ADDRESS) {
+		if (!sp->remove || strcmp(sp->interface, ifname) != 0)
+			return (NULL);
+		strlcpy(addr, sp->address, sizeof(addr));
+		addr[strcspn(addr, "/")] = '\0';
+		if (ss.ss_family == AF_INET) {
+			mine = (unsigned char *)&((struct sockaddr_in *)&ss)->
+			    sin_addr;
+			hit = inet_pton(AF_INET, addr, raw) == 1 &&
+			    memcmp(raw, mine, 4) == 0;
+		} else {
+			mine = (unsigned char *)&((struct sockaddr_in6 *)&ss)->
+			    sin6_addr;
+			hit = (inet_pton(AF_INET6, addr, raw) == 1 &&
+			    memcmp(raw, mine, 16) == 0) ||
+			    (IN6_IS_ADDR_V4MAPPED((struct in6_addr *)
+			    (void *)mine) && inet_pton(AF_INET, addr, raw) ==
+			    1 && memcmp(raw, mine + 12, 4) == 0);
+		}
+	} else
+		hit = strcmp(sp->interface, ifname) == 0 &&
+		    (sp->kind == ARC_JOB_KIND_IF_DESTROY || !sp->up);
+	return (hit ? "this request came in by that address: the change "
+	    "would cut you off.  Ask for it in safe mode, and the host takes "
+	    "it back when it does not hear from you again" : NULL);
 }
 
 /* Jobs are queued, listed and read on the loop: none of it waits. */
@@ -977,7 +1103,8 @@ arc_job_submit_doit(cbl_req *req, const struct arc_job_submit_req *rq,
 	int				 error;
 
 	for (i = 0; i < rq->batch.n; i++)
-		if ((e = check_spec(&rq->batch.v[i])) != NULL)
+		if ((e = check_spec(&rq->batch.v[i])) != NULL ||
+		    (e = cuts_off(req, &rq->batch.v[i])) != NULL)
 			return (reject(req, e));
 	work_init(&w);
 	memset(&rsp, 0, sizeof(rsp));

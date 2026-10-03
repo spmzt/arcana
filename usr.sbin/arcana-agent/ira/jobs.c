@@ -36,6 +36,11 @@ struct qjob {
 	bool			 confirmed;	/* a safe change may stay */
 	time_t			 confirm_by;	/* or is undone at this time */
 	const char		*undo_address;	/* in w's pool, or NULL */
+	unsigned int		 undo_mtu;	/* if-set: what it was */
+	const char		*undo_descr;
+	const char		*made;		/* if-create: the name it got */
+	struct arc_variable	*undo_vars;	/* service-config: as they were */
+	size_t			 undo_nvars;
 	char			*title;
 	char			*peer;
 	const char		*error;		/* in w's pool */
@@ -60,6 +65,7 @@ static void	 job_free(struct qjob *);
 static void	 trim(void);
 static void	 run(struct qjob *);
 static bool	 await_confirm(struct qjob *);
+static void	 undo_prepare(struct qjob *);
 static const char *undo(struct qjob *);
 static void	*runner(void *);
 static void	 fill(struct work *, struct arc_job *, struct qjob *, bool);
@@ -113,9 +119,30 @@ title_of(const struct arc_job_spec *sp)
 		    "down");
 		break;
 	case ARC_JOB_KIND_ROUTE:
-		rc = asprintf(&t, "route %s %s%s%s", sp->remove ? "delete" :
+		rc = asprintf(&t, "route %s %s%s%s%s%s", sp->remove ? "delete" :
 		    "add", sp->destination, sp->gateway != NULL ? " via " : "",
-		    sp->gateway != NULL ? sp->gateway : "");
+		    sp->gateway != NULL ? sp->gateway : "", sp->has_fib &&
+		    sp->fib != 0 ? " (fib)" : "", sp->persist ? " (kept)" : "");
+		break;
+	case ARC_JOB_KIND_IF_SET:
+		rc = asprintf(&t, "%s: set%s%s", sp->interface, sp->has_mtu &&
+		    sp->mtu != 0 ? " mtu" : "", sp->description != NULL ?
+		    " description" : "");
+		break;
+	case ARC_JOB_KIND_IF_CREATE:
+		rc = asprintf(&t, "create %s%s%s%s%s", sp->interface,
+		    sp->tunnel_remote != NULL ? " to " : "",
+		    sp->tunnel_remote != NULL ? sp->tunnel_remote : "",
+		    sp->address != NULL ? " with " : "", sp->address != NULL ?
+		    sp->address : "");
+		break;
+	case ARC_JOB_KIND_IF_DESTROY:
+		rc = asprintf(&t, "destroy %s", sp->interface);
+		break;
+	case ARC_JOB_KIND_NETGRAPH:
+		rc = asprintf(&t, "ngctl %s %s%s%s", sp->verb, sp->names.n > 0 ?
+		    sp->names.v[0] : "", sp->names.n > 1 ? " " : "",
+		    sp->names.n > 1 ? sp->names.v[1] : "");
 		break;
 	default:
 		rc = asprintf(&t, "pkg upgrade%s%s%s", sp->jail != NULL ?
@@ -142,6 +169,11 @@ spec_copy(struct arc_job_spec *d, const struct arc_job_spec *s)
 	d->service = xdup(s->service);
 	d->destination = xdup(s->destination);
 	d->gateway = xdup(s->gateway);
+	d->description = xdup(s->description);
+	d->tunnel_local = xdup(s->tunnel_local);
+	d->tunnel_remote = xdup(s->tunnel_remote);
+	d->parent = xdup(s->parent);
+	d->verb = xdup(s->verb);
 	d->variables.v = NULL;
 	d->names.v = NULL;
 	if (s->variables.n > 0) {
@@ -182,6 +214,11 @@ job_free(struct qjob *j)
 	free((char *)(uintptr_t)j->spec.service);
 	free((char *)(uintptr_t)j->spec.destination);
 	free((char *)(uintptr_t)j->spec.gateway);
+	free((char *)(uintptr_t)j->spec.description);
+	free((char *)(uintptr_t)j->spec.tunnel_local);
+	free((char *)(uintptr_t)j->spec.tunnel_remote);
+	free((char *)(uintptr_t)j->spec.parent);
+	free((char *)(uintptr_t)j->spec.verb);
 	free(j->title);
 	free(j->peer);
 	work_free(&j->w);
@@ -246,10 +283,63 @@ await_confirm(struct qjob *j)
 	return (confirmed);
 }
 
+/* What undoes an action on a service: the one that reverses it. */
+static const uint8_t svc_reverse[] = {
+	[ARC_SERVICE_ACTION_START] = ARC_SERVICE_ACTION_STOP,
+	[ARC_SERVICE_ACTION_STOP] = ARC_SERVICE_ACTION_START,
+	[ARC_SERVICE_ACTION_ENABLE] = ARC_SERVICE_ACTION_DISABLE,
+	[ARC_SERVICE_ACTION_DISABLE] = ARC_SERVICE_ACTION_ENABLE,
+};
+
+/*
+ * Before a safe change: what it will take to put things back, which
+ * afterwards can no longer be read.
+ */
+static void
+undo_prepare(struct qjob *j)
+{
+	const struct arc_job_spec	*sp;
+	const char			*v;
+	char				 descr[256];
+	size_t				 i;
+
+	sp = &j->spec;
+	switch (sp->kind) {
+	case ARC_JOB_KIND_IF_ADDRESS:
+		/* To put an address back, its prefix length is needed. */
+		if (sp->remove)
+			j->undo_address = if_address_with_prefix(&j->w,
+			    sp->interface, sp->address);
+		break;
+	case ARC_JOB_KIND_IF_SET:
+		if_current(sp->interface, &j->undo_mtu, descr, sizeof(descr));
+		j->undo_descr = wstrdup(&j->w, descr);
+		break;
+	case ARC_JOB_KIND_SERVICE_CONFIG:
+		j->undo_vars = wcalloc(&j->w, sp->variables.n + 1,
+		    sizeof(*j->undo_vars));
+		for (i = 0; i < sp->variables.n; i++) {
+			v = rc_get(&j->w, sp->variables.v[i].key);
+			j->undo_vars[i].key = sp->variables.v[i].key;
+			j->undo_vars[i].value = v;
+			j->undo_vars[i].remove = v == NULL;
+		}
+		j->undo_nvars = sp->variables.n;
+		break;
+	default:
+		break;
+	}
+}
+
 /* Take a safe change back; returns what to say of the job. */
 static const char *
 undo(struct qjob *j)
 {
+	struct arc_address_req		 dq;
+	struct arc_address_rsp		 dr;
+	struct arc_service_action_rsp	 sar;
+	struct arc_service_config_req	 scq;
+	struct arc_service_config_rsp	 scr;
 	const struct arc_job_spec	*sp;
 	const char			*e;
 	int				 rc;
@@ -259,14 +349,54 @@ undo(struct qjob *j)
 	switch (sp->kind) {
 	case ARC_JOB_KIND_IF_ADDRESS:
 		rc = do_if_address(&j->w, sp->interface, j->undo_address != NULL ?
-		    j->undo_address : sp->address, !sp->remove, &e);
+		    j->undo_address : sp->address, !sp->remove, sp->persist,
+		    &e);
 		break;
 	case ARC_JOB_KIND_IF_STATE:
 		rc = do_if_state(&j->w, sp->interface, !sp->up, &e);
 		break;
+	case ARC_JOB_KIND_IF_SET:
+		rc = do_if_set(&j->w, sp->interface, sp->has_mtu && sp->mtu !=
+		    0 ? j->undo_mtu : 0, sp->description != NULL ?
+		    j->undo_descr : NULL, sp->persist, &e);
+		break;
+	case ARC_JOB_KIND_IF_CREATE:
+		rc = do_if_destroy(&j->w, j->made != NULL ? j->made :
+		    sp->interface, sp->persist, &e);
+		break;
+	case ARC_JOB_KIND_ADDRESS:
+		memset(&dq, 0, sizeof(dq));
+		memset(&dr, 0, sizeof(dr));
+		dq.jail = sp->jail;
+		dq.address = sp->address;
+		dq.interface = sp->interface;
+		dq.remove = !sp->remove;
+		dq.live = sp->live;
+		dq.persist = sp->persist;
+		do_address(&j->w, &dq, &dr);
+		rc = dr.ok ? 0 : -1;
+		e = dr.error;
+		break;
+	case ARC_JOB_KIND_SERVICE_ACTION:
+		memset(&sar, 0, sizeof(sar));
+		do_service_action(&j->w, sp->service,
+		    svc_reverse[sp->service_action], &sar);
+		rc = sar.ok ? 0 : -1;
+		e = sar.error;
+		break;
+	case ARC_JOB_KIND_SERVICE_CONFIG:
+		memset(&scq, 0, sizeof(scq));
+		memset(&scr, 0, sizeof(scr));
+		scq.service = sp->service;
+		scq.variables.v = j->undo_vars;
+		scq.variables.n = j->undo_nvars;
+		do_service_config(&j->w, &scq, &scr);
+		rc = scr.ok ? 0 : -1;
+		e = scr.error;
+		break;
 	default:
 		rc = do_route(&j->w, sp->destination, sp->gateway, !sp->remove,
-		    &e);
+		    sp->has_fib ? sp->fib : 0, sp->persist, &e);
 		break;
 	}
 	if (rc != 0)
@@ -302,6 +432,8 @@ run(struct qjob *j)
 	pthread_mutex_lock(&jobs_lock);
 	j->begun = go;
 	pthread_mutex_unlock(&jobs_lock);
+	if (go && sp->safe)
+		undo_prepare(j);
 	if (!go) {
 		ok = false;
 		error = "not run: arcana-agent was stopping";
@@ -333,12 +465,27 @@ run(struct qjob *j)
 		break;
 	case ARC_JOB_KIND_IF_ADDRESS:
 		error = NULL;
-		/* To put an address back, its prefix length is needed. */
-		if (sp->safe && sp->remove)
-			j->undo_address = if_address_with_prefix(&j->w,
-			    sp->interface, sp->address);
 		ok = do_if_address(&j->w, sp->interface, sp->address,
-		    sp->remove, &error) == 0;
+		    sp->remove, sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IF_SET:
+		error = NULL;
+		ok = do_if_set(&j->w, sp->interface, sp->has_mtu ? sp->mtu : 0,
+		    sp->description, sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IF_CREATE:
+		error = NULL;
+		ok = do_if_create(&j->w, sp, &j->made, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IF_DESTROY:
+		error = NULL;
+		ok = do_if_destroy(&j->w, sp->interface, sp->persist,
+		    &error) == 0;
+		break;
+	case ARC_JOB_KIND_NETGRAPH:
+		error = NULL;
+		ok = do_ng(&j->w, sp->verb, sp->names.v, sp->names.n,
+		    &error) == 0;
 		break;
 	case ARC_JOB_KIND_IF_STATE:
 		error = NULL;
@@ -347,7 +494,7 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_ROUTE:
 		error = NULL;
 		ok = do_route(&j->w, sp->destination, sp->gateway, sp->remove,
-		    &error) == 0;
+		    sp->has_fib ? sp->fib : 0, sp->persist, &error) == 0;
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
 		memset(&scq, 0, sizeof(scq));

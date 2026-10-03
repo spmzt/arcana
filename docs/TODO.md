@@ -2,21 +2,11 @@
 
 ## To do
 
-- Interfaces, the rest: what is there lists them and changes them live
-  (an address on or off, up or down). Not yet: keeping a change in
-  `rc.conf` (`ifconfig_<if>_alias<n>`, whose numbers must stay without
-  gaps), MTU and description, creating and destroying cloned interfaces,
-  and refusing a change that would cut off the address the console
-  comes in by.
 - BIRD: neighbours and protocols, status, restart, clear.
-- Routes, the rest: static routes are added and deleted live with
-  route(8). Not yet: keeping one in `rc.conf` (`static_routes`), FIBs,
-  and doing it through netlink with its attributes mapped to CBOR
-  instead of running a program.
-- Safe mode, the rest: changes to interfaces and routes are undone by
-  the host when the console does not reach it again within a minute.
-  Not yet: the same for a jail's address, for services and for what is
-  kept in configuration files.
+- Routes through netlink, with its attributes mapped to CBOR, instead of
+  running route(8) and netstat(1).
+- WireGuard: `wg` interfaces are made, but their keys and peers are not
+  set.
 
 ## Planned
 

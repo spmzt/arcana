@@ -8,7 +8,8 @@
  * Invidia: the network interfaces of the host.  They are read with
  * getifaddrs(3) and a few ioctls, as ifconfig(8) reads them, and
  * changed by running ifconfig(8), whose argv and output the trace
- * keeps.  Changes are live only: nothing here touches rc.conf.
+ * keeps.  A change is made live, and when asked also kept in rc.conf
+ * (rcconf.c).
  */
 
 #include <sys/param.h>
@@ -29,6 +30,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <ucl.h>
 #include <unistd.h>
 
@@ -173,6 +175,7 @@ do_interfaces(struct work *w, uint8_t family, struct arc_network_rsp *rsp)
 	const unsigned char	*m;
 	ucl_object_t		*top, *arr, *o, *a, *f;
 	unsigned char		*json;
+	struct timespec		 ts;
 	char			 buf[NI_MAXHOST], mac[24];
 	size_t			 i;
 	int			 step, s4, s6, n, af;
@@ -264,6 +267,10 @@ do_interfaces(struct work *w, uint8_t family, struct arc_network_rsp *rsp)
 		close(s6);
 	step_end(w, step, true, "%d interfaces", n);
 	put(top, "interfaces", arr);
+	/* When the counters were read, to make rates of two readings. */
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	put(top, "time", ucl_object_fromint((int64_t)ts.tv_sec * 1000 +
+	    ts.tv_nsec / 1000000));
 	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
 	if (json == NULL || strlen((char *)json) > ARC_MAX_JSON) {
@@ -341,10 +348,13 @@ if_address_with_prefix(struct work *w, const char *ifname, const char *address)
 	return (out);
 }
 
-/* Add an address to an interface as an alias, or take it off. */
+/*
+ * Add an address to an interface as an alias, or take it off; with
+ * persist, in rc.conf as well.
+ */
 int
 do_if_address(struct work *w, const char *ifname, const char *address,
-    bool remove, const char **errp)
+    bool remove, bool persist, const char **errp)
 {
 	struct execres	 res;
 	const char	*addr;
@@ -372,6 +382,9 @@ do_if_address(struct work *w, const char *ifname, const char *address,
 		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
 		return (-1);
 	}
+	if (persist)
+		return (rc_alias(w, ifname, af == AF_INET ? "inet" : "inet6",
+		    addr, wfmt(w, "%s/%d", addr, plen), remove, errp));
 	return (0);
 }
 
@@ -396,3 +409,442 @@ do_if_state(struct work *w, const char *ifname, bool up, const char **errp)
 	}
 	return (0);
 }
+
+/* The MTU and the description an interface has now. */
+void
+if_current(const char *ifname, unsigned int *mtup, char *descr, size_t len)
+{
+	struct ifreq	ifr;
+	char		buf[256];
+	int		s;
+
+	*mtup = 0;
+	descr[0] = '\0';
+	if ((s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1 &&
+	    (s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
+		return;
+	memset(&ifr, 0, sizeof(ifr));
+	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+	if (ioctl(s, SIOCGIFMTU, &ifr) == 0)
+		*mtup = (unsigned int)ifr.ifr_mtu;
+	memset(&ifr, 0, sizeof(ifr));
+	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
+	ifr.ifr_buffer.buffer = buf;
+	ifr.ifr_buffer.length = sizeof(buf);
+	if (ioctl(s, SIOCGIFDESCR, &ifr) == 0 && ifr.ifr_buffer.buffer == buf &&
+	    ifr.ifr_buffer.length > 1)
+		strlcpy(descr, buf, len);
+	close(s);
+}
+
+/* A description is printable, and nothing rc.conf would read as more. */
+static bool
+valid_descr(const char *s)
+{
+
+	for (; *s != '\0'; s++)
+		if ((unsigned char)*s < 0x20 || *s == 0x7f || strchr("\"'`$\\",
+		    *s) != NULL)
+			return (false);
+	return (true);
+}
+
+/*
+ * Set an interface's MTU (0 leaves it), its description (NULL leaves
+ * it, "" takes it off), or both.
+ */
+int
+do_if_set(struct work *w, const char *ifname, unsigned int mtu,
+    const char *descr, bool persist, const char **errp)
+{
+	struct execres	 res;
+	char		*argv[5];
+
+	if (if_nametoindex(ifname) == 0) {
+		*errp = wfmt(w, "no interface %s on this host", ifname);
+		return (-1);
+	}
+	if (descr != NULL && !valid_descr(descr)) {
+		*errp = "a description is plain text, without quotes, $ or \\";
+		return (-1);
+	}
+	if (mtu != 0 && (mtu < 68 || mtu > 65535)) {
+		*errp = "an MTU is between 68 and 65535";
+		return (-1);
+	}
+	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[1] = (char *)(uintptr_t)ifname;
+	if (mtu != 0) {
+		argv[2] = (char *)(uintptr_t)"mtu";
+		argv[3] = wfmt(w, "%u", mtu);
+		argv[4] = NULL;
+		if (run_exec(w, argv, &res) != 0) {
+			*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+			return (-1);
+		}
+		if (persist && rc_mtu(w, ifname, mtu, errp) != 0)
+			return (-1);
+	}
+	if (descr != NULL) {
+		argv[2] = (char *)(uintptr_t)(descr[0] != '\0' ? "description" :
+		    "-description");
+		argv[3] = descr[0] != '\0' ? (char *)(uintptr_t)descr : NULL;
+		argv[4] = NULL;
+		if (run_exec(w, argv, &res) != 0) {
+			*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+			return (-1);
+		}
+		if (persist && descr[0] == '\0')
+			rc_unset(w, wfmt(w, "ifconfig_%s_descr", ifname));
+		else if (persist && rc_set(w, wfmt(w, "ifconfig_%s_descr",
+		    ifname), "=", descr, errp) != 0)
+			return (-1);
+	}
+	return (0);
+}
+
+/*
+ * The interfaces that can be made, and what making one takes: a tunnel
+ * has two outer ends, a VXLAN an identifier and may have them, a VLAN
+ * a tag and the interface it rides, a bridge may take a member in.
+ */
+enum { CL_PLAIN, CL_TUNNEL, CL_VXLAN, CL_VLAN, CL_BRIDGE, CL_PAIR };
+
+static const struct {
+	const char	*type;
+	int		 how;
+} cloners[] = {
+	{ "epair", CL_PAIR }, { "gif", CL_TUNNEL }, { "gre", CL_TUNNEL },
+	{ "ipsec", CL_TUNNEL }, { "me", CL_TUNNEL }, { "vxlan", CL_VXLAN },
+	{ "vlan", CL_VLAN }, { "bridge", CL_BRIDGE }, { "lagg", CL_PLAIN },
+	{ "tap", CL_PLAIN }, { "tun", CL_PLAIN }, { "lo", CL_PLAIN },
+	{ "wg", CL_PLAIN }, { "ovpn", CL_PLAIN },
+};
+
+/* The kind of the cloner name is of, "gif" or "gif3"; -1 for none. */
+static int
+cloner_of(const char *name)
+{
+	size_t	i, len;
+
+	for (i = 0; i < nitems(cloners); i++) {
+		len = strlen(cloners[i].type);
+		if (strncmp(name, cloners[i].type, len) == 0 &&
+		    name[len + strspn(name + len, "0123456789")] == '\0')
+			return (cloners[i].how);
+	}
+	return (-1);
+}
+
+/* An address alone, of either family; no option, no name. */
+static bool
+plain_addr(const char *s)
+{
+	unsigned char	raw[16];
+
+	return (inet_pton(AF_INET, s, raw) == 1 || inet_pton(AF_INET6, s,
+	    raw) == 1);
+}
+
+/* What rc.conf lists in cloned_interfaces: an epair without its side. */
+static const char *
+clone_base(struct work *w, const char *name)
+{
+	size_t	len;
+
+	len = strlen(name);
+	if (strncmp(name, "epair", 5) == 0 && len > 5 && (name[len - 1] ==
+	    'a' || name[len - 1] == 'b'))
+		return (wstrndup(w, name, len - 1));
+	return (name);
+}
+
+/* Destroy a cloned interface; with persist, forget it in rc.conf. */
+int
+do_if_destroy(struct work *w, const char *ifname, bool persist,
+    const char **errp)
+{
+	struct execres	 res;
+	const char	*base, *e;
+	char		*argv[4];
+
+	base = clone_base(w, ifname);
+	if (cloner_of(base) == -1) {
+		*errp = wfmt(w, "%s is not an interface that was made: only "
+		    "cloned ones are destroyed", ifname);
+		return (-1);
+	}
+	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[1] = (char *)(uintptr_t)ifname;
+	argv[2] = (char *)(uintptr_t)"destroy";
+	argv[3] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+		return (-1);
+	}
+	if (persist) {
+		e = NULL;
+		(void)rc_set(w, "cloned_interfaces", "-=", base, &e);
+		rc_forget_if(w, ifname);
+		if (base != ifname)
+			rc_forget_if(w, wfmt(w, "%sb", base));
+	}
+	return (0);
+}
+
+/*
+ * Create a cloned interface and set it up, step by step as one would
+ * by hand; what cannot be finished is destroyed again.  *namep is the
+ * name it got.
+ */
+int
+do_if_create(struct work *w, const struct arc_job_spec *sp,
+    const char **namep, const char **errp)
+{
+	struct execres	 res;
+	const char	*name, *addr, *rcif, *e;
+	char		*argv[12], *create, *alias;
+	int		 how, n, af, plen;
+
+	*namep = NULL;
+	if ((how = cloner_of(sp->interface)) == -1) {
+		*errp = wfmt(w, "%s is not an interface that can be made: "
+		    "epair, gif, gre, ipsec, me, vxlan, vlan, bridge, lagg, "
+		    "tap, tun, lo, wg or ovpn, with or without a unit",
+		    sp->interface);
+		return (-1);
+	}
+	if ((sp->tunnel_local != NULL && !plain_addr(sp->tunnel_local)) ||
+	    (sp->tunnel_remote != NULL && !plain_addr(sp->tunnel_remote))) {
+		*errp = "a tunnel's ends are addresses";
+		return (-1);
+	}
+	if ((sp->tunnel_local != NULL) != (sp->tunnel_remote != NULL) ||
+	    (how == CL_TUNNEL && sp->tunnel_local == NULL)) {
+		*errp = "a tunnel needs both its ends: tunnel-local and "
+		    "tunnel-remote";
+		return (-1);
+	}
+	if (sp->tunnel_local != NULL && how != CL_TUNNEL && how != CL_VXLAN) {
+		*errp = "only a tunnel has tunnel ends";
+		return (-1);
+	}
+	if (how == CL_VLAN && (!sp->has_id || sp->id < 1 || sp->id > 4094 ||
+	    sp->parent == NULL)) {
+		*errp = "a vlan needs its tag, 1 to 4094, and the interface "
+		    "it rides";
+		return (-1);
+	}
+	if (how == CL_VXLAN && (!sp->has_id || sp->id > 16777215)) {
+		*errp = "a vxlan needs its identifier, up to 16777215";
+		return (-1);
+	}
+	if (sp->parent != NULL && if_nametoindex(sp->parent) == 0) {
+		*errp = wfmt(w, "no interface %s on this host", sp->parent);
+		return (-1);
+	}
+	if (sp->description != NULL && !valid_descr(sp->description)) {
+		*errp = "a description is plain text, without quotes, $ or \\";
+		return (-1);
+	}
+	addr = NULL;
+	af = AF_UNSPEC;
+	plen = 0;
+	if (sp->address != NULL && !parse_addr(w, sp->address, &af, &addr,
+	    &plen)) {
+		*errp = wfmt(w, "%s is not an IPv4 or IPv6 address, with or "
+		    "without a prefix length", sp->address);
+		return (-1);
+	}
+	if (sp->destination != NULL && (addr == NULL || !plain_addr(
+	    sp->destination))) {
+		*errp = "the far end's inner address is an address, and "
+		    "comes with this end's";
+		return (-1);
+	}
+
+	/* What is given at its creation, and kept as create_args. */
+	create = NULL;
+	if (how == CL_VLAN)
+		create = wfmt(w, "vlan %u vlandev %s", sp->id, sp->parent);
+	else if (how == CL_VXLAN)
+		create = sp->tunnel_local != NULL && sp->tunnel_remote != NULL ?
+		    wfmt(w, "vxlanid %u vxlanlocal %s vxlanremote %s", sp->id,
+		    sp->tunnel_local, sp->tunnel_remote) : wfmt(w,
+		    "vxlanid %u", sp->id);
+	n = 0;
+	argv[n++] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[n++] = (char *)(uintptr_t)sp->interface;
+	argv[n++] = (char *)(uintptr_t)"create";
+	if (how == CL_VLAN) {
+		argv[n++] = (char *)(uintptr_t)"vlan";
+		argv[n++] = wfmt(w, "%u", sp->id);
+		argv[n++] = (char *)(uintptr_t)"vlandev";
+		argv[n++] = (char *)(uintptr_t)sp->parent;
+	} else if (how == CL_VXLAN) {
+		argv[n++] = (char *)(uintptr_t)"vxlanid";
+		argv[n++] = wfmt(w, "%u", sp->id);
+		if (sp->tunnel_local != NULL && sp->tunnel_remote != NULL) {
+			argv[n++] = (char *)(uintptr_t)"vxlanlocal";
+			argv[n++] = (char *)(uintptr_t)sp->tunnel_local;
+			argv[n++] = (char *)(uintptr_t)"vxlanremote";
+			argv[n++] = (char *)(uintptr_t)sp->tunnel_remote;
+		}
+	}
+	argv[n] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+		return (-1);
+	}
+	/* ifconfig prints the name it made: gif0, or epair0a of a pair. */
+	name = res.out != NULL ? wstrndup(w, res.out, strcspn(res.out,
+	    " \t\n")) : "";
+	if (name[0] == '\0' || cloner_of(clone_base(w, name)) == -1)
+		name = how == CL_PAIR && sp->interface[strlen(sp->interface) -
+		    1] != 'a' ? wfmt(w, "%sa", sp->interface) : sp->interface;
+	*namep = name;
+
+	argv[1] = (char *)(uintptr_t)name;
+	if (how == CL_TUNNEL) {
+		argv[2] = (char *)(uintptr_t)"tunnel";
+		argv[3] = (char *)(uintptr_t)sp->tunnel_local;
+		argv[4] = (char *)(uintptr_t)sp->tunnel_remote;
+		argv[5] = NULL;
+		if (run_exec(w, argv, &res) != 0)
+			goto undo;
+	}
+	if (how == CL_BRIDGE && sp->parent != NULL) {
+		argv[2] = (char *)(uintptr_t)"addm";
+		argv[3] = (char *)(uintptr_t)sp->parent;
+		argv[4] = NULL;
+		if (run_exec(w, argv, &res) != 0)
+			goto undo;
+	}
+	alias = NULL;
+	if (addr != NULL) {
+		/* With a far end, a point-to-point address: this, then that. */
+		n = 2;
+		argv[n++] = (char *)(uintptr_t)(af == AF_INET ? "inet" :
+		    "inet6");
+		if (sp->destination != NULL && af == AF_INET6) {
+			argv[n++] = (char *)(uintptr_t)addr;
+			argv[n++] = (char *)(uintptr_t)sp->destination;
+			argv[n++] = (char *)(uintptr_t)"prefixlen";
+			argv[n++] = (char *)(uintptr_t)"128";
+			alias = wfmt(w, "inet6 %s %s prefixlen 128", addr,
+			    sp->destination);
+		} else {
+			argv[n++] = wfmt(w, "%s/%d", addr, plen);
+			if (sp->destination != NULL)
+				argv[n++] = (char *)(uintptr_t)sp->destination;
+			alias = wfmt(w, "%s %s/%d%s%s", af == AF_INET ? "inet" :
+			    "inet6", addr, plen, sp->destination != NULL ?
+			    " " : "", sp->destination != NULL ?
+			    sp->destination : "");
+		}
+		argv[n] = NULL;
+		if (run_exec(w, argv, &res) != 0)
+			goto undo;
+	}
+	if (sp->has_mtu && sp->mtu != 0) {
+		if (sp->mtu < 68 || sp->mtu > 65535) {
+			e = "an MTU is between 68 and 65535";
+			goto undo_said;
+		}
+		argv[2] = (char *)(uintptr_t)"mtu";
+		argv[3] = wfmt(w, "%u", sp->mtu);
+		argv[4] = NULL;
+		if (run_exec(w, argv, &res) != 0)
+			goto undo;
+	}
+	if (sp->description != NULL && sp->description[0] != '\0') {
+		argv[2] = (char *)(uintptr_t)"description";
+		argv[3] = (char *)(uintptr_t)sp->description;
+		argv[4] = NULL;
+		if (run_exec(w, argv, &res) != 0)
+			goto undo;
+	}
+	argv[2] = (char *)(uintptr_t)"up";
+	argv[3] = NULL;
+	if (run_exec(w, argv, &res) != 0)
+		goto undo;
+	if (!sp->persist)
+		return (0);
+
+	/* As rc(8) will make it again: the clone, its arguments, its setup. */
+	rcif = name;
+	e = NULL;
+	if (rc_set(w, "cloned_interfaces", "+=", clone_base(w, name), &e) != 0)
+		goto undo_said;
+	if (create != NULL && rc_set(w, wfmt(w, "create_args_%s", name), "=",
+	    create, &e) != 0)
+		goto undo_said;
+	if (rc_set(w, wfmt(w, "ifconfig_%s", rcif), "=", wfmt(w, "%s%s%s%s%s%s"
+	    "%s%sup", how == CL_TUNNEL ? "tunnel " : "", how == CL_TUNNEL ?
+	    sp->tunnel_local : "", how == CL_TUNNEL ? " " : "",
+	    how == CL_TUNNEL ? sp->tunnel_remote : "", how == CL_TUNNEL ? " " :
+	    "", how == CL_BRIDGE && sp->parent != NULL ? wfmt(w, "addm %s ",
+	    sp->parent) : "", sp->has_mtu && sp->mtu != 0 ? wfmt(w, "mtu %u ",
+	    sp->mtu) : "", ""), &e) != 0)
+		goto undo_said;
+	if (alias != NULL && rc_set(w, wfmt(w, "ifconfig_%s_alias0", rcif), "=",
+	    alias, &e) != 0)
+		goto undo_said;
+	if (sp->description != NULL && sp->description[0] != '\0' &&
+	    rc_set(w, wfmt(w, "ifconfig_%s_descr", rcif), "=", sp->description,
+	    &e) != 0)
+		goto undo_said;
+	return (0);
+undo:
+	e = wtext(w, exec_error(w, &res, "ifconfig"));
+undo_said:
+	*errp = e;
+	e = NULL;
+	(void)do_if_destroy(w, name, sp->persist, &e);
+	return (-1);
+}
+
+/*
+ * Does this host have the address sa on an interface, and which?  An
+ * IPv4 address inside an IPv6 one is taken out of it first.
+ */
+bool
+if_owning(const struct sockaddr *sa, char *ifname, size_t len)
+{
+	struct ifaddrs			*ifap, *ifa;
+	const struct sockaddr_in6	*s6;
+	struct in_addr			 v4;
+	bool				 found, mapped;
+
+	mapped = false;
+	if (sa->sa_family == AF_INET)
+		v4 = ((const struct sockaddr_in *)(const void *)sa)->sin_addr;
+	else if (sa->sa_family == AF_INET6) {
+		s6 = (const struct sockaddr_in6 *)(const void *)sa;
+		if ((mapped = IN6_IS_ADDR_V4MAPPED(&s6->sin6_addr)))
+			memcpy(&v4, &s6->sin6_addr.s6_addr[12], sizeof(v4));
+	} else
+		return (false);
+	if (getifaddrs(&ifap) == -1)
+		return (false);
+	found = false;
+	for (ifa = ifap; ifa != NULL && !found; ifa = ifa->ifa_next) {
+		if (ifa->ifa_addr == NULL)
+			continue;
+		if (ifa->ifa_addr->sa_family == AF_INET &&
+		    (sa->sa_family == AF_INET || mapped))
+			found = ((const struct sockaddr_in *)(const void *)
+			    ifa->ifa_addr)->sin_addr.s_addr == v4.s_addr;
+		else if (ifa->ifa_addr->sa_family == AF_INET6 &&
+		    sa->sa_family == AF_INET6 && !mapped)
+			found = memcmp(&((const struct sockaddr_in6 *)
+			    (const void *)ifa->ifa_addr)->sin6_addr,
+			    &((const struct sockaddr_in6 *)(const void *)sa)->
+			    sin6_addr, sizeof(struct in6_addr)) == 0;
+		if (found)
+			strlcpy(ifname, ifa->ifa_name, len);
+	}
+	freeifaddrs(ifap);
+	return (found);
+}
+
