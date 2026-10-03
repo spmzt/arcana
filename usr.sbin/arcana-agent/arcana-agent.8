@@ -140,6 +140,9 @@ The options are:
 Certificate authority for client certificates.
 .It Fl C Ar certfile , Fl K Ar keyfile
 This server's certificate and key.
+The three files are read at startup, before the daemon detaches: one
+that is missing, unreadable, not PEM, or a key that is not the
+certificate's, is an error that names the file.
 .It Fl D Ar confdir
 Per-jail configuration files.
 Default

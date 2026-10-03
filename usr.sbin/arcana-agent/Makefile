@@ -11,7 +11,7 @@ CBLINK_PARTS=	h,c,server
 CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
-LDADD+=		-ljail -lprocstat -lutil -lpthread ${UCL_LIBS}
+LDADD+=		-ljail -lprocstat -lutil -lpthread -lcrypto ${UCL_LIBS}
 
 # The rc.d(8) script.
 FILESGROUPS+=	RC

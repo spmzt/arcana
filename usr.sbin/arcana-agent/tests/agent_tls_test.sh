@@ -104,7 +104,29 @@ mtls_cleanup()
 	stop_daemon
 }
 
+atf_test_case tls_files
+tls_files_head()
+{
+	atf_set "descr" "Bad TLS files are named at startup, before detaching"
+	atf_set "require.progs" "openssl"
+}
+tls_files_body()
+{
+	programs
+	ca ca
+	cert ca server "IP:127.0.0.1" serverAuth
+	cert ca other "IP:127.0.0.1" serverAuth
+	URI="tcp://127.0.0.1:$(( 20000 + $$ % 20000 ))"
+	atf_check -s exit:1 -e match:'-C missing.pem: No such file' \
+	    "$JGD" -l "$URI" -A ca.pem -C missing.pem -K server.key
+	atf_check -s exit:1 -e match:'-K ca.pem: not a PEM private key' \
+	    "$JGD" -l "$URI" -A ca.pem -C server.pem -K ca.pem
+	atf_check -s exit:1 -e match:'not the key of the certificate' \
+	    "$JGD" -l "$URI" -A ca.pem -C server.pem -K other.key
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case tls_files
 	atf_add_test_case mtls
 }

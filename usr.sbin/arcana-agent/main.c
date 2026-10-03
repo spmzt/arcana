@@ -23,6 +23,10 @@
 #include <syslog.h>
 #include <unistd.h>
 
+#include <openssl/err.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+
 #include "agent.h"
 
 #define	PATH_SOCKET	"unix:/var/run/arcana-agent.sock"
@@ -107,6 +111,52 @@ on_signal(int sig, void *arg)
 
 	logmsg(LOG_INFO, "signal %d, stopping", sig);
 	(void)cbl_loop_stop(arg);
+}
+
+/*
+ * The TLS files are read when a listener starts, after the daemon has
+ * detached, and OpenSSL then says only "system lib" for a file it could
+ * not open.  Read them here first, and say what is wrong with which.
+ */
+static void
+check_pem(const char *flag, const char *path, bool cert, EVP_PKEY **pkp)
+{
+	FILE		*fp;
+	X509		*x;
+	EVP_PKEY	*pk;
+
+	if ((fp = fopen(path, "r")) == NULL)
+		err(1, "%s %s", flag, path);
+	if (cert) {
+		x = PEM_read_X509(fp, NULL, NULL, NULL);
+		pk = x != NULL ? X509_get_pubkey(x) : NULL;
+		X509_free(x);
+	} else
+		pk = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
+	fclose(fp);
+	if (pk == NULL)
+		errx(1, "%s %s: not a PEM %s", flag, path, cert ?
+		    "certificate" : "private key");
+	ERR_clear_error();
+	if (pkp != NULL)
+		*pkp = pk;
+	else
+		EVP_PKEY_free(pk);
+}
+
+static void
+check_tls_files(const char *cafile, const char *certfile, const char *keyfile)
+{
+	EVP_PKEY	*pub, *key;
+
+	check_pem("-A", cafile, true, NULL);
+	check_pem("-C", certfile, true, &pub);
+	check_pem("-K", keyfile, false, &key);
+	if (EVP_PKEY_eq(pub, key) != 1)
+		errx(1, "-K %s is not the key of the certificate -C %s",
+		    keyfile, certfile);
+	EVP_PKEY_free(pub);
+	EVP_PKEY_free(key);
 }
 
 int
@@ -215,6 +265,7 @@ main(int argc, char *argv[])
 	if (network) {
 		if (cafile == NULL || certfile == NULL || keyfile == NULL)
 			errx(1, "network listeners need -A, -C and -K");
+		check_tls_files(cafile, certfile, keyfile);
 		if (cbl_tls_new(&tls) != 0 ||
 		    cbl_tls_set_cert(tls, certfile, keyfile) != 0 ||
 		    cbl_tls_set_ca(tls, cafile, NULL) != 0)
