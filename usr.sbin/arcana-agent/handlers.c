@@ -42,6 +42,8 @@ struct job {
 	bool			 restart;
 	char			*source;	/* agent-build */
 	char			*ref;
+	char			*host_keys;
+	char			*ssh_key;
 	char			*peer;
 };
 
@@ -395,7 +397,8 @@ worker(void *arg)
 		memset(&abr, 0, sizeof(abr));
 		/* One build at a time: they share the directory. */
 		pthread_mutex_lock(&build_lock);
-		do_agent_build(&w, j->source, j->ref, &abr);
+		do_agent_build(&w, j->source, j->ref, j->host_keys,
+		    j->ssh_key, &abr);
 		pthread_mutex_unlock(&build_lock);
 		ok = abr.ok;
 		error = abr.error;
@@ -520,6 +523,8 @@ job_free(struct job *j)
 	free(j->sha256);
 	free(j->source);
 	free(j->ref);
+	free(j->host_keys);
+	free(j->ssh_key);
 	free((char *)(uintptr_t)j->addr.jail);
 	free((char *)(uintptr_t)j->addr.address);
 	free((char *)(uintptr_t)j->addr.interface);
@@ -666,6 +671,8 @@ arc_agent_build_doit(cbl_req *req, const struct arc_agent_build_req *rq,
 	j->source = xstrdup(rq->source);
 	j->ref = rq->ref != NULL && rq->ref[0] != '\0' ? xstrdup(rq->ref) :
 	    NULL;
+	j->host_keys = rq->host_keys != NULL ? xstrdup(rq->host_keys) : NULL;
+	j->ssh_key = rq->ssh_key != NULL ? xstrdup(rq->ssh_key) : NULL;
 	return (start(j));
 }
 

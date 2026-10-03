@@ -1121,6 +1121,42 @@ modal(struct html *h)
 			    "certificate.</p>");
 		}
 		break;
+	case MODAL_HOST_KEY:
+		k = app.build_reply;
+		add = jstr(k, "host_keys") != NULL;	/* a key to confirm */
+		h_fmt(h, "<form data-form=\"host-key\" class=\"hostkey%s\">"
+		    "<h2>%s</h2><p>", add && jstr(k, "error") != NULL &&
+		    strstr(jstr(k, "error"), "CHANGED") != NULL ? " danger" : "",
+		    add ? "Confirm the SSH host key" : "Allow the deploy key");
+		h_txt(h, jstr(k, "error"));
+		h_raw(h, ".</p>");
+		if (add) {
+			h_raw(h, "<p>The repository's server showed these keys "
+			    "to the host that builds. Compare a fingerprint "
+			    "with what the server's administrator gives; once "
+			    "confirmed, the host keeps the keys and refuses the "
+			    "server if it ever shows another.</p>"
+			    "<ul class=\"fingerprints\">");
+			it = NULL;
+			while ((k = ucl_object_iterate(jget(app.build_reply,
+			    "fingerprints"), &it, true)) != NULL) {
+				h_raw(h, "<li><code>");
+				h_txt(h, ucl_object_tostring(k));
+				h_raw(h, "</code></li>");
+			}
+			h_raw(h, "</ul>");
+		}
+		if (jstr(app.build_reply, "deploy_key") != NULL) {
+			h_raw(h, add ? "<p>The host shows the server this key "
+			    "of its own; allow it there, read-only, if it is "
+			    "not yet:</p>" : "<p>Add this key of the host's to "
+			    "the repository's server as a read-only deploy "
+			    "key, then build again:</p>");
+			h_raw(h, "<pre class=\"out deploy-key\">");
+			h_txt(h, jstr(app.build_reply, "deploy_key"));
+			h_raw(h, "</pre>");
+		}
+		break;
 	case MODAL_SETTINGS:
 		h_raw(h, "<form data-form=\"settings\" class=\"settings\">"
 		    "<h2>Settings</h2>");
@@ -1310,6 +1346,13 @@ modal(struct html *h)
 			break;
 		case MODAL_AGENT_UPDATE:
 			h_raw(h, "<button class=\"primary\">Update</button>");
+			break;
+		case MODAL_HOST_KEY:
+			h_fmt(h, "<button class=\"%s\">%s</button>",
+			    jstr(app.build_reply, "host_keys") == NULL ?
+			    "primary" : "danger", jstr(app.build_reply,
+			    "host_keys") == NULL ? "Build again" :
+			    "Trust these keys and build");
 			break;
 		case MODAL_SETTINGS:
 			h_fmt(h, "<button class=\"primary\"%s>Save</button>",

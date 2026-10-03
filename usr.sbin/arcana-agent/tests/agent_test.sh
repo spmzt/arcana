@@ -208,6 +208,7 @@ start_daemon()
 	    -X "$(pwd)/fake-sockstat" -P "$(pwd)/fake-pkg" \
 	    -U "$(pwd)/installed-agent" -B "$(pwd)/build" \
 	    -c "$(pwd)/build.mk" -G "$(pwd)/fake-git" -M "$(pwd)/fake-make" \
+	    -Y "$(pwd)/fake-keyscan" \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -689,6 +690,7 @@ agent_build_body()
 	# git clone makes the tree; make "builds" by copying the agent.
 	cat > fake-git <<EOS
 #!/bin/sh
+[ "\$1" = -c ] && shift 2
 [ "\$1" = clone ] || exit 2
 for a; do last=\$a; done
 case " \$* " in *" --branch nope "*) echo "fatal: no such branch" >&2; exit 128 ;; esac
@@ -703,7 +705,17 @@ case " \$* " in
 */usr.sbin/arcana-agent*) mkdir -p "\$dir/obj" && cp "$JGD" "\$dir/obj/arcana-agent" ;;
 esac
 EOS
-	chmod +x fake-git fake-make
+	# The server's host key is a real one, so that ssh-keygen(1) can
+	# fingerprint it and find it; only the scan is a stand-in.
+	ssh-keygen -q -t ed25519 -N '' -C server -f hostkey
+	cat > fake-keyscan <<EOS
+#!/bin/sh
+port=
+for a; do [ "\$prev" = -p ] && port=\$a; prev=\$a; last=\$a; done
+[ -n "\$port" ] && last="[\$last]:\$port"
+echo "\$last \$(cut -d' ' -f1,2 $(pwd)/hostkey.pub)"
+EOS
+	chmod +x fake-git fake-make fake-keyscan
 	echo 'CBLINK_PREFIX= /opt/cblink' > build.mk
 	start_daemon
 
@@ -718,6 +730,34 @@ EOS
 	atf_check -s exit:1 -e match:'no such branch' -o ignore \
 	    "$JGC" -c "$SOCK" agent-build -o other https://example.org/arcana.git nope
 	atf_check test ! -e other
+	# Over SSH the server's host key is not taken on trust: the first
+	# try hands back what was found, with fingerprints and this host's
+	# deploy key, and builds nothing.
+	atf_check -s exit:1 -o match:'Host key: +256 SHA256:' \
+	    -o match:'Deploy key: +ssh-ed25519 ' \
+	    -e match:'does not know the SSH host key of git.example.org' \
+	    "$JGC" -c "$SOCK" agent-build -o viassh git@git.example.org:me/arcana.git
+	atf_check test ! -e viassh -a ! -e build/known_hosts
+	atf_check test -f build/id_ed25519
+	# Confirmed, the key is kept and git is told to check against it.
+	atf_check -o match:'^Built: ' -o match:'StrictHostKeyChecking=yes' \
+	    -o match:'UserKnownHostsFile=.*/build/known_hosts' \
+	    "$JGC" -t -c "$SOCK" agent-build -y -o viassh \
+	    git@git.example.org:me/arcana.git
+	atf_check -o match:'^git.example.org ssh-ed25519 ' cat build/known_hosts
+	# Known from then on, also on a port of its own only when asked.
+	atf_check -o match:'^Built: ' \
+	    "$JGC" -c "$SOCK" agent-build -o viassh git@git.example.org:me/arcana.git
+	atf_check -s exit:1 -o match:'Host key: ' -e match:'\[git.example.org\]:2222' \
+	    "$JGC" -c "$SOCK" agent-build -o other \
+	    ssh://git@git.example.org:2222/me/arcana.git
+	# A key of the administrator's own, by its path on the host.
+	atf_check -s exit:1 -e match:'missing-key is not there' -o ignore \
+	    "$JGC" -c "$SOCK" agent-build -i "$(pwd)/missing-key" -o other \
+	    git@git.example.org:me/arcana.git
+	atf_check -o match:"ssh -i $(pwd)/hostkey " \
+	    "$JGC" -t -c "$SOCK" agent-build -i "$(pwd)/hostkey" -o viassh \
+	    git@git.example.org:me/arcana.git
 	# What git would take as an option is not a repository.
 	atf_check -s exit:1 -e match:'not a repository' -o ignore \
 	    "$JGC" -c "$SOCK" agent-build -- --upload-pack=x

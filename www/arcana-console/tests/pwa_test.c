@@ -344,7 +344,7 @@ ATF_TC_BODY(pwa, tc)
 	    "textContent.includes('localhost')"));
 	shot("0a-settings");
 	run("const f = document.querySelector('form[data-form=settings]'); "
-	    "f.agent_source.value = 'https://example.org/arcana.git'; "
+	    "f.agent_source.value = 'git@git.example.org:me/arcana.git'; "
 	    "f.requestSubmit();");
 	wait_js("!document.querySelector('form[data-form=settings]') && "
 	    "[...document.querySelectorAll('.toast')].some(t => "
@@ -430,15 +430,38 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.hostbar button[data-act=agent-update]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=agent-update]')", 5);
-	/* With the repository set, the host can be asked to build. */
-	ATF_CHECK(js_true("document.querySelector('.hostbar button[data-act="
-	    "agent-build]')"));
 	shot("1b-agent-update");
 	run("const f = document.querySelector('form[data-form=agent-update]'); "
 	    "f.restart.checked = false; f.requestSubmit();");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('in place'))", 20);
 	ATF_CHECK(access("installed-agent", X_OK) == 0);
+
+	/*
+	 * With the repository set, the host can be asked to build.  It is
+	 * reached over SSH and the host does not know its server: the
+	 * page shows the server's key for the user to confirm, and the
+	 * build goes on once it is.
+	 */
+	ATF_REQUIRE(system("ssh-keygen -q -t ed25519 -N '' -f hostkey") == 0);
+	run("document.querySelector('.hostbar button[data-act=agent-build]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')"
+	    ".requestSubmit()");
+	wait_js("document.querySelector('form[data-form=host-key] "
+	    ".fingerprints code') && document.querySelector('form[data-form="
+	    "host-key] .fingerprints code').textContent.includes('SHA256:') "
+	    "&& document.querySelector('pre.deploy-key').textContent."
+	    "startsWith('ssh-ed25519 ')", 20);
+	shot("1c-host-key");
+	run("document.querySelector('form[data-form=host-key]')"
+	    ".requestSubmit()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('built arcana-agent'))", 30);
+	/* What was built is the host's own build here: nothing to send. */
+	wait_js("!document.querySelector('.hostbar button[data-act="
+	    "agent-update]')", 10);
 
 	/* The fleet page lists it, and leads back to it. */
 	run("document.querySelector('.tree .titem.fleet').click()");

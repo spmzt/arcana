@@ -39,3 +39,6 @@ cookie_secure = true;
 # sends from then on.
 #agent_source = "https://github.com/spmzt/arcana.git";
 #agent_ref = "main";
+# Over SSH, a private key on the host that builds, readable by nobody;
+# by default that host makes one and the console shows it to you.
+#agent_ssh_key = "/usr/local/etc/arcana/git_ed25519";

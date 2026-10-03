@@ -287,6 +287,34 @@ attribute-sets:
         doc: The branch or tag to build; the repository's default if absent.
         checks:
           max-len: 128
+      - name: host-keys
+        type: text
+        doc: |
+          SSH host keys of the repository's server, as known_hosts lines.
+          In a reply: what ssh-keyscan found, for the user to confirm
+          when this host does not know the server.  In a request: the
+          lines confirmed, which this host keeps and checks the server
+          against from then on.
+        checks:
+          max-len: 8192
+      - name: ssh-key
+        type: text
+        doc: |
+          A private key on this host for git to show the repository's
+          server, instead of the one this host makes for itself.
+        checks:
+          max-len: 1024
+      - name: fingerprints
+        type: text
+        multi-attr: true
+        doc: The fingerprints of host-keys, as ssh-keygen -l prints them.
+      - name: deploy-key
+        type: text
+        doc: |
+          The public key this host shows the repository's server, to be
+          allowed there as a read-only deploy key.
+        checks:
+          max-len: 1024
       - name: restart
         type: flag
         doc: Restart the service once the new program is in place.
@@ -892,6 +920,8 @@ operations:
         attributes:
           - source
           - ref
+          - host-keys
+          - ssh-key
         required:
           - source
       reply:
@@ -901,5 +931,8 @@ operations:
           - binary
           - sha256
           - agent-version
+          - host-keys
+          - fingerprints
+          - deploy-key
           - trace
 

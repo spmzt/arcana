@@ -684,6 +684,28 @@ label {
 	font-size: .68rem;
 }
 
+/* Confirming an SSH host key. */
+form.hostkey > p:first-of-type::first-letter { text-transform: uppercase; }
+form.hostkey ul.fingerprints {
+	list-style: none;
+	margin: .4rem 0 .8rem;
+	padding: 0;
+}
+form.hostkey ul.fingerprints code {
+	display: block;
+	padding: .35rem .5rem;
+	margin: .25rem 0;
+	border: 1px solid var(--line);
+	font-size: .72rem;
+	overflow-wrap: anywhere;
+}
+form.hostkey pre.deploy-key {
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	font-size: .7rem;
+	user-select: all;
+}
+
 /* The settings dialog. */
 form.settings label small {
 	display: block;
@@ -1894,7 +1916,7 @@ pre.diff {
 /* Toasts. */
 .toasts {
 	position: fixed;
-	z-index: 30;
+	z-index: 8;
 	left: 50%;
 	transform: translateX(-50%);
 	top: calc(3.4rem + var(--top));

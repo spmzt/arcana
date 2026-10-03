@@ -269,7 +269,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("fake-pkg", 0755) == 0);
 
 	/* git clone makes a tree; make "builds" by copying the agent. */
-	put("fake-git", "#!/bin/sh\n[ \"$1\" = clone ] || exit 2\n"
+	put("fake-git", "#!/bin/sh\n[ \"$1\" = -c ] && shift 2\n"
+	    "[ \"$1\" = clone ] || exit 2\n"
 	    "for a; do last=$a; done\n"
 	    "mkdir -p \"$last/lib/libjailconf\" \"$last/usr.sbin/arcana-agent\"\n");
 	ATF_REQUIRE(chmod("fake-git", 0755) == 0);
@@ -277,6 +278,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "*\" -V .OBJDIR \"*) echo \"$dir/obj\" ;;\n"
 	    "*/usr.sbin/arcana-agent*) mkdir -p \"$dir/obj\" && "
 	    "cp '%s' \"$dir/obj/arcana-agent\" ;;\nesac\n", jgd);
+	/* ssh-keyscan: the key ./hostkey.pub, made by the test that asks. */
+	put("fake-keyscan", "#!/bin/sh\nfor a; do last=$a; done\n"
+	    "echo \"$last $(cut -d' ' -f1,2 hostkey.pub)\"\n");
+	ATF_REQUIRE(chmod("fake-keyscan", 0755) == 0);
 	put("fake-make", buf);
 	ATF_REQUIRE(chmod("fake-make", 0755) == 0);
 	snprintf(send, sizeof(send), "%s", jgd);
@@ -338,7 +343,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[25] = (char *)(uintptr_t)"./fake-git";
 	argv[26] = (char *)(uintptr_t)"-M";
 	argv[27] = (char *)(uintptr_t)"./fake-make";
-	argv[28] = NULL;
+	argv[28] = (char *)(uintptr_t)"-Y";
+	argv[29] = (char *)(uintptr_t)"./fake-keyscan";
+	argv[30] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

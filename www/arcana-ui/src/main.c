@@ -374,6 +374,14 @@ submit(const char *form, const ucl_object_t *f)
 		address_change(app.jail, s, jstr(f, "mode") != NULL &&
 		    strcmp(jstr(f, "mode"), "remove") == 0, jbool(f, "live"),
 		    jbool(f, "persist"), dry);
+	} else if (strcmp(form, "host-key") == 0) {
+		/* Confirmed: build again, with the keys shown as trusted;
+		 * or just again, once the deploy key is allowed. */
+		app.modal = MODAL_NONE;
+		for (i = 0; i < app.nservers; i++)
+			if (strcmp(app.servers[i].id, app.build_sid) == 0)
+				agent_build(&app.servers[i], jstr(app.build_reply,
+				    "host_keys"));
 	} else if (strcmp(form, "settings") == 0) {
 		save_settings(f);
 	} else if (strcmp(form, "agent-update") == 0) {
@@ -663,7 +671,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "do-agent-build") == 0) {
 		for (i = 0; i < app.nservers; i++)
 			if (strcmp(app.servers[i].id, arg) == 0)
-				agent_build(&app.servers[i]);
+				agent_build(&app.servers[i], NULL);
 	} else if (strcmp(act, "jail-sort") == 0) {
 		i = strcmp(arg, "name") == 0 ? JAIL_SORT_NAME :
 		    JAIL_SORT_RUNNING;

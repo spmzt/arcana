@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.5.0"
+#define	ARCW_VERSION		"0.6.0"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -55,6 +55,7 @@ struct config {
 	char		*agent_binary;	/* the arcana-agent sent to hosts */
 	char		*agent_source;	/* git repository to build it from */
 	char		*agent_ref;	/* its branch or tag, or NULL */
+	char		*agent_ssh_key;	/* a key on the build host, or NULL */
 };
 
 extern struct config cfg;

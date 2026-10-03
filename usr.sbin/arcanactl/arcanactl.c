@@ -110,7 +110,7 @@ usage(void)
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
 	    "    agent-update [-r] program\n"
-	    "    agent-build [-o file] repository [ref]\n"
+	    "    agent-build [-y] [-i key] [-o file] repository [ref]\n"
 	    "with -q, start, stop, restart, kill, address, service (but "
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
 	    "instead of waited for.\n");
@@ -663,23 +663,57 @@ cmd_agent_build(struct arc_client *cl, int argc, char **argv)
 	struct arc_agent_build_rsp	*rsp;
 	const char			*out;
 	char				 hex[SHA256_DIGEST_STRING_LENGTH];
+	char				*keys;
+	size_t				 i;
+	bool				 trust;
 	int				 ch, error, fd;
 
 	memset(&req, 0, sizeof(req));
 	out = "arcana-agent";
+	trust = false;
+	keys = NULL;
 	optreset = optind = 1;
-	while ((ch = getopt(argc, argv, "o:")) != -1) {
-		if (ch != 'o')
+	while ((ch = getopt(argc, argv, "i:o:y")) != -1) {
+		switch (ch) {
+		case 'i':
+			req.ssh_key = optarg;
+			break;
+		case 'o':
+			out = optarg;
+			break;
+		case 'y':
+			trust = true;
+			break;
+		default:
 			usage();
-		out = optarg;
+		}
 	}
 	if (argc - optind < 1 || argc - optind > 2)
 		usage();
 	req.source = argv[optind];
 	req.ref = argv[optind + 1];
+again:
 	if ((error = arc_agent_build(cl, &req, &rsp)) != 0)
 		fail(cl, error, "agent-build");
 	emit_trace(rsp->trace.v, rsp->trace.n);
+	/*
+	 * The host does not know the server's SSH host key: show what it
+	 * found, and with -y send it back as confirmed.
+	 */
+	if (!rsp->ok && rsp->host_keys != NULL) {
+		for (i = 0; i < rsp->fingerprints.n; i++)
+			xo_emit("{Lwc:Host key}{l:fingerprint/%s}\n",
+			    rsp->fingerprints.v[i]);
+		if (trust && keys == NULL) {
+			if ((keys = strdup(rsp->host_keys)) == NULL)
+				xo_err(1, "strdup");
+			req.host_keys = keys;
+			arc_agent_build_rsp_free(rsp);
+			goto again;
+		}
+	}
+	if (!rsp->ok && rsp->deploy_key != NULL)
+		xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n", rsp->deploy_key);
 	if (rsp->ok) {
 		/* What arrived is what the host says it built. */
 		if (rsp->sha256 == NULL || strcmp(SHA256_Data(rsp->binary.p,
@@ -699,6 +733,7 @@ cmd_agent_build(struct arc_client *cl, int argc, char **argv)
 		    "failed");
 	error = rsp->ok ? 0 : 1;
 	arc_agent_build_rsp_free(rsp);
+	free(keys);
 	return (error);
 }
 

@@ -275,6 +275,16 @@ are built there with
 .Xr make 1 .
 When the daemon is root, git and make run as
 .Li nobody .
+For a repository reached over SSH, the server's host key is never
+taken on trust: until the client sends back the keys a person
+confirmed, the reply carries the keys the server showed and their
+fingerprints, and nothing is built.
+Confirmed keys are kept in
+.Pa known_hosts
+in the build directory and checked strictly from then on.
+git shows the server a key of this host's, made on first use as
+.Pa id_ed25519
+there, or the one the client names.
 The program is sent back with its SHA-256 and the version it reports;
 nothing is installed.
 One build runs at a time.

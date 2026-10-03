@@ -18,7 +18,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.2.2"
+#define	ARCANA_AGENT_VERSION	"0.3.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -33,6 +33,8 @@
 #define	PATH_PKG_BIN		"/usr/sbin/pkg"
 #define	PATH_GIT_BIN		"/usr/local/bin/git"
 #define	PATH_MAKE_BIN		"/usr/bin/make"
+#define	PATH_KEYSCAN_BIN	"/usr/bin/ssh-keyscan"
+#define	PATH_KEYGEN_BIN		"/usr/bin/ssh-keygen"
 #define	PATH_BUILD_DIR		"/var/cache/arcana-build"
 #define	PATH_BUILD_CONF		"/usr/local/etc/arcana/config.mk"
 
@@ -57,6 +59,8 @@ struct opts {
 	const char	*pkg_bin;
 	const char	*self_path;	/* the program an update replaces */
 	const char	*git_bin;
+	const char	*keyscan_bin;	/* ssh-keyscan(1) */
+	const char	*keygen_bin;	/* ssh-keygen(1) */
 	const char	*make_bin;
 	const char	*build_dir;	/* where a tree is cloned and built */
 	const char	*build_conf;	/* this host's config.mk for it */
@@ -255,7 +259,7 @@ void		 pools_measure(struct work *, struct arc_stats *);
 
 /* ira/build.c */
 int		 do_agent_build(struct work *, const char *, const char *,
-		    struct arc_agent_build_rsp *);
+		    const char *, const char *, struct arc_agent_build_rsp *);
 
 /* ira/update.c */
 int		 do_agent_update(struct work *, const uint8_t *, size_t,

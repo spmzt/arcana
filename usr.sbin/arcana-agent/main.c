@@ -54,6 +54,8 @@ struct opts opts = {
 	.pkg_bin = PATH_PKG_BIN,
 	.git_bin = PATH_GIT_BIN,
 	.make_bin = PATH_MAKE_BIN,
+	.keyscan_bin = PATH_KEYSCAN_BIN,
+	.keygen_bin = PATH_KEYGEN_BIN,
 	.build_dir = PATH_BUILD_DIR,
 	.build_conf = PATH_BUILD_CONF,
 };
@@ -81,6 +83,7 @@ usage(void)
 	    "[-U program]\n"
 	    "                 [-B build dir] [-c config.mk] [-G git] "
 	    "[-M make]\n"
+	    "                 [-Y ssh-keyscan] [-E ssh-keygen]\n"
 	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
 	exit(2);
@@ -270,7 +273,7 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	while ((ch = getopt(argc, argv, "A:B:C:c:D:dFf:G:g:j:K:l:M:N:P:p:R:s:U:VW:X:y:Z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:B:C:c:D:dE:Ff:G:g:j:K:l:M:N:P:p:R:s:U:VW:X:Y:y:Z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -341,6 +344,12 @@ main(int argc, char *argv[])
 			break;
 		case 'c':
 			opts.build_conf = optarg;
+			break;
+		case 'E':
+			opts.keygen_bin = optarg;
+			break;
+		case 'Y':
+			opts.keyscan_bin = optarg;
 			break;
 		case 'G':
 			opts.git_bin = optarg;

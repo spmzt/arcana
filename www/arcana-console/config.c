@@ -84,6 +84,7 @@ config_load(const char *path)
 	cfg.agent_binary = get(top, "agent_binary", ARCW_AGENT_BINARY);
 	cfg.agent_source = get(top, "agent_source", NULL);
 	cfg.agent_ref = get(top, "agent_ref", NULL);
+	cfg.agent_ssh_key = get(top, "agent_ssh_key", NULL);
 	ucl_object_unref(top);
 
 	if (cfg.rp_id == NULL || cfg.origin == NULL) {

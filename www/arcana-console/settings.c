@@ -39,6 +39,7 @@ static const char	*v_url(const char *);
 static const char	*v_path(const char *);
 static const char	*v_source(const char *);
 static const char	*v_ref(const char *);
+static const char	*v_keypath(const char *);
 
 static struct setting {
 	const char	*key;
@@ -68,6 +69,11 @@ static struct setting {
 	    NULL },
 	{ "agent_ref", K_TEXT, "Branch or tag to build",
 	    "Empty for the repository's own.", v_ref, NULL, NULL },
+	{ "agent_ssh_key", K_TEXT, "SSH key for git, on the host that builds",
+	    "For a repository reached over SSH: the path of a private key "
+	    "on the build host, readable by nobody, whom git runs as. Empty "
+	    "for a key the host makes for itself and shows you, to allow as "
+	    "a deploy key.", v_keypath, NULL, NULL },
 };
 
 static struct timespec	loaded;		/* settings.json's mtime when read */
@@ -133,6 +139,15 @@ v_ref(const char *s)
 	return (NULL);
 }
 
+/* A path on another machine: only its form can be checked; or empty. */
+static const char *
+v_keypath(const char *s)
+{
+
+	return (s[0] == '\0' ? NULL : v_path(s) != NULL || strchr(s, ' ') !=
+	    NULL ? "an absolute path without blanks" : NULL);
+}
+
 static struct setting *
 find(const char *key)
 {
@@ -175,6 +190,8 @@ apply(void)
 	cfg.agent_source = v[0] != '\0' ? kore_strdup(v) : NULL;
 	v = value("agent_ref");
 	cfg.agent_ref = v[0] != '\0' ? kore_strdup(v) : NULL;
+	v = value("agent_ssh_key");
+	cfg.agent_ssh_key = v[0] != '\0' ? kore_strdup(v) : NULL;
 }
 
 static void
@@ -227,6 +244,7 @@ settings_init(const char *update_check, const char *update_url)
 	find("agent_binary")->base = cfg.agent_binary;
 	find("agent_source")->base = cfg.agent_source;
 	find("agent_ref")->base = cfg.agent_ref;
+	find("agent_ssh_key")->base = cfg.agent_ssh_key;
 	load();
 }
 
@@ -356,7 +374,8 @@ api_settings(struct http_request *req)
 		    "false") : ucl_object_tostring_forced(v);
 		/* Empty means none, where there can be none. */
 		why = s->valid != NULL && !(val[0] == '\0' && (s->valid ==
-		    v_source || s->valid == v_ref)) ? s->valid(val) : NULL;
+		    v_source || s->valid == v_ref || s->valid == v_keypath)) ?
+		    s->valid(val) : NULL;
 		if (why != NULL) {
 			reply_error(req, 400, "invalid", "%s: not %s", s->label,
 			    why);

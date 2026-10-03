@@ -258,6 +258,7 @@ enum modal {
 	MODAL_ADDRESS,
 	MODAL_AGENT_UPDATE,
 	MODAL_SETTINGS,
+	MODAL_HOST_KEY,
 };
 
 struct confirm {
@@ -310,6 +311,8 @@ struct app {
 	int		 svc_sort;	/* SVC_SORT_*: running first at start */
 	bool		 svc_sort_desc;
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
+	ucl_object_t	*build_reply;	/* a build that needs the user: host keys */
+	char		 build_sid[9];	/* and the host it was asked of */
 	ucl_object_t	*schema;	/* the family's, from schema.json */
 	bool		 schema_loading;
 	bool		 schema_failed;
@@ -371,7 +374,7 @@ void		 refresh_network(struct server *, bool);
 void		 refresh_stats(struct server *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);
-void		 agent_build(struct server *);
+void		 agent_build(struct server *, const char *);
 void		 load_settings(void);
 void		 save_settings(const ucl_object_t *);
 void		 load_schema(void);

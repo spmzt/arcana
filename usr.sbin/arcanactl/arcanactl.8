@@ -139,7 +139,7 @@ One job with the trace of what it has done so far;
 waits until it has finished.
 .It Cm job-cancel Ar id
 Take a job that has not started out of the queue.
-.It Cm agent-build Oo Fl o Ar file Oc Ar repository Op Ar ref
+.It Cm agent-build Oo Fl y Oc Oo Fl i Ar key Oc Oo Fl o Ar file Oc Ar repository Op Ar ref
 Have the host clone the git
 .Ar repository ,
 at the branch or tag
@@ -151,6 +151,15 @@ It is saved as
 .Ar file ,
 .Pa arcana-agent
 by default, after a check against its SHA-256.
+For a repository reached over SSH, a host that does not know the
+server's host key builds nothing: the fingerprints of the keys the
+server showed are printed, with the public key the host shows the
+server.
+.Fl y
+sends those keys back as confirmed, and the host keeps them.
+.Fl i
+names a private key on the host for git to use instead of the host's
+own.
 .It Cm agent-update Oo Fl r Oc Ar program
 Put
 .Ar program

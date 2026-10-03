@@ -646,6 +646,33 @@ ATF_TC_BODY(agent_build, tc)
 	ATF_CHECK_STREQ(sha, jstr(&r, "agent_build"));
 	ATF_CHECK(jstr(&r, "agent_version") != NULL);
 	resp_free(&r);
+
+	/*
+	 * Over SSH: the host hands back the server's host keys for the
+	 * user to confirm, and builds once they come back confirmed.
+	 */
+	ATF_REQUIRE(system("ssh-keygen -q -t ed25519 -N '' -f hostkey") == 0);
+	http("POST", "/api/settings", "{\"set\":{\"agent_source\":"
+	    "\"git@git.example.org:me/arcana.git\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_REQUIRE(jstr(&r, "host_keys") != NULL);
+	ATF_CHECK(strncmp(jstr(&r, "host_keys"), "git.example.org ssh-ed25519 ",
+	    28) == 0);
+	ATF_CHECK(jstr(&r, "fingerprints.0") != NULL && strstr(jstr(&r,
+	    "fingerprints.0"), "SHA256:") != NULL);
+	ATF_CHECK(jstr(&r, "deploy_key") != NULL);
+	snprintf(body, sizeof(body), "{\"host_keys\":\"%.*s\"}",
+	    (int)strcspn(jstr(&r, "host_keys"), "\n"), jstr(&r, "host_keys"));
+	resp_free(&r);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	resp_free(&r);
+	ATF_CHECK(access("build/known_hosts", R_OK) == 0);
 }
 
 CONSOLE_TC(settings, "Settings are changed from the console, kept in the "

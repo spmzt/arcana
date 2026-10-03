@@ -58,7 +58,7 @@ certificate from that CA.
 | `-p pidfile` | Default `/var/run/arcana-agent.pid`. |
 | `-j`, `-s`, `-y`, `-N`, `-X`, `-W`, `-Z`, `-P` | The `jail`, `service`, `sysrc`, `netstat`, `sockstat`, `swapinfo`, `zpool` and `pkg` programs, if not the system's; `-R` the rc.d directories. Used by the tests. |
 | `-U` *program* | The file an update replaces, if not the running program. |
-| `-B` *dir*, `-c` *config.mk* | Where a tree is cloned and built when the console asks for a build (`/var/cache/arcana-build`), and this host's settings for it (`/usr/local/etc/arcana/config.mk`). `-G` and `-M` name `git` and `make`. |
+| `-B` *dir*, `-c` *config.mk* | Where a tree is cloned and built when the console asks for a build (`/var/cache/arcana-build`), and this host's settings for it (`/usr/local/etc/arcana/config.mk`). `-G` and `-M` name `git` and `make`, `-Y` and `-E` `ssh-keyscan` and `ssh-keygen`. |
 | `-V` | Print the version and exit. |
 
 What each operation runs on the host is in
@@ -118,7 +118,7 @@ arcanactl -c tcp://host1.example:4310 \
 | `jobs` | Queued, running and recent jobs. |
 | `job [-w]` *id* | A job with its trace so far; `-w` waits for the end. |
 | `job-cancel` *id* | Take a queued job back. |
-| `agent-build` [`-o` *file*] *repository* [*ref*] | Have the host clone the repository, build `arcana-agent` there and send it back; it is saved as *file* (`arcana-agent`). |
+| `agent-build` [`-y`] [`-i` *key*] [`-o` *file*] *repository* [*ref*] | Have the host clone the repository, build `arcana-agent` there and send it back; it is saved as *file* (`arcana-agent`). Over SSH the server's host key fingerprints are printed and nothing is built until `-y` confirms them; `-i` names a private key on the host for git. |
 | `agent-update` [`-r`] *program* | Put a new `arcana-agent` in place on the host, checked there by running it with `-V`; `-r` restarts the service. The one before stays as `arcana-agent.old`. |
 
 Global options: `-c uri` (default the local socket), `-A`/`-C`/`-K` for
@@ -176,6 +176,7 @@ cat /var/db/arcana/setup-token   # for the first login
 | `agent_binary` | The `arcana-agent` the console sends to hosts when asked to update them. | `/usr/local/sbin/arcana-agent` |
 | `settings.json` in `datadir` | What **Settings** in the console changed: `rp_name`, `update_check`, `update_url`, `agent_binary`, `agent_source`, `agent_ref`. It overrides `web.conf` for those. | none |
 | `agent_source`, `agent_ref` | A git repository, and a branch or tag, a host can be asked to build `arcana-agent` from; what it builds is sent instead of `agent_binary`. | none |
+| `agent_ssh_key` | For a repository over SSH: a private key on the build host for git, readable by `nobody`. | a key the host makes |
 
 rc.conf variables: `arcana_console_enable`, `arcana_console_config` (the
 `kore.conf`), `arcana_console_web_conf`. The HTTP API is in

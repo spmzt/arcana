@@ -59,6 +59,27 @@ installed there. The console checks it against its SHA-256, keeps it in
 the hosts that run another build are offered the update. The build is
 in the activity bar with the output of git and make.
 
+A repository reached over SSH (`git@host:path`, `ssh://…`) takes two
+more things, since git runs there as a user with no known hosts and no
+key:
+
+- **The server's host key.** The host that builds never takes it on
+  trust. The first build stops and the console shows the fingerprints
+  of the keys the server presented; compare one with what the server's
+  administrator gives, and confirm. The host keeps the confirmed keys
+  in `known_hosts` in its build directory and checks the server against
+  them from then on. If the server later shows another key, the build
+  fails and says so in capitals, and the dialog asks again.
+- **A key for the host.** By default the host makes one for itself
+  (`id_ed25519` in the build directory) and the dialog shows its public
+  half: add it to the repository's server as a read-only deploy key.
+  To use a key of your own instead, put its path on the build host in
+  **Settings**, "SSH key for git" (`agent_ssh_key`); it has to be
+  readable by `nobody`, whom git runs as.
+
+From a shell, `arcanactl agent-build -y` confirms the keys shown, and
+`-i key` names the key.
+
 The host that builds needs what the build needs: `git`, the base
 compiler, and `devel/cblink` with its `libcbor`. If cblink or the linker
 are somewhere else on it, `/usr/local/etc/arcana/config.mk` there is

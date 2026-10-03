@@ -76,6 +76,7 @@ struct call {
 	size_t			 nspecs;
 	uint64_t		 jobid;		/* job, job-cancel */
 	bool			 restart;	/* agent-update */
+	char			*host_keys;	/* agent-build: confirmed */
 	struct arc_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
 	char			*json;		/* the reply, from the thread */
@@ -968,10 +969,19 @@ call_run(struct kore_task *t)
 		memset(&abq, 0, sizeof(abq));
 		abq.source = cfg.agent_source;
 		abq.ref = cfg.agent_ref;
+		abq.ssh_key = cfg.agent_ssh_key;
+		abq.host_keys = c->host_keys;
 		if ((error = arc_agent_build(&cl, &abq, &abr)) != 0)
 			goto rpcfail;
 		ok = abr->ok;
 		put_str(top, "error", abr->error);
+		/* An SSH server the host does not know: for the user to
+		 * confirm, with the key the host shows that server. */
+		put_str(top, "host_keys", abr->host_keys);
+		if (abr->fingerprints.n > 0)
+			put(top, "fingerprints", strs(abr->fingerprints.v,
+			    abr->fingerprints.n));
+		put_str(top, "deploy_key", abr->deploy_key);
 		steps = abr->trace.v;
 		nsteps = abr->trace.n;
 		if (!ok)
@@ -1203,6 +1213,8 @@ api_call_free(struct http_request *req)
 	kore_free(c->uri);
 	kore_free(c->peer);
 	c->sname = c->uri = c->peer = NULL;
+	kore_free(c->host_keys);
+	c->host_keys = NULL;
 	call_free_vars(c);
 	for (i = 0; i < c->nnames; i++)
 		kore_free(c->names[i]);
@@ -1268,7 +1280,9 @@ api_service_action(struct http_request *req)
 int
 api_agent_build(struct http_request *req)
 {
-	struct call	*c;
+	ucl_object_t		*body;
+	const ucl_object_t	*v;
+	struct call		*c;
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
@@ -1277,6 +1291,13 @@ api_agent_build(struct http_request *req)
 		    "in web.conf names no repository to build from"));
 	if ((c = call_new(req, OP_AGENT_BUILD)) == NULL)
 		return (KORE_RESULT_OK);
+	/* {"host_keys": "..."}: the lines the user confirmed. */
+	if ((body = read_json(req)) != NULL) {
+		if ((v = ucl_object_lookup(body, "host_keys")) != NULL &&
+		    ucl_object_type(v) == UCL_STRING)
+			c->host_keys = kore_strdup(ucl_object_tostring(v));
+		ucl_object_unref(body);
+	}
 	return (call_start(req, c));
 }
 

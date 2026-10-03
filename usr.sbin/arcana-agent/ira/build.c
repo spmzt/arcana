@@ -30,7 +30,7 @@
 
 #define	BUILD_USER	"nobody"
 #define	VERSION_PREFIX	"arcana-agent "
-#define	MAX_ARGS	16
+#define	MAX_ARGS	20
 
 static int	run_as(struct work *, bool, const char *const *,
 		    struct execres *);
@@ -68,6 +68,7 @@ run_as(struct work *w, bool unpriv, const char *const *argv,
     struct execres *res)
 {
 	char	*full[MAX_ARGS + 5];
+
 	int	 n, i;
 
 	n = 0;
@@ -83,16 +84,169 @@ run_as(struct work *w, bool unpriv, const char *const *argv,
 	return (run_exec(w, full, res));
 }
 
+/*
+ * A repository reached over SSH, as "ssh://[user@]host[:port]/path" or
+ * "[user@]host:path": its server's name as known_hosts has it, "host"
+ * or "[host]:port", with the host and port apart.  False for the rest:
+ * a path, or another scheme.
+ */
+static bool
+ssh_source(struct work *w, const char *source, const char **namep,
+    const char **hostp, const char **portp)
+{
+	const char	*p, *at, *end;
+	char		*host, *colon;
+
+	*portp = NULL;
+	if (strncmp(source, "ssh://", 6) == 0) {
+		p = source + 6;
+		end = p + strcspn(p, "/");
+		at = memchr(p, '@', (size_t)(end - p));
+		if (at != NULL)
+			p = at + 1;
+		host = wstrndup(w, p, (size_t)(end - p));
+		if ((colon = strrchr(host, ':')) != NULL && strchr(colon,
+		    ']') == NULL) {
+			*colon = '\0';
+			*portp = colon + 1;
+		}
+	} else {
+		if (strstr(source, "://") != NULL || source[0] == '/' ||
+		    source[0] == '.')
+			return (false);
+		end = source + strcspn(source, ":/");
+		if (*end != ':')
+			return (false);
+		at = memchr(source, '@', (size_t)(end - source));
+		p = at != NULL ? at + 1 : source;
+		host = wstrndup(w, p, (size_t)(end - p));
+	}
+	if (host[0] == '\0' || host[0] == '-')
+		return (false);
+	*hostp = host;
+	*namep = *portp != NULL ? wfmt(w, "[%s]:%s", host, *portp) : host;
+	return (true);
+}
+
+/* known_hosts lines for name and nobody else, a few of them, in ASCII. */
+static bool
+valid_host_keys(const char *keys, const char *name)
+{
+	const char	*p, *nl;
+	size_t		 nlen;
+	int		 lines;
+
+	nlen = strlen(name);
+	lines = 0;
+	for (p = keys; *p != '\0'; p = *nl != '\0' ? nl + 1 : nl) {
+		nl = p + strcspn(p, "\n");
+		if (nl == p)
+			continue;
+		if (++lines > 8 || strncmp(p, name, nlen) != 0 || p[nlen] != ' ')
+			return (false);
+		for (; p < nl; p++)
+			if (*p < 0x20 || *p > 0x7e)
+				return (false);
+	}
+	return (lines > 0);
+}
+
+static int
+write_text(const char *path, const char *text)
+{
+	FILE	*fp;
+
+	(void)unlink(path);
+	if ((fp = fopen(path, "w")) == NULL)
+		return (-1);
+	fputs(text, fp);
+	if (text[0] != '\0' && text[strlen(text) - 1] != '\n')
+		fputc('\n', fp);
+	return (fclose(fp) == 0 ? 0 : -1);
+}
+
+/*
+ * Ask the server for its host keys and hand them to the client with
+ * their fingerprints, for a person to confirm: nothing is trusted here.
+ */
+static void
+offer_host_keys(struct work *w, bool unpriv, const char *name,
+    const char *host, const char *port, struct arc_agent_build_rsp *rsp)
+{
+	struct execres	 res;
+	const char	*argv[MAX_ARGS], **fps, *p, *nl;
+	char		*scan;
+	size_t		 nf;
+	int		 n;
+
+	n = 0;
+	argv[n++] = opts.keyscan_bin;
+	argv[n++] = "-T";
+	argv[n++] = "10";
+	if (port != NULL) {
+		argv[n++] = "-p";
+		argv[n++] = port;
+	}
+	argv[n++] = "-t";
+	argv[n++] = "ed25519,ecdsa,rsa";
+	argv[n++] = "--";
+	argv[n++] = host;
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) != 0 || res.outlen == 0) {
+		rsp->error = wfmt(w, "%s did not give its SSH host keys: is it "
+		    "reachable from this host?", name);
+		return;
+	}
+	rsp->host_keys = wtext(w, wstrndup(w, res.out, res.outlen));
+	if (!valid_host_keys(rsp->host_keys, name)) {
+		rsp->host_keys = NULL;
+		rsp->error = wfmt(w, "%s gave no host keys that can be kept",
+		    name);
+		return;
+	}
+	scan = wfmt(w, "%s/scan", opts.build_dir);
+	if (write_text(scan, rsp->host_keys) == 0) {
+		n = 0;
+		argv[n++] = opts.keygen_bin;
+		argv[n++] = "-l";
+		argv[n++] = "-f";
+		argv[n++] = scan;
+		argv[n] = NULL;
+		if (run_as(w, unpriv, argv, &res) == 0) {
+			fps = wcalloc(w, 9, sizeof(*fps));
+			nf = 0;
+			for (p = res.out; p < res.out + res.outlen && nf < 8;
+			    p = nl + 1) {
+				if ((nl = memchr(p, '\n', (size_t)(res.out +
+				    res.outlen - p))) == NULL)
+					nl = res.out + res.outlen;
+				if (nl > p)
+					fps[nf++] = wtext(w, wstrndup(w, p,
+					    (size_t)(nl - p)));
+				if (nl == res.out + res.outlen)
+					break;
+			}
+			rsp->fingerprints.v = fps;
+			rsp->fingerprints.n = nf;
+		}
+		(void)unlink(scan);
+	}
+}
+
 int
 do_agent_build(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey,
     struct arc_agent_build_rsp *rsp)
 {
 	struct execres	 res;
 	struct passwd	*pw;
 	struct stat	 sb;
 	unsigned char	 md[EVP_MAX_MD_SIZE];
-	const char	*argv[MAX_ARGS], *nl;
-	char		*src, *objdir, *prog, *sha, *conf;
+	const char	*argv[MAX_ARGS], *nl, *name, *host, *port, *sshcmd;
+	char		*src, *objdir, *prog, *sha, *conf, *kh, *key, *pub;
+	char		 line[1024];
+	FILE		*fp;
+	bool		 ssh;
 	uint8_t		*bin;
 	ssize_t		 r;
 	size_t		 off;
@@ -138,8 +292,104 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 		rsp->error = wtext(w, exec_error(w, &res, "rm"));
 		return (0);
 	}
+	/*
+	 * Over SSH, git runs ssh as the build user, who has no known
+	 * hosts and no key.  Both are kept in the build directory: the
+	 * host keys a person confirmed, never one taken on trust, and a
+	 * key of this host's own for the server to allow.
+	 */
+	sshcmd = NULL;
+	ssh = ssh_source(w, source, &name, &host, &port);
+	if (ssh) {
+		kh = wfmt(w, "%s/known_hosts", opts.build_dir);
+		key = wfmt(w, "%s/id_ed25519", opts.build_dir);
+		if (sshkey != NULL && sshkey[0] != '\0') {
+			/* A key the administrator keeps on this host. */
+			if (sshkey[0] != '/' || !valid_source(sshkey)) {
+				rsp->error = "the SSH key is not an absolute "
+				    "path";
+				return (0);
+			}
+			argv[0] = "/bin/test";
+			argv[1] = "-r";
+			argv[2] = sshkey;
+			argv[3] = NULL;
+			if (run_as(w, unpriv, argv, &res) != 0) {
+				rsp->error = wfmt(w, "the SSH key %s is not "
+				    "there, or not readable by %s, whom git "
+				    "runs as", sshkey, unpriv ? BUILD_USER :
+				    "the agent");
+				return (0);
+			}
+			key = wstrdup(w, sshkey);
+		}
+		pub = wfmt(w, "%s.pub", key);
+		if (access(key, F_OK) == -1) {
+			n = 0;
+			argv[n++] = opts.keygen_bin;
+			argv[n++] = "-q";
+			argv[n++] = "-t";
+			argv[n++] = "ed25519";
+			argv[n++] = "-N";
+			argv[n++] = "";
+			argv[n++] = "-C";
+			argv[n++] = "arcana-build";
+			argv[n++] = "-f";
+			argv[n++] = key;
+			argv[n] = NULL;
+			if (run_as(w, unpriv, argv, &res) != 0) {
+				rsp->error = wtext(w, exec_error(w, &res,
+				    "ssh-keygen"));
+				return (0);
+			}
+		}
+		if ((fp = fopen(pub, "r")) != NULL) {
+			if (fgets(line, sizeof(line), fp) != NULL) {
+				line[strcspn(line, "\n")] = '\0';
+				rsp->deploy_key = wtext(w, wstrdup(w, line));
+			}
+			fclose(fp);
+		}
+		if (accepted != NULL && accepted[0] != '\0') {
+			s = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", kh);
+			if (!valid_host_keys(accepted, name) || write_text(kh,
+			    accepted) == -1) {
+				step_end(w, s, false, "not host keys of %s",
+				    name);
+				rsp->error = wfmt(w, "those are not host keys "
+				    "of %s that can be kept", name);
+				return (0);
+			}
+			step_end(w, s, true, "the host keys of %s, as "
+			    "confirmed", name);
+		}
+		/* Known already?  ssh-keygen -F finds the server's lines. */
+		n = 0;
+		argv[n++] = opts.keygen_bin;
+		argv[n++] = "-F";
+		argv[n++] = name;
+		argv[n++] = "-f";
+		argv[n++] = kh;
+		argv[n] = NULL;
+		if (access(kh, R_OK) == -1 || run_as(w, unpriv, argv,
+		    &res) != 0 || res.outlen == 0) {
+			offer_host_keys(w, unpriv, name, host, port, rsp);
+			if (rsp->host_keys != NULL)
+				rsp->error = wfmt(w, "this host does not know "
+				    "the SSH host key of %s: confirm it", name);
+			return (0);
+		}
+		sshcmd = wfmt(w, "core.sshCommand=ssh -i %s -o IdentitiesOnly="
+		    "yes -o UserKnownHostsFile=%s -o GlobalKnownHostsFile="
+		    "/dev/null -o StrictHostKeyChecking=yes -o BatchMode=yes",
+		    key, kh);
+	}
 	n = 0;
 	argv[n++] = opts.git_bin;
+	if (sshcmd != NULL) {
+		argv[n++] = "-c";
+		argv[n++] = sshcmd;
+	}
 	argv[n++] = "clone";
 	argv[n++] = "--depth";
 	argv[n++] = "1";
@@ -153,6 +403,25 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 	argv[n] = NULL;
 	if (run_as(w, unpriv, argv, &res) != 0) {
 		rsp->error = wtext(w, exec_error(w, &res, "git clone"));
+		if (!ssh || res.err == NULL)
+			return (0);
+		/*
+		 * The server showing another key than the one confirmed is
+		 * not something to pass over: say so, and offer the new
+		 * keys for a person to judge.
+		 */
+		if (memmem(res.err, res.errlen, "verification failed",
+		    19) != NULL || memmem(res.err, res.errlen,
+		    "IDENTIFICATION HAS CHANGED", 26) != NULL) {
+			offer_host_keys(w, unpriv, name, host, port, rsp);
+			rsp->error = wfmt(w, "THE SSH HOST KEY OF %s HAS "
+			    "CHANGED since it was confirmed: someone may be "
+			    "in between, or the server was reinstalled", name);
+		} else if (memmem(res.err, res.errlen, "Permission denied",
+		    17) != NULL)
+			rsp->error = wfmt(w, "%s did not accept this host's "
+			    "key: allow the deploy key there, read-only",
+			    name);
 		return (0);
 	}
 

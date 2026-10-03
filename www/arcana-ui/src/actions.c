@@ -1688,7 +1688,19 @@ agent_build_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		toast(false, "%s built arcana-agent %s: the console sends it "
 		    "from now on", c->name, jstr(o, "version") != NULL ?
 		    jstr(o, "version") : "");
-	else
+	else if (status == 200 && (jstr(o, "host_keys") != NULL ||
+	    jstr(o, "deploy_key") != NULL)) {
+		/*
+		 * Over SSH, and the host needs a person: to confirm the
+		 * server's host key, or to allow the host's key there.
+		 */
+		if (app.build_reply != NULL)
+			ucl_object_unref(app.build_reply);
+		app.build_reply = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+		snprintf(app.build_sid, sizeof(app.build_sid), "%s", c->sid);
+		app.modal = MODAL_HOST_KEY;
+		app.modal_error[0] = '\0';
+	} else
 		toast(true, "%s: agent not built: %s", c->name, err != NULL ?
 		    err : "failed");
 	/* Which build the console has decides who is offered an update. */
@@ -1696,13 +1708,16 @@ agent_build_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	free(c);
 }
 
-/* Have s build arcana-agent from the console's repository. */
+/*
+ * Have s build arcana-agent from the console's repository; host_keys,
+ * if not NULL, are the SSH host keys of its server the user confirmed.
+ */
 void
-agent_build(struct server *s)
+agent_build(struct server *s, const char *host_keys)
 {
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[128];
+	char		 url[128], *q, *body;
 
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
@@ -1712,7 +1727,16 @@ agent_build(struct server *s)
 	app.trace_op = op->id;
 	app.dock_open = true;
 	snprintf(url, sizeof(url), "/api/servers/%s/agent-build", s->id);
-	api("POST", url, "{}", agent_build_cb, c);
+	if (host_keys == NULL) {
+		api("POST", url, "{}", agent_build_cb, c);
+		return;
+	}
+	q = json_quote(host_keys);
+	if (asprintf(&body, "{\"host_keys\":%s}", q) == -1)
+		abort();
+	free(q);
+	api("POST", url, body, agent_build_cb, c);
+	free(body);
 }
 
 static void

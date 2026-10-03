@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.5.0
+  version: 0.6.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -624,7 +624,9 @@ paths:
       description: The host clones the repository named by agent_source
         in web.conf, builds arcana-agent and sends it back; the console
         keeps it and sends it to hosts from then on. 409 when no
-        repository is configured.
+        repository is configured. Over SSH, a host that does not know
+        the server answers ok false with host_keys, fingerprints and
+        deploy_key; send host_keys back in the body to confirm them.
       parameters:
         - $ref: "#/components/parameters/server"
       responses:
