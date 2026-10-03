@@ -68,7 +68,9 @@ sb_take(struct work *w, struct sbuf *sb)
 }
 
 /*
- * Run jail(8) -e on one scope and split what it prints.  Values are
+ * Run jail(8) -e on one scope and split what it prints.  Returns -1 with
+ * *errp when jail(8) fails, and 0 with the jails otherwise; *errp is
+ * then what it warned of, or NULL.  Values are
  * written by quoted_print() in usr.sbin/jail/jail.c: quoted with " or '
  * when they contain blanks or quotes, '\' escaping '\' and the quote.
  * Values of one parameter are separated by ','.
@@ -95,12 +97,21 @@ conf_scope_read(struct work *w, const char *scope, struct cjail **outp,
 	argv[3] = eopt;
 	argv[4] = sep;
 	argv[5] = NULL;
+	*errp = NULL;
 	if (run_exec(w, argv, &res) != 0) {
 		*errp = res.errlen > 0 ? wtext(w, wstrndup(w, res.err,
 		    res.errlen > 0 && res.err[res.errlen - 1] == '\n' ?
 		    res.errlen - 1 : res.errlen)) : exec_error(w, &res, "jail");
 		return (-1);
 	}
+	/*
+	 * What jail(8) complains of and goes on from, such as a variable
+	 * one jail uses and does not have: the jails are all there, that
+	 * one with the parameter empty, and the complaint is passed on.
+	 */
+	if (res.errlen > 0)
+		*errp = wtext(w, wstrndup(w, res.err, res.err[res.errlen -
+		    1] == '\n' ? res.errlen - 1 : res.errlen));
 
 	jails = NULL;
 	nj = capj = 0;
@@ -259,6 +270,11 @@ conf_read(struct work *w, struct cconf *conf)
 			e.message = errs;
 			VEC_PUSH(conf->errors, conf->nerrors, cape, e);
 			continue;
+		}
+		if (errs != NULL) {
+			e.scope = wtext(w, scopes[i]);
+			e.message = errs;
+			VEC_PUSH(conf->errors, conf->nerrors, cape, e);
 		}
 		/* A name already seen in an earlier scope wins. */
 		for (k = 0; k < n; k++)

@@ -290,6 +290,14 @@ conf_errors_body()
 	printf 'bad {\n\tpath = "/x;\n}\n' > etc/jail.conf.d/bad.conf
 	atf_check -o match:'^web ' -e match:'bad.conf line 2: unterminated string' \
 	    "$JGC" -c "$SOCK" list -c
+	# What jail(8) only warns of is passed on too, with every jail of
+	# the file listed: here a variable one jail uses and does not have.
+	rm etc/jail.conf.d/bad.conf
+	printf 'template {\n\tpath = /;\n\tip6.addr = "$ip6";\n}\n' \
+	    > etc/jail.conf.d/template.conf
+	atf_check -o match:'^web ' -o match:'^template ' \
+	    -e match:'template: ip6.addr: variable "ip6" not found' \
+	    "$JGC" -c "$SOCK" list -c
 }
 conf_errors_cleanup()
 {
