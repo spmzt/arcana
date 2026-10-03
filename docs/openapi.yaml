@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.11.5
+  version: 0.12.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -591,6 +591,81 @@ paths:
                     type: array
                     items: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/Error" }
+
+  /api/push:
+    get:
+      summary: The key browsers subscribe to Web Push with, and the devices
+      responses:
+        "200":
+          description: public_key (base64url, P-256) and devices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  public_key: { type: string }
+                  devices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        endpoint: { type: string }
+                        service: { type: string }
+                        added: { type: integer }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/push/subscribe:
+    post:
+      summary: Have this browser told of tasks that end elsewhere
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, p256dh, auth]
+              properties:
+                endpoint: { type: string, description: "https address at the push service" }
+                p256dh: { type: string }
+                auth: { type: string }
+                name: { type: string }
+      responses:
+        "200": { description: The number of devices now }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/push/unsubscribe:
+    post:
+      summary: Stop telling a device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string }
+      responses:
+        "200": { description: The number of devices now }
+
+  /api/push/send:
+    post:
+      summary: Tell every device but the one that asks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                body: { type: string }
+                except: { type: string, description: "the sender's own endpoint" }
+      responses:
+        "200":
+          description: sent, gone, failed, and what each push service answered
 
   /api/settings:
     get:

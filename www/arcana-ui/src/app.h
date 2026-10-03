@@ -39,6 +39,10 @@ void		 arc_events_init(void);
 void		 arc_http(int, const char *, const char *, const char *);
 void		 arc_http_abort(int);
 void		 arc_reload(void);
+void		 arc_push_sync(void);
+void		 arc_push_send(const char *, const char *);
+void		 arc_push_remove(const char *);
+char		*arc_push_here(void);
 char		*arc_theme_get(void);
 void		 arc_theme_set(const char *);
 void		 arc_webauthn(int, int, const char *);
@@ -328,6 +332,7 @@ struct app {
 	bool		 rail_open;	/* the tree, on a narrow screen, is unfolded */
 	char		 theme[16];	/* "" for the default */
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
+	ucl_object_t	*push;		/* /api/push: the devices that are told */
 	ucl_object_t	*build_reply;	/* a build that needs the user: host keys */
 	char		 build_sid[9];	/* and the host it was asked of */
 	bool		 build_console;	/* it was the console's own update */
@@ -401,6 +406,7 @@ void		 route_change(struct server *, const char *, const char *, bool);
 bool		 service_busy(const struct server *, const char *);
 bool		 packages_busy(const struct server *);
 void		 load_settings(void);
+void		 load_push(void);
 void		 save_settings(const ucl_object_t *);
 void		 load_schema(void);
 const char	*schema_op(const ucl_object_t *);

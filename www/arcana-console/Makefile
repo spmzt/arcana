@@ -1,8 +1,8 @@
 # arcana-console.so: the Kore module serving the console and its API.
 
 SHLIB_NAME=	arcana-console.so
-SRCS=		api.c auth.c config.c hosts.c pki.c servers.c settings.c store.c \
-		update.c
+SRCS=		api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c \
+		store.c update.c webpush.c
 LIBDIR?=	${PREFIX}/lib/arcana
 MAN=		arcana-console.8
 
@@ -15,7 +15,7 @@ CBLINK_PARTS=	h,c,client
 .error Kore must be built with tasks (TASKS=1): KORE_FEATURES is "${KORE_FEATURES}"
 .endif
 CFLAGS+=	-I${KORE_INCLUDE} ${KORE_FEATURES} ${UCL_CFLAGS} ${SSL_CFLAGS}
-LDADD+=		${UCL_LIBS} ${SSL_LDFLAGS} -lcrypto -lfetch
+LDADD+=		${UCL_LIBS} ${SSL_LDFLAGS} -lssl -lcrypto -lfetch
 
 # Configuration samples, the routes, and the rc.d(8) script.
 FILESGROUPS+=	CONF RC

@@ -2,10 +2,13 @@
 
 TESTSDIR=	${TESTSBASE}/arcana/console
 ATF_TESTS_C=	console_test \
-		pwa_test
+		pwa_test \
+		webpush_test
 
 SRCS.console_test=	console_test.c harness.c
 SRCS.pwa_test=		pwa_test.c harness.c
+SRCS.webpush_test=	webpush_test.c webpush.c
+.PATH:			${.CURDIR}/..
 
 CFLAGS+=	${UCL_CFLAGS} ${SSL_CFLAGS} -DTESTSRC='"${.CURDIR}"'
 LDADD+=		${UCL_LIBS} ${SSL_LDFLAGS} -lcrypto

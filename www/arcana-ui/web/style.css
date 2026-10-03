@@ -2360,6 +2360,8 @@ html.fx .edges path { animation: flow 1.2s linear infinite; }
 	}
 }
 
+ul.devices em { color: var(--cyan); font-style: normal; font-size: .7rem; }
+
 /* Choosing a theme. */
 .themes {
 	display: flex;

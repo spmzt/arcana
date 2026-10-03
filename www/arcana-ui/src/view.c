@@ -1118,6 +1118,7 @@ modal(struct html *h)
 	const ucl_object_t *k;
 	ucl_object_iter_t it;
 	bool		 add, changed;
+	char		*here;
 	int		 i, n;
 
 	if (app.modal == MODAL_NONE)
@@ -1274,7 +1275,41 @@ modal(struct html *h)
 			    strcmp(app.theme, themes[i].name) == 0 ? " on" : "",
 			    themes[i].name, themes[i].title);
 		h_raw(h, "</div><p class=\"dim\">Kept in this browser.</p>"
-		    "<h4>Console</h4>");
+		    "<h4>Notifications</h4><p class=\"dim\">A change that "
+		    "ends in one browser is told to the others listed here, "
+		    "open or not. A browser joins when notifications are "
+		    "allowed in it, with <b>Notify</b> in the top bar.</p>");
+		here = arc_push_here();
+		n = 0;
+		it = NULL;
+		h_raw(h, "<ul class=\"keys devices\">");
+		while ((k = ucl_object_iterate(jget(app.push, "devices"), &it,
+		    true)) != NULL) {
+			char when[32];
+
+			n++;
+			h_raw(h, "<li><span class=\"name\">");
+			h_txt(h, jstr(k, "name"));
+			if (jstr(k, "endpoint") != NULL && strcmp(jstr(k,
+			    "endpoint"), here) == 0)
+				h_raw(h, " <em>this one</em>");
+			h_raw(h, "</span><span class=\"dim\">");
+			h_txt(h, jstr(k, "service"));
+			fmt_age(when, sizeof(when), (double)jint(k, "added",
+			    0) * 1000);
+			h_raw(h, " · since ");
+			h_txt(h, when);
+			h_raw(h, "</span><button type=\"button\" class=\"icon\" "
+			    "data-act=\"push-remove\" title=\"Stop telling this "
+			    "device\"");
+			h_attr(h, "data-arg", jstr(k, "endpoint"));
+			h_raw(h, ">×</button></li>");
+		}
+		if (n == 0)
+			h_raw(h, "<li class=\"dim\">No device yet.</li>");
+		h_raw(h, "</ul>");
+		free(here);
+		h_raw(h, "<h4>Console</h4>");
 		if (app.settings == NULL) {
 			h_raw(h, "<div class=\"loader\"></div>");
 			break;

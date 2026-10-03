@@ -29,6 +29,11 @@ pidfile		/var/run/arcana-console.pid
 # for a larger fleet or for many pages open at once.
 workers			1
 task_threads		32
+# A browser opens connections ahead of need and may leave one idle;
+# Kore answers an idle one with 408 after this many seconds, and the
+# browser's next request on it gets that answer.  The page sends such a
+# request again, and a longer wait makes it rare.
+http_header_timeout	60
 http_body_max		65536
 http_media_type		application/wasm wasm
 http_media_type		application/manifest+json webmanifest

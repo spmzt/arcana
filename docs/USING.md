@@ -107,6 +107,21 @@ The console is laid out as a tree and tabs.
   repository, and so decides what is built and sent to every host as
   root.
 - In the top bar: **FX** turns the blur and idle animations off for this
-  browser, **Notify** allows a desktop notification when a task that
-  took more than ten seconds ends, **Keys** manages security keys and
+  browser, **Notify** allows a notification when a task that
+  took more than ten seconds ends, and has this browser told of changes
+  made in the others (below), **Keys** manages security keys and
   passkeys.
+- **Notifications on other devices**: a change asked for in one browser
+  is told, when it ends, to every other browser where **Notify** was
+  allowed, whether or not the console is open there: the phone hears of
+  what was done at the desk. It is Web Push: the browser subscribes with
+  its vendor's push service (Google's for Chrome, Mozilla's for Firefox,
+  Apple's for Safari, where the console must be installed to the home
+  screen first), and the console posts the message there, encrypted for
+  that browser alone (RFC 8291) and signed with the console's own key
+  (VAPID; `vapid.pem` in the data directory). The push service sees who
+  sends and to whom, not what. The console must be able to reach those
+  services over HTTPS, port 443, and the page must be served over HTTPS
+  for a browser to subscribe. **Settings** lists the devices
+  (`push.json`) and removes one; a device whose browser dropped the
+  subscription is forgotten by itself. Up to 16 devices.

@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.11.5"
+#define	ARCW_VERSION		"0.12.0"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
@@ -64,6 +64,13 @@ extern struct config cfg;
 
 int		 config_load(const char *);
 int		 config_check_certs(void);
+
+/* push.c: notifications to the devices that asked, by Web Push. */
+int		 push_init(void);
+int		 api_push(struct http_request *);
+int		 api_push_list(struct http_request *);
+int		 api_push_subscribe(struct http_request *);
+int		 api_push_send(struct http_request *);
 
 /* settings.c: the settings changed from the console. */
 void		 settings_init(const char *, const char *);

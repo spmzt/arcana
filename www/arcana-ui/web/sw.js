@@ -49,6 +49,26 @@ self.addEventListener("fetch", (e) => {
 	    .then((hit) => hit || fetch(e.request)));
 });
 
+/*
+ * A push from the console: a task ended in another browser.  It is
+ * shown here whether or not the console is open on this device.
+ */
+self.addEventListener("push", (e) => {
+	let d = {};
+
+	try {
+		d = e.data ? e.data.json() : {};
+	} catch (err) {
+		d = { body: e.data ? e.data.text() : "" };
+	}
+	e.waitUntil(self.registration.showNotification(d.title || "Arcana", {
+		body: d.body || "",
+		icon: "icons/icon-192.png",
+		badge: "icons/icon-192.png",
+		tag: "arcana-" + Date.now()
+	}));
+});
+
 /* A notification of a finished task brings the console forward. */
 self.addEventListener("notificationclick", (e) => {
 	e.notification.close();

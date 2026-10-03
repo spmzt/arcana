@@ -564,6 +564,12 @@ dispatch(const char *act, const char *arg, const char *value)
 		arc_notify_ask();
 	} else if (strcmp(act, "notify-changed") == 0) {
 		app.notify = arc_notify_state();
+		/* Allowed: this browser is told of tasks from now on. */
+		arc_push_sync();
+	} else if (strcmp(act, "push-changed") == 0) {
+		load_push();
+	} else if (strcmp(act, "push-remove") == 0) {
+		arc_push_remove(arg);
 	} else if (strcmp(act, "net-kind") == 0 && s != NULL) {
 		app.net.sort = -1;
 		app.net.kind = strcmp(arg, "nexthops") == 0 ? NET_NEXTHOPS :

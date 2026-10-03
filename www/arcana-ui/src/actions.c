@@ -108,6 +108,8 @@ op_done(struct op *o, bool ok, const ucl_object_t *reply, const char *err)
 		snprintf(body, sizeof(body), "%s on %s: %s", o->title,
 		    o->server, ok ? "done" : err != NULL ? err : "failed");
 		arc_notify(ok ? "Arcana: done" : "Arcana: failed", body);
+		/* And to the other devices that asked to be told. */
+		arc_push_send(ok ? "Arcana: done" : "Arcana: failed", body);
 	}
 	if (reply != NULL && (t = jget(reply, "trace")) != NULL)
 		o->trace = ucl_object_ref((ucl_object_t *)(uintptr_t)t);
@@ -253,12 +255,18 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (!ok)
 		snprintf(op->error, sizeof(op->error), "%s", err != NULL ? err :
 		    "failed");
-	if (op->finished - op->started >= NOTIFY_MS) {
+	{
 		char body[256];
 
 		snprintf(body, sizeof(body), "%s on %s: %s", op->title,
 		    op->server, ok ? "done" : op->error);
-		arc_notify(ok ? "Arcana: done" : "Arcana: failed", body);
+		/* Here, when it took a while; and every change that this
+		 * browser asked for, to the other devices that are told. */
+		if (op->finished - op->started >= NOTIFY_MS)
+			arc_notify(ok ? "Arcana: done" : "Arcana: failed", body);
+		if (op->what != JOB_WATCH)
+			arc_push_send(ok ? "Arcana: done" : "Arcana: failed",
+			    body);
 	}
 	job_finished(op, ok, err);
 }
@@ -1361,6 +1369,8 @@ status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		app.screen = SCREEN_CONSOLE;
 		app.auth_error[0] = '\0';
 		refresh_servers();
+		/* Where notifications are allowed, this browser is told. */
+		arc_push_sync();
 	} else
 		app.screen = app.setup_required ? SCREEN_ENROL : SCREEN_LOGIN;
 }
@@ -1382,6 +1392,7 @@ auth_done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		app.auth_error[0] = '\0';
 		app.setup_required = false;
 		refresh_servers();
+		arc_push_sync();
 		return;
 	}
 	snprintf(app.auth_error, sizeof(app.auth_error), "%s",
@@ -1923,6 +1934,7 @@ settings_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		ucl_object_unref(app.settings);
 	app.settings = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
 	app.modal_error[0] = '\0';
+	load_push();
 	if (saved) {
 		app.modal = MODAL_NONE;
 		toast(false, "Settings saved");
@@ -2074,5 +2086,24 @@ packages_busy(const struct server *s)
 			return (true);
 	}
 	return (false);
+}
+
+static void
+push_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	if (status != 200)
+		return;
+	if (app.push != NULL)
+		ucl_object_unref(app.push);
+	app.push = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+}
+
+/* The devices that are told of tasks, for the settings to show. */
+void
+load_push(void)
+{
+
+	api("GET", "/api/push", NULL, push_cb, NULL);
 }
 

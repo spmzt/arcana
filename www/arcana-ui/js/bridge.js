@@ -286,6 +286,126 @@ addToLibrary({
 	},
 
 	/*
+	 * Web Push: this browser subscribes with its push service and
+	 * gives the console the address and keys, so that tasks ending in
+	 * another browser are told here; and tasks ending here are told to
+	 * the others.  Only with notifications allowed.
+	 */
+	$arcPush: { endpoint: "" },
+	$arcPushPost: function (path, body) {
+		return (fetch(path, {
+			method: "POST",
+			credentials: "same-origin",
+			headers: { "Content-Type": "application/json",
+			    "X-Arcana": "1" },
+			body: JSON.stringify(body)
+		}));
+	},
+	arc_push_sync__deps: ["$arcPush", "$arcPushPost", "$arcStr"],
+	arc_push_sync: function () {
+		var key;
+
+		function bytes(b64) {
+			var s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") +
+			    "===".slice((b64.length + 3) % 4)), a, i;
+
+			a = new Uint8Array(s.length);
+			for (i = 0; i < s.length; i++)
+				a[i] = s.charCodeAt(i);
+			return (a);
+		}
+		function device() {
+			var ua = navigator.userAgent, os, br;
+
+			os = /Android/.test(ua) ? "Android" : /iPhone|iPad/.test(
+			    ua) ? "iOS" : /FreeBSD/.test(ua) ? "FreeBSD" :
+			    /Windows/.test(ua) ? "Windows" : /Mac OS/.test(ua) ?
+			    "macOS" : /Linux/.test(ua) ? "Linux" : "a device";
+			br = /Firefox/.test(ua) ? "Firefox" : /Edg\//.test(ua) ?
+			    "Edge" : /Chrome/.test(ua) ? "Chrome" :
+			    /Safari/.test(ua) ? "Safari" : "a browser";
+			return (br + " on " + os);
+		}
+		if (!("serviceWorker" in navigator) || !("PushManager" in
+		    window) || !("Notification" in window) ||
+		    Notification.permission !== "granted")
+			return;
+		fetch("/api/push", { credentials: "same-origin" })
+		    .then(function (r) {
+			return (r.ok ? r.json() : null);
+		}).then(function (j) {
+			if (!j || !j.public_key)
+				return (null);
+			key = j.public_key;
+			return (navigator.serviceWorker.ready);
+		}).then(function (reg) {
+			if (!reg)
+				return (null);
+			return (reg.pushManager.getSubscription().then(
+			    function (sub) {
+				return (sub || reg.pushManager.subscribe({
+					userVisibleOnly: true,
+					applicationServerKey: bytes(key)
+				}));
+			}));
+		}).then(function (sub) {
+			var j;
+
+			if (!sub)
+				return (null);
+			j = sub.toJSON();
+			arcPush.endpoint = j.endpoint;
+			return (arcPushPost("/api/push/subscribe", {
+				endpoint: j.endpoint,
+				p256dh: j.keys.p256dh,
+				auth: j.keys.auth,
+				name: device()
+			}));
+		}).then(function () {
+			Module._arc_on_action(arcStr("push-changed"),
+			    arcStr(""), arcStr(""));
+		}).catch(function (e) {
+			console.warn("push:", e);
+		});
+	},
+	arc_push_send__deps: ["$arcPush", "$arcPushPost", "$UTF8ToString"],
+	arc_push_send: function (titlep, bodyp) {
+		arcPushPost("/api/push/send", {
+			title: UTF8ToString(titlep),
+			body: UTF8ToString(bodyp),
+			except: arcPush.endpoint
+		}).catch(function () {
+		});
+	},
+	arc_push_remove__deps: ["$arcPush", "$arcPushPost", "$UTF8ToString",
+	    "$arcStr"],
+	arc_push_remove: function (endpointp) {
+		var endpoint = UTF8ToString(endpointp);
+
+		function done() {
+			Module._arc_on_action(arcStr("push-changed"),
+			    arcStr(""), arcStr(""));
+		}
+		arcPushPost("/api/push/unsubscribe", { endpoint: endpoint })
+		    .then(done).catch(done);
+		/* This browser itself: its subscription goes too. */
+		if (endpoint === arcPush.endpoint && navigator.serviceWorker) {
+			arcPush.endpoint = "";
+			navigator.serviceWorker.ready.then(function (reg) {
+				return (reg.pushManager.getSubscription());
+			}).then(function (sub) {
+				if (sub)
+					sub.unsubscribe();
+			}).catch(function () {
+			});
+		}
+	},
+	arc_push_here__deps: ["$arcPush", "$arcStr"],
+	arc_push_here: function () {
+		return (arcStr(arcPush.endpoint));
+	},
+
+	/*
 	 * The theme, kept per browser: a name the stylesheet knows, or
 	 * none for the default.  The bar of the installed app follows the
 	 * page's background.
@@ -328,7 +448,7 @@ addToLibrary({
 	arc_http__deps: ["$arcAborts", "$arcStr", "$UTF8ToString"],
 	arc_http: function (id, methodp, urlp, bodyp) {
 		var method = UTF8ToString(methodp), body = null, opts;
-		var ctl = new AbortController();
+		var ctl = new AbortController(), url = UTF8ToString(urlp);
 
 		if (bodyp !== 0)
 			body = UTF8ToString(bodyp);
@@ -343,16 +463,32 @@ addToLibrary({
 		if (body !== null)
 			opts.body = body;
 		arcAborts[id] = ctl;
-		fetch(UTF8ToString(urlp), opts).then(function (r) {
-			return (r.text().then(function (t) {
+		/*
+		 * A 408 is the server's answer to a connection it found
+		 * idle, not to this request: the browser had opened the
+		 * connection ahead of time, and the request went out on it
+		 * as the server gave up waiting.  Nothing was done with the
+		 * request, so it is sent again, on a connection of its own.
+		 */
+		(function send(tries) {
+			fetch(url, opts).then(function (r) {
+				if (r.status === 408 && tries < 3) {
+					setTimeout(function () {
+						send(tries + 1);
+					}, 150 * (tries + 1));
+					return (null);
+				}
+				return (r.text().then(function (t) {
+					delete arcAborts[id];
+					Module._arc_on_http(id, r.status,
+					    arcStr(t));
+				}));
+			}).catch(function (err) {
 				delete arcAborts[id];
-				Module._arc_on_http(id, r.status, arcStr(t));
-			}));
-		}).catch(function (err) {
-			delete arcAborts[id];
-			Module._arc_on_http(id, 0, arcStr(ctl.gaveUp ?
-			    "cancelled" : String(err)));
-		});
+				Module._arc_on_http(id, 0, arcStr(ctl.gaveUp ?
+				    "cancelled" : String(err)));
+			});
+		})(0);
 	},
 
 	/*

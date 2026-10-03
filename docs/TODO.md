@@ -1,6 +1,6 @@
 # TODO
 
-## Waiting for approval before any work
+## To do
 
 - Interfaces, the rest: what is there lists them and changes them live
   (an address on or off, up or down). Not yet: keeping a change in
@@ -43,8 +43,10 @@ Written and tested with stand-ins, never run for real:
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.
-- Desktop notifications in a real browser; headless Chromium has no
-  permission prompt.
+- Notifications on a real phone. A message sent with the console's code
+  was delivered to headless Firefox through Mozilla's push service and
+  shown; Google's service accepts the console's signature, but the
+  Chromium build the tests run cannot receive from it.
 - `arcana-enrol -s` on a real host, the container image since the
   rename, and the update check against GitHub's live feed.
 

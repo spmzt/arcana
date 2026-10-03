@@ -807,6 +807,100 @@ ATF_TC_BODY(load, tc)
 	    0);
 }
 
+CONSOLE_TC(push, "Devices subscribe to be told of tasks, and a message goes "
+    "to all but the one that sends it")
+ATF_TC_BODY(push, tc)
+{
+	/* A P-256 point and 16 bytes, as a browser gives them. */
+	static const char key[] = "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcx"
+	    "aOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4";
+	static const char auth[] = "BTBZMqHH6r4Tts7J_aSIgg";
+	struct authn	a;
+	struct resp	r;
+	char		body[1024];
+
+	start(tc, 0, NULL);
+	http("GET", "/api/push", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	enrol(&a);
+
+	/* The console's key, for browsers to subscribe with; kept. */
+	http("GET", "/api/push", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "public_key") != NULL);
+	ATF_CHECK_EQ(87, strlen(jstr(&r, "public_key")));
+	ATF_CHECK(jstr(&r, "devices.0.name") == NULL);
+	resp_free(&r);
+	ATF_CHECK(system("test \"$(stat -f %Lp data/vapid.pem)\" = 600") == 0);
+
+	/* What is not a push service's address, or not keys, is refused. */
+	snprintf(body, sizeof(body), "{\"endpoint\":\"http://plain.example/x\","
+	    "\"p256dh\":\"%s\",\"auth\":\"%s\"}", key, auth);
+	http("POST", "/api/push/subscribe", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"endpoint\":\"https://localhost/a\","
+	    "\"p256dh\":\"AAAA\",\"auth\":\"%s\"}", auth);
+	http("POST", "/api/push/subscribe", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/* Two devices; one of them twice is still one. */
+	snprintf(body, sizeof(body), "{\"endpoint\":\"https://localhost/a\","
+	    "\"p256dh\":\"%s\",\"auth\":\"%s\",\"name\":\"Chrome on "
+	    "Android\"}", key, auth);
+	http("POST", "/api/push/subscribe", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/push/subscribe", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("1", jstr(&r, "devices"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"endpoint\":\"https://localhost/b\","
+	    "\"p256dh\":\"%s\",\"auth\":\"%s\",\"name\":\"Firefox on "
+	    "FreeBSD\"}", key, auth);
+	http("POST", "/api/push/subscribe", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("2", jstr(&r, "devices"));
+	resp_free(&r);
+	http("GET", "/api/push", NULL, &r);
+	ATF_CHECK_STREQ("Chrome on Android", jstr(&r, "devices.0.name"));
+	ATF_CHECK_STREQ("localhost", jstr(&r, "devices.0.service"));
+	resp_free(&r);
+
+	/*
+	 * A message goes to the one that did not send it.  Nothing
+	 * listens there, so it fails, and says so without failing the
+	 * request; with no other device there is nothing to send.
+	 */
+	http("POST", "/api/push/send", "{\"title\":\"Arcana: done\","
+	    "\"body\":\"start web on lab: done\",\"except\":"
+	    "\"https://localhost/a\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("0", jstr(&r, "sent"));
+	ATF_CHECK_STREQ("1", jstr(&r, "failed"));
+	resp_free(&r);
+
+	http("POST", "/api/push/unsubscribe", "{\"endpoint\":"
+	    "\"https://localhost/b\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("1", jstr(&r, "devices"));
+	resp_free(&r);
+	http("POST", "/api/push/send", "{\"title\":\"t\",\"body\":\"b\","
+	    "\"except\":\"https://localhost/a\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("0", jstr(&r, "sent"));
+	resp_free(&r);
+
+	/* The devices outlive a restart. */
+	restart_console();
+	http("GET", "/api/push", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("Chrome on Android", jstr(&r, "devices.0.name"));
+	resp_free(&r);
+}
+
 CONSOLE_TC(settings, "Settings are changed from the console, kept in the "
     "data directory, and override web.conf")
 ATF_TC_BODY(settings, tc)
@@ -1458,6 +1552,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, settings);
+	ATF_TP_ADD_TC(tp, push);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);

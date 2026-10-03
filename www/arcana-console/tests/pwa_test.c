@@ -358,11 +358,30 @@ ATF_TC_BODY(pwa, tc)
 
 	/* Settings: a repository to build the agent from is set from the
 	 * page, kept by the console, and what web.conf fixes is shown. */
+	run("window.subbed = false; fetch('/api/push/subscribe', { method: "
+	    "'POST', headers: { 'Content-Type': 'application/json', "
+	    "'X-Arcana': '1' }, body: JSON.stringify({ endpoint: "
+	    "'https://push.example.org/x', p256dh: 'BCVxsr7N_eNgVRqvHtD0zTZsEc"
+	    "6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4', "
+	    "auth: 'BTBZMqHH6r4Tts7J_aSIgg', name: 'Chrome on Android' }) })"
+	    ".then(r => { window.subbed = r.ok; });");
+	wait_js("window.subbed", 10);
 	run("document.querySelector('button[data-act=settings]').click()");
 	wait_js("document.querySelector('form[data-form=settings] "
 	    "input[name=agent_source]')", 10);
 	ATF_CHECK(js_true("document.querySelector('form.settings dl.kv')."
 	    "textContent.includes('localhost')"));
+	/* A device that subscribed to be told of tasks is listed, and
+	 * taken off with its cross. */
+	wait_js("document.querySelector('ul.devices li .name') && document."
+	    "querySelector('ul.devices').textContent.includes('Chrome on "
+	    "Android')", 10);
+	ATF_CHECK(js_true("document.querySelector('ul.devices').textContent"
+	    ".includes('push.example.org')"));
+	run("document.querySelector('ul.devices button[data-act=push-remove]')"
+	    ".click()");
+	wait_js("document.querySelector('ul.devices').textContent.includes("
+	    "'No device yet')", 10);
 	shot("0a-settings");
 	run("const f = document.querySelector('form[data-form=settings]'); "
 	    "f.agent_source.value = 'git@git.example.org:me/arcana.git'; "

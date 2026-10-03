@@ -223,7 +223,8 @@ arcw_onload(int action)
 		path = ARCW_CONF;
 	/* Kore goes on serving after a failed onload: stop it here. */
 	if (config_load(path) == -1 || pki_init() == -1 ||
-	    config_check_certs() == -1 || hosts_init() == -1)
+	    config_check_certs() == -1 || hosts_init() == -1 ||
+	    push_init() == -1)
 		fatalx("arcana: not starting, see above");
 	auth_init();
 	servers_init();
