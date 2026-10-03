@@ -272,8 +272,11 @@ The console is laid out as a tree and tabs.
   a graph from the API call through the session check and the cblink
   request to each call the agent made; a box picked in the graph shows
   its details in a pane beside the graph, which stays in view while the
-  graph scrolls. When a program ran, **Raw output** shows its argv, exit
-  status and output. Changes are jobs the
+  graph scrolls. The same pane shows the operation's **CBOR schema**:
+  its request and reply as maps keyed by attribute number, in CDDL, with
+  the attribute sets they nest, taken from the family's own description
+  (`share/arcana/arcana.yaml`); **{ } Schema** turns it off and on. When
+  a program ran, **Raw output** shows its argv, exit status and output. Changes are jobs the
   host runs on its own: the graph fills in stage by stage, and a change
   that cuts the console off still completes. **Queue** is on unless
   you turn it off in that browser: a change waits in the activity bar

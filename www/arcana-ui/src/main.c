@@ -620,6 +620,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.trace_op = atoi(arg);
 		app.trace_step = -1;
 		app.dock_open = true;
+	} else if (strcmp(act, "schema") == 0) {
+		app.trace_schema = !app.trace_schema;
 	} else if (strcmp(act, "step") == 0) {
 		app.trace_step = app.trace_step == atoi(arg) ? -1 : atoi(arg);
 	} else if (strcmp(act, "dock") == 0) {
@@ -772,6 +774,7 @@ main(void)
 	app.notify = arc_notify_state();
 	app.install = arc_install_state();
 	app.queue_on = arc_queue_get() != 0;
+	app.trace_schema = true;
 	render();
 	check_health();
 	last_health = last_refresh = arc_now();

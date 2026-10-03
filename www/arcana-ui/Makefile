@@ -15,7 +15,8 @@ WWWDIR?=	${PREFIX}/www/arcana-console
 
 DIST=		${.OBJDIR}/dist
 
-APP_SRCS=	main.c actions.c api.c fleet.c graph.c html.c json.c netview.c view.c
+APP_SRCS=	main.c actions.c api.c fleet.c graph.c html.c json.c netview.c \
+		schema.c view.c
 UCL_SRCS=	ucl_emitter_streamline.c ucl_emitter_utils.c ucl_emitter.c \
 		ucl_hash.c ucl_msgpack.c ucl_parser.c ucl_schema.c ucl_sexp.c \
 		ucl_util.c
@@ -76,7 +77,15 @@ ${DIST}/icons/icon-maskable-512.png: ${MKICON}
 	mkdir -p ${DIST}/icons
 	${MKICON} -m 512 ${.TARGET}
 
-SHELL_FILES=	${STATIC:S,^,${DIST}/,} ${DIST}/arcana.js \
+# The family's schema, shown beside an operation: cblink-gen's reference
+# for share/arcana/arcana.yaml, as JSON.
+${DIST}/schema.json: ${ARC_TOP}/share/arcana/arcana.yaml \
+    ${.CURDIR}/tools/schema.awk
+	mkdir -p ${DIST}
+	${CBLINK_GEN} -m md -o ${.OBJDIR} ${ARC_TOP}/share/arcana/arcana.yaml
+	awk -f ${.CURDIR}/tools/schema.awk ${.OBJDIR}/arcana.md > ${.TARGET}
+
+SHELL_FILES=	${STATIC:S,^,${DIST}/,} ${DIST}/arcana.js ${DIST}/schema.json \
 		${DIST}/morphdom-umd.min.js ${FONTS:S,^,${DIST}/fonts/,} \
 		${ICONS:S,^,${DIST}/icons/,}
 
@@ -107,6 +116,6 @@ install: .PHONY
 	    sw.js; do ${INSTALL} -m 0444 $$f ${DESTDIR}${WWWDIR}/$$f; done
 
 clean: .PHONY
-	rm -rf ${OBJS} ${MKICON} ${DIST}
+	rm -rf ${OBJS} ${MKICON} ${DIST} ${.OBJDIR}/arcana.md
 
 .include <bsd.obj.mk>

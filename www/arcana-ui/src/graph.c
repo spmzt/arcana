@@ -232,6 +232,11 @@ view_trace(struct html *h, const struct op *o)
 		h_txt(h, dur);
 		h_raw(h, "</span>");
 	}
+	if (o->trace != NULL)
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"schema\" "
+		    "title=\"The operation's request and reply as CBOR, from "
+		    "the family's schema\">{ } Schema</button>",
+		    app.trace_schema ? " on" : "");
 	if (o->trace != NULL && has_exec(o->trace))
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"raw\" "
 		    "data-arg=\"%d\" title=\"A program ran: see exactly what "
@@ -266,7 +271,7 @@ view_trace(struct html *h, const struct op *o)
 	 */
 	h_fmt(h, "<div class=\"trace-main%s\"><div class=\"graph-scroll\">"
 	    "<div class=\"graph\" style=\"width:%dpx;height:%dpx\">",
-	    sel ? " has-step" : "", w, ht);
+	    sel || app.trace_schema ? " has-step" : "", w, ht);
 	/* Edges first, under the nodes. */
 	h_fmt(h, "<svg class=\"edges\" width=\"%d\" height=\"%d\" "
 	    "aria-hidden=\"true\">", w, ht);
@@ -305,18 +310,24 @@ view_trace(struct html *h, const struct op *o)
 		h_raw(h, "</div></div>");
 	}
 	h_raw(h, "</div></div>");
-	if (sel) {
-		s = l.step[app.trace_step];
-		h_fmt(h, "<aside class=\"step-pane\"><button class=\"icon "
-		    "close\" data-act=\"step\" data-arg=\"%d\" title=\"Close\">"
-		    "×</button>", app.trace_step);
-		step_details(h, s);
-		if (jstr(s, "kind") != NULL && strcmp(jstr(s, "kind"),
-		    "exec") == 0) {
-			lines(h, jstr(s, "output"), "out preview", 12);
-			lines(h, jstr(s, "error_output"), "out err preview",
-			    12);
+	if (sel || app.trace_schema) {
+		h_raw(h, "<aside class=\"step-pane\">");
+		if (sel) {
+			s = l.step[app.trace_step];
+			h_fmt(h, "<button class=\"icon close\" data-act=\"step\" "
+			    "data-arg=\"%d\" title=\"Close\">×</button>",
+			    app.trace_step);
+			step_details(h, s);
+			if (jstr(s, "kind") != NULL && strcmp(jstr(s, "kind"),
+			    "exec") == 0) {
+				lines(h, jstr(s, "output"), "out preview", 12);
+				lines(h, jstr(s, "error_output"),
+				    "out err preview", 12);
+			}
 		}
+		/* What the operation is on the wire. */
+		if (app.trace_schema)
+			view_schema(h, schema_op(o->trace));
 		h_raw(h, "</aside>");
 	}
 	h_raw(h, "</div>");

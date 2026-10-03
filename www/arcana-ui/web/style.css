@@ -1658,6 +1658,29 @@ html.fx .node.st-incomplete { animation: breathe 1.2s ease-in-out infinite; }
 	z-index: 1;
 }
 .step-pane .step-detail { margin-top: 0; }
+.step-pane .step-detail + .schema, .step-pane pre.out + .schema {
+	margin-top: .8rem;
+}
+
+/* An operation's request and reply, as CDDL. */
+.schema {
+	padding: .6rem .8rem;
+	border: 1px solid var(--line);
+	background: rgba(4, 10, 18, .6);
+}
+.schema h4 { margin: 0 0 .4rem; font-size: .8rem; }
+.schema h4 .dim, .schema p { font-size: .7rem; font-weight: 400; }
+.schema p { margin: .2rem 0 .5rem; }
+.schema pre.cddl {
+	margin: 0;
+	overflow-x: auto;
+	font-size: .7rem;
+	line-height: 1.5;
+	color: var(--fg-2);
+}
+.schema pre.cddl b { color: var(--cyan); font-weight: 500; }
+.schema pre.cddl .m { color: var(--fg); }
+.schema pre.cddl .c { color: var(--dim); }
 .step-pane pre.out { max-width: 100%; overflow-x: auto; }
 
 .step-detail {

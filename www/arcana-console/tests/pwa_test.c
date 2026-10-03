@@ -490,7 +490,20 @@ ATF_TC_BODY(pwa, tc)
 	    "p.top < d.bottom - 40; })()"));
 	shot("3b-step");
 	run("document.querySelector('.step-pane .close').click()");
+	wait_js("!document.querySelector('.step-pane .step-detail')", 5);
+	/* Beside the operation, what it is on the wire: its request and
+	 * reply as CBOR maps, and the sets they nest. */
+	wait_js("document.querySelector('.schema pre.cddl')", 10);
+	ATF_CHECK(js_true("(() => { const t = document.querySelector("
+	    "'.schema').textContent; return t.includes('arcana') && "
+	    "t.includes('command') && t.includes('request = {') && "
+	    "t.includes('reply = {') && t.includes('=> uint') && "
+	    "t.includes('; id'); })()"));
+	shot("3c-schema");
+	run("document.querySelector('.trace button[data-act=schema]').click()");
 	wait_js("!document.querySelector('.step-pane')", 5);
+	run("document.querySelector('.trace button[data-act=schema]').click()");
+	wait_js("document.querySelector('.schema pre.cddl')", 5);
 	ATF_CHECK(js_true("document.querySelector('.graph .node.k-auth')"));
 	run("document.querySelector('.trace button[data-act=raw]').click()");
 	wait_js("document.querySelector('.terminal')", 5);
