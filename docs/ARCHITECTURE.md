@@ -196,9 +196,10 @@ lib/libjailconf/     in-place jail.conf editing
 usr.sbin/jailconf/   jailconf(8)
 usr.sbin/jailgridd/  jailgridd(8)
 usr.sbin/jailgridctl/ jailgridctl(8)
+usr.sbin/jailgrid-enrol/ jailgrid-enrol(8)
 www/jailgrid/        Kore module
 www/jailgrid-ui/     the PWA
-docs/                this file, openapi.yaml
+docs/                this file, TOOLS.md, openapi.yaml
 tests/               the top of the installed test suite
 ```
 

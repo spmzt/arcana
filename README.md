@@ -20,17 +20,22 @@ Home: <https://github.com/spmzt/geass>
 | `www/jailgrid-ui` | The PWA: C compiled with Emscripten, base libucl for JSON, installable and usable offline as a shell. |
 | `usr.sbin/jailconf` | `jailconf(8)`: change one value of a jail parameter in `jail.conf` in place, like `sysrc(8)` for `rc.conf`. |
 | `usr.sbin/jailgridctl` | `jailgridctl(8)`: talk to a jailgridd from a shell, with libxo(3) output. |
+| `usr.sbin/jailgrid-enrol` | `jailgrid-enrol(8)`: join a jail host to the console with a one-time token; it gets its certificate from the console's CA. |
 | `lib/libjailconf` | The in-place editor behind both. |
 | `share/jailgrid/jailgrid.yaml` | The cblink family: the contract between jailgridd and its clients. |
 
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains the design and the
-trust boundaries.
+trust boundaries; [docs/TOOLS.md](docs/TOOLS.md) describes every program
+with its options and examples, and each has a man page: `jailgridd(8)`,
+`jailgridctl(8)`, `jailgrid-enrol(8)`, `jailconf(8)` and `jailgrid(8)`
+for the console.
 
 ## Building
 
 Base `make(1)` and `bsd.*.mk`, on FreeBSD 14 or later.
 
-For the jail host's programs (jailgridd, jailconf, jailgridctl):
+For the jail host's programs (jailgridd, jailgridctl, jailgrid-enrol,
+jailconf):
 
 - [cblink](https://github.com/spmzt/cblink): libcblink, `cblink-gen` and
   `cblink.mk`, from its port `devel/cblink` or its own tree;

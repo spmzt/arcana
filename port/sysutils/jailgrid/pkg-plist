@@ -10,6 +10,7 @@ sbin/jailgridctl
 sbin/jailgridd
 share/man/man8/jailconf.8.gz
 share/man/man8/jailgrid-enrol.8.gz
+%%CONSOLE%%share/man/man8/jailgrid.8.gz
 share/man/man8/jailgridctl.8.gz
 share/man/man8/jailgridd.8.gz
 %%CONSOLE%%%%WWWDIR%%/fonts/jetbrains-mono-latin-400-normal.woff2

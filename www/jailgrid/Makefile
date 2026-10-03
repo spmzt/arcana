@@ -3,7 +3,7 @@
 SHLIB_NAME=	jailgrid.so
 SRCS=		api.c auth.c config.c hosts.c pki.c servers.c store.c update.c
 LIBDIR?=	${PREFIX}/lib/jailgrid
-MAN=
+MAN=		jailgrid.8
 
 .include "${.CURDIR}/../../share/mk/jailgrid.mk"
 

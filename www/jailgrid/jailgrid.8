@@ -1,0 +1,152 @@
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+.\"
+.Dd October 3, 2026
+.Dt JAILGRID 8
+.Os
+.Sh NAME
+.Nm jailgrid
+.Nd the jailgrid web console
+.Sh SYNOPSIS
+.Nm service
+.Cm jailgrid
+.Cm start | stop | restart | status
+.Pp
+.Ev JAILGRID_WEB_CONF Ns = Ns Pa web.conf
+.Nm kore
+.Op Fl d
+.Fl c Pa kore.conf
+.Sh DESCRIPTION
+The jailgrid console is
+.Xr kore 1
+with the module
+.Pa jailgrid.so :
+it serves the web application and its JSON API, logs its one user in
+with WebAuthn, keeps the list of jail hosts, and talks to the
+.Xr jailgridd 8
+of each host over cblink, with mutual TLS over TCP or through a local
+socket.
+It runs unprivileged; everything that changes a host is done by that
+host's
+.Xr jailgridd 8 .
+.Pp
+The console shows, per host: its jails with their state and actions;
+its rc.d services with their
+.Xr rc.conf 5
+variables; the routing table, nexthops, connections and sockets; the
+packages that can be upgraded, on the host and in running jails; and
+CPU, memory and ZFS usage.
+Every call to a host is listed with a trace of what the host did.
+.Sh CONFIGURATION
+Two files configure it.
+.Pa kore.conf
+is Kore's own: the address to bind (one
+.Cm bind
+line per address family), the RSA certificate for HTTPS, the user the
+worker runs as, and an
+.Cm include
+of
+.Pa routes.conf .
+.Pa web.conf ,
+named by the environment variable
+.Ev JAILGRID_WEB_CONF ,
+is the console's, in UCL:
+.Bl -tag -width "update_check"
+.It Va rp_id
+The WebAuthn relying party: the console's host name as the browser sees
+it.
+Required.
+.It Va origin
+The exact origin the browser uses, such as
+.Ql https://console.example .
+Required.
+.It Va rp_name
+The name security keys show.
+Default
+.Ql Jailgrid .
+.It Va datadir
+Where the registered keys, the server list, the setup token and, without
+.Va tls ,
+the console's own certificate authority are kept; mode 0700, owned by
+the worker's user.
+Default
+.Pa /var/db/jailgrid .
+.It Va cookie_secure
+Whether the session cookie is marked Secure.
+Default true.
+.It Va tls
+A block naming certificates for
+.Xr jailgridd 8
+over TCP:
+.Va ca ,
+the authority that issued the hosts' certificates;
+.Va cert
+and
+.Va key ,
+the console's client certificate; and optionally
+.Va ca_key ,
+the authority's key, which lets the console enrol hosts.
+Without the block the console makes an authority of its own in
+.Va datadir
+at first start and enrols hosts with it; see
+.Xr jailgrid-enrol 8 .
+.It Va update_check
+False stops the console from asking the release feed for newer
+versions.
+Default true.
+.It Va update_url
+Another feed, in the shape of GitHub's
+.Pa releases/latest .
+.El
+.Pp
+The module checks every certificate it is configured with when it
+loads, and refuses to start with the reason in the log; Kore serves
+HTTPS only with an RSA certificate.
+.Sh FIRST LOGIN
+With no security key registered, the console writes a one-time token to
+.Pa setup-token
+in
+.Va datadir
+and says so in its log.
+The first registration in the browser needs it; later keys are added
+from a logged-in session.
+A key may be a hardware key or a passkey, such as a phone's.
+.Sh FILES
+.Bl -tag -width Ds -compact
+.It Pa /usr/local/etc/jailgrid/kore.conf
+.It Pa /usr/local/etc/jailgrid/web.conf
+.It Pa /usr/local/etc/jailgrid/routes.conf
+The configuration; the first two have samples next to them.
+.It Pa /usr/local/lib/jailgrid/jailgrid.so
+The module.
+.It Pa /usr/local/www/jailgrid
+The web application.
+.It Pa /var/db/jailgrid
+.Pa credentials.json ,
+.Pa servers.json ,
+.Pa setup-token ,
+and with the console's own authority
+.Pa ca.pem ,
+.Pa ca.key ,
+.Pa console.pem ,
+.Pa console.key .
+.It Pa /usr/local/etc/rc.d/jailgrid
+The
+.Xr rc 8
+script; variables
+.Va jailgrid_enable ,
+.Va jailgrid_config
+and
+.Va jailgrid_web_conf .
+.El
+.Sh SEE ALSO
+.Xr kore 1 ,
+.Xr jailconf 8 ,
+.Xr jailgrid-enrol 8 ,
+.Xr jailgridctl 8 ,
+.Xr jailgridd 8
+.Pp
+The API is described in
+.Pa docs/openapi.yaml
+of the source tree.

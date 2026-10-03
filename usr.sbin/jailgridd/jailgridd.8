@@ -82,6 +82,46 @@ and if
 .Xr jail 8
 does not read the new file as intended it is put back.
 .Pp
+Beyond jails it reports and changes the host itself, always through the
+system's own programs.
+Services are the executable scripts of
+.Pa /etc/rc.d
+and
+.Pa /usr/local/etc/rc.d :
+whether they are enabled is read from
+.Ql sysrc -A ,
+whether the enabled ones run from
+.Ql service name status ;
+they are started, stopped, restarted and reloaded with
+.Xr service 8 ,
+enabled and disabled, and their
+.Xr rc.conf 5
+variables read and set, with
+.Xr sysrc 8 .
+The routing table, the nexthops, the active connections and the open
+sockets are what
+.Xr netstat 1
+and
+.Xr sockstat 1
+print with
+.Fl -libxo Cm json ,
+one run per address family.
+Usage figures are the CPU share from
+.Va kern.cp_time
+between two requests, memory from the
+.Va vm.stats.vm
+counters, swap from
+.Xr swapinfo 8
+and the ZFS pools from
+.Xr zpool 8 .
+Packages that the repository has newer versions of are listed with
+.Ql pkg version -vRl '<'
+and upgraded with
+.Ql pkg upgrade -y ,
+on the host or, with
+.Ql pkg -j ,
+in a running jail.
+.Pp
 Every reply carries a trace: the library calls, system calls, files and
 programs the request used, with the output of every program.
 Changes are made one at a time; reading is not held up by them.
@@ -194,4 +234,9 @@ socket:
 .Xr jail.conf 5 ,
 .Xr jail 8 ,
 .Xr jailconf 8 ,
-.Xr jailgridctl 8
+.Xr jailgrid 8 ,
+.Xr jailgrid-enrol 8 ,
+.Xr jailgridctl 8 ,
+.Xr pkg 8 ,
+.Xr service 8 ,
+.Xr sysrc 8
