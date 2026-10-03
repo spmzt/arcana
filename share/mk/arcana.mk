@@ -43,6 +43,11 @@ WARNS?=		6
 # cblink: the transport between arcana-agent and its clients.
 CBLINK_PREFIX?=	${LOCALBASE}
 CBLINK_MK?=	${CBLINK_PREFIX}/share/cblink/cblink.mk
+.if !exists(${CBLINK_MK})
+.error cblink is not at CBLINK_PREFIX=${CBLINK_PREFIX} (no ${CBLINK_MK}): \
+install devel/cblink, or set CBLINK_PREFIX in ${ARC_TOP}/config.mk, \
+where the top of the tree is $${ARC_TOP}
+.endif
 CBLINK_GEN?=	${CBLINK_PREFIX}/bin/cblink-gen
 CBLINK_CFLAGS?=	-I${CBLINK_PREFIX}/include
 CBLINK_LIBS?=	-L${CBLINK_PREFIX}/lib -lcblink
