@@ -1,0 +1,18 @@
+-- The arcana test suite, installed in ${TESTSBASE}/arcana.
+--
+--	kyua -v test_suites.FreeBSD.kore=/usr/local/bin/kore test \
+--	    -k /usr/local/tests/arcana/Kyuafile
+
+syntax(2)
+
+test_suite("FreeBSD")
+
+-- Every suite installed here: the console's is absent WITHOUT_CONSOLE.
+local directory = fs.dirname(current_kyuafile())
+for file in fs.files(directory) do
+	local kyuafile = fs.join(file, "Kyuafile")
+	if file ~= "." and file ~= ".." and
+	    fs.exists(fs.join(directory, kyuafile)) then
+		include(kyuafile)
+	end
+end

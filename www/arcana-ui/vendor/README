@@ -1,0 +1,11 @@
+Third-party files served with the console, unmodified.
+
+morphdom 2.7.8 sha512-D/fR4xgGUyVRbdMGU6Nejea1RFzYxYtyurG4Fbv2Fi/daKlWKuXGLOdXtl+3eIwL110cI2hz1ZojGICjjFLgTg==
+@fontsource/jetbrains-mono 5.3.0 sha512-fqDfB5I9f1p1TV486aUgB9t8zP84P0O1FtQR5Ol9vjwPy+S+EIGlVYm1cvj2W5shcZMTg2nZFdVMoH5wFu8a1A==
+@fontsource/orbitron 5.3.0 sha512-+BhPsbUAo/AF7sRcf+TEexm+EWWkgTiR9Zwb7AhYIPkc5oplfvw0C45Oc2xlKPhwVEmxG8hHuA6/Ansbl+Bc6w==
+
+morphdom/morphdom-umd.min.js	dist/morphdom-umd.min.js of the npm package (MIT)
+fonts/*.woff2			files/*-latin-*-normal.woff2 of the @fontsource packages
+				(SIL Open Font License 1.1)
+
+Each tarball was checked against the npm registry's sha512 integrity.

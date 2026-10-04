@@ -1,0 +1,35 @@
+#!/bin/sh
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# PROVIDE: arcana_console
+# REQUIRE: LOGIN NETWORKING
+# KEYWORD: shutdown
+#
+# The arcana console: kore(1) with arcana-console.so.  In /etc/rc.conf:
+#
+# arcana_console_enable (bool):	Set to "YES" to run the console.
+# arcana_console_config (str):	kore(1) configuration.
+#				Default: %%PREFIX%%/etc/arcana/kore.conf
+# arcana_console_web_conf (str):	The console's own configuration.
+#				Default: %%PREFIX%%/etc/arcana/web.conf
+
+. /etc/rc.subr
+
+name="arcana_console"
+rcvar="arcana_console_enable"
+
+load_rc_config $name
+
+: ${arcana_console_enable:="NO"}
+: ${arcana_console_config:="%%PREFIX%%/etc/arcana/kore.conf"}
+: ${arcana_console_web_conf:="%%PREFIX%%/etc/arcana/web.conf"}
+
+command="%%LOCALBASE%%/bin/kore"
+# kore(1) 4.3 stays in the foreground unless told to daemonise.
+command_args="-d -c ${arcana_console_config}"
+pidfile="/var/run/arcana-console.pid"
+required_files="${arcana_console_config} ${arcana_console_web_conf}"
+arcana_console_env="ARCANA_WEB_CONF=${arcana_console_web_conf}"
+
+run_rc_command "$1"

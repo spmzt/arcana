@@ -1,0 +1,554 @@
+.\"-
+.\" SPDX-License-Identifier: BSD-2-Clause
+.\"
+.\" Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+.\"
+.Dd October 2, 2026
+.Dt ARCANACTL 8
+.Os
+.Sh NAME
+.Nm arcanactl
+.Nd command-line client for arcana-agent
+.Sh SYNOPSIS
+.Nm
+.Op Fl -libxo Ar options
+.Op Fl qst
+.Op Fl c Ar uri
+.Op Fl A Ar cafile Fl C Ar certfile Fl K Ar keyfile
+.Op Fl N Ar name
+.Ar command
+.Sh DESCRIPTION
+.Nm
+sends one request to a
+.Xr arcana-agent 8
+and prints the answer.
+Output goes through
+.Xr libxo 3 ,
+so
+.Fl -libxo Ns = Ns Ar json
+and the other styles work.
+.Pp
+The options are:
+.Bl -tag -width Ds
+.It Fl A Ar cafile , Fl C Ar certfile , Fl K Ar keyfile
+The certificate authority that issued the server's certificate, and
+this client's certificate and key, for network URIs.
+.It Fl c Ar uri
+The daemon to talk to.
+Default
+.Ql unix:/var/run/arcana-agent.sock .
+.It Fl N Ar name
+The name the server's certificate must carry, when it differs from the
+host in
+.Ar uri .
+.It Fl F Ar fib
+The routing table that
+.Cm route
+and
+.Cm net routes
+work in, when not the first.
+.It Fl j Ar jail
+Work on the network of a running jail that has one of its own
+.Pq vnet
+instead of the host's: for
+.Cm net ,
+.Cm route ,
+.Cm interface ,
+.Cm ng ,
+.Cm wg
+and
+.Cm bird .
+The host does it; nothing runs in the jail but the jail's own
+.Xr birdc 8 ,
+.Xr bird 8
+and
+.Xr wg 8 .
+With
+.Fl p
+a change is kept in the jail's own
+.Xr rc.conf 5 .
+.It Fl p
+Keep a change to an interface or a route in
+.Xr rc.conf 5
+as well, so that it is there after a boot.
+.It Fl q
+Queue the change as a job; see the end of the command list.
+.It Fl s
+Make the change in safe mode; see
+.Cm route .
+.It Fl t
+Also print the trace: every library call, system call, file and
+program the daemon used, with the programs' output.
+.El
+.Pp
+The commands are:
+.Bl -tag -width Ds
+.It Cm hello
+Show the host.
+.It Cm list Op Fl c
+List running and configured jails.
+With
+.Fl c ,
+only configured ones.
+.It Cm start | stop | restart | kill Ar jail
+Change the jail's state.
+.Cm kill
+removes the jail without running its stop scripts.
+.It Cm address add | remove Oo Fl lnp Oc Oo Fl i Ar interface Oc Ar jail Ar address Ns Op / Ns Ar len
+Add or remove an address:
+.Fl l
+in the running jail (the default),
+.Fl p
+in its configuration file,
+.Fl n
+only showing what would change.
+.Fl i
+names the interface for the alias when the jail has no
+.Va interface
+parameter.
+.It Cm services
+The host's rc.d scripts: whether
+.Xr rc.conf 5
+enables them, and for the enabled ones whether they run, as
+.Xr service 8
+reports.
+.It Cm service Ar name Cm start | stop | restart | reload | enable | disable
+Change a service:
+.Cm start ,
+.Cm stop ,
+.Cm restart
+and
+.Cm reload
+through
+.Xr service 8 ,
+.Cm enable
+and
+.Cm disable
+by setting its rcvar with
+.Xr sysrc 8 .
+.It Cm service Ar name Cm config Oo Fl x Ar key Oc ... Oo Ar key Ns = Ns Ar value Oc ...
+The service's
+.Xr rc.conf 5
+variables, with what the script says of itself and its extra commands.
+.Ar key Ns = Ns Ar value
+sets one first,
+.Fl x
+unsets one; only the service's own variables are accepted.
+.It Cm net routes | nexthops | connections | sockets | interfaces | netgraph | wireguard | bird Op Fl 4 | Fl 6
+The host's routing table
+.Pq Nm netstat Fl rnW ,
+nexthop table
+.Pq Nm netstat Fl onW ,
+active connections
+.Pq Nm netstat Fl nW
+or open sockets
+.Pq Nm sockstat Fl w ,
+as the program printed them with
+.Fl -libxo Cm json ,
+for one address family or both.
+.It Cm kmod
+The kernel's modules and its memory: every file linked into the kernel
+with its size, the references to it and the modules it holds; the
+modules that could be loaded; what
+.Xr rc.conf 5 Ns 's
+.Va kld_list
+loads at boot; and the largest of the kernel's
+.Xr malloc 9
+types and
+.Xr uma 9
+zones.
+.It Cm kmod load | unload Ar module
+Load a kernel module with
+.Xr kldload 8 ,
+or unload one with
+.Xr kldunload 8 .
+The module is named as
+.Xr kldload 8
+finds it, without a path.
+With
+.Fl p ,
+it is also put into
+.Va kld_list ,
+or taken out of it.
+.It Cm storage disks | pools | datasets | mounts
+.It Cm storage snapshots Op Ar dataset
+The host's storage, as JSON: the disks and their partitions as GEOM
+has them, the ZFS pools with their devices, the datasets, the
+snapshots (the newest first, of all or of one dataset and those under
+it), and what is mounted beside what
+.Xr fstab 5
+says to mount.
+.It Cm zfs snapshot | destroy | rollback Oo Fl r Oc Ar name
+.It Cm zfs create Ar dataset Op Ar property Ns = Ns Ar value ...
+.It Cm zfs set Ar dataset Ar property Ns = Ns Ar value ...
+.It Cm zfs inherit Ar dataset Ar property
+.It Cm zfs mount | unmount Oo Fl f Oc | promote Ar dataset
+.It Cm zfs clone Ar snapshot Ar dataset
+.It Cm zfs rename Ar name Ar name
+.Xr zfs 8 ,
+by a job.
+A dataset is made a volume by
+.Li volsize= Ns Ar size .
+A pool's own dataset is not destroyed.
+.It Cm zpool scrub | scrub-stop | trim Ar pool
+.It Cm zpool clear Ar pool Op Ar device
+.It Cm zpool online | offline Ar pool Ar device
+.It Cm zpool create Oo Fl f Oc Ar pool Oo Cm mirror | raidz1 | raidz2 | raidz3 Oc Ar device ... Op Cm mountpoint= Ns Ar path
+.It Cm zpool add Oo Fl f Oc Ar pool Oo Cm mirror | log | cache | spare | special Oc Ar device ...
+.It Cm zpool attach Ar pool Ar device Ar new-device
+.It Cm zpool detach | remove Ar pool Ar device
+.It Cm zpool replace Ar pool Ar device Op Ar new-device
+.It Cm zpool export | destroy Ar pool
+.It Cm zpool import Ar pool Op Cm altroot= Ns Ar path
+.Xr zpool 8 ,
+by a job.
+A pool with a dataset mounted where the system lives, the root or
+under
+.Pa /usr ,
+.Pa /var ,
+.Pa /home
+and the like, is not destroyed or exported, and no pool is by force.
+.Cm storage importable
+lists the pools that could be imported.
+.It Cm mount Ar path
+Mount what
+.Xr fstab 5
+describes for
+.Ar path .
+.It Cm umount Oo Fl f Oc Ar path
+Unmount what is mounted there; never the root.
+.It Cm gpart create Ar disk Cm gpt | mbr | bsd
+.It Cm gpart add Ar disk Ar type Op Ar size Op Ar label
+.It Cm gpart delete Ar disk Ar index
+.It Cm gpart resize Ar disk Ar index Op Ar size
+.It Cm gpart modify Ar disk Ar index Ar label
+.It Cm gpart destroy Ar disk
+.Xr gpart 8 ,
+by a job.
+Partitions are aligned to 1 MiB; a table is destroyed only when it is
+empty.
+.It Cm cam rescan
+.Ql camcontrol rescan all .
+.It Cm fstab Op Fl w Ar new-text Op Fl n
+Print
+.Xr fstab 5 ,
+or put the text of the local file
+.Ar new-text
+in its place: taken only when every line is an entry, and the one
+before is kept beside it.
+With
+.Fl n
+it is only checked.
+.Pp
+In all of these the host checks every word before a program is given
+it; none is ever an option, and none is done in safe mode.
+.It Cm stats
+CPU busy share since the previous request, load averages, memory, swap
+and the ZFS pools.
+.It Cm packages Oo Fl r Oc Op Ar jail
+Packages of the host, or of the running
+.Ar jail ,
+that the repository has newer versions of
+.Pq Nm pkg version Fl vRl '<' ;
+.Fl r
+fetches the catalogue first
+.Pq Nm pkg update .
+.It Cm pkg-upgrade Oo Fl n Oc Oo Fl j Ar jail Oc Op Ar package ...
+.Nm pkg upgrade Fl y
+of the named packages, or of all of them, on the host or in the running
+.Ar jail ;
+.Fl n
+only shows what would be done.
+What is still pending follows.
+.It Cm jobs
+The host's queued, running and recently finished jobs.
+.It Cm job Oo Fl w Oc Ar id
+One job with the trace of what it has done so far;
+.Fl w
+waits until it has finished.
+.It Cm job-cancel Ar id
+Take a job that has not started out of the queue.
+.It Cm interface Ar name Cm up | down
+Bring a network interface up or down.
+.It Cm interface Ar name Cm add | remove Ar address
+Add an IPv4 or IPv6
+.Ar address ,
+with its prefix length, to an interface as an alias, or take it off.
+.It Cm route add Ar destination gateway Oo Cm metric Ar n Oc Oo Cm weight Ar n Oc Oo Cm source Ar address Oc
+Add a static route to
+.Ar destination ,
+which is
+.Li default ,
+a network with its prefix length or a host address, by
+.Ar gateway ,
+an address or the name of an interface.
+.Li ::/0
+is the default route of IPv6.
+.Cm metric
+is the route's cost, the lowest of several to one destination being the
+one used;
+.Cm weight
+its share among routes of one cost; and
+.Cm source
+the address of the host that what takes the route is sent from.
+The routing table is that of the option
+.Fl F .
+.It Cm route delete Ar destination Oo Ar gateway Oc Oo Cm metric Ar n Oc
+Delete the route to
+.Ar destination .
+.It Cm route get Ar address
+The route the host would send a packet to
+.Ar address
+by, as
+.Xr route 8
+get tells it, and the other routes of the table that cover the address,
+each with the length of its prefix: what is left when the best goes.
+.It Cm interface Ar name Cm mtu Ar number
+.It Cm interface Ar name Cm description Ar text
+Set an interface's MTU or its description; an empty text takes the
+description off.
+.It Cm interface Ar name Cm create Oo Cm tunnel Ar local remote Oc Oo Cm address Ar address Oo Cm peer Ar address Oc Oc Oo Cm mtu Ar number Oc Oo Cm description Ar text Oc Oo Cm id Ar number Oc Oo Cm parent Ar interface Oc
+Create a cloned interface and set it up.
+.Ar name
+is a type with its unit, as
+.Ql gif0 ,
+or a type alone, for the kernel to pick the unit: epair, gif, gre,
+ipsec, me, vxlan, vlan, bridge, lagg, tap, tun, lo, wg or ovpn.
+.Cm tunnel
+gives a tunnel's outer ends,
+.Cm address
+and
+.Cm peer
+its inner ones,
+.Cm id
+a VLAN's tag or a VXLAN's identifier, and
+.Cm parent
+the interface a VLAN rides or a bridge takes in.
+What cannot be finished is destroyed again.
+.It Cm interface Ar name Cm give | take Ar jail
+Give the host's interface to a running jail that has a network of its
+own, or take it back to the host.
+With
+.Fl p ,
+also as
+.Va vnet.interface
+of the jail in
+.Xr jail.conf 5 ,
+so the jail has it again when it next starts.
+.It Cm interface epair give Ar jail Op Ar bridge
+Make a new
+.Xr epair 4
+for the jail: its
+.Sy b
+end goes to the jail, its
+.Sy a
+end stays on the host, brought up as a member of
+.Ar bridge
+when one is named.
+.It Cm interface Ar name Cm destroy
+Destroy a cloned interface.
+.It Cm ng mkpeer | connect | rmhook | shutdown | name Ar argument ...
+Change the
+.Xr netgraph 4
+graph: the command and its arguments are given to
+.Xr ngctl 8 .
+.It Cm wg Ar interface Cm init Op Ar port
+Give a WireGuard interface a private key, made on the host, when it has
+none, and with
+.Ar port
+the port it listens on.
+The key never leaves the host:
+.Cm net wireguard
+shows public keys only.
+.It Cm wg Ar interface Cm peer Ar key Oo Cm endpoint Ar address : Ns Ar port Oc Oo Cm allowed-ips Ar list Oc Oo Cm keepalive Ar seconds Oc
+Add the peer whose public key is
+.Ar key ,
+or change it.
+.It Cm wg Ar interface Cm unpeer Ar key
+Remove a peer.
+.Pp
+With
+.Fl p
+the interface as it is then, its key, addresses and peers, is written
+to
+.Pa /usr/local/etc/wireguard/ Ns Ar interface Ns Pa .conf
+for
+.Xr wg-quick 8 ,
+readable by root alone, and
+.Va wireguard_interfaces
+in
+.Xr rc.conf 5
+names it.
+.It Cm bird enable | disable | restart | reload Ar protocol
+.It Cm bird configure
+Tell the BIRD routing daemon through
+.Xr birdc 8 ;
+.Ar protocol
+may be
+.Ql all .
+.Cm net bird
+shows its status, its protocols with what
+.Ql show protocols all
+says of each, its OSPF neighbours and its tables.
+.It Cm bird routes Oo Ar prefix | Cm for Ar address Oc Oo Cm protocol | export Ar name Oc Oo Cm table Ar name Oc Op Cm all
+Routes of BIRD's tables, said in the words of
+.Xr birdc 8 Ns 's
+.Ql show route :
+a prefix, or the route that covers an address
+.Pq an address alone is taken so ;
+those learned from a protocol, or exported to it; those of one table;
+with
+.Cm all ,
+what each carries, a BGP route's path and communities.
+They are counted first: more than 2000 are not sent, and the count is
+said instead.
+.It Cm bird confirm
+The configuration put in place with
+.Fl s
+stays.
+.It Cm bird config Op Ar file
+Print BIRD's configuration: its main file, or
+.Ar file ,
+one it includes.
+.It Cm bird config Fl w Ar new-text Oo Fl n Oc Op Ar file
+Put the text of the local file
+.Ar new-text
+in its place.
+.Xr bird 8
+parses the whole configuration first, and what it refuses does not
+stay; then the daemon is told to read it.
+The file as it was is kept beside it with
+.Pa .arcana-old
+after its name.
+With
+.Fl n
+it is parsed only.
+With
+.Fl s
+before the command, BIRD is told to take the new configuration back by
+itself
+.Pq Ql configure timeout
+unless
+.Cm bird confirm
+comes within the time the host allows; the file is then put back as it
+was.
+.Pp
+With the option
+.Fl s
+before the command, the change is made in safe mode: the host undoes it
+unless it hears from the client again within the time it allows.
+.Nm
+confirms by waiting for the job, so the change stays when the host is
+still reachable afterwards, and is undone when the change cut it off.
+With
+.Fl q
+nobody confirms.
+Safe mode is for what can be taken back: an address, an interface's
+state, MTU and description, an interface made, a route, a jail's
+address, a service's variables, and a service started, stopped, enabled
+or disabled.
+A change that would take away the address the request came in by is
+refused unless it is made in safe mode.
+.Pp
+These run
+.Xr ifconfig 8
+and
+.Xr route 8
+on the host as a job, which is waited for unless
+.Fl q
+only queues it, and change the running system; with
+.Fl p
+they are kept in
+.Xr rc.conf 5
+as well: an address as the next
+.Va ifconfig_ Ns Ar interface Ns Va _alias Ns Ar n ,
+a route under a name of its own in
+.Va static_routes ,
+an interface made in
+.Va cloned_interfaces .
+.It Cm agent-build Oo Fl y Oc Oo Fl i Ar key Oc Oo Fl o Ar file Oc Ar repository Op Ar ref
+Have the host clone the git
+.Ar repository ,
+at the branch or tag
+.Ar ref
+if given, build
+.Xr arcana-agent 8
+there and send it back.
+It is saved as
+.Ar file ,
+.Pa arcana-agent
+by default, after a check against its SHA-256.
+For a repository reached over SSH, a host that does not know the
+server's host key builds nothing: the fingerprints of the keys the
+server showed are printed, with the public key the host shows the
+server.
+.Fl y
+sends those keys back as confirmed, and the host keeps them.
+.Fl i
+names a private key on the host for git to use instead of the host's
+own.
+.It Cm console-update Oo Fl y Oc Oo Fl i Ar key Oc Ar repository Op Ar ref
+Have the host clone the git
+.Ar repository ,
+build all of Arcana there, install it over what is installed and
+restart the
+.Nm arcana_console
+service: the console's own update, on the host it runs on.
+.Fl y
+and
+.Fl i
+are as for
+.Cm agent-build .
+.It Cm agent-update Oo Fl r Oc Ar program
+Put
+.Ar program
+in place of the host's
+.Xr arcana-agent 8 .
+The host checks it against its SHA-256 and by running it with
+.Fl V
+before it replaces the one installed, which it keeps with the suffix
+.Pa .old .
+With
+.Fl r
+the service is restarted; otherwise the new program runs from its next
+start.
+.El
+.Pp
+With
+.Fl q ,
+.Cm start ,
+.Cm stop ,
+.Cm restart ,
+.Cm kill ,
+.Cm address ,
+.Cm service
+actions and variable changes, and
+.Cm pkg-upgrade
+are queued as a job instead of waited for:
+.Nm
+prints the job's number and returns.
+The host runs its jobs one after another in the order they were queued,
+whether or not anyone stays connected, which is what a change that cuts
+the connection it was asked over needs.
+.Sh EXIT STATUS
+0 when the request succeeded, 1 when it failed, 2 for usage errors.
+.Sh EXAMPLES
+.Bd -literal -offset indent
+# arcanactl list
+NAME             STATE     JID ADDRESSES                       HOSTNAME
+web              running     3 10.0.0.10,10.0.0.11             web.lab.example
+# arcanactl -t restart web
+# arcanactl address add -lp web 10.0.0.12
+# arcanactl -c tcp://host1:4310 -A ca.pem -C me.pem -K me.key list
+.Ed
+.Sh SEE ALSO
+.Xr libxo 3 ,
+.Xr arcana-agent 8 ,
+.Xr arcana-console 8 ,
+.Xr arcana-enrol 8 ,
+.Xr jailconf 8
+.Sh BUGS
+.Xr libxo 3
+writes tab characters into JSON strings unescaped, so JSON output
+containing them, such as program output in a trace, is not strictly
+valid JSON.

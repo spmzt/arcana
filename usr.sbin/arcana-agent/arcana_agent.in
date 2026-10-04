@@ -1,0 +1,63 @@
+#!/bin/sh
+#
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# PROVIDE: arcana_agent
+# REQUIRE: LOGIN jail
+# KEYWORD: shutdown
+#
+# Add these lines to /etc/rc.conf to enable arcana-agent:
+#
+# arcana_agent_enable (bool):	Set to "YES" to run arcana-agent.
+# arcana_agent_socket (str):	The local socket, always listened on.
+#				Default: /var/run/arcana-agent.sock
+# arcana_agent_group (str):	A group whose members may use the socket.
+#				Default: arcana, the group of the console's
+#				user, when there is one, so that a console
+#				on this host reaches its agent; root only
+#				otherwise, or when set to "".
+# arcana_agent_listen (str):	Network listeners, separated by spaces, for
+#				example "tcp://0.0.0.0:4310 tcp://[::]:4310".
+#				Default: none, the local socket only.
+# arcana_agent_ca (str):	The CA of client certificates, the host's
+# arcana_agent_cert (str):	certificate and its key, used with network
+# arcana_agent_key (str):	listeners.  Default: ca.pem, host.pem and
+#				host.key in %%PREFIX%%/etc/arcana
+# arcana_agent_flags (str):	More flags, added to those above.
+
+. /etc/rc.subr
+
+name="arcana_agent"
+rcvar="arcana_agent_enable"
+
+load_rc_config $name
+
+: ${arcana_agent_enable:="NO"}
+: ${arcana_agent_socket:="/var/run/arcana-agent.sock"}
+# Unset, not empty: "" is how to say root only.
+if [ -z "${arcana_agent_group+set}" ] && pw groupshow arcana > /dev/null 2>&1; then
+	arcana_agent_group="arcana"
+fi
+: ${arcana_agent_group=""}
+: ${arcana_agent_listen:=""}
+: ${arcana_agent_ca:="%%PREFIX%%/etc/arcana/ca.pem"}
+: ${arcana_agent_cert:="%%PREFIX%%/etc/arcana/host.pem"}
+: ${arcana_agent_key:="%%PREFIX%%/etc/arcana/host.key"}
+
+command="%%PREFIX%%/sbin/arcana-agent"
+pidfile="/var/run/arcana-agent.pid"
+
+command_args="-l unix:${arcana_agent_socket}"
+if [ -n "${arcana_agent_group}" ]; then
+	command_args="-g ${arcana_agent_group} ${command_args}"
+fi
+if [ -n "${arcana_agent_listen}" ]; then
+	for _l in ${arcana_agent_listen}; do
+		command_args="${command_args} -l ${_l}"
+	done
+	command_args="${command_args} -A ${arcana_agent_ca}"
+	command_args="${command_args} -C ${arcana_agent_cert}"
+	command_args="${command_args} -K ${arcana_agent_key}"
+fi
+
+run_rc_command "$1"

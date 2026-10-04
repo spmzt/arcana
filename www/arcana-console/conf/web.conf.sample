@@ -1,0 +1,53 @@
+# The arcana console (arcana-console.so), in UCL.  Named by ARCANA_WEB_CONF.
+
+# WebAuthn relying party: the console's host name, and the exact origin
+# the browser uses.  WebAuthn needs HTTPS except on localhost.
+rp_id = "console.example";
+rp_name = "Arcana";
+origin = "https://console.example";
+
+# Registered keys, servers and the one-time setup token.  Mode 0700,
+# owned by the user the worker runs as.
+datadir = "/var/db/arcana";
+
+cookie_secure = true;
+
+# Certificates for arcana-agent over TCP.  Without this block the console
+# runs a CA of its own in datadir and enrols hosts with it (see
+# arcana-enrol(8)).  With it: the CA that issued the arcana-agent
+# certificates, the console's client certificate, and the CA's key if
+# the console is still to enrol hosts.
+#tls {
+#	ca = "/usr/local/etc/arcana/ca.pem";
+#	ca_key = "/usr/local/etc/arcana/ca.key";
+#	cert = "/usr/local/etc/arcana/client.pem";
+#	key = "/usr/local/etc/arcana/client.key";
+#}
+
+# The console asks GitHub's release feed for the newest version every
+# few hours and says in the UI when there is one; it does not replace
+# itself.  Turn the checks off, or point them elsewhere:
+#update_check = false;
+#update_url = "https://api.github.com/repos/spmzt/arcana/releases/latest";
+
+# The arcana-agent sent to hosts when the console is asked to update
+# them: by default the one installed with it.
+#agent_binary = "/usr/local/sbin/arcana-agent";
+
+# Or have a host build it: with a repository named here, a host's page
+# offers "Build agent here", and what it builds is what the console
+# sends from then on.
+#agent_source = "https://github.com/spmzt/arcana.git";
+#agent_ref = "main";
+# Over SSH, a private key on the host that builds, readable by nobody;
+# by default that host makes one and the console shows it to you.
+#agent_ssh_key = "/usr/local/etc/arcana/git_ed25519";
+
+# The agent of the host the console runs on is added to the list of
+# servers by itself, once it answers on its local socket: start it with
+# "service arcana_agent enable" and "service arcana_agent start", and
+# have the console's user in the group of its socket (arcana_agent_group
+# in rc.conf).  Taken off the list, it is not added again.  Another
+# socket, or none:
+#local_agent = "unix:/var/run/arcana-agent.sock";
+#local_agent = "";

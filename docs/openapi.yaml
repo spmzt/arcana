@@ -1,0 +1,1610 @@
+openapi: 3.1.0
+info:
+  title: Arcana console API
+  version: 0.26.1
+  summary: The JSON API of arcana-console.so, the console's Kore module.
+  description: |
+    One user, authenticated with WebAuthn.  After a login or registration
+    the console sets an HttpOnly, SameSite=Strict `arc_session` cookie;
+    every route below except health, auth status and the four ceremony
+    routes requires it.
+
+    Requests that change something (POST, DELETE) on a protected route
+    also need the header `X-Arcana: 1` and, when the browser sends one,
+    an `Origin` equal to the console's configured origin.
+
+    Replies about a host carry a `trace`: what the console and arcana-agent(8)
+    did, step by step.  Steps of kind `exec` are programs that ran, with
+    their argv, exit status and output; nothing else ran any program.
+
+    Failures of an operation the host attempted (a jail that would not
+    start) are HTTP 200 with `ok: false` and `error`, so the trace and the
+    program output still arrive.  Failures to reach the host are 502.
+  license:
+    name: BSD-2-Clause
+    identifier: BSD-2-Clause
+
+externalDocs:
+  description: Source, architecture and setup
+  url: https://github.com/spmzt/arcana
+
+servers:
+  - url: https://console.example
+    description: The console; WebAuthn needs HTTPS except on localhost.
+
+security:
+  - session: []
+
+tags:
+  - name: health
+  - name: auth
+    description: WebAuthn ceremonies and sessions.
+  - name: servers
+    description: The arcana-agent instances the console knows.
+  - name: jails
+    description: Jail state and changes, through arcana-agent.
+
+paths:
+  /api/health:
+    get:
+      tags: [health]
+      summary: Is the console up
+      security: []
+      responses:
+        "200":
+          description: Up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, version, time]
+                properties:
+                  ok: { type: boolean, const: true }
+                  version: { type: string, examples: ["0.1.0"] }
+                  time: { type: integer, description: Unix time. }
+
+  /api/auth/status:
+    get:
+      tags: [auth]
+      summary: Session state, and whether a key still has to be registered
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthStatus"
+
+  /api/auth/register/begin:
+    post:
+      tags: [auth]
+      summary: Options for navigator.credentials.create()
+      description: |
+        With no key registered yet, the body must carry the one-time setup
+        token the console wrote to `<datadir>/setup-token`.  Once a key
+        exists, registering another needs a session (and the change
+        headers).
+      security: [{}, { session: [] }]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                setup_token:
+                  type: string
+                  pattern: "^[0-9a-f]{64}$"
+      responses:
+        "200":
+          description: Creation options; binary fields in base64url.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publicKey]
+                properties:
+                  publicKey:
+                    $ref: "#/components/schemas/CreationOptions"
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/auth/register/finish:
+    post:
+      tags: [auth]
+      summary: Register the new credential
+      description: |
+        The browser's attestation response, with the public key as
+        SubjectPublicKeyInfo (`getPublicKey()`), so the console needs no
+        CBOR.  The console checks the client data (type, challenge, origin)
+        and the authenticator data (RP ID hash, user presence, the
+        credential id) and that the key matches the algorithm.  Starts a
+        session.
+      security: [{}, { session: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegistrationResponse"
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthStatus"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/auth/login/begin:
+    post:
+      tags: [auth]
+      summary: Options for navigator.credentials.get()
+      security: []
+      responses:
+        "200":
+          description: Request options; binary fields in base64url.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publicKey]
+                properties:
+                  publicKey:
+                    $ref: "#/components/schemas/RequestOptions"
+        "409":
+          $ref: "#/components/responses/Error"
+
+  /api/auth/login/finish:
+    post:
+      tags: [auth]
+      summary: Log in with an assertion
+      description: |
+        The signature over authenticatorData and SHA-256 of the client
+        data is verified with the stored key; the signature counter must
+        move forward when it is not zero.  Starts a session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AssertionResponse"
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthStatus"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: End the session
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthStatus"
+
+  /api/auth/credentials:
+    get:
+      tags: [auth]
+      summary: The registered keys
+      responses:
+        "200": { $ref: "#/components/responses/Credentials" }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/auth/credentials/{id}:
+    delete:
+      tags: [auth]
+      summary: Remove a key; never the last one
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[A-Za-z0-9_-]+$" }
+      responses:
+        "200": { $ref: "#/components/responses/Credentials" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/servers:
+    get:
+      tags: [servers]
+      summary: The servers
+      responses:
+        "200": { $ref: "#/components/responses/Servers" }
+        "401": { $ref: "#/components/responses/Error" }
+    post:
+      tags: [servers]
+      summary: Add a server
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, uri]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 64 }
+                uri:
+                  type: string
+                  description: |
+                    `unix:/path` for an arcana-agent on the console's host,
+                    `tcp://host:port` for others (mutual TLS with the
+                    certificate in web.conf).
+                  examples: ["tcp://host1.example:4310",
+                    "unix:/var/run/arcana-agent.sock"]
+                peer_name:
+                  type: string
+                  description: The name the server certificate must carry,
+                    when it is not the URI's host.
+      responses:
+        "200": { $ref: "#/components/responses/Servers" }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/enrol/tokens:
+    post:
+      tags: [servers]
+      summary: A one-time token for a host to join with arcana-enrol(8)
+      description: |
+        Needs a session. The console's CA signs the host's certificate
+        when the token comes back with a certificate request; without a
+        CA key (no `tls { }` block, or `tls.ca_key`) this answers 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, host]
+              properties:
+                name: { type: string, minLength: 1, maxLength: 64 }
+                host:
+                  type: string
+                  description: The host name or address the console
+                    will connect to, and the certificate's name.
+                port: { type: integer, default: 4310 }
+      responses:
+        "200":
+          description: The token, valid once and for an hour.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  host: { type: string }
+                  name: { type: string }
+                  port: { type: integer }
+                  expires: { type: integer, description: Unix time. }
+                  command:
+                    type: string
+                    description: What to run on the host.
+                    example: arcana-enrol -s https://console.example 3f1c…
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/enrol:
+    post:
+      tags: [servers]
+      summary: Join as a host, with a token
+      description: |
+        No session: the token is the credential. The certificate is for
+        the host the token was made for, and the host becomes a server
+        at `tcp://host:port`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, csr]
+              properties:
+                token: { type: string }
+                csr:
+                  type: string
+                  description: A PEM certificate request for an EC or
+                    Ed25519 key.
+      responses:
+        "200":
+          description: The certificate and the CA, both PEM.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  certificate: { type: string }
+                  ca: { type: string }
+                  host: { type: string }
+                  name: { type: string }
+                  added:
+                    type: boolean
+                    description: Whether the host joined the server list
+                      (false when its URI was already there).
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}:
+    delete:
+      tags: [servers]
+      summary: Forget a server; its jails are not touched
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200": { $ref: "#/components/responses/Servers" }
+        "404": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/services:
+    get:
+      tags: [servers]
+      summary: The host's rc.d services
+      description: One `service <name> status` per enabled script; the
+        reply carries the trace.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The services.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  services:
+                    type: array
+                    items: { $ref: "#/components/schemas/Service" }
+                  trace: { type: array }
+        "502": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/services/{service}/action:
+    post:
+      tags: [servers]
+      summary: start, stop, restart, reload, enable or disable a service
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: service
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [start, stop, restart, reload, enable, disable]
+      responses:
+        "200":
+          description: The outcome, with the service as it is now.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  service: { $ref: "#/components/schemas/Service" }
+                  trace: { type: array }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/services/{service}/config:
+    get:
+      tags: [servers]
+      summary: A service's rc.conf variables
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: service
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/ServiceConfig" }
+    post:
+      tags: [servers]
+      summary: Set or unset variables with sysrc(8), then read them
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: service
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                set:
+                  type: object
+                  additionalProperties: { type: string }
+                  example: { sshd_flags: "-4" }
+                unset:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200": { $ref: "#/components/responses/ServiceConfig" }
+
+  /api/servers/{server}/bird/config:
+    get:
+      tags: [servers]
+      summary: A file of BIRD's configuration, its checksum, and the files there are
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: path
+          in: query
+          description: A file the main one includes; the main one without it.
+          schema: { type: string }
+        - name: jail
+          in: query
+          description: A running jail with a network of its own (vnet), whose
+            BIRD is meant; the host's without it.
+          schema: { type: string }
+      responses:
+        "200":
+          description: text, sha256, path and files
+    post:
+      tags: [servers]
+      summary: Put a new text in a configuration file's place
+      description: The whole configuration is parsed by bird(8) first; what
+        it refuses does not stay. Then the daemon is told to read it.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, sha256]
+              properties:
+                path: { type: string }
+                jail: { type: string, description: "a vnet jail whose BIRD is meant" }
+                text: { type: string }
+                sha256: { type: string, description: "of the text this was made from" }
+                check: { type: boolean, description: "parse only, change nothing" }
+                safe: { type: boolean, description: "BIRD takes the change
+                    back by itself unless a request with confirm comes by
+                    confirm_by; the file is then put back too" }
+                confirm: { type: boolean, description: "the change made with
+                    safe stays; no text is needed" }
+      responses:
+        "200":
+          description: ok, or error with what bird said; confirm_by after
+            a change with safe
+
+  /api/servers/{server}/net/{kind}:
+    get:
+      tags: [servers]
+      summary: A network table of the host, as its program printed it
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [routes, nexthops, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup]
+          description: netstat -rnW, netstat -onW, netstat -n, sockstat,
+            getifaddrs(3), ngctl list -l, wg show (public keys only),
+            birdc show status and protocols; bird-routes is birdc show
+            route for what `filter` names, in birdc's words with a comma
+            between them (a prefix, an address, `protocol,name`,
+            `export,name`, `table,name`, `all`), refused with their count
+            when there are more than 2000; lookup is the route to the
+            address in `to`, with `best` and `candidates` under `data`.
+        - name: to
+          in: query
+          description: For lookup, an IPv4 or IPv6 address.
+          schema: { type: string }
+        - name: fib
+          in: query
+          description: The routing table, when not the first.
+          schema: { type: integer }
+        - name: jail
+          in: query
+          description: A running jail with a network of its own (vnet), whose
+            network is meant; the host's without it. A job that changes a
+            network takes the same as its jail.
+          schema: { type: string }
+        - name: filter
+          in: query
+          description: For routes, a text searched for on the host
+            (letters, digits and . : / _ -). A table too large to send
+            comes with total and truncated.
+          schema: { type: string }
+        - name: family
+          in: query
+          schema: { type: string, enum: [inet, inet6] }
+          description: One address family; both without it.
+      responses:
+        "200":
+          description: The program's `--libxo json` document under `data`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  data: { type: object, nullable: true }
+                  trace: { type: array }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/storage/{kind}:
+    get:
+      tags: [servers]
+      summary: The host's storage
+      description: Under data. disks, each with size, sectorsize, descr,
+        ident, cam, scheme and parts (name, index, type, label, start,
+        end, size, mounted), from GEOM; pools, each with size, alloc,
+        free, frag, cap, dedup, health, state, status, action, scan,
+        errors and vdevs (name, depth, state, read, write, cksum, note);
+        datasets (name, type, used, avail, refer, mountpoint,
+        compression, ratio, quota, reservation, mounted, canmount,
+        origin, volsize, readonly); snapshots, newest first (name, used,
+        refer, creation); mounts and fstab. What is changed is a job, of
+        kind zfs, zpool, mount, gpart or cam, with a verb, its words as
+        args, and the flags recursive and force.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [disks, pools, datasets, snapshots, mounts, importable]
+        - name: filter
+          in: query
+          description: For snapshots, the dataset whose they are, with
+            those under it.
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok and data, or error; total and truncated when
+            there are more than a reply carries
+  /api/servers/{server}/fstab:
+    get:
+      tags: [servers]
+      summary: fstab, and the SHA-256 of its text
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: text and sha256
+    post:
+      tags: [servers]
+      summary: Put a new text in fstab's place
+      description: Taken only when every line is an entry and sha256 is
+        that of the text it was made from; the one before is kept beside
+        it.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, sha256]
+              properties:
+                text: { type: string }
+                sha256: { type: string }
+                check: { type: boolean, description: "check only" }
+      responses:
+        "200":
+          description: ok, or error with what is wrong and where
+  /api/servers/{server}/kernel:
+    get:
+      tags: [servers]
+      summary: The kernel's modules and its memory
+      description: Under data. files is every file linked into the kernel
+        (id, name, path, refs, size, address, modules); available the
+        modules of the module path that are not loaded; kept what
+        rc.conf's kld_list loads at boot; memory has files, kmem_size,
+        kmem_map_size, kmem_map_free, malloc_total, and the largest
+        malloc(9) types (malloc) and uma(9) zones (zones). A module is
+        loaded or unloaded by a job of kind kmod, with verb load or unload
+        and the module's name as its one arg; with persist also into or
+        out of kld_list.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
+  /api/servers/{server}/stats:
+    get:
+      tags: [servers]
+      summary: CPU, load, memory, swap and ZFS pool usage of the host
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The figures; bytes for sizes, percent for CPU.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  stats:
+                    type: object
+                    properties:
+                      cpu_pct: { type: number }
+                      load1: { type: number }
+                      load5: { type: number }
+                      load15: { type: number }
+                      mem_total: { type: integer }
+                      mem_used: { type: integer }
+                      mem_inactive: { type: integer }
+                      mem_free: { type: integer }
+                      swap_total: { type: integer }
+                      swap_used: { type: integer }
+                      pools:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            name: { type: string }
+                            size: { type: integer }
+                            alloc: { type: integer }
+                            free: { type: integer }
+                            health: { type: string }
+                  trace: { type: array }
+
+  /api/servers/{server}/jobs:
+    get:
+      tags: [servers]
+      summary: The host's queued, running and recent jobs
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The jobs, oldest first, without traces.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  jobs:
+                    type: array
+                    items: { $ref: "#/components/schemas/Job" }
+    post:
+      tags: [servers]
+      summary: Queue a batch of changes
+      description: |
+        The host runs them one after another in this order, whether or
+        not the console stays connected.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [jobs]
+              properties:
+                jobs:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  items:
+                    type: object
+                    required: [kind]
+                    properties:
+                      kind:
+                        type: string
+                        enum: [jail-action, address, service-action,
+                          service-config, pkg-upgrade, if-address,
+                          if-state, route, if-set, if-create, if-destroy,
+                          netgraph, wireguard, bird, if-vnet, kmod, zfs,
+                          zpool, mount, gpart, cam]
+                      jail: { type: string, description: The jail acted on.
+                          For a job that changes a network, the vnet jail
+                          whose network it is; for if-vnet, the jail the
+                          interface is given to, or with remove taken
+                          from. }
+                      action: { type: string, description: For jail-action
+                          and service-action. }
+                      address: { type: string }
+                      interface: { type: string }
+                      remove: { type: boolean }
+                      up: { type: boolean, description: For if-state. }
+                      safe:
+                        type: boolean
+                        description: For if-address, if-state and route.
+                          The host undoes the change unless the console
+                          reaches it again in time; reading the job
+                          (GET …/jobs/{job}) is that.
+                      destination: { type: string, description: For route. }
+                      gateway: { type: string, description: For route; an
+                          address or an interface. }
+                      live: { type: boolean }
+                      persist: { type: boolean }
+                      service: { type: string }
+                      set:
+                        type: object
+                        additionalProperties: { type: string }
+                      unset: { type: array, items: { type: string } }
+                      packages: { type: array, items: { type: string } }
+            example:
+              jobs:
+                - { kind: service-action, service: nginx, action: stop }
+                - { kind: jail-action, jail: web, action: restart }
+      responses:
+        "200":
+          description: The queued jobs with their numbers.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  jobs:
+                    type: array
+                    items: { $ref: "#/components/schemas/Job" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /api/push:
+    get:
+      summary: The key browsers subscribe to Web Push with, and the devices
+      responses:
+        "200":
+          description: public_key (base64url, P-256) and devices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  public_key: { type: string }
+                  devices:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name: { type: string }
+                        endpoint: { type: string }
+                        service: { type: string }
+                        added: { type: integer }
+        "401": { $ref: "#/components/responses/Error" }
+
+  /api/push/subscribe:
+    post:
+      summary: Have this browser told of tasks that end elsewhere
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, p256dh, auth]
+              properties:
+                endpoint: { type: string, description: "https address at the push service" }
+                p256dh: { type: string }
+                auth: { type: string }
+                name: { type: string }
+      responses:
+        "200": { description: The number of devices now }
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/push/unsubscribe:
+    post:
+      summary: Stop telling a device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint: { type: string }
+      responses:
+        "200": { description: The number of devices now }
+
+  /api/push/send:
+    post:
+      summary: Tell every device but the one that asks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string }
+                body: { type: string }
+                except: { type: string, description: "the sender's own endpoint" }
+      responses:
+        "200":
+          description: sent, gone, failed, and what each push service answered
+
+  /api/settings:
+    get:
+      tags: [console]
+      summary: The console's settings
+      description: Every setting with its value, what web.conf says
+        (`base`), whether the console overrides it, and whether it can be
+        changed here. rp_id, origin, datadir, cookie_secure and the
+        certificates are shown and not changed.
+      responses:
+        "200":
+          description: The settings.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+    post:
+      tags: [console]
+      summary: Change settings
+      description: Kept in settings.json in the data directory, where
+        they override web.conf. A value equal to web.conf's, or null,
+        drops the override. All of a request is checked before any of
+        it is kept.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [set]
+              properties:
+                set:
+                  type: object
+                  description: rp_name, update_check, update_url,
+                    agent_binary, agent_source, agent_ref.
+                  additionalProperties: true
+      responses:
+        "200":
+          description: The settings as they are now.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/agent-build:
+    post:
+      tags: [servers]
+      summary: Have the host build arcana-agent from agent_source
+      description: The host clones the repository named by agent_source
+        in web.conf, builds arcana-agent and sends it back; the console
+        keeps it and sends it to hosts from then on. 409 when no
+        repository is configured. Over SSH, a host that does not know
+        the server answers ok false with host_keys, fingerprints and
+        deploy_key; send host_keys back in the body to confirm them.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: What the host built.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  version: { type: string }
+                  sha256: { type: string }
+                  trace: { type: object }
+        "409": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/console-update:
+    post:
+      tags: [servers]
+      summary: Update the console itself from agent_source
+      description: Through the agent of the host the console runs on,
+        a server added by its local socket (409 for another). The agent
+        builds all of Arcana from the repository, installs it and
+        restarts the console's service. Host keys are confirmed as for
+        agent-build.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: What the host did.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  restarting: { type: boolean }
+                  host_keys: { type: string, nullable: true }
+                  fingerprints: { type: array, items: { type: string } }
+                  deploy_key: { type: string, nullable: true }
+                  trace: { type: object }
+        "409": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/agent-update:
+    post:
+      tags: [servers]
+      summary: Send the host the console's arcana-agent
+      description: The host checks the program against its SHA-256 and by
+        running it with -V, puts it in place of the one installed (kept
+        as arcana-agent.old), and with `restart` restarts its service
+        after replying.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                restart: { type: boolean }
+      responses:
+        "200":
+          description: What the host did.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  version:
+                    type: string
+                    description: The version the program in place reports.
+                  restarting: { type: boolean }
+                  trace: { type: object }
+      x-note: >-
+        GET /api/health carries agent_build and agent_version, the
+        SHA-256 and version of the program the console would send, and
+        agent_source and agent_ref when a host can be asked to build it;
+        a host reports its own build as host.build.
+        "502": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/jobs/{job}:
+    get:
+      tags: [servers]
+      summary: One job with its trace so far
+      description: Read it again while `state` is `queued` or `running`;
+        a step that has begun and not ended has status `incomplete`.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: job
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The job.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  job: { $ref: "#/components/schemas/Job" }
+    delete:
+      tags: [servers]
+      summary: Take a queued job out of the queue
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: job
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: ok false with the reason when it already runs or
+            has finished.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  job: { $ref: "#/components/schemas/Job" }
+
+  /api/servers/{server}/packages:
+    get:
+      tags: [servers]
+      summary: Packages with a newer version in the repository
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: jail
+          in: query
+          schema: { type: string }
+          description: A running jail; the host without it.
+        - name: refresh
+          in: query
+          schema: { type: string, enum: ["1"] }
+          description: pkg update first.
+      responses:
+        "200":
+          description: The pending upgrades.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  packages:
+                    type: array
+                    items: { $ref: "#/components/schemas/Package" }
+                  trace: { type: array }
+
+  /api/servers/{server}/packages/upgrade:
+    post:
+      tags: [servers]
+      summary: pkg upgrade -y of named packages or of all
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                jail: { type: string, description: A running jail, or
+                    absent for the host. }
+                packages:
+                  type: array
+                  items: { type: string }
+                  description: None means all pending ones.
+                dry_run: { type: boolean }
+      responses:
+        "200":
+          description: What pkg did, and what is still pending.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  error: { type: string, nullable: true }
+                  upgraded: { type: integer, nullable: true }
+                  packages:
+                    type: array
+                    items: { $ref: "#/components/schemas/Package" }
+                  trace: { type: array }
+        "400": { $ref: "#/components/responses/Error" }
+
+  /api/servers/{server}/hello:
+    get:
+      tags: [servers]
+      summary: The host behind a server
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: The host.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/HostReply"
+                  - type: object
+                    properties:
+                      host: { $ref: "#/components/schemas/Host" }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Unreachable" }
+
+  /api/servers/{server}/jails:
+    get:
+      tags: [jails]
+      summary: Running and configured jails
+      description: |
+        Running jails come from jail_getv(3) and libprocstat(3); configured
+        ones from `jail -f <file> -e` for every configuration file
+        rc.d/jail would use, so their parameters are resolved as jail(8)
+        resolves them.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: config_only
+          in: query
+          description: Only configured jails, without looking at running ones.
+          schema: { type: string, enum: ["1"] }
+      responses:
+        "200":
+          description: The jails.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/HostReply"
+                  - type: object
+                    required: [ok, jails]
+                    properties:
+                      ok: { type: boolean }
+                      error: { type: [string, "null"] }
+                      host: { $ref: "#/components/schemas/Host" }
+                      jails:
+                        type: array
+                        items: { $ref: "#/components/schemas/Jail" }
+                      scopes:
+                        type: array
+                        description: The configuration files read.
+                        items: { type: string }
+                      conf_errors:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            scope: { type: string }
+                            message: { type: string }
+        "404": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Unreachable" }
+
+  /api/servers/{server}/jails/{jail}/action:
+    post:
+      tags: [jails]
+      summary: Start, stop, restart or kill a jail
+      description: |
+        start, stop and restart run jail(8) with `-c`, `-r` or `-rc` and
+        the configuration file that defines the jail; kill removes it with
+        jail_remove(2), without its stop scripts.  Interface aliases of
+        addresses added while the jail ran are removed with it.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - $ref: "#/components/parameters/jail"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [start, stop, restart, kill]
+      responses:
+        "200": { $ref: "#/components/responses/JailChange" }
+        "400": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Unreachable" }
+
+  /api/servers/{server}/jails/{jail}/address:
+    post:
+      tags: [jails]
+      summary: Add or remove an IP address, live and/or persistently
+      description: |
+        Live: jail_setv(3) on the running jail, and an interface alias
+        (SIOCAIFADDR) when the jail has an `interface` parameter.
+        Persistent: the jail's block in its configuration file is edited
+        in place (libjailconf), the previous file kept as
+        `<file>.arcana.bak`, and the result read back with jail(8) -e; if
+        jail(8) disagrees, the previous version is restored.  With
+        `dry_run` nothing changes and `diff` shows the edit.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - $ref: "#/components/parameters/jail"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address:
+                  type: string
+                  description: IPv4 or IPv6, optionally with /prefixlen.
+                  examples: ["10.0.0.12", "2001:db8::12/64"]
+                interface: { type: string, maxLength: 15 }
+                remove: { type: boolean, default: false }
+                live: { type: boolean, default: false }
+                persist: { type: boolean, default: false }
+                dry_run: { type: boolean, default: false }
+      responses:
+        "200":
+          description: The outcome, the jail as it is now, and the diff.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/JailChangeReply"
+                  - type: object
+                    properties:
+                      diff:
+                        type: [string, "null"]
+                        description: Unified diff of the configuration
+                          change.
+        "400": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Unreachable" }
+
+components:
+  securitySchemes:
+    session:
+      type: apiKey
+      in: cookie
+      name: arc_session
+      description: Set by register/finish and login/finish.
+
+  parameters:
+    server:
+      name: server
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[0-9a-f]{8}$" }
+    jail:
+      name: jail
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: "^[A-Za-z0-9_][A-Za-z0-9_.-]*$"
+        description: All-digit names are refused (jail(8) reads them as
+          jids).
+
+  responses:
+    ServiceConfig:
+      description: The variables, the description and the extra commands.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              ok: { type: boolean }
+              error: { type: string, nullable: true }
+              service: { $ref: "#/components/schemas/Service" }
+              variables:
+                type: object
+                additionalProperties: { type: string }
+              description: { type: string, nullable: true }
+              commands:
+                type: array
+                items: { type: string }
+              trace: { type: array }
+    Error:
+      description: The request was refused.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unreachable:
+      description: |
+        The host did not answer, or refused the request in transport
+        (`code` is `unreachable` or `rejected`).  The trace shows where.
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: "#/components/schemas/Error"
+              - $ref: "#/components/schemas/HostReply"
+    AuthStatus:
+      description: The session state.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [authenticated, setup_required, rp_id, origin]
+            properties:
+              authenticated: { type: boolean }
+              setup_required:
+                type: boolean
+                description: No key is registered yet.
+              rp_id: { type: string }
+              origin:
+                type: string
+                description: >-
+                  The origin the console is configured for; security keys
+                  work only when the page is open there.
+    Credentials:
+      description: The registered keys.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              credentials:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: { type: string, description: base64url. }
+                    name: { type: string }
+                    alg:
+                      type: integer
+                      enum: [-7, -8, -257]
+                      description: COSE algorithm; ES256, EdDSA or RS256.
+                    created: { type: integer }
+                    last_used: { type: integer }
+                    sign_count: { type: integer }
+                    transports:
+                      type: array
+                      items: { type: string }
+    Servers:
+      description: The servers.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              servers:
+                type: array
+                items: { $ref: "#/components/schemas/Server" }
+    JailChange:
+      description: The outcome and the jail as it is now.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/JailChangeReply" }
+
+  schemas:
+    Settings:
+      type: object
+      properties:
+        file: { type: string, description: Where overrides are kept. }
+        settings:
+          type: array
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              label: { type: string }
+              help: { type: string }
+              type: { type: string, enum: [text, bool] }
+              value: { type: string }
+              base: { type: string, description: What web.conf says. }
+              overridden: { type: boolean }
+              editable: { type: boolean }
+    Job:
+      type: object
+      properties:
+        id: { type: integer }
+        kind: { type: string }
+        title: { type: string }
+        state:
+          type: string
+          enum: [queued, running, done, cancelled, unconfirmed]
+        ok: { type: boolean, nullable: true, description: With done. }
+        error: { type: string, nullable: true }
+        peer: { type: string, description: Who queued it. }
+        created: { type: integer }
+        started: { type: integer, nullable: true }
+        finished: { type: integer, nullable: true }
+        trace: { type: array, description: Only when one job is read. }
+    Package:
+      type: object
+      properties:
+        name: { type: string }
+        installed: { type: string }
+        available: { type: string, nullable: true }
+    Service:
+      type: object
+      properties:
+        name: { type: string }
+        path: { type: string }
+        rcvar: { type: string, nullable: true }
+        enabled: { type: boolean, nullable: true }
+        running:
+          type: boolean
+          nullable: true
+          description: Null when the script was not asked (not enabled).
+        pid: { type: integer, nullable: true }
+        status: { type: string, nullable: true }
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              examples: [unauthenticated, csrf, setup_token, login,
+                registration, not_found, invalid, unreachable, rejected]
+            message: { type: string }
+
+    Server:
+      type: object
+      required: [id, name, uri, local]
+      properties:
+        id: { type: string, pattern: "^[0-9a-f]{8}$" }
+        name: { type: string }
+        uri: { type: string }
+        peer_name: { type: string }
+        local:
+          type: boolean
+          description: A unix socket on the console's own host.
+
+    HostReply:
+      type: object
+      required: [server, fetched_at, trace]
+      properties:
+        server:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+        fetched_at: { type: integer, description: Unix time. }
+        trace:
+          type: array
+          items: { $ref: "#/components/schemas/Step" }
+
+    JailChangeReply:
+      allOf:
+        - $ref: "#/components/schemas/HostReply"
+        - type: object
+          required: [ok]
+          properties:
+            ok: { type: boolean }
+            error: { type: [string, "null"] }
+            jail: { $ref: "#/components/schemas/Jail" }
+
+    Host:
+      type: object
+      properties:
+        hostname: { type: string }
+        sysname: { type: string }
+        release: { type: string }
+        machine: { type: string }
+        ncpu: { type: integer }
+        physmem: { type: integer, description: Bytes. }
+        boottime: { type: integer }
+        time: { type: integer }
+        securelevel: { type: integer }
+        privileged:
+          type: boolean
+          description: arcana-agent runs as root; without it changes fail.
+        version: { type: string, description: arcana-agent's. }
+        plugins:
+          type: array
+          items: { type: string, enum: [bird, wireguard] }
+          description: What the host has of what works through a program
+            that is installed, not the base system's. BIRD through
+            birdc(8), WireGuard's keys and peers through wg(8). A running
+            jail with a network of its own has the same member, by what
+            is installed in the jail.
+
+    Jail:
+      type: object
+      required: [name, state]
+      properties:
+        name: { type: string }
+        state:
+          type: string
+          enum: [running, stopped, dying, absent]
+        jid: { type: [integer, "null"] }
+        configured:
+          type: boolean
+          description: Defined in a configuration file.
+        scope:
+          type: [string, "null"]
+          description: The configuration file that defines it.
+        hostname: { type: [string, "null"] }
+        path: { type: [string, "null"] }
+        ip4: { type: array, items: { type: string } }
+        ip6: { type: array, items: { type: string } }
+        vnet: { type: boolean }
+        osrelease: { type: [string, "null"] }
+        persist: { type: boolean }
+        interface: { type: [string, "null"] }
+        nproc: { type: integer, description: Running jails only. }
+        rss_kb: { type: integer }
+        cpu_pct: { type: number }
+        securelevel: { type: integer }
+        children: { type: integer }
+        params:
+          type: array
+          description: Configured parameters as jail(8) resolves them.
+          items:
+            type: object
+            properties:
+              key: { type: string }
+              values: { type: array, items: { type: string } }
+
+    Step:
+      type: object
+      required: [id, parent, kind, label, status, duration_us]
+      properties:
+        id: { type: integer }
+        parent:
+          type: integer
+          description: The parent step's id, -1 for the root.
+        kind:
+          type: string
+          enum: [api, auth, lib, daemon, syscall, file, exec]
+        label:
+          type: string
+          examples: ["jail_getid(3)", "ioctl(SIOCAIFADDR)",
+            "/usr/sbin/jail -f /etc/jail.conf -c web"]
+        detail: { type: [string, "null"] }
+        status:
+          type: string
+          enum: [ok, failed, incomplete]
+        duration_us: { type: integer }
+        argv:
+          type: array
+          description: exec steps only.
+          items: { type: string }
+        exit:
+          type: integer
+          description: exec steps only; 128 + signal when killed.
+        output:
+          type: string
+          description: exec steps only; standard output, unprintable
+            characters as vis(3) escapes.
+        error_output:
+          type: string
+          description: exec steps only; standard error.
+
+    CreationOptions:
+      type: object
+      description: PublicKeyCredentialCreationOptions with base64url
+        challenge, user.id and excludeCredentials[].id.
+      properties:
+        challenge: { type: string }
+        rp:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+        user:
+          type: object
+          properties:
+            id: { type: string }
+            name: { type: string }
+            displayName: { type: string }
+        pubKeyCredParams:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string, const: public-key }
+              alg: { type: integer, enum: [-8, -7, -257] }
+        excludeCredentials:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              id: { type: string }
+        authenticatorSelection: { type: object }
+        attestation: { type: string, const: none }
+        timeout: { type: integer }
+
+    RequestOptions:
+      type: object
+      description: PublicKeyCredentialRequestOptions with base64url
+        challenge and allowCredentials[].id.
+      properties:
+        challenge: { type: string }
+        rpId: { type: string }
+        allowCredentials:
+          type: array
+          items:
+            type: object
+            properties:
+              type: { type: string }
+              id: { type: string }
+              transports: { type: array, items: { type: string } }
+        userVerification: { type: string }
+        timeout: { type: integer }
+
+    RegistrationResponse:
+      type: object
+      required: [id, clientDataJSON, authenticatorData, publicKey,
+        publicKeyAlgorithm]
+      properties:
+        id: { type: string, description: base64url credential id. }
+        clientDataJSON: { type: string, description: base64url. }
+        authenticatorData:
+          type: string
+          description: base64url of getAuthenticatorData().
+        publicKey:
+          type: string
+          description: base64url SubjectPublicKeyInfo, from getPublicKey().
+        publicKeyAlgorithm: { type: integer, enum: [-7, -8, -257] }
+        transports: { type: array, items: { type: string } }
+        name: { type: string, description: A label for the key. }
+
+    AssertionResponse:
+      type: object
+      required: [id, clientDataJSON, authenticatorData, signature]
+      properties:
+        id: { type: string }
+        clientDataJSON: { type: string }
+        authenticatorData: { type: string }
+        signature: { type: string }

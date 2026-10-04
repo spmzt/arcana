@@ -1,0 +1,24 @@
+.git
+.github
+port
+!port/www/kore/files
+**/*.core
+
+# As in .gitignore: machine-local settings, third-party builds, build
+# products and development state, so the image builds from source.
+config.mk
+build
+obj
+*/*/tests/Kyuafile
+**/*.o
+**/*.pico
+**/*.pieo
+**/*.a
+**/*.so
+**/*.full
+**/*.debug
+**/*.wo
+**/.depend*
+**/arcana.[ch]
+**/arcana_client.c
+**/arcana_server.c
