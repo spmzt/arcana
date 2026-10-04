@@ -240,7 +240,8 @@ start_daemon()
 	    -c "$(pwd)/build.mk" -G "$(pwd)/fake-git" -M "$(pwd)/fake-make" \
 	    -Y "$(pwd)/fake-keyscan" -I "$(pwd)/fake-ifconfig" \
 	    -r "$(pwd)/fake-route" -n "$(pwd)/fake-ngctl" \
-	    -k "$(pwd)/fake-wg" -o "$(pwd)/wg" -b "$(pwd)/fake-birdc" -w 2 \
+	    -k "$(pwd)/fake-wg" -o "$(pwd)/wg" -b "$(pwd)/fake-birdc" \
+	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" -w 2 \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -1071,14 +1072,73 @@ echo "\$*" >> $(pwd)/birdc.log
 [ "\$1" = -r ] && shift
 case "\$*" in
 "show status") printf 'BIRD 2.15.1 ready.\nBIRD 2.15.1\nRouter ID is 192.0.2.1\nHostname is lab\nDaemon is up and running\n' ;;
-"show protocols") printf 'BIRD 2.15.1 ready.\nName       Proto      Table      State  Since         Info\ndevice1    Device     ---        up     2026-10-01    \nkernel1    Kernel     master4    up     2026-10-01    \nbgp_core   BGP        ---        up     12:01:02.345  Established   \nbgp_edge   BGP        ---        start  12:01:02.345  Active        Socket: Connection refused\n' ;;
+"show protocols all") cat <<EOP ;;
+BIRD 2.15.1 ready.
+Name       Proto      Table      State  Since         Info
+device1    Device     ---        up     2026-10-01    
+
+kernel1    Kernel     master4    up     2026-10-01    
+  Channel ipv4
+    State:          UP
+    Table:          master4
+    Input filter:   ACCEPT
+    Output filter:  ACCEPT
+    Routes:         0 imported, 3 exported, 0 preferred
+
+bgp_core   BGP        ---        up     12:01:02.345  Established   
+  Description:    Core uplink
+  BGP state:          Established
+    Neighbor address: 192.0.2.1
+    Neighbor AS:      65001
+    Local AS:         65000
+    Neighbor ID:      192.0.2.1
+    Hold timer:       150.012/240
+  Channel ipv4
+    State:          UP
+    Table:          master4
+    Input filter:   bgp_in
+    Output filter:  bgp_out
+    Routes:         845233 imported, 12 exported, 400000 preferred
+  Channel ipv6
+    State:          UP
+    Table:          master6
+    Input filter:   bgp_in
+    Output filter:  REJECT
+    Routes:         190000 imported, 0 exported, 180000 preferred
+
+bgp_edge   BGP        ---        start  12:01:02.345  Active        Socket: Connection refused
+  BGP state:          Active
+    Neighbor address: 198.51.100.7
+    Neighbor AS:      65002
+    Local AS:         65000
+    Last error:       Socket: Connection refused
+
+rpki1      RPKI       ---        up     2026-10-01    Established
+  Cache server:     rpki.example.net
+  Status:           Established
+  Serial number:    42
+EOP
+"show ospf neighbors") printf 'BIRD 2.15.1 ready.\nospf1:\nRouter ID   \tPri\t     State     \tDTime\tInterface  Router IP\n10.0.0.2    \t  1\tFull/PtP  \t00:00:35\tgif0       10.255.0.2\n' ;;
+"show symbols table") printf 'BIRD 2.15.1 ready.\nmaster4    routing table\nr4         routing table\n' ;;
+"show route table master4 count") printf 'BIRD 2.15.1 ready.\n845236 of 845236 routes for 845233 networks in table master4\n' ;;
+"show route table r4 count") printf 'BIRD 2.15.1 ready.\n512345 of 512345 routes for 512345 networks in table r4\n' ;;
 "restart nope") printf 'BIRD 2.15.1 ready.\nNo protocols match\n' ;;
 restart*|reload*|enable*|disable*) printf 'BIRD 2.15.1 ready.\n%s: done\n' "\$2" ;;
 configure) printf 'BIRD 2.15.1 ready.\nReading configuration from /usr/local/etc/bird.conf\nReconfigured\n' ;;
 esac
 exit 0
 EOS
-	chmod +x fake-ifconfig fake-wg fake-birdc
+	# bird(8), to parse: it takes what has no BROKEN in it.
+	cat > fake-bird <<EOS
+#!/bin/sh
+echo "fake-bird \$*" >&2
+grep -q BROKEN "\$3" && { echo "bird: \$3:2:1 syntax error, unexpected CF_SYM_UNDEFINED" >&2; exit 1; }
+exit 0
+EOS
+	mkdir -p bird/peers
+	printf 'router id 192.0.2.1;\ninclude "peers/*.conf";\nfilter bgp_in {\n\taccept;\n}\n' > bird/bird.conf
+	printf 'protocol bgp bgp_edge { neighbor 198.51.100.7 as 65002; }\n' > bird/peers/edge.conf
+	chmod +x fake-ifconfig fake-wg fake-birdc fake-bird
 	start_daemon
 
 	# An interface without a key, and one to be given one: made on
@@ -1154,12 +1214,23 @@ EOS
 
 	# BIRD: what it says of itself and of its protocols, asked for
 	# without the right to change anything.
+	atf_check -o save:bird.json "$JGC" -c "$SOCK" net bird
 	atf_check -o match:'"status":\["BIRD 2.15.1","Router ID is 192.0.2.1","Hostname is lab","Daemon is up and running"\]' \
 	    -o match:'"name":"device1","proto":"Device","table":"---","state":"up","since":"2026-10-01","info":""' \
 	    -o match:'"name":"bgp_core","proto":"BGP","table":"---","state":"up","since":"12:01:02.345","info":"Established"' \
 	    -o match:'"name":"bgp_edge".*"state":"start".*"info":"Active        Socket: Connection refused"' \
-	    "$JGC" -c "$SOCK" net bird
-	atf_check -o match:'^-r show status$' -o match:'^-r show protocols$' \
+	    cat bird.json
+	# Of a neighbour: who it is, and of each channel its filters and
+	# how many routes came and went.
+	atf_check -o match:'"description":"Core uplink","bgp-state":"Established","neighbor":"192.0.2.1","neighbor-as":"65001","local-as":"65000","neighbor-id":"192.0.2.1"' \
+	    -o match:'"name":"ipv4","state":"UP","table":"master4","input-filter":"bgp_in","output-filter":"bgp_out","routes":"845233 imported, 12 exported, 400000 preferred","imported":845233,"exported":12' \
+	    -o match:'"name":"ipv6".*"output-filter":"REJECT".*"imported":190000,"exported":0' \
+	    -o match:'"neighbor":"198.51.100.7","neighbor-as":"65002".*"last-error":"Socket: Connection refused"' \
+	    -o match:'"cache":"rpki.example.net","rpki-status":"Established","serial":"42"' \
+	    -o match:'"ospf":\[\{"proto":"ospf1","router-id":"10.0.0.2","pri":"1","state":"Full/PtP","dtime":"00:00:35","interface":"gif0","address":"10.255.0.2"\}\]' \
+	    -o match:'"tables":\[\{"name":"master4","routes":845236,"networks":845233\},\{"name":"r4","routes":512345,"networks":512345\}\]' \
+	    cat bird.json
+	atf_check -o match:'^-r show status$' -o match:'^-r show protocols all$' \
 	    cat birdc.log
 	atf_check -o match:'bird restart bgp_core' \
 	    -o match:'fake-birdc restart bgp_core' \
@@ -1178,6 +1249,47 @@ EOS
 	atf_check -s exit:1 -e match:'enable, disable, restart, reload or configure' -o ignore \
 	    "$JGC" -c "$SOCK" bird down now
 	atf_check -o not-match:'down' cat birdc.log
+
+	# Its configuration: read whole, with the files it includes; put
+	# back whole, once bird(8) has parsed it, and the daemon told.
+	atf_check -o match:'^router id 192.0.2.1;$' -o match:'filter bgp_in' \
+	    "$JGC" -c "$SOCK" bird config
+	atf_check -o match:'bird/peers/edge.conf' \
+	    "$JGC" --libxo json -c "$SOCK" bird config
+	atf_check -o match:'neighbor 198.51.100.7' \
+	    "$JGC" -c "$SOCK" bird config "$(pwd)/bird/peers/edge.conf"
+	sed -e 's/accept;/reject;/' bird/bird.conf > new.conf
+	: > birdc.log
+	atf_check -o match:'parses; left as it was' \
+	    "$JGC" -c "$SOCK" bird config -n -w new.conf
+	atf_check -o match:'accept;' -o not-match:'reject;' cat bird/bird.conf
+	atf_check -o empty cat birdc.log
+	atf_check -o match:'in place, and BIRD told' -o match:'fake-bird -p -c' \
+	    "$JGC" -t -c "$SOCK" bird config -w new.conf
+	atf_check -o match:'reject;' cat bird/bird.conf
+	atf_check -o match:'accept;' cat bird/bird.conf.arcana-old
+	atf_check -o match:'^configure$' cat birdc.log
+	# What bird does not take does not stay, and the daemon is not told.
+	: > birdc.log
+	printf 'router id 192.0.2.1;\nBROKEN\n' > bad.conf
+	atf_check -s exit:1 -e match:'bird does not take it' \
+	    -e match:'syntax error' -o ignore \
+	    "$JGC" -c "$SOCK" bird config -w bad.conf
+	atf_check -o match:'reject;' -o not-match:'BROKEN' cat bird/bird.conf
+	atf_check -o empty cat birdc.log
+	# A file it includes is put back the same way; another is not one
+	# of its files, wherever it is.
+	printf 'protocol bgp bgp_edge { neighbor 198.51.100.8 as 65002; }\n' > edge.new
+	atf_check -o match:'in place' \
+	    "$JGC" -c "$SOCK" bird config -w edge.new "$(pwd)/bird/peers/edge.conf"
+	atf_check -o match:'198.51.100.8' cat bird/peers/edge.conf
+	atf_check -s exit:1 -e match:"not a file of BIRD's configuration" -o ignore \
+	    "$JGC" -c "$SOCK" bird config "$(pwd)/rc.conf"
+	atf_check -s exit:1 -e match:"not a file of BIRD's configuration" -o ignore \
+	    "$JGC" -c "$SOCK" bird config -w edge.new "$(pwd)/bird/../rc.conf"
+	atf_check -s exit:1 -e match:"not a file of BIRD's configuration" -o ignore \
+	    "$JGC" -c "$SOCK" bird config -w edge.new "$(pwd)/bird/peers/x.sh"
+	atf_check -o not-match:'bgp_edge' cat rc.conf
 }
 vpn_cleanup()
 {

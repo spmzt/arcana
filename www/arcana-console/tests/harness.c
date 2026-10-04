@@ -178,9 +178,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 cwd[MAXPATHLEN], buf[4096], so[MAXPATHLEN], routes[MAXPATHLEN];
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 send[MAXPATHLEN];
-	char	 rcd[MAXPATHLEN];
+	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[48];
+	char	*argv[52];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -326,11 +326,49 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "[ \"$1\" = -r ] && shift\ncase \"$*\" in\n"
 	    "'show status') printf 'BIRD 2.15.1 ready.\\nBIRD 2.15.1\\n"
 	    "Router ID is 192.0.2.1\\nDaemon is up and running\\n' ;;\n"
-	    "'show protocols') printf 'BIRD 2.15.1 ready.\\nName Proto Table "
+	    "'show protocols all') printf 'BIRD 2.15.1 ready.\\nName Proto Table "
 	    "State Since Info\\ndevice1 Device --- up 2026-10-01 \\n"
-	    "bgp_core BGP --- up 12:01:02.345 Established\\n' ;;\n"
+	    "bgp_core BGP --- up 12:01:02.345 Established\\n"
+	    "  Description:    Core uplink\\n  BGP state:          Established"
+	    "\\n    Neighbor address: 192.0.2.1\\n    Neighbor AS:      65001"
+	    "\\n    Local AS:         65000\\n  Channel ipv4\\n    State:"
+	    "          UP\\n    Table:          master4\\n    Input filter:   "
+	    "bgp_in\\n    Output filter:  bgp_out\\n    Routes:         845233 "
+	    "imported, 12 exported, 400000 preferred\\n"
+	    "bgp_edge BGP --- start 12:01:02.345 Active\\n"
+	    "  BGP state:          Active\\n    Neighbor address: 198.51.100.7"
+	    "\\n    Neighbor AS:      65002\\n"
+	    "rpki1 RPKI --- up 2026-10-01 Established\\n"
+	    "  Cache server:     rpki.example.net\\n' ;;\n"
+	    "'show ospf neighbors') printf 'ospf1:\\nRouter ID Pri State DTime "
+	    "Interface Router IP\\n10.0.0.2 1 Full/PtP 00:00:35 gif0 "
+	    "10.255.0.2\\n' ;;\n"
+	    "'show symbols table') printf 'master4 routing table\\nr4 routing "
+	    "table\\n' ;;\n"
+	    "'show route table master4 count') printf '845236 of 845236 routes "
+	    "for 845233 networks in table master4\\n' ;;\n"
+	    "'show route table r4 count') printf '512345 of 512345 routes for "
+	    "512345 networks in table r4\\n' ;;\n"
 	    "*) printf 'BIRD 2.15.1 ready.\\n%s: done\\n' \"$2\" ;;\n"
 	    "esac\nexit 0\n");
+	put("fake-bird", "#!/bin/sh\necho \"fake-bird $*\" >&2\n"
+	    "grep -q BROKEN \"$3\" && { echo \"bird: $3:2:1 syntax error\" >&2; "
+	    "exit 1; }\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-bird", 0755) == 0);
+	ATF_REQUIRE(mkdir("bird", 0755) == 0 || errno == EEXIST);
+	put("bird/bird.conf", "# The lab's routing.\nrouter id 192.0.2.1;\n\n"
+	    "define MY_AS = 65000;\ndefine CUSTOMERS = [ (65000,100), "
+	    "(65000,200) ];\ndefine BLACKHOLE_LC = [ (65000,666,0) ];\n\n"
+	    "roa4 table r4;\n\nfilter bgp_in {\n\tif bgp_community ~ CUSTOMERS "
+	    "then accept;\n\treject;\n}\n\nfilter bgp_out {\n\taccept;\n}\n\n"
+	    "protocol device device1 {\n}\n\nprotocol bgp bgp_core {\n"
+	    "\tdescription \"Core uplink\";\n\tlocal as MY_AS;\n\tneighbor "
+	    "192.0.2.1 as 65001;\n\tipv4 {\n\t\timport filter bgp_in;\n"
+	    "\t\texport filter bgp_out;\n\t};\n}\n\nprotocol bgp bgp_edge {\n"
+	    "\tlocal as MY_AS;\n\tneighbor 198.51.100.7 as 65002;\n}\n\n"
+	    "protocol rpki rpki1 {\n\troa4 { table r4; };\n\tremote "
+	    "\"rpki.example.net\" port 3323;\n}\n");
+	snprintf(birdconf, sizeof(birdconf), "%s/bird/bird.conf", cwd);
 	ATF_REQUIRE(chmod("fake-wg", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-birdc", 0755) == 0);
 	ATF_REQUIRE(mkdir("wg", 0700) == 0 || errno == EEXIST);
@@ -359,7 +397,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	snprintf(www, sizeof(www), "%s/www", cwd);
 	snprintf(buf, sizeof(buf), "server t {\n\t%s\n\ttls no\n}\n"
 	    "load %s arcw_onload\ntls_dhparam %s\nworkers 1\ntask_threads 4\n"
-	    "http_body_max 65536\nfilemap_index index.html\n"
+	    "http_body_max 1048576\nfilemap_index index.html\n"
 	    "http_media_type application/wasm wasm\n"
 	    "http_media_type application/manifest+json webmanifest\n"
 	    "http_media_type image/svg+xml svg\n"
@@ -411,7 +449,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[39] = (char *)(uintptr_t)"./wg";
 	argv[40] = (char *)(uintptr_t)"-b";
 	argv[41] = (char *)(uintptr_t)"./fake-birdc";
-	argv[42] = NULL;
+	argv[42] = (char *)(uintptr_t)"-e";
+	argv[43] = (char *)(uintptr_t)"./fake-bird";
+	argv[44] = (char *)(uintptr_t)"-a";
+	argv[45] = birdconf;
+	argv[46] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

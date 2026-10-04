@@ -59,6 +59,8 @@ struct opts opts = {
 	.wg_bin = PATH_WG_BIN,
 	.wg_dir = PATH_WG_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
+	.bird_bin = PATH_BIRD_BIN,
+	.bird_conf = PATH_BIRD_CONF,
 	.safe_wait = 60,
 	.make_bin = PATH_MAKE_BIN,
 	.keyscan_bin = PATH_KEYSCAN_BIN,
@@ -283,7 +285,7 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	while ((ch = getopt(argc, argv, "A:B:b:C:c:D:dE:Ff:G:g:I:j:K:k:l:M:N:n:o:P:p:R:r:s:U:Vw:W:X:Y:y:Z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:I:j:K:k:l:M:N:n:o:P:p:R:r:s:U:Vw:W:X:Y:y:Z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -375,6 +377,12 @@ main(int argc, char *argv[])
 			break;
 		case 'b':
 			opts.birdc_bin = optarg;
+			break;
+		case 'e':
+			opts.bird_bin = optarg;
+			break;
+		case 'a':
+			opts.bird_conf = optarg;
 			break;
 		case 'w':
 			opts.safe_wait = (int)strtonum(optarg, 1, 3600, &errstr);

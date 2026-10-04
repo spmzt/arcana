@@ -35,6 +35,8 @@
 .Op Fl k Ar wg
 .Op Fl o Ar directory
 .Op Fl b Ar birdc
+.Op Fl e Ar bird
+.Op Fl a Ar file
 .Op Fl w Ar seconds
 .Op Fl N Ar netstat
 .Op Fl X Ar sockstat
@@ -240,6 +242,13 @@ The
 and
 .Xr birdc 8
 programs.
+.It Fl e Ar bird , Fl a Ar file
+The
+.Xr bird 8
+program, which parses a configuration before it is put in place, and
+BIRD's main configuration file.
+Default
+.Pa /usr/local/etc/bird.conf .
 .It Fl o Ar directory
 Where WireGuard interfaces are written for
 .Xr wg-quick 8 .

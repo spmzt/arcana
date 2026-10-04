@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.15.1
+  version: 0.16.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -425,6 +425,42 @@ paths:
                   items: { type: string }
       responses:
         "200": { $ref: "#/components/responses/ServiceConfig" }
+
+  /api/servers/{server}/bird/config:
+    get:
+      tags: [servers]
+      summary: A file of BIRD's configuration, its checksum, and the files there are
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: path
+          in: query
+          description: A file the main one includes; the main one without it.
+          schema: { type: string }
+      responses:
+        "200":
+          description: text, sha256, path and files
+    post:
+      tags: [servers]
+      summary: Put a new text in a configuration file's place
+      description: The whole configuration is parsed by bird(8) first; what
+        it refuses does not stay. Then the daemon is told to read it.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, sha256]
+              properties:
+                path: { type: string }
+                text: { type: string }
+                sha256: { type: string, description: "of the text this was made from" }
+                check: { type: boolean, description: "parse only, change nothing" }
+      responses:
+        "200":
+          description: ok, or error with what bird said
 
   /api/servers/{server}/net/{kind}:
     get:

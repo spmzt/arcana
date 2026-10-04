@@ -1042,6 +1042,7 @@ ATF_TC_BODY(services, tc)
 	struct authn	a;
 	struct resp	r;
 	char		path[160], base[128], cwd[MAXPATHLEN], body[MAXPATHLEN];
+	char		old[65];
 	int		i;
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
@@ -1410,6 +1411,62 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("Router ID is 192.0.2.1", jstr(&r, "data.status.1"));
 	ATF_CHECK_STREQ("bgp_core", jstr(&r, "data.protocols.1.name"));
 	ATF_CHECK_STREQ("Established", jstr(&r, "data.protocols.1.info"));
+	ATF_CHECK_STREQ("192.0.2.1", jstr(&r, "data.protocols.1.neighbor"));
+	ATF_CHECK_STREQ("65001", jstr(&r, "data.protocols.1.neighbor-as"));
+	ATF_CHECK_STREQ("bgp_in", jstr(&r,
+	    "data.protocols.1.channels.0.input-filter"));
+	ATF_CHECK_STREQ("845233", jstr(&r,
+	    "data.protocols.1.channels.0.imported"));
+	ATF_CHECK_STREQ("10.0.0.2", jstr(&r, "data.ospf.0.router-id"));
+	ATF_CHECK_STREQ("r4", jstr(&r, "data.tables.1.name"));
+	resp_free(&r);
+
+	/*
+	 * BIRD's configuration: read with its checksum, put back changed
+	 * once bird(8) has parsed it; what it refuses does not stay, and
+	 * a change made from an older text is not taken.
+	 */
+	snprintf(path, sizeof(path), "%.*s/bird/config",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "sha256") != NULL && jstr(&r, "text") != NULL);
+	ATF_CHECK(strstr(jstr(&r, "text"), "filter bgp_in") != NULL);
+	ATF_CHECK(strstr(jstr(&r, "files.0"), "/bird/bird.conf") != NULL);
+	snprintf(body, sizeof(body), "{\"text\":\"router id 192.0.2.9;\\n\","
+	    "\"sha256\":\"%s\"}", jstr(&r, "sha256"));
+	resp_free(&r);
+	(void)old;
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^router id 192.0.2.9;$' bird/bird.conf && "
+	    "grep -q 'filter bgp_in' bird/bird.conf.arcana-old && "
+	    "grep -q '^configure$' birdc.log") == 0);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK(strstr(jstr(&r, "error"), "changed it meanwhile") != NULL);
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	snprintf(body, sizeof(body), "{\"text\":\"BROKEN\\n\",\"sha256\":"
+	    "\"%s\"}", jstr(&r, "sha256"));
+	resp_free(&r);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK(strstr(jstr(&r, "error"), "syntax error") != NULL);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q BROKEN bird/bird.conf") != 0);
+	snprintf(body, sizeof(body), "%s?path=/etc/../etc/passwd", path);
+	http("GET", body, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "%s?path=/etc/passwd", path);
+	http("GET", body, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	resp_free(&r);
 }
 

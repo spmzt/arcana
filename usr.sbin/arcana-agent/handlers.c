@@ -283,6 +283,8 @@ worker(void *arg)
 	struct arc_service_config_rsp scr;
 	struct arc_network_rsp	 nr;
 	struct arc_route_lookup_rsp rlr;
+	struct arc_bird_config_req bcq;
+	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
 	struct arc_packages_rsp	 pr;
 	struct arc_pkg_upgrade_rsp ur;
@@ -505,6 +507,38 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &aur.trace.v, &aur.trace.n);
 		rc = arc_agent_update_reply(j->req, &aur);
+		break;
+	case ARC_CMD_BIRD_CONFIG:
+		/* The path rides in source, the text in ref. */
+		what = wfmt(&w, "bird config %s%s", j->ref == NULL ? "read" :
+		    j->refresh ? "check" : "write", j->source != NULL ? " " :
+		    "");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s%s",
+		    what, j->source != NULL ? j->source : "");
+		memset(&bcq, 0, sizeof(bcq));
+		memset(&bcr, 0, sizeof(bcr));
+		bcq.conf_path = j->source;
+		bcq.conf_text = j->ref;
+		bcq.sha256 = j->sha256;
+		bcq.dry_run = j->refresh;
+		if (j->ref == NULL)
+			do_bird_config(&w, &bcq, &bcr);
+		else {
+			pthread_mutex_lock(&change_lock);
+			if (change_note("%s", what))
+				do_bird_config(&w, &bcq, &bcr);
+			else {
+				bcr.has_ok = true;
+				bcr.error = STOPPING;
+			}
+			(void)change_note(NULL);
+			pthread_mutex_unlock(&change_lock);
+		}
+		ok = bcr.ok;
+		error = bcr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &bcr.trace.v, &bcr.trace.n);
+		rc = arc_bird_config_reply(j->req, &bcr);
 		break;
 	case ARC_CMD_SERVICE_CONFIG:
 		what = wfmt(&w, "service %s config%s", j->jail,
@@ -864,6 +898,28 @@ arc_route_lookup_doit(cbl_req *req, const struct arc_route_lookup_req *rq,
 	j->cmd = ARC_CMD_ROUTE_LOOKUP;
 	j->source = xstrdup(rq->lookup);
 	j->fib = rq->has_net_fib ? rq->net_fib : 0;
+	return (start(j));
+}
+
+int
+arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->conf_path != NULL && rq->conf_path[0] != '\0' &&
+	    rq->conf_path[0] != '/')
+		return (reject(req, "a configuration file is named by its "
+		    "whole path"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_BIRD_CONFIG;
+	j->source = rq->conf_path != NULL && rq->conf_path[0] != '\0' ?
+	    xstrdup(rq->conf_path) : NULL;
+	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
+	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
+	j->refresh = rq->dry_run;
 	return (start(j));
 }
 

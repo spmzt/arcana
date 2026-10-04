@@ -51,6 +51,7 @@ enum op {
 	OP_AGENT_BUILD,
 	OP_CONSOLE_UPDATE,
 	OP_ROUTE_LOOKUP,
+	OP_BIRD_CONFIG,
 };
 
 struct call {
@@ -80,6 +81,7 @@ struct call {
 	uint64_t		 jobid;		/* job, job-cancel */
 	bool			 restart;	/* agent-update */
 	char			*host_keys;	/* agent-build: confirmed */
+	char			*text;		/* bird-config: the new text */
 	struct arc_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
 	char			*json;		/* the reply, from the thread */
@@ -375,6 +377,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_AGENT_BUILD ? "arc_agent_build" :
 	    c->op == OP_CONSOLE_UPDATE ? "arc_console_update" :
 	    c->op == OP_ROUTE_LOOKUP ? "arc_route_lookup" :
+	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
 	ok = callok;
@@ -630,6 +633,8 @@ call_run(struct kore_task *t)
 	struct arc_network_rsp	*nr;
 	struct arc_route_lookup_req rlq;
 	struct arc_route_lookup_rsp *rlr;
+	struct arc_bird_config_req bcq;
+	struct arc_bird_config_rsp *bcr;
 	struct arc_stats_rsp	*str;
 	struct arc_packages_req	 pq;
 	struct arc_packages_rsp	*pr;
@@ -687,6 +692,7 @@ call_run(struct kore_task *t)
 	scr = NULL;
 	nr = NULL;
 	rlr = NULL;
+	bcr = NULL;
 	str = NULL;
 	pr = NULL;
 	ur = NULL;
@@ -1013,6 +1019,26 @@ call_run(struct kore_task *t)
 		steps = nr->trace.v;
 		nsteps = nr->trace.n;
 		break;
+	case OP_BIRD_CONFIG:
+		/* The path rides where a jail's name does, the SHA-256 of
+		 * what the text was made from where an address does. */
+		memset(&bcq, 0, sizeof(bcq));
+		bcq.conf_path = c->jail[0] != '\0' ? c->jail : NULL;
+		bcq.conf_text = c->text;
+		bcq.sha256 = c->address[0] != '\0' ? c->address : NULL;
+		bcq.dry_run = c->dry_run;
+		if ((error = arc_bird_config(&cl, &bcq, &bcr)) != 0)
+			goto rpcfail;
+		ok = bcr->ok;
+		put_str(top, "error", bcr->error);
+		put_str(top, "path", bcr->conf_path);
+		put_str(top, "text", bcr->conf_text);
+		put_str(top, "sha256", bcr->sha256);
+		if (bcr->files.n > 0)
+			put(top, "files", strs(bcr->files.v, bcr->files.n));
+		steps = bcr->trace.v;
+		nsteps = bcr->trace.n;
+		break;
 	case OP_ROUTE_LOOKUP:
 		memset(&rlq, 0, sizeof(rlq));
 		rlq.lookup = c->address;
@@ -1188,6 +1214,8 @@ done:
 		arc_network_rsp_free(nr);
 	if (rlr != NULL)
 		arc_route_lookup_rsp_free(rlr);
+	if (bcr != NULL)
+		arc_bird_config_rsp_free(bcr);
 	if (str != NULL)
 		arc_stats_rsp_free(str);
 	if (pr != NULL)
@@ -1311,6 +1339,8 @@ api_call_free(struct http_request *req)
 	c->sname = c->uri = c->peer = NULL;
 	kore_free(c->host_keys);
 	c->host_keys = NULL;
+	kore_free(c->text);
+	c->text = NULL;
 	call_free_vars(c);
 	for (i = 0; i < c->nnames; i++)
 		kore_free(c->names[i]);
@@ -1681,6 +1711,71 @@ api_network(struct http_request *req)
 			return (reply_error(req, 400, "invalid", "the text to "
 			    "search for is letters, digits and . : / _ -"));
 		}
+	}
+	return (call_start(req, c));
+}
+
+/* A path of a configuration file: nothing a URL or a shell reads into. */
+static bool
+conf_path_ok(const char *s)
+{
+
+	if (s[0] != '/' || strlen(s) > 255 || strstr(s, "..") != NULL)
+		return (false);
+	for (; *s != '\0'; s++)
+		if (!isalnum((unsigned char)*s) && strchr("._/-", *s) == NULL)
+			return (false);
+	return (true);
+}
+
+/*
+ * GET /api/servers/<id>/bird/config[?path=<file>]: a file of BIRD's
+ * configuration, its SHA-256, and the files there are.
+ * POST {"path", "text", "sha256", "check"}: put text in its place,
+ * sha256 being that of the text it was made from; with check, only
+ * have it parsed.
+ */
+int
+api_bird_config(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+	const char	*s;
+	bool		 bad;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_BIRD_CONFIG)) == NULL)
+		return (KORE_RESULT_OK);
+	bad = false;
+	if (req->method == HTTP_METHOD_GET) {
+		(void)query_param(req, "path", c->jail, sizeof(c->jail));
+		bad = c->jail[0] != '\0' && !conf_path_ok(c->jail);
+	} else if ((body = read_json(req)) == NULL)
+		bad = true;
+	else {
+		if ((s = ucl_str(body, "path")) != NULL && s[0] != '\0') {
+			bad = !conf_path_ok(s);
+			strlcpy(c->jail, s, sizeof(c->jail));
+		}
+		if ((s = ucl_str(body, "sha256")) != NULL)
+			strlcpy(c->address, s, sizeof(c->address));
+		if ((s = ucl_str(body, "text")) != NULL)
+			c->text = kore_strdup(s);
+		else
+			bad = true;
+		c->dry_run = ucl_flag(body, "check");
+		ucl_object_unref(body);
+	}
+	if (bad) {
+		kore_free(c->text);
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "path is a whole path "
+		    "of letters, digits and . _ / -; a change needs text and "
+		    "the sha256 of what it was made from"));
 	}
 	return (call_start(req, c));
 }

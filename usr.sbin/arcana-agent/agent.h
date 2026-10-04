@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.8.0"
+#define	ARCANA_AGENT_VERSION	"0.9.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -39,6 +39,8 @@
 #define	PATH_WG_BIN		"/usr/local/bin/wg"
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
+#define	PATH_BIRD_BIN		"/usr/local/sbin/bird"
+#define	PATH_BIRD_CONF		"/usr/local/etc/bird.conf"
 #define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
 #define	PATH_KEYSCAN_BIN	"/usr/bin/ssh-keyscan"
@@ -72,6 +74,8 @@ struct opts {
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
 	const char	*birdc_bin;
+	const char	*bird_bin;	/* bird(8), to parse a configuration */
+	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
 	const char	*keyscan_bin;	/* ssh-keyscan(1) */
@@ -293,6 +297,9 @@ int		 do_bird(struct work *, struct arc_network_rsp *);
 const char	*bird_check(const char *, const char *const *, size_t);
 int		 do_bird_verb(struct work *, const char *, const char *const *,
 		    size_t, const char **);
+int		 do_bird_config(struct work *,
+		    const struct arc_bird_config_req *,
+		    struct arc_bird_config_rsp *);
 
 /* invidia/netgraph.c */
 int		 do_netgraph(struct work *, struct arc_network_rsp *);

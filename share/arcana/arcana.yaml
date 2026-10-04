@@ -130,7 +130,11 @@ definitions:
       - name: bird
         doc: |
           What birdc(8) tells of the BIRD routing daemon, as a JSON
-          object with "status", its lines, and the array "protocols".
+          object with "status", its lines, the array "protocols", each
+          with what show protocols all says of it (a BGP neighbour's
+          address and AS, its channels with their filters and how many
+          routes came and went), the OSPF neighbours in "ospf", and the
+          routing tables with how many routes each holds in "tables".
   - name: net-family
     type: enum
     entries:
@@ -374,6 +378,21 @@ attribute-sets:
         checks:
           min-len: 2
           max-len: 64
+      - name: conf-path
+        type: text
+        doc: |
+          A file of BIRD's configuration; its main one when not given.
+        checks:
+          max-len: 255
+      - name: conf-text
+        type: text
+        doc: A configuration file's whole text.
+        checks:
+          max-len: max-json
+      - name: files
+        type: text
+        multi-attr: true
+        doc: The files BIRD's configuration is made of.
       - name: total
         type: u64
         doc: Rows in the table on the host, when not all were sent.
@@ -1199,5 +1218,35 @@ operations:
           - ok
           - error
           - json
+          - trace
+
+  - name: bird-config
+    attribute-set: arcana
+    auth: true
+    doc: |
+      BIRD's configuration.  Without conf-text, read a file of it: the
+      main one, or with conf-path one it includes; the reply has its
+      text, the SHA-256 of that, and the files the configuration is made
+      of.  With conf-text, put that in the file's place: sha256 must be
+      that of the text it was made from, so that what somebody else
+      changed meanwhile is not lost.  The whole configuration is parsed
+      by bird(8) first, and what it refuses is not left in place; then
+      the daemon is told to read it.  With dry-run it is parsed only,
+      and the file left as it was.
+    do:
+      request:
+        attributes:
+          - conf-path
+          - conf-text
+          - sha256
+          - dry-run
+      reply:
+        attributes:
+          - ok
+          - error
+          - conf-path
+          - conf-text
+          - sha256
+          - files
           - trace
 

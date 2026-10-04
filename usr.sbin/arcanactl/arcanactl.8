@@ -242,7 +242,26 @@ Tell the BIRD routing daemon through
 may be
 .Ql all .
 .Cm net bird
-shows its status and its protocols.
+shows its status, its protocols with what
+.Ql show protocols all
+says of each, its OSPF neighbours and its tables.
+.It Cm bird config Op Ar file
+Print BIRD's configuration: its main file, or
+.Ar file ,
+one it includes.
+.It Cm bird config Fl w Ar new-text Oo Fl n Oc Op Ar file
+Put the text of the local file
+.Ar new-text
+in its place.
+.Xr bird 8
+parses the whole configuration first, and what it refuses does not
+stay; then the daemon is told to read it.
+The file as it was is kept beside it with
+.Pa .arcana-old
+after its name.
+With
+.Fl n
+it is parsed only.
 .Pp
 With the option
 .Fl s

@@ -128,6 +128,8 @@ usage(void)
 	    "    wg interface unpeer key\n"
 	    "    bird enable | disable | restart | reload protocol\n"
 	    "    bird configure\n"
+	    "    bird config [file]\n"
+	    "    bird config -w new-text [-n] [file]\n"
 	    "    stats\n"
 	    "    packages [-r] [jail]\n"
 	    "    pkg-upgrade [-n] [-j jail] [package ...]\n"
@@ -889,6 +891,81 @@ cmd_agent_update(struct arc_client *cl, int argc, char **argv)
  * interface name up | down, interface name add | remove address: a job,
  * waited for unless it is only queued (-q).
  */
+/*
+ * bird config [file]: print a file of BIRD's configuration.
+ * bird config -w new-text [-n] [file]: put the text of a local file in
+ * its place, or with -n only have it parsed.
+ */
+static int
+cmd_bird_config(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_bird_config_req	 req;
+	struct arc_bird_config_rsp	*rsp, *cur;
+	struct stat			 sb;
+	const char			*from;
+	char				*text;
+	size_t				 i;
+	int				 ch, error, fd;
+
+	from = NULL;
+	memset(&req, 0, sizeof(req));
+	optind = 1;
+	optreset = 1;
+	while ((ch = getopt(argc, argv, "nw:")) != -1) {
+		switch (ch) {
+		case 'n':
+			req.dry_run = true;
+			break;
+		case 'w':
+			from = optarg;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc - optind > 1 || (req.dry_run && from == NULL))
+		usage();
+	req.conf_path = argc - optind == 1 ? argv[optind] : NULL;
+	text = NULL;
+	cur = NULL;
+	if (from != NULL) {
+		if ((fd = open(from, O_RDONLY)) == -1 || fstat(fd, &sb) == -1 ||
+		    (text = malloc((size_t)sb.st_size + 1)) == NULL ||
+		    read(fd, text, (size_t)sb.st_size) != sb.st_size)
+			xo_err(1, "%s", from);
+		close(fd);
+		text[sb.st_size] = '\0';
+		/* What is there now says what the new text replaces. */
+		if ((error = arc_bird_config(cl, &req, &cur)) != 0)
+			fail(cl, error, "bird config");
+		req.sha256 = cur->sha256 != NULL ? cur->sha256 :
+		    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b"
+		    "7852b855";
+		req.conf_text = text;
+	}
+	if ((error = arc_bird_config(cl, &req, &rsp)) != 0)
+		fail(cl, error, "bird config");
+	if (from == NULL && rsp->conf_text != NULL)
+		xo_emit("{:text/%s}", rsp->conf_text);
+	else if (rsp->ok)
+		xo_emit("{:path/%s}: {:result/%s}\n", rsp->conf_path != NULL ?
+		    rsp->conf_path : "", req.dry_run ? "parses; left as it "
+		    "was" : "in place, and BIRD told");
+	if (from == NULL)
+		for (i = 1; i < rsp->files.n; i++)
+			xo_emit("{e:file/%s}", rsp->files.v[i]);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("bird config: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_bird_config_rsp_free(rsp);
+	if (cur != NULL)
+		arc_bird_config_rsp_free(cur);
+	free(text);
+	return (error);
+}
+
 /* route get address: the route the host would take, and the others. */
 static int
 cmd_route_get(struct arc_client *cl, int argc, char **argv)
@@ -937,6 +1014,8 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 		sp.persist = false;
 		goto send;
 	}
+	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "config") == 0)
+		return (cmd_bird_config(cl, argc - 1, argv + 1));
 	if (strcmp(argv[0], "bird") == 0) {
 		sp.kind = ARC_JOB_KIND_BIRD;
 		sp.verb = argv[1];
