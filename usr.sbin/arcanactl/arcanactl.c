@@ -108,7 +108,7 @@ usage(void)
 	    "disable\n"
 	    "    service name config [-x key ...] [key=value ...]\n"
 	    "    net routes | nexthops | connections | sockets | interfaces | "
-	    "netgraph\n        [-4 | -6]\n"
+	    "netgraph |\n        wireguard | bird [-4 | -6]\n"
 	    "    net routes [-4 | -6] text\n"
 	    "    interface name up | down | destroy\n"
 	    "    interface name add | remove address\n"
@@ -122,6 +122,12 @@ usage(void)
 	    "    route get address\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
+	    "    wg interface init [port]\n"
+	    "    wg interface peer key [endpoint address:port] [allowed-ips "
+	    "list]\n        [keepalive seconds]\n"
+	    "    wg interface unpeer key\n"
+	    "    bird enable | disable | restart | reload protocol\n"
+	    "    bird configure\n"
 	    "    stats\n"
 	    "    packages [-r] [jail]\n"
 	    "    pkg-upgrade [-n] [-j jail] [package ...]\n"
@@ -918,7 +924,7 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	uint32_t			 num;
 	int				 i;
 
-	if (argc < 3)
+	if (argc < 3 && !(argc == 2 && strcmp(argv[0], "bird") == 0))
 		usage();
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
@@ -929,6 +935,53 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 		sp.names.v = (const char **)(uintptr_t)&argv[2];
 		sp.names.n = (size_t)argc - 2;
 		sp.persist = false;
+		goto send;
+	}
+	if (strcmp(argv[0], "bird") == 0) {
+		sp.kind = ARC_JOB_KIND_BIRD;
+		sp.verb = argv[1];
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = (size_t)argc - 2;
+		sp.persist = false;
+		goto send;
+	}
+	if (strcmp(argv[0], "wg") == 0) {
+		/* wg interface init [port] | peer key [...] | unpeer key */
+		sp.kind = ARC_JOB_KIND_WIREGUARD;
+		sp.interface = argv[1];
+		sp.verb = argv[2];
+		if (strcmp(argv[2], "init") == 0) {
+			if (argc == 4) {
+				sp.has_listen_port = true;
+				sp.listen_port = (uint32_t)strtonum(argv[3], 1,
+				    65535, &errstr);
+				if (errstr != NULL)
+					xo_errx(2, "port %s: %s", argv[3],
+					    errstr);
+			} else if (argc != 3)
+				usage();
+			goto send;
+		}
+		if (argc < 4)
+			usage();
+		sp.peer = argv[3];
+		for (i = 4; i + 1 < argc; i += 2) {
+			if (strcmp(argv[i], "endpoint") == 0)
+				sp.endpoint = argv[i + 1];
+			else if (strcmp(argv[i], "allowed-ips") == 0)
+				sp.allowed_ips = argv[i + 1];
+			else if (strcmp(argv[i], "keepalive") == 0) {
+				sp.has_keepalive = true;
+				sp.keepalive = (uint32_t)strtonum(argv[i + 1],
+				    0, 65535, &errstr);
+				if (errstr != NULL)
+					xo_errx(2, "keepalive %s: %s",
+					    argv[i + 1], errstr);
+			} else
+				usage();
+		}
+		if (i != argc)
+			usage();
 		goto send;
 	}
 	if (strcmp(argv[0], "route") == 0 && strcmp(argv[1], "get") == 0)
@@ -1014,7 +1067,7 @@ static int
 cmd_net(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets", "interfaces", "netgraph" };
+	    "sockets", "interfaces", "netgraph", "wireguard", "bird" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -1512,7 +1565,8 @@ main(int argc, char *argv[])
 	else if (strcmp(argv[0], "service") == 0)
 		rc = cmd_service(&cl, argc, argv);
 	else if (strcmp(argv[0], "interface") == 0 ||
-	    strcmp(argv[0], "route") == 0 || strcmp(argv[0], "ng") == 0)
+	    strcmp(argv[0], "route") == 0 || strcmp(argv[0], "ng") == 0 ||
+	    strcmp(argv[0], "wg") == 0 || strcmp(argv[0], "bird") == 0)
 		rc = cmd_interface(&cl, argc, argv);
 	else if (strcmp(argv[0], "net") == 0)
 		rc = cmd_net(&cl, argc, argv);

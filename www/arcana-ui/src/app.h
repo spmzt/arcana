@@ -161,6 +161,8 @@ enum netkind {
 	NET_SOCKETS,
 	NET_INTERFACES,
 	NET_NETGRAPH,
+	NET_WIREGUARD,
+	NET_BIRD,
 };
 
 /* The network tab's one table: what is shown, from which server. */
@@ -287,6 +289,8 @@ enum modal {
 	MODAL_IF_SET,
 	MODAL_NG_CONNECT,
 	MODAL_NG_MKPEER,
+	MODAL_WG_INIT,
+	MODAL_WG_PEER,
 };
 
 struct confirm {
@@ -477,6 +481,14 @@ bool		 ng_action(const char *, const char *, const char *);
 bool		 topo_form(const char *, const ucl_object_t *);
 bool		 topo_modal(struct html *);
 void		 fmt_rate(char *, size_t, double);
+
+/* vpn.c: a host's WireGuard interfaces and its BIRD. */
+void		 view_wireguard(struct html *, struct server *,
+		    const ucl_object_t *);
+void		 view_bird(struct html *, struct server *, const ucl_object_t *);
+bool		 vpn_action(const char *, const char *, const char *);
+bool		 vpn_form(const char *, const ucl_object_t *);
+bool		 vpn_modal(struct html *);
 const char	*state_class(const struct server *, const ucl_object_t *,
 		    const struct jailui *);
 void		 fmt_age(char *, size_t, double);

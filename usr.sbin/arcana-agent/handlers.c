@@ -80,6 +80,8 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_SOCKETS] = "sockets",
 	[ARC_NET_KIND_INTERFACES] = "interfaces",
 	[ARC_NET_KIND_NETGRAPH] = "netgraph",
+	[ARC_NET_KIND_WIREGUARD] = "wireguard",
+	[ARC_NET_KIND_BIRD] = "bird",
 };
 
 static const char *service_action_names[] = {
@@ -929,9 +931,11 @@ arc_pkg_upgrade_doit(cbl_req *req, const struct arc_pkg_upgrade_req *rq,
 static const char *
 check_spec(const struct arc_job_spec *sp)
 {
-	size_t	i;
+	struct work	 cw;
+	const char	*e;
+	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_NETGRAPH)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_BIRD)
 		return ("a job needs a kind");
 	switch (sp->kind) {
 	case ARC_JOB_KIND_JAIL_ACTION:
@@ -990,6 +994,21 @@ check_spec(const struct arc_job_spec *sp)
 			return ("netgraph changes cannot be undone: not in "
 			    "safe mode");
 		return (ng_check(sp->verb, sp->names.v, sp->names.n));
+	case ARC_JOB_KIND_WIREGUARD:
+		if (sp->safe)
+			return ("wireguard changes are not undone: not in "
+			    "safe mode");
+		if (sp->interface == NULL || !valid_ifname(sp->interface))
+			return ("invalid interface name");
+		work_init(&cw);
+		e = wg_check(&cw, sp);
+		work_free(&cw);
+		return (e);
+	case ARC_JOB_KIND_BIRD:
+		if (sp->safe)
+			return ("what BIRD was told is not taken back: not in "
+			    "safe mode");
+		return (bird_check(sp->verb, sp->names.v, sp->names.n));
 	case ARC_JOB_KIND_ROUTE:
 		if (sp->destination == NULL || sp->destination[0] == '\0' ||
 		    sp->destination[0] == '-')

@@ -146,6 +146,15 @@ title_of(const struct arc_job_spec *sp)
 		    sp->names.v[0] : "", sp->names.n > 1 ? " " : "",
 		    sp->names.n > 1 ? sp->names.v[1] : "");
 		break;
+	case ARC_JOB_KIND_WIREGUARD:
+		rc = asprintf(&t, "%s: wireguard %s%s%.12s%s", sp->interface,
+		    sp->verb, sp->peer != NULL ? " " : "", sp->peer != NULL ?
+		    sp->peer : "", sp->peer != NULL ? "…" : "");
+		break;
+	case ARC_JOB_KIND_BIRD:
+		rc = asprintf(&t, "bird %s%s%s", sp->verb, sp->names.n > 0 ?
+		    " " : "", sp->names.n > 0 ? sp->names.v[0] : "");
+		break;
 	default:
 		rc = asprintf(&t, "pkg upgrade%s%s%s", sp->jail != NULL ?
 		    " in " : "", sp->jail != NULL ? sp->jail : "",
@@ -176,6 +185,9 @@ spec_copy(struct arc_job_spec *d, const struct arc_job_spec *s)
 	d->tunnel_remote = xdup(s->tunnel_remote);
 	d->parent = xdup(s->parent);
 	d->verb = xdup(s->verb);
+	d->peer = xdup(s->peer);
+	d->endpoint = xdup(s->endpoint);
+	d->allowed_ips = xdup(s->allowed_ips);
 	d->variables.v = NULL;
 	d->names.v = NULL;
 	if (s->variables.n > 0) {
@@ -221,6 +233,9 @@ job_free(struct qjob *j)
 	free((char *)(uintptr_t)j->spec.tunnel_remote);
 	free((char *)(uintptr_t)j->spec.parent);
 	free((char *)(uintptr_t)j->spec.verb);
+	free((char *)(uintptr_t)j->spec.peer);
+	free((char *)(uintptr_t)j->spec.endpoint);
+	free((char *)(uintptr_t)j->spec.allowed_ips);
 	free(j->title);
 	free(j->peer);
 	work_free(&j->w);
@@ -524,6 +539,15 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_NETGRAPH:
 		error = NULL;
 		ok = do_ng(&j->w, sp->verb, sp->names.v, sp->names.n,
+		    &error) == 0;
+		break;
+	case ARC_JOB_KIND_WIREGUARD:
+		error = NULL;
+		ok = do_wg(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_BIRD:
+		error = NULL;
+		ok = do_bird_verb(&j->w, sp->verb, sp->names.v, sp->names.n,
 		    &error) == 0;
 		break;
 	case ARC_JOB_KIND_IF_STATE:

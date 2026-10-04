@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.14.1
+  version: 0.15.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -437,9 +437,10 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, connections, sockets, interfaces, netgraph, lookup]
+            enum: [routes, nexthops, connections, sockets, interfaces, netgraph, wireguard, bird, lookup]
           description: netstat -rnW, netstat -onW, netstat -n, sockstat,
-            getifaddrs(3), ngctl list -l; lookup is the route to the
+            getifaddrs(3), ngctl list -l, wg show (public keys only),
+            birdc show status and protocols; lookup is the route to the
             address in `to`, with `best` and `candidates` under `data`.
         - name: to
           in: query

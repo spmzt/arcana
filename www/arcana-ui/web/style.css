@@ -2825,6 +2825,24 @@ svg.bw .out { fill: rgba(var(--amber-rgb), .3); stroke: var(--amber); stroke-wid
 .io-now .out { color: var(--amber); }
 .pane > svg.bw { height: 70px; }
 
+.pane.wg, .pane.bird { margin-bottom: 1rem; }
+.pane.wg h4 small { color: var(--dim); letter-spacing: 0; text-transform: none; }
+.pane h4 .pane-actions { margin: 0; }
+code.key { font-size: .74rem; color: var(--fg); word-break: break-all; }
+table.net tr.up code.key { color: var(--green); }
+table.bird .led {
+	display: inline-block;
+	width: 7px;
+	height: 7px;
+	margin-right: .45rem;
+	border-radius: 50%;
+	background: var(--slate);
+}
+table.bird tr.up .led { background: var(--green); box-shadow: 0 0 5px var(--green); }
+table.bird tr.down .led { background: var(--red); }
+table.bird tr.start .led { background: var(--amber); }
+table.net td small { display: block; color: var(--dim); font-size: .68rem; }
+
 .ngmap { height: auto; margin-bottom: 1rem; }
 .ngmap .map-wrap { min-height: 420px; }
 .tnode.ng .box { stroke: rgba(var(--violet-rgb), .6); }

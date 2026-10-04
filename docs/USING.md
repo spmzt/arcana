@@ -56,6 +56,19 @@ The console is laid out as a tree and tabs.
     join them, from `ngctl list -l`; a node is picked for its hooks,
     which are removed with their cross, shut down, or given a new peer;
     dragging the dot on a node onto another connects a hook of each.
+    **WireGuard** lists the `wg` interfaces with their peers: endpoint,
+    allowed addresses, last handshake, traffic. **Make its key** has
+    the host make the interface's private key, which stays on the host:
+    the console is told, and shows, public keys only, and what `wg`
+    prints with keys in it is kept out of the trace. **+ peer** adds a
+    peer by its public key; the cross removes one. Kept for a boot, an
+    interface is written with its key, addresses and peers to
+    `/usr/local/etc/wireguard/<if>.conf` for `wg-quick`, readable by
+    root alone, and named in `wireguard_interfaces`: that needs the
+    `wireguard-tools` package on the host.
+    **BIRD** shows what `birdc` says of the routing daemon and its
+    protocols, each with **restart**, **reload** and **disable** or
+    **enable**, and **Reconfigure** to read its configuration again.
     Changes to interfaces, routes, a jail's address made here and
     service variables are made in **safe mode** where they can be: once
     the change is made, the host waits a minute to hear from the
@@ -167,8 +180,11 @@ works the links out.
 - A **tunnel is made by drawing it**: drag the dot on a host's edge
   onto another host. The console offers the outer addresses the two
   reach each other by and a free pair of inner ones, asks for the kind
-  (gif, gre, vxlan), and creates an interface on each host, the two
-  ends of one tunnel. Each is made in safe mode, and kept in `rc.conf`
+  (gif, gre, WireGuard, vxlan), and creates an interface on each host,
+  the two ends of one tunnel. For WireGuard each host makes its own key;
+  once both have one, each is given the other as its peer, by its
+  public key, at its outer address. WireGuard peers that are interfaces
+  of two hosts of the console are drawn as a tunnel. Each is made in safe mode, and kept in `rc.conf`
   unless told otherwise. A tunnel picked on the map is destroyed with
   one button, both ends.
 - **Route between hosts** asks each host on the way which route it

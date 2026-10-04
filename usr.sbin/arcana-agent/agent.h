@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.7.1"
+#define	ARCANA_AGENT_VERSION	"0.8.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -36,6 +36,9 @@
 #define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
 #define	PATH_ROUTE_BIN		"/sbin/route"
 #define	PATH_NGCTL_BIN		"/usr/sbin/ngctl"
+#define	PATH_WG_BIN		"/usr/local/bin/wg"
+#define	PATH_WG_DIR		"/usr/local/etc/wireguard"
+#define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
 #define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
 #define	PATH_KEYSCAN_BIN	"/usr/bin/ssh-keyscan"
@@ -66,6 +69,9 @@ struct opts {
 	const char	*ifconfig_bin;
 	const char	*route_bin;
 	const char	*ngctl_bin;
+	const char	*wg_bin;
+	const char	*wg_dir;	/* where wg-quick(8) reads from */
+	const char	*birdc_bin;
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
 	const char	*keyscan_bin;	/* ssh-keyscan(1) */
@@ -152,6 +158,7 @@ struct execres {
 
 int		 run_exec(struct work *, char *const [], struct execres *);
 void		 exec_set_home(struct work *, const char *);
+void		 exec_set_secret(bool);
 int		 run_exec_lines(struct work *, char *const [],
 		    void (*)(const char *, void *), void *);
 int		 run_exec_max(struct work *, char *const [], struct execres *,
@@ -272,6 +279,20 @@ int		 rc_alias(struct work *, const char *, const char *,
 int		 rc_mtu(struct work *, const char *, unsigned int,
 		    const char **);
 void		 rc_forget_if(struct work *, const char *);
+
+/* invidia/wireguard.c */
+int		 do_wireguard(struct work *, struct arc_network_rsp *);
+const char	*wg_check(struct work *, const struct arc_job_spec *);
+int		 do_wg(struct work *, const struct arc_job_spec *,
+		    const char **);
+void		 wg_forget(struct work *, const char *);
+bool		 wg_key_ok(const char *);
+
+/* invidia/bird.c */
+int		 do_bird(struct work *, struct arc_network_rsp *);
+const char	*bird_check(const char *, const char *const *, size_t);
+int		 do_bird_verb(struct work *, const char *, const char *const *,
+		    size_t, const char **);
 
 /* invidia/netgraph.c */
 int		 do_netgraph(struct work *, struct arc_network_rsp *);

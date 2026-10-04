@@ -67,7 +67,26 @@ struct thost {
 	int		 nr;
 	double		 x, y;
 	bool		 placed;
+	ucl_object_t	*wg;		/* its WireGuard interfaces */
+	bool		 wg_loading;
 };
+
+/*
+ * A WireGuard tunnel being made between two hosts: each makes its
+ * interface and its key, and once both public keys are known each is
+ * told of the other as its peer.
+ */
+#define	WG_PAIRS	8
+struct wgpair {
+	bool	active;
+	char	a[9], b[9];		/* the hosts */
+	char	ifa[16], ifb[16];
+	char	enda[96], endb[96];	/* where each is reached */
+	char	ina[64], inb[64];	/* what each may send from */
+	bool	keep;
+	double	since;
+};
+static struct wgpair	wgpairs[WG_PAIRS];
 
 enum { LK_TUNNEL, LK_P2P, LK_LAN };
 
@@ -439,10 +458,118 @@ topo_poll(struct server *s)
 	api("GET", url, NULL, poll_cb, strdup(s->id));
 }
 
+/* The interface of a host with this public key, or NULL. */
+static const char *
+wg_iface(struct thost *t, const char *key, const char *ifname)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (t != NULL && (o = ucl_object_iterate(jget(t->wg, "interfaces"),
+	    &it, true)) != NULL) {
+		if (jstr(o, "name") == NULL || jstr(o, "public-key") == NULL)
+			continue;
+		if (key != NULL && strcmp(jstr(o, "public-key"), key) == 0)
+			return (jstr(o, "name"));
+		if (ifname != NULL && strcmp(jstr(o, "name"), ifname) == 0)
+			return (jstr(o, "public-key"));
+	}
+	return (NULL);
+}
+
+/* Tunnels waiting for their keys: those that have both get their peers. */
+static void
+wg_pairs_step(void)
+{
+	struct wgpair	*p;
+	const char	*ka, *kb;
+	char		*json, title[160];
+	int		 i, a, b;
+
+	for (i = 0; i < WG_PAIRS; i++) {
+		p = &wgpairs[i];
+		if (!p->active)
+			continue;
+		if ((a = server_index(p->a)) == -1 || (b = server_index(
+		    p->b)) == -1 || arc_now() - p->since > 300000) {
+			p->active = false;
+			continue;
+		}
+		ka = wg_iface(thost(p->a, false), NULL, p->ifa);
+		kb = wg_iface(thost(p->b, false), NULL, p->ifb);
+		if (ka == NULL || kb == NULL)
+			continue;
+		p->active = false;
+		/* Keys are base64 and the rest was checked: as they are. */
+		if (asprintf(&json, "{\"kind\":\"wireguard\",\"interface\":"
+		    "\"%s\",\"verb\":\"peer\",\"peer\":\"%s\",\"endpoint\":"
+		    "\"%s\",\"allowed_ips\":\"%s\",\"persist\":%s}", p->ifa, kb,
+		    p->endb, p->inb, p->keep ? "true" : "false") == -1)
+			abort();
+		snprintf(title, sizeof(title), "%s: wireguard peer", p->ifa);
+		job_send(&app.servers[a], json, title, JOB_IFACE, p->ifa);
+		if (asprintf(&json, "{\"kind\":\"wireguard\",\"interface\":"
+		    "\"%s\",\"verb\":\"peer\",\"peer\":\"%s\",\"endpoint\":"
+		    "\"%s\",\"allowed_ips\":\"%s\",\"persist\":%s}", p->ifb, ka,
+		    p->enda, p->ina, p->keep ? "true" : "false") == -1)
+			abort();
+		snprintf(title, sizeof(title), "%s: wireguard peer", p->ifb);
+		job_send(&app.servers[b], json, title, JOB_IFACE, p->ifb);
+	}
+}
+
+static bool
+wg_pending(void)
+{
+	int	i;
+
+	for (i = 0; i < WG_PAIRS; i++)
+		if (wgpairs[i].active)
+			return (true);
+	return (false);
+}
+
+static void
+wg_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct thost	*t;
+	char		*sid;
+
+	(void)err;
+	sid = arg;
+	t = thost(sid, false);
+	free(sid);
+	if (t == NULL)
+		return;
+	t->wg_loading = false;
+	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL)
+		return;
+	if (t->wg != NULL)
+		ucl_object_unref(t->wg);
+	t->wg = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	wg_pairs_step();
+}
+
+/* Read a host's WireGuard interfaces, quietly, for the map's links. */
+static void
+wg_poll(struct server *s)
+{
+	struct thost	*t;
+	char		 url[96];
+
+	if (!app.online || (t = thost(s->id, true)) == NULL || t->wg_loading)
+		return;
+	t->wg_loading = true;
+	snprintf(url, sizeof(url), "/api/servers/%s/net/wireguard", s->id);
+	api("GET", url, NULL, wg_cb, strdup(s->id));
+}
+
 /* From the tick: the map watches every host, a host's tab its own. */
 void
 topo_tick(double now)
 {
+	static int	 wg_turn = -1;
 	struct server	*s;
 	int		 i;
 
@@ -450,8 +577,14 @@ topo_tick(double now)
 		return;
 	if (app.node == NODE_NETWORK) {
 		tp.last_poll = now;
-		for (i = 0; i < app.nservers; i++)
+		/* WireGuard changes seldom: read less often, unless a
+		 * tunnel waits for its keys. */
+		wg_turn = wg_pending() ? 0 : (wg_turn + 1) % 6;
+		for (i = 0; i < app.nservers; i++) {
 			topo_poll(&app.servers[i]);
+			if (wg_turn == 0)
+				wg_poll(&app.servers[i]);
+		}
 		render();
 	} else if (app.node == NODE_HOST && app.tab == TAB_NETWORK &&
 	    app.net.kind == NET_INTERFACES && (s = cur_server()) != NULL) {
@@ -593,6 +726,42 @@ links_build(void)
 					    sizeof(sg->ifn[0]), "%s", jstr(o,
 					    "name"));
 					sg->n++;
+				}
+			}
+		}
+	}
+	/* A WireGuard peer whose key is an interface's of another host. */
+	for (i = 0; i < nhosts; i++) {
+		const ucl_object_t	*p;
+		const char		*other;
+
+		t = &hosts[i];
+		if (t->wg == NULL || (s = server_index(t->sid)) == -1)
+			continue;
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(t->wg, "interfaces"), &it,
+		    true)) != NULL) {
+			if (jstr(o, "public-key") == NULL)
+				continue;
+			ait = NULL;
+			while ((p = ucl_object_iterate(jget(o, "peers"), &ait,
+			    true)) != NULL) {
+				for (k = 0; k < nhosts; k++) {
+					if (k == i || (peer = server_index(
+					    hosts[k].sid)) == -1 || (other =
+					    wg_iface(&hosts[k], jstr(p,
+					    "public-key"), NULL)) == NULL)
+						continue;
+					if ((l = link_add(s, peer, LK_TUNNEL,
+					    jstr(o, "name"), other, jstr(o,
+					    "public-key"), jstr(p,
+					    "public-key"))) != NULL) {
+						l->up = true;
+						snprintf(l->label,
+						    sizeof(l->label),
+						    "WireGuard %s ⇄ %s", jstr(o,
+						    "name"), other);
+					}
 				}
 			}
 		}
@@ -1810,9 +1979,13 @@ topo_modal(struct html *h)
 		h_raw(h, "</h2><p>An interface is created on each host, the "
 		    "two ends of one tunnel, with <code>ifconfig</code>. Each "
 		    "is made in safe mode: a host that cannot be reached "
-		    "again afterwards destroys its end by itself.</p>"
+		    "again afterwards destroys its end by itself. For "
+		    "WireGuard each host makes its own key and keeps it; the "
+		    "two are told of each other by their public keys once "
+		    "both have one.</p>"
 		    "<label>Kind<select name=\"type\"><option value=\"gif\">"
 		    "gif: IP in IP</option><option value=\"gre\">gre</option>"
+		    "<option value=\"wg\">wg: WireGuard, encrypted</option>"
 		    "<option value=\"vxlan\">vxlan: Ethernet over UDP</option>"
 		    "</select></label><div class=\"two\"><label>Outer address "
 		    "of ");
@@ -1974,6 +2147,80 @@ number(const ucl_object_t *f, const char *name, const char *key)
 	return (out);
 }
 
+/*
+ * A WireGuard tunnel: each host makes its interface with its inner
+ * address, then its key; the peers follow once both keys are known,
+ * which only the hosts can say.
+ */
+static void
+wg_create(const ucl_object_t *f, struct server *sa, struct server *sb,
+    const char *na, const char *nb, const char *la, const char *lb,
+    const char *ia, const char *ib, bool outer6, bool keep)
+{
+	struct wgpair	*p;
+	unsigned char	 raw[16];
+	char		 title[160], *json, *qa, *mtu;
+	int		 i, pa, pb, af, end;
+
+	if (ia[0] == '\0') {
+		snprintf(app.modal_error, sizeof(app.modal_error), "A "
+		    "WireGuard tunnel needs its inner addresses: they are "
+		    "what each end may send from");
+		return;
+	}
+	for (i = 0; i < WG_PAIRS && wgpairs[i].active; i++)
+		;
+	if (i == WG_PAIRS) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "Too many "
+		    "tunnels are being made: let them finish");
+		return;
+	}
+	p = &wgpairs[i];
+	memset(p, 0, sizeof(*p));
+	pa = 51820 + atoi(na + 2);
+	pb = 51820 + atoi(nb + 2);
+	snprintf(p->a, sizeof(p->a), "%s", sa->id);
+	snprintf(p->b, sizeof(p->b), "%s", sb->id);
+	snprintf(p->ifa, sizeof(p->ifa), "%s", na);
+	snprintf(p->ifb, sizeof(p->ifb), "%s", nb);
+	snprintf(p->enda, sizeof(p->enda), outer6 ? "[%s]:%d" : "%s:%d", la, pa);
+	snprintf(p->endb, sizeof(p->endb), outer6 ? "[%s]:%d" : "%s:%d", lb, pb);
+	/* What an end may send from: its inner address, and that alone. */
+	(void)addr_bytes(ia, &af, raw);
+	snprintf(p->ina, sizeof(p->ina), "%.*s/%d", (int)strcspn(ia, "/"), ia,
+	    af == AF_INET ? 32 : 128);
+	snprintf(p->inb, sizeof(p->inb), "%.*s/%d", (int)strcspn(ib, "/"), ib,
+	    af == AF_INET ? 32 : 128);
+	p->keep = keep;
+	p->since = arc_now();
+	mtu = number(f, "mtu", "mtu");
+	for (end = 0; end < 2; end++) {
+		struct server	*s = end == 0 ? sa : sb;
+		const char	*name = end == 0 ? na : nb;
+
+		qa = json_quote(end == 0 ? ia : ib);
+		if (asprintf(&json, "{\"kind\":\"if-create\",\"interface\":"
+		    "\"%s\",\"address\":%s%s,\"description\":\"arcana tunnel\","
+		    "\"safe\":true}", name, qa, mtu) == -1)
+			abort();
+		free(qa);
+		snprintf(title, sizeof(title), "create %s to %s", name,
+		    end == 0 ? sb->name : sa->name);
+		job_send(s, json, title, JOB_IFACE, name);
+		if (asprintf(&json, "{\"kind\":\"wireguard\",\"interface\":"
+		    "\"%s\",\"verb\":\"init\",\"listen_port\":%d,\"persist\":"
+		    "%s}", name, end == 0 ? pa : pb, keep ? "true" : "false") ==
+		    -1)
+			abort();
+		snprintf(title, sizeof(title), "%s: wireguard init", name);
+		job_send(s, json, title, JOB_IFACE, name);
+	}
+	free(mtu);
+	p->active = true;
+	app.modal = MODAL_NONE;
+	tp.last_poll = 0;
+}
+
 /* The two ends of a tunnel, as the form describes it: a job each. */
 static void
 tunnel_create(const ucl_object_t *f)
@@ -1994,7 +2241,7 @@ tunnel_create(const ucl_object_t *f)
 	sb = &app.servers[b];
 	type = jstr(f, "type") != NULL ? jstr(f, "type") : "gif";
 	if (strcmp(type, "gif") != 0 && strcmp(type, "gre") != 0 &&
-	    strcmp(type, "vxlan") != 0)
+	    strcmp(type, "vxlan") != 0 && strcmp(type, "wg") != 0)
 		type = "gif";
 	vx = strcmp(type, "vxlan") == 0;
 	la = jstr(f, "local_a") != NULL ? jstr(f, "local_a") : "";
@@ -2024,6 +2271,11 @@ tunnel_create(const ucl_object_t *f)
 	    type));
 	snprintf(nb, sizeof(nb), "%s%d", type, next_unit(thost(sb->id, false),
 	    type));
+	if (strcmp(type, "wg") == 0) {
+		wg_create(f, sa, sb, na, nb, la, lb, ia, ib, fa == AF_INET6,
+		    keep);
+		return;
+	}
 	/* The far end's inner address, without its prefix length: what a
 	 * point-to-point address names its peer by. */
 	snprintf(pa, sizeof(pa), "%.*s", (int)strcspn(ia, "/"), ia);
@@ -2250,8 +2502,10 @@ topo_open(void)
 	app.rail_open = false;
 	places_fill();
 	tp.last_poll = arc_now();
-	for (i = 0; i < app.nservers; i++)
+	for (i = 0; i < app.nservers; i++) {
 		topo_poll(&app.servers[i]);
+		wg_poll(&app.servers[i]);
+	}
 }
 
 /* What the map's buttons, drags and fields do; true when act is one. */

@@ -77,6 +77,19 @@ run_exec(struct work *w, char *const argv[], struct execres *res)
  */
 static _Thread_local char	*exec_home;
 
+/*
+ * What the programs this thread runs print is kept out of the trace,
+ * while this is set: it has keys in it, and a trace is read far away.
+ */
+static _Thread_local bool	exec_secret;
+
+void
+exec_set_secret(bool on)
+{
+
+	exec_secret = on;
+}
+
 void
 exec_set_home(struct work *w, const char *dir)
 {
@@ -213,8 +226,12 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	res->truncated = out.truncated;
 	free(out.buf);
 	free(eout.buf);
-	step_exec(w, step, argv, rc, res->out, MIN(res->outlen,
-	    (size_t)ARC_MAX_OUTPUT), res->err, res->errlen);
+	if (exec_secret)
+		step_exec(w, step, argv, rc, "(not kept: it has keys in it)\n",
+		    30, res->err, res->errlen);
+	else
+		step_exec(w, step, argv, rc, res->out, MIN(res->outlen,
+		    (size_t)ARC_MAX_OUTPUT), res->err, res->errlen);
 	step_end(w, step, rc == 0, "exit status %d%s", rc,
 	    out.truncated || eout.truncated ? ", output truncated" : "");
 	return (rc);

@@ -123,6 +123,8 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_SOCKETS] = "sockets",
 	[ARC_NET_KIND_INTERFACES] = "interfaces",
 	[ARC_NET_KIND_NETGRAPH] = "netgraph",
+	[ARC_NET_KIND_WIREGUARD] = "wireguard",
+	[ARC_NET_KIND_BIRD] = "bird",
 };
 
 static const char *service_action_names[] = {
@@ -1652,7 +1654,7 @@ api_network(struct http_request *req)
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "kind is one of "
 		    "routes, nexthops, connections, sockets, interfaces, "
-		    "netgraph, lookup; fib a number"));
+		    "netgraph, wireguard, bird, lookup; fib a number"));
 	}
 	c->action = (uint8_t)i;
 	c->family = ARC_NET_FAMILY_ALL;
@@ -1811,6 +1813,8 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_IF_CREATE] = "if-create",
 	[ARC_JOB_KIND_IF_DESTROY] = "if-destroy",
 	[ARC_JOB_KIND_NETGRAPH] = "netgraph",
+	[ARC_JOB_KIND_WIREGUARD] = "wireguard",
+	[ARC_JOB_KIND_BIRD] = "bird",
 };
 
 static const char *job_state_names[] = {
@@ -1864,6 +1868,9 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->tunnel_remote);
 	kore_free((char *)(uintptr_t)sp->parent);
 	kore_free((char *)(uintptr_t)sp->verb);
+	kore_free((char *)(uintptr_t)sp->peer);
+	kore_free((char *)(uintptr_t)sp->endpoint);
+	kore_free((char *)(uintptr_t)sp->allowed_ips);
 	kore_free((char *)(uintptr_t)sp->description);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
@@ -1920,6 +1927,21 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->tunnel_remote = jdup(o, "tunnel_remote");
 	sp->parent = jdup(o, "parent");
 	sp->verb = jdup(o, "verb");
+	sp->peer = jdup(o, "peer");
+	sp->endpoint = jdup(o, "endpoint");
+	/* Empty allowed-ips says a peer may send from nowhere: it is kept. */
+	if ((kind = ucl_str(o, "allowed_ips")) != NULL)
+		sp->allowed_ips = kore_strdup(kind);
+	if ((v = ucl_object_lookup(o, "keepalive")) != NULL &&
+	    ucl_object_toint(v) >= 0 && ucl_object_toint(v) <= 65535) {
+		sp->has_keepalive = true;
+		sp->keepalive = (uint32_t)ucl_object_toint(v);
+	}
+	if ((v = ucl_object_lookup(o, "listen_port")) != NULL &&
+	    ucl_object_toint(v) > 0 && ucl_object_toint(v) <= 65535) {
+		sp->has_listen_port = true;
+		sp->listen_port = (uint32_t)ucl_object_toint(v);
+	}
 	/* A description may be empty: that takes it off. */
 	if ((kind = ucl_str(o, "description")) != NULL)
 		sp->description = kore_strdup(kind);
@@ -1985,11 +2007,18 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		if (sp->interface == NULL)
 			return ("the job needs an interface");
 		break;
+	case ARC_JOB_KIND_WIREGUARD:
+		if (sp->interface == NULL || sp->verb == NULL)
+			return ("a wireguard job needs an interface and a verb");
+		break;
 	case ARC_JOB_KIND_NETGRAPH:
+	case ARC_JOB_KIND_BIRD:
 		names = ucl_object_lookup(o, "args");
-		if (sp->verb == NULL || (n = ucl_array_size(names)) == 0 ||
-		    n > 4)
-			return ("a netgraph job needs a verb and its args");
+		if (sp->verb == NULL || (n = ucl_array_size(names)) > 4 ||
+		    (n == 0 && sp->kind == ARC_JOB_KIND_NETGRAPH))
+			return ("the job needs a verb and its args");
+		if (n == 0)
+			break;
 		nv = kore_calloc(n, sizeof(*nv));
 		sp->names.v = nv;
 		it = NULL;

@@ -32,6 +32,9 @@
 .Op Fl I Ar ifconfig
 .Op Fl r Ar route
 .Op Fl n Ar ngctl
+.Op Fl k Ar wg
+.Op Fl o Ar directory
+.Op Fl b Ar birdc
 .Op Fl w Ar seconds
 .Op Fl N Ar netstat
 .Op Fl X Ar sockstat
@@ -228,13 +231,20 @@ Print the version and exit.
 .It Fl w Ar seconds
 How long a change made in safe mode waits to be confirmed.
 Default 60.
-.It Fl I Ar ifconfig , Fl r Ar route , Fl n Ar ngctl
+.It Fl I Ar ifconfig , Fl r Ar route , Fl n Ar ngctl , Fl k Ar wg , Fl b Ar birdc
 The
 .Xr ifconfig 8 ,
-.Xr route 8
+.Xr route 8 ,
+.Xr ngctl 8 ,
+.Xr wg 8
 and
-.Xr ngctl 8
+.Xr birdc 8
 programs.
+.It Fl o Ar directory
+Where WireGuard interfaces are written for
+.Xr wg-quick 8 .
+Default
+.Pa /usr/local/etc/wireguard .
 .It Fl N Ar netstat , Fl X Ar sockstat
 The
 .Xr netstat 1

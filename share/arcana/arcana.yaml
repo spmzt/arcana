@@ -70,6 +70,21 @@ definitions:
           Change the netgraph(4) graph with ngctl(8).  verb is one of
           mkpeer, connect, rmhook, shutdown and name, and names its
           arguments in order.
+      - name: wireguard
+        doc: |
+          Set up a WireGuard interface with wg(8).  verb init gives the
+          interface a private key made on the host, when it has none,
+          and with listen-port the port it listens on; peer adds or
+          changes the peer whose public key is peer, with its endpoint,
+          allowed-ips and keepalive; unpeer removes it.  A private key
+          never leaves the host.  With persist the interface, as it is
+          then, is written for wg-quick(8) to bring up at boot.
+      - name: bird
+        doc: |
+          Tell the BIRD routing daemon through birdc(8).  verb is one
+          of enable, disable, restart and reload, with the protocol as
+          the one name, or configure, which reads its configuration
+          again.
   - name: job-state
     type: enum
     entries:
@@ -107,6 +122,15 @@ definitions:
         doc: |
           The netgraph(4) nodes with their hooks, from ngctl(8) list -l,
           as a JSON object with the array "nodes".
+      - name: wireguard
+        doc: |
+          The WireGuard interfaces with their peers, from wg(8) show,
+          as a JSON object with the array "interfaces".  Public keys
+          only; of a private or a preshared key, that there is one.
+      - name: bird
+        doc: |
+          What birdc(8) tells of the BIRD routing daemon, as a JSON
+          object with "status", its lines, and the array "protocols".
   - name: net-family
     type: enum
     entries:
@@ -658,9 +682,30 @@ attribute-sets:
           max-len: 15
       - name: verb
         type: text
-        doc: For netgraph, the ngctl(8) command.
+        doc: For netgraph, wireguard and bird, what to do.
         checks:
           max-len: 16
+      - name: peer
+        type: text
+        doc: For wireguard, a peer's public key.
+        checks:
+          max-len: 44
+      - name: endpoint
+        type: text
+        doc: For wireguard, where a peer is reached, as address and port.
+        checks:
+          max-len: 128
+      - name: allowed-ips
+        type: text
+        doc: For wireguard, the networks a peer may send from, with commas.
+        checks:
+          max-len: 1024
+      - name: keepalive
+        type: u32
+        doc: For wireguard, seconds between keepalives to a peer; 0 for none.
+      - name: listen-port
+        type: u32
+        doc: For wireguard, the port the interface listens on.
 
   - name: job
     attributes:

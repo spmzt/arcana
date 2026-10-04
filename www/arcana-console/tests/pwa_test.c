@@ -903,6 +903,65 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.dock > header').click()");
 
 	/*
+	 * WireGuard, in a host's network tab: an interface without a key
+	 * is given one, made on the host, and then a peer.  And BIRD: its
+	 * protocols, one of them reloaded.
+	 */
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=wireguard]')", 10);
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=wireguard]').click()");
+	wait_js("document.querySelector('.pane.wg button[data-act=wg-init]')",
+	    20);
+	ATF_CHECK(js_true("document.querySelector('.pane.wg').textContent."
+	    "includes('no key yet')"));
+	run("document.querySelector('.pane.wg button[data-act=wg-init]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=wg-init]')", 5);
+	run("const f = document.querySelector('form[data-form=wg-init]'); "
+	    "f.port.value = '51820'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('.pane.wg code.key') && document."
+	    "querySelector('.pane.wg code.key').textContent.startsWith('HIgo')",
+	    20);
+	run("document.querySelector('.pane.wg button[data-act=wg-peer-add]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=wg-peer]')", 5);
+	run("const f = document.querySelector('form[data-form=wg-peer]'); "
+	    "f.peer.value = 'xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg='; "
+	    "f.endpoint.value = '192.0.2.9:51820'; f.allowed.value = "
+	    "'10.9.9.2/32, fd00::2/128'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('.pane.wg button[data-act=wg-unpeer]')",
+	    20);
+	ATF_CHECK(system("grep -q '^set wg0 peer xTIBA5rboUvnH4htodjb6e697QjLER"
+	    "t1NAB4mZqp8Dg= endpoint 192.0.2.9:51820 allowed-ips 10.9.9.2/32,"
+	    "fd00::2/128$' wg.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("7c-wireguard");
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=bird]').click()");
+	wait_js("document.querySelectorAll('table.bird tbody tr').length === 2",
+	    20);
+	ATF_CHECK(js_true("document.querySelector('.pane.bird').textContent."
+	    "includes('Router ID is 192.0.2.1')"));
+	run("[...document.querySelectorAll('table.bird button[data-act="
+	    "bird-verb][data-arg=reload]')].find(b => b.dataset.value === "
+	    "'bgp_core').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('bird reload bgp_core: done'))", 20);
+	ATF_CHECK(system("grep -q '^reload bgp_core$' birdc.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("7d-bird");
+
+	/*
 	 * The network: every host a node of a map, joined to the others
 	 * as its interfaces join it.  Both agents here read the same
 	 * machine, so they share its networks.
@@ -976,6 +1035,40 @@ ATF_TC_BODY(pwa, tc)
 	    "ifconfig.log && grep -q '^gif0 inet 10.255.0.2/30 10.255.0.1$' "
 	    "ifconfig.log && test \"$(grep -c '^gif0 tunnel ' ifconfig.log)\" "
 	    "= 2") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * The same, as WireGuard: each host makes its interface and its
+	 * key, and when both public keys are known each is given the
+	 * other as its peer, by that key, at its outer address.
+	 */
+	run("const ns = document.querySelectorAll('svg.topo .tnode'), p = "
+	    "ns[0].querySelector('.port'), b = ns[1].querySelector('.box')."
+	    "getBoundingClientRect(); window.bx = b.x + b.width / 2; "
+	    "window.by = b.y + b.height / 2; ptr(p, 'pointerdown'); "
+	    "ptr(p, 'pointermove', window.bx, window.by);");
+	wait_js("document.querySelector('svg.topo .tdraft')", 5);
+	run("ptr(document.body, 'pointerup', window.bx, window.by);");
+	wait_js("document.querySelector('form[data-form=tunnel]')", 5);
+	run("const f = document.querySelector('form[data-form=tunnel]'); "
+	    "f.type.value = 'wg'; f.inner_a.value = '10.254.0.1/30'; "
+	    "f.inner_b.value = '10.254.0.2/30'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	/* The peers are queued once the keys are read: run them too. */
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('Queued: wg0: wireguard peer'))", 40);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (int k = 0; k < 150 && system("grep -q 'allowed-ips 10.254.0.2/32$'"
+	    " wg.log 2>/dev/null && grep -q 'allowed-ips 10.254.0.1/32$' "
+	    "wg.log") != 0; k++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^wg0 create$' ifconfig.log && grep -q "
+	    "'^wg0 inet 10.254.0.1/30$' ifconfig.log && grep -Eq '^set wg0 "
+	    "peer HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw= endpoint "
+	    "[^ ]+:51820 allowed-ips 10.254.0.2/32$' wg.log && grep -q "
+	    "'allowed-ips 10.254.0.1/32$' wg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
 	/* The route from a host to an address: asked of the host, drawn

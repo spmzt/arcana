@@ -210,7 +210,7 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_IFACE:
 		/* The interfaces as they are now, if they are on show. */
 		if ((app.net.kind == NET_INTERFACES || app.net.kind ==
-		    NET_ROUTES || app.net.kind == NET_NETGRAPH) &&
+		    NET_ROUTES || app.net.kind >= NET_NETGRAPH) &&
 		    strcmp(app.net.sid, s->id) == 0 && app.node == NODE_HOST)
 			refresh_network(s, false);
 		/* And for the map, which draws its links from them. */
@@ -1184,7 +1184,7 @@ void
 refresh_network(struct server *s, bool user)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets", "interfaces", "netgraph" };
+	    "sockets", "interfaces", "netgraph", "wireguard", "bird" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[320], title[160], fib[24];

@@ -239,7 +239,8 @@ start_daemon()
 	    -U "$(pwd)/installed-agent" -B "$(pwd)/build" \
 	    -c "$(pwd)/build.mk" -G "$(pwd)/fake-git" -M "$(pwd)/fake-make" \
 	    -Y "$(pwd)/fake-keyscan" -I "$(pwd)/fake-ifconfig" \
-	    -r "$(pwd)/fake-route" -n "$(pwd)/fake-ngctl" -w 2 \
+	    -r "$(pwd)/fake-route" -n "$(pwd)/fake-ngctl" \
+	    -k "$(pwd)/fake-wg" -o "$(pwd)/wg" -b "$(pwd)/fake-birdc" -w 2 \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -1034,6 +1035,155 @@ network_more_cleanup()
 	stop_daemon
 }
 
+atf_test_case vpn cleanup
+vpn_head()
+{
+	atf_set "descr" "WireGuard interfaces and their peers, with keys that stay on the host; BIRD through birdc"
+}
+vpn_body()
+{
+	PEER='xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg='
+	PUB='HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw='
+	mkdir wg
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	cat > fake-wg <<EOS
+#!/bin/sh
+d=$(pwd)
+echo "\$*" >> \$d/wg.log
+key="(none)"; pub="(none)"
+[ -f \$d/wg.key ] && { key=\$(cat \$d/wg.key); pub=$PUB; }
+case "\$1 \$2 \$3" in
+"show all dump")
+	printf 'wg0\t%s\t%s\t51820\toff\n' "\$key" "\$pub"
+	printf 'wg0\t%s\t(none)\t192.0.2.9:51820\t10.9.9.2/32,fd00::2/128\t1700000000\t1024\t2048\t25\n' $PEER
+	printf 'wg1\t(none)\t(none)\t0\toff\n' ;;
+"show wg0 private-key") echo "\$key" ;;
+"showconf wg0 ")
+	printf '[Interface]\nListenPort = 51820\nPrivateKey = %s\n\n[Peer]\nPublicKey = %s\nAllowedIPs = 10.9.9.2/32\n' "\$key" $PEER ;;
+"set wg0 private-key") cp "\$4" \$d/wg.key; ls -la "\$4" | cut -c1-10 > \$d/wg.keymode ;;
+"set wg9 "*) echo "Unable to modify interface: No such device" >&2; exit 1 ;;
+esac
+exit 0
+EOS
+	cat > fake-birdc <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/birdc.log
+[ "\$1" = -r ] && shift
+case "\$*" in
+"show status") printf 'BIRD 2.15.1 ready.\nBIRD 2.15.1\nRouter ID is 192.0.2.1\nHostname is lab\nDaemon is up and running\n' ;;
+"show protocols") printf 'BIRD 2.15.1 ready.\nName       Proto      Table      State  Since         Info\ndevice1    Device     ---        up     2026-10-01    \nkernel1    Kernel     master4    up     2026-10-01    \nbgp_core   BGP        ---        up     12:01:02.345  Established   \nbgp_edge   BGP        ---        start  12:01:02.345  Active        Socket: Connection refused\n' ;;
+"restart nope") printf 'BIRD 2.15.1 ready.\nNo protocols match\n' ;;
+restart*|reload*|enable*|disable*) printf 'BIRD 2.15.1 ready.\n%s: done\n' "\$2" ;;
+configure) printf 'BIRD 2.15.1 ready.\nReading configuration from /usr/local/etc/bird.conf\nReconfigured\n' ;;
+esac
+exit 0
+EOS
+	chmod +x fake-ifconfig fake-wg fake-birdc
+	start_daemon
+
+	# An interface without a key, and one to be given one: made on
+	# the host, read by wg(8) from a file that is gone afterwards.
+	atf_check -o match:'"name":"wg0","private-key":false,"listen-port":51820' \
+	    -o match:'"name":"wg1"' -o not-match:'none' \
+	    "$JGC" -c "$SOCK" net wireguard
+	atf_check -o match:'wg0: wireguard init' -o match:'made on this host' \
+	    -o match:'fake-wg set wg0 listen-port 51820' \
+	    "$JGC" -c "$SOCK" wg wg0 init 51820
+	atf_check -o match:'^set wg0 private-key .*/wg/\.wg0\.key\.' cat wg.log
+	atf_check -o match:'^-rw-------$' cat wg.keymode
+	atf_check -o match:'^[A-Za-z0-9+/]{43}=$' cat wg.key
+	atf_check -o empty find wg -type f
+	KEY=$(cat wg.key)
+	# One it has is kept: its peers know it by that one.
+	atf_check -o ignore "$JGC" -c "$SOCK" wg wg0 init
+	atf_check -o inline:"$KEY\n" cat wg.key
+
+	# What is told of it: the public key, and of the private one only
+	# that there is one.  Not in the reading, not in its trace, not in
+	# a job's.
+	atf_check -o save:wg.out "$JGC" -t -c "$SOCK" net wireguard
+	atf_check -o match:"\"name\":\"wg0\",\"private-key\":true,\"public-key\":\"$PUB\"" \
+	    -o match:"\"public-key\":\"$PEER\",\"preshared-key\":false,\"endpoint\":\"192.0.2.9:51820\",\"allowed-ips\":\[\"10.9.9.2/32\",\"fd00::2/128\"\],\"latest-handshake\":1700000000,\"rx\":1024,\"tx\":2048,\"keepalive\":25" \
+	    -o match:'not kept: it has keys in it' cat wg.out
+	atf_check -s exit:1 grep -qF "$KEY" wg.out
+
+	# A peer, as wg(8) takes it; and gone again.
+	atf_check -o match:"fake-wg set wg0 peer $PEER endpoint 192.0.2.9:51820 allowed-ips 10.9.9.2/32,fd00::2/128 persistent-keepalive 25" \
+	    "$JGC" -c "$SOCK" wg wg0 peer "$PEER" endpoint 192.0.2.9:51820 \
+	    allowed-ips 10.9.9.2/32,fd00::2/128 keepalive 25
+	atf_check -o match:"fake-wg set wg0 peer $PEER endpoint \[2001:db8::9\]:51820" \
+	    "$JGC" -c "$SOCK" wg wg0 peer "$PEER" endpoint '[2001:db8::9]:51820'
+	atf_check -o match:"fake-wg set wg0 peer $PEER remove" \
+	    "$JGC" -c "$SOCK" wg wg0 unpeer "$PEER"
+	atf_check -s exit:1 -o match:'No such device' \
+	    "$JGC" -c "$SOCK" wg wg9 unpeer "$PEER"
+	: > wg.log
+	atf_check -s exit:1 -e match:'44 characters of base64' -o ignore \
+	    "$JGC" -c "$SOCK" wg wg0 peer 'not-a-key'
+	atf_check -s exit:1 -e match:'an address or a name, and a port' -o ignore \
+	    "$JGC" -c "$SOCK" wg wg0 peer "$PEER" endpoint '192.0.2.9 51820'
+	atf_check -s exit:1 -e match:'an address or a name, and a port' -o ignore \
+	    "$JGC" -c "$SOCK" wg wg0 peer "$PEER" endpoint '-x:1'
+	atf_check -s exit:1 -e match:'with their prefix lengths' -o ignore \
+	    "$JGC" -c "$SOCK" wg wg0 peer "$PEER" allowed-ips '10.0.0.0/40'
+	atf_check -s exit:1 -e match:'the interface is wg and its number' -o ignore \
+	    "$JGC" -c "$SOCK" wg em0 init
+	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
+	    "$JGC" -s -c "$SOCK" wg wg0 init
+	atf_check -o empty cat wg.log
+
+	# Kept for a boot: written as wg-quick(8) reads it, for nobody
+	# else to read, and rc.conf told to bring it up.
+	printf 'cloned_interfaces="wg0 gif1"\nifconfig_wg0="up"\n' >> rc.conf
+	atf_check -o save:keep.out "$JGC" -p -t -c "$SOCK" wg wg0 peer "$PEER" \
+	    allowed-ips 10.9.9.2/32
+	atf_check -s exit:1 grep -qF "$KEY" keep.out
+	atf_check -o match:'^\[Interface\]$' cat wg/wg0.conf
+	atf_check grep -qxF "PrivateKey = $KEY" wg/wg0.conf
+	atf_check grep -qxF "PublicKey = $PEER" wg/wg0.conf
+	atf_check -o match:'^-rw-------' ls -l wg/wg0.conf
+	atf_check -o match:'^wireguard_interfaces="wg0"$' \
+	    -o match:'^wireguard_enable="YES"$' \
+	    -o match:'^cloned_interfaces="gif1"$' -o not-match:'ifconfig_wg0' \
+	    cat rc.conf
+	# Destroyed and forgotten: the file goes with it.
+	atf_check -o match:'fake-ifconfig wg0 destroy' \
+	    "$JGC" -p -c "$SOCK" interface wg0 destroy
+	atf_check test ! -e wg/wg0.conf
+	atf_check -o not-match:'wg0' cat rc.conf
+
+	# BIRD: what it says of itself and of its protocols, asked for
+	# without the right to change anything.
+	atf_check -o match:'"status":\["BIRD 2.15.1","Router ID is 192.0.2.1","Hostname is lab","Daemon is up and running"\]' \
+	    -o match:'"name":"device1","proto":"Device","table":"---","state":"up","since":"2026-10-01","info":""' \
+	    -o match:'"name":"bgp_core","proto":"BGP","table":"---","state":"up","since":"12:01:02.345","info":"Established"' \
+	    -o match:'"name":"bgp_edge".*"state":"start".*"info":"Active        Socket: Connection refused"' \
+	    "$JGC" -c "$SOCK" net bird
+	atf_check -o match:'^-r show status$' -o match:'^-r show protocols$' \
+	    cat birdc.log
+	atf_check -o match:'bird restart bgp_core' \
+	    -o match:'fake-birdc restart bgp_core' \
+	    "$JGC" -c "$SOCK" bird restart bgp_core
+	atf_check -o match:'fake-birdc reload all' \
+	    "$JGC" -c "$SOCK" bird reload all
+	atf_check -o match:'fake-birdc disable bgp_edge' \
+	    "$JGC" -c "$SOCK" bird disable bgp_edge
+	atf_check -o match:'fake-birdc configure' -o match:'Reconfigured' \
+	    "$JGC" -c "$SOCK" bird configure
+	# birdc ends well whatever was answered: what it said counts.
+	atf_check -s exit:1 -o match:'No protocols match' \
+	    "$JGC" -c "$SOCK" bird restart nope
+	atf_check -s exit:1 -e match:'letters, digits and _' -o ignore \
+	    "$JGC" -c "$SOCK" bird restart 'bgp1;down'
+	atf_check -s exit:1 -e match:'enable, disable, restart, reload or configure' -o ignore \
+	    "$JGC" -c "$SOCK" bird down now
+	atf_check -o not-match:'down' cat birdc.log
+}
+vpn_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case safe_mode cleanup
 safe_mode_head()
 {
@@ -1493,6 +1643,7 @@ atf_init_test_cases()
 {
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
+	atf_add_test_case vpn
 	atf_add_test_case safe_mode
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart

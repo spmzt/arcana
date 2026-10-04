@@ -300,7 +300,7 @@ close_modal(void)
 static void
 submit(const char *form, const ucl_object_t *f)
 {
-	if (topo_form(form, f))
+	if (topo_form(form, f) || vpn_form(form, f))
 		return;
 	submit_form(form, f);
 }
@@ -470,7 +470,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	int			 i;
 
 	s = cur_server();
-	if (topo_action(act, arg, value) || ng_action(act, arg, value))
+	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
+	    vpn_action(act, arg, value))
 		return;
 	if (strcmp(act, "fold") == 0) {
 		arc_open_set(arg, !arc_open_get(arg));
@@ -593,7 +594,9 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "connections") == 0 ? NET_CONNECTIONS :
 		    strcmp(arg, "sockets") == 0 ? NET_SOCKETS :
 		    strcmp(arg, "interfaces") == 0 ? NET_INTERFACES :
-		    strcmp(arg, "netgraph") == 0 ? NET_NETGRAPH : NET_ROUTES;
+		    strcmp(arg, "netgraph") == 0 ? NET_NETGRAPH :
+		    strcmp(arg, "wireguard") == 0 ? NET_WIREGUARD :
+		    strcmp(arg, "bird") == 0 ? NET_BIRD : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
 			topo_poll(s);
 		app.net.loading = false;

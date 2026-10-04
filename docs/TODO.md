@@ -2,11 +2,10 @@
 
 ## To do
 
-- BIRD: neighbours and protocols, status, restart, clear.
 - Routes through netlink, with its attributes mapped to CBOR, instead of
   running route(8) and netstat(1).
-- WireGuard: `wg` interfaces are made, but their keys and peers are not
-  set.
+- WireGuard: preshared keys; a peer's key rotated.
+- BIRD: its routes, and a protocol's details (`show protocols all`).
 
 ## Not yet verified
 
@@ -25,6 +24,10 @@ Written and tested with stand-ins, never run for real:
   machine's real output.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
+- WireGuard and BIRD against the real wg(8), wg-quick(8) and birdc(8):
+  the tests use stand-ins. The format of `wg show all dump` is the one
+  wg(8) documents; BIRD is not installed on the machine this was written
+  on, and what birdc prints was written from its documentation.
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.

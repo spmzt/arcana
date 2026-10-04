@@ -510,10 +510,18 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 			    "in between, or the server was reinstalled", name);
 		} else if (memmem(res.err, res.errlen, "Permission denied (",
 		    19) != NULL)
-			rsp->error = wfmt(w, "%s refused the key %s of this "
-			    "host; its public half has to be allowed there "
-			    "for this repository. %s", name, key,
-			    git_error(w, &res));
+			/* Which key it was, and who chose it: told apart. */
+			rsp->error = sshkey != NULL && sshkey[0] != '\0' ?
+			    wfmt(w, "%s refused the key %s, the one named for "
+			    "this build; its public half has to be allowed "
+			    "there for this repository. %s", name, key,
+			    git_error(w, &res)) : wfmt(w, "%s refused the key "
+			    "%s, this host's own: no other key was named for "
+			    "this build (the console's Settings, SSH key for "
+			    "git; arcanactl -i). Its public half has to be "
+			    "allowed there for this repository, or a key that "
+			    "is allowed named. %s", name, key, git_error(w,
+			    &res));
 		return (false);
 	}
 

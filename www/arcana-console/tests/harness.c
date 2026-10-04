@@ -180,7 +180,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[40];
+	char	*argv[48];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -304,6 +304,36 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "  ----------  ---------  ---------  -------  ---------\\n"
 	    "  link0  em0  ether  00000002  lower\\n'\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-ngctl", 0755) == 0);
+	/* wg(8): an interface that has a key once it was given one, and
+	 * the peers it was given; birdc(8): a daemon with two protocols. */
+	put("fake-wg", "#!/bin/sh\necho \"$*\" >> wg.log\n"
+	    "key='(none)'; pub='(none)'\n"
+	    "[ -f wg.key ] && { key=$(cat wg.key); "
+	    "pub=HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw=; }\n"
+	    "case \"$1 $2 $3\" in\n"
+	    "'show all dump') printf 'wg0\\t%s\\t%s\\t51820\\toff\\n' "
+	    "\"$key\" \"$pub\"\n"
+	    "  [ -f wg.peers ] && cat wg.peers ;;\n"
+	    "'show wg0 private-key') echo \"$key\" ;;\n"
+	    "'showconf wg0 ') printf '[Interface]\\nPrivateKey = %s\\n' "
+	    "\"$key\" ;;\n"
+	    "'set wg0 private-key') cp \"$4\" wg.key ;;\n"
+	    "'set wg0 peer') [ \"$5\" = remove ] && rm -f wg.peers || "
+	    "printf 'wg0\\t%s\\t(none)\\t192.0.2.9:51820\\t10.9.9.2/32\\t0"
+	    "\\t0\\t0\\t0\\n' \"$4\" > wg.peers ;;\n"
+	    "esac\nexit 0\n");
+	put("fake-birdc", "#!/bin/sh\necho \"$*\" >> birdc.log\n"
+	    "[ \"$1\" = -r ] && shift\ncase \"$*\" in\n"
+	    "'show status') printf 'BIRD 2.15.1 ready.\\nBIRD 2.15.1\\n"
+	    "Router ID is 192.0.2.1\\nDaemon is up and running\\n' ;;\n"
+	    "'show protocols') printf 'BIRD 2.15.1 ready.\\nName Proto Table "
+	    "State Since Info\\ndevice1 Device --- up 2026-10-01 \\n"
+	    "bgp_core BGP --- up 12:01:02.345 Established\\n' ;;\n"
+	    "*) printf 'BIRD 2.15.1 ready.\\n%s: done\\n' \"$2\" ;;\n"
+	    "esac\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-wg", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-birdc", 0755) == 0);
+	ATF_REQUIRE(mkdir("wg", 0700) == 0 || errno == EEXIST);
 	ATF_REQUIRE(chmod("fake-route", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-ifconfig", 0755) == 0);
 	put("fake-make", buf);
@@ -375,7 +405,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[33] = (char *)(uintptr_t)"./fake-route";
 	argv[34] = (char *)(uintptr_t)"-n";
 	argv[35] = (char *)(uintptr_t)"./fake-ngctl";
-	argv[36] = NULL;
+	argv[36] = (char *)(uintptr_t)"-k";
+	argv[37] = (char *)(uintptr_t)"./fake-wg";
+	argv[38] = (char *)(uintptr_t)"-o";
+	argv[39] = (char *)(uintptr_t)"./wg";
+	argv[40] = (char *)(uintptr_t)"-b";
+	argv[41] = (char *)(uintptr_t)"./fake-birdc";
+	argv[42] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

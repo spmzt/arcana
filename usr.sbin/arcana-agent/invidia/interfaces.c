@@ -614,6 +614,7 @@ do_if_destroy(struct work *w, const char *ifname, bool persist,
 	if (persist) {
 		e = NULL;
 		(void)rc_set(w, "cloned_interfaces", "-=", base, &e);
+		wg_forget(w, ifname);
 		/* Of a pair, both sides: whichever was named. */
 		if (base != ifname) {
 			rc_forget_if(w, wfmt(w, "%sa", base));
@@ -809,6 +810,12 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	if (run_exec(w, argv, &res) != 0)
 		goto undo;
 	if (!sp->persist)
+		return (0);
+	/*
+	 * A WireGuard interface is kept another way, once it has its key:
+	 * written for wg-quick(8), which makes the interface itself.
+	 */
+	if (strncmp(name, "wg", 2) == 0)
 		return (0);
 
 	/* As rc(8) will make it again: the clone, its arguments, its setup. */

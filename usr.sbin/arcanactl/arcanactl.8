@@ -114,7 +114,7 @@ variables, with what the script says of itself and its extra commands.
 sets one first,
 .Fl x
 unsets one; only the service's own variables are accepted.
-.It Cm net routes | nexthops | connections | sockets | interfaces | netgraph Op Fl 4 | Fl 6
+.It Cm net routes | nexthops | connections | sockets | interfaces | netgraph | wireguard | bird Op Fl 4 | Fl 6
 The host's routing table
 .Pq Nm netstat Fl rnW ,
 nexthop table
@@ -207,6 +207,42 @@ Change the
 .Xr netgraph 4
 graph: the command and its arguments are given to
 .Xr ngctl 8 .
+.It Cm wg Ar interface Cm init Op Ar port
+Give a WireGuard interface a private key, made on the host, when it has
+none, and with
+.Ar port
+the port it listens on.
+The key never leaves the host:
+.Cm net wireguard
+shows public keys only.
+.It Cm wg Ar interface Cm peer Ar key Oo Cm endpoint Ar address : Ns Ar port Oc Oo Cm allowed-ips Ar list Oc Oo Cm keepalive Ar seconds Oc
+Add the peer whose public key is
+.Ar key ,
+or change it.
+.It Cm wg Ar interface Cm unpeer Ar key
+Remove a peer.
+.Pp
+With
+.Fl p
+the interface as it is then, its key, addresses and peers, is written
+to
+.Pa /usr/local/etc/wireguard/ Ns Ar interface Ns Pa .conf
+for
+.Xr wg-quick 8 ,
+readable by root alone, and
+.Va wireguard_interfaces
+in
+.Xr rc.conf 5
+names it.
+.It Cm bird enable | disable | restart | reload Ar protocol
+.It Cm bird configure
+Tell the BIRD routing daemon through
+.Xr birdc 8 ;
+.Ar protocol
+may be
+.Ql all .
+.Cm net bird
+shows its status and its protocols.
 .Pp
 With the option
 .Fl s

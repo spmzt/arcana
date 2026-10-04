@@ -1349,6 +1349,68 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("em0", jstr(&r, "data.nodes.0.name"));
 	ATF_CHECK_STREQ("bridge0", jstr(&r, "data.nodes.0.hooks.0.peer"));
 	resp_free(&r);
+
+	/*
+	 * WireGuard: the host makes the key, and the console is told the
+	 * public one; a peer is given to it.  BIRD: its protocols, and
+	 * one of them restarted.
+	 */
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"wireguard\",\"interface\":"
+	    "\"wg0\",\"verb\":\"init\",\"listen_port\":51820},{\"kind\":"
+	    "\"wireguard\",\"interface\":\"wg0\",\"verb\":\"peer\",\"peer\":"
+	    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\",\"endpoint\":"
+	    "\"192.0.2.9:51820\",\"allowed_ips\":\"10.9.9.2/32\",\"keepalive\":"
+	    "25},{\"kind\":\"bird\",\"verb\":\"restart\",\"args\":"
+	    "[\"bgp_core\"]},{\"kind\":\"bird\",\"verb\":\"configure\"}]}",
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("wg0: wireguard init", jstr(&r, "jobs.0.title"));
+	ATF_CHECK_STREQ("bird restart bgp_core", jstr(&r, "jobs.2.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q '^configure$' birdc.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^set wg0 listen-port 51820$' wg.log && "
+	    "grep -q '^set wg0 peer xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg= "
+	    "endpoint 192.0.2.9:51820 allowed-ips 10.9.9.2/32 "
+	    "persistent-keepalive 25$' wg.log && grep -q '^restart bgp_core$' "
+	    "birdc.log") == 0);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"wireguard\",\"interface\":"
+	    "\"wg0\",\"verb\":\"peer\",\"peer\":\"short\"}]}", &r);
+	EXPECT(&r, 502);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/net/wireguard",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.interfaces.0.private-key"));
+	ATF_CHECK_STREQ("HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw=",
+	    jstr(&r, "data.interfaces.0.public-key"));
+	ATF_CHECK_STREQ("192.0.2.9:51820", jstr(&r,
+	    "data.interfaces.0.peers.0.endpoint"));
+	/* The key the host made is nowhere in what the console says. */
+	ATF_CHECK(system("test -s wg.key") == 0);
+	{
+		char key[64];
+		FILE *fp;
+
+		ATF_REQUIRE((fp = fopen("wg.key", "r")) != NULL);
+		ATF_REQUIRE(fgets(key, sizeof(key), fp) != NULL);
+		fclose(fp);
+		key[strcspn(key, "\n")] = '\0';
+		ATF_CHECK(strstr(r.body, key) == NULL);
+	}
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/net/bird",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("Router ID is 192.0.2.1", jstr(&r, "data.status.1"));
+	ATF_CHECK_STREQ("bgp_core", jstr(&r, "data.protocols.1.name"));
+	ATF_CHECK_STREQ("Established", jstr(&r, "data.protocols.1.info"));
+	resp_free(&r);
 }
 
 CONSOLE_TC(unreachable, "A server that does not answer is reported")

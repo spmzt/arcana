@@ -387,6 +387,7 @@ view_network(struct html *h, struct server *s)
 		{ "routes", "Routes" }, { "nexthops", "Nexthops" },
 		{ "connections", "Connections" }, { "sockets", "Sockets" },
 		{ "interfaces", "Interfaces" }, { "netgraph", "Netgraph" },
+		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -396,7 +397,7 @@ view_network(struct html *h, struct server *s)
 
 	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0;
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
-	for (i = 0; i < 6; i++)
+	for (i = 0; i < 8; i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
@@ -511,6 +512,12 @@ view_network(struct html *h, struct server *s)
 		break;
 	case NET_NETGRAPH:
 		view_netgraph(h, s, jget(app.net.data, "data.nodes"));
+		return;
+	case NET_WIREGUARD:
+		view_wireguard(h, s, jget(app.net.data, "data"));
+		return;
+	case NET_BIRD:
+		view_bird(h, s, jget(app.net.data, "data"));
 		return;
 	default:
 		shown = table(h, jget(app.net.data, "data.sockstat.socket"),

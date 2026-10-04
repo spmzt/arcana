@@ -310,6 +310,10 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 		return (do_interfaces(w, family, rsp));
 	if (kind == ARC_NET_KIND_NETGRAPH)
 		return (do_netgraph(w, rsp));
+	if (kind == ARC_NET_KIND_WIREGUARD)
+		return (do_wireguard(w, rsp));
+	if (kind == ARC_NET_KIND_BIRD)
+		return (do_bird(w, rsp));
 	rsp->has_ok = true;
 	rsp->ok = false;
 	/* Searched for on the host: read line by line from the start. */
