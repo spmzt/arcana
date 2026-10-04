@@ -72,6 +72,7 @@ struct call {
 	char			 ifname[16];
 	uint8_t			 family;	/* network */
 	uint32_t		 fib;		/* network, route lookup */
+	char			 scope[256];	/* the vnet jail whose network it is */
 	bool			 refresh;	/* packages */
 	bool			 dry_run;	/* pkg-upgrade */
 	char			**names;	/* pkg-upgrade: packages */
@@ -1003,6 +1004,7 @@ call_run(struct kore_task *t)
 		nq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
 		nq.has_net_fib = c->fib != 0;
 		nq.net_fib = c->fib;
+		nq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_network(&cl, &nq, &nr)) != 0)
 			goto rpcfail;
 		ok = nr->ok;
@@ -1035,6 +1037,7 @@ call_run(struct kore_task *t)
 		bcq.conf_text = c->text;
 		bcq.sha256 = c->address[0] != '\0' ? c->address : NULL;
 		bcq.dry_run = c->dry_run;
+		bcq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_bird_config(&cl, &bcq, &bcr)) != 0)
 			goto rpcfail;
 		ok = bcr->ok;
@@ -1052,6 +1055,7 @@ call_run(struct kore_task *t)
 		rlq.lookup = c->address;
 		rlq.has_net_fib = c->fib != 0;
 		rlq.net_fib = c->fib;
+		rlq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_route_lookup(&cl, &rlq, &rlr)) != 0)
 			goto rpcfail;
 		ok = rlr->ok;
@@ -1636,6 +1640,23 @@ api_address(struct http_request *req)
 	return (call_start(req, c));
 }
 
+/*
+ * ?jail=name into the call: the vnet jail whose network is meant.
+ * False when it is no name of a jail.
+ */
+static bool
+pick_scope(struct http_request *req, struct call *c)
+{
+	const char	*p;
+
+	if (!query_param(req, "jail", c->scope, sizeof(c->scope)))
+		return (true);
+	for (p = c->scope; *p != '\0'; p++)
+		if (!isalnum((unsigned char)*p) && strchr("_.-", *p) == NULL)
+			return (false);
+	return (true);
+}
+
 /* ?fib=N into the call; false when it is not a number of a table. */
 static bool
 pick_fib(struct http_request *req, struct call *c)
@@ -1672,7 +1693,8 @@ api_network(struct http_request *req)
 		/* An address is hex digits, dots and colons: no escaping. */
 		(void)query_param(req, "to", c->address, sizeof(c->address));
 		if (c->address[0] == '\0' || c->address[strspn(c->address,
-		    "0123456789abcdefABCDEF.:")] != '\0' || !pick_fib(req, c)) {
+		    "0123456789abcdefABCDEF.:")] != '\0' || !pick_fib(req, c) ||
+		    !pick_scope(req, c)) {
 			kore_free(c->sname);
 			kore_free(c->uri);
 			kore_free(c->peer);
@@ -1685,7 +1707,8 @@ api_network(struct http_request *req)
 	for (i = 0; i < nitems(net_kind_names); i++)
 		if (strcmp(kind, net_kind_names[i]) == 0)
 			break;
-	if (i == nitems(net_kind_names) || !pick_fib(req, c)) {
+	if (i == nitems(net_kind_names) || !pick_fib(req, c) ||
+	    !pick_scope(req, c)) {
 		kore_free(c->sname);
 		kore_free(c->uri);
 		kore_free(c->peer);
@@ -1758,7 +1781,8 @@ api_bird_config(struct http_request *req)
 	bad = false;
 	if (req->method == HTTP_METHOD_GET) {
 		(void)query_param(req, "path", c->jail, sizeof(c->jail));
-		bad = c->jail[0] != '\0' && !conf_path_ok(c->jail);
+		bad = (c->jail[0] != '\0' && !conf_path_ok(c->jail)) ||
+		    !pick_scope(req, c);
 	} else if ((body = read_json(req)) == NULL)
 		bad = true;
 	else {
@@ -1773,6 +1797,13 @@ api_bird_config(struct http_request *req)
 		else
 			bad = true;
 		c->dry_run = ucl_flag(body, "check");
+		if ((s = ucl_str(body, "jail")) != NULL) {
+			strlcpy(c->scope, s, sizeof(c->scope));
+			for (; *s != '\0'; s++)
+				if (!isalnum((unsigned char)*s) && strchr("_.-",
+				    *s) == NULL)
+					bad = true;
+		}
 		ucl_object_unref(body);
 	}
 	if (bad) {

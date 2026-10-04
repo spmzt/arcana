@@ -122,6 +122,20 @@ The console is laid out as a tree and tabs.
     job, a request somebody waits for such as a check of the packages,
     since when, and whether the agent was told to stop and waits for
     it: the same as its log says.
+- A **jail with a network of its own** (vnet) has that network on its
+  page, under **Network**: the same views as a host's network tab
+  (interfaces, routes with lookup, connections, sockets, netgraph,
+  WireGuard, BIRD with its neighbours and its configuration), for the
+  jail. It is read and changed from the host: there is no agent in the
+  jail, and nothing is installed there for it. `ifconfig`, `route`,
+  `netstat`, `sockstat` and `ngctl` are the host's, run for the jail;
+  `birdc`, `bird` and `wg` are the jail's own, run in it, so that what
+  parses a configuration is the version that runs it. What is kept for
+  the jail's next start is kept in the jail's own `rc.conf`, its BIRD
+  configuration and WireGuard files are the jail's, and they are never
+  followed out of the jail through a link. Safe mode works there as on
+  the host. From a shell: `arcanactl -j jail net …`, `interface …`,
+  `route …`, `wg …`, `bird …`.
 - A **jail** has its page: actions, addresses (changed live with
   jail_setv(3) and the interface alias, persistently in its `jail.conf`
   block with a diff to preview, or both), its configuration as jail(8)

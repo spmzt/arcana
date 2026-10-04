@@ -37,6 +37,9 @@
 .Op Fl b Ar birdc
 .Op Fl e Ar bird
 .Op Fl a Ar file
+.Op Fl L Ar jls
+.Op Fl x Ar jexec
+.Op Fl H Ar helper
 .Op Fl w Ar seconds
 .Op Fl N Ar netstat
 .Op Fl X Ar sockstat
@@ -249,6 +252,16 @@ program, which parses a configuration before it is put in place, and
 BIRD's main configuration file.
 Default
 .Pa /usr/local/etc/bird.conf .
+.It Fl L Ar jls , Fl x Ar jexec
+The
+.Xr jls 8
+and
+.Xr jexec 8
+programs: the first says whether a jail runs with a network of its own
+and where its root is, the second runs the jail's own programs in it.
+.It Fl H Ar helper
+The program run to look at a jail's interfaces from inside it.
+Default: this program itself.
 .It Fl o Ar directory
 Where WireGuard interfaces are written for
 .Xr wg-quick 8 .

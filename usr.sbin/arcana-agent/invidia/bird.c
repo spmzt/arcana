@@ -176,7 +176,9 @@ do_bird(struct work *w, struct arc_network_rsp *rsp)
 	rsp->has_ok = true;
 	rsp->ok = false;
 	if (birdc(w, true, "show", "status", NULL, &res) != 0) {
-		rsp->error = wtext(w, exec_error(w, &res, "birdc"));
+		if ((rsp->error = scope_missing(w, &res, "birdc(8)",
+		    "bird3")) == NULL)
+			rsp->error = wtext(w, exec_error(w, &res, "birdc"));
 		return (0);
 	}
 	top = ucl_object_typed_new(UCL_OBJECT);

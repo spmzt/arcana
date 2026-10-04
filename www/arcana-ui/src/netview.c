@@ -395,7 +395,8 @@ view_network(struct html *h, struct server *s)
 	int			 i, n, shown;
 	bool			 mine;
 
-	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0;
+	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0 &&
+	    strcmp(app.net.jail, net_scope()) == 0;
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
 	for (i = 0; i < 8; i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "

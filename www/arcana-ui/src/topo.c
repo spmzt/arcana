@@ -3353,7 +3353,7 @@ void
 topo_lookup(struct server *s, const char *addr, int fib)
 {
 	unsigned char	raw[16];
-	char		url[200];
+	char		url[520];
 	int		af;
 
 	snprintf(lk.sid, sizeof(lk.sid), "%s", s->id);
@@ -3370,8 +3370,9 @@ topo_lookup(struct server *s, const char *addr, int fib)
 	}
 	lk.error[0] = '\0';
 	lk.busy = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/net/lookup?to=%s&fib=%d",
-	    s->id, addr, fib);
+	snprintf(url, sizeof(url), "/api/servers/%s/net/lookup?to=%s&fib=%d"
+	    "%s%s", s->id, addr, fib, net_scope()[0] != '\0' ? "&jail=" : "",
+	    net_scope());
 	api("GET", url, NULL, lookup_cb, NULL);
 }
 

@@ -1462,6 +1462,55 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 
 	/*
+	 * A jail with a network of its own: read and changed through its
+	 * host, by naming the jail.
+	 */
+	snprintf(path, sizeof(path), "%.*s/net/interfaces?jail=gw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("epair1b", jstr(&r, "data.interfaces.0.name"));
+	ATF_CHECK_STREQ("10.99.0.2", jstr(&r,
+	    "data.interfaces.0.addresses.0.address"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/net/lookup?to=192.0.2.9&jail=gw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^-j 4 -n get -inet 192.0.2.9$' route.log")
+	    == 0);
+	snprintf(path, sizeof(path), "%.*s/net/interfaces?jail=a;b",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* A jail without one has none to show. */
+	snprintf(path, sizeof(path), "%.*s/net/interfaces?jail=web",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"if-address\",\"jail\":\"gw\","
+	    "\"interface\":\"epair1b\",\"address\":\"10.99.0.5/24\",\"persist\":"
+	    "true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("gw: epair1b: add 10.99.0.5/24", jstr(&r,
+	    "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'alias0' jroot/etc/rc.conf "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^-j 4 epair1b inet 10.99.0.5/24 alias$' "
+	    "ifconfig.log && grep -q '^ifconfig_epair1b_alias0=\"inet "
+	    "10.99.0.5/24\"$' jroot/etc/rc.conf && ! grep -q 10.99.0.5 "
+	    "rc.conf") == 0);
+
+	/*
 	 * WireGuard: the host makes the key, and the console is told the
 	 * public one; a peer is given to it.  BIRD: its protocols, and
 	 * one of them restarted.

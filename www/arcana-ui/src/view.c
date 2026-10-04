@@ -1007,6 +1007,18 @@ jail_page(struct html *h)
 	    "no");
 	h_raw(h, "</dl>");
 
+	/*
+	 * A jail with a network of its own: that network, read and
+	 * changed from the host, as the host's own is in its tab.
+	 */
+	if (net_scope()[0] != '\0') {
+		h_raw(h, "<h4>Network <span class=\"dim\">its own (vnet), "
+		    "managed from the host: nothing is installed in the jail"
+		    "</span></h4><div class=\"jail-net\">");
+		view_network(h, s);
+		h_raw(h, "</div>");
+	}
+
 	if (ucl_array_size(jget(j, "params")) > 0) {
 		h_raw(h, "<h4>Configuration <span class=\"dim\">as jail(8) "
 		    "reads it</span></h4><table class=\"params\">");

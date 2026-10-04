@@ -728,6 +728,13 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.peek = false;
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 		close_service();
+		/* A jail with a network of its own: its interfaces first. */
+		if (net_scope()[0] != '\0' && (s = cur_server()) != NULL) {
+			app.net.kind = NET_INTERFACES;
+			app.net.sort = -1;
+			app.net.loading = false;
+			refresh_network(s, false);
+		}
 	} else if (strcmp(act, "peek-jail") == 0) {
 		/* From a graph, the fleet's or a host's: the jail in a box
 		 * over the page, which stays the page it is. */

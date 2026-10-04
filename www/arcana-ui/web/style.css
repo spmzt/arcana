@@ -3069,3 +3069,7 @@ select.conf-file { width: auto; margin-left: .6rem; font-size: .72rem; padding: 
 .empty .notice.local { max-width: 560px; margin: 0 auto 1.2rem; text-align: left; }
 .empty .notice.local pre { margin: .5rem 0; font-size: .76rem; }
 
+/* A vnet jail's own network, on its page. */
+.jail-net { margin-top: .6rem; }
+.jail-page h4 .dim { text-transform: none; letter-spacing: 0; font-weight: 400; }
+

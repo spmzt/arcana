@@ -179,7 +179,9 @@ do_wireguard(struct work *w, struct arc_network_rsp *rsp)
 	n = run_exec(w, argv, &res);
 	exec_set_secret(false);
 	if (n != 0) {
-		rsp->error = wtext(w, exec_error(w, &res, "wg"));
+		if ((rsp->error = scope_missing(w, &res, "wg(8)",
+		    "wireguard-tools")) == NULL)
+			rsp->error = wtext(w, exec_error(w, &res, "wg"));
 		return (0);
 	}
 	top = ucl_object_typed_new(UCL_OBJECT);

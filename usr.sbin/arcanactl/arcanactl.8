@@ -47,6 +47,26 @@ The routing table that
 and
 .Cm net routes
 work in, when not the first.
+.It Fl j Ar jail
+Work on the network of a running jail that has one of its own
+.Pq vnet
+instead of the host's: for
+.Cm net ,
+.Cm route ,
+.Cm interface ,
+.Cm ng ,
+.Cm wg
+and
+.Cm bird .
+The host does it; nothing runs in the jail but the jail's own
+.Xr birdc 8 ,
+.Xr bird 8
+and
+.Xr wg 8 .
+With
+.Fl p
+a change is kept in the jail's own
+.Xr rc.conf 5 .
 .It Fl p
 Keep a change to an interface or a route in
 .Xr rc.conf 5

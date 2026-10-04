@@ -138,6 +138,23 @@ scope_argv(struct work *w, char *const argv[])
 }
 
 /*
+ * Why a program of the jail's own did not run, when the jail has no
+ * such program: said so, rather than as jexec says it.  NULL otherwise.
+ */
+const char *
+scope_missing(struct work *w, const struct execres *res, const char *prog,
+    const char *package)
+{
+
+	if (w->jail == NULL || res->err == NULL || strstr(res->err,
+	    "execvp") == NULL)
+		return (NULL);
+	return (wfmt(w, "the jail %s has no %s: it is the jail's own that is "
+	    "run there (pkg -j %s install %s)", w->jail, prog, w->jail,
+	    package));
+}
+
+/*
  * A directory of the host, or of the jail w works in: opened beneath
  * the jail's root, whatever links the jail has put on the way.
  */

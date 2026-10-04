@@ -170,6 +170,7 @@ struct netview {
 	enum netkind	 kind;
 	int		 family;	/* 0 all, 4, 6 */
 	char		 sid[9];	/* the server it came from */
+	char		 jail[256];	/* and the vnet jail of it, or "" */
 	ucl_object_t	*data;		/* the reply, or NULL */
 	double		 fetched;
 	bool		 loading;
@@ -416,6 +417,7 @@ void		 refresh_services(struct server *, bool);
 void		 service_action(const char *, const char *);
 void		 service_config(const char *, const char *);
 void		 refresh_network(struct server *, bool);
+const char	*net_scope(void);
 void		 refresh_stats(struct server *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);

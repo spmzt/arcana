@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.10.0"
+#define	ARCANA_AGENT_VERSION	"0.10.1"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -324,6 +324,8 @@ int		 scope_replace(struct work *, const char *, const char *,
 int		 scope_rename(struct work *, const char *, const char *,
 		    const char *);
 int		 scope_helper(int, char **);
+const char	*scope_missing(struct work *, const struct execres *,
+		    const char *, const char *);
 char		*ifq_text(const char *, const char *, const char *);
 
 /* invidia/netgraph.c */

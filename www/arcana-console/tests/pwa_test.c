@@ -460,13 +460,13 @@ ATF_TC_BODY(pwa, tc)
 	/* Its jails are folded away until asked for; the choice is kept. */
 	ATF_CHECK(!js_true("document.querySelector('.tree .titem.leaf')"));
 	run("document.querySelector('.tree button[data-act=fold]').click()");
-	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 3 "
+	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 4 "
 	    "&& localStorage.getItem('arc_open').includes('\"')", 5);
 	run("document.querySelector('.tree button[data-act=fold]').click()");
 	wait_js("!document.querySelector('.tree .titem.leaf') && "
 	    "localStorage.getItem('arc_open') === '[]'", 5);
 	run("document.querySelector('.tree button[data-act=fold]').click()");
-	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 3",
+	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 4",
 	    5);
 	ATF_CHECK(!js_true("document.querySelector('.tree .titem.more')"));
 	/* With no room under the hosts, a row stands for the rest and
@@ -479,13 +479,13 @@ ATF_TC_BODY(pwa, tc)
 	shot("1a-tree-more");
 	run("document.querySelector('.tree .titem.more').click()");
 	wait_js("document.querySelectorAll('.tree .titem.leaf:not(.more)')."
-	    "length === 3 && document.querySelector('.tree .titem.more')."
+	    "length === 4 && document.querySelector('.tree .titem.more')."
 	    "textContent.includes('fewer')", 5);
 	run("document.querySelector('.tree .titem.more').click()");
 	ucl_object_unref(wd("POST", "/session/window/rect",
 	    "{\"width\":1280,\"height\":800}"));
 	wait_js("!document.querySelector('.tree .titem.more') && "
-	    "document.querySelectorAll('.tree .titem.leaf').length === 3", 5);
+	    "document.querySelectorAll('.tree .titem.leaf').length === 4", 5);
 	ATF_CHECK(js_true("document.querySelector('.tiles .tile')"));
 	shot("1-host-summary");
 	/* The host runs another build of arcana-agent than the console
@@ -934,6 +934,45 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.dock > header').click()");
 
 	/*
+	 * A jail with a network of its own: its page shows that network,
+	 * read through the host, and a change made there is made in the
+	 * jail, and kept in the jail's own rc.conf.
+	 */
+	run("const m = document.querySelector('.tree .titem.more'); if (m && "
+	    "!m.textContent.includes('fewer')) m.click();");
+	wait_js("[...document.querySelectorAll('.tree .titem.leaf')].some(l => "
+	    "l.dataset.arg === 'gw')", 10);
+	run("[...document.querySelectorAll('.tree .titem.leaf')].find(l => "
+	    "l.dataset.arg === 'gw').click()");
+	wait_js("document.querySelector('.jail-page .jail-net table.ifaces "
+	    "tr[data-if=epair1b] .chip')", 20);
+	ATF_CHECK(js_true("document.querySelector('.jail-net').textContent"
+	    ".includes('10.99.0.2/24') && !document.querySelector('.jail-net "
+	    "tr[data-if=lo0]')"));
+	shot("7g-vnet-jail");
+	run("document.querySelector('.jail-net tr[data-if=epair1b] button"
+	    "[data-act=if-addr-add]').click()");
+	wait_js("document.querySelector('form[data-form=if-address]')", 5);
+	run("const f = document.querySelector('form[data-form=if-address]'); "
+	    "f.address.value = '10.99.0.7/24'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('gw: epair1b: add 10.99.0.7/24: done'))",
+	    20);
+	ATF_CHECK(system("grep -q '^-j 4 epair1b inet 10.99.0.7/24 alias$' "
+	    "ifconfig.log && grep -q '10.99.0.7/24' jroot/etc/rc.conf && "
+	    "! grep -q 10.99.0.7 rc.conf") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* Its routes, by the host's netstat told which jail. */
+	run("document.querySelector('.jail-net button[data-act=net-kind]"
+	    "[data-arg=routes]').click()");
+	wait_js("document.querySelector('.jail-net button[data-act=route-add]')",
+	    10);
+	run("document.querySelector('li[data-act=select-server]').click()");
+	wait_js("document.querySelector('button.tab[data-arg=network]')", 10);
+
+	/*
 	 * WireGuard, in a host's network tab: an interface without a key
 	 * is given one, made on the host, and then a peer.  And BIRD: its
 	 * protocols, one of them reloaded.
@@ -1159,8 +1198,10 @@ ATF_TC_BODY(pwa, tc)
 	ATF_CHECK(js_true("document.querySelector('form[data-form=tunnel]')."
 	    "inner_a.value === '10.255.0.1/30'"));
 	shot("8b-tunnel");
-	run("document.querySelector('form[data-form=tunnel]')."
-	    "requestSubmit();");
+	/* Not kept: the two hosts here are one, with one rc.conf, which
+	 * would have the second end's name already. */
+	run("const f = document.querySelector('form[data-form=tunnel]'); "
+	    "f.persist.checked = false; f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].filter(t => "

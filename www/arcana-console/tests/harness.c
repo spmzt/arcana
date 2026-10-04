@@ -184,7 +184,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[52];
+	char	*argv[60];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -218,7 +218,33 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 		snprintf(harness_origin, sizeof(harness_origin), "%s", ORIGIN);
 	put("etc/jail.conf", "path = \"/jails/$name\";\n"
 	    "web {\n\tip4.addr = 10.0.0.10;\n\tpersist;\n}\n"
-	    "db {\n\tip4.addr = 10.0.0.20;\n}\n");
+	    "db {\n\tip4.addr = 10.0.0.20;\n}\n"
+	    "gw {\n\tvnet;\n}\n");
+	/*
+	 * gw has a network of its own, and "runs": jls says so, jexec
+	 * runs what it is given, and the helper answers for the jail.
+	 */
+	snprintf(buf, sizeof(buf), "#!/bin/sh\n[ \"$2\" = gw ] && { echo "
+	    "\"4 new %s/jroot\"; exit 0; }\necho \"jls: jail not found\" >&2\n"
+	    "exit 1\n", cwd);
+	put("fake-jls", buf);
+	put("fake-jexec", "#!/bin/sh\necho \"jexec $*\" >> jexec.log\nshift\n"
+	    "exec \"$@\"\n");
+	put("fake-helper", "#!/bin/sh\necho \"$*\" >> helper.log\n"
+	    "case \"$3\" in\ninterfaces) echo '{\"interfaces\":[{\"name\":"
+	    "\"epair1b\",\"up\":true,\"flags\":[\"UP\"],\"link\":\"up\",\"mtu\":"
+	    "1500,\"ibytes\":1,\"obytes\":2,\"addresses\":[{\"family\":\"inet\","
+	    "\"address\":\"10.99.0.2\",\"prefixlen\":24}]}],\"time\":1000}' ;;\n"
+	    "exists) [ \"$4\" = epair1b ] && echo 1 || echo 0 ;;\n"
+	    "up) echo 1 ;;\ncurrent) printf '1500\\t' ;;\n"
+	    "prefix) [ \"$5\" = 10.99.0.2 ] && echo 10.99.0.2/24 ;;\nesac\n"
+	    "exit 0\n");
+	ATF_REQUIRE(chmod("fake-jls", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-jexec", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-helper", 0755) == 0);
+	ATF_REQUIRE(mkdir("jroot", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("jroot/etc", 0755) == 0 || errno == EEXIST);
+	put("jroot/etc/rc.conf", "hostname=\"gw\"\n");
 	put("fake-jail", "#!/bin/sh\nfor a; do [ \"$a\" = -e ] && "
 	    "exec /usr/sbin/jail \"$@\"; done\necho \"fake-jail: $*\"\n");
 	ATF_REQUIRE(chmod("fake-jail", 0755) == 0);
@@ -231,7 +257,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("rc.d/ntpd", 0755) == 0);
 	put("rc.conf", "sshd_enable=\"YES\"\nsshd_flags=\"-4\"\n");
 	snprintf(buf, sizeof(buf), "#!/bin/sh\nconf=%s/rc.conf\n"
+	    "[ \"$1\" = -R ] && { conf=$2/etc/rc.conf; shift 2; }\n"
+	    "[ \"$1\" = -i ] && shift\n"
 	    "case \"$1\" in\n"
+	    "-n) grep -q \"^$2=\" \"$conf\" || exit 1; sed -n \"s/^$2=\\\""
+	    "\\(.*\\)\\\"\\$/\\1/p\" \"$conf\" ;;\n"
 	    "-a|-A) sed -e 's/=\"\\(.*\\)\"$/: \\1/' \"$conf\" ;;\n"
 	    "-x) grep -v \"^$2=\" \"$conf\" > c.new; mv c.new \"$conf\" ;;\n"
 	    "*=*) k=${1%%%%=*}; v=${1#*=}; grep -v \"^$k=\" \"$conf\" > c.new; "
@@ -465,7 +495,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[43] = (char *)(uintptr_t)"./fake-bird";
 	argv[44] = (char *)(uintptr_t)"-a";
 	argv[45] = birdconf;
-	argv[46] = NULL;
+	argv[46] = (char *)(uintptr_t)"-L";
+	argv[47] = (char *)(uintptr_t)"./fake-jls";
+	argv[48] = (char *)(uintptr_t)"-x";
+	argv[49] = (char *)(uintptr_t)"./fake-jexec";
+	argv[50] = (char *)(uintptr_t)"-H";
+	argv[51] = (char *)(uintptr_t)"./fake-helper";
+	argv[52] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

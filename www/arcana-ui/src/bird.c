@@ -40,6 +40,7 @@ struct block {
 
 static struct {
 	char		 sid[9];
+	char		 jail[256];	/* the vnet jail it is in; "" the host */
 	char		 path[256];	/* the file shown; "" the main one */
 	char		*text;
 	char		 sha[65];
@@ -323,12 +324,13 @@ conf_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 static void
 conf_load(struct server *s, bool again)
 {
-	char	url[400];
+	char	url[700];
 
-	if (bd.loading || (!again && strcmp(bd.sid, s->id) == 0 && (bd.text !=
-	    NULL || bd.error[0] != '\0')))
+	if (bd.loading || (!again && strcmp(bd.sid, s->id) == 0 && strcmp(
+	    bd.jail, net_scope()) == 0 && (bd.text != NULL || bd.error[0] !=
+	    '\0')))
 		return;
-	if (strcmp(bd.sid, s->id) != 0) {
+	if (strcmp(bd.sid, s->id) != 0 || strcmp(bd.jail, net_scope()) != 0) {
 		free(bd.text);
 		bd.text = NULL;
 		bd.nb = 0;
@@ -336,9 +338,10 @@ conf_load(struct server *s, bool again)
 		bd.error[0] = '\0';
 	}
 	snprintf(bd.sid, sizeof(bd.sid), "%s", s->id);
+	snprintf(bd.jail, sizeof(bd.jail), "%s", net_scope());
 	bd.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/bird/config%s%s", s->id,
-	    bd.path[0] != '\0' ? "?path=" : "", bd.path);
+	snprintf(url, sizeof(url), "/api/servers/%s/bird/config?path=%s%s%s",
+	    s->id, bd.path, bd.jail[0] != '\0' ? "&jail=" : "", bd.jail);
 	api("GET", url, NULL, conf_cb, NULL);
 }
 
@@ -346,16 +349,19 @@ conf_load(struct server *s, bool again)
 static void
 conf_save(struct server *s, const char *text, bool check)
 {
-	char	url[96], *qt, *qp, *body;
+	char	url[96], *qt, *qp, *qj, *body;
 
 	snprintf(url, sizeof(url), "/api/servers/%s/bird/config", s->id);
 	qt = json_quote(text);
 	qp = json_quote(bd.path);
-	if (asprintf(&body, "{\"path\":%s,\"text\":%s,\"sha256\":\"%s\","
-	    "\"check\":%s}", qp, qt, bd.sha, check ? "true" : "false") == -1)
+	qj = json_quote(bd.jail);
+	if (asprintf(&body, "{\"path\":%s,\"jail\":%s,\"text\":%s,\"sha256\":"
+	    "\"%s\",\"check\":%s}", qp, qj, qt, bd.sha, check ? "true" :
+	    "false") == -1)
 		abort();
 	free(qt);
 	free(qp);
+	free(qj);
 	bd.saving = true;
 	app.modal_error[0] = '\0';
 	api("POST", url, body, conf_cb, check ? NULL : &bd);

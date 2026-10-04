@@ -56,6 +56,24 @@ url_word(const char *s)
 	return (true);
 }
 
+/*
+ * The vnet jail whose network the page shows and changes: the one whose
+ * page is open, when it has a network of its own; "" for the host's.
+ * One that does not run has none now, which the host says when asked.
+ */
+const char *
+net_scope(void)
+{
+	const struct server	*s;
+	const ucl_object_t	*j;
+
+	if (app.node != NODE_JAIL || app.peek || app.jail[0] == '\0' ||
+	    (s = cur_server()) == NULL || !url_word(app.jail) || (j =
+	    find_jail(s, app.jail)) == NULL || !jbool(j, "vnet"))
+		return ("");
+	return (app.jail);
+}
+
 static struct ctx *
 ctx_new(void)
 {
@@ -211,7 +229,8 @@ job_finished(struct op *op, bool ok, const char *err)
 		/* The interfaces as they are now, if they are on show. */
 		if ((app.net.kind == NET_INTERFACES || app.net.kind ==
 		    NET_ROUTES || app.net.kind >= NET_NETGRAPH) &&
-		    strcmp(app.net.sid, s->id) == 0 && app.node == NODE_HOST)
+		    strcmp(app.net.sid, s->id) == 0 && (app.node == NODE_HOST ||
+		    net_scope()[0] != '\0'))
 			refresh_network(s, false);
 		/* And for the map, which draws its links from them. */
 		topo_poll(s);
@@ -397,11 +416,30 @@ void
 job_send(struct server *s, char *json, const char *title, int what,
     const char *target)
 {
-	struct queued	q;
+	struct queued	 q;
+	const char	*scope;
+	char		*in, *qj;
 
+	/*
+	 * A change to a network asked for on a jail's page is one to that
+	 * jail's network: the job says so, and the host does it there.
+	 */
+	scope = net_scope();
+	if (what == JOB_IFACE && scope[0] != '\0' && s == cur_server() &&
+	    json[0] == '{') {
+		qj = json_quote(scope);
+		if (asprintf(&in, "{\"jail\":%s,%s", qj, json + 1) == -1)
+			abort();
+		free(qj);
+		free(json);
+		json = in;
+	}
 	memset(&q, 0, sizeof(q));
 	q.json = json;
-	snprintf(q.title, sizeof(q.title), "%s", title);
+	if (what == JOB_IFACE && scope[0] != '\0' && s == cur_server())
+		snprintf(q.title, sizeof(q.title), "%s: %s", scope, title);
+	else
+		snprintf(q.title, sizeof(q.title), "%s", title);
 	q.what = what;
 	snprintf(q.target, sizeof(q.target), "%s", target);
 	snprintf(q.sid, sizeof(q.sid), "%s", s->id);
@@ -1168,7 +1206,8 @@ network_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	op_done(op, ok, o, err);
 	/* Still the table that was asked for? */
 	if (strcmp(app.net.sid, c->sid) == 0 && (int)app.net.kind == c->net_kind &&
-	    app.net.family == c->op_family) {
+	    app.net.family == c->op_family && strcmp(app.net.jail, c->jail) ==
+	    0) {
 		app.net.loading = false;
 		if (ok) {
 			if (app.net.data != NULL)
@@ -1191,22 +1230,27 @@ refresh_network(struct server *s, bool user)
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird" };
 	struct ctx	*c;
 	struct op	*op;
-	char		 url[320], title[160], fib[24];
+	char		 url[640], title[160], fib[24], c0jail[270];
 
 	if (!app.online)
 		return;
-	if (strcmp(app.net.sid, s->id) != 0 || app.net.loading) {
+	if (strcmp(app.net.sid, s->id) != 0 || strcmp(app.net.jail,
+	    net_scope()) != 0 || app.net.loading) {
 		if (app.net.data != NULL)
 			ucl_object_unref(app.net.data);
 		app.net.data = NULL;
 		app.net.error[0] = '\0';
 	}
 	snprintf(app.net.sid, sizeof(app.net.sid), "%s", s->id);
+	snprintf(app.net.jail, sizeof(app.net.jail), "%s", net_scope());
+	snprintf(c0jail, sizeof(c0jail), "%s%s", app.net.jail[0] != '\0' ?
+	    "&jail=" : "", app.net.jail);
 	app.net.loading = true;
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	c->net_kind = (int)app.net.kind;
 	c->op_family = app.net.family;
+	snprintf(c->jail, sizeof(c->jail), "%s", app.net.jail);
 	c->user = user;
 	if (user) {
 		snprintf(title, sizeof(title), "net %s%s", kinds[app.net.kind],
@@ -1220,11 +1264,12 @@ refresh_network(struct server *s, bool user)
 	if (app.net.fib > 0 && (app.net.kind == NET_ROUTES || app.net.kind ==
 	    NET_NEXTHOPS))
 		snprintf(fib, sizeof(fib), "&fib=%d", app.net.fib);
-	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=%s%s%s%s",
+	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=%s%s%s%s%s",
 	    s->id, kinds[app.net.kind], app.net.family == 4 ? "inet" :
 	    app.net.family == 6 ? "inet6" : "all", app.net.kind ==
 	    NET_ROUTES && app.net.host_filter[0] != '\0' ? "&filter=" : "",
-	    app.net.kind == NET_ROUTES ? app.net.host_filter : "", fib);
+	    app.net.kind == NET_ROUTES ? app.net.host_filter : "", fib,
+	    c0jail);
 	op_wait(c->op, api("GET", url, NULL, network_cb, c));
 }
 
