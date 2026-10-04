@@ -1617,14 +1617,22 @@ EOS
 		sleep 0.1
 	done
 	atf_check test -e running.arcana_console
+	# The agent was installed with it: it is restarted too, or the new
+	# console would talk to the agent of the version before.
+	for i in $(seq 1 60); do
+		[ -e running.arcana_agent ] && break
+		sleep 0.1
+	done
+	atf_check test -e running.arcana_agent
 	# A build that fails installs nothing and restarts nothing.
-	rm running.arcana_console made
+	rm running.arcana_console running.arcana_agent made
 	touch make-fails
 	atf_check -s exit:1 -e match:'make exited with status 1' -o ignore \
 	    "$JGC" -c "$SOCK" console-update https://example.org/arcana.git
 	atf_check -o not-match:'install' cat made
 	sleep 1.5
 	atf_check test ! -e running.arcana_console
+	atf_check test ! -e running.arcana_agent
 	rm make-fails
 	# What git would take as an option is not a repository.
 	atf_check -s exit:1 -e match:'not a repository' -o ignore \

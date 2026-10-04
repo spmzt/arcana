@@ -30,8 +30,10 @@ of the host the console runs on, the one added by its local socket
 there clones the repository, builds all of Arcana as `nobody`, runs
 `make install` as root over what is installed (the console's module,
 the page, the agent and the tools), and restarts the `arcana_console`
-service; the page reconnects by itself, still logged in: the console keeps its
-sessions over a restart. When the console answers with another version
+service and then itself, `arcana_agent`: the console and the agent of
+one host are of one version, and read each other. Updating by hand,
+restart both too. The page reconnects by itself, still logged in: the
+console keeps its sessions over a restart. When the console answers with another version
 than the page was loaded from, the page loads itself again, after
 letting its service worker take the new files. A repository over SSH asks for
 its host key as a build does. From a shell: `arcanactl console-update

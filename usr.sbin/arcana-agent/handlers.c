@@ -460,7 +460,13 @@ worker(void *arg)
 		pthread_mutex_unlock(&build_lock);
 		ok = cur.ok;
 		error = cur.error;
+		/*
+		 * The tree that was installed has this daemon in it too:
+		 * both are restarted, or the console would talk to an agent
+		 * of the version before.
+		 */
 		console = ok;
+		restart = ok;
 		cur.restarting = console;
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &cur.trace.v, &cur.trace.n);
@@ -595,7 +601,7 @@ worker(void *arg)
 	(void)cbl_req_complete(j->req, rc);
 	work_free(&w);
 	job_free(j);
-	/* The console's own service, once it has its answer. */
+	/* The console's own service, once it has its answer; then ours. */
 	if (console)
 		service_restart("arcana_console");
 	if (restart) {
