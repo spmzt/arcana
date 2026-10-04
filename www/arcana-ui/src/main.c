@@ -302,7 +302,8 @@ close_modal(void)
 static void
 submit(const char *form, const ucl_object_t *f)
 {
-	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f))
+	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
+	    kernel_form(form, f))
 		return;
 	submit_form(form, f);
 }
@@ -473,7 +474,8 @@ dispatch(const char *act, const char *arg, const char *value)
 
 	s = cur_server();
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
-	    bird_action(act, arg, value) || vpn_action(act, arg, value))
+	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
+	    kernel_action(act, arg, value))
 		return;
 	if (strcmp(act, "fold") == 0) {
 		arc_open_set(arg, !arc_open_get(arg));
@@ -497,6 +499,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_stats(s);
 			if (app.tab == TAB_SERVICES && s->services == NULL)
 				refresh_services(s, true);
+			if (app.tab == TAB_KERNEL)
+				refresh_kernel(s, false);
 			if (app.tab == TAB_NETWORK && (strcmp(app.net.sid,
 			    s->id) != 0 || (app.net.data == NULL &&
 			    !app.net.loading)))
@@ -521,12 +525,15 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "network") == 0 || strcmp(arg, "wireguard") ==
 		    0 || strcmp(arg, "bird") == 0 ? TAB_NETWORK :
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
+		    strcmp(arg, "kernel") == 0 ? TAB_KERNEL :
 		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
 		app.node = NODE_HOST;
 		app.jail[0] = '\0';
 		if (app.tab == TAB_JOBS)
 			refresh_jobs(s);
+		if (app.tab == TAB_KERNEL)
+			refresh_kernel(s, true);
 		close_service();
 		if (app.tab == TAB_SERVICES && s->services == NULL)
 			refresh_services(s, true);
@@ -814,6 +821,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		} else if (app.tab == TAB_NETWORK) {
 			app.net.loading = false;
 			refresh_network(s, true);
+		} else if (app.tab == TAB_KERNEL) {
+			refresh_kernel(s, true);
 		} else if (app.tab == TAB_PACKAGES) {
 			app.pkg.loading = false;
 			refresh_packages(s, true);

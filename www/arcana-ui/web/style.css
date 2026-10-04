@@ -3090,3 +3090,17 @@ nav.tabs .tab.plugin:first-of-type, nav.tabs .tab:not(.plugin) + .tab.plugin { m
 nav.tabs .tab.plugin::before { content: "◆ "; font-size: .6em; vertical-align: .15em; opacity: .7; }
 nav.sub.plugins { padding-left: .6rem; border-left: 1px solid var(--line, rgba(255,255,255,.12)); }
 
+/* The kernel: its modules and its memory. */
+form.kmod-load { display: flex; gap: .5rem; align-items: center; flex: 1 1 20rem; }
+form.kmod-load input[name=name] { flex: 1 1 12rem; min-width: 0; }
+form.kmod-load label.toggle { margin: 0; white-space: nowrap; }
+.facts.kmem { margin: .6rem 0 1rem; }
+table.kmods td small { display: block; font-size: .68rem; }
+table.kmods { width: 100%; }
+table.kmods td.mods { font-size: .72rem; color: var(--dim); max-width: 16rem; overflow-wrap: anywhere; }
+table.kmods td:nth-child(2) { max-width: 16rem; overflow-wrap: anywhere; }
+table.kmods td.mods summary { cursor: pointer; color: var(--fg-2, inherit); }
+table.kmem td.bar { width: 28%; }
+table.kmem td.bar i { display: block; height: 6px; border-radius: 3px; background: var(--cyan); opacity: .7; min-width: 2px; }
+h4.family nav.sub { display: inline-flex; margin-left: .8rem; vertical-align: middle; }
+

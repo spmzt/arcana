@@ -264,6 +264,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\\(.*\\)\\\"\\$/\\1/p\" \"$conf\" ;;\n"
 	    "-a|-A) sed -e 's/=\"\\(.*\\)\"$/: \\1/' \"$conf\" ;;\n"
 	    "-x) grep -v \"^$2=\" \"$conf\" > c.new; mv c.new \"$conf\" ;;\n"
+	    "*+=*|*-=*) k=${1%%%%[+-]=*}; v=${1#*=}; o=$(sed -n \"s/^$k=\\\"\\("
+	    ".*\\)\\\"\\$/\\1/p\" \"$conf\"); case \"$1\" in *+=*) n=\"${o:+$o }"
+	    "$v\" ;; *) n=$(echo \" $o \" | sed \"s/ $v / /\" | xargs) ;; esac; "
+	    "grep -v \"^$k=\" \"$conf\" > c.new; printf '%%s=\"%%s\"\\n' \"$k\" "
+	    "\"$n\" >> c.new; mv c.new \"$conf\" ;;\n"
 	    "*=*) k=${1%%%%=*}; v=${1#*=}; grep -v \"^$k=\" \"$conf\" > c.new; "
 	    "printf '%%s=\"%%s\"\\n' \"$k\" \"$v\" >> c.new; mv c.new \"$conf\" ;;\n"
 	    "esac\n", cwd);
@@ -410,6 +415,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "grep -q BROKEN \"$3\" && { echo \"bird: $3:2:1 syntax error\" >&2; "
 	    "exit 1; }\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-bird", 0755) == 0);
+	/* kldload(8) and kldunload(8): what they were told is logged. */
+	put("fake-kldload", "#!/bin/sh\necho \"kldload $*\" >> kld.log\n"
+	    "exit 0\n");
+	put("fake-kldunload", "#!/bin/sh\necho \"kldunload $*\" >> kld.log\n"
+	    "[ \"$1\" = zfs ] && { echo \"kldunload: can't unload file: Device "
+	    "busy\" >&2; exit 1; }\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-kldload", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-kldunload", 0755) == 0);
 	ATF_REQUIRE(mkdir("bird", 0755) == 0 || errno == EEXIST);
 	put("bird/bird.conf", "# The lab's routing.\nrouter id 192.0.2.1;\n\n"
 	    "define MY_AS = 65000;\ndefine CUSTOMERS = [ (65000,100), "
@@ -521,7 +534,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[49] = (char *)(uintptr_t)"./fake-jexec";
 	argv[50] = (char *)(uintptr_t)"-H";
 	argv[51] = (char *)(uintptr_t)"./fake-helper";
-	argv[52] = NULL;
+	argv[52] = (char *)(uintptr_t)"-T";
+	argv[53] = (char *)(uintptr_t)"./fake-kldload";
+	argv[54] = (char *)(uintptr_t)"-t";
+	argv[55] = (char *)(uintptr_t)"./fake-kldunload";
+	argv[56] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

@@ -255,6 +255,9 @@ job_finished(struct op *op, bool ok, const char *err)
 			service_config(op->target, NULL);
 		}
 		break;
+	case JOB_KERNEL:
+		refresh_kernel(s, true);
+		break;
 	case JOB_IFACE:
 		/* The interfaces as they are now, if they are on show. */
 		if ((app.net.kind == NET_INTERFACES || app.net.kind ==

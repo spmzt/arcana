@@ -245,7 +245,8 @@ start_daemon()
 	    -k "$(pwd)/fake-wg" -o "$(pwd)/wg" -b "$(pwd)/fake-birdc" \
 	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" \
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
-	    -H "$(pwd)/fake-helper" -w 2 \
+	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
+	    -t "$(pwd)/fake-kldunload" -w 2 \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -2170,12 +2171,96 @@ agent_update_cleanup()
 	stop_daemon
 }
 
+atf_test_case kernel cleanup
+kernel_head()
+{
+	atf_set "descr" "The kernel's modules and memory; one loaded, one unloaded, kept in kld_list"
+}
+kernel_body()
+{
+	# kldload and kldunload, which take a name: one of them is in use.
+	cat > fake-kldload <<EOS
+#!/bin/sh
+echo "kldload \$*" >> $(pwd)/kld.log
+[ "\$2" = nosuch ] && { echo "kldload: can't load nosuch: No such file or directory" >&2; exit 1; }
+exit 0
+EOS
+	cat > fake-kldunload <<EOS
+#!/bin/sh
+echo "kldunload \$*" >> $(pwd)/kld.log
+[ "\$1" = zfs ] && { echo "kldunload: can't unload file: Device busy" >&2; exit 1; }
+exit 0
+EOS
+	chmod +x fake-kldload fake-kldunload
+	start_daemon
+	printf 'kld_list="if_bridge"\n' >> rc.conf
+
+	# What is in the kernel is read from the kernel: the kernel itself
+	# first, with the modules it holds; what its memory went to.
+	atf_check -o save:k.json "$JGC" -c "$SOCK" kmod
+	atf_check -o match:'"files":\[\{"id":1,"name":"kernel","path":"/boot/[^"]*kernel"' \
+	    -o match:'"refs":[0-9]+,"size":[0-9]+' -o match:'"modules":\["' \
+	    -o match:'"available":\[' -o match:'"kept":\["if_bridge"\]' \
+	    -o match:'"memory":\{"files":[0-9]+' \
+	    -o match:'"malloc_total":[0-9]+,"malloc":\[\{"name":"[^"]+","bytes":[0-9]+,"count":[0-9]+,"requests":[0-9]+\}' \
+	    -o match:'"zones":\[\{"name":"[^"]+","bytes":[0-9]+,"count":[0-9]+,"requests":[0-9]+,"size":[0-9]+,"free":[0-9]+\}' \
+	    cat k.json
+
+	# Loaded: as kldload finds it, and one that is in already is no
+	# failure.  Kept, it is in kld_list beside what was there.
+	atf_check -o match:'done +kldload sctp$' -o match:'fake-kldload -n sctp' \
+	    "$JGC" -c "$SOCK" kmod load sctp
+	atf_check -o not-match:'sctp' cat rc.conf
+	atf_check -o match:'done +kldload sctp \(kept\)' \
+	    "$JGC" -p -c "$SOCK" kmod load sctp
+	atf_check -o match:'^kld_list="if_bridge sctp"$' cat rc.conf
+	# Unloaded, and out of the list; what the kernel refuses is said.
+	atf_check -o match:'done +kldunload sctp \(kept\)' \
+	    -o match:'fake-kldunload sctp' "$JGC" -p -c "$SOCK" kmod unload sctp
+	atf_check -o match:'^kld_list="if_bridge"$' cat rc.conf
+	atf_check -s exit:1 -o match:'Device busy' \
+	    "$JGC" -c "$SOCK" kmod unload zfs
+	atf_check -s exit:1 -o match:'No such file' \
+	    "$JGC" -c "$SOCK" kmod load nosuch
+	# A name is a name: no path to a file of somebody's, no option;
+	# and the kernel itself stays.
+	: > kld.log
+	atf_check -s exit:1 -e match:'without a path' -o ignore \
+	    "$JGC" -c "$SOCK" kmod load /tmp/evil.ko
+	atf_check -s exit:1 -e match:'without a path' -o ignore \
+	    "$JGC" -c "$SOCK" kmod load ../evil
+	atf_check -s exit:1 -e match:'the kernel itself is not unloaded' \
+	    -o ignore "$JGC" -c "$SOCK" kmod unload kernel
+	atf_check -s exit:1 -e match:'a jail has no kernel' -o ignore \
+	    "$JGC" -j web -c "$SOCK" kmod load sctp
+	atf_check -o empty cat kld.log
+	# In safe mode, unconfirmed, what was loaded is unloaded again;
+	# one that was in already is left in.
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" kmod load sctp
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^kldload -n sctp$' cat kld.log
+	if kldstat -q -m sctp 2>/dev/null; then
+		atf_check -o not-match:'kldunload' cat kld.log
+	else
+		atf_check -o match:'^kldunload sctp$' cat kld.log
+	fi
+}
+kernel_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case vpn
 	atf_add_test_case vnet
+	atf_add_test_case kernel
 	atf_add_test_case safe_mode
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart

@@ -35,6 +35,8 @@ Written and tested with stand-ins, never run for real:
   configuration written in a jail, WireGuard in a jail, safe mode in a
   jail, and the map with a real jail as a node (the browser test tells
   the page that a jail runs).
+- Loading and unloading a kernel module for real: reading the kernel
+  is real, kldload(8) and kldunload(8) are stand-ins in the tests.
 - BIRD's safe mode and what is done when BIRD stops answering, against
   a real BIRD: the replies looked for are those in BIRD's source, 2.19
   and 3.3 (`cmd_reconfig_msg()`), and the tests use a stand-in that

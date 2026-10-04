@@ -58,6 +58,8 @@ struct opts opts = {
 	.ngctl_bin = PATH_NGCTL_BIN,
 	.jls_bin = PATH_JLS_BIN,
 	.jexec_bin = PATH_JEXEC_BIN,
+	.kldload_bin = PATH_KLDLOAD_BIN,
+	.kldunload_bin = PATH_KLDUNLOAD_BIN,
 	.wg_bin = PATH_WG_BIN,
 	.wg_dir = PATH_WG_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
@@ -290,7 +292,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:I:j:K:k:L:l:M:N:n:o:P:p:R:r:s:U:Vw:W:X:x:Y:y:Z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:I:j:K:k:L:l:M:N:n:o:P:p:R:r:s:T:t:U:Vw:W:X:x:Y:y:Z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -379,6 +381,12 @@ main(int argc, char *argv[])
 			break;
 		case 'x':
 			opts.jexec_bin = optarg;
+			break;
+		case 'T':
+			opts.kldload_bin = optarg;
+			break;
+		case 't':
+			opts.kldunload_bin = optarg;
 			break;
 		case 'H':
 			opts.helper_bin = optarg;

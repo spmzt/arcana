@@ -280,7 +280,7 @@ The agent's sources are laid out by Archive, in
 | Directory | Archive | What is in it |
 |---|---|---|
 | (top) | the Agent | `main.c` (start, listeners, stopping), `handlers.c` (the family's requests, one thread each), `work.c` (a request's memory) |
-| `superbia/` | Superbia | `host.c` (what the host is), `confread.c` (the jails as configured, as jail(8) resolves them), `confedit.c` (changing a jail's configuration, with a backup and a read-back) |
+| `superbia/` | Superbia | `host.c` (what the host is), `confread.c` (the jails as configured, as jail(8) resolves them), `confedit.c` (changing a jail's configuration, with a backup and a read-back), `kernel.c` (the kernel's modules, loaded and unloaded, and its memory) |
 | `invidia/` | Invidia | `network.c` (routes, nexthops, connections, sockets), `interfaces.c` (the interfaces, read and changed live), `routes.c` (static routes), `address.c` (a jail's addresses, live and persistent) |
 | `ira/` | Ira | `lifecycle.c` (list, start, stop, restart, kill), `jails.c`, `jail.c` (running jails), `services.c`, `packages.c`, `jobs.c` (the queue), `exec.c` (running a program), `update.c`, `build.c` (the agent's own program) |
 | `acedia/` | Acedia | `pools.c` (ZFS pools) |

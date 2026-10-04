@@ -146,6 +146,30 @@ or open sockets
 as the program printed them with
 .Fl -libxo Cm json ,
 for one address family or both.
+.It Cm kmod
+The kernel's modules and its memory: every file linked into the kernel
+with its size, the references to it and the modules it holds; the
+modules that could be loaded; what
+.Xr rc.conf 5 Ns 's
+.Va kld_list
+loads at boot; and the largest of the kernel's
+.Xr malloc 9
+types and
+.Xr uma 9
+zones.
+.It Cm kmod load | unload Ar module
+Load a kernel module with
+.Xr kldload 8 ,
+or unload one with
+.Xr kldunload 8 .
+The module is named as
+.Xr kldload 8
+finds it, without a path.
+With
+.Fl p ,
+it is also put into
+.Va kld_list ,
+or taken out of it.
 .It Cm stats
 CPU busy share since the previous request, load averages, memory, swap
 and the ZFS pools.

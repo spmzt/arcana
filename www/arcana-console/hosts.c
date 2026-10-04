@@ -52,6 +52,7 @@ enum op {
 	OP_CONSOLE_UPDATE,
 	OP_ROUTE_LOOKUP,
 	OP_BIRD_CONFIG,
+	OP_KERNEL,
 };
 
 struct call {
@@ -373,8 +374,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_ACTION ? "arc_action" : c->op == OP_ADDRESS ?
 	    "arc_address" : c->op == OP_SERVICES ? "arc_services" :
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
-	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STATS ?
-	    "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
+	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_KERNEL ?
+	    "arc_kernel" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
 	    "arc_jobs" : c->op == OP_JOB ? "arc_job" : c->op == OP_JOB_CANCEL ?
@@ -649,6 +650,7 @@ call_run(struct kore_task *t)
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp *bcr;
 	struct arc_stats_rsp	*str;
+	struct arc_kernel_rsp	*kr;
 	struct arc_packages_req	 pq;
 	struct arc_packages_rsp	*pr;
 	struct arc_pkg_upgrade_req uq;
@@ -707,6 +709,7 @@ call_run(struct kore_task *t)
 	rlr = NULL;
 	bcr = NULL;
 	str = NULL;
+	kr = NULL;
 	pr = NULL;
 	ur = NULL;
 	jsr = NULL;
@@ -1084,6 +1087,26 @@ call_run(struct kore_task *t)
 		steps = rlr->trace.v;
 		nsteps = rlr->trace.n;
 		break;
+	case OP_KERNEL:
+		if ((error = arc_kernel(&cl, &kr)) != 0)
+			goto rpcfail;
+		ok = kr->ok;
+		put_str(top, "error", kr->error);
+		e = NULL;
+		if (kr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, kr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = kr->trace.v;
+		nsteps = kr->trace.n;
+		break;
 	case OP_CONSOLE_UPDATE:
 		memset(&cuq, 0, sizeof(cuq));
 		cuq.source = cfg.agent_source;
@@ -1239,6 +1262,8 @@ done:
 		arc_bird_config_rsp_free(bcr);
 	if (str != NULL)
 		arc_stats_rsp_free(str);
+	if (kr != NULL)
+		arc_kernel_rsp_free(kr);
 	if (pr != NULL)
 		arc_packages_rsp_free(pr);
 	if (ur != NULL)
@@ -1836,6 +1861,19 @@ api_bird_config(struct http_request *req)
 }
 
 /* GET /api/servers/<id>/stats */
+/* GET /api/servers/<id>/kernel: its modules and its memory. */
+int
+api_kernel(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_KERNEL)) == NULL)
+		return (KORE_RESULT_OK);
+	return (call_start(req, c));
+}
+
 int
 api_stats(struct http_request *req)
 {
@@ -1966,6 +2004,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_WIREGUARD] = "wireguard",
 	[ARC_JOB_KIND_BIRD] = "bird",
 	[ARC_JOB_KIND_IF_VNET] = "if-vnet",
+	[ARC_JOB_KIND_KMOD] = "kmod",
 };
 
 static const char *job_state_names[] = {
@@ -2168,9 +2207,11 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		break;
 	case ARC_JOB_KIND_NETGRAPH:
 	case ARC_JOB_KIND_BIRD:
+	case ARC_JOB_KIND_KMOD:
 		names = ucl_object_lookup(o, "args");
 		if (sp->verb == NULL || (n = ucl_array_size(names)) > 4 ||
-		    (n == 0 && sp->kind == ARC_JOB_KIND_NETGRAPH))
+		    (n == 0 && sp->kind == ARC_JOB_KIND_NETGRAPH) ||
+		    (n != 1 && sp->kind == ARC_JOB_KIND_KMOD))
 			return ("the job needs a verb and its args");
 		if (n == 0)
 			break;

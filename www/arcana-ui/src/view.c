@@ -812,7 +812,8 @@ stage(struct html *h)
 		} tabs[] = {
 			{ "summary", "Summary" }, { "jails", "Jails" },
 			{ "services", "Services" }, { "network", "Network" },
-			{ "packages", "Packages" }, { "jobs", "Jobs" },
+			{ "packages", "Packages" }, { "kernel", "Kernel" },
+			{ "jobs", "Jobs" },
 		};
 		/*
 		 * A plugin has a tab of its own, on a host that has it: it
@@ -831,7 +832,7 @@ stage(struct html *h)
 		plug = app.tab == TAB_NETWORK && (app.net.kind ==
 		    NET_WIREGUARD || app.net.kind == NET_BIRD);
 		h_raw(h, "<nav class=\"tabs\">");
-		for (t = 0; t < 6; t++)
+		for (t = 0; t < 7; t++)
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
@@ -864,6 +865,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_NETWORK) {
 		view_network(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_KERNEL) {
+		view_kernel(h, s);
 		h_raw(h, "</main>");
 		return;
 	}

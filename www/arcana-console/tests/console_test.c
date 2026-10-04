@@ -1653,6 +1653,44 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	resp_free(&r);
 
+	/*
+	 * The kernel: what is linked into it, read from the kernel, and
+	 * what its memory went to; a module loaded by a job.
+	 */
+	snprintf(path, sizeof(path), "%.*s/kernel",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("kernel", jstr(&r, "data.files.0.name"));
+	ATF_CHECK(jstr(&r, "data.files.0.size") != NULL);
+	ATF_CHECK(jstr(&r, "data.files.0.modules.0") != NULL);
+	ATF_CHECK(jstr(&r, "data.memory.malloc.0.name") != NULL);
+	ATF_CHECK(jstr(&r, "data.memory.zones.0.size") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"kmod\",\"verb\":\"load\","
+	    "\"args\":[\"sctp\"],\"persist\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("kldload sctp (kept)", jstr(&r, "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'kld_list' rc.conf "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^kldload -n sctp$' kld.log && grep -q "
+	    "'^kld_list=\"sctp\"$' rc.conf") == 0);
+	/* A name is a name, and a verb one of the two. */
+	http("POST", path, "{\"jobs\":[{\"kind\":\"kmod\",\"verb\":\"load\","
+	    "\"args\":[\"/tmp/evil.ko\"]}]}", &r);
+	ATF_CHECK(r.status != 200 || strcmp(jstr(&r, "ok") != NULL ? jstr(&r,
+	    "ok") : "", "true") != 0);
+	resp_free(&r);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"kmod\",\"verb\":\"load\"}]}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
 	/* The host says which plugins it has: the programs are there. */
 	snprintf(path, sizeof(path), "%.*s/jails",
 	    (int)(strlen(base) - strlen("/services")), base);

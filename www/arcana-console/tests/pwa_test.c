@@ -1240,6 +1240,52 @@ ATF_TC_BODY(pwa, tc)
 	    == 0);
 
 	/*
+	 * The kernel: the files linked into it with the modules each
+	 * holds, what its memory went to, a module loaded and one
+	 * unloaded, kept in rc.conf's kld_list or taken out of it.
+	 */
+	run("document.querySelector('button.tab[data-arg=kernel]').click()");
+	wait_js("document.querySelector('table.kmods tr[data-kld=kernel]') && "
+	    "document.querySelectorAll('table.kmem tbody tr').length > 3", 20);
+	ATF_CHECK(js_true("!document.querySelector('table.kmods tr[data-kld="
+	    "kernel] button[data-act=kmod-unload]') && document.querySelector("
+	    "'.facts.kmem').textContent.includes('kernel memory in use') && "
+	    "document.querySelectorAll('#kmods option').length > 0"));
+	shot("7i-kernel");
+	run("document.querySelector('button[data-act=kmem][data-arg=zones]')"
+	    ".click()");
+	wait_js("document.querySelector('table.kmem thead').textContent."
+	    "includes('Item size')", 5);
+	run("const f = document.querySelector('form[data-form=kmod-load]'); "
+	    "f.name.value = 'sctp'; f.persist.checked = true; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('kldload sctp: done'))", 20);
+	ATF_CHECK(system("grep -q '^kldload -n sctp$' kld.log && grep -q "
+	    "'^kld_list=\"sctp\"$' rc.conf") == 0);
+	/* Kept, and not in this kernel: said. */
+	wait_js("document.querySelector('.notice.info') && document."
+	    "querySelector('.notice.info').textContent.includes('sctp')", 20);
+	run("document.querySelector('.dock > header').click()");
+	/* One that is in is unloaded once its name is typed. */
+	run("window.kld = [...document.querySelectorAll('table.kmods button"
+	    "[data-act=kmod-unload]')][0].dataset.arg; document.querySelector("
+	    "'table.kmods button[data-act=kmod-unload]').click()");
+	wait_js("document.querySelector('form[data-form=confirm] input')", 5);
+	run("const f = document.querySelector('form[data-form=confirm]'); "
+	    "const i = f.querySelector('input'); i.value = window.kld; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true })); "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('kldunload ' + window.kld))", 20);
+	ATF_CHECK(system("grep -q '^kldunload ' kld.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/*
 	 * The network: every host a node of a map, joined to the others
 	 * as its interfaces join it.  Both agents here read the same
 	 * machine, so they share its networks.

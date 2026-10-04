@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.23.0"
+#define	ARCW_VERSION		"0.24.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -144,6 +144,7 @@ const char	*agent_version(void);
 int		 api_agent_build(struct http_request *);
 int		 api_network(struct http_request *);
 int		 api_stats(struct http_request *);
+int		 api_kernel(struct http_request *);
 int		 api_bird_config(struct http_request *);
 int		 api_packages(struct http_request *);
 int		 api_pkg_upgrade(struct http_request *);

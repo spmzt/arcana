@@ -287,6 +287,7 @@ worker(void *arg)
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
+	struct arc_kernel_rsp	 kr;
 	struct arc_packages_rsp	 pr;
 	struct arc_pkg_upgrade_rsp ur;
 	struct arc_agent_update_rsp aur;
@@ -389,6 +390,18 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &str.trace.v, &str.trace.n);
 		rc = arc_stats_reply(j->req, &str);
+		break;
+	case ARC_CMD_KERNEL:
+		what = "kernel";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "kernel");
+		memset(&kr, 0, sizeof(kr));
+		do_kernel(&w, &kr);
+		ok = kr.ok;
+		error = kr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &kr.trace.v, &kr.trace.n);
+		rc = arc_kernel_reply(j->req, &kr);
 		break;
 	case ARC_CMD_NETWORK:
 		what = wfmt(&w, "network %s%s", net_kind_names[j->action],
@@ -956,6 +969,18 @@ arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
 }
 
 int
+arc_kernel_doit(cbl_req *req, void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_KERNEL;
+	return (start(j));
+}
+
+int
 arc_stats_doit(cbl_req *req, void *arg __unused)
 {
 	struct job	*j;
@@ -1023,7 +1048,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_IF_VNET)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_KMOD)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1073,6 +1098,19 @@ check_spec(const struct arc_job_spec *sp)
 			return ("invalid interface name");
 		if (sp->parent != NULL && !valid_ifname(sp->parent))
 			return ("invalid interface name");
+		break;
+	case ARC_JOB_KIND_KMOD:
+		if (sp->jail != NULL && sp->jail[0] != '\0')
+			return ("a jail has no kernel of its own");
+		if (sp->verb == NULL || (strcmp(sp->verb, "load") != 0 &&
+		    strcmp(sp->verb, "unload") != 0))
+			return ("a module is loaded or unloaded: load, unload");
+		if (sp->names.n != 1 || !kmod_name_ok(sp->names.v[0]))
+			return ("name one module, as kldload(8) finds it, "
+			    "without a path: letters, digits and . _ -");
+		if (strcmp(sp->verb, "unload") == 0 && (strcmp(sp->names.v[0],
+		    "kernel") == 0 || strcmp(sp->names.v[0], "kernel.ko") == 0))
+			return ("the kernel itself is not unloaded");
 		break;
 	case ARC_JOB_KIND_IF_VNET:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))

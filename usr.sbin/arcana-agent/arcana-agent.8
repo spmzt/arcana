@@ -39,6 +39,8 @@
 .Op Fl a Ar file
 .Op Fl L Ar jls
 .Op Fl x Ar jexec
+.Op Fl T Ar kldload
+.Op Fl t Ar kldunload
 .Op Fl H Ar helper
 .Op Fl w Ar seconds
 .Op Fl N Ar netstat
@@ -252,6 +254,12 @@ program, which parses a configuration before it is put in place, and
 BIRD's main configuration file.
 Default
 .Pa /usr/local/etc/bird.conf .
+.It Fl T Ar kldload , Fl t Ar kldunload
+The
+.Xr kldload 8
+and
+.Xr kldunload 8
+programs, which load a kernel module and unload one.
 .It Fl L Ar jls , Fl x Ar jexec
 The
 .Xr jls 8

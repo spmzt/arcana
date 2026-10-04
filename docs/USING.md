@@ -66,6 +66,23 @@ The console is laid out as a tree and tabs.
     join them, from `ngctl list -l`; a node is picked for its hooks,
     which are removed with their cross, shut down, or given a new peer;
     dragging the dot on a node onto another connects a hook of each.
+  - **Kernel**: every file linked into the kernel, the kernel itself
+    first, with its size, how many references hold it, and the modules
+    in it; read from the kernel, as `kldstat -v` has it. **Load** takes
+    a module's name as `kldload` finds it, without a path, and offers
+    those of the module path that are not in; **Unload** asks for the
+    name to be typed, since what a module does stops with it, and the
+    kernel refuses one that is still used. With **at boot too** a
+    module loaded is put into `rc.conf`'s `kld_list`; one unloaded
+    that was there is taken out of it; and what `kld_list` names that
+    is not in the kernel now is said. Arcana loads no module by
+    itself: what a feature needs and is missing is said, and loaded
+    here. Above the list: what the kernel and its modules take, and
+    how much of the kernel's memory is in use. Below it, **Kernel
+    memory**: the largest `malloc(9)` types and `uma(9)` zones, as
+    `vmstat -m` and `vmstat -z` count them, which is where a module's
+    own memory shows. From a shell: `arcanactl kmod`, `arcanactl [-p]
+    kmod load | unload module`.
   - **Plugins** are what works through a program that has to be
     installed, not the base system's: **BIRD** (`birdc`) and
     **WireGuard** (`wg`; the interface itself, `if_wg` made by

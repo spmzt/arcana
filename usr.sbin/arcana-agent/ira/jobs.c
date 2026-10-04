@@ -98,7 +98,7 @@ scoped(const struct arc_job_spec *sp)
 {
 
 	return (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->kind !=
-	    ARC_JOB_KIND_IF_VNET);
+	    ARC_JOB_KIND_IF_VNET && sp->kind != ARC_JOB_KIND_KMOD);
 }
 
 /* What the job does, in words: the activity log's line for it. */
@@ -167,6 +167,10 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_BIRD:
 		rc = asprintf(&t, "bird %s%s%s", sp->verb, sp->names.n > 0 ?
 		    " " : "", sp->names.n > 0 ? sp->names.v[0] : "");
+		break;
+	case ARC_JOB_KIND_KMOD:
+		rc = asprintf(&t, "kld%s %s%s", sp->verb, sp->names.v[0],
+		    sp->persist ? " (kept)" : "");
 		break;
 	case ARC_JOB_KIND_IF_VNET:
 		rc = asprintf(&t, sp->remove ? "take %s back from %s%s%s%s" :
@@ -366,6 +370,12 @@ undo_prepare(struct qjob *j)
 		if (if_is_up(&j->w, sp->interface, &up) && up == sp->up)
 			j->undo_none = true;
 		break;
+	case ARC_JOB_KIND_KMOD:
+		/* One that was in already, or out, is left so. */
+		if (kmod_loaded(sp->names.v[0]) == (strcmp(sp->verb,
+		    "load") == 0))
+			j->undo_none = true;
+		break;
 	case ARC_JOB_KIND_IF_CREATE:
 		/* A name rc.conf sets up already keeps what it has there. */
 		if (rc_get(&j->w, wfmt(&j->w, "ifconfig_%s", rc_ifname(&j->w,
@@ -539,6 +549,10 @@ undo(struct qjob *j)
 	case ARC_JOB_KIND_IF_STATE:
 		rc = do_if_state(&j->w, sp->interface, !sp->up, &e);
 		break;
+	case ARC_JOB_KIND_KMOD:
+		rc = do_kmod(&j->w, strcmp(sp->verb, "load") == 0 ? "unload" :
+		    "load", sp->names.v[0], sp->persist, &e);
+		break;
 	case ARC_JOB_KIND_IF_VNET:
 		rc = do_if_vnet(&j->w, j->made != NULL ? j->made :
 		    sp->interface, sp->jail, !sp->remove, sp->persist, &e);
@@ -699,6 +713,11 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_BIRD:
 		error = NULL;
 		ok = do_bird_verb(&j->w, sp->verb, sp->names.v, sp->names.n,
+		    &error) == 0;
+		break;
+	case ARC_JOB_KIND_KMOD:
+		error = NULL;
+		ok = do_kmod(&j->w, sp->verb, sp->names.v[0], sp->persist,
 		    &error) == 0;
 		break;
 	case ARC_JOB_KIND_IF_VNET:

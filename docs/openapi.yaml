@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.23.0
+  version: 0.24.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -532,6 +532,24 @@ paths:
                   trace: { type: array }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/servers/{server}/kernel:
+    get:
+      tags: [servers]
+      summary: The kernel's modules and its memory
+      description: Under data. files is every file linked into the kernel
+        (id, name, path, refs, size, address, modules); available the
+        modules of the module path that are not loaded; kept what
+        rc.conf's kld_list loads at boot; memory has files, kmem_size,
+        kmem_map_size, kmem_map_free, malloc_total, and the largest
+        malloc(9) types (malloc) and uma(9) zones (zones). A module is
+        loaded or unloaded by a job of kind kmod, with verb load or unload
+        and the module's name as its one arg; with persist also into or
+        out of kld_list.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
   /api/servers/{server}/stats:
     get:
       tags: [servers]
@@ -619,7 +637,7 @@ paths:
                         enum: [jail-action, address, service-action,
                           service-config, pkg-upgrade, if-address,
                           if-state, route, if-set, if-create, if-destroy,
-                          netgraph, wireguard, bird, if-vnet]
+                          netgraph, wireguard, bird, if-vnet, kmod]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the

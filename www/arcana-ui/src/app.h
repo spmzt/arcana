@@ -139,6 +139,7 @@ enum tab {
 	TAB_SERVICES,
 	TAB_NETWORK,
 	TAB_PACKAGES,
+	TAB_KERNEL,
 	TAB_JOBS,
 };
 
@@ -260,6 +261,7 @@ enum {
 	JOB_SERVICE_CONFIG,
 	JOB_PACKAGES,
 	JOB_IFACE,
+	JOB_KERNEL,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -509,6 +511,10 @@ bool		 bird_action(const char *, const char *, const char *);
 bool		 bird_form(const char *, const ucl_object_t *);
 bool		 bird_modal(struct html *);
 void		 bird_tick(double);
+void		 refresh_kernel(struct server *, bool);
+void		 view_kernel(struct html *, struct server *);
+bool		 kernel_form(const char *, const ucl_object_t *);
+bool		 kernel_action(const char *, const char *, const char *);
 void		 topo_poll_host(struct server *);
 void		 bird_modal_buttons(struct html *);
 const char	*state_class(const struct server *, const ucl_object_t *,

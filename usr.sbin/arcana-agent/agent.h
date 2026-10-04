@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.13.2"
+#define	ARCANA_AGENT_VERSION	"0.14.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -38,6 +38,8 @@
 #define	PATH_NGCTL_BIN		"/usr/sbin/ngctl"
 #define	PATH_JLS_BIN		"/usr/sbin/jls"
 #define	PATH_JEXEC_BIN		"/usr/sbin/jexec"
+#define	PATH_KLDLOAD_BIN	"/sbin/kldload"
+#define	PATH_KLDUNLOAD_BIN	"/sbin/kldunload"
 #define	PATH_WG_BIN		"/usr/local/bin/wg"
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
@@ -75,6 +77,8 @@ struct opts {
 	const char	*ngctl_bin;
 	const char	*jls_bin;
 	const char	*jexec_bin;
+	const char	*kldload_bin;
+	const char	*kldunload_bin;
 	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
@@ -317,6 +321,13 @@ int		 do_bird_config(struct work *,
 int		 scope_enter(struct work *, const char *, const char **);
 int		 do_bird_routes(struct work *, const char *,
 		    struct arc_network_rsp *);
+/* superbia/kernel.c: the kernel's modules and memory. */
+int		 do_kernel(struct work *, struct arc_kernel_rsp *);
+int		 do_kmod(struct work *, const char *, const char *, bool,
+		    const char **);
+bool		 kmod_name_ok(const char *);
+bool		 kmod_loaded(const char *);
+
 /* luxuria/plugins.c */
 void		 plugins_there(struct work *, const char *,
 		    const char *const **, size_t *);

@@ -81,6 +81,7 @@ static int	cmd_address(struct arc_client *, int, char **);
 static int	cmd_services(struct arc_client *);
 static int	cmd_net(struct arc_client *, int, char **);
 static int	cmd_stats(struct arc_client *);
+static int	cmd_kmod(struct arc_client *, int, char **);
 static int	cmd_packages(struct arc_client *, int, char **);
 static int	cmd_pkg_upgrade(struct arc_client *, int, char **);
 static void	emit_packages(const struct arc_package *, size_t);
@@ -138,6 +139,7 @@ usage(void)
 	    "    bird routes [prefix | for address] [protocol | export name]\n"
 	    "        [table name] [all]\n"
 	    "    stats\n"
+	    "    kmod [load | unload module]\n"
 	    "    packages [-r] [jail]\n"
 	    "    pkg-upgrade [-n] [-j jail] [package ...]\n"
 	    "    jobs\n"
@@ -1320,6 +1322,47 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/*
+ * kmod: the kernel's modules and its memory, as the host says them.
+ * kmod load | unload module: a job; with -p also in rc.conf's kld_list.
+ */
+static int
+cmd_kmod(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_kernel_rsp	*rsp;
+	const char		*name;
+	int			 error;
+
+	if (argc == 3 && (strcmp(argv[1], "load") == 0 || strcmp(argv[1],
+	    "unload") == 0)) {
+		memset(&sp, 0, sizeof(sp));
+		sp.has_kind = true;
+		sp.kind = ARC_JOB_KIND_KMOD;
+		sp.verb = argv[1];
+		name = argv[2];
+		sp.names.v = &name;
+		sp.names.n = 1;
+		sp.persist = persist;
+		sp.safe = safe;
+		sp.jail = netjail;
+		return (submit(cl, &sp));
+	}
+	if (argc != 1)
+		usage();
+	if ((error = arc_kernel(cl, &rsp)) != 0)
+		fail(cl, error, "kmod");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("kmod: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_kernel_rsp_free(rsp);
+	return (error);
+}
+
 static int
 cmd_stats(struct arc_client *cl)
 {
@@ -1768,6 +1811,8 @@ main(int argc, char *argv[])
 		rc = cmd_net(&cl, argc, argv);
 	else if (strcmp(argv[0], "stats") == 0 && argc == 1)
 		rc = cmd_stats(&cl);
+	else if (strcmp(argv[0], "kmod") == 0)
+		rc = cmd_kmod(&cl, argc, argv);
 	else if (strcmp(argv[0], "packages") == 0)
 		rc = cmd_packages(&cl, argc, argv);
 	else if (strcmp(argv[0], "jobs") == 0 && argc == 1)

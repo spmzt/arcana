@@ -2,7 +2,7 @@ PROG=		arcana-agent
 # The Agent itself, then what it does by Archive (docs/NAMING.md).
 SRCS=		main.c handlers.c work.c
 # Superbia: identity, configuration, what is true of the host.
-SRCS+=		confedit.c confread.c host.c
+SRCS+=		confedit.c confread.c host.c kernel.c
 # Invidia: the network.
 SRCS+=		address.c interfaces.c netgraph.c network.c rcconf.c \
 		routes.c scope.c vnet.c
@@ -27,7 +27,7 @@ CBLINK_PARTS=	h,c,server
 CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
-LDADD+=		-ljail -lprocstat -lutil -lpthread -lcrypto ${UCL_LIBS}
+LDADD+=		-ljail -lmemstat -lprocstat -lutil -lpthread -lcrypto ${UCL_LIBS}
 
 # The rc.d(8) script.
 FILESGROUPS+=	RC
