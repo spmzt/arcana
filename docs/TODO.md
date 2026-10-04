@@ -54,11 +54,6 @@
 
 Written and tested with stand-ins, never run for real:
 
-- The agent's tests that need root (a jail started, restarted, stopped
-  and killed; live addresses), since the rename to Arcana. They make a
-  jail of their own, and the one host there is root on is itself a jail
-  that may have none: to be run as root on a host,
-  `kyua test -k Kyuafile agent_root_test` in the agent's tests.
 - On a host itself, as root: creating, setting and destroying
   interfaces and what of them is kept in rc.conf (done for real only in
   a vnet jail, below); static routes, routing tables and netgraph
@@ -114,6 +109,9 @@ What was once in the list above, and when it was run:
   rc.conf with the real sysrc(8), in a vnet jail (2026-10-04): what was
   kept made keeping it again refused, and what was forgotten did not.
 
+- The agent's tests that need root (2026-10-04, as root on the machine
+  this is written on): a jail of their own started, restarted,
+  stopped and killed, its addresses added and removed live and kept.
 - Storage (2026-10-04, in a lab on the machine this is written on,
   with memory disks and a pool of its own): gpart creating a table,
   adding, labelling, resizing and deleting partitions; zfs creating
