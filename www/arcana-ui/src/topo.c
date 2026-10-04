@@ -764,8 +764,9 @@ bird_poll(int i)
 	struct thost	*t;
 	char		 url[240];
 
-	if (!app.online || (t = thost(tn[i].key, true)) == NULL ||
-	    t->bird_loading)
+	/* Asked only of who has it: it is a plugin. */
+	if (!app.online || !plugin_at(&app.servers[tn[i].srv], tn[i].jail,
+	    "bird") || (t = thost(tn[i].key, true)) == NULL || t->bird_loading)
 		return;
 	t->bird_loading = true;
 	node_url(i, "bird", "", url, sizeof(url));
@@ -779,7 +780,8 @@ wg_poll(int i)
 	struct thost	*t;
 	char		 url[240];
 
-	if (!app.online || (t = thost(tn[i].key, true)) == NULL ||
+	if (!app.online || !plugin_at(&app.servers[tn[i].srv], tn[i].jail,
+	    "wireguard") || (t = thost(tn[i].key, true)) == NULL ||
 	    t->wg_loading)
 		return;
 	t->wg_loading = true;

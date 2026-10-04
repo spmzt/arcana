@@ -3085,3 +3085,8 @@ table.broutes tr.other td { color: var(--dim); }
 table.broutes tr.attrs pre { margin: 0 0 .4rem 1.2rem; font-size: .72rem; color: var(--dim); white-space: pre-wrap; }
 .modal table.net select { max-width: 13rem; }
 
+/* Plugins: what was installed, apart from what the base system has. */
+nav.tabs .tab.plugin:first-of-type, nav.tabs .tab:not(.plugin) + .tab.plugin { margin-left: 1.2rem; }
+nav.tabs .tab.plugin::before { content: "◆ "; font-size: .6em; vertical-align: .15em; opacity: .7; }
+nav.sub.plugins { padding-left: .6rem; border-left: 1px solid var(--line, rgba(255,255,255,.12)); }
+

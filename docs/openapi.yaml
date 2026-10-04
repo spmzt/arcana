@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.22.0
+  version: 0.23.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1367,6 +1367,14 @@ components:
           type: boolean
           description: arcana-agent runs as root; without it changes fail.
         version: { type: string, description: arcana-agent's. }
+        plugins:
+          type: array
+          items: { type: string, enum: [bird, wireguard] }
+          description: What the host has of what works through a program
+            that is installed, not the base system's. BIRD through
+            birdc(8), WireGuard's keys and peers through wg(8). A running
+            jail with a network of its own has the same member, by what
+            is installed in the jail.
 
     Jail:
       type: object

@@ -400,17 +400,37 @@ view_network(struct html *h, struct server *s)
 	ucl_object_iter_t	 it;
 	char			 age[32];
 	int			 i, n, shown;
-	bool			 mine;
+	bool			 mine, plug, scoped;
 
 	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0 &&
 	    strcmp(app.net.jail, net_scope()) == 0;
+	/*
+	 * A plugin's view stands by itself: on a host it is a tab of its
+	 * own, and what the base system has is not offered beside it.  A
+	 * jail's page has no tabs: there the plugins the jail has follow
+	 * the rest, apart.
+	 */
+	plug = app.net.kind == NET_WIREGUARD || app.net.kind == NET_BIRD;
+	scoped = net_scope()[0] != '\0';
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
-	for (i = 0; i < 8; i++)
+	for (i = 0; i < 6 && (!plug || scoped); i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
-	h_raw(h, "</nav><nav class=\"sub\">");
-	for (i = 0; i < 3; i++) {
+	h_raw(h, "</nav>");
+	if (scoped && (has_plugin(s, "wireguard") || has_plugin(s, "bird"))) {
+		h_raw(h, "<nav class=\"sub plugins\" title=\"Plugins: what is "
+		    "installed in the jail, not the base system's\">");
+		for (i = 6; i < 8; i++)
+			if (has_plugin(s, kinds[i].arg))
+				h_fmt(h, "<button class=\"ghost small%s\" "
+				    "data-act=\"net-kind\" data-arg=\"%s\">%s"
+				    "</button>", (int)app.net.kind == i ? " on" :
+				    "", kinds[i].arg, kinds[i].title);
+		h_raw(h, "</nav>");
+	}
+	h_raw(h, "<nav class=\"sub\">");
+	for (i = 0; i < 3 && !plug; i++) {
 		static const int fams[] = { 0, 4, 6 };
 
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-family\" "

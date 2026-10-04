@@ -507,8 +507,19 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_packages(s, false);
 		}
 	} else if (strcmp(act, "tab") == 0 && s != NULL) {
+		/* A plugin's tab is its view of the host's network. */
+		if (strcmp(arg, "wireguard") == 0 || strcmp(arg, "bird") == 0 ||
+		    (strcmp(arg, "network") == 0 && app.net.kind >=
+		    NET_WIREGUARD)) {
+			app.net.kind = arg[0] == 'w' ? NET_WIREGUARD : arg[0] ==
+			    'b' ? NET_BIRD : NET_INTERFACES;
+			app.net.sort = -1;
+			app.net.loading = false;
+			app.net.sid[0] = '\0';
+		}
 		app.tab = strcmp(arg, "services") == 0 ? TAB_SERVICES :
-		    strcmp(arg, "network") == 0 ? TAB_NETWORK :
+		    strcmp(arg, "network") == 0 || strcmp(arg, "wireguard") ==
+		    0 || strcmp(arg, "bird") == 0 ? TAB_NETWORK :
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
 		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;

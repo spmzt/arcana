@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.12.0"
+#define	ARCANA_AGENT_VERSION	"0.13.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -296,7 +296,7 @@ int		 rc_mtu(struct work *, const char *, unsigned int,
 		    const char **);
 void		 rc_forget_if(struct work *, const char *);
 
-/* invidia/wireguard.c */
+/* luxuria/wireguard.c: a plugin, through wg(8). */
 int		 do_wireguard(struct work *, struct arc_network_rsp *);
 const char	*wg_check(struct work *, const struct arc_job_spec *);
 int		 do_wg(struct work *, const struct arc_job_spec *,
@@ -304,7 +304,7 @@ int		 do_wg(struct work *, const struct arc_job_spec *,
 void		 wg_forget(struct work *, const char *);
 bool		 wg_key_ok(const char *);
 
-/* invidia/bird.c */
+/* luxuria/bird.c: a plugin, through birdc(8). */
 int		 do_bird(struct work *, struct arc_network_rsp *);
 const char	*bird_check(const char *, const char *const *, size_t);
 int		 do_bird_verb(struct work *, const char *, const char *const *,
@@ -317,6 +317,9 @@ int		 do_bird_config(struct work *,
 int		 scope_enter(struct work *, const char *, const char **);
 int		 do_bird_routes(struct work *, const char *,
 		    struct arc_network_rsp *);
+/* luxuria/plugins.c */
+void		 plugins_there(struct work *, const char *,
+		    const char *const **, size_t *);
 int		 do_if_vnet(struct work *, const char *, const char *, bool,
 		    bool, const char **);
 char *const	*scope_argv(struct work *, char *const []);

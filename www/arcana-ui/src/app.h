@@ -421,6 +421,8 @@ void		 service_action(const char *, const char *);
 void		 service_config(const char *, const char *);
 void		 refresh_network(struct server *, bool);
 const char	*net_scope(void);
+bool		 plugin_at(const struct server *, const char *, const char *);
+bool		 has_plugin(const struct server *, const char *);
 void		 refresh_stats(struct server *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);

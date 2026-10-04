@@ -286,7 +286,7 @@ The agent's sources are laid out by Archive, in
 | `acedia/` | Acedia | `pools.c` (ZFS pools) |
 | `avaritia/` | Avaritia | `resources.c` (CPU, memory, swap) |
 | `gula/` | Gula | `trace.c` (the steps of every request), `stats.c` (the host's figures, gathered) |
-| | Luxuria | nothing in the agent yet |
+| `luxuria/` | Luxuria | the plugins, what works through a program that is installed and not the base system's: `plugins.c` (which a host or a vnet jail has), `bird.c` (BIRD, through birdc(8) and bird(8)), `wireguard.c` (WireGuard's keys and peers, through wg(8); the interface is Invidia's) |
 
 One feature can touch several: changing a jail's address is Invidia's
 operation, done live through the kernel and persistently through
@@ -305,3 +305,4 @@ fall under the Archives:
 | `stats`: ZFS pools | Acedia |
 | the trace of every call, the activity log, job traces | Gula |
 | update check, browser notifications (in the console) | Luxuria |
+| `network` for bird, bird-routes and wireguard, `bird-config`, the wireguard and bird jobs: the plugins | Luxuria |

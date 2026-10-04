@@ -74,6 +74,36 @@ net_scope(void)
 	return (app.jail);
 }
 
+/*
+ * Has the host, or its jail named, the plugin?  A plugin works through
+ * a program that is installed, not the base system's: BIRD, WireGuard's
+ * wg(8).  The host says which it has, and which a vnet jail of it has.
+ */
+bool
+plugin_at(const struct server *s, const char *jail, const char *name)
+{
+	const ucl_object_t	*list, *o;
+	ucl_object_iter_t	 it;
+
+	if (s == NULL || s->list == NULL)
+		return (false);
+	list = jail != NULL && jail[0] != '\0' ? jget(find_jail(s, jail),
+	    "plugins") : jget(s->list, "host.plugins");
+	it = NULL;
+	while ((o = ucl_object_iterate(list, &it, true)) != NULL)
+		if (strcmp(ucl_object_tostring_forced(o), name) == 0)
+			return (true);
+	return (false);
+}
+
+/* The same of what the page shows: the host, or the vnet jail open. */
+bool
+has_plugin(const struct server *s, const char *name)
+{
+
+	return (plugin_at(s, s == cur_server() ? net_scope() : "", name));
+}
+
 static struct ctx *
 ctx_new(void)
 {
@@ -1247,6 +1277,11 @@ refresh_network(struct server *s, bool user)
 
 	if (!app.online)
 		return;
+	/* A plugin's view, of a host known not to have the plugin. */
+	if (s->list != NULL && ((app.net.kind == NET_WIREGUARD &&
+	    !has_plugin(s, "wireguard")) || (app.net.kind == NET_BIRD &&
+	    !has_plugin(s, "bird"))))
+		app.net.kind = NET_INTERFACES;
 	if (strcmp(app.net.sid, s->id) != 0 || strcmp(app.net.jail,
 	    net_scope()) != 0 || app.net.loading) {
 		if (app.net.data != NULL)

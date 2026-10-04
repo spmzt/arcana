@@ -1653,6 +1653,15 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	resp_free(&r);
 
+	/* The host says which plugins it has: the programs are there. */
+	snprintf(path, sizeof(path), "%.*s/jails",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bird", jstr(&r, "host.plugins.0"));
+	ATF_CHECK_STREQ("wireguard", jstr(&r, "host.plugins.1"));
+	resp_free(&r);
+
 	/* BIRD's routes, asked for in birdc's words with , between. */
 	snprintf(path, sizeof(path), "%.*s/net/bird-routes?filter=10.1.2.3,all",
 	    (int)(strlen(base) - strlen("/services")), base);

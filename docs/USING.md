@@ -66,6 +66,15 @@ The console is laid out as a tree and tabs.
     join them, from `ngctl list -l`; a node is picked for its hooks,
     which are removed with their cross, shut down, or given a new peer;
     dragging the dot on a node onto another connects a hook of each.
+  - **Plugins** are what works through a program that has to be
+    installed, not the base system's: **BIRD** (`birdc`) and
+    **WireGuard** (`wg`; the interface itself, `if_wg` made by
+    `ifconfig`, is the base system's and is among the interfaces).
+    Each has a tab of its own, after the others and marked ◆, on a
+    host where its program is installed, and none where it is not;
+    on the page of a jail with a network of its own they follow that
+    network's views, apart, when the program is installed in the
+    jail. Nothing is asked of BIRD or `wg` on a host without them.
     **WireGuard** lists the `wg` interfaces with their peers: endpoint,
     allowed addresses, last handshake, traffic. **Make its key** has
     the host make the interface's private key, which stays on the host:

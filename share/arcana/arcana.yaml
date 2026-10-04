@@ -518,6 +518,14 @@ attribute-sets:
           one version differ in it.
         checks:
           max-len: 64
+      - name: plugins
+        type: text
+        multi-attr: true
+        doc: |
+          The plugins the host has: what works through a program that
+          is not the base system's and is installed there.  bird is
+          BIRD, through birdc(8); wireguard is WireGuard's keys and
+          peers, through wg(8).
 
   - name: jail
     attributes:
@@ -568,6 +576,12 @@ attribute-sets:
         nested-attributes: param
         multi-attr: true
         doc: Configured parameters as jail(8) resolves them.
+      - name: plugins
+        type: text
+        multi-attr: true
+        doc: |
+          Of a running jail with a network of its own: the plugins it
+          has, as a host's, by the programs installed in the jail.
 
   - name: param
     attributes:

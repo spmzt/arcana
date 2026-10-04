@@ -76,5 +76,7 @@ it found and could be fixed was, and this is what stays:
   signs with RSA only, so `console.pem` must be RSA until Kore (or a
   patch like the one in `port/www/kore/files`) handles ECDSA.
 - A web terminal in the console: it could not be built.
-- Luxuria has nothing in the agent yet: what reaches outside (the
-  release check, notifications) is the console's.
+- Luxuria in the agent is the plugins, BIRD and WireGuard's `wg`; what
+  reaches outside (the release check, notifications) is the console's.
+  A plugin is still built into the agent and the page: what makes it
+  one is that it is there only where its program is installed.

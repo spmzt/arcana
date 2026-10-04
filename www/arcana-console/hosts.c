@@ -258,6 +258,7 @@ host_object(const struct arc_host *h)
 	put(o, "privileged", ucl_object_frombool(h->privileged));
 	put_str(o, "version", h->version);
 	put_str(o, "build", h->build);
+	put(o, "plugins", strs(h->plugins.v, h->plugins.n));
 	return (o);
 }
 
@@ -280,6 +281,8 @@ jail_object(const struct arc_jail *j)
 	put(o, "ip4", strs(j->ip4.v, j->ip4.n));
 	put(o, "ip6", strs(j->ip6.v, j->ip6.n));
 	put(o, "vnet", ucl_object_frombool(j->vnet));
+	if (j->plugins.n > 0)
+		put(o, "plugins", strs(j->plugins.v, j->plugins.n));
 	put_str(o, "osrelease", j->osrelease);
 	put(o, "persist", ucl_object_frombool(j->persist));
 	put_str(o, "interface", j->interface);

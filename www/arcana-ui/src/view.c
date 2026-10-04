@@ -814,13 +814,36 @@ stage(struct html *h)
 			{ "services", "Services" }, { "network", "Network" },
 			{ "packages", "Packages" }, { "jobs", "Jobs" },
 		};
-		int t;
+		/*
+		 * A plugin has a tab of its own, on a host that has it: it
+		 * is what was installed there, not the base system's.
+		 */
+		static const struct {
+			const char	*arg, *title;
+			int		 kind;
+		} plugins[] = {
+			{ "wireguard", "WireGuard", NET_WIREGUARD },
+			{ "bird", "BIRD", NET_BIRD },
+		};
+		bool	plug;
+		int	t;
 
+		plug = app.tab == TAB_NETWORK && (app.net.kind ==
+		    NET_WIREGUARD || app.net.kind == NET_BIRD);
 		h_raw(h, "<nav class=\"tabs\">");
 		for (t = 0; t < 6; t++)
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
-			    "data-arg=\"%s\">%s</button>", (int)app.tab == t ?
-			    " on" : "", tabs[t].arg, tabs[t].title);
+			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
+			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
+			    tabs[t].title);
+		for (t = 0; t < 2; t++)
+			if (plugin_at(s, "", plugins[t].arg))
+				h_fmt(h, "<button class=\"tab plugin%s\" "
+				    "data-act=\"tab\" data-arg=\"%s\" title=\""
+				    "A plugin: installed on this host, not the "
+				    "base system's\">%s</button>", plug &&
+				    (int)app.net.kind == plugins[t].kind ? " on" :
+				    "", plugins[t].arg, plugins[t].title);
 		h_raw(h, "</nav>");
 	}
 	if (app.tab == TAB_SUMMARY) {

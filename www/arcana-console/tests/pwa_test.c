@@ -1013,11 +1013,21 @@ ATF_TC_BODY(pwa, tc)
 	 * is given one, made on the host, and then a peer.  And BIRD: its
 	 * protocols, one of them reloaded.
 	 */
+	/* They are plugins, installed on the host: each a tab of its own,
+	 * not among what the Network tab has of the base system. */
 	run("document.querySelector('button.tab[data-arg=network]').click()");
 	wait_js("document.querySelector('button[data-act=net-kind]"
-	    "[data-arg=wireguard]')", 10);
-	run("document.querySelector('button[data-act=net-kind]"
-	    "[data-arg=wireguard]').click()");
+	    "[data-arg=interfaces]')", 10);
+	ATF_CHECK(js_true("!document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=wireguard]') && !document.querySelector('button"
+	    "[data-act=net-kind][data-arg=bird]') && document.querySelector("
+	    "'button.tab.plugin[data-arg=bird]')"));
+	run("document.querySelector('button.tab.plugin[data-arg=wireguard]')"
+	    ".click()");
+	wait_js("document.querySelector('button.tab.plugin[data-arg=wireguard]"
+	    ".on') && !document.querySelector('button.tab[data-arg=network]"
+	    ".on') && !document.querySelector('button[data-act=net-kind]')",
+	    10);
 	wait_js("document.querySelector('.pane.wg button[data-act=wg-init]')",
 	    20);
 	ATF_CHECK(js_true("document.querySelector('.pane.wg').textContent."
@@ -1050,8 +1060,8 @@ ATF_TC_BODY(pwa, tc)
 	    "fd00::2/128$' wg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 	shot("7c-wireguard");
-	run("document.querySelector('button[data-act=net-kind]"
-	    "[data-arg=bird]').click()");
+	run("document.querySelector('button.tab.plugin[data-arg=bird]')"
+	    ".click()");
 	wait_js("document.querySelectorAll('table.bird tbody tr').length === 4",
 	    20);
 	ATF_CHECK(js_true("document.querySelector('.pane.bird').textContent."
