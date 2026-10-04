@@ -5,6 +5,8 @@
 - Routes through netlink, with its attributes mapped to CBOR, instead of
   running route(8) and netstat(1).
 - WireGuard: preshared keys; a peer's key rotated.
+- A vnet jail: its epair's host end put in a bridge when it is made;
+  the host's interfaces offered in a list when one is given.
 - BIRD: its routes (`show route`, for a prefix or from a neighbour);
   choosing a neighbour's filters from a list rather than writing their
   names; a change tried with `configure timeout` and taken back when
@@ -31,6 +33,14 @@ Written and tested with stand-ins, never run for real:
   the tests use stand-ins. The format of `wg show all dump` is the one
   wg(8) documents; BIRD is not installed on the machine this was written
   on, and what birdc prints was written from its documentation.
+- A vnet jail's network. Run for real, against the jail `gateway` of
+  one host: its interfaces, routes, route lookup and BIRD read; an
+  address added and removed; an interface brought up; a new epair
+  given, taken back and destroyed. Not run for real: anything kept
+  (the jail's own `rc.conf`, `vnet.interface` in `jail.conf`), BIRD's
+  configuration written in a jail, WireGuard in a jail, safe mode in a
+  jail, and the map with a real jail as a node (the browser test tells
+  the page that a jail runs).
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.
