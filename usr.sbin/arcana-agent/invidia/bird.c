@@ -14,13 +14,17 @@
 #include <sys/stat.h>
 
 #include <ctype.h>
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <glob.h>
 #include <limits.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <syslog.h>
+#include <time.h>
 #include <ucl.h>
 #include <unistd.h>
 
@@ -55,6 +59,57 @@ birdc(struct work *w, bool readonly, const char *a, const char *b,
 	argv[n] = NULL;
 	return (run_exec(w, argv, res));
 }
+
+/*
+ * Does the daemon answer?  birdc ends badly when it cannot reach it, or
+ * when it goes away under it; a daemon on its way down does not count.
+ */
+static bool
+alive(struct work *w)
+{
+	struct execres	res;
+
+	return (birdc(w, true, "show", "status", NULL, &res) == 0 &&
+	    res.out != NULL && strstr(res.out, "BIRD") != NULL &&
+	    strstr(res.out, "Shutdown") == NULL);
+}
+
+/*
+ * Did BIRD take the configuration it was told to read?  Only what it
+ * says when it did counts (cmd_reconfig_msg() in its sysdep/unix/main.c):
+ * what it says of a file it cannot parse has no word to look for, and
+ * a daemon shutting down ignores the request.
+ */
+static bool
+took(const struct execres *res)
+{
+
+	return (res->out != NULL && (strstr(res->out, "Reconfigured") != NULL ||
+	    strstr(res->out, "Reconfiguration in progress") != NULL ||
+	    strstr(res->out, "queueing new config") != NULL));
+}
+
+/* What birdc said, for an error: its lines but the greeting. */
+static const char *
+said(struct work *w, const struct execres *res)
+{
+	const char	*p;
+	char		*t;
+
+	p = res->out != NULL ? res->out : "";
+	if (strncmp(p, "BIRD ", 5) == 0 && strstr(p, " ready.") != NULL &&
+	    strchr(p, '\n') != NULL)
+		p = strchr(p, '\n') + 1;
+	if (p[0] == '\0')
+		p = res->err != NULL && res->err[0] != '\0' ? res->err :
+		    "it said nothing";
+	t = wstrdup(w, p);
+	while (t[0] != '\0' && t[strlen(t) - 1] == '\n')
+		t[strlen(t) - 1] = '\0';
+	return (t);
+}
+
+static bool	pending(void);
 
 /* The text after "key:" of a line, when the line starts with key. */
 static const char *
@@ -344,6 +399,243 @@ do_bird(struct work *w, struct arc_network_rsp *rsp)
 	return (0);
 }
 
+/* A word birdc is given as it is: a name, an address, a prefix. */
+static bool
+route_word(const char *s, const char *more)
+{
+
+	if (s[0] == '\0' || s[0] == '-' || strlen(s) > 64)
+		return (false);
+	for (; *s != '\0'; s++)
+		if (!isalnum((unsigned char)*s) && strchr(more, *s) == NULL)
+			return (false);
+	return (true);
+}
+
+/*
+ * What to show of the routes, in birdc's own words, each checked: for
+ * and an address, or a prefix; protocol or export and a name; table and
+ * a name; all.  The words, NULL-ended, or NULL with why not.
+ */
+static char **
+route_words(struct work *w, const char *filter, const char **errp)
+{
+	char	**v, *text, *word, *next;
+	int	  n;
+
+	v = wcalloc(w, 12, sizeof(*v));
+	n = 0;
+	text = wstrdup(w, filter != NULL ? filter : "");
+	while ((word = strsep(&text, " ,")) != NULL) {
+		if (word[0] == '\0')
+			continue;
+		if (n > 8)
+			goto bad;
+		if (strcmp(word, "all") == 0 || strcmp(word, "primary") == 0) {
+			v[n++] = word;
+			continue;
+		}
+		if (strcmp(word, "for") == 0 || strcmp(word, "protocol") == 0 ||
+		    strcmp(word, "export") == 0 || strcmp(word, "table") == 0) {
+			do
+				next = strsep(&text, " ,");
+			while (next != NULL && next[0] == '\0');
+			if (next == NULL || !route_word(next, word[0] == 'f' ?
+			    ".:/" : "_"))
+				goto bad;
+			v[n++] = word;
+			v[n++] = next;
+			continue;
+		}
+		/* A prefix, or an address for the route that covers it. */
+		if (!route_word(word, ".:/") || !isxdigit((unsigned char)
+		    word[0]) || (strchr(word, '.') == NULL && strchr(word,
+		    ':') == NULL))
+			goto bad;
+		if (strchr(word, '/') == NULL)
+			v[n++] = wstrdup(w, "for");
+		v[n++] = word;
+	}
+	v[n] = NULL;
+	return (v);
+bad:
+	*errp = "say which routes in birdc's words: a prefix, for and an "
+	    "address, protocol or export and a protocol's name, table and a "
+	    "table's name, all";
+	return (NULL);
+}
+
+#define	BIRD_ROUTES_MAX	2000
+
+/*
+ * {"routes": [{"table", "prefix", "type", "protocol", "since", "from",
+ * "primary", "preference", "info", "nexthops": [{"via", "interface"}],
+ * "attrs": [...]}], "count"}.  A table can hold a million routes: they
+ * are counted first, and more than a page shows are not asked for.
+ */
+int
+do_bird_routes(struct work *w, const char *filter, struct arc_network_rsp *rsp)
+{
+	struct execres	 res;
+	ucl_object_t	*top, *arr, *o, *nh, *hops, *attrs;
+	unsigned char	*json;
+	char		**words, *argv[16], *text, *line, *p, *q, *e;
+	char		 table[64], prefix[80];
+	long long	 routes, total, nets, sum;
+	int		 n, i;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	if ((words = route_words(w, filter, &rsp->error)) == NULL)
+		return (0);
+	n = 0;
+	argv[n++] = (char *)(uintptr_t)opts.birdc_bin;
+	argv[n++] = (char *)(uintptr_t)"-r";
+	argv[n++] = (char *)(uintptr_t)"show";
+	argv[n++] = (char *)(uintptr_t)"route";
+	for (i = 0; words[i] != NULL; i++)
+		if (strcmp(words[i], "all") != 0)
+			argv[n++] = words[i];
+	argv[n] = (char *)(uintptr_t)"count";
+	argv[n + 1] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		if ((rsp->error = scope_missing(w, &res, "birdc(8)",
+		    "bird3")) == NULL)
+			rsp->error = wtext(w, exec_error(w, &res, "birdc"));
+		return (0);
+	}
+	sum = 0;
+	for (p = wstrdup(w, res.out != NULL ? res.out : ""); p != NULL &&
+	    *p != '\0'; p = strchr(p, '\n'), p = p != NULL ? p + 1 : NULL)
+		if (sscanf(p, "%lld of %lld routes for %lld networks", &routes,
+		    &total, &nets) == 3)
+			sum += routes;
+	rsp->has_total = true;
+	rsp->total = (uint64_t)sum;
+	if (sum > BIRD_ROUTES_MAX) {
+		rsp->truncated = true;
+		rsp->error = wfmt(w, "%lld routes: more than the %d shown at "
+		    "once.  Say which: a prefix, or for and an address", sum,
+		    BIRD_ROUTES_MAX);
+		return (0);
+	}
+	n = 4;
+	for (i = 0; words[i] != NULL; i++)
+		argv[n++] = words[i];
+	argv[n] = NULL;
+	if (run_exec_max(w, argv, &res, ARC_MAX_JSON / 2) != 0 ||
+	    res.truncated) {
+		rsp->error = res.truncated ? "what birdc says of these routes "
+		    "is more than a reply carries: ask for fewer, or without "
+		    "all" : wtext(w, exec_error(w, &res, "birdc"));
+		return (0);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	o = hops = attrs = NULL;
+	table[0] = prefix[0] = '\0';
+	text = wstrdup(w, res.out != NULL ? res.out : "");
+	while ((line = strsep(&text, "\n")) != NULL) {
+		if (line[0] == '\0' || strstr(line, " ready.") != NULL ||
+		    strncmp(line, "Access restricted", 17) == 0)
+			continue;
+		if (strncmp(line, "Table ", 6) == 0) {
+			snprintf(table, sizeof(table), "%.*s", (int)strcspn(
+			    line + 6, ":"), line + 6);
+			continue;
+		}
+		p = line + strspn(line, " \t");
+		/* A route's own line has its protocol in brackets second. */
+		q = p + strcspn(p, " \t");
+		if (line[0] != ' ' && line[0] != '\t') {
+			/* It starts with the prefix; the route follows. */
+			if (*q == '\0' || !isxdigit((unsigned char)p[0]) ||
+			    strchr(q, '[') == NULL) {
+				put(top, "message", line);
+				continue;
+			}
+			snprintf(prefix, sizeof(prefix), "%.*s", (int)(q - p),
+			    p);
+			p = q + strspn(q, " \t");
+			q = p + strcspn(p, " \t");
+		}
+		if (q[0] != '\0' && q[strspn(q, " \t")] == '[') {
+			o = ucl_object_typed_new(UCL_OBJECT);
+			hops = attrs = NULL;
+			put(o, "table", table);
+			put(o, "prefix", prefix);
+			put(o, "type", wstrndup(w, p, (size_t)(q - p)));
+			p = strchr(q, '[') + 1;
+			if ((e = strchr(p, ']')) == NULL)
+				e = p + strlen(p);
+			q = wstrndup(w, p, (size_t)(e - p));
+			put(o, "protocol", wstrndup(w, q, strcspn(q, " ")));
+			if ((p = strstr(q, " from ")) != NULL) {
+				put(o, "from", p + 6);
+				*p = '\0';
+			}
+			if (strchr(q, ' ') != NULL)
+				put(o, "since", strchr(q, ' ') + 1);
+			p = *e != '\0' ? e + 1 : e;
+			q = strchr(p, '(');
+			/* The best one: *, or ! when the kernel has not got it. */
+			n = (int)(q != NULL ? (size_t)(q - p) : strlen(p));
+			ucl_object_insert_key(o, ucl_object_frombool(memchr(p,
+			    '*', (size_t)n) != NULL || memchr(p, '!',
+			    (size_t)n) != NULL), "primary", 0, false);
+			if (q != NULL && (e = strchr(q, ')')) != NULL) {
+				put(o, "preference", wstrndup(w, q + 1,
+				    (size_t)(e - q - 1)));
+				if ((p = strchr(e, '[')) != NULL && (e =
+				    strchr(p, ']')) != NULL)
+					put(o, "info", wstrndup(w, p + 1,
+					    (size_t)(e - p - 1)));
+			}
+			ucl_array_append(arr, o);
+			continue;
+		}
+		if (o == NULL)
+			continue;
+		/* Of the route above: where it leads, or what it carries. */
+		if (strncmp(p, "via ", 4) == 0 || strncmp(p, "dev ", 4) == 0) {
+			nh = ucl_object_typed_new(UCL_OBJECT);
+			if (p[0] == 'v') {
+				put(nh, "via", wstrndup(w, p + 4, strcspn(p + 4,
+				    " ")));
+				if ((q = strstr(p, " on ")) != NULL)
+					put(nh, "interface", wstrndup(w, q + 4,
+					    strcspn(q + 4, " ")));
+			} else
+				put(nh, "interface", wstrndup(w, p + 4,
+				    strcspn(p + 4, " ")));
+			if (hops == NULL) {
+				hops = ucl_object_typed_new(UCL_ARRAY);
+				ucl_object_insert_key(o, hops, "nexthops", 0,
+				    false);
+			}
+			ucl_array_append(hops, nh);
+			continue;
+		}
+		if (attrs == NULL) {
+			attrs = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(o, attrs, "attrs", 0, false);
+		}
+		ucl_array_append(attrs, ucl_object_fromstring(p));
+	}
+	ucl_object_insert_key(top, arr, "routes", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromint(sum), "count", 0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL || strlen((char *)json) > ARC_MAX_JSON) {
+		free(json);
+		rsp->error = "these routes are more than a reply carries";
+		return (0);
+	}
+	rsp->json = wtext(w, wadopt(w, json));
+	rsp->ok = true;
+	return (0);
+}
+
 /* NULL when birdc may be told verb, about the protocol named or all. */
 const char *
 bird_check(const char *verb, const char *const *names, size_t n)
@@ -384,8 +676,19 @@ do_bird_verb(struct work *w, const char *verb, const char *const *names,
 
 	if ((*errp = bird_check(verb, names, n)) != NULL)
 		return (-1);
+	/* Told to read its configuration, BIRD stops its own undo timer. */
+	if (strcmp(verb, "configure") == 0 && pending()) {
+		*errp = "a change to BIRD's configuration waits to be "
+		    "confirmed: it stays or is taken back first";
+		return (-1);
+	}
 	if (birdc(w, false, verb, n == 1 ? names[0] : NULL, NULL, &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "birdc"));
+		return (-1);
+	}
+	if (strcmp(verb, "configure") == 0 && !took(&res)) {
+		*errp = wfmt(w, "BIRD did not take its configuration: %s",
+		    said(w, &res));
 		return (-1);
 	}
 	for (line = res.out; line != NULL && *line != '\0'; line = *nl !=
@@ -457,6 +760,184 @@ sha_hex(struct work *w, const char *data, size_t len)
 	return (hex);
 }
 
+/*
+ * A configuration put in place in safe mode, waiting to be confirmed:
+ * BIRD was told to take it back by itself when the time is up
+ * (configure timeout), and the file is put back then too.  One at a
+ * time.
+ */
+static pthread_mutex_t	pend_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t	pend_cv = PTHREAD_COND_INITIALIZER;
+static struct {
+	bool	 active, confirmed;
+	char	*jail;			/* whose BIRD, or NULL the host's */
+	char	*path, *base, *bak;
+	char	*sha;			/* of the text put in place */
+	bool	 had;
+	time_t	 by;
+} pend;
+
+static bool
+pending(void)
+{
+	bool	p;
+
+	pthread_mutex_lock(&pend_lock);
+	p = pend.active;
+	pthread_mutex_unlock(&pend_lock);
+	return (p);
+}
+
+/*
+ * The file as it was before the change that was not confirmed, and BIRD
+ * running what the file says.  Only a file that is still the text put
+ * there is touched: what somebody changed since is theirs.  And only
+ * for a BIRD that answers: one that died is not undone after.
+ */
+static void
+pend_back(struct work *w, bool dead)
+{
+	struct execres	 res;
+	const char	*e;
+	char		*now;
+	size_t		 len;
+
+	e = NULL;
+	if (scope_enter(w, pend.jail, &e) != 0) {
+		logmsg(LOG_ERR, "bird: the change to %s was not confirmed, and "
+		    "the file could not be put back: %s", pend.path, e);
+		return;
+	}
+	if ((now = scope_slurp(w, pend.path, &len)) == NULL || strcmp(
+	    sha_hex(w, now, len), pend.sha) != 0) {
+		logmsg(LOG_WARNING, "bird: the change to %s was not confirmed, "
+		    "but the file is no longer the one put there: left as "
+		    "it is", pend.path);
+		return;
+	}
+	/*
+	 * A BIRD that went away has no timer left to take anything back
+	 * with, and nothing is taken back for it: the file parses, and is
+	 * what it reads when it is started again.
+	 */
+	if (dead || !alive(w)) {
+		logmsg(LOG_ERR, "bird: BIRD stopped answering after the change "
+		    "to %s, which was not confirmed: the file is left in "
+		    "place, for BIRD to read when it is started again",
+		    pend.path);
+		return;
+	}
+	if (scope_rename(w, pend.path, pend.had ? pend.bak : pend.base,
+	    pend.had ? pend.base : NULL) != 0) {
+		logmsg(LOG_ERR, "bird: the change to %s was not confirmed, and "
+		    "the file could not be put back: %s", pend.path,
+		    strerror(errno));
+		return;
+	}
+	/*
+	 * BIRD went back by itself when its time was up, and reading the
+	 * file again changes nothing then.  Had it been started anew
+	 * meanwhile, it would run what the file said then: this is what
+	 * takes that back.
+	 */
+	if (birdc(w, false, "configure", NULL, NULL, &res) != 0 ||
+	    !took(&res))
+		logmsg(LOG_ERR, "bird: the change to %s was not confirmed; the "
+		    "file is as it was, but BIRD did not read it: %s",
+		    pend.path, said(w, &res));
+	else
+		logmsg(LOG_WARNING, "bird: the change to %s was not confirmed "
+		    "in time: BIRD took it back, and the file is as it was",
+		    pend.path);
+}
+
+static void *
+pend_wait(void *arg __unused)
+{
+	struct timespec	 ts;
+	struct work	 w;
+	const char	*e;
+	bool		 keep, dead;
+	int		 n;
+
+	dead = false;
+	pthread_mutex_lock(&pend_lock);
+	for (n = 1; !pend.confirmed && !dead && !changes_stopping() &&
+	    time(NULL) < pend.by + 2; n++) {
+		clock_gettime(CLOCK_REALTIME, &ts);
+		ts.tv_sec += 1;
+		(void)pthread_cond_timedwait(&pend_cv, &pend_lock, &ts);
+		if (pend.confirmed || n % 3 != 0)
+			continue;
+		/* A daemon the change brought down is not waited for. */
+		pthread_mutex_unlock(&pend_lock);
+		work_init(&w);
+		e = NULL;
+		dead = scope_enter(&w, pend.jail, &e) == 0 && !alive(&w);
+		work_free(&w);
+		pthread_mutex_lock(&pend_lock);
+	}
+	keep = pend.confirmed;
+	/* From here a confirmation comes too late. */
+	if (!keep)
+		pend.confirmed = true;
+	pthread_mutex_unlock(&pend_lock);
+	if (!keep) {
+		work_init(&w);
+		pthread_mutex_lock(&change_lock);
+		pend_back(&w, dead);
+		pthread_mutex_unlock(&change_lock);
+		work_free(&w);
+	} else
+		logmsg(LOG_INFO, "bird: the change to %s was confirmed",
+		    pend.path);
+	pthread_mutex_lock(&pend_lock);
+	free(pend.jail);
+	free(pend.path);
+	free(pend.base);
+	free(pend.bak);
+	free(pend.sha);
+	memset(&pend, 0, sizeof(pend));
+	pthread_cond_broadcast(&pend_cv);
+	pthread_mutex_unlock(&pend_lock);
+	return (NULL);
+}
+
+static bool
+same_jail(const char *a, const char *b)
+{
+
+	return (strcmp(a != NULL ? a : "", b != NULL ? b : "") == 0);
+}
+
+/* The change that waits stays: BIRD is told, and the file is left. */
+static void
+pend_confirm(struct work *w, struct arc_bird_config_rsp *rsp)
+{
+	struct execres	res;
+
+	pthread_mutex_lock(&pend_lock);
+	if (!pend.active || pend.confirmed || !same_jail(pend.jail, w->jail)) {
+		pthread_mutex_unlock(&pend_lock);
+		rsp->error = "no change to BIRD waits to be confirmed: it was "
+		    "taken back when its time was up";
+		return;
+	}
+	/* "Nothing to do" is BIRD's word for an undo timer not running. */
+	if (birdc(w, false, "configure", "confirm", NULL, &res) != 0 ||
+	    res.out == NULL || strstr(res.out, "Reconfiguration confirmed") ==
+	    NULL) {
+		pthread_mutex_unlock(&pend_lock);
+		rsp->error = wfmt(w, "BIRD did not confirm it, and the change "
+		    "is taken back: %s", said(w, &res));
+		return;
+	}
+	pend.confirmed = true;
+	pthread_cond_broadcast(&pend_cv);
+	pthread_mutex_unlock(&pend_lock);
+	rsp->ok = true;
+}
+
 /* The main file, and the files its include lines name. */
 static void
 conf_files(struct work *w, struct arc_bird_config_rsp *rsp)
@@ -511,11 +992,16 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 	const char	*path, *sha, *base;
 	char		*old, *tmp, *bak, *argv[5];
 	size_t		 oldlen, len;
+	pthread_t	 thr;
 	int		 step;
-	bool		 had;
+	bool		 had, up;
 
 	rsp->has_ok = true;
 	rsp->ok = false;
+	if (rq->confirm) {
+		pend_confirm(w, rsp);
+		return (0);
+	}
 	path = rq->conf_path != NULL && rq->conf_path[0] != '\0' ?
 	    rq->conf_path : opts.bird_conf;
 	if (path[0] != '/' || strstr(path, "/../") != NULL ||
@@ -566,6 +1052,12 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 		    "somebody changed it meanwhile.  Read it again";
 		return (0);
 	}
+	if (pending()) {
+		rsp->error = "a change to BIRD waits to be confirmed: it "
+		    "stays or is taken back first";
+		return (0);
+	}
+
 	len = strlen(rq->conf_text);
 	base = strrchr(path, '/') + 1;
 	bak = wfmt(w, "%s.arcana-old", base);
@@ -593,15 +1085,74 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 		rsp->ok = true;
 		goto back;
 	}
-	if (birdc(w, false, "configure", NULL, NULL, &res) != 0 ||
-	    (res.out != NULL && (strstr(res.out, "error") != NULL ||
-	    strstr(res.out, "Unable to connect") != NULL))) {
-		rsp->error = wfmt(w, "the file is in place and parses, but "
-		    "the daemon was not told: %s", res.out != NULL &&
-		    res.out[0] != '\0' ? res.out : res.err);
+	/*
+	 * Safe mode is BIRD's own: a daemon that does not answer has no
+	 * timer to take the change back with.
+	 */
+	up = alive(w);
+	if (!up && rq->safe) {
+		rsp->error = "BIRD does not answer: nothing can be changed in "
+		    "safe mode, where it is BIRD that takes the change back";
+		goto back;
+	}
+	if (!up) {
+		/* Nothing runs to be told: it reads the file when started. */
+		rsp->error = "the file is in place and parses; BIRD does not "
+		    "answer, and reads it when it is started";
 		rsp->conf_text = wtext(w, wstrdup(w, rq->conf_text));
 		rsp->sha256 = sha_hex(w, rq->conf_text, len);
 		return (0);
+	}
+	/*
+	 * What a BIRD that answers does not take does not stay in the
+	 * file either.  One that goes away while it is told is another
+	 * matter: the file parses, bird(8) said so, and it stays for BIRD
+	 * to read when it is started again.
+	 */
+	if (birdc(w, false, "configure", rq->safe ? "timeout" : NULL,
+	    rq->safe ? wfmt(w, "%d", opts.safe_wait) : NULL, &res) != 0 ||
+	    !took(&res)) {
+		if (alive(w)) {
+			rsp->error = wfmt(w, "BIRD did not take it, and the "
+			    "file is as it was: %s", said(w, &res));
+			goto back;
+		}
+		rsp->error = wfmt(w, "BIRD stopped answering when told to read "
+		    "the new configuration (%s).  The file is in place and "
+		    "parses: BIRD reads it when it is started again",
+		    said(w, &res));
+		rsp->conf_text = wtext(w, wstrdup(w, rq->conf_text));
+		rsp->sha256 = sha_hex(w, rq->conf_text, len);
+		return (0);
+	}
+	(void)usleep(700000);
+	if (!alive(w)) {
+		rsp->error = "BIRD took the new configuration and then stopped "
+		    "answering.  The file is in place and parses: BIRD reads "
+		    "it when it is started again";
+		rsp->conf_text = wtext(w, wstrdup(w, rq->conf_text));
+		rsp->sha256 = sha_hex(w, rq->conf_text, len);
+		return (0);
+	}
+	if (rq->safe) {
+		/* BIRD counts from now; so does the file. */
+		pthread_mutex_lock(&pend_lock);
+		pend.active = true;
+		pend.confirmed = false;
+		pend.jail = w->jail != NULL ? strdup(w->jail) : NULL;
+		pend.path = strdup(path);
+		pend.base = strdup(base);
+		pend.bak = strdup(bak);
+		pend.sha = strdup(sha_hex(w, rq->conf_text, len));
+		pend.had = had;
+		pend.by = time(NULL) + opts.safe_wait;
+		rsp->has_confirm_by = true;
+		rsp->confirm_by = pend.by;
+		if (pend.path == NULL || pend.base == NULL || pend.bak ==
+		    NULL || pend.sha == NULL || pthread_create(&thr, NULL, pend_wait, NULL) != 0)
+			err(1, "bird: safe mode");
+		pthread_detach(thr);
+		pthread_mutex_unlock(&pend_lock);
 	}
 	rsp->conf_text = wtext(w, wstrdup(w, rq->conf_text));
 	rsp->sha256 = sha_hex(w, rq->conf_text, len);

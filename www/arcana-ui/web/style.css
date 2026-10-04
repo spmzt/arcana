@@ -3075,3 +3075,13 @@ select.conf-file { width: auto; margin-left: .6rem; font-size: .72rem; padding: 
 .jail-net { margin-top: .6rem; }
 .jail-page h4 .dim { text-transform: none; letter-spacing: 0; font-weight: 400; }
 
+/* BIRD's routes. */
+form.bird-routes { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-bottom: .6rem; }
+form.bird-routes input[name=q] { flex: 1 1 16rem; min-width: 0; }
+form.bird-routes label.toggle { margin: 0; }
+table.broutes .led { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: .5rem; background: var(--green); }
+table.broutes .led.off { background: transparent; border: 1px solid var(--slate); }
+table.broutes tr.other td { color: var(--dim); }
+table.broutes tr.attrs pre { margin: 0 0 .4rem 1.2rem; font-size: .72rem; color: var(--dim); white-space: pre-wrap; }
+.modal table.net select { max-width: 13rem; }
+

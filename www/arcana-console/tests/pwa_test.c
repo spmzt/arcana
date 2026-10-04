@@ -1080,6 +1080,38 @@ ATF_TC_BODY(pwa, tc)
 	    "ul.blocks li')].some(l => l.textContent.includes('BLACKHOLE_LC') "
 	    "&& l.textContent.includes('large communities'))", 20);
 	shot("7d-bird");
+	/*
+	 * BIRD's routes: asked for by an address, with what they carry;
+	 * the one in use marked, the other shown beside it.
+	 */
+	run("const f = document.querySelector('form[data-form=bird-routes]'); "
+	    "f.q.value = '10.1.2.3'; f.all.checked = true; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.broutes tbody tr.best')."
+	    "length === 1 && document.querySelectorAll('table.broutes tbody "
+	    "tr.other').length === 1", 20);
+	ATF_CHECK(js_true("document.querySelector('table.broutes').textContent"
+	    ".includes('10.1.0.0/16') && document.querySelector('table.broutes "
+	    "tr.attrs').textContent.includes('BGP.large_community: (65001, 1, "
+	    "100)') && document.querySelector('table.broutes').textContent"
+	    ".includes('198.51.100.7')"));
+	ATF_CHECK(system("grep -q '^-r show route for 10.1.2.3 all$' birdc.log")
+	    == 0);
+	shot("7d-bird-routes");
+	/* A table that is the whole Internet is counted, not carried. */
+	run("const f = document.querySelector('form[data-form=bird-routes]'); "
+	    "f.q.value = ''; f.all.checked = false; f.proto.value = 'bgp_core'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('form.bird-routes + .notice.bad') && "
+	    "document.querySelector('form.bird-routes + .notice.bad')."
+	    "textContent.includes('845233 routes')", 20);
+	/*
+	 * A change to the configuration is made in safe mode unless that
+	 * is turned off: the steps here follow each other faster than a
+	 * change is confirmed, so it is off until its own step below.
+	 */
+	run("document.querySelector('button[data-act=bird-safe]').click()");
+	wait_js("document.querySelector('button[data-act=bird-safe]')."
+	    "textContent.includes('off')", 5);
 	/* A neighbour picked opens in a box: what the daemon says of it,
 	 * and the part of the configuration that makes it. */
 	run("document.querySelector('.birdmap .tnode.peer.bgp').dispatchEvent("
@@ -1155,6 +1187,47 @@ ATF_TC_BODY(pwa, tc)
 	    "test \"$(grep -c '^roa4 table r4;$' bird/bird.conf)\" = 1 && "
 	    "grep -q 'protocol rpki rpki2' bird/bird.conf && grep -q "
 	    "'define PEERS_LC' bird/bird.conf") == 0);
+	/*
+	 * A neighbour's filter is chosen from the filters there are, and
+	 * written into its part of the configuration.  In safe mode BIRD
+	 * is told to take the change back by itself, and the page, still
+	 * reaching the host a while after, says that it stays.
+	 */
+	run("document.querySelector('button[data-act=bird-safe]').click()");
+	wait_js("document.querySelector('button[data-act=bird-safe]')."
+	    "textContent.includes('on')", 5);
+	run("document.querySelector('.birdmap .tnode.peer.bgp').dispatchEvent("
+	    "new MouseEvent('click', { bubbles: true }))");
+	wait_js("document.querySelector('form[data-form=bird-block] select"
+	    "[name=export_ipv4]')", 10);
+	ATF_CHECK(js_true("[...document.querySelector('select[name=import_ipv4]"
+	    "').options].map(o => o.value).join('|') === '|all|none|filter "
+	    "bgp_out'"));
+	shot("7f-bird-filter-list");
+	run("const f = document.querySelector('form[data-form=bird-block]'); "
+	    "f.export_ipv4.value = 'none'; f.import_ipv4.value = 'filter "
+	    "bgp_out'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('takes it back unless the host is still "
+	    "reached'))", 20);
+	ATF_CHECK(system("grep -q '^\t\timport filter bgp_out;$' bird/bird.conf "
+	    "&& grep -q '^\t\texport none;$' bird/bird.conf && ! grep -q "
+	    "'export filter bgp_out' bird/bird.conf && grep -q '^configure "
+	    "timeout 60$' birdc.log") == 0);
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('BIRD keeps its new configuration'))", 30);
+	ATF_CHECK(system("grep -q '^configure confirm$' birdc.log") == 0);
+	/* Routes a neighbour sent, from its box. */
+	run("[...document.querySelectorAll('table.bird tbody tr')].find(r => "
+	    "r.textContent.includes('bgp_edge')).click()");
+	wait_js("document.querySelector('.modal button[data-act=bird-routes-of]"
+	    "')", 10);
+	run("document.querySelector('.modal button[data-act=bird-routes-of]"
+	    "[data-arg=protocol]').click()");
+	wait_js("!document.querySelector('.modal') && document.querySelector("
+	    "'table.broutes tbody tr.best')", 20);
+	ATF_CHECK(system("grep -q '^-r show route protocol bgp_edge$' birdc.log")
+	    == 0);
 
 	/*
 	 * The network: every host a node of a map, joined to the others

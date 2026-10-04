@@ -55,7 +55,33 @@ static struct {
 	char		*draft;		/* what was typed, kept over a refusal */
 	char		 newkind[16];	/* of a new part: filter, set, ... */
 	bool		 saving;
+	/*
+	 * A change is made in safe mode unless that was turned off: BIRD
+	 * takes it back by itself, unless this page, some seconds later
+	 * and so through the network as the change left it, says it stays.
+	 */
+	bool		 unsafe;
+	double		 confirm_at;	/* when to say so, or 0 */
+	char		 confirm_sid[9];
+	char		 confirm_jail[256];
+	bool		 confirming;
+	double		 reload_at;	/* when to read the file again, or 0 */
 } bd = { .edit = -1 };
+
+/* BIRD's routes, as last asked for. */
+static struct {
+	char		 sid[9];
+	char		 jail[256];
+	char		 words[200];	/* what was asked, with , between */
+	ucl_object_t	*data;
+	bool		 loading;
+	char		 error[300];
+} br;
+
+#define	CONFIRM_AFTER_MS	5000
+
+static void	conf_load(struct server *, bool);
+static bool	name_ok(const char *);
 
 /* The end of what starts at p and is not to be read: blanks, comments. */
 static const char *
@@ -312,11 +338,248 @@ conf_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		free(bd.draft);
 		bd.draft = NULL;
 		app.modal = MODAL_NONE;
-		toast(false, "BIRD has its new configuration");
+		if (jint(o, "confirm_by", 0) > 0) {
+			/* To be confirmed, once the change has settled. */
+			bd.confirm_at = arc_now() + CONFIRM_AFTER_MS;
+			snprintf(bd.confirm_sid, sizeof(bd.confirm_sid), "%s",
+			    bd.sid);
+			snprintf(bd.confirm_jail, sizeof(bd.confirm_jail), "%s",
+			    bd.jail);
+			toast(false, "BIRD has its new configuration, and takes "
+			    "it back unless the host is still reached");
+		} else
+			toast(false, "BIRD has its new configuration");
 		if (cur_server() != NULL) {
 			app.net.loading = false;
 			refresh_network(cur_server(), false);
 		}
+	}
+}
+
+/* Whether the change stays: BIRD's answer to the confirmation. */
+static void
+confirm_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	bd.confirming = false;
+	if (status == 200 && jbool(o, "ok")) {
+		toast(false, "BIRD keeps its new configuration");
+		return;
+	}
+	toast(true, "BIRD's new configuration was not confirmed, and is taken "
+	    "back: %s", status == 200 && jstr(o, "error") != NULL ? jstr(o,
+	    "error") : err != NULL ? err : "the host did not answer");
+	/* The file is the old one again soon: read then. */
+	bd.reload_at = arc_now() + 4 * CONFIRM_AFTER_MS;
+}
+
+/*
+ * From the tick: the change made in safe mode is confirmed, a while
+ * after it was made.  A page that cannot reach the host any more
+ * confirms nothing, and BIRD takes the change back by itself.
+ */
+void
+bird_tick(double now)
+{
+	struct server	*s;
+	char		 url[96], *qj, *body;
+
+	if (bd.reload_at != 0 && now >= bd.reload_at) {
+		bd.reload_at = 0;
+		if ((s = cur_server()) != NULL && strcmp(s->id, bd.sid) == 0 &&
+		    app.net.kind == NET_BIRD) {
+			conf_load(s, true);
+			render();
+		}
+	}
+	if (bd.confirm_at == 0 || now < bd.confirm_at || bd.confirming)
+		return;
+	bd.confirm_at = 0;
+	bd.confirming = true;
+	snprintf(url, sizeof(url), "/api/servers/%s/bird/config",
+	    bd.confirm_sid);
+	qj = json_quote(bd.confirm_jail);
+	if (asprintf(&body, "{\"confirm\":true,\"jail\":%s}", qj) == -1)
+		abort();
+	free(qj);
+	api("POST", url, body, confirm_cb, NULL);
+	free(body);
+	render();
+}
+
+/* Past what is at p: a comment or a string whole, else one character. */
+static const char *
+past(const char *p)
+{
+	const char	*q;
+
+	if (*p == '#')
+		return (p + strcspn(p, "\n"));
+	if (p[0] == '/' && p[1] == '*')
+		return ((q = strstr(p + 2, "*/")) != NULL ? q + 2 : p +
+		    strlen(p));
+	if (*p == '"')
+		return ((q = strchr(p + 1, '"')) != NULL ? q + 1 : p +
+		    strlen(p));
+	return (p + 1);
+}
+
+/*
+ * The end of the statement at p: past its ';', or past the block it is
+ * and the ';' after that if there is one; the '}' itself of the block
+ * the statement is in, when that ends first.
+ */
+static const char *
+stmt_end(const char *p)
+{
+	const char	*q;
+	int		 depth;
+
+	for (depth = 0; *p != '\0'; p = past(p)) {
+		if (*p == '{')
+			depth++;
+		else if (*p == '}') {
+			if (depth == 0)
+				return (p);
+			if (--depth == 0) {
+				q = skip(p + 1);
+				return (*q == ';' ? q + 1 : p + 1);
+			}
+		} else if (*p == ';' && depth == 0)
+			return (p + 1);
+	}
+	return (p);
+}
+
+/* The place after the '{' that opens the block starting at p, or NULL. */
+static const char *
+opened(const char *p)
+{
+
+	for (; *p != '\0' && *p != ';' && *p != '}'; p = past(p))
+		if (*p == '{')
+			return (p + 1);
+	return (NULL);
+}
+
+/*
+ * The channel named chan of a protocol's text: the place after its '{',
+ * or NULL when the protocol has no such block written out.
+ */
+static const char *
+channel_of(const char *text, const char *chan)
+{
+	const char	*p, *q;
+	char		 w[32];
+
+	if ((p = opened(text)) == NULL)
+		return (NULL);
+	for (;;) {
+		p = skip(p);
+		if (*p == '\0' || *p == '}')
+			return (NULL);
+		q = word(p, w, sizeof(w));
+		if (strcmp(w, chan) == 0 && *skip(q) == '{')
+			return (skip(q) + 1);
+		q = stmt_end(p);
+		if (q == p)
+			return (NULL);
+		p = q;
+	}
+}
+
+/*
+ * A protocol's text with what its channel imports or exports (dir) set
+ * to choice: all, none, or filter and a name.  Only a statement written
+ * that way is rewritten; one with a filter written out in it, or a
+ * condition, is left to who wrote it, and NULL says so.  A channel that
+ * says nothing of it gets the statement.
+ */
+static char *
+filter_set(const char *text, const char *chan, const char *dir,
+    const char *choice)
+{
+	const char	*p, *q, *e;
+	char		 w[32], *out;
+
+	if ((p = channel_of(text, chan)) == NULL)
+		return (NULL);
+	e = p;
+	for (;;) {
+		p = skip(p);
+		if (*p == '\0')
+			return (NULL);
+		if (*p == '}') {
+			/* Not said: said first in the channel. */
+			if (asprintf(&out, "%.*s\n\t\t%s %s;%s", (int)(e -
+			    text), text, dir, choice, e) == -1)
+				abort();
+			return (out);
+		}
+		q = word(p, w, sizeof(w));
+		if (strcmp(w, dir) == 0) {
+			q = word(q, w, sizeof(w));
+			if (strcmp(w, "filter") == 0) {
+				if (*skip(q) == '{')
+					return (NULL);
+				q = word(q, w, sizeof(w));
+				if (w[0] == '\0')
+					return (NULL);
+			} else if (strcmp(w, "all") != 0 && strcmp(w,
+			    "none") != 0) {
+				/* import limit, export table: not the filter. */
+				if (strcmp(w, "where") == 0 || w[0] == '\0')
+					return (NULL);
+				goto next;
+			}
+			if (*skip(q) != ';')
+				return (NULL);
+			if (asprintf(&out, "%.*s%s %s%s", (int)(p - text),
+			    text, dir, choice, skip(q)) == -1)
+				abort();
+			return (out);
+		}
+next:
+		q = stmt_end(p);
+		if (q == p)
+			return (NULL);
+		p = q;
+	}
+}
+
+/* What a channel's import or export is written as, when simply: or "". */
+static void
+filter_now(const char *text, const char *chan, const char *dir, char *buf,
+    size_t len)
+{
+	const char	*p, *q;
+	char		 w[64];
+
+	buf[0] = '\0';
+	if ((p = channel_of(text, chan)) == NULL)
+		return;
+	for (;;) {
+		p = skip(p);
+		if (*p == '\0' || *p == '}')
+			return;
+		q = word(p, w, sizeof(w));
+		if (strcmp(w, dir) == 0) {
+			q = word(q, w, sizeof(w));
+			if (strcmp(w, "all") == 0 || strcmp(w, "none") == 0) {
+				snprintf(buf, len, "%s", w);
+				return;
+			}
+			if (strcmp(w, "filter") == 0 && *skip(q) != '{') {
+				(void)word(q, w, sizeof(w));
+				snprintf(buf, len, "filter %s", w);
+				return;
+			}
+		}
+		q = stmt_end(p);
+		if (q == p)
+			return;
+		p = q;
 	}
 }
 
@@ -356,8 +619,8 @@ conf_save(struct server *s, const char *text, bool check)
 	qp = json_quote(bd.path);
 	qj = json_quote(bd.jail);
 	if (asprintf(&body, "{\"path\":%s,\"jail\":%s,\"text\":%s,\"sha256\":"
-	    "\"%s\",\"check\":%s}", qp, qj, qt, bd.sha, check ? "true" :
-	    "false") == -1)
+	    "\"%s\",\"check\":%s,\"safe\":%s}", qp, qj, qt, bd.sha, check ?
+	    "true" : "false", !check && !bd.unsafe ? "true" : "false") == -1)
 		abort();
 	free(qt);
 	free(qp);
@@ -521,6 +784,169 @@ graph(struct html *h, const ucl_object_t *data)
 
 /* A number of routes, short: 845233 as 845.2k. */
 static void
+routes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	br.loading = false;
+	if (br.data != NULL)
+		ucl_object_unref(br.data);
+	br.data = NULL;
+	br.error[0] = '\0';
+	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL)
+		snprintf(br.error, sizeof(br.error), "%s", status == 200 &&
+		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+		    err : "no answer");
+	else
+		br.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
+		    "data"));
+}
+
+/* Ask for the routes words name: birdc's own, with , between them. */
+static void
+routes_ask(struct server *s, const char *words)
+{
+	char	url[640];
+
+	snprintf(br.sid, sizeof(br.sid), "%s", s->id);
+	snprintf(br.jail, sizeof(br.jail), "%s", net_scope());
+	snprintf(br.words, sizeof(br.words), "%s", words);
+	br.loading = true;
+	br.error[0] = '\0';
+	snprintf(url, sizeof(url), "/api/servers/%s/net/bird-routes?filter=%s"
+	    "%s%s", s->id, words, br.jail[0] != '\0' ? "&jail=" : "", br.jail);
+	api("GET", url, NULL, routes_cb, NULL);
+}
+
+/*
+ * BIRD's routes: asked for by a prefix, an address, a neighbour, a
+ * table.  A table can hold the whole Internet, so nothing is shown
+ * until something is asked, and the host counts before it answers.
+ */
+static void
+routes_view(struct html *h, struct server *s, const ucl_object_t *data)
+{
+	const ucl_object_t	*o, *nh, *l;
+	ucl_object_iter_t	 it, nit;
+	bool			 mine;
+	int			 n;
+
+	mine = strcmp(br.sid, s->id) == 0 && strcmp(br.jail, net_scope()) == 0;
+	h_raw(h, "<h4 class=\"family\">Routes</h4><form data-form=\""
+	    "bird-routes\" class=\"bird-routes\"><input name=\"q\" "
+	    "spellcheck=\"false\" autocomplete=\"off\" placeholder=\""
+	    "192.0.2.0/24, or an address for the route that covers it\">"
+	    "<select name=\"proto\"><option value=\"\">any protocol</option>");
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(data, "protocols"), &it, true)) !=
+	    NULL) {
+		if (jstr(o, "name") == NULL || !name_ok(jstr(o, "name")))
+			continue;
+		h_raw(h, "<option");
+		h_attr(h, "value", jstr(o, "name"));
+		h_raw(h, ">");
+		h_txt(h, jstr(o, "name"));
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select><select name=\"dir\"><option value=\"protocol\">"
+	    "learned from it</option><option value=\"export\">sent to it"
+	    "</option></select><select name=\"table\"><option value=\"\">any "
+	    "table</option>");
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(data, "tables"), &it, true)) !=
+	    NULL) {
+		if (jstr(o, "name") == NULL || !name_ok(jstr(o, "name")))
+			continue;
+		h_raw(h, "<option");
+		h_attr(h, "value", jstr(o, "name"));
+		h_raw(h, ">");
+		h_txt(h, jstr(o, "name"));
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select><label class=\"toggle\"><input type=\"checkbox\" "
+	    "name=\"all\"><span>with what they carry</span></label><button "
+	    "class=\"ghost small\">Show</button></form>");
+	if (!mine)
+		return;
+	if (br.loading) {
+		h_raw(h, "<div class=\"empty small\"><div class=\"loader\">"
+		    "</div></div>");
+		return;
+	}
+	if (br.error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, br.error);
+		h_raw(h, "</div>");
+		return;
+	}
+	if (br.data == NULL)
+		return;
+	if (ucl_array_size(jget(br.data, "routes")) == 0) {
+		h_raw(h, "<p class=\"dim\">");
+		h_txt(h, jstr(br.data, "message") != NULL ? jstr(br.data,
+		    "message") : "No such route.");
+		h_raw(h, "</p>");
+		return;
+	}
+	h_raw(h, "<table class=\"net broutes\"><thead><tr><th>Prefix</th>"
+	    "<th>Leads to</th><th>Protocol</th><th>From</th><th>Preference"
+	    "</th><th>Info</th><th>Since</th><th>Table</th></tr></thead>"
+	    "<tbody>");
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(br.data, "routes"), &it, true)) !=
+	    NULL) {
+		h_fmt(h, "<tr class=\"%s\"><td class=\"mono\">", jbool(o,
+		    "primary") ? "best" : "other");
+		h_raw(h, jbool(o, "primary") ? "<i class=\"led\" title=\"The "
+		    "one in use\"></i>" : "<i class=\"led off\"></i>");
+		h_txt(h, jstr(o, "prefix"));
+		h_raw(h, "</td><td class=\"mono\">");
+		nit = NULL;
+		n = 0;
+		while ((nh = ucl_object_iterate(jget(o, "nexthops"), &nit,
+		    true)) != NULL) {
+			if (n++ > 0)
+				h_raw(h, "<br>");
+			if (jstr(nh, "via") != NULL) {
+				h_txt(h, jstr(nh, "via"));
+				h_raw(h, " ");
+			}
+			if (jstr(nh, "interface") != NULL) {
+				h_raw(h, "<span class=\"dim\">");
+				h_txt(h, jstr(nh, "interface"));
+				h_raw(h, "</span>");
+			}
+		}
+		if (n == 0)
+			h_txt(h, jstr(o, "type"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(o, "protocol"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(o, "from"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(o, "preference"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(o, "info"));
+		h_raw(h, "</td><td class=\"dim\">");
+		h_txt(h, jstr(o, "since"));
+		h_raw(h, "</td><td class=\"dim\">");
+		h_txt(h, jstr(o, "table"));
+		h_raw(h, "</td></tr>");
+		if (ucl_array_size(jget(o, "attrs")) > 0) {
+			h_raw(h, "<tr class=\"attrs\"><td colspan=\"8\"><pre>");
+			nit = NULL;
+			while ((l = ucl_object_iterate(jget(o, "attrs"), &nit,
+			    true)) != NULL) {
+				h_txt(h, ucl_object_tostring_forced(l));
+				h_raw(h, "\n");
+			}
+			h_raw(h, "</pre></td></tr>");
+		}
+	}
+	h_raw(h, "</tbody></table>");
+}
+
+static void
 count(char *buf, size_t len, int64_t n)
 {
 
@@ -651,7 +1077,13 @@ view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 		h_raw(h, "</div>");
 	}
 
+	routes_view(h, s, data);
+
 	/* From here on: what the configuration is made of. */
+	if (bd.confirm_at != 0 || bd.confirming)
+		h_raw(h, "<div class=\"notice\">BIRD runs a new configuration "
+		    "and takes it back by itself unless this page reaches "
+		    "the host again in a moment: it is being confirmed.</div>");
 	h_raw(h, "<h4 class=\"family\">Configuration");
 	if (ucl_array_size(bd.files) > 1) {
 		h_raw(h, " <select class=\"conf-file\" data-input=\""
@@ -672,7 +1104,11 @@ view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 		}
 		h_raw(h, "</select>");
 	}
-	h_raw(h, "</h4>");
+	h_fmt(h, " <button class=\"ghost small%s\" data-act=\"bird-safe\" "
+	    "title=\"In safe mode BIRD takes a change back by itself "
+	    "(configure timeout) unless the console still reaches the host "
+	    "after it\">Safe mode: %s</button></h4>", bd.unsafe ? "" : " on",
+	    bd.unsafe ? "off" : "on");
 	if (bd.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, bd.error);
@@ -832,6 +1268,52 @@ skeleton(const char *kind)
 }
 
 /* The boxes of BIRD; true when the one open is one of them. */
+/*
+ * A channel's filter in a neighbour's box: to be chosen among the
+ * filters the file has, when the protocol's text says it in a way that
+ * can be rewritten; else as birdc names it.
+ */
+static void
+filter_cell(struct html *h, int block, const char *chan, const char *dir,
+    const char *running)
+{
+	char	*text, now[80], opt[80];
+	int	 i;
+
+	if (block < 0 || chan == NULL || !name_ok(chan)) {
+		h_txt(h, running);
+		return;
+	}
+	text = block_text(block);
+	if (channel_of(text, chan) == NULL) {
+		free(text);
+		h_txt(h, running);
+		return;
+	}
+	filter_now(text, chan, dir, now, sizeof(now));
+	free(text);
+	h_fmt(h, "<select name=\"%s_%s\"><option value=\"\">", dir, chan);
+	h_txt(h, running != NULL ? running : "");
+	h_raw(h, " (as written)</option>");
+	for (i = -2; i < bd.nb; i++) {
+		if (i >= 0 && strcmp(bd.b[i].kind, "filter") != 0)
+			continue;
+		if (i < 0)
+			snprintf(opt, sizeof(opt), "%s", i == -2 ? "all" :
+			    "none");
+		else
+			snprintf(opt, sizeof(opt), "filter %s", bd.b[i].name);
+		if (strcmp(opt, now) == 0)
+			continue;
+		h_raw(h, "<option");
+		h_attr(h, "value", opt);
+		h_raw(h, ">");
+		h_txt(h, opt);
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select>");
+}
+
 bool
 bird_modal(struct html *h)
 {
@@ -906,9 +1388,11 @@ bird_modal(struct html *h)
 					h_raw(h, "</td><td>");
 					h_txt(h, jstr(c, "table"));
 					h_raw(h, "</td><td>");
-					h_txt(h, jstr(c, "input-filter"));
+					filter_cell(h, i, jstr(c, "name"),
+					    "import", jstr(c, "input-filter"));
 					h_raw(h, "</td><td>");
-					h_txt(h, jstr(c, "output-filter"));
+					filter_cell(h, i, jstr(c, "name"),
+					    "export", jstr(c, "output-filter"));
 					h_raw(h, "</td><td>");
 					h_txt(h, jstr(c, "routes"));
 					h_raw(h, "</td></tr>");
@@ -929,6 +1413,14 @@ bird_modal(struct html *h)
 					h_fmt(h, ">%s</button>", vs[k]);
 				}
 			}
+			if (name_ok(bd.proto))
+				h_raw(h, "<button type=\"button\" class=\"ghost "
+				    "small\" data-act=\"bird-routes-of\" "
+				    "data-arg=\"protocol\">Routes from it"
+				    "</button><button type=\"button\" class=\""
+				    "ghost small\" data-act=\"bird-routes-of\" "
+				    "data-arg=\"export\">Routes sent to it"
+				    "</button>");
 			h_raw(h, "</div><details><summary>All that birdc says "
 			    "of it</summary><pre>");
 			it = NULL;
@@ -951,9 +1443,10 @@ bird_modal(struct html *h)
 		    "class=\"code\" spellcheck=\"false\" rows=\"14\">");
 		h_txt(h, text);
 		h_raw(h, "</textarea><small>Filters are named in <code>import"
-		    "</code> and <code>export</code>; bird parses the whole "
-		    "configuration before it is taken, and what it refuses "
-		    "is not kept.</small></label>");
+		    "</code> and <code>export</code>: one chosen above is "
+		    "written into this text when it is saved. bird parses "
+		    "the whole configuration before it is taken, and what it "
+		    "refuses is not kept.</small></label>");
 		free(text);
 		return (true);
 	case MODAL_BIRD_BLOCK:
@@ -1080,12 +1573,42 @@ bird_form(const char *form, const ucl_object_t *f)
 {
 	struct server	*s;
 	struct html	 b;
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
 	const char	*text, *name, *host, *port, *r4, *r6, *p, *nl;
-	char		*all;
+	char		*all, *mine;
 	bool		 first;
 
 	if (strncmp(form, "bird-", 5) != 0)
 		return (false);
+	if (strcmp(form, "bird-routes") == 0) {
+		char	words[200], q[80];
+
+		if ((s = cur_server()) == NULL)
+			return (true);
+		/* What goes into the address is checked here; the host
+		 * checks it again, word by word. */
+		snprintf(q, sizeof(q), "%s", jstr(f, "q") != NULL ? jstr(f,
+		    "q") : "");
+		name = jstr(f, "proto") != NULL ? jstr(f, "proto") : "";
+		host = jstr(f, "table") != NULL ? jstr(f, "table") : "";
+		if (q[strspn(q, "0123456789abcdefABCDEF.:/")] != '\0' ||
+		    (name[0] != '\0' && !name_ok(name)) || (host[0] != '\0' &&
+		    !name_ok(host))) {
+			snprintf(br.sid, sizeof(br.sid), "%s", s->id);
+			snprintf(br.jail, sizeof(br.jail), "%s", net_scope());
+			snprintf(br.error, sizeof(br.error), "A prefix or an "
+			    "address: 192.0.2.0/24, 2001:db8::1");
+			return (true);
+		}
+		snprintf(words, sizeof(words), "%s%s%s%s%s%s%s%s", q, name[0] !=
+		    '\0' ? "," : "", name[0] == '\0' ? "" : jstr(f, "dir") !=
+		    NULL && strcmp(jstr(f, "dir"), "export") == 0 ? "export," :
+		    "protocol,", name, host[0] != '\0' ? ",table," : "", host,
+		    jbool(f, "all") ? ",all" : "", "");
+		routes_ask(s, words[0] == ',' ? words + 1 : words);
+		return (true);
+	}
 	if ((s = cur_server()) == NULL || bd.text == NULL || bd.saving)
 		return (true);
 	text = jstr(f, "text") != NULL ? jstr(f, "text") : "";
@@ -1101,7 +1624,37 @@ bird_form(const char *form, const ucl_object_t *f)
 			    "Nothing to save: Remove takes it out");
 			return (true);
 		}
-		all = spliced(bd.edit, text);
+		/* The filters chosen from the lists go into the text. */
+		mine = strdup(text);
+		it = NULL;
+		while ((o = ucl_object_iterate(f, &it, true)) != NULL) {
+			const char	*key = ucl_object_key(o), *v;
+			char		 dir[8], *next;
+
+			v = ucl_object_tostring_forced(o);
+			if (key == NULL || v == NULL || v[0] == '\0' ||
+			    (strncmp(key, "import_", 7) != 0 && strncmp(key,
+			    "export_", 7) != 0))
+				continue;
+			snprintf(dir, sizeof(dir), "%.6s", key);
+			if ((strcmp(v, "all") != 0 && strcmp(v, "none") != 0 &&
+			    (strncmp(v, "filter ", 7) != 0 || !name_ok(v +
+			    7))) || (next = filter_set(mine, key + 7, dir,
+			    v)) == NULL) {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "What %s %ss is written in a way that is "
+				    "not rewritten from a list: change it in "
+				    "the text", key + 7, dir);
+				free(mine);
+				return (true);
+			}
+			free(mine);
+			mine = next;
+		}
+		free(bd.draft);
+		bd.draft = strdup(mine);
+		all = spliced(bd.edit, mine);
+		free(mine);
 		conf_save(s, all, false);
 		free(all);
 		return (true);
@@ -1227,6 +1780,16 @@ bird_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "bird-file") == 0) {
 		if (bd.text != NULL)
 			app.modal = MODAL_BIRD_FILE;
+	} else if (strcmp(act, "bird-safe") == 0) {
+		bd.unsafe = !bd.unsafe;
+	} else if (strcmp(act, "bird-routes-of") == 0) {
+		/* arg: protocol or export; of the neighbour whose box it is. */
+		if (name_ok(bd.proto)) {
+			snprintf(body, sizeof(body), "%s,%s", strcmp(arg,
+			    "export") == 0 ? "export" : "protocol", bd.proto);
+			routes_ask(s, body);
+			app.modal = MODAL_NONE;
+		}
 	} else if (strcmp(act, "bird-delete") == 0) {
 		if (bd.edit < 0 || bd.edit >= bd.nb)
 			return (true);

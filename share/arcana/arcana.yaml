@@ -90,7 +90,8 @@ definitions:
           Give the host's interface to the running jail named by jail,
           which has a network of its own (vnet), or with remove take it
           back to the host.  The interface epair, without a number, is
-          a new epair(4) made for it: its a end stays on the host, its b
+          a new epair(4) made for it: its a end stays on the host, a
+          member of the bridge parent names when one is named, its b
           end goes to the jail.  Here jail is where the interface goes, not
           whose network is worked on: the host does it, with
           ifconfig(8).  With persist, also as vnet.interface of the
@@ -145,6 +146,16 @@ definitions:
           address and AS, its channels with their filters and how many
           routes came and went), the OSPF neighbours in "ospf", and the
           routing tables with how many routes each holds in "tables".
+      - name: bird-routes
+        doc: |
+          Routes of BIRD's tables, from birdc(8) show route, as a JSON
+          object with the array "routes": each with its table, prefix,
+          type, protocol, since, from, primary, preference, info, its
+          "nexthops" and, when asked with all, its attributes in
+          "attrs".  net-filter says which, in birdc's own words: for
+          and an address, or a prefix; protocol or export and a
+          protocol's name; table and a table's name; all.  More routes
+          than a reply should carry are counted, not sent.
   - name: net-family
     type: enum
     entries:
@@ -457,6 +468,21 @@ attribute-sets:
         type: text
         multi-attr: true
         doc: The files BIRD's configuration is made of.
+      - name: safe
+        type: flag
+        doc: |
+          For bird-config: the daemon is told to take the new
+          configuration back by itself (configure timeout) unless it is
+          confirmed within the time the agent allows, and the file is
+          then put back as it was.
+      - name: confirm
+        type: flag
+        doc: |
+          For bird-config: the change made with safe stays.  A client
+          that still reaches the host after the change says so.
+      - name: confirm-by
+        type: s64
+        doc: After a change with safe, the Unix time it is taken back at.
 
   - name: host
     attributes:
@@ -1247,7 +1273,9 @@ operations:
       changed meanwhile is not lost.  The whole configuration is parsed
       by bird(8) first, and what it refuses is not left in place; then
       the daemon is told to read it.  With dry-run it is parsed only,
-      and the file left as it was.
+      and the file left as it was.  With safe the daemon takes it back
+      by itself unless a request with confirm comes by confirm-by, and
+      the file is then as it was before.
     do:
       request:
         attributes:
@@ -1256,6 +1284,8 @@ operations:
           - sha256
           - dry-run
           - jail
+          - safe
+          - confirm
       reply:
         attributes:
           - ok
@@ -1265,4 +1295,5 @@ operations:
           - sha256
           - files
           - trace
+          - confirm-by
 

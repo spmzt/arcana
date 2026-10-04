@@ -230,6 +230,16 @@ also as
 of the jail in
 .Xr jail.conf 5 ,
 so the jail has it again when it next starts.
+.It Cm interface epair give Ar jail Op Ar bridge
+Make a new
+.Xr epair 4
+for the jail: its
+.Sy b
+end goes to the jail, its
+.Sy a
+end stays on the host, brought up as a member of
+.Ar bridge
+when one is named.
 .It Cm interface Ar name Cm destroy
 Destroy a cloned interface.
 .It Cm ng mkpeer | connect | rmhook | shutdown | name Ar argument ...
@@ -275,6 +285,22 @@ may be
 shows its status, its protocols with what
 .Ql show protocols all
 says of each, its OSPF neighbours and its tables.
+.It Cm bird routes Oo Ar prefix | Cm for Ar address Oc Oo Cm protocol | export Ar name Oc Oo Cm table Ar name Oc Op Cm all
+Routes of BIRD's tables, said in the words of
+.Xr birdc 8 Ns 's
+.Ql show route :
+a prefix, or the route that covers an address
+.Pq an address alone is taken so ;
+those learned from a protocol, or exported to it; those of one table;
+with
+.Cm all ,
+what each carries, a BGP route's path and communities.
+They are counted first: more than 2000 are not sent, and the count is
+said instead.
+.It Cm bird confirm
+The configuration put in place with
+.Fl s
+stays.
 .It Cm bird config Op Ar file
 Print BIRD's configuration: its main file, or
 .Ar file ,
@@ -292,6 +318,15 @@ after its name.
 With
 .Fl n
 it is parsed only.
+With
+.Fl s
+before the command, BIRD is told to take the new configuration back by
+itself
+.Pq Ql configure timeout
+unless
+.Cm bird confirm
+comes within the time the host allows; the file is then put back as it
+was.
 .Pp
 With the option
 .Fl s

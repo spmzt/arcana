@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.21.0
+  version: 0.22.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -464,9 +464,15 @@ paths:
                 text: { type: string }
                 sha256: { type: string, description: "of the text this was made from" }
                 check: { type: boolean, description: "parse only, change nothing" }
+                safe: { type: boolean, description: "BIRD takes the change
+                    back by itself unless a request with confirm comes by
+                    confirm_by; the file is then put back too" }
+                confirm: { type: boolean, description: "the change made with
+                    safe stays; no text is needed" }
       responses:
         "200":
-          description: ok, or error with what bird said
+          description: ok, or error with what bird said; confirm_by after
+            a change with safe
 
   /api/servers/{server}/net/{kind}:
     get:
@@ -479,10 +485,14 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, connections, sockets, interfaces, netgraph, wireguard, bird, lookup]
+            enum: [routes, nexthops, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup]
           description: netstat -rnW, netstat -onW, netstat -n, sockstat,
             getifaddrs(3), ngctl list -l, wg show (public keys only),
-            birdc show status and protocols; lookup is the route to the
+            birdc show status and protocols; bird-routes is birdc show
+            route for what `filter` names, in birdc's words with a comma
+            between them (a prefix, an address, `protocol,name`,
+            `export,name`, `table,name`, `all`), refused with their count
+            when there are more than 2000; lookup is the route to the
             address in `to`, with `best` and `candidates` under `data`.
         - name: to
           in: query

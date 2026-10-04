@@ -1074,6 +1074,18 @@ EOS
 #!/bin/sh
 echo "\$*" >> $(pwd)/birdc.log
 [ "\$1" = -r ] && shift
+# A daemon that is not there, one that goes away when told to read its
+# configuration, and one that does not take what it reads.
+[ -e $(pwd)/bird.dead ] && { echo "birdc: Unable to connect to server control socket (/var/run/bird.ctl): No such file or directory" >&2; exit 1; }
+if [ "\$1" = configure ] && [ -e $(pwd)/bird.dies ]; then
+	touch $(pwd)/bird.dead
+	echo "birdc: Connection closed by server" >&2
+	exit 1
+fi
+if [ "\$1" = configure ] && [ -e $(pwd)/bird.refuses ]; then
+	printf 'BIRD 2.15.1 ready.\nReading configuration from bird.conf\nbird.conf:3:1 Unknown instruction\n'
+	exit 0
+fi
 case "\$*" in
 "show status") printf 'BIRD 2.15.1 ready.\nBIRD 2.15.1\nRouter ID is 192.0.2.1\nHostname is lab\nDaemon is up and running\n' ;;
 "show protocols all") cat <<EOP ;;
@@ -1129,6 +1141,26 @@ EOP
 "restart nope") printf 'BIRD 2.15.1 ready.\nNo protocols match\n' ;;
 restart*|reload*|enable*|disable*) printf 'BIRD 2.15.1 ready.\n%s: done\n' "\$2" ;;
 configure) printf 'BIRD 2.15.1 ready.\nReading configuration from /usr/local/etc/bird.conf\nReconfigured\n' ;;
+"configure timeout 2") printf 'BIRD 2.15.1 ready.\nReconfigured\n' ;;
+"configure confirm") printf 'BIRD 2.15.1 ready.\nReconfiguration confirmed\n' ;;
+"show route for 10.1.2.3 count") printf 'BIRD 2.15.1 ready.\n2 of 2 routes for 1 networks in table master4\n' ;;
+"show route for 10.1.2.3 all") cat <<EOP ;;
+BIRD 2.15.1 ready.
+Table master4:
+10.1.0.0/16          unicast [bgp_core 2026-10-01 from 192.0.2.1] * (100) [AS65001i]
+	via 192.0.2.1 on em0
+	Type: BGP univ
+	BGP.as_path: 65001 65010
+	BGP.large_community: (65001, 1, 100)
+                     unicast [bgp_edge 12:01:02.345] (100/20) [AS65002?]
+	via 198.51.100.7 on gre0
+	via 198.51.100.9 on gre1
+EOP
+"show route table master6 count") printf 'BIRD 2.15.1 ready.\n0 of 0 routes for 0 networks in table master6\n' ;;
+"show route table master6") printf 'BIRD 2.15.1 ready.\n' ;;
+"show route protocol bgp_core count") printf 'BIRD 2.15.1 ready.\n950000 of 950000 routes for 950000 networks in table master4\n' ;;
+"show route 10.9.0.0/16 count") printf 'BIRD 2.15.1 ready.\n0 of 0 routes for 0 networks in table master4\n' ;;
+"show route 10.9.0.0/16") printf 'BIRD 2.15.1 ready.\nNetwork not found\n' ;;
 esac
 exit 0
 EOS
@@ -1294,6 +1326,147 @@ EOS
 	atf_check -s exit:1 -e match:"not a file of BIRD's configuration" -o ignore \
 	    "$JGC" -c "$SOCK" bird config -w edge.new "$(pwd)/bird/peers/x.sh"
 	atf_check -o not-match:'bgp_edge' cat rc.conf
+
+	# BIRD's routes, said in birdc's words; an address alone is the
+	# route that covers it.  Each route with where it leads, and with
+	# all, what it carries.
+	atf_check -o save:r.json "$JGC" -c "$SOCK" bird routes 10.1.2.3 all
+	atf_check -o match:'"table":"master4","prefix":"10.1.0.0/16","type":"unicast","protocol":"bgp_core","from":"192.0.2.1","since":"2026-10-01","primary":true,"preference":"100","info":"AS65001i"' \
+	    -o match:'"nexthops":\[\{"via":"192.0.2.1","interface":"em0"\}\]' \
+	    -o match:'"attrs":\["Type: BGP univ","BGP.as_path: 65001 65010","BGP.large_community: \(65001, 1, 100\)"\]' \
+	    -o match:'"prefix":"10.1.0.0/16","type":"unicast","protocol":"bgp_edge","since":"12:01:02.345","primary":false,"preference":"100/20","info":"AS65002\?"' \
+	    -o match:'\{"via":"198.51.100.7","interface":"gre0"\},\{"via":"198.51.100.9","interface":"gre1"\}' \
+	    -o match:'"count":2' cat r.json
+	atf_check -o match:'"routes":\[\]' "$JGC" -c "$SOCK" bird routes table master6
+	atf_check -o match:'"message":"Network not found"' \
+	    "$JGC" -c "$SOCK" bird routes 10.9.0.0/16
+	# A neighbour's whole table is counted, not carried.
+	atf_check -s exit:1 -e match:'950000 routes: more than the 2000 shown' \
+	    -o ignore "$JGC" -c "$SOCK" bird routes protocol bgp_core
+	atf_check -o not-match:'^-r show route protocol bgp_core$' cat birdc.log
+	# Only birdc's words for routes, and names that are names.
+	atf_check -s exit:1 -e match:"in birdc's words" -o ignore \
+	    "$JGC" -c "$SOCK" bird routes where 'net ~ 10.0.0.0/8'
+	atf_check -s exit:1 -e match:"in birdc's words" -o ignore \
+	    "$JGC" -c "$SOCK" bird routes protocol 'bgp;down'
+	atf_check -s exit:1 -e match:"in birdc's words" -o ignore \
+	    "$JGC" -c "$SOCK" bird routes table
+
+	# In safe mode BIRD is told to take the change back by itself when
+	# its time is up, and the file goes back with it.
+	sed -e 's/reject;/accept; # safe/' bird/bird.conf > safe.conf
+	: > birdc.log
+	atf_check -o match:'taken back unless confirmed' \
+	    "$JGC" -s -c "$SOCK" bird config -w safe.conf
+	atf_check -o match:'^configure timeout 2$' cat birdc.log
+	atf_check -o match:'# safe' cat bird/bird.conf
+	# Another change waits for this one.
+	atf_check -s exit:1 -e match:'waits to be confirmed' -o ignore \
+	    "$JGC" -c "$SOCK" bird config -w safe.conf
+	for i in $(seq 1 80); do
+		grep -q '# safe' bird/bird.conf || break
+		sleep 0.1
+	done
+	atf_check -o match:'reject;' -o not-match:'# safe' cat bird/bird.conf
+	atf_check -s exit:1 -e match:'no change to BIRD waits' -o ignore \
+	    "$JGC" -c "$SOCK" bird confirm
+	# Confirmed, it stays.
+	for i in $(seq 1 50); do
+		"$JGC" -s -c "$SOCK" bird config -w safe.conf > out 2>&1 && break
+		sleep 0.1
+	done
+	atf_check -o match:'taken back unless confirmed' cat out
+	atf_check -o match:'confirmed: it stays' "$JGC" -c "$SOCK" bird confirm
+	atf_check -o match:'^configure confirm$' cat birdc.log
+	sleep 5
+	atf_check -o match:'# safe' cat bird/bird.conf
+
+	# What BIRD itself does not take does not stay in the file: what
+	# it says of a file it cannot read has no word "error" in it.
+	sed -e 's/# safe/# two/' bird/bird.conf > two.conf
+	touch bird.refuses
+	atf_check -s exit:1 -e match:'BIRD did not take it, and the file is as it was' \
+	    -e match:'Unknown instruction' -o ignore \
+	    "$JGC" -c "$SOCK" bird config -w two.conf
+	atf_check -o match:'# safe' -o not-match:'# two' cat bird/bird.conf
+	atf_check -s exit:1 -o match:'BIRD did not take its configuration' \
+	    "$JGC" -c "$SOCK" bird configure
+	rm bird.refuses
+	# A daemon that goes away while it is told is not undone after:
+	# the file parses, and stays for it to read when it is started.
+	touch bird.dies
+	atf_check -s exit:1 -e match:'BIRD stopped answering when told to read' \
+	    -e match:'The file is in place and parses' -o ignore \
+	    "$JGC" -c "$SOCK" bird config -w two.conf
+	atf_check -o match:'# two' cat bird/bird.conf
+	rm bird.dies
+	# One that does not run: nothing in safe mode; without it the file
+	# is put in place, for when it is started.
+	sed -e 's/# two/# twob/' bird/bird.conf > twob.conf
+	atf_check -s exit:1 -e match:'BIRD does not answer: nothing can be changed in safe mode' \
+	    -o ignore "$JGC" -s -c "$SOCK" bird config -w twob.conf
+	atf_check -o match:'# two$' cat bird/bird.conf
+	atf_check -s exit:1 -e match:'reads it when it is started' -o ignore \
+	    "$JGC" -c "$SOCK" bird config -w twob.conf
+	atf_check -o match:'# twob' cat bird/bird.conf
+	rm bird.dead
+	sed -e 's/# twob/# two/' bird/bird.conf > two.conf
+	atf_check -o match:'in place, and BIRD told' \
+	    "$JGC" -c "$SOCK" bird config -w two.conf
+	# What parsed is never left out because BIRD could not: but what
+	# does not parse never gets there, dead or not.
+	touch bird.dead
+	printf 'router id 192.0.2.1;\nBROKEN\n' > bad.conf
+	atf_check -s exit:1 -e match:'bird does not take it' -o ignore \
+	    "$JGC" -c "$SOCK" bird config -w bad.conf
+	atf_check -o match:'# two' -o not-match:'BROKEN' cat bird/bird.conf
+	rm bird.dead
+	# One that goes away while a change waits has no timer left, and
+	# is not undone after either: the file stays.
+	sed -e 's/# two/# gone/' bird/bird.conf > gone.conf
+	atf_check -o match:'taken back unless confirmed' \
+	    "$JGC" -s -c "$SOCK" bird config -w gone.conf
+	touch bird.dead
+	sleep 6
+	atf_check -o match:'# gone' cat bird/bird.conf
+	rm bird.dead
+	sed -e 's/# gone/# two/' bird/bird.conf > two.conf
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" bird config -w two.conf > out 2>&1 && break
+		sleep 0.1
+	done
+	atf_check -o match:'in place, and BIRD told' cat out
+	# While one waits, BIRD is not told to read its configuration:
+	# that would stop its own timer.
+	sed -e 's/# two/# three/' bird/bird.conf > three.conf
+	for i in $(seq 1 50); do
+		"$JGC" -s -c "$SOCK" bird config -w three.conf > out 2>&1 && break
+		sleep 0.1
+	done
+	atf_check -o match:'taken back unless confirmed' cat out
+	atf_check -s exit:1 -o match:'waits to be confirmed' \
+	    "$JGC" -c "$SOCK" bird configure
+	# Left alone it is taken back, and BIRD told to read the file as
+	# it was; a file somebody changed meanwhile is left to them.
+	: > birdc.log
+	for i in $(seq 1 80); do
+		grep -q '# three' bird/bird.conf || break
+		sleep 0.1
+	done
+	atf_check -o match:'# two' -o not-match:'# three' cat bird/bird.conf
+	for i in $(seq 1 30); do
+		grep -q '^configure$' birdc.log && break
+		sleep 0.1
+	done
+	atf_check -o match:'^configure$' cat birdc.log
+	for i in $(seq 1 50); do
+		"$JGC" -s -c "$SOCK" bird config -w three.conf > out 2>&1 && break
+		sleep 0.1
+	done
+	atf_check -o match:'taken back unless confirmed' cat out
+	printf '# somebody else\n' >> bird/bird.conf
+	sleep 6
+	atf_check -o match:'# three' -o match:'# somebody else' cat bird/bird.conf
 }
 vpn_cleanup()
 {
@@ -1518,6 +1691,14 @@ EOS
 	    "$JGC" -c "$SOCK" interface epair give gateway
 	atf_check -o match:'^epair create$' -o match:'^epair7a destroy$' \
 	    -o not-match:'vnet' cat ifconfig.log
+	# With a bridge named, its end on the host is put in it, and up.
+	: > ifconfig.log
+	atf_check -s exit:1 -o match:'give epair to gateway, on bridge0' \
+	    "$JGC" -c "$SOCK" interface epair give gateway bridge0
+	atf_check -o match:'^bridge0 addm epair7a$' -o match:'^epair7a up$' \
+	    cat ifconfig.log
+	atf_check -s exit:1 -e match:"a new epair's end" -o ignore \
+	    "$JGC" -c "$SOCK" interface lo0 give gateway bridge0
 }
 vnet_cleanup()
 {

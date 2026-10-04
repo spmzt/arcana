@@ -82,6 +82,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_NETGRAPH] = "netgraph",
 	[ARC_NET_KIND_WIREGUARD] = "wireguard",
 	[ARC_NET_KIND_BIRD] = "bird",
+	[ARC_NET_KIND_BIRD_ROUTES] = "bird-routes",
 };
 
 static const char *service_action_names[] = {
@@ -521,9 +522,9 @@ worker(void *arg)
 		break;
 	case ARC_CMD_BIRD_CONFIG:
 		/* The path rides in source, the text in ref. */
-		what = wfmt(&w, "bird config %s%s", j->ref == NULL ? "read" :
-		    j->refresh ? "check" : "write", j->source != NULL ? " " :
-		    "");
+		what = wfmt(&w, "bird config %s%s", j->config_only ? "confirm" :
+		    j->ref == NULL ? "read" : j->refresh ? "check" : j->restart ?
+		    "write (safe)" : "write", j->source != NULL ? " " : "");
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s%s",
 		    what, j->source != NULL ? j->source : "");
 		memset(&bcq, 0, sizeof(bcq));
@@ -532,10 +533,12 @@ worker(void *arg)
 		bcq.conf_text = j->ref;
 		bcq.sha256 = j->sha256;
 		bcq.dry_run = j->refresh;
+		bcq.safe = j->restart;
+		bcq.confirm = j->config_only;
 		bcr.has_ok = true;
 		if (scope_enter(&w, j->jail, &bcr.error) != 0)
 			;
-		else if (j->ref == NULL)
+		else if (j->ref == NULL && !bcq.confirm)
 			do_bird_config(&w, &bcq, &bcr);
 		else {
 			pthread_mutex_lock(&change_lock);
@@ -944,6 +947,9 @@ arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
 	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
 	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
 	j->refresh = rq->dry_run;
+	/* Safe rides where a restart does, confirm where config-only. */
+	j->restart = rq->safe;
+	j->config_only = rq->confirm;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
 	return (start(j));
@@ -1073,6 +1079,11 @@ check_spec(const struct arc_job_spec *sp)
 			return ("invalid interface name");
 		if (sp->jail == NULL || sp->jail[0] == '\0')
 			return ("name the jail the interface goes to");
+		if (sp->parent != NULL && sp->parent[0] != '\0' &&
+		    (!valid_ifname(sp->parent) || sp->remove ||
+		    strcmp(sp->interface, "epair") != 0))
+			return ("a bridge is named for a new epair's end on "
+			    "the host only");
 		break;
 	case ARC_JOB_KIND_IF_DESTROY:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))

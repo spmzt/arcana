@@ -169,8 +169,10 @@ title_of(const struct arc_job_spec *sp)
 		    " " : "", sp->names.n > 0 ? sp->names.v[0] : "");
 		break;
 	case ARC_JOB_KIND_IF_VNET:
-		rc = asprintf(&t, sp->remove ? "take %s back from %s%s" :
-		    "give %s to %s%s", sp->interface, sp->jail, sp->persist ?
+		rc = asprintf(&t, sp->remove ? "take %s back from %s%s%s%s" :
+		    "give %s to %s%s%s%s", sp->interface, sp->jail,
+		    sp->parent != NULL && sp->parent[0] != '\0' ? ", on " : "",
+		    sp->parent != NULL ? sp->parent : "", sp->persist ?
 		    " (kept)" : "");
 		break;
 	default:
@@ -408,15 +410,77 @@ undo_prepare(struct qjob *j)
 }
 
 /*
+ * A bridge's member, as rc.conf keeps it: "addm name" among what
+ * ifconfig_<bridge> says, added or taken out.
+ */
+static void
+bridge_keep(struct work *w, const char *bridge, const char *member, bool add)
+{
+	const char	*cur, *e, *var;
+	char		*v, *p, *word;
+
+	var = wfmt(w, "ifconfig_%s", bridge);
+	cur = rc_get(w, var);
+	word = wfmt(w, "addm %s", member);
+	e = NULL;
+	if (add) {
+		if (cur == NULL)
+			(void)rc_set(w, var, "=", wfmt(w, "%s up", word), &e);
+		else if (strstr(wfmt(w, " %s ", cur), wfmt(w, " %s ", word)) ==
+		    NULL)
+			(void)rc_set(w, var, "=", wfmt(w, "%s %s", word, cur),
+			    &e);
+		return;
+	}
+	if (cur == NULL)
+		return;
+	v = wfmt(w, " %s ", cur);
+	if ((p = strstr(v, wfmt(w, " %s ", word))) == NULL)
+		return;
+	memmove(p, p + strlen(word) + 1, strlen(p + strlen(word) + 1) + 1);
+	v[strlen(v) - 1] = '\0';
+	(void)rc_set(w, var, "=", v + 1, &e);
+}
+
+/* The bridge's member on the host, live: in, and up; or out. */
+static int
+bridge_member(struct work *w, const char *bridge, const char *member,
+    bool add, const char **errp)
+{
+	struct execres	 res;
+	char		*argv[5];
+
+	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[1] = (char *)(uintptr_t)bridge;
+	argv[2] = (char *)(uintptr_t)(add ? "addm" : "deletem");
+	argv[3] = (char *)(uintptr_t)member;
+	argv[4] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+		return (-1);
+	}
+	if (!add)
+		return (0);
+	argv[1] = (char *)(uintptr_t)member;
+	argv[2] = (char *)(uintptr_t)"up";
+	argv[3] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+		return (-1);
+	}
+	return (0);
+}
+
+/*
  * A new epair(4) for a jail: made on the host, where its a end stays,
- * and its b end given to the jail.  A pair that cannot be given is
- * destroyed again.
+ * in the bridge named by parent when one is, and its b end given to the
+ * jail.  A pair that cannot be given is destroyed again.
  */
 static bool
 give_pair(struct qjob *j, const char **errp)
 {
 	struct arc_job_spec	 cs;
-	const char		*a, *e;
+	const char		*a, *e, *br;
 	char			*b;
 
 	memset(&cs, 0, sizeof(cs));
@@ -434,11 +498,16 @@ give_pair(struct qjob *j, const char **errp)
 		return (false);
 	}
 	b[strlen(b) - 1] = 'b';
-	if (do_if_vnet(&j->w, b, j->spec.jail, false, j->spec.persist,
+	br = j->spec.parent != NULL && j->spec.parent[0] != '\0' ?
+	    j->spec.parent : NULL;
+	if ((br != NULL && bridge_member(&j->w, br, a, true, errp) != 0) ||
+	    do_if_vnet(&j->w, b, j->spec.jail, false, j->spec.persist,
 	    errp) != 0) {
 		(void)do_if_destroy(&j->w, a, j->spec.persist, &e);
 		return (false);
 	}
+	if (br != NULL && j->spec.persist)
+		bridge_keep(&j->w, br, a, true);
 	j->made = b;
 	return (true);
 }
@@ -474,8 +543,14 @@ undo(struct qjob *j)
 		rc = do_if_vnet(&j->w, j->made != NULL ? j->made :
 		    sp->interface, sp->jail, !sp->remove, sp->persist, &e);
 		/* A pair made for the jail goes with it. */
-		if (rc == 0 && j->made != NULL)
+		if (rc == 0 && j->made != NULL) {
+			if (sp->parent != NULL && sp->parent[0] != '\0' &&
+			    sp->persist)
+				bridge_keep(&j->w, sp->parent, wfmt(&j->w,
+				    "%.*sa", (int)strlen(j->made) - 1, j->made),
+				    false);
 			rc = do_if_destroy(&j->w, j->made, sp->persist, &e);
+		}
 		break;
 	case ARC_JOB_KIND_IF_SET:
 		rc = do_if_set(&j->w, sp->interface, sp->has_mtu && sp->mtu !=

@@ -128,6 +128,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_NETGRAPH] = "netgraph",
 	[ARC_NET_KIND_WIREGUARD] = "wireguard",
 	[ARC_NET_KIND_BIRD] = "bird",
+	[ARC_NET_KIND_BIRD_ROUTES] = "bird-routes",
 };
 
 static const char *service_action_names[] = {
@@ -1038,9 +1039,14 @@ call_run(struct kore_task *t)
 		bcq.sha256 = c->address[0] != '\0' ? c->address : NULL;
 		bcq.dry_run = c->dry_run;
 		bcq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		bcq.safe = c->refresh && c->text != NULL && !c->dry_run;
+		bcq.confirm = c->config_only;
 		if ((error = arc_bird_config(&cl, &bcq, &bcr)) != 0)
 			goto rpcfail;
 		ok = bcr->ok;
+		if (bcr->has_confirm_by)
+			put(top, "confirm_by", ucl_object_fromint(
+			    bcr->confirm_by));
 		put_str(top, "error", bcr->error);
 		put_str(top, "path", bcr->conf_path);
 		put_str(top, "text", bcr->conf_text);
@@ -1715,7 +1721,8 @@ api_network(struct http_request *req)
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "kind is one of "
 		    "routes, nexthops, connections, sockets, interfaces, "
-		    "netgraph, wireguard, bird, lookup; fib a number"));
+		    "netgraph, wireguard, bird, bird-routes, lookup; fib a "
+		    "number"));
 	}
 	c->action = (uint8_t)i;
 	c->family = ARC_NET_FAMILY_ALL;
@@ -1730,8 +1737,11 @@ api_network(struct http_request *req)
 	 * it is, so only what needs no escaping in a URL is taken.
 	 */
 	if (query_param(req, "filter", c->jail, sizeof(c->jail))) {
+		/* BIRD's routes are asked for in words, with , between. */
 		for (q = c->jail; *q != '\0'; q++)
-			if (!isalnum((unsigned char)*q) && strchr(".:/_-",
+			if (*q == ',' && c->action == ARC_NET_KIND_BIRD_ROUTES)
+				c->jail[q - c->jail] = ' ';
+			else if (!isalnum((unsigned char)*q) && strchr(".:/_-",
 			    *q) == NULL)
 				break;
 		if (*q != '\0' || strlen(c->jail) > 128) {
@@ -1792,9 +1802,12 @@ api_bird_config(struct http_request *req)
 		}
 		if ((s = ucl_str(body, "sha256")) != NULL)
 			strlcpy(c->address, s, sizeof(c->address));
+		/* Safe rides where a refresh does, confirm where config-only. */
+		c->refresh = ucl_flag(body, "safe");
+		c->config_only = ucl_flag(body, "confirm");
 		if ((s = ucl_str(body, "text")) != NULL)
 			c->text = kore_strdup(s);
-		else
+		else if (!c->config_only)
 			bad = true;
 		c->dry_run = ucl_flag(body, "check");
 		if ((s = ucl_str(body, "jail")) != NULL) {

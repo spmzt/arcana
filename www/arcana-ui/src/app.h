@@ -506,6 +506,8 @@ void		 vpn_age(char *, size_t, int64_t);
 bool		 bird_action(const char *, const char *, const char *);
 bool		 bird_form(const char *, const ucl_object_t *);
 bool		 bird_modal(struct html *);
+void		 bird_tick(double);
+void		 topo_poll_host(struct server *);
 void		 bird_modal_buttons(struct html *);
 const char	*state_class(const struct server *, const ucl_object_t *,
 		    const struct jailui *);

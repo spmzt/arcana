@@ -205,6 +205,8 @@ tick(void *arg)
 		agent_restarts(now);
 		if (app.visible && app.online)
 			topo_tick(now);
+		if (app.online)
+			bird_tick(now);
 	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
 	    now - last_update > UPDATE_MS) {
@@ -684,6 +686,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	    net_scope()[0] != '\0') {
 		app.modal = MODAL_IF_VNET;
 		app.modal_error[0] = '\0';
+		/* What the host has to give, and its bridges. */
+		topo_poll_host(s);
 	} else if (strcmp(act, "if-vnet-back") == 0 && s != NULL &&
 	    net_scope()[0] != '\0') {
 		snprintf(body, sizeof(body), "ifconfig %s -vnet %s, on %s: "

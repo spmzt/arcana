@@ -623,6 +623,17 @@ page_key(const struct server *s)
 	return (key);
 }
 
+/* A server's own interfaces, whatever its page shows. */
+void
+topo_poll_host(struct server *s)
+{
+	int	i;
+
+	nodes_build();
+	if ((i = node_index(s->id)) != -1)
+		node_poll(i);
+}
+
 /* The same for a server, or the jail shown, asked for from its page. */
 void
 topo_poll(struct server *s)
@@ -2441,9 +2452,12 @@ static const char keep_field[] = "<label class=\"toggle\"><input type=\""
 bool
 topo_modal(struct html *h)
 {
-	struct server	*s;
-	unsigned int	 mtu;
-	int		 a, b;
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	struct thost		*ht;
+	struct server		*s;
+	unsigned int		 mtu;
+	int			 a, b;
 
 	switch (app.modal) {
 	case MODAL_TUNNEL:
@@ -2503,14 +2517,46 @@ topo_modal(struct html *h)
 		h_txt(h, s->name);
 		h_raw(h, ", with <code>ifconfig vnet</code>: the interface "
 		    "leaves the host and is the jail's until it is taken "
-		    "back, or the jail stops.</p><label>Interface<input name="
-		    "\"interface\" spellcheck=\"false\" autocomplete=\"off\" "
-		    "placeholder=\"epair\" autofocus><small>Empty, or <code>"
-		    "epair</code>, for a new pair: its <b>a</b> end stays on "
-		    "the host, to be put in a bridge or given an address "
-		    "there, its <b>b</b> end goes to the jail. Or an "
-		    "interface the host has: vlan100, vmx1. The host refuses "
-		    "to give the one the console reaches it by.</small>"
+		    "back, or the jail stops.</p><label>Interface<select name="
+		    "\"interface\"><option value=\"\">a new epair, made for "
+		    "it</option>");
+		ht = thost(s->id, false);
+		it = NULL;
+		while (ht != NULL && (o = ucl_object_iterate(jget(ht->ifs,
+		    "interfaces"), &it, true)) != NULL) {
+			if (jstr(o, "name") == NULL || strncmp(jstr(o, "name"),
+			    "lo", 2) == 0)
+				continue;
+			h_raw(h, "<option");
+			h_attr(h, "value", jstr(o, "name"));
+			h_raw(h, ">");
+			h_txt(h, jstr(o, "name"));
+			if (jstr(o, "description") != NULL) {
+				h_raw(h, " · ");
+				h_txt(h, jstr(o, "description"));
+			}
+			h_raw(h, "</option>");
+		}
+		h_raw(h, "</select><small>Of a new pair the <b>a</b> end stays "
+		    "on the host and the <b>b</b> end goes to the jail. An "
+		    "interface the host has leaves it; the host refuses to "
+		    "give the one the console reaches it by.</small></label>"
+		    "<label>The pair's end on the host<select name=\"bridge\">"
+		    "<option value=\"\">left as it is made</option>");
+		it = NULL;
+		while (ht != NULL && (o = ucl_object_iterate(jget(ht->ifs,
+		    "interfaces"), &it, true)) != NULL) {
+			if (jstr(o, "name") == NULL || strncmp(jstr(o, "name"),
+			    "bridge", 6) != 0)
+				continue;
+			h_raw(h, "<option");
+			h_attr(h, "value", jstr(o, "name"));
+			h_raw(h, ">a member of ");
+			h_txt(h, jstr(o, "name"));
+			h_raw(h, "</option>");
+		}
+		h_raw(h, "</select><small>For a new pair only: in a bridge of "
+		    "the host it reaches what the bridge reaches.</small>"
 		    "</label>");
 		if (jstr(find_jail(s, net_scope()), "scope") != NULL)
 			h_raw(h, "<label class=\"toggle\"><input type=\""
@@ -2910,15 +2956,19 @@ topo_form(const char *form, const ucl_object_t *f)
 			    "for a new epair");
 			return (true);
 		}
+		/* A bridge for the end of a new pair that stays. */
+		c = strcmp(name, "epair") == 0 ? field(f, "bridge", "parent") :
+		    strdup("");
 		a = json_quote(net_scope());
 		snprintf(title, sizeof(title), "give %s to %s", name,
 		    net_scope());
 		/* name is letters, digits, dots: checked above. */
 		if (asprintf(&b, "{\"kind\":\"if-vnet\",\"interface\":\"%s\","
-		    "\"jail\":%s,\"persist\":%s}", name, a, jbool(f,
+		    "\"jail\":%s%s,\"persist\":%s}", name, a, c, jbool(f,
 		    "persist") ? "true" : "false") == -1)
 			abort();
 		free(a);
+		free(c);
 		job_send_host(s, b, title, JOB_IFACE, name);
 		app.modal = MODAL_NONE;
 		tp.last_poll = 0;

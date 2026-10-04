@@ -102,6 +102,32 @@ The console is laid out as a tree and tabs.
     it refuses does not stay, the box says what bird said, and what
     was typed is kept. Then BIRD is told to read it. The file as it
     was is kept beside it as `<file>.arcana-old`.
+    A change is made in **safe mode** unless that is turned off beside
+    **Configuration**: BIRD is told to take the new configuration back
+    by itself (`configure timeout`), and a few seconds later the page
+    says that it stays (`configure confirm`), which it can only do if
+    the console still reaches the host. If it cannot, BIRD goes back to
+    what it ran when the time is up, and the host puts the file back as
+    it was. While a change waits, another is not taken, and BIRD is not
+    told to read its configuration by hand: that would stop its timer.
+    A BIRD that answers and does not take a configuration leaves the
+    file as it was. One that stops answering while it is told, or
+    after, is not undone: the file parses, bird said so, and stays in
+    place for BIRD to read when it is started again; the host starts
+    nothing by itself. A BIRD that does not run gets the file all the
+    same, though not in safe mode, which is BIRD's own.
+    In a neighbour's box each channel's **import and export filter is
+    chosen from a list** of the filters the file has, with `all` and
+    `none`; the choice is written into the neighbour's part of the
+    configuration when it is saved. A filter written out in place, or
+    a condition, is left to be changed in the text.
+    **Routes** shows what BIRD's tables hold: for a prefix, or for an
+    address the route that covers it; those learned from a neighbour
+    or sent to it (also from the neighbour's box); those of one table;
+    and with what they carry, a BGP route's path and communities. The
+    host counts first: more than 2000 routes are not fetched, and the
+    count is said instead. From a shell: `arcanactl bird routes …`,
+    `arcanactl -s bird config -w file`, `arcanactl bird confirm`.
     Changes to interfaces, routes, a jail's address made here and
     service variables are made in **safe mode** where they can be: once
     the change is made, the host waits a minute to hear from the
@@ -140,13 +166,15 @@ The console is laid out as a tree and tabs.
   above the jail's interfaces gives it one the host has (`ifconfig
   vlan100 vnet jail`), or, with the field left empty, a new `epair`
   made for it: the `a` end stays on the host, to be put in a bridge or
-  given an address there, the `b` end goes to the jail. **To host** on
+  given an address there, the `b` end goes to the jail. The host's
+  interfaces are offered in a list, and so are its bridges, for the
+  pair's end on the host to be made a member of one. **To host** on
   a row takes that interface back. Kept, it is the jail's
   `vnet.interface` in `jail.conf`, and a new pair is in the host's
   `rc.conf`, so the jail has them again after a boot. The host refuses
   to give away the interface the console reaches it by, unless asked in
   safe mode. From a shell: `arcanactl [-p] interface name give | take
-  jail`.
+  jail`, `arcanactl [-p] interface epair give jail [bridge]`.
 - A **jail** has its page: actions, addresses (changed live with
   jail_setv(3) and the interface alias, persistently in its `jail.conf`
   block with a diff to preview, or both), its configuration as jail(8)

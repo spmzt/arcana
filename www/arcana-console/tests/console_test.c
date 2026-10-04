@@ -1627,6 +1627,61 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
 	resp_free(&r);
+
+	/*
+	 * In safe mode BIRD is told to take the change back by itself;
+	 * the reply says by when, and a confirmation makes it stay.
+	 */
+	http("GET", path, NULL, &r);
+	snprintf(body, sizeof(body), "{\"text\":\"router id 192.0.2.10;\\n\","
+	    "\"safe\":true,\"sha256\":\"%s\"}", jstr(&r, "sha256"));
+	resp_free(&r);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "confirm_by") != NULL);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^configure timeout 60$' birdc.log") == 0);
+	http("POST", path, "{\"confirm\":true}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^configure confirm$' birdc.log && grep -q "
+	    "'^router id 192.0.2.10;$' bird/bird.conf") == 0);
+	http("POST", path, "{\"confirm\":true}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	resp_free(&r);
+
+	/* BIRD's routes, asked for in birdc's words with , between. */
+	snprintf(path, sizeof(path), "%.*s/net/bird-routes?filter=10.1.2.3,all",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("10.1.0.0/16", jstr(&r, "data.routes.0.prefix"));
+	ATF_CHECK_STREQ("bgp_core", jstr(&r, "data.routes.0.protocol"));
+	ATF_CHECK_STREQ("192.0.2.1", jstr(&r, "data.routes.0.nexthops.0.via"));
+	ATF_CHECK_STREQ("BGP.as_path: 65001 65010", jstr(&r,
+	    "data.routes.0.attrs.0"));
+	ATF_CHECK_STREQ("bgp_edge", jstr(&r, "data.routes.1.protocol"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^-r show route for 10.1.2.3 all$' birdc.log")
+	    == 0);
+	/* A neighbour's whole table is counted, not sent. */
+	snprintf(path, sizeof(path), "%.*s/net/bird-routes?filter=protocol,"
+	    "bgp_core", (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK(strstr(jstr(&r, "error"), "845233 routes") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/net/bird-routes?filter=where,x",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	resp_free(&r);
 }
 
 CONSOLE_TC(unreachable, "A server that does not answer is reported")

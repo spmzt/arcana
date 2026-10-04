@@ -114,6 +114,7 @@ usage(void)
 	    "    net routes [-4 | -6] text\n"
 	    "    interface name up | down | destroy\n"
 	    "    interface name give | take jail\n"
+	    "    interface epair give jail [bridge]\n"
 	    "    interface name add | remove address\n"
 	    "    interface name mtu number\n"
 	    "    interface name description text\n"
@@ -133,6 +134,9 @@ usage(void)
 	    "    bird configure\n"
 	    "    bird config [file]\n"
 	    "    bird config -w new-text [-n] [file]\n"
+	    "    bird confirm\n"
+	    "    bird routes [prefix | for address] [protocol | export name]\n"
+	    "        [table name] [all]\n"
 	    "    stats\n"
 	    "    packages [-r] [jail]\n"
 	    "    pkg-upgrade [-n] [-j jail] [package ...]\n"
@@ -932,6 +936,7 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 		usage();
 	req.conf_path = argc - optind == 1 ? argv[optind] : NULL;
 	req.jail = netjail;
+	req.safe = safe && from != NULL && !req.dry_run;
 	text = NULL;
 	cur = NULL;
 	if (from != NULL) {
@@ -956,7 +961,11 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 	else if (rsp->ok)
 		xo_emit("{:path/%s}: {:result/%s}\n", rsp->conf_path != NULL ?
 		    rsp->conf_path : "", req.dry_run ? "parses; left as it "
-		    "was" : "in place, and BIRD told");
+		    "was" : req.safe ? "in place, and BIRD told; taken back "
+		    "unless confirmed (bird confirm)" : "in place, and BIRD "
+		    "told");
+	if (rsp->ok && rsp->has_confirm_by)
+		xo_emit("{e:confirm-by/%jd}", (intmax_t)rsp->confirm_by);
 	if (from == NULL)
 		for (i = 1; i < rsp->files.n; i++)
 			xo_emit("{e:file/%s}", rsp->files.v[i]);
@@ -969,6 +978,64 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 	if (cur != NULL)
 		arc_bird_config_rsp_free(cur);
 	free(text);
+	return (error);
+}
+
+/* bird confirm: the configuration changed in safe mode stays. */
+static int
+cmd_bird_confirm(struct arc_client *cl)
+{
+	struct arc_bird_config_req	 req;
+	struct arc_bird_config_rsp	*rsp;
+	int				 error;
+
+	memset(&req, 0, sizeof(req));
+	req.confirm = true;
+	req.jail = netjail;
+	if ((error = arc_bird_config(cl, &req, &rsp)) != 0)
+		fail(cl, error, "bird confirm");
+	if (rsp->ok)
+		xo_emit("{:result/%s}\n", "confirmed: it stays");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("bird confirm: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_bird_config_rsp_free(rsp);
+	return (error);
+}
+
+/* bird routes [words]: routes of BIRD's tables, said in birdc's words. */
+static int
+cmd_bird_routes(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_network_req	 req;
+	struct arc_network_rsp	*rsp;
+	char			 words[256];
+	int			 i, error;
+
+	words[0] = '\0';
+	for (i = 0; i < argc; i++) {
+		if (i > 0)
+			strlcat(words, " ", sizeof(words));
+		if (strlcat(words, argv[i], sizeof(words)) >= sizeof(words))
+			usage();
+	}
+	memset(&req, 0, sizeof(req));
+	req.has_net_kind = true;
+	req.net_kind = ARC_NET_KIND_BIRD_ROUTES;
+	req.net_filter = words[0] != '\0' ? words : NULL;
+	req.jail = netjail;
+	if ((error = arc_network(cl, &req, &rsp)) != 0)
+		fail(cl, error, "bird routes");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("bird routes: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_network_rsp_free(rsp);
 	return (error);
 }
 
@@ -1024,6 +1091,11 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	}
 	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "config") == 0)
 		return (cmd_bird_config(cl, argc - 1, argv + 1));
+	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "routes") == 0)
+		return (cmd_bird_routes(cl, argc - 2, argv + 2));
+	if (strcmp(argv[0], "bird") == 0 && strcmp(argv[1], "confirm") == 0 &&
+	    argc == 2)
+		return (cmd_bird_confirm(cl));
 	if (strcmp(argv[0], "bird") == 0) {
 		sp.kind = ARC_JOB_KIND_BIRD;
 		sp.verb = argv[1];
@@ -1100,11 +1172,14 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	} else if (strcmp(argv[2], "destroy") == 0 && argc == 3) {
 		sp.kind = ARC_JOB_KIND_IF_DESTROY;
 	} else if ((strcmp(argv[2], "give") == 0 || strcmp(argv[2],
-	    "take") == 0) && argc == 4) {
+	    "take") == 0) && (argc == 4 || (argc == 5 && argv[2][0] ==
+	    'g'))) {
 		/* The jail it goes to or comes from, not one worked in. */
 		sp.kind = ARC_JOB_KIND_IF_VNET;
 		sp.jail = argv[3];
 		sp.remove = strcmp(argv[2], "take") == 0;
+		/* And the bridge a new pair's end on the host goes in. */
+		sp.parent = argc == 5 ? argv[4] : NULL;
 	} else if (strcmp(argv[2], "mtu") == 0 && argc == 4) {
 		sp.kind = ARC_JOB_KIND_IF_SET;
 		sp.has_mtu = true;

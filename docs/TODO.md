@@ -5,12 +5,6 @@
 - Routes through netlink, with its attributes mapped to CBOR, instead of
   running route(8) and netstat(1).
 - WireGuard: preshared keys; a peer's key rotated.
-- A vnet jail: its epair's host end put in a bridge when it is made;
-  the host's interfaces offered in a list when one is given.
-- BIRD: its routes (`show route`, for a prefix or from a neighbour);
-  choosing a neighbour's filters from a list rather than writing their
-  names; a change tried with `configure timeout` and taken back when
-  the console is cut off, as safe mode does for interfaces.
 
 ## Not yet verified
 
@@ -41,6 +35,11 @@ Written and tested with stand-ins, never run for real:
   configuration written in a jail, WireGuard in a jail, safe mode in a
   jail, and the map with a real jail as a node (the browser test tells
   the page that a jail runs).
+- BIRD's safe mode and what is done when BIRD stops answering, against
+  a real BIRD: the replies looked for are those in BIRD's source, 2.19
+  and 3.3 (`cmd_reconfig_msg()`), and the tests use a stand-in that
+  says them, dies or refuses on demand. `show route` was parsed from
+  the format in `nest/rt-show.c`.
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.
