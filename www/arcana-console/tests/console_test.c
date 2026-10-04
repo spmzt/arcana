@@ -1691,6 +1691,106 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 400);
 	resp_free(&r);
 
+	/*
+	 * Storage: the pools with their devices, datasets, snapshots of
+	 * one, the disks from the kernel, what is mounted; a snapshot
+	 * taken by a job; fstab read and put back.
+	 */
+	snprintf(path, sizeof(path), "%.*s/storage/pools",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("tank", jstr(&r, "data.pools.0.name"));
+	ATF_CHECK_STREQ("DEGRADED", jstr(&r, "data.pools.0.health"));
+	ATF_CHECK_STREQ("mirror-0", jstr(&r, "data.pools.0.vdevs.1.name"));
+	ATF_CHECK_STREQ("OFFLINE", jstr(&r, "data.pools.0.vdevs.3.state"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/storage/datasets",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("tank/data", jstr(&r, "data.datasets.1.name"));
+	ATF_CHECK_STREQ("8000000", jstr(&r, "data.datasets.1.quota"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/storage/snapshots?filter=tank/data",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("tank/data@b", jstr(&r, "data.snapshots.0.name"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q -- '-S creation -r tank/data$' storage.log")
+	    == 0);
+	snprintf(path, sizeof(path), "%.*s/storage/snapshots?filter=-r",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/storage/disks",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/storage/mounts",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("/", jstr(&r, "data.mounts.0.on"));
+	ATF_CHECK_STREQ("/mnt/data", jstr(&r, "data.fstab.1.file"));
+	ATF_CHECK_STREQ("false", jstr(&r, "data.fstab.1.mounted"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"zfs\",\"verb\":\"snapshot\","
+	    "\"args\":[\"tank/data@now\"],\"recursive\":true},{\"kind\":"
+	    "\"gpart\",\"verb\":\"add\",\"args\":[\"ada9\",\"freebsd-zfs\","
+	    "\"10G\",\"tank0\"]}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("zfs snapshot -r tank/data@now", jstr(&r,
+	    "jobs.0.title"));
+	ATF_CHECK_STREQ("gpart add -t freebsd-zfs -a 1m -s 10G -l tank0 ada9",
+	    jstr(&r, "jobs.1.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q '^gpart add' storage.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^zfs snapshot -r tank/data@now$' "
+	    "storage.log") == 0);
+	/* A word that is an option, or a pool to destroy, is no job. */
+	http("POST", path, "{\"jobs\":[{\"kind\":\"zfs\",\"verb\":\"destroy\","
+	    "\"args\":[\"tank\"]}]}", &r);
+	ATF_CHECK(r.status != 200 || strcmp(jstr(&r, "ok") != NULL ? jstr(&r,
+	    "ok") : "", "true") != 0);
+	resp_free(&r);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"gpart\",\"verb\":\"destroy\","
+	    "\"args\":[\"-F\",\"ada9\"]}]}", &r);
+	ATF_CHECK(r.status != 200 || strcmp(jstr(&r, "ok") != NULL ? jstr(&r,
+	    "ok") : "", "true") != 0);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'destroy' storage.log") != 0);
+	snprintf(path, sizeof(path), "%.*s/fstab",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "sha256") != NULL);
+	ATF_CHECK(strstr(jstr(&r, "text"), "/mnt/data") != NULL);
+	snprintf(body, sizeof(body), "{\"text\":\"/dev/ada0p2\\t/\\tufs\\trw"
+	    "\\t1\\t1\\n/dev/ada0p4 /mnt/more ufs rw 2 2\\n\",\"sha256\":"
+	    "\"%s\"}", jstr(&r, "sha256"));
+	resp_free(&r);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '/mnt/more' fstab && grep -q '/mnt/data' "
+	    "fstab.arcana-old") == 0);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK(strstr(jstr(&r, "error"), "changed it meanwhile") != NULL);
+	resp_free(&r);
+
 	/* The host says which plugins it has: the programs are there. */
 	snprintf(path, sizeof(path), "%.*s/jails",
 	    (int)(strlen(base) - strlen("/services")), base);

@@ -826,10 +826,17 @@ routes_ask(struct server *s, const char *words)
 static void
 routes_view(struct html *h, struct server *s, const ucl_object_t *data)
 {
-	const ucl_object_t	*o, *nh, *l;
+	static const struct tcol rcols[] = {
+		{ "Prefix", "prefix", false }, { "Leads to", NULL, false },
+		{ "Protocol", "protocol", false }, { "From", "from", false },
+		{ "Preference", "preference", false }, { "Info", "info",
+		false }, { "Since", "since", false }, { "Table", "table",
+		false },
+	};
+	const ucl_object_t	**rows, *o, *nh, *l;
 	ucl_object_iter_t	 it, nit;
 	bool			 mine;
-	int			 n;
+	int			 n, r;
 
 	mine = strcmp(br.sid, s->id) == 0 && strcmp(br.jail, net_scope()) == 0;
 	h_raw(h, "<h4 class=\"family\">Routes</h4><form data-form=\""
@@ -888,13 +895,12 @@ routes_view(struct html *h, struct server *s, const ucl_object_t *data)
 		h_raw(h, "</p>");
 		return;
 	}
-	h_raw(h, "<table class=\"net broutes\"><thead><tr><th>Prefix</th>"
-	    "<th>Leads to</th><th>Protocol</th><th>From</th><th>Preference"
-	    "</th><th>Info</th><th>Since</th><th>Table</th></tr></thead>"
-	    "<tbody>");
-	it = NULL;
-	while ((o = ucl_object_iterate(jget(br.data, "routes"), &it, true)) !=
-	    NULL) {
+	h_raw(h, "<table class=\"net broutes\">");
+	tbl_head(h, "broutes", rcols, 8, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("broutes", jget(br.data, "routes"), rcols, 8,
+	    app.filter);
+	for (r = 0; (o = rows[r]) != NULL; r++) {
 		h_fmt(h, "<tr class=\"%s\"><td class=\"mono\">", jbool(o,
 		    "primary") ? "best" : "other");
 		h_raw(h, jbool(o, "primary") ? "<i class=\"led\" title=\"The "
@@ -943,6 +949,7 @@ routes_view(struct html *h, struct server *s, const ucl_object_t *data)
 			h_raw(h, "</pre></td></tr>");
 		}
 	}
+	free(rows);
 	h_raw(h, "</tbody></table>");
 }
 

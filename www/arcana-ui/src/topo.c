@@ -178,6 +178,9 @@ static struct {
 	char	tun_a[80], tun_b[80];	/* the tunnel asked for */
 	char	create_sid[80];		/* the node an interface is made on */
 	int	fit_n;			/* the nodes there were when fitted */
+	bool	touched;		/* moved, zoomed: no fitting unasked */
+	bool	hide[LK_KINDS];		/* kinds of links not drawn */
+	bool	hide_best, hide_alt;	/* nor the route traced */
 	double	last_poll;
 } tp = { .zoom = 1.0 };
 
@@ -224,10 +227,21 @@ nodes_build(void)
 	const ucl_object_t	*j;
 	ucl_object_iter_t	 it;
 	struct tnode		*n;
-	int			 i;
+	int			 i, remote;
 
+	/*
+	 * A host reached by a local socket is the console's own: it has
+	 * no place among those reached over the network, unless there
+	 * are no others.
+	 */
+	remote = 0;
+	for (i = 0; i < app.nservers; i++)
+		if (strncmp(app.servers[i].uri, "unix:", 5) != 0)
+			remote++;
 	ntn = 0;
 	for (i = 0; i < app.nservers; i++) {
+		if (remote > 0 && strncmp(app.servers[i].uri, "unix:", 5) == 0)
+			continue;
 		n = &tn[ntn++];
 		memset(n, 0, sizeof(*n));
 		n->srv = i;
@@ -236,6 +250,8 @@ nodes_build(void)
 		snprintf(n->label, sizeof(n->label), "%s", app.servers[i].name);
 	}
 	for (i = 0; i < app.nservers; i++) {
+		if (remote > 0 && strncmp(app.servers[i].uri, "unix:", 5) == 0)
+			continue;
 		it = NULL;
 		while (app.servers[i].list != NULL && (j = ucl_object_iterate(
 		    jget(app.servers[i].list, "jails"), &it, true)) != NULL &&
@@ -264,7 +280,7 @@ static int
 node_host(int i)
 {
 
-	return (tn[i].srv);		/* the servers come first, in order */
+	return (node_index(app.servers[tn[i].srv].id));
 }
 
 /* Where the console asks about a node's network. */
@@ -1303,7 +1319,8 @@ map_links(struct html *h)
 
 	for (i = 0; i < nlinks; i++) {
 		l = &links[i];
-		if (!place(l->a, &x1, &y1) || !place(l->b, &x2, &y2))
+		if (tp.hide[l->kind] || !place(l->a, &x1, &y1) || !place(l->b,
+		    &x2, &y2))
 			continue;
 		bend = bend_of(i);
 		w = 1.6 + log10(1 + l->rate / 1000.0) * 1.1;
@@ -1366,7 +1383,7 @@ map_path(struct html *h)
 		p = &path.hops[i];
 		if (!place(p->from, &x1, &y1))
 			continue;
-		for (k = 0; k < p->nalt; k++) {
+		for (k = 0; !tp.hide_alt && k < p->nalt; k++) {
 			if (p->alt[k].to < 0 || p->alt[k].to == p->to ||
 			    !place(p->alt[k].to, &x2, &y2))
 				continue;
@@ -1379,6 +1396,8 @@ map_path(struct html *h)
 			h_txt(h, p->alt[k].gw);
 			h_raw(h, "</title></path>");
 		}
+		if (tp.hide_best)
+			continue;
 		if (p->to >= 0 && place(p->to, &x2, &y2)) {
 			h_raw(h, "<path class=\"tpath best\" marker-end=\""
 			    "url(#arrow)\" d=\"");
@@ -1420,6 +1439,8 @@ map_nodes(struct html *h)
 	}
 	/* The routing neighbours outside, fanned out away from the middle. */
 	for (i = 0; !tp.nopeers && i < nexts; i++) {
+		if (tp.hide[exts[i].ospf ? LK_OSPF : LK_BGP])
+			continue;
 		struct ext	*e = &exts[i];
 		double		 cx, cy, a, ex, ey;
 		int		 m;
@@ -1585,11 +1606,33 @@ map(struct html *h)
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-peers\" "
 	    "title=\"BGP and OSPF neighbours that are not hosts of this "
 	    "console\">Peers</button>", tp.nopeers ? "" : " on");
-	h_raw(h, "</div><ul class=\"map-legend\"><li class=\"tunnel\">tunnel</li>"
-	    "<li class=\"p2p\">point to point</li><li class=\"lan\">same "
-	    "network</li><li class=\"bgp\">BGP</li><li class=\"ospf\">OSPF"
-	    "</li><li class=\"best\">route</li><li class=\"alt\">instead</li>"
-	    "</ul></div>");
+	/* The legend says what a line is, and takes its kind away or back. */
+	h_raw(h, "</div><ul class=\"map-legend\">");
+	{
+		static const struct {
+			const char	*cls, *title;
+			int		 kind;
+		} lg[] = {
+			{ "tunnel", "tunnel", LK_TUNNEL },
+			{ "p2p", "point to point", LK_P2P },
+			{ "lan", "same network", LK_LAN },
+			{ "bgp", "BGP", LK_BGP }, { "ospf", "OSPF", LK_OSPF },
+			{ "vnet", "jail", LK_VNET },
+			{ "best", "route", -1 }, { "alt", "instead", -2 },
+		};
+		size_t	k;
+		bool	off;
+
+		for (k = 0; k < sizeof(lg) / sizeof(lg[0]); k++) {
+			off = lg[k].kind >= 0 ? tp.hide[lg[k].kind] :
+			    lg[k].kind == -1 ? tp.hide_best : tp.hide_alt;
+			h_fmt(h, "<li class=\"%s%s\" data-act=\"topo-legend\" "
+			    "data-arg=\"%s\" title=\"%s these in the map\">%s"
+			    "</li>", lg[k].cls, off ? " off" : "", lg[k].cls,
+			    off ? "Show" : "Hide", lg[k].title);
+		}
+	}
+	h_raw(h, "</ul></div>");
 }
 
 /* The addresses of a host a tunnel could end at or a route lead to. */
@@ -2047,7 +2090,7 @@ view_netmap(struct html *h)
 	nodes_build();
 	places_fill();
 	/* Fitted once, and again when a jail came or went as a node. */
-	if ((!tp.fitted || tp.fit_n != ntn) && ntn > 0) {
+	if ((!tp.fitted || (tp.fit_n != ntn && !tp.touched)) && ntn > 0) {
 		tp.fitted = true;
 		tp.fit_n = ntn;
 		fit();
@@ -2056,7 +2099,9 @@ view_netmap(struct html *h)
 	/* The first neighbours outside to show need room: once. */
 	if (nexts > 0 && !tp.refitted) {
 		tp.refitted = true;
-		fit();
+		/* Not under the hand of who is moving things about. */
+		if (!tp.touched)
+			fit();
 	}
 	h_raw(h, "<div class=\"netmap\">");
 	map(h);
@@ -3145,6 +3190,7 @@ topo_action(const char *act, const char *arg, const char *value)
 			t->x = x + grab_x;
 			t->y = y + grab_y;
 		}
+		tp.touched = true;
 	} else if (strcmp(act, "topo-node-end") == 0) {
 		places_save();
 	} else if (strcmp(act, "topo-node-click") == 0) {
@@ -3160,6 +3206,7 @@ topo_action(const char *act, const char *arg, const char *value)
 		if (act[9] == 'm') {
 			tp.panx -= (cx - tp.lastcx) * k;
 			tp.pany -= (cy - tp.lastcy) * k;
+			tp.touched = true;
 		}
 		tp.lastcx = cx;
 		tp.lastcy = cy;
@@ -3201,14 +3248,35 @@ topo_action(const char *act, const char *arg, const char *value)
 		toast(false, "Drag the dot onto another host to join the two "
 		    "with a tunnel");
 	} else if (strcmp(act, "topo-zoom") == 0) {
-		if (sscanf(value, "%lf,%lf,%lf", &k, &x, &y) == 3)
-			zoom_by(k < 0 ? 1.15 : 1 / 1.15, x, y);
+		/* The wheel says which way; two fingers say how much. */
+		if (sscanf(value, "%lf,%lf,%lf", &k, &x, &y) == 3) {
+			if (strcmp(arg, "pinch") == 0)
+				zoom_by(k > 0.2 && k < 5 ? k : 1, x, y);
+			else
+				zoom_by(k < 0 ? 1.15 : 1 / 1.15, x, y);
+			tp.touched = true;
+		}
 	} else if (strcmp(act, "topo-zoom-in") == 0) {
 		zoom_by(1.25, tp.panx, tp.pany);
+		tp.touched = true;
 	} else if (strcmp(act, "topo-zoom-out") == 0) {
 		zoom_by(0.8, tp.panx, tp.pany);
+		tp.touched = true;
+	} else if (strcmp(act, "topo-legend") == 0) {
+		static const char *const names[] = { "tunnel", "p2p", "lan",
+		    "bgp", "ospf", "vnet" };
+
+		for (i = 0; i < LK_KINDS; i++)
+			if (strcmp(arg, names[i]) == 0)
+				tp.hide[i] = !tp.hide[i];
+		if (strcmp(arg, "best") == 0)
+			tp.hide_best = !tp.hide_best;
+		if (strcmp(arg, "alt") == 0)
+			tp.hide_alt = !tp.hide_alt;
 	} else if (strcmp(act, "topo-fit") == 0) {
+		/* Asked for: and kept fitted until moved again. */
 		fit();
+		tp.touched = false;
 	} else if (strcmp(act, "topo-jails") == 0) {
 		tp.jails = !tp.jails;
 	} else if (strcmp(act, "topo-open-wg") == 0 || strcmp(act,

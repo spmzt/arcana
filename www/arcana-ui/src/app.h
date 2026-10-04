@@ -139,6 +139,7 @@ enum tab {
 	TAB_SERVICES,
 	TAB_NETWORK,
 	TAB_PACKAGES,
+	TAB_STORAGE,
 	TAB_KERNEL,
 	TAB_JOBS,
 };
@@ -262,6 +263,7 @@ enum {
 	JOB_PACKAGES,
 	JOB_IFACE,
 	JOB_KERNEL,
+	JOB_STORAGE,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -299,6 +301,8 @@ enum modal {
 	MODAL_BIRD_RPKI,
 	MODAL_BIRD_FILE,
 	MODAL_IF_VNET,
+	MODAL_STORAGE,
+	MODAL_LOOKUP,
 };
 
 struct confirm {
@@ -435,7 +439,7 @@ void		 if_address(struct server *, const char *, const char *, bool,
 		    bool);
 void		 if_state(struct server *, const char *, bool);
 void		 route_change(struct server *, const char *, const char *, bool,
-		    bool, int);
+		    bool, int, int, int, const char *);
 bool		 service_busy(const struct server *, const char *);
 bool		 packages_busy(const struct server *);
 void		 load_settings(void);
@@ -511,7 +515,25 @@ bool		 bird_action(const char *, const char *, const char *);
 bool		 bird_form(const char *, const ucl_object_t *);
 bool		 bird_modal(struct html *);
 void		 bird_tick(double);
+/* tbl.c: every table sorts by its columns and is filtered. */
+struct tcol {
+	const char	*title;
+	const char	*key;		/* NULL: not to be sorted by */
+	bool		 num;
+};
+void		 tbl_head(struct html *, const char *, const struct tcol *, int,
+		    int);
+const ucl_object_t **tbl_rows(const char *, const ucl_object_t *,
+		    const struct tcol *, int, const char *);
+bool		 tbl_sorted(const char *);
+bool		 tbl_action(const char *, const char *, const char *);
 void		 refresh_kernel(struct server *, bool);
+void		 refresh_storage(struct server *, bool);
+void		 view_storage(struct html *, struct server *);
+bool		 storage_modal(struct html *);
+void		 storage_modal_buttons(struct html *);
+bool		 storage_form(const char *, const ucl_object_t *);
+bool		 storage_action(const char *, const char *, const char *);
 void		 view_kernel(struct html *, struct server *);
 bool		 kernel_form(const char *, const ucl_object_t *);
 bool		 kernel_action(const char *, const char *, const char *);

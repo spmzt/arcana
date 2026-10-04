@@ -253,6 +253,78 @@ addToLibrary({
 		}
 		document.addEventListener("pointerup", drop);
 		document.addEventListener("pointercancel", drop);
+
+		/*
+		 * Two fingers on a drawing that zooms: as they part or
+		 * close, the drawing grows or shrinks about the point
+		 * between them.  The page hears of it as the wheel's name
+		 * with "pinch" and "factor,x,y".  A drag begun by the first
+		 * finger is dropped when the second comes down.
+		 */
+		var pinch = { pts: {}, n: 0, svg: null, dist: 0 };
+
+		function pinchDist() {
+			var k = Object.keys(pinch.pts), a, b;
+
+			if (k.length < 2)
+				return (0);
+			a = pinch.pts[k[0]];
+			b = pinch.pts[k[1]];
+			return (Math.hypot(a.x - b.x, a.y - b.y));
+		}
+		document.addEventListener("pointerdown", function (e) {
+			var svg = e.target.closest ? e.target.closest(
+			    "svg[data-wheel]") : null;
+
+			if (svg === null || e.pointerType !== "touch")
+				return;
+			pinch.pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+			pinch.n = Object.keys(pinch.pts).length;
+			if (pinch.n === 2) {
+				pinch.svg = svg;
+				pinch.dist = pinchDist();
+				if (drag !== null && drag.frame !== 0)
+					cancelAnimationFrame(drag.frame);
+				drag = null;
+			}
+		});
+		document.addEventListener("pointermove", function (e) {
+			var k, a, b, d, m, p;
+
+			if (!(e.pointerId in pinch.pts))
+				return;
+			pinch.pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+			if (pinch.svg === null || pinch.n !== 2)
+				return;
+			e.preventDefault();
+			d = pinchDist();
+			if (pinch.dist <= 0 || Math.abs(d - pinch.dist) < 3)
+				return;
+			if (!document.contains(pinch.svg))
+				pinch.svg = document.querySelector(
+				    "svg[data-wheel]") || pinch.svg;
+			if (!(m = pinch.svg.getScreenCTM()))
+				return;
+			k = Object.keys(pinch.pts);
+			a = pinch.pts[k[0]];
+			b = pinch.pts[k[1]];
+			p = new DOMPoint((a.x + b.x) / 2, (a.y + b.y) / 2)
+			    .matrixTransform(m.inverse());
+			act(pinch.svg.dataset.wheel, "pinch", (d /
+			    pinch.dist).toFixed(4) + "," + p.x.toFixed(1) +
+			    "," + p.y.toFixed(1));
+			pinch.dist = d;
+		}, { passive: false });
+		function pinchEnd(e) {
+			if (!(e.pointerId in pinch.pts))
+				return;
+			delete pinch.pts[e.pointerId];
+			pinch.n = Object.keys(pinch.pts).length;
+			if (pinch.n < 2)
+				pinch.svg = null;
+		}
+		document.addEventListener("pointerup", pinchEnd);
+		document.addEventListener("pointercancel", pinchEnd);
 		document.addEventListener("wheel", function (e) {
 			var svg = e.target.closest ? e.target.closest(
 			    "svg[data-wheel]") : null, m, p;

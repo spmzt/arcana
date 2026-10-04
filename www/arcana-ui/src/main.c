@@ -303,7 +303,7 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
-	    kernel_form(form, f))
+	    kernel_form(form, f) || storage_form(form, f))
 		return;
 	submit_form(form, f);
 }
@@ -418,10 +418,36 @@ submit_form(const char *form, const ucl_object_t *f)
 			    "Give a destination and a gateway");
 			return;
 		}
+		/* A number, or nothing: not half of one. */
+		for (i = 0; i < 3; i++) {
+			static const char *const nf[] = { "metric", "weight",
+			    "fib" };
+			const char *t = jstr(f, nf[i]) != NULL ? jstr(f,
+			    nf[i]) : "";
+
+			if (t[strspn(t, "0123456789")] != '\0' || strlen(t) >
+			    9) {
+				snprintf(app.modal_error,
+				    sizeof(app.modal_error), "The %s is a "
+				    "number", nf[i]);
+				return;
+			}
+		}
 		app.modal = MODAL_NONE;
 		if ((s2 = cur_server()) != NULL)
 			route_change(s2, s, jstr(f, "gateway"), false, jbool(f,
-			    "persist"), app.net.fib);
+			    "persist"), jstr(f, "fib") != NULL && jstr(f,
+			    "fib")[0] != '\0' ? atoi(jstr(f, "fib")) :
+			    app.net.fib, jstr(f, "metric") != NULL ? atoi(jstr(
+			    f, "metric")) : 0, jstr(f, "weight") != NULL ?
+			    atoi(jstr(f, "weight")) : 0, jstr(f, "source"));
+	} else if (strcmp(form, "lookup") == 0) {
+		/* The box stays: what the host answers is shown in it. */
+		s = jstr(f, "address") != NULL ? jstr(f, "address") : "";
+		if ((s2 = cur_server()) != NULL)
+			topo_lookup(s2, s, jstr(f, "fib") != NULL && jstr(f,
+			    "fib")[0] != '\0' ? atoi(jstr(f, "fib")) :
+			    app.net.fib);
 	} else if (strcmp(form, "if-address") == 0) {
 		s = jstr(f, "address") != NULL ? jstr(f, "address") : "";
 		if (strlen(s) < 2 || strchr(s, ' ') != NULL) {
@@ -475,7 +501,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	s = cur_server();
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
-	    kernel_action(act, arg, value))
+	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
+	    tbl_action(act, arg, value))
 		return;
 	if (strcmp(act, "fold") == 0) {
 		arc_open_set(arg, !arc_open_get(arg));
@@ -501,6 +528,8 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_services(s, true);
 			if (app.tab == TAB_KERNEL)
 				refresh_kernel(s, false);
+			if (app.tab == TAB_STORAGE)
+				refresh_storage(s, false);
 			if (app.tab == TAB_NETWORK && (strcmp(app.net.sid,
 			    s->id) != 0 || (app.net.data == NULL &&
 			    !app.net.loading)))
@@ -526,6 +555,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		    0 || strcmp(arg, "bird") == 0 ? TAB_NETWORK :
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
 		    strcmp(arg, "kernel") == 0 ? TAB_KERNEL :
+		    strcmp(arg, "storage") == 0 ? TAB_STORAGE :
 		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
 		app.node = NODE_HOST;
@@ -534,6 +564,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_jobs(s);
 		if (app.tab == TAB_KERNEL)
 			refresh_kernel(s, true);
+		if (app.tab == TAB_STORAGE)
+			refresh_storage(s, true);
 		close_service();
 		if (app.tab == TAB_SERVICES && s->services == NULL)
 			refresh_services(s, true);
@@ -661,7 +693,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		confirm("Delete the route", body, "Delete", true, "",
 		    "do-route-delete", arg, value);
 	} else if (strcmp(act, "do-route-delete") == 0 && s != NULL) {
-		route_change(s, arg, value, true, true, app.net.fib);
+		route_change(s, arg, value, true, true, app.net.fib, 0, 0, NULL);
 	} else if (strcmp(act, "if-addr-add") == 0 && s != NULL) {
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
 		app.modal = MODAL_IF_ADDRESS;
@@ -748,7 +780,9 @@ dispatch(const char *act, const char *arg, const char *value)
 		snprintf(body, sizeof(body), "destroy %s", arg);
 		job_send(s, json, body, JOB_IFACE, arg);
 	} else if (strcmp(act, "net-lookup") == 0 && s != NULL) {
-		topo_lookup(s, app.filter, app.net.fib);
+		topo_lookup_clear();
+		app.modal = MODAL_LOOKUP;
+		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "net-lookup-clear") == 0) {
 		topo_lookup_clear();
 	} else if (strcmp(act, "input:net-fib") == 0 && s != NULL) {
@@ -823,6 +857,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_network(s, true);
 		} else if (app.tab == TAB_KERNEL) {
 			refresh_kernel(s, true);
+		} else if (app.tab == TAB_STORAGE) {
+			refresh_storage(s, true);
 		} else if (app.tab == TAB_PACKAGES) {
 			app.pkg.loading = false;
 			refresh_packages(s, true);

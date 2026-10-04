@@ -82,6 +82,9 @@ static int	cmd_services(struct arc_client *);
 static int	cmd_net(struct arc_client *, int, char **);
 static int	cmd_stats(struct arc_client *);
 static int	cmd_kmod(struct arc_client *, int, char **);
+static int	cmd_storage(struct arc_client *, int, char **);
+static int	cmd_storage_job(struct arc_client *, int, char **);
+static int	cmd_fstab(struct arc_client *, int, char **);
 static int	cmd_packages(struct arc_client *, int, char **);
 static int	cmd_pkg_upgrade(struct arc_client *, int, char **);
 static void	emit_packages(const struct arc_package *, size_t);
@@ -122,8 +125,9 @@ usage(void)
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface]\n"
-	    "    route add destination gateway\n"
-	    "    route delete destination [gateway]\n"
+	    "    route add destination gateway [metric n] [weight n] "
+	    "[source address]\n"
+	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
@@ -140,6 +144,28 @@ usage(void)
 	    "        [table name] [all]\n"
 	    "    stats\n"
 	    "    kmod [load | unload module]\n"
+	    "    storage disks | pools | datasets | mounts\n"
+	    "    storage snapshots [dataset]\n"
+	    "    zfs snapshot | destroy | rollback [-r] name\n"
+	    "    zfs create dataset [property=value ...]\n"
+	    "    zfs set dataset property=value ...\n"
+	    "    zfs inherit dataset property\n"
+	    "    zfs mount | unmount [-f] | promote dataset\n"
+	    "    zfs clone snapshot dataset\n"
+	    "    zfs rename name name\n"
+	    "    zpool scrub | scrub-stop | trim pool\n"
+	    "    zpool clear pool [device]\n"
+	    "    zpool online | offline pool device\n"
+	    "    mount path\n"
+	    "    umount [-f] path\n"
+	    "    gpart create disk gpt | mbr | bsd\n"
+	    "    gpart add disk type [size [label]]\n"
+	    "    gpart delete disk index\n"
+	    "    gpart resize disk index [size]\n"
+	    "    gpart modify disk index label\n"
+	    "    gpart destroy disk\n"
+	    "    cam rescan\n"
+	    "    fstab [-w new-text [-n]]\n"
 	    "    packages [-r] [jail]\n"
 	    "    pkg-upgrade [-n] [-j jail] [package ...]\n"
 	    "    jobs\n"
@@ -1177,11 +1203,35 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 		sp.has_fib = fib != 0;
 		sp.fib = fib;
 		sp.remove = strcmp(argv[1], "delete") == 0;
-		if ((!sp.remove && (strcmp(argv[1], "add") != 0 || argc != 4)) ||
-		    (sp.remove && argc > 4))
+		if (!sp.remove && (strcmp(argv[1], "add") != 0 || argc < 4))
 			usage();
 		sp.destination = argv[2];
-		sp.gateway = argc == 4 ? argv[3] : NULL;
+		/* Then the gateway, and words with what follows each. */
+		i = 3;
+		if (i < argc && strcmp(argv[i], "metric") != 0 && strcmp(
+		    argv[i], "weight") != 0 && strcmp(argv[i], "source") != 0)
+			sp.gateway = argv[i++];
+		for (; i + 1 < argc; i += 2) {
+			if (strcmp(argv[i], "source") == 0) {
+				sp.source = argv[i + 1];
+				continue;
+			}
+			num = (uint32_t)strtonum(argv[i + 1], 1, UINT32_MAX,
+			    &errstr);
+			if (errstr != NULL)
+				xo_errx(2, "%s %s: %s", argv[i], argv[i + 1],
+				    errstr);
+			if (strcmp(argv[i], "metric") == 0) {
+				sp.has_metric = true;
+				sp.metric = num;
+			} else if (strcmp(argv[i], "weight") == 0) {
+				sp.has_weight = true;
+				sp.weight = num;
+			} else
+				usage();
+		}
+		if (i != argc || (!sp.remove && sp.gateway == NULL))
+			usage();
 		goto send;
 	}
 	sp.interface = argv[1];
@@ -1360,6 +1410,153 @@ cmd_kmod(struct arc_client *cl, int argc, char **argv)
 		xo_warnx("kmod: %s", rsp->error != NULL ? rsp->error :
 		    "failed");
 	arc_kernel_rsp_free(rsp);
+	return (error);
+}
+
+/* storage kind [dataset]: the host's storage, as the host says it. */
+static int
+cmd_storage(struct arc_client *cl, int argc, char **argv)
+{
+	static const char *kinds[] = { "disks", "pools", "datasets",
+	    "snapshots", "mounts" };
+	struct arc_storage_req	 req;
+	struct arc_storage_rsp	*rsp;
+	size_t			 i;
+	int			 error;
+
+	if (argc < 2 || argc > 3)
+		usage();
+	for (i = 0; i < nitems(kinds); i++)
+		if (strcmp(argv[1], kinds[i]) == 0)
+			break;
+	if (i == nitems(kinds) || (argc == 3 && i != 3))
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.has_storage_kind = true;
+	req.storage_kind = (uint8_t)i;
+	req.net_filter = argc == 3 ? argv[2] : NULL;
+	if ((error = arc_storage(cl, &req, &rsp)) != 0)
+		fail(cl, error, "storage");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	if (rsp->truncated)
+		xo_warnx("storage %s: there are %ju, more than a reply "
+		    "carries: these are the first", kinds[i],
+		    (uintmax_t)rsp->total);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("storage %s: %s", kinds[i], rsp->error != NULL ?
+		    rsp->error : "failed");
+	arc_storage_rsp_free(rsp);
+	return (error);
+}
+
+/*
+ * zfs, zpool, gpart, cam, mount and umount: a job of that kind, with
+ * the verb and its words.  -r and -f among the words are the job's
+ * flags, not words: the host gives no word to a program as an option.
+ */
+static int
+cmd_storage_job(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	const char		*words[24];
+	int			 i, first;
+
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.safe = safe;
+	sp.jail = netjail;
+	first = 2;
+	if (strcmp(argv[0], "mount") == 0 || strcmp(argv[0], "umount") == 0) {
+		sp.kind = ARC_JOB_KIND_MOUNT;
+		sp.verb = argv[0][0] == 'm' ? "mount" : "unmount";
+		first = 1;
+	} else {
+		if (argc < 2)
+			usage();
+		sp.kind = strcmp(argv[0], "zfs") == 0 ? ARC_JOB_KIND_ZFS :
+		    strcmp(argv[0], "zpool") == 0 ? ARC_JOB_KIND_ZPOOL :
+		    strcmp(argv[0], "gpart") == 0 ? ARC_JOB_KIND_GPART :
+		    ARC_JOB_KIND_CAM;
+		sp.verb = argv[1];
+	}
+	sp.names.v = words;
+	for (i = first; i < argc; i++) {
+		if (strcmp(argv[i], "-r") == 0)
+			sp.recursive = true;
+		else if (strcmp(argv[i], "-f") == 0)
+			sp.force = true;
+		else if (sp.names.n < nitems(words))
+			words[sp.names.n++] = argv[i];
+		else
+			usage();
+	}
+	return (submit(cl, &sp));
+}
+
+/* fstab: print it.  fstab -w new-text [-n]: put a local file in its place. */
+static int
+cmd_fstab(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_fstab_req	 req;
+	struct arc_fstab_rsp	*rsp, *cur;
+	struct stat		 sb;
+	const char		*from;
+	char			*text;
+	int			 ch, error, fd;
+
+	from = NULL;
+	memset(&req, 0, sizeof(req));
+	optind = 1;
+	optreset = 1;
+	while ((ch = getopt(argc, argv, "nw:")) != -1) {
+		switch (ch) {
+		case 'n':
+			req.dry_run = true;
+			break;
+		case 'w':
+			from = optarg;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc != optind || (req.dry_run && from == NULL))
+		usage();
+	text = NULL;
+	cur = NULL;
+	if (from != NULL) {
+		if ((fd = open(from, O_RDONLY)) == -1 || fstat(fd, &sb) == -1 ||
+		    (text = malloc((size_t)sb.st_size + 1)) == NULL ||
+		    read(fd, text, (size_t)sb.st_size) != sb.st_size)
+			xo_err(1, "%s", from);
+		close(fd);
+		text[sb.st_size] = '\0';
+		/* What is there now says what the new text replaces. */
+		if ((error = arc_fstab(cl, &req, &cur)) != 0)
+			fail(cl, error, "fstab");
+		req.sha256 = cur->sha256;
+		req.conf_text = text;
+	}
+	if ((error = arc_fstab(cl, &req, &rsp)) != 0)
+		fail(cl, error, "fstab");
+	if (from == NULL && rsp->conf_text != NULL)
+		xo_emit("{:text/%s}", rsp->conf_text);
+	else if (rsp->ok)
+		xo_emit("{:result/%s}\n", req.dry_run ? "it is an fstab; left "
+		    "as it was" : "in place; the one before is kept beside "
+		    "it");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("fstab: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_fstab_rsp_free(rsp);
+	if (cur != NULL)
+		arc_fstab_rsp_free(cur);
+	free(text);
 	return (error);
 }
 
@@ -1813,6 +2010,14 @@ main(int argc, char *argv[])
 		rc = cmd_stats(&cl);
 	else if (strcmp(argv[0], "kmod") == 0)
 		rc = cmd_kmod(&cl, argc, argv);
+	else if (strcmp(argv[0], "storage") == 0)
+		rc = cmd_storage(&cl, argc, argv);
+	else if (strcmp(argv[0], "zfs") == 0 || strcmp(argv[0], "zpool") == 0 ||
+	    strcmp(argv[0], "gpart") == 0 || strcmp(argv[0], "cam") == 0 ||
+	    strcmp(argv[0], "mount") == 0 || strcmp(argv[0], "umount") == 0)
+		rc = cmd_storage_job(&cl, argc, argv);
+	else if (strcmp(argv[0], "fstab") == 0)
+		rc = cmd_fstab(&cl, argc, argv);
 	else if (strcmp(argv[0], "packages") == 0)
 		rc = cmd_packages(&cl, argc, argv);
 	else if (strcmp(argv[0], "jobs") == 0 && argc == 1)

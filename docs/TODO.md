@@ -5,6 +5,11 @@
 - Routes through netlink, with its attributes mapped to CBOR, instead of
   running route(8) and netstat(1).
 - WireGuard: preshared keys; a peer's key rotated.
+- Storage, beyond what there is: making, destroying, importing and
+  exporting a pool; replacing, attaching and adding its devices;
+  `zfs send` and `receive` between hosts; encryption keys; a file
+  system made on a partition (newfs) and grown; swap; a disk's health
+  (SMART); a vnet jail's own datasets.
 - The mesh: agents joined by SCTP associations, each to at least a
   configured number of others (2 unless set), so that the console
   reaches an agent it has lost through one it still has. SCTP only,
@@ -71,6 +76,11 @@ Written and tested with stand-ins, never run for real:
   configuration written in a jail, WireGuard in a jail, safe mode in a
   jail, and the map with a real jail as a node (the browser test tells
   the page that a jail runs).
+- Storage changed for real: zfs(8), zpool(8), gpart(8), mount(8),
+  umount(8) and camcontrol(8) are stand-ins in the tests, which check
+  the words each is given. What is read is real: the disks from GEOM
+  on the machine this was written on, and the pools, datasets and
+  mounts of real hosts.
 - Loading and unloading a kernel module for real: reading the kernel
   is real, kldload(8) and kldunload(8) are stand-ins in the tests.
 - BIRD's safe mode and what is done when BIRD stops answering, against

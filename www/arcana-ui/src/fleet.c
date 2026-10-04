@@ -25,8 +25,8 @@
 
 static void	tile(struct html *, const char *, const char *, const char *);
 static void	bar(struct html *, const char *, float);
-static int	topology(struct html *, struct server *, int, int, int);
-static int	jail_rows(const struct server *);
+static int	topology(struct html *, struct server *, int, int, int, bool);
+static int	jail_rows(const struct server *, bool);
 
 /* A figure with its caption, for the summary. */
 static void
@@ -58,13 +58,39 @@ bar(struct html *h, const char *label, float pct)
 	h_raw(h, "</em></div>");
 }
 
+/* Is the jail one a graph of only what runs leaves out? */
+static bool
+stopped(const ucl_object_t *j)
+{
+
+	return (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+	    "stopped") == 0);
+}
+
+/* The jails of s a topology shows: all, or all but the stopped. */
+static unsigned int
+jail_count(const struct server *s, bool live)
+{
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it;
+	unsigned int		 n;
+
+	n = 0;
+	it = NULL;
+	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL)
+		if (jstr(j, "name") != NULL && !(live && stopped(j)))
+			n++;
+	return (n);
+}
+
 /* Rows the jails of s take in a topology: one each, capped. */
 static int
-jail_rows(const struct server *s)
+jail_rows(const struct server *s, bool live)
 {
 	unsigned int	n;
 
-	n = s->list != NULL ? ucl_array_size(jget(s->list, "jails")) : 0;
+	n = jail_count(s, live);
 	if (n == 0)
 		return (1);
 	return (n > T_MAX_JAILS ? T_MAX_JAILS + 1 : (int)n);
@@ -73,10 +99,12 @@ jail_rows(const struct server *s)
 /*
  * The host and its jails as nodes at column col, from row row on, with
  * an edge from (px, py) when px >= 0.  Returns the rows used.  Nodes are
- * buttons: a host opens its page, a jail its own.
+ * buttons: a host opens its page, a jail its own.  With live, only the
+ * jails that are not stopped: the fleet's graph is of what runs.
  */
 static int
-topology(struct html *h, struct server *s, int col, int row, int parent_y)
+topology(struct html *h, struct server *s, int col, int row, int parent_y,
+    bool live)
 {
 	const ucl_object_t	*j;
 	ucl_object_iter_t	 it;
@@ -84,7 +112,7 @@ topology(struct html *h, struct server *s, int col, int row, int parent_y)
 	int			 x, y, jx, jy, n, rows, shown;
 	unsigned int		 total;
 
-	rows = jail_rows(s);
+	rows = jail_rows(s, live);
 	x = T_PAD + col * (T_NODE_W + T_GAP_X);
 	y = T_PAD + row * (T_NODE_H + T_GAP_Y);
 	if (parent_y >= 0)
@@ -102,11 +130,11 @@ topology(struct html *h, struct server *s, int col, int row, int parent_y)
 	h_raw(h, "</div>");
 	jx = x + T_NODE_W + T_GAP_X;
 	n = shown = 0;
-	total = s->list != NULL ? ucl_array_size(jget(s->list, "jails")) : 0;
+	total = jail_count(s, live);
 	it = NULL;
 	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
 	    "jails"), &it, true)) != NULL) {
-		if ((name = jstr(j, "name")) == NULL)
+		if ((name = jstr(j, "name")) == NULL || (live && stopped(j)))
 			continue;
 		jy = T_PAD + (row + n) * (T_NODE_H + T_GAP_Y);
 		h_fmt(h, "<svg class=\"edges\" style=\"left:0;top:0\" "
@@ -162,7 +190,7 @@ view_fleet(struct html *h)
 					running++;
 			}
 		}
-		rows += jail_rows(s);
+		rows += jail_rows(s, true);
 	}
 	h_raw(h, "<section class=\"hostbar\"><div class=\"host-id\"><h1>Fleet"
 	    "</h1><div class=\"facts\"><span>The Seven Archives of FreeBSD"
@@ -232,7 +260,7 @@ view_fleet(struct html *h)
 	row = 0;
 	for (i = 0; i < app.nservers; i++)
 		row += topology(h, &app.servers[i], 1, row, T_PAD +
-		    T_NODE_H / 2);
+		    T_NODE_H / 2, true);
 	h_raw(h, "</div></div>");
 }
 
@@ -311,8 +339,8 @@ view_summary(struct html *h, struct server *s)
 	h_raw(h, "<h4>Jails</h4>");
 	h_fmt(h, "<div class=\"graph-scroll\"><div class=\"topo\" "
 	    "style=\"width:%dpx;height:%dpx\">", T_PAD * 2 + 2 * T_NODE_W +
-	    T_GAP_X, T_PAD * 2 + jail_rows(s) * (T_NODE_H + T_GAP_Y));
-	topology(h, s, 0, 0, -1);
+	    T_GAP_X, T_PAD * 2 + jail_rows(s, false) * (T_NODE_H + T_GAP_Y));
+	topology(h, s, 0, 0, -1, false);
 	h_raw(h, "</div></div>");
 }
 

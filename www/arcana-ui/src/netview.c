@@ -458,9 +458,8 @@ view_network(struct html *h, struct server *s)
 	}
 	if (app.net.kind == NET_ROUTES)
 		h_raw(h, "<button class=\"ghost small\" data-act=\"net-lookup\" "
-		    "title=\"The route this host takes to the address typed "
-		    "in the filter, and the others that cover it\">Lookup"
-		    "</button>"
+		    "title=\"Which route this host takes to an address, and "
+		    "the others that cover it\">Look up a route</button>"
 		    "<button class=\"ghost small\" data-act=\"route-add\" "
 		    "title=\"Add a static route\">+ route</button>"
 		    "<button class=\"ghost small\" data-act=\"net-search\" "
@@ -484,8 +483,6 @@ view_network(struct html *h, struct server *s)
 		h_txt(h, app.net.error);
 		h_raw(h, "</div>");
 	}
-	if (app.net.kind == NET_ROUTES)
-		view_lookup(h, s);
 	if (!mine) {
 		h_raw(h, app.net.loading ? "<div class=\"empty\"><div class="
 		    "\"loader\"></div></div>" : "<div class=\"empty\"><h2>No "

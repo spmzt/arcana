@@ -41,6 +41,12 @@
 .Op Fl x Ar jexec
 .Op Fl T Ar kldload
 .Op Fl t Ar kldunload
+.Op Fl z Ar zfs
+.Op Fl q Ar gpart
+.Op Fl i Ar camcontrol
+.Op Fl m Ar mount
+.Op Fl u Ar umount
+.Op Fl S Ar fstab
 .Op Fl H Ar helper
 .Op Fl w Ar seconds
 .Op Fl N Ar netstat
@@ -254,6 +260,23 @@ program, which parses a configuration before it is put in place, and
 BIRD's main configuration file.
 Default
 .Pa /usr/local/etc/bird.conf .
+.It Fl z Ar zfs , Fl q Ar gpart , Fl i Ar camcontrol , Fl m Ar mount , Fl u Ar umount
+The programs storage is read and changed with:
+.Xr zfs 8 ,
+.Xr gpart 8 ,
+.Xr camcontrol 8 ,
+.Xr mount 8
+and
+.Xr umount 8 .
+.Xr zpool 8
+is
+.Fl Z .
+.It Fl S Ar fstab
+The
+.Xr fstab 5
+read, and edited.
+Default:
+.Pa /etc/fstab .
 .It Fl T Ar kldload , Fl t Ar kldunload
 The
 .Xr kldload 8

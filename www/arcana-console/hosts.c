@@ -53,6 +53,8 @@ enum op {
 	OP_ROUTE_LOOKUP,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
+	OP_STORAGE,
+	OP_FSTAB,
 };
 
 struct call {
@@ -374,8 +376,9 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_ACTION ? "arc_action" : c->op == OP_ADDRESS ?
 	    "arc_address" : c->op == OP_SERVICES ? "arc_services" :
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
-	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_KERNEL ?
-	    "arc_kernel" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
+	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
+	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
 	    "arc_jobs" : c->op == OP_JOB ? "arc_job" : c->op == OP_JOB_CANCEL ?
@@ -651,6 +654,10 @@ call_run(struct kore_task *t)
 	struct arc_bird_config_rsp *bcr;
 	struct arc_stats_rsp	*str;
 	struct arc_kernel_rsp	*kr;
+	struct arc_storage_req	 sgq;
+	struct arc_storage_rsp	*sgr;
+	struct arc_fstab_req	 fsq;
+	struct arc_fstab_rsp	*fsr;
 	struct arc_packages_req	 pq;
 	struct arc_packages_rsp	*pr;
 	struct arc_pkg_upgrade_req uq;
@@ -710,6 +717,8 @@ call_run(struct kore_task *t)
 	bcr = NULL;
 	str = NULL;
 	kr = NULL;
+	sgr = NULL;
+	fsr = NULL;
 	pr = NULL;
 	ur = NULL;
 	jsr = NULL;
@@ -1087,6 +1096,52 @@ call_run(struct kore_task *t)
 		steps = rlr->trace.v;
 		nsteps = rlr->trace.n;
 		break;
+	case OP_STORAGE:
+		/* The dataset rides where a jail's name does. */
+		memset(&sgq, 0, sizeof(sgq));
+		sgq.has_storage_kind = true;
+		sgq.storage_kind = c->action;
+		sgq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
+		if ((error = arc_storage(&cl, &sgq, &sgr)) != 0)
+			goto rpcfail;
+		ok = sgr->ok;
+		put_str(top, "error", sgr->error);
+		if (sgr->has_total) {
+			put(top, "total", ucl_object_fromint(
+			    (int64_t)sgr->total));
+			put(top, "truncated", ucl_object_frombool(
+			    sgr->truncated));
+		}
+		e = NULL;
+		if (sgr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, sgr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = sgr->trace.v;
+		nsteps = sgr->trace.n;
+		break;
+	case OP_FSTAB:
+		/* The checksum rides where an address does. */
+		memset(&fsq, 0, sizeof(fsq));
+		fsq.conf_text = c->text;
+		fsq.sha256 = c->address[0] != '\0' ? c->address : NULL;
+		fsq.dry_run = c->dry_run;
+		if ((error = arc_fstab(&cl, &fsq, &fsr)) != 0)
+			goto rpcfail;
+		ok = fsr->ok;
+		put_str(top, "error", fsr->error);
+		put_str(top, "text", fsr->conf_text);
+		put_str(top, "sha256", fsr->sha256);
+		steps = fsr->trace.v;
+		nsteps = fsr->trace.n;
+		break;
 	case OP_KERNEL:
 		if ((error = arc_kernel(&cl, &kr)) != 0)
 			goto rpcfail;
@@ -1264,6 +1319,10 @@ done:
 		arc_stats_rsp_free(str);
 	if (kr != NULL)
 		arc_kernel_rsp_free(kr);
+	if (sgr != NULL)
+		arc_storage_rsp_free(sgr);
+	if (fsr != NULL)
+		arc_fstab_rsp_free(fsr);
 	if (pr != NULL)
 		arc_packages_rsp_free(pr);
 	if (ur != NULL)
@@ -1861,6 +1920,84 @@ api_bird_config(struct http_request *req)
 }
 
 /* GET /api/servers/<id>/stats */
+/* GET /api/servers/<id>/storage/<kind>[?filter=dataset]. */
+int
+api_storage(struct http_request *req)
+{
+	static const char *const kinds[] = { "disks", "pools", "datasets",
+	    "snapshots", "mounts" };
+	struct call	*c;
+	const char	*kind, *q;
+	size_t		 i;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_STORAGE)) == NULL)
+		return (KORE_RESULT_OK);
+	kind = strrchr(req->path, '/') + 1;
+	for (i = 0; i < nitems(kinds); i++)
+		if (strcmp(kind, kinds[i]) == 0)
+			break;
+	(void)query_param(req, "filter", c->jail, sizeof(c->jail));
+	for (q = c->jail; *q != '\0'; q++)
+		if (!isalnum((unsigned char)*q) && strchr("_.:/-", *q) == NULL)
+			break;
+	if (i == nitems(kinds) || *q != '\0') {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "kind is one of "
+		    "disks, pools, datasets, snapshots, mounts; a dataset is "
+		    "letters, digits and _ . : / -"));
+	}
+	c->action = (uint8_t)i;
+	return (call_start(req, c));
+}
+
+/*
+ * GET /api/servers/<id>/fstab: its text and the SHA-256 of that.
+ * POST {"text", "sha256", "check"}: put the text in its place.
+ */
+int
+api_fstab(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+	const char	*s;
+	bool		 bad;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_FSTAB)) == NULL)
+		return (KORE_RESULT_OK);
+	bad = false;
+	if (req->method != HTTP_METHOD_GET) {
+		if ((body = read_json(req)) == NULL)
+			bad = true;
+		else {
+			if ((s = ucl_str(body, "sha256")) != NULL)
+				strlcpy(c->address, s, sizeof(c->address));
+			if ((s = ucl_str(body, "text")) != NULL)
+				c->text = kore_strdup(s);
+			else
+				bad = true;
+			c->dry_run = ucl_flag(body, "check");
+			ucl_object_unref(body);
+		}
+	}
+	if (bad) {
+		kore_free(c->text);
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "a change needs text "
+		    "and the sha256 of what it was made from"));
+	}
+	return (call_start(req, c));
+}
+
 /* GET /api/servers/<id>/kernel: its modules and its memory. */
 int
 api_kernel(struct http_request *req)
@@ -2005,6 +2142,11 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_BIRD] = "bird",
 	[ARC_JOB_KIND_IF_VNET] = "if-vnet",
 	[ARC_JOB_KIND_KMOD] = "kmod",
+	[ARC_JOB_KIND_ZFS] = "zfs",
+	[ARC_JOB_KIND_ZPOOL] = "zpool",
+	[ARC_JOB_KIND_MOUNT] = "mount",
+	[ARC_JOB_KIND_GPART] = "gpart",
+	[ARC_JOB_KIND_CAM] = "cam",
 };
 
 static const char *job_state_names[] = {
@@ -2058,6 +2200,7 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->tunnel_remote);
 	kore_free((char *)(uintptr_t)sp->parent);
 	kore_free((char *)(uintptr_t)sp->verb);
+	kore_free((char *)(uintptr_t)sp->source);
 	kore_free((char *)(uintptr_t)sp->peer);
 	kore_free((char *)(uintptr_t)sp->endpoint);
 	kore_free((char *)(uintptr_t)sp->allowed_ips);
@@ -2117,6 +2260,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->tunnel_remote = jdup(o, "tunnel_remote");
 	sp->parent = jdup(o, "parent");
 	sp->verb = jdup(o, "verb");
+	sp->source = jdup(o, "source");
 	sp->peer = jdup(o, "peer");
 	sp->endpoint = jdup(o, "endpoint");
 	/* Empty allowed-ips says a peer may send from nowhere: it is kept. */
@@ -2145,12 +2289,24 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		sp->has_fib = true;
 		sp->fib = (uint32_t)ucl_object_toint(v);
 	}
+	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
+	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
+		sp->has_metric = true;
+		sp->metric = (uint32_t)ucl_object_toint(v);
+	}
+	if ((v = ucl_object_lookup(o, "weight")) != NULL && ucl_object_toint(
+	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
+		sp->has_weight = true;
+		sp->weight = (uint32_t)ucl_object_toint(v);
+	}
 	if ((v = ucl_object_lookup(o, "id")) != NULL && ucl_object_toint(v) >=
 	    0 && ucl_object_toint(v) <= 16777215) {
 		sp->has_id = true;
 		sp->id = (uint32_t)ucl_object_toint(v);
 	}
 	sp->remove = ucl_flag(o, "remove");
+	sp->recursive = ucl_flag(o, "recursive");
+	sp->force = ucl_flag(o, "force");
 	sp->safe = ucl_flag(o, "safe");
 	sp->live = ucl_flag(o, "live");
 	sp->persist = ucl_flag(o, "persist");
@@ -2208,8 +2364,15 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_NETGRAPH:
 	case ARC_JOB_KIND_BIRD:
 	case ARC_JOB_KIND_KMOD:
+	case ARC_JOB_KIND_ZFS:
+	case ARC_JOB_KIND_ZPOOL:
+	case ARC_JOB_KIND_MOUNT:
+	case ARC_JOB_KIND_GPART:
+	case ARC_JOB_KIND_CAM:
+		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
-		if (sp->verb == NULL || (n = ucl_array_size(names)) > 4 ||
+		if (sp->verb == NULL || (n = ucl_array_size(names)) >
+		    (sp->kind >= ARC_JOB_KIND_ZFS ? 24u : 4u) ||
 		    (n == 0 && sp->kind == ARC_JOB_KIND_NETGRAPH) ||
 		    (n != 1 && sp->kind == ARC_JOB_KIND_KMOD))
 			return ("the job needs a verb and its args");

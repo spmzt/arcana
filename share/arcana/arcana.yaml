@@ -102,6 +102,36 @@ definitions:
           and names the one module, as kldload(8) finds it, without a
           path.  With persist, also into or out of rc.conf's kld_list,
           which is what is loaded when the host starts.
+      - name: zfs
+        doc: |
+          zfs(8).  verb and names: snapshot and dataset@name; destroy
+          and a snapshot or a dataset, never a pool's own; rollback and
+          a snapshot; create and a dataset, then properties as
+          name=value, volsize=size making it a volume; set and a
+          dataset, then properties; inherit, a dataset and a property;
+          mount, unmount or promote and a dataset; clone, a snapshot
+          and the new dataset; rename and the two names.  recursive is
+          -r for snapshot, destroy and rollback, force -f for unmount.
+      - name: zpool
+        doc: |
+          zpool(8).  verb and names: scrub, scrub-stop or trim and a
+          pool; clear, a pool and with it a device; online or offline,
+          a pool and a device.
+      - name: mount
+        doc: |
+          verb mount and a mount point fstab(5) describes, or unmount
+          and one that something is mounted on, never the root; force
+          is umount -f.
+      - name: gpart
+        doc: |
+          gpart(8).  verb and names: create, a disk and gpt, mbr or
+          bsd; destroy and a disk whose table is empty; add, a disk, a
+          type, and then a size and a label, either of which may be
+          empty; delete, a disk and a partition's index; resize, a
+          disk, an index and with it a size; modify, a disk, an index
+          and a label.
+      - name: cam
+        doc: camcontrol(8).  verb rescan, of all buses.
   - name: job-state
     type: enum
     entries:
@@ -162,6 +192,23 @@ definitions:
           and an address, or a prefix; protocol or export and a
           protocol's name; table and a table's name; all.  More routes
           than a reply should carry are counted, not sent.
+  - name: storage-kind
+    type: enum
+    entries:
+      - name: disks
+        doc: |
+          The disks and the partitions of each, from GEOM, with what
+          camcontrol(8) says each disk is.
+      - name: pools
+        doc: The ZFS pools with their devices, from zpool(8).
+      - name: datasets
+        doc: The ZFS file systems and volumes, from zfs(8).
+      - name: snapshots
+        doc: |
+          The ZFS snapshots, the newest first; of the dataset
+          net-filter names and those under it, or of all.
+      - name: mounts
+        doc: What is mounted, and what fstab(5) says to mount.
   - name: net-family
     type: enum
     entries:
@@ -489,6 +536,9 @@ attribute-sets:
       - name: confirm-by
         type: s64
         doc: After a change with safe, the Unix time it is taken back at.
+      - name: storage-kind
+        type: u8
+        enum: storage-kind
 
   - name: host
     attributes:
@@ -781,6 +831,29 @@ attribute-sets:
       - name: listen-port
         type: u32
         doc: For wireguard, the port the interface listens on.
+      - name: recursive
+        type: flag
+        doc: For zfs, with those under it (-r).
+      - name: force
+        type: flag
+        doc: For unmounting, though it is in use (-f).
+      - name: metric
+        type: u32
+        doc: |
+          For route, the cost of the route: of several to one
+          destination the lowest is used (route -metric).
+      - name: weight
+        type: u32
+        doc: |
+          For route, its share among routes of the same metric to one
+          destination (route -weight).
+      - name: source
+        type: text
+        doc: |
+          For route, the address of this host that what takes the route
+          is sent from (route -ifa).
+        checks:
+          max-len: 64
 
   - name: job
     attributes:
@@ -1334,4 +1407,49 @@ operations:
           - ok
           - error
           - json
+          - trace
+
+  - name: storage
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The host's storage, as a JSON object, of the kind asked for.  More
+      datasets or snapshots than a reply carries come as the first of
+      them, with total and truncated.
+    do:
+      request:
+        attributes:
+          - storage-kind
+          - net-filter
+        required:
+          - storage-kind
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - total
+          - truncated
+          - trace
+
+  - name: fstab
+    attribute-set: arcana
+    auth: true
+    doc: |
+      fstab(5).  Without conf-text, read it, with the SHA-256 of its
+      text.  With conf-text, put that in its place: it has to be an
+      fstab, and sha256 that of the text it was made from.  The one
+      before is kept beside it.  With dry-run it is only checked.
+    do:
+      request:
+        attributes:
+          - conf-text
+          - sha256
+          - dry-run
+      reply:
+        attributes:
+          - ok
+          - error
+          - conf-text
+          - sha256
           - trace

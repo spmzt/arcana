@@ -283,7 +283,7 @@ The agent's sources are laid out by Archive, in
 | `superbia/` | Superbia | `host.c` (what the host is), `confread.c` (the jails as configured, as jail(8) resolves them), `confedit.c` (changing a jail's configuration, with a backup and a read-back), `kernel.c` (the kernel's modules, loaded and unloaded, and its memory) |
 | `invidia/` | Invidia | `network.c` (routes, nexthops, connections, sockets), `interfaces.c` (the interfaces, read and changed live), `routes.c` (static routes), `address.c` (a jail's addresses, live and persistent) |
 | `ira/` | Ira | `lifecycle.c` (list, start, stop, restart, kill), `jails.c`, `jail.c` (running jails), `services.c`, `packages.c`, `jobs.c` (the queue), `exec.c` (running a program), `update.c`, `build.c` (the agent's own program) |
-| `acedia/` | Acedia | `pools.c` (ZFS pools) |
+| `acedia/` | Acedia | `pools.c` (ZFS pools, for the host's figures), `storage.c` (disks and partitions from GEOM, pools, datasets, snapshots, mounts and fstab; the zfs, zpool, mount, gpart and camcontrol jobs) |
 | `avaritia/` | Avaritia | `resources.c` (CPU, memory, swap) |
 | `gula/` | Gula | `trace.c` (the steps of every request), `stats.c` (the host's figures, gathered) |
 | `luxuria/` | Luxuria | the plugins, what works through a program that is installed and not the base system's: `plugins.c` (which a host or a vnet jail has), `bird.c` (BIRD, through birdc(8) and bird(8)), `wireguard.c` (WireGuard's keys and peers, through wg(8); the interface is Invidia's) |

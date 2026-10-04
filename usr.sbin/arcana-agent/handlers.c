@@ -288,6 +288,9 @@ worker(void *arg)
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
 	struct arc_kernel_rsp	 kr;
+	struct arc_storage_rsp	 stg;
+	struct arc_fstab_req	 fq;
+	struct arc_fstab_rsp	 fr;
 	struct arc_packages_rsp	 pr;
 	struct arc_pkg_upgrade_rsp ur;
 	struct arc_agent_update_rsp aur;
@@ -390,6 +393,47 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &str.trace.v, &str.trace.n);
 		rc = arc_stats_reply(j->req, &str);
+		break;
+	case ARC_CMD_STORAGE:
+		what = "storage";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "storage");
+		memset(&stg, 0, sizeof(sr));
+		do_storage(&w, j->action, j->source, &stg);
+		ok = stg.ok;
+		error = stg.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &stg.trace.v, &stg.trace.n);
+		rc = arc_storage_reply(j->req, &stg);
+		break;
+	case ARC_CMD_FSTAB:
+		/* The text rides in ref, its checksum in sha256. */
+		what = wfmt(&w, "fstab %s", j->ref == NULL ? "read" :
+		    j->refresh ? "check" : "write");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&fq, 0, sizeof(fq));
+		memset(&fr, 0, sizeof(fr));
+		fq.conf_text = j->ref;
+		fq.sha256 = j->sha256;
+		fq.dry_run = j->refresh;
+		fr.has_ok = true;
+		if (j->ref == NULL || j->refresh)
+			do_fstab(&w, &fq, &fr);
+		else {
+			pthread_mutex_lock(&change_lock);
+			if (change_note("%s", what))
+				do_fstab(&w, &fq, &fr);
+			else
+				fr.error = STOPPING;
+			change_note(NULL);
+			pthread_mutex_unlock(&change_lock);
+		}
+		ok = fr.ok;
+		error = fr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &fr.trace.v, &fr.trace.n);
+		rc = arc_fstab_reply(j->req, &fr);
 		break;
 	case ARC_CMD_KERNEL:
 		what = "kernel";
@@ -969,6 +1013,40 @@ arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
 }
 
 int
+arc_storage_doit(cbl_req *req, const struct arc_storage_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->storage_kind > ARC_STORAGE_KIND_MOUNTS)
+		return (reject(req, "no such kind of storage"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_STORAGE;
+	j->action = rq->storage_kind;
+	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
+	    xstrdup(rq->net_filter) : NULL;
+	return (start(j));
+}
+
+int
+arc_fstab_doit(cbl_req *req, const struct arc_fstab_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_FSTAB;
+	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
+	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
+	j->refresh = rq->dry_run;
+	return (start(j));
+}
+
+int
 arc_kernel_doit(cbl_req *req, void *arg __unused)
 {
 	struct job	*j;
@@ -1048,7 +1126,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_KMOD)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_CAM)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1098,6 +1176,14 @@ check_spec(const struct arc_job_spec *sp)
 			return ("invalid interface name");
 		if (sp->parent != NULL && !valid_ifname(sp->parent))
 			return ("invalid interface name");
+		break;
+	case ARC_JOB_KIND_ZFS:
+	case ARC_JOB_KIND_ZPOOL:
+	case ARC_JOB_KIND_MOUNT:
+	case ARC_JOB_KIND_GPART:
+	case ARC_JOB_KIND_CAM:
+		if ((e = storage_check(sp)) != NULL)
+			return (e);
 		break;
 	case ARC_JOB_KIND_KMOD:
 		if (sp->jail != NULL && sp->jail[0] != '\0')
@@ -1160,6 +1246,9 @@ check_spec(const struct arc_job_spec *sp)
 			    "it is what puts the route back");
 		if (sp->gateway != NULL && sp->gateway[0] == '-')
 			return ("invalid gateway");
+		if (sp->source != NULL && sp->source[strspn(sp->source,
+		    "0123456789abcdefABCDEF.:")] != '\0')
+			return ("the address to send from is an address");
 		if (!sp->remove && (sp->gateway == NULL ||
 		    sp->gateway[0] == '\0'))
 			return ("a route to add needs a gateway");

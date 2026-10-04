@@ -127,13 +127,29 @@ tile(struct html *h, const char *label, int64_t bytes, const char *note)
 void
 view_kernel(struct html *h, struct server *s)
 {
-	const ucl_object_t	*o, *m, *mem;
+	static const struct tcol fcols[] = {
+		{ "Id", "id", true }, { "File", "name", false },
+		{ "Size", "size", true }, { "References", "refs", true },
+		{ "Modules in it", NULL, false }, { "At boot", NULL, false },
+	};
+	static const struct tcol mcols[] = {
+		{ "Type", "name", false }, { "Memory", "bytes", true },
+		{ "", NULL, false }, { "In use", "count", true },
+		{ "Requests", "requests", true },
+	};
+	static const struct tcol zcols[] = {
+		{ "Zone", "name", false }, { "Memory", "bytes", true },
+		{ "", NULL, false }, { "In use", "count", true },
+		{ "Free", "free", true }, { "Item size", "size", true },
+		{ "Requests", "requests", true },
+	};
+	const ucl_object_t	**rows, *o, *m, *mem;
 	ucl_object_iter_t	 it, mit;
 	const char		*name;
 	char			 buf[32], age[32], base[80];
 	int64_t			 used, top;
 	bool			 mine, first;
-	int			 n, shown;
+	int			 n, shown, r;
 
 	mine = kn.data != NULL && strcmp(kn.sid, s->id) == 0;
 	h_raw(h, "<div class=\"toolbar\"><form data-form=\"kmod-load\" class=\""
@@ -216,13 +232,13 @@ view_kernel(struct html *h, struct server *s)
 	if (!first)
 		h_raw(h, ".</div>");
 
-	h_raw(h, "<table class=\"net kmods\"><thead><tr><th>Id</th><th>File"
-	    "</th><th>Size</th><th>References</th><th>Modules in it</th><th>"
-	    "At boot</th><th></th></tr></thead><tbody>");
+	h_raw(h, "<table class=\"net kmods\">");
+	tbl_head(h, "kmods", fcols, 6, 1);
+	h_raw(h, "<tbody>");
+	/* The filter is its own here: a file's name, or a module's in it. */
+	rows = tbl_rows("kmods", jget(kn.data, "files"), fcols, 6, NULL);
 	shown = 0;
-	it = NULL;
-	while ((o = ucl_object_iterate(jget(kn.data, "files"), &it, true)) !=
-	    NULL) {
+	for (r = 0; (o = rows[r]) != NULL; r++) {
 		name = jstr(o, "name") != NULL ? jstr(o, "name") : "";
 		if (app.filter[0] != '\0' && strstr(name, app.filter) == NULL) {
 			/* Or one of the modules it holds. */
@@ -278,6 +294,7 @@ view_kernel(struct html *h, struct server *s)
 		}
 		h_raw(h, "</td></tr>");
 	}
+	free(rows);
 	h_raw(h, "</tbody></table>");
 	if (shown == 0)
 		h_raw(h, "<p class=\"dim\">No file of that name, and none "
@@ -289,19 +306,24 @@ view_kernel(struct html *h, struct server *s)
 	    "malloc types</button><button class=\"ghost small%s\" data-act=\""
 	    "kmem\" data-arg=\"zones\">zones</button></nav></h4>", kn.zones ?
 	    "" : " on", kn.zones ? " on" : "");
-	h_fmt(h, "<table class=\"net kmem\"><thead><tr><th>%s</th><th>Memory"
-	    "</th><th></th><th>In use</th>%s<th>Requests</th></tr></thead>"
-	    "<tbody>", kn.zones ? "Zone" : "Type", kn.zones ? "<th>Free</th>"
-	    "<th>Item size</th>" : "");
+	h_raw(h, "<table class=\"net kmem\">");
+	if (kn.zones)
+		tbl_head(h, "kzones", zcols, 7, 0);
+	else
+		tbl_head(h, "kmalloc", mcols, 5, 0);
+	h_raw(h, "<tbody>");
+	/* The bars are to the largest of all, whatever the order. */
 	top = 0;
 	it = NULL;
 	while ((o = ucl_object_iterate(jget(mem, kn.zones ? "zones" :
-	    "malloc"), &it, true)) != NULL) {
-		if (top == 0)
+	    "malloc"), &it, true)) != NULL)
+		if (jint(o, "bytes", 0) > top)
 			top = jint(o, "bytes", 0);
+	rows = tbl_rows(kn.zones ? "kzones" : "kmalloc", jget(mem, kn.zones ?
+	    "zones" : "malloc"), kn.zones ? zcols : mcols, kn.zones ? 7 : 5,
+	    app.filter);
+	for (r = 0; (o = rows[r]) != NULL; r++) {
 		name = jstr(o, "name") != NULL ? jstr(o, "name") : "";
-		if (app.filter[0] != '\0' && strstr(name, app.filter) == NULL)
-			continue;
 		h_raw(h, "<tr><td>");
 		h_txt(h, name);
 		h_raw(h, "</td><td>");
@@ -319,6 +341,7 @@ view_kernel(struct html *h, struct server *s)
 		h_fmt(h, "<td class=\"dim\">%lld</td></tr>", (long long)jint(o,
 		    "requests", 0));
 	}
+	free(rows);
 	h_raw(h, "</tbody></table><p class=\"dim\">The largest, as <code>"
 	    "vmstat -m</code> and <code>vmstat -z</code> count them. A "
 	    "module's own memory is under the types and zones it made, "

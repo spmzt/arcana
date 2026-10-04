@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.14.0"
+#define	ARCANA_AGENT_VERSION	"0.16.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -40,6 +40,12 @@
 #define	PATH_JEXEC_BIN		"/usr/sbin/jexec"
 #define	PATH_KLDLOAD_BIN	"/sbin/kldload"
 #define	PATH_KLDUNLOAD_BIN	"/sbin/kldunload"
+#define	PATH_ZFS_BIN		"/sbin/zfs"
+#define	PATH_GPART_BIN		"/sbin/gpart"
+#define	PATH_CAMCONTROL_BIN	"/sbin/camcontrol"
+#define	PATH_MOUNT_BIN		"/sbin/mount"
+#define	PATH_UMOUNT_BIN		"/sbin/umount"
+#define	PATH_FSTAB		"/etc/fstab"
 #define	PATH_WG_BIN		"/usr/local/bin/wg"
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
@@ -79,6 +85,12 @@ struct opts {
 	const char	*jexec_bin;
 	const char	*kldload_bin;
 	const char	*kldunload_bin;
+	const char	*zfs_bin;
+	const char	*gpart_bin;
+	const char	*camcontrol_bin;
+	const char	*mount_bin;
+	const char	*umount_bin;
+	const char	*fstab_path;
 	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
@@ -283,8 +295,14 @@ const char	*if_address_with_prefix(struct work *, const char *,
 		    const char *);
 
 /* invidia/routes.c */
+/* What a route has besides where it leads. */
+struct route_more {
+	uint32_t	 metric;	/* 0: the system's */
+	uint32_t	 weight;
+	const char	*source;	/* the address sent from, or NULL */
+};
 int		 do_route(struct work *, const char *, const char *, bool,
-		    uint32_t, bool, const char **);
+		    uint32_t, const struct route_more *, bool, const char **);
 
 /* invidia/rcconf.c: what of the network rc.conf keeps. */
 bool		 rc_name_ok(const char *);
@@ -327,6 +345,18 @@ int		 do_kmod(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 kmod_name_ok(const char *);
 bool		 kmod_loaded(const char *);
+
+/* acedia/storage.c: disks, pools, datasets, mounts. */
+int		 do_storage(struct work *, uint8_t, const char *,
+		    struct arc_storage_rsp *);
+int		 do_fstab(struct work *, const struct arc_fstab_req *,
+		    struct arc_fstab_rsp *);
+char		**storage_argv(struct work *, const struct arc_job_spec *,
+		    const char **);
+const char	*storage_check(const struct arc_job_spec *);
+char		*storage_title(const struct arc_job_spec *);
+int		 do_storage_job(struct work *, const struct arc_job_spec *,
+		    const char **);
 
 /* luxuria/plugins.c */
 void		 plugins_there(struct work *, const char *,

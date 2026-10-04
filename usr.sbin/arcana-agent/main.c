@@ -60,6 +60,12 @@ struct opts opts = {
 	.jexec_bin = PATH_JEXEC_BIN,
 	.kldload_bin = PATH_KLDLOAD_BIN,
 	.kldunload_bin = PATH_KLDUNLOAD_BIN,
+	.zfs_bin = PATH_ZFS_BIN,
+	.gpart_bin = PATH_GPART_BIN,
+	.camcontrol_bin = PATH_CAMCONTROL_BIN,
+	.mount_bin = PATH_MOUNT_BIN,
+	.umount_bin = PATH_UMOUNT_BIN,
+	.fstab_path = PATH_FSTAB,
 	.wg_bin = PATH_WG_BIN,
 	.wg_dir = PATH_WG_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
@@ -292,7 +298,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:I:j:K:k:L:l:M:N:n:o:P:p:R:r:s:T:t:U:Vw:W:X:x:Y:y:Z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:I:j:K:k:L:l:M:N:n:o:P:p:R:r:s:i:m:q:S:T:t:u:U:Vw:W:X:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -387,6 +393,24 @@ main(int argc, char *argv[])
 			break;
 		case 't':
 			opts.kldunload_bin = optarg;
+			break;
+		case 'z':
+			opts.zfs_bin = optarg;
+			break;
+		case 'q':
+			opts.gpart_bin = optarg;
+			break;
+		case 'i':
+			opts.camcontrol_bin = optarg;
+			break;
+		case 'm':
+			opts.mount_bin = optarg;
+			break;
+		case 'u':
+			opts.umount_bin = optarg;
+			break;
+		case 'S':
+			opts.fstab_path = optarg;
 			break;
 		case 'H':
 			opts.helper_bin = optarg;

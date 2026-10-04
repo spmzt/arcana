@@ -3104,3 +3104,27 @@ table.kmem td.bar { width: 28%; }
 table.kmem td.bar i { display: block; height: 6px; border-radius: 3px; background: var(--cyan); opacity: .7; min-width: 2px; }
 h4.family nav.sub { display: inline-flex; margin-left: .8rem; vertical-align: middle; }
 
+/* Storage: pools, datasets, disks, mounts. */
+.usage { display: inline-block; width: 7rem; height: 7px; border-radius: 4px; background: rgba(127,127,127,.18); vertical-align: middle; overflow: hidden; }
+.usage i { display: block; height: 100%; background: var(--cyan); }
+.usage.high i { background: var(--amber, #e8b339); }
+.usage.full i { background: var(--red); }
+.poolbar { display: flex; align-items: center; gap: .8rem; margin: .3rem 0 .6rem; font-size: .8rem; }
+.poolbar .usage { width: 16rem; height: 10px; }
+section.pool, section.disk { margin-bottom: 1rem; }
+table.vdevs tr.bad td { color: var(--red); }
+table.datasets td:first-child, table.snapshots td:first-child { overflow-wrap: anywhere; }
+.partbar { display: flex; gap: 2px; height: 18px; margin: .4rem 0 .6rem; border-radius: 4px; overflow: hidden; }
+.partbar i { display: block; min-width: 3px; background: var(--slate); }
+.partbar i.zfs { background: var(--cyan); }
+.partbar i.swap { background: var(--violet); }
+.partbar i.boot { background: var(--green); }
+.partbar i.free { background: transparent; border: 1px dashed var(--slate); }
+
+/* The map's legend: a kind of line picked is not drawn, and back. */
+.map-legend li { cursor: pointer; user-select: none; -webkit-user-select: none; padding: .15rem .3rem; border-radius: 4px; }
+.map-legend li:hover { background: rgba(var(--accent-rgb), .08); }
+.map-legend li.off { opacity: .4; text-decoration: line-through; }
+.map-legend .vnet::before { border-top: 2px dotted var(--dim); }
+.map-tools button { min-width: 2.2rem; min-height: 2.2rem; }
+

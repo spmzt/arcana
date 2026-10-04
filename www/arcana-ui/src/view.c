@@ -812,8 +812,8 @@ stage(struct html *h)
 		} tabs[] = {
 			{ "summary", "Summary" }, { "jails", "Jails" },
 			{ "services", "Services" }, { "network", "Network" },
-			{ "packages", "Packages" }, { "kernel", "Kernel" },
-			{ "jobs", "Jobs" },
+			{ "packages", "Packages" }, { "storage", "Storage" },
+			{ "kernel", "Kernel" }, { "jobs", "Jobs" },
 		};
 		/*
 		 * A plugin has a tab of its own, on a host that has it: it
@@ -832,7 +832,7 @@ stage(struct html *h)
 		plug = app.tab == TAB_NETWORK && (app.net.kind ==
 		    NET_WIREGUARD || app.net.kind == NET_BIRD);
 		h_raw(h, "<nav class=\"tabs\">");
-		for (t = 0; t < 7; t++)
+		for (t = 0; t < 8; t++)
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
@@ -865,6 +865,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_NETWORK) {
 		view_network(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_STORAGE) {
+		view_storage(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1268,6 +1273,10 @@ modal(struct html *h)
 		if (!topo_modal(h))
 			return;
 		break;
+	case MODAL_STORAGE:
+		if (!storage_modal(h))
+			return;
+		break;
 	case MODAL_WG_INIT:
 	case MODAL_WG_PEER:
 		if (!vpn_modal(h))
@@ -1296,7 +1305,46 @@ modal(struct html *h)
 		    "(::/0 for IPv6's).</small></label>"
 		    "<label>Gateway<input name=\"gateway\" spellcheck=\"false\" "
 		    "autocomplete=\"off\" placeholder=\"10.0.0.1\"><small>An "
-		    "address, or the name of an interface.</small></label>");
+		    "address, or the name of an interface.</small></label>"
+		    "<div class=\"two\"><label>Metric<input name=\"metric\" "
+		    "inputmode=\"numeric\" autocomplete=\"off\" placeholder="
+		    "\"the system's, 1\"><small>Its cost: of several routes "
+		    "to one destination the lowest is used, the others "
+		    "when it is gone.</small></label><label>Weight<input name="
+		    "\"weight\" inputmode=\"numeric\" autocomplete=\"off\" "
+		    "placeholder=\"the system's\"><small>Its share among "
+		    "routes of one metric.</small></label></div>"
+		    "<div class=\"two\"><label>Source address<input name=\""
+		    "source\" spellcheck=\"false\" autocomplete=\"off\" "
+		    "placeholder=\"the interface's own\"><small>The address "
+		    "of this host that what takes the route is sent from."
+		    "</small></label><label>Routing table (FIB)<input name=\""
+		    "fib\" inputmode=\"numeric\" autocomplete=\"off\"");
+		if (app.net.fib > 0)
+			h_fmt(h, " value=\"%d\"", app.net.fib);
+		h_raw(h, " placeholder=\"0\"><small>The table the route goes "
+		    "into; 0 is the first.</small></label></div>");
+		break;
+	case MODAL_LOOKUP:
+		if (cur_server() == NULL)
+			return;
+		/*
+		 * Asked in a box of its own: which route the host takes to
+		 * an address, and the others that cover it.
+		 */
+		h_raw(h, "<form data-form=\"lookup\" class=\"wide\"><h2>Look "
+		    "up a route</h2><p>The route this host takes to an "
+		    "address, as <code>route get</code> tells it, and the "
+		    "other routes of the table that cover the address.</p>"
+		    "<div class=\"two\"><label>Address<input name=\"address\" "
+		    "spellcheck=\"false\" autocomplete=\"off\" placeholder=\""
+		    "192.0.2.10 or 2001:db8::10\" autofocus></label><label>"
+		    "Routing table (FIB)<input name=\"fib\" inputmode=\""
+		    "numeric\" autocomplete=\"off\"");
+		if (app.net.fib > 0)
+			h_fmt(h, " value=\"%d\"", app.net.fib);
+		h_raw(h, " placeholder=\"0\"></label></div>");
+		view_lookup(h, cur_server());
 		break;
 	case MODAL_IF_ADDRESS:
 		h_raw(h, "<form data-form=\"if-address\"><h2>Add an address to ");
@@ -1621,6 +1669,12 @@ modal(struct html *h)
 			break;
 		case MODAL_WG_PEER:
 			h_raw(h, "<button class=\"primary\">Add</button>");
+			break;
+		case MODAL_STORAGE:
+			storage_modal_buttons(h);
+			break;
+		case MODAL_LOOKUP:
+			h_raw(h, "<button class=\"primary\">Look up</button>");
 			break;
 		case MODAL_BIRD_PROTO:
 		case MODAL_BIRD_BLOCK:

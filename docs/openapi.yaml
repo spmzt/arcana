@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.24.0
+  version: 0.25.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -532,6 +532,69 @@ paths:
                   trace: { type: array }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/servers/{server}/storage/{kind}:
+    get:
+      tags: [servers]
+      summary: The host's storage
+      description: Under data. disks, each with size, sectorsize, descr,
+        ident, cam, scheme and parts (name, index, type, label, start,
+        end, size, mounted), from GEOM; pools, each with size, alloc,
+        free, frag, cap, dedup, health, state, status, action, scan,
+        errors and vdevs (name, depth, state, read, write, cksum, note);
+        datasets (name, type, used, avail, refer, mountpoint,
+        compression, ratio, quota, reservation, mounted, canmount,
+        origin, volsize, readonly); snapshots, newest first (name, used,
+        refer, creation); mounts and fstab. What is changed is a job, of
+        kind zfs, zpool, mount, gpart or cam, with a verb, its words as
+        args, and the flags recursive and force.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [disks, pools, datasets, snapshots, mounts]
+        - name: filter
+          in: query
+          description: For snapshots, the dataset whose they are, with
+            those under it.
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok and data, or error; total and truncated when
+            there are more than a reply carries
+  /api/servers/{server}/fstab:
+    get:
+      tags: [servers]
+      summary: fstab, and the SHA-256 of its text
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: text and sha256
+    post:
+      tags: [servers]
+      summary: Put a new text in fstab's place
+      description: Taken only when every line is an entry and sha256 is
+        that of the text it was made from; the one before is kept beside
+        it.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text, sha256]
+              properties:
+                text: { type: string }
+                sha256: { type: string }
+                check: { type: boolean, description: "check only" }
+      responses:
+        "200":
+          description: ok, or error with what is wrong and where
   /api/servers/{server}/kernel:
     get:
       tags: [servers]
@@ -637,7 +700,8 @@ paths:
                         enum: [jail-action, address, service-action,
                           service-config, pkg-upgrade, if-address,
                           if-state, route, if-set, if-create, if-destroy,
-                          netgraph, wireguard, bird, if-vnet, kmod]
+                          netgraph, wireguard, bird, if-vnet, kmod, zfs,
+                          zpool, mount, gpart, cam]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the

@@ -183,8 +183,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
+	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[60];
+	char	*argv[76];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -415,6 +416,53 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "grep -q BROKEN \"$3\" && { echo \"bird: $3:2:1 syntax error\" >&2; "
 	    "exit 1; }\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-bird", 0755) == 0);
+	/*
+	 * Storage: zfs(8) and zpool(8) with a pool of their own to list,
+	 * and with gpart, mount, umount and camcontrol logging what they
+	 * are told; an fstab of the test's.
+	 */
+	put("fake-zfs", "#!/bin/sh\necho \"zfs $*\" >> storage.log\n"
+	    "case \"$*\" in\n'list -Hp -t filesystem,volume'*)\n"
+	    "printf 'tank\\tfilesystem\\t5000000\\t9000000\\t96000\\t/tank\\t"
+	    "lz4\\t1.50\\t0\\t0\\tyes\\ton\\t-\\t-\\toff\\n'\n"
+	    "printf 'tank/data\\tfilesystem\\t4000000\\t9000000\\t4000000\\t"
+	    "/tank/data\\tlz4\\t2.00\\t8000000\\t0\\tyes\\ton\\t-\\t-\\toff\\n'"
+	    "\nprintf 'tank/vol\\tvolume\\t100000\\t9000000\\t100000\\t-\\toff"
+	    "\\t1.00\\t-\\t0\\t-\\t-\\ttank/data@a\\t1048576\\toff\\n' ;;\n"
+	    "'list -Hp -t snapshot'*)\n"
+	    "printf 'tank/data@b\\t10000\\t4000000\\t1759500000\\n'\n"
+	    "printf 'tank/data@a\\t20000\\t3000000\\t1759400000\\n' ;;\n"
+	    "esac\nexit 0\n");
+	put("fake-zpool", "#!/bin/sh\necho \"zpool $*\" >> storage.log\n"
+	    "case \"$*\" in\n'list -Hp -o name,size,alloc,free,health') "
+	    "printf 'tank\\t14000000\\t5000000\\t9000000\\tDEGRADED\\n' ;;\n"
+	    "'list -Hp -o name,size,allocated'*) printf 'tank\\t14000000\\t"
+	    "5000000\\t9000000\\t12\\t35\\t1.00\\tDEGRADED\\n' ;;\n"
+	    "status) printf '  pool: tank\\n state: DEGRADED\\nstatus: One "
+	    "device was taken offline.\\n  scan: scrub repaired 0B in "
+	    "00:10:11 with 0 errors\\nconfig:\\n\\n\\tNAME        STATE     "
+	    "READ WRITE CKSUM\\n\\ttank        DEGRADED     0     0     0\\n"
+	    "\\t  mirror-0  DEGRADED     0     0     0\\n\\t    ada1p1  "
+	    "ONLINE       0     0     0\\n\\t    ada2p1  OFFLINE      0     0"
+	    "     0\\n\\nerrors: No known data errors\\n' ;;\nesac\nexit 0\n");
+	put("fake-gpart", "#!/bin/sh\necho \"gpart $*\" >> storage.log\n"
+	    "exit 0\n");
+	put("fake-mount", "#!/bin/sh\necho \"mount $*\" >> storage.log\n"
+	    "exit 0\n");
+	put("fake-umount", "#!/bin/sh\necho \"umount $*\" >> storage.log\n"
+	    "exit 0\n");
+	put("fake-camcontrol", "#!/bin/sh\necho \"camcontrol $*\" >> "
+	    "storage.log\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-zfs", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-zpool", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-gpart", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-mount", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-umount", 0755) == 0);
+	ATF_REQUIRE(chmod("fake-camcontrol", 0755) == 0);
+	put("fstab", "# Device\tMountpoint\tFStype\tOptions\tDump\tPass#\n"
+	    "/dev/ada0p2\t/\tufs\trw\t1\t1\n/dev/ada0p3\t/mnt/data\tufs\t"
+	    "rw,noatime\t2\t2\n");
+	snprintf(fstab, sizeof(fstab), "%s/fstab", cwd);
 	/* kldload(8) and kldunload(8): what they were told is logged. */
 	put("fake-kldload", "#!/bin/sh\necho \"kldload $*\" >> kld.log\n"
 	    "exit 0\n");
@@ -538,7 +586,21 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[53] = (char *)(uintptr_t)"./fake-kldload";
 	argv[54] = (char *)(uintptr_t)"-t";
 	argv[55] = (char *)(uintptr_t)"./fake-kldunload";
-	argv[56] = NULL;
+	argv[56] = (char *)(uintptr_t)"-z";
+	argv[57] = (char *)(uintptr_t)"./fake-zfs";
+	argv[58] = (char *)(uintptr_t)"-Z";
+	argv[59] = (char *)(uintptr_t)"./fake-zpool";
+	argv[60] = (char *)(uintptr_t)"-q";
+	argv[61] = (char *)(uintptr_t)"./fake-gpart";
+	argv[62] = (char *)(uintptr_t)"-m";
+	argv[63] = (char *)(uintptr_t)"./fake-mount";
+	argv[64] = (char *)(uintptr_t)"-u";
+	argv[65] = (char *)(uintptr_t)"./fake-umount";
+	argv[66] = (char *)(uintptr_t)"-i";
+	argv[67] = (char *)(uintptr_t)"./fake-camcontrol";
+	argv[68] = (char *)(uintptr_t)"-S";
+	argv[69] = fstab;
+	argv[70] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

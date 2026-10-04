@@ -22,6 +22,9 @@ The console is laid out as a tree and tabs.
   jails run, and the fleet as a graph from the console through the
   hosts to their jails; nodes are links.
 - **Network**: the fleet as a map; see [The network](#the-network).
+- **All hosts**: the fleet at a glance. Its graph is of what runs: a
+  host with its jails that are not stopped; a host's own Summary has
+  all of them.
 - A **host** has tabs:
   - **Summary**: usage gauges with their recent history, counts, the ZFS
     pools, and the host's jails as a graph; a jail picked in a graph,
@@ -44,11 +47,17 @@ The console is laid out as a tree and tabs.
     search the whole table for it.
     In the routes, **+ route** adds a static route (a destination and
     a gateway, an address or an interface), and the cross on a static
-    route deletes it; both run `route(8)`. **fib** picks the routing
-    table shown and changed, when the host has more than one.
-    **Lookup** asks the host for the route to the address typed in the
-    filter: what it would take, as `route get` tells it, and every
-    other route that covers the address, the most specific first.
+    route deletes it; both run `route(8)`. A route can be given its
+    **metric** (its cost: of several routes to one destination the
+    lowest is used, the others when it is gone), its **weight** (its
+    share among routes of one metric), the **source address** of the
+    host that what takes it is sent from, and the **routing table** it
+    goes into. **fib** picks the routing table shown and changed, when
+    the host has more than one.
+    **Look up a route** opens a box that asks for an address and tells
+    the route the host would take to it, as `route get` tells it, and
+    every other route that covers the address, the most specific
+    first.
     **Interfaces** lists the host's interfaces as the agent reads them
     with getifaddrs(3): state and link, addresses, MTU, hardware
     address, a tunnel's two ends, traffic in all and as it is now. An
@@ -66,6 +75,50 @@ The console is laid out as a tree and tabs.
     join them, from `ngctl list -l`; a node is picked for its hooks,
     which are removed with their cross, shut down, or given a new peer;
     dragging the dot on a node onto another connects a hook of each.
+  - **Storage**, in five views:
+    **Pools**: each ZFS pool with how full and how fragmented it is,
+    its health, what `zpool status` says of it and of its last scrub,
+    and its devices as they are nested, with their error counts. A
+    scrub is started and stopped, the pool trimmed, its errors cleared,
+    a device taken offline and brought online.
+    **Datasets**: the file systems and volumes as a tree, with what
+    each uses, has available and refers to, its compression ratio and
+    where it is mounted. **+ dataset** makes one, a volume when given a
+    size, with properties as `name=value`; **Set** changes properties,
+    or returns one to what it inherits; a dataset is mounted,
+    unmounted, snapshotted, and destroyed once its name is typed. A
+    pool's own dataset is not destroyed from here.
+    **Snapshots**: the newest first, of all or of one dataset and those
+    under it; taken with a name (the time, unless another is given),
+    of everything under the dataset too when asked; rolled back to,
+    cloned into a new dataset, destroyed once the name is typed.
+    **Disks**: every disk as GEOM has it, with what `camcontrol` says
+    it is, its partition table drawn to scale and listed. A table is
+    made on a disk without one (gpt, mbr, bsd); a partition added in
+    the free room, aligned to 1 MiB, labelled, resized, deleted once
+    its name is typed; an empty table destroyed. **Rescan** has
+    `camcontrol` look for disks that came or went.
+    **Mounts**: what is mounted, with how full, and beneath it what
+    `fstab` says to mount: an entry that is not mounted is mounted,
+    what is mounted unmounted (never the root). **Edit** opens `fstab`
+    whole; the host takes it only if every line is an entry and nobody
+    changed the file meanwhile, and keeps the one before beside it as
+    `fstab.arcana-old`.
+    Every table here, as everywhere in the console, is sorted by the
+    column picked in its head, the other way when picked again and as
+    the host gave it the third time, and the filter above leaves the
+    rows that have its text in any column. The datasets are a tree
+    until they are sorted.
+    Every change is a job, and the host checks each word of it before
+    a program sees it: no word is ever an option, `-r` and `-f` are the
+    job's own flags, and only the verbs named here exist. Nothing in
+    storage is done in safe mode, since the host cannot take it back.
+    Making, destroying, importing and exporting a pool, replacing or
+    adding its devices, sending and receiving, encryption keys and
+    making a file system on a partition are not done from here. From
+    a shell: `arcanactl storage disks | pools | datasets | snapshots
+    [dataset] | mounts`, `arcanactl zfs …`, `zpool …`, `gpart …`,
+    `mount path`, `umount [-f] path`, `cam rescan`, `fstab [-w file]`.
   - **Kernel**: every file linked into the kernel, the kernel itself
     first, with its size, how many references hold it, and the modules
     in it; read from the kernel, as `kldstat -v` has it. **Load** takes
@@ -290,8 +343,17 @@ works the links out.
   peer of each host, by the other host's name when it is one, with its
   endpoint and when it last shook hands.
 - A **host** is dragged to where it should be, and stays there in that
-  browser; the map is dragged to move it and the wheel zooms. **Fit**
-  shows every host, **Arrange** puts them back on a circle.
+  browser; the map is dragged to move it, the wheel zooms, and on a
+  phone two fingers do. **Fit** shows every host, **Arrange** puts them
+  back on a circle. Once the map was moved or zoomed it is not fitted
+  again unasked, so nothing shifts under the hand.
+- The **legend** names the kinds of lines, and each is picked to take
+  that kind out of the map and to put it back: tunnels, point to point
+  links, shared networks, BGP and OSPF with their neighbours outside,
+  jails' ties to their hosts, and the route traced with its
+  alternatives.
+- A host the console reaches by a **local socket**, its own, is not on
+  the map when there are hosts reached over the network.
 - A host or a link is picked for its **details** beside the map: the
   host's interfaces with their addresses and a chart of each one's
   traffic, in above the line and out below it; a link's two ends.

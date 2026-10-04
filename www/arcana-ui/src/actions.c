@@ -258,6 +258,9 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_KERNEL:
 		refresh_kernel(s, true);
 		break;
+	case JOB_STORAGE:
+		refresh_storage(s, true);
+		break;
 	case JOB_IFACE:
 		/* The interfaces as they are now, if they are on show. */
 		if ((app.net.kind == NET_INTERFACES || app.net.kind ==
@@ -2162,21 +2165,30 @@ if_state(struct server *s, const char *ifname, bool up)
 /* Add a static route on s, or delete the one to destination. */
 void
 route_change(struct server *s, const char *destination, const char *gateway,
-    bool remove, bool persist, int fib)
+    bool remove, bool persist, int fib, int metric, int weight,
+    const char *source)
 {
-	char	*qd, *qg, *json, title[200];
+	char	*qd, *qg, *qs, *json, title[200], more[160];
 
 	qd = json_quote(destination);
 	qg = json_quote(gateway);
+	qs = json_quote(source != NULL ? source : "");
+	/* Its cost, its share, where it is sent from: when given. */
+	snprintf(more, sizeof(more), "%s%.0d%s%.0d%s%s", metric > 0 ?
+	    ",\"metric\":" : "", metric > 0 ? metric : 0, weight > 0 ?
+	    ",\"weight\":" : "", weight > 0 ? weight : 0, source != NULL &&
+	    source[0] != '\0' ? ",\"source\":" : "", source != NULL &&
+	    source[0] != '\0' ? qs : "");
 	/* Safe, unless it is a delete that could not be put back. */
 	if (asprintf(&json, "{\"kind\":\"route\",\"destination\":%s%s%s,"
-	    "\"remove\":%s,\"persist\":%s,\"fib\":%d,\"safe\":%s}", qd,
+	    "\"remove\":%s,\"persist\":%s,\"fib\":%d%s,\"safe\":%s}", qd,
 	    gateway[0] != '\0' ? ",\"gateway\":" : "", gateway[0] != '\0' ?
 	    qg : "", remove ? "true" : "false", persist ? "true" : "false",
-	    fib, !remove || gateway[0] != '\0' ? "true" : "false") == -1)
+	    fib, more, !remove || gateway[0] != '\0' ? "true" : "false") == -1)
 		abort();
 	free(qd);
 	free(qg);
+	free(qs);
 	snprintf(title, sizeof(title), "route %s %s%s%s", remove ? "delete" :
 	    "add", destination, gateway[0] != '\0' ? " via " : "", gateway);
 	job_send(s, json, title, JOB_IFACE, destination);

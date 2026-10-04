@@ -12,7 +12,7 @@ SRCS+=		bird.c plugins.c wireguard.c
 SRCS+=		build.c exec.c jail.c jails.c jobs.c lifecycle.c packages.c \
 		services.c update.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
-SRCS+=		pools.c resources.c stats.c trace.c
+SRCS+=		pools.c storage.c resources.c stats.c trace.c
 .PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
 		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula \
 		${.CURDIR}/luxuria
@@ -27,7 +27,7 @@ CBLINK_PARTS=	h,c,server
 CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
-LDADD+=		-ljail -lmemstat -lprocstat -lutil -lpthread -lcrypto ${UCL_LIBS}
+LDADD+=		-ljail -lgeom -lmemstat -lprocstat -lutil -lpthread -lcrypto ${UCL_LIBS}
 
 # The rc.d(8) script.
 FILESGROUPS+=	RC

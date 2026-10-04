@@ -170,6 +170,63 @@ With
 it is also put into
 .Va kld_list ,
 or taken out of it.
+.It Cm storage disks | pools | datasets | mounts
+.It Cm storage snapshots Op Ar dataset
+The host's storage, as JSON: the disks and their partitions as GEOM
+has them, the ZFS pools with their devices, the datasets, the
+snapshots (the newest first, of all or of one dataset and those under
+it), and what is mounted beside what
+.Xr fstab 5
+says to mount.
+.It Cm zfs snapshot | destroy | rollback Oo Fl r Oc Ar name
+.It Cm zfs create Ar dataset Op Ar property Ns = Ns Ar value ...
+.It Cm zfs set Ar dataset Ar property Ns = Ns Ar value ...
+.It Cm zfs inherit Ar dataset Ar property
+.It Cm zfs mount | unmount Oo Fl f Oc | promote Ar dataset
+.It Cm zfs clone Ar snapshot Ar dataset
+.It Cm zfs rename Ar name Ar name
+.Xr zfs 8 ,
+by a job.
+A dataset is made a volume by
+.Li volsize= Ns Ar size .
+A pool's own dataset is not destroyed.
+.It Cm zpool scrub | scrub-stop | trim Ar pool
+.It Cm zpool clear Ar pool Op Ar device
+.It Cm zpool online | offline Ar pool Ar device
+.Xr zpool 8 ,
+by a job.
+.It Cm mount Ar path
+Mount what
+.Xr fstab 5
+describes for
+.Ar path .
+.It Cm umount Oo Fl f Oc Ar path
+Unmount what is mounted there; never the root.
+.It Cm gpart create Ar disk Cm gpt | mbr | bsd
+.It Cm gpart add Ar disk Ar type Op Ar size Op Ar label
+.It Cm gpart delete Ar disk Ar index
+.It Cm gpart resize Ar disk Ar index Op Ar size
+.It Cm gpart modify Ar disk Ar index Ar label
+.It Cm gpart destroy Ar disk
+.Xr gpart 8 ,
+by a job.
+Partitions are aligned to 1 MiB; a table is destroyed only when it is
+empty.
+.It Cm cam rescan
+.Ql camcontrol rescan all .
+.It Cm fstab Op Fl w Ar new-text Op Fl n
+Print
+.Xr fstab 5 ,
+or put the text of the local file
+.Ar new-text
+in its place: taken only when every line is an entry, and the one
+before is kept beside it.
+With
+.Fl n
+it is only checked.
+.Pp
+In all of these the host checks every word before a program is given
+it; none is ever an option, and none is done in safe mode.
 .It Cm stats
 CPU busy share since the previous request, load averages, memory, swap
 and the ZFS pools.
@@ -202,7 +259,7 @@ Bring a network interface up or down.
 Add an IPv4 or IPv6
 .Ar address ,
 with its prefix length, to an interface as an alias, or take it off.
-.It Cm route add Ar destination gateway
+.It Cm route add Ar destination gateway Oo Cm metric Ar n Oc Oo Cm weight Ar n Oc Oo Cm source Ar address Oc
 Add a static route to
 .Ar destination ,
 which is
@@ -212,7 +269,16 @@ a network with its prefix length or a host address, by
 an address or the name of an interface.
 .Li ::/0
 is the default route of IPv6.
-.It Cm route delete Ar destination Op Ar gateway
+.Cm metric
+is the route's cost, the lowest of several to one destination being the
+one used;
+.Cm weight
+its share among routes of one cost; and
+.Cm source
+the address of the host that what takes the route is sent from.
+The routing table is that of the option
+.Fl F .
+.It Cm route delete Ar destination Oo Ar gateway Oc Oo Cm metric Ar n Oc
 Delete the route to
 .Ar destination .
 .It Cm route get Ar address

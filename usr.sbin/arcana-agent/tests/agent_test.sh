@@ -246,7 +246,7 @@ start_daemon()
 	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" \
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
-	    -t "$(pwd)/fake-kldunload" -w 2 \
+	    -t "$(pwd)/fake-kldunload" -w 2 $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -793,6 +793,20 @@ EOS
 	atf_check -o match:'route add 10.77.0.0/16 via 10.0.0.1' \
 	    -o match:'fake-route -n add -inet 10.77.0.0/16 10.0.0.1' \
 	    "$JGC" -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
+	# With its cost, its share among those of one cost, and the address
+	# sent from; kept, they are in rc.conf's route too.
+	atf_check -o match:'route add 10.81.0.0/16 via 10.0.0.1 \(metric\) \(weight\) \(kept\)' \
+	    -o match:'fake-route -n add -inet 10.81.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 5 -weight 20' \
+	    "$JGC" -p -c "$SOCK" route add 10.81.0.0/16 10.0.0.1 metric 5 weight 20 source 10.0.0.9
+	atf_check -o match:'^route_[a-z0-9_]*="10.81.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 5 -weight 20"$' \
+	    cat rc.conf
+	atf_check -o match:'fake-route -n delete -inet 10.81.0.0/16 10.0.0.1 -metric 5' \
+	    "$JGC" -p -c "$SOCK" route delete 10.81.0.0/16 10.0.0.1 metric 5
+	atf_check -o not-match:'10.81.0.0' cat rc.conf
+	atf_check -s exit:1 -o match:'no address of the route.s family' \
+	    "$JGC" -c "$SOCK" route add 10.82.0.0/16 10.0.0.1 source 2001:db8::9
+	atf_check -s exit:1 -e match:'the address to send from is an address' -o ignore \
+	    "$JGC" -c "$SOCK" route add 10.82.0.0/16 10.0.0.1 source '-x'
 	atf_check -o match:'fake-route -n add -inet6 2001:db8:7::/48 2001:db8::1' \
 	    "$JGC" -c "$SOCK" route add 2001:db8:7::/48 2001:db8::1
 	atf_check -o match:'fake-route -n add -inet 10.78.0.0/16 -iface lo0' \
@@ -2254,6 +2268,234 @@ kernel_cleanup()
 	stop_daemon
 }
 
+atf_test_case storage cleanup
+storage_head()
+{
+	atf_set "descr" "Disks, pools, datasets, snapshots, mounts and fstab; zfs, zpool, mount and gpart jobs, each word checked"
+}
+storage_body()
+{
+	# zfs(8) and zpool(8): what they list is canned, what they are told
+	# to do is logged.
+	cat > fake-zfs <<EOS
+#!/bin/sh
+echo "zfs \$*" >> $(pwd)/storage.log
+case "\$*" in
+"list -Hp -t filesystem,volume"*)
+	printf 'tank\tfilesystem\t5000\t9000\t96\t/tank\tlz4\t1.50\t0\t0\tyes\ton\t-\t-\toff\n'
+	printf 'tank/data\tfilesystem\t4000\t9000\t4000\t/tank/data\tlz4\t2.00\t8000\t0\tyes\ton\t-\t-\toff\n'
+	printf 'tank/vol\tvolume\t100\t9000\t100\t-\toff\t1.00\t-\t0\t-\t-\ttank/data@a\t1048576\toff\n' ;;
+"list -Hp -t snapshot"*)
+	printf 'tank/data@b\t10\t4000\t1759500000\n'
+	printf 'tank/data@a\t20\t3000\t1759400000\n' ;;
+"destroy tank/busy") echo "cannot destroy 'tank/busy': dataset is busy" >&2; exit 1 ;;
+esac
+exit 0
+EOS
+	cat > fake-zpool <<EOS
+#!/bin/sh
+echo "zpool \$*" >> $(pwd)/storage.log
+case "\$*" in
+"list -Hp -o name,size,alloc,free,health") printf 'tank\t14000\t5000\t9000\tONLINE\n' ;;
+"list -Hp -o name,size,allocated"*) printf 'tank\t14000\t5000\t9000\t12\t35\t1.00\tDEGRADED\n' ;;
+status) cat <<EOP ;;
+  pool: tank
+ state: DEGRADED
+status: One or more devices has been taken offline by the administrator.
+	Sufficient replicas exist for the pool to continue functioning.
+action: Online the device using 'zpool online'.
+  scan: scrub repaired 0B in 00:10:11 with 0 errors on Sun Oct  4 03:00:00 2026
+config:
+
+	NAME        STATE     READ WRITE CKSUM
+	tank        DEGRADED     0     0     0
+	  mirror-0  DEGRADED     0     0     0
+	    ada1p1  ONLINE       0     0     0
+	    ada2p1  OFFLINE      0     0     0  was /dev/ada2p1
+
+errors: No known data errors
+EOP
+esac
+exit 0
+EOS
+	for p in gpart mount umount camcontrol; do
+		printf '#!/bin/sh\necho "%s $*" >> %s/storage.log\n[ "$1 $2" = "destroy ada9" ] && { echo "gpart: Device busy" >&2; exit 1; }\n[ "$1" = devlist ] && echo "<FAKE DISK 1.0>   at scbus0 target 0 lun 0 (pass0,ada0)"\nexit 0\n' "$p" "$(pwd)" > fake-$p
+	done
+	chmod +x fake-zfs fake-zpool fake-gpart fake-mount fake-umount fake-camcontrol
+	printf '# Device\tMountpoint\tFStype\tOptions\tDump\tPass#\n/dev/ada0p2\t/\tufs\trw\t1\t1\n/dev/ada0p3\t/mnt/data\tufs\trw,noatime\t2\t2\nproc\t/proc\tprocfs\trw\t0\t0\n' > fstab
+	DAEMON_ARGS="-z $(pwd)/fake-zfs -Z $(pwd)/fake-zpool -q $(pwd)/fake-gpart -m $(pwd)/fake-mount -u $(pwd)/fake-umount -i $(pwd)/fake-camcontrol -S $(pwd)/fstab"
+	start_daemon
+
+	# The disks are GEOM's own, read from the kernel: sizes in bytes,
+	# partitions with their sectors.
+	atf_check -o save:d.json "$JGC" -c "$SOCK" storage disks
+	atf_check -o match:'^\{"disks":\[' cat d.json
+	if [ -n "$(sysctl -n kern.disks)" ]; then
+		atf_check -o match:'"name":"[a-z]+[0-9]+","size":[0-9]+,"sectorsize":[0-9]+' \
+		    -o match:'"parts":\[' cat d.json
+	fi
+	# The pools, with what zpool status says of each and its devices
+	# as they are nested.
+	atf_check -o save:p.json "$JGC" -c "$SOCK" storage pools
+	atf_check -o match:'"name":"tank","size":14000,"alloc":5000,"free":9000,"frag":12,"cap":35,"dedup":"1.00","health":"DEGRADED"' \
+	    -o match:'"state":"DEGRADED"' \
+	    -o match:'"status":"One or more devices has been taken offline by the administrator. Sufficient replicas exist' \
+	    -o match:'"scan":"scrub repaired 0B' -o match:'"errors":"No known data errors"' \
+	    -o match:'\{"name":"mirror-0","depth":1,"state":"DEGRADED","read":"0","write":"0","cksum":"0"\}' \
+	    -o match:'\{"name":"ada2p1","depth":2,"state":"OFFLINE","read":"0","write":"0","cksum":"0","note":"was /dev/ada2p1"\}' \
+	    cat p.json
+	# Datasets and snapshots: sizes are numbers, "-" is nothing.
+	atf_check -o match:'\{"name":"tank/data","type":"filesystem","used":4000,"avail":9000,"refer":4000,"mountpoint":"/tank/data","compression":"lz4","ratio":"2.00","quota":8000,"reservation":0,"mounted":"yes","canmount":"on","readonly":"off"\}' \
+	    -o match:'"name":"tank/vol","type":"volume".*"origin":"tank/data@a","volsize":1048576' \
+	    "$JGC" -c "$SOCK" storage datasets
+	atf_check -o match:'\{"snapshots":\[\{"name":"tank/data@b","used":10,"refer":4000,"creation":1759500000\}' \
+	    "$JGC" -c "$SOCK" storage snapshots tank/data
+	atf_check -o match:'^zfs list -Hp -t snapshot -o name,used,referenced,creation -S creation -r tank/data$' \
+	    cat storage.log
+	atf_check -s exit:1 -e match:'a dataset is named' -o ignore \
+	    "$JGC" -c "$SOCK" storage snapshots '-r'
+	# What is mounted is the kernel's word; what should be, fstab's.
+	atf_check -o save:m.json "$JGC" -c "$SOCK" storage mounts
+	atf_check -o match:'"mounts":\[\{"from":"[^"]+","on":"/","type":"[a-z]+","options":"[^"]*","size":[0-9]+,"used":[0-9]+,"avail":[0-9]+\}' \
+	    -o match:'\{"spec":"/dev/ada0p2","file":"/","vfstype":"ufs","mntops":"rw","type":"rw","freq":1,"passno":1,"mounted":true\}' \
+	    -o match:'"file":"/mnt/data","vfstype":"ufs","mntops":"rw,noatime".*"mounted":false' \
+	    cat m.json
+
+	# zfs: a snapshot, with those under it; rolled back; destroyed.
+	: > storage.log
+	atf_check -o match:'done +zfs snapshot -r tank/data@c$' \
+	    "$JGC" -c "$SOCK" zfs snapshot -r tank/data@c
+	atf_check -o match:'done +zfs rollback tank/data@c' \
+	    "$JGC" -c "$SOCK" zfs rollback tank/data@c
+	atf_check -o match:'done +zfs destroy tank/data@c' \
+	    "$JGC" -c "$SOCK" zfs destroy tank/data@c
+	atf_check -o match:'done +zfs create -o compression=zstd -o quota=10G tank/new' \
+	    "$JGC" -c "$SOCK" zfs create tank/new compression=zstd quota=10G
+	atf_check -o match:'done +zfs create -V 2G -o volblocksize=16k tank/zvol' \
+	    "$JGC" -c "$SOCK" zfs create tank/zvol volsize=2G volblocksize=16k
+	atf_check -o match:'done +zfs set mountpoint=/srv/data atime=off tank/data' \
+	    "$JGC" -c "$SOCK" zfs set tank/data mountpoint=/srv/data atime=off
+	atf_check -o match:'done +zfs set org.example:owner=me tank/data' \
+	    "$JGC" -c "$SOCK" zfs set tank/data org.example:owner=me
+	atf_check -o match:'done +zfs inherit quota tank/data' \
+	    "$JGC" -c "$SOCK" zfs inherit tank/data quota
+	atf_check -o match:'done +zfs clone tank/data@a tank/copy' \
+	    "$JGC" -c "$SOCK" zfs clone tank/data@a tank/copy
+	atf_check -o match:'done +zfs unmount -f tank/data' \
+	    "$JGC" -c "$SOCK" zfs unmount -f tank/data
+	atf_check -o match:'done +zfs rename tank/a tank/b' \
+	    "$JGC" -c "$SOCK" zfs rename tank/a tank/b
+	# What zfs refuses is said as it said it.
+	atf_check -s exit:1 -o match:'dataset is busy' \
+	    "$JGC" -c "$SOCK" zfs destroy tank/busy
+	atf_check -o match:'^zfs snapshot -r tank/data@c$' \
+	    -o match:'^zfs create -V 2G -o volblocksize=16k tank/zvol$' \
+	    cat storage.log
+	# No word is an option, a pool is not destroyed by its name, a
+	# property is one zfs has, and nothing here is undone: not in
+	# safe mode.
+	: > storage.log
+	for bad in 'destroy tank' 'destroy -R' 'destroy tank/x;reboot' \
+	    'snapshot tank/data' 'snapshot tank/data@a@b' 'rollback tank/data' \
+	    'create tank' 'create tank/x mountpoint' 'create tank/x evil=1' \
+	    'set tank/data -o=x' 'create tank/x volsize=lots' 'send tank/data' \
+	    'rename tank/a tank/b@c' 'destroy /etc/passwd'; do
+		atf_check -s exit:1 -o ignore -e not-empty \
+		    "$JGC" -c "$SOCK" zfs $bad
+	done
+	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
+	    "$JGC" -s -c "$SOCK" zfs snapshot tank/data@s
+	atf_check -s exit:1 -e match:"storage is the host's" -o ignore \
+	    "$JGC" -j web -c "$SOCK" zfs snapshot tank/data@s
+	atf_check -o empty cat storage.log
+
+	# zpool: a scrub started and stopped, a device taken off and on.
+	atf_check -o match:'done +zpool scrub tank' "$JGC" -c "$SOCK" zpool scrub tank
+	atf_check -o match:'done +zpool scrub -s tank' \
+	    "$JGC" -c "$SOCK" zpool scrub-stop tank
+	atf_check -o match:'done +zpool offline tank ada2p1' \
+	    "$JGC" -c "$SOCK" zpool offline tank ada2p1
+	atf_check -o match:'done +zpool online tank gpt/disk2' \
+	    "$JGC" -c "$SOCK" zpool online tank gpt/disk2
+	atf_check -o match:'done +zpool clear tank' "$JGC" -c "$SOCK" zpool clear tank
+	: > storage.log
+	for bad in 'destroy tank' 'create tank ada1' 'scrub -s' \
+	    'offline tank ../x' 'export tank' 'add tank ada3'; do
+		atf_check -s exit:1 -o ignore -e not-empty \
+		    "$JGC" -c "$SOCK" zpool $bad
+	done
+	atf_check -o empty cat storage.log
+
+	# mount: what fstab describes; unmount: what is mounted, never /.
+	atf_check -o match:'done +mount -F .*/fstab /mnt/data' \
+	    "$JGC" -c "$SOCK" mount /mnt/data
+	atf_check -s exit:1 -e match:'/mnt/other is not in fstab' -o ignore \
+	    "$JGC" -c "$SOCK" mount /mnt/other
+	atf_check -s exit:1 -e match:'the root is not unmounted' -o ignore \
+	    "$JGC" -c "$SOCK" umount /
+	atf_check -s exit:1 -e match:'nothing is mounted on /mnt/data' -o ignore \
+	    "$JGC" -c "$SOCK" umount /mnt/data
+	atf_check -o match:'done +umount -f /dev' "$JGC" -c "$SOCK" umount -f /dev
+	atf_check -s exit:1 -e match:'a mount point is a whole path' -o ignore \
+	    "$JGC" -c "$SOCK" mount '/mnt/../etc'
+
+	# gpart: a table made, a partition added, labelled, resized,
+	# deleted; a table destroyed only as gpart lets it be.
+	atf_check -o match:'done +gpart create -s gpt ada9' \
+	    "$JGC" -c "$SOCK" gpart create ada9 gpt
+	atf_check -o match:'done +gpart add -t freebsd-zfs -a 1m -s 10G -l tank0 ada9' \
+	    "$JGC" -c "$SOCK" gpart add ada9 freebsd-zfs 10G tank0
+	atf_check -o match:'done +gpart add -t freebsd-swap -a 1m ada9' \
+	    "$JGC" -c "$SOCK" gpart add ada9 freebsd-swap
+	atf_check -o match:'done +gpart modify -i 1 -l tank1 ada9' \
+	    "$JGC" -c "$SOCK" gpart modify ada9 1 tank1
+	atf_check -o match:'done +gpart resize -i 1 -a 1m -s 20G ada9' \
+	    "$JGC" -c "$SOCK" gpart resize ada9 1 20G
+	atf_check -o match:'done +gpart delete -i 2 ada9' \
+	    "$JGC" -c "$SOCK" gpart delete ada9 2
+	atf_check -s exit:1 -o match:'Device busy' \
+	    "$JGC" -c "$SOCK" gpart destroy ada9
+	: > storage.log
+	for bad in 'create ada9 zfs' 'add ada9 -F' 'add ada9 freebsd-zfs big' \
+	    'delete ada9 one' 'destroy -F ada9' 'destroy ada9 -F' \
+	    'modify ada9 1 a;b' 'bootcode ada9' 'add /dev/ada9 freebsd-zfs'; do
+		atf_check -s exit:1 -o ignore -e not-empty \
+		    "$JGC" -c "$SOCK" gpart $bad
+	done
+	atf_check -o empty cat storage.log
+	atf_check -o match:'done +camcontrol rescan all' "$JGC" -c "$SOCK" cam rescan
+
+	# fstab: read whole, put back whole once it is an fstab, the one
+	# before kept beside it; not over somebody else's change.
+	atf_check -o match:'^/dev/ada0p3	/mnt/data	ufs	rw,noatime	2	2$' \
+	    "$JGC" -c "$SOCK" fstab
+	cp fstab new.fstab
+	printf '/dev/ada0p4\t/mnt/more\tufs\trw\t2\t2\n' >> new.fstab
+	atf_check -o match:'it is an fstab; left as it was' \
+	    "$JGC" -c "$SOCK" fstab -n -w new.fstab
+	atf_check -o not-match:'/mnt/more' cat fstab
+	atf_check -o match:'in place' "$JGC" -c "$SOCK" fstab -w new.fstab
+	atf_check -o match:'/mnt/more' cat fstab
+	atf_check -o not-match:'/mnt/more' cat fstab.arcana-old
+	# And what it now describes can be mounted.
+	atf_check -o match:'done +mount -F .*/fstab /mnt/more' \
+	    "$JGC" -c "$SOCK" mount /mnt/more
+	printf '/dev/ada0p5 /mnt/x\n' > bad.fstab
+	atf_check -s exit:1 -e match:'line 1: an entry is a device' -o ignore \
+	    "$JGC" -c "$SOCK" fstab -w bad.fstab
+	printf '/dev/ada0p5 mnt ufs rw 0 0\n' > bad.fstab
+	atf_check -s exit:1 -e match:'line 1: mnt is no mount point' -o ignore \
+	    "$JGC" -c "$SOCK" fstab -w bad.fstab
+	printf '/dev/ada0p5 /mnt/x ufs rw 0 0' > bad.fstab
+	atf_check -s exit:1 -e match:'the last line has to end' -o ignore \
+	    "$JGC" -c "$SOCK" fstab -w bad.fstab
+	atf_check -o match:'/mnt/more' -o not-match:'ada0p5' cat fstab
+}
+storage_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case interfaces
@@ -2261,6 +2503,7 @@ atf_init_test_cases()
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case kernel
+	atf_add_test_case storage
 	atf_add_test_case safe_mode
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart

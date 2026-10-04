@@ -87,14 +87,19 @@ route_name(struct work *w, const char *dest, uint32_t fib)
  */
 int
 do_route(struct work *w, const char *destination, const char *gateway,
-    bool remove, uint32_t fib, bool persist, const char **errp)
+    bool remove, uint32_t fib, const struct route_more *more, bool persist,
+    const char **errp)
 {
+	static const struct route_more	none;
 	struct execres	 res;
 	unsigned char	 raw[16];
-	const char	*dest, *name, *list, *e;
-	char		*argv[11];
+	const char	*dest, *name, *list, *e, *mods;
+	char		*argv[18];
 	bool		 iface;
 	int		 af, gaf, n;
+
+	if (more == NULL)
+		more = &none;
 
 	if (!parse_dest(w, destination, &af, &dest)) {
 		*errp = wfmt(w, "%s is not a destination: default, or an "
@@ -136,6 +141,32 @@ do_route(struct work *w, const char *destination, const char *gateway,
 		argv[n++] = (char *)(uintptr_t)"-fib";
 		argv[n++] = wfmt(w, "%u", fib);
 	}
+	/*
+	 * What tells one route to a destination from another: its cost,
+	 * its share among those of one cost, and the address of this
+	 * host that is sent from.  mods is the same for rc.conf.
+	 */
+	mods = "";
+	if (more->source != NULL && more->source[0] != '\0') {
+		if (inet_pton(af, more->source, raw) != 1) {
+			*errp = wfmt(w, "%s is no address of the route's "
+			    "family to send from", more->source);
+			return (-1);
+		}
+		argv[n++] = (char *)(uintptr_t)"-ifa";
+		argv[n++] = (char *)(uintptr_t)more->source;
+		mods = wfmt(w, " -ifa %s", more->source);
+	}
+	if (more->metric != 0) {
+		argv[n++] = (char *)(uintptr_t)"-metric";
+		argv[n++] = wfmt(w, "%u", more->metric);
+		mods = wfmt(w, "%s -metric %u", mods, more->metric);
+	}
+	if (more->weight != 0) {
+		argv[n++] = (char *)(uintptr_t)"-weight";
+		argv[n++] = wfmt(w, "%u", more->weight);
+		mods = wfmt(w, "%s -weight %u", mods, more->weight);
+	}
 	argv[n] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "route"));
@@ -154,12 +185,13 @@ do_route(struct work *w, const char *destination, const char *gateway,
 		return (0);
 	}
 	if (rc_set(w, wfmt(w, "%sroute_%s", af == AF_INET ? "" : "ipv6_", name),
-	    "=", wfmt(w, "%s%s %s%s%s", dest, iface ? " -iface" : "", gateway,
-	    fib != 0 ? " -fib " : "", fib != 0 ? wfmt(w, "%u", fib) : ""),
-	    errp) != 0 || rc_set(w, list, "+=", name, errp) != 0) {
+	    "=", wfmt(w, "%s%s %s%s%s%s", dest, iface ? " -iface" : "", gateway,
+	    fib != 0 ? " -fib " : "", fib != 0 ? wfmt(w, "%u", fib) : "",
+	    mods), errp) != 0 || rc_set(w, list, "+=", name, errp) != 0) {
 		/* Not kept: not left half done either. */
 		e = NULL;
-		(void)do_route(w, destination, gateway, true, fib, false, &e);
+		(void)do_route(w, destination, gateway, true, fib, more, false,
+		    &e);
 		return (-1);
 	}
 	return (0);

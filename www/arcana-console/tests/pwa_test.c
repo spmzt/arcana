@@ -558,14 +558,10 @@ ATF_TC_BODY(pwa, tc)
 	/* The fleet page lists it, and leads back to it. */
 	run("document.querySelector('.tree .titem.fleet').click()");
 	wait_js("document.querySelector('.hosts .hostcard')", 5);
-	/* In the fleet's graph too, a jail opens over the page. */
-	run("document.querySelector('.topo .tnode[data-act=peek-jail]')"
-	    ".click()");
-	wait_js("document.querySelector('.peek-box .jail-page') && "
-	    "document.querySelector('.hosts .hostcard')", 5);
-	run("document.querySelector('.peek-box .close').click()");
-	wait_js("!document.querySelector('.peek-box') && "
-	    "document.querySelector('.hosts .hostcard')", 5);
+	/* The fleet's graph is of what runs: no jail here does, so the
+	 * host stands alone in it. */
+	ATF_CHECK(js_true("document.querySelector('.topo .tnode.host') && "
+	    "!document.querySelector('.topo .tnode[data-act=peek-jail]')"));
 	shot("2-fleet");
 	run("document.querySelector('.hosts .hostcard').click()");
 	wait_js("document.querySelector('.tree .titem.server.selected')", 5);
@@ -747,16 +743,19 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('button[data-act=route-add]')", 10);
 	run("document.querySelector('button[data-act=route-add]').click()");
 	wait_js("document.querySelector('form[data-form=route]')", 5);
+	/* With its cost, its share, the address sent from and the table. */
 	run("const f = document.querySelector('form[data-form=route]'); "
 	    "f.destination.value = '10.88.0.0/16'; f.gateway.value = "
-	    "'10.0.0.1'; f.requestSubmit();");
+	    "'10.0.0.1'; f.metric.value = '5'; f.weight.value = '20'; "
+	    "f.source.value = '10.0.0.9'; f.fib.value = '2'; "
+	    "f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('route add 10.88.0.0/16 via 10.0.0.1: "
 	    "done'))", 20);
-	ATF_CHECK(system("grep -q '^-n add -inet 10.88.0.0/16 10.0.0.1$' "
-	    "route.log") == 0);
+	ATF_CHECK(system("grep -q '^-n add -inet 10.88.0.0/16 10.0.0.1 -fib 2 "
+	    "-ifa 10.0.0.9 -metric 5 -weight 20$' route.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
 	/*
@@ -764,18 +763,17 @@ ATF_TC_BODY(pwa, tc)
 	 * in a box over the table.  And an interface's traffic and its
 	 * MTU, in the interfaces.
 	 */
-	run("const i = document.querySelector('#filter'); i.value = "
-	    "'10.77.5.5'; i.dispatchEvent(new Event('input', { bubbles: true "
-	    "}));");
 	run("document.querySelector('button[data-act=net-lookup]').click()");
-	wait_js("document.querySelector('.notice.lookup') && document."
-	    "querySelector('.notice.lookup').textContent.includes('10.0.0.1')",
-	    10);
+	wait_js("document.querySelector('form[data-form=lookup] input[name="
+	    "address]')", 5);
+	run("const f = document.querySelector('form[data-form=lookup]'); "
+	    "f.address.value = '10.77.5.5'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal .notice.lookup') && document."
+	    "querySelector('.modal .notice.lookup').textContent.includes("
+	    "'10.0.0.1')", 10);
 	shot("7a-lookup");
-	run("document.querySelector('button[data-act=net-lookup-clear]')"
-	    ".click()");
-	run("const i = document.querySelector('#filter'); i.value = ''; "
-	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]').click()");
 	wait_js("document.querySelector('tr[data-if=lo0] button[data-act="
@@ -1240,6 +1238,131 @@ ATF_TC_BODY(pwa, tc)
 	    == 0);
 
 	/*
+	 * Storage: the pools with their devices, the datasets, a snapshot
+	 * taken and one destroyed once its name is typed, the disks as
+	 * the kernel has them, what is mounted, and fstab edited.
+	 */
+	run("document.querySelector('button.tab[data-arg=storage]').click()");
+	wait_js("document.querySelector('section.pool[data-pool=tank] table."
+	    "vdevs tr.bad')", 20);
+	ATF_CHECK(js_true("document.querySelector('section.pool').textContent"
+	    ".includes('DEGRADED') && document.querySelectorAll('table.vdevs "
+	    "tbody tr').length === 4 && document.querySelector('table.vdevs "
+	    "button[data-arg=online]')"));
+	shot("7j-storage-pools");
+	run("[...document.querySelectorAll('section.pool button[data-act="
+	    "st-zpool]')].find(b => b.dataset.arg === 'scrub').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('zpool scrub tank: done'))", 20);
+	ATF_CHECK(system("grep -q '^zpool scrub tank$' storage.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=st-kind][data-arg="
+	    "datasets]').click()");
+	wait_js("document.querySelector('table.datasets tr[data-ds=\"tank/data"
+	    "\"]')", 20);
+	ATF_CHECK(js_true("document.querySelector('table.datasets').textContent"
+	    ".includes('volume') && !document.querySelector('table.datasets tr"
+	    "[data-ds=tank] button[data-act=st-destroy]')"));
+	shot("7k-storage-datasets");
+	/* Every table sorts by a column picked, and back; the filter
+	 * leaves the rows that have the text. */
+	run("[...document.querySelectorAll('table.datasets th.sortable')]"
+	    ".find(t => t.textContent === 'Used').click()");
+	wait_js("document.querySelector('table.datasets th.asc') && document."
+	    "querySelector('table.datasets tbody tr').dataset.ds === "
+	    "'tank/vol'", 5);
+	run("document.querySelector('table.datasets th.asc').click()");
+	wait_js("document.querySelector('table.datasets th.desc') && document."
+	    "querySelector('table.datasets tbody tr').dataset.ds === 'tank'",
+	    5);
+	run("document.querySelector('table.datasets th.desc').click()");
+	wait_js("!document.querySelector('table.datasets th.asc, table.datasets "
+	    "th.desc')", 5);
+	run("const i = document.getElementById('filter'); i.value = 'vol'; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("document.querySelectorAll('table.datasets tbody tr').length "
+	    "=== 1", 5);
+	run("const i = document.getElementById('filter'); i.value = ''; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("document.querySelectorAll('table.datasets tbody tr').length "
+	    "=== 3", 5);
+	run("document.querySelector('table.datasets tr[data-ds=\"tank/data\"] "
+	    "button[data-act=st-snapshot]').click()");
+	wait_js("document.querySelector('form[data-form=st-snapshot] input"
+	    "[name=name]')", 5);
+	run("const f = document.querySelector('form[data-form=st-snapshot]'); "
+	    "f.name.value = 'before'; f.recursive.checked = true; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('zfs snapshot tank/data@before: done'))",
+	    20);
+	ATF_CHECK(system("grep -q '^zfs snapshot -r tank/data@before$' "
+	    "storage.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* Its snapshots; one destroyed, by its name typed. */
+	wait_js("document.querySelector('table.datasets tr[data-ds=\"tank/data"
+	    "\"] button[data-act=st-snaps-of]')", 20);
+	run("document.querySelector('table.datasets tr[data-ds=\"tank/data\"] "
+	    "button[data-act=st-snaps-of]').click()");
+	wait_js("document.querySelectorAll('table.snapshots tbody tr').length "
+	    "=== 2", 20);
+	run("document.querySelector('table.snapshots tr[data-snap=\"tank/data@a"
+	    "\"] button[data-act=st-destroy]').click()");
+	wait_js("document.querySelector('form[data-form=confirm] input')", 5);
+	run("const f = document.querySelector('form[data-form=confirm]'); "
+	    "const i = f.querySelector('input'); i.value = 'a'; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true })); "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('zfs destroy tank/data@a: done'))", 20);
+	ATF_CHECK(system("grep -q '^zfs destroy tank/data@a$' storage.log") ==
+	    0);
+	run("document.querySelector('.dock > header').click()");
+	/* The disks are this machine's own. */
+	run("document.querySelector('button[data-act=st-kind][data-arg=disks]')"
+	    ".click()");
+	wait_js("document.querySelector('section.disk, .empty')", 20);
+	shot("7l-storage-disks");
+	/* fstab, with a line more. */
+	run("document.querySelector('button[data-act=st-kind][data-arg=mounts]"
+	    "').click()");
+	wait_js("document.querySelector('table.fstab tr[data-fs=\"/mnt/data\"] "
+	    "button[data-act=st-mount]')", 20);
+	shot("7m-storage-mounts");
+	run("document.querySelector('button[data-act=st-fstab]').click()");
+	wait_js("document.querySelector('form[data-form=st-fstab] textarea') "
+	    "&& document.querySelector('form[data-form=st-fstab] textarea')"
+	    ".value.includes('/mnt/data')", 10);
+	run("const t = document.querySelector('form[data-form=st-fstab] "
+	    "textarea'); t.value += 'not an entry\\n'; t.form.requestSubmit();");
+	wait_js("document.querySelector('.modal .err') && document."
+	    "querySelector('.modal .err').textContent.includes('an entry is "
+	    "a device')", 10);
+	run("const t = document.querySelector('form[data-form=st-fstab] "
+	    "textarea'); t.value = t.value.replace('not an entry\\n', "
+	    "'/dev/ada0p5\\t/mnt/web\\tufs\\trw\\t2\\t2\\n'); "
+	    "t.form.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && document.querySelector("
+	    "'table.fstab tr[data-fs=\"/mnt/web\"]')", 20);
+	ATF_CHECK(system("grep -q '/mnt/web' fstab && ! grep -q '/mnt/web' "
+	    "fstab.arcana-old") == 0);
+	run("document.querySelector('table.fstab tr[data-fs=\"/mnt/web\"] "
+	    "button[data-act=st-mount]').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('mount /mnt/web: done'))", 20);
+	ATF_CHECK(system("grep -q '^mount -F .*/fstab /mnt/web$' storage.log")
+	    == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/*
 	 * The kernel: the files linked into it with the modules each
 	 * holds, what its memory went to, a module loaded and one
 	 * unloaded, kept in rc.conf's kld_list or taken out of it.
@@ -1300,6 +1423,33 @@ ATF_TC_BODY(pwa, tc)
 	    30);
 	wait_js("document.querySelector('.map-panel .facts')", 10);
 	shot("8-network");
+	/* The legend takes a kind of line out of the map, and puts it back. */
+	run("window.kind = ['tunnel', 'p2p', 'lan', 'bgp', 'ospf'].find(k => "
+	    "document.querySelector('svg.topo .tlink.' + k)); document."
+	    "querySelector('.map-legend li[data-arg=' + window.kind + ']')"
+	    ".click()");
+	wait_js("!document.querySelector('svg.topo .tlink.' + window.kind) && "
+	    "document.querySelector('.map-legend li.off[data-arg=' + "
+	    "window.kind + ']')", 5);
+	run("document.querySelector('.map-legend li[data-arg=' + window.kind + "
+	    "']').click()");
+	wait_js("document.querySelector('svg.topo .tlink.' + window.kind) && "
+	    "!document.querySelector('.map-legend li.off')", 5);
+	/* Two fingers parting on the map bring it closer. */
+	run("window.vb = document.querySelector('svg.topo').getAttribute("
+	    "'viewBox'); const s = document.querySelector('svg.topo'), r = "
+	    "s.getBoundingClientRect(), ev = (t, id, x, y) => (t === "
+	    "'pointerdown' ? s : document).dispatchEvent(new PointerEvent(t, "
+	    "{ bubbles: true, cancelable: true, pointerId: id, pointerType: "
+	    "'touch', clientX: x, clientY: y })); const cx = r.x + r.width / "
+	    "2, cy = r.y + r.height / 2; ev('pointerdown', 11, cx - 40, cy); "
+	    "ev('pointerdown', 12, cx + 40, cy); ev('pointermove', 12, cx + "
+	    "120, cy); ev('pointerup', 11, cx - 40, cy); ev('pointerup', 12, "
+	    "cx + 120, cy);");
+	wait_js("parseFloat(document.querySelector('svg.topo').getAttribute("
+	    "'viewBox').split(' ')[2]) < parseFloat(window.vb.split(' ')[2])",
+	    5);
+	run("document.querySelector('button[data-act=topo-fit]').click()");
 	/* A host is picked: its interfaces, with their addresses. */
 	run("const n = document.querySelector('svg.topo .tnode .box'); "
 	    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
@@ -1445,6 +1595,20 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button[data-act=refresh]').click()");
 	wait_js("[...document.querySelectorAll('.tree .titem.leaf')].some(l => "
 	    "l.dataset.arg === 'gw' && l.classList.contains('s-running'))", 15);
+	/* In the fleet's graph the one that runs is there, and none of
+	 * the stopped; it opens over the page. */
+	run("document.querySelector('.tree .titem.fleet').click()");
+	wait_js("document.querySelector('.topo .tnode.s-running[data-arg=gw]')",
+	    10);
+	ATF_CHECK(js_true("!document.querySelector('.topo .tnode.s-stopped')"));
+	run("document.querySelector('.topo .tnode[data-act=peek-jail]')"
+	    ".click()");
+	wait_js("document.querySelector('.peek-box .jail-page') && "
+	    "document.querySelector('.hosts .hostcard')", 5);
+	run("document.querySelector('.peek-box .close').click()");
+	wait_js("!document.querySelector('.peek-box') && "
+	    "document.querySelector('.hosts .hostcard')", 5);
+	shot("2a-fleet-running");
 	run("document.querySelector('li[data-act=select-network]').click()");
 	wait_js("document.querySelector('svg.topo .tnode.jail.up') && "
 	    "document.querySelector('svg.topo .tlink.vnet')", 30);

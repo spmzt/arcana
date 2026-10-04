@@ -97,8 +97,8 @@ static bool
 scoped(const struct arc_job_spec *sp)
 {
 
-	return (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->kind !=
-	    ARC_JOB_KIND_IF_VNET && sp->kind != ARC_JOB_KIND_KMOD);
+	return (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->kind <=
+	    ARC_JOB_KIND_BIRD);
 }
 
 /* What the job does, in words: the activity log's line for it. */
@@ -134,10 +134,13 @@ title_of(const struct arc_job_spec *sp)
 		    "down");
 		break;
 	case ARC_JOB_KIND_ROUTE:
-		rc = asprintf(&t, "route %s %s%s%s%s%s", sp->remove ? "delete" :
-		    "add", sp->destination, sp->gateway != NULL ? " via " : "",
-		    sp->gateway != NULL ? sp->gateway : "", sp->has_fib &&
-		    sp->fib != 0 ? " (fib)" : "", sp->persist ? " (kept)" : "");
+		rc = asprintf(&t, "route %s %s%s%s%s%s%s%s", sp->remove ?
+		    "delete" : "add", sp->destination, sp->gateway != NULL ?
+		    " via " : "", sp->gateway != NULL ? sp->gateway : "",
+		    sp->has_fib && sp->fib != 0 ? " (fib)" : "",
+		    sp->has_metric && sp->metric != 0 ? " (metric)" : "",
+		    sp->has_weight && sp->weight != 0 ? " (weight)" : "",
+		    sp->persist ? " (kept)" : "");
 		break;
 	case ARC_JOB_KIND_IF_SET:
 		rc = asprintf(&t, "%s: set%s%s", sp->interface, sp->has_mtu &&
@@ -172,6 +175,12 @@ title_of(const struct arc_job_spec *sp)
 		rc = asprintf(&t, "kld%s %s%s", sp->verb, sp->names.v[0],
 		    sp->persist ? " (kept)" : "");
 		break;
+	case ARC_JOB_KIND_ZFS:
+	case ARC_JOB_KIND_ZPOOL:
+	case ARC_JOB_KIND_MOUNT:
+	case ARC_JOB_KIND_GPART:
+	case ARC_JOB_KIND_CAM:
+		return (storage_title(sp));
 	case ARC_JOB_KIND_IF_VNET:
 		rc = asprintf(&t, sp->remove ? "take %s back from %s%s%s%s" :
 		    "give %s to %s%s%s%s", sp->interface, sp->jail,
@@ -531,6 +540,7 @@ undo(struct qjob *j)
 	struct arc_service_action_rsp	 sar;
 	struct arc_service_config_req	 scq;
 	struct arc_service_config_rsp	 scr;
+	struct route_more		 rm;
 	const struct arc_job_spec	*sp;
 	const char			*e;
 	int				 rc;
@@ -607,8 +617,11 @@ undo(struct qjob *j)
 		e = scr.error;
 		break;
 	default:
+		rm.metric = sp->has_metric ? sp->metric : 0;
+		rm.weight = sp->has_weight ? sp->weight : 0;
+		rm.source = sp->source;
 		rc = do_route(&j->w, sp->destination, sp->gateway, !sp->remove,
-		    sp->has_fib ? sp->fib : 0, sp->persist, &e);
+		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &e);
 		break;
 	}
 	if (rc != 0)
@@ -628,6 +641,7 @@ run(struct qjob *j)
 	struct arc_service_action_rsp	 sar;
 	struct arc_service_config_req	 scq;
 	struct arc_service_config_rsp	 scr;
+	struct route_more		 rm;
 	struct arc_pkg_upgrade_req	 uq;
 	struct arc_pkg_upgrade_rsp	 ur;
 	const struct arc_job_spec	*sp;
@@ -720,6 +734,14 @@ run(struct qjob *j)
 		ok = do_kmod(&j->w, sp->verb, sp->names.v[0], sp->persist,
 		    &error) == 0;
 		break;
+	case ARC_JOB_KIND_ZFS:
+	case ARC_JOB_KIND_ZPOOL:
+	case ARC_JOB_KIND_MOUNT:
+	case ARC_JOB_KIND_GPART:
+	case ARC_JOB_KIND_CAM:
+		error = NULL;
+		ok = do_storage_job(&j->w, sp, &error) == 0;
+		break;
 	case ARC_JOB_KIND_IF_VNET:
 		error = NULL;
 		if (!sp->remove && strcmp(sp->interface, "epair") == 0) {
@@ -735,8 +757,11 @@ run(struct qjob *j)
 		break;
 	case ARC_JOB_KIND_ROUTE:
 		error = NULL;
+		rm.metric = sp->has_metric ? sp->metric : 0;
+		rm.weight = sp->has_weight ? sp->weight : 0;
+		rm.source = sp->source;
 		ok = do_route(&j->w, sp->destination, sp->gateway, sp->remove,
-		    sp->has_fib ? sp->fib : 0, sp->persist, &error) == 0;
+		    sp->has_fib ? sp->fib : 0, &rm, sp->persist, &error) == 0;
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
 		memset(&scq, 0, sizeof(scq));
