@@ -2687,6 +2687,8 @@ svg.topo.linking .tnode.target:hover .box {
 	opacity: .85;
 }
 .tlink.tunnel .wire { stroke: var(--violet); }
+.tlink.vnet .wire { stroke: var(--dim); stroke-dasharray: 2 5; }
+.tnode.jail .box { rx: 22px; stroke-dasharray: 7 3; }
 .tlink.p2p .wire { stroke: var(--teal); }
 .tlink.lan .wire { stroke: var(--blue); }
 .tlink.down .wire { stroke-dasharray: 3 6; opacity: .5; }

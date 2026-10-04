@@ -1261,6 +1261,44 @@ ATF_TC_BODY(pwa, tc)
 	    "includes('10.0.0.1') && document.querySelector('.hops')."
 	    "textContent.includes('leaves the fleet')"));
 	shot("8c-path");
+	run("document.querySelector('button[data-act=topo-path-clear]')."
+	    "click()");
+	/*
+	 * A running jail with a network of its own is a node of the map,
+	 * tied to its host, read through it.  No jail runs here, so the
+	 * page is told that gw does.
+	 */
+	run("window.fetch0 = window.fetch; window.fetch = (u, o) => "
+	    "window.fetch0(u, o).then(r => String(u).endsWith('/jails') ? "
+	    "r.text().then(t => { const j = JSON.parse(t), walk = v => { if "
+	    "(v && typeof v === 'object') { if (v.name === 'gw' && 'vnet' in "
+	    "v) v.state = 'running'; Object.values(v).forEach(walk); } }; "
+	    "walk(j); return new Response(JSON.stringify(j), { status: "
+	    "r.status, headers: r.headers }); }) : r);");
+	run("document.querySelector('li[data-act=select-server]').click()");
+	wait_js("document.querySelector('button[data-act=refresh]')", 10);
+	run("document.querySelector('button[data-act=refresh]').click()");
+	wait_js("[...document.querySelectorAll('.tree .titem.leaf')].some(l => "
+	    "l.dataset.arg === 'gw' && l.classList.contains('s-running'))", 15);
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelector('svg.topo .tnode.jail.up') && "
+	    "document.querySelector('svg.topo .tlink.vnet')", 30);
+	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo .tnode.jail "
+	    ".name')].some(n => n.textContent === 'gw')"));
+	run("const n = document.querySelector('svg.topo .tnode.jail .box'); "
+	    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
+	wait_js("document.querySelector('svg.topo .tnode.jail.sel') && "
+	    "document.querySelector('.map-panel .iflist').textContent."
+	    "includes('epair1b')", 10);
+	shot("8d-vnet-jail-node");
+	/* Its network is the jail's page. */
+	run("document.querySelector('.map-panel button[data-act="
+	    "topo-open-host]').click()");
+	wait_js("document.querySelector('.jail-page .jail-net tr[data-if="
+	    "epair1b]')", 20);
+	run("window.fetch = window.fetch0;");
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelector('svg.topo .tnode')", 10);
 	/* On a phone the map is above its panel, each as wide as the screen. */
 	phone(true);
 	wait_js("document.querySelector('.map-wrap').getBoundingClientRect()"

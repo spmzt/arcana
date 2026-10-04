@@ -36,6 +36,7 @@
 #include "app.h"
 
 #define	TOPO_POLL_MS	5000
+#define	MAX_NODES	(MAX_SERVERS + 32)
 #define	TOPO_IFS	64
 #define	TOPO_HIST	48
 #define	TOPO_LINKS	256
@@ -57,7 +58,7 @@ struct ifrate {
 
 /* What is known of one host's network. */
 struct thost {
-	char		 sid[9];
+	char		 sid[80];	/* the node: a server, or server/jail */
 	ucl_object_t	*ifs;		/* its interfaces, as last read */
 	double		 fetched;
 	double		 time;		/* the host's clock at that reading */
@@ -98,7 +99,7 @@ static int		nexts;
 #define	WG_PAIRS	8
 struct wgpair {
 	bool	active;
-	char	a[9], b[9];		/* the hosts */
+	char	a[80], b[80];		/* the nodes */
 	char	ifa[16], ifb[16];
 	char	enda[96], endb[96];	/* where each is reached */
 	char	ina[64], inb[64];	/* what each may send from */
@@ -107,7 +108,7 @@ struct wgpair {
 };
 static struct wgpair	wgpairs[WG_PAIRS];
 
-enum { LK_TUNNEL, LK_P2P, LK_LAN, LK_BGP, LK_OSPF, LK_KINDS };
+enum { LK_TUNNEL, LK_P2P, LK_LAN, LK_BGP, LK_OSPF, LK_VNET, LK_KINDS };
 
 struct tlink {
 	int	a, b;			/* servers; b < 0: segment -b - 1 */
@@ -123,8 +124,8 @@ struct tlink {
 /* A network more than two hosts are in: a node of its own. */
 struct seg {
 	char	net[64];
-	int	member[MAX_SERVERS];
-	char	ifn[MAX_SERVERS][16];
+	int	member[MAX_NODES];
+	char	ifn[MAX_NODES][16];
 	int	n;
 	double	x, y;
 };
@@ -142,7 +143,18 @@ struct hop {
 	int		nalt;
 };
 
-static struct thost	hosts[MAX_SERVERS];
+/* A node of the map: a server, or a vnet jail of one. */
+struct tnode {
+	char	key[80];		/* the server's id, or id/jail */
+	char	name[65];		/* as its box says it */
+	char	label[140];		/* as a list says it: jail · server */
+	int	srv;			/* the server, in app.servers */
+	char	jail[64];		/* the jail, or "" */
+};
+static struct tnode	tn[MAX_NODES];
+static int		ntn;
+
+static struct thost	hosts[MAX_NODES];
 static int		nhosts;
 static struct tlink	links[TOPO_LINKS];
 static int		nlinks;
@@ -156,22 +168,23 @@ static struct {
 	bool	refitted;		/* and again, with neighbours outside */
 	bool	jails;			/* each host's running jails around it */
 	bool	nopeers;		/* routing neighbours outside are hidden */
-	char	sel[9];			/* the host picked, or "" */
+	char	sel[80];		/* the node picked, or "" */
 	char	sel_if[16];		/* and its interface charted */
 	char	sel_link[80];		/* or the link picked */
 	bool	linking;		/* a link is being drawn */
-	char	link_from[9];
+	char	link_from[80];
 	double	link_x, link_y;
 	bool	loaded;			/* the places kept were read */
-	char	tun_a[9], tun_b[9];	/* the tunnel asked for */
-	char	create_sid[9];		/* the host an interface is made on */
+	char	tun_a[80], tun_b[80];	/* the tunnel asked for */
+	char	create_sid[80];		/* the node an interface is made on */
+	int	fit_n;			/* the nodes there were when fitted */
 	double	last_poll;
 } tp = { .zoom = 1.0 };
 
 static struct {
-	char		from[9];
+	char		from[80];
 	char		to[65];		/* the address looked for */
-	char		to_name[65];
+	char		to_name[80];
 	struct hop	hops[TOPO_HOPS];
 	int		n;
 	int		gen;		/* answers to an older trace are dropped */
@@ -181,7 +194,12 @@ static struct {
 } path;
 
 static struct thost	*thost(const char *, bool);
-static int		 server_index(const char *);
+static int		 node_index(const char *);
+static void		 nodes_build(void);
+static int		 node_host(int);
+static void		 node_send(int, char *, const char *, const char *);
+static void		 node_job(int, const char *, const char *, const char *,
+			    ...) __attribute__((format(printf, 4, 5)));
 static void		 places_load(void);
 static void		 places_save(void);
 static void		 poll_cb(int, const ucl_object_t *, const char *, void *);
@@ -194,6 +212,102 @@ static void		 fit(void);
 static int		 drag_values(const char *, double *, double *, double *,
 			    double *, double *, char *, size_t);
 
+/*
+ * What the map draws as a node of its own: every server, and every
+ * running jail of a server that has a network of its own, which its
+ * host's agent reads and changes for it.  A node is known by its key:
+ * the server's id, or that and the jail's name.
+ */
+static void
+nodes_build(void)
+{
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it;
+	struct tnode		*n;
+	int			 i;
+
+	ntn = 0;
+	for (i = 0; i < app.nservers; i++) {
+		n = &tn[ntn++];
+		memset(n, 0, sizeof(*n));
+		n->srv = i;
+		snprintf(n->key, sizeof(n->key), "%s", app.servers[i].id);
+		snprintf(n->name, sizeof(n->name), "%s", app.servers[i].name);
+		snprintf(n->label, sizeof(n->label), "%s", app.servers[i].name);
+	}
+	for (i = 0; i < app.nservers; i++) {
+		it = NULL;
+		while (app.servers[i].list != NULL && (j = ucl_object_iterate(
+		    jget(app.servers[i].list, "jails"), &it, true)) != NULL &&
+		    ntn < MAX_NODES) {
+			if (!jbool(j, "vnet") || jstr(j, "name") == NULL ||
+			    jstr(j, "state") == NULL || strcmp(jstr(j, "state"),
+			    "running") != 0 || strlen(jstr(j, "name")) >=
+			    sizeof(n->jail) || strpbrk(jstr(j, "name"),
+			    " /?&#%") != NULL)
+				continue;
+			n = &tn[ntn++];
+			memset(n, 0, sizeof(*n));
+			n->srv = i;
+			snprintf(n->jail, sizeof(n->jail), "%s", jstr(j, "name"));
+			snprintf(n->key, sizeof(n->key), "%s/%s",
+			    app.servers[i].id, n->jail);
+			snprintf(n->name, sizeof(n->name), "%s", n->jail);
+			snprintf(n->label, sizeof(n->label), "%s · %s", n->jail,
+			    app.servers[i].name);
+		}
+	}
+}
+
+/* The node of the server a node is of: itself, for a server. */
+static int
+node_host(int i)
+{
+
+	return (tn[i].srv);		/* the servers come first, in order */
+}
+
+/* Where the console asks about a node's network. */
+static void
+node_url(int i, const char *what, const char *more, char *url, size_t len)
+{
+
+	snprintf(url, len, "/api/servers/%s/net/%s?%s%s%s",
+	    app.servers[tn[i].srv].id, what, more, tn[i].jail[0] != '\0' ?
+	    "&jail=" : "", tn[i].jail);
+}
+
+/* A job for a node: the server's, naming the jail when it is one. */
+static void
+node_send(int i, char *json, const char *title, const char *target)
+{
+	char	*in, t2[200];
+
+	if (tn[i].jail[0] != '\0' && json[0] == '{') {
+		if (asprintf(&in, "{\"jail\":\"%s\",%s", tn[i].jail, json +
+		    1) == -1)
+			abort();
+		free(json);
+		json = in;
+		snprintf(t2, sizeof(t2), "%s: %s", tn[i].jail, title);
+		title = t2;
+	}
+	job_send(&app.servers[tn[i].srv], json, title, JOB_IFACE, target);
+}
+
+static void
+node_job(int i, const char *title, const char *target, const char *fmt, ...)
+{
+	va_list	 ap;
+	char	*json;
+
+	va_start(ap, fmt);
+	if (vasprintf(&json, fmt, ap) == -1)
+		abort();
+	va_end(ap);
+	node_send(i, json, title, target);
+}
+
 static struct thost *
 thost(const char *sid, bool make)
 {
@@ -202,7 +316,7 @@ thost(const char *sid, bool make)
 	for (i = 0; i < nhosts; i++)
 		if (strcmp(hosts[i].sid, sid) == 0)
 			return (&hosts[i]);
-	if (!make || nhosts == MAX_SERVERS)
+	if (!make || nhosts == MAX_NODES)
 		return (NULL);
 	memset(&hosts[nhosts], 0, sizeof(hosts[0]));
 	snprintf(hosts[nhosts].sid, sizeof(hosts[0].sid), "%s", sid);
@@ -210,12 +324,12 @@ thost(const char *sid, bool make)
 }
 
 static int
-server_index(const char *sid)
+node_index(const char *sid)
 {
 	int	i;
 
-	for (i = 0; i < app.nservers; i++)
-		if (strcmp(app.servers[i].id, sid) == 0)
+	for (i = 0; i < ntn; i++)
+		if (strcmp(tn[i].key, sid) == 0)
 			return (i);
 	return (-1);
 }
@@ -225,14 +339,14 @@ static void
 places_load(void)
 {
 	struct thost	*t;
-	char		*text, *p, *line, sid[9];
+	char		*text, *p, *line, sid[80];
 	double		 x, y;
 
 	tp.loaded = true;
 	text = arc_store_get("arc_topo");
 	p = text;
 	while (p != NULL && (line = strsep(&p, "\n")) != NULL)
-		if (sscanf(line, "%8s %lf %lf", sid, &x, &y) == 3 &&
+		if (sscanf(line, "%79s %lf %lf", sid, &x, &y) == 3 &&
 		    (t = thost(sid, true)) != NULL) {
 			t->x = x;
 			t->y = y;
@@ -249,7 +363,7 @@ places_save(void)
 
 	memset(&b, 0, sizeof(b));
 	for (i = 0; i < nhosts; i++)
-		if (hosts[i].placed && server_index(hosts[i].sid) != -1)
+		if (hosts[i].placed && node_index(hosts[i].sid) != -1)
 			h_fmt(&b, "%s %.0f %.0f\n", hosts[i].sid, hosts[i].x,
 			    hosts[i].y);
 	arc_store_set("arc_topo", b.s != NULL ? b.s : "");
@@ -269,9 +383,26 @@ places_fill(void)
 	r = app.nservers < 3 ? 170 : 120 + 26.0 * app.nservers;
 	if (r > 520)
 		r = 520;
-	for (i = 0; i < app.nservers; i++) {
-		if ((t = thost(app.servers[i].id, true)) == NULL || t->placed)
+	for (i = 0; i < ntn; i++) {
+		if ((t = thost(tn[i].key, true)) == NULL || t->placed)
 			continue;
+		if (tn[i].jail[0] != '\0') {
+			/* A jail: under its host, beside the others of it. */
+			struct thost	*ht;
+			int		 k, nth;
+
+			if ((ht = thost(tn[node_host(i)].key, false)) == NULL ||
+			    !ht->placed)
+				continue;
+			for (nth = 0, k = app.nservers; k < i; k++)
+				if (tn[k].srv == tn[i].srv)
+					nth++;
+			t->x = ht->x + ((nth + 1) / 2) * (nth % 2 == 1 ? -1 :
+			    1) * (NODE_W + 30);
+			t->y = ht->y + NODE_H + 90;
+			t->placed = true;
+			continue;
+		}
 		a = M_PI + 2 * M_PI * i / (app.nservers > 0 ? app.nservers :
 		    1);
 		t->x = app.nservers == 1 ? 0 : r * cos(a) * 1.35;
@@ -360,7 +491,7 @@ owner(const char *addr, char *ifname, size_t len)
 	int			 i, s;
 
 	for (i = 0; i < nhosts; i++) {
-		if (hosts[i].ifs == NULL || (s = server_index(hosts[i].sid)) ==
+		if (hosts[i].ifs == NULL || (s = node_index(hosts[i].sid)) ==
 		    -1)
 			continue;
 		it = NULL;
@@ -466,17 +597,41 @@ poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 }
 
 /* Read a host's interfaces, quietly: no entry in the activity list. */
+static void
+node_poll(int i)
+{
+	struct thost	*t;
+	char		 url[240];
+
+	if (!app.online || (t = thost(tn[i].key, true)) == NULL || t->loading)
+		return;
+	t->loading = true;
+	node_url(i, "interfaces", "", url, sizeof(url));
+	api("GET", url, NULL, poll_cb, strdup(tn[i].key));
+}
+
+/* The node a server's page is about: itself, or the jail it shows. */
+static const char *
+page_key(const struct server *s)
+{
+	static char	key[80];
+
+	if (s == cur_server() && net_scope()[0] != '\0')
+		snprintf(key, sizeof(key), "%s/%s", s->id, net_scope());
+	else
+		snprintf(key, sizeof(key), "%s", s->id);
+	return (key);
+}
+
+/* The same for a server, or the jail shown, asked for from its page. */
 void
 topo_poll(struct server *s)
 {
-	struct thost	*t;
-	char		 url[96];
+	int	i;
 
-	if (!app.online || (t = thost(s->id, true)) == NULL || t->loading)
-		return;
-	t->loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/net/interfaces", s->id);
-	api("GET", url, NULL, poll_cb, strdup(s->id));
+	nodes_build();
+	if ((i = node_index(page_key(s))) != -1)
+		node_poll(i);
 }
 
 /* The interface of a host with this public key, or NULL. */
@@ -512,7 +667,7 @@ wg_pairs_step(void)
 		p = &wgpairs[i];
 		if (!p->active)
 			continue;
-		if ((a = server_index(p->a)) == -1 || (b = server_index(
+		if ((a = node_index(p->a)) == -1 || (b = node_index(
 		    p->b)) == -1 || arc_now() - p->since > 300000) {
 			p->active = false;
 			continue;
@@ -529,14 +684,14 @@ wg_pairs_step(void)
 		    p->endb, p->inb, p->keep ? "true" : "false") == -1)
 			abort();
 		snprintf(title, sizeof(title), "%s: wireguard peer", p->ifa);
-		job_send(&app.servers[a], json, title, JOB_IFACE, p->ifa);
+		node_send(a, json, title, p->ifa);
 		if (asprintf(&json, "{\"kind\":\"wireguard\",\"interface\":"
 		    "\"%s\",\"verb\":\"peer\",\"peer\":\"%s\",\"endpoint\":"
 		    "\"%s\",\"allowed_ips\":\"%s\",\"persist\":%s}", p->ifb, ka,
 		    p->enda, p->ina, p->keep ? "true" : "false") == -1)
 			abort();
 		snprintf(title, sizeof(title), "%s: wireguard peer", p->ifb);
-		job_send(&app.servers[b], json, title, JOB_IFACE, p->ifb);
+		node_send(b, json, title, p->ifb);
 	}
 }
 
@@ -593,30 +748,32 @@ bird_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 /* Read what a host's BIRD says, quietly; a host without one says no. */
 static void
-bird_poll(struct server *s)
+bird_poll(int i)
 {
 	struct thost	*t;
-	char		 url[96];
+	char		 url[240];
 
-	if (!app.online || (t = thost(s->id, true)) == NULL || t->bird_loading)
+	if (!app.online || (t = thost(tn[i].key, true)) == NULL ||
+	    t->bird_loading)
 		return;
 	t->bird_loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/net/bird", s->id);
-	api("GET", url, NULL, bird_cb, strdup(s->id));
+	node_url(i, "bird", "", url, sizeof(url));
+	api("GET", url, NULL, bird_cb, strdup(tn[i].key));
 }
 
 /* Read a host's WireGuard interfaces, quietly, for the map's links. */
 static void
-wg_poll(struct server *s)
+wg_poll(int i)
 {
 	struct thost	*t;
-	char		 url[96];
+	char		 url[240];
 
-	if (!app.online || (t = thost(s->id, true)) == NULL || t->wg_loading)
+	if (!app.online || (t = thost(tn[i].key, true)) == NULL ||
+	    t->wg_loading)
 		return;
 	t->wg_loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/net/wireguard", s->id);
-	api("GET", url, NULL, wg_cb, strdup(s->id));
+	node_url(i, "wireguard", "", url, sizeof(url));
+	api("GET", url, NULL, wg_cb, strdup(tn[i].key));
 }
 
 /* From the tick: the map watches every host, a host's tab its own. */
@@ -634,16 +791,18 @@ topo_tick(double now)
 		/* WireGuard changes seldom: read less often, unless a
 		 * tunnel waits for its keys. */
 		wg_turn = wg_pending() ? 0 : (wg_turn + 1) % 6;
-		for (i = 0; i < app.nservers; i++) {
-			topo_poll(&app.servers[i]);
+		nodes_build();
+		for (i = 0; i < ntn; i++) {
+			node_poll(i);
 			if (wg_turn == 0) {
-				wg_poll(&app.servers[i]);
-				bird_poll(&app.servers[i]);
+				wg_poll(i);
+				bird_poll(i);
 			}
 		}
 		render();
-	} else if (app.node == NODE_HOST && app.tab == TAB_NETWORK &&
-	    app.net.kind == NET_INTERFACES && (s = cur_server()) != NULL) {
+	} else if (((app.node == NODE_HOST && app.tab == TAB_NETWORK) ||
+	    net_scope()[0] != '\0') && app.net.kind == NET_INTERFACES &&
+	    (s = cur_server()) != NULL) {
 		tp.last_poll = now;
 		topo_poll(s);
 		render();
@@ -717,7 +876,7 @@ links_build(void)
 	nlinks = nsegs = 0;
 	for (i = 0; i < nhosts; i++) {
 		t = &hosts[i];
-		if (t->ifs == NULL || (s = server_index(t->sid)) == -1)
+		if (t->ifs == NULL || (s = node_index(t->sid)) == -1)
 			continue;
 		it = NULL;
 		while ((o = ucl_object_iterate(jget(t->ifs, "interfaces"), &it,
@@ -776,7 +935,7 @@ links_build(void)
 				for (m = 0; m < sg->n; m++)
 					if (sg->member[m] == s)
 						break;
-				if (m == sg->n && sg->n < MAX_SERVERS) {
+				if (m == sg->n && sg->n < MAX_NODES) {
 					sg->member[sg->n] = s;
 					snprintf(sg->ifn[sg->n],
 					    sizeof(sg->ifn[0]), "%s", jstr(o,
@@ -792,7 +951,7 @@ links_build(void)
 		const char		*other;
 
 		t = &hosts[i];
-		if (t->wg == NULL || (s = server_index(t->sid)) == -1)
+		if (t->wg == NULL || (s = node_index(t->sid)) == -1)
 			continue;
 		it = NULL;
 		while ((o = ucl_object_iterate(jget(t->wg, "interfaces"), &it,
@@ -803,7 +962,7 @@ links_build(void)
 			while ((p = ucl_object_iterate(jget(o, "peers"), &ait,
 			    true)) != NULL) {
 				for (k = 0; k < nhosts; k++) {
-					if (k == i || (peer = server_index(
+					if (k == i || (peer = node_index(
 					    hosts[k].sid)) == -1 || (other =
 					    wg_iface(&hosts[k], jstr(p,
 					    "public-key"), NULL)) == NULL)
@@ -834,7 +993,7 @@ links_build(void)
 		int		 mine, pass;
 
 		t = &hosts[i];
-		if (t->bird == NULL || (s = server_index(t->sid)) == -1)
+		if (t->bird == NULL || (s = node_index(t->sid)) == -1)
 			continue;
 		mine = 0;
 		for (pass = 0; pass < 2; pass++) {
@@ -858,8 +1017,8 @@ links_build(void)
 					/* One for a pair, whichever end says it. */
 					if ((l = link_add(s, peer, ospf ?
 					    LK_OSPF : LK_BGP, "", "",
-					    app.servers[s].id,
-					    app.servers[peer].id)) != NULL) {
+					    tn[s].key,
+					    tn[peer].key)) != NULL) {
 						l->up = l->up || up;
 						if (ospf)
 							snprintf(l->label,
@@ -927,19 +1086,52 @@ links_build(void)
 		} else if (sg->n > 2) {
 			sg->x = sg->y = 0;
 			for (m = 0; m < sg->n; m++) {
-				t = thost(app.servers[sg->member[m]].id, false);
+				t = thost(tn[sg->member[m]].key, false);
 				sg->x += t != NULL ? t->x / sg->n : 0;
 				sg->y += t != NULL ? t->y / sg->n : 0;
 				if ((l = link_add(sg->member[m], -k - 1, LK_LAN,
-				    sg->ifn[m], "", sg->net, app.servers[
-				    sg->member[m]].id)) != NULL)
+				    sg->ifn[m], "", sg->net, tn[
+				    sg->member[m]].key)) != NULL)
 					l->up = true;
 			}
 		}
 	}
+	/*
+	 * A jail with a network of its own hangs on its host: by the end
+	 * of an epair it was given, when it has one, whose other end the
+	 * host has.
+	 */
+	for (i = 0; i < ntn; i++) {
+		char	ifa[16], hif[16];
+
+		if (tn[i].jail[0] == '\0')
+			continue;
+		ifa[0] = hif[0] = '\0';
+		t = thost(tn[i].key, false);
+		it = NULL;
+		while (t != NULL && (o = ucl_object_iterate(jget(t->ifs,
+		    "interfaces"), &it, true)) != NULL) {
+			size_t	n;
+
+			if (jstr(o, "name") == NULL || strncmp(jstr(o, "name"),
+			    "epair", 5) != 0 || (n = strlen(jstr(o, "name"))) <
+			    7 || n >= sizeof(ifa) || jstr(o, "name")[n - 1] != 'b')
+				continue;
+			snprintf(ifa, sizeof(ifa), "%s", jstr(o, "name"));
+			snprintf(hif, sizeof(hif), "%s", ifa);
+			hif[n - 1] = 'a';
+			break;
+		}
+		if ((l = link_add(i, node_host(i), LK_VNET, ifa, hif, tn[i].key,
+		    "host")) != NULL) {
+			l->up = t != NULL && t->ifs != NULL;
+			snprintf(l->label, sizeof(l->label), "%s is a jail of "
+			    "%s", tn[i].jail, tn[node_host(i)].name);
+		}
+	}
 	for (i = 0; i < nlinks; i++) {
 		l = &links[i];
-		l->rate = rate_now(thost(app.servers[l->a].id, false), l->ifa);
+		l->rate = rate_now(thost(tn[l->a].key, false), l->ifa);
 	}
 }
 
@@ -1007,7 +1199,7 @@ topo_spark(struct html *h, const struct server *s, const char *ifname)
 	struct ifrate	*r;
 	char		 in[24], out[24];
 
-	if ((t = thost(s->id, false)) == NULL || (r = rate_of(t, ifname,
+	if ((t = thost(page_key(s), false)) == NULL || (r = rate_of(t, ifname,
 	    false)) == NULL || r->n == 0) {
 		h_raw(h, "<span class=\"dim\">…</span>");
 		return;
@@ -1036,7 +1228,7 @@ place(int s, double *xp, double *yp)
 		*yp = segs[-s - 1].y;
 		return (true);
 	}
-	if (s >= app.nservers || (t = thost(app.servers[s].id, false)) == NULL)
+	if (s >= ntn || (t = thost(tn[s].key, false)) == NULL)
 		return (false);
 	*xp = t->x;
 	*yp = t->y;
@@ -1090,7 +1282,7 @@ static void
 map_links(struct html *h)
 {
 	static const char *const kinds[] = { "tunnel", "p2p", "lan", "bgp",
-	    "ospf" };
+	    "ospf", "vnet" };
 	struct tlink	*l;
 	char		 rate[24];
 	double		 x1, y1, x2, y2, mx, my, bend, w;
@@ -1219,11 +1411,11 @@ map_nodes(struct html *h)
 		double		 cx, cy, a, ex, ey;
 		int		 m;
 
-		if ((t = thost(app.servers[e->host].id, false)) == NULL)
+		if ((t = thost(tn[e->host].key, false)) == NULL)
 			continue;
 		cx = cy = 0;
 		for (m = 0, k = 0; k < nhosts; k++)
-			if (hosts[k].placed && server_index(hosts[k].sid) !=
+			if (hosts[k].placed && node_index(hosts[k].sid) !=
 			    -1) {
 				cx += hosts[k].x;
 				cy += hosts[k].y;
@@ -1238,7 +1430,7 @@ map_nodes(struct html *h)
 		ey = t->y + 125 * sin(a);
 		h_fmt(h, "<g class=\"tpeer %s %s\" data-act=\"topo-open-bird\"",
 		    e->ospf ? "ospf" : "bgp", e->up ? "up" : "down");
-		h_attr(h, "data-arg", app.servers[e->host].id);
+		h_attr(h, "data-arg", tn[e->host].key);
 		h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\"%.1f\" "
 		    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
 		    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
@@ -1266,14 +1458,16 @@ map_nodes(struct html *h)
 		while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
 		    true)) != NULL)
 			if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
-			    "running") == 0)
+			    "running") == 0 && !jbool(j, "vnet"))
 				nj++;
 		m = 0;
 		it = NULL;
 		while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
 		    true)) != NULL && m < 12) {
+			/* One with a network of its own is a node itself. */
 			if (jstr(j, "state") == NULL || strcmp(jstr(j, "state"),
-			    "running") != 0 || jstr(j, "name") == NULL)
+			    "running") != 0 || jstr(j, "name") == NULL ||
+			    jbool(j, "vnet"))
 				continue;
 			jx = t->x + (m - ((nj > 12 ? 12 : nj) - 1) / 2.0) * 46;
 			jy = t->y + NODE_H / 2 + 34 + (m % 2) * 16;
@@ -1286,9 +1480,11 @@ map_nodes(struct html *h)
 			m++;
 		}
 	}
-	for (i = 0; i < app.nservers; i++) {
-		s = &app.servers[i];
-		if ((t = thost(s->id, false)) == NULL)
+	for (i = 0; i < ntn; i++) {
+		const char	*key = tn[i].key;
+
+		s = &app.servers[tn[i].srv];
+		if ((t = thost(key, false)) == NULL || !t->placed)
 			continue;
 		nif = 0;
 		total = 0;
@@ -1299,20 +1495,20 @@ map_nodes(struct html *h)
 				nif++;
 				total += rate_now(t, jstr(o, "name"));
 			}
-		h_fmt(h, "<g class=\"tnode %s%s%s\" transform=\"translate(%.1f,"
+		h_fmt(h, "<g class=\"tnode %s%s%s%s\" transform=\"translate(%.1f,"
 		    "%.1f)\" data-drag=\"topo-node\"", t->failed || s->failed ?
 		    "down" : t->ifs != NULL ? "up" : "unknown",
-		    strcmp(tp.sel, s->id) == 0 ? " sel" : "", tp.linking &&
-		    strcmp(tp.link_from, s->id) != 0 ? " target" : "", t->x,
-		    t->y);
-		h_attr(h, "data-arg", s->id);
-		h_attr(h, "data-drop", s->id);
+		    strcmp(tp.sel, key) == 0 ? " sel" : "", tp.linking &&
+		    strcmp(tp.link_from, key) != 0 ? " target" : "",
+		    tn[i].jail[0] != '\0' ? " jail" : "", t->x, t->y);
+		h_attr(h, "data-arg", key);
+		h_attr(h, "data-drop", key);
 		h_fmt(h, "><rect class=\"box\" x=\"%d\" y=\"%d\" width=\"%d\" "
 		    "height=\"%d\" rx=\"10\"/><circle class=\"led\" cx=\"%d\" "
 		    "cy=\"-10\" r=\"4\"/><text class=\"name\" x=\"%d\" y=\"-5\">",
 		    -NODE_W / 2, -NODE_H / 2, NODE_W, NODE_H, -NODE_W / 2 + 14,
 		    -NODE_W / 2 + 26);
-		h_txt(h, s->name);
+		h_txt(h, tn[i].name);
 		h_fmt(h, "</text><text class=\"sub\" x=\"%d\" y=\"15\">",
 		    -NODE_W / 2 + 12);
 		if (t->ifs == NULL)
@@ -1320,12 +1516,13 @@ map_nodes(struct html *h)
 			    "no answer" : "reading…");
 		else {
 			fmt_rate(rate, sizeof(rate), total);
-			snprintf(sub, sizeof(sub), "%d if · %s", nif, rate);
+			snprintf(sub, sizeof(sub), "%s%d if · %s", tn[i].jail[0] !=
+			    '\0' ? "jail · " : "", nif, rate);
 		}
 		h_txt(h, sub);
 		h_fmt(h, "</text><circle class=\"port\" cx=\"%d\" cy=\"0\" "
 		    "r=\"7\" data-drag=\"topo-link\"", NODE_W / 2);
-		h_attr(h, "data-arg", s->id);
+		h_attr(h, "data-arg", key);
 		h_raw(h, "><title>Drag to another host to join them with a "
 		    "tunnel</title></circle></g>");
 	}
@@ -1423,24 +1620,24 @@ panel_path(struct html *h)
 	h_raw(h, "<section class=\"pane path\"><h4>Route between hosts</h4>"
 	    "<div class=\"path-form\"><label>From<select data-input=\""
 	    "topo-from\">");
-	for (i = 0; i < app.nservers; i++) {
+	for (i = 0; i < ntn; i++) {
 		h_raw(h, "<option");
-		h_attr(h, "value", app.servers[i].id);
-		if (strcmp(path.from, app.servers[i].id) == 0)
+		h_attr(h, "value", tn[i].key);
+		if (strcmp(path.from, tn[i].key) == 0)
 			h_raw(h, " selected");
 		h_raw(h, ">");
-		h_txt(h, app.servers[i].name);
+		h_txt(h, tn[i].label);
 		h_raw(h, "</option>");
 	}
 	h_raw(h, "</select></label><label>To<select data-input=\"topo-to\">"
 	    "<option value=\"\">an address…</option>");
-	for (i = 0; i < app.nservers; i++) {
+	for (i = 0; i < ntn; i++) {
 		h_raw(h, "<option");
-		h_attr(h, "value", app.servers[i].id);
-		if (strcmp(path.to_name, app.servers[i].id) == 0)
+		h_attr(h, "value", tn[i].key);
+		if (strcmp(path.to_name, tn[i].key) == 0)
 			h_raw(h, " selected");
 		h_raw(h, ">");
-		h_txt(h, app.servers[i].name);
+		h_txt(h, tn[i].label);
 		h_raw(h, "</option>");
 	}
 	h_raw(h, "</select></label><label>Address<input data-input=\""
@@ -1463,8 +1660,8 @@ panel_path(struct html *h)
 		for (i = 0; i < path.n; i++) {
 			p = &path.hops[i];
 			h_raw(h, "<li><b>");
-			h_txt(h, p->from >= 0 && p->from < app.nservers ?
-			    app.servers[p->from].name : "?");
+			h_txt(h, p->from >= 0 && p->from < ntn ?
+			    tn[p->from].label : "?");
 			h_raw(h, "</b>");
 			if (p->ifn[0] != '\0') {
 				h_raw(h, " <span class=\"dim\">out</span> ");
@@ -1494,7 +1691,7 @@ panel_path(struct html *h)
 				h_txt(h, p->alt[k].ifn);
 				if (p->alt[k].to >= 0) {
 					h_raw(h, ", to ");
-					h_txt(h, app.servers[p->alt[k].to].name);
+					h_txt(h, tn[p->alt[k].to].label);
 				}
 				h_raw(h, ")</small>");
 			}
@@ -1508,7 +1705,7 @@ panel_path(struct html *h)
 }
 
 static void
-panel_host(struct html *h, struct server *s, struct thost *t)
+panel_host(struct html *h, int node, struct thost *t)
 {
 	const ucl_object_t	*o, *a;
 	ucl_object_iter_t	 it, ait;
@@ -1517,17 +1714,17 @@ panel_host(struct html *h, struct server *s, struct thost *t)
 	char			 in[24], out[24];
 
 	h_raw(h, "<section class=\"pane\"><h4>");
-	h_txt(h, s->name);
+	h_txt(h, tn[node].label);
 	h_raw(h, "<button class=\"icon\" data-act=\"topo-unselect\" "
 	    "title=\"Close\">×</button></h4><div class=\"pane-actions\">"
 	    "<button class=\"ghost small\" data-act=\"topo-if-create\"");
-	h_attr(h, "data-arg", s->id);
+	h_attr(h, "data-arg", tn[node].key);
 	h_raw(h, ">+ interface</button><button class=\"ghost small\" "
 	    "data-act=\"topo-open-host\"");
-	h_attr(h, "data-arg", s->id);
-	h_raw(h, ">Its network tab</button><button class=\"ghost small\" "
+	h_attr(h, "data-arg", tn[node].key);
+	h_raw(h, ">Its network</button><button class=\"ghost small\" "
 	    "data-act=\"topo-from-here\"");
-	h_attr(h, "data-arg", s->id);
+	h_attr(h, "data-arg", tn[node].key);
 	h_raw(h, ">Route from here</button></div>");
 	if (t == NULL || t->ifs == NULL) {
 		h_raw(h, "<p class=\"dim\">Its interfaces have not been read "
@@ -1599,7 +1796,8 @@ static void
 panel_link(struct html *h, struct tlink *l)
 {
 	static const char *const kinds[] = { "Tunnel", "Point to point",
-	    "Same network", "BGP session", "OSPF adjacency" };
+	    "Same network", "BGP session", "OSPF adjacency",
+	    "Jail with its own network" };
 	struct thost	*t;
 	const char	*ifn;
 	int		 end, s;
@@ -1613,16 +1811,16 @@ panel_link(struct html *h, struct tlink *l)
 	for (end = 0; end < 2; end++) {
 		s = end == 0 ? l->a : l->b;
 		ifn = end == 0 ? l->ifa : l->ifb;
-		if (s < 0 || s >= app.nservers)
+		if (s < 0 || s >= ntn)
 			continue;
-		t = thost(app.servers[s].id, false);
+		t = thost(tn[s].key, false);
 		h_raw(h, "<div class=\"end\"><b>");
-		h_txt(h, app.servers[s].name);
+		h_txt(h, tn[s].label);
 		h_raw(h, "</b> ");
 		if (l->kind >= LK_BGP) {
 			h_raw(h, "<button class=\"ghost small\" data-act=\""
 			    "topo-open-bird\"");
-			h_attr(h, "data-arg", app.servers[s].id);
+			h_attr(h, "data-arg", tn[s].key);
 			h_raw(h, ">Its BIRD</button></div>");
 			continue;
 		}
@@ -1658,7 +1856,7 @@ wg_sessions(struct html *h)
 
 	n = 0;
 	for (i = 0; i < nhosts; i++) {
-		if (hosts[i].wg == NULL || server_index(hosts[i].sid) == -1)
+		if (hosts[i].wg == NULL || node_index(hosts[i].sid) == -1)
 			continue;
 		now = jint(hosts[i].wg, "now", 0);
 		it = NULL;
@@ -1679,7 +1877,7 @@ wg_sessions(struct html *h)
 					if (k != i && (other = wg_iface(
 					    &hosts[k], jstr(p, "public-key"),
 					    NULL)) != NULL)
-						peer = server_index(
+						peer = node_index(
 						    hosts[k].sid);
 				h_fmt(h, "<li class=\"%s\" data-act=\""
 				    "topo-open-wg\"", hs != 0 && now - hs <
@@ -1687,13 +1885,12 @@ wg_sessions(struct html *h)
 				h_attr(h, "data-arg", hosts[i].sid);
 				h_raw(h, "><div class=\"ifhead\"><i class=\"led\">"
 				    "</i><b>");
-				h_txt(h, app.servers[server_index(
-				    hosts[i].sid)].name);
+				h_txt(h, tn[node_index(hosts[i].sid)].label);
 				h_raw(h, "</b><span class=\"dim\">");
 				h_txt(h, jstr(o, "name"));
 				h_raw(h, " → </span><b>");
 				if (peer >= 0)
-					h_txt(h, app.servers[peer].name);
+					h_txt(h, tn[peer].label);
 				else {
 					snprintf(key, sizeof(key), "%.10s…",
 					    jstr(p, "public-key") != NULL ?
@@ -1738,7 +1935,7 @@ panel_overview(struct html *h)
 	    "</span></div></div><p class=\"dim\">Drag a host to place it, "
 	    "the map to move it, and the dot on a host's edge onto another "
 	    "host to join the two with a tunnel. Pick a host or a link for "
-	    "its details.</p></section>", app.nservers, kinds[LK_TUNNEL],
+	    "its details.</p></section>", ntn, kinds[LK_TUNNEL],
 	    kinds[LK_P2P], kinds[LK_LAN]);
 	if (kinds[LK_BGP] + kinds[LK_OSPF] + nexts > 0)
 		h_fmt(h, "<section class=\"pane\"><h4>Routing</h4><div class=\""
@@ -1750,7 +1947,7 @@ panel_overview(struct html *h)
 	/* Everything every host receives and sends, over time. */
 	memset(&sum, 0, sizeof(sum));
 	for (i = 0; i < nhosts; i++) {
-		if (server_index(hosts[i].sid) == -1)
+		if (node_index(hosts[i].sid) == -1)
 			continue;
 		for (k = 0; k < hosts[i].nr; k++) {
 			const struct ifrate *r = &hosts[i].r[k];
@@ -1784,7 +1981,7 @@ panel_overview(struct html *h)
 	}
 	n = 0;
 	for (i = 0; i < nhosts; i++) {
-		if (server_index(hosts[i].sid) == -1)
+		if (node_index(hosts[i].sid) == -1)
 			continue;
 		for (k = 0; k < hosts[i].nr; k++) {
 			if (strncmp(hosts[i].r[k].name, "lo", 2) == 0)
@@ -1817,7 +2014,7 @@ panel_overview(struct html *h)
 		h_attr(h, "data-arg", top[i].t->sid);
 		h_attr(h, "data-value", top[i].r->name);
 		h_raw(h, "><span class=\"who\">");
-		h_txt(h, app.servers[server_index(top[i].t->sid)].name);
+		h_txt(h, tn[node_index(top[i].t->sid)].label);
 		h_raw(h, " <b>");
 		h_txt(h, top[i].r->name);
 		h_raw(h, "</b></span><span class=\"amount\">");
@@ -1831,13 +2028,15 @@ panel_overview(struct html *h)
 void
 view_netmap(struct html *h)
 {
-	struct server	*s;
 	struct tlink	*l;
 	int		 i;
 
+	nodes_build();
 	places_fill();
-	if (!tp.fitted && app.nservers > 0) {
+	/* Fitted once, and again when a jail came or went as a node. */
+	if ((!tp.fitted || tp.fit_n != ntn) && ntn > 0) {
 		tp.fitted = true;
+		tp.fit_n = ntn;
 		fit();
 	}
 	links_build();
@@ -1854,10 +2053,9 @@ view_netmap(struct html *h)
 	for (i = 0; tp.sel_link[0] != '\0' && i < nlinks; i++)
 		if (strcmp(links[i].key, tp.sel_link) == 0)
 			l = &links[i];
-	if (tp.sel[0] != '\0' && (i = server_index(tp.sel)) != -1) {
-		s = &app.servers[i];
-		panel_host(h, s, thost(s->id, false));
-	} else if (l != NULL)
+	if (tp.sel[0] != '\0' && (i = node_index(tp.sel)) != -1)
+		panel_host(h, i, thost(tn[i].key, false));
+	else if (l != NULL)
 		panel_link(h, l);
 	else
 		panel_overview(h);
@@ -1900,7 +2098,7 @@ next_host(int from, const char *gw, const char *ifn)
 	if ((next = owner(path.to, NULL, 0)) != -1)
 		return (next);
 	/* Or into a tunnel, whose far end is where it comes out. */
-	if ((t = thost(app.servers[from].id, false)) == NULL)
+	if ((t = thost(tn[from].key, false)) == NULL)
 		return (-1);
 	it = NULL;
 	while ((o = ucl_object_iterate(jget(t->ifs, "interfaces"), &it,
@@ -1942,7 +2140,7 @@ trace_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (status != 200 || !jbool(o, "ok") || (data = jget(o, "data")) ==
 	    NULL) {
 		snprintf(path.error, sizeof(path.error), "%s: %s",
-		    app.servers[from].name, status == 200 && jstr(o, "error") !=
+		    tn[from].label, status == 200 && jstr(o, "error") !=
 		    NULL ? jstr(o, "error") : err != NULL ? err : "no answer");
 		path.busy = false;
 		return;
@@ -2013,7 +2211,7 @@ trace_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	for (i = 0; i < path.n; i++)
 		if (path.hops[i].from == p->to) {
 			snprintf(p->note, sizeof(p->note), "a loop: %s was "
-			    "passed already", app.servers[p->to].name);
+			    "passed already", tn[p->to].label);
 			return;
 		}
 	trace_next(p->to, NULL);
@@ -2023,7 +2221,7 @@ static void
 trace_next(int from, const char *unused)
 {
 	struct tctx	*x;
-	char		 url[200];
+	char		 url[400], to[80];
 
 	(void)unused;
 	if (owner(path.to, NULL, 0) == from) {
@@ -2042,8 +2240,8 @@ trace_next(int from, const char *unused)
 	x->gen = path.gen;
 	x->from = from;
 	path.busy = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/net/lookup?to=%s",
-	    app.servers[from].id, path.to);
+	snprintf(to, sizeof(to), "to=%s", path.to);
+	node_url(from, "lookup", to, url, sizeof(url));
 	api("GET", url, NULL, trace_cb, x);
 }
 
@@ -2058,15 +2256,15 @@ trace_start(void)
 	path.done = false;
 	path.error[0] = '\0';
 	path.gen++;
-	if (path.from[0] == '\0' && app.nservers > 0)
-		snprintf(path.from, sizeof(path.from), "%s", app.servers[0].id);
-	if ((from = server_index(path.from)) == -1) {
+	if (path.from[0] == '\0' && ntn > 0)
+		snprintf(path.from, sizeof(path.from), "%s", tn[0].key);
+	if ((from = node_index(path.from)) == -1) {
 		snprintf(path.error, sizeof(path.error), "Pick the host to "
 		    "start from");
 		return;
 	}
-	if (path.to[0] == '\0' && (to = server_index(path.to_name)) != -1 &&
-	    (a = primary_addr(thost(app.servers[to].id, false), 0)) != NULL)
+	if (path.to[0] == '\0' && (to = node_index(path.to_name)) != -1 &&
+	    (a = primary_addr(thost(tn[to].key, false), 0)) != NULL)
 		snprintf(path.to, sizeof(path.to), "%.*s", (int)strcspn(a, "%"),
 		    a);
 	if (!addr_bytes(path.to, &af, raw) || strchr(path.to, '%') != NULL) {
@@ -2076,7 +2274,7 @@ trace_start(void)
 	}
 	if (owner(path.to, NULL, 0) == from) {
 		snprintf(path.error, sizeof(path.error), "%s is an address of "
-		    "%s itself", path.to, app.servers[from].name);
+		    "%s itself", path.to, tn[from].label);
 		return;
 	}
 	trace_next(from, NULL);
@@ -2248,13 +2446,13 @@ topo_modal(struct html *h)
 
 	switch (app.modal) {
 	case MODAL_TUNNEL:
-		if ((a = server_index(tp.tun_a)) == -1 || (b = server_index(
+		if ((a = node_index(tp.tun_a)) == -1 || (b = node_index(
 		    tp.tun_b)) == -1)
 			return (false);
 		h_raw(h, "<form data-form=\"tunnel\"><h2>Join ");
-		h_txt(h, app.servers[a].name);
+		h_txt(h, tn[a].label);
 		h_raw(h, " and ");
-		h_txt(h, app.servers[b].name);
+		h_txt(h, tn[b].label);
 		h_raw(h, "</h2><p>An interface is created on each host, the "
 		    "two ends of one tunnel, with <code>ifconfig</code>. Each "
 		    "is made in safe mode: a host that cannot be reached "
@@ -2268,21 +2466,21 @@ topo_modal(struct html *h)
 		    "<option value=\"vxlan\">vxlan: Ethernet over UDP</option>"
 		    "</select></label><div class=\"two\"><label>Outer address "
 		    "of ");
-		h_txt(h, app.servers[a].name);
+		h_txt(h, tn[a].label);
 		h_raw(h, "<select name=\"local_a\">");
 		addr_options(h, thost(tp.tun_a, false), offer.oa);
 		h_raw(h, "</select></label><label>Outer address of ");
-		h_txt(h, app.servers[b].name);
+		h_txt(h, tn[b].label);
 		h_raw(h, "<select name=\"local_b\">");
 		addr_options(h, thost(tp.tun_b, false), offer.ob);
 		h_raw(h, "</select></label></div><div class=\"two\"><label>"
 		    "Inner address of ");
-		h_txt(h, app.servers[a].name);
+		h_txt(h, tn[a].label);
 		h_raw(h, "<input name=\"inner_a\" spellcheck=\"false\" "
 		    "autocomplete=\"off\"");
 		h_attr(h, "value", offer.ia);
 		h_raw(h, "></label><label>Inner address of ");
-		h_txt(h, app.servers[b].name);
+		h_txt(h, tn[b].label);
 		h_raw(h, "<input name=\"inner_b\" spellcheck=\"false\" "
 		    "autocomplete=\"off\"");
 		h_attr(h, "value", offer.ib);
@@ -2296,11 +2494,11 @@ topo_modal(struct html *h)
 		h_raw(h, keep_field);
 		return (true);
 	case MODAL_IF_CREATE:
-		if ((a = server_index(tp.create_sid)) == -1)
+		if ((a = node_index(tp.create_sid)) == -1)
 			return (false);
 		h_raw(h, "<form data-form=\"if-create\"><h2>Create an "
 		    "interface on ");
-		h_txt(h, app.servers[a].name);
+		h_txt(h, tn[a].label);
 		h_raw(h, "</h2><p>A cloned interface, with <code>ifconfig "
 		    "create</code>; what cannot be finished is destroyed "
 		    "again.</p><label>Interface<input name=\"name\" "
@@ -2432,7 +2630,7 @@ number(const ucl_object_t *f, const char *name, const char *key)
  * which only the hosts can say.
  */
 static void
-wg_create(const ucl_object_t *f, struct server *sa, struct server *sb,
+wg_create(const ucl_object_t *f, int sa, int sb,
     const char *na, const char *nb, const char *la, const char *lb,
     const char *ia, const char *ib, bool outer6, bool keep)
 {
@@ -2458,8 +2656,8 @@ wg_create(const ucl_object_t *f, struct server *sa, struct server *sb,
 	memset(p, 0, sizeof(*p));
 	pa = 51820 + atoi(na + 2);
 	pb = 51820 + atoi(nb + 2);
-	snprintf(p->a, sizeof(p->a), "%s", sa->id);
-	snprintf(p->b, sizeof(p->b), "%s", sb->id);
+	snprintf(p->a, sizeof(p->a), "%s", tn[sa].key);
+	snprintf(p->b, sizeof(p->b), "%s", tn[sb].key);
 	snprintf(p->ifa, sizeof(p->ifa), "%s", na);
 	snprintf(p->ifb, sizeof(p->ifb), "%s", nb);
 	snprintf(p->enda, sizeof(p->enda), outer6 ? "[%s]:%d" : "%s:%d", la, pa);
@@ -2474,7 +2672,7 @@ wg_create(const ucl_object_t *f, struct server *sa, struct server *sb,
 	p->since = arc_now();
 	mtu = number(f, "mtu", "mtu");
 	for (end = 0; end < 2; end++) {
-		struct server	*s = end == 0 ? sa : sb;
+		int	s = end == 0 ? sa : sb;
 		const char	*name = end == 0 ? na : nb;
 
 		qa = json_quote(end == 0 ? ia : ib);
@@ -2484,15 +2682,15 @@ wg_create(const ucl_object_t *f, struct server *sa, struct server *sb,
 			abort();
 		free(qa);
 		snprintf(title, sizeof(title), "create %s to %s", name,
-		    end == 0 ? sb->name : sa->name);
-		job_send(s, json, title, JOB_IFACE, name);
+		    end == 0 ? tn[sb].label : tn[sa].label);
+		node_send(s, json, title, name);
 		if (asprintf(&json, "{\"kind\":\"wireguard\",\"interface\":"
 		    "\"%s\",\"verb\":\"init\",\"listen_port\":%d,\"persist\":"
 		    "%s}", name, end == 0 ? pa : pb, keep ? "true" : "false") ==
 		    -1)
 			abort();
 		snprintf(title, sizeof(title), "%s: wireguard init", name);
-		job_send(s, json, title, JOB_IFACE, name);
+		node_send(s, json, title, name);
 	}
 	free(mtu);
 	p->active = true;
@@ -2500,11 +2698,30 @@ wg_create(const ucl_object_t *f, struct server *sa, struct server *sb,
 	tp.last_poll = 0;
 }
 
+/* A node's own network: a host's tab, or a jail's page. */
+static void
+node_open(int n, int kind)
+{
+
+	app.sel = tn[n].srv;
+	if (tn[n].jail[0] != '\0') {
+		app.node = NODE_JAIL;
+		app.peek = false;
+		snprintf(app.jail, sizeof(app.jail), "%s", tn[n].jail);
+	} else {
+		app.node = NODE_HOST;
+		app.tab = TAB_NETWORK;
+	}
+	app.net.kind = kind;
+	app.net.sort = -1;
+	app.net.loading = false;
+	refresh_network(&app.servers[tn[n].srv], true);
+}
+
 /* The two ends of a tunnel, as the form describes it: a job each. */
 static void
 tunnel_create(const ucl_object_t *f)
 {
-	struct server	*sa, *sb;
 	unsigned char	 ra[16], rb[16];
 	const char	*type, *ia, *ib, *la, *lb;
 	char		 na[16], nb[16], title[160], pa[80], pb[80];
@@ -2513,11 +2730,9 @@ tunnel_create(const ucl_object_t *f)
 	bool		 vx, keep;
 	int		 a, b, fa, fb;
 
-	if ((a = server_index(tp.tun_a)) == -1 || (b = server_index(
+	if ((a = node_index(tp.tun_a)) == -1 || (b = node_index(
 	    tp.tun_b)) == -1)
 		return;
-	sa = &app.servers[a];
-	sb = &app.servers[b];
 	type = jstr(f, "type") != NULL ? jstr(f, "type") : "gif";
 	if (strcmp(type, "gif") != 0 && strcmp(type, "gre") != 0 &&
 	    strcmp(type, "vxlan") != 0 && strcmp(type, "wg") != 0)
@@ -2546,12 +2761,12 @@ tunnel_create(const ucl_object_t *f)
 		return;
 	}
 	keep = jbool(f, "persist");
-	snprintf(na, sizeof(na), "%s%d", type, next_unit(thost(sa->id, false),
+	snprintf(na, sizeof(na), "%s%d", type, next_unit(thost(tn[a].key, false),
 	    type));
-	snprintf(nb, sizeof(nb), "%s%d", type, next_unit(thost(sb->id, false),
+	snprintf(nb, sizeof(nb), "%s%d", type, next_unit(thost(tn[b].key, false),
 	    type));
 	if (strcmp(type, "wg") == 0) {
-		wg_create(f, sa, sb, na, nb, la, lb, ia, ib, fa == AF_INET6,
+		wg_create(f, a, b, na, nb, la, lb, ia, ib, fa == AF_INET6,
 		    keep);
 		return;
 	}
@@ -2581,13 +2796,13 @@ tunnel_create(const ucl_object_t *f)
 		inner_a = strdup("");
 		inner_b = strdup("");
 	}
-	snprintf(title, sizeof(title), "create %s to %s", na, sb->name);
-	if_job(sa, title, na, "{\"kind\":\"if-create\",\"interface\":\"%s\","
+	snprintf(title, sizeof(title), "create %s to %s", na, tn[b].label);
+	node_job(a, title, na, "{\"kind\":\"if-create\",\"interface\":\"%s\","
 	    "\"tunnel_local\":%s,\"tunnel_remote\":%s%s%s%s,\"description\":"
 	    "\"arcana tunnel\",\"persist\":%s,\"safe\":true}", na, qla, qlb,
 	    inner_a, mtu, vni, keep ? "true" : "false");
-	snprintf(title, sizeof(title), "create %s to %s", nb, sa->name);
-	if_job(sb, title, nb, "{\"kind\":\"if-create\",\"interface\":\"%s\","
+	snprintf(title, sizeof(title), "create %s to %s", nb, tn[a].label);
+	node_job(b, title, nb, "{\"kind\":\"if-create\",\"interface\":\"%s\","
 	    "\"tunnel_local\":%s,\"tunnel_remote\":%s%s%s%s,\"description\":"
 	    "\"arcana tunnel\",\"persist\":%s,\"safe\":true}", nb, qlb, qla,
 	    inner_b, mtu, vni, keep ? "true" : "false");
@@ -2614,14 +2829,15 @@ topo_form(const char *form, const ucl_object_t *f)
 	char		 title[160], *a, *b, *c, *d, *e, *g, *i, *k;
 	int		 n;
 
+	nodes_build();
+
 	if (strcmp(form, "tunnel") == 0) {
 		tunnel_create(f);
 		return (true);
 	}
 	if (strcmp(form, "if-create") == 0) {
-		if ((n = server_index(tp.create_sid)) == -1)
+		if ((n = node_index(tp.create_sid)) == -1)
 			return (true);
-		s = &app.servers[n];
 		name = jstr(f, "name") != NULL ? jstr(f, "name") : "";
 		if (name[0] == '\0' || name[strspn(name, "abcdefghijklmnopqrstu"
 		    "vwxyz0123456789")] != '\0') {
@@ -2640,7 +2856,7 @@ topo_form(const char *form, const ucl_object_t *f)
 		k = number(f, "id", "id");
 		snprintf(title, sizeof(title), "create %s", name);
 		/* name is letters and digits: checked above. */
-		if_job(s, title, name, "{\"kind\":\"if-create\",\"interface\":"
+		node_job(n, title, name, "{\"kind\":\"if-create\",\"interface\":"
 		    "\"%s\"%s%s%s%s%s%s%s%s,\"persist\":%s,\"safe\":true}", name,
 		    a, b, c, d, e, g, i, k, jbool(f, "persist") ? "true" :
 		    "false");
@@ -2747,7 +2963,7 @@ fit(void)
 	n = 0;
 	x0 = y0 = x1 = y1 = 0;
 	for (i = 0; i < nhosts; i++) {
-		if (!hosts[i].placed || server_index(hosts[i].sid) == -1)
+		if (!hosts[i].placed || node_index(hosts[i].sid) == -1)
 			continue;
 		if (n == 0 || hosts[i].x < x0)
 			x0 = hosts[i].x;
@@ -2784,10 +3000,11 @@ topo_open(void)
 	app.rail_open = false;
 	places_fill();
 	tp.last_poll = arc_now();
-	for (i = 0; i < app.nservers; i++) {
-		topo_poll(&app.servers[i]);
-		wg_poll(&app.servers[i]);
-		bird_poll(&app.servers[i]);
+	nodes_build();
+	for (i = 0; i < ntn; i++) {
+		node_poll(i);
+		wg_poll(i);
+		bird_poll(i);
 	}
 }
 
@@ -2798,9 +3015,11 @@ topo_action(const char *act, const char *arg, const char *value)
 	static double	 grab_x, grab_y;
 	struct thost	*t;
 	struct server	*s;
-	char		 drop[64], body[400], *q;
+	char		 drop[96], body[400], *q;
 	double		 x, y, cx, cy, k;
 	int		 i, n;
+
+	nodes_build();
 
 	if (strcmp(act, "select-network") == 0) {
 		topo_open();
@@ -2859,7 +3078,7 @@ topo_action(const char *act, const char *arg, const char *value)
 		(void)drag_values(value, &x, &y, &cx, &cy, &k, drop,
 		    sizeof(drop));
 		if (drop[0] == '\0' || strcmp(drop, arg) == 0 ||
-		    server_index(drop) == -1 || server_index(arg) == -1)
+		    node_index(drop) == -1 || node_index(arg) == -1)
 			return (true);
 		if (thost(arg, false) == NULL || thost(arg, false)->ifs ==
 		    NULL || thost(drop, false) == NULL || thost(drop,
@@ -2890,14 +3109,9 @@ topo_action(const char *act, const char *arg, const char *value)
 		tp.jails = !tp.jails;
 	} else if (strcmp(act, "topo-open-wg") == 0 || strcmp(act,
 	    "topo-open-bird") == 0) {
-		if ((n = server_index(arg)) == -1)
+		if ((n = node_index(arg)) == -1)
 			return (true);
-		app.sel = n;
-		app.node = NODE_HOST;
-		app.tab = TAB_NETWORK;
-		app.net.kind = act[10] == 'w' ? NET_WIREGUARD : NET_BIRD;
-		app.net.loading = false;
-		refresh_network(&app.servers[n], true);
+		node_open(n, act[10] == 'w' ? NET_WIREGUARD : NET_BIRD);
 	} else if (strcmp(act, "topo-peers") == 0) {
 		tp.nopeers = !tp.nopeers;
 	} else if (strcmp(act, "topo-arrange") == 0) {
@@ -2919,14 +3133,9 @@ topo_action(const char *act, const char *arg, const char *value)
 		snprintf(tp.sel, sizeof(tp.sel), "%s", arg);
 		snprintf(tp.sel_if, sizeof(tp.sel_if), "%s", value);
 	} else if (strcmp(act, "topo-open-host") == 0) {
-		if ((n = server_index(arg)) == -1)
+		if ((n = node_index(arg)) == -1)
 			return (true);
-		app.sel = n;
-		app.node = NODE_HOST;
-		app.tab = TAB_NETWORK;
-		app.net.kind = NET_INTERFACES;
-		app.net.loading = false;
-		refresh_network(&app.servers[n], true);
+		node_open(n, NET_INTERFACES);
 	} else if (strcmp(act, "topo-from-here") == 0) {
 		snprintf(path.from, sizeof(path.from), "%s", arg);
 	} else if (strcmp(act, "input:topo-from") == 0) {
@@ -2946,11 +3155,11 @@ topo_action(const char *act, const char *arg, const char *value)
 		path.busy = path.done = false;
 		path.error[0] = '\0';
 	} else if (strcmp(act, "topo-if-create") == 0) {
-		s = arg[0] != '\0' ? (server_index(arg) != -1 ?
-		    &app.servers[server_index(arg)] : NULL) : cur_server();
-		if (s == NULL)
+		if (arg[0] != '\0' ? node_index(arg) == -1 : (s =
+		    cur_server()) == NULL)
 			return (true);
-		snprintf(tp.create_sid, sizeof(tp.create_sid), "%s", s->id);
+		snprintf(tp.create_sid, sizeof(tp.create_sid), "%s", arg[0] !=
+		    '\0' ? arg : s->id);
 		app.modal = MODAL_IF_CREATE;
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "topo-tunnel-destroy") == 0) {
@@ -2962,10 +3171,10 @@ topo_action(const char *act, const char *arg, const char *value)
 		snprintf(body, sizeof(body), "ifconfig %s destroy on %s%s%s%s"
 		    "%s, and they are forgotten in rc.conf. A host that the "
 		    "console reaches through the tunnel refuses.", links[i].ifa,
-		    app.servers[links[i].a].name, links[i].ifb[0] != '\0' ?
+		    tn[links[i].a].label, links[i].ifb[0] != '\0' ?
 		    ", ifconfig " : "", links[i].ifb, links[i].ifb[0] != '\0' ?
 		    " destroy on " : "", links[i].ifb[0] != '\0' ?
-		    app.servers[links[i].b].name : "");
+		    tn[links[i].b].label : "");
 		confirm("Destroy the tunnel", body, "Destroy", true, "",
 		    "do-topo-tunnel-destroy", arg, "");
 	} else if (strcmp(act, "do-topo-tunnel-destroy") == 0) {
@@ -2976,13 +3185,13 @@ topo_action(const char *act, const char *arg, const char *value)
 			return (true);
 		q = json_quote(links[i].ifa);
 		snprintf(body, sizeof(body), "destroy %s", links[i].ifa);
-		if_job(&app.servers[links[i].a], body, links[i].ifa, "{\"kind\":"
+		node_job(links[i].a, body, links[i].ifa, "{\"kind\":"
 		    "\"if-destroy\",\"interface\":%s,\"persist\":true}", q);
 		free(q);
 		if (links[i].ifb[0] != '\0') {
 			q = json_quote(links[i].ifb);
 			snprintf(body, sizeof(body), "destroy %s", links[i].ifb);
-			if_job(&app.servers[links[i].b], body, links[i].ifb,
+			node_job(links[i].b, body, links[i].ifb,
 			    "{\"kind\":\"if-destroy\",\"interface\":%s,"
 			    "\"persist\":true}", q);
 			free(q);

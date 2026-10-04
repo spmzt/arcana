@@ -233,6 +233,13 @@ works the links out.
   With nothing picked, what the whole fleet receives and sends over
   time, and its busiest interfaces. **Jails** hangs each host's running
   jails under it.
+- A **running jail with a network of its own** (vnet) is a node itself,
+  drawn with a dashed edge under its host and tied to it: it has its
+  interfaces and their traffic, its tunnels, its BGP and OSPF sessions
+  and its neighbours outside, as a host has. A tunnel is drawn from or
+  to it as with a host, a route is traced from it and through it, and
+  **Its network** opens the jail's page. All of it is done by the
+  jail's host.
 - A **tunnel is made by drawing it**: drag the dot on a host's edge
   onto another host. The console offers the outer addresses the two
   reach each other by and a free pair of inner ones, asks for the kind

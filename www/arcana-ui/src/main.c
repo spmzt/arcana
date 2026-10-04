@@ -728,6 +728,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.peek = false;
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 		close_service();
+		topo_lookup_clear();
 		/* A jail with a network of its own: its interfaces first. */
 		if (net_scope()[0] != '\0' && (s = cur_server()) != NULL) {
 			app.net.kind = NET_INTERFACES;
