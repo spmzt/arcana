@@ -2298,6 +2298,7 @@ echo "zpool \$*" >> $(pwd)/storage.log
 case "\$*" in
 "list -Hp -o name,size,alloc,free,health") printf 'tank\t14000\t5000\t9000\tONLINE\n' ;;
 "list -Hp -o name,size,allocated"*) printf 'tank\t14000\t5000\t9000\t12\t35\t1.00\tDEGRADED\n' ;;
+import) printf '   pool: spare\n     id: 1234567890\n  state: ONLINE\n action: The pool can be imported using its name or numeric identifier.\n config:\n\n\tspare       ONLINE\n\t  ada7p1    ONLINE\n' ;;
 status) cat <<EOP ;;
   pool: tank
  state: DEGRADED
@@ -2418,13 +2419,62 @@ EOS
 	atf_check -o match:'done +zpool online tank gpt/disk2' \
 	    "$JGC" -c "$SOCK" zpool online tank gpt/disk2
 	atf_check -o match:'done +zpool clear tank' "$JGC" -c "$SOCK" zpool clear tank
+	# A pool made, of devices put together as zpool has it; given more
+	# devices; a device mirrored, taken out, replaced; exported,
+	# imported, destroyed.
+	atf_check -o match:'done +zpool create -m /srv/tank -o ashift=12 tank mirror ada1p1 ada2p1 log gpt/slog' \
+	    "$JGC" -c "$SOCK" zpool create tank mirror ada1p1 ada2p1 log gpt/slog mountpoint=/srv/tank ashift=12
+	atf_check -o match:'done +zpool create -f lab ada3' \
+	    "$JGC" -c "$SOCK" zpool create -f lab ada3
+	atf_check -o match:'done +zpool add tank cache ada4p1' \
+	    "$JGC" -c "$SOCK" zpool add tank cache ada4p1
+	atf_check -o match:'done +zpool attach tank ada1p1 ada5p1' \
+	    "$JGC" -c "$SOCK" zpool attach tank ada1p1 ada5p1
+	atf_check -o match:'done +zpool detach tank ada5p1' \
+	    "$JGC" -c "$SOCK" zpool detach tank ada5p1
+	atf_check -o match:'done +zpool replace tank ada2p1 ada6p1' \
+	    "$JGC" -c "$SOCK" zpool replace tank ada2p1 ada6p1
+	atf_check -o match:'done +zpool remove tank ada4p1' \
+	    "$JGC" -c "$SOCK" zpool remove tank ada4p1
+	atf_check -o match:'done +zpool export tank' "$JGC" -c "$SOCK" zpool export tank
+	atf_check -o match:'done +zpool import -R /mnt tank' \
+	    "$JGC" -c "$SOCK" zpool import tank altroot=/mnt
+	atf_check -o match:'done +zpool destroy tank' \
+	    "$JGC" -c "$SOCK" zpool destroy tank
+	# Never by force: that unmounts what is in use.
+	atf_check -s exit:1 -e match:'not destroyed or exported by force' \
+	    -o ignore "$JGC" -c "$SOCK" zpool destroy -f tank
+	atf_check -s exit:1 -e match:'not destroyed or exported by force' \
+	    -o ignore "$JGC" -c "$SOCK" zpool export -f tank
 	: > storage.log
-	for bad in 'destroy tank' 'create tank ada1' 'scrub -s' \
-	    'offline tank ../x' 'export tank' 'add tank ada3'; do
+	for bad in 'scrub -s' 'offline tank ../x' 'create tank' \
+	    'create tank mirror' 'create tank ada1 evil=1' \
+	    'create tank ada1 mountpoint=srv' 'create tank ada1 ashift=x' \
+	    'add tank ada1 mountpoint=/x' 'add tank log' \
+	    'import tank altroot=etc' 'attach tank ada1' 'detach tank' \
+	    'replace tank' 'destroy' 'create tank ada1;reboot' 'split tank x'; do
 		atf_check -s exit:1 -o ignore -e not-empty \
 		    "$JGC" -c "$SOCK" zpool $bad
 	done
 	atf_check -o empty cat storage.log
+	# Never a pool the system lives on: any with a dataset mounted on
+	# the root or under /usr, /var, /home and the like.  (zpool here
+	# is the stand-in: nothing real is asked of a real pool.)
+	for pool in $(mount -t zfs | awk '$3 == "/" || $3 ~ "^/(usr|var|home|tmp|compat)(/|$)" { split($1, a, "/"); print a[1] }' | sort -u); do
+		atf_check -s exit:1 -e match:'where the system lives' \
+		    -o ignore "$JGC" -c "$SOCK" zpool destroy "$pool"
+		atf_check -s exit:1 -e match:'where the system lives' \
+		    -o ignore "$JGC" -c "$SOCK" zpool export "$pool"
+		atf_check -s exit:1 -e match:'where the system lives' \
+		    -o ignore "$JGC" -c "$SOCK" zfs unmount -f "$pool/x"
+		atf_check -o empty cat storage.log
+	done
+	atf_check -s exit:1 -e match:'where the system lives' -o ignore \
+	    "$JGC" -c "$SOCK" umount -f /dev
+	atf_check -o empty cat storage.log
+	# The pools that could be imported.
+	atf_check -o match:'\{"importable":\[\{"name":"spare","id":"1234567890","state":"ONLINE"\}\]\}' \
+	    "$JGC" -c "$SOCK" storage importable
 
 	# mount: what fstab describes; unmount: what is mounted, never /.
 	atf_check -o match:'done +mount -F .*/fstab /mnt/data' \
@@ -2435,7 +2485,7 @@ EOS
 	    "$JGC" -c "$SOCK" umount /
 	atf_check -s exit:1 -e match:'nothing is mounted on /mnt/data' -o ignore \
 	    "$JGC" -c "$SOCK" umount /mnt/data
-	atf_check -o match:'done +umount -f /dev' "$JGC" -c "$SOCK" umount -f /dev
+	atf_check -o match:'done +umount /dev' "$JGC" -c "$SOCK" umount /dev
 	atf_check -s exit:1 -e match:'a mount point is a whole path' -o ignore \
 	    "$JGC" -c "$SOCK" mount '/mnt/../etc'
 

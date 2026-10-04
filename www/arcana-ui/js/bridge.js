@@ -694,6 +694,13 @@ addToLibrary({
 		 * connection ahead of time, and the request went out on it
 		 * as the server gave up waiting.  Nothing was done with the
 		 * request, so it is sent again, on a connection of its own.
+		 *
+		 * A 502, 503 or 504 whose body is not the console's own
+		 * JSON came from a proxy in front of it, which could not
+		 * reach the console at that moment: while it starts again,
+		 * or is busy.  A question is asked again a few times, ever
+		 * later, before a host is said not to answer; what would
+		 * change something is not, since it may have arrived.
 		 */
 		(function send(tries) {
 			fetch(url, opts).then(function (r) {
@@ -704,6 +711,14 @@ addToLibrary({
 					return (null);
 				}
 				return (r.text().then(function (t) {
+					if (method === "GET" && r.status >= 502 &&
+					    r.status <= 504 && t.charAt(0) !==
+					    "{" && tries < 4 && !ctl.gaveUp) {
+						setTimeout(function () {
+							send(tries + 1);
+						}, 400 * (tries + 1) * (tries + 1));
+						return;
+					}
 					delete arcAborts[id];
 					Module._arc_on_http(id, r.status,
 					    arcStr(t));

@@ -3122,9 +3122,17 @@ table.datasets td:first-child, table.snapshots td:first-child { overflow-wrap: a
 .partbar i.free { background: transparent; border: 1px dashed var(--slate); }
 
 /* The map's legend: a kind of line picked is not drawn, and back. */
+/* The legend lets the map be dragged through it; its entries are picked. */
+.map-legend li[data-act] { pointer-events: auto; }
 .map-legend li { cursor: pointer; user-select: none; -webkit-user-select: none; padding: .15rem .3rem; border-radius: 4px; }
 .map-legend li:hover { background: rgba(var(--accent-rgb), .08); }
 .map-legend li.off { opacity: .4; text-decoration: line-through; }
 .map-legend .vnet::before { border-top: 2px dotted var(--dim); }
 .map-tools button { min-width: 2.2rem; min-height: 2.2rem; }
+
+/* A crowded map: a line's label only where the pointer is, or picked. */
+svg.topo.quiet .tlink .lbl, svg.topo.quiet .tlink .rate { display: none; }
+svg.topo.quiet .tlink:hover .lbl, svg.topo.quiet .tlink:hover .rate,
+svg.topo.quiet .tlink.sel .lbl, svg.topo.quiet .tlink.sel .rate { display: inline; }
+.map-legend { background: color-mix(in srgb, var(--bg) 82%, transparent); border-radius: 6px; padding: .2rem .4rem; }
 

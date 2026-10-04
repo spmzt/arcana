@@ -1925,7 +1925,7 @@ int
 api_storage(struct http_request *req)
 {
 	static const char *const kinds[] = { "disks", "pools", "datasets",
-	    "snapshots", "mounts" };
+	    "snapshots", "mounts", "importable" };
 	struct call	*c;
 	const char	*kind, *q;
 	size_t		 i;

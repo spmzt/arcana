@@ -5,11 +5,15 @@
 - Routes through netlink, with its attributes mapped to CBOR, instead of
   running route(8) and netstat(1).
 - WireGuard: preshared keys; a peer's key rotated.
-- Storage, beyond what there is: making, destroying, importing and
-  exporting a pool; replacing, attaching and adding its devices;
-  `zfs send` and `receive` between hosts; encryption keys; a file
-  system made on a partition (newfs) and grown; swap; a disk's health
-  (SMART); a vnet jail's own datasets.
+- Storage, beyond what there is: `zfs send` and `receive` between
+  hosts; encryption keys; a file system made on a partition (newfs) and
+  grown; swap; a disk's health (SMART); a vnet jail's own datasets.
+- The console keeps no connection to an agent open: every request
+  makes one. One kept for each host, and a host switched from TCP to
+  SCTP from the console.
+- Views that change by themselves (connections, sockets) updated as
+  they change, not when asked.
+- A tab that shows the API (docs/openapi.yaml), and one for sysctl.
 - The mesh: agents joined by SCTP associations, each to at least a
   configured number of others (2 unless set), so that the console
   reaches an agent it has lost through one it still has. SCTP only,
@@ -76,11 +80,6 @@ Written and tested with stand-ins, never run for real:
   configuration written in a jail, WireGuard in a jail, safe mode in a
   jail, and the map with a real jail as a node (the browser test tells
   the page that a jail runs).
-- Storage changed for real: zfs(8), zpool(8), gpart(8), mount(8),
-  umount(8) and camcontrol(8) are stand-ins in the tests, which check
-  the words each is given. What is read is real: the disks from GEOM
-  on the machine this was written on, and the pools, datasets and
-  mounts of real hosts.
 - Loading and unloading a kernel module for real: reading the kernel
   is real, kldload(8) and kldunload(8) are stand-ins in the tests.
 - BIRD's safe mode and what is done when BIRD stops answering, against
@@ -114,6 +113,24 @@ What was once in the list above, and when it was run:
   and destroyed with the real ifconfig(8), and kept in and taken out of
   rc.conf with the real sysrc(8), in a vnet jail (2026-10-04): what was
   kept made keeping it again refused, and what was forgotten did not.
+
+- Storage (2026-10-04, in a lab on the machine this is written on,
+  with memory disks and a pool of its own): gpart creating a table,
+  adding, labelling, resizing and deleting partitions; zfs creating
+  datasets and a volume, setting properties, snapshots, a rollback
+  that brought a file back, clone, promote, rename, mount, unmount; a
+  pool created as a mirror, a device attached, detached, replaced, a
+  cache added and removed, scrub, trim, clear, export, import with the
+  list of what can be imported; a UFS file system mounted by an fstab
+  written through the agent. What zfs and zpool refuse comes through
+  as they say it.
+  That lab is also where a guard was found to be too weak: it knew the
+  pool of the root file system only, and a test asked for another pool
+  of the same machine, one with `/home` on it, to be destroyed and
+  exported by force. Neither happened, but zpool unmounted what it
+  could before it refused. Since then no pool with a dataset mounted
+  where the system lives is destroyed, exported or force-unmounted
+  from here, and none by force.
 
 ## Known limits
 

@@ -32,7 +32,10 @@ TESTDIRS+=	www/arcana-console/tests
 .endif
 
 # A failed or broken test fails the target, with kyua's report on it
-# (less the environment, which can hold secrets).
+# (less the environment, which can hold secrets).  The cases of a suite
+# run side by side, CHECK_JOBS of them at once: each has a directory and
+# sockets of its own.
+CHECK_JOBS?=	8
 # "all" as a dependency would not recurse: bsd.subdir.mk only descends
 # for targets named on the command line.
 check: .PHONY
@@ -40,6 +43,7 @@ check: .PHONY
 .for _d in ${TESTDIRS}
 	@echo "===> ${_d} (check)"
 	@set -o pipefail; cd ${.OBJDIR}/${_d} && kyua \
+	    -v parallelism=${CHECK_JOBS} \
 	    -v test_suites.FreeBSD.kore=${KORE_BIN} \
 	    -v test_suites.FreeBSD.dhparam=${KORE_DHPARAM} \
 	    test -k Kyuafile | sed -n '/->/p;$$p' || { kyua report \

@@ -116,7 +116,17 @@ definitions:
         doc: |
           zpool(8).  verb and names: scrub, scrub-stop or trim and a
           pool; clear, a pool and with it a device; online or offline,
-          a pool and a device.
+          a pool and a device; create, a pool and its devices, with
+          mirror, raidz1, raidz2, raidz3, log, cache, spare or special
+          before those put together so, and mountpoint=, altroot= and
+          ashift=; add, a pool and devices in the same words; destroy
+          or export and a pool, never one with a dataset mounted where
+          the system lives (the root, /usr, /var, /home and the like),
+          and never by force;
+          import and a pool's name or number, with altroot=; attach, a
+          pool, a device of it and the one to mirror it; detach or
+          remove, a pool and a device; replace, a pool, a device and
+          with it the new one.  force is -f.
       - name: mount
         doc: |
           verb mount and a mount point fstab(5) describes, or unmount
@@ -209,6 +219,10 @@ definitions:
           net-filter names and those under it, or of all.
       - name: mounts
         doc: What is mounted, and what fstab(5) says to mount.
+      - name: importable
+        doc: |
+          The pools zpool(8) finds on the host's devices that are not
+          imported.
   - name: net-family
     type: enum
     entries:

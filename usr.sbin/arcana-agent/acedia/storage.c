@@ -10,7 +10,7 @@
  * Read: the disks and their partitions from GEOM itself (libgeom(3)),
  * with what camcontrol(8) says of each; the ZFS pools with their
  * devices from zpool(8), the datasets and the snapshots from zfs(8);
- * what is mounted from getmntinfo(3), beside what fstab(5) says should
+ * what is mounted from getfsstat(2), beside what fstab(5) says should
  * be.
  *
  * Changed, by a job: with zfs(8), zpool(8), mount(8), umount(8),
@@ -89,6 +89,75 @@ emit(struct work *w, ucl_object_t *top, struct arc_storage_rsp *rsp)
 	return (0);
 }
 
+/*
+ * What is mounted, in memory of the request's own: getmntinfo(3) keeps
+ * its answer in one place for the whole process, and requests run side
+ * by side.
+ */
+static int
+mnts(struct work *w, struct statfs **out)
+{
+	struct statfs	*buf;
+	int		 n;
+
+	*out = NULL;
+	if ((n = getfsstat(NULL, 0, MNT_NOWAIT)) <= 0)
+		return (0);
+	buf = wcalloc(w, (size_t)n + 16, sizeof(*buf));
+	n = getfsstat(buf, (long)((size_t)(n + 16) * sizeof(*buf)), MNT_NOWAIT);
+	if (n <= 0)
+		return (0);
+	*out = buf;
+	return (n);
+}
+
+/*
+ * Is the path where the system itself lives?  The root, and what is
+ * under the directories every FreeBSD has: a file system there is one
+ * the host, or who works on it, may be standing on.
+ */
+static bool
+system_path(const char *path)
+{
+	static const char *const dirs[] = { "bin", "boot", "compat", "dev",
+	    "etc", "home", "lib", "libexec", "net", "proc", "rescue", "root",
+	    "sbin", "tmp", "usr", "var" };
+	size_t	i, n;
+
+	if (path[0] != '/')
+		return (false);
+	if (path[1] == '\0')
+		return (true);
+	n = strcspn(path + 1, "/");
+	for (i = 0; i < nitems(dirs); i++)
+		if (strlen(dirs[i]) == n && strncmp(path + 1, dirs[i], n) == 0)
+			return (true);
+	return (false);
+}
+
+/*
+ * A dataset of the pool that is mounted where the system lives: its
+ * mount point, or NULL when the pool has none there.
+ */
+static const char *
+pool_system_mount(struct work *w, const char *pool)
+{
+	struct statfs	*mnt;
+	size_t		 len;
+	int		 n, i;
+
+	len = strlen(pool);
+	n = mnts(w, &mnt);
+	for (i = 0; i < n; i++)
+		if (strcmp(mnt[i].f_fstypename, "zfs") == 0 && strncmp(
+		    mnt[i].f_mntfromname, pool, len) == 0 &&
+		    (mnt[i].f_mntfromname[len] == '/' ||
+		    mnt[i].f_mntfromname[len] == '\0') && system_path(
+		    mnt[i].f_mntonname))
+			return (wstrdup(w, mnt[i].f_mntonname));
+	return (NULL);
+}
+
 static const char *
 conf(struct gconf *gc, const char *name)
 {
@@ -135,7 +204,7 @@ disks(struct work *w, struct arc_storage_rsp *rsp)
 	argv[2] = NULL;
 	if (run_exec(w, argv, &res) == 0 && res.out != NULL)
 		text = wstrdup(w, res.out);
-	nmnt = getmntinfo(&mnt, MNT_NOWAIT);
+	nmnt = mnts(w, &mnt);
 
 	part = NULL;
 	LIST_FOREACH(cls, &mesh.lg_class, lg_class)
@@ -539,8 +608,8 @@ mounts(struct work *w, struct arc_storage_rsp *rsp)
 	int		 n, i, step;
 	bool		 mounted;
 
-	step = step_begin(w, ARC_STEP_KIND_LIB, "getmntinfo(3)", NULL);
-	n = getmntinfo(&mnt, MNT_NOWAIT);
+	step = step_begin(w, ARC_STEP_KIND_LIB, "getfsstat(2)", NULL);
+	n = mnts(w, &mnt);
 	step_end(w, step, n > 0, "%d mounted", n);
 	top = ucl_object_typed_new(UCL_OBJECT);
 	arr = ucl_object_typed_new(UCL_ARRAY);
@@ -590,6 +659,8 @@ mounts(struct work *w, struct arc_storage_rsp *rsp)
 	return (emit(w, top, rsp));
 }
 
+static int	importable(struct work *, struct arc_storage_rsp *);
+
 int
 do_storage(struct work *w, uint8_t kind, const char *filter,
     struct arc_storage_rsp *rsp)
@@ -608,6 +679,8 @@ do_storage(struct work *w, uint8_t kind, const char *filter,
 		return (datasets(w, true, filter, rsp));
 	case ARC_STORAGE_KIND_MOUNTS:
 		return (mounts(w, rsp));
+	case ARC_STORAGE_KIND_IMPORTABLE:
+		return (importable(w, rsp));
 	default:
 		rsp->error = "no such kind of storage";
 		return (0);
@@ -701,7 +774,7 @@ in_fstab(const char *path)
  * same place.
  */
 static bool
-is_mounted(const char *path)
+is_mounted(struct work *w, const char *path)
 {
 	struct statfs	*mnt;
 	char		 real[MAXPATHLEN];
@@ -709,12 +782,63 @@ is_mounted(const char *path)
 
 	if (realpath(path, real) == NULL)
 		strlcpy(real, path, sizeof(real));
-	n = getmntinfo(&mnt, MNT_NOWAIT);
+	n = mnts(w, &mnt);
 	for (i = 0; i < n; i++)
 		if (strcmp(mnt[i].f_mntonname, path) == 0 || strcmp(
 		    mnt[i].f_mntonname, real) == 0)
 			return (true);
 	return (false);
+}
+
+/* How devices are put together in a pool, in zpool(8)'s words. */
+static bool
+vdev_word(const char *s)
+{
+	static const char *const words[] = { "mirror", "raidz", "raidz1",
+	    "raidz2", "raidz3", "log", "cache", "spare", "special" };
+	size_t	i;
+
+	for (i = 0; i < nitems(words); i++)
+		if (strcmp(s, words[i]) == 0)
+			return (true);
+	return (false);
+}
+
+/*
+ * {"importable": [{"name", "id", "state", "status"}]}: the pools zpool
+ * finds on the host's devices that are not imported.
+ */
+static int
+importable(struct work *w, struct arc_storage_rsp *rsp)
+{
+	struct execres	 res;
+	ucl_object_t	*top, *arr, *o;
+	char		*argv[3], *text, *line, *p;
+
+	argv[0] = (char *)(uintptr_t)opts.zpool_bin;
+	argv[1] = (char *)(uintptr_t)"import";
+	argv[2] = NULL;
+	/* With nothing to import it says so and ends badly: none, then. */
+	(void)run_exec(w, argv, &res);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	o = NULL;
+	text = wstrdup(w, res.out != NULL ? res.out : "");
+	while ((line = strsep(&text, "\n")) != NULL) {
+		p = line + strspn(line, " ");
+		if (strncmp(p, "pool: ", 6) == 0) {
+			o = ucl_object_typed_new(UCL_OBJECT);
+			put(o, "name", p + 6);
+			ucl_array_append(arr, o);
+		} else if (o != NULL && strncmp(p, "id: ", 4) == 0)
+			put(o, "id", p + 4);
+		else if (o != NULL && strncmp(p, "state: ", 7) == 0)
+			put(o, "state", p + 7);
+		else if (o != NULL && strncmp(p, "status: ", 8) == 0)
+			put(o, "status", p + 8);
+	}
+	ucl_object_insert_key(top, arr, "importable", 0, false);
+	return (emit(w, top, rsp));
 }
 
 #define	ARG(s)	do { v[n++] = (char *)(uintptr_t)(s); } while (0)
@@ -729,9 +853,9 @@ char **
 storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	const char *const	*a;
-	const char		*verb;
+	const char		*verb, *sysmnt;
 	char			**v;
-	size_t			 na, i, n;
+	size_t			 na, i, n, devs;
 
 	*errp = NULL;
 	verb = sp->verb != NULL ? sp->verb : "";
@@ -741,7 +865,7 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		*errp = "too many words";
 		return (NULL);
 	}
-	v = wcalloc(w, na + 12, sizeof(*v));
+	v = wcalloc(w, 2 * na + 12, sizeof(*v));
 	n = 0;
 	switch (sp->kind) {
 	case ARC_JOB_KIND_ZFS:
@@ -812,6 +936,18 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		    1) {
 			if (!dataset_ok(a[0]))
 				goto name;
+			/* By force only what the system does not live on. */
+			if (sp->force && verb[0] == 'u') {
+				if ((sysmnt = pool_system_mount(w, wstrndup(w,
+				    a[0], strcspn(a[0], "/")))) != NULL) {
+					*errp = wfmt(w, "its pool has a "
+					    "dataset mounted on %s, where the "
+					    "system lives: nothing of it is "
+					    "unmounted by force from here",
+					    sysmnt);
+					return (NULL);
+				}
+			}
 			ARG(verb);
 			if (sp->force && verb[0] == 'u')
 				ARG("-f");
@@ -838,7 +974,108 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		ARG(opts.zpool_bin);
 		if (na < 1 || !word_ok(a[0], "_.:-", 255))
 			goto name;
-		if ((strcmp(verb, "scrub") == 0 || strcmp(verb, "trim") ==
+		if (strcmp(verb, "create") == 0 || strcmp(verb, "add") == 0) {
+			/*
+			 * A pool, then how its devices are put together and
+			 * the devices: mirror, raidz and the like among
+			 * them, as zpool takes them; for create, also
+			 * mountpoint=, altroot= and ashift=.
+			 */
+			ARG(verb);
+			if (sp->force)
+				ARG("-f");
+			devs = 0;
+			for (i = 1; i < na; i++) {
+				if (verb[0] != 'c' || strchr(a[i], '=') == NULL)
+					continue;
+				if (strncmp(a[i], "mountpoint=/", 12) == 0 &&
+				    word_ok(a[i] + 12, "_.:/@+-", MAXPATHLEN) &&
+				    strstr(a[i], "/..") == NULL) {
+					ARG("-m");
+					ARG(a[i] + 11);
+				} else if (strncmp(a[i], "altroot=/", 9) == 0 &&
+				    word_ok(a[i] + 9, "_.:/@+-", MAXPATHLEN) &&
+				    strstr(a[i], "/..") == NULL) {
+					ARG("-R");
+					ARG(a[i] + 8);
+				} else if (strncmp(a[i], "ashift=", 7) == 0 &&
+				    a[i][7] != '\0' && strlen(a[i]) <= 9 &&
+				    a[i][7 + strspn(a[i] + 7, "0123456789")] ==
+				    '\0') {
+					ARG("-o");
+					ARG(a[i]);
+				} else
+					goto pool;
+			}
+			ARG(a[0]);
+			for (i = 1; i < na; i++) {
+				if (strchr(a[i], '=') != NULL) {
+					if (verb[0] != 'c')
+						goto pool;
+					continue;
+				}
+				if (!vdev_word(a[i]) && (!word_ok(a[i],
+				    "_.:/-", 255) || strstr(a[i], "..") !=
+				    NULL))
+					goto pool;
+				if (!vdev_word(a[i]))
+					devs++;
+				ARG(a[i]);
+			}
+			if (devs == 0)
+				goto pool;
+		} else if ((strcmp(verb, "destroy") == 0 || strcmp(verb,
+		    "export") == 0) && na == 1) {
+			/*
+			 * Never a pool the system lives on: to destroy or
+			 * export it unmounts what it can, and the host, or
+			 * who is logged in to it, is left standing on
+			 * nothing.  And never by force, which unmounts what
+			 * is in use.
+			 */
+			if ((sysmnt = pool_system_mount(w, a[0])) != NULL) {
+				*errp = wfmt(w, "%s has a dataset mounted on "
+				    "%s, where the system lives: it is not "
+				    "%sed from here", a[0], sysmnt, verb[0] ==
+				    'd' ? "destroy" : "export");
+				return (NULL);
+			}
+			if (sp->force) {
+				*errp = "a pool is not destroyed or exported "
+				    "by force from here: what uses it is "
+				    "stopped first";
+				return (NULL);
+			}
+			ARG(verb);
+			ARG(a[0]);
+		} else if (strcmp(verb, "import") == 0 && na <= 2) {
+			ARG("import");
+			if (sp->force)
+				ARG("-f");
+			if (na == 2) {
+				if (strncmp(a[1], "altroot=/", 9) != 0 ||
+				    !word_ok(a[1] + 9, "_.:/@+-", MAXPATHLEN) ||
+				    strstr(a[1], "/..") != NULL)
+					goto pool;
+				ARG("-R");
+				ARG(a[1] + 8);
+			}
+			ARG(a[0]);
+		} else if (((strcmp(verb, "attach") == 0 || strcmp(verb,
+		    "replace") == 0) && na == 3) || ((strcmp(verb, "detach") ==
+		    0 || strcmp(verb, "remove") == 0 || strcmp(verb,
+		    "replace") == 0) && na == 2)) {
+			for (i = 1; i < na; i++)
+				if (!word_ok(a[i], "_.:/-", 255) || strstr(a[i],
+				    "..") != NULL)
+					goto name;
+			ARG(verb);
+			if (sp->force && verb[0] != 'd' && verb[2] != 'm')
+				ARG("-f");
+			ARG(a[0]);
+			for (i = 1; i < na; i++)
+				ARG(a[i]);
+		} else if ((strcmp(verb, "scrub") == 0 || strcmp(verb, "trim") ==
 		    0) && na == 1) {
 			ARG(verb);
 			ARG(a[0]);
@@ -892,8 +1129,14 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 				*errp = "the root is not unmounted";
 				return (NULL);
 			}
-			if (!is_mounted(a[0])) {
+			if (!is_mounted(w, a[0])) {
 				*errp = wfmt(w, "nothing is mounted on %s",
+				    a[0]);
+				return (NULL);
+			}
+			if (sp->force && system_path(a[0])) {
+				*errp = wfmt(w, "%s is where the system lives: "
+				    "it is not unmounted by force from here",
 				    a[0]);
 				return (NULL);
 			}
@@ -1014,6 +1257,12 @@ type:
 	return (NULL);
 label:
 	*errp = "a label is letters, digits and _ . -";
+	return (NULL);
+pool:
+	*errp = "a pool is made of devices, with mirror, raidz1, raidz2, "
+	    "raidz3, log, cache, spare or special before those that are put "
+	    "together so; and for a new one mountpoint=/path, altroot=/path "
+	    "and ashift=number";
 	return (NULL);
 }
 

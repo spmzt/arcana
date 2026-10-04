@@ -1705,6 +1705,13 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("mirror-0", jstr(&r, "data.pools.0.vdevs.1.name"));
 	ATF_CHECK_STREQ("OFFLINE", jstr(&r, "data.pools.0.vdevs.3.state"));
 	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/storage/importable",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("spare", jstr(&r, "data.importable.0.name"));
+	ATF_CHECK_STREQ("1234567890", jstr(&r, "data.importable.0.id"));
+	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/storage/datasets",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);

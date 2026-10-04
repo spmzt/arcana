@@ -22,6 +22,7 @@
 #include <openssl/evp.h>
 
 #include <atf-c.h>
+#include <math.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -173,6 +174,61 @@ run(const char *script)
 
 	if ((v = js(script)) != NULL)
 		ucl_object_unref(v);
+}
+
+static double
+js_num(const char *expr)
+{
+	ucl_object_t	*v;
+	char		 script[2048];
+	double		 d;
+
+	snprintf(script, sizeof(script), "return (%s);", expr);
+	v = js(script);
+	d = v != NULL ? ucl_object_todouble(v) : 0;
+	if (v != NULL)
+		ucl_object_unref(v);
+	return (d);
+}
+
+/*
+ * A mouse, as a hand moves one: the browser decides what is under it,
+ * which a click() from a script does not ask.  what is pointerMove,
+ * pointerDown or pointerUp.
+ */
+static void
+mouse(const char *what, double x, double y)
+{
+	char	body[512];
+
+	if (strcmp(what, "pointerMove") == 0)
+		snprintf(body, sizeof(body), "{\"actions\":[{\"type\":\"pointer\","
+		    "\"id\":\"mouse\",\"parameters\":{\"pointerType\":\"mouse\"},"
+		    "\"actions\":[{\"type\":\"pointerMove\",\"duration\":60,"
+		    "\"x\":%d,\"y\":%d}]}]}", (int)x, (int)y);
+	else
+		snprintf(body, sizeof(body), "{\"actions\":[{\"type\":\"pointer\","
+		    "\"id\":\"mouse\",\"parameters\":{\"pointerType\":\"mouse\"},"
+		    "\"actions\":[{\"type\":\"%s\",\"button\":0}]}]}", what);
+	ucl_object_unref(wd("POST", "/session/actions", body));
+}
+
+/* A click where the thing is, if the browser lets it be reached. */
+static void
+click_at(const char *selector)
+{
+	char	expr[600];
+	double	x, y;
+
+	snprintf(expr, sizeof(expr), "(r => r.x + r.width / 2)(document."
+	    "querySelector('%s').getBoundingClientRect())", selector);
+	x = js_num(expr);
+	snprintf(expr, sizeof(expr), "(r => r.y + r.height / 2)(document."
+	    "querySelector('%s').getBoundingClientRect())", selector);
+	y = js_num(expr);
+	mouse("pointerMove", x, y);
+	mouse("pointerDown", 0, 0);
+	mouse("pointerUp", 0, 0);
 }
 
 static void
@@ -1258,6 +1314,55 @@ ATF_TC_BODY(pwa, tc)
 	    "t.textContent.includes('zpool scrub tank: done'))", 20);
 	ATF_CHECK(system("grep -q '^zpool scrub tank$' storage.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/* A pool made of two devices that mirror each other; one found
+	 * on the host's devices imported. */
+	run("document.querySelector('button[data-act=st-pool-new]').click()");
+	wait_js("document.querySelector('form[data-form=st-pool-new] select"
+	    "[name=layout]')", 5);
+	run("const f = document.querySelector('form[data-form=st-pool-new]'); "
+	    "f.name.value = 'lab'; f.layout.value = 'mirror'; f.devices.value "
+	    "= 'ada8p1 ada9p1'; f.mountpoint.value = '/srv/lab'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('zpool create lab mirror ada8p1 ada9p1 "
+	    "mountpoint=/srv/lab: done'))", 20);
+	ATF_CHECK(system("grep -q '^zpool create -m /srv/lab lab mirror ada8p1 "
+	    "ada9p1$' storage.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelector('button[data-act=st-pool-import]')", 20);
+	run("document.querySelector('button[data-act=st-pool-import]')."
+	    "click()");
+	wait_js("document.querySelector('.modal li[data-act=st-import]"
+	    "[data-arg=spare]')", 10);
+	shot("7j-storage-import");
+	run("document.querySelector('.modal li[data-act=st-import]').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('zpool import spare: done'))", 20);
+	run("document.querySelector('.dock > header').click()");
+	/* A device replaced, by the one named. */
+	wait_js("document.querySelector('table.vdevs button[data-act=st-vdev]"
+	    "[data-arg=replace]')", 20);
+	run("[...document.querySelectorAll('table.vdevs button[data-act="
+	    "st-vdev][data-arg=replace]')].find(b => b.dataset.value === "
+	    "'tank ada2p1').click()");
+	wait_js("document.querySelector('form[data-form=st-vdev-replace] input"
+	    "[name=device]')", 5);
+	run("const f = document.querySelector('form[data-form=st-vdev-replace]"
+	    "'); f.device.value = 'ada6p1'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('zpool replace tank ada2p1 ada6p1: done'))",
+	    20);
+	ATF_CHECK(system("grep -q '^zpool replace tank ada2p1 ada6p1$' "
+	    "storage.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelector('button[data-act=st-kind][data-arg="
+	    "datasets]')", 20);
 	run("document.querySelector('button[data-act=st-kind][data-arg="
 	    "datasets]').click()");
 	wait_js("document.querySelector('table.datasets tr[data-ds=\"tank/data"
@@ -1424,17 +1529,46 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.map-panel .facts')", 10);
 	shot("8-network");
 	/* The legend takes a kind of line out of the map, and puts it back. */
-	run("window.kind = ['tunnel', 'p2p', 'lan', 'bgp', 'ospf'].find(k => "
-	    "document.querySelector('svg.topo .tlink.' + k)); document."
-	    "querySelector('.map-legend li[data-arg=' + window.kind + ']')"
-	    ".click()");
-	wait_js("!document.querySelector('svg.topo .tlink.' + window.kind) && "
-	    "document.querySelector('.map-legend li.off[data-arg=' + "
-	    "window.kind + ']')", 5);
-	run("document.querySelector('.map-legend li[data-arg=' + window.kind + "
-	    "']').click()");
-	wait_js("document.querySelector('svg.topo .tlink.' + window.kind) && "
+	/* Picked with the mouse itself: it has to be reached by one. */
+	ATF_REQUIRE(js_true("document.querySelector('svg.topo .tlink.lan')"));
+	click_at(".map-legend li[data-arg=lan]");
+	wait_js("!document.querySelector('svg.topo .tlink.lan') && "
+	    "document.querySelector('.map-legend li.off[data-arg=lan]')", 5);
+	click_at(".map-legend li[data-arg=lan]");
+	wait_js("document.querySelector('svg.topo .tlink.lan') && "
 	    "!document.querySelector('.map-legend li.off')", 5);
+	/*
+	 * A host dragged by the mouse stays under it, all the way, and
+	 * while the map reads the hosts again: taken by its middle, its
+	 * middle is where the pointer is after every move.
+	 */
+	{
+		double	x0, y0, x, y, cx, cy;
+		int	step;
+
+		x0 = js_num("(r => r.x + r.width / 2)(document.querySelector("
+		    "'svg.topo .tnode .box').getBoundingClientRect())");
+		y0 = js_num("(r => r.y + r.height / 2)(document.querySelector("
+		    "'svg.topo .tnode .box').getBoundingClientRect())");
+		mouse("pointerMove", x0, y0);
+		mouse("pointerDown", 0, 0);
+		for (step = 1; step <= 16; step++) {
+			x = x0 + 9 * step * (step % 4 < 2 ? 1 : 0.6);
+			y = y0 + 6 * step;
+			mouse("pointerMove", x, y);
+			usleep(450000);
+			cx = js_num("(r => r.x + r.width / 2)(document."
+			    "querySelector('svg.topo .tnode .box')."
+			    "getBoundingClientRect())");
+			cy = js_num("(r => r.y + r.height / 2)(document."
+			    "querySelector('svg.topo .tnode .box')."
+			    "getBoundingClientRect())");
+			ATF_CHECK_MSG(fabs(cx - x) < 6 && fabs(cy - y) < 6,
+			    "step %d: the host is at %.0f,%.0f and the "
+			    "pointer at %.0f,%.0f", step, cx, cy, x, y);
+		}
+		mouse("pointerUp", 0, 0);
+	}
 	/* Two fingers parting on the map bring it closer. */
 	run("window.vb = document.querySelector('svg.topo').getAttribute("
 	    "'viewBox'); const s = document.querySelector('svg.topo'), r = "

@@ -80,7 +80,20 @@ The console is laid out as a tree and tabs.
     its health, what `zpool status` says of it and of its last scrub,
     and its devices as they are nested, with their error counts. A
     scrub is started and stopped, the pool trimmed, its errors cleared,
-    a device taken offline and brought online.
+    a device taken offline and brought online, replaced by another,
+    mirrored by another, detached from its mirror. **+ pool** makes a
+    pool of the devices named, each by itself, as a mirror or as
+    raidz1, raidz2 or raidz3, with where it is mounted; **+ devices**
+    gives a pool more, as data or as a log, a cache, spares or a
+    special device; **Import** lists the pools zpool finds on the
+    host's devices that are not imported, to be picked; a pool is
+    exported, and destroyed once its name is typed.
+    A pool with a dataset mounted where the system lives (the root,
+    or under `/usr`, `/var`, `/home`, `/tmp` and the like) is never
+    destroyed or exported from here, and nothing of it is unmounted
+    by force: to do so unmounts what it can, and the host, or who is
+    logged in to it, is left standing on nothing. No pool is destroyed
+    or exported by force at all: what uses it is stopped first.
     **Datasets**: the file systems and volumes as a tree, with what
     each uses, has available and refers to, its compression ratio and
     where it is mounted. **+ dataset** makes one, a volume when given a
@@ -113,9 +126,8 @@ The console is laid out as a tree and tabs.
     a program sees it: no word is ever an option, `-r` and `-f` are the
     job's own flags, and only the verbs named here exist. Nothing in
     storage is done in safe mode, since the host cannot take it back.
-    Making, destroying, importing and exporting a pool, replacing or
-    adding its devices, sending and receiving, encryption keys and
-    making a file system on a partition are not done from here. From
+    Sending and receiving, encryption keys and making a file system
+    on a partition are not done from here. From
     a shell: `arcanactl storage disks | pools | datasets | snapshots
     [dataset] | mounts`, `arcanactl zfs …`, `zpool …`, `gpart …`,
     `mount path`, `umount [-f] path`, `cam rescan`, `fstab [-w file]`.

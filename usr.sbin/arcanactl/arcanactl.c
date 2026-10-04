@@ -144,7 +144,7 @@ usage(void)
 	    "        [table name] [all]\n"
 	    "    stats\n"
 	    "    kmod [load | unload module]\n"
-	    "    storage disks | pools | datasets | mounts\n"
+	    "    storage disks | pools | datasets | mounts | importable\n"
 	    "    storage snapshots [dataset]\n"
 	    "    zfs snapshot | destroy | rollback [-r] name\n"
 	    "    zfs create dataset [property=value ...]\n"
@@ -156,6 +156,14 @@ usage(void)
 	    "    zpool scrub | scrub-stop | trim pool\n"
 	    "    zpool clear pool [device]\n"
 	    "    zpool online | offline pool device\n"
+	    "    zpool create [-f] pool [mirror | raidz1 ...] device ... "
+	    "[mountpoint=path]\n"
+	    "    zpool add [-f] pool [mirror | log | cache ...] device ...\n"
+	    "    zpool destroy | export [-f] pool\n"
+	    "    zpool import [-f] pool [altroot=path]\n"
+	    "    zpool attach pool device new-device\n"
+	    "    zpool detach | remove pool device\n"
+	    "    zpool replace pool device [new-device]\n"
 	    "    mount path\n"
 	    "    umount [-f] path\n"
 	    "    gpart create disk gpt | mbr | bsd\n"
@@ -1418,7 +1426,7 @@ static int
 cmd_storage(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "disks", "pools", "datasets",
-	    "snapshots", "mounts" };
+	    "snapshots", "mounts", "importable" };
 	struct arc_storage_req	 req;
 	struct arc_storage_rsp	*rsp;
 	size_t			 i;

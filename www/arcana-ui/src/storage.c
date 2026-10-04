@@ -23,7 +23,8 @@
 enum { SK_POOLS, SK_DATASETS, SK_SNAPSHOTS, SK_DISKS, SK_MOUNTS, SK_N };
 enum {
 	SM_NONE, SM_SNAPSHOT, SM_DATASET, SM_PROPS, SM_CLONE, SM_PART_ADD,
-	SM_PART_LABEL, SM_PART_RESIZE, SM_SCHEME, SM_FSTAB,
+	SM_PART_LABEL, SM_PART_RESIZE, SM_SCHEME, SM_FSTAB, SM_POOL_NEW,
+	SM_POOL_ADD, SM_POOL_IMPORT, SM_VDEV_REPLACE, SM_VDEV_ATTACH,
 };
 
 static const char *const kind_arg[SK_N] = { "pools", "datasets", "snapshots",
@@ -43,6 +44,9 @@ static struct {
 	int		 modal;
 	char		 target[256];	/* what the box is about */
 	char		 part[8];	/* a partition's index */
+	char		 dev[256];	/* a pool's device */
+	ucl_object_t	*importable;	/* pools that could be imported */
+	bool		 importing;
 	char		*fstab;		/* its text, as last read */
 	char		 fstab_sha[65];
 	char		*draft;		/* typed, kept over a refusal */
@@ -172,6 +176,51 @@ sjob(struct server *s, const char *kind, const char *verb, const char *flags,
 	    JOB_STORAGE, target);
 }
 
+/* The same, with the words in an array. */
+static void
+sjobv(struct server *s, const char *kind, const char *verb, const char *flags,
+    const char *target, int n, const char **v)
+{
+	struct html	 b;
+	char		*q, title[300];
+	int		 i;
+
+	memset(&b, 0, sizeof(b));
+	h_fmt(&b, "{\"kind\":\"%s\",\"verb\":\"%s\"%s,\"args\":[", kind, verb,
+	    flags);
+	snprintf(title, sizeof(title), "%s %s", kind, verb);
+	for (i = 0; i < n; i++) {
+		q = json_quote(v[i]);
+		h_fmt(&b, "%s", i > 0 ? "," : "");
+		h_raw(&b, q);
+		free(q);
+		if (strlen(title) + strlen(v[i]) + 2 < sizeof(title)) {
+			strcat(title, " ");
+			strcat(title, v[i]);
+		}
+	}
+	h_raw(&b, "]}");
+	job_send_host(s, b.s, title, JOB_STORAGE, target);
+}
+
+/* Words separated by blanks or line ends, into v; how many, or -1. */
+static int
+words(char *text, const char **v, int max)
+{
+	char	*w;
+	int	 n;
+
+	n = 0;
+	while ((w = strsep(&text, " \t\r\n,")) != NULL) {
+		if (*w == '\0')
+			continue;
+		if (n == max || *w == '-')
+			return (-1);
+		v[n++] = w;
+	}
+	return (n);
+}
+
 static bool
 name_ok(const char *s, const char *more)
 {
@@ -236,6 +285,16 @@ view_pools(struct html *h)
 				h_fmt(h, ">%s</button>", ts[i]);
 			}
 		}
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "st-pool-add\"");
+		h_attr(h, "data-arg", name);
+		h_raw(h, ">+ devices</button><button class=\"ghost small\" "
+		    "data-act=\"st-pool-export\"");
+		h_attr(h, "data-arg", name);
+		h_raw(h, ">Export</button><button class=\"icon\" data-act=\""
+		    "st-pool-destroy\" title=\"Destroy the pool\"");
+		h_attr(h, "data-arg", name);
+		h_raw(h, ">×</button>");
 		h_raw(h, "</span></h4><div class=\"poolbar\">");
 		bar(h, jint(p, "alloc", 0), jint(p, "size", 0));
 		size(a, sizeof(a), jint(p, "alloc", 0));
@@ -304,6 +363,21 @@ view_pools(struct html *h)
 				h_attr(h, "data-value", both);
 				h_fmt(h, ">%s</button>", strcmp(st,
 				    "OFFLINE") == 0 ? "Online" : "Offline");
+				{
+					static const char *const as[] = {
+					    "replace", "attach", "detach" };
+					static const char *const ts[] = {
+					    "Replace", "Mirror", "Detach" };
+					int k;
+
+					for (k = 0; k < 3; k++) {
+						h_fmt(h, "<button class=\"ghost "
+						    "small\" data-act=\"st-vdev\" "
+						    "data-arg=\"%s\"", as[k]);
+						h_attr(h, "data-value", both);
+						h_fmt(h, ">%s</button>", ts[k]);
+					}
+				}
 			}
 			h_raw(h, "</td></tr>");
 			i++;
@@ -747,6 +821,12 @@ view_storage(struct html *h, struct server *s)
 	if (k == SK_DATASETS)
 		h_raw(h, "<button class=\"ghost small\" data-act=\""
 		    "st-dataset\">+ dataset</button>");
+	if (k == SK_POOLS)
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "st-pool-new\">+ pool</button><button class=\"ghost "
+		    "small\" data-act=\"st-pool-import\" title=\"Pools on "
+		    "this host's devices that are not imported\">Import"
+		    "</button>");
 	if (k == SK_DISKS)
 		h_raw(h, "<button class=\"ghost small\" data-act=\"st-rescan\""
 		    " title=\"camcontrol rescan all: look for disks that "
@@ -820,6 +900,25 @@ fstab_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		if (cur_server() != NULL)
 			refresh_storage(cur_server(), true);
 	}
+}
+
+static void
+import_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	sg.importing = false;
+	if (sg.importable != NULL)
+		ucl_object_unref(sg.importable);
+	sg.importable = NULL;
+	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "%s",
+		    status == 200 && jstr(o, "error") != NULL ? jstr(o,
+		    "error") : err != NULL ? err : "no answer");
+		return;
+	}
+	sg.importable = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
+	    "data"));
 }
 
 /* The boxes of storage: true when the one open is one of them. */
@@ -929,6 +1028,100 @@ storage_modal(struct html *h)
 		    "</select></label><p class=\"dim\">gpart refuses a disk "
 		    "that has one already.</p>");
 		return (true);
+	case SM_POOL_NEW:
+	case SM_POOL_ADD:
+		if (sg.modal == SM_POOL_NEW)
+			h_raw(h, "<form data-form=\"st-pool-new\"><h2>Create a "
+			    "pool</h2><label>Name<input name=\"name\" "
+			    "spellcheck=\"false\" autocomplete=\"off\" "
+			    "autofocus></label>");
+		else {
+			h_raw(h, "<form data-form=\"st-pool-add\"><h2>Add "
+			    "devices to ");
+			h_txt(h, sg.target);
+			h_raw(h, "</h2>");
+		}
+		h_raw(h, "<label>The devices are<select name=\"layout\">"
+		    "<option value=\"\">each by itself (a stripe)</option>"
+		    "<option value=\"mirror\">a mirror of each other</option>"
+		    "<option value=\"raidz1\">raidz1: one may fail</option>"
+		    "<option value=\"raidz2\">raidz2: two may fail</option>"
+		    "<option value=\"raidz3\">raidz3: three may fail</option>");
+		if (sg.modal == SM_POOL_ADD)
+			h_raw(h, "<option value=\"log\">a log device</option>"
+			    "<option value=\"cache\">a cache device</option>"
+			    "<option value=\"spare\">spares</option><option "
+			    "value=\"special\">a special device</option>");
+		h_raw(h, "</select></label><label>Devices<textarea name=\""
+		    "devices\" class=\"code\" rows=\"3\" spellcheck=\"false\" "
+		    "placeholder=\"ada1p1 ada2p1, or gpt/disk1 gpt/disk2\">"
+		    "</textarea><small>Partitions or whole disks, as the "
+		    "<b>Disks</b> view names them, or their labels. What is "
+		    "on them is lost.</small></label>");
+		if (sg.modal == SM_POOL_NEW)
+			h_raw(h, "<div class=\"two\"><label>Mounted on<input "
+			    "name=\"mountpoint\" spellcheck=\"false\" "
+			    "autocomplete=\"off\" placeholder=\"/ and its name"
+			    "\"></label><label>Sector size, as a power of two"
+			    "<input name=\"ashift\" inputmode=\"numeric\" "
+			    "autocomplete=\"off\" placeholder=\"as the disks "
+			    "say; 12 for 4 KiB\"></label></div>");
+		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"force\"><span>Though zpool finds something on "
+		    "them already, or they differ (-f)</span></label>");
+		if (sg.modal == SM_POOL_ADD)
+			h_raw(h, "<p class=\"dim\">Devices added to a pool as "
+			    "data cannot always be taken out again.</p>");
+		return (true);
+	case SM_POOL_IMPORT:
+		h_raw(h, "<form data-form=\"st-pool-import\"><h2>Import a pool"
+		    "</h2>");
+		if (sg.importing)
+			h_raw(h, "<div class=\"empty small\"><div class=\""
+			    "loader\"></div></div>");
+		else if (ucl_array_size(jget(sg.importable, "importable")) ==
+		    0)
+			h_raw(h, "<p class=\"dim\">zpool finds no pool on this "
+			    "host's devices that is not imported.</p>");
+		else {
+			const ucl_object_t	*o;
+			ucl_object_iter_t	 it;
+
+			h_raw(h, "<ul class=\"blocks\">");
+			it = NULL;
+			while ((o = ucl_object_iterate(jget(sg.importable,
+			    "importable"), &it, true)) != NULL) {
+				h_raw(h, "<li data-act=\"st-import\"");
+				h_attr(h, "data-arg", jstr(o, "name"));
+				h_raw(h, "><b>");
+				h_txt(h, jstr(o, "name"));
+				h_raw(h, "</b><span class=\"dim\">");
+				h_txt(h, jstr(o, "state"));
+				h_raw(h, " · ");
+				h_txt(h, jstr(o, "id"));
+				h_raw(h, "</span></li>");
+			}
+			h_raw(h, "</ul><p class=\"dim\">Pick one to import "
+			    "it.</p>");
+		}
+		return (true);
+	case SM_VDEV_REPLACE:
+	case SM_VDEV_ATTACH:
+		h_fmt(h, "<form data-form=\"%s\"><h2>%s ", sg.modal ==
+		    SM_VDEV_REPLACE ? "st-vdev-replace" : "st-vdev-attach",
+		    sg.modal == SM_VDEV_REPLACE ? "Replace" : "Mirror");
+		h_txt(h, sg.dev);
+		h_raw(h, " of ");
+		h_txt(h, sg.target);
+		h_fmt(h, "</h2><label>%s<input name=\"device\" spellcheck=\""
+		    "false\" autocomplete=\"off\" placeholder=\"ada3p1, or "
+		    "gpt/disk3\" autofocus><small>%s</small></label>",
+		    sg.modal == SM_VDEV_REPLACE ? "With the device" :
+		    "The device to mirror it", sg.modal == SM_VDEV_REPLACE ?
+		    "Empty when the new disk took the old one's place and "
+		    "name. The pool copies what was there onto it." :
+		    "It becomes a copy of this one; what is on it is lost.");
+		return (true);
 	case SM_FSTAB:
 		h_raw(h, "<form data-form=\"st-fstab\" class=\"wide\"><h2>fstab"
 		    "</h2><label>What is mounted when the host starts"
@@ -950,8 +1143,13 @@ void
 storage_modal_buttons(struct html *h)
 {
 
+	if (sg.modal == SM_POOL_IMPORT)
+		return;
 	h_fmt(h, "<button class=\"primary\"%s>%s</button>", sg.saving ?
 	    " disabled" : "", sg.modal == SM_SNAPSHOT ? "Snapshot" :
+	    sg.modal == SM_VDEV_REPLACE ? "Replace" : sg.modal ==
+	    SM_VDEV_ATTACH ? "Mirror" : sg.modal == SM_POOL_ADD ? "Add" :
+	    sg.modal == SM_POOL_NEW ? "Create" :
 	    sg.modal == SM_DATASET || sg.modal == SM_SCHEME ? "Create" :
 	    sg.modal == SM_CLONE ? "Clone" : sg.modal == SM_PART_ADD ? "Add" :
 	    sg.modal == SM_PART_RESIZE ? "Resize" : sg.modal == SM_FSTAB ?
@@ -1087,6 +1285,58 @@ storage_form(const char *form, const ucl_object_t *f)
 	} else if (strcmp(form, "st-scheme") == 0) {
 		sjob(s, "gpart", "create", "", sg.target, 2, sg.target,
 		    jstr(f, "scheme") != NULL ? jstr(f, "scheme") : "gpt");
+	} else if (strcmp(form, "st-pool-new") == 0 || strcmp(form,
+	    "st-pool-add") == 0) {
+		const char	*pv[24], *lay, *mp, *as;
+		char		 mpw[300], asw[32];
+		bool		 create = form[8] == 'n';
+
+		lay = jstr(f, "layout") != NULL ? jstr(f, "layout") : "";
+		text = strdup(jstr(f, "devices") != NULL ? jstr(f, "devices") :
+		    "");
+		n = 0;
+		pv[n++] = create ? name : sg.target;
+		if (lay[0] != '\0')
+			pv[n++] = lay;
+		i = words(text, pv + n, 18);
+		if ((create && !name_ok(name, "_.:-")) || i <= 0) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "%s", i <= 0 ? "Name the devices, with blanks "
+			    "between them" : "A pool's name is letters, "
+			    "digits and _ . : -");
+			free(text);
+			return (true);
+		}
+		n += i;
+		mp = jstr(f, "mountpoint") != NULL ? jstr(f, "mountpoint") : "";
+		as = jstr(f, "ashift") != NULL ? jstr(f, "ashift") : "";
+		if (create && mp[0] != '\0') {
+			snprintf(mpw, sizeof(mpw), "mountpoint=%s", mp);
+			pv[n++] = mpw;
+		}
+		if (create && as[0] != '\0') {
+			snprintf(asw, sizeof(asw), "ashift=%s", as);
+			pv[n++] = asw;
+		}
+		sjobv(s, "zpool", create ? "create" : "add", jbool(f, "force") ?
+		    ",\"force\":true" : "", pv[0], n, pv);
+		free(text);
+	} else if (strcmp(form, "st-vdev-replace") == 0 || strcmp(form,
+	    "st-vdev-attach") == 0) {
+		label = jstr(f, "device") != NULL ? jstr(f, "device") : "";
+		if (form[8] == 'a' && label[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Name the device to mirror it");
+			return (true);
+		}
+		if (label[0] != '\0')
+			sjob(s, "zpool", form[8] == 'a' ? "attach" : "replace",
+			    "", sg.target, 3, sg.target, sg.dev, label);
+		else
+			sjob(s, "zpool", "replace", "", sg.target, 2, sg.target,
+			    sg.dev);
+	} else if (strcmp(form, "st-pool-import") == 0) {
+		return (true);
 	} else if (strcmp(form, "st-fstab") == 0) {
 		char	url[96], *qt, *body;
 
@@ -1179,6 +1429,52 @@ storage_action(const char *act, const char *arg, const char *value)
 		if (strcmp(arg, "scrub") == 0 || strcmp(arg, "scrub-stop") ==
 		    0 || strcmp(arg, "trim") == 0 || strcmp(arg, "clear") == 0)
 			sjob(s, "zpool", arg, "", value, 1, value);
+	} else if (strcmp(act, "st-pool-new") == 0) {
+		box(SM_POOL_NEW, "", "");
+	} else if (strcmp(act, "st-pool-add") == 0) {
+		box(SM_POOL_ADD, arg, "");
+	} else if (strcmp(act, "st-pool-import") == 0) {
+		box(SM_POOL_IMPORT, "", "");
+		sg.importing = true;
+		snprintf(url, sizeof(url), "/api/servers/%s/storage/importable",
+		    s->id);
+		api("GET", url, NULL, import_cb, NULL);
+	} else if (strcmp(act, "st-import") == 0) {
+		sjob(s, "zpool", "import", "", arg, 1, arg);
+		app.modal = MODAL_NONE;
+	} else if (strcmp(act, "st-pool-export") == 0) {
+		snprintf(body, sizeof(body), "zpool export %s, on %s: its "
+		    "datasets are unmounted and the pool is no longer this "
+		    "host's until it is imported again, here or elsewhere. "
+		    "The host refuses for the pool it runs from, and zpool "
+		    "while something uses it.", arg, s->name);
+		confirm("Export the pool", body, "Export", true, "",
+		    "do-st-pool-export", arg, "");
+	} else if (strcmp(act, "do-st-pool-export") == 0) {
+		sjob(s, "zpool", "export", "", arg, 1, arg);
+	} else if (strcmp(act, "st-pool-destroy") == 0) {
+		snprintf(body, sizeof(body), "zpool destroy %s, on %s: the "
+		    "pool, every dataset and every snapshot in it, are gone "
+		    "for good. The host refuses for the pool it runs from.",
+		    arg, s->name);
+		confirm("Destroy the pool", body, "Destroy", true, arg,
+		    "do-st-pool-destroy", arg, "");
+	} else if (strcmp(act, "do-st-pool-destroy") == 0) {
+		sjob(s, "zpool", "destroy", "", arg, 1, arg);
+	} else if (strcmp(act, "st-vdev") == 0 && (strcmp(arg, "replace") ==
+	    0 || strcmp(arg, "attach") == 0)) {
+		box(arg[0] == 'r' ? SM_VDEV_REPLACE : SM_VDEV_ATTACH, first,
+		    "");
+		snprintf(sg.dev, sizeof(sg.dev), "%s", dev);
+	} else if (strcmp(act, "st-vdev") == 0 && strcmp(arg, "detach") == 0) {
+		snprintf(body, sizeof(body), "zpool detach %s %s, on %s: the "
+		    "device leaves its mirror, which goes on with one copy "
+		    "less. zpool refuses for a device that is no part of a "
+		    "mirror.", first, dev, s->name);
+		confirm("Detach the device", body, "Detach", true, "",
+		    "do-st-detach", first, dev);
+	} else if (strcmp(act, "do-st-detach") == 0) {
+		sjob(s, "zpool", "detach", "", arg, 2, arg, value);
 	} else if (strcmp(act, "st-vdev") == 0) {
 		if (strcmp(arg, "online") == 0)
 			sjob(s, "zpool", "online", "", first, 2, first, dev);

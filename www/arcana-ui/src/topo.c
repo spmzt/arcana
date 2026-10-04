@@ -179,6 +179,7 @@ static struct {
 	char	create_sid[80];		/* the node an interface is made on */
 	int	fit_n;			/* the nodes there were when fitted */
 	bool	touched;		/* moved, zoomed: no fitting unasked */
+	int	labels;			/* 0 as fits, 1 shown, 2 left out */
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
 	bool	hide_best, hide_alt;	/* nor the route traced */
 	double	last_poll;
@@ -1459,9 +1460,13 @@ map_nodes(struct html *h)
 		cy = m > 0 ? cy / m : 0;
 		a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ? -M_PI / 2 :
 		    atan2(t->y - cy, t->x - cx);
-		a += (e->slot - (e->of - 1) / 2.0) * 0.42;
-		ex = t->x + 185 * cos(a);
-		ey = t->y + 125 * sin(a);
+		/*
+		 * On two rings, every other one further out: side by
+		 * side on one ring they would lie on each other.
+		 */
+		a += (e->slot - (e->of - 1) / 2.0) * 0.36;
+		ex = t->x + 185 * (e->slot % 2 == 1 ? 1.5 : 1.0) * cos(a);
+		ey = t->y + 125 * (e->slot % 2 == 1 ? 1.5 : 1.0) * sin(a);
 		h_fmt(h, "<g class=\"tpeer %s %s\" data-act=\"topo-open-bird\"",
 		    e->ospf ? "ospf" : "bgp", e->up ? "up" : "down");
 		h_attr(h, "data-arg", tn[e->host].key);
@@ -1562,6 +1567,23 @@ map_nodes(struct html *h)
 	}
 }
 
+/*
+ * The classes of the map's drawing.  With many links their labels run
+ * into each other: they are left out then, and a link shows its own
+ * when the pointer is on it or it is picked; "Labels" says otherwise.
+ */
+static const char *
+wfmt_cls(void)
+{
+	static char	cls[40];
+	bool		quiet;
+
+	quiet = tp.labels == 2 || (tp.labels == 0 && nlinks > 6);
+	snprintf(cls, sizeof(cls), "%s%s", tp.linking ? " linking" : "",
+	    quiet ? " quiet" : "");
+	return (cls);
+}
+
 static void
 map(struct html *h)
 {
@@ -1583,7 +1605,7 @@ map(struct html *h)
 	    "</pattern></defs>"
 	    "<rect class=\"bg\" x=\"%.1f\" y=\"%.1f\" width=\"%.1f\" height=\""
 	    "%.1f\" fill=\"url(#dots)\" data-drag=\"topo-pan\" data-arg=\"\"/>",
-	    tp.linking ? " linking" : "", tp.panx - w / 2, tp.pany - ht / 2, w,
+	    wfmt_cls(), tp.panx - w / 2, tp.pany - ht / 2, w,
 	    ht, tp.panx - w * 2, tp.pany - ht * 2, w * 4, ht * 4);
 	map_links(h);
 	map_path(h);
@@ -1603,6 +1625,10 @@ map(struct html *h)
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-jails\" "
 	    "title=\"Each host's running jails\">Jails</button>", tp.jails ?
 	    " on" : "");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-labels\" "
+	    "title=\"What each line is and carries, written on it\">Labels"
+	    "</button>", tp.labels == 2 || (tp.labels == 0 && nlinks > 6) ?
+	    "" : " on");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-peers\" "
 	    "title=\"BGP and OSPF neighbours that are not hosts of this "
 	    "console\">Peers</button>", tp.nopeers ? "" : " on");
@@ -3127,9 +3153,9 @@ fit(void)
 	tp.panx = (x0 + x1) / 2;
 	tp.pany = (y0 + y1) / 2;
 	/* Room around them, and more when neighbours stand beside them. */
-	zx = VIEW_W / (x1 - x0 + NODE_W + (nexts > 0 && !tp.nopeers ? 460 :
+	zx = VIEW_W / (x1 - x0 + NODE_W + (nexts > 0 && !tp.nopeers ? 640 :
 	    120));
-	zy = VIEW_H / (y1 - y0 + NODE_H + (nexts > 0 && !tp.nopeers ? 330 :
+	zy = VIEW_H / (y1 - y0 + NODE_H + (nexts > 0 && !tp.nopeers ? 460 :
 	    140));
 	tp.zoom = zx < zy ? zx : zy;
 	if (tp.zoom > 1.7)
@@ -3262,6 +3288,9 @@ topo_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "topo-zoom-out") == 0) {
 		zoom_by(0.8, tp.panx, tp.pany);
 		tp.touched = true;
+	} else if (strcmp(act, "topo-labels") == 0) {
+		tp.labels = tp.labels == 2 || (tp.labels == 0 && nlinks > 6) ?
+		    1 : 2;
 	} else if (strcmp(act, "topo-legend") == 0) {
 		static const char *const names[] = { "tunnel", "p2p", "lan",
 		    "bgp", "ospf", "vnet" };

@@ -193,8 +193,23 @@ A pool's own dataset is not destroyed.
 .It Cm zpool scrub | scrub-stop | trim Ar pool
 .It Cm zpool clear Ar pool Op Ar device
 .It Cm zpool online | offline Ar pool Ar device
+.It Cm zpool create Oo Fl f Oc Ar pool Oo Cm mirror | raidz1 | raidz2 | raidz3 Oc Ar device ... Op Cm mountpoint= Ns Ar path
+.It Cm zpool add Oo Fl f Oc Ar pool Oo Cm mirror | log | cache | spare | special Oc Ar device ...
+.It Cm zpool attach Ar pool Ar device Ar new-device
+.It Cm zpool detach | remove Ar pool Ar device
+.It Cm zpool replace Ar pool Ar device Op Ar new-device
+.It Cm zpool export | destroy Ar pool
+.It Cm zpool import Ar pool Op Cm altroot= Ns Ar path
 .Xr zpool 8 ,
 by a job.
+A pool with a dataset mounted where the system lives, the root or
+under
+.Pa /usr ,
+.Pa /var ,
+.Pa /home
+and the like, is not destroyed or exported, and no pool is by force.
+.Cm storage importable
+lists the pools that could be imported.
 .It Cm mount Ar path
 Mount what
 .Xr fstab 5

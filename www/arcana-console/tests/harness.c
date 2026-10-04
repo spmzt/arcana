@@ -438,6 +438,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf 'tank\\t14000000\\t5000000\\t9000000\\tDEGRADED\\n' ;;\n"
 	    "'list -Hp -o name,size,allocated'*) printf 'tank\\t14000000\\t"
 	    "5000000\\t9000000\\t12\\t35\\t1.00\\tDEGRADED\\n' ;;\n"
+	    "import) printf '   pool: spare\\n     id: 1234567890\\n  state: "
+	    "ONLINE\\n' ;;\n"
 	    "status) printf '  pool: tank\\n state: DEGRADED\\nstatus: One "
 	    "device was taken offline.\\n  scan: scrub repaired 0B in "
 	    "00:10:11 with 0 errors\\nconfig:\\n\\n\\tNAME        STATE     "

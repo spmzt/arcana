@@ -554,7 +554,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [disks, pools, datasets, snapshots, mounts]
+            enum: [disks, pools, datasets, snapshots, mounts, importable]
         - name: filter
           in: query
           description: For snapshots, the dataset whose they are, with
