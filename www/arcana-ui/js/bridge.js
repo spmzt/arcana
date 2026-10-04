@@ -56,14 +56,46 @@ addToLibrary({
 			return;
 		morphdom(el, "<div>" + html + "</div>", {
 			childrenOnly: true,
-			/* Keep the field being typed in; otherwise let
-			 * morphdom walk: isEqualNode() on every node costs
-			 * more than the walk, in Firefox several times. */
+			/*
+			 * Keep the field being typed in, and every field
+			 * somebody changed and the page did not: a box is
+			 * drawn again under its fields when anything in it
+			 * changes, an age that grew older say, and what
+			 * was typed and not yet sent must still be there.
+			 * A field the page itself gives another value is
+			 * the page's.  Otherwise let morphdom walk:
+			 * isEqualNode() on every node costs more than the
+			 * walk, in Firefox several times.
+			 */
 			onBeforeElUpdated: function (from, to) {
-				return (!(from === document.activeElement &&
-				    (from.tagName === "INPUT" ||
-				    from.tagName === "TEXTAREA" ||
-				    from.tagName === "SELECT")));
+				var tag = from.tagName, i, was, now;
+
+				if (tag !== "INPUT" && tag !== "TEXTAREA" &&
+				    tag !== "SELECT")
+					return (true);
+				if (from === document.activeElement)
+					return (false);
+				if (tag === "SELECT") {
+					was = now = -1;
+					for (i = 0; i < from.options.length; i++)
+						if (from.options[i].defaultSelected)
+							was = i;
+					for (i = 0; i < to.options.length; i++)
+						if (to.options[i].defaultSelected)
+							now = i;
+					return (!(from.selectedIndex !==
+					    Math.max(was, 0) && was === now &&
+					    from.options.length ===
+					    to.options.length));
+				}
+				if (from.type === "checkbox" ||
+				    from.type === "radio")
+					return (!(from.checked !==
+					    from.defaultChecked &&
+					    to.defaultChecked ===
+					    from.defaultChecked));
+				return (!(from.value !== from.defaultValue &&
+				    to.defaultValue === from.defaultValue));
 			}
 		});
 	},

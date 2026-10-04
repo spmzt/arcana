@@ -378,17 +378,42 @@ ATF_TC_BODY(pwa, tc)
 	    "Android')", 10);
 	ATF_CHECK(js_true("document.querySelector('ul.devices').textContent"
 	    ".includes('push.example.org')"));
+	/*
+	 * What is typed in a field stays there when the box is drawn
+	 * again under it, as it is when the list of devices changes or
+	 * their age does: the key's path typed first is still there when
+	 * the form is sent, and is what the console keeps.
+	 */
+	run("const f = document.querySelector('form[data-form=settings]'); "
+	    "f.agent_ssh_key.value = '/usr/local/etc/arcana/id_ed25519'; "
+	    "f.update_check.checked = !f.update_check.checked; "
+	    "window.wasChecked = f.update_check.checked;");
 	run("document.querySelector('ul.devices button[data-act=push-remove]')"
 	    ".click()");
 	wait_js("document.querySelector('ul.devices').textContent.includes("
 	    "'No device yet')", 10);
+	ATF_CHECK_MSG(js_true("document.querySelector('form[data-form="
+	    "settings]').agent_ssh_key.value === "
+	    "'/usr/local/etc/arcana/id_ed25519'"), "what was typed was lost "
+	    "when the box was drawn again");
+	ATF_CHECK(js_true("document.querySelector('form[data-form=settings]')"
+	    ".update_check.checked === window.wasChecked"));
 	shot("0a-settings");
 	run("const f = document.querySelector('form[data-form=settings]'); "
+	    "f.update_check.checked = !f.update_check.checked; "
 	    "f.agent_source.value = 'git@git.example.org:me/arcana.git'; "
 	    "f.requestSubmit();");
 	wait_js("!document.querySelector('form[data-form=settings]') && "
 	    "[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('Settings saved'))", 10);
+	ATF_CHECK(system("grep -q '/usr/local/etc/arcana/id_ed25519' "
+	    "data/settings.json") == 0);
+	/* There is no such key here: the builds below use the host's own. */
+	run("window.unset = false; fetch('/api/settings', { method: 'POST', "
+	    "headers: { 'Content-Type': 'application/json', 'X-Arcana': '1' }, "
+	    "body: JSON.stringify({ set: { agent_ssh_key: '' } }) }).then(r => "
+	    "{ window.unset = r.ok; });");
+	wait_js("window.unset", 10);
 
 	/* A desktop browser is not asked to install the console; a phone
 	 * is, with the browser's own prompt, and can say not now. */
