@@ -92,7 +92,7 @@ xdup(const char *s)
 static char *
 title_of(const struct arc_job_spec *sp)
 {
-	char	*t;
+	char	*t, *in;
 	int	 rc;
 
 	switch (sp->kind) {
@@ -163,6 +163,14 @@ title_of(const struct arc_job_spec *sp)
 	}
 	if (rc == -1)
 		err(1, "asprintf");
+	/* A change to a jail's network says whose it is. */
+	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
+	    sp->jail[0] != '\0') {
+		in = t;
+		if (asprintf(&t, "%s: %s", sp->jail, in) == -1)
+			err(1, "asprintf");
+		free(in);
+	}
 	return (t);
 }
 
@@ -336,7 +344,7 @@ undo_prepare(struct qjob *j)
 			j->undo_none = true;
 		break;
 	case ARC_JOB_KIND_IF_STATE:
-		if (if_is_up(sp->interface, &up) && up == sp->up)
+		if (if_is_up(&j->w, sp->interface, &up) && up == sp->up)
 			j->undo_none = true;
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
@@ -362,7 +370,8 @@ undo_prepare(struct qjob *j)
 			j->undo_none = true;
 		break;
 	case ARC_JOB_KIND_IF_SET:
-		if_current(sp->interface, &j->undo_mtu, descr, sizeof(descr));
+		if_current(&j->w, sp->interface, &j->undo_mtu, descr,
+		    sizeof(descr));
 		j->undo_descr = wstrdup(&j->w, descr);
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
@@ -474,7 +483,7 @@ run(struct qjob *j)
 	struct arc_pkg_upgrade_rsp	 ur;
 	const struct arc_job_spec	*sp;
 	const char			*error;
-	bool				 ok, go;
+	bool				 ok, go, inside;
 	int				 root;
 
 	sp = &j->spec;
@@ -486,11 +495,18 @@ run(struct qjob *j)
 	pthread_mutex_lock(&jobs_lock);
 	j->begun = go;
 	pthread_mutex_unlock(&jobs_lock);
-	if (go && sp->safe)
+	/* What changes a network works in the jail named, if one is. */
+	error = NULL;
+	inside = sp->kind >= ARC_JOB_KIND_IF_ADDRESS;
+	if (go && inside && scope_enter(&j->w, sp->jail, &error) != 0) {
+		ok = false;
+		go = false;
+	} else if (go && sp->safe)
 		undo_prepare(j);
 	if (!go) {
 		ok = false;
-		error = "not run: arcana-agent was stopping";
+		if (error == NULL)
+			error = "not run: arcana-agent was stopping";
 	} else switch (sp->kind) {
 	case ARC_JOB_KIND_JAIL_ACTION:
 		memset(&ar, 0, sizeof(ar));

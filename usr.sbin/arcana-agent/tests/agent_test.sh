@@ -83,6 +83,8 @@ write_rc()
 #!/bin/sh
 conf=$(pwd)/rc.conf
 echo "\$*" >> $(pwd)/sysrc.log
+# -R dir: the rc.conf of what is rooted there, a jail's.
+[ "\$1" = -R ] && { conf=\$2/etc/rc.conf; shift 2; }
 ign=no
 [ "\$1" = -i ] && { ign=yes; shift; }
 put()
@@ -241,7 +243,9 @@ start_daemon()
 	    -Y "$(pwd)/fake-keyscan" -I "$(pwd)/fake-ifconfig" \
 	    -r "$(pwd)/fake-route" -n "$(pwd)/fake-ngctl" \
 	    -k "$(pwd)/fake-wg" -o "$(pwd)/wg" -b "$(pwd)/fake-birdc" \
-	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" -w 2 \
+	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" \
+	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
+	    -H "$(pwd)/fake-helper" -w 2 \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -1296,6 +1300,179 @@ vpn_cleanup()
 	stop_daemon
 }
 
+atf_test_case vnet cleanup
+vnet_head()
+{
+	atf_set "descr" "The network of a jail that has one of its own, worked on from the host"
+}
+vnet_body()
+{
+	PEER='xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg='
+	# The jail's root, with its own rc.conf, BIRD and WireGuard files.
+	R=$(pwd)/jroot
+	mkdir -p "$R/etc" "$R$(pwd)/bird" "$R$(pwd)/wg"
+	printf 'hostname="gateway"\n' > "$R/etc/rc.conf"
+	printf 'router id 10.0.0.1;\nfilter gw_in {\n\taccept;\n}\n' > "$R$(pwd)/bird/bird.conf"
+	# jls: gateway runs with a network of its own, web shares the
+	# host's, and nothing else runs.
+	cat > fake-jls <<EOS
+#!/bin/sh
+case "\$2" in
+gateway) echo "4 new $R" ;;
+web) echo "7 inherit $(pwd)/web" ;;
+*) echo "jls: jail \"\$2\" not found" >&2; exit 1 ;;
+esac
+EOS
+	# jexec: the program, "in the jail": what it was given is logged.
+	cat > fake-jexec <<EOS
+#!/bin/sh
+echo "jexec \$*" >> $(pwd)/jexec.log
+shift
+exec "\$@"
+EOS
+	# The helper, which would attach to the jail: its answers.
+	cat > fake-helper <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/helper.log
+case "\$3" in
+interfaces) echo '{"interfaces":[{"name":"epair1b","up":true,"mtu":1500,"addresses":[{"family":"inet","address":"10.99.0.2","prefixlen":24}]},{"name":"wg0","up":true,"mtu":1420,"addresses":[{"family":"inet","address":"10.255.0.1","prefixlen":30}]}],"time":1000}' ;;
+exists) case "\$4" in epair1b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
+up) echo 1 ;;
+current) printf '1500\tto the host' ;;
+prefix) [ "\$5" = 10.99.0.2 ] && echo 10.99.0.2/24 ;;
+esac
+exit 0
+EOS
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	printf '#!/bin/sh\necho "$*" >> %s/route.log\n[ "$4" = get ] && printf "   route to: %%s\\n    gateway: 10.99.0.1\\n  interface: epair1b\\n" "$6"\nexit 0\n' "$(pwd)" > fake-route
+	printf '#!/bin/sh\necho "$*" >> %s/sysrc.log\nexit 1\n' "$(pwd)" > sysrc-log
+	cat > fake-wg <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/wg.log
+case "\$1 \$2 \$3" in
+"show all dump") printf 'wg0\t(none)\t(none)\t51820\toff\n' ;;
+"show wg0 private-key") echo "(none)" ;;
+"showconf wg0 ") printf '[Interface]\nListenPort = 51820\nPrivateKey = KEY\n' ;;
+"set wg0 private-key") test -r "$R\$4" && echo "read \$4" >> $(pwd)/wg.log ;;
+esac
+exit 0
+EOS
+	cat > fake-birdc <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/birdc.log
+[ "\$1" = -r ] && shift
+case "\$*" in
+"show status") printf 'BIRD 2.15.1 ready.\nBIRD 2.15.1\nRouter ID is 10.0.0.1\n' ;;
+"show protocols all") printf 'BIRD 2.15.1 ready.\nName Proto Table State Since Info\nbgp_up BGP --- up 2026-10-01 Established\n    Neighbor address: 192.0.2.1\n    Neighbor AS:      65001\n' ;;
+configure) printf 'Reconfigured\n' ;;
+esac
+exit 0
+EOS
+	printf '#!/bin/sh\necho "bird $*" >> %s/birdc.log\ngrep -q BROKEN "%s$3" && { echo "syntax error" >&2; exit 1; }\nexit 0\n' "$(pwd)" "$R" > fake-bird
+	chmod +x fake-jls fake-jexec fake-helper fake-ifconfig fake-route fake-wg fake-birdc fake-bird
+	start_daemon
+
+	# Its interfaces: read by the helper, which attaches to the jail;
+	# the host's are still the host's.
+	atf_check -o match:'"name":"epair1b"' -o match:'"address":"10.99.0.2"' \
+	    -o not-match:'"name":"lo0"' "$JGC" -j gateway -c "$SOCK" net interfaces
+	atf_check -o match:'^-Q 4 interfaces - 0$' cat helper.log
+	atf_check -o match:'"name":"lo0"' -o not-match:'epair1b' \
+	    "$JGC" -c "$SOCK" net interfaces
+	# Its routes and its route to an address: the host's programs,
+	# told which jail.
+	atf_check -o match:'fake-netstat -j 4 --libxo json -rnW -f inet' \
+	    "$JGC" -t -j gateway -c "$SOCK" net routes -4
+	atf_check -o match:'"gateway":"10.99.0.1","interface":"epair1b"' \
+	    "$JGC" -j gateway -c "$SOCK" route get 192.0.2.9
+	atf_check -o match:'^-j 4 -n get -inet 192.0.2.9$' cat route.log
+
+	# A change there: ifconfig and route with the jail, the job named
+	# after it, what is kept kept in the jail's own rc.conf.
+	atf_check -o match:'gateway: epair1b: add 10.99.0.5/24' \
+	    -o match:'fake-ifconfig -j 4 epair1b inet 10.99.0.5/24 alias' \
+	    "$JGC" -p -j gateway -c "$SOCK" interface epair1b add 10.99.0.5/24
+	atf_check -o match:'^ifconfig_epair1b_alias0="inet 10.99.0.5/24"$' \
+	    cat "$R/etc/rc.conf"
+	atf_check -o not-match:'10.99.0.5' cat rc.conf
+	atf_check -o match:'fake-route -j 4 -n add -inet 10.77.0.0/16 10.99.0.1' \
+	    "$JGC" -j gateway -c "$SOCK" route add 10.77.0.0/16 10.99.0.1
+	# An interface is one of the jail's, or it is not there.
+	atf_check -s exit:1 -o match:'no interface em0 in that jail' \
+	    "$JGC" -j gateway -c "$SOCK" interface em0 up
+	# Safe mode in a jail: what was there is found there, and put back
+	# there.
+	: > ifconfig.log
+	atf_check -o match:'queued' "$JGC" -q -s -j gateway -c "$SOCK" \
+	    interface epair1b remove 10.99.0.2
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^-j 4 epair1b inet 10.99.0.2 -alias$' \
+	    -o match:'^-j 4 epair1b inet 10.99.0.2/24 alias$' cat ifconfig.log
+
+	# WireGuard there: the jail's own wg, through jexec; the key is
+	# made in the jail's directory, where the jail's wg reads it, and
+	# what is kept is the jail's file.
+	atf_check -o match:'made in the jail' \
+	    -o match:'fake-jexec 4 .*/fake-wg set wg0 listen-port 51820' \
+	    "$JGC" -p -j gateway -c "$SOCK" wg wg0 init 51820
+	atf_check -o match:'^read .*/wg/\.wg0\.key\.' cat wg.log
+	atf_check -o match:'^Address = 10.255.0.1/30$' -o match:'^MTU = 1420$' \
+	    -o match:'^PrivateKey = KEY$' cat "$R$(pwd)/wg/wg0.conf"
+	atf_check -o match:'^wireguard_interfaces="wg0"$' cat "$R/etc/rc.conf"
+	atf_check test ! -e wg/wg0.conf
+	atf_check -o not-match:'wireguard' cat rc.conf
+
+	# BIRD there: the jail's birdc and bird, its configuration read and
+	# put back beneath the jail's root.
+	atf_check -o match:'"name":"bgp_up".*"neighbor":"192.0.2.1"' \
+	    "$JGC" -j gateway -c "$SOCK" net bird
+	atf_check -o match:'jexec 4 .*/fake-birdc -r show status' cat jexec.log
+	atf_check -o match:'^router id 10.0.0.1;$' \
+	    "$JGC" -j gateway -c "$SOCK" bird config
+	sed -e 's/accept;/reject;/' "$R$(pwd)/bird/bird.conf" > new.conf
+	atf_check -o match:'in place, and BIRD told' \
+	    "$JGC" -j gateway -c "$SOCK" bird config -w new.conf
+	atf_check -o match:'reject;' cat "$R$(pwd)/bird/bird.conf"
+	atf_check -o match:'accept;' cat "$R$(pwd)/bird/bird.conf.arcana-old"
+	atf_check -o match:"jexec 4 .*/fake-bird -p -c $(pwd)/bird/bird.conf" \
+	    -o match:'jexec 4 .*/fake-birdc configure' cat jexec.log
+	# What the jail's bird refuses does not stay there either.
+	printf 'BROKEN\n' > bad.conf
+	atf_check -s exit:1 -e match:'bird does not take it' -o ignore \
+	    "$JGC" -j gateway -c "$SOCK" bird config -w bad.conf
+	atf_check -o match:'reject;' -o not-match:'BROKEN' \
+	    cat "$R$(pwd)/bird/bird.conf"
+	# A file of the jail that is a link out of it is not followed: the
+	# jail's root may make any name there lead anywhere.
+	printf 'secret of the host\n' > outside.conf
+	ln -s "$(pwd)/outside.conf" "$R$(pwd)/bird/leak.conf"
+	atf_check -s exit:1 -o not-match:'secret' -e not-match:'secret' \
+	    "$JGC" -j gateway -c "$SOCK" bird config "$(pwd)/bird/leak.conf"
+	rm -rf "$R$(pwd)/bird"
+	ln -s "$(pwd)" "$R$(pwd)/bird"
+	atf_check -s exit:1 -o not-match:'secret' -e not-match:'secret' \
+	    "$JGC" -j gateway -c "$SOCK" bird config "$(pwd)/bird/outside.conf"
+
+	# A jail without a network of its own has none to work on, and
+	# one that does not run has none now.
+	atf_check -s exit:1 -e match:'has no network of its own' -o ignore \
+	    "$JGC" -j web -c "$SOCK" net interfaces
+	atf_check -s exit:1 -e match:'is not running' -o ignore \
+	    "$JGC" -j nope -c "$SOCK" net routes
+	atf_check -s exit:1 -o match:'has no network of its own' \
+	    "$JGC" -j web -c "$SOCK" interface lo0 up
+	atf_check -s exit:1 -e match:'invalid jail name' -o ignore \
+	    "$JGC" -j 'a;b' -c "$SOCK" net routes
+}
+vnet_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case safe_mode cleanup
 safe_mode_head()
 {
@@ -1764,6 +1941,7 @@ atf_init_test_cases()
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case vpn
+	atf_add_test_case vnet
 	atf_add_test_case safe_mode
 	atf_add_test_case agent_update
 	atf_add_test_case agent_restart

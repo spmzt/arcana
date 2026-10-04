@@ -408,7 +408,11 @@ do_bird_verb(struct work *w, const char *verb, const char *const *names,
  * does not stay.
  */
 
-/* Is path the main file, or a .conf under the directory it is in? */
+/*
+ * Is path the main file, or a .conf under the directory it is in?  In
+ * a jail the names are the jail's, and say nothing of where they lead:
+ * there the file is opened beneath the jail's root in any case.
+ */
 static bool
 conf_file_ok(struct work *w, const char *path)
 {
@@ -417,40 +421,22 @@ conf_file_ok(struct work *w, const char *path)
 
 	if (strcmp(path, opts.bird_conf) == 0)
 		return (true);
+	len = strlen(path);
+	if (len < 6 || strcmp(path + len - 5, ".conf") != 0 || strstr(path,
+	    "/../") != NULL || strstr(path, "/./") != NULL)
+		return (false);
+	if (w->jail != NULL) {
+		strlcpy(dir, opts.bird_conf, sizeof(dir));
+		if ((slash = strrchr(dir, '/')) == NULL)
+			return (false);
+		slash[1] = '\0';
+		return (strncmp(path, dir, strlen(dir)) == 0);
+	}
 	if (realpath(path, real) == NULL || realpath(opts.bird_conf, dir) ==
 	    NULL || (slash = strrchr(dir, '/')) == NULL)
 		return (false);
 	slash[1] = '\0';
-	len = strlen(real);
-	(void)w;
-	return (strncmp(real, dir, strlen(dir)) == 0 && len > 5 &&
-	    strcmp(real + len - 5, ".conf") == 0);
-}
-
-static char *
-slurp(struct work *w, const char *path, size_t *lenp)
-{
-	struct stat	 sb;
-	char		*buf;
-	ssize_t		 n;
-	int		 fd;
-
-	if ((fd = open(path, O_RDONLY | O_CLOEXEC)) == -1)
-		return (NULL);
-	if (fstat(fd, &sb) == -1 || !S_ISREG(sb.st_mode) || sb.st_size >
-	    ARC_MAX_JSON) {
-		close(fd);
-		errno = EFBIG;
-		return (NULL);
-	}
-	buf = wmalloc(w, (size_t)sb.st_size + 1);
-	n = read(fd, buf, (size_t)sb.st_size);
-	close(fd);
-	if (n != sb.st_size)
-		return (NULL);
-	buf[n] = '\0';
-	*lenp = (size_t)n;
-	return (buf);
+	return (strncmp(real, dir, strlen(dir)) == 0);
 }
 
 static const char *
@@ -476,12 +462,12 @@ conf_files(struct work *w, struct arc_bird_config_rsp *rsp)
 	const char	**v, *p, *q, *e;
 	char		*text, *pat;
 	glob_t		 g;
-	size_t		 len, n, i;
+	size_t		 len, n, i, skip;
 
 	v = wcalloc(w, 66, sizeof(*v));
 	n = 0;
 	v[n++] = opts.bird_conf;
-	if ((text = slurp(w, opts.bird_conf, &len)) != NULL) {
+	if ((text = scope_slurp(w, opts.bird_conf, &len)) != NULL) {
 		for (p = text; (p = strstr(p, "include")) != NULL && n < 64;
 		    p += 7) {
 			if ((p != text && p[-1] != '\n' && p[-1] != ' ' &&
@@ -497,11 +483,17 @@ conf_files(struct work *w, struct arc_bird_config_rsp *rsp)
 				    opts.bird_conf) : 1, q != NULL ?
 				    opts.bird_conf : ".", pat);
 			}
-			if (glob(pat, 0, NULL, &g) != 0)
+			/* In a jail the names are looked for under its root,
+			 * and told as the jail knows them. */
+			skip = w->jail != NULL ? strlen(w->jroot) : 0;
+			if (glob(skip > 0 ? wfmt(w, "%s%s", w->jroot, pat) :
+			    pat, 0, NULL, &g) != 0)
 				continue;
 			for (i = 0; i < g.gl_pathc && n < 64; i++)
-				if (conf_file_ok(w, g.gl_pathv[i]))
-					v[n++] = wstrdup(w, g.gl_pathv[i]);
+				if (strlen(g.gl_pathv[i]) > skip &&
+				    conf_file_ok(w, g.gl_pathv[i] + skip))
+					v[n++] = wstrdup(w, g.gl_pathv[i] +
+					    skip);
 			globfree(&g);
 		}
 	}
@@ -514,10 +506,10 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
     struct arc_bird_config_rsp *rsp)
 {
 	struct execres	 res;
-	const char	*path, *sha;
+	const char	*path, *sha, *base;
 	char		*old, *tmp, *bak, *argv[5];
 	size_t		 oldlen, len;
-	int		 fd, step;
+	int		 step;
 	bool		 had;
 
 	rsp->has_ok = true;
@@ -532,7 +524,7 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 	}
 	rsp->conf_path = wtext(w, wstrdup(w, path));
 	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", path);
-	old = slurp(w, path, &oldlen);
+	old = scope_slurp(w, path, &oldlen);
 	had = old != NULL;
 	step_end(w, step, had || (errno == ENOENT && rq->conf_text != NULL),
 	    had ? NULL : "%s", strerror(errno));
@@ -573,30 +565,18 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 		return (0);
 	}
 	len = strlen(rq->conf_text);
-	tmp = wfmt(w, "%s.arcana-new", path);
-	bak = wfmt(w, "%s.arcana-old", path);
+	base = strrchr(path, '/') + 1;
+	bak = wfmt(w, "%s.arcana-old", base);
 	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
-	(void)unlink(tmp);
-	if ((fd = open(tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
-	    O_CLOEXEC, 0640)) == -1 || write(fd, rq->conf_text, len) !=
-	    (ssize_t)len || fsync(fd) == -1) {
-		step_end(w, step, false, "%s", strerror(errno));
-		rsp->error = wfmt(w, "%s: %s", tmp, strerror(errno));
-		if (fd != -1)
-			close(fd);
-		(void)unlink(tmp);
-		return (0);
-	}
-	close(fd);
 	/* The old one aside, the new one in its place, to be parsed. */
-	(void)unlink(bak);
-	if ((had && link(path, bak) == -1) || rename(tmp, path) == -1) {
+	if (scope_replace(w, path, rq->conf_text, len, 0640, had ? bak :
+	    NULL) == -1) {
 		step_end(w, step, false, "%s", strerror(errno));
 		rsp->error = wfmt(w, "%s: %s", path, strerror(errno));
-		(void)unlink(tmp);
 		return (0);
 	}
-	step_end(w, step, true, "the one before it is kept as %s", bak);
+	step_end(w, step, true, "the one before it is kept as %s.arcana-old",
+	    path);
 	argv[0] = (char *)(uintptr_t)opts.bird_bin;
 	argv[1] = (char *)(uintptr_t)"-p";
 	argv[2] = (char *)(uintptr_t)"-c";
@@ -629,7 +609,8 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 back:
 	/* As it was: the one before it back, or the new file gone. */
 	step = step_begin(w, ARC_STEP_KIND_FILE, "restore", "%s", path);
-	step_end(w, step, (had ? rename(bak, path) : unlink(path)) == 0, NULL);
+	step_end(w, step, scope_rename(w, path, had ? bak : base, had ? base :
+	    NULL) == 0, NULL);
 	rsp->conf_text = wtext(w, old);
 	rsp->sha256 = sha;
 	return (0);

@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.9.3"
+#define	ARCANA_AGENT_VERSION	"0.10.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -36,6 +36,8 @@
 #define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
 #define	PATH_ROUTE_BIN		"/sbin/route"
 #define	PATH_NGCTL_BIN		"/usr/sbin/ngctl"
+#define	PATH_JLS_BIN		"/usr/sbin/jls"
+#define	PATH_JEXEC_BIN		"/usr/sbin/jexec"
 #define	PATH_WG_BIN		"/usr/local/bin/wg"
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
@@ -71,6 +73,9 @@ struct opts {
 	const char	*ifconfig_bin;
 	const char	*route_bin;
 	const char	*ngctl_bin;
+	const char	*jls_bin;
+	const char	*jexec_bin;
+	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
 	const char	*birdc_bin;
@@ -120,6 +125,10 @@ struct work {
 	int		 nsteps;
 	int		 stack[TRACE_DEPTH];
 	int		 depth;
+	/* The jail whose network the request is about; NULL the host's. */
+	const char	*jail;
+	int		 jid;
+	const char	*jroot;
 	/*
 	 * A job's trace is read by other threads while the job runs: the
 	 * step functions change it under this lock, and trace_copy() of
@@ -260,8 +269,11 @@ int		 do_if_set(struct work *, const char *, unsigned int,
 int		 do_if_create(struct work *, const struct arc_job_spec *,
 		    const char **, const char **);
 int		 do_if_destroy(struct work *, const char *, bool, const char **);
-void		 if_current(const char *, unsigned int *, char *, size_t);
-bool		 if_is_up(const char *, bool *);
+void		 if_current(struct work *, const char *, unsigned int *, char *,
+		    size_t);
+bool		 if_is_up(struct work *, const char *, bool *);
+bool		 if_exists(struct work *, const char *);
+const char	*if_json(struct work *);
 bool		 if_owning(const struct sockaddr *, char *, size_t);
 const char	*if_address_with_prefix(struct work *, const char *,
 		    const char *);
@@ -300,6 +312,19 @@ int		 do_bird_verb(struct work *, const char *, const char *const *,
 int		 do_bird_config(struct work *,
 		    const struct arc_bird_config_req *,
 		    struct arc_bird_config_rsp *);
+
+/* invidia/scope.c: the network of a vnet jail, from the host. */
+int		 scope_enter(struct work *, const char *, const char **);
+char *const	*scope_argv(struct work *, char *const []);
+int		 scope_dirfd(struct work *, const char *);
+int		 scope_open_dir(struct work *, const char *, const char **);
+char		*scope_slurp(struct work *, const char *, size_t *);
+int		 scope_replace(struct work *, const char *, const char *,
+		    size_t, mode_t, const char *);
+int		 scope_rename(struct work *, const char *, const char *,
+		    const char *);
+int		 scope_helper(int, char **);
+char		*ifq_text(const char *, const char *, const char *);
 
 /* invidia/netgraph.c */
 int		 do_netgraph(struct work *, struct arc_network_rsp *);

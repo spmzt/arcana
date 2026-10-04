@@ -43,6 +43,13 @@ static const char	*numeric(const struct sockaddr *, char *, size_t);
 static void		 extras(int, int, const char *, ucl_object_t *);
 static bool		 parse_addr(struct work *, const char *, int *,
 			    const char **, int *);
+static const char	*ifq(struct work *, const char *, const char *,
+			    const char *);
+static bool		 host_is_up(const char *, bool *);
+static const char	*host_prefix(struct work *, const char *,
+			    const char *);
+static void		 host_current(const char *, unsigned int *, char *,
+			    size_t);
 
 static const struct {
 	unsigned int	 bit;
@@ -182,6 +189,18 @@ do_interfaces(struct work *w, uint8_t family, struct arc_network_rsp *rsp)
 
 	rsp->has_ok = true;
 	rsp->ok = false;
+	/* Of a jail: read by the helper, which attaches to it first. */
+	if (w->jail != NULL) {
+		if ((rsp->json = ifq(w, "interfaces", NULL, wfmt(w, "%u",
+		    family))) == NULL || rsp->json[0] != '{') {
+			rsp->json = NULL;
+			rsp->error = wfmt(w, "cannot read the interfaces of "
+			    "the jail %s", w->jail);
+			return (0);
+		}
+		rsp->ok = true;
+		return (0);
+	}
 	step = step_begin(w, ARC_STEP_KIND_LIB, "getifaddrs(3)", NULL);
 	if (getifaddrs(&ifap) == -1) {
 		step_end(w, step, false, "%s", strerror(errno));
@@ -318,9 +337,9 @@ parse_addr(struct work *w, const char *s, int *afp, const char **addrp,
 	return (true);
 }
 
-/* Is the interface up?  False when it could not be told. */
-bool
-if_is_up(const char *ifname, bool *upp)
+/* Is the interface up, here?  False when it could not be told. */
+static bool
+host_is_up(const char *ifname, bool *upp)
 {
 	struct ifreq	ifr;
 	int		s;
@@ -342,8 +361,8 @@ if_is_up(const char *ifname, bool *upp)
  * puts it back after it was taken off.  NULL when it is not there.
  * Without an interface named, as whichever interface has it.
  */
-const char *
-if_address_with_prefix(struct work *w, const char *ifname, const char *address)
+static const char *
+host_prefix(struct work *w, const char *ifname, const char *address)
 {
 	struct ifaddrs	*ifap, *ifa;
 	const char	*addr, *out;
@@ -381,8 +400,9 @@ do_if_address(struct work *w, const char *ifname, const char *address,
 	char		*argv[6];
 	int		 af, plen, n;
 
-	if (if_nametoindex(ifname) == 0) {
-		*errp = wfmt(w, "no interface %s on this host", ifname);
+	if (!if_exists(w, ifname)) {
+		*errp = wfmt(w, "no interface %s %s", ifname, w->jail != NULL ?
+		    "in that jail" : "on this host");
 		return (-1);
 	}
 	if (!parse_addr(w, address, &af, &addr, &plen)) {
@@ -421,8 +441,9 @@ do_if_state(struct work *w, const char *ifname, bool up, const char **errp)
 	struct execres	 res;
 	char		*argv[4];
 
-	if (if_nametoindex(ifname) == 0) {
-		*errp = wfmt(w, "no interface %s on this host", ifname);
+	if (!if_exists(w, ifname)) {
+		*errp = wfmt(w, "no interface %s %s", ifname, w->jail != NULL ?
+		    "in that jail" : "on this host");
 		return (-1);
 	}
 	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
@@ -436,9 +457,9 @@ do_if_state(struct work *w, const char *ifname, bool up, const char **errp)
 	return (0);
 }
 
-/* The MTU and the description an interface has now. */
-void
-if_current(const char *ifname, unsigned int *mtup, char *descr, size_t len)
+/* The MTU and the description an interface has now, here. */
+static void
+host_current(const char *ifname, unsigned int *mtup, char *descr, size_t len)
 {
 	struct ifreq	ifr;
 	char		buf[256];
@@ -486,8 +507,9 @@ do_if_set(struct work *w, const char *ifname, unsigned int mtu,
 	struct execres	 res;
 	char		*argv[5];
 
-	if (if_nametoindex(ifname) == 0) {
-		*errp = wfmt(w, "no interface %s on this host", ifname);
+	if (!if_exists(w, ifname)) {
+		*errp = wfmt(w, "no interface %s %s", ifname, w->jail != NULL ?
+		    "in that jail" : "on this host");
 		return (-1);
 	}
 	/* ifconfig takes any text; rc.conf not what sh(1) reads as more. */
@@ -674,7 +696,7 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 		*errp = "a vxlan needs its identifier, up to 16777215";
 		return (-1);
 	}
-	if (sp->parent != NULL && if_nametoindex(sp->parent) == 0) {
+	if (sp->parent != NULL && !if_exists(w, sp->parent)) {
 		*errp = wfmt(w, "no interface %s on this host", sp->parent);
 		return (-1);
 	}
@@ -895,5 +917,130 @@ if_owning(const struct sockaddr *sa, char *ifname, size_t len)
 	}
 	freeifaddrs(ifap);
 	return (found);
+}
+
+/*
+ * What the daemon asks of the interfaces in its own process, answered
+ * as text: the same question is put to the helper when it is about a
+ * jail.  what is interfaces (arg the family), exists, current, up or
+ * prefix (arg the address).  malloc(3)ed; NULL when it cannot be told.
+ */
+char *
+ifq_text(const char *what, const char *ifname, const char *arg)
+{
+	struct arc_network_rsp	 rsp;
+	struct work		 w;
+	const char		*s;
+	char			*out, descr[256];
+	unsigned int		 mtu;
+	bool			 up;
+
+	work_init(&w);
+	out = NULL;
+	if (strcmp(what, "interfaces") == 0) {
+		memset(&rsp, 0, sizeof(rsp));
+		do_interfaces(&w, arg != NULL ? (uint8_t)atoi(arg) :
+		    ARC_NET_FAMILY_ALL, &rsp);
+		if (rsp.ok && rsp.json != NULL)
+			out = strdup(rsp.json);
+	} else if (ifname == NULL && strcmp(what, "prefix") != 0) {
+		;
+	} else if (strcmp(what, "exists") == 0) {
+		out = strdup(if_nametoindex(ifname) != 0 ? "1" : "0");
+	} else if (strcmp(what, "current") == 0) {
+		host_current(ifname, &mtu, descr, sizeof(descr));
+		if (asprintf(&out, "%u\t%s", mtu, descr) == -1)
+			out = NULL;
+	} else if (strcmp(what, "up") == 0) {
+		out = strdup(!host_is_up(ifname, &up) ? "?" : up ? "1" : "0");
+	} else if (strcmp(what, "prefix") == 0 && arg != NULL) {
+		s = host_prefix(&w, ifname, arg);
+		out = strdup(s != NULL ? s : "");
+	}
+	work_free(&w);
+	return (out);
+}
+
+/* The answer for where w works: here, or in its jail by the helper. */
+static const char *
+ifq(struct work *w, const char *what, const char *ifname, const char *arg)
+{
+	struct execres	 res;
+	char		*argv[7], *out;
+
+	if (w->jail == NULL)
+		return ((out = ifq_text(what, ifname, arg)) != NULL ?
+		    wadopt(w, out) : NULL);
+	argv[0] = (char *)(uintptr_t)opts.helper_bin;
+	argv[1] = (char *)(uintptr_t)"-Q";
+	argv[2] = wfmt(w, "%d", w->jid);
+	argv[3] = (char *)(uintptr_t)what;
+	argv[4] = (char *)(uintptr_t)(ifname != NULL ? ifname : "-");
+	argv[5] = (char *)(uintptr_t)(arg != NULL ? arg : "-");
+	argv[6] = NULL;
+	if (run_exec_max(w, argv, &res, ARC_MAX_JSON) != 0 || res.out == NULL)
+		return (NULL);
+	return (res.out);
+}
+
+bool
+if_exists(struct work *w, const char *ifname)
+{
+	const char	*a;
+
+	return ((a = ifq(w, "exists", ifname, NULL)) != NULL && a[0] == '1');
+}
+
+/* Is the interface up?  False when it could not be told. */
+bool
+if_is_up(struct work *w, const char *ifname, bool *upp)
+{
+	const char	*a;
+
+	if ((a = ifq(w, "up", ifname, NULL)) == NULL || (a[0] != '0' &&
+	    a[0] != '1'))
+		return (false);
+	*upp = a[0] == '1';
+	return (true);
+}
+
+/* The MTU and the description an interface has now. */
+void
+if_current(struct work *w, const char *ifname, unsigned int *mtup,
+    char *descr, size_t len)
+{
+	const char	*a, *tab;
+
+	*mtup = 0;
+	descr[0] = '\0';
+	if ((a = ifq(w, "current", ifname, NULL)) == NULL)
+		return;
+	*mtup = (unsigned int)strtoul(a, NULL, 10);
+	if ((tab = strchr(a, '\t')) != NULL)
+		snprintf(descr, len, "%.*s", (int)strcspn(tab + 1, "\n"),
+		    tab + 1);
+}
+
+/*
+ * address as the interface has it now, with its prefix length: what
+ * puts it back after it was taken off.  NULL when it is not there.
+ * Without an interface named, as whichever interface has it.
+ */
+const char *
+if_address_with_prefix(struct work *w, const char *ifname, const char *address)
+{
+	const char	*a;
+
+	a = ifq(w, "prefix", ifname, address);
+	return (a != NULL && a[0] != '\0' ? wstrndup(w, a, strcspn(a, "\n")) :
+	    NULL);
+}
+
+/* The interfaces where w works, as do_interfaces() tells them. */
+const char *
+if_json(struct work *w)
+{
+
+	return (ifq(w, "interfaces", NULL, "0"));
 }
 

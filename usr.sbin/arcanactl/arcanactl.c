@@ -58,6 +58,7 @@ static bool	queue;		/* -q: submit as a job */
 static bool	safe;		/* -s: undo the change unless confirmed */
 static bool	persist;	/* -p: keep the change in rc.conf too */
 static uint32_t	fib;		/* -F: the routing table */
+static const char *netjail;	/* -j: the vnet jail whose network it is */
 
 static const char *job_states[] = {
 	[ARC_JOB_STATE_QUEUED] = "queued",
@@ -96,8 +97,9 @@ static void
 usage(void)
 {
 
-	xo_error("usage: arcanactl [-pqst] [-F fib] [-c uri] [-A cafile "
-	    "-C certfile -K keyfile]\n                 [-N name] command\n"
+	xo_error("usage: arcanactl [-pqst] [-F fib] [-j jail] [-c uri] "
+	    "[-A cafile -C certfile\n                 -K keyfile] [-N name] "
+	    "command\n"
 	    "commands:\n"
 	    "    hello\n"
 	    "    list [-c]\n"
@@ -143,7 +145,9 @@ usage(void)
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
 	    "instead of waited for.\n-p keeps a change to an interface or a "
 	    "route in rc.conf too, -s has it undone\nunless this program "
-	    "reaches the host again, -F names a routing table.\n");
+	    "reaches the host again, -F names a routing table,\n-j a running "
+	    "jail with a network of its own (vnet), for net, route,\n"
+	    "interface, ng, wg and bird to work in instead of the host.\n");
 	exit(2);
 }
 
@@ -926,6 +930,7 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 	if (argc - optind > 1 || (req.dry_run && from == NULL))
 		usage();
 	req.conf_path = argc - optind == 1 ? argv[optind] : NULL;
+	req.jail = netjail;
 	text = NULL;
 	cur = NULL;
 	if (from != NULL) {
@@ -980,6 +985,7 @@ cmd_route_get(struct arc_client *cl, int argc, char **argv)
 	req.lookup = argv[2];
 	req.has_net_fib = fib != 0;
 	req.net_fib = fib;
+	req.jail = netjail;
 	if ((error = arc_route_lookup(cl, &req, &rsp)) != 0)
 		fail(cl, error, "route get");
 	if (rsp->json != NULL)
@@ -1006,6 +1012,7 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
 	sp.persist = persist;
+	sp.jail = netjail;
 	if (strcmp(argv[0], "ng") == 0) {
 		sp.kind = ARC_JOB_KIND_NETGRAPH;
 		sp.verb = argv[1];
@@ -1166,6 +1173,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	req.net_family = ARC_NET_FAMILY_ALL;
 	req.has_net_fib = fib != 0;
 	req.net_fib = fib;
+	req.jail = netjail;
 	argc--;
 	argv++;
 	optind = 1;
@@ -1556,7 +1564,7 @@ main(int argc, char *argv[])
 		exit(2);
 	uri = PATH_SOCKET;
 	cafile = certfile = keyfile = name = NULL;
-	while ((ch = getopt(argc, argv, "+A:C:c:F:K:N:pqst")) != -1) {
+	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:pqst")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -1577,6 +1585,9 @@ main(int argc, char *argv[])
 			fib = (uint32_t)strtonum(optarg, 0, 65535, &errstr);
 			if (errstr != NULL)
 				xo_errx(2, "-F %s: %s", optarg, errstr);
+			break;
+		case 'j':
+			netjail = optarg;
 			break;
 		case 'p':
 			persist = true;

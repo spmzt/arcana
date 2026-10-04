@@ -265,40 +265,35 @@ static int
 new_key(struct work *w, const char *ifname, const char **errp)
 {
 	struct execres	 res;
-	unsigned char	 raw[32], text[48];
-	char		*path, *argv[6];
-	int		 fd, rc, step;
+	unsigned char	 raw[32];
+	char		 text[48], *path, *argv[6];
+	int		 rc, step;
 
-	step = step_begin(w, ARC_STEP_KIND_FILE, "private key", "made on this "
-	    "host, for %s", ifname);
+	step = step_begin(w, ARC_STEP_KIND_FILE, "private key", "made %s, for "
+	    "%s", w->jail != NULL ? "in the jail" : "on this host", ifname);
 	arc4random_buf(raw, sizeof(raw));
 	raw[0] &= 248;
 	raw[31] = (raw[31] & 127) | 64;
-	EVP_EncodeBlock(text, raw, sizeof(raw));
+	EVP_EncodeBlock((unsigned char *)text, raw, sizeof(raw));
 	explicit_bzero(raw, sizeof(raw));
-	path = wfmt(w, "%s/.%s.key.XXXXXX", opts.wg_dir, ifname);
-	if ((fd = mkstemp(path)) == -1) {
-		step_end(w, step, false, "%s: %s", path, strerror(errno));
+	text[44] = '\n';
+	path = wfmt(w, "%s/.%s.key.%08x", opts.wg_dir, ifname, arc4random());
+	rc = scope_replace(w, path, text, 45, 0600, NULL);
+	explicit_bzero(text, sizeof(text));
+	step_end(w, step, rc == 0, rc == 0 ? NULL : "%s", strerror(errno));
+	if (rc != 0) {
 		*errp = wfmt(w, "%s: %s", opts.wg_dir, strerror(errno));
-		explicit_bzero(text, sizeof(text));
 		return (-1);
 	}
-	rc = write(fd, text, 44) == 44 && write(fd, "\n", 1) == 1 ? 0 : -1;
-	close(fd);
-	explicit_bzero(text, sizeof(text));
-	step_end(w, step, rc == 0, NULL);
-	if (rc == 0) {
-		argv[0] = (char *)(uintptr_t)opts.wg_bin;
-		argv[1] = (char *)(uintptr_t)"set";
-		argv[2] = (char *)(uintptr_t)ifname;
-		argv[3] = (char *)(uintptr_t)"private-key";
-		argv[4] = path;
-		argv[5] = NULL;
-		if ((rc = run_exec(w, argv, &res)) != 0)
-			*errp = wtext(w, exec_error(w, &res, "wg"));
-	} else
-		*errp = "cannot write the key";
-	(void)unlink(path);
+	argv[0] = (char *)(uintptr_t)opts.wg_bin;
+	argv[1] = (char *)(uintptr_t)"set";
+	argv[2] = (char *)(uintptr_t)ifname;
+	argv[3] = (char *)(uintptr_t)"private-key";
+	argv[4] = path;
+	argv[5] = NULL;
+	if ((rc = run_exec(w, argv, &res)) != 0)
+		*errp = wtext(w, exec_error(w, &res, "wg"));
+	(void)scope_rename(w, path, strrchr(path, '/') + 1, NULL);
 	return (rc == 0 ? 0 : -1);
 }
 
@@ -318,15 +313,14 @@ conf_path(struct work *w, const char *ifname)
 static int
 wg_save(struct work *w, const char *ifname, const char **errp)
 {
-	struct execres	 res;
-	struct ifaddrs	*ifap, *ifa;
-	const unsigned char *m;
-	const char	*nl, *e;
-	char		*argv[4], *path, *tmp, buf[NI_MAXHOST], *extra;
-	unsigned int	 mtu;
-	size_t		 i, len;
-	FILE		*fp;
-	int		 fd, rc, step, plen;
+	struct execres		 res;
+	struct ucl_parser	*p;
+	ucl_object_t		*top;
+	const ucl_object_t	*o, *a, *v, *pl;
+	ucl_object_iter_t	 it, ait;
+	const char		*nl, *e, *json;
+	char			*argv[4], *path, *extra, *text;
+	int			 rc, step;
 
 	argv[0] = (char *)(uintptr_t)opts.wg_bin;
 	argv[1] = (char *)(uintptr_t)"showconf";
@@ -340,51 +334,46 @@ wg_save(struct work *w, const char *ifname, const char **errp)
 		*errp = wtext(w, exec_error(w, &res, "wg showconf"));
 		return (-1);
 	}
+	/* Its addresses and its MTU, as the interfaces are told. */
 	extra = wstrdup(w, "");
-	if (getifaddrs(&ifap) == 0) {
-		for (ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
-			if (ifa->ifa_addr == NULL || strcmp(ifa->ifa_name,
-			    ifname) != 0 || (ifa->ifa_addr->sa_family !=
-			    AF_INET && ifa->ifa_addr->sa_family != AF_INET6) ||
-			    ifa->ifa_netmask == NULL || getnameinfo(
-			    ifa->ifa_addr, ifa->ifa_addr->sa_len, buf,
-			    sizeof(buf), NULL, 0, NI_NUMERICHOST) != 0 ||
-			    strchr(buf, '%') != NULL)
+	if ((json = if_json(w)) != NULL) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+		    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+		top = ucl_parser_add_string(p, json, 0) ?
+		    ucl_parser_get_object(p) : NULL;
+		ucl_parser_free(p);
+		it = NULL;
+		while ((o = ucl_object_iterate(ucl_object_lookup(top,
+		    "interfaces"), &it, true)) != NULL) {
+			if ((v = ucl_object_lookup(o, "name")) == NULL ||
+			    strcmp(ucl_object_tostring_forced(v), ifname) != 0)
 				continue;
-			m = ifa->ifa_addr->sa_family == AF_INET ?
-			    (const unsigned char *)&((struct sockaddr_in *)
-			    (void *)ifa->ifa_netmask)->sin_addr :
-			    (const unsigned char *)&((struct sockaddr_in6 *)
-			    (void *)ifa->ifa_netmask)->sin6_addr;
-			len = ifa->ifa_addr->sa_family == AF_INET ? 4 : 16;
-			plen = 0;
-			for (i = 0; i < len; i++)
-				plen += __builtin_popcount(m[i]);
-			extra = wfmt(w, "%sAddress = %s/%d\n", extra, buf, plen);
+			ait = NULL;
+			while ((a = ucl_object_iterate(ucl_object_lookup(o,
+			    "addresses"), &ait, true)) != NULL) {
+				v = ucl_object_lookup(a, "address");
+				pl = ucl_object_lookup(a, "prefixlen");
+				if (v == NULL || pl == NULL || strchr(
+				    ucl_object_tostring_forced(v), '%') != NULL)
+					continue;
+				extra = wfmt(w, "%sAddress = %s/%lld\n", extra,
+				    ucl_object_tostring_forced(v),
+				    (long long)ucl_object_toint(pl));
+			}
+			if ((v = ucl_object_lookup(o, "mtu")) != NULL &&
+			    ucl_object_toint(v) > 0)
+				extra = wfmt(w, "%sMTU = %lld\n", extra,
+				    (long long)ucl_object_toint(v));
 		}
-		freeifaddrs(ifap);
+		if (top != NULL)
+			ucl_object_unref(top);
 	}
-	if_current(ifname, &mtu, buf, sizeof(buf));
-	if (mtu != 0)
-		extra = wfmt(w, "%sMTU = %u\n", extra, mtu);
 
 	path = conf_path(w, ifname);
 	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", path);
-	tmp = wfmt(w, "%s/.%s.conf.XXXXXX", opts.wg_dir, ifname);
-	if ((fd = mkstemp(tmp)) == -1 || (fp = fdopen(fd, "w")) == NULL) {
-		if (fd != -1) {
-			close(fd);
-			(void)unlink(tmp);
-		}
-		step_end(w, step, false, "%s", strerror(errno));
-		*errp = wfmt(w, "%s: %s", opts.wg_dir, strerror(errno));
-		return (-1);
-	}
-	fwrite(res.out, 1, (size_t)(nl + 1 - res.out), fp);
-	fputs(extra, fp);
-	fputs(nl + 1, fp);
-	if (fclose(fp) != 0 || rename(tmp, path) == -1) {
-		(void)unlink(tmp);
+	text = wfmt(w, "%.*s%s%s", (int)(nl + 1 - res.out), res.out, extra,
+	    nl + 1);
+	if (scope_replace(w, path, text, strlen(text), 0600, NULL) == -1) {
 		step_end(w, step, false, "%s", strerror(errno));
 		*errp = wfmt(w, "%s: %s", path, strerror(errno));
 		return (-1);
@@ -411,8 +400,8 @@ wg_forget(struct work *w, const char *ifname)
 		return;
 	step = step_begin(w, ARC_STEP_KIND_FILE, "remove", "%s", conf_path(w,
 	    ifname));
-	step_end(w, step, unlink(conf_path(w, ifname)) == 0 || errno == ENOENT,
-	    NULL);
+	step_end(w, step, scope_rename(w, conf_path(w, ifname), wfmt(w,
+	    "%s.conf", ifname), NULL) == 0 || errno == ENOENT, NULL);
 	e = NULL;
 	(void)rc_set(w, "wireguard_interfaces", "-=", ifname, &e);
 }

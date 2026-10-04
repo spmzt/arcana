@@ -5,7 +5,7 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		confedit.c confread.c host.c
 # Invidia: the network.
 SRCS+=		address.c bird.c interfaces.c netgraph.c network.c rcconf.c \
-		routes.c wireguard.c
+		routes.c scope.c wireguard.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jobs.c lifecycle.c packages.c \
 		services.c update.c

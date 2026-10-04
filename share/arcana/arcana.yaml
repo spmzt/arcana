@@ -958,6 +958,9 @@ operations:
     doc: |
       The host's routing table, nexthops, connections or sockets, as
       netstat(1) and sockstat(1) print them with --libxo json.
+      With jail, those of a running jail that has a network of its own
+      (vnet), read from the host: nothing runs in the jail for it but
+      the jail's own birdc and wg.
     do:
       request:
         attributes:
@@ -965,6 +968,7 @@ operations:
           - net-family
           - net-filter
           - net-fib
+          - jail
         required:
           - net-kind
       reply:
@@ -1211,6 +1215,7 @@ operations:
         attributes:
           - lookup
           - net-fib
+          - jail
         required:
           - lookup
       reply:
@@ -1240,6 +1245,7 @@ operations:
           - conf-text
           - sha256
           - dry-run
+          - jail
       reply:
         attributes:
           - ok

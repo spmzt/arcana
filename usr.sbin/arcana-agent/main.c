@@ -56,6 +56,8 @@ struct opts opts = {
 	.ifconfig_bin = PATH_IFCONFIG_BIN,
 	.route_bin = PATH_ROUTE_BIN,
 	.ngctl_bin = PATH_NGCTL_BIN,
+	.jls_bin = PATH_JLS_BIN,
+	.jexec_bin = PATH_JEXEC_BIN,
 	.wg_bin = PATH_WG_BIN,
 	.wg_dir = PATH_WG_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
@@ -285,7 +287,10 @@ main(int argc, char *argv[])
 	pidpath = PATH_PIDFILE;
 	gid = (gid_t)-1;
 	nl = 0;
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:I:j:K:k:l:M:N:n:o:P:p:R:r:s:U:Vw:W:X:Y:y:Z:")) != -1) {
+	/* Run again by the daemon, to look at a jail from inside it. */
+	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
+		return (scope_helper(argc - 2, argv + 2));
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:I:j:K:k:L:l:M:N:n:o:P:p:R:r:s:U:Vw:W:X:x:Y:y:Z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -369,6 +374,15 @@ main(int argc, char *argv[])
 		case 'n':
 			opts.ngctl_bin = optarg;
 			break;
+		case 'L':
+			opts.jls_bin = optarg;
+			break;
+		case 'x':
+			opts.jexec_bin = optarg;
+			break;
+		case 'H':
+			opts.helper_bin = optarg;
+			break;
 		case 'k':
 			opts.wg_bin = optarg;
 			break;
@@ -417,6 +431,9 @@ main(int argc, char *argv[])
 			err(1, "sysctl kern.proc.pathname");
 		if (opts.self_path == NULL)
 			opts.self_path = self;
+		/* The program that is running, not one put in its place. */
+		if (opts.helper_bin == NULL)
+			opts.helper_bin = self;
 		/* Which build this is, before an update changes the file. */
 		build_id(self);
 	}

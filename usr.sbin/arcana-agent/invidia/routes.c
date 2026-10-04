@@ -108,7 +108,7 @@ do_route(struct work *w, const char *destination, const char *gateway,
 			gaf = AF_INET;
 		else if (inet_pton(AF_INET6, gateway, raw) == 1)
 			gaf = AF_INET6;
-		else if (if_nametoindex(gateway) != 0)
+		else if (if_exists(w, gateway))
 			iface = true;
 		else {
 			*errp = wfmt(w, "%s is neither an address nor an "

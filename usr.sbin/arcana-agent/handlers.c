@@ -396,7 +396,10 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
 		    what);
 		memset(&nr, 0, sizeof(nr));
-		do_network(&w, j->action, j->family, j->source, j->fib, &nr);
+		nr.has_ok = true;
+		if (scope_enter(&w, j->jail, &nr.error) == 0)
+			do_network(&w, j->action, j->family, j->source, j->fib,
+			    &nr);
 		ok = nr.ok;
 		error = nr.error;
 		step_end(&w, root, ok, NULL);
@@ -408,7 +411,9 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
 		    what);
 		memset(&rlr, 0, sizeof(rlr));
-		do_route_lookup(&w, j->source, j->fib, &rlr);
+		rlr.has_ok = true;
+		if (scope_enter(&w, j->jail, &rlr.error) == 0)
+			do_route_lookup(&w, j->source, j->fib, &rlr);
 		ok = rlr.ok;
 		error = rlr.error;
 		step_end(&w, root, ok, NULL);
@@ -527,7 +532,10 @@ worker(void *arg)
 		bcq.conf_text = j->ref;
 		bcq.sha256 = j->sha256;
 		bcq.dry_run = j->refresh;
-		if (j->ref == NULL)
+		bcr.has_ok = true;
+		if (scope_enter(&w, j->jail, &bcr.error) != 0)
+			;
+		else if (j->ref == NULL)
 			do_bird_config(&w, &bcq, &bcr);
 		else {
 			pthread_mutex_lock(&change_lock);
@@ -875,6 +883,8 @@ arc_network_doit(cbl_req *req, const struct arc_network_req *rq,
 
 	if (rq->net_kind >= nitems(net_kind_names))
 		return (reject(req, "invalid kind"));
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
 	if (rq->has_net_family && rq->net_family > ARC_NET_FAMILY_INET6)
 		return (reject(req, "invalid family"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
@@ -887,6 +897,8 @@ arc_network_doit(cbl_req *req, const struct arc_network_req *rq,
 	j->action = rq->net_kind;
 	j->family = rq->has_net_family ? rq->net_family : ARC_NET_FAMILY_ALL;
 	j->fib = rq->has_net_fib ? rq->net_fib : 0;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
 	return (start(j));
 }
 
@@ -898,12 +910,16 @@ arc_route_lookup_doit(cbl_req *req, const struct arc_route_lookup_req *rq,
 
 	if (rq->lookup == NULL || rq->lookup[0] == '-')
 		return (reject(req, "an address to look up is needed"));
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_ROUTE_LOOKUP;
 	j->source = xstrdup(rq->lookup);
 	j->fib = rq->has_net_fib ? rq->net_fib : 0;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
 	return (start(j));
 }
 
@@ -917,6 +933,8 @@ arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
 	    rq->conf_path[0] != '/')
 		return (reject(req, "a configuration file is named by its "
 		    "whole path"));
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);
 	j->req = req;
@@ -926,6 +944,8 @@ arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
 	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
 	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
 	j->refresh = rq->dry_run;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
 	return (start(j));
 }
 
@@ -999,6 +1019,10 @@ check_spec(const struct arc_job_spec *sp)
 
 	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_BIRD)
 		return ("a job needs a kind");
+	/* For what changes a network, jail is the jail whose it is. */
+	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
+	    sp->jail[0] != '\0' && !valid_jail(sp->jail))
+		return ("invalid jail name");
 	switch (sp->kind) {
 	case ARC_JOB_KIND_JAIL_ACTION:
 		if (sp->jail == NULL || !valid_jail(sp->jail))
@@ -1139,9 +1163,10 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 	bool			 hit;
 	int			 fd;
 
-	if (sp->safe || (sp->kind != ARC_JOB_KIND_IF_ADDRESS &&
-	    sp->kind != ARC_JOB_KIND_IF_STATE && sp->kind !=
-	    ARC_JOB_KIND_IF_DESTROY))
+	/* In a jail the request did not come in by any address of its. */
+	if (sp->safe || (sp->jail != NULL && sp->jail[0] != '\0') ||
+	    (sp->kind != ARC_JOB_KIND_IF_ADDRESS && sp->kind !=
+	    ARC_JOB_KIND_IF_STATE && sp->kind != ARC_JOB_KIND_IF_DESTROY))
 		return (NULL);
 	len = sizeof(ss);
 	if ((fd = cbl_conn_fd(cbl_req_conn(req))) == -1 || getsockname(fd,

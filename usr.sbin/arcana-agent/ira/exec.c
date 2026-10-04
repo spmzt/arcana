@@ -126,6 +126,8 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	int				 op[2], ep[2], status, rc, step, n;
 	bool				 exited;
 
+	argv = scope_argv(w, argv);
+
 	memset(res, 0, sizeof(*res));
 	cmdline = wvis(w, argv[0]);
 	for (i = 1; argv[i] != NULL; i++)
@@ -278,6 +280,8 @@ run_exec_lines(struct work *w, char *const argv[],
 	FILE				*fp;
 	pid_t				 pid;
 	int				 op[2], status, rc, step;
+
+	argv = scope_argv(w, argv);
 
 	cmdline = wvis(w, argv[0]);
 	for (i = 1; argv[i] != NULL; i++)
