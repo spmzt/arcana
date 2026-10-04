@@ -2441,8 +2441,9 @@ static const char keep_field[] = "<label class=\"toggle\"><input type=\""
 bool
 topo_modal(struct html *h)
 {
-	unsigned int	mtu;
-	int		a, b;
+	struct server	*s;
+	unsigned int	 mtu;
+	int		 a, b;
 
 	switch (app.modal) {
 	case MODAL_TUNNEL:
@@ -2492,6 +2493,31 @@ topo_modal(struct html *h)
 		    "inputmode=\"numeric\" placeholder=\"for vxlan only\">"
 		    "</label></div>");
 		h_raw(h, keep_field);
+		return (true);
+	case MODAL_IF_VNET:
+		if ((s = cur_server()) == NULL || net_scope()[0] == '\0')
+			return (false);
+		h_raw(h, "<form data-form=\"if-vnet\"><h2>Give ");
+		h_txt(h, net_scope());
+		h_raw(h, " an interface</h2><p>From its host, ");
+		h_txt(h, s->name);
+		h_raw(h, ", with <code>ifconfig vnet</code>: the interface "
+		    "leaves the host and is the jail's until it is taken "
+		    "back, or the jail stops.</p><label>Interface<input name="
+		    "\"interface\" spellcheck=\"false\" autocomplete=\"off\" "
+		    "placeholder=\"epair\" autofocus><small>Empty, or <code>"
+		    "epair</code>, for a new pair: its <b>a</b> end stays on "
+		    "the host, to be put in a bridge or given an address "
+		    "there, its <b>b</b> end goes to the jail. Or an "
+		    "interface the host has: vlan100, vmx1. The host refuses "
+		    "to give the one the console reaches it by.</small>"
+		    "</label>");
+		if (jstr(find_jail(s, net_scope()), "scope") != NULL)
+			h_raw(h, "<label class=\"toggle\"><input type=\""
+			    "checkbox\" name=\"persist\" checked><span>Keep it: "
+			    "as the jail's <code>vnet.interface</code> in "
+			    "<code>jail.conf</code>, and a new pair in the "
+			    "host's <code>rc.conf</code></span></label>");
 		return (true);
 	case MODAL_IF_CREATE:
 		if ((a = node_index(tp.create_sid)) == -1)
@@ -2868,6 +2894,32 @@ topo_form(const char *form, const ucl_object_t *f)
 		free(g);
 		free(i);
 		free(k);
+		app.modal = MODAL_NONE;
+		tp.last_poll = 0;
+		return (true);
+	}
+	if (strcmp(form, "if-vnet") == 0) {
+		if ((s = cur_server()) == NULL || net_scope()[0] == '\0')
+			return (true);
+		name = jstr(f, "interface") != NULL && jstr(f,
+		    "interface")[0] != '\0' ? jstr(f, "interface") : "epair";
+		if (name[strspn(name, "abcdefghijklmnopqrstuvwxyz0123456789"
+		    "._")] != '\0' || strlen(name) > 15) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Name an interface of the host, or leave it empty "
+			    "for a new epair");
+			return (true);
+		}
+		a = json_quote(net_scope());
+		snprintf(title, sizeof(title), "give %s to %s", name,
+		    net_scope());
+		/* name is letters, digits, dots: checked above. */
+		if (asprintf(&b, "{\"kind\":\"if-vnet\",\"interface\":\"%s\","
+		    "\"jail\":%s,\"persist\":%s}", name, a, jbool(f,
+		    "persist") ? "true" : "false") == -1)
+			abort();
+		free(a);
+		job_send_host(s, b, title, JOB_IFACE, name);
 		app.modal = MODAL_NONE;
 		tp.last_poll = 0;
 		return (true);

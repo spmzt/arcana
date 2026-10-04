@@ -296,6 +296,7 @@ enum modal {
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
 	MODAL_BIRD_FILE,
+	MODAL_IF_VNET,
 };
 
 struct confirm {
@@ -407,6 +408,8 @@ void		 confirm(const char *, const char *, const char *, bool,
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
 void		 job_send(struct server *, char *, const char *, int,
+		    const char *);
+void		 job_send_host(struct server *, char *, const char *, int,
 		    const char *);
 void		 queue_run(void);
 void		 queue_clear(void);

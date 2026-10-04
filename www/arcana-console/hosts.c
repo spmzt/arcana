@@ -1949,6 +1949,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_NETGRAPH] = "netgraph",
 	[ARC_JOB_KIND_WIREGUARD] = "wireguard",
 	[ARC_JOB_KIND_BIRD] = "bird",
+	[ARC_JOB_KIND_IF_VNET] = "if-vnet",
 };
 
 static const char *job_state_names[] = {
@@ -2134,6 +2135,10 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		    NULL))
 			return ("a route job needs a destination, and a "
 			    "gateway to add one");
+		break;
+	case ARC_JOB_KIND_IF_VNET:
+		if (sp->interface == NULL || sp->jail == NULL)
+			return ("an if-vnet job needs an interface and a jail");
 		break;
 	case ARC_JOB_KIND_IF_SET:
 	case ARC_JOB_KIND_IF_CREATE:

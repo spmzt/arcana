@@ -680,6 +680,35 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strchr(value, ' ') != NULL ? strchr(value, ' ') + 1 : "");
 		app.modal = MODAL_IF_SET;
 		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "if-vnet-give") == 0 && s != NULL &&
+	    net_scope()[0] != '\0') {
+		app.modal = MODAL_IF_VNET;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "if-vnet-back") == 0 && s != NULL &&
+	    net_scope()[0] != '\0') {
+		snprintf(body, sizeof(body), "ifconfig %s -vnet %s, on %s: "
+		    "the interface leaves the jail with what it carries "
+		    "there, and is the host's again. It is taken out of the "
+		    "jail's vnet.interface in jail.conf too.", arg, net_scope(),
+		    s->name);
+		confirm("Take the interface back", body, "Take back", true,
+		    "", "do-if-vnet-back", arg, "");
+	} else if (strcmp(act, "do-if-vnet-back") == 0 && s != NULL &&
+	    net_scope()[0] != '\0') {
+		const ucl_object_t *jl = find_jail(s, net_scope());
+		char *q = json_quote(arg), *qj = json_quote(net_scope()), *json;
+
+		/* Kept where the jail is defined, when it is. */
+		if (asprintf(&json, "{\"kind\":\"if-vnet\",\"interface\":%s,"
+		    "\"jail\":%s,\"remove\":true,\"persist\":%s}", q, qj,
+		    jl != NULL && jstr(jl, "scope") != NULL ? "true" :
+		    "false") == -1)
+			abort();
+		free(q);
+		free(qj);
+		snprintf(body, sizeof(body), "take %s back from %s", arg,
+		    net_scope());
+		job_send_host(s, json, body, JOB_IFACE, arg);
 	} else if (strcmp(act, "if-destroy") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "ifconfig %s destroy, on %s, and "
 		    "it is forgotten in rc.conf. This cannot be undone; the "

@@ -113,6 +113,7 @@ usage(void)
 	    "netgraph |\n        wireguard | bird [-4 | -6]\n"
 	    "    net routes [-4 | -6] text\n"
 	    "    interface name up | down | destroy\n"
+	    "    interface name give | take jail\n"
 	    "    interface name add | remove address\n"
 	    "    interface name mtu number\n"
 	    "    interface name description text\n"
@@ -1098,6 +1099,12 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 		sp.remove = strcmp(argv[2], "remove") == 0;
 	} else if (strcmp(argv[2], "destroy") == 0 && argc == 3) {
 		sp.kind = ARC_JOB_KIND_IF_DESTROY;
+	} else if ((strcmp(argv[2], "give") == 0 || strcmp(argv[2],
+	    "take") == 0) && argc == 4) {
+		/* The jail it goes to or comes from, not one worked in. */
+		sp.kind = ARC_JOB_KIND_IF_VNET;
+		sp.jail = argv[3];
+		sp.remove = strcmp(argv[2], "take") == 0;
 	} else if (strcmp(argv[2], "mtu") == 0 && argc == 4) {
 		sp.kind = ARC_JOB_KIND_IF_SET;
 		sp.has_mtu = true;

@@ -1017,7 +1017,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_BIRD)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_IF_VNET)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1067,6 +1067,12 @@ check_spec(const struct arc_job_spec *sp)
 			return ("invalid interface name");
 		if (sp->parent != NULL && !valid_ifname(sp->parent))
 			return ("invalid interface name");
+		break;
+	case ARC_JOB_KIND_IF_VNET:
+		if (sp->interface == NULL || !valid_ifname(sp->interface))
+			return ("invalid interface name");
+		if (sp->jail == NULL || sp->jail[0] == '\0')
+			return ("name the jail the interface goes to");
 		break;
 	case ARC_JOB_KIND_IF_DESTROY:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))
@@ -1163,8 +1169,16 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 	bool			 hit;
 	int			 fd;
 
-	/* In a jail the request did not come in by any address of its. */
-	if (sp->safe || (sp->jail != NULL && sp->jail[0] != '\0') ||
+	/*
+	 * In a jail the request did not come in by any address of its;
+	 * an interface given to a jail is one the host has no more.
+	 */
+	if (sp->safe)
+		return (NULL);
+	if (sp->kind == ARC_JOB_KIND_IF_VNET) {
+		if (sp->remove)
+			return (NULL);
+	} else if ((sp->jail != NULL && sp->jail[0] != '\0') ||
 	    (sp->kind != ARC_JOB_KIND_IF_ADDRESS && sp->kind !=
 	    ARC_JOB_KIND_IF_STATE && sp->kind != ARC_JOB_KIND_IF_DESTROY))
 		return (NULL);
@@ -1196,7 +1210,7 @@ cuts_off(cbl_req *req, const struct arc_job_spec *sp)
 		}
 	} else
 		hit = strcmp(sp->interface, ifname) == 0 &&
-		    (sp->kind == ARC_JOB_KIND_IF_DESTROY || !sp->up);
+		    (sp->kind != ARC_JOB_KIND_IF_STATE || !sp->up);
 	return (hit ? "this request came in by that address: the change "
 	    "would cut you off.  Ask for it in safe mode, and the host takes "
 	    "it back when it does not hear from you again" : NULL);

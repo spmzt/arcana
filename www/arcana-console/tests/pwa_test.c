@@ -311,6 +311,7 @@ ATF_TC_BODY(pwa, tc)
 	char		 web[MAXPATHLEN], cwd[MAXPATHLEN], script[2048];
 	char		*token;
 	FILE		*fp;
+	int		 i;
 
 	snprintf(web, sizeof(web), "%s", locate(tc, "../../arcana-ui/dist",
 	    "webroot", "/usr/local/www/arcana-console"));
@@ -964,6 +965,41 @@ ATF_TC_BODY(pwa, tc)
 	    "ifconfig.log && grep -q '10.99.0.7/24' jroot/etc/rc.conf && "
 	    "! grep -q 10.99.0.7 rc.conf") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * An interface from the host: a new epair, made there, whose b
+	 * end the jail gets; the host does it, not told to work in the
+	 * jail.  And one the jail has, taken back to the host.
+	 */
+	run("document.querySelector('.jail-net button[data-act=if-vnet-give]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=if-vnet] input[name="
+	    "persist]')", 5);
+	shot("7h-vnet-give");
+	run("document.querySelector('form[data-form=if-vnet]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('give epair to gw'))", 20);
+	for (i = 0; i < 100 && system("grep -q '^epair create$' ifconfig.log")
+	    != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^epair create$' ifconfig.log && ! grep -q "
+	    "'^-j 4 epair create' ifconfig.log") == 0);
+	wait_js("document.querySelector('.jail-net tr[data-if=epair1b] button"
+	    "[data-act=if-vnet-back]')", 20);
+	run("document.querySelector('.jail-net tr[data-if=epair1b] button"
+	    "[data-act=if-vnet-back]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')"
+	    ".requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('take epair1b back from gw: done'))", 20);
+	ATF_CHECK(system("grep -q '^epair1b -vnet 4$' ifconfig.log") == 0);
+	wait_js("document.querySelector('.jail-net button[data-act=net-kind]"
+	    "[data-arg=routes]')", 20);
 	/* Its routes, by the host's netstat told which jail. */
 	run("document.querySelector('.jail-net button[data-act=net-kind]"
 	    "[data-arg=routes]').click()");

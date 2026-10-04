@@ -1233,6 +1233,7 @@ modal(struct html *h)
 	case MODAL_TUNNEL:
 	case MODAL_IF_CREATE:
 	case MODAL_IF_SET:
+	case MODAL_IF_VNET:
 	case MODAL_NG_CONNECT:
 	case MODAL_NG_MKPEER:
 		if (!topo_modal(h))
@@ -1581,6 +1582,9 @@ modal(struct html *h)
 		case MODAL_IF_CREATE:
 		case MODAL_NG_MKPEER:
 			h_raw(h, "<button class=\"primary\">Create</button>");
+			break;
+		case MODAL_IF_VNET:
+			h_raw(h, "<button class=\"primary\">Give</button>");
 			break;
 		case MODAL_IF_SET:
 		case MODAL_WG_INIT:

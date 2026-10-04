@@ -136,6 +136,17 @@ The console is laid out as a tree and tabs.
   followed out of the jail through a link. Safe mode works there as on
   the host. From a shell: `arcanactl -j jail net …`, `interface …`,
   `route …`, `wg …`, `bird …`.
+- **An interface gets into such a jail from its host**: **+ from host**
+  above the jail's interfaces gives it one the host has (`ifconfig
+  vlan100 vnet jail`), or, with the field left empty, a new `epair`
+  made for it: the `a` end stays on the host, to be put in a bridge or
+  given an address there, the `b` end goes to the jail. **To host** on
+  a row takes that interface back. Kept, it is the jail's
+  `vnet.interface` in `jail.conf`, and a new pair is in the host's
+  `rc.conf`, so the jail has them again after a boot. The host refuses
+  to give away the interface the console reaches it by, unless asked in
+  safe mode. From a shell: `arcanactl [-p] interface name give | take
+  jail`.
 - A **jail** has its page: actions, addresses (changed live with
   jail_setv(3) and the interface alias, persistently in its `jail.conf`
   block with a diff to preview, or both), its configuration as jail(8)

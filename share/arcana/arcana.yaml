@@ -85,6 +85,16 @@ definitions:
           of enable, disable, restart and reload, with the protocol as
           the one name, or configure, which reads its configuration
           again.
+      - name: if-vnet
+        doc: |
+          Give the host's interface to the running jail named by jail,
+          which has a network of its own (vnet), or with remove take it
+          back to the host.  The interface epair, without a number, is
+          a new epair(4) made for it: its a end stays on the host, its b
+          end goes to the jail.  Here jail is where the interface goes, not
+          whose network is worked on: the host does it, with
+          ifconfig(8).  With persist, also as vnet.interface of the
+          jail in jail.conf.
   - name: job-state
     type: enum
     entries:

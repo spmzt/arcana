@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.10.1"
+#define	ARCANA_AGENT_VERSION	"0.11.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -315,6 +315,8 @@ int		 do_bird_config(struct work *,
 
 /* invidia/scope.c: the network of a vnet jail, from the host. */
 int		 scope_enter(struct work *, const char *, const char **);
+int		 do_if_vnet(struct work *, const char *, const char *, bool,
+		    bool, const char **);
 char *const	*scope_argv(struct work *, char *const []);
 int		 scope_dirfd(struct work *, const char *);
 int		 scope_open_dir(struct work *, const char *, const char **);

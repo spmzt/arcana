@@ -220,6 +220,16 @@ a VLAN's tag or a VXLAN's identifier, and
 .Cm parent
 the interface a VLAN rides or a bridge takes in.
 What cannot be finished is destroyed again.
+.It Cm interface Ar name Cm give | take Ar jail
+Give the host's interface to a running jail that has a network of its
+own, or take it back to the host.
+With
+.Fl p ,
+also as
+.Va vnet.interface
+of the jail in
+.Xr jail.conf 5 ,
+so the jail has it again when it next starts.
 .It Cm interface Ar name Cm destroy
 Destroy a cloned interface.
 .It Cm ng mkpeer | connect | rmhook | shutdown | name Ar argument ...

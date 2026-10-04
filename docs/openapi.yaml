@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.20.0
+  version: 0.21.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -608,8 +608,13 @@ paths:
                         type: string
                         enum: [jail-action, address, service-action,
                           service-config, pkg-upgrade, if-address,
-                          if-state, route]
-                      jail: { type: string }
+                          if-state, route, if-set, if-create, if-destroy,
+                          netgraph, wireguard, bird, if-vnet]
+                      jail: { type: string, description: The jail acted on.
+                          For a job that changes a network, the vnet jail
+                          whose network it is; for if-vnet, the jail the
+                          interface is given to, or with remove taken
+                          from. }
                       action: { type: string, description: For jail-action
                           and service-action. }
                       address: { type: string }

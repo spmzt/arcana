@@ -88,6 +88,19 @@ xdup(const char *s)
 	return (p);
 }
 
+/*
+ * Does the job work on a network, the jail's that it names when it names
+ * one?  Giving an interface to a jail does not: the host does that, and
+ * the jail is where the interface goes.
+ */
+static bool
+scoped(const struct arc_job_spec *sp)
+{
+
+	return (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->kind !=
+	    ARC_JOB_KIND_IF_VNET);
+}
+
 /* What the job does, in words: the activity log's line for it. */
 static char *
 title_of(const struct arc_job_spec *sp)
@@ -155,6 +168,11 @@ title_of(const struct arc_job_spec *sp)
 		rc = asprintf(&t, "bird %s%s%s", sp->verb, sp->names.n > 0 ?
 		    " " : "", sp->names.n > 0 ? sp->names.v[0] : "");
 		break;
+	case ARC_JOB_KIND_IF_VNET:
+		rc = asprintf(&t, sp->remove ? "take %s back from %s%s" :
+		    "give %s to %s%s", sp->interface, sp->jail, sp->persist ?
+		    " (kept)" : "");
+		break;
 	default:
 		rc = asprintf(&t, "pkg upgrade%s%s%s", sp->jail != NULL ?
 		    " in " : "", sp->jail != NULL ? sp->jail : "",
@@ -164,8 +182,7 @@ title_of(const struct arc_job_spec *sp)
 	if (rc == -1)
 		err(1, "asprintf");
 	/* A change to a jail's network says whose it is. */
-	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
-	    sp->jail[0] != '\0') {
+	if (scoped(sp) && sp->jail != NULL && sp->jail[0] != '\0') {
 		in = t;
 		if (asprintf(&t, "%s: %s", sp->jail, in) == -1)
 			err(1, "asprintf");
@@ -390,6 +407,42 @@ undo_prepare(struct qjob *j)
 	}
 }
 
+/*
+ * A new epair(4) for a jail: made on the host, where its a end stays,
+ * and its b end given to the jail.  A pair that cannot be given is
+ * destroyed again.
+ */
+static bool
+give_pair(struct qjob *j, const char **errp)
+{
+	struct arc_job_spec	 cs;
+	const char		*a, *e;
+	char			*b;
+
+	memset(&cs, 0, sizeof(cs));
+	cs.has_kind = true;
+	cs.kind = ARC_JOB_KIND_IF_CREATE;
+	cs.interface = (char *)(uintptr_t)"epair";
+	cs.persist = j->spec.persist;
+	a = NULL;
+	if (do_if_create(&j->w, &cs, &a, errp) != 0)
+		return (false);
+	b = wstrdup(&j->w, a);
+	if (b[0] == '\0' || b[strlen(b) - 1] != 'a') {
+		*errp = wfmt(&j->w, "ifconfig made %s, which is no end of a "
+		    "pair", a);
+		return (false);
+	}
+	b[strlen(b) - 1] = 'b';
+	if (do_if_vnet(&j->w, b, j->spec.jail, false, j->spec.persist,
+	    errp) != 0) {
+		(void)do_if_destroy(&j->w, a, j->spec.persist, &e);
+		return (false);
+	}
+	j->made = b;
+	return (true);
+}
+
 /* Take a safe change back; returns what to say of the job. */
 static const char *
 undo(struct qjob *j)
@@ -416,6 +469,13 @@ undo(struct qjob *j)
 		break;
 	case ARC_JOB_KIND_IF_STATE:
 		rc = do_if_state(&j->w, sp->interface, !sp->up, &e);
+		break;
+	case ARC_JOB_KIND_IF_VNET:
+		rc = do_if_vnet(&j->w, j->made != NULL ? j->made :
+		    sp->interface, sp->jail, !sp->remove, sp->persist, &e);
+		/* A pair made for the jail goes with it. */
+		if (rc == 0 && j->made != NULL)
+			rc = do_if_destroy(&j->w, j->made, sp->persist, &e);
 		break;
 	case ARC_JOB_KIND_IF_SET:
 		rc = do_if_set(&j->w, sp->interface, sp->has_mtu && sp->mtu !=
@@ -497,7 +557,7 @@ run(struct qjob *j)
 	pthread_mutex_unlock(&jobs_lock);
 	/* What changes a network works in the jail named, if one is. */
 	error = NULL;
-	inside = sp->kind >= ARC_JOB_KIND_IF_ADDRESS;
+	inside = scoped(sp);
 	if (go && inside && scope_enter(&j->w, sp->jail, &error) != 0) {
 		ok = false;
 		go = false;
@@ -565,6 +625,15 @@ run(struct qjob *j)
 		error = NULL;
 		ok = do_bird_verb(&j->w, sp->verb, sp->names.v, sp->names.n,
 		    &error) == 0;
+		break;
+	case ARC_JOB_KIND_IF_VNET:
+		error = NULL;
+		if (!sp->remove && strcmp(sp->interface, "epair") == 0) {
+			ok = give_pair(j, &error);
+			break;
+		}
+		ok = do_if_vnet(&j->w, sp->interface, sp->jail, sp->remove,
+		    sp->persist, &error) == 0;
 		break;
 	case ARC_JOB_KIND_IF_STATE:
 		error = NULL;

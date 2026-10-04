@@ -412,6 +412,19 @@ jobs_submit(struct server *s, struct queued *q, int n)
  * A change for the server, as the jobs API takes it: sent as a job now,
  * or held in the queue when queueing is on.  json is taken over.
  */
+/* A change to the host's own network, though a jail's page asks it. */
+static bool	on_host;
+
+void
+job_send_host(struct server *s, char *json, const char *title, int what,
+    const char *target)
+{
+
+	on_host = true;
+	job_send(s, json, title, what, target);
+	on_host = false;
+}
+
 void
 job_send(struct server *s, char *json, const char *title, int what,
     const char *target)
@@ -424,7 +437,7 @@ job_send(struct server *s, char *json, const char *title, int what,
 	 * A change to a network asked for on a jail's page is one to that
 	 * jail's network: the job says so, and the host does it there.
 	 */
-	scope = net_scope();
+	scope = on_host ? "" : net_scope();
 	if (what == JOB_IFACE && scope[0] != '\0' && s == cur_server() &&
 	    json[0] == '{') {
 		qj = json_quote(scope);

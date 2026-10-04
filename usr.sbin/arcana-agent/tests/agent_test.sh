@@ -1467,6 +1467,57 @@ EOS
 	    "$JGC" -j web -c "$SOCK" interface lo0 up
 	atf_check -s exit:1 -e match:'invalid jail name' -o ignore \
 	    "$JGC" -j 'a;b' -c "$SOCK" net routes
+
+	# An interface of the host given to the jail: the host's ifconfig,
+	# not told to work in the jail; kept, it is the jail's
+	# vnet.interface in jail.conf.
+	printf 'gateway {\n\tvnet;\n\tvnet.interface = "epair1b";\n}\n' \
+	    >> etc/jail.conf
+	: > ifconfig.log
+	atf_check -o match:'give lo0 to gateway \(kept\)' -o match:'done' \
+	    "$JGC" -p -c "$SOCK" interface lo0 give gateway
+	atf_check -o match:'^lo0 vnet 4$' -o not-match:'-j 4' cat ifconfig.log
+	atf_check -o match:'vnet.interface = "epair1b", "lo0";' \
+	    cat etc/jail.conf
+	# And taken back: out of the jail, and out of the file.
+	atf_check -o match:'take lo0 back from gateway' \
+	    -o match:'fake-ifconfig lo0 -vnet 4' \
+	    "$JGC" -p -c "$SOCK" interface lo0 take gateway
+	atf_check -o match:'vnet.interface = "epair1b";' \
+	    -o not-match:'"lo0"' cat etc/jail.conf
+	# What the file has already stays as it is written.
+	atf_check -o match:'done' \
+	    "$JGC" -p -c "$SOCK" interface epair1b take gateway
+	atf_check -o not-match:'epair1b' cat etc/jail.conf
+	# Only what is there moves, and only to a jail with a network.
+	atf_check -s exit:1 -o match:'the jail gateway has no interface em9' \
+	    "$JGC" -c "$SOCK" interface em9 take gateway
+	atf_check -s exit:1 -o match:'the host has no interface em9' \
+	    "$JGC" -c "$SOCK" interface em9 give gateway
+	atf_check -s exit:1 -o match:'has no network of its own' \
+	    "$JGC" -c "$SOCK" interface lo0 give web
+	atf_check -s exit:1 -o match:'is not running' \
+	    "$JGC" -c "$SOCK" interface lo0 give nope
+	# In safe mode, unconfirmed, the jail gives it back.
+	: > ifconfig.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" \
+	    interface lo0 give gateway
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'^lo0 vnet 4$' -o match:'^lo0 -vnet 4$' \
+	    cat ifconfig.log
+	# A new pair for the jail is made on the host; one that cannot be
+	# given, as here where no pair is really made, is destroyed again.
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n[ "$*" = "epair create" ] && echo epair7a\nexit 0\n' "$(pwd)" > fake-ifconfig
+	: > ifconfig.log
+	atf_check -s exit:1 -o match:'give epair to gateway' \
+	    -o match:'the host has no interface epair7b' \
+	    "$JGC" -c "$SOCK" interface epair give gateway
+	atf_check -o match:'^epair create$' -o match:'^epair7a destroy$' \
+	    -o not-match:'vnet' cat ifconfig.log
 }
 vnet_cleanup()
 {

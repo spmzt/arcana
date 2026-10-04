@@ -366,6 +366,13 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 		    "description") : "");
 		h_attr(h, "data-value", buf);
 		h_raw(h, ">Edit</button>");
+		if (net_scope()[0] != '\0' && strncmp(name, "lo", 2) != 0) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "if-vnet-back\" title=\"Take this interface out "
+			    "of the jail, back to its host\"");
+			h_attr(h, "data-arg", name);
+			h_raw(h, ">To host</button>");
+		}
 		if (cloned(name)) {
 			h_raw(h, "<button class=\"icon\" data-act=\""
 			    "if-destroy\" title=\"Destroy this interface\"");
@@ -416,6 +423,11 @@ view_network(struct html *h, struct server *s)
 		h_raw(h, "<button class=\"ghost small\" data-act=\""
 		    "topo-if-create\" data-arg=\"\" title=\"Create an epair, a "
 		    "tunnel, a bridge, a VLAN…\">+ interface</button>");
+	if (app.net.kind == NET_INTERFACES && net_scope()[0] != '\0')
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "if-vnet-give\" title=\"Give the jail an interface of "
+		    "its host, or one end of a new epair\">+ from host"
+		    "</button>");
 	if (app.net.kind == NET_ROUTES || app.net.kind == NET_NEXTHOPS) {
 		h_raw(h, "<label class=\"fib\" title=\"The routing table "
 		    "(FIB) shown and changed\">fib<input data-input=\""
