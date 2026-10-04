@@ -230,6 +230,15 @@ emit_jail(const struct arc_jail *j, bool table)
 		xo_emit("{Lwc:Hostname}{:hostname/%s}\n", j->hostname);
 	if (j->path != NULL)
 		xo_emit("{Lwc:Path}{:path/%s}\n", j->path);
+	if (j->plugins.n > 0) {
+		xo_emit("{Lwc:Plugins}");
+		xo_open_list("plugins");
+		for (i = 0; i < j->plugins.n; i++)
+			xo_emit("{P:/%s}{l:plugins/%s}", i > 0 ? " " : "",
+			    j->plugins.v[i]);
+		xo_close_list("plugins");
+		xo_emit("\n");
+	}
 	if (j->ip4.n > 0)
 		xo_emit("{Lwc:IPv4}{d:/%s}\n", join(j->ip4.v, j->ip4.n));
 	if (j->ip6.n > 0)
@@ -371,6 +380,18 @@ cmd_hello(struct arc_client *cl)
 	xo_emit("{Lwc:arcana-agent}{:version/%s}\n", h->version);
 	if (h->build != NULL)
 		xo_emit("{Lwc:Build}{:build/%s}\n", h->build);
+	/* What is installed there that is not the base system's. */
+	if (h->plugins.n > 0) {
+		size_t	i;
+
+		xo_emit("{Lwc:Plugins}");
+		xo_open_list("plugins");
+		for (i = 0; i < h->plugins.n; i++)
+			xo_emit("{P:/%s}{l:plugins/%s}", i > 0 ? " " : "",
+			    h->plugins.v[i]);
+		xo_close_list("plugins");
+		xo_emit("\n");
+	}
 	xo_close_container("host");
 	arc_hello_rsp_free(rsp);
 	return (0);
