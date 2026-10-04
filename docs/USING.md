@@ -2,6 +2,16 @@
 
 The console is laid out as a tree and tabs.
 
+- **The first host** is the machine the console runs on. Arcana installs
+  the agent beside the console, so nothing is enrolled: start it
+  (`sysrc arcana_agent_enable=YES`, `service arcana_agent start`) and
+  the console adds it by itself, under the host's name, over the agent's
+  local socket. Until then the empty page says what it waits for: no
+  agent answering, or one whose socket the console's user may not use.
+  The agent's rc script lets the group `arcana`, the console's, use the
+  socket when that group exists. Taken off the list, the host is not
+  added again; `local_agent` in `web.conf` names another socket, or
+  none.
 - The **tree** on the left: the fleet, its hosts, and each host's jails.
   What you select decides the page. **Enrol a host** and **Add a server**
   are at its top. A host's jails are folded away until you open them

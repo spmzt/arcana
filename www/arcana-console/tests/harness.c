@@ -41,6 +41,10 @@ static char	 kore_path[MAXPATHLEN];
 static void	 terminate(const char *);
 /* The console sends another build of arcana-agent than the host runs. */
 bool		 harness_other_agent;
+/* The agent beside the console is looked for, as outside the tests. */
+bool		 harness_local_agent;
+/* web.conf's local_agent is the test's own line. */
+bool		 harness_webconf_only_local;
 
 extern char	**environ;
 
@@ -178,7 +182,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 cwd[MAXPATHLEN], buf[4096], so[MAXPATHLEN], routes[MAXPATHLEN];
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 send[MAXPATHLEN];
-	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN];
+	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	const char *kore, *dh;
 	char	*argv[52];
 	FILE	*fp;
@@ -385,10 +389,17 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 		    jgd, send, send);
 		ATF_REQUIRE(system(buf) == 0);
 	}
+	/* None, unless a test is about it or names one itself. */
+	if (harness_webconf_only_local)
+		local[0] = '\0';
+	else
+		snprintf(local, sizeof(local), harness_local_agent ?
+		    "local_agent = \"unix:%s/jgd.sock\";\n" :
+		    "local_agent = \"\";\n", cwd);
 	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n"
-	    "agent_binary = \"%s\";\n%s", RP_ID, harness_origin, cwd, send,
-	    harness_webconf);
+	    "agent_binary = \"%s\";\n%s%s", RP_ID, harness_origin, cwd, send,
+	    local, harness_webconf);
 	put("web.conf", buf);
 	if (port != 0)
 		snprintf(listen, sizeof(listen), "bind 127.0.0.1 %d", port);

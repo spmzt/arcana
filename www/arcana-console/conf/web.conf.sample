@@ -42,3 +42,12 @@ cookie_secure = true;
 # Over SSH, a private key on the host that builds, readable by nobody;
 # by default that host makes one and the console shows it to you.
 #agent_ssh_key = "/usr/local/etc/arcana/git_ed25519";
+
+# The agent of the host the console runs on is added to the list of
+# servers by itself, once it answers on its local socket: start it with
+# "service arcana_agent enable" and "service arcana_agent start", and
+# have the console's user in the group of its socket (arcana_agent_group
+# in rc.conf).  Taken off the list, it is not added again.  Another
+# socket, or none:
+#local_agent = "unix:/var/run/arcana-agent.sock";
+#local_agent = "";

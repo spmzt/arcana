@@ -419,10 +419,18 @@ static const char *
 agent_path(bool *builtp)
 {
 	static char	built[MAXPATHLEN];
+	struct stat	sb, si;
 	bool		isbuilt;
 
+	/*
+	 * The one a host built, unless the one installed with the console
+	 * is newer: after the console itself was updated, that is the
+	 * agent of its version, and the built one is of the one before.
+	 */
 	snprintf(built, sizeof(built), "%s/agent/arcana-agent", cfg.datadir);
-	isbuilt = cfg.agent_source != NULL && access(built, R_OK) == 0;
+	isbuilt = cfg.agent_source != NULL && stat(built, &sb) == 0 &&
+	    (stat(cfg.agent_binary, &si) == -1 || sb.st_mtim.tv_sec >=
+	    si.st_mtim.tv_sec);
 	if (builtp != NULL)
 		*builtp = isbuilt;
 	return (isbuilt ? built : cfg.agent_binary);

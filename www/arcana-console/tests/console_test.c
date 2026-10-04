@@ -673,6 +673,21 @@ ATF_TC_BODY(agent_build, tc)
 	resp_free(&r);
 
 	/*
+	 * Unless the one installed beside the console is newer, as after
+	 * the console itself was updated: that one is of its version, and
+	 * the built one of the version before.
+	 */
+	ATF_REQUIRE(system("touch -t 203001010000 other-agent") == 0);
+	http("GET", "/api/health", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strcmp(sha, jstr(&r, "agent_build")) != 0);
+	resp_free(&r);
+	ATF_REQUIRE(system("touch -t 200001010000 other-agent") == 0);
+	http("GET", "/api/health", NULL, &r);
+	ATF_CHECK_STREQ(sha, jstr(&r, "agent_build"));
+	resp_free(&r);
+
+	/*
 	 * Over SSH: the host hands back the server's host keys for the
 	 * user to confirm, and builds once they come back confirmed.
 	 */
@@ -947,6 +962,77 @@ ATF_TC_BODY(push, tc)
 	http("GET", "/api/push", NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("Chrome on Android", jstr(&r, "devices.0.name"));
+	resp_free(&r);
+}
+
+CONSOLE_TC(local_agent, "The agent beside the console is added by itself, "
+    "once, when its socket answers")
+ATF_TC_BODY(local_agent, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], path[MAXPATHLEN], host[MAXHOSTNAMELEN];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ATF_REQUIRE(gethostname(host, sizeof(host)) == 0);
+	host[strcspn(host, ".")] = '\0';
+	harness_local_agent = true;
+	start(tc, 0, NULL);
+	enrol(&a);
+
+	/* It runs, and the console may reach it: there it is, by the
+	 * host's name, and it answers. */
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("added", jstr(&r, "local"));
+	ATF_CHECK_STREQ(host, jstr(&r, "servers.0.name"));
+	ATF_CHECK_STREQ("true", jstr(&r, "servers.0.local"));
+	ATF_CHECK(strstr(jstr(&r, "servers.0.uri"), "/jgd.sock") != NULL);
+	ATF_CHECK(jstr(&r, "servers.1.id") == NULL);
+	snprintf(path, sizeof(path), "/api/servers/%s", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+	snprintf(cwd, sizeof(cwd), "%s/jails", path);
+	http("GET", cwd, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* Asked again, it is not added twice. */
+	http("GET", "/api/servers", NULL, &r);
+	ATF_CHECK(jstr(&r, "servers.1.id") == NULL);
+	resp_free(&r);
+
+	/* Taken off the list, it stays off: over a restart too. */
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "servers.0.id") == NULL);
+	ATF_CHECK_STREQ("removed", jstr(&r, "local"));
+	resp_free(&r);
+	restart_console();
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "servers.0.id") == NULL);
+	ATF_CHECK_STREQ("removed", jstr(&r, "local"));
+	resp_free(&r);
+}
+
+CONSOLE_TC(local_absent, "Without an agent beside the console, it says "
+    "what it waits for")
+ATF_TC_BODY(local_absent, tc)
+{
+	struct authn	a;
+	struct resp	r;
+
+	snprintf(harness_webconf, sizeof(harness_webconf), "local_agent = "
+	    "\"unix:/nonexistent/arcana-agent.sock\";\n");
+	harness_webconf_only_local = true;
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("absent", jstr(&r, "local"));
+	ATF_CHECK_STREQ("unix:/nonexistent/arcana-agent.sock", jstr(&r,
+	    "local_agent"));
+	ATF_CHECK(jstr(&r, "servers.0.id") == NULL);
 	resp_free(&r);
 }
 
@@ -1803,6 +1889,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, settings);
+	ATF_TP_ADD_TC(tp, local_agent);
+	ATF_TP_ADD_TC(tp, local_absent);
 	ATF_TP_ADD_TC(tp, push);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);

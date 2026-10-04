@@ -752,11 +752,38 @@ stage(struct html *h)
 		return;
 	}
 	if ((s = cur_server()) == NULL) {
-		h_raw(h, "<div class=\"empty\"><h2>No hosts yet</h2><p>Enrol a "
-		    "host running <code>arcana-agent(8)</code>, or add one that "
-		    "already has its certificates: "
-		    "<code>unix:/var/run/arcana-agent.sock</code> for this "
-		    "machine, <code>tcp://host:4310</code> for others.</p>"
+		h_raw(h, "<div class=\"empty\"><h2>No hosts yet</h2>");
+		/*
+		 * The machine the console runs on is the first host: its
+		 * agent is added by itself once it answers, and until then
+		 * this says what it waits for.
+		 */
+		if (strcmp(app.local, "absent") == 0) {
+			h_raw(h, "<div class=\"notice info local\"><b>This "
+			    "machine</b> is added by itself once its agent "
+			    "runs. On it:<pre>service arcana_agent enable\n"
+			    "service arcana_agent start</pre>Nothing answers "
+			    "on <code>");
+			h_txt(h, app.local_agent);
+			h_raw(h, "</code> yet. <button class=\"ghost small\" "
+			    "data-act=\"servers-again\">Look again</button>"
+			    "</div>");
+		} else if (strcmp(app.local, "denied") == 0) {
+			h_raw(h, "<div class=\"notice warn local\"><b>This "
+			    "machine's</b> agent runs, but the console may not "
+			    "use its socket <code>");
+			h_txt(h, app.local_agent);
+			h_raw(h, "</code>. Put the console's user in the "
+			    "socket's group, then restart both:<pre>sysrc "
+			    "arcana_agent_group=arcana\npw groupmod arcana -m "
+			    "arcana\nservice arcana_agent restart\nservice "
+			    "arcana_console restart</pre><button class=\"ghost "
+			    "small\" data-act=\"servers-again\">Look again"
+			    "</button></div>");
+		}
+		h_raw(h, "<p>Enrol a host running <code>arcana-agent(8)</code>, "
+		    "or add one that already has its certificates: "
+		    "<code>tcp://host:4310</code>.</p>"
 		    "<button class=\"primary\" data-act=\"enrol\">Enrol a host"
 		    "</button> <button class=\"ghost\" data-act=\"add-server\">"
 		    "Add a server</button></div></main>");

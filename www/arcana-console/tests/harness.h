@@ -32,6 +32,8 @@ extern char		 harness_origin[64];
 extern int		 harness_port;
 extern char		 harness_webconf[1024];
 extern bool		 harness_other_agent;
+extern bool		 harness_local_agent;
+extern bool		 harness_webconf_only_local;
 
 const char	*locate(const atf_tc_t *, const char *, const char *,
 		    const char *);

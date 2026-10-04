@@ -13,6 +13,12 @@ The console (CONSOLE option) runs kore(1) as an unprivileged user:
   edit %%PREFIX%%/etc/arcana/kore.conf and web.conf
   sysrc arcana_console_enable=YES && service arcana_console start
 
+The host the console runs on is its first: start its agent, and the
+console adds it by itself, over the agent's local socket, which the
+group arcana may use:
+
+  sysrc arcana_agent_enable=YES && service arcana_agent start
+
 Its TLS certificate must be RSA: Kore's key manager signs nothing else.
 The first login needs the token in /var/db/arcana/setup-token.
 EOM

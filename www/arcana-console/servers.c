@@ -11,12 +11,16 @@
  * host.  Kept in servers.json in the data directory.
  */
 
-#include <sys/types.h>
+#include <sys/param.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "console.h"
 
@@ -32,6 +36,16 @@ static int	save(void);
 static ucl_object_t *server_object(const struct server *);
 static void	add(const char *, const char *, const char *, const char *);
 static void	new_id(char *, size_t);
+static void	local_enrol(void);
+
+/*
+ * The agent beside the console.  Arcana installs both, so the host the
+ * console runs on is the first to manage: once its agent answers on
+ * its local socket, it is added by itself, under the host's name.  It
+ * is added once: taken off the list by somebody, it stays off.
+ */
+static bool		local_done;	/* added once, or found there */
+static const char	*local_state = "off";
 
 static bool
 valid_name(const char *s)
@@ -101,7 +115,74 @@ servers_init(void)
 			continue;
 		add(id, name, uri, ucl_str(o, "peer_name"));
 	}
+	local_done = ucl_flag(doc, "local_done");
 	ucl_object_unref(doc);
+}
+
+/*
+ * Look for the agent beside the console, until it was added once.  Its
+ * socket is tried, not only looked at: one the console's user may not
+ * connect to is no agent to add, and why is told to who asks.
+ */
+static void
+local_enrol(void)
+{
+	struct sockaddr_un	 sun;
+	char			 host[MAXHOSTNAMELEN], id[9];
+	const char		*path;
+	int			 i, s, error;
+
+	if (cfg.local_agent == NULL || strncmp(cfg.local_agent, "unix:/",
+	    6) != 0) {
+		local_state = "off";
+		return;
+	}
+	for (i = 0; i < nservers; i++)
+		if (strcmp(servers[i].uri, cfg.local_agent) == 0) {
+			local_state = "added";
+			if (!local_done) {
+				local_done = true;
+				(void)save();
+			}
+			return;
+		}
+	if (local_done) {
+		local_state = "removed";
+		return;
+	}
+	path = cfg.local_agent + 5;
+	memset(&sun, 0, sizeof(sun));
+	sun.sun_family = AF_UNIX;
+	if (strlcpy(sun.sun_path, path, sizeof(sun.sun_path)) >=
+	    sizeof(sun.sun_path) || nservers == MAX_SERVERS) {
+		local_state = "off";
+		return;
+	}
+	if ((s = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0)) == -1)
+		return;
+	error = connect(s, (struct sockaddr *)&sun, sizeof(sun)) == -1 ?
+	    errno : 0;
+	close(s);
+	if (error != 0) {
+		/* Not running, or not for the console's user to reach. */
+		local_state = error == EACCES || error == EPERM ? "denied" :
+		    "absent";
+		return;
+	}
+	if (gethostname(host, sizeof(host)) == -1 || host[0] == '\0')
+		strlcpy(host, "this host", sizeof(host));
+	host[sizeof(host) - 1] = '\0';
+	host[strcspn(host, ".")] = '\0';
+	if (!valid_name(host))
+		strlcpy(host, "this host", sizeof(host));
+	new_id(id, sizeof(id));
+	add(id, host, cfg.local_agent, NULL);
+	local_done = true;
+	local_state = "added";
+	if (save() == -1)
+		kore_log(LOG_ERR, "cannot save the list of servers");
+	kore_log(LOG_NOTICE, "server %s added by itself: the agent beside "
+	    "the console, %s", id, cfg.local_agent);
 }
 
 static void
@@ -182,6 +263,8 @@ save(void)
 	for (i = 0; i < nservers; i++)
 		ucl_array_append(a, server_object(&servers[i]));
 	ucl_object_insert_key(doc, a, "servers", 0, false);
+	ucl_object_insert_key(doc, ucl_object_frombool(local_done),
+	    "local_done", 0, false);
 	rc = store_save(SERVERS, doc);
 	ucl_object_unref(doc);
 	return (rc);
@@ -233,11 +316,19 @@ api_servers(struct http_request *req)
 		kore_log(LOG_NOTICE, "server %s added: %s", id,
 		    servers[nservers - 1].uri);
 	}
+	/* The agent beside the console may have come up since. */
+	local_enrol();
 	a = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0; i < nservers; i++)
 		ucl_array_append(a, server_object(&servers[i]));
 	o = ucl_object_typed_new(UCL_OBJECT);
 	ucl_object_insert_key(o, a, "servers", 0, false);
+	/* added, removed, absent (not running), denied (not reachable). */
+	ucl_object_insert_key(o, ucl_object_fromstring(local_state), "local",
+	    0, false);
+	if (cfg.local_agent != NULL)
+		ucl_object_insert_key(o, ucl_object_fromstring(
+		    cfg.local_agent), "local_agent", 0, false);
 	return (reply_json(req, 200, o));
 }
 

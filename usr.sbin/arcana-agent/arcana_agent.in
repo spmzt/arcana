@@ -12,7 +12,10 @@
 # arcana_agent_socket (str):	The local socket, always listened on.
 #				Default: /var/run/arcana-agent.sock
 # arcana_agent_group (str):	A group whose members may use the socket.
-#				Default: none, root only.
+#				Default: arcana, the group of the console's
+#				user, when there is one, so that a console
+#				on this host reaches its agent; root only
+#				otherwise, or when set to "".
 # arcana_agent_listen (str):	Network listeners, separated by spaces, for
 #				example "tcp://0.0.0.0:4310 tcp://[::]:4310".
 #				Default: none, the local socket only.
@@ -31,7 +34,11 @@ load_rc_config $name
 
 : ${arcana_agent_enable:="NO"}
 : ${arcana_agent_socket:="/var/run/arcana-agent.sock"}
-: ${arcana_agent_group:=""}
+# Unset, not empty: "" is how to say root only.
+if [ -z "${arcana_agent_group+set}" ] && pw groupshow arcana > /dev/null 2>&1; then
+	arcana_agent_group="arcana"
+fi
+: ${arcana_agent_group=""}
 : ${arcana_agent_listen:=""}
 : ${arcana_agent_ca:="%%PREFIX%%/etc/arcana/ca.pem"}
 : ${arcana_agent_cert:="%%PREFIX%%/etc/arcana/host.pem"}

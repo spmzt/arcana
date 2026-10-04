@@ -32,7 +32,9 @@ there clones the repository, builds all of Arcana as `nobody`, runs
 the page, the agent and the tools), and restarts the `arcana_console`
 service and then itself, `arcana_agent`: the console and the agent of
 one host are of one version, and read each other. Updating by hand,
-restart both too. The page reconnects by itself, still logged in: the
+restart both too. The agent the console then sends to the other hosts
+is the one installed with it, when that is newer than the one a host
+built for it earlier. The page reconnects by itself, still logged in: the
 console keeps its sessions over a restart. When the console answers with another version
 than the page was loaded from, the page loads itself again, after
 letting its service worker take the new files. A repository over SSH asks for

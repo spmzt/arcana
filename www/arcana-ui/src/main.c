@@ -925,6 +925,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "do-delete-key") == 0) {
 		app.modal = MODAL_KEYS;
 		delete_key(arg);
+	} else if (strcmp(act, "servers-again") == 0) {
+		refresh_servers();
 	} else if (strcmp(act, "retry") == 0) {
 		auth_status();
 	} else if (strcmp(act, "login") == 0) {

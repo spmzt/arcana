@@ -572,6 +572,10 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	nold = app.nservers;
 	memset(app.servers, 0, sizeof(app.servers));
 	app.nservers = 0;
+	snprintf(app.local, sizeof(app.local), "%s", jstr(o, "local") != NULL ?
+	    jstr(o, "local") : "");
+	snprintf(app.local_agent, sizeof(app.local_agent), "%s", jstr(o,
+	    "local_agent") != NULL ? jstr(o, "local_agent") : "");
 	a = jget(o, "servers");
 	it = NULL;
 	while ((e = ucl_object_iterate(a, &it, true)) != NULL &&

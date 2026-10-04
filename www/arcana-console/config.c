@@ -85,6 +85,10 @@ config_load(const char *path)
 	cfg.agent_source = get(top, "agent_source", NULL);
 	cfg.agent_ref = get(top, "agent_ref", NULL);
 	cfg.agent_ssh_key = get(top, "agent_ssh_key", NULL);
+	/* Empty says: do not look for an agent beside the console. */
+	cfg.local_agent = get(top, "local_agent", ARCW_LOCAL_AGENT);
+	if (cfg.local_agent != NULL && cfg.local_agent[0] == '\0')
+		cfg.local_agent = NULL;
 	ucl_object_unref(top);
 
 	if (cfg.rp_id == NULL || cfg.origin == NULL) {

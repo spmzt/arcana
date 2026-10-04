@@ -364,6 +364,8 @@ struct app {
 	struct netview	 net;
 	struct pkgview	 pkg;
 	bool		 servers_loaded;
+	char		 local[12];	/* the agent beside the console: added, absent, denied, ... */
+	char		 local_agent[160];	/* and its socket */
 
 	bool		 queue_on;	/* changes are held, not sent */
 	struct queued	 batch[MAX_BATCH];
