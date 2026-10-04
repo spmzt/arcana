@@ -206,7 +206,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 
 	ATF_REQUIRE(mkdir("etc", 0755) == 0);
 	ATF_REQUIRE(mkdir("etc/jail.conf.d", 0755) == 0);
-	ATF_REQUIRE(mkdir("data", 0700) == 0);
+	/* A test may have put something there to start from. */
+	ATF_REQUIRE(mkdir("data", 0700) == 0 || errno == EEXIST);
 	ATF_REQUIRE(mkdir("www", 0755) == 0);
 	put("www/index.html", "<!doctype html><title>t</title>\n");
 	harness_port = port;

@@ -1015,6 +1015,30 @@ ATF_TC_BODY(local_agent, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(local_same, "The agent beside the console is not added again "
+    "when it is on the list under another spelling of its socket")
+ATF_TC_BODY(local_same, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], buf[MAXPATHLEN + 128];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	ATF_REQUIRE(mkdir("data", 0700) == 0);
+	snprintf(buf, sizeof(buf), "{\"servers\":[{\"id\":\"933e5390\",\"name\":"
+	    "\"here\",\"uri\":\"unix://%s/jgd.sock\"}]}\n", cwd);
+	put("data/servers.json", buf);
+	harness_local_agent = true;
+	start(tc, 0, NULL);
+	enrol(&a);
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("added", jstr(&r, "local"));
+	ATF_CHECK_STREQ("here", jstr(&r, "servers.0.name"));
+	ATF_CHECK(jstr(&r, "servers.1.id") == NULL);
+	resp_free(&r);
+}
+
 CONSOLE_TC(local_absent, "Without an agent beside the console, it says "
     "what it waits for")
 ATF_TC_BODY(local_absent, tc)
@@ -1890,6 +1914,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, local_agent);
+	ATF_TP_ADD_TC(tp, local_same);
 	ATF_TP_ADD_TC(tp, local_absent);
 	ATF_TP_ADD_TC(tp, push);
 	ATF_TP_ADD_TC(tp, load);

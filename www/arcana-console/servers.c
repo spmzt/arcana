@@ -37,6 +37,8 @@ static ucl_object_t *server_object(const struct server *);
 static void	add(const char *, const char *, const char *, const char *);
 static void	new_id(char *, size_t);
 static void	local_enrol(void);
+static const char *socket_path(const char *);
+static bool	same_socket(const char *, const char *);
 
 /*
  * The agent beside the console.  Arcana installs both, so the host the
@@ -119,6 +121,29 @@ servers_init(void)
 	ucl_object_unref(doc);
 }
 
+/* The path of a unix: URI, however many slashes it was written with. */
+static const char *
+socket_path(const char *uri)
+{
+
+	if (strncmp(uri, "unix:", 5) != 0)
+		return (NULL);
+	uri += 5;
+	while (uri[0] == '/' && uri[1] == '/')
+		uri++;
+	return (uri);
+}
+
+/* Do two URIs name one local socket?  unix:/x and unix:///x do. */
+static bool
+same_socket(const char *a, const char *b)
+{
+	const char	*pa, *pb;
+
+	return ((pa = socket_path(a)) != NULL && (pb = socket_path(b)) !=
+	    NULL && strcmp(pa, pb) == 0);
+}
+
 /*
  * Look for the agent beside the console, until it was added once.  Its
  * socket is tried, not only looked at: one the console's user may not
@@ -138,7 +163,7 @@ local_enrol(void)
 		return;
 	}
 	for (i = 0; i < nservers; i++)
-		if (strcmp(servers[i].uri, cfg.local_agent) == 0) {
+		if (same_socket(servers[i].uri, cfg.local_agent)) {
 			local_state = "added";
 			if (!local_done) {
 				local_done = true;
@@ -150,7 +175,7 @@ local_enrol(void)
 		local_state = "removed";
 		return;
 	}
-	path = cfg.local_agent + 5;
+	path = socket_path(cfg.local_agent);
 	memset(&sun, 0, sizeof(sun));
 	sun.sun_family = AF_UNIX;
 	if (strlcpy(sun.sun_path, path, sizeof(sun.sun_path)) >=
