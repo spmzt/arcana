@@ -852,6 +852,12 @@ ATF_TC_BODY(pwa, tc)
 	    "getComputedStyle(document.documentElement).getPropertyValue("
 	    "'--cyan').trim() === '#ffb547'", 5);
 	shot("m9-amber");
+	run("document.querySelector('button.theme[data-arg=onyx]').click()");
+	wait_js("document.documentElement.dataset.theme === 'onyx' && "
+	    "getComputedStyle(document.documentElement).getPropertyValue("
+	    "'--cyan').trim() === '#e5484d' && !getComputedStyle(document.body)"
+	    ".fontFamily.startsWith('\"JetBrains')", 5);
+	shot("m9a-onyx");
 	run("document.querySelector('button.theme[data-arg=paper]').click()");
 	wait_js("document.documentElement.dataset.theme === 'paper'", 5);
 	shot("m10-paper");
@@ -1005,6 +1011,9 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('button[data-act=topo-jails].on') && "
 	    "document.querySelector('.map-panel .io-now')", 30);
 	shot("8a-overview");
+	run("document.documentElement.dataset.theme = 'onyx'");
+	shot("8a-onyx");
+	run("delete document.documentElement.dataset.theme");
 
 	/*
 	 * A tunnel is drawn: from one host's port onto the other.  That

@@ -1117,7 +1117,8 @@ static const struct {
 	const char	*name, *title;
 } themes[] = {
 	{ "", "Tron" }, { "amber", "Amber" }, { "matrix", "Matrix" },
-	{ "synth", "Synth" }, { "slate", "Slate" }, { "paper", "Paper" },
+	{ "synth", "Synth" }, { "slate", "Slate" }, { "onyx", "Onyx" },
+	{ "paper", "Paper" },
 };
 
 static void

@@ -118,7 +118,8 @@ The console is laid out as a tree and tabs.
   drawer are resized by dragging their edge; the browser keeps the
   sizes, and a double click on the edge goes back to the usual one.
 - **Settings** has the console's version, and under **Look** its
-  themes: Tron, Amber, Matrix, Synth, Slate and the light Paper. The one
+  themes: Tron, Amber, Matrix, Synth, Slate, Onyx (black, white and one
+  red, in a plain face, without glow) and the light Paper. The one
   picked takes at once and is kept in that browser. A theme is a set of
   colours in `web/style.css` (`html[data-theme="…"]`): the accent, the
   surfaces and the text, which everything else is drawn from.

@@ -141,6 +141,94 @@ html[data-theme="paper"] {
 	--slate: #7d8b98;
 	--display: var(--mono);
 }
+/*
+ * Onyx: black, white and one red.  Nothing glows and nothing is
+ * spaced out in capitals: a plain face for headings and text, the
+ * fixed one kept for what is read character by character.
+ */
+html[data-theme="onyx"] {
+	--bg: #0a0a0a;
+	--bg-2: #111111;
+	--fg: #f5f5f5;
+	--fg-2: #b4b4b4;
+	--dim: #7a7a7a;
+	--cyan: #e5484d;
+	--accent-rgb: 229, 72, 77;
+	--surface-rgb: 20, 20, 20;
+	--line: rgba(255, 255, 255, 0.09);
+	--line-2: rgba(255, 255, 255, 0.2);
+	--panel: #141414;
+	--panel-2: #181818;
+	--red: #ff6b6b;
+	--red-rgb: 255, 107, 107;
+	--amber: #e2a336;
+	--amber-rgb: 226, 163, 54;
+	--green: #4cc38a;
+	--violet: #e8e8e8;
+	--violet-rgb: 232, 232, 232;
+	--teal: #a3a3a3;
+	--blue: #8a8a8a;
+	--slate: #5c5c5c;
+	--magenta: #e5484d;
+	--sans: "Inter", "Helvetica Neue", "Segoe UI", system-ui, -apple-system,
+	    Arial, sans-serif;
+	--display: var(--sans);
+	--cut: 6px;
+}
+html[data-theme="onyx"] body { font-family: var(--sans); font-size: 14px; }
+html[data-theme="onyx"] body::before,
+html[data-theme="onyx"] body::after { display: none; }
+html[data-theme="onyx"] code,
+html[data-theme="onyx"] pre,
+html[data-theme="onyx"] .mono,
+html[data-theme="onyx"] input,
+html[data-theme="onyx"] table.net td,
+html[data-theme="onyx"] svg.topo text { font-family: var(--mono); }
+html[data-theme="onyx"] *,
+html[data-theme="onyx"] *::before,
+html[data-theme="onyx"] *::after {
+	text-shadow: none !important;
+	backdrop-filter: none !important;
+	-webkit-backdrop-filter: none !important;
+}
+html[data-theme="onyx"] h1,
+html[data-theme="onyx"] h2,
+html[data-theme="onyx"] h3,
+html[data-theme="onyx"] h4,
+html[data-theme="onyx"] .pane h4,
+html[data-theme="onyx"] .label,
+html[data-theme="onyx"] button,
+html[data-theme="onyx"] th {
+	letter-spacing: .01em;
+}
+html[data-theme="onyx"] .pane h4,
+html[data-theme="onyx"] h4 { color: var(--fg); font-size: .82rem; }
+html[data-theme="onyx"] button { text-transform: none; font-weight: 500; }
+html[data-theme="onyx"] button.primary {
+	background: var(--cyan);
+	border-color: var(--cyan);
+	color: #fff;
+	box-shadow: none;
+}
+html[data-theme="onyx"] button.ghost.on,
+html[data-theme="onyx"] button.tab.on { color: var(--fg); }
+html[data-theme="onyx"] .tnode .box,
+html[data-theme="onyx"] .tnode.sel .box,
+html[data-theme="onyx"] .tpath.best,
+html[data-theme="onyx"] .tlink.sel .wire { filter: none; }
+/* Red is the accent here, and would say "wrong" of what is well. */
+html[data-theme="onyx"] .link.up,
+html[data-theme="onyx"] .s-running,
+html[data-theme="onyx"] .server.up,
+html[data-theme="onyx"] .tree .titem.up { --c: var(--green); }
+html[data-theme="onyx"] .tnode .port { stroke: var(--fg-2); }
+html[data-theme="onyx"] .tnode .port:hover { fill: var(--fg); }
+html[data-theme="onyx"] code { color: var(--fg); }
+html[data-theme="onyx"] .map-wrap { background: var(--panel); }
+html[data-theme="onyx"] .tpath.best { stroke: var(--fg); }
+html[data-theme="onyx"] svg.topo .head { fill: var(--fg); }
+html[data-theme="onyx"] .hopno circle { fill: var(--fg); }
+
 /* Text that was light on a dark tint, on paper. */
 html[data-theme="paper"] .banner.warn,
 html[data-theme="paper"] .notice.warn { color: #6b3c00; }
@@ -2408,6 +2496,7 @@ ul.devices em { color: var(--cyan); font-style: normal; font-size: .7rem; }
 .themes .theme.t-synth i { background: #ff74d4; box-shadow: 0 0 0 2px #0a0512; }
 .themes .theme.t-slate i { background: #7aa7ff; box-shadow: 0 0 0 2px #0d1117; }
 .themes .theme.t-paper i { background: #006e9c; box-shadow: 0 0 0 2px #f3f5f7; }
+.themes .theme.t-onyx i { background: #e5484d; box-shadow: 0 0 0 2px #0a0a0a, 0 0 0 3px #f5f5f5; }
 
 /*
  * Narrow screens.  The tree is one line, unfolded on demand, so that
