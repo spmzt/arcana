@@ -1428,7 +1428,8 @@ map_nodes(struct html *h)
 	double			 total;
 	int			 i, k, nif;
 
-	for (k = 0; k < nsegs; k++) {
+	/* A network several are in: with its lines, or not at all. */
+	for (k = 0; !tp.hide[LK_LAN] && k < nsegs; k++) {
 		if (segs[k].n < 3)
 			continue;
 		h_fmt(h, "<g class=\"tseg\" transform=\"translate(%.1f,%.1f)\">"

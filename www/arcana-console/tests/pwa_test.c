@@ -1533,6 +1533,7 @@ ATF_TC_BODY(pwa, tc)
 	ATF_REQUIRE(js_true("document.querySelector('svg.topo .tlink.lan')"));
 	click_at(".map-legend li[data-arg=lan]");
 	wait_js("!document.querySelector('svg.topo .tlink.lan') && "
+	    "!document.querySelector('svg.topo .tseg') && "
 	    "document.querySelector('.map-legend li.off[data-arg=lan]')", 5);
 	click_at(".map-legend li[data-arg=lan]");
 	wait_js("document.querySelector('svg.topo .tlink.lan') && "
