@@ -201,6 +201,9 @@ emit_jail(const struct arc_jail *j, bool table)
 		    join(j->ip4.n > 0 ? j->ip4.v : j->ip6.v,
 		    j->ip4.n > 0 ? j->ip4.n : j->ip6.n),
 		    j->hostname != NULL ? j->hostname : "-");
+		/* For a program that reads this: its plugins, if it has. */
+		for (i = 0; i < j->plugins.n; i++)
+			xo_emit("{el:plugins/%s}", j->plugins.v[i]);
 		/* libxo ends a leaf list at the next other field. */
 		for (i = 0; i < j->ip4.n; i++)
 			xo_emit("{el:ip4/%s}", j->ip4.v[i]);
