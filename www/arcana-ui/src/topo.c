@@ -69,7 +69,26 @@ struct thost {
 	bool		 placed;
 	ucl_object_t	*wg;		/* its WireGuard interfaces */
 	bool		 wg_loading;
+	ucl_object_t	*bird;		/* what its BIRD says, if it has one */
+	bool		 bird_loading;
 };
+
+/*
+ * A routing neighbour that is not a host of this console: drawn beside
+ * the host that speaks to it.
+ */
+#define	EXT_MAX		160
+#define	EXT_PER_HOST	8
+struct ext {
+	int	host;			/* the server it is a neighbour of */
+	bool	ospf;			/* or BGP */
+	bool	up;
+	char	label[40];		/* AS65001, or a router ID */
+	char	sub[64];		/* its address, or the protocol */
+	int	slot, of;		/* its place among the host's */
+};
+static struct ext	exts[EXT_MAX];
+static int		nexts;
 
 /*
  * A WireGuard tunnel being made between two hosts: each makes its
@@ -88,7 +107,7 @@ struct wgpair {
 };
 static struct wgpair	wgpairs[WG_PAIRS];
 
-enum { LK_TUNNEL, LK_P2P, LK_LAN };
+enum { LK_TUNNEL, LK_P2P, LK_LAN, LK_BGP, LK_OSPF, LK_KINDS };
 
 struct tlink {
 	int	a, b;			/* servers; b < 0: segment -b - 1 */
@@ -134,7 +153,9 @@ static struct {
 	double	zoom, panx, pany;
 	double	lastcx, lastcy;		/* a pan under way: where it was */
 	bool	fitted;			/* shown whole once, at first */
+	bool	refitted;		/* and again, with neighbours outside */
 	bool	jails;			/* each host's running jails around it */
+	bool	nopeers;		/* routing neighbours outside are hidden */
 	char	sel[9];			/* the host picked, or "" */
 	char	sel_if[16];		/* and its interface charted */
 	char	sel_link[80];		/* or the link picked */
@@ -551,6 +572,39 @@ wg_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	wg_pairs_step();
 }
 
+static void
+bird_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct thost	*t;
+	char		*sid;
+
+	(void)err;
+	sid = arg;
+	t = thost(sid, false);
+	free(sid);
+	if (t == NULL)
+		return;
+	t->bird_loading = false;
+	if (t->bird != NULL)
+		ucl_object_unref(t->bird);
+	t->bird = status == 200 && jbool(o, "ok") && jget(o, "data") != NULL ?
+	    ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data")) : NULL;
+}
+
+/* Read what a host's BIRD says, quietly; a host without one says no. */
+static void
+bird_poll(struct server *s)
+{
+	struct thost	*t;
+	char		 url[96];
+
+	if (!app.online || (t = thost(s->id, true)) == NULL || t->bird_loading)
+		return;
+	t->bird_loading = true;
+	snprintf(url, sizeof(url), "/api/servers/%s/net/bird", s->id);
+	api("GET", url, NULL, bird_cb, strdup(s->id));
+}
+
 /* Read a host's WireGuard interfaces, quietly, for the map's links. */
 static void
 wg_poll(struct server *s)
@@ -582,8 +636,10 @@ topo_tick(double now)
 		wg_turn = wg_pending() ? 0 : (wg_turn + 1) % 6;
 		for (i = 0; i < app.nservers; i++) {
 			topo_poll(&app.servers[i]);
-			if (wg_turn == 0)
+			if (wg_turn == 0) {
 				wg_poll(&app.servers[i]);
+				bird_poll(&app.servers[i]);
+			}
 		}
 		render();
 	} else if (app.node == NODE_HOST && app.tab == TAB_NETWORK &&
@@ -765,6 +821,88 @@ links_build(void)
 				}
 			}
 		}
+	}
+	/*
+	 * Routing: a BGP session or an OSPF adjacency with an address of
+	 * another host is a link between the two; with any other address,
+	 * a neighbour outside, drawn beside the host.
+	 */
+	nexts = 0;
+	for (i = 0; i < nhosts; i++) {
+		const char	*addr, *st;
+		bool		 ospf, up;
+		int		 mine, pass;
+
+		t = &hosts[i];
+		if (t->bird == NULL || (s = server_index(t->sid)) == -1)
+			continue;
+		mine = 0;
+		for (pass = 0; pass < 2; pass++) {
+			ospf = pass == 1;
+			it = NULL;
+			while ((o = ucl_object_iterate(jget(t->bird, ospf ?
+			    "ospf" : "protocols"), &it, true)) != NULL) {
+				if (!ospf && (jstr(o, "proto") == NULL ||
+				    strcmp(jstr(o, "proto"), "BGP") != 0))
+					continue;
+				addr = jstr(o, ospf ? "address" : "neighbor");
+				st = jstr(o, "state") != NULL ? jstr(o,
+				    "state") : "";
+				up = ospf ? strncmp(st, "Full", 4) == 0 :
+				    strcmp(st, "up") == 0;
+				if (addr == NULL)
+					continue;
+				if ((peer = owner(addr, NULL, 0)) != -1) {
+					if (peer == s)
+						continue;
+					/* One for a pair, whichever end says it. */
+					if ((l = link_add(s, peer, ospf ?
+					    LK_OSPF : LK_BGP, "", "",
+					    app.servers[s].id,
+					    app.servers[peer].id)) != NULL) {
+						l->up = l->up || up;
+						if (ospf)
+							snprintf(l->label,
+							    sizeof(l->label),
+							    "OSPF");
+						else
+							snprintf(l->label,
+							    sizeof(l->label),
+							    "BGP AS%s ⇄ AS%s",
+							    jstr(o, "local-as") !=
+							    NULL ? jstr(o,
+							    "local-as") : "?",
+							    jstr(o,
+							    "neighbor-as") !=
+							    NULL ? jstr(o,
+							    "neighbor-as") : "?");
+					}
+					continue;
+				}
+				if (nexts == EXT_MAX || mine == EXT_PER_HOST)
+					continue;
+				memset(&exts[nexts], 0, sizeof(exts[0]));
+				exts[nexts].host = s;
+				exts[nexts].ospf = ospf;
+				exts[nexts].up = up;
+				exts[nexts].slot = mine++;
+				if (ospf)
+					snprintf(exts[nexts].label,
+					    sizeof(exts[0].label), "%s", jstr(o,
+					    "router-id") != NULL ? jstr(o,
+					    "router-id") : "OSPF");
+				else
+					snprintf(exts[nexts].label,
+					    sizeof(exts[0].label), "AS%s",
+					    jstr(o, "neighbor-as") != NULL ?
+					    jstr(o, "neighbor-as") : "?");
+				snprintf(exts[nexts].sub, sizeof(exts[0].sub),
+				    "%s", addr);
+				nexts++;
+			}
+		}
+		for (k = nexts - mine; k < nexts; k++)
+			exts[k].of = mine;
 	}
 	/* Two hosts in a network: a link.  More: a node they all join. */
 	for (k = 0; k < nsegs; k++) {
@@ -951,7 +1089,8 @@ bend_of(int i)
 static void
 map_links(struct html *h)
 {
-	static const char *const kinds[] = { "tunnel", "p2p", "lan" };
+	static const char *const kinds[] = { "tunnel", "p2p", "lan", "bgp",
+	    "ospf" };
 	struct tlink	*l;
 	char		 rate[24];
 	double		 x1, y1, x2, y2, mx, my, bend, w;
@@ -988,8 +1127,9 @@ map_links(struct html *h)
 		if (l->b >= 0) {
 			h_fmt(h, "<text class=\"lbl\" x=\"%.1f\" y=\"%.1f\">", mx,
 			    my - 6);
-			h_txt(h, l->kind == LK_LAN ? l->label : l->ifa);
-			if (l->kind != LK_LAN && l->ifb[0] != '\0') {
+			h_txt(h, l->kind == LK_LAN || l->kind >= LK_BGP ?
+			    l->label : l->ifa);
+			if (l->kind < LK_LAN && l->ifb[0] != '\0') {
 				h_raw(h, " ⇄ ");
 				h_txt(h, l->ifb);
 			}
@@ -1072,6 +1212,45 @@ map_nodes(struct html *h)
 		    segs[k].y);
 		h_txt(h, segs[k].net);
 		h_raw(h, "</text></g>");
+	}
+	/* The routing neighbours outside, fanned out away from the middle. */
+	for (i = 0; !tp.nopeers && i < nexts; i++) {
+		struct ext	*e = &exts[i];
+		double		 cx, cy, a, ex, ey;
+		int		 m;
+
+		if ((t = thost(app.servers[e->host].id, false)) == NULL)
+			continue;
+		cx = cy = 0;
+		for (m = 0, k = 0; k < nhosts; k++)
+			if (hosts[k].placed && server_index(hosts[k].sid) !=
+			    -1) {
+				cx += hosts[k].x;
+				cy += hosts[k].y;
+				m++;
+			}
+		cx = m > 0 ? cx / m : 0;
+		cy = m > 0 ? cy / m : 0;
+		a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ? -M_PI / 2 :
+		    atan2(t->y - cy, t->x - cx);
+		a += (e->slot - (e->of - 1) / 2.0) * 0.42;
+		ex = t->x + 185 * cos(a);
+		ey = t->y + 125 * sin(a);
+		h_fmt(h, "<g class=\"tpeer %s %s\" data-act=\"topo-open-bird\"",
+		    e->ospf ? "ospf" : "bgp", e->up ? "up" : "down");
+		h_attr(h, "data-arg", app.servers[e->host].id);
+		h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\"%.1f\" "
+		    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
+		    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
+		    ex - 56, ey - 17, ex, ey - 2);
+		h_txt(h, e->label);
+		h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
+		    ey + 10);
+		h_txt(h, e->sub);
+		h_raw(h, "</text><title>");
+		h_txt(h, e->ospf ? "An OSPF neighbour outside this console" :
+		    "A BGP neighbour outside this console");
+		h_raw(h, "</title></g>");
 	}
 	/* The running jails of each host, hung under it. */
 	for (i = 0; tp.jails && i < app.nservers; i++) {
@@ -1193,10 +1372,14 @@ map(struct html *h)
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-jails\" "
 	    "title=\"Each host's running jails\">Jails</button>", tp.jails ?
 	    " on" : "");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-peers\" "
+	    "title=\"BGP and OSPF neighbours that are not hosts of this "
+	    "console\">Peers</button>", tp.nopeers ? "" : " on");
 	h_raw(h, "</div><ul class=\"map-legend\"><li class=\"tunnel\">tunnel</li>"
 	    "<li class=\"p2p\">point to point</li><li class=\"lan\">same "
-	    "network</li><li class=\"best\">route</li><li class=\"alt\">"
-	    "instead</li></ul></div>");
+	    "network</li><li class=\"bgp\">BGP</li><li class=\"ospf\">OSPF"
+	    "</li><li class=\"best\">route</li><li class=\"alt\">instead</li>"
+	    "</ul></div>");
 }
 
 /* The addresses of a host a tunnel could end at or a route lead to. */
@@ -1416,7 +1599,7 @@ static void
 panel_link(struct html *h, struct tlink *l)
 {
 	static const char *const kinds[] = { "Tunnel", "Point to point",
-	    "Same network" };
+	    "Same network", "BGP session", "OSPF adjacency" };
 	struct thost	*t;
 	const char	*ifn;
 	int		 end, s;
@@ -1435,7 +1618,15 @@ panel_link(struct html *h, struct tlink *l)
 		t = thost(app.servers[s].id, false);
 		h_raw(h, "<div class=\"end\"><b>");
 		h_txt(h, app.servers[s].name);
-		h_raw(h, "</b> <span class=\"mono\">");
+		h_raw(h, "</b> ");
+		if (l->kind >= LK_BGP) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "topo-open-bird\"");
+			h_attr(h, "data-arg", app.servers[s].id);
+			h_raw(h, ">Its BIRD</button></div>");
+			continue;
+		}
+		h_raw(h, "<span class=\"mono\">");
 		h_txt(h, ifn[0] != '\0' ? ifn : "?");
 		h_raw(h, "</span>");
 		if (t != NULL && ifn[0] != '\0')
@@ -1451,6 +1642,82 @@ panel_link(struct html *h, struct tlink *l)
 	h_raw(h, "</section>");
 }
 
+/*
+ * Every WireGuard peer of every host, with when it last shook hands: a
+ * session is one that did within the last three minutes.
+ */
+static void
+wg_sessions(struct html *h)
+{
+	const ucl_object_t	*o, *p;
+	ucl_object_iter_t	 it, pit;
+	const char		*other;
+	char			 age[32], key[20];
+	int64_t			 now, hs;
+	int			 i, k, n, peer;
+
+	n = 0;
+	for (i = 0; i < nhosts; i++) {
+		if (hosts[i].wg == NULL || server_index(hosts[i].sid) == -1)
+			continue;
+		now = jint(hosts[i].wg, "now", 0);
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(hosts[i].wg, "interfaces"),
+		    &it, true)) != NULL) {
+			pit = NULL;
+			while ((p = ucl_object_iterate(jget(o, "peers"), &pit,
+			    true)) != NULL) {
+				if (n++ == 0)
+					h_raw(h, "<section class=\"pane\"><h4>"
+					    "WireGuard sessions</h4><ul class="
+					    "\"iflist wgs\">");
+				hs = jint(p, "latest-handshake", 0);
+				/* The peer by its host's name, when it is one. */
+				other = NULL;
+				peer = -1;
+				for (k = 0; k < nhosts && other == NULL; k++)
+					if (k != i && (other = wg_iface(
+					    &hosts[k], jstr(p, "public-key"),
+					    NULL)) != NULL)
+						peer = server_index(
+						    hosts[k].sid);
+				h_fmt(h, "<li class=\"%s\" data-act=\""
+				    "topo-open-wg\"", hs != 0 && now - hs <
+				    180 ? "up" : "down");
+				h_attr(h, "data-arg", hosts[i].sid);
+				h_raw(h, "><div class=\"ifhead\"><i class=\"led\">"
+				    "</i><b>");
+				h_txt(h, app.servers[server_index(
+				    hosts[i].sid)].name);
+				h_raw(h, "</b><span class=\"dim\">");
+				h_txt(h, jstr(o, "name"));
+				h_raw(h, " → </span><b>");
+				if (peer >= 0)
+					h_txt(h, app.servers[peer].name);
+				else {
+					snprintf(key, sizeof(key), "%.10s…",
+					    jstr(p, "public-key") != NULL ?
+					    jstr(p, "public-key") : "");
+					h_txt(h, key);
+				}
+				h_raw(h, "</b><span class=\"io\">");
+				if (hs == 0)
+					h_raw(h, "never");
+				else {
+					vpn_age(age, sizeof(age), now - hs);
+					h_txt(h, age);
+				}
+				h_raw(h, "</span></div><small class=\"mono\">");
+				h_txt(h, jstr(p, "endpoint") != NULL ? jstr(p,
+				    "endpoint") : "no endpoint");
+				h_raw(h, "</small></li>");
+			}
+		}
+	}
+	if (n > 0)
+		h_raw(h, "</ul></section>");
+}
+
 /* Nothing picked: what there is, and where the traffic goes. */
 static void
 panel_overview(struct html *h)
@@ -1459,7 +1726,7 @@ panel_overview(struct html *h)
 	struct ifrate sum;
 	char	rate[24];
 	double	max;
-	int	i, k, m, n, kinds[3];
+	int	i, k, m, n, kinds[LK_KINDS];
 
 	memset(kinds, 0, sizeof(kinds));
 	for (i = 0; i < nlinks; i++)
@@ -1473,6 +1740,13 @@ panel_overview(struct html *h)
 	    "host to join the two with a tunnel. Pick a host or a link for "
 	    "its details.</p></section>", app.nservers, kinds[LK_TUNNEL],
 	    kinds[LK_P2P], kinds[LK_LAN]);
+	if (kinds[LK_BGP] + kinds[LK_OSPF] + nexts > 0)
+		h_fmt(h, "<section class=\"pane\"><h4>Routing</h4><div class=\""
+		    "facts three\"><div><b>%d</b><span>BGP between hosts</span>"
+		    "</div><div><b>%d</b><span>OSPF between hosts</span></div>"
+		    "<div><b>%d</b><span>neighbours outside</span></div></div>"
+		    "</section>", kinds[LK_BGP], kinds[LK_OSPF], nexts);
+	wg_sessions(h);
 	/* Everything every host receives and sends, over time. */
 	memset(&sum, 0, sizeof(sum));
 	for (i = 0; i < nhosts; i++) {
@@ -1567,6 +1841,11 @@ view_netmap(struct html *h)
 		fit();
 	}
 	links_build();
+	/* The first neighbours outside to show need room: once. */
+	if (nexts > 0 && !tp.refitted) {
+		tp.refitted = true;
+		fit();
+	}
 	h_raw(h, "<div class=\"netmap\">");
 	map(h);
 	h_raw(h, "<aside class=\"map-panel\">");
@@ -2482,8 +2761,11 @@ fit(void)
 	}
 	tp.panx = (x0 + x1) / 2;
 	tp.pany = (y0 + y1) / 2;
-	zx = VIEW_W / (x1 - x0 + NODE_W + 120);
-	zy = VIEW_H / (y1 - y0 + NODE_H + 140);
+	/* Room around them, and more when neighbours stand beside them. */
+	zx = VIEW_W / (x1 - x0 + NODE_W + (nexts > 0 && !tp.nopeers ? 460 :
+	    120));
+	zy = VIEW_H / (y1 - y0 + NODE_H + (nexts > 0 && !tp.nopeers ? 330 :
+	    140));
 	tp.zoom = zx < zy ? zx : zy;
 	if (tp.zoom > 1.7)
 		tp.zoom = 1.7;
@@ -2505,6 +2787,7 @@ topo_open(void)
 	for (i = 0; i < app.nservers; i++) {
 		topo_poll(&app.servers[i]);
 		wg_poll(&app.servers[i]);
+		bird_poll(&app.servers[i]);
 	}
 }
 
@@ -2605,6 +2888,18 @@ topo_action(const char *act, const char *arg, const char *value)
 		fit();
 	} else if (strcmp(act, "topo-jails") == 0) {
 		tp.jails = !tp.jails;
+	} else if (strcmp(act, "topo-open-wg") == 0 || strcmp(act,
+	    "topo-open-bird") == 0) {
+		if ((n = server_index(arg)) == -1)
+			return (true);
+		app.sel = n;
+		app.node = NODE_HOST;
+		app.tab = TAB_NETWORK;
+		app.net.kind = act[10] == 'w' ? NET_WIREGUARD : NET_BIRD;
+		app.net.loading = false;
+		refresh_network(&app.servers[n], true);
+	} else if (strcmp(act, "topo-peers") == 0) {
+		tp.nopeers = !tp.nopeers;
 	} else if (strcmp(act, "topo-arrange") == 0) {
 		for (i = 0; i < nhosts; i++)
 			hosts[i].placed = false;

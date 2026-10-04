@@ -5,7 +5,10 @@
 - Routes through netlink, with its attributes mapped to CBOR, instead of
   running route(8) and netstat(1).
 - WireGuard: preshared keys; a peer's key rotated.
-- BIRD: its routes, and a protocol's details (`show protocols all`).
+- BIRD: its routes (`show route`, for a prefix or from a neighbour);
+  choosing a neighbour's filters from a list rather than writing their
+  names; a change tried with `configure timeout` and taken back when
+  the console is cut off, as safe mode does for interfaces.
 
 ## Not yet verified
 

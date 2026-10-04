@@ -300,7 +300,7 @@ close_modal(void)
 static void
 submit(const char *form, const ucl_object_t *f)
 {
-	if (topo_form(form, f) || vpn_form(form, f))
+	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f))
 		return;
 	submit_form(form, f);
 }
@@ -471,7 +471,7 @@ dispatch(const char *act, const char *arg, const char *value)
 
 	s = cur_server();
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
-	    vpn_action(act, arg, value))
+	    bird_action(act, arg, value) || vpn_action(act, arg, value))
 		return;
 	if (strcmp(act, "fold") == 0) {
 		arc_open_set(arg, !arc_open_get(arg));

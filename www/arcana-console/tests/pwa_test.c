@@ -952,7 +952,7 @@ ATF_TC_BODY(pwa, tc)
 	shot("7c-wireguard");
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=bird]').click()");
-	wait_js("document.querySelectorAll('table.bird tbody tr').length === 2",
+	wait_js("document.querySelectorAll('table.bird tbody tr').length === 4",
 	    20);
 	ATF_CHECK(js_true("document.querySelector('.pane.bird').textContent."
 	    "includes('Router ID is 192.0.2.1')"));
@@ -965,7 +965,96 @@ ATF_TC_BODY(pwa, tc)
 	    "t.textContent.includes('bird reload bgp_core: done'))", 20);
 	ATF_CHECK(system("grep -q '^reload bgp_core$' birdc.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Its neighbours drawn around it: two BGP ones, an OSPF one, an
+	 * RPKI cache.  And the parts of its configuration, once read.
+	 */
+	wait_js("document.querySelectorAll('.birdmap .tnode.peer').length === 4 "
+	    "&& document.querySelector('.birdmap .tnode.peer.ospf') && "
+	    "document.querySelector('.birdmap .tnode.peer.rpki')", 10);
+	wait_js("[...document.querySelectorAll('.conf-grid ul.blocks li b')]"
+	    ".some(b => b.textContent === 'bgp_in') && [...document."
+	    "querySelectorAll('.conf-grid ul.blocks li')].some(l => "
+	    "l.textContent.includes('CUSTOMERS') && l.textContent.includes("
+	    "'communities')) && [...document.querySelectorAll('.conf-grid "
+	    "ul.blocks li')].some(l => l.textContent.includes('BLACKHOLE_LC') "
+	    "&& l.textContent.includes('large communities'))", 20);
 	shot("7d-bird");
+	/* A neighbour picked opens in a box: what the daemon says of it,
+	 * and the part of the configuration that makes it. */
+	run("document.querySelector('.birdmap .tnode.peer.bgp').dispatchEvent("
+	    "new MouseEvent('click', { bubbles: true }))");
+	wait_js("document.querySelector('form[data-form=bird-block] textarea') "
+	    "&& document.querySelector('form[data-form=bird-block] textarea')"
+	    ".value.includes('neighbor 192.0.2.1 as 65001')", 5);
+	ATF_CHECK(js_true("document.querySelector('.modal dl.kv').textContent"
+	    ".includes('65001') && document.querySelector('.modal table.net')"
+	    ".textContent.includes('bgp_out')"));
+	shot("7e-bird-neighbour");
+	run("const t = document.querySelector('form[data-form=bird-block] "
+	    "textarea'); t.value = t.value.replace('Core uplink', 'Core uplink, "
+	    "east'); t.form.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('BIRD has its new configuration')) && "
+	    "!document.querySelector('.modal')", 20);
+	ATF_CHECK(system("grep -q 'description \"Core uplink, east\";' "
+	    "bird/bird.conf && grep -q '^configure$' birdc.log && grep -q "
+	    "'filter bgp_in' bird/bird.conf") == 0);
+	/* What bird refuses does not stay, and what was typed is kept. */
+	run("[...document.querySelectorAll('.conf-grid ul.blocks li')].find("
+	    "l => l.querySelector('b').textContent === 'bgp_in').click()");
+	wait_js("document.querySelector('form[data-form=bird-block] textarea')",
+	    5);
+	run("const t = document.querySelector('form[data-form=bird-block] "
+	    "textarea'); t.value = 'filter bgp_in {\\n\\tBROKEN\\n}'; "
+	    "t.form.requestSubmit();");
+	wait_js("document.querySelector('.modal .err') && document."
+	    "querySelector('.modal .err').textContent.includes('syntax error')",
+	    20);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=bird-block] "
+	    "textarea').value.includes('BROKEN')"));
+	ATF_CHECK(system("grep -q BROKEN bird/bird.conf") != 0);
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	/* A community set, as a list: an entry more. */
+	run("[...document.querySelectorAll('.conf-grid ul.blocks li')].find("
+	    "l => l.querySelector('b').textContent === 'CUSTOMERS').click()");
+	wait_js("document.querySelector('form[data-form=bird-set] textarea') "
+	    "&& document.querySelector('form[data-form=bird-set] textarea')"
+	    ".value === '(65000,100)\\n(65000,200)'", 5);
+	shot("7f-bird-communities");
+	run("const t = document.querySelector('form[data-form=bird-set] "
+	    "textarea'); t.value += '\\n(65000, 300..399)'; "
+	    "t.form.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('.conf-grid ul.blocks li')].some(l => "
+	    "l.textContent.includes('300..399'))", 20);
+	ATF_CHECK(system("grep -q '(65000, 300..399)' bird/bird.conf && "
+	    "grep -q '^define CUSTOMERS = \\[$' bird/bird.conf") == 0);
+	/* A set of large communities, new. */
+	run("document.querySelector('button[data-act=bird-new][data-arg=lset]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-set]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-set]'); "
+	    "f.name.value = 'PEERS_LC'; f.text.value = '(65000, 1, *)'; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('.conf-grid ul.blocks li')].some(l => "
+	    "l.textContent.includes('PEERS_LC'))", 20);
+	/* An RPKI cache: its tables, its protocol, and the function that
+	 * filters ask. */
+	run("document.querySelector('button[data-act=bird-new][data-arg=rpki]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=bird-rpki]')", 5);
+	run("const f = document.querySelector('form[data-form=bird-rpki]'); "
+	    "f.host.value = 'rtr.example.org'; f.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('.conf-grid ul.blocks li b')].some(b => "
+	    "b.textContent === 'rpki_invalid')", 20);
+	ATF_CHECK(system("grep -q 'remote \"rtr.example.org\" port 3323;' "
+	    "bird/bird.conf && grep -q '^roa6 table r6;$' bird/bird.conf && "
+	    "test \"$(grep -c '^roa4 table r4;$' bird/bird.conf)\" = 1 && "
+	    "grep -q 'protocol rpki rpki2' bird/bird.conf && grep -q "
+	    "'define PEERS_LC' bird/bird.conf") == 0);
 
 	/*
 	 * The network: every host a node of a map, joined to the others
@@ -1010,6 +1099,20 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button[data-act=topo-jails]').click()");
 	wait_js("document.querySelector('button[data-act=topo-jails].on') && "
 	    "document.querySelector('.map-panel .io-now')", 30);
+	/*
+	 * Routing on the map: the BGP and OSPF neighbours that are not
+	 * hosts of this console, beside the host that speaks to them; and
+	 * every WireGuard peer, with when it last shook hands.
+	 */
+	wait_js("document.querySelectorAll('svg.topo g.tpeer.bgp').length >= 2 "
+	    "&& document.querySelector('svg.topo g.tpeer.ospf') && "
+	    "[...document.querySelectorAll('.map-panel h4')].some(h => "
+	    "h.textContent === 'WireGuard sessions') && [...document."
+	    "querySelectorAll('.map-panel h4')].some(h => h.textContent === "
+	    "'Routing')", 60);
+	ATF_CHECK(js_true("document.querySelector('svg.topo g.tpeer.bgp')."
+	    "textContent.includes('AS65001') && document.querySelector("
+	    "'.iflist.wgs').textContent.includes('192.0.2.9:51820')"));
 	shot("8a-overview");
 	run("document.documentElement.dataset.theme = 'onyx'");
 	shot("8a-onyx");

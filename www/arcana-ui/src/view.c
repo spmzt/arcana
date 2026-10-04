@@ -1204,6 +1204,13 @@ modal(struct html *h)
 		if (!vpn_modal(h))
 			return;
 		break;
+	case MODAL_BIRD_PROTO:
+	case MODAL_BIRD_BLOCK:
+	case MODAL_BIRD_RPKI:
+	case MODAL_BIRD_FILE:
+		if (!bird_modal(h))
+			return;
+		break;
 	case MODAL_ROUTE:
 		h_fmt(h, "<form data-form=\"route\"><h2>Add a static route%s"
 		    "</h2>", app.net.fib > 0 ? " to this routing table" : "");
@@ -1542,6 +1549,12 @@ modal(struct html *h)
 			break;
 		case MODAL_WG_PEER:
 			h_raw(h, "<button class=\"primary\">Add</button>");
+			break;
+		case MODAL_BIRD_PROTO:
+		case MODAL_BIRD_BLOCK:
+		case MODAL_BIRD_RPKI:
+		case MODAL_BIRD_FILE:
+			bird_modal_buttons(h);
 			break;
 		case MODAL_NG_CONNECT:
 			h_raw(h, "<button class=\"primary\">Connect</button>");

@@ -291,6 +291,10 @@ enum modal {
 	MODAL_NG_MKPEER,
 	MODAL_WG_INIT,
 	MODAL_WG_PEER,
+	MODAL_BIRD_PROTO,
+	MODAL_BIRD_BLOCK,
+	MODAL_BIRD_RPKI,
+	MODAL_BIRD_FILE,
 };
 
 struct confirm {
@@ -489,6 +493,13 @@ void		 view_bird(struct html *, struct server *, const ucl_object_t *);
 bool		 vpn_action(const char *, const char *, const char *);
 bool		 vpn_form(const char *, const ucl_object_t *);
 bool		 vpn_modal(struct html *);
+void		 vpn_age(char *, size_t, int64_t);
+
+/* bird.c: BIRD's neighbours and its configuration. */
+bool		 bird_action(const char *, const char *, const char *);
+bool		 bird_form(const char *, const ucl_object_t *);
+bool		 bird_modal(struct html *);
+void		 bird_modal_buttons(struct html *);
 const char	*state_class(const struct server *, const ucl_object_t *,
 		    const struct jailui *);
 void		 fmt_age(char *, size_t, double);

@@ -66,9 +66,32 @@ The console is laid out as a tree and tabs.
     `/usr/local/etc/wireguard/<if>.conf` for `wg-quick`, readable by
     root alone, and named in `wireguard_interfaces`: that needs the
     `wireguard-tools` package on the host.
-    **BIRD** shows what `birdc` says of the routing daemon and its
-    protocols, each with **restart**, **reload** and **disable** or
-    **enable**, and **Reconfigure** to read its configuration again.
+    **BIRD** draws the routing daemon in the middle and around it its
+    BGP neighbours (their AS and address), its OSPF neighbours and its
+    RPKI caches, each coloured by its state. A neighbour picked, in the
+    drawing or in the table under it, opens in a box: what the daemon
+    says of it (session, timers, each channel's table, its import and
+    export filters, how many routes came and went, and all the rest
+    `show protocols all` prints), **restart**, **reload**, **disable**
+    and **enable**, and the part of the configuration that makes it, to
+    be changed there.
+    Under it, what the configuration is made of, read from the host:
+    **filters and functions**, what BGP and OSPF take in and give out,
+    each edited as it is written; **communities and sets**, the named
+    lists filters test against, edited as a list, one entry a line, a
+    community as `(AS, value)` and a large one as `(AS, a, b)`;
+    **RPKI**, the caches with their state and the ROA tables with how
+    many origins each holds, and **+ cache**, which adds the tables,
+    the protocol and a function `rpki_invalid()` for filters to ask;
+    and the protocols and the rest, with **+ BGP neighbour** and
+    **+ OSPF** to start one from an outline. **Configuration** edits
+    the whole file; a configuration in several files has a list to
+    pick from.
+    A change is put back as the whole file with that part changed.
+    The host has `bird -p` parse the whole configuration first: what
+    it refuses does not stay, the box says what bird said, and what
+    was typed is kept. Then BIRD is told to read it. The file as it
+    was is kept beside it as `<file>.arcana-old`.
     Changes to interfaces, routes, a jail's address made here and
     service variables are made in **safe mode** where they can be: once
     the change is made, the host waits a minute to hear from the
@@ -169,6 +192,14 @@ works the links out.
   Three or more hosts in one network join a node of its own. A link
   carries its traffic: its width and the dots that run along it follow
   the rate of the interface behind it.
+- **Routing** is drawn too, from what each host's BIRD says: a BGP
+  session or an OSPF adjacency between two hosts as a link of its own
+  kind, and a neighbour that is not a host of this console as a small
+  node beside the host that speaks to it, with its AS or router ID;
+  picking one opens that host's BIRD. **Peers** hides them.
+- With nothing picked, the panel lists every **WireGuard session**: each
+  peer of each host, by the other host's name when it is one, with its
+  endpoint and when it last shook hands.
 - A **host** is dragged to where it should be, and stays there in that
   browser; the map is dragged to move it and the wheel zooms. **Fit**
   shows every host, **Arrange** puts them back on a circle.

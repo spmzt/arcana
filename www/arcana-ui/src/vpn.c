@@ -31,6 +31,24 @@ vpn_job(struct server *s, const char *title, const char *fmt, ...)
 	job_send(s, json, title, JOB_IFACE, "vpn");
 }
 
+/* A time gone by, in the two units that say it best. */
+void
+vpn_age(char *buf, size_t len, int64_t s)
+{
+
+	if (s < 60)
+		snprintf(buf, len, "%llds", (long long)s);
+	else if (s < 3600)
+		snprintf(buf, len, "%lldm %llds", (long long)(s / 60),
+		    (long long)(s % 60));
+	else if (s < 86400)
+		snprintf(buf, len, "%lldh %lldm", (long long)(s / 3600),
+		    (long long)(s % 3600 / 60));
+	else
+		snprintf(buf, len, "%lldd %lldh", (long long)(s / 86400),
+		    (long long)(s % 86400 / 3600));
+}
+
 static void
 bytes(char *buf, size_t len, int64_t n)
 {
@@ -122,7 +140,7 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 			if (hs == 0)
 				h_raw(h, "<span class=\"dim\">never</span>");
 			else {
-				fmt_dur(buf, sizeof(buf), now - hs);
+				vpn_age(buf, sizeof(buf), now - hs);
 				h_txt(h, buf);
 				h_raw(h, " ago");
 			}
@@ -145,71 +163,6 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 		    "this host. Create one in <b>Interfaces</b> with "
 		    "<b>+ interface</b>, named <code>wg</code>, or draw a "
 		    "tunnel between two hosts in <b>Network</b>.</p></div>");
-}
-
-void
-view_bird(struct html *h, struct server *s, const ucl_object_t *data)
-{
-	static const char *const verbs[] = { "restart", "reload" };
-	const ucl_object_t	*o, *l;
-	ucl_object_iter_t	 it;
-	const char		*state;
-	size_t			 i;
-	bool			 up;
-
-	(void)s;
-	h_raw(h, "<section class=\"pane bird\"><h4><span>BIRD</span><span "
-	    "class=\"pane-actions\"><button class=\"ghost small\" data-act=\""
-	    "bird-verb\" data-arg=\"configure\" data-value=\"\" title=\"Read "
-	    "its configuration again\">Reconfigure</button></span></h4>"
-	    "<p class=\"mono\">");
-	it = NULL;
-	while ((l = ucl_object_iterate(jget(data, "status"), &it, true)) !=
-	    NULL) {
-		h_txt(h, ucl_object_tostring_forced(l));
-		h_raw(h, "<br>");
-	}
-	h_raw(h, "</p></section><table class=\"net bird\"><thead><tr><th>"
-	    "Protocol</th><th>Kind</th><th>Table</th><th>State</th><th>Since"
-	    "</th><th>Info</th><th></th></tr></thead><tbody>");
-	it = NULL;
-	while ((o = ucl_object_iterate(jget(data, "protocols"), &it, true)) !=
-	    NULL) {
-		if (jstr(o, "name") == NULL || (app.filter[0] != '\0' &&
-		    strstr(jstr(o, "name"), app.filter) == NULL && (jstr(o,
-		    "proto") == NULL || strstr(jstr(o, "proto"), app.filter) ==
-		    NULL)))
-			continue;
-		state = jstr(o, "state") != NULL ? jstr(o, "state") : "";
-		up = strcmp(state, "up") == 0;
-		h_fmt(h, "<tr class=\"%s\"><td><i class=\"led\"></i><b>", up ?
-		    "up" : strcmp(state, "down") == 0 ? "down" : "start");
-		h_txt(h, jstr(o, "name"));
-		h_raw(h, "</b></td><td>");
-		h_txt(h, jstr(o, "proto"));
-		h_raw(h, "</td><td>");
-		h_txt(h, jstr(o, "table"));
-		h_raw(h, "</td><td>");
-		h_txt(h, state);
-		h_raw(h, "</td><td>");
-		h_txt(h, jstr(o, "since"));
-		h_raw(h, "</td><td>");
-		h_txt(h, jstr(o, "info"));
-		h_raw(h, "</td><td class=\"acts\">");
-		for (i = 0; i < 2; i++) {
-			h_fmt(h, "<button class=\"ghost small\" data-act=\""
-			    "bird-verb\" data-arg=\"%s\"", verbs[i]);
-			h_attr(h, "data-value", jstr(o, "name"));
-			h_fmt(h, ">%s</button>", verbs[i]);
-		}
-		h_fmt(h, "<button class=\"ghost small\" data-act=\"bird-verb\" "
-		    "data-arg=\"%s\"", strcmp(state, "down") == 0 ? "enable" :
-		    "disable");
-		h_attr(h, "data-value", jstr(o, "name"));
-		h_fmt(h, ">%s</button></td></tr>", strcmp(state, "down") == 0 ?
-		    "enable" : "disable");
-	}
-	h_raw(h, "</tbody></table>");
 }
 
 static const char keep_wg[] = "<label class=\"toggle\"><input type=\""

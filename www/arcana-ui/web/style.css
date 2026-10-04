@@ -2906,6 +2906,23 @@ svg.bw .out { fill: rgba(var(--amber-rgb), .3); stroke: var(--amber); stroke-wid
 }
 .busy .amount { color: var(--amber); white-space: nowrap; }
 
+.tlink.bgp .wire { stroke: var(--magenta); stroke-dasharray: 9 5; }
+.tlink.ospf .wire { stroke: var(--amber); stroke-dasharray: 2 6; }
+.map-legend .bgp::before { border-top: 2px dashed var(--magenta); }
+.map-legend .ospf::before { border-top: 2px dotted var(--amber); }
+svg.topo g.tpeer { cursor: pointer; }
+svg.topo g.tpeer path { stroke: var(--magenta); stroke-width: 1.2; stroke-dasharray: 9 5; fill: none; opacity: .7; }
+svg.topo g.tpeer.ospf path { stroke: var(--amber); stroke-dasharray: 2 6; }
+svg.topo g.tpeer rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--magenta); stroke-width: 1.2; }
+svg.topo g.tpeer.ospf rect { stroke: var(--amber); }
+svg.topo g.tpeer.down rect { stroke-dasharray: 3 3; opacity: .7; }
+svg.topo g.tpeer text { text-anchor: middle; }
+svg.topo g.tpeer .name { font-size: 10.5px; font-weight: 700; fill: var(--fg); }
+svg.topo g.tpeer .sub { font-size: 8.5px; fill: var(--dim); }
+svg.topo g.tpeer:hover rect { filter: drop-shadow(0 0 6px var(--magenta)); }
+.facts.three { grid-template-columns: repeat(3, 1fr); }
+.iflist.wgs li.down .led { background: var(--slate); }
+
 .tjail path { stroke: var(--line-2); stroke-width: 1; fill: none; }
 .tjail circle { fill: var(--bg); stroke: var(--green); stroke-width: 1.4; }
 .tjail text { font-size: 8.5px; text-anchor: middle; fill: var(--dim); }
@@ -2967,3 +2984,83 @@ form .two {
 	.map-panel { overflow: visible; }
 	form .two { grid-template-columns: 1fr; }
 }
+
+/*
+ * BIRD: its neighbours around it, the boxes they open in, and the
+ * parts of its configuration.
+ */
+.modal:has(form.wide) { width: min(860px, calc(100vw - 2rem)); }
+textarea {
+	width: 100%;
+	padding: .6rem .7rem;
+	border: 1px solid var(--line-2);
+	border-radius: 2px;
+	background: rgba(var(--surface-rgb), .7);
+	color: var(--fg);
+	font: inherit;
+	resize: vertical;
+}
+textarea:focus {
+	outline: none;
+	border-color: var(--cyan);
+	box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .12);
+}
+textarea.code {
+	font-family: var(--mono);
+	font-size: .78rem;
+	line-height: 1.5;
+	tab-size: 4;
+	white-space: pre;
+	overflow: auto;
+}
+.modal h2 small { font-weight: 400; color: var(--dim); font-size: .74rem; margin-left: .4rem; }
+.modal h2 small.state.up { color: var(--green); }
+.modal h2 small.state.down { color: var(--red); }
+.modal details { font-size: .78rem; color: var(--fg-2); }
+.modal details summary { cursor: pointer; }
+.modal details pre {
+	max-height: 260px;
+	overflow: auto;
+	margin: .5rem 0 0;
+	padding: .6rem;
+	border: 1px solid var(--line);
+	font-size: .72rem;
+}
+.birdmap { min-height: 360px; margin-bottom: 1rem; }
+.birdmap .spoke { stroke: var(--line-2); stroke-width: 1.2; fill: none; }
+.tnode.peer { cursor: pointer; }
+.tnode.peer.bgp .box { stroke: rgba(var(--violet-rgb), .7); }
+.tnode.peer.ospf .box { stroke: var(--teal); }
+.tnode.peer.rpki .box { stroke: var(--amber); }
+.tnode.hub .box { stroke: var(--cyan); stroke-width: 2; }
+.tnode.unknown .led { fill: var(--amber); }
+.birdmap .map-legend .bgp::before { border-top: 2px solid var(--violet); }
+.birdmap .map-legend .ospf::before { border-top: 2px solid var(--teal); }
+.map-legend .rpki::before { border-color: var(--amber); }
+table.net tr.pick { cursor: pointer; }
+table.net tr.pick:hover td { background: rgba(var(--accent-rgb), .05); }
+.facts.tables { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); text-align: left; margin-bottom: 1rem; }
+.conf-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+	gap: 1rem;
+}
+.pane h4 > span:first-child { display: inline-flex; align-items: baseline; gap: .4rem; }
+ul.blocks { margin: .4rem 0 0; padding: 0; list-style: none; }
+ul.blocks li {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: .2rem .6rem;
+	padding: .4rem .5rem;
+	border-top: 1px solid var(--line);
+	font-size: .8rem;
+	cursor: pointer;
+}
+ul.blocks li:first-child { border-top: 0; }
+ul.blocks li:hover { background: rgba(var(--accent-rgb), .06); }
+ul.blocks li.none { cursor: default; }
+ul.blocks li.none:hover { background: none; }
+ul.blocks li small { flex-basis: 100%; color: var(--dim); font-size: .68rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.blocks li.up b { color: var(--green); }
+select.conf-file { width: auto; margin-left: .6rem; font-size: .72rem; padding: .25rem .4rem; }
