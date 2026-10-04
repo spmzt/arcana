@@ -369,30 +369,6 @@ attribute-sets:
           for on the host, which a table too large to send needs.
         checks:
           max-len: 128
-      - name: net-fib
-        type: u32
-        doc: The routing table to read or look in; 0 when not given.
-      - name: lookup
-        type: text
-        doc: An IPv4 or IPv6 address to find the route to.
-        checks:
-          min-len: 2
-          max-len: 64
-      - name: conf-path
-        type: text
-        doc: |
-          A file of BIRD's configuration; its main one when not given.
-        checks:
-          max-len: 255
-      - name: conf-text
-        type: text
-        doc: A configuration file's whole text.
-        checks:
-          max-len: max-json
-      - name: files
-        type: text
-        multi-attr: true
-        doc: The files BIRD's configuration is made of.
       - name: total
         type: u64
         doc: Rows in the table on the host, when not all were sent.
@@ -447,6 +423,30 @@ attribute-sets:
         doc: The version the program in place reports.
         checks:
           max-len: 64
+      - name: net-fib
+        type: u32
+        doc: The routing table to read or look in; 0 when not given.
+      - name: lookup
+        type: text
+        doc: An IPv4 or IPv6 address to find the route to.
+        checks:
+          min-len: 2
+          max-len: 64
+      - name: conf-path
+        type: text
+        doc: |
+          A file of BIRD's configuration; its main one when not given.
+        checks:
+          max-len: 255
+      - name: conf-text
+        type: text
+        doc: A configuration file's whole text.
+        checks:
+          max-len: max-json
+      - name: files
+        type: text
+        multi-attr: true
+        doc: The files BIRD's configuration is made of.
 
   - name: host
     attributes:
