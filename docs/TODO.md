@@ -5,6 +5,41 @@
 - Routes through netlink, with its attributes mapped to CBOR, instead of
   running route(8) and netstat(1).
 - WireGuard: preshared keys; a peer's key rotated.
+- The mesh: agents joined by SCTP associations, each to at least a
+  configured number of others (2 unless set), so that the console
+  reaches an agent it has lost through one it still has. SCTP only,
+  with no fallback to TCP: a blocked or failed association is a state
+  to show and to route around. No module is loaded for it and no
+  interface made; an agent on a host without `sctp` in its kernel does
+  not try until the console tells it to try again. Who the agents are
+  and how they are joined is agreed among them with DNCP (RFC 7787),
+  from `libdncp`, which is written and is a repository of its own.
+  To be done, in this order:
+  - Certificates with a role. An agent's is for a server only, and an
+    agent takes any peer the CA signed for the console: agents that
+    call each other need certificates that can, and an agent must let
+    only the console's ask for anything but the mesh.
+  - Arcana's DNCP profile: over cblink on SCTP with DTLS, its own TLVs
+    (an agent's name and mesh addresses, when it last heard the
+    console), SCTP's heartbeats instead of keep-alives.
+  - The mesh listener, the switch and "try again" for each host in the
+    console, and the associations drawn on the map and listed, with
+    their state, their paths, their round-trip time and their streams.
+  - Relaying, and the console falling back to it; the path named by
+    the console from the topology the agents hold.
+  Not yet decided:
+  - How an agent picks its neighbours, which DNCP leaves open: the
+    next ones on a ring ordered by node identifier, until enough
+    associations work, is what was proposed.
+  - Whether a node's data carries its signature. DNCP secures each
+    hop, not the data: an agent could publish for another until that
+    one publishes again.
+  - How a relayed session is carried: end to end, the console's own
+    TLS session with the agent inside a stream through the relay,
+    which only copies bytes; or hop by hop, the relay reading and
+    sending on. End to end needs a cblink connection that runs over a
+    cblink stream, which cblink has not got, or a bridge through a
+    local socket at both ends.
 
 ## Not yet verified
 
