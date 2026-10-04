@@ -45,17 +45,18 @@
 
 Written and tested with stand-ins, never run for real:
 
-- Building the agent as `nobody` when `arcana-agent` runs as root
-  (`chroot -u nobody`); only the unprivileged build was run with the
-  real git and make.
-- The agent's restart after an update against a real rc(8)-managed
-  service; the tests use a stand-in for service(8).
-- The agent's tests that need root, since the rename to Arcana.
-- Creating, setting and destroying interfaces, routing tables, what is
-  kept in rc.conf, and netgraph, against a real ifconfig(8), route(8),
-  sysrc(8) and ngctl(8) as root; the tests use stand-ins. The interfaces
-  themselves and the route lookup's parsing were checked against this
-  machine's real output.
+- The agent's tests that need root (a jail started, restarted, stopped
+  and killed; live addresses), since the rename to Arcana. They make a
+  jail of their own, and the one host there is root on is itself a jail
+  that may have none: to be run as root on a host,
+  `kyua test -k Kyuafile agent_root_test` in the agent's tests.
+- On a host itself, as root: creating, setting and destroying
+  interfaces and what of them is kept in rc.conf (done for real only in
+  a vnet jail, below); static routes, routing tables and netgraph
+  against the real route(8) and ngctl(8) anywhere. The one jail to try
+  them in has a BIRD that learns the kernel's routes, and a route made
+  to try would be one it could announce. The interfaces themselves and
+  the route lookup's parsing were checked against real output.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
 - WireGuard and BIRD against the real wg(8), wg-quick(8) and birdc(8):
@@ -86,6 +87,23 @@ Written and tested with stand-ins, never run for real:
   Chromium build the tests run cannot receive from it.
 - `arcana-enrol -s` on a real host, the container image since the
   rename, and the update check against GitHub's live feed.
+
+## Verified for real
+
+What was once in the list above, and when it was run:
+
+- Building the agent as `nobody` when `arcana-agent` runs as root
+  (2026-10-04, on the console's host): the clone over SSH with the key
+  set for it, make, and the program run with `-V`, each under
+  `chroot -u nobody`; the tree it leaves is `nobody`'s, and the program
+  sent back is the one built, by its SHA-256.
+- The agent's restart after an update, by the real rc(8) service
+  (2026-10-04, and on every host at every update since): another
+  process within two seconds, the old one stopped by the service.
+- An interface created, described, given an MTU, brought down and up
+  and destroyed with the real ifconfig(8), and kept in and taken out of
+  rc.conf with the real sysrc(8), in a vnet jail (2026-10-04): what was
+  kept made keeping it again refused, and what was forgotten did not.
 
 ## Known limits
 
