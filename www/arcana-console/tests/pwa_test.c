@@ -1635,6 +1635,10 @@ ATF_TC_BODY(pwa, tc)
 	    "querySelector('button[data-act=tr-switch]') && document."
 	    "querySelector('table.sessions tbody').textContent.includes("
 	    "'unix')"));
+	/* Green is before the console's own way in, and before no other. */
+	ATF_CHECK(js_true("document.querySelectorAll('.transport ul.listeners "
+	    "li.up').length === 1 && document.querySelector('.transport "
+	    "ul.listeners li.up .chip')"));
 	shot("1e-transport");
 
 	/*

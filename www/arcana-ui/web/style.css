@@ -3457,3 +3457,6 @@ ul.apiops { list-style: none; margin: .8rem 0 0; padding: 0; display: grid; gap:
 .link.go { cursor: pointer; }
 .link.go:hover, .link.go.on { border-color: var(--cyan); color: var(--fg); }
 
+/* A listener the agent has that the console has not tried: no colour. */
+ul.listeners li.idle .led { background: transparent; box-shadow: inset 0 0 0 1.5px var(--slate); }
+

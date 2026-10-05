@@ -269,7 +269,8 @@ confirm(const char *title, const char *body, const char *button,
 	snprintf(c->body, sizeof(c->body), "%s", body);
 	snprintf(c->button, sizeof(c->button), "%s", button);
 	c->danger = danger;
-	snprintf(c->typed, sizeof(c->typed), "%s", typed);
+	/* Nothing to type is no word, not the word "(null)". */
+	snprintf(c->typed, sizeof(c->typed), "%s", typed != NULL ? typed : "");
 	snprintf(c->act, sizeof(c->act), "%s", act);
 	snprintf(c->arg, sizeof(c->arg), "%s", arg);
 	snprintf(c->value, sizeof(c->value), "%s", value);

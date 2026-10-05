@@ -170,20 +170,24 @@ The console is laid out as a tree and tabs.
     shell: `arcanactl sysctl [name]`, `arcanactl [-p] sysctl
     name=value`.
   - **How it is reached**, at the foot of the summary: the agent's
-    listeners, the one the console uses, and the connections open to
-    the agent now, each with its transport, where it comes from and
-    the name in its certificate, read again every few seconds. The
-    console keeps its connection to an agent open and sends the next
-    request over it; several requests at once have one each. An agent
-    that listens on TCP listens on SCTP as well, at the same address
-    and port, where the kernel has SCTP. It never loads the module:
-    where it is missing the listener is shown as down with the reason,
-    and once `sctp` is loaded from the Kernel tab, **Try SCTP again**
-    has the agent start it. **Switch to SCTP** asks the agent over
-    SCTP first and changes the server only when it answers; **Switch
-    to TCP** goes back the same way. Nothing falls back by itself:
-    where SCTP is blocked on the way, the host does not answer until
-    it is switched back. From a shell: `arcanactl transport [retry]`.
+    listeners and the connections open to the agent now, each with its
+    transport, where it comes from and the name in its certificate,
+    read again every few seconds. A green light is before the way the
+    console itself gets in, which is the one it knows to work; another
+    the agent listens on has an empty one, until it is tried; the
+    agent's local socket is listed only when it is the console's way.
+    The console keeps its connection to an agent open and sends the
+    next request over it; several requests at once have one each. An
+    agent that listens on TCP listens on SCTP as well, at the same
+    address and port, where the kernel has SCTP. It never loads the
+    module: where it is missing the listener is shown as down with the
+    reason, and once `sctp` is loaded from the Kernel tab, **Try SCTP
+    again** has the agent start it. **Switch to SCTP** has the console
+    ask the agent over SCTP first, and only when it answers is the
+    host reached that way from then on; when it does not, nothing is
+    changed. **Go back to TCP** does the same the other way, and is
+    also offered when a host reached over SCTP stops answering. From a
+    shell: `arcanactl transport [retry]`.
   - **Plugins** are what works through a program that has to be
     installed, not the base system's: **BIRD** (`birdc`) and
     **WireGuard** (`wg`; the interface itself, `if_wg` made by

@@ -497,10 +497,33 @@ switch_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		tr.sid[0] = '\0';
 		refresh_servers();
 	} else
-		toast(true, "It does not answer over %s: %s. Nothing was "
-		    "changed.", to, jstr(o, "error.message") != NULL ? jstr(o,
-		    "error.message") : err != NULL ? err : "no answer");
+		toast(true, "It does not answer over %s (%s): the host is "
+		    "reached as before.", to, jstr(o, "error.message") != NULL ?
+		    jstr(o, "error.message") : err != NULL ? err :
+		    "no answer");
 	free(to);
+}
+
+/*
+ * Are the two the same way in?  The agent says what it was told to
+ * listen on, which may be every address (0.0.0.0, ::) where the
+ * console names one: the transport and the port are what tell.
+ */
+static bool
+same_way(const char *theirs, const char *ours)
+{
+	const char	*tp, *op;
+	size_t		 n;
+
+	if (strcmp(theirs, ours) == 0)
+		return (true);
+	n = strcspn(ours, ":");
+	if (strncmp(theirs, ours, n + 1) != 0 || strncmp(ours, "unix:", 5) ==
+	    0)
+		return (false);
+	tp = strrchr(theirs, ':');
+	op = strrchr(ours, ':');
+	return (tp != NULL && op != NULL && strcmp(tp, op) == 0);
 }
 
 /* The pane of the summary: listeners, the console's way in, sessions. */
@@ -520,8 +543,23 @@ view_transport(struct html *h, struct server *s)
 	int				  r;
 	int64_t				  t;
 
-	if (tr.o == NULL || strcmp(tr.sid, s->id) != 0)
+	/*
+	 * A host reached over SCTP that does not answer: the way back to
+	 * TCP is offered where its listeners would be, since they cannot
+	 * be read.  The console asks over TCP first there too.
+	 */
+	if (tr.o == NULL || strcmp(tr.sid, s->id) != 0) {
+		if (strncmp(s->uri, "sctp:", 5) != 0 || !s->failed)
+			return;
+		h_fmt(h, "<section class=\"transport\"><h3>How it is reached"
+		    "</h3><p class=\"dim\">Over SCTP, and it does not answer. "
+		    "If SCTP is blocked on the way, the host may still answer "
+		    "over TCP.</p><div class=\"toolbar\"><button class=\""
+		    "ghost small\" data-act=\"tr-switch\" data-arg=\"tcp\"%s>"
+		    "Go back to TCP</button></div></section>", tr.busy ?
+		    " disabled" : "");
 		return;
+	}
 	d = jget(tr.o, "data");
 	uri = jstr(tr.o, "uri") != NULL ? jstr(tr.o, "uri") : s->uri;
 	sctp = strncmp(uri, "sctp:", 5) == 0;
@@ -540,18 +578,39 @@ view_transport(struct html *h, struct server *s)
 	    NULL) {
 		bool	up = jbool(o, "up");
 
+		bool	mine = jstr(o, "uri") != NULL && same_way(jstr(o,
+		    "uri"), uri);
+
 		if (jstr(o, "transport") != NULL && strcmp(jstr(o,
 		    "transport"), "sctp") == 0) {
 			has_sctp = true;
 			sctp_up = sctp_up || up;
 		}
+		/*
+		 * The agent's local socket is of use to who is on the
+		 * host: shown only when it is how the console gets in.
+		 */
+		if (jstr(o, "transport") != NULL && strcmp(jstr(o,
+		    "transport"), "unix") == 0 && !mine)
+			continue;
+		/*
+		 * Green is what the console reaches, which it knows of
+		 * its own way in alone; another the agent listens on is
+		 * that, and no more, until it is tried.
+		 */
 		h_fmt(h, "<li class=\"%s\"><span class=\"led\"></span><code>",
-		    up ? "up" : "down");
+		    mine ? "up" : up ? "idle" : "down");
+		h_attr(h, "title", mine ? "The console reaches the agent "
+		    "this way now" : up ? "The agent listens here; the console "
+		    "has not tried it" : "The agent does not listen here");
 		h_txt(h, jstr(o, "uri"));
 		h_raw(h, "</code>");
-		if (jstr(o, "uri") != NULL && strcmp(jstr(o, "uri"), uri) == 0)
+		if (mine)
 			h_raw(h, "<span class=\"chip\">the console's way in"
 			    "</span>");
+		else if (up)
+			h_raw(h, "<span class=\"dim\">listening, not tried "
+			    "from here</span>");
 		if (!up && (e = jstr(o, "error")) != NULL) {
 			h_raw(h, "<span class=\"dim\">");
 			h_txt(h, e);
@@ -571,7 +630,7 @@ view_transport(struct html *h, struct server *s)
 		    " disabled" : "");
 	if (sctp)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"tr-switch\" "
-		    "data-arg=\"tcp\"%s>Switch to TCP</button>", tr.busy ?
+		    "data-arg=\"tcp\"%s>Go back to TCP</button>", tr.busy ?
 		    " disabled" : "");
 	if (tcp && has_sctp && !jbool(d, "sctp"))
 		h_raw(h, "<span class=\"dim\">The kernel has no SCTP: load "
@@ -641,15 +700,13 @@ sysctl_action(const char *act, const char *arg, const char *value)
 		refresh_transport(s, true, true);
 	} else if (strcmp(act, "tr-switch") == 0 && (strcmp(arg, "sctp") ==
 	    0 || strcmp(arg, "tcp") == 0)) {
-		snprintf(text, sizeof(text), "The console reaches %s over %s "
-		    "from now on, at the same address and port. It asks the "
-		    "agent that way first, and changes nothing when there is "
-		    "no answer. Afterwards there is no falling back by "
-		    "itself: when %s is blocked on the way, the host does not "
-		    "answer until this is switched back.", s->name, arg[0] ==
-		    's' ? "SCTP" : "TCP", arg[0] == 's' ? "SCTP" : "TCP");
+		snprintf(text, sizeof(text), "The console asks %s over %s "
+		    "first, at the same address and port. Only when the agent "
+		    "answers there is the host reached that way from then on; "
+		    "when it does not, nothing is changed.", s->name, arg[0] ==
+		    's' ? "SCTP" : "TCP");
 		confirm(arg[0] == 's' ? "Switch to SCTP" : "Switch to TCP",
-		    text, "Switch", false, NULL, "do-tr-switch", arg, "");
+		    text, "Test and switch", false, "", "do-tr-switch", arg, "");
 	} else if (strcmp(act, "do-tr-switch") == 0 && (strcmp(arg, "sctp") ==
 	    0 || strcmp(arg, "tcp") == 0)) {
 		tr.busy = true;
