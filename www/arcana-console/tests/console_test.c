@@ -1874,7 +1874,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("skipto 500 ip from any to any out", jstr(&r,
 	    "data.rules.0.text"));
 	ATF_CHECK_STREQ("900", jstr(&r, "data.rules.0.bytes"));
-	ATF_CHECK_STREQ("T46", jstr(&r, "data.tables.0"));
+	ATF_CHECK_STREQ("T46", jstr(&r, "data.tables.0.name"));
 	ATF_CHECK_STREQ("1002", jstr(&r, "data.kept.3.num"));
 	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/jobs",

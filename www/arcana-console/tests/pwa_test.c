@@ -1889,7 +1889,7 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.tab[data-arg=firewall]').click()");
 	/* The layout is in the side bar, a line for each part, in place of
 	 * the hosts; the light that says it is on is the switch. */
-	wait_js("document.querySelectorAll('.fwrail .titem.fw').length === 28 "
+	wait_js("document.querySelectorAll('.fwrail .titem.fw').length >= 34 "
 	    "&& document.querySelector('table.fw-layout tr.pick')", 20);
 	ATF_CHECK(js_true("document.querySelector('button.switch.on[data-act="
 	    "fw-onoff]') && document.querySelector('.fw-count').textContent."
@@ -1974,6 +1974,59 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('table.fw-dyn tbody tr').click()");
 	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
 	    "')", 10);
+	/*
+	 * A table and what is in it, an entry more; what Apply would
+	 * change; a packet followed through the rules; the firewall of
+	 * a jail with a network of its own.
+	 */
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-4\"]').click()");
+	wait_js("document.querySelectorAll('table.fwentries tbody tr').length "
+	    "=== 2 && document.querySelector('section.fwtable h4').textContent"
+	    ".includes('T46')", 10);
+	run("const f = document.querySelector('form[data-form=fw-entry]'); "
+	    "f.key.value = '198.51.100.0/24'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^ipfw -q table T46 add "
+	    "198.51.100.0/24$' ipfw.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q table T46 add 198.51.100.0/24$' "
+	    "ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("7o-firewall-tables");
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-6\"]').click()");
+	wait_js("document.querySelector('table.fw-diff tr.d-add') && document."
+	    "querySelector('table.fw-diff tr.d-del') && document."
+	    "querySelector('.stage').textContent.includes('added ·')", 10);
+	shot("7o-firewall-diff");
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-7\"]').click()");
+	wait_js("document.querySelector('form[data-form=fw-trace]')", 10);
+	run("const f = document.querySelector('form[data-form=fw-trace]'); "
+	    "f.src.value = '2001:db8::9'; f.dst.value = '2001:db8::1'; "
+	    "f.port.value = '22'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('ol.fw-steps li').length === 2 && "
+	    "document.querySelector('ol.fw-steps li').textContent.includes("
+	    "'into 9100') && document.querySelector('.stage .notice.bad')."
+	    "textContent.includes('dropped')", 10);
+	shot("7o-firewall-trace");
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-5\"]').click()");
+	wait_js("document.querySelector('form[data-form=fw-object] select')",
+	    10);
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-8\"]').click()");
+	wait_js("document.querySelector('.stage').textContent.includes("
+	    "'Logged packets')", 10);
+	run("document.querySelector('.fwrail li[data-act=fw-jail]:not("
+	    "[data-arg=\"\"])') && document.querySelector('.fwrail "
+	    "li[data-act=fw-jail]:not([data-arg=\"\"])').click()");
+	usleep(700000);
+	run("document.querySelector('.fwrail li[data-act=fw-jail][data-arg="
+	    "\"\"]').click()");
+	wait_js("document.querySelector('table.fw-layout')", 20);
 	/* Back to the hosts, and to the layout again. */
 	run("document.querySelector('.fwrail button[data-act=fw-rail]')."
 	    "click()");

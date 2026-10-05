@@ -327,6 +327,21 @@ Turn the firewall on or off, with
 in
 .Xr rc.conf 5
 too, or clear the counters.
+.It Cm ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | pipe | queue | sched Ar name Ar word ...
+What a rule names and is not one, in
+.Xr ipfw 8 Ns 's
+own words:
+.Li table T46 add 10.0.0.1 ,
+.Li nat 1 config if em0 ,
+.Li pipe 1 config bw 10Mbit/s .
+With
+.Fl p ,
+the same words are also a line at the head of the kept rules.
+With
+.Fl j ,
+of that jail's own firewall, as every
+.Cm ipfw
+command is: ipfw is run in the jail.
 .It Cm ipfw rules Oo Fl w Ar file Oc Op Fl n
 The kept rules, a file of
 .Xr ipfw 8

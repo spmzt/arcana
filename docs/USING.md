@@ -274,6 +274,31 @@ The console is laid out as a tree and tabs.
     them: the rule that made each, its flow, counters and how long it
     still lives, read again every two seconds; one pressed leads to
     its rule.
+    **What Apply would change** sets the kept rules beside those of
+    the kernel: the rules Apply would add, those it would remove, and
+    those whose words differ, which may be only how ipfw writes a
+    rule back. **Follow a packet** asks for a protocol, where from,
+    where to, a port, a direction and an interface, and walks the
+    first packet of such a connection through the kernel's rules:
+    each rule it meets, each jump, call and return, and what becomes
+    of it. A rule the page cannot judge (`me`, a state, an option it
+    does not know) is taken as met and marked; it is a reading of the
+    rules, not the kernel's own answer. In a part, a rule's packets
+    are followed by how many a second it took since the look before,
+    and **never** when none has matched it; a rule being changed has
+    ▲ and ▼, which put a number before the rule above or after the
+    one below into its field, for Save to move it there.
+    **Tables** lists each table with its type and what is in it: an
+    entry is added and taken out, a table created and destroyed.
+    **NAT and pipes** shows the NAT instances and dummynet's pipes as
+    ipfw shows them, and one line makes, changes or deletes a NAT,
+    NAT64 or NPTv6 instance, a pipe, a queue or a scheduler, in
+    ipfw's own words. With **keep**, what is done to a table or an
+    instance is also a line at the head of the kept rules. **Logged
+    packets** reads what the rules with `log` wrote into
+    `/var/log/security`. A running jail with a network of its own is
+    listed under the host in the side bar: its firewall is its own,
+    ipfw is run inside it, and its rules are kept in the jail.
   - **Sysctl**: the kernel's state, a part of the tree at a time
     (**kern**, **vm**, **net** and the others, or from a name typed),
     read from the kernel as `sysctl -a` has it: each name with its

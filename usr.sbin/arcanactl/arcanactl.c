@@ -174,6 +174,8 @@ usage(void)
 	    "    ipfw [keep] add number rule ...\n"
 	    "    ipfw [keep] delete number\n"
 	    "    ipfw apply | enable | disable | zero [number]\n"
+	    "    ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | "
+	    "pipe |\n        queue | sched name word ...\n"
 	    "    ipfw rules [-w file] [-n]\n"
 	    "    storage disks | pools | datasets | mounts | importable | health\n"
 	    "    zfs load-key | unload-key [-r] dataset\n"

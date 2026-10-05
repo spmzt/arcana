@@ -3653,3 +3653,29 @@ form.usample { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .
 form.usample label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; font-size: .78rem; color: var(--fg-2); }
 form.usample input[type=number] { width: 5.5rem; }
 form.usample small { flex: 1 1 100%; }
+
+/* The firewall, further: rates, what Apply changes, a packet followed. */
+table.fw-rules small.rate { color: var(--green); margin-left: .3rem; }
+table.fw-rules small.never { margin-left: .3rem; font-style: italic; }
+table.fw-diff tr.d-add td { color: var(--green); }
+table.fw-diff tr.d-del td { color: var(--red); }
+table.fw-diff tr.d-chg td:first-child { color: var(--amber); }
+table.fw-diff del { color: var(--red); text-decoration: none; opacity: .8; }
+table.fw-diff ins { color: var(--green); text-decoration: none; }
+form.fw-add select { width: auto; flex: 0 0 auto; }
+form.fw-add input[name=words], form.fw-add input[name=key] { flex: 1 1 14rem; min-width: 0; width: auto; }
+form.fw-add input[name=name], form.fw-add input[name=value] { flex: 0 1 12rem; width: auto; }
+form.fw-trace input[name=src], form.fw-trace input[name=dst] { flex: 1 1 11rem; min-width: 0; width: auto; }
+form.fw-trace input[name=port] { flex: 0 0 5.5rem; width: 5.5rem; }
+form.fw-trace input[name=iface] { flex: 0 0 7rem; width: 7rem; }
+ol.fw-steps { list-style: none; margin: .8rem 0; padding: 0; border-left: 2px solid var(--line-2); }
+ol.fw-steps li { padding: .35rem .7rem; cursor: pointer; }
+ol.fw-steps li:hover { background: rgba(var(--accent-rgb), .05); }
+ol.fw-steps li.maybe { border-left: 2px solid var(--amber); margin-left: -2px; }
+ol.fw-steps li.met { border-left: 2px solid var(--green); margin-left: -2px; }
+ol.fw-steps li code { color: var(--fg); }
+ol.fw-steps li small { color: var(--fg-2); margin-left: .4rem; }
+section.fwtable { margin-bottom: .8rem; }
+section.fwtable h4 .chip, section.fwtable h4 button { margin-left: .6rem; }
+.rail.fwrail .titem.jailfw .twig { color: var(--dim); margin-right: .3rem; }
+.rail.fwrail .titem.host-of { cursor: pointer; }

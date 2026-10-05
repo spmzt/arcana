@@ -1572,6 +1572,9 @@ exit 0
 EOS
 	printf '#!/bin/sh\necho "bird $*" >> %s/birdc.log\ngrep -q BROKEN "%s$3" && { echo "syntax error" >&2; exit 1; }\nexit 0\n' "$(pwd)" "$R" > fake-bird
 	chmod +x fake-jls fake-jexec fake-helper fake-ifconfig fake-wg fake-birdc fake-bird
+	printf '#!/bin/sh\necho "ipfw $*" >> %s/ipfw.log\nexit 0\n' "$(pwd)" > fake-ipfw
+	chmod +x fake-ipfw
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw"
 	start_daemon
 
 	# Its interfaces: read by the helper, which attaches to the jail;
@@ -1599,6 +1602,13 @@ EOS
 	atf_check -o not-match:'10.99.0.5' cat rc.conf
 	atf_check -o match:'fake-helper -Q 4 route-add 10.77.0.0/16 10.99.0.1 - 0 0 0 -' \
 	    "$JGC" -j gateway -c "$SOCK" route add 10.77.0.0/16 10.99.0.1
+	# Its firewall is its own: ipfw is run in the jail, not on the host.
+	atf_check -o match:'gateway' -o match:'fake-jexec 4 .*/fake-ipfw -q add 100 allow ip from any to any' \
+	    "$JGC" -j gateway -c "$SOCK" ipfw add 100 allow ip from any to any
+	atf_check -o match:'done' "$JGC" -j gateway -c "$SOCK" ipfw table T46 add 10.0.0.1
+	atf_check -o match:'"loaded":true' "$JGC" -j gateway -c "$SOCK" net ipfw
+	atf_check -o match:'^jexec 4 .*/fake-ipfw -q table T46 add 10.0.0.1$' \
+	    -o match:'^jexec 4 .*/fake-ipfw -S show$' cat jexec.log
 	# An interface is one of the jail's, or it is not there.
 	atf_check -s exit:1 -o match:'no interface em0 in that jail' \
 	    "$JGC" -j gateway -c "$SOCK" interface em0 up
@@ -2725,7 +2735,10 @@ case "\$*" in
 	printf '01001      3      180 set 0 allow tcp from any to me6 22 in\n'
 	printf '# DISABLED 01001      0        0 set 1 allow tcp from any to me6 2222 in\n'
 	printf '65535     99     9999 set 31 deny ip from any to any\n' ;;
-"table all info") printf -- '--- table(T46), set(0) ---\n kindex: 1, type: addr\n' ;;
+"table all info") printf -- '--- table(T46), set(0) ---\n kindex: 1, type: addr\n references: 2, valtype: legacy\n' ;;
+"table T46 list") printf -- '--- table(T46), set(0) ---\n10.0.0.0/8 0\n2001:db8::/32 0\n' ;;
+"pipe show") printf '00001:  10.000 Mbit/s    0 ms burst 0\n' ;;
+"-q table T46 add 10.9.9.9") echo "ipfw: Adding record failed: record already exists" >&2; exit 1 ;;
 "-D show")
 	printf '## Dynamic rules (2 136):\n'
 	printf '01001      7      560 (298s) STATE tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default\n'
@@ -2746,7 +2759,9 @@ EOS
 	atf_check -o match:'"loaded":true' \
 	    -o match:'\{"num":5,"pkts":12,"bytes":900,"set":0,"text":"skipto 500 ip from any to any out"\}' \
 	    -o match:'\{"num":1001,"pkts":0,"bytes":0,"set":1,"text":"allow tcp from any to me6 2222 in","disabled":true\}' \
-	    -o match:'"tables":\["T46"\]' -o match:'"kept":\[\]' \
+	    -o match:'"tables":\[\{"name":"T46","type":"addr","entries":\[\{"key":"10.0.0.0/8","value":"0"\},\{"key":"2001:db8::/32","value":"0"\}\],"count":2\}\]' \
+	    -o match:'"pipes":\["00001:  10.000 Mbit/s    0 ms burst 0"\]' \
+	    -o match:'"kept":\[\]' \
 	    -o match:'"file":false' cat fw.json
 	# The dynamic rules: the connections let through, each with its
 	# rule, its counters and how long it still lives.
@@ -2849,6 +2864,26 @@ add 00010 set 1 allow ip from table(T46) to any
 	    -o match:'^firewall_type=".*/fw/ipfw.rules"$' cat rc.conf
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw zero 5
 	atf_check -o match:'^ipfw -q zero 5$' tail -1 ipfw.log
+	# What a rule names and is not one: a table's entry, a NAT
+	# instance, a pipe; kept, a line at the head of the kept file,
+	# once; what ipfw refuses said; not all at once, no shell's words.
+	atf_check -o match:'done +ipfw table T46 add 192.0.2.0/24$' \
+	    "$JGC" -c "$SOCK" ipfw table T46 add 192.0.2.0/24
+	atf_check -o match:'^ipfw -q table T46 add 192.0.2.0/24$' cat ipfw.log
+	atf_check -o match:'done +ipfw nat 1 config if em0 same_ports \(kept\)$' \
+	    "$JGC" -p -c "$SOCK" ipfw nat 1 config if em0 same_ports
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw nat 1 config if em0 same_ports
+	atf_check -o inline:'1\n' sh -c "grep -c '^nat 1 config if em0 same_ports\$' fw/ipfw.rules"
+	atf_check -o match:'^nat 1 config if em0 same_ports$' sed -n 1p fw/ipfw.rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw pipe 1 config bw 10Mbit/s
+	atf_check -s exit:1 -o match:'record already exists' \
+	    "$JGC" -c "$SOCK" ipfw table T46 add 10.9.9.9
+	atf_check -s exit:1 -e match:'not all of them at once' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw table all flush
+	atf_check -s exit:1 -e match:'the words are ipfw' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw table T46 add '10.0.0.1;id'
+	atf_check -s exit:1 -e match:'not taken back' -o ignore \
+	    "$JGC" -s -c "$SOCK" ipfw table T46 flush x
 
 	# A rule's words are ipfw's own; a number is a number; the sets
 	# are not a rule's to name; what ipfw refuses is said.

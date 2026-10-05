@@ -15,19 +15,13 @@
   a dataset whose keylocation is prompt, without it being kept in a
   job; a key changed; file systems other than UFS made; a disk's
   self-test started; a vnet jail's datasets from the jail's own page.
-- The firewall's page, further: rules of a part moved by dragging and
-  renumbered to make room; a rule's words offered as they are typed
-  (actions, tables, interfaces, the host's own addresses); a hit
-  counter drawn over time and the rules that never matched marked;
-  the difference between the kept rules and the kernel's shown as a
-  whole before Apply; a packet followed through the chain ("what
-  happens to tcp from A to B in"); the log of denied packets
-  (ipfw0) read; tables and NAT with pages of their own.
-- The firewall, beyond what there is: its tables' entries read and
-  changed, NAT and NAT64 instances made from forms and not only as
-  lines of the kept rules, pipes and queues, the dynamic rules shown,
-  a rule moved, and a jail's firewall from the jail's page (the agent
-  takes the jail; the page asks only for the host).
+- The firewall, further: a packet followed by the kernel itself and
+  not by the page's reading of the rules; a rule's words offered as
+  they are typed; rules moved by dragging; a hit counter drawn over
+  time; a line of the kept rules taken out when what it made is
+  deleted; forms for NAT and pipes in place of ipfw's own words; a
+  jail's firewall shown on or off as the jail has it (the page shows
+  the host's switch).
 - Bridges and geneve, beyond what there is: a bridge's own options
   from a form (priority, timers, protocol: the agent takes them), the
   addresses a bridge has learned, a geneve tunnel's forwarding table.

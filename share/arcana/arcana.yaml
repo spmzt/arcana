@@ -159,8 +159,12 @@ definitions:
           job-confirm comes.  verb enable or disable turns the
           firewall on or off (net.inet.ip.fw.enable), with persist in
           rc.conf.  verb zero clears the counters, of a rule when
-          names has its number.  jail is the vnet jail whose firewall
-          it is.
+          names has its number.  verb table, nat, nat64lsn, nat64stl,
+          nat64clat, nptv6, pipe, queue or sched, with names what ipfw
+          takes after that word (T46 add 10.0.0.1; 1 config if em0;
+          1 delete), does it now, and with persist writes the same
+          words as a line at the head of the kept rules.  jail is the
+          vnet jail whose firewall it is: ipfw is run in the jail.
       - name: bridge
         doc: |
           if_bridge(4).  interface is the bridge, names the verb's
@@ -277,7 +281,9 @@ definitions:
         doc: |
           The firewall, ipfw(8), as a JSON object: "loaded" and
           "enabled"; "rules", each with its number, set, counters and
-          text, and whether its set is disabled; "tables" and "nat";
+          text, and whether its set is disabled; "tables", each with
+          its name, type, count and the first of its entries (key,
+          value); "nat" and "pipes", as ipfw shows them; "verbose";
           "kept", the rules of the kept file each with its number and
           text, "other" its lines that are not rules, "path" where it
           is and "rc" what rc.conf says of the firewall.
