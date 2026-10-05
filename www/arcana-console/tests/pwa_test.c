@@ -1783,10 +1783,45 @@ ATF_TC_BODY(pwa, tc)
 	    "\"300\"]').click()");
 	wait_js("document.querySelector('button[data-act=usage-window]"
 	    "[data-arg=\"300\"].on')", 5);
+	/*
+	 * The network is all the interfaces or the one picked, by name;
+	 * how the agent samples is said with what it takes, and set.
+	 */
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.ucard "
+	    "figure.uplot figcaption b')].some(b => /^Network · all [0-9]+ "
+	    "interfaces$/.test(b.textContent)) && document.querySelector("
+	    "'section.ucard h4 small').textContent.includes('every 5 s, 720 "
+	    "kept (1 h)')"));
+	if (js_true("document.querySelector('button[data-act=usage-net]"
+	    ":not([data-value=\"\"])')")) {
+		run("window.ifn = document.querySelector('button[data-act="
+		    "usage-net]:not([data-value=\"\"])'); window.ifn = "
+		    "window.ifn.dataset.value; document.querySelector("
+		    "'button[data-act=usage-net]:not([data-value=\"\"])')."
+		    "click()");
+		wait_js("[...document.querySelectorAll('section.ucard "
+		    "figure.uplot figcaption b')].some(b => b.textContent "
+		    "=== 'Network · ' + window.ifn) && document.querySelector("
+		    "'button[data-act=usage-net].on').dataset.value === "
+		    "window.ifn", 5);
+	}
 	run("document.querySelectorAll('main, .stage').forEach(e => { "
 	    "e.scrollTop = 0; })");
 	usleep(300000);
 	shot("7t-usage");
+	run("document.querySelector('button[data-act=usage-cfg]').click()");
+	wait_js("document.querySelector('form[data-form=usage-set]') && "
+	    "document.querySelector('form[data-form=usage-set] small')."
+	    "textContent.includes('interfaces')", 5);
+	shot("7t-usage-sampling");
+	run("const f = document.querySelector('form[data-form=usage-set]'); "
+	    "f.step.value = '2'; f.keep.value = '50'; f.requestSubmit();");
+	wait_js("document.querySelector('section.ucard h4 small').textContent"
+	    ".includes('every 2 s, 50 kept') && !document.querySelector("
+	    "'form[data-form=usage-set]') && document.querySelectorAll("
+	    "'section.ucard figure.uplot svg path.line').length >= 10", 30);
+	ATF_CHECK(system("grep -q '^step=2$' history.conf && grep -q "
+	    "'^keep=50$' history.conf") == 0);
 	run("document.querySelector('section.ucard .uname').click()");
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
 

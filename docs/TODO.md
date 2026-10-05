@@ -48,7 +48,7 @@
 - Gula, more of it: a jail's own logs (its `/var/log`), the packed
   logs of newsyslog, the audit trail and `dmesg`; a level for a line
   where syslogd writes one (`-v`); the history kept across a restart
-  of the agent and for longer than an hour, thinned; each jail's
+  of the agent, and older samples thinned instead of dropped; each jail's
   share of the CPUs and the memory (rctl, racct); a threshold on any
   of the figures as an event for the workflows; threads of a process,
   its open files and sockets (procstat).

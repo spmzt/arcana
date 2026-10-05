@@ -246,7 +246,8 @@ start_daemon()
 	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" \
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
-	    -t "$(pwd)/fake-kldunload" -w 2 $DAEMON_ARGS \
+	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
+	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -2652,12 +2653,44 @@ observe_body()
 	# second, and none after the time of the last.
 	sleep 2
 	atf_check -o save:h.json "$JGC" -c "$SOCK" history
-	atf_check -o match:'"step":5,"ncpu":[0-9]+,"mem_total":[1-9][0-9]+,"swap_total":[0-9]+' \
+	atf_check -o match:'"step":5,"keep":720,"bytes":[1-9][0-9]+,"ncpu":[0-9]+,"mem_total":[1-9][0-9]+,"swap_total":[0-9]+' \
 	    -o match:'"fields":\["t","cpu","load","mem","swap","rx","tx","read","write"\]' \
-	    -o match:'"samples":\[\[[0-9]+,[0-9.]+,[0-9.]+,[1-9][0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+\]' \
+	    -o match:'"nets":\[("[A-Za-z0-9_.:-]+",?)*\],"disks":\[("[a-z0-9]+",?)*\]' \
+	    -o match:'"samples":\[\[[0-9]+,[0-9.]+,[0-9.]+,[1-9][0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+[],]' \
 	    cat h.json
+	# A sample is as wide as its fields, the interfaces and the disks.
+	atf_check -o inline:'ok\n' awk '{
+		nn = 0; nd = 0
+		if (match($0, /"nets":\[[^]]*\]/)) { s = substr($0, RSTART, RLENGTH); nn = gsub(/"[^"]*"/, "", s) - 1 }
+		if (match($0, /"disks":\[[^]]*\]/)) { s = substr($0, RSTART, RLENGTH); nd = gsub(/"[^"]*"/, "", s) - 1 }
+		match($0, /"samples":\[\[[^]]*\]/); s = substr($0, RSTART, RLENGTH)
+		print (gsub(/,/, "", s) + 1 == 9 + 2 * nn + 2 * nd) ? "ok" : "width " nn " " nd
+	}' h.json
 	last=$(sed -E 's/.*\[([0-9]+),[^]]*\]\]\}.*/\1/' h.json)
 	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history "$last"
+	# How it samples is set, and written down for the next start: fewer
+	# kept are the newest; none kept is no sampling and no memory.
+	atf_check -o match:'"step":1,"keep":2,"bytes":[1-9][0-9]*,' \
+	    "$JGC" -c "$SOCK" history set 1 2
+	atf_check -o match:'^step=1$' -o match:'^keep=2$' cat history.conf
+	sleep 4
+	atf_check -o save:h2.json "$JGC" -c "$SOCK" history
+	atf_check -o inline:'2\n' sh -c "grep -o '\[[0-9][0-9,.]*\]' h2.json | wc -l | tr -d ' '"
+	atf_check -o match:'"step":60,"keep":0,"bytes":0,' -o match:'"samples":\[\]' \
+	    "$JGC" -c "$SOCK" history set 60 0
+	sleep 2
+	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history
+	atf_check -o match:'"step":2,"keep":10,' "$JGC" -c "$SOCK" history set 2 10
+	sleep 3
+	atf_check -o match:'"samples":\[\[' "$JGC" -c "$SOCK" history
+	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 3601 10
+	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 5 5001
+	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 0 10
+	# At its next start the agent samples as it was told.
+	stop_daemon
+	sleep 1
+	start_daemon
+	atf_check -o match:'"step":2,"keep":10,' "$JGC" -c "$SOCK" history
 }
 observe_cleanup()
 {

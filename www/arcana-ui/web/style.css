@@ -3642,3 +3642,13 @@ section.ucard { margin-bottom: .8rem; }
 section.ucard h4 small { margin-left: .8rem; font-weight: 400; }
 section.ucard .uname { cursor: pointer; }
 section.ucard .uname:hover { color: var(--cyan); }
+.uplots.wide { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); margin-top: .7rem; }
+.upick { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .4rem; }
+.upick button { text-transform: none; letter-spacing: 0; }
+.upick button small { margin-left: .3rem; color: var(--fg-2); }
+.upick button.idle { opacity: .55; }
+section.ucard h4 > button { margin-left: .8rem; }
+form.usample { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; margin: .2rem 0 .8rem; }
+form.usample label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; font-size: .78rem; color: var(--fg-2); }
+form.usample input[type=number] { width: 5.5rem; }
+form.usample small { flex: 1 1 100%; }

@@ -661,6 +661,14 @@ attribute-sets:
         doc: |
           For history, the time, in seconds since the epoch, after
           which samples are asked for.
+      - name: sample-step
+        type: u32
+        doc: For history, the seconds between two samples, 1 to 3600.
+      - name: sample-keep
+        type: u32
+        doc: |
+          For history, how many samples the agent keeps, at most 5000;
+          with 0 it does not sample and holds no memory for it.
 
   - name: host
     attributes:
@@ -1719,18 +1727,27 @@ operations:
     auth: true
     doc: |
       How busy the host has been, which the agent samples by itself
-      and keeps for an hour, as a JSON object: "step", the seconds
-      between two samples; "fields", the names of what a sample holds,
-      in order (t, cpu, load, mem, swap, rx, tx, read, write: a time,
-      a percentage, the load average, bytes of memory and of swap in
-      use, bytes a second received and sent on the network, and read
-      from and written to the disks); "samples", each an array of
-      those; "mem_total", "swap_total" and "ncpu".  With after only
-      the samples after that time.
+      and keeps the last of, as a JSON object: "step", the seconds
+      between two samples; "keep", how many are kept; "bytes", the
+      memory that takes; "fields", the names of what a sample begins
+      with, in order (t, cpu, load, mem, swap, rx, tx, read, write: a
+      time, a percentage, the load average, bytes of memory and of
+      swap in use, bytes a second received and sent on all interfaces
+      but the loopback, and read from and written to all disks);
+      "nets" and "disks", the names of the interfaces and the disks
+      told apart, at most 16 of each; "samples", each an array of the
+      fields, then bytes a second in and out of each of nets, then
+      read and written of each of disks; "mem_total", "swap_total" and
+      "ncpu".  With after only the samples after that time.  With
+      sample-step and sample-keep, both, the agent first samples that
+      way from now on, and keeps it for its next start: an hour every
+      five seconds until it is told otherwise.
     do:
       request:
         attributes:
           - after
+          - sample-step
+          - sample-keep
       reply:
         attributes:
           - ok

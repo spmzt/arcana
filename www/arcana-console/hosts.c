@@ -1512,6 +1512,10 @@ connected:
 		memset(&hsq, 0, sizeof(hsq));
 		hsq.has_after = c->has_pos;
 		hsq.after = c->pos;
+		/* How to sample rides where the routes' fib and offset do. */
+		hsq.has_sample_step = hsq.has_sample_keep = c->retry;
+		hsq.sample_step = c->fib;
+		hsq.sample_keep = c->offset;
 		if ((error = arc_history(&cl, &hsq, &hsr)) != 0)
 			goto rpcfail;
 		ok = hsr->ok;
@@ -1814,7 +1818,8 @@ call_new(struct http_request *req, enum op op)
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
 	    op == OP_CONSOLE_UPDATE ||
 	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT || op ==
-	    OP_IPFW_RULES || op == OP_FSTAB) && req->method ==
+	    OP_IPFW_RULES || op == OP_FSTAB || op == OP_HISTORY) &&
+	    req->method ==
 	    HTTP_METHOD_POST)))
 		return (NULL);
 	t1 = now_us();
@@ -2648,17 +2653,43 @@ api_log(struct http_request *req)
 	return (call_start(req, c));
 }
 
-/* GET /api/servers/<id>/history[?after=time]: how busy it has been. */
+/*
+ * GET /api/servers/<id>/history[?after=time]: how busy it has been.
+ * POST {"step": seconds, "keep": samples}: how its agent samples it
+ * from now on; the reply is as the GET's.
+ */
 int
 api_history(struct http_request *req)
 {
 	struct call	*c;
+	ucl_object_t	*body;
+	int64_t		 step, keep;
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_HISTORY)) == NULL)
 		return (KORE_RESULT_OK);
 	c->has_pos = query_u64(req, "after", INT64_MAX, &c->pos);
+	if (req->method == HTTP_METHOD_GET)
+		return (call_start(req, c));
+	body = read_json(req);
+	step = body != NULL ? ucl_object_toint(ucl_object_lookup(body,
+	    "step")) : 0;
+	keep = body != NULL && ucl_object_lookup(body, "keep") != NULL ?
+	    ucl_object_toint(ucl_object_lookup(body, "keep")) : -1;
+	if (body != NULL)
+		ucl_object_unref(body);
+	if (step < 1 || step > 3600 || keep < 0 || keep > 5000) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "step is 1 to 3600 "
+		    "seconds, keep 0 to 5000 samples"));
+	}
+	c->retry = true;
+	c->fib = (uint32_t)step;
+	c->offset = (uint32_t)keep;
 	return (call_start(req, c));
 }
 

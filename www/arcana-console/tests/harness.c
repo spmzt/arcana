@@ -697,7 +697,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[77] = (char *)(uintptr_t)"ipfw.rules";
 	argv[78] = (char *)(uintptr_t)"-v";
 	argv[79] = (char *)(uintptr_t)"log";
-	argv[80] = NULL;
+	argv[80] = (char *)(uintptr_t)"-1";
+	argv[81] = (char *)(uintptr_t)"history.conf";
+	argv[82] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

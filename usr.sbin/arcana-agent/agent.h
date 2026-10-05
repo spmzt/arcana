@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.22.0"
+#define	ARCANA_AGENT_VERSION	"0.23.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -96,6 +96,7 @@ struct opts {
 	const char	*ipfw_rules;
 	const char	*sysctl_conf;
 	const char	*log_dir;	/* where syslogd(8) writes */
+	const char	*history_conf;	/* how the host is sampled */
 	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
@@ -360,7 +361,8 @@ bool		 log_name_ok(const char *);
 int		 do_log(struct work *, const char *, const char *, bool,
 		    uint64_t, uint32_t, struct arc_log_rsp *);
 void		 history_start(void);
-int		 do_history(struct work *, uint64_t, struct arc_history_rsp *);
+int		 do_history(struct work *, uint64_t, bool, uint32_t, uint32_t,
+		    struct arc_history_rsp *);
 
 int		 do_sysctl(struct work *, const char *,
 		    struct arc_sysctl_rsp *);

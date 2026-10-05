@@ -23,10 +23,23 @@ The console is laid out as a tree and tabs.
   hosts to their jails; nodes are links.
 - **Network**: the fleet as a map; see [The network](#the-network).
 - **Utilization**: how busy every host has been, as lines over the
-  last five minutes, quarter of an hour or hour. Each agent looks at
-  its host every five seconds by itself and keeps an hour of it, so
-  the lines are there when the page is opened; while it is open, what
-  came since is added. With more than one host, their CPU, memory and
+  last five minutes, quarter of an hour, hour, or all that is kept.
+  Each agent looks at its host by itself, every five seconds and an
+  hour of it until it is told otherwise, so the lines are there when
+  the page is opened; while it is open, what came since is added.
+  **Sampling**, at a host's name, says how often its agent looks and
+  how many samples it keeps, with what that takes of the agent's
+  memory (about 70 KiB for the hour, on a host with five interfaces
+  and three disks: 8 bytes a sample and 4 for each figure in it), and
+  sets both; with 0 kept the agent does not sample at all and holds
+  nothing. The agent keeps what it was told in
+  `/usr/local/etc/arcana/history.conf`. Under **Network** are the
+  host's interfaces, without the loopback, each with what goes over
+  it now: **all** draws them added up, one pressed draws that one;
+  a bridge and its members are each counted, so **all** counts a
+  bridged packet more than once. Under **Disks** the same for each
+  disk. From a shell: `arcanactl history`, `arcanactl history set
+  seconds samples`. With more than one host, their CPU, memory and
   load are first drawn over one another, a colour each. Then each host
   has a box of its own, which folds: the CPUs' busy share, the memory
   in use with the swap as a dashed line, the load, what the network

@@ -588,6 +588,7 @@ void		 usage_open(void);
 void		 usage_tick(double);
 void		 view_usage(struct html *);
 bool		 usage_action(const char *, const char *, const char *);
+bool		 usage_form(const char *, const ucl_object_t *);
 void		 fmt_size(char *, size_t, double);
 void		 refresh_sysctl(struct server *, bool);
 void		 sysctl_stream(const ucl_object_t *);

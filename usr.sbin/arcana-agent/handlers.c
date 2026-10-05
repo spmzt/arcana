@@ -488,11 +488,12 @@ worker(void *arg)
 		rc = arc_log_reply(j->req, &lgr);
 		break;
 	case ARC_CMD_HISTORY:
-		what = "history";
+		/* How to sample rides in fib and offset. */
+		what = j->refresh ? "history set" : "history";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "history");
+		    "%s", what);
 		memset(&hsr, 0, sizeof(hsr));
-		do_history(&w, j->pos, &hsr);
+		do_history(&w, j->pos, j->refresh, j->fib, j->offset, &hsr);
 		ok = hsr.ok;
 		error = hsr.error;
 		step_end(&w, root, ok, NULL);
@@ -1231,11 +1232,17 @@ arc_history_doit(cbl_req *req, const struct arc_history_req *rq,
 {
 	struct job	*j;
 
+	if (rq->has_sample_step != rq->has_sample_keep)
+		return (reject(req, "how to sample is both: every how many "
+		    "seconds, and how many are kept"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_HISTORY;
 	j->pos = rq->has_after ? rq->after : 0;
+	j->refresh = rq->has_sample_step;
+	j->fib = rq->sample_step;
+	j->offset = rq->sample_keep;
 	return (start(j));
 }
 

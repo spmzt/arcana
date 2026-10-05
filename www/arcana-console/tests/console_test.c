@@ -1788,6 +1788,25 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("5", jstr(&r, "data.step"));
 	ATF_CHECK_STREQ("cpu", jstr(&r, "data.fields.1"));
 	ATF_CHECK(jstr(&r, "data.samples.0.0") != NULL);
+	ATF_CHECK_STREQ("720", jstr(&r, "data.keep"));
+	ATF_CHECK(jstr(&r, "data.bytes") != NULL);
+	resp_free(&r);
+	/* How it is sampled is set, and said back; not anyhow. */
+	http("POST", path, "{\"step\":3,\"keep\":100}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("3", jstr(&r, "data.step"));
+	ATF_CHECK_STREQ("100", jstr(&r, "data.keep"));
+	ATF_CHECK(system("grep -q '^step=3$' history.conf && grep -q "
+	    "'^keep=100$' history.conf") == 0);
+	resp_free(&r);
+	http("POST", path, "{\"step\":0,\"keep\":100}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"step\":5}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"step\":5,\"keep\":720}", &r);
+	EXPECT(&r, 200);
 	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/history?after=99999999999",
 	    (int)(strlen(base) - strlen("/services")), base);

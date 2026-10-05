@@ -7,10 +7,12 @@
 /*
  * How busy every host has been, drawn as lines over time: the CPUs,
  * the memory, the load, the network and the disks.  Each agent keeps
- * the last hour by itself, so the lines are there when the page is
+ * the last of it by itself, so the lines are there when the page is
  * opened; while it is shown, what came since is asked for and added.
  * The hosts are drawn over one another to be compared, and then each
- * by itself.
+ * by itself, where the network is all its interfaces or one of them,
+ * and the disks likewise.  How often an agent samples and how much it
+ * keeps is set here, with what that takes of its memory.
  */
 
 #include <math.h>
@@ -23,8 +25,9 @@
 #define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
 
 #define	USAGE_EVERY	5000	/* ms between two looks */
-#define	USAGE_KEPT	720	/* samples of a host, an hour of them */
-#define	NF		9	/* what a sample holds */
+#define	NF		9	/* what a sample begins with */
+#define	DEVS		16	/* interfaces, and disks, told apart */
+#define	DEVNAME		24
 #define	PW		300	/* a plot's box */
 #define	PH		70
 
@@ -32,17 +35,23 @@ enum { F_T, F_CPU, F_LOAD, F_MEM, F_SWAP, F_RX, F_TX, F_RD, F_WR };
 
 struct uhost {
 	char	 sid[9];
-	double	(*v)[NF];
-	int	 n;
-	double	 mem_total, swap_total;
-	int	 ncpu, step;
+	double	*v;		/* keep rows of stride */
+	int	 n, stride;
+	double	 mem_total, swap_total, bytes;
+	int	 ncpu, step, keep;
+	char	 nets[DEVS][DEVNAME], disks[DEVS][DEVNAME];
+	int	 nn, nd;
+	char	 net[DEVNAME], disk[DEVNAME];	/* the one drawn, "" all */
+	bool	 known;		/* how it samples was said */
+	bool	 cfg;		/* how it samples is being set */
 	bool	 loading;
 	double	 asked;
 	char	 error[160];
 };
 
 static struct uhost	uh[MAX_SERVERS];
-static int		window = 900;	/* s shown */
+static int		window = 900;	/* s shown; 0 all that is kept */
+static int		span = 900;	/* what that is now */
 
 static const char *const palette[] = { "var(--cyan)", "var(--green)",
     "var(--amber)", "var(--violet)", "var(--magenta)", "var(--blue)",
@@ -78,6 +87,31 @@ uhost(const char *sid, bool make)
 	return (&uh[free_i]);
 }
 
+/* The names of arr into v; true when they are not what was there. */
+static bool
+devs(const ucl_object_t *arr, char v[DEVS][DEVNAME], int *n)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	const char		*name;
+	int			 k;
+	bool			 other;
+
+	other = false;
+	k = 0;
+	it = NULL;
+	while ((o = ucl_object_iterate(arr, &it, true)) != NULL && k < DEVS) {
+		name = ucl_object_tostring_forced(o);
+		if (k >= *n || strcmp(v[k], name) != 0)
+			other = true;
+		snprintf(v[k++], DEVNAME, "%s", name);
+	}
+	if (k != *n)
+		other = true;
+	*n = k;
+	return (other);
+}
+
 static void
 usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -85,8 +119,9 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	ucl_object_iter_t	 it, fit;
 	struct uhost		*u;
 	char			*sid;
-	double			 s[NF];
-	int			 k;
+	double			*s;
+	int			 k, keep;
+	bool			 other;
 
 	sid = arg;
 	u = uhost(sid, false);
@@ -102,28 +137,52 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	u->error[0] = '\0';
+	u->known = true;
 	u->mem_total = jnum(d, "mem_total", 0);
 	u->swap_total = jnum(d, "swap_total", 0);
+	u->bytes = jnum(d, "bytes", 0);
 	u->ncpu = (int)jint(d, "ncpu", 1);
 	u->step = (int)jint(d, "step", 5);
-	if (u->v == NULL && (u->v = calloc(USAGE_KEPT, sizeof(*u->v))) == NULL)
-		abort();
+	keep = (int)jint(d, "keep", 720);
+	other = devs(jget(d, "nets"), u->nets, &u->nn);
+	other = devs(jget(d, "disks"), u->disks, &u->nd) || other;
+	/*
+	 * Rows of another width, or another number of them: what is
+	 * here is let go, and all of it asked for anew.
+	 */
+	if (other || keep != u->keep || u->v == NULL) {
+		free(u->v);
+		u->keep = keep;
+		u->stride = NF + 2 * (u->nn + u->nd);
+		u->v = calloc((size_t)(keep > 0 ? keep : 1) *
+		    (size_t)u->stride, sizeof(*u->v));
+		if (u->v == NULL)
+			abort();
+		other = u->n > 0;
+		u->n = 0;
+		if (other) {
+			u->asked = 0;
+			return;
+		}
+	}
 	it = NULL;
-	while ((row = ucl_object_iterate(jget(d, "samples"), &it, true)) !=
-	    NULL) {
-		memset(s, 0, sizeof(s));
-		fit = NULL;
-		for (k = 0; k < NF && (f = ucl_object_iterate(row, &fit,
-		    true)) != NULL; k++)
-			s[k] = ucl_object_todouble(f);
-		if (k < NF || (u->n > 0 && s[F_T] <= u->v[u->n - 1][F_T]))
+	while (u->keep > 0 && (row = ucl_object_iterate(jget(d, "samples"),
+	    &it, true)) != NULL) {
+		if ((int)ucl_array_size(row) != u->stride)
 			continue;
-		if (u->n == USAGE_KEPT) {
-			memmove(u->v, u->v + 1, (USAGE_KEPT - 1) *
-			    sizeof(*u->v));
+		if (u->n == u->keep) {
+			memmove(u->v, u->v + u->stride, (size_t)(u->keep - 1) *
+			    (size_t)u->stride * sizeof(*u->v));
 			u->n--;
 		}
-		memcpy(u->v[u->n++], s, sizeof(s));
+		s = u->v + (size_t)u->n * (size_t)u->stride;
+		fit = NULL;
+		for (k = 0; k < u->stride && (f = ucl_object_iterate(row,
+		    &fit, true)) != NULL; k++)
+			s[k] = ucl_object_todouble(f);
+		if (u->n > 0 && s[F_T] <= s[F_T - u->stride])
+			continue;
+		u->n++;
 	}
 }
 
@@ -138,7 +197,7 @@ usage_poll(struct server *s, double now)
 	u->loading = true;
 	u->asked = now;
 	snprintf(url, sizeof(url), "/api/servers/%s/history?after=%.0f", s->id,
-	    u->n > 0 ? u->v[u->n - 1][F_T] : 0.0);
+	    u->n > 0 ? u->v[(u->n - 1) * u->stride + F_T] : 0.0);
 	api("GET", url, NULL, usage_cb, strdup(s->id));
 }
 
@@ -168,11 +227,16 @@ usage_tick(double now)
 		/* A request nobody answered is given up after a while. */
 		if (u != NULL && u->loading && now - u->asked > 30000)
 			u->loading = false;
+		/* No oftener than the agent itself looks. */
 		if (u == NULL || (!u->loading && now - u->asked >=
-		    USAGE_EVERY))
+		    (u->step * 1000 > USAGE_EVERY && u->asked != 0 ?
+		    u->step * 1000 : USAGE_EVERY)))
 			usage_poll(&app.servers[i], now);
 	}
 }
+
+/* Sample i of the host: its time first. */
+#define	T(u, i)	((u)->v + (size_t)(i) * (size_t)(u)->stride)
 
 /* What field f of sample i is, in what it is drawn in. */
 static double
@@ -181,13 +245,13 @@ value(const struct uhost *u, int i, int f)
 
 	switch (f) {
 	case F_MEM:
-		return (u->mem_total > 0 ? 100 * u->v[i][F_MEM] /
+		return (u->mem_total > 0 ? 100 * T(u, i)[F_MEM] /
 		    u->mem_total : 0);
 	case F_SWAP:
-		return (u->swap_total > 0 ? 100 * u->v[i][F_SWAP] /
+		return (u->swap_total > 0 ? 100 * T(u, i)[F_SWAP] /
 		    u->swap_total : 0);
 	default:
-		return (u->v[i][f]);
+		return (T(u, i)[f]);
 	}
 }
 
@@ -197,7 +261,7 @@ first(const struct uhost *u, double t1)
 {
 	int	i;
 
-	for (i = u->n; i > 0 && u->v[i - 1][F_T] >= t1 - window; i--)
+	for (i = u->n; i > 0 && T(u, i - 1)[F_T] >= t1 - span; i--)
 		;
 	return (i);
 }
@@ -256,10 +320,10 @@ line(struct html *h, const struct uhost *u, int f, double t1, double top,
 		open = false;
 		x0 = px = 0;
 		for (int k = i0; k < u->n; k++) {
-			x = PW * (1 - (t1 - u->v[k][F_T]) / window);
+			x = PW * (1 - (t1 - T(u, k)[F_T]) / span);
 			y = value(u, k, f) / top;
 			y = PH - (PH - 2) * (y > 1 ? 1 : y < 0 ? 0 : y);
-			if (open && u->v[k][F_T] - u->v[k - 1][F_T] > 4 *
+			if (open && T(u, k)[F_T] - T(u, k - 1)[F_T] > 4 *
 			    (u->step > 0 ? u->step : 5)) {
 				if (i == 0)
 					h_fmt(h, "L%.1f %d Z ", px, PH);
@@ -398,19 +462,99 @@ single(struct html *h, const struct uhost *u, const char *label, int f1,
 	h_raw(h, "</div></figure>");
 }
 
+/* The interfaces or the disks of a host, to pick the one drawn. */
+static void
+picker(struct html *h, const struct uhost *u, const char *act,
+    char names[DEVS][DEVNAME], int n, int base, const char *picked,
+    double t1, bool rate)
+{
+	char	buf[32];
+	double	last, avg, peak, l2;
+	int	k;
+
+	h_fmt(h, "<div class=\"upick\"><button class=\"ghost small%s\" "
+	    "data-act=\"%s\" data-value=\"\"", picked[0] == '\0' ? " on" : "",
+	    act);
+	h_attr(h, "data-arg", u->sid);
+	h_fmt(h, " title=\"All %d of them, added up\">all %d</button>", n, n);
+	for (k = 0; k < n; k++) {
+		stats(u, base + 2 * k, t1, &last, &avg, &peak);
+		l2 = last;
+		stats(u, base + 2 * k + 1, t1, &last, &avg, &peak);
+		h_fmt(h, "<button class=\"ghost small%s%s\" data-act=\"%s\"",
+		    strcmp(picked, names[k]) == 0 ? " on" : "", l2 + last <=
+		    0 ? " idle" : "", act);
+		h_attr(h, "data-arg", u->sid);
+		h_attr(h, "data-value", names[k]);
+		h_raw(h, ">");
+		h_txt(h, names[k]);
+		if (l2 + last > 0) {
+			if (rate)
+				fmt_rate(buf, sizeof(buf), l2 + last);
+			else {
+				fmt_size(buf, sizeof(buf), l2 + last);
+				strlcat(buf, "/s", sizeof(buf));
+			}
+			h_raw(h, " <small>");
+			h_txt(h, buf);
+			h_raw(h, "</small>");
+		}
+		h_raw(h, "</button>");
+	}
+	h_raw(h, "</div>");
+}
+
+/* The place of the one picked among the names, or -1 for all. */
+static int
+picked_at(char names[DEVS][DEVNAME], int n, const char *picked)
+{
+	int	k;
+
+	for (k = 0; k < n; k++)
+		if (picked[0] != '\0' && strcmp(names[k], picked) == 0)
+			return (k);
+	return (-1);
+}
+
+/* How the agent samples the host, said and set. */
+static void
+sampling(struct html *h, const struct uhost *u)
+{
+	char	buf[32];
+
+	h_raw(h, "<form data-form=\"usage-set\" class=\"usample\"><input "
+	    "type=\"hidden\" name=\"sid\"");
+	h_attr(h, "value", u->sid);
+	h_fmt(h, "><label>Sample every<input name=\"step\" type=\"number\" "
+	    "min=\"1\" max=\"3600\" value=\"%d\">s</label><label>and keep"
+	    "<input name=\"keep\" type=\"number\" min=\"0\" max=\"5000\" "
+	    "value=\"%d\">samples</label><button class=\"small\">Set</button>"
+	    "<button type=\"button\" class=\"ghost small\" data-act=\""
+	    "usage-cfg\"", u->step, u->keep);
+	h_attr(h, "data-arg", u->sid);
+	fmt_size(buf, sizeof(buf), u->bytes);
+	h_fmt(h, ">Close</button><small class=\"dim\">Now %s of the agent's "
+	    "memory: 8 bytes a sample, and 4 for each figure in it, of "
+	    "which there are %d here with %d interfaces and %d disks. With "
+	    "0 kept the agent does not sample and holds nothing. It keeps "
+	    "this for its next start.</small></form>", buf, u->stride - 1,
+	    u->nn, u->nd);
+}
+
 void
 view_usage(struct html *h)
 {
 	static const struct {
 		int		 secs;
 		const char	*title;
-	} windows[] = { { 300, "5 min" }, { 900, "15 min" }, { 3600, "1 hour" } };
-	const struct uhost	*u;
+	} windows[] = { { 300, "5 min" }, { 900, "15 min" },
+	    { 3600, "1 hour" }, { 0, "all kept" } };
+	struct uhost		*u;
 	struct server		*s;
-	char			 key_[32], buf[48];
+	char			 key_[32], buf[48], label[64];
 	double			 t1;
 	size_t			 w;
-	int			 i, have;
+	int			 i, have, k;
 
 	h_raw(h, "<section class=\"util\"><div class=\"toolbar\"><h3>"
 	    "Utilization</h3><nav class=\"sub\">");
@@ -419,8 +563,9 @@ view_usage(struct html *h)
 		    "window\" data-arg=\"%d\">%s</button>", window ==
 		    windows[w].secs ? " on" : "", windows[w].secs,
 		    windows[w].title);
-	h_raw(h, "</nav><span class=\"age\">each agent samples itself every "
-	    "5 s and keeps an hour</span></div>");
+	h_raw(h, "</nav><span class=\"age\">each agent samples its host by "
+	    "itself; how often and how much is set at each host</span>"
+	    "</div>");
 	if (app.nservers == 0) {
 		h_raw(h, "<div class=\"empty\"><p>No host yet.</p></div>"
 		    "</section>");
@@ -429,13 +574,18 @@ view_usage(struct html *h)
 	/* The plots end now, by the newest sample any host has. */
 	t1 = 0;
 	have = 0;
+	span = window;
 	for (i = 0; i < app.nservers; i++)
 		if ((u = uhost(app.servers[i].id, false)) != NULL && u->n >
 		    0) {
 			have++;
-			if (u->v[u->n - 1][F_T] > t1)
-				t1 = u->v[u->n - 1][F_T];
+			if (T(u, u->n - 1)[F_T] > t1)
+				t1 = T(u, u->n - 1)[F_T];
+			if (window == 0 && u->step * u->keep > span)
+				span = u->step * u->keep;
 		}
+	if (span <= 0)
+		span = 900;
 	if (have > 1) {
 		h_raw(h, "<h4 class=\"family\">All hosts, over one another"
 		    "</h4><div class=\"uplots compare\">");
@@ -455,21 +605,37 @@ view_usage(struct html *h)
 		h_raw(h, " title=\"Open the host\">");
 		h_txt(h, s->name);
 		h_raw(h, "</span>");
-		if (u != NULL && u->n > 0) {
-			fmt_size(buf, sizeof(buf), u->mem_total);
-			h_fmt(h, "<small class=\"dim\">%d CPUs · %s memory"
-			    "</small>", u->ncpu, buf);
+		if (u != NULL && u->known) {
+			fmt_size(buf, sizeof(buf), u->bytes);
+			if (u->keep > 0)
+				h_fmt(h, "<small class=\"dim\">%d CPUs · every "
+				    "%d s, %d kept (%.3g h) · %s in the agent"
+				    "</small>", u->ncpu, u->step, u->keep,
+				    (double)u->step * u->keep / 3600, buf);
+			else
+				h_raw(h, "<small class=\"dim\">not sampled"
+				    "</small>");
+			h_fmt(h, "<button class=\"ghost small%s\" data-act=\""
+			    "usage-cfg\"", u->cfg ? " on" : "");
+			h_attr(h, "data-arg", s->id);
+			h_raw(h, " title=\"How often the agent samples this "
+			    "host, and how much it keeps\">Sampling</button>");
 		}
 		h_raw(h, "</h4>");
 		if (box_shut(key_)) {
 			h_raw(h, "</section>");
 			continue;
 		}
+		if (u != NULL && u->known && (u->cfg || u->keep == 0))
+			sampling(h, u);
 		if (u == NULL || u->n == 0) {
 			h_raw(h, "<p class=\"dim\">");
 			h_txt(h, u != NULL && u->error[0] != '\0' ? u->error :
 			    s->failed ? "The host does not answer." :
-			    "Reading…");
+			    u != NULL && u->known && u->keep == 0 ?
+			    "The agent keeps no samples of this host: say "
+			    "how many it should." : u != NULL && u->known ?
+			    "No sample yet." : "Reading…");
 			h_raw(h, "</p></section>");
 			continue;
 		}
@@ -482,25 +648,88 @@ view_usage(struct html *h)
 		single(h, u, "CPU", F_CPU, "busy", -1, NULL, t1, 0);
 		single(h, u, "Memory", F_MEM, "in use", F_SWAP, "swap", t1, 0);
 		single(h, u, "Load", F_LOAD, "1 min", -1, NULL, t1, 1);
-		single(h, u, "Network", F_RX, "in", F_TX, "out", t1, 2);
-		single(h, u, "Disks", F_RD, "read", F_WR, "written", t1, 3);
-		h_raw(h, "</div></section>");
+		h_raw(h, "</div><div class=\"uplots wide\"><div>");
+		k = picked_at(u->nets, u->nn, u->net);
+		if (k >= 0)
+			snprintf(label, sizeof(label), "Network · %s",
+			    u->nets[k]);
+		else
+			snprintf(label, sizeof(label), "Network · all %d "
+			    "interfaces", u->nn);
+		single(h, u, label, k >= 0 ? NF + 2 * k : F_RX, "in", k >= 0 ?
+		    NF + 2 * k + 1 : F_TX, "out", t1, 2);
+		picker(h, u, "usage-net", u->nets, u->nn, NF, k >= 0 ? u->net :
+		    "", t1, true);
+		h_raw(h, "</div><div>");
+		k = picked_at(u->disks, u->nd, u->disk);
+		if (k >= 0)
+			snprintf(label, sizeof(label), "Disks · %s",
+			    u->disks[k]);
+		else
+			snprintf(label, sizeof(label), "Disks · all %d",
+			    u->nd);
+		single(h, u, label, k >= 0 ? NF + 2 * (u->nn + k) : F_RD,
+		    "read", k >= 0 ? NF + 2 * (u->nn + k) + 1 : F_WR,
+		    "written", t1, 3);
+		picker(h, u, "usage-disk", u->disks, u->nd, NF + 2 * u->nn,
+		    k >= 0 ? u->disk : "", t1, false);
+		h_raw(h, "</div></div></section>");
 	}
 	h_raw(h, "</section>");
 }
 
 bool
+usage_form(const char *form, const ucl_object_t *f)
+{
+	struct uhost	*u;
+	const char	*sid;
+	char		 url[96], body[64];
+	int		 step, keep;
+
+	if (strcmp(form, "usage-set") != 0)
+		return (false);
+	sid = jstr(f, "sid") != NULL ? jstr(f, "sid") : "";
+	if ((u = uhost(sid, false)) == NULL)
+		return (true);
+	step = atoi(jstr(f, "step") != NULL ? jstr(f, "step") : "");
+	keep = jstr(f, "keep") != NULL && jstr(f, "keep")[0] != '\0' ?
+	    atoi(jstr(f, "keep")) : -1;
+	if (step < 1 || step > 3600 || keep < 0 || keep > 5000) {
+		toast(true, "Every 1 to 3600 seconds, and 0 to 5000 kept");
+		return (true);
+	}
+	snprintf(url, sizeof(url), "/api/servers/%s/history", u->sid);
+	snprintf(body, sizeof(body), "{\"step\":%d,\"keep\":%d}", step, keep);
+	u->loading = true;
+	u->asked = arc_now();
+	u->cfg = false;
+	api("POST", url, body, usage_cb, strdup(u->sid));
+	return (true);
+}
+
+bool
 usage_action(const char *act, const char *arg, const char *value)
 {
+	struct uhost	*u;
 
-	(void)value;
 	if (strcmp(act, "select-usage") == 0) {
 		usage_open();
 		return (true);
 	}
-	if (strcmp(act, "usage-window") != 0)
+	if (strncmp(act, "usage-", 6) != 0)
 		return (false);
-	if (atoi(arg) == 300 || atoi(arg) == 900 || atoi(arg) == 3600)
-		window = atoi(arg);
+	if (strcmp(act, "usage-window") == 0) {
+		if (atoi(arg) == 300 || atoi(arg) == 900 || atoi(arg) ==
+		    3600 || atoi(arg) == 0)
+			window = atoi(arg);
+	} else if ((u = uhost(arg, false)) == NULL) {
+		;
+	} else if (strcmp(act, "usage-cfg") == 0) {
+		u->cfg = !u->cfg;
+	} else if (strcmp(act, "usage-net") == 0) {
+		snprintf(u->net, sizeof(u->net), "%s", value);
+	} else if (strcmp(act, "usage-disk") == 0) {
+		snprintf(u->disk, sizeof(u->disk), "%s", value);
+	}
 	return (true);
 }

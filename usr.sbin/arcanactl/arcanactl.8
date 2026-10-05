@@ -239,13 +239,24 @@ A file
 .Xr newsyslog 8
 has packed is not read.
 .It Cm history Op Ar after
-How busy the host has been: what the agent sampled every five seconds
-and kept for an hour, each sample with its time, the CPUs' busy share,
-the load, the memory and swap in use, and the bytes a second on the
-network and the disks.
+How busy the host has been: what the agent sampled by itself and
+kept, each sample with its time, the CPUs' busy share, the load, the
+memory and swap in use, and the bytes a second on the network and the
+disks, added up and then for each interface and each disk, which are
+named.
 With
 .Ar after ,
 only the samples after that time, in seconds since the epoch.
+.It Cm history set Ar seconds Ar samples
+Have the agent sample every
+.Ar seconds ,
+1 to 3600, and keep that many
+.Ar samples ,
+at most 5000, from now on and after its next start.
+With 0
+.Ar samples
+it does not sample and holds no memory for it.
+The reply says what the samples take of the agent's memory.
 .It Cm net bridges | geneve | ipfw
 The bridges with their spanning tree and their members' VLANs, the
 .Xr geneve 4

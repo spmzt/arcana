@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.31.0
+  version: 0.32.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -729,12 +729,16 @@ paths:
       tags: [servers]
       summary: How busy the host has been
       description: Under data, what the agent sampled by itself and
-        kept, an hour of it. step is the seconds between two samples;
-        fields names what a sample holds, in order (t, cpu, load, mem,
-        swap, rx, tx, read, write); samples is an array of arrays of
-        those, the oldest first, with cpu in percent of all CPUs, mem
-        and swap in bytes in use, rx and tx in bytes a second on the
-        network, read and write in bytes a second on the disks;
+        kept. step is the seconds between two samples, keep how many
+        are kept, bytes the memory of the agent that takes; fields
+        names what a sample begins with, in order (t, cpu, load, mem,
+        swap, rx, tx, read, write); nets and disks name the interfaces
+        (without the loopback) and the disks told apart, at most 16 of
+        each; samples is an array of arrays, the oldest first, each
+        the fields, then bytes a second in and out of each of nets,
+        then read and written of each of disks, with cpu in percent of
+        all CPUs, mem and swap in bytes in use, rx and tx the sum of
+        the interfaces, read and write the sum of the disks;
         mem_total, swap_total and ncpu.
       parameters:
         - $ref: "#/components/parameters/server"
@@ -746,6 +750,29 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+    post:
+      tags: [servers]
+      summary: How the agent samples the host
+      description: The agent samples every step seconds from now on and
+        keeps keep samples, the newest of those it has; with keep 0 it
+        does not sample and holds no memory for it. It keeps this for
+        its next start. The reply is as the GET's.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [step, keep]
+              properties:
+                step: { type: integer, minimum: 1, maximum: 3600 }
+                keep: { type: integer, minimum: 0, maximum: 5000 }
+      responses:
+        "200":
+          description: ok and data, or error
+        "400": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/sysctl:
     get:
       tags: [servers]

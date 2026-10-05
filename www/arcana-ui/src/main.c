@@ -316,7 +316,7 @@ submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
-	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) ||
+	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
 		return;
 	submit_form(form, f);

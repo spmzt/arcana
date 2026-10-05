@@ -159,6 +159,7 @@ usage(void)
 	    "    renice pid nice\n"
 	    "    log [-o lines] [-f position] [name [text]]\n"
 	    "    history [after]\n"
+	    "    history set seconds samples\n"
 	    "    net bridges | geneve | ipfw\n"
 	    "    bridge name addm | deletem member\n"
 	    "    bridge name access member vlan\n"
@@ -1545,6 +1546,7 @@ json_out(const char *what, bool ok, const char *error, const char *json,
  * renice pid nice: give it another nice value.
  * log [name [text]]: the end of a log; -o how many lines, -f from where.
  * history [after]: how busy the host has been.
+ * history set seconds samples: how often it is sampled, how many kept.
  */
 static int
 cmd_gula(struct arc_client *cl, int argc, char **argv)
@@ -1587,10 +1589,22 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 		return (submit(cl, &sp));
 	}
 	if (strcmp(argv[0], "history") == 0) {
-		if (argc > 2)
-			usage();
 		memset(&hq, 0, sizeof(hq));
-		if (argc == 2) {
+		if (argc == 4 && strcmp(argv[1], "set") == 0) {
+			hq.has_sample_step = hq.has_sample_keep = true;
+			hq.sample_step = (uint32_t)strtonum(argv[2], 1, 3600,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "history: seconds %s: %s", argv[2],
+				    e);
+			hq.sample_keep = (uint32_t)strtonum(argv[3], 0, 5000,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "history: samples %s: %s", argv[3],
+				    e);
+		} else if (argc > 2)
+			usage();
+		else if (argc == 2) {
 			hq.has_after = true;
 			hq.after = (uint64_t)strtonum(argv[1], 0, INT64_MAX,
 			    &e);
