@@ -15,7 +15,7 @@ WWWDIR?=	${PREFIX}/www/arcana-console
 
 DIST=		${.OBJDIR}/dist
 
-APP_SRCS=	main.c actions.c api.c bird.c fleet.c kernel.c storage.c tbl.c topo.c vpn.c graph.c html.c json.c netview.c \
+APP_SRCS=	main.c actions.c api.c apidoc.c bird.c fleet.c kernel.c storage.c sysctl.c tbl.c topo.c vpn.c graph.c html.c json.c netview.c \
 		schema.c view.c
 UCL_SRCS=	ucl_emitter_streamline.c ucl_emitter_utils.c ucl_emitter.c \
 		ucl_hash.c ucl_msgpack.c ucl_parser.c ucl_schema.c ucl_sexp.c \
@@ -85,7 +85,19 @@ ${DIST}/schema.json: ${ARC_TOP}/share/arcana/arcana.yaml \
 	${CBLINK_GEN} -m md -o ${.OBJDIR} ${ARC_TOP}/share/arcana/arcana.yaml
 	awk -f ${.CURDIR}/tools/schema.awk ${.OBJDIR}/arcana.md > ${.TARGET}
 
+# The console's API as it is documented, for the API page: the document
+# itself, and what the page shows of it.
+${DIST}/openapi.yaml: ${ARC_TOP}/docs/openapi.yaml
+	mkdir -p ${DIST}
+	cp ${ARC_TOP}/docs/openapi.yaml ${.TARGET}
+${DIST}/openapi.json: ${ARC_TOP}/docs/openapi.yaml \
+    ${.CURDIR}/tools/openapi.awk
+	mkdir -p ${DIST}
+	awk -f ${.CURDIR}/tools/openapi.awk ${ARC_TOP}/docs/openapi.yaml > \
+	    ${.TARGET}
+
 SHELL_FILES=	${STATIC:S,^,${DIST}/,} ${DIST}/arcana.js ${DIST}/schema.json \
+		${DIST}/openapi.json ${DIST}/openapi.yaml \
 		${DIST}/morphdom-umd.min.js ${FONTS:S,^,${DIST}/fonts/,} \
 		${ICONS:S,^,${DIST}/icons/,}
 

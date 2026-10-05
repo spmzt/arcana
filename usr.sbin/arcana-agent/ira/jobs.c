@@ -175,6 +175,10 @@ title_of(const struct arc_job_spec *sp)
 		rc = asprintf(&t, "kld%s %s%s", sp->verb, sp->names.v[0],
 		    sp->persist ? " (kept)" : "");
 		break;
+	case ARC_JOB_KIND_SYSCTL:
+		rc = asprintf(&t, "sysctl %s=%s%s", sp->names.v[0],
+		    sp->names.v[1], sp->persist ? " (kept)" : "");
+		break;
 	case ARC_JOB_KIND_ZFS:
 	case ARC_JOB_KIND_ZPOOL:
 	case ARC_JOB_KIND_MOUNT:
@@ -228,6 +232,7 @@ spec_copy(struct arc_job_spec *d, const struct arc_job_spec *s)
 	d->peer = xdup(s->peer);
 	d->endpoint = xdup(s->endpoint);
 	d->allowed_ips = xdup(s->allowed_ips);
+	d->source = xdup(s->source);
 	d->variables.v = NULL;
 	d->names.v = NULL;
 	if (s->variables.n > 0) {
@@ -276,6 +281,7 @@ job_free(struct qjob *j)
 	free((char *)(uintptr_t)j->spec.peer);
 	free((char *)(uintptr_t)j->spec.endpoint);
 	free((char *)(uintptr_t)j->spec.allowed_ips);
+	free((char *)(uintptr_t)j->spec.source);
 	free(j->title);
 	free(j->peer);
 	work_free(&j->w);
@@ -733,6 +739,11 @@ run(struct qjob *j)
 		error = NULL;
 		ok = do_kmod(&j->w, sp->verb, sp->names.v[0], sp->persist,
 		    &error) == 0;
+		break;
+	case ARC_JOB_KIND_SYSCTL:
+		error = NULL;
+		ok = do_sysctl_set(&j->w, sp->names.v[0], sp->names.v[1],
+		    sp->persist, &error) == 0;
 		break;
 	case ARC_JOB_KIND_ZFS:
 	case ARC_JOB_KIND_ZPOOL:

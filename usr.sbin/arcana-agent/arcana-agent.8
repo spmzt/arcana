@@ -47,6 +47,8 @@
 .Op Fl m Ar mount
 .Op Fl u Ar umount
 .Op Fl S Ar fstab
+.Op Fl Q Ar sysctl
+.Op Fl O Ar sysctl.conf
 .Op Fl H Ar helper
 .Op Fl w Ar seconds
 .Op Fl N Ar netstat
@@ -204,6 +206,21 @@ and
 .Fl K .
 Default
 .Ql unix:/var/run/arcana-agent.sock .
+Beside every
+.Ql tcp://
+listener
+.Nm
+listens on SCTP at the same address and port, where the kernel has
+SCTP.
+It does not load the
+.Xr sctp 4
+module, and where it is missing does not try again by itself: it is
+told to with the
+.Cm transport
+operation, as
+.Xr arcanactl 8
+.Cm transport retry
+does.
 .It Fl p Ar pidfile
 Default
 .Pa /var/run/arcana-agent.pid .
@@ -277,6 +294,16 @@ The
 read, and edited.
 Default:
 .Pa /etc/fstab .
+.It Fl Q Ar sysctl , Fl O Ar sysctl.conf
+The
+.Xr sysctl 8
+program, which sets a variable of the kernel's state, and the
+.Xr sysctl.conf 5
+that keeps one for the next boot.
+Default:
+.Pa /sbin/sysctl
+and
+.Pa /etc/sysctl.conf .
 .It Fl T Ar kldload , Fl t Ar kldunload
 The
 .Xr kldload 8

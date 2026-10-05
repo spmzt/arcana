@@ -2206,6 +2206,15 @@ echo "kldunload \$*" >> $(pwd)/kld.log
 exit 0
 EOS
 	chmod +x fake-kldload fake-kldunload
+	cat > fake-sysctl <<EOS
+#!/bin/sh
+echo "sysctl \$*" >> $(pwd)/kld.log
+[ "\$1" = "kern.nosuch=1" ] && { echo "sysctl: unknown oid 'kern.nosuch'" >&2; exit 1; }
+exit 0
+EOS
+	chmod +x fake-sysctl
+	printf '# kept\nkern.ipc.somaxconn=1024\nnet.inet.ip.forwarding = 1 # routes\n' > sysctl.conf
+	DAEMON_ARGS="-Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
 	start_daemon
 	printf 'kld_list="if_bridge"\n' >> rc.conf
 
@@ -2261,6 +2270,72 @@ EOS
 		atf_check -o not-match:'kldunload' cat kld.log
 	else
 		atf_check -o match:'^kldunload sctp$' cat kld.log
+	fi
+
+	# The kernel's state: read from the kernel, a name or the start of
+	# one; with what sysctl.conf sets at boot.
+	atf_check -o save:s.json "$JGC" -c "$SOCK" sysctl kern.ostype
+	atf_check -o match:'"values":\[\{"name":"kern.ostype","value":"FreeBSD","type":"string","rw":false' \
+	    -o match:'"kept":\[\{"name":"kern.ipc.somaxconn","value":"1024"\},\{"name":"net.inet.ip.forwarding","value":"1"\}\]' \
+	    cat s.json
+	atf_check -o match:'"name":"kern.maxproc","value":"[0-9]+","type":"integer"' \
+	    -o match:'"descr":"' "$JGC" -c "$SOCK" sysctl kern.maxproc
+	atf_check -o match:'"name":"kern.ipc.somaxconn"' \
+	    -o not-match:'"name":"vm\.' "$JGC" -c "$SOCK" sysctl kern.ipc.
+	# All of it is more than a reply carries: the first, and counted.
+	atf_check -o match:'"name":"kern.ostype"' -e match:'the first of [0-9]+' \
+	    "$JGC" -c "$SOCK" sysctl
+	# Set with sysctl(8); kept, the line that set it before is replaced
+	# and the rest of the file is as it was.
+	: > kld.log
+	atf_check -o match:'done +sysctl kern.ipc.somaxconn=2048$' \
+	    "$JGC" -c "$SOCK" sysctl kern.ipc.somaxconn=2048
+	atf_check -o match:'^sysctl kern.ipc.somaxconn=2048$' cat kld.log
+	atf_check -o match:'^kern.ipc.somaxconn=1024$' cat sysctl.conf
+	atf_check -o match:'done +sysctl kern.ipc.somaxconn=4096 \(kept\)' \
+	    "$JGC" -p -c "$SOCK" sysctl kern.ipc.somaxconn=4096
+	atf_check -o match:'^kern.ipc.somaxconn=4096$' -o not-match:'1024' \
+	    -o match:'^# kept$' -o match:'^net.inet.ip.forwarding = 1 # routes$' \
+	    cat sysctl.conf
+	atf_check -o match:'done' "$JGC" -p -c "$SOCK" sysctl 'kern.corefile=/var/cores/%N core'
+	atf_check -o match:'^kern.corefile="/var/cores/%N core"$' cat sysctl.conf
+	atf_check -o match:'"kept":.*"name":"kern.corefile","value":"/var/cores/%N core"' \
+	    -o match:'"values":\[\]' "$JGC" -c "$SOCK" sysctl kern.nothing-there
+	# A name the kernel leaves out of its list is found by itself.
+	if sysctl -n kern.ipc.somaxconn >/dev/null 2>&1; then
+		atf_check -o match:'"values":\[\{"name":"kern.ipc.somaxconn","value":"[0-9]+"' \
+		    "$JGC" -c "$SOCK" sysctl kern.ipc.somaxconn
+	fi
+	# What sysctl refuses is said, and is not kept.
+	atf_check -s exit:1 -o match:'unknown oid' \
+	    "$JGC" -p -c "$SOCK" sysctl kern.nosuch=1
+	atf_check -o not-match:'nosuch' cat sysctl.conf
+	# A name is a name, a value one line; no jail, no taking back.
+	: > kld.log
+	atf_check -s exit:1 -e match:'letters, digits' -o ignore \
+	    "$JGC" -c "$SOCK" sysctl '.a=1'
+	atf_check -s exit:1 -e match:'letters, digits' -o ignore \
+	    "$JGC" -c "$SOCK" sysctl 'kern.x y=1'
+	atf_check -s exit:1 -e match:'one line' -o ignore \
+	    "$JGC" -c "$SOCK" sysctl "kern.hostname=a
+b"
+	atf_check -s exit:1 -e match:'not set from here' -o ignore \
+	    "$JGC" -j web -c "$SOCK" sysctl kern.hostname=x
+	atf_check -s exit:1 -e match:'not taken back by itself' -o ignore \
+	    "$JGC" -s -c "$SOCK" sysctl kern.hostname=x
+	atf_check -o empty cat kld.log
+
+	# How the agent is reached: its listeners, and who is connected
+	# now, which is at least who asks.
+	atf_check -o match:'"listeners":\[\{"uri":"unix:[^"]*","transport":"unix","up":true\}\]' \
+	    -o match:'"sessions":\[\{"transport":"unix"' \
+	    -o match:'"seen":[0-9]+' "$JGC" -c "$SOCK" transport
+	# SCTP is tried again only where the kernel has it.
+	if kldstat -q -m sctp 2>/dev/null; then
+		atf_check -o match:'"sctp":true' "$JGC" -c "$SOCK" transport retry
+	else
+		atf_check -s exit:1 -e match:'load the sctp module first' \
+		    -o ignore "$JGC" -c "$SOCK" transport retry
 	fi
 }
 kernel_cleanup()

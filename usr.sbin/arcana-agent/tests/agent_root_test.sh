@@ -74,6 +74,8 @@ lifecycle_head()
 {
 	atf_set "descr" "start, restart, stop and kill a real jail"
 	atf_set "require.user" "root"
+	# One jail and one name for all of them: never side by side.
+	atf_set "is.exclusive" "true"
 }
 lifecycle_body()
 {
@@ -111,6 +113,8 @@ live_address_head()
 {
 	atf_set "descr" "Live address changes use jail_setv(3) and ioctls only"
 	atf_set "require.user" "root"
+	# One jail and one name for all of them: never side by side.
+	atf_set "is.exclusive" "true"
 }
 live_address_body()
 {
@@ -151,6 +155,8 @@ aliases_head()
 {
 	atf_set "descr" "Aliases jail(8) does not know about go with the jail"
 	atf_set "require.user" "root"
+	# One jail and one name for all of them: never side by side.
+	atf_set "is.exclusive" "true"
 }
 aliases_body()
 {

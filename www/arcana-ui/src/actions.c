@@ -258,6 +258,9 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_KERNEL:
 		refresh_kernel(s, true);
 		break;
+	case JOB_SYSCTL:
+		refresh_sysctl(s, true);
+		break;
 	case JOB_STORAGE:
 		refresh_storage(s, true);
 		break;

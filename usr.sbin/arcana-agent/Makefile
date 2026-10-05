@@ -2,7 +2,7 @@ PROG=		arcana-agent
 # The Agent itself, then what it does by Archive (docs/NAMING.md).
 SRCS=		main.c handlers.c work.c
 # Superbia: identity, configuration, what is true of the host.
-SRCS+=		confedit.c confread.c host.c kernel.c
+SRCS+=		confedit.c confread.c host.c kernel.c sysctl.c transport.c
 # Invidia: the network.
 SRCS+=		address.c interfaces.c netgraph.c network.c rcconf.c \
 		routes.c scope.c vnet.c

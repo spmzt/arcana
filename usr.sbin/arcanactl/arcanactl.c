@@ -82,6 +82,8 @@ static int	cmd_services(struct arc_client *);
 static int	cmd_net(struct arc_client *, int, char **);
 static int	cmd_stats(struct arc_client *);
 static int	cmd_kmod(struct arc_client *, int, char **);
+static int	cmd_sysctl(struct arc_client *, int, char **);
+static int	cmd_transport(struct arc_client *, int, char **);
 static int	cmd_storage(struct arc_client *, int, char **);
 static int	cmd_storage_job(struct arc_client *, int, char **);
 static int	cmd_fstab(struct arc_client *, int, char **);
@@ -144,6 +146,9 @@ usage(void)
 	    "        [table name] [all]\n"
 	    "    stats\n"
 	    "    kmod [load | unload module]\n"
+	    "    sysctl [name | start of a name]\n"
+	    "    sysctl name=value\n"
+	    "    transport [retry]\n"
 	    "    storage disks | pools | datasets | mounts | importable\n"
 	    "    storage snapshots [dataset]\n"
 	    "    zfs snapshot | destroy | rollback [-r] name\n"
@@ -1421,6 +1426,82 @@ cmd_kmod(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/*
+ * sysctl [prefix]: the kernel's state, as the host says it.
+ * sysctl name=value: a job; with -p also in sysctl.conf.
+ */
+static int
+cmd_sysctl(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_sysctl_req	 req;
+	struct arc_sysctl_rsp	*rsp;
+	const char		*names[2];
+	char			*eq;
+	int			 error;
+
+	if (argc == 2 && (eq = strchr(argv[1], '=')) != NULL) {
+		*eq = '\0';
+		memset(&sp, 0, sizeof(sp));
+		sp.has_kind = true;
+		sp.kind = ARC_JOB_KIND_SYSCTL;
+		names[0] = argv[1];
+		names[1] = eq + 1;
+		sp.names.v = names;
+		sp.names.n = 2;
+		sp.persist = persist;
+		sp.safe = safe;
+		sp.jail = netjail;
+		return (submit(cl, &sp));
+	}
+	if (argc > 2)
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.net_filter = argc == 2 ? argv[1] : NULL;
+	if ((error = arc_sysctl(cl, &req, &rsp)) != 0)
+		fail(cl, error, "sysctl");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	if (rsp->truncated)
+		xo_warnx("sysctl: the first of %ju: name where to begin",
+		    (uintmax_t)rsp->total);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("sysctl: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_sysctl_rsp_free(rsp);
+	return (error);
+}
+
+/*
+ * transport: the agent's listeners and the connections open to it.
+ * transport retry: start the SCTP listeners that are not up.
+ */
+static int
+cmd_transport(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_transport_req	 req;
+	struct arc_transport_rsp	*rsp;
+	int				 error;
+
+	if (argc > 2 || (argc == 2 && strcmp(argv[1], "retry") != 0))
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.retry = argc == 2;
+	if ((error = arc_transport(cl, &req, &rsp)) != 0)
+		fail(cl, error, "transport");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("transport: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_transport_rsp_free(rsp);
+	return (error);
+}
+
 /* storage kind [dataset]: the host's storage, as the host says it. */
 static int
 cmd_storage(struct arc_client *cl, int argc, char **argv)
@@ -2018,6 +2099,10 @@ main(int argc, char *argv[])
 		rc = cmd_stats(&cl);
 	else if (strcmp(argv[0], "kmod") == 0)
 		rc = cmd_kmod(&cl, argc, argv);
+	else if (strcmp(argv[0], "sysctl") == 0)
+		rc = cmd_sysctl(&cl, argc, argv);
+	else if (strcmp(argv[0], "transport") == 0)
+		rc = cmd_transport(&cl, argc, argv);
 	else if (strcmp(argv[0], "storage") == 0)
 		rc = cmd_storage(&cl, argc, argv);
 	else if (strcmp(argv[0], "zfs") == 0 || strcmp(argv[0], "zpool") == 0 ||

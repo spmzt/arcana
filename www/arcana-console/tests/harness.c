@@ -471,6 +471,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-kldunload", "#!/bin/sh\necho \"kldunload $*\" >> kld.log\n"
 	    "[ \"$1\" = zfs ] && { echo \"kldunload: can't unload file: Device "
 	    "busy\" >&2; exit 1; }\nexit 0\n");
+	/* sysctl(8), to set one, and the file that keeps them. */
+	put("fake-sysctl", "#!/bin/sh\necho \"sysctl $*\" >> kld.log\n"
+	    "[ \"$1\" = kern.nosuch=1 ] && { echo \"sysctl: unknown oid "
+	    "'kern.nosuch'\" >&2; exit 1; }\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-sysctl", 0755) == 0);
+	put("sysctl.conf", "# kept\nkern.ipc.somaxconn=1024\n");
 	ATF_REQUIRE(chmod("fake-kldload", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-kldunload", 0755) == 0);
 	ATF_REQUIRE(mkdir("bird", 0755) == 0 || errno == EEXIST);
@@ -602,7 +608,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[67] = (char *)(uintptr_t)"./fake-camcontrol";
 	argv[68] = (char *)(uintptr_t)"-S";
 	argv[69] = fstab;
-	argv[70] = NULL;
+	argv[70] = (char *)(uintptr_t)"-Q";
+	argv[71] = (char *)(uintptr_t)"./fake-sysctl";
+	argv[72] = (char *)(uintptr_t)"-O";
+	argv[73] = (char *)(uintptr_t)"sysctl.conf";
+	argv[74] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

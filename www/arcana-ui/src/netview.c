@@ -466,6 +466,12 @@ view_network(struct html *h, struct server *s)
 		    "title=\"Search the whole table on the host for the text "
 		    "in the filter: for tables too large to send\">Search "
 		    "host</button>");
+	/* What changes by itself is read again by itself, unless paused. */
+	if (app.net.kind == NET_CONNECTIONS || app.net.kind == NET_SOCKETS)
+		h_fmt(h, "<button class=\"ghost small live%s\" data-act=\""
+		    "net-live\" title=\"Read again every two seconds while "
+		    "this is shown\"><span class=\"led\"></span>Live</button>",
+		    app.net.paused ? "" : " on");
 	h_raw(h, "<input class=\"filter\" id=\"filter\" data-input="
 	    "\"filter\" placeholder=\"Filter rows\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
@@ -557,3 +563,24 @@ view_network(struct html *h, struct server *s)
 	if (shown == 0)
 		h_raw(h, "<div class=\"empty\"><p>Nothing to show.</p></div>");
 }
+
+/*
+ * Connections and sockets change by themselves: while one of them is
+ * shown, and nobody paused it, it is read again every two seconds,
+ * without a task of its own in the activity.
+ */
+void
+net_live_tick(double now)
+{
+	struct server	*s;
+
+	if (!app.visible || app.net.paused || app.net.loading ||
+	    app.node != NODE_HOST || app.tab != TAB_NETWORK ||
+	    (app.net.kind != NET_CONNECTIONS && app.net.kind != NET_SOCKETS))
+		return;
+	if ((s = cur_server()) == NULL || strcmp(app.net.sid, s->id) != 0 ||
+	    app.net.data == NULL || now - app.net.fetched < 2000)
+		return;
+	refresh_network(s, false);
+}
+

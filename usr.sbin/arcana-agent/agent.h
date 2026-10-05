@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.17.0"
+#define	ARCANA_AGENT_VERSION	"0.18.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -91,6 +91,8 @@ struct opts {
 	const char	*mount_bin;
 	const char	*umount_bin;
 	const char	*fstab_path;
+	const char	*sysctl_bin;
+	const char	*sysctl_conf;
 	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
@@ -344,6 +346,16 @@ int		 do_kernel(struct work *, struct arc_kernel_rsp *);
 int		 do_kmod(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 kmod_name_ok(const char *);
+int		 do_sysctl(struct work *, const char *,
+		    struct arc_sysctl_rsp *);
+int		 do_sysctl_set(struct work *, const char *, const char *, bool,
+		    const char **);
+bool		 sysctl_name_ok(const char *);
+bool		 sysctl_value_ok(const char *);
+int		 transport_watch(cbl_ctx *);
+void		 transport_add(const char *, cbl_listener *);
+void		 transport_init(cbl_ctx *, cbl_loop *, cbl_tls *);
+int		 do_transport(struct work *, bool, struct arc_transport_rsp *);
 bool		 kmod_loaded(const char *);
 
 /* acedia/storage.c: disks, pools, datasets, mounts. */

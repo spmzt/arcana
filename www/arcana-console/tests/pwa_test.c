@@ -157,14 +157,21 @@ js_true(const char *expr)
 static void
 wait_js(const char *expr, int seconds)
 {
-	int	i;
+	ucl_object_t	*v;
+	int		 i;
 
 	for (i = 0; i < seconds * 10; i++) {
 		if (js_true(expr))
 			return;
 		usleep(100000);
 	}
-	atf_tc_fail("timed out waiting for %s", expr);
+	shot("failed");
+	/* With what the page last said, which is most often why. */
+	v = js("return ([...document.querySelectorAll('.toast, .err')].map("
+	    "t => t.textContent.slice(0, 120)).join(' | ').slice(-700));");
+	atf_tc_fail("timed out waiting for %s; the page says: %s", expr,
+	    v != NULL && ucl_object_tostring(v) != NULL ?
+	    ucl_object_tostring(v) : "nothing");
 }
 
 static void
@@ -882,11 +889,11 @@ ATF_TC_BODY(pwa, tc)
 	phone(true);
 	{
 		static const char *tabs[] = { "summary", "jails", "services",
-		    "network", "packages", "jobs" };
+		    "network", "packages", "sysctl", "jobs" };
 		char name[32];
 		size_t t;
 
-		for (t = 0; t < 6; t++) {
+		for (t = 0; t < 7; t++) {
 			snprintf(script, sizeof(script), "document.querySelector("
 			    "'button.tab[data-arg=%s]').click()", tabs[t]);
 			run(script);
@@ -911,11 +918,22 @@ ATF_TC_BODY(pwa, tc)
 	    "=== 'none' && document.querySelector('.hosts .hostcard')", 5);
 	usleep(500000);
 	shot("m6-fleet");
-	/* Every control of the top bar can be reached. */
-	ATF_CHECK(js_true("(() => { const b = document.querySelector("
-	    "'button[data-act=logout]'); b.scrollIntoView(); const r = "
-	    "b.getBoundingClientRect(); return r.left >= 0 && r.right <= "
-	    "innerWidth + 1; })()"));
+	/* Every control of the top bar can be reached: what does not fit
+	 * the one row is behind its menu, which the next thing done
+	 * closes. */
+	ATF_CHECK(js_true("getComputedStyle(document.querySelector('.who'))"
+	    ".display === 'none'"));
+	run("document.querySelector('button[data-act=who-toggle]').click()");
+	wait_js("getComputedStyle(document.querySelector('.who')).display "
+	    "!== 'none'", 5);
+	ATF_CHECK(js_true("(() => { const r = document.querySelector("
+	    "'button[data-act=logout]').getBoundingClientRect(); return "
+	    "r.width > 0 && r.left >= 0 && r.right <= innerWidth + 1 && "
+	    "r.top >= 0 && r.bottom <= innerHeight; })()"));
+	shot("m6a-menu");
+	run("document.querySelector('button[data-act=who-toggle]').click()");
+	wait_js("getComputedStyle(document.querySelector('.who')).display "
+	    "=== 'none'", 5);
 	ATF_CHECK(js_true("document.documentElement.scrollWidth <= "
 	    "window.innerWidth + 1"));
 	run("document.querySelector('.dock > header').click()");
@@ -1514,6 +1532,118 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.dock > header').click()");
 
 	/*
+	 * The kernel's state: a part of the tree, read from the kernel;
+	 * another part named; one value set in its row, and kept.
+	 */
+	run("document.querySelector('button.tab[data-arg=sysctl]').click()");
+	wait_js("document.querySelectorAll('table.sysctl tbody tr').length > "
+	    "20 && [...document.querySelectorAll('table.sysctl tbody tr b')]."
+	    "some(b => b.textContent === 'kern.ostype')", 20);
+	ATF_CHECK(js_true("document.querySelector('.sy-kept').textContent."
+	    "includes('kern.ipc.somaxconn=')"));
+	/* Sorted by a column, as every table is. */
+	run("document.querySelector('table.sysctl th[data-act=t-sort]')."
+	    "click()");
+	wait_js("document.querySelector('table.sysctl th.sortable.up, "
+	    "table.sysctl th.sortable.down, table.sysctl th.sortable.asc, "
+	    "table.sysctl th.sortable.desc')", 5);
+	run("document.querySelector('table.sysctl th[data-act=t-sort]')."
+	    "click(); document.querySelector('table.sysctl th[data-act=t-sort]')"
+	    ".click();");
+	shot("7n-sysctl");
+	run("const f = document.querySelector('form[data-form=sy-from]'); "
+	    "f.name.value = 'kern.ipc.somaxconn'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.sysctl tbody tr').length "
+	    "=== 1 && document.querySelector('table.sysctl button[data-act="
+	    "sy-edit]')", 20);
+	run("document.querySelector('table.sysctl button[data-act=sy-edit]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sy-set] input[name="
+	    "value]')", 5);
+	/* It is kept already: so says the box, ticked. */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=sy-set] "
+	    "input[name=persist]').checked"));
+	run("const f = document.querySelector('form[data-form=sy-set]'); "
+	    "f.value.value = '8192'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('sysctl kern.ipc.somaxconn=8192: done'))",
+	    20);
+	ATF_CHECK(system("grep -q '^sysctl kern.ipc.somaxconn=8192$' kld.log "
+	    "&& grep -q '^kern.ipc.somaxconn=8192$' sysctl.conf") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * How the host is reached, on its summary: the agent's listener,
+	 * the console's own connection among those open now.  A local
+	 * socket is not switched to anything.
+	 */
+	run("document.querySelector('button.tab[data-arg=summary]').click()");
+	wait_js("document.querySelector('.transport ul.listeners li.up') && "
+	    "document.querySelector('table.sessions tbody tr')", 20);
+	ATF_CHECK(js_true("document.querySelector('.transport ul.listeners')."
+	    "textContent.includes('the console\\'s way in') && !document."
+	    "querySelector('button[data-act=tr-switch]') && document."
+	    "querySelector('table.sessions tbody').textContent.includes("
+	    "'unix')"));
+	shot("1e-transport");
+
+	/*
+	 * Connections are read again by themselves while they are shown,
+	 * until paused.
+	 */
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind][data-arg="
+	    "connections]')", 10);
+	run("document.querySelector('button[data-act=net-kind][data-arg="
+	    "connections]').click()");
+	wait_js("document.querySelector('button.live.on')", 10);
+	run("window.nets = 0; window.fetch0 = window.fetch; window.fetch = "
+	    "function (u, o) { if (String(u).includes('/net/')) window.nets"
+	    "++; return window.fetch0(u, o); };");
+	wait_js("window.nets >= 2", 15);
+	run("document.querySelector('button[data-act=net-live]').click()");
+	wait_js("!document.querySelector('button.live.on')", 5);
+	usleep(2500000);
+	run("window.nets = 0;");
+	usleep(4500000);
+	ATF_CHECK_MSG(js_true("window.nets === 0"), "paused, the connections "
+	    "were still read again");
+	run("window.fetch = window.fetch0; document.querySelector('button"
+	    "[data-act=net-live]').click()");
+
+	/*
+	 * The API's own page, from the menu: every route of the document,
+	 * by group, searched, one unfolded.
+	 */
+	run("document.querySelector('li[data-act=select-api]').click()");
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length > 40",
+	    20);
+	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 8",
+	    5);
+	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
+	    ".click()");
+	run("const i = document.querySelector('#filter'); i.value = "
+	    "'transport/switch'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 1",
+	    5);
+	run("document.querySelector('ul.apiops li.apiop').click()");
+	wait_js("document.querySelector('ul.apiops li.apiop.open .more') && "
+	    "document.querySelector('ul.apiops li.apiop.open .more')."
+	    "textContent.includes('X-Arcana')", 5);
+	shot("9-api");
+	ATF_CHECK(js_true("document.querySelector('.apidoc header a')."
+	    "getAttribute('href') === '/openapi.yaml'"));
+	run("const i = document.querySelector('#filter'); i.value = ''; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	run("document.querySelector('.tree .titem.server').click()");
+	wait_js("document.querySelector('button.tab[data-arg=summary]')", 10);
+
+	/*
 	 * The network: every host a node of a map, joined to the others
 	 * as its interfaces join it.  Both agents here read the same
 	 * machine, so they share its networks.
@@ -1585,11 +1715,28 @@ ATF_TC_BODY(pwa, tc)
 	    "'viewBox').split(' ')[2]) < parseFloat(window.vb.split(' ')[2])",
 	    5);
 	run("document.querySelector('button[data-act=topo-fit]').click()");
-	/* A host is picked: its interfaces, with their addresses. */
-	run("const n = document.querySelector('svg.topo .tnode .box'); "
-	    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
-	wait_js("document.querySelector('svg.topo .tnode.sel') && document."
-	    "querySelector('.map-panel .iflist li')", 5);
+	/* A host is picked: its interfaces, with their addresses.  The
+	 * drawing keeps its size whatever the panel beside it shows: it
+	 * would grow or shrink under the pointer otherwise. */
+	{
+		double	w0, h0, w1, h1;
+
+		w0 = js_num("document.querySelector('svg.topo')."
+		    "getBoundingClientRect().width");
+		h0 = js_num("document.querySelector('svg.topo')."
+		    "getBoundingClientRect().height");
+		run("const n = document.querySelector('svg.topo .tnode .box'); "
+		    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
+		wait_js("document.querySelector('svg.topo .tnode.sel') && "
+		    "document.querySelector('.map-panel .iflist li')", 5);
+		w1 = js_num("document.querySelector('svg.topo')."
+		    "getBoundingClientRect().width");
+		h1 = js_num("document.querySelector('svg.topo')."
+		    "getBoundingClientRect().height");
+		ATF_CHECK_MSG(fabs(w1 - w0) < 1 && fabs(h1 - h0) < 1,
+		    "the map was %.0fx%.0f and is %.0fx%.0f with a host "
+		    "picked", w0, h0, w1, h1);
+	}
 	ATF_CHECK(js_true("document.querySelector('.map-panel .iflist')."
 	    "textContent.includes('lo0')"));
 	/* And dragged: it is where it was put, and stays there. */

@@ -45,8 +45,14 @@
 #define	TOPO_ALTS	3
 #define	NODE_W		150
 #define	NODE_H		58
-#define	VIEW_W		1000.0
-#define	VIEW_H		600.0
+/*
+ * What of the drawing is seen at a zoom of one: as much as the map has
+ * room for on the page, so that a host and what is written on it are
+ * as large on a phone as on a wide screen.  Before the map is drawn
+ * its room is not known, and is guessed.
+ */
+#define	VIEW_W		(tp.vw > 0 ? tp.vw : arc_narrow() ? 360.0 : 900.0)
+#define	VIEW_H		(tp.vh > 0 ? tp.vh : arc_narrow() ? 450.0 : 560.0)
 
 struct ifrate {
 	char	name[16];
@@ -68,6 +74,8 @@ struct thost {
 	int		 nr;
 	double		 x, y;
 	bool		 placed;
+	double		 out_a;		/* where its outside neighbours stand */
+	bool		 out_set;
 	ucl_object_t	*wg;		/* its WireGuard interfaces */
 	bool		 wg_loading;
 	ucl_object_t	*bird;		/* what its BIRD says, if it has one */
@@ -178,6 +186,8 @@ static struct {
 	char	tun_a[80], tun_b[80];	/* the tunnel asked for */
 	char	create_sid[80];		/* the node an interface is made on */
 	int	fit_n;			/* the nodes there were when fitted */
+	double	vw, vh;			/* the room the map has, in pixels */
+	double	fit_w, fit_h;		/* and had when fitted */
 	bool	touched;		/* moved, zoomed: no fitting unasked */
 	int	labels;			/* 0 as fits, 1 shown, 2 left out */
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
@@ -1459,8 +1469,17 @@ map_nodes(struct html *h)
 			}
 		cx = m > 0 ? cx / m : 0;
 		cy = m > 0 ? cy / m : 0;
-		a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ? -M_PI / 2 :
-		    atan2(t->y - cy, t->x - cx);
+		/*
+		 * Away from the middle of the hosts, as it was when first
+		 * drawn: followed at every move, all of them would swing
+		 * about while one host is dragged.  "Fit" sets it again.
+		 */
+		if (!t->out_set) {
+			t->out_a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ?
+			    -M_PI / 2 : atan2(t->y - cy, t->x - cx);
+			t->out_set = true;
+		}
+		a = t->out_a;
 		/*
 		 * On two rings, every other one further out: side by
 		 * side on one ring they would lie on each other.
@@ -1475,11 +1494,15 @@ map_nodes(struct html *h)
 		    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
 		    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
 		    ex - 56, ey - 17, ex, ey - 2);
-		h_txt(h, e->label);
+		h_fit(h, e->label, 16);
 		h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
 		    ey + 10);
-		h_txt(h, e->sub);
+		h_fit(h, e->sub, 20);
 		h_raw(h, "</text><title>");
+		h_txt(h, e->label);
+		h_raw(h, " · ");
+		h_txt(h, e->sub);
+		h_raw(h, " — ");
 		h_txt(h, e->ospf ? "An OSPF neighbour outside this console" :
 		    "A BGP neighbour outside this console");
 		h_raw(h, "</title></g>");
@@ -1548,7 +1571,7 @@ map_nodes(struct html *h)
 		    "cy=\"-10\" r=\"4\"/><text class=\"name\" x=\"%d\" y=\"-5\">",
 		    -NODE_W / 2, -NODE_H / 2, NODE_W, NODE_H, -NODE_W / 2 + 14,
 		    -NODE_W / 2 + 26);
-		h_txt(h, tn[i].name);
+		h_fit(h, tn[i].name, 13);
 		h_fmt(h, "</text><text class=\"sub\" x=\"%d\" y=\"15\">",
 		    -NODE_W / 2 + 12);
 		if (t->ifs == NULL)
@@ -1556,11 +1579,14 @@ map_nodes(struct html *h)
 			    "no answer" : "reading…");
 		else {
 			fmt_rate(rate, sizeof(rate), total);
-			snprintf(sub, sizeof(sub), "%s%d if · %s", tn[i].jail[0] !=
-			    '\0' ? "jail · " : "", nif, rate);
+			snprintf(sub, sizeof(sub), "%d if · %s", nif, rate);
 		}
+		h_fit(h, sub, 20);
+		h_raw(h, "</text><title>");
+		h_txt(h, tn[i].name);
+		h_raw(h, tn[i].jail[0] != '\0' ? " (a jail) · " : " · ");
 		h_txt(h, sub);
-		h_fmt(h, "</text><circle class=\"port\" cx=\"%d\" cy=\"0\" "
+		h_fmt(h, "</title><circle class=\"port\" cx=\"%d\" cy=\"0\" "
 		    "r=\"7\" data-drag=\"topo-link\"", NODE_W / 2);
 		h_attr(h, "data-arg", key);
 		h_raw(h, "><title>Drag to another host to join them with a "
@@ -2117,9 +2143,15 @@ view_netmap(struct html *h)
 	nodes_build();
 	places_fill();
 	/* Fitted once, and again when a jail came or went as a node. */
-	if ((!tp.fitted || (tp.fit_n != ntn && !tp.touched)) && ntn > 0) {
+	tp.vw = arc_map_w();
+	tp.vh = arc_map_h();
+	/* And when its room changed: a window resized, a phone turned. */
+	if ((!tp.fitted || ((tp.fit_n != ntn || fabs(VIEW_W - tp.fit_w) > 24 ||
+	    fabs(VIEW_H - tp.fit_h) > 24) && !tp.touched)) && ntn > 0) {
 		tp.fitted = true;
 		tp.fit_n = ntn;
+		tp.fit_w = VIEW_W;
+		tp.fit_h = VIEW_H;
 		fit();
 	}
 	links_build();
@@ -3155,9 +3187,9 @@ fit(void)
 	tp.pany = (y0 + y1) / 2;
 	/* Room around them, and more when neighbours stand beside them. */
 	zx = VIEW_W / (x1 - x0 + NODE_W + (nexts > 0 && !tp.nopeers ? 640 :
-	    120));
+	    120) * (VIEW_W < 600 ? 0.5 : 1.0));
 	zy = VIEW_H / (y1 - y0 + NODE_H + (nexts > 0 && !tp.nopeers ? 460 :
-	    140));
+	    140) * (VIEW_W < 600 ? 0.5 : 1.0));
 	tp.zoom = zx < zy ? zx : zy;
 	if (tp.zoom > 1.7)
 		tp.zoom = 1.7;
@@ -3305,6 +3337,8 @@ topo_action(const char *act, const char *arg, const char *value)
 			tp.hide_alt = !tp.hide_alt;
 	} else if (strcmp(act, "topo-fit") == 0) {
 		/* Asked for: and kept fitted until moved again. */
+		for (i = 0; i < nhosts; i++)
+			hosts[i].out_set = false;
 		fit();
 		tp.touched = false;
 	} else if (strcmp(act, "topo-jails") == 0) {
@@ -3543,10 +3577,14 @@ view_netgraph(struct html *h, struct server *s, const ucl_object_t *nodes)
 		h_raw(h, "><rect class=\"box\" x=\"-65\" y=\"-24\" width=\"130\" "
 		    "height=\"48\" rx=\"10\"/><text class=\"name\" x=\"-54\" "
 		    "y=\"-3\">");
-		h_txt(h, jstr(o, "name"));
+		h_fit(h, jstr(o, "name"), 12);
 		h_raw(h, "</text><text class=\"sub\" x=\"-54\" y=\"14\">");
+		h_fit(h, jstr(o, "type"), 15);
+		h_raw(h, "</text><title>");
+		h_txt(h, jstr(o, "name"));
+		h_raw(h, " · ");
 		h_txt(h, jstr(o, "type"));
-		h_raw(h, "</text><circle class=\"port\" cx=\"65\" cy=\"0\" r=\"7\" "
+		h_raw(h, "</title><circle class=\"port\" cx=\"65\" cy=\"0\" r=\"7\" "
 		    "data-drag=\"ng-link\"");
 		h_attr(h, "data-arg", id);
 		h_raw(h, "><title>Drag to another node to connect a hook of "

@@ -142,6 +142,11 @@ definitions:
           and a label.
       - name: cam
         doc: camcontrol(8).  verb rescan, of all buses.
+      - name: sysctl
+        doc: |
+          Set a sysctl(8) variable: names holds its name and its value.
+          With persist it is also written to sysctl.conf(5), where a
+          line that set it before is replaced.
   - name: job-state
     type: enum
     entries:
@@ -553,6 +558,11 @@ attribute-sets:
       - name: storage-kind
         type: u8
         enum: storage-kind
+      - name: retry
+        type: flag
+        doc: |
+          For transport: start the SCTP listeners that are not up, now
+          that the kernel can.
 
   - name: host
     attributes:
@@ -1467,3 +1477,51 @@ operations:
           - conf-text
           - sha256
           - trace
+
+  - name: transport
+    attribute-set: arcana
+    auth: true
+    doc: |
+      How the agent is reached, as a JSON object: "listeners", each
+      with its uri, its transport (tcp, sctp or unix) and whether it is
+      up, and why not when it is not; "sctp", whether the kernel has it;
+      and "sessions", the connections open now, each with its
+      transport, the address and the certificate's name of who is at
+      the other end, and since when.  An agent that listens on TCP
+      listens on SCTP at the same address and port as well, once the
+      kernel has SCTP: it does not load it, and does not try by itself
+      again.  With retry it tries now.
+    do:
+      request:
+        attributes:
+          - retry
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: sysctl
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The kernel's state, sysctl(8), as a JSON object: "values", each
+      with its name, its value as sysctl prints it, whether it can be
+      set, and what it is said to be; "kept", what sysctl.conf(5) sets
+      at boot.  net-filter is where in the tree to begin, a name or
+      the start of one; without it the whole tree, of which more than
+      a reply carries comes as the first, with total and truncated.
+    do:
+      request:
+        attributes:
+          - net-filter
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - total
+          - truncated
+          - trace
+

@@ -164,7 +164,9 @@ topbar(struct html *h)
 	enum link	 host;
 
 	s = cur_server();
-	h_raw(h, "<header class=\"topbar\"><div class=\"brand\">"
+	h_raw(h, "<header class=\"topbar\"><button class=\"ghost burger\" "
+	    "data-act=\"rail-toggle\" title=\"Hosts and jails\" aria-label=\""
+	    "Hosts and jails\">☰</button><div class=\"brand\">"
 	    "<span class=\"logo\">");
 	h_raw(h, icon_grid);
 	h_raw(h, "</span><span class=\"wordmark\">ARCANA</span>");
@@ -175,7 +177,12 @@ topbar(struct html *h)
 		h_raw(h, "</span>");
 	}
 	h_raw(h, "</div><nav class=\"crumbs\">");
-	if (s != NULL) {
+	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
+	    NODE_API)
+		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
+		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
+		    "All hosts");
+	else if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
 		h_txt(h, s->name);
 		h_raw(h, "</span>");
@@ -196,7 +203,10 @@ topbar(struct html *h)
 	    s->failed ? LINK_DOWN : LINK_UP;
 	link_led(h, "HOST", host, s == NULL ? "No server selected" :
 	    s->failed ? s->error : "arcana-agent answers");
-	h_raw(h, "</div><div class=\"who\">");
+	h_fmt(h, "</div><button class=\"ghost more%s\" data-act=\"who-toggle\" "
+	    "title=\"Settings, keys, log out\" aria-label=\"Menu\">⋮</button>"
+	    "<div class=\"who%s\">", app.who_open ? " on" : "", app.who_open ?
+	    " open" : "");
 	h_fmt(h, "<button class=\"ghost%s\" data-act=\"fx\" title=\"Blur and "
 	    "idle animations: %s. Off is lighter on slow browsers; the "
 	    "choice stays in this browser.\">FX</button>", app.fx ? " on" :
@@ -352,12 +362,15 @@ rail(struct html *h)
 	tree_caps(cap);
 	/* On a narrow screen the tree is one line until it is unfolded. */
 	s = cur_server();
+	if (app.rail_open)
+		h_raw(h, "<div class=\"scrim\" data-act=\"rail-toggle\"></div>");
 	h_fmt(h, "<aside class=\"rail%s\"><div class=\"rail-head\">"
 	    "<button class=\"ghost small rail-toggle\" data-act=\""
 	    "rail-toggle\" title=\"Hosts and jails\">%s ", app.rail_open ?
 	    " open" : "", app.rail_open ? "▴" : "▾");
-	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node ==
-	    NODE_FLEET || s == NULL ? "All hosts" : s->name);
+	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
+	    "API" : app.node == NODE_FLEET || s == NULL ? "All hosts" :
+	    s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
 		h_raw(h, " / ");
 		h_txt(h, app.jail);
@@ -372,8 +385,12 @@ rail(struct html *h)
 	    "<span class=\"count\">%d</span></li>"
 	    "<li class=\"titem fleet netnode%s\" data-act=\"select-network\">"
 	    "<span class=\"twig\">⌬</span><span class=\"name\">Network</span>"
+	    "</li><li class=\"titem fleet apinode%s\" data-act=\"select-api\" "
+	    "title=\"The console's own API, as it is documented\">"
+	    "<span class=\"twig\">{ }</span><span class=\"name\">API</span>"
 	    "</li>", app.node == NODE_FLEET ? " selected" : "", app.nservers,
-	    app.node == NODE_NETWORK ? " selected" : "");
+	    app.node == NODE_NETWORK ? " selected" : "", app.node ==
+	    NODE_API ? " selected" : "");
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
@@ -800,6 +817,11 @@ stage(struct html *h)
 		h_raw(h, "</main>");
 		return;
 	}
+	if (app.node == NODE_API) {
+		view_apidoc(h);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (app.node == NODE_JAIL) {
 		jail_page(h);
 		h_raw(h, "</main>");
@@ -813,7 +835,8 @@ stage(struct html *h)
 			{ "summary", "Summary" }, { "jails", "Jails" },
 			{ "services", "Services" }, { "network", "Network" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
-			{ "kernel", "Kernel" }, { "jobs", "Jobs" },
+			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
+			{ "jobs", "Jobs" },
 		};
 		/*
 		 * A plugin has a tab of its own, on a host that has it: it
@@ -832,7 +855,7 @@ stage(struct html *h)
 		plug = app.tab == TAB_NETWORK && (app.net.kind ==
 		    NET_WIREGUARD || app.net.kind == NET_BIRD);
 		h_raw(h, "<nav class=\"tabs\">");
-		for (t = 0; t < 8; t++)
+		for (t = 0; t < 9; t++)
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
@@ -849,6 +872,7 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_SUMMARY) {
 		view_summary(h, s);
+		view_transport(h, s);
 		peek_box(h);
 		h_raw(h, "</main>");
 		return;
@@ -875,6 +899,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_KERNEL) {
 		view_kernel(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_SYSCTL) {
+		view_sysctl(h, s);
 		h_raw(h, "</main>");
 		return;
 	}

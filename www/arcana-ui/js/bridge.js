@@ -197,13 +197,25 @@ addToLibrary({
 			svg = t.closest("svg");
 			if (svg === null)
 				return;
+			if (drag !== null)
+				return;
 			drag = { name: t.dataset.drag, arg: t.dataset.arg || "",
 			    svg: svg, x: e.clientX, y: e.clientY, moved: false,
-			    last: null, frame: 0 };
+			    last: null, frame: 0, id: e.pointerId };
+			/*
+			 * The pointer is the drawing's until let go: over
+			 * the panels, outside the window, it still moves
+			 * what it holds, and its letting go is heard.
+			 */
+			try {
+				svg.setPointerCapture(e.pointerId);
+			} catch (err) {
+			}
 			e.preventDefault();
 		});
 		document.addEventListener("pointermove", function (e) {
-			if (drag === null)
+			if (drag === null || (e.pointerId !== drag.id &&
+			    e.isTrusted))
 				return;
 			if (!drag.moved && Math.abs(e.clientX - drag.x) +
 			    Math.abs(e.clientY - drag.y) < 5)
@@ -233,7 +245,7 @@ addToLibrary({
 		function drop(e) {
 			var d = drag, el, on;
 
-			if (d === null)
+			if (d === null || (e.pointerId !== d.id && e.isTrusted))
 				return;
 			drag = null;
 			if (d.frame !== 0)
@@ -348,7 +360,7 @@ addToLibrary({
 		 * custom property on the root element, kept per browser;
 		 * a double click goes back to the usual one.
 		 */
-		var sizes = {}, drag = null, root = document.documentElement;
+		var sizes = {}, resizing = null, root = document.documentElement;
 		var props = { rail: "--rail-w", dock: "--dock-h", ops: "--ops-w",
 		    drawer: "--drawer-w" };
 
@@ -386,31 +398,31 @@ addToLibrary({
 			if (t === null || e.button > 0)
 				return;
 			e.preventDefault();
-			drag = t.dataset.resize;
+			resizing = t.dataset.resize;
 			root.classList.add("resizing");
 		});
 		window.addEventListener("pointermove", function (e) {
 			var r, w = window.innerWidth, h = window.innerHeight, el;
 
-			if (drag === null)
+			if (resizing === null)
 				return;
-			if (drag === "rail") {
+			if (resizing === "rail") {
 				r = document.getElementById("body")
 				    .getBoundingClientRect();
 				sizes.rail = clamp(e.clientX - r.left, 150, w * .6);
-			} else if (drag === "drawer") {
+			} else if (resizing === "drawer") {
 				r = document.getElementById("body")
 				    .getBoundingClientRect();
 				sizes.drawer = clamp(r.right - e.clientX, 280,
 				    w * .7);
-			} else if (drag === "ops") {
+			} else if (resizing === "ops") {
 				el = document.querySelector(".dock-body");
 				if (el === null)
 					return;
 				r = el.getBoundingClientRect();
 				sizes.ops = clamp(e.clientX - r.left, 140,
 				    r.width * .7);
-			} else if (drag === "dock") {
+			} else if (resizing === "dock") {
 				el = document.querySelector(".dock-body");
 				if (el === null)
 					return;
@@ -421,9 +433,9 @@ addToLibrary({
 			applySizes();
 		});
 		function endDrag() {
-			if (drag === null)
+			if (resizing === null)
 				return;
-			drag = null;
+			resizing = null;
 			root.classList.remove("resizing");
 			saveSizes();
 		}
@@ -828,6 +840,25 @@ addToLibrary({
 
 	arc_now: function () {
 		return (Date.now());
+	},
+
+	/* The room the fleet's map has on the page, 0 when not drawn yet. */
+	arc_map_w: function () {
+		var el = document.querySelector(".netmap:not(.ngmap) " +
+		    "> .map-wrap");
+
+		return (el === null ? 0 : el.clientWidth);
+	},
+	arc_map_h: function () {
+		var el = document.querySelector(".netmap:not(.ngmap) " +
+		    "> .map-wrap");
+
+		return (el === null ? 0 : el.clientHeight);
+	},
+
+	/* Is the window as narrow as a phone held upright? */
+	arc_narrow: function () {
+		return (window.innerWidth <= 620 ? 1 : 0);
 	},
 
 	arc_title__deps: ["$UTF8ToString"],

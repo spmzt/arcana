@@ -207,6 +207,10 @@ tick(void *arg)
 			topo_tick(now);
 		if (app.online)
 			bird_tick(now);
+		if (app.online) {
+			transport_tick(now);
+			net_live_tick(now);
+		}
 	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
 	    now - last_update > UPDATE_MS) {
@@ -303,7 +307,8 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
-	    kernel_form(form, f) || storage_form(form, f))
+	    kernel_form(form, f) || storage_form(form, f) ||
+	    sysctl_form(form, f))
 		return;
 	submit_form(form, f);
 }
@@ -502,6 +507,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
+	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
 	    tbl_action(act, arg, value))
 		return;
 	if (strcmp(act, "fold") == 0) {
@@ -528,6 +534,8 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_services(s, true);
 			if (app.tab == TAB_KERNEL)
 				refresh_kernel(s, false);
+			if (app.tab == TAB_SYSCTL)
+				refresh_sysctl(s, false);
 			if (app.tab == TAB_STORAGE)
 				refresh_storage(s, false);
 			if (app.tab == TAB_NETWORK && (strcmp(app.net.sid,
@@ -555,6 +563,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		    0 || strcmp(arg, "bird") == 0 ? TAB_NETWORK :
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
 		    strcmp(arg, "kernel") == 0 ? TAB_KERNEL :
+		    strcmp(arg, "sysctl") == 0 ? TAB_SYSCTL :
 		    strcmp(arg, "storage") == 0 ? TAB_STORAGE :
 		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
@@ -564,6 +573,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_jobs(s);
 		if (app.tab == TAB_KERNEL)
 			refresh_kernel(s, true);
+		if (app.tab == TAB_SYSCTL)
+			refresh_sysctl(s, false);
 		if (app.tab == TAB_STORAGE)
 			refresh_storage(s, true);
 		close_service();
@@ -640,6 +651,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		load_push();
 	} else if (strcmp(act, "push-remove") == 0) {
 		arc_push_remove(arg);
+	} else if (strcmp(act, "net-live") == 0) {
+		app.net.paused = !app.net.paused;
 	} else if (strcmp(act, "net-kind") == 0 && s != NULL) {
 		app.net.sort = -1;
 		app.net.kind = strcmp(arg, "nexthops") == 0 ? NET_NEXTHOPS :
@@ -857,6 +870,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_network(s, true);
 		} else if (app.tab == TAB_KERNEL) {
 			refresh_kernel(s, true);
+		} else if (app.tab == TAB_SYSCTL) {
+			refresh_sysctl(s, true);
 		} else if (app.tab == TAB_STORAGE) {
 			refresh_storage(s, true);
 		} else if (app.tab == TAB_PACKAGES) {
@@ -1007,6 +1022,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		arc_theme_set(app.theme);
 	} else if (strcmp(act, "rail-toggle") == 0) {
 		app.rail_open = !app.rail_open;
+	} else if (strcmp(act, "who-toggle") == 0) {
+		app.who_open = !app.who_open;
 	} else if (strcmp(act, "settings") == 0) {
 		app.modal = MODAL_SETTINGS;
 		app.modal_error[0] = '\0';
@@ -1077,6 +1094,10 @@ EMSCRIPTEN_KEEPALIVE void
 arc_on_action(char *act, char *arg, char *value)
 {
 
+	/* The top bar's menu closes at whatever is done next. */
+	if (app.who_open && strcmp(act, "who-toggle") != 0 && strcmp(act,
+	    "resize") != 0)
+		app.who_open = false;
 	dispatch(act, arg, value);
 	free(act);
 	free(arg);

@@ -16,6 +16,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/module.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -1692,6 +1693,84 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 
 	/*
+	 * The kernel's state: from a name on, with what is kept for the
+	 * next boot; one set by a job, and kept.
+	 */
+	snprintf(path, sizeof(path), "%.*s/sysctl?filter=kern.ostype",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("kern.ostype", jstr(&r, "data.values.0.name"));
+	ATF_CHECK_STREQ("FreeBSD", jstr(&r, "data.values.0.value"));
+	ATF_CHECK_STREQ("false", jstr(&r, "data.values.0.rw"));
+	ATF_CHECK_STREQ("kern.ipc.somaxconn", jstr(&r, "data.kept.0.name"));
+	ATF_CHECK_STREQ("1024", jstr(&r, "data.kept.0.value"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/sysctl?filter=kern,x",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"sysctl\",\"args\":["
+	    "\"kern.ipc.somaxconn\",\"4096\"],\"persist\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("sysctl kern.ipc.somaxconn=4096 (kept)", jstr(&r,
+	    "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q '^kern.ipc.somaxconn=4096$' "
+	    "sysctl.conf 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^sysctl kern.ipc.somaxconn=4096$' kld.log "
+	    "&& grep -q '^kern.ipc.somaxconn=4096$' sysctl.conf && grep -q "
+	    "'^# kept$' sysctl.conf && ! grep -q 1024 sysctl.conf") == 0);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"sysctl\",\"args\":["
+	    "\"kern.hostname\"]}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/*
+	 * How the agent is reached: its listeners and who is connected.
+	 * The console keeps its connection open: what it asks next goes
+	 * over the same one, and the agent has seen no new connection.
+	 */
+	snprintf(path, sizeof(path), "%.*s/transport",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("unix", jstr(&r, "data.listeners.0.transport"));
+	ATF_CHECK_STREQ("true", jstr(&r, "data.listeners.0.up"));
+	ATF_CHECK_STREQ("unix", jstr(&r, "data.sessions.0.transport"));
+	ATF_CHECK(jstr(&r, "uri") != NULL && strncmp(jstr(&r, "uri"), "unix:",
+	    5) == 0);
+	{
+		long	seen, after;
+
+		seen = atol(jstr(&r, "data.seen"));
+		resp_free(&r);
+		for (i = 0; i < 6; i++) {
+			http("GET", base, NULL, &r);
+			EXPECT(&r, 200);
+			resp_free(&r);
+		}
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		after = atol(jstr(&r, "data.seen"));
+		ATF_CHECK_MSG(after == seen, "the agent saw %ld connections, "
+		    "then %ld after six more requests", seen, after);
+		resp_free(&r);
+	}
+	/* A local socket has no other way to be reached. */
+	snprintf(path, sizeof(path), "%.*s/transport/switch",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"transport\":\"sctp\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/*
 	 * Storage: the pools with their devices, datasets, snapshots of
 	 * one, the disks from the kernel, what is mounted; a snapshot
 	 * taken by a job; fstab read and put back.
@@ -1941,6 +2020,7 @@ ATF_TC_BODY(mtls, tc)
 	struct resp	 r;
 	char		 cwd[MAXPATHLEN], uri[64], body[256], path[128];
 	char		 jgd[MAXPATHLEN], listen[64], *argv[16];
+	char		 sid[16], sw[128];
 	FILE		*fp;
 	pid_t		 pid;
 	int		 port, i;
@@ -2012,6 +2092,86 @@ ATF_TC_BODY(mtls, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 502);
 	ATF_CHECK_STREQ("unreachable", jstr(&r, "error.code"));
+	resp_free(&r);
+
+	/*
+	 * Beside its TCP listener the agent has an SCTP one, at the same
+	 * address and port, where the kernel has SCTP.  The console is
+	 * switched to it only when the agent answers there, and back.
+	 */
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("tcp", jstr(&r, "data.listeners.0.transport"));
+	ATF_CHECK_STREQ("sctp", jstr(&r, "data.listeners.1.transport"));
+	ATF_CHECK_STREQ("tcp", jstr(&r, "data.sessions.0.transport"));
+	ATF_CHECK(jstr(&r, "data.sessions.0.subject") != NULL && strstr(jstr(
+	    &r, "data.sessions.0.subject"), "console") != NULL);
+	resp_free(&r);
+	snprintf(sw, sizeof(sw), "/api/servers/%s/transport/switch", sid);
+	if (modfind("sctp") != -1) {
+		http("POST", sw, "{\"transport\":\"sctp\"}", &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+		resp_free(&r);
+		http("GET", "/api/servers", NULL, &r);
+		ATF_CHECK(strncmp(jstr(&r, "servers.0.uri"), "sctp://", 7) ==
+		    0);
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
+		ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "mutual DTLS")
+		    != NULL, "%s", jstr(&r, "trace.2.detail"));
+		resp_free(&r);
+		/* And kept open: the next one goes over the same. */
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "kept open")
+		    != NULL, "%s", jstr(&r, "trace.2.detail"));
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("true", jstr(&r, "data.listeners.1.up"));
+		ATF_CHECK_STREQ("sctp", jstr(&r, "data.sessions.0.transport"));
+		ATF_CHECK(strncmp(jstr(&r, "uri"), "sctp://", 7) == 0);
+		resp_free(&r);
+		http("POST", sw, "{\"transport\":\"tcp\"}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http("GET", "/api/servers", NULL, &r);
+		ATF_CHECK(strncmp(jstr(&r, "servers.0.uri"), "tcp://", 6) == 0);
+		resp_free(&r);
+	} else {
+		/* No SCTP here: said by the agent, and nothing is changed. */
+		http("GET", path, NULL, &r);
+		ATF_CHECK_STREQ("false", jstr(&r, "data.listeners.1.up"));
+		ATF_CHECK_STREQ("false", jstr(&r, "data.sctp"));
+		resp_free(&r);
+		http("POST", path, "{\"retry\":true}", &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+		ATF_CHECK(strstr(jstr(&r, "error"), "sctp module") != NULL);
+		resp_free(&r);
+		http("POST", sw, "{\"transport\":\"sctp\"}", &r);
+		EXPECT(&r, 502);
+		resp_free(&r);
+		http("GET", "/api/servers", NULL, &r);
+		ATF_CHECK(strncmp(jstr(&r, "servers.0.uri"), "tcp://", 6) == 0);
+		resp_free(&r);
+	}
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", sw, "{\"transport\":\"udp\"}", &r);
+	EXPECT(&r, 400);
 	resp_free(&r);
 }
 

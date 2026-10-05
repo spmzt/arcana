@@ -22,6 +22,10 @@ The console is laid out as a tree and tabs.
   jails run, and the fleet as a graph from the console through the
   hosts to their jails; nodes are links.
 - **Network**: the fleet as a map; see [The network](#the-network).
+- **API**: the console's own API as `docs/openapi.yaml` documents it,
+  every route with what it is for, what it takes and what it answers,
+  by group and searched; the document itself is one press away, for a
+  client generator or another viewer.
 - **All hosts**: the fleet at a glance. Its graph is of what runs: a
   host with its jails that are not stopped; a host's own Summary has
   all of them.
@@ -148,6 +152,36 @@ The console is laid out as a tree and tabs.
     `vmstat -m` and `vmstat -z` count them, which is where a module's
     own memory shows. From a shell: `arcanactl kmod`, `arcanactl [-p]
     kmod load | unload module`.
+  - **Sysctl**: the kernel's state, a part of the tree at a time
+    (**kern**, **vm**, **net** and the others, or from a name typed),
+    read from the kernel as `sysctl -a` has it: each name with its
+    value, its type, whether it is a loader tunable, and what it is
+    said to be. Values that are neither numbers nor text are left
+    out. The whole tree is more than is sent at once: **all** gives
+    its beginning and says how much there is. **Set**, on a value that
+    can be, puts it into a field in its row; it is set with
+    `sysctl name=value` by a job, and with **at boot too** also
+    written to `/etc/sysctl.conf`, where the line that set the name
+    before is replaced and the rest is left as it was. What
+    `sysctl.conf` sets is listed above the table, whichever part of
+    the tree is shown. A jail's sysctls are not set from here. From a
+    shell: `arcanactl sysctl [name]`, `arcanactl [-p] sysctl
+    name=value`.
+  - **How it is reached**, at the foot of the summary: the agent's
+    listeners, the one the console uses, and the connections open to
+    the agent now, each with its transport, where it comes from and
+    the name in its certificate, read again every few seconds. The
+    console keeps its connection to an agent open and sends the next
+    request over it; several requests at once have one each. An agent
+    that listens on TCP listens on SCTP as well, at the same address
+    and port, where the kernel has SCTP. It never loads the module:
+    where it is missing the listener is shown as down with the reason,
+    and once `sctp` is loaded from the Kernel tab, **Try SCTP again**
+    has the agent start it. **Switch to SCTP** asks the agent over
+    SCTP first and changes the server only when it answers; **Switch
+    to TCP** goes back the same way. Nothing falls back by itself:
+    where SCTP is blocked on the way, the host does not answer until
+    it is switched back. From a shell: `arcanactl transport [retry]`.
   - **Plugins** are what works through a program that has to be
     installed, not the base system's: **BIRD** (`birdc`) and
     **WireGuard** (`wg`; the interface itself, `if_wg` made by
@@ -333,6 +367,15 @@ The console is laid out as a tree and tabs.
   for a browser to subscribe. **Settings** lists the devices
   (`push.json`) and removes one; a device whose browser dropped the
   subscription is forgotten by itself. Up to 16 devices.
+
+- **On a phone** the tree of hosts is a drawer that slides in from the
+  left (☰), the top bar is one row with the rest behind **⋮**, a
+  dialog is a sheet from the bottom, a row of choices is one line that
+  is scrolled, and a table keeps its first column in sight while the
+  others are scrolled.
+- **Connections** and **Sockets**, in a host's network, are read again
+  every two seconds while they are shown, without a task of their own
+  in the activity; **Live** pauses that.
 
 ## The network
 

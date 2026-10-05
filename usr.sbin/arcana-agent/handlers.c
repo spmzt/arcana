@@ -288,6 +288,8 @@ worker(void *arg)
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
 	struct arc_kernel_rsp	 kr;
+	struct arc_transport_rsp tpr;
+	struct arc_sysctl_rsp	 scr2;
 	struct arc_storage_rsp	 stg;
 	struct arc_fstab_req	 fq;
 	struct arc_fstab_rsp	 fr;
@@ -393,6 +395,30 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &str.trace.v, &str.trace.n);
 		rc = arc_stats_reply(j->req, &str);
+		break;
+	case ARC_CMD_TRANSPORT:
+		what = j->refresh ? "transport retry" : "transport";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&tpr, 0, sizeof(tpr));
+		do_transport(&w, j->refresh, &tpr);
+		ok = tpr.ok;
+		error = tpr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &tpr.trace.v, &tpr.trace.n);
+		rc = arc_transport_reply(j->req, &tpr);
+		break;
+	case ARC_CMD_SYSCTL:
+		what = "sysctl";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "sysctl");
+		memset(&scr2, 0, sizeof(scr2));
+		do_sysctl(&w, j->source, &scr2);
+		ok = scr2.ok;
+		error = scr2.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &scr2.trace.v, &scr2.trace.n);
+		rc = arc_sysctl_reply(j->req, &scr2);
 		break;
 	case ARC_CMD_STORAGE:
 		what = "storage";
@@ -1031,6 +1057,35 @@ arc_storage_doit(cbl_req *req, const struct arc_storage_req *rq,
 }
 
 int
+arc_transport_doit(cbl_req *req, const struct arc_transport_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_TRANSPORT;
+	j->refresh = rq->retry;
+	return (start(j));
+}
+
+int
+arc_sysctl_doit(cbl_req *req, const struct arc_sysctl_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SYSCTL;
+	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
+	    xstrdup(rq->net_filter) : NULL;
+	return (start(j));
+}
+
+int
 arc_fstab_doit(cbl_req *req, const struct arc_fstab_req *rq,
     void *arg __unused)
 {
@@ -1126,7 +1181,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_CAM)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SYSCTL)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1184,6 +1239,17 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_CAM:
 		if ((e = storage_check(sp)) != NULL)
 			return (e);
+		break;
+	case ARC_JOB_KIND_SYSCTL:
+		if (sp->jail != NULL && sp->jail[0] != '\0')
+			return ("a jail's sysctls are not set from here");
+		if (sp->safe)
+			return ("a sysctl is not taken back by itself");
+		if (sp->names.n != 2 || !sysctl_name_ok(sp->names.v[0]))
+			return ("name one sysctl, with letters, digits and "
+			    ". _ - %, and its value");
+		if (!sysctl_value_ok(sp->names.v[1]))
+			return ("a sysctl's value is one line");
 		break;
 	case ARC_JOB_KIND_KMOD:
 		if (sp->jail != NULL && sp->jail[0] != '\0')

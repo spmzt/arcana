@@ -3136,3 +3136,227 @@ svg.topo.quiet .tlink:hover .lbl, svg.topo.quiet .tlink:hover .rate,
 svg.topo.quiet .tlink.sel .lbl, svg.topo.quiet .tlink.sel .rate { display: inline; }
 .map-legend { background: color-mix(in srgb, var(--bg) 82%, transparent); border-radius: 6px; padding: .2rem .4rem; }
 
+/*
+ * The shell on small screens.  The tree of hosts is a drawer that
+ * slides in from the left over the page, the top bar is one row, and
+ * what does not fit it is behind a menu; a dialog is a sheet from the
+ * bottom; notices stay clear of the controls.
+ */
+.burger, .topbar .more, .scrim { display: none; }
+.toasts {
+	left: auto;
+	right: 1rem;
+	top: auto;
+	bottom: calc(3.6rem + var(--bottom));
+	transform: none;
+}
+.toast:nth-last-child(n+5) { display: none; }
+@media (max-width: 980px) {
+	.burger {
+		display: block;
+		flex: none;
+		padding: .35rem .6rem;
+		font-size: 1rem;
+		line-height: 1;
+	}
+	.body, .body.with-drawer { grid-template-rows: minmax(0, 1fr); }
+	.scrim {
+		display: block;
+		position: fixed;
+		z-index: 14;
+		inset: 0;
+		background: rgba(0, 0, 0, .55);
+	}
+	.rail {
+		position: fixed;
+		z-index: 15;
+		top: 0;
+		bottom: 0;
+		left: 0;
+		width: min(86vw, 340px);
+		display: flex;
+		flex-direction: column;
+		padding-top: var(--top);
+		padding-bottom: var(--bottom);
+		background: var(--bg-2);
+		border-right: 1px solid var(--line-2);
+		border-bottom: 0;
+		transform: translateX(-104%);
+		transition: transform .25s var(--ease);
+	}
+	.rail.open {
+		transform: none;
+		box-shadow: 30px 0 60px -20px #000;
+	}
+	.rail-head { padding: .7rem .8rem; }
+	.rail-head .rail-toggle { display: none; }
+	.rail-head .label { display: block; flex: 1; }
+	.tree {
+		flex: 1;
+		max-height: none;
+		overflow-y: auto;
+	}
+	.tree .titem { padding-top: .6rem; padding-bottom: .6rem; }
+	/* What names a row stays in sight while the rest is scrolled. */
+	.stage table.net th:first-child, .stage table.net td:first-child {
+		position: sticky;
+		left: 0;
+		z-index: 1;
+		background: var(--bg);
+	}
+}
+@media (max-width: 620px) {
+	.topbar {
+		flex-wrap: nowrap;
+		position: relative;
+	}
+	.brand .wordmark, .brand .version { display: none; }
+	.crumbs {
+		display: flex;
+		flex: 1;
+		min-width: 0;
+		overflow: hidden;
+		white-space: nowrap;
+		font-size: .9rem;
+	}
+	.crumbs .crumb { overflow: hidden; text-overflow: ellipsis; }
+	.topbar .more {
+		display: block;
+		flex: none;
+		padding: .35rem .7rem;
+		font-size: 1rem;
+		line-height: 1;
+	}
+	.topbar .more.on { color: var(--cyan); border-color: var(--cyan); }
+	.who {
+		display: none;
+		order: 0;
+		flex: none;
+		position: absolute;
+		z-index: 16;
+		right: .6rem;
+		top: calc(100% + .3rem);
+		flex-direction: column;
+		align-items: stretch;
+		gap: .3rem;
+		min-width: 11rem;
+		padding: .5rem;
+		border: 1px solid var(--line-2);
+		background: var(--bg-2);
+		box-shadow: 0 20px 40px -12px #000;
+		overflow: visible;
+	}
+	.who.open { display: flex; }
+	.who button, .who button:first-child {
+		display: block;
+		padding: .65rem .8rem;
+		text-align: left;
+	}
+	.modal {
+		left: 0;
+		right: 0;
+		top: auto;
+		bottom: 0;
+		width: auto;
+		max-height: 92dvh;
+		transform: none;
+		padding: 1.1rem 1rem calc(1.2rem + var(--bottom));
+		border-width: 1px 0 0;
+		border-radius: 14px 14px 0 0;
+		animation: sheet .25s var(--ease) both;
+	}
+	.modal .actions { position: sticky; bottom: 0; }
+	.toasts {
+		left: .6rem;
+		right: .6rem;
+		bottom: calc(4.2rem + var(--bottom));
+	}
+	.toast:nth-last-child(n+3) { display: none; }
+	button, .tab, select, input { min-height: 2.4rem; }
+	.netmap:not(.ngmap) > .map-wrap {
+		min-height: 0;
+		aspect-ratio: 4 / 5;
+	}
+	.map-tools {
+		right: .6rem;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	.map-tools button { flex: none; }
+	.map-legend {
+		left: .4rem;
+		right: .4rem;
+		bottom: .4rem;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		white-space: nowrap;
+		scrollbar-width: none;
+	}
+	.map-legend li { flex: none; }
+}
+@keyframes sheet {
+	from { opacity: 0; transform: translateY(24px); }
+	to { opacity: 1; transform: none; }
+}
+
+/* The kernel's state, how a host is reached, and the API's own page. */
+table.sysctl td.val { font-family: var(--mono); word-break: break-all; max-width: 28rem; }
+table.sysctl tr.editing td { background: rgba(var(--accent-rgb), .06); }
+form.sy-set { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .3rem; }
+form.sy-set input[name=value] { flex: 1 1 14rem; min-width: 0; }
+.sy-kept { margin: .2rem 0 .8rem; line-height: 2; }
+.sy-kept .chip { cursor: pointer; }
+.transport { margin-top: 1.4rem; }
+.transport h3 { margin: 0 0 .3rem; font-size: 1rem; }
+ul.listeners { list-style: none; margin: .5rem 0; padding: 0; display: grid; gap: .35rem; }
+ul.listeners li { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+ul.listeners .led { width: .55rem; height: .55rem; border-radius: 50%; background: var(--slate); flex: none; }
+ul.listeners li.up .led { background: var(--green); }
+ul.listeners li.down .led { background: var(--red); }
+button.live .led { display: inline-block; width: .5rem; height: .5rem; margin-right: .4rem; border-radius: 50%; background: var(--slate); }
+button.live.on .led { background: var(--green); box-shadow: 0 0 6px var(--green); }
+html.fx button.live.on .led { animation: breathe 1.6s ease-in-out infinite; }
+.apidoc > header { display: flex; align-items: center; gap: .7rem; margin-bottom: .4rem; }
+.apidoc > header h2 { margin: 0; }
+.apidoc > header a { margin-left: auto; text-decoration: none; padding: .3rem .6rem; border: 1px solid var(--line); color: var(--fg-2); }
+.apidoc .about { white-space: pre-line; color: var(--fg-2); max-width: 60rem; }
+ul.apiops { list-style: none; margin: .8rem 0 0; padding: 0; display: grid; gap: .3rem; }
+.apiop { border: 1px solid var(--line); padding: .5rem .7rem; cursor: pointer; }
+.apiop:hover, .apiop.open { border-color: var(--line-2); background: rgba(var(--accent-rgb), .04); }
+.apiop .line { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .7rem; }
+.apiop .method { flex: none; min-width: 3.6rem; text-transform: uppercase; font-size: .72rem; letter-spacing: .08em; color: var(--green); }
+.apiop.m-post .method { color: var(--amber); }
+.apiop.m-delete .method { color: var(--red); }
+.apiop code { word-break: break-all; }
+.apiop .line > span { color: var(--fg-2); }
+.apiop .more { margin-top: .5rem; padding-top: .5rem; border-top: 1px dashed var(--line); cursor: default; }
+.apiop .more p { margin: .3rem 0; white-space: pre-line; }
+.titem.apinode .twig { color: var(--teal); font-size: .7em; }
+
+/* The host's own line of facts is a line, not the map panel's grid. */
+.hostbar .facts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: .2rem 1rem;
+	margin-bottom: 0;
+	text-align: left;
+}
+.hostbar .facts span { font-size: inherit; color: inherit; }
+@media (max-width: 620px) {
+	/* A row of choices is one line that is scrolled, not a wall. */
+	.toolbar nav.sub {
+		flex-wrap: nowrap;
+		max-width: 100%;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+	.toolbar nav.sub button { flex: none; }
+	.toolbar > form, .toolbar > .filter { flex: 1 1 100%; }
+	.stage table.net th:first-child, .stage table.net td:first-child {
+		max-width: 46vw;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.hostbar { align-items: flex-start; flex-direction: column; gap: .5rem; }
+}
+

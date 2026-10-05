@@ -50,6 +50,9 @@ void		 arc_theme_set(const char *);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
+int		 arc_narrow(void);
+int		 arc_map_w(void);
+int		 arc_map_h(void);
 void		 arc_title(const char *);
 char		*arc_hostname(void);
 char		*arc_origin(void);
@@ -83,6 +86,7 @@ struct html {
 
 void		 h_raw(struct html *, const char *);
 void		 h_txt(struct html *, const char *);
+void		 h_fit(struct html *, const char *, int);
 void		 h_fmt(struct html *, const char *, ...)
 		    __attribute__((format(printf, 2, 3)));
 void		 h_attr(struct html *, const char *, const char *);
@@ -131,6 +135,7 @@ enum node {
 	NODE_HOST,
 	NODE_JAIL,
 	NODE_NETWORK,		/* the fleet's network, as a map */
+	NODE_API,		/* the console's API, as it is documented */
 };
 
 enum tab {
@@ -141,6 +146,7 @@ enum tab {
 	TAB_PACKAGES,
 	TAB_STORAGE,
 	TAB_KERNEL,
+	TAB_SYSCTL,
 	TAB_JOBS,
 };
 
@@ -179,6 +185,7 @@ struct netview {
 	char		 error[256];	int		 sort;		/* column sorted by, or -1 */
 	bool		 sort_desc;
 	char		 host_filter[129]; /* routes: searched for on the host */
+	bool		 paused;	/* connections, sockets: not read again by themselves */
 	int		 fib;		/* the routing table shown; 0 the first */
 };
 
@@ -263,6 +270,7 @@ enum {
 	JOB_PACKAGES,
 	JOB_IFACE,
 	JOB_KERNEL,
+	JOB_SYSCTL,
 	JOB_STORAGE,
 };
 
@@ -356,6 +364,7 @@ struct app {
 	bool		 svc_sort_desc;
 	bool		 peek;		/* app.jail is shown in a box over the page */
 	bool		 rail_open;	/* the tree, on a narrow screen, is unfolded */
+	bool		 who_open;	/* the top bar's menu, on a phone */
 	char		 theme[16];	/* "" for the default */
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
 	ucl_object_t	*push;		/* /api/push: the devices that are told */
@@ -528,6 +537,17 @@ const ucl_object_t **tbl_rows(const char *, const ucl_object_t *,
 bool		 tbl_sorted(const char *);
 bool		 tbl_action(const char *, const char *, const char *);
 void		 refresh_kernel(struct server *, bool);
+void		 apidoc_open(void);
+void		 view_apidoc(struct html *);
+bool		 apidoc_action(const char *, const char *, const char *);
+void		 net_live_tick(double);
+void		 refresh_sysctl(struct server *, bool);
+void		 view_sysctl(struct html *, struct server *);
+bool		 sysctl_form(const char *, const ucl_object_t *);
+bool		 sysctl_action(const char *, const char *, const char *);
+void		 refresh_transport(struct server *, bool, bool);
+void		 transport_tick(double);
+void		 view_transport(struct html *, struct server *);
 void		 refresh_storage(struct server *, bool);
 void		 view_storage(struct html *, struct server *);
 bool		 storage_modal(struct html *);

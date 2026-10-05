@@ -8,12 +8,19 @@
 - Storage, beyond what there is: `zfs send` and `receive` between
   hosts; encryption keys; a file system made on a partition (newfs) and
   grown; swap; a disk's health (SMART); a vnet jail's own datasets.
-- The console keeps no connection to an agent open: every request
-  makes one. One kept for each host, and a host switched from TCP to
-  SCTP from the console.
-- Views that change by themselves (connections, sockets) updated as
-  they change, not when asked.
-- A tab that shows the API (docs/openapi.yaml), and one for sysctl.
+- A reply sent in parts, so that a large table (routes, sockets, the
+  whole of sysctl) fills the page as it comes: cblink's replies can
+  be of several messages, and over SCTP each is a message of its own;
+  the console would pass them on as they arrive (server-sent events),
+  and the page add rows. Today a reply is one message, cut off at a
+  size and counted, and what changes by itself is asked again every
+  two seconds.
+- The page on a phone: a table as cards, one for each row, with what
+  is done to a row behind one menu; the older tables (BIRD's
+  protocols, WireGuard's peers, routes, sockets) sorted and filtered
+  by the helper the newer ones use.
+- One SCTP association shared by the requests that run at once, each
+  on a stream of its own, instead of a connection for each.
 - The mesh: agents joined by SCTP associations, each to at least a
   configured number of others (2 unless set), so that the console
   reaches an agent it has lost through one it still has. SCTP only,
@@ -54,13 +61,18 @@
 
 Written and tested with stand-ins, never run for real:
 
-- On a host itself, as root: creating, setting and destroying
-  interfaces and what of them is kept in rc.conf (done for real only in
-  a vnet jail, below); static routes, routing tables and netgraph
-  against the real route(8) and ngctl(8) anywhere. The one jail to try
-  them in has a BIRD that learns the kernel's routes, and a route made
-  to try would be one it could announce. The interfaces themselves and
-  the route lookup's parsing were checked against real output.
+- On a host itself, as root: what of an interface is kept in rc.conf
+  (done for real only in a vnet jail, below), and a static route kept
+  there. A route in another routing table: the one tried was refused
+  by the kernel, its gateway not being reached in that table, which
+  came through as route(8) says it. Whether the address named to send
+  from is the one a route then uses: route(8) took it.
+- Nodes of the map that move away from the pointer, as was reported
+  from a browser that is not the one the tests run: not reproduced. A
+  real mouse in headless Chromium keeps a host under it for every
+  step. What could cause it was changed: the pointer is the drawing's
+  while something is dragged, the neighbours outside no longer swing
+  about when a host is moved, and the drawing is as large as its room.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
 - WireGuard and BIRD against the real wg(8), wg-quick(8) and birdc(8):
@@ -77,6 +89,9 @@ Written and tested with stand-ins, never run for real:
   the page that a jail runs).
 - Loading and unloading a kernel module for real: reading the kernel
   is real, kldload(8) and kldunload(8) are stand-ins in the tests.
+- The switch to SCTP from the page, and SCTP between two machines:
+  the API was run for real, between a console and an agent on one
+  machine.
 - BIRD's safe mode and what is done when BIRD stops answering, against
   a real BIRD: the replies looked for are those in BIRD's source, 2.19
   and 3.3 (`cmd_reconfig_msg()`), and the tests use a stand-in that
@@ -129,6 +144,26 @@ What was once in the list above, and when it was run:
   could before it refused. Since then no pool with a dataset mounted
   where the system lives is destroyed, exported or force-unmounted
   from here, and none by force.
+
+- SCTP (2026-10-04, on a test machine with `sctp` in its kernel): an
+  agent listening on TCP also listens on SCTP at the same address and
+  port; the console switched to it through its API, asked the jails
+  over DTLS on SCTP, kept the association open for the next request,
+  saw its own session listed as sctp, and switched back.
+- Static routes and netgraph, with the real route(8) and ngctl(8)
+  (2026-10-04, on the same machine, in a vnet jail made for it and on
+  the host): a route added with a metric and a weight, which
+  `route get` then showed, looked up through the agent and deleted;
+  what route(8) refuses said as it says it; a bridge node made on an
+  interface, named, connected by a second hook, listed, the hook
+  removed and the node shut down, on the host and inside the jail.
+  In a jail, netgraph needs the jail to allow its sockets
+  (`allow.socket_af`) and the node types loaded on the host: a jail
+  cannot load a module.
+- Sysctl (the same day and machine): read from the kernel, one set
+  with the real sysctl(8), and a read-only one refused as sysctl says.
+- The agent's tests that need root, on that machine too. They share
+  one jail, and are now marked never to run side by side.
 
 ## Known limits
 

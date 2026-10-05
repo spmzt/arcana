@@ -247,6 +247,40 @@ servers_add(const char *name, const char *uri, const char *peer)
 	return (0);
 }
 
+/*
+ * A server is reached at another URI from now on.  -1 when it is not a
+ * URI, another server has it, or saving fails; the connections kept to
+ * where it was are closed.
+ */
+int
+servers_move(const char *id, const char *uri)
+{
+	char	*old;
+	int	 i, k;
+
+	if (!valid_uri(uri))
+		return (-1);
+	for (i = 0; i < nservers; i++)
+		if (strcmp(servers[i].id, id) == 0)
+			break;
+	if (i == nservers)
+		return (-1);
+	for (k = 0; k < nservers; k++)
+		if (k != i && strcmp(servers[k].uri, uri) == 0)
+			return (-1);
+	old = servers[i].uri;
+	servers[i].uri = kore_strdup(uri);
+	if (save() == -1) {
+		kore_free(servers[i].uri);
+		servers[i].uri = old;
+		return (-1);
+	}
+	kore_log(LOG_NOTICE, "server %s moved: %s to %s", id, old, uri);
+	hosts_forget(old);
+	kore_free(old);
+	return (0);
+}
+
 const struct server *
 server_find(const char *id)
 {
@@ -374,6 +408,7 @@ api_server(struct http_request *req)
 	if (i == nservers)
 		return (reply_error(req, 404, "not_found", "no such server"));
 	kore_log(LOG_NOTICE, "server %s removed: %s", id, servers[i].uri);
+	hosts_forget(servers[i].uri);
 	kore_free(servers[i].name);
 	kore_free(servers[i].uri);
 	kore_free(servers[i].peer_name);

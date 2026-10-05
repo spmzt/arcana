@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.26.1
+  version: 0.27.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -613,6 +613,69 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+  /api/servers/{server}/sysctl:
+    get:
+      tags: [servers]
+      summary: The kernel's state, sysctl(8)
+      description: Under data. values is each name with its value as
+        sysctl prints it, its type (string, integer, unsigned), rw when
+        it can be set, tun when it is a loader tunable, and descr; kept
+        is what sysctl.conf sets at boot (name, value). filter is where
+        in the tree to begin, a name or the start of one; without it the
+        whole tree, of which only the first values come, with total and
+        truncated. One is set by a job of kind sysctl, with the name and
+        the value as its two args; with persist also in sysctl.conf.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: filter
+          in: query
+          schema: { type: string, pattern: "^[A-Za-z0-9._%-]*$" }
+      responses:
+        "200":
+          description: ok and data, or error
+        "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/transport:
+    get:
+      tags: [servers]
+      summary: How the agent is reached, and who is connected to it
+      description: Under data. listeners is each of the agent's listeners
+        (uri, transport tcp, sctp or unix, up, and error when it is not
+        up); sctp whether the kernel has SCTP; sessions the connections
+        open now (transport, address, subject of the certificate, since);
+        seen how many there were since the agent started. uri is how the
+        console itself reaches the agent. The console keeps its
+        connection to an agent open and uses it for the next request.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
+    post:
+      tags: [servers]
+      summary: Have the agent start its SCTP listeners
+      description: With retry true. An agent that listens on TCP listens
+        on SCTP at the same address and port once the kernel has SCTP; it
+        does not load the module and does not try again by itself.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data as for GET, or error
+  /api/servers/{server}/transport/switch:
+    post:
+      tags: [servers]
+      summary: Reach the agent over SCTP instead of TCP, or back
+      description: With transport sctp or tcp. The console asks the agent
+        over the other transport first, at the same address and port,
+        and changes the server only when it answers. There is no falling
+        back by itself afterwards.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and the host, as hello; the server's uri changed
+        "400": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/stats:
     get:
       tags: [servers]
@@ -701,7 +764,7 @@ paths:
                           service-config, pkg-upgrade, if-address,
                           if-state, route, if-set, if-create, if-destroy,
                           netgraph, wireguard, bird, if-vnet, kmod, zfs,
-                          zpool, mount, gpart, cam]
+                          zpool, mount, gpart, cam, sysctl]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the

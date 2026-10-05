@@ -83,6 +83,28 @@ mtls_body()
 	URI="tcp://127.0.0.1:$PORT"
 	atf_check -o match:'^web +stopped +- +10.0.0.10 ' \
 	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key list -c
+	# Beside the TCP listener there is an SCTP one at the same address
+	# and port: up where the kernel has SCTP, and reached there; said
+	# to be missing, with why, where it has not.  Who is connected is
+	# named by the certificate.
+	atf_check -o save:t.json \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key transport
+	atf_check -o match:"\"uri\":\"tcp://127.0.0.1:$PORT\",\"transport\":\"tcp\",\"up\":true" \
+	    -o match:"\"uri\":\"sctp://127.0.0.1:$PORT\",\"transport\":\"sctp\"" \
+	    -o match:'"sessions":\[\{"transport":"tcp","address":"127.0.0.1:[0-9]+","subject":"[^"]+"' \
+	    cat t.json
+	if kldstat -q -m sctp 2>/dev/null; then
+		atf_check -o match:'"transport":"sctp","up":true' cat t.json
+		atf_check -o match:'"sessions":\[\{"transport":"sctp"' \
+		    "$JGC" -c "sctp://127.0.0.1:$PORT" -A ca.pem -C client.pem \
+		    -K client.key transport
+	else
+		atf_check -o match:'"transport":"sctp","up":false,"error":"the kernel has no SCTP' \
+		    cat t.json
+		atf_check -s exit:1 -e match:'load the sctp module first' -o ignore \
+		    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key \
+		    transport retry
+	fi
 	# A client certificate from another CA.
 	atf_check -s exit:1 -e not-empty -o ignore \
 	    "$JGC" -c "$URI" -A ca.pem -C intruder.pem -K intruder.key hello

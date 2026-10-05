@@ -170,6 +170,35 @@ With
 it is also put into
 .Va kld_list ,
 or taken out of it.
+.It Cm sysctl Op Ar name
+The kernel's state, as
+.Xr sysctl 8
+.Fl a
+has it: every variable whose name begins with
+.Ar name ,
+with its value, its type, whether it can be set and what it is said to
+be, and what
+.Xr sysctl.conf 5
+sets at boot.
+Without
+.Ar name
+the whole tree, of which only the beginning is sent.
+.It Cm sysctl Ar name Ns = Ns Ar value
+Set a variable with
+.Xr sysctl 8 ,
+by a job.
+With
+.Fl p ,
+it is also written to
+.Xr sysctl.conf 5 ,
+in place of the line that set it before.
+.It Cm transport Op Cm retry
+How the agent is reached: its listeners, each up or not and why not,
+whether the kernel has SCTP, and the connections open to the agent now.
+With
+.Cm retry
+the agent starts the SCTP listeners that are not up, which it does not
+do by itself once the kernel had no SCTP when it started.
 .It Cm storage disks | pools | datasets | mounts
 .It Cm storage snapshots Op Ar dataset
 The host's storage, as JSON: the disks and their partitions as GEOM
