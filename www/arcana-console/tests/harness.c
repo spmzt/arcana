@@ -547,6 +547,15 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "'kern.nosuch'\" >&2; exit 1; }\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-sysctl", 0755) == 0);
 	put("sysctl.conf", "# kept\nkern.ipc.somaxconn=1024\n");
+	/* What syslogd(8) wrote, in both of its forms. */
+	ATF_REQUIRE(mkdir("log", 0755) == 0 || errno == EEXIST);
+	put("log/messages", "Oct  5 12:00:01 web1 kernel: em0: link state "
+	    "changed to UP\nOct  5 12:00:02 web1 sshd[812]: Accepted "
+	    "publickey for root from 2001:db8::9 port 51234\n"
+	    "2026-10-05T12:00:03.123456+03:30 web1 cron 933 - - (root) CMD "
+	    "(/usr/libexec/atrun)\n");
+	put("log/auth.log", "Oct  5 11:00:00 web1 su[77]: BAD SU alice to "
+	    "root on /dev/pts/1\n");
 	ATF_REQUIRE(chmod("fake-kldload", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-kldunload", 0755) == 0);
 	ATF_REQUIRE(mkdir("bird", 0755) == 0 || errno == EEXIST);
@@ -686,7 +695,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[75] = (char *)(uintptr_t)"./fake-ipfw";
 	argv[76] = (char *)(uintptr_t)"-J";
 	argv[77] = (char *)(uintptr_t)"ipfw.rules";
-	argv[78] = NULL;
+	argv[78] = (char *)(uintptr_t)"-v";
+	argv[79] = (char *)(uintptr_t)"log";
+	argv[80] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

@@ -84,14 +84,14 @@ cmp(const void *a, const void *b)
 {
 	const ucl_object_t	*x, *y;
 	const char		*sx, *sy;
-	int64_t			 nx, ny;
+	double			 nx, ny;
 	int			 r;
 
 	x = *(const ucl_object_t *const *)a;
 	y = *(const ucl_object_t *const *)b;
 	if (by->num) {
-		nx = jint(x, by->key, 0);
-		ny = jint(y, by->key, 0);
+		nx = jnum(x, by->key, 0);
+		ny = jnum(y, by->key, 0);
 		r = nx < ny ? -1 : nx > ny ? 1 : 0;
 	} else {
 		sx = jstr(x, by->key) != NULL ? jstr(x, by->key) : "";
@@ -138,6 +138,30 @@ tbl_rows(const char *id, const ucl_object_t *arr, const struct tcol *cols,
 		qsort(v, cnt, sizeof(*v), cmp);
 	}
 	return (v);
+}
+
+/* The table in the order of one column, or with col -1 as it came. */
+void
+tbl_set(const char *id, int col, bool desc)
+{
+	int	s;
+
+	if ((s = find(id, true)) == -1)
+		return;
+	state[s].col = col;
+	state[s].desc = desc;
+}
+
+/* The column the table is in the order of, or -1; *desc, which way. */
+int
+tbl_col(const char *id, bool *desc)
+{
+	int	s;
+
+	if ((s = find(id, false)) == -1)
+		return (-1);
+	*desc = state[s].desc;
+	return (state[s].col);
 }
 
 /* A column picked: sorted by it; again, the other way; a third time, not. */

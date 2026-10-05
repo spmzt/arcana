@@ -60,6 +60,9 @@ enum op {
 	OP_IPFW_RULES,
 	OP_TRANSPORT,
 	OP_SYSCTL,
+	OP_PROCESSES,
+	OP_LOG,
+	OP_HISTORY,
 };
 
 struct call {
@@ -96,6 +99,10 @@ struct call {
 	size_t			 nvars;
 	bool			 reads;		/* changes nothing: may be asked twice */
 	bool			 retry;		/* transport: try SCTP again */
+	char			 logname[129];	/* log: the file */
+	uint64_t		 pos;		/* log: from where; history: after when */
+	bool			 has_pos;
+	uint32_t		 lines;		/* log: at most */
 	bool			 fresh;		/* a connection of its own, not kept */
 	bool			 moved;		/* transport switch: it answered */
 	char			*json;		/* the reply, from the thread */
@@ -608,6 +615,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
 	    OP_KERNEL ? "arc_kernel" : c->op == OP_TRANSPORT ? "arc_transport" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
+	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
+	    "arc_log" : c->op == OP_HISTORY ? "arc_history" :
 	    c->op == OP_SYSCTL ? "arc_sysctl" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
@@ -860,6 +869,25 @@ agent_keep(const void *bin, size_t len, const char *version)
 	return (NULL);
 }
 
+/* The host's own JSON, as the reply's data. */
+static void
+put_json(ucl_object_t *top, const char *json)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*e;
+
+	if (json == NULL)
+		return;
+	e = NULL;
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	if (ucl_parser_add_string(p, json, 0))
+		e = ucl_parser_get_object(p);
+	ucl_parser_free(p);
+	if (e != NULL)
+		put(top, "data", e);
+}
+
 static int
 call_run(struct kore_task *t)
 {
@@ -888,6 +916,12 @@ call_run(struct kore_task *t)
 	struct arc_transport_rsp *tpr;
 	struct arc_sysctl_req	 syq;
 	struct arc_sysctl_rsp	*syr;
+	struct arc_processes_req prq;
+	struct arc_processes_rsp *prr;
+	struct arc_log_req	 lgq;
+	struct arc_log_rsp	*lgr;
+	struct arc_history_req	 hsq;
+	struct arc_history_rsp	*hsr;
 	struct pooled		 kept;
 	struct arc_storage_req	 sgq;
 	struct arc_storage_rsp	*sgr;
@@ -956,6 +990,9 @@ call_run(struct kore_task *t)
 	kr = NULL;
 	tpr = NULL;
 	syr = NULL;
+	prr = NULL;
+	lgr = NULL;
+	hsr = NULL;
 	reused = again = false;
 	sgr = NULL;
 	fsr = NULL;
@@ -1443,6 +1480,46 @@ connected:
 		steps = tpr->trace.v;
 		nsteps = tpr->trace.n;
 		break;
+	case OP_PROCESSES:
+		memset(&prq, 0, sizeof(prq));
+		prq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		if ((error = arc_processes(&cl, &prq, &prr)) != 0)
+			goto rpcfail;
+		ok = prr->ok;
+		put_str(top, "error", prr->error);
+		put_json(top, prr->json);
+		steps = prr->trace.v;
+		nsteps = prr->trace.n;
+		break;
+	case OP_LOG:
+		/* The text looked for rides where a jail's name does. */
+		memset(&lgq, 0, sizeof(lgq));
+		lgq.log_name = c->logname[0] != '\0' ? c->logname : NULL;
+		lgq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
+		lgq.has_position = c->has_pos;
+		lgq.position = c->pos;
+		lgq.has_lines = c->lines > 0;
+		lgq.lines = c->lines;
+		if ((error = arc_log(&cl, &lgq, &lgr)) != 0)
+			goto rpcfail;
+		ok = lgr->ok;
+		put_str(top, "error", lgr->error);
+		put_json(top, lgr->json);
+		steps = lgr->trace.v;
+		nsteps = lgr->trace.n;
+		break;
+	case OP_HISTORY:
+		memset(&hsq, 0, sizeof(hsq));
+		hsq.has_after = c->has_pos;
+		hsq.after = c->pos;
+		if ((error = arc_history(&cl, &hsq, &hsr)) != 0)
+			goto rpcfail;
+		ok = hsr->ok;
+		put_str(top, "error", hsr->error);
+		put_json(top, hsr->json);
+		steps = hsr->trace.v;
+		nsteps = hsr->trace.n;
+		break;
 	case OP_SYSCTL:
 		/* Where to begin rides where a jail's name does. */
 		memset(&syq, 0, sizeof(syq));
@@ -1668,6 +1745,12 @@ done:
 		arc_transport_rsp_free(tpr);
 	if (syr != NULL)
 		arc_sysctl_rsp_free(syr);
+	if (prr != NULL)
+		arc_processes_rsp_free(prr);
+	if (lgr != NULL)
+		arc_log_rsp_free(lgr);
+	if (hsr != NULL)
+		arc_history_rsp_free(hsr);
 	if (sgr != NULL)
 		arc_storage_rsp_free(sgr);
 	if (fsr != NULL)
@@ -2506,6 +2589,79 @@ api_transport_switch(struct http_request *req)
 	return (call_start(req, c));
 }
 
+/* A number of the query, when it is there and is one. */
+static bool
+query_u64(struct http_request *req, const char *name, uint64_t max,
+    uint64_t *v)
+{
+	const char	*errstr;
+	char		 buf[24];
+
+	if (!query_param(req, name, buf, sizeof(buf)) || buf[0] == '\0')
+		return (false);
+	*v = (uint64_t)strtonum(buf, 0, (long long)max, &errstr);
+	return (errstr == NULL);
+}
+
+/* GET /api/servers/<id>/processes[?jail=name]: what runs there. */
+int
+api_processes(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_PROCESSES)) == NULL)
+		return (KORE_RESULT_OK);
+	(void)query_param(req, "jail", c->scope, sizeof(c->scope));
+	return (call_start(req, c));
+}
+
+/*
+ * GET /api/servers/<id>/log[?name=file][&filter=text][&position=n]
+ * [&lines=n]: the end of a log, or what came after position.
+ */
+int
+api_log(struct http_request *req)
+{
+	struct call	*c;
+	uint64_t	 v;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_LOG)) == NULL)
+		return (KORE_RESULT_OK);
+	(void)query_param(req, "name", c->logname, sizeof(c->logname));
+	/* The text may be any: it comes escaped, as a URL has it. */
+	if (query_param(req, "filter", c->jail, sizeof(c->jail)) &&
+	    (!http_argument_urldecode(c->jail, 1) || strlen(c->jail) > 128)) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "the text looked "
+		    "for is at most 128 bytes, escaped as a URL has it"));
+	}
+	c->has_pos = query_u64(req, "position", INT64_MAX, &c->pos);
+	if (query_u64(req, "lines", 5000, &v))
+		c->lines = (uint32_t)v;
+	return (call_start(req, c));
+}
+
+/* GET /api/servers/<id>/history[?after=time]: how busy it has been. */
+int
+api_history(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_HISTORY)) == NULL)
+		return (KORE_RESULT_OK);
+	c->has_pos = query_u64(req, "after", INT64_MAX, &c->pos);
+	return (call_start(req, c));
+}
+
 /* GET /api/servers/<id>/sysctl[?filter=name]: the kernel's state. */
 int
 api_sysctl(struct http_request *req)
@@ -2685,6 +2841,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_IPFW] = "ipfw",
 	[ARC_JOB_KIND_BRIDGE] = "bridge",
 	[ARC_JOB_KIND_GENEVE] = "geneve",
+	[ARC_JOB_KIND_PROCESS] = "process",
 };
 
 static const char *job_state_names[] = {
@@ -2911,6 +3068,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_IPFW:
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
+	case ARC_JOB_KIND_PROCESS:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {

@@ -889,11 +889,12 @@ ATF_TC_BODY(pwa, tc)
 	phone(true);
 	{
 		static const char *tabs[] = { "summary", "jails", "services",
-		    "network", "packages", "sysctl", "jobs" };
+		    "network", "packages", "sysctl", "processes", "log",
+		    "jobs" };
 		char name[32];
 		size_t t;
 
-		for (t = 0; t < 7; t++) {
+		for (t = 0; t < 9; t++) {
 			snprintf(script, sizeof(script), "document.querySelector("
 			    "'button.tab[data-arg=%s]').click()", tabs[t]);
 			run(script);
@@ -1653,6 +1654,141 @@ ATF_TC_BODY(pwa, tc)
 	ATF_CHECK(system("grep -q '^sysctl kern.ipc.somaxconn=8192$' kld.log "
 	    "&& grep -q '^kern.ipc.somaxconn=8192$' sysctl.conf") == 0);
 	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * What runs: in the order of what each uses; one picked is given
+	 * a nice value, and sent a signal once that is confirmed.
+	 */
+	ATF_REQUIRE(system("sleep 300 & echo $! > sleep.pid") == 0);
+	{
+		char	pid[16], cmd[96];
+
+		ATF_REQUIRE((fp = fopen("sleep.pid", "r")) != NULL);
+		ATF_REQUIRE(fgets(pid, sizeof(pid), fp) != NULL);
+		fclose(fp);
+		pid[strcspn(pid, "\n")] = '\0';
+		run("document.querySelector('button.tab[data-arg=processes]')"
+		    ".click()");
+		snprintf(script, sizeof(script), "document.querySelectorAll("
+		    "'table.procs tbody tr').length > 3 && document."
+		    "querySelector('table.procs tr[data-arg=\"%s\"]')", pid);
+		wait_js(script, 20);
+		ATF_CHECK(js_true("document.querySelector('.ps-sum')."
+		    "textContent.includes('processes') && document."
+		    "querySelector('button[data-act=ps-live].on')"));
+		/* By memory: the most first, and so the table says. */
+		run("document.querySelector('button[data-act=ps-sort]"
+		    "[data-arg=\"6\"]').click()");
+		wait_js("document.querySelector('table.procs th.sortable.desc') "
+		    "&& document.querySelector('table.procs th.sortable.desc')"
+		    ".textContent === 'Res' && document.querySelector("
+		    "'button[data-act=ps-sort][data-arg=\"6\"].on')", 5);
+		for (i = 0; i < 4; i++) {
+			static const char *const by[] = { "8", "9", "10", "6" };
+
+			snprintf(script, sizeof(script), "document."
+			    "querySelector('button[data-act=ps-sort][data-arg="
+			    "\"%s\"]').click()", by[i]);
+			run(script);
+			snprintf(script, sizeof(script), "document."
+			    "querySelector('button[data-act=ps-sort][data-arg="
+			    "\"%s\"].on')", by[i]);
+			wait_js(script, 5);
+		}
+		shot("7r-processes");
+		snprintf(script, sizeof(script), "const r = document."
+		    "querySelector('table.procs tr[data-arg=\"%s\"]'); "
+		    "r.scrollIntoView({ block: 'center' }); r.click()", pid);
+		run(script);
+		wait_js("document.querySelector('form[data-form=ps-renice]') "
+		    "&& document.querySelector('.ps-what code').textContent."
+		    "includes('sleep 300')", 5);
+		shot("7r-process-picked");
+		run("const f = document.querySelector('form[data-form="
+		    "ps-renice]'); f.nice.value = '7'; f.requestSubmit();");
+		wait_js("document.querySelector('button[data-act=queue-run]')",
+		    5);
+		run("document.querySelector('button[data-act=queue-run]')."
+		    "click()");
+		snprintf(cmd, sizeof(cmd), "[ \"$(ps -o nice= -p %s | tr -d "
+		    "' ')\" = 7 ]", pid);
+		for (i = 0; i < 200 && system(cmd) != 0; i++)
+			usleep(50000);
+		ATF_CHECK(system(cmd) == 0);
+		run("const f = document.querySelector('form[data-form="
+		    "ps-signal]'); f.signal.value = 'KILL'; f.requestSubmit();");
+		wait_js("document.querySelector('form[data-form=confirm]') && "
+		    "document.querySelector('.modal').textContent.includes("
+		    "'SIGKILL')", 5);
+		run("document.querySelector('form[data-form=confirm]')."
+		    "requestSubmit()");
+		wait_js("document.querySelector('button[data-act=queue-run]')",
+		    5);
+		run("document.querySelector('button[data-act=queue-run]')."
+		    "click()");
+		snprintf(cmd, sizeof(cmd), "! kill -0 %s 2>/dev/null", pid);
+		for (i = 0; i < 200 && system(cmd) != 0; i++)
+			usleep(50000);
+		ATF_CHECK(system(cmd) == 0);
+		run("document.querySelector('.dock > header').click()");
+	}
+
+	/*
+	 * A log: its lines taken apart, the newest first; a text searched
+	 * for on the host; and what is written while it is shown.
+	 */
+	run("document.querySelector('button.tab[data-arg=log]').click()");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "3 && document.querySelector('table.logs tbody tr b').textContent "
+	    "=== 'cron' && document.querySelectorAll('label.lg-file option')"
+	    ".length === 2", 20);
+	run("const f = document.querySelector('form[data-form=lg-find]'); "
+	    "f.text.value = 'publickey for'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "1 && document.querySelector('table.logs tbody tr b').textContent "
+	    "=== 'sshd'", 10);
+	run("const f = document.querySelector('form[data-form=lg-find]'); "
+	    "f.text.value = ''; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "3", 10);
+	ATF_REQUIRE(system("printf 'Oct  5 12:00:09 web1 ntpd[5]: time set"
+	    "\\nOct  5 12:00:10 web1 kernel: em0: link state changed to DOWN"
+	    "\\n' >> log/messages") == 0);
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "5 && document.querySelector('table.logs tbody tr.l-warn td.msg')"
+	    ".textContent.includes('changed to DOWN')", 15);
+	shot("7s-log");
+	run("const s = document.querySelector('label.lg-file select'); "
+	    "s.value = 'auth.log'; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "1 && document.querySelector('table.logs tbody tr b').textContent "
+	    "=== 'su'", 10);
+
+	/*
+	 * How busy the hosts have been: the agent kept it by itself, and
+	 * it is drawn as lines.
+	 */
+	run("document.querySelector('li[data-act=select-usage]').click()");
+	wait_js("document.querySelectorAll('section.ucard').length === 2 && "
+	    "document.querySelectorAll('section.ucard figure.uplot').length "
+	    "=== 10 && document.querySelectorAll('section.ucard figure.uplot "
+	    "svg path.line').length >= 10 && document.querySelectorAll("
+	    "'.uplots.compare figure.uplot').length === 3 && document."
+	    "querySelectorAll('.uplots.compare .ukey').length === 6", 30);
+	ATF_CHECK(js_true("document.querySelector('.crumb.place').textContent "
+	    "=== 'Utilization' && document.querySelector('section.ucard h4')"
+	    ".textContent.includes('CPUs')"));
+	run("document.querySelector('button[data-act=usage-window][data-arg="
+	    "\"300\"]').click()");
+	wait_js("document.querySelector('button[data-act=usage-window]"
+	    "[data-arg=\"300\"].on')", 5);
+	run("document.querySelectorAll('main, .stage').forEach(e => { "
+	    "e.scrollTop = 0; })");
+	usleep(300000);
+	shot("7t-usage");
+	run("document.querySelector('section.ucard .uname').click()");
+	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
 
 	/*
 	 * The firewall: the layout with a tab for each of its parts; a

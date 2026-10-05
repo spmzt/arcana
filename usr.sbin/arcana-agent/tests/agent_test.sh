@@ -2533,6 +2533,137 @@ l2_cleanup()
 	stop_daemon
 }
 
+atf_test_case observe cleanup
+observe_head()
+{
+	atf_set "descr" "what runs, with what each uses; a process sent a signal and given a nice value, and which are left alone; a log read from its end, by text, and followed; the history the agent keeps by itself"
+}
+observe_body()
+{
+	mkdir log
+	{
+		printf 'Oct  5 12:00:01 web1 kernel: em0: link state changed to UP\n'
+		printf 'Oct  5 12:00:02 web1 sshd[812]: Accepted publickey for root from 2001:db8::9 port 51234\n'
+		printf '2026-10-05T12:00:03.123456+03:30 web1 cron 933 - - (root) CMD (/usr/libexec/atrun)\n'
+		printf 'a line of no form\n'
+		printf 'Oct  5 12:00:04 web1 syslogd: last message repeated 2 times\n'
+	} > log/messages
+	printf 'Oct  5 11:00:00 web1 su[77]: BAD SU alice to root on /dev/pts/1\n' > log/auth.log
+	printf 'packed' > log/messages.0.bz2
+	printf 'who\0was\0here\n' > log/utx.log
+	printf 'not\0a\0text\n' > log/blob
+	ln -s /etc/master.passwd log/linked
+	DAEMON_ARGS="-v $(pwd)/log"
+	start_daemon
+
+	# What runs: this test's own sleep among it, with what top shows.
+	sleep 300 &
+	pid=$!
+	atf_check -o save:ps.json "$JGC" -c "$SOCK" ps
+	atf_check -o match:"\"pid\":$pid,\"ppid\":[0-9]+,\"user\":\"$(id -un)\",\"jid\":[0-9]+,\"state\":\"sleep\"" \
+	    -o match:'"nice":0,"pri":-?[0-9]+,"threads":1,"rss":[0-9]+,"size":[0-9]+,"time":[0-9.]+,"wcpu":[0-9.]+,"cpu":[0-9.]+,"in":[0-9]+,"out":[0-9]+,"io":[0-9.]+,"start":[0-9]+' \
+	    -o match:'"comm":"sleep","args":"sleep 300"' \
+	    -o match:'"ncpu":[0-9]+,"elapsed":[0-9.]+' cat ps.json
+	atf_check -s exit:1 -e match:'not running' -o ignore \
+	    "$JGC" -j nosuchjail -c "$SOCK" ps
+
+	# A nice value, and a signal; with when it started, only that one.
+	atf_check -o match:"done +renice 5 $pid\$" \
+	    "$JGC" -c "$SOCK" renice $pid 5
+	atf_check -o match:"\"pid\":$pid,[^}]*\"nice\":5," "$JGC" -c "$SOCK" ps
+	atf_check -s exit:1 -o match:'not a process of jail' \
+	    "$JGC" -j web -c "$SOCK" signal $pid
+	atf_check -o match:"done +kill -STOP $pid\$" \
+	    "$JGC" -c "$SOCK" signal $pid sigstop
+	atf_check -o match:"\"pid\":$pid,[^}]*\"state\":\"stop\"" \
+	    "$JGC" -c "$SOCK" ps
+	atf_check -o match:"done +kill -CONT $pid\$" \
+	    "$JGC" -c "$SOCK" signal $pid 19
+	atf_check -o match:"done +kill -TERM $pid\$" \
+	    "$JGC" -c "$SOCK" signal $pid
+	wait $pid
+	atf_check -s exit:1 -o match:"no process $pid" \
+	    "$JGC" -c "$SOCK" signal $pid KILL
+	# Not init, no group, not the agent, not the kernel's own; a signal
+	# there is, a nice value there can be; nothing is taken back.
+	for bad in 1 0 -1 x 100000; do
+		atf_check -s exit:1 -e match:'by its number' -o ignore \
+		    "$JGC" -c "$SOCK" signal $bad HUP
+	done
+	atf_check -s exit:1 -e match:'stopped as a service' -o ignore \
+	    "$JGC" -c "$SOCK" signal "$(cat daemon.pid)" TERM
+	atf_check -s exit:1 -e match:'no such signal' -o ignore \
+	    "$JGC" -c "$SOCK" signal 4242 NOSUCH
+	atf_check -s exit:1 -e match:'from -20 to 20' -o ignore \
+	    "$JGC" -c "$SOCK" renice 4242 21
+	atf_check -s exit:1 -e match:'not taken back' -o ignore \
+	    "$JGC" -s -c "$SOCK" signal 4242 HUP
+	kpid=$(ps -axo pid,flags,comm | awk '$3 == "idle" { print $1; exit }')
+	if [ -n "$kpid" ] && [ "$kpid" -gt 1 ]; then
+		atf_check -s exit:1 -o match:"the kernel's own" \
+		    "$JGC" -c "$SOCK" signal "$kpid" CONT
+	fi
+
+	# A log: messages when none is named, each line taken apart; the
+	# logs there are, without what is packed or is not a file.
+	atf_check -o save:log.json "$JGC" -c "$SOCK" log
+	atf_check -o match:'"name":"messages"' \
+	    -o match:'"files":\[\{"name":"auth.log","size":[0-9]+,"mtime":[0-9]+\},\{"name":"blob",[^}]*\},\{"name":"messages",' \
+	    -o not-match:'bz2' -o not-match:'linked' -o not-match:'utx' \
+	    -o match:'\{"time":"Oct  5 12:00:01","host":"web1","tag":"kernel","text":"em0: link state changed to UP"\}' \
+	    -o match:'\{"time":"Oct  5 12:00:02","host":"web1","pid":"812","tag":"sshd","text":"Accepted publickey for root from 2001:db8::9 port 51234"\}' \
+	    -o match:'\{"time":"2026-10-05T12:00:03.123456\+03:30","host":"web1","tag":"cron","pid":"933","text":"\(root\) CMD \(/usr/libexec/atrun\)"\}' \
+	    -o match:'\{"text":"a line of no form"\}' \
+	    -o match:'"tag":"syslogd","text":"last message repeated 2 times"' \
+	    cat log.json
+	size=$(wc -c < log/messages | tr -d ' ')
+	atf_check -o match:"\"size\":$size,\"position\":$size" cat log.json
+	# By text, in either case; the last of them only; another log.
+	atf_check -o match:'"lines":\[\{[^}]*"tag":"sshd"[^}]*\}\]' \
+	    "$JGC" -c "$SOCK" log messages PUBLICKEY
+	atf_check -o match:'"lines":\[\{"text":"a line of no form"\},\{[^}]*syslogd[^}]*\}\]' \
+	    "$JGC" -c "$SOCK" log -o 2
+	atf_check -o match:'"name":"auth.log"' -o match:'"tag":"su","text":"BAD SU' \
+	    "$JGC" -c "$SOCK" log auth.log
+	# Followed: only what was written since, a line half written not
+	# yet; a file shorter than it was is read again from its start.
+	atf_check -o match:'"lines":\[\]' -o match:"\"position\":$size" \
+	    "$JGC" -c "$SOCK" log -f "$size"
+	printf 'Oct  5 12:00:09 web1 ntpd[5]: time set\nOct  5 12:00:10 web1 half' >> log/messages
+	atf_check -o match:'"lines":\[\{[^}]*"tag":"ntpd","text":"time set"\}\]' \
+	    -o match:"\"position\":$((size + 39))" \
+	    "$JGC" -c "$SOCK" log -f "$size"
+	printf 'Oct  5 13:00:00 web1 newsyslog[9]: logfile turned over\n' > log/messages
+	atf_check -o match:'"rotated":true' -o match:'"tag":"newsyslog"' \
+	    "$JGC" -c "$SOCK" log -f "$size"
+	# Only a file of the log directory, by its name, and not a packed one.
+	for bad in ../rc.conf .hidden a/b messages.0.bz2; do
+		atf_check -s exit:1 -e match:'named|packed' -o ignore \
+		    "$JGC" -c "$SOCK" log "$bad"
+	done
+	atf_check -s exit:1 -e match:'linked' -o ignore \
+	    "$JGC" -c "$SOCK" log linked
+	atf_check -s exit:1 -e match:'nosuch' -o ignore \
+	    "$JGC" -c "$SOCK" log nosuch
+	atf_check -s exit:1 -e match:'not a text' -o ignore \
+	    "$JGC" -c "$SOCK" log blob
+
+	# The history is kept without being asked for: one sample after a
+	# second, and none after the time of the last.
+	sleep 2
+	atf_check -o save:h.json "$JGC" -c "$SOCK" history
+	atf_check -o match:'"step":5,"ncpu":[0-9]+,"mem_total":[1-9][0-9]+,"swap_total":[0-9]+' \
+	    -o match:'"fields":\["t","cpu","load","mem","swap","rx","tx","read","write"\]' \
+	    -o match:'"samples":\[\[[0-9]+,[0-9.]+,[0-9.]+,[1-9][0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+\]' \
+	    cat h.json
+	last=$(sed -E 's/.*\[([0-9]+),[^]]*\]\]\}.*/\1/' h.json)
+	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history "$last"
+}
+observe_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case firewall cleanup
 firewall_head()
 {
@@ -2988,6 +3119,7 @@ atf_init_test_cases()
 	atf_add_test_case kernel
 	atf_add_test_case l2
 	atf_add_test_case firewall
+	atf_add_test_case observe
 	atf_add_test_case storage
 	atf_add_test_case safe_mode
 	atf_add_test_case agent_update

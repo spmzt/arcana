@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.30.0
+  version: 0.31.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -663,6 +663,89 @@ paths:
         "200":
           description: ok, text and sha256, or error
         "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/processes:
+    get:
+      tags: [servers]
+      summary: What runs on the host
+      description: Under data. processes is each process with its pid,
+        ppid, user, jid and jail, state (run, sleep, stop, zombie, wait,
+        lock, idle) and what it waits on, nice, pri, threads, rss and
+        size in bytes, time (CPU seconds used), wcpu (the kernel's
+        decayed share of one CPU, in percent), cpu (its share between
+        this look and the one before), in and out (blocks read and
+        written), io (blocks a second since the look before), start,
+        kernel when it is the kernel's own, comm and args, the busiest
+        first; ncpu; elapsed, the seconds between the two looks. With
+        jail only that jail's. A process is sent a signal or given a
+        nice value by a job of kind process, with verb signal or
+        renice and as args its pid, the signal's name or the nice
+        value, and optionally start as it was read, so that another
+        process with the same number is left alone.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: jail
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok and data, or error
+  /api/servers/{server}/log:
+    get:
+      tags: [servers]
+      summary: A log of the host, as syslogd(8) wrote it
+      description: Under data. files is the logs that can be read (name,
+        size, mtime); name the one read; lines its last lines, each
+        with time, host, tag, pid and text when the line is syslog's,
+        and text alone when not; size; position, where the file ended;
+        rotated, when the file was shorter than position said and was
+        read from its start. To follow a log, ask again with the
+        position the reply before gave.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: name
+          in: query
+          description: A file of the host's log directory; messages
+            when absent.
+          schema: { type: string, pattern: "^[A-Za-z0-9_-][A-Za-z0-9._-]*$" }
+        - name: filter
+          in: query
+          description: Only the lines with this text in them, in either
+            case.
+          schema: { type: string, maxLength: 128 }
+        - name: position
+          in: query
+          description: Only what was written after this byte.
+          schema: { type: integer, minimum: 0 }
+        - name: lines
+          in: query
+          description: How many lines at most; 200 when absent.
+          schema: { type: integer, minimum: 1, maximum: 5000 }
+      responses:
+        "200":
+          description: ok and data, or error
+        "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/history:
+    get:
+      tags: [servers]
+      summary: How busy the host has been
+      description: Under data, what the agent sampled by itself and
+        kept, an hour of it. step is the seconds between two samples;
+        fields names what a sample holds, in order (t, cpu, load, mem,
+        swap, rx, tx, read, write); samples is an array of arrays of
+        those, the oldest first, with cpu in percent of all CPUs, mem
+        and swap in bytes in use, rx and tx in bytes a second on the
+        network, read and write in bytes a second on the disks;
+        mem_total, swap_total and ncpu.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: after
+          in: query
+          description: Only the samples after this time, in seconds
+            since the epoch.
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: ok and data, or error
   /api/servers/{server}/sysctl:
     get:
       tags: [servers]
@@ -815,7 +898,7 @@ paths:
                           if-state, route, if-set, if-create, if-destroy,
                           netgraph, wireguard, bird, if-vnet, kmod, zfs,
                           zpool, mount, gpart, cam, sysctl, ipfw,
-                          bridge, geneve]
+                          bridge, geneve, process]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the

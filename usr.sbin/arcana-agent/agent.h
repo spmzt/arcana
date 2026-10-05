@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.21.0"
+#define	ARCANA_AGENT_VERSION	"0.22.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -95,6 +95,7 @@ struct opts {
 	const char	*ipfw_bin;
 	const char	*ipfw_rules;
 	const char	*sysctl_conf;
+	const char	*log_dir;	/* where syslogd(8) writes */
 	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
@@ -348,6 +349,19 @@ int		 do_kernel(struct work *, struct arc_kernel_rsp *);
 int		 do_kmod(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 kmod_name_ok(const char *);
+/* gula: what runs, what was written down, how busy it has been. */
+int		 do_processes(struct work *, const char *,
+		    struct arc_processes_rsp *);
+const char	*proc_check(const struct arc_job_spec *);
+char		*proc_title(const struct arc_job_spec *);
+int		 do_proc_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+bool		 log_name_ok(const char *);
+int		 do_log(struct work *, const char *, const char *, bool,
+		    uint64_t, uint32_t, struct arc_log_rsp *);
+void		 history_start(void);
+int		 do_history(struct work *, uint64_t, struct arc_history_rsp *);
+
 int		 do_sysctl(struct work *, const char *,
 		    struct arc_sysctl_rsp *);
 int		 do_sysctl_set(struct work *, const char *, const char *, bool,

@@ -1732,6 +1732,100 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 
 	/*
+	 * What runs, a log and the history: read as the host says them;
+	 * a process sent a signal by a job.
+	 */
+	snprintf(path, sizeof(path), "%.*s/processes",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "data.processes.0.pid") != NULL);
+	ATF_CHECK(jstr(&r, "data.processes.0.wcpu") != NULL);
+	ATF_CHECK(jstr(&r, "data.processes.0.rss") != NULL);
+	ATF_CHECK(jstr(&r, "data.ncpu") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/processes?jail=nosuchjail",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("messages", jstr(&r, "data.name"));
+	ATF_CHECK_STREQ("auth.log", jstr(&r, "data.files.0.name"));
+	ATF_CHECK_STREQ("kernel", jstr(&r, "data.lines.0.tag"));
+	ATF_CHECK_STREQ("sshd", jstr(&r, "data.lines.1.tag"));
+	ATF_CHECK_STREQ("812", jstr(&r, "data.lines.1.pid"));
+	ATF_CHECK_STREQ("cron", jstr(&r, "data.lines.2.tag"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log?name=auth.log&filter=bad%%20su"
+	    "&lines=5", (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("su", jstr(&r, "data.lines.0.tag"));
+	i = atoi(jstr(&r, "data.position"));
+	ATF_CHECK(i > 0);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log?name=auth.log&position=%d",
+	    (int)(strlen(base) - strlen("/services")), base, i);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.lines.0.text") == NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log?name=..%%2Frc.conf",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	ATF_CHECK(r.status != 200 || strcmp(jstr(&r, "ok"), "false") == 0);
+	resp_free(&r);
+	sleep(2);
+	snprintf(path, sizeof(path), "%.*s/history",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("5", jstr(&r, "data.step"));
+	ATF_CHECK_STREQ("cpu", jstr(&r, "data.fields.1"));
+	ATF_CHECK(jstr(&r, "data.samples.0.0") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/history?after=99999999999",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.samples.0.0") == NULL);
+	resp_free(&r);
+	ATF_REQUIRE(system("sleep 300 & echo $! > sleep.pid") == 0);
+	{
+		char	what[256], pid[16];
+		FILE	*fp;
+
+		ATF_REQUIRE((fp = fopen("sleep.pid", "r")) != NULL);
+		ATF_REQUIRE(fgets(pid, sizeof(pid), fp) != NULL);
+		fclose(fp);
+		pid[strcspn(pid, "\n")] = '\0';
+		snprintf(path, sizeof(path), "%.*s/jobs",
+		    (int)(strlen(base) - strlen("/services")), base);
+		snprintf(what, sizeof(what), "{\"jobs\":[{\"kind\":"
+		    "\"process\",\"verb\":\"signal\",\"args\":[\"%s\","
+		    "\"TERM\"]}]}", pid);
+		http("POST", path, what, &r);
+		EXPECT(&r, 200);
+		snprintf(what, sizeof(what), "kill -TERM %s", pid);
+		ATF_CHECK_STREQ(what, jstr(&r, "jobs.0.title"));
+		resp_free(&r);
+		snprintf(what, sizeof(what), "kill -0 %s 2>/dev/null", pid);
+		for (i = 0; i < 100 && system(what) == 0; i++)
+			usleep(50000);
+		ATF_CHECK(system(what) != 0);
+		http("POST", path, "{\"jobs\":[{\"kind\":\"process\","
+		    "\"verb\":\"signal\",\"args\":[\"1\",\"TERM\"]}]}",
+		    &r);
+		ATF_CHECK(r.status != 200 || jstr(&r, "jobs.0.title") == NULL);
+		resp_free(&r);
+	}
+
+	/*
 	 * The firewall: its rules with their sets and counters, and the
 	 * kept ones; a rule kept by a job; the kept rules read, checked
 	 * and replaced, and applied through set 1.

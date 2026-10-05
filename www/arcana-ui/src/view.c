@@ -182,10 +182,10 @@ topbar(struct html *h)
 	}
 	h_raw(h, "</div><nav class=\"crumbs\">");
 	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
-	    NODE_API)
+	    NODE_API || app.node == NODE_USAGE)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
-		    "All hosts");
+		    app.node == NODE_USAGE ? "Utilization" : "All hosts");
 	else if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
 		h_txt(h, s->name);
@@ -378,7 +378,8 @@ rail(struct html *h)
 	    "rail-toggle\" title=\"Hosts and jails\">%s ", app.rail_open ?
 	    " open" : "", app.rail_open ? "▴" : "▾");
 	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
-	    "API" : app.node == NODE_FLEET || s == NULL ? "All hosts" :
+	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
+	    NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
 		h_raw(h, " / ");
@@ -394,8 +395,11 @@ rail(struct html *h)
 	    "<span class=\"count\">%d</span></li>"
 	    "<li class=\"titem fleet netnode%s\" data-act=\"select-network\">"
 	    "<span class=\"twig\">⌬</span><span class=\"name\">Network</span>"
-	    "</li>", app.node == NODE_FLEET ? " selected" : "", app.nservers,
-	    app.node == NODE_NETWORK ? " selected" : "");
+	    "</li><li class=\"titem fleet usagenode%s\" data-act=\""
+	    "select-usage\"><span class=\"twig\">◔</span><span class=\"name\">"
+	    "Utilization</span></li>", app.node == NODE_FLEET ? " selected" :
+	    "", app.nservers, app.node == NODE_NETWORK ? " selected" : "",
+	    app.node == NODE_USAGE ? " selected" : "");
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
@@ -827,6 +831,11 @@ stage(struct html *h)
 		h_raw(h, "</main>");
 		return;
 	}
+	if (app.node == NODE_USAGE) {
+		view_usage(h);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (app.node == NODE_JAIL) {
 		jail_page(h);
 		h_raw(h, "</main>");
@@ -842,6 +851,7 @@ stage(struct html *h)
 			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
+			{ "processes", "Processes" }, { "log", "Log" },
 			{ "jobs", "Jobs" },
 		};
 		/*
@@ -861,7 +871,7 @@ stage(struct html *h)
 		plug = app.tab == TAB_NETWORK && (app.net.kind ==
 		    NET_WIREGUARD || app.net.kind == NET_BIRD);
 		h_raw(h, "<nav class=\"tabs\">");
-		for (t = 0; t < 10; t++)
+		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++)
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
@@ -910,6 +920,16 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_SYSCTL) {
 		view_sysctl(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_PROCESSES) {
+		view_procs(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_LOG) {
+		view_logs(h, s);
 		h_raw(h, "</main>");
 		return;
 	}

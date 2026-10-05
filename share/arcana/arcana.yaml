@@ -187,6 +187,16 @@ definitions:
           external and dscpinherit, each on or off, and portrange with
           its two ports.  verb flush empties its forwarding table, all
           of it with names all.  With persist it is kept in rc.conf.
+      - name: process
+        doc: |
+          One process of the host.  verb signal, with names its number
+          and the signal's name (TERM, KILL, HUP, ...) or number; verb
+          renice, with names its number and the nice value, -20 to 20.
+          A third of names is when the process started, in seconds
+          since the epoch, as processes says it: when the process with
+          that number started at another time it is another one, and
+          is left alone.  With jail, only a process of that jail.
+          Not init, not the kernel's own, and not the agent.
   - name: job-state
     type: enum
     entries:
@@ -633,6 +643,24 @@ attribute-sets:
           For the routes of network: how many of the rows that would
           be sent to leave out first, to read on in a table too large
           for one reply.
+      - name: log-name
+        type: text
+        doc: For log, the file in the host's log directory to read.
+        checks:
+          max-len: 128
+      - name: position
+        type: u64
+        doc: |
+          For log, the byte of the file to read on from: what a reply
+          before gave as where it ended.
+      - name: lines
+        type: u32
+        doc: For log, how many lines to send at most.
+      - name: after
+        type: u64
+        doc: |
+          For history, the time, in seconds since the epoch, after
+          which samples are asked for.
 
   - name: host
     attributes:
@@ -1633,3 +1661,79 @@ operations:
           - sha256
           - trace
 
+  - name: processes
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What runs on the host, as a JSON object: "processes", each with
+      its pid, ppid, user, jid and jail, state, nice, pri, threads, rss
+      and size in bytes, time (the CPU seconds it has used), wcpu (the
+      kernel's decayed share of one CPU, in percent, as top(1) shows
+      it), cpu (its share between this look and the one before), in
+      and out (blocks read and written) and io (blocks a second since
+      the look before), start, comm and args; "ncpu"; and "elapsed",
+      the seconds between the two looks.  With jail, only the
+      processes of that jail.
+    do:
+      request:
+        attributes:
+          - jail
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: log
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A log of the host, as syslogd(8) wrote it, as a JSON object:
+      "files", the logs of the log directory that can be read, each
+      with its name, size and when it was last written; "name", the
+      one read (messages, when log-name names none); "lines", its last
+      lines, each with its time, host, tag, pid and text when the line
+      is one of syslog's, and its text alone when not; "position",
+      where the file ended; and "rotated", when the file is shorter
+      than position said.  With net-filter only the lines that have
+      that text in them, in either case.  With position only what was
+      written after it, which is how a log is followed.  lines is how
+      many to send at most: 200, when it is not given.
+    do:
+      request:
+        attributes:
+          - log-name
+          - net-filter
+          - position
+          - lines
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: history
+    attribute-set: arcana
+    auth: true
+    doc: |
+      How busy the host has been, which the agent samples by itself
+      and keeps for an hour, as a JSON object: "step", the seconds
+      between two samples; "fields", the names of what a sample holds,
+      in order (t, cpu, load, mem, swap, rx, tx, read, write: a time,
+      a percentage, the load average, bytes of memory and of swap in
+      use, bytes a second received and sent on the network, and read
+      from and written to the disks); "samples", each an array of
+      those; "mem_total", "swap_total" and "ncpu".  With after only
+      the samples after that time.
+    do:
+      request:
+        attributes:
+          - after
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace

@@ -83,6 +83,7 @@ static int	cmd_net(struct arc_client *, int, char **);
 static int	cmd_stats(struct arc_client *);
 static int	cmd_kmod(struct arc_client *, int, char **);
 static int	cmd_sysctl(struct arc_client *, int, char **);
+static int	cmd_gula(struct arc_client *, int, char **);
 static int	cmd_ipfw(struct arc_client *, int, char **);
 static int	cmd_l2(struct arc_client *, int, char **);
 static int	cmd_transport(struct arc_client *, int, char **);
@@ -153,6 +154,11 @@ usage(void)
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
 	    "    transport [retry]\n"
+	    "    ps\n"
+	    "    signal pid [name | number]\n"
+	    "    renice pid nice\n"
+	    "    log [-o lines] [-f position] [name [text]]\n"
+	    "    history [after]\n"
 	    "    net bridges | geneve | ipfw\n"
 	    "    bridge name addm | deletem member\n"
 	    "    bridge name access member vlan\n"
@@ -1519,6 +1525,120 @@ cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/* What a reply of JSON says, and how it went. */
+static int
+json_out(const char *what, bool ok, const char *error, const char *json,
+    const struct arc_step *steps, size_t nsteps)
+{
+
+	if (json != NULL)
+		xo_emit("{:json/%s}\n", json);
+	emit_trace(steps, nsteps);
+	if (!ok)
+		xo_warnx("%s: %s", what, error != NULL ? error : "failed");
+	return (ok ? 0 : 1);
+}
+
+/*
+ * ps: what runs on the host, or with -j in a jail, the busiest first.
+ * signal pid [name]: send it a signal, TERM when none is named.
+ * renice pid nice: give it another nice value.
+ * log [name [text]]: the end of a log; -o how many lines, -f from where.
+ * history [after]: how busy the host has been.
+ */
+static int
+cmd_gula(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_processes_req pq;
+	struct arc_processes_rsp *pr;
+	struct arc_log_req	 lq;
+	struct arc_log_rsp	*lr;
+	struct arc_history_req	 hq;
+	struct arc_history_rsp	*hr;
+	const char		*names[2], *e;
+	int			 error, ch, rc;
+
+	if (strcmp(argv[0], "ps") == 0) {
+		if (argc != 1)
+			usage();
+		memset(&pq, 0, sizeof(pq));
+		pq.jail = netjail;
+		if ((error = arc_processes(cl, &pq, &pr)) != 0)
+			fail(cl, error, "ps");
+		rc = json_out("ps", pr->ok, pr->error, pr->json, pr->trace.v,
+		    pr->trace.n);
+		arc_processes_rsp_free(pr);
+		return (rc);
+	}
+	if (strcmp(argv[0], "signal") == 0 || strcmp(argv[0], "renice") == 0) {
+		if (argc < 2 || argc > 3 || (argc == 2 && argv[0][0] == 'r'))
+			usage();
+		memset(&sp, 0, sizeof(sp));
+		sp.has_kind = true;
+		sp.kind = ARC_JOB_KIND_PROCESS;
+		sp.verb = argv[0];
+		names[0] = argv[1];
+		names[1] = argc == 3 ? argv[2] : "TERM";
+		sp.names.v = names;
+		sp.names.n = 2;
+		sp.safe = safe;
+		sp.jail = netjail;
+		return (submit(cl, &sp));
+	}
+	if (strcmp(argv[0], "history") == 0) {
+		if (argc > 2)
+			usage();
+		memset(&hq, 0, sizeof(hq));
+		if (argc == 2) {
+			hq.has_after = true;
+			hq.after = (uint64_t)strtonum(argv[1], 0, INT64_MAX,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "history: after %s: %s", argv[1], e);
+		}
+		if ((error = arc_history(cl, &hq, &hr)) != 0)
+			fail(cl, error, "history");
+		rc = json_out("history", hr->ok, hr->error, hr->json,
+		    hr->trace.v, hr->trace.n);
+		arc_history_rsp_free(hr);
+		return (rc);
+	}
+	memset(&lq, 0, sizeof(lq));
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "f:o:")) != -1) {
+		switch (ch) {
+		case 'f':
+			lq.has_position = true;
+			lq.position = (uint64_t)strtonum(optarg, 0, INT64_MAX,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "log: position %s: %s", optarg, e);
+			break;
+		case 'o':
+			lq.has_lines = true;
+			lq.lines = (uint32_t)strtonum(optarg, 1, 5000, &e);
+			if (e != NULL)
+				xo_errx(1, "log: lines %s: %s", optarg, e);
+			break;
+		default:
+			usage();
+		}
+	}
+	argc -= optind;
+	argv += optind;
+	if (argc > 2)
+		usage();
+	lq.log_name = argc > 0 ? argv[0] : NULL;
+	lq.net_filter = argc > 1 ? argv[1] : NULL;
+	if ((error = arc_log(cl, &lq, &lr)) != 0)
+		fail(cl, error, "log");
+	rc = json_out("log", lr->ok, lr->error, lr->json, lr->trace.v,
+	    lr->trace.n);
+	arc_log_rsp_free(lr);
+	return (rc);
+}
+
 /*
  * transport: the agent's listeners and the connections open to it.
  * transport retry: start the SCTP listeners that are not up.
@@ -2259,6 +2379,10 @@ main(int argc, char *argv[])
 		rc = cmd_kmod(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
 		rc = cmd_sysctl(&cl, argc, argv);
+	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||
+	    strcmp(argv[0], "renice") == 0 || strcmp(argv[0], "log") == 0 ||
+	    strcmp(argv[0], "history") == 0)
+		rc = cmd_gula(&cl, argc, argv);
 	else if (strcmp(argv[0], "transport") == 0)
 		rc = cmd_transport(&cl, argc, argv);
 	else if (strcmp(argv[0], "storage") == 0)

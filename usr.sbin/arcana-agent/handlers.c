@@ -41,6 +41,8 @@ struct job {
 	uint8_t			 family;
 	uint32_t		 fib;
 	uint32_t		 offset;		/* network: rows to leave out */
+	uint64_t		 pos;		/* log: where to read on; history: since */
+	bool			 has_pos;
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
 	uint8_t			*binary;	/* agent-update */
@@ -296,6 +298,9 @@ worker(void *arg)
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
 	struct arc_sysctl_rsp	 scr2;
+	struct arc_processes_rsp prr;
+	struct arc_log_rsp	 lgr;
+	struct arc_history_rsp	 hsr;
 	struct arc_storage_rsp	 stg;
 	struct arc_fstab_req	 fq;
 	struct arc_fstab_rsp	 fr;
@@ -456,6 +461,43 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &scr2.trace.v, &scr2.trace.n);
 		rc = arc_sysctl_reply(j->req, &scr2);
+		break;
+	case ARC_CMD_PROCESSES:
+		what = "processes";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "processes");
+		memset(&prr, 0, sizeof(prr));
+		do_processes(&w, j->jail, &prr);
+		ok = prr.ok;
+		error = prr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &prr.trace.v, &prr.trace.n);
+		rc = arc_processes_reply(j->req, &prr);
+		break;
+	case ARC_CMD_LOG:
+		what = "log";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "log %s", j->ref != NULL ? j->ref : "messages");
+		memset(&lgr, 0, sizeof(lgr));
+		do_log(&w, j->ref, j->source, j->has_pos, j->pos, j->offset,
+		    &lgr);
+		ok = lgr.ok;
+		error = lgr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &lgr.trace.v, &lgr.trace.n);
+		rc = arc_log_reply(j->req, &lgr);
+		break;
+	case ARC_CMD_HISTORY:
+		what = "history";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "history");
+		memset(&hsr, 0, sizeof(hsr));
+		do_history(&w, j->pos, &hsr);
+		ok = hsr.ok;
+		error = hsr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &hsr.trace.v, &hsr.trace.n);
+		rc = arc_history_reply(j->req, &hsr);
 		break;
 	case ARC_CMD_STORAGE:
 		what = "storage";
@@ -1143,6 +1185,60 @@ arc_sysctl_doit(cbl_req *req, const struct arc_sysctl_req *rq,
 	return (start(j));
 }
 
+int
+arc_processes_doit(cbl_req *req, const struct arc_processes_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_PROCESSES;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
+arc_log_doit(cbl_req *req, const struct arc_log_req *rq, void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->log_name != NULL && rq->log_name[0] != '\0' &&
+	    !log_name_ok(rq->log_name))
+		return (reject(req, "a log is named with letters, digits "
+		    "and . _ -"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_LOG;
+	j->ref = rq->log_name != NULL && rq->log_name[0] != '\0' ?
+	    xstrdup(rq->log_name) : NULL;
+	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
+	    xstrdup(rq->net_filter) : NULL;
+	j->has_pos = rq->has_position;
+	j->pos = rq->position;
+	j->offset = rq->has_lines ? rq->lines : 0;
+	return (start(j));
+}
+
+int
+arc_history_doit(cbl_req *req, const struct arc_history_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_HISTORY;
+	j->pos = rq->has_after ? rq->after : 0;
+	return (start(j));
+}
+
 /*
  * The kernel's state in parts: one for each call, in the loop's own
  * thread, which a part is short enough for.
@@ -1271,7 +1367,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_GENEVE)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PROCESS)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1339,6 +1435,10 @@ check_spec(const struct arc_job_spec *sp)
 		if (sp->safe)
 			return ("it is not taken back by itself");
 		if ((e = l2_check(sp)) != NULL)
+			return (e);
+		break;
+	case ARC_JOB_KIND_PROCESS:
+		if ((e = proc_check(sp)) != NULL)
 			return (e);
 		break;
 	case ARC_JOB_KIND_SYSCTL:

@@ -22,6 +22,17 @@ The console is laid out as a tree and tabs.
   jails run, and the fleet as a graph from the console through the
   hosts to their jails; nodes are links.
 - **Network**: the fleet as a map; see [The network](#the-network).
+- **Utilization**: how busy every host has been, as lines over the
+  last five minutes, quarter of an hour or hour. Each agent looks at
+  its host every five seconds by itself and keeps an hour of it, so
+  the lines are there when the page is opened; while it is open, what
+  came since is added. With more than one host, their CPU, memory and
+  load are first drawn over one another, a colour each. Then each host
+  has a box of its own, which folds: the CPUs' busy share, the memory
+  in use with the swap as a dashed line, the load, what the network
+  received and sent, and what the disks read and wrote, each with its
+  average or peak over what is shown. A gap in a line is when the
+  host was not sampled. The host's name opens the host.
 - **API**, the light in the top bar that says whether the console
   answers, opens the console's own API as `docs/openapi.yaml`
   documents it: every route with what it is for, what it takes and
@@ -228,6 +239,37 @@ The console is laid out as a tree and tabs.
     the tree is shown. A jail's sysctls are not set from here. From a
     shell: `arcanactl sysctl [name]`, `arcanactl [-p] sysctl
     name=value`.
+  - **Processes**: what runs on the host, as `top` shows it: each
+    process with its user, jail, state, nice value, threads, the
+    memory it holds (Res) and has mapped (Size), CPU, WCPU, I/O, the
+    CPU time it has used, and its command. **CPU** is what it used
+    between the two last looks, in percent of one CPU; **WCPU** is
+    the kernel's own, slower figure; **I/O** is blocks read and
+    written a second. **by CPU / WCPU / Memory / I/O** puts the most
+    first, and any column's head sorts by it; the table is read again
+    every three seconds while **Live** is lit. **all** or a jail's
+    name picks whose processes; **kernel** shows the kernel's own
+    too. A process pressed opens under its row: its whole command
+    line, its parent, what it waits on, and a **Signal** to send
+    (TERM, KILL, HUP, INT, QUIT, STOP, CONT, USR1, USR2, ABRT), which
+    is asked about first, and a **Nice** value to give it, -20 to 20.
+    Both are jobs. The agent checks that the process is still the one
+    that was shown, by when it started, and refuses init, the
+    kernel's own and itself. From a shell: `arcanactl [-j jail] ps`,
+    `arcanactl signal pid [name]`, `arcanactl renice pid nice`.
+  - **Log**: what syslogd wrote, a file of `/var/log` at a time,
+    `messages` first, the newest line on top. A line of syslog's is
+    taken apart into its time, host, program, PID and message, in
+    either form syslogd writes. While **Live** is lit, what is
+    written is read every three seconds and added, as `tail -f`
+    would; a file turned over by newsyslog is read from its start.
+    **Search** looks for a text in the end of the file on the host,
+    in either case; the filter narrows what is on the page.
+    **Older** reads further back. A line with a word of trouble in
+    it (error, fail, denied, panic) is marked red, one of doubt
+    (warn, invalid, cannot) amber: the file itself has no level.
+    Files newsyslog has packed are not read. From a shell:
+    `arcanactl log [-o lines] [-f position] [name [text]]`.
   - **How it is reached**, at the foot of the summary: the agent's
     listeners and the connections open to the agent now, each with its
     transport, where it comes from and the name in its certificate,

@@ -285,7 +285,7 @@ The agent's sources are laid out by Archive, in
 | `ira/` | Ira | `lifecycle.c` (list, start, stop, restart, kill), `jails.c`, `jail.c` (running jails), `services.c`, `packages.c`, `jobs.c` (the queue), `exec.c` (running a program), `update.c`, `build.c` (the agent's own program) |
 | `acedia/` | Acedia | `pools.c` (ZFS pools, for the host's figures), `storage.c` (disks and partitions from GEOM, pools, datasets, snapshots, mounts and fstab; the zfs, zpool, mount, gpart and camcontrol jobs) |
 | `avaritia/` | Avaritia | `resources.c` (CPU, memory, swap) |
-| `gula/` | Gula | `trace.c` (the steps of every request), `stats.c` (the host's figures, gathered) |
+| `gula/` | Gula | `trace.c` (the steps of every request), `stats.c` (the host's figures, gathered), `procs.c` (what runs, and a signal or a nice value for one), `log.c` (what syslogd wrote, read from its end and followed), `history.c` (an hour of how busy the host was, sampled by a thread of its own) |
 | `luxuria/` | Luxuria | the plugins, what works through a program that is installed and not the base system's: `plugins.c` (which a host or a vnet jail has), `bird.c` (BIRD, through birdc(8) and bird(8)), `wireguard.c` (WireGuard's keys and peers, through wg(8); the interface is Invidia's) |
 
 One feature can touch several: changing a jail's address is Invidia's

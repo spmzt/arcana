@@ -3584,3 +3584,61 @@ svg.topo g.tbridge circle.p-block { fill: var(--red); }
 svg.topo g.tbridge circle.p-off { fill: var(--slate); }
 svg.topo path.tbrlink { stroke: var(--blue, var(--cyan)); stroke-width: 1.2; stroke-dasharray: 3 3; fill: none; opacity: .8; }
 
+
+/* What runs: figures to the right, a row picked opens under itself. */
+.ps-sum { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; margin: 0 0 .7rem; font-size: .8rem; color: var(--fg-2); }
+.ps-sum b { color: var(--fg); font-family: var(--display); font-size: .95rem; margin-right: .2rem; }
+nav.ps-order > span { align-self: center; margin-right: .3rem; font-size: .72rem; }
+table.net td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.procs th:nth-child(n+5):nth-child(-n+12), table.procs th:first-child { text-align: right; }
+table.procs td.warm { color: var(--amber); }
+table.procs td.hot { color: var(--red); font-weight: 700; }
+table.procs td.dim { color: var(--dim); }
+table.procs td.st-run { color: var(--green); }
+table.procs td.st-stop, table.procs td.st-zombie { color: var(--amber); }
+table.procs tr.kproc td.cmd b { color: var(--dim); font-weight: 400; }
+table.procs tr.sel td { background: rgba(var(--accent-rgb), .1); }
+table.procs td.cmd { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.procs tr.ps-act td { background: rgba(var(--accent-rgb), .06); white-space: normal; }
+table.procs tr.ps-act td > * { vertical-align: middle; }
+.ps-what { margin: .1rem 0 .5rem; }
+.ps-what code { display: block; white-space: pre-wrap; word-break: break-all; color: var(--fg); }
+.ps-what small { display: block; margin-top: .2rem; }
+form.ps-form { display: inline-flex; align-items: center; gap: .4rem; margin: 0 1.2rem .2rem 0; }
+form.ps-form label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; font-size: .76rem; color: var(--dim); }
+form.ps-form input[type=number] { width: 4.5rem; }
+
+/* A log: the message takes the room, a line of trouble is marked. */
+label.lg-file { display: inline-flex; align-items: center; gap: .4rem; margin: 0; font-size: .76rem; color: var(--dim); }
+label.lg-file select { min-width: 11rem; max-width: 16rem; }
+.toolbar .age { white-space: nowrap; }
+.toolbar button.live { white-space: nowrap; }
+table.logs td.when { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--fg-2); }
+table.logs td.msg { white-space: pre-wrap; word-break: break-word; font-family: var(--mono); }
+table.logs tr.l-bad td.msg { color: var(--red); }
+table.logs tr.l-warn td.msg { color: var(--amber); }
+table.logs tr.l-bad td:first-child { box-shadow: inset 2px 0 0 var(--red); }
+table.logs tr.l-warn td:first-child { box-shadow: inset 2px 0 0 var(--amber); }
+p.more { margin: .6rem 0; }
+
+/* Utilization: lines over time, a host's own and all over one another. */
+.titem.usagenode .twig { color: var(--green); }
+section.util .toolbar h3 { margin: 0 1rem 0 0; font-family: var(--display); font-size: .9rem; letter-spacing: .12em; }
+.uplots { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: .7rem; }
+.uplots.compare { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); margin-bottom: 1.2rem; }
+figure.uplot { --c1: var(--cyan); --c2: var(--amber); margin: 0; padding: .5rem .6rem .55rem; border: 1px solid var(--line); border-radius: 8px; background: rgba(var(--surface-rgb), .7); min-width: 0; }
+figure.uplot figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin-bottom: .3rem; font-size: .7rem; }
+figure.uplot figcaption b { font-family: var(--display); font-size: .66rem; letter-spacing: .12em; color: var(--fg-2); text-transform: uppercase; }
+figure.uplot svg { display: block; width: 100%; height: 76px; border-bottom: 1px solid var(--line-2); }
+.uplots.compare figure.uplot svg { height: 120px; }
+figure.uplot svg .grid { fill: none; stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+figure.uplot svg .line { fill: none; stroke-width: 1.6; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+figure.uplot svg .line.dash { stroke-dasharray: 4 3; }
+figure.uplot svg .area { fill-opacity: .13; stroke: none; }
+.ukeys { display: flex; flex-wrap: wrap; gap: .15rem .9rem; margin-top: .35rem; font-size: .72rem; color: var(--fg-2); }
+.ukey i { display: inline-block; width: .7rem; height: 3px; margin-right: .35rem; vertical-align: middle; border-radius: 2px; }
+.ukey b { color: var(--fg); font-variant-numeric: tabular-nums; }
+section.ucard { margin-bottom: .8rem; }
+section.ucard h4 small { margin-left: .8rem; font-weight: 400; }
+section.ucard .uname { cursor: pointer; }
+section.ucard .uname:hover { color: var(--cyan); }

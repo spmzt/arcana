@@ -137,6 +137,7 @@ enum node {
 	NODE_JAIL,
 	NODE_NETWORK,		/* the fleet's network, as a map */
 	NODE_API,		/* the console's API, as it is documented */
+	NODE_USAGE,		/* how busy every host has been, drawn */
 };
 
 enum tab {
@@ -149,6 +150,8 @@ enum tab {
 	TAB_STORAGE,
 	TAB_KERNEL,
 	TAB_SYSCTL,
+	TAB_PROCESSES,
+	TAB_LOG,
 	TAB_JOBS,
 };
 
@@ -278,6 +281,7 @@ enum {
 	JOB_SYSCTL,
 	JOB_FIREWALL,
 	JOB_STORAGE,
+	JOB_PROCESS,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -546,6 +550,8 @@ void		 tbl_head(struct html *, const char *, const struct tcol *, int,
 const ucl_object_t **tbl_rows(const char *, const ucl_object_t *,
 		    const struct tcol *, int, const char *);
 bool		 tbl_sorted(const char *);
+void		 tbl_set(const char *, int, bool);
+int		 tbl_col(const char *, bool *);
 bool		 tbl_action(const char *, const char *, const char *);
 void		 refresh_kernel(struct server *, bool);
 void		 apidoc_open(void);
@@ -567,6 +573,22 @@ void		 view_geneve(struct html *, struct server *,
 		    const ucl_object_t *);
 bool		 l2_form(const char *, const ucl_object_t *);
 bool		 l2_action(const char *, const char *, const char *);
+/* procs.c, logs.c, usage.c: what runs, what was written, how busy. */
+void		 refresh_procs(struct server *, bool);
+void		 procs_tick(double);
+void		 view_procs(struct html *, struct server *);
+bool		 procs_form(const char *, const ucl_object_t *);
+bool		 procs_action(const char *, const char *, const char *);
+void		 refresh_logs(struct server *, bool);
+void		 logs_tick(double);
+void		 view_logs(struct html *, struct server *);
+bool		 logs_form(const char *, const ucl_object_t *);
+bool		 logs_action(const char *, const char *, const char *);
+void		 usage_open(void);
+void		 usage_tick(double);
+void		 view_usage(struct html *);
+bool		 usage_action(const char *, const char *, const char *);
+void		 fmt_size(char *, size_t, double);
 void		 refresh_sysctl(struct server *, bool);
 void		 sysctl_stream(const ucl_object_t *);
 void		 view_sysctl(struct html *, struct server *);

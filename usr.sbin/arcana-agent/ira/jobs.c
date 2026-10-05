@@ -183,6 +183,9 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_IPFW:
 		rc = (t = ipfw_title(sp)) != NULL ? 0 : -1;
 		break;
+	case ARC_JOB_KIND_PROCESS:
+		rc = (t = proc_title(sp)) != NULL ? 0 : -1;
+		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
 		rc = (t = l2_title(sp)) != NULL ? 0 : -1;
@@ -778,6 +781,10 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_IPFW:
 		error = NULL;
 		ok = do_ipfw_job(&j->w, sp, &held, &error) == 0;
+		break;
+	case ARC_JOB_KIND_PROCESS:
+		error = NULL;
+		ok = do_proc_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:

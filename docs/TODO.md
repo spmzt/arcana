@@ -45,6 +45,13 @@
   - Runs kept, each host and step with its trace; the chain drawn as
     a graph, and a run as that graph coloured as it goes; the queue
     saved as a workflow.
+- Gula, more of it: a jail's own logs (its `/var/log`), the packed
+  logs of newsyslog, the audit trail and `dmesg`; a level for a line
+  where syslogd writes one (`-v`); the history kept across a restart
+  of the agent and for longer than an hour, thinned; each jail's
+  share of the CPUs and the memory (rctl, racct); a threshold on any
+  of the figures as an event for the workflows; threads of a process,
+  its open files and sockets (procstat).
 - Routes, connections and sockets in parts, as sysctl's values are:
   the agent answers sysctl as a dump, the console passes each item to
   the page over a WebSocket (`/api/stream`), and the table fills as
@@ -202,6 +209,18 @@ What was once in the list above, and when it was run:
   with the real sysctl(8), and a read-only one refused as sysctl says.
 - The agent's tests that need root, on that machine too. They share
   one jail, and are now marked never to run side by side.
+
+- Processes, logs and history (2026-10-05, on the test machine, the
+  agent as root): every process read with another user's and a
+  jail's among them, and a jail's alone; a busy loop at 100% CPU
+  while its WCPU still rose; a nice value lowered, STOP, CONT and
+  TERM sent across users, and a jail's process only by its jail;
+  init, the agent and the kernel's idle process refused. The real
+  `/var/log/messages` read, a line of logger(1) followed from the
+  position before it and found by a search. Four samples of history
+  with the real swap, network and disk figures. Not done there: the
+  page against that agent, and a log turned over by the real
+  newsyslog.
 
 - The firewall, bridges and geneve (2026-10-05, on the test machine,
   with the real ipfw(8) and ifconfig(8)): a rule added now and

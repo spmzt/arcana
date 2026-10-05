@@ -195,6 +195,57 @@ With
 it is also written to
 .Xr sysctl.conf 5 ,
 in place of the line that set it before.
+.It Cm ps
+What runs on the host, or with
+.Fl j
+in that jail, as
+.Xr top 1
+shows it: each process with its user, jail, state, nice value,
+threads, memory, the CPU time it has used, its share of a CPU as the
+kernel has it
+.Pq wcpu
+and between this look and the one before
+.Pq cpu ,
+the blocks it read and wrote and how many a second, when it started,
+and its command line; the busiest first.
+.It Cm signal Ar pid Op Ar name | number
+Send the process a signal, by a job:
+.Dv SIGTERM
+when none is named.
+Not to
+.Xr init 8 ,
+the kernel's own processes or the agent; with
+.Fl j ,
+only to a process of that jail.
+.It Cm renice Ar pid Ar nice
+Give the process another nice value, from -20 to 20, by a job.
+.It Cm log Oo Fl o Ar lines Oc Oo Fl f Ar position Oc Op Ar name Op Ar text
+The end of a log in the host's log directory,
+.Pa messages
+when none is named, as
+.Xr syslogd 8
+wrote it: each line with its time, host, tag, pid and text, the logs
+there are to read, and the position the file ended at.
+With
+.Ar text ,
+only the lines that have it in them, in either case.
+.Fl o
+is how many lines to print at most, 200 when not given.
+With
+.Fl f ,
+only what was written after that position, which is how a log is
+followed.
+A file
+.Xr newsyslog 8
+has packed is not read.
+.It Cm history Op Ar after
+How busy the host has been: what the agent sampled every five seconds
+and kept for an hour, each sample with its time, the CPUs' busy share,
+the load, the memory and swap in use, and the bytes a second on the
+network and the disks.
+With
+.Ar after ,
+only the samples after that time, in seconds since the epoch.
 .It Cm net bridges | geneve | ipfw
 The bridges with their spanning tree and their members' VLANs, the
 .Xr geneve 4
