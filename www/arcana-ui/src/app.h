@@ -51,6 +51,7 @@ void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
 int		 arc_narrow(void);
+void		 arc_stream_send(const char *);
 int		 arc_map_w(void);
 int		 arc_map_h(void);
 void		 arc_title(const char *);
@@ -422,6 +423,8 @@ void		 confirm(const char *, const char *, const char *, bool,
 
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
+void		 ops_save(void);
+void		 ops_load(void);
 void		 job_send(struct server *, char *, const char *, int,
 		    const char *);
 void		 job_send_host(struct server *, char *, const char *, int,
@@ -542,6 +545,7 @@ void		 view_apidoc(struct html *);
 bool		 apidoc_action(const char *, const char *, const char *);
 void		 net_live_tick(double);
 void		 refresh_sysctl(struct server *, bool);
+void		 sysctl_stream(const ucl_object_t *);
 void		 view_sysctl(struct html *, struct server *);
 bool		 sysctl_form(const char *, const ucl_object_t *);
 bool		 sysctl_action(const char *, const char *, const char *);

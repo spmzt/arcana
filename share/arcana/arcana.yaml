@@ -1512,6 +1512,9 @@ operations:
       at boot.  net-filter is where in the tree to begin, a name or
       the start of one; without it the whole tree, of which more than
       a reply carries comes as the first, with total and truncated.
+      As a dump the values come in parts, as the tree is walked and
+      as fast as they are taken: each item has json, an array of the
+      next of them, and nothing is left out for size.
     do:
       request:
         attributes:
@@ -1524,4 +1527,12 @@ operations:
           - total
           - truncated
           - trace
+    dump:
+      request:
+        attributes:
+          - net-filter
+      reply:
+        attributes:
+          - json
+          - total
 

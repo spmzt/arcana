@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.27.0"
+#define	ARCW_VERSION		"0.28.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -117,6 +117,10 @@ int		 pki_init(void);
 /* hosts.c: requests to arcana-agent over cblink, in Kore task threads. */
 int		 hosts_init(void);
 void		 hosts_forget(const char *);
+const char	*hosts_connect(const char *, const char *, cbl_conn **,
+		    cbl_tls **, struct arc_client *);
+void		 hosts_release(const char *, const char *, cbl_conn *,
+		    cbl_tls *, struct arc_client *, bool);
 
 /* Route handlers, named in the Kore configuration. */
 int		 api_health(struct http_request *);
@@ -150,6 +154,10 @@ int		 api_kernel(struct http_request *);
 int		 api_transport(struct http_request *);
 int		 api_transport_switch(struct http_request *);
 int		 api_sysctl(struct http_request *);
+int		 api_stream(struct http_request *);
+void		 stream_connect(struct connection *);
+void		 stream_message(struct connection *, u_int8_t, void *, size_t);
+void		 stream_disconnect(struct connection *);
 int		 api_storage(struct http_request *);
 int		 api_fstab(struct http_request *);
 int		 api_bird_config(struct http_request *);

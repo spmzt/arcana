@@ -147,6 +147,7 @@ usage(void)
 	    "    stats\n"
 	    "    kmod [load | unload module]\n"
 	    "    sysctl [name | start of a name]\n"
+	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
 	    "    transport [retry]\n"
 	    "    storage disks | pools | datasets | mounts | importable\n"
@@ -1453,6 +1454,27 @@ cmd_sysctl(struct arc_client *cl, int argc, char **argv)
 		sp.safe = safe;
 		sp.jail = netjail;
 		return (submit(cl, &sp));
+	}
+	/* In parts, each printed as it comes: nothing left out for size. */
+	if (argc >= 2 && strcmp(argv[1], "parts") == 0) {
+		struct arc_sysctl_dump_req	 dq;
+		struct arc_sysctl_dump_rsp	*item;
+		cbl_dump			*d;
+
+		if (argc > 3)
+			usage();
+		memset(&dq, 0, sizeof(dq));
+		dq.net_filter = argc == 3 ? argv[2] : NULL;
+		if ((error = arc_sysctl_dump(cl, &dq, &d)) != 0)
+			fail(cl, error, "sysctl");
+		while ((error = arc_sysctl_dump_next(d, &item)) == 0 && item !=
+		    NULL)
+			if (item->json != NULL)
+				xo_emit("{:json/%s}\n", item->json);
+		cbl_dump_free(d);
+		if (error != 0)
+			fail(cl, error, "sysctl");
+		return (0);
 	}
 	if (argc > 2)
 		usage();

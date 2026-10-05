@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "app.h"
 
@@ -1134,16 +1135,37 @@ dock(struct html *h)
 	int		 i;
 
 	h_fmt(h, "<section class=\"dock%s\">%s<header data-act=\"dock\">"
-	    "<span class=\"label\">Activity</span>", app.dock_open ?
-	    " open" : "", app.dock_open ? RESIZER("y", "dock") : "");
-	if (app.nops > 0) {
-		o = &app.ops[0];
-		h_fmt(h, "<span class=\"last o-%s\"><i class=\"led\"></i>",
-		    o->state == OP_RUNNING ? "running" : o->state == OP_OK ?
-		    "ok" : "failed");
+	    "<span class=\"label\">Recent tasks</span><div class=\"recent\">",
+	    app.dock_open ? " open" : "", app.dock_open ? RESIZER("y",
+	    "dock") : "");
+	/*
+	 * The last few, always in sight: what each was, on which host,
+	 * how it ended and how long it took.  One picked opens below.
+	 */
+	for (i = 0; i < app.nops && i < 6; i++) {
+		o = &app.ops[i];
+		h_fmt(h, "<span class=\"last o-%s%s\" data-act=\"trace\" "
+		    "data-arg=\"%d\"", o->state == OP_RUNNING ? "running" :
+		    o->state == OP_OK ? "ok" : "failed", app.dock_open &&
+		    o->id == app.trace_op ? " selected" : "", o->id);
+		h_attr(h, "title", o->state == OP_FAILED && o->error[0] !=
+		    '\0' ? o->error : o->title);
+		h_raw(h, "><i class=\"led\"></i><b>");
 		h_txt(h, o->title);
-		h_raw(h, "</span>");
+		h_raw(h, "</b><small>");
+		h_txt(h, o->server);
+		if (o->state == OP_RUNNING)
+			h_raw(h, " · running");
+		else {
+			fmt_dur(dur, sizeof(dur), (int64_t)((o->finished -
+			    o->started) * 1000));
+			h_fmt(h, " · %s · ", o->state == OP_OK ? "done" :
+			    "failed");
+			h_txt(h, dur);
+		}
+		h_raw(h, "</small></span>");
 	}
+	h_raw(h, "</div>");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"queue\" title=\""
 	    "Changes are held in a queue until you press Run, and sent "
 	    "together: the host runs them in order, also when it loses the "
@@ -1176,6 +1198,16 @@ dock(struct html *h)
 			    o->state == OP_RUNNING ? "running" :
 			    o->state == OP_OK ? "ok" : "failed",
 			    o->id == app.trace_op ? " selected" : "", o->id);
+			{
+				time_t		when = (time_t)(o->started / 1000);
+				struct tm	tm;
+				char		clock[16];
+
+				localtime_r(&when, &tm);
+				strftime(clock, sizeof(clock), "%H:%M:%S", &tm);
+				h_fmt(h, "<span class=\"w\" title=\"When it "
+				    "began\">%s</span>", clock);
+			}
 			h_raw(h, "<span class=\"t\">");
 			h_txt(h, o->title);
 			h_raw(h, "</span><span class=\"s\">");

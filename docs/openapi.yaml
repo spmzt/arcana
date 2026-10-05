@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.27.0
+  version: 0.28.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -613,6 +613,22 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+  /api/stream:
+    get:
+      tags: [servers]
+      summary: A WebSocket for what comes in parts
+      description: Upgraded to a WebSocket; it needs the session and an
+        Origin that is the console's own. The page sends id, server,
+        what (sysctl) and filter as a JSON text; the console answers
+        for that id with any number of messages that have rows, an
+        array of the next values, then one with done and total, or one
+        with error. A message with id and stop ends one early. The
+        agent sends a part only when the one before was taken.
+      responses:
+        "101":
+          description: Switching to the WebSocket protocol
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/sysctl:
     get:
       tags: [servers]

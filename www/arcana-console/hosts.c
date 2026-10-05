@@ -364,6 +364,91 @@ hosts_forget(const char *uri)
 	pthread_mutex_unlock(&pool_lock);
 }
 
+/*
+ * A connection to an agent for something that is not a call: one kept
+ * from before or a new one, with the client set up on it.  NULL, or
+ * why not.  hosts_release() gives it back, or closes it when it is not
+ * to be trusted any more.
+ */
+const char *
+hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
+    cbl_tls **tlsp, struct arc_client *cl)
+{
+	struct pooled	 kept;
+	cbl_conn	*conn;
+	cbl_tls		*tls;
+	const char	*msg;
+	int		 error;
+
+	memset(cl, 0, sizeof(*cl));
+	*connp = NULL;
+	*tlsp = NULL;
+	if (pool_take(uri, peer, &kept)) {
+		free(kept.uri);
+		free(kept.peer);
+		cl->conn = kept.conn;
+		cl->family = kept.family;
+		cl->version = kept.version;
+		*connp = kept.conn;
+		*tlsp = kept.tls;
+		return (NULL);
+	}
+	conn = NULL;
+	tls = NULL;
+	if ((error = cbl_conn_new(ctx, uri, 0, &conn)) != 0)
+		return (strerror(error));
+	if (strncmp(uri, "unix:", 5) != 0) {
+		if (cfg.tls_ca == NULL || cfg.tls_cert == NULL ||
+		    cfg.tls_key == NULL) {
+			cbl_conn_free(conn);
+			return ("no tls { ca cert key } in web.conf");
+		}
+		if (cbl_tls_new(&tls) != 0 ||
+		    cbl_tls_set_cert(tls, cfg.tls_cert, cfg.tls_key) != 0 ||
+		    cbl_tls_set_ca(tls, cfg.tls_ca, NULL) != 0 ||
+		    (peer != NULL && cbl_tls_set_peer_name(tls, peer) != 0)) {
+			cbl_conn_free(conn);
+			cbl_tls_free(tls);
+			return ("the console's certificate could not be used");
+		}
+		(void)cbl_conn_set_tls(conn, tls);
+	}
+	if (cbl_conn_connect(conn) != 0) {
+		/* The words are the connection's: said before it goes. */
+		static _Thread_local char	why[256];
+
+		msg = cbl_conn_errstr(conn);
+		snprintf(why, sizeof(why), "%s", msg != NULL && msg[0] !=
+		    '\0' ? msg : "cannot connect");
+		cbl_conn_free(conn);
+		cbl_tls_free(tls);
+		return (why);
+	}
+	if (arc_client_init(cl, conn) != 0) {
+		cbl_conn_free(conn);
+		cbl_tls_free(tls);
+		memset(cl, 0, sizeof(*cl));
+		return ("no arcana family there");
+	}
+	*connp = conn;
+	*tlsp = tls;
+	return (NULL);
+}
+
+void
+hosts_release(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
+    struct arc_client *cl, bool good)
+{
+
+	arc_client_fini(cl);
+	if (good && cbl_conn_is_open(conn))
+		pool_give(uri, peer, conn, tls, cl);
+	else {
+		cbl_conn_free(conn);
+		cbl_tls_free(tls);
+	}
+}
+
 int
 hosts_init(void)
 {

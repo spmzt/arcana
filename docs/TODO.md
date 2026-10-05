@@ -8,13 +8,14 @@
 - Storage, beyond what there is: `zfs send` and `receive` between
   hosts; encryption keys; a file system made on a partition (newfs) and
   grown; swap; a disk's health (SMART); a vnet jail's own datasets.
-- A reply sent in parts, so that a large table (routes, sockets, the
-  whole of sysctl) fills the page as it comes: cblink's replies can
-  be of several messages, and over SCTP each is a message of its own;
-  the console would pass them on as they arrive (server-sent events),
-  and the page add rows. Today a reply is one message, cut off at a
-  size and counted, and what changes by itself is asked again every
-  two seconds.
+- Routes, connections and sockets in parts, as sysctl's values are:
+  the agent answers sysctl as a dump, the console passes each item to
+  the page over a WebSocket (`/api/stream`), and the table fills as
+  they come. The network's tables are still one reply each, cut off
+  at a size and counted: what they show is the output of netstat(1)
+  and sockstat(1), which the agent has to run in a thread of its own
+  and a dump is answered in the loop's. They need the rows kept by
+  the agent between the parts, or netlink instead of the programs.
 - The page on a phone: a table as cards, one for each row, with what
   is done to a row behind one menu; the older tables (BIRD's
   protocols, WireGuard's peers, routes, sockets) sorted and filtered

@@ -183,6 +183,9 @@ sets at boot.
 Without
 .Ar name
 the whole tree, of which only the beginning is sent.
+.It Cm sysctl parts Op Ar name
+The same values as a dump: in parts, each printed as an array of its
+own when it comes, with none left out for size.
 .It Cm sysctl Ar name Ns = Ns Ar value
 Set a variable with
 .Xr sysctl 8 ,

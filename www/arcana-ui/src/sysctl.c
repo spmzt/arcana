@@ -36,6 +36,9 @@ static struct {
 	char		 edit[204];	/* the one being set */
 	int64_t		 total;
 	bool		 truncated;
+	int		 stream;	/* the id of what is coming in parts */
+	bool		 streaming;
+	bool		 nostream;	/* no socket for it: asked for whole */
 } sy = { .prefix = "kern." };
 
 static struct {
@@ -89,13 +92,35 @@ sysctl_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	sy.fetched = arc_now();
 }
 
+/* What sysctl.conf keeps, beside the values that come in parts. */
+static void
+kept_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	char	*key;
+
+	(void)err;
+	key = arg;
+	if (strncmp(key, sy.sid, strlen(sy.sid)) == 0 && status == 200 &&
+	    sy.data != NULL && !sy.nostream && jget(o, "data.kept") != NULL) {
+		ucl_object_delete_key(sy.data, "kept");
+		ucl_object_insert_key(sy.data, ucl_object_ref(jget(o,
+		    "data.kept")), "kept", 0, false);
+	}
+	free(key);
+}
+
 /* Read the part of the tree shown; again asks though it is here. */
 void
 refresh_sysctl(struct server *s, bool again)
 {
-	char	url[200], *key;
+	char	url[200], msg[400], *key;
 
-	if (!app.online || sy.loading)
+	if (!app.online || (sy.loading && !sy.streaming))
+		return;
+	/* What is coming in parts is not asked for again, but another
+	 * part of the tree is, and ends it. */
+	if (sy.streaming && strcmp(sy.sid, s->id) == 0 && strcmp(sy.asked,
+	    sy.prefix) == 0)
 		return;
 	if (strcmp(sy.sid, s->id) != 0) {
 		if (sy.data != NULL)
@@ -108,11 +133,76 @@ refresh_sysctl(struct server *s, bool again)
 		return;
 	snprintf(sy.sid, sizeof(sy.sid), "%s", s->id);
 	sy.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/sysctl%s%s", s->id,
-	    sy.prefix[0] != '\0' ? "?filter=" : "", sy.prefix);
 	if (asprintf(&key, "%s %s", s->id, sy.prefix) == -1)
 		abort();
-	api("GET", url, NULL, sysctl_cb, key);
+	if (sy.nostream) {
+		snprintf(url, sizeof(url), "/api/servers/%s/sysctl%s%s", s->id,
+		    sy.prefix[0] != '\0' ? "?filter=" : "", sy.prefix);
+		api("GET", url, NULL, sysctl_cb, key);
+		return;
+	}
+	/*
+	 * The values come in parts, each shown as it arrives, and none
+	 * is left out for size.  What sysctl.conf keeps comes with an
+	 * ordinary answer, asked for with one value.
+	 */
+	if (sy.streaming) {
+		snprintf(msg, sizeof(msg), "{\"id\":%d,\"stop\":true}",
+		    sy.stream);
+		arc_stream_send(msg);
+	}
+	if (sy.data != NULL)
+		ucl_object_unref(sy.data);
+	sy.data = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(sy.data, ucl_object_typed_new(UCL_ARRAY),
+	    "values", 0, false);
+	snprintf(sy.asked, sizeof(sy.asked), "%s", sy.prefix);
+	sy.error[0] = '\0';
+	sy.truncated = false;
+	sy.total = 0;
+	sy.streaming = true;
+	snprintf(msg, sizeof(msg), "{\"id\":%d,\"server\":\"%s\",\"what\":"
+	    "\"sysctl\",\"filter\":\"%s\"}", ++sy.stream, s->id, sy.prefix);
+	arc_stream_send(msg);
+	snprintf(url, sizeof(url), "/api/servers/%s/sysctl?filter=kern.ostype",
+	    s->id);
+	api("GET", url, NULL, kept_cb, key);
+}
+
+/* A part of the values, their end, or the socket's. */
+void
+sysctl_stream(const ucl_object_t *o)
+{
+	const ucl_object_t	*r;
+	ucl_object_t		*vals;
+	ucl_object_iter_t	 it;
+	struct server		*s;
+
+	if (jbool(o, "closed")) {
+		/* No socket, or it went: asked for whole, as before. */
+		if (sy.streaming) {
+			sy.streaming = sy.loading = false;
+			sy.nostream = true;
+			if ((s = cur_server()) != NULL && strcmp(s->id,
+			    sy.sid) == 0)
+				refresh_sysctl(s, true);
+		}
+		return;
+	}
+	if (!sy.streaming || jint(o, "id", -1) != sy.stream || sy.data == NULL)
+		return;
+	vals = (ucl_object_t *)(uintptr_t)jget(sy.data, "values");
+	it = NULL;
+	while ((r = ucl_object_iterate(jget(o, "rows"), &it, true)) != NULL)
+		ucl_array_append(vals, ucl_object_ref(r));
+	sy.fetched = arc_now();
+	if (jbool(o, "done") || jstr(o, "error") != NULL) {
+		sy.streaming = sy.loading = false;
+		sy.total = (int64_t)ucl_array_size(vals);
+		if (jstr(o, "error") != NULL)
+			snprintf(sy.error, sizeof(sy.error), "%s", jstr(o,
+			    "error"));
+	}
 }
 
 static const char *
@@ -155,8 +245,8 @@ view_sysctl(struct html *h, struct server *s)
 		h_fmt(h, ">%.*s</button>", (int)strlen(trees[i]) - 1, trees[i]);
 	}
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"sy-tree\" "
-	    "data-arg=\"\" title=\"The whole tree: more than is sent at once, "
-	    "so only its beginning\">all</button></nav>", sy.prefix[0] ==
+	    "data-arg=\"\" title=\"The whole tree, which comes in parts\">all"
+	    "</button></nav>", sy.prefix[0] ==
 	    '\0' ? " on" : "");
 	h_raw(h, "<form data-form=\"sy-from\" class=\"kmod-load\"><input name="
 	    "\"name\" spellcheck=\"false\" autocomplete=\"off\" placeholder="
@@ -172,7 +262,10 @@ view_sysctl(struct html *h, struct server *s)
 	    "false\"");
 	h_attr(h, "value", app.filter);
 	h_raw(h, "><span class=\"age\">");
-	if (sy.loading && strcmp(sy.sid, s->id) == 0)
+	if (sy.streaming && strcmp(sy.sid, s->id) == 0)
+		h_fmt(h, "reading… %d so far", (int)ucl_array_size(jget(
+		    sy.data, "values")));
+	else if (sy.loading && strcmp(sy.sid, s->id) == 0)
 		h_raw(h, "reading…");
 	else if (mine) {
 		char	age[32];
@@ -187,7 +280,8 @@ view_sysctl(struct html *h, struct server *s)
 		h_txt(h, sy.error);
 		h_raw(h, "</div>");
 	}
-	if (!mine) {
+	if (!mine || (sy.streaming && ucl_array_size(jget(sy.data,
+	    "values")) == 0)) {
 		h_raw(h, "<div class=\"empty\"><p>Reading the kernel's state…"
 		    "</p></div>");
 		return;

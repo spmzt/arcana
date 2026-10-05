@@ -16,6 +16,7 @@
 #include <sys/sysctl.h>
 
 #include <ctype.h>
+#include <err.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -501,3 +502,88 @@ do_sysctl_set(struct work *w, const char *name, const char *value,
 	step_end(w, step, true, NULL);
 	return (0);
 }
+
+/*
+ * The tree in parts, for a dump: where the walk is, kept between the
+ * parts, which are asked for one at a time as the client takes them.
+ */
+#define	SYSCTL_PART	120	/* values in one part */
+
+struct walk {
+	int	next[CTL_MAXNAME + 2];
+	size_t	nlen;
+	size_t	sent;
+	bool	begun;
+};
+
+/*
+ * The next part into *jsonp, an array, to be freed; true while there
+ * may be more.  st->priv is the walk, made at the first part.
+ */
+bool
+sysctl_part(struct cbl_dump_state *st, const char *prefix, char **jsonp,
+    uint64_t *sentp)
+{
+	struct work	 w;
+	struct walk	*k;
+	ucl_object_t	*vals, *o;
+	unsigned char	*val;
+	char		 name[256];
+	int		 oid[CTL_MAXNAME + 2];
+	size_t		 len, plen, n;
+	bool		 more;
+
+	if ((k = st->priv) == NULL) {
+		if ((k = calloc(1, sizeof(*k))) == NULL)
+			err(1, "calloc");
+		k->next[0] = CTL_SYSCTL;
+		k->next[1] = CTL_SYSCTL_NEXT;
+		k->next[2] = CTL_KERN;
+		k->nlen = 1;
+		st->priv = k;
+		st->priv_free = free;
+	}
+	plen = prefix != NULL ? strlen(prefix) : 0;
+	work_init(&w);
+	vals = ucl_object_typed_new(UCL_ARRAY);
+	val = wcalloc(&w, SYSCTL_VALUE + 1, 1);
+	more = true;
+	for (n = 0; n < SYSCTL_PART; ) {
+		len = sizeof(oid) - 2 * sizeof(int);
+		if (sysctl(k->next, (u_int)k->nlen + 2, oid + 2, &len, NULL,
+		    0) == -1) {
+			more = false;
+			break;
+		}
+		k->nlen = len / sizeof(int);
+		memcpy(k->next + 2, oid + 2, len);
+		oid[0] = CTL_SYSCTL;
+		oid[1] = CTL_SYSCTL_NAME;
+		len = sizeof(name);
+		if (sysctl(oid, (u_int)k->nlen + 2, name, &len, NULL, 0) == -1)
+			continue;
+		if (plen > 0 && strncmp(name, prefix, plen) != 0)
+			continue;
+		if ((o = one(&w, oid, k->nlen, name, val)) == NULL)
+			continue;
+		ucl_array_append(vals, o);
+		n++;
+	}
+	/* A name the kernel leaves out of its list, asked for by itself. */
+	if (!more && k->sent == 0 && n == 0 && plen > 0) {
+		size_t	nlen = CTL_MAXNAME;
+
+		if (sysctlnametomib(prefix, oid + 2, &nlen) == 0 && (o = one(
+		    &w, oid, nlen, prefix, val)) != NULL) {
+			ucl_array_append(vals, o);
+			n = 1;
+		}
+	}
+	k->sent += n;
+	*sentp = k->sent;
+	*jsonp = (char *)ucl_object_emit(vals, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(vals);
+	work_free(&w);
+	return (more);
+}
+

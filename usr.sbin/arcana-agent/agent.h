@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.18.0"
+#define	ARCANA_AGENT_VERSION	"0.19.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -351,6 +351,8 @@ int		 do_sysctl(struct work *, const char *,
 int		 do_sysctl_set(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 sysctl_name_ok(const char *);
+bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,
+		    uint64_t *);
 bool		 sysctl_value_ok(const char *);
 int		 transport_watch(cbl_ctx *);
 void		 transport_add(const char *, cbl_listener *);

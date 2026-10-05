@@ -158,6 +158,78 @@ op_new(const char *title, const char *server)
 	return (o);
 }
 
+/*
+ * The tasks that ended, kept in the browser so that they are still
+ * there when the page is opened again: "state started finished
+ * server<TAB>title" a line, newest first.  Their traces are not kept.
+ */
+void
+ops_save(void)
+{
+	static unsigned long	last;
+	struct html		b;
+	unsigned long		sig;
+	int			i, n;
+
+	sig = 5381;
+	for (i = 0; i < app.nops; i++)
+		sig = sig * 33 + (unsigned long)app.ops[i].id * 4 +
+		    (unsigned long)app.ops[i].state;
+	if (sig == last)
+		return;
+	last = sig;
+	memset(&b, 0, sizeof(b));
+	for (i = 0, n = 0; i < app.nops && n < 24; i++) {
+		if (app.ops[i].state == OP_RUNNING)
+			continue;
+		h_fmt(&b, "%d %.0f %.0f %s\t%s\n", app.ops[i].state == OP_OK ?
+		    1 : 0, app.ops[i].started, app.ops[i].finished,
+		    app.ops[i].server, app.ops[i].title);
+		n++;
+	}
+	arc_store_set("arc_tasks", b.s != NULL ? b.s : "");
+	free(b.s);
+}
+
+void
+ops_load(void)
+{
+	struct op	*o;
+	char		*text, *p, *line, *tab, server[65];
+	double		 started, finished;
+	int		 ok, used;
+
+	static bool	 loaded;
+
+	/* Once: after what this page has done already, being older. */
+	if (loaded)
+		return;
+	loaded = true;
+	if ((text = arc_store_get("arc_tasks")) == NULL)
+		return;
+	p = text;
+	while ((line = strsep(&p, "\n")) != NULL && app.nops < MAX_OPS) {
+		if ((tab = strchr(line, '\t')) == NULL)
+			continue;
+		*tab++ = '\0';
+		used = 0;
+		if (sscanf(line, "%d %lf %lf %n", &ok, &started, &finished,
+		    &used) < 3 || used == 0)
+			continue;
+		snprintf(server, sizeof(server), "%s", line + used);
+		/* In the order they were kept: the oldest comes last. */
+		o = &app.ops[app.nops++];
+		memset(o, 0, sizeof(*o));
+		o->id = ++app.nextop;
+		snprintf(o->title, sizeof(o->title), "%s", tab);
+		snprintf(o->server, sizeof(o->server), "%s", server);
+		o->state = ok ? OP_OK : OP_FAILED;
+		o->started = started;
+		o->finished = finished;
+	}
+	free(text);
+}
+
 static void
 op_done(struct op *o, bool ok, const ucl_object_t *reply, const char *err)
 {

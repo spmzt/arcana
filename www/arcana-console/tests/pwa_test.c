@@ -959,9 +959,20 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.theme[data-arg=paper]').click()");
 	wait_js("document.documentElement.dataset.theme === 'paper'", 5);
 	shot("m10-paper");
+	/* The first one, chosen on a phone, is a choice like another: the
+	 * phone's own default is the plain one. */
 	run("document.querySelector('button.theme[data-arg=\"\"]').click()");
-	wait_js("!document.documentElement.dataset.theme && "
-	    "localStorage.getItem('arc_theme') === null", 5);
+	wait_js("document.documentElement.dataset.theme === 'tron' && "
+	    "localStorage.getItem('arc_theme') === 'tron' && document."
+	    "querySelector('button.theme[data-arg=\"\"]').classList.contains("
+	    "'on') && getComputedStyle(document.documentElement)."
+	    "getPropertyValue('--cyan').trim() === '#3be8ff'", 5);
+	run("localStorage.removeItem('arc_theme'); delete document."
+	    "documentElement.dataset.theme; const s = document.createElement("
+	    "'script'); s.src = '/fx.js?again'; document.head.appendChild(s);");
+	wait_js("document.documentElement.dataset.theme === 'slate'", 10);
+	shot("m10a-phone-default");
+	run("delete document.documentElement.dataset.theme");
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.hosts .hostcard').click()");
 	phone(false);
@@ -1551,6 +1562,22 @@ ATF_TC_BODY(pwa, tc)
 	    "click(); document.querySelector('table.sysctl th[data-act=t-sort]')"
 	    ".click();");
 	shot("7n-sysctl");
+	/*
+	 * The whole tree comes in parts, over the console's socket, and
+	 * the table fills as they arrive: more of it than one reply was
+	 * ever allowed to carry.
+	 */
+	run("document.querySelector('button[data-act=sy-tree][data-arg=\"\"]')"
+	    ".click()");
+	wait_js("document.querySelector('.toolbar .age').textContent."
+	    "includes('so far') || /[0-9]+ more/.test(document.querySelector("
+	    "'.stage').textContent)", 20);
+	wait_js("!document.querySelector('.toolbar .age').textContent."
+	    "includes('reading') && (m => m && parseInt(m[1], 10) > 3600)("
+	    "/([0-9]+) more/.exec(document.querySelector('.stage')."
+	    "textContent))", 60);
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.sysctl tbody "
+	    "tr b')].some(b => b.textContent === 'kern.ostype')"));
 	run("const f = document.querySelector('form[data-form=sy-from]'); "
 	    "f.name.value = 'kern.ipc.somaxconn'; f.requestSubmit();");
 	wait_js("document.querySelectorAll('table.sysctl tbody tr').length "
@@ -1938,6 +1965,23 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.auth .offline')", 20);
 	offline(false);
 	wait_js("document.querySelector('.shell')", 30);
+	/*
+	 * The page was loaded again: the tasks that ended before are
+	 * still along the bottom, with their hosts and how they ended;
+	 * one picked opens the list at it.
+	 */
+	wait_js("document.querySelectorAll('.dock .recent .last').length >= 4 "
+	    "&& [...document.querySelectorAll('.dock .recent .last small')]."
+	    "some(e => /done|failed/.test(e.textContent))", 20);
+	ATF_CHECK(js_true("(localStorage.getItem('arc_tasks') || '').split("
+	    "'\\n').length > 5"));
+	shot("9a-recent-tasks");
+	run("[...document.querySelectorAll('.dock .recent .last')].pop()."
+	    "click()");
+	wait_js("document.querySelector('.dock.open ol.ops li.op.selected .w')",
+	    5);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("!document.querySelector('.dock.open')", 5);
 
 	/*
 	 * A newer shell on the console: the page finds it when it comes

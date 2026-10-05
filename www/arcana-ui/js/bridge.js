@@ -655,6 +655,10 @@ addToLibrary({
 	arc_theme_set: function (namep) {
 		var name = UTF8ToString(namep), meta;
 
+		/* The default one, chosen where it is not the default. */
+		if (name === "" && window.matchMedia("(max-width: 620px)")
+		    .matches)
+			name = "tron";
 		if (name === "")
 			delete document.documentElement.dataset.theme;
 		else
@@ -854,6 +858,51 @@ addToLibrary({
 		    "> .map-wrap");
 
 		return (el === null ? 0 : el.clientHeight);
+	},
+
+	/*
+	 * What comes in parts: one WebSocket to the console, opened when
+	 * first needed and again when it went.  What is asked while it is
+	 * not open yet waits; every message goes to arc_on_stream(), and
+	 * so does {"closed": true} when the socket is lost.
+	 */
+	$arcStream: { ws: null, wait: [] },
+	arc_stream_send__deps: ["$arcStream", "$arcStr", "$UTF8ToString"],
+	arc_stream_send: function (textp) {
+		var text = UTF8ToString(textp), st = arcStream, ws;
+
+		if (st.ws !== null && st.ws.readyState === 1) {
+			st.ws.send(text);
+			return;
+		}
+		st.wait.push(text);
+		if (st.ws !== null && st.ws.readyState === 0)
+			return;
+		try {
+			ws = new WebSocket((location.protocol === "https:" ?
+			    "wss://" : "ws://") + location.host + "/api/stream");
+		} catch (e) {
+			st.wait = [];
+			Module._arc_on_stream(arcStr("{\"closed\":true}"));
+			return;
+		}
+		st.ws = ws;
+		ws.onopen = function () {
+			var q = st.wait;
+
+			st.wait = [];
+			q.forEach(function (t) { ws.send(t); });
+		};
+		ws.onmessage = function (e) {
+			if (typeof e.data === "string")
+				Module._arc_on_stream(arcStr(e.data));
+		};
+		ws.onclose = function () {
+			if (st.ws === ws)
+				st.ws = null;
+			st.wait = [];
+			Module._arc_on_stream(arcStr("{\"closed\":true}"));
+		};
 	},
 
 	/* Is the window as narrow as a phone held upright? */

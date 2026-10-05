@@ -201,6 +201,8 @@ tick(void *arg)
 	}
 	/* Running jobs: read them, and redraw when their trace grew. */
 	if (app.screen == SCREEN_CONSOLE) {
+		ops_load();
+		ops_save();
 		jobs_poll();
 		agent_restarts(now);
 		if (app.visible && app.online)
@@ -1105,6 +1107,21 @@ arc_on_action(char *act, char *arg, char *value)
 	render();
 }
 
+/* A part of something that comes in parts, or word that none will. */
+EMSCRIPTEN_KEEPALIVE void
+arc_on_stream(char *text)
+{
+	ucl_object_t	*o;
+
+	o = json_parse(text);
+	free(text);
+	if (o == NULL)
+		return;
+	sysctl_stream(o);
+	ucl_object_unref(o);
+	render();
+}
+
 EMSCRIPTEN_KEEPALIVE void
 arc_on_net(int online)
 {
@@ -1142,7 +1159,8 @@ main(void)
 	{
 		char *t = arc_theme_get();
 
-		snprintf(app.theme, sizeof(app.theme), "%s", t);
+		snprintf(app.theme, sizeof(app.theme), "%s", strcmp(t,
+		    "tron") == 0 ? "" : t);
 		free(t);
 	}
 	app.trace_schema = true;

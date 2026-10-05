@@ -157,8 +157,9 @@ The console is laid out as a tree and tabs.
     read from the kernel as `sysctl -a` has it: each name with its
     value, its type, whether it is a loader tunable, and what it is
     said to be. Values that are neither numbers nor text are left
-    out. The whole tree is more than is sent at once: **all** gives
-    its beginning and says how much there is. **Set**, on a value that
+    out. The values come in parts and the table fills as they arrive,
+    so **all**, the whole tree, is all of it: the agent sends the next
+    part only when the one before was taken. **Set**, on a value that
     can be, puts it into a field in its row; it is set with
     `sysctl name=value` by a job, and with **at boot too** also
     written to `/etc/sysctl.conf`, where the line that set the name
@@ -373,6 +374,13 @@ The console is laid out as a tree and tabs.
   dialog is a sheet from the bottom, a row of choices is one line that
   is scrolled, and a table keeps its first column in sight while the
   others are scrolled.
+- On a phone that has no theme chosen the plain **Slate** is used;
+  Tron and the others are chosen in Settings as anywhere.
+- **Recent tasks** along the bottom: the last few, each with its host,
+  how it ended and how long it took, always in sight; one picked opens
+  the list at it, where each also has the time it began. The tasks
+  that ended are kept in the browser and are still there when the
+  page is opened again, without their traces.
 - **Connections** and **Sockets**, in a host's network, are read again
   every two seconds while they are shown, without a task of their own
   in the activity; **Live** pauses that.

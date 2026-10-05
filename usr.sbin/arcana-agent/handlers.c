@@ -1085,6 +1085,38 @@ arc_sysctl_doit(cbl_req *req, const struct arc_sysctl_req *rq,
 	return (start(j));
 }
 
+/*
+ * The kernel's state in parts: one for each call, in the loop's own
+ * thread, which a part is short enough for.
+ */
+int
+arc_sysctl_dumpit(cbl_req *req, const struct arc_sysctl_dump_req *rq,
+    struct cbl_dump_state *st, void *arg __unused)
+{
+	struct arc_sysctl_dump_rsp	 rsp;
+	char				*json;
+	uint64_t			 sent;
+	bool				 more;
+	int				 error;
+
+	if (rq->net_filter != NULL && rq->net_filter[0] != '\0' &&
+	    !sysctl_name_ok(rq->net_filter))
+		return (reject(req, "a sysctl is named with letters, digits "
+		    "and . _ - %"));
+	more = sysctl_part(st, rq->net_filter, &json, &sent);
+	if (json == NULL)
+		return (ENOMEM);
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.json = json;
+	rsp.has_total = true;
+	rsp.total = sent;
+	error = arc_sysctl_dump_reply(req, &rsp);
+	free(json);
+	if (error != 0)
+		return (error);
+	return (more ? EAGAIN : 0);
+}
+
 int
 arc_fstab_doit(cbl_req *req, const struct arc_fstab_req *rq,
     void *arg __unused)

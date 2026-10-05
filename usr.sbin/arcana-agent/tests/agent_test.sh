@@ -1525,8 +1525,8 @@ EOS
 #!/bin/sh
 echo "\$*" >> $(pwd)/helper.log
 case "\$3" in
-interfaces) echo '{"interfaces":[{"name":"epair1b","up":true,"mtu":1500,"addresses":[{"family":"inet","address":"10.99.0.2","prefixlen":24}]},{"name":"wg0","up":true,"mtu":1420,"addresses":[{"family":"inet","address":"10.255.0.1","prefixlen":30}]}],"time":1000}' ;;
-exists) case "\$4" in epair1b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
+interfaces) echo '{"interfaces":[{"name":"epair91b","up":true,"mtu":1500,"addresses":[{"family":"inet","address":"10.99.0.2","prefixlen":24}]},{"name":"wg0","up":true,"mtu":1420,"addresses":[{"family":"inet","address":"10.255.0.1","prefixlen":30}]}],"time":1000}' ;;
+exists) case "\$4" in epair91b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
 up) echo 1 ;;
 current) printf '1500\tto the host' ;;
 prefix) [ "\$5" = 10.99.0.2 ] && echo 10.99.0.2/24 ;;
@@ -1534,7 +1534,7 @@ esac
 exit 0
 EOS
 	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
-	printf '#!/bin/sh\necho "$*" >> %s/route.log\n[ "$4" = get ] && printf "   route to: %%s\\n    gateway: 10.99.0.1\\n  interface: epair1b\\n" "$6"\nexit 0\n' "$(pwd)" > fake-route
+	printf '#!/bin/sh\necho "$*" >> %s/route.log\n[ "$4" = get ] && printf "   route to: %%s\\n    gateway: 10.99.0.1\\n  interface: epair91b\\n" "$6"\nexit 0\n' "$(pwd)" > fake-route
 	printf '#!/bin/sh\necho "$*" >> %s/sysrc.log\nexit 1\n' "$(pwd)" > sysrc-log
 	cat > fake-wg <<EOS
 #!/bin/sh
@@ -1564,25 +1564,25 @@ EOS
 
 	# Its interfaces: read by the helper, which attaches to the jail;
 	# the host's are still the host's.
-	atf_check -o match:'"name":"epair1b"' -o match:'"address":"10.99.0.2"' \
+	atf_check -o match:'"name":"epair91b"' -o match:'"address":"10.99.0.2"' \
 	    -o not-match:'"name":"lo0"' "$JGC" -j gateway -c "$SOCK" net interfaces
 	atf_check -o match:'^-Q 4 interfaces - 0$' cat helper.log
-	atf_check -o match:'"name":"lo0"' -o not-match:'epair1b' \
+	atf_check -o match:'"name":"lo0"' -o not-match:'epair91b' \
 	    "$JGC" -c "$SOCK" net interfaces
 	# Its routes and its route to an address: the host's programs,
 	# told which jail.
 	atf_check -o match:'fake-netstat -j 4 --libxo json -rnW -f inet' \
 	    "$JGC" -t -j gateway -c "$SOCK" net routes -4
-	atf_check -o match:'"gateway":"10.99.0.1","interface":"epair1b"' \
+	atf_check -o match:'"gateway":"10.99.0.1","interface":"epair91b"' \
 	    "$JGC" -j gateway -c "$SOCK" route get 192.0.2.9
 	atf_check -o match:'^-j 4 -n get -inet 192.0.2.9$' cat route.log
 
 	# A change there: ifconfig and route with the jail, the job named
 	# after it, what is kept kept in the jail's own rc.conf.
-	atf_check -o match:'gateway: epair1b: add 10.99.0.5/24' \
-	    -o match:'fake-ifconfig -j 4 epair1b inet 10.99.0.5/24 alias' \
-	    "$JGC" -p -j gateway -c "$SOCK" interface epair1b add 10.99.0.5/24
-	atf_check -o match:'^ifconfig_epair1b_alias0="inet 10.99.0.5/24"$' \
+	atf_check -o match:'gateway: epair91b: add 10.99.0.5/24' \
+	    -o match:'fake-ifconfig -j 4 epair91b inet 10.99.0.5/24 alias' \
+	    "$JGC" -p -j gateway -c "$SOCK" interface epair91b add 10.99.0.5/24
+	atf_check -o match:'^ifconfig_epair91b_alias0="inet 10.99.0.5/24"$' \
 	    cat "$R/etc/rc.conf"
 	atf_check -o not-match:'10.99.0.5' cat rc.conf
 	atf_check -o match:'fake-route -j 4 -n add -inet 10.77.0.0/16 10.99.0.1' \
@@ -1594,14 +1594,14 @@ EOS
 	# there.
 	: > ifconfig.log
 	atf_check -o match:'queued' "$JGC" -q -s -j gateway -c "$SOCK" \
-	    interface epair1b remove 10.99.0.2
+	    interface epair91b remove 10.99.0.2
 	for i in $(seq 1 100); do
 		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
 		    break
 		sleep 0.1
 	done
-	atf_check -o match:'^-j 4 epair1b inet 10.99.0.2 -alias$' \
-	    -o match:'^-j 4 epair1b inet 10.99.0.2/24 alias$' cat ifconfig.log
+	atf_check -o match:'^-j 4 epair91b inet 10.99.0.2 -alias$' \
+	    -o match:'^-j 4 epair91b inet 10.99.0.2/24 alias$' cat ifconfig.log
 
 	# WireGuard there: the jail's own wg, through jexec; the key is
 	# made in the jail's directory, where the jail's wg reads it, and
@@ -1661,24 +1661,24 @@ EOS
 	# An interface of the host given to the jail: the host's ifconfig,
 	# not told to work in the jail; kept, it is the jail's
 	# vnet.interface in jail.conf.
-	printf 'gateway {\n\tvnet;\n\tvnet.interface = "epair1b";\n}\n' \
+	printf 'gateway {\n\tvnet;\n\tvnet.interface = "epair91b";\n}\n' \
 	    >> etc/jail.conf
 	: > ifconfig.log
 	atf_check -o match:'give lo0 to gateway \(kept\)' -o match:'done' \
 	    "$JGC" -p -c "$SOCK" interface lo0 give gateway
 	atf_check -o match:'^lo0 vnet 4$' -o not-match:'-j 4' cat ifconfig.log
-	atf_check -o match:'vnet.interface = "epair1b", "lo0";' \
+	atf_check -o match:'vnet.interface = "epair91b", "lo0";' \
 	    cat etc/jail.conf
 	# And taken back: out of the jail, and out of the file.
 	atf_check -o match:'take lo0 back from gateway' \
 	    -o match:'fake-ifconfig lo0 -vnet 4' \
 	    "$JGC" -p -c "$SOCK" interface lo0 take gateway
-	atf_check -o match:'vnet.interface = "epair1b";' \
+	atf_check -o match:'vnet.interface = "epair91b";' \
 	    -o not-match:'"lo0"' cat etc/jail.conf
 	# What the file has already stays as it is written.
 	atf_check -o match:'done' \
-	    "$JGC" -p -c "$SOCK" interface epair1b take gateway
-	atf_check -o not-match:'epair1b' cat etc/jail.conf
+	    "$JGC" -p -c "$SOCK" interface epair91b take gateway
+	atf_check -o not-match:'epair91b' cat etc/jail.conf
 	# Only what is there moves, and only to a jail with a network.
 	atf_check -s exit:1 -o match:'the jail gateway has no interface em9' \
 	    "$JGC" -c "$SOCK" interface em9 take gateway
@@ -2285,6 +2285,17 @@ EOS
 	# All of it is more than a reply carries: the first, and counted.
 	atf_check -o match:'"name":"kern.ostype"' -e match:'the first of [0-9]+' \
 	    "$JGC" -c "$SOCK" sysctl
+	# In parts, as a dump: the whole tree, nothing left out for size,
+	# each part an array of its own; and a part of the tree the same.
+	atf_check -o save:parts.json "$JGC" -c "$SOCK" sysctl parts
+	atf_check -o match:'^[1-9][0-9]*$' sh -c 'wc -l < parts.json | tr -d " "'
+	[ "$(wc -l < parts.json)" -gt 10 ] || atf_fail "the tree came in $(wc -l < parts.json) parts"
+	atf_check -o match:'^\[\{"name":"kern.ostype","value":"FreeBSD"' head -1 parts.json
+	atf_check -o match:'"name":"vm\.' -o match:'"name":"net\.' cat parts.json
+	atf_check -o match:'^\[\{"name":"kern.ostype"[^]]*\]$' \
+	    "$JGC" -c "$SOCK" sysctl parts kern.ostype
+	atf_check -s exit:1 -e match:'Invalid argument' -o ignore \
+	    "$JGC" -c "$SOCK" sysctl parts 'kern x'
 	# Set with sysctl(8); kept, the line that set it before is replaced
 	# and the rest of the file is as it was.
 	: > kld.log

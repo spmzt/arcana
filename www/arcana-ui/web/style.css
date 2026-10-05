@@ -3360,3 +3360,33 @@ ul.apiops { list-style: none; margin: .8rem 0 0; padding: 0; display: grid; gap:
 	.hostbar { align-items: flex-start; flex-direction: column; gap: .5rem; }
 }
 
+/*
+ * Recent tasks: the last few always in sight along the bottom, each
+ * with its host, how it ended and how long it took.
+ */
+.dock .recent {
+	display: flex;
+	flex: 1;
+	gap: .5rem;
+	min-width: 0;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+.dock .recent .last {
+	flex: none;
+	max-width: 19rem;
+	padding: .2rem .55rem;
+	border: 1px solid var(--line);
+	overflow: hidden;
+}
+.dock .recent .last:hover, .dock .recent .last.selected { border-color: var(--line-2); background: rgba(var(--accent-rgb), .05); }
+.dock .recent .last b { font-weight: 500; color: var(--fg); overflow: hidden; text-overflow: ellipsis; }
+.dock .recent .last small { flex: none; color: var(--dim); font-size: .68rem; }
+.dock .recent .last.o-failed { border-color: rgba(var(--red-rgb), .5); }
+.op .w { flex: none; color: var(--dim); font-size: .68rem; font-variant-numeric: tabular-nums; }
+@media (max-width: 620px) {
+	.dock > header .label { display: none; }
+	.dock .recent .last { max-width: 70vw; }
+	.dock .recent .last small { display: none; }
+}
+
