@@ -8,6 +8,34 @@
 - Storage, beyond what there is: `zfs send` and `receive` between
   hosts; encryption keys; a file system made on a partition (newfs) and
   grown; swap; a disk's health (SMART); a vnet jail's own datasets.
+- The firewall, ipfw(8): its rules, sets, tables and counters read;
+  a rule added, moved and deleted, a table's entries changed, by
+  jobs with every word checked, in safe mode so that a rule that cuts
+  the console off is taken back; what is kept in rc.conf
+  (`firewall_enable`, `firewall_type`, `firewall_script`) and the
+  module in the kernel; in a vnet jail as on a host; its NAT, pipes
+  and queues after that.
+- Workflows: a chain of steps kept by the console and run by it on
+  several hosts at once. As decided:
+  - The spec is the schema the steps are made from: a table in
+    `arcana.yaml` of which attributes each kind of job uses and which
+    it needs, carried into `schema.json`, so that the editor's forms
+    and the console's checks come from it and a new kind is there
+    without more code.
+  - A step is a job of any kind, with a condition before it (a read
+    operation and a test on its reply) and what follows a failure:
+    stop, go on, or another step. Values may be parameters asked for
+    when it is run, the host, or what an earlier step answered.
+  - Triggers: by hand, at an interval, and on events, both asked for
+    by the console (a host that stopped or began answering, a
+    threshold crossed, a jail's state) and told by the agent (cblink
+    notifications).
+  - A workflow that runs by itself may hold a destructive kind (a
+    pool destroyed, a partition table, an agent replaced) only when
+    it is marked so by hand.
+  - Runs kept, each host and step with its trace; the chain drawn as
+    a graph, and a run as that graph coloured as it goes; the queue
+    saved as a workflow.
 - Routes, connections and sockets in parts, as sysctl's values are:
   the agent answers sysctl as a dump, the console passes each item to
   the page over a WebSocket (`/api/stream`), and the table fills as

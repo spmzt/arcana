@@ -150,8 +150,11 @@ static void
 link_led(struct html *h, const char *name, enum link l, const char *title)
 {
 
-	h_fmt(h, "<span class=\"link %s\"", l == LINK_UP ? "up" :
-	    l == LINK_DOWN ? "down" : "unknown");
+	/* The API's light is also the way to the API's own page. */
+	h_fmt(h, "<span class=\"link %s%s\"%s", l == LINK_UP ? "up" :
+	    l == LINK_DOWN ? "down" : "unknown", strcmp(name, "API") == 0 ?
+	    app.node == NODE_API ? " go on" : " go" : "", strcmp(name,
+	    "API") == 0 ? " data-act=\"select-api\" role=\"button\"" : "");
 	h_attr(h, "title", title);
 	h_raw(h, "><i class=\"led\"></i>");
 	h_txt(h, name);
@@ -198,8 +201,10 @@ topbar(struct html *h)
 	link_led(h, "NET", app.online ? LINK_UP : LINK_DOWN, app.online ?
 	    "This device is online" : "This device is offline");
 	link_led(h, "API", app.api, app.api == LINK_UP ?
-	    "The console answers" : app.api == LINK_DOWN ?
-	    "The console does not answer" : "Not checked yet");
+	    "The console answers. Its API, as it is documented: press" :
+	    app.api == LINK_DOWN ? "The console does not answer. Its API, as "
+	    "it is documented: press" : "Not checked yet. The console's API, "
+	    "as it is documented: press");
 	host = s == NULL || (s->list == NULL && !s->failed) ? LINK_UNKNOWN :
 	    s->failed ? LINK_DOWN : LINK_UP;
 	link_led(h, "HOST", host, s == NULL ? "No server selected" :
@@ -386,12 +391,8 @@ rail(struct html *h)
 	    "<span class=\"count\">%d</span></li>"
 	    "<li class=\"titem fleet netnode%s\" data-act=\"select-network\">"
 	    "<span class=\"twig\">⌬</span><span class=\"name\">Network</span>"
-	    "</li><li class=\"titem fleet apinode%s\" data-act=\"select-api\" "
-	    "title=\"The console's own API, as it is documented\">"
-	    "<span class=\"twig\">{ }</span><span class=\"name\">API</span>"
 	    "</li>", app.node == NODE_FLEET ? " selected" : "", app.nservers,
-	    app.node == NODE_NETWORK ? " selected" : "", app.node ==
-	    NODE_API ? " selected" : "");
+	    app.node == NODE_NETWORK ? " selected" : "");
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
@@ -1252,7 +1253,8 @@ static const struct {
 } themes[] = {
 	{ "", "Tron" }, { "amber", "Amber" }, { "matrix", "Matrix" },
 	{ "synth", "Synth" }, { "slate", "Slate" }, { "onyx", "Onyx" },
-	{ "paper", "Paper" },
+	{ "paper", "Paper" }, { "sand", "Sand" }, { "mist", "Mist" },
+	{ "mint", "Mint" },
 };
 
 static void

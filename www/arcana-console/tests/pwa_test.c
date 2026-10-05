@@ -959,6 +959,27 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.theme[data-arg=paper]').click()");
 	wait_js("document.documentElement.dataset.theme === 'paper'", 5);
 	shot("m10-paper");
+	/* The other light ones: each a light ground and its own colour. */
+	{
+		static const char *const light[] = { "sand", "mist", "mint" };
+		char	name[32];
+		size_t	k;
+
+		for (k = 0; k < 3; k++) {
+			snprintf(script, sizeof(script), "document.querySelector("
+			    "'button.theme[data-arg=%s]').click()", light[k]);
+			run(script);
+			snprintf(script, sizeof(script), "document."
+			    "documentElement.dataset.theme === '%s' && "
+			    "getComputedStyle(document.documentElement)."
+			    "colorScheme === 'light' && /^#[ef]/.test("
+			    "getComputedStyle(document.documentElement)."
+			    "getPropertyValue('--bg').trim())", light[k]);
+			wait_js(script, 5);
+			snprintf(name, sizeof(name), "m10-%s", light[k]);
+			shot(name);
+		}
+	}
 	/* The first one, chosen on a phone, is a choice like another: the
 	 * phone's own default is the plain one. */
 	run("document.querySelector('button.theme[data-arg=\"\"]').click()");
@@ -1644,7 +1665,9 @@ ATF_TC_BODY(pwa, tc)
 	 * The API's own page, from the menu: every route of the document,
 	 * by group, searched, one unfolded.
 	 */
-	run("document.querySelector('li[data-act=select-api]').click()");
+	/* From the top bar: the API's light is the way to it. */
+	run("document.querySelector('.topbar .link[data-act=select-api]')"
+	    ".click()");
 	wait_js("document.querySelectorAll('ul.apiops li.apiop').length > 40",
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"

@@ -22,10 +22,11 @@ The console is laid out as a tree and tabs.
   jails run, and the fleet as a graph from the console through the
   hosts to their jails; nodes are links.
 - **Network**: the fleet as a map; see [The network](#the-network).
-- **API**: the console's own API as `docs/openapi.yaml` documents it,
-  every route with what it is for, what it takes and what it answers,
-  by group and searched; the document itself is one press away, for a
-  client generator or another viewer.
+- **API**, the light in the top bar that says whether the console
+  answers, opens the console's own API as `docs/openapi.yaml`
+  documents it: every route with what it is for, what it takes and
+  what it answers, by group and searched; the document itself is one
+  press away, for a client generator or another viewer.
 - **All hosts**: the fleet at a glance. Its graph is of what runs: a
   host with its jails that are not stopped; a host's own Summary has
   all of them.
@@ -331,7 +332,8 @@ The console is laid out as a tree and tabs.
   sizes, and a double click on the edge goes back to the usual one.
 - **Settings** has the console's version, and under **Look** its
   themes: Tron, Amber, Matrix, Synth, Slate, Onyx (black, white and one
-  red, in a plain face, without glow) and the light Paper. The one
+  red, in a plain face, without glow) and the light ones: Paper,
+  the warm Sand, the cool Mist and the green Mint. The one
   picked takes at once and is kept in that browser. A theme is a set of
   colours in `web/style.css` (`html[data-theme="…"]`): the accent, the
   surfaces and the text, which everything else is drawn from.
