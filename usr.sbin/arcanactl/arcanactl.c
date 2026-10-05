@@ -82,6 +82,11 @@ static int	cmd_services(struct arc_client *);
 static int	cmd_net(struct arc_client *, int, char **);
 static int	cmd_stats(struct arc_client *);
 static int	cmd_kmod(struct arc_client *, int, char **);
+static int	cmd_sysctl(struct arc_client *, int, char **);
+static int	cmd_gula(struct arc_client *, int, char **);
+static int	cmd_ipfw(struct arc_client *, int, char **);
+static int	cmd_l2(struct arc_client *, int, char **);
+static int	cmd_transport(struct arc_client *, int, char **);
 static int	cmd_storage(struct arc_client *, int, char **);
 static int	cmd_storage_job(struct arc_client *, int, char **);
 static int	cmd_fstab(struct arc_client *, int, char **);
@@ -116,6 +121,7 @@ usage(void)
 	    "    net routes | nexthops | connections | sockets | interfaces | "
 	    "netgraph |\n        wireguard | bird [-4 | -6]\n"
 	    "    net routes [-4 | -6] text\n"
+	    "    net routes [-4 | -6] -o rows\n"
 	    "    interface name up | down | destroy\n"
 	    "    interface name give | take jail\n"
 	    "    interface epair give jail [bridge]\n"
@@ -144,6 +150,30 @@ usage(void)
 	    "        [table name] [all]\n"
 	    "    stats\n"
 	    "    kmod [load | unload module]\n"
+	    "    sysctl [name | start of a name]\n"
+	    "    sysctl parts [name | start of a name]\n"
+	    "    sysctl name=value\n"
+	    "    transport [retry]\n"
+	    "    ps\n"
+	    "    signal pid [name | number]\n"
+	    "    renice pid nice\n"
+	    "    log [-o lines] [-f position] [name [text]]\n"
+	    "    history [after]\n"
+	    "    history set seconds samples\n"
+	    "    net bridges | geneve | ipfw\n"
+	    "    bridge name addm | deletem member\n"
+	    "    bridge name access member vlan\n"
+	    "    bridge name trunk member vlan-list [untagged-vlan]\n"
+	    "    bridge name vlanfilter on | off\n"
+	    "    bridge name flag member [-]flag\n"
+	    "    bridge name set option value\n"
+	    "    bridge name ifset member option value\n"
+	    "    geneve name create | set option value ...\n"
+	    "    geneve name flush [all]\n"
+	    "    ipfw [keep] add number rule ...\n"
+	    "    ipfw [keep] delete number\n"
+	    "    ipfw apply | enable | disable | zero [number]\n"
+	    "    ipfw rules [-w file] [-n]\n"
 	    "    storage disks | pools | datasets | mounts | importable\n"
 	    "    storage snapshots [dataset]\n"
 	    "    zfs snapshot | destroy | rollback [-r] name\n"
@@ -1319,7 +1349,8 @@ static int
 cmd_net(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets", "interfaces", "netgraph", "wireguard", "bird" };
+	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
+	    "bird-routes", "bridges", "geneve", "ipfw" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -1343,8 +1374,13 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	argc--;
 	argv++;
 	optind = 1;
-	while ((ch = getopt(argc, argv, "46")) != -1) {
+	while ((ch = getopt(argc, argv, "46o:")) != -1) {
 		switch (ch) {
+		case 'o':
+			/* Read on, after this many rows. */
+			req.has_offset = true;
+			req.offset = (uint32_t)strtoul(optarg, NULL, 10);
+			break;
 		case '4':
 			req.net_family = ARC_NET_FAMILY_INET;
 			break;
@@ -1419,6 +1455,343 @@ cmd_kmod(struct arc_client *cl, int argc, char **argv)
 		    "failed");
 	arc_kernel_rsp_free(rsp);
 	return (error);
+}
+
+/*
+ * sysctl [prefix]: the kernel's state, as the host says it.
+ * sysctl name=value: a job; with -p also in sysctl.conf.
+ */
+static int
+cmd_sysctl(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_sysctl_req	 req;
+	struct arc_sysctl_rsp	*rsp;
+	const char		*names[2];
+	char			*eq;
+	int			 error;
+
+	if (argc == 2 && (eq = strchr(argv[1], '=')) != NULL) {
+		*eq = '\0';
+		memset(&sp, 0, sizeof(sp));
+		sp.has_kind = true;
+		sp.kind = ARC_JOB_KIND_SYSCTL;
+		names[0] = argv[1];
+		names[1] = eq + 1;
+		sp.names.v = names;
+		sp.names.n = 2;
+		sp.persist = persist;
+		sp.safe = safe;
+		sp.jail = netjail;
+		return (submit(cl, &sp));
+	}
+	/* In parts, each printed as it comes: nothing left out for size. */
+	if (argc >= 2 && strcmp(argv[1], "parts") == 0) {
+		struct arc_sysctl_dump_req	 dq;
+		struct arc_sysctl_dump_rsp	*item;
+		cbl_dump			*d;
+
+		if (argc > 3)
+			usage();
+		memset(&dq, 0, sizeof(dq));
+		dq.net_filter = argc == 3 ? argv[2] : NULL;
+		if ((error = arc_sysctl_dump(cl, &dq, &d)) != 0)
+			fail(cl, error, "sysctl");
+		while ((error = arc_sysctl_dump_next(d, &item)) == 0 && item !=
+		    NULL)
+			if (item->json != NULL)
+				xo_emit("{:json/%s}\n", item->json);
+		cbl_dump_free(d);
+		if (error != 0)
+			fail(cl, error, "sysctl");
+		return (0);
+	}
+	if (argc > 2)
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.net_filter = argc == 2 ? argv[1] : NULL;
+	if ((error = arc_sysctl(cl, &req, &rsp)) != 0)
+		fail(cl, error, "sysctl");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	if (rsp->truncated)
+		xo_warnx("sysctl: the first of %ju: name where to begin",
+		    (uintmax_t)rsp->total);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("sysctl: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_sysctl_rsp_free(rsp);
+	return (error);
+}
+
+/* What a reply of JSON says, and how it went. */
+static int
+json_out(const char *what, bool ok, const char *error, const char *json,
+    const struct arc_step *steps, size_t nsteps)
+{
+
+	if (json != NULL)
+		xo_emit("{:json/%s}\n", json);
+	emit_trace(steps, nsteps);
+	if (!ok)
+		xo_warnx("%s: %s", what, error != NULL ? error : "failed");
+	return (ok ? 0 : 1);
+}
+
+/*
+ * ps: what runs on the host, or with -j in a jail, the busiest first.
+ * signal pid [name]: send it a signal, TERM when none is named.
+ * renice pid nice: give it another nice value.
+ * log [name [text]]: the end of a log; -o how many lines, -f from where.
+ * history [after]: how busy the host has been.
+ * history set seconds samples: how often it is sampled, how many kept.
+ */
+static int
+cmd_gula(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_processes_req pq;
+	struct arc_processes_rsp *pr;
+	struct arc_log_req	 lq;
+	struct arc_log_rsp	*lr;
+	struct arc_history_req	 hq;
+	struct arc_history_rsp	*hr;
+	const char		*names[2], *e;
+	int			 error, ch, rc;
+
+	if (strcmp(argv[0], "ps") == 0) {
+		if (argc != 1)
+			usage();
+		memset(&pq, 0, sizeof(pq));
+		pq.jail = netjail;
+		if ((error = arc_processes(cl, &pq, &pr)) != 0)
+			fail(cl, error, "ps");
+		rc = json_out("ps", pr->ok, pr->error, pr->json, pr->trace.v,
+		    pr->trace.n);
+		arc_processes_rsp_free(pr);
+		return (rc);
+	}
+	if (strcmp(argv[0], "signal") == 0 || strcmp(argv[0], "renice") == 0) {
+		if (argc < 2 || argc > 3 || (argc == 2 && argv[0][0] == 'r'))
+			usage();
+		memset(&sp, 0, sizeof(sp));
+		sp.has_kind = true;
+		sp.kind = ARC_JOB_KIND_PROCESS;
+		sp.verb = argv[0];
+		names[0] = argv[1];
+		names[1] = argc == 3 ? argv[2] : "TERM";
+		sp.names.v = names;
+		sp.names.n = 2;
+		sp.safe = safe;
+		sp.jail = netjail;
+		return (submit(cl, &sp));
+	}
+	if (strcmp(argv[0], "history") == 0) {
+		memset(&hq, 0, sizeof(hq));
+		if (argc == 4 && strcmp(argv[1], "set") == 0) {
+			hq.has_sample_step = hq.has_sample_keep = true;
+			hq.sample_step = (uint32_t)strtonum(argv[2], 1, 3600,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "history: seconds %s: %s", argv[2],
+				    e);
+			hq.sample_keep = (uint32_t)strtonum(argv[3], 0, 5000,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "history: samples %s: %s", argv[3],
+				    e);
+		} else if (argc > 2)
+			usage();
+		else if (argc == 2) {
+			hq.has_after = true;
+			hq.after = (uint64_t)strtonum(argv[1], 0, INT64_MAX,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "history: after %s: %s", argv[1], e);
+		}
+		if ((error = arc_history(cl, &hq, &hr)) != 0)
+			fail(cl, error, "history");
+		rc = json_out("history", hr->ok, hr->error, hr->json,
+		    hr->trace.v, hr->trace.n);
+		arc_history_rsp_free(hr);
+		return (rc);
+	}
+	memset(&lq, 0, sizeof(lq));
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "f:o:")) != -1) {
+		switch (ch) {
+		case 'f':
+			lq.has_position = true;
+			lq.position = (uint64_t)strtonum(optarg, 0, INT64_MAX,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "log: position %s: %s", optarg, e);
+			break;
+		case 'o':
+			lq.has_lines = true;
+			lq.lines = (uint32_t)strtonum(optarg, 1, 5000, &e);
+			if (e != NULL)
+				xo_errx(1, "log: lines %s: %s", optarg, e);
+			break;
+		default:
+			usage();
+		}
+	}
+	argc -= optind;
+	argv += optind;
+	if (argc > 2)
+		usage();
+	lq.log_name = argc > 0 ? argv[0] : NULL;
+	lq.net_filter = argc > 1 ? argv[1] : NULL;
+	if ((error = arc_log(cl, &lq, &lr)) != 0)
+		fail(cl, error, "log");
+	rc = json_out("log", lr->ok, lr->error, lr->json, lr->trace.v,
+	    lr->trace.n);
+	arc_log_rsp_free(lr);
+	return (rc);
+}
+
+/*
+ * transport: the agent's listeners and the connections open to it.
+ * transport retry: start the SCTP listeners that are not up.
+ */
+static int
+cmd_transport(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_transport_req	 req;
+	struct arc_transport_rsp	*rsp;
+	int				 error;
+
+	if (argc > 2 || (argc == 2 && strcmp(argv[1], "retry") != 0))
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.retry = argc == 2;
+	if ((error = arc_transport(cl, &req, &rsp)) != 0)
+		fail(cl, error, "transport");
+	if (rsp->json != NULL)
+		xo_emit("{:json/%s}\n", rsp->json);
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("transport: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	arc_transport_rsp_free(rsp);
+	return (error);
+}
+
+/*
+ * ipfw add | delete: a rule, now; with -p kept too, and after "keep"
+ * kept only.  ipfw apply: the kept rules as the whole ruleset, through
+ * set 1; with -s taken back unless confirmed.  ipfw rules: the kept
+ * file read, or with -w put in place, with -n only checked.
+ */
+static int
+cmd_ipfw(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec		 sp;
+	struct arc_ipfw_rules_req	 req;
+	struct arc_ipfw_rules_rsp	*rsp, *cur;
+	struct stat			 sb;
+	const char			*from;
+	char				*text;
+	int				 ch, error, fd;
+	bool				 keep;
+
+	if (argc < 2)
+		usage();
+	if (strcmp(argv[1], "rules") == 0) {
+		from = NULL;
+		memset(&req, 0, sizeof(req));
+		req.jail = netjail;
+		argc--;
+		argv++;
+		optind = 1;
+		optreset = 1;
+		while ((ch = getopt(argc, argv, "nw:")) != -1) {
+			switch (ch) {
+			case 'n':
+				req.dry_run = true;
+				break;
+			case 'w':
+				from = optarg;
+				break;
+			default:
+				usage();
+			}
+		}
+		if (argc != optind || (req.dry_run && from == NULL))
+			usage();
+		if (from != NULL) {
+			if ((fd = open(from, O_RDONLY)) == -1 || fstat(fd,
+			    &sb) == -1 || (text = malloc((size_t)sb.st_size +
+			    1)) == NULL || read(fd, text, (size_t)sb.st_size) !=
+			    sb.st_size)
+				xo_err(1, "%s", from);
+			close(fd);
+			text[sb.st_size] = '\0';
+			if ((error = arc_ipfw_rules(cl, &req, &cur)) != 0)
+				fail(cl, error, "ipfw rules");
+			req.sha256 = cur->sha256;
+			req.conf_text = text;
+		}
+		if ((error = arc_ipfw_rules(cl, &req, &rsp)) != 0)
+			fail(cl, error, "ipfw rules");
+		if (from == NULL && rsp->conf_text != NULL)
+			xo_emit("{:text/%s}", rsp->conf_text);
+		else if (rsp->ok)
+			xo_emit("{:result/%s}\n", req.dry_run ? "ipfw has "
+			    "nothing against it; left as it was" : "in place; "
+			    "the one before is kept beside it");
+		emit_trace(rsp->trace.v, rsp->trace.n);
+		error = rsp->ok ? 0 : 1;
+		if (!rsp->ok)
+			xo_warnx("ipfw rules: %s", rsp->error != NULL ?
+			    rsp->error : "failed");
+		arc_ipfw_rules_rsp_free(rsp);
+		return (error);
+	}
+	keep = strcmp(argv[1], "keep") == 0;
+	if (keep) {
+		argc--;
+		argv++;
+		if (argc < 2)
+			usage();
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_IPFW;
+	sp.verb = argv[1];
+	sp.names.v = (const char *const *)(uintptr_t)(argv + 2);
+	sp.names.n = (size_t)(argc - 2);
+	sp.live = !keep;
+	sp.persist = keep || persist;
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/* bridge | geneve name verb word ...: a job; with -p kept in rc.conf. */
+static int
+cmd_l2(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = strcmp(argv[0], "bridge") == 0 ? ARC_JOB_KIND_BRIDGE :
+	    ARC_JOB_KIND_GENEVE;
+	sp.interface = argv[1];
+	sp.verb = argv[2];
+	sp.names.v = (const char *const *)(uintptr_t)(argv + 3);
+	sp.names.n = (size_t)(argc - 3);
+	sp.persist = persist;
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
 }
 
 /* storage kind [dataset]: the host's storage, as the host says it. */
@@ -2018,6 +2391,14 @@ main(int argc, char *argv[])
 		rc = cmd_stats(&cl);
 	else if (strcmp(argv[0], "kmod") == 0)
 		rc = cmd_kmod(&cl, argc, argv);
+	else if (strcmp(argv[0], "sysctl") == 0)
+		rc = cmd_sysctl(&cl, argc, argv);
+	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||
+	    strcmp(argv[0], "renice") == 0 || strcmp(argv[0], "log") == 0 ||
+	    strcmp(argv[0], "history") == 0)
+		rc = cmd_gula(&cl, argc, argv);
+	else if (strcmp(argv[0], "transport") == 0)
+		rc = cmd_transport(&cl, argc, argv);
 	else if (strcmp(argv[0], "storage") == 0)
 		rc = cmd_storage(&cl, argc, argv);
 	else if (strcmp(argv[0], "zfs") == 0 || strcmp(argv[0], "zpool") == 0 ||
@@ -2026,6 +2407,11 @@ main(int argc, char *argv[])
 		rc = cmd_storage_job(&cl, argc, argv);
 	else if (strcmp(argv[0], "fstab") == 0)
 		rc = cmd_fstab(&cl, argc, argv);
+	else if (strcmp(argv[0], "ipfw") == 0)
+		rc = cmd_ipfw(&cl, argc, argv);
+	else if (strcmp(argv[0], "bridge") == 0 || strcmp(argv[0], "geneve") ==
+	    0)
+		rc = cmd_l2(&cl, argc, argv);
 	else if (strcmp(argv[0], "packages") == 0)
 		rc = cmd_packages(&cl, argc, argv);
 	else if (strcmp(argv[0], "jobs") == 0 && argc == 1)

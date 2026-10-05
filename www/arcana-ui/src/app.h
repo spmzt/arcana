@@ -50,6 +50,10 @@ void		 arc_theme_set(const char *);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
+int		 arc_narrow(void);
+void		 arc_stream_send(const char *);
+int		 arc_map_w(void);
+int		 arc_map_h(void);
 void		 arc_title(const char *);
 char		*arc_hostname(void);
 char		*arc_origin(void);
@@ -83,6 +87,7 @@ struct html {
 
 void		 h_raw(struct html *, const char *);
 void		 h_txt(struct html *, const char *);
+void		 h_fit(struct html *, const char *, int);
 void		 h_fmt(struct html *, const char *, ...)
 		    __attribute__((format(printf, 2, 3)));
 void		 h_attr(struct html *, const char *, const char *);
@@ -131,6 +136,8 @@ enum node {
 	NODE_HOST,
 	NODE_JAIL,
 	NODE_NETWORK,		/* the fleet's network, as a map */
+	NODE_API,		/* the console's API, as it is documented */
+	NODE_USAGE,		/* how busy every host has been, drawn */
 };
 
 enum tab {
@@ -138,9 +145,13 @@ enum tab {
 	TAB_JAILS,
 	TAB_SERVICES,
 	TAB_NETWORK,
+	TAB_FIREWALL,
 	TAB_PACKAGES,
 	TAB_STORAGE,
 	TAB_KERNEL,
+	TAB_SYSCTL,
+	TAB_PROCESSES,
+	TAB_LOG,
 	TAB_JOBS,
 };
 
@@ -165,6 +176,8 @@ enum netkind {
 	NET_NETGRAPH,
 	NET_WIREGUARD,
 	NET_BIRD,
+	NET_BRIDGES,
+	NET_GENEVE,
 };
 
 /* The network tab's one table: what is shown, from which server. */
@@ -179,6 +192,7 @@ struct netview {
 	char		 error[256];	int		 sort;		/* column sorted by, or -1 */
 	bool		 sort_desc;
 	char		 host_filter[129]; /* routes: searched for on the host */
+	bool		 paused;	/* connections, sockets: not read again by themselves */
 	int		 fib;		/* the routing table shown; 0 the first */
 };
 
@@ -251,6 +265,7 @@ struct op {
 	bool		 polling;
 	bool		 waiting;	/* the host does not answer; it runs on */
 	int		 what;		/* JOB_*: what to refresh when done */
+	char		*again;		/* a job as it was sent, to send again */
 	char		 target[256];	/* the jail or service */
 };
 
@@ -263,7 +278,10 @@ enum {
 	JOB_PACKAGES,
 	JOB_IFACE,
 	JOB_KERNEL,
+	JOB_SYSCTL,
+	JOB_FIREWALL,
 	JOB_STORAGE,
+	JOB_PROCESS,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -356,6 +374,7 @@ struct app {
 	bool		 svc_sort_desc;
 	bool		 peek;		/* app.jail is shown in a box over the page */
 	bool		 rail_open;	/* the tree, on a narrow screen, is unfolded */
+	bool		 who_open;	/* the top bar's menu, on a phone */
 	char		 theme[16];	/* "" for the default */
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
 	ucl_object_t	*push;		/* /api/push: the devices that are told */
@@ -413,6 +432,11 @@ void		 confirm(const char *, const char *, const char *, bool,
 
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
+void		 ops_save(void);
+void		 op_retry(int);
+bool		 box_shut(const char *);
+void		 box_head(struct html *, const char *, const char *);
+void		 ops_load(void);
 void		 job_send(struct server *, char *, const char *, int,
 		    const char *);
 void		 job_send_host(struct server *, char *, const char *, int,
@@ -526,8 +550,54 @@ void		 tbl_head(struct html *, const char *, const struct tcol *, int,
 const ucl_object_t **tbl_rows(const char *, const ucl_object_t *,
 		    const struct tcol *, int, const char *);
 bool		 tbl_sorted(const char *);
+void		 tbl_set(const char *, int, bool);
+int		 tbl_col(const char *, bool *);
 bool		 tbl_action(const char *, const char *, const char *);
 void		 refresh_kernel(struct server *, bool);
+void		 apidoc_open(void);
+void		 view_apidoc(struct html *);
+bool		 apidoc_action(const char *, const char *, const char *);
+void		 net_live_tick(double);
+int		 routes_held(void);
+void		 network_more(struct server *);
+void		 refresh_firewall(struct server *, bool);
+bool		 firewall_rail(struct html *);
+bool		 firewall_rail_away(void);
+void		 firewall_tick(double);
+void		 view_firewall(struct html *, struct server *);
+bool		 firewall_form(const char *, const ucl_object_t *);
+bool		 firewall_action(const char *, const char *, const char *);
+void		 view_bridges(struct html *, struct server *,
+		    const ucl_object_t *);
+void		 view_geneve(struct html *, struct server *,
+		    const ucl_object_t *);
+bool		 l2_form(const char *, const ucl_object_t *);
+bool		 l2_action(const char *, const char *, const char *);
+/* procs.c, logs.c, usage.c: what runs, what was written, how busy. */
+void		 refresh_procs(struct server *, bool);
+void		 procs_tick(double);
+void		 view_procs(struct html *, struct server *);
+bool		 procs_form(const char *, const ucl_object_t *);
+bool		 procs_action(const char *, const char *, const char *);
+void		 refresh_logs(struct server *, bool);
+void		 logs_tick(double);
+void		 view_logs(struct html *, struct server *);
+bool		 logs_form(const char *, const ucl_object_t *);
+bool		 logs_action(const char *, const char *, const char *);
+void		 usage_open(void);
+void		 usage_tick(double);
+void		 view_usage(struct html *);
+bool		 usage_action(const char *, const char *, const char *);
+bool		 usage_form(const char *, const ucl_object_t *);
+void		 fmt_size(char *, size_t, double);
+void		 refresh_sysctl(struct server *, bool);
+void		 sysctl_stream(const ucl_object_t *);
+void		 view_sysctl(struct html *, struct server *);
+bool		 sysctl_form(const char *, const ucl_object_t *);
+bool		 sysctl_action(const char *, const char *, const char *);
+void		 refresh_transport(struct server *, bool, bool);
+void		 transport_tick(double);
+void		 view_transport(struct html *, struct server *);
 void		 refresh_storage(struct server *, bool);
 void		 view_storage(struct html *, struct server *);
 bool		 storage_modal(struct html *);

@@ -8,12 +8,64 @@
 - Storage, beyond what there is: `zfs send` and `receive` between
   hosts; encryption keys; a file system made on a partition (newfs) and
   grown; swap; a disk's health (SMART); a vnet jail's own datasets.
-- The console keeps no connection to an agent open: every request
-  makes one. One kept for each host, and a host switched from TCP to
-  SCTP from the console.
-- Views that change by themselves (connections, sockets) updated as
-  they change, not when asked.
-- A tab that shows the API (docs/openapi.yaml), and one for sysctl.
+- The firewall's page, further: rules of a part moved by dragging and
+  renumbered to make room; a rule's words offered as they are typed
+  (actions, tables, interfaces, the host's own addresses); a hit
+  counter drawn over time and the rules that never matched marked;
+  the difference between the kept rules and the kernel's shown as a
+  whole before Apply; a packet followed through the chain ("what
+  happens to tcp from A to B in"); the log of denied packets
+  (ipfw0) read; tables and NAT with pages of their own.
+- The firewall, beyond what there is: its tables' entries read and
+  changed, NAT and NAT64 instances made from forms and not only as
+  lines of the kept rules, pipes and queues, the dynamic rules shown,
+  a rule moved, and a jail's firewall from the jail's page (the agent
+  takes the jail; the page asks only for the host).
+- Bridges and geneve, beyond what there is: a bridge's own options
+  from a form (priority, timers, protocol: the agent takes them), the
+  addresses a bridge has learned, a geneve tunnel's forwarding table.
+- Workflows: a chain of steps kept by the console and run by it on
+  several hosts at once. As decided:
+  - The spec is the schema the steps are made from: a table in
+    `arcana.yaml` of which attributes each kind of job uses and which
+    it needs, carried into `schema.json`, so that the editor's forms
+    and the console's checks come from it and a new kind is there
+    without more code.
+  - A step is a job of any kind, with a condition before it (a read
+    operation and a test on its reply) and what follows a failure:
+    stop, go on, or another step. Values may be parameters asked for
+    when it is run, the host, or what an earlier step answered.
+  - Triggers: by hand, at an interval, and on events, both asked for
+    by the console (a host that stopped or began answering, a
+    threshold crossed, a jail's state) and told by the agent (cblink
+    notifications).
+  - A workflow that runs by itself may hold a destructive kind (a
+    pool destroyed, a partition table, an agent replaced) only when
+    it is marked so by hand.
+  - Runs kept, each host and step with its trace; the chain drawn as
+    a graph, and a run as that graph coloured as it goes; the queue
+    saved as a workflow.
+- Gula, more of it: a jail's own logs (its `/var/log`), the packed
+  logs of newsyslog, the audit trail and `dmesg`; a level for a line
+  where syslogd writes one (`-v`); the history kept across a restart
+  of the agent, and older samples thinned instead of dropped; each jail's
+  share of the CPUs and the memory (rctl, racct); a threshold on any
+  of the figures as an event for the workflows; threads of a process,
+  its open files and sockets (procstat).
+- Routes, connections and sockets in parts, as sysctl's values are:
+  the agent answers sysctl as a dump, the console passes each item to
+  the page over a WebSocket (`/api/stream`), and the table fills as
+  they come. The network's tables are still one reply each, cut off
+  at a size and counted: what they show is the output of netstat(1)
+  and sockstat(1), which the agent has to run in a thread of its own
+  and a dump is answered in the loop's. They need the rows kept by
+  the agent between the parts, or netlink instead of the programs.
+- The page on a phone: a table as cards, one for each row, with what
+  is done to a row behind one menu; the older tables (BIRD's
+  protocols, WireGuard's peers, routes, sockets) sorted and filtered
+  by the helper the newer ones use.
+- One SCTP association shared by the requests that run at once, each
+  on a stream of its own, instead of a connection for each.
 - The mesh: agents joined by SCTP associations, each to at least a
   configured number of others (2 unless set), so that the console
   reaches an agent it has lost through one it still has. SCTP only,
@@ -54,13 +106,18 @@
 
 Written and tested with stand-ins, never run for real:
 
-- On a host itself, as root: creating, setting and destroying
-  interfaces and what of them is kept in rc.conf (done for real only in
-  a vnet jail, below); static routes, routing tables and netgraph
-  against the real route(8) and ngctl(8) anywhere. The one jail to try
-  them in has a BIRD that learns the kernel's routes, and a route made
-  to try would be one it could announce. The interfaces themselves and
-  the route lookup's parsing were checked against real output.
+- On a host itself, as root: what of an interface is kept in rc.conf
+  (done for real only in a vnet jail, below), and a static route kept
+  there. A route in another routing table: the one tried was refused
+  by the kernel, its gateway not being reached in that table, which
+  came through as route(8) says it. Whether the address named to send
+  from is the one a route then uses: route(8) took it.
+- Nodes of the map that move away from the pointer, as was reported
+  from a browser that is not the one the tests run: not reproduced. A
+  real mouse in headless Chromium keeps a host under it for every
+  step. What could cause it was changed: the pointer is the drawing's
+  while something is dragged, the neighbours outside no longer swing
+  about when a host is moved, and the drawing is as large as its room.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
 - WireGuard and BIRD against the real wg(8), wg-quick(8) and birdc(8):
@@ -77,6 +134,9 @@ Written and tested with stand-ins, never run for real:
   the page that a jail runs).
 - Loading and unloading a kernel module for real: reading the kernel
   is real, kldload(8) and kldunload(8) are stand-ins in the tests.
+- The switch to SCTP from the page, and SCTP between two machines:
+  the API was run for real, between a console and an agent on one
+  machine.
 - BIRD's safe mode and what is done when BIRD stops answering, against
   a real BIRD: the replies looked for are those in BIRD's source, 2.19
   and 3.3 (`cmd_reconfig_msg()`), and the tests use a stand-in that
@@ -129,6 +189,55 @@ What was once in the list above, and when it was run:
   could before it refused. Since then no pool with a dataset mounted
   where the system lives is destroyed, exported or force-unmounted
   from here, and none by force.
+
+- SCTP (2026-10-04, on a test machine with `sctp` in its kernel): an
+  agent listening on TCP also listens on SCTP at the same address and
+  port; the console switched to it through its API, asked the jails
+  over DTLS on SCTP, kept the association open for the next request,
+  saw its own session listed as sctp, and switched back.
+- Static routes and netgraph, with the real route(8) and ngctl(8)
+  (2026-10-04, on the same machine, in a vnet jail made for it and on
+  the host): a route added with a metric and a weight, which
+  `route get` then showed, looked up through the agent and deleted;
+  what route(8) refuses said as it says it; a bridge node made on an
+  interface, named, connected by a second hook, listed, the hook
+  removed and the node shut down, on the host and inside the jail.
+  In a jail, netgraph needs the jail to allow its sockets
+  (`allow.socket_af`) and the node types loaded on the host: a jail
+  cannot load a module.
+- Sysctl (the same day and machine): read from the kernel, one set
+  with the real sysctl(8), and a read-only one refused as sysctl says.
+- The agent's tests that need root, on that machine too. They share
+  one jail, and are now marked never to run side by side.
+
+- Processes, logs and history (2026-10-05, on the test machine, the
+  agent as root): every process read with another user's and a
+  jail's among them, and a jail's alone; a busy loop at 100% CPU
+  while its WCPU still rose; a nice value lowered, STOP, CONT and
+  TERM sent across users, and a jail's process only by its jail;
+  init, the agent and the kernel's idle process refused. The real
+  `/var/log/messages` read, a line of logger(1) followed from the
+  position before it and found by a search. Four samples of history
+  with the real swap, network and disk figures. Not done there: the
+  page against that agent, and a log turned over by the real
+  newsyslog.
+
+- The firewall, bridges and geneve (2026-10-05, on the test machine,
+  with the real ipfw(8) and ifconfig(8)): a rule added now and
+  deleted; rules kept, and applied through set 1 and the swap, with a
+  table of the kept file made in it; in safe mode the old rules
+  swapped back by the host when nothing confirmed, and the new ones
+  left with set 1 emptied when it was; a text ipfw refuses not kept,
+  with ipfw's own words; the firewall turned off and on. A bridge
+  with two members: VLAN filtering, an access port and a trunk, both
+  in the spanning tree, read back as ifconfig has them, with role and
+  state; an address refused on a member, and one put there by hand
+  shown. Geneve tunnels made in l2 to a host and in l3 to a multicast
+  group with TTL, DF and DSCP inherited, their options set and read
+  back. Not run for real: any of it in a vnet jail, what is kept in
+  rc.conf for a bridge or a tunnel, NAT and NAT64, a spanning tree
+  with more than one bridge in it (every port there was designated
+  and forwarding), and traffic through a geneve tunnel.
 
 ## Known limits
 

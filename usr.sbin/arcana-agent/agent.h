@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.17.0"
+#define	ARCANA_AGENT_VERSION	"0.23.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -91,6 +91,12 @@ struct opts {
 	const char	*mount_bin;
 	const char	*umount_bin;
 	const char	*fstab_path;
+	const char	*sysctl_bin;
+	const char	*ipfw_bin;
+	const char	*ipfw_rules;
+	const char	*sysctl_conf;
+	const char	*log_dir;	/* where syslogd(8) writes */
+	const char	*history_conf;	/* how the host is sampled */
 	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
@@ -271,7 +277,7 @@ void		 service_state(struct work *, const char *, bool *, bool *);
 
 /* invidia/network.c */
 int		 do_network(struct work *, uint8_t, uint8_t, const char *,
-		    uint32_t, struct arc_network_rsp *);
+		    uint32_t, uint32_t, struct arc_network_rsp *);
 int		 do_route_lookup(struct work *, const char *, uint32_t,
 		    struct arc_route_lookup_rsp *);
 
@@ -344,6 +350,47 @@ int		 do_kernel(struct work *, struct arc_kernel_rsp *);
 int		 do_kmod(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 kmod_name_ok(const char *);
+/* gula: what runs, what was written down, how busy it has been. */
+int		 do_processes(struct work *, const char *,
+		    struct arc_processes_rsp *);
+const char	*proc_check(const struct arc_job_spec *);
+char		*proc_title(const struct arc_job_spec *);
+int		 do_proc_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+bool		 log_name_ok(const char *);
+int		 do_log(struct work *, const char *, const char *, bool,
+		    uint64_t, uint32_t, struct arc_log_rsp *);
+void		 history_start(void);
+int		 do_history(struct work *, uint64_t, bool, uint32_t, uint32_t,
+		    struct arc_history_rsp *);
+
+int		 do_sysctl(struct work *, const char *,
+		    struct arc_sysctl_rsp *);
+int		 do_sysctl_set(struct work *, const char *, const char *, bool,
+		    const char **);
+bool		 sysctl_name_ok(const char *);
+bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,
+		    uint64_t *);
+bool		 sysctl_value_ok(const char *);
+int		 do_l2(struct work *, bool, struct arc_network_rsp *);
+const char	*bridge_holding(struct work *, const char *);
+const char	*l2_check(const struct arc_job_spec *);
+char		*l2_title(const struct arc_job_spec *);
+int		 do_l2_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+int		 do_ipfw(struct work *, struct arc_network_rsp *);
+int		 do_ipfw_rules(struct work *, const struct arc_ipfw_rules_req *,
+		    struct arc_ipfw_rules_rsp *);
+const char	*ipfw_check(const struct arc_job_spec *);
+char		*ipfw_title(const struct arc_job_spec *);
+int		 do_ipfw_job(struct work *, const struct arc_job_spec *, bool *,
+		    const char **);
+const char	*ipfw_settle(struct work *, bool);
+const char	*ipfw_unadd(struct work *, const struct arc_job_spec *);
+int		 transport_watch(cbl_ctx *);
+void		 transport_add(const char *, cbl_listener *);
+void		 transport_init(cbl_ctx *, cbl_loop *, cbl_tls *);
+int		 do_transport(struct work *, bool, struct arc_transport_rsp *);
 bool		 kmod_loaded(const char *);
 
 /* acedia/storage.c: disks, pools, datasets, mounts. */

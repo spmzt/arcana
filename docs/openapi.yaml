@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.26.1
+  version: 0.32.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -502,6 +502,11 @@ paths:
           in: query
           description: The routing table, when not the first.
           schema: { type: integer }
+        - name: offset
+          in: query
+          description: For routes, how many of the rows to leave out
+            first, to read on in a table too large for one reply.
+          schema: { type: integer }
         - name: jail
           in: query
           description: A running jail with a network of its own (vnet), whose
@@ -613,6 +618,224 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+  /api/stream:
+    get:
+      tags: [servers]
+      summary: A WebSocket for what comes in parts
+      description: Upgraded to a WebSocket; it needs the session and an
+        Origin that is the console's own. The page sends id, server,
+        what (sysctl) and filter as a JSON text; the console answers
+        for that id with any number of messages that have rows, an
+        array of the next values, then one with done and total, or one
+        with error. A message with id and stop ends one early. The
+        agent sends a part only when the one before was taken.
+      responses:
+        "101":
+          description: Switching to the WebSocket protocol
+        "401": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/ipfw/rules:
+    get:
+      tags: [servers]
+      summary: The kept rules of the firewall
+      description: text, a file of ipfw(8) commands one a line, and
+        sha256 of it. The rules themselves, with their sets and
+        counters, are read with net/ipfw; a rule is added or deleted,
+        the kept rules applied and the firewall turned on or off by
+        jobs of kind ipfw.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: jail
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok, text and sha256, or error
+    post:
+      tags: [servers]
+      summary: Replace the kept rules, or only check them
+      description: With text and the sha256 of what it was made from;
+        check true has ipfw read it without doing it and keeps nothing.
+        A line may not name a set, flush or delete, which applying does.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok, text and sha256, or error
+        "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/processes:
+    get:
+      tags: [servers]
+      summary: What runs on the host
+      description: Under data. processes is each process with its pid,
+        ppid, user, jid and jail, state (run, sleep, stop, zombie, wait,
+        lock, idle) and what it waits on, nice, pri, threads, rss and
+        size in bytes, time (CPU seconds used), wcpu (the kernel's
+        decayed share of one CPU, in percent), cpu (its share between
+        this look and the one before), in and out (blocks read and
+        written), io (blocks a second since the look before), start,
+        kernel when it is the kernel's own, comm and args, the busiest
+        first; ncpu; elapsed, the seconds between the two looks. With
+        jail only that jail's. A process is sent a signal or given a
+        nice value by a job of kind process, with verb signal or
+        renice and as args its pid, the signal's name or the nice
+        value, and optionally start as it was read, so that another
+        process with the same number is left alone.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: jail
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok and data, or error
+  /api/servers/{server}/log:
+    get:
+      tags: [servers]
+      summary: A log of the host, as syslogd(8) wrote it
+      description: Under data. files is the logs that can be read (name,
+        size, mtime); name the one read; lines its last lines, each
+        with time, host, tag, pid and text when the line is syslog's,
+        and text alone when not; size; position, where the file ended;
+        rotated, when the file was shorter than position said and was
+        read from its start. To follow a log, ask again with the
+        position the reply before gave.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: name
+          in: query
+          description: A file of the host's log directory; messages
+            when absent.
+          schema: { type: string, pattern: "^[A-Za-z0-9_-][A-Za-z0-9._-]*$" }
+        - name: filter
+          in: query
+          description: Only the lines with this text in them, in either
+            case.
+          schema: { type: string, maxLength: 128 }
+        - name: position
+          in: query
+          description: Only what was written after this byte.
+          schema: { type: integer, minimum: 0 }
+        - name: lines
+          in: query
+          description: How many lines at most; 200 when absent.
+          schema: { type: integer, minimum: 1, maximum: 5000 }
+      responses:
+        "200":
+          description: ok and data, or error
+        "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/history:
+    get:
+      tags: [servers]
+      summary: How busy the host has been
+      description: Under data, what the agent sampled by itself and
+        kept. step is the seconds between two samples, keep how many
+        are kept, bytes the memory of the agent that takes; fields
+        names what a sample begins with, in order (t, cpu, load, mem,
+        swap, rx, tx, read, write); nets and disks name the interfaces
+        (without the loopback) and the disks told apart, at most 16 of
+        each; samples is an array of arrays, the oldest first, each
+        the fields, then bytes a second in and out of each of nets,
+        then read and written of each of disks, with cpu in percent of
+        all CPUs, mem and swap in bytes in use, rx and tx the sum of
+        the interfaces, read and write the sum of the disks;
+        mem_total, swap_total and ncpu.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: after
+          in: query
+          description: Only the samples after this time, in seconds
+            since the epoch.
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: ok and data, or error
+    post:
+      tags: [servers]
+      summary: How the agent samples the host
+      description: The agent samples every step seconds from now on and
+        keeps keep samples, the newest of those it has; with keep 0 it
+        does not sample and holds no memory for it. It keeps this for
+        its next start. The reply is as the GET's.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [step, keep]
+              properties:
+                step: { type: integer, minimum: 1, maximum: 3600 }
+                keep: { type: integer, minimum: 0, maximum: 5000 }
+      responses:
+        "200":
+          description: ok and data, or error
+        "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/sysctl:
+    get:
+      tags: [servers]
+      summary: The kernel's state, sysctl(8)
+      description: Under data. values is each name with its value as
+        sysctl prints it, its type (string, integer, unsigned), rw when
+        it can be set, tun when it is a loader tunable, and descr; kept
+        is what sysctl.conf sets at boot (name, value). filter is where
+        in the tree to begin, a name or the start of one; without it the
+        whole tree, of which only the first values come, with total and
+        truncated. One is set by a job of kind sysctl, with the name and
+        the value as its two args; with persist also in sysctl.conf.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: filter
+          in: query
+          schema: { type: string, pattern: "^[A-Za-z0-9._%-]*$" }
+      responses:
+        "200":
+          description: ok and data, or error
+        "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/transport:
+    get:
+      tags: [servers]
+      summary: How the agent is reached, and who is connected to it
+      description: Under data. listeners is each of the agent's listeners
+        (uri, transport tcp, sctp or unix, up, and error when it is not
+        up); sctp whether the kernel has SCTP; sessions the connections
+        open now (transport, address, subject of the certificate, since);
+        seen how many there were since the agent started. uri is how the
+        console itself reaches the agent. The console keeps its
+        connection to an agent open and uses it for the next request.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
+    post:
+      tags: [servers]
+      summary: Have the agent start its SCTP listeners
+      description: With retry true. An agent that listens on TCP listens
+        on SCTP at the same address and port once the kernel has SCTP; it
+        does not load the module and does not try again by itself.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data as for GET, or error
+  /api/servers/{server}/transport/switch:
+    post:
+      tags: [servers]
+      summary: Reach the agent over SCTP instead of TCP, or back
+      description: With transport sctp or tcp. The console asks the agent
+        over the other transport first, at the same address and port,
+        and changes the server only when it answers. There is no falling
+        back by itself afterwards.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and the host, as hello; the server's uri changed
+        "400": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/stats:
     get:
       tags: [servers]
@@ -701,7 +924,8 @@ paths:
                           service-config, pkg-upgrade, if-address,
                           if-state, route, if-set, if-create, if-destroy,
                           netgraph, wireguard, bird, if-vnet, kmod, zfs,
-                          zpool, mount, gpart, cam]
+                          zpool, mount, gpart, cam, sysctl, ipfw,
+                          bridge, geneve, process]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the

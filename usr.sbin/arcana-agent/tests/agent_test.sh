@@ -246,7 +246,8 @@ start_daemon()
 	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" \
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
-	    -t "$(pwd)/fake-kldunload" -w 2 $DAEMON_ARGS \
+	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
+	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
@@ -637,6 +638,13 @@ network_body()
 	    -o not-match:'"destination":"10.0.0.0/24"' cat found.out
 	atf_check -o match:'"total":3000' -o match:'"truncated":"false"' \
 	    "$JGC" --libxo json -c "$SOCK" net routes -4 10.11.249.
+	# And read on: the rows after the first 2000, which are the rest.
+	atf_check -o save:more.out -e ignore "$JGC" -c "$SOCK" net routes -4 -o 2000
+	atf_check -o match:'"destination":"10.8.0.0/24"' \
+	    -o not-match:'"destination":"10.7.249.0/24"' \
+	    -o match:'"destination":"10.11.249.0/24"' cat more.out
+	atf_check -o match:'"total":3000' -o match:'"truncated":"false"' \
+	    "$JGC" --libxo json -c "$SOCK" net routes -4 -o 2000
 	rm huge
 }
 network_cleanup()
@@ -1525,8 +1533,8 @@ EOS
 #!/bin/sh
 echo "\$*" >> $(pwd)/helper.log
 case "\$3" in
-interfaces) echo '{"interfaces":[{"name":"epair1b","up":true,"mtu":1500,"addresses":[{"family":"inet","address":"10.99.0.2","prefixlen":24}]},{"name":"wg0","up":true,"mtu":1420,"addresses":[{"family":"inet","address":"10.255.0.1","prefixlen":30}]}],"time":1000}' ;;
-exists) case "\$4" in epair1b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
+interfaces) echo '{"interfaces":[{"name":"epair91b","up":true,"mtu":1500,"addresses":[{"family":"inet","address":"10.99.0.2","prefixlen":24}]},{"name":"wg0","up":true,"mtu":1420,"addresses":[{"family":"inet","address":"10.255.0.1","prefixlen":30}]}],"time":1000}' ;;
+exists) case "\$4" in epair91b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
 up) echo 1 ;;
 current) printf '1500\tto the host' ;;
 prefix) [ "\$5" = 10.99.0.2 ] && echo 10.99.0.2/24 ;;
@@ -1534,7 +1542,7 @@ esac
 exit 0
 EOS
 	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
-	printf '#!/bin/sh\necho "$*" >> %s/route.log\n[ "$4" = get ] && printf "   route to: %%s\\n    gateway: 10.99.0.1\\n  interface: epair1b\\n" "$6"\nexit 0\n' "$(pwd)" > fake-route
+	printf '#!/bin/sh\necho "$*" >> %s/route.log\n[ "$4" = get ] && printf "   route to: %%s\\n    gateway: 10.99.0.1\\n  interface: epair91b\\n" "$6"\nexit 0\n' "$(pwd)" > fake-route
 	printf '#!/bin/sh\necho "$*" >> %s/sysrc.log\nexit 1\n' "$(pwd)" > sysrc-log
 	cat > fake-wg <<EOS
 #!/bin/sh
@@ -1564,25 +1572,25 @@ EOS
 
 	# Its interfaces: read by the helper, which attaches to the jail;
 	# the host's are still the host's.
-	atf_check -o match:'"name":"epair1b"' -o match:'"address":"10.99.0.2"' \
+	atf_check -o match:'"name":"epair91b"' -o match:'"address":"10.99.0.2"' \
 	    -o not-match:'"name":"lo0"' "$JGC" -j gateway -c "$SOCK" net interfaces
 	atf_check -o match:'^-Q 4 interfaces - 0$' cat helper.log
-	atf_check -o match:'"name":"lo0"' -o not-match:'epair1b' \
+	atf_check -o match:'"name":"lo0"' -o not-match:'epair91b' \
 	    "$JGC" -c "$SOCK" net interfaces
 	# Its routes and its route to an address: the host's programs,
 	# told which jail.
 	atf_check -o match:'fake-netstat -j 4 --libxo json -rnW -f inet' \
 	    "$JGC" -t -j gateway -c "$SOCK" net routes -4
-	atf_check -o match:'"gateway":"10.99.0.1","interface":"epair1b"' \
+	atf_check -o match:'"gateway":"10.99.0.1","interface":"epair91b"' \
 	    "$JGC" -j gateway -c "$SOCK" route get 192.0.2.9
 	atf_check -o match:'^-j 4 -n get -inet 192.0.2.9$' cat route.log
 
 	# A change there: ifconfig and route with the jail, the job named
 	# after it, what is kept kept in the jail's own rc.conf.
-	atf_check -o match:'gateway: epair1b: add 10.99.0.5/24' \
-	    -o match:'fake-ifconfig -j 4 epair1b inet 10.99.0.5/24 alias' \
-	    "$JGC" -p -j gateway -c "$SOCK" interface epair1b add 10.99.0.5/24
-	atf_check -o match:'^ifconfig_epair1b_alias0="inet 10.99.0.5/24"$' \
+	atf_check -o match:'gateway: epair91b: add 10.99.0.5/24' \
+	    -o match:'fake-ifconfig -j 4 epair91b inet 10.99.0.5/24 alias' \
+	    "$JGC" -p -j gateway -c "$SOCK" interface epair91b add 10.99.0.5/24
+	atf_check -o match:'^ifconfig_epair91b_alias0="inet 10.99.0.5/24"$' \
 	    cat "$R/etc/rc.conf"
 	atf_check -o not-match:'10.99.0.5' cat rc.conf
 	atf_check -o match:'fake-route -j 4 -n add -inet 10.77.0.0/16 10.99.0.1' \
@@ -1594,14 +1602,14 @@ EOS
 	# there.
 	: > ifconfig.log
 	atf_check -o match:'queued' "$JGC" -q -s -j gateway -c "$SOCK" \
-	    interface epair1b remove 10.99.0.2
+	    interface epair91b remove 10.99.0.2
 	for i in $(seq 1 100); do
 		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
 		    break
 		sleep 0.1
 	done
-	atf_check -o match:'^-j 4 epair1b inet 10.99.0.2 -alias$' \
-	    -o match:'^-j 4 epair1b inet 10.99.0.2/24 alias$' cat ifconfig.log
+	atf_check -o match:'^-j 4 epair91b inet 10.99.0.2 -alias$' \
+	    -o match:'^-j 4 epair91b inet 10.99.0.2/24 alias$' cat ifconfig.log
 
 	# WireGuard there: the jail's own wg, through jexec; the key is
 	# made in the jail's directory, where the jail's wg reads it, and
@@ -1661,24 +1669,24 @@ EOS
 	# An interface of the host given to the jail: the host's ifconfig,
 	# not told to work in the jail; kept, it is the jail's
 	# vnet.interface in jail.conf.
-	printf 'gateway {\n\tvnet;\n\tvnet.interface = "epair1b";\n}\n' \
+	printf 'gateway {\n\tvnet;\n\tvnet.interface = "epair91b";\n}\n' \
 	    >> etc/jail.conf
 	: > ifconfig.log
 	atf_check -o match:'give lo0 to gateway \(kept\)' -o match:'done' \
 	    "$JGC" -p -c "$SOCK" interface lo0 give gateway
 	atf_check -o match:'^lo0 vnet 4$' -o not-match:'-j 4' cat ifconfig.log
-	atf_check -o match:'vnet.interface = "epair1b", "lo0";' \
+	atf_check -o match:'vnet.interface = "epair91b", "lo0";' \
 	    cat etc/jail.conf
 	# And taken back: out of the jail, and out of the file.
 	atf_check -o match:'take lo0 back from gateway' \
 	    -o match:'fake-ifconfig lo0 -vnet 4' \
 	    "$JGC" -p -c "$SOCK" interface lo0 take gateway
-	atf_check -o match:'vnet.interface = "epair1b";' \
+	atf_check -o match:'vnet.interface = "epair91b";' \
 	    -o not-match:'"lo0"' cat etc/jail.conf
 	# What the file has already stays as it is written.
 	atf_check -o match:'done' \
-	    "$JGC" -p -c "$SOCK" interface epair1b take gateway
-	atf_check -o not-match:'epair1b' cat etc/jail.conf
+	    "$JGC" -p -c "$SOCK" interface epair91b take gateway
+	atf_check -o not-match:'epair91b' cat etc/jail.conf
 	# Only what is there moves, and only to a jail with a network.
 	atf_check -s exit:1 -o match:'the jail gateway has no interface em9' \
 	    "$JGC" -c "$SOCK" interface em9 take gateway
@@ -2206,6 +2214,15 @@ echo "kldunload \$*" >> $(pwd)/kld.log
 exit 0
 EOS
 	chmod +x fake-kldload fake-kldunload
+	cat > fake-sysctl <<EOS
+#!/bin/sh
+echo "sysctl \$*" >> $(pwd)/kld.log
+[ "\$1" = "kern.nosuch=1" ] && { echo "sysctl: unknown oid 'kern.nosuch'" >&2; exit 1; }
+exit 0
+EOS
+	chmod +x fake-sysctl
+	printf '# kept\nkern.ipc.somaxconn=1024\nnet.inet.ip.forwarding = 1 # routes\n' > sysctl.conf
+	DAEMON_ARGS="-Q $(pwd)/fake-sysctl -O $(pwd)/sysctl.conf"
 	start_daemon
 	printf 'kld_list="if_bridge"\n' >> rc.conf
 
@@ -2262,8 +2279,588 @@ EOS
 	else
 		atf_check -o match:'^kldunload sctp$' cat kld.log
 	fi
+
+	# The kernel's state: read from the kernel, a name or the start of
+	# one; with what sysctl.conf sets at boot.
+	atf_check -o save:s.json "$JGC" -c "$SOCK" sysctl kern.ostype
+	atf_check -o match:'"values":\[\{"name":"kern.ostype","value":"FreeBSD","type":"string","rw":false' \
+	    -o match:'"kept":\[\{"name":"kern.ipc.somaxconn","value":"1024"\},\{"name":"net.inet.ip.forwarding","value":"1"\}\]' \
+	    cat s.json
+	atf_check -o match:'"name":"kern.maxproc","value":"[0-9]+","type":"integer"' \
+	    -o match:'"descr":"' "$JGC" -c "$SOCK" sysctl kern.maxproc
+	atf_check -o match:'"name":"kern.ipc.somaxconn"' \
+	    -o not-match:'"name":"vm\.' "$JGC" -c "$SOCK" sysctl kern.ipc.
+	# All of it is more than a reply carries: the first, and counted.
+	atf_check -o match:'"name":"kern.ostype"' -e match:'the first of [0-9]+' \
+	    "$JGC" -c "$SOCK" sysctl
+	# In parts, as a dump: the whole tree, nothing left out for size,
+	# each part an array of its own; and a part of the tree the same.
+	atf_check -o save:parts.json "$JGC" -c "$SOCK" sysctl parts
+	atf_check -o match:'^[1-9][0-9]*$' sh -c 'wc -l < parts.json | tr -d " "'
+	[ "$(wc -l < parts.json)" -gt 10 ] || atf_fail "the tree came in $(wc -l < parts.json) parts"
+	atf_check -o match:'^\[\{"name":"kern.ostype","value":"FreeBSD"' head -1 parts.json
+	atf_check -o match:'"name":"vm\.' -o match:'"name":"net\.' cat parts.json
+	atf_check -o match:'^\[\{"name":"kern.ostype"[^]]*\]$' \
+	    "$JGC" -c "$SOCK" sysctl parts kern.ostype
+	atf_check -s exit:1 -e match:'Invalid argument' -o ignore \
+	    "$JGC" -c "$SOCK" sysctl parts 'kern x'
+	# Set with sysctl(8); kept, the line that set it before is replaced
+	# and the rest of the file is as it was.
+	: > kld.log
+	atf_check -o match:'done +sysctl kern.ipc.somaxconn=2048$' \
+	    "$JGC" -c "$SOCK" sysctl kern.ipc.somaxconn=2048
+	atf_check -o match:'^sysctl kern.ipc.somaxconn=2048$' cat kld.log
+	atf_check -o match:'^kern.ipc.somaxconn=1024$' cat sysctl.conf
+	atf_check -o match:'done +sysctl kern.ipc.somaxconn=4096 \(kept\)' \
+	    "$JGC" -p -c "$SOCK" sysctl kern.ipc.somaxconn=4096
+	atf_check -o match:'^kern.ipc.somaxconn=4096$' -o not-match:'1024' \
+	    -o match:'^# kept$' -o match:'^net.inet.ip.forwarding = 1 # routes$' \
+	    cat sysctl.conf
+	atf_check -o match:'done' "$JGC" -p -c "$SOCK" sysctl 'kern.corefile=/var/cores/%N core'
+	atf_check -o match:'^kern.corefile="/var/cores/%N core"$' cat sysctl.conf
+	atf_check -o match:'"kept":.*"name":"kern.corefile","value":"/var/cores/%N core"' \
+	    -o match:'"values":\[\]' "$JGC" -c "$SOCK" sysctl kern.nothing-there
+	# A name the kernel leaves out of its list is found by itself.
+	if sysctl -n kern.ipc.somaxconn >/dev/null 2>&1; then
+		atf_check -o match:'"values":\[\{"name":"kern.ipc.somaxconn","value":"[0-9]+"' \
+		    "$JGC" -c "$SOCK" sysctl kern.ipc.somaxconn
+	fi
+	# What sysctl refuses is said, and is not kept.
+	atf_check -s exit:1 -o match:'unknown oid' \
+	    "$JGC" -p -c "$SOCK" sysctl kern.nosuch=1
+	atf_check -o not-match:'nosuch' cat sysctl.conf
+	# A name is a name, a value one line; no jail, no taking back.
+	: > kld.log
+	atf_check -s exit:1 -e match:'letters, digits' -o ignore \
+	    "$JGC" -c "$SOCK" sysctl '.a=1'
+	atf_check -s exit:1 -e match:'letters, digits' -o ignore \
+	    "$JGC" -c "$SOCK" sysctl 'kern.x y=1'
+	atf_check -s exit:1 -e match:'one line' -o ignore \
+	    "$JGC" -c "$SOCK" sysctl "kern.hostname=a
+b"
+	atf_check -s exit:1 -e match:'not set from here' -o ignore \
+	    "$JGC" -j web -c "$SOCK" sysctl kern.hostname=x
+	atf_check -s exit:1 -e match:'not taken back by itself' -o ignore \
+	    "$JGC" -s -c "$SOCK" sysctl kern.hostname=x
+	atf_check -o empty cat kld.log
+
+	# How the agent is reached: its listeners, and who is connected
+	# now, which is at least who asks.
+	atf_check -o match:'"listeners":\[\{"uri":"unix:[^"]*","transport":"unix","up":true\}\]' \
+	    -o match:'"sessions":\[\{"transport":"unix"' \
+	    -o match:'"seen":[0-9]+' "$JGC" -c "$SOCK" transport
+	# SCTP is tried again only where the kernel has it.
+	if kldstat -q -m sctp 2>/dev/null; then
+		atf_check -o match:'"sctp":true' "$JGC" -c "$SOCK" transport retry
+	else
+		atf_check -s exit:1 -e match:'load the sctp module first' \
+		    -o ignore "$JGC" -c "$SOCK" transport retry
+	fi
 }
 kernel_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case l2 cleanup
+l2_head()
+{
+	atf_set "descr" "Bridges with their spanning tree and VLANs, geneve tunnels; access and trunk ports, options, and no address on a member"
+}
+l2_body()
+{
+	# ifconfig(8): -a says what there is, the rest is logged.
+	cat > fake-ifconfig <<EOS
+#!/bin/sh
+if [ "\$*" = "-av" ]; then cat $(pwd)/ifconfig.out; exit 0; fi
+echo "\$*" >> $(pwd)/ifconfig.log
+case " \$* " in *" nosuch0 "*) echo "ifconfig: BRDGADD nosuch0: No such file or directory" >&2; exit 1 ;; esac
+exit 0
+EOS
+	chmod +x fake-ifconfig
+	printf '%s\n' \
+	    'bridge0: flags=1008843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST,LOWER_UP> metric 0 mtu 1500' \
+	    '	options=10<VLAN_HWTAGGING>' \
+	    '	ether 58:9c:fc:10:ff:aa' \
+	    '	inet 10.7.0.1 netmask 0xffffff00 broadcast 10.7.0.255' \
+	    '	id 58:9c:fc:10:ff:aa priority 32768 hellotime 2 fwddelay 15' \
+	    '	maxage 20 holdcnt 6 proto rstp maxaddr 2000 timeout 1200' \
+	    '	root id 00:11:22:33:44:55 priority 4096 ifcost 2000 port 5' \
+	    '	bridge flags=1<VLANFILTER> defuntagged=1' \
+	    '	member: epair5a flags=1c7<LEARNING,DISCOVER,STP,AUTOEDGE,PTP,AUTOPTP>' \
+	    '	        port 5 priority 128 path cost 2000 proto rstp' \
+	    '	        role root state forwarding untagged 10' \
+	    '	member: em1 flags=143<LEARNING,DISCOVER,AUTOEDGE,AUTOPTP>' \
+	    '	        port 6 priority 128 path cost 20000 vlan protocol 802.1q untagged 1 tagged 10-20,30' \
+	    '	member: tap3 flags=147<LEARNING,DISCOVER,STP,AUTOEDGE,AUTOPTP>' \
+	    '	        port 7 priority 128 path cost 2000000 proto rstp' \
+	    '	        role alternate state discarding' \
+	    '	groups: bridge' \
+	    '	nd6 options=9<PERFORMNUD,IFDISABLED>' \
+	    'em1: flags=8863<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> metric 0 mtu 1500' \
+	    '	inet 192.0.2.7 netmask 0xffffff00 broadcast 192.0.2.255' \
+	    '	inet6 fe80::1%em1 prefixlen 64 scopeid 0x2' \
+	    'geneve0: flags=8843<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> metric 0 mtu 1450' \
+	    '	geneve mode: l2' \
+	    '	geneve config:' \
+	    '		virtual network identifier (vni): 100' \
+	    '		local: 198.51.100.10:6081' \
+	    '		remote: 203.0.113.1:6081' \
+	    '		portrange: 49152-65535, ttl: 64, df: unset' \
+	    '		ftable mode: learning, count: 2, max: 2000, timeout: 1200' \
+	    'geneve1: flags=8051<UP,POINTOPOINT,RUNNING,MULTICAST> metric 0 mtu 1450' \
+	    '	geneve mode: l3' \
+	    '	geneve config:' \
+	    '		virtual network identifier (vni): 42' \
+	    '		local: [3fff::1]:6081' \
+	    '		group: [ff08::db8:1]:6081, dev: em0' \
+	    '		portrange: 49152-65535, ttl: inherit, dscp: inherit, df: inherit' \
+	    > ifconfig.out
+	start_daemon
+
+	# A bridge: its spanning tree, and each member's place in it; who
+	# is an access port and who a trunk; and a member's addresses.
+	atf_check -o save:br.json "$JGC" -c "$SOCK" net bridges
+	atf_check -o match:'"name":"bridge0","id":"58:9c:fc:10:ff:aa","priority":32768,"hellotime":2,"fwddelay":15' \
+	    -o match:'"proto":"rstp"' -o match:'"maxage":20' \
+	    -o match:'"root":"00:11:22:33:44:55","root_priority":4096,"root_cost":2000,"root_port":5' \
+	    -o match:'"vlanfilter":true' -o match:'"defuntagged":1' \
+	    -o match:'"is_root":false' cat br.json
+	atf_check -o match:'"name":"epair5a","stp":true,"flags":\[[^]]*"stp"[^]]*\],"port":5,"priority":128,"cost":2000,"proto":"rstp","role":"root","state":"forwarding","untagged":10,"mode":"access"' \
+	    -o match:'"name":"em1","stp":false,[^}]*"addresses":\["192.0.2.7"\],"port":6,[^}]*"vlanproto":"802.1q","untagged":1,"tagged":"10-20,30","mode":"trunk"' \
+	    -o match:'"name":"tap3",[^}]*"role":"alternate","state":"discarding"\}' \
+	    cat br.json
+	# A geneve tunnel in each mode: one to a host, one to a group.
+	atf_check -o save:gn.json "$JGC" -c "$SOCK" net geneve
+	atf_check -o match:'"name":"geneve0","mode":"l2","id":100,"local":"198.51.100.10:6081","remote":"203.0.113.1:6081","portrange":"49152-65535","ttl":"64","df":"unset","dscpinherit":false,"external":false,"learn":true,"count":2,"maxaddr":2000,"timeout":1200,"up":true' \
+	    -o match:'"name":"geneve1","mode":"l3","id":42,"local":"\[3fff::1\]:6081","group":"\[ff08::db8:1\]:6081","dev":"em0",[^}]*"ttl":"inherit","df":"inherit","dscpinherit":true' \
+	    cat gn.json
+
+	# An access port: in one VLAN untagged, and none tagged.
+	atf_check -o match:'done +bridge0 access epair5a 20' \
+	    "$JGC" -c "$SOCK" bridge bridge0 access epair5a 20
+	atf_check -o match:'^bridge0 ifuntagged epair5a 20 iftagged epair5a none$' \
+	    tail -1 ifconfig.log
+	# A trunk: its VLANs tagged, with one untagged or none.
+	atf_check -o ignore "$JGC" -c "$SOCK" bridge bridge0 trunk em1 10-20,30 1
+	atf_check -o match:'^bridge0 iftagged em1 10-20,30 ifuntagged em1 1$' \
+	    tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -c "$SOCK" bridge bridge0 trunk em1 all
+	atf_check -o match:'^bridge0 iftagged em1 all -ifuntagged em1$' \
+	    tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -c "$SOCK" bridge bridge0 vlanfilter on
+	atf_check -o match:'^bridge0 vlanfilter$' tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -c "$SOCK" bridge bridge0 flag tap3 -stp
+	atf_check -o match:'^bridge0 -stp tap3$' tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -c "$SOCK" bridge bridge0 set proto stp
+	atf_check -o match:'^bridge0 proto stp$' tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -c "$SOCK" bridge bridge0 ifset em1 ifpathcost 100
+	atf_check -o match:'^bridge0 ifpathcost em1 100$' tail -1 ifconfig.log
+	# A member taken in is brought up; what ifconfig refuses is said.
+	atf_check -o ignore "$JGC" -c "$SOCK" bridge bridge0 addm tap9
+	atf_check -o match:'^bridge0 addm tap9$' -o match:'^tap9 up$' \
+	    tail -2 ifconfig.log
+	atf_check -s exit:1 -o match:'No such file' \
+	    "$JGC" -c "$SOCK" bridge bridge0 addm nosuch0
+	# Kept: in rc.conf, in place of what set the same before.
+	atf_check -o match:'\(kept\)' \
+	    "$JGC" -p -c "$SOCK" bridge bridge0 access epair5a 20
+	atf_check -o match:'^ifconfig_bridge0="ifuntagged epair5a 20 iftagged epair5a none"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 vlanfilter on
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 trunk epair5a 30-40
+	atf_check -o match:'^ifconfig_bridge0="vlanfilter iftagged epair5a 30-40"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 addm tap9
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 flag tap9 stp
+	atf_check -o match:'^ifconfig_bridge0="vlanfilter iftagged epair5a 30-40 addm tap9 stp tap9"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 flag tap9 -stp
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 vlanfilter off
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 deletem tap9
+	atf_check -o match:'^ifconfig_bridge0="iftagged epair5a 30-40"$' \
+	    cat rc.conf
+	# Every word is checked before anything runs.
+	: > ifconfig.log
+	for bad in "access epair5a 5000" "access epair5a" "trunk em1 10-5" \
+	    "trunk em1 1,2,x" "flag tap3 bogus" "set proto mstp" \
+	    "set hellotime 9" "ifset em1 ifpathcost -1" "vlanfilter maybe" \
+	    "addm -rf" "frobnicate em1"; do
+		atf_check -s exit:1 -e not-empty -o ignore \
+		    "$JGC" -c "$SOCK" bridge bridge0 $bad
+	done
+	atf_check -s exit:1 -e match:'not taken back by itself' -o ignore \
+	    "$JGC" -s -c "$SOCK" bridge bridge0 vlanfilter on
+	atf_check -o empty cat ifconfig.log
+
+	# A member of a bridge takes no address: the bridge does.  One it
+	# has may be taken away.
+	atf_check -s exit:1 -o match:'em1 is a member of bridge0' \
+	    "$JGC" -c "$SOCK" interface em1 add 10.1.1.1/24
+	atf_check -o empty cat ifconfig.log
+
+	# A geneve tunnel made, in the mode it will keep; its options set.
+	atf_check -o match:'done +geneve5 create' "$JGC" -c "$SOCK" geneve \
+	    geneve5 create mode l3 id 77 local 192.0.2.1 remote 192.0.2.2 \
+	    ttl inherit df inherit
+	atf_check -o match:'^geneve5 create genevemode l3 geneveid 77 genevelocal 192.0.2.1 geneveremote 192.0.2.2 genevettl inherit genevedf inherit$' \
+	    tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -c "$SOCK" geneve geneve0 set learn off \
+	    portrange 5000-6000 group ff08::1 dev em0 dscpinherit on
+	atf_check -o match:'^geneve0 -genevelearn geneveportrange 5000 6000 genevegroup ff08::1 genevedev em0 genevedscpinherit$' \
+	    tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -c "$SOCK" geneve geneve0 flush all
+	atf_check -o match:'^geneve0 geneveflushall$' tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -p -c "$SOCK" geneve geneve6 create mode l2 \
+	    id 9 local 192.0.2.1 group 239.0.0.9 dev em0
+	atf_check -o match:'^ifconfig_geneve6="genevemode l2 geneveid 9 genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0"$' \
+	    -o match:'^cloned_interfaces="geneve6"$' cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" geneve geneve6 set id 10
+	atf_check -o match:'^ifconfig_geneve6="genevemode l2 genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0 geneveid 10"$' \
+	    cat rc.conf
+	: > ifconfig.log
+	for bad in "set mode l3" "create mode l4" "set id 99999999" \
+	    "set ttl 300" "set df maybe" "set local nothing" "set learn" \
+	    "set portrange 9" "set bogus 1"; do
+		atf_check -s exit:1 -e not-empty -o ignore \
+		    "$JGC" -c "$SOCK" geneve geneve0 $bad
+	done
+	atf_check -s exit:1 -e not-empty -o ignore \
+	    "$JGC" -c "$SOCK" geneve em0 set id 5
+	atf_check -o empty cat ifconfig.log
+}
+l2_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case observe cleanup
+observe_head()
+{
+	atf_set "descr" "what runs, with what each uses; a process sent a signal and given a nice value, and which are left alone; a log read from its end, by text, and followed; the history the agent keeps by itself"
+}
+observe_body()
+{
+	mkdir log
+	{
+		printf 'Oct  5 12:00:01 web1 kernel: em0: link state changed to UP\n'
+		printf 'Oct  5 12:00:02 web1 sshd[812]: Accepted publickey for root from 2001:db8::9 port 51234\n'
+		printf '2026-10-05T12:00:03.123456+03:30 web1 cron 933 - - (root) CMD (/usr/libexec/atrun)\n'
+		printf 'a line of no form\n'
+		printf 'Oct  5 12:00:04 web1 syslogd: last message repeated 2 times\n'
+	} > log/messages
+	printf 'Oct  5 11:00:00 web1 su[77]: BAD SU alice to root on /dev/pts/1\n' > log/auth.log
+	printf 'packed' > log/messages.0.bz2
+	printf 'who\0was\0here\n' > log/utx.log
+	printf 'not\0a\0text\n' > log/blob
+	ln -s /etc/master.passwd log/linked
+	DAEMON_ARGS="-v $(pwd)/log"
+	start_daemon
+
+	# What runs: this test's own sleep among it, with what top shows.
+	sleep 300 &
+	pid=$!
+	atf_check -o save:ps.json "$JGC" -c "$SOCK" ps
+	atf_check -o match:"\"pid\":$pid,\"ppid\":[0-9]+,\"user\":\"$(id -un)\",\"jid\":[0-9]+,\"state\":\"sleep\"" \
+	    -o match:'"nice":0,"pri":-?[0-9]+,"threads":1,"rss":[0-9]+,"size":[0-9]+,"time":[0-9.]+,"wcpu":[0-9.]+,"cpu":[0-9.]+,"in":[0-9]+,"out":[0-9]+,"io":[0-9.]+,"start":[0-9]+' \
+	    -o match:'"comm":"sleep","args":"sleep 300"' \
+	    -o match:'"ncpu":[0-9]+,"elapsed":[0-9.]+' cat ps.json
+	atf_check -s exit:1 -e match:'not running' -o ignore \
+	    "$JGC" -j nosuchjail -c "$SOCK" ps
+
+	# A nice value, and a signal; with when it started, only that one.
+	atf_check -o match:"done +renice 5 $pid\$" \
+	    "$JGC" -c "$SOCK" renice $pid 5
+	atf_check -o match:"\"pid\":$pid,[^}]*\"nice\":5," "$JGC" -c "$SOCK" ps
+	atf_check -s exit:1 -o match:'not a process of jail' \
+	    "$JGC" -j web -c "$SOCK" signal $pid
+	atf_check -o match:"done +kill -STOP $pid\$" \
+	    "$JGC" -c "$SOCK" signal $pid sigstop
+	atf_check -o match:"\"pid\":$pid,[^}]*\"state\":\"stop\"" \
+	    "$JGC" -c "$SOCK" ps
+	atf_check -o match:"done +kill -CONT $pid\$" \
+	    "$JGC" -c "$SOCK" signal $pid 19
+	atf_check -o match:"done +kill -TERM $pid\$" \
+	    "$JGC" -c "$SOCK" signal $pid
+	wait $pid
+	atf_check -s exit:1 -o match:"no process $pid" \
+	    "$JGC" -c "$SOCK" signal $pid KILL
+	# Not init, no group, not the agent, not the kernel's own; a signal
+	# there is, a nice value there can be; nothing is taken back.
+	for bad in 1 0 -1 x 100000; do
+		atf_check -s exit:1 -e match:'by its number' -o ignore \
+		    "$JGC" -c "$SOCK" signal $bad HUP
+	done
+	atf_check -s exit:1 -e match:'stopped as a service' -o ignore \
+	    "$JGC" -c "$SOCK" signal "$(cat daemon.pid)" TERM
+	atf_check -s exit:1 -e match:'no such signal' -o ignore \
+	    "$JGC" -c "$SOCK" signal 4242 NOSUCH
+	atf_check -s exit:1 -e match:'from -20 to 20' -o ignore \
+	    "$JGC" -c "$SOCK" renice 4242 21
+	atf_check -s exit:1 -e match:'not taken back' -o ignore \
+	    "$JGC" -s -c "$SOCK" signal 4242 HUP
+	kpid=$(ps -axo pid,flags,comm | awk '$3 == "idle" { print $1; exit }')
+	if [ -n "$kpid" ] && [ "$kpid" -gt 1 ]; then
+		atf_check -s exit:1 -o match:"the kernel's own" \
+		    "$JGC" -c "$SOCK" signal "$kpid" CONT
+	fi
+
+	# A log: messages when none is named, each line taken apart; the
+	# logs there are, without what is packed or is not a file.
+	atf_check -o save:log.json "$JGC" -c "$SOCK" log
+	atf_check -o match:'"name":"messages"' \
+	    -o match:'"files":\[\{"name":"auth.log","size":[0-9]+,"mtime":[0-9]+\},\{"name":"blob",[^}]*\},\{"name":"messages",' \
+	    -o not-match:'bz2' -o not-match:'linked' -o not-match:'utx' \
+	    -o match:'\{"time":"Oct  5 12:00:01","host":"web1","tag":"kernel","text":"em0: link state changed to UP"\}' \
+	    -o match:'\{"time":"Oct  5 12:00:02","host":"web1","pid":"812","tag":"sshd","text":"Accepted publickey for root from 2001:db8::9 port 51234"\}' \
+	    -o match:'\{"time":"2026-10-05T12:00:03.123456\+03:30","host":"web1","tag":"cron","pid":"933","text":"\(root\) CMD \(/usr/libexec/atrun\)"\}' \
+	    -o match:'\{"text":"a line of no form"\}' \
+	    -o match:'"tag":"syslogd","text":"last message repeated 2 times"' \
+	    cat log.json
+	size=$(wc -c < log/messages | tr -d ' ')
+	atf_check -o match:"\"size\":$size,\"position\":$size" cat log.json
+	# By text, in either case; the last of them only; another log.
+	atf_check -o match:'"lines":\[\{[^}]*"tag":"sshd"[^}]*\}\]' \
+	    "$JGC" -c "$SOCK" log messages PUBLICKEY
+	atf_check -o match:'"lines":\[\{"text":"a line of no form"\},\{[^}]*syslogd[^}]*\}\]' \
+	    "$JGC" -c "$SOCK" log -o 2
+	atf_check -o match:'"name":"auth.log"' -o match:'"tag":"su","text":"BAD SU' \
+	    "$JGC" -c "$SOCK" log auth.log
+	# Followed: only what was written since, a line half written not
+	# yet; a file shorter than it was is read again from its start.
+	atf_check -o match:'"lines":\[\]' -o match:"\"position\":$size" \
+	    "$JGC" -c "$SOCK" log -f "$size"
+	printf 'Oct  5 12:00:09 web1 ntpd[5]: time set\nOct  5 12:00:10 web1 half' >> log/messages
+	atf_check -o match:'"lines":\[\{[^}]*"tag":"ntpd","text":"time set"\}\]' \
+	    -o match:"\"position\":$((size + 39))" \
+	    "$JGC" -c "$SOCK" log -f "$size"
+	printf 'Oct  5 13:00:00 web1 newsyslog[9]: logfile turned over\n' > log/messages
+	atf_check -o match:'"rotated":true' -o match:'"tag":"newsyslog"' \
+	    "$JGC" -c "$SOCK" log -f "$size"
+	# Only a file of the log directory, by its name, and not a packed one.
+	for bad in ../rc.conf .hidden a/b messages.0.bz2; do
+		atf_check -s exit:1 -e match:'named|packed' -o ignore \
+		    "$JGC" -c "$SOCK" log "$bad"
+	done
+	atf_check -s exit:1 -e match:'linked' -o ignore \
+	    "$JGC" -c "$SOCK" log linked
+	atf_check -s exit:1 -e match:'nosuch' -o ignore \
+	    "$JGC" -c "$SOCK" log nosuch
+	atf_check -s exit:1 -e match:'not a text' -o ignore \
+	    "$JGC" -c "$SOCK" log blob
+
+	# The history is kept without being asked for: one sample after a
+	# second, and none after the time of the last.
+	sleep 2
+	atf_check -o save:h.json "$JGC" -c "$SOCK" history
+	atf_check -o match:'"step":5,"keep":720,"bytes":[1-9][0-9]+,"ncpu":[0-9]+,"mem_total":[1-9][0-9]+,"swap_total":[0-9]+' \
+	    -o match:'"fields":\["t","cpu","load","mem","swap","rx","tx","read","write"\]' \
+	    -o match:'"nets":\[("[A-Za-z0-9_.:-]+",?)*\],"disks":\[("[a-z0-9]+",?)*\]' \
+	    -o match:'"samples":\[\[[0-9]+,[0-9.]+,[0-9.]+,[1-9][0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+,[0-9]+[],]' \
+	    cat h.json
+	# A sample is as wide as its fields, the interfaces and the disks.
+	atf_check -o inline:'ok\n' awk '{
+		nn = 0; nd = 0
+		if (match($0, /"nets":\[[^]]*\]/)) { s = substr($0, RSTART, RLENGTH); nn = gsub(/"[^"]*"/, "", s) - 1 }
+		if (match($0, /"disks":\[[^]]*\]/)) { s = substr($0, RSTART, RLENGTH); nd = gsub(/"[^"]*"/, "", s) - 1 }
+		match($0, /"samples":\[\[[^]]*\]/); s = substr($0, RSTART, RLENGTH)
+		print (gsub(/,/, "", s) + 1 == 9 + 2 * nn + 2 * nd) ? "ok" : "width " nn " " nd
+	}' h.json
+	last=$(sed -E 's/.*\[([0-9]+),[^]]*\]\]\}.*/\1/' h.json)
+	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history "$last"
+	# How it samples is set, and written down for the next start: fewer
+	# kept are the newest; none kept is no sampling and no memory.
+	atf_check -o match:'"step":1,"keep":2,"bytes":[1-9][0-9]*,' \
+	    "$JGC" -c "$SOCK" history set 1 2
+	atf_check -o match:'^step=1$' -o match:'^keep=2$' cat history.conf
+	sleep 4
+	atf_check -o save:h2.json "$JGC" -c "$SOCK" history
+	atf_check -o inline:'2\n' sh -c "grep -o '\[[0-9][0-9,.]*\]' h2.json | wc -l | tr -d ' '"
+	atf_check -o match:'"step":60,"keep":0,"bytes":0,' -o match:'"samples":\[\]' \
+	    "$JGC" -c "$SOCK" history set 60 0
+	sleep 2
+	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history
+	atf_check -o match:'"step":2,"keep":10,' "$JGC" -c "$SOCK" history set 2 10
+	sleep 3
+	atf_check -o match:'"samples":\[\[' "$JGC" -c "$SOCK" history
+	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 3601 10
+	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 5 5001
+	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 0 10
+	# At its next start the agent samples as it was told.
+	stop_daemon
+	sleep 1
+	start_daemon
+	atf_check -o match:'"step":2,"keep":10,' "$JGC" -c "$SOCK" history
+}
+observe_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case firewall cleanup
+firewall_head()
+{
+	atf_set "descr" "ipfw: rules read with sets and counters; a rule added and deleted, now and kept; the kept rules applied through set 1, and taken back unconfirmed"
+}
+firewall_body()
+{
+	# ipfw(8): what it has is canned, what it is told is logged; a file
+	# it is given is read, and refused when it has the word bogus.
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+echo "ipfw \$*" >> $(pwd)/ipfw.log
+case "\$*" in
+"-S show")
+	printf '00005     12      900 set 0 skipto 500 ip from any to any out\n'
+	printf '00200      0        0 set 0 check-state :default\n'
+	printf '01001      3      180 set 0 allow tcp from any to me6 22 in\n'
+	printf '# DISABLED 01001      0        0 set 1 allow tcp from any to me6 2222 in\n'
+	printf '65535     99     9999 set 31 deny ip from any to any\n' ;;
+"table all info") printf -- '--- table(T46), set(0) ---\n kindex: 1, type: addr\n' ;;
+"-D show")
+	printf '## Dynamic rules (2 136):\n'
+	printf '01001      7      560 (298s) STATE tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default\n'
+	printf '06101     12     1440 (3s) STATE udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default\n' ;;
+"-n -q "*) grep -q bogus "\$3" && { echo "ipfw: line 2: bad command bogus" >&2; exit 1; } ;;
+"-q add "*" refuse "*) echo "ipfw: unrecognised option refuse" >&2; exit 1 ;;
+"-q "*.arcana-load) cat "\$2" > $(pwd)/loaded.rules; grep -q fails "\$2" && { echo "ipfw: line 1: getsockopt(IP_FW_XADD): Invalid argument" >&2; exit 1; } ;;
+esac
+exit 0
+EOS
+	chmod +x fake-ipfw
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -J $(pwd)/fw/ipfw.rules"
+	start_daemon
+
+	# What the firewall has: each rule with its set and counters, one
+	# of a disabled set marked so; no kept rules yet.
+	atf_check -o save:fw.json "$JGC" -c "$SOCK" net ipfw
+	atf_check -o match:'"loaded":true' \
+	    -o match:'\{"num":5,"pkts":12,"bytes":900,"set":0,"text":"skipto 500 ip from any to any out"\}' \
+	    -o match:'\{"num":1001,"pkts":0,"bytes":0,"set":1,"text":"allow tcp from any to me6 2222 in","disabled":true\}' \
+	    -o match:'"tables":\["T46"\]' -o match:'"kept":\[\]' \
+	    -o match:'"file":false' cat fw.json
+	# The dynamic rules: the connections let through, each with its
+	# rule, its counters and how long it still lives.
+	atf_check -o match:'"dynamic_total":2,"dynamic":\[\{"num":1001,"pkts":7,"bytes":560,"ttl":298,"kind":"STATE","flow":"tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default"\}' \
+	    -o match:'\{"num":6101,"pkts":12,"bytes":1440,"ttl":3,"kind":"STATE","flow":"udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default"\}' \
+	    cat fw.json
+
+	# A rule added now, and deleted now.
+	atf_check -o match:'done +ipfw add 1002 allow tcp from any to me6 80 in \(now\)' \
+	    "$JGC" -c "$SOCK" ipfw add 1002 allow tcp from any to me6 80 in
+	atf_check -o match:'^ipfw -q add 1002 allow tcp from any to me6 80 in$' \
+	    tail -1 ipfw.log
+	atf_check test ! -e fw/ipfw.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw delete 1002
+	atf_check -o match:'^ipfw -q delete 1002$' tail -1 ipfw.log
+	# Kept only: into the file, in the order of the numbers.
+	: > ipfw.log
+	atf_check -o match:'\(kept\)' \
+	    "$JGC" -c "$SOCK" ipfw keep add 1001 allow tcp from any to me6 22 in
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw keep add 5 skipto 500 all from any to any out
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw keep add 999 deny log all from any to any
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw keep add 200 check-state
+	atf_check -o inline:'add 00005 skipto 500 all from any to any out
+add 00200 check-state
+add 00999 deny log all from any to any
+add 01001 allow tcp from any to me6 22 in
+' cat fw/ipfw.rules
+	atf_check -o not-match:'ipfw -q add' cat ipfw.log
+	# Both: now, and kept.
+	atf_check -o match:'\(now, and kept\)' \
+	    "$JGC" -p -c "$SOCK" ipfw add 1002 allow tcp from any to me6 443 in
+	atf_check -o match:'^ipfw -q add 1002 allow' tail -1 ipfw.log
+	atf_check -o match:'^add 01002 allow tcp from any to me6 443 in$' cat fw/ipfw.rules
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw delete 1002
+	atf_check -o not-match:'01002' cat fw/ipfw.rules
+	atf_check -o match:'"kept":\[\{"num":5,"text":"skipto 500 all from any to any out"\},\{"num":200' \
+	    -o match:'"file":true' "$JGC" -c "$SOCK" net ipfw
+
+	# Applied: the kept rules into set 1 while it is off, swapped with
+	# set 0, and the old ones deleted.
+	: > ipfw.log
+	atf_check -o match:'done +ipfw apply' "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o inline:'ipfw -q set disable 1
+ipfw -q -f set 1 flush
+ipfw -q set 1 table all destroy
+' sh -c 'head -3 ipfw.log'
+	atf_check -o match:'^ipfw -q .*/ipfw.rules.arcana-load$' \
+	    -o match:'^ipfw -q set swap 0 1$' \
+	    -o match:'^ipfw -q -f delete set 1$' cat ipfw.log
+	atf_check -o inline:'add 00005 set 1 skipto 500 all from any to any out
+add 00200 set 1 check-state
+add 00999 set 1 deny log all from any to any
+add 01001 set 1 allow tcp from any to me6 22 in
+' cat loaded.rules
+	# In safe mode, unconfirmed: the old rules, which waited in set 1,
+	# are swapped back in.
+	: > ipfw.log
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" ipfw apply
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'not confirmed' "$JGC" -c "$SOCK" jobs
+	atf_check -o inline:'ipfw -q set swap 0 1
+ipfw -q set swap 0 1
+ipfw -q -f delete set 1
+' sh -c 'grep -E "swap|delete set" ipfw.log'
+
+	# The kept file as a whole: read; replaced once ipfw has nothing
+	# against it, and not when it has.
+	atf_check -o match:'^add 00005 skipto' "$JGC" -c "$SOCK" ipfw rules
+	printf 'table T46 create type addr\nadd 00010 allow ip from table(T46) to any\n' > new.rules
+	atf_check -o match:'in place' "$JGC" -c "$SOCK" ipfw rules -w new.rules
+	atf_check -o file:new.rules cat fw/ipfw.rules
+	atf_check -o match:'^add 00005' cat fw/ipfw.rules.arcana-old
+	: > ipfw.log
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o inline:'set 1 table T46 create type addr
+add 00010 set 1 allow ip from table(T46) to any
+' cat loaded.rules
+	printf 'add 00010 allow ip from any to any\nbogus\n' > bad.rules
+	atf_check -s exit:1 -e match:'bad command bogus' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw rules -w bad.rules
+	printf 'add 00010 allow ip from any to any\nset swap 0 1\n' > bad.rules
+	atf_check -s exit:1 -e match:'line 2: the kept rules are what there is to be' \
+	    -o ignore "$JGC" -c "$SOCK" ipfw rules -w bad.rules
+	atf_check -o file:new.rules cat fw/ipfw.rules
+	# What ipfw refuses of the load leaves set 0 alone.
+	printf 'add 00010 allow ip from any to fails\n' > f.rules
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw rules -w f.rules
+	: > ipfw.log
+	atf_check -s exit:1 -o match:'Invalid argument' "$JGC" -c "$SOCK" ipfw apply
+	atf_check -o not-match:'swap' cat ipfw.log
+
+	# On and off, kept in rc.conf with where the rules are.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw enable
+	atf_check -o match:'^ipfw -q enable firewall$' tail -1 ipfw.log
+	atf_check -o match:'^firewall_enable="YES"$' \
+	    -o match:'^firewall_type=".*/fw/ipfw.rules"$' cat rc.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw zero 5
+	atf_check -o match:'^ipfw -q zero 5$' tail -1 ipfw.log
+
+	# A rule's words are ipfw's own; a number is a number; the sets
+	# are not a rule's to name; what ipfw refuses is said.
+	: > ipfw.log
+	atf_check -s exit:1 -e match:'no quotes and nothing a shell would read' \
+	    -o ignore "$JGC" -c "$SOCK" ipfw add 10 allow ip from any to 'any;reboot'
+	atf_check -s exit:1 -e match:'no quotes' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw add 10 allow ip from any to '$(id)'
+	atf_check -s exit:1 -e match:'its number, 1 to 65534' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw add 65535 allow ip from any to any
+	atf_check -s exit:1 -e match:'not given a set here' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw add 10 set 1 allow ip from any to any
+	atf_check -s exit:1 -e match:'not put back by itself' -o ignore \
+	    "$JGC" -s -c "$SOCK" ipfw delete 5
+	atf_check -s exit:1 -e match:'is add, delete, apply' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw flush
+	atf_check -o empty cat ipfw.log
+	atf_check -s exit:1 -o match:'unrecognised option refuse' \
+	    "$JGC" -c "$SOCK" ipfw add 10 allow refuse from any to any
+}
+firewall_cleanup()
 {
 	stop_daemon
 }
@@ -2553,6 +3150,9 @@ atf_init_test_cases()
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case kernel
+	atf_add_test_case l2
+	atf_add_test_case firewall
+	atf_add_test_case observe
 	atf_add_test_case storage
 	atf_add_test_case safe_mode
 	atf_add_test_case agent_update

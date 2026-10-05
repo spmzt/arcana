@@ -157,14 +157,21 @@ js_true(const char *expr)
 static void
 wait_js(const char *expr, int seconds)
 {
-	int	i;
+	ucl_object_t	*v;
+	int		 i;
 
 	for (i = 0; i < seconds * 10; i++) {
 		if (js_true(expr))
 			return;
 		usleep(100000);
 	}
-	atf_tc_fail("timed out waiting for %s", expr);
+	shot("failed");
+	/* With what the page last said, which is most often why. */
+	v = js("return ([...document.querySelectorAll('.toast, .err')].map("
+	    "t => t.textContent.slice(0, 120)).join(' | ').slice(-700));");
+	atf_tc_fail("timed out waiting for %s; the page says: %s", expr,
+	    v != NULL && ucl_object_tostring(v) != NULL ?
+	    ucl_object_tostring(v) : "nothing");
 }
 
 static void
@@ -882,11 +889,12 @@ ATF_TC_BODY(pwa, tc)
 	phone(true);
 	{
 		static const char *tabs[] = { "summary", "jails", "services",
-		    "network", "packages", "jobs" };
+		    "network", "packages", "sysctl", "processes", "log",
+		    "jobs" };
 		char name[32];
 		size_t t;
 
-		for (t = 0; t < 6; t++) {
+		for (t = 0; t < 9; t++) {
 			snprintf(script, sizeof(script), "document.querySelector("
 			    "'button.tab[data-arg=%s]').click()", tabs[t]);
 			run(script);
@@ -911,11 +919,22 @@ ATF_TC_BODY(pwa, tc)
 	    "=== 'none' && document.querySelector('.hosts .hostcard')", 5);
 	usleep(500000);
 	shot("m6-fleet");
-	/* Every control of the top bar can be reached. */
-	ATF_CHECK(js_true("(() => { const b = document.querySelector("
-	    "'button[data-act=logout]'); b.scrollIntoView(); const r = "
-	    "b.getBoundingClientRect(); return r.left >= 0 && r.right <= "
-	    "innerWidth + 1; })()"));
+	/* Every control of the top bar can be reached: what does not fit
+	 * the one row is behind its menu, which the next thing done
+	 * closes. */
+	ATF_CHECK(js_true("getComputedStyle(document.querySelector('.who'))"
+	    ".display === 'none'"));
+	run("document.querySelector('button[data-act=who-toggle]').click()");
+	wait_js("getComputedStyle(document.querySelector('.who')).display "
+	    "!== 'none'", 5);
+	ATF_CHECK(js_true("(() => { const r = document.querySelector("
+	    "'button[data-act=logout]').getBoundingClientRect(); return "
+	    "r.width > 0 && r.left >= 0 && r.right <= innerWidth + 1 && "
+	    "r.top >= 0 && r.bottom <= innerHeight; })()"));
+	shot("m6a-menu");
+	run("document.querySelector('button[data-act=who-toggle]').click()");
+	wait_js("getComputedStyle(document.querySelector('.who')).display "
+	    "=== 'none'", 5);
 	ATF_CHECK(js_true("document.documentElement.scrollWidth <= "
 	    "window.innerWidth + 1"));
 	run("document.querySelector('.dock > header').click()");
@@ -941,9 +960,41 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.theme[data-arg=paper]').click()");
 	wait_js("document.documentElement.dataset.theme === 'paper'", 5);
 	shot("m10-paper");
+	/* The other light ones: each a light ground and its own colour. */
+	{
+		static const char *const light[] = { "sand", "mist", "mint" };
+		char	name[32];
+		size_t	k;
+
+		for (k = 0; k < 3; k++) {
+			snprintf(script, sizeof(script), "document.querySelector("
+			    "'button.theme[data-arg=%s]').click()", light[k]);
+			run(script);
+			snprintf(script, sizeof(script), "document."
+			    "documentElement.dataset.theme === '%s' && "
+			    "getComputedStyle(document.documentElement)."
+			    "colorScheme === 'light' && /^#[ef]/.test("
+			    "getComputedStyle(document.documentElement)."
+			    "getPropertyValue('--bg').trim())", light[k]);
+			wait_js(script, 5);
+			snprintf(name, sizeof(name), "m10-%s", light[k]);
+			shot(name);
+		}
+	}
+	/* The first one, chosen on a phone, is a choice like another: the
+	 * phone's own default is the plain one. */
 	run("document.querySelector('button.theme[data-arg=\"\"]').click()");
-	wait_js("!document.documentElement.dataset.theme && "
-	    "localStorage.getItem('arc_theme') === null", 5);
+	wait_js("document.documentElement.dataset.theme === 'tron' && "
+	    "localStorage.getItem('arc_theme') === 'tron' && document."
+	    "querySelector('button.theme[data-arg=\"\"]').classList.contains("
+	    "'on') && getComputedStyle(document.documentElement)."
+	    "getPropertyValue('--cyan').trim() === '#3be8ff'", 5);
+	run("localStorage.removeItem('arc_theme'); delete document."
+	    "documentElement.dataset.theme; const s = document.createElement("
+	    "'script'); s.src = '/fx.js?again'; document.head.appendChild(s);");
+	wait_js("document.documentElement.dataset.theme === 'slate'", 10);
+	shot("m10a-phone-default");
+	run("delete document.documentElement.dataset.theme");
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.hosts .hostcard').click()");
 	phone(false);
@@ -1514,6 +1565,533 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.dock > header').click()");
 
 	/*
+	 * The kernel's state: a part of the tree, read from the kernel;
+	 * another part named; one value set in its row, and kept.
+	 */
+	run("document.querySelector('button.tab[data-arg=sysctl]').click()");
+	wait_js("document.querySelectorAll('table.sysctl tbody tr').length > "
+	    "20 && [...document.querySelectorAll('table.sysctl tbody tr b')]."
+	    "some(b => b.textContent === 'kern.ostype')", 20);
+	ATF_CHECK(js_true("document.querySelector('.sy-kept').textContent."
+	    "includes('kern.ipc.somaxconn=')"));
+	/* Sorted by a column, as every table is. */
+	run("document.querySelector('table.sysctl th[data-act=t-sort]')."
+	    "click()");
+	wait_js("document.querySelector('table.sysctl th.sortable.up, "
+	    "table.sysctl th.sortable.down, table.sysctl th.sortable.asc, "
+	    "table.sysctl th.sortable.desc')", 5);
+	run("document.querySelector('table.sysctl th[data-act=t-sort]')."
+	    "click(); document.querySelector('table.sysctl th[data-act=t-sort]')"
+	    ".click();");
+	shot("7n-sysctl");
+	/*
+	 * A column is as wide as its border is dragged, and stays so when
+	 * the table is drawn again; a double click on the border lets it
+	 * be as wide as what is in it.
+	 */
+	{
+		double	x, y, w0, w1;
+
+		x = js_num("document.querySelector('table.sysctl th')."
+		    "getBoundingClientRect().right");
+		y = js_num("(r => r.y + r.height / 2)(document.querySelector("
+		    "'table.sysctl th').getBoundingClientRect())");
+		w0 = js_num("document.querySelector('table.sysctl th')."
+		    "getBoundingClientRect().width");
+		mouse("pointerMove", x - 2, y);
+		mouse("pointerDown", 0, 0);
+		mouse("pointerMove", x + 70, y);
+		mouse("pointerUp", 0, 0);
+		usleep(1300000);
+		w1 = js_num("document.querySelector('table.sysctl th')."
+		    "getBoundingClientRect().width");
+		ATF_CHECK_MSG(w1 > w0 + 50, "the column was %.0f wide and is "
+		    "%.0f after its border was dragged by 72", w0, w1);
+		ATF_CHECK(js_true("document.querySelector('table.sysctl th')."
+		    "style.width !== ''"));
+		run("const th = document.querySelector('table.sysctl th'), r = "
+		    "th.getBoundingClientRect(); th.dispatchEvent(new MouseEvent("
+		    "'dblclick', { bubbles: true, cancelable: true, clientX: "
+		    "r.right - 2, clientY: r.y + 4 }));");
+		wait_js("document.querySelector('table.sysctl th').style.width "
+		    "=== ''", 5);
+	}
+	/*
+	 * The whole tree comes in parts, over the console's socket, and
+	 * the table fills as they arrive: more of it than one reply was
+	 * ever allowed to carry.
+	 */
+	run("document.querySelector('button[data-act=sy-tree][data-arg=\"\"]')"
+	    ".click()");
+	wait_js("document.querySelector('.toolbar .age').textContent."
+	    "includes('so far') || /[0-9]+ more/.test(document.querySelector("
+	    "'.stage').textContent)", 20);
+	wait_js("!document.querySelector('.toolbar .age').textContent."
+	    "includes('reading') && (m => m && parseInt(m[1], 10) > 3600)("
+	    "/([0-9]+) more/.exec(document.querySelector('.stage')."
+	    "textContent))", 60);
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.sysctl tbody "
+	    "tr b')].some(b => b.textContent === 'kern.ostype')"));
+	run("const f = document.querySelector('form[data-form=sy-from]'); "
+	    "f.name.value = 'kern.ipc.somaxconn'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.sysctl tbody tr').length "
+	    "=== 1 && document.querySelector('table.sysctl button[data-act="
+	    "sy-edit]')", 20);
+	run("document.querySelector('table.sysctl button[data-act=sy-edit]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sy-set] input[name="
+	    "value]')", 5);
+	/* It is kept already: so says the box, ticked. */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=sy-set] "
+	    "input[name=persist]').checked"));
+	run("const f = document.querySelector('form[data-form=sy-set]'); "
+	    "f.value.value = '8192'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('sysctl kern.ipc.somaxconn=8192: done'))",
+	    20);
+	ATF_CHECK(system("grep -q '^sysctl kern.ipc.somaxconn=8192$' kld.log "
+	    "&& grep -q '^kern.ipc.somaxconn=8192$' sysctl.conf") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * What runs: in the order of what each uses; one picked is given
+	 * a nice value, and sent a signal once that is confirmed.
+	 */
+	ATF_REQUIRE(system("sleep 300 & echo $! > sleep.pid") == 0);
+	{
+		char	pid[16], cmd[96];
+
+		ATF_REQUIRE((fp = fopen("sleep.pid", "r")) != NULL);
+		ATF_REQUIRE(fgets(pid, sizeof(pid), fp) != NULL);
+		fclose(fp);
+		pid[strcspn(pid, "\n")] = '\0';
+		run("document.querySelector('button.tab[data-arg=processes]')"
+		    ".click()");
+		snprintf(script, sizeof(script), "document.querySelectorAll("
+		    "'table.procs tbody tr').length > 3 && document."
+		    "querySelector('table.procs tr[data-arg=\"%s\"]')", pid);
+		wait_js(script, 20);
+		ATF_CHECK(js_true("document.querySelector('.ps-sum')."
+		    "textContent.includes('processes') && document."
+		    "querySelector('button[data-act=ps-live].on')"));
+		/* By memory: the most first, and so the table says. */
+		run("document.querySelector('button[data-act=ps-sort]"
+		    "[data-arg=\"6\"]').click()");
+		wait_js("document.querySelector('table.procs th.sortable.desc') "
+		    "&& document.querySelector('table.procs th.sortable.desc')"
+		    ".textContent === 'Res' && document.querySelector("
+		    "'button[data-act=ps-sort][data-arg=\"6\"].on')", 5);
+		for (i = 0; i < 4; i++) {
+			static const char *const by[] = { "8", "9", "10", "6" };
+
+			snprintf(script, sizeof(script), "document."
+			    "querySelector('button[data-act=ps-sort][data-arg="
+			    "\"%s\"]').click()", by[i]);
+			run(script);
+			snprintf(script, sizeof(script), "document."
+			    "querySelector('button[data-act=ps-sort][data-arg="
+			    "\"%s\"].on')", by[i]);
+			wait_js(script, 5);
+		}
+		shot("7r-processes");
+		snprintf(script, sizeof(script), "const r = document."
+		    "querySelector('table.procs tr[data-arg=\"%s\"]'); "
+		    "r.scrollIntoView({ block: 'center' }); r.click()", pid);
+		run(script);
+		wait_js("document.querySelector('form[data-form=ps-renice]') "
+		    "&& document.querySelector('.ps-what code').textContent."
+		    "includes('sleep 300')", 5);
+		shot("7r-process-picked");
+		run("const f = document.querySelector('form[data-form="
+		    "ps-renice]'); f.nice.value = '7'; f.requestSubmit();");
+		wait_js("document.querySelector('button[data-act=queue-run]')",
+		    5);
+		run("document.querySelector('button[data-act=queue-run]')."
+		    "click()");
+		snprintf(cmd, sizeof(cmd), "[ \"$(ps -o nice= -p %s | tr -d "
+		    "' ')\" = 7 ]", pid);
+		for (i = 0; i < 200 && system(cmd) != 0; i++)
+			usleep(50000);
+		ATF_CHECK(system(cmd) == 0);
+		run("const f = document.querySelector('form[data-form="
+		    "ps-signal]'); f.signal.value = 'KILL'; f.requestSubmit();");
+		wait_js("document.querySelector('form[data-form=confirm]') && "
+		    "document.querySelector('.modal').textContent.includes("
+		    "'SIGKILL')", 5);
+		run("document.querySelector('form[data-form=confirm]')."
+		    "requestSubmit()");
+		wait_js("document.querySelector('button[data-act=queue-run]')",
+		    5);
+		run("document.querySelector('button[data-act=queue-run]')."
+		    "click()");
+		snprintf(cmd, sizeof(cmd), "! kill -0 %s 2>/dev/null", pid);
+		for (i = 0; i < 200 && system(cmd) != 0; i++)
+			usleep(50000);
+		ATF_CHECK(system(cmd) == 0);
+		run("document.querySelector('.dock > header').click()");
+	}
+
+	/*
+	 * A log: its lines taken apart, the newest first; a text searched
+	 * for on the host; and what is written while it is shown.
+	 */
+	run("document.querySelector('button.tab[data-arg=log]').click()");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "3 && document.querySelector('table.logs tbody tr b').textContent "
+	    "=== 'cron' && document.querySelectorAll('label.lg-file option')"
+	    ".length === 2", 20);
+	run("const f = document.querySelector('form[data-form=lg-find]'); "
+	    "f.text.value = 'publickey for'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "1 && document.querySelector('table.logs tbody tr b').textContent "
+	    "=== 'sshd'", 10);
+	run("const f = document.querySelector('form[data-form=lg-find]'); "
+	    "f.text.value = ''; f.requestSubmit();");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "3", 10);
+	ATF_REQUIRE(system("printf 'Oct  5 12:00:09 web1 ntpd[5]: time set"
+	    "\\nOct  5 12:00:10 web1 kernel: em0: link state changed to DOWN"
+	    "\\n' >> log/messages") == 0);
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "5 && document.querySelector('table.logs tbody tr.l-warn td.msg')"
+	    ".textContent.includes('changed to DOWN')", 15);
+	shot("7s-log");
+	run("const s = document.querySelector('label.lg-file select'); "
+	    "s.value = 'auth.log'; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "1 && document.querySelector('table.logs tbody tr b').textContent "
+	    "=== 'su'", 10);
+
+	/*
+	 * How busy the hosts have been: the agent kept it by itself, and
+	 * it is drawn as lines.
+	 */
+	run("document.querySelector('li[data-act=select-usage]').click()");
+	wait_js("document.querySelectorAll('section.ucard').length === 2 && "
+	    "document.querySelectorAll('section.ucard figure.uplot').length "
+	    "=== 10 && document.querySelectorAll('section.ucard figure.uplot "
+	    "svg path.line').length >= 10 && document.querySelectorAll("
+	    "'.uplots.compare figure.uplot').length === 3 && document."
+	    "querySelectorAll('.uplots.compare .ukey').length === 6", 30);
+	ATF_CHECK(js_true("document.querySelector('.crumb.place').textContent "
+	    "=== 'Utilization' && document.querySelector('section.ucard h4')"
+	    ".textContent.includes('CPUs')"));
+	run("document.querySelector('button[data-act=usage-window][data-arg="
+	    "\"300\"]').click()");
+	wait_js("document.querySelector('button[data-act=usage-window]"
+	    "[data-arg=\"300\"].on')", 5);
+	/*
+	 * The network is all the interfaces or the one picked, by name;
+	 * how the agent samples is said with what it takes, and set.
+	 */
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.ucard "
+	    "figure.uplot figcaption b')].some(b => /^Network · all [0-9]+ "
+	    "interfaces$/.test(b.textContent)) && document.querySelector("
+	    "'section.ucard h4 small').textContent.includes('every 5 s, 720 "
+	    "kept (1 h)')"));
+	if (js_true("document.querySelector('button[data-act=usage-net]"
+	    ":not([data-value=\"\"])')")) {
+		run("window.ifn = document.querySelector('button[data-act="
+		    "usage-net]:not([data-value=\"\"])'); window.ifn = "
+		    "window.ifn.dataset.value; document.querySelector("
+		    "'button[data-act=usage-net]:not([data-value=\"\"])')."
+		    "click()");
+		wait_js("[...document.querySelectorAll('section.ucard "
+		    "figure.uplot figcaption b')].some(b => b.textContent "
+		    "=== 'Network · ' + window.ifn) && document.querySelector("
+		    "'button[data-act=usage-net].on').dataset.value === "
+		    "window.ifn", 5);
+	}
+	run("document.querySelectorAll('main, .stage').forEach(e => { "
+	    "e.scrollTop = 0; })");
+	usleep(300000);
+	shot("7t-usage");
+	run("document.querySelector('button[data-act=usage-cfg]').click()");
+	wait_js("document.querySelector('form[data-form=usage-set]') && "
+	    "document.querySelector('form[data-form=usage-set] small')."
+	    "textContent.includes('interfaces')", 5);
+	shot("7t-usage-sampling");
+	run("const f = document.querySelector('form[data-form=usage-set]'); "
+	    "f.step.value = '2'; f.keep.value = '50'; f.requestSubmit();");
+	wait_js("document.querySelector('section.ucard h4 small').textContent"
+	    ".includes('every 2 s, 50 kept') && !document.querySelector("
+	    "'form[data-form=usage-set]') && document.querySelectorAll("
+	    "'section.ucard figure.uplot svg path.line').length >= 10", 30);
+	ATF_CHECK(system("grep -q '^step=2$' history.conf && grep -q "
+	    "'^keep=50$' history.conf") == 0);
+	run("document.querySelector('section.ucard .uname').click()");
+	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
+
+	/*
+	 * The firewall: the layout with a tab for each of its parts; a
+	 * part's rules, those of now and those only kept; a rule added
+	 * now and kept; the kept rules as a text; and applied through
+	 * set 1, which stays once the console is heard from again.
+	 */
+	run("document.querySelector('button.tab[data-arg=firewall]').click()");
+	/* The layout is in the side bar, a line for each part, in place of
+	 * the hosts; the light that says it is on is the switch. */
+	wait_js("document.querySelectorAll('.fwrail .titem.fw').length === 28 "
+	    "&& document.querySelector('table.fw-layout tr.pick')", 20);
+	ATF_CHECK(js_true("document.querySelector('button.switch.on[data-act="
+	    "fw-onoff]') && document.querySelector('.fw-count').textContent."
+	    "includes('7 rules now') && !document.querySelector('.tree "
+	    ".titem.server')"));
+	shot("7o-firewall-layout");
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"10\"]')."
+	    "click()");
+	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
+	    "') && document.querySelector('table.fw-rules tr[data-rule="
+	    "\"1002\"].off')", 10);
+	ATF_CHECK(js_true("document.querySelector('table.fw-rules tr[data-rule="
+	    "\"1001\"]').textContent.includes('now, kept') && document."
+	    "querySelector('table.fw-rules tr[data-rule=\"1002\"]')."
+	    "textContent.includes('kept, not loaded') && document."
+	    "querySelector('form[data-form=fw-add]').num.value === '1003'"));
+	run("const f = document.querySelector('form[data-form=fw-add]'); "
+	    "f.num.value = '1500'; f.rule.value = 'allow tcp from any to me6 "
+	    "8443 in'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('ipfw add 1500') && t.textContent."
+	    "includes('done'))", 20);
+	ATF_CHECK(system("grep -q '^ipfw -q add 1500 allow tcp from any to me6 "
+	    "8443 in$' ipfw.log && grep -q '^add 01500 allow tcp from any to "
+	    "me6 8443 in$' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* A rule's number is one of its part's. */
+	run("const f = document.querySelector('form[data-form=fw-add]'); "
+	    "f.num.value = '5'; f.rule.value = 'allow ip from any to any'; "
+	    "f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('from 1000 to 1999'))", 5);
+	/* A rule is pressed, and changed in its own row: the words it is
+	 * kept with are the ones in the field; saved, the old one goes
+	 * and the new one comes, now and kept. */
+	wait_js("document.querySelector('table.fw-rules tr.pick[data-rule="
+	    "\"1001\"]')", 20);
+	run("document.querySelector('table.fw-rules tr.pick[data-rule=\"1001\"]"
+	    "').click()");
+	wait_js("document.querySelector('form[data-form=fw-edit] input[name="
+	    "rule]')", 5);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=fw-edit]')."
+	    "rule.value === 'allow tcp from any to me6 22 in' && document."
+	    "querySelector('form[data-form=fw-edit]').live.checked && document"
+	    ".querySelector('form[data-form=fw-edit]').persist.checked"));
+	shot("7o-firewall-part");
+	run("const f = document.querySelector('form[data-form=fw-edit]'); "
+	    "f.rule.value = 'allow tcp from any to me6 2222 in'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('ipfw add 1001 allow tcp from any to me6 "
+	    "2222') && t.textContent.includes('done'))", 20);
+	ATF_CHECK(system("grep -q '^ipfw -q delete 1001$' ipfw.log && grep -q "
+	    "'^ipfw -q add 1001 allow tcp from any to me6 2222 in$' ipfw.log "
+	    "&& grep -q '^add 01001 allow tcp from any to me6 2222 in$' "
+	    "ipfw.rules && ! grep -q 'me6 22 in' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* The kept rules as a text, and the connections let through now,
+	 * read again by themselves. */
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=fw-text] textarea') && "
+	    "document.querySelector('form[data-form=fw-text] textarea').value."
+	    "includes('add 01500 allow')", 10);
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-2\"]')."
+	    "click()");
+	wait_js("document.querySelectorAll('table.fw-dyn tbody tr').length === "
+	    "2 && document.querySelector('table.fw-dyn').textContent.includes("
+	    "'2001:db8::9 51234 <-> 2001:db8::1 22') && document.querySelector("
+	    "'button.live.on[data-act=fw-live]')", 20);
+	shot("7o-firewall-dynamic");
+	run("window.fwn = 0; window.fetch1 = window.fetch; window.fetch = "
+	    "function (u, o) { if (String(u).includes('/net/ipfw')) window.fwn"
+	    "++; return window.fetch1(u, o); };");
+	wait_js("window.fwn >= 2", 15);
+	run("window.fetch = window.fetch1;");
+	/* A state pressed leads to the rule that made it. */
+	run("document.querySelector('table.fw-dyn tbody tr').click()");
+	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
+	    "')", 10);
+	/* Back to the hosts, and to the layout again. */
+	run("document.querySelector('.fwrail button[data-act=fw-rail]')."
+	    "click()");
+	wait_js("document.querySelector('.tree .titem.server') && document."
+	    "querySelector('.fwbar button[data-act=fw-rail]')", 5);
+	run("document.querySelector('.fwbar button[data-act=fw-rail]').click()");
+	wait_js("document.querySelector('.fwrail .titem.fw')", 5);
+	run("document.querySelector('button[data-act=fw-apply]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('ipfw apply') && t.textContent.includes("
+	    "'done'))", 40);
+	ATF_CHECK(system("grep -q '^ipfw -q set disable 1$' ipfw.log && [ "
+	    "\"$(grep -c 'set swap 0 1' ipfw.log)\" = 1 ] && grep -q '^ipfw "
+	    "-q -f delete set 1$' ipfw.log && grep -q '^add 01500 set 1 allow' "
+	    "loaded.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * A bridge, drawn as a switch: each port by what the spanning tree
+	 * made of it; a member that has an address is marked; a port made
+	 * an access port.
+	 */
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind][data-arg="
+	    "bridges]')", 10);
+	run("document.querySelector('button[data-act=net-kind][data-arg="
+	    "bridges]').click()");
+	wait_js("document.querySelectorAll('.pane.bridge .ports .port').length "
+	    "=== 3", 20);
+	ATF_CHECK(js_true("document.querySelector('.ports .port.st-forwarding')"
+	    ".textContent.includes('epair5a') && document.querySelector("
+	    "'.ports .port.st-discarding').textContent.includes('tap3') && "
+	    "document.querySelector('.ports .port.st-nostp').textContent."
+	    "includes('trunk 10-20,30') && document.querySelector('.ports "
+	    ".port.st-nostp .warn') && document.querySelector('.pane.bridge')."
+	    "textContent.includes('filters VLANs')"));
+	shot("7p-bridge");
+	/* A bridge's box folds at its head, and unfolds. */
+	run("document.querySelector('.pane.bridge .boxhead .chev').click()");
+	wait_js("!document.querySelector('.pane.bridge .ports') && document."
+	    "querySelector('.pane.bridge .boxhead.shut')", 5);
+	run("document.querySelector('.pane.bridge .boxhead .chev').click()");
+	wait_js("document.querySelector('.pane.bridge .ports')", 5);
+	run("document.querySelector('.ports .port.st-nostp').click()");
+	wait_js("document.querySelector('form[data-form=br-port]')", 5);
+	ATF_CHECK(js_true("document.querySelector('.pane.bridge .notice.warn')"
+	    ".textContent.includes('192.0.2.7')"));
+	run("const f = document.querySelector('form[data-form=br-port]'); "
+	    "f.mode.value = 'access'; f.untagged.value = '30'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('bridge0 access') && t.textContent."
+	    "includes('done'))", 20);
+	ATF_CHECK(system("grep -q '^bridge0 ifuntagged em1 30 iftagged em1 "
+	    "none$' ifconfig.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/* Geneve tunnels: both modes; one made, to a group. */
+	wait_js("document.querySelector('button[data-act=net-kind][data-arg="
+	    "geneve]')", 20);
+	run("document.querySelector('button[data-act=net-kind][data-arg="
+	    "geneve]').click()");
+	wait_js("document.querySelectorAll('table.geneve tbody tr.pick')."
+	    "length === 2", 20);
+	ATF_CHECK(js_true("document.querySelector('table.geneve').textContent."
+	    "includes('l3') && document.querySelector('table.geneve')."
+	    "textContent.includes('[ff08::db8:1]:6081')"));
+	run("document.querySelector('button[data-act=gn-pick][data-arg=\"+\"]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=gn-set] select[name="
+	    "mode]')", 5);
+	shot("7q-geneve");
+	run("const f = document.querySelector('form[data-form=gn-set]'); "
+	    "f.name.value = 'geneve9'; f.mode.value = 'l3'; f.id.value = '9'; "
+	    "f.local.value = '192.0.2.1'; f.group.value = '239.0.0.9'; "
+	    "f.dev.value = 'em0'; f.ttl.value = 'inherit'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('geneve9 create') && t.textContent."
+	    "includes('done'))", 20);
+	ATF_CHECK(system("grep -q '^geneve9 create genevemode l3 geneveid 9 "
+	    "genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0 "
+	    "genevettl inherit genevelearn -genevedscpinherit "
+	    "-geneveexternal$' ifconfig.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * How the host is reached, on its summary: the agent's listener,
+	 * the console's own connection among those open now.  A local
+	 * socket is not switched to anything.
+	 */
+	run("document.querySelector('button.tab[data-arg=summary]').click()");
+	wait_js("document.querySelector('.transport ul.listeners li.up') && "
+	    "document.querySelector('table.sessions tbody tr')", 20);
+	ATF_CHECK(js_true("document.querySelector('.transport ul.listeners')."
+	    "textContent.includes('the console\\'s way in') && !document."
+	    "querySelector('button[data-act=tr-switch]') && document."
+	    "querySelector('table.sessions tbody').textContent.includes("
+	    "'unix')"));
+	/* A line is the address, and what it means is said when hovered. */
+	ATF_CHECK(js_true("!document.querySelector('.transport ul.listeners')"
+	    ".textContent.includes('title=') && document.querySelector("
+	    "'.transport ul.listeners li').title.length > 10"));
+	/* Green is before the console's own way in, and before no other. */
+	ATF_CHECK(js_true("document.querySelectorAll('.transport ul.listeners "
+	    "li.up').length === 1 && document.querySelector('.transport "
+	    "ul.listeners li.up .chip')"));
+	shot("1e-transport");
+
+	/*
+	 * Connections are read again by themselves while they are shown,
+	 * until paused.
+	 */
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind][data-arg="
+	    "connections]')", 10);
+	run("document.querySelector('button[data-act=net-kind][data-arg="
+	    "connections]').click()");
+	wait_js("document.querySelector('button.live.on')", 10);
+	run("window.nets = 0; window.fetch0 = window.fetch; window.fetch = "
+	    "function (u, o) { if (String(u).includes('/net/')) window.nets"
+	    "++; return window.fetch0(u, o); };");
+	wait_js("window.nets >= 2", 15);
+	run("document.querySelector('button[data-act=net-live]').click()");
+	wait_js("!document.querySelector('button.live.on')", 5);
+	usleep(2500000);
+	run("window.nets = 0;");
+	usleep(4500000);
+	ATF_CHECK_MSG(js_true("window.nets === 0"), "paused, the connections "
+	    "were still read again");
+	run("window.fetch = window.fetch0; document.querySelector('button"
+	    "[data-act=net-live]').click()");
+
+	/*
+	 * The API's own page, from the menu: every route of the document,
+	 * by group, searched, one unfolded.
+	 */
+	/* From the top bar: the API's light is the way to it. */
+	run("document.querySelector('.topbar .link[data-act=select-api]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length > 40",
+	    20);
+	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 8",
+	    5);
+	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
+	    ".click()");
+	run("const i = document.querySelector('#filter'); i.value = "
+	    "'transport/switch'; i.dispatchEvent(new Event('input', { bubbles: "
+	    "true }));");
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 1",
+	    5);
+	run("document.querySelector('ul.apiops li.apiop').click()");
+	wait_js("document.querySelector('ul.apiops li.apiop.open .more') && "
+	    "document.querySelector('ul.apiops li.apiop.open .more')."
+	    "textContent.includes('X-Arcana')", 5);
+	shot("9-api");
+	ATF_CHECK(js_true("document.querySelector('.apidoc header a')."
+	    "getAttribute('href') === '/openapi.yaml'"));
+	run("const i = document.querySelector('#filter'); i.value = ''; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	run("document.querySelector('.tree .titem.server').click()");
+	wait_js("document.querySelector('button.tab[data-arg=summary]')", 10);
+
+	/*
 	 * The network: every host a node of a map, joined to the others
 	 * as its interfaces join it.  Both agents here read the same
 	 * machine, so they share its networks.
@@ -1527,6 +2105,12 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelectorAll('svg.topo .tnode.up').length === 2",
 	    30);
 	wait_js("document.querySelector('.map-panel .facts')", 10);
+	/* A host's bridge is drawn above it: a dot for each member, in
+	 * the colour the spanning tree gave it. */
+	wait_js("document.querySelectorAll('svg.topo g.tbridge').length >= 1 "
+	    "&& document.querySelector('svg.topo g.tbridge circle.p-fwd') && "
+	    "document.querySelector('svg.topo g.tbridge circle.p-block') && "
+	    "document.querySelector('svg.topo g.tbridge circle.p-off')", 30);
 	shot("8-network");
 	/* The legend takes a kind of line out of the map, and puts it back. */
 	/* Picked with the mouse itself: it has to be reached by one. */
@@ -1585,11 +2169,28 @@ ATF_TC_BODY(pwa, tc)
 	    "'viewBox').split(' ')[2]) < parseFloat(window.vb.split(' ')[2])",
 	    5);
 	run("document.querySelector('button[data-act=topo-fit]').click()");
-	/* A host is picked: its interfaces, with their addresses. */
-	run("const n = document.querySelector('svg.topo .tnode .box'); "
-	    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
-	wait_js("document.querySelector('svg.topo .tnode.sel') && document."
-	    "querySelector('.map-panel .iflist li')", 5);
+	/* A host is picked: its interfaces, with their addresses.  The
+	 * drawing keeps its size whatever the panel beside it shows: it
+	 * would grow or shrink under the pointer otherwise. */
+	{
+		double	w0, h0, w1, h1;
+
+		w0 = js_num("document.querySelector('svg.topo')."
+		    "getBoundingClientRect().width");
+		h0 = js_num("document.querySelector('svg.topo')."
+		    "getBoundingClientRect().height");
+		run("const n = document.querySelector('svg.topo .tnode .box'); "
+		    "ptr(n, 'pointerdown'); ptr(n, 'pointerup');");
+		wait_js("document.querySelector('svg.topo .tnode.sel') && "
+		    "document.querySelector('.map-panel .iflist li')", 5);
+		w1 = js_num("document.querySelector('svg.topo')."
+		    "getBoundingClientRect().width");
+		h1 = js_num("document.querySelector('svg.topo')."
+		    "getBoundingClientRect().height");
+		ATF_CHECK_MSG(fabs(w1 - w0) < 1 && fabs(h1 - h0) < 1,
+		    "the map was %.0fx%.0f and is %.0fx%.0f with a host "
+		    "picked", w0, h0, w1, h1);
+	}
 	ATF_CHECK(js_true("document.querySelector('.map-panel .iflist')."
 	    "textContent.includes('lo0')"));
 	/* And dragged: it is where it was put, and stays there. */
@@ -1791,6 +2392,23 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.auth .offline')", 20);
 	offline(false);
 	wait_js("document.querySelector('.shell')", 30);
+	/*
+	 * The page was loaded again: the tasks that ended before are
+	 * still along the bottom, with their hosts and how they ended;
+	 * one picked opens the list at it.
+	 */
+	wait_js("document.querySelectorAll('.dock .recent .last').length >= 4 "
+	    "&& [...document.querySelectorAll('.dock .recent .last small')]."
+	    "some(e => /done|failed/.test(e.textContent))", 20);
+	ATF_CHECK(js_true("(localStorage.getItem('arc_tasks') || '').split("
+	    "'\\n').length > 5"));
+	shot("9a-recent-tasks");
+	run("[...document.querySelectorAll('.dock .recent .last')].pop()."
+	    "click()");
+	wait_js("document.querySelector('.dock.open ol.ops li.op.selected .w')",
+	    5);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("!document.querySelector('.dock.open')", 5);
 
 	/*
 	 * A newer shell on the console: the page finds it when it comes

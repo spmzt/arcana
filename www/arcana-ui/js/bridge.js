@@ -98,6 +98,8 @@ addToLibrary({
 				    to.defaultValue === from.defaultValue));
 			}
 		});
+		if (typeof arcColsApply === "function")
+			arcColsApply(el);
 	},
 
 	arc_set_class__deps: ["$UTF8ToString"],
@@ -197,13 +199,25 @@ addToLibrary({
 			svg = t.closest("svg");
 			if (svg === null)
 				return;
+			if (drag !== null)
+				return;
 			drag = { name: t.dataset.drag, arg: t.dataset.arg || "",
 			    svg: svg, x: e.clientX, y: e.clientY, moved: false,
-			    last: null, frame: 0 };
+			    last: null, frame: 0, id: e.pointerId };
+			/*
+			 * The pointer is the drawing's until let go: over
+			 * the panels, outside the window, it still moves
+			 * what it holds, and its letting go is heard.
+			 */
+			try {
+				svg.setPointerCapture(e.pointerId);
+			} catch (err) {
+			}
 			e.preventDefault();
 		});
 		document.addEventListener("pointermove", function (e) {
-			if (drag === null)
+			if (drag === null || (e.pointerId !== drag.id &&
+			    e.isTrusted))
 				return;
 			if (!drag.moved && Math.abs(e.clientX - drag.x) +
 			    Math.abs(e.clientY - drag.y) < 5)
@@ -233,7 +247,7 @@ addToLibrary({
 		function drop(e) {
 			var d = drag, el, on;
 
-			if (d === null)
+			if (d === null || (e.pointerId !== d.id && e.isTrusted))
 				return;
 			drag = null;
 			if (d.frame !== 0)
@@ -325,6 +339,107 @@ addToLibrary({
 		}
 		document.addEventListener("pointerup", pinchEnd);
 		document.addEventListener("pointercancel", pinchEnd);
+		/*
+		 * Every table's columns are as wide as they are dragged:
+		 * a head's right border is taken hold of and moved, and a
+		 * double click on it lets the column be as wide as what is
+		 * in it again.  A width is kept, while the page lives, by
+		 * the table's kind and the column's place, and put back
+		 * when the table is drawn again.
+		 */
+		var colw = {}, coldrag = null, colclick = 0;
+
+		function colKey(th) {
+			var t = th.closest("table");
+
+			return (t === null ? null : t.className.replace(
+			    /\s+/g, ".") + "#" + th.cellIndex);
+		}
+		function colEdge(e) {
+			var th = e.target.closest ? e.target.closest(
+			    "table.net th") : null, r;
+
+			if (th === null)
+				return (null);
+			r = th.getBoundingClientRect();
+			/* A click made by a script has no place: not a border's. */
+			if (e.clientX < r.left || e.clientX > r.right ||
+			    e.clientY < r.top || e.clientY > r.bottom)
+				return (null);
+			if (r.right - e.clientX <= 6)
+				return (th);
+			/* The left border is the one before's right. */
+			if (e.clientX - r.left <= 4 &&
+			    th.previousElementSibling !== null)
+				return (th.previousElementSibling);
+			return (null);
+		}
+		window.arcColsApply = function (root) {
+			var ths = root.querySelectorAll("table.net th"), i, k;
+
+			for (i = 0; i < ths.length; i++) {
+				k = colKey(ths[i]);
+				if (k !== null && colw[k] !== undefined) {
+					ths[i].style.width = colw[k] + "px";
+					ths[i].style.minWidth = colw[k] + "px";
+					ths[i].style.maxWidth = colw[k] + "px";
+				} else if (ths[i].style.width !== "") {
+					ths[i].style.width = "";
+					ths[i].style.minWidth = "";
+					ths[i].style.maxWidth = "";
+				}
+			}
+		};
+		document.addEventListener("pointermove", function (e) {
+			var th, w;
+
+			if (coldrag !== null) {
+				w = Math.max(40, coldrag.w + e.clientX -
+				    coldrag.x);
+				colw[coldrag.k] = Math.round(w);
+				arcColsApply(document);
+				return;
+			}
+			th = e.target.closest ? e.target.closest(
+			    "table.net thead") : null;
+			if (th !== null)
+				th.style.cursor = colEdge(e) !== null ?
+				    "col-resize" : "";
+		});
+		document.addEventListener("pointerdown", function (e) {
+			var th = colEdge(e);
+
+			if (th === null || e.button > 0)
+				return;
+			coldrag = { k: colKey(th), x: e.clientX,
+			    w: th.getBoundingClientRect().width };
+			e.preventDefault();
+			e.stopPropagation();
+		}, true);
+		document.addEventListener("pointerup", function () {
+			if (coldrag !== null) {
+				coldrag = null;
+				colclick = Date.now();
+			}
+		}, true);
+		/* Taking hold of a border is not picking the column to sort. */
+		document.addEventListener("click", function (e) {
+			if (Date.now() - colclick < 350 || colEdge(e) !== null) {
+				e.stopPropagation();
+				e.preventDefault();
+			}
+		}, true);
+		document.addEventListener("dblclick", function (e) {
+			var th = colEdge(e);
+
+			if (th === null)
+				return;
+			delete colw[colKey(th)];
+			arcColsApply(document);
+			e.stopPropagation();
+			e.preventDefault();
+		}, true);
+
 		document.addEventListener("wheel", function (e) {
 			var svg = e.target.closest ? e.target.closest(
 			    "svg[data-wheel]") : null, m, p;
@@ -348,7 +463,7 @@ addToLibrary({
 		 * custom property on the root element, kept per browser;
 		 * a double click goes back to the usual one.
 		 */
-		var sizes = {}, drag = null, root = document.documentElement;
+		var sizes = {}, resizing = null, root = document.documentElement;
 		var props = { rail: "--rail-w", dock: "--dock-h", ops: "--ops-w",
 		    drawer: "--drawer-w" };
 
@@ -386,31 +501,31 @@ addToLibrary({
 			if (t === null || e.button > 0)
 				return;
 			e.preventDefault();
-			drag = t.dataset.resize;
+			resizing = t.dataset.resize;
 			root.classList.add("resizing");
 		});
 		window.addEventListener("pointermove", function (e) {
 			var r, w = window.innerWidth, h = window.innerHeight, el;
 
-			if (drag === null)
+			if (resizing === null)
 				return;
-			if (drag === "rail") {
+			if (resizing === "rail") {
 				r = document.getElementById("body")
 				    .getBoundingClientRect();
 				sizes.rail = clamp(e.clientX - r.left, 150, w * .6);
-			} else if (drag === "drawer") {
+			} else if (resizing === "drawer") {
 				r = document.getElementById("body")
 				    .getBoundingClientRect();
 				sizes.drawer = clamp(r.right - e.clientX, 280,
 				    w * .7);
-			} else if (drag === "ops") {
+			} else if (resizing === "ops") {
 				el = document.querySelector(".dock-body");
 				if (el === null)
 					return;
 				r = el.getBoundingClientRect();
 				sizes.ops = clamp(e.clientX - r.left, 140,
 				    r.width * .7);
-			} else if (drag === "dock") {
+			} else if (resizing === "dock") {
 				el = document.querySelector(".dock-body");
 				if (el === null)
 					return;
@@ -421,9 +536,9 @@ addToLibrary({
 			applySizes();
 		});
 		function endDrag() {
-			if (drag === null)
+			if (resizing === null)
 				return;
-			drag = null;
+			resizing = null;
 			root.classList.remove("resizing");
 			saveSizes();
 		}
@@ -643,6 +758,10 @@ addToLibrary({
 	arc_theme_set: function (namep) {
 		var name = UTF8ToString(namep), meta;
 
+		/* The default one, chosen where it is not the default. */
+		if (name === "" && window.matchMedia("(max-width: 620px)")
+		    .matches)
+			name = "tron";
 		if (name === "")
 			delete document.documentElement.dataset.theme;
 		else
@@ -828,6 +947,70 @@ addToLibrary({
 
 	arc_now: function () {
 		return (Date.now());
+	},
+
+	/* The room the fleet's map has on the page, 0 when not drawn yet. */
+	arc_map_w: function () {
+		var el = document.querySelector(".netmap:not(.ngmap) " +
+		    "> .map-wrap");
+
+		return (el === null ? 0 : el.clientWidth);
+	},
+	arc_map_h: function () {
+		var el = document.querySelector(".netmap:not(.ngmap) " +
+		    "> .map-wrap");
+
+		return (el === null ? 0 : el.clientHeight);
+	},
+
+	/*
+	 * What comes in parts: one WebSocket to the console, opened when
+	 * first needed and again when it went.  What is asked while it is
+	 * not open yet waits; every message goes to arc_on_stream(), and
+	 * so does {"closed": true} when the socket is lost.
+	 */
+	$arcStream: { ws: null, wait: [] },
+	arc_stream_send__deps: ["$arcStream", "$arcStr", "$UTF8ToString"],
+	arc_stream_send: function (textp) {
+		var text = UTF8ToString(textp), st = arcStream, ws;
+
+		if (st.ws !== null && st.ws.readyState === 1) {
+			st.ws.send(text);
+			return;
+		}
+		st.wait.push(text);
+		if (st.ws !== null && st.ws.readyState === 0)
+			return;
+		try {
+			ws = new WebSocket((location.protocol === "https:" ?
+			    "wss://" : "ws://") + location.host + "/api/stream");
+		} catch (e) {
+			st.wait = [];
+			Module._arc_on_stream(arcStr("{\"closed\":true}"));
+			return;
+		}
+		st.ws = ws;
+		ws.onopen = function () {
+			var q = st.wait;
+
+			st.wait = [];
+			q.forEach(function (t) { ws.send(t); });
+		};
+		ws.onmessage = function (e) {
+			if (typeof e.data === "string")
+				Module._arc_on_stream(arcStr(e.data));
+		};
+		ws.onclose = function () {
+			if (st.ws === ws)
+				st.ws = null;
+			st.wait = [];
+			Module._arc_on_stream(arcStr("{\"closed\":true}"));
+		};
+	},
+
+	/* Is the window as narrow as a phone held upright? */
+	arc_narrow: function () {
+		return (window.innerWidth <= 620 ? 1 : 0);
 	},
 
 	arc_title__deps: ["$UTF8ToString"],

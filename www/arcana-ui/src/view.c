@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "app.h"
 
@@ -149,8 +150,11 @@ static void
 link_led(struct html *h, const char *name, enum link l, const char *title)
 {
 
-	h_fmt(h, "<span class=\"link %s\"", l == LINK_UP ? "up" :
-	    l == LINK_DOWN ? "down" : "unknown");
+	/* The API's light is also the way to the API's own page. */
+	h_fmt(h, "<span class=\"link %s%s\"%s", l == LINK_UP ? "up" :
+	    l == LINK_DOWN ? "down" : "unknown", strcmp(name, "API") == 0 ?
+	    app.node == NODE_API ? " go on" : " go" : "", strcmp(name,
+	    "API") == 0 ? " data-act=\"select-api\" role=\"button\"" : "");
 	h_attr(h, "title", title);
 	h_raw(h, "><i class=\"led\"></i>");
 	h_txt(h, name);
@@ -164,7 +168,9 @@ topbar(struct html *h)
 	enum link	 host;
 
 	s = cur_server();
-	h_raw(h, "<header class=\"topbar\"><div class=\"brand\">"
+	h_raw(h, "<header class=\"topbar\"><button class=\"ghost burger\" "
+	    "data-act=\"rail-toggle\" title=\"Hosts and jails\" aria-label=\""
+	    "Hosts and jails\">☰</button><div class=\"brand\">"
 	    "<span class=\"logo\">");
 	h_raw(h, icon_grid);
 	h_raw(h, "</span><span class=\"wordmark\">ARCANA</span>");
@@ -175,7 +181,12 @@ topbar(struct html *h)
 		h_raw(h, "</span>");
 	}
 	h_raw(h, "</div><nav class=\"crumbs\">");
-	if (s != NULL) {
+	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
+	    NODE_API || app.node == NODE_USAGE)
+		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
+		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
+		    app.node == NODE_USAGE ? "Utilization" : "All hosts");
+	else if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
 		h_txt(h, s->name);
 		h_raw(h, "</span>");
@@ -190,13 +201,18 @@ topbar(struct html *h)
 	link_led(h, "NET", app.online ? LINK_UP : LINK_DOWN, app.online ?
 	    "This device is online" : "This device is offline");
 	link_led(h, "API", app.api, app.api == LINK_UP ?
-	    "The console answers" : app.api == LINK_DOWN ?
-	    "The console does not answer" : "Not checked yet");
+	    "The console answers. Its API, as it is documented: press" :
+	    app.api == LINK_DOWN ? "The console does not answer. Its API, as "
+	    "it is documented: press" : "Not checked yet. The console's API, "
+	    "as it is documented: press");
 	host = s == NULL || (s->list == NULL && !s->failed) ? LINK_UNKNOWN :
 	    s->failed ? LINK_DOWN : LINK_UP;
 	link_led(h, "HOST", host, s == NULL ? "No server selected" :
 	    s->failed ? s->error : "arcana-agent answers");
-	h_raw(h, "</div><div class=\"who\">");
+	h_fmt(h, "</div><button class=\"ghost more%s\" data-act=\"who-toggle\" "
+	    "title=\"Settings, keys, log out\" aria-label=\"Menu\">⋮</button>"
+	    "<div class=\"who%s\">", app.who_open ? " on" : "", app.who_open ?
+	    " open" : "");
 	h_fmt(h, "<button class=\"ghost%s\" data-act=\"fx\" title=\"Blur and "
 	    "idle animations: %s. Off is lighter on slow browsers; the "
 	    "choice stays in this browser.\">FX</button>", app.fx ? " on" :
@@ -349,15 +365,22 @@ rail(struct html *h)
 	int			 i, run, all, idx, sidx, lim;
 	bool			 folded, selhere;
 
+	/* The firewall's parts are in the side bar while its tab is shown. */
+	if (firewall_rail(h))
+		return;
 	tree_caps(cap);
 	/* On a narrow screen the tree is one line until it is unfolded. */
 	s = cur_server();
+	if (app.rail_open)
+		h_raw(h, "<div class=\"scrim\" data-act=\"rail-toggle\"></div>");
 	h_fmt(h, "<aside class=\"rail%s\"><div class=\"rail-head\">"
 	    "<button class=\"ghost small rail-toggle\" data-act=\""
 	    "rail-toggle\" title=\"Hosts and jails\">%s ", app.rail_open ?
 	    " open" : "", app.rail_open ? "▴" : "▾");
-	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node ==
-	    NODE_FLEET || s == NULL ? "All hosts" : s->name);
+	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
+	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
+	    NODE_FLEET || s == NULL ? "All hosts" :
+	    s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
 		h_raw(h, " / ");
 		h_txt(h, app.jail);
@@ -372,8 +395,11 @@ rail(struct html *h)
 	    "<span class=\"count\">%d</span></li>"
 	    "<li class=\"titem fleet netnode%s\" data-act=\"select-network\">"
 	    "<span class=\"twig\">⌬</span><span class=\"name\">Network</span>"
-	    "</li>", app.node == NODE_FLEET ? " selected" : "", app.nservers,
-	    app.node == NODE_NETWORK ? " selected" : "");
+	    "</li><li class=\"titem fleet usagenode%s\" data-act=\""
+	    "select-usage\"><span class=\"twig\">◔</span><span class=\"name\">"
+	    "Utilization</span></li>", app.node == NODE_FLEET ? " selected" :
+	    "", app.nservers, app.node == NODE_NETWORK ? " selected" : "",
+	    app.node == NODE_USAGE ? " selected" : "");
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
@@ -800,6 +826,16 @@ stage(struct html *h)
 		h_raw(h, "</main>");
 		return;
 	}
+	if (app.node == NODE_API) {
+		view_apidoc(h);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.node == NODE_USAGE) {
+		view_usage(h);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (app.node == NODE_JAIL) {
 		jail_page(h);
 		h_raw(h, "</main>");
@@ -812,8 +848,11 @@ stage(struct html *h)
 		} tabs[] = {
 			{ "summary", "Summary" }, { "jails", "Jails" },
 			{ "services", "Services" }, { "network", "Network" },
+			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
-			{ "kernel", "Kernel" }, { "jobs", "Jobs" },
+			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
+			{ "processes", "Processes" }, { "log", "Log" },
+			{ "jobs", "Jobs" },
 		};
 		/*
 		 * A plugin has a tab of its own, on a host that has it: it
@@ -832,7 +871,7 @@ stage(struct html *h)
 		plug = app.tab == TAB_NETWORK && (app.net.kind ==
 		    NET_WIREGUARD || app.net.kind == NET_BIRD);
 		h_raw(h, "<nav class=\"tabs\">");
-		for (t = 0; t < 8; t++)
+		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++)
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
@@ -849,6 +888,7 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_SUMMARY) {
 		view_summary(h, s);
+		view_transport(h, s);
 		peek_box(h);
 		h_raw(h, "</main>");
 		return;
@@ -875,6 +915,26 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_KERNEL) {
 		view_kernel(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_SYSCTL) {
+		view_sysctl(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_PROCESSES) {
+		view_procs(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_LOG) {
+		view_logs(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_FIREWALL) {
+		view_firewall(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1105,16 +1165,37 @@ dock(struct html *h)
 	int		 i;
 
 	h_fmt(h, "<section class=\"dock%s\">%s<header data-act=\"dock\">"
-	    "<span class=\"label\">Activity</span>", app.dock_open ?
-	    " open" : "", app.dock_open ? RESIZER("y", "dock") : "");
-	if (app.nops > 0) {
-		o = &app.ops[0];
-		h_fmt(h, "<span class=\"last o-%s\"><i class=\"led\"></i>",
-		    o->state == OP_RUNNING ? "running" : o->state == OP_OK ?
-		    "ok" : "failed");
+	    "<span class=\"label\">Recent tasks</span><div class=\"recent\">",
+	    app.dock_open ? " open" : "", app.dock_open ? RESIZER("y",
+	    "dock") : "");
+	/*
+	 * The last few, always in sight: what each was, on which host,
+	 * how it ended and how long it took.  One picked opens below.
+	 */
+	for (i = 0; i < app.nops && i < 6; i++) {
+		o = &app.ops[i];
+		h_fmt(h, "<span class=\"last o-%s%s\" data-act=\"trace\" "
+		    "data-arg=\"%d\"", o->state == OP_RUNNING ? "running" :
+		    o->state == OP_OK ? "ok" : "failed", app.dock_open &&
+		    o->id == app.trace_op ? " selected" : "", o->id);
+		h_attr(h, "title", o->state == OP_FAILED && o->error[0] !=
+		    '\0' ? o->error : o->title);
+		h_raw(h, "><i class=\"led\"></i><b>");
 		h_txt(h, o->title);
-		h_raw(h, "</span>");
+		h_raw(h, "</b><small>");
+		h_txt(h, o->server);
+		if (o->state == OP_RUNNING)
+			h_raw(h, " · running");
+		else {
+			fmt_dur(dur, sizeof(dur), (int64_t)((o->finished -
+			    o->started) * 1000));
+			h_fmt(h, " · %s · ", o->state == OP_OK ? "done" :
+			    "failed");
+			h_txt(h, dur);
+		}
+		h_raw(h, "</small></span>");
 	}
+	h_raw(h, "</div>");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"queue\" title=\""
 	    "Changes are held in a queue until you press Run, and sent "
 	    "together: the host runs them in order, also when it loses the "
@@ -1147,6 +1228,16 @@ dock(struct html *h)
 			    o->state == OP_RUNNING ? "running" :
 			    o->state == OP_OK ? "ok" : "failed",
 			    o->id == app.trace_op ? " selected" : "", o->id);
+			{
+				time_t		when = (time_t)(o->started / 1000);
+				struct tm	tm;
+				char		clock[16];
+
+				localtime_r(&when, &tm);
+				strftime(clock, sizeof(clock), "%H:%M:%S", &tm);
+				h_fmt(h, "<span class=\"w\" title=\"When it "
+				    "began\">%s</span>", clock);
+			}
 			h_raw(h, "<span class=\"t\">");
 			h_txt(h, o->title);
 			h_raw(h, "</span><span class=\"s\">");
@@ -1161,7 +1252,15 @@ dock(struct html *h)
 				h_raw(h, "<span class=\"d\">");
 				h_txt(h, dur);
 				h_raw(h, "</span>");
-			} else if (o->job > 0 || o->req != 0)
+			}
+			if (o->state == OP_FAILED && o->again != NULL)
+				h_fmt(h, "<button class=\"ghost small retry\" "
+				    "data-act=\"op-retry\" data-arg=\"%d\" "
+				    "title=\"Send it again, as it was\">Retry"
+				    "</button>", o->id);
+			if (o->state != OP_RUNNING)
+				;
+			else if (o->job > 0 || o->req != 0)
 				h_fmt(h, "<button class=\"icon\" "
 				    "data-act=\"op-cancel\" data-arg=\"%d\" "
 				    "title=\"%s\">×</button>", o->id, o->job > 0 ?
@@ -1191,7 +1290,8 @@ static const struct {
 } themes[] = {
 	{ "", "Tron" }, { "amber", "Amber" }, { "matrix", "Matrix" },
 	{ "synth", "Synth" }, { "slate", "Slate" }, { "onyx", "Onyx" },
-	{ "paper", "Paper" },
+	{ "paper", "Paper" }, { "sand", "Sand" }, { "mist", "Mist" },
+	{ "mint", "Mint" },
 };
 
 static void
@@ -1811,6 +1911,34 @@ view_shell(struct html *h)
 	    "<div id=\"r-dock\" class=\"region\"></div></div>"
 	    "<div id=\"r-modal\" class=\"region\"></div>"
 	    "<div id=\"r-toasts\" class=\"region\"></div>");
+}
+
+/*
+ * A box that folds: its head is pressed to shut it and to open it
+ * again, and how it was left is kept in the browser.  box_head() is
+ * the head's attributes and its mark; box_shut() says not to draw what
+ * is under it.
+ */
+bool
+box_shut(const char *key)
+{
+	char	k[96];
+
+	snprintf(k, sizeof(k), "shut:%s", key);
+	return (arc_open_get(k) != 0);
+}
+
+void
+box_head(struct html *h, const char *key, const char *tag)
+{
+	char	k[96];
+
+	snprintf(k, sizeof(k), "shut:%s", key);
+	h_fmt(h, "<%s class=\"boxhead%s\" data-act=\"fold\"", tag,
+	    arc_open_get(k) != 0 ? " shut" : "");
+	h_attr(h, "data-arg", k);
+	h_fmt(h, " title=\"Fold, or unfold\"><i class=\"chev\">%s</i>",
+	    arc_open_get(k) != 0 ? "▸" : "▾");
 }
 
 /* Is the service drawer open?  The body lays out differently. */

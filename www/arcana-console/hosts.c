@@ -19,6 +19,8 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
+#include <pthread.h>
 #include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,6 +57,12 @@ enum op {
 	OP_KERNEL,
 	OP_STORAGE,
 	OP_FSTAB,
+	OP_IPFW_RULES,
+	OP_TRANSPORT,
+	OP_SYSCTL,
+	OP_PROCESSES,
+	OP_LOG,
+	OP_HISTORY,
 };
 
 struct call {
@@ -75,6 +83,7 @@ struct call {
 	char			 ifname[16];
 	uint8_t			 family;	/* network */
 	uint32_t		 fib;		/* network, route lookup */
+	uint32_t		 offset;		/* network: rows to leave out */
 	char			 scope[256];	/* the vnet jail whose network it is */
 	bool			 refresh;	/* packages */
 	bool			 dry_run;	/* pkg-upgrade */
@@ -88,9 +97,42 @@ struct call {
 	char			*text;		/* bird-config: the new text */
 	struct arc_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
+	bool			 reads;		/* changes nothing: may be asked twice */
+	bool			 retry;		/* transport: try SCTP again */
+	char			 logname[129];	/* log: the file */
+	uint64_t		 pos;		/* log: from where; history: after when */
+	bool			 has_pos;
+	uint32_t		 lines;		/* log: at most */
+	bool			 fresh;		/* a connection of its own, not kept */
+	bool			 moved;		/* transport switch: it answered */
 	char			*json;		/* the reply, from the thread */
 	int			 status;
 };
+
+/*
+ * The connections to the agents, kept open between requests: a request
+ * takes one that is idle, or makes one, and gives it back when it has
+ * its answer.  Several requests to one host at once have one each, and
+ * leave as many behind.  One that nobody took for a while is closed,
+ * and so is one the other end has closed or written to unasked.
+ */
+#define	POOL_MAX	48
+#define	POOL_PER_HOST	4
+#define	POOL_IDLE_US	(90 * 1000000ULL)
+
+struct pooled {
+	char		*uri;
+	char		*peer;
+	cbl_conn	*conn;
+	cbl_tls		*tls;
+	uint16_t	 family;
+	uint32_t	 version;
+	uint64_t	 since;		/* µs, when it was given back */
+};
+
+static struct pooled	pool[POOL_MAX];
+static int		npool;
+static pthread_mutex_t	pool_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static cbl_ctx	*ctx;
 
@@ -132,6 +174,9 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_WIREGUARD] = "wireguard",
 	[ARC_NET_KIND_BIRD] = "bird",
 	[ARC_NET_KIND_BIRD_ROUTES] = "bird-routes",
+	[ARC_NET_KIND_BRIDGES] = "bridges",
+	[ARC_NET_KIND_GENEVE] = "geneve",
+	[ARC_NET_KIND_IPFW] = "ipfw",
 };
 
 static const char *service_action_names[] = {
@@ -224,6 +269,196 @@ output(const struct cbl_bytes *b)
 	o = ucl_object_fromstring(v);
 	free(v);
 	return (o);
+}
+
+static bool
+same(const char *a, const char *b)
+{
+
+	return ((a == NULL && b == NULL) || (a != NULL && b != NULL &&
+	    strcmp(a, b) == 0));
+}
+
+static void
+pooled_close(struct pooled *p)
+{
+
+	cbl_conn_free(p->conn);
+	cbl_tls_free(p->tls);
+	free(p->uri);
+	free(p->peer);
+}
+
+/* An idle connection to uri, if one is there and still good. */
+static bool
+pool_take(const char *uri, const char *peer, struct pooled *out)
+{
+	struct pollfd	pfd;
+	uint64_t	now;
+	int		i;
+	bool		found;
+
+	found = false;
+	now = now_us();
+	pthread_mutex_lock(&pool_lock);
+	for (i = npool - 1; i >= 0; i--) {
+		bool	mine, dead;
+
+		mine = !found && strcmp(pool[i].uri, uri) == 0 && same(
+		    pool[i].peer, peer);
+		dead = now - pool[i].since > POOL_IDLE_US ||
+		    !cbl_conn_is_open(pool[i].conn);
+		if (!dead && mine) {
+			/* Closed by the other end, or written to unasked. */
+			pfd.fd = cbl_conn_fd(pool[i].conn);
+			pfd.events = POLLIN;
+			pfd.revents = 0;
+			dead = pfd.fd == -1 || poll(&pfd, 1, 0) != 0;
+		}
+		if (!dead && !mine)
+			continue;
+		if (dead)
+			pooled_close(&pool[i]);
+		else {
+			*out = pool[i];
+			found = true;
+		}
+		pool[i] = pool[--npool];
+	}
+	pthread_mutex_unlock(&pool_lock);
+	return (found);
+}
+
+/* Back for the next request; closed when there are enough already. */
+static void
+pool_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
+    const struct arc_client *cl)
+{
+	struct pooled	p;
+	int		i, n;
+
+	memset(&p, 0, sizeof(p));
+	p.conn = conn;
+	p.tls = tls;
+	p.family = cl->family;
+	p.version = cl->version;
+	p.since = now_us();
+	if ((p.uri = strdup(uri)) == NULL || (peer != NULL && (p.peer =
+	    strdup(peer)) == NULL)) {
+		pooled_close(&p);
+		return;
+	}
+	pthread_mutex_lock(&pool_lock);
+	for (i = 0, n = 0; i < npool; i++)
+		if (strcmp(pool[i].uri, uri) == 0)
+			n++;
+	if (npool < POOL_MAX && n < POOL_PER_HOST) {
+		pool[npool++] = p;
+		p.conn = NULL;
+	}
+	pthread_mutex_unlock(&pool_lock);
+	if (p.conn != NULL)
+		pooled_close(&p);
+}
+
+/* A server went, or is reached another way: its connections go. */
+void
+hosts_forget(const char *uri)
+{
+	int	i;
+
+	pthread_mutex_lock(&pool_lock);
+	for (i = npool - 1; i >= 0; i--)
+		if (strcmp(pool[i].uri, uri) == 0) {
+			pooled_close(&pool[i]);
+			pool[i] = pool[--npool];
+		}
+	pthread_mutex_unlock(&pool_lock);
+}
+
+/*
+ * A connection to an agent for something that is not a call: one kept
+ * from before or a new one, with the client set up on it.  NULL, or
+ * why not.  hosts_release() gives it back, or closes it when it is not
+ * to be trusted any more.
+ */
+const char *
+hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
+    cbl_tls **tlsp, struct arc_client *cl)
+{
+	struct pooled	 kept;
+	cbl_conn	*conn;
+	cbl_tls		*tls;
+	const char	*msg;
+	int		 error;
+
+	memset(cl, 0, sizeof(*cl));
+	*connp = NULL;
+	*tlsp = NULL;
+	if (pool_take(uri, peer, &kept)) {
+		free(kept.uri);
+		free(kept.peer);
+		cl->conn = kept.conn;
+		cl->family = kept.family;
+		cl->version = kept.version;
+		*connp = kept.conn;
+		*tlsp = kept.tls;
+		return (NULL);
+	}
+	conn = NULL;
+	tls = NULL;
+	if ((error = cbl_conn_new(ctx, uri, 0, &conn)) != 0)
+		return (strerror(error));
+	if (strncmp(uri, "unix:", 5) != 0) {
+		if (cfg.tls_ca == NULL || cfg.tls_cert == NULL ||
+		    cfg.tls_key == NULL) {
+			cbl_conn_free(conn);
+			return ("no tls { ca cert key } in web.conf");
+		}
+		if (cbl_tls_new(&tls) != 0 ||
+		    cbl_tls_set_cert(tls, cfg.tls_cert, cfg.tls_key) != 0 ||
+		    cbl_tls_set_ca(tls, cfg.tls_ca, NULL) != 0 ||
+		    (peer != NULL && cbl_tls_set_peer_name(tls, peer) != 0)) {
+			cbl_conn_free(conn);
+			cbl_tls_free(tls);
+			return ("the console's certificate could not be used");
+		}
+		(void)cbl_conn_set_tls(conn, tls);
+	}
+	if (cbl_conn_connect(conn) != 0) {
+		/* The words are the connection's: said before it goes. */
+		static _Thread_local char	why[256];
+
+		msg = cbl_conn_errstr(conn);
+		snprintf(why, sizeof(why), "%s", msg != NULL && msg[0] !=
+		    '\0' ? msg : "cannot connect");
+		cbl_conn_free(conn);
+		cbl_tls_free(tls);
+		return (why);
+	}
+	if (arc_client_init(cl, conn) != 0) {
+		cbl_conn_free(conn);
+		cbl_tls_free(tls);
+		memset(cl, 0, sizeof(*cl));
+		return ("no arcana family there");
+	}
+	*connp = conn;
+	*tlsp = tls;
+	return (NULL);
+}
+
+void
+hosts_release(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
+    struct arc_client *cl, bool good)
+{
+
+	arc_client_fini(cl);
+	if (good && cbl_conn_is_open(conn))
+		pool_give(uri, peer, conn, tls, cl);
+	else {
+		cbl_conn_free(conn);
+		cbl_tls_free(tls);
+	}
 }
 
 int
@@ -378,7 +613,11 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_TRANSPORT ? "arc_transport" :
+	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
+	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
+	    "arc_log" : c->op == OP_HISTORY ? "arc_history" :
+	    c->op == OP_SYSCTL ? "arc_sysctl" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
 	    "arc_jobs" : c->op == OP_JOB ? "arc_job" : c->op == OP_JOB_CANCEL ?
@@ -630,6 +869,25 @@ agent_keep(const void *bin, size_t len, const char *version)
 	return (NULL);
 }
 
+/* The host's own JSON, as the reply's data. */
+static void
+put_json(ucl_object_t *top, const char *json)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*e;
+
+	if (json == NULL)
+		return;
+	e = NULL;
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	if (ucl_parser_add_string(p, json, 0))
+		e = ucl_parser_get_object(p);
+	ucl_parser_free(p);
+	if (e != NULL)
+		put(top, "data", e);
+}
+
 static int
 call_run(struct kore_task *t)
 {
@@ -654,10 +912,23 @@ call_run(struct kore_task *t)
 	struct arc_bird_config_rsp *bcr;
 	struct arc_stats_rsp	*str;
 	struct arc_kernel_rsp	*kr;
+	struct arc_transport_req tpq;
+	struct arc_transport_rsp *tpr;
+	struct arc_sysctl_req	 syq;
+	struct arc_sysctl_rsp	*syr;
+	struct arc_processes_req prq;
+	struct arc_processes_rsp *prr;
+	struct arc_log_req	 lgq;
+	struct arc_log_rsp	*lgr;
+	struct arc_history_req	 hsq;
+	struct arc_history_rsp	*hsr;
+	struct pooled		 kept;
 	struct arc_storage_req	 sgq;
 	struct arc_storage_rsp	*sgr;
 	struct arc_fstab_req	 fsq;
 	struct arc_fstab_rsp	*fsr;
+	struct arc_ipfw_rules_req irq;
+	struct arc_ipfw_rules_rsp *irr;
 	struct arc_packages_req	 pq;
 	struct arc_packages_rsp	*pr;
 	struct arc_pkg_upgrade_req uq;
@@ -690,7 +961,7 @@ call_run(struct kore_task *t)
 	char			 detail[512];
 	uint64_t		 t1, us;
 	size_t			 nsteps, i;
-	bool			 local, ok;
+	bool			 local, ok, reused, again;
 	int			 error;
 
 	c = (struct call *)t;
@@ -717,8 +988,15 @@ call_run(struct kore_task *t)
 	bcr = NULL;
 	str = NULL;
 	kr = NULL;
+	tpr = NULL;
+	syr = NULL;
+	prr = NULL;
+	lgr = NULL;
+	hsr = NULL;
+	reused = again = false;
 	sgr = NULL;
 	fsr = NULL;
+	irr = NULL;
 	pr = NULL;
 	ur = NULL;
 	jsr = NULL;
@@ -731,11 +1009,28 @@ call_run(struct kore_task *t)
 	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
-	snprintf(detail, sizeof(detail), "%s, %s", c->uri, local ?
-	    "local socket" : "mutual TLS 1.3");
 	t1 = now_us();
+connect:
 	memset(&cl, 0, sizeof(cl));
-
+	/* One kept from before, when there is one. */
+	if (!c->fresh && !again && pool_take(c->uri, c->peer, &kept)) {
+		conn = kept.conn;
+		tls = kept.tls;
+		free(kept.uri);
+		free(kept.peer);
+		cl.conn = conn;
+		cl.family = kept.family;
+		cl.version = kept.version;
+		reused = true;
+		snprintf(detail, sizeof(detail), "%s, %s, kept open", c->uri,
+		    local ? "local socket" : strncmp(c->uri, "sctp:", 5) ==
+		    0 ? "mutual DTLS 1.2" : "mutual TLS 1.3");
+		goto connected;
+	}
+	reused = false;
+	snprintf(detail, sizeof(detail), "%s, %s", c->uri, local ?
+	    "local socket" : strncmp(c->uri, "sctp:", 5) == 0 ?
+	    "mutual DTLS 1.2" : "mutual TLS 1.3");
 	if ((error = cbl_conn_new(ctx, c->uri, 0, &conn)) != 0) {
 		msg = strerror(error);
 		goto fail;
@@ -765,6 +1060,7 @@ call_run(struct kore_task *t)
 		msg = "no arcana family there";
 		goto fail;
 	}
+connected:
 
 	switch (c->op) {
 	case OP_HELLO:
@@ -1020,6 +1316,8 @@ call_run(struct kore_task *t)
 		nq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
 		nq.has_net_fib = c->fib != 0;
 		nq.net_fib = c->fib;
+		nq.has_offset = c->offset != 0;
+		nq.offset = c->offset;
 		nq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_network(&cl, &nq, &nr)) != 0)
 			goto rpcfail;
@@ -1127,6 +1425,22 @@ call_run(struct kore_task *t)
 		steps = sgr->trace.v;
 		nsteps = sgr->trace.n;
 		break;
+	case OP_IPFW_RULES:
+		/* As fstab: the checksum rides where an address does. */
+		memset(&irq, 0, sizeof(irq));
+		irq.conf_text = c->text;
+		irq.sha256 = c->address[0] != '\0' ? c->address : NULL;
+		irq.dry_run = c->dry_run;
+		irq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		if ((error = arc_ipfw_rules(&cl, &irq, &irr)) != 0)
+			goto rpcfail;
+		ok = irr->ok;
+		put_str(top, "error", irr->error);
+		put_str(top, "text", irr->conf_text);
+		put_str(top, "sha256", irr->sha256);
+		steps = irr->trace.v;
+		nsteps = irr->trace.n;
+		break;
 	case OP_FSTAB:
 		/* The checksum rides where an address does. */
 		memset(&fsq, 0, sizeof(fsq));
@@ -1141,6 +1455,103 @@ call_run(struct kore_task *t)
 		put_str(top, "sha256", fsr->sha256);
 		steps = fsr->trace.v;
 		nsteps = fsr->trace.n;
+		break;
+	case OP_TRANSPORT:
+		memset(&tpq, 0, sizeof(tpq));
+		tpq.retry = c->retry;
+		if ((error = arc_transport(&cl, &tpq, &tpr)) != 0)
+			goto rpcfail;
+		ok = tpr->ok;
+		put_str(top, "error", tpr->error);
+		e = NULL;
+		if (tpr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, tpr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		/* How the console itself reaches it. */
+		put_str(top, "uri", c->uri);
+		steps = tpr->trace.v;
+		nsteps = tpr->trace.n;
+		break;
+	case OP_PROCESSES:
+		memset(&prq, 0, sizeof(prq));
+		prq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		if ((error = arc_processes(&cl, &prq, &prr)) != 0)
+			goto rpcfail;
+		ok = prr->ok;
+		put_str(top, "error", prr->error);
+		put_json(top, prr->json);
+		steps = prr->trace.v;
+		nsteps = prr->trace.n;
+		break;
+	case OP_LOG:
+		/* The text looked for rides where a jail's name does. */
+		memset(&lgq, 0, sizeof(lgq));
+		lgq.log_name = c->logname[0] != '\0' ? c->logname : NULL;
+		lgq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
+		lgq.has_position = c->has_pos;
+		lgq.position = c->pos;
+		lgq.has_lines = c->lines > 0;
+		lgq.lines = c->lines;
+		if ((error = arc_log(&cl, &lgq, &lgr)) != 0)
+			goto rpcfail;
+		ok = lgr->ok;
+		put_str(top, "error", lgr->error);
+		put_json(top, lgr->json);
+		steps = lgr->trace.v;
+		nsteps = lgr->trace.n;
+		break;
+	case OP_HISTORY:
+		memset(&hsq, 0, sizeof(hsq));
+		hsq.has_after = c->has_pos;
+		hsq.after = c->pos;
+		/* How to sample rides where the routes' fib and offset do. */
+		hsq.has_sample_step = hsq.has_sample_keep = c->retry;
+		hsq.sample_step = c->fib;
+		hsq.sample_keep = c->offset;
+		if ((error = arc_history(&cl, &hsq, &hsr)) != 0)
+			goto rpcfail;
+		ok = hsr->ok;
+		put_str(top, "error", hsr->error);
+		put_json(top, hsr->json);
+		steps = hsr->trace.v;
+		nsteps = hsr->trace.n;
+		break;
+	case OP_SYSCTL:
+		/* Where to begin rides where a jail's name does. */
+		memset(&syq, 0, sizeof(syq));
+		syq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
+		if ((error = arc_sysctl(&cl, &syq, &syr)) != 0)
+			goto rpcfail;
+		ok = syr->ok;
+		put_str(top, "error", syr->error);
+		if (syr->has_total) {
+			put(top, "total", ucl_object_fromint(
+			    (int64_t)syr->total));
+			put(top, "truncated", ucl_object_frombool(
+			    syr->truncated));
+		}
+		e = NULL;
+		if (syr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, syr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = syr->trace.v;
+		nsteps = syr->trace.n;
 		break;
 	case OP_KERNEL:
 		if ((error = arc_kernel(&cl, &kr)) != 0)
@@ -1271,9 +1682,24 @@ call_run(struct kore_task *t)
 	put(top, "ok", ucl_object_frombool(ok));
 	put(top, "trace", trace_object(c, steps, nsteps, detail, true, us));
 	c->status = 200;
+	c->moved = c->op == OP_HELLO && ok;
 	goto done;
 
 rpcfail:
+	/*
+	 * A connection kept from before may have been closed at the other
+	 * end since it was looked at: what only asks is asked again, on a
+	 * new one.  What changes something is not: it may have arrived.
+	 */
+	if (reused && c->reads && cl.err == NULL) {
+		arc_client_fini(&cl);
+		cbl_conn_free(conn);
+		cbl_tls_free(tls);
+		conn = NULL;
+		tls = NULL;
+		again = true;
+		goto connect;
+	}
 	msg = cl.err != NULL && cbl_msg_err_str(cl.err) != NULL ?
 	    cbl_msg_err_str(cl.err) : strerror(error);
 	c->status = 502;
@@ -1319,10 +1745,22 @@ done:
 		arc_stats_rsp_free(str);
 	if (kr != NULL)
 		arc_kernel_rsp_free(kr);
+	if (tpr != NULL)
+		arc_transport_rsp_free(tpr);
+	if (syr != NULL)
+		arc_sysctl_rsp_free(syr);
+	if (prr != NULL)
+		arc_processes_rsp_free(prr);
+	if (lgr != NULL)
+		arc_log_rsp_free(lgr);
+	if (hsr != NULL)
+		arc_history_rsp_free(hsr);
 	if (sgr != NULL)
 		arc_storage_rsp_free(sgr);
 	if (fsr != NULL)
 		arc_fstab_rsp_free(fsr);
+	if (irr != NULL)
+		arc_ipfw_rules_rsp_free(irr);
 	if (pr != NULL)
 		arc_packages_rsp_free(pr);
 	if (ur != NULL)
@@ -1342,6 +1780,18 @@ done:
 	if (cur != NULL)
 		arc_console_update_rsp_free(cur);
 	free(bin);
+	/*
+	 * Kept for the next request when it answered: also when the agent
+	 * refused what was asked, which says nothing against the
+	 * connection.  Not after an update, which restarts the agent.
+	 */
+	if (cl.conn != NULL && !c->fresh && c->op != OP_AGENT_UPDATE &&
+	    c->op != OP_CONSOLE_UPDATE && (c->status == 200 || cl.err !=
+	    NULL) && cbl_conn_is_open(conn)) {
+		arc_client_fini(&cl);
+		pool_give(c->uri, c->peer, conn, tls, &cl);
+		return (KORE_RESULT_OK);
+	}
 	if (cl.conn != NULL)
 		arc_client_fini(&cl);
 	cbl_conn_free(conn);
@@ -1367,7 +1817,10 @@ call_new(struct http_request *req, enum op op)
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL ||
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
 	    op == OP_CONSOLE_UPDATE ||
-	    (op == OP_SERVICE_CONFIG && req->method == HTTP_METHOD_POST)))
+	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT || op ==
+	    OP_IPFW_RULES || op == OP_FSTAB || op == OP_HISTORY) &&
+	    req->method ==
+	    HTTP_METHOD_POST)))
 		return (NULL);
 	t1 = now_us();
 	if (!capture(req, 3, sid, sizeof(sid)) || (s = server_find(sid)) ==
@@ -1377,6 +1830,7 @@ call_new(struct http_request *req, enum op op)
 	}
 	c = kore_calloc(1, sizeof(*c));
 	c->op = op;
+	c->reads = req->method == HTTP_METHOD_GET;
 	c->t0 = t0;
 	c->auth_us = t1 - t0;
 	strlcpy(c->sid, s->id, sizeof(c->sid));
@@ -1812,6 +2266,19 @@ api_network(struct http_request *req)
 		    "number"));
 	}
 	c->action = (uint8_t)i;
+	/* Read on in a table too large for one reply. */
+	{
+		const char	*errstr;
+		char		 off[16];
+
+		if (query_param(req, "offset", off, sizeof(off)) && off[0] !=
+		    '\0') {
+			c->offset = (uint32_t)strtonum(off, 0, 100000000,
+			    &errstr);
+			if (errstr != NULL)
+				c->offset = 0;
+		}
+	}
 	c->family = ARC_NET_FAMILY_ALL;
 	if (req->query_string != NULL) {
 		if (strstr(req->query_string, "family=inet6") != NULL)
@@ -1956,6 +2423,52 @@ api_storage(struct http_request *req)
 }
 
 /*
+ * GET /api/servers/<id>/ipfw/rules[?jail=]: the kept rules of the
+ * firewall and the SHA-256 of their text.  POST {"text", "sha256",
+ * "check"}: put the text in their place, once ipfw has nothing against
+ * it.
+ */
+int
+api_ipfw_rules(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+	const char	*s;
+	bool		 bad;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_IPFW_RULES)) == NULL)
+		return (KORE_RESULT_OK);
+	bad = !pick_scope(req, c);
+	if (!bad && req->method != HTTP_METHOD_GET) {
+		if ((body = read_json(req)) == NULL)
+			bad = true;
+		else {
+			if ((s = ucl_str(body, "sha256")) != NULL)
+				strlcpy(c->address, s, sizeof(c->address));
+			if ((s = ucl_str(body, "text")) != NULL)
+				c->text = kore_strdup(s);
+			else
+				bad = true;
+			c->dry_run = ucl_flag(body, "check");
+			ucl_object_unref(body);
+		}
+	}
+	if (bad) {
+		kore_free(c->text);
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "a change needs text "
+		    "and the sha256 of what it was made from; jail is a "
+		    "jail's name"));
+	}
+	return (call_start(req, c));
+}
+
+/*
  * GET /api/servers/<id>/fstab: its text and the SHA-256 of that.
  * POST {"text", "sha256", "check"}: put the text in its place.
  */
@@ -1994,6 +2507,214 @@ api_fstab(struct http_request *req)
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "a change needs text "
 		    "and the sha256 of what it was made from"));
+	}
+	return (call_start(req, c));
+}
+
+/*
+ * GET /api/servers/<id>/transport: the agent's listeners and the
+ * connections open to it.  POST {"retry": true}: it starts the SCTP
+ * listeners that are not up.
+ */
+int
+api_transport(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_TRANSPORT)) == NULL)
+		return (KORE_RESULT_OK);
+	if (req->method != HTTP_METHOD_GET && (body = read_json(req)) !=
+	    NULL) {
+		c->retry = ucl_flag(body, "retry");
+		ucl_object_unref(body);
+	}
+	return (call_start(req, c));
+}
+
+/*
+ * POST /api/servers/<id>/transport/switch {"transport": "sctp" | "tcp"}:
+ * reach the agent the other way, at the same address and port.  The
+ * agent is asked there first, on a connection of its own, and the
+ * server is changed only when it answers: there is no falling back
+ * from one to the other by itself.
+ */
+int
+api_transport_switch(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+	const char	*to, *rest;
+	char		*uri;
+	size_t		 len;
+
+	if ((c = req->hdlr_extra) != NULL) {
+		if (kore_task_state(&c->task) == KORE_TASK_STATE_FINISHED &&
+		    c->moved) {
+			c->moved = false;
+			if (servers_move(c->sid, c->uri) == -1) {
+				c->status = 500;
+				free(c->json);
+				c->json = strdup("{\"error\":{\"code\":"
+				    "\"store\",\"message\":\"it answers "
+				    "there, but the change could not be "
+				    "saved\"}}");
+			}
+		}
+		return (call_finish(req));
+	}
+	if ((c = call_new(req, OP_HELLO)) == NULL)
+		return (KORE_RESULT_OK);
+	to = NULL;
+	if ((body = read_json(req)) != NULL)
+		to = ucl_str(body, "transport");
+	rest = strncmp(c->uri, "tcp://", 6) == 0 ? c->uri + 6 : strncmp(
+	    c->uri, "sctp://", 7) == 0 ? c->uri + 7 : NULL;
+	if (to == NULL || rest == NULL || (strcmp(to, "sctp") != 0 &&
+	    strcmp(to, "tcp") != 0)) {
+		if (body != NULL)
+			ucl_object_unref(body);
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "transport is sctp "
+		    "or tcp, for a server reached over one of them"));
+	}
+	len = strlen(rest) + 8;
+	uri = kore_malloc(len);
+	snprintf(uri, len, "%s://%s", to, rest);
+	ucl_object_unref(body);
+	kore_free(c->uri);
+	c->uri = uri;
+	c->fresh = true;
+	c->reads = false;
+	return (call_start(req, c));
+}
+
+/* A number of the query, when it is there and is one. */
+static bool
+query_u64(struct http_request *req, const char *name, uint64_t max,
+    uint64_t *v)
+{
+	const char	*errstr;
+	char		 buf[24];
+
+	if (!query_param(req, name, buf, sizeof(buf)) || buf[0] == '\0')
+		return (false);
+	*v = (uint64_t)strtonum(buf, 0, (long long)max, &errstr);
+	return (errstr == NULL);
+}
+
+/* GET /api/servers/<id>/processes[?jail=name]: what runs there. */
+int
+api_processes(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_PROCESSES)) == NULL)
+		return (KORE_RESULT_OK);
+	(void)query_param(req, "jail", c->scope, sizeof(c->scope));
+	return (call_start(req, c));
+}
+
+/*
+ * GET /api/servers/<id>/log[?name=file][&filter=text][&position=n]
+ * [&lines=n]: the end of a log, or what came after position.
+ */
+int
+api_log(struct http_request *req)
+{
+	struct call	*c;
+	uint64_t	 v;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_LOG)) == NULL)
+		return (KORE_RESULT_OK);
+	(void)query_param(req, "name", c->logname, sizeof(c->logname));
+	/* The text may be any: it comes escaped, as a URL has it. */
+	if (query_param(req, "filter", c->jail, sizeof(c->jail)) &&
+	    (!http_argument_urldecode(c->jail, 1) || strlen(c->jail) > 128)) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "the text looked "
+		    "for is at most 128 bytes, escaped as a URL has it"));
+	}
+	c->has_pos = query_u64(req, "position", INT64_MAX, &c->pos);
+	if (query_u64(req, "lines", 5000, &v))
+		c->lines = (uint32_t)v;
+	return (call_start(req, c));
+}
+
+/*
+ * GET /api/servers/<id>/history[?after=time]: how busy it has been.
+ * POST {"step": seconds, "keep": samples}: how its agent samples it
+ * from now on; the reply is as the GET's.
+ */
+int
+api_history(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+	int64_t		 step, keep;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_HISTORY)) == NULL)
+		return (KORE_RESULT_OK);
+	c->has_pos = query_u64(req, "after", INT64_MAX, &c->pos);
+	if (req->method == HTTP_METHOD_GET)
+		return (call_start(req, c));
+	body = read_json(req);
+	step = body != NULL ? ucl_object_toint(ucl_object_lookup(body,
+	    "step")) : 0;
+	keep = body != NULL && ucl_object_lookup(body, "keep") != NULL ?
+	    ucl_object_toint(ucl_object_lookup(body, "keep")) : -1;
+	if (body != NULL)
+		ucl_object_unref(body);
+	if (step < 1 || step > 3600 || keep < 0 || keep > 5000) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "step is 1 to 3600 "
+		    "seconds, keep 0 to 5000 samples"));
+	}
+	c->retry = true;
+	c->fib = (uint32_t)step;
+	c->offset = (uint32_t)keep;
+	return (call_start(req, c));
+}
+
+/* GET /api/servers/<id>/sysctl[?filter=name]: the kernel's state. */
+int
+api_sysctl(struct http_request *req)
+{
+	struct call	*c;
+	const char	*q;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_SYSCTL)) == NULL)
+		return (KORE_RESULT_OK);
+	(void)query_param(req, "filter", c->jail, sizeof(c->jail));
+	for (q = c->jail; *q != '\0'; q++)
+		if (!isalnum((unsigned char)*q) && strchr("._-%", *q) == NULL)
+			break;
+	if (*q != '\0') {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "a sysctl is named "
+		    "with letters, digits and . _ - %%"));
 	}
 	return (call_start(req, c));
 }
@@ -2147,6 +2868,11 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_MOUNT] = "mount",
 	[ARC_JOB_KIND_GPART] = "gpart",
 	[ARC_JOB_KIND_CAM] = "cam",
+	[ARC_JOB_KIND_SYSCTL] = "sysctl",
+	[ARC_JOB_KIND_IPFW] = "ipfw",
+	[ARC_JOB_KIND_BRIDGE] = "bridge",
+	[ARC_JOB_KIND_GENEVE] = "geneve",
+	[ARC_JOB_KIND_PROCESS] = "process",
 };
 
 static const char *job_state_names[] = {
@@ -2369,13 +3095,27 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_MOUNT:
 	case ARC_JOB_KIND_GPART:
 	case ARC_JOB_KIND_CAM:
+	case ARC_JOB_KIND_SYSCTL:
+	case ARC_JOB_KIND_IPFW:
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+	case ARC_JOB_KIND_PROCESS:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
+		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
+			/* A name and its value, and no verb. */
+			if (ucl_array_size(names) != 2)
+				return ("a sysctl job needs a name and a "
+				    "value as its args");
+			sp->verb = NULL;
+		} else
 		if (sp->verb == NULL || (n = ucl_array_size(names)) >
-		    (sp->kind >= ARC_JOB_KIND_ZFS ? 24u : 4u) ||
+		    (sp->kind >= ARC_JOB_KIND_IPFW ? 120u : sp->kind >=
+		    ARC_JOB_KIND_ZFS ? 24u : 4u) ||
 		    (n == 0 && sp->kind == ARC_JOB_KIND_NETGRAPH) ||
 		    (n != 1 && sp->kind == ARC_JOB_KIND_KMOD))
 			return ("the job needs a verb and its args");
+		n = ucl_array_size(names);
 		if (n == 0)
 			break;
 		nv = kore_calloc(n, sizeof(*nv));

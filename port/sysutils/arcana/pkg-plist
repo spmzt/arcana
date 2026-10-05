@@ -27,6 +27,8 @@ share/man/man8/arcana-agent.8.gz
 %%CONSOLE%%%%WWWDIR%%/arcana.wasm
 %%CONSOLE%%%%WWWDIR%%/manifest.webmanifest
 %%CONSOLE%%%%WWWDIR%%/morphdom-umd.min.js
+%%CONSOLE%%%%WWWDIR%%/openapi.json
+%%CONSOLE%%%%WWWDIR%%/openapi.yaml
 %%CONSOLE%%%%WWWDIR%%/schema.json
 %%CONSOLE%%%%WWWDIR%%/style.css
 %%CONSOLE%%%%WWWDIR%%/sw.js

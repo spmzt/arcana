@@ -742,7 +742,7 @@ graph(struct html *h, const ucl_object_t *data)
 		h_raw(h, "><rect class=\"box\" x=\"-78\" y=\"-24\" width=\"156\" "
 		    "height=\"48\" rx=\"10\"/><circle class=\"led\" cx=\"-64\" "
 		    "cy=\"-8\" r=\"4\"/><text class=\"name\" x=\"-54\" y=\"-3\">");
-		h_txt(h, jstr(o, "name"));
+		h_fit(h, jstr(o, "name"), 14);
 		h_raw(h, "</text><text class=\"sub\" x=\"-66\" y=\"14\">");
 		if (proto[0] == 'B')
 			snprintf(sub, sizeof(sub), "AS%s · %s", jstr(o,
@@ -752,8 +752,12 @@ graph(struct html *h, const ucl_object_t *data)
 		else
 			snprintf(sub, sizeof(sub), "RPKI · %s", jstr(o,
 			    "cache") != NULL ? jstr(o, "cache") : "?");
+		h_fit(h, sub, 19);
+		h_raw(h, "</text><title>");
+		h_txt(h, jstr(o, "name"));
+		h_raw(h, " · ");
 		h_txt(h, sub);
-		h_raw(h, "</text></g>");
+		h_raw(h, "</title></g>");
 	}
 	it = NULL;
 	while ((o = ucl_object_iterate(jget(data, "ospf"), &it, true)) !=
@@ -770,12 +774,16 @@ graph(struct html *h, const ucl_object_t *data)
 		h_raw(h, "><rect class=\"box\" x=\"-78\" y=\"-24\" width=\"156\" "
 		    "height=\"48\" rx=\"10\"/><circle class=\"led\" cx=\"-64\" "
 		    "cy=\"-8\" r=\"4\"/><text class=\"name\" x=\"-54\" y=\"-3\">");
-		h_txt(h, jstr(o, "router-id"));
+		h_fit(h, jstr(o, "router-id"), 14);
 		h_raw(h, "</text><text class=\"sub\" x=\"-66\" y=\"14\">");
 		snprintf(sub, sizeof(sub), "OSPF %s · %s", t, jstr(o,
 		    "interface") != NULL ? jstr(o, "interface") : "");
+		h_fit(h, sub, 19);
+		h_raw(h, "</text><title>");
+		h_txt(h, jstr(o, "router-id"));
+		h_raw(h, " · ");
 		h_txt(h, sub);
-		h_raw(h, "</text></g>");
+		h_raw(h, "</title></g>");
 	}
 	h_raw(h, "</svg><ul class=\"map-legend\"><li class=\"bgp\">BGP</li>"
 	    "<li class=\"ospf\">OSPF</li><li class=\"rpki\">RPKI</li></ul>"

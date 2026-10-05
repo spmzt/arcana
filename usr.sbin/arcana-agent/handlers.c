@@ -40,6 +40,9 @@ struct job {
 	struct arc_service_config_req svc;
 	uint8_t			 family;
 	uint32_t		 fib;
+	uint32_t		 offset;		/* network: rows to leave out */
+	uint64_t		 pos;		/* log: where to read on; history: since */
+	bool			 has_pos;
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
 	uint8_t			*binary;	/* agent-update */
@@ -83,6 +86,9 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_WIREGUARD] = "wireguard",
 	[ARC_NET_KIND_BIRD] = "bird",
 	[ARC_NET_KIND_BIRD_ROUTES] = "bird-routes",
+	[ARC_NET_KIND_BRIDGES] = "bridges",
+	[ARC_NET_KIND_GENEVE] = "geneve",
+	[ARC_NET_KIND_IPFW] = "ipfw",
 };
 
 static const char *service_action_names[] = {
@@ -288,6 +294,13 @@ worker(void *arg)
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
 	struct arc_kernel_rsp	 kr;
+	struct arc_transport_rsp tpr;
+	struct arc_ipfw_rules_req irq;
+	struct arc_ipfw_rules_rsp irr;
+	struct arc_sysctl_rsp	 scr2;
+	struct arc_processes_rsp prr;
+	struct arc_log_rsp	 lgr;
+	struct arc_history_rsp	 hsr;
 	struct arc_storage_rsp	 stg;
 	struct arc_fstab_req	 fq;
 	struct arc_fstab_rsp	 fr;
@@ -394,6 +407,99 @@ worker(void *arg)
 		trace_steps(&w, &str.trace.v, &str.trace.n);
 		rc = arc_stats_reply(j->req, &str);
 		break;
+	case ARC_CMD_IPFW_RULES:
+		/* The text rides in ref, its checksum in sha256. */
+		what = wfmt(&w, "ipfw rules %s", j->ref == NULL ? "read" :
+		    j->refresh ? "check" : "write");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&irq, 0, sizeof(irq));
+		memset(&irr, 0, sizeof(irr));
+		irq.conf_text = j->ref;
+		irq.sha256 = j->sha256;
+		irq.dry_run = j->refresh;
+		irr.has_ok = true;
+		if (scope_enter(&w, j->jail, &irr.error) != 0)
+			;
+		else if (j->ref == NULL || j->refresh)
+			do_ipfw_rules(&w, &irq, &irr);
+		else {
+			pthread_mutex_lock(&change_lock);
+			if (change_note("%s", what))
+				do_ipfw_rules(&w, &irq, &irr);
+			else
+				irr.error = STOPPING;
+			change_note(NULL);
+			pthread_mutex_unlock(&change_lock);
+		}
+		ok = irr.ok;
+		error = irr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &irr.trace.v, &irr.trace.n);
+		rc = arc_ipfw_rules_reply(j->req, &irr);
+		break;
+	case ARC_CMD_TRANSPORT:
+		what = j->refresh ? "transport retry" : "transport";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&tpr, 0, sizeof(tpr));
+		do_transport(&w, j->refresh, &tpr);
+		ok = tpr.ok;
+		error = tpr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &tpr.trace.v, &tpr.trace.n);
+		rc = arc_transport_reply(j->req, &tpr);
+		break;
+	case ARC_CMD_SYSCTL:
+		what = "sysctl";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "sysctl");
+		memset(&scr2, 0, sizeof(scr2));
+		do_sysctl(&w, j->source, &scr2);
+		ok = scr2.ok;
+		error = scr2.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &scr2.trace.v, &scr2.trace.n);
+		rc = arc_sysctl_reply(j->req, &scr2);
+		break;
+	case ARC_CMD_PROCESSES:
+		what = "processes";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "processes");
+		memset(&prr, 0, sizeof(prr));
+		do_processes(&w, j->jail, &prr);
+		ok = prr.ok;
+		error = prr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &prr.trace.v, &prr.trace.n);
+		rc = arc_processes_reply(j->req, &prr);
+		break;
+	case ARC_CMD_LOG:
+		what = "log";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "log %s", j->ref != NULL ? j->ref : "messages");
+		memset(&lgr, 0, sizeof(lgr));
+		do_log(&w, j->ref, j->source, j->has_pos, j->pos, j->offset,
+		    &lgr);
+		ok = lgr.ok;
+		error = lgr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &lgr.trace.v, &lgr.trace.n);
+		rc = arc_log_reply(j->req, &lgr);
+		break;
+	case ARC_CMD_HISTORY:
+		/* How to sample rides in fib and offset. */
+		what = j->refresh ? "history set" : "history";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&hsr, 0, sizeof(hsr));
+		do_history(&w, j->pos, j->refresh, j->fib, j->offset, &hsr);
+		ok = hsr.ok;
+		error = hsr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &hsr.trace.v, &hsr.trace.n);
+		rc = arc_history_reply(j->req, &hsr);
+		break;
 	case ARC_CMD_STORAGE:
 		what = "storage";
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
@@ -457,7 +563,7 @@ worker(void *arg)
 		nr.has_ok = true;
 		if (scope_enter(&w, j->jail, &nr.error) == 0)
 			do_network(&w, j->action, j->family, j->source, j->fib,
-			    &nr);
+			    j->offset, &nr);
 		ok = nr.ok;
 		error = nr.error;
 		step_end(&w, root, ok, NULL);
@@ -957,6 +1063,7 @@ arc_network_doit(cbl_req *req, const struct arc_network_req *rq,
 	j->action = rq->net_kind;
 	j->family = rq->has_net_family ? rq->net_family : ARC_NET_FAMILY_ALL;
 	j->fib = rq->has_net_fib ? rq->net_fib : 0;
+	j->offset = rq->has_offset ? rq->offset : 0;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
 	return (start(j));
@@ -1028,6 +1135,147 @@ arc_storage_doit(cbl_req *req, const struct arc_storage_req *rq,
 	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
 	    xstrdup(rq->net_filter) : NULL;
 	return (start(j));
+}
+
+int
+arc_ipfw_rules_doit(cbl_req *req, const struct arc_ipfw_rules_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_IPFW_RULES;
+	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
+	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
+	j->refresh = rq->dry_run;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
+arc_transport_doit(cbl_req *req, const struct arc_transport_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_TRANSPORT;
+	j->refresh = rq->retry;
+	return (start(j));
+}
+
+int
+arc_sysctl_doit(cbl_req *req, const struct arc_sysctl_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SYSCTL;
+	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
+	    xstrdup(rq->net_filter) : NULL;
+	return (start(j));
+}
+
+int
+arc_processes_doit(cbl_req *req, const struct arc_processes_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_PROCESSES;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
+arc_log_doit(cbl_req *req, const struct arc_log_req *rq, void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->log_name != NULL && rq->log_name[0] != '\0' &&
+	    !log_name_ok(rq->log_name))
+		return (reject(req, "a log is named with letters, digits "
+		    "and . _ -"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_LOG;
+	j->ref = rq->log_name != NULL && rq->log_name[0] != '\0' ?
+	    xstrdup(rq->log_name) : NULL;
+	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
+	    xstrdup(rq->net_filter) : NULL;
+	j->has_pos = rq->has_position;
+	j->pos = rq->position;
+	j->offset = rq->has_lines ? rq->lines : 0;
+	return (start(j));
+}
+
+int
+arc_history_doit(cbl_req *req, const struct arc_history_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->has_sample_step != rq->has_sample_keep)
+		return (reject(req, "how to sample is both: every how many "
+		    "seconds, and how many are kept"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_HISTORY;
+	j->pos = rq->has_after ? rq->after : 0;
+	j->refresh = rq->has_sample_step;
+	j->fib = rq->sample_step;
+	j->offset = rq->sample_keep;
+	return (start(j));
+}
+
+/*
+ * The kernel's state in parts: one for each call, in the loop's own
+ * thread, which a part is short enough for.
+ */
+int
+arc_sysctl_dumpit(cbl_req *req, const struct arc_sysctl_dump_req *rq,
+    struct cbl_dump_state *st, void *arg __unused)
+{
+	struct arc_sysctl_dump_rsp	 rsp;
+	char				*json;
+	uint64_t			 sent;
+	bool				 more;
+	int				 error;
+
+	if (rq->net_filter != NULL && rq->net_filter[0] != '\0' &&
+	    !sysctl_name_ok(rq->net_filter))
+		return (reject(req, "a sysctl is named with letters, digits "
+		    "and . _ - %"));
+	more = sysctl_part(st, rq->net_filter, &json, &sent);
+	if (json == NULL)
+		return (ENOMEM);
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.json = json;
+	rsp.has_total = true;
+	rsp.total = sent;
+	error = arc_sysctl_dump_reply(req, &rsp);
+	free(json);
+	if (error != 0)
+		return (error);
+	return (more ? EAGAIN : 0);
 }
 
 int
@@ -1126,7 +1374,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_CAM)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PROCESS)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1184,6 +1432,32 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_CAM:
 		if ((e = storage_check(sp)) != NULL)
 			return (e);
+		break;
+	case ARC_JOB_KIND_IPFW:
+		if ((e = ipfw_check(sp)) != NULL)
+			return (e);
+		break;
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+		if (sp->safe)
+			return ("it is not taken back by itself");
+		if ((e = l2_check(sp)) != NULL)
+			return (e);
+		break;
+	case ARC_JOB_KIND_PROCESS:
+		if ((e = proc_check(sp)) != NULL)
+			return (e);
+		break;
+	case ARC_JOB_KIND_SYSCTL:
+		if (sp->jail != NULL && sp->jail[0] != '\0')
+			return ("a jail's sysctls are not set from here");
+		if (sp->safe)
+			return ("a sysctl is not taken back by itself");
+		if (sp->names.n != 2 || !sysctl_name_ok(sp->names.v[0]))
+			return ("name one sysctl, with letters, digits and "
+			    ". _ - %, and its value");
+		if (!sysctl_value_ok(sp->names.v[1]))
+			return ("a sysctl's value is one line");
 		break;
 	case ARC_JOB_KIND_KMOD:
 		if (sp->jail != NULL && sp->jail[0] != '\0')

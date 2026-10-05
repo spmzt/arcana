@@ -142,6 +142,61 @@ definitions:
           and a label.
       - name: cam
         doc: camcontrol(8).  verb rescan, of all buses.
+      - name: sysctl
+        doc: |
+          Set a sysctl(8) variable: names holds its name and its value.
+          With persist it is also written to sysctl.conf(5), where a
+          line that set it before is replaced.
+      - name: ipfw
+        doc: |
+          The firewall, ipfw(8).  verb add, with names a rule's number
+          and then its words: with live it is added now, with persist
+          it is written into the kept rules.  verb delete and a number,
+          the same two ways.  verb apply loads the kept rules as the
+          host's whole ruleset without a gap: into set 1, which is
+          disabled, then swapped with set 0; with safe the rules that
+          were there wait in set 1 and are swapped back unless
+          job-confirm comes.  verb enable or disable turns the
+          firewall on or off (net.inet.ip.fw.enable), with persist in
+          rc.conf.  verb zero clears the counters, of a rule when
+          names has its number.  jail is the vnet jail whose firewall
+          it is.
+      - name: bridge
+        doc: |
+          if_bridge(4).  interface is the bridge, names the verb's
+          words: addm or deletem and a member; access, a member and a
+          VLAN it is in untagged, and none tagged; trunk, a member,
+          the list of VLANs it carries tagged (none, all, or numbers
+          and ranges) and, when there is one, the VLAN that is
+          untagged on it; vlanfilter and on or off; flag, a member and
+          one of stp, edge, autoedge, ptp, autoptp, learn, discover,
+          sticky, private, span, qinq, with a - before it to take it
+          away; set and one of proto, priority, hellotime, fwddelay,
+          maxage, holdcnt, maxaddr, timeout, defuntagged with its
+          value; ifset, a member, one of ifpriority, ifpathcost,
+          ifmaxaddr, ifvlanproto and its value.  With persist it is
+          kept in rc.conf.
+      - name: geneve
+        doc: |
+          geneve(4).  interface is the tunnel.  verb create makes it,
+          with names holding option and value pairs: mode (l2 or l3,
+          which only a new one can be given), id, local, remote, group,
+          dev, localport, remoteport, ttl (a number or inherit), df
+          (set, unset or inherit), maxaddr, timeout.  verb set changes
+          one or more of them on one that is there, and also learn,
+          external and dscpinherit, each on or off, and portrange with
+          its two ports.  verb flush empties its forwarding table, all
+          of it with names all.  With persist it is kept in rc.conf.
+      - name: process
+        doc: |
+          One process of the host.  verb signal, with names its number
+          and the signal's name (TERM, KILL, HUP, ...) or number; verb
+          renice, with names its number and the nice value, -20 to 20.
+          A third of names is when the process started, in seconds
+          since the epoch, as processes says it: when the process with
+          that number started at another time it is another one, and
+          is left alone.  With jail, only a process of that jail.
+          Not init, not the kernel's own, and not the agent.
   - name: job-state
     type: enum
     entries:
@@ -202,6 +257,30 @@ definitions:
           and an address, or a prefix; protocol or export and a
           protocol's name; table and a table's name; all.  More routes
           than a reply should carry are counted, not sent.
+      - name: bridges
+        doc: |
+          The bridges, if_bridge(4), as a JSON object with the array
+          "bridges": each with its spanning tree (protocol, its own
+          identifier and the root's, the root port and cost, the
+          timers), whether it filters VLANs, and its "members", each
+          with its flags, port number, priority and path cost, its
+          role and state in the spanning tree, the VLAN it is in
+          untagged and those it carries tagged, and the addresses it
+          has, which a member should not have.
+      - name: geneve
+        doc: |
+          The geneve(4) tunnels, as a JSON object with the array
+          "geneves": each with its mode, identifier, local and remote
+          or group address and ports, device, ttl, df, and its
+          forwarding table's settings.
+      - name: ipfw
+        doc: |
+          The firewall, ipfw(8), as a JSON object: "loaded" and
+          "enabled"; "rules", each with its number, set, counters and
+          text, and whether its set is disabled; "tables" and "nat";
+          "kept", the rules of the kept file each with its number and
+          text, "other" its lines that are not rules, "path" where it
+          is and "rc" what rc.conf says of the firewall.
   - name: storage-kind
     type: enum
     entries:
@@ -553,6 +632,43 @@ attribute-sets:
       - name: storage-kind
         type: u8
         enum: storage-kind
+      - name: retry
+        type: flag
+        doc: |
+          For transport: start the SCTP listeners that are not up, now
+          that the kernel can.
+      - name: offset
+        type: u32
+        doc: |
+          For the routes of network: how many of the rows that would
+          be sent to leave out first, to read on in a table too large
+          for one reply.
+      - name: log-name
+        type: text
+        doc: For log, the file in the host's log directory to read.
+        checks:
+          max-len: 128
+      - name: position
+        type: u64
+        doc: |
+          For log, the byte of the file to read on from: what a reply
+          before gave as where it ended.
+      - name: lines
+        type: u32
+        doc: For log, how many lines to send at most.
+      - name: after
+        type: u64
+        doc: |
+          For history, the time, in seconds since the epoch, after
+          which samples are asked for.
+      - name: sample-step
+        type: u32
+        doc: For history, the seconds between two samples, 1 to 3600.
+      - name: sample-keep
+        type: u32
+        doc: |
+          For history, how many samples the agent keeps, at most 5000;
+          with 0 it does not sample and holds no memory for it.
 
   - name: host
     attributes:
@@ -1112,6 +1228,7 @@ operations:
           - net-filter
           - net-fib
           - jail
+          - offset
         required:
           - net-kind
       reply:
@@ -1466,4 +1583,174 @@ operations:
           - error
           - conf-text
           - sha256
+          - trace
+
+  - name: transport
+    attribute-set: arcana
+    auth: true
+    doc: |
+      How the agent is reached, as a JSON object: "listeners", each
+      with its uri, its transport (tcp, sctp or unix) and whether it is
+      up, and why not when it is not; "sctp", whether the kernel has it;
+      and "sessions", the connections open now, each with its
+      transport, the address and the certificate's name of who is at
+      the other end, and since when.  An agent that listens on TCP
+      listens on SCTP at the same address and port as well, once the
+      kernel has SCTP: it does not load it, and does not try by itself
+      again.  With retry it tries now.
+    do:
+      request:
+        attributes:
+          - retry
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: sysctl
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The kernel's state, sysctl(8), as a JSON object: "values", each
+      with its name, its value as sysctl prints it, whether it can be
+      set, and what it is said to be; "kept", what sysctl.conf(5) sets
+      at boot.  net-filter is where in the tree to begin, a name or
+      the start of one; without it the whole tree, of which more than
+      a reply carries comes as the first, with total and truncated.
+      As a dump the values come in parts, as the tree is walked and
+      as fast as they are taken: each item has json, an array of the
+      next of them, and nothing is left out for size.
+    do:
+      request:
+        attributes:
+          - net-filter
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - total
+          - truncated
+          - trace
+    dump:
+      request:
+        attributes:
+          - net-filter
+      reply:
+        attributes:
+          - json
+          - total
+
+  - name: ipfw-rules
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The kept rules of the firewall, a file of ipfw(8) commands, one
+      a line.  Without conf-text, read it, with the SHA-256 of its
+      text.  With conf-text, put that in its place, once ipfw has
+      read it without doing it (ipfw -n) and found nothing wrong:
+      sha256 is that of the text it was made from.  The one before is
+      kept beside it.  With dry-run it is only checked.  jail is the
+      vnet jail whose firewall it is.
+    do:
+      request:
+        attributes:
+          - conf-text
+          - sha256
+          - dry-run
+          - jail
+      reply:
+        attributes:
+          - ok
+          - error
+          - conf-text
+          - sha256
+          - trace
+
+  - name: processes
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What runs on the host, as a JSON object: "processes", each with
+      its pid, ppid, user, jid and jail, state, nice, pri, threads, rss
+      and size in bytes, time (the CPU seconds it has used), wcpu (the
+      kernel's decayed share of one CPU, in percent, as top(1) shows
+      it), cpu (its share between this look and the one before), in
+      and out (blocks read and written) and io (blocks a second since
+      the look before), start, comm and args; "ncpu"; and "elapsed",
+      the seconds between the two looks.  With jail, only the
+      processes of that jail.
+    do:
+      request:
+        attributes:
+          - jail
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: log
+    attribute-set: arcana
+    auth: true
+    doc: |
+      A log of the host, as syslogd(8) wrote it, as a JSON object:
+      "files", the logs of the log directory that can be read, each
+      with its name, size and when it was last written; "name", the
+      one read (messages, when log-name names none); "lines", its last
+      lines, each with its time, host, tag, pid and text when the line
+      is one of syslog's, and its text alone when not; "position",
+      where the file ended; and "rotated", when the file is shorter
+      than position said.  With net-filter only the lines that have
+      that text in them, in either case.  With position only what was
+      written after it, which is how a log is followed.  lines is how
+      many to send at most: 200, when it is not given.
+    do:
+      request:
+        attributes:
+          - log-name
+          - net-filter
+          - position
+          - lines
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: history
+    attribute-set: arcana
+    auth: true
+    doc: |
+      How busy the host has been, which the agent samples by itself
+      and keeps the last of, as a JSON object: "step", the seconds
+      between two samples; "keep", how many are kept; "bytes", the
+      memory that takes; "fields", the names of what a sample begins
+      with, in order (t, cpu, load, mem, swap, rx, tx, read, write: a
+      time, a percentage, the load average, bytes of memory and of
+      swap in use, bytes a second received and sent on all interfaces
+      but the loopback, and read from and written to all disks);
+      "nets" and "disks", the names of the interfaces and the disks
+      told apart, at most 16 of each; "samples", each an array of the
+      fields, then bytes a second in and out of each of nets, then
+      read and written of each of disks; "mem_total", "swap_total" and
+      "ncpu".  With after only the samples after that time.  With
+      sample-step and sample-keep, both, the agent first samples that
+      way from now on, and keeps it for its next start: an hour every
+      five seconds until it is told otherwise.
+    do:
+      request:
+        attributes:
+          - after
+          - sample-step
+          - sample-keep
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
           - trace

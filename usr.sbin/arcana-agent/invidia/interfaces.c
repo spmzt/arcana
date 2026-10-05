@@ -400,6 +400,22 @@ do_if_address(struct work *w, const char *ifname, const char *address,
 	char		*argv[6];
 	int		 af, plen, n;
 
+	/*
+	 * A member of a bridge takes no address: the bridge is where the
+	 * host's addresses on that network belong, and one on a member
+	 * answers on some paths and not on others.  One that is there
+	 * may still be taken away.
+	 */
+	if (!remove) {
+		const char	*br;
+
+		if ((br = bridge_holding(w, ifname)) != NULL) {
+			*errp = wfmt(w, "%s is a member of %s: an address "
+			    "belongs on the bridge, not on its member", ifname,
+			    br);
+			return (-1);
+		}
+	}
 	if (!if_exists(w, ifname)) {
 		*errp = wfmt(w, "no interface %s %s", ifname, w->jail != NULL ?
 		    "in that jail" : "on this host");

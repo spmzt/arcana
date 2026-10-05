@@ -41,6 +41,35 @@ h_raw(struct html *h, const char *s)
 	h->len += n;
 }
 
+/*
+ * Text that must fit a box drawn for it: at most max characters, the
+ * last an ellipsis when there were more.
+ */
+void
+h_fit(struct html *h, const char *s, int max)
+{
+	char		 cut[256];
+	const char	*p;
+	int		 n;
+
+	if (s == NULL)
+		return;
+	for (n = 0, p = s; *p != '\0'; p++)
+		if (((unsigned char)*p & 0xc0) != 0x80)
+			n++;
+	if (n <= max) {
+		h_txt(h, s);
+		return;
+	}
+	for (n = 0, p = s; *p != '\0'; p++) {
+		if (((unsigned char)*p & 0xc0) != 0x80 && ++n == max)
+			break;
+	}
+	snprintf(cut, sizeof(cut), "%.*s", (int)(p - s), s);
+	h_txt(h, cut);
+	h_raw(h, "…");
+}
+
 void
 h_txt(struct html *h, const char *s)
 {

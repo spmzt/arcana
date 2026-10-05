@@ -29,7 +29,7 @@ static int	run_kind(struct work *, uint8_t, uint8_t, uint32_t,
 static ucl_object_t *parse(const char *, size_t);
 static const char *array_path(uint8_t);
 static int	routes_scan(struct work *, uint8_t, const char *, uint32_t,
-		    struct arc_network_rsp *);
+		    uint32_t, struct arc_network_rsp *);
 
 /* The program for kind, for one family (never ARC_NET_FAMILY_ALL). */
 static int
@@ -114,6 +114,7 @@ struct scan {
 	const uint8_t	*cover;		/* keep the rows this address is in */
 	int		 af;		/* its family */
 	size_t		 max;		/* rows kept at most */
+	uint64_t	 skip;		/* of those wanted, left out first */
 	uint64_t	 total;
 	size_t		 kept;
 	bool		 body;		/* past the header line */
@@ -183,6 +184,11 @@ scan_line(const char *line, void *arg)
 	plen = -1;
 	if (sc->cover != NULL && (plen = covers(line, sc->af, sc->cover)) < 0)
 		return;
+	/* Read on from where a reply before this one ended. */
+	if (sc->skip > 0) {
+		sc->skip--;
+		return;
+	}
 	if (sc->kept == sc->max) {
 		sc->truncated = true;
 		return;
@@ -223,7 +229,7 @@ scan_line(const char *line, void *arg)
 
 static int
 routes_scan(struct work *w, uint8_t family, const char *filter, uint32_t fib,
-    struct arc_network_rsp *rsp)
+    uint32_t offset, struct arc_network_rsp *rsp)
 {
 	static const struct {
 		uint8_t		 family;
@@ -242,6 +248,7 @@ routes_scan(struct work *w, uint8_t family, const char *filter, uint32_t fib,
 	memset(&sc, 0, sizeof(sc));
 	sc.filter = filter;
 	sc.max = ROUTES_MAX;
+	sc.skip = offset;
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	any = false;
 	for (i = 0; i < nitems(fams); i++) {
@@ -296,7 +303,7 @@ routes_scan(struct work *w, uint8_t family, const char *filter, uint32_t fib,
 
 int
 do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
-    uint32_t fib, struct arc_network_rsp *rsp)
+    uint32_t fib, uint32_t offset, struct arc_network_rsp *rsp)
 {
 	struct execres		 res, res6;
 	ucl_object_t		*o, *o6, *dst, *e;
@@ -316,11 +323,16 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 		return (do_bird(w, rsp));
 	if (kind == ARC_NET_KIND_BIRD_ROUTES)
 		return (do_bird_routes(w, filter, rsp));
+	if (kind == ARC_NET_KIND_BRIDGES || kind == ARC_NET_KIND_GENEVE)
+		return (do_l2(w, kind == ARC_NET_KIND_GENEVE, rsp));
+	if (kind == ARC_NET_KIND_IPFW)
+		return (do_ipfw(w, rsp));
 	rsp->has_ok = true;
 	rsp->ok = false;
-	/* Searched for on the host: read line by line from the start. */
-	if (kind == ARC_NET_KIND_ROUTES && filter != NULL && filter[0] != '\0')
-		return (routes_scan(w, family, filter, fib, rsp));
+	/* Searched for on the host, or read on: line by line. */
+	if (kind == ARC_NET_KIND_ROUTES && ((filter != NULL && filter[0] !=
+	    '\0') || offset > 0))
+		return (routes_scan(w, family, filter, fib, offset, rsp));
 	if (family != ARC_NET_FAMILY_ALL) {
 		if (run_kind(w, kind, family, fib, &res) != 0) {
 			rsp->error = wtext(w, exec_error(w, &res,
@@ -330,7 +342,7 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 		}
 		if (res.truncated) {
 			if (kind == ARC_NET_KIND_ROUTES)
-				return (routes_scan(w, family, NULL, fib, rsp));
+				return (routes_scan(w, family, NULL, fib, 0, rsp));
 			rsp->error = wfmt(w, "the table is larger than the %d "
 			    "bytes a reply carries; narrow it to one family or "
 			    "ask the host directly", ARC_MAX_JSON);
@@ -351,7 +363,7 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 	}
 	if ((ok4 && res.truncated) || (ok6 && res6.truncated)) {
 		if (kind == ARC_NET_KIND_ROUTES)
-			return (routes_scan(w, family, NULL, fib, rsp));
+			return (routes_scan(w, family, NULL, fib, 0, rsp));
 		rsp->error = wfmt(w, "the table is larger than the %d bytes a "
 		    "reply carries; ask for one family", ARC_MAX_JSON);
 		return (0);
@@ -392,7 +404,7 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 	if (strlen((char *)json) > ARC_MAX_JSON) {
 		free(json);
 		if (kind == ARC_NET_KIND_ROUTES)
-			return (routes_scan(w, family, NULL, fib, rsp));
+			return (routes_scan(w, family, NULL, fib, 0, rsp));
 		rsp->error = wfmt(w, "the tables are larger than the %d bytes "
 		    "a reply carries", ARC_MAX_JSON);
 		return (0);

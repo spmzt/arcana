@@ -22,6 +22,35 @@ The console is laid out as a tree and tabs.
   jails run, and the fleet as a graph from the console through the
   hosts to their jails; nodes are links.
 - **Network**: the fleet as a map; see [The network](#the-network).
+- **Utilization**: how busy every host has been, as lines over the
+  last five minutes, quarter of an hour, hour, or all that is kept.
+  Each agent looks at its host by itself, every five seconds and an
+  hour of it until it is told otherwise, so the lines are there when
+  the page is opened; while it is open, what came since is added.
+  **Sampling**, at a host's name, says how often its agent looks and
+  how many samples it keeps, with what that takes of the agent's
+  memory (about 70 KiB for the hour, on a host with five interfaces
+  and three disks: 8 bytes a sample and 4 for each figure in it), and
+  sets both; with 0 kept the agent does not sample at all and holds
+  nothing. The agent keeps what it was told in
+  `/usr/local/etc/arcana/history.conf`. Under **Network** are the
+  host's interfaces, without the loopback, each with what goes over
+  it now: **all** draws them added up, one pressed draws that one;
+  a bridge and its members are each counted, so **all** counts a
+  bridged packet more than once. Under **Disks** the same for each
+  disk. From a shell: `arcanactl history`, `arcanactl history set
+  seconds samples`. With more than one host, their CPU, memory and
+  load are first drawn over one another, a colour each. Then each host
+  has a box of its own, which folds: the CPUs' busy share, the memory
+  in use with the swap as a dashed line, the load, what the network
+  received and sent, and what the disks read and wrote, each with its
+  average or peak over what is shown. A gap in a line is when the
+  host was not sampled. The host's name opens the host.
+- **API**, the light in the top bar that says whether the console
+  answers, opens the console's own API as `docs/openapi.yaml`
+  documents it: every route with what it is for, what it takes and
+  what it answers, by group and searched; the document itself is one
+  press away, for a client generator or another viewer.
 - **All hosts**: the fleet at a glance. Its graph is of what runs: a
   host with its jails that are not stopped; a host's own Summary has
   all of them.
@@ -148,6 +177,131 @@ The console is laid out as a tree and tabs.
     `vmstat -m` and `vmstat -z` count them, which is where a module's
     own memory shows. From a shell: `arcanactl kmod`, `arcanactl [-p]
     kmod load | unload module`.
+  - **Firewall**: ipfw(8), laid out as a ruleset is written here. A
+    main chain that every packet walks in the order of the numbers,
+    and the parts it calls, each ending in its return; **Layout**
+    lists them, and each has a tab of its own with the rules whose
+    numbers are its:
+
+    | Numbers | Part |
+    |---|---|
+    | 1–8 | Outgoing jump |
+    | 9–99 | Before incoming NAT |
+    | 100–199 | Incoming NAT |
+    | 200–299 | Check-state after incoming NAT |
+    | 300–399 | Incoming NAT64 |
+    | 400–499 | After incoming NAT |
+    | 500–599 | Before outgoing NAT |
+    | 600–699 | Outgoing NAT |
+    | 700–799 | Check-state after outgoing NAT |
+    | 800–999 | After outgoing NAT |
+    | 1000–8999 | IPv6 and IPv4, to me and from me, before and after NAT: eight parts of a thousand each |
+    | 9000–9099 | IPv6 link-locals only |
+    | 9100–9199 | Silent drop |
+    | 9200–9999 | Dangerous packets |
+    | 10000–13999 | IPv6 and IPv4, incoming and outgoing forward |
+
+    A part's table has each rule with its counters and where it is:
+    in the kernel now, kept, or both. A rule is added with its number
+    and its words as ipfw takes them, **now** (into what the kernel
+    has), **keep** (into the kept rules), or both, and deleted the
+    same ways. The kept rules are a file of ipfw's own commands, one a
+    line (`add 01001 allow tcp from any to me6 22 in`, and `table`,
+    `nat` and `nat64…` lines), which the host loads when it starts;
+    **Kept rules as text** shows it to be changed as a whole, checked
+    by ipfw without being done, and for a host that has none **Start
+    from the layout** fills it with the chain, its calls and returns.
+    **Apply the kept rules** makes them the whole ruleset without a
+    gap: they are loaded into set 1 while it is disabled, and set 1
+    is swapped with set 0, so no packet meets half a ruleset. The
+    rules that were there wait in set 1: if the console does not
+    reach the host afterwards, the host swaps them back by itself.
+    **Turn on** is taken back the same way. A rule's words are
+    checked to be ipfw's, with nothing a shell would read, and the
+    sets are not a rule's to name. ipfw must be in the kernel; Arcana
+    does not load it. From a shell: `arcanactl net ipfw`, `arcanactl
+    [-p] ipfw add number rule…`, `ipfw keep add …`, `ipfw [keep]
+    delete number`, `[-s] ipfw apply`, `ipfw enable | disable`,
+    `ipfw rules [-w file] [-n]`.
+    While the Firewall tab is shown its parts are in the side bar, in
+    place of the hosts: **Overview**, **Dynamic states**, **Kept rules
+    as text**, then a line for each part with how many rules it has;
+    **‹ Hosts** brings the tree back, and **Layout ›** the parts. The
+    light beside the counts is the switch: it shows whether the
+    firewall is on, and pressed turns it off or on. A rule is pressed
+    to change it in its own row: its number, its words as they are
+    kept, now and keep; saved, the old one is deleted where it was and
+    the new one added where it is to be. **Dynamic states** are the
+    connections the stateful rules let through, as `ipfw -D show` has
+    them: the rule that made each, its flow, counters and how long it
+    still lives, read again every two seconds; one pressed leads to
+    its rule.
+  - **Sysctl**: the kernel's state, a part of the tree at a time
+    (**kern**, **vm**, **net** and the others, or from a name typed),
+    read from the kernel as `sysctl -a` has it: each name with its
+    value, its type, whether it is a loader tunable, and what it is
+    said to be. Values that are neither numbers nor text are left
+    out. The values come in parts and the table fills as they arrive,
+    so **all**, the whole tree, is all of it: the agent sends the next
+    part only when the one before was taken. **Set**, on a value that
+    can be, puts it into a field in its row; it is set with
+    `sysctl name=value` by a job, and with **at boot too** also
+    written to `/etc/sysctl.conf`, where the line that set the name
+    before is replaced and the rest is left as it was. What
+    `sysctl.conf` sets is listed above the table, whichever part of
+    the tree is shown. A jail's sysctls are not set from here. From a
+    shell: `arcanactl sysctl [name]`, `arcanactl [-p] sysctl
+    name=value`.
+  - **Processes**: what runs on the host, as `top` shows it: each
+    process with its user, jail, state, nice value, threads, the
+    memory it holds (Res) and has mapped (Size), CPU, WCPU, I/O, the
+    CPU time it has used, and its command. **CPU** is what it used
+    between the two last looks, in percent of one CPU; **WCPU** is
+    the kernel's own, slower figure; **I/O** is blocks read and
+    written a second. **by CPU / WCPU / Memory / I/O** puts the most
+    first, and any column's head sorts by it; the table is read again
+    every three seconds while **Live** is lit. **all** or a jail's
+    name picks whose processes; **kernel** shows the kernel's own
+    too. A process pressed opens under its row: its whole command
+    line, its parent, what it waits on, and a **Signal** to send
+    (TERM, KILL, HUP, INT, QUIT, STOP, CONT, USR1, USR2, ABRT), which
+    is asked about first, and a **Nice** value to give it, -20 to 20.
+    Both are jobs. The agent checks that the process is still the one
+    that was shown, by when it started, and refuses init, the
+    kernel's own and itself. From a shell: `arcanactl [-j jail] ps`,
+    `arcanactl signal pid [name]`, `arcanactl renice pid nice`.
+  - **Log**: what syslogd wrote, a file of `/var/log` at a time,
+    `messages` first, the newest line on top. A line of syslog's is
+    taken apart into its time, host, program, PID and message, in
+    either form syslogd writes. While **Live** is lit, what is
+    written is read every three seconds and added, as `tail -f`
+    would; a file turned over by newsyslog is read from its start.
+    **Search** looks for a text in the end of the file on the host,
+    in either case; the filter narrows what is on the page.
+    **Older** reads further back. A line with a word of trouble in
+    it (error, fail, denied, panic) is marked red, one of doubt
+    (warn, invalid, cannot) amber: the file itself has no level.
+    Files newsyslog has packed are not read. From a shell:
+    `arcanactl log [-o lines] [-f position] [name [text]]`.
+  - **How it is reached**, at the foot of the summary: the agent's
+    listeners and the connections open to the agent now, each with its
+    transport, where it comes from and the name in its certificate,
+    read again every few seconds. A green light is before the way the
+    console itself gets in, which is the one it knows to work; another
+    the agent listens on has an empty one, until it is tried; the
+    agent's local socket is listed only when it is the console's way.
+    The console keeps its connection to an agent open and sends the
+    next request over it; several requests at once have one each. An
+    agent that listens on TCP listens on SCTP as well, at the same
+    address and port, where the kernel has SCTP. It never loads the
+    module: where it is missing the listener is shown as down with the
+    reason, and once `sctp` is loaded from the Kernel tab, **Try SCTP
+    again** has the agent start it. **Switch to SCTP** has the console
+    ask the agent over SCTP first, and only when it answers is the
+    host reached that way from then on; when it does not, nothing is
+    changed. **Go back to TCP** does the same the other way, and is
+    also offered when a host reached over SCTP stops answering. From a
+    shell: `arcanactl transport [retry]`.
   - **Plugins** are what works through a program that has to be
     installed, not the base system's: **BIRD** (`birdc`) and
     **WireGuard** (`wg`; the interface itself, `if_wg` made by
@@ -296,7 +450,8 @@ The console is laid out as a tree and tabs.
   sizes, and a double click on the edge goes back to the usual one.
 - **Settings** has the console's version, and under **Look** its
   themes: Tron, Amber, Matrix, Synth, Slate, Onyx (black, white and one
-  red, in a plain face, without glow) and the light Paper. The one
+  red, in a plain face, without glow) and the light ones: Paper,
+  the warm Sand, the cool Mist and the green Mint. The one
   picked takes at once and is kept in that browser. A theme is a set of
   colours in `web/style.css` (`html[data-theme="…"]`): the accent, the
   surfaces and the text, which everything else is drawn from.
@@ -333,6 +488,64 @@ The console is laid out as a tree and tabs.
   for a browser to subscribe. **Settings** lists the devices
   (`push.json`) and removes one; a device whose browser dropped the
   subscription is forgotten by itself. Up to 16 devices.
+
+- **On a phone** the tree of hosts is a drawer that slides in from the
+  left (☰), the top bar is one row with the rest behind **⋮**, a
+  dialog is a sheet from the bottom, a row of choices is one line that
+  is scrolled, and a table keeps its first column in sight while the
+  others are scrolled.
+- On a phone that has no theme chosen the plain **Slate** is used;
+  Tron and the others are chosen in Settings as anywhere.
+- **Every table's columns** are as wide as their borders are dragged
+  in the head; a double click on a border lets the column be as wide
+  as what is in it again. A box with a mark before its name (a
+  bridge, how a host is reached) folds when its head is pressed, and
+  stays as it was left.
+- A task that **failed** has **Retry** in the list: the same job, sent
+  again to the same host.
+- A routing table too large for one reply ends in **More**, which
+  reads the next two thousand routes and puts them after those that
+  are there.
+- On the **Network** map a host's bridges stand above it: a box for
+  each, with a dot for every member in the colour the spanning tree
+  gave it, and a dashed line to the jail whose end of an epair is in
+  the bridge; pressed, it opens the host's bridges.
+- **Recent tasks** along the bottom: the last few, each with its host,
+  how it ended and how long it took, always in sight; one picked opens
+  the list at it, where each also has the time it began. The tasks
+  that ended are kept in the browser and are still there when the
+  page is opened again, without their traces.
+- **Bridges**, in a host's network or a jail's: each bridge drawn as
+  the switch it is, a port for each member, coloured by what the
+  spanning tree made of it (forwarding, on its way, held back, or not
+  in the tree), with its role, and the VLAN it is in untagged or those
+  it carries tagged. Above them: whether the bridge filters VLANs,
+  which bridge is the root of the tree and through which port and at
+  what cost it is reached. A port picked is made an **access port**
+  (one VLAN untagged, none tagged) or a **trunk** (a list of VLANs
+  tagged, and perhaps one untagged), put into or taken out of the
+  spanning tree, made an edge port, or taken out of the bridge; kept
+  in `rc.conf` when asked. A member of a bridge takes no address
+  here: its addresses belong on the bridge. One that has some is
+  marked, and they can be removed. From a shell: `arcanactl net
+  bridges`, `arcanactl [-p] bridge name access member vlan`, `bridge
+  name trunk member vlans [untagged]`, `bridge name vlanfilter on |
+  off`, `bridge name flag member [-]flag`, `bridge name set option
+  value`, `bridge name addm | deletem member`.
+- **Geneve**: the geneve(4) tunnels, each with its mode (l2, Ethernet
+  frames for a bridge; l3, IP packets that are routed), its
+  identifier, its local address and the host or the multicast group
+  it leads to. **+ geneve tunnel** makes one, in the mode it will
+  keep; a tunnel picked has every option to be set: identifier,
+  addresses, group and its device, TTL and don't-fragment (each also
+  inherited from the packet inside), DSCP inherited, the port range,
+  learning and its table's size and timeout, external control.
+  **Flush** empties its forwarding table. From a shell: `arcanactl net
+  geneve`, `arcanactl [-p] geneve name create | set option value …`,
+  `geneve name flush [all]`.
+- **Connections** and **Sockets**, in a host's network, are read again
+  every two seconds while they are shown, without a task of their own
+  in the activity; **Live** pauses that.
 
 ## The network
 

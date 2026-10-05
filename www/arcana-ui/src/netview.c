@@ -395,6 +395,7 @@ view_network(struct html *h, struct server *s)
 		{ "connections", "Connections" }, { "sockets", "Sockets" },
 		{ "interfaces", "Interfaces" }, { "netgraph", "Netgraph" },
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
+		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -414,6 +415,11 @@ view_network(struct html *h, struct server *s)
 	scoped = net_scope()[0] != '\0';
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
 	for (i = 0; i < 6 && (!plug || scoped); i++)
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
+		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
+		    " on" : "", kinds[i].arg, kinds[i].title);
+	/* What is of the base system too, and came later. */
+	for (i = 8; i < 10 && (!plug || scoped); i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
@@ -466,6 +472,12 @@ view_network(struct html *h, struct server *s)
 		    "title=\"Search the whole table on the host for the text "
 		    "in the filter: for tables too large to send\">Search "
 		    "host</button>");
+	/* What changes by itself is read again by itself, unless paused. */
+	if (app.net.kind == NET_CONNECTIONS || app.net.kind == NET_SOCKETS)
+		h_fmt(h, "<button class=\"ghost small live%s\" data-act=\""
+		    "net-live\" title=\"Read again every two seconds while "
+		    "this is shown\"><span class=\"led\"></span>Live</button>",
+		    app.net.paused ? "" : " on");
 	h_raw(h, "<input class=\"filter\" id=\"filter\" data-input="
 	    "\"filter\" placeholder=\"Filter rows\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
@@ -502,14 +514,16 @@ view_network(struct html *h, struct server *s)
 		if (app.net.host_filter[0] != '\0') {
 			h_raw(h, "These are the rows containing <code>");
 			h_txt(h, app.net.host_filter);
-			h_fmt(h, "</code>%s. <button class=\"ghost small\" "
-			    "data-act=\"net-search-clear\">Clear</button>",
-			    jbool(app.net.data, "truncated") ? ", the first "
-			    "2000 of them" : "");
+			h_raw(h, "</code>");
+			if (jbool(app.net.data, "truncated"))
+				h_fmt(h, ", the first %d of them", routes_held());
+			h_raw(h, ". <button class=\"ghost small\" data-act=\""
+			    "net-search-clear\">Clear</button>");
 		} else
-			h_raw(h, "These are its first 2000. Type what to look "
-			    "for in the filter, a prefix or an interface, and "
-			    "press <b>Search host</b>.");
+			h_fmt(h, "These are its first %d. <b>More</b>, below "
+			    "them, reads on; or type what to look for in the "
+			    "filter, a prefix or an interface, and press <b>"
+			    "Search host</b>.", routes_held());
 		h_raw(h, "</div>");
 	}
 	shown = 0;
@@ -532,6 +546,15 @@ view_network(struct html *h, struct server *s)
 			    "nh-entry"), nexthops_cols, 10, NULL);
 			shown += n;
 		}
+		/* The table goes on: the next of it, after these. */
+		if (app.net.kind == NET_ROUTES && jbool(app.net.data,
+		    "truncated"))
+			h_fmt(h, "<div class=\"more\"><button class=\"ghost\" "
+			    "data-act=\"net-more\"%s>%s</button><span class=\""
+			    "dim\">%d of %lld here</span></div>",
+			    app.net.loading ? " disabled" : "", app.net.loading ?
+			    "Reading…" : "More", routes_held(), (long long)jint(
+			    app.net.data, "total", 0));
 		break;
 	case NET_CONNECTIONS:
 		shown = table(h, jget(app.net.data, "data.statistics.socket"),
@@ -549,6 +572,12 @@ view_network(struct html *h, struct server *s)
 	case NET_BIRD:
 		view_bird(h, s, jget(app.net.data, "data"));
 		return;
+	case NET_BRIDGES:
+		view_bridges(h, s, jget(app.net.data, "data.bridges"));
+		return;
+	case NET_GENEVE:
+		view_geneve(h, s, jget(app.net.data, "data.geneves"));
+		return;
 	default:
 		shown = table(h, jget(app.net.data, "data.sockstat.socket"),
 		    sock_cols, 7, NULL);
@@ -557,3 +586,24 @@ view_network(struct html *h, struct server *s)
 	if (shown == 0)
 		h_raw(h, "<div class=\"empty\"><p>Nothing to show.</p></div>");
 }
+
+/*
+ * Connections and sockets change by themselves: while one of them is
+ * shown, and nobody paused it, it is read again every two seconds,
+ * without a task of its own in the activity.
+ */
+void
+net_live_tick(double now)
+{
+	struct server	*s;
+
+	if (!app.visible || app.net.paused || app.net.loading ||
+	    app.node != NODE_HOST || app.tab != TAB_NETWORK ||
+	    (app.net.kind != NET_CONNECTIONS && app.net.kind != NET_SOCKETS))
+		return;
+	if ((s = cur_server()) == NULL || strcmp(app.net.sid, s->id) != 0 ||
+	    app.net.data == NULL || now - app.net.fetched < 2000)
+		return;
+	refresh_network(s, false);
+}
+

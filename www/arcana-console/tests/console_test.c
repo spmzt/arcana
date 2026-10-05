@@ -16,6 +16,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/module.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -1692,6 +1693,298 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 
 	/*
+	 * The kernel's state: from a name on, with what is kept for the
+	 * next boot; one set by a job, and kept.
+	 */
+	snprintf(path, sizeof(path), "%.*s/sysctl?filter=kern.ostype",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("kern.ostype", jstr(&r, "data.values.0.name"));
+	ATF_CHECK_STREQ("FreeBSD", jstr(&r, "data.values.0.value"));
+	ATF_CHECK_STREQ("false", jstr(&r, "data.values.0.rw"));
+	ATF_CHECK_STREQ("kern.ipc.somaxconn", jstr(&r, "data.kept.0.name"));
+	ATF_CHECK_STREQ("1024", jstr(&r, "data.kept.0.value"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/sysctl?filter=kern,x",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"sysctl\",\"args\":["
+	    "\"kern.ipc.somaxconn\",\"4096\"],\"persist\":true}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("sysctl kern.ipc.somaxconn=4096 (kept)", jstr(&r,
+	    "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q '^kern.ipc.somaxconn=4096$' "
+	    "sysctl.conf 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^sysctl kern.ipc.somaxconn=4096$' kld.log "
+	    "&& grep -q '^kern.ipc.somaxconn=4096$' sysctl.conf && grep -q "
+	    "'^# kept$' sysctl.conf && ! grep -q 1024 sysctl.conf") == 0);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"sysctl\",\"args\":["
+	    "\"kern.hostname\"]}]}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/*
+	 * What runs, a log and the history: read as the host says them;
+	 * a process sent a signal by a job.
+	 */
+	snprintf(path, sizeof(path), "%.*s/processes",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "data.processes.0.pid") != NULL);
+	ATF_CHECK(jstr(&r, "data.processes.0.wcpu") != NULL);
+	ATF_CHECK(jstr(&r, "data.processes.0.rss") != NULL);
+	ATF_CHECK(jstr(&r, "data.ncpu") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/processes?jail=nosuchjail",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("messages", jstr(&r, "data.name"));
+	ATF_CHECK_STREQ("auth.log", jstr(&r, "data.files.0.name"));
+	ATF_CHECK_STREQ("kernel", jstr(&r, "data.lines.0.tag"));
+	ATF_CHECK_STREQ("sshd", jstr(&r, "data.lines.1.tag"));
+	ATF_CHECK_STREQ("812", jstr(&r, "data.lines.1.pid"));
+	ATF_CHECK_STREQ("cron", jstr(&r, "data.lines.2.tag"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log?name=auth.log&filter=bad%%20su"
+	    "&lines=5", (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("su", jstr(&r, "data.lines.0.tag"));
+	i = atoi(jstr(&r, "data.position"));
+	ATF_CHECK(i > 0);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log?name=auth.log&position=%d",
+	    (int)(strlen(base) - strlen("/services")), base, i);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.lines.0.text") == NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log?name=..%%2Frc.conf",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	ATF_CHECK(r.status != 200 || strcmp(jstr(&r, "ok"), "false") == 0);
+	resp_free(&r);
+	sleep(2);
+	snprintf(path, sizeof(path), "%.*s/history",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("5", jstr(&r, "data.step"));
+	ATF_CHECK_STREQ("cpu", jstr(&r, "data.fields.1"));
+	ATF_CHECK(jstr(&r, "data.samples.0.0") != NULL);
+	ATF_CHECK_STREQ("720", jstr(&r, "data.keep"));
+	ATF_CHECK(jstr(&r, "data.bytes") != NULL);
+	resp_free(&r);
+	/* How it is sampled is set, and said back; not anyhow. */
+	http("POST", path, "{\"step\":3,\"keep\":100}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("3", jstr(&r, "data.step"));
+	ATF_CHECK_STREQ("100", jstr(&r, "data.keep"));
+	ATF_CHECK(system("grep -q '^step=3$' history.conf && grep -q "
+	    "'^keep=100$' history.conf") == 0);
+	resp_free(&r);
+	http("POST", path, "{\"step\":0,\"keep\":100}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"step\":5}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", path, "{\"step\":5,\"keep\":720}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/history?after=99999999999",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.samples.0.0") == NULL);
+	resp_free(&r);
+	ATF_REQUIRE(system("sleep 300 & echo $! > sleep.pid") == 0);
+	{
+		char	what[256], pid[16];
+		FILE	*fp;
+
+		ATF_REQUIRE((fp = fopen("sleep.pid", "r")) != NULL);
+		ATF_REQUIRE(fgets(pid, sizeof(pid), fp) != NULL);
+		fclose(fp);
+		pid[strcspn(pid, "\n")] = '\0';
+		snprintf(path, sizeof(path), "%.*s/jobs",
+		    (int)(strlen(base) - strlen("/services")), base);
+		snprintf(what, sizeof(what), "{\"jobs\":[{\"kind\":"
+		    "\"process\",\"verb\":\"signal\",\"args\":[\"%s\","
+		    "\"TERM\"]}]}", pid);
+		http("POST", path, what, &r);
+		EXPECT(&r, 200);
+		snprintf(what, sizeof(what), "kill -TERM %s", pid);
+		ATF_CHECK_STREQ(what, jstr(&r, "jobs.0.title"));
+		resp_free(&r);
+		snprintf(what, sizeof(what), "kill -0 %s 2>/dev/null", pid);
+		for (i = 0; i < 100 && system(what) == 0; i++)
+			usleep(50000);
+		ATF_CHECK(system(what) != 0);
+		http("POST", path, "{\"jobs\":[{\"kind\":\"process\","
+		    "\"verb\":\"signal\",\"args\":[\"1\",\"TERM\"]}]}",
+		    &r);
+		ATF_CHECK(r.status != 200 || jstr(&r, "jobs.0.title") == NULL);
+		resp_free(&r);
+	}
+
+	/*
+	 * The firewall: its rules with their sets and counters, and the
+	 * kept ones; a rule kept by a job; the kept rules read, checked
+	 * and replaced, and applied through set 1.
+	 */
+	snprintf(path, sizeof(path), "%.*s/net/ipfw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.loaded"));
+	ATF_CHECK_STREQ("5", jstr(&r, "data.rules.0.num"));
+	ATF_CHECK_STREQ("skipto 500 ip from any to any out", jstr(&r,
+	    "data.rules.0.text"));
+	ATF_CHECK_STREQ("900", jstr(&r, "data.rules.0.bytes"));
+	ATF_CHECK_STREQ("T46", jstr(&r, "data.tables.0"));
+	ATF_CHECK_STREQ("1002", jstr(&r, "data.kept.3.num"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"ipfw\",\"verb\":\"add\","
+	    "\"args\":[\"1003\",\"allow\",\"tcp\",\"from\",\"any\",\"to\","
+	    "\"me6\",\"443\",\"in\"],\"persist\":true,\"live\":true},"
+	    "{\"kind\":\"ipfw\",\"verb\":\"apply\"}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ipfw add 1003 allow tcp from any to me6 443 in "
+	    "(now, and kept)", jstr(&r, "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'set swap 0 1' ipfw.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q add 1003 allow tcp from any to "
+	    "me6 443 in$' ipfw.log && grep -q '^add 01003 allow tcp from any "
+	    "to me6 443 in$' ipfw.rules && grep -q '^add 01003 set 1 allow' "
+	    "loaded.rules && grep -q '^ipfw -q set disable 1$' ipfw.log") ==
+	    0);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"ipfw\",\"verb\":\"add\","
+	    "\"args\":[\"10\",\"allow\",\"ip;reboot\"],\"live\":true}]}", &r);
+	ATF_CHECK(r.status != 200 || strcmp(jstr(&r, "ok") != NULL ? jstr(&r,
+	    "ok") : "", "true") != 0);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/ipfw/rules",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(jstr(&r, "text"), "add 01003 allow") != NULL);
+	snprintf(body, sizeof(body), "{\"text\":\"add 00010 allow ip from "
+	    "any to any\\nbogus\\n\",\"sha256\":\"%s\"}", jstr(&r,
+	    "sha256"));
+	resp_free(&r);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK(strstr(jstr(&r, "error"), "bogus") != NULL);
+	resp_free(&r);
+
+	/*
+	 * Bridges and geneve tunnels: what they are; a port made an
+	 * access port by a job.
+	 */
+	snprintf(path, sizeof(path), "%.*s/net/bridges",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bridge0", jstr(&r, "data.bridges.0.name"));
+	ATF_CHECK_STREQ("true", jstr(&r, "data.bridges.0.vlanfilter"));
+	ATF_CHECK_STREQ("root", jstr(&r, "data.bridges.0.members.0.role"));
+	ATF_CHECK_STREQ("forwarding", jstr(&r,
+	    "data.bridges.0.members.0.state"));
+	ATF_CHECK_STREQ("trunk", jstr(&r, "data.bridges.0.members.1.mode"));
+	ATF_CHECK_STREQ("192.0.2.7", jstr(&r,
+	    "data.bridges.0.members.1.addresses.0"));
+	ATF_CHECK_STREQ("discarding", jstr(&r,
+	    "data.bridges.0.members.2.state"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/net/geneve",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("l2", jstr(&r, "data.geneves.0.mode"));
+	ATF_CHECK_STREQ("100", jstr(&r, "data.geneves.0.id"));
+	ATF_CHECK_STREQ("l3", jstr(&r, "data.geneves.1.mode"));
+	ATF_CHECK_STREQ("inherit", jstr(&r, "data.geneves.1.ttl"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"bridge\",\"interface\":"
+	    "\"bridge0\",\"verb\":\"access\",\"args\":[\"epair5a\",\"20\"]},"
+	    "{\"kind\":\"geneve\",\"interface\":\"geneve7\",\"verb\":"
+	    "\"create\",\"args\":[\"mode\",\"l3\",\"id\",\"7\",\"local\","
+	    "\"192.0.2.1\",\"remote\",\"192.0.2.2\"]}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bridge0 access epair5a 20", jstr(&r, "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'geneve7 create' ifconfig.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^bridge0 ifuntagged epair5a 20 iftagged "
+	    "epair5a none$' ifconfig.log && grep -q '^geneve7 create "
+	    "genevemode l3 geneveid 7 genevelocal 192.0.2.1 geneveremote "
+	    "192.0.2.2$' ifconfig.log") == 0);
+
+	/*
+	 * How the agent is reached: its listeners and who is connected.
+	 * The console keeps its connection open: what it asks next goes
+	 * over the same one, and the agent has seen no new connection.
+	 */
+	snprintf(path, sizeof(path), "%.*s/transport",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("unix", jstr(&r, "data.listeners.0.transport"));
+	ATF_CHECK_STREQ("true", jstr(&r, "data.listeners.0.up"));
+	ATF_CHECK_STREQ("unix", jstr(&r, "data.sessions.0.transport"));
+	ATF_CHECK(jstr(&r, "uri") != NULL && strncmp(jstr(&r, "uri"), "unix:",
+	    5) == 0);
+	{
+		long	seen, after;
+
+		seen = atol(jstr(&r, "data.seen"));
+		resp_free(&r);
+		for (i = 0; i < 6; i++) {
+			http("GET", base, NULL, &r);
+			EXPECT(&r, 200);
+			resp_free(&r);
+		}
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		after = atol(jstr(&r, "data.seen"));
+		ATF_CHECK_MSG(after == seen, "the agent saw %ld connections, "
+		    "then %ld after six more requests", seen, after);
+		resp_free(&r);
+	}
+	/* A local socket has no other way to be reached. */
+	snprintf(path, sizeof(path), "%.*s/transport/switch",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"transport\":\"sctp\"}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/*
 	 * Storage: the pools with their devices, datasets, snapshots of
 	 * one, the disks from the kernel, what is mounted; a snapshot
 	 * taken by a job; fstab read and put back.
@@ -1941,6 +2234,7 @@ ATF_TC_BODY(mtls, tc)
 	struct resp	 r;
 	char		 cwd[MAXPATHLEN], uri[64], body[256], path[128];
 	char		 jgd[MAXPATHLEN], listen[64], *argv[16];
+	char		 sid[16], sw[128];
 	FILE		*fp;
 	pid_t		 pid;
 	int		 port, i;
@@ -2012,6 +2306,86 @@ ATF_TC_BODY(mtls, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 502);
 	ATF_CHECK_STREQ("unreachable", jstr(&r, "error.code"));
+	resp_free(&r);
+
+	/*
+	 * Beside its TCP listener the agent has an SCTP one, at the same
+	 * address and port, where the kernel has SCTP.  The console is
+	 * switched to it only when the agent answers there, and back.
+	 */
+	http("GET", "/api/servers", NULL, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("tcp", jstr(&r, "data.listeners.0.transport"));
+	ATF_CHECK_STREQ("sctp", jstr(&r, "data.listeners.1.transport"));
+	ATF_CHECK_STREQ("tcp", jstr(&r, "data.sessions.0.transport"));
+	ATF_CHECK(jstr(&r, "data.sessions.0.subject") != NULL && strstr(jstr(
+	    &r, "data.sessions.0.subject"), "console") != NULL);
+	resp_free(&r);
+	snprintf(sw, sizeof(sw), "/api/servers/%s/transport/switch", sid);
+	if (modfind("sctp") != -1) {
+		http("POST", sw, "{\"transport\":\"sctp\"}", &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+		resp_free(&r);
+		http("GET", "/api/servers", NULL, &r);
+		ATF_CHECK(strncmp(jstr(&r, "servers.0.uri"), "sctp://", 7) ==
+		    0);
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
+		ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "mutual DTLS")
+		    != NULL, "%s", jstr(&r, "trace.2.detail"));
+		resp_free(&r);
+		/* And kept open: the next one goes over the same. */
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "kept open")
+		    != NULL, "%s", jstr(&r, "trace.2.detail"));
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("true", jstr(&r, "data.listeners.1.up"));
+		ATF_CHECK_STREQ("sctp", jstr(&r, "data.sessions.0.transport"));
+		ATF_CHECK(strncmp(jstr(&r, "uri"), "sctp://", 7) == 0);
+		resp_free(&r);
+		http("POST", sw, "{\"transport\":\"tcp\"}", &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http("GET", "/api/servers", NULL, &r);
+		ATF_CHECK(strncmp(jstr(&r, "servers.0.uri"), "tcp://", 6) == 0);
+		resp_free(&r);
+	} else {
+		/* No SCTP here: said by the agent, and nothing is changed. */
+		http("GET", path, NULL, &r);
+		ATF_CHECK_STREQ("false", jstr(&r, "data.listeners.1.up"));
+		ATF_CHECK_STREQ("false", jstr(&r, "data.sctp"));
+		resp_free(&r);
+		http("POST", path, "{\"retry\":true}", &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+		ATF_CHECK(strstr(jstr(&r, "error"), "sctp module") != NULL);
+		resp_free(&r);
+		http("POST", sw, "{\"transport\":\"sctp\"}", &r);
+		EXPECT(&r, 502);
+		resp_free(&r);
+		http("GET", "/api/servers", NULL, &r);
+		ATF_CHECK(strncmp(jstr(&r, "servers.0.uri"), "tcp://", 6) == 0);
+		resp_free(&r);
+	}
+	snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", sw, "{\"transport\":\"udp\"}", &r);
+	EXPECT(&r, 400);
 	resp_free(&r);
 }
 

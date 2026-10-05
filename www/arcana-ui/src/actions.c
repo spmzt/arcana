@@ -27,6 +27,7 @@ struct ctx {
 	bool	dry_run;
 	enum pending pend;
 	int	net_kind;	/* the network table asked for */
+	bool	more;		/* rows to add to those there are */
 	int	op_family;	/* and its family */
 };
 
@@ -143,6 +144,7 @@ op_new(const char *title, const char *server)
 		if (o->trace != NULL)
 			ucl_object_unref(o->trace);
 		free(o->diff);
+		free(o->again);
 		app.nops--;
 	}
 	memmove(&app.ops[1], &app.ops[0],
@@ -156,6 +158,78 @@ op_new(const char *title, const char *server)
 	o->state = OP_RUNNING;
 	o->started = arc_now();
 	return (o);
+}
+
+/*
+ * The tasks that ended, kept in the browser so that they are still
+ * there when the page is opened again: "state started finished
+ * server<TAB>title" a line, newest first.  Their traces are not kept.
+ */
+void
+ops_save(void)
+{
+	static unsigned long	last;
+	struct html		b;
+	unsigned long		sig;
+	int			i, n;
+
+	sig = 5381;
+	for (i = 0; i < app.nops; i++)
+		sig = sig * 33 + (unsigned long)app.ops[i].id * 4 +
+		    (unsigned long)app.ops[i].state;
+	if (sig == last)
+		return;
+	last = sig;
+	memset(&b, 0, sizeof(b));
+	for (i = 0, n = 0; i < app.nops && n < 24; i++) {
+		if (app.ops[i].state == OP_RUNNING)
+			continue;
+		h_fmt(&b, "%d %.0f %.0f %s\t%s\n", app.ops[i].state == OP_OK ?
+		    1 : 0, app.ops[i].started, app.ops[i].finished,
+		    app.ops[i].server, app.ops[i].title);
+		n++;
+	}
+	arc_store_set("arc_tasks", b.s != NULL ? b.s : "");
+	free(b.s);
+}
+
+void
+ops_load(void)
+{
+	struct op	*o;
+	char		*text, *p, *line, *tab, server[65];
+	double		 started, finished;
+	int		 ok, used;
+
+	static bool	 loaded;
+
+	/* Once: after what this page has done already, being older. */
+	if (loaded)
+		return;
+	loaded = true;
+	if ((text = arc_store_get("arc_tasks")) == NULL)
+		return;
+	p = text;
+	while ((line = strsep(&p, "\n")) != NULL && app.nops < MAX_OPS) {
+		if ((tab = strchr(line, '\t')) == NULL)
+			continue;
+		*tab++ = '\0';
+		used = 0;
+		if (sscanf(line, "%d %lf %lf %n", &ok, &started, &finished,
+		    &used) < 3 || used == 0)
+			continue;
+		snprintf(server, sizeof(server), "%s", line + used);
+		/* In the order they were kept: the oldest comes last. */
+		o = &app.ops[app.nops++];
+		memset(o, 0, sizeof(*o));
+		o->id = ++app.nextop;
+		snprintf(o->title, sizeof(o->title), "%s", tab);
+		snprintf(o->server, sizeof(o->server), "%s", server);
+		o->state = ok ? OP_OK : OP_FAILED;
+		o->started = started;
+		o->finished = finished;
+	}
+	free(text);
 }
 
 static void
@@ -257,6 +331,15 @@ job_finished(struct op *op, bool ok, const char *err)
 		break;
 	case JOB_KERNEL:
 		refresh_kernel(s, true);
+		break;
+	case JOB_PROCESS:
+		refresh_procs(s, true);
+		break;
+	case JOB_SYSCTL:
+		refresh_sysctl(s, true);
+		break;
+	case JOB_FIREWALL:
+		refresh_firewall(s, true);
 		break;
 	case JOB_STORAGE:
 		refresh_storage(s, true);
@@ -433,6 +516,8 @@ jobs_submit(struct server *s, struct queued *q, int n)
 		snprintf(op->sid, sizeof(op->sid), "%s", s->id);
 		op->what = q[i].what;
 		snprintf(op->target, sizeof(op->target), "%s", q[i].target);
+		/* Kept as it was sent, for when it fails and is tried again. */
+		op->again = q[i].json != NULL ? strdup(q[i].json) : NULL;
 		sub->ops[sub->nops++] = op->id;
 		if (i == 0) {
 			app.trace_op = op->id;
@@ -506,6 +591,49 @@ job_send(struct server *s, char *json, const char *title, int what,
 	}
 	jobs_submit(s, &q, 1);
 	free(json);
+}
+
+/*
+ * A job that failed, sent again as it was: to the same host, with the
+ * same words.  It goes into the queue when the queue is on.
+ */
+void
+op_retry(int id)
+{
+	struct queued	 q;
+	struct op	*o;
+	int		 i;
+
+	if ((o = op_find(id)) == NULL || o->again == NULL || o->state !=
+	    OP_FAILED)
+		return;
+	for (i = 0; i < app.nservers; i++)
+		if (strcmp(app.servers[i].id, o->sid) == 0)
+			break;
+	if (i == app.nservers) {
+		toast(true, "The host it was for is no longer here");
+		return;
+	}
+	memset(&q, 0, sizeof(q));
+	q.json = strdup(o->again);
+	snprintf(q.title, sizeof(q.title), "%s", o->title);
+	q.what = o->what;
+	snprintf(q.target, sizeof(q.target), "%s", o->target);
+	snprintf(q.sid, sizeof(q.sid), "%s", app.servers[i].id);
+	snprintf(q.host, sizeof(q.host), "%s", app.servers[i].name);
+	if (app.queue_on) {
+		if (app.nbatch == MAX_BATCH) {
+			toast(true, "The queue holds %d changes at most",
+			    MAX_BATCH);
+			free(q.json);
+			return;
+		}
+		app.batch[app.nbatch++] = q;
+		toast(false, "Queued again: %s", q.title);
+		return;
+	}
+	jobs_submit(&app.servers[i], &q, 1);
+	free(q.json);
 }
 
 /* Send everything held, in the order it was added. */
@@ -1240,6 +1368,92 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run)
 	free(body);
 }
 
+#define	RTFAM	"data.statistics.route-information.route-table.rt-family"
+
+static api_cb	 network_cb;
+
+/* How many routes the table shown holds. */
+int
+routes_held(void)
+{
+	const ucl_object_t	*fam;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while ((fam = ucl_object_iterate(jget(app.net.data, RTFAM), &it,
+	    true)) != NULL)
+		n += (int)ucl_array_size(jget(fam, "rt-entry"));
+	return (n);
+}
+
+/*
+ * More routes of a table too large for one reply: each family's are
+ * put after those of the same family that are there, and what the
+ * reply says of the whole takes the place of what was said before.
+ */
+static void
+routes_more(const ucl_object_t *o)
+{
+	const ucl_object_t	*nf, *of, *e;
+	ucl_object_iter_t	 it, oit, eit;
+	const char		*name;
+
+	it = NULL;
+	while ((nf = ucl_object_iterate(jget(o, RTFAM), &it, true)) != NULL) {
+		name = jstr(nf, "address-family");
+		oit = NULL;
+		while ((of = ucl_object_iterate(jget(app.net.data, RTFAM),
+		    &oit, true)) != NULL)
+			if (name != NULL && jstr(of, "address-family") != NULL &&
+			    strcmp(jstr(of, "address-family"), name) == 0)
+				break;
+		if (of == NULL) {
+			ucl_array_append((ucl_object_t *)(uintptr_t)jget(
+			    app.net.data, RTFAM), ucl_object_ref(nf));
+			continue;
+		}
+		eit = NULL;
+		while ((e = ucl_object_iterate(jget(nf, "rt-entry"), &eit,
+		    true)) != NULL)
+			ucl_array_append((ucl_object_t *)(uintptr_t)jget(of,
+			    "rt-entry"), ucl_object_ref(e));
+	}
+	ucl_object_replace_key(app.net.data, ucl_object_frombool(jbool(o,
+	    "truncated")), "truncated", 0, false);
+}
+
+/* Ask for the routes after those that are here. */
+void
+network_more(struct server *s)
+{
+	struct ctx	*c;
+	char		 url[640], fib[24], jail[270];
+
+	if (!app.online || app.net.loading || app.net.data == NULL ||
+	    app.net.kind != NET_ROUTES)
+		return;
+	app.net.loading = true;
+	c = ctx_new();
+	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
+	c->net_kind = (int)app.net.kind;
+	c->op_family = app.net.family;
+	snprintf(c->jail, sizeof(c->jail), "%s", app.net.jail);
+	c->more = true;
+	fib[0] = '\0';
+	if (app.net.fib > 0)
+		snprintf(fib, sizeof(fib), "&fib=%d", app.net.fib);
+	snprintf(jail, sizeof(jail), "%s%s", app.net.jail[0] != '\0' ?
+	    "&jail=" : "", app.net.jail);
+	snprintf(url, sizeof(url), "/api/servers/%s/net/routes?family=%s%s%s"
+	    "&offset=%d%s%s", s->id, app.net.family == 4 ? "inet" :
+	    app.net.family == 6 ? "inet6" : "all", app.net.host_filter[0] !=
+	    '\0' ? "&filter=" : "", app.net.host_filter, routes_held(), fib,
+	    jail);
+	api("GET", url, NULL, network_cb, c);
+}
+
 static void
 network_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -1258,7 +1472,11 @@ network_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	    app.net.family == c->op_family && strcmp(app.net.jail, c->jail) ==
 	    0) {
 		app.net.loading = false;
-		if (ok) {
+		if (ok && c->more && app.net.data != NULL) {
+			routes_more(o);
+			app.net.fetched = arc_now();
+			app.net.error[0] = '\0';
+		} else if (ok) {
 			if (app.net.data != NULL)
 				ucl_object_unref(app.net.data);
 			app.net.data = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
@@ -1276,7 +1494,8 @@ void
 refresh_network(struct server *s, bool user)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets", "interfaces", "netgraph", "wireguard", "bird" };
+	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
+	    "bridges", "geneve" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];

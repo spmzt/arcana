@@ -45,8 +45,14 @@
 #define	TOPO_ALTS	3
 #define	NODE_W		150
 #define	NODE_H		58
-#define	VIEW_W		1000.0
-#define	VIEW_H		600.0
+/*
+ * What of the drawing is seen at a zoom of one: as much as the map has
+ * room for on the page, so that a host and what is written on it are
+ * as large on a phone as on a wide screen.  Before the map is drawn
+ * its room is not known, and is guessed.
+ */
+#define	VIEW_W		(tp.vw > 0 ? tp.vw : arc_narrow() ? 360.0 : 900.0)
+#define	VIEW_H		(tp.vh > 0 ? tp.vh : arc_narrow() ? 450.0 : 560.0)
 
 struct ifrate {
 	char	name[16];
@@ -68,6 +74,11 @@ struct thost {
 	int		 nr;
 	double		 x, y;
 	bool		 placed;
+	double		 out_a;		/* where its outside neighbours stand */
+	bool		 out_set;
+	ucl_object_t	*bridges;	/* its bridges, as last read */
+	double		 br_fetched;
+	bool		 br_loading;
 	ucl_object_t	*wg;		/* its WireGuard interfaces */
 	bool		 wg_loading;
 	ucl_object_t	*bird;		/* what its BIRD says, if it has one */
@@ -178,6 +189,8 @@ static struct {
 	char	tun_a[80], tun_b[80];	/* the tunnel asked for */
 	char	create_sid[80];		/* the node an interface is made on */
 	int	fit_n;			/* the nodes there were when fitted */
+	double	vw, vh;			/* the room the map has, in pixels */
+	double	fit_w, fit_h;		/* and had when fitted */
 	bool	touched;		/* moved, zoomed: no fitting unasked */
 	int	labels;			/* 0 as fits, 1 shown, 2 left out */
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
@@ -556,6 +569,29 @@ rate_now(struct thost *t, const char *name)
 }
 
 /* A reading of a host's interfaces: kept, and made into rates. */
+/* A node's bridges, for the map to draw beside it. */
+static void
+bridges_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct thost	*t;
+	char		*sid;
+
+	(void)err;
+	sid = arg;
+	t = thost(sid, false);
+	free(sid);
+	if (t == NULL)
+		return;
+	t->br_loading = false;
+	t->br_fetched = arc_now();
+	if (status != 200 || !jbool(o, "ok"))
+		return;
+	if (t->bridges != NULL)
+		ucl_object_unref(t->bridges);
+	t->bridges = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
+	    "data.bridges"));
+}
+
 static void
 poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -625,6 +661,12 @@ node_poll(int i)
 	t->loading = true;
 	node_url(i, "interfaces", "", url, sizeof(url));
 	api("GET", url, NULL, poll_cb, strdup(tn[i].key));
+	/* Its bridges change less often than its counters. */
+	if (!t->br_loading && arc_now() - t->br_fetched > 15000) {
+		t->br_loading = true;
+		node_url(i, "bridges", "", url, sizeof(url));
+		api("GET", url, NULL, bridges_cb, strdup(tn[i].key));
+	}
 }
 
 /* The node a server's page is about: itself, or the jail it shows. */
@@ -1459,8 +1501,17 @@ map_nodes(struct html *h)
 			}
 		cx = m > 0 ? cx / m : 0;
 		cy = m > 0 ? cy / m : 0;
-		a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ? -M_PI / 2 :
-		    atan2(t->y - cy, t->x - cx);
+		/*
+		 * Away from the middle of the hosts, as it was when first
+		 * drawn: followed at every move, all of them would swing
+		 * about while one host is dragged.  "Fit" sets it again.
+		 */
+		if (!t->out_set) {
+			t->out_a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ?
+			    -M_PI / 2 : atan2(t->y - cy, t->x - cx);
+			t->out_set = true;
+		}
+		a = t->out_a;
 		/*
 		 * On two rings, every other one further out: side by
 		 * side on one ring they would lie on each other.
@@ -1475,11 +1526,15 @@ map_nodes(struct html *h)
 		    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
 		    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
 		    ex - 56, ey - 17, ex, ey - 2);
-		h_txt(h, e->label);
+		h_fit(h, e->label, 16);
 		h_fmt(h, "</text><text class=\"sub\" x=\"%.1f\" y=\"%.1f\">", ex,
 		    ey + 10);
-		h_txt(h, e->sub);
+		h_fit(h, e->sub, 20);
 		h_raw(h, "</text><title>");
+		h_txt(h, e->label);
+		h_raw(h, " · ");
+		h_txt(h, e->sub);
+		h_raw(h, " — ");
 		h_txt(h, e->ospf ? "An OSPF neighbour outside this console" :
 		    "A BGP neighbour outside this console");
 		h_raw(h, "</title></g>");
@@ -1520,6 +1575,93 @@ map_nodes(struct html *h)
 			m++;
 		}
 	}
+	/*
+	 * The bridges of each node, above it: a box for each, with a dot
+	 * for every member in the colour the spanning tree gave it, and a
+	 * line to the jail whose end of an epair is in the bridge.
+	 */
+	for (i = 0; !tp.hide[LK_VNET] && i < ntn; i++) {
+		const ucl_object_t	*b, *m, *jf;
+		ucl_object_iter_t	 bit, mit, jit;
+		struct thost		*jt;
+		const char		*mn, *st;
+		char			 other[24];
+		double			 bx, by;
+		int			 nb, k, np, len;
+
+		if ((t = thost(tn[i].key, false)) == NULL || !t->placed ||
+		    t->bridges == NULL)
+			continue;
+		nb = 0;
+		bit = NULL;
+		while ((b = ucl_object_iterate(t->bridges, &bit, true)) != NULL &&
+		    nb < 4) {
+			bx = t->x - NODE_W / 2 + 46 + nb * 104;
+			by = t->y - NODE_H / 2 - 40;
+			/* To the jails behind its members, first: under it. */
+			mit = NULL;
+			while ((m = ucl_object_iterate(jget(b, "members"), &mit,
+			    true)) != NULL) {
+				mn = jstr(m, "name");
+				len = mn != NULL ? (int)strlen(mn) : 0;
+				if (len < 6 || strncmp(mn, "epair", 5) != 0 ||
+				    mn[len - 1] != 'a')
+					continue;
+				snprintf(other, sizeof(other), "%.*sb", len - 1,
+				    mn);
+				for (k = 0; k < ntn; k++) {
+					if (tn[k].srv != tn[i].srv || tn[k].jail[0]
+					    == '\0' || (jt = thost(tn[k].key,
+					    false)) == NULL || !jt->placed)
+						continue;
+					jit = NULL;
+					while ((jf = ucl_object_iterate(jget(
+					    jt->ifs, "interfaces"), &jit,
+					    true)) != NULL)
+						if (jstr(jf, "name") != NULL &&
+						    strcmp(jstr(jf, "name"),
+						    other) == 0)
+							h_fmt(h, "<path class=\""
+							    "tbrlink\" d=\"M%.1f "
+							    "%.1f L%.1f %.1f\"/>",
+							    bx, by, jt->x,
+							    jt->y);
+				}
+			}
+			h_raw(h, "<g class=\"tbridge\" data-act=\""
+			    "topo-open-bridges\"");
+			h_attr(h, "data-arg", tn[i].key);
+			h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\""
+			    "%.1f\" y=\"%.1f\" width=\"96\" height=\"28\" rx=\""
+			    "4\"/><text class=\"name\" x=\"%.1f\" y=\"%.1f\">",
+			    bx, by + 14, bx, t->y - NODE_H / 2, bx - 48, by -
+			    14, bx - 42, by - 2);
+			h_fit(h, jstr(b, "name"), 9);
+			h_raw(h, "</text>");
+			np = 0;
+			mit = NULL;
+			while ((m = ucl_object_iterate(jget(b, "members"), &mit,
+			    true)) != NULL && np < 9) {
+				st = jstr(m, "state");
+				h_fmt(h, "<circle class=\"p-%s\" cx=\"%.1f\" cy=\""
+				    "%.1f\" r=\"3\"/>", !jbool(m, "stp") ? "off" :
+				    st != NULL && strcmp(st, "forwarding") ==
+				    0 ? "fwd" : st != NULL && (strcmp(st,
+				    "discarding") == 0 || strcmp(st,
+				    "blocking") == 0) ? "block" : "learn", bx -
+				    40 + np * 10, by + 7);
+				np++;
+			}
+			h_raw(h, "<title>");
+			h_txt(h, jstr(b, "name"));
+			h_fmt(h, ": a bridge with %d members%s%s. Press for its "
+			    "ports.</title></g>", (int)ucl_array_size(jget(b,
+			    "members")), jbool(b, "vlanfilter") ? ", filtering "
+			    "VLANs" : "", jbool(b, "is_root") ? ", root of its "
+			    "spanning tree" : "");
+			nb++;
+		}
+	}
 	for (i = 0; i < ntn; i++) {
 		const char	*key = tn[i].key;
 
@@ -1548,7 +1690,7 @@ map_nodes(struct html *h)
 		    "cy=\"-10\" r=\"4\"/><text class=\"name\" x=\"%d\" y=\"-5\">",
 		    -NODE_W / 2, -NODE_H / 2, NODE_W, NODE_H, -NODE_W / 2 + 14,
 		    -NODE_W / 2 + 26);
-		h_txt(h, tn[i].name);
+		h_fit(h, tn[i].name, 13);
 		h_fmt(h, "</text><text class=\"sub\" x=\"%d\" y=\"15\">",
 		    -NODE_W / 2 + 12);
 		if (t->ifs == NULL)
@@ -1556,11 +1698,14 @@ map_nodes(struct html *h)
 			    "no answer" : "reading…");
 		else {
 			fmt_rate(rate, sizeof(rate), total);
-			snprintf(sub, sizeof(sub), "%s%d if · %s", tn[i].jail[0] !=
-			    '\0' ? "jail · " : "", nif, rate);
+			snprintf(sub, sizeof(sub), "%d if · %s", nif, rate);
 		}
+		h_fit(h, sub, 20);
+		h_raw(h, "</text><title>");
+		h_txt(h, tn[i].name);
+		h_raw(h, tn[i].jail[0] != '\0' ? " (a jail) · " : " · ");
 		h_txt(h, sub);
-		h_fmt(h, "</text><circle class=\"port\" cx=\"%d\" cy=\"0\" "
+		h_fmt(h, "</title><circle class=\"port\" cx=\"%d\" cy=\"0\" "
 		    "r=\"7\" data-drag=\"topo-link\"", NODE_W / 2);
 		h_attr(h, "data-arg", key);
 		h_raw(h, "><title>Drag to another host to join them with a "
@@ -2117,9 +2262,15 @@ view_netmap(struct html *h)
 	nodes_build();
 	places_fill();
 	/* Fitted once, and again when a jail came or went as a node. */
-	if ((!tp.fitted || (tp.fit_n != ntn && !tp.touched)) && ntn > 0) {
+	tp.vw = arc_map_w();
+	tp.vh = arc_map_h();
+	/* And when its room changed: a window resized, a phone turned. */
+	if ((!tp.fitted || ((tp.fit_n != ntn || fabs(VIEW_W - tp.fit_w) > 24 ||
+	    fabs(VIEW_H - tp.fit_h) > 24) && !tp.touched)) && ntn > 0) {
 		tp.fitted = true;
 		tp.fit_n = ntn;
+		tp.fit_w = VIEW_W;
+		tp.fit_h = VIEW_H;
 		fit();
 	}
 	links_build();
@@ -3155,9 +3306,9 @@ fit(void)
 	tp.pany = (y0 + y1) / 2;
 	/* Room around them, and more when neighbours stand beside them. */
 	zx = VIEW_W / (x1 - x0 + NODE_W + (nexts > 0 && !tp.nopeers ? 640 :
-	    120));
+	    120) * (VIEW_W < 600 ? 0.5 : 1.0));
 	zy = VIEW_H / (y1 - y0 + NODE_H + (nexts > 0 && !tp.nopeers ? 460 :
-	    140));
+	    140) * (VIEW_W < 600 ? 0.5 : 1.0));
 	tp.zoom = zx < zy ? zx : zy;
 	if (tp.zoom > 1.7)
 		tp.zoom = 1.7;
@@ -3305,6 +3456,8 @@ topo_action(const char *act, const char *arg, const char *value)
 			tp.hide_alt = !tp.hide_alt;
 	} else if (strcmp(act, "topo-fit") == 0) {
 		/* Asked for: and kept fitted until moved again. */
+		for (i = 0; i < nhosts; i++)
+			hosts[i].out_set = false;
 		fit();
 		tp.touched = false;
 	} else if (strcmp(act, "topo-jails") == 0) {
@@ -3314,6 +3467,10 @@ topo_action(const char *act, const char *arg, const char *value)
 		if ((n = node_index(arg)) == -1)
 			return (true);
 		node_open(n, act[10] == 'w' ? NET_WIREGUARD : NET_BIRD);
+	} else if (strcmp(act, "topo-open-bridges") == 0) {
+		if ((n = node_index(arg)) == -1)
+			return (true);
+		node_open(n, NET_BRIDGES);
 	} else if (strcmp(act, "topo-peers") == 0) {
 		tp.nopeers = !tp.nopeers;
 	} else if (strcmp(act, "topo-arrange") == 0) {
@@ -3543,10 +3700,14 @@ view_netgraph(struct html *h, struct server *s, const ucl_object_t *nodes)
 		h_raw(h, "><rect class=\"box\" x=\"-65\" y=\"-24\" width=\"130\" "
 		    "height=\"48\" rx=\"10\"/><text class=\"name\" x=\"-54\" "
 		    "y=\"-3\">");
-		h_txt(h, jstr(o, "name"));
+		h_fit(h, jstr(o, "name"), 12);
 		h_raw(h, "</text><text class=\"sub\" x=\"-54\" y=\"14\">");
+		h_fit(h, jstr(o, "type"), 15);
+		h_raw(h, "</text><title>");
+		h_txt(h, jstr(o, "name"));
+		h_raw(h, " · ");
 		h_txt(h, jstr(o, "type"));
-		h_raw(h, "</text><circle class=\"port\" cx=\"65\" cy=\"0\" r=\"7\" "
+		h_raw(h, "</title><circle class=\"port\" cx=\"65\" cy=\"0\" r=\"7\" "
 		    "data-drag=\"ng-link\"");
 		h_attr(h, "data-arg", id);
 		h_raw(h, "><title>Drag to another node to connect a hook of "

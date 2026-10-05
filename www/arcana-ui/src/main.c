@@ -201,12 +201,22 @@ tick(void *arg)
 	}
 	/* Running jobs: read them, and redraw when their trace grew. */
 	if (app.screen == SCREEN_CONSOLE) {
+		ops_load();
+		ops_save();
 		jobs_poll();
 		agent_restarts(now);
 		if (app.visible && app.online)
 			topo_tick(now);
 		if (app.online)
 			bird_tick(now);
+		if (app.online) {
+			transport_tick(now);
+			net_live_tick(now);
+			firewall_tick(now);
+			procs_tick(now);
+			logs_tick(now);
+			usage_tick(now);
+		}
 	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
 	    now - last_update > UPDATE_MS) {
@@ -218,13 +228,14 @@ tick(void *arg)
 		last_refresh = now;
 		/* The fleet page watches every host, a host page its own. */
 		for (i = 0; (app.node == NODE_FLEET || app.node ==
-		    NODE_NETWORK) && i < app.nservers; i++) {
+		    NODE_NETWORK || app.node == NODE_USAGE) && i <
+		    app.nservers; i++) {
 			refresh_jails(&app.servers[i], false);
 			if (app.node == NODE_FLEET)
 				refresh_stats(&app.servers[i]);
 		}
 		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
-		    (s = cur_server()) != NULL) {
+		    app.node != NODE_USAGE && (s = cur_server()) != NULL) {
 			refresh_jails(s, false);
 			refresh_stats(s);
 			if (app.tab == TAB_JOBS)
@@ -237,7 +248,7 @@ tick(void *arg)
 		 * its old self until the page is loaded again.
 		 */
 		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
-		    ++others_turn >= OTHERS_EVERY) {
+		    app.node != NODE_USAGE && ++others_turn >= OTHERS_EVERY) {
 			others_turn = 0;
 			for (i = 0; i < app.nservers; i++)
 				if (i != app.sel)
@@ -263,7 +274,8 @@ confirm(const char *title, const char *body, const char *button,
 	snprintf(c->body, sizeof(c->body), "%s", body);
 	snprintf(c->button, sizeof(c->button), "%s", button);
 	c->danger = danger;
-	snprintf(c->typed, sizeof(c->typed), "%s", typed);
+	/* Nothing to type is no word, not the word "(null)". */
+	snprintf(c->typed, sizeof(c->typed), "%s", typed != NULL ? typed : "");
 	snprintf(c->act, sizeof(c->act), "%s", act);
 	snprintf(c->arg, sizeof(c->arg), "%s", arg);
 	snprintf(c->value, sizeof(c->value), "%s", value);
@@ -303,7 +315,9 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
-	    kernel_form(form, f) || storage_form(form, f))
+	    kernel_form(form, f) || storage_form(form, f) ||
+	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
+	    firewall_form(form, f) || l2_form(form, f))
 		return;
 	submit_form(form, f);
 }
@@ -502,6 +516,10 @@ dispatch(const char *act, const char *arg, const char *value)
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
+	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
+	    procs_action(act, arg, value) || logs_action(act, arg, value) ||
+	    usage_action(act, arg, value) ||
+	    firewall_action(act, arg, value) || l2_action(act, arg, value) ||
 	    tbl_action(act, arg, value))
 		return;
 	if (strcmp(act, "fold") == 0) {
@@ -528,6 +546,14 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_services(s, true);
 			if (app.tab == TAB_KERNEL)
 				refresh_kernel(s, false);
+			if (app.tab == TAB_SYSCTL)
+				refresh_sysctl(s, false);
+			if (app.tab == TAB_PROCESSES)
+				refresh_procs(s, false);
+			if (app.tab == TAB_LOG)
+				refresh_logs(s, false);
+			if (app.tab == TAB_FIREWALL)
+				refresh_firewall(s, false);
 			if (app.tab == TAB_STORAGE)
 				refresh_storage(s, false);
 			if (app.tab == TAB_NETWORK && (strcmp(app.net.sid,
@@ -555,6 +581,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		    0 || strcmp(arg, "bird") == 0 ? TAB_NETWORK :
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
 		    strcmp(arg, "kernel") == 0 ? TAB_KERNEL :
+		    strcmp(arg, "sysctl") == 0 ? TAB_SYSCTL :
+		    strcmp(arg, "processes") == 0 ? TAB_PROCESSES :
+		    strcmp(arg, "log") == 0 ? TAB_LOG :
+		    strcmp(arg, "firewall") == 0 ? TAB_FIREWALL :
 		    strcmp(arg, "storage") == 0 ? TAB_STORAGE :
 		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
@@ -564,6 +594,14 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_jobs(s);
 		if (app.tab == TAB_KERNEL)
 			refresh_kernel(s, true);
+		if (app.tab == TAB_SYSCTL)
+			refresh_sysctl(s, false);
+		if (app.tab == TAB_PROCESSES)
+			refresh_procs(s, true);
+		if (app.tab == TAB_LOG)
+			refresh_logs(s, false);
+		if (app.tab == TAB_FIREWALL)
+			refresh_firewall(s, true);
 		if (app.tab == TAB_STORAGE)
 			refresh_storage(s, true);
 		close_service();
@@ -640,6 +678,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		load_push();
 	} else if (strcmp(act, "push-remove") == 0) {
 		arc_push_remove(arg);
+	} else if (strcmp(act, "net-more") == 0 && s != NULL) {
+		network_more(s);
+	} else if (strcmp(act, "net-live") == 0) {
+		app.net.paused = !app.net.paused;
 	} else if (strcmp(act, "net-kind") == 0 && s != NULL) {
 		app.net.sort = -1;
 		app.net.kind = strcmp(arg, "nexthops") == 0 ? NET_NEXTHOPS :
@@ -647,6 +689,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "sockets") == 0 ? NET_SOCKETS :
 		    strcmp(arg, "interfaces") == 0 ? NET_INTERFACES :
 		    strcmp(arg, "netgraph") == 0 ? NET_NETGRAPH :
+		    strcmp(arg, "bridges") == 0 ? NET_BRIDGES :
+		    strcmp(arg, "geneve") == 0 ? NET_GENEVE :
 		    strcmp(arg, "wireguard") == 0 ? NET_WIREGUARD :
 		    strcmp(arg, "bird") == 0 ? NET_BIRD : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
@@ -857,6 +901,14 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_network(s, true);
 		} else if (app.tab == TAB_KERNEL) {
 			refresh_kernel(s, true);
+		} else if (app.tab == TAB_SYSCTL) {
+			refresh_sysctl(s, true);
+		} else if (app.tab == TAB_PROCESSES) {
+			refresh_procs(s, true);
+		} else if (app.tab == TAB_LOG) {
+			refresh_logs(s, true);
+		} else if (app.tab == TAB_FIREWALL) {
+			refresh_firewall(s, true);
 		} else if (app.tab == TAB_STORAGE) {
 			refresh_storage(s, true);
 		} else if (app.tab == TAB_PACKAGES) {
@@ -936,6 +988,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.dock_open = true;
 	} else if (strcmp(act, "schema") == 0) {
 		app.trace_schema = !app.trace_schema;
+	} else if (strcmp(act, "op-retry") == 0) {
+		op_retry(atoi(arg));
 	} else if (strcmp(act, "op-cancel") == 0) {
 		struct op *o;
 
@@ -1007,6 +1061,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		arc_theme_set(app.theme);
 	} else if (strcmp(act, "rail-toggle") == 0) {
 		app.rail_open = !app.rail_open;
+	} else if (strcmp(act, "who-toggle") == 0) {
+		app.who_open = !app.who_open;
 	} else if (strcmp(act, "settings") == 0) {
 		app.modal = MODAL_SETTINGS;
 		app.modal_error[0] = '\0';
@@ -1077,10 +1133,29 @@ EMSCRIPTEN_KEEPALIVE void
 arc_on_action(char *act, char *arg, char *value)
 {
 
+	/* The top bar's menu closes at whatever is done next. */
+	if (app.who_open && strcmp(act, "who-toggle") != 0 && strcmp(act,
+	    "resize") != 0)
+		app.who_open = false;
 	dispatch(act, arg, value);
 	free(act);
 	free(arg);
 	free(value);
+	render();
+}
+
+/* A part of something that comes in parts, or word that none will. */
+EMSCRIPTEN_KEEPALIVE void
+arc_on_stream(char *text)
+{
+	ucl_object_t	*o;
+
+	o = json_parse(text);
+	free(text);
+	if (o == NULL)
+		return;
+	sysctl_stream(o);
+	ucl_object_unref(o);
 	render();
 }
 
@@ -1121,7 +1196,8 @@ main(void)
 	{
 		char *t = arc_theme_get();
 
-		snprintf(app.theme, sizeof(app.theme), "%s", t);
+		snprintf(app.theme, sizeof(app.theme), "%s", strcmp(t,
+		    "tron") == 0 ? "" : t);
 		free(t);
 	}
 	app.trace_schema = true;

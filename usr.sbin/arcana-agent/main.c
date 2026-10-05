@@ -66,6 +66,12 @@ struct opts opts = {
 	.mount_bin = PATH_MOUNT_BIN,
 	.umount_bin = PATH_UMOUNT_BIN,
 	.fstab_path = PATH_FSTAB,
+	.sysctl_bin = "/sbin/sysctl",
+	.ipfw_bin = "/sbin/ipfw",
+	.ipfw_rules = "/usr/local/etc/arcana/ipfw.rules",
+	.sysctl_conf = "/etc/sysctl.conf",
+	.log_dir = "/var/log",
+	.history_conf = "/usr/local/etc/arcana/history.conf",
 	.wg_bin = PATH_WG_BIN,
 	.wg_dir = PATH_WG_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
@@ -104,7 +110,10 @@ usage(void)
 	    "[-M make]\n"
 	    "                 [-Y ssh-keyscan] [-E ssh-keygen] "
 	    "[-I ifconfig]\n"
-	    "                 [-r route] [-w seconds]\n"
+	    "                 [-r route] [-w seconds] [-Q sysctl] "
+	    "[-O sysctl.conf]\n"
+	    "                 [-v log-directory] [-1 history.conf]\n"
+	    "                 [-h ipfw] [-J ipfw.rules]\n"
 	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
 	exit(2);
@@ -298,7 +307,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:I:j:K:k:L:l:M:N:n:o:P:p:R:r:s:i:m:q:S:T:t:u:U:Vw:W:X:x:Y:y:Z:z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:1:X:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -334,8 +343,26 @@ main(int argc, char *argv[])
 				errx(1, "at most %d listeners", MAX_LISTEN);
 			uris[nl++] = optarg;
 			break;
+		case 'h':
+			opts.ipfw_bin = optarg;
+			break;
+		case 'J':
+			opts.ipfw_rules = optarg;
+			break;
+		case 'O':
+			opts.sysctl_conf = optarg;
+			break;
 		case 'p':
 			pidpath = optarg;
+			break;
+		case 'Q':
+			opts.sysctl_bin = optarg;
+			break;
+		case 'v':
+			opts.log_dir = optarg;
+			break;
+		case '1':
+			opts.history_conf = optarg;
 			break;
 		case 'R':
 			opts.rc_dirs = optarg;
@@ -522,6 +549,8 @@ main(int argc, char *argv[])
 		fatal(pfh, "cbl_ctx_new: %s", strerror(error));
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_FRAME, MAX_FRAME);
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_ATTRS, MAX_ATTRS);
+	if ((error = transport_watch(ctx)) != 0)
+		fatal(pfh, "cbl_ctx_set_conn_cbs: %s", strerror(error));
 	if ((error = arc_register(ctx, NULL, &fam)) != 0)
 		fatal(pfh, "registering the %s family: %s", ARC_FAMILY_NAME,
 		    strerror(error));
@@ -546,8 +575,12 @@ main(int argc, char *argv[])
 			fatal(pfh, "%s: %s", uris[i],
 			    cbl_listener_errstr(ls[i]));
 		logmsg(LOG_INFO, "listening on %s", uris[i]);
+		transport_add(uris[i], ls[i]);
 	}
+	/* And on SCTP where it listens on TCP, if the kernel has it. */
+	transport_init(ctx, loop, tls);
 	jobs_init();
+	history_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);
 	stop_loop = loop;
 	stop_pfh = pfh;
