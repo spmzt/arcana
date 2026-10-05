@@ -63,6 +63,7 @@ enum op {
 	OP_PROCESSES,
 	OP_LOG,
 	OP_HISTORY,
+	OP_EVENTS,
 };
 
 struct call {
@@ -177,6 +178,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_BRIDGES] = "bridges",
 	[ARC_NET_KIND_GENEVE] = "geneve",
 	[ARC_NET_KIND_IPFW] = "ipfw",
+	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 };
 
 static const char *service_action_names[] = {
@@ -616,7 +618,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    OP_KERNEL ? "arc_kernel" : c->op == OP_TRANSPORT ? "arc_transport" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
-	    "arc_log" : c->op == OP_HISTORY ? "arc_history" :
+	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
+	    OP_EVENTS ? "arc_events" :
 	    c->op == OP_SYSCTL ? "arc_sysctl" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
@@ -922,6 +925,8 @@ call_run(struct kore_task *t)
 	struct arc_log_rsp	*lgr;
 	struct arc_history_req	 hsq;
 	struct arc_history_rsp	*hsr;
+	struct arc_events_req	 evq;
+	struct arc_events_rsp	*evr;
 	struct pooled		 kept;
 	struct arc_storage_req	 sgq;
 	struct arc_storage_rsp	*sgr;
@@ -993,6 +998,7 @@ call_run(struct kore_task *t)
 	prr = NULL;
 	lgr = NULL;
 	hsr = NULL;
+	evr = NULL;
 	reused = again = false;
 	sgr = NULL;
 	fsr = NULL;
@@ -1524,6 +1530,18 @@ connected:
 		steps = hsr->trace.v;
 		nsteps = hsr->trace.n;
 		break;
+	case OP_EVENTS:
+		memset(&evq, 0, sizeof(evq));
+		evq.has_after = c->has_pos;
+		evq.after = c->pos;
+		if ((error = arc_events(&cl, &evq, &evr)) != 0)
+			goto rpcfail;
+		ok = evr->ok;
+		put_str(top, "error", evr->error);
+		put_json(top, evr->json);
+		steps = evr->trace.v;
+		nsteps = evr->trace.n;
+		break;
 	case OP_SYSCTL:
 		/* Where to begin rides where a jail's name does. */
 		memset(&syq, 0, sizeof(syq));
@@ -1755,6 +1773,8 @@ done:
 		arc_log_rsp_free(lgr);
 	if (hsr != NULL)
 		arc_history_rsp_free(hsr);
+	if (evr != NULL)
+		arc_events_rsp_free(evr);
 	if (sgr != NULL)
 		arc_storage_rsp_free(sgr);
 	if (fsr != NULL)
@@ -2261,7 +2281,7 @@ api_network(struct http_request *req)
 		kore_free(c->peer);
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "kind is one of "
-		    "routes, nexthops, connections, sockets, interfaces, "
+		    "routes, nexthops, nhgroups, connections, sockets, interfaces, "
 		    "netgraph, wireguard, bird, bird-routes, lookup; fib a "
 		    "number"));
 	}
@@ -2690,6 +2710,20 @@ api_history(struct http_request *req)
 	c->retry = true;
 	c->fib = (uint32_t)step;
 	c->offset = (uint32_t)keep;
+	return (call_start(req, c));
+}
+
+/* GET /api/servers/<id>/events[?after=number]: what happened there. */
+int
+api_events(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_EVENTS)) == NULL)
+		return (KORE_RESULT_OK);
+	c->has_pos = query_u64(req, "after", INT64_MAX, &c->pos);
 	return (call_start(req, c));
 }
 

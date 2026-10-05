@@ -68,15 +68,27 @@ The console is laid out as a tree and tabs.
     first, then those enabled; **Sort** orders by running, enabled or
     name, and the other way round when pressed again.
   - **Network**: the routing table, nexthops, connections and sockets,
-    per address family, as `netstat` and `sockstat` print them
-    (`--libxo json`); filter the rows, click a column to sort.
-    A routing table too large to send, a full BGP table say, comes as
-    its first 2000 rows with how many it has; type a prefix or an
+    per address family; filter the rows, click a column to sort. The
+    routes are asked of the kernel itself, through netlink, so each
+    comes with what the kernel knows of it: its metric, its weight,
+    the address it sends from, its table. The others are as `netstat`
+    and `sockstat` print them (`--libxo json`).
+    A routing table of more than 2000 routes, a full BGP table say,
+    comes as its first 2000 rows with how many it has, and **More**
+    reads on; type a prefix or an
     interface in the filter and press **Search host** to have the host
     search the whole table for it.
     In the routes, **+ route** adds a static route (a destination and
     a gateway, an address or an interface), and the cross on a static
-    route deletes it; both run `route(8)`. A route can be given its
+    route deletes it; both are asked of the kernel through netlink. A
+    gateway may be several addresses with commas between, each with
+    its share after an `@` (`10.0.0.1@2,10.0.0.2`): that is one route
+    with as many next hops (ECMP), which the table shows as a row for
+    each, **Path** saying which of how many, and **Nexthop groups**
+    as the group the kernel made of them. A second route to a
+    destination that has one makes such a group too; one way of it
+    is deleted by its gateway. A route of several gateways is not
+    kept in `rc.conf` from here. A route can be given its
     **metric** (its cost: of several routes to one destination the
     lowest is used, the others when it is gone), its **weight** (its
     share among routes of one metric), the **source address** of the
@@ -84,7 +96,7 @@ The console is laid out as a tree and tabs.
     goes into. **fib** picks the routing table shown and changed, when
     the host has more than one.
     **Look up a route** opens a box that asks for an address and tells
-    the route the host would take to it, as `route get` tells it, and
+    the route the host would take to it, as the kernel tells it, and
     every other route that covers the address, the most specific
     first.
     **Interfaces** lists the host's interfaces as the agent reads them
@@ -270,6 +282,14 @@ The console is laid out as a tree and tabs.
     that was shown, by when it started, and refuses init, the
     kernel's own and itself. From a shell: `arcanactl [-j jail] ps`,
     `arcanactl signal pid [name]`, `arcanactl renice pid nice`.
+  - **Events**, the last entry of the Log tab's list of logs: every
+    route, interface and address of the host that came, went or
+    changed, as the kernel told the agent of it through netlink the
+    moment it happened, the last 512 kept. A storm of routes (a BGP
+    session coming up) is counted for each second and not listed. A
+    jail's own network is not in it. This is what the workflows'
+    triggers will be made of. From a shell: `arcanactl events
+    [after]`.
   - **Log**: what syslogd wrote, a file of `/var/log` at a time,
     `messages` first, the newest line on top. A line of syslog's is
     taken apart into its time, host, program, PID and message, in

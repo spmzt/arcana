@@ -89,6 +89,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_BRIDGES] = "bridges",
 	[ARC_NET_KIND_GENEVE] = "geneve",
 	[ARC_NET_KIND_IPFW] = "ipfw",
+	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 };
 
 static const char *service_action_names[] = {
@@ -301,6 +302,7 @@ worker(void *arg)
 	struct arc_processes_rsp prr;
 	struct arc_log_rsp	 lgr;
 	struct arc_history_rsp	 hsr;
+	struct arc_events_rsp	 evr;
 	struct arc_storage_rsp	 stg;
 	struct arc_fstab_req	 fq;
 	struct arc_fstab_rsp	 fr;
@@ -499,6 +501,18 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &hsr.trace.v, &hsr.trace.n);
 		rc = arc_history_reply(j->req, &hsr);
+		break;
+	case ARC_CMD_EVENTS:
+		what = "events";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "events");
+		memset(&evr, 0, sizeof(evr));
+		do_events(&w, j->pos, &evr);
+		ok = evr.ok;
+		error = evr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &evr.trace.v, &evr.trace.n);
+		rc = arc_events_reply(j->req, &evr);
 		break;
 	case ARC_CMD_STORAGE:
 		what = "storage";
@@ -1243,6 +1257,20 @@ arc_history_doit(cbl_req *req, const struct arc_history_req *rq,
 	j->refresh = rq->has_sample_step;
 	j->fib = rq->sample_step;
 	j->offset = rq->sample_keep;
+	return (start(j));
+}
+
+int
+arc_events_doit(cbl_req *req, const struct arc_events_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_EVENTS;
+	j->pos = rq->has_after ? rq->after : 0;
 	return (start(j));
 }
 

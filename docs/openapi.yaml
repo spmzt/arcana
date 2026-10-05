@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.32.0
+  version: 0.33.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -485,8 +485,12 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup]
-          description: netstat -rnW, netstat -onW, netstat -n, sockstat,
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup]
+          description: The kernel's routes through netlink(4) (each with
+            destination, gateway, flags, nhop, mtu, interface-name,
+            metric, weight, fib, prefixlen, source and expire-time when
+            it has them, and path of paths for one next hop of
+            several), netstat -onW, netstat -OnW, netstat -n, sockstat,
             getifaddrs(3), ngctl list -l, wg show (public keys only),
             birdc show status and protocols; bird-routes is birdc show
             route for what `filter` names, in birdc's words with a comma
@@ -773,6 +777,29 @@ paths:
         "200":
           description: ok and data, or error
         "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/events:
+    get:
+      tags: [servers]
+      summary: What happened on the host, as it happened
+      description: Under data. events is each event with its number n,
+        its time t, its kind and data; last the number of the newest,
+        first that of the oldest still kept, kept how many are at most.
+        Ask again with after set to the last number seen and none is
+        missed, unless first is beyond it. The kinds are route-add and
+        route-del (data is the route, as net/routes has one), routes
+        (changed, how many more changed in a second than are said one
+        by one), link and link-del (interface, up, carrier, mtu),
+        address-add and address-del (interface, address, prefixlen).
+        They are the kernel's netlink(4) messages of the host's own
+        network.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: after
+          in: query
+          schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: ok and data, or error
   /api/servers/{server}/sysctl:
     get:
       tags: [servers]

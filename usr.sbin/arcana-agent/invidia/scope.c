@@ -112,8 +112,7 @@ scope_argv(struct work *w, char *const argv[])
 		;
 	v = wcalloc(w, n + 4, sizeof(*v));
 	k = 0;
-	if (argv[0] == opts.ifconfig_bin || argv[0] == opts.route_bin ||
-	    argv[0] == opts.netstat_bin || argv[0] == opts.sockstat_bin ||
+	if (argv[0] == opts.ifconfig_bin || argv[0] == opts.netstat_bin || argv[0] == opts.sockstat_bin ||
 	    argv[0] == opts.ngctl_bin) {
 		v[k++] = argv[0];
 		v[k++] = (char *)(uintptr_t)"-j";
@@ -134,6 +133,28 @@ scope_argv(struct work *w, char *const argv[])
 	for (; i < n; i++)
 		v[k++] = argv[i];
 	v[k] = NULL;
+	return (v);
+}
+
+/*
+ * The helper's argv for a verb and its n words: this program again,
+ * told the jail w works in, or 0 for the host.
+ */
+char **
+helper_argv(struct work *w, const char *verb, size_t n,
+    const char *const words[])
+{
+	char	**v;
+	size_t	  i;
+
+	v = wcalloc(w, n + 5, sizeof(*v));
+	v[0] = (char *)(uintptr_t)opts.helper_bin;
+	v[1] = (char *)(uintptr_t)"-Q";
+	v[2] = wfmt(w, "%d", w->jail != NULL ? w->jid : 0);
+	v[3] = (char *)(uintptr_t)verb;
+	for (i = 0; i < n; i++)
+		v[4 + i] = (char *)(uintptr_t)words[i];
+	v[4 + n] = NULL;
 	return (v);
 }
 
@@ -308,7 +329,7 @@ scope_helper(int argc, char **argv)
 	char	*out;
 	int	 jid;
 
-	if (argc != 4)
+	if (argc < 2)
 		return (2);
 	jid = atoi(argv[0]);
 	if (jid > 0 && jail_attach(jid) == -1) {
@@ -316,6 +337,11 @@ scope_helper(int argc, char **argv)
 		    strerror(errno));
 		return (1);
 	}
+	/* The routing tables, through netlink(4). */
+	if (strncmp(argv[1], "route", 5) == 0)
+		return (route_helper(argc - 1, argv + 1));
+	if (argc != 4)
+		return (2);
 	if ((out = ifq_text(argv[1], strcmp(argv[2], "-") == 0 ? NULL :
 	    argv[2], strcmp(argv[3], "-") == 0 ? NULL : argv[3])) == NULL)
 		return (1);

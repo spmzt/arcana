@@ -232,7 +232,18 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-jexec", "#!/bin/sh\necho \"jexec $*\" >> jexec.log\nshift\n"
 	    "exec \"$@\"\n");
 	put("fake-helper", "#!/bin/sh\necho \"$*\" >> helper.log\n"
-	    "case \"$3\" in\ninterfaces) echo '{\"interfaces\":[{\"name\":"
+	    "case \"$3\" in\n"
+	    /* The routes, as the helper reads them through netlink(4). */
+	    "routes) echo '{\"destination\":\"default\",\"gateway\":"
+	    "\"10.0.0.1\",\"flags\":\"UGS\",\"nhop\":1,\"mtu\":1500,"
+	    "\"interface-name\":\"em0\",\"metric\":1,\"weight\":1,\"fib\":0,"
+	    "\"prefixlen\":0}'; echo '#total 1' ;;\n"
+	    "route-get) echo '{\"to\":\"'$4'\",\"destination\":\"10.77.0.0\","
+	    "\"prefixlen\":16,\"gateway\":\"10.0.0.1\",\"fib\":\"0\","
+	    "\"interface\":\"em0\",\"flags\":\"UGS\",\"metric\":1,"
+	    "\"weight\":1}' ;;\n"
+	    "route-add|route-del) shift; echo \"$*\" >> route.log ;;\n"
+	    "interfaces) echo '{\"interfaces\":[{\"name\":"
 	    "\"epair1b\",\"up\":true,\"flags\":[\"UP\"],\"link\":\"up\",\"mtu\":"
 	    "1500,\"ibytes\":1,\"obytes\":2,\"addresses\":[{\"family\":\"inet\","
 	    "\"address\":\"10.99.0.2\",\"prefixlen\":24}]}],\"time\":1000}' ;;\n"
@@ -400,11 +411,6 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "add 01001 allow tcp from any to me6 22 in\n"
 	    "add 01002 allow tcp from any to me6 80 in\n"
 	    "add 01999 return via any\n");
-	put("fake-route", "#!/bin/sh\necho \"$*\" >> route.log\n"
-	    "[ \"$2\" = get ] && printf '   route to: %s\\ndestination: "
-	    "10.77.0.0\\n       mask: 255.255.0.0\\n    gateway: 10.0.0.1\\n"
-	    "        fib: 0\\n  interface: em0\\n      flags: <UP,GATEWAY>"
-	    "\\n' \"$4\"\nexit 0\n");
 	put("fake-ngctl", "#!/bin/sh\necho \"$*\" >> ngctl.log\n"
 	    "[ \"$1\" = list ] && printf '  Name: em0  Type: ether  ID: "
 	    "00000002  Num hooks: 1\\n  Local hook  Peer name  Peer type  "
@@ -575,7 +581,6 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("fake-wg", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-birdc", 0755) == 0);
 	ATF_REQUIRE(mkdir("wg", 0700) == 0 || errno == EEXIST);
-	ATF_REQUIRE(chmod("fake-route", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-ifconfig", 0755) == 0);
 	put("fake-make", buf);
 	ATF_REQUIRE(chmod("fake-make", 0755) == 0);
@@ -649,57 +654,55 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[29] = (char *)(uintptr_t)"./fake-keyscan";
 	argv[30] = (char *)(uintptr_t)"-I";
 	argv[31] = (char *)(uintptr_t)"./fake-ifconfig";
-	argv[32] = (char *)(uintptr_t)"-r";
-	argv[33] = (char *)(uintptr_t)"./fake-route";
-	argv[34] = (char *)(uintptr_t)"-n";
-	argv[35] = (char *)(uintptr_t)"./fake-ngctl";
-	argv[36] = (char *)(uintptr_t)"-k";
-	argv[37] = (char *)(uintptr_t)"./fake-wg";
-	argv[38] = (char *)(uintptr_t)"-o";
-	argv[39] = (char *)(uintptr_t)"./wg";
-	argv[40] = (char *)(uintptr_t)"-b";
-	argv[41] = (char *)(uintptr_t)"./fake-birdc";
-	argv[42] = (char *)(uintptr_t)"-e";
-	argv[43] = (char *)(uintptr_t)"./fake-bird";
-	argv[44] = (char *)(uintptr_t)"-a";
-	argv[45] = birdconf;
-	argv[46] = (char *)(uintptr_t)"-L";
-	argv[47] = (char *)(uintptr_t)"./fake-jls";
-	argv[48] = (char *)(uintptr_t)"-x";
-	argv[49] = (char *)(uintptr_t)"./fake-jexec";
-	argv[50] = (char *)(uintptr_t)"-H";
-	argv[51] = (char *)(uintptr_t)"./fake-helper";
-	argv[52] = (char *)(uintptr_t)"-T";
-	argv[53] = (char *)(uintptr_t)"./fake-kldload";
-	argv[54] = (char *)(uintptr_t)"-t";
-	argv[55] = (char *)(uintptr_t)"./fake-kldunload";
-	argv[56] = (char *)(uintptr_t)"-z";
-	argv[57] = (char *)(uintptr_t)"./fake-zfs";
-	argv[58] = (char *)(uintptr_t)"-Z";
-	argv[59] = (char *)(uintptr_t)"./fake-zpool";
-	argv[60] = (char *)(uintptr_t)"-q";
-	argv[61] = (char *)(uintptr_t)"./fake-gpart";
-	argv[62] = (char *)(uintptr_t)"-m";
-	argv[63] = (char *)(uintptr_t)"./fake-mount";
-	argv[64] = (char *)(uintptr_t)"-u";
-	argv[65] = (char *)(uintptr_t)"./fake-umount";
-	argv[66] = (char *)(uintptr_t)"-i";
-	argv[67] = (char *)(uintptr_t)"./fake-camcontrol";
-	argv[68] = (char *)(uintptr_t)"-S";
-	argv[69] = fstab;
-	argv[70] = (char *)(uintptr_t)"-Q";
-	argv[71] = (char *)(uintptr_t)"./fake-sysctl";
-	argv[72] = (char *)(uintptr_t)"-O";
-	argv[73] = (char *)(uintptr_t)"sysctl.conf";
-	argv[74] = (char *)(uintptr_t)"-h";
-	argv[75] = (char *)(uintptr_t)"./fake-ipfw";
-	argv[76] = (char *)(uintptr_t)"-J";
-	argv[77] = (char *)(uintptr_t)"ipfw.rules";
-	argv[78] = (char *)(uintptr_t)"-v";
-	argv[79] = (char *)(uintptr_t)"log";
-	argv[80] = (char *)(uintptr_t)"-1";
-	argv[81] = (char *)(uintptr_t)"history.conf";
-	argv[82] = NULL;
+	argv[32] = (char *)(uintptr_t)"-n";
+	argv[33] = (char *)(uintptr_t)"./fake-ngctl";
+	argv[34] = (char *)(uintptr_t)"-k";
+	argv[35] = (char *)(uintptr_t)"./fake-wg";
+	argv[36] = (char *)(uintptr_t)"-o";
+	argv[37] = (char *)(uintptr_t)"./wg";
+	argv[38] = (char *)(uintptr_t)"-b";
+	argv[39] = (char *)(uintptr_t)"./fake-birdc";
+	argv[40] = (char *)(uintptr_t)"-e";
+	argv[41] = (char *)(uintptr_t)"./fake-bird";
+	argv[42] = (char *)(uintptr_t)"-a";
+	argv[43] = birdconf;
+	argv[44] = (char *)(uintptr_t)"-L";
+	argv[45] = (char *)(uintptr_t)"./fake-jls";
+	argv[46] = (char *)(uintptr_t)"-x";
+	argv[47] = (char *)(uintptr_t)"./fake-jexec";
+	argv[48] = (char *)(uintptr_t)"-H";
+	argv[49] = (char *)(uintptr_t)"./fake-helper";
+	argv[50] = (char *)(uintptr_t)"-T";
+	argv[51] = (char *)(uintptr_t)"./fake-kldload";
+	argv[52] = (char *)(uintptr_t)"-t";
+	argv[53] = (char *)(uintptr_t)"./fake-kldunload";
+	argv[54] = (char *)(uintptr_t)"-z";
+	argv[55] = (char *)(uintptr_t)"./fake-zfs";
+	argv[56] = (char *)(uintptr_t)"-Z";
+	argv[57] = (char *)(uintptr_t)"./fake-zpool";
+	argv[58] = (char *)(uintptr_t)"-q";
+	argv[59] = (char *)(uintptr_t)"./fake-gpart";
+	argv[60] = (char *)(uintptr_t)"-m";
+	argv[61] = (char *)(uintptr_t)"./fake-mount";
+	argv[62] = (char *)(uintptr_t)"-u";
+	argv[63] = (char *)(uintptr_t)"./fake-umount";
+	argv[64] = (char *)(uintptr_t)"-i";
+	argv[65] = (char *)(uintptr_t)"./fake-camcontrol";
+	argv[66] = (char *)(uintptr_t)"-S";
+	argv[67] = fstab;
+	argv[68] = (char *)(uintptr_t)"-Q";
+	argv[69] = (char *)(uintptr_t)"./fake-sysctl";
+	argv[70] = (char *)(uintptr_t)"-O";
+	argv[71] = (char *)(uintptr_t)"sysctl.conf";
+	argv[72] = (char *)(uintptr_t)"-h";
+	argv[73] = (char *)(uintptr_t)"./fake-ipfw";
+	argv[74] = (char *)(uintptr_t)"-J";
+	argv[75] = (char *)(uintptr_t)"ipfw.rules";
+	argv[76] = (char *)(uintptr_t)"-v";
+	argv[77] = (char *)(uintptr_t)"log";
+	argv[78] = (char *)(uintptr_t)"-1";
+	argv[79] = (char *)(uintptr_t)"history.conf";
+	argv[80] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

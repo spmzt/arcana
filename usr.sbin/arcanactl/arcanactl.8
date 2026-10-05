@@ -238,6 +238,17 @@ followed.
 A file
 .Xr newsyslog 8
 has packed is not read.
+.It Cm events Op Ar after
+What happened on the host, as the kernel told the agent of it through
+.Xr netlink 4 :
+every route, interface and address that came, went or changed, each
+with its number, time and kind, the last 512 kept.
+With
+.Ar after ,
+only the events of a greater number.
+.It Cm net nhgroups
+The kernel's nexthop groups, what a route of several next hops points
+to, each with its next hops and their shares.
 .It Cm history Op Ar after
 How busy the host has been: what the agent sampled by itself and
 kept, each sample with its time, the CPUs' busy share, the load, the
@@ -444,7 +455,12 @@ which is
 .Li default ,
 a network with its prefix length or a host address, by
 .Ar gateway ,
-an address or the name of an interface.
+an address or the name of an interface, or several addresses with a
+comma between, each with its share after an @
+.Pq Li 10.0.0.1@2,10.0.0.2 ,
+for one route with as many next hops.
+The kernel is asked through
+.Xr netlink 4 .
 .Li ::/0
 is the default route of IPv6.
 .Cm metric

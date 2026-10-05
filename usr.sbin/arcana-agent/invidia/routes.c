@@ -5,9 +5,9 @@
  */
 
 /*
- * Invidia: static routes, added and deleted by running route(8), whose
- * argv and output the trace keeps.  The table itself is read through
- * netstat(1) (network.c).  A change is made live, and when asked also
+ * Invidia: static routes, added and deleted through netlink(4) by the
+ * helper (nlroute.c), whose words the trace keeps.  The table itself
+ * is read the same way (network.c).  A change is made live, and when asked also
  * kept in rc.conf: a route this daemon keeps is named after its
  * destination in static_routes, or in ipv6_static_routes.
  */
@@ -93,8 +93,7 @@ do_route(struct work *w, const char *destination, const char *gateway,
 	static const struct route_more	none;
 	struct execres	 res;
 	unsigned char	 raw[16];
-	const char	*dest, *name, *list, *e, *mods;
-	char		*argv[18];
+	const char	*dest, *name, *list, *e, *mods, *words[7];
 	bool		 iface;
 	int		 af, gaf, n;
 
@@ -108,7 +107,47 @@ do_route(struct work *w, const char *destination, const char *gateway,
 	}
 	iface = false;
 	gaf = AF_UNSPEC;
-	if (gateway != NULL && gateway[0] != '\0') {
+	if (gateway != NULL && strchr(gateway, ',') != NULL) {
+		/*
+		 * Several gateways, each with its share after an @: one
+		 * route with as many next hops (ECMP).
+		 */
+		char	*copy, *it, *one, *at;
+		int	 n1;
+
+		if (remove) {
+			*errp = "one way of a route is deleted by its gateway; "
+			    "all of them without one";
+			return (-1);
+		}
+		if (persist) {
+			*errp = "rc.conf keeps a route of one gateway: a route "
+			    "of several is not kept from here";
+			return (-1);
+		}
+		copy = wstrdup(w, gateway);
+		for (it = copy; (one = strsep(&it, ",")) != NULL; ) {
+			if ((at = strchr(one, '@')) != NULL) {
+				*at++ = '\0';
+				n1 = (int)strtonum(at, 1, 255, &e);
+				if (e != NULL || n1 == 0) {
+					*errp = wfmt(w, "%s: a share is from "
+					    "1 to 255", at);
+					return (-1);
+				}
+			}
+			n1 = inet_pton(AF_INET, one, raw) == 1 ? AF_INET :
+			    inet_pton(AF_INET6, one, raw) == 1 ? AF_INET6 :
+			    AF_UNSPEC;
+			if (n1 == AF_UNSPEC) {
+				*errp = wfmt(w, "%s is not an address: each "
+				    "of several gateways is one", one);
+				return (-1);
+			}
+			if (gaf == AF_UNSPEC)
+				gaf = n1;
+		}
+	} else if (gateway != NULL && gateway[0] != '\0') {
 		if (inet_pton(AF_INET, gateway, raw) == 1)
 			gaf = AF_INET;
 		else if (inet_pton(AF_INET6, gateway, raw) == 1)
@@ -127,20 +166,6 @@ do_route(struct work *w, const char *destination, const char *gateway,
 	/* "default" alone is IPv4's, unless the gateway says otherwise. */
 	if (af == AF_UNSPEC)
 		af = gaf == AF_INET6 ? AF_INET6 : AF_INET;
-	n = 0;
-	argv[n++] = (char *)(uintptr_t)opts.route_bin;
-	argv[n++] = (char *)(uintptr_t)"-n";
-	argv[n++] = (char *)(uintptr_t)(remove ? "delete" : "add");
-	argv[n++] = (char *)(uintptr_t)(af == AF_INET ? "-inet" : "-inet6");
-	argv[n++] = (char *)(uintptr_t)dest;
-	if (iface)
-		argv[n++] = (char *)(uintptr_t)"-iface";
-	if (gateway != NULL && gateway[0] != '\0')
-		argv[n++] = (char *)(uintptr_t)gateway;
-	if (fib != 0) {
-		argv[n++] = (char *)(uintptr_t)"-fib";
-		argv[n++] = wfmt(w, "%u", fib);
-	}
 	/*
 	 * What tells one route to a destination from another: its cost,
 	 * its share among those of one cost, and the address of this
@@ -153,22 +178,32 @@ do_route(struct work *w, const char *destination, const char *gateway,
 			    "family to send from", more->source);
 			return (-1);
 		}
-		argv[n++] = (char *)(uintptr_t)"-ifa";
-		argv[n++] = (char *)(uintptr_t)more->source;
 		mods = wfmt(w, " -ifa %s", more->source);
 	}
-	if (more->metric != 0) {
-		argv[n++] = (char *)(uintptr_t)"-metric";
-		argv[n++] = wfmt(w, "%u", more->metric);
+	if (more->metric != 0)
 		mods = wfmt(w, "%s -metric %u", mods, more->metric);
-	}
-	if (more->weight != 0) {
-		argv[n++] = (char *)(uintptr_t)"-weight";
-		argv[n++] = wfmt(w, "%u", more->weight);
+	if (more->weight != 0)
 		mods = wfmt(w, "%s -weight %u", mods, more->weight);
+	/*
+	 * Asked of the kernel by the helper, through netlink(4): the
+	 * destination, its gateway or its interface, the table, the
+	 * cost, and for a new one its share and where it sends from.
+	 */
+	n = 0;
+	words[n++] = strcmp(dest, "default") != 0 ? dest : af == AF_INET ?
+	    "0.0.0.0/0" : "::/0";
+	words[n++] = !iface && gateway != NULL && gateway[0] != '\0' ?
+	    gateway : "-";
+	words[n++] = iface ? gateway : "-";
+	words[n++] = wfmt(w, "%u", fib);
+	words[n++] = wfmt(w, "%u", more->metric);
+	if (!remove) {
+		words[n++] = wfmt(w, "%u", more->weight);
+		words[n++] = more->source != NULL && more->source[0] !=
+		    '\0' ? more->source : "-";
 	}
-	argv[n] = NULL;
-	if (run_exec(w, argv, &res) != 0) {
+	if (run_exec(w, helper_argv(w, remove ? "route-del" : "route-add",
+	    (size_t)n, words), &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, "route"));
 		return (-1);
 	}

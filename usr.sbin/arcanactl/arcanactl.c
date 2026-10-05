@@ -131,7 +131,7 @@ usage(void)
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface]\n"
-	    "    route add destination gateway [metric n] [weight n] "
+	    "    route add destination gateway[@share][,gateway[@share]...] [metric n] [weight n] "
 	    "[source address]\n"
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
@@ -160,7 +160,8 @@ usage(void)
 	    "    log [-o lines] [-f position] [name [text]]\n"
 	    "    history [after]\n"
 	    "    history set seconds samples\n"
-	    "    net bridges | geneve | ipfw\n"
+	    "    events [after]\n"
+	    "    net bridges | geneve | ipfw | nhgroups\n"
 	    "    bridge name addm | deletem member\n"
 	    "    bridge name access member vlan\n"
 	    "    bridge name trunk member vlan-list [untagged-vlan]\n"
@@ -1350,7 +1351,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
-	    "bird-routes", "bridges", "geneve", "ipfw" };
+	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -1547,6 +1548,7 @@ json_out(const char *what, bool ok, const char *error, const char *json,
  * log [name [text]]: the end of a log; -o how many lines, -f from where.
  * history [after]: how busy the host has been.
  * history set seconds samples: how often it is sampled, how many kept.
+ * events [after]: what happened on the host, after an event's number.
  */
 static int
 cmd_gula(struct arc_client *cl, int argc, char **argv)
@@ -1587,6 +1589,27 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 		sp.safe = safe;
 		sp.jail = netjail;
 		return (submit(cl, &sp));
+	}
+	if (strcmp(argv[0], "events") == 0) {
+		struct arc_events_req	 eq;
+		struct arc_events_rsp	*er;
+
+		if (argc > 2)
+			usage();
+		memset(&eq, 0, sizeof(eq));
+		if (argc == 2) {
+			eq.has_after = true;
+			eq.after = (uint64_t)strtonum(argv[1], 0, INT64_MAX,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "events: after %s: %s", argv[1], e);
+		}
+		if ((error = arc_events(cl, &eq, &er)) != 0)
+			fail(cl, error, "events");
+		rc = json_out("events", er->ok, er->error, er->json,
+		    er->trace.v, er->trace.n);
+		arc_events_rsp_free(er);
+		return (rc);
 	}
 	if (strcmp(argv[0], "history") == 0) {
 		memset(&hq, 0, sizeof(hq));
@@ -2395,7 +2418,7 @@ main(int argc, char *argv[])
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||
 	    strcmp(argv[0], "renice") == 0 || strcmp(argv[0], "log") == 0 ||
-	    strcmp(argv[0], "history") == 0)
+	    strcmp(argv[0], "history") == 0 || strcmp(argv[0], "events") == 0)
 		rc = cmd_gula(&cl, argc, argv);
 	else if (strcmp(argv[0], "transport") == 0)
 		rc = cmd_transport(&cl, argc, argv);

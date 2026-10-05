@@ -17,6 +17,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 #include "app.h"
 
@@ -25,6 +26,7 @@
 #define	LOGS_EVERY	3000	/* ms between two looks, while live */
 #define	LOGS_FIRST	200	/* lines asked for at first */
 #define	LOGS_MAX	5000	/* and at most, which is also what is held */
+#define	EVENTS		"@events"	/* not a file: what the agent saw happen */
 
 enum { C_N_, C_TIME, C_HOST, C_TAG, C_PID, C_TEXT, C_N };
 
@@ -63,6 +65,56 @@ forget(void)
 	lg.rotated = false;
 }
 
+/* An event as a line: its time, its kind, and what it is about. */
+static ucl_object_t *
+event_line(const ucl_object_t *e)
+{
+	const ucl_object_t	*d;
+	ucl_object_t		*l;
+	struct tm		 tm;
+	const char		*kind;
+	char			 buf[400];
+	time_t			 t;
+
+	l = ucl_object_typed_new(UCL_OBJECT);
+	t = (time_t)jint(e, "t", 0);
+	localtime_r(&t, &tm);
+	strftime(buf, sizeof(buf), "%b %e %H:%M:%S", &tm);
+	ucl_object_insert_key(l, ucl_object_fromstring(buf), "time", 0, false);
+	kind = jstr(e, "kind") != NULL ? jstr(e, "kind") : "";
+	ucl_object_insert_key(l, ucl_object_fromstring(kind), "tag", 0, false);
+	d = jget(e, "data");
+	if (strncmp(kind, "route-", 6) == 0)
+		snprintf(buf, sizeof(buf), "%s via %s on %s, metric %lld, "
+		    "weight %lld, table %lld%s", jstr(d, "destination") !=
+		    NULL ? jstr(d, "destination") : "?", jstr(d, "gateway") !=
+		    NULL ? jstr(d, "gateway") : "?", jstr(d,
+		    "interface-name") != NULL ? jstr(d, "interface-name") :
+		    "?", (long long)jint(d, "metric", 0), (long long)jint(d,
+		    "weight", 0), (long long)jint(d, "fib", 0), kind[6] ==
+		    'd' ? ": gone" : "");
+	else if (strcmp(kind, "routes") == 0)
+		snprintf(buf, sizeof(buf), "%lld more routes changed in that "
+		    "second", (long long)jint(d, "changed", 0));
+	else if (strncmp(kind, "link", 4) == 0)
+		snprintf(buf, sizeof(buf), "%s %s, %s, mtu %lld%s", jstr(d,
+		    "interface") != NULL ? jstr(d, "interface") : "?",
+		    jbool(d, "up") ? "up" : "down", jbool(d, "carrier") ?
+		    "link state up" : "link state changed to down",
+		    (long long)jint(d, "mtu", 0), kind[4] == '-' ? ": gone" :
+		    "");
+	else if (strncmp(kind, "address-", 8) == 0)
+		snprintf(buf, sizeof(buf), "%s/%lld %s %s", jstr(d,
+		    "address") != NULL ? jstr(d, "address") : "?",
+		    (long long)jint(d, "prefixlen", 0), kind[8] == 'd' ?
+		    "taken off" : "on", jstr(d, "interface") != NULL ?
+		    jstr(d, "interface") : "?");
+	else
+		buf[0] = '\0';
+	ucl_object_insert_key(l, ucl_object_fromstring(buf), "text", 0, false);
+	return (l);
+}
+
 static void
 logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -96,6 +148,16 @@ logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	if (lg.lines == NULL)
 		lg.lines = ucl_object_typed_new(UCL_ARRAY);
+	/* The agent's events: its numbers are theirs, last is where to
+	 * go on from. */
+	it = NULL;
+	while ((l = ucl_object_iterate(jget(d, "events"), &it, true)) !=
+	    NULL) {
+		c = event_line(l);
+		ucl_object_insert_key(c, ucl_object_fromint(jint(l, "n", 0)),
+		    "n", 0, false);
+		ucl_array_append(lg.lines, c);
+	}
 	it = NULL;
 	while ((l = ucl_object_iterate(jget(d, "lines"), &it, true)) != NULL) {
 		c = ucl_object_copy(l);
@@ -105,7 +167,8 @@ logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	while (ucl_array_size(lg.lines) > LOGS_MAX)
 		ucl_object_unref(ucl_array_pop_first(lg.lines));
-	lg.position = jint(d, "position", -1);
+	lg.position = jget(d, "events") != NULL ? jint(d, "last", 0) :
+	    jint(d, "position", -1);
 	if (jget(d, "files") != NULL) {
 		if (lg.files != NULL)
 			ucl_object_unref(lg.files);
@@ -149,6 +212,14 @@ logs_read(struct server *s, bool follow)
 	if (!follow)
 		lg.seq = 0;
 	memset(&u, 0, sizeof(u));
+	if (strcmp(lg.name, EVENTS) == 0) {
+		h_fmt(&u, "/api/servers/%s/events?after=%lld", s->id, follow ?
+		    lg.position : 0LL);
+		url = h_take(&u);
+		api("GET", url, NULL, logs_cb, strdup(s->id));
+		free(url);
+		return;
+	}
 	h_fmt(&u, "/api/servers/%s/log?lines=%d", s->id, follow ? LOGS_MAX :
 	    lg.want);
 	if (lg.name[0] != '\0')
@@ -238,11 +309,14 @@ view_logs(struct html *h, struct server *s)
 		h_txt(h, name);
 		h_fmt(h, " · %s</option>", buf);
 	}
-	if (n == 0) {
+	if (n == 0 && strcmp(lg.name, EVENTS) != 0) {
 		h_raw(h, "<option>");
 		h_txt(h, lg.name[0] != '\0' ? lg.name : "messages");
 		h_raw(h, "</option>");
 	}
+	h_fmt(h, "<option value=\"" EVENTS "\"%s>events · routes, "
+	    "interfaces, addresses</option>", strcmp(lg.name, EVENTS) == 0 ?
+	    " selected" : "");
 	h_raw(h, "</select></label><form data-form=\"lg-find\" class=\""
 	    "kmod-load\"><input name=\"text\" spellcheck=\"false\" "
 	    "autocomplete=\"off\" placeholder=\"search the whole file: sshd, "
@@ -311,6 +385,16 @@ view_logs(struct html *h, struct server *s)
 		    "<div class=\"empty\"><p>No line with that in it.</p>"
 		    "</div>" : "<div class=\"empty\"><p>The log is empty.</p>"
 		    "</div>");
+	if (strcmp(lg.name, EVENTS) == 0) {
+		h_fmt(h, "<p class=\"dim\">%d events, the newest first, as the "
+		    "kernel told the agent of them through netlink: every "
+		    "route, interface and address of the host that came, "
+		    "went or changed since the agent started, the last 512 "
+		    "kept. A storm of routes is counted, not listed. A "
+		    "jail's own network is not in it.</p>",
+		    (int)ucl_array_size(lg.lines));
+		return;
+	}
 	if ((int)ucl_array_size(lg.lines) >= lg.want && lg.want < LOGS_MAX)
 		h_fmt(h, "<p class=\"more\"><button class=\"ghost small\" "
 		    "data-act=\"lg-more\" title=\"Read further back in the "
@@ -373,8 +457,8 @@ logs_action(const char *act, const char *arg, const char *value)
 		lg.want = lg.want * 5 > LOGS_MAX ? LOGS_MAX : lg.want * 5;
 		lg.loading = false;
 		logs_read(s, false);
-	} else if (strcmp(act, "input:lg-file") == 0 && name_ok(value) &&
-	    strcmp(value, lg.name) != 0) {
+	} else if (strcmp(act, "input:lg-file") == 0 && (name_ok(value) ||
+	    strcmp(value, EVENTS) == 0) && strcmp(value, lg.name) != 0) {
 		snprintf(lg.name, sizeof(lg.name), "%s", value);
 		lg.want = LOGS_FIRST;
 		lg.loading = false;

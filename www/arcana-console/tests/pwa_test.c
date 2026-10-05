@@ -817,8 +817,8 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('route add 10.88.0.0/16 via 10.0.0.1: "
 	    "done'))", 20);
-	ATF_CHECK(system("grep -q '^-n add -inet 10.88.0.0/16 10.0.0.1 -fib 2 "
-	    "-ifa 10.0.0.9 -metric 5 -weight 20$' route.log") == 0);
+	ATF_CHECK(system("grep -q '^0 route-add 10.88.0.0/16 10.0.0.1 - 2 5 "
+	    "20 10.0.0.9$' route.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
 	/*
@@ -1741,7 +1741,7 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
 	    "3 && document.querySelector('table.logs tbody tr b').textContent "
 	    "=== 'cron' && document.querySelectorAll('label.lg-file option')"
-	    ".length === 2", 20);
+	    ".length === 3", 20);
 	run("const f = document.querySelector('form[data-form=lg-find]'); "
 	    "f.text.value = 'publickey for'; f.requestSubmit();");
 	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
@@ -1764,6 +1764,19 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
 	    "1 && document.querySelector('table.logs tbody tr b').textContent "
 	    "=== 'su'", 10);
+
+	/* What the kernel told the agent, in the same place. */
+	run("const s = document.querySelector('label.lg-file select'); "
+	    "s.value = '@events'; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelector('.stage').textContent.includes("
+	    "'events, the newest first') && document.querySelector("
+	    "'label.lg-file select').value === '@events'", 10);
+	run("const s = document.querySelector('label.lg-file select'); "
+	    "s.value = 'auth.log'; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "1", 10);
 
 	/*
 	 * How busy the hosts have been: the agent kept it by itself, and

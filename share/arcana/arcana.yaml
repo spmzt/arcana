@@ -281,6 +281,12 @@ definitions:
           "kept", the rules of the kept file each with its number and
           text, "other" its lines that are not rules, "path" where it
           is and "rc" what rc.conf says of the firewall.
+      - name: nhgroups
+        doc: |
+          The kernel's nexthop groups, what a route of several next
+          hops (ECMP) points to, as netstat -O prints them: each with
+          its index, how many routes use it, and its next hops with
+          the share of each.
   - name: storage-kind
     type: enum
     entries:
@@ -660,7 +666,8 @@ attribute-sets:
         type: u64
         doc: |
           For history, the time, in seconds since the epoch, after
-          which samples are asked for.
+          which samples are asked for.  For events, the number of the
+          last event the asker has.
       - name: sample-step
         type: u32
         doc: For history, the seconds between two samples, 1 to 3600.
@@ -903,9 +910,13 @@ attribute-sets:
           max-len: 64
       - name: gateway
         type: text
-        doc: For route, an address, or the name of an interface.
+        doc: |
+          For route, an address, or the name of an interface; or
+          several addresses with a comma between, each with its share
+          after an @ when it has one (10.0.0.1@2,10.0.0.2), for a
+          route with as many next hops.
         checks:
-          max-len: 64
+          max-len: 512
       - name: fib
         type: u32
         doc: For route, the routing table; 0 when not given.
@@ -1748,6 +1759,34 @@ operations:
           - after
           - sample-step
           - sample-keep
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: events
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What happened on the host, as it happened, as a JSON object:
+      "events", each with its number n, its time t, its kind and data,
+      what it is about; "last", the number of the newest; "first",
+      that of the oldest still kept, of "kept" at most.  With after
+      only the events of a greater number: asked again with the last
+      number seen, none is missed, unless first is beyond it.  The
+      kinds: route-add and route-del, a route with its attributes as
+      network's routes have them; routes, with changed, how many more
+      routes changed in a second than are said one by one; link and
+      link-del, an interface with up, carrier and mtu; address-add
+      and address-del, an interface's address and prefixlen.  They
+      are the kernel's own netlink(4) messages, of the host's network
+      and not of a jail's.
+    do:
+      request:
+        attributes:
+          - after
       reply:
         attributes:
           - ok

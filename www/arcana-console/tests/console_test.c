@@ -1303,7 +1303,7 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 400);
 	resp_free(&r);
 
-	/* The network tables: netstat's JSON, inside ours. */
+	/* The network tables: the kernel's routes, inside ours. */
 	snprintf(path, sizeof(path), "%.*s/net/routes?family=inet",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);
@@ -1311,7 +1311,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("default", jstr(&r, "data.statistics.route-information."
 	    "route-table.rt-family.0.rt-entry.0.destination"));
-	ATF_CHECK_MSG(strstr(jstr(&r, "trace.4.label"), "-f inet") != NULL,
+	ATF_CHECK_MSG(strstr(jstr(&r, "trace.4.label"), "routes 4 0") != NULL,
 	    "%s", jstr(&r, "trace.4.label"));
 	resp_free(&r);
 
@@ -1393,11 +1393,12 @@ ATF_TC_BODY(services, tc)
 	    "jobs.0.title"));
 	ATF_CHECK_STREQ("route delete 10.77.0.0/16", jstr(&r, "jobs.1.title"));
 	resp_free(&r);
-	for (i = 0; i < 100 && system("grep -q delete route.log 2>/dev/null") !=
+	for (i = 0; i < 100 && system("grep -q route-del route.log 2>/dev/null") !=
 	    0; i++)
 		usleep(50000);
-	ATF_CHECK(system("grep -q '^-n add -inet 10.77.0.0/16 10.0.0.1$' "
-	    "route.log && grep -q '^-n delete -inet 10.77.0.0/16$' route.log")
+	ATF_CHECK(system("grep -q '^0 route-add 10.77.0.0/16 10.0.0.1 - 0 0 0 "
+	    "-$' route.log && grep -q '^0 route-del 10.77.0.0/16 - - 0 0$' "
+	    "route.log")
 	    == 0);
 	http("POST", path, "{\"jobs\":[{\"kind\":\"route\",\"destination\":"
 	    "\"10.77.0.0/16\"}]}", &r);
@@ -1430,7 +1431,7 @@ ATF_TC_BODY(services, tc)
 	    "ifconfig.log && grep -q '^gif3 inet 10.255.0.1/30 10.255.0.2$' "
 	    "ifconfig.log && grep -q '^gif3 description to lab$' ifconfig.log "
 	    "&& grep -q '^lo0 mtu 9000$' ifconfig.log && grep -q "
-	    "'^-n add -inet 10.88.0.0/16 10.0.0.1 -fib 2$' route.log && "
+	    "'^0 route-add 10.88.0.0/16 10.0.0.1 - 2 0 0 -$' route.log && "
 	    "grep -q '^mkpeer em0: bridge lower link0$' ngctl.log") == 0);
 	/* What ngctl is not to be given the agent refuses to queue. */
 	http("POST", path, "{\"jobs\":[{\"kind\":\"netgraph\",\"verb\":"
@@ -1447,7 +1448,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("10.0.0.1", jstr(&r, "data.best.gateway"));
 	ATF_CHECK_STREQ("em0", jstr(&r, "data.best.interface"));
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^-n get -inet 10.77.5.5 -fib 1$' route.log")
+	ATF_CHECK(system("grep -q '^-Q 0 route-get 10.77.5.5 1$' helper.log")
 	    == 0);
 	snprintf(path, sizeof(path), "%.*s/net/lookup?to=10.0.0.1;id",
 	    (int)(strlen(base) - strlen("/services")), base);
@@ -1480,7 +1481,7 @@ ATF_TC_BODY(services, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^-j 4 -n get -inet 192.0.2.9$' route.log")
+	ATF_CHECK(system("grep -q '^-Q 4 route-get 192.0.2.9 0$' helper.log")
 	    == 0);
 	snprintf(path, sizeof(path), "%.*s/net/interfaces?jail=a;b",
 	    (int)(strlen(base) - strlen("/services")), base);
@@ -1813,6 +1814,21 @@ ATF_TC_BODY(services, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK(jstr(&r, "data.samples.0.0") == NULL);
+	resp_free(&r);
+	/* What happened there: numbered, to be asked for from a number. */
+	snprintf(path, sizeof(path), "%.*s/events",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "data.last") != NULL);
+	ATF_CHECK_STREQ("512", jstr(&r, "data.kept"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/events?after=99999999",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.events.0.n") == NULL);
 	resp_free(&r);
 	ATF_REQUIRE(system("sleep 300 & echo $! > sleep.pid") == 0);
 	{

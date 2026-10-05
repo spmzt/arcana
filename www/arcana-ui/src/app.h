@@ -178,6 +178,7 @@ enum netkind {
 	NET_BIRD,
 	NET_BRIDGES,
 	NET_GENEVE,
+	NET_NHGROUPS,
 };
 
 /* The network tab's one table: what is shown, from which server. */

@@ -182,9 +182,83 @@ aliases_cleanup()
 	cleanup
 }
 
+atf_test_case routes cleanup
+routes_head()
+{
+	atf_set "descr" "the real routing table through netlink: read, a route added with its cost and share, looked up, deleted; and each told by the kernel as an event, as an interface and its address are"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+routes_body()
+{
+	if ifconfig lo7 >/dev/null 2>&1 || route -n get 198.51.100.9 2>/dev/null | grep -q 'destination: 198.51.100.0'; then
+		atf_skip "lo7 or a route to 198.51.100.0/24 is there already"
+	fi
+	touch mine
+	start_daemon
+	atf_check -o match:'"interface-name":"lo0"' -o match:'"metric":[0-9]+,"weight":[0-9]+,"fib":0,"prefixlen":[0-9]+' \
+	    "$JGC" -c "$SOCK" net routes
+	last=$("$JGC" -c "$SOCK" events | sed -E 's/^\{"last":([0-9]+).*/\1/')
+
+	atf_check -o match:'done +route add 198.51.100.0/24 via 127.0.0.1' \
+	    "$JGC" -c "$SOCK" route add 198.51.100.0/24 127.0.0.1 metric 7 weight 3
+	atf_check -o match:'"destination":"198.51.100.0/24","gateway":"127.0.0.1","flags":"UGS",[^}]*"interface-name":"lo0","metric":7,"weight":3' \
+	    "$JGC" -c "$SOCK" net routes -4 198.51.100.
+	atf_check -o match:'"best":\{"to":"198.51.100.9","destination":"198.51.100.0","prefixlen":24,"gateway":"127.0.0.1"' \
+	    -o match:'"candidates":\[.*"destination":"198.51.100.0/24"' \
+	    "$JGC" -c "$SOCK" route get 198.51.100.9
+	atf_check -o match:'198.51.100.0/24 +127.0.0.1' netstat -rn4
+	# The kernel told the agent of it, without being asked.
+	atf_check -o match:'"kind":"route-add","data":\{"destination":"198.51.100.0/24","gateway":"127.0.0.1"' \
+	    "$JGC" -c "$SOCK" events "$last"
+	atf_check -o match:'done +route delete 198.51.100.0/24' \
+	    "$JGC" -c "$SOCK" route delete 198.51.100.0/24 127.0.0.1 metric 7
+	atf_check -o not-match:'198.51.100.0/24' netstat -rn4
+	atf_check -o match:'"kind":"route-del","data":\{"destination":"198.51.100.0/24"' \
+	    "$JGC" -c "$SOCK" events "$last"
+	atf_check -s exit:1 -o match:'there is no such route' \
+	    "$JGC" -c "$SOCK" route delete 198.51.100.0/24 127.0.0.1
+
+	# An interface that comes, and its address.
+	atf_check ifconfig lo7 create
+	atf_check ifconfig lo7 inet 127.0.77.1/24
+	sleep 0.5
+	atf_check -o match:'"kind":"link","data":\{"interface":"lo7"' \
+	    -o match:'"kind":"address-add","data":\{"interface":"lo7","address":"127.0.77.1","prefixlen":24\}' \
+	    "$JGC" -c "$SOCK" events "$last"
+	# A route of two next hops, each with its share: two rows of one
+	# route, and a nexthop group in the kernel.
+	atf_check -o match:'done +route add 198.51.100.0/24 via 127.0.77.2@2,127.0.77.3' \
+	    "$JGC" -c "$SOCK" route add 198.51.100.0/24 127.0.77.2@2,127.0.77.3
+	atf_check -o save:ecmp.json "$JGC" -c "$SOCK" net routes -4 198.51.100.
+	atf_check -o match:'"gateway":"127.0.77.2",[^}]*"weight":2,[^}]*"path":[12],"paths":2' \
+	    -o match:'"gateway":"127.0.77.3",[^}]*"weight":1,[^}]*"path":[12],"paths":2' \
+	    cat ecmp.json
+	atf_check -o match:'"nh-gw":"127.0.77.[23]"' "$JGC" -c "$SOCK" net nhgroups
+	# One of its ways deleted by its gateway: the other stays.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" route delete 198.51.100.0/24 127.0.77.3
+	atf_check -o match:'"gateway":"127.0.77.2"' -o not-match:'127.0.77.3' \
+	    "$JGC" -c "$SOCK" net routes -4 198.51.100.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" route delete 198.51.100.0/24
+	atf_check ifconfig lo7 destroy
+	sleep 0.5
+	atf_check -o match:'"kind":"link-del","data":\{"interface":"lo7"' \
+	    "$JGC" -c "$SOCK" events "$last"
+}
+routes_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	if [ -f mine ]; then
+		route -q delete 198.51.100.0/24 >/dev/null 2>&1
+		ifconfig lo7 destroy >/dev/null 2>&1
+	fi
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases
+	atf_add_test_case routes
 }

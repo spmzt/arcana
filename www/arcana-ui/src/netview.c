@@ -28,6 +28,10 @@ static const struct column routes_cols[] = {
 	{ "Nhop", "nhop", NULL },
 	{ "MTU", "mtu", NULL },
 	{ "Interface", "interface-name", NULL },
+	{ "Metric", "metric", NULL },
+	{ "Weight", "weight", NULL },
+	{ "Path", "path", "paths" },
+	{ "Source", "source", NULL },
 	{ "Expire", "expire-time", NULL },
 };
 
@@ -205,6 +209,63 @@ route_delete(struct html *h, const ucl_object_t *e, const char *family)
 		h_raw(h, ">×</button>");
 	}
 	h_raw(h, "</td>");
+}
+
+/*
+ * The nexthop groups, what a route of several next hops points to:
+ * each with its next hops and the share of each.
+ */
+static int
+nhgroups(struct html *h, const ucl_object_t *fams)
+{
+	static const struct tcol	cols[] = {
+		{ "Group", "nhgrp-index", true },
+		{ "Routes using it", "nhg-refcnt", true },
+		{ "Next hops", NULL, false },
+	};
+	const ucl_object_t		**rows, *fam, *g, *n;
+	ucl_object_iter_t		  it, nit;
+	int				  r, shown;
+
+	shown = 0;
+	it = NULL;
+	while ((fam = ucl_object_iterate(fams, &it, true)) != NULL) {
+		h_raw(h, "<h4 class=\"family\">");
+		h_txt(h, jstr(fam, "address-family"));
+		h_raw(h, "</h4><table class=\"net nhgroups\">");
+		tbl_head(h, "nhgroups", cols, 3, 0);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows("nhgroups", jget(fam, "nhgrp-entry"), cols, 3,
+		    NULL);
+		for (r = 0; (g = rows[r]) != NULL; r++) {
+			shown++;
+			h_fmt(h, "<tr><td>%lld</td><td>%lld</td><td>",
+			    (long long)jint(g, "nhgrp-index", 0),
+			    (long long)jint(g, "nhg-refcnt", 0));
+			nit = NULL;
+			while ((n = ucl_object_iterate(jget(g, "nhop-weights"),
+			    &nit, true)) != NULL) {
+				h_raw(h, "<span class=\"chip\" title=\"A next "
+				    "hop of the group, and its share\">");
+				h_txt(h, jstr(n, "nh-gw"));
+				h_raw(h, " on ");
+				h_txt(h, jstr(n, "nh-interface"));
+				h_fmt(h, " · share %lld · nexthop %lld</span> ",
+				    (long long)jint(n, "nh-weight", 0),
+				    (long long)jint(n, "nh-index", 0));
+			}
+			h_raw(h, "</td></tr>");
+		}
+		free(rows);
+		h_raw(h, "</tbody></table>");
+	}
+	if (shown == 0)
+		h_raw(h, "<div class=\"empty\"><p>No route of this host has "
+		    "several next hops. One is made by a route with several "
+		    "gateways, <code>10.0.0.1@2,10.0.0.2@1</code>, each with "
+		    "its share after the @, or by a second route to a "
+		    "destination that has one.</p></div>");
+	return (shown);
 }
 
 /* A count of bytes, in the unit that keeps it short. */
@@ -396,6 +457,7 @@ view_network(struct html *h, struct server *s)
 		{ "interfaces", "Interfaces" }, { "netgraph", "Netgraph" },
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
+		{ "nhgroups", "Nexthop groups" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -419,7 +481,7 @@ view_network(struct html *h, struct server *s)
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
 	/* What is of the base system too, and came later. */
-	for (i = 8; i < 10 && (!plug || scoped); i++)
+	for (i = 8; i < 11 && (!plug || scoped); i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
@@ -540,7 +602,7 @@ view_network(struct html *h, struct server *s)
 			h_txt(h, jstr(fam, "address-family"));
 			h_raw(h, "</h4>");
 			n = app.net.kind == NET_ROUTES ? table(h, jget(fam,
-			    "rt-entry"), routes_cols, 7, jstr(fam,
+			    "rt-entry"), routes_cols, 11, jstr(fam,
 			    "address-family") != NULL ? jstr(fam,
 			    "address-family") : "") : table(h, jget(fam,
 			    "nh-entry"), nexthops_cols, 10, NULL);
@@ -575,6 +637,10 @@ view_network(struct html *h, struct server *s)
 	case NET_BRIDGES:
 		view_bridges(h, s, jget(app.net.data, "data.bridges"));
 		return;
+	case NET_NHGROUPS:
+		shown = nhgroups(h, jget(app.net.data, "data.statistics."
+		    "route-nhgrp-information.nhgrp-table.rt-family"));
+		break;
 	case NET_GENEVE:
 		view_geneve(h, s, jget(app.net.data, "data.geneves"));
 		return;

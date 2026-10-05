@@ -2,8 +2,12 @@
 
 ## To do
 
-- Routes through netlink, with its attributes mapped to CBOR, instead of
-  running route(8) and netstat(1).
+- Netlink, further: the events told to the console as they happen
+  (cblink notifications) and not only asked for; a jail's own network
+  watched as the host's is; neighbours (ARP, NDP) and nexthops read
+  the same way; the host's routes read in the daemon itself and not
+  by the helper it runs; a route's attributes as CBOR of the spec and
+  not as JSON text.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: `zfs send` and `receive` between
   hosts; encryption keys; a file system made on a partition (newfs) and

@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.23.0"
+#define	ARCANA_AGENT_VERSION	"0.24.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -34,7 +34,6 @@
 #define	PATH_PKG_BIN		"/usr/sbin/pkg"
 #define	PATH_GIT_BIN		"/usr/local/bin/git"
 #define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
-#define	PATH_ROUTE_BIN		"/sbin/route"
 #define	PATH_NGCTL_BIN		"/usr/sbin/ngctl"
 #define	PATH_JLS_BIN		"/usr/sbin/jls"
 #define	PATH_JEXEC_BIN		"/usr/sbin/jexec"
@@ -79,7 +78,6 @@ struct opts {
 	const char	*pkg_bin;
 	const char	*self_path;	/* the program an update replaces */
 	const char	*ifconfig_bin;
-	const char	*route_bin;
 	const char	*ngctl_bin;
 	const char	*jls_bin;
 	const char	*jexec_bin;
@@ -422,6 +420,12 @@ int		 scope_helper(int, char **);
 const char	*scope_missing(struct work *, const struct execres *,
 		    const char *, const char *);
 char		*ifq_text(const char *, const char *, const char *);
+char		**helper_argv(struct work *, const char *, size_t,
+		    const char *const []);
+int		 route_helper(int, char **);
+void		 route_watch_start(void);
+void		 event_add(const char *, const char *, ...) __printflike(2, 3);
+int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);
 
 /* invidia/netgraph.c */
 int		 do_netgraph(struct work *, struct arc_network_rsp *);
