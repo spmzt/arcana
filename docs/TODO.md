@@ -8,6 +8,14 @@
 - Storage, beyond what there is: `zfs send` and `receive` between
   hosts; encryption keys; a file system made on a partition (newfs) and
   grown; swap; a disk's health (SMART); a vnet jail's own datasets.
+- The firewall's page, further: rules of a part moved by dragging and
+  renumbered to make room; a rule's words offered as they are typed
+  (actions, tables, interfaces, the host's own addresses); a hit
+  counter drawn over time and the rules that never matched marked;
+  the difference between the kept rules and the kernel's shown as a
+  whole before Apply; a packet followed through the chain ("what
+  happens to tcp from A to B in"); the log of denied packets
+  (ipfw0) read; tables and NAT with pages of their own.
 - The firewall, beyond what there is: its tables' entries read and
   changed, NAT and NAT64 instances made from forms and not only as
   lines of the kept rules, pipes and queues, the dynamic rules shown,

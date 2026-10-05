@@ -514,14 +514,16 @@ view_network(struct html *h, struct server *s)
 		if (app.net.host_filter[0] != '\0') {
 			h_raw(h, "These are the rows containing <code>");
 			h_txt(h, app.net.host_filter);
-			h_fmt(h, "</code>%s. <button class=\"ghost small\" "
-			    "data-act=\"net-search-clear\">Clear</button>",
-			    jbool(app.net.data, "truncated") ? ", the first "
-			    "2000 of them" : "");
+			h_raw(h, "</code>");
+			if (jbool(app.net.data, "truncated"))
+				h_fmt(h, ", the first %d of them", routes_held());
+			h_raw(h, ". <button class=\"ghost small\" data-act=\""
+			    "net-search-clear\">Clear</button>");
 		} else
-			h_raw(h, "These are its first 2000. Type what to look "
-			    "for in the filter, a prefix or an interface, and "
-			    "press <b>Search host</b>.");
+			h_fmt(h, "These are its first %d. <b>More</b>, below "
+			    "them, reads on; or type what to look for in the "
+			    "filter, a prefix or an interface, and press <b>"
+			    "Search host</b>.", routes_held());
 		h_raw(h, "</div>");
 	}
 	shown = 0;
@@ -544,6 +546,15 @@ view_network(struct html *h, struct server *s)
 			    "nh-entry"), nexthops_cols, 10, NULL);
 			shown += n;
 		}
+		/* The table goes on: the next of it, after these. */
+		if (app.net.kind == NET_ROUTES && jbool(app.net.data,
+		    "truncated"))
+			h_fmt(h, "<div class=\"more\"><button class=\"ghost\" "
+			    "data-act=\"net-more\"%s>%s</button><span class=\""
+			    "dim\">%d of %lld here</span></div>",
+			    app.net.loading ? " disabled" : "", app.net.loading ?
+			    "Reading…" : "More", routes_held(), (long long)jint(
+			    app.net.data, "total", 0));
 		break;
 	case NET_CONNECTIONS:
 		shown = table(h, jget(app.net.data, "data.statistics.socket"),

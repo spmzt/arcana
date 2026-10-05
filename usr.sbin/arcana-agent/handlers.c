@@ -40,6 +40,7 @@ struct job {
 	struct arc_service_config_req svc;
 	uint8_t			 family;
 	uint32_t		 fib;
+	uint32_t		 offset;		/* network: rows to leave out */
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
 	uint8_t			*binary;	/* agent-update */
@@ -519,7 +520,7 @@ worker(void *arg)
 		nr.has_ok = true;
 		if (scope_enter(&w, j->jail, &nr.error) == 0)
 			do_network(&w, j->action, j->family, j->source, j->fib,
-			    &nr);
+			    j->offset, &nr);
 		ok = nr.ok;
 		error = nr.error;
 		step_end(&w, root, ok, NULL);
@@ -1019,6 +1020,7 @@ arc_network_doit(cbl_req *req, const struct arc_network_req *rq,
 	j->action = rq->net_kind;
 	j->family = rq->has_net_family ? rq->net_family : ARC_NET_FAMILY_ALL;
 	j->fib = rq->has_net_fib ? rq->net_fib : 0;
+	j->offset = rq->has_offset ? rq->offset : 0;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
 	return (start(j));

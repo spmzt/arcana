@@ -91,7 +91,10 @@ view_bridges(struct html *h, struct server *s, const ucl_object_t *bridges)
 	while ((b = ucl_object_iterate(bridges, &it, true)) != NULL) {
 		n++;
 		name = jstr(b, "name") != NULL ? jstr(b, "name") : "";
-		h_raw(h, "<section class=\"pane bridge\"><h4><span>");
+		snprintf(id, sizeof(id), "bridge-%.20s", name);
+		h_raw(h, "<section class=\"pane bridge\">");
+		box_head(h, id, "h4");
+		h_raw(h, "<span>");
 		h_txt(h, name);
 		h_fmt(h, "</span><span class=\"chip%s\">%s</span>", jbool(b,
 		    "vlanfilter") ? "" : " dim", jbool(b, "vlanfilter") ?
@@ -108,6 +111,11 @@ view_bridges(struct html *h, struct server *s, const ucl_object_t *bridges)
 		h_attr(h, "data-arg", name);
 		h_fmt(h, ">%s</button></h4>", jbool(b, "vlanfilter") ? "Stop "
 		    "filtering VLANs" : "Filter VLANs");
+		/* Folded: its name and what it is, and no more. */
+		if (box_shut(id)) {
+			h_raw(h, "</section>");
+			continue;
+		}
 		h_raw(h, "<p class=\"dim\">");
 		if (!jbool(b, "is_root")) {
 			h_raw(h, "The root is <code>");

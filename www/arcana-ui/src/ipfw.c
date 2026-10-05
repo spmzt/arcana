@@ -74,20 +74,27 @@ static const struct sect {
 	{ 13000, 13999, "IPv4 outgoing forward", "", true },
 };
 
+#define	FW_LAYOUT	(-1)	/* the parts, listed */
+#define	FW_DYNAMIC	(-2)	/* the connections let through now */
+#define	FW_TEXT		(-3)	/* the kept rules, as a text */
+
 static struct {
 	char		 sid[9];
 	ucl_object_t	*data;
 	bool		 loading;
 	char		 error[300];
 	double		 fetched;
-	int		 sect;		/* -1: the layout itself */
+	int		 sect;		/* a part; or one of the views below */
+	bool		 rail_hosts;	/* the tree of hosts is wanted back */
+	long long	 edit;		/* the rule being changed, or 0 */
+	bool		 dyn_paused;
 	bool		 file_open;	/* the kept rules, as a text */
 	char		*text;
 	char		 sha[65];
 	bool		 file_loading;
 	char		 file_error[300];
 	char		 file_note[160];
-} fw = { .sect = -1 };
+} fw = { .sect = FW_LAYOUT };
 
 /*
  * The layout as rules, for a host that keeps none yet: the main chain
@@ -327,6 +334,178 @@ rows_of(int lo, int hi)
 	return (arr);
 }
 
+/* The text a rule has where it is kept, or NULL. */
+static const char *
+kept_text(long long num)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(fw.data, "kept"), &it, true)) !=
+	    NULL)
+		if (jint(o, "num", 0) == num)
+			return (jstr(o, "text"));
+	return (NULL);
+}
+
+/*
+ * The firewall's own side bar, in place of the tree of hosts while its
+ * tab is shown: the way back, and then the layout, a line for each
+ * part.  False when the tree is what is wanted.
+ */
+bool
+firewall_rail(struct html *h)
+{
+	const ucl_object_t	*live, *kept;
+	struct server		*s;
+	size_t			 i;
+	int			 n, k;
+	bool			 mine;
+
+	s = cur_server();
+	if (app.node != NODE_HOST || app.tab != TAB_FIREWALL || s == NULL ||
+	    fw.rail_hosts)
+		return (false);
+	mine = fw.data != NULL && strcmp(fw.sid, s->id) == 0;
+	live = mine ? jget(fw.data, "rules") : NULL;
+	kept = mine ? jget(fw.data, "kept") : NULL;
+	if (app.rail_open)
+		h_raw(h, "<div class=\"scrim\" data-act=\"rail-toggle\"></div>");
+	h_fmt(h, "<aside class=\"rail fwrail%s\"><div class=\"rail-head\">"
+	    "<button class=\"ghost small back\" data-act=\"fw-rail\" title=\""
+	    "Back to the hosts and their jails\">‹ Hosts</button><span class="
+	    "\"label\">Firewall</span></div><ul class=\"tree\">",
+	    app.rail_open ? " open" : "");
+	h_raw(h, "<li class=\"titem host-of\"><span class=\"name\">");
+	h_txt(h, s->name);
+	h_raw(h, "</span></li>");
+	h_fmt(h, "<li class=\"titem fw%s\" data-act=\"fw-sect\" data-arg=\"%d\">"
+	    "<span class=\"name\">Overview</span><span class=\"count\">%d"
+	    "</span></li>", fw.sect == FW_LAYOUT ? " selected" : "", FW_LAYOUT,
+	    (int)ucl_array_size(live));
+	h_fmt(h, "<li class=\"titem fw%s\" data-act=\"fw-sect\" data-arg=\"%d\" "
+	    "title=\"The connections the stateful rules let through, now\">"
+	    "<span class=\"name\">Dynamic states</span><span class=\"count\">"
+	    "%lld</span></li>", fw.sect == FW_DYNAMIC ? " selected" : "",
+	    FW_DYNAMIC, mine ? (long long)jint(fw.data, "dynamic_total", 0) :
+	    0LL);
+	h_fmt(h, "<li class=\"titem fw%s\" data-act=\"fw-sect\" data-arg=\"%d\">"
+	    "<span class=\"name\">Kept rules as text</span><span class=\""
+	    "count\">%d</span></li>", fw.sect == FW_TEXT ? " selected" : "",
+	    FW_TEXT, (int)ucl_array_size(kept));
+	for (i = 0; i < nitems(sects); i++) {
+		if (i == 0 || i == 10)
+			h_fmt(h, "<li class=\"tgroup\">%s</li>", i == 0 ?
+			    "The chain" : "Called from the chain");
+		n = count(live, sects[i].lo, sects[i].hi);
+		k = count(kept, sects[i].lo, sects[i].hi);
+		h_fmt(h, "<li class=\"titem fw%s%s\" data-act=\"fw-sect\" "
+		    "data-arg=\"%zu\" title=\"%d to %d\"><span class=\"num\">%d"
+		    "</span><span class=\"name\">%s</span><span class=\"count\">"
+		    "%d</span></li>", fw.sect == (int)i ? " selected" : "",
+		    n == 0 && k == 0 ? " none" : "", i, sects[i].lo,
+		    sects[i].hi, sects[i].lo, sects[i].name, n);
+	}
+	h_raw(h, "</ul></aside>");
+	return (true);
+}
+
+/* Is the tree of hosts shown where the firewall's side bar would be? */
+bool
+firewall_rail_away(void)
+{
+
+	return (app.node == NODE_HOST && app.tab == TAB_FIREWALL &&
+	    fw.rail_hosts);
+}
+
+static void
+view_dynamic(struct html *h)
+{
+	static const struct tcol	cols[] = {
+		{ "Rule", "num", true }, { "Kind", "kind", false },
+		{ "Flow", "flow", false }, { "Packets", "pkts", true },
+		{ "Bytes", "bytes", true }, { "Expires in", "ttl", true },
+	};
+	const ucl_object_t		**rows, *o;
+	char				  buf[32];
+	int				  r, n;
+
+	h_fmt(h, "<h4 class=\"family\">Dynamic states <small class=\"dim\">"
+	    "%lld now, as <code>ipfw -D show</code> has them</small><button "
+	    "class=\"ghost small live%s\" data-act=\"fw-live\" title=\"Read "
+	    "again every two seconds while this is shown\"><span class=\""
+	    "led\"></span>Live</button></h4><p class=\"dim\">A connection a "
+	    "rule with keep-state or record-state let through: its packets "
+	    "pass at check-state for as long as it lives. The rule is the "
+	    "one that made it.</p>", (long long)jint(fw.data, "dynamic_total",
+	    0), fw.dyn_paused ? "" : " on");
+	h_raw(h, "<table class=\"net fw-dyn\">");
+	tbl_head(h, "fwdyn", cols, 6, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("fwdyn", jget(fw.data, "dynamic"), cols, 6, app.filter);
+	for (r = 0, n = 0; (o = rows[r]) != NULL && r < 800; r++, n++) {
+		h_fmt(h, "<tr class=\"pick\" data-act=\"fw-goto\" data-arg=\""
+		    "%lld\" title=\"To the rule that made it\"><td><b>%05lld"
+		    "</b></td><td>", (long long)jint(o, "num", 0), (long long)
+		    jint(o, "num", 0));
+		h_txt(h, jstr(o, "kind"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(o, "flow"));
+		bytes(buf, sizeof(buf), jint(o, "bytes", 0));
+		h_fmt(h, "</td><td>%lld</td><td>%s</td><td>%lld s</td></tr>",
+		    (long long)jint(o, "pkts", 0), buf, (long long)jint(o,
+		    "ttl", 0));
+	}
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	if (n == 0)
+		h_raw(h, "<div class=\"empty\"><p>No connection is being "
+		    "tracked.</p></div>");
+	if (jint(fw.data, "dynamic_total", 0) > (int64_t)ucl_array_size(jget(
+	    fw.data, "dynamic")))
+		h_fmt(h, "<p class=\"dim\">The first %d of them.</p>", (int)
+		    ucl_array_size(jget(fw.data, "dynamic")));
+}
+
+static void
+view_text(struct html *h)
+{
+
+	h_raw(h, "<h4 class=\"family\">The kept rules</h4><p class=\"dim\">"
+	    "ipfw's own commands, one a line: <code>add</code> and a number "
+	    "for a rule, and <code>table</code>, <code>nat</code> and <code>"
+	    "nat64…</code> lines for what the rules use. No <code>set</code>, "
+	    "<code>flush</code> or <code>delete</code>: applying does those. "
+	    "The host loads this file when it starts.</p>");
+	if (fw.file_error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, fw.file_error);
+		h_raw(h, "</div>");
+	} else if (fw.file_note[0] != '\0') {
+		h_raw(h, "<div class=\"notice info\">");
+		h_txt(h, fw.file_note);
+		h_raw(h, "</div>");
+	}
+	h_raw(h, "<form data-form=\"fw-text\" class=\"fw-file\"><textarea name="
+	    "\"text\" rows=\"22\" spellcheck=\"false\" class=\"mono\">");
+	h_txt(h, fw.text != NULL ? fw.text : "");
+	h_fmt(h, "</textarea><div class=\"actions\"><button class=\"ghost "
+	    "small\" name=\"how\" value=\"check\"%s>Check</button><button "
+	    "class=\"small\" name=\"how\" value=\"write\"%s>Keep</button>",
+	    fw.file_loading ? " disabled" : "", fw.file_loading ? " disabled" :
+	    "");
+	if (fw.text == NULL || fw.text[0] == '\0')
+		h_raw(h, "<button type=\"button\" class=\"ghost small\" "
+		    "data-act=\"fw-skeleton\" title=\"The layout as rules: the "
+		    "chain with its calls, each part with its return, SSH and "
+		    "what the host sends let through, the rest denied. To be "
+		    "made this host's own before it is applied\">Start from "
+		    "the layout</button>");
+	h_raw(h, "</div></form>");
+}
+
 void
 view_firewall(struct html *h, struct server *s)
 {
@@ -339,42 +518,50 @@ view_firewall(struct html *h, struct server *s)
 	ucl_object_iter_t		  it;
 	ucl_object_t			 *arr;
 	const struct sect		 *sc;
+	const char			 *kt;
 	char				  age[32], buf[32];
 	size_t				  i;
-	bool				  mine, loaded;
+	bool				  mine, loaded, on;
 	int				  r, n, next;
 
 	mine = fw.data != NULL && strcmp(fw.sid, s->id) == 0;
 	live = mine ? jget(fw.data, "rules") : NULL;
 	kept = mine ? jget(fw.data, "kept") : NULL;
 	loaded = mine && jbool(fw.data, "loaded");
-	h_raw(h, "<div class=\"toolbar\"><div class=\"fw-state\">");
+	on = loaded && jbool(fw.data, "enabled");
+	h_raw(h, "<div class=\"toolbar fwbar\">");
+	if (firewall_rail_away())
+		h_raw(h, "<button class=\"ghost small\" data-act=\"fw-rail\" "
+		    "title=\"The firewall's parts, in the side bar\">Layout ›"
+		    "</button>");
 	if (mine) {
-		h_fmt(h, "<span class=\"chip %s\">%s</span>", loaded && jbool(
-		    fw.data, "enabled") ? "ok" : "warn", !loaded ? "ipfw is not "
-		    "in the kernel" : jbool(fw.data, "enabled") ? "on" : "off");
-		h_fmt(h, "<span class=\"dim\">%d rules now · %d kept in "
-		    "<code>", (int)ucl_array_size(live), (int)ucl_array_size(
-		    kept));
-		h_txt(h, jstr(fw.data, "path"));
-		h_raw(h, "</code></span>");
+		/* The light is the switch: what it shows, pressed, changes. */
+		if (loaded)
+			h_fmt(h, "<button class=\"switch%s\" data-act=\"fw-onoff\" "
+			    "data-arg=\"%s\" role=\"switch\" aria-checked=\"%s\" "
+			    "title=\"%s. net.inet.ip.fw.enable now, and "
+			    "firewall_enable in rc.conf\"><i></i><span>%s</span>"
+			    "</button>", on ? " on" : "", on ? "disable" :
+			    "enable", on ? "true" : "false", on ? "The firewall "
+			    "is on: press to turn it off" : "The firewall is "
+			    "off, and everything passes: press to turn it on",
+			    on ? "On" : "Off");
+		else
+			h_raw(h, "<span class=\"chip warn\">ipfw is not in the "
+			    "kernel</span>");
+		h_fmt(h, "<span class=\"fw-count\"><b>%d</b> rules now · <b>%d"
+		    "</b> kept · <b>%lld</b> states</span>", (int)
+		    ucl_array_size(live), (int)ucl_array_size(kept),
+		    (long long)jint(fw.data, "dynamic_total", 0));
 	}
-	h_raw(h, "</div>");
-	if (loaded) {
-		h_fmt(h, "<button class=\"ghost small\" data-act=\"fw-onoff\" "
-		    "data-arg=\"%s\" title=\"net.inet.ip.fw.enable, and "
-		    "firewall_enable in rc.conf\">%s</button>", jbool(fw.data,
-		    "enabled") ? "disable" : "enable", jbool(fw.data,
-		    "enabled") ? "Turn off" : "Turn on");
+	if (loaded)
 		h_raw(h, "<button class=\"small\" data-act=\"fw-apply\" title="
 		    "\"The kept rules become the whole ruleset, without a gap: "
 		    "loaded into set 1 while it is off, then swapped with set "
 		    "0\">Apply the kept rules</button>");
-	}
-	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"fw-file\">Kept "
-	    "rules as text</button><input class=\"filter\" id=\"filter\" "
-	    "data-input=\"filter\" placeholder=\"Filter rows\" autocomplete=\""
-	    "off\" spellcheck=\"false\"", fw.file_open ? " on" : "");
+	h_raw(h, "<input class=\"filter\" id=\"filter\" data-input=\"filter\" "
+	    "placeholder=\"Filter rows\" autocomplete=\"off\" spellcheck=\""
+	    "false\"");
 	h_attr(h, "value", app.filter);
 	h_raw(h, "><span class=\"age\">");
 	if (fw.loading && strcmp(fw.sid, s->id) == 0)
@@ -403,59 +590,14 @@ view_firewall(struct html *h, struct server *s)
 		    "loader first if the host is reached over the network, "
 		    "since an empty ipfw denies everything. The kept rules "
 		    "can be written meanwhile.</div>");
-
-	/* The kept rules as one text, to be read, checked and replaced. */
-	if (fw.file_open) {
-		h_raw(h, "<section class=\"pane fw-file\"><h4>The kept rules"
-		    "</h4><p class=\"dim\">ipfw's own commands, one a line: "
-		    "<code>add</code> and a number for a rule, and <code>table"
-		    "</code>, <code>nat</code> and <code>nat64…</code> lines "
-		    "for what the rules use. No <code>set</code>, <code>flush"
-		    "</code> or <code>delete</code>: applying does those. The "
-		    "host loads this file when it starts.</p>");
-		if (fw.file_error[0] != '\0') {
-			h_raw(h, "<div class=\"notice bad\">");
-			h_txt(h, fw.file_error);
-			h_raw(h, "</div>");
-		} else if (fw.file_note[0] != '\0') {
-			h_raw(h, "<div class=\"notice info\">");
-			h_txt(h, fw.file_note);
-			h_raw(h, "</div>");
-		}
-		h_raw(h, "<form data-form=\"fw-text\"><textarea name=\"text\" "
-		    "rows=\"18\" spellcheck=\"false\" class=\"mono\">");
-		h_txt(h, fw.text != NULL ? fw.text : "");
-		h_fmt(h, "</textarea><div class=\"actions\"><button class=\""
-		    "ghost small\" name=\"how\" value=\"check\"%s>Check"
-		    "</button><button class=\"small\" name=\"how\" value=\""
-		    "write\"%s>Keep</button>", fw.file_loading ? " disabled" :
-		    "", fw.file_loading ? " disabled" : "");
-		if (fw.text == NULL || fw.text[0] == '\0')
-			h_raw(h, "<button type=\"button\" class=\"ghost small\" "
-			    "data-act=\"fw-skeleton\" title=\"The layout as "
-			    "rules: the chain with its calls, each part with "
-			    "its return, SSH and what the host sends let "
-			    "through, the rest denied. To be made this "
-			    "host's own before it is applied\">Start from the "
-			    "layout</button>");
-		h_raw(h, "</div></form></section>");
+	if (fw.sect == FW_DYNAMIC) {
+		view_dynamic(h);
+		return;
 	}
-
-	/* A tab for the layout, and one for each of its parts. */
-	h_fmt(h, "<nav class=\"fw-tabs\"><button class=\"ghost small%s\" "
-	    "data-act=\"fw-sect\" data-arg=\"-1\">Layout</button>",
-	    fw.sect == -1 ? " on" : "");
-	for (i = 0; i < nitems(sects); i++) {
-		if (i == 10)
-			h_raw(h, "<span class=\"sep\">called</span>");
-		n = count(live, sects[i].lo, sects[i].hi);
-		h_fmt(h, "<button class=\"ghost small%s%s\" data-act=\"fw-sect\" "
-		    "data-arg=\"%zu\" title=\"%d to %d\">%s<small>%d</small>"
-		    "</button>", fw.sect == (int)i ? " on" : "", n == 0 &&
-		    count(kept, sects[i].lo, sects[i].hi) == 0 ? " none" : "",
-		    i, sects[i].lo, sects[i].hi, sects[i].name, n);
+	if (fw.sect == FW_TEXT) {
+		view_text(h);
+		return;
 	}
-	h_raw(h, "</nav>");
 	if (fw.sect < 0 || fw.sect >= (int)nitems(sects)) {
 		h_raw(h, "<table class=\"net fw-layout\"><thead><tr><th>Numbers"
 		    "</th><th>Part</th><th>Now</th><th>Kept</th><th></th></tr>"
@@ -531,18 +673,50 @@ view_firewall(struct html *h, struct server *s)
 	    "<span>keep</span></label><button class=\"small\">Add</button>"
 	    "</form>", next, sc->lo, sc->hi, loaded ? " checked" : "");
 	h_raw(h, "<table class=\"net fw-rules\">");
-	tbl_head(h, "fwrules", cols, 5, 1);
+	tbl_head(h, "fwrules", cols, 5, 0);
 	h_raw(h, "<tbody>");
 	rows = tbl_rows("fwrules", arr, cols, 5, app.filter);
 	for (r = 0; (o = rows[r]) != NULL; r++) {
 		const char	*where = jstr(o, "where");
 		bool		 now = strncmp(where, "now", 3) == 0 || strcmp(
 		    where, "set off") == 0;
+		bool		 keptr = strcmp(where, "now, kept") == 0 ||
+		    !now;
+		long long	 num = (long long)jint(o, "num", 0);
 
-		h_fmt(h, "<tr class=\"%s\"", now ? "" : "off");
-		h_fmt(h, " data-rule=\"%lld\"><td><b>%05lld</b></td><td class="
-		    "\"mono rule\">", (long long)jint(o, "num", 0), (long long)
-		    jint(o, "num", 0));
+		if (fw.edit == num) {
+			/*
+			 * Being changed, in its own row: its words as they
+			 * are kept, which are the ones that were written,
+			 * or as ipfw says them.
+			 */
+			kt = kept_text(num);
+			h_fmt(h, "<tr class=\"editing\" data-rule=\"%lld\"><td "
+			    "colspan=\"5\"><form data-form=\"fw-edit\" class="
+			    "\"fw-add\"><input name=\"num\" inputmode=\""
+			    "numeric\" size=\"6\" value=\"%lld\"><input name="
+			    "\"rule\" spellcheck=\"false\" autocomplete=\"off\"",
+			    num, num);
+			h_attr(h, "value", kt != NULL ? kt : jstr(o, "text"));
+			h_fmt(h, "><label class=\"toggle\"><input type=\""
+			    "checkbox\" name=\"live\"%s><span>now</span></label>"
+			    "<label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"persist\"%s><span>keep</span></label>"
+			    "<button class=\"small\">Save</button><button type="
+			    "\"button\" class=\"ghost small danger\" data-act="
+			    "\"fw-del\" data-arg=\"%lld\" data-value=\"%s\">"
+			    "Delete</button><button type=\"button\" class=\""
+			    "ghost small\" data-act=\"fw-edit\" data-arg=\"0\">"
+			    "Cancel</button></form></td></tr>", now && loaded ?
+			    " checked" : "", keptr ? " checked" : "", num,
+			    strcmp(where, "now, kept") == 0 ? "both" : now ?
+			    "live" : "kept");
+			continue;
+		}
+		h_fmt(h, "<tr class=\"pick%s\" data-act=\"fw-edit\" data-arg=\""
+		    "%lld\" data-rule=\"%lld\" title=\"Press to change it\"><td>"
+		    "<b>%05lld</b></td><td class=\"mono rule\">", now ? "" :
+		    " off", num, num, num);
 		h_txt(h, jstr(o, "text"));
 		h_raw(h, "</td><td>");
 		if (now)
@@ -555,11 +729,7 @@ view_firewall(struct html *h, struct server *s)
 		h_fmt(h, "</td><td><span class=\"chip%s\">", strcmp(where,
 		    "now, kept") == 0 ? "" : " dim");
 		h_txt(h, where);
-		h_fmt(h, "</span></td><td class=\"acts\"><button class=\"ghost "
-		    "small\" data-act=\"fw-del\" data-arg=\"%lld\" data-value=\""
-		    "%s\">Delete</button></td></tr>", (long long)jint(o, "num",
-		    0), strcmp(where, "now, kept") == 0 ? "both" : now ? "live" :
-		    "kept");
+		h_raw(h, "</span></td></tr>");
 	}
 	free(rows);
 	h_raw(h, "</tbody></table>");
@@ -576,17 +746,58 @@ fw_job(struct server *s, const char *json, const char *title)
 	job_send_host(s, strdup(json), title, JOB_FIREWALL, "");
 }
 
+/* The words of a rule as the job's args, after its number. */
+static void
+rule_args(struct html *b, const char *rule)
+{
+	char	*copy, *p, *w, *q;
+	bool	 first;
+
+	copy = strdup(rule);
+	p = copy;
+	first = true;
+	while ((w = strsep(&p, " \t")) != NULL) {
+		if (*w == '\0')
+			continue;
+		/* "add" before the rule says what is known. */
+		if (first && strcmp(w, "add") == 0)
+			continue;
+		first = false;
+		q = json_quote(w);
+		h_fmt(b, ",%s", q);
+		free(q);
+	}
+	free(copy);
+}
+
+/* The dynamic states change by themselves: read again while shown. */
+void
+firewall_tick(double now)
+{
+	struct server	*s;
+
+	if (app.node != NODE_HOST || app.tab != TAB_FIREWALL || fw.sect !=
+	    FW_DYNAMIC || fw.dyn_paused || !app.visible || fw.loading ||
+	    (s = cur_server()) == NULL || strcmp(fw.sid, s->id) != 0 ||
+	    now - fw.fetched < 2000)
+		return;
+	refresh_firewall(s, true);
+}
+
 bool
 firewall_form(const char *form, const ucl_object_t *f)
 {
 	struct server	*s;
 	struct html	 b;
 	const char	*rule, *how;
-	char		*copy, *p, *w, *q, url[96], title[200];
+	char		*copy, *q, url[96], title[200], del[200];
+	const ucl_object_t *o;
+	ucl_object_iter_t it;
 	int		 num, lo, hi;
-	bool		 first;
+	bool		 edit, was_live, was_kept;
 
-	if (strcmp(form, "fw-add") != 0 && strcmp(form, "fw-text") != 0)
+	if (strcmp(form, "fw-add") != 0 && strcmp(form, "fw-text") != 0 &&
+	    strcmp(form, "fw-edit") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
@@ -614,6 +825,7 @@ firewall_form(const char *form, const ucl_object_t *f)
 		free(b.s);
 		return (true);
 	}
+	edit = strcmp(form, "fw-edit") == 0;
 	num = jstr(f, "num") != NULL ? atoi(jstr(f, "num")) : 0;
 	rule = jstr(f, "rule") != NULL ? jstr(f, "rule") : "";
 	lo = fw.sect >= 0 ? sects[fw.sect].lo : 1;
@@ -631,29 +843,37 @@ firewall_form(const char *form, const ucl_object_t *f)
 		toast(true, "Now, kept, or both");
 		return (true);
 	}
-	/* The rule's words, each one of the job's. */
+	/*
+	 * A rule changed is the old one deleted where it was and the new
+	 * one added where it is to be: two jobs, in that order.
+	 */
+	if (edit && fw.edit > 0) {
+		was_live = was_kept = false;
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(fw.data, "rules"), &it,
+		    true)) != NULL)
+			if (jint(o, "num", 0) == fw.edit)
+				was_live = true;
+		was_kept = kept_text(fw.edit) != NULL;
+		if (was_live || was_kept) {
+			snprintf(del, sizeof(del), "{\"kind\":\"ipfw\",\"verb\":"
+			    "\"delete\",\"args\":[\"%lld\"],\"live\":%s,"
+			    "\"persist\":%s}", fw.edit, was_live ? "true" :
+			    "false", was_kept ? "true" : "false");
+			snprintf(title, sizeof(title), "ipfw delete %lld",
+			    fw.edit);
+			fw_job(s, del, title);
+		}
+	}
 	memset(&b, 0, sizeof(b));
 	h_fmt(&b, "{\"kind\":\"ipfw\",\"verb\":\"add\",\"args\":[\"%d\"", num);
-	copy = strdup(rule);
-	p = copy;
-	first = true;
-	while ((w = strsep(&p, " \t")) != NULL) {
-		if (*w == '\0')
-			continue;
-		/* "add" and a number before the rule say what is known. */
-		if (first && strcmp(w, "add") == 0)
-			continue;
-		first = false;
-		q = json_quote(w);
-		h_fmt(&b, ",%s", q);
-		free(q);
-	}
-	free(copy);
+	rule_args(&b, rule);
 	h_fmt(&b, "],\"live\":%s,\"persist\":%s}", jbool(f, "live") ? "true" :
 	    "false", jbool(f, "persist") ? "true" : "false");
 	snprintf(title, sizeof(title), "ipfw add %d %.140s", num, rule);
 	fw_job(s, b.s, title);
 	free(b.s);
+	fw.edit = 0;
 	return (true);
 }
 
@@ -662,6 +882,7 @@ firewall_action(const char *act, const char *arg, const char *value)
 {
 	struct server	*s;
 	char		 json[256], title[96], body[500];
+	size_t		 i;
 
 	if (strncmp(act, "fw-", 3) != 0 && strncmp(act, "do-fw-", 6) != 0)
 		return (false);
@@ -669,13 +890,30 @@ firewall_action(const char *act, const char *arg, const char *value)
 		return (true);
 	if (strcmp(act, "fw-sect") == 0) {
 		fw.sect = atoi(arg);
-		if (fw.sect < -1 || fw.sect >= (int)nitems(sects))
-			fw.sect = -1;
-	} else if (strcmp(act, "fw-file") == 0) {
-		fw.file_open = !fw.file_open;
-		fw.file_error[0] = fw.file_note[0] = '\0';
-		if (fw.file_open)
+		fw.edit = 0;
+		app.rail_open = false;
+		if (fw.sect < FW_TEXT || fw.sect >= (int)nitems(sects))
+			fw.sect = FW_LAYOUT;
+		if (fw.sect == FW_TEXT) {
+			fw.file_error[0] = fw.file_note[0] = '\0';
 			file_read(s);
+		}
+		if (fw.sect == FW_DYNAMIC) {
+			fw.loading = false;
+			refresh_firewall(s, true);
+		}
+	} else if (strcmp(act, "fw-rail") == 0) {
+		fw.rail_hosts = !fw.rail_hosts;
+	} else if (strcmp(act, "fw-live") == 0) {
+		fw.dyn_paused = !fw.dyn_paused;
+	} else if (strcmp(act, "fw-edit") == 0) {
+		fw.edit = atoll(arg) == fw.edit ? 0 : atoll(arg);
+	} else if (strcmp(act, "fw-goto") == 0) {
+		/* The part a rule's number is of, and the rule in it. */
+		for (i = 0; i < nitems(sects); i++)
+			if (atoi(arg) >= sects[i].lo && atoi(arg) <=
+			    sects[i].hi)
+				fw.sect = (int)i;
 	} else if (strcmp(act, "fw-skeleton") == 0) {
 		free(fw.text);
 		fw.text = strdup(skeleton);
@@ -721,6 +959,7 @@ firewall_action(const char *act, const char *arg, const char *value)
 		    strcmp(value, "live") == 0 ? "false" : "true");
 		snprintf(title, sizeof(title), "ipfw delete %d", atoi(arg));
 		fw_job(s, json, title);
+		fw.edit = 0;
 	}
 	return (true);
 }

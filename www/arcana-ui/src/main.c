@@ -212,6 +212,7 @@ tick(void *arg)
 		if (app.online) {
 			transport_tick(now);
 			net_live_tick(now);
+			firewall_tick(now);
 		}
 	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
@@ -660,6 +661,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		load_push();
 	} else if (strcmp(act, "push-remove") == 0) {
 		arc_push_remove(arg);
+	} else if (strcmp(act, "net-more") == 0 && s != NULL) {
+		network_more(s);
 	} else if (strcmp(act, "net-live") == 0) {
 		app.net.paused = !app.net.paused;
 	} else if (strcmp(act, "net-kind") == 0 && s != NULL) {
@@ -964,6 +967,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.dock_open = true;
 	} else if (strcmp(act, "schema") == 0) {
 		app.trace_schema = !app.trace_schema;
+	} else if (strcmp(act, "op-retry") == 0) {
+		op_retry(atoi(arg));
 	} else if (strcmp(act, "op-cancel") == 0) {
 		struct op *o;
 

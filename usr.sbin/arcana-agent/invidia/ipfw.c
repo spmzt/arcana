@@ -41,6 +41,7 @@
 #define	IPFW_FILE_MAX	(1024 * 1024)
 #define	IPFW_RULES_MAX	20000
 #define	IPFW_WORDS	120
+#define	IPFW_DYN_MAX	3000	/* dynamic rules in a reply, at most */
 
 static pthread_mutex_t	file_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -304,6 +305,55 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 		}
 	}
 	ucl_object_insert_key(top, rules, "rules", 0, false);
+	/*
+	 * The dynamic rules, as ipfw -D show has them: the connections
+	 * the stateful rules let through, each with the rule that made
+	 * it, its counters and how long it still lives.
+	 */
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	argv[1] = (char *)(uintptr_t)"-D";
+	argv[2] = (char *)(uintptr_t)"show";
+	argv[3] = NULL;
+	if (loaded && run_exec_max(w, scope_argv(w, argv), &res, 8 * 1024 *
+	    1024) == 0) {
+		text = wstrndup(w, res.out != NULL ? res.out : "", res.outlen);
+		p = text;
+		n = 0;
+		while ((line = strsep(&p, "\n")) != NULL) {
+			if (!isdigit((unsigned char)line[0]))
+				continue;
+			if (++n > IPFW_DYN_MAX)
+				continue;
+			o = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(o, ucl_object_fromint(strtol(
+			    line, &end, 10)), "num", 0, false);
+			t = end + strspn(end, " ");
+			ucl_object_insert_key(o, ucl_object_fromint(strtoll(t,
+			    &end, 10)), "pkts", 0, false);
+			t = end + strspn(end, " ");
+			ucl_object_insert_key(o, ucl_object_fromint(strtoll(t,
+			    &end, 10)), "bytes", 0, false);
+			t = end + strspn(end, " ");
+			if (*t == '(') {
+				ucl_object_insert_key(o, ucl_object_fromint(
+				    strtol(t + 1, &end, 10)), "ttl", 0, false);
+				t = end + strcspn(end, " ");
+				t += strspn(t, " ");
+			}
+			/* STATE, PARENT or LIMIT, and then the flow. */
+			if (isupper((unsigned char)*t)) {
+				end = t + strcspn(t, " ");
+				put(o, "kind", wstrndup(w, t, (size_t)(end -
+				    t)));
+				t = end + strspn(end, " ");
+			}
+			put(o, "flow", t);
+			ucl_array_append(arr, o);
+		}
+		ucl_object_insert_key(top, ucl_object_fromint(n), "dynamic_total",
+		    0, false);
+	}
+	ucl_object_insert_key(top, arr, "dynamic", 0, false);
 	/* The tables, by name, and the NAT instances as they were made. */
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	argv[1] = (char *)(uintptr_t)"table";

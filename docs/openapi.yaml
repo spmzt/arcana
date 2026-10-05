@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.29.0
+  version: 0.30.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -501,6 +501,11 @@ paths:
         - name: fib
           in: query
           description: The routing table, when not the first.
+          schema: { type: integer }
+        - name: offset
+          in: query
+          description: For routes, how many of the rows to leave out
+            first, to read on in a table too large for one reply.
           schema: { type: integer }
         - name: jail
           in: query

@@ -199,6 +199,19 @@ The console is laid out as a tree and tabs.
     [-p] ipfw add number rule…`, `ipfw keep add …`, `ipfw [keep]
     delete number`, `[-s] ipfw apply`, `ipfw enable | disable`,
     `ipfw rules [-w file] [-n]`.
+    While the Firewall tab is shown its parts are in the side bar, in
+    place of the hosts: **Overview**, **Dynamic states**, **Kept rules
+    as text**, then a line for each part with how many rules it has;
+    **‹ Hosts** brings the tree back, and **Layout ›** the parts. The
+    light beside the counts is the switch: it shows whether the
+    firewall is on, and pressed turns it off or on. A rule is pressed
+    to change it in its own row: its number, its words as they are
+    kept, now and keep; saved, the old one is deleted where it was and
+    the new one added where it is to be. **Dynamic states** are the
+    connections the stateful rules let through, as `ipfw -D show` has
+    them: the rule that made each, its flow, counters and how long it
+    still lives, read again every two seconds; one pressed leads to
+    its rule.
   - **Sysctl**: the kernel's state, a part of the tree at a time
     (**kern**, **vm**, **net** and the others, or from a name typed),
     read from the kernel as `sysctl -a` has it: each name with its
@@ -428,6 +441,20 @@ The console is laid out as a tree and tabs.
   others are scrolled.
 - On a phone that has no theme chosen the plain **Slate** is used;
   Tron and the others are chosen in Settings as anywhere.
+- **Every table's columns** are as wide as their borders are dragged
+  in the head; a double click on a border lets the column be as wide
+  as what is in it again. A box with a mark before its name (a
+  bridge, how a host is reached) folds when its head is pressed, and
+  stays as it was left.
+- A task that **failed** has **Retry** in the list: the same job, sent
+  again to the same host.
+- A routing table too large for one reply ends in **More**, which
+  reads the next two thousand routes and puts them after those that
+  are there.
+- On the **Network** map a host's bridges stand above it: a box for
+  each, with a dot for every member in the colour the spanning tree
+  gave it, and a dashed line to the jail whose end of an epair is in
+  the bridge; pressed, it opens the host's bridges.
 - **Recent tasks** along the bottom: the last few, each with its host,
   how it ended and how long it took, always in sight; one picked opens
   the list at it, where each also has the time it began. The tasks

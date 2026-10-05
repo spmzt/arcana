@@ -80,6 +80,7 @@ struct call {
 	char			 ifname[16];
 	uint8_t			 family;	/* network */
 	uint32_t		 fib;		/* network, route lookup */
+	uint32_t		 offset;		/* network: rows to leave out */
 	char			 scope[256];	/* the vnet jail whose network it is */
 	bool			 refresh;	/* packages */
 	bool			 dry_run;	/* pkg-upgrade */
@@ -1278,6 +1279,8 @@ connected:
 		nq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
 		nq.has_net_fib = c->fib != 0;
 		nq.net_fib = c->fib;
+		nq.has_offset = c->offset != 0;
+		nq.offset = c->offset;
 		nq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_network(&cl, &nq, &nr)) != 0)
 			goto rpcfail;
@@ -2175,6 +2178,19 @@ api_network(struct http_request *req)
 		    "number"));
 	}
 	c->action = (uint8_t)i;
+	/* Read on in a table too large for one reply. */
+	{
+		const char	*errstr;
+		char		 off[16];
+
+		if (query_param(req, "offset", off, sizeof(off)) && off[0] !=
+		    '\0') {
+			c->offset = (uint32_t)strtonum(off, 0, 100000000,
+			    &errstr);
+			if (errstr != NULL)
+				c->offset = 0;
+		}
+	}
 	c->family = ARC_NET_FAMILY_ALL;
 	if (req->query_string != NULL) {
 		if (strstr(req->query_string, "family=inet6") != NULL)

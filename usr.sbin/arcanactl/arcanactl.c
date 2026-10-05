@@ -120,6 +120,7 @@ usage(void)
 	    "    net routes | nexthops | connections | sockets | interfaces | "
 	    "netgraph |\n        wireguard | bird [-4 | -6]\n"
 	    "    net routes [-4 | -6] text\n"
+	    "    net routes [-4 | -6] -o rows\n"
 	    "    interface name up | down | destroy\n"
 	    "    interface name give | take jail\n"
 	    "    interface epair give jail [bridge]\n"
@@ -1366,8 +1367,13 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	argc--;
 	argv++;
 	optind = 1;
-	while ((ch = getopt(argc, argv, "46")) != -1) {
+	while ((ch = getopt(argc, argv, "46o:")) != -1) {
 		switch (ch) {
+		case 'o':
+			/* Read on, after this many rows. */
+			req.has_offset = true;
+			req.offset = (uint32_t)strtoul(optarg, NULL, 10);
+			break;
 		case '4':
 			req.net_family = ARC_NET_FAMILY_INET;
 			break;

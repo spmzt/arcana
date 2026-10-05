@@ -98,6 +98,8 @@ addToLibrary({
 				    to.defaultValue === from.defaultValue));
 			}
 		});
+		if (typeof arcColsApply === "function")
+			arcColsApply(el);
 	},
 
 	arc_set_class__deps: ["$UTF8ToString"],
@@ -337,6 +339,107 @@ addToLibrary({
 		}
 		document.addEventListener("pointerup", pinchEnd);
 		document.addEventListener("pointercancel", pinchEnd);
+		/*
+		 * Every table's columns are as wide as they are dragged:
+		 * a head's right border is taken hold of and moved, and a
+		 * double click on it lets the column be as wide as what is
+		 * in it again.  A width is kept, while the page lives, by
+		 * the table's kind and the column's place, and put back
+		 * when the table is drawn again.
+		 */
+		var colw = {}, coldrag = null, colclick = 0;
+
+		function colKey(th) {
+			var t = th.closest("table");
+
+			return (t === null ? null : t.className.replace(
+			    /\s+/g, ".") + "#" + th.cellIndex);
+		}
+		function colEdge(e) {
+			var th = e.target.closest ? e.target.closest(
+			    "table.net th") : null, r;
+
+			if (th === null)
+				return (null);
+			r = th.getBoundingClientRect();
+			/* A click made by a script has no place: not a border's. */
+			if (e.clientX < r.left || e.clientX > r.right ||
+			    e.clientY < r.top || e.clientY > r.bottom)
+				return (null);
+			if (r.right - e.clientX <= 6)
+				return (th);
+			/* The left border is the one before's right. */
+			if (e.clientX - r.left <= 4 &&
+			    th.previousElementSibling !== null)
+				return (th.previousElementSibling);
+			return (null);
+		}
+		window.arcColsApply = function (root) {
+			var ths = root.querySelectorAll("table.net th"), i, k;
+
+			for (i = 0; i < ths.length; i++) {
+				k = colKey(ths[i]);
+				if (k !== null && colw[k] !== undefined) {
+					ths[i].style.width = colw[k] + "px";
+					ths[i].style.minWidth = colw[k] + "px";
+					ths[i].style.maxWidth = colw[k] + "px";
+				} else if (ths[i].style.width !== "") {
+					ths[i].style.width = "";
+					ths[i].style.minWidth = "";
+					ths[i].style.maxWidth = "";
+				}
+			}
+		};
+		document.addEventListener("pointermove", function (e) {
+			var th, w;
+
+			if (coldrag !== null) {
+				w = Math.max(40, coldrag.w + e.clientX -
+				    coldrag.x);
+				colw[coldrag.k] = Math.round(w);
+				arcColsApply(document);
+				return;
+			}
+			th = e.target.closest ? e.target.closest(
+			    "table.net thead") : null;
+			if (th !== null)
+				th.style.cursor = colEdge(e) !== null ?
+				    "col-resize" : "";
+		});
+		document.addEventListener("pointerdown", function (e) {
+			var th = colEdge(e);
+
+			if (th === null || e.button > 0)
+				return;
+			coldrag = { k: colKey(th), x: e.clientX,
+			    w: th.getBoundingClientRect().width };
+			e.preventDefault();
+			e.stopPropagation();
+		}, true);
+		document.addEventListener("pointerup", function () {
+			if (coldrag !== null) {
+				coldrag = null;
+				colclick = Date.now();
+			}
+		}, true);
+		/* Taking hold of a border is not picking the column to sort. */
+		document.addEventListener("click", function (e) {
+			if (Date.now() - colclick < 350 || colEdge(e) !== null) {
+				e.stopPropagation();
+				e.preventDefault();
+			}
+		}, true);
+		document.addEventListener("dblclick", function (e) {
+			var th = colEdge(e);
+
+			if (th === null)
+				return;
+			delete colw[colKey(th)];
+			arcColsApply(document);
+			e.stopPropagation();
+			e.preventDefault();
+		}, true);
+
 		document.addEventListener("wheel", function (e) {
 			var svg = e.target.closest ? e.target.closest(
 			    "svg[data-wheel]") : null, m, p;

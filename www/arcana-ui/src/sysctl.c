@@ -336,7 +336,14 @@ view_sysctl(struct html *h, struct server *s)
 			h_raw(h, "</small></td></tr>");
 			continue;
 		}
-		h_raw(h, "<tr><td><b>");
+		if (jbool(o, "rw")) {
+			h_raw(h, "<tr class=\"pick\" data-act=\"sy-edit\" title="
+			    "\"Press to set it\"");
+			h_attr(h, "data-arg", name);
+			h_raw(h, "><td><b>");
+		} else
+			h_raw(h, "<tr class=\"ro\" title=\"The kernel does not "
+			    "let it be set\"><td><b>");
 		h_txt(h, name);
 		h_raw(h, "</b></td><td class=\"val\">");
 		h_txt(h, jstr(o, "value"));
@@ -565,8 +572,14 @@ view_transport(struct html *h, struct server *s)
 	sctp = strncmp(uri, "sctp:", 5) == 0;
 	tcp = strncmp(uri, "tcp:", 4) == 0;
 	has_sctp = sctp_up = false;
-	h_raw(h, "<section class=\"transport\"><h3>How it is reached</h3>"
-	    "<p class=\"dim\">The console's connection to the agent is kept "
+	h_raw(h, "<section class=\"transport\">");
+	box_head(h, "transport", "h3");
+	h_raw(h, "How it is reached</h3>");
+	if (box_shut("transport")) {
+		h_raw(h, "</section>");
+		return;
+	}
+	h_raw(h, "<p class=\"dim\">The console's connection to the agent is kept "
 	    "open and used again for the next request. ");
 	h_raw(h, sctp ? "It is an SCTP association: every request is a "
 	    "message of its own, and one that is lost does not hold up the "

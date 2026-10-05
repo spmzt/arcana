@@ -365,6 +365,9 @@ rail(struct html *h)
 	int			 i, run, all, idx, sidx, lim;
 	bool			 folded, selhere;
 
+	/* The firewall's parts are in the side bar while its tab is shown. */
+	if (firewall_rail(h))
+		return;
 	tree_caps(cap);
 	/* On a narrow screen the tree is one line until it is unfolded. */
 	s = cur_server();
@@ -1229,7 +1232,15 @@ dock(struct html *h)
 				h_raw(h, "<span class=\"d\">");
 				h_txt(h, dur);
 				h_raw(h, "</span>");
-			} else if (o->job > 0 || o->req != 0)
+			}
+			if (o->state == OP_FAILED && o->again != NULL)
+				h_fmt(h, "<button class=\"ghost small retry\" "
+				    "data-act=\"op-retry\" data-arg=\"%d\" "
+				    "title=\"Send it again, as it was\">Retry"
+				    "</button>", o->id);
+			if (o->state != OP_RUNNING)
+				;
+			else if (o->job > 0 || o->req != 0)
 				h_fmt(h, "<button class=\"icon\" "
 				    "data-act=\"op-cancel\" data-arg=\"%d\" "
 				    "title=\"%s\">×</button>", o->id, o->job > 0 ?
@@ -1880,6 +1891,34 @@ view_shell(struct html *h)
 	    "<div id=\"r-dock\" class=\"region\"></div></div>"
 	    "<div id=\"r-modal\" class=\"region\"></div>"
 	    "<div id=\"r-toasts\" class=\"region\"></div>");
+}
+
+/*
+ * A box that folds: its head is pressed to shut it and to open it
+ * again, and how it was left is kept in the browser.  box_head() is
+ * the head's attributes and its mark; box_shut() says not to draw what
+ * is under it.
+ */
+bool
+box_shut(const char *key)
+{
+	char	k[96];
+
+	snprintf(k, sizeof(k), "shut:%s", key);
+	return (arc_open_get(k) != 0);
+}
+
+void
+box_head(struct html *h, const char *key, const char *tag)
+{
+	char	k[96];
+
+	snprintf(k, sizeof(k), "shut:%s", key);
+	h_fmt(h, "<%s class=\"boxhead%s\" data-act=\"fold\"", tag,
+	    arc_open_get(k) != 0 ? " shut" : "");
+	h_attr(h, "data-arg", k);
+	h_fmt(h, " title=\"Fold, or unfold\"><i class=\"chev\">%s</i>",
+	    arc_open_get(k) != 0 ? "▸" : "▾");
 }
 
 /* Is the service drawer open?  The body lays out differently. */

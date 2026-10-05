@@ -262,6 +262,7 @@ struct op {
 	bool		 polling;
 	bool		 waiting;	/* the host does not answer; it runs on */
 	int		 what;		/* JOB_*: what to refresh when done */
+	char		*again;		/* a job as it was sent, to send again */
 	char		 target[256];	/* the jail or service */
 };
 
@@ -428,6 +429,9 @@ void		 confirm(const char *, const char *, const char *, bool,
 /* actions.c: what the buttons do. */
 void		 refresh_servers(void);
 void		 ops_save(void);
+void		 op_retry(int);
+bool		 box_shut(const char *);
+void		 box_head(struct html *, const char *, const char *);
 void		 ops_load(void);
 void		 job_send(struct server *, char *, const char *, int,
 		    const char *);
@@ -548,7 +552,12 @@ void		 apidoc_open(void);
 void		 view_apidoc(struct html *);
 bool		 apidoc_action(const char *, const char *, const char *);
 void		 net_live_tick(double);
+int		 routes_held(void);
+void		 network_more(struct server *);
 void		 refresh_firewall(struct server *, bool);
+bool		 firewall_rail(struct html *);
+bool		 firewall_rail_away(void);
+void		 firewall_tick(double);
 void		 view_firewall(struct html *, struct server *);
 bool		 firewall_form(const char *, const ucl_object_t *);
 bool		 firewall_action(const char *, const char *, const char *);

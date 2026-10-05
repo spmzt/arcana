@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.20.0"
+#define	ARCANA_AGENT_VERSION	"0.21.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -275,7 +275,7 @@ void		 service_state(struct work *, const char *, bool *, bool *);
 
 /* invidia/network.c */
 int		 do_network(struct work *, uint8_t, uint8_t, const char *,
-		    uint32_t, struct arc_network_rsp *);
+		    uint32_t, uint32_t, struct arc_network_rsp *);
 int		 do_route_lookup(struct work *, const char *, uint32_t,
 		    struct arc_route_lookup_rsp *);
 

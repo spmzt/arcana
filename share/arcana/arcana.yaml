@@ -627,6 +627,12 @@ attribute-sets:
         doc: |
           For transport: start the SCTP listeners that are not up, now
           that the kernel can.
+      - name: offset
+        type: u32
+        doc: |
+          For the routes of network: how many of the rows that would
+          be sent to leave out first, to read on in a table too large
+          for one reply.
 
   - name: host
     attributes:
@@ -1186,6 +1192,7 @@ operations:
           - net-filter
           - net-fib
           - jail
+          - offset
         required:
           - net-kind
       reply:

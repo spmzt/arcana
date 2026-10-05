@@ -3524,3 +3524,63 @@ button.danger { color: var(--red); border-color: rgba(var(--red-rgb), .5); }
 .fw-state { flex: 1 0 100%; }
 .toolbar:has(.fw-state) { flex-wrap: wrap; }
 
+/* A column's border is taken hold of to make it wider or narrower. */
+table.net th { position: relative; }
+table.net th::after { content: ""; position: absolute; top: 20%; bottom: 20%; right: 0; width: 1px; background: var(--line); }
+table.net th:last-child::after { display: none; }
+table.net th[style*="width"], table.net th[style*="width"] ~ th { overflow: hidden; text-overflow: ellipsis; }
+.op .retry { flex: none; }
+/* A box that folds. */
+.boxhead { cursor: pointer; user-select: none; }
+.boxhead .chev { display: inline-block; width: 1em; font-style: normal; color: var(--dim); }
+.boxhead.shut { margin-bottom: 0; }
+
+/* The firewall's side bar, and its switch. */
+.fwrail .back { flex: none; text-transform: none; letter-spacing: 0; }
+.fwrail .titem.host-of { color: var(--dim); font-size: .72rem; cursor: default; }
+.fwrail .tgroup { margin: .7rem .8rem .2rem; font-size: .62rem; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); list-style: none; }
+.fwrail .titem.fw { display: flex; align-items: baseline; gap: .5rem; padding: .32rem .8rem; cursor: pointer; }
+.fwrail .titem.fw .num { flex: none; width: 2.9rem; text-align: right; color: var(--dim); font-size: .68rem; font-variant-numeric: tabular-nums; }
+.fwrail .titem.fw .name { flex: 1; min-width: 0; font-size: .8rem; }
+.fwrail .titem.fw .count { color: var(--dim); font-size: .7rem; }
+.fwrail .titem.fw.none { opacity: .5; }
+.fwrail .titem.fw.selected { background: rgba(var(--accent-rgb), .1); box-shadow: inset 2px 0 0 var(--cyan); }
+.fwrail .titem.fw:hover { background: rgba(var(--accent-rgb), .06); }
+.fwbar { flex-wrap: wrap; }
+.fw-count { color: var(--fg-2); font-size: .78rem; flex: 1; min-width: 12rem; }
+.fw-count b { color: var(--fg); }
+button.switch {
+	display: inline-flex;
+	align-items: center;
+	gap: .5rem;
+	padding: .25rem .7rem .25rem .3rem;
+	border-radius: 999px;
+	border: 1px solid var(--line-2);
+	background: transparent;
+	color: var(--dim);
+	text-transform: none;
+	letter-spacing: 0;
+}
+button.switch i { width: 1.9rem; height: 1.05rem; border-radius: 999px; background: var(--line-2); position: relative; transition: background .2s; }
+button.switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: calc(1.05rem - 4px); height: calc(1.05rem - 4px); border-radius: 50%; background: var(--slate); transition: left .2s, background .2s; }
+button.switch.on { color: var(--green); border-color: var(--green); }
+button.switch.on i { background: rgba(10, 160, 90, .3); }
+button.switch.on i::after { left: calc(100% - 1.05rem + 2px); background: var(--green); box-shadow: 0 0 6px var(--green); }
+table.fw-rules tr.editing td { background: rgba(var(--accent-rgb), .06); }
+table.fw-rules tr.editing form { margin: 0; }
+h4.family .live { margin-left: .8rem; }
+table.sysctl tr.ro td { opacity: .75; }
+div.more { display: flex; align-items: center; gap: 1rem; margin: .8rem 0 1.4rem; }
+
+/* A bridge on the map: a box above its host, a dot for each member. */
+svg.topo g.tbridge { cursor: pointer; }
+svg.topo g.tbridge path { stroke: var(--blue, var(--cyan)); stroke-width: 1.2; fill: none; opacity: .7; }
+svg.topo g.tbridge rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--blue, var(--cyan)); stroke-width: 1.2; }
+svg.topo g.tbridge:hover rect { filter: drop-shadow(0 0 6px var(--cyan)); }
+svg.topo g.tbridge .name { font-size: 10px; font-weight: 700; fill: var(--fg); }
+svg.topo g.tbridge circle.p-fwd { fill: var(--green); }
+svg.topo g.tbridge circle.p-learn { fill: var(--amber); }
+svg.topo g.tbridge circle.p-block { fill: var(--red); }
+svg.topo g.tbridge circle.p-off { fill: var(--slate); }
+svg.topo path.tbrlink { stroke: var(--blue, var(--cyan)); stroke-width: 1.2; stroke-dasharray: 3 3; fill: none; opacity: .8; }
+

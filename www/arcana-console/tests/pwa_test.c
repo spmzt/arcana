@@ -1584,6 +1584,38 @@ ATF_TC_BODY(pwa, tc)
 	    ".click();");
 	shot("7n-sysctl");
 	/*
+	 * A column is as wide as its border is dragged, and stays so when
+	 * the table is drawn again; a double click on the border lets it
+	 * be as wide as what is in it.
+	 */
+	{
+		double	x, y, w0, w1;
+
+		x = js_num("document.querySelector('table.sysctl th')."
+		    "getBoundingClientRect().right");
+		y = js_num("(r => r.y + r.height / 2)(document.querySelector("
+		    "'table.sysctl th').getBoundingClientRect())");
+		w0 = js_num("document.querySelector('table.sysctl th')."
+		    "getBoundingClientRect().width");
+		mouse("pointerMove", x - 2, y);
+		mouse("pointerDown", 0, 0);
+		mouse("pointerMove", x + 70, y);
+		mouse("pointerUp", 0, 0);
+		usleep(1300000);
+		w1 = js_num("document.querySelector('table.sysctl th')."
+		    "getBoundingClientRect().width");
+		ATF_CHECK_MSG(w1 > w0 + 50, "the column was %.0f wide and is "
+		    "%.0f after its border was dragged by 72", w0, w1);
+		ATF_CHECK(js_true("document.querySelector('table.sysctl th')."
+		    "style.width !== ''"));
+		run("const th = document.querySelector('table.sysctl th'), r = "
+		    "th.getBoundingClientRect(); th.dispatchEvent(new MouseEvent("
+		    "'dblclick', { bubbles: true, cancelable: true, clientX: "
+		    "r.right - 2, clientY: r.y + 4 }));");
+		wait_js("document.querySelector('table.sysctl th').style.width "
+		    "=== ''", 5);
+	}
+	/*
 	 * The whole tree comes in parts, over the console's socket, and
 	 * the table fills as they arrive: more of it than one reply was
 	 * ever allowed to carry.
@@ -1629,14 +1661,16 @@ ATF_TC_BODY(pwa, tc)
 	 * set 1, which stays once the console is heard from again.
 	 */
 	run("document.querySelector('button.tab[data-arg=firewall]').click()");
-	wait_js("document.querySelectorAll('nav.fw-tabs button').length === 26 "
+	/* The layout is in the side bar, a line for each part, in place of
+	 * the hosts; the light that says it is on is the switch. */
+	wait_js("document.querySelectorAll('.fwrail .titem.fw').length === 28 "
 	    "&& document.querySelector('table.fw-layout tr.pick')", 20);
-	ATF_CHECK(js_true("document.querySelector('.fw-state .chip.ok') && "
-	    "document.querySelector('.fw-state').textContent.includes("
-	    "'7 rules now') && document.querySelector('.fw-state')."
-	    "textContent.includes('kept in')"));
+	ATF_CHECK(js_true("document.querySelector('button.switch.on[data-act="
+	    "fw-onoff]') && document.querySelector('.fw-count').textContent."
+	    "includes('7 rules now') && !document.querySelector('.tree "
+	    ".titem.server')"));
 	shot("7o-firewall-layout");
-	run("document.querySelector('nav.fw-tabs button[data-arg=\"10\"]')."
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"10\"]')."
 	    "click()");
 	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
 	    "') && document.querySelector('table.fw-rules tr[data-rule="
@@ -1658,18 +1692,69 @@ ATF_TC_BODY(pwa, tc)
 	    "8443 in$' ipfw.log && grep -q '^add 01500 allow tcp from any to "
 	    "me6 8443 in$' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
-	shot("7o-firewall-part");
 	/* A rule's number is one of its part's. */
 	run("const f = document.querySelector('form[data-form=fw-add]'); "
 	    "f.num.value = '5'; f.rule.value = 'allow ip from any to any'; "
 	    "f.requestSubmit();");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('from 1000 to 1999'))", 5);
-	run("document.querySelector('button[data-act=fw-file]').click()");
+	/* A rule is pressed, and changed in its own row: the words it is
+	 * kept with are the ones in the field; saved, the old one goes
+	 * and the new one comes, now and kept. */
+	wait_js("document.querySelector('table.fw-rules tr.pick[data-rule="
+	    "\"1001\"]')", 20);
+	run("document.querySelector('table.fw-rules tr.pick[data-rule=\"1001\"]"
+	    "').click()");
+	wait_js("document.querySelector('form[data-form=fw-edit] input[name="
+	    "rule]')", 5);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=fw-edit]')."
+	    "rule.value === 'allow tcp from any to me6 22 in' && document."
+	    "querySelector('form[data-form=fw-edit]').live.checked && document"
+	    ".querySelector('form[data-form=fw-edit]').persist.checked"));
+	shot("7o-firewall-part");
+	run("const f = document.querySelector('form[data-form=fw-edit]'); "
+	    "f.rule.value = 'allow tcp from any to me6 2222 in'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('ipfw add 1001 allow tcp from any to me6 "
+	    "2222') && t.textContent.includes('done'))", 20);
+	ATF_CHECK(system("grep -q '^ipfw -q delete 1001$' ipfw.log && grep -q "
+	    "'^ipfw -q add 1001 allow tcp from any to me6 2222 in$' ipfw.log "
+	    "&& grep -q '^add 01001 allow tcp from any to me6 2222 in$' "
+	    "ipfw.rules && ! grep -q 'me6 22 in' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* The kept rules as a text, and the connections let through now,
+	 * read again by themselves. */
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
+	    "click()");
 	wait_js("document.querySelector('form[data-form=fw-text] textarea') && "
 	    "document.querySelector('form[data-form=fw-text] textarea').value."
 	    "includes('add 01500 allow')", 10);
-	run("document.querySelector('button[data-act=fw-file]').click()");
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-2\"]')."
+	    "click()");
+	wait_js("document.querySelectorAll('table.fw-dyn tbody tr').length === "
+	    "2 && document.querySelector('table.fw-dyn').textContent.includes("
+	    "'2001:db8::9 51234 <-> 2001:db8::1 22') && document.querySelector("
+	    "'button.live.on[data-act=fw-live]')", 20);
+	shot("7o-firewall-dynamic");
+	run("window.fwn = 0; window.fetch1 = window.fetch; window.fetch = "
+	    "function (u, o) { if (String(u).includes('/net/ipfw')) window.fwn"
+	    "++; return window.fetch1(u, o); };");
+	wait_js("window.fwn >= 2", 15);
+	run("window.fetch = window.fetch1;");
+	/* A state pressed leads to the rule that made it. */
+	run("document.querySelector('table.fw-dyn tbody tr').click()");
+	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
+	    "')", 10);
+	/* Back to the hosts, and to the layout again. */
+	run("document.querySelector('.fwrail button[data-act=fw-rail]')."
+	    "click()");
+	wait_js("document.querySelector('.tree .titem.server') && document."
+	    "querySelector('.fwbar button[data-act=fw-rail]')", 5);
+	run("document.querySelector('.fwbar button[data-act=fw-rail]').click()");
+	wait_js("document.querySelector('.fwrail .titem.fw')", 5);
 	run("document.querySelector('button[data-act=fw-apply]').click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
@@ -1704,6 +1789,12 @@ ATF_TC_BODY(pwa, tc)
 	    ".port.st-nostp .warn') && document.querySelector('.pane.bridge')."
 	    "textContent.includes('filters VLANs')"));
 	shot("7p-bridge");
+	/* A bridge's box folds at its head, and unfolds. */
+	run("document.querySelector('.pane.bridge .boxhead .chev').click()");
+	wait_js("!document.querySelector('.pane.bridge .ports') && document."
+	    "querySelector('.pane.bridge .boxhead.shut')", 5);
+	run("document.querySelector('.pane.bridge .boxhead .chev').click()");
+	wait_js("document.querySelector('.pane.bridge .ports')", 5);
 	run("document.querySelector('.ports .port.st-nostp').click()");
 	wait_js("document.querySelector('form[data-form=br-port]')", 5);
 	ATF_CHECK(js_true("document.querySelector('.pane.bridge .notice.warn')"
@@ -1843,6 +1934,12 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelectorAll('svg.topo .tnode.up').length === 2",
 	    30);
 	wait_js("document.querySelector('.map-panel .facts')", 10);
+	/* A host's bridge is drawn above it: a dot for each member, in
+	 * the colour the spanning tree gave it. */
+	wait_js("document.querySelectorAll('svg.topo g.tbridge').length >= 1 "
+	    "&& document.querySelector('svg.topo g.tbridge circle.p-fwd') && "
+	    "document.querySelector('svg.topo g.tbridge circle.p-block') && "
+	    "document.querySelector('svg.topo g.tbridge circle.p-off')", 30);
 	shot("8-network");
 	/* The legend takes a kind of line out of the map, and puts it back. */
 	/* Picked with the mouse itself: it has to be reached by one. */

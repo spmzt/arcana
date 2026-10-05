@@ -637,6 +637,13 @@ network_body()
 	    -o not-match:'"destination":"10.0.0.0/24"' cat found.out
 	atf_check -o match:'"total":3000' -o match:'"truncated":"false"' \
 	    "$JGC" --libxo json -c "$SOCK" net routes -4 10.11.249.
+	# And read on: the rows after the first 2000, which are the rest.
+	atf_check -o save:more.out -e ignore "$JGC" -c "$SOCK" net routes -4 -o 2000
+	atf_check -o match:'"destination":"10.8.0.0/24"' \
+	    -o not-match:'"destination":"10.7.249.0/24"' \
+	    -o match:'"destination":"10.11.249.0/24"' cat more.out
+	atf_check -o match:'"total":3000' -o match:'"truncated":"false"' \
+	    "$JGC" --libxo json -c "$SOCK" net routes -4 -o 2000
 	rm huge
 }
 network_cleanup()
@@ -2546,6 +2553,10 @@ case "\$*" in
 	printf '# DISABLED 01001      0        0 set 1 allow tcp from any to me6 2222 in\n'
 	printf '65535     99     9999 set 31 deny ip from any to any\n' ;;
 "table all info") printf -- '--- table(T46), set(0) ---\n kindex: 1, type: addr\n' ;;
+"-D show")
+	printf '## Dynamic rules (2 136):\n'
+	printf '01001      7      560 (298s) STATE tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default\n'
+	printf '06101     12     1440 (3s) STATE udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default\n' ;;
 "-n -q "*) grep -q bogus "\$3" && { echo "ipfw: line 2: bad command bogus" >&2; exit 1; } ;;
 "-q add "*" refuse "*) echo "ipfw: unrecognised option refuse" >&2; exit 1 ;;
 "-q "*.arcana-load) cat "\$2" > $(pwd)/loaded.rules; grep -q fails "\$2" && { echo "ipfw: line 1: getsockopt(IP_FW_XADD): Invalid argument" >&2; exit 1; } ;;
@@ -2564,6 +2575,11 @@ EOS
 	    -o match:'\{"num":1001,"pkts":0,"bytes":0,"set":1,"text":"allow tcp from any to me6 2222 in","disabled":true\}' \
 	    -o match:'"tables":\["T46"\]' -o match:'"kept":\[\]' \
 	    -o match:'"file":false' cat fw.json
+	# The dynamic rules: the connections let through, each with its
+	# rule, its counters and how long it still lives.
+	atf_check -o match:'"dynamic_total":2,"dynamic":\[\{"num":1001,"pkts":7,"bytes":560,"ttl":298,"kind":"STATE","flow":"tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default"\}' \
+	    -o match:'\{"num":6101,"pkts":12,"bytes":1440,"ttl":3,"kind":"STATE","flow":"udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default"\}' \
+	    cat fw.json
 
 	# A rule added now, and deleted now.
 	atf_check -o match:'done +ipfw add 1002 allow tcp from any to me6 80 in \(now\)' \
