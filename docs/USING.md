@@ -603,6 +603,12 @@ The console is laid out as a tree and tabs.
   name trunk member vlans [untagged]`, `bridge name vlanfilter on |
   off`, `bridge name flag member [-]flag`, `bridge name set option
   value`, `bridge name addm | deletem member`.
+- **A bridge's own options and what it has learned**, at the foot of
+  its box: the spanning tree's protocol, priority and timers, how
+  many addresses it keeps and for how long, each in a field with what
+  the bridge has now, of which **Set what was changed** sets those
+  that differ; and the addresses it has learned, each with its VLAN,
+  the member it is behind and when it is forgotten.
 - **Geneve**: the geneve(4) tunnels, each with its mode (l2, Ethernet
   frames for a bridge; l3, IP packets that are routed), its
   identifier, its local address and the host or the multicast group

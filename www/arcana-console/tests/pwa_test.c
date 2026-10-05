@@ -2067,6 +2067,11 @@ ATF_TC_BODY(pwa, tc)
 	    "includes('trunk 10-20,30') && document.querySelector('.ports "
 	    ".port.st-nostp .warn') && document.querySelector('.pane.bridge')."
 	    "textContent.includes('filters VLANs')"));
+	/* What it has learned, and its own options, unfolded and set. */
+	ATF_CHECK(js_true("document.querySelector('table.brmac') && document."
+	    "querySelector('table.brmac').textContent.includes("
+	    "'02:00:00:00:00:01') && document.querySelector('form[data-form="
+	    "br-set] input[name=priority]')"));
 	shot("7p-bridge");
 	/* A bridge's box folds at its head, and unfolds. */
 	run("document.querySelector('.pane.bridge .boxhead .chev').click()");

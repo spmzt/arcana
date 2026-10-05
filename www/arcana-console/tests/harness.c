@@ -341,6 +341,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* ifconfig(8), for changes: what it was run with. */
 	put("fake-ifconfig", "#!/bin/sh\n"
 	    "[ \"$*\" = -av ] && { cat ifconfig.out; exit 0; }\n"
+	    "[ \"$2\" = addr ] && { printf '\\t02:00:00:00:00:01 Vlan10 "
+	    "epair0a 1193 flags=0<>\\n'; exit 0; }\n"
 	    "echo \"$*\" >> ifconfig.log\n"
 	    "[ \"$2\" = create ] && echo \"$1\"\nexit 0\n");
 	/* What ifconfig -a says: a bridge with its spanning tree and

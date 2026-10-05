@@ -22,9 +22,10 @@
   deleted; forms for NAT and pipes in place of ipfw's own words; a
   jail's firewall shown on or off as the jail has it (the page shows
   the host's switch).
-- Bridges and geneve, beyond what there is: a bridge's own options
-  from a form (priority, timers, protocol: the agent takes them), the
-  addresses a bridge has learned, a geneve tunnel's forwarding table.
+- A geneve tunnel's forwarding table: if_geneve keeps one and shows
+  no way to read it from userland (no sysctl as vxlan has, no dump
+  through netlink); once it does, shown as a bridge's addresses are.
+  A learned address of a bridge deleted, and a static one added.
 - Workflows: a chain of steps kept by the console and run by it on
   several hosts at once. As decided:
   - The spec is the schema the steps are made from: a table in

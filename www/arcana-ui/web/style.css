@@ -3679,3 +3679,6 @@ section.fwtable { margin-bottom: .8rem; }
 section.fwtable h4 .chip, section.fwtable h4 button { margin-left: .6rem; }
 .rail.fwrail .titem.jailfw .twig { color: var(--dim); margin-right: .3rem; }
 .rail.fwrail .titem.host-of { cursor: pointer; }
+.brmore h5 { margin: .9rem 0 .4rem; font-size: .76rem; font-weight: 600; color: var(--fg-2); }
+.brmore h5 .chip { margin-left: .5rem; }
+.brmore form.gn-set { margin-bottom: .4rem; }

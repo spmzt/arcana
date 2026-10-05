@@ -270,7 +270,10 @@ definitions:
           with its flags, port number, priority and path cost, its
           role and state in the spanning tree, the VLAN it is in
           untagged and those it carries tagged, and the addresses it
-          has, which a member should not have.
+          has, which a member should not have; and "learned", the
+          addresses the bridge has learned, each with its mac, vlan,
+          the member it is behind and when it expires, the first 500
+          of learned_total.
       - name: geneve
         doc: |
           The geneve(4) tunnels, as a JSON object with the array

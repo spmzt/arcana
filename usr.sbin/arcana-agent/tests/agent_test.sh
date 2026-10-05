@@ -2386,6 +2386,10 @@ l2_body()
 	cat > fake-ifconfig <<EOS
 #!/bin/sh
 if [ "\$*" = "-av" ]; then cat $(pwd)/ifconfig.out; exit 0; fi
+if [ "\$2" = addr ]; then
+	[ "\$1" = bridge0 ] && printf '\t02:00:00:00:00:01 Vlan10 epair0a 1193 flags=0<>\n\t02:00:00:00:00:02 Vlan1 em1 0 flags=1<STATIC>\n'
+	exit 0
+fi
 echo "\$*" >> $(pwd)/ifconfig.log
 case " \$* " in *" nosuch0 "*) echo "ifconfig: BRDGADD nosuch0: No such file or directory" >&2; exit 1 ;; esac
 exit 0
@@ -2439,6 +2443,9 @@ EOS
 	    -o match:'"root":"00:11:22:33:44:55","root_priority":4096,"root_cost":2000,"root_port":5' \
 	    -o match:'"vlanfilter":true' -o match:'"defuntagged":1' \
 	    -o match:'"is_root":false' cat br.json
+	# The addresses it has learned, and behind which member each is.
+	atf_check -o match:'"learned":\[\{"mac":"02:00:00:00:00:01","vlan":10,"member":"epair0a","expire":1193\},\{"mac":"02:00:00:00:00:02","vlan":1,"member":"em1","expire":0,"static":true\}\],"learned_total":2' \
+	    cat br.json
 	atf_check -o match:'"name":"epair5a","stp":true,"flags":\[[^]]*"stp"[^]]*\],"port":5,"priority":128,"cost":2000,"proto":"rstp","role":"root","state":"forwarding","untagged":10,"mode":"access"' \
 	    -o match:'"name":"em1","stp":false,[^}]*"addresses":\["192.0.2.7"\],"port":6,[^}]*"vlanproto":"802.1q","untagged":1,"tagged":"10-20,30","mode":"trunk"' \
 	    -o match:'"name":"tap3",[^}]*"role":"alternate","state":"discarding"\}' \
