@@ -83,6 +83,9 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_WIREGUARD] = "wireguard",
 	[ARC_NET_KIND_BIRD] = "bird",
 	[ARC_NET_KIND_BIRD_ROUTES] = "bird-routes",
+	[ARC_NET_KIND_BRIDGES] = "bridges",
+	[ARC_NET_KIND_GENEVE] = "geneve",
+	[ARC_NET_KIND_IPFW] = "ipfw",
 };
 
 static const char *service_action_names[] = {
@@ -289,6 +292,8 @@ worker(void *arg)
 	struct arc_stats_rsp	 str;
 	struct arc_kernel_rsp	 kr;
 	struct arc_transport_rsp tpr;
+	struct arc_ipfw_rules_req irq;
+	struct arc_ipfw_rules_rsp irr;
 	struct arc_sysctl_rsp	 scr2;
 	struct arc_storage_rsp	 stg;
 	struct arc_fstab_req	 fq;
@@ -395,6 +400,37 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &str.trace.v, &str.trace.n);
 		rc = arc_stats_reply(j->req, &str);
+		break;
+	case ARC_CMD_IPFW_RULES:
+		/* The text rides in ref, its checksum in sha256. */
+		what = wfmt(&w, "ipfw rules %s", j->ref == NULL ? "read" :
+		    j->refresh ? "check" : "write");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&irq, 0, sizeof(irq));
+		memset(&irr, 0, sizeof(irr));
+		irq.conf_text = j->ref;
+		irq.sha256 = j->sha256;
+		irq.dry_run = j->refresh;
+		irr.has_ok = true;
+		if (scope_enter(&w, j->jail, &irr.error) != 0)
+			;
+		else if (j->ref == NULL || j->refresh)
+			do_ipfw_rules(&w, &irq, &irr);
+		else {
+			pthread_mutex_lock(&change_lock);
+			if (change_note("%s", what))
+				do_ipfw_rules(&w, &irq, &irr);
+			else
+				irr.error = STOPPING;
+			change_note(NULL);
+			pthread_mutex_unlock(&change_lock);
+		}
+		ok = irr.ok;
+		error = irr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &irr.trace.v, &irr.trace.n);
+		rc = arc_ipfw_rules_reply(j->req, &irr);
 		break;
 	case ARC_CMD_TRANSPORT:
 		what = j->refresh ? "transport retry" : "transport";
@@ -1057,6 +1093,26 @@ arc_storage_doit(cbl_req *req, const struct arc_storage_req *rq,
 }
 
 int
+arc_ipfw_rules_doit(cbl_req *req, const struct arc_ipfw_rules_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_IPFW_RULES;
+	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
+	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
+	j->refresh = rq->dry_run;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
 arc_transport_doit(cbl_req *req, const struct arc_transport_req *rq,
     void *arg __unused)
 {
@@ -1213,7 +1269,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SYSCTL)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_GENEVE)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1270,6 +1326,17 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_GPART:
 	case ARC_JOB_KIND_CAM:
 		if ((e = storage_check(sp)) != NULL)
+			return (e);
+		break;
+	case ARC_JOB_KIND_IPFW:
+		if ((e = ipfw_check(sp)) != NULL)
+			return (e);
+		break;
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+		if (sp->safe)
+			return ("it is not taken back by itself");
+		if ((e = l2_check(sp)) != NULL)
 			return (e);
 		break;
 	case ARC_JOB_KIND_SYSCTL:

@@ -333,6 +333,9 @@ job_finished(struct op *op, bool ok, const char *err)
 	case JOB_SYSCTL:
 		refresh_sysctl(s, true);
 		break;
+	case JOB_FIREWALL:
+		refresh_firewall(s, true);
+		break;
 	case JOB_STORAGE:
 		refresh_storage(s, true);
 		break;
@@ -1351,7 +1354,8 @@ void
 refresh_network(struct server *s, bool user)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets", "interfaces", "netgraph", "wireguard", "bird" };
+	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
+	    "bridges", "geneve" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];

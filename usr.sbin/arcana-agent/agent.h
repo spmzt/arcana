@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.19.0"
+#define	ARCANA_AGENT_VERSION	"0.20.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -92,6 +92,8 @@ struct opts {
 	const char	*umount_bin;
 	const char	*fstab_path;
 	const char	*sysctl_bin;
+	const char	*ipfw_bin;
+	const char	*ipfw_rules;
 	const char	*sysctl_conf;
 	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
@@ -354,6 +356,21 @@ bool		 sysctl_name_ok(const char *);
 bool		 sysctl_part(struct cbl_dump_state *, const char *, char **,
 		    uint64_t *);
 bool		 sysctl_value_ok(const char *);
+int		 do_l2(struct work *, bool, struct arc_network_rsp *);
+const char	*bridge_holding(struct work *, const char *);
+const char	*l2_check(const struct arc_job_spec *);
+char		*l2_title(const struct arc_job_spec *);
+int		 do_l2_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+int		 do_ipfw(struct work *, struct arc_network_rsp *);
+int		 do_ipfw_rules(struct work *, const struct arc_ipfw_rules_req *,
+		    struct arc_ipfw_rules_rsp *);
+const char	*ipfw_check(const struct arc_job_spec *);
+char		*ipfw_title(const struct arc_job_spec *);
+int		 do_ipfw_job(struct work *, const struct arc_job_spec *, bool *,
+		    const char **);
+const char	*ipfw_settle(struct work *, bool);
+const char	*ipfw_unadd(struct work *, const struct arc_job_spec *);
 int		 transport_watch(cbl_ctx *);
 void		 transport_add(const char *, cbl_listener *);
 void		 transport_init(cbl_ctx *, cbl_loop *, cbl_tls *);

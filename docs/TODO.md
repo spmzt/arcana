@@ -8,13 +8,14 @@
 - Storage, beyond what there is: `zfs send` and `receive` between
   hosts; encryption keys; a file system made on a partition (newfs) and
   grown; swap; a disk's health (SMART); a vnet jail's own datasets.
-- The firewall, ipfw(8): its rules, sets, tables and counters read;
-  a rule added, moved and deleted, a table's entries changed, by
-  jobs with every word checked, in safe mode so that a rule that cuts
-  the console off is taken back; what is kept in rc.conf
-  (`firewall_enable`, `firewall_type`, `firewall_script`) and the
-  module in the kernel; in a vnet jail as on a host; its NAT, pipes
-  and queues after that.
+- The firewall, beyond what there is: its tables' entries read and
+  changed, NAT and NAT64 instances made from forms and not only as
+  lines of the kept rules, pipes and queues, the dynamic rules shown,
+  a rule moved, and a jail's firewall from the jail's page (the agent
+  takes the jail; the page asks only for the host).
+- Bridges and geneve, beyond what there is: a bridge's own options
+  from a form (priority, timers, protocol: the agent takes them), the
+  addresses a bridge has learned, a geneve tunnel's forwarding table.
 - Workflows: a chain of steps kept by the console and run by it on
   several hosts at once. As decided:
   - The spec is the schema the steps are made from: a table in
@@ -193,6 +194,23 @@ What was once in the list above, and when it was run:
   with the real sysctl(8), and a read-only one refused as sysctl says.
 - The agent's tests that need root, on that machine too. They share
   one jail, and are now marked never to run side by side.
+
+- The firewall, bridges and geneve (2026-10-05, on the test machine,
+  with the real ipfw(8) and ifconfig(8)): a rule added now and
+  deleted; rules kept, and applied through set 1 and the swap, with a
+  table of the kept file made in it; in safe mode the old rules
+  swapped back by the host when nothing confirmed, and the new ones
+  left with set 1 emptied when it was; a text ipfw refuses not kept,
+  with ipfw's own words; the firewall turned off and on. A bridge
+  with two members: VLAN filtering, an access port and a trunk, both
+  in the spanning tree, read back as ifconfig has them, with role and
+  state; an address refused on a member, and one put there by hand
+  shown. Geneve tunnels made in l2 to a host and in l3 to a multicast
+  group with TTL, DF and DSCP inherited, their options set and read
+  back. Not run for real: any of it in a vnet jail, what is kept in
+  rc.conf for a bridge or a tunnel, NAT and NAT64, a spanning tree
+  with more than one bridge in it (every port there was designated
+  and forwarding), and traffic through a geneve tunnel.
 
 ## Known limits
 

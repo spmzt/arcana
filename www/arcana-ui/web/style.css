@@ -3460,3 +3460,67 @@ ul.apiops { list-style: none; margin: .8rem 0 0; padding: 0; display: grid; gap:
 /* A listener the agent has that the console has not tried: no colour. */
 ul.listeners li.idle .led { background: transparent; box-shadow: inset 0 0 0 1.5px var(--slate); }
 
+/* The firewall: a tab for each part of the layout. */
+.fw-state { display: flex; align-items: center; gap: .6rem; flex: 1; min-width: 0; }
+.chip.ok { border-color: var(--green); color: var(--green); }
+.chip.warn { border-color: var(--amber); color: var(--amber); }
+nav.fw-tabs { display: flex; flex-wrap: wrap; gap: .25rem; margin: .2rem 0 1rem; align-items: center; }
+nav.fw-tabs button { text-transform: none; letter-spacing: 0; }
+nav.fw-tabs button.on { color: var(--cyan); border-color: var(--cyan); }
+nav.fw-tabs button.none { opacity: .55; }
+nav.fw-tabs button small { margin-left: .4rem; color: var(--dim); }
+nav.fw-tabs .sep { flex: 1 0 100%; font-size: .66rem; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin-top: .3rem; }
+table.fw-layout tr.group td { color: var(--dim); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; padding-top: 1rem; }
+table.fw-layout td small { display: block; font-size: .7rem; }
+table.fw-rules td.rule { word-break: break-word; }
+table.fw-rules tr.off td { opacity: .6; }
+form.fw-add { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin: .4rem 0 .8rem; }
+form.fw-add input[name=rule] { flex: 1 1 18rem; min-width: 0; }
+form.fw-add input[name=num] { width: 5.5rem; }
+.fw-file textarea { width: 100%; min-height: 16rem; }
+.fw-file .actions { display: flex; gap: .5rem; margin-top: .5rem; }
+
+/* A bridge, as the switch it is: a port for each member. */
+.pane.bridge { margin-bottom: 1rem; }
+.pane.bridge h4 { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.pane.bridge h4 button { margin-left: auto; }
+.ports { display: flex; flex-wrap: wrap; gap: .5rem; margin: .7rem 0 .4rem; }
+.port {
+	--c: var(--slate);
+	display: grid;
+	gap: .15rem;
+	min-width: 8.5rem;
+	padding: .5rem .6rem;
+	border: 1px solid var(--line);
+	border-top: 3px solid var(--c);
+	background: rgba(var(--surface-rgb), .6);
+	cursor: pointer;
+}
+.port:hover, .port.sel { border-color: var(--c); }
+.port .led { display: inline-block; width: .55rem; height: .55rem; border-radius: 50%; background: var(--c); }
+.port b { font-weight: 600; }
+.port small { color: var(--dim); font-size: .68rem; }
+.port .vl { font-size: .72rem; color: var(--fg-2); }
+.port .warn { font-size: .68rem; color: var(--amber); }
+.port.st-forwarding { --c: var(--green); }
+.port.st-learning, .port.st-listening { --c: var(--amber); }
+.port.st-discarding, .port.st-blocking { --c: var(--red); }
+.port.st-disabled, .port.st-nostp, .port.st-unknown { --c: var(--slate); }
+.map-legend.static { position: static; pointer-events: auto; margin: 0 0 .6rem; background: none; padding: 0; }
+.map-legend .p-fwd::before { border-color: var(--green); }
+.map-legend .p-learn::before { border-color: var(--amber); }
+.map-legend .p-block::before { border-color: var(--red); }
+.map-legend .p-off::before { border-color: var(--slate); }
+form.br-port, form.gn-set { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .6rem; margin: .5rem 0 .8rem; padding: .6rem; border: 1px dashed var(--line-2); }
+form.br-port label, form.gn-set label { display: grid; gap: .2rem; font-size: .72rem; color: var(--fg-2); }
+form.gn-set label { flex: 1 1 12rem; }
+form.gn-set label.toggle, form.br-port label.toggle { display: flex; flex: none; align-items: center; }
+form.gn-set .actions { display: flex; gap: .5rem; flex: 1 0 100%; }
+button.danger { color: var(--red); border-color: rgba(var(--red-rgb), .5); }
+
+/* More tabs than a row holds are scrolled, at any width. */
+.tabs { overflow-x: auto; scrollbar-width: none; }
+.tabs .tab { flex: none; }
+.fw-state { flex: 1 0 100%; }
+.toolbar:has(.fw-state) { flex-wrap: wrap; }
+

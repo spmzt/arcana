@@ -598,11 +598,12 @@ view_transport(struct html *h, struct server *s)
 		 * its own way in alone; another the agent listens on is
 		 * that, and no more, until it is tried.
 		 */
-		h_fmt(h, "<li class=\"%s\"><span class=\"led\"></span><code>",
-		    mine ? "up" : up ? "idle" : "down");
+		h_fmt(h, "<li class=\"%s\"", mine ? "up" : up ? "idle" :
+		    "down");
 		h_attr(h, "title", mine ? "The console reaches the agent "
 		    "this way now" : up ? "The agent listens here; the console "
 		    "has not tried it" : "The agent does not listen here");
+		h_raw(h, "><span class=\"led\"></span><code>");
 		h_txt(h, jstr(o, "uri"));
 		h_raw(h, "</code>");
 		if (mine)

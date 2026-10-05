@@ -67,6 +67,8 @@ struct opts opts = {
 	.umount_bin = PATH_UMOUNT_BIN,
 	.fstab_path = PATH_FSTAB,
 	.sysctl_bin = "/sbin/sysctl",
+	.ipfw_bin = "/sbin/ipfw",
+	.ipfw_rules = "/usr/local/etc/arcana/ipfw.rules",
 	.sysctl_conf = "/etc/sysctl.conf",
 	.wg_bin = PATH_WG_BIN,
 	.wg_dir = PATH_WG_DIR,
@@ -108,6 +110,7 @@ usage(void)
 	    "[-I ifconfig]\n"
 	    "                 [-r route] [-w seconds] [-Q sysctl] "
 	    "[-O sysctl.conf]\n"
+	    "                 [-h ipfw] [-J ipfw.rules]\n"
 	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
 	exit(2);
@@ -301,7 +304,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:I:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vw:W:X:x:Y:y:Z:z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vw:W:X:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -336,6 +339,12 @@ main(int argc, char *argv[])
 			if (nl == MAX_LISTEN)
 				errx(1, "at most %d listeners", MAX_LISTEN);
 			uris[nl++] = optarg;
+			break;
+		case 'h':
+			opts.ipfw_bin = optarg;
+			break;
+		case 'J':
+			opts.ipfw_rules = optarg;
 			break;
 		case 'O':
 			opts.sysctl_conf = optarg;

@@ -48,6 +48,8 @@
 .Op Fl u Ar umount
 .Op Fl S Ar fstab
 .Op Fl Q Ar sysctl
+.Op Fl h Ar ipfw
+.Op Fl J Ar ipfw.rules
 .Op Fl O Ar sysctl.conf
 .Op Fl H Ar helper
 .Op Fl w Ar seconds
@@ -294,6 +296,15 @@ The
 read, and edited.
 Default:
 .Pa /etc/fstab .
+.It Fl h Ar ipfw , Fl J Ar ipfw.rules
+The
+.Xr ipfw 8
+program, and the file of its commands that holds the kept rules of the
+firewall.
+Default:
+.Pa /sbin/ipfw
+and
+.Pa /usr/local/etc/arcana/ipfw.rules .
 .It Fl Q Ar sysctl , Fl O Ar sysctl.conf
 The
 .Xr sysctl 8

@@ -185,7 +185,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[76];
+	char	*argv[84];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -328,8 +328,74 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "echo \"$last $(cut -d' ' -f1,2 hostkey.pub)\"\n");
 	ATF_REQUIRE(chmod("fake-keyscan", 0755) == 0);
 	/* ifconfig(8), for changes: what it was run with. */
-	put("fake-ifconfig", "#!/bin/sh\necho \"$*\" >> ifconfig.log\n"
+	put("fake-ifconfig", "#!/bin/sh\n"
+	    "[ \"$*\" = -av ] && { cat ifconfig.out; exit 0; }\n"
+	    "echo \"$*\" >> ifconfig.log\n"
 	    "[ \"$2\" = create ] && echo \"$1\"\nexit 0\n");
+	/* What ifconfig -a says: a bridge with its spanning tree and
+	 * VLANs, a member with an address, and two geneve tunnels. */
+	put("ifconfig.out",
+	    "bridge0: flags=1008843<UP,BROADCAST,RUNNING> metric 0 mtu 1500\n"
+	    "\tinet 10.7.0.1 netmask 0xffffff00 broadcast 10.7.0.255\n"
+	    "\tid 58:9c:fc:10:ff:aa priority 32768 hellotime 2 fwddelay 15\n"
+	    "\tmaxage 20 holdcnt 6 proto rstp maxaddr 2000 timeout 1200\n"
+	    "\troot id 00:11:22:33:44:55 priority 4096 ifcost 2000 port 5\n"
+	    "\tbridge flags=1<VLANFILTER> defuntagged=1\n"
+	    "\tmember: epair5a flags=1c7<LEARNING,DISCOVER,STP,AUTOEDGE,PTP,"
+	    "AUTOPTP>\n"
+	    "\t        port 5 priority 128 path cost 2000 proto rstp\n"
+	    "\t        role root state forwarding untagged 10\n"
+	    "\tmember: em1 flags=143<LEARNING,DISCOVER,AUTOEDGE,AUTOPTP>\n"
+	    "\t        port 6 priority 128 path cost 20000 vlan protocol "
+	    "802.1q untagged 1 tagged 10-20,30\n"
+	    "\tmember: tap3 flags=147<LEARNING,DISCOVER,STP,AUTOEDGE,AUTOPTP>\n"
+	    "\t        port 7 priority 128 path cost 2000000 proto rstp\n"
+	    "\t        role alternate state discarding\n"
+	    "\tgroups: bridge\n"
+	    "em1: flags=8863<UP,BROADCAST,RUNNING> metric 0 mtu 1500\n"
+	    "\tinet 192.0.2.7 netmask 0xffffff00 broadcast 192.0.2.255\n"
+	    "geneve0: flags=8843<UP,BROADCAST,RUNNING> metric 0 mtu 1450\n"
+	    "\tgeneve mode: l2\n\tgeneve config:\n"
+	    "\t\tvirtual network identifier (vni): 100\n"
+	    "\t\tlocal: 198.51.100.10:6081\n"
+	    "\t\tremote: 203.0.113.1:6081\n"
+	    "\t\tportrange: 49152-65535, ttl: 64, df: unset\n"
+	    "\t\tftable mode: learning, count: 2, max: 2000, timeout: 1200\n"
+	    "geneve1: flags=8051<UP,POINTOPOINT,RUNNING> metric 0 mtu 1450\n"
+	    "\tgeneve mode: l3\n\tgeneve config:\n"
+	    "\t\tvirtual network identifier (vni): 42\n"
+	    "\t\tlocal: [3fff::1]:6081\n"
+	    "\t\tgroup: [ff08::db8:1]:6081, dev: em0\n"
+	    "\t\tportrange: 49152-65535, ttl: inherit, dscp: inherit, df: "
+	    "inherit\n");
+	/* ipfw(8): its rules are canned, the rest is logged; a file it
+	 * is to check is refused when it has the word bogus. */
+	put("fake-ipfw", "#!/bin/sh\necho \"ipfw $*\" >> ipfw.log\n"
+	    "case \"$*\" in\n"
+	    "'-S show')\n"
+	    "printf '00005     12      900 set 0 skipto 500 ip from any to "
+	    "any out\\n'\n"
+	    "printf '00020      1       60 set 0 call 9100 ip from any to "
+	    "any in\\n'\n"
+	    "printf '00200      0        0 set 0 check-state :default\\n'\n"
+	    "printf '01001      3      180 set 0 allow tcp from any to me6 "
+	    "22 in\\n'\n"
+	    "printf '01999      9      540 set 0 return via any\\n'\n"
+	    "printf '09100      0        0 set 0 deny udp from any 5678 to "
+	    "any 5678 in\\n'\n"
+	    "printf '65535     99     9999 set 31 deny ip from any to any"
+	    "\\n' ;;\n"
+	    "'table all info') printf -- '--- table(T46), set(0) ---\\n' ;;\n"
+	    "'-n -q '*) grep -q bogus \"$3\" && { echo 'ipfw: line 2: bad "
+	    "command bogus' >&2; exit 1; } ;;\n"
+	    "'-q '*.arcana-load) cat \"$2\" > loaded.rules ;;\n"
+	    "esac\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-ipfw", 0755) == 0);
+	put("ipfw.rules", "add 00005 skipto 500 all from any to any out\n"
+	    "add 00200 check-state\n"
+	    "add 01001 allow tcp from any to me6 22 in\n"
+	    "add 01002 allow tcp from any to me6 80 in\n"
+	    "add 01999 return via any\n");
 	put("fake-route", "#!/bin/sh\necho \"$*\" >> route.log\n"
 	    "[ \"$2\" = get ] && printf '   route to: %s\\ndestination: "
 	    "10.77.0.0\\n       mask: 255.255.0.0\\n    gateway: 10.0.0.1\\n"
@@ -612,7 +678,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[71] = (char *)(uintptr_t)"./fake-sysctl";
 	argv[72] = (char *)(uintptr_t)"-O";
 	argv[73] = (char *)(uintptr_t)"sysctl.conf";
-	argv[74] = NULL;
+	argv[74] = (char *)(uintptr_t)"-h";
+	argv[75] = (char *)(uintptr_t)"./fake-ipfw";
+	argv[76] = (char *)(uintptr_t)"-J";
+	argv[77] = (char *)(uintptr_t)"ipfw.rules";
+	argv[78] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

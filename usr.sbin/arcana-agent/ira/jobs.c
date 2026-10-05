@@ -97,8 +97,9 @@ static bool
 scoped(const struct arc_job_spec *sp)
 {
 
-	return (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->kind <=
-	    ARC_JOB_KIND_BIRD);
+	return ((sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->kind <=
+	    ARC_JOB_KIND_BIRD) || sp->kind == ARC_JOB_KIND_IPFW || sp->kind ==
+	    ARC_JOB_KIND_BRIDGE || sp->kind == ARC_JOB_KIND_GENEVE);
 }
 
 /* What the job does, in words: the activity log's line for it. */
@@ -178,6 +179,13 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_SYSCTL:
 		rc = asprintf(&t, "sysctl %s=%s%s", sp->names.v[0],
 		    sp->names.v[1], sp->persist ? " (kept)" : "");
+		break;
+	case ARC_JOB_KIND_IPFW:
+		rc = (t = ipfw_title(sp)) != NULL ? 0 : -1;
+		break;
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+		rc = (t = l2_title(sp)) != NULL ? 0 : -1;
 		break;
 	case ARC_JOB_KIND_ZFS:
 	case ARC_JOB_KIND_ZPOOL:
@@ -569,6 +577,27 @@ undo(struct qjob *j)
 		rc = do_kmod(&j->w, strcmp(sp->verb, "load") == 0 ? "unload" :
 		    "load", sp->names.v[0], sp->persist, &e);
 		break;
+	case ARC_JOB_KIND_IPFW:
+		/*
+		 * The rules that were there are swapped back in; a rule
+		 * added is deleted; on becomes off, and off on.
+		 */
+		if (strcmp(sp->verb, "apply") == 0)
+			e = ipfw_settle(&j->w, false);
+		else if (strcmp(sp->verb, "add") == 0)
+			e = ipfw_unadd(&j->w, sp);
+		else {
+			struct arc_job_spec	back;
+			bool			held;
+
+			back = *sp;
+			back.safe = false;
+			back.verb = strcmp(sp->verb, "enable") == 0 ?
+			    "disable" : "enable";
+			(void)do_ipfw_job(&j->w, &back, &held, &e);
+		}
+		rc = e == NULL ? 0 : -1;
+		break;
 	case ARC_JOB_KIND_IF_VNET:
 		rc = do_if_vnet(&j->w, j->made != NULL ? j->made :
 		    sp->interface, sp->jail, !sp->remove, sp->persist, &e);
@@ -652,9 +681,10 @@ run(struct qjob *j)
 	struct arc_pkg_upgrade_rsp	 ur;
 	const struct arc_job_spec	*sp;
 	const char			*error;
-	bool				 ok, go, inside;
+	bool				 ok, go, inside, held;
 	int				 root;
 
+	held = false;
 	sp = &j->spec;
 	root = step_begin(&j->w, ARC_STEP_KIND_DAEMON, "arcana-agent", "job %ju: %s",
 	    (uintmax_t)j->id, j->title);
@@ -745,6 +775,15 @@ run(struct qjob *j)
 		ok = do_sysctl_set(&j->w, sp->names.v[0], sp->names.v[1],
 		    sp->persist, &error) == 0;
 		break;
+	case ARC_JOB_KIND_IPFW:
+		error = NULL;
+		ok = do_ipfw_job(&j->w, sp, &held, &error) == 0;
+		break;
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
+		error = NULL;
+		ok = do_l2_job(&j->w, sp, &error) == 0;
+		break;
 	case ARC_JOB_KIND_ZFS:
 	case ARC_JOB_KIND_ZPOOL:
 	case ARC_JOB_KIND_MOUNT:
@@ -799,7 +838,11 @@ run(struct qjob *j)
 	if (ok && go && sp->safe && !await_confirm(j)) {
 		ok = false;
 		error = undo(j);
+		held = false;
 	}
+	/* The firewall's old rules waited for that: now they go. */
+	if (held)
+		(void)ipfw_settle(&j->w, true);
 	(void)change_note(NULL);
 	pthread_mutex_unlock(&change_lock);
 	step_end(&j->w, root, ok, NULL);

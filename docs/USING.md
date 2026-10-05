@@ -153,6 +153,52 @@ The console is laid out as a tree and tabs.
     `vmstat -m` and `vmstat -z` count them, which is where a module's
     own memory shows. From a shell: `arcanactl kmod`, `arcanactl [-p]
     kmod load | unload module`.
+  - **Firewall**: ipfw(8), laid out as a ruleset is written here. A
+    main chain that every packet walks in the order of the numbers,
+    and the parts it calls, each ending in its return; **Layout**
+    lists them, and each has a tab of its own with the rules whose
+    numbers are its:
+
+    | Numbers | Part |
+    |---|---|
+    | 1–8 | Outgoing jump |
+    | 9–99 | Before incoming NAT |
+    | 100–199 | Incoming NAT |
+    | 200–299 | Check-state after incoming NAT |
+    | 300–399 | Incoming NAT64 |
+    | 400–499 | After incoming NAT |
+    | 500–599 | Before outgoing NAT |
+    | 600–699 | Outgoing NAT |
+    | 700–799 | Check-state after outgoing NAT |
+    | 800–999 | After outgoing NAT |
+    | 1000–8999 | IPv6 and IPv4, to me and from me, before and after NAT: eight parts of a thousand each |
+    | 9000–9099 | IPv6 link-locals only |
+    | 9100–9199 | Silent drop |
+    | 9200–9999 | Dangerous packets |
+    | 10000–13999 | IPv6 and IPv4, incoming and outgoing forward |
+
+    A part's table has each rule with its counters and where it is:
+    in the kernel now, kept, or both. A rule is added with its number
+    and its words as ipfw takes them, **now** (into what the kernel
+    has), **keep** (into the kept rules), or both, and deleted the
+    same ways. The kept rules are a file of ipfw's own commands, one a
+    line (`add 01001 allow tcp from any to me6 22 in`, and `table`,
+    `nat` and `nat64…` lines), which the host loads when it starts;
+    **Kept rules as text** shows it to be changed as a whole, checked
+    by ipfw without being done, and for a host that has none **Start
+    from the layout** fills it with the chain, its calls and returns.
+    **Apply the kept rules** makes them the whole ruleset without a
+    gap: they are loaded into set 1 while it is disabled, and set 1
+    is swapped with set 0, so no packet meets half a ruleset. The
+    rules that were there wait in set 1: if the console does not
+    reach the host afterwards, the host swaps them back by itself.
+    **Turn on** is taken back the same way. A rule's words are
+    checked to be ipfw's, with nothing a shell would read, and the
+    sets are not a rule's to name. ipfw must be in the kernel; Arcana
+    does not load it. From a shell: `arcanactl net ipfw`, `arcanactl
+    [-p] ipfw add number rule…`, `ipfw keep add …`, `ipfw [keep]
+    delete number`, `[-s] ipfw apply`, `ipfw enable | disable`,
+    `ipfw rules [-w file] [-n]`.
   - **Sysctl**: the kernel's state, a part of the tree at a time
     (**kern**, **vm**, **net** and the others, or from a name typed),
     read from the kernel as `sysctl -a` has it: each name with its
@@ -387,6 +433,34 @@ The console is laid out as a tree and tabs.
   the list at it, where each also has the time it began. The tasks
   that ended are kept in the browser and are still there when the
   page is opened again, without their traces.
+- **Bridges**, in a host's network or a jail's: each bridge drawn as
+  the switch it is, a port for each member, coloured by what the
+  spanning tree made of it (forwarding, on its way, held back, or not
+  in the tree), with its role, and the VLAN it is in untagged or those
+  it carries tagged. Above them: whether the bridge filters VLANs,
+  which bridge is the root of the tree and through which port and at
+  what cost it is reached. A port picked is made an **access port**
+  (one VLAN untagged, none tagged) or a **trunk** (a list of VLANs
+  tagged, and perhaps one untagged), put into or taken out of the
+  spanning tree, made an edge port, or taken out of the bridge; kept
+  in `rc.conf` when asked. A member of a bridge takes no address
+  here: its addresses belong on the bridge. One that has some is
+  marked, and they can be removed. From a shell: `arcanactl net
+  bridges`, `arcanactl [-p] bridge name access member vlan`, `bridge
+  name trunk member vlans [untagged]`, `bridge name vlanfilter on |
+  off`, `bridge name flag member [-]flag`, `bridge name set option
+  value`, `bridge name addm | deletem member`.
+- **Geneve**: the geneve(4) tunnels, each with its mode (l2, Ethernet
+  frames for a bridge; l3, IP packets that are routed), its
+  identifier, its local address and the host or the multicast group
+  it leads to. **+ geneve tunnel** makes one, in the mode it will
+  keep; a tunnel picked has every option to be set: identifier,
+  addresses, group and its device, TTL and don't-fragment (each also
+  inherited from the packet inside), DSCP inherited, the port range,
+  learning and its table's size and timeout, external control.
+  **Flush** empties its forwarding table. From a shell: `arcanactl net
+  geneve`, `arcanactl [-p] geneve name create | set option value …`,
+  `geneve name flush [all]`.
 - **Connections** and **Sockets**, in a host's network, are read again
   every two seconds while they are shown, without a task of their own
   in the activity; **Live** pauses that.

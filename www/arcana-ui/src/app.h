@@ -144,6 +144,7 @@ enum tab {
 	TAB_JAILS,
 	TAB_SERVICES,
 	TAB_NETWORK,
+	TAB_FIREWALL,
 	TAB_PACKAGES,
 	TAB_STORAGE,
 	TAB_KERNEL,
@@ -172,6 +173,8 @@ enum netkind {
 	NET_NETGRAPH,
 	NET_WIREGUARD,
 	NET_BIRD,
+	NET_BRIDGES,
+	NET_GENEVE,
 };
 
 /* The network tab's one table: what is shown, from which server. */
@@ -272,6 +275,7 @@ enum {
 	JOB_IFACE,
 	JOB_KERNEL,
 	JOB_SYSCTL,
+	JOB_FIREWALL,
 	JOB_STORAGE,
 };
 
@@ -544,6 +548,16 @@ void		 apidoc_open(void);
 void		 view_apidoc(struct html *);
 bool		 apidoc_action(const char *, const char *, const char *);
 void		 net_live_tick(double);
+void		 refresh_firewall(struct server *, bool);
+void		 view_firewall(struct html *, struct server *);
+bool		 firewall_form(const char *, const ucl_object_t *);
+bool		 firewall_action(const char *, const char *, const char *);
+void		 view_bridges(struct html *, struct server *,
+		    const ucl_object_t *);
+void		 view_geneve(struct html *, struct server *,
+		    const ucl_object_t *);
+bool		 l2_form(const char *, const ucl_object_t *);
+bool		 l2_action(const char *, const char *, const char *);
 void		 refresh_sysctl(struct server *, bool);
 void		 sysctl_stream(const ucl_object_t *);
 void		 view_sysctl(struct html *, struct server *);

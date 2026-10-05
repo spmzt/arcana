@@ -1732,6 +1732,107 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 
 	/*
+	 * The firewall: its rules with their sets and counters, and the
+	 * kept ones; a rule kept by a job; the kept rules read, checked
+	 * and replaced, and applied through set 1.
+	 */
+	snprintf(path, sizeof(path), "%.*s/net/ipfw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "data.loaded"));
+	ATF_CHECK_STREQ("5", jstr(&r, "data.rules.0.num"));
+	ATF_CHECK_STREQ("skipto 500 ip from any to any out", jstr(&r,
+	    "data.rules.0.text"));
+	ATF_CHECK_STREQ("900", jstr(&r, "data.rules.0.bytes"));
+	ATF_CHECK_STREQ("T46", jstr(&r, "data.tables.0"));
+	ATF_CHECK_STREQ("1002", jstr(&r, "data.kept.3.num"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"ipfw\",\"verb\":\"add\","
+	    "\"args\":[\"1003\",\"allow\",\"tcp\",\"from\",\"any\",\"to\","
+	    "\"me6\",\"443\",\"in\"],\"persist\":true,\"live\":true},"
+	    "{\"kind\":\"ipfw\",\"verb\":\"apply\"}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ipfw add 1003 allow tcp from any to me6 443 in "
+	    "(now, and kept)", jstr(&r, "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'set swap 0 1' ipfw.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q add 1003 allow tcp from any to "
+	    "me6 443 in$' ipfw.log && grep -q '^add 01003 allow tcp from any "
+	    "to me6 443 in$' ipfw.rules && grep -q '^add 01003 set 1 allow' "
+	    "loaded.rules && grep -q '^ipfw -q set disable 1$' ipfw.log") ==
+	    0);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"ipfw\",\"verb\":\"add\","
+	    "\"args\":[\"10\",\"allow\",\"ip;reboot\"],\"live\":true}]}", &r);
+	ATF_CHECK(r.status != 200 || strcmp(jstr(&r, "ok") != NULL ? jstr(&r,
+	    "ok") : "", "true") != 0);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/ipfw/rules",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(jstr(&r, "text"), "add 01003 allow") != NULL);
+	snprintf(body, sizeof(body), "{\"text\":\"add 00010 allow ip from "
+	    "any to any\\nbogus\\n\",\"sha256\":\"%s\"}", jstr(&r,
+	    "sha256"));
+	resp_free(&r);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK(strstr(jstr(&r, "error"), "bogus") != NULL);
+	resp_free(&r);
+
+	/*
+	 * Bridges and geneve tunnels: what they are; a port made an
+	 * access port by a job.
+	 */
+	snprintf(path, sizeof(path), "%.*s/net/bridges",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bridge0", jstr(&r, "data.bridges.0.name"));
+	ATF_CHECK_STREQ("true", jstr(&r, "data.bridges.0.vlanfilter"));
+	ATF_CHECK_STREQ("root", jstr(&r, "data.bridges.0.members.0.role"));
+	ATF_CHECK_STREQ("forwarding", jstr(&r,
+	    "data.bridges.0.members.0.state"));
+	ATF_CHECK_STREQ("trunk", jstr(&r, "data.bridges.0.members.1.mode"));
+	ATF_CHECK_STREQ("192.0.2.7", jstr(&r,
+	    "data.bridges.0.members.1.addresses.0"));
+	ATF_CHECK_STREQ("discarding", jstr(&r,
+	    "data.bridges.0.members.2.state"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/net/geneve",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("l2", jstr(&r, "data.geneves.0.mode"));
+	ATF_CHECK_STREQ("100", jstr(&r, "data.geneves.0.id"));
+	ATF_CHECK_STREQ("l3", jstr(&r, "data.geneves.1.mode"));
+	ATF_CHECK_STREQ("inherit", jstr(&r, "data.geneves.1.ttl"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"bridge\",\"interface\":"
+	    "\"bridge0\",\"verb\":\"access\",\"args\":[\"epair5a\",\"20\"]},"
+	    "{\"kind\":\"geneve\",\"interface\":\"geneve7\",\"verb\":"
+	    "\"create\",\"args\":[\"mode\",\"l3\",\"id\",\"7\",\"local\","
+	    "\"192.0.2.1\",\"remote\",\"192.0.2.2\"]}]}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bridge0 access epair5a 20", jstr(&r, "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'geneve7 create' ifconfig.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^bridge0 ifuntagged epair5a 20 iftagged "
+	    "epair5a none$' ifconfig.log && grep -q '^geneve7 create "
+	    "genevemode l3 geneveid 7 genevelocal 192.0.2.1 geneveremote "
+	    "192.0.2.2$' ifconfig.log") == 0);
+
+	/*
 	 * How the agent is reached: its listeners and who is connected.
 	 * The console keeps its connection open: what it asks next goes
 	 * over the same one, and the agent has seen no new connection.

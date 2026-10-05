@@ -395,6 +395,7 @@ view_network(struct html *h, struct server *s)
 		{ "connections", "Connections" }, { "sockets", "Sockets" },
 		{ "interfaces", "Interfaces" }, { "netgraph", "Netgraph" },
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
+		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -414,6 +415,11 @@ view_network(struct html *h, struct server *s)
 	scoped = net_scope()[0] != '\0';
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
 	for (i = 0; i < 6 && (!plug || scoped); i++)
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
+		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
+		    " on" : "", kinds[i].arg, kinds[i].title);
+	/* What is of the base system too, and came later. */
+	for (i = 8; i < 10 && (!plug || scoped); i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
@@ -554,6 +560,12 @@ view_network(struct html *h, struct server *s)
 		return;
 	case NET_BIRD:
 		view_bird(h, s, jget(app.net.data, "data"));
+		return;
+	case NET_BRIDGES:
+		view_bridges(h, s, jget(app.net.data, "data.bridges"));
+		return;
+	case NET_GENEVE:
+		view_geneve(h, s, jget(app.net.data, "data.geneves"));
 		return;
 	default:
 		shown = table(h, jget(app.net.data, "data.sockstat.socket"),

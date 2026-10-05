@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.28.2
+  version: 0.29.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -629,6 +629,35 @@ paths:
           description: Switching to the WebSocket protocol
         "401": { $ref: "#/components/responses/Error" }
         "403": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/ipfw/rules:
+    get:
+      tags: [servers]
+      summary: The kept rules of the firewall
+      description: text, a file of ipfw(8) commands one a line, and
+        sha256 of it. The rules themselves, with their sets and
+        counters, are read with net/ipfw; a rule is added or deleted,
+        the kept rules applied and the firewall turned on or off by
+        jobs of kind ipfw.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: jail
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: ok, text and sha256, or error
+    post:
+      tags: [servers]
+      summary: Replace the kept rules, or only check them
+      description: With text and the sha256 of what it was made from;
+        check true has ipfw read it without doing it and keeps nothing.
+        A line may not name a set, flush or delete, which applying does.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok, text and sha256, or error
+        "400": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/sysctl:
     get:
       tags: [servers]
@@ -780,7 +809,8 @@ paths:
                           service-config, pkg-upgrade, if-address,
                           if-state, route, if-set, if-create, if-destroy,
                           netgraph, wireguard, bird, if-vnet, kmod, zfs,
-                          zpool, mount, gpart, cam, sysctl]
+                          zpool, mount, gpart, cam, sysctl, ipfw,
+                          bridge, geneve]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the

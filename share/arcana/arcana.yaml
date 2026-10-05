@@ -147,6 +147,46 @@ definitions:
           Set a sysctl(8) variable: names holds its name and its value.
           With persist it is also written to sysctl.conf(5), where a
           line that set it before is replaced.
+      - name: ipfw
+        doc: |
+          The firewall, ipfw(8).  verb add, with names a rule's number
+          and then its words: with live it is added now, with persist
+          it is written into the kept rules.  verb delete and a number,
+          the same two ways.  verb apply loads the kept rules as the
+          host's whole ruleset without a gap: into set 1, which is
+          disabled, then swapped with set 0; with safe the rules that
+          were there wait in set 1 and are swapped back unless
+          job-confirm comes.  verb enable or disable turns the
+          firewall on or off (net.inet.ip.fw.enable), with persist in
+          rc.conf.  verb zero clears the counters, of a rule when
+          names has its number.  jail is the vnet jail whose firewall
+          it is.
+      - name: bridge
+        doc: |
+          if_bridge(4).  interface is the bridge, names the verb's
+          words: addm or deletem and a member; access, a member and a
+          VLAN it is in untagged, and none tagged; trunk, a member,
+          the list of VLANs it carries tagged (none, all, or numbers
+          and ranges) and, when there is one, the VLAN that is
+          untagged on it; vlanfilter and on or off; flag, a member and
+          one of stp, edge, autoedge, ptp, autoptp, learn, discover,
+          sticky, private, span, qinq, with a - before it to take it
+          away; set and one of proto, priority, hellotime, fwddelay,
+          maxage, holdcnt, maxaddr, timeout, defuntagged with its
+          value; ifset, a member, one of ifpriority, ifpathcost,
+          ifmaxaddr, ifvlanproto and its value.  With persist it is
+          kept in rc.conf.
+      - name: geneve
+        doc: |
+          geneve(4).  interface is the tunnel.  verb create makes it,
+          with names holding option and value pairs: mode (l2 or l3,
+          which only a new one can be given), id, local, remote, group,
+          dev, localport, remoteport, ttl (a number or inherit), df
+          (set, unset or inherit), maxaddr, timeout.  verb set changes
+          one or more of them on one that is there, and also learn,
+          external and dscpinherit, each on or off, and portrange with
+          its two ports.  verb flush empties its forwarding table, all
+          of it with names all.  With persist it is kept in rc.conf.
   - name: job-state
     type: enum
     entries:
@@ -207,6 +247,30 @@ definitions:
           and an address, or a prefix; protocol or export and a
           protocol's name; table and a table's name; all.  More routes
           than a reply should carry are counted, not sent.
+      - name: bridges
+        doc: |
+          The bridges, if_bridge(4), as a JSON object with the array
+          "bridges": each with its spanning tree (protocol, its own
+          identifier and the root's, the root port and cost, the
+          timers), whether it filters VLANs, and its "members", each
+          with its flags, port number, priority and path cost, its
+          role and state in the spanning tree, the VLAN it is in
+          untagged and those it carries tagged, and the addresses it
+          has, which a member should not have.
+      - name: geneve
+        doc: |
+          The geneve(4) tunnels, as a JSON object with the array
+          "geneves": each with its mode, identifier, local and remote
+          or group address and ports, device, ttl, df, and its
+          forwarding table's settings.
+      - name: ipfw
+        doc: |
+          The firewall, ipfw(8), as a JSON object: "loaded" and
+          "enabled"; "rules", each with its number, set, counters and
+          text, and whether its set is disabled; "tables" and "nat";
+          "kept", the rules of the kept file each with its number and
+          text, "other" its lines that are not rules, "path" where it
+          is and "rc" what rc.conf says of the firewall.
   - name: storage-kind
     type: enum
     entries:
@@ -1535,4 +1599,30 @@ operations:
         attributes:
           - json
           - total
+
+  - name: ipfw-rules
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The kept rules of the firewall, a file of ipfw(8) commands, one
+      a line.  Without conf-text, read it, with the SHA-256 of its
+      text.  With conf-text, put that in its place, once ipfw has
+      read it without doing it (ipfw -n) and found nothing wrong:
+      sha256 is that of the text it was made from.  The one before is
+      kept beside it.  With dry-run it is only checked.  jail is the
+      vnet jail whose firewall it is.
+    do:
+      request:
+        attributes:
+          - conf-text
+          - sha256
+          - dry-run
+          - jail
+      reply:
+        attributes:
+          - ok
+          - error
+          - conf-text
+          - sha256
+          - trace
 

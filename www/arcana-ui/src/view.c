@@ -836,6 +836,7 @@ stage(struct html *h)
 		} tabs[] = {
 			{ "summary", "Summary" }, { "jails", "Jails" },
 			{ "services", "Services" }, { "network", "Network" },
+			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
 			{ "jobs", "Jobs" },
@@ -857,7 +858,7 @@ stage(struct html *h)
 		plug = app.tab == TAB_NETWORK && (app.net.kind ==
 		    NET_WIREGUARD || app.net.kind == NET_BIRD);
 		h_raw(h, "<nav class=\"tabs\">");
-		for (t = 0; t < 9; t++)
+		for (t = 0; t < 10; t++)
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
@@ -906,6 +907,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_SYSCTL) {
 		view_sysctl(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_FIREWALL) {
+		view_firewall(h, s);
 		h_raw(h, "</main>");
 		return;
 	}

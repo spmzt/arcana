@@ -311,7 +311,7 @@ submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
-	    sysctl_form(form, f))
+	    sysctl_form(form, f) || firewall_form(form, f) || l2_form(form, f))
 		return;
 	submit_form(form, f);
 }
@@ -511,6 +511,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
+	    firewall_action(act, arg, value) || l2_action(act, arg, value) ||
 	    tbl_action(act, arg, value))
 		return;
 	if (strcmp(act, "fold") == 0) {
@@ -539,6 +540,8 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_kernel(s, false);
 			if (app.tab == TAB_SYSCTL)
 				refresh_sysctl(s, false);
+			if (app.tab == TAB_FIREWALL)
+				refresh_firewall(s, false);
 			if (app.tab == TAB_STORAGE)
 				refresh_storage(s, false);
 			if (app.tab == TAB_NETWORK && (strcmp(app.net.sid,
@@ -567,6 +570,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
 		    strcmp(arg, "kernel") == 0 ? TAB_KERNEL :
 		    strcmp(arg, "sysctl") == 0 ? TAB_SYSCTL :
+		    strcmp(arg, "firewall") == 0 ? TAB_FIREWALL :
 		    strcmp(arg, "storage") == 0 ? TAB_STORAGE :
 		    strcmp(arg, "jails") == 0 ? TAB_JAILS :
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
@@ -578,6 +582,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_kernel(s, true);
 		if (app.tab == TAB_SYSCTL)
 			refresh_sysctl(s, false);
+		if (app.tab == TAB_FIREWALL)
+			refresh_firewall(s, true);
 		if (app.tab == TAB_STORAGE)
 			refresh_storage(s, true);
 		close_service();
@@ -663,6 +669,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "sockets") == 0 ? NET_SOCKETS :
 		    strcmp(arg, "interfaces") == 0 ? NET_INTERFACES :
 		    strcmp(arg, "netgraph") == 0 ? NET_NETGRAPH :
+		    strcmp(arg, "bridges") == 0 ? NET_BRIDGES :
+		    strcmp(arg, "geneve") == 0 ? NET_GENEVE :
 		    strcmp(arg, "wireguard") == 0 ? NET_WIREGUARD :
 		    strcmp(arg, "bird") == 0 ? NET_BIRD : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
@@ -875,6 +883,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_kernel(s, true);
 		} else if (app.tab == TAB_SYSCTL) {
 			refresh_sysctl(s, true);
+		} else if (app.tab == TAB_FIREWALL) {
+			refresh_firewall(s, true);
 		} else if (app.tab == TAB_STORAGE) {
 			refresh_storage(s, true);
 		} else if (app.tab == TAB_PACKAGES) {

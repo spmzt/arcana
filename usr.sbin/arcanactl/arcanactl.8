@@ -195,6 +195,75 @@ With
 it is also written to
 .Xr sysctl.conf 5 ,
 in place of the line that set it before.
+.It Cm net bridges | geneve | ipfw
+The bridges with their spanning tree and their members' VLANs, the
+.Xr geneve 4
+tunnels, or the firewall's rules with their sets and counters and the
+kept ones.
+.It Cm bridge Ar name Cm access Ar member Ar vlan
+.It Cm bridge Ar name Cm trunk Ar member Ar vlan-list Op Ar untagged-vlan
+.It Cm bridge Ar name Cm vlanfilter on | off
+.It Cm bridge Ar name Cm flag Ar member Oo Cm - Oc Ns Ar flag
+.It Cm bridge Ar name Cm set Ar option Ar value
+.It Cm bridge Ar name Cm ifset Ar member Ar option Ar value
+.It Cm bridge Ar name Cm addm | deletem Ar member
+Change an
+.Xr if_bridge 4 ,
+by a job.
+An access port is in one VLAN untagged and carries none tagged; a trunk
+carries a list of VLANs tagged
+.Pq Cm none , all , No or numbers and ranges with commas between
+and may have one untagged.
+A flag is one of stp, edge, autoedge, ptp, autoptp, learn, discover,
+sticky, private, span, qinq.
+With
+.Fl p
+it is kept in
+.Xr rc.conf 5 .
+A member of a bridge is given no address.
+.It Cm geneve Ar name Cm create | set Ar option Ar value ...
+.It Cm geneve Ar name Cm flush Op Cm all
+Make a
+.Xr geneve 4
+tunnel, or change one, by a job.
+The options are mode
+.Pq l2 or l3, of a new one only ,
+id, local, remote, group, dev, localport, remoteport, portrange, ttl
+.Pq a number or inherit ,
+df
+.Pq set, unset or inherit ,
+maxaddr, timeout, and learn, external and dscpinherit, each on or off.
+.It Cm ipfw Oo Cm keep Oc Cm add Ar number Ar rule ...
+.It Cm ipfw Oo Cm keep Oc Cm delete Ar number
+A rule of the firewall, by a job: added to or deleted from what the
+kernel has now; with
+.Fl p
+also the kept rules; after
+.Cm keep
+only those.
+.It Cm ipfw apply
+Make the kept rules the whole ruleset without a gap: loaded into set 1
+while it is disabled, then swapped with set 0.
+With
+.Fl s
+the rules that were there wait in set 1 and are swapped back unless the
+job is confirmed.
+.It Cm ipfw enable | disable | zero Op Ar number
+Turn the firewall on or off, with
+.Fl p
+in
+.Xr rc.conf 5
+too, or clear the counters.
+.It Cm ipfw rules Oo Fl w Ar file Oc Op Fl n
+The kept rules, a file of
+.Xr ipfw 8
+commands: printed, or with
+.Fl w
+replaced by
+.Ar file
+once ipfw has read it without doing it; with
+.Fl n
+only checked.
 .It Cm transport Op Cm retry
 How the agent is reached: its listeners, each up or not and why not,
 whether the kernel has SCTP, and the connections open to the agent now.

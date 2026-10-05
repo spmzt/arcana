@@ -83,6 +83,8 @@ static int	cmd_net(struct arc_client *, int, char **);
 static int	cmd_stats(struct arc_client *);
 static int	cmd_kmod(struct arc_client *, int, char **);
 static int	cmd_sysctl(struct arc_client *, int, char **);
+static int	cmd_ipfw(struct arc_client *, int, char **);
+static int	cmd_l2(struct arc_client *, int, char **);
 static int	cmd_transport(struct arc_client *, int, char **);
 static int	cmd_storage(struct arc_client *, int, char **);
 static int	cmd_storage_job(struct arc_client *, int, char **);
@@ -150,6 +152,20 @@ usage(void)
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
 	    "    transport [retry]\n"
+	    "    net bridges | geneve | ipfw\n"
+	    "    bridge name addm | deletem member\n"
+	    "    bridge name access member vlan\n"
+	    "    bridge name trunk member vlan-list [untagged-vlan]\n"
+	    "    bridge name vlanfilter on | off\n"
+	    "    bridge name flag member [-]flag\n"
+	    "    bridge name set option value\n"
+	    "    bridge name ifset member option value\n"
+	    "    geneve name create | set option value ...\n"
+	    "    geneve name flush [all]\n"
+	    "    ipfw [keep] add number rule ...\n"
+	    "    ipfw [keep] delete number\n"
+	    "    ipfw apply | enable | disable | zero [number]\n"
+	    "    ipfw rules [-w file] [-n]\n"
 	    "    storage disks | pools | datasets | mounts | importable\n"
 	    "    storage snapshots [dataset]\n"
 	    "    zfs snapshot | destroy | rollback [-r] name\n"
@@ -1325,7 +1341,8 @@ static int
 cmd_net(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
-	    "sockets", "interfaces", "netgraph", "wireguard", "bird" };
+	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
+	    "bird-routes", "bridges", "geneve", "ipfw" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -1522,6 +1539,119 @@ cmd_transport(struct arc_client *cl, int argc, char **argv)
 		    "failed");
 	arc_transport_rsp_free(rsp);
 	return (error);
+}
+
+/*
+ * ipfw add | delete: a rule, now; with -p kept too, and after "keep"
+ * kept only.  ipfw apply: the kept rules as the whole ruleset, through
+ * set 1; with -s taken back unless confirmed.  ipfw rules: the kept
+ * file read, or with -w put in place, with -n only checked.
+ */
+static int
+cmd_ipfw(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec		 sp;
+	struct arc_ipfw_rules_req	 req;
+	struct arc_ipfw_rules_rsp	*rsp, *cur;
+	struct stat			 sb;
+	const char			*from;
+	char				*text;
+	int				 ch, error, fd;
+	bool				 keep;
+
+	if (argc < 2)
+		usage();
+	if (strcmp(argv[1], "rules") == 0) {
+		from = NULL;
+		memset(&req, 0, sizeof(req));
+		req.jail = netjail;
+		argc--;
+		argv++;
+		optind = 1;
+		optreset = 1;
+		while ((ch = getopt(argc, argv, "nw:")) != -1) {
+			switch (ch) {
+			case 'n':
+				req.dry_run = true;
+				break;
+			case 'w':
+				from = optarg;
+				break;
+			default:
+				usage();
+			}
+		}
+		if (argc != optind || (req.dry_run && from == NULL))
+			usage();
+		if (from != NULL) {
+			if ((fd = open(from, O_RDONLY)) == -1 || fstat(fd,
+			    &sb) == -1 || (text = malloc((size_t)sb.st_size +
+			    1)) == NULL || read(fd, text, (size_t)sb.st_size) !=
+			    sb.st_size)
+				xo_err(1, "%s", from);
+			close(fd);
+			text[sb.st_size] = '\0';
+			if ((error = arc_ipfw_rules(cl, &req, &cur)) != 0)
+				fail(cl, error, "ipfw rules");
+			req.sha256 = cur->sha256;
+			req.conf_text = text;
+		}
+		if ((error = arc_ipfw_rules(cl, &req, &rsp)) != 0)
+			fail(cl, error, "ipfw rules");
+		if (from == NULL && rsp->conf_text != NULL)
+			xo_emit("{:text/%s}", rsp->conf_text);
+		else if (rsp->ok)
+			xo_emit("{:result/%s}\n", req.dry_run ? "ipfw has "
+			    "nothing against it; left as it was" : "in place; "
+			    "the one before is kept beside it");
+		emit_trace(rsp->trace.v, rsp->trace.n);
+		error = rsp->ok ? 0 : 1;
+		if (!rsp->ok)
+			xo_warnx("ipfw rules: %s", rsp->error != NULL ?
+			    rsp->error : "failed");
+		arc_ipfw_rules_rsp_free(rsp);
+		return (error);
+	}
+	keep = strcmp(argv[1], "keep") == 0;
+	if (keep) {
+		argc--;
+		argv++;
+		if (argc < 2)
+			usage();
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_IPFW;
+	sp.verb = argv[1];
+	sp.names.v = (const char *const *)(uintptr_t)(argv + 2);
+	sp.names.n = (size_t)(argc - 2);
+	sp.live = !keep;
+	sp.persist = keep || persist;
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/* bridge | geneve name verb word ...: a job; with -p kept in rc.conf. */
+static int
+cmd_l2(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = strcmp(argv[0], "bridge") == 0 ? ARC_JOB_KIND_BRIDGE :
+	    ARC_JOB_KIND_GENEVE;
+	sp.interface = argv[1];
+	sp.verb = argv[2];
+	sp.names.v = (const char *const *)(uintptr_t)(argv + 3);
+	sp.names.n = (size_t)(argc - 3);
+	sp.persist = persist;
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
 }
 
 /* storage kind [dataset]: the host's storage, as the host says it. */
@@ -2133,6 +2263,11 @@ main(int argc, char *argv[])
 		rc = cmd_storage_job(&cl, argc, argv);
 	else if (strcmp(argv[0], "fstab") == 0)
 		rc = cmd_fstab(&cl, argc, argv);
+	else if (strcmp(argv[0], "ipfw") == 0)
+		rc = cmd_ipfw(&cl, argc, argv);
+	else if (strcmp(argv[0], "bridge") == 0 || strcmp(argv[0], "geneve") ==
+	    0)
+		rc = cmd_l2(&cl, argc, argv);
 	else if (strcmp(argv[0], "packages") == 0)
 		rc = cmd_packages(&cl, argc, argv);
 	else if (strcmp(argv[0], "jobs") == 0 && argc == 1)

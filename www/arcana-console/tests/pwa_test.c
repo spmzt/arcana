@@ -1623,6 +1623,134 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.dock > header').click()");
 
 	/*
+	 * The firewall: the layout with a tab for each of its parts; a
+	 * part's rules, those of now and those only kept; a rule added
+	 * now and kept; the kept rules as a text; and applied through
+	 * set 1, which stays once the console is heard from again.
+	 */
+	run("document.querySelector('button.tab[data-arg=firewall]').click()");
+	wait_js("document.querySelectorAll('nav.fw-tabs button').length === 26 "
+	    "&& document.querySelector('table.fw-layout tr.pick')", 20);
+	ATF_CHECK(js_true("document.querySelector('.fw-state .chip.ok') && "
+	    "document.querySelector('.fw-state').textContent.includes("
+	    "'7 rules now') && document.querySelector('.fw-state')."
+	    "textContent.includes('kept in')"));
+	shot("7o-firewall-layout");
+	run("document.querySelector('nav.fw-tabs button[data-arg=\"10\"]')."
+	    "click()");
+	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
+	    "') && document.querySelector('table.fw-rules tr[data-rule="
+	    "\"1002\"].off')", 10);
+	ATF_CHECK(js_true("document.querySelector('table.fw-rules tr[data-rule="
+	    "\"1001\"]').textContent.includes('now, kept') && document."
+	    "querySelector('table.fw-rules tr[data-rule=\"1002\"]')."
+	    "textContent.includes('kept, not loaded') && document."
+	    "querySelector('form[data-form=fw-add]').num.value === '1003'"));
+	run("const f = document.querySelector('form[data-form=fw-add]'); "
+	    "f.num.value = '1500'; f.rule.value = 'allow tcp from any to me6 "
+	    "8443 in'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('ipfw add 1500') && t.textContent."
+	    "includes('done'))", 20);
+	ATF_CHECK(system("grep -q '^ipfw -q add 1500 allow tcp from any to me6 "
+	    "8443 in$' ipfw.log && grep -q '^add 01500 allow tcp from any to "
+	    "me6 8443 in$' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("7o-firewall-part");
+	/* A rule's number is one of its part's. */
+	run("const f = document.querySelector('form[data-form=fw-add]'); "
+	    "f.num.value = '5'; f.rule.value = 'allow ip from any to any'; "
+	    "f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('from 1000 to 1999'))", 5);
+	run("document.querySelector('button[data-act=fw-file]').click()");
+	wait_js("document.querySelector('form[data-form=fw-text] textarea') && "
+	    "document.querySelector('form[data-form=fw-text] textarea').value."
+	    "includes('add 01500 allow')", 10);
+	run("document.querySelector('button[data-act=fw-file]').click()");
+	run("document.querySelector('button[data-act=fw-apply]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('ipfw apply') && t.textContent.includes("
+	    "'done'))", 40);
+	ATF_CHECK(system("grep -q '^ipfw -q set disable 1$' ipfw.log && [ "
+	    "\"$(grep -c 'set swap 0 1' ipfw.log)\" = 1 ] && grep -q '^ipfw "
+	    "-q -f delete set 1$' ipfw.log && grep -q '^add 01500 set 1 allow' "
+	    "loaded.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/*
+	 * A bridge, drawn as a switch: each port by what the spanning tree
+	 * made of it; a member that has an address is marked; a port made
+	 * an access port.
+	 */
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind][data-arg="
+	    "bridges]')", 10);
+	run("document.querySelector('button[data-act=net-kind][data-arg="
+	    "bridges]').click()");
+	wait_js("document.querySelectorAll('.pane.bridge .ports .port').length "
+	    "=== 3", 20);
+	ATF_CHECK(js_true("document.querySelector('.ports .port.st-forwarding')"
+	    ".textContent.includes('epair5a') && document.querySelector("
+	    "'.ports .port.st-discarding').textContent.includes('tap3') && "
+	    "document.querySelector('.ports .port.st-nostp').textContent."
+	    "includes('trunk 10-20,30') && document.querySelector('.ports "
+	    ".port.st-nostp .warn') && document.querySelector('.pane.bridge')."
+	    "textContent.includes('filters VLANs')"));
+	shot("7p-bridge");
+	run("document.querySelector('.ports .port.st-nostp').click()");
+	wait_js("document.querySelector('form[data-form=br-port]')", 5);
+	ATF_CHECK(js_true("document.querySelector('.pane.bridge .notice.warn')"
+	    ".textContent.includes('192.0.2.7')"));
+	run("const f = document.querySelector('form[data-form=br-port]'); "
+	    "f.mode.value = 'access'; f.untagged.value = '30'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('bridge0 access') && t.textContent."
+	    "includes('done'))", 20);
+	ATF_CHECK(system("grep -q '^bridge0 ifuntagged em1 30 iftagged em1 "
+	    "none$' ifconfig.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/* Geneve tunnels: both modes; one made, to a group. */
+	wait_js("document.querySelector('button[data-act=net-kind][data-arg="
+	    "geneve]')", 20);
+	run("document.querySelector('button[data-act=net-kind][data-arg="
+	    "geneve]').click()");
+	wait_js("document.querySelectorAll('table.geneve tbody tr.pick')."
+	    "length === 2", 20);
+	ATF_CHECK(js_true("document.querySelector('table.geneve').textContent."
+	    "includes('l3') && document.querySelector('table.geneve')."
+	    "textContent.includes('[ff08::db8:1]:6081')"));
+	run("document.querySelector('button[data-act=gn-pick][data-arg=\"+\"]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=gn-set] select[name="
+	    "mode]')", 5);
+	shot("7q-geneve");
+	run("const f = document.querySelector('form[data-form=gn-set]'); "
+	    "f.name.value = 'geneve9'; f.mode.value = 'l3'; f.id.value = '9'; "
+	    "f.local.value = '192.0.2.1'; f.group.value = '239.0.0.9'; "
+	    "f.dev.value = 'em0'; f.ttl.value = 'inherit'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('geneve9 create') && t.textContent."
+	    "includes('done'))", 20);
+	ATF_CHECK(system("grep -q '^geneve9 create genevemode l3 geneveid 9 "
+	    "genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0 "
+	    "genevettl inherit genevelearn -genevedscpinherit "
+	    "-geneveexternal$' ifconfig.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+
+	/*
 	 * How the host is reached, on its summary: the agent's listener,
 	 * the console's own connection among those open now.  A local
 	 * socket is not switched to anything.
@@ -1635,6 +1763,10 @@ ATF_TC_BODY(pwa, tc)
 	    "querySelector('button[data-act=tr-switch]') && document."
 	    "querySelector('table.sessions tbody').textContent.includes("
 	    "'unix')"));
+	/* A line is the address, and what it means is said when hovered. */
+	ATF_CHECK(js_true("!document.querySelector('.transport ul.listeners')"
+	    ".textContent.includes('title=') && document.querySelector("
+	    "'.transport ul.listeners li').title.length > 10"));
 	/* Green is before the console's own way in, and before no other. */
 	ATF_CHECK(js_true("document.querySelectorAll('.transport ul.listeners "
 	    "li.up').length === 1 && document.querySelector('.transport "

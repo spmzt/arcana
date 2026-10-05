@@ -57,6 +57,7 @@ enum op {
 	OP_KERNEL,
 	OP_STORAGE,
 	OP_FSTAB,
+	OP_IPFW_RULES,
 	OP_TRANSPORT,
 	OP_SYSCTL,
 };
@@ -165,6 +166,9 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_WIREGUARD] = "wireguard",
 	[ARC_NET_KIND_BIRD] = "bird",
 	[ARC_NET_KIND_BIRD_ROUTES] = "bird-routes",
+	[ARC_NET_KIND_BRIDGES] = "bridges",
+	[ARC_NET_KIND_GENEVE] = "geneve",
+	[ARC_NET_KIND_IPFW] = "ipfw",
 };
 
 static const char *service_action_names[] = {
@@ -602,6 +606,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
 	    OP_KERNEL ? "arc_kernel" : c->op == OP_TRANSPORT ? "arc_transport" :
+	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_SYSCTL ? "arc_sysctl" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
@@ -887,6 +892,8 @@ call_run(struct kore_task *t)
 	struct arc_storage_rsp	*sgr;
 	struct arc_fstab_req	 fsq;
 	struct arc_fstab_rsp	*fsr;
+	struct arc_ipfw_rules_req irq;
+	struct arc_ipfw_rules_rsp *irr;
 	struct arc_packages_req	 pq;
 	struct arc_packages_rsp	*pr;
 	struct arc_pkg_upgrade_req uq;
@@ -951,6 +958,7 @@ call_run(struct kore_task *t)
 	reused = again = false;
 	sgr = NULL;
 	fsr = NULL;
+	irr = NULL;
 	pr = NULL;
 	ur = NULL;
 	jsr = NULL;
@@ -1377,6 +1385,22 @@ connected:
 		steps = sgr->trace.v;
 		nsteps = sgr->trace.n;
 		break;
+	case OP_IPFW_RULES:
+		/* As fstab: the checksum rides where an address does. */
+		memset(&irq, 0, sizeof(irq));
+		irq.conf_text = c->text;
+		irq.sha256 = c->address[0] != '\0' ? c->address : NULL;
+		irq.dry_run = c->dry_run;
+		irq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		if ((error = arc_ipfw_rules(&cl, &irq, &irr)) != 0)
+			goto rpcfail;
+		ok = irr->ok;
+		put_str(top, "error", irr->error);
+		put_str(top, "text", irr->conf_text);
+		put_str(top, "sha256", irr->sha256);
+		steps = irr->trace.v;
+		nsteps = irr->trace.n;
+		break;
 	case OP_FSTAB:
 		/* The checksum rides where an address does. */
 		memset(&fsq, 0, sizeof(fsq));
@@ -1645,6 +1669,8 @@ done:
 		arc_storage_rsp_free(sgr);
 	if (fsr != NULL)
 		arc_fstab_rsp_free(fsr);
+	if (irr != NULL)
+		arc_ipfw_rules_rsp_free(irr);
 	if (pr != NULL)
 		arc_packages_rsp_free(pr);
 	if (ur != NULL)
@@ -1701,7 +1727,8 @@ call_new(struct http_request *req, enum op op)
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL ||
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
 	    op == OP_CONSOLE_UPDATE ||
-	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT) && req->method ==
+	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT || op ==
+	    OP_IPFW_RULES || op == OP_FSTAB) && req->method ==
 	    HTTP_METHOD_POST)))
 		return (NULL);
 	t1 = now_us();
@@ -2292,6 +2319,52 @@ api_storage(struct http_request *req)
 }
 
 /*
+ * GET /api/servers/<id>/ipfw/rules[?jail=]: the kept rules of the
+ * firewall and the SHA-256 of their text.  POST {"text", "sha256",
+ * "check"}: put the text in their place, once ipfw has nothing against
+ * it.
+ */
+int
+api_ipfw_rules(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+	const char	*s;
+	bool		 bad;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_IPFW_RULES)) == NULL)
+		return (KORE_RESULT_OK);
+	bad = !pick_scope(req, c);
+	if (!bad && req->method != HTTP_METHOD_GET) {
+		if ((body = read_json(req)) == NULL)
+			bad = true;
+		else {
+			if ((s = ucl_str(body, "sha256")) != NULL)
+				strlcpy(c->address, s, sizeof(c->address));
+			if ((s = ucl_str(body, "text")) != NULL)
+				c->text = kore_strdup(s);
+			else
+				bad = true;
+			c->dry_run = ucl_flag(body, "check");
+			ucl_object_unref(body);
+		}
+	}
+	if (bad) {
+		kore_free(c->text);
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "a change needs text "
+		    "and the sha256 of what it was made from; jail is a "
+		    "jail's name"));
+	}
+	return (call_start(req, c));
+}
+
+/*
  * GET /api/servers/<id>/fstab: its text and the SHA-256 of that.
  * POST {"text", "sha256", "check"}: put the text in its place.
  */
@@ -2593,6 +2666,9 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_GPART] = "gpart",
 	[ARC_JOB_KIND_CAM] = "cam",
 	[ARC_JOB_KIND_SYSCTL] = "sysctl",
+	[ARC_JOB_KIND_IPFW] = "ipfw",
+	[ARC_JOB_KIND_BRIDGE] = "bridge",
+	[ARC_JOB_KIND_GENEVE] = "geneve",
 };
 
 static const char *job_state_names[] = {
@@ -2816,6 +2892,9 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_GPART:
 	case ARC_JOB_KIND_CAM:
 	case ARC_JOB_KIND_SYSCTL:
+	case ARC_JOB_KIND_IPFW:
+	case ARC_JOB_KIND_BRIDGE:
+	case ARC_JOB_KIND_GENEVE:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -2826,7 +2905,8 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			sp->verb = NULL;
 		} else
 		if (sp->verb == NULL || (n = ucl_array_size(names)) >
-		    (sp->kind >= ARC_JOB_KIND_ZFS ? 24u : 4u) ||
+		    (sp->kind >= ARC_JOB_KIND_IPFW ? 120u : sp->kind >=
+		    ARC_JOB_KIND_ZFS ? 24u : 4u) ||
 		    (n == 0 && sp->kind == ARC_JOB_KIND_NETGRAPH) ||
 		    (n != 1 && sp->kind == ARC_JOB_KIND_KMOD))
 			return ("the job needs a verb and its args");
