@@ -1485,11 +1485,53 @@ ATF_TC_BODY(pwa, tc)
 	    ".click()");
 	wait_js("document.querySelector('section.disk, .empty')", 20);
 	shot("7l-storage-disks");
+	/*
+	 * How the disks say they are; a dataset that is encrypted, its
+	 * key loaded where it is kept; a snapshot sent into a new one.
+	 */
+	run("document.querySelector('button[data-act=st-kind][data-arg=health]"
+	    "').click()");
+	wait_js("document.querySelectorAll('table.health tbody tr').length "
+	    "=== 3 && document.querySelector('table.health .chip.ok') && "
+	    "document.querySelector('table.health .chip.bad').textContent "
+	    "=== 'failing' && document.querySelector('table.health')."
+	    "textContent.includes('88 reallocated sectors')", 20);
+	shot("7m-storage-health");
+	run("document.querySelector('button[data-act=st-kind][data-arg="
+	    "datasets]').click()");
+	wait_js("document.querySelector('tr[data-ds=\"tank/data\"] .chip.warn')"
+	    " && document.querySelector('tr[data-ds=\"tank/data\"] button"
+	    "[data-act=st-key][data-arg=load-key]')", 20);
+	run("document.querySelector('tr[data-ds=\"tank/data\"] button"
+	    "[data-act=st-key]').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^zfs load-key tank/data$' "
+	    "storage.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^zfs load-key tank/data$' storage.log") ==
+	    0);
+	run("document.querySelector('tr[data-ds=\"tank/data\"] button"
+	    "[data-act=st-ask][data-arg=jail]').click()");
+	wait_js("document.querySelector('form[data-form=st-ask] input[name="
+	    "name]')", 5);
+	run("const f = document.querySelector('form[data-form=st-ask]'); "
+	    "f.name.value = 'web'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^zfs jail web tank/data$' "
+	    "storage.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^zfs jail web tank/data$' storage.log") ==
+	    0);
+	run("document.querySelector('.dock > header').click()");
 	/* fstab, with a line more. */
 	run("document.querySelector('button[data-act=st-kind][data-arg=mounts]"
 	    "').click()");
 	wait_js("document.querySelector('table.fstab tr[data-fs=\"/mnt/data\"] "
 	    "button[data-act=st-mount]')", 20);
+	ATF_CHECK(js_true("document.querySelector('table.swap') && document."
+	    "querySelector('button[data-act=st-ask][data-arg=swapon]')"));
 	shot("7m-storage-mounts");
 	run("document.querySelector('button[data-act=st-fstab]').click()");
 	wait_js("document.querySelector('form[data-form=st-fstab] textarea') "

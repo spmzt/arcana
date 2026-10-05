@@ -492,13 +492,13 @@ datasets(struct work *w, bool snaps, const char *filter,
 	static const char *const dcols[] = { "name", "type", "used", "avail",
 	    "refer", "mountpoint", "compression", "ratio", "quota",
 	    "reservation", "mounted", "canmount", "origin", "volsize",
-	    "readonly" };
+	    "readonly", "encryption", "keystatus", "keylocation", "jailed" };
 	static const char *const scols[] = { "name", "used", "refer",
 	    "creation" };
 	struct execres		 res;
 	ucl_object_t		*top, *arr, *o;
 	const char *const	*cols;
-	char			*argv[12], *text, *line, *f[16];
+	char			*argv[12], *text, *line, *f[20];
 	uint64_t		 total;
 	int			 n, i, ncols;
 
@@ -520,7 +520,8 @@ datasets(struct work *w, bool snaps, const char *filter,
 	argv[n++] = (char *)(uintptr_t)(snaps ? "name,used,referenced,"
 	    "creation" : "name,type,used,available,referenced,mountpoint,"
 	    "compression,compressratio,quota,reservation,mounted,canmount,"
-	    "origin,volsize,readonly");
+	    "origin,volsize,readonly,encryption,keystatus,keylocation,"
+	    "jailed");
 	if (snaps) {
 		argv[n++] = (char *)(uintptr_t)"-S";
 		argv[n++] = (char *)(uintptr_t)"creation";
@@ -656,6 +657,7 @@ mounts(struct work *w, struct arc_storage_rsp *rsp)
 	}
 	pthread_mutex_unlock(&fstab_lock);
 	ucl_object_insert_key(top, arr, "fstab", 0, false);
+	ucl_object_insert_key(top, swap_list(w), "swap", 0, false);
 	return (emit(w, top, rsp));
 }
 
@@ -681,6 +683,8 @@ do_storage(struct work *w, uint8_t kind, const char *filter,
 		return (mounts(w, rsp));
 	case ARC_STORAGE_KIND_IMPORTABLE:
 		return (importable(w, rsp));
+	case ARC_STORAGE_KIND_HEALTH:
+		return (do_health(w, rsp));
 	default:
 		rsp->error = "no such kind of storage";
 		return (0);
@@ -721,7 +725,9 @@ property_ok(struct work *w, const char *s)
 	    "reservation", "setuid", "snapdir", "sync", "volsize", "xattr",
 	    "primarycache", "secondarycache", "logbias", "relatime",
 	    "acltype", "aclmode", "aclinherit", "utf8only", "normalization",
-	    "casesensitivity", "volblocksize", "special_small_blocks" };
+	    "casesensitivity", "volblocksize", "special_small_blocks",
+	    "encryption", "keyformat", "keylocation", "pbkdf2iters",
+	    "jailed" };
 	const char	*eq;
 	char		*name;
 	size_t		 i;
@@ -952,6 +958,54 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			if (sp->force && verb[0] == 'u')
 				ARG("-f");
 			ARG(a[0]);
+		} else if ((strcmp(verb, "jail") == 0 || strcmp(verb,
+		    "unjail") == 0) && na == 2) {
+			/* A dataset given to a jail, to manage as its own. */
+			if (!dataset_ok(a[0]) || strchr(a[0], '/') == NULL)
+				goto name;
+			if (!word_ok(a[1], "_.-", 255)) {
+				*errp = "a jail is named by letters, digits "
+				    "and _ . -";
+				return (NULL);
+			}
+			ARG(verb);
+			ARG(a[1]);
+			ARG(a[0]);
+		} else if ((strcmp(verb, "load-key") == 0 || strcmp(verb,
+		    "unload-key") == 0) && na == 1) {
+			/*
+			 * The key of an encrypted dataset, read from where
+			 * its keylocation says: one that is asked for at a
+			 * prompt is not loaded from here.
+			 */
+			if (!dataset_ok(a[0]))
+				goto name;
+			ARG(verb);
+			if (sp->recursive)
+				ARG("-r");
+			ARG(a[0]);
+		} else if (strcmp(verb, "replicate") == 0 && (na == 2 || na ==
+		    3)) {
+			/*
+			 * A snapshot sent into a dataset that is not there
+			 * yet, on this host: zfs send into zfs receive, by
+			 * the helper.  With a third word, only what changed
+			 * since that snapshot, which both have.
+			 */
+			if (!snapshot_ok(w, a[0]) || !dataset_ok(a[1]) ||
+			    strchr(a[1], '/') == NULL || (na == 3 &&
+			    !snapshot_ok(w, a[2])))
+				goto name;
+			n = 0;
+			ARG(opts.helper_bin);
+			ARG("-Q");
+			ARG("0");
+			ARG("zfs-pipe");
+			ARG(opts.zfs_bin);
+			ARG(a[0]);
+			ARG(a[1]);
+			ARG(na == 3 ? a[2] : "-");
+			ARG(sp->recursive ? "r" : "-");
 		} else if (strcmp(verb, "clone") == 0 && na == 2) {
 			if (!snapshot_ok(w, a[0]) || !dataset_ok(a[1]) ||
 			    strchr(a[1], '/') == NULL)
@@ -1144,10 +1198,56 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			if (sp->force)
 				ARG("-f");
 			ARG(a[0]);
+		} else if ((strcmp(verb, "swapon") == 0 || strcmp(verb,
+		    "swapoff") == 0) && na == 1) {
+			const char	*bin;
+
+			/* A device to swap on, or no longer. */
+			if (strncmp(a[0], "/dev/", 5) != 0 || !word_ok(a[0] +
+			    5, "_./-", 64) || strstr(a[0], "..") != NULL) {
+				*errp = "swap is on a device: /dev/ada0p3";
+				return (NULL);
+			}
+			if ((bin = tool(w, verb)) == NULL) {
+				*errp = wfmt(w, "the host has no %s", verb);
+				return (NULL);
+			}
+			ARG(bin);
+			ARG(a[0]);
 		} else
 			goto verb;
 		break;
 	case ARC_JOB_KIND_GPART:
+		/*
+		 * A file system made on a partition, or grown to its
+		 * size: newfs(8) and growfs(8) of UFS.  What is on the
+		 * partition is looked at before it is run.
+		 */
+		if ((strcmp(verb, "newfs") == 0 && (na == 1 || na == 2)) ||
+		    (strcmp(verb, "growfs") == 0 && na == 1)) {
+			const char	*bin;
+
+			if (!word_ok(a[0], "_.-", 64) || a[0][0] == '.')
+				goto geom;
+			if (na == 2 && a[1][0] != '\0' && !word_ok(a[1], "_.-",
+			    32))
+				goto label;
+			if ((bin = tool(w, verb)) == NULL) {
+				*errp = wfmt(w, "the host has no %s", verb);
+				return (NULL);
+			}
+			ARG(bin);
+			if (verb[0] == 'n') {
+				ARG("-U");
+				if (na == 2 && a[1][0] != '\0') {
+					ARG("-L");
+					ARG(a[1]);
+				}
+			} else
+				ARG("-y");
+			ARG(wfmt(w, "/dev/%s", a[0]));
+			break;
+		}
 		ARG(opts.gpart_bin);
 		if (na < 1 || !word_ok(a[0], "", 32))
 			goto geom;
@@ -1317,6 +1417,60 @@ storage_title(const struct arc_job_spec *sp)
 	return (t);
 }
 
+/*
+ * Why no file system is made on the device: something is mounted from
+ * it, a pool or the swap has it, or it has a file system, which only
+ * force gives up.  NULL when it may be.
+ */
+static const char *
+newfs_wrong(struct work *w, const char *dev, bool force)
+{
+	struct statfs	*mnt;
+	struct execres	 res;
+	const char	*bin, *p;
+	char		*argv[4], *path;
+	size_t		 len;
+	int		 n, i;
+
+	path = wfmt(w, "/dev/%s", dev);
+	n = mnts(w, &mnt);
+	for (i = 0; i < n; i++)
+		if (strcmp(mnt[i].f_mntfromname, path) == 0)
+			return (wfmt(w, "%s is mounted on %s", path,
+			    mnt[i].f_mntonname));
+	argv[0] = (char *)(uintptr_t)opts.swapinfo_bin;
+	argv[1] = (char *)(uintptr_t)"-k";
+	argv[2] = NULL;
+	if (run_exec(w, argv, &res) == 0 && res.out != NULL && strstr(res.out,
+	    wfmt(w, "%s ", path)) != NULL)
+		return (wfmt(w, "the host swaps on %s", path));
+	argv[0] = (char *)(uintptr_t)opts.zpool_bin;
+	argv[1] = (char *)(uintptr_t)"status";
+	argv[2] = NULL;
+	len = strlen(dev);
+	if (run_exec(w, argv, &res) == 0 && res.out != NULL)
+		for (p = res.out; (p = strstr(p, dev)) != NULL; p += len)
+			if ((p == res.out || isspace((unsigned char)p[-1]) ||
+			    p[-1] == '/') && (p[len] == '\0' || isspace(
+			    (unsigned char)p[len])))
+				return (wfmt(w, "%s is a device of a pool",
+				    dev));
+	if (force)
+		return (NULL);
+	if ((bin = tool(w, "fstyp")) == NULL)
+		return ("the host has no fstyp to tell what is on it: with "
+		    "force only");
+	argv[0] = (char *)(uintptr_t)bin;
+	argv[1] = path;
+	argv[2] = NULL;
+	if (run_exec(w, argv, &res) == 0 && res.out != NULL && res.out[0] !=
+	    '\0')
+		return (wfmt(w, "%s has a file system on it (%.*s): it is "
+		    "given up with force only", path, (int)strcspn(res.out,
+		    "\n"), res.out));
+	return (NULL);
+}
+
 int
 do_storage_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
@@ -1325,6 +1479,10 @@ do_storage_job(struct work *w, const struct arc_job_spec *sp,
 	char		**v;
 
 	if ((v = storage_argv(w, sp, errp)) == NULL)
+		return (-1);
+	if (sp->kind == ARC_JOB_KIND_GPART && sp->verb != NULL && strcmp(
+	    sp->verb, "newfs") == 0 && (*errp = newfs_wrong(w, sp->names.v[0],
+	    sp->force)) != NULL)
 		return (-1);
 	if (run_exec(w, v, &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, strrchr(v[0], '/') !=

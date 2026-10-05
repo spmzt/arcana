@@ -175,7 +175,13 @@ usage(void)
 	    "    ipfw [keep] delete number\n"
 	    "    ipfw apply | enable | disable | zero [number]\n"
 	    "    ipfw rules [-w file] [-n]\n"
-	    "    storage disks | pools | datasets | mounts | importable\n"
+	    "    storage disks | pools | datasets | mounts | importable | health\n"
+	    "    zfs load-key | unload-key [-r] dataset\n"
+	    "    zfs jail | unjail dataset jail\n"
+	    "    zfs replicate [-r] snapshot new-dataset [since-snapshot]\n"
+	    "    gpart newfs [-f] partition [label]\n"
+	    "    gpart growfs partition\n"
+	    "    swapon | swapoff device\n"
 	    "    storage snapshots [dataset]\n"
 	    "    zfs snapshot | destroy | rollback [-r] name\n"
 	    "    zfs create dataset [property=value ...]\n"
@@ -1822,7 +1828,7 @@ static int
 cmd_storage(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "disks", "pools", "datasets",
-	    "snapshots", "mounts", "importable" };
+	    "snapshots", "mounts", "importable", "health" };
 	struct arc_storage_req	 req;
 	struct arc_storage_rsp	*rsp;
 	size_t			 i;
@@ -1873,7 +1879,13 @@ cmd_storage_job(struct arc_client *cl, int argc, char **argv)
 	sp.safe = safe;
 	sp.jail = netjail;
 	first = 2;
-	if (strcmp(argv[0], "mount") == 0 || strcmp(argv[0], "umount") == 0) {
+	if (strcmp(argv[0], "swapon") == 0 || strcmp(argv[0], "swapoff") ==
+	    0) {
+		sp.kind = ARC_JOB_KIND_MOUNT;
+		sp.verb = argv[0];
+		first = 1;
+	} else if (strcmp(argv[0], "mount") == 0 || strcmp(argv[0],
+	    "umount") == 0) {
 		sp.kind = ARC_JOB_KIND_MOUNT;
 		sp.verb = argv[0][0] == 'm' ? "mount" : "unmount";
 		first = 1;
@@ -2426,7 +2438,8 @@ main(int argc, char *argv[])
 		rc = cmd_storage(&cl, argc, argv);
 	else if (strcmp(argv[0], "zfs") == 0 || strcmp(argv[0], "zpool") == 0 ||
 	    strcmp(argv[0], "gpart") == 0 || strcmp(argv[0], "cam") == 0 ||
-	    strcmp(argv[0], "mount") == 0 || strcmp(argv[0], "umount") == 0)
+	    strcmp(argv[0], "mount") == 0 || strcmp(argv[0], "umount") == 0 ||
+	    strcmp(argv[0], "swapon") == 0 || strcmp(argv[0], "swapoff") == 0)
 		rc = cmd_storage_job(&cl, argc, argv);
 	else if (strcmp(argv[0], "fstab") == 0)
 		rc = cmd_fstab(&cl, argc, argv);

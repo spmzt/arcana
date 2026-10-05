@@ -111,7 +111,7 @@ usage(void)
 	    "[-I ifconfig]\n"
 	    "                 [-w seconds] [-Q sysctl] "
 	    "[-O sysctl.conf]\n"
-	    "                 [-v log-directory] [-1 history.conf]\n"
+	    "                 [-v log-directory] [-1 history.conf] [-2 directory]\n"
 	    "                 [-h ipfw] [-J ipfw.rules]\n"
 	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
@@ -306,7 +306,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:s:i:m:q:S:T:t:u:U:Vv:w:W:1:X:x:Y:y:Z:z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:s:i:m:q:S:T:t:u:U:Vv:w:W:1:2:X:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -362,6 +362,9 @@ main(int argc, char *argv[])
 			break;
 		case '1':
 			opts.history_conf = optarg;
+			break;
+		case '2':
+			opts.tools_dir = optarg;
 			break;
 		case 'R':
 			opts.rc_dirs = optarg;

@@ -52,6 +52,7 @@
 .Op Fl O Ar sysctl.conf
 .Op Fl v Ar log-directory
 .Op Fl 1 Ar history.conf
+.Op Fl 2 Ar directory
 .Op Fl H Ar helper
 .Op Fl w Ar seconds
 .Op Fl N Ar netstat
@@ -327,6 +328,17 @@ many seconds, and how many samples it keeps.
 Without the file, every five seconds and an hour of it.
 Default:
 .Pa /usr/local/etc/arcana/history.conf .
+.It Fl 2 Ar directory
+Where the programs are that have no option of their own:
+.Xr newfs 8 ,
+.Xr growfs 8 ,
+.Xr fstyp 8 ,
+.Xr swapon 8 ,
+.Xr swapoff 8 ,
+.Xr nvmecontrol 8
+and
+.Xr smartctl 8 .
+Without it they are looked for where the system keeps such.
 .It Fl T Ar kldload , Fl t Ar kldunload
 The
 .Xr kldload 8

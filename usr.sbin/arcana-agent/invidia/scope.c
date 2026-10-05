@@ -340,6 +340,8 @@ scope_helper(int argc, char **argv)
 	/* The routing tables, through netlink(4). */
 	if (strncmp(argv[1], "route", 5) == 0)
 		return (route_helper(argc - 1, argv + 1));
+	if (strcmp(argv[1], "zfs-pipe") == 0)
+		return (zfs_pipe(argc - 1, argv + 1));
 	if (argc != 4)
 		return (2);
 	if ((out = ifq_text(argv[1], strcmp(argv[2], "-") == 0 ? NULL :

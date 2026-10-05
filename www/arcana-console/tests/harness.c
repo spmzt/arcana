@@ -500,11 +500,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-zfs", "#!/bin/sh\necho \"zfs $*\" >> storage.log\n"
 	    "case \"$*\" in\n'list -Hp -t filesystem,volume'*)\n"
 	    "printf 'tank\\tfilesystem\\t5000000\\t9000000\\t96000\\t/tank\\t"
-	    "lz4\\t1.50\\t0\\t0\\tyes\\ton\\t-\\t-\\toff\\n'\n"
+	    "lz4\\t1.50\\t0\\t0\\tyes\\ton\\t-\\t-\\toff\\toff\\t-\\tnone\\toff\\n'\n"
 	    "printf 'tank/data\\tfilesystem\\t4000000\\t9000000\\t4000000\\t"
-	    "/tank/data\\tlz4\\t2.00\\t8000000\\t0\\tyes\\ton\\t-\\t-\\toff\\n'"
+	    "/tank/data\\tlz4\\t2.00\\t8000000\\t0\\tyes\\ton\\t-\\t-\\toff\\t"
+	    "aes-256-gcm\\tunavailable\\tfile:///k\\toff\\n'"
 	    "\nprintf 'tank/vol\\tvolume\\t100000\\t9000000\\t100000\\t-\\toff"
-	    "\\t1.00\\t-\\t0\\t-\\t-\\ttank/data@a\\t1048576\\toff\\n' ;;\n"
+	    "\\t1.00\\t-\\t0\\t-\\t-\\ttank/data@a\\t1048576\\toff\\toff\\t-\\tnone"
+	    "\\toff\\n' ;;\n"
 	    "'list -Hp -t snapshot'*)\n"
 	    "printf 'tank/data@b\\t10000\\t4000000\\t1759500000\\n'\n"
 	    "printf 'tank/data@a\\t20000\\t3000000\\t1759400000\\n' ;;\n"
@@ -541,6 +543,25 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "/dev/ada0p2\t/\tufs\trw\t1\t1\n/dev/ada0p3\t/mnt/data\tufs\t"
 	    "rw,noatime\t2\t2\n");
 	snprintf(fstab, sizeof(fstab), "%s/fstab", cwd);
+	/* What the daemon has no option for: how the disks are, newfs. */
+	ATF_REQUIRE(mkdir("tools", 0755) == 0 || errno == EEXIST);
+	put("tools/nvmecontrol", "#!/bin/sh\nprintf 'Critical Warning State: "
+	    "0x00\\nTemperature: 312 K\\nAvailable spare: 100\\nPercentage "
+	    "used: 3\\nPower cycles: 120\\nPower on hours: 4567\\nUnsafe "
+	    "shutdowns: 12\\nMedia errors: 0\\n'\n");
+	put("tools/smartctl", "#!/bin/sh\n[ \"$4\" = /dev/da0 ] && { echo "
+	    "'{\"smart_status\":{\"passed\":false},\"temperature\":"
+	    "{\"current\":51},\"power_on_time\":{\"hours\":40000},"
+	    "\"ata_smart_attributes\":{\"table\":[{\"id\":5,\"raw\":"
+	    "{\"value\":88}}]}}'; exit 8; }\necho '{\"smart_status\":"
+	    "{\"passed\":true},\"temperature\":{\"current\":34},"
+	    "\"power_on_time\":{\"hours\":1200}}'\n");
+	put("tools/newfs", "#!/bin/sh\necho \"newfs $*\" >> storage.log\n");
+	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
+	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
+	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");
+	put("tools/fstyp", "#!/bin/sh\nexit 1\n");
+	ATF_REQUIRE(system("chmod +x tools/*") == 0);
 	/* kldload(8) and kldunload(8): what they were told is logged. */
 	put("fake-kldload", "#!/bin/sh\necho \"kldload $*\" >> kld.log\n"
 	    "exit 0\n");
@@ -702,7 +723,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[77] = (char *)(uintptr_t)"log";
 	argv[78] = (char *)(uintptr_t)"-1";
 	argv[79] = (char *)(uintptr_t)"history.conf";
-	argv[80] = NULL;
+	argv[80] = (char *)(uintptr_t)"-2";
+	argv[81] = (char *)(uintptr_t)"tools";
+	argv[82] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

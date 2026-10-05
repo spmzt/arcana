@@ -116,7 +116,7 @@ The console is laid out as a tree and tabs.
     join them, from `ngctl list -l`; a node is picked for its hooks,
     which are removed with their cross, shut down, or given a new peer;
     dragging the dot on a node onto another connects a hook of each.
-  - **Storage**, in five views:
+  - **Storage**, in six views:
     **Pools**: each ZFS pool with how full and how fragmented it is,
     its health, what `zpool status` says of it and of its last scrub,
     and its devices as they are nested, with their error counts. A
@@ -142,22 +142,48 @@ The console is laid out as a tree and tabs.
     or returns one to what it inherits; a dataset is mounted,
     unmounted, snapshotted, and destroyed once its name is typed. A
     pool's own dataset is not destroyed from here.
+    An encrypted dataset says so, and whether its key is loaded:
+    **Load key** reads the key from where the dataset's `keylocation`
+    says (a file, a URL), **Unload key** forgets it; a key that is
+    asked for at a prompt is never typed into the console, and is
+    loaded on the host. One is made encrypted with the properties
+    `encryption=on`, `keyformat=` and `keylocation=file:///...`.
+    **Jail** gives a dataset to a running jail to manage as its own
+    (`zfs jail`), **Unjail** takes it back.
+    **Health**: how each disk says it is: well or failing, its
+    temperature, how long it has been powered on, how worn it is, and
+    the errors it counts. An NVMe disk is asked with `nvmecontrol`,
+    any other with `smartctl` when the host has smartmontools.
     **Snapshots**: the newest first, of all or of one dataset and those
     under it; taken with a name (the time, unless another is given),
     of everything under the dataset too when asked; rolled back to,
     cloned into a new dataset, destroyed once the name is typed.
+    **Replicate** sends a snapshot into a dataset that is not there
+    yet, on the same host (another pool, say): `zfs send` into `zfs
+    receive`, all of it or what changed since a snapshot both have,
+    with the datasets under it when asked. What arrives is not
+    mounted. Between two hosts it is not done yet.
     **Disks**: every disk as GEOM has it, with what `camcontrol` says
     it is, its partition table drawn to scale and listed. A table is
     made on a disk without one (gpt, mbr, bsd); a partition added in
     the free room, aligned to 1 MiB, labelled, resized, deleted once
     its name is typed; an empty table destroyed. **Rescan** has
-    `camcontrol` look for disks that came or went.
+    `camcontrol` look for disks that came or went. On a partition
+    of type freebsd-ufs, **newfs** makes a UFS file system, with a
+    label when given one, and **growfs** grows the file system to the
+    partition's size. The host refuses newfs while the partition is
+    mounted, swapped on or a pool's device, and, unless told that it
+    may, while it has a file system on it.
     **Mounts**: what is mounted, with how full, and beneath it what
     `fstab` says to mount: an entry that is not mounted is mounted,
     what is mounted unmounted (never the root). **Edit** opens `fstab`
     whole; the host takes it only if every line is an entry and nobody
     changed the file meanwhile, and keeps the one before beside it as
     `fstab.arcana-old`.
+    **Swap**, beneath: the devices the host swaps on, with how much of
+    each is used; **+ swap** swaps on a device more and **Swap off**
+    takes one away, until the next start, for which swap is a line
+    of `fstab`.
     Every table here, as everywhere in the console, is sorted by the
     column picked in its head, the other way when picked again and as
     the host gave it the third time, and the filter above leaves the

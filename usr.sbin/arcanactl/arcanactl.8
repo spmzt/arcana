@@ -344,6 +344,34 @@ With
 .Cm retry
 the agent starts the SCTP listeners that are not up, which it does not
 do by itself once the kernel had no SCTP when it started.
+.It Cm storage health
+How each disk says it is: asked with
+.Xr nvmecontrol 8
+when it is an NVMe disk, and with
+.Xr smartctl 8
+otherwise, when the host has it.
+.It Cm zfs load-key | unload-key Oo Fl r Oc Ar dataset
+Load the key of an encrypted dataset from where its
+.Va keylocation
+says, or forget it.
+.It Cm zfs jail | unjail Ar dataset Ar jail
+Give a dataset to a running jail to manage as its own, or take it back.
+.It Cm zfs replicate Oo Fl r Oc Ar snapshot Ar new-dataset Op Ar since-snapshot
+Send a snapshot into a dataset of the same host that is not there yet;
+with
+.Ar since-snapshot ,
+only what changed since that one, which both have.
+What arrives is not mounted.
+.It Cm gpart newfs Oo Fl f Oc Ar partition Op Ar label
+Make a UFS file system on a partition.
+Refused while it is mounted, swapped on or a pool's device, and,
+without
+.Fl f ,
+while it has a file system on it.
+.It Cm gpart growfs Ar partition
+Grow a partition's UFS file system to the partition's size.
+.It Cm swapon | swapoff Ar device
+Swap on a device, or no longer.
 .It Cm storage disks | pools | datasets | mounts
 .It Cm storage snapshots Op Ar dataset
 The host's storage, as JSON: the disks and their partitions as GEOM

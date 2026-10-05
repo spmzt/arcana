@@ -10,8 +10,11 @@
   not as JSON text.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: `zfs send` and `receive` between
-  hosts; encryption keys; a file system made on a partition (newfs) and
-  grown; swap; a disk's health (SMART); a vnet jail's own datasets.
+  two hosts (on one host it is done; between two it needs the agents
+  to reach each other, which is the mesh's); a key that is typed, for
+  a dataset whose keylocation is prompt, without it being kept in a
+  job; a key changed; file systems other than UFS made; a disk's
+  self-test started; a vnet jail's datasets from the jail's own page.
 - The firewall's page, further: rules of a part moved by dragging and
   renumbered to make room; a rule's words offered as they are typed
   (actions, tables, interfaces, the host's own addresses); a hit

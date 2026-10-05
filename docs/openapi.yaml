@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.33.0
+  version: 0.34.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -552,10 +552,21 @@ paths:
         errors and vdevs (name, depth, state, read, write, cksum, note);
         datasets (name, type, used, avail, refer, mountpoint,
         compression, ratio, quota, reservation, mounted, canmount,
-        origin, volsize, readonly); snapshots, newest first (name, used,
-        refer, creation); mounts and fstab. What is changed is a job, of
+        origin, volsize, readonly, encryption, keystatus, keylocation,
+        jailed); snapshots, newest first (name, used, refer, creation);
+        mounts, fstab and swap (device, size, used); health, the disks
+        each with name, by (nvmecontrol or smartctl), ok, temperature,
+        power_on_hours, power_cycles, used_pct and spare_pct or the
+        counts of reallocated, pending, uncorrectable and crc_errors,
+        and note when it was not asked. What is changed is a job, of
         kind zfs, zpool, mount, gpart or cam, with a verb, its words as
-        args, and the flags recursive and force.
+        args, and the flags recursive and force. Beyond what zfs(8),
+        zpool(8) and gpart(8) name, the verbs are zfs load-key and
+        unload-key (a dataset), jail and unjail (a dataset, a jail),
+        replicate (a snapshot, a new dataset of the same host, and
+        optionally the snapshot to send the changes since); gpart
+        newfs (a partition, a label) and growfs (a partition); mount
+        swapon and swapoff (a device).
       parameters:
         - $ref: "#/components/parameters/server"
         - name: kind
@@ -563,7 +574,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [disks, pools, datasets, snapshots, mounts, importable]
+            enum: [disks, pools, datasets, snapshots, mounts, importable, health]
         - name: filter
           in: query
           description: For snapshots, the dataset whose they are, with

@@ -20,17 +20,21 @@
 
 #include "app.h"
 
-enum { SK_POOLS, SK_DATASETS, SK_SNAPSHOTS, SK_DISKS, SK_MOUNTS, SK_N };
+enum { SK_POOLS, SK_DATASETS, SK_SNAPSHOTS, SK_DISKS, SK_MOUNTS, SK_HEALTH,
+    SK_N };
 enum {
 	SM_NONE, SM_SNAPSHOT, SM_DATASET, SM_PROPS, SM_CLONE, SM_PART_ADD,
 	SM_PART_LABEL, SM_PART_RESIZE, SM_SCHEME, SM_FSTAB, SM_POOL_NEW,
 	SM_POOL_ADD, SM_POOL_IMPORT, SM_VDEV_REPLACE, SM_VDEV_ATTACH,
+	SM_ASK,
 };
+/* What the box that asks for one word is asked for. */
+enum { A_JAIL, A_UNJAIL, A_REPLICATE, A_NEWFS, A_SWAPON };
 
 static const char *const kind_arg[SK_N] = { "pools", "datasets", "snapshots",
-    "disks", "mounts" };
+    "disks", "mounts", "health" };
 static const char *const kind_title[SK_N] = { "Pools", "Datasets",
-    "Snapshots", "Disks", "Mounts" };
+    "Snapshots", "Disks", "Mounts", "Health" };
 
 static struct {
 	char		 sid[9];
@@ -42,6 +46,7 @@ static struct {
 	double		 fetched[SK_N];
 	char		 of[256];	/* snapshots: of this dataset, or "" */
 	int		 modal;
+	int		 ask;		/* A_*: what SM_ASK asks for */
 	char		 target[256];	/* what the box is about */
 	char		 part[8];	/* a partition's index */
 	char		 dev[256];	/* a pool's device */
@@ -401,7 +406,7 @@ view_datasets(struct html *h)
 	const char		*name, *p;
 	char			 buf[32];
 	int			 depth, n, r;
-	bool			 vol, tree;
+	bool			 vol, tree, enc, locked, jailed;
 
 	h_raw(h, "<table class=\"net datasets\">");
 	tbl_head(h, "datasets", cols, 6, 1);
@@ -438,6 +443,23 @@ view_datasets(struct html *h)
 		if (jstr(d, "readonly") != NULL && strcmp(jstr(d, "readonly"),
 		    "on") == 0)
 			h_raw(h, " <span class=\"chip\">read-only</span>");
+		enc = jstr(d, "encryption") != NULL && strcmp(jstr(d,
+		    "encryption"), "off") != 0 && strcmp(jstr(d, "encryption"),
+		    "-") != 0;
+		locked = enc && jstr(d, "keystatus") != NULL && strcmp(jstr(d,
+		    "keystatus"), "unavailable") == 0;
+		jailed = jstr(d, "jailed") != NULL && strcmp(jstr(d, "jailed"),
+		    "on") == 0;
+		if (enc) {
+			h_fmt(h, " <span class=\"chip%s\"", locked ? " warn" :
+			    "");
+			h_attr(h, "title", jstr(d, "keylocation"));
+			h_fmt(h, ">encrypted · key %s</span>", locked ?
+			    "not loaded" : "loaded");
+		}
+		if (jailed)
+			h_raw(h, " <span class=\"chip\" title=\"A jail it was "
+			    "given to manages it as its own\">jailed</span>");
 		h_raw(h, "</td><td>");
 		size(buf, sizeof(buf), jint(d, "used", 0));
 		h_txt(h, buf);
@@ -480,6 +502,27 @@ view_datasets(struct html *h)
 			h_fmt(h, ">%s</button>", jstr(d, "mounted") != NULL &&
 			    strcmp(jstr(d, "mounted"), "yes") == 0 ?
 			    "Unmount" : "Mount");
+		}
+		if (enc) {
+			h_fmt(h, "<button class=\"ghost small\" data-act=\""
+			    "st-key\" data-arg=\"%s\"", locked ? "load-key" :
+			    "unload-key");
+			h_attr(h, "data-value", name);
+			h_fmt(h, " title=\"%s\">%s</button>", locked ? "Read "
+			    "its key from where its keylocation says" :
+			    "Forget its key: it is unmounted first, and "
+			    "cannot be read until the key is loaded again",
+			    locked ? "Load key" : "Unload key");
+		}
+		if (depth > 0) {
+			h_fmt(h, "<button class=\"ghost small\" data-act=\""
+			    "st-ask\" data-arg=\"%s\"", jailed ? "unjail" :
+			    "jail");
+			h_attr(h, "data-value", name);
+			h_fmt(h, " title=\"%s\">%s</button>", jailed ? "Take "
+			    "it back from the jail it was given to" : "Give "
+			    "it to a running jail, to manage as its own",
+			    jailed ? "Unjail" : "Jail");
 		}
 		if (depth > 0) {
 			h_raw(h, "<button class=\"icon\" data-act=\""
@@ -545,7 +588,12 @@ view_snapshots(struct html *h)
 		h_raw(h, ">Roll back</button><button class=\"ghost small\" "
 		    "data-act=\"st-clone\"");
 		h_attr(h, "data-arg", name);
-		h_raw(h, ">Clone</button><button class=\"icon\" data-act=\""
+		h_raw(h, ">Clone</button><button class=\"ghost small\" "
+		    "data-act=\"st-ask\" data-arg=\"replicate\" title=\"Send "
+		    "it into a new dataset of this host, another pool's "
+		    "say: zfs send into zfs receive\"");
+		h_attr(h, "data-value", name);
+		h_raw(h, ">Replicate</button><button class=\"icon\" data-act=\""
 		    "st-destroy\" title=\"Destroy it\"");
 		h_attr(h, "data-arg", name);
 		h_raw(h, ">×</button></td></tr>");
@@ -695,6 +743,23 @@ view_disks(struct html *h)
 					h_attr(h, "data-value", buf);
 					h_fmt(h, ">%s</button>", ts[k]);
 				}
+				/* UFS on it: made, or grown to its size. */
+				if (jstr(p, "type") != NULL && strcmp(jstr(p,
+				    "type"), "freebsd-ufs") == 0 && jstr(p,
+				    "name") != NULL) {
+					h_raw(h, "<button class=\"ghost small\" "
+					    "data-act=\"st-ask\" data-arg=\""
+					    "newfs\" title=\"Make a UFS file "
+					    "system on it: newfs\"");
+					h_attr(h, "data-value", jstr(p, "name"));
+					h_raw(h, ">newfs</button><button class="
+					    "\"ghost small\" data-act=\""
+					    "st-growfs\" title=\"Grow its file "
+					    "system to the partition's size: "
+					    "growfs\"");
+					h_attr(h, "data-arg", jstr(p, "name"));
+					h_raw(h, ">growfs</button>");
+				}
 			}
 			h_raw(h, "<button class=\"icon\" data-act=\""
 			    "st-part-delete\" title=\"Delete the partition\"");
@@ -715,6 +780,137 @@ view_disks(struct html *h)
 	}
 	if (n == 0)
 		h_raw(h, "<div class=\"empty small\"><p>No disk.</p></div>");
+}
+
+/* The swap the host has, and a device more for it. */
+static void
+view_swap(struct html *h)
+{
+	static const struct tcol cols[] = {
+		{ "Device", "device", false }, { "Size", "size", true },
+		{ "Used", "used", true },
+	};
+	const ucl_object_t	**rows, *o;
+	char			  buf[32];
+	int			  r;
+
+	h_raw(h, "<h4 class=\"family\">Swap <button class=\"ghost small\" "
+	    "data-act=\"st-ask\" data-arg=\"swapon\" data-value=\"\" title="
+	    "\"Swap on a device too: swapon\">+ swap</button></h4><table "
+	    "class=\"net swap\">");
+	tbl_head(h, "swap", cols, 3, 1);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("swap", jget(sg.data[SK_MOUNTS], "swap"), cols, 3,
+	    app.filter);
+	for (r = 0; (o = rows[r]) != NULL; r++) {
+		h_raw(h, "<tr><td class=\"mono\"><b>");
+		h_txt(h, jstr(o, "device"));
+		h_raw(h, "</b></td><td>");
+		size(buf, sizeof(buf), jint(o, "size", 0));
+		h_txt(h, buf);
+		h_raw(h, "</td><td>");
+		size(buf, sizeof(buf), jint(o, "used", 0));
+		h_txt(h, buf);
+		h_raw(h, " ");
+		bar(h, jint(o, "used", 0), jint(o, "size", 0));
+		h_raw(h, "</td><td class=\"acts\"><button class=\"ghost small\" "
+		    "data-act=\"st-swapoff\"");
+		h_attr(h, "data-arg", jstr(o, "device"));
+		h_raw(h, ">Swap off</button></td></tr>");
+	}
+	if (r == 0)
+		h_raw(h, "<tr><td colspan=\"4\" class=\"dim\">The host swaps "
+		    "on nothing.</td></tr>");
+	free(rows);
+	h_raw(h, "</tbody></table><p class=\"dim\">What is swapped on now. "
+	    "For the next start it is a line of fstab, which <b>fstab</b> "
+	    "above edits.</p>");
+}
+
+/* How each disk says it is. */
+static void
+view_health(struct html *h)
+{
+	static const struct tcol cols[] = {
+		{ "Disk", "name", false }, { "It says", "ok", false },
+		{ "Temperature", "temperature", true },
+		{ "Powered on", "power_on_hours", true },
+		{ "Worn", "used_pct", true }, { "Errors", NULL, false },
+		{ "Asked with", "by", false },
+	};
+	static const struct {
+		const char	*key, *title;
+	} errs[] = {
+		{ "media_errors", "media errors" },
+		{ "reallocated", "reallocated sectors" },
+		{ "pending", "sectors pending" },
+		{ "uncorrectable", "uncorrectable" },
+		{ "crc_errors", "CRC errors" },
+		{ "unsafe_shutdowns", "unsafe shutdowns" },
+	};
+	const ucl_object_t	**rows, *o;
+	size_t			  i;
+	int			  r, n;
+
+	h_raw(h, "<table class=\"net health\">");
+	tbl_head(h, "health", cols, 7, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("health", jget(sg.data[SK_HEALTH], "disks"), cols, 7,
+	    app.filter);
+	for (r = 0; (o = rows[r]) != NULL; r++) {
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, jstr(o, "name"));
+		h_raw(h, "</b></td><td>");
+		if (jget(o, "ok") != NULL)
+			h_fmt(h, "<span class=\"chip %s\">%s</span>", jbool(o,
+			    "ok") ? "ok" : "bad", jbool(o, "ok") ? "well" :
+			    "failing");
+		else {
+			h_raw(h, "<small class=\"dim\">");
+			h_txt(h, jstr(o, "note"));
+			h_raw(h, "</small>");
+		}
+		h_raw(h, "</td><td>");
+		if (jget(o, "temperature") != NULL)
+			h_fmt(h, "%lld °C", (long long)jint(o, "temperature",
+			    0));
+		h_raw(h, "</td><td>");
+		if (jget(o, "power_on_hours") != NULL)
+			h_fmt(h, "%.1f years <small class=\"dim\">%lld h, %lld "
+			    "starts</small>", (double)jint(o, "power_on_hours",
+			    0) / 8766, (long long)jint(o, "power_on_hours", 0),
+			    (long long)jint(o, "power_cycles", 0));
+		h_raw(h, "</td><td>");
+		if (jget(o, "used_pct") != NULL)
+			h_fmt(h, "%lld%% <small class=\"dim\">spare %lld%%"
+			    "</small>", (long long)jint(o, "used_pct", 0),
+			    (long long)jint(o, "spare_pct", 0));
+		else if (jget(o, "life_left") != NULL)
+			h_fmt(h, "%lld%% left", (long long)jint(o, "life_left",
+			    0));
+		else if (jget(o, "wear_level") != NULL)
+			h_fmt(h, "wear level %lld", (long long)jint(o,
+			    "wear_level", 0));
+		h_raw(h, "</td><td>");
+		n = 0;
+		for (i = 0; i < sizeof(errs) / sizeof(errs[0]); i++)
+			if (jint(o, errs[i].key, 0) > 0) {
+				h_fmt(h, "<span class=\"chip%s\">%lld %s</span> ",
+				    i < 4 ? " warn" : "", (long long)jint(o,
+				    errs[i].key, 0), errs[i].title);
+				n++;
+			}
+		if (n == 0 && jget(o, "ok") != NULL)
+			h_raw(h, "<small class=\"dim\">none</small>");
+		h_raw(h, "</td><td class=\"dim\">");
+		h_txt(h, jstr(o, "by"));
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table><p class=\"dim\">An NVMe disk is asked "
+	    "with <code>nvmecontrol logpage -p 2</code>; any other with "
+	    "<code>smartctl</code> of smartmontools, when the host has it. "
+	    "The agent has to be root to ask.</p>");
 }
 
 static void
@@ -800,6 +996,7 @@ view_mounts(struct html *h)
 	}
 	free(rows);
 	h_raw(h, "</tbody></table>");
+	view_swap(h);
 }
 
 void
@@ -865,6 +1062,9 @@ view_storage(struct html *h, struct server *s)
 		break;
 	case SK_DISKS:
 		view_disks(h);
+		break;
+	case SK_HEALTH:
+		view_health(h);
 		break;
 	default:
 		view_mounts(h);
@@ -935,6 +1135,46 @@ storage_modal(struct html *h)
 	if (app.modal != MODAL_STORAGE)
 		return (false);
 	switch (sg.modal) {
+	case SM_ASK:
+		h_raw(h, "<form data-form=\"st-ask\"><h2>");
+		h_txt(h, sg.ask == A_JAIL ? "Give to a jail: " : sg.ask ==
+		    A_UNJAIL ? "Take back from its jail: " : sg.ask ==
+		    A_REPLICATE ? "Replicate " : sg.ask == A_NEWFS ?
+		    "New file system on " : "Swap on a device");
+		h_txt(h, sg.target);
+		h_fmt(h, "</h2><label>%s<input name=\"name\" spellcheck=\""
+		    "false\" autocomplete=\"off\" autofocus placeholder=\"%s\">"
+		    "<small>%s</small></label>", sg.ask == A_JAIL || sg.ask ==
+		    A_UNJAIL ? "The jail" : sg.ask == A_REPLICATE ? "Into the "
+		    "new dataset" : sg.ask == A_NEWFS ? "Its label" :
+		    "The device", sg.ask == A_JAIL || sg.ask == A_UNJAIL ?
+		    "web" : sg.ask == A_REPLICATE ? "backup/path/name" :
+		    sg.ask == A_NEWFS ? "nothing, or data" : "/dev/ada0p3",
+		    sg.ask == A_JAIL ? "A running jail: the dataset is its "
+		    "own from then on (zfs jail), when its jailed property "
+		    "is on and the jail is allowed to mount zfs." : sg.ask ==
+		    A_UNJAIL ? "The jail it was given to (zfs unjail)." :
+		    sg.ask == A_REPLICATE ? "A dataset that is not there "
+		    "yet, on this host: the snapshot is sent into it, and "
+		    "it is not mounted." : sg.ask == A_NEWFS ? "newfs -U: "
+		    "whatever is on the partition is gone. The host refuses "
+		    "while it is mounted, swapped on or a pool's." :
+		    "swapon: until the next start, unless fstab has it.");
+		if (sg.ask == A_REPLICATE)
+			h_raw(h, "<label>Only what changed since<input name=\""
+			    "from\" spellcheck=\"false\" autocomplete=\"off\" "
+			    "placeholder=\"nothing: all of it; or "
+			    "pool/name@earlier\"><small>A snapshot both "
+			    "have, for one that was replicated before."
+			    "</small></label><label class=\"toggle\"><input "
+			    "type=\"checkbox\" name=\"recursive\"><span>With "
+			    "the datasets under it, their snapshots and "
+			    "properties</span></label>");
+		if (sg.ask == A_NEWFS)
+			h_raw(h, "<label class=\"toggle\"><input type=\""
+			    "checkbox\" name=\"force\"><span>Though it has a "
+			    "file system on it already</span></label>");
+		return (true);
 	case SM_SNAPSHOT:
 		t = time(NULL);
 		strftime(name, sizeof(name), "%Y-%m-%d-%H%M", gmtime(&t));
@@ -1146,7 +1386,10 @@ storage_modal_buttons(struct html *h)
 	if (sg.modal == SM_POOL_IMPORT)
 		return;
 	h_fmt(h, "<button class=\"primary\"%s>%s</button>", sg.saving ?
-	    " disabled" : "", sg.modal == SM_SNAPSHOT ? "Snapshot" :
+	    " disabled" : "", sg.modal == SM_ASK ? (sg.ask == A_JAIL ? "Give" :
+	    sg.ask == A_UNJAIL ? "Take back" : sg.ask == A_REPLICATE ?
+	    "Replicate" : sg.ask == A_NEWFS ? "Make it" : "Swap on") :
+	    sg.modal == SM_SNAPSHOT ? "Snapshot" :
 	    sg.modal == SM_VDEV_REPLACE ? "Replace" : sg.modal ==
 	    SM_VDEV_ATTACH ? "Mirror" : sg.modal == SM_POOL_ADD ? "Add" :
 	    sg.modal == SM_POOL_NEW ? "Create" :
@@ -1192,6 +1435,58 @@ storage_form(const char *form, const ucl_object_t *f)
 	if ((s = cur_server()) == NULL)
 		return (true);
 	name = jstr(f, "name") != NULL ? jstr(f, "name") : "";
+	if (strcmp(form, "st-ask") == 0) {
+		const char *from = jstr(f, "from") != NULL ? jstr(f, "from") :
+		    "";
+
+		if (sg.ask == A_JAIL || sg.ask == A_UNJAIL) {
+			if (!name_ok(name, "_.-")) {
+				snprintf(app.modal_error,
+				    sizeof(app.modal_error), "Name the jail");
+				return (true);
+			}
+			sjob(s, "zfs", sg.ask == A_JAIL ? "jail" : "unjail",
+			    "", sg.target, 2, sg.target, name);
+		} else if (sg.ask == A_REPLICATE) {
+			if (!name_ok(name, "_.:/-") || strchr(name, '/') ==
+			    NULL || (from[0] != '\0' && (!name_ok(from,
+			    "_.:/@-") || strchr(from, '@') == NULL))) {
+				snprintf(app.modal_error,
+				    sizeof(app.modal_error), "Into pool/name; "
+				    "since nothing, or a snapshot");
+				return (true);
+			}
+			if (from[0] != '\0')
+				sjob(s, "zfs", "replicate", jbool(f,
+				    "recursive") ? ",\"recursive\":true" : "",
+				    name, 3, sg.target, name, from);
+			else
+				sjob(s, "zfs", "replicate", jbool(f,
+				    "recursive") ? ",\"recursive\":true" : "",
+				    name, 2, sg.target, name);
+		} else if (sg.ask == A_NEWFS) {
+			if (name[0] != '\0' && !name_ok(name, "_.-")) {
+				snprintf(app.modal_error,
+				    sizeof(app.modal_error), "A label is "
+				    "letters, digits and _ . -");
+				return (true);
+			}
+			sjob(s, "gpart", "newfs", jbool(f, "force") ?
+			    ",\"force\":true" : "", sg.target, 2, sg.target,
+			    name);
+		} else {
+			if (strncmp(name, "/dev/", 5) != 0 || !name_ok(name +
+			    5, "_./-")) {
+				snprintf(app.modal_error,
+				    sizeof(app.modal_error), "A device: "
+				    "/dev/ada0p3");
+				return (true);
+			}
+			sjob(s, "mount", "swapon", "", name, 1, name);
+		}
+		app.modal = MODAL_NONE;
+		return (true);
+	}
 	if (strcmp(form, "st-snapshot") == 0) {
 		if (!name_ok(name, "_.:-")) {
 			snprintf(app.modal_error, sizeof(app.modal_error),
@@ -1402,6 +1697,26 @@ storage_action(const char *act, const char *arg, const char *value)
 		sg.data[SK_SNAPSHOTS] = NULL;
 		sg.loading[SK_SNAPSHOTS] = false;
 		refresh_storage(s, true);
+	} else if (strcmp(act, "st-ask") == 0) {
+		sg.ask = strcmp(arg, "jail") == 0 ? A_JAIL : strcmp(arg,
+		    "unjail") == 0 ? A_UNJAIL : strcmp(arg, "replicate") == 0 ?
+		    A_REPLICATE : strcmp(arg, "newfs") == 0 ? A_NEWFS :
+		    A_SWAPON;
+		box(SM_ASK, value, "");
+	} else if (strcmp(act, "st-key") == 0 && (strcmp(arg, "load-key") ==
+	    0 || strcmp(arg, "unload-key") == 0)) {
+		/* Its key is read where keylocation says, never typed here. */
+		sjob(s, "zfs", arg, "", value, 1, value);
+	} else if (strcmp(act, "st-growfs") == 0) {
+		sjob(s, "gpart", "growfs", "", arg, 1, arg);
+	} else if (strcmp(act, "st-swapoff") == 0) {
+		snprintf(body, sizeof(body), "swapoff %s, on %s: what is "
+		    "swapped out there has to fit the memory and the swap "
+		    "that is left, or the host refuses.", arg, s->name);
+		confirm("Swap off", body, "Swap off", true, "",
+		    "do-st-swapoff", arg, "");
+	} else if (strcmp(act, "do-st-swapoff") == 0) {
+		sjob(s, "mount", "swapoff", "", arg, 1, arg);
 	} else if (strcmp(act, "st-snapshot") == 0) {
 		box(SM_SNAPSHOT, arg, "");
 	} else if (strcmp(act, "st-dataset") == 0) {

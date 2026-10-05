@@ -308,6 +308,18 @@ definitions:
         doc: |
           The pools zpool(8) finds on the host's devices that are not
           imported.
+      - name: health
+        doc: |
+          How the disks are, as they say themselves, as a JSON object
+          with "disks": each with its name; "by", the program that
+          asked it (nvmecontrol for an NVMe disk, smartctl of
+          smartmontools for another, when the host has it); "ok",
+          whether it says it is well; its temperature in Celsius,
+          power_on_hours, power_cycles; for an NVMe disk used_pct and
+          spare_pct, media_errors and unsafe_shutdowns; for another
+          the raw values of reallocated, pending, uncorrectable,
+          crc_errors and what it has of wear_level, life_left and
+          media_wearout; and "note", why it was not asked.
   - name: net-family
     type: enum
     entries:

@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.24.0"
+#define	ARCANA_AGENT_VERSION	"0.25.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -95,6 +95,7 @@ struct opts {
 	const char	*sysctl_conf;
 	const char	*log_dir;	/* where syslogd(8) writes */
 	const char	*history_conf;	/* how the host is sampled */
+	const char	*tools_dir;	/* where programs without an option are */
 	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
@@ -423,6 +424,11 @@ char		*ifq_text(const char *, const char *, const char *);
 char		**helper_argv(struct work *, const char *, size_t,
 		    const char *const []);
 int		 route_helper(int, char **);
+int		 zfs_pipe(int, char **);
+const char	*tool(struct work *, const char *);
+int		 do_health(struct work *, struct arc_storage_rsp *);
+struct ucl_object_s;
+struct ucl_object_s *swap_list(struct work *);
 void		 route_watch_start(void);
 void		 event_add(const char *, const char *, ...) __printflike(2, 3);
 int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);

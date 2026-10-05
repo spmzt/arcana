@@ -2888,9 +2888,9 @@ storage_body()
 echo "zfs \$*" >> $(pwd)/storage.log
 case "\$*" in
 "list -Hp -t filesystem,volume"*)
-	printf 'tank\tfilesystem\t5000\t9000\t96\t/tank\tlz4\t1.50\t0\t0\tyes\ton\t-\t-\toff\n'
-	printf 'tank/data\tfilesystem\t4000\t9000\t4000\t/tank/data\tlz4\t2.00\t8000\t0\tyes\ton\t-\t-\toff\n'
-	printf 'tank/vol\tvolume\t100\t9000\t100\t-\toff\t1.00\t-\t0\t-\t-\ttank/data@a\t1048576\toff\n' ;;
+	printf 'tank\tfilesystem\t5000\t9000\t96\t/tank\tlz4\t1.50\t0\t0\tyes\ton\t-\t-\toff\toff\t-\tnone\toff\n'
+	printf 'tank/data\tfilesystem\t4000\t9000\t4000\t/tank/data\tlz4\t2.00\t8000\t0\tyes\ton\t-\t-\toff\taes-256-gcm\tunavailable\tfile:///k\ton\n'
+	printf 'tank/vol\tvolume\t100\t9000\t100\t-\toff\t1.00\t-\t0\t-\t-\ttank/data@a\t1048576\toff\toff\t-\tnone\toff\n' ;;
 "list -Hp -t snapshot"*)
 	printf 'tank/data@b\t10\t4000\t1759500000\n'
 	printf 'tank/data@a\t20\t3000\t1759400000\n' ;;
@@ -2929,9 +2929,83 @@ EOS
 		printf '#!/bin/sh\necho "%s $*" >> %s/storage.log\n[ "$1 $2" = "destroy ada9" ] && { echo "gpart: Device busy" >&2; exit 1; }\n[ "$1" = devlist ] && echo "<FAKE DISK 1.0>   at scbus0 target 0 lun 0 (pass0,ada0)"\nexit 0\n' "$p" "$(pwd)" > fake-$p
 	done
 	chmod +x fake-zfs fake-zpool fake-gpart fake-mount fake-umount fake-camcontrol
+	# The programs the daemon has no option for, in a directory of
+	# their own: what they are told is logged, what they say is canned.
+	mkdir tools
+	for p in newfs growfs swapon swapoff; do
+		printf '#!/bin/sh\necho "%s $*" >> %s/storage.log\nexit 0\n' "$p" "$(pwd)" > tools/$p
+	done
+	printf '#!/bin/sh\n[ "$1" = /dev/ada0p3 ] && echo ufs && exit 0\nexit 1\n' > tools/fstyp
+	cat > tools/nvmecontrol <<'EOS'
+#!/bin/sh
+cat <<EOP
+SMART/Health Information Log
+============================
+Critical Warning State:         0x00
+ Available spare:               0
+ Temperature:                   0
+Temperature:                    312 K, 38.85 C, 101.93 F
+Available spare:                100
+Available spare threshold:      10
+Percentage used:                3
+Power cycles:                   120
+Power on hours:                 4567
+Unsafe shutdowns:               12
+Media errors:                   0
+EOP
+EOS
+	cat > tools/smartctl <<'EOS'
+#!/bin/sh
+case "$4" in
+/dev/da0) echo '{"smart_status":{"passed":false},"temperature":{"current":51},"power_on_time":{"hours":40000},"ata_smart_attributes":{"table":[{"id":5,"name":"Reallocated_Sector_Ct","raw":{"value":88}},{"id":197,"name":"Current_Pending_Sector","raw":{"value":3}}]}}'; exit 8 ;;
+*) echo '{"smart_status":{"passed":true},"temperature":{"current":34},"power_on_time":{"hours":1200},"power_cycle_count":40,"ata_smart_attributes":{"table":[{"id":5,"name":"Reallocated_Sector_Ct","raw":{"value":0}},{"id":231,"name":"SSD_Life_Left","raw":{"value":97}}]}}' ;;
+esac
+EOS
+	chmod +x tools/*
 	printf '# Device\tMountpoint\tFStype\tOptions\tDump\tPass#\n/dev/ada0p2\t/\tufs\trw\t1\t1\n/dev/ada0p3\t/mnt/data\tufs\trw,noatime\t2\t2\nproc\t/proc\tprocfs\trw\t0\t0\n' > fstab
-	DAEMON_ARGS="-z $(pwd)/fake-zfs -Z $(pwd)/fake-zpool -q $(pwd)/fake-gpart -m $(pwd)/fake-mount -u $(pwd)/fake-umount -i $(pwd)/fake-camcontrol -S $(pwd)/fstab"
+	DAEMON_ARGS="-z $(pwd)/fake-zfs -Z $(pwd)/fake-zpool -q $(pwd)/fake-gpart -m $(pwd)/fake-mount -u $(pwd)/fake-umount -i $(pwd)/fake-camcontrol -S $(pwd)/fstab -2 $(pwd)/tools"
 	start_daemon
+
+	# A dataset's encryption and whether a jail has it; its key loaded
+	# from where it is kept, and forgotten; given to a jail, taken back.
+	atf_check -o match:'"name":"tank/data",[^}]*"encryption":"aes-256-gcm","keystatus":"unavailable","keylocation":"file:///k","jailed":"on"' \
+	    "$JGC" -c "$SOCK" storage datasets
+	atf_check -o match:'done +zfs load-key tank/data$' "$JGC" -c "$SOCK" zfs load-key tank/data
+	atf_check -o match:'done +zfs unload-key -r tank/data$' "$JGC" -c "$SOCK" zfs unload-key -r tank/data
+	atf_check -o match:'done +zfs jail web tank/data$' "$JGC" -c "$SOCK" zfs jail tank/data web
+	atf_check -o match:'done +zfs unjail web tank/data$' "$JGC" -c "$SOCK" zfs unjail tank/data web
+	atf_check -s exit:1 -e match:'a jail is named' -o ignore "$JGC" -c "$SOCK" zfs jail tank/data 'a b'
+	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs jail tank web
+	# A snapshot sent into a new dataset: the helper pipes zfs send
+	# into zfs receive, of all or of what changed since another.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" zfs replicate tank/data@b backup/data
+	atf_check -o match:"^0 zfs-pipe $(pwd)/fake-zfs tank/data@b backup/data - -\$" cat helper.log
+	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs replicate tank/data backup/data
+	atf_check "$JGD" -Q 0 zfs-pipe "$(pwd)/fake-zfs" tank/data@b backup/data tank/data@a r
+	atf_check -o match:'^zfs send -R -i tank/data@a tank/data@b$' \
+	    -o match:'^zfs receive -u backup/data$' cat storage.log
+	# A file system made on a partition: not on one that has one, is
+	# a pool's, or is not a device; and one grown.
+	atf_check -o match:'done +newfs -U -L data /dev/ada0p4$' "$JGC" -c "$SOCK" gpart newfs ada0p4 data
+	atf_check -s exit:1 -o match:'has a file system on it \(ufs\)' "$JGC" -c "$SOCK" gpart newfs ada0p3
+	atf_check -o match:'done +newfs -U /dev/ada0p3$' "$JGC" -c "$SOCK" gpart newfs -f ada0p3
+	atf_check -s exit:1 -o match:'ada1p1 is a device of a pool' "$JGC" -c "$SOCK" gpart newfs -f ada1p1
+	atf_check -s exit:1 -e match:'named as GEOM names it' -o ignore "$JGC" -c "$SOCK" gpart newfs ../etc
+	atf_check -o match:'done +growfs -y /dev/ada0p3$' "$JGC" -c "$SOCK" gpart growfs ada0p3
+	atf_check -o not-match:'ada1p1$' -o not-match:'etc' cat storage.log
+	# Swap, on a device and off it.
+	atf_check -o match:'done +swapon /dev/ada0p9$' "$JGC" -c "$SOCK" swapon /dev/ada0p9
+	atf_check -o match:'done +swapoff /dev/ada0p9$' "$JGC" -c "$SOCK" swapoff /dev/ada0p9
+	atf_check -s exit:1 -e match:'swap is on a device' -o ignore "$JGC" -c "$SOCK" swapon /etc/passwd
+	atf_check -o match:'"swap":\[' "$JGC" -c "$SOCK" storage mounts
+	# How the disks say they are: an NVMe disk by nvmecontrol, the
+	# others by smartctl, one of them failing.
+	atf_check -o save:health.json "$JGC" -c "$SOCK" storage health
+	atf_check -o match:'\{"name":"nda0","by":"nvmecontrol","ok":true,"temperature":39,"spare_pct":100,"used_pct":3,"power_on_hours":4567,"unsafe_shutdowns":12,"media_errors":0,"power_cycles":120\}' \
+	    -o match:'\{"name":"ada0","by":"smartctl","ok":true,"temperature":34,"power_on_hours":1200,"power_cycles":40,"reallocated":0,"life_left":97\}' \
+	    -o match:'\{"name":"da0","by":"smartctl","ok":false,"temperature":51,"power_on_hours":40000,"reallocated":88,"pending":3\}' \
+	    cat health.json
+	: > storage.log
 
 	# The disks are GEOM's own, read from the kernel: sizes in bytes,
 	# partitions with their sectors.
@@ -2952,7 +3026,7 @@ EOS
 	    -o match:'\{"name":"ada2p1","depth":2,"state":"OFFLINE","read":"0","write":"0","cksum":"0","note":"was /dev/ada2p1"\}' \
 	    cat p.json
 	# Datasets and snapshots: sizes are numbers, "-" is nothing.
-	atf_check -o match:'\{"name":"tank/data","type":"filesystem","used":4000,"avail":9000,"refer":4000,"mountpoint":"/tank/data","compression":"lz4","ratio":"2.00","quota":8000,"reservation":0,"mounted":"yes","canmount":"on","readonly":"off"\}' \
+	atf_check -o match:'\{"name":"tank/data","type":"filesystem","used":4000,"avail":9000,"refer":4000,"mountpoint":"/tank/data","compression":"lz4","ratio":"2.00","quota":8000,"reservation":0,"mounted":"yes","canmount":"on","readonly":"off",' \
 	    -o match:'"name":"tank/vol","type":"volume".*"origin":"tank/data@a","volsize":1048576' \
 	    "$JGC" -c "$SOCK" storage datasets
 	atf_check -o match:'\{"snapshots":\[\{"name":"tank/data@b","used":10,"refer":4000,"creation":1759500000\}' \

@@ -1139,7 +1139,7 @@ arc_storage_doit(cbl_req *req, const struct arc_storage_req *rq,
 {
 	struct job	*j;
 
-	if (rq->storage_kind > ARC_STORAGE_KIND_IMPORTABLE)
+	if (rq->storage_kind > ARC_STORAGE_KIND_HEALTH)
 		return (reject(req, "no such kind of storage"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);

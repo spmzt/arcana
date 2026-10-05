@@ -3464,6 +3464,7 @@ ul.listeners li.idle .led { background: transparent; box-shadow: inset 0 0 0 1.5
 .fw-state { display: flex; align-items: center; gap: .6rem; flex: 1; min-width: 0; }
 .chip.ok { border-color: var(--green); color: var(--green); }
 .chip.warn { border-color: var(--amber); color: var(--amber); }
+.chip.bad { border-color: var(--red); color: var(--red); }
 nav.fw-tabs { display: flex; flex-wrap: wrap; gap: .25rem; margin: .2rem 0 1rem; align-items: center; }
 nav.fw-tabs button { text-transform: none; letter-spacing: 0; }
 nav.fw-tabs button.on { color: var(--cyan); border-color: var(--cyan); }
