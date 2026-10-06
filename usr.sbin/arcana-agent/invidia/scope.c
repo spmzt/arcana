@@ -35,6 +35,7 @@
 #include <sys/jail.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/wait.h>
 
 #include <errno.h>
@@ -537,6 +538,20 @@ scope_helper(int argc, char **argv)
 		return (pcb_helper(argc - 1, argv + 1));
 	if (strcmp(argv[1], "zfs-pipe") == 0)
 		return (zfs_pipe(argc - 1, argv + 1));
+	/* A number of the network's, as the jail's own network has it. */
+	if (strcmp(argv[1], "sysctl-int") == 0 && argc == 3 &&
+	    strncmp(argv[2], "net.", 4) == 0) {
+		int	v;
+		size_t	len;
+
+		len = sizeof(v);
+		if (sysctlbyname(argv[2], &v, &len, NULL, 0) == -1) {
+			fprintf(stderr, "%s: %s\n", argv[2], strerror(errno));
+			return (1);
+		}
+		printf("%d\n", v);
+		return (0);
+	}
 	if (argc != 4)
 		return (2);
 	if ((out = ifq_text(argv[1], strcmp(argv[2], "-") == 0 ? NULL :

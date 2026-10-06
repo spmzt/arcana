@@ -303,6 +303,7 @@ worker(void *arg)
 	struct arc_sysctl_rsp	 scr2;
 	struct arc_processes_rsp prr;
 	struct arc_log_rsp	 lgr;
+	struct arc_fw_trace_rsp	 ftr;
 	struct arc_history_rsp	 hsr;
 	struct arc_events_rsp	 evr;
 	struct arc_storage_rsp	 stg;
@@ -496,6 +497,23 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &lgr.trace.v, &lgr.trace.n);
 		rc = arc_log_reply(j->req, &lgr);
+		break;
+	case ARC_CMD_FW_TRACE:
+		/* The address rides in source, seconds in fib, packets in
+		 * offset. */
+		what = "fw-trace";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "follow %s through the firewall", j->source);
+		memset(&ftr, 0, sizeof(ftr));
+		if (scope_enter_jail(&w, j->jail, &ftr.error, true) != 0)
+			ftr.has_ok = true;
+		else
+			do_fw_trace(&w, j->source, j->fib, j->offset, &ftr);
+		ok = ftr.ok;
+		error = ftr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &ftr.trace.v, &ftr.trace.n);
+		rc = arc_fw_trace_reply(j->req, &ftr);
 		break;
 	case ARC_CMD_HISTORY:
 		/* How to sample rides in fib and offset. */
@@ -1251,6 +1269,29 @@ arc_log_doit(cbl_req *req, const struct arc_log_req *rq, void *arg __unused)
 	j->has_pos = rq->has_position;
 	j->pos = rq->position;
 	j->offset = rq->has_lines ? rq->lines : 0;
+	return (start(j));
+}
+
+int
+arc_fw_trace_doit(cbl_req *req, const struct arc_fw_trace_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if (rq->net_filter == NULL || strlen(rq->net_filter) > 64)
+		return (reject(req, "the address to follow is an IPv4 or IPv6 "
+		    "address"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_FW_TRACE;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	j->source = xstrdup(rq->net_filter);
+	j->fib = rq->has_seconds ? rq->seconds : 0;
+	j->offset = rq->has_packets ? rq->packets : 0;
 	return (start(j));
 }
 

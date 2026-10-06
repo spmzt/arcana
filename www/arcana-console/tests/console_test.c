@@ -1845,6 +1845,23 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK(jstr(&r, "data.events.0.n") == NULL);
 	resp_free(&r);
+	/* Packets followed through the firewall by the kernel. */
+	snprintf(path, sizeof(path), "%.*s/ipfw/trace?address=10.0.0.2&"
+	    "seconds=2&packets=5", (int)(strlen(base) - strlen("/services")),
+	    base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("pass", jstr(&r, "data.packets.0.verdict"));
+	ATF_CHECK_STREQ("100", jstr(&r, "data.packets.0.rule"));
+	ATF_CHECK_STREQ("in", jstr(&r, "data.packets.0.direction"));
+	ATF_CHECK_STREQ("5", jstr(&r, "data.limit"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^tick-2s$' trace.d") == 0);
+	snprintf(path, sizeof(path), "%.*s/ipfw/trace?address=10.0.0.2;x",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 	ATF_REQUIRE(system("sleep 300 & echo $! > sleep.pid") == 0);
 	{
 		char	what[256], pid[16];

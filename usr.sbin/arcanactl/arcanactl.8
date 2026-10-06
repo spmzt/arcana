@@ -387,6 +387,26 @@ replaced by
 once ipfw has read it without doing it; with
 .Fl n
 only checked.
+.It Cm ipfw trace Ar address Op Ar seconds Op Ar packets
+Packets to or from
+.Ar address
+followed by the kernel itself: for each, the rule of the firewall that
+decided it and what it decided, its interface and direction, as the
+kernel's
+.Ql ipfw:::rule-matched
+probe tells
+.Xr dtrace 1 ;
+for 10
+.Ar seconds
+or 100
+.Ar packets ,
+whichever ends first.
+With
+.Fl j ,
+of the jail's own firewall.
+The host needs
+.Xr dtrace 4
+loaded.
 .It Cm transport Op Cm retry
 How the agent is reached: its listeners, each up or not and why not,
 whether the kernel has SCTP, and the connections open to the agent now.

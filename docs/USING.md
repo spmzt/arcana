@@ -287,7 +287,8 @@ The console is laid out as a tree and tabs.
     does not load it. From a shell: `arcanactl net ipfw`, `arcanactl
     [-p] ipfw add number rule…`, `ipfw keep add …`, `ipfw [keep]
     delete number`, `[-s] ipfw apply`, `ipfw enable | disable`,
-    `ipfw rules [-w file] [-n]`.
+    `ipfw rules [-w file] [-n]`, `ipfw trace address [seconds
+    [packets]]`.
     While the Firewall tab is shown its parts are in the side bar, in
     place of the hosts: **Overview**, **Dynamic states**, **Kept rules
     as text**, then a line for each part with how many rules it has;
@@ -310,7 +311,12 @@ The console is laid out as a tree and tabs.
     each rule it meets, each jump, call and return, and what becomes
     of it. A rule the page cannot judge (`me`, a state, an option it
     does not know) is taken as met and marked; it is a reading of the
-    rules, not the kernel's own answer. In a part, a rule's packets
+    rules, not the kernel's own answer. The kernel's own answer is
+    `arcanactl [-j jail] ipfw trace address`: for some seconds the
+    packets to or from the address that really cross the firewall,
+    each with the rule that decided it and what it decided, its
+    interface and direction, as ipfw's `rule-matched` probe tells
+    dtrace(1); the host needs dtrace (`kldload dtraceall`). In a part, a rule's packets
     are followed by how many a second it took since the look before,
     and **never** when none has matched it; a rule being changed has
     ▲ and ▼, which put a number before the rule above or after the
@@ -321,11 +327,15 @@ The console is laid out as a tree and tabs.
     ipfw shows them, and one line makes, changes or deletes a NAT,
     NAT64 or NPTv6 instance, a pipe, a queue or a scheduler, in
     ipfw's own words. With **keep**, what is done to a table or an
-    instance is also a line at the head of the kept rules. **Logged
+    instance is also a line at the head of the kept rules; and what
+    undoes it takes its lines out again: a table or an instance
+    deleted (`destroy`, `delete`) all of its lines, a table flushed
+    its entries, an entry deleted its own. **Logged
     packets** reads what the rules with `log` wrote into
     `/var/log/security`. A running jail with a network of its own is
     listed under the host in the side bar: its firewall is its own,
-    ipfw is run inside it, and its rules are kept in the jail.
+    ipfw is run inside it, its rules are kept in the jail, and on or
+    off is as the jail's own network has it.
   - **Sysctl**: the kernel's state, a part of the tree at a time
     (**kern**, **vm**, **net** and the others, or from a name typed),
     read from the kernel as `sysctl -a` has it: each name with its

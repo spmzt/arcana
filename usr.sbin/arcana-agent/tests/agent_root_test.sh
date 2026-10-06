@@ -333,6 +333,14 @@ jail_network_body()
 	done
 	# The host's own were not told as the jail's.
 	atf_check -o not-match:'"kind":"route-add","data":\{"destination":"198.51.100.0/24"' cat ev.json
+	# Its firewall on or off as the jail's own network has it, not
+	# as the host's.
+	if kldstat -q -m ipfw; then
+		atf_check -o ignore jexec arcw_n1 sysctl net.inet.ip.fw.enable=0
+		atf_check -o match:'"enabled":false' "$JGC" -j arcw_n1 -c "$SOCK" net ipfw
+		atf_check -o ignore jexec arcw_n1 sysctl net.inet.ip.fw.enable=1
+		atf_check -o match:'"enabled":true' "$JGC" -j arcw_n1 -c "$SOCK" net ipfw
+	fi
 	# Removed: no longer watched, and gone, not held dying by it.
 	atf_check -o ignore jail -r arcw_n1
 	sleep 0.5
@@ -355,6 +363,31 @@ jail_network_cleanup()
 	true
 }
 
+atf_test_case fw_trace cleanup
+fw_trace_head()
+{
+	atf_set "descr" "packets followed through the real firewall by the kernel: pings to an address, each with the rule that passed it"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+fw_trace_body()
+{
+	kldstat -q -m ipfw || atf_skip "ipfw(4) is not loaded"
+	kldload -n dtraceall || atf_skip "no dtrace(4)"
+	start_daemon
+	ping -c 6 -i 0.3 127.0.0.1 >/dev/null 2>&1 &
+	atf_check -o save:trace.json "$JGC" -c "$SOCK" ipfw trace 127.0.0.1 3 4
+	atf_check -o match:'"verdict":"pass","family":"inet","source":"127.0.0.1","destination":"127.0.0.1","proto":1,"sport":0,"dport":0,"rule":[0-9]+,"interface":"lo0","direction":"(in|out)"' \
+	    -o match:'"seconds":3,"limit":4' cat trace.json
+	# No more than asked for.
+	atf_check -o inline:'4\n' sh -c "grep -o '\"ms\"' trace.json | wc -l | tr -d ' '"
+}
+fw_trace_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case lifecycle
@@ -362,4 +395,5 @@ atf_init_test_cases()
 	atf_add_test_case aliases
 	atf_add_test_case routes
 	atf_add_test_case jail_network
+	atf_add_test_case fw_trace
 }

@@ -180,6 +180,7 @@ usage(void)
 	    "    ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | "
 	    "pipe |\n        queue | sched name word ...\n"
 	    "    ipfw rules [-w file] [-n]\n"
+	    "    ipfw trace address [seconds [packets]]\n"
 	    "    storage disks | pools | datasets | mounts | importable | health\n"
 	    "    zfs load-key | unload-key [-r] dataset\n"
 	    "    zfs jail | unjail dataset jail\n"
@@ -1910,6 +1911,37 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 
 	if (argc < 2)
 		usage();
+	if (strcmp(argv[1], "trace") == 0) {
+		struct arc_fw_trace_req	 tq;
+		struct arc_fw_trace_rsp	*tr;
+		const char		*e;
+
+		if (argc < 3 || argc > 5)
+			usage();
+		memset(&tq, 0, sizeof(tq));
+		tq.jail = netjail;
+		tq.net_filter = argv[2];
+		if (argc > 3) {
+			tq.has_seconds = true;
+			tq.seconds = (uint32_t)strtonum(argv[3], 1, 60, &e);
+			if (e != NULL)
+				xo_errx(1, "ipfw trace: seconds %s: %s", argv[3],
+				    e);
+		}
+		if (argc > 4) {
+			tq.has_packets = true;
+			tq.packets = (uint32_t)strtonum(argv[4], 1, 1000, &e);
+			if (e != NULL)
+				xo_errx(1, "ipfw trace: packets %s: %s", argv[4],
+				    e);
+		}
+		if ((error = arc_fw_trace(cl, &tq, &tr)) != 0)
+			fail(cl, error, "ipfw trace");
+		error = json_out("ipfw trace", tr->ok, tr->error, tr->json,
+		    tr->trace.v, tr->trace.n);
+		arc_fw_trace_rsp_free(tr);
+		return (error);
+	}
 	if (strcmp(argv[1], "rules") == 0) {
 		from = NULL;
 		memset(&req, 0, sizeof(req));

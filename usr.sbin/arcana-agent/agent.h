@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.33.0"
+#define	ARCANA_AGENT_VERSION	"0.34.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -382,6 +382,8 @@ char		*l2_title(const struct arc_job_spec *);
 int		 do_l2_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 do_ipfw(struct work *, struct arc_network_rsp *);
+int		 do_fw_trace(struct work *, const char *, uint32_t, uint32_t,
+		    struct arc_fw_trace_rsp *);
 int		 do_ipfw_rules(struct work *, const struct arc_ipfw_rules_req *,
 		    struct arc_ipfw_rules_rsp *);
 const char	*ipfw_check(const struct arc_job_spec *);

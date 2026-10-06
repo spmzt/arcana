@@ -726,6 +726,18 @@ attribute-sets:
         nested-attributes: route
         multi-attr: true
         doc: The routes of a part of network's dump of the routes.
+      - name: seconds
+        type: u32
+        doc: For fw-trace, how long to follow, at most.
+        checks:
+          min: 1
+          max: 60
+      - name: packets
+        type: u32
+        doc: For fw-trace, how many packets to follow, at most.
+        checks:
+          min: 1
+          max: 1000
 
   - name: host
     attributes:
@@ -1938,6 +1950,37 @@ operations:
     event:
       attributes:
         - json
+
+  - name: fw-trace
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Packets followed by the kernel itself through the firewall: each
+      that ipfw decides on whose source or destination is net-filter
+      (an address), as the kernel's ipfw:::rule-matched probe tells it
+      to dtrace(1), for up to seconds (10) or packets (100), whichever
+      ends first.  json: {"packets":[...],"seconds","limit"}, each
+      with ms (since it began), verdict (pass, deny, divert, tee,
+      dummynet, netgraph, ngtee, nat, reass, nat64), family, source,
+      destination, proto, sport, dport, rule (its number), interface
+      and direction (in or out).  With jail, of a jail's own firewall
+      (vnet): the packets on the jail's interfaces.  It needs
+      dtraceall(4) loaded.
+    do:
+      request:
+        attributes:
+          - jail
+          - net-filter
+          - seconds
+          - packets
+        required:
+          - net-filter
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
 
 mcast-groups:
   - name: events

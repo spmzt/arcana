@@ -578,6 +578,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");
 	put("tools/fstyp", "#!/bin/sh\nexit 1\n");
+	/* dtrace(1), told of a packet ipfw passed. */
+	put("tools/dtrace", "#!/bin/sh\ncat \"$3\" > trace.d\necho 'P 3 0 "
+	    "10.0.0.2 10.0.0.1 6 4000 22 100 em0 1'\n");
 	ATF_REQUIRE(system("chmod +x tools/*") == 0);
 	/* kldload(8) and kldunload(8): what they were told is logged. */
 	put("fake-kldload", "#!/bin/sh\necho \"kldload $*\" >> kld.log\n"

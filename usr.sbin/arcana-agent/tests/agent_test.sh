@@ -1568,6 +1568,7 @@ route-get) echo '{"to":"'\$4'","destination":"default","prefixlen":0,"gateway":"
 interfaces) echo '{"interfaces":[{"name":"epair91b","up":true,"mtu":1500,"addresses":[{"family":"inet","address":"10.99.0.2","prefixlen":24}]},{"name":"wg0","up":true,"mtu":1420,"addresses":[{"family":"inet","address":"10.255.0.1","prefixlen":30}]}],"time":1000}' ;;
 exists) case "\$4" in epair91b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
 up) echo 1 ;;
+sysctl-int) [ -f $(pwd)/fw-on ] && echo 1 || echo 0 ;;
 current) printf '1500\tto the host' ;;
 prefix) [ "\$5" = 10.99.0.2 ] && echo 10.99.0.2/24 ;;
 esac
@@ -1634,6 +1635,13 @@ EOS
 	    "$JGC" -j gateway -c "$SOCK" ipfw add 100 allow ip from any to any
 	atf_check -o match:'done' "$JGC" -j gateway -c "$SOCK" ipfw table T46 add 10.0.0.1
 	atf_check -o match:'"loaded":true' "$JGC" -j gateway -c "$SOCK" net ipfw
+	# On or off as the jail's own network has it, read inside it.
+	atf_check -o match:'sysctl-int net.inet.ip.fw.enable' cat helper.log
+	if kldstat -q -m ipfw; then
+		atf_check -o match:'"enabled":false' "$JGC" -j gateway -c "$SOCK" net ipfw
+		touch fw-on
+		atf_check -o match:'"enabled":true' "$JGC" -j gateway -c "$SOCK" net ipfw
+	fi
 	atf_check -o match:'^jexec 4 .*/fake-ipfw -q table T46 add 10.0.0.1$' \
 	    -o match:'^jexec 4 .*/fake-ipfw -S show$' cat jexec.log
 	# An interface is one of the jail's, or it is not there.
@@ -2791,6 +2799,40 @@ observe_cleanup()
 	stop_daemon
 }
 
+atf_test_case fw_trace cleanup
+fw_trace_head()
+{
+	atf_set "descr" "packets followed through the firewall by the kernel: dtrace(1) asked for ipfw:::rule-matched of one address, and what it tells read"
+}
+fw_trace_body()
+{
+	# dtrace(1): the script it is given is kept, two packets told.
+	mkdir tools
+	cat > tools/dtrace <<EOS
+#!/bin/sh
+cat "\$3" > $(pwd)/script.d
+echo 'P 12 0 192.0.2.7 198.51.100.1 6 40000 443 100 em0 0'
+echo 'P 13 1 198.51.100.1 192.0.2.7 6 443 40000 65535 em0 1'
+EOS
+	chmod +x tools/dtrace
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o match:'"packets":\[\{"ms":12,"verdict":"pass","family":"inet","source":"192.0.2.7","destination":"198.51.100.1","proto":6,"sport":40000,"dport":443,"rule":100,"interface":"em0","direction":"out"\},\{"ms":13,"verdict":"deny",[^}]*"rule":65535,[^}]*"direction":"in"\}\],"seconds":5,"limit":100' \
+	    "$JGC" -c "$SOCK" ipfw trace 192.0.2.7 5
+	# Of that address only, as the kernel holds it, and no longer.
+	atf_check -o match:'^ipfw:::rule-matched$' -o match:'arg1 == 2 && \(\(\(\(uint32_t \*\)arg2\)\[0\] == [0-9]+U\) \|\| \(\(\(uint32_t \*\)arg3\)\[0\] == [0-9]+U\)\)' \
+	    -o match:'^tick-5s$' -o match:'^/n >= 100/$' cat script.d
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw trace 2001:db8::7 1 3
+	atf_check -o match:'arg1 == 28 && \(\(\(\(uint32_t \*\)arg2\)\[0\] == [0-9]+U && .*\[3\] == [0-9]+U\)' \
+	    -o match:'^tick-1s$' -o match:'^/n >= 3/$' -o match:'inet_ntoa6' cat script.d
+	atf_check -s exit:1 -e match:'IPv4 or IPv6 address' "$JGC" -c "$SOCK" ipfw trace nonsense
+	atf_check -s exit:1 -e ignore "$JGC" -c "$SOCK" ipfw trace 192.0.2.7 61
+}
+fw_trace_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case firewall cleanup
 firewall_head()
 {
@@ -2951,6 +2993,21 @@ add 00010 set 1 allow ip from table(T46) to any
 	atf_check -o inline:'1\n' sh -c "grep -c '^nat 1 config if em0 same_ports\$' fw/ipfw.rules"
 	atf_check -o match:'^nat 1 config if em0 same_ports$' sed -n 1p fw/ipfw.rules
 	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw pipe 1 config bw 10Mbit/s
+	# Undone, kept: so are the lines it had made, and no others.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 create type addr
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 add 10.1.0.1
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 add 10.1.0.10
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 delete 10.1.0.1
+	atf_check -o match:'^table T9 add 10.1.0.10$' -o not-match:'^table T9 add 10.1.0.1$' \
+	    -o match:'^table T9 create type addr$' cat fw/ipfw.rules
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 flush
+	atf_check -o not-match:'^table T9 add' -o match:'^table T9 create type addr$' \
+	    cat fw/ipfw.rules
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 destroy
+	atf_check -o not-match:'T9' cat fw/ipfw.rules
+	atf_check -o match:'^ipfw -q table T9 destroy$' cat ipfw.log
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw nat 1 delete
+	atf_check -o not-match:'^nat 1 ' -o match:'^add ' cat fw/ipfw.rules
 	atf_check -s exit:1 -o match:'record already exists' \
 	    "$JGC" -c "$SOCK" ipfw table T46 add 10.9.9.9
 	atf_check -s exit:1 -e match:'not all of them at once' -o ignore \
@@ -3344,6 +3401,7 @@ atf_init_test_cases()
 	atf_add_test_case vnet
 	atf_add_test_case kernel
 	atf_add_test_case l2
+	atf_add_test_case fw_trace
 	atf_add_test_case firewall
 	atf_add_test_case observe
 	atf_add_test_case storage
