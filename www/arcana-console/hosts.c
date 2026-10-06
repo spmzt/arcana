@@ -197,6 +197,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_GENEVE] = "geneve",
 	[ARC_NET_KIND_IPFW] = "ipfw",
 	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
+	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
 };
 
 static const char *service_action_names[] = {
@@ -2495,8 +2496,8 @@ api_network(struct http_request *req)
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "kind is one of "
 		    "routes, nexthops, nhgroups, connections, sockets, interfaces, "
-		    "netgraph, wireguard, bird, bird-routes, lookup; fib a "
-		    "number"));
+		    "netgraph, wireguard, bird, bird-routes, bridges, geneve, "
+		    "ipfw, neighbours, lookup; fib a number"));
 	}
 	c->action = (uint8_t)i;
 	/* Read on in a table too large for one reply. */

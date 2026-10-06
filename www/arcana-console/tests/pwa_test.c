@@ -800,6 +800,17 @@ ATF_TC_BODY(pwa, tc)
 	    "length > 0 && window.netw.some(t => t.includes('\"what\":"
 	    "\"sockets\"'))", 20);
 	run("WebSocket.prototype.send = window.ws1;");
+	/* The neighbours, ARP's and NDP's, asked of the kernel. */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=neighbours]').click()");
+	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
+	    ".some(r => r.textContent.includes('58:9c:fc:00:00:02') && "
+	    "r.textContent.includes('reachable'))", 20);
+	/* The nexthop groups, as netstat -O has them. */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=nhgroups]').click()");
+	wait_js("document.querySelector('.stage table.nhgroups') || "
+	    "document.querySelector('.stage .empty')", 20);
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]').click()");
 	wait_js("document.querySelector('table.ifaces tr[data-if=lo0] .chip')",

@@ -67,6 +67,15 @@ static const struct column sock_cols[] = {
 	{ "Foreign", "foreign.address", "foreign.port" },
 };
 
+static const struct column neigh_cols[] = {
+	{ "Address", "address", NULL },
+	{ "Link address", "lladdr", NULL },
+	{ "Interface", "interface-name", NULL },
+	{ "State", "state", NULL },
+	{ "Family", "family", NULL },
+	{ "Router", "router", NULL },
+};
+
 static void	cell(struct html *, const ucl_object_t *, const struct column *);
 static int	table(struct html *, const ucl_object_t *, const struct column *,
 		    size_t, const char *);
@@ -412,7 +421,7 @@ view_network(struct html *h, struct server *s)
 		{ "interfaces", "Interfaces" }, { "netgraph", "Netgraph" },
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
-		{ "nhgroups", "Nexthop groups" },
+		{ "nhgroups", "Nexthop groups" }, { "neighbours", "Neighbours" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -436,7 +445,8 @@ view_network(struct html *h, struct server *s)
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
 	/* What is of the base system too, and came later. */
-	for (i = 8; i < 11 && (!plug || scoped); i++)
+	for (i = 8; i < (int)(sizeof(kinds) / sizeof(kinds[0])) &&
+	    (!plug || scoped); i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
@@ -599,6 +609,10 @@ view_network(struct html *h, struct server *s)
 	case NET_GENEVE:
 		view_geneve(h, s, jget(app.net.data, "data.geneves"));
 		return;
+	case NET_NEIGHBOURS:
+		shown = table(h, jget(app.net.data, "data.neighbours"),
+		    neigh_cols, 6, NULL);
+		break;
 	default:
 		shown = table(h, jget(app.net.data, "data.sockstat.socket"),
 		    sock_cols, 7, NULL);
@@ -609,9 +623,9 @@ view_network(struct html *h, struct server *s)
 }
 
 /*
- * Connections and sockets change by themselves: while one of them is
- * shown, and nobody paused it, it is read again every two seconds,
- * without a task of its own in the activity.
+ * Connections, sockets and neighbours change by themselves: while one
+ * of them is shown, and nobody paused it, it is read again every two
+ * seconds, without a task of its own in the activity.
  */
 void
 net_live_tick(double now)
@@ -620,7 +634,8 @@ net_live_tick(double now)
 
 	if (!app.visible || app.net.paused || app.net.loading ||
 	    app.node != NODE_HOST || app.tab != TAB_NETWORK ||
-	    (app.net.kind != NET_CONNECTIONS && app.net.kind != NET_SOCKETS))
+	    (app.net.kind != NET_CONNECTIONS && app.net.kind != NET_SOCKETS &&
+	    app.net.kind != NET_NEIGHBOURS))
 		return;
 	if ((s = cur_server()) == NULL || strcmp(app.net.sid, s->id) != 0 ||
 	    app.net.data == NULL || now - app.net.fetched < 2000)

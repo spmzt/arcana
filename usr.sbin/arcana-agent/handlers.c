@@ -91,6 +91,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_GENEVE] = "geneve",
 	[ARC_NET_KIND_IPFW] = "ipfw",
 	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
+	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
 };
 
 static const char *service_action_names[] = {

@@ -296,6 +296,15 @@ definitions:
           hops (ECMP) points to, as netstat -O prints them: each with
           its index, how many routes use it, and its next hops with
           the share of each.
+      - name: neighbours
+        doc: |
+          The neighbours, ARP's and NDP's, asked of the kernel through
+          netlink(4): a JSON object with the array "neighbours", each
+          with its family, address, link-level address, interface,
+          state (reachable, stale, delay, probe, incomplete, permanent)
+          and when it moves on ("next", seconds of the kernel's uptime),
+          with "router" for a router; and "total", how many there are
+          before the filter.
   - name: storage-kind
     type: enum
     entries:
@@ -1851,8 +1860,9 @@ operations:
       network's routes have them; routes, with changed, how many more
       routes changed in a second than are said one by one; link and
       link-del, an interface with up, carrier and mtu; address-add
-      and address-del, an interface's address and prefixlen.  They
-      are the kernel's own netlink(4) messages, of the host's network
+      and address-del, an interface's address and prefixlen; neigh
+      and neigh-del, a neighbour (ARP, NDP) as network's neighbours
+      has one.  They are the kernel's own netlink(4) messages, of the host's network
       and not of a jail's.  threshold, with what (cpu, mem or swap),
       value, limit and over, when a figure of history crosses its
       limit, either way.

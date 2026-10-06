@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.30.0"
+#define	ARCANA_AGENT_VERSION	"0.31.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -430,6 +430,7 @@ char		**helper_argv(struct work *, const char *, size_t,
 int		 route_helper(int, char **);
 int		 route_list(FILE *, int, uint32_t, const char *, const char *);
 int		 route_lookup(FILE *, const char *, uint32_t);
+int		 neigh_list(FILE *, int, const char *);
 int		 pcb_helper(int, char **);
 int		 pcb_list(FILE *, bool, int);
 int		 helper_lines(struct work *, const char *, size_t,

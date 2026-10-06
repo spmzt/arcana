@@ -123,6 +123,7 @@ usage(void)
 	    "    net routes [-4 | -6] text\n"
 	    "    net routes [-4 | -6] -o rows\n"
 	    "    net routes | connections | sockets [-4 | -6] parts [text]\n"
+	    "    net neighbours [-4 | -6] [text]\n"
 	    "    interface name up | down | destroy\n"
 	    "    interface name give | take jail\n"
 	    "    interface epair give jail [bridge]\n"
@@ -1360,7 +1361,8 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
-	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups" };
+	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups",
+	    "neighbours" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -1428,7 +1430,8 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 			fail(cl, error, "net");
 		return (0);
 	}
-	if (argc - optind == 1 && req.net_kind == ARC_NET_KIND_ROUTES)
+	if (argc - optind == 1 && (req.net_kind == ARC_NET_KIND_ROUTES ||
+	    req.net_kind == ARC_NET_KIND_NEIGHBOURS))
 		req.net_filter = argv[optind];
 	else if (optind != argc)
 		usage();

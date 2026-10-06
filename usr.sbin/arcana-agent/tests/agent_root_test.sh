@@ -249,6 +249,23 @@ routes_body()
 	atf_check -o match:'"gateway":"127.0.77.2"' -o not-match:'127.0.77.3' \
 	    "$JGC" -c "$SOCK" net routes -4 198.51.100.
 	atf_check -o match:'done' "$JGC" -c "$SOCK" route delete 198.51.100.0/24
+	# A neighbour, as ARP has it: listed by the kernel, and told as an
+	# event when it comes and when it goes.
+	ep=$(ifconfig epair create)
+	echo "$ep" > epair
+	atf_check ifconfig "$ep" inet 192.0.2.201/24 up
+	atf_check arp -s 192.0.2.202 02:00:00:77:02:02
+	sleep 0.5
+	atf_check -o match:"\"address\":\"192.0.2.202\",\"lladdr\":\"02:00:00:77:02:02\",\"interface-name\":\"$ep\",\"state\":\"permanent\"" \
+	    -o match:'"total":[1-9]' "$JGC" -c "$SOCK" net neighbours -4 192.0.2.202
+	atf_check -o match:'"kind":"neigh","data":\{"family":"inet","address":"192.0.2.202"' \
+	    "$JGC" -c "$SOCK" events "$last"
+	atf_check -o ignore arp -d 192.0.2.202
+	sleep 0.5
+	atf_check -o match:'"kind":"neigh-del","data":\{"family":"inet","address":"192.0.2.202"' \
+	    "$JGC" -c "$SOCK" events "$last"
+	atf_check ifconfig "$ep" destroy
+	rm epair
 	atf_check ifconfig lo7 destroy
 	sleep 0.5
 	atf_check -o match:'"kind":"link-del","data":\{"interface":"lo7"' \
@@ -260,6 +277,7 @@ routes_cleanup()
 	if [ -f mine ]; then
 		route -q delete 198.51.100.0/24 >/dev/null 2>&1
 		ifconfig lo7 destroy >/dev/null 2>&1
+		[ -f epair ] && ifconfig "$(cat epair)" destroy >/dev/null 2>&1
 	fi
 	true
 }

@@ -190,6 +190,10 @@ pcb-conns)
 pcb-socks)
 	echo '{"user":"root","command":"sshd","pid":1,"fd":3,"proto":"tcp'\$( [ "\$1" = 6 ] && echo 6 || echo 4)'","local":{"address":"*","port":22},"foreign":{"address":"*","port":0}}'
 	echo "#total 1" ;;
+route-neighs)
+	[ "\$1" != 6 ] && echo '{"family":"inet","address":"10.0.0.2","lladdr":"58:9c:fc:00:00:02","interface-name":"em0","state":"reachable","next":120}' | grep -e "\${2#-}"
+	[ "\$1" != 4 ] && echo '{"family":"inet6","address":"fe80::1%em0","lladdr":"58:9c:fc:00:00:01","interface-name":"em0","state":"stale","router":true}' | grep -e "\${2#-}"
+	echo "#total 2" ;;
 route-add|route-del)
 	echo "\$jid \$verb \$*" >> $(pwd)/route.log
 	case "\$1" in 10.66.0.0/16) echo "10.66.0.0/16: the route is there already" >&2; exit 1 ;; esac ;;
@@ -640,6 +644,12 @@ network_body()
 	atf_check -o match:'"nhgrp-index":1,"nhg-refcnt":1,"nhop-weights":\[\{"nh-index":5,"nh-weight":2' \
 	    -o match:'fake-netstat --libxo json -OnW -f inet$' \
 	    "$JGC" -t -c "$SOCK" net nhgroups
+	# The neighbours, of ARP and NDP, asked of the kernel.
+	atf_check -o match:'fake-helper -Q 0 route-neighs 0 -' \
+	    -o match:'"neighbours":\[\{"family":"inet","address":"10.0.0.2".*"router":true\}\],"total":2' \
+	    "$JGC" -t -c "$SOCK" net neighbours
+	atf_check -o match:'^\{"neighbours":\[\{"family":"inet6"[^]]*\],"total":2\}$' \
+	    "$JGC" -c "$SOCK" net neighbours -6 fe80
 	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" net tables
 	# A table too large to send whole: its first rows come, with how
 	# many there are; and it can be searched on the host.

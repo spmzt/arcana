@@ -543,6 +543,121 @@ route_lookup(FILE *out, const char *address, uint32_t fib)
 	return (rc);
 }
 
+/* A link-level address as it is written: aa:bb:cc:dd:ee:ff. */
+static void
+lladdr_text(const struct nlattr *nla, char *buf, size_t len)
+{
+	const unsigned char	*p;
+	size_t			 n, i, o;
+
+	buf[0] = '\0';
+	if (nla == NULL || nla->nla_len <= sizeof(*nla))
+		return;
+	p = (const unsigned char *)(nla + 1);
+	n = nla->nla_len - sizeof(*nla);
+	for (i = o = 0; i < n && o + 4 < len; i++)
+		o += (size_t)snprintf(buf + o, len - o, "%s%02x", i > 0 ? ":" :
+		    "", p[i]);
+}
+
+static const char *
+neigh_state(uint16_t state)
+{
+
+	return ((state & NUD_PERMANENT) != 0 ? "permanent" : (state &
+	    NUD_REACHABLE) != 0 ? "reachable" : (state & NUD_STALE) != 0 ?
+	    "stale" : (state & NUD_DELAY) != 0 ? "delay" : (state &
+	    NUD_PROBE) != 0 ? "probe" : (state & NUD_INCOMPLETE) != 0 ?
+	    "incomplete" : (state & NUD_FAILED) != 0 ? "failed" : "none");
+}
+
+/* One neighbour as a line: its address, link address and state. */
+static void
+neigh_row(struct rl *c, struct snl_state *ss, struct nlmsghdr *hdr)
+{
+	struct snl_parsed_neigh	 n = { 0 };
+	char			 a[INET6_ADDRSTRLEN + IF_NAMESIZE + 8],
+				 ll[64], ifn[IF_NAMESIZE];
+
+	if (!snl_parse_nlmsg(ss, hdr, &snl_rtm_neigh_parser, &n) ||
+	    n.nda_dst == NULL)
+		return;
+	if (if_indextoname(n.nda_ifindex, ifn) == NULL)
+		ifn[0] = '\0';
+	addr_text(n.nda_dst, a, sizeof(a));
+	lladdr_text(n.nda_lladdr, ll, sizeof(ll));
+	c->total++;
+	if (c->filter != NULL && strstr(a, c->filter) == NULL && strstr(ll,
+	    c->filter) == NULL && strstr(ifn, c->filter) == NULL)
+		return;
+	fprintf(c->out, "{\"family\":\"%s\",\"address\":", n.ndm_family ==
+	    AF_INET6 ? "inet6" : "inet");
+	jstring(c, a);
+	fprintf(c->out, ",\"lladdr\":");
+	jstring(c, ll[0] != '\0' ? ll : "(incomplete)");
+	fprintf(c->out, ",\"interface-name\":");
+	jstring(c, ifn);
+	/* One set by hand stays (sticky), as arp(8) says "permanent". */
+	fprintf(c->out, ",\"state\":\"%s\"", (n.ndm_flags & NTF_STICKY) !=
+	    0 ? "permanent" : neigh_state(n.ndm_state));
+	if ((n.ndm_flags & NTF_ROUTER) != 0)
+		fprintf(c->out, ",\"router\":true");
+	if (n.ndaf_next_ts != 0)
+		fprintf(c->out, ",\"next\":%u", n.ndaf_next_ts);
+	fprintf(c->out, "}\n");
+}
+
+/*
+ * The neighbours, ARP's and NDP's, a row a line into out and "#total
+ * n" last; of family 4, 6 or 0 for both, those with filter in them.
+ */
+int
+neigh_list(FILE *out, int fam, const char *filter)
+{
+	struct {
+		struct nlmsghdr	hdr;
+		struct ndmsg	ndm;
+	}			 msg;
+	struct snl_state	 ss;
+	struct snl_errmsg_data	 e = { 0 };
+	struct nlmsghdr		*hdr;
+	struct rl		 c;
+	int			 af, rc;
+
+	if (!snl_init(&ss, NETLINK_ROUTE)) {
+		fprintf(stderr, "netlink(4): %s\n", strerror(errno));
+		return (1);
+	}
+	memset(&c, 0, sizeof(c));
+	c.out = out;
+	c.filter = filter;
+	rc = 0;
+	for (af = 0; af < 2; af++) {
+		if ((af == 0 && fam == 6) || (af == 1 && fam == 4))
+			continue;
+		memset(&msg, 0, sizeof(msg));
+		msg.hdr.nlmsg_type = RTM_GETNEIGH;
+		msg.hdr.nlmsg_flags = NLM_F_DUMP | NLM_F_REQUEST;
+		msg.hdr.nlmsg_seq = snl_get_seq(&ss);
+		msg.hdr.nlmsg_len = sizeof(msg);
+		msg.ndm.ndm_family = af == 0 ? AF_INET : AF_INET6;
+		if (!snl_send_message(&ss, &msg.hdr)) {
+			rc = 1;
+			continue;
+		}
+		while ((hdr = snl_read_reply_multi(&ss, msg.hdr.nlmsg_seq,
+		    &e)) != NULL) {
+			neigh_row(&c, &ss, hdr);
+			snl_clear_lb(&ss);
+		}
+		if (e.error != 0)
+			rc = 1;
+	}
+	fprintf(out, "#total %ju\n", (uintmax_t)c.total);
+	snl_free(&ss);
+	return (rc);
+}
+
 /* The helper's verbs that begin with "route"; argv[0] is the verb. */
 int
 route_helper(int argc, char **argv)
@@ -557,6 +672,9 @@ route_helper(int argc, char **argv)
 	if (strcmp(argv[0], "route-get") == 0 && argc == 3)
 		return (route_lookup(stdout, argv[1], (uint32_t)strtoul(
 		    argv[2], NULL, 10)));
+	if (strcmp(argv[0], "route-neighs") == 0 && argc == 3)
+		return (neigh_list(stdout, atoi(argv[1]), strcmp(argv[2], "-") !=
+		    0 ? argv[2] : NULL));
 	if (strcmp(argv[0], "route-add") != 0 && strcmp(argv[0], "route-del") !=
 	    0)
 		return (2);
@@ -674,10 +792,45 @@ watch_addr(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
 	free(json);
 }
 
+/*
+ * A neighbour that came, changed or went: an event, but not for each of
+ * a storm (a neighbour going stale and fresh again, many at once).
+ */
+static void
+watch_neigh(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
+{
+	static time_t	 second;
+	static unsigned	 seen;
+	struct rl	 wc;
+	char		*json;
+	size_t		 len;
+	time_t		 now;
+
+	now = time(NULL);
+	if (now != second) {
+		second = now;
+		seen = 0;
+	}
+	if (++seen > WATCH_ROUTES_A_SECOND)
+		return;
+	json = NULL;
+	memset(&wc, 0, sizeof(wc));
+	if ((wc.out = open_memstream(&json, &len)) == NULL)
+		return;
+	neigh_row(&wc, ss, hdr);
+	fclose(wc.out);
+	if (json != NULL && len > 1) {
+		json[strcspn(json, "\n")] = '\0';
+		event_add(gone ? "neigh-del" : "neigh", "%s", json);
+	}
+	free(json);
+}
+
 static void *
 watcher(void *arg __unused)
 {
-	static const int	 groups[] = { RTNLGRP_LINK, RTNLGRP_IPV4_IFADDR,
+	static const int	 groups[] = { RTNLGRP_LINK, RTNLGRP_NEIGH,
+				    RTNLGRP_IPV4_IFADDR,
 				    RTNLGRP_IPV6_IFADDR, RTNLGRP_IPV4_ROUTE,
 				    RTNLGRP_IPV6_ROUTE };
 	struct snl_state	 ss;
@@ -704,6 +857,11 @@ watcher(void *arg __unused)
 		case NL_RTM_NEWLINK:
 		case NL_RTM_DELLINK:
 			watch_link(&ss, hdr, hdr->nlmsg_type == NL_RTM_DELLINK);
+			break;
+		case NL_RTM_NEWNEIGH:
+		case NL_RTM_DELNEIGH:
+			watch_neigh(&ss, hdr, hdr->nlmsg_type ==
+			    NL_RTM_DELNEIGH);
 			break;
 		case NL_RTM_NEWADDR:
 		case NL_RTM_DELADDR:

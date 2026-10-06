@@ -4,9 +4,10 @@
 
 - Netlink, further: the events told to the console as they happen
   (cblink notifications) and not only asked for; a jail's own network
-  watched as the host's is; neighbours (ARP, NDP) and nexthops read
-  the same way; a route's attributes as CBOR of the spec and not as
-  JSON text.
+  watched as the host's is; a route's attributes as CBOR of the spec
+  and not as JSON text. The nexthops stay with netstat -o: netlink
+  gives a kernel nexthop only its index, gateway and interfaces (not
+  its references, use, MTU or flags), and no kernel nexthop group.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: `zfs send` and `receive` between
   two hosts (on one host it is done; between two it needs the agents

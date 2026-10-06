@@ -18,6 +18,7 @@
 #include <arpa/inet.h>
 
 #include <err.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ucl.h>
@@ -213,10 +214,11 @@ first_line(const char *line, void *arg)
 		*p = strdup(line);
 }
 
-/* A row of the connections or sockets, into the document's array. */
+/* A row of the connections, sockets or neighbours, into the array. */
 struct pscan {
-	FILE	*out;
-	bool	 some;
+	FILE		*out;
+	bool		 some;
+	uintmax_t	 total;
 };
 
 static void
@@ -224,6 +226,8 @@ pcb_line(const char *line, void *arg)
 {
 	struct pscan	*ps = arg;
 
+	if (strncmp(line, "#total ", 7) == 0)
+		ps->total = strtoumax(line + 7, NULL, 10);
 	if (line[0] != '{')
 		return;
 	fprintf(ps->out, "%s%s", ps->some ? "," : "", line);
@@ -232,14 +236,15 @@ pcb_line(const char *line, void *arg)
 
 /*
  * The connections or the sockets, read from the kernel (pcb.c), in the
- * shape netstat and sockstat give them with --libxo json.
+ * shape netstat and sockstat give them with --libxo json; or the
+ * neighbours, through netlink (nlroute.c), with their total.
  */
 static int
-pcb_scan(struct work *w, uint8_t kind, uint8_t family,
+pcb_scan(struct work *w, uint8_t kind, uint8_t family, const char *filter,
     struct arc_network_rsp *rsp)
 {
 	struct pscan	 ps;
-	const char	*words[1];
+	const char	*words[2];
 	char		*json;
 	size_t		 len;
 	int		 rc;
@@ -251,12 +256,19 @@ pcb_scan(struct work *w, uint8_t kind, uint8_t family,
 		return (0);
 	}
 	fputs(kind == ARC_NET_KIND_SOCKETS ? "{\"sockstat\":{\"socket\":[" :
+	    kind == ARC_NET_KIND_NEIGHBOURS ? "{\"neighbours\":[" :
 	    "{\"statistics\":{\"socket\":[", ps.out);
 	words[0] = family == ARC_NET_FAMILY_INET ? "4" : family ==
 	    ARC_NET_FAMILY_INET6 ? "6" : "0";
-	rc = helper_lines(w, kind == ARC_NET_KIND_SOCKETS ? "pcb-socks" :
-	    "pcb-conns", 1, words, pcb_line, &ps);
-	fputs("]}}", ps.out);
+	words[1] = filter != NULL && filter[0] != '\0' ? filter : "-";
+	if (kind == ARC_NET_KIND_NEIGHBOURS) {
+		rc = helper_lines(w, "route-neighs", 2, words, pcb_line, &ps);
+		fprintf(ps.out, "],\"total\":%ju}", ps.total);
+	} else {
+		rc = helper_lines(w, kind == ARC_NET_KIND_SOCKETS ?
+		    "pcb-socks" : "pcb-conns", 1, words, pcb_line, &ps);
+		fputs("]}}", ps.out);
+	}
 	if (fclose(ps.out) != 0 || json == NULL || rc != 0) {
 		free(json);
 		rsp->error = "the kernel did not list them";
@@ -303,8 +315,9 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 	rsp->ok = false;
 	if (kind == ARC_NET_KIND_ROUTES)
 		return (routes_scan(w, family, filter, fib, offset, rsp));
-	if (kind == ARC_NET_KIND_CONNECTIONS || kind == ARC_NET_KIND_SOCKETS)
-		return (pcb_scan(w, kind, family, rsp));
+	if (kind == ARC_NET_KIND_CONNECTIONS || kind == ARC_NET_KIND_SOCKETS ||
+	    kind == ARC_NET_KIND_NEIGHBOURS)
+		return (pcb_scan(w, kind, family, filter, rsp));
 	if (family != ARC_NET_FAMILY_ALL) {
 		if (run_kind(w, kind, family, fib, &res) != 0) {
 			rsp->error = wtext(w, exec_error(w, &res,

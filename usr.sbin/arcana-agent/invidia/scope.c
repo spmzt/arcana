@@ -234,6 +234,9 @@ helper_lines(struct work *w, const char *verb, size_t n,
 	else if (strcmp(verb, "route-get") == 0 && n == 2)
 		rc = route_lookup(fp, words[0], (uint32_t)strtoul(words[1],
 		    NULL, 10));
+	else if (strcmp(verb, "route-neighs") == 0 && n == 2)
+		rc = neigh_list(fp, atoi(words[0]), strcmp(words[1], "-") != 0 ?
+		    words[1] : NULL);
 	else if (strncmp(verb, "pcb-", 4) == 0 && n == 1)
 		rc = pcb_list(fp, strcmp(verb, "pcb-socks") == 0, atoi(
 		    words[0]));

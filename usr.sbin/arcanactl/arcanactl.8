@@ -259,6 +259,13 @@ only the events of a greater number.
 .It Cm net nhgroups
 The kernel's nexthop groups, what a route of several next hops points
 to, each with its next hops and their shares.
+.It Cm net neighbours Oo Fl 4 | Fl 6 Oc Op Ar text
+The neighbours, those of ARP and of NDP, asked of the kernel through
+.Xr netlink 4 :
+each with its address, link-level address, interface and state, and
+when it moves on; only those with
+.Ar text
+in them, when given.
 .It Cm history Op Ar after
 How busy the host has been: what the agent sampled by itself and
 kept, each sample with its time, the CPUs' busy share, the load, the

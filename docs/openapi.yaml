@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.42.0
+  version: 0.43.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -485,7 +485,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup]
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, neighbours]
           description: The kernel's routes through netlink(4) (each with
             destination, gateway, flags, nhop, mtu, interface-name,
             metric, weight, fib, prefixlen, source and expire-time when
@@ -493,6 +493,10 @@ paths:
             several), netstat -onW, netstat -OnW, the kernel's connections and
             sockets in the shape of netstat -n and sockstat -w,
             getifaddrs(3), ngctl list -l, wg show (public keys only),
+            the neighbours of ARP and NDP through netlink(4) as
+            {"neighbours":[...],"total":n} (each with family, address,
+            lladdr, interface-name, state, next and router, and
+            only those with `filter` in them),
             birdc show status and protocols; bird-routes is birdc show
             route for what `filter` names, in birdc's words with a comma
             between them (a prefix, an address, `protocol,name`,
@@ -824,6 +828,7 @@ paths:
         (changed, how many more changed in a second than are said one
         by one), link and link-del (interface, up, carrier, mtu),
         address-add and address-del (interface, address, prefixlen),
+        neigh and neigh-del (a neighbour, as net/neighbours has one),
         and threshold (what, value, limit, over) when a figure of the
         history crosses its limit. The rest are the kernel's netlink(4)
         messages of the host's own network.

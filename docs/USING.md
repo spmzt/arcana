@@ -83,6 +83,12 @@ The console is laid out as a tree and tabs.
     and descriptor, and `?` for one nobody holds any more. A host's
     own are read by the agent itself, a jail's by its helper inside
     the jail; netstat and sockstat are not run for them.
+    **Neighbours** are ARP's and NDP's, asked of the kernel through
+    netlink as the routes are: each with its link-level address,
+    interface, state (reachable, stale, delay, probe, incomplete, or
+    permanent for one set by hand) and whether it is a router; read
+    again every two seconds while Live is lit. `arcanactl net
+    neighbours [-4 | -6] [text]`.
     The routes, connections and sockets come in parts over the
     console's stream as the host reads them, so a table of any size,
     a full BGP table say, arrives whole: the first time the table
@@ -360,8 +366,8 @@ The console is laid out as a tree and tabs.
     root agent only. From a shell: `arcanactl [-j jail] ps [pid]`,
     `arcanactl signal pid [name]`, `arcanactl renice pid nice`.
   - **Events**, the last entry of the Log tab's list of logs: every
-    route, interface and address of the host that came, went or
-    changed, as the kernel told the agent of it through netlink the
+    route, interface, address and neighbour of the host that came,
+    went or changed, as the kernel told the agent of it through netlink the
     moment it happened, the last 512 kept. A storm of routes (a BGP
     session coming up) is counted for each second and not listed. A
     jail's own network is not in it. This is what the workflows'

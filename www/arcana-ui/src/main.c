@@ -692,6 +692,7 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "bridges") == 0 ? NET_BRIDGES :
 		    strcmp(arg, "geneve") == 0 ? NET_GENEVE :
 		    strcmp(arg, "nhgroups") == 0 ? NET_NHGROUPS :
+		    strcmp(arg, "neighbours") == 0 ? NET_NEIGHBOURS :
 		    strcmp(arg, "wireguard") == 0 ? NET_WIREGUARD :
 		    strcmp(arg, "bird") == 0 ? NET_BIRD : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
