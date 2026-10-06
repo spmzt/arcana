@@ -2378,8 +2378,53 @@ ATF_TC_BODY(mtls, tc)
 		http("GET", path, NULL, &r);
 		EXPECT(&r, 200);
 		ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "kept open")
-		    != NULL, "%s", jstr(&r, "trace.2.detail"));
+		    != NULL && strstr(jstr(&r, "trace.2.detail"), "shared") !=
+		    NULL, "%s", jstr(&r, "trace.2.detail"));
 		resp_free(&r);
+		/*
+		 * Requests at once go over that one association, each
+		 * waiting for its own answer: the agent sees one SCTP
+		 * session, however many there were.
+		 */
+		{
+			pid_t	kids[6];
+			int	k, st, bad;
+
+			for (k = 0; k < 6; k++)
+				if ((kids[k] = fork()) == 0) {
+					struct resp	kr;
+
+					http("GET", path, NULL, &kr);
+					_exit(kr.status == 200 ? 0 : 1);
+				}
+			bad = 0;
+			for (k = 0; k < 6; k++)
+				if (waitpid(kids[k], &st, 0) == -1 ||
+				    !WIFEXITED(st) || WEXITSTATUS(st) != 0)
+					bad++;
+			ATF_CHECK_EQ(0, bad);
+		}
+		snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		{
+			const char	*t;
+			char		 key[64];
+			int		 k, nsctp;
+
+			nsctp = 0;
+			for (k = 0; k < 32; k++) {
+				snprintf(key, sizeof(key),
+				    "data.sessions.%d.transport", k);
+				if ((t = jstr(&r, key)) == NULL)
+					break;
+				if (strcmp(t, "sctp") == 0)
+					nsctp++;
+			}
+			ATF_CHECK_EQ_MSG(1, nsctp, "%d SCTP sessions", nsctp);
+		}
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
 		snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
 		http("GET", path, NULL, &r);
 		EXPECT(&r, 200);

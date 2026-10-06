@@ -375,6 +375,15 @@ The console is laid out as a tree and tabs.
     (warn, invalid, cannot) amber: the file itself has no level.
     Files newsyslog has packed are not read. From a shell:
     `arcanactl log [-o lines] [-f position] [name [text]]`.
+  - **Over SCTP**, the requests the console makes of a host at once
+    all go over one association, which a thread of the console runs,
+    each waiting for its own answer: the agent sees one session where
+    over TCP it would see one for each. What comes in parts (the
+    kernel's state, the routes, connections and sockets) has an
+    association of its own, as a slow reader of it would otherwise
+    hold the others back. cblink sends every request and reply on
+    SCTP stream 0; its other streams are for its own flow-controlled
+    streams, which nothing of Arcana uses yet.
   - **How it is reached**, at the foot of the summary: the agent's
     listeners and the connections open to the agent now, each with its
     transport, where it comes from and the name in its certificate,

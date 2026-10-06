@@ -116,6 +116,13 @@ struct call {
  * its answer.  Several requests to one host at once have one each, and
  * leave as many behind.  One that nobody took for a while is closed,
  * and so is one the other end has closed or written to unasked.
+ *
+ * An SCTP association is not taken but shared: the requests to a host
+ * that run at once all go over the one association, which a thread of
+ * its own runs (a cbl_loop), each request waiting for its own answer.
+ * A dump is not sent over it: a reader that is slow holds the reading
+ * of the connection its dump came on, which would hold every other
+ * request with it; it has a connection of its own, as on TCP.
  */
 #define	POOL_MAX	48
 #define	POOL_PER_HOST	4
@@ -134,6 +141,17 @@ struct pooled {
 static struct pooled	pool[POOL_MAX];
 static int		npool;
 static pthread_mutex_t	pool_lock = PTHREAD_MUTEX_INITIALIZER;
+
+struct shared {
+	struct pooled	 p;
+	int		 users;		/* requests on it now */
+	bool		 dead;		/* to be closed once nobody uses it */
+};
+
+static struct shared	shared[POOL_MAX];
+static int		nshared;
+static cbl_loop		*sloop;		/* runs the shared associations */
+static pthread_once_t	sloop_once = PTHREAD_ONCE_INIT;
 
 static cbl_ctx	*ctx;
 
@@ -291,9 +309,179 @@ pooled_close(struct pooled *p)
 	free(p->peer);
 }
 
+static bool	pool_take_own(const char *, const char *, struct pooled *);
+
+static bool
+is_sctp(const char *uri)
+{
+
+	return (strncmp(uri, "sctp:", 5) == 0);
+}
+
+static void *
+sloop_run(void *arg __unused)
+{
+
+	(void)cbl_loop_run(sloop);
+	return (NULL);
+}
+
+/* The thread that runs the shared associations, once. */
+static void
+sloop_start(void)
+{
+	pthread_t	tid;
+	int		error;
+
+	if ((error = cbl_loop_new(ctx, &sloop)) != 0) {
+		kore_log(LOG_ERR, "cbl_loop_new: %s", strerror(error));
+		sloop = NULL;
+		return;
+	}
+	if ((error = pthread_create(&tid, NULL, sloop_run, NULL)) != 0) {
+		kore_log(LOG_ERR, "pthread_create: %s", strerror(error));
+		cbl_loop_free(sloop);
+		sloop = NULL;
+		return;
+	}
+	(void)pthread_detach(tid);
+}
+
+/* Closed once its last user is done; called with the lock held. */
+static void
+shared_drop(int i)
+{
+
+	if (shared[i].users > 0)
+		return;
+	pooled_close(&shared[i].p);
+	shared[i] = shared[--nshared];
+}
+
+/* The shared association to uri, with one user more; false if none. */
+static bool
+shared_take(const char *uri, const char *peer, struct pooled *out)
+{
+	uint64_t	now;
+	int		i;
+	bool		found;
+
+	found = false;
+	now = now_us();
+	pthread_mutex_lock(&pool_lock);
+	for (i = nshared - 1; i >= 0; i--) {
+		if (!shared[i].dead && (!cbl_conn_is_open(shared[i].p.conn) ||
+		    (shared[i].users == 0 && now - shared[i].p.since >
+		    POOL_IDLE_US)))
+			shared[i].dead = true;
+		if (shared[i].dead) {
+			shared_drop(i);
+			continue;
+		}
+		if (found || strcmp(shared[i].p.uri, uri) != 0 ||
+		    !same(shared[i].p.peer, peer))
+			continue;
+		*out = shared[i].p;
+		out->uri = strdup(uri);
+		out->peer = peer != NULL ? strdup(peer) : NULL;
+		shared[i].users++;
+		found = true;
+	}
+	pthread_mutex_unlock(&pool_lock);
+	return (found);
+}
+
+/*
+ * A request is done with a shared association, or one of its own over
+ * SCTP becomes the shared one: attached to the loop, unless there is
+ * one already.  False when conn is not and is not to be shared.
+ */
+static bool
+shared_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
+    const struct arc_client *cl)
+{
+	struct shared	n;
+	int		i;
+
+	pthread_mutex_lock(&pool_lock);
+	for (i = 0; i < nshared; i++)
+		if (shared[i].p.conn == conn) {
+			shared[i].users--;
+			shared[i].p.since = now_us();
+			if (shared[i].dead)
+				shared_drop(i);
+			pthread_mutex_unlock(&pool_lock);
+			return (true);
+		}
+	for (i = 0; i < nshared; i++)
+		if (!shared[i].dead && strcmp(shared[i].p.uri, uri) == 0 &&
+		    same(shared[i].p.peer, peer))
+			break;
+	pthread_mutex_unlock(&pool_lock);
+	/* One is shared already, or there is no room: this one goes. */
+	if (i < nshared || nshared >= POOL_MAX)
+		return (false);
+	(void)pthread_once(&sloop_once, sloop_start);
+	if (sloop == NULL || cbl_conn_attach(conn, sloop) != 0)
+		return (false);
+	memset(&n, 0, sizeof(n));
+	n.p.conn = conn;
+	n.p.tls = tls;
+	n.p.family = cl->family;
+	n.p.version = cl->version;
+	n.p.since = now_us();
+	if ((n.p.uri = strdup(uri)) == NULL || (peer != NULL && (n.p.peer =
+	    strdup(peer)) == NULL)) {
+		pooled_close(&n.p);
+		return (true);
+	}
+	pthread_mutex_lock(&pool_lock);
+	if (nshared < POOL_MAX)
+		shared[nshared++] = n;
+	else
+		n.p.conn = NULL;
+	pthread_mutex_unlock(&pool_lock);
+	if (n.p.conn == NULL)
+		pooled_close(&n.p);
+	return (true);
+}
+
+/*
+ * A connection not to be used again: closed, or for a shared one,
+ * closed once the requests on it now are done.
+ */
+static void
+pool_drop(cbl_conn *conn, cbl_tls *tls)
+{
+	int	i;
+
+	pthread_mutex_lock(&pool_lock);
+	for (i = 0; i < nshared; i++)
+		if (shared[i].p.conn == conn) {
+			shared[i].users--;
+			shared[i].dead = true;
+			shared_drop(i);
+			pthread_mutex_unlock(&pool_lock);
+			return;
+		}
+	pthread_mutex_unlock(&pool_lock);
+	cbl_conn_free(conn);
+	cbl_tls_free(tls);
+}
+
 /* An idle connection to uri, if one is there and still good. */
 static bool
 pool_take(const char *uri, const char *peer, struct pooled *out)
+{
+
+	if (is_sctp(uri))
+		return (shared_take(uri, peer, out));
+	return (pool_take_own(uri, peer, out));
+}
+
+/* The same, of the connections that are not shared. */
+static bool
+pool_take_own(const char *uri, const char *peer, struct pooled *out)
 {
 	struct pollfd	pfd;
 	uint64_t	now;
@@ -339,6 +527,14 @@ pool_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 	struct pooled	p;
 	int		i, n;
 
+	if (is_sctp(uri)) {
+		if (!shared_give(uri, peer, conn, tls, cl)) {
+			cbl_conn_free(conn);
+			cbl_tls_free(tls);
+		}
+		return;
+	}
+
 	memset(&p, 0, sizeof(p));
 	p.conn = conn;
 	p.tls = tls;
@@ -375,6 +571,11 @@ hosts_forget(const char *uri)
 			pooled_close(&pool[i]);
 			pool[i] = pool[--npool];
 		}
+	for (i = nshared - 1; i >= 0; i--)
+		if (strcmp(shared[i].p.uri, uri) == 0) {
+			shared[i].dead = true;
+			shared_drop(i);
+		}
 	pthread_mutex_unlock(&pool_lock);
 }
 
@@ -397,7 +598,8 @@ hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
 	memset(cl, 0, sizeof(*cl));
 	*connp = NULL;
 	*tlsp = NULL;
-	if (pool_take(uri, peer, &kept)) {
+	/* Not a shared one: see above. */
+	if (pool_take_own(uri, peer, &kept)) {
 		free(kept.uri);
 		free(kept.peer);
 		cl->conn = kept.conn;
@@ -455,12 +657,11 @@ hosts_release(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 {
 
 	arc_client_fini(cl);
+	/* A dump's own SCTP association may be the shared one after. */
 	if (good && cbl_conn_is_open(conn))
 		pool_give(uri, peer, conn, tls, cl);
-	else {
-		cbl_conn_free(conn);
-		cbl_tls_free(tls);
-	}
+	else
+		pool_drop(conn, tls);
 }
 
 int
@@ -1030,7 +1231,8 @@ connect:
 		reused = true;
 		snprintf(detail, sizeof(detail), "%s, %s, kept open", c->uri,
 		    local ? "local socket" : strncmp(c->uri, "sctp:", 5) ==
-		    0 ? "mutual DTLS 1.2" : "mutual TLS 1.3");
+		    0 ? "mutual DTLS 1.2, one association shared by the "
+		    "requests to this host" : "mutual TLS 1.3");
 		goto connected;
 	}
 	reused = false;
@@ -1721,8 +1923,7 @@ rpcfail:
 	 */
 	if (reused && c->reads && cl.err == NULL) {
 		arc_client_fini(&cl);
-		cbl_conn_free(conn);
-		cbl_tls_free(tls);
+		pool_drop(conn, tls);
 		conn = NULL;
 		tls = NULL;
 		again = true;
@@ -1824,8 +2025,10 @@ done:
 	}
 	if (cl.conn != NULL)
 		arc_client_fini(&cl);
-	cbl_conn_free(conn);
-	cbl_tls_free(tls);
+	if (conn != NULL)
+		pool_drop(conn, tls);
+	else
+		cbl_tls_free(tls);
 	return (KORE_RESULT_OK);
 }
 
