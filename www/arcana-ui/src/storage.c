@@ -115,6 +115,11 @@ snap_there(const char *name)
 	return (false);
 }
 
+static const struct tcol snap_cols[] = {
+	{ "Snapshot", "name", false }, { "Used", "used", true },
+	{ "Referenced", "refer", true }, { "Taken", "creation", true },
+};
+
 /*
  * Is it the newest snapshot of its dataset?  The host lists them the
  * newest first: the first of its dataset is.
@@ -622,14 +627,11 @@ view_datasets(struct html *h)
 static void
 view_snapshots(struct html *h)
 {
-	static const struct tcol cols[] = {
-		{ "Snapshot", "name", false }, { "Used", "used", true },
-		{ "Referenced", "refer", true }, { "Taken", "creation", true },
-	};
+	const struct tcol	*cols = snap_cols;
 	const ucl_object_t	**rows, *o;
 	const char		*name;
 	char			 buf[32], when[32];
-	int			 n, r, all;
+	int			 n, r, all, newest;
 
 	if (sg.of[0] != '\0') {
 		h_raw(h, "<div class=\"notice info\">Snapshots of <b>");
@@ -656,15 +658,29 @@ view_snapshots(struct html *h)
 	    "</label>", sg.nsel > 0 ? " on" : "", n > 0 && all == n ?
 	    " checked" : "", n == 0 ? " disabled" : "", app.filter[0] !=
 	    '\0' ? "All shown" : "All");
-	if (sg.nsel > 0)
+	for (r = 0, newest = 0; r < sg.nsel; r++)
+		if (snap_newest(sg.sel[r]))
+			newest++;
+	if (sg.nsel > 0) {
 		h_fmt(h, "<b>%d</b> picked<button class=\"small danger\" "
-		    "data-act=\"st-destroy-sel\">Destroy %d</button><button "
-		    "class=\"ghost small\" data-act=\"st-sel-none\">Clear"
-		    "</button>", sg.nsel, sg.nsel);
-	else
-		h_raw(h, "<span class=\"dim\">Pick snapshots to destroy them "
-		    "at once; the filter narrows what All picks: a "
-		    "dataset's name, or a date.</span>");
+		    "data-act=\"st-destroy-sel\">Destroy %d</button>",
+		    sg.nsel, sg.nsel);
+		/* Only the newest of a dataset is made again. */
+		if (newest > 0)
+			h_fmt(h, "<button class=\"small\" data-act=\""
+			    "st-resnap-sel\" title=\"Each picked that is the "
+			    "newest of its dataset, taken again now under its "
+			    "name\">Resnapshot %d</button>", newest);
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "st-sel-none\">Clear</button>");
+	} else
+		h_raw(h, "<span class=\"dim\">Pick snapshots to destroy or "
+		    "take them again at once; the filter narrows what All "
+		    "picks: a dataset's name, or a date.</span>");
+	if (n > 0)
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "st-sel-newest\" title=\"Pick the newest snapshot of "
+		    "each dataset shown\">Pick the newest</button>");
 	h_raw(h, "</div>");
 	h_raw(h, "<table class=\"net snapshots\">");
 	tbl_head(h, "snapshots", cols, 4, 1);
@@ -1963,17 +1979,12 @@ storage_action(const char *act, const char *arg, const char *value)
 		sel_clear();
 	} else if (strcmp(act, "st-sel-all") == 0) {
 		const ucl_object_t	**rows, *o;
-		static const struct tcol cols[] = {
-			{ "Snapshot", "name", false }, { "Used", "used", true },
-			{ "Referenced", "refer", true }, { "Taken", "creation",
-			true },
-		};
 		int	r, all;
 		bool	on;
 
 		/* All shown picked: none of them; else all of them. */
 		rows = tbl_rows("snapshots", jget(sg.data[SK_SNAPSHOTS],
-		    "snapshots"), cols, 4, app.filter);
+		    "snapshots"), snap_cols, 4, app.filter);
 		for (r = all = 0; (o = rows[r]) != NULL; r++)
 			if (jstr(o, "name") != NULL && sel_find(jstr(o,
 			    "name")) != -1)
@@ -2008,6 +2019,60 @@ storage_action(const char *act, const char *arg, const char *value)
 		    "", sz);
 		confirm("Destroy the snapshots", body, "Destroy", true, "",
 		    "do-st-destroy-sel", "", "");
+	} else if (strcmp(act, "st-sel-newest") == 0) {
+		const ucl_object_t	**rows;
+		int			  r;
+
+		/* As the table shows them: the filter narrows them. */
+		rows = tbl_rows("snapshots", jget(sg.data[SK_SNAPSHOTS],
+		    "snapshots"), snap_cols, 4, app.filter);
+		for (r = 0; rows[r] != NULL; r++)
+			if (jstr(rows[r], "name") != NULL && snap_newest(jstr(
+			    rows[r], "name")) && sel_find(jstr(rows[r],
+			    "name")) == -1)
+				sel_set(jstr(rows[r], "name"), true);
+		free(rows);
+	} else if (strcmp(act, "st-resnap-sel") == 0 && sg.nsel > 0) {
+		int	i, k;
+
+		for (i = k = 0; i < sg.nsel; i++)
+			if (snap_newest(sg.sel[i]))
+				k++;
+		snprintf(body, sizeof(body), "zfs resnapshot of %d snapshot%s "
+		    "on %s, each a job of its own in one batch: each is "
+		    "taken again, now, under the same name, the new one "
+		    "first. %s One zfs will not destroy (held, cloned) stays "
+		    "as it was, and the others are taken again all the "
+		    "same.", k, k == 1 ? "" : "s", s->name, k < sg.nsel ?
+		    "Those picked that are not the newest of their dataset "
+		    "are left as they are." : "");
+		confirm("Take the snapshots again", body, "Resnapshot", false,
+		    "", "do-st-resnap-sel", "", "");
+	} else if (strcmp(act, "do-st-resnap-sel") == 0 && sg.nsel > 0) {
+		struct queued	*q;
+		char		*qn;
+		int		 i, k;
+
+		if ((q = calloc((size_t)sg.nsel, sizeof(*q))) == NULL)
+			abort();
+		for (i = k = 0; i < sg.nsel; i++) {
+			if (!snap_newest(sg.sel[i]))
+				continue;
+			qn = json_quote(sg.sel[i]);
+			if (asprintf(&q[k].json, "{\"kind\":\"zfs\",\"verb\":"
+			    "\"resnapshot\",\"args\":[%s]}", qn) == -1)
+				abort();
+			free(qn);
+			snprintf(q[k].title, sizeof(q[k].title),
+			    "zfs resnapshot %s", sg.sel[i]);
+			snprintf(q[k].target, sizeof(q[k].target), "%s",
+			    sg.sel[i]);
+			k++;
+		}
+		if (k > 0)
+			job_send_many(s, q, k);
+		free(q);
+		sel_clear();
 	} else if (strcmp(act, "do-st-destroy-sel") == 0 && sg.nsel > 0) {
 		struct queued	*q;
 		char		*qn;

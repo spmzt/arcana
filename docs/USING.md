@@ -191,8 +191,12 @@ The console is laid out as a tree and tabs.
     again, now, under the same name, and lets the old one go: the new
     one is taken first under a name of its own, the old one destroyed,
     and the new one renamed, so that there is a snapshot all along;
-    one zfs will not destroy (held, cloned) stays as it was. From a
-    shell: `arcanactl zfs resnapshot [-r] dataset@snapshot`.
+    one zfs will not destroy (held, cloned) stays as it was.
+    **Resnapshot N**, beside Destroy N, does it to every picked
+    snapshot that is the newest of its dataset, in one batch, a job
+    each; **Pick the newest** picks the newest snapshot of each
+    dataset shown. From a shell: `arcanactl zfs resnapshot [-r]
+    dataset@snapshot`.
     **Replicate** sends a snapshot into a dataset that is not there
     yet, on the same host (another pool, say): `zfs send` into `zfs
     receive`, all of it or what changed since a snapshot both have,

@@ -1585,6 +1585,37 @@ ATF_TC_BODY(pwa, tc)
 	    "tank/data@b.resnap|zfs destroy tank/data@b|zfs rename "
 	    "tank/data@b.resnap tank/data@b|'") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/* Several at once: the newest of each dataset picked, and taken
+	 * again in one batch; one picked that is not the newest left. */
+	run("document.querySelector('button[data-act=st-sel-newest]').click()");
+	wait_js("document.querySelectorAll('table.snapshots tr.picked')."
+	    "length === 1 && document.querySelector('table.snapshots tr."
+	    "picked').dataset.snap === 'tank/data@b' && document."
+	    "querySelector('button[data-act=st-resnap-sel]').textContent "
+	    "=== 'Resnapshot 1'", 5);
+	run("document.querySelector('table.snapshots tr[data-snap=\"tank/data@a"
+	    "\"] input[data-act=st-sel]').click()");
+	wait_js("document.querySelectorAll('table.snapshots tr.picked')."
+	    "length === 2 && document.querySelector('button[data-act="
+	    "st-resnap-sel]').textContent === 'Resnapshot 1'", 5);
+	shot("7l-snapshots-resnap");
+	run("document.querySelector('button[data-act=st-resnap-sel]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "document.querySelector('form[data-form=confirm]').textContent."
+	    "includes('not the newest of their dataset are left')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("[ $(grep -c '^zfs rename "
+	    "tank/data@b.resnap tank/data@b$' storage.log) -ge 2 ]") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("[ $(grep -c '^zfs rename tank/data@b.resnap "
+	    "tank/data@b$' storage.log) -eq 2 ] && ! grep -q 'tank/data@a."
+	    "resnap' storage.log") == 0);
+	ATF_CHECK(js_true("!document.querySelector('table.snapshots tr."
+	    "picked')"));
+	run("document.querySelector('.dock > header').click()");
 	/* The disks are this machine's own. */
 	run("document.querySelector('button[data-act=st-kind][data-arg=disks]')"
 	    ".click()");
