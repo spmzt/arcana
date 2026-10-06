@@ -168,7 +168,13 @@ The console is laid out as a tree and tabs.
     **Snapshots**: the newest first, of all or of one dataset and those
     under it; taken with a name (the time, unless another is given),
     of everything under the dataset too when asked; rolled back to,
-    cloned into a new dataset, destroyed once the name is typed.
+    cloned into a new dataset, destroyed once it is confirmed (a
+    snapshot's name is not typed: a dataset's still is). Each row has
+    a box to pick it, and **All** picks every snapshot shown, as the
+    filter leaves them (a dataset's name, a date in the name):
+    **Destroy N** destroys those picked at once, after one question,
+    as a batch of jobs, one each, so that one refused (a clone was made
+    of it) leaves the others destroyed.
     **Replicate** sends a snapshot into a dataset that is not there
     yet, on the same host (another pool, say): `zfs send` into `zfs
     receive`, all of it or what changed since a snapshot both have,

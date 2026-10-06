@@ -1492,7 +1492,8 @@ ATF_TC_BODY(pwa, tc)
 	ATF_CHECK(system("grep -q '^zfs snapshot -r tank/data@before$' "
 	    "storage.log") == 0);
 	run("document.querySelector('.dock > header').click()");
-	/* Its snapshots; one destroyed, by its name typed. */
+	/* Its snapshots; one destroyed, once it is confirmed: nothing is
+	 * typed for a snapshot. */
 	wait_js("document.querySelector('table.datasets tr[data-ds=\"tank/data"
 	    "\"] button[data-act=st-snaps-of]')", 20);
 	run("document.querySelector('table.datasets tr[data-ds=\"tank/data\"] "
@@ -1501,17 +1502,43 @@ ATF_TC_BODY(pwa, tc)
 	    "=== 2", 20);
 	run("document.querySelector('table.snapshots tr[data-snap=\"tank/data@a"
 	    "\"] button[data-act=st-destroy]').click()");
-	wait_js("document.querySelector('form[data-form=confirm] input')", 5);
-	run("const f = document.querySelector('form[data-form=confirm]'); "
-	    "const i = f.querySelector('input'); i.value = 'a'; "
-	    "i.dispatchEvent(new Event('input', { bubbles: true })); "
-	    "f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=confirm] "
+	    "input')"));
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('zfs destroy tank/data@a: done'))", 20);
 	ATF_CHECK(system("grep -q '^zfs destroy tank/data@a$' storage.log") ==
 	    0);
+	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Several picked, here all of them, and destroyed at once: one
+	 * question, one batch of a job each.
+	 */
+	run("document.querySelector('input[data-act=st-sel-all]').click()");
+	wait_js("document.querySelectorAll('table.snapshots tr.picked')."
+	    "length === 2 && document.querySelector('button[data-act="
+	    "st-destroy-sel]').textContent === 'Destroy 2'", 5);
+	shot("7l-snapshots-picked");
+	run("document.querySelector('button[data-act=st-destroy-sel]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "!document.querySelector('form[data-form=confirm] input')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("[ $(grep -c '^zfs destroy tank/data@' "
+	    "storage.log) -ge 3 ]") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^zfs destroy tank/data@b$' storage.log && "
+	    "[ $(grep -c '^zfs destroy tank/data@a$' storage.log) -eq 2 ]") ==
+	    0);
+	ATF_CHECK(js_true("!document.querySelector('button[data-act="
+	    "st-destroy-sel]')"));
 	run("document.querySelector('.dock > header').click()");
 	/* The disks are this machine's own. */
 	run("document.querySelector('button[data-act=st-kind][data-arg=disks]')"

@@ -59,8 +59,10 @@ fmt_age(char *buf, size_t len, double ms)
 		snprintf(buf, len, "%.0fs ago", s - (double)((int)s % 10));
 	else if (s < 3600)
 		snprintf(buf, len, "%.0fm ago", s / 60);
-	else
+	else if (s < 172800)
 		snprintf(buf, len, "%.1fh ago", s / 3600);
+	else
+		snprintf(buf, len, "%.0fd ago", s / 86400);
 }
 
 void
