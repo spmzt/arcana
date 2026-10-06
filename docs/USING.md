@@ -338,7 +338,9 @@ The console is laid out as a tree and tabs.
     five minutes: a part shown is read again every five seconds while
     **Live** is lit), and **never** when none has matched it; a rule being changed has
     ▲ and ▼, which put a number before the rule above or after the
-    one below into its field, for Save to move it there.
+    one below into its field, for Save to move it there; a rule
+    dragged and dropped before or after another of its part opens
+    the same way, with a number between the two.
     **Tables** lists each table with its type and what is in it: an
     entry is added and taken out, a table created and destroyed.
     **NAT and pipes** shows the NAT instances and dummynet's pipes as

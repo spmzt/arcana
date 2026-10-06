@@ -2093,6 +2093,27 @@ ATF_TC_BODY(pwa, tc)
 	    " svg.hits polyline') && document.querySelector('button.live.on"
 	    "[data-act=fw-live]')", 30);
 	shot("7o-firewall-hits");
+	/* A rule dragged above another: its row opened with the number
+	 * between, for Save to move it there. */
+	run("const a = document.querySelector('table.fw-rules tr[data-rule="
+	    "\"1999\"]'), b = document.querySelector('table.fw-rules "
+	    "tr[data-rule=\"1001\"]'), d = new DataTransfer(), r = b."
+	    "getBoundingClientRect(), y = r.top + 2; "
+	    "a.dispatchEvent(new DragEvent('dragstart', { bubbles: true, "
+	    "dataTransfer: d })); b.dispatchEvent(new DragEvent('dragover', "
+	    "{ bubbles: true, cancelable: true, dataTransfer: d, clientY: y "
+	    "})); b.dispatchEvent(new DragEvent('drop', { bubbles: true, "
+	    "cancelable: true, dataTransfer: d, clientY: y })); "
+	    "a.dispatchEvent(new DragEvent('dragend', { bubbles: true, "
+	    "dataTransfer: d }));");
+	wait_js("document.querySelector('table.fw-rules tr.editing[data-rule="
+	    "\"1999\"] input[name=num]') && document.querySelector('table."
+	    "fw-rules tr.editing[data-rule=\"1999\"] input[name=num]')."
+	    "value === '1000'", 5);
+	/* Not saved: the row closed again as it was. */
+	run("document.querySelector('table.fw-rules tr.editing button"
+	    "[data-act=fw-edit][data-arg=\"0\"]').click()");
+	wait_js("!document.querySelector('table.fw-rules tr.editing')", 5);
 	/* A rule's words offered as it is typed, by ipfw's order: after
 	 * from, the addresses and the host's tables; then to. */
 	run("const i = document.querySelector('form[data-form=fw-add] "

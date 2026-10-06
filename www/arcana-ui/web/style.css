@@ -3523,6 +3523,11 @@ form.fw-obj {
 }
 /* What a rule took a second at the last looks. */
 .pk { white-space: nowrap; }
+/* A rule being dragged, and where it would go. */
+table.fw-rules tr[draggable=true] { cursor: grab; }
+table.fw-rules tr.dragging { opacity: .4; }
+table.fw-rules tr.drop-before td { box-shadow: inset 0 2px 0 var(--cyan); }
+table.fw-rules tr.drop-after td { box-shadow: inset 0 -2px 0 var(--cyan); }
 svg.hits {
 	width: 4.5rem;
 	height: .9rem;

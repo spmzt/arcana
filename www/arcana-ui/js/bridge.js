@@ -170,6 +170,73 @@ addToLibrary({
 		});
 
 		/*
+		 * Rows put in another order by dragging: a row with
+		 * data-reorder is taken with its data-arg, and dropped on
+		 * another of the same data-reorder, before or after it by
+		 * which half of it the pointer is in; the page hears
+		 * <data-reorder>-drop with what was taken, and the row and
+		 * the side ("1001:before").
+		 */
+		var reordering = null;
+
+		function rowOf(e) {
+			var r = e.target.closest ? e.target.closest(
+			    "[data-reorder]") : null;
+
+			return (r !== null && reordering !== null &&
+			    r.dataset.reorder === reordering.dataset.reorder &&
+			    r !== reordering ? r : null);
+		}
+		function side(r, e) {
+			var b = r.getBoundingClientRect();
+
+			return (e.clientY < b.top + b.height / 2 ? "before" :
+			    "after");
+		}
+		function unmark() {
+			document.querySelectorAll(".drop-before, .drop-after")
+			    .forEach(function (x) {
+				x.classList.remove("drop-before", "drop-after");
+			});
+		}
+		document.addEventListener("dragstart", function (e) {
+			var r = e.target.closest ? e.target.closest(
+			    "[data-reorder]") : null;
+
+			if (r === null)
+				return;
+			reordering = r;
+			r.classList.add("dragging");
+			e.dataTransfer.effectAllowed = "move";
+			e.dataTransfer.setData("text/plain", r.dataset.arg || "");
+		});
+		document.addEventListener("dragover", function (e) {
+			var r = rowOf(e);
+
+			if (r === null)
+				return;
+			e.preventDefault();
+			unmark();
+			r.classList.add("drop-" + side(r, e));
+		});
+		document.addEventListener("drop", function (e) {
+			var r = rowOf(e);
+
+			if (r === null)
+				return;
+			e.preventDefault();
+			act(reordering.dataset.reorder + "-drop",
+			    reordering.dataset.arg || "", (r.dataset.arg || "") +
+			    ":" + side(r, e));
+		});
+		document.addEventListener("dragend", function () {
+			if (reordering !== null)
+				reordering.classList.remove("dragging");
+			reordering = null;
+			unmark();
+		});
+
+		/*
 		 * Things dragged inside a drawing: an element with data-drag
 		 * names what it is, and the page hears of it as
 		 * <name>-start where it was taken hold of, <name>-move

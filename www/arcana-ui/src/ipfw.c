@@ -1983,6 +1983,59 @@ more_action(struct server *s, const char *act, const char *arg,
 	} else if (strcmp(act, "do-fw-table-destroy") == 0) {
 		snprintf(words, sizeof(words), "%s destroy", arg);
 		object_job(s, "table", words, false);
+	} else if (strcmp(act, "fw-drop") == 0 && fw.sect >= 0) {
+		/*
+		 * A rule dropped before or after another of the part: its
+		 * row opened with a number between that one and its
+		 * neighbour on that side, for Save to move it there.
+		 */
+		long long	 at, lo, hi, x;
+		const char	*colon;
+
+		cur = atoll(arg);
+		at = atoll(value);
+		colon = strchr(value, ':');
+		lo = sects[fw.sect].lo - 1;
+		hi = sects[fw.sect].hi + 1;
+		n = (int)ucl_array_size(jget(fw.data, "rules")) + (int)
+		    ucl_array_size(jget(fw.data, "kept"));
+		if ((rules = calloc((size_t)n + 1, sizeof(*rules))) == NULL)
+			abort();
+		n = 0;
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(fw.data, "rules"), &it,
+		    true)) != NULL)
+			rules[n++] = o;
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(fw.data, "kept"), &it,
+		    true)) != NULL)
+			rules[n++] = o;
+		if (colon != NULL && strcmp(colon + 1, "before") == 0) {
+			hi = at;
+			for (i = 0; i < n; i++)
+				if ((x = jint(rules[i], "num", 0)) < at && x >
+				    lo && x != cur)
+					lo = x;
+		} else {
+			lo = at;
+			for (i = 0; i < n; i++)
+				if ((x = jint(rules[i], "num", 0)) > at && x <
+				    hi && x != cur)
+					hi = x;
+		}
+		free(rules);
+		if (cur <= 0 || at <= 0)
+			return (true);
+		if (hi - lo < 2)
+			toast(true, "No number is free between %05lld and "
+			    "%05lld: give one of them another first", lo, hi);
+		else {
+			fw.edit = cur;
+			fw.move = (lo + hi) / 2;
+			/* Where it already is: nothing to move. */
+			if (fw.move == cur)
+				fw.move = 0;
+		}
 	} else if (strcmp(act, "fw-move") == 0 && fw.edit > 0 && fw.sect >=
 	    0) {
 		/*
@@ -2301,9 +2354,10 @@ view_firewall(struct html *h, struct server *s)
 			continue;
 		}
 		h_fmt(h, "<tr class=\"pick%s\" data-act=\"fw-edit\" data-arg=\""
-		    "%lld\" data-rule=\"%lld\" title=\"Press to change it\"><td>"
-		    "<b>%05lld</b></td><td class=\"mono rule\">", now ? "" :
-		    " off", num, num, num);
+		    "%lld\" data-rule=\"%lld\" draggable=\"true\" data-reorder="
+		    "\"fw\" title=\"Press to change it; drag it to another "
+		    "place\"><td><b>%05lld</b></td><td class=\"mono rule\">",
+		    now ? "" : " off", num, num, num);
 		h_txt(h, jstr(o, "text"));
 		h_raw(h, "</td><td>");
 		if (now) {
