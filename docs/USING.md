@@ -337,9 +337,14 @@ The console is laid out as a tree and tabs.
     **Tables** lists each table with its type and what is in it: an
     entry is added and taken out, a table created and destroyed.
     **NAT and pipes** shows the NAT instances and dummynet's pipes as
-    ipfw shows them, and one line makes, changes or deletes a NAT,
-    NAT64 or NPTv6 instance, a pipe, a queue or a scheduler, in
-    ipfw's own words. With **keep**, what is done to a table or an
+    ipfw shows them. A NAT instance is asked for by what it is: its
+    number, the interface or address it hides behind, its options
+    (same ports, private only, reset, deny in, log) and the ports it
+    sends on, one a line (`tcp 10.0.0.5:80 8080`); a pipe by its
+    number, bandwidth, delay, loss in percent, queue and whether each
+    source or destination address has a pipe of its own. One line
+    more makes, changes or deletes anything else (NAT64, NPTv6, a
+    queue, a scheduler, a delete) in ipfw's own words. With **keep**, what is done to a table or an
     instance is also a line at the head of the kept rules; and what
     undoes it takes its lines out again: a table or an instance
     deleted (`destroy`, `delete`) all of its lines, a table flushed

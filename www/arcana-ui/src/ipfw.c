@@ -747,8 +747,52 @@ view_objects(struct html *h)
 	    "create prefix4 192.0.2.0/24</code>), a pipe, queue or "
 	    "scheduler of dummynet (<code>pipe 1 config bw 10Mbit/s</code>)."
 	    " The words are ipfw's; with <b>keep</b> they are a line of the "
-	    "kept rules too.</p><form data-form=\"fw-object\" class=\"fw-add\""
-	    "><select name=\"kind\">");
+	    "kept rules too.</p>");
+	/* A NAT instance, asked for by what it is, not in ipfw's words. */
+	h_raw(h, "<form data-form=\"fw-nat\" class=\"fw-obj\"><b>NAT</b>"
+	    "<label>number<input name=\"num\" inputmode=\"numeric\" size=\"5\""
+	    " placeholder=\"1\"></label><label>on<select name=\"on\"><option "
+	    "value=\"if\">the address of interface</option><option value=\"ip"
+	    "\">the address</option></select></label><input name=\"what\" "
+	    "spellcheck=\"false\" autocomplete=\"off\" size=\"14\" "
+	    "placeholder=\"em0, or 192.0.2.1\"><span class=\"opts\">"
+	    "<label class=\"toggle\" title=\"Keep the ports as they are when "
+	    "it can\"><input type=\"checkbox\" name=\"same_ports\" checked>"
+	    "<span>same ports</span></label><label class=\"toggle\" title=\""
+	    "Only what comes from private addresses\"><input type=\"checkbox\" "
+	    "name=\"unreg_only\"><span>private only</span></label><label "
+	    "class=\"toggle\" title=\"Forget the translations when the "
+	    "interface's address changes\"><input type=\"checkbox\" name=\""
+	    "reset\"><span>reset</span></label><label class=\"toggle\" title=\""
+	    "Drop what comes in and was not asked for\"><input type=\"checkbox"
+	    "\" name=\"deny_in\"><span>deny in</span></label><label class=\""
+	    "toggle\"><input type=\"checkbox\" name=\"log\"><span>log</span>"
+	    "</label></span><textarea name=\"redirects\" rows=\"2\" "
+	    "spellcheck=\"false\" placeholder=\"ports sent on, one a line: "
+	    "tcp 10.0.0.5:80 8080\"></textarea><label class=\"toggle\"><input "
+	    "type=\"checkbox\" name=\"persist\" checked><span>keep</span>"
+	    "</label><button class=\"small\">Configure</button></form>");
+	/* A pipe of dummynet: how fast, how late, how lossy. */
+	h_raw(h, "<form data-form=\"fw-pipe\" class=\"fw-obj\"><b>Pipe</b>"
+	    "<label>number<input name=\"num\" inputmode=\"numeric\" size=\"5\""
+	    " placeholder=\"1\"></label><label>bandwidth<input name=\"bw\" "
+	    "inputmode=\"decimal\" size=\"6\" placeholder=\"no limit\"><select "
+	    "name=\"unit\"><option>Kbit/s</option><option selected>Mbit/s"
+	    "</option><option>Gbit/s</option></select></label><label>delay"
+	    "<input name=\"delay\" inputmode=\"numeric\" size=\"5\" "
+	    "placeholder=\"0\"><span class=\"dim\">ms</span></label><label>"
+	    "loss<input name=\"plr\" inputmode=\"decimal\" size=\"5\" "
+	    "placeholder=\"0\"><span class=\"dim\">%</span></label><label>"
+	    "queue<input name=\"queue\" inputmode=\"numeric\" size=\"5\" "
+	    "placeholder=\"50\"><span class=\"dim\">slots</span></label>"
+	    "<label>for<select name=\"mask\"><option value=\"\">all at once"
+	    "</option><option value=\"src\">each source address</option>"
+	    "<option value=\"dst\">each destination address</option></select>"
+	    "</label><label class=\"toggle\"><input type=\"checkbox\" name=\""
+	    "persist\" checked><span>keep</span></label><button class=\"small"
+	    "\">Configure</button></form>");
+	h_raw(h, "<form data-form=\"fw-object\" class=\"fw-add\" title=\""
+	    "Anything else, in ipfw's own words\"><select name=\"kind\">");
 	for (i = 0; i < nitems(kinds); i++)
 		h_fmt(h, "<option>%s</option>", kinds[i]);
 	h_raw(h, "</select><input name=\"words\" spellcheck=\"false\" "
@@ -1464,6 +1508,143 @@ words_ok(const char *s)
 	    "<>*+%[]")] == '\0');
 }
 
+/* A field of digits, and how many at most; "" when empty is allowed. */
+static const char *
+digits(const ucl_object_t *f, const char *name, size_t max)
+{
+	const char	*v;
+
+	v = jstr(f, name) != NULL ? jstr(f, name) : "";
+	if (strlen(v) > max || v[strspn(v, "0123456789")] != '\0')
+		return (NULL);
+	return (v);
+}
+
+/* A field of a number that may have a fraction: 10, 2.5. */
+static const char *
+decimal(const ucl_object_t *f, const char *name)
+{
+	const char	*v;
+
+	v = jstr(f, name) != NULL ? jstr(f, name) : "";
+	if (strlen(v) > 12 || v[strspn(v, "0123456789.")] != '\0' ||
+	    strchr(v, '.') != strrchr(v, '.'))
+		return (NULL);
+	return (v);
+}
+
+/* The NAT form as ipfw's words: "1 config if em0 same_ports ...". */
+static bool
+nat_words(const ucl_object_t *f, char *w, size_t len)
+{
+	static const char *const flags[] = { "same_ports", "unreg_only",
+	    "reset", "deny_in", "log" };
+	const char	*num, *what, *on, *rd;
+	char		*copy, *line, *p, *a, *b, *c;
+	size_t		 i;
+
+	on = jstr(f, "on") != NULL && strcmp(jstr(f, "on"), "ip") == 0 ?
+	    "ip" : "if";
+	what = jstr(f, "what") != NULL ? jstr(f, "what") : "";
+	if ((num = digits(f, "num", 5)) == NULL || num[0] == '\0' ||
+	    atoi(num) < 1 || atoi(num) > 65535) {
+		toast(true, "A NAT instance has a number, 1 to 65535");
+		return (false);
+	}
+	if (what[0] == '\0' || strchr(what, ' ') != NULL || !words_ok(what)) {
+		toast(true, on[1] == 'f' ? "Which interface's address: em0" :
+		    "Which address: 192.0.2.1");
+		return (false);
+	}
+	snprintf(w, len, "%s config %s %s", num, on, what);
+	for (i = 0; i < nitems(flags); i++)
+		if (jbool(f, flags[i])) {
+			strlcat(w, " ", len);
+			strlcat(w, flags[i], len);
+		}
+	/* Each line a port sent on: proto inside:port outside. */
+	rd = jstr(f, "redirects") != NULL ? jstr(f, "redirects") : "";
+	copy = strdup(rd);
+	for (p = copy; (line = strsep(&p, "\n")) != NULL;) {
+		a = strtok(line, " \t\r");
+		if (a == NULL)
+			continue;
+		b = strtok(NULL, " \t\r");
+		c = strtok(NULL, " \t\r");
+		if ((strcmp(a, "tcp") != 0 && strcmp(a, "udp") != 0) || b ==
+		    NULL || c == NULL || strtok(NULL, " \t\r") != NULL ||
+		    !words_ok(b) || !words_ok(c) || strchr(b, ':') == NULL) {
+			toast(true, "A port sent on is tcp or udp, the address "
+			    "and port inside, and the port outside: tcp "
+			    "10.0.0.5:80 8080");
+			free(copy);
+			return (false);
+		}
+		strlcat(w, " redirect_port ", len);
+		strlcat(w, a, len);
+		strlcat(w, " ", len);
+		strlcat(w, b, len);
+		strlcat(w, " ", len);
+		strlcat(w, c, len);
+	}
+	free(copy);
+	return (true);
+}
+
+/* The pipe form as ipfw's words: "1 config bw 10Mbit/s delay 20". */
+static bool
+pipe_words(const ucl_object_t *f, char *w, size_t len)
+{
+	const char	*num, *bw, *delay, *plr, *queue, *unit, *mask;
+	char		 frac[24];
+
+	num = digits(f, "num", 5);
+	bw = decimal(f, "bw");
+	delay = digits(f, "delay", 6);
+	plr = decimal(f, "plr");
+	queue = digits(f, "queue", 5);
+	if (num == NULL || num[0] == '\0' || atoi(num) < 1 || atoi(num) >
+	    65535) {
+		toast(true, "A pipe has a number, 1 to 65535");
+		return (false);
+	}
+	if (bw == NULL || delay == NULL || plr == NULL || queue == NULL ||
+	    (plr[0] != '\0' && atof(plr) > 100)) {
+		toast(true, "Bandwidth, delay, loss and queue are numbers; the "
+		    "loss a percentage, 0 to 100");
+		return (false);
+	}
+	unit = jstr(f, "unit") != NULL && (strcmp(jstr(f, "unit"), "Kbit/s") ==
+	    0 || strcmp(jstr(f, "unit"), "Gbit/s") == 0) ? jstr(f, "unit") :
+	    "Mbit/s";
+	snprintf(w, len, "%s config", num);
+	/* Unset is ipfw's own: no limit, no delay, nothing lost. */
+	if (bw[0] != '\0') {
+		strlcat(w, " bw ", len);
+		strlcat(w, bw, len);
+		strlcat(w, unit, len);
+	}
+	if (delay[0] != '\0') {
+		strlcat(w, " delay ", len);
+		strlcat(w, delay, len);
+	}
+	/* ipfw's plr is a probability, 0 to 1. */
+	if (plr[0] != '\0') {
+		snprintf(frac, sizeof(frac), " plr %g", atof(plr) / 100.0);
+		strlcat(w, frac, len);
+	}
+	if (queue[0] != '\0') {
+		strlcat(w, " queue ", len);
+		strlcat(w, queue, len);
+	}
+	mask = jstr(f, "mask") != NULL ? jstr(f, "mask") : "";
+	if (strcmp(mask, "src") == 0)
+		strlcat(w, " mask src-ip 0xffffffff", len);
+	else if (strcmp(mask, "dst") == 0)
+		strlcat(w, " mask dst-ip 0xffffffff", len);
+	return (true);
+}
+
 /* The forms of the views above; true when form is one of them. */
 static bool
 more_form(const char *form, const ucl_object_t *f)
@@ -1474,10 +1655,18 @@ more_form(const char *form, const ucl_object_t *f)
 
 	if (strcmp(form, "fw-table") != 0 && strcmp(form, "fw-entry") != 0 &&
 	    strcmp(form, "fw-object") != 0 && strcmp(form, "fw-trace") != 0 &&
-	    strcmp(form, "fw-ktrace") != 0)
+	    strcmp(form, "fw-ktrace") != 0 && strcmp(form, "fw-nat") != 0 &&
+	    strcmp(form, "fw-pipe") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(form, "fw-nat") == 0 || strcmp(form, "fw-pipe") == 0) {
+		if (form[3] == 'n' ? nat_words(f, words, sizeof(words)) :
+		    pipe_words(f, words, sizeof(words)))
+			object_job(s, form[3] == 'n' ? "nat" : "pipe", words,
+			    jbool(f, "persist"));
+		return (true);
+	}
 	if (strcmp(form, "fw-ktrace") == 0) {
 		char	url[512];
 

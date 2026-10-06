@@ -2211,6 +2211,39 @@ ATF_TC_BODY(pwa, tc)
 	    "\"-5\"]').click()");
 	wait_js("document.querySelector('form[data-form=fw-object] select')",
 	    10);
+	/* A NAT instance and a pipe, by what they are: ipfw's words made
+	 * of the forms, and kept. */
+	run("const f = document.querySelector('form[data-form=fw-nat]'); "
+	    "f.num.value = '7'; f.what.value = 'em0'; f.deny_in.checked = "
+	    "true; f.redirects.value = 'tcp 10.0.0.5:80 8080\\nudp "
+	    "10.0.0.6:53 53'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^nat 7 config' ipfw.rules "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q nat 7 config if em0 same_ports "
+	    "deny_in redirect_port tcp 10.0.0.5:80 8080 redirect_port udp "
+	    "10.0.0.6:53 53$' ipfw.log && grep -q '^nat 7 config if em0 "
+	    "same_ports deny_in' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("const f = document.querySelector('form[data-form=fw-pipe]'); "
+	    "f.num.value = '3'; f.bw.value = '20'; f.delay.value = '15'; "
+	    "f.plr.value = '1'; f.mask.value = 'src'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^ipfw -q pipe 3 config' "
+	    "ipfw.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q pipe 3 config bw 20Mbit/s delay "
+	    "15 plr 0.01 mask src-ip 0xffffffff$' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* What is not a number is said, and nothing is done. */
+	run("const f = document.querySelector('form[data-form=fw-pipe]'); "
+	    "f.num.value = '3'; f.bw.value = 'fast'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('are numbers'))", 5);
+	shot("7o-firewall-objects");
 	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
 	    "\"-8\"]').click()");
 	wait_js("document.querySelector('.stage').textContent.includes("
