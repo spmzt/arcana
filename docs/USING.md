@@ -79,9 +79,14 @@ The console is laid out as a tree and tabs.
     comes with what the kernel knows of it: its metric, its weight,
     the address it sends from, its table. The others are as `netstat`
     and `sockstat` print them (`--libxo json`).
-    A routing table of more than 2000 routes, a full BGP table say,
-    comes as its first 2000 rows with how many it has, and **More**
-    reads on; type a prefix or an
+    The routes, connections and sockets come in parts over the
+    console's stream as the host reads them, so a table of any size,
+    a full BGP table say, arrives whole: the first time the table
+    fills as the parts come, and read again (as connections and
+    sockets are every two seconds while **Live** is lit) the table
+    shown stays until the new one is whole. Where the page has no
+    stream, a table of more than 2000 routes comes as its first 2000
+    rows with how many it has, and **More** reads on; type a prefix or an
     interface in the filter and press **Search host** to have the host
     search the whole table for it.
     In the routes, **+ route** adds a static route (a destination and

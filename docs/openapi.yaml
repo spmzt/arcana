@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.37.0
+  version: 0.38.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -639,7 +639,9 @@ paths:
       summary: A WebSocket for what comes in parts
       description: Upgraded to a WebSocket; it needs the session and an
         Origin that is the console's own. The page sends id, server,
-        what (sysctl) and filter as a JSON text; the console answers
+        what (sysctl, routes, connections or sockets), filter, and
+        for a table family (inet, inet6 or all), fib and jail, as a
+        JSON text; the console answers
         for that id with any number of messages that have rows, an
         array of the next values, then one with done and total, or one
         with error. A message with id and stop ends one early. The

@@ -1292,6 +1292,45 @@ arc_events_doit(cbl_req *req, const struct arc_events_req *rq,
 	return (start(j));
 }
 
+/* A network table in parts, from a thread of the dump's own. */
+int
+arc_network_dumpit(cbl_req *req, const struct arc_network_dump_req *rq,
+    struct cbl_dump_state *st, void *arg __unused)
+{
+	struct arc_network_dump_rsp	 rsp;
+	const char			*err;
+	char				*json;
+	uint64_t			 total;
+	bool				 more;
+	int				 error;
+
+	if (rq->net_kind != ARC_NET_KIND_ROUTES && rq->net_kind !=
+	    ARC_NET_KIND_CONNECTIONS && rq->net_kind != ARC_NET_KIND_SOCKETS)
+		return (reject(req, "the routes, connections and sockets "
+		    "come in parts; the rest whole"));
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if (rq->net_filter != NULL && strlen(rq->net_filter) > 128)
+		return (reject(req, "the text to search for is at most 128 "
+		    "bytes"));
+	more = network_part(st, rq, &json, &total, &err);
+	if (json == NULL)
+		return (err != NULL ? reject(req, err) : ENOMEM);
+	if (err != NULL && !more) {
+		free(json);
+		return (reject(req, err));
+	}
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.json = json;
+	rsp.has_total = true;
+	rsp.total = total;
+	error = arc_network_dump_reply(req, &rsp);
+	free(json);
+	if (error != 0)
+		return (error);
+	return (more ? EAGAIN : 0);
+}
+
 /*
  * The kernel's state in parts: one for each call, in the loop's own
  * thread, which a part is short enough for.

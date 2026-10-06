@@ -122,6 +122,7 @@ usage(void)
 	    "netgraph |\n        wireguard | bird [-4 | -6]\n"
 	    "    net routes [-4 | -6] text\n"
 	    "    net routes [-4 | -6] -o rows\n"
+	    "    net routes | connections | sockets [-4 | -6] parts [text]\n"
 	    "    interface name up | down | destroy\n"
 	    "    interface name give | take jail\n"
 	    "    interface epair give jail [bridge]\n"
@@ -1401,6 +1402,32 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 		}
 	}
 	/* A text to search the routes for, on the host. */
+	/* In parts, each printed as it comes: nothing left out for size. */
+	if (optind < argc && strcmp(argv[optind], "parts") == 0) {
+		struct arc_network_dump_req	 dq;
+		struct arc_network_dump_rsp	*item;
+		cbl_dump			*d;
+
+		memset(&dq, 0, sizeof(dq));
+		dq.has_net_kind = true;
+		dq.net_kind = req.net_kind;
+		dq.has_net_family = req.has_net_family;
+		dq.net_family = req.net_family;
+		dq.has_net_fib = req.has_net_fib;
+		dq.net_fib = req.net_fib;
+		dq.jail = req.jail;
+		dq.net_filter = optind + 1 < argc ? argv[optind + 1] : NULL;
+		if ((error = arc_network_dump(cl, &dq, &d)) != 0)
+			fail(cl, error, "net");
+		while ((error = arc_network_dump_next(d, &item)) == 0 && item !=
+		    NULL)
+			if (item->json != NULL)
+				xo_emit("{:json/%s}\n", item->json);
+		cbl_dump_free(d);
+		if (error != 0)
+			fail(cl, error, "net");
+		return (0);
+	}
 	if (argc - optind == 1 && req.net_kind == ARC_NET_KIND_ROUTES)
 		req.net_filter = argv[optind];
 	else if (optind != argc)

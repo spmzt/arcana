@@ -9,7 +9,10 @@
  * host gives them: a WebSocket at /api/stream, on which the page asks
  *
  *	{"id": 7, "server": "<id>", "what": "sysctl", "filter": "kern."}
+ *	{"id": 8, "server": "<id>", "what": "routes", "family": "inet",
+ *	    "fib": 0, "jail": "", "filter": "10."}
  *
+ * what is sysctl, routes, connections or sockets, *
  * and is answered, for that id, with any number of
  *
  *	{"id": 7, "rows": [ ... ]}
@@ -50,6 +53,10 @@ struct stream {
 	char			*uri;
 	char			*peer;
 	char			 filter[201];
+	uint8_t			 kind;		/* ARC_NET_KIND_*, or 255 for sysctl */
+	uint8_t			 family;
+	uint32_t		 fib;
+	char			 jail[256];
 };
 
 static LIST_HEAD(, stream)	streams = LIST_HEAD_INITIALIZER(streams);
@@ -96,6 +103,53 @@ stream_run(struct kore_task *t)
 		say(t, "{\"id\":%ju,\"error\":\"the host does not answer\"}",
 		    (uintmax_t)s->id);
 		kore_log(LOG_NOTICE, "stream %s: %s", s->sid, msg);
+		return (KORE_RESULT_OK);
+	}
+	if (s->kind != 255) {
+		struct arc_network_dump_req	 nq;
+		struct arc_network_dump_rsp	*nitem;
+
+		memset(&nq, 0, sizeof(nq));
+		nq.has_net_kind = true;
+		nq.net_kind = s->kind;
+		nq.has_net_family = true;
+		nq.net_family = s->family;
+		nq.has_net_fib = s->fib != 0;
+		nq.net_fib = s->fib;
+		nq.jail = s->jail[0] != '\0' ? s->jail : NULL;
+		nq.net_filter = s->filter[0] != '\0' ? s->filter : NULL;
+		if ((error = arc_network_dump(&cl, &nq, &d)) != 0) {
+			say(t, "{\"id\":%ju,\"error\":\"the host refused: %s\"}",
+			    (uintmax_t)s->id, strerror(error));
+			hosts_release(s->uri, s->peer, conn, tls, &cl, false);
+			return (KORE_RESULT_OK);
+		}
+		total = 0;
+		ended = false;
+		while (!atomic_load(&s->stop)) {
+			if ((error = arc_network_dump_next(d, &nitem)) != 0)
+				break;
+			if (nitem == NULL) {
+				ended = true;
+				break;
+			}
+			if (nitem->has_total)
+				total = nitem->total;
+			if (nitem->json != NULL && nitem->json[0] == '[' &&
+			    strlen(nitem->json) < STREAM_PART - 64 &&
+			    nitem->json[1] != ']')
+				say(t, "{\"id\":%ju,\"rows\":%s}",
+				    (uintmax_t)s->id, nitem->json);
+		}
+		cbl_dump_free(d);
+		if (ended)
+			say(t, "{\"id\":%ju,\"done\":true,\"total\":%ju}",
+			    (uintmax_t)s->id, (uintmax_t)total);
+		else if (!atomic_load(&s->stop))
+			say(t, "{\"id\":%ju,\"error\":\"the host stopped "
+			    "answering: %s\"}", (uintmax_t)s->id,
+			    strerror(error));
+		hosts_release(s->uri, s->peer, conn, tls, &cl, ended);
 		return (KORE_RESULT_OK);
 	}
 	memset(&dq, 0, sizeof(dq));
@@ -211,8 +265,9 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 	struct ucl_parser	*p;
 	ucl_object_t		*o;
 	struct stream		*s;
-	const char		*sid, *what, *filter, *q;
+	const char		*sid, *what, *filter, *q, *jail, *q2, *fam;
 	uint64_t		 id;
+	uint8_t			 kind;
 
 	if (op != WEBSOCKET_OP_TEXT || len == 0 || len > 1024)
 		return;
@@ -237,13 +292,29 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 	filter = ucl_str(o, "filter");
 	if (filter == NULL)
 		filter = "";
+	kind = 255;
+	if (what != NULL && strcmp(what, "routes") == 0)
+		kind = ARC_NET_KIND_ROUTES;
+	else if (what != NULL && strcmp(what, "connections") == 0)
+		kind = ARC_NET_KIND_CONNECTIONS;
+	else if (what != NULL && strcmp(what, "sockets") == 0)
+		kind = ARC_NET_KIND_SOCKETS;
 	for (q = filter; *q != '\0'; q++)
-		if (!isalnum((unsigned char)*q) && strchr("._-%", *q) == NULL)
+		if (!isalnum((unsigned char)*q) && strchr(kind == 255 ? "._-%" :
+		    ".:/_-", *q) == NULL)
 			break;
-	if (sid == NULL || what == NULL || strcmp(what, "sysctl") != 0 ||
-	    *q != '\0' || strlen(filter) > 200)
-		refuse(c, id, "what is sysctl, of a server, from a name of "
-		    "letters, digits and . _ - %");
+	jail = ucl_str(o, "jail");
+	if (jail != NULL)
+		for (q2 = jail; *q2 != '\0'; q2++)
+			if (!isalnum((unsigned char)*q2) && strchr("._-", *q2)
+			    == NULL)
+				break;
+	if (sid == NULL || what == NULL || (strcmp(what, "sysctl") != 0 &&
+	    kind == 255) || *q != '\0' || strlen(filter) > 128 || (jail !=
+	    NULL && (*q2 != '\0' || strlen(jail) > 255)))
+		refuse(c, id, "what is sysctl, routes, connections or sockets, "
+		    "of a server, with a filter of letters, digits and "
+		    ". _ - % : /");
 	else if ((sv = server_find(sid)) == NULL)
 		refuse(c, id, "no such server");
 	else if (nstreams >= STREAMS_MAX)
@@ -260,6 +331,14 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 		s->peer = sv->peer_name != NULL ? kore_strdup(sv->peer_name) :
 		    NULL;
 		strlcpy(s->filter, filter, sizeof(s->filter));
+		s->kind = kind;
+		fam = ucl_str(o, "family");
+		s->family = fam != NULL && strcmp(fam, "inet6") == 0 ?
+		    ARC_NET_FAMILY_INET6 : fam != NULL && strcmp(fam, "inet") ==
+		    0 ? ARC_NET_FAMILY_INET : ARC_NET_FAMILY_ALL;
+		s->fib = (uint32_t)ucl_object_toint(ucl_object_lookup(o, "fib"));
+		if (jail != NULL)
+			strlcpy(s->jail, jail, sizeof(s->jail));
 		LIST_INSERT_HEAD(&streams, s, list);
 		nstreams++;
 		kore_task_create(&s->task, stream_run);

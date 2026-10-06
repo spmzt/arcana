@@ -1489,6 +1489,179 @@ network_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	free(c);
 }
 
+/*
+ * The routes, connections and sockets come in parts over the console's
+ * stream, as the host reads them, and nothing is left out for size.
+ * The first time, the table fills as they come; read again, the table
+ * shown stays until the new one is whole.  Without a stream, they are
+ * asked for whole as the others are.
+ */
+#define	NS_BASE		1000000		/* ids apart from sysctl's */
+
+static struct {
+	int		 id;
+	bool		 on;
+	bool		 nostream;
+	bool		 swap;		/* to be shown once it is whole */
+	ucl_object_t	*target;	/* the reply being made */
+	ucl_object_t	*arr;		/* where a row goes: not routes' */
+	char		 sid[9];
+	int		 kind;
+	int		 family;
+	char		 jail[256];
+} ns = { .id = NS_BASE };
+
+static void
+ns_stop(void)
+{
+	char	msg[64];
+
+	if (ns.on) {
+		snprintf(msg, sizeof(msg), "{\"id\":%d,\"stop\":true}", ns.id);
+		arc_stream_send(msg);
+	}
+	ns.on = false;
+	if (ns.target != NULL)
+		ucl_object_unref(ns.target);
+	ns.target = NULL;
+	ns.arr = NULL;
+}
+
+/* An empty reply of the shape the table is drawn from. */
+static ucl_object_t *
+ns_shape(int kind, ucl_object_t **arrp)
+{
+	ucl_object_t	*top, *data, *a, *b, *c;
+
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, ucl_object_frombool(true), "ok", 0, false);
+	data = ucl_object_typed_new(UCL_OBJECT);
+	*arrp = ucl_object_typed_new(UCL_ARRAY);
+	if (kind == NET_ROUTES) {
+		c = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(c, *arrp, "rt-family", 0, false);
+		b = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(b, c, "route-table", 0, false);
+		a = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(a, b, "route-information", 0, false);
+		ucl_object_insert_key(data, a, "statistics", 0, false);
+	} else {
+		a = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(a, *arrp, "socket", 0, false);
+		ucl_object_insert_key(data, a, kind == NET_SOCKETS ?
+		    "sockstat" : "statistics", 0, false);
+	}
+	ucl_object_insert_key(top, data, "data", 0, false);
+	return (top);
+}
+
+/* The rt-entry array of a family, made when it is not there yet. */
+static ucl_object_t *
+ns_family(ucl_object_t *fams, const char *name)
+{
+	ucl_object_t		*f, *e;
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((o = ucl_object_iterate(fams, &it, true)) != NULL)
+		if (jstr(o, "address-family") != NULL && strcmp(jstr(o,
+		    "address-family"), name) == 0)
+			return ((ucl_object_t *)(uintptr_t)jget(o, "rt-entry"));
+	f = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(f, ucl_object_fromstring(name),
+	    "address-family", 0, false);
+	e = ucl_object_typed_new(UCL_ARRAY);
+	ucl_object_insert_key(f, e, "rt-entry", 0, false);
+	ucl_array_append(fams, f);
+	return (e);
+}
+
+/* Read the table in parts; false when there is no stream for it. */
+static bool
+ns_start(struct server *s)
+{
+	char	msg[400];
+
+	if (ns.nostream || (app.net.kind != NET_ROUTES && app.net.kind !=
+	    NET_CONNECTIONS && app.net.kind != NET_SOCKETS))
+		return (false);
+	ns_stop();
+	ns.id++;
+	ns.on = true;
+	ns.kind = (int)app.net.kind;
+	ns.family = app.net.family;
+	snprintf(ns.sid, sizeof(ns.sid), "%s", s->id);
+	snprintf(ns.jail, sizeof(ns.jail), "%s", app.net.jail);
+	ns.target = ns_shape(ns.kind, &ns.arr);
+	/* Shown as it fills when there is nothing to show yet. */
+	ns.swap = app.net.data != NULL;
+	if (!ns.swap)
+		app.net.data = ucl_object_ref(ns.target);
+	snprintf(msg, sizeof(msg), "{\"id\":%d,\"server\":\"%s\",\"what\":"
+	    "\"%s\",\"family\":\"%s\",\"fib\":%d,\"jail\":\"%s\","
+	    "\"filter\":\"%s\"}", ns.id, s->id, ns.kind == NET_ROUTES ?
+	    "routes" : ns.kind == NET_SOCKETS ? "sockets" : "connections",
+	    app.net.family == 4 ? "inet" : app.net.family == 6 ? "inet6" :
+	    "all", ns.kind == NET_ROUTES ? app.net.fib : 0, app.net.jail,
+	    ns.kind == NET_ROUTES ? app.net.host_filter : "");
+	arc_stream_send(msg);
+	return (true);
+}
+
+void
+network_stream(const ucl_object_t *o)
+{
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+	struct server		*s;
+	bool			 mine;
+
+	if (jbool(o, "closed")) {
+		if (ns.on) {
+			ns_stop();
+			ns.nostream = true;
+			app.net.loading = false;
+			if ((s = cur_server()) != NULL)
+				refresh_network(s, false);
+		}
+		return;
+	}
+	if (!ns.on || jint(o, "id", -1) != ns.id || ns.target == NULL)
+		return;
+	it = NULL;
+	while ((r = ucl_object_iterate(jget(o, "rows"), &it, true)) != NULL)
+		ucl_array_append(ns.kind == NET_ROUTES ? ns_family(ns.arr,
+		    jstr(r, "family") != NULL ? jstr(r, "family") :
+		    "Internet") : ns.arr, ucl_object_ref(r));
+	mine = strcmp(app.net.sid, ns.sid) == 0 && (int)app.net.kind ==
+	    ns.kind && app.net.family == ns.family && strcmp(app.net.jail,
+	    ns.jail) == 0;
+	if (mine && !ns.swap)
+		app.net.fetched = arc_now();
+	if (!jbool(o, "done") && jstr(o, "error") == NULL)
+		return;
+	if (mine) {
+		app.net.loading = false;
+		if (jstr(o, "error") != NULL)
+			snprintf(app.net.error, sizeof(app.net.error), "%s",
+			    jstr(o, "error"));
+		else {
+			app.net.error[0] = '\0';
+			app.net.fetched = arc_now();
+			if (ns.swap) {
+				if (app.net.data != NULL)
+					ucl_object_unref(app.net.data);
+				app.net.data = ucl_object_ref(ns.target);
+			}
+		}
+	}
+	ns.on = false;
+	ucl_object_unref(ns.target);
+	ns.target = NULL;
+	ns.arr = NULL;
+}
+
 /* The network table the tab shows, from the server; user: log it. */
 void
 refresh_network(struct server *s, bool user)
@@ -1519,6 +1692,9 @@ refresh_network(struct server *s, bool user)
 	snprintf(c0jail, sizeof(c0jail), "%s%s", app.net.jail[0] != '\0' ?
 	    "&jail=" : "", app.net.jail);
 	app.net.loading = true;
+	if (ns_start(s))
+		return;
+	ns_stop();
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	c->net_kind = (int)app.net.kind;

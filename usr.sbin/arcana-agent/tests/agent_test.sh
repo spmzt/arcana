@@ -647,6 +647,20 @@ network_body()
 	    -o match:'"destination":"10.7.249.0/24"' \
 	    -o not-match:'"destination":"10.8.0.0/24"' \
 	    -o match:'"interface-name":"em0"' cat huge.out
+	# In parts, as they are taken: all 3000, with their family in each,
+	# and the sockets and connections the same way; the text searched
+	# for on the host.
+	atf_check -o save:parts.out "$JGC" -c "$SOCK" net routes -4 parts
+	atf_check -o inline:'3000\n' sh -c "grep -o '\"destination\"' parts.out | wc -l | tr -d ' '"
+	atf_check -o match:'^\[\{"family":"Internet","destination":"10.0.0.0/24"' \
+	    -o not-match:'Internet6' cat parts.out
+	atf_check -o match:'"family":"Internet6","destination":"::1"' \
+	    "$JGC" -c "$SOCK" net routes -6 parts
+	atf_check -o match:'"destination":"10.11.249.0/24"' -o not-match:'10.0.0.0/24' \
+	    "$JGC" -c "$SOCK" net routes -4 parts 10.11.249.
+	atf_check -o match:'^\[\{"protocol":"tcp4"' "$JGC" -c "$SOCK" net connections -4 parts
+	atf_check -o match:'"command":"sshd"' "$JGC" -c "$SOCK" net sockets parts
+	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" net nexthops parts
 	atf_check -o save:found.out "$JGC" -c "$SOCK" net routes -4 10.11.249.
 	atf_check -o match:'"destination":"10.11.249.0/24"' \
 	    -o not-match:'"destination":"10.0.0.0/24"' cat found.out

@@ -63,14 +63,10 @@
   jail; the kernel's messages followed as they come (not read whole
   each time); dmesg for an agent that is not root, which the kernel
   refuses unless security.bsd.unprivileged_read_msgbuf is on.
-- Routes, connections and sockets in parts, as sysctl's values are:
-  the agent answers sysctl as a dump, the console passes each item to
-  the page over a WebSocket (`/api/stream`), and the table fills as
-  they come. The network's tables are still one reply each, cut off
-  at a size and counted: what they show is the output of netstat(1)
-  and sockstat(1), which the agent has to run in a thread of its own
-  and a dump is answered in the loop's. They need the rows kept by
-  the agent between the parts, or netlink instead of the programs.
+- Connections and sockets in parts as the programs print them, and
+  not after netstat and sockstat have printed the whole document:
+  through the kernel's own lists (sysctl net.inet.tcp.pcblist and
+  the like) or netlink, as the routes are.
 - The page on a phone: a table as cards, one for each row, with what
   is done to a row behind one menu; the older tables (BIRD's
   protocols, WireGuard's peers, routes, sockets) sorted and filtered

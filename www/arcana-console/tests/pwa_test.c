@@ -781,6 +781,25 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.tab[data-arg=network]').click()");
 	wait_js("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]')", 10);
+	/*
+	 * The routes and the sockets come in parts over the stream, and
+	 * are whole: no word of a table cut short.
+	 */
+	run("window.netw = []; window.ws1 = WebSocket.prototype.send; "
+	    "WebSocket.prototype.send = function (t) { window.netw.push(t); "
+	    "return window.ws1.call(this, t); };");
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=routes]').click()");
+	wait_js("[...document.querySelectorAll('.stage table.net td')].some("
+	    "t => t.textContent === 'default') && !document.querySelector("
+	    "'.routes-cut') && window.netw.some(t => t.includes("
+	    "'\"what\":\"routes\"'))", 20);
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=sockets]').click()");
+	wait_js("document.querySelectorAll('.stage table.net tbody tr')."
+	    "length > 0 && window.netw.some(t => t.includes('\"what\":"
+	    "\"sockets\"'))", 20);
+	run("WebSocket.prototype.send = window.ws1;");
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]').click()");
 	wait_js("document.querySelector('table.ifaces tr[data-if=lo0] .chip')",
@@ -2178,9 +2197,11 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button[data-act=net-kind][data-arg="
 	    "connections]').click()");
 	wait_js("document.querySelector('button.live.on')", 10);
-	run("window.nets = 0; window.fetch0 = window.fetch; window.fetch = "
-	    "function (u, o) { if (String(u).includes('/net/')) window.nets"
-	    "++; return window.fetch0(u, o); };");
+	/* They come over the stream: what is sent on it is counted. */
+	run("window.nets = 0; window.ws0 = WebSocket.prototype.send; "
+	    "WebSocket.prototype.send = function (t) { if (String(t)."
+	    "includes('\"what\":\"connections\"')) window.nets++; return "
+	    "window.ws0.call(this, t); };");
 	wait_js("window.nets >= 2", 15);
 	run("document.querySelector('button[data-act=net-live]').click()");
 	wait_js("!document.querySelector('button.live.on')", 5);
@@ -2189,8 +2210,8 @@ ATF_TC_BODY(pwa, tc)
 	usleep(4500000);
 	ATF_CHECK_MSG(js_true("window.nets === 0"), "paused, the connections "
 	    "were still read again");
-	run("window.fetch = window.fetch0; document.querySelector('button"
-	    "[data-act=net-live]').click()");
+	run("WebSocket.prototype.send = window.ws0; document.querySelector("
+	    "'button[data-act=net-live]').click()");
 
 	/*
 	 * The API's own page, from the menu: every route of the document,

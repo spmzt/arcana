@@ -286,6 +286,10 @@ the percentages over which an event is made, 0 for none.
 The reply says what the samples take of the agent's memory.
 The samples are written down when the agent stops and read again when
 it starts.
+.It Cm net routes | connections | sockets Oo Fl 4 | Fl 6 Oc Cm parts Op Ar text
+The same table as a dump: in parts, each printed as an array of rows
+of its own when it comes, a route with its family in it; none is left
+out for size.
 .It Cm net bridges | geneve | ipfw
 The bridges with their spanning tree and their members' VLANs, the
 .Xr geneve 4

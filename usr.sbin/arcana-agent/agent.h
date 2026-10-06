@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.28.0"
+#define	ARCANA_AGENT_VERSION	"0.29.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -428,6 +428,11 @@ char		*ifq_text(const char *, const char *, const char *);
 char		**helper_argv(struct work *, const char *, size_t,
 		    const char *const []);
 int		 route_helper(int, char **);
+struct cbl_dump_state;
+struct arc_network_dump_req;
+bool		 network_part(struct cbl_dump_state *,
+		    const struct arc_network_dump_req *, char **, uint64_t *,
+		    const char **);
 int		 zfs_pipe(int, char **);
 const char	*tool(struct work *, const char *);
 int		 do_health(struct work *, struct arc_storage_rsp *);

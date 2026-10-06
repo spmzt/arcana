@@ -1266,7 +1266,11 @@ operations:
       netstat(1) and sockstat(1) print them with --libxo json.
       With jail, those of a running jail that has a network of its own
       (vnet), read from the host: nothing runs in the jail for it but
-      the jail's own birdc and wg.
+      the jail's own birdc and wg.  As a dump, the routes, connections
+      and sockets come in parts as they are taken: each item has json,
+      an array of the next rows, a route with its "family" (Internet
+      or Internet6) in it, and total, how many rows the table has;
+      nothing is left out for size.
     do:
       request:
         attributes:
@@ -1286,6 +1290,20 @@ operations:
           - total
           - truncated
           - trace
+    dump:
+      request:
+        attributes:
+          - net-kind
+          - net-family
+          - net-filter
+          - net-fib
+          - jail
+        required:
+          - net-kind
+      reply:
+        attributes:
+          - json
+          - total
 
   - name: stats
     attribute-set: arcana
