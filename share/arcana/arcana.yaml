@@ -1876,3 +1876,20 @@ operations:
           - error
           - json
           - trace
+  - name: event
+    attribute-set: arcana
+    mcgrp: events
+    doc: |
+      One event, the moment it happens: json is it as events has
+      one, {"n","t","kind","data"}, of the same number.  What is sent
+      while nobody listens is not kept for them; events has the last
+      512, to read what came before a subscription or while it was
+      gone.
+    event:
+      attributes:
+        - json
+
+mcast-groups:
+  - name: events
+    auth: true
+    doc: The host's events, each as it happens (event).

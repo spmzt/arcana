@@ -1158,6 +1158,7 @@ arc_on_stream(char *text)
 		return;
 	sysctl_stream(o);
 	network_stream(o);
+	logs_stream(o);
 	ucl_object_unref(o);
 	render();
 }

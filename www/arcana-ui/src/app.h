@@ -584,6 +584,7 @@ bool		 procs_form(const char *, const ucl_object_t *);
 bool		 procs_action(const char *, const char *, const char *);
 void		 refresh_logs(struct server *, bool);
 void		 logs_tick(double);
+void		 logs_stream(const ucl_object_t *);
 void		 view_logs(struct html *, struct server *);
 bool		 logs_form(const char *, const ucl_object_t *);
 bool		 logs_action(const char *, const char *, const char *);

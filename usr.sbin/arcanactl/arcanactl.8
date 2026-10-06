@@ -248,14 +248,20 @@ followed.
 A file
 .Xr newsyslog 8
 has packed is unpacked and read whole.
-.It Cm events Op Ar after
+.It Cm events Op Ar after | Fl f
 What happened on the host, as the kernel told the agent of it through
 .Xr netlink 4 :
-every route, interface and address that came, went or changed, each
-with its number, time and kind, the last 512 kept.
+every route, interface, address and neighbour that came, went or
+changed, each with its number, time and kind, the last 512 kept.
 With
 .Ar after ,
 only the events of a greater number.
+With
+.Fl f ,
+each event as it happens, a line each, until the host goes or
+.Nm
+is stopped: the agent tells it to those who subscribed, nothing is
+asked again.
 .It Cm net nhgroups
 The kernel's nexthop groups, what a route of several next hops points
 to, each with its next hops and their shares.

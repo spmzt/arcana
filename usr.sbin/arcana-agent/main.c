@@ -552,6 +552,7 @@ main(int argc, char *argv[])
 	if ((error = arc_register(ctx, NULL, &fam)) != 0)
 		fatal(pfh, "registering the %s family: %s", ARC_FAMILY_NAME,
 		    strerror(error));
+	event_family(fam);
 	if ((error = cbl_loop_new(ctx, &loop)) != 0)
 		fatal(pfh, "cbl_loop_new: %s", strerror(error));
 	for (i = 0; i < nl; i++) {
@@ -591,6 +592,7 @@ main(int argc, char *argv[])
 
 	for (i = 0; i < nl; i++)
 		cbl_listener_free(ls[i]);
+	event_family(NULL);
 	(void)cbl_family_unregister(fam);
 	cbl_loop_free(loop);
 	cbl_tls_free(tls);

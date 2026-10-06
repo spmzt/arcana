@@ -1904,6 +1904,31 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.stage').textContent.includes("
 	    "'events, the newest first') && document.querySelector("
 	    "'label.lg-file select').value === '@events'", 10);
+	/* Told as it happens, not asked for: a limit of the memory's
+	 * crossed is shown as the agent tells it, over the stream. */
+	wait_js("document.querySelector('.stage').textContent.includes("
+	    "'the moment the agent tells it')", 10);
+	run("window.evt0 = performance.now(); window.lim = (cpu, mem) => fetch('/api/servers').then(r => "
+	    "r.json()).then(j => Promise.all(j.servers.map(s => fetch("
+	    "'/api/servers/' + s.id + '/history', { method: 'POST', headers: "
+	    "{ 'Content-Type': 'application/json', 'X-Arcana': '1' }, body: "
+	    "JSON.stringify({ step: 5, keep: 720, cpu: cpu, mem: mem, swap: "
+	    "50 }) }))));");
+	run("window.lim(90, 1);");
+	wait_js("[...document.querySelectorAll('table.logs tbody tr')].some("
+	    "r => r.textContent.includes('threshold') && r.textContent."
+	    "includes('mem at'))", 20);
+	/* Nothing was asked again for it: it came by itself. */
+	ATF_CHECK(js_true("!performance.getEntriesByType('resource').some("
+	    "e => e.name.includes('/events?after=') && e.startTime > "
+	    "window.evt0)"));
+	/* And the way back under, as well, while it stays followed. */
+	run("window.lim(90, 90);");
+	wait_js("[...document.querySelectorAll('table.logs tbody tr')].some("
+	    "r => r.textContent.includes('back under its limit of 90%')) && "
+	    "document.querySelector('.stage').textContent.includes("
+	    "'the moment the agent tells it')", 20);
+	shot("7r-events-live");
 	run("const s = document.querySelector('label.lg-file select'); "
 	    "s.value = 'auth.log'; s.dispatchEvent(new Event('input', "
 	    "{ bubbles: true }));");

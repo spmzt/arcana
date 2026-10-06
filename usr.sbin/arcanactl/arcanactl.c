@@ -14,6 +14,7 @@
 #include <err.h>
 #include <fcntl.h>
 #include <libxo/xo.h>
+#include <poll.h>
 #include <sha256.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -162,7 +163,7 @@ usage(void)
 	    "    log [-o lines] [-f position] [name [text]]\n"
 	    "    history [after]\n"
 	    "    history set seconds samples [cpu%% mem%% swap%%]\n"
-	    "    events [after]\n"
+	    "    events [after | -f]\n"
 	    "    net bridges | geneve | ipfw | nhgroups\n"
 	    "    bridge name addm | deletem member\n"
 	    "    bridge name access member vlan\n"
@@ -1588,6 +1589,51 @@ json_out(const char *what, bool ok, const char *error, const char *json,
  * history set seconds samples: how often it is sampled, how many kept.
  * events [after]: what happened on the host, after an event's number.
  */
+/* An event as it comes: a line of its own, at once. */
+static void
+event_line(const struct arc_event_ntf *ntf, void *arg)
+{
+
+	(void)arg;
+	if (ntf->json != NULL) {
+		printf("%s\n", ntf->json);
+		fflush(stdout);
+	}
+}
+
+/*
+ * The host's events as they happen, until the host goes or we are
+ * stopped: the connection is driven here, nothing asked of it after.
+ */
+static int
+follow_events(struct arc_client *cl)
+{
+	static const struct arc_events_handlers h = { .event = event_line };
+	struct pollfd	 pfd;
+	cbl_sub		*sub;
+	int		 error, ev, ms;
+
+	if ((error = arc_events_subscribe(cl, &h, NULL, &sub)) != 0)
+		fail(cl, error, "events");
+	for (;;) {
+		ev = 0;
+		ms = -1;
+		(void)cbl_conn_interest(cl->conn, &ev, &ms);
+		pfd.fd = cbl_conn_fd(cl->conn);
+		pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
+		    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
+		pfd.revents = 0;
+		if (poll(&pfd, 1, ms) == -1)
+			continue;
+		ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
+		    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
+		    CBL_EV_WRITE : 0);
+		if ((error = cbl_conn_process(cl->conn, ev)) != 0)
+			break;
+	}
+	xo_errx(1, "events: the host is gone: %s", strerror(error));
+}
+
 static int
 cmd_gula(struct arc_client *cl, int argc, char **argv)
 {
@@ -1634,6 +1680,9 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 		sp.jail = netjail;
 		return (submit(cl, &sp));
 	}
+	if (strcmp(argv[0], "events") == 0 && argc == 2 && strcmp(argv[1],
+	    "-f") == 0)
+		return (follow_events(cl));
 	if (strcmp(argv[0], "events") == 0) {
 		struct arc_events_req	 eq;
 		struct arc_events_rsp	*er;

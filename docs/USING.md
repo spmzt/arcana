@@ -370,9 +370,13 @@ The console is laid out as a tree and tabs.
     went or changed, as the kernel told the agent of it through netlink the
     moment it happened, the last 512 kept. A storm of routes (a BGP
     session coming up) is counted for each second and not listed. A
-    jail's own network is not in it. This is what the workflows'
-    triggers will be made of. From a shell: `arcanactl events
-    [after]`.
+    jail's own network is not in it. Each is shown the moment the
+    agent tells it: the console subscribes to the host's events
+    while they are shown, and passes each to the page over its
+    stream; asked for every few seconds only where there is no
+    stream. This is what the workflows' triggers will be made of.
+    From a shell: `arcanactl events [after]`, or `arcanactl events
+    -f` to follow them as they happen.
   - **Log**: what syslogd wrote, a file of `/var/log` at a time,
     `messages` first, the newest line on top. A line of syslog's is
     taken apart into its time, host, program, PID and message, in

@@ -12,7 +12,7 @@
  *	{"id": 8, "server": "<id>", "what": "routes", "family": "inet",
  *	    "fib": 0, "jail": "", "filter": "10."}
  *
- * what is sysctl, routes, connections or sockets, *
+ * what is sysctl, routes, connections or sockets,
  * and is answered, for that id, with any number of
  *
  *	{"id": 7, "rows": [ ... ]}
@@ -26,6 +26,9 @@
  * passes them on to the socket.  The host sends an item only when the
  * one before was taken, so a slow page slows the host down and nothing
  * piles up between them.
+ *
+ * what is events too: the host's events as they happen, which do not
+ * end (follow.c).
  */
 
 #include <sys/param.h>
@@ -245,6 +248,7 @@ stream_disconnect(struct connection *c)
 			s->c = NULL;
 			atomic_store(&s->stop, true);
 		}
+	(void)follow_stop(c, 0, true);
 }
 
 static void
@@ -284,11 +288,22 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 		LIST_FOREACH(s, &streams, list)
 			if (s->c == c && s->id == id)
 				atomic_store(&s->stop, true);
+		(void)follow_stop(c, id, false);
 		ucl_object_unref(o);
 		return;
 	}
 	sid = ucl_str(o, "server");
 	what = ucl_str(o, "what");
+	if (sid != NULL && what != NULL && strcmp(what, "events") == 0) {
+		const char	*why;
+
+		if ((sv = server_find(sid)) == NULL)
+			refuse(c, id, "no such server");
+		else if ((why = follow_start(c, id, sv)) != NULL)
+			refuse(c, id, why);
+		ucl_object_unref(o);
+		return;
+	}
 	filter = ucl_str(o, "filter");
 	if (filter == NULL)
 		filter = "";

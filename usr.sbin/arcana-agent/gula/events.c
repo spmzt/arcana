@@ -39,15 +39,30 @@ static pthread_mutex_t	ev_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct event	ring[EVENTS_KEPT];
 static size_t		ring_first, ring_n;
 static uint64_t		ev_last;
+static cbl_family	*ev_family;	/* what a subscriber hears it on */
+
+/*
+ * The family the events are told on, to those who subscribed; NULL
+ * before it goes, so that no event is told on it after.
+ */
+void
+event_family(cbl_family *fam)
+{
+
+	pthread_mutex_lock(&ev_lock);
+	ev_family = fam;
+	pthread_mutex_unlock(&ev_lock);
+}
 
 /* kind is a string that stays; the rest makes a JSON object. */
 void
 event_add(const char *kind, const char *fmt, ...)
 {
-	struct event	*e;
-	va_list		 ap;
-	char		*data;
-	int		 n;
+	struct arc_event_ntf	 ntf;
+	struct event		*e;
+	va_list			 ap;
+	char			*data, *json;
+	int			 n;
 
 	va_start(ap, fmt);
 	n = vasprintf(&data, fmt, ap);
@@ -70,7 +85,17 @@ event_add(const char *kind, const char *fmt, ...)
 	e->t = time(NULL);
 	e->kind = kind;
 	e->data = data;
+	/* Told to the subscribers too, as events has it, in its order. */
+	json = NULL;
+	if (ev_family != NULL && asprintf(&json, "{\"n\":%ju,\"t\":%jd,"
+	    "\"kind\":\"%s\",\"data\":%s}", (uintmax_t)e->n, (intmax_t)e->t,
+	    kind, data) != -1) {
+		memset(&ntf, 0, sizeof(ntf));
+		ntf.json = json;
+		(void)arc_event_notify(ev_family, &ntf);
+	}
 	pthread_mutex_unlock(&ev_lock);
+	free(json);
 }
 
 /* {"last":n,"first":n,"events":[{"n","t","kind","data":{}}]}, after one. */

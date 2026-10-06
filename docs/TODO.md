@@ -2,9 +2,7 @@
 
 ## To do
 
-- Netlink, further: the events told to the console as they happen
-  (cblink notifications) and not only asked for; a jail's own network
-  watched as the host's is; a route's attributes as CBOR of the spec
+- Netlink, further: a jail's own network watched as the host's is; a route's attributes as CBOR of the spec
   and not as JSON text. The nexthops stay with netstat -o: netlink
   gives a kernel nexthop only its index, gateway and interfaces (not
   its references, use, MTU or flags), and no kernel nexthop group.

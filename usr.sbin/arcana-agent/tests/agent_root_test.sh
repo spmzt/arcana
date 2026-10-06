@@ -228,6 +228,10 @@ routes_body()
 	atf_check -s exit:1 -o match:'there is no such route' \
 	    "$JGC" -c "$SOCK" route delete 198.51.100.0/24 127.0.0.1
 
+	# Followed as they happen, the same events told to a subscriber.
+	"$JGC" -c "$SOCK" events -f > follow.out 2>&1 &
+	echo $! > follow.pid
+	sleep 0.5
 	# An interface that comes, and its address.
 	atf_check ifconfig lo7 create
 	atf_check ifconfig lo7 inet 127.0.77.1/24
@@ -270,10 +274,16 @@ routes_body()
 	sleep 0.5
 	atf_check -o match:'"kind":"link-del","data":\{"interface":"lo7"' \
 	    "$JGC" -c "$SOCK" events "$last"
+	kill "$(cat follow.pid)"
+	atf_check -o match:'"kind":"link","data":\{"interface":"lo7"' \
+	    -o match:'"kind":"route-add","data":\{[^}]*"destination":"198.51.100.0' \
+	    -o match:'"kind":"neigh","data":\{"family":"inet","address":"192.0.2.202"' \
+	    -o match:'"kind":"link-del","data":\{"interface":"lo7"' cat follow.out
 }
 routes_cleanup()
 {
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	[ -f follow.pid ] && kill "$(cat follow.pid)" 2>/dev/null
 	if [ -f mine ]; then
 		route -q delete 198.51.100.0/24 >/dev/null 2>&1
 		ifconfig lo7 destroy >/dev/null 2>&1

@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.31.0"
+#define	ARCANA_AGENT_VERSION	"0.32.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -447,6 +447,7 @@ struct ucl_object_s;
 struct ucl_object_s *swap_list(struct work *);
 void		 route_watch_start(void);
 void		 event_add(const char *, const char *, ...) __printflike(2, 3);
+void		 event_family(cbl_family *);
 int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);
 
 /* invidia/netgraph.c */

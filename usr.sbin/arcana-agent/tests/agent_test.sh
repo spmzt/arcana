@@ -2743,10 +2743,17 @@ observe_body()
 	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history "$last"
 	# How it samples is set, and written down for the next start: fewer
 	# kept are the newest; none kept is no sampling and no memory.
-	# A limit crossed is an event, once, until it is crossed back.
+	# A limit crossed is an event, once, until it is crossed back; told
+	# to those who follow the events the moment it is made.
+	"$JGC" -c "$SOCK" events -f > follow.out 2>&1 &
+	echo $! > follow.pid
+	sleep 0.5
 	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0\}' \
 	    "$JGC" -c "$SOCK" history set 1 20 1 1 0
 	sleep 3
+	kill "$(cat follow.pid)"
+	atf_check -o match:'^\{"n":[0-9]+,"t":[0-9]+,"kind":"threshold","data":\{"what":"mem","value":[0-9]+,"limit":1,"over":true\}\}$' \
+	    cat follow.out
 	atf_check -o match:'"kind":"threshold","data":\{"what":"mem","value":[0-9]+,"limit":1,"over":true\}' \
 	    "$JGC" -c "$SOCK" events
 	atf_check -o inline:'1\n' sh -c "$JGC -c $SOCK events | grep -o '\"what\":\"mem\"' | wc -l | tr -d ' '"

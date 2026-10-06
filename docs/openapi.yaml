@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.43.0
+  version: 0.44.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -651,6 +651,12 @@ paths:
         array of the next values, then one with done and total, or one
         with error. A message with id and stop ends one early. The
         agent sends a part only when the one before was taken.
+        what events follows the host's events, which do not end: each
+        is a message with event, the event as GET events has one, the
+        moment the agent tells it (the console subscribes to the
+        agent's events group); lost true when some went past a page
+        too slow for them, to read them with GET events; error when
+        the host is gone. Until stop, or the socket closes.
       responses:
         "101":
           description: Switching to the WebSocket protocol

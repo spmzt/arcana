@@ -135,6 +135,7 @@ struct pooled {
 	cbl_tls		*tls;
 	uint16_t	 family;
 	uint32_t	 version;
+	uint32_t	 groups[ARC_MCGRP_COUNT];	/* the family's, resolved */
 	uint64_t	 since;		/* µs, when it was given back */
 };
 
@@ -430,6 +431,7 @@ shared_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 	n.p.tls = tls;
 	n.p.family = cl->family;
 	n.p.version = cl->version;
+	memcpy(n.p.groups, cl->groups, sizeof(n.p.groups));
 	n.p.since = now_us();
 	if ((n.p.uri = strdup(uri)) == NULL || (peer != NULL && (n.p.peer =
 	    strdup(peer)) == NULL)) {
@@ -541,6 +543,7 @@ pool_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 	p.tls = tls;
 	p.family = cl->family;
 	p.version = cl->version;
+	memcpy(p.groups, cl->groups, sizeof(p.groups));
 	p.since = now_us();
 	if ((p.uri = strdup(uri)) == NULL || (peer != NULL && (p.peer =
 	    strdup(peer)) == NULL)) {
@@ -606,6 +609,7 @@ hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
 		cl->conn = kept.conn;
 		cl->family = kept.family;
 		cl->version = kept.version;
+		memcpy(cl->groups, kept.groups, sizeof(kept.groups));
 		*connp = kept.conn;
 		*tlsp = kept.tls;
 		return (NULL);
@@ -1229,6 +1233,7 @@ connect:
 		cl.conn = conn;
 		cl.family = kept.family;
 		cl.version = kept.version;
+		memcpy(cl.groups, kept.groups, sizeof(kept.groups));
 		reused = true;
 		snprintf(detail, sizeof(detail), "%s, %s, kept open", c->uri,
 		    local ? "local socket" : strncmp(c->uri, "sctp:", 5) ==
