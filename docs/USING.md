@@ -77,8 +77,12 @@ The console is laid out as a tree and tabs.
     per address family; filter the rows, click a column to sort. The
     routes are asked of the kernel itself, through netlink, so each
     comes with what the kernel knows of it: its metric, its weight,
-    the address it sends from, its table. The others are as `netstat`
-    and `sockstat` print them (`--libxo json`).
+    the address it sends from, its table. The connections and sockets
+    come from the kernel's own lists of them, as netstat and sockstat
+    read them, with the same columns: who holds a socket, its command
+    and descriptor, and `?` for one nobody holds any more. A host's
+    own are read by the agent itself, a jail's by its helper inside
+    the jail; netstat and sockstat are not run for them.
     The routes, connections and sockets come in parts over the
     console's stream as the host reads them, so a table of any size,
     a full BGP table say, arrives whole: the first time the table

@@ -51,28 +51,32 @@
 
 #include "agent.h"
 
-static const char	*filter, *cover_text;
-static unsigned char	 cover[16];
-static int		 cover_af;
-static uint64_t		 total;
-static uint32_t		 paths, path;	/* of the route being written */
-static FILE		*out;		/* where a row is written */
+/* One listing: where its rows go, and what it keeps count of. */
+struct rl {
+	FILE		*out;
+	const char	*filter;
+	const char	*cover_text;	/* the address the routes cover, or NULL */
+	unsigned char	 cover[16];
+	int		 cover_af;
+	uint64_t	 total;
+	uint32_t	 paths, path;	/* of the route being written */
+};
 
 /* A string as JSON has one. */
 static void
-jstring(const char *s)
+jstring(struct rl *c, const char *s)
 {
 
-	fputc('"', out);
+	fputc('"', c->out);
 	for (; *s != '\0'; s++) {
 		if (*s == '"' || *s == '\\')
-			fprintf(out, "\\%c", *s);
+			fprintf(c->out, "\\%c", *s);
 		else if ((unsigned char)*s < 0x20)
-			fprintf(out, "\\u%04x", (unsigned int)(unsigned char)*s);
+			fprintf(c->out, "\\u%04x", (unsigned int)(unsigned char)*s);
 		else
-			fputc(*s, out);
+			fputc(*s, c->out);
 	}
-	fputc('"', out);
+	fputc('"', c->out);
 }
 
 /* The flags of a route as netstat(1) letters them. */
@@ -129,30 +133,30 @@ addr_text(const struct sockaddr *sa, char *buf, size_t len)
 
 /* Is the address asked about inside the route's prefix? */
 static bool
-covers(const struct snl_parsed_route *r)
+covers(struct rl *c, const struct snl_parsed_route *r)
 {
 	const unsigned char	*net;
 	int			 plen, i;
 
-	if (cover_text == NULL)
+	if (c->cover_text == NULL)
 		return (true);
-	if (r->rtm_family != cover_af || r->rta_dst == NULL)
+	if (r->rtm_family != c->cover_af || r->rta_dst == NULL)
 		return (false);
-	net = cover_af == AF_INET ? (const unsigned char *)
+	net = c->cover_af == AF_INET ? (const unsigned char *)
 	    &((const struct sockaddr_in *)(const void *)r->rta_dst)->sin_addr :
 	    (const unsigned char *)&((const struct sockaddr_in6 *)
 	    (const void *)r->rta_dst)->sin6_addr;
 	plen = r->rtm_dst_len;
 	for (i = 0; i < plen / 8; i++)
-		if (net[i] != cover[i])
+		if (net[i] != c->cover[i])
 			return (false);
-	return (plen % 8 == 0 || ((net[i] ^ cover[i]) & (0xff << (8 - plen %
+	return (plen % 8 == 0 || ((net[i] ^ c->cover[i]) & (0xff << (8 - plen %
 	    8))) == 0);
 }
 
 /* One route by one next hop, as a line. */
 static void
-row(const struct snl_parsed_route *r, const struct sockaddr *gw,
+row(struct rl *c, const struct snl_parsed_route *r, const struct sockaddr *gw,
     uint32_t ifindex, uint32_t flags, uint32_t weight, uint32_t metric,
     uint32_t mtu, uint32_t expire)
 {
@@ -180,37 +184,37 @@ row(const struct snl_parsed_route *r, const struct sockaddr *gw,
 		snprintf(gwt, sizeof(gwt), "link#%u", ifindex);
 	if (if_indextoname(ifindex, ifn) == NULL)
 		ifn[0] = '\0';
-	total++;
-	if (filter != NULL && strstr(dst, filter) == NULL && strstr(gwt,
-	    filter) == NULL && strstr(ifn, filter) == NULL)
+	c->total++;
+	if (c->filter != NULL && strstr(dst, c->filter) == NULL && strstr(gwt,
+	    c->filter) == NULL && strstr(ifn, c->filter) == NULL)
 		return;
-	fprintf(out, "{\"destination\":");
-	jstring(dst);
-	fprintf(out, ",\"gateway\":");
-	jstring(gwt);
-	fprintf(out, ",\"flags\":\"%s\",\"nhop\":%u,", flag_letters(flags |
+	fprintf(c->out, "{\"destination\":");
+	jstring(c, dst);
+	fprintf(c->out, ",\"gateway\":");
+	jstring(c, gwt);
+	fprintf(c->out, ",\"flags\":\"%s\",\"nhop\":%u,", flag_letters(flags |
 	    RTF_UP), r->rta_knh_id);
 	/* The route's own, when it has one: or it is its interface's. */
 	if (mtu != 0)
-		fprintf(out, "\"mtu\":%u,", mtu);
-	fprintf(out, "\"interface-name\":");
-	jstring(ifn);
-	fprintf(out, ",\"metric\":%u,\"weight\":%u,\"fib\":%u,\"prefixlen\":%u",
+		fprintf(c->out, "\"mtu\":%u,", mtu);
+	fprintf(c->out, "\"interface-name\":");
+	jstring(c, ifn);
+	fprintf(c->out, ",\"metric\":%u,\"weight\":%u,\"fib\":%u,\"prefixlen\":%u",
 	    metric, weight, r->rta_table, r->rtm_dst_len);
 	if (r->rta_pref_src != NULL) {
-		fprintf(out, ",\"source\":");
-		jstring(addr_text(r->rta_pref_src, src, sizeof(src)));
+		fprintf(c->out, ",\"source\":");
+		jstring(c, addr_text(r->rta_pref_src, src, sizeof(src)));
 	}
 	/* One of several ways the route has: which, of how many. */
-	if (paths > 1)
-		fprintf(out, ",\"path\":%u,\"paths\":%u", path, paths);
+	if (c->paths > 1)
+		fprintf(c->out, ",\"path\":%u,\"paths\":%u", c->path, c->paths);
 	if (expire != 0)
-		fprintf(out, ",\"expire-time\":\"%u\"", expire);
-	fprintf(out, "}\n");
+		fprintf(c->out, ",\"expire-time\":\"%u\"", expire);
+	fprintf(c->out, "}\n");
 }
 
 static void
-route_rows(struct snl_state *ss, struct nlmsghdr *hdr)
+route_rows(struct rl *c, struct snl_state *ss, struct nlmsghdr *hdr)
 {
 	struct snl_parsed_route	 r = { .rtax_weight = RT_DEFAULT_WEIGHT };
 	const struct rta_mpath_nh *nh;
@@ -218,31 +222,31 @@ route_rows(struct snl_state *ss, struct nlmsghdr *hdr)
 
 	if (!snl_parse_nlmsg(ss, hdr, &snl_rtm_route_parser, &r))
 		return;
-	if (!covers(&r)) {
-		total++;
+	if (!covers(c, &r)) {
+		c->total++;
 		return;
 	}
-	paths = r.rta_multipath.count;
+	c->paths = r.rta_multipath.count;
 	if (r.rta_multipath.count == 0) {
-		row(&r, r.rta_gw, r.rta_oif, r.rta_rtflags, r.rtax_weight,
+		row(c, &r, r.rta_gw, r.rta_oif, r.rta_rtflags, r.rtax_weight,
 		    r.rta_metric, r.rtax_mtu, r.rta_expire);
 		return;
 	}
 	for (i = 0; i < r.rta_multipath.count; i++) {
 		nh = (const struct rta_mpath_nh *)r.rta_multipath.items[i];
-		path = i + 1;
-		row(&r, nh->gw, nh->ifindex, nh->rta_rtflags != 0 ?
+		c->path = i + 1;
+		row(c, &r, nh->gw, nh->ifindex, nh->rta_rtflags != 0 ?
 		    nh->rta_rtflags : r.rta_rtflags, nh->rtnh_weight,
 		    nh->rta_metric != 0 ? nh->rta_metric : r.rta_metric,
 		    nh->rtax_mtu, nh->rta_expire);
 		/* One route, however many ways it has. */
 		if (i > 0)
-			total--;
+			c->total--;
 	}
 }
 
 static int
-routes(struct snl_state *ss, int af, uint32_t fib)
+routes(struct rl *c, struct snl_state *ss, int af, uint32_t fib)
 {
 	struct {
 		struct nlmsghdr	hdr;
@@ -268,7 +272,7 @@ routes(struct snl_state *ss, int af, uint32_t fib)
 	}
 	while ((hdr = snl_read_reply_multi(ss, msg.hdr.nlmsg_seq, &e)) !=
 	    NULL) {
-		route_rows(ss, hdr);
+		route_rows(c, ss, hdr);
 		snl_clear_lb(ss);
 	}
 	if (e.error != 0) {
@@ -319,7 +323,8 @@ prefix(const char *s, int af, struct sockaddr_storage *ss, int *plenp)
 }
 
 static int
-route_get(struct snl_state *ss, const char *address, uint32_t fib)
+route_get(struct rl *c, struct snl_state *ss, const char *address,
+    uint32_t fib)
 {
 	struct snl_parsed_route	 r = { .rtax_weight = RT_DEFAULT_WEIGHT };
 	struct sockaddr_storage	 dst;
@@ -346,22 +351,22 @@ route_get(struct snl_state *ss, const char *address, uint32_t fib)
 		return (1);
 	if (if_indextoname(r.rta_oif, ifn) == NULL)
 		ifn[0] = '\0';
-	fprintf(out, "{\"to\":");
-	jstring(address);
-	fprintf(out, ",\"destination\":");
+	fprintf(c->out, "{\"to\":");
+	jstring(c, address);
+	fprintf(c->out, ",\"destination\":");
 	if (r.rtm_dst_len == 0)
-		fprintf(out, "\"default\"");
+		fprintf(c->out, "\"default\"");
 	else
-		jstring(addr_text(r.rta_dst, a, sizeof(a)));
-	fprintf(out, ",\"prefixlen\":%u,\"gateway\":", r.rtm_dst_len);
+		jstring(c, addr_text(r.rta_dst, a, sizeof(a)));
+	fprintf(c->out, ",\"prefixlen\":%u,\"gateway\":", r.rtm_dst_len);
 	if (r.rta_gw != NULL && (r.rta_gw->sa_family == AF_INET ||
 	    r.rta_gw->sa_family == AF_INET6))
-		jstring(addr_text(r.rta_gw, a, sizeof(a)));
+		jstring(c, addr_text(r.rta_gw, a, sizeof(a)));
 	else
-		fprintf(out, "\"link#%u\"", r.rta_oif);
-	fprintf(out, ",\"fib\":\"%u\",\"interface\":", fib);
-	jstring(ifn);
-	fprintf(out, ",\"flags\":\"%s\",\"metric\":%u,\"weight\":%u}\n",
+		fprintf(c->out, "\"link#%u\"", r.rta_oif);
+	fprintf(c->out, ",\"fib\":\"%u\",\"interface\":", fib);
+	jstring(c, ifn);
+	fprintf(c->out, ",\"flags\":\"%s\",\"metric\":%u,\"weight\":%u}\n",
 	    flag_letters(r.rta_rtflags | RTF_UP), r.rta_metric, r.rtax_weight);
 	return (0);
 }
@@ -478,46 +483,88 @@ route_change(struct snl_state *ss, bool del, int argc, char **argv)
 	return (0);
 }
 
-/* The helper's verbs that begin with "route"; argv[0] is the verb. */
+/*
+ * The routes of a table, a row a line into out, and "#total n" last;
+ * of family 4, 6 or 0 for both, those with filter in them, those the
+ * address cover is in: each NULL for any.  For the helper, and for the
+ * daemon itself, which gives out a stream of its own.
+ */
 int
-route_helper(int argc, char **argv)
+route_list(FILE *out, int fam, uint32_t fib, const char *filter,
+    const char *cover)
 {
 	struct snl_state	ss;
-	uint32_t		fib;
-	int			rc, fam;
+	struct rl		c;
+	int			rc;
 
 	if (!snl_init(&ss, NETLINK_ROUTE)) {
 		fprintf(stderr, "netlink(4): %s\n", strerror(errno));
 		return (1);
 	}
-	out = stdout;
-	rc = 2;
-	if (strcmp(argv[0], "routes") == 0 && argc == 5) {
-		fam = atoi(argv[1]);
-		fib = (uint32_t)strtoul(argv[2], NULL, 10);
-		filter = strcmp(argv[3], "-") != 0 ? argv[3] : NULL;
-		if (strcmp(argv[4], "-") != 0) {
-			cover_text = argv[4];
-			cover_af = inet_pton(AF_INET, cover_text, cover) == 1 ?
-			    AF_INET : inet_pton(AF_INET6, cover_text,
-			    cover) == 1 ? AF_INET6 : AF_UNSPEC;
-			fam = cover_af == AF_INET ? 4 : 6;
-		}
-		rc = 0;
-		if (fam == 0 || fam == 4)
-			rc = routes(&ss, AF_INET, fib);
-		/* The other family's table is marked where it begins. */
-		if (fam == 0)
-			printf("#family 6\n");
-		if (fam == 0 || fam == 6)
-			rc = routes(&ss, AF_INET6, fib) != 0 && rc != 0;
-		printf("#total %ju\n", (uintmax_t)total);
-	} else if (strcmp(argv[0], "route-get") == 0 && argc == 3)
-		rc = route_get(&ss, argv[1], (uint32_t)strtoul(argv[2], NULL,
-		    10));
-	else if (strcmp(argv[0], "route-add") == 0 || strcmp(argv[0],
-	    "route-del") == 0)
-		rc = route_change(&ss, argv[0][6] == 'd', argc - 1, argv + 1);
+	memset(&c, 0, sizeof(c));
+	c.out = out;
+	c.filter = filter;
+	if (cover != NULL) {
+		c.cover_text = cover;
+		c.cover_af = inet_pton(AF_INET, cover, c.cover) == 1 ? AF_INET :
+		    inet_pton(AF_INET6, cover, c.cover) == 1 ? AF_INET6 :
+		    AF_UNSPEC;
+		fam = c.cover_af == AF_INET ? 4 : 6;
+	}
+	rc = 0;
+	if (fam == 0 || fam == 4)
+		rc = routes(&c, &ss, AF_INET, fib);
+	/* The other family's table is marked where it begins. */
+	if (fam == 0)
+		fprintf(out, "#family 6\n");
+	if (fam == 0 || fam == 6)
+		rc = routes(&c, &ss, AF_INET6, fib) != 0 && rc != 0;
+	fprintf(out, "#total %ju\n", (uintmax_t)c.total);
+	snl_free(&ss);
+	return (rc);
+}
+
+/* The route the kernel would take to address, one line into out. */
+int
+route_lookup(FILE *out, const char *address, uint32_t fib)
+{
+	struct snl_state	ss;
+	struct rl		c;
+	int			rc;
+
+	if (!snl_init(&ss, NETLINK_ROUTE)) {
+		fprintf(stderr, "netlink(4): %s\n", strerror(errno));
+		return (1);
+	}
+	memset(&c, 0, sizeof(c));
+	c.out = out;
+	rc = route_get(&c, &ss, address, fib);
+	snl_free(&ss);
+	return (rc);
+}
+
+/* The helper's verbs that begin with "route"; argv[0] is the verb. */
+int
+route_helper(int argc, char **argv)
+{
+	struct snl_state	ss;
+	int			rc;
+
+	if (strcmp(argv[0], "routes") == 0 && argc == 5)
+		return (route_list(stdout, atoi(argv[1]), (uint32_t)strtoul(
+		    argv[2], NULL, 10), strcmp(argv[3], "-") != 0 ? argv[3] :
+		    NULL, strcmp(argv[4], "-") != 0 ? argv[4] : NULL));
+	if (strcmp(argv[0], "route-get") == 0 && argc == 3)
+		return (route_lookup(stdout, argv[1], (uint32_t)strtoul(
+		    argv[2], NULL, 10)));
+	if (strcmp(argv[0], "route-add") != 0 && strcmp(argv[0], "route-del") !=
+	    0)
+		return (2);
+	if (!snl_init(&ss, NETLINK_ROUTE)) {
+		fprintf(stderr, "netlink(4): %s\n", strerror(errno));
+		return (1);
+	}
+	rc = route_change(&ss, argv[0][6] == 'd', argc - 1, argv + 1);
 	snl_free(&ss);
 	return (rc);
 }
@@ -535,6 +582,7 @@ route_helper(int argc, char **argv)
 static void
 watch_route(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
 {
+	struct rl	 rc;
 	static time_t	 second;
 	static unsigned	 seen, left;
 	char		*json;
@@ -553,12 +601,11 @@ watch_route(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
 		return;
 	}
 	json = NULL;
-	if ((out = open_memstream(&json, &len)) == NULL)
+	memset(&rc, 0, sizeof(rc));
+	if ((rc.out = open_memstream(&json, &len)) == NULL)
 		return;
-	total = 0;
-	route_rows(ss, hdr);
-	fclose(out);
-	out = NULL;
+	route_rows(&rc, ss, hdr);
+	fclose(rc.out);
 	if (json != NULL && len > 1) {
 		json[strcspn(json, "\n")] = '\0';
 		event_add(gone ? "route-del" : "route-add", "%s", json);
@@ -569,6 +616,7 @@ watch_route(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
 static void
 watch_link(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
 {
+	struct rl		 wc, *c;
 	struct snl_parsed_link	l = { 0 };
 	char			*json;
 	size_t			 len;
@@ -577,16 +625,17 @@ watch_link(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
 	    l.ifla_ifname == NULL)
 		return;
 	json = NULL;
-	if ((out = open_memstream(&json, &len)) == NULL)
+	memset(&wc, 0, sizeof(wc));
+	if ((wc.out = open_memstream(&json, &len)) == NULL)
 		return;
-	fprintf(out, "{\"interface\":");
-	jstring(l.ifla_ifname);
-	fprintf(out, ",\"up\":%s,\"carrier\":%s,\"mtu\":%u}",
+	c = &wc;
+	fprintf(c->out, "{\"interface\":");
+	jstring(c, l.ifla_ifname);
+	fprintf(c->out, ",\"up\":%s,\"carrier\":%s,\"mtu\":%u}",
 	    (l.ifi_flags & IFF_UP) != 0 ? "true" : "false",
 	    l.ifla_operstate == IF_OPER_UP || l.ifla_carrier != 0 ? "true" :
 	    "false", l.ifla_mtu);
-	fclose(out);
-	out = NULL;
+	fclose(c->out);
 	if (json != NULL)
 		event_add(gone ? "link-del" : "link", "%s", json);
 	free(json);
@@ -595,6 +644,7 @@ watch_link(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
 static void
 watch_addr(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
 {
+	struct rl		 wc, *c;
 	struct snl_parsed_addr	 a = { 0 };
 	const struct sockaddr	*sa;
 	char			 text[INET6_ADDRSTRLEN + IF_NAMESIZE + 8],
@@ -609,15 +659,16 @@ watch_addr(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
 	if (if_indextoname(a.ifa_index, ifn) == NULL)
 		ifn[0] = '\0';
 	json = NULL;
-	if ((out = open_memstream(&json, &len)) == NULL)
+	memset(&wc, 0, sizeof(wc));
+	if ((wc.out = open_memstream(&json, &len)) == NULL)
 		return;
-	fprintf(out, "{\"interface\":");
-	jstring(ifn);
-	fprintf(out, ",\"address\":");
-	jstring(addr_text(sa, text, sizeof(text)));
-	fprintf(out, ",\"prefixlen\":%u}", a.ifa_prefixlen);
-	fclose(out);
-	out = NULL;
+	c = &wc;
+	fprintf(c->out, "{\"interface\":");
+	jstring(c, ifn);
+	fprintf(c->out, ",\"address\":");
+	jstring(c, addr_text(sa, text, sizeof(text)));
+	fprintf(c->out, ",\"prefixlen\":%u}", a.ifa_prefixlen);
+	fclose(c->out);
 	if (json != NULL)
 		event_add(gone ? "address-del" : "address-add", "%s", json);
 	free(json);

@@ -14,12 +14,13 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* Generated into the object directory; <> so that a stale copy next
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.29.0"
+#define	ARCANA_AGENT_VERSION	"0.30.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -28,7 +29,6 @@
 #define	PATH_SERVICE_BIN	"/usr/sbin/service"
 #define	PATH_SYSRC_BIN		"/usr/sbin/sysrc"
 #define	PATH_NETSTAT_BIN	"/usr/bin/netstat"
-#define	PATH_SOCKSTAT_BIN	"/usr/bin/sockstat"
 #define	PATH_SWAPINFO_BIN	"/usr/sbin/swapinfo"
 #define	PATH_ZPOOL_BIN		"/sbin/zpool"
 #define	PATH_PKG_BIN		"/usr/sbin/pkg"
@@ -72,7 +72,6 @@ struct opts {
 	const char	*service_bin;
 	const char	*sysrc_bin;
 	const char	*netstat_bin;
-	const char	*sockstat_bin;
 	const char	*swapinfo_bin;
 	const char	*zpool_bin;
 	const char	*pkg_bin;
@@ -97,6 +96,7 @@ struct opts {
 	const char	*history_conf;	/* how the host is sampled */
 	const char	*tools_dir;	/* where programs without an option are */
 	const char	*helper_bin;	/* this program, run again with -Q */
+	bool		 helper_self;	/* it is this program: the host's own is read here */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
 	const char	*birdc_bin;
@@ -428,6 +428,12 @@ char		*ifq_text(const char *, const char *, const char *);
 char		**helper_argv(struct work *, const char *, size_t,
 		    const char *const []);
 int		 route_helper(int, char **);
+int		 route_list(FILE *, int, uint32_t, const char *, const char *);
+int		 route_lookup(FILE *, const char *, uint32_t);
+int		 pcb_helper(int, char **);
+int		 pcb_list(FILE *, bool, int);
+int		 helper_lines(struct work *, const char *, size_t,
+		    const char *const [], void (*)(const char *, void *), void *);
 struct cbl_dump_state;
 struct arc_network_dump_req;
 bool		 network_part(struct cbl_dump_state *,

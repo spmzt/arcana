@@ -199,6 +199,15 @@ routes_body()
 	atf_check -o match:'"interface-name":"lo0"' -o match:'"metric":[0-9]+,"weight":[0-9]+,"fib":0,"prefixlen":[0-9]+' \
 	    "$JGC" -c "$SOCK" net routes
 	last=$("$JGC" -c "$SOCK" events | sed -E 's/^\{"last":([0-9]+).*/\1/')
+	# Read by the daemon itself, from the kernel's own lists, as
+	# netstat and sockstat would list them: what sockstat has, this has,
+	# and in parts too.
+	atf_check -o match:'"statistics":\{"socket":\[' "$JGC" -c "$SOCK" net connections
+	pid=$(sockstat -46w | awk 'NR == 2 { print $3 }')
+	atf_check -o match:"\"pid\":$pid," -o match:'"user":"' \
+	    "$JGC" -c "$SOCK" net sockets
+	atf_check -o match:'"command":"' "$JGC" -c "$SOCK" net sockets parts
+	atf_check -o match:'netlink\(4\)' "$JGC" -t -c "$SOCK" net routes
 
 	atf_check -o match:'done +route add 198.51.100.0/24 via 127.0.0.1' \
 	    "$JGC" -c "$SOCK" route add 198.51.100.0/24 127.0.0.1 metric 7 weight 3

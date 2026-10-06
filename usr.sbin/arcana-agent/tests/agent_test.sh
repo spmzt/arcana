@@ -155,12 +155,7 @@ case "$*" in
 *)	echo '{"statistics": {"socket": [{"protocol": "tcp4", "local": {"address": "10.0.0.1", "port": "22"}, "remote": {"address": "10.0.0.2", "port": "4000"}, "tcp-state": "ESTABLISHED"}]}}' ;;
 esac
 EOS
-	cat > fake-sockstat <<'EOS'
-#!/bin/sh
-echo "fake-sockstat $*" >&2
-echo '{"__version": "1", "sockstat": {"socket": [{"user": "root", "command": "sshd", "pid": 1, "fd": 3, "proto": "tcp4", "local": {"address": "*", "port": 22}, "foreign": {"address": "*", "port": "*"}}]}}'
-EOS
-	chmod +x fake-netstat fake-sockstat
+	chmod +x fake-netstat
 	# The helper, which speaks netlink(4) for the routes: what it is
 	# asked is logged, what it answers is canned.  ./huge is a table
 	# of 3000 routes; ./covers the routes an address is in.
@@ -189,6 +184,12 @@ routes)
 route-get)
 	case "\$1" in 203.0.113.*) exit 1 ;; esac
 	echo '{"to":"'\$1'","destination":"10.77.0.0","prefixlen":16,"gateway":"10.0.0.1","fib":"'\$2'","interface":"em0","flags":"UGS","metric":1,"weight":1}' ;;
+pcb-conns)
+	[ "\$1" != 6 ] && echo '{"protocol":"tcp4","receive-bytes-waiting":0,"send-bytes-waiting":0,"local":{"address":"10.0.0.1","port":"22"},"remote":{"address":"10.0.0.2","port":"4000"},"tcp-state":"ESTABLISHED"}'
+	echo "#total 1" ;;
+pcb-socks)
+	echo '{"user":"root","command":"sshd","pid":1,"fd":3,"proto":"tcp'\$( [ "\$1" = 6 ] && echo 6 || echo 4)'","local":{"address":"*","port":22},"foreign":{"address":"*","port":0}}'
+	echo "#total 1" ;;
 route-add|route-del)
 	echo "\$jid \$verb \$*" >> $(pwd)/route.log
 	case "\$1" in 10.66.0.0/16) echo "10.66.0.0/16: the route is there already" >&2; exit 1 ;; esac ;;
@@ -249,7 +250,7 @@ start_daemon()
 	    -D "$(pwd)/etc/jail.conf.d" -j "$(pwd)/fake-jail" \
 	    -R "$(pwd)/rc.d:$(pwd)/local/rc.d" -s "$(pwd)/fake-service" \
 	    -y "$(pwd)/fake-sysrc" -N "$(pwd)/fake-netstat" \
-	    -X "$(pwd)/fake-sockstat" -P "$(pwd)/fake-pkg" \
+	    -P "$(pwd)/fake-pkg" \
 	    -U "$(pwd)/installed-agent" -B "$(pwd)/build" \
 	    -c "$(pwd)/build.mk" -G "$(pwd)/fake-git" -M "$(pwd)/fake-make" \
 	    -Y "$(pwd)/fake-keyscan" -I "$(pwd)/fake-ifconfig" \
@@ -627,12 +628,14 @@ network_body()
 	atf_check -o match:'fake-netstat --libxo json -onW -f inet$' cat nh.out
 	atf_check -o match:'fake-netstat --libxo json -onW -f inet6$' cat nh.out
 	atf_check -o match:'"rt-family"' cat nh.out
-	atf_check -o match:'fake-netstat --libxo json -nW -f inet$' \
+	# The connections and sockets: the kernel's own lists, read by the
+	# helper here (by the daemon itself when it is its own helper).
+	atf_check -o match:'fake-helper -Q 0 pcb-conns 4' \
+	    -o match:'"statistics":\{"socket":\[\{"protocol":"tcp4"' \
 	    "$JGC" -t -c "$SOCK" net connections -4
 	atf_check -o save:so.out "$JGC" -t -c "$SOCK" net sockets
-	atf_check -o match:'fake-sockstat --libxo json -w -4$' cat so.out
-	atf_check -o match:'fake-sockstat --libxo json -w -6$' cat so.out
-	atf_check -o match:'"sshd".*"sshd"' cat so.out
+	atf_check -o match:'fake-helper -Q 0 pcb-socks 0' \
+	    -o match:'"sockstat":\{"socket":\[\{"user":"root","command":"sshd"' cat so.out
 	# The nexthop groups, what a route of several next hops points to.
 	atf_check -o match:'"nhgrp-index":1,"nhg-refcnt":1,"nhop-weights":\[\{"nh-index":5,"nh-weight":2' \
 	    -o match:'fake-netstat --libxo json -OnW -f inet$' \

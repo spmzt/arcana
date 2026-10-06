@@ -5,9 +5,8 @@
 - Netlink, further: the events told to the console as they happen
   (cblink notifications) and not only asked for; a jail's own network
   watched as the host's is; neighbours (ARP, NDP) and nexthops read
-  the same way; the host's routes read in the daemon itself and not
-  by the helper it runs; a route's attributes as CBOR of the spec and
-  not as JSON text.
+  the same way; a route's attributes as CBOR of the spec and not as
+  JSON text.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: `zfs send` and `receive` between
   two hosts (on one host it is done; between two it needs the agents
@@ -63,10 +62,6 @@
   jail; the kernel's messages followed as they come (not read whole
   each time); dmesg for an agent that is not root, which the kernel
   refuses unless security.bsd.unprivileged_read_msgbuf is on.
-- Connections and sockets in parts as the programs print them, and
-  not after netstat and sockstat have printed the whole document:
-  through the kernel's own lists (sysctl net.inet.tcp.pcblist and
-  the like) or netlink, as the routes are.
 - The page on a phone, further: a card's title the column that names
   the row best (a process's command, not its number); the row's
   actions behind one menu when there are many; the map and the

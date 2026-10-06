@@ -121,7 +121,7 @@ scope_argv(struct work *w, char *const argv[])
 		;
 	v = wcalloc(w, n + 4, sizeof(*v));
 	k = 0;
-	if (argv[0] == opts.ifconfig_bin || argv[0] == opts.netstat_bin || argv[0] == opts.sockstat_bin ||
+	if (argv[0] == opts.ifconfig_bin || argv[0] == opts.netstat_bin ||
 	    argv[0] == opts.ngctl_bin) {
 		v[k++] = argv[0];
 		v[k++] = (char *)(uintptr_t)"-j";
@@ -166,6 +166,83 @@ helper_argv(struct work *w, const char *verb, size_t n,
 		v[4 + i] = (char *)(uintptr_t)words[i];
 	v[4 + n] = NULL;
 	return (v);
+}
+
+/* Lines written into a stream of the daemon's, each given on. */
+struct lines {
+	void	(*fn)(const char *, void *);
+	void	*arg;
+	char	*buf;
+	size_t	 len, cap;
+};
+
+static int
+lines_write(void *cookie, const char *data, int n)
+{
+	struct lines	*l = cookie;
+	char		*nl;
+	size_t		 k;
+
+	if (l->len + (size_t)n + 1 > l->cap) {
+		l->cap = (l->len + (size_t)n + 1) * 2;
+		if ((l->buf = realloc(l->buf, l->cap)) == NULL)
+			return (-1);
+	}
+	memcpy(l->buf + l->len, data, (size_t)n);
+	l->len += (size_t)n;
+	while ((nl = memchr(l->buf, '\n', l->len)) != NULL) {
+		*nl = '\0';
+		l->fn(l->buf, l->arg);
+		k = (size_t)(nl - l->buf) + 1;
+		memmove(l->buf, nl + 1, l->len - k);
+		l->len -= k;
+	}
+	return (n);
+}
+
+/*
+ * What the helper's verb prints, a line at a time to fn: of the host's
+ * own stack read here, by the daemon itself, as it is written; of a
+ * jail's, or when the helper is another program (-H), by the helper.
+ */
+int
+helper_lines(struct work *w, const char *verb, size_t n,
+    const char *const words[], void (*fn)(const char *, void *), void *arg)
+{
+	struct lines	 l;
+	FILE		*fp;
+	int		 step, rc;
+
+	if (w->jail != NULL || !opts.helper_self)
+		return (run_exec_lines(w, helper_argv(w, verb, n, words), fn,
+		    arg));
+	step = step_begin(w, ARC_STEP_KIND_LIB, strncmp(verb, "pcb-", 4) == 0 ?
+	    "sysctl(3)" : "netlink(4)", "%s %s", verb, n > 0 ? words[0] : "");
+	memset(&l, 0, sizeof(l));
+	l.fn = fn;
+	l.arg = arg;
+	if ((fp = fwopen(&l, lines_write)) == NULL) {
+		step_end(w, step, false, "fwopen");
+		return (-1);
+	}
+	/* Line by line: each is given on when it is whole. */
+	(void)setvbuf(fp, NULL, _IOLBF, 0);
+	if (strcmp(verb, "routes") == 0 && n == 4)
+		rc = route_list(fp, atoi(words[0]), (uint32_t)strtoul(words[1],
+		    NULL, 10), strcmp(words[2], "-") != 0 ? words[2] : NULL,
+		    strcmp(words[3], "-") != 0 ? words[3] : NULL);
+	else if (strcmp(verb, "route-get") == 0 && n == 2)
+		rc = route_lookup(fp, words[0], (uint32_t)strtoul(words[1],
+		    NULL, 10));
+	else if (strncmp(verb, "pcb-", 4) == 0 && n == 1)
+		rc = pcb_list(fp, strcmp(verb, "pcb-socks") == 0, atoi(
+		    words[0]));
+	else
+		rc = 2;
+	fclose(fp);
+	free(l.buf);
+	step_end(w, step, rc == 0, NULL);
+	return (rc == 0 ? 0 : -1);
 }
 
 /*
@@ -350,6 +427,8 @@ scope_helper(int argc, char **argv)
 	/* The routing tables, through netlink(4). */
 	if (strncmp(argv[1], "route", 5) == 0)
 		return (route_helper(argc - 1, argv + 1));
+	if (strncmp(argv[1], "pcb-", 4) == 0)
+		return (pcb_helper(argc - 1, argv + 1));
 	if (strcmp(argv[1], "zfs-pipe") == 0)
 		return (zfs_pipe(argc - 1, argv + 1));
 	if (argc != 4)

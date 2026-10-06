@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.41.0
+  version: 0.42.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -490,7 +490,8 @@ paths:
             destination, gateway, flags, nhop, mtu, interface-name,
             metric, weight, fib, prefixlen, source and expire-time when
             it has them, and path of paths for one next hop of
-            several), netstat -onW, netstat -OnW, netstat -n, sockstat,
+            several), netstat -onW, netstat -OnW, the kernel's connections and
+            sockets in the shape of netstat -n and sockstat -w,
             getifaddrs(3), ngctl list -l, wg show (public keys only),
             birdc show status and protocols; bird-routes is birdc show
             route for what `filter` names, in birdc's words with a comma

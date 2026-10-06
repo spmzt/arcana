@@ -6,13 +6,14 @@
 
 /*
  * Invidia: a network table in parts.  A dump is answered in the loop's
- * own thread, a part for each call, which is too little room to run a
- * program in; so a thread of the dump's own runs it and hands the rows
- * over a queue, which holds a few thousand of them: the program is
+ * own thread, a part for each call, which is too little room to read a
+ * table in; so a thread of the dump's own reads it and hands the rows
+ * over a queue, which holds a few thousand of them: the reading is
  * held back while the client is slow, and nothing of the table is
- * kept whole.  The routes come from the helper a row a line
- * (nlroute.c); the connections and sockets from netstat and sockstat,
- * whose whole document is read and then given out row by row.
+ * kept whole.  The rows come a line each as they are read from the
+ * kernel: the routes through netlink (nlroute.c), the connections and
+ * sockets from its lists of control blocks (pcb.c); by the daemon
+ * itself for the host, by the helper in a jail.
  */
 
 #include <sys/param.h>
@@ -21,7 +22,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ucl.h>
 
 #include "agent.h"
 
@@ -116,8 +116,12 @@ nd_line(const char *line, void *arg)
 	}
 	if (line[0] != '{')
 		return;
-	if (asprintf(&row, "{\"family\":\"%s\",%s", nd->six ? "Internet6" :
-	    "Internet", line + 1) == -1)
+	/* A route says which table it is of; the others say it already. */
+	if (nd->kind != ARC_NET_KIND_ROUTES) {
+		if ((row = strdup(line)) == NULL)
+			return;
+	} else if (asprintf(&row, "{\"family\":\"%s\",%s", nd->six ?
+	    "Internet6" : "Internet", line + 1) == -1)
 		return;
 	nd_put(nd, row);
 }
@@ -127,15 +131,7 @@ nd_run(void *arg)
 {
 	struct netdump		*nd = arg;
 	struct work		 w;
-	struct execres		 res;
-	struct ucl_parser	*p;
-	ucl_object_t		*top;
-	const ucl_object_t	*e;
-	ucl_object_iter_t	 it;
 	const char		*err, *words[4];
-	char			*argv[9];
-	unsigned char		*json;
-	int			 n, fams, f;
 
 	work_init(&w);
 	err = NULL;
@@ -149,73 +145,18 @@ nd_run(void *arg)
 		nd_unref(nd);
 		return (NULL);
 	}
+	words[0] = nd->family == ARC_NET_FAMILY_INET ? "4" : nd->family ==
+	    ARC_NET_FAMILY_INET6 ? "6" : "0";
 	if (nd->kind == ARC_NET_KIND_ROUTES) {
-		words[0] = nd->family == ARC_NET_FAMILY_INET ? "4" :
-		    nd->family == ARC_NET_FAMILY_INET6 ? "6" : "0";
 		words[1] = wfmt(&w, "%u", nd->fib);
 		words[2] = nd->filter != NULL ? nd->filter : "-";
 		words[3] = "-";
 		nd->six = nd->family == ARC_NET_FAMILY_INET6;
-		if (run_exec_lines(&w, helper_argv(&w, "routes", 4, words),
-		    nd_line, nd) != 0)
+		if (helper_lines(&w, "routes", 4, words, nd_line, nd) != 0)
 			err = "the kernel did not list its routes";
-	} else {
-		/* One run a family, the document's rows one by one. */
-		fams = nd->family == ARC_NET_FAMILY_ALL ? 2 : 1;
-		for (f = 0; f < fams && !nd->stop; f++) {
-			uint8_t	fam = fams == 2 ? (f == 0 ?
-			    ARC_NET_FAMILY_INET : ARC_NET_FAMILY_INET6) :
-			    nd->family;
-
-			n = 0;
-			if (nd->kind == ARC_NET_KIND_SOCKETS) {
-				argv[n++] = (char *)(uintptr_t)opts.sockstat_bin;
-				argv[n++] = (char *)(uintptr_t)"--libxo";
-				argv[n++] = (char *)(uintptr_t)"json";
-				argv[n++] = (char *)(uintptr_t)"-w";
-				argv[n++] = (char *)(uintptr_t)(fam ==
-				    ARC_NET_FAMILY_INET ? "-4" : "-6");
-			} else {
-				argv[n++] = (char *)(uintptr_t)opts.netstat_bin;
-				argv[n++] = (char *)(uintptr_t)"--libxo";
-				argv[n++] = (char *)(uintptr_t)"json";
-				argv[n++] = (char *)(uintptr_t)"-nW";
-				argv[n++] = (char *)(uintptr_t)"-f";
-				argv[n++] = (char *)(uintptr_t)(fam ==
-				    ARC_NET_FAMILY_INET ? "inet" : "inet6");
-			}
-			argv[n] = NULL;
-			if (run_exec_max(&w, scope_argv(&w, argv), &res, 64 *
-			    1024 * 1024) != 0) {
-				if (fams == 1)
-					err = "the program could not list "
-					    "them";
-				continue;
-			}
-			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
-			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
-			top = NULL;
-			if (res.out != NULL && ucl_parser_add_chunk(p,
-			    (const unsigned char *)res.out, res.outlen))
-				top = ucl_parser_get_object(p);
-			ucl_parser_free(p);
-			if (top == NULL)
-				continue;
-			it = NULL;
-			while ((e = ucl_object_iterate(ucl_object_lookup_path(
-			    top, nd->kind == ARC_NET_KIND_SOCKETS ?
-			    "sockstat.socket" : "statistics.socket"), &it,
-			    true)) != NULL && !nd->stop) {
-				json = ucl_object_emit(e, UCL_EMIT_JSON_COMPACT);
-				if (json != NULL)
-					nd_put(nd, (char *)json);
-				pthread_mutex_lock(&nd->lock);
-				nd->total++;
-				pthread_mutex_unlock(&nd->lock);
-			}
-			ucl_object_unref(top);
-		}
-	}
+	} else if (helper_lines(&w, nd->kind == ARC_NET_KIND_SOCKETS ?
+	    "pcb-socks" : "pcb-conns", 1, words, nd_line, nd) != 0)
+		err = "the kernel did not list them";
 	pthread_mutex_lock(&nd->lock);
 	if (err != NULL)
 		snprintf(nd->error, sizeof(nd->error), "%s", err);

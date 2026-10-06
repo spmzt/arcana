@@ -40,14 +40,7 @@ run_kind(struct work *w, uint8_t kind, uint8_t family, uint32_t fib,
 	int	 i;
 
 	i = 0;
-	if (kind == ARC_NET_KIND_SOCKETS) {
-		argv[i++] = (char *)(uintptr_t)opts.sockstat_bin;
-		argv[i++] = (char *)(uintptr_t)"--libxo";
-		argv[i++] = (char *)(uintptr_t)"json";
-		argv[i++] = (char *)(uintptr_t)"-w";
-		argv[i++] = (char *)(uintptr_t)(family == ARC_NET_FAMILY_INET ?
-		    "-4" : "-6");
-	} else {
+	{
 		argv[i++] = (char *)(uintptr_t)opts.netstat_bin;
 		argv[i++] = (char *)(uintptr_t)"--libxo";
 		argv[i++] = (char *)(uintptr_t)"json";
@@ -193,8 +186,7 @@ routes_scan(struct work *w, uint8_t family, const char *filter, uint32_t fib,
 	words[1] = wfmt(w, "%u", fib);
 	words[2] = filter != NULL && filter[0] != '\0' ? filter : "-";
 	words[3] = "-";
-	rc = run_exec_lines(w, helper_argv(w, "routes", 4, words), scan_line,
-	    &sc);
+	rc = helper_lines(w, "routes", 4, words, scan_line, &sc);
 	if (!sc.open)
 		scan_family(&sc);
 	fputs("]}]}}}}", sc.out);
@@ -207,6 +199,76 @@ routes_scan(struct work *w, uint8_t family, const char *filter, uint32_t fib,
 	rsp->has_total = true;
 	rsp->total = sc.total;
 	rsp->truncated = sc.truncated;
+	rsp->ok = true;
+	return (0);
+}
+
+/* The first line given, kept. */
+static void
+first_line(const char *line, void *arg)
+{
+	char	**p = arg;
+
+	if (*p == NULL && line[0] == '{')
+		*p = strdup(line);
+}
+
+/* A row of the connections or sockets, into the document's array. */
+struct pscan {
+	FILE	*out;
+	bool	 some;
+};
+
+static void
+pcb_line(const char *line, void *arg)
+{
+	struct pscan	*ps = arg;
+
+	if (line[0] != '{')
+		return;
+	fprintf(ps->out, "%s%s", ps->some ? "," : "", line);
+	ps->some = true;
+}
+
+/*
+ * The connections or the sockets, read from the kernel (pcb.c), in the
+ * shape netstat and sockstat give them with --libxo json.
+ */
+static int
+pcb_scan(struct work *w, uint8_t kind, uint8_t family,
+    struct arc_network_rsp *rsp)
+{
+	struct pscan	 ps;
+	const char	*words[1];
+	char		*json;
+	size_t		 len;
+	int		 rc;
+
+	json = NULL;
+	memset(&ps, 0, sizeof(ps));
+	if ((ps.out = open_memstream(&json, &len)) == NULL) {
+		rsp->error = "cannot build the reply";
+		return (0);
+	}
+	fputs(kind == ARC_NET_KIND_SOCKETS ? "{\"sockstat\":{\"socket\":[" :
+	    "{\"statistics\":{\"socket\":[", ps.out);
+	words[0] = family == ARC_NET_FAMILY_INET ? "4" : family ==
+	    ARC_NET_FAMILY_INET6 ? "6" : "0";
+	rc = helper_lines(w, kind == ARC_NET_KIND_SOCKETS ? "pcb-socks" :
+	    "pcb-conns", 1, words, pcb_line, &ps);
+	fputs("]}}", ps.out);
+	if (fclose(ps.out) != 0 || json == NULL || rc != 0) {
+		free(json);
+		rsp->error = "the kernel did not list them";
+		return (0);
+	}
+	if (strlen(json) > ARC_MAX_JSON) {
+		free(json);
+		rsp->error = wfmt(w, "more than the %d bytes a reply carries: "
+		    "they come in parts", ARC_MAX_JSON);
+		return (0);
+	}
+	rsp->json = wtext(w, wadopt(w, json));
 	rsp->ok = true;
 	return (0);
 }
@@ -241,6 +303,8 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 	rsp->ok = false;
 	if (kind == ARC_NET_KIND_ROUTES)
 		return (routes_scan(w, family, filter, fib, offset, rsp));
+	if (kind == ARC_NET_KIND_CONNECTIONS || kind == ARC_NET_KIND_SOCKETS)
+		return (pcb_scan(w, kind, family, rsp));
 	if (family != ARC_NET_FAMILY_ALL) {
 		if (run_kind(w, kind, family, fib, &res) != 0) {
 			rsp->error = wtext(w, exec_error(w, &res,
@@ -347,8 +411,8 @@ int
 do_route_lookup(struct work *w, const char *address, uint32_t fib,
     struct arc_route_lookup_rsp *rsp)
 {
-	struct execres	 res;
 	struct cands	 cands;
+	char		*got;
 	ucl_object_t	*top, *best;
 	unsigned char	*json;
 	const char	*words[4];
@@ -373,24 +437,25 @@ do_route_lookup(struct work *w, const char *address, uint32_t fib,
 	    "inet" : "inet6"), "family", 0, false);
 	ucl_object_insert_key(top, ucl_object_fromint(fib), "fib", 0, false);
 
-	/* No route is an answer too: the helper fails, and best stays out. */
+	/* No route is an answer too: nothing is said, and best stays out. */
 	words[0] = address;
 	words[1] = wfmt(w, "%u", fib);
-	if (run_exec(w, helper_argv(w, "route-get", 2, words), &res) == 0 &&
-	    res.out != NULL && (best = parse(res.out, res.outlen)) != NULL) {
+	got = NULL;
+	(void)helper_lines(w, "route-get", 2, words, first_line, &got);
+	if (got != NULL && (best = parse(got, strlen(got))) != NULL) {
 		if (ucl_object_lookup(best, "interface") != NULL)
 			ucl_object_insert_key(top, best, "best", 0, false);
 		else
 			ucl_object_unref(best);
 	}
+	free(got);
 	cands.arr = ucl_object_typed_new(UCL_ARRAY);
 	cands.max = CANDIDATES_MAX;
 	words[0] = "0";
 	words[1] = wfmt(w, "%u", fib);
 	words[2] = "-";
 	words[3] = address;
-	(void)run_exec_lines(w, helper_argv(w, "routes", 4, words), cand_line,
-	    &cands);
+	(void)helper_lines(w, "routes", 4, words, cand_line, &cands);
 	ucl_object_insert_key(top, cands.arr, "candidates", 0, false);
 
 	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
