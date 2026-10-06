@@ -1489,6 +1489,8 @@ connected:
 	case OP_PROCESSES:
 		memset(&prq, 0, sizeof(prq));
 		prq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		prq.has_pid = c->fib != 0;
+		prq.pid = c->fib;
 		if ((error = arc_processes(&cl, &prq, &prr)) != 0)
 			goto rpcfail;
 		ok = prr->ok;
@@ -1506,6 +1508,7 @@ connected:
 		lgq.position = c->pos;
 		lgq.has_lines = c->lines > 0;
 		lgq.lines = c->lines;
+		lgq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_log(&cl, &lgq, &lgr)) != 0)
 			goto rpcfail;
 		ok = lgr->ok;
@@ -1522,6 +1525,13 @@ connected:
 		hsq.has_sample_step = hsq.has_sample_keep = c->retry;
 		hsq.sample_step = c->fib;
 		hsq.sample_keep = c->offset;
+		hsq.has_limit_cpu = hsq.has_limit_mem = hsq.has_limit_swap =
+		    c->retry && c->names != NULL;
+		if (c->names != NULL) {
+			hsq.limit_cpu = (uint32_t)atoi(c->names[0]);
+			hsq.limit_mem = (uint32_t)atoi(c->names[1]);
+			hsq.limit_swap = (uint32_t)atoi(c->names[2]);
+		}
 		if ((error = arc_history(&cl, &hsq, &hsr)) != 0)
 			goto rpcfail;
 		ok = hsr->ok;
@@ -2633,12 +2643,15 @@ int
 api_processes(struct http_request *req)
 {
 	struct call	*c;
+	uint64_t	 v;
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_PROCESSES)) == NULL)
 		return (KORE_RESULT_OK);
 	(void)query_param(req, "jail", c->scope, sizeof(c->scope));
+	if (query_u64(req, "pid", 99999, &v))
+		c->fib = (uint32_t)v;
 	return (call_start(req, c));
 }
 
@@ -2657,6 +2670,7 @@ api_log(struct http_request *req)
 	if ((c = call_new(req, OP_LOG)) == NULL)
 		return (KORE_RESULT_OK);
 	(void)query_param(req, "name", c->logname, sizeof(c->logname));
+	(void)query_param(req, "jail", c->scope, sizeof(c->scope));
 	/* The text may be any: it comes escaped, as a URL has it. */
 	if (query_param(req, "filter", c->jail, sizeof(c->jail)) &&
 	    (!http_argument_urldecode(c->jail, 1) || strlen(c->jail) > 128)) {
@@ -2697,9 +2711,30 @@ api_history(struct http_request *req)
 	    "step")) : 0;
 	keep = body != NULL && ucl_object_lookup(body, "keep") != NULL ?
 	    ucl_object_toint(ucl_object_lookup(body, "keep")) : -1;
+	/* The limits, all three or none, as percentages. */
+	if (body != NULL && ucl_object_lookup(body, "cpu") != NULL) {
+		int64_t	l[3];
+		size_t	k;
+
+		l[0] = ucl_object_toint(ucl_object_lookup(body, "cpu"));
+		l[1] = ucl_object_toint(ucl_object_lookup(body, "mem"));
+		l[2] = ucl_object_toint(ucl_object_lookup(body, "swap"));
+		for (k = 0; k < 3; k++)
+			if (l[k] < 0 || l[k] > 100)
+				step = 0;
+		c->names = kore_calloc(3, sizeof(*c->names));
+		c->nnames = 3;
+		for (k = 0; k < 3; k++) {
+			c->names[k] = kore_malloc(8);
+			snprintf(c->names[k], 8, "%lld", (long long)l[k]);
+		}
+	}
 	if (body != NULL)
 		ucl_object_unref(body);
 	if (step < 1 || step > 3600 || keep < 0 || keep > 5000) {
+		for (keep = 0; keep < (int64_t)c->nnames; keep++)
+			kore_free(c->names[keep]);
+		kore_free(c->names);
 		kore_free(c->sname);
 		kore_free(c->uri);
 		kore_free(c->peer);

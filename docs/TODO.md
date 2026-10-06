@@ -57,13 +57,12 @@
   - Runs kept, each host and step with its trace; the chain drawn as
     a graph, and a run as that graph coloured as it goes; the queue
     saved as a workflow.
-- Gula, more of it: a jail's own logs (its `/var/log`), the packed
-  logs of newsyslog, the audit trail and `dmesg`; a level for a line
-  where syslogd writes one (`-v`); the history kept across a restart
-  of the agent, and older samples thinned instead of dropped; each jail's
-  share of the CPUs and the memory (rctl, racct); a threshold on any
-  of the figures as an event for the workflows; threads of a process,
-  its open files and sockets (procstat).
+- Gula, further: older samples thinned instead of dropped; a jail's
+  share of the CPUs and memory as rctl accounts it, not only added up
+  from its processes; a threshold on a disk, an interface or a
+  jail; the kernel's messages followed as they come (not read whole
+  each time); dmesg for an agent that is not root, which the kernel
+  refuses unless security.bsd.unprivileged_read_msgbuf is on.
 - Routes, connections and sockets in parts, as sysctl's values are:
   the agent answers sysctl as a dump, the console passes each item to
   the page over a WebSocket (`/api/stream`), and the table fills as

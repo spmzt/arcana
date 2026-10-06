@@ -588,6 +588,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "(/usr/libexec/atrun)\n");
 	put("log/auth.log", "Oct  5 11:00:00 web1 su[77]: BAD SU alice to "
 	    "root on /dev/pts/1\n");
+	/* And the jail's own, beneath its root. */
+	ATF_REQUIRE(mkdir("jroot/log", 0755) == 0 || errno == EEXIST);
+	put("jroot/log/messages", "Oct  5 12:00:05 gw sshd[9]: the jail's "
+	    "own line\n");
 	ATF_REQUIRE(chmod("fake-kldload", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-kldunload", 0755) == 0);
 	ATF_REQUIRE(mkdir("bird", 0755) == 0 || errno == EEXIST);

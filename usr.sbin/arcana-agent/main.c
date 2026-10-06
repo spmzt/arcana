@@ -182,6 +182,7 @@ stopper(void *arg __unused)
 	while (sigwait(&set, &sig) != 0)
 		;
 	logmsg(LOG_NOTICE, "signal %d, stopping", sig);
+	history_save();
 	changes_stop(true);
 	jobs_wake();
 	cut = false;

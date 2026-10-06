@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.36.0
+  version: 0.37.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -690,8 +690,13 @@ paths:
         this look and the one before), in and out (blocks read and
         written), io (blocks a second since the look before), start,
         kernel when it is the kernel's own, comm and args, the busiest
-        first; ncpu; elapsed, the seconds between the two looks. With
-        jail only that jail's. A process is sent a signal or given a
+        first; jails, each jail's share added up (jid, name, procs,
+        threads, cpu, wcpu, rss); ncpu; elapsed, the seconds between
+        the two looks. With jail only that jail's. With pid, that
+        process alone and more of it: files (fd or use, type, path,
+        or proto, local and remote for a socket, mode) and threads
+        (tid, name, state, wait, pri, wcpu, time, cpu). A process is
+        sent a signal or given a
         nice value by a job of kind process, with verb signal or
         renice and as args its pid, the signal's name or the nice
         value, and optionally start as it was read, so that another
@@ -701,6 +706,9 @@ paths:
         - name: jail
           in: query
           schema: { type: string }
+        - name: pid
+          in: query
+          schema: { type: integer, minimum: 1 }
       responses:
         "200":
           description: ok and data, or error
@@ -711,17 +719,23 @@ paths:
       description: Under data. files is the logs that can be read (name,
         size, mtime); name the one read; lines its last lines, each
         with time, host, tag, pid and text when the line is syslog's,
-        and text alone when not; size; position, where the file ended;
-        rotated, when the file was shorter than position said and was
-        read from its start. To follow a log, ask again with the
-        position the reply before gave.
+        with level where syslogd writes one, and text alone when not;
+        size; position, where the file ended; rotated, when the file
+        was shorter than position said and was read from its start.
+        To follow a log, ask again with the position the reply before
+        gave. A packed log is unpacked and read whole; @dmesg is the
+        kernel's message buffer, @audit the audit trail; with jail,
+        the jail's own /var/log.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: name
           in: query
-          description: A file of the host's log directory; messages
-            when absent.
-          schema: { type: string, pattern: "^[A-Za-z0-9_-][A-Za-z0-9._-]*$" }
+          description: A file of the host's log directory, @dmesg or
+            @audit; messages when absent.
+          schema: { type: string, pattern: "^(@dmesg|@audit|[A-Za-z0-9_-][A-Za-z0-9._-]*)$" }
+        - name: jail
+          in: query
+          schema: { type: string }
         - name: filter
           in: query
           description: Only the lines with this text in them, in either
@@ -770,8 +784,11 @@ paths:
       summary: How the agent samples the host
       description: The agent samples every step seconds from now on and
         keeps keep samples, the newest of those it has; with keep 0 it
-        does not sample and holds no memory for it. It keeps this for
-        its next start. The reply is as the GET's.
+        does not sample and holds no memory for it. With cpu, mem and
+        swap, all three, the percentages over which an event of kind
+        threshold is made (0 for none). It keeps this for its next
+        start, with the samples. The reply is as the GET's, with
+        limits.
       parameters:
         - $ref: "#/components/parameters/server"
       requestBody:
@@ -784,6 +801,9 @@ paths:
               properties:
                 step: { type: integer, minimum: 1, maximum: 3600 }
                 keep: { type: integer, minimum: 0, maximum: 5000 }
+                cpu: { type: integer, minimum: 0, maximum: 100 }
+                mem: { type: integer, minimum: 0, maximum: 100 }
+                swap: { type: integer, minimum: 0, maximum: 100 }
       responses:
         "200":
           description: ok and data, or error
@@ -800,9 +820,10 @@ paths:
         route-del (data is the route, as net/routes has one), routes
         (changed, how many more changed in a second than are said one
         by one), link and link-del (interface, up, carrier, mtu),
-        address-add and address-del (interface, address, prefixlen).
-        They are the kernel's netlink(4) messages of the host's own
-        network.
+        address-add and address-del (interface, address, prefixlen),
+        and threshold (what, value, limit, over) when a figure of the
+        history crosses its limit. The rest are the kernel's netlink(4)
+        messages of the host's own network.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: after

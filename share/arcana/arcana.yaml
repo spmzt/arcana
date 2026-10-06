@@ -697,6 +697,21 @@ attribute-sets:
         doc: |
           For history, how many samples the agent keeps, at most 5000;
           with 0 it does not sample and holds no memory for it.
+      - name: pid
+        type: u32
+        doc: For processes, the one to say more of.
+      - name: limit-cpu
+        type: u32
+        doc: |
+          For history, the percentage of the CPUs busy above which an
+          event is made, and another when it falls under it again; 0
+          for none.
+      - name: limit-mem
+        type: u32
+        doc: For history, the same for the memory in use.
+      - name: limit-swap
+        type: u32
+        doc: For history, the same for the swap in use.
 
   - name: host
     attributes:
@@ -1711,13 +1726,18 @@ operations:
       kernel's decayed share of one CPU, in percent, as top(1) shows
       it), cpu (its share between this look and the one before), in
       and out (blocks read and written) and io (blocks a second since
-      the look before), start, comm and args; "ncpu"; and "elapsed",
-      the seconds between the two looks.  With jail, only the
-      processes of that jail.
+      the look before), start, comm and args; "jails", each jail with
+      its jid, name, procs, threads, cpu, wcpu and rss added up;
+      "ncpu"; and "elapsed", the seconds between the two looks.  With
+      jail, only the processes of that jail.  With pid, one process
+      alone and more of it: "files", each with its fd, type, path or
+      socket's addresses; "threads", each with its tid, name, state,
+      priority and cpu.
     do:
       request:
         attributes:
           - jail
+          - pid
       reply:
         attributes:
           - ok
@@ -1734,9 +1754,13 @@ operations:
       with its name, size and when it was last written; "name", the
       one read (messages, when log-name names none); "lines", its last
       lines, each with its time, host, tag, pid and text when the line
-      is one of syslog's, and its text alone when not; "position",
-      where the file ended; and "rotated", when the file is shorter
-      than position said.  With net-filter only the lines that have
+      is one of syslog's, with level when syslogd writes one (-v),
+      and its text alone when not; "position", where the file ended;
+      and "rotated", when the file is shorter than position said.
+      A packed log (.bz2, .gz, .xz, .zst) is unpacked to be read,
+      and not followed.  @dmesg is the kernel's message buffer,
+      @audit the audit trail of now (praudit).  With jail, the logs
+      of that jail's own /var/log.  With net-filter only the lines that have
       that text in them, in either case.  With position only what was
       written after it, which is how a log is followed.  lines is how
       many to send at most: 200, when it is not given.
@@ -1747,6 +1771,7 @@ operations:
           - net-filter
           - position
           - lines
+          - jail
       reply:
         attributes:
           - ok
@@ -1773,13 +1798,20 @@ operations:
       "ncpu".  With after only the samples after that time.  With
       sample-step and sample-keep, both, the agent first samples that
       way from now on, and keeps it for its next start: an hour every
-      five seconds until it is told otherwise.
+      five seconds until it is told otherwise; limit-cpu, limit-mem
+      and limit-swap with them are the percentages above which an
+      event (kind threshold) is made.  The reply has "limits".  The
+      samples are written down when the agent stops and every few
+      minutes, and read again when it starts.
     do:
       request:
         attributes:
           - after
           - sample-step
           - sample-keep
+          - limit-cpu
+          - limit-mem
+          - limit-swap
       reply:
         attributes:
           - ok
@@ -1803,7 +1835,9 @@ operations:
       link-del, an interface with up, carrier and mtu; address-add
       and address-del, an interface's address and prefixlen.  They
       are the kernel's own netlink(4) messages, of the host's network
-      and not of a jail's.
+      and not of a jail's.  threshold, with what (cpu, mem or swap),
+      value, limit and over, when a figure of history crosses its
+      limit, either way.
     do:
       request:
         attributes:

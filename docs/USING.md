@@ -33,7 +33,13 @@ The console is laid out as a tree and tabs.
   and three disks: 8 bytes a sample and 4 for each figure in it), and
   sets both; with 0 kept the agent does not sample at all and holds
   nothing. The agent keeps what it was told in
-  `/usr/local/etc/arcana/history.conf`. Under **Network** are the
+  `/usr/local/etc/arcana/history.conf`, and the samples themselves
+  beside it when it stops and every five minutes, so that a restart
+  of the agent keeps the graphs. The same form sets the limits: a
+  CPU, memory or swap figure over its limit makes an event, and
+  another when it is back under (five points lower), listed under
+  events in the Log tab; the defaults are 90, 90 and 50 percent, and
+  0 is no limit. Under **Network** are the
   host's interfaces, without the loopback, each with what goes over
   it now: **all** draws them added up, one pressed draws that one;
   a bridge and its members are each counted, so **all** counts a
@@ -331,7 +337,12 @@ The console is laid out as a tree and tabs.
     is asked about first, and a **Nice** value to give it, -20 to 20.
     Both are jobs. The agent checks that the process is still the one
     that was shown, by when it started, and refuses init, the
-    kernel's own and itself. From a shell: `arcanactl [-j jail] ps`,
+    kernel's own and itself. Above the table, each jail's processes
+    are added up (how many, their CPU, their memory); one pressed
+    shows that jail's alone. A process opened also lists what it has
+    open (files, sockets with their addresses, pipes) and its threads
+    with what each waits on; another user's files are shown to a
+    root agent only. From a shell: `arcanactl [-j jail] ps [pid]`,
     `arcanactl signal pid [name]`, `arcanactl renice pid nice`.
   - **Events**, the last entry of the Log tab's list of logs: every
     route, interface and address of the host that came, went or
@@ -349,7 +360,12 @@ The console is laid out as a tree and tabs.
     would; a file turned over by newsyslog is read from its start.
     **Search** looks for a text in the end of the file on the host,
     in either case; the filter narrows what is on the page.
-    **Older** reads further back. A line with a word of trouble in
+    **Older** reads further back. **host** or a running jail's name
+    picks whose `/var/log` is read. A packed log (`.bz2`, `.gz`,
+    `.xz`, `.zst`) is unpacked to be read, whole. **dmesg** is the
+    kernel's message buffer and **audit** the audit trail of now,
+    where the host keeps one. Where syslogd writes a level (`-v`),
+    it is a column. A line with a word of trouble in
     it (error, fail, denied, panic) is marked red, one of doubt
     (warn, invalid, cannot) amber: the file itself has no level.
     Files newsyslog has packed are not read. From a shell:

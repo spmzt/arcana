@@ -2570,7 +2570,8 @@ observe_body()
 		printf 'Oct  5 12:00:04 web1 syslogd: last message repeated 2 times\n'
 	} > log/messages
 	printf 'Oct  5 11:00:00 web1 su[77]: BAD SU alice to root on /dev/pts/1\n' > log/auth.log
-	printf 'packed' > log/messages.0.bz2
+	printf 'Oct  5 11:00:01 <auth.info> web1 sshd[80]: Connection closed\n' >> log/auth.log
+	printf 'Sep 30 09:00:00 web1 kernel: an older day\n' | bzip2 > log/messages.0.bz2
 	printf 'who\0was\0here\n' > log/utx.log
 	printf 'not\0a\0text\n' > log/blob
 	ln -s /etc/master.passwd log/linked
@@ -2587,6 +2588,14 @@ observe_body()
 	    -o match:'"ncpu":[0-9]+,"elapsed":[0-9.]+' cat ps.json
 	atf_check -s exit:1 -e match:'not running' -o ignore \
 	    "$JGC" -j nosuchjail -c "$SOCK" ps
+	# Each jail's share, added up; and one process with its files and
+	# threads.
+	atf_check -o match:'"jails":\[' cat ps.json
+	atf_check -o save:one.json "$JGC" -c "$SOCK" ps $pid
+	atf_check -o match:"^\{\"pid\":$pid,\"comm\":\"sleep\",\"files\":\[" \
+	    -o match:'"threads":\[\{"tid":[0-9]+,"name":"sleep","state":"sleep","wait":"nanslp","pri":-?[0-9]+,"wcpu":[0-9.]+,"time":[0-9.]+,"cpu":[0-9]+\}\]' \
+	    cat one.json
+	atf_check -s exit:1 -e match:'no process 99998' -o ignore "$JGC" -c "$SOCK" ps 99998
 
 	# A nice value, and a signal; with when it started, only that one.
 	atf_check -o match:"done +renice 5 $pid\$" \
@@ -2630,7 +2639,7 @@ observe_body()
 	atf_check -o save:log.json "$JGC" -c "$SOCK" log
 	atf_check -o match:'"name":"messages"' \
 	    -o match:'"files":\[\{"name":"auth.log","size":[0-9]+,"mtime":[0-9]+\},\{"name":"blob",[^}]*\},\{"name":"messages",' \
-	    -o not-match:'bz2' -o not-match:'linked' -o not-match:'utx' \
+	    -o not-match:'linked' -o not-match:'utx' \
 	    -o match:'\{"time":"Oct  5 12:00:01","host":"web1","tag":"kernel","text":"em0: link state changed to UP"\}' \
 	    -o match:'\{"time":"Oct  5 12:00:02","host":"web1","pid":"812","tag":"sshd","text":"Accepted publickey for root from 2001:db8::9 port 51234"\}' \
 	    -o match:'\{"time":"2026-10-05T12:00:03.123456\+03:30","host":"web1","tag":"cron","pid":"933","text":"\(root\) CMD \(/usr/libexec/atrun\)"\}' \
@@ -2645,7 +2654,18 @@ observe_body()
 	atf_check -o match:'"lines":\[\{"text":"a line of no form"\},\{[^}]*syslogd[^}]*\}\]' \
 	    "$JGC" -c "$SOCK" log -o 2
 	atf_check -o match:'"name":"auth.log"' -o match:'"tag":"su","text":"BAD SU' \
+	    -o match:'"time":"Oct  5 11:00:01","level":"auth.info","host":"web1","pid":"80","tag":"sshd"' \
 	    "$JGC" -c "$SOCK" log auth.log
+	# A packed log is unpacked to be read; the kernel's own messages.
+	atf_check -o match:'"name":"messages.0.bz2","size":[0-9]+,"mtime":[0-9]+,"packed":true' \
+	    -o match:'"tag":"kernel","text":"an older day"' \
+	    "$JGC" -c "$SOCK" log messages.0.bz2
+	if sysctl -n kern.msgbuf 2>/dev/null | grep -q .; then
+		atf_check -o match:'"name":"@dmesg","lines":\[\{"text":"' "$JGC" -c "$SOCK" log @dmesg
+	else
+		atf_check -s exit:1 -e match:'kern.msgbuf' -o ignore "$JGC" -c "$SOCK" log @dmesg
+	fi
+	atf_check -s exit:1 -e match:'@dmesg or @audit' -o ignore "$JGC" -c "$SOCK" log @nosuch
 	# Followed: only what was written since, a line half written not
 	# yet; a file shorter than it was is read again from its start.
 	atf_check -o match:'"lines":\[\]' -o match:"\"position\":$size" \
@@ -2658,8 +2678,8 @@ observe_body()
 	atf_check -o match:'"rotated":true' -o match:'"tag":"newsyslog"' \
 	    "$JGC" -c "$SOCK" log -f "$size"
 	# Only a file of the log directory, by its name, and not a packed one.
-	for bad in ../rc.conf .hidden a/b messages.0.bz2; do
-		atf_check -s exit:1 -e match:'named|packed' -o ignore \
+	for bad in ../rc.conf .hidden a/b; do
+		atf_check -s exit:1 -e match:'named' -o ignore \
 		    "$JGC" -c "$SOCK" log "$bad"
 	done
 	atf_check -s exit:1 -e match:'linked' -o ignore \
@@ -2696,6 +2716,16 @@ observe_body()
 	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history "$last"
 	# How it samples is set, and written down for the next start: fewer
 	# kept are the newest; none kept is no sampling and no memory.
+	# A limit crossed is an event, once, until it is crossed back.
+	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0\}' \
+	    "$JGC" -c "$SOCK" history set 1 20 1 1 0
+	sleep 3
+	atf_check -o match:'"kind":"threshold","data":\{"what":"mem","value":[0-9]+,"limit":1,"over":true\}' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o inline:'1\n' sh -c "$JGC -c $SOCK events | grep -o '\"what\":\"mem\"' | wc -l | tr -d ' '"
+	atf_check -o match:'^cpu=1$' -o match:'^mem=1$' cat history.conf
+	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50\}' \
+	    "$JGC" -c "$SOCK" history set 1 20 90 90 50
 	atf_check -o match:'"step":1,"keep":2,"bytes":[1-9][0-9]*,' \
 	    "$JGC" -c "$SOCK" history set 1 2
 	atf_check -o match:'^step=1$' -o match:'^keep=2$' cat history.conf
@@ -2713,10 +2743,14 @@ observe_body()
 	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 5 5001
 	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 0 10
 	# At its next start the agent samples as it was told.
+	sleep 3
 	stop_daemon
 	sleep 1
+	# The samples were written down when it stopped, and are back.
+	atf_check -o match:'^# arcana-agent samples' cat history.conf.samples
 	start_daemon
-	atf_check -o match:'"step":2,"keep":10,' "$JGC" -c "$SOCK" history
+	atf_check -o match:'"step":2,"keep":10,' -o match:'"samples":\[\[' \
+	    "$JGC" -c "$SOCK" history
 }
 observe_cleanup()
 {

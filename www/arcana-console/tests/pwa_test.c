@@ -1744,7 +1744,8 @@ ATF_TC_BODY(pwa, tc)
 		run(script);
 		wait_js("document.querySelector('form[data-form=ps-renice]') "
 		    "&& document.querySelector('.ps-what code').textContent."
-		    "includes('sleep 300')", 5);
+		    "includes('sleep 300') && document.querySelector("
+		    "'table.ps-threads tbody tr')", 10);
 		shot("7r-process-picked");
 		run("const f = document.querySelector('form[data-form="
 		    "ps-renice]'); f.nice.value = '7'; f.requestSubmit();");
@@ -1783,7 +1784,7 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
 	    "3 && document.querySelector('table.logs tbody tr b').textContent "
 	    "=== 'cron' && document.querySelectorAll('label.lg-file option')"
-	    ".length === 3", 20);
+	    ".length === 5", 20);
 	run("const f = document.querySelector('form[data-form=lg-find]'); "
 	    "f.text.value = 'publickey for'; f.requestSubmit();");
 	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
@@ -1807,6 +1808,24 @@ ATF_TC_BODY(pwa, tc)
 	    "1 && document.querySelector('table.logs tbody tr b').textContent "
 	    "=== 'su'", 10);
 
+	/* A jail's own logs; the kernel's messages, or why not. */
+	if (js_true("document.querySelector('button[data-act=lg-jail]"
+	    "[data-arg=gw]')")) {
+		run("document.querySelector('button[data-act=lg-jail]"
+		    "[data-arg=gw]').click()");
+		wait_js("document.querySelector('table.logs tbody tr td.msg') "
+		    "&& document.querySelector('table.logs tbody tr td.msg')."
+		    "textContent === \"the jail's own line\"", 10);
+		run("document.querySelector('button[data-act=lg-jail]"
+		    "[data-arg=\"\"]').click()");
+		wait_js("document.querySelectorAll('table.logs tbody tr')."
+		    "length === 5", 10);
+	}
+	run("const s = document.querySelector('label.lg-file select'); "
+	    "s.value = '@dmesg'; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelector('table.logs tbody tr') || document."
+	    "querySelector('.notice.bad')", 10);
 	/* What the kernel told the agent, in the same place. */
 	run("const s = document.querySelector('label.lg-file select'); "
 	    "s.value = '@events'; s.dispatchEvent(new Event('input', "
@@ -1867,7 +1886,8 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button[data-act=usage-cfg]').click()");
 	wait_js("document.querySelector('form[data-form=usage-set]') && "
 	    "document.querySelector('form[data-form=usage-set] small')."
-	    "textContent.includes('interfaces')", 5);
+	    "textContent.includes('interfaces') && document.querySelector("
+	    "'form[data-form=usage-set] input[name=cpu]').value === '90'", 5);
 	shot("7t-usage-sampling");
 	run("const f = document.querySelector('form[data-form=usage-set]'); "
 	    "f.step.value = '2'; f.keep.value = '50'; f.requestSubmit();");

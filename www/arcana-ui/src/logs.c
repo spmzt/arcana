@@ -28,10 +28,11 @@
 #define	LOGS_MAX	5000	/* and at most, which is also what is held */
 #define	EVENTS		"@events"	/* not a file: what the agent saw happen */
 
-enum { C_N_, C_TIME, C_HOST, C_TAG, C_PID, C_TEXT, C_N };
+enum { C_N_, C_TIME, C_LEVEL, C_HOST, C_TAG, C_PID, C_TEXT, C_N };
 
 static const struct tcol cols[C_N] = {
 	{ "#", "n", true }, { "Time", "time", false },
+	{ "Level", "level", false },
 	{ "Host", "host", false }, { "Program", "tag", false },
 	{ "PID", "pid", true }, { "Message", "text", false },
 };
@@ -39,6 +40,7 @@ static const struct tcol cols[C_N] = {
 static struct {
 	char		 sid[9];
 	char		 name[129];	/* the file, "" for messages */
+	char		 jail[256];	/* whose logs: "" the host's */
 	char		 text[129];	/* searched for on the host */
 	ucl_object_t	*lines;		/* an array, the oldest first */
 	ucl_object_t	*files;
@@ -103,6 +105,11 @@ event_line(const ucl_object_t *e)
 		    "link state up" : "link state changed to down",
 		    (long long)jint(d, "mtu", 0), kind[4] == '-' ? ": gone" :
 		    "");
+	else if (strcmp(kind, "threshold") == 0)
+		snprintf(buf, sizeof(buf), "%s at %lld%%, %s its limit of "
+		    "%lld%%", jstr(d, "what") != NULL ? jstr(d, "what") : "?",
+		    (long long)jint(d, "value", 0), jbool(d, "over") ? "over" :
+		    "back under", (long long)jint(d, "limit", 0));
 	else if (strncmp(kind, "address-", 8) == 0)
 		snprintf(buf, sizeof(buf), "%s/%lld %s %s", jstr(d,
 		    "address") != NULL ? jstr(d, "address") : "?",
@@ -198,7 +205,7 @@ logs_read(struct server *s, bool follow)
 			ucl_object_unref(lg.files);
 		lg.files = NULL;
 		lg.error[0] = '\0';
-		lg.name[0] = lg.text[0] = '\0';
+		lg.name[0] = lg.text[0] = lg.jail[0] = '\0';
 		lg.want = LOGS_FIRST;
 		follow = false;
 	}
@@ -224,6 +231,8 @@ logs_read(struct server *s, bool follow)
 	    lg.want);
 	if (lg.name[0] != '\0')
 		h_fmt(&u, "&name=%s", lg.name);
+	if (lg.jail[0] != '\0')
+		h_fmt(&u, "&jail=%s", lg.jail);
 	if (lg.text[0] != '\0') {
 		/* Any text: escaped, as a URL has it. */
 		h_raw(&u, "&filter=");
@@ -294,7 +303,24 @@ view_logs(struct html *h, struct server *s)
 	bool			  mine, asc;
 
 	mine = lg.lines != NULL && strcmp(lg.sid, s->id) == 0;
-	h_raw(h, "<div class=\"toolbar\"><label class=\"lg-file\">Log<select "
+	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"lg-jail\" "
+	    "data-arg=\"\" title=\"The host's own logs\">host</button>",
+	    lg.jail[0] == '\0' ? " on" : "");
+	it = NULL;
+	while (s->list != NULL && (o = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL) {
+		if (jstr(o, "name") == NULL || jstr(o, "state") == NULL ||
+		    strcmp(jstr(o, "state"), "running") != 0)
+			continue;
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"lg-jail\"",
+		    strcmp(lg.jail, jstr(o, "name")) == 0 ? " on" : "");
+		h_attr(h, "data-arg", jstr(o, "name"));
+		h_raw(h, " title=\"The jail's own /var/log\">");
+		h_txt(h, jstr(o, "name"));
+		h_raw(h, "</button>");
+	}
+	h_raw(h, "</nav><label class=\"lg-file\">Log<select "
 	    "data-input=\"lg-file\">");
 	n = 0;
 	it = NULL;
@@ -307,15 +333,20 @@ view_logs(struct html *h, struct server *s)
 		h_attr(h, "value", name);
 		h_raw(h, strcmp(name, lg.name) == 0 ? " selected>" : ">");
 		h_txt(h, name);
-		h_fmt(h, " · %s</option>", buf);
+		h_fmt(h, " · %s%s</option>", buf, jbool(o, "packed") ?
+		    " · packed" : "");
 	}
 	if (n == 0 && strcmp(lg.name, EVENTS) != 0) {
 		h_raw(h, "<option>");
 		h_txt(h, lg.name[0] != '\0' ? lg.name : "messages");
 		h_raw(h, "</option>");
 	}
-	h_fmt(h, "<option value=\"" EVENTS "\"%s>events · routes, "
-	    "interfaces, addresses</option>", strcmp(lg.name, EVENTS) == 0 ?
+	h_fmt(h, "<option value=\"@dmesg\"%s>dmesg · the kernel's messages"
+	    "</option><option value=\"@audit\"%s>audit · the trail of now"
+	    "</option><option value=\"" EVENTS "\"%s>events · routes, "
+	    "interfaces, addresses, limits</option>", strcmp(lg.name,
+	    "@dmesg") == 0 ? " selected" : "", strcmp(lg.name, "@audit") ==
+	    0 ? " selected" : "", strcmp(lg.name, EVENTS) == 0 ?
 	    " selected" : "");
 	h_raw(h, "</select></label><form data-form=\"lg-find\" class=\""
 	    "kmod-load\"><input name=\"text\" spellcheck=\"false\" "
@@ -368,6 +399,8 @@ view_logs(struct html *h, struct server *s)
 		    "<td class=\"when\">", line_class(jstr(o, "text")),
 		    (long long)jint(o, "n", 0));
 		h_txt(h, jstr(o, "time"));
+		h_raw(h, "</td><td class=\"dim\">");
+		h_txt(h, jstr(o, "level"));
 		h_raw(h, "</td><td class=\"dim\">");
 		h_txt(h, jstr(o, "host"));
 		h_raw(h, "</td><td><b>");
@@ -449,7 +482,18 @@ logs_action(const char *act, const char *arg, const char *value)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
-	if (strcmp(act, "lg-live") == 0) {
+	if (strcmp(act, "lg-jail") == 0) {
+		snprintf(lg.jail, sizeof(lg.jail), "%s", arg);
+		if (lg.name[0] == '@')
+			lg.name[0] = '\0';
+		lg.want = LOGS_FIRST;
+		lg.loading = false;
+		forget();
+		if (lg.files != NULL)
+			ucl_object_unref(lg.files);
+		lg.files = NULL;
+		logs_read(s, false);
+	} else if (strcmp(act, "lg-live") == 0) {
 		lg.paused = !lg.paused;
 		if (!lg.paused)
 			logs_read(s, true);
@@ -458,7 +502,8 @@ logs_action(const char *act, const char *arg, const char *value)
 		lg.loading = false;
 		logs_read(s, false);
 	} else if (strcmp(act, "input:lg-file") == 0 && (name_ok(value) ||
-	    strcmp(value, EVENTS) == 0) && strcmp(value, lg.name) != 0) {
+	    strcmp(value, EVENTS) == 0 || strcmp(value, "@dmesg") == 0 ||
+	    strcmp(value, "@audit") == 0) && strcmp(value, lg.name) != 0) {
 		snprintf(lg.name, sizeof(lg.name), "%s", value);
 		lg.want = LOGS_FIRST;
 		lg.loading = false;

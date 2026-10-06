@@ -51,8 +51,17 @@
 int
 scope_enter(struct work *w, const char *jail, const char **errp)
 {
+
+	return (scope_enter_jail(w, jail, errp, true));
+}
+
+/* The same; with vnet false, a jail without a network of its own too. */
+int
+scope_enter_jail(struct work *w, const char *jail, const char **errp,
+    bool vnet)
+{
 	struct execres	 res;
-	char		*argv[7], *line, *p, *vnet;
+	char		*argv[7], *line, *p, *vnetv;
 
 	w->jail = NULL;
 	w->jid = 0;
@@ -76,7 +85,7 @@ scope_enter(struct work *w, const char *jail, const char **errp)
 	w->jid = atoi(p);
 	p += strcspn(p, " ");
 	p += strspn(p, " ");
-	vnet = p;
+	vnetv = p;
 	p += strcspn(p, " ");
 	if (*p != '\0')
 		*p++ = '\0';
@@ -85,7 +94,7 @@ scope_enter(struct work *w, const char *jail, const char **errp)
 		*errp = wfmt(w, "jls did not say where the jail %s is", jail);
 		return (-1);
 	}
-	if (strcmp(vnet, "new") != 0 && strcmp(vnet, "1") != 0) {
+	if (vnet && strcmp(vnetv, "new") != 0 && strcmp(vnetv, "1") != 0) {
 		*errp = wfmt(w, "the jail %s has no network of its own (vnet): "
 		    "its addresses are the host's, and are managed there",
 		    jail);

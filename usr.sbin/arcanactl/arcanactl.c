@@ -154,12 +154,12 @@ usage(void)
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
 	    "    transport [retry]\n"
-	    "    ps\n"
+	    "    ps [pid]\n"
 	    "    signal pid [name | number]\n"
 	    "    renice pid nice\n"
 	    "    log [-o lines] [-f position] [name [text]]\n"
 	    "    history [after]\n"
-	    "    history set seconds samples\n"
+	    "    history set seconds samples [cpu%% mem%% swap%%]\n"
 	    "    events [after]\n"
 	    "    net bridges | geneve | ipfw | nhgroups\n"
 	    "    bridge name addm | deletem member\n"
@@ -1572,10 +1572,16 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 	int			 error, ch, rc;
 
 	if (strcmp(argv[0], "ps") == 0) {
-		if (argc != 1)
+		if (argc > 2)
 			usage();
 		memset(&pq, 0, sizeof(pq));
 		pq.jail = netjail;
+		if (argc == 2) {
+			pq.has_pid = true;
+			pq.pid = (uint32_t)strtonum(argv[1], 1, 99999, &e);
+			if (e != NULL)
+				xo_errx(1, "ps: %s: %s", argv[1], e);
+		}
 		if ((error = arc_processes(cl, &pq, &pr)) != 0)
 			fail(cl, error, "ps");
 		rc = json_out("ps", pr->ok, pr->error, pr->json, pr->trace.v,
@@ -1621,7 +1627,22 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 	}
 	if (strcmp(argv[0], "history") == 0) {
 		memset(&hq, 0, sizeof(hq));
-		if (argc == 4 && strcmp(argv[1], "set") == 0) {
+		if ((argc == 4 || argc == 7) && strcmp(argv[1], "set") == 0) {
+			if (argc == 7) {
+				hq.has_limit_cpu = hq.has_limit_mem =
+				    hq.has_limit_swap = true;
+				hq.limit_cpu = (uint32_t)strtonum(argv[4], 0,
+				    100, &e);
+				if (e == NULL)
+					hq.limit_mem = (uint32_t)strtonum(
+					    argv[5], 0, 100, &e);
+				if (e == NULL)
+					hq.limit_swap = (uint32_t)strtonum(
+					    argv[6], 0, 100, &e);
+				if (e != NULL)
+					xo_errx(1, "history: a limit is 0 to "
+					    "100");
+			}
 			hq.has_sample_step = hq.has_sample_keep = true;
 			hq.sample_step = (uint32_t)strtonum(argv[2], 1, 3600,
 			    &e);
@@ -1676,6 +1697,7 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 		usage();
 	lq.log_name = argc > 0 ? argv[0] : NULL;
 	lq.net_filter = argc > 1 ? argv[1] : NULL;
+	lq.jail = netjail;
 	if ((error = arc_log(cl, &lq, &lr)) != 0)
 		fail(cl, error, "log");
 	rc = json_out("log", lr->ok, lr->error, lr->json, lr->trace.v,

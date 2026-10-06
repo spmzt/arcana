@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.27.0"
+#define	ARCANA_AGENT_VERSION	"0.28.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -342,6 +342,8 @@ int		 do_bird_config(struct work *,
 
 /* invidia/scope.c: the network of a vnet jail, from the host. */
 int		 scope_enter(struct work *, const char *, const char **);
+int		 scope_enter_jail(struct work *, const char *, const char **,
+		    bool);
 int		 do_bird_routes(struct work *, const char *,
 		    struct arc_network_rsp *);
 /* superbia/kernel.c: the kernel's modules and memory. */
@@ -361,7 +363,9 @@ int		 do_log(struct work *, const char *, const char *, bool,
 		    uint64_t, uint32_t, struct arc_log_rsp *);
 void		 history_start(void);
 int		 do_history(struct work *, uint64_t, bool, uint32_t, uint32_t,
-		    struct arc_history_rsp *);
+		    const uint32_t *, struct arc_history_rsp *);
+void		 history_save(void);
+int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,
 		    struct arc_sysctl_rsp *);

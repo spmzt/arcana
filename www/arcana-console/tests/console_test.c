@@ -1776,6 +1776,19 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK(jstr(&r, "data.lines.0.text") == NULL);
 	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log?jail=gw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.lines.0.text") != NULL && strcmp(jstr(&r,
+	    "data.lines.0.text"), "the jail's own line") == 0);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/processes?pid=%d",
+	    (int)(strlen(base) - strlen("/services")), base, (int)getpid());
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.threads.0.tid") != NULL);
+	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/log?name=..%%2Frc.conf",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);
@@ -1793,10 +1806,12 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK(jstr(&r, "data.bytes") != NULL);
 	resp_free(&r);
 	/* How it is sampled is set, and said back; not anyhow. */
-	http("POST", path, "{\"step\":3,\"keep\":100}", &r);
+	http("POST", path, "{\"step\":3,\"keep\":100,\"cpu\":95,\"mem\":80,"
+	    "\"swap\":10}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("3", jstr(&r, "data.step"));
 	ATF_CHECK_STREQ("100", jstr(&r, "data.keep"));
+	ATF_CHECK_STREQ("80", jstr(&r, "data.limits.mem"));
 	ATF_CHECK(system("grep -q '^step=3$' history.conf && grep -q "
 	    "'^keep=100$' history.conf") == 0);
 	resp_free(&r);

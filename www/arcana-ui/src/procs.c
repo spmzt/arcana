@@ -48,7 +48,41 @@ static struct {
 	char		 error[300];
 	double		 fetched;
 	long long	 open;		/* the process picked, or 0 */
+	ucl_object_t	*detail;	/* more of it: files and threads */
+	long long	 detail_of;
+	bool		 detail_loading;
 } pr;
+
+static void
+detail_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	pr.detail_loading = false;
+	if (pr.detail != NULL)
+		ucl_object_unref(pr.detail);
+	pr.detail = NULL;
+	if (status == 200 && jbool(o, "ok") && jget(o, "data") != NULL) {
+		pr.detail = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
+		    "data"));
+		pr.detail_of = jint(pr.detail, "pid", 0);
+	}
+}
+
+/* More of the process picked: its files and threads, asked once. */
+static void
+detail_read(struct server *s, long long pid)
+{
+	char	url[128];
+
+	if (pr.detail_loading || (pr.detail != NULL && pr.detail_of == pid))
+		return;
+	pr.detail_loading = true;
+	snprintf(url, sizeof(url), "/api/servers/%s/processes?pid=%lld", s->id,
+	    pid);
+	api("GET", url, NULL, detail_cb, NULL);
+}
 
 /* 1536 as "1.50 KiB". */
 void
@@ -169,6 +203,89 @@ pct(struct html *h, double v)
 	    20 ? " warm" : v < 0.05 ? " dim" : "", v);
 }
 
+/* What the process has open, and its threads, once they are here. */
+static void
+detail(struct html *h, long long pid)
+{
+	static const struct tcol fcols[] = {
+		{ "fd", "fd", true }, { "Type", "type", false },
+		{ "What", "path", false }, { "Mode", "mode", false },
+	};
+	static const struct tcol tcols[] = {
+		{ "Thread", "tid", true }, { "Name", "name", false },
+		{ "State", "state", false }, { "Waits on", "wait", false },
+		{ "WCPU", "wcpu", true }, { "Time", "time", true },
+		{ "On CPU", "cpu", true },
+	};
+	const ucl_object_t	**rows, *o;
+	char			  buf[32];
+	int			  r;
+
+	if (pr.detail == NULL || pr.detail_of != pid) {
+		h_raw(h, pr.detail_loading ? "<p class=\"dim\">Reading what it "
+		    "has open…</p>" : "");
+		return;
+	}
+	h_fmt(h, "<div class=\"ps-detail\"><h5>Open files and sockets <small "
+	    "class=\"dim\">%d</small></h5><table class=\"net ps-files\">",
+	    (int)ucl_array_size(jget(pr.detail, "files")));
+	tbl_head(h, "psfiles", fcols, 4, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("psfiles", jget(pr.detail, "files"), fcols, 4, NULL);
+	for (r = 0; (o = rows[r]) != NULL && r < 300; r++) {
+		h_raw(h, "<tr><td class=\"num\">");
+		if (jget(o, "fd") != NULL)
+			h_fmt(h, "%lld", (long long)jint(o, "fd", 0));
+		else
+			h_txt(h, jstr(o, "use"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(o, "type"));
+		h_raw(h, "</td><td class=\"mono\">");
+		if (jstr(o, "proto") != NULL) {
+			h_txt(h, jstr(o, "proto"));
+			h_raw(h, " ");
+			h_txt(h, jstr(o, "local"));
+			if (jstr(o, "remote") != NULL && jstr(o, "remote")[0] !=
+			    '\0') {
+				h_raw(h, " ↔ ");
+				h_txt(h, jstr(o, "remote"));
+			}
+		} else
+			h_txt(h, jstr(o, "path"));
+		h_raw(h, "</td><td class=\"dim\">");
+		h_txt(h, jstr(o, "mode"));
+		h_raw(h, "</td></tr>");
+	}
+	if (r == 0)
+		h_raw(h, "<tr><td colspan=\"4\" class=\"dim\">None that the "
+		    "agent may see: another user's process shows its files "
+		    "to root only.</td></tr>");
+	free(rows);
+	h_fmt(h, "</tbody></table><h5>Threads <small class=\"dim\">%d</small>"
+	    "</h5><table class=\"net ps-threads\">", (int)ucl_array_size(jget(
+	    pr.detail, "threads")));
+	tbl_head(h, "psthreads", tcols, 7, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("psthreads", jget(pr.detail, "threads"), tcols, 7,
+	    NULL);
+	for (r = 0; (o = rows[r]) != NULL && r < 300; r++) {
+		h_fmt(h, "<tr><td class=\"num\">%lld</td><td>", (long long)jint(
+		    o, "tid", 0));
+		h_txt(h, jstr(o, "name"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(o, "state"));
+		h_raw(h, "</td><td class=\"dim\">");
+		h_txt(h, jstr(o, "wait"));
+		h_fmt(h, "</td><td class=\"num\">%.1f%%</td>", jnum(o, "wcpu",
+		    0));
+		fmt_cputime(buf, sizeof(buf), jnum(o, "time", 0));
+		h_fmt(h, "<td class=\"num\">%s</td><td class=\"num dim\">%lld"
+		    "</td></tr>", buf, (long long)jint(o, "cpu", 0));
+	}
+	free(rows);
+	h_raw(h, "</tbody></table></div>");
+}
+
 /* The row under a process picked: what can be done to it. */
 static void
 picked(struct html *h, const ucl_object_t *o)
@@ -215,7 +332,9 @@ picked(struct html *h, const ucl_object_t *o)
 	h_attr(h, "value", buf);
 	h_raw(h, "></label><button class=\"small\">Renice</button></form>"
 	    "<button type=\"button\" class=\"ghost small\" data-act=\""
-	    "ps-open\" data-arg=\"0\">Close</button></td></tr>");
+	    "ps-open\" data-arg=\"0\">Close</button>");
+	detail(h, jint(o, "pid", 0));
+	h_raw(h, "</td></tr>");
 }
 
 void
@@ -320,6 +439,28 @@ view_procs(struct html *h, struct server *s)
 	    "\"dim\">over %.1f s</span></div>", n, thr, cpu / 100, (long long)jint(
 	    pr.data, "ncpu", 1), buf, jnum(pr.data, "elapsed", 0));
 
+	/* Each jail's share, added up, when there is one. */
+	if (ucl_array_size(jget(pr.data, "jails")) > 0) {
+		h_raw(h, "<div class=\"ps-jails\">");
+		it = NULL;
+		while ((j = ucl_object_iterate(jget(pr.data, "jails"), &it,
+		    true)) != NULL) {
+			fmt_size(buf, sizeof(buf), jnum(j, "rss", 0));
+			h_fmt(h, "<button class=\"ghost small jail%s\" data-act="
+			    "\"ps-jail\"", jstr(j, "name") != NULL && strcmp(
+			    pr.jail, jstr(j, "name")) == 0 ? " on" : "");
+			h_attr(h, "data-arg", jstr(j, "name") != NULL ? jstr(j,
+			    "name") : "");
+			h_raw(h, " title=\"What the jail's processes use, "
+			    "added up; press for them alone\"><b>");
+			h_txt(h, jstr(j, "name") != NULL ? jstr(j, "name") :
+			    "?");
+			h_fmt(h, "</b> %lld procs · %.1f%% CPU · %s</button>",
+			    (long long)jint(j, "procs", 0), jnum(j, "cpu", 0),
+			    buf);
+		}
+		h_raw(h, "</div>");
+	}
 	h_raw(h, "<table class=\"net procs\">");
 	tbl_head(h, "procs", cols, C_N, 0);
 	h_raw(h, "<tbody>");
@@ -468,6 +609,8 @@ procs_action(const char *act, const char *arg, const char *value)
 		return (true);
 	if (strcmp(act, "ps-open") == 0) {
 		pr.open = pr.open == atoll(arg) ? 0 : atoll(arg);
+		if (pr.open != 0)
+			detail_read(s, pr.open);
 	} else if (strcmp(act, "ps-live") == 0) {
 		pr.paused = !pr.paused;
 		if (!pr.paused)

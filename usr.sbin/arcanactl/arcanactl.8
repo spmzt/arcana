@@ -195,7 +195,7 @@ With
 it is also written to
 .Xr sysctl.conf 5 ,
 in place of the line that set it before.
-.It Cm ps
+.It Cm ps Op Ar pid
 What runs on the host, or with
 .Fl j
 in that jail, as
@@ -207,7 +207,11 @@ kernel has it
 and between this look and the one before
 .Pq cpu ,
 the blocks it read and wrote and how many a second, when it started,
-and its command line; the busiest first.
+and its command line; the busiest first; and each jail's share added
+up.
+With
+.Ar pid ,
+that process alone, with what it has open and its threads.
 .It Cm signal Ar pid Op Ar name | number
 Send the process a signal, by a job:
 .Dv SIGTERM
@@ -220,7 +224,13 @@ only to a process of that jail.
 .It Cm renice Ar pid Ar nice
 Give the process another nice value, from -20 to 20, by a job.
 .It Cm log Oo Fl o Ar lines Oc Oo Fl f Ar position Oc Op Ar name Op Ar text
-The end of a log in the host's log directory,
+The end of a log in the host's log directory, or with
+.Fl j
+in the jail's own;
+.Li @dmesg ,
+the kernel's message buffer, or
+.Li @audit ,
+the audit trail;
 .Pa messages
 when none is named, as
 .Xr syslogd 8
@@ -237,7 +247,7 @@ only what was written after that position, which is how a log is
 followed.
 A file
 .Xr newsyslog 8
-has packed is not read.
+has packed is unpacked and read whole.
 .It Cm events Op Ar after
 What happened on the host, as the kernel told the agent of it through
 .Xr netlink 4 :
@@ -258,7 +268,7 @@ named.
 With
 .Ar after ,
 only the samples after that time, in seconds since the epoch.
-.It Cm history set Ar seconds Ar samples
+.It Cm history set Ar seconds Ar samples Op Ar cpu mem swap
 Have the agent sample every
 .Ar seconds ,
 1 to 3600, and keep that many
@@ -267,7 +277,15 @@ at most 5000, from now on and after its next start.
 With 0
 .Ar samples
 it does not sample and holds no memory for it.
+With
+.Ar cpu ,
+.Ar mem
+and
+.Ar swap ,
+the percentages over which an event is made, 0 for none.
 The reply says what the samples take of the agent's memory.
+The samples are written down when the agent stops and read again when
+it starts.
 .It Cm net bridges | geneve | ipfw
 The bridges with their spanning tree and their members' VLANs, the
 .Xr geneve 4
