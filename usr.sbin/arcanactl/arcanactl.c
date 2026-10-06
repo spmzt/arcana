@@ -92,6 +92,7 @@ static int	cmd_storage(struct arc_client *, int, char **);
 static int	cmd_storage_job(struct arc_client *, int, char **);
 static int	cmd_fstab(struct arc_client *, int, char **);
 static int	cmd_packages(struct arc_client *, int, char **);
+static int	cmd_pkg_clean(struct arc_client *, int, char **);
 static int	cmd_pkg_upgrade(struct arc_client *, int, char **);
 static void	emit_packages(const struct arc_package *, size_t);
 static int	submit(struct arc_client *, struct arc_job_spec *);
@@ -218,8 +219,9 @@ usage(void)
 	    "    gpart destroy disk\n"
 	    "    cam rescan\n"
 	    "    fstab [-w new-text [-n]]\n"
-	    "    packages [-r] [jail]\n"
-	    "    pkg-upgrade [-n] [-j jail] [package ...]\n"
+	    "    packages [-i] [-r] [-4 | -6] [jail]\n"
+	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...]\n"
+	    "    pkg-clean [-a] [-j jail]\n"
 	    "    jobs\n"
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
@@ -2256,7 +2258,32 @@ emit_packages(const struct arc_package *v, size_t n)
 	xo_close_list("package");
 }
 
-/* packages [-r] [jail]: what has a newer version in the repository. */
+/* The installed packages: by hand or automatic, size, what each is. */
+static void
+emit_installed(const struct arc_package *v, size_t n)
+{
+	size_t	i;
+
+	xo_emit("{T:/%-32s} {T:/%-18s} {T:/%-9s} {T:/%10s} {T:/%s}\n",
+	    "PACKAGE", "VERSION", "INSTALLED", "SIZE", "COMMENT");
+	xo_open_list("package");
+	for (i = 0; i < n; i++) {
+		xo_open_instance("package");
+		xo_emit("{k:name/%-32s/%s} {:installed/%-18s/%s} "
+		    "{:how/%-9s/%s} {:size/%10ju} {:comment/%s}\n", v[i].name,
+		    v[i].installed != NULL ? v[i].installed : "",
+		    v[i].automatic ? "automatic" : "by hand",
+		    (uintmax_t)v[i].size, v[i].comment != NULL ?
+		    v[i].comment : "");
+		xo_close_instance("package");
+	}
+	xo_close_list("package");
+}
+
+/*
+ * packages [-i] [-r] [-4 | -6] [jail]: what has a newer version in the
+ * repository; with -i, what is installed.
+ */
 static int
 cmd_packages(struct arc_client *cl, int argc, char **argv)
 {
@@ -2266,8 +2293,17 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 
 	memset(&req, 0, sizeof(req));
 	optind = 1;
-	while ((ch = getopt(argc, argv, "r")) != -1) {
+	while ((ch = getopt(argc, argv, "46ir")) != -1) {
 		switch (ch) {
+		case '4':
+		case '6':
+			req.has_pkg_ip = true;
+			req.pkg_ip = (uint8_t)(ch - '0');
+			break;
+		case 'i':
+			req.has_pkg_installed = true;
+			req.pkg_installed = true;
+			break;
 		case 'r':
 			req.refresh = true;
 			break;
@@ -2281,7 +2317,9 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 		req.jail = argv[optind];
 	if ((error = arc_packages(cl, &req, &rsp)) != 0)
 		fail(cl, error, "packages");
-	if (rsp->ok)
+	if (rsp->ok && req.pkg_installed)
+		emit_installed(rsp->packages.v, rsp->packages.n);
+	else if (rsp->ok)
 		emit_packages(rsp->packages.v, rsp->packages.n);
 	emit_trace(rsp->trace.v, rsp->trace.n);
 	error = rsp->ok ? 0 : 1;
@@ -2292,7 +2330,35 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
-/* pkg-upgrade [-n] [-j jail] [package ...] */
+/* pkg-clean [-a] [-j jail]: the cache of downloaded packages, a job. */
+static int
+cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	sp;
+	int			ch;
+
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_PKG_CLEAN;
+	optind = 1;
+	while ((ch = getopt(argc, argv, "aj:")) != -1) {
+		switch (ch) {
+		case 'a':
+			sp.force = true;
+			break;
+		case 'j':
+			sp.jail = optarg;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (optind != argc)
+		usage();
+	return (submit(cl, &sp));
+}
+
+/* pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...] */
 static int
 cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 {
@@ -2302,8 +2368,18 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 
 	memset(&req, 0, sizeof(req));
 	optind = 1;
-	while ((ch = getopt(argc, argv, "j:n")) != -1) {
+	while ((ch = getopt(argc, argv, "46Oj:n")) != -1) {
 		switch (ch) {
+		case '4':
+		case '6':
+			req.has_pkg_ip = true;
+			req.pkg_ip = (uint8_t)(ch - '0');
+			break;
+		case 'O':
+			/* Packages for a newer FreeBSD too. */
+			req.has_ignore_osversion = true;
+			req.ignore_osversion = true;
+			break;
 		case 'j':
 			req.jail = optarg;
 			break;
@@ -2323,6 +2399,9 @@ cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
 		sp.has_kind = true;
 		sp.kind = ARC_JOB_KIND_PKG_UPGRADE;
 		sp.jail = req.jail;
+		sp.force = req.ignore_osversion;
+		sp.has_pkg_ip = req.has_pkg_ip;
+		sp.pkg_ip = req.pkg_ip;
 		sp.names.v = req.names.v;
 		sp.names.n = req.names.n;
 		return (submit(cl, &sp));
@@ -2669,6 +2748,8 @@ main(int argc, char *argv[])
 		rc = cmd_job(&cl, argc, argv);
 	else if (strcmp(argv[0], "job-cancel") == 0)
 		rc = cmd_job_cancel(&cl, argc, argv);
+	else if (strcmp(argv[0], "pkg-clean") == 0)
+		rc = cmd_pkg_clean(&cl, argc, argv);
 	else if (strcmp(argv[0], "pkg-upgrade") == 0)
 		rc = cmd_pkg_upgrade(&cl, argc, argv);
 	else if (strcmp(argv[0], "agent-update") == 0)

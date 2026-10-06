@@ -1537,7 +1537,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PROCESS)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PKG_CLEAN)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1610,6 +1610,13 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_PROCESS:
 		if ((e = proc_check(sp)) != NULL)
 			return (e);
+		break;
+	case ARC_JOB_KIND_PKG_CLEAN:
+		if (sp->safe)
+			return ("a clean is not taken back by itself");
+		if (sp->names.n > 0)
+			return ("pkg clean takes no names: the cache is cleaned "
+			    "whole");
 		break;
 	case ARC_JOB_KIND_SYSCTL:
 		if (sp->jail != NULL && sp->jail[0] != '\0')

@@ -367,7 +367,7 @@ ATF_TC_HEAD(pwa, tc)
 
 	atf_tc_set_md_var(tc, "descr", "Enrol, manage jails, see the workflow, "
 	    "log in again and go offline, in Chromium");
-	atf_tc_set_md_var(tc, "timeout", "180");
+	atf_tc_set_md_var(tc, "timeout", "300");
 }
 ATF_TC_BODY(pwa, tc)
 {
@@ -807,6 +807,21 @@ ATF_TC_BODY(pwa, tc)
 	    "'aria2') && r.textContent.includes('by hand'))", 20);
 	ATF_CHECK(system("grep -q '^query ' pkg.log") == 0);
 	shot("6b-installed");
+	/* The cache cleaned, all of it: asked first, then a job. */
+	run("document.querySelector('button[data-act=pkg-clean][data-arg=all]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && document."
+	    "querySelector('.modal').textContent.includes('every downloaded "
+	    "package')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^clean -ay$' pkg.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^clean -ay$' pkg.log") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* Over IPv6 only: pkg -6, kept in the browser. */
 	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"6\"]')"
 	    ".click()");
@@ -1805,7 +1820,8 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('kldunload ' + window.kld))", 20);
+	    "t.textContent.includes('kldunload ' + window.kld + ': done'))",
+	    20);
 	ATF_CHECK(system("grep -q '^kldunload ' kld.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 

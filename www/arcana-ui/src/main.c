@@ -628,6 +628,33 @@ dispatch(const char *act, const char *arg, const char *value)
 		refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-check") == 0 && s != NULL) {
 		refresh_packages(s, true);
+	} else if (strcmp(act, "pkg-clean") == 0 && s != NULL) {
+		snprintf(body, sizeof(body), "pkg clean%s on %s%s%s: %s",
+		    arg[0] != '\0' ? " -a" : "", s->name, app.pkg.jail[0] !=
+		    '\0' ? ", in jail " : "", app.pkg.jail, arg[0] != '\0' ?
+		    "every downloaded package in the cache is deleted; what is "
+		    "installed stays, and what is upgraded later is downloaded "
+		    "again." : "the downloaded packages that are no longer "
+		    "needed, or that the repository no longer has, are "
+		    "deleted; what is installed stays.");
+		confirm(arg[0] != '\0' ? "Clean all the package cache" :
+		    "Clean the package cache", body, "Clean", arg[0] != '\0',
+		    "", "do-pkg-clean", arg, "");
+	} else if (strcmp(act, "do-pkg-clean") == 0 && s != NULL) {
+		char	*json, *qj, title[300];
+
+		qj = json_quote(app.pkg.jail);
+		if (asprintf(&json, "{\"kind\":\"pkg-clean\"%s%s%s}",
+		    app.pkg.jail[0] != '\0' ? ",\"jail\":" : "",
+		    app.pkg.jail[0] != '\0' ? qj : "", arg[0] != '\0' ?
+		    ",\"force\":true" : "") == -1)
+			abort();
+		free(qj);
+		snprintf(title, sizeof(title), "pkg clean%s%s%s", arg[0] != '\0' ?
+		    " -a" : "", app.pkg.jail[0] != '\0' ? " in " : "",
+		    app.pkg.jail);
+		/* The text is the queue's now. */
+		job_send(s, json, title, JOB_PACKAGES, app.pkg.jail);
 	} else if (strcmp(act, "pkg-mode") == 0 && s != NULL) {
 		/* The installed, or what the repository has newer: the
 		 * repository is asked only for the second. */

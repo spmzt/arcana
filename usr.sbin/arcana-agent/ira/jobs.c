@@ -186,6 +186,11 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_PROCESS:
 		rc = (t = proc_title(sp)) != NULL ? 0 : -1;
 		break;
+	case ARC_JOB_KIND_PKG_CLEAN:
+		rc = asprintf(&t, "pkg clean%s%s%s", sp->force ? " -a" : "",
+		    sp->jail != NULL && sp->jail[0] != '\0' ? " in " : "",
+		    sp->jail != NULL ? sp->jail : "");
+		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
 		rc = (t = l2_title(sp)) != NULL ? 0 : -1;
@@ -786,6 +791,10 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_PROCESS:
 		error = NULL;
 		ok = do_proc_job(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_PKG_CLEAN:
+		error = NULL;
+		ok = do_pkg_clean(&j->w, sp->jail, sp->force, &error) == 0;
 		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:

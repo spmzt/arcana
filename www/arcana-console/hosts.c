@@ -3233,6 +3233,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_BRIDGE] = "bridge",
 	[ARC_JOB_KIND_GENEVE] = "geneve",
 	[ARC_JOB_KIND_PROCESS] = "process",
+	[ARC_JOB_KIND_PKG_CLEAN] = "pkg-clean",
 };
 
 static const char *job_state_names[] = {

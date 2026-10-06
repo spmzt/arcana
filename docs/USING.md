@@ -551,7 +551,12 @@ The console is laid out as a tree and tabs.
     what is newer, with **Check** (pkg update first), a dry run, and
     **Upgrade** of the selected packages or of all. **IPv4** or
     **IPv6** has pkg reach the repository over that only (`pkg -4`,
-    `pkg -6`), kept in the browser; **either** lets pkg choose. When pkg refuses packages built for a newer
+    `pkg -6`), kept in the browser; **either** lets pkg choose.
+    **Clean** deletes the downloaded packages no longer needed, or no
+    longer in the repository (`pkg clean`), **Clean all** the whole
+    cache (`pkg clean -a`), each a job once it is confirmed. From a
+    shell: `arcanactl packages [-i] [-4 | -6] [jail]`, `pkg-upgrade
+    [-O] …`, `pkg-clean [-a] [-j jail]`. When pkg refuses packages built for a newer
     FreeBSD than the host's (OSVERSION), the console asks whether to
     go on anyway, and approved, does it again with
     `IGNORE_OSVERSION=yes` (a job of kind pkg-upgrade with force).

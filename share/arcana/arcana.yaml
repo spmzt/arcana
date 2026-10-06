@@ -201,6 +201,11 @@ definitions:
           that number started at another time it is another one, and
           is left alone.  With jail, only a process of that jail.
           Not init, not the kernel's own, and not the agent.
+      - name: pkg-clean
+        doc: |
+          pkg clean -y on the host or in a running jail: the cached
+          packages that are no longer needed, or that the repository no
+          longer has, deleted; with force, all of the cache (-a).
   - name: job-state
     type: enum
     entries:

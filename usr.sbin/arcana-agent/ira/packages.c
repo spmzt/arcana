@@ -250,3 +250,26 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 	}
 	return (0);
 }
+
+/*
+ * pkg clean -y: the cached packages no longer needed, or no longer in
+ * the repository, deleted; with all, the whole cache (-a).
+ */
+int
+do_pkg_clean(struct work *w, const char *jail, bool all, const char **errp)
+{
+	static const char *const some[] = { "clean", "-y" };
+	static const char *const every[] = { "clean", "-ay" };
+	struct execres	res;
+	const char	*e;
+
+	if ((e = check_jail(w, jail)) != NULL) {
+		*errp = e;
+		return (-1);
+	}
+	if (pkg_run(w, jail, false, 0, all ? every : some, 2, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "pkg clean"));
+		return (-1);
+	}
+	return (0);
+}

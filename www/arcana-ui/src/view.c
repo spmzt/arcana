@@ -2490,6 +2490,13 @@ view_packages(struct html *h, struct server *s)
 	    "small%s\" data-act=\"pkg-ip\" data-arg=\"6\">IPv6</button></nav>",
 	    app.pkg.ip == 0 ? " on" : "", app.pkg.ip == 4 ? " on" : "",
 	    app.pkg.ip == 6 ? " on" : "");
+	/* The cache of downloaded packages, cleaned. */
+	h_raw(h, "<button class=\"ghost small\" data-act=\"pkg-clean\" "
+	    "data-arg=\"\" title=\"pkg clean: the downloaded packages no "
+	    "longer needed deleted\">Clean</button><button class=\"ghost "
+	    "small\" data-act=\"pkg-clean\" data-arg=\"all\" title=\"pkg "
+	    "clean -a: all the downloaded packages deleted\">Clean all"
+	    "</button>");
 	if (app.pkg.mode == 1)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-check\""
 		    "%s title=\"pkg update, then list what has a newer version"

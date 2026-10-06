@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.37.0"
+#define	ARCANA_AGENT_VERSION	"0.38.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -476,6 +476,7 @@ int		 do_packages(struct work *, const char *, bool, bool, uint8_t,
 		    struct arc_packages_rsp *);
 int		 do_pkg_upgrade(struct work *, const struct arc_pkg_upgrade_req *,
 		    struct arc_pkg_upgrade_rsp *);
+int		 do_pkg_clean(struct work *, const char *, bool, const char **);
 
 /* ira/jobs.c: queued changes, run in order whoever is or is not connected. */
 void		 jobs_init(void);
