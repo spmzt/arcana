@@ -204,9 +204,10 @@ title_of(const struct arc_job_spec *sp)
 		    " (kept)" : "");
 		break;
 	default:
-		rc = asprintf(&t, "pkg upgrade%s%s%s", sp->jail != NULL ?
+		rc = asprintf(&t, "pkg upgrade%s%s%s%s", sp->jail != NULL ?
 		    " in " : "", sp->jail != NULL ? sp->jail : "",
-		    sp->names.n > 0 ? " of some" : "");
+		    sp->names.n > 0 ? " of some" : "", sp->force ?
+		    ", ignoring OSVERSION" : "");
 		break;
 	}
 	if (rc == -1)
@@ -836,6 +837,9 @@ run(struct qjob *j)
 		uq.jail = sp->jail;
 		uq.names.v = sp->names.v;
 		uq.names.n = sp->names.n;
+		/* Forced: to packages built for a newer FreeBSD too. */
+		uq.has_ignore_osversion = sp->force;
+		uq.ignore_osversion = sp->force;
 		do_pkg_upgrade(&j->w, &uq, &ur);
 		ok = ur.ok;
 		error = ur.error;

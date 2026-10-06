@@ -330,7 +330,15 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* pkg(8): ./pending holds "name-version remote" lines; upgrade -y
 	 * removes the named ones, or all. */
 	put("pending", "aria2-1.37.0_1 1.37.0_2\npimd-3.1.0 3.2.0\n");
-	put("fake-pkg", "#!/bin/sh\n[ \"$1\" = -j ] && shift 2\n"
+	/* With ./newer-os the repository is for a newer FreeBSD: an
+	 * upgrade is refused but past IGNORE_OSVERSION. */
+	put("fake-pkg", "#!/bin/sh\necho \"$*\" >> pkg.log\nanyos=no\n"
+	    "[ \"$1\" = -o ] && { anyos=yes; shift 2; }\n"
+	    "[ \"$1\" = -j ] && shift 2\n"
+	    "[ \"$1\" = upgrade ] && [ -f newer-os ] && [ $anyos = no ] && "
+	    "{ printf 'Newer FreeBSD version for package curl:\\n- package: "
+	    "1600010\\n- running kernel: 1600004\\nTo ignore this error set "
+	    "IGNORE_OSVERSION=yes\\n' >&2; exit 1; }\n"
 	    "case \"$1\" in\n"
 	    "update) exit 0 ;;\n"
 	    "version) [ -s pending ] || exit 1; while read nv r; do "

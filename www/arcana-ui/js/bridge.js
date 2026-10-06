@@ -733,6 +733,13 @@ addToLibrary({
 	arc_push_sync: function () {
 		var key;
 
+		/* Turned off in this console: nothing is subscribed. */
+		try {
+			if (localStorage.getItem("arc_notify") === "off")
+				return;
+		} catch (e) {
+		}
+
 		function bytes(b64) {
 			var s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") +
 			    "===".slice((b64.length + 3) % 4)), a, i;
@@ -827,6 +834,32 @@ addToLibrary({
 			}).catch(function () {
 			});
 		}
+	},
+	/*
+	 * This browser's own subscription let go of, on the console and in
+	 * the browser: nothing is pushed to it while it is off.
+	 */
+	arc_push_off__deps: ["$arcPush", "$arcPushPost", "$arcStr"],
+	arc_push_off: function () {
+		function done() {
+			Module._arc_on_action(arcStr("push-changed"),
+			    arcStr(""), arcStr(""));
+		}
+
+		arcPush.endpoint = "";
+		if (!navigator.serviceWorker)
+			return;
+		navigator.serviceWorker.ready.then(function (reg) {
+			return (reg.pushManager.getSubscription());
+		}).then(function (sub) {
+			if (!sub)
+				return (null);
+			return (arcPushPost("/api/push/unsubscribe", {
+				endpoint: sub.endpoint
+			}).then(function () {
+				return (sub.unsubscribe());
+			}));
+		}).then(done).catch(done);
 	},
 	arc_push_here__deps: ["$arcPush", "$arcStr"],
 	arc_push_here: function () {
@@ -1317,6 +1350,11 @@ addToLibrary({
 		if (!("Notification" in window) ||
 		    Notification.permission !== "granted")
 			return;
+		try {
+			if (localStorage.getItem("arc_notify") === "off")
+				return;
+		} catch (e) {
+		}
 		if (navigator.serviceWorker && navigator.serviceWorker.ready)
 			navigator.serviceWorker.ready.then(function (r) {
 				return (r.showNotification(title, opts));

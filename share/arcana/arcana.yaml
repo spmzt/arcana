@@ -738,6 +738,12 @@ attribute-sets:
         checks:
           min: 1
           max: 1000
+      - name: ignore-osversion
+        type: bool
+        doc: |
+          For pkg-upgrade, pkg told to install packages built for a
+          newer FreeBSD than the host's (IGNORE_OSVERSION), which it
+          refuses otherwise.
 
   - name: host
     attributes:
@@ -1411,13 +1417,16 @@ operations:
     auth: true
     doc: |
       pkg upgrade -y on the host or in a running jail, of the named
-      packages or of all; dry-run only shows what pkg would do.
+      packages or of all; dry-run only shows what pkg would do;
+      ignore-osversion upgrades to packages built for a newer FreeBSD
+      too, as a job of kind pkg-upgrade does with force.
     do:
       request:
         attributes:
           - jail
           - names
           - dry-run
+          - ignore-osversion
       reply:
         attributes:
           - ok

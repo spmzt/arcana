@@ -222,9 +222,11 @@ topbar(struct html *h)
 	if (app.notify != 3)
 		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
 		    "Notify when a task that took more than ten seconds "
-		    "ends: %s\">Notify</button>", app.notify == 1 ? " on" : "",
-		    app.notify == 1 ? "on" : app.notify == 2 ?
-		    "blocked in the browser's settings" : "off, press to allow");
+		    "ends: %s\">Notify</button>", app.notify == 1 &&
+		    !app.notify_off ? " on" : "", app.notify == 1 ?
+		    app.notify_off ? "off, press to turn on" : "on, press to "
+		    "turn off" : app.notify == 2 ? "blocked in the browser's "
+		    "settings" : "off, press to allow");
 	h_raw(h, "<button class=\"ghost\" data-act=\"settings\" title=\""
 	    "The console's settings\">Settings</button>"
 	    "<button class=\"ghost\" data-act=\"keys\">Keys</button>"

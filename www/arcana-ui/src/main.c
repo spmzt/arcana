@@ -396,7 +396,7 @@ submit_form(const char *form, const ucl_object_t *f)
 		dry = jstr(f, "__submit") != NULL &&
 		    strcmp(jstr(f, "__submit"), "dry") == 0;
 		if (dry)
-			pkg_upgrade(s2, any ? names : NULL, true);
+			pkg_upgrade(s2, any ? names : NULL, true, false);
 		else if (any)
 			confirm("Upgrade packages", "pkg upgrade -y of the "
 			    "selected packages; services may restart.",
@@ -636,7 +636,12 @@ dispatch(const char *act, const char *arg, const char *value)
 		confirm("Upgrade all packages", body, "Upgrade", true, "",
 		    "do-pkg-upgrade", "", "");
 	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {
-		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false);
+		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false, false);
+	} else if ((strcmp(act, "do-pkg-anyos") == 0 || strcmp(act,
+	    "do-pkg-dry-anyos") == 0) && s != NULL) {
+		/* Approved: the same again, OSVERSION ignored. */
+		pkg_upgrade(s, value[0] != '\0' ? value : NULL, act[7] == 'd',
+		    true);
 	} else if (strcmp(act, "queue") == 0) {
 		app.queue_on = !app.queue_on;
 		arc_queue_set(app.queue_on ? 1 : 0);
@@ -669,9 +674,31 @@ dispatch(const char *act, const char *arg, const char *value)
 			app.net.sort_desc = false;
 		}
 	} else if (strcmp(act, "notify") == 0) {
-		arc_notify_ask();
+		/*
+		 * The browser's leave is asked once; after, the button turns
+		 * them off and on here, which the browser alone cannot.
+		 */
+		if (app.notify == 0)
+			arc_notify_ask();
+		else if (app.notify == 2)
+			toast(true, "Notifications are blocked in this browser's "
+			    "settings for this site: allow them there");
+		else if (!app.notify_off) {
+			app.notify_off = true;
+			arc_store_set("arc_notify", "off");
+			arc_push_off();
+		} else {
+			app.notify_off = false;
+			arc_store_set("arc_notify", "");
+			arc_push_sync();
+		}
 	} else if (strcmp(act, "notify-changed") == 0) {
 		app.notify = arc_notify_state();
+		/* Just allowed: on. */
+		if (app.notify == 1) {
+			app.notify_off = false;
+			arc_store_set("arc_notify", "");
+		}
 		/* Allowed: this browser is told of tasks from now on. */
 		arc_push_sync();
 	} else if (strcmp(act, "push-changed") == 0) {
@@ -1195,6 +1222,12 @@ main(void)
 	arc_sw_register();
 	app.fx = arc_fx_get() != 0;
 	app.notify = arc_notify_state();
+	{
+		char *v = arc_store_get("arc_notify");
+
+		app.notify_off = v != NULL && strcmp(v, "off") == 0;
+		free(v);
+	}
 	app.install = arc_install_state();
 	app.queue_on = arc_queue_get() != 0;
 	{

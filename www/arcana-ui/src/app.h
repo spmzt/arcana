@@ -67,6 +67,7 @@ void		 arc_fx_set(int);
 void		 arc_notify(const char *, const char *);
 int		 arc_notify_state(void);
 void		 arc_notify_ask(void);
+void		 arc_push_off(void);
 int		 arc_install_state(void);
 void		 arc_install_prompt(void);
 void		 arc_install_dismiss(void);
@@ -165,6 +166,7 @@ struct pkgview {
 	bool		 busy;		/* an upgrade runs */
 	char		 error[256];
 	char		 result[256];	/* what the last upgrade said */
+	char		*names;		/* what it was asked of: JSON, or NULL */
 };
 
 enum netkind {
@@ -349,6 +351,7 @@ struct app {
 	bool		 visible;
 	bool		 fx;		/* blur and idle animations */
 	int		 notify;	/* 0 not asked, 1 granted, 2 denied, 3 none */
+	bool		 notify_off;	/* turned off here, though allowed */
 	int		 install;	/* 0 no offer, 1 prompt, 2 iOS, 3 menu */
 	bool		 setup_required;
 	char		 version[32];	/* the console's, from /api/health */
@@ -478,7 +481,7 @@ void		 view_schema(struct html *, const char *);
 void		 refresh_jobs(struct server *);
 void		 open_job(struct server *, long long, const char *);
 void		 refresh_packages(struct server *, bool);
-void		 pkg_upgrade(struct server *, const char *, bool);
+void		 pkg_upgrade(struct server *, const char *, bool, bool);
 void		 address_change(const char *, const char *, bool, bool, bool,
 		    bool);
 void		 check_health(void);

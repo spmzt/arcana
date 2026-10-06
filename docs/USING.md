@@ -545,7 +545,10 @@ The console is laid out as a tree and tabs.
     so before it does it.
   - **Packages**: what `pkg` can upgrade on the host or in a running
     jail, with **Check**, a dry run, and **Upgrade** of the selected
-    packages or of all.
+    packages or of all. When pkg refuses packages built for a newer
+    FreeBSD than the host's (OSVERSION), the console asks whether to
+    go on anyway, and approved, does it again with
+    `IGNORE_OSVERSION=yes` (a job of kind pkg-upgrade with force).
   - **Jobs**: the host's own record of what it was asked to change, by
     this console or with `arcanactl -q`; a row opens its workflow.
     Above the list it says what the agent is doing now that is not a
@@ -631,7 +634,9 @@ The console is laid out as a tree and tabs.
 - In the top bar: **FX** turns the blur and idle animations off for this
   browser, **Notify** allows a notification when a task that
   took more than ten seconds ends, and has this browser told of changes
-  made in the others (below), **Keys** manages security keys and
+  made in the others (below); once the browser has allowed them, the
+  same button turns them off and on again for this browser, which also
+  stops what is pushed to it. **Keys** manages security keys and
   passkeys.
 - **Notifications on other devices**: a change asked for in one browser
   is told, when it ends, to every other browser where **Notify** was

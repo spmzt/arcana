@@ -89,6 +89,7 @@ struct call {
 	char			 scope[256];	/* the vnet jail whose network it is */
 	bool			 refresh;	/* packages */
 	bool			 dry_run;	/* pkg-upgrade */
+	bool			 anyos;		/* pkg-upgrade: IGNORE_OSVERSION */
 	char			**names;	/* pkg-upgrade: packages */
 	size_t			 nnames;
 	struct arc_job_spec	*specs;		/* job-submit: the batch */
@@ -1386,6 +1387,8 @@ connected:
 		memset(&uq, 0, sizeof(uq));
 		uq.jail = c->jail[0] != '\0' ? c->jail : NULL;
 		uq.dry_run = c->dry_run;
+		uq.has_ignore_osversion = c->anyos;
+		uq.ignore_osversion = c->anyos;
 		uq.names.v = (const char *const *)c->names;
 		uq.names.n = c->nnames;
 		if ((error = arc_pkg_upgrade(&cl, &uq, &ur)) != 0)
@@ -3165,6 +3168,7 @@ api_pkg_upgrade(struct http_request *req)
 		    "an optional jail and packages"));
 	}
 	c->dry_run = ucl_flag(body, "dry_run");
+	c->anyos = ucl_flag(body, "ignore_osversion");
 	a = ucl_object_lookup(body, "packages");
 	if ((n = ucl_array_size(a)) > 0) {
 		c->names = kore_calloc(n, sizeof(*c->names));

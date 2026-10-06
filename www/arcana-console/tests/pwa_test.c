@@ -419,6 +419,22 @@ ATF_TC_BODY(pwa, tc)
 	/* The effects class comes from a script in the head: the page's
 	 * Content-Security-Policy must let it run. */
 	ATF_CHECK(js_true("document.documentElement.classList.contains('fx')"));
+	/* Notify: allowed once by the browser (a stand-in here), then
+	 * turned off and on again by the button, and kept so. */
+	run("Object.defineProperty(Notification, 'permission', { get: () => "
+	    "window.perm || 'default' }); Notification.requestPermission = "
+	    "() => { window.perm = 'granted'; return (Promise.resolve("
+	    "'granted')); };");
+	run("document.querySelector('button[data-act=notify]').click()");
+	wait_js("document.querySelector('button.on[data-act=notify]')", 5);
+	run("document.querySelector('button[data-act=notify]').click()");
+	wait_js("!document.querySelector('button.on[data-act=notify]') && "
+	    "localStorage.getItem('arc_notify') === 'off' && document."
+	    "querySelector('button[data-act=notify]').title.includes("
+	    "'press to turn on')", 5);
+	run("document.querySelector('button[data-act=notify]').click()");
+	wait_js("document.querySelector('button.on[data-act=notify]') && "
+	    "localStorage.getItem('arc_notify') === ''", 5);
 
 	/* Settings: a repository to build the agent from is set from the
 	 * page, kept by the console, and what web.conf fixes is shown. */
@@ -775,6 +791,39 @@ ATF_TC_BODY(pwa, tc)
 	    "document.querySelector('.ops .op.o-failed')", 5);
 	run("document.querySelector('.dock > header').click()");
 	ATF_REQUIRE(system("mv fake-pkg.fast fake-pkg") == 0);
+	/*
+	 * A repository for a newer FreeBSD: pkg refuses, and the page asks
+	 * whether to go past OSVERSION; approved, the same upgrade again
+	 * with IGNORE_OSVERSION.
+	 */
+	ATF_REQUIRE(system("touch newer-os && cp pending pending.keep") == 0);
+	run("document.querySelector('button.tab[data-arg=packages]').click()");
+	wait_js("document.querySelector('button[value=go]:not([disabled])')",
+	    20);
+	run("document.querySelector('button[value=go]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "document.querySelector('.modal').textContent.includes("
+	    "'Packages for a newer FreeBSD') && document.querySelector("
+	    "'.modal').textContent.includes('IGNORE_OSVERSION')", 20);
+	shot("6b-osversion");
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^-o IGNORE_OSVERSION=yes "
+	    "upgrade -y$' pkg.log 2>/dev/null && ! [ -s pending ]") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^-o IGNORE_OSVERSION=yes upgrade -y$' "
+	    "pkg.log && ! [ -s pending ]") == 0);
+	wait_js("[...document.querySelectorAll('.ops .op')].some(o => "
+	    "o.textContent.includes('ignoring OSVERSION'))", 10);
+	run("document.querySelector('.dock > header').click()");
+	ATF_REQUIRE(system("rm newer-os && mv pending.keep pending") == 0);
 
 	/* The interfaces, in the network tab: an address is added to one
 	 * through the queue, as any change is. */

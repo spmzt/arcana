@@ -22,24 +22,31 @@
 
 #include "agent.h"
 
-static int	pkg_run(struct work *, const char *, const char *const *,
+static int	pkg_run(struct work *, const char *, bool, const char *const *,
 		    size_t, struct execres *);
 static void	parse_versions(struct work *, const struct execres *,
 		    struct arc_package **, size_t *);
 static bool	valid_pkg(const char *);
 static const char *check_jail(struct work *, const char *);
 
-/* "pkg [-j jail] args..." */
+/*
+ * "pkg [-o IGNORE_OSVERSION=yes] [-j jail] args...": with anyos, also
+ * packages built for a newer FreeBSD than this one.
+ */
 static int
-pkg_run(struct work *w, const char *jail, const char *const *args, size_t n,
-    struct execres *res)
+pkg_run(struct work *w, const char *jail, bool anyos, const char *const *args,
+    size_t n, struct execres *res)
 {
 	char	**argv;
 	size_t	 i, k;
 
-	argv = wcalloc(w, n + 5, sizeof(*argv));
+	argv = wcalloc(w, n + 7, sizeof(*argv));
 	k = 0;
 	argv[k++] = (char *)(uintptr_t)opts.pkg_bin;
+	if (anyos) {
+		argv[k++] = (char *)(uintptr_t)"-o";
+		argv[k++] = (char *)(uintptr_t)"IGNORE_OSVERSION=yes";
+	}
 	if (jail != NULL && *jail != '\0') {
 		argv[k++] = (char *)(uintptr_t)"-j";
 		argv[k++] = (char *)(uintptr_t)jail;
@@ -126,12 +133,12 @@ do_packages(struct work *w, const char *jail, bool refresh,
 		rsp->error = e;
 		return (0);
 	}
-	if (refresh && pkg_run(w, jail, update, 2, &res) != 0) {
+	if (refresh && pkg_run(w, jail, false, update, 2, &res) != 0) {
 		rsp->error = wtext(w, exec_error(w, &res, "pkg update"));
 		return (0);
 	}
 	/* pkg version exits 0 with matches and 1 without, as grep does. */
-	if (pkg_run(w, jail, version, 3, &res) != 0 && res.status != 1) {
+	if (pkg_run(w, jail, false, version, 3, &res) != 0 && res.status != 1) {
 		rsp->error = wtext(w, exec_error(w, &res, "pkg version"));
 		return (0);
 	}
@@ -171,7 +178,7 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 	for (i = 0; i < rq->names.n; i++)
 		args[n++] = rq->names.v[i];
 	/* pkg upgrade -n exits 1 when it would change nothing. */
-	if (pkg_run(w, rq->jail, args, n, &res) != 0 &&
+	if (pkg_run(w, rq->jail, rq->ignore_osversion, args, n, &res) != 0 &&
 	    !(rq->dry_run && res.status == 1)) {
 		rsp->error = wtext(w, exec_error(w, &res, "pkg upgrade"));
 	} else {
@@ -182,7 +189,8 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
 			rsp->upgraded++;
 	}
 	/* What is still pending, for the reply. */
-	if (pkg_run(w, rq->jail, version, 3, &res) == 0 || res.status == 1) {
+	if (pkg_run(w, rq->jail, false, version, 3, &res) == 0 ||
+	    res.status == 1) {
 		parse_versions(w, &res, &v, &n);
 		rsp->packages.v = v;
 		rsp->packages.n = n;

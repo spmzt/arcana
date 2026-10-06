@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.54.0
+  version: 0.55.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1052,6 +1052,9 @@ paths:
                       gateway: { type: string, description: For route; an
                           address or an interface. }
                       live: { type: boolean }
+                      force: { type: boolean, description: For
+                          pkg-upgrade, also packages built for a newer
+                          FreeBSD than the host's (IGNORE_OSVERSION). }
                       persist: { type: boolean }
                       service: { type: string }
                       set:
@@ -1383,6 +1386,9 @@ paths:
                   items: { type: string }
                   description: None means all pending ones.
                 dry_run: { type: boolean }
+                ignore_osversion: { type: boolean, description: Also
+                    packages built for a newer FreeBSD than the host's,
+                    which pkg refuses otherwise (IGNORE_OSVERSION). }
       responses:
         "200":
           description: What pkg did, and what is still pending.
