@@ -56,7 +56,6 @@
 .Op Fl H Ar helper
 .Op Fl w Ar seconds
 .Op Fl N Ar netstat
-.Op Fl X Ar sockstat
 .Op Fl W Ar swapinfo
 .Op Fl Z Ar zpool
 .Op Fl P Ar pkg
@@ -353,21 +352,29 @@ and
 programs: the first says whether a jail runs with a network of its own
 and where its root is, the second runs the jail's own programs in it.
 .It Fl H Ar helper
-The program run to look at a jail's interfaces from inside it.
-Default: this program itself.
+The program run to look at a jail's network from inside it: its
+interfaces, its routes through
+.Xr netlink 4 ,
+its connections and sockets from the kernel's lists of them.
+Default: this program itself, which then reads the host's own routes,
+connections and sockets in the daemon, without running anything; and
+which makes a
+.Xr netlink 4
+socket inside each jail with a network of its own and hands it over,
+so that the daemon is told of that network's changes as of the
+host's: another helper cannot, and the jails' networks are then not
+watched.
 .It Fl o Ar directory
 Where WireGuard interfaces are written for
 .Xr wg-quick 8 .
 Default
 .Pa /usr/local/etc/wireguard .
-.It Fl N Ar netstat , Fl X Ar sockstat
+.It Fl N Ar netstat
 The
 .Xr netstat 1
-and
-.Xr sockstat 1
-programs, run with
+program, run with
 .Fl -libxo Cm json
-for the network tables.
+for the nexthops and the nexthop groups.
 .It Fl W Ar swapinfo , Fl Z Ar zpool
 The
 .Xr swapinfo 8

@@ -55,6 +55,66 @@ static struct {
 	double		 fetched;
 } lg;
 
+static ucl_object_t	*event_line(const ucl_object_t *);
+
+/*
+ * The host's events as they happen, over the console's stream, while
+ * they are shown: they are then not asked for every few seconds.  Its
+ * ids are its own, above the network's.
+ */
+#define	EV_BASE		2000000
+#define	EV_RETRY	30000	/* ms before the stream is tried again */
+
+static struct {
+	int		 id;
+	bool		 on;
+	char		 sid[9];
+	double		 retry;		/* not before this */
+} ev = { .id = EV_BASE };
+
+static void
+ev_stop(void)
+{
+	char	msg[64];
+
+	if (ev.on) {
+		snprintf(msg, sizeof(msg), "{\"id\":%d,\"stop\":true}", ev.id);
+		arc_stream_send(msg);
+	}
+	ev.on = false;
+}
+
+static void
+ev_start(struct server *s)
+{
+	char	msg[128];
+
+	ev_stop();
+	ev.id++;
+	ev.on = true;
+	snprintf(ev.sid, sizeof(ev.sid), "%s", s->id);
+	snprintf(msg, sizeof(msg), "{\"id\":%d,\"server\":\"%s\",\"what\":"
+	    "\"events\"}", ev.id, s->id);
+	arc_stream_send(msg);
+}
+
+/* An event, appended once: what was read already is not again. */
+static void
+ev_append(const ucl_object_t *e)
+{
+	ucl_object_t	*c;
+
+	if (lg.lines == NULL || jint(e, "n", 0) <= lg.position)
+		return;
+	c = event_line(e);
+	ucl_object_insert_key(c, ucl_object_fromint(jint(e, "n", 0)), "n", 0,
+	    false);
+	ucl_array_append(lg.lines, c);
+	while (ucl_array_size(lg.lines) > LOGS_MAX)
+		ucl_object_unref(ucl_array_pop_first(lg.lines));
+	lg.position = jint(e, "n", 0);
+}
+
 static void
 forget(void)
 {
@@ -85,6 +145,10 @@ event_line(const ucl_object_t *e)
 	ucl_object_insert_key(l, ucl_object_fromstring(buf), "time", 0, false);
 	kind = jstr(e, "kind") != NULL ? jstr(e, "kind") : "";
 	ucl_object_insert_key(l, ucl_object_fromstring(kind), "tag", 0, false);
+	/* Of a jail's own network: the jail is where it happened. */
+	if (jstr(e, "jail") != NULL)
+		ucl_object_insert_key(l, ucl_object_fromstring(jstr(e,
+		    "jail")), "host", 0, false);
 	d = jget(e, "data");
 	if (strncmp(kind, "route-", 6) == 0)
 		snprintf(buf, sizeof(buf), "%s via %s on %s, metric %lld, "
@@ -110,6 +174,14 @@ event_line(const ucl_object_t *e)
 		    "%lld%%", jstr(d, "what") != NULL ? jstr(d, "what") : "?",
 		    (long long)jint(d, "value", 0), jbool(d, "over") ? "over" :
 		    "back under", (long long)jint(d, "limit", 0));
+	else if (strncmp(kind, "neigh", 5) == 0)
+		snprintf(buf, sizeof(buf), "%s at %s on %s, %s%s%s", jstr(d,
+		    "address") != NULL ? jstr(d, "address") : "?", jstr(d,
+		    "lladdr") != NULL ? jstr(d, "lladdr") : "?", jstr(d,
+		    "interface-name") != NULL ? jstr(d, "interface-name") :
+		    "?", jstr(d, "state") != NULL ? jstr(d, "state") : "?",
+		    jbool(d, "router") ? ", a router" : "", kind[5] == '-' ?
+		    ": gone" : "");
 	else if (strncmp(kind, "address-", 8) == 0)
 		snprintf(buf, sizeof(buf), "%s/%lld %s %s", jstr(d,
 		    "address") != NULL ? jstr(d, "address") : "?",
@@ -156,15 +228,13 @@ logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (lg.lines == NULL)
 		lg.lines = ucl_object_typed_new(UCL_ARRAY);
 	/* The agent's events: its numbers are theirs, last is where to
-	 * go on from. */
+	 * go on from; one that came over the stream meanwhile is here. */
+	if (jget(d, "events") != NULL && !lg.following)
+		lg.position = 0;
 	it = NULL;
 	while ((l = ucl_object_iterate(jget(d, "events"), &it, true)) !=
-	    NULL) {
-		c = event_line(l);
-		ucl_object_insert_key(c, ucl_object_fromint(jint(l, "n", 0)),
-		    "n", 0, false);
-		ucl_array_append(lg.lines, c);
-	}
+	    NULL)
+		ev_append(l);
 	it = NULL;
 	while ((l = ucl_object_iterate(jget(d, "lines"), &it, true)) != NULL) {
 		c = ucl_object_copy(l);
@@ -174,8 +244,10 @@ logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	while (ucl_array_size(lg.lines) > LOGS_MAX)
 		ucl_object_unref(ucl_array_pop_first(lg.lines));
-	lg.position = jget(d, "events") != NULL ? jint(d, "last", 0) :
-	    jint(d, "position", -1);
+	if (jget(d, "events") == NULL)
+		lg.position = jint(d, "position", -1);
+	else if (jint(d, "last", 0) > lg.position)
+		lg.position = jint(d, "last", 0);
 	if (jget(d, "files") != NULL) {
 		if (lg.files != NULL)
 			ucl_object_unref(lg.files);
@@ -260,12 +332,51 @@ void
 logs_tick(double now)
 {
 	struct server	*s;
+	bool		 shown;
 
+	s = cur_server();
+	shown = app.node == NODE_HOST && app.tab == TAB_LOG && !lg.paused &&
+	    app.visible && s != NULL && strcmp(lg.sid, s->id) == 0 &&
+	    strcmp(lg.name, EVENTS) == 0;
+	if (ev.on && (!shown || strcmp(ev.sid, s->id) != 0))
+		ev_stop();
+	/* Read once, then told as they happen. */
+	if (shown && !ev.on && !lg.loading && lg.lines != NULL &&
+	    lg.position >= 0 && now >= ev.retry)
+		ev_start(s);
 	if (app.node != NODE_HOST || app.tab != TAB_LOG || lg.paused ||
-	    !app.visible || lg.loading || (s = cur_server()) == NULL ||
-	    strcmp(lg.sid, s->id) != 0 || now - lg.fetched < LOGS_EVERY)
+	    !app.visible || lg.loading || s == NULL ||
+	    strcmp(lg.sid, s->id) != 0 || now - lg.fetched < LOGS_EVERY ||
+	    (ev.on && strcmp(lg.name, EVENTS) == 0))
 		return;
 	logs_read(s, true);
+}
+
+/* What the console's stream says of the events followed. */
+void
+logs_stream(const ucl_object_t *o)
+{
+	struct server	*s;
+
+	if (jbool(o, "closed")) {
+		ev.on = false;
+		ev.retry = arc_now() + EV_RETRY;
+		return;
+	}
+	if (!ev.on || jint(o, "id", -1) != ev.id)
+		return;
+	if (jget(o, "event") != NULL && strcmp(lg.sid, ev.sid) == 0 &&
+	    strcmp(lg.name, EVENTS) == 0) {
+		ev_append(jget(o, "event"));
+		lg.fetched = arc_now();
+	}
+	/* Some went past, or the host is gone: read as before. */
+	if (jbool(o, "lost") && (s = cur_server()) != NULL && !lg.loading)
+		logs_read(s, true);
+	if (jstr(o, "error") != NULL) {
+		ev.on = false;
+		ev.retry = arc_now() + EV_RETRY;
+	}
 }
 
 /* Is it a line somebody should see?  By its words: syslog's file has
@@ -421,11 +532,14 @@ view_logs(struct html *h, struct server *s)
 	if (strcmp(lg.name, EVENTS) == 0) {
 		h_fmt(h, "<p class=\"dim\">%d events, the newest first, as the "
 		    "kernel told the agent of them through netlink: every "
-		    "route, interface and address of the host that came, "
-		    "went or changed since the agent started, the last 512 "
-		    "kept. A storm of routes is counted, not listed. A "
-		    "jail's own network is not in it.</p>",
-		    (int)ucl_array_size(lg.lines));
+		    "route, interface, address and neighbour of the host, "
+		    "and of each jail with a network of its own (its name "
+		    "is the Host), that came, went or changed since the "
+		    "agent started, the last 512 kept. A storm of routes "
+		    "is counted, not listed. %s</p>",
+		    (int)ucl_array_size(lg.lines), ev.on ? "Each is shown "
+		    "the moment the agent tells it." : "Read again every "
+		    "few seconds.");
 		return;
 	}
 	if ((int)ucl_array_size(lg.lines) >= lg.want && lg.want < LOGS_MAX)

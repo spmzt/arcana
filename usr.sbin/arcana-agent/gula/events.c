@@ -32,6 +32,7 @@ struct event {
 	uint64_t	 n;
 	time_t		 t;
 	const char	*kind;		/* a literal */
+	char		*jail;		/* whose network, NULL the host's */
 	char		*data;
 };
 
@@ -39,22 +40,70 @@ static pthread_mutex_t	ev_lock = PTHREAD_MUTEX_INITIALIZER;
 static struct event	ring[EVENTS_KEPT];
 static size_t		ring_first, ring_n;
 static uint64_t		ev_last;
+static cbl_family	*ev_family;	/* what a subscriber hears it on */
+
+/*
+ * The family the events are told on, to those who subscribed; NULL
+ * before it goes, so that no event is told on it after.
+ */
+void
+event_family(cbl_family *fam)
+{
+
+	pthread_mutex_lock(&ev_lock);
+	ev_family = fam;
+	pthread_mutex_unlock(&ev_lock);
+}
+
+static void	event_vadd(const char *, const char *, const char *,
+		    va_list) __printflike(3, 0);
 
 /* kind is a string that stays; the rest makes a JSON object. */
 void
 event_add(const char *kind, const char *fmt, ...)
 {
-	struct event	*e;
-	va_list		 ap;
-	char		*data;
-	int		 n;
+	va_list	ap;
 
 	va_start(ap, fmt);
-	n = vasprintf(&data, fmt, ap);
+	event_vadd(NULL, kind, fmt, ap);
 	va_end(ap);
+}
+
+/* The same, of a jail's own network: jail is its name. */
+void
+event_add_jail(const char *jail, const char *kind, const char *fmt, ...)
+{
+	va_list	ap;
+
+	va_start(ap, fmt);
+	event_vadd(jail, kind, fmt, ap);
+	va_end(ap);
+}
+
+/* A JSON string of a jail's name: letters, digits and ._- only. */
+static bool
+name_ok(const char *s)
+{
+
+	return (s != NULL && s[0] != '\0' && strlen(s) < 256 && s[strspn(s,
+	    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	    "._-")] == '\0');
+}
+
+static void
+event_vadd(const char *jail, const char *kind, const char *fmt, va_list ap)
+{
+	struct arc_event_ntf	 ntf;
+	struct event		*e;
+	char			*data, *json, *jname;
+	int			 n;
+
+	n = vasprintf(&data, fmt, ap);
 	if (n == -1)
 		return;
-	if (n > EVENT_MAX || data[0] != '{') {
+	jname = NULL;
+	if (n > EVENT_MAX || data[0] != '{' || (jail != NULL &&
+	    (!name_ok(jail) || (jname = strdup(jail)) == NULL))) {
 		free(data);
 		return;
 	}
@@ -65,15 +114,32 @@ event_add(const char *kind, const char *fmt, ...)
 		e = &ring[ring_first];
 		ring_first = (ring_first + 1) % EVENTS_KEPT;
 		free(e->data);
+		free(e->jail);
 	}
 	e->n = ++ev_last;
 	e->t = time(NULL);
 	e->kind = kind;
+	e->jail = jname;
 	e->data = data;
+	/* Told to the subscribers too, as events has it, in its order. */
+	json = NULL;
+	if (ev_family != NULL && asprintf(&json, "{\"n\":%ju,\"t\":%jd,"
+	    "\"kind\":\"%s\"%s%s%s,\"data\":%s}", (uintmax_t)e->n,
+	    (intmax_t)e->t, kind, jname != NULL ? ",\"jail\":\"" : "",
+	    jname != NULL ? jname : "", jname != NULL ? "\"" : "", data) !=
+	    -1) {
+		memset(&ntf, 0, sizeof(ntf));
+		ntf.json = json;
+		(void)arc_event_notify(ev_family, &ntf);
+	}
 	pthread_mutex_unlock(&ev_lock);
+	free(json);
 }
 
-/* {"last":n,"first":n,"events":[{"n","t","kind","data":{}}]}, after one. */
+/*
+ * {"last":n,"first":n,"events":[{"n","t","kind","jail","data":{}}]},
+ * after one; jail only for a jail's.
+ */
 int
 do_events(struct work *w, uint64_t after, struct arc_events_rsp *rsp)
 {
@@ -101,9 +167,11 @@ do_events(struct work *w, uint64_t after, struct arc_events_rsp *rsp)
 		e = &ring[(ring_first + i) % EVENTS_KEPT];
 		if (e->n <= after)
 			continue;
-		fprintf(fp, "%s{\"n\":%ju,\"t\":%jd,\"kind\":\"%s\",\"data\":"
-		    "%s}", n++ > 0 ? "," : "", (uintmax_t)e->n, (intmax_t)e->t,
-		    e->kind, e->data);
+		fprintf(fp, "%s{\"n\":%ju,\"t\":%jd,\"kind\":\"%s\"%s%s%s,"
+		    "\"data\":%s}", n++ > 0 ? "," : "", (uintmax_t)e->n,
+		    (intmax_t)e->t, e->kind, e->jail != NULL ? ",\"jail\":\"" :
+		    "", e->jail != NULL ? e->jail : "", e->jail != NULL ? "\"" :
+		    "", e->data);
 	}
 	pthread_mutex_unlock(&ev_lock);
 	fprintf(fp, "]}");

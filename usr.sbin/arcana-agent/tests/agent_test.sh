@@ -155,12 +155,7 @@ case "$*" in
 *)	echo '{"statistics": {"socket": [{"protocol": "tcp4", "local": {"address": "10.0.0.1", "port": "22"}, "remote": {"address": "10.0.0.2", "port": "4000"}, "tcp-state": "ESTABLISHED"}]}}' ;;
 esac
 EOS
-	cat > fake-sockstat <<'EOS'
-#!/bin/sh
-echo "fake-sockstat $*" >&2
-echo '{"__version": "1", "sockstat": {"socket": [{"user": "root", "command": "sshd", "pid": 1, "fd": 3, "proto": "tcp4", "local": {"address": "*", "port": 22}, "foreign": {"address": "*", "port": "*"}}]}}'
-EOS
-	chmod +x fake-netstat fake-sockstat
+	chmod +x fake-netstat
 	# The helper, which speaks netlink(4) for the routes: what it is
 	# asked is logged, what it answers is canned.  ./huge is a table
 	# of 3000 routes; ./covers the routes an address is in.
@@ -189,6 +184,16 @@ routes)
 route-get)
 	case "\$1" in 203.0.113.*) exit 1 ;; esac
 	echo '{"to":"'\$1'","destination":"10.77.0.0","prefixlen":16,"gateway":"10.0.0.1","fib":"'\$2'","interface":"em0","flags":"UGS","metric":1,"weight":1}' ;;
+pcb-conns)
+	[ "\$1" != 6 ] && echo '{"protocol":"tcp4","receive-bytes-waiting":0,"send-bytes-waiting":0,"local":{"address":"10.0.0.1","port":"22"},"remote":{"address":"10.0.0.2","port":"4000"},"tcp-state":"ESTABLISHED"}'
+	echo "#total 1" ;;
+pcb-socks)
+	echo '{"user":"root","command":"sshd","pid":1,"fd":3,"proto":"tcp'\$( [ "\$1" = 6 ] && echo 6 || echo 4)'","local":{"address":"*","port":22},"foreign":{"address":"*","port":0}}'
+	echo "#total 1" ;;
+route-neighs)
+	[ "\$1" != 6 ] && echo '{"family":"inet","address":"10.0.0.2","lladdr":"58:9c:fc:00:00:02","interface-name":"em0","state":"reachable","next":120}' | grep -e "\${2#-}"
+	[ "\$1" != 4 ] && echo '{"family":"inet6","address":"fe80::1%em0","lladdr":"58:9c:fc:00:00:01","interface-name":"em0","state":"stale","router":true}' | grep -e "\${2#-}"
+	echo "#total 2" ;;
 route-add|route-del)
 	echo "\$jid \$verb \$*" >> $(pwd)/route.log
 	case "\$1" in 10.66.0.0/16) echo "10.66.0.0/16: the route is there already" >&2; exit 1 ;; esac ;;
@@ -249,7 +254,7 @@ start_daemon()
 	    -D "$(pwd)/etc/jail.conf.d" -j "$(pwd)/fake-jail" \
 	    -R "$(pwd)/rc.d:$(pwd)/local/rc.d" -s "$(pwd)/fake-service" \
 	    -y "$(pwd)/fake-sysrc" -N "$(pwd)/fake-netstat" \
-	    -X "$(pwd)/fake-sockstat" -P "$(pwd)/fake-pkg" \
+	    -P "$(pwd)/fake-pkg" \
 	    -U "$(pwd)/installed-agent" -B "$(pwd)/build" \
 	    -c "$(pwd)/build.mk" -G "$(pwd)/fake-git" -M "$(pwd)/fake-make" \
 	    -Y "$(pwd)/fake-keyscan" -I "$(pwd)/fake-ifconfig" \
@@ -627,16 +632,24 @@ network_body()
 	atf_check -o match:'fake-netstat --libxo json -onW -f inet$' cat nh.out
 	atf_check -o match:'fake-netstat --libxo json -onW -f inet6$' cat nh.out
 	atf_check -o match:'"rt-family"' cat nh.out
-	atf_check -o match:'fake-netstat --libxo json -nW -f inet$' \
+	# The connections and sockets: the kernel's own lists, read by the
+	# helper here (by the daemon itself when it is its own helper).
+	atf_check -o match:'fake-helper -Q 0 pcb-conns 4' \
+	    -o match:'"statistics":\{"socket":\[\{"protocol":"tcp4"' \
 	    "$JGC" -t -c "$SOCK" net connections -4
 	atf_check -o save:so.out "$JGC" -t -c "$SOCK" net sockets
-	atf_check -o match:'fake-sockstat --libxo json -w -4$' cat so.out
-	atf_check -o match:'fake-sockstat --libxo json -w -6$' cat so.out
-	atf_check -o match:'"sshd".*"sshd"' cat so.out
+	atf_check -o match:'fake-helper -Q 0 pcb-socks 0' \
+	    -o match:'"sockstat":\{"socket":\[\{"user":"root","command":"sshd"' cat so.out
 	# The nexthop groups, what a route of several next hops points to.
 	atf_check -o match:'"nhgrp-index":1,"nhg-refcnt":1,"nhop-weights":\[\{"nh-index":5,"nh-weight":2' \
 	    -o match:'fake-netstat --libxo json -OnW -f inet$' \
 	    "$JGC" -t -c "$SOCK" net nhgroups
+	# The neighbours, of ARP and NDP, asked of the kernel.
+	atf_check -o match:'fake-helper -Q 0 route-neighs 0 -' \
+	    -o match:'"neighbours":\[\{"family":"inet","address":"10.0.0.2".*"router":true\}\],"total":2' \
+	    "$JGC" -t -c "$SOCK" net neighbours
+	atf_check -o match:'^\{"neighbours":\[\{"family":"inet6"[^]]*\],"total":2\}$' \
+	    "$JGC" -c "$SOCK" net neighbours -6 fe80
 	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" net tables
 	# A table too large to send whole: its first rows come, with how
 	# many there are; and it can be searched on the host.
@@ -1555,6 +1568,7 @@ route-get) echo '{"to":"'\$4'","destination":"default","prefixlen":0,"gateway":"
 interfaces) echo '{"interfaces":[{"name":"epair91b","up":true,"mtu":1500,"addresses":[{"family":"inet","address":"10.99.0.2","prefixlen":24}]},{"name":"wg0","up":true,"mtu":1420,"addresses":[{"family":"inet","address":"10.255.0.1","prefixlen":30}]}],"time":1000}' ;;
 exists) case "\$4" in epair91b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
 up) echo 1 ;;
+sysctl-int) [ -f $(pwd)/fw-on ] && echo 1 || echo 0 ;;
 current) printf '1500\tto the host' ;;
 prefix) [ "\$5" = 10.99.0.2 ] && echo 10.99.0.2/24 ;;
 esac
@@ -1621,6 +1635,13 @@ EOS
 	    "$JGC" -j gateway -c "$SOCK" ipfw add 100 allow ip from any to any
 	atf_check -o match:'done' "$JGC" -j gateway -c "$SOCK" ipfw table T46 add 10.0.0.1
 	atf_check -o match:'"loaded":true' "$JGC" -j gateway -c "$SOCK" net ipfw
+	# On or off as the jail's own network has it, read inside it.
+	atf_check -o match:'sysctl-int net.inet.ip.fw.enable' cat helper.log
+	if kldstat -q -m ipfw; then
+		atf_check -o match:'"enabled":false' "$JGC" -j gateway -c "$SOCK" net ipfw
+		touch fw-on
+		atf_check -o match:'"enabled":true' "$JGC" -j gateway -c "$SOCK" net ipfw
+	fi
 	atf_check -o match:'^jexec 4 .*/fake-ipfw -q table T46 add 10.0.0.1$' \
 	    -o match:'^jexec 4 .*/fake-ipfw -S show$' cat jexec.log
 	# An interface is one of the jail's, or it is not there.
@@ -2730,10 +2751,17 @@ observe_body()
 	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history "$last"
 	# How it samples is set, and written down for the next start: fewer
 	# kept are the newest; none kept is no sampling and no memory.
-	# A limit crossed is an event, once, until it is crossed back.
+	# A limit crossed is an event, once, until it is crossed back; told
+	# to those who follow the events the moment it is made.
+	"$JGC" -c "$SOCK" events -f > follow.out 2>&1 &
+	echo $! > follow.pid
+	sleep 0.5
 	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0\}' \
 	    "$JGC" -c "$SOCK" history set 1 20 1 1 0
 	sleep 3
+	kill "$(cat follow.pid)"
+	atf_check -o match:'^\{"n":[0-9]+,"t":[0-9]+,"kind":"threshold","data":\{"what":"mem","value":[0-9]+,"limit":1,"over":true\}\}$' \
+	    cat follow.out
 	atf_check -o match:'"kind":"threshold","data":\{"what":"mem","value":[0-9]+,"limit":1,"over":true\}' \
 	    "$JGC" -c "$SOCK" events
 	atf_check -o inline:'1\n' sh -c "$JGC -c $SOCK events | grep -o '\"what\":\"mem\"' | wc -l | tr -d ' '"
@@ -2767,6 +2795,40 @@ observe_body()
 	    "$JGC" -c "$SOCK" history
 }
 observe_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case fw_trace cleanup
+fw_trace_head()
+{
+	atf_set "descr" "packets followed through the firewall by the kernel: dtrace(1) asked for ipfw:::rule-matched of one address, and what it tells read"
+}
+fw_trace_body()
+{
+	# dtrace(1): the script it is given is kept, two packets told.
+	mkdir tools
+	cat > tools/dtrace <<EOS
+#!/bin/sh
+cat "\$3" > $(pwd)/script.d
+echo 'P 12 0 192.0.2.7 198.51.100.1 6 40000 443 100 em0 0'
+echo 'P 13 1 198.51.100.1 192.0.2.7 6 443 40000 65535 em0 1'
+EOS
+	chmod +x tools/dtrace
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o match:'"packets":\[\{"ms":12,"verdict":"pass","family":"inet","source":"192.0.2.7","destination":"198.51.100.1","proto":6,"sport":40000,"dport":443,"rule":100,"interface":"em0","direction":"out"\},\{"ms":13,"verdict":"deny",[^}]*"rule":65535,[^}]*"direction":"in"\}\],"seconds":5,"limit":100' \
+	    "$JGC" -c "$SOCK" ipfw trace 192.0.2.7 5
+	# Of that address only, as the kernel holds it, and no longer.
+	atf_check -o match:'^ipfw:::rule-matched$' -o match:'arg1 == 2 && \(\(\(\(uint32_t \*\)arg2\)\[0\] == [0-9]+U\) \|\| \(\(\(uint32_t \*\)arg3\)\[0\] == [0-9]+U\)\)' \
+	    -o match:'^tick-5s$' -o match:'^/n >= 100/$' cat script.d
+	atf_check -o ignore "$JGC" -c "$SOCK" ipfw trace 2001:db8::7 1 3
+	atf_check -o match:'arg1 == 28 && \(\(\(\(uint32_t \*\)arg2\)\[0\] == [0-9]+U && .*\[3\] == [0-9]+U\)' \
+	    -o match:'^tick-1s$' -o match:'^/n >= 3/$' -o match:'inet_ntoa6' cat script.d
+	atf_check -s exit:1 -e match:'IPv4 or IPv6 address' "$JGC" -c "$SOCK" ipfw trace nonsense
+	atf_check -s exit:1 -e ignore "$JGC" -c "$SOCK" ipfw trace 192.0.2.7 61
+}
+fw_trace_cleanup()
 {
 	stop_daemon
 }
@@ -2931,6 +2993,21 @@ add 00010 set 1 allow ip from table(T46) to any
 	atf_check -o inline:'1\n' sh -c "grep -c '^nat 1 config if em0 same_ports\$' fw/ipfw.rules"
 	atf_check -o match:'^nat 1 config if em0 same_ports$' sed -n 1p fw/ipfw.rules
 	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw pipe 1 config bw 10Mbit/s
+	# Undone, kept: so are the lines it had made, and no others.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 create type addr
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 add 10.1.0.1
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 add 10.1.0.10
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 delete 10.1.0.1
+	atf_check -o match:'^table T9 add 10.1.0.10$' -o not-match:'^table T9 add 10.1.0.1$' \
+	    -o match:'^table T9 create type addr$' cat fw/ipfw.rules
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 flush
+	atf_check -o not-match:'^table T9 add' -o match:'^table T9 create type addr$' \
+	    cat fw/ipfw.rules
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw table T9 destroy
+	atf_check -o not-match:'T9' cat fw/ipfw.rules
+	atf_check -o match:'^ipfw -q table T9 destroy$' cat ipfw.log
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw nat 1 delete
+	atf_check -o not-match:'^nat 1 ' -o match:'^add ' cat fw/ipfw.rules
 	atf_check -s exit:1 -o match:'record already exists' \
 	    "$JGC" -c "$SOCK" ipfw table T46 add 10.9.9.9
 	atf_check -s exit:1 -e match:'not all of them at once' -o ignore \
@@ -2985,6 +3062,8 @@ case "\$*" in
 	printf 'tank/data@b\t10\t4000\t1759500000\n'
 	printf 'tank/data@a\t20\t3000\t1759400000\n' ;;
 "destroy tank/busy") echo "cannot destroy 'tank/busy': dataset is busy" >&2; exit 1 ;;
+"list -H -o name -s createtxg -t snapshot -d 1 tank/data") printf 'tank/data@a\ntank/data@b\n' ;;
+"destroy tank/data@b") [ -f $(pwd)/held ] && { echo "cannot destroy snapshot tank/data@b: dataset is busy" >&2; exit 1; } ;;
 esac
 exit 0
 EOS
@@ -3140,6 +3219,28 @@ EOS
 	    "$JGC" -c "$SOCK" zfs rollback tank/data@c
 	atf_check -o match:'done +zfs destroy tank/data@c' \
 	    "$JGC" -c "$SOCK" zfs destroy tank/data@c
+	# The newest snapshot made again under its name: a snapshot there
+	# all along; not one that is not the newest; one held kept.
+	n=$(wc -l < storage.log)
+	atf_check -o match:'done +zfs resnapshot tank/data@b$' \
+	    "$JGC" -c "$SOCK" zfs resnapshot tank/data@b
+	atf_check -o inline:'zfs list -H -o name -s createtxg -t snapshot -d 1 tank/data
+zfs snapshot tank/data@b.resnap
+zfs destroy tank/data@b
+zfs rename tank/data@b.resnap tank/data@b
+' tail -n +$((n + 1)) storage.log
+	atf_check -s exit:1 -o match:'tank/data@a is not the newest snapshot of tank/data: tank/data@b is' \
+	    "$JGC" -c "$SOCK" zfs resnapshot tank/data@a
+	touch held
+	n=$(wc -l < storage.log)
+	atf_check -s exit:1 -o match:'tank/data@b is kept as it was: .*busy' \
+	    "$JGC" -c "$SOCK" zfs resnapshot tank/data@b
+	atf_check -o match:'^zfs destroy tank/data@b.resnap$' -o not-match:'rename' \
+	    tail -n +$((n + 1)) storage.log
+	rm held
+	atf_check -o match:'^zfs snapshot -r tank/data@b.resnap$' \
+	    -o match:'^zfs rename -r tank/data@b.resnap tank/data@b$' \
+	    sh -c "\"$JGC\" -c $SOCK zfs resnapshot -r tank/data@b >/dev/null; cat storage.log"
 	atf_check -o match:'done +zfs create -o compression=zstd -o quota=10G tank/new' \
 	    "$JGC" -c "$SOCK" zfs create tank/new compression=zstd quota=10G
 	atf_check -o match:'done +zfs create -V 2G -o volblocksize=16k tank/zvol' \
@@ -3324,6 +3425,7 @@ atf_init_test_cases()
 	atf_add_test_case vnet
 	atf_add_test_case kernel
 	atf_add_test_case l2
+	atf_add_test_case fw_trace
 	atf_add_test_case firewall
 	atf_add_test_case observe
 	atf_add_test_case storage

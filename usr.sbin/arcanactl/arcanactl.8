@@ -248,17 +248,30 @@ followed.
 A file
 .Xr newsyslog 8
 has packed is unpacked and read whole.
-.It Cm events Op Ar after
+.It Cm events Op Ar after | Fl f
 What happened on the host, as the kernel told the agent of it through
 .Xr netlink 4 :
-every route, interface and address that came, went or changed, each
-with its number, time and kind, the last 512 kept.
+every route, interface, address and neighbour that came, went or
+changed, each with its number, time and kind, the last 512 kept.
 With
 .Ar after ,
 only the events of a greater number.
+With
+.Fl f ,
+each event as it happens, a line each, until the host goes or
+.Nm
+is stopped: the agent tells it to those who subscribed, nothing is
+asked again.
 .It Cm net nhgroups
 The kernel's nexthop groups, what a route of several next hops points
 to, each with its next hops and their shares.
+.It Cm net neighbours Oo Fl 4 | Fl 6 Oc Op Ar text
+The neighbours, those of ARP and of NDP, asked of the kernel through
+.Xr netlink 4 :
+each with its address, link-level address, interface and state, and
+when it moves on; only those with
+.Ar text
+in them, when given.
 .It Cm history Op Ar after
 How busy the host has been: what the agent sampled by itself and
 kept, each sample with its time, the CPUs' busy share, the load, the
@@ -374,6 +387,26 @@ replaced by
 once ipfw has read it without doing it; with
 .Fl n
 only checked.
+.It Cm ipfw trace Ar address Op Ar seconds Op Ar packets
+Packets to or from
+.Ar address
+followed by the kernel itself: for each, the rule of the firewall that
+decided it and what it decided, its interface and direction, as the
+kernel's
+.Ql ipfw:::rule-matched
+probe tells
+.Xr dtrace 1 ;
+for 10
+.Ar seconds
+or 100
+.Ar packets ,
+whichever ends first.
+With
+.Fl j ,
+of the jail's own firewall.
+The host needs
+.Xr dtrace 4
+loaded.
 .It Cm transport Op Cm retry
 How the agent is reached: its listeners, each up or not and why not,
 whether the kernel has SCTP, and the connections open to the agent now.
@@ -393,6 +426,14 @@ Load the key of an encrypted dataset from where its
 says, or forget it.
 .It Cm zfs jail | unjail Ar dataset Ar jail
 Give a dataset to a running jail to manage as its own, or take it back.
+.It Cm zfs resnapshot Oo Fl r Oc Ar snapshot
+The newest snapshot of its dataset made again, now, under the same
+name: the new one is taken under a name of its own, the old one
+destroyed, and the new one renamed to it, so that there is a snapshot
+all along.
+One that is not the newest is refused; one that
+.Xr zfs 8
+will not destroy (held, cloned) stays as it was.
 .It Cm zfs replicate Oo Fl r Oc Ar snapshot Ar new-dataset Op Ar since-snapshot
 Send a snapshot into a dataset of the same host that is not there yet;
 with

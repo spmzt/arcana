@@ -1336,6 +1336,40 @@ table.net th.sortable:hover { color: var(--fg-2); }
 table.net th.asc::after { content: " ▲"; color: var(--cyan); }
 table.net th.desc::after { content: " ▼"; color: var(--cyan); }
 table.net tbody tr:hover { background: rgba(var(--accent-rgb), .05); }
+/* A nexthop group: its next hops one under the other, each with a
+ * bar of its share. */
+table.nhgroups td { vertical-align: top; }
+table.nhgroups td.nhg-id b { display: block; font-size: .95rem; }
+table.nhgroups td.nhg-id small { color: var(--dim); }
+table.nhgroups td.num { text-align: right; }
+.nhg-hops { display: grid; gap: .3rem; }
+.nhg-hop {
+	display: grid;
+	grid-template-columns: minmax(9rem, 16rem) 5rem minmax(6rem, 1fr) 3rem auto;
+	align-items: center;
+	gap: .7rem;
+}
+.nhg-gw { color: var(--fg-1, inherit); }
+.nhg-if { color: var(--cyan); }
+.nhg-bar {
+	height: .45rem;
+	border-radius: .25rem;
+	background: var(--line);
+	overflow: hidden;
+}
+.nhg-bar i {
+	display: block;
+	height: 100%;
+	background: var(--cyan);
+	opacity: .75;
+}
+.nhg-pct { text-align: right; font-variant-numeric: tabular-nums; }
+.nhg-meta { font-size: .7rem; }
+@media (max-width: 720px) {
+	.nhg-hop { grid-template-columns: 1fr auto; }
+	.nhg-bar { grid-column: 1 / -1; }
+	.nhg-meta { grid-column: 1 / -1; }
+}
 
 /* Jails. */
 .grid {
@@ -3717,3 +3751,10 @@ section.fwtable h4 .chip, section.fwtable h4 button { margin-left: .6rem; }
 	table.net.cards tbody tr.whole td { display: block; text-align: left; }
 	table.net.cards tbody tr.whole td::before { content: none; }
 }
+
+/* Snapshots picked, to be destroyed at once. */
+.selbar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .9rem; margin: 0 0 .5rem; font-size: .78rem; }
+.selbar label.toggle { margin: 0; }
+.selbar.on { padding: .35rem .6rem; border: 1px solid rgba(var(--red-rgb), .4); border-radius: 8px; background: rgba(var(--red-rgb), .05); }
+table.snapshots input.pick { width: auto; padding: 0; margin: 0 .55rem 0 0; vertical-align: middle; accent-color: var(--red); }
+table.snapshots tr.picked td { background: rgba(var(--red-rgb), .06); }

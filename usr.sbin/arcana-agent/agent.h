@@ -14,12 +14,13 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /* Generated into the object directory; <> so that a stale copy next
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.29.0"
+#define	ARCANA_AGENT_VERSION	"0.35.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -28,7 +29,6 @@
 #define	PATH_SERVICE_BIN	"/usr/sbin/service"
 #define	PATH_SYSRC_BIN		"/usr/sbin/sysrc"
 #define	PATH_NETSTAT_BIN	"/usr/bin/netstat"
-#define	PATH_SOCKSTAT_BIN	"/usr/bin/sockstat"
 #define	PATH_SWAPINFO_BIN	"/usr/sbin/swapinfo"
 #define	PATH_ZPOOL_BIN		"/sbin/zpool"
 #define	PATH_PKG_BIN		"/usr/sbin/pkg"
@@ -72,7 +72,6 @@ struct opts {
 	const char	*service_bin;
 	const char	*sysrc_bin;
 	const char	*netstat_bin;
-	const char	*sockstat_bin;
 	const char	*swapinfo_bin;
 	const char	*zpool_bin;
 	const char	*pkg_bin;
@@ -97,6 +96,7 @@ struct opts {
 	const char	*history_conf;	/* how the host is sampled */
 	const char	*tools_dir;	/* where programs without an option are */
 	const char	*helper_bin;	/* this program, run again with -Q */
+	bool		 helper_self;	/* it is this program: the host's own is read here */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
 	const char	*birdc_bin;
@@ -382,6 +382,8 @@ char		*l2_title(const struct arc_job_spec *);
 int		 do_l2_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 do_ipfw(struct work *, struct arc_network_rsp *);
+int		 do_fw_trace(struct work *, const char *, uint32_t, uint32_t,
+		    struct arc_fw_trace_rsp *);
 int		 do_ipfw_rules(struct work *, const struct arc_ipfw_rules_req *,
 		    struct arc_ipfw_rules_rsp *);
 const char	*ipfw_check(const struct arc_job_spec *);
@@ -428,11 +430,26 @@ char		*ifq_text(const char *, const char *, const char *);
 char		**helper_argv(struct work *, const char *, size_t,
 		    const char *const []);
 int		 route_helper(int, char **);
+int		 route_list(FILE *, int, uint32_t, const char *, const char *);
+int		 route_lookup(FILE *, const char *, uint32_t);
+int		 neigh_list(FILE *, int, const char *);
+int		 route_socket(void);
+int		 helper_netlink(int);
+int		 jail_jid_name(int, char *, size_t, char *, size_t);
+int		 jail_next(int);
+int		 pcb_helper(int, char **);
+int		 pcb_list(FILE *, bool, int);
+int		 helper_lines(struct work *, const char *, size_t,
+		    const char *const [], void (*)(const char *, void *), void *);
 struct cbl_dump_state;
 struct arc_network_dump_req;
 bool		 network_part(struct cbl_dump_state *,
 		    const struct arc_network_dump_req *, char **, uint64_t *,
 		    const char **);
+struct ucl_object_s;
+int		 network_routes(const char *, struct arc_route **, size_t *,
+		    struct ucl_object_s **);
+void		 network_routes_free(struct ucl_object_s *);
 int		 zfs_pipe(int, char **);
 const char	*tool(struct work *, const char *);
 int		 do_health(struct work *, struct arc_storage_rsp *);
@@ -440,6 +457,9 @@ struct ucl_object_s;
 struct ucl_object_s *swap_list(struct work *);
 void		 route_watch_start(void);
 void		 event_add(const char *, const char *, ...) __printflike(2, 3);
+void		 event_family(cbl_family *);
+void		 event_add_jail(const char *, const char *, const char *, ...)
+		    __printflike(3, 4);
 int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);
 
 /* invidia/netgraph.c */

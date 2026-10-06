@@ -243,6 +243,18 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\"interface\":\"em0\",\"flags\":\"UGS\",\"metric\":1,"
 	    "\"weight\":1}' ;;\n"
 	    "route-add|route-del) shift; echo \"$*\" >> route.log ;;\n"
+	    /* The connections and the sockets, from the kernel's lists. */
+	    "pcb-conns) echo '{\"protocol\":\"tcp4\",\"receive-bytes-waiting\":"
+	    "0,\"send-bytes-waiting\":0,\"local\":{\"address\":\"10.0.0.1\","
+	    "\"port\":\"22\"},\"remote\":{\"address\":\"10.0.0.2\",\"port\":"
+	    "\"4000\"},\"tcp-state\":\"ESTABLISHED\"}'; echo '#total 1' ;;\n"
+	    "route-neighs) echo '{\"family\":\"inet\",\"address\":"
+	    "\"10.0.0.2\",\"lladdr\":\"58:9c:fc:00:00:02\",\"interface-name\":"
+	    "\"em0\",\"state\":\"reachable\"}'; echo '#total 1' ;;\n"
+	    "pcb-socks) echo '{\"user\":\"root\",\"command\":\"sshd\",\"pid\":"
+	    "1,\"fd\":3,\"proto\":\"tcp4\",\"local\":{\"address\":\"*\","
+	    "\"port\":22},\"foreign\":{\"address\":\"*\",\"port\":0}}'; "
+	    "echo '#total 1' ;;\n"
 	    "interfaces) echo '{\"interfaces\":[{\"name\":"
 	    "\"epair1b\",\"up\":true,\"flags\":[\"UP\"],\"link\":\"up\",\"mtu\":"
 	    "1500,\"ibytes\":1,\"obytes\":2,\"addresses\":[{\"family\":\"inet\","
@@ -301,7 +313,16 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "esac\n", cwd, cwd);
 	put("fake-service", buf);
 	ATF_REQUIRE(chmod("fake-service", 0755) == 0);
-	put("fake-netstat", "#!/bin/sh\necho '{\"statistics\": {\"route-information\": "
+	/* netstat -O: a group of two next hops, two shares to one. */
+	put("fake-netstat", "#!/bin/sh\ncase \"$*\" in *-OnW*) echo '{"
+	    "\"statistics\": {\"route-nhgrp-information\": {\"nhgrp-table\": "
+	    "{\"rt-family\": [{\"address-family\": \"Internet\", "
+	    "\"nhgrp-entry\": [{\"nhgrp-index\": 7, \"nhg-refcnt\": 3, "
+	    "\"nhop-weights\": [{\"nh-index\": 5, \"nh-weight\": 2, "
+	    "\"nh-gw\": \"10.0.0.1\", \"nh-interface\": \"em0\"}, "
+	    "{\"nh-index\": 6, \"nh-weight\": 1, \"nh-gw\": \"10.0.0.2\", "
+	    "\"nh-interface\": \"em1\"}]}]}]}}}}'; exit 0 ;; esac\n"
+	    "echo '{\"statistics\": {\"route-information\": "
 	    "{\"route-table\": {\"rt-family\": [{\"address-family\": \"Internet\", "
 	    "\"rt-entry\": [{\"destination\": \"default\", \"gateway\": "
 	    "\"10.0.0.1\", \"flags\": \"UGS\", \"interface-name\": \"em0\"}]}]}}}}'\n");
@@ -515,6 +536,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "'list -Hp -t snapshot'*)\n"
 	    "printf 'tank/data@b\\t10000\\t4000000\\t1759500000\\n'\n"
 	    "printf 'tank/data@a\\t20000\\t3000000\\t1759400000\\n' ;;\n"
+	    "'list -H -o name -s createtxg -t snapshot -d 1 tank/data') "
+	    "printf 'tank/data@a\\ntank/data@b\\n' ;;\n"
 	    "esac\nexit 0\n");
 	put("fake-zpool", "#!/bin/sh\necho \"zpool $*\" >> storage.log\n"
 	    "case \"$*\" in\n'list -Hp -o name,size,alloc,free,health') "
@@ -566,6 +589,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");
 	put("tools/fstyp", "#!/bin/sh\nexit 1\n");
+	/* dtrace(1), told of a packet ipfw passed. */
+	put("tools/dtrace", "#!/bin/sh\ncat \"$3\" > trace.d\necho 'P 3 0 "
+	    "10.0.0.2 10.0.0.1 6 4000 22 100 em0 1'\n");
 	ATF_REQUIRE(system("chmod +x tools/*") == 0);
 	/* kldload(8) and kldunload(8): what they were told is logged. */
 	put("fake-kldload", "#!/bin/sh\necho \"kldload $*\" >> kld.log\n"

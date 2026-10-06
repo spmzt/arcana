@@ -28,6 +28,8 @@
  */
 
 #include <sys/param.h>
+#include <sys/event.h>
+#include <sys/queue.h>
 #include <sys/socket.h>
 
 #include <net/if.h>
@@ -42,37 +44,56 @@
 #include <netlink/netlink_snl_route_parsers.h>
 
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <syslog.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "agent.h"
 
-static const char	*filter, *cover_text;
-static unsigned char	 cover[16];
-static int		 cover_af;
-static uint64_t		 total;
-static uint32_t		 paths, path;	/* of the route being written */
-static FILE		*out;		/* where a row is written */
+/*
+ * The interfaces of a jail's network by their index, as its own socket
+ * tells them: the daemon's if_indextoname(3) knows only the host's.
+ */
+struct ifnames {
+	size_t	 n;
+	struct ifn {
+		uint32_t	 index;
+		char		 name[IF_NAMESIZE];
+	}	*v;
+};
+
+/* One listing: where its rows go, and what it keeps count of. */
+struct rl {
+	FILE		*out;
+	const struct ifnames *ifs;	/* a jail's, NULL the host's */
+	const char	*filter;
+	const char	*cover_text;	/* the address the routes cover, or NULL */
+	unsigned char	 cover[16];
+	int		 cover_af;
+	uint64_t	 total;
+	uint32_t	 paths, path;	/* of the route being written */
+};
 
 /* A string as JSON has one. */
 static void
-jstring(const char *s)
+jstring(struct rl *c, const char *s)
 {
 
-	fputc('"', out);
+	fputc('"', c->out);
 	for (; *s != '\0'; s++) {
 		if (*s == '"' || *s == '\\')
-			fprintf(out, "\\%c", *s);
+			fprintf(c->out, "\\%c", *s);
 		else if ((unsigned char)*s < 0x20)
-			fprintf(out, "\\u%04x", (unsigned int)(unsigned char)*s);
+			fprintf(c->out, "\\u%04x", (unsigned int)(unsigned char)*s);
 		else
-			fputc(*s, out);
+			fputc(*s, c->out);
 	}
-	fputc('"', out);
+	fputc('"', c->out);
 }
 
 /* The flags of a route as netstat(1) letters them. */
@@ -101,9 +122,30 @@ flag_letters(uint32_t flags)
 	return (buf);
 }
 
+/* An interface's name by its index, in the network listed. */
+static char *
+ifname(const struct ifnames *ifs, uint32_t index, char *buf)
+{
+	size_t	i;
+
+	buf[0] = '\0';
+	if (ifs == NULL) {
+		if (if_indextoname(index, buf) == NULL)
+			buf[0] = '\0';
+		return (buf);
+	}
+	for (i = 0; i < ifs->n; i++)
+		if (ifs->v[i].index == index) {
+			strlcpy(buf, ifs->v[i].name, IF_NAMESIZE);
+			break;
+		}
+	return (buf);
+}
+
 /* An address as it is written, a link-local one with its interface. */
 static const char *
-addr_text(const struct sockaddr *sa, char *buf, size_t len)
+addr_text(const struct ifnames *ifs, const struct sockaddr *sa, char *buf,
+    size_t len)
 {
 	const struct sockaddr_in6	*s6;
 	char				 ifn[IF_NAMESIZE];
@@ -118,8 +160,8 @@ addr_text(const struct sockaddr *sa, char *buf, size_t len)
 	else if (sa->sa_family == AF_INET6) {
 		s6 = (const struct sockaddr_in6 *)(const void *)sa;
 		inet_ntop(AF_INET6, &s6->sin6_addr, buf, (socklen_t)len);
-		if (s6->sin6_scope_id != 0 && if_indextoname(s6->sin6_scope_id,
-		    ifn) != NULL) {
+		if (s6->sin6_scope_id != 0 && ifname(ifs, s6->sin6_scope_id,
+		    ifn)[0] != '\0') {
 			n = strlen(buf);
 			snprintf(buf + n, len - n, "%%%s", ifn);
 		}
@@ -129,30 +171,30 @@ addr_text(const struct sockaddr *sa, char *buf, size_t len)
 
 /* Is the address asked about inside the route's prefix? */
 static bool
-covers(const struct snl_parsed_route *r)
+covers(struct rl *c, const struct snl_parsed_route *r)
 {
 	const unsigned char	*net;
 	int			 plen, i;
 
-	if (cover_text == NULL)
+	if (c->cover_text == NULL)
 		return (true);
-	if (r->rtm_family != cover_af || r->rta_dst == NULL)
+	if (r->rtm_family != c->cover_af || r->rta_dst == NULL)
 		return (false);
-	net = cover_af == AF_INET ? (const unsigned char *)
+	net = c->cover_af == AF_INET ? (const unsigned char *)
 	    &((const struct sockaddr_in *)(const void *)r->rta_dst)->sin_addr :
 	    (const unsigned char *)&((const struct sockaddr_in6 *)
 	    (const void *)r->rta_dst)->sin6_addr;
 	plen = r->rtm_dst_len;
 	for (i = 0; i < plen / 8; i++)
-		if (net[i] != cover[i])
+		if (net[i] != c->cover[i])
 			return (false);
-	return (plen % 8 == 0 || ((net[i] ^ cover[i]) & (0xff << (8 - plen %
+	return (plen % 8 == 0 || ((net[i] ^ c->cover[i]) & (0xff << (8 - plen %
 	    8))) == 0);
 }
 
 /* One route by one next hop, as a line. */
 static void
-row(const struct snl_parsed_route *r, const struct sockaddr *gw,
+row(struct rl *c, const struct snl_parsed_route *r, const struct sockaddr *gw,
     uint32_t ifindex, uint32_t flags, uint32_t weight, uint32_t metric,
     uint32_t mtu, uint32_t expire)
 {
@@ -166,7 +208,7 @@ row(const struct snl_parsed_route *r, const struct sockaddr *gw,
 	if (r->rtm_dst_len == 0)
 		strlcpy(dst, "default", sizeof(dst));
 	else {
-		addr_text(r->rta_dst, dst, sizeof(dst));
+		addr_text(c->ifs, r->rta_dst, dst, sizeof(dst));
 		if (r->rtm_dst_len != max) {
 			n = strlen(dst);
 			snprintf(dst + n, sizeof(dst) - n, "/%u",
@@ -175,42 +217,42 @@ row(const struct snl_parsed_route *r, const struct sockaddr *gw,
 	}
 	if (gw != NULL && (gw->sa_family == AF_INET || gw->sa_family ==
 	    AF_INET6))
-		addr_text(gw, gwt, sizeof(gwt));
+		addr_text(c->ifs, gw, gwt, sizeof(gwt));
 	else
 		snprintf(gwt, sizeof(gwt), "link#%u", ifindex);
-	if (if_indextoname(ifindex, ifn) == NULL)
-		ifn[0] = '\0';
-	total++;
-	if (filter != NULL && strstr(dst, filter) == NULL && strstr(gwt,
-	    filter) == NULL && strstr(ifn, filter) == NULL)
+	ifname(c->ifs, ifindex, ifn);
+	c->total++;
+	if (c->filter != NULL && strstr(dst, c->filter) == NULL && strstr(gwt,
+	    c->filter) == NULL && strstr(ifn, c->filter) == NULL)
 		return;
-	fprintf(out, "{\"destination\":");
-	jstring(dst);
-	fprintf(out, ",\"gateway\":");
-	jstring(gwt);
-	fprintf(out, ",\"flags\":\"%s\",\"nhop\":%u,", flag_letters(flags |
+	fprintf(c->out, "{\"destination\":");
+	jstring(c, dst);
+	fprintf(c->out, ",\"gateway\":");
+	jstring(c, gwt);
+	fprintf(c->out, ",\"flags\":\"%s\",\"nhop\":%u,", flag_letters(flags |
 	    RTF_UP), r->rta_knh_id);
 	/* The route's own, when it has one: or it is its interface's. */
 	if (mtu != 0)
-		fprintf(out, "\"mtu\":%u,", mtu);
-	fprintf(out, "\"interface-name\":");
-	jstring(ifn);
-	fprintf(out, ",\"metric\":%u,\"weight\":%u,\"fib\":%u,\"prefixlen\":%u",
+		fprintf(c->out, "\"mtu\":%u,", mtu);
+	fprintf(c->out, "\"interface-name\":");
+	jstring(c, ifn);
+	fprintf(c->out, ",\"metric\":%u,\"weight\":%u,\"fib\":%u,\"prefixlen\":%u",
 	    metric, weight, r->rta_table, r->rtm_dst_len);
 	if (r->rta_pref_src != NULL) {
-		fprintf(out, ",\"source\":");
-		jstring(addr_text(r->rta_pref_src, src, sizeof(src)));
+		fprintf(c->out, ",\"source\":");
+		jstring(c, addr_text(c->ifs, r->rta_pref_src, src,
+		    sizeof(src)));
 	}
 	/* One of several ways the route has: which, of how many. */
-	if (paths > 1)
-		fprintf(out, ",\"path\":%u,\"paths\":%u", path, paths);
+	if (c->paths > 1)
+		fprintf(c->out, ",\"path\":%u,\"paths\":%u", c->path, c->paths);
 	if (expire != 0)
-		fprintf(out, ",\"expire-time\":\"%u\"", expire);
-	fprintf(out, "}\n");
+		fprintf(c->out, ",\"expire-time\":\"%u\"", expire);
+	fprintf(c->out, "}\n");
 }
 
 static void
-route_rows(struct snl_state *ss, struct nlmsghdr *hdr)
+route_rows(struct rl *c, struct snl_state *ss, struct nlmsghdr *hdr)
 {
 	struct snl_parsed_route	 r = { .rtax_weight = RT_DEFAULT_WEIGHT };
 	const struct rta_mpath_nh *nh;
@@ -218,31 +260,31 @@ route_rows(struct snl_state *ss, struct nlmsghdr *hdr)
 
 	if (!snl_parse_nlmsg(ss, hdr, &snl_rtm_route_parser, &r))
 		return;
-	if (!covers(&r)) {
-		total++;
+	if (!covers(c, &r)) {
+		c->total++;
 		return;
 	}
-	paths = r.rta_multipath.count;
+	c->paths = r.rta_multipath.count;
 	if (r.rta_multipath.count == 0) {
-		row(&r, r.rta_gw, r.rta_oif, r.rta_rtflags, r.rtax_weight,
+		row(c, &r, r.rta_gw, r.rta_oif, r.rta_rtflags, r.rtax_weight,
 		    r.rta_metric, r.rtax_mtu, r.rta_expire);
 		return;
 	}
 	for (i = 0; i < r.rta_multipath.count; i++) {
 		nh = (const struct rta_mpath_nh *)r.rta_multipath.items[i];
-		path = i + 1;
-		row(&r, nh->gw, nh->ifindex, nh->rta_rtflags != 0 ?
+		c->path = i + 1;
+		row(c, &r, nh->gw, nh->ifindex, nh->rta_rtflags != 0 ?
 		    nh->rta_rtflags : r.rta_rtflags, nh->rtnh_weight,
 		    nh->rta_metric != 0 ? nh->rta_metric : r.rta_metric,
 		    nh->rtax_mtu, nh->rta_expire);
 		/* One route, however many ways it has. */
 		if (i > 0)
-			total--;
+			c->total--;
 	}
 }
 
 static int
-routes(struct snl_state *ss, int af, uint32_t fib)
+routes(struct rl *c, struct snl_state *ss, int af, uint32_t fib)
 {
 	struct {
 		struct nlmsghdr	hdr;
@@ -268,7 +310,7 @@ routes(struct snl_state *ss, int af, uint32_t fib)
 	}
 	while ((hdr = snl_read_reply_multi(ss, msg.hdr.nlmsg_seq, &e)) !=
 	    NULL) {
-		route_rows(ss, hdr);
+		route_rows(c, ss, hdr);
 		snl_clear_lb(ss);
 	}
 	if (e.error != 0) {
@@ -319,7 +361,8 @@ prefix(const char *s, int af, struct sockaddr_storage *ss, int *plenp)
 }
 
 static int
-route_get(struct snl_state *ss, const char *address, uint32_t fib)
+route_get(struct rl *c, struct snl_state *ss, const char *address,
+    uint32_t fib)
 {
 	struct snl_parsed_route	 r = { .rtax_weight = RT_DEFAULT_WEIGHT };
 	struct sockaddr_storage	 dst;
@@ -344,24 +387,23 @@ route_get(struct snl_state *ss, const char *address, uint32_t fib)
 	    hdr->nlmsg_type != NL_RTM_NEWROUTE || !snl_parse_nlmsg(ss, hdr,
 	    &snl_rtm_route_parser, &r))
 		return (1);
-	if (if_indextoname(r.rta_oif, ifn) == NULL)
-		ifn[0] = '\0';
-	fprintf(out, "{\"to\":");
-	jstring(address);
-	fprintf(out, ",\"destination\":");
+	ifname(c->ifs, r.rta_oif, ifn);
+	fprintf(c->out, "{\"to\":");
+	jstring(c, address);
+	fprintf(c->out, ",\"destination\":");
 	if (r.rtm_dst_len == 0)
-		fprintf(out, "\"default\"");
+		fprintf(c->out, "\"default\"");
 	else
-		jstring(addr_text(r.rta_dst, a, sizeof(a)));
-	fprintf(out, ",\"prefixlen\":%u,\"gateway\":", r.rtm_dst_len);
+		jstring(c, addr_text(c->ifs, r.rta_dst, a, sizeof(a)));
+	fprintf(c->out, ",\"prefixlen\":%u,\"gateway\":", r.rtm_dst_len);
 	if (r.rta_gw != NULL && (r.rta_gw->sa_family == AF_INET ||
 	    r.rta_gw->sa_family == AF_INET6))
-		jstring(addr_text(r.rta_gw, a, sizeof(a)));
+		jstring(c, addr_text(c->ifs, r.rta_gw, a, sizeof(a)));
 	else
-		fprintf(out, "\"link#%u\"", r.rta_oif);
-	fprintf(out, ",\"fib\":\"%u\",\"interface\":", fib);
-	jstring(ifn);
-	fprintf(out, ",\"flags\":\"%s\",\"metric\":%u,\"weight\":%u}\n",
+		fprintf(c->out, "\"link#%u\"", r.rta_oif);
+	fprintf(c->out, ",\"fib\":\"%u\",\"interface\":", fib);
+	jstring(c, ifn);
+	fprintf(c->out, ",\"flags\":\"%s\",\"metric\":%u,\"weight\":%u}\n",
 	    flag_letters(r.rta_rtflags | RTF_UP), r.rta_metric, r.rtax_weight);
 	return (0);
 }
@@ -478,192 +520,668 @@ route_change(struct snl_state *ss, bool del, int argc, char **argv)
 	return (0);
 }
 
-/* The helper's verbs that begin with "route"; argv[0] is the verb. */
+/*
+ * The routes of a table, a row a line into out, and "#total n" last;
+ * of family 4, 6 or 0 for both, those with filter in them, those the
+ * address cover is in: each NULL for any.  For the helper, and for the
+ * daemon itself, which gives out a stream of its own.
+ */
 int
-route_helper(int argc, char **argv)
+route_list(FILE *out, int fam, uint32_t fib, const char *filter,
+    const char *cover)
 {
 	struct snl_state	ss;
-	uint32_t		fib;
-	int			rc, fam;
+	struct rl		c;
+	int			rc;
 
 	if (!snl_init(&ss, NETLINK_ROUTE)) {
 		fprintf(stderr, "netlink(4): %s\n", strerror(errno));
 		return (1);
 	}
-	out = stdout;
-	rc = 2;
-	if (strcmp(argv[0], "routes") == 0 && argc == 5) {
-		fam = atoi(argv[1]);
-		fib = (uint32_t)strtoul(argv[2], NULL, 10);
-		filter = strcmp(argv[3], "-") != 0 ? argv[3] : NULL;
-		if (strcmp(argv[4], "-") != 0) {
-			cover_text = argv[4];
-			cover_af = inet_pton(AF_INET, cover_text, cover) == 1 ?
-			    AF_INET : inet_pton(AF_INET6, cover_text,
-			    cover) == 1 ? AF_INET6 : AF_UNSPEC;
-			fam = cover_af == AF_INET ? 4 : 6;
+	memset(&c, 0, sizeof(c));
+	c.out = out;
+	c.filter = filter;
+	if (cover != NULL) {
+		c.cover_text = cover;
+		c.cover_af = inet_pton(AF_INET, cover, c.cover) == 1 ? AF_INET :
+		    inet_pton(AF_INET6, cover, c.cover) == 1 ? AF_INET6 :
+		    AF_UNSPEC;
+		fam = c.cover_af == AF_INET ? 4 : 6;
+	}
+	rc = 0;
+	if (fam == 0 || fam == 4)
+		rc = routes(&c, &ss, AF_INET, fib);
+	/* The other family's table is marked where it begins. */
+	if (fam == 0)
+		fprintf(out, "#family 6\n");
+	if (fam == 0 || fam == 6)
+		rc = routes(&c, &ss, AF_INET6, fib) != 0 && rc != 0;
+	fprintf(out, "#total %ju\n", (uintmax_t)c.total);
+	snl_free(&ss);
+	return (rc);
+}
+
+/* The route the kernel would take to address, one line into out. */
+int
+route_lookup(FILE *out, const char *address, uint32_t fib)
+{
+	struct snl_state	ss;
+	struct rl		c;
+	int			rc;
+
+	if (!snl_init(&ss, NETLINK_ROUTE)) {
+		fprintf(stderr, "netlink(4): %s\n", strerror(errno));
+		return (1);
+	}
+	memset(&c, 0, sizeof(c));
+	c.out = out;
+	rc = route_get(&c, &ss, address, fib);
+	snl_free(&ss);
+	return (rc);
+}
+
+/* A link-level address as it is written: aa:bb:cc:dd:ee:ff. */
+static void
+lladdr_text(const struct nlattr *nla, char *buf, size_t len)
+{
+	const unsigned char	*p;
+	size_t			 n, i, o;
+
+	buf[0] = '\0';
+	if (nla == NULL || nla->nla_len <= sizeof(*nla))
+		return;
+	p = (const unsigned char *)(nla + 1);
+	n = nla->nla_len - sizeof(*nla);
+	for (i = o = 0; i < n && o + 4 < len; i++)
+		o += (size_t)snprintf(buf + o, len - o, "%s%02x", i > 0 ? ":" :
+		    "", p[i]);
+}
+
+static const char *
+neigh_state(uint16_t state)
+{
+
+	return ((state & NUD_PERMANENT) != 0 ? "permanent" : (state &
+	    NUD_REACHABLE) != 0 ? "reachable" : (state & NUD_STALE) != 0 ?
+	    "stale" : (state & NUD_DELAY) != 0 ? "delay" : (state &
+	    NUD_PROBE) != 0 ? "probe" : (state & NUD_INCOMPLETE) != 0 ?
+	    "incomplete" : (state & NUD_FAILED) != 0 ? "failed" : "none");
+}
+
+/* One neighbour as a line: its address, link address and state. */
+static void
+neigh_row(struct rl *c, struct snl_state *ss, struct nlmsghdr *hdr)
+{
+	struct snl_parsed_neigh	 n = { 0 };
+	char			 a[INET6_ADDRSTRLEN + IF_NAMESIZE + 8],
+				 ll[64], ifn[IF_NAMESIZE];
+
+	if (!snl_parse_nlmsg(ss, hdr, &snl_rtm_neigh_parser, &n) ||
+	    n.nda_dst == NULL)
+		return;
+	ifname(c->ifs, n.nda_ifindex, ifn);
+	addr_text(c->ifs, n.nda_dst, a, sizeof(a));
+	lladdr_text(n.nda_lladdr, ll, sizeof(ll));
+	c->total++;
+	if (c->filter != NULL && strstr(a, c->filter) == NULL && strstr(ll,
+	    c->filter) == NULL && strstr(ifn, c->filter) == NULL)
+		return;
+	fprintf(c->out, "{\"family\":\"%s\",\"address\":", n.ndm_family ==
+	    AF_INET6 ? "inet6" : "inet");
+	jstring(c, a);
+	fprintf(c->out, ",\"lladdr\":");
+	jstring(c, ll[0] != '\0' ? ll : "(incomplete)");
+	fprintf(c->out, ",\"interface-name\":");
+	jstring(c, ifn);
+	/* One set by hand stays (sticky), as arp(8) says "permanent". */
+	fprintf(c->out, ",\"state\":\"%s\"", (n.ndm_flags & NTF_STICKY) !=
+	    0 ? "permanent" : neigh_state(n.ndm_state));
+	if ((n.ndm_flags & NTF_ROUTER) != 0)
+		fprintf(c->out, ",\"router\":true");
+	if (n.ndaf_next_ts != 0)
+		fprintf(c->out, ",\"next\":%u", n.ndaf_next_ts);
+	fprintf(c->out, "}\n");
+}
+
+/*
+ * The neighbours, ARP's and NDP's, a row a line into out and "#total
+ * n" last; of family 4, 6 or 0 for both, those with filter in them.
+ */
+int
+neigh_list(FILE *out, int fam, const char *filter)
+{
+	struct {
+		struct nlmsghdr	hdr;
+		struct ndmsg	ndm;
+	}			 msg;
+	struct snl_state	 ss;
+	struct snl_errmsg_data	 e = { 0 };
+	struct nlmsghdr		*hdr;
+	struct rl		 c;
+	int			 af, rc;
+
+	if (!snl_init(&ss, NETLINK_ROUTE)) {
+		fprintf(stderr, "netlink(4): %s\n", strerror(errno));
+		return (1);
+	}
+	memset(&c, 0, sizeof(c));
+	c.out = out;
+	c.filter = filter;
+	rc = 0;
+	for (af = 0; af < 2; af++) {
+		if ((af == 0 && fam == 6) || (af == 1 && fam == 4))
+			continue;
+		memset(&msg, 0, sizeof(msg));
+		msg.hdr.nlmsg_type = RTM_GETNEIGH;
+		msg.hdr.nlmsg_flags = NLM_F_DUMP | NLM_F_REQUEST;
+		msg.hdr.nlmsg_seq = snl_get_seq(&ss);
+		msg.hdr.nlmsg_len = sizeof(msg);
+		msg.ndm.ndm_family = af == 0 ? AF_INET : AF_INET6;
+		if (!snl_send_message(&ss, &msg.hdr)) {
+			rc = 1;
+			continue;
 		}
-		rc = 0;
-		if (fam == 0 || fam == 4)
-			rc = routes(&ss, AF_INET, fib);
-		/* The other family's table is marked where it begins. */
-		if (fam == 0)
-			printf("#family 6\n");
-		if (fam == 0 || fam == 6)
-			rc = routes(&ss, AF_INET6, fib) != 0 && rc != 0;
-		printf("#total %ju\n", (uintmax_t)total);
-	} else if (strcmp(argv[0], "route-get") == 0 && argc == 3)
-		rc = route_get(&ss, argv[1], (uint32_t)strtoul(argv[2], NULL,
-		    10));
-	else if (strcmp(argv[0], "route-add") == 0 || strcmp(argv[0],
-	    "route-del") == 0)
-		rc = route_change(&ss, argv[0][6] == 'd', argc - 1, argv + 1);
+		while ((hdr = snl_read_reply_multi(&ss, msg.hdr.nlmsg_seq,
+		    &e)) != NULL) {
+			neigh_row(&c, &ss, hdr);
+			snl_clear_lb(&ss);
+		}
+		if (e.error != 0)
+			rc = 1;
+	}
+	fprintf(out, "#total %ju\n", (uintmax_t)c.total);
+	snl_free(&ss);
+	return (rc);
+}
+
+/* The helper's verbs that begin with "route"; argv[0] is the verb. */
+int
+route_helper(int argc, char **argv)
+{
+	struct snl_state	ss;
+	int			rc;
+
+	if (strcmp(argv[0], "routes") == 0 && argc == 5)
+		return (route_list(stdout, atoi(argv[1]), (uint32_t)strtoul(
+		    argv[2], NULL, 10), strcmp(argv[3], "-") != 0 ? argv[3] :
+		    NULL, strcmp(argv[4], "-") != 0 ? argv[4] : NULL));
+	if (strcmp(argv[0], "route-get") == 0 && argc == 3)
+		return (route_lookup(stdout, argv[1], (uint32_t)strtoul(
+		    argv[2], NULL, 10)));
+	if (strcmp(argv[0], "route-socket") == 0 && argc == 1)
+		return (route_socket());
+	if (strcmp(argv[0], "route-neighs") == 0 && argc == 3)
+		return (neigh_list(stdout, atoi(argv[1]), strcmp(argv[2], "-") !=
+		    0 ? argv[2] : NULL));
+	if (strcmp(argv[0], "route-add") != 0 && strcmp(argv[0], "route-del") !=
+	    0)
+		return (2);
+	if (!snl_init(&ss, NETLINK_ROUTE)) {
+		fprintf(stderr, "netlink(4): %s\n", strerror(errno));
+		return (1);
+	}
+	rc = route_change(&ss, argv[0][6] == 'd', argc - 1, argv + 1);
 	snl_free(&ss);
 	return (rc);
 }
 
 /*
- * The daemon's side: one socket of its own, in a thread of its own,
- * told by the kernel of every route, interface and address that comes,
- * goes or changes.  Each is an event (gula/events.c), which is what a
- * program run now and then cannot give: nothing is missed between two
- * looks.  A storm of routes, a BGP session coming up, is counted and
- * said as one event a second and not as each of its routes.
+ * The daemon's side: a socket of its own for the host's network, and
+ * one for each jail with a network of its own (vnet), all read in a
+ * thread of their own; told by the kernel of every route, interface,
+ * address and neighbour that comes, goes or changes.  Each is an event
+ * (gula/events.c), which is what a program run now and then cannot
+ * give: nothing is missed between two looks.  A storm of routes, a BGP
+ * session coming up, is counted and said as one event a second and not
+ * as each of its routes.
+ *
+ * A jail's socket is made inside it, by the helper (which is in the
+ * jail's network once attached to it), and handed over: the daemon
+ * reads it as it reads its own.  It holds the jail, which cannot go
+ * away while it is open: the kernel says when the jail is removed
+ * (EVFILT_JAIL), and it is closed at once.  New jails are told of the
+ * same way.
  */
 #define	WATCH_ROUTES_A_SECOND	40
 
+/* A network watched: the host's, or a jail's. */
+struct watched {
+	LIST_ENTRY(watched)	 list;
+	struct snl_state	 ss;
+	int			 jid;		/* 0 the host's */
+	char			 name[MAXHOSTNAMELEN];	/* the jail's */
+	struct ifnames		 ifs;
+	time_t			 second;	/* the storm of routes counted */
+	unsigned		 seen, left;
+	time_t			 nsecond;	/* and of neighbours */
+	unsigned		 nseen;
+};
+
+static const int	watch_groups[] = { RTNLGRP_LINK, RTNLGRP_NEIGH,
+			    RTNLGRP_IPV4_IFADDR, RTNLGRP_IPV6_IFADDR,
+			    RTNLGRP_IPV4_ROUTE, RTNLGRP_IPV6_ROUTE };
+
+static LIST_HEAD(, watched)	watching = LIST_HEAD_INITIALIZER(watching);
+
+/* An event of the network watched: the host's, or the jail's. */
 static void
-watch_route(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
+told(const struct watched *wd, const char *kind, const char *json)
 {
-	static time_t	 second;
-	static unsigned	 seen, left;
-	char		*json;
+
+	if (wd->jid == 0)
+		event_add(kind, "%s", json);
+	else
+		event_add_jail(wd->name, kind, "%s", json);
+}
+
+/* The interface in a jail's names, as it comes or goes. */
+static void
+ifs_set(struct ifnames *ifs, uint32_t index, const char *name, bool gone)
+{
+	struct ifn	*v;
+	size_t		 i;
+
+	for (i = 0; i < ifs->n; i++)
+		if (ifs->v[i].index == index)
+			break;
+	if (gone) {
+		if (i < ifs->n)
+			ifs->v[i] = ifs->v[--ifs->n];
+		return;
+	}
+	if (i == ifs->n) {
+		if ((v = reallocarray(ifs->v, ifs->n + 1, sizeof(*v))) == NULL)
+			return;
+		ifs->v = v;
+		ifs->n++;
+	}
+	ifs->v[i].index = index;
+	strlcpy(ifs->v[i].name, name, sizeof(ifs->v[i].name));
+}
+
+static void
+watch_route(struct watched *wd, struct nlmsghdr *hdr, bool gone)
+{
+	struct rl	 rc;
+	char		*json, left[32];
 	size_t		 len;
 	time_t		 now;
 
 	now = time(NULL);
-	if (now != second) {
-		if (left > 0)
-			event_add("routes", "{\"changed\":%u}", left);
-		second = now;
-		seen = left = 0;
+	if (now != wd->second) {
+		if (wd->left > 0) {
+			snprintf(left, sizeof(left), "{\"changed\":%u}",
+			    wd->left);
+			told(wd, "routes", left);
+		}
+		wd->second = now;
+		wd->seen = wd->left = 0;
 	}
-	if (++seen > WATCH_ROUTES_A_SECOND) {
-		left++;
+	if (++wd->seen > WATCH_ROUTES_A_SECOND) {
+		wd->left++;
 		return;
 	}
 	json = NULL;
-	if ((out = open_memstream(&json, &len)) == NULL)
+	memset(&rc, 0, sizeof(rc));
+	rc.ifs = wd->jid != 0 ? &wd->ifs : NULL;
+	if ((rc.out = open_memstream(&json, &len)) == NULL)
 		return;
-	total = 0;
-	route_rows(ss, hdr);
-	fclose(out);
-	out = NULL;
+	route_rows(&rc, &wd->ss, hdr);
+	fclose(rc.out);
 	if (json != NULL && len > 1) {
 		json[strcspn(json, "\n")] = '\0';
-		event_add(gone ? "route-del" : "route-add", "%s", json);
+		told(wd, gone ? "route-del" : "route-add", json);
 	}
 	free(json);
 }
 
 static void
-watch_link(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
+watch_link(struct watched *wd, struct nlmsghdr *hdr, bool gone)
 {
+	struct rl		 wc, *c;
 	struct snl_parsed_link	l = { 0 };
 	char			*json;
 	size_t			 len;
 
-	if (!snl_parse_nlmsg(ss, hdr, &snl_rtm_link_parser, &l) ||
+	if (!snl_parse_nlmsg(&wd->ss, hdr, &snl_rtm_link_parser, &l) ||
 	    l.ifla_ifname == NULL)
 		return;
+	if (wd->jid != 0)
+		ifs_set(&wd->ifs, (uint32_t)l.ifi_index, l.ifla_ifname, gone);
 	json = NULL;
-	if ((out = open_memstream(&json, &len)) == NULL)
+	memset(&wc, 0, sizeof(wc));
+	if ((wc.out = open_memstream(&json, &len)) == NULL)
 		return;
-	fprintf(out, "{\"interface\":");
-	jstring(l.ifla_ifname);
-	fprintf(out, ",\"up\":%s,\"carrier\":%s,\"mtu\":%u}",
+	c = &wc;
+	fprintf(c->out, "{\"interface\":");
+	jstring(c, l.ifla_ifname);
+	fprintf(c->out, ",\"up\":%s,\"carrier\":%s,\"mtu\":%u}",
 	    (l.ifi_flags & IFF_UP) != 0 ? "true" : "false",
 	    l.ifla_operstate == IF_OPER_UP || l.ifla_carrier != 0 ? "true" :
 	    "false", l.ifla_mtu);
-	fclose(out);
-	out = NULL;
+	fclose(c->out);
 	if (json != NULL)
-		event_add(gone ? "link-del" : "link", "%s", json);
+		told(wd, gone ? "link-del" : "link", json);
 	free(json);
 }
 
 static void
-watch_addr(struct snl_state *ss, struct nlmsghdr *hdr, bool gone)
+watch_addr(struct watched *wd, struct nlmsghdr *hdr, bool gone)
 {
+	struct rl		 wc, *c;
 	struct snl_parsed_addr	 a = { 0 };
 	const struct sockaddr	*sa;
 	char			 text[INET6_ADDRSTRLEN + IF_NAMESIZE + 8],
 				 ifn[IF_NAMESIZE], *json;
 	size_t			 len;
 
-	if (!snl_parse_nlmsg(ss, hdr, &snl_rtm_addr_parser, &a))
+	if (!snl_parse_nlmsg(&wd->ss, hdr, &snl_rtm_addr_parser, &a))
 		return;
 	sa = a.ifa_local != NULL ? a.ifa_local : a.ifa_address;
 	if (sa == NULL)
 		return;
-	if (if_indextoname(a.ifa_index, ifn) == NULL)
-		ifn[0] = '\0';
 	json = NULL;
-	if ((out = open_memstream(&json, &len)) == NULL)
+	memset(&wc, 0, sizeof(wc));
+	wc.ifs = wd->jid != 0 ? &wd->ifs : NULL;
+	if ((wc.out = open_memstream(&json, &len)) == NULL)
 		return;
-	fprintf(out, "{\"interface\":");
-	jstring(ifn);
-	fprintf(out, ",\"address\":");
-	jstring(addr_text(sa, text, sizeof(text)));
-	fprintf(out, ",\"prefixlen\":%u}", a.ifa_prefixlen);
-	fclose(out);
-	out = NULL;
+	c = &wc;
+	fprintf(c->out, "{\"interface\":");
+	jstring(c, ifname(c->ifs, a.ifa_index, ifn));
+	fprintf(c->out, ",\"address\":");
+	jstring(c, addr_text(c->ifs, sa, text, sizeof(text)));
+	fprintf(c->out, ",\"prefixlen\":%u}", a.ifa_prefixlen);
+	fclose(c->out);
 	if (json != NULL)
-		event_add(gone ? "address-del" : "address-add", "%s", json);
+		told(wd, gone ? "address-del" : "address-add", json);
 	free(json);
+}
+
+/*
+ * A neighbour that came, changed or went: an event, but not for each of
+ * a storm (a neighbour going stale and fresh again, many at once).
+ */
+static void
+watch_neigh(struct watched *wd, struct nlmsghdr *hdr, bool gone)
+{
+	struct rl	 wc;
+	char		*json;
+	size_t		 len;
+	time_t		 now;
+
+	now = time(NULL);
+	if (now != wd->nsecond) {
+		wd->nsecond = now;
+		wd->nseen = 0;
+	}
+	if (++wd->nseen > WATCH_ROUTES_A_SECOND)
+		return;
+	json = NULL;
+	memset(&wc, 0, sizeof(wc));
+	wc.ifs = wd->jid != 0 ? &wd->ifs : NULL;
+	if ((wc.out = open_memstream(&json, &len)) == NULL)
+		return;
+	neigh_row(&wc, &wd->ss, hdr);
+	fclose(wc.out);
+	if (json != NULL && len > 1) {
+		json[strcspn(json, "\n")] = '\0';
+		told(wd, gone ? "neigh-del" : "neigh", json);
+	}
+	free(json);
+}
+
+/* What came on a socket watched, every message of it; false: it ended. */
+static bool
+watch_read(struct watched *wd)
+{
+	struct nlmsghdr	*hdr;
+
+	while ((hdr = snl_read_message(&wd->ss)) != NULL) {
+		switch (hdr->nlmsg_type) {
+		case NL_RTM_NEWROUTE:
+		case NL_RTM_DELROUTE:
+			watch_route(wd, hdr, hdr->nlmsg_type ==
+			    NL_RTM_DELROUTE);
+			break;
+		case NL_RTM_NEWLINK:
+		case NL_RTM_DELLINK:
+			watch_link(wd, hdr, hdr->nlmsg_type == NL_RTM_DELLINK);
+			break;
+		case NL_RTM_NEWNEIGH:
+		case NL_RTM_DELNEIGH:
+			watch_neigh(wd, hdr, hdr->nlmsg_type ==
+			    NL_RTM_DELNEIGH);
+			break;
+		case NL_RTM_NEWADDR:
+		case NL_RTM_DELADDR:
+			watch_addr(wd, hdr, hdr->nlmsg_type == NL_RTM_DELADDR);
+			break;
+		}
+		snl_clear_lb(&wd->ss);
+	}
+	return (errno == EAGAIN || errno == EINTR);
+}
+
+static void
+watched_free(struct watched *wd)
+{
+
+	LIST_REMOVE(wd, list);
+	snl_free(&wd->ss);
+	free(wd->ifs.v);
+	free(wd);
+}
+
+/*
+ * The helper's verb route-socket: a socket in the network the helper
+ * is in, a jail's once it is attached to it, told of what is watched,
+ * and handed over on its standard output, which is a socket.
+ */
+int
+route_socket(void)
+{
+	struct msghdr	 msg;
+	struct cmsghdr	*cm;
+	struct iovec	 iov;
+	union {
+		struct cmsghdr	hdr;
+		char		buf[CMSG_SPACE(sizeof(int))];
+	}		 cbuf;
+	size_t		 i;
+	int		 fd;
+	char		 one = '1';
+
+	if ((fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_ROUTE)) == -1) {
+		fprintf(stderr, "netlink(4): %s\n", strerror(errno));
+		return (1);
+	}
+	for (i = 0; i < nitems(watch_groups); i++)
+		if (setsockopt(fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+		    &watch_groups[i], sizeof(watch_groups[i])) == -1) {
+			fprintf(stderr, "netlink(4) group %d: %s\n",
+			    watch_groups[i], strerror(errno));
+			return (1);
+		}
+	memset(&msg, 0, sizeof(msg));
+	memset(&cbuf, 0, sizeof(cbuf));
+	iov.iov_base = &one;
+	iov.iov_len = 1;
+	msg.msg_iov = &iov;
+	msg.msg_iovlen = 1;
+	msg.msg_control = cbuf.buf;
+	msg.msg_controllen = sizeof(cbuf.buf);
+	cm = CMSG_FIRSTHDR(&msg);
+	cm->cmsg_level = SOL_SOCKET;
+	cm->cmsg_type = SCM_RIGHTS;
+	cm->cmsg_len = CMSG_LEN(sizeof(int));
+	memcpy(CMSG_DATA(cm), &fd, sizeof(int));
+	if (sendmsg(STDOUT_FILENO, &msg, 0) == -1) {
+		fprintf(stderr, "sendmsg: %s\n", strerror(errno));
+		return (1);
+	}
+	return (0);
+}
+
+/* The interfaces a jail's network has now, by its own socket. */
+static void
+ifs_read(struct watched *wd)
+{
+	struct {
+		struct nlmsghdr	hdr;
+		struct ifinfomsg ifi;
+	}			 msg;
+	struct snl_errmsg_data	 e = { 0 };
+	struct snl_parsed_link_simple l;
+	struct nlmsghdr		*hdr;
+	struct snl_state	 ss;
+
+	/* Asked on a socket of the same network: the watched one's
+	 * replies would be among its events. */
+	memset(&msg, 0, sizeof(msg));
+	msg.hdr.nlmsg_type = RTM_GETLINK;
+	msg.hdr.nlmsg_flags = NLM_F_DUMP | NLM_F_REQUEST;
+	msg.hdr.nlmsg_len = sizeof(msg);
+	ss = wd->ss;
+	msg.hdr.nlmsg_seq = snl_get_seq(&ss);
+	if (!snl_send_message(&ss, &msg.hdr))
+		return;
+	while ((hdr = snl_read_reply_multi(&ss, msg.hdr.nlmsg_seq, &e)) !=
+	    NULL) {
+		memset(&l, 0, sizeof(l));
+		if (snl_parse_nlmsg(&ss, hdr, &snl_rtm_link_parser_simple, &l) &&
+		    l.ifla_ifname != NULL)
+			ifs_set(&wd->ifs, l.ifi_index, l.ifla_ifname, false);
+		snl_clear_lb(&ss);
+	}
+	wd->ss.seq = ss.seq;
+}
+
+/*
+ * Watch a jail's network, when it has one of its own and is not
+ * watched yet: its socket from the helper, inside it.
+ */
+static void
+watch_jail(int kq, int jid)
+{
+	struct watched	*wd;
+	struct kevent	 ev[2];
+	char		 name[MAXHOSTNAMELEN], vnet[16];
+	int		 fd, fl;
+
+	LIST_FOREACH(wd, &watching, list)
+		if (wd->jid == jid)
+			return;
+	if (jid <= 0)
+		return;
+	if (jail_jid_name(jid, name, sizeof(name), vnet, sizeof(vnet)) != 0 ||
+	    strcmp(vnet, "new") != 0)
+		return;
+	if ((fd = helper_netlink(jid)) == -1)
+		return;
+	if ((wd = calloc(1, sizeof(*wd))) == NULL || !snl_init(&wd->ss,
+	    NETLINK_ROUTE)) {
+		free(wd);
+		close(fd);
+		return;
+	}
+	/* The helper's socket in the place of snl's own. */
+	close(wd->ss.fd);
+	wd->ss.fd = fd;
+	wd->jid = jid;
+	strlcpy(wd->name, name, sizeof(wd->name));
+	ifs_read(wd);
+	if ((fl = fcntl(fd, F_GETFL)) != -1)
+		(void)fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+	EV_SET(&ev[0], fd, EVFILT_READ, EV_ADD, 0, 0, wd);
+	EV_SET(&ev[1], jid, EVFILT_JAIL, EV_ADD, NOTE_JAIL_REMOVE, 0, wd);
+	if (kevent(kq, ev, 2, NULL, 0, NULL) == -1) {
+		snl_free(&wd->ss);
+		free(wd->ifs.v);
+		free(wd);
+		return;
+	}
+	LIST_INSERT_HEAD(&watching, wd, list);
+	logmsg(LOG_INFO, "watching the network of jail %s", name);
+}
+
+/* Every jail there is now, watched if it has a network of its own. */
+static void
+watch_jails(int kq)
+{
+	int	jid;
+
+	jid = 0;
+	while ((jid = jail_next(jid)) > 0)
+		watch_jail(kq, jid);
 }
 
 static void *
 watcher(void *arg __unused)
 {
-	static const int	 groups[] = { RTNLGRP_LINK, RTNLGRP_IPV4_IFADDR,
-				    RTNLGRP_IPV6_IFADDR, RTNLGRP_IPV4_ROUTE,
-				    RTNLGRP_IPV6_ROUTE };
-	struct snl_state	 ss;
-	struct nlmsghdr		*hdr;
-	size_t			 i;
+	struct watched	*host, *wd;
+	struct kevent	 ev;
+	size_t		 i;
+	int		 kq, fl;
 
-	if (!snl_init(&ss, NETLINK_ROUTE)) {
+	if ((host = calloc(1, sizeof(*host))) == NULL || !snl_init(&host->ss,
+	    NETLINK_ROUTE) || (kq = kqueue()) == -1) {
 		logmsg(LOG_NOTICE, "no events of the network: netlink(4): %s",
 		    strerror(errno));
 		return (NULL);
 	}
-	for (i = 0; i < nitems(groups); i++)
-		if (setsockopt(ss.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
-		    &groups[i], sizeof(groups[i])) == -1)
+	for (i = 0; i < nitems(watch_groups); i++)
+		if (setsockopt(host->ss.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+		    &watch_groups[i], sizeof(watch_groups[i])) == -1)
 			logmsg(LOG_NOTICE, "netlink(4) group %d: %s",
-			    groups[i], strerror(errno));
-	while ((hdr = snl_read_message(&ss)) != NULL) {
-		switch (hdr->nlmsg_type) {
-		case NL_RTM_NEWROUTE:
-		case NL_RTM_DELROUTE:
-			watch_route(&ss, hdr, hdr->nlmsg_type ==
-			    NL_RTM_DELROUTE);
-			break;
-		case NL_RTM_NEWLINK:
-		case NL_RTM_DELLINK:
-			watch_link(&ss, hdr, hdr->nlmsg_type == NL_RTM_DELLINK);
-			break;
-		case NL_RTM_NEWADDR:
-		case NL_RTM_DELADDR:
-			watch_addr(&ss, hdr, hdr->nlmsg_type == NL_RTM_DELADDR);
+			    watch_groups[i], strerror(errno));
+	if ((fl = fcntl(host->ss.fd, F_GETFL)) != -1)
+		(void)fcntl(host->ss.fd, F_SETFL, fl | O_NONBLOCK);
+	LIST_INSERT_HEAD(&watching, host, list);
+	EV_SET(&ev, host->ss.fd, EVFILT_READ, EV_ADD, 0, 0, host);
+	(void)kevent(kq, &ev, 1, NULL, 0, NULL);
+	/* The jails: only when the helper is this program, which can
+	 * hand a socket over. */
+	if (opts.helper_self) {
+		EV_SET(&ev, 0, EVFILT_JAIL, EV_ADD, NOTE_JAIL_CHILD, 0, NULL);
+		if (kevent(kq, &ev, 1, NULL, 0, NULL) == -1)
+			logmsg(LOG_NOTICE, "no events of the jails' networks: "
+			    "EVFILT_JAIL: %s", strerror(errno));
+		watch_jails(kq);
+	}
+	for (;;) {
+		if (kevent(kq, NULL, 0, &ev, 1, NULL) == -1) {
+			if (errno == EINTR)
+				continue;
 			break;
 		}
-		snl_clear_lb(&ss);
+		if (ev.filter == EVFILT_JAIL && ev.udata == NULL) {
+			/* A jail made; which one, unless several were. */
+			if ((ev.fflags & NOTE_JAIL_CHILD) == 0)
+				continue;
+			if (ev.data != 0 && (ev.fflags & NOTE_JAIL_MULTI) == 0)
+				watch_jail(kq, (int)ev.data);
+			else
+				watch_jails(kq);
+			continue;
+		}
+		wd = ev.udata;
+		if (ev.filter == EVFILT_JAIL) {
+			/* Gone: closed now, or it could not go. */
+			logmsg(LOG_INFO, "the network of jail %s is not "
+			    "watched: it is removed", wd->name);
+			watched_free(wd);
+			continue;
+		}
+		if (watch_read(wd))
+			continue;
+		if (wd == host) {
+			logmsg(LOG_NOTICE, "the events of the network ended: "
+			    "netlink(4): %s", strerror(errno));
+			break;
+		}
+		watched_free(wd);
 	}
-	logmsg(LOG_NOTICE, "the events of the network ended: netlink(4): %s",
-	    strerror(errno));
-	snl_free(&ss);
+	close(kq);
 	return (NULL);
 }
 

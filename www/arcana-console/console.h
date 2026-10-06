@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.40.0"
+#define	ARCW_VERSION		"0.49.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -158,11 +158,15 @@ int		 api_processes(struct http_request *);
 int		 api_log(struct http_request *);
 int		 api_history(struct http_request *);
 int		 api_events(struct http_request *);
+int		 api_fw_trace(struct http_request *);
 int		 api_ipfw_rules(struct http_request *);
 int		 api_stream(struct http_request *);
 void		 stream_connect(struct connection *);
 void		 stream_message(struct connection *, u_int8_t, void *, size_t);
 void		 stream_disconnect(struct connection *);
+const char	*follow_start(struct connection *, uint64_t,
+		    const struct server *);
+bool		 follow_stop(struct connection *, uint64_t, bool);
 int		 api_storage(struct http_request *);
 int		 api_fstab(struct http_request *);
 int		 api_bird_config(struct http_request *);

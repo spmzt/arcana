@@ -77,8 +77,18 @@ The console is laid out as a tree and tabs.
     per address family; filter the rows, click a column to sort. The
     routes are asked of the kernel itself, through netlink, so each
     comes with what the kernel knows of it: its metric, its weight,
-    the address it sends from, its table. The others are as `netstat`
-    and `sockstat` print them (`--libxo json`).
+    the address it sends from, its table. The connections and sockets
+    come from the kernel's own lists of them, as netstat and sockstat
+    read them, with the same columns: who holds a socket, its command
+    and descriptor, and `?` for one nobody holds any more. A host's
+    own are read by the agent itself, a jail's by its helper inside
+    the jail; netstat and sockstat are not run for them.
+    **Neighbours** are ARP's and NDP's, asked of the kernel through
+    netlink as the routes are: each with its link-level address,
+    interface, state (reachable, stale, delay, probe, incomplete, or
+    permanent for one set by hand) and whether it is a router; read
+    again every two seconds while Live is lit. `arcanactl net
+    neighbours [-4 | -6] [text]`.
     The routes, connections and sockets come in parts over the
     console's stream as the host reads them, so a table of any size,
     a full BGP table say, arrives whole: the first time the table
@@ -95,8 +105,10 @@ The console is laid out as a tree and tabs.
     gateway may be several addresses with commas between, each with
     its share after an `@` (`10.0.0.1@2,10.0.0.2`): that is one route
     with as many next hops (ECMP), which the table shows as a row for
-    each, **Path** saying which of how many, and **Nexthop groups**
-    as the group the kernel made of them. A second route to a
+    each, **Path** saying which of how many, and **Nexthops**, in
+    **Groups**, as the group the kernel made of them: each
+    group a row, its next hops one under the other, each with its
+    gateway, interface and a bar of its share. A second route to a
     destination that has one makes such a group too; one way of it
     is deleted by its gateway. A route of several gateways is not
     kept in `rc.conf` from here. A route can be given its
@@ -168,7 +180,23 @@ The console is laid out as a tree and tabs.
     **Snapshots**: the newest first, of all or of one dataset and those
     under it; taken with a name (the time, unless another is given),
     of everything under the dataset too when asked; rolled back to,
-    cloned into a new dataset, destroyed once the name is typed.
+    cloned into a new dataset, destroyed once it is confirmed (a
+    snapshot's name is not typed: a dataset's still is). Each row has
+    a box to pick it, and **All** picks every snapshot shown, as the
+    filter leaves them (a dataset's name, a date in the name):
+    **Destroy N** destroys those picked at once, after one question,
+    as a batch of jobs, one each, so that one refused (a clone was made
+    of it) leaves the others destroyed.
+    **Resnapshot**, on the newest snapshot of a dataset, takes it
+    again, now, under the same name, and lets the old one go: the new
+    one is taken first under a name of its own, the old one destroyed,
+    and the new one renamed, so that there is a snapshot all along;
+    one zfs will not destroy (held, cloned) stays as it was.
+    **Resnapshot N**, beside Destroy N, does it to every picked
+    snapshot that is the newest of its dataset, in one batch, a job
+    each; **Pick the newest** picks the newest snapshot of each
+    dataset shown. From a shell: `arcanactl zfs resnapshot [-r]
+    dataset@snapshot`.
     **Replicate** sends a snapshot into a dataset that is not there
     yet, on the same host (another pool, say): `zfs send` into `zfs
     receive`, all of it or what changed since a snapshot both have,
@@ -271,7 +299,8 @@ The console is laid out as a tree and tabs.
     does not load it. From a shell: `arcanactl net ipfw`, `arcanactl
     [-p] ipfw add number rule…`, `ipfw keep add …`, `ipfw [keep]
     delete number`, `[-s] ipfw apply`, `ipfw enable | disable`,
-    `ipfw rules [-w file] [-n]`.
+    `ipfw rules [-w file] [-n]`, `ipfw trace address [seconds
+    [packets]]`.
     While the Firewall tab is shown its parts are in the side bar, in
     place of the hosts: **Overview**, **Dynamic states**, **Kept rules
     as text**, then a line for each part with how many rules it has;
@@ -294,7 +323,12 @@ The console is laid out as a tree and tabs.
     each rule it meets, each jump, call and return, and what becomes
     of it. A rule the page cannot judge (`me`, a state, an option it
     does not know) is taken as met and marked; it is a reading of the
-    rules, not the kernel's own answer. In a part, a rule's packets
+    rules, not the kernel's own answer. The kernel's own answer is
+    `arcanactl [-j jail] ipfw trace address`: for some seconds the
+    packets to or from the address that really cross the firewall,
+    each with the rule that decided it and what it decided, its
+    interface and direction, as ipfw's `rule-matched` probe tells
+    dtrace(1); the host needs dtrace (`kldload dtraceall`). In a part, a rule's packets
     are followed by how many a second it took since the look before,
     and **never** when none has matched it; a rule being changed has
     ▲ and ▼, which put a number before the rule above or after the
@@ -305,11 +339,15 @@ The console is laid out as a tree and tabs.
     ipfw shows them, and one line makes, changes or deletes a NAT,
     NAT64 or NPTv6 instance, a pipe, a queue or a scheduler, in
     ipfw's own words. With **keep**, what is done to a table or an
-    instance is also a line at the head of the kept rules. **Logged
+    instance is also a line at the head of the kept rules; and what
+    undoes it takes its lines out again: a table or an instance
+    deleted (`destroy`, `delete`) all of its lines, a table flushed
+    its entries, an entry deleted its own. **Logged
     packets** reads what the rules with `log` wrote into
     `/var/log/security`. A running jail with a network of its own is
     listed under the host in the side bar: its firewall is its own,
-    ipfw is run inside it, and its rules are kept in the jail.
+    ipfw is run inside it, its rules are kept in the jail, and on or
+    off is as the jail's own network has it.
   - **Sysctl**: the kernel's state, a part of the tree at a time
     (**kern**, **vm**, **net** and the others, or from a name typed),
     read from the kernel as `sysctl -a` has it: each name with its
@@ -350,13 +388,20 @@ The console is laid out as a tree and tabs.
     root agent only. From a shell: `arcanactl [-j jail] ps [pid]`,
     `arcanactl signal pid [name]`, `arcanactl renice pid nice`.
   - **Events**, the last entry of the Log tab's list of logs: every
-    route, interface and address of the host that came, went or
-    changed, as the kernel told the agent of it through netlink the
+    route, interface, address and neighbour of the host that came,
+    went or changed, as the kernel told the agent of it through netlink the
     moment it happened, the last 512 kept. A storm of routes (a BGP
     session coming up) is counted for each second and not listed. A
-    jail's own network is not in it. This is what the workflows'
-    triggers will be made of. From a shell: `arcanactl events
-    [after]`.
+    jail with a network of its own (vnet) is watched as the host is,
+    from the moment it is made or the agent starts, and its events
+    say its name (in the Host column); removed, it is let go at once,
+    not held. Each is shown the moment the
+    agent tells it: the console subscribes to the host's events
+    while they are shown, and passes each to the page over its
+    stream; asked for every few seconds only where there is no
+    stream. This is what the workflows' triggers will be made of.
+    From a shell: `arcanactl events [after]`, or `arcanactl events
+    -f` to follow them as they happen.
   - **Log**: what syslogd wrote, a file of `/var/log` at a time,
     `messages` first, the newest line on top. A line of syslog's is
     taken apart into its time, host, program, PID and message, in

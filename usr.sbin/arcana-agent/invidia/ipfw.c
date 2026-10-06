@@ -23,6 +23,10 @@
 #include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
+#include <sys/socket.h>
+
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -199,15 +203,20 @@ have(void)
 	    0);
 }
 
+/* On, in the network looked at: a jail's is its own, read inside it. */
 static bool
-enabled(void)
+enabled(struct work *w)
 {
-	int	v;
-	size_t	len;
+	static const char *const name[] = { "net.inet.ip.fw.enable" };
+	struct execres	res;
+	int		v;
+	size_t		len;
 
+	if (w->jail != NULL)
+		return (run_exec(w, helper_argv(w, "sysctl-int", 1, name),
+		    &res) == 0 && res.out != NULL && atoi(res.out) != 0);
 	len = sizeof(v);
-	return (sysctlbyname("net.inet.ip.fw.enable", &v, &len, NULL, 0) ==
-	    0 && v != 0);
+	return (sysctlbyname(name[0], &v, &len, NULL, 0) == 0 && v != 0);
 }
 
 /* Run ipfw with the words; 0, or -1 and why. */
@@ -263,7 +272,7 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 	loaded = have();
 	ucl_object_insert_key(top, ucl_object_frombool(loaded), "loaded", 0,
 	    false);
-	ucl_object_insert_key(top, ucl_object_frombool(loaded && (enabled() ||
+	ucl_object_insert_key(top, ucl_object_frombool(loaded && (enabled(w) ||
 	    !kmod_loaded("ipfw"))), "enabled", 0, false);
 	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
 	argv[1] = (char *)(uintptr_t)"-S";
@@ -923,6 +932,70 @@ kept_line(struct work *w, const char *line, const char **errp)
 	return (rc);
 }
 
+/*
+ * Lines of the kept file that what was just undone had made, taken out:
+ * an object deleted (destroy, delete) takes all its lines, a table
+ * flushed its entries, an entry deleted its own.  words is the
+ * command, verb first: "table T destroy", "nat 1 delete", "table T
+ * delete 10.0.0.1".  0 also when it had none.
+ */
+static int
+kept_forget(struct work *w, const char *const words[], size_t n,
+    const char **errp)
+{
+	char	*old, *out, *p, *l, *obj, *entry;
+	size_t	 len, olen, elen;
+	bool	 drop, any;
+	int	 rc;
+
+	if (n < 3)
+		return (0);
+	obj = wfmt(w, "%s %s ", words[0], words[1]);
+	olen = strlen(obj);
+	entry = NULL;
+	elen = 0;
+	if (strcmp(words[2], "flush") == 0)
+		entry = wfmt(w, "%sadd ", obj);
+	else if (strcmp(words[0], "table") == 0 && strcmp(words[2],
+	    "delete") == 0 && n > 3)
+		entry = wfmt(w, "%sadd %s", obj, words[3]);
+	else if (strcmp(words[2], "destroy") != 0 && strcmp(words[2],
+	    "delete") != 0)
+		return (0);
+	if (entry != NULL)
+		elen = strlen(entry);
+	pthread_mutex_lock(&file_lock);
+	if ((old = file_read(w, &len)) == NULL) {
+		pthread_mutex_unlock(&file_lock);
+		return (0);
+	}
+	out = wcalloc(w, len + 1, 1);
+	p = wstrdup(w, old);
+	any = false;
+	while ((l = strsep(&p, "\n")) != NULL) {
+		const char	*t = l + strspn(l, " \t");
+
+		if (entry == NULL)
+			drop = strncmp(t, obj, olen) == 0;
+		else
+			/* The entry, and only it: a word ends there. */
+			drop = strncmp(t, entry, elen) == 0 && (t[elen] ==
+			    '\0' || t[elen] == ' ' || entry[elen - 1] == ' ');
+		if (drop) {
+			any = true;
+			continue;
+		}
+		if (p != NULL || l[0] != '\0') {
+			strlcat(out, l, len + 1);
+			if (p != NULL)
+				strlcat(out, "\n", len + 1);
+		}
+	}
+	rc = any ? file_write(w, out, strlen(out), errp) : 0;
+	pthread_mutex_unlock(&file_lock);
+	return (rc);
+}
+
 /* Do the job.  *heldp says an apply left the old rules to be settled. */
 int
 do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
@@ -1005,6 +1078,16 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 				*errp = wtext(w, exec_error(w, &res, "ipfw"));
 			return (-1);
 		}
+		/* Undone: so are the kept lines it had made. */
+		if (sp->persist && sp->names.n >= 2 &&
+		    (strcmp(sp->names.v[1], "destroy") == 0 ||
+		    strcmp(sp->names.v[1], "delete") == 0 ||
+		    strcmp(sp->names.v[1], "flush") == 0)) {
+			argvv[0] = verb;
+			for (i = 0; i < sp->names.n && i < IPFW_WORDS + 2; i++)
+				argvv[i + 1] = sp->names.v[i];
+			return (kept_forget(w, argvv, i + 1, errp));
+		}
 		/* Kept: the same words, a line of the kept file. */
 		if (sp->persist) {
 			rule = wcalloc(w, len, 1);
@@ -1049,4 +1132,201 @@ ipfw_unadd(struct work *w, const struct arc_job_spec *sp)
 		(void)kept_change(w, strtol(sp->names.v[0], NULL, 10), NULL,
 		    &e);
 	return (e);
+}
+
+/*
+ * Packets followed by the kernel itself: ipfw:::rule-matched, the
+ * probe ipfw fires with the rule that decided each packet, told to
+ * dtrace(1).  Only those of one address, for a few seconds or packets:
+ * a predicate on the address's own words, as the kernel holds it.
+ */
+#define	FW_TRACE_SECONDS	10
+#define	FW_TRACE_PACKETS	100
+
+static const char *const verdicts[] = { "pass", "deny", "divert", "tee",
+    "dummynet", "netgraph", "ngtee", "nat", "reass", "nat64" };
+
+/* "a == x" for the address's 32-bit words at p. */
+static void
+words_match(FILE *fp, const char *p, const uint32_t *w, int n)
+{
+	int	i;
+
+	fputc('(', fp);
+	for (i = 0; i < n; i++)
+		fprintf(fp, "%s((uint32_t *)%s)[%d] == %uU", i > 0 ? " && " :
+		    "", p, i, w[i]);
+	fputc(')', fp);
+}
+
+/* The jail's interfaces, but lo0, which every network has its own of. */
+static void
+trace_ifs(struct work *w, FILE *fp)
+{
+	static const char *const words[] = { "-", "-" };
+	struct execres		 res;
+	struct ucl_parser	*p;
+	ucl_object_t		*top;
+	const ucl_object_t	*i;
+	ucl_object_iter_t	 it;
+	const char		*name;
+	bool			 some;
+
+	some = false;
+	top = NULL;
+	if (run_exec(w, helper_argv(w, "interfaces", 2, words), &res) == 0 &&
+	    res.out != NULL) {
+		p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+		if (ucl_parser_add_chunk(p, (const unsigned char *)res.out,
+		    res.outlen))
+			top = ucl_parser_get_object(p);
+		ucl_parser_free(p);
+	}
+	fputs(" && args[4]->ifp != NULL && (", fp);
+	it = NULL;
+	while (top != NULL && (i = ucl_object_iterate(ucl_object_lookup(top,
+	    "interfaces"), &it, true)) != NULL) {
+		name = ucl_object_tostring(ucl_object_lookup(i, "name"));
+		if (name == NULL || strcmp(name, "lo0") == 0 ||
+		    name[strspn(name, "abcdefghijklmnopqrstuvwxyz"
+		    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")] != '\0')
+			continue;
+		fprintf(fp, "%sstringof(args[4]->ifp->if_xname) == \"%s\"",
+		    some ? " || " : "", name);
+		some = true;
+	}
+	/* A jail with none of its own sees none. */
+	fputs(some ? ")" : "0)", fp);
+	if (top != NULL)
+		ucl_object_unref(top);
+}
+
+int
+do_fw_trace(struct work *w, const char *address, uint32_t seconds,
+    uint32_t packets, struct arc_fw_trace_rsp *rsp)
+{
+	struct execres	 res;
+	unsigned char	 a[16];
+	uint32_t	 wd[4];
+	char		*script, *json, *line, *next, *argv[5], *f[12],
+			 path[64];
+	size_t		 len, n;
+	FILE		*fp;
+	int		 af, nw, i, sfd, rc;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	if (inet_pton(AF_INET, address, a) == 1) {
+		af = AF_INET;
+		nw = 1;
+	} else if (inet_pton(AF_INET6, address, a) == 1) {
+		af = AF_INET6;
+		nw = 4;
+	} else {
+		rsp->error = "the address to follow is an IPv4 or IPv6 address";
+		return (0);
+	}
+	memcpy(wd, a, (size_t)nw * 4);
+	if (seconds == 0)
+		seconds = FW_TRACE_SECONDS;
+	if (packets == 0)
+		packets = FW_TRACE_PACKETS;
+	script = NULL;
+	if ((fp = open_memstream(&script, &len)) == NULL) {
+		rsp->error = "out of memory";
+		return (0);
+	}
+	fprintf(fp, "#pragma D option quiet\n"
+	    "int n;\nuint64_t start;\n"
+	    "ipfw:::rule-matched\n/arg1 == %d && (", af);
+	words_match(fp, "arg2", wd, nw);
+	fputs(" || ", fp);
+	words_match(fp, "arg3", wd, nw);
+	fputc(')', fp);
+	if (w->jail != NULL)
+		trace_ifs(w, fp);
+	/* Not one more than asked for: the next would be told before the
+	 * clause that ends it. */
+	fprintf(fp, " && n < %u/\n{\n\tn++;\n", packets);
+	fprintf(fp, "\tprintf(\"P %%d %%d %%s %%s %%d %%d %%d %%d %%s %%d\\n\", "
+	    "(timestamp - %s) / 1000000, arg0,\n"
+	    "\t    %s((%s *)arg2), %s((%s *)arg3),\n"
+	    "\t    args[4]->f_id.proto, args[4]->f_id.src_port,\n"
+	    "\t    args[4]->f_id.dst_port, args[5]->rulenum,\n"
+	    "\t    args[4]->ifp != NULL ? stringof(args[4]->ifp->if_xname) : "
+	    "\"-\",\n\t    (args[4]->flags & 0x00400000) != 0);\n}\n"
+	    "ipfw:::rule-matched\n/n >= %u/\n{\n\texit(0);\n}\n"
+	    "tick-%us\n{\n\texit(0);\n}\n"
+	    "BEGIN\n{\n\tstart = timestamp;\n}\n", "start",
+	    af == AF_INET ? "inet_ntoa" : "inet_ntoa6", af == AF_INET ?
+	    "in_addr_t" : "struct in6_addr", af == AF_INET ? "inet_ntoa" :
+	    "inet_ntoa6", af == AF_INET ? "in_addr_t" : "struct in6_addr",
+	    packets, seconds);
+	if (fclose(fp) != 0 || script == NULL) {
+		free(script);
+		rsp->error = "out of memory";
+		return (0);
+	}
+	/* A script with its declarations is read from a file (-s). */
+	snprintf(path, sizeof(path), "/tmp/arcana-fw-trace.XXXXXX");
+	if ((sfd = mkstemp(path)) == -1 || write(sfd, script, len) !=
+	    (ssize_t)len) {
+		if (sfd != -1) {
+			close(sfd);
+			unlink(path);
+		}
+		free(script);
+		rsp->error = "cannot write the script for dtrace";
+		return (0);
+	}
+	close(sfd);
+	free(script);
+	argv[0] = (char *)(uintptr_t)tool(w, "dtrace");
+	argv[1] = (char *)(uintptr_t)"-q";
+	argv[2] = (char *)(uintptr_t)"-s";
+	argv[3] = path;
+	argv[4] = NULL;
+	rc = run_exec(w, argv, &res);
+	unlink(path);
+	if (rc != 0) {
+		rsp->error = res.err != NULL && strstr(res.err,
+		    "does not match any probes") != NULL ? "the kernel has no "
+		    "ipfw:::rule-matched probe here: dtraceall(4) and ipfw(4) "
+		    "are to be loaded" : wtext(w, exec_error(w, &res, "dtrace"));
+		return (0);
+	}
+	json = NULL;
+	if ((fp = open_memstream(&json, &len)) == NULL) {
+		rsp->error = "out of memory";
+		return (0);
+	}
+	fputs("{\"packets\":[", fp);
+	n = 0;
+	for (line = (char *)(uintptr_t)(res.out != NULL ? res.out : "");
+	    line != NULL && *line != '\0'; line = next) {
+		if ((next = strchr(line, '\n')) != NULL)
+			*next++ = '\0';
+		for (i = 0; i < 12 && (f[i] = strsep(&line, " ")) != NULL; i++)
+			;
+		/* P ms verdict src dst proto sport dport rule if in */
+		if (i != 11 || strcmp(f[0], "P") != 0)
+			continue;
+		fprintf(fp, "%s{\"ms\":%s,\"verdict\":\"%s\",\"family\":\"%s\","
+		    "\"source\":\"%s\",\"destination\":\"%s\",\"proto\":%s,"
+		    "\"sport\":%s,\"dport\":%s,\"rule\":%s,\"interface\":\"%s\","
+		    "\"direction\":\"%s\"}", n++ > 0 ? "," : "", f[1],
+		    (size_t)atoi(f[2]) < nitems(verdicts) ? verdicts[atoi(f[2])] :
+		    "?", af == AF_INET ? "inet" : "inet6", f[3], f[4], f[5],
+		    f[6], f[7], f[8], f[9], strcmp(f[10], "1") == 0 ? "in" :
+		    "out");
+	}
+	fprintf(fp, "],\"seconds\":%u,\"limit\":%u}", seconds, packets);
+	if (fclose(fp) != 0 || json == NULL) {
+		free(json);
+		rsp->error = "out of memory";
+		return (0);
+	}
+	rsp->json = wtext(w, wadopt(w, json));
+	rsp->ok = true;
+	return (0);
 }

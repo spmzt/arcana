@@ -48,7 +48,6 @@ struct opts opts = {
 	.service_bin = PATH_SERVICE_BIN,
 	.sysrc_bin = PATH_SYSRC_BIN,
 	.netstat_bin = PATH_NETSTAT_BIN,
-	.sockstat_bin = PATH_SOCKSTAT_BIN,
 	.swapinfo_bin = PATH_SWAPINFO_BIN,
 	.zpool_bin = PATH_ZPOOL_BIN,
 	.pkg_bin = PATH_PKG_BIN,
@@ -113,7 +112,7 @@ usage(void)
 	    "[-O sysctl.conf]\n"
 	    "                 [-v log-directory] [-1 history.conf] [-2 directory]\n"
 	    "                 [-h ipfw] [-J ipfw.rules]\n"
-	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
+	    "                 [-N netstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
 	exit(2);
 }
@@ -307,7 +306,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:s:i:m:q:S:T:t:u:U:Vv:w:W:1:2:X:x:Y:y:Z:z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:s:i:m:q:S:T:t:u:U:Vv:w:W:1:2:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -378,9 +377,6 @@ main(int argc, char *argv[])
 			break;
 		case 'N':
 			opts.netstat_bin = optarg;
-			break;
-		case 'X':
-			opts.sockstat_bin = optarg;
 			break;
 		case 'W':
 			opts.swapinfo_bin = optarg;
@@ -491,8 +487,10 @@ main(int argc, char *argv[])
 		if (opts.self_path == NULL)
 			opts.self_path = self;
 		/* The program that is running, not one put in its place. */
-		if (opts.helper_bin == NULL)
+		if (opts.helper_bin == NULL) {
 			opts.helper_bin = self;
+			opts.helper_self = true;
+		}
 		/* Which build this is, before an update changes the file. */
 		build_id(self);
 	}
@@ -554,6 +552,7 @@ main(int argc, char *argv[])
 	if ((error = arc_register(ctx, NULL, &fam)) != 0)
 		fatal(pfh, "registering the %s family: %s", ARC_FAMILY_NAME,
 		    strerror(error));
+	event_family(fam);
 	if ((error = cbl_loop_new(ctx, &loop)) != 0)
 		fatal(pfh, "cbl_loop_new: %s", strerror(error));
 	for (i = 0; i < nl; i++) {
@@ -593,6 +592,7 @@ main(int argc, char *argv[])
 
 	for (i = 0; i < nl; i++)
 		cbl_listener_free(ls[i]);
+	event_family(NULL);
 	(void)cbl_family_unregister(fam);
 	cbl_loop_free(loop);
 	cbl_tls_free(tls);

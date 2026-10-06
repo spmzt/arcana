@@ -594,6 +594,45 @@ job_send(struct server *s, char *json, const char *title, int what,
 }
 
 /*
+ * Several jobs for one host, chosen together: one batch, or as many
+ * as the host takes at once, in the order given; into the queue when
+ * the queue is on.  Takes the jobs' text.
+ */
+void
+job_send_many(struct server *s, struct queued *q, int n)
+{
+	int	i, k;
+
+	for (i = 0; i < n; i++) {
+		q[i].what = JOB_STORAGE;
+		snprintf(q[i].sid, sizeof(q[i].sid), "%s", s->id);
+		snprintf(q[i].host, sizeof(q[i].host), "%s", s->name);
+	}
+	if (app.queue_on) {
+		for (i = 0; i < n; i++) {
+			if (app.nbatch == MAX_BATCH) {
+				toast(true, "The queue holds %d changes at "
+				    "most: %d were not queued", MAX_BATCH,
+				    n - i);
+				for (; i < n; i++)
+					free(q[i].json);
+				return;
+			}
+			app.batch[app.nbatch++] = q[i];
+		}
+		toast(false, "Queued: %d changes", n);
+		return;
+	}
+	for (i = 0; i < n; i += k) {
+		k = n - i > MAX_BATCH ? MAX_BATCH : n - i;
+		jobs_submit(s, q + i, k);
+	}
+	for (i = 0; i < n; i++)
+		free(q[i].json);
+	app.dock_open = true;
+}
+
+/*
  * A job that failed, sent again as it was: to the same host, with the
  * same words.  It goes into the queue when the queue is on.
  */
@@ -1668,7 +1707,7 @@ refresh_network(struct server *s, bool user)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
-	    "bridges", "geneve", "nhgroups" };
+	    "bridges", "geneve", "nhgroups", "neighbours" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];

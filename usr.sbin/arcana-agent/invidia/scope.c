@@ -33,10 +33,17 @@
 
 #include <sys/param.h>
 #include <sys/jail.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
+#include <sys/wait.h>
 
 #include <errno.h>
 #include <fcntl.h>
+#include <jail.h>
+#include <poll.h>
+#include <signal.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -121,7 +128,7 @@ scope_argv(struct work *w, char *const argv[])
 		;
 	v = wcalloc(w, n + 4, sizeof(*v));
 	k = 0;
-	if (argv[0] == opts.ifconfig_bin || argv[0] == opts.netstat_bin || argv[0] == opts.sockstat_bin ||
+	if (argv[0] == opts.ifconfig_bin || argv[0] == opts.netstat_bin ||
 	    argv[0] == opts.ngctl_bin) {
 		v[k++] = argv[0];
 		v[k++] = (char *)(uintptr_t)"-j";
@@ -166,6 +173,183 @@ helper_argv(struct work *w, const char *verb, size_t n,
 		v[4 + i] = (char *)(uintptr_t)words[i];
 	v[4 + n] = NULL;
 	return (v);
+}
+
+/*
+ * A jail's name and whether it has a network of its own ("new"), by
+ * its number; -1 when it is not there.
+ */
+int
+jail_jid_name(int jid, char *name, size_t nlen, char *vnet, size_t vlen)
+{
+	char	js[16], nb[MAXHOSTNAMELEN], vb[16];
+
+	snprintf(js, sizeof(js), "%d", jid);
+	if (jail_getv(0, "jid", js, "name", nb, "vnet", vb, NULL) == -1)
+		return (-1);
+	strlcpy(name, nb, nlen);
+	strlcpy(vnet, vb, vlen);
+	return (0);
+}
+
+/* The jail after jid, by number (0 for the first); 0 when none. */
+int
+jail_next(int jid)
+{
+	char	ls[16], js[16];
+	int	next;
+
+	snprintf(ls, sizeof(ls), "%d", jid);
+	js[0] = '\0';
+	if ((next = jail_getv(0, "lastjid", ls, "jid", js, NULL)) == -1)
+		return (0);
+	return (next);
+}
+
+/*
+ * A netlink(4) socket in a jail's own network, told of what is
+ * watched: the helper makes it there and hands it over on a socket
+ * that is its standard output.  -1 when it could not.
+ */
+int
+helper_netlink(int jid)
+{
+	static char *const		 noenv[] = { NULL };
+	posix_spawn_file_actions_t	 fa;
+	struct msghdr			 msg;
+	struct cmsghdr			*cm;
+	struct iovec			 iov;
+	struct pollfd			 pfd;
+	union {
+		struct cmsghdr	hdr;
+		char		buf[CMSG_SPACE(sizeof(int))];
+	}				 cbuf;
+	char				 js[16], one, *argv[5];
+	pid_t				 pid;
+	int				 sp[2], fd, rc, status;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sp) == -1)
+		return (-1);
+	snprintf(js, sizeof(js), "%d", jid);
+	argv[0] = (char *)(uintptr_t)opts.helper_bin;
+	argv[1] = (char *)(uintptr_t)"-Q";
+	argv[2] = js;
+	argv[3] = (char *)(uintptr_t)"route-socket";
+	argv[4] = NULL;
+	posix_spawn_file_actions_init(&fa);
+	posix_spawn_file_actions_addopen(&fa, STDIN_FILENO, "/dev/null",
+	    O_RDONLY, 0);
+	posix_spawn_file_actions_adddup2(&fa, sp[1], STDOUT_FILENO);
+	rc = posix_spawn(&pid, argv[0], &fa, NULL, argv, noenv);
+	posix_spawn_file_actions_destroy(&fa);
+	close(sp[1]);
+	if (rc != 0) {
+		close(sp[0]);
+		return (-1);
+	}
+	fd = -1;
+	pfd.fd = sp[0];
+	pfd.events = POLLIN;
+	if (poll(&pfd, 1, 5000) == 1) {
+		memset(&msg, 0, sizeof(msg));
+		iov.iov_base = &one;
+		iov.iov_len = 1;
+		msg.msg_iov = &iov;
+		msg.msg_iovlen = 1;
+		msg.msg_control = cbuf.buf;
+		msg.msg_controllen = sizeof(cbuf.buf);
+		if (recvmsg(sp[0], &msg, MSG_CMSG_CLOEXEC) == 1 &&
+		    (cm = CMSG_FIRSTHDR(&msg)) != NULL && cm->cmsg_level ==
+		    SOL_SOCKET && cm->cmsg_type == SCM_RIGHTS &&
+		    cm->cmsg_len == CMSG_LEN(sizeof(int)))
+			memcpy(&fd, CMSG_DATA(cm), sizeof(int));
+	}
+	close(sp[0]);
+	if (fd == -1)
+		(void)kill(pid, SIGKILL);
+	while (waitpid(pid, &status, 0) == -1 && errno == EINTR)
+		;
+	return (fd);
+}
+
+/* Lines written into a stream of the daemon's, each given on. */
+struct lines {
+	void	(*fn)(const char *, void *);
+	void	*arg;
+	char	*buf;
+	size_t	 len, cap;
+};
+
+static int
+lines_write(void *cookie, const char *data, int n)
+{
+	struct lines	*l = cookie;
+	char		*nl;
+	size_t		 k;
+
+	if (l->len + (size_t)n + 1 > l->cap) {
+		l->cap = (l->len + (size_t)n + 1) * 2;
+		if ((l->buf = realloc(l->buf, l->cap)) == NULL)
+			return (-1);
+	}
+	memcpy(l->buf + l->len, data, (size_t)n);
+	l->len += (size_t)n;
+	while ((nl = memchr(l->buf, '\n', l->len)) != NULL) {
+		*nl = '\0';
+		l->fn(l->buf, l->arg);
+		k = (size_t)(nl - l->buf) + 1;
+		memmove(l->buf, nl + 1, l->len - k);
+		l->len -= k;
+	}
+	return (n);
+}
+
+/*
+ * What the helper's verb prints, a line at a time to fn: of the host's
+ * own stack read here, by the daemon itself, as it is written; of a
+ * jail's, or when the helper is another program (-H), by the helper.
+ */
+int
+helper_lines(struct work *w, const char *verb, size_t n,
+    const char *const words[], void (*fn)(const char *, void *), void *arg)
+{
+	struct lines	 l;
+	FILE		*fp;
+	int		 step, rc;
+
+	if (w->jail != NULL || !opts.helper_self)
+		return (run_exec_lines(w, helper_argv(w, verb, n, words), fn,
+		    arg));
+	step = step_begin(w, ARC_STEP_KIND_LIB, strncmp(verb, "pcb-", 4) == 0 ?
+	    "sysctl(3)" : "netlink(4)", "%s %s", verb, n > 0 ? words[0] : "");
+	memset(&l, 0, sizeof(l));
+	l.fn = fn;
+	l.arg = arg;
+	if ((fp = fwopen(&l, lines_write)) == NULL) {
+		step_end(w, step, false, "fwopen");
+		return (-1);
+	}
+	/* Line by line: each is given on when it is whole. */
+	(void)setvbuf(fp, NULL, _IOLBF, 0);
+	if (strcmp(verb, "routes") == 0 && n == 4)
+		rc = route_list(fp, atoi(words[0]), (uint32_t)strtoul(words[1],
+		    NULL, 10), strcmp(words[2], "-") != 0 ? words[2] : NULL,
+		    strcmp(words[3], "-") != 0 ? words[3] : NULL);
+	else if (strcmp(verb, "route-get") == 0 && n == 2)
+		rc = route_lookup(fp, words[0], (uint32_t)strtoul(words[1],
+		    NULL, 10));
+	else if (strcmp(verb, "route-neighs") == 0 && n == 2)
+		rc = neigh_list(fp, atoi(words[0]), strcmp(words[1], "-") != 0 ?
+		    words[1] : NULL);
+	else if (strncmp(verb, "pcb-", 4) == 0 && n == 1)
+		rc = pcb_list(fp, strcmp(verb, "pcb-socks") == 0, atoi(
+		    words[0]));
+	else
+		rc = 2;
+	fclose(fp);
+	free(l.buf);
+	step_end(w, step, rc == 0, NULL);
+	return (rc == 0 ? 0 : -1);
 }
 
 /*
@@ -350,8 +534,24 @@ scope_helper(int argc, char **argv)
 	/* The routing tables, through netlink(4). */
 	if (strncmp(argv[1], "route", 5) == 0)
 		return (route_helper(argc - 1, argv + 1));
+	if (strncmp(argv[1], "pcb-", 4) == 0)
+		return (pcb_helper(argc - 1, argv + 1));
 	if (strcmp(argv[1], "zfs-pipe") == 0)
 		return (zfs_pipe(argc - 1, argv + 1));
+	/* A number of the network's, as the jail's own network has it. */
+	if (strcmp(argv[1], "sysctl-int") == 0 && argc == 3 &&
+	    strncmp(argv[2], "net.", 4) == 0) {
+		int	v;
+		size_t	len;
+
+		len = sizeof(v);
+		if (sysctlbyname(argv[2], &v, &len, NULL, 0) == -1) {
+			fprintf(stderr, "%s: %s\n", argv[2], strerror(errno));
+			return (1);
+		}
+		printf("%d\n", v);
+		return (0);
+	}
 	if (argc != 4)
 		return (2);
 	if ((out = ifq_text(argv[1], strcmp(argv[2], "-") == 0 ? NULL :

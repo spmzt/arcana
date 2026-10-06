@@ -296,6 +296,15 @@ definitions:
           hops (ECMP) points to, as netstat -O prints them: each with
           its index, how many routes use it, and its next hops with
           the share of each.
+      - name: neighbours
+        doc: |
+          The neighbours, ARP's and NDP's, asked of the kernel through
+          netlink(4): a JSON object with the array "neighbours", each
+          with its family, address, link-level address, interface,
+          state (reachable, stale, delay, probe, incomplete, permanent)
+          and when it moves on ("next", seconds of the kernel's uptime),
+          with "router" for a router; and "total", how many there are
+          before the filter.
   - name: storage-kind
     type: enum
     entries:
@@ -712,6 +721,23 @@ attribute-sets:
       - name: limit-swap
         type: u32
         doc: For history, the same for the swap in use.
+      - name: routes
+        type: nest
+        nested-attributes: route
+        multi-attr: true
+        doc: The routes of a part of network's dump of the routes.
+      - name: seconds
+        type: u32
+        doc: For fw-trace, how long to follow, at most.
+        checks:
+          min: 1
+          max: 60
+      - name: packets
+        type: u32
+        doc: For fw-trace, how many packets to follow, at most.
+        checks:
+          min: 1
+          max: 1000
 
   - name: host
     attributes:
@@ -1135,6 +1161,49 @@ attribute-sets:
         checks:
           max-len: max-output
 
+  - name: route
+    attributes:
+      - name: family
+        type: text
+        doc: The table it is of, Internet or Internet6.
+      - name: destination
+        type: text
+        doc: The prefix, or default.
+      - name: gateway
+        type: text
+        doc: The next hop's address, or link#n for a route on a link.
+      - name: flags
+        type: text
+        doc: Its flags as netstat -r writes them, UGS and so on.
+      - name: nhop
+        type: u32
+        doc: The kernel's nexthop it uses.
+      - name: mtu
+        type: u32
+      - name: interface-name
+        type: text
+      - name: metric
+        type: u32
+      - name: weight
+        type: u32
+        doc: Its share, against the other ways of a route of several.
+      - name: fib
+        type: u32
+      - name: prefixlen
+        type: u32
+      - name: source
+        type: text
+        doc: The address it sends from, when it is set.
+      - name: path
+        type: u32
+        doc: Which of the ways of a route of several (ECMP) this is.
+      - name: paths
+        type: u32
+        doc: How many ways the route has.
+      - name: expire-time
+        type: u32
+        doc: When a route that expires does.
+
 operations:
   - name: hello
     attribute-set: arcana
@@ -1267,10 +1336,10 @@ operations:
       With jail, those of a running jail that has a network of its own
       (vnet), read from the host: nothing runs in the jail for it but
       the jail's own birdc and wg.  As a dump, the routes, connections
-      and sockets come in parts as they are taken: each item has json,
-      an array of the next rows, a route with its "family" (Internet
-      or Internet6) in it, and total, how many rows the table has;
-      nothing is left out for size.
+      and sockets come in parts as they are taken: each item has total,
+      how many rows the table has, and the next rows: routes, typed,
+      for the routes, and json, an array of them, for the connections
+      and sockets; nothing is left out for size.
     do:
       request:
         attributes:
@@ -1304,6 +1373,7 @@ operations:
         attributes:
           - json
           - total
+          - routes
 
   - name: stats
     attribute-set: arcana
@@ -1851,9 +1921,11 @@ operations:
       network's routes have them; routes, with changed, how many more
       routes changed in a second than are said one by one; link and
       link-del, an interface with up, carrier and mtu; address-add
-      and address-del, an interface's address and prefixlen.  They
-      are the kernel's own netlink(4) messages, of the host's network
-      and not of a jail's.  threshold, with what (cpu, mem or swap),
+      and address-del, an interface's address and prefixlen; neigh
+      and neigh-del, a neighbour (ARP, NDP) as network's neighbours
+      has one.  They are the kernel's own netlink(4) messages, of the
+      host's network, and of each jail's own (vnet) too: one of a
+      jail's has "jail", its name, beside its kind.  threshold, with what (cpu, mem or swap),
       value, limit and over, when a figure of history crosses its
       limit, either way.
     do:
@@ -1866,3 +1938,51 @@ operations:
           - error
           - json
           - trace
+  - name: event
+    attribute-set: arcana
+    mcgrp: events
+    doc: |
+      One event, the moment it happens: json is it as events has
+      one, {"n","t","kind","data"}, of the same number.  What is sent
+      while nobody listens is not kept for them; events has the last
+      512, to read what came before a subscription or while it was
+      gone.
+    event:
+      attributes:
+        - json
+
+  - name: fw-trace
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Packets followed by the kernel itself through the firewall: each
+      that ipfw decides on whose source or destination is net-filter
+      (an address), as the kernel's ipfw:::rule-matched probe tells it
+      to dtrace(1), for up to seconds (10) or packets (100), whichever
+      ends first.  json: {"packets":[...],"seconds","limit"}, each
+      with ms (since it began), verdict (pass, deny, divert, tee,
+      dummynet, netgraph, ngtee, nat, reass, nat64), family, source,
+      destination, proto, sport, dport, rule (its number), interface
+      and direction (in or out).  With jail, of a jail's own firewall
+      (vnet): the packets on the jail's interfaces.  It needs
+      dtraceall(4) loaded.
+    do:
+      request:
+        attributes:
+          - jail
+          - net-filter
+          - seconds
+          - packets
+        required:
+          - net-filter
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+mcast-groups:
+  - name: events
+    auth: true
+    doc: The host's events, each as it happens (event).

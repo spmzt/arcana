@@ -56,7 +56,93 @@ static struct {
 	char		 fstab_sha[65];
 	char		*draft;		/* typed, kept over a refusal */
 	bool		 saving;
+	char		**sel;		/* the snapshots picked, to destroy */
+	int		 nsel;
 } sg;
+
+#define	SEL_MAX		2000
+
+static int
+sel_find(const char *name)
+{
+	int	i;
+
+	for (i = 0; i < sg.nsel; i++)
+		if (strcmp(sg.sel[i], name) == 0)
+			return (i);
+	return (-1);
+}
+
+static void
+sel_set(const char *name, bool on)
+{
+	int	i;
+
+	i = sel_find(name);
+	if (on && i == -1 && sg.nsel < SEL_MAX) {
+		if ((sg.sel = reallocarray(sg.sel, (size_t)sg.nsel + 1,
+		    sizeof(*sg.sel))) == NULL)
+			abort();
+		if ((sg.sel[sg.nsel++] = strdup(name)) == NULL)
+			abort();
+	} else if (!on && i != -1) {
+		free(sg.sel[i]);
+		sg.sel[i] = sg.sel[--sg.nsel];
+	}
+}
+
+static void
+sel_clear(void)
+{
+
+	while (sg.nsel > 0)
+		free(sg.sel[--sg.nsel]);
+}
+
+/* Is the snapshot in the list now?  A picked one that went is let go. */
+static bool
+snap_there(const char *name)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(sg.data[SK_SNAPSHOTS],
+	    "snapshots"), &it, true)) != NULL)
+		if (jstr(o, "name") != NULL && strcmp(jstr(o, "name"), name) ==
+		    0)
+			return (true);
+	return (false);
+}
+
+static const struct tcol snap_cols[] = {
+	{ "Snapshot", "name", false }, { "Used", "used", true },
+	{ "Referenced", "refer", true }, { "Taken", "creation", true },
+};
+
+/*
+ * Is it the newest snapshot of its dataset?  The host lists them the
+ * newest first: the first of its dataset is.
+ */
+static bool
+snap_newest(const char *name)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	const char		*n;
+	size_t			 ds;
+
+	ds = strcspn(name, "@");
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(sg.data[SK_SNAPSHOTS],
+	    "snapshots"), &it, true)) != NULL) {
+		if ((n = jstr(o, "name")) == NULL || strncmp(n, name, ds) != 0 ||
+		    n[ds] != '@')
+			continue;
+		return (strcmp(n, name) == 0);
+	}
+	return (false);
+}
 
 static void
 size(char *buf, size_t len, int64_t n)
@@ -541,14 +627,11 @@ view_datasets(struct html *h)
 static void
 view_snapshots(struct html *h)
 {
-	static const struct tcol cols[] = {
-		{ "Snapshot", "name", false }, { "Used", "used", true },
-		{ "Referenced", "refer", true }, { "Taken", "creation", true },
-	};
+	const struct tcol	*cols = snap_cols;
 	const ucl_object_t	**rows, *o;
 	const char		*name;
 	char			 buf[32], when[32];
-	int			 n, r;
+	int			 n, r, all, newest;
 
 	if (sg.of[0] != '\0') {
 		h_raw(h, "<div class=\"notice info\">Snapshots of <b>");
@@ -559,18 +642,60 @@ view_snapshots(struct html *h)
 		h_attr(h, "data-arg", sg.of);
 		h_raw(h, ">Snapshot now</button></div>");
 	}
+	/* What was picked and is gone since is no longer picked. */
+	for (r = sg.nsel - 1; r >= 0; r--)
+		if (!snap_there(sg.sel[r]))
+			sel_set(sg.sel[r], false);
+	rows = tbl_rows("snapshots", jget(sg.data[SK_SNAPSHOTS], "snapshots"),
+	    cols, 4, app.filter);
+	for (n = 0, all = 0; rows[n] != NULL; n++)
+		if (jstr(rows[n], "name") != NULL && sel_find(jstr(rows[n],
+		    "name")) != -1)
+			all++;
+	h_fmt(h, "<div class=\"selbar%s\"><label class=\"toggle\" title=\""
+	    "Pick every snapshot shown, as the filter leaves them\"><input "
+	    "type=\"checkbox\" data-act=\"st-sel-all\"%s%s><span>%s</span>"
+	    "</label>", sg.nsel > 0 ? " on" : "", n > 0 && all == n ?
+	    " checked" : "", n == 0 ? " disabled" : "", app.filter[0] !=
+	    '\0' ? "All shown" : "All");
+	for (r = 0, newest = 0; r < sg.nsel; r++)
+		if (snap_newest(sg.sel[r]))
+			newest++;
+	if (sg.nsel > 0) {
+		h_fmt(h, "<b>%d</b> picked<button class=\"small danger\" "
+		    "data-act=\"st-destroy-sel\">Destroy %d</button>",
+		    sg.nsel, sg.nsel);
+		/* Only the newest of a dataset is made again. */
+		if (newest > 0)
+			h_fmt(h, "<button class=\"small\" data-act=\""
+			    "st-resnap-sel\" title=\"Each picked that is the "
+			    "newest of its dataset, taken again now under its "
+			    "name\">Resnapshot %d</button>", newest);
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "st-sel-none\">Clear</button>");
+	} else
+		h_raw(h, "<span class=\"dim\">Pick snapshots to destroy or "
+		    "take them again at once; the filter narrows what All "
+		    "picks: a dataset's name, or a date.</span>");
+	if (n > 0)
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "st-sel-newest\" title=\"Pick the newest snapshot of "
+		    "each dataset shown\">Pick the newest</button>");
+	h_raw(h, "</div>");
 	h_raw(h, "<table class=\"net snapshots\">");
 	tbl_head(h, "snapshots", cols, 4, 1);
 	h_raw(h, "<tbody>");
-	rows = tbl_rows("snapshots", jget(sg.data[SK_SNAPSHOTS], "snapshots"),
-	    cols, 4, app.filter);
 	n = 0;
 	for (r = 0; (o = rows[r]) != NULL; r++) {
 		name = jstr(o, "name") != NULL ? jstr(o, "name") : "";
 		n++;
-		h_raw(h, "<tr");
+		h_fmt(h, "<tr%s", sel_find(name) != -1 ? " class=\"picked\"" :
+		    "");
 		h_attr(h, "data-snap", name);
-		h_raw(h, "><td class=\"mono\">");
+		h_raw(h, "><td class=\"mono\"><input type=\"checkbox\" "
+		    "class=\"pick\" data-act=\"st-sel\"");
+		h_attr(h, "data-arg", name);
+		h_raw(h, sel_find(name) != -1 ? " checked>" : ">");
 		h_txt(h, name);
 		h_raw(h, "</td><td>");
 		size(buf, sizeof(buf), jint(o, "used", 0));
@@ -582,8 +707,17 @@ view_snapshots(struct html *h)
 		fmt_age(when, sizeof(when), (double)jint(o, "creation", 0) *
 		    1000.0);
 		h_txt(h, when);
-		h_raw(h, "</td><td class=\"acts\"><button class=\"ghost small\""
-		    " data-act=\"st-rollback\"");
+		h_raw(h, "</td><td class=\"acts\">");
+		/* The newest of its dataset: made again, now. */
+		if (snap_newest(name)) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "st-resnap\" title=\"Destroy it and take it again, "
+			    "now, under the same name\"");
+			h_attr(h, "data-arg", name);
+			h_raw(h, ">Resnapshot</button>");
+		}
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "st-rollback\"");
 		h_attr(h, "data-arg", name);
 		h_raw(h, ">Roll back</button><button class=\"ghost small\" "
 		    "data-act=\"st-clone\"");
@@ -1818,17 +1952,148 @@ storage_action(const char *act, const char *arg, const char *value)
 		    "do-st-rollback", arg, "");
 	} else if (strcmp(act, "do-st-rollback") == 0) {
 		sjob(s, "zfs", "rollback", "", arg, 1, arg);
+	} else if (strcmp(act, "st-resnap") == 0) {
+		snprintf(body, sizeof(body), "zfs resnapshot %s, on %s: the "
+		    "snapshot is taken again, now, under the same name, and "
+		    "what it held of before is let go. The new one is taken "
+		    "first; the old one stays when zfs will not destroy it.",
+		    arg, s->name);
+		confirm("Take the snapshot again", body, "Resnapshot", false,
+		    "", "do-st-resnap", arg, "");
+	} else if (strcmp(act, "do-st-resnap") == 0) {
+		sjob(s, "zfs", "resnapshot", "", arg, 1, arg);
 	} else if (strcmp(act, "st-destroy") == 0) {
 		snprintf(body, sizeof(body), "zfs destroy %s, on %s. %s zfs "
 		    "refuses while it has snapshots, clones or datasets "
 		    "under it, or is in use.", arg, s->name, strchr(arg,
 		    '@') != NULL ? "The snapshot is gone for good." : "The "
 		    "dataset and everything in it is gone for good.");
+		/* A snapshot is asked about; a dataset's name is typed. */
 		confirm(strchr(arg, '@') != NULL ? "Destroy the snapshot" :
 		    "Destroy the dataset", body, "Destroy", true, strchr(arg,
-		    '@') != NULL ? strchr(arg, '@') + 1 : strrchr(arg, '/') !=
-		    NULL ? strrchr(arg, '/') + 1 : arg, "do-st-destroy", arg,
-		    "");
+		    '@') != NULL ? "" : strrchr(arg, '/') != NULL ?
+		    strrchr(arg, '/') + 1 : arg, "do-st-destroy", arg, "");
+	} else if (strcmp(act, "st-sel") == 0) {
+		sel_set(arg, sel_find(arg) == -1);
+	} else if (strcmp(act, "st-sel-none") == 0) {
+		sel_clear();
+	} else if (strcmp(act, "st-sel-all") == 0) {
+		const ucl_object_t	**rows, *o;
+		int	r, all;
+		bool	on;
+
+		/* All shown picked: none of them; else all of them. */
+		rows = tbl_rows("snapshots", jget(sg.data[SK_SNAPSHOTS],
+		    "snapshots"), snap_cols, 4, app.filter);
+		for (r = all = 0; (o = rows[r]) != NULL; r++)
+			if (jstr(o, "name") != NULL && sel_find(jstr(o,
+			    "name")) != -1)
+				all++;
+		/* r is how many are shown now. */
+		on = all != r;
+		for (r = 0; (o = rows[r]) != NULL; r++)
+			if (jstr(o, "name") != NULL)
+				sel_set(jstr(o, "name"), on);
+		free(rows);
+	} else if (strcmp(act, "st-destroy-sel") == 0 && sg.nsel > 0) {
+		uint64_t	bytes;
+		const ucl_object_t *o;
+		ucl_object_iter_t it;
+		char		 sz[32];
+
+		bytes = 0;
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(sg.data[SK_SNAPSHOTS],
+		    "snapshots"), &it, true)) != NULL)
+			if (jstr(o, "name") != NULL && sel_find(jstr(o,
+			    "name")) != -1)
+				bytes += (uint64_t)jint(o, "used", 0);
+		size(sz, sizeof(sz), (int64_t)bytes);
+		snprintf(body, sizeof(body), "zfs destroy of %d snapshot%s on "
+		    "%s, each a job of its own in one batch: %s%s%s. What "
+		    "each holds alone, about %s, is freed; a snapshot a "
+		    "clone was made of is refused, and the others are "
+		    "destroyed all the same.", sg.nsel, sg.nsel == 1 ? "" :
+		    "s", s->name, sg.sel[0], sg.nsel > 1 ? " and " : "",
+		    sg.nsel > 2 ? "the others" : sg.nsel == 2 ? sg.sel[1] :
+		    "", sz);
+		confirm("Destroy the snapshots", body, "Destroy", true, "",
+		    "do-st-destroy-sel", "", "");
+	} else if (strcmp(act, "st-sel-newest") == 0) {
+		const ucl_object_t	**rows;
+		int			  r;
+
+		/* As the table shows them: the filter narrows them. */
+		rows = tbl_rows("snapshots", jget(sg.data[SK_SNAPSHOTS],
+		    "snapshots"), snap_cols, 4, app.filter);
+		for (r = 0; rows[r] != NULL; r++)
+			if (jstr(rows[r], "name") != NULL && snap_newest(jstr(
+			    rows[r], "name")) && sel_find(jstr(rows[r],
+			    "name")) == -1)
+				sel_set(jstr(rows[r], "name"), true);
+		free(rows);
+	} else if (strcmp(act, "st-resnap-sel") == 0 && sg.nsel > 0) {
+		int	i, k;
+
+		for (i = k = 0; i < sg.nsel; i++)
+			if (snap_newest(sg.sel[i]))
+				k++;
+		snprintf(body, sizeof(body), "zfs resnapshot of %d snapshot%s "
+		    "on %s, each a job of its own in one batch: each is "
+		    "taken again, now, under the same name, the new one "
+		    "first. %s One zfs will not destroy (held, cloned) stays "
+		    "as it was, and the others are taken again all the "
+		    "same.", k, k == 1 ? "" : "s", s->name, k < sg.nsel ?
+		    "Those picked that are not the newest of their dataset "
+		    "are left as they are." : "");
+		confirm("Take the snapshots again", body, "Resnapshot", false,
+		    "", "do-st-resnap-sel", "", "");
+	} else if (strcmp(act, "do-st-resnap-sel") == 0 && sg.nsel > 0) {
+		struct queued	*q;
+		char		*qn;
+		int		 i, k;
+
+		if ((q = calloc((size_t)sg.nsel, sizeof(*q))) == NULL)
+			abort();
+		for (i = k = 0; i < sg.nsel; i++) {
+			if (!snap_newest(sg.sel[i]))
+				continue;
+			qn = json_quote(sg.sel[i]);
+			if (asprintf(&q[k].json, "{\"kind\":\"zfs\",\"verb\":"
+			    "\"resnapshot\",\"args\":[%s]}", qn) == -1)
+				abort();
+			free(qn);
+			snprintf(q[k].title, sizeof(q[k].title),
+			    "zfs resnapshot %s", sg.sel[i]);
+			snprintf(q[k].target, sizeof(q[k].target), "%s",
+			    sg.sel[i]);
+			k++;
+		}
+		if (k > 0)
+			job_send_many(s, q, k);
+		free(q);
+		sel_clear();
+	} else if (strcmp(act, "do-st-destroy-sel") == 0 && sg.nsel > 0) {
+		struct queued	*q;
+		char		*qn;
+		int		 i;
+
+		if ((q = calloc((size_t)sg.nsel, sizeof(*q))) == NULL)
+			abort();
+		for (i = 0; i < sg.nsel; i++) {
+			qn = json_quote(sg.sel[i]);
+			if (asprintf(&q[i].json, "{\"kind\":\"zfs\",\"verb\":"
+			    "\"destroy\",\"args\":[%s]}", qn) == -1)
+				abort();
+			free(qn);
+			snprintf(q[i].title, sizeof(q[i].title), "zfs destroy %s",
+			    sg.sel[i]);
+			snprintf(q[i].target, sizeof(q[i].target), "%s",
+			    sg.sel[i]);
+		}
+		job_send_many(s, q, sg.nsel);
+		free(q);
+		sel_clear();
 	} else if (strcmp(act, "do-st-destroy") == 0) {
 		sjob(s, "zfs", "destroy", "", arg, 1, arg);
 	} else if (strcmp(act, "st-mount") == 0) {

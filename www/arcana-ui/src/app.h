@@ -179,6 +179,7 @@ enum netkind {
 	NET_BRIDGES,
 	NET_GENEVE,
 	NET_NHGROUPS,
+	NET_NEIGHBOURS,
 };
 
 /* The network tab's one table: what is shown, from which server. */
@@ -442,6 +443,7 @@ void		 job_send(struct server *, char *, const char *, int,
 		    const char *);
 void		 job_send_host(struct server *, char *, const char *, int,
 		    const char *);
+void		 job_send_many(struct server *, struct queued *, int);
 void		 queue_run(void);
 void		 queue_clear(void);
 void		 jobs_poll(void);
@@ -582,6 +584,7 @@ bool		 procs_form(const char *, const ucl_object_t *);
 bool		 procs_action(const char *, const char *, const char *);
 void		 refresh_logs(struct server *, bool);
 void		 logs_tick(double);
+void		 logs_stream(const ucl_object_t *);
 void		 view_logs(struct html *, struct server *);
 bool		 logs_form(const char *, const ucl_object_t *);
 bool		 logs_action(const char *, const char *, const char *);

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.40.0
+  version: 0.49.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -485,13 +485,18 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup]
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, neighbours]
           description: The kernel's routes through netlink(4) (each with
             destination, gateway, flags, nhop, mtu, interface-name,
             metric, weight, fib, prefixlen, source and expire-time when
             it has them, and path of paths for one next hop of
-            several), netstat -onW, netstat -OnW, netstat -n, sockstat,
+            several), netstat -onW, netstat -OnW, the kernel's connections and
+            sockets in the shape of netstat -n and sockstat -w,
             getifaddrs(3), ngctl list -l, wg show (public keys only),
+            the neighbours of ARP and NDP through netlink(4) as
+            {"neighbours":[...],"total":n} (each with family, address,
+            lladdr, interface-name, state, next and router, and
+            only those with `filter` in them),
             birdc show status and protocols; bird-routes is birdc show
             route for what `filter` names, in birdc's words with a comma
             between them (a prefix, an address, `protocol,name`,
@@ -646,6 +651,12 @@ paths:
         array of the next values, then one with done and total, or one
         with error. A message with id and stop ends one early. The
         agent sends a part only when the one before was taken.
+        what events follows the host's events, which do not end: each
+        is a message with event, the event as GET events has one, the
+        moment the agent tells it (the console subscribes to the
+        agent's events group); lost true when some went past a page
+        too slow for them, to read them with GET events; error when
+        the host is gone. Until stop, or the socket closes.
       responses:
         "101":
           description: Switching to the WebSocket protocol
@@ -823,14 +834,47 @@ paths:
         (changed, how many more changed in a second than are said one
         by one), link and link-del (interface, up, carrier, mtu),
         address-add and address-del (interface, address, prefixlen),
+        neigh and neigh-del (a neighbour, as net/neighbours has one),
         and threshold (what, value, limit, over) when a figure of the
         history crosses its limit. The rest are the kernel's netlink(4)
-        messages of the host's own network.
+        messages of the host's own network, and of each vnet jail's,
+        which have jail, its name.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: after
           in: query
           schema: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: ok and data, or error
+  /api/servers/{server}/ipfw/trace:
+    get:
+      tags: [servers]
+      summary: Packets followed through the firewall by the kernel
+      description: Under data. packets is each packet to or from address
+        that ipfw decided on, as the kernel's ipfw:::rule-matched probe
+        told dtrace(1), with ms (since it began), verdict (pass, deny,
+        divert, tee, dummynet, netgraph, ngtee, nat, reass, nat64),
+        family, source, destination, proto, sport, dport, rule (its
+        number), interface and direction (in or out); seconds and limit
+        what it ran for. It takes up to seconds; the host needs
+        dtraceall(4). With jail, a vnet jail's own firewall, by the
+        jail's interfaces.
+      parameters:
+        - $ref: "#/components/parameters/server"
+        - name: address
+          in: query
+          required: true
+          schema: { type: string }
+        - name: seconds
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 60, default: 10 }
+        - name: packets
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 100 }
+        - name: jail
+          in: query
+          schema: { type: string }
       responses:
         "200":
           description: ok and data, or error

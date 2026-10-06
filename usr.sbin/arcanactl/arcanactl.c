@@ -14,6 +14,7 @@
 #include <err.h>
 #include <fcntl.h>
 #include <libxo/xo.h>
+#include <poll.h>
 #include <sha256.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -123,6 +124,7 @@ usage(void)
 	    "    net routes [-4 | -6] text\n"
 	    "    net routes [-4 | -6] -o rows\n"
 	    "    net routes | connections | sockets [-4 | -6] parts [text]\n"
+	    "    net neighbours [-4 | -6] [text]\n"
 	    "    interface name up | down | destroy\n"
 	    "    interface name give | take jail\n"
 	    "    interface epair give jail [bridge]\n"
@@ -161,7 +163,7 @@ usage(void)
 	    "    log [-o lines] [-f position] [name [text]]\n"
 	    "    history [after]\n"
 	    "    history set seconds samples [cpu%% mem%% swap%%]\n"
-	    "    events [after]\n"
+	    "    events [after | -f]\n"
 	    "    net bridges | geneve | ipfw | nhgroups\n"
 	    "    bridge name addm | deletem member\n"
 	    "    bridge name access member vlan\n"
@@ -178,6 +180,7 @@ usage(void)
 	    "    ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | "
 	    "pipe |\n        queue | sched name word ...\n"
 	    "    ipfw rules [-w file] [-n]\n"
+	    "    ipfw trace address [seconds [packets]]\n"
 	    "    storage disks | pools | datasets | mounts | importable | health\n"
 	    "    zfs load-key | unload-key [-r] dataset\n"
 	    "    zfs jail | unjail dataset jail\n"
@@ -187,6 +190,7 @@ usage(void)
 	    "    swapon | swapoff device\n"
 	    "    storage snapshots [dataset]\n"
 	    "    zfs snapshot | destroy | rollback [-r] name\n"
+	    "    zfs resnapshot [-r] snapshot\n"
 	    "    zfs create dataset [property=value ...]\n"
 	    "    zfs set dataset property=value ...\n"
 	    "    zfs inherit dataset property\n"
@@ -1354,13 +1358,82 @@ send:
 	return (submit(cl, &sp));
 }
 
+/* A text as a JSON string; what JSON would escape is left out. */
+static void
+route_str(FILE *fp, const char *key, const char *v, bool *first)
+{
+
+	if (v == NULL)
+		return;
+	fprintf(fp, "%s\"%s\":\"", *first ? "" : ",", key);
+	for (; *v != '\0'; v++)
+		if (*v != '"' && *v != '\\' && (unsigned char)*v >= 0x20)
+			fputc(*v, fp);
+	fputc('"', fp);
+	*first = false;
+}
+
+static void
+route_num(FILE *fp, const char *key, bool has, uint32_t v, bool *first)
+{
+
+	if (!has)
+		return;
+	fprintf(fp, "%s\"%s\":%u", *first ? "" : ",", key, v);
+	*first = false;
+}
+
+/* The typed routes of a part, as the rows of a table: a JSON array. */
+static char *
+routes_json(const struct arc_route *v, size_t n)
+{
+	FILE	*fp;
+	char	*json;
+	size_t	 len, i;
+	bool	 first;
+
+	json = NULL;
+	if ((fp = open_memstream(&json, &len)) == NULL)
+		return (NULL);
+	fputc('[', fp);
+	for (i = 0; i < n; i++) {
+		fprintf(fp, "%s{", i > 0 ? "," : "");
+		first = true;
+		route_str(fp, "family", v[i].family, &first);
+		route_str(fp, "destination", v[i].destination, &first);
+		route_str(fp, "gateway", v[i].gateway, &first);
+		route_str(fp, "flags", v[i].flags, &first);
+		route_num(fp, "nhop", v[i].has_nhop, v[i].nhop, &first);
+		route_num(fp, "mtu", v[i].has_mtu, v[i].mtu, &first);
+		route_str(fp, "interface-name", v[i].interface_name, &first);
+		route_num(fp, "metric", v[i].has_metric, v[i].metric, &first);
+		route_num(fp, "weight", v[i].has_weight, v[i].weight, &first);
+		route_num(fp, "fib", v[i].has_fib, v[i].fib, &first);
+		route_num(fp, "prefixlen", v[i].has_prefixlen, v[i].prefixlen,
+		    &first);
+		route_str(fp, "source", v[i].source, &first);
+		route_num(fp, "path", v[i].has_path, v[i].path, &first);
+		route_num(fp, "paths", v[i].has_paths, v[i].paths, &first);
+		route_num(fp, "expire-time", v[i].has_expire_time,
+		    v[i].expire_time, &first);
+		fputc('}', fp);
+	}
+	fputc(']', fp);
+	if (fclose(fp) != 0) {
+		free(json);
+		return (NULL);
+	}
+	return (json);
+}
+
 /* The program's libxo JSON, printed as it came. */
 static int
 cmd_net(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
-	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups" };
+	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups",
+	    "neighbours" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -1420,15 +1493,25 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 		if ((error = arc_network_dump(cl, &dq, &d)) != 0)
 			fail(cl, error, "net");
 		while ((error = arc_network_dump_next(d, &item)) == 0 && item !=
-		    NULL)
+		    NULL) {
+			char	*rows;
+
 			if (item->json != NULL)
 				xo_emit("{:json/%s}\n", item->json);
+			/* The routes come typed: written as rows. */
+			else if (item->routes.n > 0 && (rows = routes_json(
+			    item->routes.v, item->routes.n)) != NULL) {
+				xo_emit("{:json/%s}\n", rows);
+				free(rows);
+			}
+		}
 		cbl_dump_free(d);
 		if (error != 0)
 			fail(cl, error, "net");
 		return (0);
 	}
-	if (argc - optind == 1 && req.net_kind == ARC_NET_KIND_ROUTES)
+	if (argc - optind == 1 && (req.net_kind == ARC_NET_KIND_ROUTES ||
+	    req.net_kind == ARC_NET_KIND_NEIGHBOURS))
 		req.net_filter = argv[optind];
 	else if (optind != argc)
 		usage();
@@ -1585,6 +1668,51 @@ json_out(const char *what, bool ok, const char *error, const char *json,
  * history set seconds samples: how often it is sampled, how many kept.
  * events [after]: what happened on the host, after an event's number.
  */
+/* An event as it comes: a line of its own, at once. */
+static void
+event_line(const struct arc_event_ntf *ntf, void *arg)
+{
+
+	(void)arg;
+	if (ntf->json != NULL) {
+		printf("%s\n", ntf->json);
+		fflush(stdout);
+	}
+}
+
+/*
+ * The host's events as they happen, until the host goes or we are
+ * stopped: the connection is driven here, nothing asked of it after.
+ */
+static int
+follow_events(struct arc_client *cl)
+{
+	static const struct arc_events_handlers h = { .event = event_line };
+	struct pollfd	 pfd;
+	cbl_sub		*sub;
+	int		 error, ev, ms;
+
+	if ((error = arc_events_subscribe(cl, &h, NULL, &sub)) != 0)
+		fail(cl, error, "events");
+	for (;;) {
+		ev = 0;
+		ms = -1;
+		(void)cbl_conn_interest(cl->conn, &ev, &ms);
+		pfd.fd = cbl_conn_fd(cl->conn);
+		pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
+		    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
+		pfd.revents = 0;
+		if (poll(&pfd, 1, ms) == -1)
+			continue;
+		ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) != 0 ?
+		    CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) != 0 ?
+		    CBL_EV_WRITE : 0);
+		if ((error = cbl_conn_process(cl->conn, ev)) != 0)
+			break;
+	}
+	xo_errx(1, "events: the host is gone: %s", strerror(error));
+}
+
 static int
 cmd_gula(struct arc_client *cl, int argc, char **argv)
 {
@@ -1631,6 +1759,9 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 		sp.jail = netjail;
 		return (submit(cl, &sp));
 	}
+	if (strcmp(argv[0], "events") == 0 && argc == 2 && strcmp(argv[1],
+	    "-f") == 0)
+		return (follow_events(cl));
 	if (strcmp(argv[0], "events") == 0) {
 		struct arc_events_req	 eq;
 		struct arc_events_rsp	*er;
@@ -1781,6 +1912,37 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 
 	if (argc < 2)
 		usage();
+	if (strcmp(argv[1], "trace") == 0) {
+		struct arc_fw_trace_req	 tq;
+		struct arc_fw_trace_rsp	*tr;
+		const char		*e;
+
+		if (argc < 3 || argc > 5)
+			usage();
+		memset(&tq, 0, sizeof(tq));
+		tq.jail = netjail;
+		tq.net_filter = argv[2];
+		if (argc > 3) {
+			tq.has_seconds = true;
+			tq.seconds = (uint32_t)strtonum(argv[3], 1, 60, &e);
+			if (e != NULL)
+				xo_errx(1, "ipfw trace: seconds %s: %s", argv[3],
+				    e);
+		}
+		if (argc > 4) {
+			tq.has_packets = true;
+			tq.packets = (uint32_t)strtonum(argv[4], 1, 1000, &e);
+			if (e != NULL)
+				xo_errx(1, "ipfw trace: packets %s: %s", argv[4],
+				    e);
+		}
+		if ((error = arc_fw_trace(cl, &tq, &tr)) != 0)
+			fail(cl, error, "ipfw trace");
+		error = json_out("ipfw trace", tr->ok, tr->error, tr->json,
+		    tr->trace.v, tr->trace.n);
+		arc_fw_trace_rsp_free(tr);
+		return (error);
+	}
 	if (strcmp(argv[1], "rules") == 0) {
 		from = NULL;
 		memset(&req, 0, sizeof(req));

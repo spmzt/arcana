@@ -706,9 +706,9 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.schema pre.cddl')", 5);
 	ATF_CHECK(js_true("document.querySelector('.graph .node.k-auth')"));
 	run("document.querySelector('.trace button[data-act=raw]').click()");
-	wait_js("document.querySelector('.terminal')", 5);
-	ATF_CHECK(js_true("document.querySelector('.terminal').textContent."
-	    "includes('fake-jail: -f etc/jail.conf -c web')"));
+	wait_js("document.querySelector('.terminal') && document."
+	    "querySelector('.terminal').textContent.includes('fake-jail: -f "
+	    "etc/jail.conf -c web')", 5);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
 
@@ -800,6 +800,30 @@ ATF_TC_BODY(pwa, tc)
 	    "length > 0 && window.netw.some(t => t.includes('\"what\":"
 	    "\"sockets\"'))", 20);
 	run("WebSocket.prototype.send = window.ws1;");
+	/* The neighbours, ARP's and NDP's, asked of the kernel. */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=neighbours]').click()");
+	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
+	    ".some(r => r.textContent.includes('58:9c:fc:00:00:02') && "
+	    "r.textContent.includes('reachable'))", 20);
+	/* The nexthop groups, as netstat -O has them, under Nexthops:
+	 * each next hop a line of its own, with its share. */
+	ATF_CHECK(js_true("!document.querySelector('nav.sub button[data-act="
+	    "net-kind][data-arg=nhgroups]')"));
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=nexthops]').click()");
+	wait_js("document.querySelector('nav.sub button[data-act=net-kind]"
+	    "[data-arg=nhgroups]')", 10);
+	run("document.querySelector('nav.sub button[data-act=net-kind]"
+	    "[data-arg=nhgroups]').click()");
+	wait_js("document.querySelectorAll('.stage table.nhgroups .nhg-hop')"
+	    ".length >= 2 && document.querySelector('button[data-act="
+	    "net-kind][data-arg=nexthops].on')", 20);
+	ATF_CHECK(js_true("(() => { const h = [...document.querySelectorAll("
+	    "'.nhg-hop')].map(e => e.textContent); return h[0].includes("
+	    "'10.0.0.1') && h[0].includes('67%') && h[1].includes('em1') && "
+	    "h[1].includes('33%'); })()"));
+	shot("7n-nhgroups");
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]').click()");
 	wait_js("document.querySelector('table.ifaces tr[data-if=lo0] .chip')",
@@ -1492,7 +1516,8 @@ ATF_TC_BODY(pwa, tc)
 	ATF_CHECK(system("grep -q '^zfs snapshot -r tank/data@before$' "
 	    "storage.log") == 0);
 	run("document.querySelector('.dock > header').click()");
-	/* Its snapshots; one destroyed, by its name typed. */
+	/* Its snapshots; one destroyed, once it is confirmed: nothing is
+	 * typed for a snapshot. */
 	wait_js("document.querySelector('table.datasets tr[data-ds=\"tank/data"
 	    "\"] button[data-act=st-snaps-of]')", 20);
 	run("document.querySelector('table.datasets tr[data-ds=\"tank/data\"] "
@@ -1501,17 +1526,95 @@ ATF_TC_BODY(pwa, tc)
 	    "=== 2", 20);
 	run("document.querySelector('table.snapshots tr[data-snap=\"tank/data@a"
 	    "\"] button[data-act=st-destroy]').click()");
-	wait_js("document.querySelector('form[data-form=confirm] input')", 5);
-	run("const f = document.querySelector('form[data-form=confirm]'); "
-	    "const i = f.querySelector('input'); i.value = 'a'; "
-	    "i.dispatchEvent(new Event('input', { bubbles: true })); "
-	    "f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=confirm] "
+	    "input')"));
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('zfs destroy tank/data@a: done'))", 20);
 	ATF_CHECK(system("grep -q '^zfs destroy tank/data@a$' storage.log") ==
 	    0);
+	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Several picked, here all of them, and destroyed at once: one
+	 * question, one batch of a job each.
+	 */
+	run("document.querySelector('input[data-act=st-sel-all]').click()");
+	wait_js("document.querySelectorAll('table.snapshots tr.picked')."
+	    "length === 2 && document.querySelector('button[data-act="
+	    "st-destroy-sel]').textContent === 'Destroy 2'", 5);
+	shot("7l-snapshots-picked");
+	run("document.querySelector('button[data-act=st-destroy-sel]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "!document.querySelector('form[data-form=confirm] input')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("[ $(grep -c '^zfs destroy tank/data@' "
+	    "storage.log) -ge 3 ]") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^zfs destroy tank/data@b$' storage.log && "
+	    "[ $(grep -c '^zfs destroy tank/data@a$' storage.log) -eq 2 ]") ==
+	    0);
+	ATF_CHECK(js_true("!document.querySelector('button[data-act="
+	    "st-destroy-sel]')"));
+	run("document.querySelector('.dock > header').click()");
+	/* The newest of a dataset's snapshots, and only it, taken again
+	 * under its name: the new one first, then the old one goes. */
+	ATF_CHECK(js_true("document.querySelector('table.snapshots tr[data-"
+	    "snap=\"tank/data@b\"] button[data-act=st-resnap]') && !document."
+	    "querySelector('table.snapshots tr[data-snap=\"tank/data@a\"] "
+	    "button[data-act=st-resnap]')"));
+	run("document.querySelector('table.snapshots tr[data-snap=\"tank/data@b"
+	    "\"] button[data-act=st-resnap]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "!document.querySelector('form[data-form=confirm] input')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('zfs resnapshot tank/data@b: done'))", 20);
+	ATF_CHECK(system("grep -A2 '^zfs snapshot tank/data@b.resnap$' "
+	    "storage.log | tr '\\n' '|' | grep -q '^zfs snapshot "
+	    "tank/data@b.resnap|zfs destroy tank/data@b|zfs rename "
+	    "tank/data@b.resnap tank/data@b|'") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* Several at once: the newest of each dataset picked, and taken
+	 * again in one batch; one picked that is not the newest left. */
+	run("document.querySelector('button[data-act=st-sel-newest]').click()");
+	wait_js("document.querySelectorAll('table.snapshots tr.picked')."
+	    "length === 1 && document.querySelector('table.snapshots tr."
+	    "picked').dataset.snap === 'tank/data@b' && document."
+	    "querySelector('button[data-act=st-resnap-sel]').textContent "
+	    "=== 'Resnapshot 1'", 5);
+	run("document.querySelector('table.snapshots tr[data-snap=\"tank/data@a"
+	    "\"] input[data-act=st-sel]').click()");
+	wait_js("document.querySelectorAll('table.snapshots tr.picked')."
+	    "length === 2 && document.querySelector('button[data-act="
+	    "st-resnap-sel]').textContent === 'Resnapshot 1'", 5);
+	shot("7l-snapshots-resnap");
+	run("document.querySelector('button[data-act=st-resnap-sel]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "document.querySelector('form[data-form=confirm]').textContent."
+	    "includes('not the newest of their dataset are left')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("[ $(grep -c '^zfs rename "
+	    "tank/data@b.resnap tank/data@b$' storage.log) -ge 2 ]") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("[ $(grep -c '^zfs rename tank/data@b.resnap "
+	    "tank/data@b$' storage.log) -eq 2 ] && ! grep -q 'tank/data@a."
+	    "resnap' storage.log") == 0);
+	ATF_CHECK(js_true("!document.querySelector('table.snapshots tr."
+	    "picked')"));
 	run("document.querySelector('.dock > header').click()");
 	/* The disks are this machine's own. */
 	run("document.querySelector('button[data-act=st-kind][data-arg=disks]')"
@@ -1611,17 +1714,18 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('table.kmem thead').textContent."
 	    "includes('Item size')", 5);
 	run("const f = document.querySelector('form[data-form=kmod-load]'); "
-	    "f.name.value = 'sctp'; f.persist.checked = true; "
+	    "f.name.value = 'if_disc'; f.persist.checked = true; "
 	    "f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('kldload sctp: done'))", 20);
-	ATF_CHECK(system("grep -q '^kldload -n sctp$' kld.log && grep -q "
-	    "'^kld_list=\"sctp\"$' rc.conf") == 0);
-	/* Kept, and not in this kernel: said. */
+	    "t.textContent.includes('kldload if_disc: done'))", 20);
+	ATF_CHECK(system("grep -q '^kldload -n if_disc$' kld.log && grep -q "
+	    "'^kld_list=\"if_disc\"$' rc.conf") == 0);
+	/* Kept, and not in this kernel: said.  A module hardly ever
+	 * loaded, so that the kernel the test runs on has not. */
 	wait_js("document.querySelector('.notice.info') && document."
-	    "querySelector('.notice.info').textContent.includes('sctp')", 20);
+	    "querySelector('.notice.info').textContent.includes('if_disc')", 20);
 	run("document.querySelector('.dock > header').click()");
 	/* One that is in is unloaded once its name is typed. */
 	run("window.kld = [...document.querySelectorAll('table.kmods button"
@@ -1717,8 +1821,8 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('form[data-form=sy-set] input[name="
 	    "value]')", 5);
 	/* It is kept already: so says the box, ticked. */
-	ATF_CHECK(js_true("document.querySelector('form[data-form=sy-set] "
-	    "input[name=persist]').checked"));
+	wait_js("document.querySelector('form[data-form=sy-set] "
+	    "input[name=persist]').checked", 5);
 	run("const f = document.querySelector('form[data-form=sy-set]'); "
 	    "f.value.value = '8192'; f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
@@ -1866,6 +1970,31 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.stage').textContent.includes("
 	    "'events, the newest first') && document.querySelector("
 	    "'label.lg-file select').value === '@events'", 10);
+	/* Told as it happens, not asked for: a limit of the memory's
+	 * crossed is shown as the agent tells it, over the stream. */
+	wait_js("document.querySelector('.stage').textContent.includes("
+	    "'the moment the agent tells it')", 10);
+	run("window.evt0 = performance.now(); window.lim = (cpu, mem) => fetch('/api/servers').then(r => "
+	    "r.json()).then(j => Promise.all(j.servers.map(s => fetch("
+	    "'/api/servers/' + s.id + '/history', { method: 'POST', headers: "
+	    "{ 'Content-Type': 'application/json', 'X-Arcana': '1' }, body: "
+	    "JSON.stringify({ step: 5, keep: 720, cpu: cpu, mem: mem, swap: "
+	    "50 }) }))));");
+	run("window.lim(90, 1);");
+	wait_js("[...document.querySelectorAll('table.logs tbody tr')].some("
+	    "r => r.textContent.includes('threshold') && r.textContent."
+	    "includes('mem at'))", 20);
+	/* Nothing was asked again for it: it came by itself. */
+	ATF_CHECK(js_true("!performance.getEntriesByType('resource').some("
+	    "e => e.name.includes('/events?after=') && e.startTime > "
+	    "window.evt0)"));
+	/* And the way back under, as well, while it stays followed. */
+	run("window.lim(90, 90);");
+	wait_js("[...document.querySelectorAll('table.logs tbody tr')].some("
+	    "r => r.textContent.includes('back under its limit of 90%')) && "
+	    "document.querySelector('.stage').textContent.includes("
+	    "'the moment the agent tells it')", 20);
+	shot("7r-events-live");
 	run("const s = document.querySelector('label.lg-file select'); "
 	    "s.value = 'auth.log'; s.dispatchEvent(new Event('input', "
 	    "{ bubbles: true }));");
