@@ -69,6 +69,98 @@ flag_of(const ucl_object_t *m, const char *name)
 	return (false);
 }
 
+/* A bridge's own options, to set; and the addresses it has learned. */
+static void
+bridge_more(struct html *h, const ucl_object_t *b, const char *name)
+{
+	static const struct tcol cols[] = {
+		{ "Address", "mac", false }, { "VLAN", "vlan", true },
+		{ "Behind", "member", false }, { "Expires in", "expire", true },
+	};
+	static const struct {
+		const char	*name, *label, *hint;
+	} opts[] = {
+		{ "proto", "Protocol", "rstp or stp" },
+		{ "priority", "Priority", "0 to 61440, in steps of 4096" },
+		{ "hellotime", "Hello", "1 or 2 s" },
+		{ "fwddelay", "Forward delay", "4 to 30 s" },
+		{ "maxage", "Max age", "6 to 40 s" },
+		{ "holdcnt", "Hold count", "1 to 10" },
+		{ "maxaddr", "Addresses kept", "how many at most" },
+		{ "timeout", "Forgotten after", "seconds; 0 never" },
+	};
+	const ucl_object_t	**rows, *o;
+	char			  key[64], buf[32];
+	size_t			  i;
+	int			  r;
+
+	snprintf(key, sizeof(key), "bropt-%.20s", name);
+	h_raw(h, "<div class=\"brmore\">");
+	box_head(h, key, "h5");
+	h_raw(h, "<span>The bridge's own options</span></h5>");
+	/* Shut until it is asked for: it is seldom what one came for. */
+	if (!box_shut(key)) {
+		h_raw(h, "<form data-form=\"br-set\" class=\"gn-set\"><input "
+		    "type=\"hidden\" name=\"bridge\"");
+		h_attr(h, "value", name);
+		h_raw(h, ">");
+		for (i = 0; i < sizeof(opts) / sizeof(opts[0]); i++) {
+			const ucl_object_t *v = jget(b, opts[i].name);
+
+			h_fmt(h, "<label>%s<input name=\"%s\" spellcheck=\""
+			    "false\" autocomplete=\"off\" placeholder=\"%s\"",
+			    opts[i].label, opts[i].name, opts[i].hint);
+			h_attr(h, "value", v != NULL ?
+			    ucl_object_tostring_forced(v) : "");
+			h_raw(h, "></label>");
+		}
+		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"persist\"><span>keep in rc.conf</span></label>"
+		    "<button class=\"small\">Set what was changed</button>"
+		    "</form>");
+	}
+	snprintf(key, sizeof(key), "brmac-%.20s", name);
+	box_head(h, key, "h5");
+	h_fmt(h, "<span>Addresses learned</span><span class=\"chip dim\">%lld"
+	    "</span></h5>", (long long)jint(b, "learned_total", 0));
+	if (!box_shut(key)) {
+		h_raw(h, "<table class=\"net brmac\">");
+		tbl_head(h, key, cols, 4, 0);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows(key, jget(b, "learned"), cols, 4, app.filter);
+		for (r = 0; (o = rows[r]) != NULL; r++) {
+			h_raw(h, "<tr><td class=\"mono\"><b>");
+			h_txt(h, jstr(o, "mac"));
+			h_raw(h, "</b>");
+			if (jbool(o, "static") || jbool(o, "sticky"))
+				h_fmt(h, " <span class=\"chip dim\">%s</span>",
+				    jbool(o, "static") ? "static" : "sticky");
+			h_raw(h, "</td><td>");
+			if (jget(o, "vlan") != NULL)
+				h_fmt(h, "%lld", (long long)jint(o, "vlan", 0));
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(o, "member"));
+			snprintf(buf, sizeof(buf), "%lld s", (long long)jint(o,
+			    "expire", 0));
+			h_raw(h, "</td><td class=\"dim\">");
+			h_txt(h, buf);
+			h_raw(h, "</td></tr>");
+		}
+		if (r == 0)
+			h_raw(h, "<tr><td colspan=\"4\" class=\"dim\">None "
+			    "yet: a bridge learns an address when a frame "
+			    "comes from it.</td></tr>");
+		free(rows);
+		h_raw(h, "</tbody></table>");
+		if (jint(b, "learned_total", 0) > (int64_t)ucl_array_size(jget(
+		    b, "learned")))
+			h_fmt(h, "<p class=\"dim\">The first %d of %lld.</p>",
+			    (int)ucl_array_size(jget(b, "learned")),
+			    (long long)jint(b, "learned_total", 0));
+	}
+	h_raw(h, "</div>");
+}
+
 void
 view_bridges(struct html *h, struct server *s, const ucl_object_t *bridges)
 {
@@ -300,7 +392,9 @@ view_bridges(struct html *h, struct server *s, const ucl_object_t *bridges)
 		    "in: epair0a, em1\"><label class=\"toggle\"><input type=\""
 		    "checkbox\" name=\"persist\"><span>keep in rc.conf</span>"
 		    "</label><button class=\"ghost small\">Add member</button>"
-		    "</form></section>");
+		    "</form>");
+		bridge_more(h, b, name);
+		h_raw(h, "</section>");
 	}
 	if (n == 0)
 		h_raw(h, "<div class=\"empty\"><p>No bridge here. One is made "
@@ -489,10 +583,48 @@ l2_form(const char *form, const ucl_object_t *f)
 	bool		 new;
 
 	if (strcmp(form, "br-port") != 0 && strcmp(form, "br-add") != 0 &&
-	    strcmp(form, "gn-set") != 0)
+	    strcmp(form, "gn-set") != 0 && strcmp(form, "br-set") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(form, "br-set") == 0) {
+		static const char *const bo[] = { "proto", "priority",
+		    "hellotime", "fwddelay", "maxage", "holdcnt", "maxaddr",
+		    "timeout" };
+		const ucl_object_t	*b, *cur;
+		ucl_object_iter_t	 it;
+		int			 sent;
+
+		/* Each that is not what the bridge has now is set. */
+		name = jstr(f, "bridge") != NULL ? jstr(f, "bridge") : "";
+		b = NULL;
+		it = NULL;
+		while (app.net.data != NULL && (b = ucl_object_iterate(jget(
+		    app.net.data, "data.bridges"), &it, true)) != NULL)
+			if (jstr(b, "name") != NULL && strcmp(jstr(b, "name"),
+			    name) == 0)
+				break;
+		sent = 0;
+		for (i = 0; i < sizeof(bo) / sizeof(bo[0]); i++) {
+			v = jstr(f, bo[i]) != NULL ? jstr(f, bo[i]) : "";
+			cur = b != NULL ? jget(b, bo[i]) : NULL;
+			if (v[0] == '\0' || (cur != NULL && strcmp(
+			    ucl_object_tostring_forced(cur), v) == 0))
+				continue;
+			if (!word_ok(v, "")) {
+				toast(true, "%s is a number, or stp or rstp",
+				    bo[i]);
+				return (true);
+			}
+			snprintf(args, sizeof(args), "\"%s\",\"%s\"", bo[i], v);
+			l2_job(s, "bridge", name, "set", args, jbool(f,
+			    "persist"));
+			sent++;
+		}
+		if (sent == 0)
+			toast(false, "Nothing was changed");
+		return (true);
+	}
 	if (strcmp(form, "br-add") == 0) {
 		v = jstr(f, "member") != NULL ? jstr(f, "member") : "";
 		name = jstr(f, "bridge") != NULL ? jstr(f, "bridge") : "";

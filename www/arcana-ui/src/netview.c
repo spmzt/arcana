@@ -28,6 +28,10 @@ static const struct column routes_cols[] = {
 	{ "Nhop", "nhop", NULL },
 	{ "MTU", "mtu", NULL },
 	{ "Interface", "interface-name", NULL },
+	{ "Metric", "metric", NULL },
+	{ "Weight", "weight", NULL },
+	{ "Path", "path", "paths" },
+	{ "Source", "source", NULL },
 	{ "Expire", "expire-time", NULL },
 };
 
@@ -67,37 +71,10 @@ static void	cell(struct html *, const ucl_object_t *, const struct column *);
 static int	table(struct html *, const ucl_object_t *, const struct column *,
 		    size_t, const char *);
 static void	route_delete(struct html *, const ucl_object_t *, const char *);
-static int	cmp_rows(const void *, const void *);
 static int	interfaces(struct html *, const struct server *,
 		    const ucl_object_t *);
 static void	fmt_bytes(char *, size_t, int64_t);
 
-/* What qsort(3) compares by: the sorted column of the table drawn. */
-static const struct column	*sort_col;
-static bool			 sort_desc;
-
-/* Numbers as numbers, everything else as text. */
-static int
-cmp_rows(const void *a, const void *b)
-{
-	const ucl_object_t	*x, *y;
-	const char		*sx, *sy;
-	char			*ex, *ey;
-	double			 dx, dy;
-	int			 r;
-
-	x = jget(*(const ucl_object_t *const *)a, sort_col->path);
-	y = jget(*(const ucl_object_t *const *)b, sort_col->path);
-	sx = x != NULL ? ucl_object_tostring_forced(x) : "";
-	sy = y != NULL ? ucl_object_tostring_forced(y) : "";
-	dx = strtod(sx, &ex);
-	dy = strtod(sy, &ey);
-	if (*sx != '\0' && *sy != '\0' && *ex == '\0' && *ey == '\0')
-		r = dx < dy ? -1 : dx > dy ? 1 : 0;
-	else
-		r = strcmp(sx, sy);
-	return (sort_desc ? -r : r);
-}
 
 /* One cell: the value at path, or "a:b" with path2, as text. */
 static void
@@ -116,58 +93,31 @@ cell(struct html *h, const ucl_object_t *e, const struct column *c)
 	h_raw(h, "</td>");
 }
 
-/* A table of the entries in the array; the rows shown. */
+/*
+ * A table of the entries in the array, sorted and filtered as every
+ * table is (tbl.c); the rows shown.  id names it, for the order kept.
+ */
 static int
 table(struct html *h, const ucl_object_t *arr, const struct column *cols,
     size_t ncols, const char *family)
 {
-	const ucl_object_t	*e, **rows;
-	ucl_object_iter_t	 it;
-	size_t			 i, c, n, cap;
-	bool			 sorted;
+	struct tcol		 tc[16];
+	const ucl_object_t	**rows;
+	char			 id[48];
+	size_t			 i, c;
 
-	sorted = app.net.sort >= 0 && (size_t)app.net.sort < ncols;
-	h_raw(h, "<table class=\"net\"><thead><tr>");
-	for (i = 0; i < ncols; i++) {
-		h_fmt(h, "<th class=\"sortable%s\" data-act=\"net-sort\" "
-		    "data-arg=\"%zu\" title=\"Sort by this column\">",
-		    sorted && (size_t)app.net.sort == i ? app.net.sort_desc ?
-		    " desc" : " asc" : "", i);
-		h_txt(h, cols[i].title);
-		h_raw(h, "</th>");
+	for (c = 0; c < ncols && c < 16; c++) {
+		tc[c].title = cols[c].title;
+		tc[c].key = cols[c].path;
+		tc[c].num = false;
 	}
-	if (family != NULL)
-		h_raw(h, "<th></th>");
-	h_raw(h, "</tr></thead><tbody>");
-	/* The rows that pass the filter, then in the order asked for. */
-	rows = NULL;
-	n = cap = 0;
-	it = NULL;
-	while ((e = ucl_object_iterate(arr, &it, true)) != NULL) {
-		if (app.filter[0] != '\0') {
-			char *line = (char *)ucl_object_emit(e,
-			    UCL_EMIT_JSON_COMPACT);
-			bool hit = line != NULL && strstr(line, app.filter) !=
-			    NULL;
-
-			free(line);
-			if (!hit)
-				continue;
-		}
-		if (n == cap) {
-			cap = cap == 0 ? 256 : cap * 2;
-			if ((rows = reallocarray(rows, cap, sizeof(*rows))) ==
-			    NULL)
-				abort();
-		}
-		rows[n++] = e;
-	}
-	if (sorted && n > 1) {
-		sort_col = &cols[app.net.sort];
-		sort_desc = app.net.sort_desc;
-		qsort(rows, n, sizeof(*rows), cmp_rows);
-	}
-	for (i = 0; i < n; i++) {
+	snprintf(id, sizeof(id), "net-%d-%s", (int)app.net.kind, family !=
+	    NULL ? family : "");
+	h_raw(h, "<table class=\"net\">");
+	tbl_head(h, id, tc, (int)c, family != NULL ? 1 : 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows(id, arr, tc, (int)c, app.filter);
+	for (i = 0; rows[i] != NULL; i++) {
 		h_raw(h, "<tr>");
 		for (c = 0; c < ncols; c++)
 			cell(h, rows[i], &cols[c]);
@@ -177,7 +127,7 @@ table(struct html *h, const ucl_object_t *arr, const struct column *cols,
 	}
 	free(rows);
 	h_raw(h, "</tbody></table>");
-	return ((int)n);
+	return ((int)i);
 }
 
 /*
@@ -205,6 +155,63 @@ route_delete(struct html *h, const ucl_object_t *e, const char *family)
 		h_raw(h, ">×</button>");
 	}
 	h_raw(h, "</td>");
+}
+
+/*
+ * The nexthop groups, what a route of several next hops points to:
+ * each with its next hops and the share of each.
+ */
+static int
+nhgroups(struct html *h, const ucl_object_t *fams)
+{
+	static const struct tcol	cols[] = {
+		{ "Group", "nhgrp-index", true },
+		{ "Routes using it", "nhg-refcnt", true },
+		{ "Next hops", NULL, false },
+	};
+	const ucl_object_t		**rows, *fam, *g, *n;
+	ucl_object_iter_t		  it, nit;
+	int				  r, shown;
+
+	shown = 0;
+	it = NULL;
+	while ((fam = ucl_object_iterate(fams, &it, true)) != NULL) {
+		h_raw(h, "<h4 class=\"family\">");
+		h_txt(h, jstr(fam, "address-family"));
+		h_raw(h, "</h4><table class=\"net nhgroups\">");
+		tbl_head(h, "nhgroups", cols, 3, 0);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows("nhgroups", jget(fam, "nhgrp-entry"), cols, 3,
+		    NULL);
+		for (r = 0; (g = rows[r]) != NULL; r++) {
+			shown++;
+			h_fmt(h, "<tr><td>%lld</td><td>%lld</td><td>",
+			    (long long)jint(g, "nhgrp-index", 0),
+			    (long long)jint(g, "nhg-refcnt", 0));
+			nit = NULL;
+			while ((n = ucl_object_iterate(jget(g, "nhop-weights"),
+			    &nit, true)) != NULL) {
+				h_raw(h, "<span class=\"chip\" title=\"A next "
+				    "hop of the group, and its share\">");
+				h_txt(h, jstr(n, "nh-gw"));
+				h_raw(h, " on ");
+				h_txt(h, jstr(n, "nh-interface"));
+				h_fmt(h, " · share %lld · nexthop %lld</span> ",
+				    (long long)jint(n, "nh-weight", 0),
+				    (long long)jint(n, "nh-index", 0));
+			}
+			h_raw(h, "</td></tr>");
+		}
+		free(rows);
+		h_raw(h, "</tbody></table>");
+	}
+	if (shown == 0)
+		h_raw(h, "<div class=\"empty\"><p>No route of this host has "
+		    "several next hops. One is made by a route with several "
+		    "gateways, <code>10.0.0.1@2,10.0.0.2@1</code>, each with "
+		    "its share after the @, or by a second route to a "
+		    "destination that has one.</p></div>");
+	return (shown);
 }
 
 /* A count of bytes, in the unit that keeps it short. */
@@ -247,19 +254,27 @@ cloned(const char *name)
 static int
 interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 {
-	const ucl_object_t	*o, *a;
-	ucl_object_iter_t	 it, ait;
+	static const struct tcol cols[] = {
+		{ "Interface", "name", false }, { "State", "up", false },
+		{ "Addresses", NULL, false }, { "MTU", "mtu", true },
+		{ "Ether", "ether", false }, { "In / out", "ibytes", true },
+		{ "Now", NULL, false },
+	};
+	const ucl_object_t	*o, *a, **rows;
+	ucl_object_iter_t	 ait;
 	const char		*name;
 	char			 buf[96], in[24], out[24];
 	bool			 up, match;
-	int			 n;
+	int			 n, r;
 
-	h_raw(h, "<table class=\"net ifaces\"><thead><tr><th>Interface</th>"
-	    "<th>State</th><th>Addresses</th><th>MTU</th><th>Ether</th>"
-	    "<th>In / out</th><th>Now</th><th></th></tr></thead><tbody>");
+	h_raw(h, "<table class=\"net ifaces\">");
+	tbl_head(h, "ifaces", cols, 7, 1);
+	h_raw(h, "<tbody>");
 	n = 0;
-	it = NULL;
-	while ((o = ucl_object_iterate(arr, &it, true)) != NULL) {
+	/* In the order asked for; the filter is this table's own, which
+	 * looks at the addresses too. */
+	rows = tbl_rows("ifaces", arr, cols, 7, NULL);
+	for (r = 0; (o = rows[r]) != NULL; r++) {
 		if ((name = jstr(o, "name")) == NULL)
 			continue;
 		match = app.filter[0] == '\0' || strstr(name, app.filter) !=
@@ -381,6 +396,7 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 		}
 		h_raw(h, "</td></tr>");
 	}
+	free(rows);
 	h_raw(h, "</tbody></table>");
 	return (n);
 }
@@ -396,6 +412,7 @@ view_network(struct html *h, struct server *s)
 		{ "interfaces", "Interfaces" }, { "netgraph", "Netgraph" },
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
+		{ "nhgroups", "Nexthop groups" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -419,7 +436,7 @@ view_network(struct html *h, struct server *s)
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
 	/* What is of the base system too, and came later. */
-	for (i = 8; i < 10 && (!plug || scoped); i++)
+	for (i = 8; i < 11 && (!plug || scoped); i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
 		    " on" : "", kinds[i].arg, kinds[i].title);
@@ -540,7 +557,7 @@ view_network(struct html *h, struct server *s)
 			h_txt(h, jstr(fam, "address-family"));
 			h_raw(h, "</h4>");
 			n = app.net.kind == NET_ROUTES ? table(h, jget(fam,
-			    "rt-entry"), routes_cols, 7, jstr(fam,
+			    "rt-entry"), routes_cols, 11, jstr(fam,
 			    "address-family") != NULL ? jstr(fam,
 			    "address-family") : "") : table(h, jget(fam,
 			    "nh-entry"), nexthops_cols, 10, NULL);
@@ -575,6 +592,10 @@ view_network(struct html *h, struct server *s)
 	case NET_BRIDGES:
 		view_bridges(h, s, jget(app.net.data, "data.bridges"));
 		return;
+	case NET_NHGROUPS:
+		shown = nhgroups(h, jget(app.net.data, "data.statistics."
+		    "route-nhgrp-information.nhgrp-table.rt-family"));
+		break;
 	case NET_GENEVE:
 		view_geneve(h, s, jget(app.net.data, "data.geneves"));
 		return;

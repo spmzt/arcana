@@ -54,7 +54,6 @@ struct opts opts = {
 	.pkg_bin = PATH_PKG_BIN,
 	.git_bin = PATH_GIT_BIN,
 	.ifconfig_bin = PATH_IFCONFIG_BIN,
-	.route_bin = PATH_ROUTE_BIN,
 	.ngctl_bin = PATH_NGCTL_BIN,
 	.jls_bin = PATH_JLS_BIN,
 	.jexec_bin = PATH_JEXEC_BIN,
@@ -110,9 +109,9 @@ usage(void)
 	    "[-M make]\n"
 	    "                 [-Y ssh-keyscan] [-E ssh-keygen] "
 	    "[-I ifconfig]\n"
-	    "                 [-r route] [-w seconds] [-Q sysctl] "
+	    "                 [-w seconds] [-Q sysctl] "
 	    "[-O sysctl.conf]\n"
-	    "                 [-v log-directory] [-1 history.conf]\n"
+	    "                 [-v log-directory] [-1 history.conf] [-2 directory]\n"
 	    "                 [-h ipfw] [-J ipfw.rules]\n"
 	    "                 [-N netstat] [-X sockstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
@@ -183,6 +182,7 @@ stopper(void *arg __unused)
 	while (sigwait(&set, &sig) != 0)
 		;
 	logmsg(LOG_NOTICE, "signal %d, stopping", sig);
+	history_save();
 	changes_stop(true);
 	jobs_wake();
 	cut = false;
@@ -307,7 +307,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:1:X:x:Y:y:Z:z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:s:i:m:q:S:T:t:u:U:Vv:w:W:1:2:X:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -364,6 +364,9 @@ main(int argc, char *argv[])
 		case '1':
 			opts.history_conf = optarg;
 			break;
+		case '2':
+			opts.tools_dir = optarg;
+			break;
 		case 'R':
 			opts.rc_dirs = optarg;
 			break;
@@ -402,9 +405,6 @@ main(int argc, char *argv[])
 			break;
 		case 'I':
 			opts.ifconfig_bin = optarg;
-			break;
-		case 'r':
-			opts.route_bin = optarg;
 			break;
 		case 'n':
 			opts.ngctl_bin = optarg;
@@ -581,6 +581,7 @@ main(int argc, char *argv[])
 	transport_init(ctx, loop, tls);
 	jobs_init();
 	history_start();
+	route_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);
 	stop_loop = loop;
 	stop_pfh = pfh;

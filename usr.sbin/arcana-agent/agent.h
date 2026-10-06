@@ -19,7 +19,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.23.0"
+#define	ARCANA_AGENT_VERSION	"0.29.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -34,7 +34,6 @@
 #define	PATH_PKG_BIN		"/usr/sbin/pkg"
 #define	PATH_GIT_BIN		"/usr/local/bin/git"
 #define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
-#define	PATH_ROUTE_BIN		"/sbin/route"
 #define	PATH_NGCTL_BIN		"/usr/sbin/ngctl"
 #define	PATH_JLS_BIN		"/usr/sbin/jls"
 #define	PATH_JEXEC_BIN		"/usr/sbin/jexec"
@@ -79,7 +78,6 @@ struct opts {
 	const char	*pkg_bin;
 	const char	*self_path;	/* the program an update replaces */
 	const char	*ifconfig_bin;
-	const char	*route_bin;
 	const char	*ngctl_bin;
 	const char	*jls_bin;
 	const char	*jexec_bin;
@@ -97,6 +95,7 @@ struct opts {
 	const char	*sysctl_conf;
 	const char	*log_dir;	/* where syslogd(8) writes */
 	const char	*history_conf;	/* how the host is sampled */
+	const char	*tools_dir;	/* where programs without an option are */
 	const char	*helper_bin;	/* this program, run again with -Q */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
@@ -343,6 +342,8 @@ int		 do_bird_config(struct work *,
 
 /* invidia/scope.c: the network of a vnet jail, from the host. */
 int		 scope_enter(struct work *, const char *, const char **);
+int		 scope_enter_jail(struct work *, const char *, const char **,
+		    bool);
 int		 do_bird_routes(struct work *, const char *,
 		    struct arc_network_rsp *);
 /* superbia/kernel.c: the kernel's modules and memory. */
@@ -362,7 +363,9 @@ int		 do_log(struct work *, const char *, const char *, bool,
 		    uint64_t, uint32_t, struct arc_log_rsp *);
 void		 history_start(void);
 int		 do_history(struct work *, uint64_t, bool, uint32_t, uint32_t,
-		    struct arc_history_rsp *);
+		    const uint32_t *, struct arc_history_rsp *);
+void		 history_save(void);
+int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,
 		    struct arc_sysctl_rsp *);
@@ -422,6 +425,22 @@ int		 scope_helper(int, char **);
 const char	*scope_missing(struct work *, const struct execres *,
 		    const char *, const char *);
 char		*ifq_text(const char *, const char *, const char *);
+char		**helper_argv(struct work *, const char *, size_t,
+		    const char *const []);
+int		 route_helper(int, char **);
+struct cbl_dump_state;
+struct arc_network_dump_req;
+bool		 network_part(struct cbl_dump_state *,
+		    const struct arc_network_dump_req *, char **, uint64_t *,
+		    const char **);
+int		 zfs_pipe(int, char **);
+const char	*tool(struct work *, const char *);
+int		 do_health(struct work *, struct arc_storage_rsp *);
+struct ucl_object_s;
+struct ucl_object_s *swap_list(struct work *);
+void		 route_watch_start(void);
+void		 event_add(const char *, const char *, ...) __printflike(2, 3);
+int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);
 
 /* invidia/netgraph.c */
 int		 do_netgraph(struct work *, struct arc_network_rsp *);

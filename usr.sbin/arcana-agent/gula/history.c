@@ -58,10 +58,17 @@ struct dev {
 	bool		now;
 };
 
+static void	thresholds(const float *);
+
 static pthread_mutex_t	hist_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t	hist_wake = PTHREAD_COND_INITIALIZER;
 static unsigned int	hist_step = HIST_STEP;
 static unsigned int	hist_keep = HIST_KEEP;
+/* Above which an event is made: cpu, mem, swap in percent; 0 none. */
+static unsigned int	limits[3] = { 90, 90, 50 };
+static bool		over[3];
+static time_t		saved;		/* when the samples were last written */
+#define	HIST_SAVE_EVERY	300
 static double		*times;		/* hist_keep of them, when any */
 static float		*rows;		/* hist_keep rows of width */
 static size_t		 nrows, width = H_BASE;
@@ -331,9 +338,150 @@ look(void)
 	/* The first look has nothing to be the difference from. */
 	if (!first)
 		times[nrows++] = (double)time(NULL);
+	if (!first)
+		thresholds(row);
 	pthread_mutex_unlock(&hist_lock);
 	if (ifa0 != NULL)
 		freeifaddrs(ifa0);
+}
+
+/*
+ * A figure over its limit, or under it again: an event each time it
+ * crosses, and not for every look it stays there.
+ */
+static void
+thresholds(const float *row)
+{
+	static const char *const what[] = { "cpu", "mem", "swap" };
+	double	v[3];
+	size_t	i;
+
+	v[0] = row[H_CPU];
+	v[1] = mem_total > 0 ? 100.0 * row[H_MEM] / (double)mem_total : 0;
+	v[2] = swap_total > 0 ? 100.0 * row[H_SWAP] / (double)swap_total : 0;
+	for (i = 0; i < 3; i++) {
+		if (limits[i] == 0)
+			continue;
+		if (!over[i] && v[i] > limits[i])
+			over[i] = true;
+		else if (over[i] && v[i] < (double)limits[i] - 5)
+			over[i] = false;
+		else
+			continue;
+		event_add("threshold", "{\"what\":\"%s\",\"value\":%.0f,"
+		    "\"limit\":%u,\"over\":%s}", what[i], v[i], limits[i],
+		    over[i] ? "true" : "false");
+	}
+}
+
+/*
+ * The samples written down, to be read again at the next start: a
+ * header of what a row holds, then a row a line.  Beside the file
+ * that keeps how the host is sampled.
+ */
+static void
+samples_write(void)
+{
+	char	path[MAXPATHLEN], tmp[MAXPATHLEN];
+	FILE	*fp;
+	size_t	i, k;
+
+	snprintf(path, sizeof(path), "%s.samples", opts.history_conf);
+	snprintf(tmp, sizeof(tmp), "%s.new", path);
+	if (rows == NULL || nrows == 0) {
+		(void)unlink(path);
+		return;
+	}
+	if ((fp = fopen(tmp, "we")) == NULL)
+		return;
+	fprintf(fp, "# arcana-agent samples: step keep nets disks\n%u %u", hist_step,
+	    hist_keep);
+	for (k = 0; k < nnets; k++)
+		fprintf(fp, " %s", nets[k].name);
+	fprintf(fp, " |");
+	for (k = 0; k < ndisks; k++)
+		fprintf(fp, " %s", disks[k].name);
+	fprintf(fp, "\n");
+	for (i = 0; i < nrows; i++) {
+		fprintf(fp, "%.0f", times[i]);
+		for (k = 0; k < width; k++)
+			fprintf(fp, " %.2f", rows[i * width + k]);
+		fprintf(fp, "\n");
+	}
+	if (fclose(fp) != 0 || rename(tmp, path) == -1)
+		(void)unlink(tmp);
+	saved = time(NULL);
+}
+
+/* What was written down by the agent that ran before: read, if it is
+ * of the same devices, and not older than is kept. */
+static void
+samples_read(void)
+{
+	char	path[MAXPATHLEN], *line, *p, *w;
+	FILE	*fp;
+	size_t	cap, k, n;
+	double	t;
+	unsigned int	step, keep;
+
+	snprintf(path, sizeof(path), "%s.samples", opts.history_conf);
+	if ((fp = fopen(path, "re")) == NULL)
+		return;
+	line = NULL;
+	cap = 0;
+	if (getline(&line, &cap, fp) == -1 || getline(&line, &cap, fp) == -1) {
+		free(line);
+		fclose(fp);
+		return;
+	}
+	p = line;
+	step = (unsigned int)strtoul(strsep(&p, " "), NULL, 10);
+	keep = (unsigned int)strtoul(strsep(&p, " "), NULL, 10);
+	(void)step;
+	(void)keep;
+	/* The devices, in the order the rows have them. */
+	n = 0;
+	while ((w = strsep(&p, " \n")) != NULL && strcmp(w, "|") != 0)
+		if (w[0] != '\0' && (int)n < HIST_DEVS)
+			strlcpy(nets[n++].name, w, sizeof(nets[0].name));
+	nnets = n;
+	n = 0;
+	while ((w = strsep(&p, " \n")) != NULL)
+		if (w[0] != '\0' && (int)n < HIST_DEVS)
+			strlcpy(disks[n++].name, w, sizeof(disks[0].name));
+	ndisks = n;
+	reshape(hist_keep, nnets, ndisks);
+	while (rows != NULL && getline(&line, &cap, fp) != -1) {
+		p = line;
+		t = strtod(strsep(&p, " "), NULL);
+		if (t <= 0 || t < (double)time(NULL) - (double)hist_step *
+		    hist_keep)
+			continue;
+		if (nrows == hist_keep) {
+			memmove(times, times + 1, (nrows - 1) * sizeof(*times));
+			memmove(rows, rows + width, (nrows - 1) * width *
+			    sizeof(*rows));
+			nrows--;
+		}
+		times[nrows] = t;
+		for (k = 0; k < width; k++)
+			rows[nrows * width + k] = (w = strsep(&p, " \n")) !=
+			    NULL ? (float)strtod(w, NULL) : 0;
+		nrows++;
+	}
+	free(line);
+	fclose(fp);
+	logmsg(LOG_INFO, "history: %zu samples read from %s", nrows, path);
+}
+
+/* Written down, for the next start: called when the agent stops. */
+void
+history_save(void)
+{
+
+	pthread_mutex_lock(&hist_lock);
+	samples_write();
+	pthread_mutex_unlock(&hist_lock);
 }
 
 static void *
@@ -355,6 +503,8 @@ sampler(void *arg __unused)
 		pthread_mutex_unlock(&hist_lock);
 		look();
 		pthread_mutex_lock(&hist_lock);
+		if (time(NULL) - saved >= HIST_SAVE_EVERY)
+			samples_write();
 		/* The first after a second, for one to show soon. */
 		wait = nrows == 0 ? 1 : hist_step;
 		clock_gettime(CLOCK_REALTIME, &until);
@@ -387,6 +537,12 @@ hconf_read(void)
 			v = strtonum(line + 5, 0, HIST_KEEP_MAX, &e);
 			if (e == NULL)
 				hist_keep = (unsigned int)v;
+		} else if (strncmp(line, "cpu=", 4) == 0 || strncmp(line,
+		    "mem=", 4) == 0 || strncmp(line, "swap=", 5) == 0) {
+			v = strtonum(strchr(line, '=') + 1, 0, 100, &e);
+			if (e == NULL)
+				limits[line[0] == 'c' ? 0 : line[0] == 'm' ? 1 :
+				    2] = (unsigned int)v;
 		}
 	}
 	fclose(fp);
@@ -402,7 +558,8 @@ hconf_write(unsigned int step, unsigned int keep)
 	if ((fp = fopen(tmp, "we")) == NULL)
 		return (-1);
 	fprintf(fp, "# How arcana-agent samples the host: set from the "
-	    "console.\nstep=%u\nkeep=%u\n", step, keep);
+	    "console.\nstep=%u\nkeep=%u\ncpu=%u\nmem=%u\nswap=%u\n", step,
+	    keep, limits[0], limits[1], limits[2]);
 	if (fclose(fp) != 0 || rename(tmp, opts.history_conf) == -1) {
 		(void)unlink(tmp);
 		return (-1);
@@ -419,6 +576,8 @@ history_start(void)
 	hconf_read();
 	pthread_mutex_lock(&hist_lock);
 	reshape(hist_keep, 0, 0);
+	samples_read();
+	saved = time(NULL);
 	pthread_mutex_unlock(&hist_lock);
 	if ((error = pthread_create(&tid, NULL, sampler, NULL)) != 0) {
 		logmsg(LOG_WARNING, "no history is kept: pthread_create: %s",
@@ -447,7 +606,7 @@ names(FILE *fp, const char *key, const struct dev *v, size_t n)
  */
 int
 do_history(struct work *w, uint64_t after, bool set, uint32_t step,
-    uint32_t keep, struct arc_history_rsp *rsp)
+    uint32_t keep, const uint32_t lim[3], struct arc_history_rsp *rsp)
 {
 	const float	*row;
 	FILE		*fp;
@@ -458,11 +617,18 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 	rsp->has_ok = true;
 	rsp->ok = false;
 	if (set) {
-		if (step < 1 || step > HIST_STEP_MAX || keep > HIST_KEEP_MAX) {
+		if (step < 1 || step > HIST_STEP_MAX || keep > HIST_KEEP_MAX ||
+		    (lim != NULL && (lim[0] > 100 || lim[1] > 100 || lim[2] >
+		    100))) {
 			rsp->error = wfmt(w, "sampled every 1 to %d seconds, "
-			    "and 0 to %d samples kept", HIST_STEP_MAX,
-			    HIST_KEEP_MAX);
+			    "0 to %d samples kept, and limits of 0 to 100",
+			    HIST_STEP_MAX, HIST_KEEP_MAX);
 			return (0);
+		}
+		if (lim != NULL) {
+			pthread_mutex_lock(&hist_lock);
+			memcpy(limits, lim, sizeof(limits));
+			pthread_mutex_unlock(&hist_lock);
 		}
 		st = step_begin(w, ARC_STEP_KIND_DAEMON, "history",
 		    "every %u s, %u kept, into %s", step, keep,
@@ -490,7 +656,9 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 	}
 	ncpu = (int)sysconf(_SC_NPROCESSORS_ONLN);
 	pthread_mutex_lock(&hist_lock);
-	fprintf(fp, "{\"step\":%u,\"keep\":%u,\"bytes\":%zu,\"ncpu\":%d,"
+	fprintf(fp, "{\"limits\":{\"cpu\":%u,\"mem\":%u,\"swap\":%u},", limits[0],
+	    limits[1], limits[2]);
+	fprintf(fp, "\"step\":%u,\"keep\":%u,\"bytes\":%zu,\"ncpu\":%d,"
 	    "\"mem_total\":%ju,\"swap_total\":%ju,\"fields\":[\"t\",\"cpu\","
 	    "\"load\",\"mem\",\"swap\",\"rx\",\"tx\",\"read\",\"write\"],",
 	    hist_step, hist_keep, rows != NULL ? hist_keep * (sizeof(*times) +

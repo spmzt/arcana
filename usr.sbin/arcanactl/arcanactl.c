@@ -122,6 +122,7 @@ usage(void)
 	    "netgraph |\n        wireguard | bird [-4 | -6]\n"
 	    "    net routes [-4 | -6] text\n"
 	    "    net routes [-4 | -6] -o rows\n"
+	    "    net routes | connections | sockets [-4 | -6] parts [text]\n"
 	    "    interface name up | down | destroy\n"
 	    "    interface name give | take jail\n"
 	    "    interface epair give jail [bridge]\n"
@@ -131,7 +132,7 @@ usage(void)
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface]\n"
-	    "    route add destination gateway [metric n] [weight n] "
+	    "    route add destination gateway[@share][,gateway[@share]...] [metric n] [weight n] "
 	    "[source address]\n"
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
@@ -154,13 +155,14 @@ usage(void)
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
 	    "    transport [retry]\n"
-	    "    ps\n"
+	    "    ps [pid]\n"
 	    "    signal pid [name | number]\n"
 	    "    renice pid nice\n"
 	    "    log [-o lines] [-f position] [name [text]]\n"
 	    "    history [after]\n"
-	    "    history set seconds samples\n"
-	    "    net bridges | geneve | ipfw\n"
+	    "    history set seconds samples [cpu%% mem%% swap%%]\n"
+	    "    events [after]\n"
+	    "    net bridges | geneve | ipfw | nhgroups\n"
 	    "    bridge name addm | deletem member\n"
 	    "    bridge name access member vlan\n"
 	    "    bridge name trunk member vlan-list [untagged-vlan]\n"
@@ -173,8 +175,16 @@ usage(void)
 	    "    ipfw [keep] add number rule ...\n"
 	    "    ipfw [keep] delete number\n"
 	    "    ipfw apply | enable | disable | zero [number]\n"
+	    "    ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | "
+	    "pipe |\n        queue | sched name word ...\n"
 	    "    ipfw rules [-w file] [-n]\n"
-	    "    storage disks | pools | datasets | mounts | importable\n"
+	    "    storage disks | pools | datasets | mounts | importable | health\n"
+	    "    zfs load-key | unload-key [-r] dataset\n"
+	    "    zfs jail | unjail dataset jail\n"
+	    "    zfs replicate [-r] snapshot new-dataset [since-snapshot]\n"
+	    "    gpart newfs [-f] partition [label]\n"
+	    "    gpart growfs partition\n"
+	    "    swapon | swapoff device\n"
 	    "    storage snapshots [dataset]\n"
 	    "    zfs snapshot | destroy | rollback [-r] name\n"
 	    "    zfs create dataset [property=value ...]\n"
@@ -1350,7 +1360,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
-	    "bird-routes", "bridges", "geneve", "ipfw" };
+	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -1392,6 +1402,32 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 		}
 	}
 	/* A text to search the routes for, on the host. */
+	/* In parts, each printed as it comes: nothing left out for size. */
+	if (optind < argc && strcmp(argv[optind], "parts") == 0) {
+		struct arc_network_dump_req	 dq;
+		struct arc_network_dump_rsp	*item;
+		cbl_dump			*d;
+
+		memset(&dq, 0, sizeof(dq));
+		dq.has_net_kind = true;
+		dq.net_kind = req.net_kind;
+		dq.has_net_family = req.has_net_family;
+		dq.net_family = req.net_family;
+		dq.has_net_fib = req.has_net_fib;
+		dq.net_fib = req.net_fib;
+		dq.jail = req.jail;
+		dq.net_filter = optind + 1 < argc ? argv[optind + 1] : NULL;
+		if ((error = arc_network_dump(cl, &dq, &d)) != 0)
+			fail(cl, error, "net");
+		while ((error = arc_network_dump_next(d, &item)) == 0 && item !=
+		    NULL)
+			if (item->json != NULL)
+				xo_emit("{:json/%s}\n", item->json);
+		cbl_dump_free(d);
+		if (error != 0)
+			fail(cl, error, "net");
+		return (0);
+	}
 	if (argc - optind == 1 && req.net_kind == ARC_NET_KIND_ROUTES)
 		req.net_filter = argv[optind];
 	else if (optind != argc)
@@ -1547,6 +1583,7 @@ json_out(const char *what, bool ok, const char *error, const char *json,
  * log [name [text]]: the end of a log; -o how many lines, -f from where.
  * history [after]: how busy the host has been.
  * history set seconds samples: how often it is sampled, how many kept.
+ * events [after]: what happened on the host, after an event's number.
  */
 static int
 cmd_gula(struct arc_client *cl, int argc, char **argv)
@@ -1562,10 +1599,16 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 	int			 error, ch, rc;
 
 	if (strcmp(argv[0], "ps") == 0) {
-		if (argc != 1)
+		if (argc > 2)
 			usage();
 		memset(&pq, 0, sizeof(pq));
 		pq.jail = netjail;
+		if (argc == 2) {
+			pq.has_pid = true;
+			pq.pid = (uint32_t)strtonum(argv[1], 1, 99999, &e);
+			if (e != NULL)
+				xo_errx(1, "ps: %s: %s", argv[1], e);
+		}
 		if ((error = arc_processes(cl, &pq, &pr)) != 0)
 			fail(cl, error, "ps");
 		rc = json_out("ps", pr->ok, pr->error, pr->json, pr->trace.v,
@@ -1588,9 +1631,45 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 		sp.jail = netjail;
 		return (submit(cl, &sp));
 	}
+	if (strcmp(argv[0], "events") == 0) {
+		struct arc_events_req	 eq;
+		struct arc_events_rsp	*er;
+
+		if (argc > 2)
+			usage();
+		memset(&eq, 0, sizeof(eq));
+		if (argc == 2) {
+			eq.has_after = true;
+			eq.after = (uint64_t)strtonum(argv[1], 0, INT64_MAX,
+			    &e);
+			if (e != NULL)
+				xo_errx(1, "events: after %s: %s", argv[1], e);
+		}
+		if ((error = arc_events(cl, &eq, &er)) != 0)
+			fail(cl, error, "events");
+		rc = json_out("events", er->ok, er->error, er->json,
+		    er->trace.v, er->trace.n);
+		arc_events_rsp_free(er);
+		return (rc);
+	}
 	if (strcmp(argv[0], "history") == 0) {
 		memset(&hq, 0, sizeof(hq));
-		if (argc == 4 && strcmp(argv[1], "set") == 0) {
+		if ((argc == 4 || argc == 7) && strcmp(argv[1], "set") == 0) {
+			if (argc == 7) {
+				hq.has_limit_cpu = hq.has_limit_mem =
+				    hq.has_limit_swap = true;
+				hq.limit_cpu = (uint32_t)strtonum(argv[4], 0,
+				    100, &e);
+				if (e == NULL)
+					hq.limit_mem = (uint32_t)strtonum(
+					    argv[5], 0, 100, &e);
+				if (e == NULL)
+					hq.limit_swap = (uint32_t)strtonum(
+					    argv[6], 0, 100, &e);
+				if (e != NULL)
+					xo_errx(1, "history: a limit is 0 to "
+					    "100");
+			}
 			hq.has_sample_step = hq.has_sample_keep = true;
 			hq.sample_step = (uint32_t)strtonum(argv[2], 1, 3600,
 			    &e);
@@ -1645,6 +1724,7 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 		usage();
 	lq.log_name = argc > 0 ? argv[0] : NULL;
 	lq.net_filter = argc > 1 ? argv[1] : NULL;
+	lq.jail = netjail;
 	if ((error = arc_log(cl, &lq, &lr)) != 0)
 		fail(cl, error, "log");
 	rc = json_out("log", lr->ok, lr->error, lr->json, lr->trace.v,
@@ -1799,7 +1879,7 @@ static int
 cmd_storage(struct arc_client *cl, int argc, char **argv)
 {
 	static const char *kinds[] = { "disks", "pools", "datasets",
-	    "snapshots", "mounts", "importable" };
+	    "snapshots", "mounts", "importable", "health" };
 	struct arc_storage_req	 req;
 	struct arc_storage_rsp	*rsp;
 	size_t			 i;
@@ -1850,7 +1930,13 @@ cmd_storage_job(struct arc_client *cl, int argc, char **argv)
 	sp.safe = safe;
 	sp.jail = netjail;
 	first = 2;
-	if (strcmp(argv[0], "mount") == 0 || strcmp(argv[0], "umount") == 0) {
+	if (strcmp(argv[0], "swapon") == 0 || strcmp(argv[0], "swapoff") ==
+	    0) {
+		sp.kind = ARC_JOB_KIND_MOUNT;
+		sp.verb = argv[0];
+		first = 1;
+	} else if (strcmp(argv[0], "mount") == 0 || strcmp(argv[0],
+	    "umount") == 0) {
 		sp.kind = ARC_JOB_KIND_MOUNT;
 		sp.verb = argv[0][0] == 'm' ? "mount" : "unmount";
 		first = 1;
@@ -2395,7 +2481,7 @@ main(int argc, char *argv[])
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||
 	    strcmp(argv[0], "renice") == 0 || strcmp(argv[0], "log") == 0 ||
-	    strcmp(argv[0], "history") == 0)
+	    strcmp(argv[0], "history") == 0 || strcmp(argv[0], "events") == 0)
 		rc = cmd_gula(&cl, argc, argv);
 	else if (strcmp(argv[0], "transport") == 0)
 		rc = cmd_transport(&cl, argc, argv);
@@ -2403,7 +2489,8 @@ main(int argc, char *argv[])
 		rc = cmd_storage(&cl, argc, argv);
 	else if (strcmp(argv[0], "zfs") == 0 || strcmp(argv[0], "zpool") == 0 ||
 	    strcmp(argv[0], "gpart") == 0 || strcmp(argv[0], "cam") == 0 ||
-	    strcmp(argv[0], "mount") == 0 || strcmp(argv[0], "umount") == 0)
+	    strcmp(argv[0], "mount") == 0 || strcmp(argv[0], "umount") == 0 ||
+	    strcmp(argv[0], "swapon") == 0 || strcmp(argv[0], "swapoff") == 0)
 		rc = cmd_storage_job(&cl, argc, argv);
 	else if (strcmp(argv[0], "fstab") == 0)
 		rc = cmd_fstab(&cl, argc, argv);

@@ -43,6 +43,7 @@ struct job {
 	uint32_t		 offset;		/* network: rows to leave out */
 	uint64_t		 pos;		/* log: where to read on; history: since */
 	bool			 has_pos;
+	uint32_t		 lim[3];	/* history: the limits */
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
 	uint8_t			*binary;	/* agent-update */
@@ -89,6 +90,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_BRIDGES] = "bridges",
 	[ARC_NET_KIND_GENEVE] = "geneve",
 	[ARC_NET_KIND_IPFW] = "ipfw",
+	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 };
 
 static const char *service_action_names[] = {
@@ -301,6 +303,7 @@ worker(void *arg)
 	struct arc_processes_rsp prr;
 	struct arc_log_rsp	 lgr;
 	struct arc_history_rsp	 hsr;
+	struct arc_events_rsp	 evr;
 	struct arc_storage_rsp	 stg;
 	struct arc_fstab_req	 fq;
 	struct arc_fstab_rsp	 fr;
@@ -467,7 +470,10 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "processes");
 		memset(&prr, 0, sizeof(prr));
-		do_processes(&w, j->jail, &prr);
+		if (j->fib != 0)
+			do_process(&w, j->fib, &prr);
+		else
+			do_processes(&w, j->jail, &prr);
 		ok = prr.ok;
 		error = prr.error;
 		step_end(&w, root, ok, NULL);
@@ -479,8 +485,11 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "log %s", j->ref != NULL ? j->ref : "messages");
 		memset(&lgr, 0, sizeof(lgr));
-		do_log(&w, j->ref, j->source, j->has_pos, j->pos, j->offset,
-		    &lgr);
+		if (scope_enter_jail(&w, j->jail, &lgr.error, false) != 0)
+			lgr.has_ok = true;
+		else
+			do_log(&w, j->ref, j->source, j->has_pos, j->pos,
+			    j->offset, &lgr);
 		ok = lgr.ok;
 		error = lgr.error;
 		step_end(&w, root, ok, NULL);
@@ -493,12 +502,25 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "%s", what);
 		memset(&hsr, 0, sizeof(hsr));
-		do_history(&w, j->pos, j->refresh, j->fib, j->offset, &hsr);
+		do_history(&w, j->pos, j->refresh, j->fib, j->offset,
+		    j->restart ? j->lim : NULL, &hsr);
 		ok = hsr.ok;
 		error = hsr.error;
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &hsr.trace.v, &hsr.trace.n);
 		rc = arc_history_reply(j->req, &hsr);
+		break;
+	case ARC_CMD_EVENTS:
+		what = "events";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "events");
+		memset(&evr, 0, sizeof(evr));
+		do_events(&w, j->pos, &evr);
+		ok = evr.ok;
+		error = evr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &evr.trace.v, &evr.trace.n);
+		rc = arc_events_reply(j->req, &evr);
 		break;
 	case ARC_CMD_STORAGE:
 		what = "storage";
@@ -1125,7 +1147,7 @@ arc_storage_doit(cbl_req *req, const struct arc_storage_req *rq,
 {
 	struct job	*j;
 
-	if (rq->storage_kind > ARC_STORAGE_KIND_IMPORTABLE)
+	if (rq->storage_kind > ARC_STORAGE_KIND_HEALTH)
 		return (reject(req, "no such kind of storage"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);
@@ -1200,6 +1222,7 @@ arc_processes_doit(cbl_req *req, const struct arc_processes_req *rq,
 	j->cmd = ARC_CMD_PROCESSES;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
+	j->fib = rq->has_pid ? rq->pid : 0;
 	return (start(j));
 }
 
@@ -1209,13 +1232,17 @@ arc_log_doit(cbl_req *req, const struct arc_log_req *rq, void *arg __unused)
 	struct job	*j;
 
 	if (rq->log_name != NULL && rq->log_name[0] != '\0' &&
-	    !log_name_ok(rq->log_name))
+	    rq->log_name[0] != '@' && !log_name_ok(rq->log_name))
 		return (reject(req, "a log is named with letters, digits "
 		    "and . _ -"));
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
 	if ((j = calloc(1, sizeof(*j))) == NULL)
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_LOG;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
 	j->ref = rq->log_name != NULL && rq->log_name[0] != '\0' ?
 	    xstrdup(rq->log_name) : NULL;
 	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
@@ -1243,7 +1270,65 @@ arc_history_doit(cbl_req *req, const struct arc_history_req *rq,
 	j->refresh = rq->has_sample_step;
 	j->fib = rq->sample_step;
 	j->offset = rq->sample_keep;
+	j->restart = rq->has_limit_cpu && rq->has_limit_mem &&
+	    rq->has_limit_swap;
+	j->lim[0] = rq->limit_cpu;
+	j->lim[1] = rq->limit_mem;
+	j->lim[2] = rq->limit_swap;
 	return (start(j));
+}
+
+int
+arc_events_doit(cbl_req *req, const struct arc_events_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_EVENTS;
+	j->pos = rq->has_after ? rq->after : 0;
+	return (start(j));
+}
+
+/* A network table in parts, from a thread of the dump's own. */
+int
+arc_network_dumpit(cbl_req *req, const struct arc_network_dump_req *rq,
+    struct cbl_dump_state *st, void *arg __unused)
+{
+	struct arc_network_dump_rsp	 rsp;
+	const char			*err;
+	char				*json;
+	uint64_t			 total;
+	bool				 more;
+	int				 error;
+
+	if (rq->net_kind != ARC_NET_KIND_ROUTES && rq->net_kind !=
+	    ARC_NET_KIND_CONNECTIONS && rq->net_kind != ARC_NET_KIND_SOCKETS)
+		return (reject(req, "the routes, connections and sockets "
+		    "come in parts; the rest whole"));
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if (rq->net_filter != NULL && strlen(rq->net_filter) > 128)
+		return (reject(req, "the text to search for is at most 128 "
+		    "bytes"));
+	more = network_part(st, rq, &json, &total, &err);
+	if (json == NULL)
+		return (err != NULL ? reject(req, err) : ENOMEM);
+	if (err != NULL && !more) {
+		free(json);
+		return (reject(req, err));
+	}
+	memset(&rsp, 0, sizeof(rsp));
+	rsp.json = json;
+	rsp.has_total = true;
+	rsp.total = total;
+	error = arc_network_dump_reply(req, &rsp);
+	free(json);
+	if (error != 0)
+		return (error);
+	return (more ? EAGAIN : 0);
 }
 
 /*

@@ -240,6 +240,54 @@ bridge_of(struct work *w, const char *name, char *block,
 	return (b);
 }
 
+/*
+ * The addresses a bridge has learned, and behind which member each
+ * is: "ifconfig bridge0 addr" prints "02:00:00:00:00:01 Vlan1 em0 1193
+ * flags=0<>" for each.
+ */
+#define	L2_LEARNED	500
+
+static void
+learned(struct work *w, ucl_object_t *b, const char *name)
+{
+	struct execres	 res;
+	ucl_object_t	*arr, *o;
+	char		*argv[4], *text, *p, *line, *v[L2_WORDS];
+	int		 n, total;
+
+	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[1] = (char *)(uintptr_t)name;
+	argv[2] = (char *)(uintptr_t)"addr";
+	argv[3] = NULL;
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	total = 0;
+	if (run_exec(w, scope_argv(w, argv), &res) == 0 && res.out != NULL) {
+		text = wstrndup(w, res.out, res.outlen);
+		p = text;
+		while ((line = strsep(&p, "\n")) != NULL) {
+			n = words(line, v, L2_WORDS);
+			if (n < 4 || strchr(v[0], ':') == NULL)
+				continue;
+			if (total++ >= L2_LEARNED)
+				continue;
+			o = ucl_object_typed_new(UCL_OBJECT);
+			put(o, "mac", v[0]);
+			if (strncmp(v[1], "Vlan", 4) == 0)
+				putn(o, "vlan", v[1] + 4);
+			put(o, "member", v[2]);
+			putn(o, "expire", v[3]);
+			if (n > 4 && strstr(v[4], "STATIC") != NULL)
+				putb(o, "static", true);
+			if (n > 4 && strstr(v[4], "STICKY") != NULL)
+				putb(o, "sticky", true);
+			ucl_array_append(arr, o);
+		}
+	}
+	ucl_object_insert_key(b, arr, "learned", 0, false);
+	ucl_object_insert_key(b, ucl_object_fromint(total), "learned_total",
+	    0, false);
+}
+
 /* The same for a geneve tunnel. */
 static ucl_object_t *
 geneve_of(struct work *w, const char *name, const char *block)
@@ -327,6 +375,8 @@ do_l2(struct work *w, bool geneve, struct arc_network_rsp *rsp)
 				bname = wstrdup(w, name);
 				o = geneve ? geneve_of(w, bname, block) :
 				    bridge_of(w, bname, block, addrs);
+				if (o != NULL && !geneve)
+					learned(w, o, bname);
 				if (o != NULL)
 					ucl_array_append(arr, o);
 				continue;

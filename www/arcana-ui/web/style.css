@@ -3464,6 +3464,7 @@ ul.listeners li.idle .led { background: transparent; box-shadow: inset 0 0 0 1.5
 .fw-state { display: flex; align-items: center; gap: .6rem; flex: 1; min-width: 0; }
 .chip.ok { border-color: var(--green); color: var(--green); }
 .chip.warn { border-color: var(--amber); color: var(--amber); }
+.chip.bad { border-color: var(--red); color: var(--red); }
 nav.fw-tabs { display: flex; flex-wrap: wrap; gap: .25rem; margin: .2rem 0 1rem; align-items: center; }
 nav.fw-tabs button { text-transform: none; letter-spacing: 0; }
 nav.fw-tabs button.on { color: var(--cyan); border-color: var(--cyan); }
@@ -3652,3 +3653,67 @@ form.usample { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .
 form.usample label { display: inline-flex; align-items: center; gap: .4rem; margin: 0; font-size: .78rem; color: var(--fg-2); }
 form.usample input[type=number] { width: 5.5rem; }
 form.usample small { flex: 1 1 100%; }
+
+/* The firewall, further: rates, what Apply changes, a packet followed. */
+table.fw-rules small.rate { color: var(--green); margin-left: .3rem; }
+table.fw-rules small.never { margin-left: .3rem; font-style: italic; }
+table.fw-diff tr.d-add td { color: var(--green); }
+table.fw-diff tr.d-del td { color: var(--red); }
+table.fw-diff tr.d-chg td:first-child { color: var(--amber); }
+table.fw-diff del { color: var(--red); text-decoration: none; opacity: .8; }
+table.fw-diff ins { color: var(--green); text-decoration: none; }
+form.fw-add select { width: auto; flex: 0 0 auto; }
+form.fw-add input[name=words], form.fw-add input[name=key] { flex: 1 1 14rem; min-width: 0; width: auto; }
+form.fw-add input[name=name], form.fw-add input[name=value] { flex: 0 1 12rem; width: auto; }
+form.fw-trace input[name=src], form.fw-trace input[name=dst] { flex: 1 1 11rem; min-width: 0; width: auto; }
+form.fw-trace input[name=port] { flex: 0 0 5.5rem; width: 5.5rem; }
+form.fw-trace input[name=iface] { flex: 0 0 7rem; width: 7rem; }
+ol.fw-steps { list-style: none; margin: .8rem 0; padding: 0; border-left: 2px solid var(--line-2); }
+ol.fw-steps li { padding: .35rem .7rem; cursor: pointer; }
+ol.fw-steps li:hover { background: rgba(var(--accent-rgb), .05); }
+ol.fw-steps li.maybe { border-left: 2px solid var(--amber); margin-left: -2px; }
+ol.fw-steps li.met { border-left: 2px solid var(--green); margin-left: -2px; }
+ol.fw-steps li code { color: var(--fg); }
+ol.fw-steps li small { color: var(--fg-2); margin-left: .4rem; }
+section.fwtable { margin-bottom: .8rem; }
+section.fwtable h4 .chip, section.fwtable h4 button { margin-left: .6rem; }
+.rail.fwrail .titem.jailfw .twig { color: var(--dim); margin-right: .3rem; }
+.rail.fwrail .titem.host-of { cursor: pointer; }
+.brmore h5 { margin: .9rem 0 .4rem; font-size: .76rem; font-weight: 600; color: var(--fg-2); }
+.brmore h5 .chip { margin-left: .5rem; }
+.brmore form.gn-set { margin-bottom: .4rem; }
+.ps-jails { display: flex; flex-wrap: wrap; gap: .3rem; margin: 0 0 .6rem; }
+.ps-jails button b { margin-right: .2rem; }
+.ps-detail { margin-top: .6rem; }
+.ps-detail h5 { margin: .6rem 0 .3rem; font-size: .74rem; font-weight: 600; color: var(--fg-2); }
+.ps-detail table.net td { font-size: .74rem; }
+
+/*
+ * On a phone, a table is a card for each row (bridge.js marks it so):
+ * the column's name before each value, the row's actions along the
+ * foot of its card, and the head a row of buttons to sort by.
+ */
+@media (max-width: 620px) {
+	.stage table.net.cards { display: block; overflow: visible; max-width: 100%; border: 0; }
+	table.net.cards thead { display: block; margin-bottom: .5rem; }
+	table.net.cards thead tr { display: flex; flex-wrap: wrap; gap: .3rem; }
+	table.net.cards thead th { display: inline-block; width: auto !important; min-width: 0 !important; max-width: none !important; padding: .2rem .5rem; border: 1px solid var(--line); border-radius: 999px; font-size: .7rem; position: static; background: none; }
+	table.net.cards thead th:empty, table.net.cards thead th:not(.sortable) { display: none; }
+	table.net.cards thead th::after { position: static; background: none; width: auto; }
+	table.net.cards tbody { display: block; }
+	table.net.cards tbody tr { display: block; margin: 0 0 .5rem; padding: .45rem .7rem; border: 1px solid var(--line); border-radius: 8px; background: rgba(var(--surface-rgb), .6); }
+	.stage table.net.cards tbody td, .stage table.net.cards tbody td:first-child {
+		display: flex; justify-content: space-between; align-items: baseline; gap: .8rem;
+		padding: .14rem 0; border: 0; text-align: right; white-space: normal; word-break: break-word;
+		position: static; max-width: none; overflow: visible; background: none;
+	}
+	table.net.cards tbody td::before { content: attr(data-label); flex: none; color: var(--dim); font-size: .7rem; text-align: left; }
+	table.net.cards tbody td[data-label=""]::before { content: none; }
+	table.net.cards tbody td:first-child { justify-content: flex-start; text-align: left; font-size: .85rem; padding-bottom: .3rem; }
+	table.net.cards tbody td:first-child::before { content: none; }
+	table.net.cards tbody td:empty { display: none; }
+	table.net.cards tbody td.acts { justify-content: flex-end; flex-wrap: wrap; margin-top: .3rem; padding-top: .4rem; border-top: 1px solid var(--line); }
+	table.net.cards tbody td.acts::before { content: none; }
+	table.net.cards tbody tr.whole td { display: block; text-align: left; }
+	table.net.cards tbody tr.whole td::before { content: none; }
+}

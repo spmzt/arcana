@@ -1303,7 +1303,7 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 400);
 	resp_free(&r);
 
-	/* The network tables: netstat's JSON, inside ours. */
+	/* The network tables: the kernel's routes, inside ours. */
 	snprintf(path, sizeof(path), "%.*s/net/routes?family=inet",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);
@@ -1311,7 +1311,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
 	ATF_CHECK_STREQ("default", jstr(&r, "data.statistics.route-information."
 	    "route-table.rt-family.0.rt-entry.0.destination"));
-	ATF_CHECK_MSG(strstr(jstr(&r, "trace.4.label"), "-f inet") != NULL,
+	ATF_CHECK_MSG(strstr(jstr(&r, "trace.4.label"), "routes 4 0") != NULL,
 	    "%s", jstr(&r, "trace.4.label"));
 	resp_free(&r);
 
@@ -1393,11 +1393,12 @@ ATF_TC_BODY(services, tc)
 	    "jobs.0.title"));
 	ATF_CHECK_STREQ("route delete 10.77.0.0/16", jstr(&r, "jobs.1.title"));
 	resp_free(&r);
-	for (i = 0; i < 100 && system("grep -q delete route.log 2>/dev/null") !=
+	for (i = 0; i < 100 && system("grep -q route-del route.log 2>/dev/null") !=
 	    0; i++)
 		usleep(50000);
-	ATF_CHECK(system("grep -q '^-n add -inet 10.77.0.0/16 10.0.0.1$' "
-	    "route.log && grep -q '^-n delete -inet 10.77.0.0/16$' route.log")
+	ATF_CHECK(system("grep -q '^0 route-add 10.77.0.0/16 10.0.0.1 - 0 0 0 "
+	    "-$' route.log && grep -q '^0 route-del 10.77.0.0/16 - - 0 0$' "
+	    "route.log")
 	    == 0);
 	http("POST", path, "{\"jobs\":[{\"kind\":\"route\",\"destination\":"
 	    "\"10.77.0.0/16\"}]}", &r);
@@ -1430,7 +1431,7 @@ ATF_TC_BODY(services, tc)
 	    "ifconfig.log && grep -q '^gif3 inet 10.255.0.1/30 10.255.0.2$' "
 	    "ifconfig.log && grep -q '^gif3 description to lab$' ifconfig.log "
 	    "&& grep -q '^lo0 mtu 9000$' ifconfig.log && grep -q "
-	    "'^-n add -inet 10.88.0.0/16 10.0.0.1 -fib 2$' route.log && "
+	    "'^0 route-add 10.88.0.0/16 10.0.0.1 - 2 0 0 -$' route.log && "
 	    "grep -q '^mkpeer em0: bridge lower link0$' ngctl.log") == 0);
 	/* What ngctl is not to be given the agent refuses to queue. */
 	http("POST", path, "{\"jobs\":[{\"kind\":\"netgraph\",\"verb\":"
@@ -1447,7 +1448,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("10.0.0.1", jstr(&r, "data.best.gateway"));
 	ATF_CHECK_STREQ("em0", jstr(&r, "data.best.interface"));
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^-n get -inet 10.77.5.5 -fib 1$' route.log")
+	ATF_CHECK(system("grep -q '^-Q 0 route-get 10.77.5.5 1$' helper.log")
 	    == 0);
 	snprintf(path, sizeof(path), "%.*s/net/lookup?to=10.0.0.1;id",
 	    (int)(strlen(base) - strlen("/services")), base);
@@ -1480,7 +1481,7 @@ ATF_TC_BODY(services, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
-	ATF_CHECK(system("grep -q '^-j 4 -n get -inet 192.0.2.9$' route.log")
+	ATF_CHECK(system("grep -q '^-Q 4 route-get 192.0.2.9 0$' helper.log")
 	    == 0);
 	snprintf(path, sizeof(path), "%.*s/net/interfaces?jail=a;b",
 	    (int)(strlen(base) - strlen("/services")), base);
@@ -1775,6 +1776,19 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK(jstr(&r, "data.lines.0.text") == NULL);
 	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/log?jail=gw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.lines.0.text") != NULL && strcmp(jstr(&r,
+	    "data.lines.0.text"), "the jail's own line") == 0);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/processes?pid=%d",
+	    (int)(strlen(base) - strlen("/services")), base, (int)getpid());
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.threads.0.tid") != NULL);
+	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/log?name=..%%2Frc.conf",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);
@@ -1792,10 +1806,12 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK(jstr(&r, "data.bytes") != NULL);
 	resp_free(&r);
 	/* How it is sampled is set, and said back; not anyhow. */
-	http("POST", path, "{\"step\":3,\"keep\":100}", &r);
+	http("POST", path, "{\"step\":3,\"keep\":100,\"cpu\":95,\"mem\":80,"
+	    "\"swap\":10}", &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("3", jstr(&r, "data.step"));
 	ATF_CHECK_STREQ("100", jstr(&r, "data.keep"));
+	ATF_CHECK_STREQ("80", jstr(&r, "data.limits.mem"));
 	ATF_CHECK(system("grep -q '^step=3$' history.conf && grep -q "
 	    "'^keep=100$' history.conf") == 0);
 	resp_free(&r);
@@ -1813,6 +1829,21 @@ ATF_TC_BODY(services, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK(jstr(&r, "data.samples.0.0") == NULL);
+	resp_free(&r);
+	/* What happened there: numbered, to be asked for from a number. */
+	snprintf(path, sizeof(path), "%.*s/events",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "data.last") != NULL);
+	ATF_CHECK_STREQ("512", jstr(&r, "data.kept"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/events?after=99999999",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "data.events.0.n") == NULL);
 	resp_free(&r);
 	ATF_REQUIRE(system("sleep 300 & echo $! > sleep.pid") == 0);
 	{
@@ -1858,7 +1889,7 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("skipto 500 ip from any to any out", jstr(&r,
 	    "data.rules.0.text"));
 	ATF_CHECK_STREQ("900", jstr(&r, "data.rules.0.bytes"));
-	ATF_CHECK_STREQ("T46", jstr(&r, "data.tables.0"));
+	ATF_CHECK_STREQ("T46", jstr(&r, "data.tables.0.name"));
 	ATF_CHECK_STREQ("1002", jstr(&r, "data.kept.3.num"));
 	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/jobs",
@@ -2347,8 +2378,53 @@ ATF_TC_BODY(mtls, tc)
 		http("GET", path, NULL, &r);
 		EXPECT(&r, 200);
 		ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "kept open")
-		    != NULL, "%s", jstr(&r, "trace.2.detail"));
+		    != NULL && strstr(jstr(&r, "trace.2.detail"), "shared") !=
+		    NULL, "%s", jstr(&r, "trace.2.detail"));
 		resp_free(&r);
+		/*
+		 * Requests at once go over that one association, each
+		 * waiting for its own answer: the agent sees one SCTP
+		 * session, however many there were.
+		 */
+		{
+			pid_t	kids[6];
+			int	k, st, bad;
+
+			for (k = 0; k < 6; k++)
+				if ((kids[k] = fork()) == 0) {
+					struct resp	kr;
+
+					http("GET", path, NULL, &kr);
+					_exit(kr.status == 200 ? 0 : 1);
+				}
+			bad = 0;
+			for (k = 0; k < 6; k++)
+				if (waitpid(kids[k], &st, 0) == -1 ||
+				    !WIFEXITED(st) || WEXITSTATUS(st) != 0)
+					bad++;
+			ATF_CHECK_EQ(0, bad);
+		}
+		snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		{
+			const char	*t;
+			char		 key[64];
+			int		 k, nsctp;
+
+			nsctp = 0;
+			for (k = 0; k < 32; k++) {
+				snprintf(key, sizeof(key),
+				    "data.sessions.%d.transport", k);
+				if ((t = jstr(&r, key)) == NULL)
+					break;
+				if (strcmp(t, "sctp") == 0)
+					nsctp++;
+			}
+			ATF_CHECK_EQ_MSG(1, nsctp, "%d SCTP sessions", nsctp);
+		}
+		resp_free(&r);
+		snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
 		snprintf(path, sizeof(path), "/api/servers/%s/transport", sid);
 		http("GET", path, NULL, &r);
 		EXPECT(&r, 200);

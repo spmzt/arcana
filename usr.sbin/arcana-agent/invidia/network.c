@@ -51,8 +51,8 @@ run_kind(struct work *w, uint8_t kind, uint8_t family, uint32_t fib,
 		argv[i++] = (char *)(uintptr_t)opts.netstat_bin;
 		argv[i++] = (char *)(uintptr_t)"--libxo";
 		argv[i++] = (char *)(uintptr_t)"json";
-		argv[i++] = (char *)(uintptr_t)(kind == ARC_NET_KIND_ROUTES ?
-		    "-rnW" : kind == ARC_NET_KIND_NEXTHOPS ? "-onW" : "-nW");
+		argv[i++] = (char *)(uintptr_t)(kind == ARC_NET_KIND_NEXTHOPS ?
+		    "-onW" : kind == ARC_NET_KIND_NHGROUPS ? "-OnW" : "-nW");
 		argv[i++] = (char *)(uintptr_t)"-f";
 		argv[i++] = (char *)(uintptr_t)(family == ARC_NET_FAMILY_INET ?
 		    "inet" : "inet6");
@@ -87,8 +87,9 @@ array_path(uint8_t kind)
 {
 
 	switch (kind) {
-	case ARC_NET_KIND_ROUTES:
-		return ("statistics.route-information.route-table.rt-family");
+	case ARC_NET_KIND_NHGROUPS:
+		return ("statistics.route-nhgrp-information.nhgrp-table."
+		    "rt-family");
 	case ARC_NET_KIND_NEXTHOPS:
 		return ("statistics.route-nhop-information.nhop-table."
 		    "rt-family");
@@ -100,89 +101,55 @@ array_path(uint8_t kind)
 }
 
 /*
- * A routing table too large to send, or one to search: netstat(1)'s
- * plain listing is read line by line, nothing of it kept but the rows
- * wanted, up to ROUTES_MAX of them.  The reply has the shape of the
- * libxo document, so that it is shown the same, with how many rows the
- * table has and whether more matched than were sent.
+ * The routing tables, read by the helper through netlink(4), a route
+ * a line as a JSON object (nlroute.c).  Nothing of a table is kept but
+ * the rows wanted, up to ROUTES_MAX of them, so one of any size is
+ * read; the reply says how many routes the table has and whether more
+ * were wanted than are sent.  Its shape is that of netstat(1)'s libxo
+ * document, the tables of two families in one array.
  */
 #define	ROUTES_MAX	2000
 
 struct scan {
-	ucl_object_t	*entries;	/* of the family being read */
-	const char	*filter;
-	const uint8_t	*cover;		/* keep the rows this address is in */
-	int		 af;		/* its family */
+	FILE		*out;
 	size_t		 max;		/* rows kept at most */
 	uint64_t	 skip;		/* of those wanted, left out first */
 	uint64_t	 total;
 	size_t		 kept;
-	bool		 body;		/* past the header line */
+	bool		 six;		/* the family being read */
+	bool		 open;		/* its array is */
+	bool		 some;		/* and has a row */
 	bool		 truncated;
 };
 
-/*
- * The length of the prefix of the route a line of netstat -rn starts
- * with, when the address is inside it; -1 when it is not, or when the
- * line's destination is not of the family.
- */
-static int
-covers(const char *line, int af, const uint8_t *addr)
+static void
+scan_family(struct scan *sc)
 {
-	uint8_t		 net[16];
-	const char	*errstr;
-	char		 dest[80], *slash, *zone;
-	size_t		 len;
-	int		 plen, max, i;
 
-	len = strcspn(line, " \t");
-	if (len == 0 || len >= sizeof(dest))
-		return (-1);
-	memcpy(dest, line, len);
-	dest[len] = '\0';
-	if (strcmp(dest, "default") == 0)
-		return (0);
-	max = af == AF_INET ? 32 : 128;
-	plen = max;
-	if ((slash = strchr(dest, '/')) != NULL) {
-		*slash = '\0';
-		plen = (int)strtonum(slash + 1, 0, max, &errstr);
-		if (errstr != NULL)
-			return (-1);
-	}
-	if ((zone = strchr(dest, '%')) != NULL)
-		*zone = '\0';
-	if (inet_pton(af, dest, net) != 1)
-		return (-1);
-	for (i = 0; i < plen / 8; i++)
-		if (net[i] != addr[i])
-			return (-1);
-	if (plen % 8 != 0 && ((net[i] ^ addr[i]) & (0xff << (8 - plen % 8))) !=
-	    0)
-		return (-1);
-	return (plen);
+	if (sc->open)
+		fputs("]},", sc->out);
+	fprintf(sc->out, "{\"address-family\":\"%s\",\"rt-entry\":[", sc->six ?
+	    "Internet6" : "Internet");
+	sc->open = true;
+	sc->some = false;
 }
 
 static void
 scan_line(const char *line, void *arg)
 {
 	struct scan	*sc;
-	ucl_object_t	*e;
-	char		*copy, *f[8], *p, *tok;
-	int		 n, plen;
 
 	sc = arg;
-	if (!sc->body) {
-		sc->body = strncmp(line, "Destination", 11) == 0;
+	if (strncmp(line, "#total ", 7) == 0) {
+		sc->total = strtoull(line + 7, NULL, 10);
 		return;
 	}
-	if (line[0] == '\0')
+	if (strcmp(line, "#family 6") == 0) {
+		sc->six = true;
+		scan_family(sc);
 		return;
-	sc->total++;
-	if (sc->filter != NULL && strstr(line, sc->filter) == NULL)
-		return;
-	plen = -1;
-	if (sc->cover != NULL && (plen = covers(line, sc->af, sc->cover)) < 0)
+	}
+	if (line[0] != '{')
 		return;
 	/* Read on from where a reply before this one ended. */
 	if (sc->skip > 0) {
@@ -193,104 +160,47 @@ scan_line(const char *line, void *arg)
 		sc->truncated = true;
 		return;
 	}
-	if ((copy = strdup(line)) == NULL)
-		err(1, "strdup");
-	n = 0;
-	p = copy;
-	while (n < 8 && (tok = strsep(&p, " \t")) != NULL)
-		if (tok[0] != '\0')
-			f[n++] = tok;
-	/* Destination Gateway Flags Nhop# Mtu Netif [Metric] [Expire] */
-	if (n >= 6) {
-		e = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(e, ucl_object_fromstring(f[0]),
-		    "destination", 0, false);
-		ucl_object_insert_key(e, ucl_object_fromstring(f[1]),
-		    "gateway", 0, false);
-		ucl_object_insert_key(e, ucl_object_fromstring(f[2]), "flags",
-		    0, false);
-		ucl_object_insert_key(e, ucl_object_fromint(strtoll(f[3], NULL,
-		    10)), "nhop", 0, false);
-		ucl_object_insert_key(e, ucl_object_fromint(strtoll(f[4], NULL,
-		    10)), "mtu", 0, false);
-		ucl_object_insert_key(e, ucl_object_fromstring(f[5]),
-		    "interface-name", 0, false);
-		if (n == 8)
-			ucl_object_insert_key(e, ucl_object_fromstring(f[7]),
-			    "expire-time", 0, false);
-		if (plen >= 0)
-			ucl_object_insert_key(e, ucl_object_fromint(plen),
-			    "prefixlen", 0, false);
-		ucl_array_append(sc->entries, e);
-		sc->kept++;
-	}
-	free(copy);
+	if (!sc->open)
+		scan_family(sc);
+	fprintf(sc->out, "%s%s", sc->some ? "," : "", line);
+	sc->some = true;
+	sc->kept++;
 }
 
 static int
 routes_scan(struct work *w, uint8_t family, const char *filter, uint32_t fib,
     uint32_t offset, struct arc_network_rsp *rsp)
 {
-	static const struct {
-		uint8_t		 family;
-		const char	*arg, *name;
-	} fams[] = {
-		{ ARC_NET_FAMILY_INET, "inet", "Internet" },
-		{ ARC_NET_FAMILY_INET6, "inet6", "Internet6" },
-	};
 	struct scan	 sc;
-	ucl_object_t	*top, *st, *ri, *rt, *arr, *fo;
-	unsigned char	*json;
-	char		*argv[7];
-	size_t		 i;
-	bool		 any;
+	const char	*words[4];
+	char		*json;
+	size_t		 len;
+	int		 rc;
 
 	memset(&sc, 0, sizeof(sc));
-	sc.filter = filter;
 	sc.max = ROUTES_MAX;
 	sc.skip = offset;
-	arr = ucl_object_typed_new(UCL_ARRAY);
-	any = false;
-	for (i = 0; i < nitems(fams); i++) {
-		if (family != ARC_NET_FAMILY_ALL && family != fams[i].family)
-			continue;
-		sc.entries = ucl_object_typed_new(UCL_ARRAY);
-		sc.body = false;
-		argv[0] = (char *)(uintptr_t)opts.netstat_bin;
-		argv[1] = (char *)(uintptr_t)"-rnW";
-		argv[2] = (char *)(uintptr_t)"-f";
-		argv[3] = (char *)(uintptr_t)fams[i].arg;
-		argv[4] = fib != 0 ? (char *)(uintptr_t)"-F" : NULL;
-		argv[5] = fib != 0 ? wfmt(w, "%u", fib) : NULL;
-		argv[6] = NULL;
-		if (run_exec_lines(w, argv, scan_line, &sc) != 0) {
-			ucl_object_unref(sc.entries);
-			continue;
-		}
-		any = true;
-		fo = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(fo, ucl_object_fromstring(fams[i].name),
-		    "address-family", 0, false);
-		ucl_object_insert_key(fo, sc.entries, "rt-entry", 0, false);
-		ucl_array_append(arr, fo);
-	}
-	if (!any) {
-		ucl_object_unref(arr);
-		rsp->error = "netstat could not list the routes";
+	sc.six = family == ARC_NET_FAMILY_INET6;
+	json = NULL;
+	if ((sc.out = open_memstream(&json, &len)) == NULL) {
+		rsp->error = "cannot build the reply";
 		return (0);
 	}
-	rt = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(rt, arr, "rt-family", 0, false);
-	ri = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(ri, rt, "route-table", 0, false);
-	st = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(st, ri, "route-information", 0, false);
-	top = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(top, st, "statistics", 0, false);
-	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
-	ucl_object_unref(top);
-	if (json == NULL) {
-		rsp->error = "cannot build the reply";
+	fputs("{\"statistics\":{\"route-information\":{\"route-table\":{"
+	    "\"rt-family\":[", sc.out);
+	words[0] = family == ARC_NET_FAMILY_INET ? "4" : family ==
+	    ARC_NET_FAMILY_INET6 ? "6" : "0";
+	words[1] = wfmt(w, "%u", fib);
+	words[2] = filter != NULL && filter[0] != '\0' ? filter : "-";
+	words[3] = "-";
+	rc = run_exec_lines(w, helper_argv(w, "routes", 4, words), scan_line,
+	    &sc);
+	if (!sc.open)
+		scan_family(&sc);
+	fputs("]}]}}}}", sc.out);
+	if (fclose(sc.out) != 0 || json == NULL || rc != 0) {
+		free(json);
+		rsp->error = "the kernel did not list its routes";
 		return (0);
 	}
 	rsp->json = wtext(w, wadopt(w, json));
@@ -329,9 +239,7 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 		return (do_ipfw(w, rsp));
 	rsp->has_ok = true;
 	rsp->ok = false;
-	/* Searched for on the host, or read on: line by line. */
-	if (kind == ARC_NET_KIND_ROUTES && ((filter != NULL && filter[0] !=
-	    '\0') || offset > 0))
+	if (kind == ARC_NET_KIND_ROUTES)
 		return (routes_scan(w, family, filter, fib, offset, rsp));
 	if (family != ARC_NET_FAMILY_ALL) {
 		if (run_kind(w, kind, family, fib, &res) != 0) {
@@ -341,8 +249,6 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 			return (0);
 		}
 		if (res.truncated) {
-			if (kind == ARC_NET_KIND_ROUTES)
-				return (routes_scan(w, family, NULL, fib, 0, rsp));
 			rsp->error = wfmt(w, "the table is larger than the %d "
 			    "bytes a reply carries; narrow it to one family or "
 			    "ask the host directly", ARC_MAX_JSON);
@@ -362,8 +268,6 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 		return (0);
 	}
 	if ((ok4 && res.truncated) || (ok6 && res6.truncated)) {
-		if (kind == ARC_NET_KIND_ROUTES)
-			return (routes_scan(w, family, NULL, fib, 0, rsp));
 		rsp->error = wfmt(w, "the table is larger than the %d bytes a "
 		    "reply carries; ask for one family", ARC_MAX_JSON);
 		return (0);
@@ -403,8 +307,6 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 	}
 	if (strlen((char *)json) > ARC_MAX_JSON) {
 		free(json);
-		if (kind == ARC_NET_KIND_ROUTES)
-			return (routes_scan(w, family, NULL, fib, 0, rsp));
 		rsp->error = wfmt(w, "the tables are larger than the %d bytes "
 		    "a reply carries", ARC_MAX_JSON);
 		return (0);
@@ -414,32 +316,28 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 	return (0);
 }
 
-/* "   gateway: 10.0.0.1" of route(8) get into best, as "gateway". */
-static void
-lookup_line(const char *line, void *arg)
-{
-	static const char *const keys[] = { "route to", "destination", "mask",
-	    "gateway", "fib", "interface", "flags" };
-	ucl_object_t	*best;
-	const char	*p, *colon;
-	size_t		 i, len;
+/* A covering route, a line of the helper's, among the candidates. */
+struct cands {
+	ucl_object_t	*arr;
+	size_t		 max;
+};
 
-	best = arg;
-	p = line + strspn(line, " \t");
-	if ((colon = strstr(p, ": ")) == NULL)
+static void
+cand_line(const char *line, void *arg)
+{
+	struct cands	*c;
+	ucl_object_t	*o;
+
+	c = arg;
+	if (line[0] != '{' || ucl_array_size(c->arr) >= c->max)
 		return;
-	len = (size_t)(colon - p);
-	for (i = 0; i < nitems(keys); i++)
-		if (strlen(keys[i]) == len && strncmp(p, keys[i], len) == 0) {
-			ucl_object_insert_key(best, ucl_object_fromstring(
-			    colon + 2), i == 0 ? "to" : keys[i], 0, true);
-			return;
-		}
+	if ((o = parse(line, strlen(line))) != NULL)
+		ucl_array_append(c->arr, o);
 }
 
 /*
- * The route to an address: what route(8) get says the kernel would
- * use, and every route of the table the address is in, the most
+ * The route to an address: what the kernel says it would use, and
+ * every route of the table the address is in, the most
  * specific first being the same and the rest what would be used in
  * its place.
  */
@@ -449,12 +347,13 @@ int
 do_route_lookup(struct work *w, const char *address, uint32_t fib,
     struct arc_route_lookup_rsp *rsp)
 {
-	struct scan	 sc;
+	struct execres	 res;
+	struct cands	 cands;
 	ucl_object_t	*top, *best;
 	unsigned char	*json;
+	const char	*words[4];
 	uint8_t		 raw[16];
-	char		*argv[9];
-	int		 af, n;
+	int		 af;
 
 	rsp->has_ok = true;
 	rsp->ok = false;
@@ -474,42 +373,25 @@ do_route_lookup(struct work *w, const char *address, uint32_t fib,
 	    "inet" : "inet6"), "family", 0, false);
 	ucl_object_insert_key(top, ucl_object_fromint(fib), "fib", 0, false);
 
-	best = ucl_object_typed_new(UCL_OBJECT);
-	n = 0;
-	argv[n++] = (char *)(uintptr_t)opts.route_bin;
-	argv[n++] = (char *)(uintptr_t)"-n";
-	argv[n++] = (char *)(uintptr_t)"get";
-	argv[n++] = (char *)(uintptr_t)(af == AF_INET ? "-inet" : "-inet6");
-	argv[n++] = (char *)(uintptr_t)address;
-	if (fib != 0) {
-		argv[n++] = (char *)(uintptr_t)"-fib";
-		argv[n++] = wfmt(w, "%u", fib);
+	/* No route is an answer too: the helper fails, and best stays out. */
+	words[0] = address;
+	words[1] = wfmt(w, "%u", fib);
+	if (run_exec(w, helper_argv(w, "route-get", 2, words), &res) == 0 &&
+	    res.out != NULL && (best = parse(res.out, res.outlen)) != NULL) {
+		if (ucl_object_lookup(best, "interface") != NULL)
+			ucl_object_insert_key(top, best, "best", 0, false);
+		else
+			ucl_object_unref(best);
 	}
-	argv[n] = NULL;
-	/* No route is an answer too: route(8) fails, and best stays out. */
-	if (run_exec_lines(w, argv, lookup_line, best) == 0 &&
-	    ucl_object_lookup(best, "interface") != NULL)
-		ucl_object_insert_key(top, best, "best", 0, false);
-	else
-		ucl_object_unref(best);
-
-	memset(&sc, 0, sizeof(sc));
-	sc.entries = ucl_object_typed_new(UCL_ARRAY);
-	sc.cover = raw;
-	sc.af = af;
-	sc.max = CANDIDATES_MAX;
-	n = 0;
-	argv[n++] = (char *)(uintptr_t)opts.netstat_bin;
-	argv[n++] = (char *)(uintptr_t)"-rnW";
-	argv[n++] = (char *)(uintptr_t)"-f";
-	argv[n++] = (char *)(uintptr_t)(af == AF_INET ? "inet" : "inet6");
-	if (fib != 0) {
-		argv[n++] = (char *)(uintptr_t)"-F";
-		argv[n++] = wfmt(w, "%u", fib);
-	}
-	argv[n] = NULL;
-	(void)run_exec_lines(w, argv, scan_line, &sc);
-	ucl_object_insert_key(top, sc.entries, "candidates", 0, false);
+	cands.arr = ucl_object_typed_new(UCL_ARRAY);
+	cands.max = CANDIDATES_MAX;
+	words[0] = "0";
+	words[1] = wfmt(w, "%u", fib);
+	words[2] = "-";
+	words[3] = address;
+	(void)run_exec_lines(w, helper_argv(w, "routes", 4, words), cand_line,
+	    &cands);
+	ucl_object_insert_key(top, cands.arr, "candidates", 0, false);
 
 	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);

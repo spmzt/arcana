@@ -65,8 +65,16 @@ bytes(char *buf, size_t len, int64_t n)
 void
 view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 {
+	static const struct tcol	pcols[] = {
+		{ "Peer", "public-key", false }, { "Endpoint", "endpoint",
+		false }, { "Allowed", NULL, false }, { "Handshake",
+		"latest-handshake", true }, { "In / out", "rx", true },
+	};
+	const ucl_object_t		**rows;
+	char				  tid[64];
+	int				  r;
 	const ucl_object_t	*o, *p, *ip;
-	ucl_object_iter_t	 it, pit, iit;
+	ucl_object_iter_t	 it, iit;
 	char			 buf[64], rx[24], tx[24];
 	int64_t			 now, hs;
 	int			 n;
@@ -105,12 +113,13 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 			h_raw(h, "<p class=\"dim\">No peers.</p></section>");
 			continue;
 		}
-		h_raw(h, "<table class=\"net\"><thead><tr><th>Peer</th><th>"
-		    "Endpoint</th><th>Allowed</th><th>Handshake</th><th>In / "
-		    "out</th><th></th></tr></thead><tbody>");
-		pit = NULL;
-		while ((p = ucl_object_iterate(jget(o, "peers"), &pit, true)) !=
-		    NULL) {
+		h_raw(h, "<table class=\"net wgpeers\">");
+		snprintf(tid, sizeof(tid), "wg-%.40s", jstr(o, "name") != NULL ?
+		    jstr(o, "name") : "");
+		tbl_head(h, tid, pcols, 5, 1);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows(tid, jget(o, "peers"), pcols, 5, app.filter);
+		for (r = 0; (p = rows[r]) != NULL; r++) {
 			hs = jint(p, "latest-handshake", 0);
 			h_fmt(h, "<tr class=\"%s\"><td><code class=\"key\"",
 			    hs != 0 && now - hs < 180 ? "up" : "down");
@@ -156,6 +165,7 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 			h_attr(h, "data-value", jstr(p, "public-key"));
 			h_raw(h, ">×</button></td></tr>");
 		}
+		free(rows);
 		h_raw(h, "</tbody></table></section>");
 	}
 	if (n == 0)

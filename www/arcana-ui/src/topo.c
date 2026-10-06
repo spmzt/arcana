@@ -3615,12 +3615,12 @@ ng_place(const char *id, int i, int total)
 void
 view_netgraph(struct html *h, struct server *s, const ucl_object_t *nodes)
 {
-	const ucl_object_t	*o, *hk, *sel;
+	const ucl_object_t	*o, *hk, *sel, **nrows;
 	ucl_object_iter_t	 it, hit;
 	const char		*id;
 	char			 p[80];
 	double			 mx, my;
-	int			 i, k, m, total;
+	int			 i, k, m, total, nr;
 
 	if (strcmp(ng.sid, s->id) != 0) {
 		memset(&ng, 0, sizeof(ng));
@@ -3753,15 +3753,18 @@ view_netgraph(struct html *h, struct server *s, const ucl_object_t *nodes)
 		    "node's edge onto another node to connect a hook of each. "
 		    "Changes run <code>ngctl</code> as jobs; they are not "
 		    "kept over a boot.</p></section>");
-	h_raw(h, "</aside></div><table class=\"net\"><thead><tr><th>Node</th>"
-	    "<th>Type</th><th>ID</th><th>Hooks</th></tr></thead><tbody>");
-	it = NULL;
-	while ((o = ucl_object_iterate(nodes, &it, true)) != NULL) {
-		if (app.filter[0] != '\0' && (jstr(o, "name") == NULL ||
-		    strstr(jstr(o, "name"), app.filter) == NULL) && (jstr(o,
-		    "type") == NULL || strstr(jstr(o, "type"), app.filter) ==
-		    NULL))
-			continue;
+	h_raw(h, "</aside></div><table class=\"net ngnodes\">");
+	{
+		static const struct tcol ncols[] = {
+			{ "Node", "name", false }, { "Type", "type", false },
+			{ "ID", "id", false }, { "Hooks", NULL, false },
+		};
+
+		tbl_head(h, "ngnodes", ncols, 4, 0);
+		h_raw(h, "<tbody>");
+		nrows = tbl_rows("ngnodes", nodes, ncols, 4, app.filter);
+	}
+	for (nr = 0; (o = nrows[nr]) != NULL; nr++) {
 		h_raw(h, "<tr><td>");
 		h_txt(h, jstr(o, "name"));
 		h_raw(h, "</td><td>");
@@ -3782,6 +3785,7 @@ view_netgraph(struct html *h, struct server *s, const ucl_object_t *nodes)
 		}
 		h_raw(h, "</td></tr>");
 	}
+	free(nrows);
 	h_raw(h, "</tbody></table>");
 }
 

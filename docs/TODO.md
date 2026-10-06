@@ -2,28 +2,40 @@
 
 ## To do
 
-- Routes through netlink, with its attributes mapped to CBOR, instead of
-  running route(8) and netstat(1).
+- Netlink, further: the events told to the console as they happen
+  (cblink notifications) and not only asked for; a jail's own network
+  watched as the host's is; neighbours (ARP, NDP) and nexthops read
+  the same way; the host's routes read in the daemon itself and not
+  by the helper it runs; a route's attributes as CBOR of the spec and
+  not as JSON text.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: `zfs send` and `receive` between
-  hosts; encryption keys; a file system made on a partition (newfs) and
-  grown; swap; a disk's health (SMART); a vnet jail's own datasets.
-- The firewall's page, further: rules of a part moved by dragging and
-  renumbered to make room; a rule's words offered as they are typed
-  (actions, tables, interfaces, the host's own addresses); a hit
-  counter drawn over time and the rules that never matched marked;
-  the difference between the kept rules and the kernel's shown as a
-  whole before Apply; a packet followed through the chain ("what
-  happens to tcp from A to B in"); the log of denied packets
-  (ipfw0) read; tables and NAT with pages of their own.
-- The firewall, beyond what there is: its tables' entries read and
-  changed, NAT and NAT64 instances made from forms and not only as
-  lines of the kept rules, pipes and queues, the dynamic rules shown,
-  a rule moved, and a jail's firewall from the jail's page (the agent
-  takes the jail; the page asks only for the host).
-- Bridges and geneve, beyond what there is: a bridge's own options
-  from a form (priority, timers, protocol: the agent takes them), the
-  addresses a bridge has learned, a geneve tunnel's forwarding table.
+  two hosts (on one host it is done; between two it needs the agents
+  to reach each other, which is the mesh's); a key that is typed, for
+  a dataset whose keylocation is prompt, without it being kept in a
+  job; a key changed; file systems other than UFS made; a disk's
+  self-test started; a vnet jail's datasets from the jail's own page.
+- The firewall, further: a packet followed by the kernel itself and
+  not by the page's reading of the rules; a rule's words offered as
+  they are typed; rules moved by dragging; a hit counter drawn over
+  time; a line of the kept rules taken out when what it made is
+  deleted; forms for NAT and pipes in place of ipfw's own words; a
+  jail's firewall shown on or off as the jail has it (the page shows
+  the host's switch).
+- To look at (2026-10-06): the test VM (FreeBSD 16-CURRENT, labvm)
+  stopped answering, and had to be restarted, right after `ifconfig
+  bridge0 maxaddr 500` was run by the agent on a bridge it had just
+  made, with one epair member that had learned one address, and whose
+  priority had been set to 4096 a moment before. No crash dump was
+  written: a hang, not a panic. Not reproduced since; the lab that
+  did it is `lab-br.sh` of the session's scratchpad, minus that line.
+  Once, in the same lab, the agent's `ifconfig -av` failed with
+  "getnameinfo: Address family not recognized" while the bridge and
+  its epair were being made; not reproduced either.
+- A geneve tunnel's forwarding table: if_geneve keeps one and shows
+  no way to read it from userland (no sysctl as vxlan has, no dump
+  through netlink); once it does, shown as a bridge's addresses are.
+  A learned address of a bridge deleted, and a static one added.
 - Workflows: a chain of steps kept by the console and run by it on
   several hosts at once. As decided:
   - The spec is the schema the steps are made from: a table in
@@ -45,27 +57,25 @@
   - Runs kept, each host and step with its trace; the chain drawn as
     a graph, and a run as that graph coloured as it goes; the queue
     saved as a workflow.
-- Gula, more of it: a jail's own logs (its `/var/log`), the packed
-  logs of newsyslog, the audit trail and `dmesg`; a level for a line
-  where syslogd writes one (`-v`); the history kept across a restart
-  of the agent, and older samples thinned instead of dropped; each jail's
-  share of the CPUs and the memory (rctl, racct); a threshold on any
-  of the figures as an event for the workflows; threads of a process,
-  its open files and sockets (procstat).
-- Routes, connections and sockets in parts, as sysctl's values are:
-  the agent answers sysctl as a dump, the console passes each item to
-  the page over a WebSocket (`/api/stream`), and the table fills as
-  they come. The network's tables are still one reply each, cut off
-  at a size and counted: what they show is the output of netstat(1)
-  and sockstat(1), which the agent has to run in a thread of its own
-  and a dump is answered in the loop's. They need the rows kept by
-  the agent between the parts, or netlink instead of the programs.
-- The page on a phone: a table as cards, one for each row, with what
-  is done to a row behind one menu; the older tables (BIRD's
-  protocols, WireGuard's peers, routes, sockets) sorted and filtered
-  by the helper the newer ones use.
-- One SCTP association shared by the requests that run at once, each
-  on a stream of its own, instead of a connection for each.
+- Gula, further: older samples thinned instead of dropped; a jail's
+  share of the CPUs and memory as rctl accounts it, not only added up
+  from its processes; a threshold on a disk, an interface or a
+  jail; the kernel's messages followed as they come (not read whole
+  each time); dmesg for an agent that is not root, which the kernel
+  refuses unless security.bsd.unprivileged_read_msgbuf is on.
+- Connections and sockets in parts as the programs print them, and
+  not after netstat and sockstat have printed the whole document:
+  through the kernel's own lists (sysctl net.inet.tcp.pcblist and
+  the like) or netlink, as the routes are.
+- The page on a phone, further: a card's title the column that names
+  the row best (a process's command, not its number); the row's
+  actions behind one menu when there are many; the map and the
+  firewall's chain drawn for a narrow screen.
+- SCTP, further: what comes in parts as a cblink stream (each on an
+  SCTP stream of its own, flow-controlled by itself) instead of a
+  dump, so that it can share the association too; a burst of first
+  requests to a host opens an association each until one is shared,
+  and the others are closed then.
 - The mesh: agents joined by SCTP associations, each to at least a
   configured number of others (2 unless set), so that the console
   reaches an agent it has lost through one it still has. SCTP only,

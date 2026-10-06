@@ -149,31 +149,8 @@ write_net()
 	cat > fake-netstat <<'EOS'
 #!/bin/sh
 echo "fake-netstat $*" >&2
-# With ./huge, a table too large to hold: the libxo document is cut
-# short, and the plain listing has 3000 routes to read line by line.
-if [ -f huge ] && [ "$*" = "--libxo json -rnW -f inet" ]; then
-	printf '{"statistics": {"route-information": {"route-table": {"rt-family": [{"address-family": "Internet", "rt-entry": ['
-	head -c 5000000 /dev/zero | tr '\0' ' '
-	exit 0
-fi
-if [ -f huge ] && [ "$*" = "-rnW -f inet" ]; then
-	printf 'Routing tables\n\nInternet:\nDestination        Gateway            Flags   Nhop#    Mtu            Netif   Metric Expire\n'
-	jot 3000 0 | awk '{ printf "10.%d.%d.0/24      192.0.2.1          UGS  %8d   1500              em0       1\n", int($1 / 250), $1 % 250, $1 }'
-	exit 0
-fi
-# With ./big, an IPv4 routing table of 6000 routes: over a megabyte.
-if [ -f big ] && [ "$*" = "--libxo json -rnW -f inet" ]; then
-	printf '{"statistics": {"route-information": {"route-table": {"rt-family": [{"address-family": "Internet", "rt-entry": ['
-	i=0
-	while [ $i -lt 6000 ]; do
-		printf '{"destination":"10.%d.%d.0/24","gateway":"192.0.2.1","flags":"UGS","flags_pretty":["up","gateway","static"],"nhop":%d,"mtu":1500,"interface-name":"em0"},' $((i / 250)) $((i % 250)) $i
-		i=$((i + 1))
-	done
-	echo '{"destination":"10.99.99.99/32","gateway":"last-entry","flags":"UH","interface-name":"lo0"}]}]}}}}'
-	exit 0
-fi
 case "$*" in
-*-rnW*)	echo '{"statistics": {"route-information": {"route-table": {"rt-family": [{"address-family": "Internet6", "rt-entry": [{"destination": "::1", "gateway": "link#2", "flags": "UHS", "interface-name": "lo0"}]}]}}}}' ;;
+*-OnW*)	echo '{"statistics": {"route-nhgrp-information": {"nhgrp-table": {"rt-family": [{"address-family": "Internet", "nhgrp-entry": [{"nhgrp-index": 1, "nhg-refcnt": 1, "nhop-weights": [{"nh-index": 5, "nh-weight": 2, "nh-slots": 2, "nh-gw": "10.0.0.1", "nh-interface": "em0"}]}]}]}}}}' ;;
 *-onW*)	echo '{"statistics": {"route-nhop-information": {"nhop-table": {"rt-family": []}}}}' ;;
 *)	echo '{"statistics": {"socket": [{"protocol": "tcp4", "local": {"address": "10.0.0.1", "port": "22"}, "remote": {"address": "10.0.0.2", "port": "4000"}, "tcp-state": "ESTABLISHED"}]}}' ;;
 esac
@@ -184,6 +161,41 @@ echo "fake-sockstat $*" >&2
 echo '{"__version": "1", "sockstat": {"socket": [{"user": "root", "command": "sshd", "pid": 1, "fd": 3, "proto": "tcp4", "local": {"address": "*", "port": 22}, "foreign": {"address": "*", "port": "*"}}]}}'
 EOS
 	chmod +x fake-netstat fake-sockstat
+	# The helper, which speaks netlink(4) for the routes: what it is
+	# asked is logged, what it answers is canned.  ./huge is a table
+	# of 3000 routes; ./covers the routes an address is in.
+	[ -f fake-helper ] || cat > fake-helper <<EOS
+#!/bin/sh
+echo "fake-helper \$*" >&2
+shift
+echo "\$*" >> $(pwd)/helper.log
+jid=\$1 verb=\$2
+shift 2
+case "\$verb" in
+routes)
+	if [ "\$4" != - ]; then
+		[ -f $(pwd)/covers ] && cat $(pwd)/covers
+		echo '{"destination":"default","gateway":"192.0.2.1","flags":"UGS","nhop":1,"mtu":1500,"interface-name":"em0","metric":1,"weight":1,"fib":0,"prefixlen":0}'
+		echo "#total 5"; exit 0
+	fi
+	if [ -f $(pwd)/huge ] && [ "\$1" != 6 ]; then
+		jot 3000 0 | awk -v f="\$3" '{ d = sprintf("10.%d.%d.0/24", int(\$1 / 250), \$1 % 250); if (f == "-" || index(d, f)) printf "{\\"destination\\":\\"%s\\",\\"gateway\\":\\"192.0.2.1\\",\\"flags\\":\\"UGS\\",\\"nhop\\":%d,\\"mtu\\":1500,\\"interface-name\\":\\"em0\\",\\"metric\\":1,\\"weight\\":1,\\"fib\\":0,\\"prefixlen\\":24}\\n", d, \$1 }'
+		echo "#total 3000"; exit 0
+	fi
+	[ "\$1" != 6 ] && echo '{"destination":"10.0.0.0/24","gateway":"link#1","flags":"U","nhop":2,"mtu":1500,"interface-name":"em0","metric":1,"weight":1,"fib":'\$2',"prefixlen":24}'
+	[ "\$1" = 0 ] && echo "#family 6"
+	[ "\$1" != 4 ] && echo '{"destination":"::1","gateway":"link#2","flags":"UHS","nhop":1,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":'\$2',"prefixlen":128}'
+	echo "#total 2" ;;
+route-get)
+	case "\$1" in 203.0.113.*) exit 1 ;; esac
+	echo '{"to":"'\$1'","destination":"10.77.0.0","prefixlen":16,"gateway":"10.0.0.1","fib":"'\$2'","interface":"em0","flags":"UGS","metric":1,"weight":1}' ;;
+route-add|route-del)
+	echo "\$jid \$verb \$*" >> $(pwd)/route.log
+	case "\$1" in 10.66.0.0/16) echo "10.66.0.0/16: the route is there already" >&2; exit 1 ;; esac ;;
+esac
+exit 0
+EOS
+	chmod +x fake-helper
 }
 
 # pkg(8) stand-in: the pending upgrades live in ./pending, one per line
@@ -241,7 +253,7 @@ start_daemon()
 	    -U "$(pwd)/installed-agent" -B "$(pwd)/build" \
 	    -c "$(pwd)/build.mk" -G "$(pwd)/fake-git" -M "$(pwd)/fake-make" \
 	    -Y "$(pwd)/fake-keyscan" -I "$(pwd)/fake-ifconfig" \
-	    -r "$(pwd)/fake-route" -n "$(pwd)/fake-ngctl" \
+	    -n "$(pwd)/fake-ngctl" \
 	    -k "$(pwd)/fake-wg" -o "$(pwd)/wg" -b "$(pwd)/fake-birdc" \
 	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" \
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
@@ -596,15 +608,20 @@ service_config_cleanup()
 atf_test_case network cleanup
 network_head()
 {
-	atf_set "descr" "routes, nexthops, connections and sockets as the programs' libxo JSON"
+	atf_set "descr" "routes as the kernel has them, through the helper; nexthops, connections and sockets as the programs' libxo JSON"
 }
 network_body()
 {
 	start_daemon
+	# The routes: asked of the kernel by the helper, each with what
+	# the kernel says of it; the two families in one document.
 	atf_check -o save:routes.out "$JGC" -c "$SOCK" net routes -6
-	atf_check -o match:'"route-table"' cat routes.out
-	atf_check -o match:'fake-netstat --libxo json -rnW -f inet6' \
+	atf_check -o match:'"route-table":\{"rt-family":\[\{"address-family":"Internet6","rt-entry":\[\{"destination":"::1","gateway":"link#2","flags":"UHS","nhop":1,"mtu":16384,"interface-name":"lo0","metric":1,"weight":1,"fib":0,"prefixlen":128\}\]\}\]' \
+	    cat routes.out
+	atf_check -o match:'fake-helper -Q 0 routes 6 0 - -:' \
 	    "$JGC" -t -c "$SOCK" net routes -6
+	atf_check -o match:'"address-family":"Internet","rt-entry":\[\{"destination":"10.0.0.0/24"[^]]*\]\},\{"address-family":"Internet6","rt-entry":\[\{"destination":"::1"' \
+	    "$JGC" -c "$SOCK" net routes
 	# Both families: a run each, the entries joined.
 	atf_check -o save:nh.out "$JGC" -t -c "$SOCK" net nexthops
 	atf_check -o match:'fake-netstat --libxo json -onW -f inet$' cat nh.out
@@ -616,16 +633,13 @@ network_body()
 	atf_check -o match:'fake-sockstat --libxo json -w -4$' cat so.out
 	atf_check -o match:'fake-sockstat --libxo json -w -6$' cat so.out
 	atf_check -o match:'"sshd".*"sshd"' cat so.out
+	# The nexthop groups, what a route of several next hops points to.
+	atf_check -o match:'"nhgrp-index":1,"nhg-refcnt":1,"nhop-weights":\[\{"nh-index":5,"nh-weight":2' \
+	    -o match:'fake-netstat --libxo json -OnW -f inet$' \
+	    "$JGC" -t -c "$SOCK" net nhgroups
 	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" net tables
-	# A table far larger than what a trace step keeps arrives whole.
-	touch big
-	atf_check -o save:big.out "$JGC" -c "$SOCK" net routes -4
-	atf_check -o match:'"destination":"10.99.99.99/32"' cat big.out
-	atf_check -o match:'last-entry' cat big.out
-
 	# A table too large to send whole: its first rows come, with how
 	# many there are; and it can be searched on the host.
-	rm big
 	touch huge
 	atf_check -o save:huge.out -e match:'the table has 3000 rows' \
 	    "$JGC" -c "$SOCK" net routes -4
@@ -633,6 +647,20 @@ network_body()
 	    -o match:'"destination":"10.7.249.0/24"' \
 	    -o not-match:'"destination":"10.8.0.0/24"' \
 	    -o match:'"interface-name":"em0"' cat huge.out
+	# In parts, as they are taken: all 3000, with their family in each,
+	# and the sockets and connections the same way; the text searched
+	# for on the host.
+	atf_check -o save:parts.out "$JGC" -c "$SOCK" net routes -4 parts
+	atf_check -o inline:'3000\n' sh -c "grep -o '\"destination\"' parts.out | wc -l | tr -d ' '"
+	atf_check -o match:'^\[\{"family":"Internet","destination":"10.0.0.0/24"' \
+	    -o not-match:'Internet6' cat parts.out
+	atf_check -o match:'"family":"Internet6","destination":"::1"' \
+	    "$JGC" -c "$SOCK" net routes -6 parts
+	atf_check -o match:'"destination":"10.11.249.0/24"' -o not-match:'10.0.0.0/24' \
+	    "$JGC" -c "$SOCK" net routes -4 parts 10.11.249.
+	atf_check -o match:'^\[\{"protocol":"tcp4"' "$JGC" -c "$SOCK" net connections -4 parts
+	atf_check -o match:'"command":"sshd"' "$JGC" -c "$SOCK" net sockets parts
+	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" net nexthops parts
 	atf_check -o save:found.out "$JGC" -c "$SOCK" net routes -4 10.11.249.
 	atf_check -o match:'"destination":"10.11.249.0/24"' \
 	    -o not-match:'"destination":"10.0.0.0/24"' cat found.out
@@ -756,13 +784,7 @@ echo "\$*" >> $(pwd)/ifconfig.log
 case " \$* " in *" 10.9.9.9"*) echo "ifconfig: ioctl (SIOCAIFADDR): File exists" >&2; exit 1 ;; esac
 exit 0
 EOS
-	cat > fake-route <<EOS
-#!/bin/sh
-echo "\$*" >> $(pwd)/route.log
-case " \$* " in *" 10.66.0.0/16 "*) echo "route: message indicates error: File exists" >&2; exit 1 ;; esac
-echo "add net \$4: gateway \$5"
-EOS
-	chmod +x fake-ifconfig fake-route
+	chmod +x fake-ifconfig
 	start_daemon
 	# The loopback is on every host: with its addresses and flags.
 	atf_check -o save:if.json "$JGC" -c "$SOCK" net interfaces
@@ -797,35 +819,46 @@ EOS
 	atf_check -o not-match:'nope0' -o not-match:'300' -o not-match:'reboot' \
 	    cat ifconfig.log
 
-	# Static routes: route(8) is run as one would run it.
+	# Static routes: asked of the kernel by the helper, word by word.
 	atf_check -o match:'route add 10.77.0.0/16 via 10.0.0.1' \
-	    -o match:'fake-route -n add -inet 10.77.0.0/16 10.0.0.1' \
+	    -o match:'fake-helper -Q 0 route-add 10.77.0.0/16 10.0.0.1 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	# With its cost, its share among those of one cost, and the address
 	# sent from; kept, they are in rc.conf's route too.
 	atf_check -o match:'route add 10.81.0.0/16 via 10.0.0.1 \(metric\) \(weight\) \(kept\)' \
-	    -o match:'fake-route -n add -inet 10.81.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 5 -weight 20' \
+	    -o match:'fake-helper -Q 0 route-add 10.81.0.0/16 10.0.0.1 - 0 5 20 10.0.0.9' \
 	    "$JGC" -p -c "$SOCK" route add 10.81.0.0/16 10.0.0.1 metric 5 weight 20 source 10.0.0.9
 	atf_check -o match:'^route_[a-z0-9_]*="10.81.0.0/16 10.0.0.1 -ifa 10.0.0.9 -metric 5 -weight 20"$' \
 	    cat rc.conf
-	atf_check -o match:'fake-route -n delete -inet 10.81.0.0/16 10.0.0.1 -metric 5' \
+	atf_check -o match:'fake-helper -Q 0 route-del 10.81.0.0/16 10.0.0.1 - 0 5' \
 	    "$JGC" -p -c "$SOCK" route delete 10.81.0.0/16 10.0.0.1 metric 5
 	atf_check -o not-match:'10.81.0.0' cat rc.conf
 	atf_check -s exit:1 -o match:'no address of the route.s family' \
 	    "$JGC" -c "$SOCK" route add 10.82.0.0/16 10.0.0.1 source 2001:db8::9
 	atf_check -s exit:1 -e match:'the address to send from is an address' -o ignore \
 	    "$JGC" -c "$SOCK" route add 10.82.0.0/16 10.0.0.1 source '-x'
-	atf_check -o match:'fake-route -n add -inet6 2001:db8:7::/48 2001:db8::1' \
+	atf_check -o match:'fake-helper -Q 0 route-add 2001:db8:7::/48 2001:db8::1 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 2001:db8:7::/48 2001:db8::1
-	atf_check -o match:'fake-route -n add -inet 10.78.0.0/16 -iface lo0' \
+	atf_check -o match:'fake-helper -Q 0 route-add 10.78.0.0/16 - lo0 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add 10.78.0.0/16 lo0
-	atf_check -o match:'fake-route -n add -inet6 default 2001:db8::1' \
+	atf_check -o match:'fake-helper -Q 0 route-add ::/0 2001:db8::1 - 0 0 0 -' \
 	    "$JGC" -c "$SOCK" route add ::/0 2001:db8::1
-	atf_check -o match:'fake-route -n delete -inet 10.77.0.0/16:' \
+	atf_check -o match:'fake-helper -Q 0 route-del 10.77.0.0/16 - - 0 0' \
 	    "$JGC" -c "$SOCK" route delete 10.77.0.0/16
 	atf_check -o match:'^ +[0-9]+ queued +route delete default via 10.0.0.1' \
 	    "$JGC" -q -c "$SOCK" route delete default 10.0.0.1
-	atf_check -s exit:1 -o match:'File exists' \
+	# Several gateways: one route of as many next hops, each with its
+	# share; not kept, not deleted as one, and each an address.
+	atf_check -o match:'fake-helper -Q 0 route-add 10.83.0.0/16 10.0.0.1@2,10.0.0.2 - 0 0 0 -' \
+	    "$JGC" -c "$SOCK" route add 10.83.0.0/16 10.0.0.1@2,10.0.0.2
+	atf_check -s exit:1 -o match:'rc.conf keeps a route of one gateway' \
+	    "$JGC" -p -c "$SOCK" route add 10.84.0.0/16 10.0.0.1,10.0.0.2
+	atf_check -s exit:1 -o match:'a share is from 1 to 255' \
+	    "$JGC" -c "$SOCK" route add 10.84.0.0/16 10.0.0.1@0,10.0.0.2
+	atf_check -s exit:1 -o match:'each of several gateways is one' \
+	    "$JGC" -c "$SOCK" route add 10.84.0.0/16 10.0.0.1,em0
+	atf_check -o not-match:'10.84' cat route.log
+	atf_check -s exit:1 -o match:'the route is there already' \
 	    "$JGC" -c "$SOCK" route add 10.66.0.0/16 10.0.0.1
 	atf_check -s exit:1 -o match:'not a destination' \
 	    "$JGC" -c "$SOCK" route add 10.0.0.0/33 10.0.0.1
@@ -856,15 +889,6 @@ case " \$* " in
 esac
 exit 0
 EOS
-	cat > fake-route <<EOS
-#!/bin/sh
-echo "\$*" >> $(pwd)/route.log
-if [ "\$2" = get ]; then
-	case "\$*" in *203.0.113.*) echo "route: route has not been found" >&2; exit 1 ;; esac
-	printf '   route to: %s\ndestination: 10.77.0.0\n       mask: 255.255.0.0\n    gateway: 10.0.0.1\n        fib: 0\n  interface: em0\n      flags: <UP,GATEWAY,DONE,STATIC>\n recvpipe  sendpipe\n       0         0\n' "\$4"
-fi
-exit 0
-EOS
 	cat > fake-ngctl <<EOS
 #!/bin/sh
 echo "\$*" >> $(pwd)/ngctl.log
@@ -886,22 +910,13 @@ shutdown) [ "\$2" = gone: ] && { echo "ngctl: send msg: No such file or director
 esac
 exit 0
 EOS
-	chmod +x fake-ifconfig fake-route fake-ngctl
+	chmod +x fake-ifconfig fake-ngctl
 	start_daemon
-	# The plain routing table, for the routes that cover an address.
-	cat > fake-netstat <<'EOS'
-#!/bin/sh
-echo "fake-netstat $*" >&2
-case "$*" in
-"-rnW -f inet"*)
-	printf 'Routing tables\n\nInternet:\nDestination        Gateway            Flags   Nhop#    Mtu      Netif Expire\n'
-	printf 'default            192.0.2.1          UGS         1   1500        em0\n'
-	printf '10.77.0.0/16       10.0.0.1           UGS         2   1500        em0\n'
-	printf '10.77.5.0/24       10.0.0.9           UGS         3   1500        em1\n'
-	printf '10.78.0.0/16       10.0.0.1           UGS         4   1500        em0\n'
-	printf '10.77.5.5          link#3             UH          5   1500        lo0\n' ;;
-*)	echo '{"statistics": {"route-information": {"route-table": {"rt-family": []}}}}' ;;
-esac
+	# The routes an address is in, as the helper would find them.
+	cat > covers <<'EOS'
+{"destination":"10.77.0.0/16","gateway":"10.0.0.1","flags":"UGS","nhop":2,"mtu":1500,"interface-name":"em0","metric":1,"weight":1,"fib":0,"prefixlen":16}
+{"destination":"10.77.5.0/24","gateway":"10.0.0.9","flags":"UGS","nhop":3,"mtu":1500,"interface-name":"em1","metric":1,"weight":1,"fib":0,"prefixlen":24}
+{"destination":"10.77.5.5","gateway":"link#3","flags":"UH","nhop":5,"mtu":1500,"interface-name":"lo0","metric":1,"weight":1,"fib":0,"prefixlen":32}
 EOS
 
 	# An MTU and a description, live; and kept, in rc.conf.
@@ -1001,7 +1016,7 @@ EOS
 	    "$JGC" -c "$SOCK" interface em0 destroy
 
 	# Routes: in a routing table of their own, and kept by a name.
-	atf_check -o match:'fake-route -n add -inet 10.77.0.0/16 10.0.0.1 -fib 2' \
+	atf_check -o match:'fake-helper -Q 0 route-add 10.77.0.0/16 10.0.0.1 - 2 0 0 -' \
 	    "$JGC" -F 2 -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 10.77.0.0/16 10.0.0.1
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route add 2001:db8:7::/48 2001:db8::1
@@ -1015,24 +1030,25 @@ EOS
 	atf_check -o ignore "$JGC" -p -c "$SOCK" route delete 10.77.0.0/16
 	atf_check -o match:'^static_routes="arc_10_80_0_0_16_fib3"$' \
 	    -o not-match:'route_arc_10_77' cat rc.conf
-	atf_check -o match:'fake-netstat --libxo json -rnW -f inet -F 2' \
+	atf_check -o match:'fake-helper -Q 0 routes 4 2 - -' \
 	    "$JGC" -t -F 2 -c "$SOCK" net routes -4
 
 	# The route to an address: the one taken, and those that cover it,
 	# each with the length of its prefix.
 	atf_check -o save:get.out "$JGC" -c "$SOCK" route get 10.77.5.5
-	atf_check -o match:'"best":\{"to":"10.77.5.5","destination":"10.77.0.0","mask":"255.255.0.0","gateway":"10.0.0.1","fib":"0","interface":"em0"' \
+	atf_check -o match:'"best":\{"to":"10.77.5.5","destination":"10.77.0.0","prefixlen":16,"gateway":"10.0.0.1","fib":"0","interface":"em0"' \
 	    -o match:'"destination":"default".*"prefixlen":0' \
 	    -o match:'"destination":"10.77.0.0/16".*"prefixlen":16' \
 	    -o match:'"destination":"10.77.5.0/24","gateway":"10.0.0.9".*"prefixlen":24' \
 	    -o match:'"destination":"10.77.5.5".*"prefixlen":32' \
-	    -o not-match:'10.78.0.0' cat get.out
+	    cat get.out
+	atf_check -o match:'^0 routes 0 0 - 10.77.5.5$' cat helper.log
 	# No route is an answer: nothing is best, the default still covers.
 	atf_check -o not-match:'"best"' -o match:'"destination":"default"' \
 	    "$JGC" -c "$SOCK" route get 203.0.113.9
 	atf_check -s exit:1 -e match:'not an IPv4 or IPv6 address' -o ignore \
 	    "$JGC" -c "$SOCK" route get '10.0.0.1;id'
-	atf_check -o match:'get -inet 10.77.5.5 -fib 4' \
+	atf_check -o match:'fake-helper -Q 0 route-get 10.77.5.5 4' \
 	    "$JGC" -t -F 4 -c "$SOCK" route get 10.77.5.5
 
 	# Netgraph: the nodes with their hooks, and the few commands.
@@ -1531,8 +1547,11 @@ EOS
 	# The helper, which would attach to the jail: its answers.
 	cat > fake-helper <<EOS
 #!/bin/sh
+echo "fake-helper \$*" >&2
 echo "\$*" >> $(pwd)/helper.log
 case "\$3" in
+routes) echo '{"destination":"default","gateway":"10.99.0.1","flags":"UGS","nhop":1,"mtu":1500,"interface-name":"epair91b","metric":1,"weight":1,"fib":0,"prefixlen":0}'; echo "#total 1" ;;
+route-get) echo '{"to":"'\$4'","destination":"default","prefixlen":0,"gateway":"10.99.0.1","fib":"0","interface":"epair91b","flags":"UGS","metric":1,"weight":1}' ;;
 interfaces) echo '{"interfaces":[{"name":"epair91b","up":true,"mtu":1500,"addresses":[{"family":"inet","address":"10.99.0.2","prefixlen":24}]},{"name":"wg0","up":true,"mtu":1420,"addresses":[{"family":"inet","address":"10.255.0.1","prefixlen":30}]}],"time":1000}' ;;
 exists) case "\$4" in epair91b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
 up) echo 1 ;;
@@ -1542,7 +1561,6 @@ esac
 exit 0
 EOS
 	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
-	printf '#!/bin/sh\necho "$*" >> %s/route.log\n[ "$4" = get ] && printf "   route to: %%s\\n    gateway: 10.99.0.1\\n  interface: epair91b\\n" "$6"\nexit 0\n' "$(pwd)" > fake-route
 	printf '#!/bin/sh\necho "$*" >> %s/sysrc.log\nexit 1\n' "$(pwd)" > sysrc-log
 	cat > fake-wg <<EOS
 #!/bin/sh
@@ -1567,7 +1585,10 @@ esac
 exit 0
 EOS
 	printf '#!/bin/sh\necho "bird $*" >> %s/birdc.log\ngrep -q BROKEN "%s$3" && { echo "syntax error" >&2; exit 1; }\nexit 0\n' "$(pwd)" "$R" > fake-bird
-	chmod +x fake-jls fake-jexec fake-helper fake-ifconfig fake-route fake-wg fake-birdc fake-bird
+	chmod +x fake-jls fake-jexec fake-helper fake-ifconfig fake-wg fake-birdc fake-bird
+	printf '#!/bin/sh\necho "ipfw $*" >> %s/ipfw.log\nexit 0\n' "$(pwd)" > fake-ipfw
+	chmod +x fake-ipfw
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw"
 	start_daemon
 
 	# Its interfaces: read by the helper, which attaches to the jail;
@@ -1579,11 +1600,11 @@ EOS
 	    "$JGC" -c "$SOCK" net interfaces
 	# Its routes and its route to an address: the host's programs,
 	# told which jail.
-	atf_check -o match:'fake-netstat -j 4 --libxo json -rnW -f inet' \
+	atf_check -o match:'fake-helper -Q 4 routes 4 0 - -' \
 	    "$JGC" -t -j gateway -c "$SOCK" net routes -4
-	atf_check -o match:'"gateway":"10.99.0.1","interface":"epair91b"' \
+	atf_check -o match:'"gateway":"10.99.0.1","fib":"0","interface":"epair91b"' \
 	    "$JGC" -j gateway -c "$SOCK" route get 192.0.2.9
-	atf_check -o match:'^-j 4 -n get -inet 192.0.2.9$' cat route.log
+	atf_check -o match:'^-Q 4 route-get 192.0.2.9 0$' cat helper.log
 
 	# A change there: ifconfig and route with the jail, the job named
 	# after it, what is kept kept in the jail's own rc.conf.
@@ -1593,8 +1614,15 @@ EOS
 	atf_check -o match:'^ifconfig_epair91b_alias0="inet 10.99.0.5/24"$' \
 	    cat "$R/etc/rc.conf"
 	atf_check -o not-match:'10.99.0.5' cat rc.conf
-	atf_check -o match:'fake-route -j 4 -n add -inet 10.77.0.0/16 10.99.0.1' \
+	atf_check -o match:'fake-helper -Q 4 route-add 10.77.0.0/16 10.99.0.1 - 0 0 0 -' \
 	    "$JGC" -j gateway -c "$SOCK" route add 10.77.0.0/16 10.99.0.1
+	# Its firewall is its own: ipfw is run in the jail, not on the host.
+	atf_check -o match:'gateway' -o match:'fake-jexec 4 .*/fake-ipfw -q add 100 allow ip from any to any' \
+	    "$JGC" -j gateway -c "$SOCK" ipfw add 100 allow ip from any to any
+	atf_check -o match:'done' "$JGC" -j gateway -c "$SOCK" ipfw table T46 add 10.0.0.1
+	atf_check -o match:'"loaded":true' "$JGC" -j gateway -c "$SOCK" net ipfw
+	atf_check -o match:'^jexec 4 .*/fake-ipfw -q table T46 add 10.0.0.1$' \
+	    -o match:'^jexec 4 .*/fake-ipfw -S show$' cat jexec.log
 	# An interface is one of the jail's, or it is not there.
 	atf_check -s exit:1 -o match:'no interface em0 in that jail' \
 	    "$JGC" -j gateway -c "$SOCK" interface em0 up
@@ -1739,8 +1767,7 @@ safe_mode_head()
 safe_mode_body()
 {
 	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
-	printf '#!/bin/sh\necho "$*" >> %s/route.log\n' "$(pwd)" > fake-route
-	chmod +x fake-ifconfig fake-route
+	chmod +x fake-ifconfig
 	start_daemon
 
 	# A client that waits for the job is heard from again: it stays.
@@ -1771,10 +1798,10 @@ safe_mode_body()
 	    -o match:'^lo0 down$' -o match:'^lo0 up$' \
 	    -o match:'^lo0 inet 127.0.0.1 -alias$' \
 	    -o match:'^lo0 inet 127.0.0.1/8 alias$' cat ifconfig.log
-	atf_check -o match:'^-n add -inet 10.77.0.0/16 10.0.0.1$' \
-	    -o match:'^-n delete -inet 10.77.0.0/16 10.0.0.1$' \
-	    -o match:'^-n delete -inet 10.78.0.0/16 10.0.0.1$' \
-	    -o match:'^-n add -inet 10.78.0.0/16 10.0.0.1$' cat route.log
+	atf_check -o match:'^0 route-add 10.77.0.0/16 10.0.0.1 - 0 0 0 -$' \
+	    -o match:'^0 route-del 10.77.0.0/16 10.0.0.1 - 0 0$' \
+	    -o match:'^0 route-del 10.78.0.0/16 10.0.0.1 - 0 0$' \
+	    -o match:'^0 route-add 10.78.0.0/16 10.0.0.1 - 0 0 0 -$' cat route.log
 	atf_check -o match:'not confirmed in time: undoing it' cat daemon.out
 
 	# A route deleted without its gateway could not be put back.
@@ -2373,6 +2400,10 @@ l2_body()
 	cat > fake-ifconfig <<EOS
 #!/bin/sh
 if [ "\$*" = "-av" ]; then cat $(pwd)/ifconfig.out; exit 0; fi
+if [ "\$2" = addr ]; then
+	[ "\$1" = bridge0 ] && printf '\t02:00:00:00:00:01 Vlan10 epair0a 1193 flags=0<>\n\t02:00:00:00:00:02 Vlan1 em1 0 flags=1<STATIC>\n'
+	exit 0
+fi
 echo "\$*" >> $(pwd)/ifconfig.log
 case " \$* " in *" nosuch0 "*) echo "ifconfig: BRDGADD nosuch0: No such file or directory" >&2; exit 1 ;; esac
 exit 0
@@ -2426,6 +2457,9 @@ EOS
 	    -o match:'"root":"00:11:22:33:44:55","root_priority":4096,"root_cost":2000,"root_port":5' \
 	    -o match:'"vlanfilter":true' -o match:'"defuntagged":1' \
 	    -o match:'"is_root":false' cat br.json
+	# The addresses it has learned, and behind which member each is.
+	atf_check -o match:'"learned":\[\{"mac":"02:00:00:00:00:01","vlan":10,"member":"epair0a","expire":1193\},\{"mac":"02:00:00:00:00:02","vlan":1,"member":"em1","expire":0,"static":true\}\],"learned_total":2' \
+	    cat br.json
 	atf_check -o match:'"name":"epair5a","stp":true,"flags":\[[^]]*"stp"[^]]*\],"port":5,"priority":128,"cost":2000,"proto":"rstp","role":"root","state":"forwarding","untagged":10,"mode":"access"' \
 	    -o match:'"name":"em1","stp":false,[^}]*"addresses":\["192.0.2.7"\],"port":6,[^}]*"vlanproto":"802.1q","untagged":1,"tagged":"10-20,30","mode":"trunk"' \
 	    -o match:'"name":"tap3",[^}]*"role":"alternate","state":"discarding"\}' \
@@ -2550,7 +2584,8 @@ observe_body()
 		printf 'Oct  5 12:00:04 web1 syslogd: last message repeated 2 times\n'
 	} > log/messages
 	printf 'Oct  5 11:00:00 web1 su[77]: BAD SU alice to root on /dev/pts/1\n' > log/auth.log
-	printf 'packed' > log/messages.0.bz2
+	printf 'Oct  5 11:00:01 <auth.info> web1 sshd[80]: Connection closed\n' >> log/auth.log
+	printf 'Sep 30 09:00:00 web1 kernel: an older day\n' | bzip2 > log/messages.0.bz2
 	printf 'who\0was\0here\n' > log/utx.log
 	printf 'not\0a\0text\n' > log/blob
 	ln -s /etc/master.passwd log/linked
@@ -2567,6 +2602,14 @@ observe_body()
 	    -o match:'"ncpu":[0-9]+,"elapsed":[0-9.]+' cat ps.json
 	atf_check -s exit:1 -e match:'not running' -o ignore \
 	    "$JGC" -j nosuchjail -c "$SOCK" ps
+	# Each jail's share, added up; and one process with its files and
+	# threads.
+	atf_check -o match:'"jails":\[' cat ps.json
+	atf_check -o save:one.json "$JGC" -c "$SOCK" ps $pid
+	atf_check -o match:"^\{\"pid\":$pid,\"comm\":\"sleep\",\"files\":\[" \
+	    -o match:'"threads":\[\{"tid":[0-9]+,"name":"sleep","state":"sleep","wait":"nanslp","pri":-?[0-9]+,"wcpu":[0-9.]+,"time":[0-9.]+,"cpu":[0-9]+\}\]' \
+	    cat one.json
+	atf_check -s exit:1 -e match:'no process 99998' -o ignore "$JGC" -c "$SOCK" ps 99998
 
 	# A nice value, and a signal; with when it started, only that one.
 	atf_check -o match:"done +renice 5 $pid\$" \
@@ -2610,7 +2653,7 @@ observe_body()
 	atf_check -o save:log.json "$JGC" -c "$SOCK" log
 	atf_check -o match:'"name":"messages"' \
 	    -o match:'"files":\[\{"name":"auth.log","size":[0-9]+,"mtime":[0-9]+\},\{"name":"blob",[^}]*\},\{"name":"messages",' \
-	    -o not-match:'bz2' -o not-match:'linked' -o not-match:'utx' \
+	    -o not-match:'linked' -o not-match:'utx' \
 	    -o match:'\{"time":"Oct  5 12:00:01","host":"web1","tag":"kernel","text":"em0: link state changed to UP"\}' \
 	    -o match:'\{"time":"Oct  5 12:00:02","host":"web1","pid":"812","tag":"sshd","text":"Accepted publickey for root from 2001:db8::9 port 51234"\}' \
 	    -o match:'\{"time":"2026-10-05T12:00:03.123456\+03:30","host":"web1","tag":"cron","pid":"933","text":"\(root\) CMD \(/usr/libexec/atrun\)"\}' \
@@ -2625,7 +2668,18 @@ observe_body()
 	atf_check -o match:'"lines":\[\{"text":"a line of no form"\},\{[^}]*syslogd[^}]*\}\]' \
 	    "$JGC" -c "$SOCK" log -o 2
 	atf_check -o match:'"name":"auth.log"' -o match:'"tag":"su","text":"BAD SU' \
+	    -o match:'"time":"Oct  5 11:00:01","level":"auth.info","host":"web1","pid":"80","tag":"sshd"' \
 	    "$JGC" -c "$SOCK" log auth.log
+	# A packed log is unpacked to be read; the kernel's own messages.
+	atf_check -o match:'"name":"messages.0.bz2","size":[0-9]+,"mtime":[0-9]+,"packed":true' \
+	    -o match:'"tag":"kernel","text":"an older day"' \
+	    "$JGC" -c "$SOCK" log messages.0.bz2
+	if sysctl -n kern.msgbuf 2>/dev/null | grep -q .; then
+		atf_check -o match:'"name":"@dmesg","lines":\[\{"text":"' "$JGC" -c "$SOCK" log @dmesg
+	else
+		atf_check -s exit:1 -e match:'kern.msgbuf' -o ignore "$JGC" -c "$SOCK" log @dmesg
+	fi
+	atf_check -s exit:1 -e match:'@dmesg or @audit' -o ignore "$JGC" -c "$SOCK" log @nosuch
 	# Followed: only what was written since, a line half written not
 	# yet; a file shorter than it was is read again from its start.
 	atf_check -o match:'"lines":\[\]' -o match:"\"position\":$size" \
@@ -2638,8 +2692,8 @@ observe_body()
 	atf_check -o match:'"rotated":true' -o match:'"tag":"newsyslog"' \
 	    "$JGC" -c "$SOCK" log -f "$size"
 	# Only a file of the log directory, by its name, and not a packed one.
-	for bad in ../rc.conf .hidden a/b messages.0.bz2; do
-		atf_check -s exit:1 -e match:'named|packed' -o ignore \
+	for bad in ../rc.conf .hidden a/b; do
+		atf_check -s exit:1 -e match:'named' -o ignore \
 		    "$JGC" -c "$SOCK" log "$bad"
 	done
 	atf_check -s exit:1 -e match:'linked' -o ignore \
@@ -2648,6 +2702,12 @@ observe_body()
 	    "$JGC" -c "$SOCK" log nosuch
 	atf_check -s exit:1 -e match:'not a text' -o ignore \
 	    "$JGC" -c "$SOCK" log blob
+
+	# What happened: numbered from one, the last of them kept; none
+	# after a number there is none after.
+	atf_check -o match:'^\{"last":[0-9]+,"first":[0-9]+,"kept":512,"events":\[' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o match:'"events":\[\]' "$JGC" -c "$SOCK" events 99999999
 
 	# The history is kept without being asked for: one sample after a
 	# second, and none after the time of the last.
@@ -2670,6 +2730,16 @@ observe_body()
 	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history "$last"
 	# How it samples is set, and written down for the next start: fewer
 	# kept are the newest; none kept is no sampling and no memory.
+	# A limit crossed is an event, once, until it is crossed back.
+	atf_check -o match:'"limits":\{"cpu":1,"mem":1,"swap":0\}' \
+	    "$JGC" -c "$SOCK" history set 1 20 1 1 0
+	sleep 3
+	atf_check -o match:'"kind":"threshold","data":\{"what":"mem","value":[0-9]+,"limit":1,"over":true\}' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o inline:'1\n' sh -c "$JGC -c $SOCK events | grep -o '\"what\":\"mem\"' | wc -l | tr -d ' '"
+	atf_check -o match:'^cpu=1$' -o match:'^mem=1$' cat history.conf
+	atf_check -o match:'"limits":\{"cpu":90,"mem":90,"swap":50\}' \
+	    "$JGC" -c "$SOCK" history set 1 20 90 90 50
 	atf_check -o match:'"step":1,"keep":2,"bytes":[1-9][0-9]*,' \
 	    "$JGC" -c "$SOCK" history set 1 2
 	atf_check -o match:'^step=1$' -o match:'^keep=2$' cat history.conf
@@ -2687,10 +2757,14 @@ observe_body()
 	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 5 5001
 	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 0 10
 	# At its next start the agent samples as it was told.
+	sleep 3
 	stop_daemon
 	sleep 1
+	# The samples were written down when it stopped, and are back.
+	atf_check -o match:'^# arcana-agent samples' cat history.conf.samples
 	start_daemon
-	atf_check -o match:'"step":2,"keep":10,' "$JGC" -c "$SOCK" history
+	atf_check -o match:'"step":2,"keep":10,' -o match:'"samples":\[\[' \
+	    "$JGC" -c "$SOCK" history
 }
 observe_cleanup()
 {
@@ -2716,7 +2790,10 @@ case "\$*" in
 	printf '01001      3      180 set 0 allow tcp from any to me6 22 in\n'
 	printf '# DISABLED 01001      0        0 set 1 allow tcp from any to me6 2222 in\n'
 	printf '65535     99     9999 set 31 deny ip from any to any\n' ;;
-"table all info") printf -- '--- table(T46), set(0) ---\n kindex: 1, type: addr\n' ;;
+"table all info") printf -- '--- table(T46), set(0) ---\n kindex: 1, type: addr\n references: 2, valtype: legacy\n' ;;
+"table T46 list") printf -- '--- table(T46), set(0) ---\n10.0.0.0/8 0\n2001:db8::/32 0\n' ;;
+"pipe show") printf '00001:  10.000 Mbit/s    0 ms burst 0\n' ;;
+"-q table T46 add 10.9.9.9") echo "ipfw: Adding record failed: record already exists" >&2; exit 1 ;;
 "-D show")
 	printf '## Dynamic rules (2 136):\n'
 	printf '01001      7      560 (298s) STATE tcp 2001:db8::9 51234 <-> 2001:db8::1 22 :default\n'
@@ -2737,7 +2814,9 @@ EOS
 	atf_check -o match:'"loaded":true' \
 	    -o match:'\{"num":5,"pkts":12,"bytes":900,"set":0,"text":"skipto 500 ip from any to any out"\}' \
 	    -o match:'\{"num":1001,"pkts":0,"bytes":0,"set":1,"text":"allow tcp from any to me6 2222 in","disabled":true\}' \
-	    -o match:'"tables":\["T46"\]' -o match:'"kept":\[\]' \
+	    -o match:'"tables":\[\{"name":"T46","type":"addr","entries":\[\{"key":"10.0.0.0/8","value":"0"\},\{"key":"2001:db8::/32","value":"0"\}\],"count":2\}\]' \
+	    -o match:'"pipes":\["00001:  10.000 Mbit/s    0 ms burst 0"\]' \
+	    -o match:'"kept":\[\]' \
 	    -o match:'"file":false' cat fw.json
 	# The dynamic rules: the connections let through, each with its
 	# rule, its counters and how long it still lives.
@@ -2840,6 +2919,26 @@ add 00010 set 1 allow ip from table(T46) to any
 	    -o match:'^firewall_type=".*/fw/ipfw.rules"$' cat rc.conf
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw zero 5
 	atf_check -o match:'^ipfw -q zero 5$' tail -1 ipfw.log
+	# What a rule names and is not one: a table's entry, a NAT
+	# instance, a pipe; kept, a line at the head of the kept file,
+	# once; what ipfw refuses said; not all at once, no shell's words.
+	atf_check -o match:'done +ipfw table T46 add 192.0.2.0/24$' \
+	    "$JGC" -c "$SOCK" ipfw table T46 add 192.0.2.0/24
+	atf_check -o match:'^ipfw -q table T46 add 192.0.2.0/24$' cat ipfw.log
+	atf_check -o match:'done +ipfw nat 1 config if em0 same_ports \(kept\)$' \
+	    "$JGC" -p -c "$SOCK" ipfw nat 1 config if em0 same_ports
+	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw nat 1 config if em0 same_ports
+	atf_check -o inline:'1\n' sh -c "grep -c '^nat 1 config if em0 same_ports\$' fw/ipfw.rules"
+	atf_check -o match:'^nat 1 config if em0 same_ports$' sed -n 1p fw/ipfw.rules
+	atf_check -o match:'done' "$JGC" -c "$SOCK" ipfw pipe 1 config bw 10Mbit/s
+	atf_check -s exit:1 -o match:'record already exists' \
+	    "$JGC" -c "$SOCK" ipfw table T46 add 10.9.9.9
+	atf_check -s exit:1 -e match:'not all of them at once' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw table all flush
+	atf_check -s exit:1 -e match:'the words are ipfw' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw table T46 add '10.0.0.1;id'
+	atf_check -s exit:1 -e match:'not taken back' -o ignore \
+	    "$JGC" -s -c "$SOCK" ipfw table T46 flush x
 
 	# A rule's words are ipfw's own; a number is a number; the sets
 	# are not a rule's to name; what ipfw refuses is said.
@@ -2879,9 +2978,9 @@ storage_body()
 echo "zfs \$*" >> $(pwd)/storage.log
 case "\$*" in
 "list -Hp -t filesystem,volume"*)
-	printf 'tank\tfilesystem\t5000\t9000\t96\t/tank\tlz4\t1.50\t0\t0\tyes\ton\t-\t-\toff\n'
-	printf 'tank/data\tfilesystem\t4000\t9000\t4000\t/tank/data\tlz4\t2.00\t8000\t0\tyes\ton\t-\t-\toff\n'
-	printf 'tank/vol\tvolume\t100\t9000\t100\t-\toff\t1.00\t-\t0\t-\t-\ttank/data@a\t1048576\toff\n' ;;
+	printf 'tank\tfilesystem\t5000\t9000\t96\t/tank\tlz4\t1.50\t0\t0\tyes\ton\t-\t-\toff\toff\t-\tnone\toff\n'
+	printf 'tank/data\tfilesystem\t4000\t9000\t4000\t/tank/data\tlz4\t2.00\t8000\t0\tyes\ton\t-\t-\toff\taes-256-gcm\tunavailable\tfile:///k\ton\n'
+	printf 'tank/vol\tvolume\t100\t9000\t100\t-\toff\t1.00\t-\t0\t-\t-\ttank/data@a\t1048576\toff\toff\t-\tnone\toff\n' ;;
 "list -Hp -t snapshot"*)
 	printf 'tank/data@b\t10\t4000\t1759500000\n'
 	printf 'tank/data@a\t20\t3000\t1759400000\n' ;;
@@ -2920,9 +3019,83 @@ EOS
 		printf '#!/bin/sh\necho "%s $*" >> %s/storage.log\n[ "$1 $2" = "destroy ada9" ] && { echo "gpart: Device busy" >&2; exit 1; }\n[ "$1" = devlist ] && echo "<FAKE DISK 1.0>   at scbus0 target 0 lun 0 (pass0,ada0)"\nexit 0\n' "$p" "$(pwd)" > fake-$p
 	done
 	chmod +x fake-zfs fake-zpool fake-gpart fake-mount fake-umount fake-camcontrol
+	# The programs the daemon has no option for, in a directory of
+	# their own: what they are told is logged, what they say is canned.
+	mkdir tools
+	for p in newfs growfs swapon swapoff; do
+		printf '#!/bin/sh\necho "%s $*" >> %s/storage.log\nexit 0\n' "$p" "$(pwd)" > tools/$p
+	done
+	printf '#!/bin/sh\n[ "$1" = /dev/ada0p3 ] && echo ufs && exit 0\nexit 1\n' > tools/fstyp
+	cat > tools/nvmecontrol <<'EOS'
+#!/bin/sh
+cat <<EOP
+SMART/Health Information Log
+============================
+Critical Warning State:         0x00
+ Available spare:               0
+ Temperature:                   0
+Temperature:                    312 K, 38.85 C, 101.93 F
+Available spare:                100
+Available spare threshold:      10
+Percentage used:                3
+Power cycles:                   120
+Power on hours:                 4567
+Unsafe shutdowns:               12
+Media errors:                   0
+EOP
+EOS
+	cat > tools/smartctl <<'EOS'
+#!/bin/sh
+case "$4" in
+/dev/da0) echo '{"smart_status":{"passed":false},"temperature":{"current":51},"power_on_time":{"hours":40000},"ata_smart_attributes":{"table":[{"id":5,"name":"Reallocated_Sector_Ct","raw":{"value":88}},{"id":197,"name":"Current_Pending_Sector","raw":{"value":3}}]}}'; exit 8 ;;
+*) echo '{"smart_status":{"passed":true},"temperature":{"current":34},"power_on_time":{"hours":1200},"power_cycle_count":40,"ata_smart_attributes":{"table":[{"id":5,"name":"Reallocated_Sector_Ct","raw":{"value":0}},{"id":231,"name":"SSD_Life_Left","raw":{"value":97}}]}}' ;;
+esac
+EOS
+	chmod +x tools/*
 	printf '# Device\tMountpoint\tFStype\tOptions\tDump\tPass#\n/dev/ada0p2\t/\tufs\trw\t1\t1\n/dev/ada0p3\t/mnt/data\tufs\trw,noatime\t2\t2\nproc\t/proc\tprocfs\trw\t0\t0\n' > fstab
-	DAEMON_ARGS="-z $(pwd)/fake-zfs -Z $(pwd)/fake-zpool -q $(pwd)/fake-gpart -m $(pwd)/fake-mount -u $(pwd)/fake-umount -i $(pwd)/fake-camcontrol -S $(pwd)/fstab"
+	DAEMON_ARGS="-z $(pwd)/fake-zfs -Z $(pwd)/fake-zpool -q $(pwd)/fake-gpart -m $(pwd)/fake-mount -u $(pwd)/fake-umount -i $(pwd)/fake-camcontrol -S $(pwd)/fstab -2 $(pwd)/tools"
 	start_daemon
+
+	# A dataset's encryption and whether a jail has it; its key loaded
+	# from where it is kept, and forgotten; given to a jail, taken back.
+	atf_check -o match:'"name":"tank/data",[^}]*"encryption":"aes-256-gcm","keystatus":"unavailable","keylocation":"file:///k","jailed":"on"' \
+	    "$JGC" -c "$SOCK" storage datasets
+	atf_check -o match:'done +zfs load-key tank/data$' "$JGC" -c "$SOCK" zfs load-key tank/data
+	atf_check -o match:'done +zfs unload-key -r tank/data$' "$JGC" -c "$SOCK" zfs unload-key -r tank/data
+	atf_check -o match:'done +zfs jail web tank/data$' "$JGC" -c "$SOCK" zfs jail tank/data web
+	atf_check -o match:'done +zfs unjail web tank/data$' "$JGC" -c "$SOCK" zfs unjail tank/data web
+	atf_check -s exit:1 -e match:'a jail is named' -o ignore "$JGC" -c "$SOCK" zfs jail tank/data 'a b'
+	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs jail tank web
+	# A snapshot sent into a new dataset: the helper pipes zfs send
+	# into zfs receive, of all or of what changed since another.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" zfs replicate tank/data@b backup/data
+	atf_check -o match:"^0 zfs-pipe $(pwd)/fake-zfs tank/data@b backup/data - -\$" cat helper.log
+	atf_check -s exit:1 -e match:'a dataset is pool/name' -o ignore "$JGC" -c "$SOCK" zfs replicate tank/data backup/data
+	atf_check "$JGD" -Q 0 zfs-pipe "$(pwd)/fake-zfs" tank/data@b backup/data tank/data@a r
+	atf_check -o match:'^zfs send -R -i tank/data@a tank/data@b$' \
+	    -o match:'^zfs receive -u backup/data$' cat storage.log
+	# A file system made on a partition: not on one that has one, is
+	# a pool's, or is not a device; and one grown.
+	atf_check -o match:'done +newfs -U -L data /dev/ada0p4$' "$JGC" -c "$SOCK" gpart newfs ada0p4 data
+	atf_check -s exit:1 -o match:'has a file system on it \(ufs\)' "$JGC" -c "$SOCK" gpart newfs ada0p3
+	atf_check -o match:'done +newfs -U /dev/ada0p3$' "$JGC" -c "$SOCK" gpart newfs -f ada0p3
+	atf_check -s exit:1 -o match:'ada1p1 is a device of a pool' "$JGC" -c "$SOCK" gpart newfs -f ada1p1
+	atf_check -s exit:1 -e match:'named as GEOM names it' -o ignore "$JGC" -c "$SOCK" gpart newfs ../etc
+	atf_check -o match:'done +growfs -y /dev/ada0p3$' "$JGC" -c "$SOCK" gpart growfs ada0p3
+	atf_check -o not-match:'ada1p1$' -o not-match:'etc' cat storage.log
+	# Swap, on a device and off it.
+	atf_check -o match:'done +swapon /dev/ada0p9$' "$JGC" -c "$SOCK" swapon /dev/ada0p9
+	atf_check -o match:'done +swapoff /dev/ada0p9$' "$JGC" -c "$SOCK" swapoff /dev/ada0p9
+	atf_check -s exit:1 -e match:'swap is on a device' -o ignore "$JGC" -c "$SOCK" swapon /etc/passwd
+	atf_check -o match:'"swap":\[' "$JGC" -c "$SOCK" storage mounts
+	# How the disks say they are: an NVMe disk by nvmecontrol, the
+	# others by smartctl, one of them failing.
+	atf_check -o save:health.json "$JGC" -c "$SOCK" storage health
+	atf_check -o match:'\{"name":"nda0","by":"nvmecontrol","ok":true,"temperature":39,"spare_pct":100,"used_pct":3,"power_on_hours":4567,"unsafe_shutdowns":12,"media_errors":0,"power_cycles":120\}' \
+	    -o match:'\{"name":"ada0","by":"smartctl","ok":true,"temperature":34,"power_on_hours":1200,"power_cycles":40,"reallocated":0,"life_left":97\}' \
+	    -o match:'\{"name":"da0","by":"smartctl","ok":false,"temperature":51,"power_on_hours":40000,"reallocated":88,"pending":3\}' \
+	    cat health.json
+	: > storage.log
 
 	# The disks are GEOM's own, read from the kernel: sizes in bytes,
 	# partitions with their sectors.
@@ -2943,7 +3116,7 @@ EOS
 	    -o match:'\{"name":"ada2p1","depth":2,"state":"OFFLINE","read":"0","write":"0","cksum":"0","note":"was /dev/ada2p1"\}' \
 	    cat p.json
 	# Datasets and snapshots: sizes are numbers, "-" is nothing.
-	atf_check -o match:'\{"name":"tank/data","type":"filesystem","used":4000,"avail":9000,"refer":4000,"mountpoint":"/tank/data","compression":"lz4","ratio":"2.00","quota":8000,"reservation":0,"mounted":"yes","canmount":"on","readonly":"off"\}' \
+	atf_check -o match:'\{"name":"tank/data","type":"filesystem","used":4000,"avail":9000,"refer":4000,"mountpoint":"/tank/data","compression":"lz4","ratio":"2.00","quota":8000,"reservation":0,"mounted":"yes","canmount":"on","readonly":"off",' \
 	    -o match:'"name":"tank/vol","type":"volume".*"origin":"tank/data@a","volsize":1048576' \
 	    "$JGC" -c "$SOCK" storage datasets
 	atf_check -o match:'\{"snapshots":\[\{"name":"tank/data@b","used":10,"refer":4000,"creation":1759500000\}' \

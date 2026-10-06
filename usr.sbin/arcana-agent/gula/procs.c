@@ -17,10 +17,15 @@
 #include <sys/resource.h>
 #include <sys/sysctl.h>
 #include <sys/user.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+
+#include <netdb.h>
 
 #include <ctype.h>
 #include <errno.h>
 #include <jail.h>
+#include <libprocstat.h>
 #include <pthread.h>
 #include <pwd.h>
 #include <signal.h>
@@ -210,6 +215,9 @@ do_processes(struct work *w, const char *jail, struct arc_processes_rsp *rsp)
 	struct {
 		int	 jid;
 		char	*name;
+		int	 procs;
+		long long threads, rss;
+		double	 cpu, wcpu;
 	}			 jails[JAILS_SEEN];
 	struct kinfo_proc	*kp;
 	const struct kinfo_proc	*p;
@@ -303,6 +311,7 @@ do_processes(struct work *w, const char *jail, struct arc_processes_rsp *rsp)
 				    p->ki_jid; k++)
 					;
 				if (k == nj && nj < JAILS_SEEN) {
+					memset(&jails[nj], 0, sizeof(jails[0]));
 					jails[nj].jid = p->ki_jid;
 					jails[nj++].name =
 					    jail_getname(p->ki_jid);
@@ -310,6 +319,18 @@ do_processes(struct work *w, const char *jail, struct arc_processes_rsp *rsp)
 				if (k < nj && jails[k].name != NULL)
 					str(o, "jail", wtext(w,
 					    jails[k].name));
+				/* What the jail uses, all of it added up;
+				 * counted once, not when the command lines
+				 * are tried without. */
+				if (k < nj && args) {
+					jails[k].procs++;
+					jails[k].threads += p->ki_numthreads;
+					jails[k].rss += (long long)p->ki_rssize *
+					    getpagesize();
+					jails[k].cpu += sh[i].cpu;
+					jails[k].wcpu += 100.0 *
+					    (double)p->ki_pctcpu / FSCALE;
+				}
 			}
 			str(o, "state", state_name(p));
 			if (p->ki_stat == SSLEEP && p->ki_wmesg[0] != '\0')
@@ -336,6 +357,20 @@ do_processes(struct work *w, const char *jail, struct arc_processes_rsp *rsp)
 			ucl_array_append(arr, o);
 		}
 		ucl_object_insert_key(top, arr, "processes", 0, false);
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		for (k = 0; k < nj; k++) {
+			o = ucl_object_typed_new(UCL_OBJECT);
+			num(o, "jid", jails[k].jid);
+			if (jails[k].name != NULL)
+				str(o, "name", wtext(w, jails[k].name));
+			num(o, "procs", jails[k].procs);
+			num(o, "threads", jails[k].threads);
+			num(o, "rss", jails[k].rss);
+			real(o, "cpu", jails[k].cpu);
+			real(o, "wcpu", jails[k].wcpu);
+			ucl_array_append(arr, o);
+		}
+		ucl_object_insert_key(top, arr, "jails", 0, false);
 		ncpu = (int)sysconf(_SC_NPROCESSORS_ONLN);
 		num(top, "ncpu", ncpu > 0 ? ncpu : 1);
 		real(top, "elapsed", elapsed);
@@ -531,5 +566,139 @@ do_proc_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (-1);
 	}
 	step_end(w, step, true, NULL);
+	return (0);
+}
+
+/* A socket's address as text, or the family's name. */
+static const char *
+sock_text(struct work *w, const struct sockaddr_storage *ss)
+{
+	char	host[NI_MAXHOST], port[NI_MAXSERV];
+
+	if (ss->ss_family == AF_UNIX)
+		return (wtext(w, ((const struct sockaddr_un *)(const void *)
+		    ss)->sun_path));
+	if ((ss->ss_family == AF_INET || ss->ss_family == AF_INET6) &&
+	    getnameinfo((const struct sockaddr *)ss, ss->ss_len, host,
+	    sizeof(host), port, sizeof(port), NI_NUMERICHOST | NI_NUMERICSERV)
+	    == 0)
+		return (wfmt(w, ss->ss_family == AF_INET6 ? "[%s]:%s" : "%s:%s",
+		    host, port));
+	return ("");
+}
+
+/*
+ * One process, and more of it than the list has: its files, with what
+ * each is (a vnode's path, a socket's addresses), and its threads.
+ */
+int
+do_process(struct work *w, uint32_t pid, struct arc_processes_rsp *rsp)
+{
+	static const char *const types[] = { [PS_FST_TYPE_VNODE] = "file",
+	    [PS_FST_TYPE_FIFO] = "fifo", [PS_FST_TYPE_SOCKET] = "socket",
+	    [PS_FST_TYPE_PIPE] = "pipe", [PS_FST_TYPE_PTS] = "tty",
+	    [PS_FST_TYPE_KQUEUE] = "kqueue", [PS_FST_TYPE_MQUEUE] = "mqueue",
+	    [PS_FST_TYPE_SHM] = "shm", [PS_FST_TYPE_SEM] = "sem",
+	    [PS_FST_TYPE_PROCDESC] = "process", [PS_FST_TYPE_DEV] = "device" };
+	struct procstat		*ps;
+	struct kinfo_proc	*kp, *tp;
+	struct filestat_list	*files;
+	struct filestat		*fst;
+	struct sockstat		 sock;
+	ucl_object_t		*top, *arr, *o;
+	unsigned char		*json;
+	char			 errbuf[2048];
+	unsigned int		 cnt, i, n;
+	int			 step;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	step = step_begin(w, ARC_STEP_KIND_LIB, "procstat(3)", "process %u",
+	    pid);
+	if ((ps = procstat_open_sysctl()) == NULL) {
+		step_end(w, step, false, "procstat_open_sysctl failed");
+		rsp->error = "the processes could not be looked at";
+		return (0);
+	}
+	if ((kp = procstat_getprocs(ps, KERN_PROC_PID, (int)pid, &cnt)) == NULL
+	    || cnt == 0) {
+		procstat_close(ps);
+		step_end(w, step, false, "not there");
+		rsp->error = wfmt(w, "no process %u", pid);
+		return (0);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	num(top, "pid", pid);
+	str(top, "comm", wtext(w, kp->ki_comm));
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	n = 0;
+	if ((files = procstat_getfiles(ps, kp, 0)) != NULL) {
+		STAILQ_FOREACH(fst, files, next) {
+			if (n++ >= 500)
+				break;
+			o = ucl_object_typed_new(UCL_OBJECT);
+			if (fst->fs_fd >= 0)
+				num(o, "fd", fst->fs_fd);
+			else
+				str(o, "use", (fst->fs_uflags & PS_FST_UFLAG_CDIR)
+				    != 0 ? "cwd" : (fst->fs_uflags &
+				    PS_FST_UFLAG_RDIR) != 0 ? "root" :
+				    (fst->fs_uflags & PS_FST_UFLAG_TEXT) != 0 ?
+				    "text" : (fst->fs_uflags &
+				    PS_FST_UFLAG_MMAP) != 0 ? "mapped" :
+				    "other");
+			str(o, "type", fst->fs_type >= 0 && fst->fs_type <
+			    (int)nitems(types) && types[fst->fs_type] != NULL ?
+			    types[fst->fs_type] : "other");
+			if (fst->fs_path != NULL)
+				str(o, "path", wtext(w, fst->fs_path));
+			if (fst->fs_type == PS_FST_TYPE_SOCKET &&
+			    procstat_get_socket_info(ps, fst, &sock, errbuf) ==
+			    0) {
+				str(o, "proto", wtext(w, sock.dname));
+				str(o, "local", sock_text(w, &sock.sa_local));
+				str(o, "remote", sock_text(w, &sock.sa_peer));
+			}
+			if ((fst->fs_fflags & (PS_FST_FFLAG_READ |
+			    PS_FST_FFLAG_WRITE)) != 0)
+				str(o, "mode", (fst->fs_fflags &
+				    PS_FST_FFLAG_WRITE) != 0 ? (fst->fs_fflags &
+				    PS_FST_FFLAG_READ) != 0 ? "rw" : "w" : "r");
+			ucl_array_append(arr, o);
+		}
+		procstat_freefiles(ps, files);
+	}
+	ucl_object_insert_key(top, arr, "files", 0, false);
+	procstat_freeprocs(ps, kp);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if ((tp = procstat_getprocs(ps, KERN_PROC_PID | KERN_PROC_INC_THREAD,
+	    (int)pid, &cnt)) != NULL) {
+		for (i = 0; i < cnt && i < 1000; i++) {
+			o = ucl_object_typed_new(UCL_OBJECT);
+			num(o, "tid", tp[i].ki_tid);
+			str(o, "name", wtext(w, tp[i].ki_tdname));
+			str(o, "state", state_name(&tp[i]));
+			if (tp[i].ki_stat == SSLEEP && tp[i].ki_wmesg[0] != '\0')
+				str(o, "wait", wtext(w, tp[i].ki_wmesg));
+			num(o, "pri", tp[i].ki_pri.pri_level - PZERO);
+			real(o, "wcpu", 100.0 * (double)tp[i].ki_pctcpu / FSCALE);
+			real(o, "time", (double)tp[i].ki_runtime / 1e6);
+			num(o, "cpu", tp[i].ki_lastcpu);
+			ucl_array_append(arr, o);
+		}
+		procstat_freeprocs(ps, tp);
+	}
+	ucl_object_insert_key(top, arr, "threads", 0, false);
+	procstat_close(ps);
+	step_end(w, step, true, "%u files, %u threads", n, cnt);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL || strlen((char *)json) > ARC_MAX_JSON) {
+		free(json);
+		rsp->error = "more of it than a reply carries";
+		return (0);
+	}
+	rsp->json = wtext(w, wadopt(w, json));
+	rsp->ok = true;
 	return (0);
 }

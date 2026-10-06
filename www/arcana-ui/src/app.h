@@ -178,6 +178,7 @@ enum netkind {
 	NET_BIRD,
 	NET_BRIDGES,
 	NET_GENEVE,
+	NET_NHGROUPS,
 };
 
 /* The network tab's one table: what is shown, from which server. */
@@ -592,6 +593,7 @@ bool		 usage_form(const char *, const ucl_object_t *);
 void		 fmt_size(char *, size_t, double);
 void		 refresh_sysctl(struct server *, bool);
 void		 sysctl_stream(const ucl_object_t *);
+void		 network_stream(const ucl_object_t *);
 void		 view_sysctl(struct html *, struct server *);
 bool		 sysctl_form(const char *, const ucl_object_t *);
 bool		 sysctl_action(const char *, const char *, const char *);

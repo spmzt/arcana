@@ -39,6 +39,7 @@ struct uhost {
 	int	 n, stride;
 	double	 mem_total, swap_total, bytes;
 	int	 ncpu, step, keep;
+	int	 lim[3];	/* cpu, mem, swap, in percent; 0 none */
 	char	 nets[DEVS][DEVNAME], disks[DEVS][DEVNAME];
 	int	 nn, nd;
 	char	 net[DEVNAME], disk[DEVNAME];	/* the one drawn, "" all */
@@ -143,6 +144,9 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	u->bytes = jnum(d, "bytes", 0);
 	u->ncpu = (int)jint(d, "ncpu", 1);
 	u->step = (int)jint(d, "step", 5);
+	u->lim[0] = (int)jint(jget(d, "limits"), "cpu", 0);
+	u->lim[1] = (int)jint(jget(d, "limits"), "mem", 0);
+	u->lim[2] = (int)jint(jget(d, "limits"), "swap", 0);
 	keep = (int)jint(d, "keep", 720);
 	other = devs(jget(d, "nets"), u->nets, &u->nn);
 	other = devs(jget(d, "disks"), u->disks, &u->nd) || other;
@@ -528,16 +532,24 @@ sampling(struct html *h, const struct uhost *u)
 	h_fmt(h, "><label>Sample every<input name=\"step\" type=\"number\" "
 	    "min=\"1\" max=\"3600\" value=\"%d\">s</label><label>and keep"
 	    "<input name=\"keep\" type=\"number\" min=\"0\" max=\"5000\" "
-	    "value=\"%d\">samples</label><button class=\"small\">Set</button>"
-	    "<button type=\"button\" class=\"ghost small\" data-act=\""
-	    "usage-cfg\"", u->step, u->keep);
+	    "value=\"%d\">samples</label><label>An event when CPU is over"
+	    "<input name=\"cpu\" type=\"number\" min=\"0\" max=\"100\" "
+	    "value=\"%d\">%%</label><label>memory over<input name=\"mem\" "
+	    "type=\"number\" min=\"0\" max=\"100\" value=\"%d\">%%</label>"
+	    "<label>swap over<input name=\"swap\" type=\"number\" min=\"0\" "
+	    "max=\"100\" value=\"%d\">%%</label><button class=\"small\">Set"
+	    "</button><button type=\"button\" class=\"ghost small\" data-act="
+	    "\"usage-cfg\"", u->step, u->keep, u->lim[0], u->lim[1],
+	    u->lim[2]);
 	h_attr(h, "data-arg", u->sid);
 	fmt_size(buf, sizeof(buf), u->bytes);
 	h_fmt(h, ">Close</button><small class=\"dim\">Now %s of the agent's "
 	    "memory: 8 bytes a sample, and 4 for each figure in it, of "
 	    "which there are %d here with %d interfaces and %d disks. With "
 	    "0 kept the agent does not sample and holds nothing. It keeps "
-	    "this for its next start.</small></form>", buf, u->stride - 1,
+	    "this for its next start, and the samples with it. A limit "
+	    "crossed, either way, is an event, listed under events in the "
+	    "Log tab; 0 is no limit.</small></form>", buf, u->stride - 1,
 	    u->nn, u->nd);
 }
 
@@ -683,8 +695,8 @@ usage_form(const char *form, const ucl_object_t *f)
 {
 	struct uhost	*u;
 	const char	*sid;
-	char		 url[96], body[64];
-	int		 step, keep;
+	char		 url[96], body[128];
+	int		 step, keep, lim[3], k;
 
 	if (strcmp(form, "usage-set") != 0)
 		return (false);
@@ -698,8 +710,19 @@ usage_form(const char *form, const ucl_object_t *f)
 		toast(true, "Every 1 to 3600 seconds, and 0 to 5000 kept");
 		return (true);
 	}
+	for (k = 0; k < 3; k++) {
+		const char	*v = jstr(f, k == 0 ? "cpu" : k == 1 ? "mem" :
+		    "swap");
+
+		lim[k] = v != NULL && v[0] != '\0' ? atoi(v) : 0;
+		if (lim[k] < 0 || lim[k] > 100) {
+			toast(true, "A limit is 0 to 100 percent");
+			return (true);
+		}
+	}
 	snprintf(url, sizeof(url), "/api/servers/%s/history", u->sid);
-	snprintf(body, sizeof(body), "{\"step\":%d,\"keep\":%d}", step, keep);
+	snprintf(body, sizeof(body), "{\"step\":%d,\"keep\":%d,\"cpu\":%d,"
+	    "\"mem\":%d,\"swap\":%d}", step, keep, lim[0], lim[1], lim[2]);
 	u->loading = true;
 	u->asked = arc_now();
 	u->cfg = false;

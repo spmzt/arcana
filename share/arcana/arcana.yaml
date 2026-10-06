@@ -159,8 +159,12 @@ definitions:
           job-confirm comes.  verb enable or disable turns the
           firewall on or off (net.inet.ip.fw.enable), with persist in
           rc.conf.  verb zero clears the counters, of a rule when
-          names has its number.  jail is the vnet jail whose firewall
-          it is.
+          names has its number.  verb table, nat, nat64lsn, nat64stl,
+          nat64clat, nptv6, pipe, queue or sched, with names what ipfw
+          takes after that word (T46 add 10.0.0.1; 1 config if em0;
+          1 delete), does it now, and with persist writes the same
+          words as a line at the head of the kept rules.  jail is the
+          vnet jail whose firewall it is: ipfw is run in the jail.
       - name: bridge
         doc: |
           if_bridge(4).  interface is the bridge, names the verb's
@@ -266,7 +270,10 @@ definitions:
           with its flags, port number, priority and path cost, its
           role and state in the spanning tree, the VLAN it is in
           untagged and those it carries tagged, and the addresses it
-          has, which a member should not have.
+          has, which a member should not have; and "learned", the
+          addresses the bridge has learned, each with its mac, vlan,
+          the member it is behind and when it expires, the first 500
+          of learned_total.
       - name: geneve
         doc: |
           The geneve(4) tunnels, as a JSON object with the array
@@ -277,10 +284,18 @@ definitions:
         doc: |
           The firewall, ipfw(8), as a JSON object: "loaded" and
           "enabled"; "rules", each with its number, set, counters and
-          text, and whether its set is disabled; "tables" and "nat";
+          text, and whether its set is disabled; "tables", each with
+          its name, type, count and the first of its entries (key,
+          value); "nat" and "pipes", as ipfw shows them; "verbose";
           "kept", the rules of the kept file each with its number and
           text, "other" its lines that are not rules, "path" where it
           is and "rc" what rc.conf says of the firewall.
+      - name: nhgroups
+        doc: |
+          The kernel's nexthop groups, what a route of several next
+          hops (ECMP) points to, as netstat -O prints them: each with
+          its index, how many routes use it, and its next hops with
+          the share of each.
   - name: storage-kind
     type: enum
     entries:
@@ -302,6 +317,18 @@ definitions:
         doc: |
           The pools zpool(8) finds on the host's devices that are not
           imported.
+      - name: health
+        doc: |
+          How the disks are, as they say themselves, as a JSON object
+          with "disks": each with its name; "by", the program that
+          asked it (nvmecontrol for an NVMe disk, smartctl of
+          smartmontools for another, when the host has it); "ok",
+          whether it says it is well; its temperature in Celsius,
+          power_on_hours, power_cycles; for an NVMe disk used_pct and
+          spare_pct, media_errors and unsafe_shutdowns; for another
+          the raw values of reallocated, pending, uncorrectable,
+          crc_errors and what it has of wear_level, life_left and
+          media_wearout; and "note", why it was not asked.
   - name: net-family
     type: enum
     entries:
@@ -660,7 +687,8 @@ attribute-sets:
         type: u64
         doc: |
           For history, the time, in seconds since the epoch, after
-          which samples are asked for.
+          which samples are asked for.  For events, the number of the
+          last event the asker has.
       - name: sample-step
         type: u32
         doc: For history, the seconds between two samples, 1 to 3600.
@@ -669,6 +697,21 @@ attribute-sets:
         doc: |
           For history, how many samples the agent keeps, at most 5000;
           with 0 it does not sample and holds no memory for it.
+      - name: pid
+        type: u32
+        doc: For processes, the one to say more of.
+      - name: limit-cpu
+        type: u32
+        doc: |
+          For history, the percentage of the CPUs busy above which an
+          event is made, and another when it falls under it again; 0
+          for none.
+      - name: limit-mem
+        type: u32
+        doc: For history, the same for the memory in use.
+      - name: limit-swap
+        type: u32
+        doc: For history, the same for the swap in use.
 
   - name: host
     attributes:
@@ -903,9 +946,13 @@ attribute-sets:
           max-len: 64
       - name: gateway
         type: text
-        doc: For route, an address, or the name of an interface.
+        doc: |
+          For route, an address, or the name of an interface; or
+          several addresses with a comma between, each with its share
+          after an @ when it has one (10.0.0.1@2,10.0.0.2), for a
+          route with as many next hops.
         checks:
-          max-len: 64
+          max-len: 512
       - name: fib
         type: u32
         doc: For route, the routing table; 0 when not given.
@@ -1219,7 +1266,11 @@ operations:
       netstat(1) and sockstat(1) print them with --libxo json.
       With jail, those of a running jail that has a network of its own
       (vnet), read from the host: nothing runs in the jail for it but
-      the jail's own birdc and wg.
+      the jail's own birdc and wg.  As a dump, the routes, connections
+      and sockets come in parts as they are taken: each item has json,
+      an array of the next rows, a route with its "family" (Internet
+      or Internet6) in it, and total, how many rows the table has;
+      nothing is left out for size.
     do:
       request:
         attributes:
@@ -1239,6 +1290,20 @@ operations:
           - total
           - truncated
           - trace
+    dump:
+      request:
+        attributes:
+          - net-kind
+          - net-family
+          - net-filter
+          - net-fib
+          - jail
+        required:
+          - net-kind
+      reply:
+        attributes:
+          - json
+          - total
 
   - name: stats
     attribute-set: arcana
@@ -1679,13 +1744,18 @@ operations:
       kernel's decayed share of one CPU, in percent, as top(1) shows
       it), cpu (its share between this look and the one before), in
       and out (blocks read and written) and io (blocks a second since
-      the look before), start, comm and args; "ncpu"; and "elapsed",
-      the seconds between the two looks.  With jail, only the
-      processes of that jail.
+      the look before), start, comm and args; "jails", each jail with
+      its jid, name, procs, threads, cpu, wcpu and rss added up;
+      "ncpu"; and "elapsed", the seconds between the two looks.  With
+      jail, only the processes of that jail.  With pid, one process
+      alone and more of it: "files", each with its fd, type, path or
+      socket's addresses; "threads", each with its tid, name, state,
+      priority and cpu.
     do:
       request:
         attributes:
           - jail
+          - pid
       reply:
         attributes:
           - ok
@@ -1702,9 +1772,13 @@ operations:
       with its name, size and when it was last written; "name", the
       one read (messages, when log-name names none); "lines", its last
       lines, each with its time, host, tag, pid and text when the line
-      is one of syslog's, and its text alone when not; "position",
-      where the file ended; and "rotated", when the file is shorter
-      than position said.  With net-filter only the lines that have
+      is one of syslog's, with level when syslogd writes one (-v),
+      and its text alone when not; "position", where the file ended;
+      and "rotated", when the file is shorter than position said.
+      A packed log (.bz2, .gz, .xz, .zst) is unpacked to be read,
+      and not followed.  @dmesg is the kernel's message buffer,
+      @audit the audit trail of now (praudit).  With jail, the logs
+      of that jail's own /var/log.  With net-filter only the lines that have
       that text in them, in either case.  With position only what was
       written after it, which is how a log is followed.  lines is how
       many to send at most: 200, when it is not given.
@@ -1715,6 +1789,7 @@ operations:
           - net-filter
           - position
           - lines
+          - jail
       reply:
         attributes:
           - ok
@@ -1741,13 +1816,50 @@ operations:
       "ncpu".  With after only the samples after that time.  With
       sample-step and sample-keep, both, the agent first samples that
       way from now on, and keeps it for its next start: an hour every
-      five seconds until it is told otherwise.
+      five seconds until it is told otherwise; limit-cpu, limit-mem
+      and limit-swap with them are the percentages above which an
+      event (kind threshold) is made.  The reply has "limits".  The
+      samples are written down when the agent stops and every few
+      minutes, and read again when it starts.
     do:
       request:
         attributes:
           - after
           - sample-step
           - sample-keep
+          - limit-cpu
+          - limit-mem
+          - limit-swap
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: events
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What happened on the host, as it happened, as a JSON object:
+      "events", each with its number n, its time t, its kind and data,
+      what it is about; "last", the number of the newest; "first",
+      that of the oldest still kept, of "kept" at most.  With after
+      only the events of a greater number: asked again with the last
+      number seen, none is missed, unless first is beyond it.  The
+      kinds: route-add and route-del, a route with its attributes as
+      network's routes have them; routes, with changed, how many more
+      routes changed in a second than are said one by one; link and
+      link-del, an interface with up, carrier and mtu; address-add
+      and address-del, an interface's address and prefixlen.  They
+      are the kernel's own netlink(4) messages, of the host's network
+      and not of a jail's.  threshold, with what (cpu, mem or swap),
+      value, limit and over, when a figure of history crosses its
+      limit, either way.
+    do:
+      request:
+        attributes:
+          - after
       reply:
         attributes:
           - ok

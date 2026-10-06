@@ -51,8 +51,17 @@
 int
 scope_enter(struct work *w, const char *jail, const char **errp)
 {
+
+	return (scope_enter_jail(w, jail, errp, true));
+}
+
+/* The same; with vnet false, a jail without a network of its own too. */
+int
+scope_enter_jail(struct work *w, const char *jail, const char **errp,
+    bool vnet)
+{
 	struct execres	 res;
-	char		*argv[7], *line, *p, *vnet;
+	char		*argv[7], *line, *p, *vnetv;
 
 	w->jail = NULL;
 	w->jid = 0;
@@ -76,7 +85,7 @@ scope_enter(struct work *w, const char *jail, const char **errp)
 	w->jid = atoi(p);
 	p += strcspn(p, " ");
 	p += strspn(p, " ");
-	vnet = p;
+	vnetv = p;
 	p += strcspn(p, " ");
 	if (*p != '\0')
 		*p++ = '\0';
@@ -85,7 +94,7 @@ scope_enter(struct work *w, const char *jail, const char **errp)
 		*errp = wfmt(w, "jls did not say where the jail %s is", jail);
 		return (-1);
 	}
-	if (strcmp(vnet, "new") != 0 && strcmp(vnet, "1") != 0) {
+	if (vnet && strcmp(vnetv, "new") != 0 && strcmp(vnetv, "1") != 0) {
 		*errp = wfmt(w, "the jail %s has no network of its own (vnet): "
 		    "its addresses are the host's, and are managed there",
 		    jail);
@@ -112,8 +121,7 @@ scope_argv(struct work *w, char *const argv[])
 		;
 	v = wcalloc(w, n + 4, sizeof(*v));
 	k = 0;
-	if (argv[0] == opts.ifconfig_bin || argv[0] == opts.route_bin ||
-	    argv[0] == opts.netstat_bin || argv[0] == opts.sockstat_bin ||
+	if (argv[0] == opts.ifconfig_bin || argv[0] == opts.netstat_bin || argv[0] == opts.sockstat_bin ||
 	    argv[0] == opts.ngctl_bin) {
 		v[k++] = argv[0];
 		v[k++] = (char *)(uintptr_t)"-j";
@@ -125,7 +133,8 @@ scope_argv(struct work *w, char *const argv[])
 		v[k++] = (char *)(uintptr_t)w->jroot;
 		i = 1;
 	} else if (argv[0] == opts.birdc_bin || argv[0] == opts.bird_bin ||
-	    argv[0] == opts.wg_bin) {
+	    argv[0] == opts.wg_bin || argv[0] == opts.ipfw_bin) {
+		/* The jail's own: ipfw(8) has no way to name a jail. */
 		v[k++] = (char *)(uintptr_t)opts.jexec_bin;
 		v[k++] = wfmt(w, "%d", w->jid);
 		i = 0;
@@ -134,6 +143,28 @@ scope_argv(struct work *w, char *const argv[])
 	for (; i < n; i++)
 		v[k++] = argv[i];
 	v[k] = NULL;
+	return (v);
+}
+
+/*
+ * The helper's argv for a verb and its n words: this program again,
+ * told the jail w works in, or 0 for the host.
+ */
+char **
+helper_argv(struct work *w, const char *verb, size_t n,
+    const char *const words[])
+{
+	char	**v;
+	size_t	  i;
+
+	v = wcalloc(w, n + 5, sizeof(*v));
+	v[0] = (char *)(uintptr_t)opts.helper_bin;
+	v[1] = (char *)(uintptr_t)"-Q";
+	v[2] = wfmt(w, "%d", w->jail != NULL ? w->jid : 0);
+	v[3] = (char *)(uintptr_t)verb;
+	for (i = 0; i < n; i++)
+		v[4 + i] = (char *)(uintptr_t)words[i];
+	v[4 + n] = NULL;
 	return (v);
 }
 
@@ -308,7 +339,7 @@ scope_helper(int argc, char **argv)
 	char	*out;
 	int	 jid;
 
-	if (argc != 4)
+	if (argc < 2)
 		return (2);
 	jid = atoi(argv[0]);
 	if (jid > 0 && jail_attach(jid) == -1) {
@@ -316,6 +347,13 @@ scope_helper(int argc, char **argv)
 		    strerror(errno));
 		return (1);
 	}
+	/* The routing tables, through netlink(4). */
+	if (strncmp(argv[1], "route", 5) == 0)
+		return (route_helper(argc - 1, argv + 1));
+	if (strcmp(argv[1], "zfs-pipe") == 0)
+		return (zfs_pipe(argc - 1, argv + 1));
+	if (argc != 4)
+		return (2);
 	if ((out = ifq_text(argv[1], strcmp(argv[2], "-") == 0 ? NULL :
 	    argv[2], strcmp(argv[3], "-") == 0 ? NULL : argv[3])) == NULL)
 		return (1);

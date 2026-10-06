@@ -33,7 +33,13 @@ The console is laid out as a tree and tabs.
   and three disks: 8 bytes a sample and 4 for each figure in it), and
   sets both; with 0 kept the agent does not sample at all and holds
   nothing. The agent keeps what it was told in
-  `/usr/local/etc/arcana/history.conf`. Under **Network** are the
+  `/usr/local/etc/arcana/history.conf`, and the samples themselves
+  beside it when it stops and every five minutes, so that a restart
+  of the agent keeps the graphs. The same form sets the limits: a
+  CPU, memory or swap figure over its limit makes an event, and
+  another when it is back under (five points lower), listed under
+  events in the Log tab; the defaults are 90, 90 and 50 percent, and
+  0 is no limit. Under **Network** are the
   host's interfaces, without the loopback, each with what goes over
   it now: **all** draws them added up, one pressed draws that one;
   a bridge and its members are each counted, so **all** counts a
@@ -68,15 +74,32 @@ The console is laid out as a tree and tabs.
     first, then those enabled; **Sort** orders by running, enabled or
     name, and the other way round when pressed again.
   - **Network**: the routing table, nexthops, connections and sockets,
-    per address family, as `netstat` and `sockstat` print them
-    (`--libxo json`); filter the rows, click a column to sort.
-    A routing table too large to send, a full BGP table say, comes as
-    its first 2000 rows with how many it has; type a prefix or an
+    per address family; filter the rows, click a column to sort. The
+    routes are asked of the kernel itself, through netlink, so each
+    comes with what the kernel knows of it: its metric, its weight,
+    the address it sends from, its table. The others are as `netstat`
+    and `sockstat` print them (`--libxo json`).
+    The routes, connections and sockets come in parts over the
+    console's stream as the host reads them, so a table of any size,
+    a full BGP table say, arrives whole: the first time the table
+    fills as the parts come, and read again (as connections and
+    sockets are every two seconds while **Live** is lit) the table
+    shown stays until the new one is whole. Where the page has no
+    stream, a table of more than 2000 routes comes as its first 2000
+    rows with how many it has, and **More** reads on; type a prefix or an
     interface in the filter and press **Search host** to have the host
     search the whole table for it.
     In the routes, **+ route** adds a static route (a destination and
     a gateway, an address or an interface), and the cross on a static
-    route deletes it; both run `route(8)`. A route can be given its
+    route deletes it; both are asked of the kernel through netlink. A
+    gateway may be several addresses with commas between, each with
+    its share after an `@` (`10.0.0.1@2,10.0.0.2`): that is one route
+    with as many next hops (ECMP), which the table shows as a row for
+    each, **Path** saying which of how many, and **Nexthop groups**
+    as the group the kernel made of them. A second route to a
+    destination that has one makes such a group too; one way of it
+    is deleted by its gateway. A route of several gateways is not
+    kept in `rc.conf` from here. A route can be given its
     **metric** (its cost: of several routes to one destination the
     lowest is used, the others when it is gone), its **weight** (its
     share among routes of one metric), the **source address** of the
@@ -84,7 +107,7 @@ The console is laid out as a tree and tabs.
     goes into. **fib** picks the routing table shown and changed, when
     the host has more than one.
     **Look up a route** opens a box that asks for an address and tells
-    the route the host would take to it, as `route get` tells it, and
+    the route the host would take to it, as the kernel tells it, and
     every other route that covers the address, the most specific
     first.
     **Interfaces** lists the host's interfaces as the agent reads them
@@ -104,7 +127,7 @@ The console is laid out as a tree and tabs.
     join them, from `ngctl list -l`; a node is picked for its hooks,
     which are removed with their cross, shut down, or given a new peer;
     dragging the dot on a node onto another connects a hook of each.
-  - **Storage**, in five views:
+  - **Storage**, in six views:
     **Pools**: each ZFS pool with how full and how fragmented it is,
     its health, what `zpool status` says of it and of its last scrub,
     and its devices as they are nested, with their error counts. A
@@ -130,22 +153,48 @@ The console is laid out as a tree and tabs.
     or returns one to what it inherits; a dataset is mounted,
     unmounted, snapshotted, and destroyed once its name is typed. A
     pool's own dataset is not destroyed from here.
+    An encrypted dataset says so, and whether its key is loaded:
+    **Load key** reads the key from where the dataset's `keylocation`
+    says (a file, a URL), **Unload key** forgets it; a key that is
+    asked for at a prompt is never typed into the console, and is
+    loaded on the host. One is made encrypted with the properties
+    `encryption=on`, `keyformat=` and `keylocation=file:///...`.
+    **Jail** gives a dataset to a running jail to manage as its own
+    (`zfs jail`), **Unjail** takes it back.
+    **Health**: how each disk says it is: well or failing, its
+    temperature, how long it has been powered on, how worn it is, and
+    the errors it counts. An NVMe disk is asked with `nvmecontrol`,
+    any other with `smartctl` when the host has smartmontools.
     **Snapshots**: the newest first, of all or of one dataset and those
     under it; taken with a name (the time, unless another is given),
     of everything under the dataset too when asked; rolled back to,
     cloned into a new dataset, destroyed once the name is typed.
+    **Replicate** sends a snapshot into a dataset that is not there
+    yet, on the same host (another pool, say): `zfs send` into `zfs
+    receive`, all of it or what changed since a snapshot both have,
+    with the datasets under it when asked. What arrives is not
+    mounted. Between two hosts it is not done yet.
     **Disks**: every disk as GEOM has it, with what `camcontrol` says
     it is, its partition table drawn to scale and listed. A table is
     made on a disk without one (gpt, mbr, bsd); a partition added in
     the free room, aligned to 1 MiB, labelled, resized, deleted once
     its name is typed; an empty table destroyed. **Rescan** has
-    `camcontrol` look for disks that came or went.
+    `camcontrol` look for disks that came or went. On a partition
+    of type freebsd-ufs, **newfs** makes a UFS file system, with a
+    label when given one, and **growfs** grows the file system to the
+    partition's size. The host refuses newfs while the partition is
+    mounted, swapped on or a pool's device, and, unless told that it
+    may, while it has a file system on it.
     **Mounts**: what is mounted, with how full, and beneath it what
     `fstab` says to mount: an entry that is not mounted is mounted,
     what is mounted unmounted (never the root). **Edit** opens `fstab`
     whole; the host takes it only if every line is an entry and nobody
     changed the file meanwhile, and keeps the one before beside it as
     `fstab.arcana-old`.
+    **Swap**, beneath: the devices the host swaps on, with how much of
+    each is used; **+ swap** swaps on a device more and **Swap off**
+    takes one away, until the next start, for which swap is a line
+    of `fstab`.
     Every table here, as everywhere in the console, is sorted by the
     column picked in its head, the other way when picked again and as
     the host gave it the third time, and the filter above leaves the
@@ -236,6 +285,31 @@ The console is laid out as a tree and tabs.
     them: the rule that made each, its flow, counters and how long it
     still lives, read again every two seconds; one pressed leads to
     its rule.
+    **What Apply would change** sets the kept rules beside those of
+    the kernel: the rules Apply would add, those it would remove, and
+    those whose words differ, which may be only how ipfw writes a
+    rule back. **Follow a packet** asks for a protocol, where from,
+    where to, a port, a direction and an interface, and walks the
+    first packet of such a connection through the kernel's rules:
+    each rule it meets, each jump, call and return, and what becomes
+    of it. A rule the page cannot judge (`me`, a state, an option it
+    does not know) is taken as met and marked; it is a reading of the
+    rules, not the kernel's own answer. In a part, a rule's packets
+    are followed by how many a second it took since the look before,
+    and **never** when none has matched it; a rule being changed has
+    ▲ and ▼, which put a number before the rule above or after the
+    one below into its field, for Save to move it there.
+    **Tables** lists each table with its type and what is in it: an
+    entry is added and taken out, a table created and destroyed.
+    **NAT and pipes** shows the NAT instances and dummynet's pipes as
+    ipfw shows them, and one line makes, changes or deletes a NAT,
+    NAT64 or NPTv6 instance, a pipe, a queue or a scheduler, in
+    ipfw's own words. With **keep**, what is done to a table or an
+    instance is also a line at the head of the kept rules. **Logged
+    packets** reads what the rules with `log` wrote into
+    `/var/log/security`. A running jail with a network of its own is
+    listed under the host in the side bar: its firewall is its own,
+    ipfw is run inside it, and its rules are kept in the jail.
   - **Sysctl**: the kernel's state, a part of the tree at a time
     (**kern**, **vm**, **net** and the others, or from a name typed),
     read from the kernel as `sysctl -a` has it: each name with its
@@ -268,8 +342,21 @@ The console is laid out as a tree and tabs.
     is asked about first, and a **Nice** value to give it, -20 to 20.
     Both are jobs. The agent checks that the process is still the one
     that was shown, by when it started, and refuses init, the
-    kernel's own and itself. From a shell: `arcanactl [-j jail] ps`,
+    kernel's own and itself. Above the table, each jail's processes
+    are added up (how many, their CPU, their memory); one pressed
+    shows that jail's alone. A process opened also lists what it has
+    open (files, sockets with their addresses, pipes) and its threads
+    with what each waits on; another user's files are shown to a
+    root agent only. From a shell: `arcanactl [-j jail] ps [pid]`,
     `arcanactl signal pid [name]`, `arcanactl renice pid nice`.
+  - **Events**, the last entry of the Log tab's list of logs: every
+    route, interface and address of the host that came, went or
+    changed, as the kernel told the agent of it through netlink the
+    moment it happened, the last 512 kept. A storm of routes (a BGP
+    session coming up) is counted for each second and not listed. A
+    jail's own network is not in it. This is what the workflows'
+    triggers will be made of. From a shell: `arcanactl events
+    [after]`.
   - **Log**: what syslogd wrote, a file of `/var/log` at a time,
     `messages` first, the newest line on top. A line of syslog's is
     taken apart into its time, host, program, PID and message, in
@@ -278,11 +365,25 @@ The console is laid out as a tree and tabs.
     would; a file turned over by newsyslog is read from its start.
     **Search** looks for a text in the end of the file on the host,
     in either case; the filter narrows what is on the page.
-    **Older** reads further back. A line with a word of trouble in
+    **Older** reads further back. **host** or a running jail's name
+    picks whose `/var/log` is read. A packed log (`.bz2`, `.gz`,
+    `.xz`, `.zst`) is unpacked to be read, whole. **dmesg** is the
+    kernel's message buffer and **audit** the audit trail of now,
+    where the host keeps one. Where syslogd writes a level (`-v`),
+    it is a column. A line with a word of trouble in
     it (error, fail, denied, panic) is marked red, one of doubt
     (warn, invalid, cannot) amber: the file itself has no level.
     Files newsyslog has packed are not read. From a shell:
     `arcanactl log [-o lines] [-f position] [name [text]]`.
+  - **Over SCTP**, the requests the console makes of a host at once
+    all go over one association, which a thread of the console runs,
+    each waiting for its own answer: the agent sees one session where
+    over TCP it would see one for each. What comes in parts (the
+    kernel's state, the routes, connections and sockets) has an
+    association of its own, as a slow reader of it would otherwise
+    hold the others back. cblink sends every request and reply on
+    SCTP stream 0; its other streams are for its own flow-controlled
+    streams, which nothing of Arcana uses yet.
   - **How it is reached**, at the foot of the summary: the agent's
     listeners and the connections open to the agent now, each with its
     transport, where it comes from and the name in its certificate,
@@ -489,6 +590,14 @@ The console is laid out as a tree and tabs.
   (`push.json`) and removes one; a device whose browser dropped the
   subscription is forgotten by itself. Up to 16 devices.
 
+- **A table on a phone** is a card for each row: the first column is
+  its title, each other value has its column's name beside it, and
+  what is done to the row is along the card's foot. The table's head
+  stays above the cards as a row of buttons to sort by. Every table,
+  the older ones too (routes, sockets, interfaces, BIRD's protocols,
+  WireGuard's peers, netgraph's nodes, packages, jobs), sorts by the
+  column picked, numbers as numbers whether they came as numbers or
+  as text, and is narrowed by the filter.
 - **On a phone** the tree of hosts is a drawer that slides in from the
   left (☰), the top bar is one row with the rest behind **⋮**, a
   dialog is a sheet from the bottom, a row of choices is one line that
@@ -532,6 +641,12 @@ The console is laid out as a tree and tabs.
   name trunk member vlans [untagged]`, `bridge name vlanfilter on |
   off`, `bridge name flag member [-]flag`, `bridge name set option
   value`, `bridge name addm | deletem member`.
+- **A bridge's own options and what it has learned**, at the foot of
+  its box: the spanning tree's protocol, priority and timers, how
+  many addresses it keeps and for how long, each in a field with what
+  the bridge has now, of which **Set what was changed** sets those
+  that differ; and the addresses it has learned, each with its VLAN,
+  the member it is behind and when it is forgotten.
 - **Geneve**: the geneve(4) tunnels, each with its mode (l2, Ethernet
   frames for a bridge; l3, IP packets that are routed), its
   identifier, its local address and the host or the multicast group

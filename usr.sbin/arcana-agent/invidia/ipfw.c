@@ -40,6 +40,7 @@
 
 #define	IPFW_FILE_MAX	(1024 * 1024)
 #define	IPFW_RULES_MAX	20000
+#define	IPFW_TABLE_ROWS	500	/* of one table, and no more are sent */
 #define	IPFW_WORDS	120
 #define	IPFW_DYN_MAX	3000	/* dynamic rules in a reply, at most */
 
@@ -246,6 +247,8 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 	struct execres	 res;
 	ucl_object_t	*top, *rules, *o, *kept, *other, *arr, *rc;
 	unsigned char	*json;
+	const ucl_object_t *co;
+	ucl_object_iter_t it;
 	char		*argv[5], *text, *p, *line, *t, *end;
 	const char	*rest, *v;
 	size_t		 len;
@@ -363,13 +366,56 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 	if (loaded && run_exec(w, scope_argv(w, argv), &res) == 0) {
 		text = wstrndup(w, res.out != NULL ? res.out : "", res.outlen);
 		p = text;
-		while ((line = strsep(&p, "\n")) != NULL)
+		o = NULL;
+		while ((line = strsep(&p, "\n")) != NULL) {
 			if (strncmp(line, "--- table(", 10) == 0) {
 				line += 10;
 				line[strcspn(line, ")")] = '\0';
-				ucl_array_append(arr, ucl_object_fromstring(
-				    line));
+				o = ucl_object_typed_new(UCL_OBJECT);
+				put(o, "name", line);
+				ucl_array_append(arr, o);
+			} else if (o != NULL && strstr(line, "kindex") !=
+			    NULL && (t = strstr(line, " type: ")) != NULL) {
+				t += 7;
+				t[strcspn(t, ", ")] = '\0';
+				put(o, "type", t);
 			}
+		}
+		/* What each holds: a key a line, and its value. */
+		it = NULL;
+		while ((co = ucl_object_iterate(arr, &it, true)) != NULL) {
+			ucl_object_t	*ents, *e;
+			int		 cnt;
+
+			o = (ucl_object_t *)(uintptr_t)co;
+			argv[2] = (char *)(uintptr_t)ucl_object_tostring(
+			    ucl_object_lookup(o, "name"));
+			argv[3] = (char *)(uintptr_t)"list";
+			ents = ucl_object_typed_new(UCL_ARRAY);
+			cnt = 0;
+			if (run_exec(w, scope_argv(w, argv), &res) == 0 &&
+			    res.out != NULL) {
+				text = wstrndup(w, res.out, res.outlen);
+				p = text;
+				while ((line = strsep(&p, "\n")) != NULL) {
+					if (line[0] == '\0' || line[0] == '-')
+						continue;
+					if (cnt++ >= IPFW_TABLE_ROWS)
+						continue;
+					e = ucl_object_typed_new(UCL_OBJECT);
+					t = line + strcspn(line, " ");
+					if (*t != '\0')
+						*t++ = '\0';
+					put(e, "key", line);
+					put(e, "value", t);
+					ucl_array_append(ents, e);
+				}
+			}
+			ucl_object_insert_key(o, ents, "entries", 0, false);
+			ucl_object_insert_key(o, ucl_object_fromint(cnt),
+			    "count", 0, false);
+		}
+		argv[2] = (char *)(uintptr_t)"all";
 	}
 	ucl_object_insert_key(top, arr, "tables", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);
@@ -386,6 +432,33 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 				    line));
 	}
 	ucl_object_insert_key(top, arr, "nat", 0, false);
+	/* The pipes and queues of dummynet, as ipfw shows them. */
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	argv[1] = (char *)(uintptr_t)"pipe";
+	argv[2] = (char *)(uintptr_t)"show";
+	argv[3] = NULL;
+	if (loaded && (kmod_loaded("dummynet") || strcmp(opts.ipfw_bin,
+	    "/sbin/ipfw") != 0) && run_exec(w, scope_argv(w,
+	    argv), &res) == 0) {
+		text = wstrndup(w, res.out != NULL ? res.out : "", res.outlen);
+		p = text;
+		while ((line = strsep(&p, "\n")) != NULL)
+			if (line[0] != '\0')
+				ucl_array_append(arr, ucl_object_fromstring(
+				    line));
+	}
+	ucl_object_insert_key(top, arr, "pipes", 0, false);
+	/* Whether a rule with log writes a line to the security log. */
+	{
+		int	vb;
+		size_t	vl;
+
+		vl = sizeof(vb);
+		if (loaded && sysctlbyname("net.inet.ip.fw.verbose", &vb, &vl,
+		    NULL, 0) == 0)
+			ucl_object_insert_key(top, ucl_object_frombool(vb !=
+			    0), "verbose", 0, false);
+	}
 
 	/* What is kept: its rules, and its lines that are not rules. */
 	kept = ucl_object_typed_new(UCL_ARRAY);
@@ -558,6 +631,20 @@ out:
 }
 
 /* What is wrong with the job, or NULL. */
+/* Is the verb one of what ipfw has beside its rules? */
+static bool
+object_verb(const char *verb)
+{
+	static const char *const verbs[] = { "table", "nat", "nat64lsn",
+	    "nat64stl", "nat64clat", "nptv6", "pipe", "queue", "sched" };
+	size_t	i;
+
+	for (i = 0; i < nitems(verbs); i++)
+		if (strcmp(verb, verbs[i]) == 0)
+			return (true);
+	return (false);
+}
+
 const char *
 ipfw_check(const struct arc_job_spec *sp)
 {
@@ -599,9 +686,27 @@ ipfw_check(const struct arc_job_spec *sp)
 			return ("zero takes a rule's number, or nothing");
 		if (sp->safe)
 			return ("counters cleared are not brought back");
+	} else if (object_verb(verb)) {
+		/*
+		 * What a rule names and is not one: a table and what is
+		 * in it, a NAT instance, a pipe.  The words are ipfw's.
+		 */
+		if (sp->names.n < 2 || sp->names.n > IPFW_WORDS)
+			return ("name it, and say what to do with it: table "
+			    "T46 add 10.0.0.1, nat 1 config if em0, pipe 1 "
+			    "config bw 10Mbit/s");
+		for (i = 0; i < sp->names.n; i++)
+			if (!word_ok(sp->names.v[i]))
+				return ("the words are ipfw's: letters, "
+				    "digits and . _ : / , - and the like");
+		if (strcmp(sp->names.v[0], "all") == 0)
+			return ("one at a time: not all of them at once");
+		if (sp->safe)
+			return ("it is not taken back by itself");
 	} else
-		return ("an ipfw job is add, delete, apply, enable, disable "
-		    "or zero");
+		return ("an ipfw job is add, delete, apply, enable, disable, "
+		    "zero, or table, nat, nat64lsn, nat64stl, nat64clat, "
+		    "nptv6, pipe, queue, sched with their words");
 	return (NULL);
 }
 
@@ -793,6 +898,31 @@ ipfw_settle(struct work *w, bool keep)
 	return (NULL);
 }
 
+/* A line that is not a rule, at the head of the kept file, once. */
+static int
+kept_line(struct work *w, const char *line, const char **errp)
+{
+	char	*old, *out, *p, *l;
+	size_t	 len;
+	int	 rc;
+
+	pthread_mutex_lock(&file_lock);
+	old = file_read(w, &len);
+	if (old == NULL)
+		old = wstrdup(w, "");
+	p = wstrdup(w, old);
+	while ((l = strsep(&p, "\n")) != NULL)
+		if (strcmp(l + strspn(l, " \t"), line) == 0) {
+			pthread_mutex_unlock(&file_lock);
+			return (0);
+		}
+	/* Before the rules: a rule may name what the line makes. */
+	out = wfmt(w, "%s\n%s", line, old);
+	rc = file_write(w, out, strlen(out), errp);
+	pthread_mutex_unlock(&file_lock);
+	return (rc);
+}
+
 /* Do the job.  *heldp says an apply left the old rules to be settled. */
 int
 do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
@@ -856,6 +986,35 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 		if (apply(w, sp->safe, errp) != 0)
 			return (-1);
 		*heldp = sp->safe;
+		return (0);
+	}
+	if (object_verb(verb)) {
+		n = 0;
+		argv[n++] = (char *)(uintptr_t)opts.ipfw_bin;
+		argv[n++] = (char *)(uintptr_t)"-q";
+		argv[n++] = (char *)(uintptr_t)verb;
+		len = strlen(verb) + 2;
+		for (i = 0; i < sp->names.n; i++) {
+			argv[n++] = (char *)(uintptr_t)sp->names.v[i];
+			len += strlen(sp->names.v[i]) + 1;
+		}
+		argv[n] = NULL;
+		if (run_exec(w, scope_argv(w, argv), &res) != 0) {
+			*errp = scope_missing(w, &res, "ipfw", NULL);
+			if (*errp == NULL)
+				*errp = wtext(w, exec_error(w, &res, "ipfw"));
+			return (-1);
+		}
+		/* Kept: the same words, a line of the kept file. */
+		if (sp->persist) {
+			rule = wcalloc(w, len, 1);
+			strlcpy(rule, verb, len);
+			for (i = 0; i < sp->names.n; i++) {
+				strlcat(rule, " ", len);
+				strlcat(rule, sp->names.v[i], len);
+			}
+			return (kept_line(w, rule, errp));
+		}
 		return (0);
 	}
 	if (strcmp(verb, "zero") == 0)

@@ -15,6 +15,7 @@
 
 #include <sys/param.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 
 #include <ctype.h>
 #include <dirent.h>
@@ -50,16 +51,17 @@ log_name_ok(const char *name)
 	return (true);
 }
 
-/* What newsyslog(8) packed is not read from here. */
-static bool
+/* What newsyslog(8) packed: the program that unpacks it, or NULL. */
+static const char *
 packed(const char *name)
 {
 	const char	*dot;
 
 	if ((dot = strrchr(name, '.')) == NULL)
-		return (false);
-	return (strcmp(dot, ".bz2") == 0 || strcmp(dot, ".gz") == 0 ||
-	    strcmp(dot, ".xz") == 0 || strcmp(dot, ".zst") == 0);
+		return (NULL);
+	return (strcmp(dot, ".bz2") == 0 ? "bzcat" : strcmp(dot, ".gz") == 0 ?
+	    "zcat" : strcmp(dot, ".xz") == 0 ? "xzcat" : strcmp(dot, ".zst") ==
+	    0 ? "zstdcat" : NULL);
 }
 
 static void
@@ -98,8 +100,8 @@ files(struct work *w, int dfd)
 	n = 0;
 	while ((de = readdir(d)) != NULL && n < LOG_FILES_MAX)
 		/* utx.log and its kin are getutxent(3)'s, and not text. */
-		if (log_name_ok(de->d_name) && !packed(de->d_name) &&
-		    strncmp(de->d_name, "utx.", 4) != 0)
+		if (log_name_ok(de->d_name) && strncmp(de->d_name, "utx.", 4)
+		    != 0)
 			names[n++] = wstrdup(w, de->d_name);
 	closedir(d);
 	qsort(names, n, sizeof(names[0]), name_cmp);
@@ -113,6 +115,9 @@ files(struct work *w, int dfd)
 		    "size", 0, false);
 		ucl_object_insert_key(o, ucl_object_fromint(sb.st_mtime),
 		    "mtime", 0, false);
+		if (packed(names[i]) != NULL)
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "packed", 0, false);
 		ucl_array_append(arr, o);
 	}
 	return (arr);
@@ -191,6 +196,13 @@ line_object(struct work *w, char *line)
 		line[15] = '\0';
 		str(o, "time", wtext(w, line));
 		rest = line + 16;
+		/* "<auth.info>" before the host: syslogd -v. */
+		if (rest[0] == '<' && (colon = strchr(rest, '>')) != NULL &&
+		    colon[1] == ' ') {
+			*colon = '\0';
+			str(o, "level", wtext(w, rest + 1));
+			rest = colon + 2;
+		}
 		if ((host = word(&rest)) != NULL)
 			str(o, "host", wtext(w, host));
 		if (rest == NULL)
@@ -210,6 +222,133 @@ line_object(struct work *w, char *line)
 	return (o);
 }
 
+/* The lines of text as the reply, each taken apart; the last max. */
+static int
+lines_reply(struct work *w, const char *name, char *buf, size_t len,
+    const char *filter, uint32_t max, struct arc_log_rsp *rsp)
+{
+	ucl_object_t	*top, *arr;
+	unsigned char	*json;
+	char		*p, *e, **keep;
+	size_t		 nkeep, first, i;
+
+	keep = wcalloc(w, max, sizeof(*keep));
+	nkeep = first = 0;
+	for (p = buf; p < buf + len; p = e + 1) {
+		if ((e = memchr(p, '\n', (size_t)(buf + len - p))) == NULL)
+			e = buf + len;
+		*e = '\0';
+		if (e - p > LOG_LINE_MAX)
+			p[LOG_LINE_MAX] = '\0';
+		if (*p == '\0' || (filter != NULL && filter[0] != '\0' &&
+		    strcasestr(p, filter) == NULL))
+			continue;
+		if (nkeep < max)
+			keep[nkeep++] = p;
+		else {
+			keep[first] = p;
+			first = (first + 1) % max;
+		}
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	str(top, "name", name);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < nkeep; i++)
+		ucl_array_append(arr, line_object(w, keep[(first + i) %
+		    (nkeep < max ? nkeep : max)]));
+	ucl_object_insert_key(top, arr, "lines", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromint((int64_t)len),
+	    "position", 0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	if (json == NULL || strlen((char *)json) > ARC_MAX_JSON) {
+		free(json);
+		rsp->error = "more lines than a reply carries: ask for fewer";
+		return (0);
+	}
+	rsp->json = wtext(w, wadopt(w, json));
+	rsp->ok = true;
+	return (0);
+}
+
+/*
+ * What is not a file of the log directory: @dmesg, the kernel's
+ * message buffer, as dmesg(8) prints it; @audit, the audit trail of
+ * now, as praudit(1) prints it.
+ */
+static int
+special(struct work *w, const char *name, const char *filter, uint32_t max,
+    struct arc_log_rsp *rsp)
+{
+	struct execres	 res;
+	const char	*bin;
+	char		*argv[4], *buf, *p, *q;
+	size_t		 len;
+	int		 step;
+
+	if (max == 0)
+		max = LOG_LINES;
+	if (max > LOG_LINES_MAX)
+		max = LOG_LINES_MAX;
+	if (strcmp(name, "@dmesg") == 0) {
+		step = step_begin(w, ARC_STEP_KIND_LIB, "sysctl(3)",
+		    "kern.msgbuf");
+		if (w->jail != NULL) {
+			rsp->error = "the kernel's messages are the host's";
+			step_end(w, step, false, NULL);
+			return (0);
+		}
+		len = 0;
+		if (sysctlbyname("kern.msgbuf", NULL, &len, NULL, 0) == -1) {
+			rsp->error = wfmt(w, "kern.msgbuf: %s", strerror(
+			    errno));
+			step_end(w, step, false, "%s", strerror(errno));
+			return (0);
+		}
+		buf = wcalloc(w, len + 1, 1);
+		if (sysctlbyname("kern.msgbuf", buf, &len, NULL, 0) == -1) {
+			rsp->error = wfmt(w, "kern.msgbuf: %s", strerror(
+			    errno));
+			step_end(w, step, false, "%s", strerror(errno));
+			return (0);
+		}
+		/* "<6>text": the priority, which dmesg leaves out. */
+		for (p = q = buf; p < buf + len; ) {
+			if ((p == buf || p[-1] == '\n') && p[0] == '<' &&
+			    isdigit((unsigned char)p[1]) && (p[2] == '>' ||
+			    (isdigit((unsigned char)p[2]) && p[3] == '>'))) {
+				p += p[2] == '>' ? 3 : 4;
+				continue;
+			}
+			*q++ = *p++;
+		}
+		len = (size_t)(q - buf);
+		step_end(w, step, true, "%zu bytes", len);
+		return (lines_reply(w, name, buf, len, filter, max, rsp));
+	}
+	if (strcmp(name, "@audit") == 0) {
+		if ((bin = tool(w, "praudit")) == NULL) {
+			rsp->error = "the host has no praudit";
+			return (0);
+		}
+		argv[0] = (char *)(uintptr_t)bin;
+		argv[1] = (char *)(uintptr_t)"-l";
+		argv[2] = wfmt(w, "%s/var/audit/current", w->jail != NULL ?
+		    w->jroot : "");
+		argv[3] = NULL;
+		if (run_exec_max(w, argv, &res, LOG_READ_MAX) != 0) {
+			rsp->error = wtext(w, exec_error(w, &res, "praudit"));
+			return (0);
+		}
+		buf = wcalloc(w, res.outlen + 1, 1);
+		memcpy(buf, res.out, res.outlen);
+		return (lines_reply(w, name, buf, res.outlen, filter, max,
+		    rsp));
+	}
+	rsp->error = "a log is a file of the log directory, @dmesg or @audit";
+	return (0);
+}
+
 int
 do_log(struct work *w, const char *name, const char *filter, bool from,
     uint64_t position, uint32_t max, struct arc_log_rsp *rsp)
@@ -221,6 +360,7 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 	off_t		 start;
 	ssize_t		 n;
 	size_t		 len, nkeep, i, first;
+	const char	*unpack;
 	int		 dfd, fd, step;
 	bool		 rotated;
 
@@ -228,9 +368,11 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 	rsp->ok = false;
 	if (name == NULL || name[0] == '\0')
 		name = "messages";
-	if (!log_name_ok(name) || packed(name)) {
+	if (name[0] == '@')
+		return (special(w, name, filter, max, rsp));
+	if (!log_name_ok(name)) {
 		rsp->error = "a log is a file of the log directory, named "
-		    "with letters, digits and . _ -, and not a packed one";
+		    "with letters, digits and . _ -";
 		return (0);
 	}
 	if (max == 0)
@@ -239,8 +381,7 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 		max = LOG_LINES_MAX;
 	step = step_begin(w, ARC_STEP_KIND_LIB, "read(2)", "%s/%s",
 	    opts.log_dir, name);
-	if ((dfd = open(opts.log_dir, O_RDONLY | O_DIRECTORY | O_CLOEXEC)) ==
-	    -1) {
+	if ((dfd = scope_dirfd(w, opts.log_dir)) == -1) {
 		rsp->error = wfmt(w, "%s: %s", opts.log_dir, strerror(errno));
 		step_end(w, step, false, "%s", strerror(errno));
 		return (0);
@@ -259,12 +400,44 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 	if (rotated)
 		from = false;
 	start = from ? (off_t)position : 0;
-	if (sb.st_size - start > LOG_READ_MAX)
-		start = sb.st_size - LOG_READ_MAX;
-	len = (size_t)(sb.st_size - start);
-	buf = wcalloc(w, len + 1, 1);
-	n = len > 0 ? pread(fd, buf, len, start) : 0;
-	close(fd);
+	if ((unpack = packed(name)) != NULL) {
+		/* Unpacked by its program, whole; it is not followed. */
+		struct execres	 res;
+		const char	*bin;
+		char		*argv[3];
+
+		close(fd);
+		if ((bin = tool(w, unpack)) == NULL) {
+			rsp->error = wfmt(w, "the host has no %s to unpack %s",
+			    unpack, name);
+			step_end(w, step, false, NULL);
+			close(dfd);
+			return (0);
+		}
+		argv[0] = (char *)(uintptr_t)bin;
+		argv[1] = wfmt(w, "%s/%s", w->jail != NULL ? wfmt(w, "%s%s",
+		    w->jroot, opts.log_dir) : opts.log_dir, name);
+		argv[2] = NULL;
+		if (run_exec_max(w, argv, &res, LOG_READ_MAX) != 0) {
+			rsp->error = wtext(w, exec_error(w, &res, unpack));
+			step_end(w, step, false, NULL);
+			close(dfd);
+			return (0);
+		}
+		len = res.outlen;
+		buf = wcalloc(w, len + 1, 1);
+		memcpy(buf, res.out, len);
+		n = (ssize_t)len;
+		start = 0;
+		from = false;
+	} else {
+		if (sb.st_size - start > LOG_READ_MAX)
+			start = sb.st_size - LOG_READ_MAX;
+		len = (size_t)(sb.st_size - start);
+		buf = wcalloc(w, len + 1, 1);
+		n = len > 0 ? pread(fd, buf, len, start) : 0;
+		close(fd);
+	}
 	if (n < 0) {
 		rsp->error = wfmt(w, "%s: %s", name, strerror(errno));
 		step_end(w, step, false, "%s", strerror(errno));

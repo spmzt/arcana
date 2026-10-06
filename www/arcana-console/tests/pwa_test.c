@@ -781,6 +781,25 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.tab[data-arg=network]').click()");
 	wait_js("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]')", 10);
+	/*
+	 * The routes and the sockets come in parts over the stream, and
+	 * are whole: no word of a table cut short.
+	 */
+	run("window.netw = []; window.ws1 = WebSocket.prototype.send; "
+	    "WebSocket.prototype.send = function (t) { window.netw.push(t); "
+	    "return window.ws1.call(this, t); };");
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=routes]').click()");
+	wait_js("[...document.querySelectorAll('.stage table.net td')].some("
+	    "t => t.textContent === 'default') && !document.querySelector("
+	    "'.routes-cut') && window.netw.some(t => t.includes("
+	    "'\"what\":\"routes\"'))", 20);
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=sockets]').click()");
+	wait_js("document.querySelectorAll('.stage table.net tbody tr')."
+	    "length > 0 && window.netw.some(t => t.includes('\"what\":"
+	    "\"sockets\"'))", 20);
+	run("WebSocket.prototype.send = window.ws1;");
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]').click()");
 	wait_js("document.querySelector('table.ifaces tr[data-if=lo0] .chip')",
@@ -817,8 +836,8 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('route add 10.88.0.0/16 via 10.0.0.1: "
 	    "done'))", 20);
-	ATF_CHECK(system("grep -q '^-n add -inet 10.88.0.0/16 10.0.0.1 -fib 2 "
-	    "-ifa 10.0.0.9 -metric 5 -weight 20$' route.log") == 0);
+	ATF_CHECK(system("grep -q '^0 route-add 10.88.0.0/16 10.0.0.1 - 2 5 "
+	    "20 10.0.0.9$' route.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
 	/*
@@ -904,7 +923,21 @@ ATF_TC_BODY(pwa, tc)
 			ATF_CHECK_MSG(js_true("document.documentElement."
 			    "scrollWidth <= window.innerWidth + 1"),
 			    "the %s tab is wider than a phone", tabs[t]);
+			/* A table is a card for each row, each value with
+			 * its column's name; none scrolls sideways. */
+			ATF_CHECK_MSG(js_true("[...document.querySelectorAll("
+			    "'.stage table.net')].every(t => t.classList."
+			    "contains('cards') && t.scrollWidth <= t."
+			    "clientWidth + 1)"), "a table of the %s tab is not "
+			    "cards", tabs[t]);
 		}
+		run("document.querySelector('button.tab[data-arg=processes]')"
+		    ".click()");
+		wait_js("document.querySelector('table.procs.cards tbody tr td"
+		    "[data-label=PID]')", 10);
+		ATF_CHECK(js_true("getComputedStyle(document.querySelector("
+		    "'table.procs.cards tbody tr')).display === 'block'"));
+		shot("m9-processes-cards");
 	}
 	/* The tree is one line until unfolded, and folds again when
 	 * something in it is picked. */
@@ -1485,11 +1518,53 @@ ATF_TC_BODY(pwa, tc)
 	    ".click()");
 	wait_js("document.querySelector('section.disk, .empty')", 20);
 	shot("7l-storage-disks");
+	/*
+	 * How the disks say they are; a dataset that is encrypted, its
+	 * key loaded where it is kept; a snapshot sent into a new one.
+	 */
+	run("document.querySelector('button[data-act=st-kind][data-arg=health]"
+	    "').click()");
+	wait_js("document.querySelectorAll('table.health tbody tr').length "
+	    "=== 3 && document.querySelector('table.health .chip.ok') && "
+	    "document.querySelector('table.health .chip.bad').textContent "
+	    "=== 'failing' && document.querySelector('table.health')."
+	    "textContent.includes('88 reallocated sectors')", 20);
+	shot("7m-storage-health");
+	run("document.querySelector('button[data-act=st-kind][data-arg="
+	    "datasets]').click()");
+	wait_js("document.querySelector('tr[data-ds=\"tank/data\"] .chip.warn')"
+	    " && document.querySelector('tr[data-ds=\"tank/data\"] button"
+	    "[data-act=st-key][data-arg=load-key]')", 20);
+	run("document.querySelector('tr[data-ds=\"tank/data\"] button"
+	    "[data-act=st-key]').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^zfs load-key tank/data$' "
+	    "storage.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^zfs load-key tank/data$' storage.log") ==
+	    0);
+	run("document.querySelector('tr[data-ds=\"tank/data\"] button"
+	    "[data-act=st-ask][data-arg=jail]').click()");
+	wait_js("document.querySelector('form[data-form=st-ask] input[name="
+	    "name]')", 5);
+	run("const f = document.querySelector('form[data-form=st-ask]'); "
+	    "f.name.value = 'web'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^zfs jail web tank/data$' "
+	    "storage.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^zfs jail web tank/data$' storage.log") ==
+	    0);
+	run("document.querySelector('.dock > header').click()");
 	/* fstab, with a line more. */
 	run("document.querySelector('button[data-act=st-kind][data-arg=mounts]"
 	    "').click()");
 	wait_js("document.querySelector('table.fstab tr[data-fs=\"/mnt/data\"] "
 	    "button[data-act=st-mount]')", 20);
+	ATF_CHECK(js_true("document.querySelector('table.swap') && document."
+	    "querySelector('button[data-act=st-ask][data-arg=swapon]')"));
 	shot("7m-storage-mounts");
 	run("document.querySelector('button[data-act=st-fstab]').click()");
 	wait_js("document.querySelector('form[data-form=st-fstab] textarea') "
@@ -1702,7 +1777,8 @@ ATF_TC_BODY(pwa, tc)
 		run(script);
 		wait_js("document.querySelector('form[data-form=ps-renice]') "
 		    "&& document.querySelector('.ps-what code').textContent."
-		    "includes('sleep 300')", 5);
+		    "includes('sleep 300') && document.querySelector("
+		    "'table.ps-threads tbody tr')", 10);
 		shot("7r-process-picked");
 		run("const f = document.querySelector('form[data-form="
 		    "ps-renice]'); f.nice.value = '7'; f.requestSubmit();");
@@ -1741,7 +1817,7 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
 	    "3 && document.querySelector('table.logs tbody tr b').textContent "
 	    "=== 'cron' && document.querySelectorAll('label.lg-file option')"
-	    ".length === 2", 20);
+	    ".length === 5", 20);
 	run("const f = document.querySelector('form[data-form=lg-find]'); "
 	    "f.text.value = 'publickey for'; f.requestSubmit();");
 	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
@@ -1764,6 +1840,37 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
 	    "1 && document.querySelector('table.logs tbody tr b').textContent "
 	    "=== 'su'", 10);
+
+	/* A jail's own logs; the kernel's messages, or why not. */
+	if (js_true("document.querySelector('button[data-act=lg-jail]"
+	    "[data-arg=gw]')")) {
+		run("document.querySelector('button[data-act=lg-jail]"
+		    "[data-arg=gw]').click()");
+		wait_js("document.querySelector('table.logs tbody tr td.msg') "
+		    "&& document.querySelector('table.logs tbody tr td.msg')."
+		    "textContent === \"the jail's own line\"", 10);
+		run("document.querySelector('button[data-act=lg-jail]"
+		    "[data-arg=\"\"]').click()");
+		wait_js("document.querySelectorAll('table.logs tbody tr')."
+		    "length === 5", 10);
+	}
+	run("const s = document.querySelector('label.lg-file select'); "
+	    "s.value = '@dmesg'; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelector('table.logs tbody tr') || document."
+	    "querySelector('.notice.bad')", 10);
+	/* What the kernel told the agent, in the same place. */
+	run("const s = document.querySelector('label.lg-file select'); "
+	    "s.value = '@events'; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelector('.stage').textContent.includes("
+	    "'events, the newest first') && document.querySelector("
+	    "'label.lg-file select').value === '@events'", 10);
+	run("const s = document.querySelector('label.lg-file select'); "
+	    "s.value = 'auth.log'; s.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('table.logs tbody tr').length === "
+	    "1", 10);
 
 	/*
 	 * How busy the hosts have been: the agent kept it by itself, and
@@ -1812,7 +1919,8 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button[data-act=usage-cfg]').click()");
 	wait_js("document.querySelector('form[data-form=usage-set]') && "
 	    "document.querySelector('form[data-form=usage-set] small')."
-	    "textContent.includes('interfaces')", 5);
+	    "textContent.includes('interfaces') && document.querySelector("
+	    "'form[data-form=usage-set] input[name=cpu]').value === '90'", 5);
 	shot("7t-usage-sampling");
 	run("const f = document.querySelector('form[data-form=usage-set]'); "
 	    "f.step.value = '2'; f.keep.value = '50'; f.requestSubmit();");
@@ -1834,7 +1942,7 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button.tab[data-arg=firewall]').click()");
 	/* The layout is in the side bar, a line for each part, in place of
 	 * the hosts; the light that says it is on is the switch. */
-	wait_js("document.querySelectorAll('.fwrail .titem.fw').length === 28 "
+	wait_js("document.querySelectorAll('.fwrail .titem.fw').length >= 34 "
 	    "&& document.querySelector('table.fw-layout tr.pick')", 20);
 	ATF_CHECK(js_true("document.querySelector('button.switch.on[data-act="
 	    "fw-onoff]') && document.querySelector('.fw-count').textContent."
@@ -1919,6 +2027,59 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('table.fw-dyn tbody tr').click()");
 	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
 	    "')", 10);
+	/*
+	 * A table and what is in it, an entry more; what Apply would
+	 * change; a packet followed through the rules; the firewall of
+	 * a jail with a network of its own.
+	 */
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-4\"]').click()");
+	wait_js("document.querySelectorAll('table.fwentries tbody tr').length "
+	    "=== 2 && document.querySelector('section.fwtable h4').textContent"
+	    ".includes('T46')", 10);
+	run("const f = document.querySelector('form[data-form=fw-entry]'); "
+	    "f.key.value = '198.51.100.0/24'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^ipfw -q table T46 add "
+	    "198.51.100.0/24$' ipfw.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q table T46 add 198.51.100.0/24$' "
+	    "ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("7o-firewall-tables");
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-6\"]').click()");
+	wait_js("document.querySelector('table.fw-diff tr.d-add') && document."
+	    "querySelector('table.fw-diff tr.d-del') && document."
+	    "querySelector('.stage').textContent.includes('added ·')", 10);
+	shot("7o-firewall-diff");
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-7\"]').click()");
+	wait_js("document.querySelector('form[data-form=fw-trace]')", 10);
+	run("const f = document.querySelector('form[data-form=fw-trace]'); "
+	    "f.src.value = '2001:db8::9'; f.dst.value = '2001:db8::1'; "
+	    "f.port.value = '22'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('ol.fw-steps li').length === 2 && "
+	    "document.querySelector('ol.fw-steps li').textContent.includes("
+	    "'into 9100') && document.querySelector('.stage .notice.bad')."
+	    "textContent.includes('dropped')", 10);
+	shot("7o-firewall-trace");
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-5\"]').click()");
+	wait_js("document.querySelector('form[data-form=fw-object] select')",
+	    10);
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-8\"]').click()");
+	wait_js("document.querySelector('.stage').textContent.includes("
+	    "'Logged packets')", 10);
+	run("document.querySelector('.fwrail li[data-act=fw-jail]:not("
+	    "[data-arg=\"\"])') && document.querySelector('.fwrail "
+	    "li[data-act=fw-jail]:not([data-arg=\"\"])').click()");
+	usleep(700000);
+	run("document.querySelector('.fwrail li[data-act=fw-jail][data-arg="
+	    "\"\"]').click()");
+	wait_js("document.querySelector('table.fw-layout')", 20);
 	/* Back to the hosts, and to the layout again. */
 	run("document.querySelector('.fwrail button[data-act=fw-rail]')."
 	    "click()");
@@ -1959,6 +2120,11 @@ ATF_TC_BODY(pwa, tc)
 	    "includes('trunk 10-20,30') && document.querySelector('.ports "
 	    ".port.st-nostp .warn') && document.querySelector('.pane.bridge')."
 	    "textContent.includes('filters VLANs')"));
+	/* What it has learned, and its own options, unfolded and set. */
+	ATF_CHECK(js_true("document.querySelector('table.brmac') && document."
+	    "querySelector('table.brmac').textContent.includes("
+	    "'02:00:00:00:00:01') && document.querySelector('form[data-form="
+	    "br-set] input[name=priority]')"));
 	shot("7p-bridge");
 	/* A bridge's box folds at its head, and unfolds. */
 	run("document.querySelector('.pane.bridge .boxhead .chev').click()");
@@ -2045,9 +2211,11 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button[data-act=net-kind][data-arg="
 	    "connections]').click()");
 	wait_js("document.querySelector('button.live.on')", 10);
-	run("window.nets = 0; window.fetch0 = window.fetch; window.fetch = "
-	    "function (u, o) { if (String(u).includes('/net/')) window.nets"
-	    "++; return window.fetch0(u, o); };");
+	/* They come over the stream: what is sent on it is counted. */
+	run("window.nets = 0; window.ws0 = WebSocket.prototype.send; "
+	    "WebSocket.prototype.send = function (t) { if (String(t)."
+	    "includes('\"what\":\"connections\"')) window.nets++; return "
+	    "window.ws0.call(this, t); };");
 	wait_js("window.nets >= 2", 15);
 	run("document.querySelector('button[data-act=net-live]').click()");
 	wait_js("!document.querySelector('button.live.on')", 5);
@@ -2056,8 +2224,8 @@ ATF_TC_BODY(pwa, tc)
 	usleep(4500000);
 	ATF_CHECK_MSG(js_true("window.nets === 0"), "paused, the connections "
 	    "were still read again");
-	run("window.fetch = window.fetch0; document.querySelector('button"
-	    "[data-act=net-live]').click()");
+	run("WebSocket.prototype.send = window.ws0; document.querySelector("
+	    "'button[data-act=net-live]').click()");
 
 	/*
 	 * The API's own page, from the menu: every route of the document,

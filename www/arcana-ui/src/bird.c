@@ -977,13 +977,19 @@ void
 view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 {
 	static const char *const verbs[] = { "restart", "reload" };
-	const ucl_object_t	*o, *l, *c;
+	static const struct tcol pcols[] = {
+		{ "Protocol", "name", false }, { "Kind", "proto", false },
+		{ "Neighbour", "neighbor", false }, { "State", "state", false },
+		{ "Since", "since", false }, { "Routes in / out", NULL, false },
+		{ "Info", "info", false },
+	};
+	const ucl_object_t	*o, *l, *c, **prows;
 	ucl_object_iter_t	 it, cit;
 	const char		*state, *kind;
 	char			 in[24], out[24], *lines;
 	size_t			 k;
 	int64_t			 imp, exp;
-	int			 i, n;
+	int			 i, n, pr;
 
 	conf_load(s, false);
 	h_raw(h, "<section class=\"pane bird\"><h4><span>BIRD</span><span "
@@ -1002,18 +1008,13 @@ view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 	h_raw(h, "</p></section>");
 	graph(h, data);
 
-	h_raw(h, "<h4 class=\"family\">Protocols</h4><table class=\"net bird\">"
-	    "<thead><tr><th>Protocol</th><th>Kind</th><th>Neighbour</th><th>"
-	    "State</th><th>Since</th><th>Routes in / out</th><th>Info</th>"
-	    "<th></th></tr></thead><tbody>");
-	it = NULL;
-	while ((o = ucl_object_iterate(jget(data, "protocols"), &it, true)) !=
-	    NULL) {
-		if (jstr(o, "name") == NULL || (app.filter[0] != '\0' &&
-		    strstr(jstr(o, "name"), app.filter) == NULL && (jstr(o,
-		    "proto") == NULL || strstr(jstr(o, "proto"), app.filter) ==
-		    NULL) && (jstr(o, "neighbor") == NULL || strstr(jstr(o,
-		    "neighbor"), app.filter) == NULL)))
+	h_raw(h, "<h4 class=\"family\">Protocols</h4><table class=\"net bird\">");
+	tbl_head(h, "bird", pcols, 7, 1);
+	h_raw(h, "<tbody>");
+	prows = tbl_rows("bird", jget(data, "protocols"), pcols, 7,
+	    app.filter);
+	for (pr = 0; (o = prows[pr]) != NULL; pr++) {
+		if (jstr(o, "name") == NULL)
 			continue;
 		state = jstr(o, "state") != NULL ? jstr(o, "state") : "";
 		h_fmt(h, "<tr class=\"%s pick\" data-act=\"bird-open\"",
@@ -1070,6 +1071,7 @@ view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 		}
 		h_raw(h, "</td></tr>");
 	}
+	free(prows);
 	h_raw(h, "</tbody></table>");
 
 	if (ucl_array_size(jget(data, "tables")) > 0) {

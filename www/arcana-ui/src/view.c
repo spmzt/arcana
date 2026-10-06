@@ -1405,7 +1405,10 @@ modal(struct html *h)
 		    "(::/0 for IPv6's).</small></label>"
 		    "<label>Gateway<input name=\"gateway\" spellcheck=\"false\" "
 		    "autocomplete=\"off\" placeholder=\"10.0.0.1\"><small>An "
-		    "address, or the name of an interface.</small></label>"
+		    "address, or the name of an interface. Several addresses "
+		    "with commas make one route of as many next hops (ECMP), "
+		    "each with its share after an @: 10.0.0.1@2,10.0.0.2."
+		    "</small></label>"
 		    "<div class=\"two\"><label>Metric<input name=\"metric\" "
 		    "inputmode=\"numeric\" autocomplete=\"off\" placeholder="
 		    "\"the system's, 1\"><small>Its cost: of several routes "
@@ -2370,10 +2373,10 @@ view_gauges(struct html *h, struct server *s)
 void
 view_packages(struct html *h, struct server *s)
 {
-	const ucl_object_t	*j, *p;
+	const ucl_object_t	*j, *p, **prows;
 	ucl_object_iter_t	 it;
 	char			 age[32], fname[300];
-	int			 n;
+	int			 n, pr;
 	bool			 mine;
 
 	mine = app.pkg.data != NULL && strcmp(app.pkg.sid, s->id) == 0;
@@ -2423,13 +2426,21 @@ view_packages(struct html *h, struct server *s)
 	}
 	n = 0;
 	h_raw(h, "<form data-form=\"packages\" class=\"pkgs\">"
-	    "<table class=\"net\"><thead><tr><th></th><th>Package</th>"
-	    "<th>Installed</th><th>Available</th></tr></thead><tbody>");
-	it = NULL;
-	while ((p = ucl_object_iterate(jget(app.pkg.data, "packages"), &it,
-	    true)) != NULL) {
-		if (jstr(p, "name") == NULL || (app.filter[0] != '\0' &&
-		    strstr(jstr(p, "name"), app.filter) == NULL))
+	    "<table class=\"net\">");
+	{
+		static const struct tcol pcols[] = {
+			{ "", NULL, false }, { "Package", "name", false },
+			{ "Installed", "installed", false },
+			{ "Available", "available", false },
+		};
+
+		tbl_head(h, "pkgs", pcols, 4, 0);
+		h_raw(h, "<tbody>");
+		prows = tbl_rows("pkgs", jget(app.pkg.data, "packages"),
+		    pcols, 4, app.filter);
+	}
+	for (pr = 0; (p = prows[pr]) != NULL; pr++) {
+		if (jstr(p, "name") == NULL)
 			continue;
 		snprintf(fname, sizeof(fname), "p:%s", jstr(p, "name"));
 		h_raw(h, "<tr><td><input type=\"checkbox\"");
@@ -2443,6 +2454,7 @@ view_packages(struct html *h, struct server *s)
 		h_raw(h, "</td></tr>");
 		n++;
 	}
+	free(prows);
 	h_raw(h, "</tbody></table>");
 	if (n == 0)
 		h_raw(h, "<div class=\"empty\"><p>Everything is up to date."

@@ -63,6 +63,7 @@ enum op {
 	OP_PROCESSES,
 	OP_LOG,
 	OP_HISTORY,
+	OP_EVENTS,
 };
 
 struct call {
@@ -115,6 +116,13 @@ struct call {
  * its answer.  Several requests to one host at once have one each, and
  * leave as many behind.  One that nobody took for a while is closed,
  * and so is one the other end has closed or written to unasked.
+ *
+ * An SCTP association is not taken but shared: the requests to a host
+ * that run at once all go over the one association, which a thread of
+ * its own runs (a cbl_loop), each request waiting for its own answer.
+ * A dump is not sent over it: a reader that is slow holds the reading
+ * of the connection its dump came on, which would hold every other
+ * request with it; it has a connection of its own, as on TCP.
  */
 #define	POOL_MAX	48
 #define	POOL_PER_HOST	4
@@ -133,6 +141,17 @@ struct pooled {
 static struct pooled	pool[POOL_MAX];
 static int		npool;
 static pthread_mutex_t	pool_lock = PTHREAD_MUTEX_INITIALIZER;
+
+struct shared {
+	struct pooled	 p;
+	int		 users;		/* requests on it now */
+	bool		 dead;		/* to be closed once nobody uses it */
+};
+
+static struct shared	shared[POOL_MAX];
+static int		nshared;
+static cbl_loop		*sloop;		/* runs the shared associations */
+static pthread_once_t	sloop_once = PTHREAD_ONCE_INIT;
 
 static cbl_ctx	*ctx;
 
@@ -177,6 +196,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_BRIDGES] = "bridges",
 	[ARC_NET_KIND_GENEVE] = "geneve",
 	[ARC_NET_KIND_IPFW] = "ipfw",
+	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 };
 
 static const char *service_action_names[] = {
@@ -289,9 +309,179 @@ pooled_close(struct pooled *p)
 	free(p->peer);
 }
 
+static bool	pool_take_own(const char *, const char *, struct pooled *);
+
+static bool
+is_sctp(const char *uri)
+{
+
+	return (strncmp(uri, "sctp:", 5) == 0);
+}
+
+static void *
+sloop_run(void *arg __unused)
+{
+
+	(void)cbl_loop_run(sloop);
+	return (NULL);
+}
+
+/* The thread that runs the shared associations, once. */
+static void
+sloop_start(void)
+{
+	pthread_t	tid;
+	int		error;
+
+	if ((error = cbl_loop_new(ctx, &sloop)) != 0) {
+		kore_log(LOG_ERR, "cbl_loop_new: %s", strerror(error));
+		sloop = NULL;
+		return;
+	}
+	if ((error = pthread_create(&tid, NULL, sloop_run, NULL)) != 0) {
+		kore_log(LOG_ERR, "pthread_create: %s", strerror(error));
+		cbl_loop_free(sloop);
+		sloop = NULL;
+		return;
+	}
+	(void)pthread_detach(tid);
+}
+
+/* Closed once its last user is done; called with the lock held. */
+static void
+shared_drop(int i)
+{
+
+	if (shared[i].users > 0)
+		return;
+	pooled_close(&shared[i].p);
+	shared[i] = shared[--nshared];
+}
+
+/* The shared association to uri, with one user more; false if none. */
+static bool
+shared_take(const char *uri, const char *peer, struct pooled *out)
+{
+	uint64_t	now;
+	int		i;
+	bool		found;
+
+	found = false;
+	now = now_us();
+	pthread_mutex_lock(&pool_lock);
+	for (i = nshared - 1; i >= 0; i--) {
+		if (!shared[i].dead && (!cbl_conn_is_open(shared[i].p.conn) ||
+		    (shared[i].users == 0 && now - shared[i].p.since >
+		    POOL_IDLE_US)))
+			shared[i].dead = true;
+		if (shared[i].dead) {
+			shared_drop(i);
+			continue;
+		}
+		if (found || strcmp(shared[i].p.uri, uri) != 0 ||
+		    !same(shared[i].p.peer, peer))
+			continue;
+		*out = shared[i].p;
+		out->uri = strdup(uri);
+		out->peer = peer != NULL ? strdup(peer) : NULL;
+		shared[i].users++;
+		found = true;
+	}
+	pthread_mutex_unlock(&pool_lock);
+	return (found);
+}
+
+/*
+ * A request is done with a shared association, or one of its own over
+ * SCTP becomes the shared one: attached to the loop, unless there is
+ * one already.  False when conn is not and is not to be shared.
+ */
+static bool
+shared_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
+    const struct arc_client *cl)
+{
+	struct shared	n;
+	int		i;
+
+	pthread_mutex_lock(&pool_lock);
+	for (i = 0; i < nshared; i++)
+		if (shared[i].p.conn == conn) {
+			shared[i].users--;
+			shared[i].p.since = now_us();
+			if (shared[i].dead)
+				shared_drop(i);
+			pthread_mutex_unlock(&pool_lock);
+			return (true);
+		}
+	for (i = 0; i < nshared; i++)
+		if (!shared[i].dead && strcmp(shared[i].p.uri, uri) == 0 &&
+		    same(shared[i].p.peer, peer))
+			break;
+	pthread_mutex_unlock(&pool_lock);
+	/* One is shared already, or there is no room: this one goes. */
+	if (i < nshared || nshared >= POOL_MAX)
+		return (false);
+	(void)pthread_once(&sloop_once, sloop_start);
+	if (sloop == NULL || cbl_conn_attach(conn, sloop) != 0)
+		return (false);
+	memset(&n, 0, sizeof(n));
+	n.p.conn = conn;
+	n.p.tls = tls;
+	n.p.family = cl->family;
+	n.p.version = cl->version;
+	n.p.since = now_us();
+	if ((n.p.uri = strdup(uri)) == NULL || (peer != NULL && (n.p.peer =
+	    strdup(peer)) == NULL)) {
+		pooled_close(&n.p);
+		return (true);
+	}
+	pthread_mutex_lock(&pool_lock);
+	if (nshared < POOL_MAX)
+		shared[nshared++] = n;
+	else
+		n.p.conn = NULL;
+	pthread_mutex_unlock(&pool_lock);
+	if (n.p.conn == NULL)
+		pooled_close(&n.p);
+	return (true);
+}
+
+/*
+ * A connection not to be used again: closed, or for a shared one,
+ * closed once the requests on it now are done.
+ */
+static void
+pool_drop(cbl_conn *conn, cbl_tls *tls)
+{
+	int	i;
+
+	pthread_mutex_lock(&pool_lock);
+	for (i = 0; i < nshared; i++)
+		if (shared[i].p.conn == conn) {
+			shared[i].users--;
+			shared[i].dead = true;
+			shared_drop(i);
+			pthread_mutex_unlock(&pool_lock);
+			return;
+		}
+	pthread_mutex_unlock(&pool_lock);
+	cbl_conn_free(conn);
+	cbl_tls_free(tls);
+}
+
 /* An idle connection to uri, if one is there and still good. */
 static bool
 pool_take(const char *uri, const char *peer, struct pooled *out)
+{
+
+	if (is_sctp(uri))
+		return (shared_take(uri, peer, out));
+	return (pool_take_own(uri, peer, out));
+}
+
+/* The same, of the connections that are not shared. */
+static bool
+pool_take_own(const char *uri, const char *peer, struct pooled *out)
 {
 	struct pollfd	pfd;
 	uint64_t	now;
@@ -337,6 +527,14 @@ pool_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 	struct pooled	p;
 	int		i, n;
 
+	if (is_sctp(uri)) {
+		if (!shared_give(uri, peer, conn, tls, cl)) {
+			cbl_conn_free(conn);
+			cbl_tls_free(tls);
+		}
+		return;
+	}
+
 	memset(&p, 0, sizeof(p));
 	p.conn = conn;
 	p.tls = tls;
@@ -373,6 +571,11 @@ hosts_forget(const char *uri)
 			pooled_close(&pool[i]);
 			pool[i] = pool[--npool];
 		}
+	for (i = nshared - 1; i >= 0; i--)
+		if (strcmp(shared[i].p.uri, uri) == 0) {
+			shared[i].dead = true;
+			shared_drop(i);
+		}
 	pthread_mutex_unlock(&pool_lock);
 }
 
@@ -395,7 +598,8 @@ hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
 	memset(cl, 0, sizeof(*cl));
 	*connp = NULL;
 	*tlsp = NULL;
-	if (pool_take(uri, peer, &kept)) {
+	/* Not a shared one: see above. */
+	if (pool_take_own(uri, peer, &kept)) {
 		free(kept.uri);
 		free(kept.peer);
 		cl->conn = kept.conn;
@@ -453,12 +657,11 @@ hosts_release(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 {
 
 	arc_client_fini(cl);
+	/* A dump's own SCTP association may be the shared one after. */
 	if (good && cbl_conn_is_open(conn))
 		pool_give(uri, peer, conn, tls, cl);
-	else {
-		cbl_conn_free(conn);
-		cbl_tls_free(tls);
-	}
+	else
+		pool_drop(conn, tls);
 }
 
 int
@@ -616,7 +819,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    OP_KERNEL ? "arc_kernel" : c->op == OP_TRANSPORT ? "arc_transport" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
-	    "arc_log" : c->op == OP_HISTORY ? "arc_history" :
+	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
+	    OP_EVENTS ? "arc_events" :
 	    c->op == OP_SYSCTL ? "arc_sysctl" : c->op == OP_STATS ? "arc_stats" : c->op == OP_PACKAGES ? "arc_packages" :
 	    c->op == OP_PKG_UPGRADE ? "arc_pkg_upgrade" :
 	    c->op == OP_JOB_SUBMIT ? "arc_job_submit" : c->op == OP_JOBS ?
@@ -922,6 +1126,8 @@ call_run(struct kore_task *t)
 	struct arc_log_rsp	*lgr;
 	struct arc_history_req	 hsq;
 	struct arc_history_rsp	*hsr;
+	struct arc_events_req	 evq;
+	struct arc_events_rsp	*evr;
 	struct pooled		 kept;
 	struct arc_storage_req	 sgq;
 	struct arc_storage_rsp	*sgr;
@@ -993,6 +1199,7 @@ call_run(struct kore_task *t)
 	prr = NULL;
 	lgr = NULL;
 	hsr = NULL;
+	evr = NULL;
 	reused = again = false;
 	sgr = NULL;
 	fsr = NULL;
@@ -1024,7 +1231,8 @@ connect:
 		reused = true;
 		snprintf(detail, sizeof(detail), "%s, %s, kept open", c->uri,
 		    local ? "local socket" : strncmp(c->uri, "sctp:", 5) ==
-		    0 ? "mutual DTLS 1.2" : "mutual TLS 1.3");
+		    0 ? "mutual DTLS 1.2, one association shared by the "
+		    "requests to this host" : "mutual TLS 1.3");
 		goto connected;
 	}
 	reused = false;
@@ -1483,6 +1691,8 @@ connected:
 	case OP_PROCESSES:
 		memset(&prq, 0, sizeof(prq));
 		prq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		prq.has_pid = c->fib != 0;
+		prq.pid = c->fib;
 		if ((error = arc_processes(&cl, &prq, &prr)) != 0)
 			goto rpcfail;
 		ok = prr->ok;
@@ -1500,6 +1710,7 @@ connected:
 		lgq.position = c->pos;
 		lgq.has_lines = c->lines > 0;
 		lgq.lines = c->lines;
+		lgq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_log(&cl, &lgq, &lgr)) != 0)
 			goto rpcfail;
 		ok = lgr->ok;
@@ -1516,6 +1727,13 @@ connected:
 		hsq.has_sample_step = hsq.has_sample_keep = c->retry;
 		hsq.sample_step = c->fib;
 		hsq.sample_keep = c->offset;
+		hsq.has_limit_cpu = hsq.has_limit_mem = hsq.has_limit_swap =
+		    c->retry && c->names != NULL;
+		if (c->names != NULL) {
+			hsq.limit_cpu = (uint32_t)atoi(c->names[0]);
+			hsq.limit_mem = (uint32_t)atoi(c->names[1]);
+			hsq.limit_swap = (uint32_t)atoi(c->names[2]);
+		}
 		if ((error = arc_history(&cl, &hsq, &hsr)) != 0)
 			goto rpcfail;
 		ok = hsr->ok;
@@ -1523,6 +1741,18 @@ connected:
 		put_json(top, hsr->json);
 		steps = hsr->trace.v;
 		nsteps = hsr->trace.n;
+		break;
+	case OP_EVENTS:
+		memset(&evq, 0, sizeof(evq));
+		evq.has_after = c->has_pos;
+		evq.after = c->pos;
+		if ((error = arc_events(&cl, &evq, &evr)) != 0)
+			goto rpcfail;
+		ok = evr->ok;
+		put_str(top, "error", evr->error);
+		put_json(top, evr->json);
+		steps = evr->trace.v;
+		nsteps = evr->trace.n;
 		break;
 	case OP_SYSCTL:
 		/* Where to begin rides where a jail's name does. */
@@ -1693,8 +1923,7 @@ rpcfail:
 	 */
 	if (reused && c->reads && cl.err == NULL) {
 		arc_client_fini(&cl);
-		cbl_conn_free(conn);
-		cbl_tls_free(tls);
+		pool_drop(conn, tls);
 		conn = NULL;
 		tls = NULL;
 		again = true;
@@ -1755,6 +1984,8 @@ done:
 		arc_log_rsp_free(lgr);
 	if (hsr != NULL)
 		arc_history_rsp_free(hsr);
+	if (evr != NULL)
+		arc_events_rsp_free(evr);
 	if (sgr != NULL)
 		arc_storage_rsp_free(sgr);
 	if (fsr != NULL)
@@ -1794,8 +2025,10 @@ done:
 	}
 	if (cl.conn != NULL)
 		arc_client_fini(&cl);
-	cbl_conn_free(conn);
-	cbl_tls_free(tls);
+	if (conn != NULL)
+		pool_drop(conn, tls);
+	else
+		cbl_tls_free(tls);
 	return (KORE_RESULT_OK);
 }
 
@@ -2261,7 +2494,7 @@ api_network(struct http_request *req)
 		kore_free(c->peer);
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "kind is one of "
-		    "routes, nexthops, connections, sockets, interfaces, "
+		    "routes, nexthops, nhgroups, connections, sockets, interfaces, "
 		    "netgraph, wireguard, bird, bird-routes, lookup; fib a "
 		    "number"));
 	}
@@ -2392,7 +2625,7 @@ int
 api_storage(struct http_request *req)
 {
 	static const char *const kinds[] = { "disks", "pools", "datasets",
-	    "snapshots", "mounts", "importable" };
+	    "snapshots", "mounts", "importable", "health" };
 	struct call	*c;
 	const char	*kind, *q;
 	size_t		 i;
@@ -2613,12 +2846,15 @@ int
 api_processes(struct http_request *req)
 {
 	struct call	*c;
+	uint64_t	 v;
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_PROCESSES)) == NULL)
 		return (KORE_RESULT_OK);
 	(void)query_param(req, "jail", c->scope, sizeof(c->scope));
+	if (query_u64(req, "pid", 99999, &v))
+		c->fib = (uint32_t)v;
 	return (call_start(req, c));
 }
 
@@ -2637,6 +2873,7 @@ api_log(struct http_request *req)
 	if ((c = call_new(req, OP_LOG)) == NULL)
 		return (KORE_RESULT_OK);
 	(void)query_param(req, "name", c->logname, sizeof(c->logname));
+	(void)query_param(req, "jail", c->scope, sizeof(c->scope));
 	/* The text may be any: it comes escaped, as a URL has it. */
 	if (query_param(req, "filter", c->jail, sizeof(c->jail)) &&
 	    (!http_argument_urldecode(c->jail, 1) || strlen(c->jail) > 128)) {
@@ -2677,9 +2914,30 @@ api_history(struct http_request *req)
 	    "step")) : 0;
 	keep = body != NULL && ucl_object_lookup(body, "keep") != NULL ?
 	    ucl_object_toint(ucl_object_lookup(body, "keep")) : -1;
+	/* The limits, all three or none, as percentages. */
+	if (body != NULL && ucl_object_lookup(body, "cpu") != NULL) {
+		int64_t	l[3];
+		size_t	k;
+
+		l[0] = ucl_object_toint(ucl_object_lookup(body, "cpu"));
+		l[1] = ucl_object_toint(ucl_object_lookup(body, "mem"));
+		l[2] = ucl_object_toint(ucl_object_lookup(body, "swap"));
+		for (k = 0; k < 3; k++)
+			if (l[k] < 0 || l[k] > 100)
+				step = 0;
+		c->names = kore_calloc(3, sizeof(*c->names));
+		c->nnames = 3;
+		for (k = 0; k < 3; k++) {
+			c->names[k] = kore_malloc(8);
+			snprintf(c->names[k], 8, "%lld", (long long)l[k]);
+		}
+	}
 	if (body != NULL)
 		ucl_object_unref(body);
 	if (step < 1 || step > 3600 || keep < 0 || keep > 5000) {
+		for (keep = 0; keep < (int64_t)c->nnames; keep++)
+			kore_free(c->names[keep]);
+		kore_free(c->names);
 		kore_free(c->sname);
 		kore_free(c->uri);
 		kore_free(c->peer);
@@ -2690,6 +2948,20 @@ api_history(struct http_request *req)
 	c->retry = true;
 	c->fib = (uint32_t)step;
 	c->offset = (uint32_t)keep;
+	return (call_start(req, c));
+}
+
+/* GET /api/servers/<id>/events[?after=number]: what happened there. */
+int
+api_events(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_EVENTS)) == NULL)
+		return (KORE_RESULT_OK);
+	c->has_pos = query_u64(req, "after", INT64_MAX, &c->pos);
 	return (call_start(req, c));
 }
 
