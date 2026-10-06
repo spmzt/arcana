@@ -118,6 +118,7 @@ static struct {
 	char		 k_addr[64];
 	int		 k_secs;
 	ucl_object_t	*k_data;
+	char		 typed[400];	/* the rule being typed, for its words */
 	bool		 k_loading;
 	char		 k_error[300];
 	ucl_object_t	*log;		/* the lines of the security log */
@@ -1599,6 +1600,128 @@ words_ok(const char *s)
 	    "<>*+%[]")] == '\0');
 }
 
+/*
+ * The words that may come next in a rule being typed, by ipfw's order:
+ * the action (with its number, for one that names a rule or a pipe),
+ * then what it is (ip, tcp…), from an address to an address, then
+ * the options.  Each offered as the whole line with it, for the
+ * field's list: the browser shows those that begin as typed.
+ */
+static void
+rule_words(struct html *h)
+{
+	static const char *const actions[] = { "allow", "deny", "reject",
+	    "count", "skipto", "call", "return", "check-state", "nat",
+	    "pipe", "queue", "fwd", "divert", "tee", "setfib", "tag",
+	    "unreach", "reset", "log" };
+	static const char *const protos[] = { "ip", "all", "tcp", "udp",
+	    "icmp", "ipv6-icmp", "ip4", "ip6" };
+	static const char *const addrs[] = { "any", "me", "me6", "not" };
+	static const char *const opts[] = { "in", "out", "via", "recv",
+	    "xmit", "keep-state", "record-state", "setup", "established",
+	    "frag", "limit", "tcpflags", "icmptypes", "//" };
+	static const char *const numbered[] = { "skipto", "call", "nat",
+	    "pipe", "queue", "setfib", "tag", "divert", "tee", "unreach" };
+	const char *const	*list;
+	const ucl_object_t	*t;
+	ucl_object_iter_t	 it;
+	char			 copy[400], *p, *w, *v[64], head[400], extra[96];
+	int			 n, nl, i, from, to;
+	size_t			 k;
+	bool			 tbl;
+
+	h_raw(h, "<datalist id=\"fw-words\">");
+	snprintf(copy, sizeof(copy), "%s", fw.typed);
+	n = 0;
+	p = copy;
+	while (n < 63 && (w = strsep(&p, " \t")) != NULL)
+		if (*w != '\0')
+			v[n++] = w;
+	/* The words done are those before the last space. */
+	k = strlen(fw.typed);
+	if (k > 0 && fw.typed[k - 1] != ' ' && n > 0)
+		n--;
+	snprintf(head, sizeof(head), "%.*s", (int)(k > 0 && fw.typed[k - 1] !=
+	    ' ' ? strrchr(fw.typed, ' ') != NULL ? strrchr(fw.typed, ' ') -
+	    fw.typed + 1 : 0 : k), fw.typed);
+	from = to = -1;
+	for (i = 0; i < n; i++) {
+		if (strcmp(v[i], "from") == 0)
+			from = i;
+		else if (strcmp(v[i], "to") == 0)
+			to = i;
+	}
+	list = NULL;
+	nl = 0;
+	tbl = false;
+	extra[0] = '\0';
+	if (n == 0) {
+		list = actions;
+		nl = (int)nitems(actions);
+	} else if (to >= 0 && to == n - 1) {
+		list = addrs;
+		nl = (int)nitems(addrs);
+		tbl = true;
+	} else if (to >= 0) {
+		list = opts;
+		nl = (int)nitems(opts);
+	} else if (from >= 0 && from == n - 1) {
+		list = addrs;
+		nl = (int)nitems(addrs);
+		tbl = true;
+	} else if (from >= 0) {
+		snprintf(extra, sizeof(extra), "to");
+	} else {
+		for (k = 0; k < nitems(numbered); k++)
+			if (strcmp(v[n - 1], numbered[k]) == 0)
+				break;
+		if (k < nitems(numbered)) {
+			/* A rule's number: where each part begins. */
+			if (strcmp(v[n - 1], "skipto") == 0 || strcmp(v[n - 1],
+			    "call") == 0)
+				for (k = 0; k < nitems(sects); k++)
+					h_fmt(h, "<option value=\"%s%d\">%s"
+					    "</option>", head, sects[k].lo,
+					    sects[k].name);
+		} else {
+			/* After the action and its number: what it is, or
+			 * from, when it was already said. */
+			list = protos;
+			nl = (int)nitems(protos);
+			for (i = 0; i < n; i++)
+				for (k = 0; k < nitems(protos); k++)
+					if (strcmp(v[i], protos[k]) == 0)
+						list = NULL;
+			if (list == NULL)
+				snprintf(extra, sizeof(extra), "from");
+		}
+	}
+	for (i = 0; i < nl; i++) {
+		snprintf(copy, sizeof(copy), "%s%s", head, list[i]);
+		h_raw(h, "<option");
+		h_attr(h, "value", copy);
+		h_raw(h, "></option>");
+	}
+	if (extra[0] != '\0') {
+		snprintf(copy, sizeof(copy), "%s%s", head, extra);
+		h_raw(h, "<option");
+		h_attr(h, "value", copy);
+		h_raw(h, "></option>");
+	}
+	/* The host's tables, as an address. */
+	it = NULL;
+	while (tbl && (t = ucl_object_iterate(jget(fw.data, "tables"), &it,
+	    true)) != NULL)
+		if (jstr(t, "name") != NULL) {
+			snprintf(copy, sizeof(copy), "%stable(%s)", head,
+			    jstr(t, "name"));
+			h_raw(h, "<option");
+			h_attr(h, "value", copy);
+			h_raw(h, "></option>");
+		}
+	h_raw(h, "</datalist>");
+}
+
 /* A field of digits, and how many at most; "" when empty is allowed. */
 static const char *
 digits(const ucl_object_t *f, const char *name, size_t max)
@@ -2120,14 +2243,15 @@ view_firewall(struct html *h, struct server *s)
 	h_fmt(h, "<form data-form=\"fw-add\" class=\"fw-add\"><input name=\""
 	    "num\" inputmode=\"numeric\" size=\"6\" value=\"%d\" title=\"The "
 	    "rule's number: %d to %d here\"><input name=\"rule\" spellcheck=\""
-	    "false\" autocomplete=\"off\" placeholder=\"allow tcp from any to "
-	    "me 443 in\"><label class=\"toggle\" title=\"Added to what the "
+	    "false\" autocomplete=\"off\" list=\"fw-words\" data-input=\""
+	    "fw-rule\" placeholder=\"allow tcp from any to me 443 in\"><label class=\"toggle\" title=\"Added to what the "
 	    "kernel has, at once\"><input type=\"checkbox\" name=\"live\"%s>"
 	    "<span>now</span></label><label class=\"toggle\" title=\"Written "
 	    "into the kept rules, which the host loads when it starts and "
 	    "Apply loads\"><input type=\"checkbox\" name=\"persist\" checked>"
 	    "<span>keep</span></label><button class=\"small\">Add</button>"
 	    "</form>", next, sc->lo, sc->hi, loaded ? " checked" : "");
+	rule_words(h);
 	h_raw(h, "<table class=\"net fw-rules\">");
 	tbl_head(h, "fwrules", cols, 5, 0);
 	h_raw(h, "<tbody>");
@@ -2157,7 +2281,8 @@ view_firewall(struct html *h, struct server *s)
 			    "title=\"A number after the rule below\">▼"
 			    "</button><input name=\"num\" inputmode=\""
 			    "numeric\" size=\"6\" value=\"%lld\"><input name="
-			    "\"rule\" spellcheck=\"false\" autocomplete=\"off\"",
+			    "\"rule\" spellcheck=\"false\" autocomplete=\"off\""
+			    " list=\"fw-words\" data-input=\"fw-rule\"",
 			    num, fw.move > 0 ? fw.move : num);
 			h_attr(h, "value", kt != NULL ? kt : jstr(o, "text"));
 			h_fmt(h, "><label class=\"toggle\"><input type=\""
@@ -2378,6 +2503,12 @@ firewall_action(const char *act, const char *arg, const char *value)
 	char		 json[256], title[96], body[500];
 	size_t		 i;
 
+	/* A rule being typed: the words that may come next follow it. */
+	if (strcmp(act, "input:fw-rule") == 0) {
+		snprintf(fw.typed, sizeof(fw.typed), "%s", value != NULL ? value :
+		    "");
+		return (true);
+	}
 	if (strncmp(act, "fw-", 3) != 0 && strncmp(act, "do-fw-", 6) != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)

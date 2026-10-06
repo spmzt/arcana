@@ -309,7 +309,10 @@ The console is laid out as a tree and tabs.
     firewall is on, and pressed turns it off or on. A rule is pressed
     to change it in its own row: its number, its words as they are
     kept, now and keep; saved, the old one is deleted where it was and
-    the new one added where it is to be. **Dynamic states** are the
+    the new one added where it is to be. As a rule is typed, the words
+    that may come next are offered in ipfw's order: the action, what
+    the packet is, `from` and an address (the host's tables among
+    them), `to`, and the options. **Dynamic states** are the
     connections the stateful rules let through, as `ipfw -D show` has
     them: the rule that made each, its flow, counters and how long it
     still lives, read again every two seconds; one pressed leads to

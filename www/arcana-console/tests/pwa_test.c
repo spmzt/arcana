@@ -2093,6 +2093,28 @@ ATF_TC_BODY(pwa, tc)
 	    " svg.hits polyline') && document.querySelector('button.live.on"
 	    "[data-act=fw-live]')", 30);
 	shot("7o-firewall-hits");
+	/* A rule's words offered as it is typed, by ipfw's order: after
+	 * from, the addresses and the host's tables; then to. */
+	run("const i = document.querySelector('form[data-form=fw-add] "
+	    "input[name=rule]'); i.value = 'allow tcp from '; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("(() => { const o = [...document.querySelectorAll("
+	    "'#fw-words option')].map(e => e.value); return o.includes("
+	    "'allow tcp from any') && o.includes('allow tcp from me6') && "
+	    "o.includes('allow tcp from table(T46)'); })()", 5);
+	run("const i = document.querySelector('form[data-form=fw-add] "
+	    "input[name=rule]'); i.value = 'allow tcp from any '; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("[...document.querySelectorAll('#fw-words option')].some(e => "
+	    "e.value === 'allow tcp from any to')", 5);
+	run("const i = document.querySelector('form[data-form=fw-add] "
+	    "input[name=rule]'); i.value = 'sk'; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("[...document.querySelectorAll('#fw-words option')].some(e => "
+	    "e.value === 'skipto')", 5);
+	run("const i = document.querySelector('form[data-form=fw-add] "
+	    "input[name=rule]'); i.value = ''; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
 	run("const f = document.querySelector('form[data-form=fw-add]'); "
 	    "f.num.value = '1500'; f.rule.value = 'allow tcp from any to me6 "
 	    "8443 in'; f.requestSubmit();");
