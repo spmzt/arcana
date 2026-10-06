@@ -71,37 +71,10 @@ static void	cell(struct html *, const ucl_object_t *, const struct column *);
 static int	table(struct html *, const ucl_object_t *, const struct column *,
 		    size_t, const char *);
 static void	route_delete(struct html *, const ucl_object_t *, const char *);
-static int	cmp_rows(const void *, const void *);
 static int	interfaces(struct html *, const struct server *,
 		    const ucl_object_t *);
 static void	fmt_bytes(char *, size_t, int64_t);
 
-/* What qsort(3) compares by: the sorted column of the table drawn. */
-static const struct column	*sort_col;
-static bool			 sort_desc;
-
-/* Numbers as numbers, everything else as text. */
-static int
-cmp_rows(const void *a, const void *b)
-{
-	const ucl_object_t	*x, *y;
-	const char		*sx, *sy;
-	char			*ex, *ey;
-	double			 dx, dy;
-	int			 r;
-
-	x = jget(*(const ucl_object_t *const *)a, sort_col->path);
-	y = jget(*(const ucl_object_t *const *)b, sort_col->path);
-	sx = x != NULL ? ucl_object_tostring_forced(x) : "";
-	sy = y != NULL ? ucl_object_tostring_forced(y) : "";
-	dx = strtod(sx, &ex);
-	dy = strtod(sy, &ey);
-	if (*sx != '\0' && *sy != '\0' && *ex == '\0' && *ey == '\0')
-		r = dx < dy ? -1 : dx > dy ? 1 : 0;
-	else
-		r = strcmp(sx, sy);
-	return (sort_desc ? -r : r);
-}
 
 /* One cell: the value at path, or "a:b" with path2, as text. */
 static void
@@ -120,58 +93,31 @@ cell(struct html *h, const ucl_object_t *e, const struct column *c)
 	h_raw(h, "</td>");
 }
 
-/* A table of the entries in the array; the rows shown. */
+/*
+ * A table of the entries in the array, sorted and filtered as every
+ * table is (tbl.c); the rows shown.  id names it, for the order kept.
+ */
 static int
 table(struct html *h, const ucl_object_t *arr, const struct column *cols,
     size_t ncols, const char *family)
 {
-	const ucl_object_t	*e, **rows;
-	ucl_object_iter_t	 it;
-	size_t			 i, c, n, cap;
-	bool			 sorted;
+	struct tcol		 tc[16];
+	const ucl_object_t	**rows;
+	char			 id[48];
+	size_t			 i, c;
 
-	sorted = app.net.sort >= 0 && (size_t)app.net.sort < ncols;
-	h_raw(h, "<table class=\"net\"><thead><tr>");
-	for (i = 0; i < ncols; i++) {
-		h_fmt(h, "<th class=\"sortable%s\" data-act=\"net-sort\" "
-		    "data-arg=\"%zu\" title=\"Sort by this column\">",
-		    sorted && (size_t)app.net.sort == i ? app.net.sort_desc ?
-		    " desc" : " asc" : "", i);
-		h_txt(h, cols[i].title);
-		h_raw(h, "</th>");
+	for (c = 0; c < ncols && c < 16; c++) {
+		tc[c].title = cols[c].title;
+		tc[c].key = cols[c].path;
+		tc[c].num = false;
 	}
-	if (family != NULL)
-		h_raw(h, "<th></th>");
-	h_raw(h, "</tr></thead><tbody>");
-	/* The rows that pass the filter, then in the order asked for. */
-	rows = NULL;
-	n = cap = 0;
-	it = NULL;
-	while ((e = ucl_object_iterate(arr, &it, true)) != NULL) {
-		if (app.filter[0] != '\0') {
-			char *line = (char *)ucl_object_emit(e,
-			    UCL_EMIT_JSON_COMPACT);
-			bool hit = line != NULL && strstr(line, app.filter) !=
-			    NULL;
-
-			free(line);
-			if (!hit)
-				continue;
-		}
-		if (n == cap) {
-			cap = cap == 0 ? 256 : cap * 2;
-			if ((rows = reallocarray(rows, cap, sizeof(*rows))) ==
-			    NULL)
-				abort();
-		}
-		rows[n++] = e;
-	}
-	if (sorted && n > 1) {
-		sort_col = &cols[app.net.sort];
-		sort_desc = app.net.sort_desc;
-		qsort(rows, n, sizeof(*rows), cmp_rows);
-	}
-	for (i = 0; i < n; i++) {
+	snprintf(id, sizeof(id), "net-%d-%s", (int)app.net.kind, family !=
+	    NULL ? family : "");
+	h_raw(h, "<table class=\"net\">");
+	tbl_head(h, id, tc, (int)c, family != NULL ? 1 : 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows(id, arr, tc, (int)c, app.filter);
+	for (i = 0; rows[i] != NULL; i++) {
 		h_raw(h, "<tr>");
 		for (c = 0; c < ncols; c++)
 			cell(h, rows[i], &cols[c]);
@@ -181,7 +127,7 @@ table(struct html *h, const ucl_object_t *arr, const struct column *cols,
 	}
 	free(rows);
 	h_raw(h, "</tbody></table>");
-	return ((int)n);
+	return ((int)i);
 }
 
 /*
@@ -308,19 +254,27 @@ cloned(const char *name)
 static int
 interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 {
-	const ucl_object_t	*o, *a;
-	ucl_object_iter_t	 it, ait;
+	static const struct tcol cols[] = {
+		{ "Interface", "name", false }, { "State", "up", false },
+		{ "Addresses", NULL, false }, { "MTU", "mtu", true },
+		{ "Ether", "ether", false }, { "In / out", "ibytes", true },
+		{ "Now", NULL, false },
+	};
+	const ucl_object_t	*o, *a, **rows;
+	ucl_object_iter_t	 ait;
 	const char		*name;
 	char			 buf[96], in[24], out[24];
 	bool			 up, match;
-	int			 n;
+	int			 n, r;
 
-	h_raw(h, "<table class=\"net ifaces\"><thead><tr><th>Interface</th>"
-	    "<th>State</th><th>Addresses</th><th>MTU</th><th>Ether</th>"
-	    "<th>In / out</th><th>Now</th><th></th></tr></thead><tbody>");
+	h_raw(h, "<table class=\"net ifaces\">");
+	tbl_head(h, "ifaces", cols, 7, 1);
+	h_raw(h, "<tbody>");
 	n = 0;
-	it = NULL;
-	while ((o = ucl_object_iterate(arr, &it, true)) != NULL) {
+	/* In the order asked for; the filter is this table's own, which
+	 * looks at the addresses too. */
+	rows = tbl_rows("ifaces", arr, cols, 7, NULL);
+	for (r = 0; (o = rows[r]) != NULL; r++) {
 		if ((name = jstr(o, "name")) == NULL)
 			continue;
 		match = app.filter[0] == '\0' || strstr(name, app.filter) !=
@@ -442,6 +396,7 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 		}
 		h_raw(h, "</td></tr>");
 	}
+	free(rows);
 	h_raw(h, "</tbody></table>");
 	return (n);
 }

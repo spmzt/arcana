@@ -581,6 +581,14 @@ The console is laid out as a tree and tabs.
   (`push.json`) and removes one; a device whose browser dropped the
   subscription is forgotten by itself. Up to 16 devices.
 
+- **A table on a phone** is a card for each row: the first column is
+  its title, each other value has its column's name beside it, and
+  what is done to the row is along the card's foot. The table's head
+  stays above the cards as a row of buttons to sort by. Every table,
+  the older ones too (routes, sockets, interfaces, BIRD's protocols,
+  WireGuard's peers, netgraph's nodes, packages, jobs), sorts by the
+  column picked, numbers as numbers whether they came as numbers or
+  as text, and is narrowed by the filter.
 - **On a phone** the tree of hosts is a drawer that slides in from the
   left (☰), the top bar is one row with the rest behind **⋮**, a
   dialog is a sheet from the bottom, a row of choices is one line that

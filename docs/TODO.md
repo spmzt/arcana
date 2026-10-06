@@ -67,10 +67,10 @@
   not after netstat and sockstat have printed the whole document:
   through the kernel's own lists (sysctl net.inet.tcp.pcblist and
   the like) or netlink, as the routes are.
-- The page on a phone: a table as cards, one for each row, with what
-  is done to a row behind one menu; the older tables (BIRD's
-  protocols, WireGuard's peers, routes, sockets) sorted and filtered
-  by the helper the newer ones use.
+- The page on a phone, further: a card's title the column that names
+  the row best (a process's command, not its number); the row's
+  actions behind one menu when there are many; the map and the
+  firewall's chain drawn for a narrow screen.
 - One SCTP association shared by the requests that run at once, each
   on a stream of its own, instead of a connection for each.
 - The mesh: agents joined by SCTP associations, each to at least a

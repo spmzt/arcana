@@ -923,7 +923,21 @@ ATF_TC_BODY(pwa, tc)
 			ATF_CHECK_MSG(js_true("document.documentElement."
 			    "scrollWidth <= window.innerWidth + 1"),
 			    "the %s tab is wider than a phone", tabs[t]);
+			/* A table is a card for each row, each value with
+			 * its column's name; none scrolls sideways. */
+			ATF_CHECK_MSG(js_true("[...document.querySelectorAll("
+			    "'.stage table.net')].every(t => t.classList."
+			    "contains('cards') && t.scrollWidth <= t."
+			    "clientWidth + 1)"), "a table of the %s tab is not "
+			    "cards", tabs[t]);
 		}
+		run("document.querySelector('button.tab[data-arg=processes]')"
+		    ".click()");
+		wait_js("document.querySelector('table.procs.cards tbody tr td"
+		    "[data-label=PID]')", 10);
+		ATF_CHECK(js_true("getComputedStyle(document.querySelector("
+		    "'table.procs.cards tbody tr')).display === 'block'"));
+		shot("m9-processes-cards");
 	}
 	/* The tree is one line until unfolded, and folds again when
 	 * something in it is picked. */

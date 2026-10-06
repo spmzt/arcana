@@ -348,12 +348,21 @@ view_summary(struct html *h, struct server *s)
 void
 view_jobs(struct html *h, struct server *s)
 {
-	const ucl_object_t	*j, *arr;
+	static const struct tcol jcols[] = {
+		{ "#", "id", true }, { "State", "state", false },
+		{ "Job", "title", false }, { "By", "peer", false },
+		{ "Queued", "created", true }, { "Took", NULL, false },
+	};
+	const ucl_object_t	*j, *arr, **rows;
 	const char		*st;
 	char			 buf[48], id[24];
 	unsigned int		 n, i;
 
-	h_raw(h, "<div class=\"toolbar\"><span class=\"tally\">What this host "
+	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
+	    "data-input=\"filter\" placeholder=\"Filter rows\" autocomplete=\""
+	    "off\" spellcheck=\"false\"");
+	h_attr(h, "value", app.filter);
+	h_raw(h, "><span class=\"tally\">What this host "
 	    "was asked to change, by the console or with arcanactl -q; it "
 	    "keeps the last 64 and forgets them when the agent restarts."
 	    "</span></div>");
@@ -387,12 +396,15 @@ view_jobs(struct html *h, struct server *s)
 		h_raw(h, "<div class=\"empty\"><p>No jobs yet.</p></div>");
 		return;
 	}
-	h_raw(h, "<table class=\"net jobs\"><thead><tr><th>#</th><th>State</th>"
-	    "<th>Job</th><th>By</th><th>Queued</th><th>Took</th></tr></thead>"
-	    "<tbody>");
-	/* Newest first. */
+	h_raw(h, "<table class=\"net jobs\">");
+	tbl_head(h, "jobs", jcols, 6, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("jobs", arr, jcols, 6, app.filter);
+	for (n = 0; rows[n] != NULL; n++)
+		;
+	/* Newest first, unless an order was asked for. */
 	for (i = n; i > 0; i--) {
-		j = ucl_array_find_index(arr, i - 1);
+		j = rows[tbl_sorted("jobs") ? n - i : i - 1];
 		st = jstr(j, "state") != NULL ? jstr(j, "state") : "unknown";
 		if (strcmp(st, "done") == 0 && !jbool(j, "ok"))
 			st = "failed";
@@ -427,5 +439,6 @@ view_jobs(struct html *h, struct server *s)
 		}
 		h_raw(h, "</td></tr>");
 	}
+	free(rows);
 	h_raw(h, "</tbody></table>");
 }

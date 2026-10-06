@@ -17,7 +17,7 @@
 
 #include "app.h"
 
-#define	TBL_MAX	48
+#define	TBL_MAX	160
 
 static struct {
 	char	id[24];
@@ -84,20 +84,24 @@ cmp(const void *a, const void *b)
 {
 	const ucl_object_t	*x, *y;
 	const char		*sx, *sy;
+	char			*ex, *ey;
 	double			 nx, ny;
 	int			 r;
 
 	x = *(const ucl_object_t *const *)a;
 	y = *(const ucl_object_t *const *)b;
-	if (by->num) {
-		nx = jnum(x, by->key, 0);
-		ny = jnum(y, by->key, 0);
+	sx = jget(x, by->key) != NULL ? ucl_object_tostring_forced(jget(x,
+	    by->key)) : "";
+	sy = jget(y, by->key) != NULL ? ucl_object_tostring_forced(jget(y,
+	    by->key)) : "";
+	/* Numbers as numbers, whether they came as numbers or as text. */
+	nx = strtod(sx, &ex);
+	ny = strtod(sy, &ey);
+	if (by->num || (*sx != '\0' && *sy != '\0' && *ex == '\0' && *ey ==
+	    '\0'))
 		r = nx < ny ? -1 : nx > ny ? 1 : 0;
-	} else {
-		sx = jstr(x, by->key) != NULL ? jstr(x, by->key) : "";
-		sy = jstr(y, by->key) != NULL ? jstr(y, by->key) : "";
+	else
 		r = strcmp(sx, sy);
-	}
 	return (by_desc ? -r : r);
 }
 

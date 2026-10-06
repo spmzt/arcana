@@ -100,6 +100,8 @@ addToLibrary({
 		});
 		if (typeof arcColsApply === "function")
 			arcColsApply(el);
+		if (typeof arcCards === "function")
+			arcCards(el);
 	},
 
 	arc_set_class__deps: ["$UTF8ToString"],
@@ -374,6 +376,43 @@ addToLibrary({
 				return (th.previousElementSibling);
 			return (null);
 		}
+		/*
+		 * On a phone a table is a card for each row: each cell says
+		 * which column it is of, taken from the table's head, which
+		 * stays as a row of buttons to sort by.  A row of one cell
+		 * across the table (one being changed, say) stays as it is.
+		 */
+		window.arcCards = function (root) {
+			var narrow = window.matchMedia("(max-width: 620px)")
+			    .matches, ts, t, ths, labels, rows, tds, i, j, k;
+
+			ts = root.querySelectorAll("table.net");
+			for (i = 0; i < ts.length; i++) {
+				t = ts[i];
+				if (!narrow) {
+					t.classList.remove("cards");
+					continue;
+				}
+				t.classList.add("cards");
+				ths = t.querySelectorAll("thead th");
+				labels = [];
+				for (j = 0; j < ths.length; j++)
+					labels.push(ths[j].textContent.trim());
+				rows = t.querySelectorAll("tbody > tr");
+				for (j = 0; j < rows.length; j++) {
+					tds = rows[j].children;
+					if (tds.length !== labels.length) {
+						rows[j].classList.add("whole");
+						continue;
+					}
+					for (k = 0; k < tds.length; k++)
+						if (tds[k].dataset.label !==
+						    labels[k])
+							tds[k].dataset.label =
+							    labels[k];
+				}
+			}
+		};
 		window.arcColsApply = function (root) {
 			var ths = root.querySelectorAll("table.net th"), i, k;
 
@@ -454,6 +493,8 @@ addToLibrary({
 		}, { passive: false });
 		window.addEventListener("resize", function () {
 			act("resize", "", "");
+			if (typeof arcCards === "function")
+				arcCards(document.body);
 		});
 
 		/*
