@@ -331,7 +331,9 @@ The console is laid out as a tree and tabs.
     interface and direction, as ipfw's `rule-matched` probe tells
     dtrace(1); the host needs dtrace (`kldload dtraceall`). In a part, a rule's packets
     are followed by how many a second it took since the look before,
-    and **never** when none has matched it; a rule being changed has
+    and a line of what it took a second at the last looks (the last
+    five minutes: a part shown is read again every five seconds while
+    **Live** is lit), and **never** when none has matched it; a rule being changed has
     ▲ and ▼, which put a number before the rule above or after the
     one below into its field, for Save to move it there.
     **Tables** lists each table with its type and what is in it: an

@@ -412,8 +412,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf '00020      1       60 set 0 call 9100 ip from any to "
 	    "any in\\n'\n"
 	    "printf '00200      0        0 set 0 check-state :default\\n'\n"
-	    "printf '01001      3      180 set 0 allow tcp from any to me6 "
-	    "22 in\\n'\n"
+	    /* 1001 counts five packets more at each look. */
+	    "n=$(cat hits 2>/dev/null || echo 3); echo $((n + 5)) > hits\n"
+	    "printf '01001 %6d      180 set 0 allow tcp from any to me6 "
+	    "22 in\\n' $n\n"
 	    "printf '01999      9      540 set 0 return via any\\n'\n"
 	    "printf '09100      0        0 set 0 deny udp from any 5678 to "
 	    "any 5678 in\\n'\n"

@@ -2088,6 +2088,11 @@ ATF_TC_BODY(pwa, tc)
 	    "querySelector('table.fw-rules tr[data-rule=\"1002\"]')."
 	    "textContent.includes('kept, not loaded') && document."
 	    "querySelector('form[data-form=fw-add]').num.value === '1003'"));
+	/* Read again while the part is shown: what a rule takes, drawn. */
+	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
+	    " svg.hits polyline') && document.querySelector('button.live.on"
+	    "[data-act=fw-live]')", 30);
+	shot("7o-firewall-hits");
 	run("const f = document.querySelector('form[data-form=fw-add]'); "
 	    "f.num.value = '1500'; f.rule.value = 'allow tcp from any to me6 "
 	    "8443 in'; f.requestSubmit();");

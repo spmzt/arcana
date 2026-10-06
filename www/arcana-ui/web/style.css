@@ -3521,6 +3521,21 @@ form.fw-obj {
 	border: 1px solid var(--line);
 	border-radius: .4rem;
 }
+/* What a rule took a second at the last looks. */
+.pk { white-space: nowrap; }
+svg.hits {
+	width: 4.5rem;
+	height: .9rem;
+	vertical-align: middle;
+	margin-left: .3rem;
+	overflow: visible;
+}
+svg.hits polyline {
+	fill: none;
+	stroke: var(--cyan);
+	stroke-width: 1.2;
+	vector-effect: non-scaling-stroke;
+}
 form.fw-obj > b { min-width: 3rem; color: var(--cyan); font-weight: 500; }
 form.fw-obj label:not(.toggle) { display: flex; align-items: center; gap: .35rem; color: var(--dim); font-size: .78rem; }
 form.fw-obj input:not([type=checkbox]) { width: auto; }

@@ -84,6 +84,8 @@ static const struct sect {
 #define	FW_LOG		(-8)	/* what the rules with log wrote down */
 #define	FW_FIRST	FW_LOG
 #define	FW_PREV		2048	/* rules whose counters are remembered */
+#define	FW_HITS		60	/* a rule's rates kept, the newest last */
+#define	FW_HITS_EVERY	5000	/* ms between two looks while a part is shown */
 
 static struct {
 	char		 sid[9];
@@ -102,6 +104,13 @@ static struct {
 	}		 prev[FW_PREV];
 	int		 nprev;
 	double		 prev_at;
+	/* Each rule's packets a second at the last looks, to draw. */
+	struct {
+		long long	num;
+		float		r[FW_HITS];
+		int		n;
+	}		 hits[FW_PREV];
+	int		 nhits;
 	/* A packet to follow: what was asked, as it was typed. */
 	char		 t_proto[8], t_src[64], t_dst[64], t_port[8], t_if[16];
 	bool		 t_out, t_asked;
@@ -188,6 +197,86 @@ static const char skeleton[] =
     "add 12999 return via any\n"
     "add 13999 return via any\n";
 
+static double	rate_of(long long, long long);
+
+/* The rates since the look before, each appended to its rule's. */
+static void
+hits_add(void)
+{
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+	long long		 num;
+	double			 rate;
+	int			 i;
+
+	it = NULL;
+	while ((r = ucl_object_iterate(jget(fw.data, "rules"), &it, true)) !=
+	    NULL) {
+		num = jint(r, "num", 0);
+		if (jbool(r, "disabled") || (rate = rate_of(num, jint(r,
+		    "pkts", 0))) < 0)
+			continue;
+		for (i = 0; i < fw.nhits && fw.hits[i].num != num; i++)
+			;
+		if (i == fw.nhits) {
+			if (fw.nhits == FW_PREV)
+				continue;
+			fw.hits[fw.nhits].num = num;
+			fw.hits[fw.nhits++].n = 0;
+		}
+		if (fw.hits[i].n == FW_HITS) {
+			memmove(fw.hits[i].r, fw.hits[i].r + 1,
+			    (FW_HITS - 1) * sizeof(float));
+			fw.hits[i].n--;
+		}
+		fw.hits[i].r[fw.hits[i].n++] = (float)rate;
+	}
+}
+
+/* Has the rule taken as many a second at every look? */
+static bool
+flat(int i)
+{
+	int	k;
+
+	for (k = 1; k < fw.hits[i].n; k++)
+		if (fw.hits[i].r[k] != fw.hits[i].r[0])
+			return (false);
+	return (true);
+}
+
+/*
+ * A rule's packets a second over the last looks, as a line: its
+ * highest at the top, each look a step to the right.
+ */
+static void
+hits_line(struct html *h, long long num)
+{
+	float	max;
+	int	i, k;
+
+	for (i = 0; i < fw.nhits && fw.hits[i].num != num; i++)
+		;
+	if (i == fw.nhits || fw.hits[i].n < 2)
+		return;
+	max = 0;
+	for (k = 0; k < fw.hits[i].n; k++)
+		if (fw.hits[i].r[k] > max)
+			max = fw.hits[i].r[k];
+	h_fmt(h, " <svg class=\"hits\" viewBox=\"0 0 %d 16\" preserveAspect"
+	    "Ratio=\"none\" role=\"img\"><title>Packets a second at the "
+	    "last %d looks, %ds apart; at most %.1f/s</title><polyline "
+	    "points=\"", FW_HITS - 1, fw.hits[i].n, FW_HITS_EVERY / 1000,
+	    (double)max);
+	/* Over the whole width, however many there are yet; a rate that
+	 * does not change is a line in the middle. */
+	for (k = 0; k < fw.hits[i].n; k++)
+		h_fmt(h, "%.2f,%.1f ", (double)(FW_HITS - 1) * k /
+		    (fw.hits[i].n - 1), max <= 0 ? 15.0 : flat(i) ? 8.0 :
+		    15.0 - 14.0 * (double)fw.hits[i].r[k] / (double)max);
+	h_raw(h, "\"/></svg>");
+}
+
 static void
 fw_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
@@ -225,6 +314,7 @@ fw_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	fw.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
 	fw.fetched = arc_now();
+	hits_add();
 }
 
 static void
@@ -286,6 +376,7 @@ refresh_firewall(struct server *s, bool again)
 	if (strcmp(fw.sid, s->id) != 0) {
 		fw.jail[0] = '\0';
 		fw.nprev = 0;
+		fw.nhits = 0;
 		if (fw.data != NULL)
 			ucl_object_unref(fw.data);
 		fw.data = NULL;
@@ -2010,8 +2101,12 @@ view_firewall(struct html *h, struct server *s)
 	}
 	sc = &sects[fw.sect];
 	h_fmt(h, "<h4 class=\"family\">%s <small class=\"dim\">%d to %d%s"
-	    "</small></h4>", sc->name, sc->lo, sc->hi, sc->called ?
-	    ", called from the chain" : "");
+	    "</small><button class=\"ghost small live%s\" data-act=\"fw-live\""
+	    " title=\"Read the counters again every %d seconds while this is "
+	    "shown, and draw what each rule takes\"><span class=\"led\">"
+	    "</span>Live</button></h4>", sc->name, sc->lo, sc->hi,
+	    sc->called ? ", called from the chain" : "", fw.dyn_paused ? "" :
+	    " on", FW_HITS_EVERY / 1000);
 	if (sc->what[0] != '\0')
 		h_fmt(h, "<p class=\"dim\">%s</p>", sc->what);
 	arr = rows_of(sc->lo, sc->hi);
@@ -2089,7 +2184,8 @@ view_firewall(struct html *h, struct server *s)
 		if (now) {
 			double	rate = rate_of(num, jint(o, "pkts", 0));
 
-			h_fmt(h, "%lld", (long long)jint(o, "pkts", 0));
+			h_fmt(h, "<span class=\"pk\">%lld", (long long)jint(o,
+			    "pkts", 0));
 			if (rate >= 0.05)
 				h_fmt(h, " <small class=\"rate\" title=\"Since "
 				    "the look before\">+%.1f/s</small>", rate);
@@ -2098,6 +2194,8 @@ view_firewall(struct html *h, struct server *s)
 				h_raw(h, " <small class=\"dim never\" title=\""
 				    "No packet has matched it since its "
 				    "counter was last cleared\">never</small>");
+			hits_line(h, num);
+			h_raw(h, "</span>");
 		}
 		h_raw(h, "</td><td>");
 		if (now) {
@@ -2165,10 +2263,13 @@ firewall_tick(double now)
 {
 	struct server	*s;
 
-	if (app.node != NODE_HOST || app.tab != TAB_FIREWALL || fw.sect !=
-	    FW_DYNAMIC || fw.dyn_paused || !app.visible || fw.loading ||
-	    (s = cur_server()) == NULL || strcmp(fw.sid, s->id) != 0 ||
-	    now - fw.fetched < 2000)
+	/* The states every two seconds; a part's counters every five, but
+	 * not while a rule of it is being changed. */
+	if (app.node != NODE_HOST || app.tab != TAB_FIREWALL || (fw.sect !=
+	    FW_DYNAMIC && (fw.sect < 0 || fw.edit != 0)) || fw.dyn_paused ||
+	    !app.visible || fw.loading || (s = cur_server()) == NULL ||
+	    strcmp(fw.sid, s->id) != 0 || now - fw.fetched < (fw.sect ==
+	    FW_DYNAMIC ? 2000 : FW_HITS_EVERY))
 		return;
 	refresh_firewall(s, true);
 }
@@ -2317,6 +2418,7 @@ firewall_action(const char *act, const char *arg, const char *value)
 		fw.k_error[0] = '\0';
 		fw.error[0] = '\0';
 		fw.nprev = 0;
+		fw.nhits = 0;
 		fw.edit = fw.move = 0;
 		fw.loading = false;
 		free(fw.text);
