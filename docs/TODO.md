@@ -22,6 +22,16 @@
   deleted; forms for NAT and pipes in place of ipfw's own words; a
   jail's firewall shown on or off as the jail has it (the page shows
   the host's switch).
+- To look at (2026-10-06): the test VM (FreeBSD 16-CURRENT, labvm)
+  stopped answering, and had to be restarted, right after `ifconfig
+  bridge0 maxaddr 500` was run by the agent on a bridge it had just
+  made, with one epair member that had learned one address, and whose
+  priority had been set to 4096 a moment before. No crash dump was
+  written: a hang, not a panic. Not reproduced since; the lab that
+  did it is `lab-br.sh` of the session's scratchpad, minus that line.
+  Once, in the same lab, the agent's `ifconfig -av` failed with
+  "getnameinfo: Address family not recognized" while the bridge and
+  its epair were being made; not reproduced either.
 - A geneve tunnel's forwarding table: if_geneve keeps one and shows
   no way to read it from userland (no sysctl as vxlan has, no dump
   through netlink); once it does, shown as a bridge's addresses are.
