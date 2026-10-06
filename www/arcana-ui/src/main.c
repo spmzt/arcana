@@ -396,7 +396,7 @@ submit_form(const char *form, const ucl_object_t *f)
 		dry = jstr(f, "__submit") != NULL &&
 		    strcmp(jstr(f, "__submit"), "dry") == 0;
 		if (dry)
-			pkg_upgrade(s2, any ? names : NULL, true);
+			pkg_upgrade(s2, any ? names : NULL, true, false);
 		else if (any)
 			confirm("Upgrade packages", "pkg upgrade -y of the "
 			    "selected packages; services may restart.",
@@ -628,6 +628,47 @@ dispatch(const char *act, const char *arg, const char *value)
 		refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-check") == 0 && s != NULL) {
 		refresh_packages(s, true);
+	} else if (strcmp(act, "pkg-clean") == 0 && s != NULL) {
+		snprintf(body, sizeof(body), "pkg clean%s on %s%s%s: %s",
+		    arg[0] != '\0' ? " -a" : "", s->name, app.pkg.jail[0] !=
+		    '\0' ? ", in jail " : "", app.pkg.jail, arg[0] != '\0' ?
+		    "every downloaded package in the cache is deleted; what is "
+		    "installed stays, and what is upgraded later is downloaded "
+		    "again." : "the downloaded packages that are no longer "
+		    "needed, or that the repository no longer has, are "
+		    "deleted; what is installed stays.");
+		confirm(arg[0] != '\0' ? "Clean all the package cache" :
+		    "Clean the package cache", body, "Clean", arg[0] != '\0',
+		    "", "do-pkg-clean", arg, "");
+	} else if (strcmp(act, "do-pkg-clean") == 0 && s != NULL) {
+		char	*json, *qj, title[300];
+
+		qj = json_quote(app.pkg.jail);
+		if (asprintf(&json, "{\"kind\":\"pkg-clean\"%s%s%s}",
+		    app.pkg.jail[0] != '\0' ? ",\"jail\":" : "",
+		    app.pkg.jail[0] != '\0' ? qj : "", arg[0] != '\0' ?
+		    ",\"force\":true" : "") == -1)
+			abort();
+		free(qj);
+		snprintf(title, sizeof(title), "pkg clean%s%s%s", arg[0] != '\0' ?
+		    " -a" : "", app.pkg.jail[0] != '\0' ? " in " : "",
+		    app.pkg.jail);
+		/* The text is the queue's now. */
+		job_send(s, json, title, JOB_PACKAGES, app.pkg.jail);
+	} else if (strcmp(act, "pkg-mode") == 0 && s != NULL) {
+		/* The installed, or what the repository has newer: the
+		 * repository is asked only for the second. */
+		app.pkg.mode = atoi(arg) == 1 ? 1 : 0;
+		if (app.pkg.data != NULL)
+			ucl_object_unref(app.pkg.data);
+		app.pkg.data = NULL;
+		app.pkg.error[0] = '\0';
+		app.pkg.loading = false;
+		refresh_packages(s, false);
+	} else if (strcmp(act, "pkg-ip") == 0) {
+		app.pkg.ip = atoi(arg) == 4 ? 4 : atoi(arg) == 6 ? 6 : 0;
+		arc_store_set("arc_pkg_ip", app.pkg.ip == 4 ? "4" : app.pkg.ip ==
+		    6 ? "6" : "");
 	} else if (strcmp(act, "pkg-upgrade-all") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "pkg upgrade -y %s%s: every "
 		    "package with a newer version in the repository is "
@@ -636,7 +677,12 @@ dispatch(const char *act, const char *arg, const char *value)
 		confirm("Upgrade all packages", body, "Upgrade", true, "",
 		    "do-pkg-upgrade", "", "");
 	} else if (strcmp(act, "do-pkg-upgrade") == 0 && s != NULL) {
-		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false);
+		pkg_upgrade(s, value[0] != '\0' ? value : NULL, false, false);
+	} else if ((strcmp(act, "do-pkg-anyos") == 0 || strcmp(act,
+	    "do-pkg-dry-anyos") == 0) && s != NULL) {
+		/* Approved: the same again, OSVERSION ignored. */
+		pkg_upgrade(s, value[0] != '\0' ? value : NULL, act[7] == 'd',
+		    true);
 	} else if (strcmp(act, "queue") == 0) {
 		app.queue_on = !app.queue_on;
 		arc_queue_set(app.queue_on ? 1 : 0);
@@ -669,9 +715,31 @@ dispatch(const char *act, const char *arg, const char *value)
 			app.net.sort_desc = false;
 		}
 	} else if (strcmp(act, "notify") == 0) {
-		arc_notify_ask();
+		/*
+		 * The browser's leave is asked once; after, the button turns
+		 * them off and on here, which the browser alone cannot.
+		 */
+		if (app.notify == 0)
+			arc_notify_ask();
+		else if (app.notify == 2)
+			toast(true, "Notifications are blocked in this browser's "
+			    "settings for this site: allow them there");
+		else if (!app.notify_off) {
+			app.notify_off = true;
+			arc_store_set("arc_notify", "off");
+			arc_push_off();
+		} else {
+			app.notify_off = false;
+			arc_store_set("arc_notify", "");
+			arc_push_sync();
+		}
 	} else if (strcmp(act, "notify-changed") == 0) {
 		app.notify = arc_notify_state();
+		/* Just allowed: on. */
+		if (app.notify == 1) {
+			app.notify_off = false;
+			arc_store_set("arc_notify", "");
+		}
 		/* Allowed: this browser is told of tasks from now on. */
 		arc_push_sync();
 	} else if (strcmp(act, "push-changed") == 0) {
@@ -1195,7 +1263,19 @@ main(void)
 	arc_sw_register();
 	app.fx = arc_fx_get() != 0;
 	app.notify = arc_notify_state();
+	{
+		char *v = arc_store_get("arc_notify");
+
+		app.notify_off = v != NULL && strcmp(v, "off") == 0;
+		free(v);
+	}
 	app.install = arc_install_state();
+	{
+		char *v = arc_store_get("arc_pkg_ip");
+
+		app.pkg.ip = v != NULL ? atoi(v) : 0;
+		free(v);
+	}
 	app.queue_on = arc_queue_get() != 0;
 	{
 		char *t = arc_theme_get();

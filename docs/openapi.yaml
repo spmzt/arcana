@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.49.0
+  version: 0.57.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1030,7 +1030,7 @@ paths:
                           if-state, route, if-set, if-create, if-destroy,
                           netgraph, wireguard, bird, if-vnet, kmod, zfs,
                           zpool, mount, gpart, cam, sysctl, ipfw,
-                          bridge, geneve, process]
+                          bridge, geneve, process, pkg-clean]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the
@@ -1052,6 +1052,9 @@ paths:
                       gateway: { type: string, description: For route; an
                           address or an interface. }
                       live: { type: boolean }
+                      force: { type: boolean, description: For
+                          pkg-upgrade, also packages built for a newer
+                          FreeBSD than the host's (IGNORE_OSVERSION). }
                       persist: { type: boolean }
                       service: { type: string }
                       set:
@@ -1337,13 +1340,25 @@ paths:
   /api/servers/{server}/packages:
     get:
       tags: [servers]
-      summary: Packages with a newer version in the repository
+      summary: Packages with a newer version in the repository, or those installed
       parameters:
         - $ref: "#/components/parameters/server"
         - name: jail
           in: query
           schema: { type: string }
           description: A running jail; the host without it.
+        - name: installed
+          in: query
+          schema: { type: integer, enum: [1] }
+          description: The packages installed instead, from the host's
+            own database without the repository, each with name,
+            installed (its version), automatic, size, origin and
+            comment.
+        - name: ip
+          in: query
+          schema: { type: integer, enum: [4, 6] }
+          description: The repository reached over IPv4 or IPv6 only
+            (pkg -4, -6).
         - name: refresh
           in: query
           schema: { type: string, enum: ["1"] }
@@ -1383,6 +1398,9 @@ paths:
                   items: { type: string }
                   description: None means all pending ones.
                 dry_run: { type: boolean }
+                ignore_osversion: { type: boolean, description: Also
+                    packages built for a newer FreeBSD than the host's,
+                    which pkg refuses otherwise (IGNORE_OSVERSION). }
       responses:
         "200":
           description: What pkg did, and what is still pending.

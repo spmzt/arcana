@@ -170,6 +170,73 @@ addToLibrary({
 		});
 
 		/*
+		 * Rows put in another order by dragging: a row with
+		 * data-reorder is taken with its data-arg, and dropped on
+		 * another of the same data-reorder, before or after it by
+		 * which half of it the pointer is in; the page hears
+		 * <data-reorder>-drop with what was taken, and the row and
+		 * the side ("1001:before").
+		 */
+		var reordering = null;
+
+		function rowOf(e) {
+			var r = e.target.closest ? e.target.closest(
+			    "[data-reorder]") : null;
+
+			return (r !== null && reordering !== null &&
+			    r.dataset.reorder === reordering.dataset.reorder &&
+			    r !== reordering ? r : null);
+		}
+		function side(r, e) {
+			var b = r.getBoundingClientRect();
+
+			return (e.clientY < b.top + b.height / 2 ? "before" :
+			    "after");
+		}
+		function unmark() {
+			document.querySelectorAll(".drop-before, .drop-after")
+			    .forEach(function (x) {
+				x.classList.remove("drop-before", "drop-after");
+			});
+		}
+		document.addEventListener("dragstart", function (e) {
+			var r = e.target.closest ? e.target.closest(
+			    "[data-reorder]") : null;
+
+			if (r === null)
+				return;
+			reordering = r;
+			r.classList.add("dragging");
+			e.dataTransfer.effectAllowed = "move";
+			e.dataTransfer.setData("text/plain", r.dataset.arg || "");
+		});
+		document.addEventListener("dragover", function (e) {
+			var r = rowOf(e);
+
+			if (r === null)
+				return;
+			e.preventDefault();
+			unmark();
+			r.classList.add("drop-" + side(r, e));
+		});
+		document.addEventListener("drop", function (e) {
+			var r = rowOf(e);
+
+			if (r === null)
+				return;
+			e.preventDefault();
+			act(reordering.dataset.reorder + "-drop",
+			    reordering.dataset.arg || "", (r.dataset.arg || "") +
+			    ":" + side(r, e));
+		});
+		document.addEventListener("dragend", function () {
+			if (reordering !== null)
+				reordering.classList.remove("dragging");
+			reordering = null;
+			unmark();
+		});
+
+		/*
 		 * Things dragged inside a drawing: an element with data-drag
 		 * names what it is, and the page hears of it as
 		 * <name>-start where it was taken hold of, <name>-move
@@ -666,6 +733,13 @@ addToLibrary({
 	arc_push_sync: function () {
 		var key;
 
+		/* Turned off in this console: nothing is subscribed. */
+		try {
+			if (localStorage.getItem("arc_notify") === "off")
+				return;
+		} catch (e) {
+		}
+
 		function bytes(b64) {
 			var s = atob(b64.replace(/-/g, "+").replace(/_/g, "/") +
 			    "===".slice((b64.length + 3) % 4)), a, i;
@@ -760,6 +834,32 @@ addToLibrary({
 			}).catch(function () {
 			});
 		}
+	},
+	/*
+	 * This browser's own subscription let go of, on the console and in
+	 * the browser: nothing is pushed to it while it is off.
+	 */
+	arc_push_off__deps: ["$arcPush", "$arcPushPost", "$arcStr"],
+	arc_push_off: function () {
+		function done() {
+			Module._arc_on_action(arcStr("push-changed"),
+			    arcStr(""), arcStr(""));
+		}
+
+		arcPush.endpoint = "";
+		if (!navigator.serviceWorker)
+			return;
+		navigator.serviceWorker.ready.then(function (reg) {
+			return (reg.pushManager.getSubscription());
+		}).then(function (sub) {
+			if (!sub)
+				return (null);
+			return (arcPushPost("/api/push/unsubscribe", {
+				endpoint: sub.endpoint
+			}).then(function () {
+				return (sub.unsubscribe());
+			}));
+		}).then(done).catch(done);
 	},
 	arc_push_here__deps: ["$arcPush", "$arcStr"],
 	arc_push_here: function () {
@@ -1250,6 +1350,11 @@ addToLibrary({
 		if (!("Notification" in window) ||
 		    Notification.permission !== "granted")
 			return;
+		try {
+			if (localStorage.getItem("arc_notify") === "off")
+				return;
+		} catch (e) {
+		}
 		if (navigator.serviceWorker && navigator.serviceWorker.ready)
 			navigator.serviceWorker.ready.then(function (r) {
 				return (r.showNotification(title, opts));

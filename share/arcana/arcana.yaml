@@ -201,6 +201,11 @@ definitions:
           that number started at another time it is another one, and
           is left alone.  With jail, only a process of that jail.
           Not init, not the kernel's own, and not the agent.
+      - name: pkg-clean
+        doc: |
+          pkg clean -y on the host or in a running jail: the cached
+          packages that are no longer needed, or that the repository no
+          longer has, deleted; with force, all of the cache (-a).
   - name: job-state
     type: enum
     entries:
@@ -738,6 +743,26 @@ attribute-sets:
         checks:
           min: 1
           max: 1000
+      - name: ignore-osversion
+        type: bool
+        doc: |
+          For pkg-upgrade, pkg told to install packages built for a
+          newer FreeBSD than the host's (IGNORE_OSVERSION), which it
+          refuses otherwise.
+      - name: pkg-installed
+        type: bool
+        doc: |
+          For packages, the packages installed (pkg query, from the
+          host's own database, without the repository) and not those
+          the repository has newer versions of.
+      - name: pkg-ip
+        type: u8
+        doc: |
+          For packages and pkg-upgrade, the repository reached over
+          IPv4 only (4, pkg -4) or IPv6 only (6, pkg -6); 0 or none
+          either.
+        checks:
+          max: 6
 
   - name: host
     attributes:
@@ -1057,6 +1082,13 @@ attribute-sets:
           is sent from (route -ifa).
         checks:
           max-len: 64
+      - name: pkg-ip
+        type: u8
+        doc: |
+          For pkg-upgrade, the repository reached over IPv4 only (4,
+          pkg -4) or IPv6 only (6, pkg -6).
+        checks:
+          max: 6
 
   - name: job
     attributes:
@@ -1105,6 +1137,20 @@ attribute-sets:
       - name: available
         type: text
         doc: The repository's version.
+      - name: automatic
+        type: bool
+        doc: |
+          Installed as what another package needs, not asked for by
+          name (pkg's automatic flag).
+      - name: comment
+        type: text
+        doc: What it is, in a line.
+      - name: size
+        type: u64
+        doc: Bytes it takes installed.
+      - name: origin
+        type: text
+        doc: Its port, category/name.
 
   - name: pool
     attributes:
@@ -1393,12 +1439,17 @@ operations:
     doc: |
       Packages of the host, or of a running jail, that the repository has
       newer versions of (pkg version -vRl '<'), after pkg update with
-      refresh.
+      refresh; with pkg-installed, the packages installed instead, each
+      with its version, origin, size, comment and whether it came
+      automatically, read from the host's own database (pkg query)
+      without asking the repository.
     do:
       request:
         attributes:
           - jail
           - refresh
+          - pkg-installed
+          - pkg-ip
       reply:
         attributes:
           - ok
@@ -1411,13 +1462,17 @@ operations:
     auth: true
     doc: |
       pkg upgrade -y on the host or in a running jail, of the named
-      packages or of all; dry-run only shows what pkg would do.
+      packages or of all; dry-run only shows what pkg would do;
+      ignore-osversion upgrades to packages built for a newer FreeBSD
+      too, as a job of kind pkg-upgrade does with force.
     do:
       request:
         attributes:
           - jail
           - names
           - dry-run
+          - ignore-osversion
+          - pkg-ip
       reply:
         attributes:
           - ok

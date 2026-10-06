@@ -222,9 +222,11 @@ topbar(struct html *h)
 	if (app.notify != 3)
 		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
 		    "Notify when a task that took more than ten seconds "
-		    "ends: %s\">Notify</button>", app.notify == 1 ? " on" : "",
-		    app.notify == 1 ? "on" : app.notify == 2 ?
-		    "blocked in the browser's settings" : "off, press to allow");
+		    "ends: %s\">Notify</button>", app.notify == 1 &&
+		    !app.notify_off ? " on" : "", app.notify == 1 ?
+		    app.notify_off ? "off, press to turn on" : "on, press to "
+		    "turn off" : app.notify == 2 ? "blocked in the browser's "
+		    "settings" : "off, press to allow");
 	h_raw(h, "<button class=\"ghost\" data-act=\"settings\" title=\""
 	    "The console's settings\">Settings</button>"
 	    "<button class=\"ghost\" data-act=\"keys\">Keys</button>"
@@ -2371,6 +2373,79 @@ view_gauges(struct html *h, struct server *s)
 	h_raw(h, "</section>");
 }
 
+/* A size in bytes, short. */
+static void
+pkg_size(char *buf, size_t len, int64_t n)
+{
+	if (n >= 1073741824)
+		snprintf(buf, len, "%.1f GiB", (double)n / 1073741824.0);
+	else if (n >= 1048576)
+		snprintf(buf, len, "%.1f MiB", (double)n / 1048576.0);
+	else
+		snprintf(buf, len, "%lld KiB", (long long)(n + 1023) / 1024);
+}
+
+/*
+ * The packages installed: each with its version, whether it was asked
+ * for by name or came as what another needs, its size, its port and
+ * what it is.
+ */
+static void
+installed_packages(struct html *h)
+{
+	static const struct tcol cols[] = {
+		{ "Package", "name", false }, { "Version", "installed", false },
+		{ "Installed", "automatic", false }, { "Size", "size", true },
+		{ "Origin", "origin", false }, { "What it is", "comment", false },
+	};
+	const ucl_object_t	**rows, *p;
+	ucl_object_iter_t	 it;
+	char			 sz[32];
+	int			 r, all, autos;
+
+	all = autos = 0;
+	it = NULL;
+	while ((p = ucl_object_iterate(jget(app.pkg.data, "packages"), &it,
+	    true)) != NULL) {
+		all++;
+		if (jbool(p, "automatic"))
+			autos++;
+	}
+	h_fmt(h, "<p class=\"dim\"><b>%d</b> installed: <b>%d</b> asked for "
+	    "by name, <b>%d</b> automatically, as what another needs. "
+	    "<b>Upgrades</b> asks the repository what is newer.</p>", all,
+	    all - autos, autos);
+	h_raw(h, "<table class=\"net pkg-installed\">");
+	tbl_head(h, "pkginst", cols, 6, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("pkginst", jget(app.pkg.data, "packages"), cols, 6,
+	    app.filter);
+	for (r = 0; (p = rows[r]) != NULL; r++) {
+		h_raw(h, "<tr><td>");
+		h_txt(h, jstr(p, "name"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(p, "installed"));
+		h_fmt(h, "</td><td><span class=\"chip%s\" title=\"%s\">%s"
+		    "</span></td><td>", jbool(p, "automatic") ? " dim" : "",
+		    jbool(p, "automatic") ? "Came as what another package "
+		    "needs: pkg autoremove takes it once none does" : "Asked "
+		    "for by name", jbool(p, "automatic") ? "automatic" :
+		    "by hand");
+		pkg_size(sz, sizeof(sz), jint(p, "size", 0));
+		h_txt(h, sz);
+		h_raw(h, "</td><td class=\"dim\">");
+		h_txt(h, jstr(p, "origin"));
+		h_raw(h, "</td><td class=\"msg\">");
+		h_txt(h, jstr(p, "comment"));
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	if (r == 0)
+		h_raw(h, "<div class=\"empty\"><p>No package, or none with that "
+		    "in it.</p></div>");
+}
+
 /* The packages tab: the host or a running jail, and what pkg can upgrade. */
 void
 view_packages(struct html *h, struct server *s)
@@ -2399,9 +2474,34 @@ view_packages(struct html *h, struct server *s)
 		h_raw(h, "</button>");
 	}
 	h_raw(h, "</nav>");
-	h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-check\"%s "
-	    "title=\"pkg update, then list what has a newer version\">Check"
-	    "</button>", app.pkg.loading || packages_busy(s) ? " disabled" : "");
+	h_fmt(h, "<nav class=\"sub\"><button class=\"ghost small%s\" data-act="
+	    "\"pkg-mode\" data-arg=\"0\" title=\"What is installed, from the "
+	    "host's own database: the repository is not asked\">Installed"
+	    "</button><button class=\"ghost small%s\" data-act=\"pkg-mode\" "
+	    "data-arg=\"1\" title=\"What the repository has newer versions "
+	    "of: it is asked\">Upgrades</button></nav>", app.pkg.mode == 0 ?
+	    " on" : "", app.pkg.mode == 1 ? " on" : "");
+	/* How the repository is reached: pkg -4, -6, or either. */
+	h_fmt(h, "<nav class=\"sub\" title=\"How pkg reaches the repository: "
+	    "over IPv4 only (pkg -4), IPv6 only (pkg -6), or either\">"
+	    "<button class=\"ghost small%s\" data-act=\"pkg-ip\" data-arg=\"0"
+	    "\">either</button><button class=\"ghost small%s\" data-act=\""
+	    "pkg-ip\" data-arg=\"4\">IPv4</button><button class=\"ghost "
+	    "small%s\" data-act=\"pkg-ip\" data-arg=\"6\">IPv6</button></nav>",
+	    app.pkg.ip == 0 ? " on" : "", app.pkg.ip == 4 ? " on" : "",
+	    app.pkg.ip == 6 ? " on" : "");
+	/* The cache of downloaded packages, cleaned. */
+	h_raw(h, "<button class=\"ghost small\" data-act=\"pkg-clean\" "
+	    "data-arg=\"\" title=\"pkg clean: the downloaded packages no "
+	    "longer needed deleted\">Clean</button><button class=\"ghost "
+	    "small\" data-act=\"pkg-clean\" data-arg=\"all\" title=\"pkg "
+	    "clean -a: all the downloaded packages deleted\">Clean all"
+	    "</button>");
+	if (app.pkg.mode == 1)
+		h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-check\""
+		    "%s title=\"pkg update, then list what has a newer version"
+		    "\">Check</button>", app.pkg.loading || packages_busy(s) ?
+		    " disabled" : "");
 	if (mine) {
 		fmt_age(age, sizeof(age), app.pkg.fetched);
 		h_raw(h, "<span class=\"tally\">");
@@ -2420,10 +2520,17 @@ view_packages(struct html *h, struct server *s)
 		h_raw(h, "</div>");
 	}
 	if (!mine) {
-		h_raw(h, app.pkg.loading ? "<div class=\"empty\"><div class="
-		    "\"loader\"></div><p class=\"dim\">pkg version against the "
-		    "repository…</p></div>" : "<div class=\"empty\"><h2>No data"
-		    "</h2><p>The host has not answered yet.</p></div>");
+		h_raw(h, !app.pkg.loading ? "<div class=\"empty\"><h2>No data"
+		    "</h2><p>The host has not answered yet.</p></div>" :
+		    app.pkg.mode == 0 ? "<div class=\"empty\"><div class="
+		    "\"loader\"></div><p class=\"dim\">pkg query, the "
+		    "installed packages…</p></div>" : "<div class=\"empty\"><div "
+		    "class=\"loader\"></div><p class=\"dim\">pkg version "
+		    "against the repository…</p></div>");
+		return;
+	}
+	if (app.pkg.mode == 0) {
+		installed_packages(h);
 		return;
 	}
 	n = 0;

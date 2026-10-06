@@ -309,7 +309,10 @@ The console is laid out as a tree and tabs.
     firewall is on, and pressed turns it off or on. A rule is pressed
     to change it in its own row: its number, its words as they are
     kept, now and keep; saved, the old one is deleted where it was and
-    the new one added where it is to be. **Dynamic states** are the
+    the new one added where it is to be. As a rule is typed, the words
+    that may come next are offered in ipfw's order: the action, what
+    the packet is, `from` and an address (the host's tables among
+    them), `to`, and the options. **Dynamic states** are the
     connections the stateful rules let through, as `ipfw -D show` has
     them: the rule that made each, its flow, counters and how long it
     still lives, read again every two seconds; one pressed leads to
@@ -324,21 +327,31 @@ The console is laid out as a tree and tabs.
     of it. A rule the page cannot judge (`me`, a state, an option it
     does not know) is taken as met and marked; it is a reading of the
     rules, not the kernel's own answer. The kernel's own answer is
+    **What the kernel decides**, below the page's reading, or
     `arcanactl [-j jail] ipfw trace address`: for some seconds the
     packets to or from the address that really cross the firewall,
     each with the rule that decided it and what it decided, its
     interface and direction, as ipfw's `rule-matched` probe tells
     dtrace(1); the host needs dtrace (`kldload dtraceall`). In a part, a rule's packets
     are followed by how many a second it took since the look before,
-    and **never** when none has matched it; a rule being changed has
+    and a line of what it took a second at the last looks (the last
+    five minutes: a part shown is read again every five seconds while
+    **Live** is lit), and **never** when none has matched it; a rule being changed has
     ▲ and ▼, which put a number before the rule above or after the
-    one below into its field, for Save to move it there.
+    one below into its field, for Save to move it there; a rule
+    dragged and dropped before or after another of its part opens
+    the same way, with a number between the two.
     **Tables** lists each table with its type and what is in it: an
     entry is added and taken out, a table created and destroyed.
     **NAT and pipes** shows the NAT instances and dummynet's pipes as
-    ipfw shows them, and one line makes, changes or deletes a NAT,
-    NAT64 or NPTv6 instance, a pipe, a queue or a scheduler, in
-    ipfw's own words. With **keep**, what is done to a table or an
+    ipfw shows them. A NAT instance is asked for by what it is: its
+    number, the interface or address it hides behind, its options
+    (same ports, private only, reset, deny in, log) and the ports it
+    sends on, one a line (`tcp 10.0.0.5:80 8080`); a pipe by its
+    number, bandwidth, delay, loss in percent, queue and whether each
+    source or destination address has a pipe of its own. One line
+    more makes, changes or deletes anything else (NAT64, NPTv6, a
+    queue, a scheduler, a delete) in ipfw's own words. With **keep**, what is done to a table or an
     instance is also a line at the head of the kept rules; and what
     undoes it takes its lines out again: a table or an instance
     deleted (`destroy`, `delete`) all of its lines, a table flushed
@@ -530,9 +543,23 @@ The console is laid out as a tree and tabs.
     job then reads "not confirmed within 60 s: undone". Only a route
     deleted without a gateway cannot be put back, and the console says
     so before it does it.
-  - **Packages**: what `pkg` can upgrade on the host or in a running
-    jail, with **Check**, a dry run, and **Upgrade** of the selected
-    packages or of all.
+  - **Packages**: of the host or a running jail. **Installed**, at
+    first, lists what is installed, from the host's own database
+    without asking the repository: each package's version, whether it
+    was asked for by hand or came automatically as what another needs,
+    its size, its port and what it is. **Upgrades** asks the repository
+    what is newer, with **Check** (pkg update first), a dry run, and
+    **Upgrade** of the selected packages or of all. **IPv4** or
+    **IPv6** has pkg reach the repository over that only (`pkg -4`,
+    `pkg -6`), kept in the browser; **either** lets pkg choose.
+    **Clean** deletes the downloaded packages no longer needed, or no
+    longer in the repository (`pkg clean`), **Clean all** the whole
+    cache (`pkg clean -a`), each a job once it is confirmed. From a
+    shell: `arcanactl packages [-i] [-4 | -6] [jail]`, `pkg-upgrade
+    [-O] …`, `pkg-clean [-a] [-j jail]`. When pkg refuses packages built for a newer
+    FreeBSD than the host's (OSVERSION), the console asks whether to
+    go on anyway, and approved, does it again with
+    `IGNORE_OSVERSION=yes` (a job of kind pkg-upgrade with force).
   - **Jobs**: the host's own record of what it was asked to change, by
     this console or with `arcanactl -q`; a row opens its workflow.
     Above the list it says what the agent is doing now that is not a
@@ -618,7 +645,9 @@ The console is laid out as a tree and tabs.
 - In the top bar: **FX** turns the blur and idle animations off for this
   browser, **Notify** allows a notification when a task that
   took more than ten seconds ends, and has this browser told of changes
-  made in the others (below), **Keys** manages security keys and
+  made in the others (below); once the browser has allowed them, the
+  same button turns them off and on again for this browser, which also
+  stops what is pushed to it. **Keys** manages security keys and
   passkeys.
 - **Notifications on other devices**: a change asked for in one browser
   is told, when it ends, to every other browser where **Notify** was

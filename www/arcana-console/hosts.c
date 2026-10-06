@@ -89,6 +89,9 @@ struct call {
 	char			 scope[256];	/* the vnet jail whose network it is */
 	bool			 refresh;	/* packages */
 	bool			 dry_run;	/* pkg-upgrade */
+	bool			 anyos;		/* pkg-upgrade: IGNORE_OSVERSION */
+	bool			 installed;	/* packages: those installed */
+	uint8_t			 pkg_ip;	/* packages: pkg -4, -6, or 0 */
 	char			**names;	/* pkg-upgrade: packages */
 	size_t			 nnames;
 	struct arc_job_spec	*specs;		/* job-submit: the batch */
@@ -1366,6 +1369,10 @@ connected:
 		memset(&pq, 0, sizeof(pq));
 		pq.jail = c->jail[0] != '\0' ? c->jail : NULL;
 		pq.refresh = c->refresh;
+		pq.has_pkg_installed = c->installed;
+		pq.pkg_installed = c->installed;
+		pq.has_pkg_ip = c->pkg_ip != 0;
+		pq.pkg_ip = c->pkg_ip;
 		if ((error = arc_packages(&cl, &pq, &pr)) != 0)
 			goto rpcfail;
 		ok = pr->ok;
@@ -1376,6 +1383,14 @@ connected:
 			put_str(e, "name", pr->packages.v[i].name);
 			put_str(e, "installed", pr->packages.v[i].installed);
 			put_str(e, "available", pr->packages.v[i].available);
+			put_str(e, "origin", pr->packages.v[i].origin);
+			put_str(e, "comment", pr->packages.v[i].comment);
+			if (pr->packages.v[i].has_automatic)
+				put(e, "automatic", ucl_object_frombool(
+				    pr->packages.v[i].automatic));
+			if (pr->packages.v[i].has_size)
+				put(e, "size", ucl_object_fromint((int64_t)
+				    pr->packages.v[i].size));
 			ucl_array_append(a, e);
 		}
 		put(top, "packages", a);
@@ -1386,6 +1401,10 @@ connected:
 		memset(&uq, 0, sizeof(uq));
 		uq.jail = c->jail[0] != '\0' ? c->jail : NULL;
 		uq.dry_run = c->dry_run;
+		uq.has_ignore_osversion = c->anyos;
+		uq.ignore_osversion = c->anyos;
+		uq.has_pkg_ip = c->pkg_ip != 0;
+		uq.pkg_ip = c->pkg_ip;
 		uq.names.v = (const char *const *)c->names;
 		uq.names.n = c->nnames;
 		if ((error = arc_pkg_upgrade(&cl, &uq, &ur)) != 0)
@@ -3127,6 +3146,10 @@ api_packages(struct http_request *req)
 	query_param(req, "jail", jail, sizeof(jail));
 	c->refresh = query_param(req, "refresh", v, sizeof(v)) &&
 	    strcmp(v, "1") == 0;
+	c->installed = query_param(req, "installed", v, sizeof(v)) &&
+	    strcmp(v, "1") == 0;
+	c->pkg_ip = query_param(req, "ip", v, sizeof(v)) ? (uint8_t)(strcmp(v,
+	    "4") == 0 ? 4 : strcmp(v, "6") == 0 ? 6 : 0) : 0;
 	if (!pick_jail(c, jail)) {
 		kore_free(c->sname);
 		kore_free(c->uri);
@@ -3165,6 +3188,10 @@ api_pkg_upgrade(struct http_request *req)
 		    "an optional jail and packages"));
 	}
 	c->dry_run = ucl_flag(body, "dry_run");
+	c->anyos = ucl_flag(body, "ignore_osversion");
+	c->pkg_ip = (uint8_t)(ucl_object_toint(ucl_object_lookup(body,
+	    "pkg_ip")) == 4 ? 4 : ucl_object_toint(ucl_object_lookup(body,
+	    "pkg_ip")) == 6 ? 6 : 0);
 	a = ucl_object_lookup(body, "packages");
 	if ((n = ucl_array_size(a)) > 0) {
 		c->names = kore_calloc(n, sizeof(*c->names));
@@ -3206,6 +3233,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_BRIDGE] = "bridge",
 	[ARC_JOB_KIND_GENEVE] = "geneve",
 	[ARC_JOB_KIND_PROCESS] = "process",
+	[ARC_JOB_KIND_PKG_CLEAN] = "pkg-clean",
 };
 
 static const char *job_state_names[] = {
@@ -3366,6 +3394,13 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->remove = ucl_flag(o, "remove");
 	sp->recursive = ucl_flag(o, "recursive");
 	sp->force = ucl_flag(o, "force");
+	/* pkg -4 or -6, for a pkg-upgrade. */
+	if (ucl_object_toint(ucl_object_lookup(o, "pkg_ip")) == 4 ||
+	    ucl_object_toint(ucl_object_lookup(o, "pkg_ip")) == 6) {
+		sp->has_pkg_ip = true;
+		sp->pkg_ip = (uint8_t)ucl_object_toint(ucl_object_lookup(o,
+		    "pkg_ip"));
+	}
 	sp->safe = ucl_flag(o, "safe");
 	sp->live = ucl_flag(o, "live");
 	sp->persist = ucl_flag(o, "persist");

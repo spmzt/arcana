@@ -367,7 +367,7 @@ ATF_TC_HEAD(pwa, tc)
 
 	atf_tc_set_md_var(tc, "descr", "Enrol, manage jails, see the workflow, "
 	    "log in again and go offline, in Chromium");
-	atf_tc_set_md_var(tc, "timeout", "180");
+	atf_tc_set_md_var(tc, "timeout", "300");
 }
 ATF_TC_BODY(pwa, tc)
 {
@@ -419,6 +419,22 @@ ATF_TC_BODY(pwa, tc)
 	/* The effects class comes from a script in the head: the page's
 	 * Content-Security-Policy must let it run. */
 	ATF_CHECK(js_true("document.documentElement.classList.contains('fx')"));
+	/* Notify: allowed once by the browser (a stand-in here), then
+	 * turned off and on again by the button, and kept so. */
+	run("Object.defineProperty(Notification, 'permission', { get: () => "
+	    "window.perm || 'default' }); Notification.requestPermission = "
+	    "() => { window.perm = 'granted'; return (Promise.resolve("
+	    "'granted')); };");
+	run("document.querySelector('button[data-act=notify]').click()");
+	wait_js("document.querySelector('button.on[data-act=notify]')", 5);
+	run("document.querySelector('button[data-act=notify]').click()");
+	wait_js("!document.querySelector('button.on[data-act=notify]') && "
+	    "localStorage.getItem('arc_notify') === 'off' && document."
+	    "querySelector('button[data-act=notify]').title.includes("
+	    "'press to turn on')", 5);
+	run("document.querySelector('button[data-act=notify]').click()");
+	wait_js("document.querySelector('button.on[data-act=notify]') && "
+	    "localStorage.getItem('arc_notify') === ''", 5);
 
 	/* Settings: a repository to build the agent from is set from the
 	 * page, kept by the console, and what web.conf fixes is shown. */
@@ -775,6 +791,71 @@ ATF_TC_BODY(pwa, tc)
 	    "document.querySelector('.ops .op.o-failed')", 5);
 	run("document.querySelector('.dock > header').click()");
 	ATF_REQUIRE(system("mv fake-pkg.fast fake-pkg") == 0);
+	/*
+	 * A repository for a newer FreeBSD: pkg refuses, and the page asks
+	 * whether to go past OSVERSION; approved, the same upgrade again
+	 * with IGNORE_OSVERSION.
+	 */
+	ATF_REQUIRE(system("touch newer-os && cp pending pending.keep") == 0);
+	run("document.querySelector('button.tab[data-arg=packages]').click()");
+	/* At first the installed, from the host's own database: by hand
+	 * or automatic; the repository is asked under Upgrades. */
+	wait_js("[...document.querySelectorAll('table.pkg-installed tbody "
+	    "tr')].some(r => r.textContent.includes('pimd') && r.textContent."
+	    "includes('automatic')) && [...document.querySelectorAll('table."
+	    "pkg-installed tbody tr')].some(r => r.textContent.includes("
+	    "'aria2') && r.textContent.includes('by hand'))", 20);
+	ATF_CHECK(system("grep -q '^query ' pkg.log") == 0);
+	shot("6b-installed");
+	/* The cache cleaned, all of it: asked first, then a job. */
+	run("document.querySelector('button[data-act=pkg-clean][data-arg=all]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && document."
+	    "querySelector('.modal').textContent.includes('every downloaded "
+	    "package')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^clean -ay$' pkg.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^clean -ay$' pkg.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* Over IPv6 only: pkg -6, kept in the browser. */
+	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"6\"]')"
+	    ".click()");
+	run("document.querySelector('button[data-act=pkg-mode][data-arg=\"1\"]')"
+	    ".click()");
+	wait_js("document.querySelector('button[value=go]:not([disabled])')",
+	    20);
+	ATF_CHECK(system("grep -q '^-6 version -vRl <$' pkg.log") == 0);
+	run("document.querySelector('button[value=go]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "document.querySelector('.modal').textContent.includes("
+	    "'Packages for a newer FreeBSD') && document.querySelector("
+	    "'.modal').textContent.includes('IGNORE_OSVERSION')", 20);
+	shot("6b-osversion");
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^-6 -o IGNORE_OSVERSION=yes "
+	    "upgrade -y$' pkg.log 2>/dev/null && ! [ -s pending ]") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q '^-6 -o IGNORE_OSVERSION=yes upgrade -y$' "
+	    "pkg.log && ! [ -s pending ]") == 0);
+	wait_js("[...document.querySelectorAll('.ops .op')].some(o => "
+	    "o.textContent.includes('ignoring OSVERSION'))", 10);
+	run("document.querySelector('.dock > header').click()");
+	ATF_REQUIRE(system("rm newer-os && mv pending.keep pending") == 0);
+	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"0\"]')"
+	    ".click()");
 
 	/* The interfaces, in the network tab: an address is added to one
 	 * through the queue, as any change is. */
@@ -1739,7 +1820,8 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('kldunload ' + window.kld))", 20);
+	    "t.textContent.includes('kldunload ' + window.kld + ': done'))",
+	    20);
 	ATF_CHECK(system("grep -q '^kldunload ' kld.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
@@ -2088,6 +2170,54 @@ ATF_TC_BODY(pwa, tc)
 	    "querySelector('table.fw-rules tr[data-rule=\"1002\"]')."
 	    "textContent.includes('kept, not loaded') && document."
 	    "querySelector('form[data-form=fw-add]').num.value === '1003'"));
+	/* Read again while the part is shown: what a rule takes, drawn. */
+	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
+	    " svg.hits polyline') && document.querySelector('button.live.on"
+	    "[data-act=fw-live]')", 30);
+	shot("7o-firewall-hits");
+	/* A rule dragged above another: its row opened with the number
+	 * between, for Save to move it there. */
+	run("const a = document.querySelector('table.fw-rules tr[data-rule="
+	    "\"1999\"]'), b = document.querySelector('table.fw-rules "
+	    "tr[data-rule=\"1001\"]'), d = new DataTransfer(), r = b."
+	    "getBoundingClientRect(), y = r.top + 2; "
+	    "a.dispatchEvent(new DragEvent('dragstart', { bubbles: true, "
+	    "dataTransfer: d })); b.dispatchEvent(new DragEvent('dragover', "
+	    "{ bubbles: true, cancelable: true, dataTransfer: d, clientY: y "
+	    "})); b.dispatchEvent(new DragEvent('drop', { bubbles: true, "
+	    "cancelable: true, dataTransfer: d, clientY: y })); "
+	    "a.dispatchEvent(new DragEvent('dragend', { bubbles: true, "
+	    "dataTransfer: d }));");
+	wait_js("document.querySelector('table.fw-rules tr.editing[data-rule="
+	    "\"1999\"] input[name=num]') && document.querySelector('table."
+	    "fw-rules tr.editing[data-rule=\"1999\"] input[name=num]')."
+	    "value === '1000'", 5);
+	/* Not saved: the row closed again as it was. */
+	run("document.querySelector('table.fw-rules tr.editing button"
+	    "[data-act=fw-edit][data-arg=\"0\"]').click()");
+	wait_js("!document.querySelector('table.fw-rules tr.editing')", 5);
+	/* A rule's words offered as it is typed, by ipfw's order: after
+	 * from, the addresses and the host's tables; then to. */
+	run("const i = document.querySelector('form[data-form=fw-add] "
+	    "input[name=rule]'); i.value = 'allow tcp from '; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("(() => { const o = [...document.querySelectorAll("
+	    "'#fw-words option')].map(e => e.value); return o.includes("
+	    "'allow tcp from any') && o.includes('allow tcp from me6') && "
+	    "o.includes('allow tcp from table(T46)'); })()", 5);
+	run("const i = document.querySelector('form[data-form=fw-add] "
+	    "input[name=rule]'); i.value = 'allow tcp from any '; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("[...document.querySelectorAll('#fw-words option')].some(e => "
+	    "e.value === 'allow tcp from any to')", 5);
+	run("const i = document.querySelector('form[data-form=fw-add] "
+	    "input[name=rule]'); i.value = 'sk'; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("[...document.querySelectorAll('#fw-words option')].some(e => "
+	    "e.value === 'skipto')", 5);
+	run("const i = document.querySelector('form[data-form=fw-add] "
+	    "input[name=rule]'); i.value = ''; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
 	run("const f = document.querySelector('form[data-form=fw-add]'); "
 	    "f.num.value = '1500'; f.rule.value = 'allow tcp from any to me6 "
 	    "8443 in'; f.requestSubmit();");
@@ -2194,10 +2324,56 @@ ATF_TC_BODY(pwa, tc)
 	    "'into 9100') && document.querySelector('.stage .notice.bad')."
 	    "textContent.includes('dropped')", 10);
 	shot("7o-firewall-trace");
+	/* And the kernel's own answer, for an address: the packets it
+	 * decided, each with the rule that did, a press away. */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=fw-ktrace]')"
+	    ".address.value === '2001:db8::1'"));
+	run("const f = document.querySelector('form[data-form=fw-ktrace]'); "
+	    "f.address.value = '10.0.0.2'; f.seconds.value = '3'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('table.ktrace tbody tr') && document."
+	    "querySelector('table.ktrace tbody tr').textContent.includes("
+	    "'pass') && document.querySelector('table.ktrace button[data-act="
+	    "fw-goto][data-arg=\"100\"]')", 20);
+	ATF_CHECK(system("grep -q '^tick-3s$' trace.d") == 0);
+	shot("7o-firewall-ktrace");
 	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
 	    "\"-5\"]').click()");
 	wait_js("document.querySelector('form[data-form=fw-object] select')",
 	    10);
+	/* A NAT instance and a pipe, by what they are: ipfw's words made
+	 * of the forms, and kept. */
+	run("const f = document.querySelector('form[data-form=fw-nat]'); "
+	    "f.num.value = '7'; f.what.value = 'em0'; f.deny_in.checked = "
+	    "true; f.redirects.value = 'tcp 10.0.0.5:80 8080\\nudp "
+	    "10.0.0.6:53 53'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^nat 7 config' ipfw.rules "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q nat 7 config if em0 same_ports "
+	    "deny_in redirect_port tcp 10.0.0.5:80 8080 redirect_port udp "
+	    "10.0.0.6:53 53$' ipfw.log && grep -q '^nat 7 config if em0 "
+	    "same_ports deny_in' ipfw.rules") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("const f = document.querySelector('form[data-form=fw-pipe]'); "
+	    "f.num.value = '3'; f.bw.value = '20'; f.delay.value = '15'; "
+	    "f.plr.value = '1'; f.mask.value = 'src'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^ipfw -q pipe 3 config' "
+	    "ipfw.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q pipe 3 config bw 20Mbit/s delay "
+	    "15 plr 0.01 mask src-ip 0xffffffff$' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* What is not a number is said, and nothing is done. */
+	run("const f = document.querySelector('form[data-form=fw-pipe]'); "
+	    "f.num.value = '3'; f.bw.value = 'fast'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('are numbers'))", 5);
+	shot("7o-firewall-objects");
 	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
 	    "\"-8\"]').click()");
 	wait_js("document.querySelector('.stage').textContent.includes("

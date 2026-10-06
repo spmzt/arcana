@@ -9,12 +9,6 @@
   a dataset whose keylocation is prompt, without it being kept in a
   job; a key changed; file systems other than UFS made; a disk's
   self-test started; a vnet jail's datasets from the jail's own page.
-- The firewall, further, in the page (waiting for the VM to have room
-  for emscripten and Chromium): the kernel's trace of a packet shown
-  beside the page's own reading (the agent, console and arcanactl
-  have it); a rule's words offered as they are typed; rules moved by
-  dragging; a hit counter drawn over time; forms for NAT and pipes in
-  place of ipfw's own words.
 - To look at (2026-10-06): the test VM (FreeBSD 16-CURRENT, labvm)
   stopped answering, and had to be restarted, right after `ifconfig
   bridge0 maxaddr 500` was run by the agent on a bridge it had just

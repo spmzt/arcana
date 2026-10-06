@@ -186,6 +186,11 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_PROCESS:
 		rc = (t = proc_title(sp)) != NULL ? 0 : -1;
 		break;
+	case ARC_JOB_KIND_PKG_CLEAN:
+		rc = asprintf(&t, "pkg clean%s%s%s", sp->force ? " -a" : "",
+		    sp->jail != NULL && sp->jail[0] != '\0' ? " in " : "",
+		    sp->jail != NULL ? sp->jail : "");
+		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
 		rc = (t = l2_title(sp)) != NULL ? 0 : -1;
@@ -204,9 +209,10 @@ title_of(const struct arc_job_spec *sp)
 		    " (kept)" : "");
 		break;
 	default:
-		rc = asprintf(&t, "pkg upgrade%s%s%s", sp->jail != NULL ?
+		rc = asprintf(&t, "pkg upgrade%s%s%s%s", sp->jail != NULL ?
 		    " in " : "", sp->jail != NULL ? sp->jail : "",
-		    sp->names.n > 0 ? " of some" : "");
+		    sp->names.n > 0 ? " of some" : "", sp->force ?
+		    ", ignoring OSVERSION" : "");
 		break;
 	}
 	if (rc == -1)
@@ -786,6 +792,10 @@ run(struct qjob *j)
 		error = NULL;
 		ok = do_proc_job(&j->w, sp, &error) == 0;
 		break;
+	case ARC_JOB_KIND_PKG_CLEAN:
+		error = NULL;
+		ok = do_pkg_clean(&j->w, sp->jail, sp->force, &error) == 0;
+		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
 		error = NULL;
@@ -836,6 +846,11 @@ run(struct qjob *j)
 		uq.jail = sp->jail;
 		uq.names.v = sp->names.v;
 		uq.names.n = sp->names.n;
+		/* Forced: to packages built for a newer FreeBSD too. */
+		uq.has_ignore_osversion = sp->force;
+		uq.ignore_osversion = sp->force;
+		uq.has_pkg_ip = sp->has_pkg_ip;
+		uq.pkg_ip = sp->pkg_ip;
 		do_pkg_upgrade(&j->w, &uq, &ur);
 		ok = ur.ok;
 		error = ur.error;

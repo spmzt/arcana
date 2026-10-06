@@ -330,9 +330,21 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* pkg(8): ./pending holds "name-version remote" lines; upgrade -y
 	 * removes the named ones, or all. */
 	put("pending", "aria2-1.37.0_1 1.37.0_2\npimd-3.1.0 3.2.0\n");
-	put("fake-pkg", "#!/bin/sh\n[ \"$1\" = -j ] && shift 2\n"
+	/* With ./newer-os the repository is for a newer FreeBSD: an
+	 * upgrade is refused but past IGNORE_OSVERSION. */
+	put("fake-pkg", "#!/bin/sh\necho \"$*\" >> pkg.log\nanyos=no\n"
+	    "case \"$1\" in -4|-6) shift ;; esac\n"
+	    "[ \"$1\" = -o ] && { anyos=yes; shift 2; }\n"
+	    "[ \"$1\" = -j ] && shift 2\n"
+	    "[ \"$1\" = upgrade ] && [ -f newer-os ] && [ $anyos = no ] && "
+	    "{ printf 'Newer FreeBSD version for package curl:\\n- package: "
+	    "1600010\\n- running kernel: 1600004\\nTo ignore this error set "
+	    "IGNORE_OSVERSION=yes\\n' >&2; exit 1; }\n"
 	    "case \"$1\" in\n"
 	    "update) exit 0 ;;\n"
+	    "query) printf 'aria2\\t1.37.0_1\\t0\\t5242880\\twww/aria2\\t"
+	    "Download utility\\npimd\\t3.1.0\\t1\\t102400\\tnet/pimd\\t"
+	    "PIM-SM daemon\\n' ;;\n"
 	    "version) [ -s pending ] || exit 1; while read nv r; do "
 	    "printf '%s < needs updating (remote has %s)\\n' \"$nv\" \"$r\"; "
 	    "done < pending ;;\n"
@@ -412,8 +424,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf '00020      1       60 set 0 call 9100 ip from any to "
 	    "any in\\n'\n"
 	    "printf '00200      0        0 set 0 check-state :default\\n'\n"
-	    "printf '01001      3      180 set 0 allow tcp from any to me6 "
-	    "22 in\\n'\n"
+	    /* 1001 counts five packets more at each look. */
+	    "n=$(cat hits 2>/dev/null || echo 3); echo $((n + 5)) > hits\n"
+	    "printf '01001 %6d      180 set 0 allow tcp from any to me6 "
+	    "22 in\\n' $n\n"
 	    "printf '01999      9      540 set 0 return via any\\n'\n"
 	    "printf '09100      0        0 set 0 deny udp from any 5678 to "
 	    "any 5678 in\\n'\n"

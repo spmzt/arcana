@@ -213,9 +213,13 @@ pimd-3.1.0 3.2.0
 	cat > fake-pkg <<'EOS'
 #!/bin/sh
 echo "fake-pkg $*" >&2
+case "$1" in -4|-6) shift ;; esac
+[ "$1" = -o ] && shift 2
 [ "$1" = -j ] && shift 2
 case "$1" in
 update)	exit 0 ;;
+query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
+clean)	echo "$*" >> clean.log ;;
 version)
 	[ -s pending ] || exit 1
 	while read nv remote; do
@@ -724,6 +728,19 @@ packages_body()
 	    "$JGC" -c "$SOCK" pkg-upgrade
 	atf_check -s exit:1 -o ignore -e match:"'a;b' is not a package name" \
 	    "$JGC" -c "$SOCK" pkg-upgrade 'a;b'
+	# The installed, from the host's own database: no repository.
+	atf_check -o match:'^aria2 +1\.37\.0_1 +by hand +5242880 Download utility' \
+	    -o match:'^pimd +3\.1\.0 +automatic' -o match:'fake-pkg query' \
+	    -o not-match:'fake-pkg (version|update)' \
+	    "$JGC" -t -c "$SOCK" packages -i
+	# Over IPv6 only; past OSVERSION.
+	atf_check -o match:'fake-pkg -6 version -vRl <' "$JGC" -t -c "$SOCK" packages -6
+	atf_check -o match:'fake-pkg -4 -o IGNORE_OSVERSION=yes upgrade -n' \
+	    "$JGC" -t -c "$SOCK" pkg-upgrade -n -O -4
+	# The cache cleaned, as a job; all of it with -a.
+	atf_check -o match:'done +pkg clean$' "$JGC" -c "$SOCK" pkg-clean
+	atf_check -o match:'done +pkg clean -a$' "$JGC" -c "$SOCK" pkg-clean -a
+	atf_check -o inline:'clean -y\nclean -ay\n' cat clean.log
 }
 packages_cleanup()
 {

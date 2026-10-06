@@ -525,7 +525,7 @@ it; none is ever an option, and none is done in safe mode.
 .It Cm stats
 CPU busy share since the previous request, load averages, memory, swap
 and the ZFS pools.
-.It Cm packages Oo Fl r Oc Op Ar jail
+.It Cm packages Oo Fl i Oc Oo Fl r Oc Oo Fl 4 | Fl 6 Oc Op Ar jail
 Packages of the host, or of the running
 .Ar jail ,
 that the repository has newer versions of
@@ -533,13 +533,36 @@ that the repository has newer versions of
 .Fl r
 fetches the catalogue first
 .Pq Nm pkg update .
-.It Cm pkg-upgrade Oo Fl n Oc Oo Fl j Ar jail Oc Op Ar package ...
+With
+.Fl i ,
+the packages installed instead, from the host's own database without
+the repository
+.Pq Nm pkg query :
+each with its version, whether it was installed by hand or
+automatically as what another needs, its size and what it is.
+.Fl 4
+or
+.Fl 6
+has pkg reach the repository over IPv4 or IPv6 only.
+.It Cm pkg-upgrade Oo Fl n Oc Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl j Ar jail Oc Op Ar package ...
 .Nm pkg upgrade Fl y
 of the named packages, or of all of them, on the host or in the running
 .Ar jail ;
 .Fl n
-only shows what would be done.
+only shows what would be done;
+.Fl O
+also installs packages built for a newer FreeBSD than the host's
+.Pq Ev IGNORE_OSVERSION ,
+which pkg refuses otherwise.
 What is still pending follows.
+.It Cm pkg-clean Oo Fl a Oc Oo Fl j Ar jail Oc
+.Nm pkg clean Fl y ,
+a job: the downloaded packages no longer needed, or no longer in the
+repository, deleted from the cache of the host or the running
+.Ar jail ;
+with
+.Fl a ,
+all of the cache.
 .It Cm jobs
 The host's queued, running and recently finished jobs.
 .It Cm job Oo Fl w Oc Ar id
