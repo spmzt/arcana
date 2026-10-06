@@ -324,6 +324,7 @@ The console is laid out as a tree and tabs.
     of it. A rule the page cannot judge (`me`, a state, an option it
     does not know) is taken as met and marked; it is a reading of the
     rules, not the kernel's own answer. The kernel's own answer is
+    **What the kernel decides**, below the page's reading, or
     `arcanactl [-j jail] ipfw trace address`: for some seconds the
     packets to or from the address that really cross the firewall,
     each with the rule that decided it and what it decided, its

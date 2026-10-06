@@ -105,6 +105,12 @@ static struct {
 	/* A packet to follow: what was asked, as it was typed. */
 	char		 t_proto[8], t_src[64], t_dst[64], t_port[8], t_if[16];
 	bool		 t_out, t_asked;
+	/* The kernel's own: the packets of an address it decided on. */
+	char		 k_addr[64];
+	int		 k_secs;
+	ucl_object_t	*k_data;
+	bool		 k_loading;
+	char		 k_error[300];
 	ucl_object_t	*log;		/* the lines of the security log */
 	bool		 log_loading;
 	char		 log_error[200];
@@ -287,6 +293,11 @@ refresh_firewall(struct server *s, bool again)
 		fw.file_open = false;
 		free(fw.text);
 		fw.text = NULL;
+		/* The kernel's trace was of that host. */
+		if (fw.k_data != NULL)
+			ucl_object_unref(fw.k_data);
+		fw.k_data = NULL;
+		fw.k_error[0] = '\0';
 	} else if (!again && (fw.data != NULL || fw.error[0] != '\0'))
 		return;
 	snprintf(fw.sid, sizeof(fw.sid), "%s", s->id);
@@ -1118,6 +1129,8 @@ num_cmp(const void *a, const void *b)
 	return (x < y ? -1 : x > y);
 }
 
+static void	view_ktrace(struct html *);
+
 static void
 view_trace_fw(struct html *h)
 {
@@ -1160,8 +1173,10 @@ view_trace_fw(struct html *h)
 	    fw.t_out ? " selected" : "");
 	h_attr(h, "value", fw.t_if);
 	h_raw(h, "><button class=\"small\">Follow</button></form>");
-	if (!fw.t_asked)
+	if (!fw.t_asked) {
+		view_ktrace(h);
 		return;
+	}
 	nr = (int)ucl_array_size(jget(fw.data, "rules"));
 	if ((rules = calloc((size_t)nr + 1, sizeof(*rules))) == NULL)
 		abort();
@@ -1248,6 +1263,112 @@ view_trace_fw(struct html *h)
 	    "ipfw's last rule then does", unsure ? ", if every rule marked "
 	    "\"may be met\" is, and none before it decided otherwise." :
 	    ".");
+	view_ktrace(h);
+}
+
+static void
+ktrace_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	fw.k_loading = false;
+	if (fw.k_data != NULL)
+		ucl_object_unref(fw.k_data);
+	fw.k_data = NULL;
+	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+		snprintf(fw.k_error, sizeof(fw.k_error), "%s", status == 200 &&
+		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+		    err : "no answer");
+		return;
+	}
+	fw.k_error[0] = '\0';
+	fw.k_data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+}
+
+/*
+ * The kernel's own answer: for some seconds, the packets of an address
+ * as ipfw decided them, each with the rule that did (arcana-agent's
+ * fw-trace, ipfw:::rule-matched told to dtrace).
+ */
+static void
+view_ktrace(struct html *h)
+{
+	static const struct tcol cols[] = {
+		{ "ms", "ms", true }, { "Verdict", "verdict", false },
+		{ "Way", "direction", false }, { "Interface", "interface",
+		false }, { "Proto", "proto", true }, { "From", "source", false },
+		{ "To", "destination", false }, { "Rule", "rule", true },
+	};
+	const ucl_object_t	**rows, *o;
+	const char		*addr, *v;
+	int			  r;
+
+	addr = fw.k_addr[0] != '\0' ? fw.k_addr : fw.t_dst[0] != '\0' ?
+	    fw.t_dst : fw.t_src;
+	h_raw(h, "<h4 class=\"family\">What the kernel decides</h4><p class="
+	    "\"dim\">Not a reading of the rules: the packets to or from an "
+	    "address that really cross the firewall, for some seconds, each "
+	    "with the rule that decided it, as the kernel tells it "
+	    "(ipfw's rule-matched probe, through dtrace; the host needs "
+	    "<code>kldload dtraceall</code>).</p><form data-form=\"fw-ktrace"
+	    "\" class=\"fw-add fw-trace\"><input name=\"address\" spellcheck="
+	    "\"false\" autocomplete=\"off\" placeholder=\"address, 192.0.2.1"
+	    "\"");
+	h_attr(h, "value", addr);
+	h_fmt(h, "><input name=\"seconds\" inputmode=\"numeric\" size=\"4\" "
+	    "value=\"%d\" title=\"How long to watch, 1 to 60 seconds\"><span "
+	    "class=\"dim\">s</span><button class=\"small\"%s>%s</button>"
+	    "</form>", fw.k_secs > 0 ? fw.k_secs : 10, fw.k_loading ?
+	    " disabled" : "", fw.k_loading ? "Watching…" : "Watch the "
+	    "kernel");
+	if (fw.k_error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, fw.k_error);
+		h_raw(h, "</div>");
+	}
+	if (fw.k_data == NULL)
+		return;
+	h_raw(h, "<table class=\"net ktrace\">");
+	tbl_head(h, "fwktrace", cols, 8, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("fwktrace", jget(fw.k_data, "packets"), cols, 8,
+	    app.filter);
+	for (r = 0; (o = rows[r]) != NULL; r++) {
+		v = jstr(o, "verdict") != NULL ? jstr(o, "verdict") : "?";
+		h_fmt(h, "<tr><td class=\"dim\">%lld</td><td><span class=\"chip"
+		    "%s\">", (long long)jint(o, "ms", 0), strcmp(v, "pass") ==
+		    0 ? "" : strcmp(v, "deny") == 0 ? " bad" : " warn");
+		h_txt(h, v);
+		h_raw(h, "</span></td><td>");
+		h_txt(h, jstr(o, "direction"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(o, "interface"));
+		h_fmt(h, "</td><td>%s</td><td class=\"mono\">", jint(o,
+		    "proto", 0) == 6 ? "tcp" : jint(o, "proto", 0) == 17 ?
+		    "udp" : jint(o, "proto", 0) == 1 || jint(o, "proto", 0) ==
+		    58 ? "icmp" : "ip");
+		h_txt(h, jstr(o, "source"));
+		if (jint(o, "sport", 0) != 0)
+			h_fmt(h, " :%lld", (long long)jint(o, "sport", 0));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(o, "destination"));
+		if (jint(o, "dport", 0) != 0)
+			h_fmt(h, " :%lld", (long long)jint(o, "dport", 0));
+		h_fmt(h, "</td><td><button class=\"ghost small\" data-act=\""
+		    "fw-goto\" data-arg=\"%lld\" title=\"To the rule\">%05lld"
+		    "</button></td></tr>", (long long)jint(o, "rule", 0),
+		    (long long)jint(o, "rule", 0));
+	}
+	h_raw(h, "</tbody></table>");
+	if (r == 0)
+		h_raw(h, "<div class=\"empty small\"><p>No packet of it crossed "
+		    "the firewall while the kernel was watched.</p></div>");
+	else
+		h_fmt(h, "<p class=\"dim\">%d packet%s in %lld s%s.</p>", r,
+		    r == 1 ? "" : "s", (long long)jint(fw.k_data, "seconds", 0),
+		    r >= jint(fw.k_data, "limit", 0) ? ", as many as were "
+		    "asked for" : "");
+	free(rows);
 }
 
 static void
@@ -1352,10 +1473,36 @@ more_form(const char *form, const ucl_object_t *f)
 	char		 words[500];
 
 	if (strcmp(form, "fw-table") != 0 && strcmp(form, "fw-entry") != 0 &&
-	    strcmp(form, "fw-object") != 0 && strcmp(form, "fw-trace") != 0)
+	    strcmp(form, "fw-object") != 0 && strcmp(form, "fw-trace") != 0 &&
+	    strcmp(form, "fw-ktrace") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(form, "fw-ktrace") == 0) {
+		char	url[512];
+
+		a = jstr(f, "address") != NULL ? jstr(f, "address") : "";
+		if (a[0] == '\0' || strlen(a) >= sizeof(fw.k_addr) ||
+		    a[strspn(a, "0123456789abcdefABCDEF.:")] != '\0') {
+			toast(true, "The kernel is watched for an IPv4 or IPv6 "
+			    "address");
+			return (true);
+		}
+		snprintf(fw.k_addr, sizeof(fw.k_addr), "%s", a);
+		fw.k_secs = jstr(f, "seconds") != NULL ? atoi(jstr(f,
+		    "seconds")) : 10;
+		if (fw.k_secs < 1 || fw.k_secs > 60)
+			fw.k_secs = 10;
+		if (fw.k_loading)
+			return (true);
+		fw.k_loading = true;
+		fw.k_error[0] = '\0';
+		snprintf(url, sizeof(url), "/api/servers/%s/ipfw/trace?address="
+		    "%s&seconds=%d%s%s", s->id, fw.k_addr, fw.k_secs,
+		    fw.jail[0] != '\0' ? "&jail=" : "", fw.jail);
+		api("GET", url, NULL, ktrace_cb, NULL);
+		return (true);
+	}
 	if (strcmp(form, "fw-trace") == 0) {
 		snprintf(fw.t_proto, sizeof(fw.t_proto), "%s", jstr(f,
 		    "proto") != NULL ? jstr(f, "proto") : "tcp");
@@ -1975,6 +2122,10 @@ firewall_action(const char *act, const char *arg, const char *value)
 		if (fw.data != NULL)
 			ucl_object_unref(fw.data);
 		fw.data = NULL;
+		if (fw.k_data != NULL)
+			ucl_object_unref(fw.k_data);
+		fw.k_data = NULL;
+		fw.k_error[0] = '\0';
 		fw.error[0] = '\0';
 		fw.nprev = 0;
 		fw.edit = fw.move = 0;

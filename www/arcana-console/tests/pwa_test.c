@@ -2194,6 +2194,19 @@ ATF_TC_BODY(pwa, tc)
 	    "'into 9100') && document.querySelector('.stage .notice.bad')."
 	    "textContent.includes('dropped')", 10);
 	shot("7o-firewall-trace");
+	/* And the kernel's own answer, for an address: the packets it
+	 * decided, each with the rule that did, a press away. */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=fw-ktrace]')"
+	    ".address.value === '2001:db8::1'"));
+	run("const f = document.querySelector('form[data-form=fw-ktrace]'); "
+	    "f.address.value = '10.0.0.2'; f.seconds.value = '3'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('table.ktrace tbody tr') && document."
+	    "querySelector('table.ktrace tbody tr').textContent.includes("
+	    "'pass') && document.querySelector('table.ktrace button[data-act="
+	    "fw-goto][data-arg=\"100\"]')", 20);
+	ATF_CHECK(system("grep -q '^tick-3s$' trace.d") == 0);
+	shot("7o-firewall-ktrace");
 	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
 	    "\"-5\"]').click()");
 	wait_js("document.querySelector('form[data-form=fw-object] select')",
