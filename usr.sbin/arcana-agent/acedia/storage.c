@@ -31,6 +31,7 @@
 #include <fstab.h>
 #include <libgeom.h>
 #include <pthread.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -892,6 +893,14 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			if (sp->recursive)
 				ARG("-r");
 			ARG(a[0]);
+		} else if (strcmp(verb, "resnapshot") == 0 && na == 1) {
+			/* Its newest snapshot made again: do_storage_job. */
+			if (!snapshot_ok(w, a[0]) || strlen(a[0]) > 240)
+				goto name;
+			ARG("resnapshot");
+			if (sp->recursive)
+				ARG("-r");
+			ARG(a[0]);
 		} else if (strcmp(verb, "rollback") == 0 && na == 1) {
 			if (!snapshot_ok(w, a[0]))
 				goto name;
@@ -1471,6 +1480,91 @@ newfs_wrong(struct work *w, const char *dev, bool force)
 	return (NULL);
 }
 
+/* zfs with the words; 0, or -1 and zfs's words in *errp. */
+static int
+zfs_run(struct work *w, const char **errp, ...)
+{
+	struct execres	 res;
+	va_list		 ap;
+	char		*v[8];
+	int		 n;
+
+	n = 0;
+	v[n++] = (char *)(uintptr_t)opts.zfs_bin;
+	va_start(ap, errp);
+	while (n < 7 && (v[n] = va_arg(ap, char *)) != NULL)
+		n++;
+	va_end(ap);
+	v[n] = NULL;
+	if (run_exec(w, v, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "zfs"));
+		return (-1);
+	}
+	return (0);
+}
+
+/*
+ * A dataset's newest snapshot made again, now, under the same name:
+ * the new one is taken first under a name of its own, the old one
+ * destroyed, and the new one given the name.  There is a snapshot all
+ * along; one zfs will not destroy (held, cloned) stays as it was.
+ */
+static int
+resnapshot(struct work *w, const char *snap, bool recursive,
+    const char **errp)
+{
+	static const char *const list[] = { "list", "-H", "-o", "name",
+	    "-s", "createtxg", "-t", "snapshot", "-d", "1" };
+	struct execres	 res;
+	const char	*r, *newest, *p;
+	char		*ds, *tmp, *argv[nitems(list) + 3];
+	size_t		 i;
+
+	ds = wstrndup(w, snap, strcspn(snap, "@"));
+	r = recursive ? "-r" : NULL;
+	argv[0] = (char *)(uintptr_t)opts.zfs_bin;
+	for (i = 0; i < nitems(list); i++)
+		argv[i + 1] = (char *)(uintptr_t)list[i];
+	argv[i + 1] = ds;
+	argv[i + 2] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "zfs"));
+		return (-1);
+	}
+	/* The last line: the newest, by when it was made. */
+	newest = NULL;
+	for (p = res.out != NULL ? res.out : ""; *p != '\0';
+	    p += strcspn(p, "\n"), p += *p == '\n')
+		if (p[0] != '\n')
+			newest = p;
+	if (newest == NULL || strncmp(newest, snap, strlen(snap)) != 0 ||
+	    (newest[strlen(snap)] != '\n' && newest[strlen(snap)] != '\0')) {
+		*errp = newest == NULL ? wfmt(w, "%s has no snapshot", ds) :
+		    wfmt(w, "%s is not the newest snapshot of %s: %.*s is",
+		    snap, ds, (int)strcspn(newest, "\n"), newest);
+		return (-1);
+	}
+	tmp = wfmt(w, "%s.resnap", snap);
+	if (zfs_run(w, errp, "snapshot", r != NULL ? r : tmp, r != NULL ?
+	    tmp : NULL, NULL) != 0)
+		return (-1);
+	if (zfs_run(w, errp, "destroy", r != NULL ? r : snap, r != NULL ?
+	    snap : NULL, NULL) != 0) {
+		/* The old one stays: the new one goes. */
+		(void)zfs_run(w, &p, "destroy", r != NULL ? r : tmp, r !=
+		    NULL ? tmp : NULL, NULL);
+		*errp = wfmt(w, "%s is kept as it was: %s", snap, *errp);
+		return (-1);
+	}
+	if (zfs_run(w, errp, "rename", r != NULL ? r : tmp, r != NULL ? tmp :
+	    snap, r != NULL ? snap : NULL, NULL) != 0) {
+		*errp = wfmt(w, "the new snapshot is %s, not renamed: %s", tmp,
+		    *errp);
+		return (-1);
+	}
+	return (0);
+}
+
 int
 do_storage_job(struct work *w, const struct arc_job_spec *sp,
     const char **errp)
@@ -1480,6 +1574,9 @@ do_storage_job(struct work *w, const struct arc_job_spec *sp,
 
 	if ((v = storage_argv(w, sp, errp)) == NULL)
 		return (-1);
+	if (sp->kind == ARC_JOB_KIND_ZFS && strcmp(sp->verb, "resnapshot") ==
+	    0)
+		return (resnapshot(w, sp->names.v[0], sp->recursive, errp));
 	if (sp->kind == ARC_JOB_KIND_GPART && sp->verb != NULL && strcmp(
 	    sp->verb, "newfs") == 0 && (*errp = newfs_wrong(w, sp->names.v[0],
 	    sp->force)) != NULL)

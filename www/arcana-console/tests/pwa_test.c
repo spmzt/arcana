@@ -1551,6 +1551,27 @@ ATF_TC_BODY(pwa, tc)
 	ATF_CHECK(js_true("!document.querySelector('button[data-act="
 	    "st-destroy-sel]')"));
 	run("document.querySelector('.dock > header').click()");
+	/* The newest of a dataset's snapshots, and only it, taken again
+	 * under its name: the new one first, then the old one goes. */
+	ATF_CHECK(js_true("document.querySelector('table.snapshots tr[data-"
+	    "snap=\"tank/data@b\"] button[data-act=st-resnap]') && !document."
+	    "querySelector('table.snapshots tr[data-snap=\"tank/data@a\"] "
+	    "button[data-act=st-resnap]')"));
+	run("document.querySelector('table.snapshots tr[data-snap=\"tank/data@b"
+	    "\"] button[data-act=st-resnap]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && "
+	    "!document.querySelector('form[data-form=confirm] input')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('zfs resnapshot tank/data@b: done'))", 20);
+	ATF_CHECK(system("grep -A2 '^zfs snapshot tank/data@b.resnap$' "
+	    "storage.log | tr '\\n' '|' | grep -q '^zfs snapshot "
+	    "tank/data@b.resnap|zfs destroy tank/data@b|zfs rename "
+	    "tank/data@b.resnap tank/data@b|'") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* The disks are this machine's own. */
 	run("document.querySelector('button[data-act=st-kind][data-arg=disks]')"
 	    ".click()");
@@ -1649,17 +1670,18 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('table.kmem thead').textContent."
 	    "includes('Item size')", 5);
 	run("const f = document.querySelector('form[data-form=kmod-load]'); "
-	    "f.name.value = 'sctp'; f.persist.checked = true; "
+	    "f.name.value = 'if_disc'; f.persist.checked = true; "
 	    "f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('kldload sctp: done'))", 20);
-	ATF_CHECK(system("grep -q '^kldload -n sctp$' kld.log && grep -q "
-	    "'^kld_list=\"sctp\"$' rc.conf") == 0);
-	/* Kept, and not in this kernel: said. */
+	    "t.textContent.includes('kldload if_disc: done'))", 20);
+	ATF_CHECK(system("grep -q '^kldload -n if_disc$' kld.log && grep -q "
+	    "'^kld_list=\"if_disc\"$' rc.conf") == 0);
+	/* Kept, and not in this kernel: said.  A module hardly ever
+	 * loaded, so that the kernel the test runs on has not. */
 	wait_js("document.querySelector('.notice.info') && document."
-	    "querySelector('.notice.info').textContent.includes('sctp')", 20);
+	    "querySelector('.notice.info').textContent.includes('if_disc')", 20);
 	run("document.querySelector('.dock > header').click()");
 	/* One that is in is unloaded once its name is typed. */
 	run("window.kld = [...document.querySelectorAll('table.kmods button"

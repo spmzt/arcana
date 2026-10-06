@@ -3062,6 +3062,8 @@ case "\$*" in
 	printf 'tank/data@b\t10\t4000\t1759500000\n'
 	printf 'tank/data@a\t20\t3000\t1759400000\n' ;;
 "destroy tank/busy") echo "cannot destroy 'tank/busy': dataset is busy" >&2; exit 1 ;;
+"list -H -o name -s createtxg -t snapshot -d 1 tank/data") printf 'tank/data@a\ntank/data@b\n' ;;
+"destroy tank/data@b") [ -f $(pwd)/held ] && { echo "cannot destroy snapshot tank/data@b: dataset is busy" >&2; exit 1; } ;;
 esac
 exit 0
 EOS
@@ -3217,6 +3219,28 @@ EOS
 	    "$JGC" -c "$SOCK" zfs rollback tank/data@c
 	atf_check -o match:'done +zfs destroy tank/data@c' \
 	    "$JGC" -c "$SOCK" zfs destroy tank/data@c
+	# The newest snapshot made again under its name: a snapshot there
+	# all along; not one that is not the newest; one held kept.
+	n=$(wc -l < storage.log)
+	atf_check -o match:'done +zfs resnapshot tank/data@b$' \
+	    "$JGC" -c "$SOCK" zfs resnapshot tank/data@b
+	atf_check -o inline:'zfs list -H -o name -s createtxg -t snapshot -d 1 tank/data
+zfs snapshot tank/data@b.resnap
+zfs destroy tank/data@b
+zfs rename tank/data@b.resnap tank/data@b
+' tail -n +$((n + 1)) storage.log
+	atf_check -s exit:1 -o match:'tank/data@a is not the newest snapshot of tank/data: tank/data@b is' \
+	    "$JGC" -c "$SOCK" zfs resnapshot tank/data@a
+	touch held
+	n=$(wc -l < storage.log)
+	atf_check -s exit:1 -o match:'tank/data@b is kept as it was: .*busy' \
+	    "$JGC" -c "$SOCK" zfs resnapshot tank/data@b
+	atf_check -o match:'^zfs destroy tank/data@b.resnap$' -o not-match:'rename' \
+	    tail -n +$((n + 1)) storage.log
+	rm held
+	atf_check -o match:'^zfs snapshot -r tank/data@b.resnap$' \
+	    -o match:'^zfs rename -r tank/data@b.resnap tank/data@b$' \
+	    sh -c "\"$JGC\" -c $SOCK zfs resnapshot -r tank/data@b >/dev/null; cat storage.log"
 	atf_check -o match:'done +zfs create -o compression=zstd -o quota=10G tank/new' \
 	    "$JGC" -c "$SOCK" zfs create tank/new compression=zstd quota=10G
 	atf_check -o match:'done +zfs create -V 2G -o volblocksize=16k tank/zvol' \

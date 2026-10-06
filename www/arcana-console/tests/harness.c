@@ -527,6 +527,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "'list -Hp -t snapshot'*)\n"
 	    "printf 'tank/data@b\\t10000\\t4000000\\t1759500000\\n'\n"
 	    "printf 'tank/data@a\\t20000\\t3000000\\t1759400000\\n' ;;\n"
+	    "'list -H -o name -s createtxg -t snapshot -d 1 tank/data') "
+	    "printf 'tank/data@a\\ntank/data@b\\n' ;;\n"
 	    "esac\nexit 0\n");
 	put("fake-zpool", "#!/bin/sh\necho \"zpool $*\" >> storage.log\n"
 	    "case \"$*\" in\n'list -Hp -o name,size,alloc,free,health') "

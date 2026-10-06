@@ -115,6 +115,30 @@ snap_there(const char *name)
 	return (false);
 }
 
+/*
+ * Is it the newest snapshot of its dataset?  The host lists them the
+ * newest first: the first of its dataset is.
+ */
+static bool
+snap_newest(const char *name)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	const char		*n;
+	size_t			 ds;
+
+	ds = strcspn(name, "@");
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(sg.data[SK_SNAPSHOTS],
+	    "snapshots"), &it, true)) != NULL) {
+		if ((n = jstr(o, "name")) == NULL || strncmp(n, name, ds) != 0 ||
+		    n[ds] != '@')
+			continue;
+		return (strcmp(n, name) == 0);
+	}
+	return (false);
+}
+
 static void
 size(char *buf, size_t len, int64_t n)
 {
@@ -667,8 +691,17 @@ view_snapshots(struct html *h)
 		fmt_age(when, sizeof(when), (double)jint(o, "creation", 0) *
 		    1000.0);
 		h_txt(h, when);
-		h_raw(h, "</td><td class=\"acts\"><button class=\"ghost small\""
-		    " data-act=\"st-rollback\"");
+		h_raw(h, "</td><td class=\"acts\">");
+		/* The newest of its dataset: made again, now. */
+		if (snap_newest(name)) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "st-resnap\" title=\"Destroy it and take it again, "
+			    "now, under the same name\"");
+			h_attr(h, "data-arg", name);
+			h_raw(h, ">Resnapshot</button>");
+		}
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "st-rollback\"");
 		h_attr(h, "data-arg", name);
 		h_raw(h, ">Roll back</button><button class=\"ghost small\" "
 		    "data-act=\"st-clone\"");
@@ -1903,6 +1936,16 @@ storage_action(const char *act, const char *arg, const char *value)
 		    "do-st-rollback", arg, "");
 	} else if (strcmp(act, "do-st-rollback") == 0) {
 		sjob(s, "zfs", "rollback", "", arg, 1, arg);
+	} else if (strcmp(act, "st-resnap") == 0) {
+		snprintf(body, sizeof(body), "zfs resnapshot %s, on %s: the "
+		    "snapshot is taken again, now, under the same name, and "
+		    "what it held of before is let go. The new one is taken "
+		    "first; the old one stays when zfs will not destroy it.",
+		    arg, s->name);
+		confirm("Take the snapshot again", body, "Resnapshot", false,
+		    "", "do-st-resnap", arg, "");
+	} else if (strcmp(act, "do-st-resnap") == 0) {
+		sjob(s, "zfs", "resnapshot", "", arg, 1, arg);
 	} else if (strcmp(act, "st-destroy") == 0) {
 		snprintf(body, sizeof(body), "zfs destroy %s, on %s. %s zfs "
 		    "refuses while it has snapshots, clones or datasets "

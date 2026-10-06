@@ -426,6 +426,14 @@ Load the key of an encrypted dataset from where its
 says, or forget it.
 .It Cm zfs jail | unjail Ar dataset Ar jail
 Give a dataset to a running jail to manage as its own, or take it back.
+.It Cm zfs resnapshot Oo Fl r Oc Ar snapshot
+The newest snapshot of its dataset made again, now, under the same
+name: the new one is taken under a name of its own, the old one
+destroyed, and the new one renamed to it, so that there is a snapshot
+all along.
+One that is not the newest is refused; one that
+.Xr zfs 8
+will not destroy (held, cloned) stays as it was.
 .It Cm zfs replicate Oo Fl r Oc Ar snapshot Ar new-dataset Op Ar since-snapshot
 Send a snapshot into a dataset of the same host that is not there yet;
 with

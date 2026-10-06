@@ -190,6 +190,7 @@ usage(void)
 	    "    swapon | swapoff device\n"
 	    "    storage snapshots [dataset]\n"
 	    "    zfs snapshot | destroy | rollback [-r] name\n"
+	    "    zfs resnapshot [-r] snapshot\n"
 	    "    zfs create dataset [property=value ...]\n"
 	    "    zfs set dataset property=value ...\n"
 	    "    zfs inherit dataset property\n"

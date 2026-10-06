@@ -388,6 +388,50 @@ fw_trace_cleanup()
 	true
 }
 
+atf_test_case resnapshot cleanup
+resnapshot_head()
+{
+	atf_set "descr" "the newest snapshot of a dataset taken again under its name, on a pool of a memory disk made for it: newer, the same name, the older one untouched"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+resnapshot_body()
+{
+	zpool list arcw_rs >/dev/null 2>&1 && atf_skip "a pool arcw_rs is there already"
+	md=$(mdconfig -a -t swap -s 128m) || atf_skip "no memory disk"
+	echo "$md" > md
+	atf_check zpool create -O mountpoint=none arcw_rs "$md"
+	atf_check zfs create arcw_rs/d
+	atf_check zfs snapshot arcw_rs/d@old
+	atf_check zfs snapshot arcw_rs/d@last
+	before=$(zfs get -Hp -o value createtxg arcw_rs/d@last)
+	start_daemon
+	atf_check -o match:'done +zfs resnapshot arcw_rs/d@last' \
+	    "$JGC" -c "$SOCK" zfs resnapshot arcw_rs/d@last
+	after=$(zfs get -Hp -o value createtxg arcw_rs/d@last)
+	atf_check test "$after" -gt "$before"
+	atf_check -o inline:'arcw_rs/d@old\narcw_rs/d@last\n' \
+	    zfs list -H -o name -s createtxg -t snapshot -d 1 arcw_rs/d
+	atf_check -s exit:1 -o match:'not the newest snapshot' \
+	    "$JGC" -c "$SOCK" zfs resnapshot arcw_rs/d@old
+	# Held, it stays as it was, and nothing is left beside it.
+	atf_check zfs hold keep arcw_rs/d@last
+	atf_check -s exit:1 -o match:'kept as it was' \
+	    "$JGC" -c "$SOCK" zfs resnapshot arcw_rs/d@last
+	atf_check -o inline:"$after\n" zfs get -Hp -o value createtxg arcw_rs/d@last
+	atf_check -o not-match:'resnap' zfs list -H -o name -t snapshot -r arcw_rs
+	atf_check zfs release keep arcw_rs/d@last
+}
+resnapshot_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	if [ -f md ]; then
+		zpool destroy -f arcw_rs >/dev/null 2>&1
+		mdconfig -d -u "$(cat md)" >/dev/null 2>&1
+	fi
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case lifecycle
@@ -396,4 +440,5 @@ atf_init_test_cases()
 	atf_add_test_case routes
 	atf_add_test_case jail_network
 	atf_add_test_case fw_trace
+	atf_add_test_case resnapshot
 }
