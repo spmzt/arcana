@@ -806,11 +806,24 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
 	    ".some(r => r.textContent.includes('58:9c:fc:00:00:02') && "
 	    "r.textContent.includes('reachable'))", 20);
-	/* The nexthop groups, as netstat -O has them. */
+	/* The nexthop groups, as netstat -O has them, under Nexthops:
+	 * each next hop a line of its own, with its share. */
+	ATF_CHECK(js_true("!document.querySelector('nav.sub button[data-act="
+	    "net-kind][data-arg=nhgroups]')"));
 	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=nexthops]').click()");
+	wait_js("document.querySelector('nav.sub button[data-act=net-kind]"
+	    "[data-arg=nhgroups]')", 10);
+	run("document.querySelector('nav.sub button[data-act=net-kind]"
 	    "[data-arg=nhgroups]').click()");
-	wait_js("document.querySelector('.stage table.nhgroups') || "
-	    "document.querySelector('.stage .empty')", 20);
+	wait_js("document.querySelectorAll('.stage table.nhgroups .nhg-hop')"
+	    ".length >= 2 && document.querySelector('button[data-act="
+	    "net-kind][data-arg=nexthops].on')", 20);
+	ATF_CHECK(js_true("(() => { const h = [...document.querySelectorAll("
+	    "'.nhg-hop')].map(e => e.textContent); return h[0].includes("
+	    "'10.0.0.1') && h[0].includes('67%') && h[1].includes('em1') && "
+	    "h[1].includes('33%'); })()"));
+	shot("7n-nhgroups");
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]').click()");
 	wait_js("document.querySelector('table.ifaces tr[data-if=lo0] .chip')",

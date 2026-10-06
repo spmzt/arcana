@@ -168,19 +168,21 @@ route_delete(struct html *h, const ucl_object_t *e, const char *family)
 
 /*
  * The nexthop groups, what a route of several next hops points to:
- * each with its next hops and the share of each.
+ * each a row of its own, its next hops one under the other, each with
+ * its gateway and interface and a bar of its share of the group.
  */
 static int
 nhgroups(struct html *h, const ucl_object_t *fams)
 {
 	static const struct tcol	cols[] = {
 		{ "Group", "nhgrp-index", true },
-		{ "Routes using it", "nhg-refcnt", true },
-		{ "Next hops", NULL, false },
+		{ "Routes", "nhg-refcnt", true },
+		{ "Next hops, and the share of each", NULL, false },
 	};
 	const ucl_object_t		**rows, *fam, *g, *n;
 	ucl_object_iter_t		  it, nit;
-	int				  r, shown;
+	long long			  sum, wt;
+	int				  r, shown, hops;
 
 	shown = 0;
 	it = NULL;
@@ -191,25 +193,43 @@ nhgroups(struct html *h, const ucl_object_t *fams)
 		tbl_head(h, "nhgroups", cols, 3, 0);
 		h_raw(h, "<tbody>");
 		rows = tbl_rows("nhgroups", jget(fam, "nhgrp-entry"), cols, 3,
-		    NULL);
+		    app.filter);
 		for (r = 0; (g = rows[r]) != NULL; r++) {
 			shown++;
-			h_fmt(h, "<tr><td>%lld</td><td>%lld</td><td>",
-			    (long long)jint(g, "nhgrp-index", 0),
-			    (long long)jint(g, "nhg-refcnt", 0));
+			sum = 0;
+			hops = 0;
 			nit = NULL;
 			while ((n = ucl_object_iterate(jget(g, "nhop-weights"),
 			    &nit, true)) != NULL) {
-				h_raw(h, "<span class=\"chip\" title=\"A next "
-				    "hop of the group, and its share\">");
-				h_txt(h, jstr(n, "nh-gw"));
-				h_raw(h, " on ");
-				h_txt(h, jstr(n, "nh-interface"));
-				h_fmt(h, " · share %lld · nexthop %lld</span> ",
-				    (long long)jint(n, "nh-weight", 0),
+				sum += jint(n, "nh-weight", 0);
+				hops++;
+			}
+			h_fmt(h, "<tr><td class=\"nhg-id\"><b>%lld</b><small>%d "
+			    "next hop%s</small></td><td class=\"num\">%lld</td>"
+			    "<td><div class=\"nhg-hops\">",
+			    (long long)jint(g, "nhgrp-index", 0), hops, hops ==
+			    1 ? "" : "s", (long long)jint(g, "nhg-refcnt", 0));
+			nit = NULL;
+			while ((n = ucl_object_iterate(jget(g, "nhop-weights"),
+			    &nit, true)) != NULL) {
+				wt = jint(n, "nh-weight", 0);
+				h_raw(h, "<div class=\"nhg-hop\"><span class=\""
+				    "mono nhg-gw\">");
+				h_txt(h, jstr(n, "nh-gw") != NULL ? jstr(n,
+				    "nh-gw") : "?");
+				h_raw(h, "</span><span class=\"nhg-if\">");
+				h_txt(h, jstr(n, "nh-interface") != NULL ?
+				    jstr(n, "nh-interface") : "");
+				h_fmt(h, "</span><span class=\"nhg-bar\" title=\""
+				    "weight %lld of %lld\"><i style=\"width:"
+				    "%lld%%\"></i></span><span class=\"nhg-pct\">"
+				    "%lld%%</span><span class=\"dim nhg-meta\">"
+				    "weight %lld · nexthop %lld</span></div>",
+				    wt, sum, sum > 0 ? wt * 100 / sum : 0, sum >
+				    0 ? (wt * 100 + sum / 2) / sum : 0, wt,
 				    (long long)jint(n, "nh-index", 0));
 			}
-			h_raw(h, "</td></tr>");
+			h_raw(h, "</div></td></tr>");
 		}
 		free(rows);
 		h_raw(h, "</tbody></table>");
@@ -427,7 +447,7 @@ view_network(struct html *h, struct server *s)
 	ucl_object_iter_t	 it;
 	char			 age[32];
 	int			 i, n, shown;
-	bool			 mine, plug, scoped;
+	bool			 mine, plug, scoped, nh;
 
 	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0 &&
 	    strcmp(app.net.jail, net_scope()) == 0;
@@ -440,17 +460,32 @@ view_network(struct html *h, struct server *s)
 	plug = app.net.kind == NET_WIREGUARD || app.net.kind == NET_BIRD;
 	scoped = net_scope()[0] != '\0';
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
+	/* The nexthop groups are of the Nexthops, not a tab of their own. */
+	nh = app.net.kind == NET_NEXTHOPS || app.net.kind == NET_NHGROUPS;
 	for (i = 0; i < 6 && (!plug || scoped); i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
-		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
-		    " on" : "", kinds[i].arg, kinds[i].title);
+		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ||
+		    (i == NET_NEXTHOPS && nh) ? " on" : "", kinds[i].arg,
+		    kinds[i].title);
 	/* What is of the base system too, and came later. */
 	for (i = 8; i < (int)(sizeof(kinds) / sizeof(kinds[0])) &&
 	    (!plug || scoped); i++)
-		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
-		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ?
-		    " on" : "", kinds[i].arg, kinds[i].title);
+		if (i != NET_NHGROUPS)
+			h_fmt(h, "<button class=\"ghost small%s\" data-act=\""
+			    "net-kind\" data-arg=\"%s\">%s</button>",
+			    (int)app.net.kind == i ? " on" : "", kinds[i].arg,
+			    kinds[i].title);
 	h_raw(h, "</nav>");
+	if (nh)
+		h_fmt(h, "<nav class=\"sub\" title=\"A nexthop is where a "
+		    "route sends; a group is what a route of several next "
+		    "hops (ECMP) sends through, each with its share\"><button "
+		    "class=\"ghost small%s\" data-act=\"net-kind\" data-arg="
+		    "\"nexthops\">Each nexthop</button><button class=\"ghost "
+		    "small%s\" data-act=\"net-kind\" data-arg=\"nhgroups\">"
+		    "Groups</button></nav>", app.net.kind ==
+		    NET_NEXTHOPS ? " on" : "", app.net.kind == NET_NHGROUPS ?
+		    " on" : "");
 	if (scoped && (has_plugin(s, "wireguard") || has_plugin(s, "bird"))) {
 		h_raw(h, "<nav class=\"sub plugins\" title=\"Plugins: what is "
 		    "installed in the jail, not the base system's\">");

@@ -313,7 +313,16 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "esac\n", cwd, cwd);
 	put("fake-service", buf);
 	ATF_REQUIRE(chmod("fake-service", 0755) == 0);
-	put("fake-netstat", "#!/bin/sh\necho '{\"statistics\": {\"route-information\": "
+	/* netstat -O: a group of two next hops, two shares to one. */
+	put("fake-netstat", "#!/bin/sh\ncase \"$*\" in *-OnW*) echo '{"
+	    "\"statistics\": {\"route-nhgrp-information\": {\"nhgrp-table\": "
+	    "{\"rt-family\": [{\"address-family\": \"Internet\", "
+	    "\"nhgrp-entry\": [{\"nhgrp-index\": 7, \"nhg-refcnt\": 3, "
+	    "\"nhop-weights\": [{\"nh-index\": 5, \"nh-weight\": 2, "
+	    "\"nh-gw\": \"10.0.0.1\", \"nh-interface\": \"em0\"}, "
+	    "{\"nh-index\": 6, \"nh-weight\": 1, \"nh-gw\": \"10.0.0.2\", "
+	    "\"nh-interface\": \"em1\"}]}]}]}}}}'; exit 0 ;; esac\n"
+	    "echo '{\"statistics\": {\"route-information\": "
 	    "{\"route-table\": {\"rt-family\": [{\"address-family\": \"Internet\", "
 	    "\"rt-entry\": [{\"destination\": \"default\", \"gateway\": "
 	    "\"10.0.0.1\", \"flags\": \"UGS\", \"interface-name\": \"em0\"}]}]}}}}'\n");

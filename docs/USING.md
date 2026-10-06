@@ -105,8 +105,10 @@ The console is laid out as a tree and tabs.
     gateway may be several addresses with commas between, each with
     its share after an `@` (`10.0.0.1@2,10.0.0.2`): that is one route
     with as many next hops (ECMP), which the table shows as a row for
-    each, **Path** saying which of how many, and **Nexthop groups**
-    as the group the kernel made of them. A second route to a
+    each, **Path** saying which of how many, and **Nexthops**, in
+    **Groups**, as the group the kernel made of them: each
+    group a row, its next hops one under the other, each with its
+    gateway, interface and a bar of its share. A second route to a
     destination that has one makes such a group too; one way of it
     is deleted by its gateway. A route of several gateways is not
     kept in `rc.conf` from here. A route can be given its
