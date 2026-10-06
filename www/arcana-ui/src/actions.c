@@ -1318,7 +1318,8 @@ packages_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		err = jstr(o, "error");
 	op_done(op, ok, o, err);
 	if (strcmp(app.pkg.sid, c->sid) == 0 &&
-	    strcmp(app.pkg.jail, c->jail) == 0) {
+	    strcmp(app.pkg.jail, c->jail) == 0 && (c->dry_run || jget(o,
+	    "upgraded") != NULL || c->net_kind == app.pkg.mode)) {
 		app.pkg.loading = false;
 		app.pkg.busy = false;
 		if (ok) {
@@ -1363,22 +1364,28 @@ refresh_packages(struct server *s, bool refresh)
 		app.pkg.data = NULL;
 		app.pkg.error[0] = '\0';
 		app.pkg.result[0] = '\0';
+		/* Another host: its own packages, not a jail of the last. */
+		app.pkg.jail[0] = '\0';
 	}
 	snprintf(app.pkg.sid, sizeof(app.pkg.sid), "%s", s->id);
 	app.pkg.loading = true;
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	snprintf(c->jail, sizeof(c->jail), "%s", app.pkg.jail);
-	snprintf(title, sizeof(title), "%s%s%s", refresh ? "pkg update, " :
-	    "", "pending packages", app.pkg.jail[0] != '\0' ? " of jail " :
-	    "");
+	/* Which view asked: an answer for the other is not shown. */
+	c->net_kind = app.pkg.mode;
+	snprintf(title, sizeof(title), "%s%s%s", refresh && app.pkg.mode ==
+	    1 ? "pkg update, " : "", app.pkg.mode == 0 ? "installed packages" :
+	    "pending packages", app.pkg.jail[0] != '\0' ? " of jail " : "");
 	strlcat(title, app.pkg.jail, sizeof(title));
 	op = op_new(title, s->name);
 	c->op = op->id;
 	app.trace_op = op->id;
-	snprintf(url, sizeof(url), "/api/servers/%s/packages?jail=%s%s", s->id,
-	    url_word(app.pkg.jail) ? app.pkg.jail : "", refresh ?
-	    "&refresh=1" : "");
+	/* The installed are the host's own: the repository is not asked. */
+	snprintf(url, sizeof(url), "/api/servers/%s/packages?jail=%s%s%s%s",
+	    s->id, url_word(app.pkg.jail) ? app.pkg.jail : "",
+	    app.pkg.mode == 0 ? "&installed=1" : refresh ? "&refresh=1" : "",
+	    app.pkg.ip == 4 ? "&ip=4" : app.pkg.ip == 6 ? "&ip=6" : "", "");
 	op_wait(c->op, api("GET", url, NULL, packages_cb, c));
 }
 
@@ -1404,10 +1411,11 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run, bool anyos)
 		    names != NULL ? " of some" : "", anyos ? ", ignoring "
 		    "OSVERSION" : "");
 		if (asprintf(&json, "{\"kind\":\"pkg-upgrade\"%s%s,"
-		    "\"packages\":%s%s}", app.pkg.jail[0] != '\0' ?
+		    "\"packages\":%s%s%s}", app.pkg.jail[0] != '\0' ?
 		    ",\"jail\":" : "", app.pkg.jail[0] != '\0' ? qj : "",
 		    names != NULL ? names : "[]", anyos ? ",\"force\":true" :
-		    "") == -1)
+		    "", app.pkg.ip == 4 ? ",\"pkg_ip\":4" : app.pkg.ip == 6 ?
+		    ",\"pkg_ip\":6" : "") == -1)
 			abort();
 		free(qj);
 		if (!app.queue_on) {
@@ -1433,8 +1441,9 @@ pkg_upgrade(struct server *s, const char *names, bool dry_run, bool anyos)
 	app.trace_step = -1;
 	qj = json_quote(app.pkg.jail);
 	if (asprintf(&body, "{\"jail\":%s,\"packages\":%s,\"dry_run\":%s,"
-	    "\"ignore_osversion\":%s}", qj, names != NULL ? names : "[]",
-	    dry_run ? "true" : "false", anyos ? "true" : "false") == -1)
+	    "\"ignore_osversion\":%s,\"pkg_ip\":%d}", qj, names != NULL ?
+	    names : "[]", dry_run ? "true" : "false", anyos ? "true" : "false",
+	    app.pkg.ip) == -1)
 		abort();
 	snprintf(url, sizeof(url), "/api/servers/%s/packages/upgrade", s->id);
 	api("POST", url, body, packages_cb, c);

@@ -46,6 +46,8 @@ struct job {
 	uint32_t		 lim[3];	/* history: the limits */
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
+	bool			 installed;	/* packages: pkg query */
+	uint8_t			 pkg_ip;	/* packages: pkg -4, -6 */
 	uint8_t			*binary;	/* agent-update */
 	size_t			 binlen;
 	char			*sha256;
@@ -357,21 +359,32 @@ worker(void *arg)
 		rc = arc_action_reply(j->req, &ar);
 		break;
 	case ARC_CMD_PACKAGES:
-		what = wfmt(&w, "packages%s%s%s", j->jail != NULL ? " of jail " :
-		    "", j->jail != NULL ? j->jail : "", j->refresh ?
+		what = wfmt(&w, "packages%s%s%s%s", j->installed ?
+		    " installed" : "", j->jail != NULL ? " of jail " : "",
+		    j->jail != NULL ? j->jail : "", j->refresh ?
 		    " (refresh)" : "");
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
 		    what);
 		memset(&pr, 0, sizeof(pr));
-		pthread_mutex_lock(&change_lock);
-		if (change_note("%s", what))
-			do_packages(&w, j->jail, j->refresh, &pr);
+		/*
+		 * Only pkg update writes (the catalogue): a reading waits for
+		 * no change, and none waits for it.
+		 */
+		if (!j->refresh)
+			do_packages(&w, j->jail, false, j->installed, j->pkg_ip,
+			    &pr);
 		else {
-			pr.has_ok = true;
-			pr.error = STOPPING;
+			pthread_mutex_lock(&change_lock);
+			if (change_note("%s", what))
+				do_packages(&w, j->jail, true, false, j->pkg_ip,
+				    &pr);
+			else {
+				pr.has_ok = true;
+				pr.error = STOPPING;
+			}
+			(void)change_note(NULL);
+			pthread_mutex_unlock(&change_lock);
 		}
-		(void)change_note(NULL);
-		pthread_mutex_unlock(&change_lock);
 		ok = pr.ok;
 		error = pr.error;
 		step_end(&w, root, ok, NULL);
@@ -1476,6 +1489,8 @@ arc_packages_doit(cbl_req *req, const struct arc_packages_req *rq,
 	j->cmd = ARC_CMD_PACKAGES;
 	j->jail = xstrdup(rq->jail);
 	j->refresh = rq->refresh;
+	j->installed = rq->pkg_installed;
+	j->pkg_ip = rq->has_pkg_ip ? rq->pkg_ip : 0;
 	return (start(j));
 }
 
@@ -1499,6 +1514,10 @@ arc_pkg_upgrade_doit(cbl_req *req, const struct arc_pkg_upgrade_req *rq,
 	j->jail = xstrdup(rq->jail);
 	j->pkg.jail = j->jail;
 	j->pkg.dry_run = rq->dry_run;
+	j->pkg.has_ignore_osversion = rq->has_ignore_osversion;
+	j->pkg.ignore_osversion = rq->ignore_osversion;
+	j->pkg.has_pkg_ip = rq->has_pkg_ip;
+	j->pkg.pkg_ip = rq->pkg_ip;
 	if (rq->names.n > 0) {
 		if ((v = calloc(rq->names.n, sizeof(*v))) == NULL)
 			err(1, "calloc");

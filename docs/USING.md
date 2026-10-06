@@ -543,9 +543,15 @@ The console is laid out as a tree and tabs.
     job then reads "not confirmed within 60 s: undone". Only a route
     deleted without a gateway cannot be put back, and the console says
     so before it does it.
-  - **Packages**: what `pkg` can upgrade on the host or in a running
-    jail, with **Check**, a dry run, and **Upgrade** of the selected
-    packages or of all. When pkg refuses packages built for a newer
+  - **Packages**: of the host or a running jail. **Installed**, at
+    first, lists what is installed, from the host's own database
+    without asking the repository: each package's version, whether it
+    was asked for by hand or came automatically as what another needs,
+    its size, its port and what it is. **Upgrades** asks the repository
+    what is newer, with **Check** (pkg update first), a dry run, and
+    **Upgrade** of the selected packages or of all. **IPv4** or
+    **IPv6** has pkg reach the repository over that only (`pkg -4`,
+    `pkg -6`), kept in the browser; **either** lets pkg choose. When pkg refuses packages built for a newer
     FreeBSD than the host's (OSVERSION), the console asks whether to
     go on anyway, and approved, does it again with
     `IGNORE_OSVERSION=yes` (a job of kind pkg-upgrade with force).

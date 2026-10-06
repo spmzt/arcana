@@ -798,8 +798,23 @@ ATF_TC_BODY(pwa, tc)
 	 */
 	ATF_REQUIRE(system("touch newer-os && cp pending pending.keep") == 0);
 	run("document.querySelector('button.tab[data-arg=packages]').click()");
+	/* At first the installed, from the host's own database: by hand
+	 * or automatic; the repository is asked under Upgrades. */
+	wait_js("[...document.querySelectorAll('table.pkg-installed tbody "
+	    "tr')].some(r => r.textContent.includes('pimd') && r.textContent."
+	    "includes('automatic')) && [...document.querySelectorAll('table."
+	    "pkg-installed tbody tr')].some(r => r.textContent.includes("
+	    "'aria2') && r.textContent.includes('by hand'))", 20);
+	ATF_CHECK(system("grep -q '^query ' pkg.log") == 0);
+	shot("6b-installed");
+	/* Over IPv6 only: pkg -6, kept in the browser. */
+	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"6\"]')"
+	    ".click()");
+	run("document.querySelector('button[data-act=pkg-mode][data-arg=\"1\"]')"
+	    ".click()");
 	wait_js("document.querySelector('button[value=go]:not([disabled])')",
 	    20);
+	ATF_CHECK(system("grep -q '^-6 version -vRl <$' pkg.log") == 0);
 	run("document.querySelector('button[value=go]').click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')."
@@ -815,15 +830,17 @@ ATF_TC_BODY(pwa, tc)
 	    "requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
-	for (i = 0; i < 200 && system("grep -q '^-o IGNORE_OSVERSION=yes "
+	for (i = 0; i < 200 && system("grep -q '^-6 -o IGNORE_OSVERSION=yes "
 	    "upgrade -y$' pkg.log 2>/dev/null && ! [ -s pending ]") != 0; i++)
 		usleep(100000);
-	ATF_CHECK(system("grep -q '^-o IGNORE_OSVERSION=yes upgrade -y$' "
+	ATF_CHECK(system("grep -q '^-6 -o IGNORE_OSVERSION=yes upgrade -y$' "
 	    "pkg.log && ! [ -s pending ]") == 0);
 	wait_js("[...document.querySelectorAll('.ops .op')].some(o => "
 	    "o.textContent.includes('ignoring OSVERSION'))", 10);
 	run("document.querySelector('.dock > header').click()");
 	ATF_REQUIRE(system("rm newer-os && mv pending.keep pending") == 0);
+	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"0\"]')"
+	    ".click()");
 
 	/* The interfaces, in the network tab: an address is added to one
 	 * through the queue, as any change is. */

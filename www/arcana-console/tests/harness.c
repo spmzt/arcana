@@ -333,6 +333,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* With ./newer-os the repository is for a newer FreeBSD: an
 	 * upgrade is refused but past IGNORE_OSVERSION. */
 	put("fake-pkg", "#!/bin/sh\necho \"$*\" >> pkg.log\nanyos=no\n"
+	    "case \"$1\" in -4|-6) shift ;; esac\n"
 	    "[ \"$1\" = -o ] && { anyos=yes; shift 2; }\n"
 	    "[ \"$1\" = -j ] && shift 2\n"
 	    "[ \"$1\" = upgrade ] && [ -f newer-os ] && [ $anyos = no ] && "
@@ -341,6 +342,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "IGNORE_OSVERSION=yes\\n' >&2; exit 1; }\n"
 	    "case \"$1\" in\n"
 	    "update) exit 0 ;;\n"
+	    "query) printf 'aria2\\t1.37.0_1\\t0\\t5242880\\twww/aria2\\t"
+	    "Download utility\\npimd\\t3.1.0\\t1\\t102400\\tnet/pimd\\t"
+	    "PIM-SM daemon\\n' ;;\n"
 	    "version) [ -s pending ] || exit 1; while read nv r; do "
 	    "printf '%s < needs updating (remote has %s)\\n' \"$nv\" \"$r\"; "
 	    "done < pending ;;\n"

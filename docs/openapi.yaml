@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.55.0
+  version: 0.56.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1340,13 +1340,25 @@ paths:
   /api/servers/{server}/packages:
     get:
       tags: [servers]
-      summary: Packages with a newer version in the repository
+      summary: Packages with a newer version in the repository, or those installed
       parameters:
         - $ref: "#/components/parameters/server"
         - name: jail
           in: query
           schema: { type: string }
           description: A running jail; the host without it.
+        - name: installed
+          in: query
+          schema: { type: integer, enum: [1] }
+          description: The packages installed instead, from the host's
+            own database without the repository, each with name,
+            installed (its version), automatic, size, origin and
+            comment.
+        - name: ip
+          in: query
+          schema: { type: integer, enum: [4, 6] }
+          description: The repository reached over IPv4 or IPv6 only
+            (pkg -4, -6).
         - name: refresh
           in: query
           schema: { type: string, enum: ["1"] }

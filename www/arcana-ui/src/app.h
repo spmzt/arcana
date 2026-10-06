@@ -167,6 +167,8 @@ struct pkgview {
 	char		 error[256];
 	char		 result[256];	/* what the last upgrade said */
 	char		*names;		/* what it was asked of: JSON, or NULL */
+	int		 mode;		/* 0 the installed, 1 the upgrades */
+	int		 ip;		/* pkg -4 or -6, or 0 either */
 };
 
 enum netkind {

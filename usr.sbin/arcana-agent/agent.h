@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.36.0"
+#define	ARCANA_AGENT_VERSION	"0.37.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -472,7 +472,7 @@ int		 do_ng(struct work *, const char *, const char *const *, size_t,
 int		 do_stats(struct work *, struct arc_stats_rsp *);
 
 /* ira/packages.c */
-int		 do_packages(struct work *, const char *, bool,
+int		 do_packages(struct work *, const char *, bool, bool, uint8_t,
 		    struct arc_packages_rsp *);
 int		 do_pkg_upgrade(struct work *, const struct arc_pkg_upgrade_req *,
 		    struct arc_pkg_upgrade_rsp *);

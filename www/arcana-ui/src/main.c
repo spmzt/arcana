@@ -628,6 +628,20 @@ dispatch(const char *act, const char *arg, const char *value)
 		refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-check") == 0 && s != NULL) {
 		refresh_packages(s, true);
+	} else if (strcmp(act, "pkg-mode") == 0 && s != NULL) {
+		/* The installed, or what the repository has newer: the
+		 * repository is asked only for the second. */
+		app.pkg.mode = atoi(arg) == 1 ? 1 : 0;
+		if (app.pkg.data != NULL)
+			ucl_object_unref(app.pkg.data);
+		app.pkg.data = NULL;
+		app.pkg.error[0] = '\0';
+		app.pkg.loading = false;
+		refresh_packages(s, false);
+	} else if (strcmp(act, "pkg-ip") == 0) {
+		app.pkg.ip = atoi(arg) == 4 ? 4 : atoi(arg) == 6 ? 6 : 0;
+		arc_store_set("arc_pkg_ip", app.pkg.ip == 4 ? "4" : app.pkg.ip ==
+		    6 ? "6" : "");
 	} else if (strcmp(act, "pkg-upgrade-all") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "pkg upgrade -y %s%s: every "
 		    "package with a newer version in the repository is "
@@ -1229,6 +1243,12 @@ main(void)
 		free(v);
 	}
 	app.install = arc_install_state();
+	{
+		char *v = arc_store_get("arc_pkg_ip");
+
+		app.pkg.ip = v != NULL ? atoi(v) : 0;
+		free(v);
+	}
 	app.queue_on = arc_queue_get() != 0;
 	{
 		char *t = arc_theme_get();

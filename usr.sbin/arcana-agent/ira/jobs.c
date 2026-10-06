@@ -840,6 +840,8 @@ run(struct qjob *j)
 		/* Forced: to packages built for a newer FreeBSD too. */
 		uq.has_ignore_osversion = sp->force;
 		uq.ignore_osversion = sp->force;
+		uq.has_pkg_ip = sp->has_pkg_ip;
+		uq.pkg_ip = sp->pkg_ip;
 		do_pkg_upgrade(&j->w, &uq, &ur);
 		ok = ur.ok;
 		error = ur.error;
