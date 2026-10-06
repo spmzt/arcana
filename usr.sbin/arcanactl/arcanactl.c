@@ -1356,6 +1356,74 @@ send:
 	return (submit(cl, &sp));
 }
 
+/* A text as a JSON string; what JSON would escape is left out. */
+static void
+route_str(FILE *fp, const char *key, const char *v, bool *first)
+{
+
+	if (v == NULL)
+		return;
+	fprintf(fp, "%s\"%s\":\"", *first ? "" : ",", key);
+	for (; *v != '\0'; v++)
+		if (*v != '"' && *v != '\\' && (unsigned char)*v >= 0x20)
+			fputc(*v, fp);
+	fputc('"', fp);
+	*first = false;
+}
+
+static void
+route_num(FILE *fp, const char *key, bool has, uint32_t v, bool *first)
+{
+
+	if (!has)
+		return;
+	fprintf(fp, "%s\"%s\":%u", *first ? "" : ",", key, v);
+	*first = false;
+}
+
+/* The typed routes of a part, as the rows of a table: a JSON array. */
+static char *
+routes_json(const struct arc_route *v, size_t n)
+{
+	FILE	*fp;
+	char	*json;
+	size_t	 len, i;
+	bool	 first;
+
+	json = NULL;
+	if ((fp = open_memstream(&json, &len)) == NULL)
+		return (NULL);
+	fputc('[', fp);
+	for (i = 0; i < n; i++) {
+		fprintf(fp, "%s{", i > 0 ? "," : "");
+		first = true;
+		route_str(fp, "family", v[i].family, &first);
+		route_str(fp, "destination", v[i].destination, &first);
+		route_str(fp, "gateway", v[i].gateway, &first);
+		route_str(fp, "flags", v[i].flags, &first);
+		route_num(fp, "nhop", v[i].has_nhop, v[i].nhop, &first);
+		route_num(fp, "mtu", v[i].has_mtu, v[i].mtu, &first);
+		route_str(fp, "interface-name", v[i].interface_name, &first);
+		route_num(fp, "metric", v[i].has_metric, v[i].metric, &first);
+		route_num(fp, "weight", v[i].has_weight, v[i].weight, &first);
+		route_num(fp, "fib", v[i].has_fib, v[i].fib, &first);
+		route_num(fp, "prefixlen", v[i].has_prefixlen, v[i].prefixlen,
+		    &first);
+		route_str(fp, "source", v[i].source, &first);
+		route_num(fp, "path", v[i].has_path, v[i].path, &first);
+		route_num(fp, "paths", v[i].has_paths, v[i].paths, &first);
+		route_num(fp, "expire-time", v[i].has_expire_time,
+		    v[i].expire_time, &first);
+		fputc('}', fp);
+	}
+	fputc(']', fp);
+	if (fclose(fp) != 0) {
+		free(json);
+		return (NULL);
+	}
+	return (json);
+}
+
 /* The program's libxo JSON, printed as it came. */
 static int
 cmd_net(struct arc_client *cl, int argc, char **argv)
@@ -1423,9 +1491,18 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 		if ((error = arc_network_dump(cl, &dq, &d)) != 0)
 			fail(cl, error, "net");
 		while ((error = arc_network_dump_next(d, &item)) == 0 && item !=
-		    NULL)
+		    NULL) {
+			char	*rows;
+
 			if (item->json != NULL)
 				xo_emit("{:json/%s}\n", item->json);
+			/* The routes come typed: written as rows. */
+			else if (item->routes.n > 0 && (rows = routes_json(
+			    item->routes.v, item->routes.n)) != NULL) {
+				xo_emit("{:json/%s}\n", rows);
+				free(rows);
+			}
+		}
 		cbl_dump_free(d);
 		if (error != 0)
 			fail(cl, error, "net");

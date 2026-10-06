@@ -706,9 +706,9 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('.schema pre.cddl')", 5);
 	ATF_CHECK(js_true("document.querySelector('.graph .node.k-auth')"));
 	run("document.querySelector('.trace button[data-act=raw]').click()");
-	wait_js("document.querySelector('.terminal')", 5);
-	ATF_CHECK(js_true("document.querySelector('.terminal').textContent."
-	    "includes('fake-jail: -f etc/jail.conf -c web')"));
+	wait_js("document.querySelector('.terminal') && document."
+	    "querySelector('.terminal').textContent.includes('fake-jail: -f "
+	    "etc/jail.conf -c web')", 5);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
 
@@ -1755,8 +1755,8 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('form[data-form=sy-set] input[name="
 	    "value]')", 5);
 	/* It is kept already: so says the box, ticked. */
-	ATF_CHECK(js_true("document.querySelector('form[data-form=sy-set] "
-	    "input[name=persist]').checked"));
+	wait_js("document.querySelector('form[data-form=sy-set] "
+	    "input[name=persist]').checked", 5);
 	run("const f = document.querySelector('form[data-form=sy-set]'); "
 	    "f.value.value = '8192'; f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);

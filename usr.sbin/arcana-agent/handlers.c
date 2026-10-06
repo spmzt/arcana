@@ -1299,9 +1299,12 @@ arc_network_dumpit(cbl_req *req, const struct arc_network_dump_req *rq,
     struct cbl_dump_state *st, void *arg __unused)
 {
 	struct arc_network_dump_rsp	 rsp;
+	struct arc_route		*routes;
+	struct ucl_object_s		*keep;
 	const char			*err;
 	char				*json;
 	uint64_t			 total;
+	size_t				 nroutes;
 	bool				 more;
 	int				 error;
 
@@ -1322,10 +1325,24 @@ arc_network_dumpit(cbl_req *req, const struct arc_network_dump_req *rq,
 		return (reject(req, err));
 	}
 	memset(&rsp, 0, sizeof(rsp));
-	rsp.json = json;
 	rsp.has_total = true;
 	rsp.total = total;
+	routes = NULL;
+	keep = NULL;
+	/* The routes typed, as the spec has a route; the rest as JSON. */
+	if (rq->net_kind == ARC_NET_KIND_ROUTES) {
+		if ((error = network_routes(json, &routes, &nroutes, &keep)) !=
+		    0) {
+			free(json);
+			return (error);
+		}
+		rsp.routes.v = routes;
+		rsp.routes.n = nroutes;
+	} else
+		rsp.json = json;
 	error = arc_network_dump_reply(req, &rsp);
+	free(routes);
+	network_routes_free(keep);
 	free(json);
 	if (error != 0)
 		return (error);

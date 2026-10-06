@@ -370,7 +370,10 @@ The console is laid out as a tree and tabs.
     went or changed, as the kernel told the agent of it through netlink the
     moment it happened, the last 512 kept. A storm of routes (a BGP
     session coming up) is counted for each second and not listed. A
-    jail's own network is not in it. Each is shown the moment the
+    jail with a network of its own (vnet) is watched as the host is,
+    from the moment it is made or the agent starts, and its events
+    say its name (in the Host column); removed, it is let go at once,
+    not held. Each is shown the moment the
     agent tells it: the console subscribes to the host's events
     while they are shown, and passes each to the page over its
     stream; asked for every few seconds only where there is no

@@ -33,10 +33,16 @@
 
 #include <sys/param.h>
 #include <sys/jail.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 
 #include <errno.h>
 #include <fcntl.h>
+#include <jail.h>
+#include <poll.h>
+#include <signal.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -166,6 +172,103 @@ helper_argv(struct work *w, const char *verb, size_t n,
 		v[4 + i] = (char *)(uintptr_t)words[i];
 	v[4 + n] = NULL;
 	return (v);
+}
+
+/*
+ * A jail's name and whether it has a network of its own ("new"), by
+ * its number; -1 when it is not there.
+ */
+int
+jail_jid_name(int jid, char *name, size_t nlen, char *vnet, size_t vlen)
+{
+	char	js[16], nb[MAXHOSTNAMELEN], vb[16];
+
+	snprintf(js, sizeof(js), "%d", jid);
+	if (jail_getv(0, "jid", js, "name", nb, "vnet", vb, NULL) == -1)
+		return (-1);
+	strlcpy(name, nb, nlen);
+	strlcpy(vnet, vb, vlen);
+	return (0);
+}
+
+/* The jail after jid, by number (0 for the first); 0 when none. */
+int
+jail_next(int jid)
+{
+	char	ls[16], js[16];
+	int	next;
+
+	snprintf(ls, sizeof(ls), "%d", jid);
+	js[0] = '\0';
+	if ((next = jail_getv(0, "lastjid", ls, "jid", js, NULL)) == -1)
+		return (0);
+	return (next);
+}
+
+/*
+ * A netlink(4) socket in a jail's own network, told of what is
+ * watched: the helper makes it there and hands it over on a socket
+ * that is its standard output.  -1 when it could not.
+ */
+int
+helper_netlink(int jid)
+{
+	static char *const		 noenv[] = { NULL };
+	posix_spawn_file_actions_t	 fa;
+	struct msghdr			 msg;
+	struct cmsghdr			*cm;
+	struct iovec			 iov;
+	struct pollfd			 pfd;
+	union {
+		struct cmsghdr	hdr;
+		char		buf[CMSG_SPACE(sizeof(int))];
+	}				 cbuf;
+	char				 js[16], one, *argv[5];
+	pid_t				 pid;
+	int				 sp[2], fd, rc, status;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sp) == -1)
+		return (-1);
+	snprintf(js, sizeof(js), "%d", jid);
+	argv[0] = (char *)(uintptr_t)opts.helper_bin;
+	argv[1] = (char *)(uintptr_t)"-Q";
+	argv[2] = js;
+	argv[3] = (char *)(uintptr_t)"route-socket";
+	argv[4] = NULL;
+	posix_spawn_file_actions_init(&fa);
+	posix_spawn_file_actions_addopen(&fa, STDIN_FILENO, "/dev/null",
+	    O_RDONLY, 0);
+	posix_spawn_file_actions_adddup2(&fa, sp[1], STDOUT_FILENO);
+	rc = posix_spawn(&pid, argv[0], &fa, NULL, argv, noenv);
+	posix_spawn_file_actions_destroy(&fa);
+	close(sp[1]);
+	if (rc != 0) {
+		close(sp[0]);
+		return (-1);
+	}
+	fd = -1;
+	pfd.fd = sp[0];
+	pfd.events = POLLIN;
+	if (poll(&pfd, 1, 5000) == 1) {
+		memset(&msg, 0, sizeof(msg));
+		iov.iov_base = &one;
+		iov.iov_len = 1;
+		msg.msg_iov = &iov;
+		msg.msg_iovlen = 1;
+		msg.msg_control = cbuf.buf;
+		msg.msg_controllen = sizeof(cbuf.buf);
+		if (recvmsg(sp[0], &msg, MSG_CMSG_CLOEXEC) == 1 &&
+		    (cm = CMSG_FIRSTHDR(&msg)) != NULL && cm->cmsg_level ==
+		    SOL_SOCKET && cm->cmsg_type == SCM_RIGHTS &&
+		    cm->cmsg_len == CMSG_LEN(sizeof(int)))
+			memcpy(&fd, CMSG_DATA(cm), sizeof(int));
+	}
+	close(sp[0]);
+	if (fd == -1)
+		(void)kill(pid, SIGKILL);
+	while (waitpid(pid, &status, 0) == -1 && errno == EINTR)
+		;
+	return (fd);
 }
 
 /* Lines written into a stream of the daemon's, each given on. */

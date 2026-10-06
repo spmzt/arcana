@@ -721,6 +721,11 @@ attribute-sets:
       - name: limit-swap
         type: u32
         doc: For history, the same for the swap in use.
+      - name: routes
+        type: nest
+        nested-attributes: route
+        multi-attr: true
+        doc: The routes of a part of network's dump of the routes.
 
   - name: host
     attributes:
@@ -1144,6 +1149,49 @@ attribute-sets:
         checks:
           max-len: max-output
 
+  - name: route
+    attributes:
+      - name: family
+        type: text
+        doc: The table it is of, Internet or Internet6.
+      - name: destination
+        type: text
+        doc: The prefix, or default.
+      - name: gateway
+        type: text
+        doc: The next hop's address, or link#n for a route on a link.
+      - name: flags
+        type: text
+        doc: Its flags as netstat -r writes them, UGS and so on.
+      - name: nhop
+        type: u32
+        doc: The kernel's nexthop it uses.
+      - name: mtu
+        type: u32
+      - name: interface-name
+        type: text
+      - name: metric
+        type: u32
+      - name: weight
+        type: u32
+        doc: Its share, against the other ways of a route of several.
+      - name: fib
+        type: u32
+      - name: prefixlen
+        type: u32
+      - name: source
+        type: text
+        doc: The address it sends from, when it is set.
+      - name: path
+        type: u32
+        doc: Which of the ways of a route of several (ECMP) this is.
+      - name: paths
+        type: u32
+        doc: How many ways the route has.
+      - name: expire-time
+        type: u32
+        doc: When a route that expires does.
+
 operations:
   - name: hello
     attribute-set: arcana
@@ -1276,10 +1324,10 @@ operations:
       With jail, those of a running jail that has a network of its own
       (vnet), read from the host: nothing runs in the jail for it but
       the jail's own birdc and wg.  As a dump, the routes, connections
-      and sockets come in parts as they are taken: each item has json,
-      an array of the next rows, a route with its "family" (Internet
-      or Internet6) in it, and total, how many rows the table has;
-      nothing is left out for size.
+      and sockets come in parts as they are taken: each item has total,
+      how many rows the table has, and the next rows: routes, typed,
+      for the routes, and json, an array of them, for the connections
+      and sockets; nothing is left out for size.
     do:
       request:
         attributes:
@@ -1313,6 +1361,7 @@ operations:
         attributes:
           - json
           - total
+          - routes
 
   - name: stats
     attribute-set: arcana
@@ -1862,8 +1911,9 @@ operations:
       link-del, an interface with up, carrier and mtu; address-add
       and address-del, an interface's address and prefixlen; neigh
       and neigh-del, a neighbour (ARP, NDP) as network's neighbours
-      has one.  They are the kernel's own netlink(4) messages, of the host's network
-      and not of a jail's.  threshold, with what (cpu, mem or swap),
+      has one.  They are the kernel's own netlink(4) messages, of the
+      host's network, and of each jail's own (vnet) too: one of a
+      jail's has "jail", its name, beside its kind.  threshold, with what (cpu, mem or swap),
       value, limit and over, when a figure of history crosses its
       limit, either way.
     do:

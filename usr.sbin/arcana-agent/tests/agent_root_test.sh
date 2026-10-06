@@ -292,10 +292,74 @@ routes_cleanup()
 	true
 }
 
+atf_test_case jail_network cleanup
+jail_network_head()
+{
+	atf_set "descr" "a jail's own network (vnet) watched as the host's is: its interfaces, addresses and routes are events with its name, whether it was there before the agent or came after; and removed, it goes at once, not held"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+jail_network_body()
+{
+	if jls -j arcw_n1 >/dev/null 2>&1 || jls -j arcw_n2 >/dev/null 2>&1; then
+		atf_skip "a jail arcw_n1 or arcw_n2 is there already"
+	fi
+	touch mine
+	atf_check -o ignore jail -c name=arcw_n1 vnet persist path=/
+	start_daemon
+	sleep 0.5
+	atf_check -o match:'watching the network of jail arcw_n1' cat daemon.out
+	last=$("$JGC" -c "$SOCK" events | sed -E 's/^\{"last":([0-9]+).*/\1/')
+	atf_check -o ignore jail -c name=arcw_n2 vnet persist path=/
+	sleep 0.5
+	atf_check -o match:'watching the network of jail arcw_n2' cat daemon.out
+	# An interface given to each, with an address and a route there:
+	# told with the jail's name, the interface by the jail's own index.
+	for n in 1 2; do
+		ep=$(ifconfig epair create)
+		echo "${ep%a}" >> epairs
+		atf_check ifconfig "${ep%a}b" vnet "arcw_n$n"
+		atf_check jexec "arcw_n$n" ifconfig "${ep%a}b" inet "192.0.2.2$n/24" up
+		atf_check -o ignore jexec "arcw_n$n" route -q add 198.51.100.0/24 "192.0.2.3$n"
+	done
+	sleep 0.5
+	atf_check -o save:ev.json "$JGC" -c "$SOCK" events "$last"
+	for n in 1 2; do
+		b=$(sed -n "${n}p" epairs)b
+		atf_check -o match:"\"kind\":\"link\",\"jail\":\"arcw_n$n\",\"data\":\\{\"interface\":\"$b\"" \
+		    -o match:"\"kind\":\"address-add\",\"jail\":\"arcw_n$n\",\"data\":\\{\"interface\":\"$b\",\"address\":\"192.0.2.2$n\",\"prefixlen\":24\\}" \
+		    -o match:"\"kind\":\"route-add\",\"jail\":\"arcw_n$n\",\"data\":\\{\"destination\":\"198.51.100.0/24\",\"gateway\":\"192.0.2.3$n\",[^}]*\"interface-name\":\"$b\"" \
+		    cat ev.json
+	done
+	# The host's own were not told as the jail's.
+	atf_check -o not-match:'"kind":"route-add","data":\{"destination":"198.51.100.0/24"' cat ev.json
+	# Removed: no longer watched, and gone, not held dying by it.
+	atf_check -o ignore jail -r arcw_n1
+	sleep 0.5
+	atf_check -o match:'the network of jail arcw_n1 is not watched' cat daemon.out
+	atf_check -s not-exit:0 -e match:"not found" jls -d -j arcw_n1 jid
+	atf_check -o ignore jail -r arcw_n2
+	sleep 0.5
+	atf_check -s not-exit:0 -e match:"not found" jls -d -j arcw_n2 jid
+}
+jail_network_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	if [ -f mine ]; then
+		jail -r arcw_n1 >/dev/null 2>&1
+		jail -r arcw_n2 >/dev/null 2>&1
+		[ -f epairs ] && while read -r e; do
+			ifconfig "${e}a" destroy >/dev/null 2>&1
+		done < epairs
+	fi
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases
 	atf_add_test_case routes
+	atf_add_test_case jail_network
 }

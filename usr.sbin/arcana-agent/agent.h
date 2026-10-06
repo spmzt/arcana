@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.32.0"
+#define	ARCANA_AGENT_VERSION	"0.33.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -431,6 +431,10 @@ int		 route_helper(int, char **);
 int		 route_list(FILE *, int, uint32_t, const char *, const char *);
 int		 route_lookup(FILE *, const char *, uint32_t);
 int		 neigh_list(FILE *, int, const char *);
+int		 route_socket(void);
+int		 helper_netlink(int);
+int		 jail_jid_name(int, char *, size_t, char *, size_t);
+int		 jail_next(int);
 int		 pcb_helper(int, char **);
 int		 pcb_list(FILE *, bool, int);
 int		 helper_lines(struct work *, const char *, size_t,
@@ -440,6 +444,10 @@ struct arc_network_dump_req;
 bool		 network_part(struct cbl_dump_state *,
 		    const struct arc_network_dump_req *, char **, uint64_t *,
 		    const char **);
+struct ucl_object_s;
+int		 network_routes(const char *, struct arc_route **, size_t *,
+		    struct ucl_object_s **);
+void		 network_routes_free(struct ucl_object_s *);
 int		 zfs_pipe(int, char **);
 const char	*tool(struct work *, const char *);
 int		 do_health(struct work *, struct arc_storage_rsp *);
@@ -448,6 +456,8 @@ struct ucl_object_s *swap_list(struct work *);
 void		 route_watch_start(void);
 void		 event_add(const char *, const char *, ...) __printflike(2, 3);
 void		 event_family(cbl_family *);
+void		 event_add_jail(const char *, const char *, const char *, ...)
+		    __printflike(3, 4);
 int		 do_events(struct work *, uint64_t, struct arc_events_rsp *);
 
 /* invidia/netgraph.c */

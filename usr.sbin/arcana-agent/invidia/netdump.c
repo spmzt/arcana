@@ -18,10 +18,12 @@
 
 #include <sys/param.h>
 
+#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ucl.h>
 
 #include "agent.h"
 
@@ -248,4 +250,97 @@ network_part(struct cbl_dump_state *st, const struct arc_network_dump_req *rq,
 	}
 	*jsonp = json;
 	return (more);
+}
+
+/* A number of a row, as it is there; has: whether it is. */
+static uint32_t
+row_u32(const ucl_object_t *r, const char *key, bool *has)
+{
+	const ucl_object_t	*o;
+	int64_t			 v;
+
+	*has = false;
+	if ((o = ucl_object_lookup(r, key)) == NULL)
+		return (0);
+	/* expire-time is a string, as netstat has it. */
+	if (ucl_object_type(o) == UCL_STRING)
+		v = strtoll(ucl_object_tostring(o), NULL, 10);
+	else if (!ucl_object_toint_safe(o, &v))
+		return (0);
+	*has = v >= 0 && v <= UINT32_MAX;
+	return (*has ? (uint32_t)v : 0);
+}
+
+static const char *
+row_text(const ucl_object_t *r, const char *key)
+{
+
+	return (ucl_object_tostring(ucl_object_lookup(r, key)));
+}
+
+/*
+ * A part of the routes, a JSON array of them, as the spec's typed
+ * routes: *vp points into *keepp, which is freed with
+ * ucl_object_unref() once they are sent, as *vp is with free().
+ */
+int
+network_routes(const char *json, struct arc_route **vp, size_t *np,
+    ucl_object_t **keepp)
+{
+	struct ucl_parser	*p;
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*top;
+	struct arc_route	*v, *rt;
+	size_t			 n;
+
+	*vp = NULL;
+	*np = 0;
+	*keepp = NULL;
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	top = NULL;
+	if (ucl_parser_add_string(p, json, 0))
+		top = ucl_parser_get_object(p);
+	ucl_parser_free(p);
+	if (top == NULL || ucl_object_type(top) != UCL_ARRAY) {
+		ucl_object_unref(top);
+		return (EINVAL);
+	}
+	if ((v = calloc(ucl_array_size(top) + 1, sizeof(*v))) == NULL) {
+		ucl_object_unref(top);
+		return (ENOMEM);
+	}
+	n = 0;
+	it = NULL;
+	while ((r = ucl_object_iterate(top, &it, true)) != NULL) {
+		rt = &v[n++];
+		rt->family = row_text(r, "family");
+		rt->destination = row_text(r, "destination");
+		rt->gateway = row_text(r, "gateway");
+		rt->flags = row_text(r, "flags");
+		rt->nhop = row_u32(r, "nhop", &rt->has_nhop);
+		rt->mtu = row_u32(r, "mtu", &rt->has_mtu);
+		rt->interface_name = row_text(r, "interface-name");
+		rt->metric = row_u32(r, "metric", &rt->has_metric);
+		rt->weight = row_u32(r, "weight", &rt->has_weight);
+		rt->fib = row_u32(r, "fib", &rt->has_fib);
+		rt->prefixlen = row_u32(r, "prefixlen", &rt->has_prefixlen);
+		rt->source = row_text(r, "source");
+		rt->path = row_u32(r, "path", &rt->has_path);
+		rt->paths = row_u32(r, "paths", &rt->has_paths);
+		rt->expire_time = row_u32(r, "expire-time", &rt->has_expire_time);
+	}
+	*vp = v;
+	*np = n;
+	*keepp = top;
+	return (0);
+}
+
+void
+network_routes_free(struct ucl_object_s *keep)
+{
+
+	if (keep != NULL)
+		ucl_object_unref(keep);
 }

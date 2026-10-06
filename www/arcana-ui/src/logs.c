@@ -145,6 +145,10 @@ event_line(const ucl_object_t *e)
 	ucl_object_insert_key(l, ucl_object_fromstring(buf), "time", 0, false);
 	kind = jstr(e, "kind") != NULL ? jstr(e, "kind") : "";
 	ucl_object_insert_key(l, ucl_object_fromstring(kind), "tag", 0, false);
+	/* Of a jail's own network: the jail is where it happened. */
+	if (jstr(e, "jail") != NULL)
+		ucl_object_insert_key(l, ucl_object_fromstring(jstr(e,
+		    "jail")), "host", 0, false);
 	d = jget(e, "data");
 	if (strncmp(kind, "route-", 6) == 0)
 		snprintf(buf, sizeof(buf), "%s via %s on %s, metric %lld, "
@@ -528,10 +532,11 @@ view_logs(struct html *h, struct server *s)
 	if (strcmp(lg.name, EVENTS) == 0) {
 		h_fmt(h, "<p class=\"dim\">%d events, the newest first, as the "
 		    "kernel told the agent of them through netlink: every "
-		    "route, interface, address and neighbour of the host "
-		    "that came, went or changed since the agent started, "
-		    "the last 512 kept. A storm of routes is counted, not "
-		    "listed. A jail's own network is not in it. %s</p>",
+		    "route, interface, address and neighbour of the host, "
+		    "and of each jail with a network of its own (its name "
+		    "is the Host), that came, went or changed since the "
+		    "agent started, the last 512 kept. A storm of routes "
+		    "is counted, not listed. %s</p>",
 		    (int)ucl_array_size(lg.lines), ev.on ? "Each is shown "
 		    "the moment the agent tells it." : "Read again every "
 		    "few seconds.");

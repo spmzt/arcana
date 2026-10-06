@@ -357,7 +357,13 @@ interfaces, its routes through
 .Xr netlink 4 ,
 its connections and sockets from the kernel's lists of them.
 Default: this program itself, which then reads the host's own routes,
-connections and sockets in the daemon, without running anything.
+connections and sockets in the daemon, without running anything; and
+which makes a
+.Xr netlink 4
+socket inside each jail with a network of its own and hands it over,
+so that the daemon is told of that network's changes as of the
+host's: another helper cannot, and the jails' networks are then not
+watched.
 .It Fl o Ar directory
 Where WireGuard interfaces are written for
 .Xr wg-quick 8 .

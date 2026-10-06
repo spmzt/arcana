@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.44.0
+  version: 0.45.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -837,7 +837,8 @@ paths:
         neigh and neigh-del (a neighbour, as net/neighbours has one),
         and threshold (what, value, limit, over) when a figure of the
         history crosses its limit. The rest are the kernel's netlink(4)
-        messages of the host's own network.
+        messages of the host's own network, and of each vnet jail's,
+        which have jail, its name.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: after
