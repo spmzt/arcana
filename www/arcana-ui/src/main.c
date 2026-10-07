@@ -655,6 +655,66 @@ dispatch(const char *act, const char *arg, const char *value)
 		    app.pkg.jail);
 		/* The text is the queue's now. */
 		job_send(s, json, title, JOB_PACKAGES, app.pkg.jail);
+	} else if (strcmp(act, "pkg-clean-jails") == 0 && s != NULL) {
+		const ucl_object_t	*j;
+		ucl_object_iter_t	 it;
+		int			 n;
+
+		n = 0;
+		it = NULL;
+		while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+		    "jails"), &it, true)) != NULL)
+			if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+			    "running") == 0)
+				n++;
+		if (n == 0) {
+			toast(true, "%s has no running jail", s->name);
+			return;
+		}
+		snprintf(body, sizeof(body), "pkg clean%s in each of the %d "
+		    "running jails of %s, each a job of its own in one batch: "
+		    "%s A jail without pkg, or whose pkg refuses, fails alone; "
+		    "the others are cleaned all the same. The host's own cache "
+		    "is not touched.", arg[0] != '\0' ? " -a" : "", n, s->name,
+		    arg[0] != '\0' ? "every downloaded package in their caches "
+		    "is deleted." : "the downloaded packages no longer needed, "
+		    "or no longer in the repository, are deleted.");
+		confirm(arg[0] != '\0' ? "Clean all the caches of the jails" :
+		    "Clean the caches of the jails", body, "Clean", arg[0] !=
+		    '\0', "", "do-pkg-clean-jails", arg, "");
+	} else if (strcmp(act, "do-pkg-clean-jails") == 0 && s != NULL) {
+		const ucl_object_t	*j;
+		ucl_object_iter_t	 it;
+		struct queued		*q;
+		char			*qj;
+		int			 n;
+
+		n = (int)ucl_array_size(jget(s->list, "jails"));
+		if (n == 0 || (q = calloc((size_t)n, sizeof(*q))) == NULL)
+			return;
+		n = 0;
+		it = NULL;
+		while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
+		    true)) != NULL) {
+			if (jstr(j, "name") == NULL || jstr(j, "state") ==
+			    NULL || strcmp(jstr(j, "state"), "running") != 0)
+				continue;
+			qj = json_quote(jstr(j, "name"));
+			if (asprintf(&q[n].json, "{\"kind\":\"pkg-clean\","
+			    "\"jail\":%s%s}", qj, arg[0] != '\0' ?
+			    ",\"force\":true" : "") == -1)
+				abort();
+			free(qj);
+			snprintf(q[n].title, sizeof(q[n].title), "pkg clean%s "
+			    "in %s", arg[0] != '\0' ? " -a" : "", jstr(j,
+			    "name"));
+			snprintf(q[n].target, sizeof(q[n].target), "%s",
+			    jstr(j, "name"));
+			n++;
+		}
+		if (n > 0)
+			job_send_many(s, q, n, JOB_PACKAGES);
+		free(q);
 	} else if (strcmp(act, "pkg-mode") == 0 && s != NULL) {
 		/* The installed, or what the repository has newer: the
 		 * repository is asked only for the second. */

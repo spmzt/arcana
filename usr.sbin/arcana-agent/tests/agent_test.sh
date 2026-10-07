@@ -741,6 +741,9 @@ packages_body()
 	atf_check -o match:'done +pkg clean$' "$JGC" -c "$SOCK" pkg-clean
 	atf_check -o match:'done +pkg clean -a$' "$JGC" -c "$SOCK" pkg-clean -a
 	atf_check -o inline:'clean -y\nclean -ay\n' cat clean.log
+	# Of every running jail: none runs here, and that is said.
+	atf_check -s exit:1 -e match:'no running jail' "$JGC" -c "$SOCK" pkg-clean -J
+	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" pkg-clean -J -j web
 }
 packages_cleanup()
 {

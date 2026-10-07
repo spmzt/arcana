@@ -554,9 +554,11 @@ The console is laid out as a tree and tabs.
     `pkg -6`), kept in the browser; **either** lets pkg choose.
     **Clean** deletes the downloaded packages no longer needed, or no
     longer in the repository (`pkg clean`), **Clean all** the whole
-    cache (`pkg clean -a`), each a job once it is confirmed. From a
-    shell: `arcanactl packages [-i] [-4 | -6] [jail]`, `pkg-upgrade
-    [-O] …`, `pkg-clean [-a] [-j jail]`. When pkg refuses packages built for a newer
+    cache (`pkg clean -a`), each a job once it is confirmed. **Clean
+    the jails**, on the host's page, does it in every running jail at
+    once: one batch of a job each, so that a jail whose pkg refuses
+    fails alone. From a shell: `arcanactl packages [-i] [-4 | -6]
+    [jail]`, `pkg-upgrade [-O] …`, `pkg-clean [-a] [-j jail | -J]`. When pkg refuses packages built for a newer
     FreeBSD than the host's (OSVERSION), the console asks whether to
     go on anyway, and approved, does it again with
     `IGNORE_OSVERSION=yes` (a job of kind pkg-upgrade with force).

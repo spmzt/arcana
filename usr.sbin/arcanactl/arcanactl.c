@@ -221,7 +221,7 @@ usage(void)
 	    "    fstab [-w new-text [-n]]\n"
 	    "    packages [-i] [-r] [-4 | -6] [jail]\n"
 	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...]\n"
-	    "    pkg-clean [-a] [-j jail]\n"
+	    "    pkg-clean [-a] [-j jail | -J]\n"
 	    "    jobs\n"
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
@@ -2330,21 +2330,34 @@ cmd_packages(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
-/* pkg-clean [-a] [-j jail]: the cache of downloaded packages, a job. */
+/*
+ * pkg-clean [-a] [-j jail | -J]: the cache of downloaded packages, a
+ * job; with -J, of every running jail, one batch of a job each.
+ */
 static int
 cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 {
-	struct arc_job_spec	sp;
-	int			ch;
+	struct arc_job_submit_req	 req;
+	struct arc_job_submit_rsp	*rsp;
+	struct arc_list_req		 lq;
+	struct arc_list_rsp		*lr;
+	struct arc_job_spec		 sp, *v;
+	size_t				 i, n;
+	int				 ch, error;
+	bool				 jails;
 
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
 	sp.kind = ARC_JOB_KIND_PKG_CLEAN;
+	jails = false;
 	optind = 1;
-	while ((ch = getopt(argc, argv, "aj:")) != -1) {
+	while ((ch = getopt(argc, argv, "aJj:")) != -1) {
 		switch (ch) {
 		case 'a':
 			sp.force = true;
+			break;
+		case 'J':
+			jails = true;
 			break;
 		case 'j':
 			sp.jail = optarg;
@@ -2353,9 +2366,47 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 			usage();
 		}
 	}
-	if (optind != argc)
+	if (optind != argc || (jails && sp.jail != NULL))
 		usage();
-	return (submit(cl, &sp));
+	if (!jails)
+		return (submit(cl, &sp));
+	memset(&lq, 0, sizeof(lq));
+	if ((error = arc_list(cl, &lq, &lr)) != 0)
+		fail(cl, error, "list");
+	if ((v = calloc(lr->jails.n + 1, sizeof(*v))) == NULL)
+		xo_err(1, "calloc");
+	for (i = n = 0; i < lr->jails.n; i++) {
+		if (!lr->jails.v[i].has_state || lr->jails.v[i].state !=
+		    ARC_JAIL_STATE_RUNNING || lr->jails.v[i].name == NULL)
+			continue;
+		v[n] = sp;
+		v[n].jail = lr->jails.v[i].name;
+		v[n].safe = safe;
+		n++;
+	}
+	if (n == 0) {
+		xo_warnx("pkg-clean: no running jail");
+		free(v);
+		arc_list_rsp_free(lr);
+		return (1);
+	}
+	memset(&req, 0, sizeof(req));
+	req.batch.v = v;
+	req.batch.n = n;
+	if ((error = arc_job_submit(cl, &req, &rsp)) != 0)
+		fail(cl, error, "queue");
+	xo_open_list("job");
+	for (i = 0; i < rsp->jobs.n; i++)
+		emit_job(&rsp->jobs.v[i]);
+	xo_close_list("job");
+	error = rsp->ok ? 0 : 1;
+	if (!rsp->ok)
+		xo_warnx("pkg-clean: %s", rsp->error != NULL ? rsp->error :
+		    "not accepted");
+	arc_job_submit_rsp_free(rsp);
+	arc_list_rsp_free(lr);
+	free(v);
+	return (error);
 }
 
 /* pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...] */

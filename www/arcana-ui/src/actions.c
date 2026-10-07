@@ -602,12 +602,12 @@ job_send(struct server *s, char *json, const char *title, int what,
  * the queue is on.  Takes the jobs' text.
  */
 void
-job_send_many(struct server *s, struct queued *q, int n)
+job_send_many(struct server *s, struct queued *q, int n, int what)
 {
 	int	i, k;
 
 	for (i = 0; i < n; i++) {
-		q[i].what = JOB_STORAGE;
+		q[i].what = what;
 		snprintf(q[i].sid, sizeof(q[i].sid), "%s", s->id);
 		snprintf(q[i].host, sizeof(q[i].host), "%s", s->name);
 	}

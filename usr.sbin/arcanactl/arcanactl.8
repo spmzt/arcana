@@ -555,7 +555,7 @@ also installs packages built for a newer FreeBSD than the host's
 .Pq Ev IGNORE_OSVERSION ,
 which pkg refuses otherwise.
 What is still pending follows.
-.It Cm pkg-clean Oo Fl a Oc Oo Fl j Ar jail Oc
+.It Cm pkg-clean Oo Fl a Oc Oo Fl j Ar jail | Fl J Oc
 .Nm pkg clean Fl y ,
 a job: the downloaded packages no longer needed, or no longer in the
 repository, deleted from the cache of the host or the running
@@ -563,6 +563,10 @@ repository, deleted from the cache of the host or the running
 with
 .Fl a ,
 all of the cache.
+With
+.Fl J ,
+in every running jail instead, one batch of a job each, so that a jail
+whose pkg refuses fails alone.
 .It Cm jobs
 The host's queued, running and recently finished jobs.
 .It Cm job Oo Fl w Oc Ar id

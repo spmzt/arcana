@@ -2070,7 +2070,7 @@ storage_action(const char *act, const char *arg, const char *value)
 			k++;
 		}
 		if (k > 0)
-			job_send_many(s, q, k);
+			job_send_many(s, q, k, JOB_STORAGE);
 		free(q);
 		sel_clear();
 	} else if (strcmp(act, "do-st-destroy-sel") == 0 && sg.nsel > 0) {
@@ -2091,7 +2091,7 @@ storage_action(const char *act, const char *arg, const char *value)
 			snprintf(q[i].target, sizeof(q[i].target), "%s",
 			    sg.sel[i]);
 		}
-		job_send_many(s, q, sg.nsel);
+		job_send_many(s, q, sg.nsel, JOB_STORAGE);
 		free(q);
 		sel_clear();
 	} else if (strcmp(act, "do-st-destroy") == 0) {

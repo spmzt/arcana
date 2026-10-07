@@ -822,6 +822,12 @@ ATF_TC_BODY(pwa, tc)
 		usleep(50000);
 	ATF_CHECK(system("grep -q '^clean -ay$' pkg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/* Of every running jail at once: none runs here, which is said,
+	 * and nothing is asked. */
+	run("document.querySelector('button[data-act=pkg-clean-jails]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('has no running jail'))", 5);
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=confirm]')"));
 	/* Over IPv6 only: pkg -6, kept in the browser. */
 	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"6\"]')"
 	    ".click()");

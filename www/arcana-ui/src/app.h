@@ -448,7 +448,7 @@ void		 job_send(struct server *, char *, const char *, int,
 		    const char *);
 void		 job_send_host(struct server *, char *, const char *, int,
 		    const char *);
-void		 job_send_many(struct server *, struct queued *, int);
+void		 job_send_many(struct server *, struct queued *, int, int);
 void		 queue_run(void);
 void		 queue_clear(void);
 void		 jobs_poll(void);

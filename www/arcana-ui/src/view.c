@@ -2497,6 +2497,12 @@ view_packages(struct html *h, struct server *s)
 	    "small\" data-act=\"pkg-clean\" data-arg=\"all\" title=\"pkg "
 	    "clean -a: all the downloaded packages deleted\">Clean all"
 	    "</button>");
+	/* Of every running jail at once, from the host's page. */
+	if (app.pkg.jail[0] == '\0')
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "pkg-clean-jails\" data-arg=\"\" title=\"pkg clean in "
+		    "every running jail, one batch of a job each\">Clean the "
+		    "jails</button>");
 	if (app.pkg.mode == 1)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-check\""
 		    "%s title=\"pkg update, then list what has a newer version"
