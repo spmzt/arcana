@@ -142,7 +142,10 @@ The console is laid out as a tree and tabs.
     gateway may be several addresses with commas between, each with
     its share after an `@` (`10.0.0.1@2,10.0.0.2`): that is one route
     with as many next hops (ECMP), which the table shows as a row for
-    each, **Path** saying which of how many, and **Nexthops**, in
+    each, **Path** saying which of how many; a route's **Nhop** opens
+    its next hop in a box (its type, gateway, interface, MTU, flags
+    and how many routes use it), or for a route of several ways the
+    group they share with what each way carried, and **Nexthops**, in
     **Groups**, as the group the kernel made of them: each
     group a row, its next hops one under the other, each with its
     gateway, interface and a bar of its share. Under each group, what

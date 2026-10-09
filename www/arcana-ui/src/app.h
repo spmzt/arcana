@@ -335,6 +335,7 @@ enum modal {
 	MODAL_IF_VNET,
 	MODAL_STORAGE,
 	MODAL_LOOKUP,
+	MODAL_NHOP,
 };
 
 struct confirm {
@@ -624,11 +625,15 @@ int		 usage_if_rates(const char *, const char *, bool, double,
 int		 usage_step(const char *);
 int		 topo_addr_owner(const char *, char *, size_t, char *, size_t);
 void		 topo_poll_all(void);
+int		 topo_gw_owner(const char *, int, const char *, char *, size_t,
+		    char *, size_t);
 bool		 ecmp_shown(void);
 void		 ecmp_tick(double);
 void		 ecmp_group(struct html *, const struct server *,
 		    const ucl_object_t *);
 void		 view_ecmp(struct html *);
+void		 nhop_modal(struct html *);
+bool		 nhop_action(const char *, const char *, const char *);
 void		 ecmp_head(struct html *);
 bool		 ecmp_map_tab(void);
 bool		 ecmp_action(const char *, const char *, const char *);

@@ -574,6 +574,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
 	    procs_action(act, arg, value) || logs_action(act, arg, value) ||
 	    usage_action(act, arg, value) || ecmp_action(act, arg, value) ||
+	    nhop_action(act, arg, value) ||
 	    firewall_action(act, arg, value) || l2_action(act, arg, value) ||
 	    tbl_action(act, arg, value))
 		return;

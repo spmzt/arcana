@@ -91,6 +91,19 @@ cell(struct html *h, const ucl_object_t *e, const struct column *c)
 {
 	const ucl_object_t	*v;
 
+	/*
+	 * A route's nexthop opens it: the group its ways share when it
+	 * has several, else the one next hop.
+	 */
+	if (strcmp(c->path, "nhop") == 0 && jint(e, "nhop", 0) > 0) {
+		h_fmt(h, "<td><button class=\"cell-link mono\" data-act=\"net-nhop\" "
+		    "data-arg=\"%lld\" data-value=\"%s\" title=\"%s\">%lld"
+		    "</button></td>", (long long)jint(e, "nhop", 0), jint(e,
+		    "paths", 0) > 1 ? "group" : "nexthop", jint(e, "paths", 0) >
+		    1 ? "The nexthop group its ways share" : "Its next hop",
+		    (long long)jint(e, "nhop", 0));
+		return;
+	}
 	h_raw(h, "<td>");
 	if ((v = jget(e, c->path)) != NULL && ucl_object_type(v) != UCL_NULL)
 		h_txt(h, ucl_object_tostring_forced(v));
@@ -737,3 +750,169 @@ net_live_tick(double now)
 	refresh_network(s, false);
 }
 
+
+/*
+ * A route's nexthop, or the group of its ways, in a box over the routes:
+ * read from the host when asked, as the Nexthops tab has it.
+ */
+static struct {
+	char		 sid[9];
+	long long	 id;
+	bool		 group;
+	ucl_object_t	*data;
+	bool		 loading;
+	char		 error[200];
+} nb;
+
+static void
+nhop_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	nb.loading = false;
+	if (status != 200 || !jbool(o, "ok")) {
+		snprintf(nb.error, sizeof(nb.error), "%s", status == 200 &&
+		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
+		    err : "no answer");
+		return;
+	}
+	if (nb.data != NULL)
+		ucl_object_unref(nb.data);
+	nb.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+}
+
+bool
+nhop_action(const char *act, const char *arg, const char *value)
+{
+	struct server	*s;
+	char		 url[400];
+
+	if (strcmp(act, "net-nhop-all") == 0) {
+		app.modal = MODAL_NONE;
+		if ((s = cur_server()) != NULL) {
+			app.net.kind = nb.group ? NET_NHGROUPS : NET_NEXTHOPS;
+			app.net.sort = -1;
+			app.net.loading = false;
+			refresh_network(s, true);
+		}
+		return (true);
+	}
+	if (strcmp(act, "net-nhop") != 0 || (s = cur_server()) == NULL)
+		return (strcmp(act, "net-nhop") == 0);
+	snprintf(nb.sid, sizeof(nb.sid), "%s", s->id);
+	nb.id = atoll(arg);
+	nb.group = strcmp(value, "group") == 0;
+	if (nb.data != NULL)
+		ucl_object_unref(nb.data);
+	nb.data = NULL;
+	nb.error[0] = '\0';
+	nb.loading = true;
+	app.modal = MODAL_NHOP;
+	app.modal_error[0] = '\0';
+	snprintf(url, sizeof(url), "/api/servers/%s/net/%s?family=all%s%s",
+	    s->id, nb.group ? "nhgroups" : "nexthops", net_scope()[0] != '\0' ?
+	    "&jail=" : "", net_scope());
+	api("GET", url, NULL, nhop_cb, NULL);
+	return (true);
+}
+
+/* A field of the box: a name, and what it is. */
+static void
+nhop_field(struct html *h, const char *name, const char *v)
+{
+
+	if (v == NULL || v[0] == '\0')
+		return;
+	h_raw(h, "<dt>");
+	h_txt(h, name);
+	h_raw(h, "</dt><dd class=\"mono\">");
+	h_txt(h, v);
+	h_raw(h, "</dd>");
+}
+
+void
+nhop_modal(struct html *h)
+{
+	static const struct {
+		const char	*key, *name;
+	} fields[] = {
+		{ "type_str", "Type" }, { "gateway", "Gateway" },
+		{ "interface-name", "Interface" },
+		{ "address-interface-name", "Address of" }, { "ifa", "Address" },
+		{ "mtu", "MTU" }, { "flags", "Flags" }, { "refcount", "Routes" },
+		{ "use", "Used" },
+	};
+	const ucl_object_t	*fams, *fam, *e, *found;
+	ucl_object_iter_t	 it, eit;
+	struct server		*s;
+	size_t			 i;
+
+	h_fmt(h, "<form data-form=\"nhop\" class=\"wide\"><h2>%s %lld</h2>",
+	    nb.group ? "Nexthop group" : "Nexthop", nb.id);
+	if (nb.loading) {
+		h_raw(h, "<div class=\"empty\"><div class=\"loader\"></div>"
+		    "</div>");
+		return;
+	}
+	if (nb.error[0] != '\0') {
+		h_raw(h, "<p class=\"err\">");
+		h_txt(h, nb.error);
+		h_raw(h, "</p>");
+		return;
+	}
+	fams = jget(nb.data, nb.group ? "statistics.route-nhgrp-information."
+	    "nhgrp-table.rt-family" : "statistics.route-nhop-information."
+	    "nhop-table.rt-family");
+	found = NULL;
+	it = NULL;
+	while (found == NULL && (fam = ucl_object_iterate(fams, &it, true)) !=
+	    NULL) {
+		eit = NULL;
+		while ((e = ucl_object_iterate(jget(fam, nb.group ?
+		    "nhgrp-entry" : "nh-entry"), &eit, true)) != NULL)
+			if (jint(e, nb.group ? "nhgrp-index" : "index", -1) ==
+			    nb.id) {
+				found = e;
+				break;
+			}
+	}
+	if (found == NULL) {
+		h_raw(h, "<p class=\"dim\">The host has it no longer: the route "
+		    "changed since the table was read.</p>");
+	} else if (nb.group) {
+		h_fmt(h, "<p class=\"dim\">Shared by %lld route%s; each of its "
+		    "next hops with its weight, and what each carried as the "
+		    "agents sampled it.</p><div class=\"nhg-hops\">",
+		    (long long)jint(found, "nhg-refcnt", 0), jint(found,
+		    "nhg-refcnt", 0) == 1 ? "" : "s");
+		eit = NULL;
+		while ((e = ucl_object_iterate(jget(found, "nhop-weights"),
+		    &eit, true)) != NULL) {
+			h_raw(h, "<div class=\"nhg-hop\"><span class=\"mono "
+			    "nhg-gw\">");
+			h_txt(h, jstr(e, "nh-gw") != NULL ? jstr(e, "nh-gw") :
+			    "?");
+			h_raw(h, "</span><span class=\"nhg-if\">");
+			h_txt(h, jstr(e, "nh-interface") != NULL ? jstr(e,
+			    "nh-interface") : "");
+			h_fmt(h, "</span><span class=\"dim nhg-meta\">weight "
+			    "%lld · nexthop %lld</span></div>", (long long)jint(e,
+			    "nh-weight", 0), (long long)jint(e, "nh-index", 0));
+		}
+		h_raw(h, "</div>");
+		if ((s = cur_server()) != NULL && net_scope()[0] == '\0')
+			ecmp_group(h, s, found);
+	} else {
+		h_raw(h, "<dl class=\"kv\">");
+		for (i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
+			e = jget(found, fields[i].key);
+			nhop_field(h, fields[i].name, e != NULL &&
+			    ucl_object_type(e) != UCL_NULL ?
+			    ucl_object_tostring_forced(e) : NULL);
+		}
+		h_raw(h, "</dl>");
+	}
+	h_fmt(h, "<p><button type=\"button\" class=\"ghost small\" "
+	    "data-act=\"net-nhop-all\">Every %s of the host</button></p>",
+	    nb.group ? "group" : "nexthop");
+}

@@ -752,6 +752,126 @@ topo_addr_owner(const char *addr, char *ifname, size_t len, char *jail,
 	return (tn[n].srv);
 }
 
+/* Is the address one of a link only (fe80::/10, 169.254/16)? */
+static bool
+addr_linklocal(const char *s)
+{
+	unsigned char	raw[16];
+	int		af;
+
+	if (!addr_bytes(s, &af, raw))
+		return (false);
+	return (af == AF_INET ? raw[0] == 169 && raw[1] == 254 :
+	    raw[0] == 0xfe && (raw[1] & 0xc0) == 0x80);
+}
+
+/* Do two interfaces' addresses share a network beyond their links? */
+static bool
+if_share_net(const ucl_object_t *a, const ucl_object_t *b)
+{
+	const ucl_object_t	*x, *y;
+	ucl_object_iter_t	 xi, yi;
+	char			 na[80], nb[80];
+
+	xi = NULL;
+	while ((x = ucl_object_iterate(jget(a, "addresses"), &xi, true)) !=
+	    NULL) {
+		if (addr_local(jstr(x, "address")) || !net_of(jstr(x,
+		    "address"), (int)jint(x, "prefixlen", 0), na, sizeof(na)))
+			continue;
+		yi = NULL;
+		while ((y = ucl_object_iterate(jget(b, "addresses"), &yi,
+		    true)) != NULL)
+			if (net_of(jstr(y, "address"), (int)jint(y, "prefixlen",
+			    0), nb, sizeof(nb)) && strcmp(na, nb) == 0)
+				return (true);
+	}
+	return (false);
+}
+
+/* The interface of a host's reading by its name, or NULL. */
+static const ucl_object_t *
+if_named(const struct thost *t, const char *name)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (t != NULL && name != NULL && (o = ucl_object_iterate(jget(
+	    t->ifs, "interfaces"), &it, true)) != NULL)
+		if (jstr(o, "name") != NULL && strcmp(jstr(o, "name"), name) ==
+		    0)
+			return (o);
+	return (NULL);
+}
+
+/*
+ * Who a next hop's gateway is: the server, its interface and jail, as
+ * topo_addr_owner says, for the host of server from sending by its
+ * interface fromif.  An address of a link only (fe80::1, which many
+ * routers and every loopback have) is looked for on that link alone:
+ * never on a loopback nor on the sender, and of several hosts that have
+ * it the one whose interface shares a network with the sender's.  -1
+ * when none, or when which of several it is cannot be told.
+ */
+int
+topo_gw_owner(const char *gw, int from, const char *fromif, char *ifname,
+    size_t len, char *jail, size_t jlen)
+{
+	const ucl_object_t	*o, *a, *mine;
+	ucl_object_iter_t	 it, ait;
+	const char		*zone, *name;
+	int			 i, n, cand, ncand, shared, nshared;
+	char			 cif[16], sif[16];
+
+	nodes_build();
+	if (!addr_linklocal(gw))
+		return (topo_addr_owner(gw, ifname, len, jail, jlen));
+	/* The zone, fe80::1%em0, names the sender's interface too. */
+	if ((fromif == NULL || fromif[0] == '\0') && (zone = strchr(gw, '%')) !=
+	    NULL)
+		fromif = zone + 1;
+	mine = from >= 0 ? if_named(thost(app.servers[from].id, false),
+	    fromif) : NULL;
+	cand = shared = -1;
+	ncand = nshared = 0;
+	cif[0] = sif[0] = '\0';
+	for (i = 0; i < nhosts; i++) {
+		if (hosts[i].ifs == NULL || (n = node_index(hosts[i].sid)) ==
+		    -1 || (tn[n].srv == from && tn[n].jail[0] == '\0'))
+			continue;
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(hosts[i].ifs, "interfaces"),
+		    &it, true)) != NULL) {
+			name = jstr(o, "name") != NULL ? jstr(o, "name") : "";
+			if (strncmp(name, "lo", 2) == 0)
+				continue;
+			ait = NULL;
+			while ((a = ucl_object_iterate(jget(o, "addresses"),
+			    &ait, true)) != NULL) {
+				if (!addr_same(jstr(a, "address"), gw))
+					continue;
+				ncand++;
+				cand = n;
+				snprintf(cif, sizeof(cif), "%s", name);
+				if (mine != NULL && if_share_net(mine, o)) {
+					nshared++;
+					shared = n;
+					snprintf(sif, sizeof(sif), "%s", name);
+				}
+			}
+		}
+	}
+	if (nshared == 1) {
+		cand = shared;
+		snprintf(cif, sizeof(cif), "%s", sif);
+	} else if (ncand != 1)
+		return (-1);
+	snprintf(ifname, len, "%s", cif);
+	snprintf(jail, jlen, "%s", tn[cand].jail);
+	return (tn[cand].srv);
+}
+
 /* Every host's interfaces read, for whom owns an address. */
 void
 topo_poll_all(void)

@@ -1085,6 +1085,25 @@ ATF_TC_BODY(pwa, tc)
 	    "20 10.0.0.9$' route.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
+	/* A route's nexthop opens in a box, read from the host. */
+	wait_js("document.querySelector('table.net button.cell-link[data-act="
+	    "net-nhop]')", 10);
+	run("window.nh = document.querySelector('table.net button.cell-link"
+	    "[data-act=net-nhop][data-value=nexthop]').textContent; document."
+	    "querySelector('table.net button.cell-link[data-act=net-nhop]"
+	    "[data-value=nexthop]').click();");
+	wait_js("document.querySelector('form[data-form=nhop] h2').textContent "
+	    "=== 'Nexthop ' + window.nh && document.querySelector('form"
+	    "[data-form=nhop] dl.kv') && document.querySelector('form[data-form="
+	    "nhop] dl.kv').textContent.includes('MTU1500')", 15);
+	shot("7a-nhop");
+	run("document.querySelector('button[data-act=net-nhop-all]').click()");
+	wait_js("!document.querySelector('.modal') && document.querySelector("
+	    "'button[data-act=net-kind][data-arg=nexthops].on')", 10);
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=routes]').click()");
+	wait_js("document.querySelector('button[data-act=net-lookup]')", 10);
+
 	/*
 	 * The route to an address, looked up on the host: what it takes,
 	 * in a box over the table.  And an interface's traffic and its
@@ -3310,6 +3329,62 @@ ATF_TC_BODY(pwa, tc)
 	run("window.fetch = window.fetch0;");
 	run("document.querySelector('li[data-act=select-network]').click()");
 	wait_js("document.querySelector('svg.topo .tnode')", 10);
+	/*
+	 * A nexthop group's far ends found by their link-local addresses:
+	 * told here that lab sends by em1 to fe80::2, which lab2 has on
+	 * two links, em6 and em5, of which only em5 shares a network with
+	 * lab's em1; and by em0 to fe80::1, which lab2 has on its loopback
+	 * alone, as every host does: no host of the fleet is that one.
+	 */
+	run("window.fetchL = window.fetch; const ids = {}; document."
+	    "querySelectorAll('li.titem.server').forEach(l => ids[l."
+	    "querySelector('.name').textContent.trim()] = l.dataset.arg); "
+	    "window.labIds = ids; const A = (f, a, p) => ({ family: f, "
+	    "address: a, prefixlen: p }), I = (n, ad) => ({ name: n, up: "
+	    "true, mtu: 1500, addresses: ad, ibytes: 0, obytes: 0 }); "
+	    "const ifs = { lab: [I('lo0', [A('inet6', 'fe80::1%lo0', 64)]), "
+	    "I('em0', [A('inet', '10.0.0.1', 24), A('inet6', 'fe80::a%em0', "
+	    "64)]), I('em1', [A('inet', '10.0.1.1', 24), A('inet6', "
+	    "'fe80::1%em1', 64)])], lab2: [I('lo0', [A('inet6', 'fe80::1%lo0'"
+	    ", 64)]), I('em6', [A('inet', '10.9.9.2', 24), A('inet6', "
+	    "'fe80::2%em6', 64)]), I('em5', [A('inet', '10.0.1.2', 24), A("
+	    "'inet6', 'fe80::2%em5', 64)])] }; const nets = { lab: ['em0', "
+	    "'em1'], lab2: ['em6', 'em5'] }, rate = { lab: [0, 1000, 0, "
+	    "1000], lab2: [0, 0, 2000, 0] }; const who = u => Object.keys("
+	    "ids).find(k => String(u).includes('/servers/' + ids[k] + '/')); "
+	    "const R = o => Promise.resolve(new Response(JSON.stringify(o), { "
+	    "status: 200, headers: { 'Content-Type': 'application/json' } })); "
+	    "window.fetch = (u, o) => { const k = who(u); if (!k) return "
+	    "window.fetchL(u, o); if (String(u).includes('/net/interfaces')) "
+	    "return R({ ok: true, data: { interfaces: ifs[k], time: Date.now()"
+	    " } }); if (String(u).includes('/net/nhgroups')) return R({ ok: "
+	    "true, data: { statistics: { 'route-nhgrp-information': { "
+	    "'nhgrp-table': { 'rt-family': k !== 'lab' ? [] : [{ "
+	    "'address-family': 'Internet6', 'nhgrp-entry': [{ 'nhgrp-index': "
+	    "9, 'nhg-refcnt': 1, 'nhop-weights': [{ 'nh-index': 1, "
+	    "'nh-weight': 1, 'nh-gw': 'fe80::2%em1', 'nh-interface': 'em1' }, "
+	    "{ 'nh-index': 2, 'nh-weight': 1, 'nh-gw': 'fe80::1%em0', "
+	    "'nh-interface': 'em0' }] }] }] } } } } }); if (String(u).includes("
+	    "'/history')) { const now = Date.now() / 1000, s = []; for (let t "
+	    "= now - 600; t <= now; t += 5) s.push([t, 1, 0.1, 1e9, 0, 0, 0, "
+	    "0, 0].concat(rate[k])); return R({ ok: true, data: { step: 5, "
+	    "keep: 720, ncpu: 1, mem_total: 2e9, swap_total: 0, bytes: 1, "
+	    "nets: nets[k], disks: [], jails: [], samples: s } }); } return "
+	    "window.fetchL(u, o); };");
+	run("document.querySelector('.netsect button.tab[data-arg=groups]')"
+	    ".click()");
+	wait_js("(() => { const g = [...document.querySelectorAll('.ecmp-page "
+	    ".ecmp-group')].find(g => g.querySelector('h4').textContent."
+	    "includes('group 9')); if (!g) return false; const r = g."
+	    "querySelectorAll('.ecmp-side')[1].textContent; return r.includes("
+	    "'lab2 · em5') && !r.includes('em6') && r.includes('no host of "
+	    "this console has it on that link'); })()", 40);
+	shot("8-network-nhgroups-linklocal");
+	run("window.fetch = window.fetchL;");
+	run("document.querySelector('.netsect button.tab[data-arg=map]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('svg.topo .tnode.up').length === 2 "
+	    "&& document.querySelector('svg.topo .tlink.lan')", 40);
 	/* On a phone the map is above its panel, each as wide as the screen;
 	 * its tools in a line of their own, its legend under it. */
 	phone(true);

@@ -4027,3 +4027,20 @@ input, select, textarea { font: inherit; color: var(--fg); }
 	.modal .two { grid-template-columns: 1fr; }
 	.modal form > .buttons button { flex: 1; }
 }
+
+/* What in a table's cell opens something: a link, not a button. */
+button.cell-link {
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: var(--cyan);
+	font: inherit;
+	letter-spacing: inherit;
+	text-transform: none;
+	text-decoration: underline dotted rgba(var(--accent-rgb), .6);
+	text-underline-offset: 3px;
+	cursor: pointer;
+	box-shadow: none;
+}
+button.cell-link:hover { text-decoration-style: solid; }

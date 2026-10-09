@@ -212,8 +212,8 @@ shares(const struct server *s, const ucl_object_t *g, bool recv,
 		srv = si;
 		snprintf(ifn, sizeof(ifn), "%s", nif);
 		jail[0] = '\0';
-		if (recv && (srv = topo_addr_owner(gw, ifn, sizeof(ifn), jail,
-		    sizeof(jail))) == -1)
+		if (recv && (srv = topo_gw_owner(gw, si, nif, ifn, sizeof(ifn),
+		    jail, sizeof(jail))) == -1)
 			snprintf(key, sizeof(key), "?%s", gw);
 		else
 			snprintf(key, sizeof(key), "%d/%s/%s", srv, jail, ifn);
@@ -227,8 +227,11 @@ shares(const struct server *s, const ucl_object_t *g, bool recv,
 			snprintf(sh[k].key, sizeof(sh[k].key), "%s", key);
 			sh[k].srv = -1;
 			if (recv && srv == -1)
-				snprintf(sh[k].why, sizeof(sh[k].why), "not a "
-				    "host of this console");
+				snprintf(sh[k].why, sizeof(sh[k].why), "%s",
+				    strncmp(gw, "fe80:", 5) == 0 || strncmp(gw,
+				    "169.254.", 8) == 0 ? "no host of this "
+				    "console has it on that link, or several do" :
+				    "not a host of this console");
 			else if (jail[0] != '\0')
 				snprintf(sh[k].why, sizeof(sh[k].why), "in jail "
 				    "%.40s of %.30s: a jail's interfaces are not "

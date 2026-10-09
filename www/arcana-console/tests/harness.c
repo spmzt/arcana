@@ -314,7 +314,15 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-service", buf);
 	ATF_REQUIRE(chmod("fake-service", 0755) == 0);
 	/* netstat -O: a group of two next hops, two shares to one. */
-	put("fake-netstat", "#!/bin/sh\ncase \"$*\" in *-OnW*) echo '{"
+	put("fake-netstat", "#!/bin/sh\ncase \"$*\" in *-onW*) printf '{"
+	    "\"statistics\": {\"route-nhop-information\": {\"nhop-table\": "
+	    "{\"rt-family\": [{\"address-family\": \"Internet\", \"nh-entry\": "
+	    "['; i=1; while [ $i -le 300 ]; do [ $i -gt 1 ] && printf ,; "
+	    "printf '{\"index\": %d, \"type_str\": \"gw\", \"gateway\": "
+	    "\"10.0.0.%d\", \"interface-name\": \"em0\", \"mtu\": 1500, "
+	    "\"refcount\": 1, \"flags\": \"UGS\"}' $i $((i % 250)); "
+	    "i=$((i + 1)); done; echo ']}]}}}}'; exit 0 ;;\n"
+	    "*-OnW*) echo '{"
 	    "\"statistics\": {\"route-nhgrp-information\": {\"nhgrp-table\": "
 	    "{\"rt-family\": [{\"address-family\": \"Internet\", "
 	    "\"nhgrp-entry\": [{\"nhgrp-index\": 7, \"nhg-refcnt\": 3, "

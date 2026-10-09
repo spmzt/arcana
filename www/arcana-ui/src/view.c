@@ -1512,6 +1512,9 @@ modal(struct html *h)
 		h_raw(h, " placeholder=\"0\"></label></div>");
 		view_lookup(h, cur_server());
 		break;
+	case MODAL_NHOP:
+		nhop_modal(h);
+		break;
 	case MODAL_IF_ADDRESS:
 		h_raw(h, "<form data-form=\"if-address\"><h2>Add an address to ");
 		h_txt(h, app.confirm.arg);
@@ -1843,8 +1846,10 @@ modal(struct html *h)
 			h_txt(h, app.modal_error);
 			h_raw(h, "</p>");
 		}
-		h_raw(h, "<div class=\"buttons\"><button type=\"button\" "
-		    "class=\"ghost\" data-act=\"close\">Cancel</button>");
+		/* A box that only shows is closed, not cancelled. */
+		h_fmt(h, "<div class=\"buttons\"><button type=\"button\" "
+		    "class=\"ghost\" data-act=\"close\">%s</button>",
+		    app.modal == MODAL_NHOP ? "Close" : "Cancel");
 		switch (app.modal) {
 		case MODAL_CONFIRM:
 			h_fmt(h, "<button class=\"%s\">",
