@@ -209,7 +209,16 @@ The console is laid out as a tree and tabs.
     yet, on the same host (another pool, say): `zfs send` into `zfs
     receive`, all of it or what changed since a snapshot both have,
     with the datasets under it when asked. What arrives is not
-    mounted. Between two hosts it is not done yet.
+    mounted. **To** another host sends it there: `zfs send` on this
+    host and `zfs receive -u` on that one, each as a stream on the
+    connection the console has with it, the console carrying the
+    bytes at the pace the slower of the two takes them; never with
+    `-F`, so nothing there is overwritten, and never into a pool's own
+    dataset. What is sent between hosts is listed above the snapshots,
+    on both hosts' pages, with what it carried, how it ended, what zfs
+    said when it did not, and **Stop** while it runs; the console
+    keeps the last 32 in `transfers.json`, and one its restart cut is
+    said to be interrupted.
     **Disks**: every disk as GEOM has it, with what `camcontrol` says
     it is, its partition table drawn to scale and listed. A table is
     made on a disk without one (gpt, mbr, bsd); a partition added in

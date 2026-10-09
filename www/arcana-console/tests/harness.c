@@ -555,6 +555,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf 'tank/data@a\\t20000\\t3000000\\t1759400000\\n' ;;\n"
 	    "'list -H -o name -s createtxg -t snapshot -d 1 tank/data') "
 	    "printf 'tank/data@a\\ntank/data@b\\n' ;;\n"
+	    /* A snapshot sent: what zsend.data has; received into a file. */
+	    "send*) cat zsend.data ;;\n"
+	    "'receive -u tank/fail') cat > /dev/null; echo \"cannot receive "
+	    "new filesystem stream: destination 'tank/fail' exists\" >&2; "
+	    "exit 1 ;;\n"
+	    "'receive -u '*) cat > zrecv.data ;;\n"
 	    "esac\nexit 0\n");
 	put("fake-zpool", "#!/bin/sh\necho \"zpool $*\" >> storage.log\n"
 	    "case \"$*\" in\n'list -Hp -o name,size,alloc,free,health') "

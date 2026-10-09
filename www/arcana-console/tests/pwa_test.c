@@ -1797,6 +1797,26 @@ ATF_TC_BODY(pwa, tc)
 	    "tank/data@b.resnap|zfs destroy tank/data@b|zfs rename "
 	    "tank/data@b.resnap tank/data@b|'") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * A snapshot sent to another host: chosen in Replicate's box, the
+	 * console carrying it, and listed with what it carried.
+	 */
+	ATF_REQUIRE(system("dd if=/dev/random of=zsend.data bs=1m count=6 "
+	    "2>/dev/null") == 0);
+	run("document.querySelector('table.snapshots tr[data-snap=\"tank/data@b"
+	    "\"] button[data-act=st-ask][data-arg=replicate]').click()");
+	wait_js("document.querySelector('form select[name=to]') && "
+	    "document.querySelector('form select[name=to]').options.length "
+	    "=== 2", 5);
+	run("const f = document.querySelector('form select[name=to]').form; "
+	    "f.to.selectedIndex = 1; f.name.value = 'tank/copy'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('ul.xfers li.done') && document."
+	    "querySelector('ul.xfers li.done').textContent.includes("
+	    "'tank/data@b') && document.querySelector('ul.xfers li.done')."
+	    "textContent.includes('6.00M')", 30);
+	ATF_CHECK(system("cmp -s zsend.data zrecv.data") == 0);
+	shot("7l-transfer");
 	/* Several at once: the newest of each dataset picked, and taken
 	 * again in one batch; one picked that is not the newest left. */
 	run("document.querySelector('button[data-act=st-sel-newest]').click()");

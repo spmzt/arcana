@@ -848,6 +848,112 @@ ATF_TC_BODY(load, tc)
 	    0);
 }
 
+CONSOLE_TC(transfers, "A snapshot sent from one host to another, the "
+    "console carrying it at the pace the receiver takes it")
+ATF_TC_BODY(transfers, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[1200], sa[16], sb[16], id[32];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	/* Two names for the one agent here: two hosts to the console. */
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	/* More than the window: the relay waits on the receiver. */
+	ATF_REQUIRE(system("dd if=/dev/random of=zsend.data bs=1m count=10 "
+	    "2>/dev/null") == 0);
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data@b\",\"to\":\"%s\",\"dataset\":\"tank/copy\"}", sa, sb);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "id"));
+	resp_free(&r);
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/transfers", NULL, &r);
+		if (jstr(&r, "transfers.0.state") != NULL && strcmp(jstr(&r,
+		    "transfers.0.state"), "running") != 0)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	if (i == 300)
+		(void)system("cat data/transfers.json; tail -5 storage.log; "
+		    "ls -l zrecv.data; tail -20 kore.out; tail -20 "
+		    "arcana-agent.out");
+	ATF_REQUIRE(i < 300);
+	ATF_CHECK_STREQ("done", jstr(&r, "transfers.0.state"));
+	ATF_CHECK_STREQ("10485760", jstr(&r, "transfers.0.bytes"));
+	ATF_CHECK_STREQ(id, jstr(&r, "transfers.0.id"));
+	resp_free(&r);
+	ATF_CHECK(system("cmp -s zsend.data zrecv.data") == 0);
+	ATF_CHECK(system("grep -q '^zfs send tank/data@b$' storage.log && "
+	    "grep -q '^zfs receive -u tank/copy$' storage.log") == 0);
+	ATF_CHECK(system("test \"$(stat -f %Lp data/transfers.json)\" = 600")
+	    == 0);
+
+	/* Only what changed since a snapshot both have; a receive that
+	 * refuses: said as zfs says it. */
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data@b\",\"since\":\"tank/data@a\",\"to\":\"%s\","
+	    "\"dataset\":\"tank/fail\"}", sa, sb);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/transfers", NULL, &r);
+		if (jstr(&r, "transfers.1.state") != NULL && strcmp(jstr(&r,
+		    "transfers.1.state"), "running") != 0)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE(i < 300);
+	ATF_CHECK_STREQ("failed", jstr(&r, "transfers.1.state"));
+	ATF_CHECK_MSG(jstr(&r, "transfers.1.error") != NULL && strstr(jstr(&r,
+	    "transfers.1.error"), "destination 'tank/fail' exists") != NULL,
+	    "%s", jstr(&r, "transfers.1.error"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^zfs send -i tank/data@a tank/data@b$' "
+	    "storage.log") == 0);
+
+	/* What is not one is refused before anything begins. */
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data@b\",\"to\":\"%s\",\"dataset\":\"tank/x\"}", sa, sa);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data@b\",\"to\":\"%s\",\"dataset\":\"tank\"}", sa, sb);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data\",\"to\":\"%s\",\"dataset\":\"tank/x\"}", sa, sb);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* Ended: nothing to stop. */
+	snprintf(body, sizeof(body), "/api/transfers/%s", id);
+	http("DELETE", body, NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
 CONSOLE_TC(tokens, "A read-only API token, made in a session, reads what is "
     "said of the hosts and changes nothing; deleted, it opens nothing")
 ATF_TC_BODY(tokens, tc)
@@ -2851,6 +2957,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, local_absent);
 	ATF_TP_ADD_TC(tp, push);
 	ATF_TP_ADD_TC(tp, tokens);
+	ATF_TP_ADD_TC(tp, transfers);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);

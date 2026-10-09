@@ -3,9 +3,7 @@
 ## To do
 
 - WireGuard: preshared keys; a peer's key rotated.
-- Storage, beyond what there is: `zfs send` and `receive` between
-  two hosts (on one host it is done; between two it needs the agents
-  to reach each other, which is the mesh's); a key that is typed, for
+- Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a
   job; a key changed; file systems other than UFS made; a disk's
   self-test started; a vnet jail's datasets from the jail's own page.
@@ -232,6 +230,14 @@ What was once in the list above, and when it was run:
   says them. A GRE or gif tunnel with IPv6 ends was found to have
   been made without its ends before then: ifconfig(8) needs inet6
   before tunnel, and says nothing in its exit status.
+- A snapshot sent between hosts (2026-10-09, the same VM, as root): two
+  agents with the real zfs on a pool of a file of its own, a full
+  send of 20 MiB and an incremental one of 5 MiB relayed between
+  their streams as the console relays them, the copy's snapshots and
+  files the same as the original's; a receive onto a dataset that is
+  there refused with zfs's own words, and a pool's own dataset
+  refused before anything ran. The console's relay itself, with
+  stand-ins for zfs.
 - Thresholds and the kernel's messages (2026-10-09, the same VM): a
   limit on vtnet0 crossed by its traffic made its event; the
   kernel's messages read as root, numbered, followed by their number

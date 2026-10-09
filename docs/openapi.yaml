@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.66.0
+  version: 0.67.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1111,6 +1111,56 @@ paths:
                     items: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/transfers:
+    get:
+      tags: [storage]
+      summary: Snapshots sent between hosts
+      description: The last 32, each with id, from, snapshot, since,
+        recursive, to, dataset, state (running, done, failed,
+        cancelled, interrupted), bytes, error, started and ended.
+      responses:
+        "200":
+          description: transfers
+    post:
+      tags: [storage]
+      summary: A snapshot sent to another host
+      description: zfs send on from, zfs receive -u on to, each as a
+        stream the console carries the bytes between, at the pace the
+        slower takes them. Never -F; never into a pool's own dataset.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, snapshot, to, dataset]
+              properties:
+                from: { type: string, description: A server's id. }
+                snapshot: { type: string, description: dataset@name }
+                since: { type: string, description: A snapshot of the
+                    same dataset both have, for what changed since. }
+                recursive: { type: boolean }
+                to: { type: string }
+                dataset: { type: string, description: pool/name, not
+                    there yet. }
+      responses:
+        "200":
+          description: id and state
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/transfers/{id}:
+    delete:
+      tags: [storage]
+      summary: A running transfer stopped
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: ok
+        "404": { $ref: "#/components/responses/Error" }
   /api/tokens:
     get:
       tags: [auth]

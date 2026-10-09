@@ -3867,3 +3867,12 @@ p.ujails { margin: .5rem 0 0; font-size: .8rem; }
 	.map-wrap .map-legend { left: .6rem; right: .6rem; bottom: .5rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; pointer-events: auto; }
 	.map-wrap .map-legend li { flex: none; }
 }
+
+/* Snapshots sent between hosts, under Storage. */
+ul.xfers { list-style: none; margin: 0; padding: 0; }
+ul.xfers li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem; padding: .35rem 0; border-bottom: 1px solid var(--line); font-size: .82rem; }
+ul.xfers li:last-child { border-bottom: 0; }
+ul.xfers li .dim { margin-left: auto; }
+ul.xfers li.failed small.bad, ul.xfers li.interrupted .dim { color: var(--red); }
+ul.xfers li.running .dim { color: var(--cyan); }
+ul.xfers li.done .dim { color: var(--green); }

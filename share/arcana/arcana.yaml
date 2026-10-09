@@ -805,6 +805,9 @@ attribute-sets:
           takes them all away, and none given leaves them as they are.
         checks:
           max-len: 2048
+      - name: zfs-recursive
+        type: flag
+        doc: For zfs-send, the datasets under the snapshot's too (-R).
 
   - name: host
     attributes:
@@ -1364,6 +1367,14 @@ attribute-sets:
         nested-attributes: route
         multi-attr: true
         doc: The next routes, typed.
+
+  - name: chunk
+    attributes:
+      - name: data
+        type: bytes
+        doc: The next bytes of what zfs send wrote, or receive is to read.
+        checks:
+          max-len: max-output
 
 operations:
   - name: hello
@@ -2207,6 +2218,45 @@ operations:
         attributes:
           - ok
 
+  - name: zfs-send
+    attribute-set: arcana
+    auth: true
+    doc: |
+      zfs send of a snapshot, the first of names, as a stream: each
+      data message the next bytes it wrote; with a second name, a
+      snapshot of the same dataset, only what changed since that one
+      (-i); with recursive, the datasets under it too (-R).  The host
+      half-closes it once send ended well, or closes it with what send
+      said.  For another host's zfs-receive, whatever carries the
+      bytes between them: the console does.
+    do:
+      request:
+        attributes:
+          - names
+          - zfs-recursive
+      reply:
+        attributes:
+          - ok
+
+  - name: zfs-receive
+    attribute-set: arcana
+    auth: true
+    doc: |
+      zfs receive -u into the dataset that names names, as a stream:
+      each data message the next bytes of what zfs send wrote, given
+      to receive only as fast as it reads them.  Half-closed by the
+      sender once all was sent; the host closes it once receive ended,
+      with nothing when it did well, with what it said when not.  A
+      dataset is never overwritten (no -F), nor a pool's own received
+      into.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+
 mcast-groups:
   - name: events
     auth: true
@@ -2223,3 +2273,13 @@ streams:
     direction: bidirectional
     payload: part
     initial-credit: 2097152
+  - name: zfs-send
+    open: zfs-send
+    direction: bidirectional
+    payload: chunk
+    initial-credit: 4194304
+  - name: zfs-receive
+    open: zfs-receive
+    direction: bidirectional
+    payload: chunk
+    initial-credit: 4194304

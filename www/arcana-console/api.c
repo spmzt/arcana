@@ -241,5 +241,6 @@ arcw_onload(int action)
 		fatalx("arcana: not starting, see above");
 	auth_init();
 	servers_init();
+	transfers_init();
 	return (KORE_RESULT_OK);
 }

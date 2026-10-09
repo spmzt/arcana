@@ -628,6 +628,7 @@ void		 transport_tick(double);
 void		 view_transport(struct html *, struct server *);
 void		 refresh_storage(struct server *, bool);
 void		 view_storage(struct html *, struct server *);
+void		 storage_tick(double);
 bool		 storage_modal(struct html *);
 void		 storage_modal_buttons(struct html *);
 bool		 storage_form(const char *, const ucl_object_t *);

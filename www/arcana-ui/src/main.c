@@ -216,6 +216,7 @@ tick(void *arg)
 			procs_tick(now);
 			logs_tick(now);
 			usage_tick(now);
+			storage_tick(now);
 		}
 	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
