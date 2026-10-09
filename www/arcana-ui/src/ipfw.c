@@ -530,7 +530,7 @@ firewall_rail(struct html *h)
 	live = mine ? jget(fw.data, "rules") : NULL;
 	kept = mine ? jget(fw.data, "kept") : NULL;
 	if (app.rail_open)
-		h_raw(h, "<div class=\"scrim\" data-act=\"rail-toggle\"></div>");
+		h_raw(h, "<div class=\"scrim rail-scrim\" data-act=\"rail-toggle\"></div>");
 	h_fmt(h, "<aside class=\"rail fwrail%s\"><div class=\"rail-head\">"
 	    "<button class=\"ghost small back\" data-act=\"fw-rail\" title=\""
 	    "Back to the hosts and their jails\">‹ Hosts</button><span class="

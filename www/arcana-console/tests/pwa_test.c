@@ -1010,6 +1010,31 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("document.querySelector('table.ifaces tr[data-if=lo0] .chip')",
 	    20);
 	shot("7-interfaces");
+	/*
+	 * A box closes when a hand clicks beside it, as with Escape:
+	 * a real mouse, which goes to what the browser has there.
+	 */
+	run("document.querySelector('tr[data-if=lo0] button[data-act="
+	    "if-addr-add]').click()");
+	wait_js("document.querySelector('form[data-form=if-address]')", 5);
+	run("window.under = document.elementFromPoint(12, window.innerHeight - "
+	    "60); window.underName = window.under ? window.under.className + "
+	    "' ' + window.under.tagName : 'none';");
+	mouse("pointerMove", 12, js_num("window.innerHeight - 60"));
+	mouse("pointerDown", 0, 0);
+	mouse("pointerUp", 0, 0);
+	for (i = 0; i < 50 && js_true("document.querySelector('form[data-form="
+	    "if-address]')"); i++)
+		usleep(100000);
+	{
+		ucl_object_t *u = js("return window.underName;");
+
+		ATF_CHECK_MSG(i < 50, "a click beside the box left it open; "
+		    "under the hand: %s", u != NULL && ucl_object_tostring(u)
+		    != NULL ? ucl_object_tostring(u) : "?");
+		if (u != NULL)
+			ucl_object_unref(u);
+	}
 	run("document.querySelector('tr[data-if=lo0] button[data-act="
 	    "if-addr-add]').click()");
 	wait_js("document.querySelector('form[data-form=if-address]')", 5);
@@ -1028,6 +1053,21 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=routes]').click()");
 	wait_js("document.querySelector('button[data-act=route-add]')", 10);
+	run("document.querySelector('button[data-act=route-add]').click()");
+	wait_js("document.querySelector('form[data-form=route]')", 5);
+	/* On a phone a dialog is a sheet from the bottom, its fields one
+	 * under the other and as wide as it; a tap above it closes it. */
+	phone(true);
+	wait_js("document.querySelector('.modal').getBoundingClientRect()."
+	    "bottom >= window.innerHeight - 2", 10);
+	shot("m3a-route-form");
+	run("document.querySelector('.modal > form').scrollTop = 1e6;");
+	shot("m3b-route-form-end");
+	mouse("pointerMove", 30, 30);
+	mouse("pointerDown", 0, 0);
+	mouse("pointerUp", 0, 0);
+	wait_js("!document.querySelector('form[data-form=route]')", 5);
+	phone(false);
 	run("document.querySelector('button[data-act=route-add]').click()");
 	wait_js("document.querySelector('form[data-form=route]')", 5);
 	/* With its cost, its share, the address sent from and the table. */
@@ -1476,6 +1516,12 @@ ATF_TC_BODY(pwa, tc)
 	    "document.querySelector('.modal').textContent.includes('tunnel "
 	    "mode')", 5);
 	shot("7d-ipsec-form");
+	phone(true);
+	usleep(500000);
+	shot("m7d-ipsec-form");
+	run("document.querySelector('.modal > form').scrollTop = 1e6;");
+	shot("m7d-ipsec-form-end");
+	phone(false);
 	run("const f = document.querySelector('form[data-form=ipsec-conn]'); "
 	    "f.reqid.value = ''; f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);

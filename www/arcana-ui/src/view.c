@@ -377,7 +377,7 @@ rail(struct html *h)
 	/* On a narrow screen the tree is one line until it is unfolded. */
 	s = cur_server();
 	if (app.rail_open)
-		h_raw(h, "<div class=\"scrim\" data-act=\"rail-toggle\"></div>");
+		h_raw(h, "<div class=\"scrim rail-scrim\" data-act=\"rail-toggle\"></div>");
 	h_fmt(h, "<aside class=\"rail%s\"><div class=\"rail-head\">"
 	    "<button class=\"ghost small rail-toggle\" data-act=\""
 	    "rail-toggle\" title=\"Hosts and jails\">%s ", app.rail_open ?

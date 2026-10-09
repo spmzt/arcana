@@ -3275,7 +3275,8 @@ svg.topo .tlink.quiet.sel .lbl, svg.topo .tlink.quiet.sel .rate { display: inlin
  * what does not fit it is behind a menu; a dialog is a sheet from the
  * bottom; notices stay clear of the controls.
  */
-.burger, .topbar .more, .scrim { display: none; }
+/* The drawer's own scrim only: a dialog's has its own, everywhere. */
+.burger, .topbar .more, .scrim.rail-scrim { display: none; }
 .toasts {
 	left: auto;
 	right: 1rem;
@@ -3293,7 +3294,7 @@ svg.topo .tlink.quiet.sel .lbl, svg.topo .tlink.quiet.sel .rate { display: inlin
 		line-height: 1;
 	}
 	.body, .body.with-drawer { grid-template-rows: minmax(0, 1fr); }
-	.scrim {
+	.scrim.rail-scrim {
 		display: block;
 		position: fixed;
 		z-index: 14;
@@ -3972,4 +3973,57 @@ table.nhgroups tr.nhg-carried .ecmp { margin: 0 0 .6rem; }
 @media (max-width: 760px) {
 	.netsect { height: auto; }
 	.ecmp { grid-template-columns: 1fr; }
+}
+
+/*
+ * A dialog: its frame stays still, with its corners, and what is in
+ * it scrolls, its buttons in sight at its foot.  Its fields one height,
+ * one size of text, whatever kind they are; what is wrong said apart.
+ * On a phone it is a sheet from the bottom, rounded, without corners,
+ * and its fields' text is large enough that the phone does not zoom.
+ */
+input, select, textarea { font: inherit; color: var(--fg); }
+.modal { display: flex; flex-direction: column; overflow: hidden; }
+.modal > form, .modal > .raw {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	/* Room for a field's focus ring at the edge. */
+	margin: -4px;
+	padding: 4px;
+}
+.modal form > .buttons {
+	position: sticky;
+	bottom: -4px;
+	z-index: 1;
+	margin: .2rem -4px -4px;
+	padding: .7rem 4px calc(.5rem + 4px);
+	background: var(--bg-2);
+	border-top: 1px solid var(--line);
+}
+.modal input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.modal select {
+	height: 2.5rem;
+	padding: 0 .7rem;
+	font-size: .82rem;
+	line-height: 1.3;
+}
+.modal textarea { font-size: .82rem; line-height: 1.4; }
+.modal label small { color: var(--dim); font-size: .7rem; letter-spacing: .02em; line-height: 1.45; }
+.modal .err {
+	margin: 0;
+	padding: .55rem .75rem;
+	border-left: 2px solid var(--red);
+	background: rgba(var(--red-rgb), .1);
+	color: #ffb3c5;
+	font-size: .78rem;
+	letter-spacing: .02em;
+}
+@media (max-width: 620px) {
+	.modal::before, .modal::after { display: none; }
+	.modal input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+	.modal select, .modal textarea { font-size: 16px; }
+	.modal .two { grid-template-columns: 1fr; }
+	.modal form > .buttons button { flex: 1; }
 }
