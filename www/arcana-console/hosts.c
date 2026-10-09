@@ -124,9 +124,11 @@ struct call {
  * An SCTP association is not taken but shared: the requests to a host
  * that run at once all go over the one association, which a thread of
  * its own runs (a cbl_loop), each request waiting for its own answer.
- * A dump is not sent over it: a reader that is slow holds the reading
- * of the connection its dump came on, which would hold every other
- * request with it; it has a connection of its own, as on TCP.
+ * It is shared the moment it is made: the first request to a host
+ * makes it, and those that come meanwhile wait for it, rather than
+ * each making one.  What comes in parts comes as a stream over it,
+ * flow-controlled by itself (stream.c); a dump would hold the reading
+ * of the connection it came on, and every request with it.
  */
 #define	POOL_MAX	48
 #define	POOL_PER_HOST	4
@@ -155,6 +157,16 @@ struct shared {
 
 static struct shared	shared[POOL_MAX];
 static int		nshared;
+
+/* Associations being made, by those that will share them. */
+#define	SHARED_WAIT_S	15
+struct making {
+	char	*uri;
+	char	*peer;
+};
+static struct making	making[POOL_MAX];
+static int		nmaking;
+static pthread_cond_t	made = PTHREAD_COND_INITIALIZER;
 static cbl_loop		*sloop;		/* runs the shared associations */
 static pthread_once_t	sloop_once = PTHREAD_ONCE_INIT;
 
@@ -203,6 +215,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_IPFW] = "ipfw",
 	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
+	[ARC_NET_KIND_IPSEC] = "ipsec",
 };
 
 static const char *service_action_names[] = {
@@ -235,6 +248,7 @@ static ucl_object_t *step_object(int, int, const char *, const char *,
 static ucl_object_t *trace_object(struct call *, const struct arc_step *,
 		    size_t, const char *, bool, uint64_t);
 static int	 call_run(struct kore_task *);
+static void	 call_release(struct call *);
 static int	 call_start(struct http_request *, struct call *);
 static int	 call_finish(struct http_request *);
 static struct call *call_new(struct http_request *, enum op);
@@ -316,6 +330,8 @@ pooled_close(struct pooled *p)
 }
 
 static bool	pool_take_own(const char *, const char *, struct pooled *);
+static const char *hosts_dial(const char *, const char *, cbl_conn **,
+		    cbl_tls **, struct arc_client *);
 
 static bool
 is_sctp(const char *uri)
@@ -451,6 +467,101 @@ shared_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 	if (n.p.conn == NULL)
 		pooled_close(&n.p);
 	return (true);
+}
+
+/* Is one being made to uri?  Called with the lock held. */
+static int
+making_at(const char *uri, const char *peer)
+{
+	int	i;
+
+	for (i = 0; i < nmaking; i++)
+		if (strcmp(making[i].uri, uri) == 0 && same(making[i].peer,
+		    peer))
+			return (i);
+	return (-1);
+}
+
+/* Made, or not: those waiting for it look again. */
+static void
+making_done(const char *uri, const char *peer)
+{
+	int	i;
+
+	pthread_mutex_lock(&pool_lock);
+	if ((i = making_at(uri, peer)) != -1) {
+		free(making[i].uri);
+		free(making[i].peer);
+		making[i] = making[--nmaking];
+	}
+	pthread_cond_broadcast(&made);
+	pthread_mutex_unlock(&pool_lock);
+}
+
+/*
+ * The shared association to uri, with one user more: true.  False
+ * when there is none, and this caller is the one to make it (it says
+ * making_done() whatever comes of it); while another makes it, this
+ * one waits, a while.
+ */
+static bool
+shared_wait(const char *uri, const char *peer, struct pooled *out)
+{
+	struct timespec	until;
+	int		i;
+
+	clock_gettime(CLOCK_REALTIME, &until);
+	until.tv_sec += SHARED_WAIT_S;
+	for (;;) {
+		if (shared_take(uri, peer, out))
+			return (true);
+		pthread_mutex_lock(&pool_lock);
+		if (making_at(uri, peer) == -1) {
+			if (nmaking < POOL_MAX && (making[nmaking].uri =
+			    strdup(uri)) != NULL) {
+				making[nmaking].peer = peer != NULL ?
+				    strdup(peer) : NULL;
+				nmaking++;
+			}
+			pthread_mutex_unlock(&pool_lock);
+			return (false);
+		}
+		/* Being made: its maker says when. */
+		i = pthread_cond_timedwait(&made, &pool_lock, &until);
+		pthread_mutex_unlock(&pool_lock);
+		if (i == ETIMEDOUT)
+			return (false);
+	}
+}
+
+/*
+ * A connection just made, shared at once, with this one user: on the
+ * loop, for the next requests to take while this one runs.
+ */
+static void
+shared_adopt(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
+    const struct arc_client *cl)
+{
+	struct shared	n;
+
+	(void)pthread_once(&sloop_once, sloop_start);
+	memset(&n, 0, sizeof(n));
+	if (sloop == NULL || nshared >= POOL_MAX || cbl_conn_attach(conn,
+	    sloop) != 0)
+		return;
+	n.p.conn = conn;
+	n.p.tls = tls;
+	n.p.family = cl->family;
+	n.p.version = cl->version;
+	memcpy(n.p.groups, cl->groups, sizeof(n.p.groups));
+	n.p.since = now_us();
+	n.users = 1;
+	n.p.uri = strdup(uri);
+	n.p.peer = peer != NULL ? strdup(peer) : NULL;
+	pthread_mutex_lock(&pool_lock);
+	if (nshared < POOL_MAX)
+		shared[nshared++] = n;
+	pthread_mutex_unlock(&pool_lock);
 }
 
 /*
@@ -598,10 +709,6 @@ hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
     cbl_tls **tlsp, struct arc_client *cl)
 {
 	struct pooled	 kept;
-	cbl_conn	*conn;
-	cbl_tls		*tls;
-	const char	*msg;
-	int		 error;
 
 	memset(cl, 0, sizeof(*cl));
 	*connp = NULL;
@@ -618,6 +725,22 @@ hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
 		*tlsp = kept.tls;
 		return (NULL);
 	}
+	return (hosts_dial(uri, peer, connp, tlsp, cl));
+}
+
+/* A new connection to an agent, with the client set up on it. */
+static const char *
+hosts_dial(const char *uri, const char *peer, cbl_conn **connp,
+    cbl_tls **tlsp, struct arc_client *cl)
+{
+	cbl_conn	*conn;
+	cbl_tls		*tls;
+	const char	*msg;
+	int		 error;
+
+	memset(cl, 0, sizeof(*cl));
+	*connp = NULL;
+	*tlsp = NULL;
 	conn = NULL;
 	tls = NULL;
 	if ((error = cbl_conn_new(ctx, uri, 0, &conn)) != 0)
@@ -671,6 +794,76 @@ hosts_release(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 		pool_give(uri, peer, conn, tls, cl);
 	else
 		pool_drop(conn, tls);
+}
+
+/*
+ * The shared connection to a host, for streams: on the loop, which runs
+ * their callbacks, with this one user more; over SCTP the association
+ * the requests share, on TCP or a local socket one kept for streams.
+ * NULL, or why not.  hosts_shared_done() says this user is done.
+ */
+const char *
+hosts_shared(const char *uri, const char *peer, cbl_conn **connp,
+    struct arc_client *cl)
+{
+	struct pooled	 kept;
+	cbl_conn	*conn;
+	cbl_tls		*tls;
+	const char	*msg;
+
+	memset(cl, 0, sizeof(*cl));
+	*connp = NULL;
+	if (shared_wait(uri, peer, &kept)) {
+		free(kept.uri);
+		free(kept.peer);
+		cl->conn = kept.conn;
+		cl->family = kept.family;
+		cl->version = kept.version;
+		memcpy(cl->groups, kept.groups, sizeof(kept.groups));
+		*connp = kept.conn;
+		return (NULL);
+	}
+	/* Made here, not taken from the pool of those of their own. */
+	if ((msg = hosts_dial(uri, peer, &conn, &tls, cl)) != NULL) {
+		making_done(uri, peer);
+		return (msg);
+	}
+	shared_adopt(uri, peer, conn, tls, cl);
+	making_done(uri, peer);
+	pthread_mutex_lock(&pool_lock);
+	for (int i = 0; i < nshared; i++)
+		if (shared[i].p.conn == conn) {
+			pthread_mutex_unlock(&pool_lock);
+			*connp = conn;
+			return (NULL);
+		}
+	pthread_mutex_unlock(&pool_lock);
+	/* Not on the loop: no stream can run on it. */
+	arc_client_fini(cl);
+	cbl_conn_free(conn);
+	cbl_tls_free(tls);
+	memset(cl, 0, sizeof(*cl));
+	return ("no room for another connection");
+}
+
+/* A stream's user is done with the shared connection; bad: it fails. */
+void
+hosts_shared_done(cbl_conn *conn, bool good)
+{
+	int	i;
+
+	pthread_mutex_lock(&pool_lock);
+	for (i = 0; i < nshared; i++)
+		if (shared[i].p.conn == conn) {
+			shared[i].users--;
+			shared[i].p.since = now_us();
+			if (!good || !cbl_conn_is_open(conn))
+				shared[i].dead = true;
+			if (shared[i].dead)
+				shared_drop(i);
+			break;
+		}
+	pthread_mutex_unlock(&pool_lock);
 }
 
 int
@@ -848,8 +1041,13 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	a = ucl_object_typed_new(UCL_ARRAY);
 	ucl_array_append(a, step_object(0, -1, "api", c->route, c->sname, ok,
 	    now_us() - c->t0));
-	ucl_array_append(a, step_object(1, 0, "auth", "session check",
-	    "WebAuthn session cookie", true, c->auth_us));
+	/* A workflow's call is the console's own: no session asked. */
+	if (strncmp(c->route, "workflow ", 9) == 0)
+		ucl_array_append(a, step_object(1, 0, "auth", "workflow",
+		    "the console's own run, no session", true, 0));
+	else
+		ucl_array_append(a, step_object(1, 0, "auth", "session check",
+		    "WebAuthn session cookie", true, c->auth_us));
 	ucl_array_append(a, step_object(2, 0, "lib", label, calldetail,
 	    callok, callus));
 	for (i = 0; i < n; i++) {
@@ -1232,7 +1430,8 @@ call_run(struct kore_task *t)
 connect:
 	memset(&cl, 0, sizeof(cl));
 	/* One kept from before, when there is one. */
-	if (!c->fresh && !again && pool_take(c->uri, c->peer, &kept)) {
+	if (!c->fresh && !again && (is_sctp(c->uri) ? shared_wait(c->uri,
+	    c->peer, &kept) : pool_take(c->uri, c->peer, &kept))) {
 		conn = kept.conn;
 		tls = kept.tls;
 		free(kept.uri);
@@ -1280,6 +1479,11 @@ connect:
 	if ((error = arc_client_init(&cl, conn)) != 0) {
 		msg = "no arcana family there";
 		goto fail;
+	}
+	/* Shared now: the requests that waited for it take it. */
+	if (is_sctp(c->uri) && !c->fresh && !again) {
+		shared_adopt(c->uri, c->peer, conn, tls, &cl);
+		making_done(c->uri, c->peer);
 	}
 connected:
 
@@ -1763,6 +1967,9 @@ connected:
 			hsq.limit_mem = (uint32_t)atoi(c->names[1]);
 			hsq.limit_swap = (uint32_t)atoi(c->names[2]);
 		}
+		/* The limits of devices and jails, as the agent takes them. */
+		if (c->retry && c->text != NULL)
+			hsq.limit_rules = c->text;
 		if ((error = arc_history(&cl, &hsq, &hsr)) != 0)
 			goto rpcfail;
 		ok = hsr->ok;
@@ -1986,6 +2193,9 @@ rpcfail:
 	    now_us() - t1));
 	goto done;
 fail:
+	/* Not made: one that waited for it may make it in its place. */
+	if (is_sctp(c->uri) && !c->fresh)
+		making_done(c->uri, c->peer);
 	c->status = 502;
 	e = ucl_object_typed_new(UCL_OBJECT);
 	put_str(e, "code", "unreachable");
@@ -2167,10 +2377,18 @@ void
 api_call_free(struct http_request *req)
 {
 	struct call	*c;
-	size_t		 i;
 
 	if ((c = req->hdlr_extra) == NULL || !kore_task_finished(&c->task))
 		return;
+	call_release(c);
+}
+
+/* What a call holds, let go; the call itself is the caller's. */
+static void
+call_release(struct call *c)
+{
+	size_t	i;
+
 	free(c->json);
 	c->json = NULL;
 	kore_free(c->sname);
@@ -2544,7 +2762,7 @@ api_network(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "kind is one of "
 		    "routes, nexthops, nhgroups, connections, sockets, interfaces, "
 		    "netgraph, wireguard, bird, bird-routes, bridges, geneve, "
-		    "ipfw, neighbours, lookup; fib a number"));
+		    "ipfw, neighbours, ipsec, lookup; fib a number"));
 	}
 	c->action = (uint8_t)i;
 	/* Read on in a table too large for one reply. */
@@ -2980,9 +3198,14 @@ api_history(struct http_request *req)
 			snprintf(c->names[k], 8, "%lld", (long long)l[k]);
 		}
 	}
+	/* "net:igb0=125000000,jail-cpu:web=80": the agent checks them. */
+	if (body != NULL && ucl_str(body, "rules") != NULL && strlen(
+	    ucl_str(body, "rules")) <= 2048)
+		c->text = kore_strdup(ucl_str(body, "rules"));
 	if (body != NULL)
 		ucl_object_unref(body);
 	if (step < 1 || step > 3600 || keep < 0 || keep > 5000) {
+		kore_free(c->text);
 		for (keep = 0; keep < (int64_t)c->nnames; keep++)
 			kore_free(c->names[keep]);
 		kore_free(c->names);
@@ -3234,6 +3457,8 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_GENEVE] = "geneve",
 	[ARC_JOB_KIND_PROCESS] = "process",
 	[ARC_JOB_KIND_PKG_CLEAN] = "pkg-clean",
+	[ARC_JOB_KIND_IPSEC] = "ipsec",
+	[ARC_JOB_KIND_PKG_INSTALL] = "pkg-install",
 };
 
 static const char *job_state_names[] = {
@@ -3292,6 +3517,14 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->endpoint);
 	kore_free((char *)(uintptr_t)sp->allowed_ips);
 	kore_free((char *)(uintptr_t)sp->description);
+	kore_free((char *)(uintptr_t)sp->conn);
+	kore_free((char *)(uintptr_t)sp->ipsec_mode);
+	kore_free((char *)(uintptr_t)sp->local_ts);
+	kore_free((char *)(uintptr_t)sp->remote_ts);
+	kore_free((char *)(uintptr_t)sp->pubkey);
+	kore_free((char *)(uintptr_t)sp->start_action);
+	kore_free((char *)(uintptr_t)sp->local_id);
+	kore_free((char *)(uintptr_t)sp->remote_id);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -3350,6 +3583,20 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->source = jdup(o, "source");
 	sp->peer = jdup(o, "peer");
 	sp->endpoint = jdup(o, "endpoint");
+	/* IPsec's connection, for an ipsec job. */
+	sp->conn = jdup(o, "conn");
+	sp->ipsec_mode = jdup(o, "ipsec_mode");
+	sp->local_ts = jdup(o, "local_ts");
+	sp->remote_ts = jdup(o, "remote_ts");
+	sp->pubkey = jdup(o, "pubkey");
+	sp->start_action = jdup(o, "start_action");
+	sp->local_id = jdup(o, "local_id");
+	sp->remote_id = jdup(o, "remote_id");
+	if ((v = ucl_object_lookup(o, "reqid")) != NULL && ucl_object_toint(v) >
+	    0 && ucl_object_toint(v) <= 16383) {
+		sp->has_reqid = true;
+		sp->reqid = (uint32_t)ucl_object_toint(v);
+	}
 	/* Empty allowed-ips says a peer may send from nowhere: it is kept. */
 	if ((kind = ucl_str(o, "allowed_ips")) != NULL)
 		sp->allowed_ips = kore_strdup(kind);
@@ -3454,6 +3701,12 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->interface == NULL || sp->verb == NULL)
 			return ("a wireguard job needs an interface and a verb");
+		break;
+	case ARC_JOB_KIND_IPSEC:
+		if (sp->verb == NULL || (strcmp(sp->verb, "init") != 0 &&
+		    strcmp(sp->verb, "start") != 0 && sp->conn == NULL))
+			return ("an ipsec job needs a verb, and a connection "
+			    "but for init");
 		break;
 	case ARC_JOB_KIND_NETGRAPH:
 	case ARC_JOB_KIND_BIRD:
@@ -3621,4 +3874,113 @@ api_job(struct http_request *req)
 	}
 	c->jobid = strtoull(id, NULL, 10);
 	return (call_start(req, c));
+}
+
+/*
+ * A call the console makes itself, a workflow's: c on the host at uri,
+ * in this thread, as a request's task would make it.  The reply's JSON,
+ * as the API answers it (the caller's to free), and its status.
+ */
+static char *
+self_call(struct call *c, const char *uri, const char *peer,
+    const char *name, const char *what, int *status)
+{
+	char	*json;
+
+	c->uri = kore_strdup(uri);
+	c->peer = peer != NULL && peer[0] != '\0' ? kore_strdup(peer) : NULL;
+	c->sname = kore_strdup(name != NULL ? name : uri);
+	c->t0 = now_us();
+	snprintf(c->route, sizeof(c->route), "workflow %s", what);
+	(void)call_run(&c->task);
+	json = c->json;
+	c->json = NULL;
+	*status = c->status;
+	call_release(c);
+	kore_free(c);
+	return (json);
+}
+
+/* A job queued on a host; NULL and *errp when it is not one. */
+char *
+hosts_submit(const char *uri, const char *peer, const char *name,
+    const ucl_object_t *job, int *status, const char **errp)
+{
+	struct call	*c;
+	const char	*e;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_JOB_SUBMIT;
+	c->specs = kore_calloc(1, sizeof(*c->specs));
+	c->nspecs = 1;
+	if ((e = spec_from_json(job, &c->specs[0])) != NULL) {
+		*errp = e;
+		call_release(c);
+		kore_free(c);
+		return (NULL);
+	}
+	*errp = NULL;
+	return (self_call(c, uri, peer, name, "job-submit", status));
+}
+
+/* A job of a host, with its trace; a safe one is confirmed. */
+char *
+hosts_job(const char *uri, const char *peer, const char *name, uint64_t id,
+    int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_JOB;
+	c->jobid = id;
+	c->reads = true;
+	return (self_call(c, uri, peer, name, "job", status));
+}
+
+/*
+ * What a workflow's condition reads of a host: hello, jails, services,
+ * stats, events, history or packages (those installed).  NULL when it
+ * is none of them.
+ */
+char *
+hosts_read(const char *uri, const char *peer, const char *name,
+    const char *what, int *status)
+{
+	static const struct {
+		const char	*what;
+		enum op		 op;
+	} reads[] = {
+		{ "hello", OP_HELLO }, { "jails", OP_LIST },
+		{ "services", OP_SERVICES }, { "stats", OP_STATS },
+		{ "events", OP_EVENTS }, { "history", OP_HISTORY },
+		{ "packages", OP_PACKAGES },
+	};
+	struct call	*c;
+	size_t		 i;
+
+	for (i = 0; i < nitems(reads); i++)
+		if (strcmp(reads[i].what, what) == 0)
+			break;
+	if (i == nitems(reads))
+		return (NULL);
+	c = kore_calloc(1, sizeof(*c));
+	c->op = reads[i].op;
+	c->reads = true;
+	c->installed = reads[i].op == OP_PACKAGES;
+	return (self_call(c, uri, peer, name, what, status));
+}
+
+/* The host's events after the number after, for a workflow's trigger. */
+char *
+hosts_events(const char *uri, const char *peer, const char *name,
+    uint64_t after, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_EVENTS;
+	c->reads = true;
+	c->has_pos = true;
+	c->pos = after;
+	return (self_call(c, uri, peer, name, "events", status));
 }

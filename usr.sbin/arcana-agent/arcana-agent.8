@@ -33,6 +33,8 @@
 .Op Fl n Ar ngctl
 .Op Fl k Ar wg
 .Op Fl o Ar directory
+.Op Fl r Ar swanctl
+.Op Fl 5 Ar directory
 .Op Fl b Ar birdc
 .Op Fl e Ar bird
 .Op Fl a Ar file
@@ -369,6 +371,27 @@ Where WireGuard interfaces are written for
 .Xr wg-quick 8 .
 Default
 .Pa /usr/local/etc/wireguard .
+.It Fl r Ar swanctl
+strongSwan's
+.Xr swanctl 8 ,
+for IPsec: the
+.Cm strongswan
+plugin, there when it is.
+Default
+.Pa /usr/local/sbin/swanctl .
+.It Fl 5 Ar directory
+Where
+.Xr swanctl 8
+reads from: the host's own key is made in its
+.Pa pkcs8
+directory, mode 0600, and its public half written to
+.Pa pubkey/arcana.pub ;
+a connection is written to
+.Pa conf.d/arcana- Ns Ar name Ns Pa .conf ,
+IKEv2 only, with its peer's key in
+.Pa pubkey .
+Default
+.Pa /usr/local/etc/swanctl .
 .It Fl N Ar netstat
 The
 .Xr netstat 1

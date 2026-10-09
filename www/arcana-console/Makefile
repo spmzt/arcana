@@ -2,7 +2,7 @@
 
 SHLIB_NAME=	arcana-console.so
 SRCS=		api.c auth.c config.c hosts.c pki.c push.c servers.c settings.c \
-		stream.c follow.c \
+		stream.c follow.c tokens.c transfers.c workflows.c \
 		store.c update.c webpush.c
 LIBDIR?=	${PREFIX}/lib/arcana
 MAN=		arcana-console.8
@@ -32,6 +32,15 @@ arcana_console.sh: conf/arcana_console.in
 	    ${.ALLSRC} > ${.TARGET}
 beforeinstall: .PHONY
 	${INSTALL} -d ${DESTDIR}${LIBDIR} ${DESTDIR}${CONFDIR}
+
+# The kinds of job, as share/arcana/jobs.yaml says: a workflow's steps
+# are checked against it.
+DPSRCS+=	jobs_table.h
+CLEANFILES+=	jobs_table.h
+jobs_table.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk
+	awk -v out=c -f ${ARC_TOP}/share/arcana/jobs.awk \
+	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}
+workflows.pico workflows.o: jobs_table.h
 
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests

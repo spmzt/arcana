@@ -129,7 +129,7 @@ case "\$verb" in
 rcvar)		echo "# \$name"; echo "\${name}_enable=\"NO\""; echo '#   (default: "")' ;;
 status)		[ -f "running.\$name" ] && { echo "\$name is running as pid 4242."; exit 0; }
 		echo "\$name is not running."; exit 1 ;;
-start)		touch "running.\$name"; echo "Starting \$name." ;;
+start|onestart)	touch "running.\$name"; echo "Starting \$name." ;;
 stop)		rm -f "running.\$name"; echo "Stopping \$name." ;;
 restart)	[ -f slow ] && sleep 2
 		touch "running.\$name"; echo "Restarting \$name." ;;
@@ -220,6 +220,7 @@ case "$1" in
 update)	exit 0 ;;
 query)	printf 'aria2\t1.37.0_1\t0\t5242880\twww/aria2\tDownload utility\npimd\t3.1.0\t1\t102400\tnet/pimd\tPIM-SM daemon\n' ;;
 clean)	echo "$*" >> clean.log ;;
+install) echo "$*" >> install.log ;;
 version)
 	[ -s pending ] || exit 1
 	while read nv remote; do
@@ -264,6 +265,7 @@ start_daemon()
 	    -Y "$(pwd)/fake-keyscan" -I "$(pwd)/fake-ifconfig" \
 	    -n "$(pwd)/fake-ngctl" \
 	    -k "$(pwd)/fake-wg" -o "$(pwd)/wg" -b "$(pwd)/fake-birdc" \
+	    -r "$(pwd)/fake-swanctl" -5 "$(pwd)/swanctl" \
 	    -e "$(pwd)/fake-bird" -a "$(pwd)/bird/bird.conf" \
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
@@ -741,6 +743,9 @@ packages_body()
 	atf_check -o match:'done +pkg clean$' "$JGC" -c "$SOCK" pkg-clean
 	atf_check -o match:'done +pkg clean -a$' "$JGC" -c "$SOCK" pkg-clean -a
 	atf_check -o inline:'clean -y\nclean -ay\n' cat clean.log
+	# Of every running jail: none runs here, and that is said.
+	atf_check -s exit:1 -e match:'no running jail' "$JGC" -c "$SOCK" pkg-clean -J
+	atf_check -s exit:2 -e ignore "$JGC" -c "$SOCK" pkg-clean -J -j web
 }
 packages_cleanup()
 {
@@ -1001,7 +1006,7 @@ EOS
 	    -o match:'^ifconfig_gif7_descr="to lab"$' cat rc.conf
 	# The kernel picks the unit of a type alone, and says which.
 	atf_check -o match:'fake-ifconfig gif create' \
-	    -o match:'fake-ifconfig gif7 tunnel 2001:db8::1 2001:db8::2' \
+	    -o match:'fake-ifconfig gif7 inet6 tunnel 2001:db8::1 2001:db8::2' \
 	    -o match:'fake-ifconfig gif7 inet6 fd00::1 fd00::2 prefixlen 128' \
 	    "$JGC" -c "$SOCK" interface gif create tunnel 2001:db8::1 \
 	    2001:db8::2 address fd00::1 peer fd00::2
@@ -1109,6 +1114,241 @@ network_more_cleanup()
 	stop_daemon
 }
 
+atf_test_case ipsec cleanup
+ipsec_head()
+{
+	atf_set "descr" "strongSwan through swanctl, IKEv2 only: the host's own key, connections in tunnel and transport mode, an ipsec interface's reqid, and pkg install"
+}
+ipsec_body()
+{
+	mkdir -p swanctl/conf.d swanctl/pkcs8 swanctl/pubkey
+	printf '#!/bin/sh\necho "$*" >> %s/ifconfig.log\n' "$(pwd)" > fake-ifconfig
+	# What strongSwan 6.1 says, as it says it; a connection of
+	# someone else's, IKEv1 and v2 both, beside one of arcana's.
+	cat > conns.out <<'EOP'
+list-conn event {
+  gre12 {
+    local_addrs = [
+      10.202.0.1
+    ]
+    remote_addrs = [
+      10.202.0.2
+    ]
+    version = IKEv2
+    proposals {
+      0 {
+        encr = [
+          AES_GCM_16_256
+        ]
+      }
+    }
+    local-1 {
+      id = 10.202.0.1
+      class = public key
+      groups = [
+      ]
+    }
+    remote-1 {
+      id = 10.202.0.2
+      class = public key
+    }
+    children {
+      gre12 {
+        mode = TRANSPORT
+        local-ts = [
+          10.202.0.1/32[gre]
+        ]
+        remote-ts = [
+          10.202.0.2/32[gre]
+        ]
+      }
+    }
+  }
+}
+list-conn event {
+  legacy {
+    local_addrs = [
+      %any
+    ]
+    remote_addrs = [
+      198.51.100.9
+    ]
+    version = IKEv1/2
+    children {
+      legacy {
+        mode = TUNNEL
+      }
+    }
+  }
+}
+list-conns reply {
+}
+EOP
+	cat > sas.out <<'EOP'
+list-sa event {
+  gre12 {
+    uniqueid = 5
+    version = 2
+    state = ESTABLISHED
+    local-host = 10.202.0.1
+    remote-host = 10.202.0.2
+    initiator-spi = 777c5aacf8abd606
+    encr-alg = AES_GCM_16
+    established = 339
+    child-sas {
+      gre12-1 {
+        name = gre12
+        reqid = 1
+        state = INSTALLED
+        mode = TRANSPORT
+        spi-in = 12345678
+        bytes-in = 192232
+        bytes-out = 265028
+        local-ts = [
+          10.202.0.1/32[gre]
+        ]
+      }
+    }
+  }
+}
+list-sas reply {
+}
+EOP
+	cat > fake-swanctl <<EOS
+#!/bin/sh
+d=$(pwd)
+echo "\$*" >> \$d/swanctl.log
+[ -f \$d/down ] && { echo "connecting to 'unix:///var/run/charon.vici' failed: No such file or directory" >&2; exit 1; }
+case "\$1" in
+--list-conns)	cat \$d/conns.out ;;
+--list-sas)	cat \$d/sas.out ;;
+--load-all)	[ -f \$d/refuse ] && { echo "loading connection 'x' failed: invalid value" >&2; exit 1; }
+		ls \$d/swanctl/conf.d > \$d/loaded ; echo "successfully loaded" ;;
+--load-creds|--initiate|--terminate|--stats) echo ok ;;
+*)		exit 2 ;;
+esac
+EOS
+	chmod +x fake-ifconfig fake-swanctl
+	start_daemon
+
+	# Read: arcana's and another's, the other's version said; the SAs
+	# with their children; no key yet.
+	atf_check -o save:ipsec.json "$JGC" -c "$SOCK" net ipsec
+	atf_check -o match:'"running":true' -o not-match:'public-key' \
+	    -o match:'"local_addrs":\["10.202.0.1"\].*"version":"IKEv2".*"children":\[\{"mode":"TRANSPORT","local-ts":\["10.202.0.1/32\[gre\]"\],"remote-ts":\["10.202.0.2/32\[gre\]"\],"name":"gre12"\}\]' \
+	    -o match:'"name":"gre12".*"local-id":"10.202.0.1","remote-id":"10.202.0.2","arcana":false' \
+	    -o match:'"version":"IKEv1/2"' \
+	    -o match:'"sas":\[\{"uniqueid":5,"version":2,"state":"ESTABLISHED".*"children":\[\{"name":"gre12","reqid":1,"state":"INSTALLED","mode":"TRANSPORT","spi-in":"12345678","bytes-in":192232' \
+	    cat ipsec.json
+
+	# The host's key: made here, the private half for root alone, the
+	# public half told; made once.
+	atf_check -o match:'ipsec init' -o match:'private key: made on this host, ECDSA P-256' \
+	    "$JGC" -c "$SOCK" -p ipsec init
+	atf_check -o match:'^600$' stat -f %Lp swanctl/pkcs8/arcana.pem
+	atf_check -o match:'BEGIN PRIVATE KEY' cat swanctl/pkcs8/arcana.pem
+	atf_check -o match:'^strongswan_enable="YES"$' cat rc.conf
+	PUB=$(sed -e '/-----/d' swanctl/pubkey/arcana.pub | tr -d '\n')
+	atf_check -o save:pub.json "$JGC" -c "$SOCK" net ipsec
+	atf_check -o ignore grep -F "\"public-key\":\"$PUB\"" pub.json
+	cp swanctl/pkcs8/arcana.pem key.was
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec init
+	atf_check cmp key.was swanctl/pkcs8/arcana.pem
+
+	# A connection: its file and its peer's key, IKEv2, read again.
+	atf_check -o match:'ipsec conn gre12 \(transport\)' \
+	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.2 transport "$PUB" \
+	    local-ts '10.202.0.1[gre]' remote-ts '10.202.0.2[gre]' start start
+	atf_check -o match:'^		version = 2$' -o match:'^		local_addrs = 10.202.0.1$' \
+	    -o match:'^			pubkeys = arcana-gre12.pub$' \
+	    -o match:'^				mode = transport$' \
+	    -o match:'^				local_ts = 10.202.0.1\[gre\]$' \
+	    -o match:'^				start_action = start$' \
+	    -o match:'^				dpd_action = start$' \
+	    -o not-match:'reqid' cat swanctl/conf.d/arcana-gre12.conf
+	atf_check -o match:'BEGIN PUBLIC KEY' cat swanctl/pubkey/arcana-gre12.pub
+	atf_check -o match:'^--load-all --noprompt$' cat swanctl.log
+	atf_check -o match:'arcana-gre12.conf' cat loaded
+	atf_check -o match:'"name":"gre12".*"arcana":true' "$JGC" -c "$SOCK" net ipsec
+	# Of an ipsec interface: tunnel mode, its policies the interface's.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec conn vti12 fd00:5a::1 fd00:5a::2 \
+	    tunnel "$PUB" reqid 100
+	atf_check -o match:'^				reqid = 100$' -o match:'^				policies = no$' \
+	    -o match:'^				local_ts = 0.0.0.0/0,::/0$' \
+	    -o match:'^				start_action = trap$' \
+	    cat swanctl/conf.d/arcana-vti12.conf
+
+	# What is not right is refused before anything is written.
+	atf_check -s exit:1 -e match:'tunnel or transport' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 beet "$PUB"
+	atf_check -s exit:1 -e match:"peer's public key" -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 tunnel bm90IGEga2V5
+	atf_check -s exit:1 -e match:'are IPv4, or both IPv6' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 2001:db8::2 tunnel "$PUB"
+	atf_check -s exit:1 -e match:'is in tunnel mode' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 transport "$PUB" reqid 5
+	atf_check -s exit:1 -e match:'traffic selectors' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 tunnel "$PUB" local-ts '10.0.0.0/8 }'
+	atf_check -s exit:1 -e match:'letters, digits, - and _' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec up '../x'
+	atf_check -s exit:1 -e match:'identity is one word' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 tunnel "$PUB" remote-id 'a=b'
+	test ! -f swanctl/conf.d/arcana-x.conf || atf_fail "a refused connection was written"
+
+	# Refused by strongSwan: the files as they were.
+	cp swanctl/conf.d/arcana-gre12.conf gre12.was
+	touch refuse
+	atf_check -s exit:1 -o match:'failed' -e ignore \
+	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.9 transport "$PUB"
+	atf_check -s exit:1 -o ignore -e ignore \
+	    "$JGC" -c "$SOCK" ipsec conn fresh 10.202.0.1 10.202.0.9 tunnel "$PUB"
+	rm refuse
+	atf_check cmp gre12.was swanctl/conf.d/arcana-gre12.conf
+	test ! -f swanctl/conf.d/arcana-fresh.conf || atf_fail "a refused connection stayed"
+	test ! -f swanctl/pubkey/arcana-fresh.pub || atf_fail "a refused key stayed"
+
+	# Up, down; taken away, its SAs ended first.
+	atf_check -o match:'ipsec up gre12' "$JGC" -c "$SOCK" ipsec up gre12
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec down gre12
+	atf_check -o match:'^--initiate --child gre12 --timeout 20$' \
+	    -o match:'^--terminate --ike gre12 --timeout 10$' cat swanctl.log
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec unconn vti12
+	atf_check -o match:'^--terminate --ike vti12 --force$' cat swanctl.log
+	test ! -f swanctl/conf.d/arcana-vti12.conf || atf_fail "unconn left the file"
+	test ! -f swanctl/pubkey/arcana-vti12.pub || atf_fail "unconn left the key"
+
+	# The daemon away: said so, and started by start.
+	touch down
+	atf_check -o match:'"running":false' "$JGC" -c "$SOCK" net ipsec
+	atf_check -o match:'fake-service strongswan onestart' \
+	    "$JGC" -c "$SOCK" ipsec start
+	rm down
+
+	# An ipsec interface with its reqid; IPv6 ends said to be so.
+	atf_check -o ignore "$JGC" -c "$SOCK" -p interface ipsec0 create reqid 100 \
+	    tunnel fd00:5a::1 fd00:5a::2
+	atf_check -o match:'^ipsec0 create reqid 100$' \
+	    -o match:'^ipsec0 inet6 tunnel fd00:5a::1 fd00:5a::2$' cat ifconfig.log
+	atf_check -o match:'^create_args_ipsec0="reqid 100"$' \
+	    -o match:'^ifconfig_ipsec0="inet6 tunnel fd00:5a::1 fd00:5a::2 up"$' cat rc.conf
+	atf_check -s exit:1 -o match:"an ipsec interface's" -e ignore \
+	    "$JGC" -c "$SOCK" interface gre0 create reqid 5 tunnel 192.0.2.1 192.0.2.2
+	atf_check -s exit:1 -o match:'both IPv4 or both IPv6' -e ignore \
+	    "$JGC" -c "$SOCK" interface gif0 create tunnel 192.0.2.1 2001:db8::2
+
+	# Packages installed, there or in a jail; a name is a name.
+	atf_check -o match:'pkg install strongswan and more' \
+	    -e ignore "$JGC" -c "$SOCK" pkg-install -6 strongswan wireguard-tools
+	atf_check -o match:'^install -y strongswan wireguard-tools$' cat install.log
+	atf_check -s exit:1 -o match:'is not a package name' -e ignore \
+	    "$JGC" -c "$SOCK" pkg-install 'a;b'
+	atf_check -o match:'Plugins: strongswan' "$JGC" -c "$SOCK" hello
+}
+ipsec_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case vpn cleanup
 vpn_head()
 {
@@ -1204,6 +1444,7 @@ rpki1      RPKI       ---        up     2026-10-01    Established
   Serial number:    42
 EOP
 "show ospf neighbors") printf 'BIRD 2.15.1 ready.\nospf1:\nRouter ID   \tPri\t     State     \tDTime\tInterface  Router IP\n10.0.0.2    \t  1\tFull/PtP  \t00:00:35\tgif0       10.255.0.2\n' ;;
+"show bfd sessions") printf 'BIRD 2.15.1 ready.\nbfd1:\nIP address                Interface  State      Since         Interval  Timeout\nfe80::1                   gif0       Up         13:01:27.605    0.200    1.000\nfe80::2                   gre1       Down       13:02:00.000    1.000    0.000\n' ;;
 "show symbols table") printf 'BIRD 2.15.1 ready.\nmaster4    routing table\nr4         routing table\n' ;;
 "show route table master4 count") printf 'BIRD 2.15.1 ready.\n845236 of 845236 routes for 845233 networks in table master4\n' ;;
 "show route table r4 count") printf 'BIRD 2.15.1 ready.\n512345 of 512345 routes for 512345 networks in table r4\n' ;;
@@ -1333,6 +1574,7 @@ EOS
 	    -o match:'"neighbor":"198.51.100.7","neighbor-as":"65002".*"last-error":"Socket: Connection refused"' \
 	    -o match:'"cache":"rpki.example.net","rpki-status":"Established","serial":"42"' \
 	    -o match:'"ospf":\[\{"proto":"ospf1","router-id":"10.0.0.2","pri":"1","state":"Full/PtP","dtime":"00:00:35","interface":"gif0","address":"10.255.0.2"\}\]' \
+	    -o match:'"bfd":\[\{"proto":"bfd1","address":"fe80::1","interface":"gif0","state":"Up","since":"13:01:27.605","interval":"0.200","timeout":"1.000"\},\{"proto":"bfd1","address":"fe80::2","interface":"gre1","state":"Down"' \
 	    -o match:'"tables":\[\{"name":"master4","routes":845236,"networks":845233\},\{"name":"r4","routes":512345,"networks":512345\}\]' \
 	    cat bird.json
 	atf_check -o match:'^-r show status$' -o match:'^-r show protocols all$' \
@@ -1790,6 +2032,46 @@ EOS
 	    cat ifconfig.log
 	atf_check -s exit:1 -e match:"a new epair's end" -o ignore \
 	    "$JGC" -c "$SOCK" interface lo0 give gateway bridge0
+
+	# IPsec there: the jail's own strongSwan, a plugin of the jail's
+	# when its swanctl is installed in it; its key, its connections
+	# and its daemon the jail's, through jexec, and nothing of it on
+	# the host.
+	mkdir -p "$R$(pwd)/swanctl/conf.d" "$R$(pwd)/swanctl/pkcs8" \
+	    "$R$(pwd)/swanctl/pubkey"
+	cat > fake-swanctl <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/swanctl.log
+case "\$1" in
+--list-conns|--list-sas) ;;
+--stats) [ -f $(pwd)/running.strongswan ] || { echo "connecting to 'unix:///var/run/charon.vici' failed" >&2; exit 1; } ;;
+esac
+exit 0
+EOS
+	chmod +x fake-swanctl
+	mkdir -p "$R$(pwd)"
+	cp fake-swanctl "$R$(pwd)/fake-swanctl"
+	atf_check -o match:'"kernel":(true|false)' -o match:'"running":true' \
+	    "$JGC" -j gateway -c "$SOCK" net ipsec
+	atf_check -o match:'private key: made in the jail' \
+	    -o match:'fake-jexec 4 .*/fake-swanctl --load-creds' \
+	    "$JGC" -p -j gateway -c "$SOCK" ipsec init
+	atf_check -o match:'BEGIN PRIVATE KEY' \
+	    cat "$R$(pwd)/swanctl/pkcs8/arcana.pem"
+	atf_check test ! -e swanctl/pkcs8/arcana.pem
+	atf_check -o match:'^strongswan_enable="YES"$' cat "$R/etc/rc.conf"
+	atf_check -o not-match:'strongswan' cat rc.conf
+	PUB=$(sed -e '/-----/d' "$R$(pwd)/swanctl/pubkey/arcana.pub" | tr -d '\n')
+	atf_check -o match:'ipsec conn to-host \(tunnel\)' \
+	    -o match:'fake-jexec 4 .*/fake-swanctl --load-all' \
+	    "$JGC" -j gateway -c "$SOCK" ipsec conn to-host 10.99.0.2 \
+	    10.99.0.1 tunnel "$PUB"
+	atf_check -o match:'^		local_addrs = 10.99.0.2$' \
+	    cat "$R$(pwd)/swanctl/conf.d/arcana-to-host.conf"
+	atf_check test ! -e swanctl/conf.d/arcana-to-host.conf
+	# Its daemon started in it, by its own rc.d script.
+	atf_check -o match:'fake-jexec 4 .*/fake-service strongswan onestart' \
+	    "$JGC" -j gateway -c "$SOCK" ipsec start
 }
 vnet_cleanup()
 {
@@ -2796,6 +3078,20 @@ observe_body()
 	sleep 2
 	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history
 	atf_check -o match:'"step":2,"keep":10,' "$JGC" -c "$SOCK" history set 2 10
+	# The limits of one device or jail each: kept, said, refused when
+	# they are not one; an empty list takes them away.
+	atf_check -o match:'"rules":\[\{"kind":"net","name":"lo1","limit":1000,"over":false\},\{"kind":"jail-cpu","name":"web","limit":80,"over":false\},\{"kind":"jail-mem","name":"web","limit":1073741824,"over":false\}\]' \
+	    -o match:'"racct":(true|false)' -o match:'"jails":\[' \
+	    "$JGC" -c "$SOCK" history set 2 10 rules 'net:lo1=1000,jail-cpu:web=80,jail-mem:web=1073741824'
+	atf_check -o match:'^rule=net:lo1=1000$' -o match:'^rule=jail-mem:web=1073741824$' \
+	    cat history.conf
+	atf_check -s exit:1 -e match:'net:, disk:, jail-cpu: or jail-mem:' -o ignore \
+	    "$JGC" -c "$SOCK" history set 2 10 rules 'cpu:all=5'
+	atf_check -s exit:1 -e match:'a rule is' -o ignore \
+	    "$JGC" -c "$SOCK" history set 2 10 rules 'net:lo1=-3'
+	atf_check -o match:'^rule=net:lo1=1000$' cat history.conf
+	atf_check -o match:'"rules":\[\]' "$JGC" -c "$SOCK" history set 2 10 rules ''
+	atf_check -o not-match:'^rule=' cat history.conf
 	sleep 3
 	atf_check -o match:'"samples":\[\[' "$JGC" -c "$SOCK" history
 	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 3601 10
@@ -3466,6 +3762,7 @@ atf_init_test_cases()
 	atf_add_test_case service_actions
 	atf_add_test_case service_config
 	atf_add_test_case network
+	atf_add_test_case ipsec
 	atf_add_test_case packages
 	atf_add_test_case jobs
 }

@@ -15,7 +15,7 @@ WWWDIR?=	${PREFIX}/www/arcana-console
 
 DIST=		${.OBJDIR}/dist
 
-APP_SRCS=	main.c actions.c api.c apidoc.c bird.c fleet.c ipfw.c l2.c kernel.c storage.c sysctl.c procs.c logs.c usage.c tbl.c topo.c vpn.c graph.c html.c json.c netview.c \
+APP_SRCS=	main.c actions.c api.c apidoc.c bird.c fleet.c ipfw.c l2.c kernel.c storage.c sysctl.c procs.c logs.c usage.c tbl.c topo.c vpn.c ipsec.c workflow.c graph.c html.c json.c netview.c \
 		schema.c view.c
 UCL_SRCS=	ucl_emitter_streamline.c ucl_emitter_utils.c ucl_emitter.c \
 		ucl_hash.c ucl_msgpack.c ucl_parser.c ucl_schema.c ucl_sexp.c \
@@ -79,6 +79,13 @@ ${DIST}/icons/icon-maskable-512.png: ${MKICON}
 
 # The family's schema, shown beside an operation: cblink-gen's reference
 # for share/arcana/arcana.yaml, as JSON.
+# The kinds of job, for the workflows' forms: share/arcana/jobs.yaml.
+${DIST}/jobs.json: ${ARC_TOP}/share/arcana/jobs.yaml \
+    ${ARC_TOP}/share/arcana/jobs.awk
+	mkdir -p ${DIST}
+	awk -v out=json -f ${ARC_TOP}/share/arcana/jobs.awk \
+	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}
+
 ${DIST}/schema.json: ${ARC_TOP}/share/arcana/arcana.yaml \
     ${.CURDIR}/tools/schema.awk
 	mkdir -p ${DIST}
@@ -97,6 +104,7 @@ ${DIST}/openapi.json: ${ARC_TOP}/docs/openapi.yaml \
 	    ${.TARGET}
 
 SHELL_FILES=	${STATIC:S,^,${DIST}/,} ${DIST}/arcana.js ${DIST}/schema.json \
+		${DIST}/jobs.json \
 		${DIST}/openapi.json ${DIST}/openapi.yaml \
 		${DIST}/morphdom-umd.min.js ${FONTS:S,^,${DIST}/fonts/,} \
 		${ICONS:S,^,${DIST}/icons/,}

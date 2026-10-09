@@ -2819,6 +2819,11 @@ svg.topo.linking .tnode.target:hover .box {
 	stroke: var(--bg);
 	stroke-width: 3px;
 }
+svg.topo .tlink .lbl.end { font-size: 9px; fill: var(--fg); }
+svg.topo.no-names .tlink .lbl, svg.topo.no-rates .tlink .rate { visibility: hidden; }
+svg.topo .tlink .hit { cursor: grab; }
+.map-labels .sep { width: 1px; align-self: stretch; margin: 0 .2rem; background: var(--line, rgba(127,127,127,.35)); }
+.map-labels button.what::before { display: none; }
 .tlink .rate {
 	font-size: 9px;
 	text-anchor: middle;
@@ -3010,7 +3015,7 @@ svg.bw .out { fill: rgba(var(--amber-rgb), .3); stroke: var(--amber); stroke-wid
 .tlink.ospf .wire { stroke: var(--amber); stroke-dasharray: 2 6; }
 .map-legend .bgp::before { border-top: 2px dashed var(--magenta); }
 .map-legend .ospf::before { border-top: 2px dotted var(--amber); }
-svg.topo g.tpeer { cursor: pointer; }
+svg.topo g.tpeer { cursor: grab; }
 svg.topo g.tpeer path { stroke: var(--magenta); stroke-width: 1.2; stroke-dasharray: 9 5; fill: none; opacity: .7; }
 svg.topo g.tpeer.ospf path { stroke: var(--amber); stroke-dasharray: 2 6; }
 svg.topo g.tpeer rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--magenta); stroke-width: 1.2; }
@@ -3186,7 +3191,6 @@ table.broutes tr.attrs pre { margin: 0 0 .4rem 1.2rem; font-size: .72rem; color:
 /* Plugins: what was installed, apart from what the base system has. */
 nav.tabs .tab.plugin:first-of-type, nav.tabs .tab:not(.plugin) + .tab.plugin { margin-left: 1.2rem; }
 nav.tabs .tab.plugin::before { content: "◆ "; font-size: .6em; vertical-align: .15em; opacity: .7; }
-nav.sub.plugins { padding-left: .6rem; border-left: 1px solid var(--line, rgba(255,255,255,.12)); }
 
 /* The kernel: its modules and its memory. */
 form.kmod-load { display: flex; gap: .5rem; align-items: center; flex: 1 1 20rem; }
@@ -3228,10 +3232,41 @@ table.datasets td:first-child, table.snapshots td:first-child { overflow-wrap: a
 .map-legend .vnet::before { border-top: 2px dotted var(--dim); }
 .map-tools button { min-width: 2.2rem; min-height: 2.2rem; }
 
-/* A crowded map: a line's label only where the pointer is, or picked. */
-svg.topo.quiet .tlink .lbl, svg.topo.quiet .tlink .rate { display: none; }
-svg.topo.quiet .tlink:hover .lbl, svg.topo.quiet .tlink:hover .rate,
-svg.topo.quiet .tlink.sel .lbl, svg.topo.quiet .tlink.sel .rate { display: inline; }
+/* Labels left out of a kind of line: one only where the pointer is, or
+ * picked. */
+svg.topo .tlink.quiet .lbl, svg.topo .tlink.quiet .rate { display: none; }
+svg.topo .tlink.quiet:hover .lbl, svg.topo .tlink.quiet:hover .rate,
+svg.topo .tlink.quiet.sel .lbl, svg.topo .tlink.quiet.sel .rate { display: inline; }
+
+/* The labels' switches, one for each kind of line, in its line's look. */
+.map-labels {
+	position: absolute;
+	top: 3.3rem;
+	left: .6rem;
+	display: flex;
+	flex-wrap: wrap;
+	gap: .3rem;
+	max-width: calc(100% - 1.2rem);
+	padding: .3rem;
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--bg) 88%, transparent);
+}
+.map-labels button::before {
+	content: "";
+	display: inline-block;
+	width: 14px;
+	height: 0;
+	margin-right: .35rem;
+	vertical-align: middle;
+	border-top: 2px solid var(--slate);
+}
+.map-labels button:not(.on) { opacity: .55; }
+.map-labels .tunnel::before { border-color: var(--violet); }
+.map-labels .p2p::before { border-color: var(--teal); }
+.map-labels .lan::before { border-color: var(--blue); }
+.map-labels .bgp::before { border-top: 2px dashed var(--magenta); }
+.map-labels .ospf::before { border-top: 2px dotted var(--amber); }
+.map-labels .vnet::before { border-top: 2px dotted var(--dim); }
 .map-legend { background: color-mix(in srgb, var(--bg) 82%, transparent); border-radius: 6px; padding: .2rem .4rem; }
 
 /*
@@ -3794,3 +3829,106 @@ section.fwtable h4 .chip, section.fwtable h4 button { margin-left: .6rem; }
 .selbar.on { padding: .35rem .6rem; border: 1px solid rgba(var(--red-rgb), .4); border-radius: 8px; background: rgba(var(--red-rgb), .05); }
 table.snapshots input.pick { width: auto; padding: 0; margin: 0 .55rem 0 0; vertical-align: middle; accent-color: var(--red); }
 table.snapshots tr.picked td { background: rgba(var(--red-rgb), .06); }
+
+/* Settings: a read-only API token made, and its value shown once. */
+.token-new { display: flex; gap: .5rem; align-items: center; margin: .4rem 0 1rem; }
+.token-new input { flex: 1; }
+pre.out.token { white-space: pre-wrap; word-break: break-all; user-select: all; }
+
+/* Utilization: the limits of devices and jails, and the jails' plots. */
+.usample label.rules { flex-basis: 100%; display: flex; flex-direction: column; gap: .25rem; }
+.usample label.rules textarea { font-family: var(--mono); font-size: .8rem; min-height: 4.2rem; }
+p.ujails { margin: .5rem 0 0; font-size: .8rem; }
+
+/*
+ * On a phone: a card titled by the column that names its row; its
+ * actions behind one button when there are many; the firewall's parts
+ * as a strip; the map's tools in a line that scrolls, and its legend
+ * under it.
+ */
+.fw-strip { display: none; }
+@media (max-width: 620px) {
+	table.net.cards tbody tr.titled { display: flex; flex-direction: column; }
+	table.net.cards tbody tr.titled td.ctitle { order: -1; justify-content: flex-start; text-align: left; font-size: .85rem; padding-bottom: .3rem; }
+	table.net.cards tbody tr.titled td.ctitle::before { content: none; }
+	.stage table.net.cards tbody tr.titled td:first-child:not(.ctitle) { justify-content: space-between; text-align: right; font-size: inherit; padding-bottom: .14rem; }
+	table.net.cards tbody tr.titled td:first-child:not(.ctitle)::before { content: attr(data-label); }
+	table.net.cards tbody td.acts { order: 99; }
+	table.net.cards tbody td.acts.many > :not(.acts-more) { display: none; }
+	table.net.cards tbody td.acts.many.open > :not(.acts-more) { display: inline-flex; }
+	table.net.cards tbody td.acts .acts-more { min-width: 2.6rem; }
+	.fw-strip { display: flex; gap: .3rem; margin: 0 0 .7rem; overflow-x: auto; scrollbar-width: none; }
+	.fw-strip button { flex: none; }
+	.fw-strip button small { color: var(--dim); font-size: .68rem; }
+	.map-tools { right: .6rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+	.map-tools button { flex: none; }
+	.map-labels { top: 3.6rem; }
+	.map-wrap .map-legend { left: .6rem; right: .6rem; bottom: .5rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; pointer-events: auto; }
+	.map-wrap .map-legend li { flex: none; }
+}
+
+/* Snapshots sent between hosts, under Storage. */
+ul.xfers { list-style: none; margin: 0; padding: 0; }
+ul.xfers li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .3rem .6rem; padding: .35rem 0; border-bottom: 1px solid var(--line); font-size: .82rem; }
+ul.xfers li:last-child { border-bottom: 0; }
+ul.xfers li .dim { margin-left: auto; }
+ul.xfers li.failed small.bad, ul.xfers li.interrupted .dim { color: var(--red); }
+ul.xfers li.running .dim { color: var(--cyan); }
+ul.xfers li.done .dim { color: var(--green); }
+
+/*
+ * Workflows: the list, the runs, a run drawn as its chain (a row for
+ * each host, each step a box coloured by how it went), and the editor.
+ */
+section.workflows { display: flex; flex-direction: column; gap: .8rem; }
+ul.wflist, ul.wfruns { list-style: none; margin: 0; padding: 0; }
+ul.wflist li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; padding: .55rem .2rem; border-bottom: 1px solid var(--line); }
+ul.wflist .wfhead { display: flex; flex-wrap: wrap; gap: .3rem .7rem; align-items: baseline; flex: 1; min-width: 0; }
+ul.wflist .acts { display: flex; gap: .3rem; }
+ul.wfruns li { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; padding: .4rem .2rem; border-bottom: 1px solid var(--line); cursor: pointer; font-size: .85rem; }
+ul.wfruns li .hosts { display: flex; gap: .3rem; flex-wrap: wrap; }
+ul.wfruns li .state { margin-left: auto; color: var(--dim); }
+ul.wfruns li.done .led { background: var(--green); }
+ul.wfruns li.failed .led, ul.wfruns li.interrupted .led { background: var(--red); }
+ul.wfruns li.running .led { background: var(--cyan); }
+ul.wfruns li.cancelled .led { background: var(--dim); }
+.chip.done { border-color: var(--green); }
+.chip.failed { border-color: var(--red); }
+.chip.running { border-color: var(--cyan); }
+.wfgraph { display: flex; flex-direction: column; gap: .7rem; overflow-x: auto; padding: .3rem 0; }
+.wfrow { display: flex; align-items: center; gap: .35rem; flex-wrap: nowrap; }
+.wfrow .wfhost { flex: none; width: 7.5rem; overflow: hidden; text-overflow: ellipsis; font-size: .8rem; color: var(--fg-2); }
+.wfarrow { color: var(--dim); flex: none; }
+button.wfstep { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; min-width: 7rem; padding: .35rem .6rem; border: 1px solid var(--line-2); border-radius: 8px; background: rgba(var(--surface-rgb), .7); text-align: left; text-transform: none; letter-spacing: 0; }
+button.wfstep b { font-size: .8rem; color: var(--fg); }
+button.wfstep small { font-size: .68rem; color: var(--dim); }
+button.wfstep small.jump { color: var(--amber); }
+button.wfstep.done { border-color: var(--green); }
+button.wfstep.failed { border-color: var(--red); }
+button.wfstep.running { border-color: var(--cyan); box-shadow: 0 0 10px rgba(var(--accent-rgb), .35); }
+button.wfstep.skipped, button.wfstep.not.run, button.wfstep.pending { opacity: .55; border-style: dashed; }
+button.wfstep.cancelled { opacity: .55; }
+button.wfstep.on { outline: 2px solid var(--cyan); outline-offset: 2px; }
+ol.wftsteps { margin: 0; padding-left: 1.2rem; font-size: .8rem; }
+ol.wftsteps li.failed b { color: var(--red); }
+.wfedit { display: flex; flex-direction: column; gap: .7rem; }
+.wfedit fieldset { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .7rem; display: flex; flex-wrap: wrap; gap: .4rem .9rem; }
+.wfedit fieldset legend { font-size: .75rem; color: var(--dim); padding: 0 .3rem; }
+ul.wfparams, ul.wfon { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; flex-basis: 100%; }
+ul.wfparams li, ul.wfon li { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+ol.wfsteps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: .6rem; }
+li.wfedstep { border: 1px solid var(--line-2); border-radius: 10px; padding: .6rem .7rem; display: flex; flex-direction: column; gap: .45rem; background: rgba(var(--surface-rgb), .5); }
+.wfedhead { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.wfedhead .num { color: var(--dim); font-size: .75rem; width: 1.4rem; }
+.wfedhead .acts { margin-left: auto; display: flex; gap: .2rem; }
+.wffields { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .4rem .7rem; }
+.wffields label em, .wfedit label em { font-style: normal; color: var(--amber); font-size: .7rem; }
+.wfwhen { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; padding-left: 1.4rem; }
+@media (max-width: 620px) {
+	.wfrow .wfhost { width: 5rem; }
+	.wffields { grid-template-columns: minmax(0, 1fr); }
+}
+ul.wfparams li input, ul.wfon li input { width: auto; flex: 1 1 10rem; min-width: 0; }
+ul.wfon li textarea { flex: 2 1 14rem; }
+/* The network tab's picker: the host, or one of its vnet jails. */
+label.net-jail select { width: auto; max-width: 14rem; font-size: .78rem; padding: .25rem .4rem; }

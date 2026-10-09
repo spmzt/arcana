@@ -21,11 +21,13 @@
  * {"id": 7, "error": "why"} in its place.  {"id": 7, "stop": true} from
  * the page ends one early.
  *
- * Each request is a task in a thread of its own, which reads the host's
- * dump item by item and writes each to the task's channel; the worker
- * passes them on to the socket.  The host sends an item only when the
- * one before was taken, so a slow page slows the host down and nothing
- * piles up between them.
+ * Each request is a task in a thread of its own, which opens a stream
+ * of the host's parts on the connection the console shares with it, and
+ * writes each part to the task's channel as it comes; the worker passes
+ * them on to the socket.  The host sends ahead only as far as the
+ * stream's window, which a part gives back once it was written, so a
+ * slow page slows the host down, nothing piles up between them, and
+ * the other requests to the host go on beside it.
  *
  * what is events too: the host's events as they happen, which do not
  * end (follow.c).
@@ -36,6 +38,8 @@
 #include <sys/queue.h>
 
 #include <ctype.h>
+#include <errno.h>
+#include <pthread.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -45,6 +49,7 @@
 
 #define	STREAMS_MAX	16		/* at once, on all sockets */
 #define	STREAM_PART	(1024 * 1024)	/* one part's text, at most */
+#define	STREAM_WINDOW	(2 * 1024 * 1024)	/* the host sends ahead */
 
 struct stream {
 	struct kore_task	 task;	/* first */
@@ -153,34 +158,136 @@ routes_json(const struct arc_route *v, size_t n)
 	return (json);
 }
 
-/* In a task thread: the host's dump, item by item, into the channel. */
-static int
-stream_run(struct kore_task *t)
+/*
+ * The parts as they come, from the loop that runs the shared connection
+ * (hosts_shared()): each queued as the text for the page, with what it
+ * took of the stream's window, which is given back only once the task
+ * wrote it to its channel.  A page that does not keep up so holds its
+ * own stream, and neither the loop nor the other requests to the host.
+ */
+struct qpart {
+	STAILQ_ENTRY(qpart)	 next;
+	char			*text;
+	size_t			 len;	/* bytes of the window it took */
+};
+
+struct reader {
+	pthread_mutex_t		 lock;
+	pthread_cond_t		 wake;
+	STAILQ_HEAD(, qpart)	 parts;
+	uint64_t		 id;
+	uint64_t		 total;
+	bool			 opened, ended, closed;
+	int			 code;
+	char			 why[160];
+};
+
+static void
+r_open(cbl_stream *st __unused, cbl_msg *accept __unused, int error,
+    void *arg)
 {
-	struct stream			*s;
-	struct arc_client		 cl;
-	struct arc_sysctl_dump_req	 dq;
-	struct arc_sysctl_dump_rsp	*item;
-	cbl_conn			*conn;
-	cbl_tls				*tls;
-	cbl_dump			*d;
-	const char			*msg;
-	uint64_t			 total;
-	int				 error;
-	bool				 ended;
+	struct reader	*r = arg;
 
-	s = (struct stream *)t;
-	if ((msg = hosts_connect(s->uri, s->peer, &conn, &tls, &cl)) != NULL) {
-		say(t, "{\"id\":%ju,\"error\":\"the host does not answer\"}",
-		    (uintmax_t)s->id);
-		kore_log(LOG_NOTICE, "stream %s: %s", s->sid, msg);
-		return (KORE_RESULT_OK);
+	pthread_mutex_lock(&r->lock);
+	r->opened = error == 0;
+	if (error != 0) {
+		r->code = error;
+		snprintf(r->why, sizeof(r->why), "the host refused: %s",
+		    strerror(error));
 	}
-	if (s->kind != 255) {
-		struct arc_network_dump_req	 nq;
-		struct arc_network_dump_rsp	*nitem;
-		char				*rows;
+	pthread_cond_signal(&r->wake);
+	pthread_mutex_unlock(&r->lock);
+}
 
+static void
+r_data(cbl_stream *st, cbl_msg *data, void *arg)
+{
+	struct reader	*r = arg;
+	struct arc_part	 d;
+	struct qpart	*q;
+	char		*rows, *text;
+
+	if (cbl_validate(cbl_msg_body(data), &arc_part_policy, NULL) != 0 ||
+	    arc_part_parse(data, cbl_msg_body(data), &d) != 0) {
+		(void)cbl_stream_reset(st, EBADMSG);
+		return;
+	}
+	rows = NULL;
+	/* The host's JSON is passed on as it is; the routes come typed. */
+	if (d.json != NULL && d.json[0] == '[' && d.json[1] != ']' &&
+	    strlen(d.json) < STREAM_PART - 64)
+		rows = strdup(d.json);
+	else if (d.routes.n > 0)
+		rows = routes_json(d.routes.v, d.routes.n);
+	text = NULL;
+	if (rows != NULL && strlen(rows) < STREAM_PART - 64 && asprintf(&text,
+	    "{\"id\":%ju,\"rows\":%s}", (uintmax_t)r->id, rows) == -1)
+		text = NULL;
+	free(rows);
+	if ((q = calloc(1, sizeof(*q))) == NULL) {
+		free(text);
+		(void)cbl_stream_reset(st, ENOMEM);
+		return;
+	}
+	q->text = text;
+	q->len = cbl_msg_len(data);
+	pthread_mutex_lock(&r->lock);
+	if (d.has_total)
+		r->total = d.total;
+	STAILQ_INSERT_TAIL(&r->parts, q, next);
+	pthread_cond_signal(&r->wake);
+	pthread_mutex_unlock(&r->lock);
+}
+
+static void
+r_hclose(cbl_stream *st __unused, void *arg)
+{
+	struct reader	*r = arg;
+
+	pthread_mutex_lock(&r->lock);
+	r->ended = true;
+	pthread_cond_signal(&r->wake);
+	pthread_mutex_unlock(&r->lock);
+}
+
+static void
+r_close(cbl_stream *st __unused, int code, const char *text, void *arg)
+{
+	struct reader	*r = arg;
+
+	pthread_mutex_lock(&r->lock);
+	r->closed = true;
+	if (!r->ended && code != 0) {
+		r->code = code;
+		snprintf(r->why, sizeof(r->why), "%s", text != NULL &&
+		    text[0] != '\0' ? text : strerror(code));
+	}
+	pthread_cond_signal(&r->wake);
+	pthread_mutex_unlock(&r->lock);
+}
+
+static const struct cbl_stream_cbs reader_cbs = {
+	.on_open = r_open,
+	.on_data = r_data,
+	.on_hclose = r_hclose,
+	.on_close = r_close,
+};
+
+/* The stream asked for, with the room given back by hand. */
+static int
+open_parts(struct stream *s, struct arc_client *cl, struct reader *r,
+    cbl_stream **sp)
+{
+	struct arc_network_parts_req	 nq;
+	struct arc_sysctl_parts_req	 sq;
+	cbl_msg				*msg;
+	int				 error;
+
+	if ((error = cbl_msg_new(cbl_conn_ctx(cl->conn), cl->family,
+	    s->kind != 255 ? ARC_CMD_NETWORK_PARTS : ARC_CMD_SYSCTL_PARTS,
+	    CBL_F_REQUEST | CBL_F_S_OPEN, &msg)) != 0)
+		return (error);
+	if (s->kind != 255) {
 		memset(&nq, 0, sizeof(nq));
 		nq.has_net_kind = true;
 		nq.net_kind = s->kind;
@@ -190,82 +297,115 @@ stream_run(struct kore_task *t)
 		nq.net_fib = s->fib;
 		nq.jail = s->jail[0] != '\0' ? s->jail : NULL;
 		nq.net_filter = s->filter[0] != '\0' ? s->filter : NULL;
-		if ((error = arc_network_dump(&cl, &nq, &d)) != 0) {
-			say(t, "{\"id\":%ju,\"error\":\"the host refused: %s\"}",
-			    (uintmax_t)s->id, strerror(error));
-			hosts_release(s->uri, s->peer, conn, tls, &cl, false);
-			return (KORE_RESULT_OK);
-		}
-		total = 0;
-		ended = false;
-		while (!atomic_load(&s->stop)) {
-			if ((error = arc_network_dump_next(d, &nitem)) != 0)
-				break;
-			if (nitem == NULL) {
-				ended = true;
-				break;
-			}
-			if (nitem->has_total)
-				total = nitem->total;
-			if (nitem->json != NULL && nitem->json[0] == '[' &&
-			    strlen(nitem->json) < STREAM_PART - 64 &&
-			    nitem->json[1] != ']')
-				say(t, "{\"id\":%ju,\"rows\":%s}",
-				    (uintmax_t)s->id, nitem->json);
-			/* The routes come typed: to the page as rows. */
-			else if (nitem->routes.n > 0 && (rows = routes_json(
-			    nitem->routes.v, nitem->routes.n)) != NULL) {
-				if (strlen(rows) < STREAM_PART - 64)
-					say(t, "{\"id\":%ju,\"rows\":%s}",
-					    (uintmax_t)s->id, rows);
-				free(rows);
-			}
-		}
-		cbl_dump_free(d);
-		if (ended)
-			say(t, "{\"id\":%ju,\"done\":true,\"total\":%ju}",
-			    (uintmax_t)s->id, (uintmax_t)total);
-		else if (!atomic_load(&s->stop))
-			say(t, "{\"id\":%ju,\"error\":\"the host stopped "
-			    "answering: %s\"}", (uintmax_t)s->id,
-			    strerror(error));
-		hosts_release(s->uri, s->peer, conn, tls, &cl, ended);
+		error = arc_network_parts_req_put_fields(msg, &nq);
+	} else {
+		memset(&sq, 0, sizeof(sq));
+		sq.net_filter = s->filter[0] != '\0' ? s->filter : NULL;
+		error = arc_sysctl_parts_req_put_fields(msg, &sq);
+	}
+	if (error != 0) {
+		cbl_msg_free(msg);
+		return (error);
+	}
+	(void)cbl_msg_set_window(msg, STREAM_WINDOW);
+	return (cbl_stream_open(cl->conn, msg, CBL_SF_MANUAL_CREDIT,
+	    &reader_cbs, r, sp));
+}
+
+/* In a task thread: the host's parts, as they come, into the channel. */
+static int
+stream_run(struct kore_task *t)
+{
+	struct stream		*s;
+	struct arc_client	 cl;
+	struct reader		 r;
+	struct qpart		*q;
+	cbl_conn		*conn;
+	cbl_stream		*st;
+	const char		*msg;
+	struct timespec		 until;
+	bool			 good;
+
+	s = (struct stream *)t;
+	if ((msg = hosts_shared(s->uri, s->peer, &conn, &cl)) != NULL) {
+		say(t, "{\"id\":%ju,\"error\":\"the host does not answer\"}",
+		    (uintmax_t)s->id);
+		kore_log(LOG_NOTICE, "stream %s: %s", s->sid, msg);
 		return (KORE_RESULT_OK);
 	}
-	memset(&dq, 0, sizeof(dq));
-	dq.net_filter = s->filter[0] != '\0' ? s->filter : NULL;
-	if ((error = arc_sysctl_dump(&cl, &dq, &d)) != 0) {
-		say(t, "{\"id\":%ju,\"error\":\"the host refused: %s\"}",
-		    (uintmax_t)s->id, strerror(error));
-		hosts_release(s->uri, s->peer, conn, tls, &cl, false);
-		return (KORE_RESULT_OK);
+	memset(&r, 0, sizeof(r));
+	pthread_mutex_init(&r.lock, NULL);
+	pthread_cond_init(&r.wake, NULL);
+	STAILQ_INIT(&r.parts);
+	r.id = s->id;
+	st = NULL;
+	pthread_mutex_lock(&r.lock);
+	if (open_parts(s, &cl, &r, &st) != 0) {
+		pthread_mutex_unlock(&r.lock);
+		say(t, "{\"id\":%ju,\"error\":\"the host refused\"}",
+		    (uintmax_t)s->id);
+		hosts_shared_done(conn, false);
+		goto out;
 	}
-	total = 0;
-	ended = false;
-	while (!atomic_load(&s->stop)) {
-		if ((error = arc_sysctl_dump_next(d, &item)) != 0)
-			break;
-		if (item == NULL) {
-			ended = true;
-			break;
+	/* Ours until we are done, whenever it ends. */
+	cbl_stream_ref(st);
+	for (;;) {
+		/* Woken by a part, its end, or a second to look at stop. */
+		while (STAILQ_EMPTY(&r.parts) && !r.ended && !r.closed &&
+		    !atomic_load(&s->stop)) {
+			clock_gettime(CLOCK_REALTIME, &until);
+			until.tv_sec += 1;
+			(void)pthread_cond_timedwait(&r.wake, &r.lock, &until);
 		}
-		if (item->has_total)
-			total = item->total;
-		/* The host's JSON is passed on as it is: an array. */
-		if (item->json != NULL && item->json[0] == '[' &&
-		    strlen(item->json) < STREAM_PART - 64)
-			say(t, "{\"id\":%ju,\"rows\":%s}", (uintmax_t)s->id,
-			    item->json);
+		if (atomic_load(&s->stop) || (STAILQ_EMPTY(&r.parts) &&
+		    (r.ended || r.closed)))
+			break;
+		q = STAILQ_FIRST(&r.parts);
+		STAILQ_REMOVE_HEAD(&r.parts, next);
+		pthread_mutex_unlock(&r.lock);
+		/* Written, then its room given back: the host sends on. */
+		if (q->text != NULL)
+			say(t, "%s", q->text);
+		(void)cbl_stream_consumed(st, q->len);
+		free(q->text);
+		free(q);
+		pthread_mutex_lock(&r.lock);
 	}
-	cbl_dump_free(d);
-	if (ended)
+	good = r.ended && r.code == 0;
+	if (atomic_load(&s->stop))
+		;
+	else if (good)
 		say(t, "{\"id\":%ju,\"done\":true,\"total\":%ju}",
-		    (uintmax_t)s->id, (uintmax_t)total);
-	else if (!atomic_load(&s->stop))
-		say(t, "{\"id\":%ju,\"error\":\"the host stopped answering: "
-		    "%s\"}", (uintmax_t)s->id, strerror(error));
-	/* A dump that ended is a connection as good as before. */
-	hosts_release(s->uri, s->peer, conn, tls, &cl, ended);
+		    (uintmax_t)s->id, (uintmax_t)r.total);
+	else
+		say(t, "{\"id\":%ju,\"error\":\"%s\"}", (uintmax_t)s->id,
+		    r.why[0] != '\0' ? r.why : "the host stopped answering");
+	pthread_mutex_unlock(&r.lock);
+	/* Stopped, or what the host sent ended: the stream goes. */
+	if (!r.closed && good)
+		(void)cbl_stream_close(st, 0, NULL);
+	else if (!r.closed)
+		(void)cbl_stream_reset(st, ECANCELED);
+	/* Until it is closed its callbacks still look at r. */
+	pthread_mutex_lock(&r.lock);
+	while (!r.closed) {
+		clock_gettime(CLOCK_REALTIME, &until);
+		until.tv_sec += 5;
+		if (pthread_cond_timedwait(&r.wake, &r.lock, &until) ==
+		    ETIMEDOUT)
+			break;
+	}
+	pthread_mutex_unlock(&r.lock);
+	cbl_stream_rele(st);
+	hosts_shared_done(conn, true);
+out:
+	while ((q = STAILQ_FIRST(&r.parts)) != NULL) {
+		STAILQ_REMOVE_HEAD(&r.parts, next);
+		free(q->text);
+		free(q);
+	}
+	pthread_mutex_destroy(&r.lock);
+	pthread_cond_destroy(&r.wake);
 	return (KORE_RESULT_OK);
 }
 

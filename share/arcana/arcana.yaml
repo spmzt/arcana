@@ -206,6 +206,25 @@ definitions:
           pkg clean -y on the host or in a running jail: the cached
           packages that are no longer needed, or that the repository no
           longer has, deleted; with force, all of the cache (-a).
+      - name: ipsec
+        doc: |
+          IPsec through strongSwan's swanctl(8), IKEv2 only.  verb init
+          gives the host a key of its own, ECDSA P-256 made on the
+          host, whose public half the ipsec network kind tells; start
+          starts the daemon (service strongswan onestart); conn
+          writes the connection named conn, between tunnel-local and
+          tunnel-remote, authenticated by the two hosts' keys (pubkey
+          is the peer's), with one child of ipsec-mode tunnel or
+          transport between local-ts and remote-ts, and with reqid the
+          ipsec(4) interface of that reqid; unconn takes it away; up
+          and down start and stop its security associations.  What is
+          written is in conf.d, a file of its own that the daemon reads
+          again, and is there after a boot.
+      - name: pkg-install
+        doc: |
+          pkg install -y of the packages names, on the host or in a
+          running jail; with force, also of packages built for a newer
+          FreeBSD (IGNORE_OSVERSION).
   - name: job-state
     type: enum
     entries:
@@ -254,8 +273,10 @@ definitions:
           object with "status", its lines, the array "protocols", each
           with what show protocols all says of it (a BGP neighbour's
           address and AS, its channels with their filters and how many
-          routes came and went), the OSPF neighbours in "ospf", and the
-          routing tables with how many routes each holds in "tables".
+          routes came and went), the OSPF neighbours in "ospf", the BFD
+          sessions in "bfd" (each with its protocol, address, interface,
+          state, since, interval and timeout), and the routing tables
+          with how many routes each holds in "tables".
       - name: bird-routes
         doc: |
           Routes of BIRD's tables, from birdc(8) show route, as a JSON
@@ -310,6 +331,16 @@ definitions:
           and when it moves on ("next", seconds of the kernel's uptime),
           with "router" for a router; and "total", how many there are
           before the filter.
+      - name: ipsec
+        doc: |
+          strongSwan's IPsec, from swanctl(8): a JSON object with
+          "running", whether its daemon answers; "public-key", the
+          host's own, of verb init, in base64; "connections", each with
+          its name, version, addresses, identities, whether arcana
+          wrote it ("arcana") and its children with their mode, reqid
+          and traffic selectors; and "sas", the security associations,
+          IKE and their children, with state, algorithms and counters.
+          Never a private key.
   - name: storage-kind
     type: enum
     entries:
@@ -763,6 +794,20 @@ attribute-sets:
           either.
         checks:
           max: 6
+      - name: limit-rules
+        type: text
+        doc: |
+          For history, with how to sample: the limits of one device or
+          jail each, with commas: net:<interface>=<bytes a second, in
+          and out>, disk:<disk>=<bytes a second, read and written>,
+          jail-cpu:<jail>=<percent of one CPU>, jail-mem:<jail>=<bytes>.
+          An event (threshold) when one is crossed, either way; empty
+          takes them all away, and none given leaves them as they are.
+        checks:
+          max-len: 2048
+      - name: zfs-recursive
+        type: flag
+        doc: For zfs-send, the datasets under the snapshot's too (-R).
 
   - name: host
     attributes:
@@ -805,7 +850,8 @@ attribute-sets:
           The plugins the host has: what works through a program that
           is not the base system's and is installed there.  bird is
           BIRD, through birdc(8); wireguard is WireGuard's keys and
-          peers, through wg(8).
+          peers, through wg(8); strongswan is IPsec, through
+          swanctl(8).
 
   - name: jail
     attributes:
@@ -1089,6 +1135,64 @@ attribute-sets:
           pkg -4) or IPv6 only (6, pkg -6).
         checks:
           max: 6
+      - name: conn
+        type: text
+        doc: |
+          For ipsec, the connection: letters, digits, - and _, kept in
+          conf.d/arcana-<conn>.conf.
+        checks:
+          max-len: 32
+      - name: ipsec-mode
+        type: text
+        doc: For ipsec conn, tunnel or transport.
+        checks:
+          max-len: 9
+      - name: local-ts
+        type: text
+        doc: |
+          For ipsec conn, this side's traffic selectors with commas, as
+          swanctl.conf(5) writes them (2001:db8::1[gre]); none says the
+          address itself in transport mode, everything in tunnel mode.
+        checks:
+          max-len: 512
+      - name: remote-ts
+        type: text
+        doc: For ipsec conn, the peer's traffic selectors, as local-ts.
+        checks:
+          max-len: 512
+      - name: pubkey
+        type: text
+        doc: |
+          For ipsec conn, the peer's public key in base64 (DER), as the
+          ipsec network kind tells it of that host.
+        checks:
+          max-len: 1024
+      - name: reqid
+        type: u32
+        doc: |
+          For ipsec conn, the reqid of the ipsec(4) interface it serves:
+          tunnel mode, its policies the interface's.  For if-create of an
+          ipsec interface, the reqid it is made with.
+      - name: start-action
+        type: text
+        doc: |
+          For ipsec conn: start, up at once and kept up; trap, up with
+          the first packet that needs it (the default); none, only by
+          up.
+        checks:
+          max-len: 5
+      - name: local-id
+        type: text
+        doc: |
+          For ipsec conn, this side's identity when it is not its
+          address (behind NAT, the address it has there).
+        checks:
+          max-len: 128
+      - name: remote-id
+        type: text
+        doc: For ipsec conn, the peer's identity, as local-id.
+        checks:
+          max-len: 128
 
   - name: job
     attributes:
@@ -1249,6 +1353,28 @@ attribute-sets:
       - name: expire-time
         type: u32
         doc: When a route that expires does.
+
+  - name: part
+    attributes:
+      - name: json
+        type: text
+        doc: The next rows, a JSON array (connections, sockets, sysctl).
+      - name: total
+        type: u64
+        doc: Rows in the table on the host.
+      - name: routes
+        type: nest
+        nested-attributes: route
+        multi-attr: true
+        doc: The next routes, typed.
+
+  - name: chunk
+    attributes:
+      - name: data
+        type: bytes
+        doc: The next bytes of what zfs send wrote, or receive is to read.
+        checks:
+          max-len: max-output
 
 operations:
   - name: hello
@@ -1902,7 +2028,10 @@ operations:
       and "rotated", when the file is shorter than position said.
       A packed log (.bz2, .gz, .xz, .zst) is unpacked to be read,
       and not followed.  @dmesg is the kernel's message buffer,
-      @audit the audit trail of now (praudit).  With jail, the logs
+      followed as it comes: each line has seq, its number, and seen,
+      when the agent saw it (none for what was there when it
+      started); position is then the newest number, after which
+      the next asking is answered.  @audit the audit trail of now (praudit).  With jail, the logs
       of that jail's own /var/log.  With net-filter only the lines that have
       that text in them, in either case.  With position only what was
       written after it, which is how a log is followed.  lines is how
@@ -1943,7 +2072,14 @@ operations:
       way from now on, and keeps it for its next start: an hour every
       five seconds until it is told otherwise; limit-cpu, limit-mem
       and limit-swap with them are the percentages above which an
-      event (kind threshold) is made.  The reply has "limits".  The
+      event (kind threshold) is made, and limit-rules the limits of an
+      interface, a disk or a jail.  The reply has "limits", and
+      "rules", each with its kind, name, limit and whether it is over.
+      Each running jail is told apart as well, at most 16, in "jails":
+      its share of one CPU in percent and its memory in bytes, as the
+      kernel's resource accounting has them, follow the disks' in a
+      sample.  That needs kern.racct.enable=1 in loader.conf(5):
+      "racct" says whether the kernel accounts.  The
       samples are written down when the agent stops and every few
       minutes, and read again when it starts.
     do:
@@ -1955,6 +2091,7 @@ operations:
           - limit-cpu
           - limit-mem
           - limit-swap
+          - limit-rules
       reply:
         attributes:
           - ok
@@ -1980,9 +2117,13 @@ operations:
       and neigh-del, a neighbour (ARP, NDP) as network's neighbours
       has one.  They are the kernel's own netlink(4) messages, of the
       host's network, and of each jail's own (vnet) too: one of a
-      jail's has "jail", its name, beside its kind.  threshold, with what (cpu, mem or swap),
-      value, limit and over, when a figure of history crosses its
-      limit, either way.
+      jail's has "jail", its name, beside its kind.  threshold, with
+      what (cpu, mem, swap, net, disk, jail-cpu or jail-mem; the last
+      four with name, the device's or the jail's), value, limit and
+      over, when a figure of history crosses its limit, either way.
+      kmsg, with seq and text, a line the kernel wrote, the moment the
+      agent sees it; or with more, how many came in that second
+      beyond the twenty said one by one.
     do:
       request:
         attributes:
@@ -2037,7 +2178,108 @@ operations:
           - json
           - trace
 
+  - name: network-parts
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The routes, connections or sockets as network's dump has them,
+      as a stream: each data message a part, the routes typed and the
+      rest as JSON, total in each; the host half-closes it once all
+      were sent, or closes it with why not.  A part is sent only when
+      the reader has room for it, which it gives back as it takes
+      them: over SCTP the stream shares the association with whatever
+      else asks the host at once, and a slow reader holds nothing but
+      its own stream.
+    do:
+      request:
+        attributes:
+          - net-kind
+          - net-family
+          - net-filter
+          - net-fib
+          - jail
+        required:
+          - net-kind
+      reply:
+        attributes:
+          - ok
+
+  - name: sysctl-parts
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The kernel's state as sysctl's dump has it, as a stream: each
+      data message a part, json the next values.  As network-parts.
+    do:
+      request:
+        attributes:
+          - net-filter
+      reply:
+        attributes:
+          - ok
+
+  - name: zfs-send
+    attribute-set: arcana
+    auth: true
+    doc: |
+      zfs send of a snapshot, the first of names, as a stream: each
+      data message the next bytes it wrote; with a second name, a
+      snapshot of the same dataset, only what changed since that one
+      (-i); with recursive, the datasets under it too (-R).  The host
+      half-closes it once send ended well, or closes it with what send
+      said.  For another host's zfs-receive, whatever carries the
+      bytes between them: the console does.
+    do:
+      request:
+        attributes:
+          - names
+          - zfs-recursive
+      reply:
+        attributes:
+          - ok
+
+  - name: zfs-receive
+    attribute-set: arcana
+    auth: true
+    doc: |
+      zfs receive -u into the dataset that names names, as a stream:
+      each data message the next bytes of what zfs send wrote, given
+      to receive only as fast as it reads them.  Half-closed by the
+      sender once all was sent; the host closes it once receive ended,
+      with nothing when it did well, with what it said when not.  A
+      dataset is never overwritten (no -F), nor a pool's own received
+      into.
+    do:
+      request:
+        attributes:
+          - names
+      reply:
+        attributes:
+          - ok
+
 mcast-groups:
   - name: events
     auth: true
     doc: The host's events, each as it happens (event).
+
+streams:
+  - name: network-parts
+    open: network-parts
+    direction: bidirectional
+    payload: part
+    initial-credit: 2097152
+  - name: sysctl-parts
+    open: sysctl-parts
+    direction: bidirectional
+    payload: part
+    initial-credit: 2097152
+  - name: zfs-send
+    open: zfs-send
+    direction: bidirectional
+    payload: chunk
+    initial-credit: 4194304
+  - name: zfs-receive
+    open: zfs-receive
+    direction: bidirectional
+    payload: chunk
+    initial-credit: 4194304

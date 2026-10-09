@@ -134,7 +134,7 @@ variables, with what the script says of itself and its extra commands.
 sets one first,
 .Fl x
 unsets one; only the service's own variables are accepted.
-.It Cm net routes | nexthops | connections | sockets | interfaces | netgraph | wireguard | bird Op Fl 4 | Fl 6
+.It Cm net routes | nexthops | connections | sockets | interfaces | netgraph | wireguard | bird | ipsec Op Fl 4 | Fl 6
 The host's routing table
 .Pq Nm netstat Fl rnW ,
 nexthop table
@@ -277,11 +277,13 @@ How busy the host has been: what the agent sampled by itself and
 kept, each sample with its time, the CPUs' busy share, the load, the
 memory and swap in use, and the bytes a second on the network and the
 disks, added up and then for each interface and each disk, which are
-named.
+named, and each running jail's share of one CPU and its memory, as the
+kernel's resource accounting has them
+.Pq Va kern.racct.enable .
 With
 .Ar after ,
 only the samples after that time, in seconds since the epoch.
-.It Cm history set Ar seconds Ar samples Op Ar cpu mem swap
+.It Cm history set Ar seconds Ar samples Oo Ar cpu mem swap Oc Op Cm rules Ar list
 Have the agent sample every
 .Ar seconds ,
 1 to 3600, and keep that many
@@ -295,7 +297,15 @@ With
 .Ar mem
 and
 .Ar swap ,
-the percentages over which an event is made, 0 for none.
+the percentages over which an event is made, 0 for none; with
+.Cm rules ,
+the limits of an interface, a disk or a jail, with commas:
+.Ql net: Ns Ar if Ns = Ns Ar bytes/s ,
+.Ql disk: Ns Ar disk Ns = Ns Ar bytes/s ,
+.Ql jail-cpu: Ns Ar jail Ns = Ns Ar percent
+and
+.Ql jail-mem: Ns Ar jail Ns = Ns Ar bytes ;
+an empty list takes them away.
 The reply says what the samples take of the agent's memory.
 The samples are written down when the agent stops and read again when
 it starts.
@@ -555,7 +565,7 @@ also installs packages built for a newer FreeBSD than the host's
 .Pq Ev IGNORE_OSVERSION ,
 which pkg refuses otherwise.
 What is still pending follows.
-.It Cm pkg-clean Oo Fl a Oc Oo Fl j Ar jail Oc
+.It Cm pkg-clean Oo Fl a Oc Oo Fl j Ar jail | Fl J Oc
 .Nm pkg clean Fl y ,
 a job: the downloaded packages no longer needed, or no longer in the
 repository, deleted from the cache of the host or the running
@@ -563,6 +573,17 @@ repository, deleted from the cache of the host or the running
 with
 .Fl a ,
 all of the cache.
+With
+.Fl J ,
+in every running jail instead, one batch of a job each, so that a jail
+whose pkg refuses fails alone.
+.It Cm pkg-install Oo Fl O Oc Oo Fl 4 | Fl 6 Oc Oo Fl j Ar jail Oc Ar package ...
+.Nm pkg install Fl y ,
+a job, on the host or in the running
+.Ar jail ;
+with
+.Fl O ,
+also packages built for a newer FreeBSD.
 .It Cm jobs
 The host's queued, running and recently finished jobs.
 .It Cm job Oo Fl w Oc Ar id
@@ -615,7 +636,7 @@ each with the length of its prefix: what is left when the best goes.
 .It Cm interface Ar name Cm description Ar text
 Set an interface's MTU or its description; an empty text takes the
 description off.
-.It Cm interface Ar name Cm create Oo Cm tunnel Ar local remote Oc Oo Cm address Ar address Oo Cm peer Ar address Oc Oc Oo Cm mtu Ar number Oc Oo Cm description Ar text Oc Oo Cm id Ar number Oc Oo Cm parent Ar interface Oc
+.It Cm interface Ar name Cm create Oo Cm tunnel Ar local remote Oc Oo Cm address Ar address Oo Cm peer Ar address Oc Oc Oo Cm mtu Ar number Oc Oo Cm description Ar text Oc Oo Cm id Ar number Oc Oo Cm parent Ar interface Oc Oo Cm reqid Ar number Oc
 Create a cloned interface and set it up.
 .Ar name
 is a type with its unit, as
@@ -631,7 +652,12 @@ its inner ones,
 .Cm id
 a VLAN's tag or a VXLAN's identifier, and
 .Cm parent
-the interface a VLAN rides or a bridge takes in.
+the interface a VLAN rides or a bridge takes in, and
+.Cm reqid
+the reqid of an
+.Xr ipsec 4
+interface, from 1 to 16383, for the IPsec connection that serves it.
+A tunnel's ends are both IPv4 or both IPv6.
 What cannot be finished is destroyed again.
 .It Cm interface Ar name Cm give | take Ar jail
 Give the host's interface to a running jail that has a network of its
@@ -674,6 +700,41 @@ Add the peer whose public key is
 or change it.
 .It Cm wg Ar interface Cm unpeer Ar key
 Remove a peer.
+.It Cm ipsec init
+Give the host an IPsec key of its own, ECDSA P-256, made there, when it
+has none; its private half never leaves the host, and
+.Cm net ipsec
+tells its public half, in base64, for its peers.
+With
+.Fl p ,
+strongSwan is also started at boot.
+.It Cm ipsec start
+Start strongSwan's daemon.
+.It Cm ipsec conn Ar name local remote Cm tunnel | transport Ar pubkey Oo Cm reqid Ar n Oc Oo Cm local-ts Ar list Oc Oo Cm remote-ts Ar list Oc Oo Cm start Cm start | trap | none Oc Oo Cm local-id Ar id Oc Oo Cm remote-id Ar id Oc
+Write the IPsec connection
+.Ar name ,
+IKEv2 only, between the addresses
+.Ar local
+and
+.Ar remote ,
+authenticated by this host's key and the peer's,
+.Ar pubkey ,
+with one child in tunnel or transport mode between the traffic
+selectors given, by default the two addresses.
+With
+.Cm reqid
+it serves the
+.Xr ipsec 4
+interface of that reqid: tunnel mode, its policies the interface's.
+strongSwan reads it at once; if it refuses, what was there before is
+put back.
+.It Cm ipsec unconn | up | down Ar name
+Take the connection away, its security associations ended first; start
+them; end them.
+.Pp
+With
+.Fl j ,
+in the vnet jail named, whose own strongSwan it is.
 .Pp
 With
 .Fl p

@@ -59,21 +59,69 @@ url_word(const char *s)
 }
 
 /*
- * The vnet jail whose network the page shows and changes: the one whose
- * page is open, when it has a network of its own; "" for the host's.
- * One that does not run has none now, which the host says when asked.
+ * A jail whose network the Network tab can show: one of its own.  One
+ * that does not run has none now, which the host says when asked.
+ */
+bool
+net_jail_ok(const ucl_object_t *j)
+{
+
+	return (j != NULL && jstr(j, "name") != NULL && url_word(jstr(j,
+	    "name")) && jbool(j, "vnet"));
+}
+
+/* And offered there: one that runs. */
+static bool
+net_jail_runs(const ucl_object_t *j)
+{
+
+	return (net_jail_ok(j) && jstr(j, "state") != NULL && strcmp(jstr(j,
+	    "state"), "running") == 0);
+}
+
+/*
+ * The vnet jail whose network the page shows and changes: the one picked
+ * in the host's Network tab, while it runs; "" for the host's.
  */
 const char *
 net_scope(void)
 {
 	const struct server	*s;
-	const ucl_object_t	*j;
 
-	if (app.node != NODE_JAIL || app.peek || app.jail[0] == '\0' ||
-	    (s = cur_server()) == NULL || !url_word(app.jail) || (j =
-	    find_jail(s, app.jail)) == NULL || !jbool(j, "vnet"))
+	if (app.node != NODE_HOST || app.tab != TAB_NETWORK ||
+	    app.net_jail[0] == '\0' || (s = cur_server()) == NULL ||
+	    !net_jail_ok(find_jail(s, app.net_jail)))
 		return ("");
-	return (app.jail);
+	return (app.net_jail);
+}
+
+/* The plugin a view of the network is of, or NULL: of the base system. */
+const char *
+kind_plugin(int kind)
+{
+
+	return (kind == NET_WIREGUARD ? "wireguard" : kind == NET_BIRD ?
+	    "bird" : kind == NET_IPSEC ? "strongswan" : NULL);
+}
+
+/*
+ * Where on the host a plugin is: "" the host itself, else the first vnet
+ * jail that runs with it; NULL nowhere.
+ */
+const char *
+plugin_where(const struct server *s, const char *name)
+{
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it;
+
+	if (plugin_at(s, "", name))
+		return ("");
+	it = NULL;
+	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL)
+		if (net_jail_runs(j) && plugin_at(s, jstr(j, "name"), name))
+			return (jstr(j, "name"));
+	return (NULL);
 }
 
 /*
@@ -602,12 +650,12 @@ job_send(struct server *s, char *json, const char *title, int what,
  * the queue is on.  Takes the jobs' text.
  */
 void
-job_send_many(struct server *s, struct queued *q, int n)
+job_send_many(struct server *s, struct queued *q, int n, int what)
 {
 	int	i, k;
 
 	for (i = 0; i < n; i++) {
-		q[i].what = JOB_STORAGE;
+		q[i].what = what;
 		snprintf(q[i].sid, sizeof(q[i].sid), "%s", s->id);
 		snprintf(q[i].host, sizeof(q[i].host), "%s", s->name);
 	}
@@ -1751,18 +1799,26 @@ refresh_network(struct server *s, bool user)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
-	    "bridges", "geneve", "nhgroups", "neighbours" };
+	    "bridges", "geneve", "nhgroups", "neighbours", "ipsec" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];
 
 	if (!app.online)
 		return;
-	/* A plugin's view, of a host known not to have the plugin. */
-	if (s->list != NULL && ((app.net.kind == NET_WIREGUARD &&
-	    !has_plugin(s, "wireguard")) || (app.net.kind == NET_BIRD &&
-	    !has_plugin(s, "bird"))))
-		app.net.kind = NET_INTERFACES;
+	/*
+	 * A plugin's view, of a host or jail known not to have the plugin:
+	 * of where on the host it is, or the interfaces if nowhere.
+	 */
+	if (s->list != NULL && kind_plugin(app.net.kind) != NULL &&
+	    !has_plugin(s, kind_plugin(app.net.kind))) {
+		const char *w = plugin_where(s, kind_plugin(app.net.kind));
+
+		if (w != NULL && s == cur_server())
+			snprintf(app.net_jail, sizeof(app.net_jail), "%s", w);
+		else
+			app.net.kind = NET_INTERFACES;
+	}
 	if (strcmp(app.net.sid, s->id) != 0 || strcmp(app.net.jail,
 	    net_scope()) != 0 || app.net.loading) {
 		if (app.net.data != NULL)
@@ -2719,6 +2775,85 @@ push_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (app.push != NULL)
 		ucl_object_unref(app.push);
 	app.push = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+}
+
+/* The read-only API tokens, for the settings to show. */
+static void
+tokens_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	if (status != 200)
+		return;
+	if (app.tokens != NULL)
+		ucl_object_unref(app.tokens);
+	app.tokens = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+}
+
+void
+load_tokens(void)
+{
+
+	api("GET", "/api/tokens", NULL, tokens_cb, NULL);
+}
+
+/* A new one made: its value is in this reply only, shown once. */
+static void
+token_made_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200 || jstr(o, "token") == NULL) {
+		toast(true, "The token was not made: %s", jstr(o, "error.message")
+		    != NULL ? jstr(o, "error.message") : err != NULL ? err :
+		    "no answer");
+		return;
+	}
+	snprintf(app.token_value, sizeof(app.token_value), "%s", jstr(o,
+	    "token"));
+	app.token_name[0] = '\0';
+	load_tokens();
+}
+
+void
+token_new(void)
+{
+	char	*q, *body;
+
+	if (app.token_name[0] == '\0') {
+		toast(true, "A token is made with a name: what will use it");
+		return;
+	}
+	q = json_quote(app.token_name);
+	if (asprintf(&body, "{\"name\":%s}", q) == -1)
+		abort();
+	free(q);
+	api("POST", "/api/tokens", body, token_made_cb, NULL);
+	free(body);
+}
+
+static void
+token_gone_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200)
+		toast(true, "The token was not deleted: %s", jstr(o,
+		    "error.message") != NULL ? jstr(o, "error.message") : err !=
+		    NULL ? err : "no answer");
+	load_tokens();
+}
+
+void
+token_del(const char *id)
+{
+	char	url[64];
+
+	if (strlen(id) != 16 || id[strspn(id, "0123456789abcdef")] != '\0')
+		return;
+	snprintf(url, sizeof(url), "/api/tokens/%s", id);
+	api("DELETE", url, NULL, token_gone_cb, NULL);
 }
 
 /* The devices that are told of tasks, for the settings to show. */

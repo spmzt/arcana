@@ -112,7 +112,17 @@ guard(struct http_request *req, bool mutate)
 
 	config_refresh();
 	if (!session_valid(req)) {
-		reply_error(req, 401, "unauthenticated", "log in first");
+		/*
+		 * A read-only API token (tokens.c): only to read what the
+		 * console says of the hosts, never to change anything, nor
+		 * to read the console's own settings, sign-in or the keys
+		 * that let a host join.
+		 */
+		if (!mutate && token_readable(req->path) && token_valid(req))
+			return (true);
+		reply_error(req, 401, "unauthenticated", mutate &&
+		    token_valid(req) ? "an API token reads only" :
+		    "log in first");
 		return (false);
 	}
 	if (!mutate)
@@ -231,5 +241,7 @@ arcw_onload(int action)
 		fatalx("arcana: not starting, see above");
 	auth_init();
 	servers_init();
+	transfers_init();
+	workflows_init();
 	return (KORE_RESULT_OK);
 }

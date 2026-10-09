@@ -192,7 +192,23 @@ static struct {
 	double	vw, vh;			/* the room the map has, in pixels */
 	double	fit_w, fit_h;		/* and had when fitted */
 	bool	touched;		/* moved, zoomed: no fitting unasked */
-	int	labels;			/* 0 as fits, 1 shown, 2 left out */
+	int	labels[LK_KINDS];	/* each kind's: 0 as fits, 1 shown,
+					   2 left out */
+	bool	labels_open;		/* the labels' switches shown */
+	bool	no_names, no_rates;	/* the lines' names, their rates, left
+					   out of every kind */
+	struct bend {
+		char	key[160];	/* the link it is of */
+		double	bend;		/* how far its middle is drawn out */
+	} bends[64];			/* links dragged aside, kept */
+	int	nbends;
+	bool	bends_loaded;
+	struct peerpos {
+		char	key[160];	/* host<tab>ospf|bgp<tab>label<tab>sub */
+		double	dx, dy;		/* where it was put, from its host */
+	} peers[64];			/* neighbours dragged, kept */
+	int	npeers;
+	bool	peers_loaded;
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
 	bool	hide_best, hide_alt;	/* nor the route traced */
 	double	last_poll;
@@ -222,6 +238,7 @@ static void		 places_save(void);
 static void		 poll_cb(int, const ucl_object_t *, const char *, void *);
 static bool		 addr_bytes(const char *, int *, unsigned char *);
 static bool		 addr_same(const char *, const char *);
+static bool		 labels_quiet(int);
 static int		 owner(const char *, char *, size_t);
 static void		 links_build(void);
 static void		 trace_next(int, const char *);
@@ -400,6 +417,176 @@ places_save(void)
 	free(b.s);
 }
 
+/*
+ * How far the links dragged aside are bent, kept in the browser:
+ * "bend<tab>key" a line.
+ */
+static void
+bends_load(void)
+{
+	char	*text, *p, *line, *tab;
+
+	tp.bends_loaded = true;
+	tp.nbends = 0;
+	text = arc_store_get("arc_topo_bends");
+	p = text;
+	while (p != NULL && (line = strsep(&p, "\n")) != NULL &&
+	    tp.nbends < (int)(sizeof(tp.bends) / sizeof(tp.bends[0]))) {
+		if ((tab = strchr(line, '\t')) == NULL || tab[1] == '\0')
+			continue;
+		*tab = '\0';
+		tp.bends[tp.nbends].bend = strtod(line, NULL);
+		snprintf(tp.bends[tp.nbends].key, sizeof(tp.bends[0].key),
+		    "%s", tab + 1);
+		tp.nbends++;
+	}
+	free(text);
+}
+
+static void
+bends_save(void)
+{
+	struct html	b;
+	int		i;
+
+	memset(&b, 0, sizeof(b));
+	for (i = 0; i < tp.nbends; i++)
+		h_fmt(&b, "%.0f\t%s\n", tp.bends[i].bend, tp.bends[i].key);
+	arc_store_set("arc_topo_bends", b.s != NULL ? b.s : "");
+	free(b.s);
+}
+
+/* The bend a link was dragged to, or NULL. */
+static struct bend *
+bend_kept(const char *key, bool make)
+{
+	int	i;
+
+	if (!tp.bends_loaded)
+		bends_load();
+	for (i = 0; i < tp.nbends; i++)
+		if (strcmp(tp.bends[i].key, key) == 0)
+			return (&tp.bends[i]);
+	if (!make)
+		return (NULL);
+	/* Full: the oldest one goes. */
+	if (tp.nbends == (int)(sizeof(tp.bends) / sizeof(tp.bends[0]))) {
+		memmove(&tp.bends[0], &tp.bends[1], sizeof(tp.bends[0]) *
+		    (sizeof(tp.bends) / sizeof(tp.bends[0]) - 1));
+		tp.nbends--;
+	}
+	snprintf(tp.bends[tp.nbends].key, sizeof(tp.bends[0].key), "%s", key);
+	tp.bends[tp.nbends].bend = 0;
+	return (&tp.bends[tp.nbends++]);
+}
+
+/*
+ * Where the routing neighbours outside were dragged, from their hosts,
+ * kept in the browser: "dx dy key" a line.  They follow their host.
+ */
+static void
+peers_load(void)
+{
+	char	*text, *p, *line;
+	double	 dx, dy;
+	int	 used;
+
+	tp.peers_loaded = true;
+	tp.npeers = 0;
+	text = arc_store_get("arc_topo_peers");
+	p = text;
+	while (p != NULL && (line = strsep(&p, "\n")) != NULL &&
+	    tp.npeers < (int)(sizeof(tp.peers) / sizeof(tp.peers[0]))) {
+		used = 0;
+		if (sscanf(line, "%lf %lf %n", &dx, &dy, &used) < 2 || used ==
+		    0 || line[used] == '\0')
+			continue;
+		tp.peers[tp.npeers].dx = dx;
+		tp.peers[tp.npeers].dy = dy;
+		snprintf(tp.peers[tp.npeers].key, sizeof(tp.peers[0].key),
+		    "%s", line + used);
+		tp.npeers++;
+	}
+	free(text);
+}
+
+static void
+peers_save(void)
+{
+	struct html	b;
+	int		i;
+
+	memset(&b, 0, sizeof(b));
+	for (i = 0; i < tp.npeers; i++)
+		h_fmt(&b, "%.0f %.0f %s\n", tp.peers[i].dx, tp.peers[i].dy,
+		    tp.peers[i].key);
+	arc_store_set("arc_topo_peers", b.s != NULL ? b.s : "");
+	free(b.s);
+}
+
+static struct peerpos *
+peer_kept(const char *key, bool make)
+{
+	int	i;
+
+	if (!tp.peers_loaded)
+		peers_load();
+	for (i = 0; i < tp.npeers; i++)
+		if (strcmp(tp.peers[i].key, key) == 0)
+			return (&tp.peers[i]);
+	if (!make)
+		return (NULL);
+	if (tp.npeers == (int)(sizeof(tp.peers) / sizeof(tp.peers[0]))) {
+		memmove(&tp.peers[0], &tp.peers[1], sizeof(tp.peers[0]) *
+		    (sizeof(tp.peers) / sizeof(tp.peers[0]) - 1));
+		tp.npeers--;
+	}
+	snprintf(tp.peers[tp.npeers].key, sizeof(tp.peers[0].key), "%s", key);
+	tp.peers[tp.npeers].dx = tp.peers[tp.npeers].dy = 0;
+	return (&tp.peers[tp.npeers++]);
+}
+
+/* A neighbour outside, as its kept place knows it. */
+static void
+peer_key(char *buf, size_t len, const struct ext *e)
+{
+
+	snprintf(buf, len, "%s\t%s\t%s\t%s", tn[e->host].key, e->ospf ?
+	    "ospf" : "bgp", e->label, e->sub);
+}
+
+/*
+ * Where a neighbour outside is drawn unless it was dragged: away from
+ * the middle of the hosts, as it was when first drawn (followed at
+ * every move, all of them would swing about while one host is
+ * dragged; "Fit" sets it again), on two rings, every other one further
+ * out, side by side on one ring they would lie on each other.
+ */
+static void
+peer_place(const struct ext *e, struct thost *t, double *exp, double *eyp)
+{
+	double	cx, cy, a;
+	int	m, k;
+
+	cx = cy = 0;
+	for (m = 0, k = 0; k < nhosts; k++)
+		if (hosts[k].placed && node_index(hosts[k].sid) != -1) {
+			cx += hosts[k].x;
+			cy += hosts[k].y;
+			m++;
+		}
+	cx = m > 0 ? cx / m : 0;
+	cy = m > 0 ? cy / m : 0;
+	if (!t->out_set) {
+		t->out_a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ? -M_PI / 2 :
+		    atan2(t->y - cy, t->x - cx);
+		t->out_set = true;
+	}
+	a = t->out_a + (e->slot - (e->of - 1) / 2.0) * 0.36;
+	*exp = t->x + 185 * (e->slot % 2 == 1 ? 1.5 : 1.0) * cos(a);
+	*eyp = t->y + 125 * (e->slot % 2 == 1 ? 1.5 : 1.0) * sin(a);
+}
+
 /* Hosts not placed yet go on a circle, in the order of the tree. */
 static void
 places_fill(void)
@@ -435,8 +622,11 @@ places_fill(void)
 		}
 		a = M_PI + 2 * M_PI * i / (app.nservers > 0 ? app.nservers :
 		    1);
-		t->x = app.nservers == 1 ? 0 : r * cos(a) * 1.35;
-		t->y = app.nservers == 1 ? 0 : r * sin(a) * 0.8;
+		/* On a phone the room is tall: the circle is too. */
+		t->x = app.nservers == 1 ? 0 : r * cos(a) * (arc_narrow() ?
+		    0.5 : 1.35);
+		t->y = app.nservers == 1 ? 0 : r * sin(a) * (arc_narrow() ?
+		    1.5 : 0.8);
 		t->placed = true;
 	}
 }
@@ -872,8 +1062,8 @@ topo_tick(double now)
 			}
 		}
 		render();
-	} else if (((app.node == NODE_HOST && app.tab == TAB_NETWORK) ||
-	    net_scope()[0] != '\0') && app.net.kind == NET_INTERFACES &&
+	} else if (app.node == NODE_HOST && app.tab == TAB_NETWORK &&
+	    app.net.kind == NET_INTERFACES &&
 	    (s = cur_server()) != NULL) {
 		tp.last_poll = now;
 		topo_poll(s);
@@ -1338,8 +1528,11 @@ curve(struct html *h, double x1, double y1, double x2, double y2, double bend,
 static double
 bend_of(int i)
 {
-	int	k, n;
+	struct bend	*b;
+	int		 k, n;
 
+	if ((b = bend_kept(links[i].key, false)) != NULL)
+		return (b->bend);
 	n = 0;
 	for (k = 0; k < i; k++)
 		if ((links[k].a == links[i].a && links[k].b == links[i].b) ||
@@ -1348,6 +1541,26 @@ bend_of(int i)
 	if (n == 0)
 		return (0);
 	return ((n % 2 == 1 ? 1 : -1) * 34.0 * ((n + 1) / 2));
+}
+
+/*
+ * Where along a link, from its end at (x, y), it leaves the host's box
+ * there, and a little further: where that end's name is written.
+ */
+static double
+leave_t(double x1, double y1, double x2, double y2, double bend, bool from_a)
+{
+	double	t, px, py, ex, ey;
+
+	ex = from_a ? x1 : x2;
+	ey = from_a ? y1 : y2;
+	for (t = 0.02; t < 0.42; t += 0.01) {
+		curve(NULL, x1, y1, x2, y2, bend, from_a ? t : 1 - t, &px, &py);
+		if (fabs(px - ex) > NODE_W / 2 + 16 || fabs(py - ey) >
+		    NODE_H / 2 + 12)
+			break;
+	}
+	return (from_a ? t : 1 - t);
 }
 
 static void
@@ -1371,10 +1584,10 @@ map_links(struct html *h)
 			w = 7;
 		flow = l->rate < 1000 ? 0 : l->rate < 100000 ? 1 : l->rate <
 		    10000000 ? 2 : 3;
-		h_fmt(h, "<g class=\"tlink %s %s flow%d%s\"><path class=\"wire\" "
-		    "style=\"stroke-width:%.1f\" d=\"", kinds[l->kind], l->up ?
-		    "up" : "down", flow, strcmp(tp.sel_link, l->key) == 0 ?
-		    " sel" : "", w);
+		h_fmt(h, "<g class=\"tlink %s %s flow%d%s%s\"><path class=\""
+		    "wire\" style=\"stroke-width:%.1f\" d=\"", kinds[l->kind],
+		    l->up ? "up" : "down", flow, strcmp(tp.sel_link, l->key) ==
+		    0 ? " sel" : "", labels_quiet(l->kind) ? " quiet" : "", w);
 		curve(h, x1, y1, x2, y2, bend, 0.5, &mx, &my);
 		h_raw(h, "\"/>");
 		if (flow > 0) {
@@ -1382,22 +1595,41 @@ map_links(struct html *h)
 			curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
 			h_raw(h, "\"/>");
 		}
-		h_raw(h, "<path class=\"hit\" data-act=\"topo-sel-link\"");
+		/* Picked, or dragged aside from the others. */
+		h_raw(h, "<path class=\"hit\" data-drag=\"topo-bend\"");
 		h_attr(h, "data-arg", l->key);
 		h_raw(h, " d=\"");
 		curve(h, x1, y1, x2, y2, bend, 0.5, NULL, NULL);
 		h_raw(h, "\"><title>");
 		h_txt(h, l->label);
 		h_raw(h, "</title></path>");
-		if (l->b >= 0) {
-			h_fmt(h, "<text class=\"lbl\" x=\"%.1f\" y=\"%.1f\">", mx,
-			    my - 6);
-			h_txt(h, l->kind == LK_LAN || l->kind >= LK_BGP ?
-			    l->label : l->ifa);
-			if (l->kind < LK_LAN && l->ifb[0] != '\0') {
-				h_raw(h, " ⇄ ");
+		/*
+		 * A tunnel's or a point to point link's ends are named each
+		 * at its own end, past the host's box; its rate is in the
+		 * middle, alone.  Another kind's name is above the middle,
+		 * its rate below.
+		 */
+		if (l->b >= 0 && l->kind < LK_LAN) {
+			double	ex, ey;
+
+			curve(NULL, x1, y1, x2, y2, bend, leave_t(x1, y1, x2,
+			    y2, bend, true), &ex, &ey);
+			h_fmt(h, "<text class=\"lbl end\" x=\"%.1f\" y=\"%.1f\">",
+			    ex, ey - 5);
+			h_txt(h, l->ifa);
+			h_raw(h, "</text>");
+			if (l->ifb[0] != '\0') {
+				curve(NULL, x1, y1, x2, y2, bend, leave_t(x1, y1,
+				    x2, y2, bend, false), &ex, &ey);
+				h_fmt(h, "<text class=\"lbl end\" x=\"%.1f\" "
+				    "y=\"%.1f\">", ex, ey - 5);
 				h_txt(h, l->ifb);
+				h_raw(h, "</text>");
 			}
+		} else if (l->b >= 0) {
+			h_fmt(h, "<text class=\"lbl\" x=\"%.1f\" y=\"%.1f\">", mx,
+			    my - 7);
+			h_txt(h, l->label);
 			if (l->more > 0)
 				h_fmt(h, " +%d", l->more);
 			h_raw(h, "</text>");
@@ -1405,7 +1637,8 @@ map_links(struct html *h)
 		if (l->rate >= 1) {
 			fmt_rate(rate, sizeof(rate), l->rate);
 			h_fmt(h, "<text class=\"rate\" x=\"%.1f\" y=\"%.1f\">",
-			    mx, my + 12);
+			    mx, l->b >= 0 && l->kind < LK_LAN ? my + 3.5 : my +
+			    14);
 			h_txt(h, rate);
 			h_raw(h, "</text>");
 		}
@@ -1486,42 +1719,27 @@ map_nodes(struct html *h)
 		if (tp.hide[exts[i].ospf ? LK_OSPF : LK_BGP])
 			continue;
 		struct ext	*e = &exts[i];
-		double		 cx, cy, a, ex, ey;
-		int		 m;
+		double		 ex, ey;
 
 		if ((t = thost(tn[e->host].key, false)) == NULL)
 			continue;
-		cx = cy = 0;
-		for (m = 0, k = 0; k < nhosts; k++)
-			if (hosts[k].placed && node_index(hosts[k].sid) !=
-			    -1) {
-				cx += hosts[k].x;
-				cy += hosts[k].y;
-				m++;
+		peer_place(e, t, &ex, &ey);
+		/* Where it was dragged to, beside its host, as it moves. */
+		{
+			struct peerpos	*pp;
+			char		 key[160];
+
+			peer_key(key, sizeof(key), e);
+			if ((pp = peer_kept(key, false)) != NULL) {
+				ex = t->x + pp->dx;
+				ey = t->y + pp->dy;
 			}
-		cx = m > 0 ? cx / m : 0;
-		cy = m > 0 ? cy / m : 0;
-		/*
-		 * Away from the middle of the hosts, as it was when first
-		 * drawn: followed at every move, all of them would swing
-		 * about while one host is dragged.  "Fit" sets it again.
-		 */
-		if (!t->out_set) {
-			t->out_a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ?
-			    -M_PI / 2 : atan2(t->y - cy, t->x - cx);
-			t->out_set = true;
+			/* Dragged to put it elsewhere; picked, BIRD's. */
+			h_fmt(h, "<g class=\"tpeer %s %s\" data-drag=\""
+			    "topo-peer\"", e->ospf ? "ospf" : "bgp", e->up ?
+			    "up" : "down");
+			h_attr(h, "data-arg", key);
 		}
-		a = t->out_a;
-		/*
-		 * On two rings, every other one further out: side by
-		 * side on one ring they would lie on each other.
-		 */
-		a += (e->slot - (e->of - 1) / 2.0) * 0.36;
-		ex = t->x + 185 * (e->slot % 2 == 1 ? 1.5 : 1.0) * cos(a);
-		ey = t->y + 125 * (e->slot % 2 == 1 ? 1.5 : 1.0) * sin(a);
-		h_fmt(h, "<g class=\"tpeer %s %s\" data-act=\"topo-open-bird\"",
-		    e->ospf ? "ospf" : "bgp", e->up ? "up" : "down");
-		h_attr(h, "data-arg", tn[e->host].key);
 		h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\"%.1f\" "
 		    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
 		    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
@@ -1714,19 +1932,32 @@ map_nodes(struct html *h)
 }
 
 /*
- * The classes of the map's drawing.  With many links their labels run
- * into each other: they are left out then, and a link shows its own
- * when the pointer is on it or it is picked; "Labels" says otherwise.
+ * Are a kind of link's labels left out?  With many links of a kind their
+ * labels run into each other: they are left out then, and a link shows
+ * its own when the pointer is on it or it is picked.  "Labels" says
+ * otherwise, for each kind on its own.
  */
+static bool
+labels_quiet(int kind)
+{
+	int	i, n;
+
+	if (tp.labels[kind] != 0)
+		return (tp.labels[kind] == 2);
+	for (i = n = 0; i < nlinks; i++)
+		if (links[i].kind == kind)
+			n++;
+	return (n > 6);
+}
+
+/* The classes of the map's drawing. */
 static const char *
 wfmt_cls(void)
 {
 	static char	cls[40];
-	bool		quiet;
 
-	quiet = tp.labels == 2 || (tp.labels == 0 && nlinks > 6);
-	snprintf(cls, sizeof(cls), "%s%s", tp.linking ? " linking" : "",
-	    quiet ? " quiet" : "");
+	snprintf(cls, sizeof(cls), "%s%s%s", tp.linking ? " linking" : "",
+	    tp.no_names ? " no-names" : "", tp.no_rates ? " no-rates" : "");
 	return (cls);
 }
 
@@ -1772,14 +2003,52 @@ map(struct html *h)
 	    "title=\"Each host's running jails\">Jails</button>", tp.jails ?
 	    " on" : "");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-labels\" "
-	    "title=\"What each line is and carries, written on it\">Labels"
-	    "</button>", tp.labels == 2 || (tp.labels == 0 && nlinks > 6) ?
-	    "" : " on");
+	    "title=\"What each kind of line is and carries, written on it\">"
+	    "Labels ▾</button>", tp.labels_open ? " on" : "");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-peers\" "
 	    "title=\"BGP and OSPF neighbours that are not hosts of this "
 	    "console\">Peers</button>", tp.nopeers ? "" : " on");
+	h_raw(h, "</div>");
+	/* The labels' switches: each kind of line's written or not. */
+	if (tp.labels_open) {
+		static const struct {
+			const char	*cls, *title;
+		} lk[LK_KINDS] = {
+			{ "tunnel", "Tunnels" }, { "p2p", "Point to point" },
+			{ "lan", "Same network" }, { "bgp", "BGP" },
+			{ "ospf", "OSPF" }, { "vnet", "Jails" },
+		};
+		int	k;
+
+		h_raw(h, "<div class=\"map-labels\" role=\"group\" "
+		    "aria-label=\"Labels\">");
+		/* What is written: the ends' names, the rates, apart. */
+		h_fmt(h, "<button type=\"button\" class=\"ghost small what%s\" "
+		    "data-act=\"topo-labels-what\" data-arg=\"names\" "
+		    "aria-pressed=\"%s\" title=\"The interfaces at each end, "
+		    "and the networks' names\">Names</button>", tp.no_names ? "" :
+		    " on", tp.no_names ? "false" : "true");
+		h_fmt(h, "<button type=\"button\" class=\"ghost small what%s\" "
+		    "data-act=\"topo-labels-what\" data-arg=\"rates\" "
+		    "aria-pressed=\"%s\" title=\"What each line carries, both "
+		    "ways\">Rates</button><span class=\"sep\"></span>",
+		    tp.no_rates ? "" : " on", tp.no_rates ? "false" : "true");
+		for (k = 0; k < LK_KINDS; k++) {
+			bool	on;
+
+			on = !labels_quiet(k);
+			h_fmt(h, "<button type=\"button\" class=\"ghost small "
+			    "%s%s\" data-act=\"topo-labels-kind\" data-arg=\"%s\" "
+			    "aria-pressed=\"%s\" title=\"%s these lines' labels"
+			    "%s\">%s</button>", lk[k].cls, on ? " on" : "",
+			    lk[k].cls, on ? "true" : "false", on ? "Leave out" :
+			    "Write", tp.labels[k] == 0 ? " (as fits, now)" : "",
+			    lk[k].title);
+		}
+		h_raw(h, "</div>");
+	}
 	/* The legend says what a line is, and takes its kind away or back. */
-	h_raw(h, "</div><ul class=\"map-legend\">");
+	h_raw(h, "<ul class=\"map-legend\">");
 	{
 		static const struct {
 			const char	*cls, *title;
@@ -2995,20 +3264,15 @@ wg_create(const ucl_object_t *f, int sa, int sb,
 	tp.last_poll = 0;
 }
 
-/* A node's own network: a host's tab, or a jail's page. */
+/* A node's own network: its host's tab, with the jail picked there. */
 static void
 node_open(int n, int kind)
 {
 
 	app.sel = tn[n].srv;
-	if (tn[n].jail[0] != '\0') {
-		app.node = NODE_JAIL;
-		app.peek = false;
-		snprintf(app.jail, sizeof(app.jail), "%s", tn[n].jail);
-	} else {
-		app.node = NODE_HOST;
-		app.tab = TAB_NETWORK;
-	}
+	app.node = NODE_HOST;
+	app.tab = TAB_NETWORK;
+	snprintf(app.net_jail, sizeof(app.net_jail), "%s", tn[n].jail);
 	app.net.kind = kind;
 	app.net.sort = -1;
 	app.net.loading = false;
@@ -3441,8 +3705,92 @@ topo_action(const char *act, const char *arg, const char *value)
 		zoom_by(0.8, tp.panx, tp.pany);
 		tp.touched = true;
 	} else if (strcmp(act, "topo-labels") == 0) {
-		tp.labels = tp.labels == 2 || (tp.labels == 0 && nlinks > 6) ?
-		    1 : 2;
+		tp.labels_open = !tp.labels_open;
+	} else if (strcmp(act, "topo-labels-what") == 0) {
+		if (strcmp(arg, "names") == 0)
+			tp.no_names = !tp.no_names;
+		else if (strcmp(arg, "rates") == 0)
+			tp.no_rates = !tp.no_rates;
+	} else if (strcmp(act, "topo-bend-start") == 0 || strcmp(act,
+	    "topo-bend-move") == 0) {
+		struct bend	*b;
+		double		 x1, y1, x2, y2, dx, dy, len;
+
+		/* The link's middle follows the pointer, across it only. */
+		for (i = 0; i < nlinks; i++)
+			if (strcmp(links[i].key, arg) == 0)
+				break;
+		if (i == nlinks || drag_values(value, &x, &y, &cx, &cy, &k,
+		    NULL, 0) < 2 || !place(links[i].a, &x1, &y1) ||
+		    !place(links[i].b, &x2, &y2) || (b = bend_kept(arg,
+		    true)) == NULL)
+			return (true);
+		dx = x2 - x1;
+		dy = y2 - y1;
+		if ((len = sqrt(dx * dx + dy * dy)) < 1)
+			return (true);
+		/* The curve's middle is half way to its control point. */
+		b->bend = 2 * ((x - (x1 + x2) / 2) * -dy / len + (y - (y1 +
+		    y2) / 2) * dx / len);
+		if (b->bend > 600)
+			b->bend = 600;
+		if (b->bend < -600)
+			b->bend = -600;
+		snprintf(tp.sel_link, sizeof(tp.sel_link), "%s", arg);
+		tp.sel[0] = tp.sel_if[0] = '\0';
+	} else if (strcmp(act, "topo-bend-end") == 0) {
+		bends_save();
+	} else if (strcmp(act, "topo-peer-start") == 0 || strcmp(act,
+	    "topo-peer-move") == 0) {
+		static double	 peer_gx, peer_gy;
+		struct peerpos	*pp;
+		char		 sid[80];
+
+		/* The host is the key's first field. */
+		snprintf(sid, sizeof(sid), "%.*s", (int)strcspn(arg, "\t"), arg);
+		if ((t = thost(sid, false)) == NULL || drag_values(value, &x,
+		    &y, &cx, &cy, &k, NULL, 0) < 2 || (pp = peer_kept(arg,
+		    true)) == NULL)
+			return (true);
+		/* It moves by where it was taken hold of. */
+		if (act[10] == 's') {
+			/* First dragged: from where it was drawn. */
+			for (i = 0; pp->dx == 0 && pp->dy == 0 && i < nexts;
+			    i++) {
+				char	key[160];
+
+				peer_key(key, sizeof(key), &exts[i]);
+				if (strcmp(key, arg) == 0) {
+					peer_place(&exts[i], t, &cx, &cy);
+					pp->dx = cx - t->x;
+					pp->dy = cy - t->y;
+				}
+			}
+			peer_gx = t->x + pp->dx - x;
+			peer_gy = t->y + pp->dy - y;
+		} else {
+			pp->dx = x + peer_gx - t->x;
+			pp->dy = y + peer_gy - t->y;
+		}
+		tp.touched = true;
+	} else if (strcmp(act, "topo-peer-end") == 0) {
+		peers_save();
+	} else if (strcmp(act, "topo-peer-click") == 0) {
+		char	sid[80];
+
+		snprintf(sid, sizeof(sid), "%.*s", (int)strcspn(arg, "\t"), arg);
+		if ((n = node_index(sid)) != -1)
+			node_open(n, NET_BIRD);
+	} else if (strcmp(act, "topo-bend-click") == 0) {
+		tp.sel[0] = tp.sel_if[0] = '\0';
+		snprintf(tp.sel_link, sizeof(tp.sel_link), "%s", arg);
+	} else if (strcmp(act, "topo-labels-kind") == 0) {
+		static const char *const names[] = { "tunnel", "p2p", "lan",
+		    "bgp", "ospf", "vnet" };
+
+		for (i = 0; i < LK_KINDS; i++)
+			if (strcmp(arg, names[i]) == 0)
+				tp.labels[i] = labels_quiet(i) ? 1 : 2;
 	} else if (strcmp(act, "topo-legend") == 0) {
 		static const char *const names[] = { "tunnel", "p2p", "lan",
 		    "bgp", "ospf", "vnet" };
@@ -3478,6 +3826,12 @@ topo_action(const char *act, const char *arg, const char *value)
 			hosts[i].placed = false;
 		places_fill();
 		places_save();
+		/* And the links straight again, or bent apart as at first,
+		 * and the neighbours outside where they were drawn. */
+		tp.nbends = 0;
+		bends_save();
+		tp.npeers = 0;
+		peers_save();
 		fit();
 	} else if (strcmp(act, "topo-sel-link") == 0) {
 		tp.sel[0] = tp.sel_if[0] = '\0';

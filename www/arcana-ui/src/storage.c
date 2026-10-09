@@ -1133,6 +1133,197 @@ view_mounts(struct html *h)
 	view_swap(h);
 }
 
+/*
+ * Snapshots sent to another host, or from one: what the console says
+ * of them (/api/transfers), read again every two seconds while one of
+ * this host's runs, and when the tab is opened.
+ */
+static ucl_object_t	*xfers;
+static double		 xfers_at;
+static bool		 xfers_loading;
+
+static void
+xfers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	xfers_loading = false;
+	if (status != 200)
+		return;
+	if (xfers != NULL)
+		ucl_object_unref(xfers);
+	xfers = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+}
+
+static void
+xfers_load(void)
+{
+
+	if (xfers_loading)
+		return;
+	xfers_loading = true;
+	xfers_at = arc_now();
+	api("GET", "/api/transfers", NULL, xfers_cb, NULL);
+}
+
+static const char *
+server_name(const char *sid)
+{
+	int	k;
+
+	for (k = 0; sid != NULL && k < app.nservers; k++)
+		if (strcmp(app.servers[k].id, sid) == 0)
+			return (app.servers[k].name);
+	return (sid != NULL ? sid : "?");
+}
+
+/* Is one of this host's running? */
+static bool
+xfers_running(const char *sid)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(xfers, "transfers"), &it, true)) !=
+	    NULL)
+		if (jstr(o, "state") != NULL && strcmp(jstr(o, "state"),
+		    "running") == 0 && (strcmp(jstr(o, "from") != NULL ?
+		    jstr(o, "from") : "", sid) == 0 || strcmp(jstr(o, "to") !=
+		    NULL ? jstr(o, "to") : "", sid) == 0))
+			return (true);
+	return (false);
+}
+
+void
+storage_tick(double now)
+{
+	struct server	*s;
+
+	if (app.node != NODE_HOST || app.tab != TAB_STORAGE || (s =
+	    cur_server()) == NULL)
+		return;
+	if (xfers == NULL ? now - xfers_at > 10000 : xfers_running(s->id) &&
+	    now - xfers_at > 2000)
+		xfers_load();
+}
+
+static void
+view_transfers(struct html *h, struct server *s)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	const char		*st;
+	char			 size[24];
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(xfers, "transfers"), &it, true)) !=
+	    NULL) {
+		bool	out;
+
+		out = jstr(o, "from") != NULL && strcmp(jstr(o, "from"),
+		    s->id) == 0;
+		if (!out && (jstr(o, "to") == NULL || strcmp(jstr(o, "to"),
+		    s->id) != 0))
+			continue;
+		if (n++ == 0)
+			h_raw(h, "<section class=\"pane xfers\"><h4><span>"
+			    "Sent between hosts</span></h4><ul class=\"xfers\">");
+		st = jstr(o, "state") != NULL ? jstr(o, "state") : "?";
+		fmt_size(size, sizeof(size), jnum(o, "bytes", 0));
+		h_fmt(h, "<li class=\"%s\"><b>", st);
+		h_txt(h, jstr(o, "snapshot"));
+		h_raw(h, "</b>");
+		if (jstr(o, "since") != NULL) {
+			h_raw(h, " <small>since ");
+			h_txt(h, strchr(jstr(o, "since"), '@') != NULL ?
+			    strchr(jstr(o, "since"), '@') : jstr(o, "since"));
+			h_raw(h, "</small>");
+		}
+		h_raw(h, out ? " → " : " ← ");
+		h_txt(h, server_name(out ? jstr(o, "to") : jstr(o, "from")));
+		if (out) {
+			h_raw(h, " <code>");
+			h_txt(h, jstr(o, "dataset"));
+			h_raw(h, "</code>");
+		}
+		h_raw(h, "<span class=\"dim\">");
+		h_txt(h, st);
+		h_raw(h, " · ");
+		h_txt(h, size);
+		h_raw(h, "</span>");
+		if (jstr(o, "error") != NULL) {
+			h_raw(h, "<small class=\"bad\">");
+			h_txt(h, jstr(o, "error"));
+			h_raw(h, "</small>");
+		}
+		if (strcmp(st, "running") == 0) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "st-xfer-stop\"");
+			h_attr(h, "data-arg", jstr(o, "id"));
+			h_raw(h, ">Stop</button>");
+		}
+		h_raw(h, "</li>");
+	}
+	if (n > 0)
+		h_raw(h, "</ul></section>");
+}
+
+static void
+xfer_started_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200)
+		toast(true, "Not sent: %s", jstr(o, "error.message") != NULL ?
+		    jstr(o, "error.message") : err != NULL ? err : "no answer");
+	else
+		toast(false, "Sending: it is listed under Storage");
+	xfers_load();
+}
+
+static void
+xfers_stopped_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+
+	(void)arg;
+	if (status != 200)
+		toast(true, "Not stopped: %s", jstr(o, "error.message") !=
+		    NULL ? jstr(o, "error.message") : err != NULL ? err :
+		    "no answer");
+	xfers_load();
+}
+
+/* A snapshot to another host: the console carries it. */
+static void
+transfer_start(struct server *s, const char *to, const char *snap,
+    const char *since, const char *dataset, bool recursive)
+{
+	char	*qf, *qt, *qs, *qi, *qd, *body;
+
+	qf = json_quote(s->id);
+	qt = json_quote(to);
+	qs = json_quote(snap);
+	qi = json_quote(since != NULL ? since : "");
+	qd = json_quote(dataset);
+	if (asprintf(&body, "{\"from\":%s,\"to\":%s,\"snapshot\":%s,"
+	    "\"since\":%s,\"dataset\":%s,\"recursive\":%s}", qf, qt, qs, qi,
+	    qd, recursive ? "true" : "false") == -1)
+		abort();
+	free(qf);
+	free(qt);
+	free(qs);
+	free(qi);
+	free(qd);
+	api("POST", "/api/transfers", body, xfer_started_cb, NULL);
+	free(body);
+	app.modal = MODAL_NONE;
+}
+
 void
 view_storage(struct html *h, struct server *s)
 {
@@ -1173,6 +1364,7 @@ view_storage(struct html *h, struct server *s)
 		h_raw(h, "</span>");
 	}
 	h_raw(h, "</div>");
+	view_transfers(h, s);
 	if (sg.error[k][0] != '\0' && strcmp(sg.sid, s->id) == 0) {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, sg.error[k]);
@@ -1294,6 +1486,26 @@ storage_modal(struct html *h)
 		    "whatever is on the partition is gone. The host refuses "
 		    "while it is mounted, swapped on or a pool's." :
 		    "swapon: until the next start, unless fstab has it.");
+		if (sg.ask == A_REPLICATE && app.nservers > 1) {
+			int	k;
+
+			/* Another host: the console carries it there. */
+			h_raw(h, "<label>To<select name=\"to\"><option value=\"\">"
+			    "this host</option>");
+			for (k = 0; k < app.nservers; k++) {
+				if (cur_server() != NULL && strcmp(
+				    app.servers[k].id, cur_server()->id) == 0)
+					continue;
+				h_raw(h, "<option");
+				h_attr(h, "value", app.servers[k].id);
+				h_raw(h, ">");
+				h_txt(h, app.servers[k].name);
+				h_raw(h, "</option>");
+			}
+			h_raw(h, "</select><small>Another host: zfs send here, "
+			    "zfs receive there, the console carrying it at the "
+			    "pace the slower takes.</small></label>");
+		}
 		if (sg.ask == A_REPLICATE)
 			h_raw(h, "<label>Only what changed since<input name=\""
 			    "from\" spellcheck=\"false\" autocomplete=\"off\" "
@@ -1588,6 +1800,11 @@ storage_form(const char *form, const ucl_object_t *f)
 				snprintf(app.modal_error,
 				    sizeof(app.modal_error), "Into pool/name; "
 				    "since nothing, or a snapshot");
+				return (true);
+			}
+			if (jstr(f, "to") != NULL && jstr(f, "to")[0] != '\0') {
+				transfer_start(s, jstr(f, "to"), sg.target, from,
+				    name, jbool(f, "recursive"));
 				return (true);
 			}
 			if (from[0] != '\0')
@@ -1941,6 +2158,17 @@ storage_action(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "st-zfs-mount") == 0) {
 		sjob(s, "zfs", strcmp(arg, "mount") == 0 ? "mount" : "unmount",
 		    "", value, 1, value);
+	} else if (strcmp(act, "st-xfer-stop") == 0) {
+		confirm("Stop sending", "zfs send stops on the one host, and "
+		    "zfs receive on the other ends without what was not sent: "
+		    "nothing of it is kept there.", "Stop", true, "",
+		    "do-st-xfer-stop", arg, "");
+	} else if (strcmp(act, "do-st-xfer-stop") == 0) {
+		char	url[64];
+
+		snprintf(url, sizeof(url), "/api/transfers/%u", (unsigned int)
+		    strtoul(arg, NULL, 10));
+		api("DELETE", url, NULL, xfers_stopped_cb, NULL);
 	} else if (strcmp(act, "st-rollback") == 0) {
 		snprintf(body, sizeof(body), "zfs rollback %s, on %s: the "
 		    "dataset becomes what it was when the snapshot was "
@@ -2070,7 +2298,7 @@ storage_action(const char *act, const char *arg, const char *value)
 			k++;
 		}
 		if (k > 0)
-			job_send_many(s, q, k);
+			job_send_many(s, q, k, JOB_STORAGE);
 		free(q);
 		sel_clear();
 	} else if (strcmp(act, "do-st-destroy-sel") == 0 && sg.nsel > 0) {
@@ -2091,7 +2319,7 @@ storage_action(const char *act, const char *arg, const char *value)
 			snprintf(q[i].target, sizeof(q[i].target), "%s",
 			    sg.sel[i]);
 		}
-		job_send_many(s, q, sg.nsel);
+		job_send_many(s, q, sg.nsel, JOB_STORAGE);
 		free(q);
 		sel_clear();
 	} else if (strcmp(act, "do-st-destroy") == 0) {

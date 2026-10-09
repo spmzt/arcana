@@ -3,9 +3,7 @@
 ## To do
 
 - WireGuard: preshared keys; a peer's key rotated.
-- Storage, beyond what there is: `zfs send` and `receive` between
-  two hosts (on one host it is done; between two it needs the agents
-  to reach each other, which is the mesh's); a key that is typed, for
+- Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a
   job; a key changed; file systems other than UFS made; a disk's
   self-test started; a vnet jail's datasets from the jail's own page.
@@ -23,42 +21,18 @@
   no way to read it from userland (no sysctl as vxlan has, no dump
   through netlink); once it does, shown as a bridge's addresses are.
   A learned address of a bridge deleted, and a static one added.
-- Workflows: a chain of steps kept by the console and run by it on
-  several hosts at once. As decided:
-  - The spec is the schema the steps are made from: a table in
-    `arcana.yaml` of which attributes each kind of job uses and which
-    it needs, carried into `schema.json`, so that the editor's forms
-    and the console's checks come from it and a new kind is there
-    without more code.
-  - A step is a job of any kind, with a condition before it (a read
-    operation and a test on its reply) and what follows a failure:
-    stop, go on, or another step. Values may be parameters asked for
-    when it is run, the host, or what an earlier step answered.
-  - Triggers: by hand, at an interval, and on events, both asked for
-    by the console (a host that stopped or began answering, a
-    threshold crossed, a jail's state) and told by the agent (cblink
-    notifications).
-  - A workflow that runs by itself may hold a destructive kind (a
-    pool destroyed, a partition table, an agent replaced) only when
-    it is marked so by hand.
-  - Runs kept, each host and step with its trace; the chain drawn as
-    a graph, and a run as that graph coloured as it goes; the queue
-    saved as a workflow.
-- Gula, further: older samples thinned instead of dropped; a jail's
-  share of the CPUs and memory as rctl accounts it, not only added up
-  from its processes; a threshold on a disk, an interface or a
-  jail; the kernel's messages followed as they come (not read whole
-  each time); dmesg for an agent that is not root, which the kernel
-  refuses unless security.bsd.unprivileged_read_msgbuf is on.
-- The page on a phone, further: a card's title the column that names
-  the row best (a process's command, not its number); the row's
-  actions behind one menu when there are many; the map and the
-  firewall's chain drawn for a narrow screen.
-- SCTP, further: what comes in parts as a cblink stream (each on an
-  SCTP stream of its own, flow-controlled by itself) instead of a
-  dump, so that it can share the association too; a burst of first
-  requests to a host opens an association each until one is shared,
-  and the others are closed then.
+- Workflows, further: the console checks a step's job against
+  share/arcana/jobs.yaml, which is apart from arcana.yaml because
+  cblink-gen takes no key of its own there: a kind added to the one
+  is added to the other by hand. A run's chain is drawn as rows of
+  boxes, where a failure goes on written on its box, not drawn as an
+  arrow; steps are moved up one at a time, not dragged. What runs at
+  an interval counts from when the console's worker began, not from
+  its last run, after a restart; the console watches events by asking
+  every five seconds, not by subscribing.
+- Gula, further: older samples thinned instead of dropped; dmesg for
+  an agent that is not root, which the kernel refuses unless
+  security.bsd.unprivileged_read_msgbuf is on.
 - The mesh: agents joined by SCTP associations, each to at least a
   configured number of others (2 unless set), so that the console
   reaches an agent it has lost through one it still has. SCTP only,
@@ -125,6 +99,9 @@ Written and tested with stand-ins, never run for real:
   configuration written in a jail, WireGuard in a jail, safe mode in a
   jail, and the map with a real jail as a node (the browser test tells
   the page that a jail runs).
+- A jail's share of the CPUs and its memory from rctl_get_racct(2):
+  the test VM's kernel has kern.racct.enable off, and turning it on
+  needs a reboot; what is read when it is off was run for real.
 - Loading and unloading a kernel module for real: reading the kernel
   is real, kldload(8) and kldunload(8) are stand-ins in the tests.
 - The switch to SCTP from the page, and SCTP between two machines:
@@ -231,6 +208,31 @@ What was once in the list above, and when it was run:
   rc.conf for a bridge or a tunnel, NAT and NAT64, a spanning tree
   with more than one bridge in it (every port there was designated
   and forwarding), and traffic through a geneve tunnel.
+
+- IPsec, BIRD and BFD (2026-10-09, on the test VM, in two vnet jails
+  with strongSwan 6.1 and BIRD 3.3, everything through the agent):
+  each jail's key made, the connections written, GRE in transport mode
+  over IPv4 and an ipsec(4) interface with its reqid in tunnel mode
+  over IPv6, pings through both and their SAs read back with their
+  counters; OSPFv3 Full and BFD Up over both, as the BIRD reading
+  says them. The jails had no allow.raw_sockets, and the agent saw
+  the kernel's IPsec (ipsec.ko, loaded on the host) from them. A GRE
+  or gif tunnel with IPv6 ends was found to have
+  been made without its ends before then: ifconfig(8) needs inet6
+  before tunnel, and says nothing in its exit status.
+- A snapshot sent between hosts (2026-10-09, the same VM, as root): two
+  agents with the real zfs on a pool of a file of its own, a full
+  send of 20 MiB and an incremental one of 5 MiB relayed between
+  their streams as the console relays them, the copy's snapshots and
+  files the same as the original's; a receive onto a dataset that is
+  there refused with zfs's own words, and a pool's own dataset
+  refused before anything ran. The console's relay itself, with
+  stand-ins for zfs.
+- Thresholds and the kernel's messages (2026-10-09, the same VM): a
+  limit on vtnet0 crossed by its traffic made its event; the
+  kernel's messages read as root, numbered, followed by their number
+  as the kernel wrote more, those beyond twenty in a second told as
+  one.
 
 ## Known limits
 

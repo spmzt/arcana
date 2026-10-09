@@ -1074,6 +1074,44 @@ view_bird(struct html *h, struct server *s, const ucl_object_t *data)
 	free(prows);
 	h_raw(h, "</tbody></table>");
 
+	/* BFD: whether each neighbour that asked for it still answers. */
+	if (ucl_array_size(jget(data, "bfd")) > 0) {
+		static const struct tcol bcols[] = {
+			{ "Address", "address", false }, { "Interface",
+			"interface", false }, { "State", "state", false },
+			{ "Since", "since", false }, { "Interval", "interval",
+			true }, { "Timeout", "timeout", true },
+		};
+		const ucl_object_t	**brows;
+
+		h_raw(h, "<h4 class=\"family\">BFD sessions</h4><table class=\""
+		    "net bfd\">");
+		tbl_head(h, "bfd", bcols, 6, 0);
+		h_raw(h, "<tbody>");
+		brows = tbl_rows("bfd", jget(data, "bfd"), bcols, 6, app.filter);
+		for (pr = 0; (o = brows[pr]) != NULL; pr++) {
+			state = jstr(o, "state") != NULL ? jstr(o, "state") : "";
+			h_fmt(h, "<tr class=\"%s\"><td><i class=\"led\"></i>",
+			    strcmp(state, "Up") == 0 ? "up" : "down");
+			h_txt(h, jstr(o, "address"));
+			h_raw(h, "<small>");
+			h_txt(h, jstr(o, "proto"));
+			h_raw(h, "</small></td><td>");
+			h_txt(h, jstr(o, "interface"));
+			h_raw(h, "</td><td>");
+			h_txt(h, state);
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(o, "since"));
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(o, "interval"));
+			h_raw(h, " s</td><td>");
+			h_txt(h, jstr(o, "timeout"));
+			h_raw(h, " s</td></tr>");
+		}
+		free(brows);
+		h_raw(h, "</tbody></table>");
+	}
+
 	if (ucl_array_size(jget(data, "tables")) > 0) {
 		h_raw(h, "<h4 class=\"family\">Tables</h4><div class=\"facts "
 		    "tables\">");

@@ -22,6 +22,35 @@ The console is laid out as a tree and tabs.
   jails run, and the fleet as a graph from the console through the
   hosts to their jails; nodes are links.
 - **Network**: the fleet as a map; see [The network](#the-network).
+- **Workflows**: chains of steps the console keeps and runs on
+  several hosts at once. A step is a job of any kind, its fields
+  those `share/arcana/jobs.yaml` says the kind needs (marked) and
+  uses, with a choice where a field is one of a few; or a read of the
+  host (hello, jails, services, stats, events, history, packages)
+  whose answer a later step looks at. **Only when…** puts a condition
+  before a step: a read made then, or what an earlier step answered,
+  a path in it (`jails[name=web].state`, `host.hostname`) and a test
+  (eq, ne, contains, gt, lt, exists, missing); a step whose condition
+  fails is skipped. **When it fails** the host's run stops, goes on,
+  or goes on at a later step, those between not run. A value may be
+  `${param.NAME}`, asked for when it runs with its default offered,
+  `${host.id}` or `${host.name}`, `${step.ID.PATH}`, what an earlier
+  step answered, or `${event.PATH}`, of the event that began the run.
+  A workflow runs by hand (**Run**, on the hosts picked), **every** so
+  many seconds, or **on** events: those the console sees itself, a
+  host that stopped answering (`host-down`), that answers again
+  (`host-up`), a jail whose state changed (`jail-state`), and those the
+  host tells (`threshold`, `kmsg`, `link` and the rest), each with what
+  it must match (`what=mem`); an event's run is on the host it happened
+  on. One that runs by itself may hold a step that destroys (a dataset
+  destroyed, an interface, a partition table) only when **It may
+  destroy, by itself** says so. Each run is listed with what began it
+  and how each host's went; a run is drawn as its chain, a row for each
+  host, each step coloured by how it went, and a step picked shows its
+  trace. What waits in the queue becomes a workflow with **As a
+  workflow**. The console keeps the workflows in `workflows.json` and
+  the last 30 runs in `runs.json`; what runs by itself is started by
+  one worker of the console's, the one holding `workflows.lock`.
 - **Utilization**: how busy every host has been, as lines over the
   last five minutes, quarter of an hour, hour, or all that is kept.
   Each agent looks at its host by itself, every five seconds and an
@@ -39,7 +68,15 @@ The console is laid out as a tree and tabs.
   CPU, memory or swap figure over its limit makes an event, and
   another when it is back under (five points lower), listed under
   events in the Log tab; the defaults are 90, 90 and 50 percent, and
-  0 is no limit. Under **Network** are the
+  0 is no limit. **Limits of an interface, a disk or a jail**, a line
+  each, do the same for one of them: `net:igb0=125000000` (bytes a
+  second, in and out together), `disk:ada0=50000000` (bytes a second,
+  read and written), `jail-cpu:web=80` (percent of one CPU) and
+  `jail-mem:web=1073741824` (bytes); back under is a tenth lower. Each
+  running jail's share of the CPUs and its memory are drawn under the
+  disks, a jail picked at a time, as the kernel's resource accounting
+  has them: that needs `kern.racct.enable=1` in `/boot/loader.conf`
+  and a reboot, which the page says when it is off. Under **Network** are the
   host's interfaces, without the loopback, each with what goes over
   it now: **all** draws them added up, one pressed draws that one;
   a bridge and its members are each counted, so **all** counts a
@@ -201,7 +238,16 @@ The console is laid out as a tree and tabs.
     yet, on the same host (another pool, say): `zfs send` into `zfs
     receive`, all of it or what changed since a snapshot both have,
     with the datasets under it when asked. What arrives is not
-    mounted. Between two hosts it is not done yet.
+    mounted. **To** another host sends it there: `zfs send` on this
+    host and `zfs receive -u` on that one, each as a stream on the
+    connection the console has with it, the console carrying the
+    bytes at the pace the slower of the two takes them; never with
+    `-F`, so nothing there is overwritten, and never into a pool's own
+    dataset. What is sent between hosts is listed above the snapshots,
+    on both hosts' pages, with what it carried, how it ended, what zfs
+    said when it did not, and **Stop** while it runs; the console
+    keeps the last 32 in `transfers.json`, and one its restart cut is
+    said to be interrupted.
     **Disks**: every disk as GEOM has it, with what `camcontrol` says
     it is, its partition table drawn to scale and listed. A table is
     made on a disk without one (gpt, mbr, bsd); a partition added in
@@ -426,7 +472,10 @@ The console is laid out as a tree and tabs.
     **Older** reads further back. **host** or a running jail's name
     picks whose `/var/log` is read. A packed log (`.bz2`, `.gz`,
     `.xz`, `.zst`) is unpacked to be read, whole. **dmesg** is the
-    kernel's message buffer and **audit** the audit trail of now,
+    kernel's message buffer, followed as it comes: the agent reads it
+    every second and numbers each new line, which the page shows the
+    moment it is told, none twice and none missed (a second with more
+    than twenty has the rest read at once). **audit** is the audit trail of now,
     where the host keeps one. Where syslogd writes a level (`-v`),
     it is a column. A line with a word of trouble in
     it (error, fail, denied, panic) is marked red, one of doubt
@@ -436,12 +485,15 @@ The console is laid out as a tree and tabs.
   - **Over SCTP**, the requests the console makes of a host at once
     all go over one association, which a thread of the console runs,
     each waiting for its own answer: the agent sees one session where
-    over TCP it would see one for each. What comes in parts (the
-    kernel's state, the routes, connections and sockets) has an
-    association of its own, as a slow reader of it would otherwise
-    hold the others back. cblink sends every request and reply on
-    SCTP stream 0; its other streams are for its own flow-controlled
-    streams, which nothing of Arcana uses yet.
+    over TCP it would see one for each. The first requests to a host,
+    when they come at once, make one association: the first makes it
+    and the others wait for it, a while. What comes in parts (the
+    kernel's state, the routes, connections and sockets) is a cblink
+    stream over that same association, flow-controlled by itself: the
+    host sends a part only while the page has room for it, which the
+    page gives back as it takes them, so a slow page holds its own
+    stream and nothing else. cblink sends requests and replies on SCTP
+    stream 0, and its own streams on the others.
   - **How it is reached**, at the foot of the summary: the agent's
     listeners and the connections open to the agent now, each with its
     transport, where it comes from and the name in its certificate,
@@ -462,14 +514,16 @@ The console is laid out as a tree and tabs.
     also offered when a host reached over SCTP stops answering. From a
     shell: `arcanactl transport [retry]`.
   - **Plugins** are what works through a program that has to be
-    installed, not the base system's: **BIRD** (`birdc`) and
+    installed, not the base system's: **BIRD** (`birdc`),
     **WireGuard** (`wg`; the interface itself, `if_wg` made by
-    `ifconfig`, is the base system's and is among the interfaces).
+    `ifconfig`, is the base system's and is among the interfaces) and
+    **IPsec** (strongSwan's `swanctl`; an `ipsec` interface is the base
+    system's).
     Each has a tab of its own, after the others and marked ◆, on a
-    host where its program is installed, and none where it is not;
-    on the page of a jail with a network of its own they follow that
-    network's views, apart, when the program is installed in the
-    jail. Nothing is asked of BIRD or `wg` on a host without them.
+    host where its program is installed or one of its running vnet
+    jails has it installed, and none where neither does; the picker
+    at the left of the tab's toolbar offers only those that have it.
+    Nothing is asked of BIRD or `wg` on a host without them.
     **WireGuard** lists the `wg` interfaces with their peers: endpoint,
     allowed addresses, last handshake, traffic. **Make its key** has
     the host make the interface's private key, which stays on the host:
@@ -480,9 +534,40 @@ The console is laid out as a tree and tabs.
     `/usr/local/etc/wireguard/<if>.conf` for `wg-quick`, readable by
     root alone, and named in `wireguard_interfaces`: that needs the
     `wireguard-tools` package on the host.
+    **IPsec** is strongSwan, IKEv2 only, every connection arcana writes
+    saying `version = 2`. **Make its key** has the host make a key of
+    its own, ECDSA P-256, whose private half stays on the host; the tab
+    shows the public half, which is what a peer is given: two hosts
+    know each other by their keys, no CA between them. **At boot**
+    keeps strongSwan started with the host (`strongswan_enable`), and
+    **Start** starts it when it is not running. **+ connection** joins
+    this host to another between two addresses, in **tunnel** mode or
+    in **transport** mode, where what is sent between the two addresses
+    is protected as it is: a gre, gif or WireGuard tunnel between them,
+    with the traffic named as `192.0.2.1[gre]`. With a **reqid** a
+    connection serves the `ipsec` interface made with that reqid
+    (**+ interface**, type ipsec): tunnel mode, the interface's routes
+    deciding what goes through it. A connection is written as
+    `swanctl/conf.d/arcana-<name>.conf` with the peer's key beside it,
+    and strongSwan reads them all again; if it refuses, the files are
+    put back as they were. The table has each connection with its
+    child, its SA's state and algorithm, and its traffic; **Up**,
+    **Down**, and the cross, for arcana's, takes it away, its SAs ended
+    first. A connection that is not IKEv2 is marked so. From a shell:
+    `arcanactl ipsec init | start | conn | unconn | up | down`.
+    In a vnet jail, strongSwan is the jail's own, installed in it
+    (`pkg -r` or **+ packages** for the jail): its key, its
+    `swanctl/conf.d` and its `strongswan_enable` are beneath the jail's
+    root, and `swanctl` and the rc.d script run in it. The kernel's
+    IPsec is the host's: built in, or `ipsec.ko` loaded on the host
+    (`ipsec_load="YES"` in its `loader.conf`), since a jail cannot load
+    a module; the tab says so when it is not there. The jail needs no
+    `allow.raw_sockets`.
     **BIRD** draws the routing daemon in the middle and around it its
     BGP neighbours (their AS and address), its OSPF neighbours and its
-    RPKI caches, each coloured by its state. A neighbour picked, in the
+    RPKI caches, each coloured by its state. Under the protocols, the
+    **BFD sessions**: each neighbour that asked for BFD, on which
+    interface, and whether it still answers. A neighbour picked, in the
     drawing or in the table under it, opens in a box: what the daemon
     says of it (session, timers, each channel's table, its import and
     export filters, how many routes came and went, and all the rest
@@ -554,9 +639,14 @@ The console is laid out as a tree and tabs.
     `pkg -6`), kept in the browser; **either** lets pkg choose.
     **Clean** deletes the downloaded packages no longer needed, or no
     longer in the repository (`pkg clean`), **Clean all** the whole
-    cache (`pkg clean -a`), each a job once it is confirmed. From a
-    shell: `arcanactl packages [-i] [-4 | -6] [jail]`, `pkg-upgrade
-    [-O] …`, `pkg-clean [-a] [-j jail]`. When pkg refuses packages built for a newer
+    cache (`pkg clean -a`), each a job once it is confirmed. **Clean
+    the jails**, on the host's page, does it in every running jail at
+    once: one batch of a job each, so that a jail whose pkg refuses
+    fails alone. **Install…** installs packages by name, on the host or
+    in the jail whose page it is, over IPv4 or IPv6 as chosen
+    (`pkg install -y`). From a shell: `arcanactl packages [-i] [-4 |
+    -6] [jail]`, `pkg-upgrade [-O] …`, `pkg-clean [-a] [-j jail | -J]`,
+    `pkg-install [-O] [-4 | -6] [-j jail] package …`. When pkg refuses packages built for a newer
     FreeBSD than the host's (OSVERSION), the console asks whether to
     go on anyway, and approved, does it again with
     `IGNORE_OSVERSION=yes` (a job of kind pkg-upgrade with force).
@@ -566,22 +656,25 @@ The console is laid out as a tree and tabs.
     job, a request somebody waits for such as a check of the packages,
     since when, and whether the agent was told to stop and waits for
     it: the same as its log says.
-- A **jail with a network of its own** (vnet) has that network on its
-  page, under **Network**: the same views as a host's network tab
-  (interfaces, routes with lookup, connections, sockets, netgraph,
-  WireGuard, BIRD with its neighbours and its configuration), for the
-  jail. It is read and changed from the host: there is no agent in the
+- A **jail with a network of its own** (vnet) has that network in its
+  host's **Network** tab, and in each plugin's: the picker at the left
+  of the toolbar names the host or one of its running vnet jails, and
+  every view (interfaces, routes with lookup, connections, sockets,
+  netgraph, bridges, geneve, neighbours; WireGuard, BIRD with its
+  neighbours and its configuration, IPsec) is then of that jail. The
+  jail's page has **Open it in the Network tab**, and the map's **Its
+  network** opens the same. It is read and changed from the host: there is no agent in the
   jail, and nothing is installed there for it. `ifconfig`, `route`,
   `netstat`, `sockstat` and `ngctl` are the host's, run for the jail;
-  `birdc`, `bird` and `wg` are the jail's own, run in it, so that what
+  `birdc`, `bird`, `wg` and `swanctl` are the jail's own, run in it, so that what
   parses a configuration is the version that runs it. What is kept for
   the jail's next start is kept in the jail's own `rc.conf`, its BIRD
   configuration and WireGuard files are the jail's, and they are never
   followed out of the jail through a link. Safe mode works there as on
   the host. From a shell: `arcanactl -j jail net …`, `interface …`,
-  `route …`, `wg …`, `bird …`.
+  `route …`, `wg …`, `bird …`, `ipsec …`.
 - **An interface gets into such a jail from its host**: **+ from host**
-  above the jail's interfaces gives it one the host has (`ifconfig
+  above the jail's interfaces, with the jail picked, gives it one the host has (`ifconfig
   vlan100 vnet jail`), or, with the field left empty, a new `epair`
   made for it: the `a` end stays on the host, to be put in a bridge or
   given an address there, the `b` end goes to the jail. The host's
@@ -621,6 +714,14 @@ The console is laid out as a tree and tabs.
 - The tree, the activity bar, the list of tasks in it and the service
   drawer are resized by dragging their edge; the browser keeps the
   sizes, and a double click on the edge goes back to the usual one.
+- **Settings** has **API tokens**: read-only tokens for a program to
+  look at the hosts through the API without a passkey, sent as
+  `Authorization: Bearer arcr_…`. One is made with a name and its
+  value is shown that once; the console keeps only its SHA-256, and
+  when it was last used. It reads what is said of the hosts (GET under
+  `/api/servers`) and nothing else: it changes nothing, and does not
+  read the console's settings, sign-in, push or enrolment. Deleted, it
+  opens nothing at once.
 - **Settings** has the console's version, and under **Look** its
   themes: Tron, Amber, Matrix, Synth, Slate, Onyx (black, white and one
   red, in a plain face, without glow) and the light ones: Paper,
@@ -664,9 +765,12 @@ The console is laid out as a tree and tabs.
   (`push.json`) and removes one; a device whose browser dropped the
   subscription is forgotten by itself. Up to 16 devices.
 
-- **A table on a phone** is a card for each row: the first column is
-  its title, each other value has its column's name beside it, and
-  what is done to the row is along the card's foot. The table's head
+- **A table on a phone** is a card for each row: its title is the
+  column that names the row (a process's command, an interface's or a
+  jail's name, a firewall's part), or the first column where none
+  does; each other value has its column's name beside it, and what is
+  done to the row is along the card's foot, behind one **⋯** when
+  there are more than two. The table's head
   stays above the cards as a row of buttons to sort by. Every table,
   the older ones too (routes, sockets, interfaces, BIRD's protocols,
   WireGuard's peers, netgraph's nodes, packages, jobs), sorts by the
@@ -676,7 +780,11 @@ The console is laid out as a tree and tabs.
   left (☰), the top bar is one row with the rest behind **⋮**, a
   dialog is a sheet from the bottom, a row of choices is one line that
   is scrolled, and a table keeps its first column in sight while the
-  others are scrolled.
+  others are scrolled. The firewall's parts, a side bar elsewhere, are
+  a strip above its rules. On the network map the tools are one line
+  along the top and the legend one along the foot, each scrolled
+  sideways, and **Arrange** puts the hosts on a tall ellipse that the
+  screen holds.
 - On a phone that has no theme chosen the plain **Slate** is used;
   Tron and the others are chosen in Settings as anywhere.
 - **Every table's columns** are as wide as their borders are dragged
@@ -761,6 +869,22 @@ works the links out.
   phone two fingers do. **Fit** shows every host, **Arrange** puts them
   back on a circle. Once the map was moved or zoomed it is not fitted
   again unasked, so nothing shifts under the hand.
+- On a tunnel or a point to point link, each end's interface is
+  written at its own end, just past the host, and what it carries in
+  the middle; another kind of line has its name above the middle and
+  its rate below.
+- **Labels** opens the switches of what is written: **Names** and
+  **Rates** apart, and one for each kind of line (tunnels, point to
+  point links, shared networks, BGP, OSPF and jails). Until a kind is
+  switched, a kind with more than six lines has its labels left out,
+  and a line then shows its own when the pointer is on it or it is
+  picked.
+- A line is **dragged** to bend it away from the lines beside it; the
+  browser keeps the bend, and **Arrange** straightens every line
+  again. A BGP or OSPF neighbour outside the console is dragged the
+  same way to put it elsewhere: it keeps its place beside its host,
+  following it when the host moves, until **Arrange**; picked, it
+  opens its host's BIRD.
 - The **legend** names the kinds of lines, and each is picked to take
   that kind out of the map and to put it back: tunnels, point to point
   links, shared networks, BGP and OSPF with their neighbours outside,
@@ -779,7 +903,8 @@ works the links out.
   interfaces and their traffic, its tunnels, its BGP and OSPF sessions
   and its neighbours outside, as a host has. A tunnel is drawn from or
   to it as with a host, a route is traced from it and through it, and
-  **Its network** opens the jail's page. All of it is done by the
+  **Its network** opens its host's Network tab with the jail picked.
+  All of it is done by the
   jail's host.
 - A **tunnel is made by drawing it**: drag the dot on a host's edge
   onto another host. The console offers the outer addresses the two

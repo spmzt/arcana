@@ -99,7 +99,8 @@ scoped(const struct arc_job_spec *sp)
 
 	return ((sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->kind <=
 	    ARC_JOB_KIND_BIRD) || sp->kind == ARC_JOB_KIND_IPFW || sp->kind ==
-	    ARC_JOB_KIND_BRIDGE || sp->kind == ARC_JOB_KIND_GENEVE);
+	    ARC_JOB_KIND_BRIDGE || sp->kind == ARC_JOB_KIND_GENEVE ||
+	    sp->kind == ARC_JOB_KIND_IPSEC);
 }
 
 /* What the job does, in words: the activity log's line for it. */
@@ -185,6 +186,19 @@ title_of(const struct arc_job_spec *sp)
 		break;
 	case ARC_JOB_KIND_PROCESS:
 		rc = (t = proc_title(sp)) != NULL ? 0 : -1;
+		break;
+	case ARC_JOB_KIND_IPSEC:
+		rc = asprintf(&t, "ipsec %s%s%s%s%s%s", sp->verb, sp->conn !=
+		    NULL ? " " : "", sp->conn != NULL ? sp->conn : "",
+		    sp->ipsec_mode != NULL ? " (" : "", sp->ipsec_mode != NULL ?
+		    sp->ipsec_mode : "", sp->ipsec_mode != NULL ? ")" : "");
+		break;
+	case ARC_JOB_KIND_PKG_INSTALL:
+		rc = asprintf(&t, "pkg install %s%s%s%s%s", sp->names.n > 0 ?
+		    sp->names.v[0] : "", sp->names.n > 1 ? " and more" : "",
+		    sp->jail != NULL && sp->jail[0] != '\0' ? " in " : "",
+		    sp->jail != NULL ? sp->jail : "", sp->force ?
+		    " (any OSVERSION)" : "");
 		break;
 	case ARC_JOB_KIND_PKG_CLEAN:
 		rc = asprintf(&t, "pkg clean%s%s%s", sp->force ? " -a" : "",
@@ -795,6 +809,14 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_PKG_CLEAN:
 		error = NULL;
 		ok = do_pkg_clean(&j->w, sp->jail, sp->force, &error) == 0;
+		break;
+	case ARC_JOB_KIND_PKG_INSTALL:
+		error = NULL;
+		ok = do_pkg_install(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IPSEC:
+		error = NULL;
+		ok = do_ipsec_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:

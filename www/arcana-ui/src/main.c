@@ -216,6 +216,8 @@ tick(void *arg)
 			procs_tick(now);
 			logs_tick(now);
 			usage_tick(now);
+			storage_tick(now);
+			workflows_tick(now);
 		}
 	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
@@ -315,6 +317,7 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
+	    ipsec_form(form, f) || workflows_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
@@ -330,7 +333,57 @@ submit_form(const char *form, const ucl_object_t *f)
 	bool		 dry;
 	int		 i;
 
-	if (strcmp(form, "enrol") == 0) {
+	if (strcmp(form, "pkg-install") == 0 && cur_server() != NULL) {
+		struct html	 b;
+		const char	*p;
+		char		 word[128], title[300], *q, *qj;
+		size_t		 n, nw;
+
+		/* The names typed, each checked, as a JSON array. */
+		memset(&b, 0, sizeof(b));
+		nw = 0;
+		for (p = jstr(f, "names") != NULL ? jstr(f, "names") : "";
+		    *p != '\0'; ) {
+			p += strspn(p, " ,\t");
+			n = strcspn(p, " ,\t");
+			if (n == 0)
+				break;
+			if (n >= sizeof(word) || strspn(p,
+			    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+			    "0123456789-_.+@/") < n) {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "A package is named with letters, digits and "
+				    "- _ . + @ /");
+				free(b.s);
+				return;
+			}
+			snprintf(word, sizeof(word), "%.*s", (int)n, p);
+			q = json_quote(word);
+			h_fmt(&b, "%s%s", nw++ > 0 ? "," : "", q);
+			free(q);
+			p += n;
+		}
+		if (nw == 0) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Name the packages to install");
+			free(b.s);
+			return;
+		}
+		qj = json_quote(app.pkg.jail);
+		if (asprintf(&q, "{\"kind\":\"pkg-install\",\"packages\":[%s]"
+		    "%s%s%s%s%s}", b.s, app.pkg.jail[0] != '\0' ? ",\"jail\":" :
+		    "", app.pkg.jail[0] != '\0' ? qj : "", app.pkg.ip != 0 ?
+		    (app.pkg.ip == 4 ? ",\"pkg_ip\":4" : ",\"pkg_ip\":6") : "",
+		    jbool(f, "anyos") ? ",\"force\":true" : "", "") == -1)
+			abort();
+		free(qj);
+		snprintf(title, sizeof(title), "pkg install %.200s%s%s",
+		    jstr(f, "names"), app.pkg.jail[0] != '\0' ? " in " : "",
+		    app.pkg.jail);
+		free(b.s);
+		app.modal = MODAL_NONE;
+		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
+	} else if (strcmp(form, "enrol") == 0) {
 		enrol(jstr(f, "token") != NULL ? jstr(f, "token") : "",
 		    jstr(f, "name") != NULL ? jstr(f, "name") : "");
 	} else if (strcmp(form, "add-server") == 0) {
@@ -515,6 +568,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	s = cur_server();
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
+	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
 	    procs_action(act, arg, value) || logs_action(act, arg, value) ||
@@ -538,6 +592,8 @@ dispatch(const char *act, const char *arg, const char *value)
 				app.sel = i;
 		app.node = NODE_HOST;
 		app.jail[0] = '\0';
+		/* A host opened from the tree shows its own network first. */
+		app.net_jail[0] = '\0';
 		close_service();
 		if ((s = cur_server()) != NULL) {
 			refresh_jails(s, false);
@@ -568,17 +624,20 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "tab") == 0 && s != NULL) {
 		/* A plugin's tab is its view of the host's network. */
 		if (strcmp(arg, "wireguard") == 0 || strcmp(arg, "bird") == 0 ||
+		    strcmp(arg, "ipsec") == 0 ||
 		    (strcmp(arg, "network") == 0 && app.net.kind >=
 		    NET_WIREGUARD)) {
 			app.net.kind = arg[0] == 'w' ? NET_WIREGUARD : arg[0] ==
-			    'b' ? NET_BIRD : NET_INTERFACES;
+			    'b' ? NET_BIRD : arg[0] == 'i' ? NET_IPSEC :
+			    NET_INTERFACES;
 			app.net.sort = -1;
 			app.net.loading = false;
 			app.net.sid[0] = '\0';
 		}
 		app.tab = strcmp(arg, "services") == 0 ? TAB_SERVICES :
 		    strcmp(arg, "network") == 0 || strcmp(arg, "wireguard") ==
-		    0 || strcmp(arg, "bird") == 0 ? TAB_NETWORK :
+		    0 || strcmp(arg, "bird") == 0 || strcmp(arg, "ipsec") == 0 ?
+		    TAB_NETWORK :
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
 		    strcmp(arg, "kernel") == 0 ? TAB_KERNEL :
 		    strcmp(arg, "sysctl") == 0 ? TAB_SYSCTL :
@@ -628,6 +687,9 @@ dispatch(const char *act, const char *arg, const char *value)
 		refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-check") == 0 && s != NULL) {
 		refresh_packages(s, true);
+	} else if (strcmp(act, "pkg-install") == 0 && s != NULL) {
+		app.modal = MODAL_PKG_INSTALL;
+		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "pkg-clean") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "pkg clean%s on %s%s%s: %s",
 		    arg[0] != '\0' ? " -a" : "", s->name, app.pkg.jail[0] !=
@@ -655,6 +717,66 @@ dispatch(const char *act, const char *arg, const char *value)
 		    app.pkg.jail);
 		/* The text is the queue's now. */
 		job_send(s, json, title, JOB_PACKAGES, app.pkg.jail);
+	} else if (strcmp(act, "pkg-clean-jails") == 0 && s != NULL) {
+		const ucl_object_t	*j;
+		ucl_object_iter_t	 it;
+		int			 n;
+
+		n = 0;
+		it = NULL;
+		while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+		    "jails"), &it, true)) != NULL)
+			if (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+			    "running") == 0)
+				n++;
+		if (n == 0) {
+			toast(true, "%s has no running jail", s->name);
+			return;
+		}
+		snprintf(body, sizeof(body), "pkg clean%s in each of the %d "
+		    "running jails of %s, each a job of its own in one batch: "
+		    "%s A jail without pkg, or whose pkg refuses, fails alone; "
+		    "the others are cleaned all the same. The host's own cache "
+		    "is not touched.", arg[0] != '\0' ? " -a" : "", n, s->name,
+		    arg[0] != '\0' ? "every downloaded package in their caches "
+		    "is deleted." : "the downloaded packages no longer needed, "
+		    "or no longer in the repository, are deleted.");
+		confirm(arg[0] != '\0' ? "Clean all the caches of the jails" :
+		    "Clean the caches of the jails", body, "Clean", arg[0] !=
+		    '\0', "", "do-pkg-clean-jails", arg, "");
+	} else if (strcmp(act, "do-pkg-clean-jails") == 0 && s != NULL) {
+		const ucl_object_t	*j;
+		ucl_object_iter_t	 it;
+		struct queued		*q;
+		char			*qj;
+		int			 n;
+
+		n = (int)ucl_array_size(jget(s->list, "jails"));
+		if (n == 0 || (q = calloc((size_t)n, sizeof(*q))) == NULL)
+			return;
+		n = 0;
+		it = NULL;
+		while ((j = ucl_object_iterate(jget(s->list, "jails"), &it,
+		    true)) != NULL) {
+			if (jstr(j, "name") == NULL || jstr(j, "state") ==
+			    NULL || strcmp(jstr(j, "state"), "running") != 0)
+				continue;
+			qj = json_quote(jstr(j, "name"));
+			if (asprintf(&q[n].json, "{\"kind\":\"pkg-clean\","
+			    "\"jail\":%s%s}", qj, arg[0] != '\0' ?
+			    ",\"force\":true" : "") == -1)
+				abort();
+			free(qj);
+			snprintf(q[n].title, sizeof(q[n].title), "pkg clean%s "
+			    "in %s", arg[0] != '\0' ? " -a" : "", jstr(j,
+			    "name"));
+			snprintf(q[n].target, sizeof(q[n].target), "%s",
+			    jstr(j, "name"));
+			n++;
+		}
+		if (n > 0)
+			job_send_many(s, q, n, JOB_PACKAGES);
+		free(q);
 	} else if (strcmp(act, "pkg-mode") == 0 && s != NULL) {
 		/* The installed, or what the repository has newer: the
 		 * repository is asked only for the second. */
@@ -762,7 +884,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "nhgroups") == 0 ? NET_NHGROUPS :
 		    strcmp(arg, "neighbours") == 0 ? NET_NEIGHBOURS :
 		    strcmp(arg, "wireguard") == 0 ? NET_WIREGUARD :
-		    strcmp(arg, "bird") == 0 ? NET_BIRD : NET_ROUTES;
+		    strcmp(arg, "bird") == 0 ? NET_BIRD :
+		    strcmp(arg, "ipsec") == 0 ? NET_IPSEC : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
 			topo_poll(s);
 		app.net.loading = false;
@@ -899,6 +1022,29 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "net-lookup-clear") == 0) {
 		topo_lookup_clear();
+	} else if (strcmp(act, "jail-net") == 0 && s != NULL) {
+		/* A jail's own network: the host's tab, the jail picked. */
+		app.node = NODE_HOST;
+		app.peek = false;
+		app.tab = TAB_NETWORK;
+		app.jail[0] = '\0';
+		snprintf(app.net_jail, sizeof(app.net_jail), "%s", arg);
+		/* Its interfaces first. */
+		app.net.kind = NET_INTERFACES;
+		app.net.sort = -1;
+		app.net.loading = false;
+		topo_lookup_clear();
+		topo_poll(s);
+		refresh_network(s, true);
+	} else if (strcmp(act, "input:net-jail") == 0 && s != NULL) {
+		snprintf(app.net_jail, sizeof(app.net_jail), "%s", value);
+		app.net.sort = -1;
+		app.net.loading = false;
+		app.net.host_filter[0] = '\0';
+		topo_lookup_clear();
+		if (app.net.kind == NET_INTERFACES)
+			topo_poll(s);
+		refresh_network(s, true);
 	} else if (strcmp(act, "input:net-fib") == 0 && s != NULL) {
 		app.net.fib = atoi(value) > 0 && atoi(value) < 65536 ?
 		    atoi(value) : 0;
@@ -928,13 +1074,6 @@ dispatch(const char *act, const char *arg, const char *value)
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 		close_service();
 		topo_lookup_clear();
-		/* A jail with a network of its own: its interfaces first. */
-		if (net_scope()[0] != '\0' && (s = cur_server()) != NULL) {
-			app.net.kind = NET_INTERFACES;
-			app.net.sort = -1;
-			app.net.loading = false;
-			refresh_network(s, false);
-		}
 	} else if (strcmp(act, "peek-jail") == 0) {
 		/* From a graph, the fleet's or a host's: the jail in a box
 		 * over the page, which stays the page it is. */
@@ -1136,7 +1275,20 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "settings") == 0) {
 		app.modal = MODAL_SETTINGS;
 		app.modal_error[0] = '\0';
+		/* A token's value is shown once: not again on reopening. */
+		app.token_value[0] = '\0';
 		load_settings();
+		load_tokens();
+	} else if (strcmp(act, "input:token-name") == 0) {
+		snprintf(app.token_name, sizeof(app.token_name), "%s", value);
+	} else if (strcmp(act, "token-new") == 0) {
+		token_new();
+	} else if (strcmp(act, "token-del") == 0) {
+		confirm("Delete the API token", "A program that uses it can no "
+		    "longer read anything from the console, from now on.",
+		    "Delete", true, "", "do-token-del", arg, "");
+	} else if (strcmp(act, "do-token-del") == 0) {
+		token_del(arg);
 	} else if (strcmp(act, "keys") == 0) {
 		app.modal = MODAL_KEYS;
 		app.modal_error[0] = '\0';

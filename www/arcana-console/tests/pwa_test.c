@@ -488,6 +488,30 @@ ATF_TC_BODY(pwa, tc)
 	    "t.textContent.includes('Settings saved'))", 10);
 	ATF_CHECK(system("grep -q '/usr/local/etc/arcana/id_ed25519' "
 	    "data/settings.json") == 0);
+	/* A read-only API token: made with a name in the settings, its
+	 * value shown once, listed, and deleted once confirmed. */
+	run("document.querySelector('button[data-act=settings]').click()");
+	wait_js("document.querySelector('input[data-input=token-name]')", 10);
+	run("const i = document.querySelector('input[data-input=token-name]'); "
+	    "i.value = 'overlay planner'; i.dispatchEvent(new Event('input', "
+	    "{ bubbles: true })); document.querySelector('button[data-act="
+	    "token-new]').click();");
+	wait_js("document.querySelector('pre.out.token') && document."
+	    "querySelector('pre.out.token').textContent.startsWith('arcr_') "
+	    "&& [...document.querySelectorAll('ul.tokens li')].some(l => "
+	    "l.textContent.includes('overlay planner') && l.textContent."
+	    "includes('never used'))", 10);
+	shot("0b-token");
+	run("document.querySelector('ul.tokens button[data-act=token-del]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=confirm]')", 5);
+	for (i = 0; i < 100 && system("grep -q 'overlay planner' "
+	    "data/tokens.json") == 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("! grep -q 'overlay planner' data/tokens.json") == 0);
 	/* There is no such key here: the builds below use the host's own. */
 	run("window.unset = false; fetch('/api/settings', { method: 'POST', "
 	    "headers: { 'Content-Type': 'application/json', 'X-Arcana': '1' }, "
@@ -822,6 +846,29 @@ ATF_TC_BODY(pwa, tc)
 		usleep(50000);
 	ATF_CHECK(system("grep -q '^clean -ay$' pkg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/* Packages installed: named in a box, checked, then a job. */
+	run("document.querySelector('button[data-act=pkg-install]').click()");
+	wait_js("document.querySelector('form[data-form=pkg-install]')", 5);
+	run("const f = document.querySelector('form[data-form=pkg-install]'); "
+	    "f.names.value = 'strongswan;rm'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal').textContent.includes("
+	    "'letters, digits')", 5);
+	run("const f = document.querySelector('form[data-form=pkg-install]'); "
+	    "f.names.value = 'strongswan  wireguard-tools'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q 'install -y strongswan "
+	    "wireguard-tools$' pkg.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q 'install -y strongswan wireguard-tools$' "
+	    "pkg.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* Of every running jail at once: none runs here, which is said,
+	 * and nothing is asked. */
+	run("document.querySelector('button[data-act=pkg-clean-jails]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('has no running jail'))", 5);
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=confirm]')"));
 	/* Over IPv6 only: pkg -6, kept in the browser. */
 	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"6\"]')"
 	    ".click()");
@@ -1040,9 +1087,35 @@ ATF_TC_BODY(pwa, tc)
 		    ".click()");
 		wait_js("document.querySelector('table.procs.cards tbody tr td"
 		    "[data-label=PID]')", 10);
-		ATF_CHECK(js_true("getComputedStyle(document.querySelector("
-		    "'table.procs.cards tbody tr')).display === 'block'"));
+		/* A card is titled by the command, not by its number. */
+		ATF_CHECK(js_true("(() => { const tr = document.querySelector("
+		    "'table.procs.cards tbody tr'), t = tr.querySelector("
+		    "'td.ctitle'); return t && t.dataset.label === 'Command' && "
+		    "t.getBoundingClientRect().top <= tr.querySelector("
+		    "'td[data-label=PID]').getBoundingClientRect().top; })()"));
 		shot("m9-processes-cards");
+		/* The firewall's parts as a strip above its rules. */
+		run("document.querySelector('button.tab[data-arg=firewall]')"
+		    ".click()");
+		wait_js("document.querySelector('.fw-strip') && getComputedStyle("
+		    "document.querySelector('.fw-strip')).display === 'flex' && "
+		    "document.querySelectorAll('.fw-strip button').length >= 4",
+		    20);
+		ATF_CHECK(js_true("document.documentElement.scrollWidth <= "
+		    "window.innerWidth + 1"));
+		shot("m9b-firewall");
+		run("[...document.querySelectorAll('.fw-strip button')].find(b "
+		    "=> b.textContent.includes('As text')).click()");
+		wait_js("document.querySelector('.fw-strip button.on') && document"
+		    ".querySelector('.fw-strip button.on').textContent.includes("
+		    "'As text')", 10);
+		run("document.querySelector('.fw-strip button').click()");
+		wait_js("document.querySelector('.fw-strip button.on') && document"
+		    ".querySelector('.fw-strip button.on').textContent === "
+		    "'Overview'", 10);
+		run("document.querySelector('button.tab[data-arg=processes]')"
+		    ".click()");
+		wait_js("document.querySelector('table.procs.cards')", 10);
 	}
 	/* The tree is one line until unfolded, and folds again when
 	 * something in it is picked. */
@@ -1178,9 +1251,10 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.dock > header').click()");
 
 	/*
-	 * A jail with a network of its own: its page shows that network,
-	 * read through the host, and a change made there is made in the
-	 * jail, and kept in the jail's own rc.conf.
+	 * A jail with a network of its own: its page sends to the host's
+	 * Network tab with the jail picked there, which shows that network,
+	 * read through the host; a change made there is made in the jail,
+	 * and kept in the jail's own rc.conf.
 	 */
 	run("const m = document.querySelector('.tree .titem.more'); if (m && "
 	    "!m.textContent.includes('fewer')) m.click();");
@@ -1188,13 +1262,20 @@ ATF_TC_BODY(pwa, tc)
 	    "l.dataset.arg === 'gw')", 10);
 	run("[...document.querySelectorAll('.tree .titem.leaf')].find(l => "
 	    "l.dataset.arg === 'gw').click()");
-	wait_js("document.querySelector('.jail-page .jail-net table.ifaces "
-	    "tr[data-if=epair1b] .chip')", 20);
-	ATF_CHECK(js_true("document.querySelector('.jail-net').textContent"
-	    ".includes('10.99.0.2/24') && !document.querySelector('.jail-net "
+	wait_js("document.querySelector('.jail-page .jail-net button[data-act="
+	    "jail-net]')", 20);
+	ATF_CHECK(js_true("!document.querySelector('.jail-page table.ifaces')"));
+	run("document.querySelector('.jail-net button[data-act=jail-net]')"
+	    ".click()");
+	wait_js("document.querySelector('button.tab[data-arg=network].on') && "
+	    "document.querySelector('select[data-input=net-jail]')?.value === "
+	    "'gw' && document.querySelector('table.ifaces tr[data-if=epair1b] "
+	    ".chip')", 20);
+	ATF_CHECK(js_true("document.querySelector('table.ifaces').textContent"
+	    ".includes('10.99.0.2/24') && !document.querySelector('table.ifaces "
 	    "tr[data-if=lo0]')"));
 	shot("7g-vnet-jail");
-	run("document.querySelector('.jail-net tr[data-if=epair1b] button"
+	run("document.querySelector('table.ifaces tr[data-if=epair1b] button"
 	    "[data-act=if-addr-add]').click()");
 	wait_js("document.querySelector('form[data-form=if-address]')", 5);
 	run("const f = document.querySelector('form[data-form=if-address]'); "
@@ -1213,8 +1294,7 @@ ATF_TC_BODY(pwa, tc)
 	 * end the jail gets; the host does it, not told to work in the
 	 * jail.  And one the jail has, taken back to the host.
 	 */
-	run("document.querySelector('.jail-net button[data-act=if-vnet-give]')"
-	    ".click()");
+	run("document.querySelector('button[data-act=if-vnet-give]').click()");
 	wait_js("document.querySelector('form[data-form=if-vnet] input[name="
 	    "persist]')", 5);
 	shot("7h-vnet-give");
@@ -1229,9 +1309,9 @@ ATF_TC_BODY(pwa, tc)
 		usleep(50000);
 	ATF_CHECK(system("grep -q '^epair create$' ifconfig.log && ! grep -q "
 	    "'^-j 4 epair create' ifconfig.log") == 0);
-	wait_js("document.querySelector('.jail-net tr[data-if=epair1b] button"
-	    "[data-act=if-vnet-back]')", 20);
-	run("document.querySelector('.jail-net tr[data-if=epair1b] button"
+	wait_js("document.querySelector('table.ifaces tr[data-if=epair1b] "
+	    "button[data-act=if-vnet-back]')", 20);
+	run("document.querySelector('table.ifaces tr[data-if=epair1b] button"
 	    "[data-act=if-vnet-back]').click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')"
@@ -1241,13 +1321,21 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('take epair1b back from gw: done'))", 20);
 	ATF_CHECK(system("grep -q '^epair1b -vnet 4$' ifconfig.log") == 0);
-	wait_js("document.querySelector('.jail-net button[data-act=net-kind]"
+	wait_js("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=routes]')", 20);
 	/* Its routes, by the host's netstat told which jail. */
-	run("document.querySelector('.jail-net button[data-act=net-kind]"
+	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=routes]').click()");
-	wait_js("document.querySelector('.jail-net button[data-act=route-add]')",
-	    10);
+	wait_js("document.querySelector('button[data-act=route-add]') && "
+	    "document.querySelector('select[data-input=net-jail]')?.value === "
+	    "'gw'", 10);
+	/* And the host's again, picked there; gw does not run, so the
+	 * host's own network is offered no picker then. */
+	run("const p = document.querySelector('select[data-input=net-jail]'); "
+	    "p.value = ''; p.dispatchEvent(new Event('input', {bubbles: "
+	    "true}));");
+	wait_js("!document.querySelector('select[data-input=net-jail]') && "
+	    "document.querySelector('button[data-act=route-add]')", 10);
 	run("document.querySelector('li[data-act=select-server]').click()");
 	wait_js("document.querySelector('button.tab[data-arg=network]')", 10);
 
@@ -1303,12 +1391,70 @@ ATF_TC_BODY(pwa, tc)
 	    "fd00::2/128$' wg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 	shot("7c-wireguard");
+	/*
+	 * IPsec, strongSwan: the host makes its key, whose public half is
+	 * shown; a connection is made with the form, IKEv2, and its SA is
+	 * there.
+	 */
+	run("document.querySelector('button.tab.plugin[data-arg=ipsec]')"
+	    ".click()");
+	wait_js("document.querySelector('.pane.ipsec button[data-act="
+	    "ipsec-init]')", 20);
+	ATF_CHECK(js_true("document.querySelector('.pane.ipsec').textContent."
+	    "includes('no key yet')"));
+	run("document.querySelector('.pane.ipsec button[data-act=ipsec-init]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('.pane.ipsec code.key.pub')", 20);
+	run("window.pub = document.querySelector('.pane.ipsec code.key.pub')"
+	    ".textContent; document.querySelector('.pane.ipsec button"
+	    "[data-act=ipsec-conn-add]').click()");
+	wait_js("document.querySelector('form[data-form=ipsec-conn]')", 5);
+	/* A reqid is an interface's: tunnel mode only. */
+	run("const f = document.querySelector('form[data-form=ipsec-conn]'); "
+	    "f.conn.value = 'to-lab2'; f.local.value = '192.0.2.1'; "
+	    "f.remote.value = '192.0.2.2'; f.mode.value = 'transport'; "
+	    "f.pubkey.value = '-----BEGIN PUBLIC KEY-----\\n' + window.pub + "
+	    "'\\n-----END PUBLIC KEY-----'; f.local_ts.value = "
+	    "'192.0.2.1[gre]'; f.remote_ts.value = '192.0.2.2[gre]'; "
+	    "f.reqid.value = '7'; f.start.value = 'start'; f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=ipsec-conn]') && "
+	    "document.querySelector('.modal').textContent.includes('tunnel "
+	    "mode')", 5);
+	shot("7d-ipsec-form");
+	run("const f = document.querySelector('form[data-form=ipsec-conn]'); "
+	    "f.reqid.value = ''; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('table.ipsec tbody tr.up') && "
+	    "document.querySelector('table.ipsec').textContent.includes("
+	    "'TRANSPORT')", 20);
+	ATF_CHECK(system("grep -q 'version = 2' "
+	    "swanctl/conf.d/arcana-to-lab2.conf && grep -q "
+	    "'local_ts = 192.0.2.1\\[gre\\]' swanctl/conf.d/arcana-to-lab2.conf "
+	    "&& grep -q 'start_action = start' "
+	    "swanctl/conf.d/arcana-to-lab2.conf") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("7e-ipsec");
+	run("document.querySelector('table.ipsec button[data-act="
+	    "ipsec-unconn]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("!document.querySelector('table.ipsec')", 20);
 	run("document.querySelector('button.tab.plugin[data-arg=bird]')"
 	    ".click()");
 	wait_js("document.querySelectorAll('table.bird tbody tr').length === 4",
 	    20);
 	ATF_CHECK(js_true("document.querySelector('.pane.bird').textContent."
 	    "includes('Router ID is 192.0.2.1')"));
+	/* BFD: each session, up or not. */
+	ATF_CHECK(js_true("document.querySelector('table.bfd tbody tr.up') && "
+	    "document.querySelector('table.bfd').textContent.includes("
+	    "'fe80::2')"));
 	run("[...document.querySelectorAll('table.bird button[data-act="
 	    "bird-verb][data-arg=reload]')].find(b => b.dataset.value === "
 	    "'bgp_core').click()");
@@ -1666,6 +1812,26 @@ ATF_TC_BODY(pwa, tc)
 	    "tank/data@b.resnap|zfs destroy tank/data@b|zfs rename "
 	    "tank/data@b.resnap tank/data@b|'") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * A snapshot sent to another host: chosen in Replicate's box, the
+	 * console carrying it, and listed with what it carried.
+	 */
+	ATF_REQUIRE(system("dd if=/dev/random of=zsend.data bs=1m count=6 "
+	    "2>/dev/null") == 0);
+	run("document.querySelector('table.snapshots tr[data-snap=\"tank/data@b"
+	    "\"] button[data-act=st-ask][data-arg=replicate]').click()");
+	wait_js("document.querySelector('form select[name=to]') && "
+	    "document.querySelector('form select[name=to]').options.length "
+	    "=== 2", 5);
+	run("const f = document.querySelector('form select[name=to]').form; "
+	    "f.to.selectedIndex = 1; f.name.value = 'tank/copy'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('ul.xfers li.done') && document."
+	    "querySelector('ul.xfers li.done').textContent.includes("
+	    "'tank/data@b') && document.querySelector('ul.xfers li.done')."
+	    "textContent.includes('6.00M')", 30);
+	ATF_CHECK(system("cmp -s zsend.data zrecv.data") == 0);
+	shot("7l-transfer");
 	/* Several at once: the newest of each dataset picked, and taken
 	 * again in one batch; one picked that is not the newest left. */
 	run("document.querySelector('button[data-act=st-sel-newest]').click()");
@@ -2129,18 +2295,28 @@ ATF_TC_BODY(pwa, tc)
 	shot("7t-usage");
 	run("document.querySelector('button[data-act=usage-cfg]').click()");
 	wait_js("document.querySelector('form[data-form=usage-set]') && "
-	    "document.querySelector('form[data-form=usage-set] small')."
+	    "document.querySelector('form[data-form=usage-set] small.dim')."
 	    "textContent.includes('interfaces') && document.querySelector("
 	    "'form[data-form=usage-set] input[name=cpu]').value === '90'", 5);
 	shot("7t-usage-sampling");
+	/* The limits of devices and jails, a line each. */
 	run("const f = document.querySelector('form[data-form=usage-set]'); "
-	    "f.step.value = '2'; f.keep.value = '50'; f.requestSubmit();");
+	    "f.step.value = '2'; f.keep.value = '50'; f.rules.value = "
+	    "'net:lo0=1000000\\n jail-mem:web=1073741824\\n'; "
+	    "f.requestSubmit();");
 	wait_js("document.querySelector('section.ucard h4 small').textContent"
 	    ".includes('every 2 s, 50 kept') && !document.querySelector("
 	    "'form[data-form=usage-set]') && document.querySelectorAll("
 	    "'section.ucard figure.uplot svg path.line').length >= 10", 30);
 	ATF_CHECK(system("grep -q '^step=2$' history.conf && grep -q "
 	    "'^keep=50$' history.conf") == 0);
+	ATF_CHECK(system("grep -q '^rule=net:lo0=1000000$' history.conf && "
+	    "grep -q '^rule=jail-mem:web=1073741824$' history.conf") == 0);
+	/* Without the kernel's accounting, what turns it on is said. */
+	ATF_CHECK(js_true("document.querySelector('section.ucard p.ujails') "
+	    "? document.querySelector('section.ucard p.ujails').textContent."
+	    "includes('kern.racct.enable') : document.querySelector("
+	    "'section.ucard .ujails')"));
 	run("document.querySelector('section.ucard .uname').click()");
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
 
@@ -2533,6 +2709,92 @@ ATF_TC_BODY(pwa, tc)
 	    "'button[data-act=net-live]').click()");
 
 	/*
+	 * Workflows: one made in the editor, its steps' forms from
+	 * jobs.json, a parameter, a condition; run, its chain drawn as it
+	 * went, a step's trace; and the queue kept as one.
+	 */
+	run("document.querySelector('li.titem.wfnode').click()");
+	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
+	run("document.querySelector('button[data-act=wf-new]').click()");
+	wait_js("document.querySelector('select[data-input=wf-kind]') && "
+	    "document.querySelector('select[data-input=wf-kind]').options."
+	    "length > 25", 10);
+	{
+		/* What a page's input does: its value, then the event. */
+		static const char set[] = "window.setf = (sel, v) => { const e = "
+		    "document.querySelector(sel); if (e.type === 'checkbox') "
+		    "e.checked = v; else e.value = v; e.dispatchEvent(new Event("
+		    "'input', { bubbles: true })); };";
+
+		run(set);
+	}
+	run("setf('input[data-arg=\"text:name\"]', 'restart a service')");
+	run("document.querySelector('button[data-act=wf-param-add]').click()");
+	wait_js("document.querySelector('input[data-arg=\"text:params.0.name\"]')",
+	    5);
+	run("setf('input[data-arg=\"text:params.0.name\"]', 'svc'); "
+	    "setf('input[data-arg=\"text:params.0.default\"]', 'ntpd')");
+	/* The first step's kind: its fields, those it needs marked. */
+	run("setf('select[data-input=wf-kind]', 'service-action')");
+	wait_js("document.querySelector('input[data-arg=\"text:steps.0.job."
+	    "service\"]') && document.querySelector('select[data-arg=\"text:"
+	    "steps.0.job.action\"]')", 5);
+	run("setf('input[data-arg=\"text:steps.0.job.service\"]', "
+	    "'${param.svc}'); setf('select[data-arg=\"text:steps.0.job."
+	    "action\"]', 'restart')");
+	/* Only when the jail web is stopped, as a read of the jails says. */
+	run("document.querySelector('input[data-act=wf-when]').click()");
+	wait_js("document.querySelector('select[data-input=wf-when-of]')", 5);
+	run("setf('select[data-input=wf-when-of]', 'read:jails'); "
+	    "setf('input[data-arg=\"text:steps.0.when.path\"]', "
+	    "'jails[name=web].state'); setf('select[data-arg=\"text:steps.0."
+	    "when.op\"]', 'eq'); setf('input[data-arg=\"text:steps.0.when."
+	    "value\"]', 'stopped')");
+	/* A second step: a read of the host. */
+	run("document.querySelector('button[data-act=wf-step-add]').click()");
+	wait_js("document.querySelectorAll('li.wfedstep').length === 2", 5);
+	run("setf('select[data-input=wf-type][data-arg=\"1\"]', 'read:hello')");
+	shot("9a-workflow-edit");
+	run("document.querySelector('button[data-act=wf-save]').click()");
+	wait_js("document.querySelector('ul.wflist button[data-act=wf-run]') "
+	    "&& document.querySelector('ul.wflist').textContent.includes("
+	    "'restart a service')", 10);
+	run("document.querySelector('ul.wflist button[data-act=wf-run]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=wf-run] input"
+	    "[name=p_svc]')", 5);
+	run("const f = document.querySelector('form[data-form=wf-run]'); "
+	    "f.p_svc.value = 'sshd'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('.wfgraph button.wfstep.done')."
+	    "length === 2", 30);
+	run("document.querySelector('.wfgraph button.wfstep').click()");
+	wait_js("document.querySelector('section.wftrace') && document."
+	    "querySelector('section.wftrace').textContent.includes('sshd')",
+	    10);
+	shot("9b-workflow-run");
+	/* What waits in the queue, kept as one. */
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	ATF_CHECK(js_true("document.querySelector('ul.wfruns li.done')"));
+	run("document.querySelector('li.titem.server').click()");
+	wait_js("document.querySelector('button.tab[data-arg=services]')", 10);
+	run("document.querySelector('button.tab[data-arg=services]').click()");
+	wait_js("document.querySelector('button[data-act=svc][data-value="
+	    "restart]')", 10);
+	run("document.querySelector('button[data-act=svc][data-value=restart]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("document.querySelector('button[data-act=queue-to-wf]')", 5);
+	run("document.querySelector('button[data-act=queue-to-wf]').click()");
+	wait_js("document.querySelector('li.wfedstep select[data-input="
+	    "wf-kind]') && document.querySelector('li.wfedstep select[data-"
+	    "input=wf-kind]').value === 'service-action' && document."
+	    "querySelector('input[data-arg=\"text:name\"]').value === 'From "
+	    "the queue'", 10);
+	shot("9c-workflow-queue");
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	run("document.querySelector('button[data-act=queue-clear]').click()");
+	/*
 	 * The API's own page, from the menu: every route of the document,
 	 * by group, searched, one unfolded.
 	 */
@@ -2543,7 +2805,7 @@ ATF_TC_BODY(pwa, tc)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 8",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 11",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");
@@ -2595,6 +2857,98 @@ ATF_TC_BODY(pwa, tc)
 	click_at(".map-legend li[data-arg=lan]");
 	wait_js("document.querySelector('svg.topo .tlink.lan') && "
 	    "!document.querySelector('.map-legend li.off')", 5);
+	/* Labels, kind by kind: the shared networks' left out, the others
+	 * as they were. */
+	click_at(".map-tools button[data-act=topo-labels]");
+	wait_js("document.querySelectorAll('.map-labels button').length === 8",
+	    5);
+	run("window.otherQuiet = [...document.querySelectorAll('svg.topo "
+	    ".tlink:not(.lan)')].map(g => g.classList.contains('quiet'))"
+	    ".join()");
+	click_at(".map-labels button[data-arg=lan].on");
+	wait_js("document.querySelector('.map-labels button[data-arg=lan]:not(.on)')"
+	    " && [...document.querySelectorAll('svg.topo .tlink.lan')].every(g "
+	    "=> g.classList.contains('quiet')) && [...document.querySelectorAll("
+	    "'svg.topo .tlink:not(.lan)')].map(g => g.classList.contains("
+	    "'quiet')).join() === window.otherQuiet", 5);
+	shot("8a-labels");
+	click_at(".map-labels button[data-arg=lan]");
+	wait_js("document.querySelector('.map-labels button[data-arg=lan].on') "
+	    "&& ![...document.querySelectorAll('svg.topo .tlink.lan')].some(g "
+	    "=> g.classList.contains('quiet'))", 5);
+	click_at(".map-tools button[data-act=topo-labels]");
+	wait_js("!document.querySelector('.map-labels')", 5);
+	/* On no line is its name written over its rate. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo g.tlink')]"
+	    ".every(g => { const r = g.querySelector('.rate'); if (!r) "
+	    "return true; const b = r.getBBox(); return [...g.querySelectorAll("
+	    "'.lbl')].every(l => { const a = l.getBBox(); return a.x + a.width "
+	    "<= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + "
+	    "b.height <= a.y; }); })"));
+	/* A line dragged aside bends to the pointer, and stays so. */
+	{
+		double	x0, y0;
+		int	step;
+
+		run("window.d0 = document.querySelector('svg.topo g.tlink.lan "
+		    ".wire').getAttribute('d')");
+		x0 = js_num("(p => { const l = p.getTotalLength(), m = p."
+		    "getPointAtLength(l / 2), c = p.getScreenCTM(); return m.x "
+		    "* c.a + c.e; })(document.querySelector('svg.topo g.tlink."
+		    "lan .hit'))");
+		y0 = js_num("(p => { const l = p.getTotalLength(), m = p."
+		    "getPointAtLength(l / 2), c = p.getScreenCTM(); return m.y "
+		    "* c.d + c.f; })(document.querySelector('svg.topo g.tlink."
+		    "lan .hit'))");
+		mouse("pointerMove", x0, y0);
+		mouse("pointerDown", 0, 0);
+		for (step = 1; step <= 6; step++) {
+			mouse("pointerMove", x0 + step, y0 + 12 * step);
+			usleep(150000);
+		}
+		mouse("pointerUp", 0, 0);
+		wait_js("document.querySelector('svg.topo g.tlink.lan .wire')"
+		    ".getAttribute('d') !== window.d0 && (localStorage."
+		    "getItem('arc_topo_bends') || '').length > 0", 5);
+		shot("8b-bent");
+		/* A neighbour outside, dragged elsewhere, stays there. */
+		x0 = js_num("(r => r.x + r.width / 2)(document.querySelector("
+		    "'svg.topo g.tpeer rect').getBoundingClientRect())");
+		y0 = js_num("(r => r.y + r.height / 2)(document.querySelector("
+		    "'svg.topo g.tpeer rect').getBoundingClientRect())");
+		run("window.p0 = document.querySelector('svg.topo g.tpeer rect')"
+		    ".getAttribute('x')");
+		mouse("pointerMove", x0, y0);
+		mouse("pointerDown", 0, 0);
+		for (step = 1; step <= 6; step++) {
+			mouse("pointerMove", x0 - 10 * step, y0 + 4 * step);
+			usleep(150000);
+		}
+		mouse("pointerUp", 0, 0);
+		wait_js("document.querySelector('svg.topo g.tpeer rect')."
+		    "getAttribute('x') !== window.p0 && (localStorage.getItem("
+		    "'arc_topo_peers') || '').length > 0", 5);
+		/* Taken by where it was held: it does not jump to the
+		 * pointer, it moves with it. */
+		{
+			double	cx, cy;
+
+			cx = js_num("(r => r.x + r.width / 2)(document."
+			    "querySelector('svg.topo g.tpeer rect')."
+			    "getBoundingClientRect())");
+			cy = js_num("(r => r.y + r.height / 2)(document."
+			    "querySelector('svg.topo g.tpeer rect')."
+			    "getBoundingClientRect())");
+			ATF_CHECK_MSG(fabs(cx - (x0 - 60)) < 6 && fabs(cy -
+			    (y0 + 24)) < 6, "the neighbour is at %.0f,%.0f and "
+			    "the pointer at %.0f,%.0f", cx, cy, x0 - 60, y0 + 24);
+		}
+		shot("8c-peer");
+		run("document.querySelector('button[data-act=topo-arrange]')"
+		    ".click()");
+		wait_js("!(localStorage.getItem('arc_topo_bends') || '') && "
+		    "!(localStorage.getItem('arc_topo_peers') || '')", 5);
+	}
 	/*
 	 * A host dragged by the mouse stays under it, all the way, and
 	 * while the map reads the hosts again: taken by its middle, its
@@ -2829,19 +3183,30 @@ ATF_TC_BODY(pwa, tc)
 	    "document.querySelector('.map-panel .iflist').textContent."
 	    "includes('epair1b')", 10);
 	shot("8d-vnet-jail-node");
-	/* Its network is the jail's page. */
+	/* Its network is its host's Network tab, the jail picked there. */
 	run("document.querySelector('.map-panel button[data-act="
 	    "topo-open-host]').click()");
-	wait_js("document.querySelector('.jail-page .jail-net tr[data-if="
+	wait_js("document.querySelector('select[data-input=net-jail]')?.value "
+	    "=== 'gw' && document.querySelector('table.ifaces tr[data-if="
 	    "epair1b]')", 20);
 	run("window.fetch = window.fetch0;");
 	run("document.querySelector('li[data-act=select-network]').click()");
 	wait_js("document.querySelector('svg.topo .tnode')", 10);
-	/* On a phone the map is above its panel, each as wide as the screen. */
+	/* On a phone the map is above its panel, each as wide as the screen;
+	 * its tools in a line of their own, its legend under it. */
 	phone(true);
 	wait_js("document.querySelector('.map-wrap').getBoundingClientRect()"
 	    ".width <= window.innerWidth && document.documentElement."
 	    "scrollWidth <= window.innerWidth + 1", 10);
+	ATF_CHECK(js_true("(() => { const t = document.querySelector("
+	    "'.map-tools').getBoundingClientRect(), w = document."
+	    "querySelector('.map-wrap').getBoundingClientRect(); return "
+	    "t.right <= w.right + 1 && document.querySelector('.map-legend')"
+	    ".getBoundingClientRect().right <= w.right + 1 && document."
+	    "querySelector('.map-legend').getBoundingClientRect().top > "
+	    "t.bottom; })()"));
+	run("document.querySelector('button[data-act=topo-arrange]').click()");
+	usleep(500000);
 	shot("m11-network");
 	phone(false);
 	run("document.querySelector('li[data-act=select-server]').click()");

@@ -848,6 +848,391 @@ ATF_TC_BODY(load, tc)
 	    0);
 }
 
+/* Wait for a run to end; its JSON in r. */
+static void
+run_wait(const char *n, struct resp *r)
+{
+	char	path[64];
+	int	i;
+
+	snprintf(path, sizeof(path), "/api/runs/%s", n);
+	for (i = 0; i < 300; i++) {
+		http("GET", path, NULL, r);
+		if (r->status == 200 && jstr(r, "state") != NULL && strcmp(jstr(r,
+		    "state"), "running") != 0)
+			return;
+		resp_free(r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(0, "run %s did not end", n);
+}
+
+CONSOLE_TC(workflows, "A workflow's steps checked against jobs.yaml, run on "
+    "a host with its values, conditions and what follows a failure, and "
+    "begun by the host's events")
+ATF_TC_BODY(workflows, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[4096], sid[16], run[32], wid[16];
+	char		path[128];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+
+	/* What is not one, as jobs.yaml has the kinds. */
+	static const char *const bad[][2] = {
+		{ "{\"kind\":\"explode\"}", "one of jobs.yaml's" },
+		{ "{\"kind\":\"service-action\",\"service\":\"sshd\","
+		    "\"action\":\"start\",\"bogus\":1}", "has no bogus" },
+		{ "{\"kind\":\"service-action\",\"service\":\"sshd\"}",
+		    "needs action" },
+		{ "{\"kind\":\"service-action\",\"service\":\"sshd\","
+		    "\"action\":\"explode\"}", "one of start|stop" },
+	};
+	for (i = 0; i < 4; i++) {
+		snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
+		    "\"steps\":[{\"id\":\"a\",\"job\":%s}]}", sid, bad[i][0]);
+		http("POST", "/api/workflows", body, &r);
+		EXPECT(&r, 400);
+		ATF_CHECK_MSG(strstr(r.body, bad[i][1]) != NULL, "%s", r.body);
+		resp_free(&r);
+	}
+	/* What runs by itself and destroys says so. */
+	snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
+	    "\"every\":3600,\"steps\":[{\"id\":\"a\",\"job\":{\"kind\":"
+	    "\"if-destroy\",\"interface\":\"gif9\"}}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "destructive") != NULL);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"bad\",\"steps\":[{\"id\":"
+	    "\"a\",\"read\":\"hello\",\"on_fail\":\"a\"}]}");
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "a step after it") != NULL);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
+	    "\"every\":30,\"steps\":[{\"id\":\"a\",\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/*
+	 * A read, a job with a parameter when the read says so, one that
+	 * fails and goes on further, one jumped over, a condition of a
+	 * read made then, and one whose condition is not met.
+	 */
+	snprintf(body, sizeof(body), "{\"name\":\"restart\",\"hosts\":[\"%s\"],"
+	    "\"params\":[{\"name\":\"svc\",\"default\":\"ntpd\"}],\"steps\":["
+	    "{\"id\":\"r\",\"read\":\"hello\"},"
+	    "{\"id\":\"a\",\"name\":\"Restart it\",\"job\":{\"kind\":"
+	    "\"service-action\",\"service\":\"${param.svc}\",\"action\":"
+	    "\"restart\"},\"when\":{\"step\":\"r\",\"path\":\"host.hostname\","
+	    "\"op\":\"exists\"}},"
+	    "{\"id\":\"b\",\"job\":{\"kind\":\"kmod\",\"verb\":\"load\","
+	    "\"args\":[\"../evil\"]},\"on_fail\":\"d\"},"
+	    "{\"id\":\"c\",\"job\":{\"kind\":\"service-action\",\"service\":"
+	    "\"ntpd\",\"action\":\"stop\"}},"
+	    "{\"id\":\"d\",\"read\":\"services\",\"when\":{\"read\":\"jails\","
+	    "\"path\":\"jails[name=web].state\",\"op\":\"eq\",\"value\":"
+	    "\"stopped\"}},"
+	    "{\"id\":\"e\",\"job\":{\"kind\":\"service-action\",\"service\":"
+	    "\"${param.svc}\",\"action\":\"stop\"},\"when\":{\"step\":\"r\","
+	    "\"path\":\"host.hostname\",\"op\":\"eq\",\"value\":\"nope\"}}]}",
+	    sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(wid, sizeof(wid), "%s", jstr(&r, "id"));
+	ATF_CHECK_EQ(8, strlen(wid));
+	ATF_CHECK_STREQ("false", jstr(&r, "steps.1.destroys"));
+	resp_free(&r);
+	http("GET", "/api/workflows", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("restart", jstr(&r, "workflows.0.name"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", wid);
+	http("POST", path, "{\"params\":{\"svc\":\"sshd\"}}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("hand", jstr(&r, "trigger"));
+	ATF_CHECK_STREQ("sshd", jstr(&r, "params.svc"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.1.state"));
+	ATF_CHECK_STREQ("service sshd restart", jstr(&r,
+	    "hosts.0.steps.1.title"));
+	ATF_CHECK(jstr(&r, "hosts.0.steps.1.trace.job.trace.0.label") !=
+	    NULL);
+	ATF_CHECK_STREQ("failed", jstr(&r, "hosts.0.steps.2.state"));
+	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.0.steps.3.state"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.4.state"));
+	ATF_CHECK_STREQ("skipped", jstr(&r, "hosts.0.steps.5.state"));
+	ATF_CHECK_STREQ("failed", jstr(&r, "state"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'sshd restart' service.log 2>/dev/null || "
+	    "test -f running.sshd") == 0);
+	/* The list has the runs, not their traces. */
+	http("GET", "/api/runs", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(run, jstr(&r, "runs.0.id"));
+	ATF_CHECK(strstr(r.body, "\"trace\"") == NULL);
+	resp_free(&r);
+
+	/* Begun by the host's events: a threshold crossed, then the host
+	 * that stops answering. */
+	snprintf(body, sizeof(body), "{\"name\":\"on mem\",\"hosts\":[\"%s\"],"
+	    "\"on\":[{\"event\":\"threshold\",\"match\":{\"what\":\"mem\","
+	    "\"over\":\"true\"}}],\"steps\":[{\"id\":\"s\",\"read\":\"stats\"}]}",
+	    sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"on down\",\"hosts\":[\"%s\"],"
+	    "\"on\":[{\"event\":\"host-down\"}],\"steps\":[{\"id\":\"s\","
+	    "\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* A tick to learn where the events are; then the threshold. */
+	sleep(7);
+	snprintf(path, sizeof(path), "/api/servers/%s/history", sid);
+	http("POST", path, "{\"step\":1,\"keep\":10,\"cpu\":90,\"mem\":1,"
+	    "\"swap\":90}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 200; i++) {
+		http("GET", "/api/runs", NULL, &r);
+		if (strstr(r.body, "\"event threshold\"") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 200, "no run begun by the threshold");
+	ATF_CHECK(strstr(r.body, "\"what\":\"mem\"") != NULL);
+	resp_free(&r);
+	ATF_REQUIRE(system("kill $(cat arcana-agent.pid)") == 0);
+	for (i = 0; i < 200; i++) {
+		http("GET", "/api/runs", NULL, &r);
+		if (strstr(r.body, "\"event host-down\"") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	if (i == 200)
+		(void)system("tail -20 kore.out >&2");
+	ATF_CHECK_MSG(i < 200, "no run begun by the host going away");
+	resp_free(&r);
+
+	ATF_CHECK(system("! grep -q 'exited with status' kore.out") == 0);
+	/* Gone. */
+	snprintf(path, sizeof(path), "/api/workflows/%s", wid);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
+CONSOLE_TC(transfers, "A snapshot sent from one host to another, the "
+    "console carrying it at the pace the receiver takes it")
+ATF_TC_BODY(transfers, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[1200], sa[16], sb[16], id[32];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	/* Two names for the one agent here: two hosts to the console. */
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	/* More than the window: the relay waits on the receiver. */
+	ATF_REQUIRE(system("dd if=/dev/random of=zsend.data bs=1m count=10 "
+	    "2>/dev/null") == 0);
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data@b\",\"to\":\"%s\",\"dataset\":\"tank/copy\"}", sa, sb);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(id, sizeof(id), "%s", jstr(&r, "id"));
+	resp_free(&r);
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/transfers", NULL, &r);
+		if (jstr(&r, "transfers.0.state") != NULL && strcmp(jstr(&r,
+		    "transfers.0.state"), "running") != 0)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	if (i == 300)
+		(void)system("cat data/transfers.json; tail -5 storage.log; "
+		    "ls -l zrecv.data; tail -20 kore.out; tail -20 "
+		    "arcana-agent.out");
+	ATF_REQUIRE(i < 300);
+	ATF_CHECK_STREQ("done", jstr(&r, "transfers.0.state"));
+	ATF_CHECK_STREQ("10485760", jstr(&r, "transfers.0.bytes"));
+	ATF_CHECK_STREQ(id, jstr(&r, "transfers.0.id"));
+	resp_free(&r);
+	ATF_CHECK(system("cmp -s zsend.data zrecv.data") == 0);
+	ATF_CHECK(system("grep -q '^zfs send tank/data@b$' storage.log && "
+	    "grep -q '^zfs receive -u tank/copy$' storage.log") == 0);
+	ATF_CHECK(system("test \"$(stat -f %Lp data/transfers.json)\" = 600")
+	    == 0);
+
+	/* Only what changed since a snapshot both have; a receive that
+	 * refuses: said as zfs says it. */
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data@b\",\"since\":\"tank/data@a\",\"to\":\"%s\","
+	    "\"dataset\":\"tank/fail\"}", sa, sb);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/transfers", NULL, &r);
+		if (jstr(&r, "transfers.1.state") != NULL && strcmp(jstr(&r,
+		    "transfers.1.state"), "running") != 0)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE(i < 300);
+	ATF_CHECK_STREQ("failed", jstr(&r, "transfers.1.state"));
+	ATF_CHECK_MSG(jstr(&r, "transfers.1.error") != NULL && strstr(jstr(&r,
+	    "transfers.1.error"), "destination 'tank/fail' exists") != NULL,
+	    "%s", jstr(&r, "transfers.1.error"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^zfs send -i tank/data@a tank/data@b$' "
+	    "storage.log") == 0);
+
+	/* What is not one is refused before anything begins. */
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data@b\",\"to\":\"%s\",\"dataset\":\"tank/x\"}", sa, sa);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data@b\",\"to\":\"%s\",\"dataset\":\"tank\"}", sa, sb);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"from\":\"%s\",\"snapshot\":"
+	    "\"tank/data\",\"to\":\"%s\",\"dataset\":\"tank/x\"}", sa, sb);
+	http("POST", "/api/transfers", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	/* Ended: nothing to stop. */
+	snprintf(body, sizeof(body), "/api/transfers/%s", id);
+	http("DELETE", body, NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
+CONSOLE_TC(tokens, "A read-only API token, made in a session, reads what is "
+    "said of the hosts and changes nothing; deleted, it opens nothing")
+ATF_TC_BODY(tokens, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		token[80], id[20], cwd[1024], body[1200], path[256];
+	char		server[256];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(server, sizeof(server), "/api/servers/%s/hello",
+	    jstr(&r, "servers.0.id"));
+	resp_free(&r);
+
+	/* Made in a session, its value said once; kept as its hash only. */
+	http("POST", "/api/tokens", "{\"name\":\"overlay planner\"}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "token") != NULL);
+	ATF_CHECK(strncmp(jstr(&r, "token"), "arcr_", 5) == 0);
+	ATF_CHECK_EQ(69, strlen(jstr(&r, "token")));
+	snprintf(token, sizeof(token), "%s", jstr(&r, "token"));
+	snprintf(id, sizeof(id), "%s", jstr(&r, "id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "grep -q '%s' data/tokens.json", token + 5);
+	ATF_CHECK(system(path) != 0);
+	ATF_CHECK(system("test \"$(stat -f %Lp data/tokens.json)\" = 600") ==
+	    0);
+	http("GET", "/api/tokens", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("overlay planner", jstr(&r, "tokens.0.name"));
+	ATF_CHECK(jstr(&r, "tokens.0.token") == NULL);
+	resp_free(&r);
+
+	/* It reads what is said of the hosts... */
+	http_bearer("GET", "/api/servers", token, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("lab", jstr(&r, "servers.0.name"));
+	resp_free(&r);
+	http_bearer("GET", server, token, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* ... and changes nothing, nor reads the console's own. */
+	http_bearer("POST", "/api/servers", token, "{\"name\":\"x\",\"uri\":"
+	    "\"unix:/nonexistent\"}", &r);
+	EXPECT(&r, 401);
+	ATF_CHECK(strstr(r.body, "reads only") != NULL);
+	resp_free(&r);
+	http_bearer("POST", "/api/tokens", token, "{\"name\":\"another\"}", &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	http_bearer("GET", "/api/settings", token, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	http_bearer("GET", "/api/push", token, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	http_bearer("GET", "/api/servers", "arcr_0000000000000000000000000000"
+	    "000000000000000000000000000000000000", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	/* Its use noted. */
+	http("GET", "/api/tokens", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "tokens.0.last") != NULL && strcmp(jstr(&r,
+	    "tokens.0.last"), "0") != 0);
+	resp_free(&r);
+
+	/* Deleted: it opens nothing at once. */
+	snprintf(path, sizeof(path), "/api/tokens/%s", id);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http_bearer("GET", "/api/servers", token, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+}
+
 CONSOLE_TC(push, "Devices subscribe to be told of tasks, and a message goes "
     "to all but the one that sends it")
 ATF_TC_BODY(push, tc)
@@ -1565,6 +1950,62 @@ ATF_TC_BODY(services, tc)
 		ATF_CHECK(strstr(r.body, key) == NULL);
 	}
 	resp_free(&r);
+
+	/*
+	 * IPsec: the host makes its key and tells its public half; a
+	 * connection is written for it, IKEv2, and read back.
+	 */
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"ipsec\",\"verb\":\"init\"}]}",
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ipsec init", jstr(&r, "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("test -s swanctl/pubkey/arcana.pub") !=
+	    0; i++)
+		usleep(50000);
+	snprintf(path, sizeof(path), "%.*s/net/ipsec",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "data.public-key") != NULL);
+	ATF_CHECK(strlen(jstr(&r, "data.public-key")) > 80);
+	ATF_CHECK(strstr(r.body, "PRIVATE") == NULL);
+	snprintf(body, sizeof(body), "{\"jobs\":[{\"kind\":\"ipsec\",\"verb\":"
+	    "\"conn\",\"conn\":\"to-lab2\",\"tunnel_local\":\"192.0.2.1\","
+	    "\"tunnel_remote\":\"192.0.2.2\",\"ipsec_mode\":\"transport\","
+	    "\"pubkey\":\"%s\",\"local_ts\":\"192.0.2.1[gre]\","
+	    "\"remote_ts\":\"192.0.2.2[gre]\",\"start_action\":\"start\"}]}",
+	    jstr(&r, "data.public-key"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ipsec conn to-lab2 (transport)", jstr(&r,
+	    "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'version = 2' "
+	    "swanctl/conf.d/arcana-to-lab2.conf 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q 'mode = transport' "
+	    "swanctl/conf.d/arcana-to-lab2.conf") == 0);
+	snprintf(path, sizeof(path), "%.*s/net/ipsec",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("to-lab2", jstr(&r, "data.connections.0.name"));
+	ATF_CHECK_STREQ("true", jstr(&r, "data.connections.0.arcana"));
+	ATF_CHECK_STREQ("INSTALLED", jstr(&r, "data.sas.0.children.0.state"));
+	resp_free(&r);
+	/* A connection is named, but for init and start. */
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"ipsec\",\"verb\":\"up\"}]}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/net/bird",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);
@@ -2146,6 +2587,7 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("bird", jstr(&r, "host.plugins.0"));
 	ATF_CHECK_STREQ("wireguard", jstr(&r, "host.plugins.1"));
+	ATF_CHECK_STREQ("strongswan", jstr(&r, "host.plugins.2"));
 	resp_free(&r);
 
 	/* BIRD's routes, asked for in birdc's words with , between. */
@@ -2286,6 +2728,7 @@ ATF_TC_BODY(mtls, tc)
 	FILE		*fp;
 	pid_t		 pid;
 	int		 port, i;
+	long		 seen_pre;
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	ATF_REQUIRE(mkdir("pki", 0700) == 0);
@@ -2371,6 +2814,7 @@ ATF_TC_BODY(mtls, tc)
 	ATF_CHECK_STREQ("tcp", jstr(&r, "data.listeners.0.transport"));
 	ATF_CHECK_STREQ("sctp", jstr(&r, "data.listeners.1.transport"));
 	ATF_CHECK_STREQ("tcp", jstr(&r, "data.sessions.0.transport"));
+	seen_pre = atol(jstr(&r, "data.seen"));
 	ATF_CHECK(jstr(&r, "data.sessions.0.subject") != NULL && strstr(jstr(
 	    &r, "data.sessions.0.subject"), "console") != NULL);
 	resp_free(&r);
@@ -2384,6 +2828,72 @@ ATF_TC_BODY(mtls, tc)
 		ATF_CHECK(strncmp(jstr(&r, "servers.0.uri"), "sctp://", 7) ==
 		    0);
 		resp_free(&r);
+		/*
+		 * A burst of first requests makes one association: the
+		 * first makes it, the others wait for it and share it.
+		 * The agent counts what connected.
+		 */
+		{
+			pid_t	kids[6];
+			long	seen1;
+			int	k, st, bad;
+
+			snprintf(path, sizeof(path), "/api/servers/%s/jails",
+			    sid);
+			for (k = 0; k < 6; k++)
+				if ((kids[k] = fork()) == 0) {
+					struct resp	kr;
+
+					http("GET", path, NULL, &kr);
+					_exit(kr.status == 200 ? 0 : 1);
+				}
+			bad = 0;
+			for (k = 0; k < 6; k++)
+				if (waitpid(kids[k], &st, 0) == -1 ||
+				    !WIFEXITED(st) || WEXITSTATUS(st) != 0)
+					bad++;
+			ATF_CHECK_EQ(0, bad);
+			/*
+			 * What comes in parts, as a stream over that same
+			 * association: the kernel's state, all of it, and no
+			 * connection more for it.
+			 */
+			{
+				char	 ask[160], *m;
+				int	 ws, parts, done;
+
+				ws = ws_open("/api/stream");
+				snprintf(ask, sizeof(ask), "{\"id\":3,\"server\":"
+				    "\"%s\",\"what\":\"sysctl\",\"filter\":"
+				    "\"kern.\"}", sid);
+				ws_send(ws, ask);
+				parts = done = 0;
+				while (!done && (m = ws_recv(ws)) != NULL) {
+					if (strstr(m, "\"rows\":[") != NULL)
+						parts++;
+					if (strstr(m, "\"done\":true") != NULL)
+						done = 1;
+					ATF_CHECK_MSG(strstr(m, "\"error\"") ==
+					    NULL, "%.200s", m);
+					if (strstr(m, "\"error\"") != NULL)
+						done = 1;
+					free(m);
+				}
+				close(ws);
+				ATF_CHECK_MSG(done && parts > 0, "%d parts, "
+				    "done %d", parts, done);
+			}
+			snprintf(path, sizeof(path), "/api/servers/%s/transport",
+			    sid);
+			http("GET", path, NULL, &r);
+			EXPECT(&r, 200);
+			seen1 = atol(jstr(&r, "data.seen"));
+			resp_free(&r);
+			/* The switch's own, and the burst's one. */
+			ATF_CHECK_MSG(seen1 - seen_pre <= 2, "the switch and a "
+			    "burst of six first requests made %ld connections",
+			    seen1 - seen_pre);
+		}
 		snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
 		http("GET", path, NULL, &r);
 		EXPECT(&r, 200);
@@ -2642,6 +3152,9 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, local_same);
 	ATF_TP_ADD_TC(tp, local_absent);
 	ATF_TP_ADD_TC(tp, push);
+	ATF_TP_ADD_TC(tp, tokens);
+	ATF_TP_ADD_TC(tp, transfers);
+	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);

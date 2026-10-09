@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.57.0
+  version: 0.69.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -34,6 +34,7 @@ servers:
 
 security:
   - session: []
+  - token: []
 
 tags:
   - name: health
@@ -43,6 +44,8 @@ tags:
     description: The arcana-agent instances the console knows.
   - name: jails
     description: Jail state and changes, through arcana-agent.
+  - name: workflows
+    description: Chains of steps the console runs on several hosts.
 
 paths:
   /api/health:
@@ -485,7 +488,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, neighbours]
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, neighbours, ipsec]
           description: The kernel's routes through netlink(4) (each with
             destination, gateway, flags, nhop, mtu, interface-name,
             metric, weight, fib, prefixlen, source and expire-time when
@@ -817,6 +820,11 @@ paths:
                 cpu: { type: integer, minimum: 0, maximum: 100 }
                 mem: { type: integer, minimum: 0, maximum: 100 }
                 swap: { type: integer, minimum: 0, maximum: 100 }
+                rules: { type: string, description: "The limits of one
+                    interface, disk or jail each, with commas:
+                    net:igb0=125000000, disk:ada0=50000000,
+                    jail-cpu:web=80, jail-mem:web=1073741824. Empty
+                    takes them away." }
       responses:
         "200":
           description: ok and data, or error
@@ -1030,7 +1038,8 @@ paths:
                           if-state, route, if-set, if-create, if-destroy,
                           netgraph, wireguard, bird, if-vnet, kmod, zfs,
                           zpool, mount, gpart, cam, sysctl, ipfw,
-                          bridge, geneve, process, pkg-clean]
+                          bridge, geneve, process, pkg-clean, ipsec,
+                          pkg-install]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the
@@ -1061,7 +1070,31 @@ paths:
                         type: object
                         additionalProperties: { type: string }
                       unset: { type: array, items: { type: string } }
-                      packages: { type: array, items: { type: string } }
+                      packages: { type: array, items: { type: string },
+                        description: For pkg-upgrade and pkg-install. }
+                      verb: { type: string, description: For ipsec, init,
+                          start, conn, unconn, up or down. }
+                      conn: { type: string, description: For ipsec, the
+                          connection, kept in conf.d/arcana-<conn>.conf. }
+                      tunnel_local: { type: string, description: For
+                          if-create a tunnel's outer address here; for
+                          ipsec conn, this host's address. }
+                      tunnel_remote: { type: string, description: The far
+                          end's, as tunnel_local. }
+                      ipsec_mode: { type: string, enum: [tunnel, transport] }
+                      pubkey: { type: string, description: For ipsec conn,
+                          the peer's public key in base64, as its
+                          net/ipsec tells it. }
+                      local_ts: { type: string, description: For ipsec conn,
+                          this side's traffic selectors, with commas. }
+                      remote_ts: { type: string }
+                      reqid: { type: integer, minimum: 1, maximum: 16383,
+                          description: For ipsec conn, the ipsec(4)
+                          interface it serves; for if-create, that
+                          interface's reqid. }
+                      start_action: { type: string, enum: [start, trap, none] }
+                      local_id: { type: string }
+                      remote_id: { type: string }
             example:
               jobs:
                 - { kind: service-action, service: nginx, action: stop }
@@ -1080,6 +1113,197 @@ paths:
                     items: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/workflows:
+    get:
+      tags: [workflows]
+      summary: The workflows
+      responses:
+        "200":
+          description: workflows, each with id, name, hosts, params,
+            steps, every, on and destructive.
+    post:
+      tags: [workflows]
+      summary: A workflow made, or changed when its id is one
+      description: Each step has an id and a job (an object as the jobs
+        API takes one, its kind's fields as share/arcana/jobs.yaml says)
+        or a read (hello, jails, services, stats, events, history,
+        packages); with when, a condition (read or step, path, op of eq,
+        ne, contains, gt, lt, exists, missing, and value); with on_fail,
+        stop, continue or a later step's id. Values may be ${param.X},
+        ${host.id}, ${host.name}, ${step.ID.PATH} or ${event.PATH}.
+        every is 0 or 60 seconds to a week; on, events with what they
+        match; one that runs by itself and destroys says destructive.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: the workflow as kept
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/workflows/{id}:
+    delete:
+      tags: [workflows]
+      summary: A workflow deleted
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[0-9a-f]{8}$" }
+      responses:
+        "200":
+          description: ok
+        "404": { $ref: "#/components/responses/Error" }
+  /api/workflows/{id}/run:
+    post:
+      tags: [workflows]
+      summary: Run it now
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[0-9a-f]{8}$" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                params: { type: object, additionalProperties: { type: string } }
+                hosts: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: run, its number
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/runs:
+    get:
+      tags: [workflows]
+      summary: The last runs
+      description: The last 30, each with its trigger, params, state and
+        each host's steps with their state, job, title and error; not
+        their traces.
+      responses:
+        "200":
+          description: runs
+  /api/runs/{n}:
+    get:
+      tags: [workflows]
+      summary: One run, each step with its trace
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: the run
+        "404": { $ref: "#/components/responses/Error" }
+    delete:
+      tags: [workflows]
+      summary: A running run stopped
+      parameters:
+        - name: n
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: ok
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/transfers:
+    get:
+      tags: [storage]
+      summary: Snapshots sent between hosts
+      description: The last 32, each with id, from, snapshot, since,
+        recursive, to, dataset, state (running, done, failed,
+        cancelled, interrupted), bytes, error, started and ended.
+      responses:
+        "200":
+          description: transfers
+    post:
+      tags: [storage]
+      summary: A snapshot sent to another host
+      description: zfs send on from, zfs receive -u on to, each as a
+        stream the console carries the bytes between, at the pace the
+        slower takes them. Never -F; never into a pool's own dataset.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from, snapshot, to, dataset]
+              properties:
+                from: { type: string, description: A server's id. }
+                snapshot: { type: string, description: dataset@name }
+                since: { type: string, description: A snapshot of the
+                    same dataset both have, for what changed since. }
+                recursive: { type: boolean }
+                to: { type: string }
+                dataset: { type: string, description: pool/name, not
+                    there yet. }
+      responses:
+        "200":
+          description: id and state
+        "400": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+  /api/transfers/{id}:
+    delete:
+      tags: [storage]
+      summary: A running transfer stopped
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: ok
+        "404": { $ref: "#/components/responses/Error" }
+  /api/tokens:
+    get:
+      tags: [auth]
+      summary: The read-only API tokens
+      description: Each with id, name, created and last (when it was last
+        used), never its value.
+      responses:
+        "200":
+          description: tokens
+    post:
+      tags: [auth]
+      summary: Make a read-only API token
+      description: In a session only. The reply's token is its value,
+        given this once; the console keeps its SHA-256. At most 32.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 64 }
+      responses:
+        "200":
+          description: id, name and token
+        "409": { $ref: "#/components/responses/Error" }
+  /api/tokens/{id}:
+    delete:
+      tags: [auth]
+      summary: Delete a token; it opens nothing from then on
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[0-9a-f]{16}$" }
+      responses:
+        "200":
+          description: ok
+        "404": { $ref: "#/components/responses/Error" }
   /api/push:
     get:
       summary: The key browsers subscribe to Web Push with, and the devices
@@ -1568,6 +1792,14 @@ components:
       in: cookie
       name: arc_session
       description: Set by register/finish and login/finish.
+    token:
+      type: http
+      scheme: bearer
+      description: A read-only API token (arcr_ and 64 hex digits), made
+        in a session with POST /api/tokens. It is taken for GET under
+        /api/servers and for /api/health and GET /api/tokens only, and
+        refused with 401 for anything that changes something, the
+        console's settings, push, sign-in and enrolment.
 
   parameters:
     server:
@@ -1798,7 +2030,7 @@ components:
         version: { type: string, description: arcana-agent's. }
         plugins:
           type: array
-          items: { type: string, enum: [bird, wireguard] }
+          items: { type: string, enum: [bird, wireguard, strongswan] }
           description: What the host has of what works through a program
             that is installed, not the base system's. BIRD through
             birdc(8), WireGuard's keys and peers through wg(8). A running

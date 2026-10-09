@@ -41,8 +41,13 @@ struct uhost {
 	int	 ncpu, step, keep;
 	int	 lim[3];	/* cpu, mem, swap, in percent; 0 none */
 	char	 nets[DEVS][DEVNAME], disks[DEVS][DEVNAME];
-	int	 nn, nd;
+	char	 jails[DEVS][DEVNAME];	/* told apart when racct is on */
+	int	 nn, nd, nj;
 	char	 net[DEVNAME], disk[DEVNAME];	/* the one drawn, "" all */
+	char	 jail[DEVNAME];		/* the jail drawn, "" the first */
+	bool	 racct;			/* the kernel accounts for jails */
+	char	 rules[1024];		/* limits of devices and jails, a line
+					   each */
 	bool	 known;		/* how it samples was said */
 	bool	 cfg;		/* how it samples is being set */
 	bool	 loading;
@@ -150,6 +155,24 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	keep = (int)jint(d, "keep", 720);
 	other = devs(jget(d, "nets"), u->nets, &u->nn);
 	other = devs(jget(d, "disks"), u->disks, &u->nd) || other;
+	other = devs(jget(d, "jails"), u->jails, &u->nj) || other;
+	u->racct = jbool(d, "racct");
+	/* The rules as they are typed: "net:igb0=125000000", a line each. */
+	{
+		const ucl_object_t	*r;
+		ucl_object_iter_t	 rit;
+		size_t			 len;
+
+		u->rules[0] = '\0';
+		rit = NULL;
+		while ((r = ucl_object_iterate(jget(d, "rules"), &rit,
+		    true)) != NULL) {
+			len = strlen(u->rules);
+			snprintf(u->rules + len, sizeof(u->rules) - len,
+			    "%s%s:%s=%.0f", len > 0 ? "\n" : "", jstr(r,
+			    "kind"), jstr(r, "name"), jnum(r, "limit", 0));
+		}
+	}
 	/*
 	 * Rows of another width, or another number of them: what is
 	 * here is let go, and all of it asked for anew.
@@ -157,7 +180,7 @@ usage_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (other || keep != u->keep || u->v == NULL) {
 		free(u->v);
 		u->keep = keep;
-		u->stride = NF + 2 * (u->nn + u->nd);
+		u->stride = NF + 2 * (u->nn + u->nd + u->nj);
 		u->v = calloc((size_t)(keep > 0 ? keep : 1) *
 		    (size_t)u->stride, sizeof(*u->v));
 		if (u->v == NULL)
@@ -425,13 +448,20 @@ single(struct html *h, const struct uhost *u, const char *label, int f1,
 	last2 = avg2 = peak2 = 0;
 	if (f2 >= 0)
 		stats(u, f2, t1, &last2, &avg2, &peak2);
-	top = unit == 0 ? 100 : ceiling(peak1 > peak2 ? peak1 : peak2);
+	top = unit == 0 ? 100 : unit == 4 ? (peak1 > 100 ? ceiling(peak1) :
+	    100) : ceiling(peak1 > peak2 ? peak1 : peak2);
 	if (unit == 0)
 		snprintf(buf, sizeof(buf), "avg %.0f%% · peak %.0f%%", avg1,
 		    peak1);
 	else if (unit == 1)
 		snprintf(buf, sizeof(buf), "avg %.2f · peak %.2f", avg1, peak1);
-	else {
+	else if (unit == 4)
+		snprintf(buf, sizeof(buf), "avg %.0f%% · peak %.0f%% of a CPU",
+		    avg1, peak1);
+	else if (unit == 5) {
+		fmt_size(a, sizeof(a), peak1);
+		snprintf(buf, sizeof(buf), "peak %s", a);
+	} else {
 		if (unit == 2) {
 			fmt_rate(a, sizeof(a), peak1 > peak2 ? peak1 : peak2);
 		} else {
@@ -445,9 +475,12 @@ single(struct html *h, const struct uhost *u, const char *label, int f1,
 	if (f2 >= 0)
 		line(h, u, f2, t1, top, "var(--c2)", false, f1 == F_MEM);
 	h_raw(h, "</svg><div class=\"ukeys\">");
-	if (unit == 0) {
+	if (unit == 0 || unit == 4) {
 		snprintf(a, sizeof(a), "%.0f%%", last1);
 		snprintf(b, sizeof(b), "%.0f%%", last2);
+	} else if (unit == 5) {
+		fmt_size(a, sizeof(a), last1);
+		fmt_size(b, sizeof(b), last2);
 	} else if (unit == 1) {
 		snprintf(a, sizeof(a), "%.2f", last1);
 		snprintf(b, sizeof(b), "%.2f", last2);
@@ -520,6 +553,34 @@ picked_at(char names[DEVS][DEVNAME], int n, const char *picked)
 	return (-1);
 }
 
+/* The jails, to pick the one drawn: each with its CPU now. */
+static void
+jail_picker(struct html *h, const struct uhost *u, int on, double t1)
+{
+	char	buf[48], mem[24];
+	double	last, avg, peak, m;
+	int	k, base;
+
+	base = NF + 2 * (u->nn + u->nd);
+	h_raw(h, "<div class=\"upick\">");
+	for (k = 0; k < u->nj; k++) {
+		stats(u, base + 2 * k + 1, t1, &m, &avg, &peak);
+		stats(u, base + 2 * k, t1, &last, &avg, &peak);
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\""
+		    "usage-jail\"", k == on ? " on" : "");
+		h_attr(h, "data-arg", u->sid);
+		h_attr(h, "data-value", u->jails[k]);
+		h_raw(h, ">");
+		h_txt(h, u->jails[k]);
+		fmt_size(mem, sizeof(mem), m);
+		snprintf(buf, sizeof(buf), " %.0f%% · %s", last, mem);
+		h_raw(h, "<small>");
+		h_txt(h, buf);
+		h_raw(h, "</small></button>");
+	}
+	h_raw(h, "</div>");
+}
+
 /* How the agent samples the host, said and set. */
 static void
 sampling(struct html *h, const struct uhost *u)
@@ -537,20 +598,31 @@ sampling(struct html *h, const struct uhost *u)
 	    "value=\"%d\">%%</label><label>memory over<input name=\"mem\" "
 	    "type=\"number\" min=\"0\" max=\"100\" value=\"%d\">%%</label>"
 	    "<label>swap over<input name=\"swap\" type=\"number\" min=\"0\" "
-	    "max=\"100\" value=\"%d\">%%</label><button class=\"small\">Set"
-	    "</button><button type=\"button\" class=\"ghost small\" data-act="
-	    "\"usage-cfg\"", u->step, u->keep, u->lim[0], u->lim[1],
-	    u->lim[2]);
+	    "max=\"100\" value=\"%d\">%%</label>", u->step, u->keep,
+	    u->lim[0], u->lim[1], u->lim[2]);
+	/* The limits of one interface, disk or jail each. */
+	h_raw(h, "<label class=\"rules\">Limits of an interface, a disk or a "
+	    "jail<textarea name=\"rules\" rows=\"3\" spellcheck=\"false\" "
+	    "placeholder=\"net:igb0=125000000&#10;disk:ada0=50000000&#10;"
+	    "jail-cpu:web=80&#10;jail-mem:web=1073741824\">");
+	h_txt(h, u->rules);
+	h_raw(h, "</textarea><small>One a line: <code>net:</code> and an "
+	    "interface, bytes a second in and out; <code>disk:</code> and a "
+	    "disk, bytes a second read and written; <code>jail-cpu:</code> "
+	    "and a jail, percent of one CPU; <code>jail-mem:</code> and a "
+	    "jail, bytes.</small></label><button class=\"small\">Set"
+	    "</button><button type=\"button\" class=\"ghost small\" "
+	    "data-act=\"usage-cfg\"");
 	h_attr(h, "data-arg", u->sid);
 	fmt_size(buf, sizeof(buf), u->bytes);
 	h_fmt(h, ">Close</button><small class=\"dim\">Now %s of the agent's "
 	    "memory: 8 bytes a sample, and 4 for each figure in it, of "
-	    "which there are %d here with %d interfaces and %d disks. With "
-	    "0 kept the agent does not sample and holds nothing. It keeps "
-	    "this for its next start, and the samples with it. A limit "
-	    "crossed, either way, is an event, listed under events in the "
-	    "Log tab; 0 is no limit.</small></form>", buf, u->stride - 1,
-	    u->nn, u->nd);
+	    "which there are %d here with %d interfaces, %d disks and %d "
+	    "jails. With 0 kept the agent does not sample and holds nothing. "
+	    "It keeps this for its next start, and the samples with it. A "
+	    "limit crossed, either way, is an event, listed under events in "
+	    "the Log tab; 0 is no limit.</small></form>", buf, u->stride - 1,
+	    u->nn, u->nd, u->nj);
 }
 
 void
@@ -685,7 +757,31 @@ view_usage(struct html *h)
 		    "written", t1, 3);
 		picker(h, u, "usage-disk", u->disks, u->nd, NF + 2 * u->nn,
 		    k >= 0 ? u->disk : "", t1, false);
-		h_raw(h, "</div></div></section>");
+		h_raw(h, "</div></div>");
+		/* Each jail's own, as the kernel accounts for it. */
+		if (!u->racct)
+			h_raw(h, "<p class=\"dim ujails\">Each jail's share of "
+			    "the CPUs and its memory are shown once the kernel "
+			    "accounts for them: <code>kern.racct.enable=1</code> "
+			    "in <code>/boot/loader.conf</code>, and a reboot.</p>");
+		else if (u->nj > 0) {
+			k = picked_at(u->jails, u->nj, u->jail);
+			if (k < 0)
+				k = 0;
+			h_raw(h, "<div class=\"uplots wide ujails\"><div>");
+			snprintf(label, sizeof(label), "Jail CPU · %s",
+			    u->jails[k]);
+			single(h, u, label, NF + 2 * (u->nn + u->nd + k), "busy",
+			    -1, NULL, t1, 4);
+			h_raw(h, "</div><div>");
+			snprintf(label, sizeof(label), "Jail memory · %s",
+			    u->jails[k]);
+			single(h, u, label, NF + 2 * (u->nn + u->nd + k) + 1,
+			    "in use", -1, NULL, t1, 5);
+			h_raw(h, "</div></div>");
+			jail_picker(h, u, k, t1);
+		}
+		h_raw(h, "</section>");
 	}
 	h_raw(h, "</section>");
 }
@@ -695,7 +791,7 @@ usage_form(const char *form, const ucl_object_t *f)
 {
 	struct uhost	*u;
 	const char	*sid;
-	char		 url[96], body[128];
+	char		 url[96], body[1300];
 	int		 step, keep, lim[3], k;
 
 	if (strcmp(form, "usage-set") != 0)
@@ -720,9 +816,29 @@ usage_form(const char *form, const ucl_object_t *f)
 			return (true);
 		}
 	}
-	snprintf(url, sizeof(url), "/api/servers/%s/history", u->sid);
-	snprintf(body, sizeof(body), "{\"step\":%d,\"keep\":%d,\"cpu\":%d,"
-	    "\"mem\":%d,\"swap\":%d}", step, keep, lim[0], lim[1], lim[2]);
+	/* The rules a line each, as the agent takes them: with commas. */
+	{
+		const char	*r;
+		char		 list[1100], *q;
+		size_t		 n;
+
+		r = jstr(f, "rules") != NULL ? jstr(f, "rules") : "";
+		for (n = 0; *r != '\0' && n < sizeof(list) - 1; r++)
+			if (*r == '\n' || *r == '\r' || *r == ',') {
+				if (n > 0 && list[n - 1] != ',')
+					list[n++] = ',';
+			} else if (*r != ' ' && *r != '\t')
+				list[n++] = *r;
+		while (n > 0 && list[n - 1] == ',')
+			n--;
+		list[n] = '\0';
+		q = json_quote(list);
+		snprintf(url, sizeof(url), "/api/servers/%s/history", u->sid);
+		snprintf(body, sizeof(body), "{\"step\":%d,\"keep\":%d,"
+		    "\"cpu\":%d,\"mem\":%d,\"swap\":%d,\"rules\":%s}", step,
+		    keep, lim[0], lim[1], lim[2], q);
+		free(q);
+	}
 	u->loading = true;
 	u->asked = arc_now();
 	u->cfg = false;
@@ -753,6 +869,8 @@ usage_action(const char *act, const char *arg, const char *value)
 		snprintf(u->net, sizeof(u->net), "%s", value);
 	} else if (strcmp(act, "usage-disk") == 0) {
 		snprintf(u->disk, sizeof(u->disk), "%s", value);
+	} else if (strcmp(act, "usage-jail") == 0) {
+		snprintf(u->jail, sizeof(u->jail), "%s", value);
 	}
 	return (true);
 }

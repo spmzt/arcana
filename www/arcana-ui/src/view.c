@@ -184,10 +184,11 @@ topbar(struct html *h)
 	}
 	h_raw(h, "</div><nav class=\"crumbs\">");
 	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
-	    NODE_API || app.node == NODE_USAGE)
+	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
-		    app.node == NODE_USAGE ? "Utilization" : "All hosts");
+		    app.node == NODE_USAGE ? "Utilization" : app.node ==
+		    NODE_WORKFLOWS ? "Workflows" : "All hosts");
 	else if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
 		h_txt(h, s->name);
@@ -383,6 +384,7 @@ rail(struct html *h)
 	    " open" : "", app.rail_open ? "▴" : "▾");
 	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
 	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
+	    NODE_WORKFLOWS ? "Workflows" : app.node ==
 	    NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
@@ -401,9 +403,12 @@ rail(struct html *h)
 	    "<span class=\"twig\">⌬</span><span class=\"name\">Network</span>"
 	    "</li><li class=\"titem fleet usagenode%s\" data-act=\""
 	    "select-usage\"><span class=\"twig\">◔</span><span class=\"name\">"
-	    "Utilization</span></li>", app.node == NODE_FLEET ? " selected" :
-	    "", app.nservers, app.node == NODE_NETWORK ? " selected" : "",
-	    app.node == NODE_USAGE ? " selected" : "");
+	    "Utilization</span></li><li class=\"titem fleet wfnode%s\" "
+	    "data-act=\"select-workflows\"><span class=\"twig\">⛓</span>"
+	    "<span class=\"name\">Workflows</span></li>", app.node ==
+	    NODE_FLEET ? " selected" : "", app.nservers, app.node ==
+	    NODE_NETWORK ? " selected" : "", app.node == NODE_USAGE ?
+	    " selected" : "", app.node == NODE_WORKFLOWS ? " selected" : "");
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
@@ -840,6 +845,11 @@ stage(struct html *h)
 		h_raw(h, "</main>");
 		return;
 	}
+	if (app.node == NODE_WORKFLOWS) {
+		view_workflows(h);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (app.node == NODE_JAIL) {
 		jail_page(h);
 		h_raw(h, "</main>");
@@ -859,8 +869,9 @@ stage(struct html *h)
 			{ "jobs", "Jobs" },
 		};
 		/*
-		 * A plugin has a tab of its own, on a host that has it: it
-		 * is what was installed there, not the base system's.
+		 * A plugin has a tab of its own, on a host that has it or
+		 * one of whose vnet jails does: it is what was installed
+		 * there, not the base system's.
 		 */
 		static const struct {
 			const char	*arg, *title;
@@ -868,24 +879,26 @@ stage(struct html *h)
 		} plugins[] = {
 			{ "wireguard", "WireGuard", NET_WIREGUARD },
 			{ "bird", "BIRD", NET_BIRD },
+			{ "ipsec", "IPsec", NET_IPSEC },
 		};
 		bool	plug;
 		int	t;
 
-		plug = app.tab == TAB_NETWORK && (app.net.kind ==
-		    NET_WIREGUARD || app.net.kind == NET_BIRD);
+		plug = app.tab == TAB_NETWORK && NET_PLUGIN(app.net.kind);
 		h_raw(h, "<nav class=\"tabs\">");
 		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++)
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
 			    tabs[t].title);
-		for (t = 0; t < 2; t++)
-			if (plugin_at(s, "", plugins[t].arg))
+		for (t = 0; t < 3; t++)
+			if (plugin_where(s, kind_plugin(plugins[t].kind)) !=
+			    NULL)
 				h_fmt(h, "<button class=\"tab plugin%s\" "
 				    "data-act=\"tab\" data-arg=\"%s\" title=\""
-				    "A plugin: installed on this host, not the "
-				    "base system's\">%s</button>", plug &&
+				    "A plugin: installed on this host or a jail "
+				    "of it, not the base system's\">%s</button>",
+				    plug &&
 				    (int)app.net.kind == plugins[t].kind ? " on" :
 				    "", plugins[t].arg, plugins[t].title);
 		h_raw(h, "</nav>");
@@ -1106,15 +1119,15 @@ jail_page(struct html *h)
 	h_raw(h, "</dl>");
 
 	/*
-	 * A jail with a network of its own: that network, read and
-	 * changed from the host, as the host's own is in its tab.
+	 * A jail with a network of its own: that network is in the host's
+	 * Network tab, with the jail picked there, as are its plugins.
 	 */
-	if (net_scope()[0] != '\0') {
-		h_raw(h, "<h4>Network <span class=\"dim\">its own (vnet), "
-		    "managed from the host: nothing is installed in the jail"
-		    "</span></h4><div class=\"jail-net\">");
-		view_network(h, s);
-		h_raw(h, "</div>");
+	if (net_jail_ok(j)) {
+		h_raw(h, "<p class=\"jail-net\">Its network is its own (vnet), "
+		    "read and changed from the host: <button class=\"ghost "
+		    "small\" data-act=\"jail-net\"");
+		h_attr(h, "data-arg", jstr(j, "name"));
+		h_raw(h, ">Open it in the Network tab</button></p>");
 	}
 
 	if (ucl_array_size(jget(j, "params")) > 0) {
@@ -1208,7 +1221,10 @@ dock(struct html *h)
 	if (app.nbatch > 0)
 		h_fmt(h, "<button class=\"primary small\" data-act=\"queue-run\">"
 		    "Run %d</button><button class=\"ghost small\" "
-		    "data-act=\"queue-clear\">Clear</button>", app.nbatch);
+		    "data-act=\"queue-clear\">Clear</button><button class=\""
+		    "ghost small\" data-act=\"queue-to-wf\" title=\"What waits "
+		    "here, kept as a workflow\">As a workflow</button>",
+		    app.nbatch);
 	h_fmt(h, "<span class=\"chev\">%s</span></header>",
 	    app.dock_open ? "▾" : "▴");
 	if (app.dock_open) {
@@ -1386,6 +1402,10 @@ modal(struct html *h)
 		if (!vpn_modal(h))
 			return;
 		break;
+	case MODAL_IPSEC_CONN:
+		if (!ipsec_modal(h))
+			return;
+		break;
 	case MODAL_BIRD_PROTO:
 	case MODAL_BIRD_BLOCK:
 	case MODAL_BIRD_RPKI:
@@ -1431,6 +1451,34 @@ modal(struct html *h)
 			h_fmt(h, " value=\"%d\"", app.net.fib);
 		h_raw(h, " placeholder=\"0\"><small>The table the route goes "
 		    "into; 0 is the first.</small></label></div>");
+		break;
+	case MODAL_WF_RUN:
+		if (!workflows_modal(h))
+			return;
+		break;
+	case MODAL_PKG_INSTALL:
+		if (cur_server() == NULL)
+			return;
+		h_raw(h, "<form data-form=\"pkg-install\"><h2>Install packages"
+		    "</h2><p><code>pkg install -y</code> ");
+		if (app.pkg.jail[0] != '\0') {
+			h_raw(h, "in the jail <b>");
+			h_txt(h, app.pkg.jail);
+			h_raw(h, "</b>");
+		} else {
+			h_raw(h, "on <b>");
+			h_txt(h, cur_server()->name);
+			h_raw(h, "</b>");
+		}
+		h_fmt(h, ", from its repository%s, with what they need.</p>"
+		    "<label>Packages<input name=\"names\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"strongswan "
+		    "wireguard-tools\" autofocus><small>Their names, with spaces "
+		    "between them.</small></label><label class=\"toggle\"><input "
+		    "type=\"checkbox\" name=\"anyos\"><span>Also packages built "
+		    "for a newer FreeBSD <em>IGNORE_OSVERSION</em></span></label>",
+		    app.pkg.ip == 4 ? ", over IPv4" : app.pkg.ip == 6 ?
+		    ", over IPv6" : "");
 		break;
 	case MODAL_LOOKUP:
 		if (cur_server() == NULL)
@@ -1570,6 +1618,54 @@ modal(struct html *h)
 			h_raw(h, "<li class=\"dim\">No device yet.</li>");
 		h_raw(h, "</ul>");
 		free(here);
+		/* Read-only API tokens: for a program to look, not to do. */
+		h_raw(h, "<h4>API tokens</h4><p class=\"dim\">For a program to "
+		    "read what the console says of the hosts, with <code>"
+		    "Authorization: Bearer</code>: their jails, network, "
+		    "storage, logs and the rest, and nothing that changes "
+		    "them, nor this console's settings or sign-in. Its value "
+		    "is shown once, when it is made.</p>");
+		if (app.token_value[0] != '\0') {
+			h_raw(h, "<div class=\"notice info\"><b>Copy it now: it is "
+			    "not shown again.</b><pre class=\"out token\">");
+			h_txt(h, app.token_value);
+			h_raw(h, "</pre></div>");
+		}
+		n = 0;
+		it = NULL;
+		h_raw(h, "<ul class=\"keys tokens\">");
+		while ((k = ucl_object_iterate(jget(app.tokens, "tokens"), &it,
+		    true)) != NULL) {
+			char made[32], used[32];
+
+			n++;
+			fmt_age(made, sizeof(made), (double)jint(k, "created", 0) *
+			    1000);
+			fmt_age(used, sizeof(used), (double)jint(k, "last", 0) *
+			    1000);
+			h_raw(h, "<li><span class=\"name\">");
+			h_txt(h, jstr(k, "name"));
+			h_raw(h, "</span><span class=\"dim\">made ");
+			h_txt(h, made);
+			h_raw(h, " · ");
+			if (jint(k, "last", 0) > 0) {
+				h_raw(h, "used ");
+				h_txt(h, used);
+			} else
+				h_raw(h, "never used");
+			h_raw(h, "</span><button type=\"button\" class=\"icon\" "
+			    "data-act=\"token-del\" title=\"Delete it\"");
+			h_attr(h, "data-arg", jstr(k, "id"));
+			h_raw(h, ">×</button></li>");
+		}
+		if (n == 0)
+			h_raw(h, "<li class=\"dim\">No token.</li>");
+		h_raw(h, "</ul><div class=\"token-new\"><input data-input=\""
+		    "token-name\" spellcheck=\"false\" autocomplete=\"off\" "
+		    "maxlength=\"64\" placeholder=\"what will use it\"");
+		h_attr(h, "value", app.token_name);
+		h_raw(h, "><button type=\"button\" class=\"small\" data-act=\""
+		    "token-new\">Make a token</button></div>");
 		h_raw(h, "<h4>Console</h4>");
 		if (app.settings == NULL) {
 			h_raw(h, "<div class=\"loader\"></div>");
@@ -1775,6 +1871,7 @@ modal(struct html *h)
 			h_raw(h, "<button class=\"primary\">Set</button>");
 			break;
 		case MODAL_WG_PEER:
+		case MODAL_IPSEC_CONN:
 			h_raw(h, "<button class=\"primary\">Add</button>");
 			break;
 		case MODAL_STORAGE:
@@ -1782,6 +1879,12 @@ modal(struct html *h)
 			break;
 		case MODAL_LOOKUP:
 			h_raw(h, "<button class=\"primary\">Look up</button>");
+			break;
+		case MODAL_PKG_INSTALL:
+			h_raw(h, "<button class=\"primary\">Install</button>");
+			break;
+		case MODAL_WF_RUN:
+			h_raw(h, "<button class=\"primary\">Run</button>");
 			break;
 		case MODAL_BIRD_PROTO:
 		case MODAL_BIRD_BLOCK:
@@ -2490,6 +2593,8 @@ view_packages(struct html *h, struct server *s)
 	    "small%s\" data-act=\"pkg-ip\" data-arg=\"6\">IPv6</button></nav>",
 	    app.pkg.ip == 0 ? " on" : "", app.pkg.ip == 4 ? " on" : "",
 	    app.pkg.ip == 6 ? " on" : "");
+	h_raw(h, "<button class=\"ghost small\" data-act=\"pkg-install\" "
+	    "title=\"pkg install: packages added\">Install…</button>");
 	/* The cache of downloaded packages, cleaned. */
 	h_raw(h, "<button class=\"ghost small\" data-act=\"pkg-clean\" "
 	    "data-arg=\"\" title=\"pkg clean: the downloaded packages no "
@@ -2497,6 +2602,12 @@ view_packages(struct html *h, struct server *s)
 	    "small\" data-act=\"pkg-clean\" data-arg=\"all\" title=\"pkg "
 	    "clean -a: all the downloaded packages deleted\">Clean all"
 	    "</button>");
+	/* Of every running jail at once, from the host's page. */
+	if (app.pkg.jail[0] == '\0')
+		h_raw(h, "<button class=\"ghost small\" data-act=\""
+		    "pkg-clean-jails\" data-arg=\"\" title=\"pkg clean in "
+		    "every running jail, one batch of a job each\">Clean the "
+		    "jails</button>");
 	if (app.pkg.mode == 1)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"pkg-check\""
 		    "%s title=\"pkg update, then list what has a newer version"

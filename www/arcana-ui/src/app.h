@@ -139,6 +139,7 @@ enum node {
 	NODE_NETWORK,		/* the fleet's network, as a map */
 	NODE_API,		/* the console's API, as it is documented */
 	NODE_USAGE,		/* how busy every host has been, drawn */
+	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
 };
 
 enum tab {
@@ -184,7 +185,11 @@ enum netkind {
 	NET_GENEVE,
 	NET_NHGROUPS,
 	NET_NEIGHBOURS,
+	NET_IPSEC,
 };
+/* A plugin's view: a tab of its own on a host that has it. */
+#define	NET_PLUGIN(k)	((k) == NET_WIREGUARD || (k) == NET_BIRD ||	\
+			    (k) == NET_IPSEC)
 
 /* The network tab's one table: what is shown, from which server. */
 struct netview {
@@ -324,6 +329,9 @@ enum modal {
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
 	MODAL_BIRD_FILE,
+	MODAL_IPSEC_CONN,
+	MODAL_PKG_INSTALL,
+	MODAL_WF_RUN,
 	MODAL_IF_VNET,
 	MODAL_STORAGE,
 	MODAL_LOOKUP,
@@ -371,6 +379,7 @@ struct app {
 	int		 nservers;
 	int		 sel;		/* selected server, or -1 */
 	char		 jail[256];	/* open in the drawer, or "" */
+	char		 net_jail[256];	/* whose network the tab shows: a vnet jail, or "" the host */
 	char		 filter[64];
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
@@ -385,6 +394,9 @@ struct app {
 	char		 theme[16];	/* "" for the default */
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
 	ucl_object_t	*push;		/* /api/push: the devices that are told */
+	ucl_object_t	*tokens;	/* /api/tokens: read-only API tokens */
+	char		 token_name[65];	/* the name typed for a new one */
+	char		 token_value[80];	/* a new one's value, shown once */
 	ucl_object_t	*build_reply;	/* a build that needs the user: host keys */
 	char		 build_sid[9];	/* and the host it was asked of */
 	bool		 build_console;	/* it was the console's own update */
@@ -448,7 +460,7 @@ void		 job_send(struct server *, char *, const char *, int,
 		    const char *);
 void		 job_send_host(struct server *, char *, const char *, int,
 		    const char *);
-void		 job_send_many(struct server *, struct queued *, int);
+void		 job_send_many(struct server *, struct queued *, int, int);
 void		 queue_run(void);
 void		 queue_clear(void);
 void		 jobs_poll(void);
@@ -459,6 +471,9 @@ void		 service_action(const char *, const char *);
 void		 service_config(const char *, const char *);
 void		 refresh_network(struct server *, bool);
 const char	*net_scope(void);
+bool		 net_jail_ok(const ucl_object_t *);
+const char	*plugin_where(const struct server *, const char *);
+const char	*kind_plugin(int);
 bool		 plugin_at(const struct server *, const char *, const char *);
 bool		 has_plugin(const struct server *, const char *);
 void		 refresh_stats(struct server *);
@@ -476,6 +491,9 @@ bool		 service_busy(const struct server *, const char *);
 bool		 packages_busy(const struct server *);
 void		 load_settings(void);
 void		 load_push(void);
+void		 load_tokens(void);
+void		 token_new(void);
+void		 token_del(const char *);
 void		 save_settings(const ucl_object_t *);
 void		 load_schema(void);
 const char	*schema_op(const ucl_object_t *);
@@ -540,6 +558,12 @@ void		 view_bird(struct html *, struct server *, const ucl_object_t *);
 bool		 vpn_action(const char *, const char *, const char *);
 bool		 vpn_form(const char *, const ucl_object_t *);
 bool		 vpn_modal(struct html *);
+/* ipsec.c: a host's strongSwan, IKEv2 only. */
+void		 view_ipsec(struct html *, struct server *,
+		    const ucl_object_t *);
+bool		 ipsec_action(const char *, const char *, const char *);
+bool		 ipsec_form(const char *, const ucl_object_t *);
+bool		 ipsec_modal(struct html *);
 void		 vpn_age(char *, size_t, int64_t);
 
 /* bird.c: BIRD's neighbours and its configuration. */
@@ -610,6 +634,14 @@ void		 transport_tick(double);
 void		 view_transport(struct html *, struct server *);
 void		 refresh_storage(struct server *, bool);
 void		 view_storage(struct html *, struct server *);
+/* workflow.c: the workflows, their editor and their runs. */
+void		 workflows_open(void);
+void		 workflows_tick(double);
+void		 view_workflows(struct html *);
+bool		 workflows_action(const char *, const char *, const char *);
+bool		 workflows_form(const char *, const ucl_object_t *);
+bool		 workflows_modal(struct html *);
+void		 storage_tick(double);
 bool		 storage_modal(struct html *);
 void		 storage_modal_buttons(struct html *);
 bool		 storage_form(const char *, const ucl_object_t *);

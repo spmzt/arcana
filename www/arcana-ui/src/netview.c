@@ -430,6 +430,60 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 	return (n);
 }
 
+/*
+ * Whose network this is: the host's, or a vnet jail's of it that runs.
+ * A plugin's tab offers only where the plugin is.
+ */
+static void
+net_jail_pick(struct html *h, const struct server *s)
+{
+	const ucl_object_t	*j;
+	ucl_object_iter_t	 it;
+	const char		*plugin, *name;
+	int			 n;
+
+	plugin = kind_plugin(app.net.kind);
+	n = 0;
+	it = NULL;
+	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL)
+		if (net_jail_ok(j) && (plugin == NULL || plugin_at(s, jstr(j,
+		    "name"), plugin)) && (strcmp(jstr(j, "name"), net_scope())
+		    == 0 || (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
+		    "running") == 0)))
+			n++;
+	if (n == 0 && net_scope()[0] == '\0')
+		return;
+	h_raw(h, "<label class=\"net-jail\" title=\"Whose network: the "
+	    "host's, or a jail's own (vnet), read and changed from the host"
+	    "\"><select data-input=\"net-jail\">");
+	if (plugin == NULL || plugin_at(s, "", plugin)) {
+		h_fmt(h, "<option value=\"\"%s>", net_scope()[0] == '\0' ?
+		    " selected" : "");
+		h_txt(h, s->name);
+		h_raw(h, "</option>");
+	}
+	it = NULL;
+	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
+	    "jails"), &it, true)) != NULL) {
+		/* Those that run, and the one picked even if it stopped. */
+		if (!net_jail_ok(j) || (plugin != NULL && !plugin_at(s, jstr(j,
+		    "name"), plugin)) || (strcmp(jstr(j, "name"), net_scope())
+		    != 0 && (jstr(j, "state") == NULL || strcmp(jstr(j, "state"),
+		    "running") != 0)))
+			continue;
+		name = jstr(j, "name");
+		h_raw(h, "<option");
+		h_attr(h, "value", name);
+		if (strcmp(name, net_scope()) == 0)
+			h_raw(h, " selected");
+		h_raw(h, ">jail ");
+		h_txt(h, name);
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select></label>");
+}
+
 void
 view_network(struct html *h, struct server *s)
 {
@@ -442,35 +496,35 @@ view_network(struct html *h, struct server *s)
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
 		{ "nhgroups", "Nexthop groups" }, { "neighbours", "Neighbours" },
+		{ "ipsec", "IPsec" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
 	char			 age[32];
 	int			 i, n, shown;
-	bool			 mine, plug, scoped, nh;
+	bool			 mine, plug, nh;
 
 	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0 &&
 	    strcmp(app.net.jail, net_scope()) == 0;
 	/*
-	 * A plugin's view stands by itself: on a host it is a tab of its
-	 * own, and what the base system has is not offered beside it.  A
-	 * jail's page has no tabs: there the plugins the jail has follow
-	 * the rest, apart.
+	 * A plugin's view stands by itself: it is a tab of its own, and
+	 * what the base system has is not offered beside it.
 	 */
-	plug = app.net.kind == NET_WIREGUARD || app.net.kind == NET_BIRD;
-	scoped = net_scope()[0] != '\0';
-	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
+	plug = NET_PLUGIN(app.net.kind);
+	h_raw(h, "<div class=\"toolbar\">");
+	net_jail_pick(h, s);
+	h_raw(h, "<nav class=\"sub\">");
 	/* The nexthop groups are of the Nexthops, not a tab of their own. */
 	nh = app.net.kind == NET_NEXTHOPS || app.net.kind == NET_NHGROUPS;
-	for (i = 0; i < 6 && (!plug || scoped); i++)
+	for (i = 0; i < 6 && !plug; i++)
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-kind\" "
 		    "data-arg=\"%s\">%s</button>", (int)app.net.kind == i ||
 		    (i == NET_NEXTHOPS && nh) ? " on" : "", kinds[i].arg,
 		    kinds[i].title);
 	/* What is of the base system too, and came later. */
-	for (i = 8; i < (int)(sizeof(kinds) / sizeof(kinds[0])) &&
-	    (!plug || scoped); i++)
-		if (i != NET_NHGROUPS)
+	for (i = 8; i < (int)(sizeof(kinds) / sizeof(kinds[0])) && !plug;
+	    i++)
+		if (i != NET_NHGROUPS && !NET_PLUGIN(i))
 			h_fmt(h, "<button class=\"ghost small%s\" data-act=\""
 			    "net-kind\" data-arg=\"%s\">%s</button>",
 			    (int)app.net.kind == i ? " on" : "", kinds[i].arg,
@@ -486,17 +540,6 @@ view_network(struct html *h, struct server *s)
 		    "Groups</button></nav>", app.net.kind ==
 		    NET_NEXTHOPS ? " on" : "", app.net.kind == NET_NHGROUPS ?
 		    " on" : "");
-	if (scoped && (has_plugin(s, "wireguard") || has_plugin(s, "bird"))) {
-		h_raw(h, "<nav class=\"sub plugins\" title=\"Plugins: what is "
-		    "installed in the jail, not the base system's\">");
-		for (i = 6; i < 8; i++)
-			if (has_plugin(s, kinds[i].arg))
-				h_fmt(h, "<button class=\"ghost small%s\" "
-				    "data-act=\"net-kind\" data-arg=\"%s\">%s"
-				    "</button>", (int)app.net.kind == i ? " on" :
-				    "", kinds[i].arg, kinds[i].title);
-		h_raw(h, "</nav>");
-	}
 	h_raw(h, "<nav class=\"sub\">");
 	for (i = 0; i < 3 && !plug; i++) {
 		static const int fams[] = { 0, 4, 6 };
@@ -633,6 +676,9 @@ view_network(struct html *h, struct server *s)
 		return;
 	case NET_BIRD:
 		view_bird(h, s, jget(app.net.data, "data"));
+		return;
+	case NET_IPSEC:
+		view_ipsec(h, s, jget(app.net.data, "data"));
 		return;
 	case NET_BRIDGES:
 		view_bridges(h, s, jget(app.net.data, "data.bridges"));

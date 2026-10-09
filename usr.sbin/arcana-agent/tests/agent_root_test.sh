@@ -203,7 +203,7 @@ routes_body()
 	# netstat and sockstat would list them: what sockstat has, this has,
 	# and in parts too.
 	atf_check -o match:'"statistics":\{"socket":\[' "$JGC" -c "$SOCK" net connections
-	pid=$(sockstat -46w | awk 'NR == 2 { print $3 }')
+	pid=$(sockstat -46w | awk 'NR > 1 && $3 ~ /^[0-9]+$/ { print $3; exit }')
 	atf_check -o match:"\"pid\":$pid," -o match:'"user":"' \
 	    "$JGC" -c "$SOCK" net sockets
 	atf_check -o match:'"command":"' "$JGC" -c "$SOCK" net sockets parts
@@ -341,7 +341,12 @@ jail_network_body()
 		atf_check -o ignore jexec arcw_n1 sysctl net.inet.ip.fw.enable=1
 		atf_check -o match:'"enabled":true' "$JGC" -j arcw_n1 -c "$SOCK" net ipfw
 	fi
-	# Removed: no longer watched, and gone, not held dying by it.
+	# Removed: no longer watched, and gone, not held dying by it.  A
+	# vnet torn down with an address on an interface in it panics a
+	# debug kernel: the epairs go first.
+	while read -r e; do
+		atf_check ifconfig "${e}a" destroy
+	done < epairs
 	atf_check -o ignore jail -r arcw_n1
 	sleep 0.5
 	atf_check -o match:'the network of jail arcw_n1 is not watched' cat daemon.out
@@ -354,11 +359,11 @@ jail_network_cleanup()
 {
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
 	if [ -f mine ]; then
-		jail -r arcw_n1 >/dev/null 2>&1
-		jail -r arcw_n2 >/dev/null 2>&1
 		[ -f epairs ] && while read -r e; do
 			ifconfig "${e}a" destroy >/dev/null 2>&1
 		done < epairs
+		jail -r arcw_n1 >/dev/null 2>&1
+		jail -r arcw_n2 >/dev/null 2>&1
 	fi
 	true
 }
@@ -383,6 +388,35 @@ fw_trace_body()
 	atf_check -o inline:'4\n' sh -c "grep -o '\"ms\"' trace.json | wc -l | tr -d ' '"
 }
 fw_trace_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
+atf_test_case kmsg cleanup
+kmsg_head()
+{
+	atf_set "descr" "the kernel's messages, numbered as they come and followed by their number, none twice"
+	atf_set "require.user" "root"
+}
+kmsg_body()
+{
+	start_daemon
+	atf_check -o save:k1.json "$JGC" -c "$SOCK" log @dmesg
+	atf_check -o match:'"name":"@dmesg","lines":\[\{' \
+	    -o match:'"seq":[0-9]+' -o match:'"position":[1-9][0-9]*' cat k1.json
+	pos=$(sed -n 's/.*"position":\([0-9]*\).*/\1/p' k1.json)
+	# After the newest: none of what was read again (the kernel may
+	# have said more since).
+	atf_check -o not-match:"\"seq\":$pos[,}]" -o match:'"position":[0-9]+' \
+	    "$JGC" -c "$SOCK" log -f "$pos" @dmesg
+	# The last lines, by their number, in order.
+	atf_check -o save:k3.json "$JGC" -c "$SOCK" log -o 3 @dmesg
+	atf_check -o inline:'3\n' sh -c "grep -o '\"seq\":' k3.json | wc -l | tr -d ' '"
+	# A number from before the agent began: read anew.
+	atf_check -o match:'"rotated":true' "$JGC" -c "$SOCK" log -f 99999999 @dmesg
+}
+kmsg_cleanup()
 {
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
 	true
@@ -441,4 +475,5 @@ atf_init_test_cases()
 	atf_add_test_case jail_network
 	atf_add_test_case fw_trace
 	atf_add_test_case resnapshot
+	atf_add_test_case kmsg
 }

@@ -255,6 +255,39 @@ do_pkg_upgrade(struct work *w, const struct arc_pkg_upgrade_req *rq,
  * pkg clean -y: the cached packages no longer needed, or no longer in
  * the repository, deleted; with all, the whole cache (-a).
  */
+/* pkg install -y of the packages named, there or in a running jail. */
+int
+do_pkg_install(struct work *w, const struct arc_job_spec *sp,
+    const char **errp)
+{
+	struct execres	 res;
+	const char	**args, *e;
+	size_t		 i, n;
+
+	if ((e = check_jail(w, sp->jail)) != NULL) {
+		*errp = e;
+		return (-1);
+	}
+	args = wcalloc(w, sp->names.n + 3, sizeof(*args));
+	n = 0;
+	args[n++] = "install";
+	args[n++] = "-y";
+	for (i = 0; i < sp->names.n; i++) {
+		if (sp->names.v[i] == NULL || !valid_pkg(sp->names.v[i])) {
+			*errp = wfmt(w, "'%s' is not a package name",
+			    sp->names.v[i] != NULL ? sp->names.v[i] : "");
+			return (-1);
+		}
+		args[n++] = sp->names.v[i];
+	}
+	if (pkg_run(w, sp->jail, sp->force, sp->has_pkg_ip ? sp->pkg_ip : 0,
+	    args, n, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "pkg install"));
+		return (-1);
+	}
+	return (0);
+}
+
 int
 do_pkg_clean(struct work *w, const char *jail, bool all, const char **errp)
 {

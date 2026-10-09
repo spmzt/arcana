@@ -94,6 +94,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_IPFW] = "ipfw",
 	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
+	[ARC_NET_KIND_IPSEC] = "ipsec",
 };
 
 static const char *service_action_names[] = {
@@ -105,7 +106,6 @@ static const char *service_action_names[] = {
 	[ARC_SERVICE_ACTION_DISABLE] = "disable",
 };
 
-static bool	valid_jail(const char *);
 static bool	valid_ifname(const char *);
 static bool	valid_service(const char *);
 static char	*peer_name(cbl_req *);
@@ -121,7 +121,7 @@ static const char *cuts_off(cbl_req *, const struct arc_job_spec *);
  * Jail names: letters, digits, '_', '-', and '.' for hierarchical jails.
  * All-digit names are refused because jail(8) reads them as jids.
  */
-static bool
+bool
 valid_jail(const char *s)
 {
 	const char	*p;
@@ -535,7 +535,7 @@ worker(void *arg)
 		    "%s", what);
 		memset(&hsr, 0, sizeof(hsr));
 		do_history(&w, j->pos, j->refresh, j->fib, j->offset,
-		    j->restart ? j->lim : NULL, &hsr);
+		    j->restart ? j->lim : NULL, j->source, &hsr);
 		ok = hsr.ok;
 		error = hsr.error;
 		step_end(&w, root, ok, NULL);
@@ -1330,6 +1330,9 @@ arc_history_doit(cbl_req *req, const struct arc_history_req *rq,
 	j->lim[0] = rq->limit_cpu;
 	j->lim[1] = rq->limit_mem;
 	j->lim[2] = rq->limit_swap;
+	/* The rules ride in source; empty takes them all away. */
+	j->source = j->refresh && rq->limit_rules != NULL ?
+	    xstrdup(rq->limit_rules) : NULL;
 	return (start(j));
 }
 
@@ -1537,7 +1540,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PKG_CLEAN)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PKG_INSTALL)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1610,6 +1613,16 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_PROCESS:
 		if ((e = proc_check(sp)) != NULL)
 			return (e);
+		break;
+	case ARC_JOB_KIND_IPSEC:
+		if (sp->safe)
+			return ("IPsec changes are not undone: not in safe mode");
+		return (ipsec_check(sp));
+	case ARC_JOB_KIND_PKG_INSTALL:
+		if (sp->safe)
+			return ("an install is not taken back by itself");
+		if (sp->names.n == 0)
+			return ("name the packages to install");
 		break;
 	case ARC_JOB_KIND_PKG_CLEAN:
 		if (sp->safe)
