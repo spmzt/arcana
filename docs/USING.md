@@ -623,6 +623,14 @@ The console is laid out as a tree and tabs.
 - The tree, the activity bar, the list of tasks in it and the service
   drawer are resized by dragging their edge; the browser keeps the
   sizes, and a double click on the edge goes back to the usual one.
+- **Settings** has **API tokens**: read-only tokens for a program to
+  look at the hosts through the API without a passkey, sent as
+  `Authorization: Bearer arcr_…`. One is made with a name and its
+  value is shown that once; the console keeps only its SHA-256, and
+  when it was last used. It reads what is said of the hosts (GET under
+  `/api/servers`) and nothing else: it changes nothing, and does not
+  read the console's settings, sign-in, push or enrolment. Deleted, it
+  opens nothing at once.
 - **Settings** has the console's version, and under **Look** its
   themes: Tron, Amber, Matrix, Synth, Slate, Onyx (black, white and one
   red, in a plain face, without glow) and the light ones: Paper,

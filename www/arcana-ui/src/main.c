@@ -1196,7 +1196,20 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "settings") == 0) {
 		app.modal = MODAL_SETTINGS;
 		app.modal_error[0] = '\0';
+		/* A token's value is shown once: not again on reopening. */
+		app.token_value[0] = '\0';
 		load_settings();
+		load_tokens();
+	} else if (strcmp(act, "input:token-name") == 0) {
+		snprintf(app.token_name, sizeof(app.token_name), "%s", value);
+	} else if (strcmp(act, "token-new") == 0) {
+		token_new();
+	} else if (strcmp(act, "token-del") == 0) {
+		confirm("Delete the API token", "A program that uses it can no "
+		    "longer read anything from the console, from now on.",
+		    "Delete", true, "", "do-token-del", arg, "");
+	} else if (strcmp(act, "do-token-del") == 0) {
+		token_del(arg);
 	} else if (strcmp(act, "keys") == 0) {
 		app.modal = MODAL_KEYS;
 		app.modal_error[0] = '\0';

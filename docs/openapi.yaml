@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.58.0
+  version: 0.59.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -34,6 +34,7 @@ servers:
 
 security:
   - session: []
+  - token: []
 
 tags:
   - name: health
@@ -1080,6 +1081,46 @@ paths:
                     items: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/tokens:
+    get:
+      tags: [auth]
+      summary: The read-only API tokens
+      description: Each with id, name, created and last (when it was last
+        used), never its value.
+      responses:
+        "200":
+          description: tokens
+    post:
+      tags: [auth]
+      summary: Make a read-only API token
+      description: In a session only. The reply's token is its value,
+        given this once; the console keeps its SHA-256. At most 32.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string, maxLength: 64 }
+      responses:
+        "200":
+          description: id, name and token
+        "409": { $ref: "#/components/responses/Error" }
+  /api/tokens/{id}:
+    delete:
+      tags: [auth]
+      summary: Delete a token; it opens nothing from then on
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[0-9a-f]{16}$" }
+      responses:
+        "200":
+          description: ok
+        "404": { $ref: "#/components/responses/Error" }
   /api/push:
     get:
       summary: The key browsers subscribe to Web Push with, and the devices
@@ -1568,6 +1609,14 @@ components:
       in: cookie
       name: arc_session
       description: Set by register/finish and login/finish.
+    token:
+      type: http
+      scheme: bearer
+      description: A read-only API token (arcr_ and 64 hex digits), made
+        in a session with POST /api/tokens. It is taken for GET under
+        /api/servers and for /api/health and GET /api/tokens only, and
+        refused with 401 for anything that changes something, the
+        console's settings, push, sign-in and enrolment.
 
   parameters:
     server:

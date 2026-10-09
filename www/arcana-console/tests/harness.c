@@ -938,6 +938,19 @@ http(const char *method, const char *path, const char *body, struct resp *r)
 	    r);
 }
 
+/* One request with an API token and no session, as a program asks. */
+void
+http_bearer(const char *method, const char *path, const char *token,
+    const char *body, struct resp *r)
+{
+	char	hdrs[1024];
+
+	snprintf(hdrs, sizeof(hdrs), "%sAuthorization: Bearer %s\r\n",
+	    send_xjg ? "X-Arcana: 1\r\n" : "", token);
+	http_on(console_socket(), "localhost:8443", hdrs, method, path, body,
+	    r);
+}
+
 /*
  * One HTTP/1.1 request on the connected socket s, which is closed; the
  * reply is parsed as JSON, and an arc_session cookie in it kept.

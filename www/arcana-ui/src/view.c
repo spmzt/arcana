@@ -1570,6 +1570,54 @@ modal(struct html *h)
 			h_raw(h, "<li class=\"dim\">No device yet.</li>");
 		h_raw(h, "</ul>");
 		free(here);
+		/* Read-only API tokens: for a program to look, not to do. */
+		h_raw(h, "<h4>API tokens</h4><p class=\"dim\">For a program to "
+		    "read what the console says of the hosts, with <code>"
+		    "Authorization: Bearer</code>: their jails, network, "
+		    "storage, logs and the rest, and nothing that changes "
+		    "them, nor this console's settings or sign-in. Its value "
+		    "is shown once, when it is made.</p>");
+		if (app.token_value[0] != '\0') {
+			h_raw(h, "<div class=\"notice info\"><b>Copy it now: it is "
+			    "not shown again.</b><pre class=\"out token\">");
+			h_txt(h, app.token_value);
+			h_raw(h, "</pre></div>");
+		}
+		n = 0;
+		it = NULL;
+		h_raw(h, "<ul class=\"keys tokens\">");
+		while ((k = ucl_object_iterate(jget(app.tokens, "tokens"), &it,
+		    true)) != NULL) {
+			char made[32], used[32];
+
+			n++;
+			fmt_age(made, sizeof(made), (double)jint(k, "created", 0) *
+			    1000);
+			fmt_age(used, sizeof(used), (double)jint(k, "last", 0) *
+			    1000);
+			h_raw(h, "<li><span class=\"name\">");
+			h_txt(h, jstr(k, "name"));
+			h_raw(h, "</span><span class=\"dim\">made ");
+			h_txt(h, made);
+			h_raw(h, " · ");
+			if (jint(k, "last", 0) > 0) {
+				h_raw(h, "used ");
+				h_txt(h, used);
+			} else
+				h_raw(h, "never used");
+			h_raw(h, "</span><button type=\"button\" class=\"icon\" "
+			    "data-act=\"token-del\" title=\"Delete it\"");
+			h_attr(h, "data-arg", jstr(k, "id"));
+			h_raw(h, ">×</button></li>");
+		}
+		if (n == 0)
+			h_raw(h, "<li class=\"dim\">No token.</li>");
+		h_raw(h, "</ul><div class=\"token-new\"><input data-input=\""
+		    "token-name\" spellcheck=\"false\" autocomplete=\"off\" "
+		    "maxlength=\"64\" placeholder=\"what will use it\"");
+		h_attr(h, "value", app.token_name);
+		h_raw(h, "><button type=\"button\" class=\"small\" data-act=\""
+		    "token-new\">Make a token</button></div>");
 		h_raw(h, "<h4>Console</h4>");
 		if (app.settings == NULL) {
 			h_raw(h, "<div class=\"loader\"></div>");

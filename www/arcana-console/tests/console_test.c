@@ -848,6 +848,89 @@ ATF_TC_BODY(load, tc)
 	    0);
 }
 
+CONSOLE_TC(tokens, "A read-only API token, made in a session, reads what is "
+    "said of the hosts and changes nothing; deleted, it opens nothing")
+ATF_TC_BODY(tokens, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		token[80], id[20], cwd[1024], body[1200], path[256];
+	char		server[256];
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(server, sizeof(server), "/api/servers/%s/hello",
+	    jstr(&r, "servers.0.id"));
+	resp_free(&r);
+
+	/* Made in a session, its value said once; kept as its hash only. */
+	http("POST", "/api/tokens", "{\"name\":\"overlay planner\"}", &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "token") != NULL);
+	ATF_CHECK(strncmp(jstr(&r, "token"), "arcr_", 5) == 0);
+	ATF_CHECK_EQ(69, strlen(jstr(&r, "token")));
+	snprintf(token, sizeof(token), "%s", jstr(&r, "token"));
+	snprintf(id, sizeof(id), "%s", jstr(&r, "id"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "grep -q '%s' data/tokens.json", token + 5);
+	ATF_CHECK(system(path) != 0);
+	ATF_CHECK(system("test \"$(stat -f %Lp data/tokens.json)\" = 600") ==
+	    0);
+	http("GET", "/api/tokens", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("overlay planner", jstr(&r, "tokens.0.name"));
+	ATF_CHECK(jstr(&r, "tokens.0.token") == NULL);
+	resp_free(&r);
+
+	/* It reads what is said of the hosts... */
+	http_bearer("GET", "/api/servers", token, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("lab", jstr(&r, "servers.0.name"));
+	resp_free(&r);
+	http_bearer("GET", server, token, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* ... and changes nothing, nor reads the console's own. */
+	http_bearer("POST", "/api/servers", token, "{\"name\":\"x\",\"uri\":"
+	    "\"unix:/nonexistent\"}", &r);
+	EXPECT(&r, 401);
+	ATF_CHECK(strstr(r.body, "reads only") != NULL);
+	resp_free(&r);
+	http_bearer("POST", "/api/tokens", token, "{\"name\":\"another\"}", &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	http_bearer("GET", "/api/settings", token, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	http_bearer("GET", "/api/push", token, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	http_bearer("GET", "/api/servers", "arcr_0000000000000000000000000000"
+	    "000000000000000000000000000000000000", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+	/* Its use noted. */
+	http("GET", "/api/tokens", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "tokens.0.last") != NULL && strcmp(jstr(&r,
+	    "tokens.0.last"), "0") != 0);
+	resp_free(&r);
+
+	/* Deleted: it opens nothing at once. */
+	snprintf(path, sizeof(path), "/api/tokens/%s", id);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http_bearer("GET", "/api/servers", token, NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+}
+
 CONSOLE_TC(push, "Devices subscribe to be told of tasks, and a message goes "
     "to all but the one that sends it")
 ATF_TC_BODY(push, tc)
@@ -2642,6 +2725,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, local_same);
 	ATF_TP_ADD_TC(tp, local_absent);
 	ATF_TP_ADD_TC(tp, push);
+	ATF_TP_ADD_TC(tp, tokens);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);

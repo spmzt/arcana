@@ -3794,3 +3794,8 @@ section.fwtable h4 .chip, section.fwtable h4 button { margin-left: .6rem; }
 .selbar.on { padding: .35rem .6rem; border: 1px solid rgba(var(--red-rgb), .4); border-radius: 8px; background: rgba(var(--red-rgb), .05); }
 table.snapshots input.pick { width: auto; padding: 0; margin: 0 .55rem 0 0; vertical-align: middle; accent-color: var(--red); }
 table.snapshots tr.picked td { background: rgba(var(--red-rgb), .06); }
+
+/* Settings: a read-only API token made, and its value shown once. */
+.token-new { display: flex; gap: .5rem; align-items: center; margin: .4rem 0 1rem; }
+.token-new input { flex: 1; }
+pre.out.token { white-space: pre-wrap; word-break: break-all; user-select: all; }

@@ -2721,6 +2721,85 @@ push_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	app.push = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
 }
 
+/* The read-only API tokens, for the settings to show. */
+static void
+tokens_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	if (status != 200)
+		return;
+	if (app.tokens != NULL)
+		ucl_object_unref(app.tokens);
+	app.tokens = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+}
+
+void
+load_tokens(void)
+{
+
+	api("GET", "/api/tokens", NULL, tokens_cb, NULL);
+}
+
+/* A new one made: its value is in this reply only, shown once. */
+static void
+token_made_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200 || jstr(o, "token") == NULL) {
+		toast(true, "The token was not made: %s", jstr(o, "error.message")
+		    != NULL ? jstr(o, "error.message") : err != NULL ? err :
+		    "no answer");
+		return;
+	}
+	snprintf(app.token_value, sizeof(app.token_value), "%s", jstr(o,
+	    "token"));
+	app.token_name[0] = '\0';
+	load_tokens();
+}
+
+void
+token_new(void)
+{
+	char	*q, *body;
+
+	if (app.token_name[0] == '\0') {
+		toast(true, "A token is made with a name: what will use it");
+		return;
+	}
+	q = json_quote(app.token_name);
+	if (asprintf(&body, "{\"name\":%s}", q) == -1)
+		abort();
+	free(q);
+	api("POST", "/api/tokens", body, token_made_cb, NULL);
+	free(body);
+}
+
+static void
+token_gone_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200)
+		toast(true, "The token was not deleted: %s", jstr(o,
+		    "error.message") != NULL ? jstr(o, "error.message") : err !=
+		    NULL ? err : "no answer");
+	load_tokens();
+}
+
+void
+token_del(const char *id)
+{
+	char	url[64];
+
+	if (strlen(id) != 16 || id[strspn(id, "0123456789abcdef")] != '\0')
+		return;
+	snprintf(url, sizeof(url), "/api/tokens/%s", id);
+	api("DELETE", url, NULL, token_gone_cb, NULL);
+}
+
 /* The devices that are told of tasks, for the settings to show. */
 void
 load_push(void)

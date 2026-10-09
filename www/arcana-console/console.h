@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.58.0"
+#define	ARCW_VERSION		"0.59.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -90,6 +90,9 @@ int		 reply_error(struct http_request *, int, const char *,
 		    const char *, ...) __printflike(4, 5);
 ucl_object_t	*read_json(struct http_request *);
 bool		 guard(struct http_request *, bool);
+bool		 token_valid(struct http_request *);
+bool		 token_readable(const char *);
+int		 api_tokens(struct http_request *);
 bool		 capture(struct http_request *, int, char *, size_t);
 const char	*ucl_str(const ucl_object_t *, const char *);
 bool		 ucl_flag(const ucl_object_t *, const char *);

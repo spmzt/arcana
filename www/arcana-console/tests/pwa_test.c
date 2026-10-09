@@ -488,6 +488,30 @@ ATF_TC_BODY(pwa, tc)
 	    "t.textContent.includes('Settings saved'))", 10);
 	ATF_CHECK(system("grep -q '/usr/local/etc/arcana/id_ed25519' "
 	    "data/settings.json") == 0);
+	/* A read-only API token: made with a name in the settings, its
+	 * value shown once, listed, and deleted once confirmed. */
+	run("document.querySelector('button[data-act=settings]').click()");
+	wait_js("document.querySelector('input[data-input=token-name]')", 10);
+	run("const i = document.querySelector('input[data-input=token-name]'); "
+	    "i.value = 'overlay planner'; i.dispatchEvent(new Event('input', "
+	    "{ bubbles: true })); document.querySelector('button[data-act="
+	    "token-new]').click();");
+	wait_js("document.querySelector('pre.out.token') && document."
+	    "querySelector('pre.out.token').textContent.startsWith('arcr_') "
+	    "&& [...document.querySelectorAll('ul.tokens li')].some(l => "
+	    "l.textContent.includes('overlay planner') && l.textContent."
+	    "includes('never used'))", 10);
+	shot("0b-token");
+	run("document.querySelector('ul.tokens button[data-act=token-del]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=confirm]')", 5);
+	for (i = 0; i < 100 && system("grep -q 'overlay planner' "
+	    "data/tokens.json") == 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("! grep -q 'overlay planner' data/tokens.json") == 0);
 	/* There is no such key here: the builds below use the host's own. */
 	run("window.unset = false; fetch('/api/settings', { method: 'POST', "
 	    "headers: { 'Content-Type': 'application/json', 'X-Arcana': '1' }, "
@@ -2549,7 +2573,7 @@ ATF_TC_BODY(pwa, tc)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 8",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 11",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");

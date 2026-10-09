@@ -48,6 +48,8 @@ void		 restart_console(void);
 void		 http_abandon(const char *);
 int		 tcp_socket(int);
 void		 http(const char *, const char *, const char *, struct resp *);
+void		 http_bearer(const char *, const char *, const char *,
+		    const char *, struct resp *);
 void		 http_on(int, const char *, const char *, const char *,
 		    const char *, const char *, struct resp *);
 void		 resp_free(struct resp *);

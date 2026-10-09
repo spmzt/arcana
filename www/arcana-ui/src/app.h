@@ -385,6 +385,9 @@ struct app {
 	char		 theme[16];	/* "" for the default */
 	ucl_object_t	*settings;	/* /api/settings, while its dialog is open */
 	ucl_object_t	*push;		/* /api/push: the devices that are told */
+	ucl_object_t	*tokens;	/* /api/tokens: read-only API tokens */
+	char		 token_name[65];	/* the name typed for a new one */
+	char		 token_value[80];	/* a new one's value, shown once */
 	ucl_object_t	*build_reply;	/* a build that needs the user: host keys */
 	char		 build_sid[9];	/* and the host it was asked of */
 	bool		 build_console;	/* it was the console's own update */
@@ -476,6 +479,9 @@ bool		 service_busy(const struct server *, const char *);
 bool		 packages_busy(const struct server *);
 void		 load_settings(void);
 void		 load_push(void);
+void		 load_tokens(void);
+void		 token_new(void);
+void		 token_del(const char *);
 void		 save_settings(const ucl_object_t *);
 void		 load_schema(void);
 const char	*schema_op(const ucl_object_t *);
