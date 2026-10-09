@@ -2625,6 +2625,27 @@ ATF_TC_BODY(pwa, tc)
 	click_at(".map-legend li[data-arg=lan]");
 	wait_js("document.querySelector('svg.topo .tlink.lan') && "
 	    "!document.querySelector('.map-legend li.off')", 5);
+	/* Labels, kind by kind: the shared networks' left out, the others
+	 * as they were. */
+	click_at(".map-tools button[data-act=topo-labels]");
+	wait_js("document.querySelectorAll('.map-labels button').length === 6",
+	    5);
+	run("window.otherQuiet = [...document.querySelectorAll('svg.topo "
+	    ".tlink:not(.lan)')].map(g => g.classList.contains('quiet'))"
+	    ".join()");
+	click_at(".map-labels button[data-arg=lan].on");
+	wait_js("document.querySelector('.map-labels button[data-arg=lan]:not(.on)')"
+	    " && [...document.querySelectorAll('svg.topo .tlink.lan')].every(g "
+	    "=> g.classList.contains('quiet')) && [...document.querySelectorAll("
+	    "'svg.topo .tlink:not(.lan)')].map(g => g.classList.contains("
+	    "'quiet')).join() === window.otherQuiet", 5);
+	shot("8a-labels");
+	click_at(".map-labels button[data-arg=lan]");
+	wait_js("document.querySelector('.map-labels button[data-arg=lan].on') "
+	    "&& ![...document.querySelectorAll('svg.topo .tlink.lan')].some(g "
+	    "=> g.classList.contains('quiet'))", 5);
+	click_at(".map-tools button[data-act=topo-labels]");
+	wait_js("!document.querySelector('.map-labels')", 5);
 	/*
 	 * A host dragged by the mouse stays under it, all the way, and
 	 * while the map reads the hosts again: taken by its middle, its

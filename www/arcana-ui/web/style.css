@@ -3228,10 +3228,41 @@ table.datasets td:first-child, table.snapshots td:first-child { overflow-wrap: a
 .map-legend .vnet::before { border-top: 2px dotted var(--dim); }
 .map-tools button { min-width: 2.2rem; min-height: 2.2rem; }
 
-/* A crowded map: a line's label only where the pointer is, or picked. */
-svg.topo.quiet .tlink .lbl, svg.topo.quiet .tlink .rate { display: none; }
-svg.topo.quiet .tlink:hover .lbl, svg.topo.quiet .tlink:hover .rate,
-svg.topo.quiet .tlink.sel .lbl, svg.topo.quiet .tlink.sel .rate { display: inline; }
+/* Labels left out of a kind of line: one only where the pointer is, or
+ * picked. */
+svg.topo .tlink.quiet .lbl, svg.topo .tlink.quiet .rate { display: none; }
+svg.topo .tlink.quiet:hover .lbl, svg.topo .tlink.quiet:hover .rate,
+svg.topo .tlink.quiet.sel .lbl, svg.topo .tlink.quiet.sel .rate { display: inline; }
+
+/* The labels' switches, one for each kind of line, in its line's look. */
+.map-labels {
+	position: absolute;
+	top: 3.3rem;
+	left: .6rem;
+	display: flex;
+	flex-wrap: wrap;
+	gap: .3rem;
+	max-width: calc(100% - 1.2rem);
+	padding: .3rem;
+	border-radius: 6px;
+	background: color-mix(in srgb, var(--bg) 88%, transparent);
+}
+.map-labels button::before {
+	content: "";
+	display: inline-block;
+	width: 14px;
+	height: 0;
+	margin-right: .35rem;
+	vertical-align: middle;
+	border-top: 2px solid var(--slate);
+}
+.map-labels button:not(.on) { opacity: .55; }
+.map-labels .tunnel::before { border-color: var(--violet); }
+.map-labels .p2p::before { border-color: var(--teal); }
+.map-labels .lan::before { border-color: var(--blue); }
+.map-labels .bgp::before { border-top: 2px dashed var(--magenta); }
+.map-labels .ospf::before { border-top: 2px dotted var(--amber); }
+.map-labels .vnet::before { border-top: 2px dotted var(--dim); }
 .map-legend { background: color-mix(in srgb, var(--bg) 82%, transparent); border-radius: 6px; padding: .2rem .4rem; }
 
 /*

@@ -192,7 +192,9 @@ static struct {
 	double	vw, vh;			/* the room the map has, in pixels */
 	double	fit_w, fit_h;		/* and had when fitted */
 	bool	touched;		/* moved, zoomed: no fitting unasked */
-	int	labels;			/* 0 as fits, 1 shown, 2 left out */
+	int	labels[LK_KINDS];	/* each kind's: 0 as fits, 1 shown,
+					   2 left out */
+	bool	labels_open;		/* the labels' switches shown */
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
 	bool	hide_best, hide_alt;	/* nor the route traced */
 	double	last_poll;
@@ -222,6 +224,7 @@ static void		 places_save(void);
 static void		 poll_cb(int, const ucl_object_t *, const char *, void *);
 static bool		 addr_bytes(const char *, int *, unsigned char *);
 static bool		 addr_same(const char *, const char *);
+static bool		 labels_quiet(int);
 static int		 owner(const char *, char *, size_t);
 static void		 links_build(void);
 static void		 trace_next(int, const char *);
@@ -1371,10 +1374,10 @@ map_links(struct html *h)
 			w = 7;
 		flow = l->rate < 1000 ? 0 : l->rate < 100000 ? 1 : l->rate <
 		    10000000 ? 2 : 3;
-		h_fmt(h, "<g class=\"tlink %s %s flow%d%s\"><path class=\"wire\" "
-		    "style=\"stroke-width:%.1f\" d=\"", kinds[l->kind], l->up ?
-		    "up" : "down", flow, strcmp(tp.sel_link, l->key) == 0 ?
-		    " sel" : "", w);
+		h_fmt(h, "<g class=\"tlink %s %s flow%d%s%s\"><path class=\""
+		    "wire\" style=\"stroke-width:%.1f\" d=\"", kinds[l->kind],
+		    l->up ? "up" : "down", flow, strcmp(tp.sel_link, l->key) ==
+		    0 ? " sel" : "", labels_quiet(l->kind) ? " quiet" : "", w);
 		curve(h, x1, y1, x2, y2, bend, 0.5, &mx, &my);
 		h_raw(h, "\"/>");
 		if (flow > 0) {
@@ -1714,19 +1717,31 @@ map_nodes(struct html *h)
 }
 
 /*
- * The classes of the map's drawing.  With many links their labels run
- * into each other: they are left out then, and a link shows its own
- * when the pointer is on it or it is picked; "Labels" says otherwise.
+ * Are a kind of link's labels left out?  With many links of a kind their
+ * labels run into each other: they are left out then, and a link shows
+ * its own when the pointer is on it or it is picked.  "Labels" says
+ * otherwise, for each kind on its own.
  */
+static bool
+labels_quiet(int kind)
+{
+	int	i, n;
+
+	if (tp.labels[kind] != 0)
+		return (tp.labels[kind] == 2);
+	for (i = n = 0; i < nlinks; i++)
+		if (links[i].kind == kind)
+			n++;
+	return (n > 6);
+}
+
+/* The classes of the map's drawing. */
 static const char *
 wfmt_cls(void)
 {
 	static char	cls[40];
-	bool		quiet;
 
-	quiet = tp.labels == 2 || (tp.labels == 0 && nlinks > 6);
-	snprintf(cls, sizeof(cls), "%s%s", tp.linking ? " linking" : "",
-	    quiet ? " quiet" : "");
+	snprintf(cls, sizeof(cls), "%s", tp.linking ? " linking" : "");
 	return (cls);
 }
 
@@ -1772,14 +1787,41 @@ map(struct html *h)
 	    "title=\"Each host's running jails\">Jails</button>", tp.jails ?
 	    " on" : "");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-labels\" "
-	    "title=\"What each line is and carries, written on it\">Labels"
-	    "</button>", tp.labels == 2 || (tp.labels == 0 && nlinks > 6) ?
-	    "" : " on");
+	    "title=\"What each kind of line is and carries, written on it\">"
+	    "Labels ▾</button>", tp.labels_open ? " on" : "");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-peers\" "
 	    "title=\"BGP and OSPF neighbours that are not hosts of this "
 	    "console\">Peers</button>", tp.nopeers ? "" : " on");
+	h_raw(h, "</div>");
+	/* The labels' switches: each kind of line's written or not. */
+	if (tp.labels_open) {
+		static const struct {
+			const char	*cls, *title;
+		} lk[LK_KINDS] = {
+			{ "tunnel", "Tunnels" }, { "p2p", "Point to point" },
+			{ "lan", "Same network" }, { "bgp", "BGP" },
+			{ "ospf", "OSPF" }, { "vnet", "Jails" },
+		};
+		int	k;
+
+		h_raw(h, "<div class=\"map-labels\" role=\"group\" "
+		    "aria-label=\"Labels\">");
+		for (k = 0; k < LK_KINDS; k++) {
+			bool	on;
+
+			on = !labels_quiet(k);
+			h_fmt(h, "<button type=\"button\" class=\"ghost small "
+			    "%s%s\" data-act=\"topo-labels-kind\" data-arg=\"%s\" "
+			    "aria-pressed=\"%s\" title=\"%s these lines' labels"
+			    "%s\">%s</button>", lk[k].cls, on ? " on" : "",
+			    lk[k].cls, on ? "true" : "false", on ? "Leave out" :
+			    "Write", tp.labels[k] == 0 ? " (as fits, now)" : "",
+			    lk[k].title);
+		}
+		h_raw(h, "</div>");
+	}
 	/* The legend says what a line is, and takes its kind away or back. */
-	h_raw(h, "</div><ul class=\"map-legend\">");
+	h_raw(h, "<ul class=\"map-legend\">");
 	{
 		static const struct {
 			const char	*cls, *title;
@@ -3441,8 +3483,14 @@ topo_action(const char *act, const char *arg, const char *value)
 		zoom_by(0.8, tp.panx, tp.pany);
 		tp.touched = true;
 	} else if (strcmp(act, "topo-labels") == 0) {
-		tp.labels = tp.labels == 2 || (tp.labels == 0 && nlinks > 6) ?
-		    1 : 2;
+		tp.labels_open = !tp.labels_open;
+	} else if (strcmp(act, "topo-labels-kind") == 0) {
+		static const char *const names[] = { "tunnel", "p2p", "lan",
+		    "bgp", "ospf", "vnet" };
+
+		for (i = 0; i < LK_KINDS; i++)
+			if (strcmp(arg, names[i]) == 0)
+				tp.labels[i] = labels_quiet(i) ? 1 : 2;
 	} else if (strcmp(act, "topo-legend") == 0) {
 		static const char *const names[] = { "tunnel", "p2p", "lan",
 		    "bgp", "ospf", "vnet" };
