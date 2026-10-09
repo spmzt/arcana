@@ -639,6 +639,17 @@ by, as
 .Xr route 8
 get tells it, and the other routes of the table that cover the address,
 each with the length of its prefix: what is left when the best goes.
+.It Cm traceroute Ar address
+One round of
+.Xr traceroute 8 ,
+or
+.Xr traceroute6 8 ,
+from the host to
+.Ar address :
+a probe a hop, a second's wait, 30 hops at most, as JSON.
+The console's Traceroute asks again and again, as
+.Xr mtr 8
+does.
 .It Cm interface Ar name Cm mtu Ar number
 .It Cm interface Ar name Cm description Ar text
 Set an interface's MTU or its description; an empty text takes the

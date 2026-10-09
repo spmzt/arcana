@@ -241,6 +241,7 @@ static bool		 addr_same(const char *, const char *);
 static bool		 labels_quiet(int);
 static int		 owner(const char *, char *, size_t);
 static void		 node_poll(int);
+static const char	*primary_addr(struct thost *, int);
 static void		 links_build(void);
 static void		 trace_next(int, const char *);
 static void		 fit(void);
@@ -870,6 +871,28 @@ topo_gw_owner(const char *gw, int from, const char *fromif, char *ifname,
 	snprintf(ifname, len, "%s", cif);
 	snprintf(jail, jlen, "%s", tn[cand].jail);
 	return (tn[cand].srv);
+}
+
+/* The MTU of a host's interface, as it was read; 0 not known. */
+int
+topo_if_mtu(int srv, const char *ifname)
+{
+	const ucl_object_t	*o;
+
+	if (srv < 0 || srv >= app.nservers || (o = if_named(thost(
+	    app.servers[srv].id, false), ifname)) == NULL)
+		return (0);
+	return ((int)jint(o, "mtu", 0));
+}
+
+/* An address a host is reached by, of the family af (0 either). */
+const char *
+topo_host_addr(int srv, int af)
+{
+
+	if (srv < 0 || srv >= app.nservers)
+		return (NULL);
+	return (primary_addr(thost(app.servers[srv].id, false), af));
 }
 
 /* Every host's interfaces read, for whom owns an address. */
@@ -2265,7 +2288,7 @@ panel_path(struct html *h)
 	struct hop	*p;
 	int		 i, k;
 
-	h_raw(h, "<section class=\"pane path\"><h4>Route between hosts</h4>"
+	h_raw(h, "<section class=\"pane path\"><h4>Look up the route</h4>"
 	    "<div class=\"path-form\"><label>From<select data-input=\""
 	    "topo-from\">");
 	for (i = 0; i < ntn; i++) {
@@ -2293,7 +2316,9 @@ panel_path(struct html *h)
 	    "\"off\" placeholder=\"192.0.2.10\"");
 	h_attr(h, "value", path.to);
 	h_fmt(h, "></label><button class=\"primary small\" data-act=\""
-	    "topo-trace\"%s>Trace</button>", path.busy ? " disabled" : "");
+	    "topo-trace\" title=\"Which way each host would send it, as its "
+	    "routing table says\"%s>Look up</button>", path.busy ?
+	    " disabled" : "");
 	if (path.n > 0 || path.error[0] != '\0')
 		h_raw(h, "<button class=\"ghost small\" data-act=\""
 		    "topo-path-clear\">Clear</button>");

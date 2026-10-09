@@ -65,7 +65,6 @@ struct ehost {
 };
 
 static struct {
-	bool		 groups_tab;	/* the network section shows the groups */
 	int		 span;		/* seconds drawn */
 	struct ehost	 eh[MAX_SERVERS];
 	double		 ifs_asked;
@@ -75,17 +74,11 @@ bool
 ecmp_shown(void)
 {
 
-	return ((app.node == NODE_NETWORK && ec.groups_tab) ||
+	return ((app.node == NODE_NETWORK && app.netsect == NETSECT_GROUPS) ||
 	    (app.node == NODE_HOST && app.tab == TAB_NETWORK &&
 	    app.net.kind == NET_NHGROUPS && net_scope()[0] == '\0'));
 }
 
-bool
-ecmp_map_tab(void)
-{
-
-	return (!ec.groups_tab);
-}
 
 static struct ehost *
 ehost(const char *sid, bool make)
@@ -539,9 +532,10 @@ ecmp_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strcmp(act, "netsect-tab") == 0) {
-		ec.groups_tab = strcmp(arg, "groups") == 0;
+		app.netsect = strcmp(arg, "groups") == 0 ? NETSECT_GROUPS :
+		    strcmp(arg, "traceroute") == 0 ? NETSECT_TRACE : NETSECT_MAP;
 		ec.ifs_asked = 0;
-		if (ec.groups_tab)
+		if (app.netsect == NETSECT_GROUPS)
 			ecmp_tick(arc_now());
 		return (true);
 	}

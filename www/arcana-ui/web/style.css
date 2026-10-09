@@ -4044,3 +4044,29 @@ button.cell-link {
 	box-shadow: none;
 }
 button.cell-link:hover { text-decoration-style: solid; }
+
+/* The Network section's traceroute, as mtr has it. */
+.mtr-form label { display: flex; align-items: center; gap: .4rem; }
+.mtr-form select, .mtr-form input { width: auto; min-width: 9rem; }
+.mtr-note { font-size: .76rem; max-width: 60rem; }
+table.mtr-table td.num, table.mtr-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.mtr-table tr.mtr-src td { border-bottom: 1px solid var(--line-2); }
+table.mtr-table tr.ours td:nth-child(3) b { color: var(--cyan); }
+table.mtr-table tr.lossy td:nth-child(2) { color: var(--amber); }
+table.mtr-table td.warn { color: var(--amber); }
+td.mtr-bar { position: relative; min-width: 8rem; }
+td.mtr-bar > span {
+	position: absolute;
+	top: 50%;
+	height: 6px;
+	margin-top: -3px;
+	border-radius: 3px;
+	background: rgba(var(--accent-rgb), .35);
+}
+td.mtr-bar > span > i {
+	position: absolute;
+	top: -2px;
+	width: 2px;
+	height: 10px;
+	background: var(--cyan);
+}

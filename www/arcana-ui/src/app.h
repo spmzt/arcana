@@ -381,6 +381,7 @@ struct app {
 	int		 sel;		/* selected server, or -1 */
 	char		 jail[256];	/* open in the drawer, or "" */
 	char		 net_jail[256];	/* whose network the tab shows: a vnet jail, or "" the host */
+	int		 netsect;	/* the Network section's tab: NETSECT_* */
 	char		 filter[64];
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
@@ -635,7 +636,12 @@ void		 view_ecmp(struct html *);
 void		 nhop_modal(struct html *);
 bool		 nhop_action(const char *, const char *, const char *);
 void		 ecmp_head(struct html *);
-bool		 ecmp_map_tab(void);
+enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE };
+void		 view_traceroute(struct html *);
+bool		 mtr_action(const char *, const char *, const char *);
+void		 mtr_tick(double);
+int		 topo_if_mtu(int, const char *);
+const char	*topo_host_addr(int, int);
 bool		 ecmp_action(const char *, const char *, const char *);
 void		 view_usage(struct html *);
 bool		 usage_action(const char *, const char *, const char *);

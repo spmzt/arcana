@@ -837,12 +837,19 @@ stage(struct html *h)
 		    "Map</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
 		    "data-arg=\"groups\" title=\"How each route of several next "
 		    "hops shares what it sends, as the agents sampled it, at "
-		    "both ends\">Nexthop groups</button></nav>",
-		    ecmp_map_tab() ? " on" : "", ecmp_map_tab() ? "" : " on");
-		if (ecmp_map_tab())
-			view_netmap(h);
-		else
+		    "both ends\">Nexthop groups</button><button class=\"tab%s\" "
+		    "data-act=\"netsect-tab\" data-arg=\"traceroute\" title=\"The "
+		    "way from a host to an address, hop by hop, again and again "
+		    "as mtr does\">Traceroute</button></nav>",
+		    app.netsect == NETSECT_MAP ? " on" : "", app.netsect ==
+		    NETSECT_GROUPS ? " on" : "", app.netsect == NETSECT_TRACE ?
+		    " on" : "");
+		if (app.netsect == NETSECT_GROUPS)
 			view_ecmp(h);
+		else if (app.netsect == NETSECT_TRACE)
+			view_traceroute(h);
+		else
+			view_netmap(h);
 		h_raw(h, "</div></main>");
 		return;
 	}

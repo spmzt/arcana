@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.45.0"
+#define	ARCANA_AGENT_VERSION	"0.46.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -33,6 +33,7 @@
 #define	PATH_ZPOOL_BIN		"/sbin/zpool"
 #define	PATH_PKG_BIN		"/usr/sbin/pkg"
 #define	PATH_GIT_BIN		"/usr/local/bin/git"
+#define	PATH_TRACEROUTE_BIN	"/usr/sbin/traceroute"
 #define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
 #define	PATH_NGCTL_BIN		"/usr/sbin/ngctl"
 #define	PATH_JLS_BIN		"/usr/sbin/jls"
@@ -108,6 +109,7 @@ struct opts {
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
+	const char	*traceroute_bin;	/* and the same with 6 */
 	const char	*keyscan_bin;	/* ssh-keyscan(1) */
 	const char	*keygen_bin;	/* ssh-keygen(1) */
 	const char	*make_bin;
@@ -283,6 +285,8 @@ int		 do_network(struct work *, uint8_t, uint8_t, const char *,
 		    uint32_t, uint32_t, struct arc_network_rsp *);
 int		 do_route_lookup(struct work *, const char *, uint32_t,
 		    struct arc_route_lookup_rsp *);
+int		 do_traceroute(struct work *, const char *,
+		    struct arc_traceroute_rsp *);
 
 /* invidia/interfaces.c */
 int		 do_interfaces(struct work *, uint8_t, struct arc_network_rsp *);

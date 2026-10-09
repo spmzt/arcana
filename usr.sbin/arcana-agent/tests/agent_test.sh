@@ -270,6 +270,7 @@ start_daemon()
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
+	    -X "$(pwd)/fake-traceroute" \
 	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
@@ -2298,6 +2299,45 @@ agent_restart_cleanup()
 	stop_daemon
 }
 
+atf_test_case traceroute cleanup
+traceroute_head()
+{
+	atf_set "descr" "One round of traceroute, as JSON: each hop's address, time and loss"
+}
+traceroute_body()
+{
+	# traceroute(8) as it prints: the header on standard error, a
+	# line a hop, a lost probe a star, what it noted after the time.
+	cat > fake-traceroute <<'EOS'
+#!/bin/sh
+for a; do last=$a; done
+echo "traceroute to $last ($last), 30 hops max, 40 byte packets" >&2
+echo "$0 $*" >> "$(dirname $0)/traceroute.log"
+echo " 1  10.0.0.1  0.312 ms"
+echo " 2  *"
+echo " 3  198.51.100.7  12.5 ms !H"
+echo " 4  $last  20.125 ms"
+EOS
+	cp fake-traceroute fake-traceroute6
+	chmod +x fake-traceroute fake-traceroute6
+	start_daemon
+	atf_check -o match:'"hops":\[\{"ttl":1,"address":"10.0.0.1","rtt":0\.312[0-9]*\},\{"ttl":2,"lost":true\},\{"ttl":3,"address":"198.51.100.7","rtt":12\.5[0-9]*,"note":"!H"\}' \
+	    -o match:'"reached":true' "$JGC" -c "$SOCK" traceroute 192.0.2.9
+	atf_check -o match:'fake-traceroute -n -q 1 -w 1 -m 30 192.0.2.9$' \
+	    cat traceroute.log
+	# IPv6 by traceroute6.
+	atf_check -o match:'"family":"inet6"' -o match:'"reached":true' \
+	    "$JGC" -c "$SOCK" traceroute 2001:db8::9
+	atf_check -o match:'fake-traceroute6 -n -q 1 -w 1 -m 30 2001:db8::9$' \
+	    cat traceroute.log
+	atf_check -s exit:1 -e match:'address to trace' -o ignore \
+	    "$JGC" -c "$SOCK" traceroute example.org
+}
+traceroute_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case agent_build cleanup
 agent_build_head()
 {
@@ -3782,6 +3822,7 @@ atf_init_test_cases()
 	atf_add_test_case network_more
 	atf_add_test_case vpn
 	atf_add_test_case vnet
+	atf_add_test_case traceroute
 	atf_add_test_case kernel
 	atf_add_test_case l2
 	atf_add_test_case fw_trace

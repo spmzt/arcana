@@ -3393,6 +3393,28 @@ ATF_TC_BODY(pwa, tc)
 	    "'lab2 · em5') && !r.includes('em6') && r.includes('no host of "
 	    "this console has it on that link'); })()", 40);
 	shot("8-network-nhgroups-linklocal");
+	/*
+	 * Traceroute, as mtr: rounds one after the other, each hop with
+	 * its loss and times; the host itself named where it is a hop.
+	 */
+	run("window.fetch = window.fetchL;");
+	run("document.querySelector('.netsect button.tab[data-arg=traceroute]')"
+	    ".click()");
+	wait_js("document.querySelector('input[data-input=mtr-to]')", 10);
+	run("const i = document.querySelector('input[data-input=mtr-to]'); "
+	    "i.value = '192.0.2.77'; i.dispatchEvent(new Event('input', { "
+	    "bubbles: true }));");
+	run("document.querySelector('button[data-act=mtr-start]').click()");
+	wait_js("(() => { const r = [...document.querySelectorAll('table."
+	    "mtr-table tbody tr')].map(t => t.textContent); return r.length "
+	    "=== 4 && r[1].includes('127.0.0.1') && r[1].includes('in lo0') "
+	    "&& r[2].includes('198.51.100.1') && document.querySelectorAll("
+	    "'table.mtr-table tbody tr')[2].children[5].textContent === '50%' "
+	    "&& r[3]"
+	    ".includes('192.0.2.77'); })()", 40);
+	shot("8-network-traceroute");
+	run("document.querySelector('button[data-act=mtr-stop]').click()");
+	wait_js("document.querySelector('button[data-act=mtr-start]')", 5);
 	run("window.fetch = window.fetchL;");
 	run("document.querySelector('.netsect button.tab[data-arg=map]')"
 	    ".click()");

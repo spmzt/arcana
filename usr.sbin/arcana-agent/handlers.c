@@ -296,6 +296,7 @@ worker(void *arg)
 	struct arc_service_config_rsp scr;
 	struct arc_network_rsp	 nr;
 	struct arc_route_lookup_rsp rlr;
+	struct arc_traceroute_rsp trr;
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
@@ -640,6 +641,18 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &rlr.trace.v, &rlr.trace.n);
 		rc = arc_route_lookup_reply(j->req, &rlr);
+		break;
+	case ARC_CMD_TRACEROUTE:
+		what = wfmt(&w, "traceroute to %s", j->source);
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&trr, 0, sizeof(trr));
+		do_traceroute(&w, j->source, &trr);
+		ok = trr.ok;
+		error = trr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &trr.trace.v, &trr.trace.n);
+		rc = arc_traceroute_reply(j->req, &trr);
 		break;
 	case ARC_CMD_SERVICES:
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
@@ -1179,6 +1192,24 @@ arc_route_lookup_doit(cbl_req *req, const struct arc_route_lookup_req *rq,
 	j->fib = rq->has_net_fib ? rq->net_fib : 0;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
+	return (start(j));
+}
+
+int
+arc_traceroute_doit(cbl_req *req, const struct arc_traceroute_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->lookup == NULL || rq->lookup[0] == '-' || rq->lookup[strspn(
+	    rq->lookup, "0123456789abcdefABCDEF.:")] != '\0')
+		return (reject(req, "an address to trace the route to is "
+		    "needed"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_TRACEROUTE;
+	j->source = xstrdup(rq->lookup);
 	return (start(j));
 }
 

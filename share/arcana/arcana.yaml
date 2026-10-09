@@ -2308,6 +2308,29 @@ operations:
           - deploy-key
           - trace
 
+  - name: traceroute
+    attribute-set: arcana
+    auth: true
+    doc: |
+      One round of traceroute(8), or traceroute6(8), from this host to
+      an address: a probe for each hop, numeric, a second's wait each,
+      30 hops at most.  A JSON object with "address", "family", "hops"
+      (each with its "ttl" and the "address" that answered, its "rtt"
+      in milliseconds and what traceroute noted of it, or "lost") and
+      "reached".  The console asks again and again, as mtr(8) does.
+    do:
+      request:
+        attributes:
+          - lookup
+        required:
+          - lookup
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
 mcast-groups:
   - name: events
     auth: true

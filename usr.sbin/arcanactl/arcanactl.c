@@ -141,6 +141,7 @@ usage(void)
 	    "[source address]\n"
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
+	    "    traceroute address\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
 	    "    wg interface init [port]\n"
@@ -1249,6 +1250,29 @@ cmd_route_get(struct arc_client *cl, int argc, char **argv)
 		xo_warnx("route get %s: %s", argv[2], rsp->error != NULL ?
 		    rsp->error : "failed");
 	arc_route_lookup_rsp_free(rsp);
+	return (error);
+}
+
+static int	json_out(const char *, bool, const char *, const char *,
+		    const struct arc_step *, size_t);
+
+/* traceroute address: one round, a probe a hop, as JSON. */
+static int
+cmd_traceroute(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_traceroute_req	 req;
+	struct arc_traceroute_rsp	*rsp;
+	int				 error;
+
+	if (argc != 2)
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.lookup = argv[1];
+	if ((error = arc_traceroute(cl, &req, &rsp)) != 0)
+		fail(cl, error, "traceroute");
+	error = json_out("traceroute", rsp->ok, rsp->error, rsp->json,
+	    rsp->trace.v, rsp->trace.n);
+	arc_traceroute_rsp_free(rsp);
 	return (error);
 }
 
@@ -3009,6 +3033,8 @@ main(int argc, char *argv[])
 		rc = cmd_agent_update(&cl, argc, argv);
 	else if (strcmp(argv[0], "agent-build") == 0)
 		rc = cmd_agent_build(&cl, argc, argv);
+	else if (strcmp(argv[0], "traceroute") == 0)
+		rc = cmd_traceroute(&cl, argc, argv);
 	else if (strcmp(argv[0], "source-head") == 0)
 		rc = cmd_source_head(&cl, argc, argv);
 	else if (strcmp(argv[0], "console-update") == 0)

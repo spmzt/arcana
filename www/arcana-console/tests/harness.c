@@ -185,7 +185,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[88];
+	char	*argv[90];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -377,6 +377,15 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "for a; do last=$a; done\n"
 	    "mkdir -p \"$last/lib/libjailconf\" \"$last/usr.sbin/arcana-agent\"\n");
 	ATF_REQUIRE(chmod("fake-git", 0755) == 0);
+	/* traceroute(8): the host itself first, then a hop that answers
+	 * every other round, then the address. */
+	put("fake-traceroute", "#!/bin/sh\nfor a; do last=$a; done\n"
+	    "echo \" 1  127.0.0.1  0.100 ms\"\n"
+	    "n=$(cat mtr.n 2>/dev/null || echo 0); n=$((n + 1)); echo $n > mtr.n\n"
+	    "if [ $((n % 2)) = 0 ]; then echo \" 2  *\"; "
+	    "else echo \" 2  198.51.100.1  5.000 ms\"; fi\n"
+	    "echo \" 3  $last  9.500 ms\"\n");
+	ATF_REQUIRE(chmod("fake-traceroute", 0755) == 0);
 	snprintf(buf, sizeof(buf), "#!/bin/sh\ndir=$2\ncase \" $* \" in\n"
 	    "*\" -V .OBJDIR \"*) echo \"$dir/obj\" ;;\n"
 	    "*/usr.sbin/arcana-agent*) mkdir -p \"$dir/obj\" && "
@@ -831,7 +840,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[83] = (char *)(uintptr_t)"./fake-swanctl";
 	argv[84] = (char *)(uintptr_t)"-5";
 	argv[85] = (char *)(uintptr_t)"swanctl";
-	argv[86] = NULL;
+	argv[86] = (char *)(uintptr_t)"-X";
+	argv[87] = (char *)(uintptr_t)"./fake-traceroute";
+	argv[88] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

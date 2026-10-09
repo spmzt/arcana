@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.74.0
+  version: 0.75.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -488,8 +488,12 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, neighbours, ipsec]
-          description: The kernel's routes through netlink(4) (each with
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, traceroute, neighbours, ipsec]
+          description: traceroute?to=ADDRESS is one round of traceroute(8)
+            or traceroute6(8) from the host, a probe a hop, as
+            {"address","family","hops":[{"ttl","address","rtt","note"} or
+            {"ttl","lost"}],"reached"}; the page asks again and again, as
+            mtr(8) does. The kernel's routes through netlink(4) (each with
             destination, gateway, flags, nhop, mtu, interface-name,
             metric, weight, fib, prefixlen, source and expire-time when
             it has them, and path of paths for one next hop of

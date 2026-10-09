@@ -54,6 +54,7 @@ enum op {
 	OP_CONSOLE_UPDATE,
 	OP_SOURCE_HEAD,
 	OP_ROUTE_LOOKUP,
+	OP_TRACEROUTE,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_STORAGE,
@@ -1034,6 +1035,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_CONSOLE_UPDATE ? "arc_console_update" :
 	    c->op == OP_SOURCE_HEAD ? "arc_source_head" :
 	    c->op == OP_ROUTE_LOOKUP ? "arc_route_lookup" :
+	    c->op == OP_TRACEROUTE ? "arc_traceroute" :
 	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
@@ -1367,6 +1369,8 @@ call_run(struct kore_task *t)
 	struct arc_console_update_req cuq;
 	struct arc_console_update_rsp *cur;
 	struct arc_source_head_req shq;
+	struct arc_traceroute_req trq;
+	struct arc_traceroute_rsp *trr;
 	struct arc_source_head_rsp *shr;
 	uint8_t			*bin;
 	size_t			 binlen;
@@ -1429,6 +1433,7 @@ call_run(struct kore_task *t)
 	abr = NULL;
 	cur = NULL;
 	shr = NULL;
+	trr = NULL;
 	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
@@ -1840,6 +1845,28 @@ connected:
 			put(top, "data", e);
 		steps = rlr->trace.v;
 		nsteps = rlr->trace.n;
+		break;
+	case OP_TRACEROUTE:
+		memset(&trq, 0, sizeof(trq));
+		trq.lookup = c->address;
+		if ((error = arc_traceroute(&cl, &trq, &trr)) != 0)
+			goto rpcfail;
+		ok = trr->ok;
+		put_str(top, "error", trr->error);
+		e = NULL;
+		if (trr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, trr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = trr->trace.v;
+		nsteps = trr->trace.n;
 		break;
 	case OP_STORAGE:
 		/* The dataset rides where a jail's name does. */
@@ -2299,6 +2326,8 @@ done:
 		arc_console_update_rsp_free(cur);
 	if (shr != NULL)
 		arc_source_head_rsp_free(shr);
+	if (trr != NULL)
+		arc_traceroute_rsp_free(trr);
 	free(bin);
 	/*
 	 * Kept for the next request when it answered: also when the agent
@@ -2750,6 +2779,7 @@ pick_fib(struct http_request *req, struct call *c)
 /*
  * GET /api/servers/<id>/net/<kind>[?family=inet|inet6&fib=N]
  * GET /api/servers/<id>/net/lookup?to=<address>[&fib=N]
+ * GET /api/servers/<id>/net/traceroute?to=<address>: one round
  */
 int
 api_network(struct http_request *req)
@@ -2762,9 +2792,10 @@ api_network(struct http_request *req)
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
-	lookup = capture(req, 5, kind, sizeof(kind)) && strcmp(kind,
-	    "lookup") == 0;
-	if ((c = call_new(req, lookup ? OP_ROUTE_LOOKUP : OP_NETWORK)) == NULL)
+	lookup = capture(req, 5, kind, sizeof(kind)) && (strcmp(kind,
+	    "lookup") == 0 || strcmp(kind, "traceroute") == 0);
+	if ((c = call_new(req, !lookup ? OP_NETWORK : strcmp(kind,
+	    "lookup") == 0 ? OP_ROUTE_LOOKUP : OP_TRACEROUTE)) == NULL)
 		return (KORE_RESULT_OK);
 	if (lookup) {
 		/* An address is hex digits, dots and colons: no escaping. */

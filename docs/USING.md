@@ -957,11 +957,23 @@ draws them (above).
   of two hosts of the console are drawn as a tunnel. Each is made in safe mode, and kept in `rc.conf`
   unless told otherwise. A tunnel picked on the map is destroyed with
   one button, both ends.
-- **Route between hosts** asks each host on the way which route it
+- **Look up the route** asks each host on the way which route it
   takes to an address (the agent's `route-lookup`), follows the gateway
   to the host that has its address, and draws the way over the map hop
   by hop, until the address is reached, the way leaves the hosts of this
   console, or it comes back to where it was. Beside each hop are the
   routes that would be taken in its place when the best one goes, drawn
   dashed.
+- **Traceroute**, the section's third tab, is the way the packets take
+  in fact, as `mtr` shows it: from a host of this console to an address
+  or another host, a round of `traceroute` every second, a probe a hop,
+  each hop with what it lost and its last, average, best and worst
+  times and their deviation, and a bar from the best to the worst
+  with the average marked. A hop that answers differently over the
+  rounds, a way of several, says how many more answered. Where a hop is
+  a host of this console it is named, with the interface the probe came
+  in by; and of the host it starts from and each of ours on the way,
+  the interface it sends on towards the address, by which gateway, and
+  that interface's MTU: the smallest of them is as large as the path's
+  MTU can be. From a shell: `arcanactl traceroute address`.
 
