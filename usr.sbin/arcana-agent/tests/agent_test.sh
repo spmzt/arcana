@@ -3038,6 +3038,20 @@ observe_body()
 	sleep 2
 	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history
 	atf_check -o match:'"step":2,"keep":10,' "$JGC" -c "$SOCK" history set 2 10
+	# The limits of one device or jail each: kept, said, refused when
+	# they are not one; an empty list takes them away.
+	atf_check -o match:'"rules":\[\{"kind":"net","name":"lo1","limit":1000,"over":false\},\{"kind":"jail-cpu","name":"web","limit":80,"over":false\},\{"kind":"jail-mem","name":"web","limit":1073741824,"over":false\}\]' \
+	    -o match:'"racct":(true|false)' -o match:'"jails":\[' \
+	    "$JGC" -c "$SOCK" history set 2 10 rules 'net:lo1=1000,jail-cpu:web=80,jail-mem:web=1073741824'
+	atf_check -o match:'^rule=net:lo1=1000$' -o match:'^rule=jail-mem:web=1073741824$' \
+	    cat history.conf
+	atf_check -s exit:1 -e match:'net:, disk:, jail-cpu: or jail-mem:' -o ignore \
+	    "$JGC" -c "$SOCK" history set 2 10 rules 'cpu:all=5'
+	atf_check -s exit:1 -e match:'a rule is' -o ignore \
+	    "$JGC" -c "$SOCK" history set 2 10 rules 'net:lo1=-3'
+	atf_check -o match:'^rule=net:lo1=1000$' cat history.conf
+	atf_check -o match:'"rules":\[\]' "$JGC" -c "$SOCK" history set 2 10 rules ''
+	atf_check -o not-match:'^rule=' cat history.conf
 	sleep 3
 	atf_check -o match:'"samples":\[\[' "$JGC" -c "$SOCK" history
 	atf_check -s exit:1 -e ignore -o ignore "$JGC" -c "$SOCK" history set 3601 10

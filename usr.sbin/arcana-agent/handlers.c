@@ -536,7 +536,7 @@ worker(void *arg)
 		    "%s", what);
 		memset(&hsr, 0, sizeof(hsr));
 		do_history(&w, j->pos, j->refresh, j->fib, j->offset,
-		    j->restart ? j->lim : NULL, &hsr);
+		    j->restart ? j->lim : NULL, j->source, &hsr);
 		ok = hsr.ok;
 		error = hsr.error;
 		step_end(&w, root, ok, NULL);
@@ -1331,6 +1331,9 @@ arc_history_doit(cbl_req *req, const struct arc_history_req *rq,
 	j->lim[0] = rq->limit_cpu;
 	j->lim[1] = rq->limit_mem;
 	j->lim[2] = rq->limit_swap;
+	/* The rules ride in source; empty takes them all away. */
+	j->source = j->refresh && rq->limit_rules != NULL ?
+	    xstrdup(rq->limit_rules) : NULL;
 	return (start(j));
 }
 

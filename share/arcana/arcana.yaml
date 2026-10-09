@@ -794,6 +794,17 @@ attribute-sets:
           either.
         checks:
           max: 6
+      - name: limit-rules
+        type: text
+        doc: |
+          For history, with how to sample: the limits of one device or
+          jail each, with commas: net:<interface>=<bytes a second, in
+          and out>, disk:<disk>=<bytes a second, read and written>,
+          jail-cpu:<jail>=<percent of one CPU>, jail-mem:<jail>=<bytes>.
+          An event (threshold) when one is crossed, either way; empty
+          takes them all away, and none given leaves them as they are.
+        checks:
+          max-len: 2048
 
   - name: host
     attributes:
@@ -1992,7 +2003,10 @@ operations:
       and "rotated", when the file is shorter than position said.
       A packed log (.bz2, .gz, .xz, .zst) is unpacked to be read,
       and not followed.  @dmesg is the kernel's message buffer,
-      @audit the audit trail of now (praudit).  With jail, the logs
+      followed as it comes: each line has seq, its number, and seen,
+      when the agent saw it (none for what was there when it
+      started); position is then the newest number, after which
+      the next asking is answered.  @audit the audit trail of now (praudit).  With jail, the logs
       of that jail's own /var/log.  With net-filter only the lines that have
       that text in them, in either case.  With position only what was
       written after it, which is how a log is followed.  lines is how
@@ -2033,7 +2047,14 @@ operations:
       way from now on, and keeps it for its next start: an hour every
       five seconds until it is told otherwise; limit-cpu, limit-mem
       and limit-swap with them are the percentages above which an
-      event (kind threshold) is made.  The reply has "limits".  The
+      event (kind threshold) is made, and limit-rules the limits of an
+      interface, a disk or a jail.  The reply has "limits", and
+      "rules", each with its kind, name, limit and whether it is over.
+      Each running jail is told apart as well, at most 16, in "jails":
+      its share of one CPU in percent and its memory in bytes, as the
+      kernel's resource accounting has them, follow the disks' in a
+      sample.  That needs kern.racct.enable=1 in loader.conf(5):
+      "racct" says whether the kernel accounts.  The
       samples are written down when the agent stops and every few
       minutes, and read again when it starts.
     do:
@@ -2045,6 +2066,7 @@ operations:
           - limit-cpu
           - limit-mem
           - limit-swap
+          - limit-rules
       reply:
         attributes:
           - ok
@@ -2070,9 +2092,13 @@ operations:
       and neigh-del, a neighbour (ARP, NDP) as network's neighbours
       has one.  They are the kernel's own netlink(4) messages, of the
       host's network, and of each jail's own (vnet) too: one of a
-      jail's has "jail", its name, beside its kind.  threshold, with what (cpu, mem or swap),
-      value, limit and over, when a figure of history crosses its
-      limit, either way.
+      jail's has "jail", its name, beside its kind.  threshold, with
+      what (cpu, mem, swap, net, disk, jail-cpu or jail-mem; the last
+      four with name, the device's or the jail's), value, limit and
+      over, when a figure of history crosses its limit, either way.
+      kmsg, with seq and text, a line the kernel wrote, the moment the
+      agent sees it; or with more, how many came in that second
+      beyond the twenty said one by one.
     do:
       request:
         attributes:

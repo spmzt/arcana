@@ -8,8 +8,17 @@
  * Gula: how busy the host has been.  A thread of its own looks every
  * few seconds, whether anybody asks or not, and keeps the last of what
  * it saw: the CPUs' busy share (kern.cp_time), the load, the memory and
- * the swap in use, and what went over each interface (getifaddrs(3))
- * and to and from each disk (devstat(3)) between two looks.
+ * the swap in use, what went over each interface (getifaddrs(3)) and
+ * to and from each disk (devstat(3)) between two looks, and each
+ * running jail's share of the CPUs and its memory as the kernel's
+ * resource accounting has them (rctl_get_racct(2)), when it is on
+ * (kern.racct.enable, a tunable of loader.conf).
+ *
+ * Besides the limits of the CPU, the memory and the swap, rules set
+ * limits of one interface (bytes a second, both ways), one disk (bytes
+ * a second, read and written), one jail's CPU (percent of one CPU, as
+ * racct says it) or memory (bytes): an event when the figure crosses
+ * its limit, either way.
  *
  * How often it looks and how many looks it keeps is set by whoever
  * manages the host, and kept in a file for the next start; with none
@@ -19,6 +28,8 @@
  */
 
 #include <sys/param.h>
+#include <sys/jail.h>
+#include <sys/rctl.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/sysctl.h>
@@ -30,6 +41,7 @@
 #include <devstat.h>
 #include <errno.h>
 #include <ifaddrs.h>
+#include <jail.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -46,9 +58,11 @@
 #define	HIST_KEEP_MAX	5000
 #define	HIST_DEVS	16		/* interfaces, and disks, told apart */
 #define	HIST_NAME	24
+#define	HIST_RULES	32
+#define	JAIL_NAME	HIST_NAME	/* a jail's column, named for it */
 
-/* What every row begins with; then in and out of each interface, and
- * read and written of each disk. */
+/* What every row begins with; then in and out of each interface,
+ * read and written of each disk, and each jail's CPU and memory. */
 enum { H_CPU, H_LOAD, H_MEM, H_SWAP, H_RX, H_TX, H_RD, H_WR, H_BASE };
 
 struct dev {
@@ -59,6 +73,20 @@ struct dev {
 };
 
 static void	thresholds(const float *);
+static void	rules_check(const float *);
+
+/* A limit of one device or jail: an event when it is crossed. */
+enum rule_kind { R_NET, R_DISK, R_JAIL_CPU, R_JAIL_MEM, R_KINDS };
+static const char *const rule_kinds[R_KINDS] = { "net", "disk", "jail-cpu",
+    "jail-mem" };
+struct rule {
+	enum rule_kind	kind;
+	char		name[HIST_NAME];
+	double		limit;
+	bool		over;
+};
+static struct rule	rules[HIST_RULES];
+static size_t		nrules;
 
 static pthread_mutex_t	hist_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t	hist_wake = PTHREAD_COND_INITIALIZER;
@@ -72,8 +100,9 @@ static time_t		saved;		/* when the samples were last written */
 static double		*times;		/* hist_keep of them, when any */
 static float		*rows;		/* hist_keep rows of width */
 static size_t		 nrows, width = H_BASE;
-static struct dev	 nets[HIST_DEVS], disks[HIST_DEVS];
-static size_t		 nnets, ndisks;
+static struct dev	 nets[HIST_DEVS], disks[HIST_DEVS], jails[HIST_DEVS];
+static size_t		 nnets, ndisks, njails;
+static bool		 racct;		/* the kernel accounts for jails */
 static uint64_t		 mem_total, swap_total;
 static long		 cp_was[CPUSTATES];
 static struct timespec	 at_was;
@@ -143,13 +172,13 @@ room(size_t keep, size_t w, double **tp, float **rp)
  * Called with the lock held.
  */
 static void
-reshape(size_t keep, size_t nn, size_t nd)
+reshape(size_t keep, size_t nn, size_t nd, size_t nj)
 {
 	double	*t;
 	float	*r, *from, *to;
 	size_t	 w, n, i, skip;
 
-	w = H_BASE + 2 * nn + 2 * nd;
+	w = H_BASE + 2 * nn + 2 * nd + 2 * nj;
 	if (!room(keep, w, &t, &r)) {
 		logmsg(LOG_WARNING, "history: no memory for %zu samples",
 		    keep);
@@ -164,6 +193,8 @@ reshape(size_t keep, size_t nn, size_t nd)
 		memcpy(to, from, (H_BASE + 2 * nnets) * sizeof(float));
 		memcpy(to + H_BASE + 2 * nn, from + H_BASE + 2 * nnets,
 		    2 * ndisks * sizeof(float));
+		memcpy(to + H_BASE + 2 * nn + 2 * nd, from + H_BASE + 2 *
+		    nnets + 2 * ndisks, 2 * njails * sizeof(float));
 	}
 	free(times);
 	free(rows);
@@ -173,6 +204,7 @@ reshape(size_t keep, size_t nn, size_t nd)
 	width = w;
 	nnets = nn;
 	ndisks = nd;
+	njails = nj;
 	hist_keep = (unsigned int)keep;
 }
 
@@ -195,9 +227,11 @@ slot(struct dev *v, size_t *n, const char *given)
 	if (*n == HIST_DEVS)
 		return (-1);
 	if (v == nets)
-		reshape(hist_keep, nnets + 1, ndisks);
+		reshape(hist_keep, nnets + 1, ndisks, njails);
+	else if (v == disks)
+		reshape(hist_keep, nnets, ndisks + 1, njails);
 	else
-		reshape(hist_keep, nnets, ndisks + 1);
+		reshape(hist_keep, nnets, ndisks, njails + 1);
 	memset(&v[i], 0, sizeof(v[i]));
 	strlcpy(v[i].name, name, sizeof(v[i].name));
 	return ((int)i);
@@ -220,6 +254,64 @@ moved(struct dev *d, float *col, uint64_t a, uint64_t b, double secs,
 	d->was = d->now = true;
 }
 
+/* One jail's figures: "pcpu=12,memoryuse=1048576,...". */
+static bool
+jail_racct(const char *name, double *pcpu, double *mem)
+{
+	char	 filter[MAXHOSTNAMELEN + 8], out[4096], *p, *kv;
+
+	snprintf(filter, sizeof(filter), "jail:%s:", name);
+	if (rctl_get_racct(filter, strlen(filter) + 1, out, sizeof(out)) ==
+	    -1)
+		return (false);
+	*pcpu = *mem = 0;
+	p = out;
+	while ((kv = strsep(&p, ",")) != NULL) {
+		if (strncmp(kv, "pcpu=", 5) == 0)
+			*pcpu = strtod(kv + 5, NULL);
+		else if (strncmp(kv, "memoryuse=", 10) == 0)
+			*mem = strtod(kv + 10, NULL);
+	}
+	return (true);
+}
+
+/* The running jails, by name, and what racct says of each. */
+struct jfig {
+	char	name[JAIL_NAME];
+	double	pcpu, mem;
+};
+
+static size_t
+jail_figures(struct jfig *v, size_t max)
+{
+	char	last[16], name[MAXHOSTNAMELEN];
+	size_t	n;
+	int	jid;
+	int	on;
+	size_t	len;
+
+	len = sizeof(on);
+	racct = sysctlbyname("kern.racct.enable", &on, &len, NULL, 0) == 0 &&
+	    on != 0;
+	if (!racct)
+		return (0);
+	n = 0;
+	strlcpy(last, "0", sizeof(last));
+	while (n < max) {
+		name[0] = '\0';
+		if ((jid = jail_getv(0, "lastjid", last, "name", name,
+		    NULL)) <= 0)
+			break;
+		snprintf(last, sizeof(last), "%d", jid);
+		if (strlen(name) >= sizeof(v[n].name) || !jail_racct(name,
+		    &v[n].pcpu, &v[n].mem))
+			continue;
+		strlcpy(v[n].name, name, sizeof(v[n].name));
+		n++;
+	}
+	return (n);
+}
+
 /* One look: a row more, the oldest dropped when there is no room. */
 static void
 look(void)
@@ -229,12 +321,13 @@ look(void)
 	const struct devstat	*ds;
 	struct timespec		 at;
 	struct loadavg		 la;
+	struct jfig		 jf[HIST_DEVS];
 	char			 name[HIST_NAME];
 	float			*row;
 	uint64_t		 st, su;
 	double			 secs;
 	long			 cp[CPUSTATES], total, idle;
-	size_t			 len, k;
+	size_t			 len, k, nj;
 	int			 i, s;
 	bool			 first;
 
@@ -247,6 +340,7 @@ look(void)
 	if (dstat_ok && devstat_getdevs(NULL, &dstat) == -1)
 		dstat.dinfo->numdevs = 0;
 	swap(&st, &su);
+	nj = jail_figures(jf, nitems(jf));
 
 	pthread_mutex_lock(&hist_lock);
 	first = !have_was;
@@ -269,6 +363,8 @@ look(void)
 		    ds->unit_number);
 		(void)slot(disks, &ndisks, name);
 	}
+	for (k = 0; k < nj; k++)
+		(void)slot(jails, &njails, jf[k].name);
 	if (rows == NULL || hist_keep == 0) {
 		pthread_mutex_unlock(&hist_lock);
 		if (ifa0 != NULL)
@@ -327,6 +423,14 @@ look(void)
 		    ds->bytes[DEVSTAT_READ], ds->bytes[DEVSTAT_WRITE], secs,
 		    &row[H_RD], &row[H_WR]);
 	}
+	/* A jail's figures are what they are now, not differences. */
+	for (k = 0; k < nj; k++) {
+		if ((s = slot(jails, &njails, jf[k].name)) == -1)
+			continue;
+		row[H_BASE + 2 * nnets + 2 * ndisks + 2 * s] = (float)jf[k].pcpu;
+		row[H_BASE + 2 * nnets + 2 * ndisks + 2 * s + 1] =
+		    (float)jf[k].mem;
+	}
 	/* One that went away and comes back begins anew. */
 	for (k = 0; k < nnets; k++)
 		nets[k].was = nets[k].now;
@@ -343,6 +447,141 @@ look(void)
 	pthread_mutex_unlock(&hist_lock);
 	if (ifa0 != NULL)
 		freeifaddrs(ifa0);
+}
+
+/* The column of a device or a jail by its name, or -1. */
+static int
+col_of(const struct dev *v, size_t n, const char *name)
+{
+	size_t	i;
+
+	for (i = 0; i < n; i++)
+		if (strcmp(v[i].name, name) == 0)
+			return ((int)i);
+	return (-1);
+}
+
+/*
+ * The rules' figures, each against its limit: an event when it
+ * crosses, and under it again only once it is a tenth below, so that
+ * a figure about its limit does not make one at every look.
+ */
+static void
+rules_check(const float *row)
+{
+	struct rule	*r;
+	const float	*base;
+	double		 v;
+	size_t		 i;
+	int		 c;
+
+	for (i = 0; i < nrules; i++) {
+		r = &rules[i];
+		switch (r->kind) {
+		case R_NET:
+			if ((c = col_of(nets, nnets, r->name)) == -1)
+				continue;
+			base = row + H_BASE + 2 * c;
+			v = (double)base[0] + base[1];
+			break;
+		case R_DISK:
+			if ((c = col_of(disks, ndisks, r->name)) == -1)
+				continue;
+			base = row + H_BASE + 2 * nnets + 2 * c;
+			v = (double)base[0] + base[1];
+			break;
+		default:
+			if ((c = col_of(jails, njails, r->name)) == -1)
+				continue;
+			base = row + H_BASE + 2 * nnets + 2 * ndisks + 2 * c;
+			v = r->kind == R_JAIL_CPU ? base[0] : base[1];
+			break;
+		}
+		if (!r->over && v > r->limit)
+			r->over = true;
+		else if (r->over && v < r->limit * 0.9)
+			r->over = false;
+		else
+			continue;
+		/* A device's or a jail's name needs no escaping. */
+		event_add("threshold", "{\"what\":\"%s\",\"name\":\"%s\","
+		    "\"value\":%.0f,\"limit\":%.0f,\"over\":%s}",
+		    rule_kinds[r->kind], r->name, v, r->limit, r->over ? "true" :
+		    "false");
+	}
+}
+
+/*
+ * One rule as it is written: "net:igb0=125000000", "disk:ada0=5e7",
+ * "jail-cpu:web=80", "jail-mem:web=1073741824".  false for one that
+ * is not.
+ */
+static bool
+rule_parse(const char *s, struct rule *r)
+{
+	const char	*colon, *eq;
+	char		*end;
+	size_t		 k, n;
+
+	if ((colon = strchr(s, ':')) == NULL || (eq = strchr(colon, '=')) ==
+	    NULL)
+		return (false);
+	for (k = 0; k < R_KINDS; k++)
+		if (strlen(rule_kinds[k]) == (size_t)(colon - s) &&
+		    strncmp(s, rule_kinds[k], (size_t)(colon - s)) == 0)
+			break;
+	n = (size_t)(eq - colon - 1);
+	if (k == R_KINDS || n == 0 || n >= sizeof(r->name))
+		return (false);
+	memset(r, 0, sizeof(*r));
+	r->kind = (enum rule_kind)k;
+	memcpy(r->name, colon + 1, n);
+	for (k = 0; k < n; k++)
+		if (!isalnum((unsigned char)r->name[k]) && strchr("._-:",
+		    r->name[k]) == NULL)
+			return (false);
+	r->limit = strtod(eq + 1, &end);
+	return (end != eq + 1 && *end == '\0' && r->limit > 0 &&
+	    r->limit < 1e15);
+}
+
+/*
+ * The rules as a list with commas, each as rule_parse() takes it; an
+ * empty one takes them all away.  NULL when they are set, or what is
+ * wrong.
+ */
+static const char *
+rules_set(const char *list)
+{
+	struct rule	 next[HIST_RULES];
+	char		*copy, *p, *tok;
+	size_t		 n, i, k;
+
+	if ((copy = strdup(list)) == NULL)
+		return ("out of memory");
+	n = 0;
+	p = copy;
+	while ((tok = strsep(&p, ", ")) != NULL) {
+		if (tok[0] == '\0')
+			continue;
+		if (n == HIST_RULES || !rule_parse(tok, &next[n])) {
+			free(copy);
+			return (n == HIST_RULES ? "32 rules at most" : "a rule "
+			    "is net:, disk:, jail-cpu: or jail-mem:, a name, = "
+			    "and its limit");
+		}
+		/* One that was over and stays the same stays over. */
+		for (i = 0; i < nrules; i++)
+			if (rules[i].kind == next[n].kind && strcmp(
+			    rules[i].name, next[n].name) == 0)
+				next[n].over = rules[i].over;
+		n++;
+	}
+	free(copy);
+	for (k = 0; k < n; k++)
+		rules[k] = next[k];
+	nrules = n;
+	return (NULL);
 }
 
 /*
@@ -372,6 +611,7 @@ thresholds(const float *row)
 		    "\"limit\":%u,\"over\":%s}", what[i], v[i], limits[i],
 		    over[i] ? "true" : "false");
 	}
+	rules_check(row);
 }
 
 /*
@@ -394,13 +634,16 @@ samples_write(void)
 	}
 	if ((fp = fopen(tmp, "we")) == NULL)
 		return;
-	fprintf(fp, "# arcana-agent samples: step keep nets disks\n%u %u", hist_step,
-	    hist_keep);
+	fprintf(fp, "# arcana-agent samples: step keep nets | disks | jails\n"
+	    "%u %u", hist_step, hist_keep);
 	for (k = 0; k < nnets; k++)
 		fprintf(fp, " %s", nets[k].name);
 	fprintf(fp, " |");
 	for (k = 0; k < ndisks; k++)
 		fprintf(fp, " %s", disks[k].name);
+	fprintf(fp, " |");
+	for (k = 0; k < njails; k++)
+		fprintf(fp, " %s", jails[k].name);
 	fprintf(fp, "\n");
 	for (i = 0; i < nrows; i++) {
 		fprintf(fp, "%.0f", times[i]);
@@ -446,11 +689,16 @@ samples_read(void)
 			strlcpy(nets[n++].name, w, sizeof(nets[0].name));
 	nnets = n;
 	n = 0;
-	while ((w = strsep(&p, " \n")) != NULL)
+	while ((w = strsep(&p, " \n")) != NULL && strcmp(w, "|") != 0)
 		if (w[0] != '\0' && (int)n < HIST_DEVS)
 			strlcpy(disks[n++].name, w, sizeof(disks[0].name));
 	ndisks = n;
-	reshape(hist_keep, nnets, ndisks);
+	n = 0;
+	while ((w = strsep(&p, " \n")) != NULL)
+		if (w[0] != '\0' && (int)n < HIST_DEVS)
+			strlcpy(jails[n++].name, w, sizeof(jails[0].name));
+	njails = n;
+	reshape(hist_keep, nnets, ndisks, njails);
 	while (rows != NULL && getline(&line, &cap, fp) != -1) {
 		p = line;
 		t = strtod(strsep(&p, " "), NULL);
@@ -537,6 +785,10 @@ hconf_read(void)
 			v = strtonum(line + 5, 0, HIST_KEEP_MAX, &e);
 			if (e == NULL)
 				hist_keep = (unsigned int)v;
+		} else if (strncmp(line, "rule=", 5) == 0) {
+			if (nrules < HIST_RULES && rule_parse(line + 5,
+			    &rules[nrules]))
+				nrules++;
 		} else if (strncmp(line, "cpu=", 4) == 0 || strncmp(line,
 		    "mem=", 4) == 0 || strncmp(line, "swap=", 5) == 0) {
 			v = strtonum(strchr(line, '=') + 1, 0, 100, &e);
@@ -553,6 +805,7 @@ hconf_write(unsigned int step, unsigned int keep)
 {
 	char	tmp[MAXPATHLEN];
 	FILE	*fp;
+	size_t	i;
 
 	snprintf(tmp, sizeof(tmp), "%s.new", opts.history_conf);
 	if ((fp = fopen(tmp, "we")) == NULL)
@@ -560,6 +813,9 @@ hconf_write(unsigned int step, unsigned int keep)
 	fprintf(fp, "# How arcana-agent samples the host: set from the "
 	    "console.\nstep=%u\nkeep=%u\ncpu=%u\nmem=%u\nswap=%u\n", step,
 	    keep, limits[0], limits[1], limits[2]);
+	for (i = 0; i < nrules; i++)
+		fprintf(fp, "rule=%s:%s=%.0f\n", rule_kinds[rules[i].kind],
+		    rules[i].name, rules[i].limit);
 	if (fclose(fp) != 0 || rename(tmp, opts.history_conf) == -1) {
 		(void)unlink(tmp);
 		return (-1);
@@ -575,7 +831,7 @@ history_start(void)
 
 	hconf_read();
 	pthread_mutex_lock(&hist_lock);
-	reshape(hist_keep, 0, 0);
+	reshape(hist_keep, 0, 0, 0);
 	samples_read();
 	saved = time(NULL);
 	pthread_mutex_unlock(&hist_lock);
@@ -606,8 +862,12 @@ names(FILE *fp, const char *key, const struct dev *v, size_t n)
  */
 int
 do_history(struct work *w, uint64_t after, bool set, uint32_t step,
-    uint32_t keep, const uint32_t lim[3], struct arc_history_rsp *rsp)
+    uint32_t keep, const uint32_t lim[3], const char *rlist,
+    struct arc_history_rsp *rsp)
 {
+	struct rule	 was[HIST_RULES];
+	size_t		 nwas;
+	const char	*e;
 	const float	*row;
 	FILE		*fp;
 	char		*json;
@@ -625,6 +885,15 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 			    HIST_STEP_MAX, HIST_KEEP_MAX);
 			return (0);
 		}
+		pthread_mutex_lock(&hist_lock);
+		memcpy(was, rules, sizeof(was));
+		nwas = nrules;
+		e = rlist != NULL ? rules_set(rlist) : NULL;
+		pthread_mutex_unlock(&hist_lock);
+		if (e != NULL) {
+			rsp->error = wtext(w, e);
+			return (0);
+		}
 		if (lim != NULL) {
 			pthread_mutex_lock(&hist_lock);
 			memcpy(limits, lim, sizeof(limits));
@@ -634,6 +903,11 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 		    "every %u s, %u kept, into %s", step, keep,
 		    opts.history_conf);
 		if (hconf_write(step, keep) == -1) {
+			/* Not kept: the rules as they were. */
+			pthread_mutex_lock(&hist_lock);
+			memcpy(rules, was, sizeof(rules));
+			nrules = nwas;
+			pthread_mutex_unlock(&hist_lock);
 			rsp->error = wfmt(w, "%s: %s", opts.history_conf,
 			    strerror(errno));
 			step_end(w, st, false, "%s", strerror(errno));
@@ -641,7 +915,7 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 		}
 		pthread_mutex_lock(&hist_lock);
 		hist_step = step;
-		reshape(keep, nnets, ndisks);
+		reshape(keep, nnets, ndisks, njails);
 		pthread_cond_broadcast(&hist_wake);
 		pthread_mutex_unlock(&hist_lock);
 		step_end(w, st, true, NULL);
@@ -658,6 +932,13 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 	pthread_mutex_lock(&hist_lock);
 	fprintf(fp, "{\"limits\":{\"cpu\":%u,\"mem\":%u,\"swap\":%u},", limits[0],
 	    limits[1], limits[2]);
+	fprintf(fp, "\"rules\":[");
+	for (i = 0; i < nrules; i++)
+		fprintf(fp, "%s{\"kind\":\"%s\",\"name\":\"%s\",\"limit\":%.0f,"
+		    "\"over\":%s}", i > 0 ? "," : "", rule_kinds[rules[i].kind],
+		    rules[i].name, rules[i].limit, rules[i].over ? "true" :
+		    "false");
+	fprintf(fp, "],\"racct\":%s,", racct ? "true" : "false");
 	fprintf(fp, "\"step\":%u,\"keep\":%u,\"bytes\":%zu,\"ncpu\":%d,"
 	    "\"mem_total\":%ju,\"swap_total\":%ju,\"fields\":[\"t\",\"cpu\","
 	    "\"load\",\"mem\",\"swap\",\"rx\",\"tx\",\"read\",\"write\"],",
@@ -666,6 +947,7 @@ do_history(struct work *w, uint64_t after, bool set, uint32_t step,
 	    (uintmax_t)mem_total, (uintmax_t)swap_total);
 	names(fp, "nets", nets, nnets);
 	names(fp, "disks", disks, ndisks);
+	names(fp, "jails", jails, njails);
 	fprintf(fp, "\"samples\":[");
 	for (i = n = 0; i < nrows; i++) {
 		if (times[i] <= (double)after)

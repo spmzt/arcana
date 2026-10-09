@@ -276,14 +276,68 @@ lines_reply(struct work *w, const char *name, char *buf, size_t len,
  * message buffer, as dmesg(8) prints it; @audit, the audit trail of
  * now, as praudit(1) prints it.
  */
+/*
+ * @dmesg as the lines that kmsg.c has numbered, those after position
+ * when following; each with its number and when it was seen.  false
+ * when nothing follows the kernel's messages here.
+ */
+static bool
+kmsg_reply(struct work *w, const char *filter, bool from, uint64_t position,
+    uint32_t max, struct arc_log_rsp *rsp)
+{
+	struct kmsg_line	*v;
+	ucl_object_t		*top, *arr, *o;
+	unsigned char		*json;
+	uint64_t		 last;
+	size_t			 n, i;
+	int			 step;
+
+	step = step_begin(w, ARC_STEP_KIND_LIB, "kmsg", "the kernel's "
+	    "messages followed%s", from ? ", after a number" : "");
+	if (!kmsg_lines(w, from ? position : 0, filter, max, &v, &n, &last)) {
+		step_end(w, step, false, "not followed");
+		return (false);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	str(top, "name", "@dmesg");
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < n; i++) {
+		o = line_object(w, v[i].text);
+		ucl_object_insert_key(o, ucl_object_fromint((int64_t)v[i].n),
+		    "seq", 0, false);
+		if (v[i].t != 0)
+			ucl_object_insert_key(o, ucl_object_fromint((int64_t)
+			    v[i].t), "seen", 0, false);
+		ucl_array_append(arr, o);
+	}
+	ucl_object_insert_key(top, arr, "lines", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromint((int64_t)last),
+	    "position", 0, false);
+	/* A number from before the agent started: begun anew. */
+	if (from && position > last)
+		ucl_object_insert_key(top, ucl_object_frombool(true), "rotated",
+		    0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	step_end(w, step, true, "%zu lines", n);
+	if (json == NULL || strlen((char *)json) > ARC_MAX_JSON) {
+		free(json);
+		rsp->error = "more lines than a reply carries: ask for fewer";
+		return (true);
+	}
+	rsp->json = wtext(w, wadopt(w, json));
+	rsp->ok = true;
+	return (true);
+}
+
 static int
-special(struct work *w, const char *name, const char *filter, uint32_t max,
-    struct arc_log_rsp *rsp)
+special(struct work *w, const char *name, const char *filter, bool from,
+    uint64_t position, uint32_t max, struct arc_log_rsp *rsp)
 {
 	struct execres	 res;
 	const char	*bin;
 	char		*argv[4], *buf, *p, *q;
-	size_t		 len;
+	size_t		 len, k;
 	int		 step;
 
 	if (max == 0)
@@ -298,6 +352,11 @@ special(struct work *w, const char *name, const char *filter, uint32_t max,
 			step_end(w, step, false, NULL);
 			return (0);
 		}
+		step_end(w, step, true, "followed as they come");
+		if (kmsg_reply(w, filter, from, position, max, rsp))
+			return (0);
+		step = step_begin(w, ARC_STEP_KIND_LIB, "sysctl(3)",
+		    "kern.msgbuf");
 		len = 0;
 		if (sysctlbyname("kern.msgbuf", NULL, &len, NULL, 0) == -1) {
 			rsp->error = wfmt(w, "kern.msgbuf: %s", strerror(
@@ -314,10 +373,11 @@ special(struct work *w, const char *name, const char *filter, uint32_t max,
 		}
 		/* "<6>text": the priority, which dmesg leaves out. */
 		for (p = q = buf; p < buf + len; ) {
+			/* "<6>", "<118>": one to three digits. */
 			if ((p == buf || p[-1] == '\n') && p[0] == '<' &&
-			    isdigit((unsigned char)p[1]) && (p[2] == '>' ||
-			    (isdigit((unsigned char)p[2]) && p[3] == '>'))) {
-				p += p[2] == '>' ? 3 : 4;
+			    (k = strspn(p + 1, "0123456789")) >= 1 && k <= 3 &&
+			    p[1 + k] == '>') {
+				p += k + 2;
 				continue;
 			}
 			*q++ = *p++;
@@ -369,7 +429,7 @@ do_log(struct work *w, const char *name, const char *filter, bool from,
 	if (name == NULL || name[0] == '\0')
 		name = "messages";
 	if (name[0] == '@')
-		return (special(w, name, filter, max, rsp));
+		return (special(w, name, filter, from, position, max, rsp));
 	if (!log_name_ok(name)) {
 		rsp->error = "a log is a file of the log directory, named "
 		    "with letters, digits and . _ -";

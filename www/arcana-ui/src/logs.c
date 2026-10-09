@@ -335,9 +335,11 @@ logs_tick(double now)
 	bool		 shown;
 
 	s = cur_server();
+	/* The events, and the kernel's messages, told as they come. */
 	shown = app.node == NODE_HOST && app.tab == TAB_LOG && !lg.paused &&
 	    app.visible && s != NULL && strcmp(lg.sid, s->id) == 0 &&
-	    strcmp(lg.name, EVENTS) == 0;
+	    (strcmp(lg.name, EVENTS) == 0 || (strcmp(lg.name, "@dmesg") ==
+	    0 && lg.jail[0] == '\0'));
 	if (ev.on && (!shown || strcmp(ev.sid, s->id) != 0))
 		ev_stop();
 	/* Read once, then told as they happen. */
@@ -347,7 +349,7 @@ logs_tick(double now)
 	if (app.node != NODE_HOST || app.tab != TAB_LOG || lg.paused ||
 	    !app.visible || lg.loading || s == NULL ||
 	    strcmp(lg.sid, s->id) != 0 || now - lg.fetched < LOGS_EVERY ||
-	    (ev.on && strcmp(lg.name, EVENTS) == 0))
+	    ev.on)
 		return;
 	logs_read(s, true);
 }
@@ -369,6 +371,39 @@ logs_stream(const ucl_object_t *o)
 	    strcmp(lg.name, EVENTS) == 0) {
 		ev_append(jget(o, "event"));
 		lg.fetched = arc_now();
+	}
+	/*
+	 * A line of the kernel's, as @dmesg numbers it: the next one is
+	 * added; one further on, or "more" than were told, has the log
+	 * read after what is here.
+	 */
+	if (jget(o, "event") != NULL && strcmp(lg.sid, ev.sid) == 0 &&
+	    strcmp(lg.name, "@dmesg") == 0 && jstr(jget(o, "event"),
+	    "kind") != NULL && strcmp(jstr(jget(o, "event"), "kind"),
+	    "kmsg") == 0 && lg.lines != NULL) {
+		const ucl_object_t	*d = jget(jget(o, "event"), "data");
+		ucl_object_t		*c;
+
+		if (jget(d, "more") != NULL || jint(d, "seq", 0) !=
+		    lg.position + 1) {
+			if ((s = cur_server()) != NULL && !lg.loading &&
+			    jint(d, "seq", 0) > lg.position)
+				logs_read(s, true);
+		} else {
+			c = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(c, ucl_object_fromstring(jstr(d,
+			    "text")), "text", 0, false);
+			ucl_object_insert_key(c, ucl_object_fromint(jint(d,
+			    "seq", 0)), "seq", 0, false);
+			ucl_object_insert_key(c, ucl_object_fromint(jint(
+			    jget(o, "event"), "t", 0)), "seen", 0, false);
+			ucl_array_append(lg.lines, c);
+			while (ucl_array_size(lg.lines) > LOGS_MAX)
+				ucl_object_unref(ucl_array_pop_first(
+				    lg.lines));
+			lg.position = jint(d, "seq", 0);
+			lg.fetched = arc_now();
+		}
 	}
 	/* Some went past, or the host is gone: read as before. */
 	if (jbool(o, "lost") && (s = cur_server()) != NULL && !lg.loading)

@@ -3835,3 +3835,8 @@ table.snapshots tr.picked td { background: rgba(var(--red-rgb), .06); }
 .token-new { display: flex; gap: .5rem; align-items: center; margin: .4rem 0 1rem; }
 .token-new input { flex: 1; }
 pre.out.token { white-space: pre-wrap; word-break: break-all; user-select: all; }
+
+/* Utilization: the limits of devices and jails, and the jails' plots. */
+.usample label.rules { flex-basis: 100%; display: flex; flex-direction: column; gap: .25rem; }
+.usample label.rules textarea { font-family: var(--mono); font-size: .8rem; min-height: 4.2rem; }
+p.ujails { margin: .5rem 0 0; font-size: .8rem; }

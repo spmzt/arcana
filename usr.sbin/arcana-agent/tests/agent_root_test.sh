@@ -388,6 +388,35 @@ fw_trace_cleanup()
 	true
 }
 
+atf_test_case kmsg cleanup
+kmsg_head()
+{
+	atf_set "descr" "the kernel's messages, numbered as they come and followed by their number, none twice"
+	atf_set "require.user" "root"
+}
+kmsg_body()
+{
+	start_daemon
+	atf_check -o save:k1.json "$JGC" -c "$SOCK" log @dmesg
+	atf_check -o match:'"name":"@dmesg","lines":\[\{' \
+	    -o match:'"seq":[0-9]+' -o match:'"position":[1-9][0-9]*' cat k1.json
+	pos=$(sed -n 's/.*"position":\([0-9]*\).*/\1/p' k1.json)
+	# After the newest: none of what was read again (the kernel may
+	# have said more since).
+	atf_check -o not-match:"\"seq\":$pos[,}]" -o match:'"position":[0-9]+' \
+	    "$JGC" -c "$SOCK" log -f "$pos" @dmesg
+	# The last lines, by their number, in order.
+	atf_check -o save:k3.json "$JGC" -c "$SOCK" log -o 3 @dmesg
+	atf_check -o inline:'3\n' sh -c "grep -o '\"seq\":' k3.json | wc -l | tr -d ' '"
+	# A number from before the agent began: read anew.
+	atf_check -o match:'"rotated":true' "$JGC" -c "$SOCK" log -f 99999999 @dmesg
+}
+kmsg_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
 atf_test_case resnapshot cleanup
 resnapshot_head()
 {
@@ -441,4 +470,5 @@ atf_init_test_cases()
 	atf_add_test_case jail_network
 	atf_add_test_case fw_trace
 	atf_add_test_case resnapshot
+	atf_add_test_case kmsg
 }

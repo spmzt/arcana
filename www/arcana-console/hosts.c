@@ -1764,6 +1764,9 @@ connected:
 			hsq.limit_mem = (uint32_t)atoi(c->names[1]);
 			hsq.limit_swap = (uint32_t)atoi(c->names[2]);
 		}
+		/* The limits of devices and jails, as the agent takes them. */
+		if (c->retry && c->text != NULL)
+			hsq.limit_rules = c->text;
 		if ((error = arc_history(&cl, &hsq, &hsr)) != 0)
 			goto rpcfail;
 		ok = hsr->ok;
@@ -2981,9 +2984,14 @@ api_history(struct http_request *req)
 			snprintf(c->names[k], 8, "%lld", (long long)l[k]);
 		}
 	}
+	/* "net:igb0=125000000,jail-cpu:web=80": the agent checks them. */
+	if (body != NULL && ucl_str(body, "rules") != NULL && strlen(
+	    ucl_str(body, "rules")) <= 2048)
+		c->text = kore_strdup(ucl_str(body, "rules"));
 	if (body != NULL)
 		ucl_object_unref(body);
 	if (step < 1 || step > 3600 || keep < 0 || keep > 5000) {
+		kore_free(c->text);
 		for (keep = 0; keep < (int64_t)c->nnames; keep++)
 			kore_free(c->names[keep]);
 		kore_free(c->names);

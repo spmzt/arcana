@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.39.0"
+#define	ARCANA_AGENT_VERSION	"0.40.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -373,7 +373,16 @@ int		 do_log(struct work *, const char *, const char *, bool,
 		    uint64_t, uint32_t, struct arc_log_rsp *);
 void		 history_start(void);
 int		 do_history(struct work *, uint64_t, bool, uint32_t, uint32_t,
-		    const uint32_t *, struct arc_history_rsp *);
+		    const uint32_t *, const char *, struct arc_history_rsp *);
+/* gula/kmsg.c: the kernel's messages, numbered as they come. */
+struct kmsg_line {
+	uint64_t	 n;
+	time_t		 t;
+	char		*text;
+};
+void		 kmsg_start(void);
+bool		 kmsg_lines(struct work *, uint64_t, const char *, uint32_t,
+		    struct kmsg_line **, size_t *, uint64_t *);
 void		 history_save(void);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 

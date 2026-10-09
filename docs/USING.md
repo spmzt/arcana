@@ -39,7 +39,15 @@ The console is laid out as a tree and tabs.
   CPU, memory or swap figure over its limit makes an event, and
   another when it is back under (five points lower), listed under
   events in the Log tab; the defaults are 90, 90 and 50 percent, and
-  0 is no limit. Under **Network** are the
+  0 is no limit. **Limits of an interface, a disk or a jail**, a line
+  each, do the same for one of them: `net:igb0=125000000` (bytes a
+  second, in and out together), `disk:ada0=50000000` (bytes a second,
+  read and written), `jail-cpu:web=80` (percent of one CPU) and
+  `jail-mem:web=1073741824` (bytes); back under is a tenth lower. Each
+  running jail's share of the CPUs and its memory are drawn under the
+  disks, a jail picked at a time, as the kernel's resource accounting
+  has them: that needs `kern.racct.enable=1` in `/boot/loader.conf`
+  and a reboot, which the page says when it is off. Under **Network** are the
   host's interfaces, without the loopback, each with what goes over
   it now: **all** draws them added up, one pressed draws that one;
   a bridge and its members are each counted, so **all** counts a
@@ -426,7 +434,10 @@ The console is laid out as a tree and tabs.
     **Older** reads further back. **host** or a running jail's name
     picks whose `/var/log` is read. A packed log (`.bz2`, `.gz`,
     `.xz`, `.zst`) is unpacked to be read, whole. **dmesg** is the
-    kernel's message buffer and **audit** the audit trail of now,
+    kernel's message buffer, followed as it comes: the agent reads it
+    every second and numbers each new line, which the page shows the
+    moment it is told, none twice and none missed (a second with more
+    than twenty has the rest read at once). **audit** is the audit trail of now,
     where the host keeps one. Where syslogd writes a level (`-v`),
     it is a column. A line with a word of trouble in
     it (error, fail, denied, panic) is marked red, one of doubt

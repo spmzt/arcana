@@ -44,12 +44,9 @@
   - Runs kept, each host and step with its trace; the chain drawn as
     a graph, and a run as that graph coloured as it goes; the queue
     saved as a workflow.
-- Gula, further: older samples thinned instead of dropped; a jail's
-  share of the CPUs and memory as rctl accounts it, not only added up
-  from its processes; a threshold on a disk, an interface or a
-  jail; the kernel's messages followed as they come (not read whole
-  each time); dmesg for an agent that is not root, which the kernel
-  refuses unless security.bsd.unprivileged_read_msgbuf is on.
+- Gula, further: older samples thinned instead of dropped; dmesg for
+  an agent that is not root, which the kernel refuses unless
+  security.bsd.unprivileged_read_msgbuf is on.
 - The page on a phone, further: a card's title the column that names
   the row best (a process's command, not its number); the row's
   actions behind one menu when there are many; the map and the
@@ -125,6 +122,9 @@ Written and tested with stand-ins, never run for real:
   configuration written in a jail, WireGuard in a jail, safe mode in a
   jail, and the map with a real jail as a node (the browser test tells
   the page that a jail runs).
+- A jail's share of the CPUs and its memory from rctl_get_racct(2):
+  the test VM's kernel has kern.racct.enable off, and turning it on
+  needs a reboot; what is read when it is off was run for real.
 - Loading and unloading a kernel module for real: reading the kernel
   is real, kldload(8) and kldunload(8) are stand-ins in the tests.
 - The switch to SCTP from the page, and SCTP between two machines:
@@ -231,6 +231,21 @@ What was once in the list above, and when it was run:
   rc.conf for a bridge or a tunnel, NAT and NAT64, a spanning tree
   with more than one bridge in it (every port there was designated
   and forwarding), and traffic through a geneve tunnel.
+
+- IPsec, BIRD and BFD (2026-10-09, on the test VM, in two vnet jails
+  with strongSwan 6.1 and BIRD 3.3, everything through the agent):
+  each jail's key made, the connections written, GRE in transport mode
+  over IPv4 and an ipsec(4) interface with its reqid in tunnel mode
+  over IPv6, pings through both and their SAs read back with their
+  counters; OSPFv3 Full and BFD Up over both, as the BIRD reading
+  says them. A GRE or gif tunnel with IPv6 ends was found to have
+  been made without its ends before then: ifconfig(8) needs inet6
+  before tunnel, and says nothing in its exit status.
+- Thresholds and the kernel's messages (2026-10-09, the same VM): a
+  limit on vtnet0 crossed by its traffic made its event; the
+  kernel's messages read as root, numbered, followed by their number
+  as the kernel wrote more, those beyond twenty in a second told as
+  one.
 
 ## Known limits
 

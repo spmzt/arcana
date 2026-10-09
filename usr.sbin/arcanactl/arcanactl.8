@@ -277,11 +277,13 @@ How busy the host has been: what the agent sampled by itself and
 kept, each sample with its time, the CPUs' busy share, the load, the
 memory and swap in use, and the bytes a second on the network and the
 disks, added up and then for each interface and each disk, which are
-named.
+named, and each running jail's share of one CPU and its memory, as the
+kernel's resource accounting has them
+.Pq Va kern.racct.enable .
 With
 .Ar after ,
 only the samples after that time, in seconds since the epoch.
-.It Cm history set Ar seconds Ar samples Op Ar cpu mem swap
+.It Cm history set Ar seconds Ar samples Oo Ar cpu mem swap Oc Op Cm rules Ar list
 Have the agent sample every
 .Ar seconds ,
 1 to 3600, and keep that many
@@ -295,7 +297,15 @@ With
 .Ar mem
 and
 .Ar swap ,
-the percentages over which an event is made, 0 for none.
+the percentages over which an event is made, 0 for none; with
+.Cm rules ,
+the limits of an interface, a disk or a jail, with commas:
+.Ql net: Ns Ar if Ns = Ns Ar bytes/s ,
+.Ql disk: Ns Ar disk Ns = Ns Ar bytes/s ,
+.Ql jail-cpu: Ns Ar jail Ns = Ns Ar percent
+and
+.Ql jail-mem: Ns Ar jail Ns = Ns Ar bytes ;
+an empty list takes them away.
 The reply says what the samples take of the agent's memory.
 The samples are written down when the agent stops and read again when
 it starts.

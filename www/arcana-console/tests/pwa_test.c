@@ -2234,18 +2234,28 @@ ATF_TC_BODY(pwa, tc)
 	shot("7t-usage");
 	run("document.querySelector('button[data-act=usage-cfg]').click()");
 	wait_js("document.querySelector('form[data-form=usage-set]') && "
-	    "document.querySelector('form[data-form=usage-set] small')."
+	    "document.querySelector('form[data-form=usage-set] small.dim')."
 	    "textContent.includes('interfaces') && document.querySelector("
 	    "'form[data-form=usage-set] input[name=cpu]').value === '90'", 5);
 	shot("7t-usage-sampling");
+	/* The limits of devices and jails, a line each. */
 	run("const f = document.querySelector('form[data-form=usage-set]'); "
-	    "f.step.value = '2'; f.keep.value = '50'; f.requestSubmit();");
+	    "f.step.value = '2'; f.keep.value = '50'; f.rules.value = "
+	    "'net:lo0=1000000\\n jail-mem:web=1073741824\\n'; "
+	    "f.requestSubmit();");
 	wait_js("document.querySelector('section.ucard h4 small').textContent"
 	    ".includes('every 2 s, 50 kept') && !document.querySelector("
 	    "'form[data-form=usage-set]') && document.querySelectorAll("
 	    "'section.ucard figure.uplot svg path.line').length >= 10", 30);
 	ATF_CHECK(system("grep -q '^step=2$' history.conf && grep -q "
 	    "'^keep=50$' history.conf") == 0);
+	ATF_CHECK(system("grep -q '^rule=net:lo0=1000000$' history.conf && "
+	    "grep -q '^rule=jail-mem:web=1073741824$' history.conf") == 0);
+	/* Without the kernel's accounting, what turns it on is said. */
+	ATF_CHECK(js_true("document.querySelector('section.ucard p.ujails') "
+	    "? document.querySelector('section.ucard p.ujails').textContent."
+	    "includes('kern.racct.enable') : document.querySelector("
+	    "'section.ucard .ujails')"));
 	run("document.querySelector('section.ucard .uname').click()");
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
 

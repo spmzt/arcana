@@ -171,7 +171,8 @@ usage(void)
 	    "    renice pid nice\n"
 	    "    log [-o lines] [-f position] [name [text]]\n"
 	    "    history [after]\n"
-	    "    history set seconds samples [cpu%% mem%% swap%%]\n"
+	    "    history set seconds samples [cpu%% mem%% swap%%] "
+	    "[rules list]\n"
 	    "    events [after | -f]\n"
 	    "    net bridges | geneve | ipfw | nhgroups\n"
 	    "    bridge name addm | deletem member\n"
@@ -1803,6 +1804,12 @@ cmd_gula(struct arc_client *cl, int argc, char **argv)
 	}
 	if (strcmp(argv[0], "history") == 0) {
 		memset(&hq, 0, sizeof(hq));
+		/* ... rules list: the limits of devices and jails, last. */
+		if (argc >= 6 && strcmp(argv[1], "set") == 0 &&
+		    strcmp(argv[argc - 2], "rules") == 0) {
+			hq.limit_rules = argv[argc - 1];
+			argc -= 2;
+		}
 		if ((argc == 4 || argc == 7) && strcmp(argv[1], "set") == 0) {
 			if (argc == 7) {
 				hq.has_limit_cpu = hq.has_limit_mem =
