@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.67.0"
+#define	ARCW_VERSION		"0.68.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -93,6 +93,9 @@ bool		 guard(struct http_request *, bool);
 bool		 token_valid(struct http_request *);
 bool		 token_readable(const char *);
 int		 api_tokens(struct http_request *);
+int		 api_workflows(struct http_request *);
+int		 api_runs(struct http_request *);
+void		 workflows_init(void);
 int		 api_transfers(struct http_request *);
 void		 transfers_init(void);
 bool		 capture(struct http_request *, int, char *, size_t);
@@ -114,6 +117,7 @@ struct server {
 void		 servers_init(void);
 int		 servers_add(const char *, const char *, const char *);
 const struct server *server_find(const char *);
+const struct server *server_at(int);
 int		 servers_move(const char *, const char *);
 
 /* pki.c: the console's CA and host enrolment. */
@@ -125,6 +129,14 @@ void		 hosts_forget(const char *);
 const char	*hosts_shared(const char *, const char *, cbl_conn **,
 		    struct arc_client *);
 void		 hosts_shared_done(cbl_conn *, bool);
+char		*hosts_submit(const char *, const char *, const char *,
+		    const ucl_object_t *, int *, const char **);
+char		*hosts_job(const char *, const char *, const char *, uint64_t,
+		    int *);
+char		*hosts_read(const char *, const char *, const char *,
+		    const char *, int *);
+char		*hosts_events(const char *, const char *, const char *,
+		    uint64_t, int *);
 const char	*hosts_connect(const char *, const char *, cbl_conn **,
 		    cbl_tls **, struct arc_client *);
 void		 hosts_release(const char *, const char *, cbl_conn *,

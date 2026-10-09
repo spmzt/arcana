@@ -848,6 +848,202 @@ ATF_TC_BODY(load, tc)
 	    0);
 }
 
+/* Wait for a run to end; its JSON in r. */
+static void
+run_wait(const char *n, struct resp *r)
+{
+	char	path[64];
+	int	i;
+
+	snprintf(path, sizeof(path), "/api/runs/%s", n);
+	for (i = 0; i < 300; i++) {
+		http("GET", path, NULL, r);
+		if (r->status == 200 && jstr(r, "state") != NULL && strcmp(jstr(r,
+		    "state"), "running") != 0)
+			return;
+		resp_free(r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(0, "run %s did not end", n);
+}
+
+CONSOLE_TC(workflows, "A workflow's steps checked against jobs.yaml, run on "
+    "a host with its values, conditions and what follows a failure, and "
+    "begun by the host's events")
+ATF_TC_BODY(workflows, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[4096], sid[16], run[32], wid[16];
+	char		path[128];
+	int		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"lab\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sid, sizeof(sid), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+
+	/* What is not one, as jobs.yaml has the kinds. */
+	static const char *const bad[][2] = {
+		{ "{\"kind\":\"explode\"}", "one of jobs.yaml's" },
+		{ "{\"kind\":\"service-action\",\"service\":\"sshd\","
+		    "\"action\":\"start\",\"bogus\":1}", "has no bogus" },
+		{ "{\"kind\":\"service-action\",\"service\":\"sshd\"}",
+		    "needs action" },
+		{ "{\"kind\":\"service-action\",\"service\":\"sshd\","
+		    "\"action\":\"explode\"}", "one of start|stop" },
+	};
+	for (i = 0; i < 4; i++) {
+		snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
+		    "\"steps\":[{\"id\":\"a\",\"job\":%s}]}", sid, bad[i][0]);
+		http("POST", "/api/workflows", body, &r);
+		EXPECT(&r, 400);
+		ATF_CHECK_MSG(strstr(r.body, bad[i][1]) != NULL, "%s", r.body);
+		resp_free(&r);
+	}
+	/* What runs by itself and destroys says so. */
+	snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
+	    "\"every\":3600,\"steps\":[{\"id\":\"a\",\"job\":{\"kind\":"
+	    "\"if-destroy\",\"interface\":\"gif9\"}}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "destructive") != NULL);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"bad\",\"steps\":[{\"id\":"
+	    "\"a\",\"read\":\"hello\",\"on_fail\":\"a\"}]}");
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "a step after it") != NULL);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"bad\",\"hosts\":[\"%s\"],"
+	    "\"every\":30,\"steps\":[{\"id\":\"a\",\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+
+	/*
+	 * A read, a job with a parameter when the read says so, one that
+	 * fails and goes on further, one jumped over, a condition of a
+	 * read made then, and one whose condition is not met.
+	 */
+	snprintf(body, sizeof(body), "{\"name\":\"restart\",\"hosts\":[\"%s\"],"
+	    "\"params\":[{\"name\":\"svc\",\"default\":\"ntpd\"}],\"steps\":["
+	    "{\"id\":\"r\",\"read\":\"hello\"},"
+	    "{\"id\":\"a\",\"name\":\"Restart it\",\"job\":{\"kind\":"
+	    "\"service-action\",\"service\":\"${param.svc}\",\"action\":"
+	    "\"restart\"},\"when\":{\"step\":\"r\",\"path\":\"host.hostname\","
+	    "\"op\":\"exists\"}},"
+	    "{\"id\":\"b\",\"job\":{\"kind\":\"kmod\",\"verb\":\"load\","
+	    "\"args\":[\"../evil\"]},\"on_fail\":\"d\"},"
+	    "{\"id\":\"c\",\"job\":{\"kind\":\"service-action\",\"service\":"
+	    "\"ntpd\",\"action\":\"stop\"}},"
+	    "{\"id\":\"d\",\"read\":\"services\",\"when\":{\"read\":\"jails\","
+	    "\"path\":\"jails[name=web].state\",\"op\":\"eq\",\"value\":"
+	    "\"stopped\"}},"
+	    "{\"id\":\"e\",\"job\":{\"kind\":\"service-action\",\"service\":"
+	    "\"${param.svc}\",\"action\":\"stop\"},\"when\":{\"step\":\"r\","
+	    "\"path\":\"host.hostname\",\"op\":\"eq\",\"value\":\"nope\"}}]}",
+	    sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(wid, sizeof(wid), "%s", jstr(&r, "id"));
+	ATF_CHECK_EQ(8, strlen(wid));
+	ATF_CHECK_STREQ("false", jstr(&r, "steps.1.destroys"));
+	resp_free(&r);
+	http("GET", "/api/workflows", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("restart", jstr(&r, "workflows.0.name"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", wid);
+	http("POST", path, "{\"params\":{\"svc\":\"sshd\"}}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("hand", jstr(&r, "trigger"));
+	ATF_CHECK_STREQ("sshd", jstr(&r, "params.svc"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.1.state"));
+	ATF_CHECK_STREQ("service sshd restart", jstr(&r,
+	    "hosts.0.steps.1.title"));
+	ATF_CHECK(jstr(&r, "hosts.0.steps.1.trace.job.trace.0.label") !=
+	    NULL);
+	ATF_CHECK_STREQ("failed", jstr(&r, "hosts.0.steps.2.state"));
+	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.0.steps.3.state"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.4.state"));
+	ATF_CHECK_STREQ("skipped", jstr(&r, "hosts.0.steps.5.state"));
+	ATF_CHECK_STREQ("failed", jstr(&r, "state"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'sshd restart' service.log 2>/dev/null || "
+	    "test -f running.sshd") == 0);
+	/* The list has the runs, not their traces. */
+	http("GET", "/api/runs", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ(run, jstr(&r, "runs.0.id"));
+	ATF_CHECK(strstr(r.body, "\"trace\"") == NULL);
+	resp_free(&r);
+
+	/* Begun by the host's events: a threshold crossed, then the host
+	 * that stops answering. */
+	snprintf(body, sizeof(body), "{\"name\":\"on mem\",\"hosts\":[\"%s\"],"
+	    "\"on\":[{\"event\":\"threshold\",\"match\":{\"what\":\"mem\","
+	    "\"over\":\"true\"}}],\"steps\":[{\"id\":\"s\",\"read\":\"stats\"}]}",
+	    sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"on down\",\"hosts\":[\"%s\"],"
+	    "\"on\":[{\"event\":\"host-down\"}],\"steps\":[{\"id\":\"s\","
+	    "\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* A tick to learn where the events are; then the threshold. */
+	sleep(7);
+	snprintf(path, sizeof(path), "/api/servers/%s/history", sid);
+	http("POST", path, "{\"step\":1,\"keep\":10,\"cpu\":90,\"mem\":1,"
+	    "\"swap\":90}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 200; i++) {
+		http("GET", "/api/runs", NULL, &r);
+		if (strstr(r.body, "\"event threshold\"") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 200, "no run begun by the threshold");
+	ATF_CHECK(strstr(r.body, "\"what\":\"mem\"") != NULL);
+	resp_free(&r);
+	ATF_REQUIRE(system("kill $(cat arcana-agent.pid)") == 0);
+	for (i = 0; i < 200; i++) {
+		http("GET", "/api/runs", NULL, &r);
+		if (strstr(r.body, "\"event host-down\"") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	if (i == 200)
+		(void)system("tail -20 kore.out >&2");
+	ATF_CHECK_MSG(i < 200, "no run begun by the host going away");
+	resp_free(&r);
+
+	ATF_CHECK(system("! grep -q 'exited with status' kore.out") == 0);
+	/* Gone. */
+	snprintf(path, sizeof(path), "/api/workflows/%s", wid);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+}
+
 CONSOLE_TC(transfers, "A snapshot sent from one host to another, the "
     "console carrying it at the pace the receiver takes it")
 ATF_TC_BODY(transfers, tc)
@@ -2958,6 +3154,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, push);
 	ATF_TP_ADD_TC(tp, tokens);
 	ATF_TP_ADD_TC(tp, transfers);
+	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);

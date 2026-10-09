@@ -139,6 +139,7 @@ enum node {
 	NODE_NETWORK,		/* the fleet's network, as a map */
 	NODE_API,		/* the console's API, as it is documented */
 	NODE_USAGE,		/* how busy every host has been, drawn */
+	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
 };
 
 enum tab {
@@ -330,6 +331,7 @@ enum modal {
 	MODAL_BIRD_FILE,
 	MODAL_IPSEC_CONN,
 	MODAL_PKG_INSTALL,
+	MODAL_WF_RUN,
 	MODAL_IF_VNET,
 	MODAL_STORAGE,
 	MODAL_LOOKUP,
@@ -628,6 +630,13 @@ void		 transport_tick(double);
 void		 view_transport(struct html *, struct server *);
 void		 refresh_storage(struct server *, bool);
 void		 view_storage(struct html *, struct server *);
+/* workflow.c: the workflows, their editor and their runs. */
+void		 workflows_open(void);
+void		 workflows_tick(double);
+void		 view_workflows(struct html *);
+bool		 workflows_action(const char *, const char *, const char *);
+bool		 workflows_form(const char *, const ucl_object_t *);
+bool		 workflows_modal(struct html *);
 void		 storage_tick(double);
 bool		 storage_modal(struct html *);
 void		 storage_modal_buttons(struct html *);

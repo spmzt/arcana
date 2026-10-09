@@ -1,0 +1,270 @@
+# The kinds of job, as the console's API takes them (POST
+# /api/servers/<id>/jobs, and a workflow's steps): what each needs,
+# what else it uses, the values some fields are one of, and whether it
+# destroys: always, or with which verbs.  Beside arcana.yaml, whose
+# job-spec they are made into: the console's checks of a workflow's
+# steps and the page's forms for them come from here (jobs.awk), so a
+# new kind is one more entry.  A line is "key: words", the words with
+# spaces between them.
+
+fields:
+  - field: jail
+    type: text
+    label: Jail
+  - field: action
+    type: text
+    label: Action
+  - field: address
+    type: text
+    label: Address
+  - field: interface
+    type: text
+    label: Interface
+  - field: service
+    type: text
+    label: Service
+  - field: destination
+    type: text
+    label: Destination
+  - field: gateway
+    type: text
+    label: Gateway
+  - field: tunnel_local
+    type: text
+    label: Tunnel, this end
+  - field: tunnel_remote
+    type: text
+    label: Tunnel, the far end
+  - field: parent
+    type: text
+    label: Parent interface
+  - field: verb
+    type: text
+    label: Verb
+  - field: args
+    type: list
+    label: Arguments
+  - field: packages
+    type: list
+    label: Packages
+  - field: set
+    type: map
+    label: Variables to set
+  - field: unset
+    type: list
+    label: Variables to unset
+  - field: source
+    type: text
+    label: Source address
+  - field: peer
+    type: text
+    label: Peer key
+  - field: endpoint
+    type: text
+    label: Endpoint
+  - field: allowed_ips
+    type: text
+    label: Allowed addresses
+  - field: keepalive
+    type: number
+    label: Keepalive, seconds
+  - field: listen_port
+    type: number
+    label: Port
+  - field: description
+    type: text
+    label: Description
+  - field: mtu
+    type: number
+    label: MTU
+  - field: fib
+    type: number
+    label: Routing table
+  - field: metric
+    type: number
+    label: Metric
+  - field: weight
+    type: number
+    label: Weight
+  - field: id
+    type: number
+    label: Tag or identifier
+  - field: reqid
+    type: number
+    label: reqid
+  - field: up
+    type: bool
+    label: Up
+  - field: remove
+    type: bool
+    label: Remove
+  - field: live
+    type: bool
+    label: Live
+  - field: persist
+    type: bool
+    label: Kept for a boot
+  - field: safe
+    type: bool
+    label: Safe, undone unless confirmed
+  - field: recursive
+    type: bool
+    label: Recursive
+  - field: force
+    type: bool
+    label: Force
+  - field: pkg_ip
+    type: number
+    label: pkg over IPv4 (4) or IPv6 (6)
+  - field: conn
+    type: text
+    label: Connection
+  - field: ipsec_mode
+    type: text
+    label: Mode
+  - field: pubkey
+    type: text
+    label: Peer's public key
+  - field: local_ts
+    type: text
+    label: This side's traffic
+  - field: remote_ts
+    type: text
+    label: The peer's traffic
+  - field: start_action
+    type: text
+    label: Started
+  - field: local_id
+    type: text
+    label: This side's identity
+  - field: remote_id
+    type: text
+    label: The peer's identity
+
+kinds:
+  - kind: jail-action
+    title: A jail started, stopped, restarted or killed
+    needs: jail action
+    values: action=start|stop|restart|kill
+  - kind: address
+    title: An address of a jail
+    needs: jail address
+    uses: interface remove live persist
+  - kind: service-action
+    title: A service started, stopped, reloaded, enabled or disabled
+    needs: service action
+    values: action=start|stop|restart|reload|enable|disable
+  - kind: service-config
+    title: A service's variables in rc.conf
+    needs: service
+    uses: set unset
+  - kind: pkg-upgrade
+    title: Packages upgraded
+    uses: jail packages force pkg_ip
+  - kind: if-address
+    title: An interface's address added or taken off
+    needs: interface address
+    uses: jail remove live persist safe
+  - kind: if-state
+    title: An interface brought up or down
+    needs: interface up
+    uses: jail persist safe
+  - kind: route
+    title: A static route added or deleted
+    needs: destination
+    uses: jail gateway remove fib metric weight source persist safe
+  - kind: if-set
+    title: An interface's MTU or description
+    needs: interface
+    uses: jail mtu description persist safe
+  - kind: if-create
+    title: An interface made
+    needs: interface
+    uses: jail tunnel_local tunnel_remote address destination description mtu id parent reqid persist
+  - kind: if-destroy
+    title: An interface destroyed
+    needs: interface
+    uses: jail persist
+    destroys: always
+  - kind: netgraph
+    title: The netgraph graph changed
+    needs: verb args
+    uses: jail
+    values: verb=mkpeer|connect|rmhook|shutdown|name
+    destroys: verb=rmhook|shutdown
+  - kind: wireguard
+    title: A WireGuard interface's key or peers
+    needs: interface verb
+    uses: jail peer endpoint allowed_ips keepalive listen_port persist
+    values: verb=init|peer|unpeer
+  - kind: bird
+    title: BIRD told something
+    needs: verb
+    uses: jail args
+    values: verb=enable|disable|restart|reload|configure
+  - kind: if-vnet
+    title: An interface given to a jail, or taken back
+    needs: interface jail
+    uses: remove parent persist
+  - kind: kmod
+    title: A kernel module loaded or unloaded
+    needs: verb args
+    uses: persist
+    values: verb=load|unload
+  - kind: zfs
+    title: zfs
+    needs: verb args
+    uses: recursive force
+    destroys: verb=destroy|rollback
+  - kind: zpool
+    title: zpool
+    needs: verb args
+    uses: force
+    destroys: verb=destroy|export|offline|detach|remove|replace|labelclear
+  - kind: mount
+    title: A file system mounted, unmounted or swapped on
+    needs: verb args
+    uses: force
+  - kind: gpart
+    title: A partition table or partition
+    needs: verb args
+    uses: force
+    destroys: verb=destroy|delete|newfs
+  - kind: cam
+    title: camcontrol
+    needs: verb args
+  - kind: sysctl
+    title: A sysctl set
+    needs: args
+    uses: persist
+  - kind: ipfw
+    title: The firewall
+    needs: verb args
+    uses: jail persist safe
+    destroys: verb=delete|flush
+  - kind: bridge
+    title: A bridge
+    needs: verb args
+    uses: jail persist
+  - kind: geneve
+    title: A geneve tunnel
+    needs: verb args
+    uses: jail persist
+  - kind: process
+    title: A process signalled or reniced
+    needs: verb args
+    values: verb=signal|renice
+    destroys: verb=signal
+  - kind: pkg-clean
+    title: The package cache cleaned
+    uses: jail force
+  - kind: ipsec
+    title: IPsec, strongSwan
+    needs: verb
+    uses: jail conn tunnel_local tunnel_remote ipsec_mode pubkey local_ts remote_ts reqid start_action local_id remote_id persist
+    values: verb=init|start|conn|unconn|up|down ipsec_mode=tunnel|transport start_action=start|trap|none
+    destroys: verb=unconn
+  - kind: pkg-install
+    title: Packages installed
+    needs: packages
+    uses: jail force pkg_ip

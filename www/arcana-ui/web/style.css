@@ -3876,3 +3876,58 @@ ul.xfers li .dim { margin-left: auto; }
 ul.xfers li.failed small.bad, ul.xfers li.interrupted .dim { color: var(--red); }
 ul.xfers li.running .dim { color: var(--cyan); }
 ul.xfers li.done .dim { color: var(--green); }
+
+/*
+ * Workflows: the list, the runs, a run drawn as its chain (a row for
+ * each host, each step a box coloured by how it went), and the editor.
+ */
+section.workflows { display: flex; flex-direction: column; gap: .8rem; }
+ul.wflist, ul.wfruns { list-style: none; margin: 0; padding: 0; }
+ul.wflist li { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .8rem; padding: .55rem .2rem; border-bottom: 1px solid var(--line); }
+ul.wflist .wfhead { display: flex; flex-wrap: wrap; gap: .3rem .7rem; align-items: baseline; flex: 1; min-width: 0; }
+ul.wflist .acts { display: flex; gap: .3rem; }
+ul.wfruns li { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .7rem; padding: .4rem .2rem; border-bottom: 1px solid var(--line); cursor: pointer; font-size: .85rem; }
+ul.wfruns li .hosts { display: flex; gap: .3rem; flex-wrap: wrap; }
+ul.wfruns li .state { margin-left: auto; color: var(--dim); }
+ul.wfruns li.done .led { background: var(--green); }
+ul.wfruns li.failed .led, ul.wfruns li.interrupted .led { background: var(--red); }
+ul.wfruns li.running .led { background: var(--cyan); }
+ul.wfruns li.cancelled .led { background: var(--dim); }
+.chip.done { border-color: var(--green); }
+.chip.failed { border-color: var(--red); }
+.chip.running { border-color: var(--cyan); }
+.wfgraph { display: flex; flex-direction: column; gap: .7rem; overflow-x: auto; padding: .3rem 0; }
+.wfrow { display: flex; align-items: center; gap: .35rem; flex-wrap: nowrap; }
+.wfrow .wfhost { flex: none; width: 7.5rem; overflow: hidden; text-overflow: ellipsis; font-size: .8rem; color: var(--fg-2); }
+.wfarrow { color: var(--dim); flex: none; }
+button.wfstep { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; min-width: 7rem; padding: .35rem .6rem; border: 1px solid var(--line-2); border-radius: 8px; background: rgba(var(--surface-rgb), .7); text-align: left; text-transform: none; letter-spacing: 0; }
+button.wfstep b { font-size: .8rem; color: var(--fg); }
+button.wfstep small { font-size: .68rem; color: var(--dim); }
+button.wfstep small.jump { color: var(--amber); }
+button.wfstep.done { border-color: var(--green); }
+button.wfstep.failed { border-color: var(--red); }
+button.wfstep.running { border-color: var(--cyan); box-shadow: 0 0 10px rgba(var(--accent-rgb), .35); }
+button.wfstep.skipped, button.wfstep.not.run, button.wfstep.pending { opacity: .55; border-style: dashed; }
+button.wfstep.cancelled { opacity: .55; }
+button.wfstep.on { outline: 2px solid var(--cyan); outline-offset: 2px; }
+ol.wftsteps { margin: 0; padding-left: 1.2rem; font-size: .8rem; }
+ol.wftsteps li.failed b { color: var(--red); }
+.wfedit { display: flex; flex-direction: column; gap: .7rem; }
+.wfedit fieldset { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .7rem; display: flex; flex-wrap: wrap; gap: .4rem .9rem; }
+.wfedit fieldset legend { font-size: .75rem; color: var(--dim); padding: 0 .3rem; }
+ul.wfparams, ul.wfon { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .3rem; flex-basis: 100%; }
+ul.wfparams li, ul.wfon li { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+ol.wfsteps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: .6rem; }
+li.wfedstep { border: 1px solid var(--line-2); border-radius: 10px; padding: .6rem .7rem; display: flex; flex-direction: column; gap: .45rem; background: rgba(var(--surface-rgb), .5); }
+.wfedhead { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.wfedhead .num { color: var(--dim); font-size: .75rem; width: 1.4rem; }
+.wfedhead .acts { margin-left: auto; display: flex; gap: .2rem; }
+.wffields { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .4rem .7rem; }
+.wffields label em, .wfedit label em { font-style: normal; color: var(--amber); font-size: .7rem; }
+.wfwhen { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; padding-left: 1.4rem; }
+@media (max-width: 620px) {
+	.wfrow .wfhost { width: 5rem; }
+	.wffields { grid-template-columns: minmax(0, 1fr); }
+}
+ul.wfparams li input, ul.wfon li input { width: auto; flex: 1 1 10rem; min-width: 0; }
+ul.wfon li textarea { flex: 2 1 14rem; }

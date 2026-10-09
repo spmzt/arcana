@@ -248,6 +248,7 @@ static ucl_object_t *step_object(int, int, const char *, const char *,
 static ucl_object_t *trace_object(struct call *, const struct arc_step *,
 		    size_t, const char *, bool, uint64_t);
 static int	 call_run(struct kore_task *);
+static void	 call_release(struct call *);
 static int	 call_start(struct http_request *, struct call *);
 static int	 call_finish(struct http_request *);
 static struct call *call_new(struct http_request *, enum op);
@@ -1040,8 +1041,13 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	a = ucl_object_typed_new(UCL_ARRAY);
 	ucl_array_append(a, step_object(0, -1, "api", c->route, c->sname, ok,
 	    now_us() - c->t0));
-	ucl_array_append(a, step_object(1, 0, "auth", "session check",
-	    "WebAuthn session cookie", true, c->auth_us));
+	/* A workflow's call is the console's own: no session asked. */
+	if (strncmp(c->route, "workflow ", 9) == 0)
+		ucl_array_append(a, step_object(1, 0, "auth", "workflow",
+		    "the console's own run, no session", true, 0));
+	else
+		ucl_array_append(a, step_object(1, 0, "auth", "session check",
+		    "WebAuthn session cookie", true, c->auth_us));
 	ucl_array_append(a, step_object(2, 0, "lib", label, calldetail,
 	    callok, callus));
 	for (i = 0; i < n; i++) {
@@ -2371,10 +2377,18 @@ void
 api_call_free(struct http_request *req)
 {
 	struct call	*c;
-	size_t		 i;
 
 	if ((c = req->hdlr_extra) == NULL || !kore_task_finished(&c->task))
 		return;
+	call_release(c);
+}
+
+/* What a call holds, let go; the call itself is the caller's. */
+static void
+call_release(struct call *c)
+{
+	size_t	i;
+
 	free(c->json);
 	c->json = NULL;
 	kore_free(c->sname);
@@ -3860,4 +3874,113 @@ api_job(struct http_request *req)
 	}
 	c->jobid = strtoull(id, NULL, 10);
 	return (call_start(req, c));
+}
+
+/*
+ * A call the console makes itself, a workflow's: c on the host at uri,
+ * in this thread, as a request's task would make it.  The reply's JSON,
+ * as the API answers it (the caller's to free), and its status.
+ */
+static char *
+self_call(struct call *c, const char *uri, const char *peer,
+    const char *name, const char *what, int *status)
+{
+	char	*json;
+
+	c->uri = kore_strdup(uri);
+	c->peer = peer != NULL && peer[0] != '\0' ? kore_strdup(peer) : NULL;
+	c->sname = kore_strdup(name != NULL ? name : uri);
+	c->t0 = now_us();
+	snprintf(c->route, sizeof(c->route), "workflow %s", what);
+	(void)call_run(&c->task);
+	json = c->json;
+	c->json = NULL;
+	*status = c->status;
+	call_release(c);
+	kore_free(c);
+	return (json);
+}
+
+/* A job queued on a host; NULL and *errp when it is not one. */
+char *
+hosts_submit(const char *uri, const char *peer, const char *name,
+    const ucl_object_t *job, int *status, const char **errp)
+{
+	struct call	*c;
+	const char	*e;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_JOB_SUBMIT;
+	c->specs = kore_calloc(1, sizeof(*c->specs));
+	c->nspecs = 1;
+	if ((e = spec_from_json(job, &c->specs[0])) != NULL) {
+		*errp = e;
+		call_release(c);
+		kore_free(c);
+		return (NULL);
+	}
+	*errp = NULL;
+	return (self_call(c, uri, peer, name, "job-submit", status));
+}
+
+/* A job of a host, with its trace; a safe one is confirmed. */
+char *
+hosts_job(const char *uri, const char *peer, const char *name, uint64_t id,
+    int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_JOB;
+	c->jobid = id;
+	c->reads = true;
+	return (self_call(c, uri, peer, name, "job", status));
+}
+
+/*
+ * What a workflow's condition reads of a host: hello, jails, services,
+ * stats, events, history or packages (those installed).  NULL when it
+ * is none of them.
+ */
+char *
+hosts_read(const char *uri, const char *peer, const char *name,
+    const char *what, int *status)
+{
+	static const struct {
+		const char	*what;
+		enum op		 op;
+	} reads[] = {
+		{ "hello", OP_HELLO }, { "jails", OP_LIST },
+		{ "services", OP_SERVICES }, { "stats", OP_STATS },
+		{ "events", OP_EVENTS }, { "history", OP_HISTORY },
+		{ "packages", OP_PACKAGES },
+	};
+	struct call	*c;
+	size_t		 i;
+
+	for (i = 0; i < nitems(reads); i++)
+		if (strcmp(reads[i].what, what) == 0)
+			break;
+	if (i == nitems(reads))
+		return (NULL);
+	c = kore_calloc(1, sizeof(*c));
+	c->op = reads[i].op;
+	c->reads = true;
+	c->installed = reads[i].op == OP_PACKAGES;
+	return (self_call(c, uri, peer, name, what, status));
+}
+
+/* The host's events after the number after, for a workflow's trigger. */
+char *
+hosts_events(const char *uri, const char *peer, const char *name,
+    uint64_t after, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_EVENTS;
+	c->reads = true;
+	c->has_pos = true;
+	c->pos = after;
+	return (self_call(c, uri, peer, name, "events", status));
 }

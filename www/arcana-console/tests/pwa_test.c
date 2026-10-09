@@ -2694,6 +2694,92 @@ ATF_TC_BODY(pwa, tc)
 	    "'button[data-act=net-live]').click()");
 
 	/*
+	 * Workflows: one made in the editor, its steps' forms from
+	 * jobs.json, a parameter, a condition; run, its chain drawn as it
+	 * went, a step's trace; and the queue kept as one.
+	 */
+	run("document.querySelector('li.titem.wfnode').click()");
+	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
+	run("document.querySelector('button[data-act=wf-new]').click()");
+	wait_js("document.querySelector('select[data-input=wf-kind]') && "
+	    "document.querySelector('select[data-input=wf-kind]').options."
+	    "length > 25", 10);
+	{
+		/* What a page's input does: its value, then the event. */
+		static const char set[] = "window.setf = (sel, v) => { const e = "
+		    "document.querySelector(sel); if (e.type === 'checkbox') "
+		    "e.checked = v; else e.value = v; e.dispatchEvent(new Event("
+		    "'input', { bubbles: true })); };";
+
+		run(set);
+	}
+	run("setf('input[data-arg=\"text:name\"]', 'restart a service')");
+	run("document.querySelector('button[data-act=wf-param-add]').click()");
+	wait_js("document.querySelector('input[data-arg=\"text:params.0.name\"]')",
+	    5);
+	run("setf('input[data-arg=\"text:params.0.name\"]', 'svc'); "
+	    "setf('input[data-arg=\"text:params.0.default\"]', 'ntpd')");
+	/* The first step's kind: its fields, those it needs marked. */
+	run("setf('select[data-input=wf-kind]', 'service-action')");
+	wait_js("document.querySelector('input[data-arg=\"text:steps.0.job."
+	    "service\"]') && document.querySelector('select[data-arg=\"text:"
+	    "steps.0.job.action\"]')", 5);
+	run("setf('input[data-arg=\"text:steps.0.job.service\"]', "
+	    "'${param.svc}'); setf('select[data-arg=\"text:steps.0.job."
+	    "action\"]', 'restart')");
+	/* Only when the jail web is stopped, as a read of the jails says. */
+	run("document.querySelector('input[data-act=wf-when]').click()");
+	wait_js("document.querySelector('select[data-input=wf-when-of]')", 5);
+	run("setf('select[data-input=wf-when-of]', 'read:jails'); "
+	    "setf('input[data-arg=\"text:steps.0.when.path\"]', "
+	    "'jails[name=web].state'); setf('select[data-arg=\"text:steps.0."
+	    "when.op\"]', 'eq'); setf('input[data-arg=\"text:steps.0.when."
+	    "value\"]', 'stopped')");
+	/* A second step: a read of the host. */
+	run("document.querySelector('button[data-act=wf-step-add]').click()");
+	wait_js("document.querySelectorAll('li.wfedstep').length === 2", 5);
+	run("setf('select[data-input=wf-type][data-arg=\"1\"]', 'read:hello')");
+	shot("9a-workflow-edit");
+	run("document.querySelector('button[data-act=wf-save]').click()");
+	wait_js("document.querySelector('ul.wflist button[data-act=wf-run]') "
+	    "&& document.querySelector('ul.wflist').textContent.includes("
+	    "'restart a service')", 10);
+	run("document.querySelector('ul.wflist button[data-act=wf-run]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=wf-run] input"
+	    "[name=p_svc]')", 5);
+	run("const f = document.querySelector('form[data-form=wf-run]'); "
+	    "f.p_svc.value = 'sshd'; f.requestSubmit();");
+	wait_js("document.querySelectorAll('.wfgraph button.wfstep.done')."
+	    "length === 2", 30);
+	run("document.querySelector('.wfgraph button.wfstep').click()");
+	wait_js("document.querySelector('section.wftrace') && document."
+	    "querySelector('section.wftrace').textContent.includes('sshd')",
+	    10);
+	shot("9b-workflow-run");
+	/* What waits in the queue, kept as one. */
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	ATF_CHECK(js_true("document.querySelector('ul.wfruns li.done')"));
+	run("document.querySelector('li.titem.server').click()");
+	wait_js("document.querySelector('button.tab[data-arg=services]')", 10);
+	run("document.querySelector('button.tab[data-arg=services]').click()");
+	wait_js("document.querySelector('button[data-act=svc][data-value="
+	    "restart]')", 10);
+	run("document.querySelector('button[data-act=svc][data-value=restart]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
+	wait_js("document.querySelector('button[data-act=queue-to-wf]')", 5);
+	run("document.querySelector('button[data-act=queue-to-wf]').click()");
+	wait_js("document.querySelector('li.wfedstep select[data-input="
+	    "wf-kind]') && document.querySelector('li.wfedstep select[data-"
+	    "input=wf-kind]').value === 'service-action' && document."
+	    "querySelector('input[data-arg=\"text:name\"]').value === 'From "
+	    "the queue'", 10);
+	shot("9c-workflow-queue");
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	run("document.querySelector('button[data-act=queue-clear]').click()");
+	/*
 	 * The API's own page, from the menu: every route of the document,
 	 * by group, searched, one unfolded.
 	 */

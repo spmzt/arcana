@@ -161,8 +161,12 @@ addToLibrary({
 		document.addEventListener("input", function (e) {
 			var t = e.target;
 
+			/* With its data-arg, which of several it is; a
+			 * checkbox says true or false. */
 			if (t.dataset && t.dataset.input)
-				act("input:" + t.dataset.input, "", t.value);
+				act("input:" + t.dataset.input, t.dataset.arg ||
+				    "", t.type === "checkbox" ? (t.checked ?
+				    "true" : "false") : t.value);
 		});
 		document.addEventListener("keydown", function (e) {
 			if (e.key === "Escape")

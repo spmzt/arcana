@@ -1,0 +1,1841 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+ */
+
+/*
+ * Workflows: a chain of steps the console keeps and runs on several
+ * hosts at once.
+ *
+ * A step is a job of any kind (share/arcana/jobs.yaml says what each
+ * needs and uses, and the steps are checked against it), or a read of
+ * the host whose answer a later step looks at.  Before a step there may
+ * be a condition: a read made then, or an earlier step's answer, a path
+ * in it and a test of what is there; a step whose condition fails is
+ * skipped.  A step that fails stops the host's run, or the run goes on,
+ * or on at a later step.  A value may be ${param.NAME}, asked for when
+ * the run begins, ${host.id} or ${host.name}, ${step.ID.PATH}, what an
+ * earlier step answered, or ${event.PATH}, of the event that began it.
+ *
+ * A workflow runs by hand, every so many seconds, or on events: those
+ * the console sees itself (a host that stopped answering, host-down;
+ * that answers again, host-up; a jail whose state changed, jail-state)
+ * and those the host tells (threshold, kmsg, link and the rest), each
+ * with what it must match.  One that runs by itself may hold a step
+ * that destroys (jobs.yaml's destroys) only when it says so.
+ *
+ *	GET    /api/workflows		the workflows
+ *	POST   /api/workflows		one made or changed
+ *	DELETE /api/workflows/<id>
+ *	POST   /api/workflows/<id>/run	run now: {"params", "hosts"}
+ *	GET    /api/runs		the last runs
+ *	GET    /api/runs/<n>		one, each host and step with its trace
+ *	DELETE /api/runs/<n>		one running stopped
+ *
+ * The workflows are kept in workflows.json and the last runs in
+ * runs.json, written as they go.  A run has a thread of its own and one
+ * for each of its hosts.  What runs by itself is started by one worker,
+ * the one holding workflows.lock: a thread of it looks every few
+ * seconds at what is due and at the hosts' events.  Threads never look
+ * at the servers themselves: a timer of the worker's copies where each
+ * is reached into a table they read.
+ */
+
+#include <sys/param.h>
+#include <sys/file.h>
+#include <sys/queue.h>
+#include <sys/stat.h>
+
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#include <unistd.h>
+
+#include "console.h"
+#include "jobs_table.h"
+
+#define	WF_FILE		"workflows.json"
+#define	RUNS_FILE	"runs.json"
+#define	WF_LOCK		"workflows.lock"
+#define	WF_MAX		64
+#define	WF_STEPS_MAX	64
+#define	WF_PARAMS_MAX	16
+#define	WF_ON_MAX	8
+#define	RUNS_KEEP	30
+#define	RUN_HOSTS_MAX	32
+#define	TICK_S		5
+#define	JOB_POLL_US	500000
+#define	JOB_WAIT_S	3600
+#define	TRACE_MAX	(64 * 1024)	/* of a step's answer, kept */
+
+struct hostref {
+	char	id[9];
+	char	name[128];
+	char	uri[256];
+	char	peer[256];
+};
+
+/* Where each server is reached: copied by the worker, read by threads. */
+static pthread_mutex_t	ref_lock = PTHREAD_MUTEX_INITIALIZER;
+static struct hostref	refs[256];
+static int		nrefs;
+
+static pthread_mutex_t	wf_lock = PTHREAD_MUTEX_INITIALIZER;
+static int		lockfd = -1;
+
+static void
+put(ucl_object_t *o, const char *key, ucl_object_t *v)
+{
+
+	(void)ucl_object_delete_key(o, key);
+	ucl_object_insert_key(o, v, key, 0, true);
+}
+
+static bool
+ref_get(const char *sid, struct hostref *out)
+{
+	int	i;
+
+	pthread_mutex_lock(&ref_lock);
+	for (i = 0; i < nrefs; i++)
+		if (strcmp(refs[i].id, sid) == 0) {
+			*out = refs[i];
+			pthread_mutex_unlock(&ref_lock);
+			return (true);
+		}
+	pthread_mutex_unlock(&ref_lock);
+	return (false);
+}
+
+/* In the worker: the servers as they are, for the threads. */
+static void
+refs_copy(void)
+{
+	const struct server	*s;
+	struct hostref		 v[256];
+	int			 n;
+
+	n = 0;
+	for (int i = 0; (s = server_at(i)) != NULL && n < 256; i++) {
+		memset(&v[n], 0, sizeof(v[n]));
+		snprintf(v[n].id, sizeof(v[n].id), "%s", s->id);
+		snprintf(v[n].name, sizeof(v[n].name), "%s", s->name);
+		snprintf(v[n].uri, sizeof(v[n].uri), "%s", s->uri);
+		snprintf(v[n].peer, sizeof(v[n].peer), "%s", s->peer_name !=
+		    NULL ? s->peer_name : "");
+		n++;
+	}
+	pthread_mutex_lock(&ref_lock);
+	memcpy(refs, v, sizeof(v[0]) * (size_t)n);
+	nrefs = n;
+	pthread_mutex_unlock(&ref_lock);
+}
+
+/* ---- What jobs.yaml says of a kind ---------------------------------- */
+
+static const struct jobkind *
+kind_of(const char *kind)
+{
+	size_t	i;
+
+	for (i = 0; kind != NULL && i < nitems(jobkinds); i++)
+		if (strcmp(jobkinds[i].kind, kind) == 0)
+			return (&jobkinds[i]);
+	return (NULL);
+}
+
+/* Is word one of the words of list, "a b c"? */
+static bool
+word_in(const char *list, const char *word, size_t len)
+{
+	const char	*p, *e;
+
+	for (p = list; *p != '\0'; p = e) {
+		p += strspn(p, " ");
+		e = p + strcspn(p, " ");
+		if ((size_t)(e - p) == len && strncmp(p, word, len) == 0)
+			return (true);
+	}
+	return (false);
+}
+
+/* The values field takes, "a|b|c", from "f=a|b g=c"; NULL for any. */
+static const char *
+values_of(const char *values, const char *field, size_t *lenp)
+{
+	const char	*p, *e, *eq;
+	size_t		 fl;
+
+	fl = strlen(field);
+	for (p = values; *p != '\0'; p = e) {
+		p += strspn(p, " ");
+		e = p + strcspn(p, " ");
+		if ((eq = memchr(p, '=', (size_t)(e - p))) != NULL &&
+		    (size_t)(eq - p) == fl && strncmp(p, field, fl) == 0) {
+			*lenp = (size_t)(e - eq - 1);
+			return (eq + 1);
+		}
+	}
+	return (NULL);
+}
+
+/* Is a job of this kind, with this verb or action, one that destroys? */
+static bool
+destroys(const struct jobkind *k, const char *verb)
+{
+	size_t		 n;
+	const char	*v, *p, *e;
+
+	if (k->destroys[0] == '\0')
+		return (false);
+	if (strcmp(k->destroys, "always") == 0)
+		return (true);
+	if (verb == NULL)
+		return (false);
+	/* A verb from a value: what it may be is all it may be. */
+	if (strstr(verb, "${") != NULL)
+		return (true);
+	if ((v = values_of(k->destroys, "verb", &n)) == NULL)
+		return (false);
+	for (p = v; p < v + n; p = e + 1) {
+		e = memchr(p, '|', (size_t)(v + n - p));
+		if (e == NULL)
+			e = v + n;
+		if ((size_t)(e - p) == strlen(verb) && strncmp(p, verb,
+		    (size_t)(e - p)) == 0)
+			return (true);
+	}
+	return (false);
+}
+
+/* What is wrong with a step's job, as jobs.yaml has its kind; or NULL. */
+static const char *
+job_check(const ucl_object_t *job, bool *destroysp)
+{
+	static char		 why[160];
+	const struct jobkind	*k;
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*key, *vals, *s, *p, *e;
+	size_t			 n;
+	bool			 ok;
+
+	if (ucl_object_type(job) != UCL_OBJECT || (k = kind_of(ucl_str(job,
+	    "kind"))) == NULL)
+		return ("a job has a kind, one of jobs.yaml's");
+	it = NULL;
+	while ((v = ucl_object_iterate(job, &it, true)) != NULL) {
+		key = ucl_object_key(v);
+		if (strcmp(key, "kind") == 0)
+			continue;
+		if (!word_in(k->needs, key, strlen(key)) && !word_in(k->uses,
+		    key, strlen(key))) {
+			snprintf(why, sizeof(why), "a %s job has no %s",
+			    k->kind, key);
+			return (why);
+		}
+		/* A value of a few is one of them, unless it is made later. */
+		if (ucl_object_type(v) == UCL_STRING && (vals = values_of(
+		    k->values, key, &n)) != NULL && strstr((s =
+		    ucl_object_tostring(v)), "${") == NULL) {
+			ok = false;
+			for (p = vals; p < vals + n && !ok; p = e + 1) {
+				e = memchr(p, '|', (size_t)(vals + n - p));
+				if (e == NULL)
+					e = vals + n;
+				ok = (size_t)(e - p) == strlen(s) &&
+				    strncmp(p, s, (size_t)(e - p)) == 0;
+			}
+			if (!ok) {
+				snprintf(why, sizeof(why), "%s of a %s job is "
+				    "one of %.*s", key, k->kind, (int)n, vals);
+				return (why);
+			}
+		}
+	}
+	for (p = k->needs; *p != '\0'; p = e) {
+		p += strspn(p, " ");
+		e = p + strcspn(p, " ");
+		if (e > p && ucl_object_lookup_len(job, p, (size_t)(e - p)) ==
+		    NULL) {
+			snprintf(why, sizeof(why), "a %s job needs %.*s",
+			    k->kind, (int)(e - p), p);
+			return (why);
+		}
+	}
+	*destroysp = destroys(k, ucl_str(job, "verb") != NULL ? ucl_str(job,
+	    "verb") : ucl_str(job, "action"));
+	return (NULL);
+}
+
+/* ---- Values in a step, ${...} --------------------------------------- */
+
+/*
+ * A path in an answer: words with dots, a number an array's place,
+ * key[field=value] the element of an array whose field is value.
+ */
+static const ucl_object_t *
+path_get(const ucl_object_t *o, const char *path)
+{
+	char			 buf[512], *p, *tok, *br, *eq, *end;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	long			 idx;
+
+	if (path == NULL || path[0] == '\0')
+		return (o);
+	snprintf(buf, sizeof(buf), "%s", path);
+	p = buf;
+	while (o != NULL && (tok = strsep(&p, ".")) != NULL) {
+		br = strchr(tok, '[');
+		if (br != NULL)
+			*br++ = '\0';
+		if (tok[0] != '\0') {
+			idx = strtol(tok, &end, 10);
+			if (*end == '\0' && ucl_object_type(o) == UCL_ARRAY)
+				o = ucl_array_find_index(o, (unsigned int)idx);
+			else
+				o = ucl_object_lookup(o, tok);
+		}
+		if (br == NULL || o == NULL)
+			continue;
+		/* [field=value] of an array. */
+		if ((eq = strchr(br, '=')) == NULL || (end = strchr(eq,
+		    ']')) == NULL)
+			return (NULL);
+		*eq++ = '\0';
+		*end = '\0';
+		it = NULL;
+		while ((e = ucl_object_iterate(o, &it, true)) != NULL)
+			if (ucl_object_lookup(e, br) != NULL && strcmp(
+			    ucl_object_tostring_forced(ucl_object_lookup(e, br)),
+			    eq) == 0)
+				break;
+		o = e;
+	}
+	return (o);
+}
+
+struct hostrun;
+
+/* ${...} in s made what it says, for the host's run; malloc'ed. */
+static char *
+expand(const char *s, const ucl_object_t *params, const struct hostref *h,
+    const ucl_object_t *answers, const ucl_object_t *event)
+{
+	const ucl_object_t	*v;
+	char			*out, name[300], *dot;
+	const char		*p, *e, *val;
+	size_t			 len, cap, n;
+
+	cap = strlen(s) + 64;
+	out = malloc(cap);
+	len = 0;
+	for (p = s; *p != '\0'; ) {
+		val = NULL;
+		if (p[0] == '$' && p[1] == '{' && (e = strchr(p, '}')) != NULL &&
+		    (size_t)(e - p - 2) < sizeof(name)) {
+			memcpy(name, p + 2, (size_t)(e - p - 2));
+			name[e - p - 2] = '\0';
+			if (strncmp(name, "param.", 6) == 0)
+				val = (v = ucl_object_lookup(params, name + 6)) !=
+				    NULL ? ucl_object_tostring_forced(v) : "";
+			else if (strcmp(name, "host.id") == 0)
+				val = h->id;
+			else if (strcmp(name, "host.name") == 0)
+				val = h->name;
+			else if (strncmp(name, "step.", 5) == 0 &&
+			    (dot = strchr(name + 5, '.')) != NULL) {
+				*dot = '\0';
+				v = path_get(ucl_object_lookup(answers, name + 5),
+				    dot + 1);
+				val = v != NULL ? ucl_object_tostring_forced(v) :
+				    "";
+			} else if (strncmp(name, "event.", 6) == 0) {
+				v = path_get(event, name + 6);
+				val = v != NULL ? ucl_object_tostring_forced(v) :
+				    "";
+			}
+		}
+		if (val == NULL) {
+			n = 1;
+			val = p;
+		} else {
+			n = strlen(val);
+			p = strchr(p, '}');
+		}
+		if (len + n + 1 > cap) {
+			cap = (len + n + 1) * 2;
+			out = realloc(out, cap);
+		}
+		memcpy(out + len, val, n);
+		len += n;
+		p++;
+	}
+	out[len] = '\0';
+	return (out);
+}
+
+/* The job with every string expanded: a new object. */
+static ucl_object_t *
+expand_obj(const ucl_object_t *o, const ucl_object_t *params,
+    const struct hostref *h, const ucl_object_t *answers,
+    const ucl_object_t *event)
+{
+	ucl_object_t		*c, *x;
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	char			*s;
+
+	switch (ucl_object_type(o)) {
+	case UCL_STRING:
+		s = expand(ucl_object_tostring(o), params, h, answers, event);
+		c = ucl_object_fromstring(s);
+		free(s);
+		return (c);
+	case UCL_OBJECT:
+		c = ucl_object_typed_new(UCL_OBJECT);
+		it = NULL;
+		while ((v = ucl_object_iterate(o, &it, true)) != NULL) {
+			x = expand_obj(v, params, h, answers, event);
+			ucl_object_insert_key(c, x, ucl_object_key(v), 0, true);
+		}
+		return (c);
+	case UCL_ARRAY:
+		c = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((v = ucl_object_iterate(o, &it, true)) != NULL)
+			ucl_array_append(c, expand_obj(v, params, h, answers,
+			    event));
+		return (c);
+	default:
+		return (ucl_object_copy(o));
+	}
+}
+
+/* A condition's test of what is at its path. */
+static bool
+test(const ucl_object_t *v, const char *op, const char *want)
+{
+	const char	*have;
+	double		 a, b;
+
+	if (strcmp(op, "exists") == 0)
+		return (v != NULL && ucl_object_type(v) != UCL_NULL);
+	if (strcmp(op, "missing") == 0)
+		return (v == NULL || ucl_object_type(v) == UCL_NULL);
+	if (v == NULL)
+		return (strcmp(op, "ne") == 0);
+	have = ucl_object_tostring_forced(v);
+	if (want == NULL)
+		want = "";
+	if (strcmp(op, "eq") == 0)
+		return (strcmp(have, want) == 0);
+	if (strcmp(op, "ne") == 0)
+		return (strcmp(have, want) != 0);
+	if (strcmp(op, "contains") == 0)
+		return (strstr(have, want) != NULL);
+	a = strtod(have, NULL);
+	b = strtod(want, NULL);
+	if (strcmp(op, "gt") == 0)
+		return (a > b);
+	if (strcmp(op, "lt") == 0)
+		return (a < b);
+	return (false);
+}
+
+/* ---- The workflows -------------------------------------------------- */
+
+static bool
+id_word(const char *s, size_t max)
+{
+	size_t	i;
+
+	if (s == NULL || s[0] == '\0' || strlen(s) > max)
+		return (false);
+	for (i = 0; s[i] != '\0'; i++)
+		if (!isalnum((unsigned char)s[i]) && s[i] != '_' && s[i] != '-')
+			return (false);
+	return (true);
+}
+
+static const char *const reads[] = { "hello", "jails", "services", "stats",
+    "events", "history", "packages" };
+static const char *const ops[] = { "eq", "ne", "contains", "gt", "lt",
+    "exists", "missing" };
+
+static bool
+in_list(const char *s, const char *const *v, size_t n)
+{
+	size_t	i;
+
+	for (i = 0; s != NULL && i < n; i++)
+		if (strcmp(s, v[i]) == 0)
+			return (true);
+	return (false);
+}
+
+/*
+ * A workflow as it was sent, checked and made the one kept: NULL and
+ * why when it is not one.
+ */
+static ucl_object_t *
+wf_check(const ucl_object_t *in, const char **whyp)
+{
+	static char		 why[200];
+	ucl_object_t		*w, *steps, *s;
+	const ucl_object_t	*v, *st, *job, *when, *e;
+	ucl_object_iter_t	 it, sit;
+	const char		*id, *of;
+	char			 ids[WF_STEPS_MAX][17], newid[9];
+	uint32_t		 r;
+	int			 n, i, k;
+	bool			 hurts, any_hurts, alone;
+
+#define	REFUSE(...) do {						\
+	snprintf(why, sizeof(why), __VA_ARGS__);			\
+	*whyp = why;							\
+	ucl_object_unref(w);						\
+	return (NULL);							\
+} while (0)
+
+	w = ucl_object_typed_new(UCL_OBJECT);
+	if (ucl_object_type(in) != UCL_OBJECT)
+		REFUSE("a workflow is an object");
+	if ((id = ucl_str(in, "id")) != NULL && id[0] != '\0') {
+		if (strlen(id) != 8 || id[strspn(id, "0123456789abcdef")] !=
+		    '\0')
+			REFUSE("an id is eight hex digits");
+		put(w, "id", ucl_object_fromstring(id));
+	} else {
+		arc4random_buf(&r, sizeof(r));
+		snprintf(newid, sizeof(newid), "%08x", r);
+		put(w, "id", ucl_object_fromstring(newid));
+	}
+	if (ucl_str(in, "name") == NULL || ucl_str(in, "name")[0] == '\0' ||
+	    strlen(ucl_str(in, "name")) > 64)
+		REFUSE("a workflow has a name, of 64 characters at most");
+	put(w, "name", ucl_object_fromstring(ucl_str(in, "name")));
+	/* The hosts it runs on by itself, and by hand unless told others. */
+	put(w, "hosts", ucl_object_typed_new(UCL_ARRAY));
+	it = NULL;
+	n = 0;
+	while ((v = ucl_object_iterate(ucl_object_lookup(in, "hosts"), &it,
+	    true)) != NULL) {
+		struct hostref	h;
+
+		if (ucl_object_type(v) != UCL_STRING || !ref_get(
+		    ucl_object_tostring(v), &h) || ++n > RUN_HOSTS_MAX)
+			REFUSE("a host is a server's id, %d at most",
+			    RUN_HOSTS_MAX);
+		ucl_array_append((ucl_object_t *)(uintptr_t)ucl_object_lookup(w,
+		    "hosts"), ucl_object_fromstring(ucl_object_tostring(v)));
+	}
+	put(w, "params", ucl_object_typed_new(UCL_ARRAY));
+	it = NULL;
+	n = 0;
+	while ((v = ucl_object_iterate(ucl_object_lookup(in, "params"), &it,
+	    true)) != NULL) {
+		if (!id_word(ucl_str(v, "name"), 32) || ++n > WF_PARAMS_MAX ||
+		    (ucl_str(v, "default") != NULL && strlen(ucl_str(v,
+		    "default")) > 256))
+			REFUSE("a parameter is named with letters, digits, - "
+			    "and _; %d at most", WF_PARAMS_MAX);
+		s = ucl_object_typed_new(UCL_OBJECT);
+		put(s, "name", ucl_object_fromstring(ucl_str(v, "name")));
+		put(s, "default", ucl_object_fromstring(ucl_str(v, "default") !=
+		    NULL ? ucl_str(v, "default") : ""));
+		ucl_array_append((ucl_object_t *)(uintptr_t)ucl_object_lookup(w,
+		    "params"), s);
+	}
+	steps = ucl_object_typed_new(UCL_ARRAY);
+	put(w, "steps", steps);
+	any_hurts = false;
+	n = 0;
+	it = NULL;
+	while ((st = ucl_object_iterate(ucl_object_lookup(in, "steps"), &it,
+	    true)) != NULL) {
+		if (n == WF_STEPS_MAX)
+			REFUSE("%d steps at most", WF_STEPS_MAX);
+		if (!id_word(ucl_str(st, "id"), 16))
+			REFUSE("a step has an id: letters, digits, - and _");
+		for (k = 0; k < n; k++)
+			if (strcmp(ids[k], ucl_str(st, "id")) == 0)
+				REFUSE("two steps are %s", ids[k]);
+		snprintf(ids[n], sizeof(ids[n]), "%s", ucl_str(st, "id"));
+		s = ucl_object_typed_new(UCL_OBJECT);
+		put(s, "id", ucl_object_fromstring(ids[n]));
+		put(s, "name", ucl_object_fromstring(ucl_str(st, "name") != NULL ?
+		    ucl_str(st, "name") : ids[n]));
+		job = ucl_object_lookup(st, "job");
+		of = ucl_str(st, "read");
+		if ((job != NULL) == (of != NULL)) {
+			ucl_object_unref(s);
+			REFUSE("step %s is a job or a read", ids[n]);
+		}
+		if (job != NULL) {
+			hurts = false;
+			if ((*whyp = job_check(job, &hurts)) != NULL) {
+				ucl_object_unref(s);
+				snprintf(why, sizeof(why), "step %s: %s", ids[n],
+				    *whyp);
+				*whyp = why;
+				ucl_object_unref(w);
+				return (NULL);
+			}
+			any_hurts = any_hurts || hurts;
+			put(s, "job", ucl_object_copy(job));
+			put(s, "destroys", ucl_object_frombool(hurts));
+		} else {
+			if (!in_list(of, reads, nitems(reads))) {
+				ucl_object_unref(s);
+				REFUSE("step %s reads hello, jails, services, "
+				    "stats, events, history or packages", ids[n]);
+			}
+			put(s, "read", ucl_object_fromstring(of));
+		}
+		if ((when = ucl_object_lookup(st, "when")) != NULL) {
+			ucl_object_t	*c;
+			const char	*wr, *ws;
+
+			wr = ucl_str(when, "read");
+			ws = ucl_str(when, "step");
+			if (!in_list(ucl_str(when, "op"), ops, nitems(ops)) ||
+			    (wr == NULL) == (ws == NULL) || (wr != NULL &&
+			    !in_list(wr, reads, nitems(reads))) ||
+			    (ucl_str(when, "path") != NULL && strlen(ucl_str(
+			    when, "path")) > 256)) {
+				ucl_object_unref(s);
+				REFUSE("step %s: a condition reads, or looks at "
+				    "an earlier step, and tests what is at its "
+				    "path: eq, ne, contains, gt, lt, exists or "
+				    "missing", ids[n]);
+			}
+			for (k = 0; ws != NULL && k < n; k++)
+				if (strcmp(ids[k], ws) == 0)
+					break;
+			if (ws != NULL && k == n) {
+				ucl_object_unref(s);
+				REFUSE("step %s: its condition looks at a step "
+				    "before it", ids[n]);
+			}
+			c = ucl_object_copy(when);
+			put(s, "when", c);
+		}
+		of = ucl_str(st, "on_fail") != NULL ? ucl_str(st, "on_fail") :
+		    "stop";
+		put(s, "on_fail", ucl_object_fromstring(of));
+		ucl_array_append(steps, s);
+		n++;
+	}
+	if (n == 0)
+		REFUSE("a workflow has a step at least");
+	/* Where a failure goes on: a step after it. */
+	sit = NULL;
+	i = 0;
+	while ((st = ucl_object_iterate(steps, &sit, true)) != NULL) {
+		of = ucl_str(st, "on_fail");
+		if (strcmp(of, "stop") != 0 && strcmp(of, "continue") != 0) {
+			for (k = i + 1; k < n; k++)
+				if (strcmp(ids[k], of) == 0)
+					break;
+			if (k >= n)
+				REFUSE("step %s: on a failure, stop, continue, or "
+				    "a step after it", ids[i]);
+		}
+		i++;
+	}
+	/* By itself: at an interval, on events. */
+	if ((v = ucl_object_lookup(in, "every")) != NULL &&
+	    ucl_object_toint(v) != 0 && (ucl_object_toint(v) < 60 ||
+	    ucl_object_toint(v) > 7 * 86400))
+		REFUSE("every is 0, or 60 seconds to a week");
+	put(w, "every", ucl_object_fromint(v != NULL ? ucl_object_toint(v) :
+	    0));
+	put(w, "on", ucl_object_typed_new(UCL_ARRAY));
+	it = NULL;
+	k = 0;
+	while ((e = ucl_object_iterate(ucl_object_lookup(in, "on"), &it,
+	    true)) != NULL) {
+		if (!id_word(ucl_str(e, "event"), 32) || ++k > WF_ON_MAX ||
+		    (ucl_object_lookup(e, "match") != NULL && ucl_object_type(
+		    ucl_object_lookup(e, "match")) != UCL_OBJECT))
+			REFUSE("an event is named, with what it must match; %d "
+			    "at most", WF_ON_MAX);
+		ucl_array_append((ucl_object_t *)(uintptr_t)ucl_object_lookup(w,
+		    "on"), ucl_object_copy(e));
+	}
+	alone = ucl_object_toint(ucl_object_lookup(w, "every")) > 0 || k > 0;
+	put(w, "destructive", ucl_object_frombool(ucl_flag(in, "destructive")));
+	if (alone && any_hurts && !ucl_flag(in, "destructive"))
+		REFUSE("it runs by itself and a step destroys: say so, "
+		    "destructive");
+	if (alone && ucl_array_size(ucl_object_lookup(w, "hosts")) == 0)
+		REFUSE("what runs by itself names its hosts");
+	put(w, "changed", ucl_object_fromint(time(NULL)));
+#undef REFUSE
+	return (w);
+}
+
+static ucl_object_t *
+wf_load(void)
+{
+	ucl_object_t	*top;
+
+	if ((top = store_load(WF_FILE)) == NULL)
+		top = ucl_object_typed_new(UCL_OBJECT);
+	if (ucl_object_lookup(top, "workflows") == NULL)
+		put(top, "workflows", ucl_object_typed_new(UCL_ARRAY));
+	return (top);
+}
+
+/* The workflow of that id, a copy; NULL when none. */
+static ucl_object_t *
+wf_find(const char *id)
+{
+	ucl_object_t		*top, *w;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	pthread_mutex_lock(&wf_lock);
+	top = wf_load();
+	pthread_mutex_unlock(&wf_lock);
+	w = NULL;
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(top, "workflows"),
+	    &it, true)) != NULL)
+		if (ucl_str(e, "id") != NULL && strcmp(ucl_str(e, "id"), id) ==
+		    0)
+			w = ucl_object_copy(e);
+	ucl_object_unref(top);
+	return (w);
+}
+
+/* ---- The runs -------------------------------------------------------- */
+
+struct hoststep {
+	char		 state[12];	/* pending, skipped, running, done,
+					   failed, cancelled, not run */
+	uint64_t	 job;
+	char		 title[160];
+	char		 error[300];
+	char		*trace;		/* the job's, JSON */
+	time_t		 started, ended;
+};
+
+struct hostrun {
+	struct run	*run;
+	struct hostref	 h;
+	char		 state[12];
+	struct hoststep	 steps[WF_STEPS_MAX];
+	ucl_object_t	*answers;	/* step id: what it answered */
+	pthread_t	 thread;
+	bool		 started;
+};
+
+struct run {
+	pthread_mutex_t	 lock;
+	uint32_t	 id;
+	ucl_object_t	*wf;
+	ucl_object_t	*params;
+	ucl_object_t	*event;		/* of what began it, or NULL */
+	char		 trigger[64];
+	char		 state[12];
+	time_t		 started, ended;
+	int		 nhosts;
+	struct hostrun	 hosts[RUN_HOSTS_MAX];
+	int		 nsteps;
+	bool		 cancel;
+	time_t		 looked;	/* runs.json, for a stop */
+};
+
+/* The run as runs.json keeps it, with the traces or without. */
+static ucl_object_t *
+run_object(struct run *r, bool traces)
+{
+	ucl_object_t		*o, *hs, *h, *ss, *s, *t;
+	const ucl_object_t	*st;
+	ucl_object_iter_t	 it;
+	struct ucl_parser	*p;
+	int			 i, k;
+
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(o, "id", ucl_object_fromint(r->id));
+	put(o, "workflow", ucl_object_fromstring(ucl_str(r->wf, "id")));
+	put(o, "name", ucl_object_fromstring(ucl_str(r->wf, "name")));
+	put(o, "trigger", ucl_object_fromstring(r->trigger));
+	put(o, "state", ucl_object_fromstring(r->state));
+	put(o, "started", ucl_object_fromint(r->started));
+	if (r->ended != 0)
+		put(o, "ended", ucl_object_fromint(r->ended));
+	put(o, "params", ucl_object_copy(r->params));
+	if (r->event != NULL)
+		put(o, "event", ucl_object_copy(r->event));
+	if (r->cancel)
+		put(o, "cancel", ucl_object_frombool(true));
+	hs = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < r->nhosts; i++) {
+		h = ucl_object_typed_new(UCL_OBJECT);
+		put(h, "id", ucl_object_fromstring(r->hosts[i].h.id));
+		put(h, "name", ucl_object_fromstring(r->hosts[i].h.name));
+		put(h, "state", ucl_object_fromstring(r->hosts[i].state));
+		ss = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		k = 0;
+		while ((st = ucl_object_iterate(ucl_object_lookup(r->wf,
+		    "steps"), &it, true)) != NULL && k < r->nsteps) {
+			struct hoststep	*x = &r->hosts[i].steps[k++];
+
+			s = ucl_object_typed_new(UCL_OBJECT);
+			put(s, "id", ucl_object_fromstring(ucl_str(st, "id")));
+			put(s, "state", ucl_object_fromstring(x->state));
+			if (x->job != 0)
+				put(s, "job", ucl_object_fromint((int64_t)x->job));
+			if (x->title[0] != '\0')
+				put(s, "title", ucl_object_fromstring(x->title));
+			if (x->error[0] != '\0')
+				put(s, "error", ucl_object_fromstring(x->error));
+			if (x->started != 0)
+				put(s, "started", ucl_object_fromint(x->started));
+			if (x->ended != 0)
+				put(s, "ended", ucl_object_fromint(x->ended));
+			if (traces && x->trace != NULL) {
+				p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+				if (ucl_parser_add_string(p, x->trace, 0) &&
+				    (t = ucl_parser_get_object(p)) != NULL)
+					put(s, "trace", t);
+				ucl_parser_free(p);
+			}
+			ucl_array_append(ss, s);
+		}
+		put(h, "steps", ss);
+		ucl_array_append(hs, h);
+	}
+	put(o, "hosts", hs);
+	return (o);
+}
+
+/*
+ * The run written into runs.json, in its place or as the newest; a stop
+ * asked of another worker is read back.  Called with r->lock held.
+ */
+static void
+run_save(struct run *r)
+{
+	ucl_object_t		*top, *keep, *mine;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	size_t			 n;
+	bool			 found;
+
+	pthread_mutex_lock(&wf_lock);
+	if ((top = store_load(RUNS_FILE)) == NULL)
+		top = ucl_object_typed_new(UCL_OBJECT);
+	keep = ucl_object_typed_new(UCL_ARRAY);
+	mine = run_object(r, true);
+	found = false;
+	n = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(top, "runs"), &it,
+	    true)) != NULL) {
+		if ((uint32_t)ucl_object_toint(ucl_object_lookup(e, "id")) ==
+		    r->id) {
+			if (ucl_object_toboolean(ucl_object_lookup(e, "cancel")))
+				r->cancel = true;
+			ucl_array_append(keep, ucl_object_ref(mine));
+			found = true;
+		} else
+			ucl_array_append(keep, ucl_object_copy(e));
+		n++;
+	}
+	if (!found) {
+		ucl_array_append(keep, ucl_object_ref(mine));
+		n++;
+	}
+	while (n > RUNS_KEEP) {
+		ucl_object_unref(ucl_array_pop_first(keep));
+		n--;
+	}
+	ucl_object_unref(mine);
+	put(top, "runs", keep);
+	(void)store_save(RUNS_FILE, top);
+	ucl_object_unref(top);
+	pthread_mutex_unlock(&wf_lock);
+}
+
+static void
+step_set(struct hostrun *hr, int k, const char *state, const char *fmt, ...)
+{
+	struct hoststep	*x = &hr->steps[k];
+	va_list		 ap;
+
+	pthread_mutex_lock(&hr->run->lock);
+	snprintf(x->state, sizeof(x->state), "%s", state);
+	if (fmt != NULL) {
+		va_start(ap, fmt);
+		vsnprintf(x->error, sizeof(x->error), fmt, ap);
+		va_end(ap);
+	}
+	if (strcmp(state, "running") == 0)
+		x->started = time(NULL);
+	else if (strcmp(state, "pending") != 0)
+		x->ended = time(NULL);
+	run_save(hr->run);
+	pthread_mutex_unlock(&hr->run->lock);
+}
+
+/*
+ * Was a stop asked?  In runs.json, where any worker puts it: looked at
+ * every two seconds, between what writes it anyway.
+ */
+static bool
+cancelled(struct run *r)
+{
+	ucl_object_t		*top;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	bool			 c;
+
+	pthread_mutex_lock(&r->lock);
+	if (!r->cancel && time(NULL) - r->looked >= 2) {
+		r->looked = time(NULL);
+		pthread_mutex_lock(&wf_lock);
+		top = store_load(RUNS_FILE);
+		pthread_mutex_unlock(&wf_lock);
+		it = NULL;
+		while (top != NULL && (e = ucl_object_iterate(
+		    ucl_object_lookup(top, "runs"), &it, true)) != NULL)
+			if ((uint32_t)ucl_object_toint(ucl_object_lookup(e,
+			    "id")) == r->id && ucl_object_toboolean(
+			    ucl_object_lookup(e, "cancel")))
+				r->cancel = true;
+		if (top != NULL)
+			ucl_object_unref(top);
+	}
+	c = r->cancel;
+	pthread_mutex_unlock(&r->lock);
+	return (c);
+}
+
+static ucl_object_t *
+parse(const char *json)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+
+	if (json == NULL)
+		return (NULL);
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+	o = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	return (o);
+}
+
+/* A job of a step: queued, then followed until it ended. */
+static bool
+run_job(struct hostrun *hr, int k, const ucl_object_t *step)
+{
+	struct hoststep		*x = &hr->steps[k];
+	ucl_object_t		*job, *ans, *jr;
+	const char		*e, *st;
+	char			*json;
+	int			 status;
+	time_t			 until;
+	uint64_t		 id;
+	bool			 ok;
+
+	job = expand_obj(ucl_object_lookup(step, "job"), hr->run->params,
+	    &hr->h, hr->answers, hr->run->event);
+	json = hosts_submit(hr->h.uri, hr->h.peer, hr->h.name, job, &status,
+	    &e);
+	ucl_object_unref(job);
+	if (json == NULL) {
+		step_set(hr, k, "failed", "%s", e);
+		return (false);
+	}
+	ans = parse(json);
+	free(json);
+	if (status != 200 || ans == NULL || ucl_object_lookup(ans,
+	    "jobs") == NULL || (id = (uint64_t)ucl_object_toint(path_get(ans,
+	    "jobs.0.id"))) == 0) {
+		step_set(hr, k, "failed", "%s", ans != NULL && ucl_str(ans,
+		    "error") != NULL ? ucl_str(ans, "error") : ans != NULL &&
+		    ucl_object_lookup(ans, "error") != NULL ?
+		    ucl_object_tostring_forced(path_get(ans, "error.message")) :
+		    "the host did not take it");
+		if (ans != NULL)
+			ucl_object_unref(ans);
+		return (false);
+	}
+	pthread_mutex_lock(&hr->run->lock);
+	x->job = id;
+	snprintf(x->title, sizeof(x->title), "%s", ucl_object_tostring_forced(
+	    path_get(ans, "jobs.0.title")));
+	run_save(hr->run);
+	pthread_mutex_unlock(&hr->run->lock);
+	ucl_object_unref(ans);
+	until = time(NULL) + JOB_WAIT_S;
+	for (;;) {
+		usleep(JOB_POLL_US);
+		if ((json = hosts_job(hr->h.uri, hr->h.peer, hr->h.name, id,
+		    &status)) == NULL || (jr = parse(json)) == NULL) {
+			free(json);
+			if (time(NULL) > until) {
+				step_set(hr, k, "failed", "the host did not "
+				    "say how the job ended");
+				return (false);
+			}
+			continue;
+		}
+		st = ucl_object_tostring_forced(path_get(jr, "job.state"));
+		if (strcmp(st, "done") == 0 || strcmp(st, "failed") == 0 ||
+		    strcmp(st, "cancelled") == 0) {
+			ok = strcmp(st, "done") == 0;
+			pthread_mutex_lock(&hr->run->lock);
+			free(x->trace);
+			x->trace = strlen(json) < TRACE_MAX ? strdup(json) :
+			    NULL;
+			pthread_mutex_unlock(&hr->run->lock);
+			/* What it answered, for the steps after. */
+			ucl_object_insert_key(hr->answers, ucl_object_ref(jr),
+			    ucl_object_tostring(ucl_object_lookup(step, "id")),
+			    0, true);
+			step_set(hr, k, ok ? "done" : "failed", ok ? NULL : "%s",
+			    ok ? NULL : ucl_object_tostring_forced(path_get(jr,
+			    "job.error")));
+			ucl_object_unref(jr);
+			free(json);
+			return (ok);
+		}
+		ucl_object_unref(jr);
+		free(json);
+		if (cancelled(hr->run) || time(NULL) > until) {
+			step_set(hr, k, "cancelled", cancelled(hr->run) ?
+			    "stopped" : "it took more than an hour");
+			return (false);
+		}
+	}
+}
+
+/* A read of a step, kept for the steps after. */
+static bool
+run_read(struct hostrun *hr, int k, const ucl_object_t *step)
+{
+	ucl_object_t	*ans;
+	char		*json;
+	int		 status;
+
+	json = hosts_read(hr->h.uri, hr->h.peer, hr->h.name, ucl_str(step,
+	    "read"), &status);
+	ans = parse(json);
+	if (status != 200 || ans == NULL) {
+		step_set(hr, k, "failed", "the host did not answer");
+		free(json);
+		if (ans != NULL)
+			ucl_object_unref(ans);
+		return (false);
+	}
+	pthread_mutex_lock(&hr->run->lock);
+	free(hr->steps[k].trace);
+	hr->steps[k].trace = strlen(json) < TRACE_MAX ? strdup(json) : NULL;
+	pthread_mutex_unlock(&hr->run->lock);
+	free(json);
+	ucl_object_insert_key(hr->answers, ans, ucl_str(step, "id"), 0, true);
+	step_set(hr, k, "done", NULL);
+	return (true);
+}
+
+/* Is a step's condition met?  Its read made now, when it has one. */
+static bool
+condition(struct hostrun *hr, const ucl_object_t *when)
+{
+	const ucl_object_t	*root;
+	ucl_object_t		*ans;
+	char			*json, *path;
+	int			 status;
+	bool			 met;
+
+	ans = NULL;
+	if (ucl_str(when, "read") != NULL) {
+		json = hosts_read(hr->h.uri, hr->h.peer, hr->h.name,
+		    ucl_str(when, "read"), &status);
+		ans = parse(json);
+		free(json);
+		root = ans;
+	} else
+		root = ucl_object_lookup(hr->answers, ucl_str(when, "step"));
+	path = expand(ucl_str(when, "path") != NULL ? ucl_str(when, "path") :
+	    "", hr->run->params, &hr->h, hr->answers, hr->run->event);
+	met = test(path_get(root, path), ucl_str(when, "op"), ucl_str(when,
+	    "value"));
+	free(path);
+	if (ans != NULL)
+		ucl_object_unref(ans);
+	return (met);
+}
+
+static void *
+host_run(void *arg)
+{
+	struct hostrun		*hr = arg;
+	const ucl_object_t	*steps, *step, *when;
+	const char		*of;
+	int			 k, j, n;
+	bool			 ok, stopped;
+
+	steps = ucl_object_lookup(hr->run->wf, "steps");
+	n = hr->run->nsteps;
+	stopped = false;
+	for (k = 0; k < n; k++) {
+		step = ucl_array_find_index(steps, (unsigned int)k);
+		if (stopped || cancelled(hr->run)) {
+			step_set(hr, k, cancelled(hr->run) ? "cancelled" :
+			    "not run", NULL);
+			continue;
+		}
+		if ((when = ucl_object_lookup(step, "when")) != NULL &&
+		    !condition(hr, when)) {
+			step_set(hr, k, "skipped", NULL);
+			continue;
+		}
+		step_set(hr, k, "running", NULL);
+		ok = ucl_object_lookup(step, "job") != NULL ? run_job(hr, k,
+		    step) : run_read(hr, k, step);
+		if (ok)
+			continue;
+		of = ucl_str(step, "on_fail");
+		if (strcmp(of, "continue") == 0)
+			continue;
+		if (strcmp(of, "stop") == 0) {
+			stopped = true;
+			continue;
+		}
+		/* On at a later step: those between are not run. */
+		for (j = k + 1; j < n; j++) {
+			if (strcmp(ucl_str(ucl_array_find_index(steps,
+			    (unsigned int)j), "id"), of) == 0)
+				break;
+			step_set(hr, j, "not run", NULL);
+		}
+		k = j - 1;
+	}
+	pthread_mutex_lock(&hr->run->lock);
+	snprintf(hr->state, sizeof(hr->state), "%s", cancelled(hr->run) ?
+	    "cancelled" : stopped ? "failed" : "done");
+	for (k = 0; k < n && !stopped; k++)
+		if (strcmp(hr->steps[k].state, "failed") == 0)
+			snprintf(hr->state, sizeof(hr->state), "failed");
+	run_save(hr->run);
+	pthread_mutex_unlock(&hr->run->lock);
+	return (NULL);
+}
+
+static int		 nrunning;
+static pthread_mutex_t	 running_lock = PTHREAD_MUTEX_INITIALIZER;
+static char		 running_wf[64][9];	/* those running now */
+
+static void *
+run_main(void *arg)
+{
+	struct run	*r = arg;
+	int		 i, k;
+	bool		 failed;
+
+	for (i = 0; i < r->nhosts; i++)
+		r->hosts[i].started = pthread_create(&r->hosts[i].thread,
+		    NULL, host_run, &r->hosts[i]) == 0;
+	for (i = 0; i < r->nhosts; i++)
+		if (r->hosts[i].started)
+			(void)pthread_join(r->hosts[i].thread, NULL);
+		else
+			snprintf(r->hosts[i].state, sizeof(r->hosts[i].state),
+			    "failed");
+	failed = false;
+	for (i = 0; i < r->nhosts; i++)
+		failed = failed || strcmp(r->hosts[i].state, "done") != 0;
+	pthread_mutex_lock(&r->lock);
+	snprintf(r->state, sizeof(r->state), "%s", r->cancel ? "cancelled" :
+	    failed ? "failed" : "done");
+	r->ended = time(NULL);
+	run_save(r);
+	pthread_mutex_unlock(&r->lock);
+	kore_log(LOG_NOTICE, "workflow %s, run %u: %s",
+	    ucl_str(r->wf, "name"), r->id, r->state);
+	pthread_mutex_lock(&running_lock);
+	for (k = 0; k < 64; k++)
+		if (strcmp(running_wf[k], ucl_str(r->wf, "id")) == 0) {
+			running_wf[k][0] = '\0';
+			break;
+		}
+	nrunning--;
+	pthread_mutex_unlock(&running_lock);
+	for (i = 0; i < r->nhosts; i++) {
+		for (k = 0; k < r->nsteps; k++)
+			free(r->hosts[i].steps[k].trace);
+		ucl_object_unref(r->hosts[i].answers);
+	}
+	ucl_object_unref(r->wf);
+	ucl_object_unref(r->params);
+	if (r->event != NULL)
+		ucl_object_unref(r->event);
+	pthread_mutex_destroy(&r->lock);
+	free(r);
+	return (NULL);
+}
+
+static bool
+wf_running(const char *id)
+{
+	int	k;
+	bool	yes;
+
+	yes = false;
+	pthread_mutex_lock(&running_lock);
+	for (k = 0; k < 64 && !yes; k++)
+		yes = strcmp(running_wf[k], id) == 0;
+	pthread_mutex_unlock(&running_lock);
+	return (yes);
+}
+
+/*
+ * A run of wf begun on its hosts, or on hosts when given; params over
+ * the defaults; event what began it.  Its number, or 0 and why.
+ */
+static uint32_t
+run_start(const ucl_object_t *wf, const ucl_object_t *hosts,
+    const ucl_object_t *params, const ucl_object_t *event,
+    const char *trigger, const char **whyp)
+{
+	struct run		*r;
+	const ucl_object_t	*v, *p;
+	ucl_object_iter_t	 it;
+	pthread_t		 tid;
+	int			 k;
+
+	if (hosts == NULL || ucl_array_size(hosts) == 0)
+		hosts = ucl_object_lookup(wf, "hosts");
+	if (ucl_array_size(hosts) == 0) {
+		*whyp = "no host to run on";
+		return (0);
+	}
+	if ((r = calloc(1, sizeof(*r))) == NULL) {
+		*whyp = "out of memory";
+		return (0);
+	}
+	pthread_mutex_init(&r->lock, NULL);
+	r->wf = ucl_object_copy(wf);
+	r->nsteps = (int)ucl_array_size(ucl_object_lookup(wf, "steps"));
+	/* The parameters: what was given, else each one's default. */
+	r->params = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((p = ucl_object_iterate(ucl_object_lookup(wf, "params"), &it,
+	    true)) != NULL) {
+		v = ucl_object_lookup(params, ucl_str(p, "name"));
+		put(r->params, ucl_str(p, "name"), ucl_object_fromstring(v !=
+		    NULL ? ucl_object_tostring_forced(v) : ucl_str(p,
+		    "default")));
+	}
+	r->event = event != NULL ? ucl_object_copy(event) : NULL;
+	snprintf(r->trigger, sizeof(r->trigger), "%s", trigger);
+	snprintf(r->state, sizeof(r->state), "running");
+	r->started = time(NULL);
+	arc4random_buf(&r->id, sizeof(r->id));
+	r->id &= 0x7fffffff;
+	it = NULL;
+	while ((v = ucl_object_iterate(hosts, &it, true)) != NULL &&
+	    r->nhosts < RUN_HOSTS_MAX) {
+		struct hostrun	*hr = &r->hosts[r->nhosts];
+
+		if (!ref_get(ucl_object_tostring_forced(v), &hr->h))
+			continue;
+		hr->run = r;
+		hr->answers = ucl_object_typed_new(UCL_OBJECT);
+		snprintf(hr->state, sizeof(hr->state), "running");
+		for (k = 0; k < r->nsteps; k++)
+			snprintf(hr->steps[k].state, sizeof(hr->steps[k].state),
+			    "pending");
+		r->nhosts++;
+	}
+	if (r->nhosts == 0) {
+		ucl_object_unref(r->wf);
+		ucl_object_unref(r->params);
+		if (r->event != NULL)
+			ucl_object_unref(r->event);
+		free(r);
+		*whyp = "none of its hosts is a server now";
+		return (0);
+	}
+	pthread_mutex_lock(&running_lock);
+	if (nrunning >= 64) {
+		pthread_mutex_unlock(&running_lock);
+		*whyp = "64 runs at once at most";
+		goto fail;
+	}
+	nrunning++;
+	for (k = 0; k < 64; k++)
+		if (running_wf[k][0] == '\0') {
+			snprintf(running_wf[k], sizeof(running_wf[k]), "%s",
+			    ucl_str(wf, "id"));
+			break;
+		}
+	pthread_mutex_unlock(&running_lock);
+	pthread_mutex_lock(&r->lock);
+	run_save(r);
+	pthread_mutex_unlock(&r->lock);
+	if (pthread_create(&tid, NULL, run_main, r) != 0) {
+		*whyp = "no thread for it";
+		pthread_mutex_lock(&running_lock);
+		nrunning--;
+		pthread_mutex_unlock(&running_lock);
+		goto fail;
+	}
+	(void)pthread_detach(tid);
+	return (r->id);
+fail:
+	for (k = 0; k < r->nhosts; k++)
+		ucl_object_unref(r->hosts[k].answers);
+	ucl_object_unref(r->wf);
+	ucl_object_unref(r->params);
+	if (r->event != NULL)
+		ucl_object_unref(r->event);
+	free(r);
+	return (0);
+}
+
+/* ---- By itself: at intervals, on events ---------------------------- */
+
+struct watched {
+	char		 sid[9];
+	uint64_t	 last;		/* the newest event seen */
+	bool		 known;		/* last is what it says */
+	bool		 down;
+	bool		 jails_known;
+	ucl_object_t	*jails;		/* name: state, as last seen */
+};
+
+static struct watched	watched[256];
+static int		nwatched;
+
+static struct watched *
+watched_of(const char *sid)
+{
+	int	i;
+
+	for (i = 0; i < nwatched; i++)
+		if (strcmp(watched[i].sid, sid) == 0)
+			return (&watched[i]);
+	if (nwatched == (int)nitems(watched))
+		return (NULL);
+	memset(&watched[nwatched], 0, sizeof(watched[0]));
+	snprintf(watched[nwatched].sid, sizeof(watched[0].sid), "%s", sid);
+	return (&watched[nwatched++]);
+}
+
+/* Does an event match a trigger: its name, and each of match's? */
+static bool
+matches(const ucl_object_t *on, const char *kind, const ucl_object_t *data)
+{
+	const ucl_object_t	*m, *v;
+	ucl_object_iter_t	 it;
+
+	if (strcmp(ucl_str(on, "event"), kind) != 0)
+		return (false);
+	it = NULL;
+	while ((m = ucl_object_iterate(ucl_object_lookup(on, "match"), &it,
+	    true)) != NULL) {
+		v = ucl_object_lookup(data, ucl_object_key(m));
+		if (v == NULL || strcmp(ucl_object_tostring_forced(v),
+		    ucl_object_tostring_forced(m)) != 0)
+			return (false);
+	}
+	return (true);
+}
+
+/* An event on a host: each workflow it begins runs there. */
+static void
+fire(const ucl_object_t *wfs, const char *sid, const char *kind,
+    const ucl_object_t *data)
+{
+	const ucl_object_t	*w, *on, *h;
+	ucl_object_iter_t	 it, oit, hit;
+	ucl_object_t		*hosts, *ev;
+	const char		*why;
+	char			 trig[64];
+	bool			 mine;
+
+	it = NULL;
+	while ((w = ucl_object_iterate(wfs, &it, true)) != NULL) {
+		mine = false;
+		hit = NULL;
+		while ((h = ucl_object_iterate(ucl_object_lookup(w, "hosts"),
+		    &hit, true)) != NULL)
+			mine = mine || strcmp(ucl_object_tostring_forced(h),
+			    sid) == 0;
+		if (!mine || wf_running(ucl_str(w, "id")))
+			continue;
+		oit = NULL;
+		while ((on = ucl_object_iterate(ucl_object_lookup(w, "on"),
+		    &oit, true)) != NULL) {
+			if (!matches(on, kind, data))
+				continue;
+			hosts = ucl_object_typed_new(UCL_ARRAY);
+			ucl_array_append(hosts, ucl_object_fromstring(sid));
+			/* host-down and host-up have nothing but what they are. */
+			ev = data != NULL ? ucl_object_copy(data) :
+			    ucl_object_typed_new(UCL_OBJECT);
+			put(ev, "kind", ucl_object_fromstring(kind));
+			put(ev, "host", ucl_object_fromstring(sid));
+			snprintf(trig, sizeof(trig), "event %s", kind);
+			(void)run_start(w, hosts, NULL, ev, trig, &why);
+			ucl_object_unref(hosts);
+			ucl_object_unref(ev);
+			break;
+		}
+	}
+}
+
+/* What a host said since it was last looked at, and how it answers. */
+static void
+watch(const ucl_object_t *wfs, const char *sid, bool jails)
+{
+	struct watched		*x;
+	struct hostref		 h;
+	ucl_object_t		*ans, *now;
+	const ucl_object_t	*e, *j, *was;
+	ucl_object_iter_t	 it;
+	char			*json;
+	int			 status;
+	uint64_t		 n;
+
+	if ((x = watched_of(sid)) == NULL || !ref_get(sid, &h))
+		return;
+	json = hosts_events(h.uri, h.peer, h.name, x->known ? x->last : 0,
+	    &status);
+	ans = parse(json);
+	free(json);
+	if (status != 200 || ans == NULL) {
+		if (ans != NULL)
+			ucl_object_unref(ans);
+		if (!x->down) {
+			x->down = true;
+			fire(wfs, sid, "host-down", NULL);
+		}
+		return;
+	}
+	if (x->down) {
+		x->down = false;
+		fire(wfs, sid, "host-up", NULL);
+	}
+	/* The first look only says where the events are. */
+	it = NULL;
+	while ((e = ucl_object_iterate(path_get(ans, "data.events"), &it,
+	    true)) != NULL) {
+		n = (uint64_t)ucl_object_toint(ucl_object_lookup(e, "n"));
+		if (x->known && n > x->last)
+			fire(wfs, sid, ucl_object_tostring_forced(
+			    ucl_object_lookup(e, "kind")), ucl_object_lookup(e,
+			    "data"));
+	}
+	if (path_get(ans, "data.last") != NULL)
+		x->last = (uint64_t)ucl_object_toint(path_get(ans, "data.last"));
+	x->known = true;
+	ucl_object_unref(ans);
+	if (!jails)
+		return;
+	/* A jail whose state is not what it was: jail-state. */
+	json = hosts_read(h.uri, h.peer, h.name, "jails", &status);
+	ans = parse(json);
+	free(json);
+	if (status != 200 || ans == NULL) {
+		if (ans != NULL)
+			ucl_object_unref(ans);
+		return;
+	}
+	now = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((j = ucl_object_iterate(ucl_object_lookup(ans, "jails"), &it,
+	    true)) != NULL) {
+		const char	*name = ucl_str(j, "name");
+		const char	*st = ucl_str(j, "state");
+
+		if (name == NULL || st == NULL)
+			continue;
+		put(now, name, ucl_object_fromstring(st));
+		was = x->jails != NULL ? ucl_object_lookup(x->jails, name) :
+		    NULL;
+		if (x->jails_known && (was == NULL || strcmp(
+		    ucl_object_tostring_forced(was), st) != 0)) {
+			ucl_object_t	*d = ucl_object_typed_new(UCL_OBJECT);
+
+			put(d, "jail", ucl_object_fromstring(name));
+			put(d, "state", ucl_object_fromstring(st));
+			if (was != NULL)
+				put(d, "was", ucl_object_fromstring(
+				    ucl_object_tostring_forced(was)));
+			fire(wfs, sid, "jail-state", d);
+			ucl_object_unref(d);
+		}
+	}
+	if (x->jails != NULL)
+		ucl_object_unref(x->jails);
+	x->jails = now;
+	x->jails_known = true;
+	ucl_object_unref(ans);
+}
+
+static void *
+scheduler(void *arg __unused)
+{
+	ucl_object_t		*top;
+	const ucl_object_t	*w, *h, *on;
+	ucl_object_iter_t	 it, hit, oit;
+	struct {
+		char	id[9];
+		time_t	last;
+	}			 due[WF_MAX];
+	int			 ndue, k;
+	time_t			 now;
+	const char		*why;
+	char			 sids[256][9];
+	bool			 sjails[256];
+	int			 nsids, s;
+
+	ndue = 0;
+	for (;;) {
+		sleep(TICK_S);
+		pthread_mutex_lock(&wf_lock);
+		top = wf_load();
+		pthread_mutex_unlock(&wf_lock);
+		now = time(NULL);
+		nsids = 0;
+		it = NULL;
+		while ((w = ucl_object_iterate(ucl_object_lookup(top,
+		    "workflows"), &it, true)) != NULL) {
+			int64_t	every;
+
+			every = ucl_object_toint(ucl_object_lookup(w, "every"));
+			if (every > 0) {
+				for (k = 0; k < ndue; k++)
+					if (strcmp(due[k].id, ucl_str(w, "id")) ==
+					    0)
+						break;
+				if (k == ndue && ndue < WF_MAX) {
+					/* Counted from when it was first seen. */
+					snprintf(due[k].id, sizeof(due[k].id), "%s",
+					    ucl_str(w, "id"));
+					due[k].last = now;
+					ndue++;
+				} else if (k < ndue && now - due[k].last >= every &&
+				    !wf_running(ucl_str(w, "id"))) {
+					due[k].last = now;
+					(void)run_start(w, NULL, NULL, NULL,
+					    "every", &why);
+				}
+			}
+			/* The hosts whose events it waits for. */
+			if (ucl_array_size(ucl_object_lookup(w, "on")) == 0)
+				continue;
+			hit = NULL;
+			while ((h = ucl_object_iterate(ucl_object_lookup(w,
+			    "hosts"), &hit, true)) != NULL) {
+				for (s = 0; s < nsids; s++)
+					if (strcmp(sids[s],
+					    ucl_object_tostring_forced(h)) == 0)
+						break;
+				if (s == nsids && nsids < 256) {
+					snprintf(sids[nsids], sizeof(sids[0]),
+					    "%s", ucl_object_tostring_forced(h));
+					sjails[nsids++] = false;
+				}
+				oit = NULL;
+				while ((on = ucl_object_iterate(
+				    ucl_object_lookup(w, "on"), &oit, true)) !=
+				    NULL)
+					if (strcmp(ucl_str(on, "event"),
+					    "jail-state") == 0)
+						sjails[s] = true;
+			}
+		}
+		for (s = 0; s < nsids; s++)
+			watch(ucl_object_lookup(top, "workflows"), sids[s],
+			    sjails[s]);
+		ucl_object_unref(top);
+	}
+	return (NULL);
+}
+
+static void
+refs_tick(void *arg __unused, uint64_t now __unused)
+{
+
+	refs_copy();
+}
+
+/*
+ * At the worker's start: the servers copied, and copied again every
+ * few seconds; runs a restart cut said to be interrupted; and the one
+ * worker that takes the lock watches for what runs by itself.
+ */
+void
+workflows_init(void)
+{
+	ucl_object_t		*top;
+	ucl_object_t		*o;
+	ucl_object_iter_t	 it;
+	pthread_t		 tid;
+	char			 path[MAXPATHLEN];
+	bool			 changed;
+
+	refs_copy();
+	(void)kore_timer_add(refs_tick, 2000, NULL, 0);
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, WF_LOCK);
+	if ((lockfd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600)) == -1 ||
+	    flock(lockfd, LOCK_EX | LOCK_NB) == -1) {
+		if (lockfd != -1)
+			close(lockfd);
+		lockfd = -1;
+		return;
+	}
+	/* This worker is the one: what a restart cut was cut. */
+	if ((top = store_load(RUNS_FILE)) != NULL) {
+		changed = false;
+		it = NULL;
+		while ((o = (ucl_object_t *)(uintptr_t)ucl_object_iterate(
+		    ucl_object_lookup(top, "runs"), &it, true)) != NULL)
+			if (ucl_str(o, "state") != NULL && strcmp(ucl_str(o,
+			    "state"), "running") == 0) {
+				put(o, "state", ucl_object_fromstring(
+				    "interrupted"));
+				changed = true;
+			}
+		if (changed)
+			(void)store_save(RUNS_FILE, top);
+		ucl_object_unref(top);
+	}
+	if (pthread_create(&tid, NULL, scheduler, NULL) == 0)
+		(void)pthread_detach(tid);
+}
+
+/* ---- The API --------------------------------------------------------- */
+
+static int
+reply_list(struct http_request *req, const char *file, const char *key,
+    bool traces)
+{
+	ucl_object_t		*top, *out, *arr, *c;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	pthread_mutex_lock(&wf_lock);
+	top = store_load(file);
+	pthread_mutex_unlock(&wf_lock);
+	out = ucl_object_typed_new(UCL_OBJECT);
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while (top != NULL && (e = ucl_object_iterate(ucl_object_lookup(top,
+	    key), &it, true)) != NULL) {
+		c = ucl_object_copy(e);
+		/* The list without each step's trace: one run has them. */
+		if (!traces) {
+			const ucl_object_t	*h, *s;
+			ucl_object_iter_t	 hit, sit;
+
+			hit = NULL;
+			while ((h = ucl_object_iterate(ucl_object_lookup(c,
+			    "hosts"), &hit, true)) != NULL) {
+				sit = NULL;
+				while ((s = ucl_object_iterate(
+				    ucl_object_lookup(h, "steps"), &sit,
+				    true)) != NULL)
+					(void)ucl_object_delete_key(
+					    (ucl_object_t *)(uintptr_t)s,
+					    "trace");
+			}
+		}
+		ucl_array_append(arr, c);
+	}
+	if (top != NULL)
+		ucl_object_unref(top);
+	put(out, key, arr);
+	return (reply_json(req, 200, out));
+}
+
+int
+api_workflows(struct http_request *req)
+{
+	ucl_object_t		*body, *w, *top, *keep, *hosts, *params;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*why, *id, *p;
+	char			 wid[9], buf[64];
+	uint32_t		 n;
+	bool			 found;
+
+	refs_copy();
+	if (req->method == HTTP_METHOD_GET) {
+		if (!guard(req, false))
+			return (KORE_RESULT_OK);
+		return (reply_list(req, WF_FILE, "workflows", true));
+	}
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	/* /api/workflows/<id>[/run] */
+	wid[0] = '\0';
+	if (strncmp(req->path, "/api/workflows/", 15) == 0)
+		snprintf(wid, sizeof(wid), "%.8s", req->path + 15);
+	if (req->method == HTTP_METHOD_POST && (p = strstr(req->path,
+	    "/run")) != NULL && p[4] == '\0') {
+		if ((w = wf_find(wid)) == NULL)
+			return (reply_error(req, 404, "not-found", "no such "
+			    "workflow"));
+		body = read_json(req);
+		hosts = body != NULL ? (ucl_object_t *)(uintptr_t)
+		    ucl_object_lookup(body, "hosts") : NULL;
+		params = body != NULL ? (ucl_object_t *)(uintptr_t)
+		    ucl_object_lookup(body, "params") : NULL;
+		it = NULL;
+		while ((e = ucl_object_iterate(hosts, &it, true)) != NULL) {
+			struct hostref	h;
+
+			if (!ref_get(ucl_object_tostring_forced(e), &h)) {
+				ucl_object_unref(w);
+				ucl_object_unref(body);
+				return (reply_error(req, 404, "not_found",
+				    "no such server"));
+			}
+		}
+		n = run_start(w, hosts, params, NULL, "hand", &why);
+		ucl_object_unref(w);
+		if (body != NULL)
+			ucl_object_unref(body);
+		if (n == 0)
+			return (reply_error(req, 409, "not-run", "%s", why));
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, "run", ucl_object_fromint(n));
+		return (reply_json(req, 200, top));
+	}
+	pthread_mutex_lock(&wf_lock);
+	top = wf_load();
+	if (req->method == HTTP_METHOD_DELETE) {
+		keep = ucl_object_typed_new(UCL_ARRAY);
+		found = false;
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(top,
+		    "workflows"), &it, true)) != NULL)
+			if (strcmp(ucl_str(e, "id"), wid) == 0)
+				found = true;
+			else
+				ucl_array_append(keep, ucl_object_copy(e));
+		put(top, "workflows", keep);
+		if (found)
+			(void)store_save(WF_FILE, top);
+		pthread_mutex_unlock(&wf_lock);
+		ucl_object_unref(top);
+		if (!found)
+			return (reply_error(req, 404, "not-found", "no such "
+			    "workflow"));
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, "ok", ucl_object_frombool(true));
+		return (reply_json(req, 200, top));
+	}
+	pthread_mutex_unlock(&wf_lock);
+	ucl_object_unref(top);
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "invalid", "a workflow, as JSON"));
+	w = wf_check(body, &why);
+	ucl_object_unref(body);
+	if (w == NULL)
+		return (reply_error(req, 400, "invalid", "%s", why));
+	/* In its place, or as the newest. */
+	pthread_mutex_lock(&wf_lock);
+	top = wf_load();
+	keep = ucl_object_typed_new(UCL_ARRAY);
+	found = false;
+	id = ucl_str(w, "id");
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(top, "workflows"),
+	    &it, true)) != NULL) {
+		if (strcmp(ucl_str(e, "id"), id) == 0) {
+			ucl_array_append(keep, ucl_object_ref(w));
+			found = true;
+		} else
+			ucl_array_append(keep, ucl_object_copy(e));
+	}
+	if (!found && ucl_array_size(keep) >= WF_MAX) {
+		pthread_mutex_unlock(&wf_lock);
+		ucl_object_unref(keep);
+		ucl_object_unref(top);
+		ucl_object_unref(w);
+		snprintf(buf, sizeof(buf), "%d workflows at most", WF_MAX);
+		return (reply_error(req, 409, "full", "%s", buf));
+	}
+	if (!found)
+		ucl_array_append(keep, ucl_object_ref(w));
+	put(top, "workflows", keep);
+	(void)store_save(WF_FILE, top);
+	pthread_mutex_unlock(&wf_lock);
+	ucl_object_unref(top);
+	return (reply_json(req, 200, w));
+}
+
+int
+api_runs(struct http_request *req)
+{
+	ucl_object_t		*top, *one;
+	ucl_object_t		*e;
+	ucl_object_iter_t	 it;
+	uint32_t		 n;
+	bool			 all;
+
+	all = strcmp(req->path, "/api/runs") == 0;
+	if (req->method == HTTP_METHOD_GET) {
+		if (!guard(req, false))
+			return (KORE_RESULT_OK);
+		if (all)
+			return (reply_list(req, RUNS_FILE, "runs", false));
+	} else if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	n = (uint32_t)strtoul(strrchr(req->path, '/') + 1, NULL, 10);
+	pthread_mutex_lock(&wf_lock);
+	top = store_load(RUNS_FILE);
+	one = NULL;
+	it = NULL;
+	while (top != NULL && (e = (ucl_object_t *)(uintptr_t)
+	    ucl_object_iterate(ucl_object_lookup(top, "runs"), &it, true)) !=
+	    NULL)
+		if ((uint32_t)ucl_object_toint(ucl_object_lookup(e, "id")) == n)
+			one = e;
+	if (one == NULL) {
+		pthread_mutex_unlock(&wf_lock);
+		if (top != NULL)
+			ucl_object_unref(top);
+		return (reply_error(req, 404, "not-found", "no such run"));
+	}
+	if (req->method == HTTP_METHOD_DELETE) {
+		/* A stop: the run's threads see it when they write next. */
+		if (strcmp(ucl_str(one, "state"), "running") != 0) {
+			pthread_mutex_unlock(&wf_lock);
+			ucl_object_unref(top);
+			return (reply_error(req, 409, "ended", "it ended"));
+		}
+		put(one, "cancel", ucl_object_frombool(true));
+		(void)store_save(RUNS_FILE, top);
+		pthread_mutex_unlock(&wf_lock);
+		ucl_object_unref(top);
+		top = ucl_object_typed_new(UCL_OBJECT);
+		put(top, "ok", ucl_object_frombool(true));
+		return (reply_json(req, 200, top));
+	}
+	one = ucl_object_ref(one);
+	pthread_mutex_unlock(&wf_lock);
+	ucl_object_unref(top);
+	return (reply_json(req, 200, one));
+}

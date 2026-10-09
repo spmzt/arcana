@@ -184,10 +184,11 @@ topbar(struct html *h)
 	}
 	h_raw(h, "</div><nav class=\"crumbs\">");
 	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
-	    NODE_API || app.node == NODE_USAGE)
+	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
-		    app.node == NODE_USAGE ? "Utilization" : "All hosts");
+		    app.node == NODE_USAGE ? "Utilization" : app.node ==
+		    NODE_WORKFLOWS ? "Workflows" : "All hosts");
 	else if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
 		h_txt(h, s->name);
@@ -383,6 +384,7 @@ rail(struct html *h)
 	    " open" : "", app.rail_open ? "▴" : "▾");
 	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
 	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
+	    NODE_WORKFLOWS ? "Workflows" : app.node ==
 	    NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
@@ -401,9 +403,12 @@ rail(struct html *h)
 	    "<span class=\"twig\">⌬</span><span class=\"name\">Network</span>"
 	    "</li><li class=\"titem fleet usagenode%s\" data-act=\""
 	    "select-usage\"><span class=\"twig\">◔</span><span class=\"name\">"
-	    "Utilization</span></li>", app.node == NODE_FLEET ? " selected" :
-	    "", app.nservers, app.node == NODE_NETWORK ? " selected" : "",
-	    app.node == NODE_USAGE ? " selected" : "");
+	    "Utilization</span></li><li class=\"titem fleet wfnode%s\" "
+	    "data-act=\"select-workflows\"><span class=\"twig\">⛓</span>"
+	    "<span class=\"name\">Workflows</span></li>", app.node ==
+	    NODE_FLEET ? " selected" : "", app.nservers, app.node ==
+	    NODE_NETWORK ? " selected" : "", app.node == NODE_USAGE ?
+	    " selected" : "", app.node == NODE_WORKFLOWS ? " selected" : "");
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
@@ -840,6 +845,11 @@ stage(struct html *h)
 		h_raw(h, "</main>");
 		return;
 	}
+	if (app.node == NODE_WORKFLOWS) {
+		view_workflows(h);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (app.node == NODE_JAIL) {
 		jail_page(h);
 		h_raw(h, "</main>");
@@ -1209,7 +1219,10 @@ dock(struct html *h)
 	if (app.nbatch > 0)
 		h_fmt(h, "<button class=\"primary small\" data-act=\"queue-run\">"
 		    "Run %d</button><button class=\"ghost small\" "
-		    "data-act=\"queue-clear\">Clear</button>", app.nbatch);
+		    "data-act=\"queue-clear\">Clear</button><button class=\""
+		    "ghost small\" data-act=\"queue-to-wf\" title=\"What waits "
+		    "here, kept as a workflow\">As a workflow</button>",
+		    app.nbatch);
 	h_fmt(h, "<span class=\"chev\">%s</span></header>",
 	    app.dock_open ? "▾" : "▴");
 	if (app.dock_open) {
@@ -1436,6 +1449,10 @@ modal(struct html *h)
 			h_fmt(h, " value=\"%d\"", app.net.fib);
 		h_raw(h, " placeholder=\"0\"><small>The table the route goes "
 		    "into; 0 is the first.</small></label></div>");
+		break;
+	case MODAL_WF_RUN:
+		if (!workflows_modal(h))
+			return;
 		break;
 	case MODAL_PKG_INSTALL:
 		if (cur_server() == NULL)
@@ -1863,6 +1880,9 @@ modal(struct html *h)
 			break;
 		case MODAL_PKG_INSTALL:
 			h_raw(h, "<button class=\"primary\">Install</button>");
+			break;
+		case MODAL_WF_RUN:
+			h_raw(h, "<button class=\"primary\">Run</button>");
 			break;
 		case MODAL_BIRD_PROTO:
 		case MODAL_BIRD_BLOCK:

@@ -292,6 +292,14 @@ server_find(const char *id)
 	return (NULL);
 }
 
+/* The i-th server, or NULL past the last: to go through them. */
+const struct server *
+server_at(int i)
+{
+
+	return (i >= 0 && i < nservers ? &servers[i] : NULL);
+}
+
 static ucl_object_t *
 server_object(const struct server *s)
 {

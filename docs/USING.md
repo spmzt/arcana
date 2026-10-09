@@ -22,6 +22,35 @@ The console is laid out as a tree and tabs.
   jails run, and the fleet as a graph from the console through the
   hosts to their jails; nodes are links.
 - **Network**: the fleet as a map; see [The network](#the-network).
+- **Workflows**: chains of steps the console keeps and runs on
+  several hosts at once. A step is a job of any kind, its fields
+  those `share/arcana/jobs.yaml` says the kind needs (marked) and
+  uses, with a choice where a field is one of a few; or a read of the
+  host (hello, jails, services, stats, events, history, packages)
+  whose answer a later step looks at. **Only when…** puts a condition
+  before a step: a read made then, or what an earlier step answered,
+  a path in it (`jails[name=web].state`, `host.hostname`) and a test
+  (eq, ne, contains, gt, lt, exists, missing); a step whose condition
+  fails is skipped. **When it fails** the host's run stops, goes on,
+  or goes on at a later step, those between not run. A value may be
+  `${param.NAME}`, asked for when it runs with its default offered,
+  `${host.id}` or `${host.name}`, `${step.ID.PATH}`, what an earlier
+  step answered, or `${event.PATH}`, of the event that began the run.
+  A workflow runs by hand (**Run**, on the hosts picked), **every** so
+  many seconds, or **on** events: those the console sees itself, a
+  host that stopped answering (`host-down`), that answers again
+  (`host-up`), a jail whose state changed (`jail-state`), and those the
+  host tells (`threshold`, `kmsg`, `link` and the rest), each with what
+  it must match (`what=mem`); an event's run is on the host it happened
+  on. One that runs by itself may hold a step that destroys (a dataset
+  destroyed, an interface, a partition table) only when **It may
+  destroy, by itself** says so. Each run is listed with what began it
+  and how each host's went; a run is drawn as its chain, a row for each
+  host, each step coloured by how it went, and a step picked shows its
+  trace. What waits in the queue becomes a workflow with **As a
+  workflow**. The console keeps the workflows in `workflows.json` and
+  the last 30 runs in `runs.json`; what runs by itself is started by
+  one worker of the console's, the one holding `workflows.lock`.
 - **Utilization**: how busy every host has been, as lines over the
   last five minutes, quarter of an hour, hour, or all that is kept.
   Each agent looks at its host by itself, every five seconds and an
