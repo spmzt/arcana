@@ -2819,6 +2819,11 @@ svg.topo.linking .tnode.target:hover .box {
 	stroke: var(--bg);
 	stroke-width: 3px;
 }
+svg.topo .tlink .lbl.end { font-size: 9px; fill: var(--fg); }
+svg.topo.no-names .tlink .lbl, svg.topo.no-rates .tlink .rate { visibility: hidden; }
+svg.topo .tlink .hit { cursor: grab; }
+.map-labels .sep { width: 1px; align-self: stretch; margin: 0 .2rem; background: var(--line, rgba(127,127,127,.35)); }
+.map-labels button.what::before { display: none; }
 .tlink .rate {
 	font-size: 9px;
 	text-anchor: middle;

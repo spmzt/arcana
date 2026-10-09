@@ -2628,7 +2628,7 @@ ATF_TC_BODY(pwa, tc)
 	/* Labels, kind by kind: the shared networks' left out, the others
 	 * as they were. */
 	click_at(".map-tools button[data-act=topo-labels]");
-	wait_js("document.querySelectorAll('.map-labels button').length === 6",
+	wait_js("document.querySelectorAll('.map-labels button').length === 8",
 	    5);
 	run("window.otherQuiet = [...document.querySelectorAll('svg.topo "
 	    ".tlink:not(.lan)')].map(g => g.classList.contains('quiet'))"
@@ -2646,6 +2646,43 @@ ATF_TC_BODY(pwa, tc)
 	    "=> g.classList.contains('quiet'))", 5);
 	click_at(".map-tools button[data-act=topo-labels]");
 	wait_js("!document.querySelector('.map-labels')", 5);
+	/* On no line is its name written over its rate. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('svg.topo g.tlink')]"
+	    ".every(g => { const r = g.querySelector('.rate'); if (!r) "
+	    "return true; const b = r.getBBox(); return [...g.querySelectorAll("
+	    "'.lbl')].every(l => { const a = l.getBBox(); return a.x + a.width "
+	    "<= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + "
+	    "b.height <= a.y; }); })"));
+	/* A line dragged aside bends to the pointer, and stays so. */
+	{
+		double	x0, y0;
+		int	step;
+
+		run("window.d0 = document.querySelector('svg.topo g.tlink.lan "
+		    ".wire').getAttribute('d')");
+		x0 = js_num("(p => { const l = p.getTotalLength(), m = p."
+		    "getPointAtLength(l / 2), c = p.getScreenCTM(); return m.x "
+		    "* c.a + c.e; })(document.querySelector('svg.topo g.tlink."
+		    "lan .hit'))");
+		y0 = js_num("(p => { const l = p.getTotalLength(), m = p."
+		    "getPointAtLength(l / 2), c = p.getScreenCTM(); return m.y "
+		    "* c.d + c.f; })(document.querySelector('svg.topo g.tlink."
+		    "lan .hit'))");
+		mouse("pointerMove", x0, y0);
+		mouse("pointerDown", 0, 0);
+		for (step = 1; step <= 6; step++) {
+			mouse("pointerMove", x0 + step, y0 + 12 * step);
+			usleep(150000);
+		}
+		mouse("pointerUp", 0, 0);
+		wait_js("document.querySelector('svg.topo g.tlink.lan .wire')"
+		    ".getAttribute('d') !== window.d0 && (localStorage."
+		    "getItem('arc_topo_bends') || '').length > 0", 5);
+		shot("8b-bent");
+		run("document.querySelector('button[data-act=topo-arrange]')"
+		    ".click()");
+		wait_js("!(localStorage.getItem('arc_topo_bends') || '')", 5);
+	}
 	/*
 	 * A host dragged by the mouse stays under it, all the way, and
 	 * while the map reads the hosts again: taken by its middle, its

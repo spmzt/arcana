@@ -771,12 +771,19 @@ works the links out.
   phone two fingers do. **Fit** shows every host, **Arrange** puts them
   back on a circle. Once the map was moved or zoomed it is not fitted
   again unasked, so nothing shifts under the hand.
-- **Labels** opens a switch for each kind of line: tunnels, point to
-  point links, shared networks, BGP, OSPF and jails. Each says whether
-  that kind's lines have their names and rates written on them. Until
-  one is switched, a kind with more than six lines has its labels left
-  out, and a line then shows its own when the pointer is on it or it
-  is picked.
+- On a tunnel or a point to point link, each end's interface is
+  written at its own end, just past the host, and what it carries in
+  the middle; another kind of line has its name above the middle and
+  its rate below.
+- **Labels** opens the switches of what is written: **Names** and
+  **Rates** apart, and one for each kind of line (tunnels, point to
+  point links, shared networks, BGP, OSPF and jails). Until a kind is
+  switched, a kind with more than six lines has its labels left out,
+  and a line then shows its own when the pointer is on it or it is
+  picked.
+- A line is **dragged** to bend it away from the lines beside it; the
+  browser keeps the bend, and **Arrange** straightens every line
+  again.
 - The **legend** names the kinds of lines, and each is picked to take
   that kind out of the map and to put it back: tunnels, point to point
   links, shared networks, BGP and OSPF with their neighbours outside,
