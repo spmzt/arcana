@@ -215,7 +215,9 @@ What was once in the list above, and when it was run:
   over IPv4 and an ipsec(4) interface with its reqid in tunnel mode
   over IPv6, pings through both and their SAs read back with their
   counters; OSPFv3 Full and BFD Up over both, as the BIRD reading
-  says them. A GRE or gif tunnel with IPv6 ends was found to have
+  says them. The jails had no allow.raw_sockets, and the agent saw
+  the kernel's IPsec (ipsec.ko, loaded on the host) from them. A GRE
+  or gif tunnel with IPv6 ends was found to have
   been made without its ends before then: ifconfig(8) needs inet6
   before tunnel, and says nothing in its exit status.
 - A snapshot sent between hosts (2026-10-09, the same VM, as root): two

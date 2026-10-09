@@ -3191,7 +3191,6 @@ table.broutes tr.attrs pre { margin: 0 0 .4rem 1.2rem; font-size: .72rem; color:
 /* Plugins: what was installed, apart from what the base system has. */
 nav.tabs .tab.plugin:first-of-type, nav.tabs .tab:not(.plugin) + .tab.plugin { margin-left: 1.2rem; }
 nav.tabs .tab.plugin::before { content: "◆ "; font-size: .6em; vertical-align: .15em; opacity: .7; }
-nav.sub.plugins { padding-left: .6rem; border-left: 1px solid var(--line, rgba(255,255,255,.12)); }
 
 /* The kernel: its modules and its memory. */
 form.kmod-load { display: flex; gap: .5rem; align-items: center; flex: 1 1 20rem; }
@@ -3931,3 +3930,5 @@ li.wfedstep { border: 1px solid var(--line-2); border-radius: 10px; padding: .6r
 }
 ul.wfparams li input, ul.wfon li input { width: auto; flex: 1 1 10rem; min-width: 0; }
 ul.wfon li textarea { flex: 2 1 14rem; }
+/* The network tab's picker: the host, or one of its vnet jails. */
+label.net-jail select { width: auto; max-width: 14rem; font-size: .78rem; padding: .25rem .4rem; }

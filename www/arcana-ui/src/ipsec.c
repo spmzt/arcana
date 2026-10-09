@@ -108,6 +108,12 @@ view_ipsec(struct html *h, struct server *s, const ucl_object_t *data)
 	    jstr(data, "public-key") != NULL ? "Keep it started at boot; the "
 	    "key it has stays" : "The host makes its key and keeps it",
 	    jstr(data, "public-key") != NULL ? "At boot" : "Make its key");
+	/* A jail cannot load ipsec.ko: its host must have it. */
+	if (jget(data, "kernel") != NULL && !jbool(data, "kernel"))
+		h_raw(h, "<p class=\"notice bad\">The kernel has no IPsec: "
+		    "load it on the host, <code>kldload ipsec</code> (and "
+		    "<code>ipsec_load=\"YES\"</code> in its <code>loader.conf"
+		    "</code>); a jail cannot.</p>");
 	if (!running)
 		h_raw(h, "<p class=\"notice warn\">strongSwan is not running "
 		    "here: <b>Start</b> starts it, and what is in "

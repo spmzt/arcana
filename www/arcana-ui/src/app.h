@@ -379,6 +379,7 @@ struct app {
 	int		 nservers;
 	int		 sel;		/* selected server, or -1 */
 	char		 jail[256];	/* open in the drawer, or "" */
+	char		 net_jail[256];	/* whose network the tab shows: a vnet jail, or "" the host */
 	char		 filter[64];
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
@@ -470,6 +471,9 @@ void		 service_action(const char *, const char *);
 void		 service_config(const char *, const char *);
 void		 refresh_network(struct server *, bool);
 const char	*net_scope(void);
+bool		 net_jail_ok(const ucl_object_t *);
+const char	*plugin_where(const struct server *, const char *);
+const char	*kind_plugin(int);
 bool		 plugin_at(const struct server *, const char *, const char *);
 bool		 has_plugin(const struct server *, const char *);
 void		 refresh_stats(struct server *);

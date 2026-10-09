@@ -341,7 +341,12 @@ jail_network_body()
 		atf_check -o ignore jexec arcw_n1 sysctl net.inet.ip.fw.enable=1
 		atf_check -o match:'"enabled":true' "$JGC" -j arcw_n1 -c "$SOCK" net ipfw
 	fi
-	# Removed: no longer watched, and gone, not held dying by it.
+	# Removed: no longer watched, and gone, not held dying by it.  A
+	# vnet torn down with an address on an interface in it panics a
+	# debug kernel: the epairs go first.
+	while read -r e; do
+		atf_check ifconfig "${e}a" destroy
+	done < epairs
 	atf_check -o ignore jail -r arcw_n1
 	sleep 0.5
 	atf_check -o match:'the network of jail arcw_n1 is not watched' cat daemon.out
@@ -354,11 +359,11 @@ jail_network_cleanup()
 {
 	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
 	if [ -f mine ]; then
-		jail -r arcw_n1 >/dev/null 2>&1
-		jail -r arcw_n2 >/dev/null 2>&1
 		[ -f epairs ] && while read -r e; do
 			ifconfig "${e}a" destroy >/dev/null 2>&1
 		done < epairs
+		jail -r arcw_n1 >/dev/null 2>&1
+		jail -r arcw_n2 >/dev/null 2>&1
 	fi
 	true
 }

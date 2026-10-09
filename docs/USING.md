@@ -520,10 +520,10 @@ The console is laid out as a tree and tabs.
     **IPsec** (strongSwan's `swanctl`; an `ipsec` interface is the base
     system's).
     Each has a tab of its own, after the others and marked ◆, on a
-    host where its program is installed, and none where it is not;
-    on the page of a jail with a network of its own they follow that
-    network's views, apart, when the program is installed in the
-    jail. Nothing is asked of BIRD or `wg` on a host without them.
+    host where its program is installed or one of its running vnet
+    jails has it installed, and none where neither does; the picker
+    at the left of the tab's toolbar offers only those that have it.
+    Nothing is asked of BIRD or `wg` on a host without them.
     **WireGuard** lists the `wg` interfaces with their peers: endpoint,
     allowed addresses, last handshake, traffic. **Make its key** has
     the host make the interface's private key, which stays on the host:
@@ -555,6 +555,14 @@ The console is laid out as a tree and tabs.
     **Down**, and the cross, for arcana's, takes it away, its SAs ended
     first. A connection that is not IKEv2 is marked so. From a shell:
     `arcanactl ipsec init | start | conn | unconn | up | down`.
+    In a vnet jail, strongSwan is the jail's own, installed in it
+    (`pkg -r` or **+ packages** for the jail): its key, its
+    `swanctl/conf.d` and its `strongswan_enable` are beneath the jail's
+    root, and `swanctl` and the rc.d script run in it. The kernel's
+    IPsec is the host's: built in, or `ipsec.ko` loaded on the host
+    (`ipsec_load="YES"` in its `loader.conf`), since a jail cannot load
+    a module; the tab says so when it is not there. The jail needs no
+    `allow.raw_sockets`.
     **BIRD** draws the routing daemon in the middle and around it its
     BGP neighbours (their AS and address), its OSPF neighbours and its
     RPKI caches, each coloured by its state. Under the protocols, the
@@ -648,22 +656,25 @@ The console is laid out as a tree and tabs.
     job, a request somebody waits for such as a check of the packages,
     since when, and whether the agent was told to stop and waits for
     it: the same as its log says.
-- A **jail with a network of its own** (vnet) has that network on its
-  page, under **Network**: the same views as a host's network tab
-  (interfaces, routes with lookup, connections, sockets, netgraph,
-  WireGuard, BIRD with its neighbours and its configuration), for the
-  jail. It is read and changed from the host: there is no agent in the
+- A **jail with a network of its own** (vnet) has that network in its
+  host's **Network** tab, and in each plugin's: the picker at the left
+  of the toolbar names the host or one of its running vnet jails, and
+  every view (interfaces, routes with lookup, connections, sockets,
+  netgraph, bridges, geneve, neighbours; WireGuard, BIRD with its
+  neighbours and its configuration, IPsec) is then of that jail. The
+  jail's page has **Open it in the Network tab**, and the map's **Its
+  network** opens the same. It is read and changed from the host: there is no agent in the
   jail, and nothing is installed there for it. `ifconfig`, `route`,
   `netstat`, `sockstat` and `ngctl` are the host's, run for the jail;
-  `birdc`, `bird` and `wg` are the jail's own, run in it, so that what
+  `birdc`, `bird`, `wg` and `swanctl` are the jail's own, run in it, so that what
   parses a configuration is the version that runs it. What is kept for
   the jail's next start is kept in the jail's own `rc.conf`, its BIRD
   configuration and WireGuard files are the jail's, and they are never
   followed out of the jail through a link. Safe mode works there as on
   the host. From a shell: `arcanactl -j jail net …`, `interface …`,
-  `route …`, `wg …`, `bird …`.
+  `route …`, `wg …`, `bird …`, `ipsec …`.
 - **An interface gets into such a jail from its host**: **+ from host**
-  above the jail's interfaces gives it one the host has (`ifconfig
+  above the jail's interfaces, with the jail picked, gives it one the host has (`ifconfig
   vlan100 vnet jail`), or, with the field left empty, a new `epair`
   made for it: the `a` end stays on the host, to be put in a bridge or
   given an address there, the `b` end goes to the jail. The host's
@@ -892,7 +903,8 @@ works the links out.
   interfaces and their traffic, its tunnels, its BGP and OSPF sessions
   and its neighbours outside, as a host has. A tunnel is drawn from or
   to it as with a host, a route is traced from it and through it, and
-  **Its network** opens the jail's page. All of it is done by the
+  **Its network** opens its host's Network tab with the jail picked.
+  All of it is done by the
   jail's host.
 - A **tunnel is made by drawing it**: drag the dot on a host's edge
   onto another host. The console offers the outer addresses the two

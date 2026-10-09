@@ -1251,9 +1251,10 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.dock > header').click()");
 
 	/*
-	 * A jail with a network of its own: its page shows that network,
-	 * read through the host, and a change made there is made in the
-	 * jail, and kept in the jail's own rc.conf.
+	 * A jail with a network of its own: its page sends to the host's
+	 * Network tab with the jail picked there, which shows that network,
+	 * read through the host; a change made there is made in the jail,
+	 * and kept in the jail's own rc.conf.
 	 */
 	run("const m = document.querySelector('.tree .titem.more'); if (m && "
 	    "!m.textContent.includes('fewer')) m.click();");
@@ -1261,13 +1262,20 @@ ATF_TC_BODY(pwa, tc)
 	    "l.dataset.arg === 'gw')", 10);
 	run("[...document.querySelectorAll('.tree .titem.leaf')].find(l => "
 	    "l.dataset.arg === 'gw').click()");
-	wait_js("document.querySelector('.jail-page .jail-net table.ifaces "
-	    "tr[data-if=epair1b] .chip')", 20);
-	ATF_CHECK(js_true("document.querySelector('.jail-net').textContent"
-	    ".includes('10.99.0.2/24') && !document.querySelector('.jail-net "
+	wait_js("document.querySelector('.jail-page .jail-net button[data-act="
+	    "jail-net]')", 20);
+	ATF_CHECK(js_true("!document.querySelector('.jail-page table.ifaces')"));
+	run("document.querySelector('.jail-net button[data-act=jail-net]')"
+	    ".click()");
+	wait_js("document.querySelector('button.tab[data-arg=network].on') && "
+	    "document.querySelector('select[data-input=net-jail]')?.value === "
+	    "'gw' && document.querySelector('table.ifaces tr[data-if=epair1b] "
+	    ".chip')", 20);
+	ATF_CHECK(js_true("document.querySelector('table.ifaces').textContent"
+	    ".includes('10.99.0.2/24') && !document.querySelector('table.ifaces "
 	    "tr[data-if=lo0]')"));
 	shot("7g-vnet-jail");
-	run("document.querySelector('.jail-net tr[data-if=epair1b] button"
+	run("document.querySelector('table.ifaces tr[data-if=epair1b] button"
 	    "[data-act=if-addr-add]').click()");
 	wait_js("document.querySelector('form[data-form=if-address]')", 5);
 	run("const f = document.querySelector('form[data-form=if-address]'); "
@@ -1286,8 +1294,7 @@ ATF_TC_BODY(pwa, tc)
 	 * end the jail gets; the host does it, not told to work in the
 	 * jail.  And one the jail has, taken back to the host.
 	 */
-	run("document.querySelector('.jail-net button[data-act=if-vnet-give]')"
-	    ".click()");
+	run("document.querySelector('button[data-act=if-vnet-give]').click()");
 	wait_js("document.querySelector('form[data-form=if-vnet] input[name="
 	    "persist]')", 5);
 	shot("7h-vnet-give");
@@ -1302,9 +1309,9 @@ ATF_TC_BODY(pwa, tc)
 		usleep(50000);
 	ATF_CHECK(system("grep -q '^epair create$' ifconfig.log && ! grep -q "
 	    "'^-j 4 epair create' ifconfig.log") == 0);
-	wait_js("document.querySelector('.jail-net tr[data-if=epair1b] button"
-	    "[data-act=if-vnet-back]')", 20);
-	run("document.querySelector('.jail-net tr[data-if=epair1b] button"
+	wait_js("document.querySelector('table.ifaces tr[data-if=epair1b] "
+	    "button[data-act=if-vnet-back]')", 20);
+	run("document.querySelector('table.ifaces tr[data-if=epair1b] button"
 	    "[data-act=if-vnet-back]').click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')"
@@ -1314,13 +1321,21 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('take epair1b back from gw: done'))", 20);
 	ATF_CHECK(system("grep -q '^epair1b -vnet 4$' ifconfig.log") == 0);
-	wait_js("document.querySelector('.jail-net button[data-act=net-kind]"
+	wait_js("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=routes]')", 20);
 	/* Its routes, by the host's netstat told which jail. */
-	run("document.querySelector('.jail-net button[data-act=net-kind]"
+	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=routes]').click()");
-	wait_js("document.querySelector('.jail-net button[data-act=route-add]')",
-	    10);
+	wait_js("document.querySelector('button[data-act=route-add]') && "
+	    "document.querySelector('select[data-input=net-jail]')?.value === "
+	    "'gw'", 10);
+	/* And the host's again, picked there; gw does not run, so the
+	 * host's own network is offered no picker then. */
+	run("const p = document.querySelector('select[data-input=net-jail]'); "
+	    "p.value = ''; p.dispatchEvent(new Event('input', {bubbles: "
+	    "true}));");
+	wait_js("!document.querySelector('select[data-input=net-jail]') && "
+	    "document.querySelector('button[data-act=route-add]')", 10);
 	run("document.querySelector('li[data-act=select-server]').click()");
 	wait_js("document.querySelector('button.tab[data-arg=network]')", 10);
 
@@ -3168,10 +3183,11 @@ ATF_TC_BODY(pwa, tc)
 	    "document.querySelector('.map-panel .iflist').textContent."
 	    "includes('epair1b')", 10);
 	shot("8d-vnet-jail-node");
-	/* Its network is the jail's page. */
+	/* Its network is its host's Network tab, the jail picked there. */
 	run("document.querySelector('.map-panel button[data-act="
 	    "topo-open-host]').click()");
-	wait_js("document.querySelector('.jail-page .jail-net tr[data-if="
+	wait_js("document.querySelector('select[data-input=net-jail]')?.value "
+	    "=== 'gw' && document.querySelector('table.ifaces tr[data-if="
 	    "epair1b]')", 20);
 	run("window.fetch = window.fetch0;");
 	run("document.querySelector('li[data-act=select-network]').click()");

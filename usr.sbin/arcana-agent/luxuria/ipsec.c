@@ -22,6 +22,8 @@
  */
 
 #include <sys/param.h>
+#include <sys/linker.h>
+#include <sys/module.h>
 #include <sys/socket.h>
 
 #include <netinet/in.h>
@@ -33,6 +35,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ucl.h>
+#include <unistd.h>
 
 #include <openssl/bio.h>
 #include <openssl/evp.h>
@@ -367,7 +370,18 @@ own_pub(struct work *w)
 }
 
 /*
- * {"running", "public-key", "connections": [{"name", "version",
+ * Has the kernel IPsec: built in, or the module loaded?  It is the
+ * host's: a jail cannot load it, and has it only when the host does.
+ */
+static bool
+in_kernel(void)
+{
+
+	return (feature_present("ipsec") || modfind("ipsec") != -1);
+}
+
+/*
+ * {"running", "kernel", "public-key", "connections": [{"name", "version",
  * "local_addrs", "remote_addrs", "local-id", "remote-id", "arcana",
  * "children": [{"name", "mode", "local-ts", "remote-ts", ...}]}],
  * "sas": [{"name", "state", "local-host", "remote-host", ...,
@@ -427,6 +441,7 @@ do_ipsec(struct work *w, struct arc_network_rsp *rsp)
 	}
 	top = ucl_object_typed_new(UCL_OBJECT);
 	put(top, "running", ucl_object_frombool(running));
+	put(top, "kernel", ucl_object_frombool(in_kernel()));
 	if ((pub = own_pub(w)) != NULL)
 		put(top, "public-key", ucl_object_fromstring(pub));
 	put(top, "connections", conns);

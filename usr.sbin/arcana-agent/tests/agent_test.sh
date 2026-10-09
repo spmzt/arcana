@@ -2032,6 +2032,46 @@ EOS
 	    cat ifconfig.log
 	atf_check -s exit:1 -e match:"a new epair's end" -o ignore \
 	    "$JGC" -c "$SOCK" interface lo0 give gateway bridge0
+
+	# IPsec there: the jail's own strongSwan, a plugin of the jail's
+	# when its swanctl is installed in it; its key, its connections
+	# and its daemon the jail's, through jexec, and nothing of it on
+	# the host.
+	mkdir -p "$R$(pwd)/swanctl/conf.d" "$R$(pwd)/swanctl/pkcs8" \
+	    "$R$(pwd)/swanctl/pubkey"
+	cat > fake-swanctl <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/swanctl.log
+case "\$1" in
+--list-conns|--list-sas) ;;
+--stats) [ -f $(pwd)/running.strongswan ] || { echo "connecting to 'unix:///var/run/charon.vici' failed" >&2; exit 1; } ;;
+esac
+exit 0
+EOS
+	chmod +x fake-swanctl
+	mkdir -p "$R$(pwd)"
+	cp fake-swanctl "$R$(pwd)/fake-swanctl"
+	atf_check -o match:'"kernel":(true|false)' -o match:'"running":true' \
+	    "$JGC" -j gateway -c "$SOCK" net ipsec
+	atf_check -o match:'private key: made in the jail' \
+	    -o match:'fake-jexec 4 .*/fake-swanctl --load-creds' \
+	    "$JGC" -p -j gateway -c "$SOCK" ipsec init
+	atf_check -o match:'BEGIN PRIVATE KEY' \
+	    cat "$R$(pwd)/swanctl/pkcs8/arcana.pem"
+	atf_check test ! -e swanctl/pkcs8/arcana.pem
+	atf_check -o match:'^strongswan_enable="YES"$' cat "$R/etc/rc.conf"
+	atf_check -o not-match:'strongswan' cat rc.conf
+	PUB=$(sed -e '/-----/d' "$R$(pwd)/swanctl/pubkey/arcana.pub" | tr -d '\n')
+	atf_check -o match:'ipsec conn to-host \(tunnel\)' \
+	    -o match:'fake-jexec 4 .*/fake-swanctl --load-all' \
+	    "$JGC" -j gateway -c "$SOCK" ipsec conn to-host 10.99.0.2 \
+	    10.99.0.1 tunnel "$PUB"
+	atf_check -o match:'^		local_addrs = 10.99.0.2$' \
+	    cat "$R$(pwd)/swanctl/conf.d/arcana-to-host.conf"
+	atf_check test ! -e swanctl/conf.d/arcana-to-host.conf
+	# Its daemon started in it, by its own rc.d script.
+	atf_check -o match:'fake-jexec 4 .*/fake-service strongswan onestart' \
+	    "$JGC" -j gateway -c "$SOCK" ipsec start
 }
 vnet_cleanup()
 {

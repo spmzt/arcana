@@ -1062,8 +1062,8 @@ topo_tick(double now)
 			}
 		}
 		render();
-	} else if (((app.node == NODE_HOST && app.tab == TAB_NETWORK) ||
-	    net_scope()[0] != '\0') && app.net.kind == NET_INTERFACES &&
+	} else if (app.node == NODE_HOST && app.tab == TAB_NETWORK &&
+	    app.net.kind == NET_INTERFACES &&
 	    (s = cur_server()) != NULL) {
 		tp.last_poll = now;
 		topo_poll(s);
@@ -3264,20 +3264,15 @@ wg_create(const ucl_object_t *f, int sa, int sb,
 	tp.last_poll = 0;
 }
 
-/* A node's own network: a host's tab, or a jail's page. */
+/* A node's own network: its host's tab, with the jail picked there. */
 static void
 node_open(int n, int kind)
 {
 
 	app.sel = tn[n].srv;
-	if (tn[n].jail[0] != '\0') {
-		app.node = NODE_JAIL;
-		app.peek = false;
-		snprintf(app.jail, sizeof(app.jail), "%s", tn[n].jail);
-	} else {
-		app.node = NODE_HOST;
-		app.tab = TAB_NETWORK;
-	}
+	app.node = NODE_HOST;
+	app.tab = TAB_NETWORK;
+	snprintf(app.net_jail, sizeof(app.net_jail), "%s", tn[n].jail);
 	app.net.kind = kind;
 	app.net.sort = -1;
 	app.net.loading = false;

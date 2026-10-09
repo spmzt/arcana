@@ -869,8 +869,9 @@ stage(struct html *h)
 			{ "jobs", "Jobs" },
 		};
 		/*
-		 * A plugin has a tab of its own, on a host that has it: it
-		 * is what was installed there, not the base system's.
+		 * A plugin has a tab of its own, on a host that has it or
+		 * one of whose vnet jails does: it is what was installed
+		 * there, not the base system's.
 		 */
 		static const struct {
 			const char	*arg, *title;
@@ -891,12 +892,13 @@ stage(struct html *h)
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
 			    tabs[t].title);
 		for (t = 0; t < 3; t++)
-			if (plugin_at(s, "", plugins[t].kind == NET_IPSEC ?
-			    "strongswan" : plugins[t].arg))
+			if (plugin_where(s, kind_plugin(plugins[t].kind)) !=
+			    NULL)
 				h_fmt(h, "<button class=\"tab plugin%s\" "
 				    "data-act=\"tab\" data-arg=\"%s\" title=\""
-				    "A plugin: installed on this host, not the "
-				    "base system's\">%s</button>", plug &&
+				    "A plugin: installed on this host or a jail "
+				    "of it, not the base system's\">%s</button>",
+				    plug &&
 				    (int)app.net.kind == plugins[t].kind ? " on" :
 				    "", plugins[t].arg, plugins[t].title);
 		h_raw(h, "</nav>");
@@ -1117,15 +1119,15 @@ jail_page(struct html *h)
 	h_raw(h, "</dl>");
 
 	/*
-	 * A jail with a network of its own: that network, read and
-	 * changed from the host, as the host's own is in its tab.
+	 * A jail with a network of its own: that network is in the host's
+	 * Network tab, with the jail picked there, as are its plugins.
 	 */
-	if (net_scope()[0] != '\0') {
-		h_raw(h, "<h4>Network <span class=\"dim\">its own (vnet), "
-		    "managed from the host: nothing is installed in the jail"
-		    "</span></h4><div class=\"jail-net\">");
-		view_network(h, s);
-		h_raw(h, "</div>");
+	if (net_jail_ok(j)) {
+		h_raw(h, "<p class=\"jail-net\">Its network is its own (vnet), "
+		    "read and changed from the host: <button class=\"ghost "
+		    "small\" data-act=\"jail-net\"");
+		h_attr(h, "data-arg", jstr(j, "name"));
+		h_raw(h, ">Open it in the Network tab</button></p>");
 	}
 
 	if (ucl_array_size(jget(j, "params")) > 0) {
