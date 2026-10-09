@@ -2852,6 +2852,19 @@ ATF_TC_BODY(pwa, tc)
 	 */
 	run("document.querySelector('li.titem.wfnode').click()");
 	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
+	/* A template: Arcana kept up to date, its four steps Arcana's own,
+	 * each after the check only when its head is newer. */
+	run("const t = document.querySelector('select[data-input=wf-template]'"
+	    "); t.value = 'arcana-update'; t.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('li.wfedstep').length === 4 && "
+	    "[...document.querySelectorAll('select[data-input=wf-type]')].map("
+	    "s => s.value).join() === 'arcana:check,arcana:build,arcana:agents,"
+	    "arcana:console' && document.querySelectorAll('li.wfedstep "
+	    ".wfwhen').length === 3", 10);
+	shot("9-workflow-template");
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
 	run("document.querySelector('button[data-act=wf-new]').click()");
 	wait_js("document.querySelector('select[data-input=wf-kind]') && "
 	    "document.querySelector('select[data-input=wf-kind]').options."

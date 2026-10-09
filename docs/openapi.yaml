@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.73.0
+  version: 0.74.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1133,7 +1133,11 @@ paths:
       description: Each step has an id and a job (an object as the jobs
         API takes one, its kind's fields as share/arcana/jobs.yaml says)
         or a read (hello, jails, services, stats, events, history,
-        packages); with when, a condition (read or step, path, op of eq,
+        packages), or arcana, one of Arcana's own (check, build, agents,
+        console: the head of agent_source against what was last built
+        and updated to, the agent built on the step's host, sent to
+        every host, the console updated where it runs); with when, a
+        condition (read or step, path, op of eq,
         ne, contains, gt, lt, exists, missing, and value); with on_fail,
         stop, continue or a later step's id. Values may be ${param.X},
         ${host.id}, ${host.name}, ${step.ID.PATH} or ${event.PATH}.

@@ -238,6 +238,7 @@ usage(void)
 	    "    agent-update [-r] program\n"
 	    "    agent-build [-y] [-i key] [-o file] repository [ref]\n"
 	    "    console-update [-y] [-i key] repository [ref]\n"
+	    "    source-head [-y] [-i key] repository [ref]\n"
 	    "with -q, start, stop, restart, kill, address, service (but "
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
 	    "instead of waited for.\n-p keeps a change to an interface or a "
@@ -885,6 +886,8 @@ again:
 		xo_emit("{Lwc:Built}{:agent-version/%s}{P: }{:sha256/%s}"
 		    "{P: }{:file/%s}\n", rsp->agent_version != NULL ?
 		    rsp->agent_version : "?", hex, out);
+		if (rsp->commit != NULL)
+			xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
 	} else
 		xo_warnx("agent-build: %s", rsp->error != NULL ? rsp->error :
 		    "failed");
@@ -952,8 +955,74 @@ again:
 	else
 		xo_warnx("console-update: %s", rsp->error != NULL ?
 		    rsp->error : "failed");
+	if (rsp->ok && rsp->commit != NULL)
+		xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
 	error = rsp->ok ? 0 : 1;
 	arc_console_update_rsp_free(rsp);
+	free(keys);
+	return (error);
+}
+
+/*
+ * source-head [-y] [-i key] repository [ref]: the commit at the head of
+ * the repository's branch, as the host sees it: whether there is
+ * anything new to build.
+ */
+static int
+cmd_source_head(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_source_head_req	 req;
+	struct arc_source_head_rsp	*rsp;
+	char				*keys;
+	size_t				 i;
+	bool				 trust;
+	int				 ch, error;
+
+	memset(&req, 0, sizeof(req));
+	trust = false;
+	keys = NULL;
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "i:y")) != -1) {
+		switch (ch) {
+		case 'i':
+			req.ssh_key = optarg;
+			break;
+		case 'y':
+			trust = true;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc - optind < 1 || argc - optind > 2)
+		usage();
+	req.source = argv[optind];
+	req.ref = argv[optind + 1];
+again:
+	if ((error = arc_source_head(cl, &req, &rsp)) != 0)
+		fail(cl, error, "source-head");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	if (!rsp->ok && rsp->host_keys != NULL) {
+		for (i = 0; i < rsp->fingerprints.n; i++)
+			xo_emit("{Lwc:Host key}{l:fingerprint/%s}\n",
+			    rsp->fingerprints.v[i]);
+		if (trust && keys == NULL) {
+			if ((keys = strdup(rsp->host_keys)) == NULL)
+				xo_err(1, "strdup");
+			req.host_keys = keys;
+			arc_source_head_rsp_free(rsp);
+			goto again;
+		}
+	}
+	if (!rsp->ok && rsp->deploy_key != NULL)
+		xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n", rsp->deploy_key);
+	if (rsp->ok)
+		xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
+	else
+		xo_warnx("source-head: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	error = rsp->ok ? 0 : 1;
+	arc_source_head_rsp_free(rsp);
 	free(keys);
 	return (error);
 }
@@ -2940,6 +3009,8 @@ main(int argc, char *argv[])
 		rc = cmd_agent_update(&cl, argc, argv);
 	else if (strcmp(argv[0], "agent-build") == 0)
 		rc = cmd_agent_build(&cl, argc, argv);
+	else if (strcmp(argv[0], "source-head") == 0)
+		rc = cmd_source_head(&cl, argc, argv);
 	else if (strcmp(argv[0], "console-update") == 0)
 		rc = cmd_console_update(&cl, argc, argv);
 	else

@@ -367,6 +367,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* git clone makes a tree; make "builds" by copying the agent. */
 	put("fake-git", "#!/bin/sh\necho \"$*\" >> git.log\n"
 	    "[ \"$1\" = -c ] && shift 2\n"
+	    /* The commit a clone is at; the head, from ./head. */
+	    "[ \"$1\" = -C ] && [ \"$3\" = rev-parse ] && { cat head 2>/dev/null "
+	    "|| echo 1111111111111111111111111111111111111111; exit 0; }\n"
+	    "[ \"$1\" = ls-remote ] && { printf '%s\\tHEAD\\n' \"$(cat head "
+	    "2>/dev/null || echo 1111111111111111111111111111111111111111)\"; "
+	    "exit 0; }\n"
 	    "[ \"$1\" = clone ] || exit 2\n"
 	    "for a; do last=$a; done\n"
 	    "mkdir -p \"$last/lib/libjailconf\" \"$last/usr.sbin/arcana-agent\"\n");

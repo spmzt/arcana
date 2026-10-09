@@ -316,6 +316,7 @@ worker(void *arg)
 	struct arc_pkg_upgrade_rsp ur;
 	struct arc_agent_update_rsp aur;
 	struct arc_agent_build_rsp abr;
+	struct arc_source_head_rsp shr;
 	struct arc_console_update_rsp cur;
 	const char		*what, *error;
 	bool			 console;
@@ -714,6 +715,23 @@ worker(void *arg)
 		trace_steps(&w, &abr.trace.v, &abr.trace.n);
 		rc = arc_agent_build_reply(j->req, &abr);
 		break;
+	case ARC_CMD_SOURCE_HEAD:
+		what = wfmt(&w, "source head of %s%s%s", j->source,
+		    j->ref != NULL ? " at " : "", j->ref != NULL ? j->ref : "");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&shr, 0, sizeof(shr));
+		/* The build directory's keys are shared with the builds. */
+		pthread_mutex_lock(&build_lock);
+		do_source_head(&w, j->source, j->ref, j->host_keys, j->ssh_key,
+		    &shr);
+		pthread_mutex_unlock(&build_lock);
+		ok = shr.ok;
+		error = shr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &shr.trace.v, &shr.trace.n);
+		rc = arc_source_head_reply(j->req, &shr);
+		break;
 	case ARC_CMD_AGENT_UPDATE:
 		what = wfmt(&w, "agent update%s", j->restart ?
 		    " and restart" : "");
@@ -1017,6 +1035,24 @@ arc_agent_build_doit(cbl_req *req, const struct arc_agent_build_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_AGENT_BUILD;
+	j->source = xstrdup(rq->source);
+	j->ref = rq->ref != NULL && rq->ref[0] != '\0' ? xstrdup(rq->ref) :
+	    NULL;
+	j->host_keys = rq->host_keys != NULL ? xstrdup(rq->host_keys) : NULL;
+	j->ssh_key = rq->ssh_key != NULL ? xstrdup(rq->ssh_key) : NULL;
+	return (start(j));
+}
+
+int
+arc_source_head_doit(cbl_req *req, const struct arc_source_head_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SOURCE_HEAD;
 	j->source = xstrdup(rq->source);
 	j->ref = rq->ref != NULL && rq->ref[0] != '\0' ? xstrdup(rq->ref) :
 	    NULL;

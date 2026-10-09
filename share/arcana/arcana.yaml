@@ -816,6 +816,13 @@ attribute-sets:
       - name: rc-file
         type: text
         doc: For ipfw-rules with from-rc, the file that was read.
+      - name: commit
+        type: text
+        doc: |
+          The commit of a repository: what source-head found at its
+          head, or what agent-build and console-update built.
+        checks:
+          max-len: 64
 
   - name: host
     attributes:
@@ -1755,6 +1762,7 @@ operations:
           - fingerprints
           - deploy-key
           - trace
+          - commit
 
   - name: console-update
     attribute-set: arcana
@@ -1784,6 +1792,7 @@ operations:
           - deploy-key
           - restarting
           - trace
+          - commit
 
   - name: route-lookup
     attribute-set: arcana
@@ -2271,6 +2280,33 @@ operations:
       reply:
         attributes:
           - ok
+
+  - name: source-head
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The commit at the head of a repository's branch (ref, or its
+      default), as git ls-remote tells it, fetched as agent-build
+      fetches: over SSH with the host keys a person confirmed, never
+      one taken on trust.  Nothing is cloned or built.
+    do:
+      request:
+        attributes:
+          - source
+          - ref
+          - host-keys
+          - ssh-key
+        required:
+          - source
+      reply:
+        attributes:
+          - ok
+          - error
+          - commit
+          - host-keys
+          - fingerprints
+          - deploy-key
+          - trace
 
 mcast-groups:
   - name: events

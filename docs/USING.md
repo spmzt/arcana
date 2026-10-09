@@ -27,7 +27,19 @@ The console is laid out as a tree and tabs.
   those `share/arcana/jobs.yaml` says the kind needs (marked) and
   uses, with a choice where a field is one of a few; or a read of the
   host (hello, jails, services, stats, events, history, packages)
-  whose answer a later step looks at. **Only when…** puts a condition
+  whose answer a later step looks at; or one of Arcana's own, from
+  the repository the console builds from (`agent_source`): **is its
+  repository newer** asks the step's host for the commit at its head
+  (`git ls-remote`, nothing cloned) and answers `new_agents`,
+  `new_console` and `new` (either), each true when the head is not
+  what the agents, or the console, were last updated to; **build the
+  agent** has the host build arcana-agent, kept by the console;
+  **update every host's agent** sends it to every host, each
+  restarted with it; **update the console** builds and installs all
+  of Arcana on the host the console runs on (a server added by its
+  local socket), the console restarting once the step has ended. What
+  was built and updated to is kept in `arcana-source.json`. **Only
+  when…** puts a condition
   before a step: a read made then, or what an earlier step answered,
   a path in it (`jails[name=web].state`, `host.hostname`) and a test
   (eq, ne, contains, gt, lt, exists, missing); a step whose condition
@@ -48,7 +60,12 @@ The console is laid out as a tree and tabs.
   and how each host's went; a run is drawn as its chain, a row for each
   host, each step coloured by how it went, and a step picked shows its
   trace. What waits in the queue becomes a workflow with **As a
-  workflow**. The console keeps the workflows in `workflows.json` and
+  workflow**, and **From a template…** starts one made already, to be
+  looked over and saved: Arcana kept up to date from its repository
+  (every hour: the check, then the agent built, sent to every host,
+  and the console updated, each only when the head is newer), a jail
+  started again when it stops, packages upgraded every week, and a
+  service restarted when its host answers again. The console keeps the workflows in `workflows.json` and
   the last 30 runs in `runs.json`; what runs by itself is started by
   one worker of the console's, the one holding `workflows.lock`.
 - **Utilization**: how busy every host has been, as lines over the

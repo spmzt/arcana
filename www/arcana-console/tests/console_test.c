@@ -988,6 +988,75 @@ ATF_TC_BODY(workflows, tc)
 	ATF_CHECK(strstr(r.body, "\"trace\"") == NULL);
 	resp_free(&r);
 
+	/*
+	 * Arcana kept up to date from its repository: its head asked of
+	 * the host, the agent built and sent to every host only when the
+	 * head is newer, and the console updated through its host (by
+	 * its local socket, as this one is: make install and the service
+	 * restarted are stand-ins); a second run finds nothing new and
+	 * builds nothing.
+	 */
+	http("POST", "/api/settings", "{\"set\":{\"agent_source\":"
+	    "\"https://example.org/arcana.git\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ATF_REQUIRE(system("echo 4444444444444444444444444444444444444444 > "
+	    "head") == 0);
+	snprintf(body, sizeof(body), "{\"name\":\"arcana\",\"hosts\":[\"%s\"],"
+	    "\"every\":3600,\"steps\":["
+	    "{\"id\":\"check\",\"arcana\":\"check\"},"
+	    "{\"id\":\"build\",\"arcana\":\"build\",\"when\":{\"step\":"
+	    "\"check\",\"path\":\"new\",\"op\":\"eq\",\"value\":\"true\"}},"
+	    "{\"id\":\"agents\",\"arcana\":\"agents\",\"when\":{\"step\":"
+	    "\"check\",\"path\":\"new_agents\",\"op\":\"eq\",\"value\":"
+	    "\"true\"}},"
+	    "{\"id\":\"console\",\"arcana\":\"console\",\"on_fail\":"
+	    "\"continue\",\"when\":{\"step\":\"check\",\"path\":"
+	    "\"new_console\",\"op\":\"eq\",\"value\":\"true\"}}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/workflows/%s/run", jstr(&r, "id"));
+	resp_free(&r);
+	http("POST", "/api/workflows", "{\"name\":\"bad\",\"steps\":[{\"id\":"
+	    "\"a\",\"arcana\":\"explode\"}]}", &r);
+	EXPECT(&r, 400);
+	ATF_CHECK(strstr(r.body, "check, build, agents and console") != NULL);
+	resp_free(&r);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK_STREQ("4444444444444444444444444444444444444444", jstr(&r,
+	    "hosts.0.steps.0.trace.commit"));
+	ATF_CHECK_STREQ("true", jstr(&r, "hosts.0.steps.0.trace.new"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.1.state"));
+	ATF_CHECK_STREQ("4444444444444444444444444444444444444444", jstr(&r,
+	    "hosts.0.steps.1.trace.commit"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.2.state"));
+	ATF_CHECK_STREQ("lab", jstr(&r, "hosts.0.steps.2.trace.hosts.0.host"));
+	ATF_CHECK_STREQ("true", jstr(&r, "hosts.0.steps.2.trace.hosts.0.ok"));
+	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.3.state"));
+	ATF_CHECK_STREQ("true", jstr(&r, "hosts.0.steps.3.trace.restarting"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '\"built\": *\"4444' data/arcana-source.json "
+	    "&& grep -q '\"agents\": *\"4444' data/arcana-source.json && "
+	    "grep -q '\"updated\": *\"4444' data/arcana-source.json") == 0);
+	/* Nothing newer: nothing built, nothing sent. */
+	ATF_REQUIRE(system(": > git.log") == 0);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	run_wait(run, &r);
+	ATF_CHECK_STREQ("false", jstr(&r, "hosts.0.steps.0.trace.new_agents"));
+	ATF_CHECK_STREQ("skipped", jstr(&r, "hosts.0.steps.1.state"));
+	ATF_CHECK_STREQ("skipped", jstr(&r, "hosts.0.steps.2.state"));
+	ATF_CHECK_STREQ("skipped", jstr(&r, "hosts.0.steps.3.state"));
+	resp_free(&r);
+	ATF_CHECK(system("! grep -q clone git.log") == 0);
+
 	/* Begun by the host's events: a threshold crossed, then the host
 	 * that stops answering. */
 	snprintf(body, sizeof(body), "{\"name\":\"on mem\",\"hosts\":[\"%s\"],"

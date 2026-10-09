@@ -33,8 +33,17 @@
 #define	MAX_ARGS	20
 
 /* What fetching a tree came to, when it did not come to a tree. */
+/* How git reaches a repository over SSH; ssh false when it does not. */
+struct gitssh {
+	bool		 ssh;
+	const char	*cmd;		/* core.sshCommand=…, or NULL */
+	const char	*name, *host, *port;
+	const char	*key;		/* this host's, or the one named */
+};
+
 struct fetched {
 	const char	*error;
+	const char	*commit;	/* what was fetched, when it was */
 	const char	*host_keys;	/* for a person to confirm */
 	const char	*deploy_key;	/* this host's, for the server */
 	struct {
@@ -301,7 +310,7 @@ git_error(struct work *w, const struct execres *res)
 
 	/* Each line kept grows by one: ": " for its newline. */
 	out = wmalloc(w, 2 * res->errlen + 64);
-	n = (size_t)sprintf(out, "git clone failed (status %d)", res->status);
+	n = (size_t)sprintf(out, "git failed (status %d)", res->status);
 	end = res->err + res->errlen;
 	for (p = res->err; p < end; p = nl + 1) {
 		if ((nl = memchr(p, '\n', (size_t)(end - p))) == NULL)
@@ -325,67 +334,24 @@ git_error(struct work *w, const struct execres *res)
 }
 
 /*
- * A fresh clone of the repository in the build directory, with this
- * host's config.mk in it.  False with f->error when there is none; over
- * SSH that may be for want of a person: f then has the server's host
- * keys to confirm, or this host's key to allow there.
+ * Over SSH, git runs ssh as the build user, who has no known hosts and
+ * no key.  Both are kept in the build directory: the host keys a person
+ * confirmed, never one taken on trust, and a key of this host's own for
+ * the server to allow.  g says what git is given for it.  False, with rsp told why,
+ * when it cannot be reached yet.
  */
 static bool
-tree_fetch(struct work *w, const char *source, const char *ref,
-    const char *accepted, const char *sshkey, bool unpriv, char **srcp,
-    struct fetched *rsp)
+git_ssh(struct work *w, const char *source, const char *accepted,
+    const char *sshkey, bool unpriv, struct gitssh *g, struct fetched *rsp)
 {
 	struct execres	 res;
-	struct passwd	*pw;
 	const char	*argv[MAX_ARGS], *name, *host, *port, *sshcmd;
-	char		*src, *conf, *kh, *key, *pub;
+	char		*kh, *key, *pub;
 	char		 line[1024];
 	FILE		*fp;
 	bool		 ssh;
 	int		 n, s;
 
-	memset(rsp, 0, sizeof(*rsp));
-	if (!valid_source(source)) {
-		rsp->error = "not a repository git clone can take";
-		return (false);
-	}
-	if (ref != NULL && !valid_ref(ref)) {
-		rsp->error = "not a branch or tag name";
-		return (false);
-	}
-	src = wfmt(w, "%s/src", opts.build_dir);
-
-	/* The build directory, the build user's when there is one. */
-	s = step_begin(w, ARC_STEP_KIND_FILE, "mkdir", "%s", opts.build_dir);
-	if (mkdir(opts.build_dir, 0755) == -1 && errno != EEXIST) {
-		step_end(w, s, false, "%s", strerror(errno));
-		rsp->error = wfmt(w, "%s: %s", opts.build_dir, strerror(errno));
-		return (false);
-	}
-	if (unpriv && ((pw = getpwnam(BUILD_USER)) == NULL ||
-	    chown(opts.build_dir, pw->pw_uid, pw->pw_gid) == -1)) {
-		step_end(w, s, false, "no user %s to build as", BUILD_USER);
-		rsp->error = "no user to build as";
-		return (false);
-	}
-	step_end(w, s, true, unpriv ? "owned by " BUILD_USER : NULL);
-
-	n = 0;
-	argv[n++] = "/bin/rm";
-	argv[n++] = "-rf";
-	argv[n++] = "--";
-	argv[n++] = src;
-	argv[n] = NULL;
-	if (run_as(w, unpriv, argv, &res) != 0) {
-		rsp->error = wtext(w, exec_error(w, &res, "rm"));
-		return (false);
-	}
-	/*
-	 * Over SSH, git runs ssh as the build user, who has no known
-	 * hosts and no key.  Both are kept in the build directory: the
-	 * host keys a person confirmed, never one taken on trust, and a
-	 * key of this host's own for the server to allow.
-	 */
 	sshcmd = NULL;
 	ssh = ssh_source(w, source, &name, &host, &port);
 	if (ssh) {
@@ -475,6 +441,102 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 		    "/dev/null -o StrictHostKeyChecking=yes -o BatchMode=yes",
 		    key, kh);
 	}
+	g->ssh = ssh;
+	g->cmd = sshcmd;
+	g->name = ssh ? name : NULL;
+	g->host = ssh ? host : NULL;
+	g->port = ssh ? port : NULL;
+	g->key = ssh ? key : NULL;
+	return (true);
+}
+
+/*
+ * What a fetch needs first: a source and a ref it can take, and the
+ * build directory, the build user's when there is one.
+ */
+static bool
+fetch_ready(struct work *w, const char *source, const char *ref,
+    bool unpriv, struct fetched *rsp)
+{
+	struct passwd	*pw;
+	int		 s;
+
+	if (!valid_source(source)) {
+		rsp->error = "not a repository git clone can take";
+		return (false);
+	}
+	if (ref != NULL && !valid_ref(ref)) {
+		rsp->error = "not a branch or tag name";
+		return (false);
+	}
+	s = step_begin(w, ARC_STEP_KIND_FILE, "mkdir", "%s", opts.build_dir);
+	if (mkdir(opts.build_dir, 0755) == -1 && errno != EEXIST) {
+		step_end(w, s, false, "%s", strerror(errno));
+		rsp->error = wfmt(w, "%s: %s", opts.build_dir, strerror(errno));
+		return (false);
+	}
+	if (unpriv && ((pw = getpwnam(BUILD_USER)) == NULL ||
+	    chown(opts.build_dir, pw->pw_uid, pw->pw_gid) == -1)) {
+		step_end(w, s, false, "no user %s to build as", BUILD_USER);
+		rsp->error = "no user to build as";
+		return (false);
+	}
+	step_end(w, s, true, unpriv ? "owned by " BUILD_USER : NULL);
+	return (true);
+}
+
+/* A commit as git prints it: forty (or sixty-four) hex digits. */
+static const char *
+commit_of(struct work *w, const char *out, size_t len)
+{
+	size_t	n;
+
+	for (n = 0; n < len && n < 64 && isxdigit((unsigned char)out[n]); n++)
+		;
+	return (n == 40 || n == 64 ? wstrndup(w, out, n) : NULL);
+}
+
+/*
+ * A fresh clone of the repository in the build directory, with this
+ * host's config.mk in it.  False with f->error when there is none; over
+ * SSH that may be for want of a person: f then has the server's host
+ * keys to confirm, or this host's key to allow there.
+ */
+static bool
+tree_fetch(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey, bool unpriv, char **srcp,
+    struct fetched *rsp)
+{
+	struct execres	 res;
+	struct gitssh	 g;
+	const char	*argv[MAX_ARGS], *name, *host, *port, *sshcmd;
+	char		*src, *conf, *key;
+	bool		 ssh;
+	int		 n;
+
+	memset(rsp, 0, sizeof(*rsp));
+	if (!fetch_ready(w, source, ref, unpriv, rsp))
+		return (false);
+	src = wfmt(w, "%s/src", opts.build_dir);
+
+	n = 0;
+	argv[n++] = "/bin/rm";
+	argv[n++] = "-rf";
+	argv[n++] = "--";
+	argv[n++] = src;
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) != 0) {
+		rsp->error = wtext(w, exec_error(w, &res, "rm"));
+		return (false);
+	}
+	if (!git_ssh(w, source, accepted, sshkey, unpriv, &g, rsp))
+		return (false);
+	ssh = g.ssh;
+	sshcmd = g.cmd;
+	name = g.name;
+	host = g.host;
+	port = g.port;
+	key = wstrdup(w, g.key != NULL ? g.key : "");
 	n = 0;
 	argv[n++] = opts.git_bin;
 	if (sshcmd != NULL) {
@@ -524,6 +586,17 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 			    &res));
 		return (false);
 	}
+
+	/* Which commit it is, for whoever asks what was built. */
+	n = 0;
+	argv[n++] = opts.git_bin;
+	argv[n++] = "-C";
+	argv[n++] = src;
+	argv[n++] = "rev-parse";
+	argv[n++] = "HEAD";
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) == 0 && res.out != NULL)
+		rsp->commit = commit_of(w, res.out, res.outlen);
 
 	/* This host's settings for the build, where it has any. */
 	if (access(opts.build_conf, R_OK) == 0) {
@@ -645,6 +718,7 @@ agent_build(struct work *w, const char *source, const char *ref,
 	rsp->binary.p = bin;
 	rsp->binary.len = off;
 	rsp->sha256 = sha;
+	rsp->commit = f.commit;
 	rsp->ok = true;
 	return (0);
 }
@@ -694,6 +768,61 @@ console_update(struct work *w, const char *source, const char *ref,
 		rsp->error = wtext(w, exec_error(w, &res, "make install"));
 		return (0);
 	}
+	rsp->commit = f.commit;
+	rsp->ok = true;
+	return (0);
+}
+
+/*
+ * The commit at the head of the repository's branch, as git ls-remote
+ * tells it: whether there is anything new to build, without building.
+ */
+static int
+source_head(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey,
+    struct arc_source_head_rsp *rsp)
+{
+	struct fetched	 f;
+	struct gitssh	 g;
+	struct execres	 res;
+	const char	*argv[MAX_ARGS];
+	bool		 unpriv;
+	int		 n;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	unpriv = geteuid() == 0;
+	memset(&f, 0, sizeof(f));
+	if (!fetch_ready(w, source, ref, unpriv, &f) || !git_ssh(w, source,
+	    accepted, sshkey, unpriv, &g, &f)) {
+		rsp->error = f.error;
+		rsp->host_keys = f.host_keys;
+		rsp->deploy_key = f.deploy_key;
+		rsp->fingerprints.v = f.fingerprints.v;
+		rsp->fingerprints.n = f.fingerprints.n;
+		return (0);
+	}
+	n = 0;
+	argv[n++] = opts.git_bin;
+	if (g.cmd != NULL) {
+		argv[n++] = "-c";
+		argv[n++] = g.cmd;
+	}
+	argv[n++] = "ls-remote";
+	argv[n++] = "--";
+	argv[n++] = source;
+	argv[n++] = ref != NULL && ref[0] != '\0' ? ref : "HEAD";
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) != 0) {
+		rsp->error = git_error(w, &res);
+		return (0);
+	}
+	if (res.out == NULL || (rsp->commit = commit_of(w, res.out,
+	    res.outlen)) == NULL) {
+		rsp->error = wfmt(w, "%s has no %s", source, ref != NULL &&
+		    ref[0] != '\0' ? ref : "HEAD");
+		return (0);
+	}
 	rsp->ok = true;
 	return (0);
 }
@@ -708,6 +837,18 @@ do_agent_build(struct work *w, const char *source, const char *ref,
 
 	exec_set_home(w, opts.build_dir);
 	rc = agent_build(w, source, ref, accepted, sshkey, rsp);
+	exec_set_home(w, NULL);
+	return (rc);
+}
+
+int
+do_source_head(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey, struct arc_source_head_rsp *rsp)
+{
+	int	rc;
+
+	exec_set_home(w, opts.build_dir);
+	rc = source_head(w, source, ref, accepted, sshkey, rsp);
 	exec_set_home(w, NULL);
 	return (rc);
 }

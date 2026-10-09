@@ -2310,6 +2310,13 @@ agent_build_body()
 	cat > fake-git <<EOS
 #!/bin/sh
 [ "\$1" = -c ] && shift 2
+# The commit a clone is at, and the head of the repository's branch.
+[ "\$1" = -C ] && [ "\$3" = rev-parse ] && { echo 1111111111111111111111111111111111111111; exit 0; }
+if [ "\$1" = ls-remote ]; then
+	case "\$4" in nope) exit 2 ;; esac
+	printf '%s\trefs/heads/%s\n' "\$(cat $(pwd)/head 2>/dev/null || echo 2222222222222222222222222222222222222222)" "\$4"
+	exit 0
+fi
 [ "\$1" = clone ] || exit 2
 for a; do last=\$a; done
 case " \$* " in *" --branch chatty "*) jot 400 | sed 's/^/remote: line /' >&2; exit 128 ;; esac
@@ -2349,6 +2356,21 @@ EOS
 	    "$JGC" -t -c "$SOCK" agent-build -o built https://example.org/arcana.git main
 	atf_check cmp -s "$JGD" built
 	atf_check test -x built
+	# What was built is said by its commit, and the head of the
+	# repository is asked without cloning or building anything.
+	atf_check -o match:'^Commit: +1111111111111111111111111111111111111111$' \
+	    "$JGC" -c "$SOCK" agent-build -o built https://example.org/arcana.git main
+	rm made
+	echo 3333333333333333333333333333333333333333 > head
+	atf_check -o match:'^Commit: +3333333333333333333333333333333333333333$' \
+	    "$JGC" -c "$SOCK" source-head https://example.org/arcana.git main
+	atf_check test ! -e made
+	atf_check -s exit:1 -e match:'git failed' -o ignore \
+	    "$JGC" -c "$SOCK" source-head https://example.org/arcana.git nope
+	# Over SSH as a build is: the host key is not taken on trust.
+	atf_check -s exit:1 -o match:'Host key: ' \
+	    -e match:'does not know the SSH host key of git.example.org' \
+	    "$JGC" -c "$SOCK" source-head git@git.example.org:me/arcana.git
 	# The host's own settings went into the tree.
 	atf_check -o match:'CBLINK_PREFIX' cat build/src/config.mk
 	# A build that fails says why, and nothing is written.

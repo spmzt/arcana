@@ -314,6 +314,123 @@ triggers(struct html *h, const ucl_object_t *w)
 	h_raw(h, "</span>");
 }
 
+/* Arcana's own steps, as the console runs them (workflows.c). */
+static const struct {
+	const char	*what, *title, *hint;
+} arcana_steps[] = {
+	{ "check", "is its repository newer",
+	    "Asks the step's host for the commit at the head of the "
+	    "repository the console builds from (agent_source), beside the "
+	    "ones the agents and the console were last updated to: its "
+	    "answer has <code>new_agents</code>, <code>new_console</code> "
+	    "and <code>new</code> (either), true when the head is newer, for "
+	    "the steps after to be run only then." },
+	{ "build", "build the agent",
+	    "Has the step's host build arcana-agent from the repository; "
+	    "the console keeps it, to send to the hosts." },
+	{ "agents", "update every host's agent",
+	    "Sends the agent the console keeps to every host it has, each "
+	    "restarted with it, one after the other." },
+	{ "console", "update the console",
+	    "Builds all of Arcana on the host the console runs on (a server "
+	    "added by its local socket) and installs it; the console "
+	    "restarts once the step has ended, so it is the last." },
+};
+
+/*
+ * Workflows made already: a draft each, to be looked over, given its
+ * hosts and saved.  ${LOCAL} is the host the console runs on, or the
+ * one picked.
+ */
+static const struct {
+	const char	*name, *title, *json;
+} templates[] = {
+	{ "arcana-update", "Arcana kept up to date from its repository",
+	    "{\"name\": \"Arcana from its repository\", \"every\": 3600, "
+	    "\"hosts\": [\"${LOCAL}\"], \"steps\": ["
+	    "{\"id\": \"check\", \"name\": \"Is there a newer commit\", "
+	    "\"arcana\": \"check\"}, "
+	    "{\"id\": \"build\", \"name\": \"Build the agent\", "
+	    "\"arcana\": \"build\", \"when\": {\"step\": \"check\", "
+	    "\"path\": \"new\", \"op\": \"eq\", \"value\": \"true\"}}, "
+	    "{\"id\": \"agents\", \"name\": \"Every host's agent\", "
+	    "\"arcana\": \"agents\", \"when\": {\"step\": \"check\", "
+	    "\"path\": \"new_agents\", \"op\": \"eq\", \"value\": \"true\"}}, "
+	    "{\"id\": \"console\", \"name\": \"The console itself\", "
+	    "\"arcana\": \"console\", \"when\": {\"step\": \"check\", "
+	    "\"path\": \"new_console\", \"op\": \"eq\", \"value\": "
+	    "\"true\"}}]}" },
+	{ "jail-restart", "A jail started again when it stops",
+	    "{\"name\": \"Jails kept running\", \"hosts\": [\"${LOCAL}\"], "
+	    "\"on\": [{\"event\": \"jail-state\", \"match\": {\"state\": "
+	    "\"stopped\"}}], \"steps\": [{\"id\": \"start\", \"name\": "
+	    "\"Start it\", \"job\": {\"kind\": \"jail-action\", \"jail\": "
+	    "\"${event.jail}\", \"action\": \"start\"}}]}" },
+	{ "pkg-weekly", "Packages upgraded every week",
+	    "{\"name\": \"Weekly upgrade\", \"every\": 604800, \"hosts\": "
+	    "[\"${LOCAL}\"], \"steps\": [{\"id\": \"upgrade\", \"name\": "
+	    "\"Upgrade the host's packages\", \"job\": {\"kind\": "
+	    "\"pkg-upgrade\"}}]}" },
+	{ "service-back", "A service restarted when its host answers again",
+	    "{\"name\": \"Service back with its host\", \"hosts\": "
+	    "[\"${LOCAL}\"], \"params\": [{\"name\": \"service\", "
+	    "\"default\": \"nginx\"}], \"on\": [{\"event\": \"host-up\"}], "
+	    "\"steps\": [{\"id\": \"restart\", \"name\": \"Restart it\", "
+	    "\"job\": {\"kind\": \"service-action\", \"service\": "
+	    "\"${param.service}\", \"action\": \"restart\"}}]}" },
+};
+
+/* The host a template names as ${LOCAL}: where the console runs. */
+static const char *
+local_host(void)
+{
+	struct server	*s;
+	int		 i;
+
+	for (i = 0; i < app.nservers; i++)
+		if (strncmp(app.servers[i].uri, "unix:", 5) == 0)
+			return (app.servers[i].id);
+	return ((s = cur_server()) != NULL ? s->id : "");
+}
+
+static bool
+draft_template(const char *name)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	const char		*at;
+	char			*json;
+	size_t			 i;
+
+	for (i = 0; i < nitems(templates); i++)
+		if (strcmp(templates[i].name, name) == 0)
+			break;
+	if (i == nitems(templates))
+		return (false);
+	/* ${LOCAL}, once, as the host's id. */
+	at = strstr(templates[i].json, "${LOCAL}");
+	if (asprintf(&json, "%.*s%s%s", (int)(at - templates[i].json),
+	    templates[i].json, local_host(), at + 8) == -1)
+		return (false);
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+	o = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	free(json);
+	if (o == NULL)
+		return (false);
+	if (ucl_object_lookup(o, "params") == NULL)
+		ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+		    "params", 0, true);
+	if (ucl_object_lookup(o, "on") == NULL)
+		ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY), "on",
+		    0, true);
+	if (wf.draft != NULL)
+		ucl_object_unref(wf.draft);
+	wf.draft = o;
+	return (true);
+}
+
 static void
 view_list(struct html *h)
 {
@@ -323,7 +440,18 @@ view_list(struct html *h)
 	int			 n;
 
 	h_raw(h, "<div class=\"toolbar\"><h3>Workflows</h3><button class=\""
-	    "small\" data-act=\"wf-new\">+ workflow</button>");
+	    "small\" data-act=\"wf-new\">+ workflow</button><select class=\""
+	    "wf-template\" data-input=\"wf-template\" title=\"A workflow "
+	    "made already, to be looked over and saved\"><option value=\"\">"
+	    "From a template…</option>");
+	for (n = 0; n < (int)nitems(templates); n++) {
+		h_raw(h, "<option");
+		h_attr(h, "value", templates[n].name);
+		h_raw(h, ">");
+		h_txt(h, templates[n].title);
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select>");
 	if (app.nbatch > 0)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"queue-to-wf\" "
 		    "title=\"What waits in the queue, kept as a workflow\">The "
@@ -688,11 +816,23 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 		h_fmt(h, "<option value=\"read:%s\"%s>a read of %s</option>",
 		    reads[r], jstr(st, "read") != NULL && strcmp(jstr(st,
 		    "read"), reads[r]) == 0 ? " selected" : "", reads[r]);
+	for (r = 0; r < nitems(arcana_steps); r++)
+		h_fmt(h, "<option value=\"arcana:%s\"%s>Arcana: %s</option>",
+		    arcana_steps[r].what, jstr(st, "arcana") != NULL &&
+		    strcmp(jstr(st, "arcana"), arcana_steps[r].what) == 0 ?
+		    " selected" : "", arcana_steps[r].title);
 	h_fmt(h, "</select><span class=\"acts\"><button class=\"icon\" "
 	    "data-act=\"wf-step-up\" data-arg=\"%d\" title=\"Earlier\"%s>↑"
 	    "</button><button class=\"icon\" data-act=\"wf-step-del\" "
 	    "data-arg=\"%d\" title=\"Take it away\">×</button></span></div>",
 	    i, i == 0 ? " disabled" : "", i);
+	for (r = 0; jstr(st, "arcana") != NULL && r < nitems(arcana_steps);
+	    r++)
+		if (strcmp(jstr(st, "arcana"), arcana_steps[r].what) == 0) {
+			h_raw(h, "<p class=\"dim wfhint\">");
+			h_raw(h, arcana_steps[r].hint);
+			h_raw(h, "</p>");
+		}
 	if (job != NULL) {
 		h_fmt(h, "<label>Kind<select data-input=\"wf-kind\" data-arg="
 		    "\"%d\"><option value=\"\">—</option>", i);
@@ -1177,9 +1317,13 @@ workflows_action(const char *act, const char *arg, const char *value)
 		    ucl_array_find_index(st, (unsigned int)i)) != NULL) {
 			(void)ucl_object_delete_key(st, "job");
 			(void)ucl_object_delete_key(st, "read");
+			(void)ucl_object_delete_key(st, "arcana");
 			if (strncmp(value, "read:", 5) == 0)
 				ucl_object_insert_key(st, ucl_object_fromstring(
 				    value + 5), "read", 0, true);
+			else if (strncmp(value, "arcana:", 7) == 0)
+				ucl_object_insert_key(st, ucl_object_fromstring(
+				    value + 7), "arcana", 0, true);
 			else
 				ucl_object_insert_key(st, ucl_object_typed_new(
 				    UCL_OBJECT), "job", 0, true);
@@ -1209,6 +1353,11 @@ workflows_action(const char *act, const char *arg, const char *value)
 		draft_new();
 		wf.error[0] = '\0';
 		wf.mode = WM_EDIT;
+	} else if (strcmp(act, "input:wf-template") == 0) {
+		if (draft_template(value)) {
+			wf.error[0] = '\0';
+			wf.mode = WM_EDIT;
+		}
 	} else if (strcmp(act, "queue-to-wf") == 0) {
 		if (app.node != NODE_WORKFLOWS)
 			workflows_open();

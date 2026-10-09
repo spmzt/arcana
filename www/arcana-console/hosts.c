@@ -52,6 +52,7 @@ enum op {
 	OP_AGENT_UPDATE,
 	OP_AGENT_BUILD,
 	OP_CONSOLE_UPDATE,
+	OP_SOURCE_HEAD,
 	OP_ROUTE_LOOKUP,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
@@ -1031,6 +1032,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    "arc_job_cancel" : c->op == OP_AGENT_UPDATE ? "arc_agent_update" :
 	    c->op == OP_AGENT_BUILD ? "arc_agent_build" :
 	    c->op == OP_CONSOLE_UPDATE ? "arc_console_update" :
+	    c->op == OP_SOURCE_HEAD ? "arc_source_head" :
 	    c->op == OP_ROUTE_LOOKUP ? "arc_route_lookup" :
 	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
@@ -1364,6 +1366,8 @@ call_run(struct kore_task *t)
 	struct arc_agent_build_rsp *abr;
 	struct arc_console_update_req cuq;
 	struct arc_console_update_rsp *cur;
+	struct arc_source_head_req shq;
+	struct arc_source_head_rsp *shr;
 	uint8_t			*bin;
 	size_t			 binlen;
 	char			 sha[65];
@@ -1424,6 +1428,7 @@ call_run(struct kore_task *t)
 	aur = NULL;
 	abr = NULL;
 	cur = NULL;
+	shr = NULL;
 	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
@@ -2075,8 +2080,28 @@ connected:
 			    cur->fingerprints.n));
 		put_str(top, "deploy_key", cur->deploy_key);
 		put(top, "restarting", ucl_object_frombool(cur->restarting));
+		put_str(top, "commit", cur->commit);
 		steps = cur->trace.v;
 		nsteps = cur->trace.n;
+		break;
+	case OP_SOURCE_HEAD:
+		memset(&shq, 0, sizeof(shq));
+		shq.source = cfg.agent_source;
+		shq.ref = cfg.agent_ref;
+		shq.ssh_key = cfg.agent_ssh_key;
+		shq.host_keys = c->host_keys;
+		if ((error = arc_source_head(&cl, &shq, &shr)) != 0)
+			goto rpcfail;
+		ok = shr->ok;
+		put_str(top, "error", shr->error);
+		put_str(top, "commit", shr->commit);
+		put_str(top, "host_keys", shr->host_keys);
+		if (shr->fingerprints.n > 0)
+			put(top, "fingerprints", strs(shr->fingerprints.v,
+			    shr->fingerprints.n));
+		put_str(top, "deploy_key", shr->deploy_key);
+		steps = shr->trace.v;
+		nsteps = shr->trace.n;
 		break;
 	case OP_AGENT_BUILD:
 		memset(&abq, 0, sizeof(abq));
@@ -2121,6 +2146,7 @@ connected:
 		}
 		put_str(top, "version", abr->agent_version);
 		put_str(top, "sha256", sha);
+		put_str(top, "commit", abr->commit);
 		break;
 	case OP_AGENT_UPDATE:
 		if ((msg = agent_binary(&bin, &binlen, sha)) != NULL) {
@@ -2271,6 +2297,8 @@ done:
 		arc_agent_build_rsp_free(abr);
 	if (cur != NULL)
 		arc_console_update_rsp_free(cur);
+	if (shr != NULL)
+		arc_source_head_rsp_free(shr);
 	free(bin);
 	/*
 	 * Kept for the next request when it answered: also when the agent
@@ -3947,6 +3975,41 @@ hosts_job(const char *uri, const char *peer, const char *name, uint64_t id,
 	c->jobid = id;
 	c->reads = true;
 	return (self_call(c, uri, peer, name, "job", status));
+}
+
+/*
+ * Arcana itself, for a workflow's steps: the head of its repository
+ * (source-head), the agent built from it and kept to send
+ * (agent-build), the agent sent and restarted (agent-update), the
+ * console updated where it runs (console-update).  NULL when what is
+ * none of them.
+ */
+char *
+hosts_arcana(const char *uri, const char *peer, const char *name,
+    const char *what, int *status)
+{
+	static const struct {
+		const char	*what;
+		enum op		 op;
+	} ops[] = {
+		{ "source-head", OP_SOURCE_HEAD },
+		{ "agent-build", OP_AGENT_BUILD },
+		{ "agent-update", OP_AGENT_UPDATE },
+		{ "console-update", OP_CONSOLE_UPDATE },
+	};
+	struct call	*c;
+	size_t		 i;
+
+	for (i = 0; i < nitems(ops); i++)
+		if (strcmp(ops[i].what, what) == 0)
+			break;
+	if (i == nitems(ops))
+		return (NULL);
+	c = kore_calloc(1, sizeof(*c));
+	c->op = ops[i].op;
+	c->restart = ops[i].op == OP_AGENT_UPDATE;
+	c->reads = ops[i].op == OP_SOURCE_HEAD;
+	return (self_call(c, uri, peer, name, what, status));
 }
 
 /*

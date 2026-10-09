@@ -875,6 +875,20 @@ and
 .Fl i
 are as for
 .Cm agent-build .
+.It Cm source-head Oo Fl y Oc Oo Fl i Ar key Oc Ar repository Op Ar ref
+The commit at the head of the
+.Ar repository Ns 's
+branch
+.Ar ref ,
+or of its default, as
+.Nm git ls-remote
+on the host tells it: whether there is anything new to build, without
+cloning or building.
+.Fl y
+and
+.Fl i
+are as for
+.Cm agent-build .
 .It Cm agent-update Oo Fl r Oc Ar program
 Put
 .Ar program
