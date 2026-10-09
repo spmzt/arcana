@@ -811,7 +811,10 @@ works the links out.
   picked.
 - A line is **dragged** to bend it away from the lines beside it; the
   browser keeps the bend, and **Arrange** straightens every line
-  again.
+  again. A BGP or OSPF neighbour outside the console is dragged the
+  same way to put it elsewhere: it keeps its place beside its host,
+  following it when the host moves, until **Arrange**; picked, it
+  opens its host's BIRD.
 - The **legend** names the kinds of lines, and each is picked to take
   that kind out of the map and to put it back: tunnels, point to point
   links, shared networks, BGP and OSPF with their neighbours outside,

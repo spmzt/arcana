@@ -203,6 +203,12 @@ static struct {
 	} bends[64];			/* links dragged aside, kept */
 	int	nbends;
 	bool	bends_loaded;
+	struct peerpos {
+		char	key[160];	/* host<tab>ospf|bgp<tab>label<tab>sub */
+		double	dx, dy;		/* where it was put, from its host */
+	} peers[64];			/* neighbours dragged, kept */
+	int	npeers;
+	bool	peers_loaded;
 	bool	hide[LK_KINDS];		/* kinds of links not drawn */
 	bool	hide_best, hide_alt;	/* nor the route traced */
 	double	last_poll;
@@ -472,6 +478,113 @@ bend_kept(const char *key, bool make)
 	snprintf(tp.bends[tp.nbends].key, sizeof(tp.bends[0].key), "%s", key);
 	tp.bends[tp.nbends].bend = 0;
 	return (&tp.bends[tp.nbends++]);
+}
+
+/*
+ * Where the routing neighbours outside were dragged, from their hosts,
+ * kept in the browser: "dx dy key" a line.  They follow their host.
+ */
+static void
+peers_load(void)
+{
+	char	*text, *p, *line;
+	double	 dx, dy;
+	int	 used;
+
+	tp.peers_loaded = true;
+	tp.npeers = 0;
+	text = arc_store_get("arc_topo_peers");
+	p = text;
+	while (p != NULL && (line = strsep(&p, "\n")) != NULL &&
+	    tp.npeers < (int)(sizeof(tp.peers) / sizeof(tp.peers[0]))) {
+		used = 0;
+		if (sscanf(line, "%lf %lf %n", &dx, &dy, &used) < 2 || used ==
+		    0 || line[used] == '\0')
+			continue;
+		tp.peers[tp.npeers].dx = dx;
+		tp.peers[tp.npeers].dy = dy;
+		snprintf(tp.peers[tp.npeers].key, sizeof(tp.peers[0].key),
+		    "%s", line + used);
+		tp.npeers++;
+	}
+	free(text);
+}
+
+static void
+peers_save(void)
+{
+	struct html	b;
+	int		i;
+
+	memset(&b, 0, sizeof(b));
+	for (i = 0; i < tp.npeers; i++)
+		h_fmt(&b, "%.0f %.0f %s\n", tp.peers[i].dx, tp.peers[i].dy,
+		    tp.peers[i].key);
+	arc_store_set("arc_topo_peers", b.s != NULL ? b.s : "");
+	free(b.s);
+}
+
+static struct peerpos *
+peer_kept(const char *key, bool make)
+{
+	int	i;
+
+	if (!tp.peers_loaded)
+		peers_load();
+	for (i = 0; i < tp.npeers; i++)
+		if (strcmp(tp.peers[i].key, key) == 0)
+			return (&tp.peers[i]);
+	if (!make)
+		return (NULL);
+	if (tp.npeers == (int)(sizeof(tp.peers) / sizeof(tp.peers[0]))) {
+		memmove(&tp.peers[0], &tp.peers[1], sizeof(tp.peers[0]) *
+		    (sizeof(tp.peers) / sizeof(tp.peers[0]) - 1));
+		tp.npeers--;
+	}
+	snprintf(tp.peers[tp.npeers].key, sizeof(tp.peers[0].key), "%s", key);
+	tp.peers[tp.npeers].dx = tp.peers[tp.npeers].dy = 0;
+	return (&tp.peers[tp.npeers++]);
+}
+
+/* A neighbour outside, as its kept place knows it. */
+static void
+peer_key(char *buf, size_t len, const struct ext *e)
+{
+
+	snprintf(buf, len, "%s\t%s\t%s\t%s", tn[e->host].key, e->ospf ?
+	    "ospf" : "bgp", e->label, e->sub);
+}
+
+/*
+ * Where a neighbour outside is drawn unless it was dragged: away from
+ * the middle of the hosts, as it was when first drawn (followed at
+ * every move, all of them would swing about while one host is
+ * dragged; "Fit" sets it again), on two rings, every other one further
+ * out, side by side on one ring they would lie on each other.
+ */
+static void
+peer_place(const struct ext *e, struct thost *t, double *exp, double *eyp)
+{
+	double	cx, cy, a;
+	int	m, k;
+
+	cx = cy = 0;
+	for (m = 0, k = 0; k < nhosts; k++)
+		if (hosts[k].placed && node_index(hosts[k].sid) != -1) {
+			cx += hosts[k].x;
+			cy += hosts[k].y;
+			m++;
+		}
+	cx = m > 0 ? cx / m : 0;
+	cy = m > 0 ? cy / m : 0;
+	if (!t->out_set) {
+		t->out_a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ? -M_PI / 2 :
+		    atan2(t->y - cy, t->x - cx);
+		t->out_set = true;
+	}
+	a = t->out_a + (e->slot - (e->of - 1) / 2.0) * 0.36;
+	*exp = t->x + 185 * (e->slot % 2 == 1 ? 1.5 : 1.0) * cos(a);
+	*eyp = t->y + 125 * (e->slot % 2 == 1 ? 1.5 : 1.0) * sin(a);
 }
 
 /* Hosts not placed yet go on a circle, in the order of the tree. */
@@ -1603,42 +1716,27 @@ map_nodes(struct html *h)
 		if (tp.hide[exts[i].ospf ? LK_OSPF : LK_BGP])
 			continue;
 		struct ext	*e = &exts[i];
-		double		 cx, cy, a, ex, ey;
-		int		 m;
+		double		 ex, ey;
 
 		if ((t = thost(tn[e->host].key, false)) == NULL)
 			continue;
-		cx = cy = 0;
-		for (m = 0, k = 0; k < nhosts; k++)
-			if (hosts[k].placed && node_index(hosts[k].sid) !=
-			    -1) {
-				cx += hosts[k].x;
-				cy += hosts[k].y;
-				m++;
+		peer_place(e, t, &ex, &ey);
+		/* Where it was dragged to, beside its host, as it moves. */
+		{
+			struct peerpos	*pp;
+			char		 key[160];
+
+			peer_key(key, sizeof(key), e);
+			if ((pp = peer_kept(key, false)) != NULL) {
+				ex = t->x + pp->dx;
+				ey = t->y + pp->dy;
 			}
-		cx = m > 0 ? cx / m : 0;
-		cy = m > 0 ? cy / m : 0;
-		/*
-		 * Away from the middle of the hosts, as it was when first
-		 * drawn: followed at every move, all of them would swing
-		 * about while one host is dragged.  "Fit" sets it again.
-		 */
-		if (!t->out_set) {
-			t->out_a = fabs(t->x - cx) + fabs(t->y - cy) < 1 ?
-			    -M_PI / 2 : atan2(t->y - cy, t->x - cx);
-			t->out_set = true;
+			/* Dragged to put it elsewhere; picked, BIRD's. */
+			h_fmt(h, "<g class=\"tpeer %s %s\" data-drag=\""
+			    "topo-peer\"", e->ospf ? "ospf" : "bgp", e->up ?
+			    "up" : "down");
+			h_attr(h, "data-arg", key);
 		}
-		a = t->out_a;
-		/*
-		 * On two rings, every other one further out: side by
-		 * side on one ring they would lie on each other.
-		 */
-		a += (e->slot - (e->of - 1) / 2.0) * 0.36;
-		ex = t->x + 185 * (e->slot % 2 == 1 ? 1.5 : 1.0) * cos(a);
-		ey = t->y + 125 * (e->slot % 2 == 1 ? 1.5 : 1.0) * sin(a);
-		h_fmt(h, "<g class=\"tpeer %s %s\" data-act=\"topo-open-bird\"",
-		    e->ospf ? "ospf" : "bgp", e->up ? "up" : "down");
-		h_attr(h, "data-arg", tn[e->host].key);
 		h_fmt(h, "><path d=\"M%.1f %.1f L%.1f %.1f\"/><rect x=\"%.1f\" "
 		    "y=\"%.1f\" width=\"112\" height=\"34\" rx=\"17\"/><text "
 		    "class=\"name\" x=\"%.1f\" y=\"%.1f\">", t->x, t->y, ex, ey,
@@ -3644,6 +3742,47 @@ topo_action(const char *act, const char *arg, const char *value)
 		tp.sel[0] = tp.sel_if[0] = '\0';
 	} else if (strcmp(act, "topo-bend-end") == 0) {
 		bends_save();
+	} else if (strcmp(act, "topo-peer-start") == 0 || strcmp(act,
+	    "topo-peer-move") == 0) {
+		static double	 peer_gx, peer_gy;
+		struct peerpos	*pp;
+		char		 sid[80];
+
+		/* The host is the key's first field. */
+		snprintf(sid, sizeof(sid), "%.*s", (int)strcspn(arg, "\t"), arg);
+		if ((t = thost(sid, false)) == NULL || drag_values(value, &x,
+		    &y, &cx, &cy, &k, NULL, 0) < 2 || (pp = peer_kept(arg,
+		    true)) == NULL)
+			return (true);
+		/* It moves by where it was taken hold of. */
+		if (act[10] == 's') {
+			/* First dragged: from where it was drawn. */
+			for (i = 0; pp->dx == 0 && pp->dy == 0 && i < nexts;
+			    i++) {
+				char	key[160];
+
+				peer_key(key, sizeof(key), &exts[i]);
+				if (strcmp(key, arg) == 0) {
+					peer_place(&exts[i], t, &cx, &cy);
+					pp->dx = cx - t->x;
+					pp->dy = cy - t->y;
+				}
+			}
+			peer_gx = t->x + pp->dx - x;
+			peer_gy = t->y + pp->dy - y;
+		} else {
+			pp->dx = x + peer_gx - t->x;
+			pp->dy = y + peer_gy - t->y;
+		}
+		tp.touched = true;
+	} else if (strcmp(act, "topo-peer-end") == 0) {
+		peers_save();
+	} else if (strcmp(act, "topo-peer-click") == 0) {
+		char	sid[80];
+
+		snprintf(sid, sizeof(sid), "%.*s", (int)strcspn(arg, "\t"), arg);
+		if ((n = node_index(sid)) != -1)
+			node_open(n, NET_BIRD);
 	} else if (strcmp(act, "topo-bend-click") == 0) {
 		tp.sel[0] = tp.sel_if[0] = '\0';
 		snprintf(tp.sel_link, sizeof(tp.sel_link), "%s", arg);
@@ -3689,9 +3828,12 @@ topo_action(const char *act, const char *arg, const char *value)
 			hosts[i].placed = false;
 		places_fill();
 		places_save();
-		/* And the links straight again, or bent apart as at first. */
+		/* And the links straight again, or bent apart as at first,
+		 * and the neighbours outside where they were drawn. */
 		tp.nbends = 0;
 		bends_save();
+		tp.npeers = 0;
+		peers_save();
 		fit();
 	} else if (strcmp(act, "topo-sel-link") == 0) {
 		tp.sel[0] = tp.sel_if[0] = '\0';

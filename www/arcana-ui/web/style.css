@@ -3015,7 +3015,7 @@ svg.bw .out { fill: rgba(var(--amber-rgb), .3); stroke: var(--amber); stroke-wid
 .tlink.ospf .wire { stroke: var(--amber); stroke-dasharray: 2 6; }
 .map-legend .bgp::before { border-top: 2px dashed var(--magenta); }
 .map-legend .ospf::before { border-top: 2px dotted var(--amber); }
-svg.topo g.tpeer { cursor: pointer; }
+svg.topo g.tpeer { cursor: grab; }
 svg.topo g.tpeer path { stroke: var(--magenta); stroke-width: 1.2; stroke-dasharray: 9 5; fill: none; opacity: .7; }
 svg.topo g.tpeer.ospf path { stroke: var(--amber); stroke-dasharray: 2 6; }
 svg.topo g.tpeer rect { fill: rgba(var(--surface-rgb), .95); stroke: var(--magenta); stroke-width: 1.2; }

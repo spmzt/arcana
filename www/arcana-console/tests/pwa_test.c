@@ -2754,9 +2754,43 @@ ATF_TC_BODY(pwa, tc)
 		    ".getAttribute('d') !== window.d0 && (localStorage."
 		    "getItem('arc_topo_bends') || '').length > 0", 5);
 		shot("8b-bent");
+		/* A neighbour outside, dragged elsewhere, stays there. */
+		x0 = js_num("(r => r.x + r.width / 2)(document.querySelector("
+		    "'svg.topo g.tpeer rect').getBoundingClientRect())");
+		y0 = js_num("(r => r.y + r.height / 2)(document.querySelector("
+		    "'svg.topo g.tpeer rect').getBoundingClientRect())");
+		run("window.p0 = document.querySelector('svg.topo g.tpeer rect')"
+		    ".getAttribute('x')");
+		mouse("pointerMove", x0, y0);
+		mouse("pointerDown", 0, 0);
+		for (step = 1; step <= 6; step++) {
+			mouse("pointerMove", x0 - 10 * step, y0 + 4 * step);
+			usleep(150000);
+		}
+		mouse("pointerUp", 0, 0);
+		wait_js("document.querySelector('svg.topo g.tpeer rect')."
+		    "getAttribute('x') !== window.p0 && (localStorage.getItem("
+		    "'arc_topo_peers') || '').length > 0", 5);
+		/* Taken by where it was held: it does not jump to the
+		 * pointer, it moves with it. */
+		{
+			double	cx, cy;
+
+			cx = js_num("(r => r.x + r.width / 2)(document."
+			    "querySelector('svg.topo g.tpeer rect')."
+			    "getBoundingClientRect())");
+			cy = js_num("(r => r.y + r.height / 2)(document."
+			    "querySelector('svg.topo g.tpeer rect')."
+			    "getBoundingClientRect())");
+			ATF_CHECK_MSG(fabs(cx - (x0 - 60)) < 6 && fabs(cy -
+			    (y0 + 24)) < 6, "the neighbour is at %.0f,%.0f and "
+			    "the pointer at %.0f,%.0f", cx, cy, x0 - 60, y0 + 24);
+		}
+		shot("8c-peer");
 		run("document.querySelector('button[data-act=topo-arrange]')"
 		    ".click()");
-		wait_js("!(localStorage.getItem('arc_topo_bends') || '')", 5);
+		wait_js("!(localStorage.getItem('arc_topo_bends') || '') && "
+		    "!(localStorage.getItem('arc_topo_peers') || '')", 5);
 	}
 	/*
 	 * A host dragged by the mouse stays under it, all the way, and
