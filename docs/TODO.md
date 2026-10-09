@@ -47,11 +47,6 @@
 - Gula, further: older samples thinned instead of dropped; dmesg for
   an agent that is not root, which the kernel refuses unless
   security.bsd.unprivileged_read_msgbuf is on.
-- SCTP, further: what comes in parts as a cblink stream (each on an
-  SCTP stream of its own, flow-controlled by itself) instead of a
-  dump, so that it can share the association too; a burst of first
-  requests to a host opens an association each until one is shared,
-  and the others are closed then.
 - The mesh: agents joined by SCTP associations, each to at least a
   configured number of others (2 unless set), so that the console
   reaches an agent it has lost through one it still has. SCTP only,

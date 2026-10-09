@@ -124,9 +124,11 @@ struct call {
  * An SCTP association is not taken but shared: the requests to a host
  * that run at once all go over the one association, which a thread of
  * its own runs (a cbl_loop), each request waiting for its own answer.
- * A dump is not sent over it: a reader that is slow holds the reading
- * of the connection its dump came on, which would hold every other
- * request with it; it has a connection of its own, as on TCP.
+ * It is shared the moment it is made: the first request to a host
+ * makes it, and those that come meanwhile wait for it, rather than
+ * each making one.  What comes in parts comes as a stream over it,
+ * flow-controlled by itself (stream.c); a dump would hold the reading
+ * of the connection it came on, and every request with it.
  */
 #define	POOL_MAX	48
 #define	POOL_PER_HOST	4
@@ -155,6 +157,16 @@ struct shared {
 
 static struct shared	shared[POOL_MAX];
 static int		nshared;
+
+/* Associations being made, by those that will share them. */
+#define	SHARED_WAIT_S	15
+struct making {
+	char	*uri;
+	char	*peer;
+};
+static struct making	making[POOL_MAX];
+static int		nmaking;
+static pthread_cond_t	made = PTHREAD_COND_INITIALIZER;
 static cbl_loop		*sloop;		/* runs the shared associations */
 static pthread_once_t	sloop_once = PTHREAD_ONCE_INIT;
 
@@ -317,6 +329,8 @@ pooled_close(struct pooled *p)
 }
 
 static bool	pool_take_own(const char *, const char *, struct pooled *);
+static const char *hosts_dial(const char *, const char *, cbl_conn **,
+		    cbl_tls **, struct arc_client *);
 
 static bool
 is_sctp(const char *uri)
@@ -452,6 +466,101 @@ shared_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 	if (n.p.conn == NULL)
 		pooled_close(&n.p);
 	return (true);
+}
+
+/* Is one being made to uri?  Called with the lock held. */
+static int
+making_at(const char *uri, const char *peer)
+{
+	int	i;
+
+	for (i = 0; i < nmaking; i++)
+		if (strcmp(making[i].uri, uri) == 0 && same(making[i].peer,
+		    peer))
+			return (i);
+	return (-1);
+}
+
+/* Made, or not: those waiting for it look again. */
+static void
+making_done(const char *uri, const char *peer)
+{
+	int	i;
+
+	pthread_mutex_lock(&pool_lock);
+	if ((i = making_at(uri, peer)) != -1) {
+		free(making[i].uri);
+		free(making[i].peer);
+		making[i] = making[--nmaking];
+	}
+	pthread_cond_broadcast(&made);
+	pthread_mutex_unlock(&pool_lock);
+}
+
+/*
+ * The shared association to uri, with one user more: true.  False
+ * when there is none, and this caller is the one to make it (it says
+ * making_done() whatever comes of it); while another makes it, this
+ * one waits, a while.
+ */
+static bool
+shared_wait(const char *uri, const char *peer, struct pooled *out)
+{
+	struct timespec	until;
+	int		i;
+
+	clock_gettime(CLOCK_REALTIME, &until);
+	until.tv_sec += SHARED_WAIT_S;
+	for (;;) {
+		if (shared_take(uri, peer, out))
+			return (true);
+		pthread_mutex_lock(&pool_lock);
+		if (making_at(uri, peer) == -1) {
+			if (nmaking < POOL_MAX && (making[nmaking].uri =
+			    strdup(uri)) != NULL) {
+				making[nmaking].peer = peer != NULL ?
+				    strdup(peer) : NULL;
+				nmaking++;
+			}
+			pthread_mutex_unlock(&pool_lock);
+			return (false);
+		}
+		/* Being made: its maker says when. */
+		i = pthread_cond_timedwait(&made, &pool_lock, &until);
+		pthread_mutex_unlock(&pool_lock);
+		if (i == ETIMEDOUT)
+			return (false);
+	}
+}
+
+/*
+ * A connection just made, shared at once, with this one user: on the
+ * loop, for the next requests to take while this one runs.
+ */
+static void
+shared_adopt(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
+    const struct arc_client *cl)
+{
+	struct shared	n;
+
+	(void)pthread_once(&sloop_once, sloop_start);
+	memset(&n, 0, sizeof(n));
+	if (sloop == NULL || nshared >= POOL_MAX || cbl_conn_attach(conn,
+	    sloop) != 0)
+		return;
+	n.p.conn = conn;
+	n.p.tls = tls;
+	n.p.family = cl->family;
+	n.p.version = cl->version;
+	memcpy(n.p.groups, cl->groups, sizeof(n.p.groups));
+	n.p.since = now_us();
+	n.users = 1;
+	n.p.uri = strdup(uri);
+	n.p.peer = peer != NULL ? strdup(peer) : NULL;
+	pthread_mutex_lock(&pool_lock);
+	if (nshared < POOL_MAX)
+		shared[nshared++] = n;
+	pthread_mutex_unlock(&pool_lock);
 }
 
 /*
@@ -599,10 +708,6 @@ hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
     cbl_tls **tlsp, struct arc_client *cl)
 {
 	struct pooled	 kept;
-	cbl_conn	*conn;
-	cbl_tls		*tls;
-	const char	*msg;
-	int		 error;
 
 	memset(cl, 0, sizeof(*cl));
 	*connp = NULL;
@@ -619,6 +724,22 @@ hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
 		*tlsp = kept.tls;
 		return (NULL);
 	}
+	return (hosts_dial(uri, peer, connp, tlsp, cl));
+}
+
+/* A new connection to an agent, with the client set up on it. */
+static const char *
+hosts_dial(const char *uri, const char *peer, cbl_conn **connp,
+    cbl_tls **tlsp, struct arc_client *cl)
+{
+	cbl_conn	*conn;
+	cbl_tls		*tls;
+	const char	*msg;
+	int		 error;
+
+	memset(cl, 0, sizeof(*cl));
+	*connp = NULL;
+	*tlsp = NULL;
 	conn = NULL;
 	tls = NULL;
 	if ((error = cbl_conn_new(ctx, uri, 0, &conn)) != 0)
@@ -672,6 +793,76 @@ hosts_release(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 		pool_give(uri, peer, conn, tls, cl);
 	else
 		pool_drop(conn, tls);
+}
+
+/*
+ * The shared connection to a host, for streams: on the loop, which runs
+ * their callbacks, with this one user more; over SCTP the association
+ * the requests share, on TCP or a local socket one kept for streams.
+ * NULL, or why not.  hosts_shared_done() says this user is done.
+ */
+const char *
+hosts_shared(const char *uri, const char *peer, cbl_conn **connp,
+    struct arc_client *cl)
+{
+	struct pooled	 kept;
+	cbl_conn	*conn;
+	cbl_tls		*tls;
+	const char	*msg;
+
+	memset(cl, 0, sizeof(*cl));
+	*connp = NULL;
+	if (shared_wait(uri, peer, &kept)) {
+		free(kept.uri);
+		free(kept.peer);
+		cl->conn = kept.conn;
+		cl->family = kept.family;
+		cl->version = kept.version;
+		memcpy(cl->groups, kept.groups, sizeof(kept.groups));
+		*connp = kept.conn;
+		return (NULL);
+	}
+	/* Made here, not taken from the pool of those of their own. */
+	if ((msg = hosts_dial(uri, peer, &conn, &tls, cl)) != NULL) {
+		making_done(uri, peer);
+		return (msg);
+	}
+	shared_adopt(uri, peer, conn, tls, cl);
+	making_done(uri, peer);
+	pthread_mutex_lock(&pool_lock);
+	for (int i = 0; i < nshared; i++)
+		if (shared[i].p.conn == conn) {
+			pthread_mutex_unlock(&pool_lock);
+			*connp = conn;
+			return (NULL);
+		}
+	pthread_mutex_unlock(&pool_lock);
+	/* Not on the loop: no stream can run on it. */
+	arc_client_fini(cl);
+	cbl_conn_free(conn);
+	cbl_tls_free(tls);
+	memset(cl, 0, sizeof(*cl));
+	return ("no room for another connection");
+}
+
+/* A stream's user is done with the shared connection; bad: it fails. */
+void
+hosts_shared_done(cbl_conn *conn, bool good)
+{
+	int	i;
+
+	pthread_mutex_lock(&pool_lock);
+	for (i = 0; i < nshared; i++)
+		if (shared[i].p.conn == conn) {
+			shared[i].users--;
+			shared[i].p.since = now_us();
+			if (!good || !cbl_conn_is_open(conn))
+				shared[i].dead = true;
+			if (shared[i].dead)
+				shared_drop(i);
+			break;
+		}
+	pthread_mutex_unlock(&pool_lock);
 }
 
 int
@@ -1233,7 +1424,8 @@ call_run(struct kore_task *t)
 connect:
 	memset(&cl, 0, sizeof(cl));
 	/* One kept from before, when there is one. */
-	if (!c->fresh && !again && pool_take(c->uri, c->peer, &kept)) {
+	if (!c->fresh && !again && (is_sctp(c->uri) ? shared_wait(c->uri,
+	    c->peer, &kept) : pool_take(c->uri, c->peer, &kept))) {
 		conn = kept.conn;
 		tls = kept.tls;
 		free(kept.uri);
@@ -1281,6 +1473,11 @@ connect:
 	if ((error = arc_client_init(&cl, conn)) != 0) {
 		msg = "no arcana family there";
 		goto fail;
+	}
+	/* Shared now: the requests that waited for it take it. */
+	if (is_sctp(c->uri) && !c->fresh && !again) {
+		shared_adopt(c->uri, c->peer, conn, tls, &cl);
+		making_done(c->uri, c->peer);
 	}
 connected:
 
@@ -1990,6 +2187,9 @@ rpcfail:
 	    now_us() - t1));
 	goto done;
 fail:
+	/* Not made: one that waited for it may make it in its place. */
+	if (is_sctp(c->uri) && !c->fresh)
+		making_done(c->uri, c->peer);
 	c->status = 502;
 	e = ucl_object_typed_new(UCL_OBJECT);
 	put_str(e, "code", "unreachable");

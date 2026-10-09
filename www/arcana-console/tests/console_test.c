@@ -2426,6 +2426,7 @@ ATF_TC_BODY(mtls, tc)
 	FILE		*fp;
 	pid_t		 pid;
 	int		 port, i;
+	long		 seen_pre;
 
 	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
 	ATF_REQUIRE(mkdir("pki", 0700) == 0);
@@ -2511,6 +2512,7 @@ ATF_TC_BODY(mtls, tc)
 	ATF_CHECK_STREQ("tcp", jstr(&r, "data.listeners.0.transport"));
 	ATF_CHECK_STREQ("sctp", jstr(&r, "data.listeners.1.transport"));
 	ATF_CHECK_STREQ("tcp", jstr(&r, "data.sessions.0.transport"));
+	seen_pre = atol(jstr(&r, "data.seen"));
 	ATF_CHECK(jstr(&r, "data.sessions.0.subject") != NULL && strstr(jstr(
 	    &r, "data.sessions.0.subject"), "console") != NULL);
 	resp_free(&r);
@@ -2524,6 +2526,72 @@ ATF_TC_BODY(mtls, tc)
 		ATF_CHECK(strncmp(jstr(&r, "servers.0.uri"), "sctp://", 7) ==
 		    0);
 		resp_free(&r);
+		/*
+		 * A burst of first requests makes one association: the
+		 * first makes it, the others wait for it and share it.
+		 * The agent counts what connected.
+		 */
+		{
+			pid_t	kids[6];
+			long	seen1;
+			int	k, st, bad;
+
+			snprintf(path, sizeof(path), "/api/servers/%s/jails",
+			    sid);
+			for (k = 0; k < 6; k++)
+				if ((kids[k] = fork()) == 0) {
+					struct resp	kr;
+
+					http("GET", path, NULL, &kr);
+					_exit(kr.status == 200 ? 0 : 1);
+				}
+			bad = 0;
+			for (k = 0; k < 6; k++)
+				if (waitpid(kids[k], &st, 0) == -1 ||
+				    !WIFEXITED(st) || WEXITSTATUS(st) != 0)
+					bad++;
+			ATF_CHECK_EQ(0, bad);
+			/*
+			 * What comes in parts, as a stream over that same
+			 * association: the kernel's state, all of it, and no
+			 * connection more for it.
+			 */
+			{
+				char	 ask[160], *m;
+				int	 ws, parts, done;
+
+				ws = ws_open("/api/stream");
+				snprintf(ask, sizeof(ask), "{\"id\":3,\"server\":"
+				    "\"%s\",\"what\":\"sysctl\",\"filter\":"
+				    "\"kern.\"}", sid);
+				ws_send(ws, ask);
+				parts = done = 0;
+				while (!done && (m = ws_recv(ws)) != NULL) {
+					if (strstr(m, "\"rows\":[") != NULL)
+						parts++;
+					if (strstr(m, "\"done\":true") != NULL)
+						done = 1;
+					ATF_CHECK_MSG(strstr(m, "\"error\"") ==
+					    NULL, "%.200s", m);
+					if (strstr(m, "\"error\"") != NULL)
+						done = 1;
+					free(m);
+				}
+				close(ws);
+				ATF_CHECK_MSG(done && parts > 0, "%d parts, "
+				    "done %d", parts, done);
+			}
+			snprintf(path, sizeof(path), "/api/servers/%s/transport",
+			    sid);
+			http("GET", path, NULL, &r);
+			EXPECT(&r, 200);
+			seen1 = atol(jstr(&r, "data.seen"));
+			resp_free(&r);
+			/* The switch's own, and the burst's one. */
+			ATF_CHECK_MSG(seen1 - seen_pre <= 2, "the switch and a "
+			    "burst of six first requests made %ld connections",
+			    seen1 - seen_pre);
+		}
 		snprintf(path, sizeof(path), "/api/servers/%s/jails", sid);
 		http("GET", path, NULL, &r);
 		EXPECT(&r, 200);

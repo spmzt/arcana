@@ -447,12 +447,15 @@ The console is laid out as a tree and tabs.
   - **Over SCTP**, the requests the console makes of a host at once
     all go over one association, which a thread of the console runs,
     each waiting for its own answer: the agent sees one session where
-    over TCP it would see one for each. What comes in parts (the
-    kernel's state, the routes, connections and sockets) has an
-    association of its own, as a slow reader of it would otherwise
-    hold the others back. cblink sends every request and reply on
-    SCTP stream 0; its other streams are for its own flow-controlled
-    streams, which nothing of Arcana uses yet.
+    over TCP it would see one for each. The first requests to a host,
+    when they come at once, make one association: the first makes it
+    and the others wait for it, a while. What comes in parts (the
+    kernel's state, the routes, connections and sockets) is a cblink
+    stream over that same association, flow-controlled by itself: the
+    host sends a part only while the page has room for it, which the
+    page gives back as it takes them, so a slow page holds its own
+    stream and nothing else. cblink sends requests and replies on SCTP
+    stream 0, and its own streams on the others.
   - **How it is reached**, at the foot of the summary: the agent's
     listeners and the connections open to the agent now, each with its
     transport, where it comes from and the name in its certificate,

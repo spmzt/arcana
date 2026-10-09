@@ -106,7 +106,6 @@ static const char *service_action_names[] = {
 	[ARC_SERVICE_ACTION_DISABLE] = "disable",
 };
 
-static bool	valid_jail(const char *);
 static bool	valid_ifname(const char *);
 static bool	valid_service(const char *);
 static char	*peer_name(cbl_req *);
@@ -122,7 +121,7 @@ static const char *cuts_off(cbl_req *, const struct arc_job_spec *);
  * Jail names: letters, digits, '_', '-', and '.' for hierarchical jails.
  * All-digit names are refused because jail(8) reads them as jids.
  */
-static bool
+bool
 valid_jail(const char *s)
 {
 	const char	*p;

@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.65.0"
+#define	ARCW_VERSION		"0.66.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -120,6 +120,9 @@ int		 pki_init(void);
 /* hosts.c: requests to arcana-agent over cblink, in Kore task threads. */
 int		 hosts_init(void);
 void		 hosts_forget(const char *);
+const char	*hosts_shared(const char *, const char *, cbl_conn **,
+		    struct arc_client *);
+void		 hosts_shared_done(cbl_conn *, bool);
 const char	*hosts_connect(const char *, const char *, cbl_conn **,
 		    cbl_tls **, struct arc_client *);
 void		 hosts_release(const char *, const char *, cbl_conn *,

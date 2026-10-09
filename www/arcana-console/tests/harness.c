@@ -975,6 +975,119 @@ http(const char *method, const char *path, const char *body, struct resp *r)
 	    r);
 }
 
+/*
+ * A WebSocket to the console at path, as the page opens one: with the
+ * session and the console's Origin.  The socket, upgraded.
+ */
+int
+ws_open(const char *path)
+{
+	char	req[1024], buf[2048];
+	size_t	len;
+	ssize_t	n;
+	int	s;
+
+	s = console_socket();
+	snprintf(req, sizeof(req), "GET %s HTTP/1.1\r\nHost: localhost:8443\r\n"
+	    "Upgrade: websocket\r\nConnection: Upgrade\r\n"
+	    "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+	    "Sec-WebSocket-Version: 13\r\nOrigin: %s\r\nCookie: %s\r\n\r\n",
+	    path, harness_origin, cookie);
+	ATF_REQUIRE(write(s, req, strlen(req)) == (ssize_t)strlen(req));
+	/* The answer's head, a byte at a time: frames may follow it. */
+	len = 0;
+	while (len < sizeof(buf) - 1 && (len < 4 || memcmp(buf + len - 4,
+	    "\r\n\r\n", 4) != 0)) {
+		if ((n = read(s, buf + len, 1)) <= 0)
+			break;
+		len++;
+	}
+	buf[len] = '\0';
+	ATF_REQUIRE_MSG(strncmp(buf, "HTTP/1.1 101", 12) == 0, "not upgraded: "
+	    "%.80s", buf);
+	return (s);
+}
+
+/* One text frame to the console, masked as a client's must be. */
+void
+ws_send(int s, const char *text)
+{
+	unsigned char	 hdr[14], mask[4] = { 0x12, 0x34, 0x56, 0x78 };
+	unsigned char	*body;
+	size_t		 len, h, i;
+
+	len = strlen(text);
+	hdr[0] = 0x81;
+	if (len < 126) {
+		hdr[1] = 0x80 | (unsigned char)len;
+		h = 2;
+	} else {
+		hdr[1] = 0x80 | 126;
+		hdr[2] = (unsigned char)(len >> 8);
+		hdr[3] = (unsigned char)len;
+		h = 4;
+	}
+	memcpy(hdr + h, mask, 4);
+	h += 4;
+	ATF_REQUIRE((body = malloc(len)) != NULL);
+	for (i = 0; i < len; i++)
+		body[i] = (unsigned char)text[i] ^ mask[i % 4];
+	ATF_REQUIRE(write(s, hdr, h) == (ssize_t)h);
+	ATF_REQUIRE(write(s, body, len) == (ssize_t)len);
+	free(body);
+}
+
+static bool
+read_full(int s, void *p, size_t len)
+{
+	size_t	got;
+	ssize_t	n;
+
+	for (got = 0; got < len; got += (size_t)n)
+		if ((n = read(s, (char *)p + got, len - got)) <= 0)
+			return (false);
+	return (true);
+}
+
+/* The next text frame from the console, whole; NULL when it is closed. */
+char *
+ws_recv(int s)
+{
+	unsigned char	 hdr[8];
+	uint64_t	 len;
+	char		*text;
+	int		 k;
+
+	for (;;) {
+		if (!read_full(s, hdr, 2))
+			return (NULL);
+		len = hdr[1] & 0x7f;
+		if (len == 126) {
+			if (!read_full(s, hdr + 2, 2))
+				return (NULL);
+			len = ((uint64_t)hdr[2] << 8) | hdr[3];
+		} else if (len == 127) {
+			if (!read_full(s, hdr, 8))
+				return (NULL);
+			for (len = 0, k = 0; k < 8; k++)
+				len = (len << 8) | hdr[k];
+		}
+		ATF_REQUIRE(len < 64 * 1024 * 1024);
+		ATF_REQUIRE((text = malloc(len + 1)) != NULL);
+		if (!read_full(s, text, len)) {
+			free(text);
+			return (NULL);
+		}
+		text[len] = '\0';
+		/* A ping, a pong: not what is asked for. */
+		if ((hdr[0] & 0x0f) == 0x1)
+			return (text);
+		free(text);
+		if ((hdr[0] & 0x0f) == 0x8)
+			return (NULL);
+	}
+}
+
 /* One request with an API token and no session, as a program asks. */
 void
 http_bearer(const char *method, const char *path, const char *token,
