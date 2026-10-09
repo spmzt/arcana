@@ -1751,7 +1751,7 @@ refresh_network(struct server *s, bool user)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
-	    "bridges", "geneve", "nhgroups", "neighbours" };
+	    "bridges", "geneve", "nhgroups", "neighbours", "ipsec" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];
@@ -1760,7 +1760,8 @@ refresh_network(struct server *s, bool user)
 		return;
 	/* A plugin's view, of a host known not to have the plugin. */
 	if (s->list != NULL && ((app.net.kind == NET_WIREGUARD &&
-	    !has_plugin(s, "wireguard")) || (app.net.kind == NET_BIRD &&
+	    !has_plugin(s, "wireguard")) || (app.net.kind == NET_IPSEC &&
+	    !has_plugin(s, "strongswan")) || (app.net.kind == NET_BIRD &&
 	    !has_plugin(s, "bird"))))
 		app.net.kind = NET_INTERFACES;
 	if (strcmp(app.net.sid, s->id) != 0 || strcmp(app.net.jail,

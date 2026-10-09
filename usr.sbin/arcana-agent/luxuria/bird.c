@@ -212,19 +212,76 @@ proto_line(ucl_object_t *o, ucl_object_t **chanp, char *line)
 		}
 }
 
+static const char *const ospf_cols[] = { "router-id", "pri", "state",
+    "dtime", "interface", "address", NULL };
+static const char *const bfd_cols[] = { "address", "interface", "state",
+    "since", "interval", "timeout", NULL };
+
+/*
+ * What "show <what> <which>" lists: "proto1:", a heading whose first
+ * word is head, then a line of the columns cols for each, as objects
+ * with "proto" besides.
+ */
+static ucl_object_t *
+table(struct work *w, const char *what, const char *which, const char *head,
+    const char *const *cols)
+{
+	struct execres	 res;
+	ucl_object_t	*arr, *o;
+	char		*text, *line, *proto, *p, *f[8];
+	int		 n, ncol;
+
+	for (ncol = 0; cols[ncol] != NULL; ncol++)
+		;
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if (birdc(w, true, "show", what, which, &res) != 0)
+		return (arr);
+	proto = NULL;
+	text = wstrdup(w, res.out != NULL ? res.out : "");
+	while ((line = strsep(&text, "\n")) != NULL) {
+		line[strcspn(line, "\r")] = '\0';
+		n = (int)strlen(line);
+		if (n > 1 && line[n - 1] == ':' && strchr(line, ' ') == NULL) {
+			line[n - 1] = '\0';
+			proto = line;
+			continue;
+		}
+		p = line;
+		for (n = 0; n < ncol; n++) {
+			p += strspn(p, " \t");
+			if (*p == '\0')
+				break;
+			f[n] = p;
+			p += strcspn(p, " \t");
+			if (*p != '\0')
+				*p++ = '\0';
+		}
+		if (n < ncol || proto == NULL || strcmp(f[0], head) == 0)
+			continue;
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put(o, "proto", proto);
+		for (n = 0; n < ncol; n++)
+			put(o, cols[n], f[n]);
+		ucl_array_append(arr, o);
+	}
+	return (arr);
+}
+
 /*
  * {"status": [...], "protocols": [{"name", "proto", "table", "state",
  * "since", "info", and what proto_line() adds}], "ospf": [{"proto",
  * "router-id", "pri", "state", "dtime", "interface", "address"}],
+ * "bfd": [{"proto", "address", "interface", "state", "since",
+ * "interval", "timeout"}],
  * "tables": [{"name", "routes", "networks"}]}.
  */
 int
 do_bird(struct work *w, struct arc_network_rsp *rsp)
 {
 	struct execres	 res;
-	ucl_object_t	*top, *st, *arr, *o, *chan, *os, *tabs;
+	ucl_object_t	*top, *st, *arr, *o, *chan, *tabs;
 	unsigned char	*json;
-	char		*text, *line, *f[6], *p, *copy, *proto, *names[16];
+	char		*text, *line, *f[6], *p, *copy, *names[16];
 	long long	 routes, total, nets;
 	int		 n, i, ntab, pass;
 
@@ -289,44 +346,11 @@ do_bird(struct work *w, struct arc_network_rsp *rsp)
 	}
 	ucl_object_insert_key(top, arr, "protocols", 0, false);
 
-	/* "ospf1:", a heading, then a line for each neighbour. */
-	os = ucl_object_typed_new(UCL_ARRAY);
-	if (birdc(w, true, "show", "ospf", "neighbors", &res) == 0) {
-		proto = NULL;
-		text = wstrdup(w, res.out != NULL ? res.out : "");
-		while ((line = strsep(&text, "\n")) != NULL) {
-			line[strcspn(line, "\r")] = '\0';
-			n = (int)strlen(line);
-			if (n > 1 && line[n - 1] == ':' && strchr(line, ' ') ==
-			    NULL) {
-				line[n - 1] = '\0';
-				proto = line;
-				continue;
-			}
-			p = line;
-			for (n = 0; n < 6; n++) {
-				p += strspn(p, " \t");
-				if (*p == '\0')
-					break;
-				f[n] = p;
-				p += strcspn(p, " \t");
-				if (*p != '\0')
-					*p++ = '\0';
-			}
-			if (n < 6 || proto == NULL || strcmp(f[0], "Router") == 0)
-				continue;
-			o = ucl_object_typed_new(UCL_OBJECT);
-			put(o, "proto", proto);
-			put(o, "router-id", f[0]);
-			put(o, "pri", f[1]);
-			put(o, "state", f[2]);
-			put(o, "dtime", f[3]);
-			put(o, "interface", f[4]);
-			put(o, "address", f[5]);
-			ucl_array_append(os, o);
-		}
-	}
-	ucl_object_insert_key(top, os, "ospf", 0, false);
+	/* The OSPF neighbours, and the BFD sessions, alike. */
+	ucl_object_insert_key(top, table(w, "ospf", "neighbors", "Router",
+	    ospf_cols), "ospf", 0, false);
+	ucl_object_insert_key(top, table(w, "bfd", "sessions", "IP",
+	    bfd_cols), "bfd", 0, false);
 
 	/* The tables, and how much each holds: ROA tables among them. */
 	tabs = ucl_object_typed_new(UCL_ARRAY);

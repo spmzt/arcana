@@ -184,7 +184,11 @@ enum netkind {
 	NET_GENEVE,
 	NET_NHGROUPS,
 	NET_NEIGHBOURS,
+	NET_IPSEC,
 };
+/* A plugin's view: a tab of its own on a host that has it. */
+#define	NET_PLUGIN(k)	((k) == NET_WIREGUARD || (k) == NET_BIRD ||	\
+			    (k) == NET_IPSEC)
 
 /* The network tab's one table: what is shown, from which server. */
 struct netview {
@@ -324,6 +328,8 @@ enum modal {
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
 	MODAL_BIRD_FILE,
+	MODAL_IPSEC_CONN,
+	MODAL_PKG_INSTALL,
 	MODAL_IF_VNET,
 	MODAL_STORAGE,
 	MODAL_LOOKUP,
@@ -546,6 +552,12 @@ void		 view_bird(struct html *, struct server *, const ucl_object_t *);
 bool		 vpn_action(const char *, const char *, const char *);
 bool		 vpn_form(const char *, const ucl_object_t *);
 bool		 vpn_modal(struct html *);
+/* ipsec.c: a host's strongSwan, IKEv2 only. */
+void		 view_ipsec(struct html *, struct server *,
+		    const ucl_object_t *);
+bool		 ipsec_action(const char *, const char *, const char *);
+bool		 ipsec_form(const char *, const ucl_object_t *);
+bool		 ipsec_modal(struct html *);
 void		 vpn_age(char *, size_t, int64_t);
 
 /* bird.c: BIRD's neighbours and its configuration. */

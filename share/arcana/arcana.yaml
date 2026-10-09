@@ -206,6 +206,25 @@ definitions:
           pkg clean -y on the host or in a running jail: the cached
           packages that are no longer needed, or that the repository no
           longer has, deleted; with force, all of the cache (-a).
+      - name: ipsec
+        doc: |
+          IPsec through strongSwan's swanctl(8), IKEv2 only.  verb init
+          gives the host a key of its own, ECDSA P-256 made on the
+          host, whose public half the ipsec network kind tells; start
+          starts the daemon (service strongswan onestart); conn
+          writes the connection named conn, between tunnel-local and
+          tunnel-remote, authenticated by the two hosts' keys (pubkey
+          is the peer's), with one child of ipsec-mode tunnel or
+          transport between local-ts and remote-ts, and with reqid the
+          ipsec(4) interface of that reqid; unconn takes it away; up
+          and down start and stop its security associations.  What is
+          written is in conf.d, a file of its own that the daemon reads
+          again, and is there after a boot.
+      - name: pkg-install
+        doc: |
+          pkg install -y of the packages names, on the host or in a
+          running jail; with force, also of packages built for a newer
+          FreeBSD (IGNORE_OSVERSION).
   - name: job-state
     type: enum
     entries:
@@ -254,8 +273,10 @@ definitions:
           object with "status", its lines, the array "protocols", each
           with what show protocols all says of it (a BGP neighbour's
           address and AS, its channels with their filters and how many
-          routes came and went), the OSPF neighbours in "ospf", and the
-          routing tables with how many routes each holds in "tables".
+          routes came and went), the OSPF neighbours in "ospf", the BFD
+          sessions in "bfd" (each with its protocol, address, interface,
+          state, since, interval and timeout), and the routing tables
+          with how many routes each holds in "tables".
       - name: bird-routes
         doc: |
           Routes of BIRD's tables, from birdc(8) show route, as a JSON
@@ -310,6 +331,16 @@ definitions:
           and when it moves on ("next", seconds of the kernel's uptime),
           with "router" for a router; and "total", how many there are
           before the filter.
+      - name: ipsec
+        doc: |
+          strongSwan's IPsec, from swanctl(8): a JSON object with
+          "running", whether its daemon answers; "public-key", the
+          host's own, of verb init, in base64; "connections", each with
+          its name, version, addresses, identities, whether arcana
+          wrote it ("arcana") and its children with their mode, reqid
+          and traffic selectors; and "sas", the security associations,
+          IKE and their children, with state, algorithms and counters.
+          Never a private key.
   - name: storage-kind
     type: enum
     entries:
@@ -805,7 +836,8 @@ attribute-sets:
           The plugins the host has: what works through a program that
           is not the base system's and is installed there.  bird is
           BIRD, through birdc(8); wireguard is WireGuard's keys and
-          peers, through wg(8).
+          peers, through wg(8); strongswan is IPsec, through
+          swanctl(8).
 
   - name: jail
     attributes:
@@ -1089,6 +1121,64 @@ attribute-sets:
           pkg -4) or IPv6 only (6, pkg -6).
         checks:
           max: 6
+      - name: conn
+        type: text
+        doc: |
+          For ipsec, the connection: letters, digits, - and _, kept in
+          conf.d/arcana-<conn>.conf.
+        checks:
+          max-len: 32
+      - name: ipsec-mode
+        type: text
+        doc: For ipsec conn, tunnel or transport.
+        checks:
+          max-len: 9
+      - name: local-ts
+        type: text
+        doc: |
+          For ipsec conn, this side's traffic selectors with commas, as
+          swanctl.conf(5) writes them (2001:db8::1[gre]); none says the
+          address itself in transport mode, everything in tunnel mode.
+        checks:
+          max-len: 512
+      - name: remote-ts
+        type: text
+        doc: For ipsec conn, the peer's traffic selectors, as local-ts.
+        checks:
+          max-len: 512
+      - name: pubkey
+        type: text
+        doc: |
+          For ipsec conn, the peer's public key in base64 (DER), as the
+          ipsec network kind tells it of that host.
+        checks:
+          max-len: 1024
+      - name: reqid
+        type: u32
+        doc: |
+          For ipsec conn, the reqid of the ipsec(4) interface it serves:
+          tunnel mode, its policies the interface's.  For if-create of an
+          ipsec interface, the reqid it is made with.
+      - name: start-action
+        type: text
+        doc: |
+          For ipsec conn: start, up at once and kept up; trap, up with
+          the first packet that needs it (the default); none, only by
+          up.
+        checks:
+          max-len: 5
+      - name: local-id
+        type: text
+        doc: |
+          For ipsec conn, this side's identity when it is not its
+          address (behind NAT, the address it has there).
+        checks:
+          max-len: 128
+      - name: remote-id
+        type: text
+        doc: For ipsec conn, the peer's identity, as local-id.
+        checks:
+          max-len: 128
 
   - name: job
     attributes:

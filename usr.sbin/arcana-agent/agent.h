@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.38.0"
+#define	ARCANA_AGENT_VERSION	"0.39.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -47,6 +47,8 @@
 #define	PATH_FSTAB		"/etc/fstab"
 #define	PATH_WG_BIN		"/usr/local/bin/wg"
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
+#define	PATH_SWANCTL_BIN	"/usr/local/sbin/swanctl"
+#define	PATH_SWANCTL_DIR	"/usr/local/etc/swanctl"
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
 #define	PATH_BIRD_BIN		"/usr/local/sbin/bird"
 #define	PATH_BIRD_CONF		"/usr/local/etc/bird.conf"
@@ -99,6 +101,8 @@ struct opts {
 	bool		 helper_self;	/* it is this program: the host's own is read here */
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
+	const char	*swanctl_bin;
+	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
 	const char	*bird_bin;	/* bird(8), to parse a configuration */
 	const char	*bird_conf;	/* its main file */
@@ -331,6 +335,12 @@ int		 do_wg(struct work *, const struct arc_job_spec *,
 void		 wg_forget(struct work *, const char *);
 bool		 wg_key_ok(const char *);
 
+/* luxuria/ipsec.c: a plugin, strongSwan through swanctl(8). */
+int		 do_ipsec(struct work *, struct arc_network_rsp *);
+const char	*ipsec_check(const struct arc_job_spec *);
+int		 do_ipsec_job(struct work *, const struct arc_job_spec *,
+		    const char **);
+
 /* luxuria/bird.c: a plugin, through birdc(8). */
 int		 do_bird(struct work *, struct arc_network_rsp *);
 const char	*bird_check(const char *, const char *const *, size_t);
@@ -477,6 +487,8 @@ int		 do_packages(struct work *, const char *, bool, bool, uint8_t,
 int		 do_pkg_upgrade(struct work *, const struct arc_pkg_upgrade_req *,
 		    struct arc_pkg_upgrade_rsp *);
 int		 do_pkg_clean(struct work *, const char *, bool, const char **);
+int		 do_pkg_install(struct work *, const struct arc_job_spec *,
+		    const char **);
 
 /* ira/jobs.c: queued changes, run in order whoever is or is not connected. */
 void		 jobs_init(void);

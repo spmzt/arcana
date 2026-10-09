@@ -462,9 +462,11 @@ The console is laid out as a tree and tabs.
     also offered when a host reached over SCTP stops answering. From a
     shell: `arcanactl transport [retry]`.
   - **Plugins** are what works through a program that has to be
-    installed, not the base system's: **BIRD** (`birdc`) and
+    installed, not the base system's: **BIRD** (`birdc`),
     **WireGuard** (`wg`; the interface itself, `if_wg` made by
-    `ifconfig`, is the base system's and is among the interfaces).
+    `ifconfig`, is the base system's and is among the interfaces) and
+    **IPsec** (strongSwan's `swanctl`; an `ipsec` interface is the base
+    system's).
     Each has a tab of its own, after the others and marked ◆, on a
     host where its program is installed, and none where it is not;
     on the page of a jail with a network of its own they follow that
@@ -480,9 +482,32 @@ The console is laid out as a tree and tabs.
     `/usr/local/etc/wireguard/<if>.conf` for `wg-quick`, readable by
     root alone, and named in `wireguard_interfaces`: that needs the
     `wireguard-tools` package on the host.
+    **IPsec** is strongSwan, IKEv2 only, every connection arcana writes
+    saying `version = 2`. **Make its key** has the host make a key of
+    its own, ECDSA P-256, whose private half stays on the host; the tab
+    shows the public half, which is what a peer is given: two hosts
+    know each other by their keys, no CA between them. **At boot**
+    keeps strongSwan started with the host (`strongswan_enable`), and
+    **Start** starts it when it is not running. **+ connection** joins
+    this host to another between two addresses, in **tunnel** mode or
+    in **transport** mode, where what is sent between the two addresses
+    is protected as it is: a gre, gif or WireGuard tunnel between them,
+    with the traffic named as `192.0.2.1[gre]`. With a **reqid** a
+    connection serves the `ipsec` interface made with that reqid
+    (**+ interface**, type ipsec): tunnel mode, the interface's routes
+    deciding what goes through it. A connection is written as
+    `swanctl/conf.d/arcana-<name>.conf` with the peer's key beside it,
+    and strongSwan reads them all again; if it refuses, the files are
+    put back as they were. The table has each connection with its
+    child, its SA's state and algorithm, and its traffic; **Up**,
+    **Down**, and the cross, for arcana's, takes it away, its SAs ended
+    first. A connection that is not IKEv2 is marked so. From a shell:
+    `arcanactl ipsec init | start | conn | unconn | up | down`.
     **BIRD** draws the routing daemon in the middle and around it its
     BGP neighbours (their AS and address), its OSPF neighbours and its
-    RPKI caches, each coloured by its state. A neighbour picked, in the
+    RPKI caches, each coloured by its state. Under the protocols, the
+    **BFD sessions**: each neighbour that asked for BFD, on which
+    interface, and whether it still answers. A neighbour picked, in the
     drawing or in the table under it, opens in a box: what the daemon
     says of it (session, timers, each channel's table, its import and
     export filters, how many routes came and went, and all the rest
@@ -557,8 +582,11 @@ The console is laid out as a tree and tabs.
     cache (`pkg clean -a`), each a job once it is confirmed. **Clean
     the jails**, on the host's page, does it in every running jail at
     once: one batch of a job each, so that a jail whose pkg refuses
-    fails alone. From a shell: `arcanactl packages [-i] [-4 | -6]
-    [jail]`, `pkg-upgrade [-O] …`, `pkg-clean [-a] [-j jail | -J]`. When pkg refuses packages built for a newer
+    fails alone. **Install…** installs packages by name, on the host or
+    in the jail whose page it is, over IPv4 or IPv6 as chosen
+    (`pkg install -y`). From a shell: `arcanactl packages [-i] [-4 |
+    -6] [jail]`, `pkg-upgrade [-O] …`, `pkg-clean [-a] [-j jail | -J]`,
+    `pkg-install [-O] [-4 | -6] [-j jail] package …`. When pkg refuses packages built for a newer
     FreeBSD than the host's (OSVERSION), the console asks whether to
     go on anyway, and approved, does it again with
     `IGNORE_OSVERSION=yes` (a job of kind pkg-upgrade with force).

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.61.0
+  version: 0.62.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -486,7 +486,7 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, neighbours]
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, neighbours, ipsec]
           description: The kernel's routes through netlink(4) (each with
             destination, gateway, flags, nhop, mtu, interface-name,
             metric, weight, fib, prefixlen, source and expire-time when
@@ -1031,7 +1031,8 @@ paths:
                           if-state, route, if-set, if-create, if-destroy,
                           netgraph, wireguard, bird, if-vnet, kmod, zfs,
                           zpool, mount, gpart, cam, sysctl, ipfw,
-                          bridge, geneve, process, pkg-clean]
+                          bridge, geneve, process, pkg-clean, ipsec,
+                          pkg-install]
                       jail: { type: string, description: The jail acted on.
                           For a job that changes a network, the vnet jail
                           whose network it is; for if-vnet, the jail the
@@ -1062,7 +1063,31 @@ paths:
                         type: object
                         additionalProperties: { type: string }
                       unset: { type: array, items: { type: string } }
-                      packages: { type: array, items: { type: string } }
+                      packages: { type: array, items: { type: string },
+                        description: For pkg-upgrade and pkg-install. }
+                      verb: { type: string, description: For ipsec, init,
+                          start, conn, unconn, up or down. }
+                      conn: { type: string, description: For ipsec, the
+                          connection, kept in conf.d/arcana-<conn>.conf. }
+                      tunnel_local: { type: string, description: For
+                          if-create a tunnel's outer address here; for
+                          ipsec conn, this host's address. }
+                      tunnel_remote: { type: string, description: The far
+                          end's, as tunnel_local. }
+                      ipsec_mode: { type: string, enum: [tunnel, transport] }
+                      pubkey: { type: string, description: For ipsec conn,
+                          the peer's public key in base64, as its
+                          net/ipsec tells it. }
+                      local_ts: { type: string, description: For ipsec conn,
+                          this side's traffic selectors, with commas. }
+                      remote_ts: { type: string }
+                      reqid: { type: integer, minimum: 1, maximum: 16383,
+                          description: For ipsec conn, the ipsec(4)
+                          interface it serves; for if-create, that
+                          interface's reqid. }
+                      start_action: { type: string, enum: [start, trap, none] }
+                      local_id: { type: string }
+                      remote_id: { type: string }
             example:
               jobs:
                 - { kind: service-action, service: nginx, action: stop }
@@ -1847,7 +1872,7 @@ components:
         version: { type: string, description: arcana-agent's. }
         plugins:
           type: array
-          items: { type: string, enum: [bird, wireguard] }
+          items: { type: string, enum: [bird, wireguard, strongswan] }
           description: What the host has of what works through a program
             that is installed, not the base system's. BIRD through
             birdc(8), WireGuard's keys and peers through wg(8). A running

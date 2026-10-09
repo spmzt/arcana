@@ -94,6 +94,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_IPFW] = "ipfw",
 	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
+	[ARC_NET_KIND_IPSEC] = "ipsec",
 };
 
 static const char *service_action_names[] = {
@@ -1537,7 +1538,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PKG_CLEAN)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PKG_INSTALL)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1610,6 +1611,16 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_PROCESS:
 		if ((e = proc_check(sp)) != NULL)
 			return (e);
+		break;
+	case ARC_JOB_KIND_IPSEC:
+		if (sp->safe)
+			return ("IPsec changes are not undone: not in safe mode");
+		return (ipsec_check(sp));
+	case ARC_JOB_KIND_PKG_INSTALL:
+		if (sp->safe)
+			return ("an install is not taken back by itself");
+		if (sp->names.n == 0)
+			return ("name the packages to install");
 		break;
 	case ARC_JOB_KIND_PKG_CLEAN:
 		if (sp->safe)

@@ -305,6 +305,8 @@ do_network(struct work *w, uint8_t kind, uint8_t family, const char *filter,
 		return (do_wireguard(w, rsp));
 	if (kind == ARC_NET_KIND_BIRD)
 		return (do_bird(w, rsp));
+	if (kind == ARC_NET_KIND_IPSEC)
+		return (do_ipsec(w, rsp));
 	if (kind == ARC_NET_KIND_BIRD_ROUTES)
 		return (do_bird_routes(w, filter, rsp));
 	if (kind == ARC_NET_KIND_BRIDGES || kind == ARC_NET_KIND_GENEVE)

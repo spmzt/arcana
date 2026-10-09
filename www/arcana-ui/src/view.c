@@ -868,20 +868,21 @@ stage(struct html *h)
 		} plugins[] = {
 			{ "wireguard", "WireGuard", NET_WIREGUARD },
 			{ "bird", "BIRD", NET_BIRD },
+			{ "ipsec", "IPsec", NET_IPSEC },
 		};
 		bool	plug;
 		int	t;
 
-		plug = app.tab == TAB_NETWORK && (app.net.kind ==
-		    NET_WIREGUARD || app.net.kind == NET_BIRD);
+		plug = app.tab == TAB_NETWORK && NET_PLUGIN(app.net.kind);
 		h_raw(h, "<nav class=\"tabs\">");
 		for (t = 0; t < (int)(sizeof(tabs) / sizeof(tabs[0])); t++)
 			h_fmt(h, "<button class=\"tab%s\" data-act=\"tab\" "
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
 			    tabs[t].title);
-		for (t = 0; t < 2; t++)
-			if (plugin_at(s, "", plugins[t].arg))
+		for (t = 0; t < 3; t++)
+			if (plugin_at(s, "", plugins[t].kind == NET_IPSEC ?
+			    "strongswan" : plugins[t].arg))
 				h_fmt(h, "<button class=\"tab plugin%s\" "
 				    "data-act=\"tab\" data-arg=\"%s\" title=\""
 				    "A plugin: installed on this host, not the "
@@ -1386,6 +1387,10 @@ modal(struct html *h)
 		if (!vpn_modal(h))
 			return;
 		break;
+	case MODAL_IPSEC_CONN:
+		if (!ipsec_modal(h))
+			return;
+		break;
 	case MODAL_BIRD_PROTO:
 	case MODAL_BIRD_BLOCK:
 	case MODAL_BIRD_RPKI:
@@ -1431,6 +1436,30 @@ modal(struct html *h)
 			h_fmt(h, " value=\"%d\"", app.net.fib);
 		h_raw(h, " placeholder=\"0\"><small>The table the route goes "
 		    "into; 0 is the first.</small></label></div>");
+		break;
+	case MODAL_PKG_INSTALL:
+		if (cur_server() == NULL)
+			return;
+		h_raw(h, "<form data-form=\"pkg-install\"><h2>Install packages"
+		    "</h2><p><code>pkg install -y</code> ");
+		if (app.pkg.jail[0] != '\0') {
+			h_raw(h, "in the jail <b>");
+			h_txt(h, app.pkg.jail);
+			h_raw(h, "</b>");
+		} else {
+			h_raw(h, "on <b>");
+			h_txt(h, cur_server()->name);
+			h_raw(h, "</b>");
+		}
+		h_fmt(h, ", from its repository%s, with what they need.</p>"
+		    "<label>Packages<input name=\"names\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"strongswan "
+		    "wireguard-tools\" autofocus><small>Their names, with spaces "
+		    "between them.</small></label><label class=\"toggle\"><input "
+		    "type=\"checkbox\" name=\"anyos\"><span>Also packages built "
+		    "for a newer FreeBSD <em>IGNORE_OSVERSION</em></span></label>",
+		    app.pkg.ip == 4 ? ", over IPv4" : app.pkg.ip == 6 ?
+		    ", over IPv6" : "");
 		break;
 	case MODAL_LOOKUP:
 		if (cur_server() == NULL)
@@ -1823,6 +1852,7 @@ modal(struct html *h)
 			h_raw(h, "<button class=\"primary\">Set</button>");
 			break;
 		case MODAL_WG_PEER:
+		case MODAL_IPSEC_CONN:
 			h_raw(h, "<button class=\"primary\">Add</button>");
 			break;
 		case MODAL_STORAGE:
@@ -1830,6 +1860,9 @@ modal(struct html *h)
 			break;
 		case MODAL_LOOKUP:
 			h_raw(h, "<button class=\"primary\">Look up</button>");
+			break;
+		case MODAL_PKG_INSTALL:
+			h_raw(h, "<button class=\"primary\">Install</button>");
 			break;
 		case MODAL_BIRD_PROTO:
 		case MODAL_BIRD_BLOCK:
@@ -2538,6 +2571,8 @@ view_packages(struct html *h, struct server *s)
 	    "small%s\" data-act=\"pkg-ip\" data-arg=\"6\">IPv6</button></nav>",
 	    app.pkg.ip == 0 ? " on" : "", app.pkg.ip == 4 ? " on" : "",
 	    app.pkg.ip == 6 ? " on" : "");
+	h_raw(h, "<button class=\"ghost small\" data-act=\"pkg-install\" "
+	    "title=\"pkg install: packages added\">Install…</button>");
 	/* The cache of downloaded packages, cleaned. */
 	h_raw(h, "<button class=\"ghost small\" data-act=\"pkg-clean\" "
 	    "data-arg=\"\" title=\"pkg clean: the downloaded packages no "

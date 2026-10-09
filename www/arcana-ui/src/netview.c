@@ -442,6 +442,7 @@ view_network(struct html *h, struct server *s)
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
 		{ "nhgroups", "Nexthop groups" }, { "neighbours", "Neighbours" },
+		{ "ipsec", "IPsec" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -457,7 +458,7 @@ view_network(struct html *h, struct server *s)
 	 * jail's page has no tabs: there the plugins the jail has follow
 	 * the rest, apart.
 	 */
-	plug = app.net.kind == NET_WIREGUARD || app.net.kind == NET_BIRD;
+	plug = NET_PLUGIN(app.net.kind);
 	scoped = net_scope()[0] != '\0';
 	h_raw(h, "<div class=\"toolbar\"><nav class=\"sub\">");
 	/* The nexthop groups are of the Nexthops, not a tab of their own. */
@@ -470,7 +471,7 @@ view_network(struct html *h, struct server *s)
 	/* What is of the base system too, and came later. */
 	for (i = 8; i < (int)(sizeof(kinds) / sizeof(kinds[0])) &&
 	    (!plug || scoped); i++)
-		if (i != NET_NHGROUPS)
+		if (i != NET_NHGROUPS && !NET_PLUGIN(i))
 			h_fmt(h, "<button class=\"ghost small%s\" data-act=\""
 			    "net-kind\" data-arg=\"%s\">%s</button>",
 			    (int)app.net.kind == i ? " on" : "", kinds[i].arg,
@@ -486,11 +487,17 @@ view_network(struct html *h, struct server *s)
 		    "Groups</button></nav>", app.net.kind ==
 		    NET_NEXTHOPS ? " on" : "", app.net.kind == NET_NHGROUPS ?
 		    " on" : "");
-	if (scoped && (has_plugin(s, "wireguard") || has_plugin(s, "bird"))) {
+	if (scoped && (has_plugin(s, "wireguard") || has_plugin(s, "bird") ||
+	    has_plugin(s, "strongswan"))) {
+		static const int plugs[] = { NET_WIREGUARD, NET_BIRD,
+		    NET_IPSEC };
+		int	pi;
+
 		h_raw(h, "<nav class=\"sub plugins\" title=\"Plugins: what is "
 		    "installed in the jail, not the base system's\">");
-		for (i = 6; i < 8; i++)
-			if (has_plugin(s, kinds[i].arg))
+		for (pi = 0; pi < 3; pi++)
+			if ((i = plugs[pi]) >= 0 && has_plugin(s, i ==
+			    NET_IPSEC ? "strongswan" : kinds[i].arg))
 				h_fmt(h, "<button class=\"ghost small%s\" "
 				    "data-act=\"net-kind\" data-arg=\"%s\">%s"
 				    "</button>", (int)app.net.kind == i ? " on" :
@@ -633,6 +640,9 @@ view_network(struct html *h, struct server *s)
 		return;
 	case NET_BIRD:
 		view_bird(h, s, jget(app.net.data, "data"));
+		return;
+	case NET_IPSEC:
+		view_ipsec(h, s, jget(app.net.data, "data"));
 		return;
 	case NET_BRIDGES:
 		view_bridges(h, s, jget(app.net.data, "data.bridges"));

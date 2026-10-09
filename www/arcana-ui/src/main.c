@@ -315,6 +315,7 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
+	    ipsec_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
@@ -330,7 +331,57 @@ submit_form(const char *form, const ucl_object_t *f)
 	bool		 dry;
 	int		 i;
 
-	if (strcmp(form, "enrol") == 0) {
+	if (strcmp(form, "pkg-install") == 0 && cur_server() != NULL) {
+		struct html	 b;
+		const char	*p;
+		char		 word[128], title[300], *q, *qj;
+		size_t		 n, nw;
+
+		/* The names typed, each checked, as a JSON array. */
+		memset(&b, 0, sizeof(b));
+		nw = 0;
+		for (p = jstr(f, "names") != NULL ? jstr(f, "names") : "";
+		    *p != '\0'; ) {
+			p += strspn(p, " ,\t");
+			n = strcspn(p, " ,\t");
+			if (n == 0)
+				break;
+			if (n >= sizeof(word) || strspn(p,
+			    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+			    "0123456789-_.+@/") < n) {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "A package is named with letters, digits and "
+				    "- _ . + @ /");
+				free(b.s);
+				return;
+			}
+			snprintf(word, sizeof(word), "%.*s", (int)n, p);
+			q = json_quote(word);
+			h_fmt(&b, "%s%s", nw++ > 0 ? "," : "", q);
+			free(q);
+			p += n;
+		}
+		if (nw == 0) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "Name the packages to install");
+			free(b.s);
+			return;
+		}
+		qj = json_quote(app.pkg.jail);
+		if (asprintf(&q, "{\"kind\":\"pkg-install\",\"packages\":[%s]"
+		    "%s%s%s%s%s}", b.s, app.pkg.jail[0] != '\0' ? ",\"jail\":" :
+		    "", app.pkg.jail[0] != '\0' ? qj : "", app.pkg.ip != 0 ?
+		    (app.pkg.ip == 4 ? ",\"pkg_ip\":4" : ",\"pkg_ip\":6") : "",
+		    jbool(f, "anyos") ? ",\"force\":true" : "", "") == -1)
+			abort();
+		free(qj);
+		snprintf(title, sizeof(title), "pkg install %.200s%s%s",
+		    jstr(f, "names"), app.pkg.jail[0] != '\0' ? " in " : "",
+		    app.pkg.jail);
+		free(b.s);
+		app.modal = MODAL_NONE;
+		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
+	} else if (strcmp(form, "enrol") == 0) {
 		enrol(jstr(f, "token") != NULL ? jstr(f, "token") : "",
 		    jstr(f, "name") != NULL ? jstr(f, "name") : "");
 	} else if (strcmp(form, "add-server") == 0) {
@@ -515,6 +566,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	s = cur_server();
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
+	    ipsec_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
 	    procs_action(act, arg, value) || logs_action(act, arg, value) ||
@@ -568,17 +620,20 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "tab") == 0 && s != NULL) {
 		/* A plugin's tab is its view of the host's network. */
 		if (strcmp(arg, "wireguard") == 0 || strcmp(arg, "bird") == 0 ||
+		    strcmp(arg, "ipsec") == 0 ||
 		    (strcmp(arg, "network") == 0 && app.net.kind >=
 		    NET_WIREGUARD)) {
 			app.net.kind = arg[0] == 'w' ? NET_WIREGUARD : arg[0] ==
-			    'b' ? NET_BIRD : NET_INTERFACES;
+			    'b' ? NET_BIRD : arg[0] == 'i' ? NET_IPSEC :
+			    NET_INTERFACES;
 			app.net.sort = -1;
 			app.net.loading = false;
 			app.net.sid[0] = '\0';
 		}
 		app.tab = strcmp(arg, "services") == 0 ? TAB_SERVICES :
 		    strcmp(arg, "network") == 0 || strcmp(arg, "wireguard") ==
-		    0 || strcmp(arg, "bird") == 0 ? TAB_NETWORK :
+		    0 || strcmp(arg, "bird") == 0 || strcmp(arg, "ipsec") == 0 ?
+		    TAB_NETWORK :
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
 		    strcmp(arg, "kernel") == 0 ? TAB_KERNEL :
 		    strcmp(arg, "sysctl") == 0 ? TAB_SYSCTL :
@@ -628,6 +683,9 @@ dispatch(const char *act, const char *arg, const char *value)
 		refresh_packages(s, false);
 	} else if (strcmp(act, "pkg-check") == 0 && s != NULL) {
 		refresh_packages(s, true);
+	} else if (strcmp(act, "pkg-install") == 0 && s != NULL) {
+		app.modal = MODAL_PKG_INSTALL;
+		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "pkg-clean") == 0 && s != NULL) {
 		snprintf(body, sizeof(body), "pkg clean%s on %s%s%s: %s",
 		    arg[0] != '\0' ? " -a" : "", s->name, app.pkg.jail[0] !=
@@ -822,7 +880,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "nhgroups") == 0 ? NET_NHGROUPS :
 		    strcmp(arg, "neighbours") == 0 ? NET_NEIGHBOURS :
 		    strcmp(arg, "wireguard") == 0 ? NET_WIREGUARD :
-		    strcmp(arg, "bird") == 0 ? NET_BIRD : NET_ROUTES;
+		    strcmp(arg, "bird") == 0 ? NET_BIRD :
+		    strcmp(arg, "ipsec") == 0 ? NET_IPSEC : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
 			topo_poll(s);
 		app.net.loading = false;

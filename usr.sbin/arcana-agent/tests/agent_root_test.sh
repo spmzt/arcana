@@ -203,7 +203,7 @@ routes_body()
 	# netstat and sockstat would list them: what sockstat has, this has,
 	# and in parts too.
 	atf_check -o match:'"statistics":\{"socket":\[' "$JGC" -c "$SOCK" net connections
-	pid=$(sockstat -46w | awk 'NR == 2 { print $3 }')
+	pid=$(sockstat -46w | awk 'NR > 1 && $3 ~ /^[0-9]+$/ { print $3; exit }')
 	atf_check -o match:"\"pid\":$pid," -o match:'"user":"' \
 	    "$JGC" -c "$SOCK" net sockets
 	atf_check -o match:'"command":"' "$JGC" -c "$SOCK" net sockets parts

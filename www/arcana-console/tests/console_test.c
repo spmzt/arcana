@@ -1648,6 +1648,62 @@ ATF_TC_BODY(services, tc)
 		ATF_CHECK(strstr(r.body, key) == NULL);
 	}
 	resp_free(&r);
+
+	/*
+	 * IPsec: the host makes its key and tells its public half; a
+	 * connection is written for it, IKEv2, and read back.
+	 */
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"ipsec\",\"verb\":\"init\"}]}",
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ipsec init", jstr(&r, "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("test -s swanctl/pubkey/arcana.pub") !=
+	    0; i++)
+		usleep(50000);
+	snprintf(path, sizeof(path), "%.*s/net/ipsec",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "data.public-key") != NULL);
+	ATF_CHECK(strlen(jstr(&r, "data.public-key")) > 80);
+	ATF_CHECK(strstr(r.body, "PRIVATE") == NULL);
+	snprintf(body, sizeof(body), "{\"jobs\":[{\"kind\":\"ipsec\",\"verb\":"
+	    "\"conn\",\"conn\":\"to-lab2\",\"tunnel_local\":\"192.0.2.1\","
+	    "\"tunnel_remote\":\"192.0.2.2\",\"ipsec_mode\":\"transport\","
+	    "\"pubkey\":\"%s\",\"local_ts\":\"192.0.2.1[gre]\","
+	    "\"remote_ts\":\"192.0.2.2[gre]\",\"start_action\":\"start\"}]}",
+	    jstr(&r, "data.public-key"));
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ipsec conn to-lab2 (transport)", jstr(&r,
+	    "jobs.0.title"));
+	resp_free(&r);
+	for (i = 0; i < 100 && system("grep -q 'version = 2' "
+	    "swanctl/conf.d/arcana-to-lab2.conf 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q 'mode = transport' "
+	    "swanctl/conf.d/arcana-to-lab2.conf") == 0);
+	snprintf(path, sizeof(path), "%.*s/net/ipsec",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("to-lab2", jstr(&r, "data.connections.0.name"));
+	ATF_CHECK_STREQ("true", jstr(&r, "data.connections.0.arcana"));
+	ATF_CHECK_STREQ("INSTALLED", jstr(&r, "data.sas.0.children.0.state"));
+	resp_free(&r);
+	/* A connection is named, but for init and start. */
+	snprintf(path, sizeof(path), "%.*s/jobs",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"ipsec\",\"verb\":\"up\"}]}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/net/bird",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);
@@ -2229,6 +2285,7 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("bird", jstr(&r, "host.plugins.0"));
 	ATF_CHECK_STREQ("wireguard", jstr(&r, "host.plugins.1"));
+	ATF_CHECK_STREQ("strongswan", jstr(&r, "host.plugins.2"));
 	resp_free(&r);
 
 	/* BIRD's routes, asked for in birdc's words with , between. */

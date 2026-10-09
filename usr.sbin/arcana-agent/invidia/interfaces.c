@@ -676,7 +676,7 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	const char	*name, *addr, *rcif, *e;
 	char		*argv[12], *create, *alias;
 	int		 how, n, af, plen;
-	bool		 wrote;
+	bool		 wrote, six;
 
 	wrote = false;
 	*namep = NULL;
@@ -700,6 +700,25 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	}
 	if (sp->tunnel_local != NULL && how != CL_TUNNEL && how != CL_VXLAN) {
 		*errp = "only a tunnel has tunnel ends";
+		return (-1);
+	}
+	/*
+	 * Both ends of one family; IPv6 ones are said so to ifconfig(8),
+	 * which takes the tunnel's ends as IPv4 otherwise, and prints its
+	 * refusal yet ends well.
+	 */
+	six = false;
+	if (sp->tunnel_local != NULL && sp->tunnel_remote != NULL) {
+		six = strchr(sp->tunnel_local, ':') != NULL;
+		if (six != (strchr(sp->tunnel_remote, ':') != NULL)) {
+			*errp = "a tunnel's ends are both IPv4 or both IPv6";
+			return (-1);
+		}
+	}
+	if (sp->has_reqid && (strncmp(sp->interface, "ipsec", 5) != 0 ||
+	    sp->interface[5 + strspn(sp->interface + 5, "0123456789")] !=
+	    '\0' || sp->reqid < 1 || sp->reqid > 16383)) {
+		*errp = "a reqid, from 1 to 16383, is an ipsec interface's";
 		return (-1);
 	}
 	if (how == CL_VLAN && (!sp->has_id || sp->id < 1 || sp->id > 4094 ||
@@ -740,6 +759,8 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	create = NULL;
 	if (how == CL_VLAN)
 		create = wfmt(w, "vlan %u vlandev %s", sp->id, sp->parent);
+	else if (sp->has_reqid)
+		create = wfmt(w, "reqid %u", sp->reqid);
 	else if (how == CL_VXLAN)
 		create = sp->tunnel_local != NULL && sp->tunnel_remote != NULL ?
 		    wfmt(w, "vxlanid %u vxlanlocal %s vxlanremote %s", sp->id,
@@ -749,7 +770,10 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	argv[n++] = (char *)(uintptr_t)opts.ifconfig_bin;
 	argv[n++] = (char *)(uintptr_t)sp->interface;
 	argv[n++] = (char *)(uintptr_t)"create";
-	if (how == CL_VLAN) {
+	if (sp->has_reqid) {
+		argv[n++] = (char *)(uintptr_t)"reqid";
+		argv[n++] = wfmt(w, "%u", sp->reqid);
+	} else if (how == CL_VLAN) {
 		argv[n++] = (char *)(uintptr_t)"vlan";
 		argv[n++] = wfmt(w, "%u", sp->id);
 		argv[n++] = (char *)(uintptr_t)"vlandev";
@@ -785,10 +809,13 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 
 	argv[1] = (char *)(uintptr_t)name;
 	if (how == CL_TUNNEL) {
-		argv[2] = (char *)(uintptr_t)"tunnel";
-		argv[3] = (char *)(uintptr_t)sp->tunnel_local;
-		argv[4] = (char *)(uintptr_t)sp->tunnel_remote;
-		argv[5] = NULL;
+		n = 2;
+		if (six)
+			argv[n++] = (char *)(uintptr_t)"inet6";
+		argv[n++] = (char *)(uintptr_t)"tunnel";
+		argv[n++] = (char *)(uintptr_t)sp->tunnel_local;
+		argv[n++] = (char *)(uintptr_t)sp->tunnel_remote;
+		argv[n] = NULL;
 		if (run_exec(w, argv, &res) != 0)
 			goto undo;
 	}
@@ -866,7 +893,8 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	    create, &e) != 0)
 		goto undo_said;
 	if (rc_set(w, wfmt(w, "ifconfig_%s", rcif), "=", wfmt(w, "%s%s%s%s%s%s"
-	    "%s%sup", how == CL_TUNNEL ? "tunnel " : "", how == CL_TUNNEL ?
+	    "%s%sup", how == CL_TUNNEL ? six ? "inet6 tunnel " : "tunnel " :
+	    "", how == CL_TUNNEL ?
 	    sp->tunnel_local : "", how == CL_TUNNEL ? " " : "",
 	    how == CL_TUNNEL ? sp->tunnel_remote : "", how == CL_TUNNEL ? " " :
 	    "", how == CL_BRIDGE && sp->parent != NULL ? wfmt(w, "addm %s ",

@@ -185,7 +185,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[84];
+	char	*argv[88];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -500,6 +500,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "'show ospf neighbors') printf 'ospf1:\\nRouter ID Pri State DTime "
 	    "Interface Router IP\\n10.0.0.2 1 Full/PtP 00:00:35 gif0 "
 	    "10.255.0.2\\n' ;;\n"
+	    "'show bfd sessions') printf 'bfd1:\\nIP address Interface State "
+	    "Since Interval Timeout\\nfe80::2 gif0 Up 13:01:27.605 0.200 "
+	    "1.000\\n' ;;\n"
 	    "'show symbols table') printf 'master4 routing table\\nr4 routing "
 	    "table\\n' ;;\n"
 	    "'show route table master4 count') printf '845236 of 845236 routes "
@@ -648,6 +651,36 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "protocol rpki rpki1 {\n\troa4 { table r4; };\n\tremote "
 	    "\"rpki.example.net\" port 3323;\n}\n");
 	snprintf(birdconf, sizeof(birdconf), "%s/bird/bird.conf", cwd);
+	/*
+	 * swanctl(8): strongSwan running, its connections those written in
+	 * conf.d, as list-conns says them, and one SA up.
+	 */
+	put("fake-swanctl", "#!/bin/sh\necho \"$*\" >> swanctl.log\n"
+	    "case \"$1\" in\n"
+	    "--list-conns) for f in swanctl/conf.d/arcana-*.conf; do\n"
+	    "  [ -f \"$f\" ] || continue; n=${f##*/arcana-}; n=${n%.conf}\n"
+	    "  l=$(sed -n 's/^.*local_addrs = //p' \"$f\")\n"
+	    "  r=$(sed -n 's/^.*remote_addrs = //p' \"$f\")\n"
+	    "  m=$(sed -n 's/^.*mode = //p' \"$f\" | tr a-z A-Z)\n"
+	    "  printf 'list-conn event {\\n  %s {\\n    local_addrs = [\\n"
+	    "      %s\\n    ]\\n    remote_addrs = [\\n      %s\\n    ]\\n"
+	    "    version = IKEv2\\n    children {\\n      %s {\\n"
+	    "        mode = %s\\n      }\\n    }\\n  }\\n}\\n' \"$n\" \"$l\" "
+	    "\"$r\" \"$n\" \"$m\"\n"
+	    "done ;;\n"
+	    "--list-sas) [ -f swanctl/conf.d/arcana-to-lab2.conf ] && printf "
+	    "'list-sa event {\\n  to-lab2 {\\n    state = ESTABLISHED\\n"
+	    "    encr-alg = AES_GCM_16\\n    child-sas {\\n      to-lab2-1 {"
+	    "\\n        name = to-lab2\\n        state = INSTALLED\\n"
+	    "        mode = TRANSPORT\\n        reqid = 1\\n"
+	    "        bytes-in = 2048\\n        bytes-out = 4096\\n      }"
+	    "\\n    }\\n  }\\n}\\n' ;;\n"
+	    "esac\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-swanctl", 0755) == 0);
+	ATF_REQUIRE(mkdir("swanctl", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("swanctl/conf.d", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("swanctl/pkcs8", 0700) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("swanctl/pubkey", 0755) == 0 || errno == EEXIST);
 	ATF_REQUIRE(chmod("fake-wg", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-birdc", 0755) == 0);
 	ATF_REQUIRE(mkdir("wg", 0700) == 0 || errno == EEXIST);
@@ -774,7 +807,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[79] = (char *)(uintptr_t)"history.conf";
 	argv[80] = (char *)(uintptr_t)"-2";
 	argv[81] = (char *)(uintptr_t)"tools";
-	argv[82] = NULL;
+	argv[82] = (char *)(uintptr_t)"-r";
+	argv[83] = (char *)(uintptr_t)"./fake-swanctl";
+	argv[84] = (char *)(uintptr_t)"-5";
+	argv[85] = (char *)(uintptr_t)"swanctl";
+	argv[86] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

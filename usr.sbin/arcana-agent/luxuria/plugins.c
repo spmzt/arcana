@@ -7,7 +7,8 @@
 /*
  * Luxuria: what is not FreeBSD's own.  A plugin works through a program
  * that has to be installed, and is there only where its program is:
- * BIRD through birdc(8), WireGuard's keys and peers through wg(8) (the
+ * BIRD through birdc(8), strongSwan's IPsec through swanctl(8),
+ * WireGuard's keys and peers through wg(8) (the
  * interface itself, if_wg(4) made by ifconfig(8), is the base system's
  * and Invidia's).  A host says which it has, and so does a jail with a
  * network of its own, where the program is the jail's.
@@ -27,6 +28,7 @@ static const struct {
 } plugins[] = {
 	{ "bird", &opts.birdc_bin },
 	{ "wireguard", &opts.wg_bin },
+	{ "strongswan", &opts.swanctl_bin },
 };
 
 /*

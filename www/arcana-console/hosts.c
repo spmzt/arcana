@@ -203,6 +203,7 @@ static const char *net_kind_names[] = {
 	[ARC_NET_KIND_IPFW] = "ipfw",
 	[ARC_NET_KIND_NHGROUPS] = "nhgroups",
 	[ARC_NET_KIND_NEIGHBOURS] = "neighbours",
+	[ARC_NET_KIND_IPSEC] = "ipsec",
 };
 
 static const char *service_action_names[] = {
@@ -2544,7 +2545,7 @@ api_network(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "kind is one of "
 		    "routes, nexthops, nhgroups, connections, sockets, interfaces, "
 		    "netgraph, wireguard, bird, bird-routes, bridges, geneve, "
-		    "ipfw, neighbours, lookup; fib a number"));
+		    "ipfw, neighbours, ipsec, lookup; fib a number"));
 	}
 	c->action = (uint8_t)i;
 	/* Read on in a table too large for one reply. */
@@ -3234,6 +3235,8 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_GENEVE] = "geneve",
 	[ARC_JOB_KIND_PROCESS] = "process",
 	[ARC_JOB_KIND_PKG_CLEAN] = "pkg-clean",
+	[ARC_JOB_KIND_IPSEC] = "ipsec",
+	[ARC_JOB_KIND_PKG_INSTALL] = "pkg-install",
 };
 
 static const char *job_state_names[] = {
@@ -3292,6 +3295,14 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->endpoint);
 	kore_free((char *)(uintptr_t)sp->allowed_ips);
 	kore_free((char *)(uintptr_t)sp->description);
+	kore_free((char *)(uintptr_t)sp->conn);
+	kore_free((char *)(uintptr_t)sp->ipsec_mode);
+	kore_free((char *)(uintptr_t)sp->local_ts);
+	kore_free((char *)(uintptr_t)sp->remote_ts);
+	kore_free((char *)(uintptr_t)sp->pubkey);
+	kore_free((char *)(uintptr_t)sp->start_action);
+	kore_free((char *)(uintptr_t)sp->local_id);
+	kore_free((char *)(uintptr_t)sp->remote_id);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -3350,6 +3361,20 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->source = jdup(o, "source");
 	sp->peer = jdup(o, "peer");
 	sp->endpoint = jdup(o, "endpoint");
+	/* IPsec's connection, for an ipsec job. */
+	sp->conn = jdup(o, "conn");
+	sp->ipsec_mode = jdup(o, "ipsec_mode");
+	sp->local_ts = jdup(o, "local_ts");
+	sp->remote_ts = jdup(o, "remote_ts");
+	sp->pubkey = jdup(o, "pubkey");
+	sp->start_action = jdup(o, "start_action");
+	sp->local_id = jdup(o, "local_id");
+	sp->remote_id = jdup(o, "remote_id");
+	if ((v = ucl_object_lookup(o, "reqid")) != NULL && ucl_object_toint(v) >
+	    0 && ucl_object_toint(v) <= 16383) {
+		sp->has_reqid = true;
+		sp->reqid = (uint32_t)ucl_object_toint(v);
+	}
 	/* Empty allowed-ips says a peer may send from nowhere: it is kept. */
 	if ((kind = ucl_str(o, "allowed_ips")) != NULL)
 		sp->allowed_ips = kore_strdup(kind);
@@ -3454,6 +3479,12 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->interface == NULL || sp->verb == NULL)
 			return ("a wireguard job needs an interface and a verb");
+		break;
+	case ARC_JOB_KIND_IPSEC:
+		if (sp->verb == NULL || (strcmp(sp->verb, "init") != 0 &&
+		    strcmp(sp->verb, "start") != 0 && sp->conn == NULL))
+			return ("an ipsec job needs a verb, and a connection "
+			    "but for init");
 		break;
 	case ARC_JOB_KIND_NETGRAPH:
 	case ARC_JOB_KIND_BIRD:

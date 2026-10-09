@@ -93,6 +93,8 @@ static int	cmd_storage_job(struct arc_client *, int, char **);
 static int	cmd_fstab(struct arc_client *, int, char **);
 static int	cmd_packages(struct arc_client *, int, char **);
 static int	cmd_pkg_clean(struct arc_client *, int, char **);
+static int	cmd_pkg_install(struct arc_client *, int, char **);
+static int	cmd_ipsec(struct arc_client *, int, char **);
 static int	cmd_pkg_upgrade(struct arc_client *, int, char **);
 static void	emit_packages(const struct arc_package *, size_t);
 static int	submit(struct arc_client *, struct arc_job_spec *);
@@ -134,7 +136,7 @@ usage(void)
 	    "    interface name description text\n"
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
-	    "text] [id number] [parent interface]\n"
+	    "text] [id number] [parent interface] [reqid number]\n"
 	    "    route add destination gateway[@share][,gateway[@share]...] [metric n] [weight n] "
 	    "[source address]\n"
 	    "    route delete destination [gateway] [metric n]\n"
@@ -145,6 +147,12 @@ usage(void)
 	    "    wg interface peer key [endpoint address:port] [allowed-ips "
 	    "list]\n        [keepalive seconds]\n"
 	    "    wg interface unpeer key\n"
+	    "    ipsec init | start\n"
+	    "    ipsec conn name local remote tunnel | transport pubkey "
+	    "[reqid n]\n        [local-ts list] [remote-ts list] "
+	    "[start start | trap | none]\n        [local-id id] "
+	    "[remote-id id]\n"
+	    "    ipsec unconn | up | down name\n"
 	    "    bird enable | disable | restart | reload protocol\n"
 	    "    bird configure\n"
 	    "    bird config [file]\n"
@@ -222,6 +230,7 @@ usage(void)
 	    "    packages [-i] [-r] [-4 | -6] [jail]\n"
 	    "    pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...]\n"
 	    "    pkg-clean [-a] [-j jail | -J]\n"
+	    "    pkg-install [-O] [-4 | -6] [-j jail] package ...\n"
 	    "    jobs\n"
 	    "    job [-w] id\n"
 	    "    job-cancel id\n"
@@ -1336,6 +1345,13 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 				sp.description = argv[++i];
 			else if (strcmp(argv[i], "parent") == 0 && i + 1 < argc)
 				sp.parent = argv[++i];
+			else if (strcmp(argv[i], "reqid") == 0 && i + 1 < argc) {
+				sp.has_reqid = true;
+				sp.reqid = (uint32_t)strtonum(argv[++i], 1, 16383,
+				    &errstr);
+				if (errstr != NULL)
+					xo_errx(2, "reqid %s: %s", argv[i], errstr);
+			}
 			else if ((strcmp(argv[i], "mtu") == 0 || strcmp(argv[i],
 			    "id") == 0) && i + 1 < argc) {
 				num = (uint32_t)strtonum(argv[i + 1], 0,
@@ -1435,7 +1451,7 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
 	    "bird-routes", "bridges", "geneve", "ipfw", "nhgroups",
-	    "neighbours" };
+	    "neighbours", "ipsec" };
 	struct arc_network_req	 req;
 	struct arc_network_rsp	*rsp;
 	size_t			 i;
@@ -2409,6 +2425,105 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+/* pkg-install [-O] [-4 | -6] [-j jail] package ...: a job. */
+static int
+cmd_pkg_install(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	sp;
+	int			ch;
+
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_PKG_INSTALL;
+	optind = 1;
+	while ((ch = getopt(argc, argv, "46Oj:")) != -1) {
+		switch (ch) {
+		case '4':
+		case '6':
+			sp.has_pkg_ip = true;
+			sp.pkg_ip = (uint8_t)(ch - '0');
+			break;
+		case 'O':
+			sp.force = true;
+			break;
+		case 'j':
+			sp.jail = optarg;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (optind == argc)
+		usage();
+	sp.names.v = (const char **)(uintptr_t)&argv[optind];
+	sp.names.n = (size_t)(argc - optind);
+	return (submit(cl, &sp));
+}
+
+/*
+ * ipsec init | conn name local remote mode pubkey [word value ...] |
+ * unconn name | up name | down name: strongSwan, a job, in the vnet
+ * jail of -j when one is named.
+ */
+static int
+cmd_ipsec(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	const char		*errstr;
+	int			 i;
+
+	if (argc < 2)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_IPSEC;
+	sp.jail = netjail;
+	sp.persist = persist;
+	sp.verb = argv[1];
+	if (strcmp(argv[1], "init") == 0 || strcmp(argv[1], "start") == 0) {
+		if (argc != 2)
+			usage();
+		return (submit(cl, &sp));
+	}
+	if (argc < 3)
+		usage();
+	sp.conn = argv[2];
+	if (strcmp(argv[1], "conn") != 0) {
+		if (argc != 3)
+			usage();
+		return (submit(cl, &sp));
+	}
+	if (argc < 7)
+		usage();
+	sp.tunnel_local = argv[3];
+	sp.tunnel_remote = argv[4];
+	sp.ipsec_mode = argv[5];
+	sp.pubkey = argv[6];
+	for (i = 7; i + 1 < argc; i += 2) {
+		if (strcmp(argv[i], "reqid") == 0) {
+			sp.has_reqid = true;
+			sp.reqid = (uint32_t)strtonum(argv[i + 1], 1, 16383,
+			    &errstr);
+			if (errstr != NULL)
+				xo_errx(2, "reqid %s: %s", argv[i + 1], errstr);
+		} else if (strcmp(argv[i], "local-ts") == 0)
+			sp.local_ts = argv[i + 1];
+		else if (strcmp(argv[i], "remote-ts") == 0)
+			sp.remote_ts = argv[i + 1];
+		else if (strcmp(argv[i], "start") == 0)
+			sp.start_action = argv[i + 1];
+		else if (strcmp(argv[i], "local-id") == 0)
+			sp.local_id = argv[i + 1];
+		else if (strcmp(argv[i], "remote-id") == 0)
+			sp.remote_id = argv[i + 1];
+		else
+			usage();
+	}
+	if (i != argc)
+		usage();
+	return (submit(cl, &sp));
+}
+
 /* pkg-upgrade [-n] [-O] [-4 | -6] [-j jail] [package ...] */
 static int
 cmd_pkg_upgrade(struct arc_client *cl, int argc, char **argv)
@@ -2801,6 +2916,10 @@ main(int argc, char *argv[])
 		rc = cmd_job_cancel(&cl, argc, argv);
 	else if (strcmp(argv[0], "pkg-clean") == 0)
 		rc = cmd_pkg_clean(&cl, argc, argv);
+	else if (strcmp(argv[0], "pkg-install") == 0)
+		rc = cmd_pkg_install(&cl, argc, argv);
+	else if (strcmp(argv[0], "ipsec") == 0)
+		rc = cmd_ipsec(&cl, argc, argv);
 	else if (strcmp(argv[0], "pkg-upgrade") == 0)
 		rc = cmd_pkg_upgrade(&cl, argc, argv);
 	else if (strcmp(argv[0], "agent-update") == 0)

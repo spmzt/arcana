@@ -72,6 +72,8 @@ struct opts opts = {
 	.history_conf = "/usr/local/etc/arcana/history.conf",
 	.wg_bin = PATH_WG_BIN,
 	.wg_dir = PATH_WG_DIR,
+	.swanctl_bin = PATH_SWANCTL_BIN,
+	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
 	.bird_bin = PATH_BIRD_BIN,
 	.bird_conf = PATH_BIRD_CONF,
@@ -111,7 +113,8 @@ usage(void)
 	    "                 [-w seconds] [-Q sysctl] "
 	    "[-O sysctl.conf]\n"
 	    "                 [-v log-directory] [-1 history.conf] [-2 directory]\n"
-	    "                 [-h ipfw] [-J ipfw.rules]\n"
+	    "                 [-h ipfw] [-J ipfw.rules] [-r swanctl] "
+	    "[-5 swanctl-directory]\n"
 	    "                 [-N netstat] [-W swapinfo] "
 	    "[-Z zpool] [-P pkg]\n");
 	exit(2);
@@ -306,7 +309,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:s:i:m:q:S:T:t:u:U:Vv:w:W:1:2:x:Y:y:Z:z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:1:2:5:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -443,6 +446,12 @@ main(int argc, char *argv[])
 			break;
 		case 'o':
 			opts.wg_dir = optarg;
+			break;
+		case 'r':
+			opts.swanctl_bin = optarg;
+			break;
+		case '5':
+			opts.swanctl_dir = optarg;
 			break;
 		case 'b':
 			opts.birdc_bin = optarg;

@@ -846,6 +846,23 @@ ATF_TC_BODY(pwa, tc)
 		usleep(50000);
 	ATF_CHECK(system("grep -q '^clean -ay$' pkg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/* Packages installed: named in a box, checked, then a job. */
+	run("document.querySelector('button[data-act=pkg-install]').click()");
+	wait_js("document.querySelector('form[data-form=pkg-install]')", 5);
+	run("const f = document.querySelector('form[data-form=pkg-install]'); "
+	    "f.names.value = 'strongswan;rm'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal').textContent.includes("
+	    "'letters, digits')", 5);
+	run("const f = document.querySelector('form[data-form=pkg-install]'); "
+	    "f.names.value = 'strongswan  wireguard-tools'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q 'install -y strongswan "
+	    "wireguard-tools$' pkg.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q 'install -y strongswan wireguard-tools$' "
+	    "pkg.log") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* Of every running jail at once: none runs here, which is said,
 	 * and nothing is asked. */
 	run("document.querySelector('button[data-act=pkg-clean-jails]').click()");
@@ -1333,12 +1350,70 @@ ATF_TC_BODY(pwa, tc)
 	    "fd00::2/128$' wg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 	shot("7c-wireguard");
+	/*
+	 * IPsec, strongSwan: the host makes its key, whose public half is
+	 * shown; a connection is made with the form, IKEv2, and its SA is
+	 * there.
+	 */
+	run("document.querySelector('button.tab.plugin[data-arg=ipsec]')"
+	    ".click()");
+	wait_js("document.querySelector('.pane.ipsec button[data-act="
+	    "ipsec-init]')", 20);
+	ATF_CHECK(js_true("document.querySelector('.pane.ipsec').textContent."
+	    "includes('no key yet')"));
+	run("document.querySelector('.pane.ipsec button[data-act=ipsec-init]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('.pane.ipsec code.key.pub')", 20);
+	run("window.pub = document.querySelector('.pane.ipsec code.key.pub')"
+	    ".textContent; document.querySelector('.pane.ipsec button"
+	    "[data-act=ipsec-conn-add]').click()");
+	wait_js("document.querySelector('form[data-form=ipsec-conn]')", 5);
+	/* A reqid is an interface's: tunnel mode only. */
+	run("const f = document.querySelector('form[data-form=ipsec-conn]'); "
+	    "f.conn.value = 'to-lab2'; f.local.value = '192.0.2.1'; "
+	    "f.remote.value = '192.0.2.2'; f.mode.value = 'transport'; "
+	    "f.pubkey.value = '-----BEGIN PUBLIC KEY-----\\n' + window.pub + "
+	    "'\\n-----END PUBLIC KEY-----'; f.local_ts.value = "
+	    "'192.0.2.1[gre]'; f.remote_ts.value = '192.0.2.2[gre]'; "
+	    "f.reqid.value = '7'; f.start.value = 'start'; f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=ipsec-conn]') && "
+	    "document.querySelector('.modal').textContent.includes('tunnel "
+	    "mode')", 5);
+	shot("7d-ipsec-form");
+	run("const f = document.querySelector('form[data-form=ipsec-conn]'); "
+	    "f.reqid.value = ''; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("document.querySelector('table.ipsec tbody tr.up') && "
+	    "document.querySelector('table.ipsec').textContent.includes("
+	    "'TRANSPORT')", 20);
+	ATF_CHECK(system("grep -q 'version = 2' "
+	    "swanctl/conf.d/arcana-to-lab2.conf && grep -q "
+	    "'local_ts = 192.0.2.1\\[gre\\]' swanctl/conf.d/arcana-to-lab2.conf "
+	    "&& grep -q 'start_action = start' "
+	    "swanctl/conf.d/arcana-to-lab2.conf") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("7e-ipsec");
+	run("document.querySelector('table.ipsec button[data-act="
+	    "ipsec-unconn]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("!document.querySelector('table.ipsec')", 20);
 	run("document.querySelector('button.tab.plugin[data-arg=bird]')"
 	    ".click()");
 	wait_js("document.querySelectorAll('table.bird tbody tr').length === 4",
 	    20);
 	ATF_CHECK(js_true("document.querySelector('.pane.bird').textContent."
 	    "includes('Router ID is 192.0.2.1')"));
+	/* BFD: each session, up or not. */
+	ATF_CHECK(js_true("document.querySelector('table.bfd tbody tr.up') && "
+	    "document.querySelector('table.bfd').textContent.includes("
+	    "'fe80::2')"));
 	run("[...document.querySelectorAll('table.bird button[data-act="
 	    "bird-verb][data-arg=reload]')].find(b => b.dataset.value === "
 	    "'bgp_core').click()");
