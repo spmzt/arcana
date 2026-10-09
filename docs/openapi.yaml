@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.69.0
+  version: 0.70.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -673,15 +673,21 @@ paths:
         sha256 of it. The rules themselves, with their sets and
         counters, are read with net/ipfw; a rule is added or deleted,
         the kept rules applied and the firewall turned on or off by
-        jobs of kind ipfw.
+        jobs of kind ipfw. With from=rc, text is instead the file
+        rc.conf's firewall_type names (rc_file), which the firewall
+        loads now, made into kept rules and not written; sha256 is
+        still the kept file's, for a change made from it.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: jail
           in: query
           schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, enum: [rc] }
       responses:
         "200":
-          description: ok, text and sha256, or error
+          description: ok, text and sha256 (and rc_file), or error
     post:
       tags: [servers]
       summary: Replace the kept rules, or only check them

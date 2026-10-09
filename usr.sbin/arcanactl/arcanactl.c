@@ -189,7 +189,7 @@ usage(void)
 	    "    ipfw apply | enable | disable | zero [number]\n"
 	    "    ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | "
 	    "pipe |\n        queue | sched name word ...\n"
-	    "    ipfw rules [-w file] [-n]\n"
+	    "    ipfw rules [-r | -w file [-n]]\n"
 	    "    ipfw trace address [seconds [packets]]\n"
 	    "    storage disks | pools | datasets | mounts | importable | health\n"
 	    "    zfs load-key | unload-key [-r] dataset\n"
@@ -1921,7 +1921,8 @@ cmd_transport(struct arc_client *cl, int argc, char **argv)
  * ipfw add | delete: a rule, now; with -p kept too, and after "keep"
  * kept only.  ipfw apply: the kept rules as the whole ruleset, through
  * set 1; with -s taken back unless confirmed.  ipfw rules: the kept
- * file read, or with -w put in place, with -n only checked.
+ * file read, or with -w put in place, with -n only checked; with -r the
+ * file rc.conf's firewall_type names, as kept rules, nothing written.
  */
 static int
 cmd_ipfw(struct arc_client *cl, int argc, char **argv)
@@ -1976,10 +1977,13 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 		argv++;
 		optind = 1;
 		optreset = 1;
-		while ((ch = getopt(argc, argv, "nw:")) != -1) {
+		while ((ch = getopt(argc, argv, "nrw:")) != -1) {
 			switch (ch) {
 			case 'n':
 				req.dry_run = true;
+				break;
+			case 'r':
+				req.from_rc = true;
 				break;
 			case 'w':
 				from = optarg;
@@ -1988,7 +1992,8 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 				usage();
 			}
 		}
-		if (argc != optind || (req.dry_run && from == NULL))
+		if (argc != optind || (req.dry_run && from == NULL) ||
+		    (req.from_rc && from != NULL))
 			usage();
 		if (from != NULL) {
 			if ((fd = open(from, O_RDONLY)) == -1 || fstat(fd,
@@ -2005,7 +2010,9 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 		}
 		if ((error = arc_ipfw_rules(cl, &req, &rsp)) != 0)
 			fail(cl, error, "ipfw rules");
-		if (from == NULL && rsp->conf_text != NULL)
+		if (req.from_rc && rsp->rc_file != NULL)
+			xo_emit("{:rc-file/# from %s}\n", rsp->rc_file);
+		if (from == NULL && rsp->conf_text != NULL && rsp->ok)
 			xo_emit("{:text/%s}", rsp->conf_text);
 		else if (rsp->ok)
 			xo_emit("{:result/%s}\n", req.dry_run ? "ipfw has "

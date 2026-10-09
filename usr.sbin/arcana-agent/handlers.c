@@ -47,6 +47,7 @@ struct job {
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
 	bool			 installed;	/* packages: pkg query */
+	bool			 from_rc;	/* ipfw-rules: rc.conf's file */
 	uint8_t			 pkg_ip;	/* packages: pkg -4, -6 */
 	uint8_t			*binary;	/* agent-update */
 	size_t			 binlen;
@@ -427,8 +428,8 @@ worker(void *arg)
 		break;
 	case ARC_CMD_IPFW_RULES:
 		/* The text rides in ref, its checksum in sha256. */
-		what = wfmt(&w, "ipfw rules %s", j->ref == NULL ? "read" :
-		    j->refresh ? "check" : "write");
+		what = wfmt(&w, "ipfw rules %s", j->from_rc ? "from rc.conf" :
+		    j->ref == NULL ? "read" : j->refresh ? "check" : "write");
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "%s", what);
 		memset(&irq, 0, sizeof(irq));
@@ -436,6 +437,7 @@ worker(void *arg)
 		irq.conf_text = j->ref;
 		irq.sha256 = j->sha256;
 		irq.dry_run = j->refresh;
+		irq.from_rc = j->from_rc;
 		irr.has_ok = true;
 		if (scope_enter(&w, j->jail, &irr.error) != 0)
 			;
@@ -1203,7 +1205,9 @@ arc_ipfw_rules_doit(cbl_req *req, const struct arc_ipfw_rules_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_IPFW_RULES;
-	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
+	j->from_rc = rq->from_rc;
+	j->ref = rq->conf_text != NULL && !rq->from_rc ? xstrdup(
+	    rq->conf_text) : NULL;
 	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
 	j->refresh = rq->dry_run;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :

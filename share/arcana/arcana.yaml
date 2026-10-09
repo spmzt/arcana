@@ -808,6 +808,14 @@ attribute-sets:
       - name: zfs-recursive
         type: flag
         doc: For zfs-send, the datasets under the snapshot's too (-R).
+      - name: from-rc
+        type: flag
+        doc: |
+          For ipfw-rules, nothing written: the file rc.conf's
+          firewall_type names, as kept rules.
+      - name: rc-file
+        type: text
+        doc: For ipfw-rules with from-rc, the file that was read.
 
   - name: host
     attributes:
@@ -1969,7 +1977,12 @@ operations:
       read it without doing it (ipfw -n) and found nothing wrong:
       sha256 is that of the text it was made from.  The one before is
       kept beside it.  With dry-run it is only checked.  jail is the
-      vnet jail whose firewall it is.
+      vnet jail whose firewall it is.  With from-rc, the file the host
+      (or the jail) loads now, as rc.conf's firewall_type names it, is
+      read and made into kept rules, which are not written: what
+      applying does itself (flush, set, delete, options) is left in
+      as comments.  sha256 is still the kept file's, for a change
+      made from it.
     do:
       request:
         attributes:
@@ -1977,6 +1990,7 @@ operations:
           - sha256
           - dry-run
           - jail
+          - from-rc
       reply:
         attributes:
           - ok
@@ -1984,6 +1998,7 @@ operations:
           - conf-text
           - sha256
           - trace
+          - rc-file
 
   - name: processes
     attribute-set: arcana

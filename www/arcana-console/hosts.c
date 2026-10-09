@@ -89,6 +89,7 @@ struct call {
 	char			 scope[256];	/* the vnet jail whose network it is */
 	bool			 refresh;	/* packages */
 	bool			 dry_run;	/* pkg-upgrade */
+	bool			 from_rc;	/* ipfw-rules: the file rc.conf names */
 	bool			 anyos;		/* pkg-upgrade: IGNORE_OSVERSION */
 	bool			 installed;	/* packages: those installed */
 	uint8_t			 pkg_ip;	/* packages: pkg -4, -6, or 0 */
@@ -1873,12 +1874,14 @@ connected:
 		irq.sha256 = c->address[0] != '\0' ? c->address : NULL;
 		irq.dry_run = c->dry_run;
 		irq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		irq.from_rc = c->from_rc;
 		if ((error = arc_ipfw_rules(&cl, &irq, &irr)) != 0)
 			goto rpcfail;
 		ok = irr->ok;
 		put_str(top, "error", irr->error);
 		put_str(top, "text", irr->conf_text);
 		put_str(top, "sha256", irr->sha256);
+		put_str(top, "rc_file", irr->rc_file);
 		steps = irr->trace.v;
 		nsteps = irr->trace.n;
 		break;
@@ -2923,9 +2926,10 @@ api_storage(struct http_request *req)
 
 /*
  * GET /api/servers/<id>/ipfw/rules[?jail=]: the kept rules of the
- * firewall and the SHA-256 of their text.  POST {"text", "sha256",
- * "check"}: put the text in their place, once ipfw has nothing against
- * it.
+ * firewall and the SHA-256 of their text; with ?from=rc, the file
+ * rc.conf's firewall_type names instead, made into kept rules and not
+ * written ("rc_file" is that file).  POST {"text", "sha256", "check"}:
+ * put the text in their place, once ipfw has nothing against it.
  */
 int
 api_ipfw_rules(struct http_request *req)
@@ -2940,6 +2944,14 @@ api_ipfw_rules(struct http_request *req)
 	if ((c = call_new(req, OP_IPFW_RULES)) == NULL)
 		return (KORE_RESULT_OK);
 	bad = !pick_scope(req, c);
+	if (!bad && req->method == HTTP_METHOD_GET) {
+		char	from[8];
+
+		if (query_param(req, "from", from, sizeof(from))) {
+			c->from_rc = strcmp(from, "rc") == 0;
+			bad = !c->from_rc;
+		}
+	}
 	if (!bad && req->method != HTTP_METHOD_GET) {
 		if ((body = read_json(req)) == NULL)
 			bad = true;
@@ -2962,7 +2974,7 @@ api_ipfw_rules(struct http_request *req)
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "a change needs text "
 		    "and the sha256 of what it was made from; jail is a "
-		    "jail's name"));
+		    "jail's name; from is rc"));
 	}
 	return (call_start(req, c));
 }

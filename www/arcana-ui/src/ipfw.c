@@ -344,6 +344,10 @@ file_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	snprintf(fw.file_note, sizeof(fw.file_note), "%s", strcmp(what,
 	    "check") == 0 ? "ipfw has nothing against it." : strcmp(what,
 	    "write") == 0 ? "Kept. Apply makes it the host's ruleset." : "");
+	if (strcmp(what, "rc") == 0)
+		snprintf(fw.file_note, sizeof(fw.file_note), "From %s, not "
+		    "kept yet: look it over, then Keep.", jstr(o, "rc_file") !=
+		    NULL ? jstr(o, "rc_file") : "the firewall's file");
 	if (strcmp(what, "write") == 0) {
 		struct server	*s;
 
@@ -365,6 +369,19 @@ file_read(struct server *s)
 	snprintf(url, sizeof(url), "/api/servers/%s/ipfw/rules%s%s", s->id,
 	    fw.jail[0] != '\0' ? "?jail=" : "", fw.jail);
 	api("GET", url, NULL, file_cb, strdup("read"));
+}
+
+/* The file the firewall loads now, rc.conf's firewall_type, as kept. */
+static void
+file_read_rc(struct server *s)
+{
+	char	url[400];
+
+	fw.file_loading = true;
+	fw.file_note[0] = '\0';
+	snprintf(url, sizeof(url), "/api/servers/%s/ipfw/rules?from=rc%s%s",
+	    s->id, fw.jail[0] != '\0' ? "&jail=" : "", fw.jail);
+	api("GET", url, NULL, file_cb, strdup("rc"));
 }
 
 void
@@ -663,6 +680,7 @@ view_dynamic(struct html *h)
 static void
 view_text(struct html *h)
 {
+	const char	*type;
 
 	h_raw(h, "<h4 class=\"family\">The kept rules</h4><p class=\"dim\">"
 	    "ipfw's own commands, one a line: <code>add</code> and a number "
@@ -694,6 +712,26 @@ view_text(struct html *h)
 		    "what the host sends let through, the rest denied. To be "
 		    "made this host's own before it is applied\">Start from "
 		    "the layout</button>");
+	/*
+	 * The file the firewall loads now, when it is not the kept one:
+	 * rc.conf's firewall_type naming a file.  A jail's rc.conf is not
+	 * read with the rules, so a jail is offered it always.
+	 */
+	type = jstr(jget(fw.data, "rc"), "firewall_type");
+	if (fw.jail[0] != '\0' || (type != NULL && type[0] == '/' &&
+	    (jstr(fw.data, "path") == NULL || strcmp(type, jstr(fw.data,
+	    "path")) != 0))) {
+		h_fmt(h, "<button type=\"button\" class=\"ghost small\" "
+		    "data-act=\"fw-load-rc\"%s title=\"", fw.file_loading ?
+		    " disabled" : "");
+		if (type != NULL)
+			h_txt(h, type);
+		else
+			h_raw(h, "The file rc.conf's firewall_type names");
+		h_raw(h, ", which the firewall loads now, here as kept rules: "
+		    "kept once Keep is pressed\">Load the current file"
+		    "</button>");
+	}
 	h_raw(h, "</div></form>");
 }
 
@@ -2643,6 +2681,8 @@ firewall_action(const char *act, const char *arg, const char *value)
 			if (atoi(arg) >= sects[i].lo && atoi(arg) <=
 			    sects[i].hi)
 				fw.sect = (int)i;
+	} else if (strcmp(act, "fw-load-rc") == 0) {
+		file_read_rc(s);
 	} else if (strcmp(act, "fw-skeleton") == 0) {
 		free(fw.text);
 		fw.text = strdup(skeleton);

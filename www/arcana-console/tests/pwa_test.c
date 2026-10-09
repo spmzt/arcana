@@ -2453,6 +2453,11 @@ ATF_TC_BODY(pwa, tc)
 	    "'2001:db8::9 51234 <-> 2001:db8::1 22') && document.querySelector("
 	    "'button.live.on[data-act=fw-live]')", 20);
 	shot("7o-firewall-dynamic");
+	/* A file of the host's own that the firewall loads now, as
+	 * rc.conf names it: read again with the rules. */
+	ATF_REQUIRE(system("printf -- '-f flush\\nadd 100 allow ip from any "
+	    "to any via lo0\\n' > host.rules && printf 'firewall_type=\"%s/"
+	    "host.rules\"\\n' \"$(pwd)\" >> rc.conf") == 0);
 	run("window.fwn = 0; window.fetch1 = window.fetch; window.fetch = "
 	    "function (u, o) { if (String(u).includes('/net/ipfw')) window.fwn"
 	    "++; return window.fetch1(u, o); };");
@@ -2462,6 +2467,20 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('table.fw-dyn tbody tr').click()");
 	wait_js("document.querySelector('table.fw-rules tr[data-rule=\"1001\"]"
 	    "')", 10);
+	/* That file loaded as the kept rules' text, not kept until Keep. */
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
+	    "click()");
+	wait_js("document.querySelector('button[data-act=fw-load-rc]')", 10);
+	run("document.querySelector('button[data-act=fw-load-rc]').click()");
+	wait_js("document.querySelector('form[data-form=fw-text] textarea')"
+	    ".value === '# left out, applying does it: -f flush\\nadd 100 "
+	    "allow ip from any to any via lo0\\n' && document.querySelector("
+	    "'.notice.info').textContent.includes('host.rules, not kept yet')",
+	    10);
+	shot("7p-firewall-load-rc");
+	ATF_CHECK(system("grep -q 'add 01500 allow' ipfw.rules && ! grep -q "
+	    "'via lo0' ipfw.rules") == 0);
+	ATF_REQUIRE(system("sed -i '' -e '/^firewall_type=/d' rc.conf") == 0);
 	/*
 	 * A table and what is in it, an entry more; what Apply would
 	 * change; a packet followed through the rules; the firewall of

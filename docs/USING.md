@@ -334,6 +334,12 @@ The console is laid out as a tree and tabs.
     **Kept rules as text** shows it to be changed as a whole, checked
     by ipfw without being done, and for a host that has none **Start
     from the layout** fills it with the chain, its calls and returns.
+    When rc.conf's `firewall_type` names a file of the host's own,
+    which the firewall loads now, **Load the current file** puts that
+    file in the text as kept rules: what applying does itself
+    (`flush`, `set`, `delete`) left in as comments and the options
+    before a command (`-q`, `-f`) taken off, nothing kept until
+    **Keep**.
     **Apply the kept rules** makes them the whole ruleset without a
     gap: they are loaded into set 1 while it is disabled, and set 1
     is swapped with set 0, so no packet meets half a ruleset. The
@@ -345,7 +351,7 @@ The console is laid out as a tree and tabs.
     does not load it. From a shell: `arcanactl net ipfw`, `arcanactl
     [-p] ipfw add number rule…`, `ipfw keep add …`, `ipfw [keep]
     delete number`, `[-s] ipfw apply`, `ipfw enable | disable`,
-    `ipfw rules [-w file] [-n]`, `ipfw trace address [seconds
+    `ipfw rules [-r | -w file [-n]]`, `ipfw trace address [seconds
     [packets]]`.
     While the Firewall tab is shown its parts are in the side bar, in
     place of the hosts: **Overview**, **Dynamic states**, **Kept rules

@@ -121,7 +121,7 @@ follow_run(void *arg)
 	int		 error, ev, ms;
 
 	if ((msg = hosts_connect(f->uri, f->peer, &conn, &tls, &cl)) != NULL) {
-		kore_log(LOG_NOTICE, "events %s: %s", f->sid, msg);
+		thread_log(LOG_NOTICE, "events %s: %s", f->sid, msg);
 		if (asprintf(&text, "{\"id\":%ju,\"error\":\"the host does not "
 		    "answer\"}", (uintmax_t)f->id) != -1)
 			tell(f, text);

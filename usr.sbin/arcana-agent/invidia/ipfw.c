@@ -553,6 +553,93 @@ file_wrong(struct work *w, const char *text, size_t len)
 	return (e);
 }
 
+/*
+ * The file the host, or the jail, loads now as its firewall: the one
+ * rc.conf's firewall_type names, when it names a file and not a kind of
+ * rc.firewall's own.  Made into kept rules: what applying does itself
+ * (flush, set, delete, an option alone) left in as a comment, and the
+ * options before a command (-q, -f) taken off it.
+ */
+static const char *
+rc_ruleset(struct work *w, const char **pathp, const char **errp)
+{
+	static const char	 note[] = "# left out, applying does it: ";
+	struct execres		 res;
+	char			*argv[5], *text, *out, *p, *line, *q;
+	const char		*type;
+	size_t			 len, n, o;
+	int			 step, e;
+
+	argv[0] = (char *)(uintptr_t)opts.sysrc_bin;
+	argv[1] = (char *)(uintptr_t)"-i";
+	argv[2] = (char *)(uintptr_t)"-n";
+	argv[3] = (char *)(uintptr_t)"firewall_type";
+	argv[4] = NULL;
+	type = NULL;
+	if (run_exec(w, scope_argv(w, argv), &res) == 0 && res.out != NULL)
+		type = wstrndup(w, res.out, strcspn(res.out, "\n"));
+	if (type == NULL || type[0] == '\0') {
+		*errp = "rc.conf sets no firewall_type: there is no file of "
+		    "rules the firewall loads";
+		return (NULL);
+	}
+	if (type[0] != '/') {
+		*errp = wfmt(w, "firewall_type is %s, one of rc.firewall's own "
+		    "rulesets, not a file of rules", type);
+		return (NULL);
+	}
+	*pathp = type;
+	if (strcmp(type, opts.ipfw_rules) == 0) {
+		*errp = wfmt(w, "firewall_type is %s already: the kept rules "
+		    "are what the firewall loads", type);
+		return (NULL);
+	}
+	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", type);
+	text = scope_slurp(w, type, &len);
+	e = errno;
+	step_end(w, step, text != NULL, text != NULL ? NULL : "%s",
+	    strerror(e));
+	if (text == NULL) {
+		*errp = wfmt(w, "%s: %s", type, strerror(e));
+		return (NULL);
+	}
+	if (len > IPFW_FILE_MAX) {
+		*errp = wfmt(w, "%s: too large for a ruleset", type);
+		return (NULL);
+	}
+	for (n = 1, p = text; *p != '\0'; p++)
+		if (*p == '\n')
+			n++;
+	out = wcalloc(w, len + n * sizeof(note) + 2, 1);
+	o = 0;
+	p = text;
+	while ((line = strsep(&p, "\n")) != NULL) {
+		if (p == NULL && line[0] == '\0')
+			break;
+		q = line + strspn(line, " \t");
+		if (q[0] != '\0' && q[0] != '#') {
+			/* ipfw -q add …: the options are applying's. */
+			while ((q[0] == '-' && (q[1] == 'q' || q[1] == 'f') &&
+			    (q[2] == ' ' || q[2] == '\t')))
+				q += 2 + strspn(q + 2, " \t");
+			if (strncmp(q, "flush", 5) == 0 || strncmp(q, "set ",
+			    4) == 0 || strncmp(q, "delete ", 7) == 0 ||
+			    q[0] == '-') {
+				memcpy(out + o, note, sizeof(note) - 1);
+				o += sizeof(note) - 1;
+				q = line + strspn(line, " \t");
+			}
+		} else
+			q = line;
+		len = strlen(q);
+		memcpy(out + o, q, len);
+		o += len;
+		out[o++] = '\n';
+	}
+	out[o] = '\0';
+	return (out);
+}
+
 /* The kept rules read, or put in place: as fstab is. */
 int
 do_ipfw_rules(struct work *w, const struct arc_ipfw_rules_req *rq,
@@ -580,6 +667,17 @@ do_ipfw_rules(struct work *w, const struct arc_ipfw_rules_req *rq,
 	sha = sha_hex(w, old, oldlen);
 	rsp->conf_text = wtext(w, old);
 	rsp->sha256 = sha;
+	if (rq->from_rc) {
+		e = NULL;
+		if ((p = (char *)(uintptr_t)rc_ruleset(w, &rsp->rc_file,
+		    &e)) == NULL) {
+			rsp->error = e;
+			goto out;
+		}
+		rsp->conf_text = wtext(w, p);
+		rsp->ok = true;
+		goto out;
+	}
 	if (rq->conf_text == NULL) {
 		rsp->ok = true;
 		goto out;

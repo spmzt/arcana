@@ -3287,11 +3287,35 @@ add 00010 set 1 allow ip from table(T46) to any
 	atf_check -s exit:1 -o match:'Invalid argument' "$JGC" -c "$SOCK" ipfw apply
 	atf_check -o not-match:'swap' cat ipfw.log
 
+	# The file the host loads now, as rc.conf names it, made into kept
+	# rules and not written: what applying does left as comments, the
+	# options before a command taken off.
+	atf_check -s exit:1 -e match:'sets no firewall_type' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw rules -r
+	printf 'firewall_type="open"\n' >> rc.conf
+	atf_check -s exit:1 -e match:"one of rc.firewall's own" -o ignore \
+	    "$JGC" -c "$SOCK" ipfw rules -r
+	printf '# the host'"'"'s own\n-f flush\nadd 100 allow ip from any to any via lo0\n-q add 200 deny ip from any to 127.0.0.0/8\ntable T9 create type addr\nset disable 3\n' > host.rules
+	sed -i '' -e '/^firewall_type=/d' rc.conf
+	printf 'firewall_type="%s/host.rules"\n' "$(pwd)" >> rc.conf
+	atf_check -o inline:"# from $(pwd)/host.rules
+# the host's own
+# left out, applying does it: -f flush
+add 100 allow ip from any to any via lo0
+add 200 deny ip from any to 127.0.0.0/8
+table T9 create type addr
+# left out, applying does it: set disable 3
+" "$JGC" -c "$SOCK" ipfw rules -r
+	atf_check -o file:f.rules cat fw/ipfw.rules
+	sed -i '' -e '/^firewall_type=/d' rc.conf
+
 	# On and off, kept in rc.conf with where the rules are.
 	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw enable
 	atf_check -o match:'^ipfw -q enable firewall$' tail -1 ipfw.log
 	atf_check -o match:'^firewall_enable="YES"$' \
 	    -o match:'^firewall_type=".*/fw/ipfw.rules"$' cat rc.conf
+	atf_check -s exit:1 -e match:'already: the kept rules are what the firewall loads' \
+	    -o ignore "$JGC" -c "$SOCK" ipfw rules -r
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw zero 5
 	atf_check -o match:'^ipfw -q zero 5$' tail -1 ipfw.log
 	# What a rule names and is not one: a table's entry, a NAT
