@@ -619,6 +619,19 @@ bool		 logs_form(const char *, const ucl_object_t *);
 bool		 logs_action(const char *, const char *, const char *);
 void		 usage_open(void);
 void		 usage_tick(double);
+int		 usage_if_rates(const char *, const char *, bool, double,
+		    double *, double *, int);
+int		 usage_step(const char *);
+int		 topo_addr_owner(const char *, char *, size_t, char *, size_t);
+void		 topo_poll_all(void);
+bool		 ecmp_shown(void);
+void		 ecmp_tick(double);
+void		 ecmp_group(struct html *, const struct server *,
+		    const ucl_object_t *);
+void		 view_ecmp(struct html *);
+void		 ecmp_head(struct html *);
+bool		 ecmp_map_tab(void);
+bool		 ecmp_action(const char *, const char *, const char *);
 void		 view_usage(struct html *);
 bool		 usage_action(const char *, const char *, const char *);
 bool		 usage_form(const char *, const ucl_object_t *);

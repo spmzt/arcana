@@ -145,7 +145,19 @@ The console is laid out as a tree and tabs.
     each, **Path** saying which of how many, and **Nexthops**, in
     **Groups**, as the group the kernel made of them: each
     group a row, its next hops one under the other, each with its
-    gateway, interface and a bar of its share. A second route to a
+    gateway, interface and a bar of its share. Under each group, what
+    it carried, from the samples the agents keep (the history): on
+    the left what the host **sent** by each next hop's interface, on
+    the right what the gateways **received**, on the interface with
+    the gateway's address, where the gateway is a host of this
+    console. Each is a chart of columns over the last 5, 15 or 60
+    minutes, every column the shares of that moment stacked to the
+    whole, with the weights dashed across where the shares would
+    meet if they were kept; beside it each next hop's share against
+    its weight, and its rate. An interface's traffic is all of it,
+    not only the group's, and next hops by one interface are one
+    share: the samples cannot tell them apart. A jail's groups have
+    no chart, its interfaces not being sampled. A second route to a
     destination that has one makes such a group too; one way of it
     is deleted by its gateway. A route of several gateways is not
     kept in `rc.conf` from here. A route can be given its
@@ -852,9 +864,12 @@ The console is laid out as a tree and tabs.
 
 ## The network
 
-**Network** in the tree shows the fleet as a map. Nothing is configured
-for it: the console reads each host's interfaces every few seconds and
-works the links out.
+**Network** in the tree shows the fleet as a map, its first tab. Nothing
+is configured for it: the console reads each host's interfaces every
+few seconds and works the links out. Its second tab, **Nexthop
+groups**, has every host's routes of several next hops with what each
+next hop sent and what its gateway received, as a host's Nexthops tab
+draws them (above).
 
 - A **link** is drawn only between hosts of this console: a tunnel
   whose far end is an address of another host, a point-to-point address

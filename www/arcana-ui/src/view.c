@@ -831,8 +831,19 @@ stage(struct html *h)
 		return;
 	}
 	if (app.node == NODE_NETWORK) {
-		view_netmap(h);
-		h_raw(h, "</main>");
+		/* The map first; beside it, what the nexthop groups carry. */
+		h_fmt(h, "<div class=\"netsect\"><nav class=\"tabs\"><button "
+		    "class=\"tab%s\" data-act=\"netsect-tab\" data-arg=\"map\">"
+		    "Map</button><button class=\"tab%s\" data-act=\"netsect-tab\" "
+		    "data-arg=\"groups\" title=\"How each route of several next "
+		    "hops shares what it sends, as the agents sampled it, at "
+		    "both ends\">Nexthop groups</button></nav>",
+		    ecmp_map_tab() ? " on" : "", ecmp_map_tab() ? "" : " on");
+		if (ecmp_map_tab())
+			view_netmap(h);
+		else
+			view_ecmp(h);
+		h_raw(h, "</div></main>");
 		return;
 	}
 	if (app.node == NODE_API) {

@@ -172,7 +172,7 @@ route_delete(struct html *h, const ucl_object_t *e, const char *family)
  * its gateway and interface and a bar of its share of the group.
  */
 static int
-nhgroups(struct html *h, const ucl_object_t *fams)
+nhgroups(struct html *h, const struct server *s, const ucl_object_t *fams)
 {
 	static const struct tcol	cols[] = {
 		{ "Group", "nhgrp-index", true },
@@ -185,6 +185,13 @@ nhgroups(struct html *h, const ucl_object_t *fams)
 	int				  r, shown, hops;
 
 	shown = 0;
+	/* What each carried, from the samples: a jail's are not taken. */
+	if (net_scope()[0] == '\0' && ucl_array_size(fams) > 0)
+		ecmp_head(h);
+	else if (ucl_array_size(fams) > 0)
+		h_raw(h, "<p class=\"dim ecmp-note\">What each next hop "
+		    "carried is drawn for the host's groups only: its agent "
+		    "samples the host's interfaces, not a jail's.</p>");
 	it = NULL;
 	while ((fam = ucl_object_iterate(fams, &it, true)) != NULL) {
 		h_raw(h, "<h4 class=\"family\">");
@@ -230,6 +237,12 @@ nhgroups(struct html *h, const ucl_object_t *fams)
 				    (long long)jint(n, "nh-index", 0));
 			}
 			h_raw(h, "</div></td></tr>");
+			/* What each carried: a row of its own, the table's width. */
+			if (net_scope()[0] == '\0') {
+				h_raw(h, "<tr class=\"nhg-carried\"><td colspan=\"3\">");
+				ecmp_group(h, s, g);
+				h_raw(h, "</td></tr>");
+			}
 		}
 		free(rows);
 		h_raw(h, "</tbody></table>");
@@ -684,7 +697,7 @@ view_network(struct html *h, struct server *s)
 		view_bridges(h, s, jget(app.net.data, "data.bridges"));
 		return;
 	case NET_NHGROUPS:
-		shown = nhgroups(h, jget(app.net.data, "data.statistics."
+		shown = nhgroups(h, s, jget(app.net.data, "data.statistics."
 		    "route-nhgrp-information.nhgrp-table.rt-family"));
 		break;
 	case NET_GENEVE:

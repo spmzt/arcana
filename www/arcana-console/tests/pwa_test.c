@@ -942,6 +942,21 @@ ATF_TC_BODY(pwa, tc)
 	    "[data-arg=nexthops]').click()");
 	wait_js("document.querySelector('nav.sub button[data-act=net-kind]"
 	    "[data-arg=nhgroups]')", 10);
+	/*
+	 * What each next hop carried, from the agent's samples: told here
+	 * that em0 sent 3000 bytes a second and em1 1000, for ten minutes,
+	 * so the group sent 75% and 25% where its weights say 67% and 33%.
+	 */
+	run("window.fetchH = window.fetch; window.hist = () => { const now = "
+	    "Date.now() / 1000, s = []; for (let t = now - 600; t <= now; t "
+	    "+= 5) s.push([t, 1, 0.1, 1e9, 0, 4000, 4000, 0, 0, 500, 3000, "
+	    "700, 1000]); return { ok: true, data: { step: 5, keep: 720, "
+	    "ncpu: 1, mem_total: 2e9, swap_total: 0, bytes: 1, nets: ['em0', "
+	    "'em1'], disks: [], jails: [], samples: s } }; }; window.fetch = "
+	    "(u, o) => String(u).includes('/history') ? Promise.resolve(new "
+	    "Response(JSON.stringify(window.hist()), { status: 200, headers: "
+	    "{ 'Content-Type': 'application/json' } })) : window.fetchH(u, "
+	    "o);");
 	run("document.querySelector('nav.sub button[data-act=net-kind]"
 	    "[data-arg=nhgroups]').click()");
 	wait_js("document.querySelectorAll('.stage table.nhgroups .nhg-hop')"
@@ -951,7 +966,45 @@ ATF_TC_BODY(pwa, tc)
 	    "'.nhg-hop')].map(e => e.textContent); return h[0].includes("
 	    "'10.0.0.1') && h[0].includes('67%') && h[1].includes('em1') && "
 	    "h[1].includes('33%'); })()"));
+	wait_js("(() => { const k = [...document.querySelectorAll('table."
+	    "nhgroups .ecmp-side')[0].querySelectorAll('.ecmp-key li')].map("
+	    "l => l.textContent); return k.length === 2 && k[0].includes("
+	    "'10.0.0.1') && k[0].includes('75%of weight 67%') && k[1]."
+	    "includes('25%of weight 33%'); })()", 20);
+	/* Ten minutes of fifteen: two thirds of the columns. */
+	ATF_CHECK(js_true("(() => { const e = document.querySelectorAll("
+	    "'table.nhgroups .ecmp-side'); return e[0].querySelectorAll("
+	    "'rect.hit').length >= 35 && e[0].querySelectorAll('line.ecmp-"
+	    "weight').length === 1 && e[1].textContent.includes('Received'); "
+	    "})()"));
+	ATF_CHECK(js_true("document.querySelector('.stage').scrollWidth <= "
+	    "document.querySelector('.stage').clientWidth + 1"));
 	shot("7n-nhgroups");
+	/* The same in the network section, a tab beside the map. */
+	run("document.querySelector('li[data-act=select-network]').click()");
+	wait_js("document.querySelector('.netsect button.tab.on[data-arg=map]"
+	    "') && document.querySelector('.netsect svg.topo')", 20);
+	run("document.querySelector('.netsect button.tab[data-arg=groups]')"
+	    ".click()");
+	wait_js("[...document.querySelectorAll('.ecmp-page .ecmp-group')]"
+	    ".some(g => g.querySelector('h4').textContent.includes('group 7') "
+	    "&& g.textContent.includes('75%of weight 67%'))", 30);
+	ATF_CHECK(js_true("!document.querySelector('.netsect svg.topo')"));
+	shot("7n-network-nhgroups");
+	phone(true);
+	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1 "
+	    "&& document.querySelector('.ecmp-page .ecmp')", 10);
+	shot("m7n-network-nhgroups");
+	phone(false);
+	run("document.querySelector('.netsect button.tab[data-arg=map]')"
+	    ".click()");
+	wait_js("document.querySelector('.netsect svg.topo')", 20);
+	run("window.fetch = window.fetchH;");
+	run("document.querySelector('li[data-act=select-server]').click()");
+	wait_js("document.querySelector('button.tab[data-arg=network]')", 10);
+	run("document.querySelector('button.tab[data-arg=network]').click()");
+	wait_js("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=interfaces]')", 10);
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]').click()");
 	wait_js("document.querySelector('table.ifaces tr[data-if=lo0] .chip')",

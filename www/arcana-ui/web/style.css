@@ -3932,3 +3932,44 @@ ul.wfparams li input, ul.wfon li input { width: auto; flex: 1 1 10rem; min-width
 ul.wfon li textarea { flex: 2 1 14rem; }
 /* The network tab's picker: the host, or one of its vnet jails. */
 label.net-jail select { width: auto; max-width: 14rem; font-size: .78rem; padding: .25rem .4rem; }
+
+/*
+ * The network section's tabs above the map, and what a nexthop group
+ * carried: its shares as stacked columns over time, the weights dashed
+ * across them, each share named beside.  The shares' colours are the
+ * theme's hues brought into one band of lightness, so that none stands
+ * out by brightness alone (checked for colour blindness, pair by pair).
+ */
+:root {
+	--nh-1: #179eae;
+	--nh-2: #c48308;
+	--nh-3: #8768d8;
+	--nh-4: #04aa6b;
+	--nh-5: #c941a3;
+	--nh-6: #2476c8;
+}
+.netsect { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.netsect > .tabs { flex: none; margin-bottom: .8rem; }
+.netsect > .netmap { flex: 1; height: auto; min-height: 0; }
+.ecmp-head { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; margin: .2rem 0 .8rem; }
+.ecmp-note { margin: 0; font-size: .74rem; max-width: 60rem; }
+.ecmp-page .ecmp-group { margin-bottom: 1rem; }
+.ecmp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-top: .7rem; }
+.ecmp-side { min-width: 0; }
+.ecmp-side h5 { margin: 0 0 .35rem; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-2); }
+.ecmp-chart { display: block; width: 100%; height: 110px; background: rgba(var(--surface-rgb), .6); border: 1px solid var(--line); }
+.ecmp-chart .hit { fill: transparent; }
+.ecmp-chart .hit:hover { fill: rgba(255, 255, 255, .08); }
+.ecmp-weight { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 4 3; opacity: .7; vector-effect: non-scaling-stroke; }
+.ecmp-axis { display: flex; justify-content: space-between; font-size: .66rem; color: var(--dim); margin-top: .15rem; }
+.ecmp-key { list-style: none; margin: .45rem 0 0; padding: 0; display: grid; gap: .3rem; }
+.ecmp-key li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; font-size: .76rem; color: var(--fg); }
+.ecmp-key i { display: inline-block; width: .7rem; height: .7rem; border-radius: 2px; flex: none; align-self: center; }
+.ecmp-key b { font-variant-numeric: tabular-nums; }
+.ecmp-key small { color: var(--fg-2); }
+table.nhgroups tr.nhg-carried td { white-space: normal; padding-top: 0; }
+table.nhgroups tr.nhg-carried .ecmp { margin: 0 0 .6rem; }
+@media (max-width: 760px) {
+	.netsect { height: auto; }
+	.ecmp { grid-template-columns: 1fr; }
+}

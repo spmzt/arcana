@@ -240,6 +240,7 @@ static bool		 addr_bytes(const char *, int *, unsigned char *);
 static bool		 addr_same(const char *, const char *);
 static bool		 labels_quiet(int);
 static int		 owner(const char *, char *, size_t);
+static void		 node_poll(int);
 static void		 links_build(void);
 static void		 trace_next(int, const char *);
 static void		 fit(void);
@@ -730,6 +731,36 @@ owner(const char *addr, char *ifname, size_t len)
 		}
 	}
 	return (-1);
+}
+
+/*
+ * The same for the pages beside the map: the server (in app.servers)
+ * whose host, or a vnet jail of it, has addr; which interface, and which
+ * jail ("" the host itself).  -1 when no host of the fleet has it, or
+ * its interfaces have not been read yet.
+ */
+int
+topo_addr_owner(const char *addr, char *ifname, size_t len, char *jail,
+    size_t jlen)
+{
+	int	n;
+
+	nodes_build();
+	if ((n = owner(addr, ifname, len)) == -1)
+		return (-1);
+	snprintf(jail, jlen, "%s", tn[n].jail);
+	return (tn[n].srv);
+}
+
+/* Every host's interfaces read, for whom owns an address. */
+void
+topo_poll_all(void)
+{
+	int	i;
+
+	nodes_build();
+	for (i = 0; i < ntn; i++)
+		node_poll(i);
 }
 
 static struct ifrate *
