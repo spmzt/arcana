@@ -449,9 +449,72 @@ addToLibrary({
 		 * stays as a row of buttons to sort by.  A row of one cell
 		 * across the table (one being changed, say) stays as it is.
 		 */
+		/*
+		 * The column a card is titled by: the one that names the row
+		 * (a process's command, an interface's name), not its first
+		 * when that is a number; -1 when none is better than the
+		 * first.
+		 */
+		var TITLES = ["name", "command", "interface", "jail",
+		    "service", "dataset", "package", "connection", "pool",
+		    "disk", "device", "protocol", "peer", "snapshot",
+		    "address", "destination", "host", "part"];
+
+		function cardTitle(labels) {
+			var t, k;
+
+			for (t = 0; t < TITLES.length; t++)
+				for (k = 0; k < labels.length; k++)
+					if (labels[k].toLowerCase() === TITLES[t])
+						return (k);
+			return (-1);
+		}
+		/*
+		 * A card's actions, when there are more than two, behind one
+		 * button that shows them; which cards were opened is kept
+		 * while the page is drawn again, by the card's title.
+		 */
+		var actsOpen = {};
+
+		function cardActs(t, tr) {
+			var td = tr.querySelector("td.acts"), more, key, n;
+
+			if (td === null)
+				return;
+			n = td.querySelectorAll("button:not(.acts-more)").length;
+			more = td.querySelector("button.acts-more");
+			if (n <= 2) {
+				if (more !== null)
+					more.remove();
+				td.classList.remove("many");
+				return;
+			}
+			key = (t.className || "") + "|" + ((tr.querySelector(
+			    "td.ctitle") || tr.firstElementChild).textContent ||
+			    "");
+			td.classList.add("many");
+			if (more === null) {
+				more = document.createElement("button");
+				more.type = "button";
+				more.className = "ghost small acts-more";
+				more.title = "Its actions";
+				more.textContent = "⋯";
+				more.addEventListener("click", function (e) {
+					e.stopPropagation();
+					actsOpen[more.dataset.key] =
+					    !td.classList.contains("open");
+					td.classList.toggle("open");
+				});
+				td.insertBefore(more, td.firstChild);
+			}
+			more.dataset.key = key;
+			td.classList.toggle("open", actsOpen[key] === true);
+		}
+
 		window.arcCards = function (root) {
 			var narrow = window.matchMedia("(max-width: 620px)")
-			    .matches, ts, t, ths, labels, rows, tds, i, j, k;
+			    .matches, ts, t, ths, labels, rows, tds, i, j, k,
+			    title;
 
 			ts = root.querySelectorAll("table.net");
 			for (i = 0; i < ts.length; i++) {
@@ -465,6 +528,7 @@ addToLibrary({
 				labels = [];
 				for (j = 0; j < ths.length; j++)
 					labels.push(ths[j].textContent.trim());
+				title = cardTitle(labels);
 				rows = t.querySelectorAll("tbody > tr");
 				for (j = 0; j < rows.length; j++) {
 					tds = rows[j].children;
@@ -472,11 +536,17 @@ addToLibrary({
 						rows[j].classList.add("whole");
 						continue;
 					}
-					for (k = 0; k < tds.length; k++)
+					for (k = 0; k < tds.length; k++) {
 						if (tds[k].dataset.label !==
 						    labels[k])
 							tds[k].dataset.label =
 							    labels[k];
+						tds[k].classList.toggle("ctitle",
+						    k === title);
+					}
+					rows[j].classList.toggle("titled",
+					    title > 0);
+					cardActs(t, rows[j]);
 				}
 			}
 		};

@@ -622,8 +622,11 @@ places_fill(void)
 		}
 		a = M_PI + 2 * M_PI * i / (app.nservers > 0 ? app.nservers :
 		    1);
-		t->x = app.nservers == 1 ? 0 : r * cos(a) * 1.35;
-		t->y = app.nservers == 1 ? 0 : r * sin(a) * 0.8;
+		/* On a phone the room is tall: the circle is too. */
+		t->x = app.nservers == 1 ? 0 : r * cos(a) * (arc_narrow() ?
+		    0.5 : 1.35);
+		t->y = app.nservers == 1 ? 0 : r * sin(a) * (arc_narrow() ?
+		    1.5 : 0.8);
 		t->placed = true;
 	}
 }

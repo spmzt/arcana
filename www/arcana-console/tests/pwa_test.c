@@ -1087,9 +1087,35 @@ ATF_TC_BODY(pwa, tc)
 		    ".click()");
 		wait_js("document.querySelector('table.procs.cards tbody tr td"
 		    "[data-label=PID]')", 10);
-		ATF_CHECK(js_true("getComputedStyle(document.querySelector("
-		    "'table.procs.cards tbody tr')).display === 'block'"));
+		/* A card is titled by the command, not by its number. */
+		ATF_CHECK(js_true("(() => { const tr = document.querySelector("
+		    "'table.procs.cards tbody tr'), t = tr.querySelector("
+		    "'td.ctitle'); return t && t.dataset.label === 'Command' && "
+		    "t.getBoundingClientRect().top <= tr.querySelector("
+		    "'td[data-label=PID]').getBoundingClientRect().top; })()"));
 		shot("m9-processes-cards");
+		/* The firewall's parts as a strip above its rules. */
+		run("document.querySelector('button.tab[data-arg=firewall]')"
+		    ".click()");
+		wait_js("document.querySelector('.fw-strip') && getComputedStyle("
+		    "document.querySelector('.fw-strip')).display === 'flex' && "
+		    "document.querySelectorAll('.fw-strip button').length >= 4",
+		    20);
+		ATF_CHECK(js_true("document.documentElement.scrollWidth <= "
+		    "window.innerWidth + 1"));
+		shot("m9b-firewall");
+		run("[...document.querySelectorAll('.fw-strip button')].find(b "
+		    "=> b.textContent.includes('As text')).click()");
+		wait_js("document.querySelector('.fw-strip button.on') && document"
+		    ".querySelector('.fw-strip button.on').textContent.includes("
+		    "'As text')", 10);
+		run("document.querySelector('.fw-strip button').click()");
+		wait_js("document.querySelector('.fw-strip button.on') && document"
+		    ".querySelector('.fw-strip button.on').textContent === "
+		    "'Overview'", 10);
+		run("document.querySelector('button.tab[data-arg=processes]')"
+		    ".click()");
+		wait_js("document.querySelector('table.procs.cards')", 10);
 	}
 	/* The tree is one line until unfolded, and folds again when
 	 * something in it is picked. */
@@ -3044,11 +3070,21 @@ ATF_TC_BODY(pwa, tc)
 	run("window.fetch = window.fetch0;");
 	run("document.querySelector('li[data-act=select-network]').click()");
 	wait_js("document.querySelector('svg.topo .tnode')", 10);
-	/* On a phone the map is above its panel, each as wide as the screen. */
+	/* On a phone the map is above its panel, each as wide as the screen;
+	 * its tools in a line of their own, its legend under it. */
 	phone(true);
 	wait_js("document.querySelector('.map-wrap').getBoundingClientRect()"
 	    ".width <= window.innerWidth && document.documentElement."
 	    "scrollWidth <= window.innerWidth + 1", 10);
+	ATF_CHECK(js_true("(() => { const t = document.querySelector("
+	    "'.map-tools').getBoundingClientRect(), w = document."
+	    "querySelector('.map-wrap').getBoundingClientRect(); return "
+	    "t.right <= w.right + 1 && document.querySelector('.map-legend')"
+	    ".getBoundingClientRect().right <= w.right + 1 && document."
+	    "querySelector('.map-legend').getBoundingClientRect().top > "
+	    "t.bottom; })()"));
+	run("document.querySelector('button[data-act=topo-arrange]').click()");
+	usleep(500000);
 	shot("m11-network");
 	phone(false);
 	run("document.querySelector('li[data-act=select-server]').click()");

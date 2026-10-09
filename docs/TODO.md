@@ -47,10 +47,6 @@
 - Gula, further: older samples thinned instead of dropped; dmesg for
   an agent that is not root, which the kernel refuses unless
   security.bsd.unprivileged_read_msgbuf is on.
-- The page on a phone, further: a card's title the column that names
-  the row best (a process's command, not its number); the row's
-  actions behind one menu when there are many; the map and the
-  firewall's chain drawn for a narrow screen.
 - SCTP, further: what comes in parts as a cblink stream (each on an
   SCTP stream of its own, flow-controlled by itself) instead of a
   dump, so that it can share the association too; a burst of first

@@ -3840,3 +3840,30 @@ pre.out.token { white-space: pre-wrap; word-break: break-all; user-select: all; 
 .usample label.rules { flex-basis: 100%; display: flex; flex-direction: column; gap: .25rem; }
 .usample label.rules textarea { font-family: var(--mono); font-size: .8rem; min-height: 4.2rem; }
 p.ujails { margin: .5rem 0 0; font-size: .8rem; }
+
+/*
+ * On a phone: a card titled by the column that names its row; its
+ * actions behind one button when there are many; the firewall's parts
+ * as a strip; the map's tools in a line that scrolls, and its legend
+ * under it.
+ */
+.fw-strip { display: none; }
+@media (max-width: 620px) {
+	table.net.cards tbody tr.titled { display: flex; flex-direction: column; }
+	table.net.cards tbody tr.titled td.ctitle { order: -1; justify-content: flex-start; text-align: left; font-size: .85rem; padding-bottom: .3rem; }
+	table.net.cards tbody tr.titled td.ctitle::before { content: none; }
+	.stage table.net.cards tbody tr.titled td:first-child:not(.ctitle) { justify-content: space-between; text-align: right; font-size: inherit; padding-bottom: .14rem; }
+	table.net.cards tbody tr.titled td:first-child:not(.ctitle)::before { content: attr(data-label); }
+	table.net.cards tbody td.acts { order: 99; }
+	table.net.cards tbody td.acts.many > :not(.acts-more) { display: none; }
+	table.net.cards tbody td.acts.many.open > :not(.acts-more) { display: inline-flex; }
+	table.net.cards tbody td.acts .acts-more { min-width: 2.6rem; }
+	.fw-strip { display: flex; gap: .3rem; margin: 0 0 .7rem; overflow-x: auto; scrollbar-width: none; }
+	.fw-strip button { flex: none; }
+	.fw-strip button small { color: var(--dim); font-size: .68rem; }
+	.map-tools { right: .6rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+	.map-tools button { flex: none; }
+	.map-labels { top: 3.6rem; }
+	.map-wrap .map-legend { left: .6rem; right: .6rem; bottom: .5rem; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; pointer-events: auto; }
+	.map-wrap .map-legend li { flex: none; }
+}

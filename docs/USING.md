@@ -713,9 +713,12 @@ The console is laid out as a tree and tabs.
   (`push.json`) and removes one; a device whose browser dropped the
   subscription is forgotten by itself. Up to 16 devices.
 
-- **A table on a phone** is a card for each row: the first column is
-  its title, each other value has its column's name beside it, and
-  what is done to the row is along the card's foot. The table's head
+- **A table on a phone** is a card for each row: its title is the
+  column that names the row (a process's command, an interface's or a
+  jail's name, a firewall's part), or the first column where none
+  does; each other value has its column's name beside it, and what is
+  done to the row is along the card's foot, behind one **⋯** when
+  there are more than two. The table's head
   stays above the cards as a row of buttons to sort by. Every table,
   the older ones too (routes, sockets, interfaces, BIRD's protocols,
   WireGuard's peers, netgraph's nodes, packages, jobs), sorts by the
@@ -725,7 +728,11 @@ The console is laid out as a tree and tabs.
   left (☰), the top bar is one row with the rest behind **⋮**, a
   dialog is a sheet from the bottom, a row of choices is one line that
   is scrolled, and a table keeps its first column in sight while the
-  others are scrolled.
+  others are scrolled. The firewall's parts, a side bar elsewhere, are
+  a strip above its rules. On the network map the tools are one line
+  along the top and the legend one along the foot, each scrolled
+  sideways, and **Arrange** puts the hosts on a tall ellipse that the
+  screen holds.
 - On a phone that has no theme chosen the plain **Slate** is used;
   Tron and the others are chosen in Settings as anywhere.
 - **Every table's columns** are as wide as their borders are dragged

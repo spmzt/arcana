@@ -2188,6 +2188,31 @@ view_firewall(struct html *h, struct server *s)
 		    "</div>");
 		return;
 	}
+	/*
+	 * On a phone the side bar is a drawer: the chain is a strip above
+	 * the rules instead, scrolled sideways, the parts that have rules
+	 * and the one shown.
+	 */
+	h_fmt(h, "<nav class=\"fw-strip\" aria-label=\"The firewall's parts\">"
+	    "<button class=\"ghost small%s\" data-act=\"fw-sect\" data-arg="
+	    "\"%d\">Overview</button><button class=\"ghost small%s\" "
+	    "data-act=\"fw-sect\" data-arg=\"%d\">States</button>",
+	    fw.sect == FW_LAYOUT ? " on" : "", FW_LAYOUT, fw.sect ==
+	    FW_DYNAMIC ? " on" : "", FW_DYNAMIC);
+	for (i = 0; i < nitems(sects); i++) {
+		n = count(live, sects[i].lo, sects[i].hi) + count(kept,
+		    sects[i].lo, sects[i].hi);
+		if (n == 0 && fw.sect != (int)i)
+			continue;
+		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"fw-sect\" "
+		    "data-arg=\"%zu\"><small>%d</small> %s</button>", fw.sect ==
+		    (int)i ? " on" : "", i, sects[i].lo, sects[i].name);
+	}
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"fw-sect\" "
+	    "data-arg=\"%d\">As text</button><button class=\"ghost small%s\" "
+	    "data-act=\"fw-sect\" data-arg=\"%d\">Follow a packet</button>"
+	    "</nav>", fw.sect == FW_TEXT ? " on" : "", FW_TEXT, fw.sect ==
+	    FW_TRACE ? " on" : "", FW_TRACE);
 	if (!loaded)
 		h_raw(h, "<div class=\"notice info\">ipfw is not in this "
 		    "host's kernel. Arcana loads no module by itself: load "
