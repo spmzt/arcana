@@ -312,5 +312,6 @@ arcw_onload(int action)
 	servers_init();
 	transfers_init();
 	workflows_init();
+	sdwan_init();
 	return (KORE_RESULT_OK);
 }

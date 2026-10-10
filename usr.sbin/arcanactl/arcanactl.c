@@ -144,7 +144,7 @@ usage(void)
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
-	    "    sdwan [probes json]\n"
+	    "    sdwan [probes | rules | steer json]\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
 	    "    wg interface init [port]\n"
@@ -1278,6 +1278,32 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		error = json_out("sdwan-probes", prsp->ok, prsp->error, NULL,
 		    prsp->trace.v, prsp->trace.n);
 		arc_sdwan_probes_rsp_free(prsp);
+		return (error);
+	}
+	if (argc == 3 && strcmp(argv[1], "rules") == 0) {
+		struct arc_sdwan_rules_req	 rq;
+		struct arc_sdwan_rules_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = argv[2];
+		if ((error = arc_sdwan_rules(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan rules");
+		error = json_out("sdwan-rules", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_rules_rsp_free(rs);
+		return (error);
+	}
+	if (argc == 3 && strcmp(argv[1], "steer") == 0) {
+		struct arc_sdwan_steer_req	 rq;
+		struct arc_sdwan_steer_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = argv[2];
+		if ((error = arc_sdwan_steer(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan steer");
+		error = json_out("sdwan-steer", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_steer_rsp_free(rs);
 		return (error);
 	}
 	if (argc != 1)

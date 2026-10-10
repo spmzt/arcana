@@ -649,6 +649,14 @@ sdwan-probes operation takes it: each an id and an address, and maybe
 fib, interval, size, count, dscp, down, up, timeout, eval, history and
 report.
 An empty array stops them all.
+.It Cm sdwan rules Ar json
+The rules that classify what comes in at the SD-WAN UNIs and steer
+it, as the sdwan-rules operation takes them: an object with the set,
+the tables and the rules.
+.It Cm sdwan steer Ar json
+What the policy tables hold, as the sdwan-steer operation takes it:
+each prefix's candidate tunnels in order; the first not down is
+chosen, and chosen again when a probe's state changes.
 .It Cm traceroute Ar address
 One round of
 .Xr traceroute 8 ,

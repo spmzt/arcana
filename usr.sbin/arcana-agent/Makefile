@@ -5,7 +5,7 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		confedit.c confread.c host.c kernel.c sysctl.c transport.c l2.c ipfw.c
 # Invidia: the network.
 SRCS+=		address.c interfaces.c netgraph.c network.c netdump.c nlroute.c parts.c pcb.c rcconf.c \
-		routes.c scope.c vnet.c
+		routes.c scope.c sdwan.c vnet.c
 # Luxuria: what is not FreeBSD's own, the plugins.
 SRCS+=		bird.c ipsec.c plugins.c wireguard.c
 # Ira: action and execution.

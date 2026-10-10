@@ -2157,7 +2157,10 @@ operations:
       agent sees it; or with more, how many came in that second
       beyond the twenty said one by one.  sdwan-tunnel, with id,
       address, state (up or down) and misses, when a tunnel the agent
-      measures (sdwan-probes) goes down or comes up.
+      measures (sdwan-probes) goes down or comes up.  The sdwan reply
+      has "rules" (the set, how many rules and which tables) and
+      "steer" (each prefix's candidates with their states and which
+      is chosen) too.
     do:
       request:
         attributes:
@@ -2391,6 +2394,49 @@ operations:
           - ok
           - error
           - json
+          - trace
+  - name: sdwan-rules
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The rules that classify what comes in at the SD-WAN UNIs and
+      steer it, as the console compiles them: json, an object with
+      "set" (2 to 31, the ipfw set they live in, emptied and filled
+      while disabled), "tables" (each a "name", a "valtype" of skipto,
+      ipv4 or ipv6, and "entries", each a prefix and a value) and
+      "rules" (each its number and its words).  Kept for the next
+      start.  With no rules, the set is emptied.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+  - name: sdwan-steer
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What the policy tables of the rules hold: json, an object with
+      "entries", each a "table", a "prefix" and its "candidates", each
+      a tunnel's "id" (as the probes know it) and the address it goes
+      "via", in the console's order.  The first whose far end the
+      probes do not say is down is the one, made again here when a
+      probe's state changes.  Kept for the next start.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
           - trace
 
 mcast-groups:

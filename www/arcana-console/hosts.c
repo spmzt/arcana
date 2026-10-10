@@ -57,6 +57,8 @@ enum op {
 	OP_TRACEROUTE,
 	OP_SDWAN,
 	OP_SDWAN_PROBES,
+	OP_SDWAN_RULES,
+	OP_SDWAN_STEER,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_STORAGE,
@@ -1039,7 +1041,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_ROUTE_LOOKUP ? "arc_route_lookup" :
 	    c->op == OP_TRACEROUTE ? "arc_traceroute" :
 	    c->op == OP_SDWAN ? "arc_sdwan" : c->op == OP_SDWAN_PROBES ?
-	    "arc_sdwan_probes" :
+	    "arc_sdwan_probes" : c->op == OP_SDWAN_RULES ? "arc_sdwan_rules" :
+	    c->op == OP_SDWAN_STEER ? "arc_sdwan_steer" :
 	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
@@ -1379,6 +1382,10 @@ call_run(struct kore_task *t)
 	struct arc_sdwan_rsp	*sdr;
 	struct arc_sdwan_probes_req spq;
 	struct arc_sdwan_probes_rsp *spr;
+	struct arc_sdwan_rules_req srq;
+	struct arc_sdwan_rules_rsp *srr;
+	struct arc_sdwan_steer_req ssq;
+	struct arc_sdwan_steer_rsp *ssr;
 	struct arc_source_head_rsp *shr;
 	uint8_t			*bin;
 	size_t			 binlen;
@@ -1908,6 +1915,26 @@ connected:
 		put_str(top, "error", spr->error);
 		steps = spr->trace.v;
 		nsteps = spr->trace.n;
+		break;
+	case OP_SDWAN_RULES:
+		memset(&srq, 0, sizeof(srq));
+		srq.json = c->text;
+		if ((error = arc_sdwan_rules(&cl, &srq, &srr)) != 0)
+			goto rpcfail;
+		ok = srr->ok;
+		put_str(top, "error", srr->error);
+		steps = srr->trace.v;
+		nsteps = srr->trace.n;
+		break;
+	case OP_SDWAN_STEER:
+		memset(&ssq, 0, sizeof(ssq));
+		ssq.json = c->text;
+		if ((error = arc_sdwan_steer(&cl, &ssq, &ssr)) != 0)
+			goto rpcfail;
+		ok = ssr->ok;
+		put_str(top, "error", ssr->error);
+		steps = ssr->trace.v;
+		nsteps = ssr->trace.n;
 		break;
 	case OP_STORAGE:
 		/* The dataset rides where a jail's name does. */
@@ -4152,17 +4179,24 @@ hosts_net(const char *uri, const char *peer, const char *name,
 	return (self_call(c, uri, peer, name, kind, status));
 }
 
-/* The tunnels the host is to measure: json, an array of targets. */
+/*
+ * The host's SD-WAN told: what is probes (the targets, an array),
+ * rules (the ruleset) or steer (the tables' entries), json as the
+ * operation takes it.
+ */
 char *
-hosts_sdwan_probes(const char *uri, const char *peer, const char *name,
-    const char *json, int *status)
+hosts_sdwan_set(const char *uri, const char *peer, const char *name,
+    const char *what, const char *json, int *status)
 {
 	struct call	*c;
+	char		 label[32];
 
 	c = kore_calloc(1, sizeof(*c));
-	c->op = OP_SDWAN_PROBES;
+	c->op = strcmp(what, "rules") == 0 ? OP_SDWAN_RULES : strcmp(what,
+	    "steer") == 0 ? OP_SDWAN_STEER : OP_SDWAN_PROBES;
 	c->text = kore_strdup(json);
-	return (self_call(c, uri, peer, name, "sdwan-probes", status));
+	snprintf(label, sizeof(label), "sdwan-%s", what);
+	return (self_call(c, uri, peer, name, label, status));
 }
 
 /* GET /api/servers/<id>/sdwan: what the host's probes have seen. */

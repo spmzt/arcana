@@ -3581,6 +3581,8 @@ ATF_TC_BODY(pwa, tc)
 	    "[...document.querySelectorAll('.sd-path .chip')].length === 4 && "
 	    "document.querySelector('.sd-path').textContent.includes('needs "
 	    "root')", 30);
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
+	    ".some(h => h.textContent.startsWith('Steering'))"));
 	shot("9-sdwan-paths");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",

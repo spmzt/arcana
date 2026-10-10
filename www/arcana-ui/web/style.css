@@ -4491,3 +4491,4 @@ ul.sd-faults li.st-down .led { background: var(--red); }
 .chip.here { border-color: var(--cyan); color: var(--fg-2); font-size: .68rem; }
 .tree .titem .chip.here { margin: 0 .3rem; padding: 0 .3rem; font-size: .6rem; vertical-align: middle; }
 .hostbar .host-id .chip.here { margin: .1rem 0 .35rem; }
+table.net.sd .chosen { color: var(--fg); font-weight: 600; }

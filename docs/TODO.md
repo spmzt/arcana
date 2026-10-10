@@ -11,8 +11,13 @@
   tunnels measured by the agents (ICMP echo through the service's
   table, the interval, size, count, DSCP and the down and up counts
   set per service), the Paths tab with each end's delay, variation and
-  loss, and faults. The probes run where the agent runs: an edge that
-  is a vnet jail is not measured yet. Next: flows
+  loss, and faults; the flows classified by ipfw in a set of their own
+  and steered by the policy tables, the edge taking the first tunnel
+  not down (the local failover), the console's manager ordering them
+  by the performance criteria. The probes and the rules run where the
+  agent runs: an edge that is a vnet jail is not measured or steered
+  yet. Next: what is not forwarded by a tunnel is let through for
+  now; breakout and NAT,
   classified and steered by ipfw in a set of its own, the console
   ordering each policy's tunnels by its performance criteria and the
   agent taking the first that answers; breakout and NAT, bandwidth and

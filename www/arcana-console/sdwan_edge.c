@@ -23,6 +23,11 @@
  *	probes		the tunnels measured: each one's far inner address,
  *			pinged by the agent through the service's FIB
  *			(sdwan-probes), as the service's probe settings say
+ *	rules		the ipfw rules that classify what comes in at the
+ *			UNIs, zone by zone and flow by flow, and steer each
+ *			flow by its policy's table (sdwan-rules)
+ *	steer		what those tables hold: each far prefix's tunnels in
+ *			order, the first not down taken (sdwan-steer)
  *	route:S:P	a route in the service's FIB: a far UNI's prefix
  *			by a tunnel, or a UNI's static route
  *	uni:EP		the SD-WAN UNI: its interface (or a VLAN on it) in
@@ -56,6 +61,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
+#include <syslog.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -71,10 +77,12 @@
 #define	WG_PORT		51000	/* + the unit: a wg tunnel's port */
 #define	JOB_POLL_US	300000
 #define	JOB_WAIT_S	600
-#define	PHASES		7
+#define	PHASES		9
 #define	LIST_SUBS	16	/* a UNI's subnets, the first and more */
+#define	CANDS_MAX_ORDER	16	/* an entry's candidates the manager orders */
 
-enum { PH_FIBS = 1, PH_IPSEC, PH_TVC, PH_PEER, PH_PROBE, PH_ROUTE, PH_UNI };
+enum { PH_FIBS = 1, PH_IPSEC, PH_TVC, PH_PEER, PH_PROBE, PH_RULES, PH_STEER,
+    PH_ROUTE, PH_UNI };
 
 static pthread_mutex_t	st_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool		applying;
@@ -779,6 +787,9 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					put(t, "public", B(public));
 					put(t, "backup", B(ucl_flag(x,
 					    "backup") || ucl_flag(y, "backup")));
+					put(t, "billing", S(str(ux, "billing") !=
+					    NULL ? str(ux, "billing") :
+					    "flat-rate"));
 					/* A geneve's VNI, the same at both. */
 					put(t, "vni", I(ucl_object_toint(
 					    ucl_array_find_index(ucl_object_lookup(
@@ -1013,6 +1024,705 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 	return (true);
 }
 
+
+/* ---- The rules: classification and steering (§8, §9.12, §10.4) ----- */
+
+#define	RULE_FROM	10	/* the rules' numbers, from here */
+#define	RULE_TO		99	/* to here, the way out of them */
+#define	IPFW_SET	30
+
+/* APPID (Table 8): what each application is, as ports and a protocol. */
+static const struct {
+	const char	*id, *proto, *ports;
+} appids[] = {
+	{ "dns", NULL, "53" }, { "http", "tcp", "80" },
+	{ "https", "tcp", "443" }, { "ssh", "tcp", "22" },
+	{ "sip", NULL, "5060,5061" }, { "ntp", "udp", "123" },
+	{ "smtp", "tcp", "25,465,587" }, { "imap", "tcp", "143,993" },
+	{ "pop3", "tcp", "110,995" }, { "ldap", "tcp", "389,636" },
+	{ "rdp", "tcp", "3389" }, { "snmp", "udp", "161,162" },
+	{ "syslog", "udp", "514" }, { "ike", "udp", "500,4500" },
+	{ "bgp", "tcp", "179" }, { "quic", "udp", "443" },
+	{ "dhcp", "udp", "67,68" }, { "icmp", "icmp", NULL },
+};
+
+/* A list's values joined by commas, into buf. */
+static const char *
+join(const ucl_object_t *arr, char *buf, size_t len)
+{
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	size_t			 n;
+
+	buf[0] = '\0';
+	n = 0;
+	it = NULL;
+	while ((v = ucl_object_iterate(arr, &it, true)) != NULL && n < len - 1)
+		n += (size_t)snprintf(buf + n, len - n, "%s%s", n > 0 ? "," : "",
+		    ucl_object_tostring_forced(v));
+	return (buf);
+}
+
+/*
+ * An application flow's criteria as the words of an ipfw rule after
+ * its action: "ip from SRC to DST options"; with to_table, DST is the
+ * table named (dst addresses then as dst-ip).  Into out; false when
+ * no packet can match (IPv4 and IPv6 criteria both), or a criterion
+ * cannot be said (ethertype).  fam is 0, 4 or 6 as the criteria say.
+ */
+static bool
+afs_words(const ucl_object_t *cr, const char *to_table, const char *appid,
+    char *out, size_t len, int *famp)
+{
+	const ucl_object_t	*v;
+	char			 src[600], dst[600], opt[900], l[600];
+	const char		*proto;
+	int			 fam;
+	size_t			 i;
+
+	fam = 0;
+	snprintf(src, sizeof(src), "any");
+	snprintf(dst, sizeof(dst), "%s", to_table != NULL ? to_table : "any");
+	opt[0] = '\0';
+	proto = "ip";
+	if (ucl_object_lookup(cr, "ethertype") != NULL)
+		return (false);
+	if ((v = ucl_object_lookup(cr, "sav4")) != NULL) {
+		fam = 4;
+		snprintf(src, sizeof(src), "%s", join(v, l, sizeof(l)));
+	}
+	if ((v = ucl_object_lookup(cr, "sav6")) != NULL) {
+		if (fam == 4)
+			return (false);
+		fam = 6;
+		snprintf(src, sizeof(src), "%s", join(v, l, sizeof(l)));
+	}
+	if ((v = ucl_object_lookup(cr, "dav4")) != NULL ||
+	    (v = ucl_object_lookup(cr, "dav6")) != NULL) {
+		if (fam != 0 && fam != (ucl_object_lookup(cr, "dav4") != NULL ?
+		    4 : 6))
+			return (false);
+		fam = ucl_object_lookup(cr, "dav4") != NULL ? 4 : 6;
+		if (to_table != NULL)
+			snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+			    " dst-ip %s", join(v, l, sizeof(l)));
+		else
+			snprintf(dst, sizeof(dst), "%s", join(v, l, sizeof(l)));
+	}
+	if ((v = ucl_object_lookup(cr, "sdav4")) != NULL ||
+	    (v = ucl_object_lookup(cr, "sdav6")) != NULL) {
+		if (fam != 0 && fam != (ucl_object_lookup(cr, "sdav4") != NULL ?
+		    4 : 6))
+			return (false);
+		fam = ucl_object_lookup(cr, "sdav4") != NULL ? 4 : 6;
+		join(v, l, sizeof(l));
+		snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+		    " { src-ip %s or dst-ip %s }", l, l);
+	}
+	if ((v = ucl_object_lookup(cr, "protv4")) != NULL ||
+	    (v = ucl_object_lookup(cr, "nextheadv6")) != NULL) {
+		const ucl_object_t	*e;
+		ucl_object_iter_t	 it;
+		int			 n;
+
+		if (ucl_array_size(v) == 1)
+			proto = ucl_object_tostring_forced(ucl_array_find_index(
+			    v, 0));
+		else {
+			snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+			    " {");
+			n = 0;
+			it = NULL;
+			while ((e = ucl_object_iterate(v, &it, true)) != NULL)
+				snprintf(opt + strlen(opt), sizeof(opt) -
+				    strlen(opt), "%s proto %s", n++ > 0 ? " or" :
+				    "", ucl_object_tostring_forced(e));
+			snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+			    " }");
+		}
+	}
+	if (appid != NULL) {
+		for (i = 0; i < nitems(appids); i++)
+			if (strcmp(appids[i].id, appid) == 0)
+				break;
+		if (i == nitems(appids))
+			return (false);
+		if (appids[i].proto != NULL)
+			proto = appids[i].proto;
+		if (appids[i].ports != NULL)
+			snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+			    " { src-port %s or dst-port %s }", appids[i].ports,
+			    appids[i].ports);
+	}
+	if ((v = ucl_object_lookup(cr, "sport")) != NULL)
+		snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+		    " src-port %s", join(v, l, sizeof(l)));
+	if ((v = ucl_object_lookup(cr, "dport")) != NULL)
+		snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+		    " dst-port %s", join(v, l, sizeof(l)));
+	if ((v = ucl_object_lookup(cr, "sdport")) != NULL) {
+		join(v, l, sizeof(l));
+		snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt),
+		    " { src-port %s or dst-port %s }", l, l);
+	}
+	if ((v = ucl_object_lookup(cr, "dscp")) != NULL)
+		snprintf(opt + strlen(opt), sizeof(opt) - strlen(opt), " dscp %s",
+		    join(v, l, sizeof(l)));
+	if (strcmp(proto, "ip") == 0 && fam != 0)
+		proto = fam == 4 ? "ip4" : "ip6";
+	snprintf(out, len, "%s from %s to %s%s", proto, src, dst, opt);
+	*famp = fam;
+	return (true);
+}
+
+/*
+ * The ingress policy of a flow in a zone at an end point (§10.4,
+ * R109-R112): the end point's map by the flow, then by its group,
+ * then the zone's by the flow, then by its group; none, dropped.
+ * NULL for none, "Block", or the policy's name.
+ */
+static const char *
+policy_for(const ucl_object_t *ep, const ucl_object_t *zone,
+    const ucl_object_t *afs)
+{
+	const ucl_object_t	*m;
+	ucl_object_iter_t	 it;
+	const char		*name, *group, *v;
+	int			 pass;
+
+	name = str(afs, "name");
+	group = str(afs, "group");
+	if (group != NULL && strcmp(group, "None") == 0)
+		group = NULL;
+	for (pass = 0; pass < 4; pass++) {
+		const ucl_object_t	*list = pass < 2 ? ucl_object_lookup(ep,
+		    "policy_map") : ucl_object_lookup(zone, "policies");
+		const char		*want = pass % 2 == 0 ? name : group;
+
+		if (want == NULL)
+			continue;
+		it = NULL;
+		while ((m = ucl_object_iterate(list, &it, true)) != NULL) {
+			if (pass < 2 && (str(m, "zone") == NULL || strcmp(str(m,
+			    "zone"), str(zone, "name")) != 0))
+				continue;
+			if (str(m, "app") == NULL || strcmp(str(m, "app"), want)
+			    != 0)
+				continue;
+			v = str(m, pass < 2 ? "ingress" : "policy");
+			return (v);
+		}
+	}
+	return (NULL);
+}
+
+/* The zone a prefix's hosts are in: by its prefixes, else Default. */
+static const ucl_object_t *
+zone_of(const ucl_object_t *sw, const char *prefix)
+{
+	const ucl_object_t	*z, *p, *list, *best, *dflt;
+	ucl_object_iter_t	 it, pit;
+	struct net		 n, zn;
+	int			 blen;
+
+	if (!net_parse(prefix, &n))
+		return (NULL);
+	best = dflt = NULL;
+	blen = -1;
+	it = NULL;
+	while ((z = ucl_object_iterate(ucl_object_lookup(sw, "zones"), &it,
+	    true)) != NULL) {
+		list = ucl_object_lookup(z, "prefixes");
+		if (ucl_object_type(list) == UCL_STRING) {
+			dflt = z;
+			continue;
+		}
+		pit = NULL;
+		while ((p = ucl_object_iterate(list, &pit, true)) != NULL) {
+			if (!net_parse(ucl_object_tostring_forced(p), &zn) ||
+			    zn.af != n.af || zn.len > n.len || zn.len <= blen)
+				continue;
+			if (memcmp(zn.a, n.a, (size_t)zn.len / 8) == 0 &&
+			    (zn.len % 8 == 0 || ((zn.a[zn.len / 8] ^ n.a[zn.len /
+			    8]) & (0xff << (8 - zn.len % 8))) == 0)) {
+				best = z;
+				blen = zn.len;
+			}
+		}
+	}
+	return (best != NULL ? best : dflt);
+}
+
+/* May a flow of a policy in zone z reach the hosts of zone dz? (R58-R62) */
+static bool
+zone_allowed(const ucl_object_t *pol, const ucl_object_t *z,
+    const ucl_object_t *dz)
+{
+	const ucl_object_t	*adz;
+
+	if (dz == NULL)
+		return (false);
+	adz = pol != NULL ? ucl_object_lookup(ucl_object_lookup(pol,
+	    "criteria"), "allowed-destination-zones") : NULL;
+	if (adz == NULL)
+		return (z == dz);		/* [Self], R62 */
+	if (ucl_object_type(adz) == UCL_STRING)
+		return (true);			/* All */
+	if (z == dz && in_list(adz, "Self"))
+		return (true);
+	return (in_list(adz, str(dz, "name")));
+}
+
+/* May a flow of a policy go from end point a to end point b? (§9.6) */
+static bool
+vt_allows(const ucl_object_t *sw, const ucl_object_t *pol, const char *a,
+    const char *b)
+{
+	const ucl_object_t	*t;
+	const char		*vt;
+
+	vt = pol != NULL ? str(ucl_object_lookup(pol, "criteria"),
+	    "virtual-topology") : NULL;
+	if (vt == NULL || strcmp(vt, "Swvc") == 0 || (t = by(ucl_object_lookup(
+	    sw, "topologies"), "name", vt)) == NULL)
+		return (true);
+	if (ucl_object_lookup(t, "end_points") != NULL)
+		return (in_list(ucl_object_lookup(t, "end_points"), a) &&
+		    in_list(ucl_object_lookup(t, "end_points"), b));
+	/* Rooted: a leaf reaches roots only; a root reaches all (R50, R51). */
+	if (in_list(ucl_object_lookup(t, "roots"), a))
+		return (in_list(ucl_object_lookup(t, "roots"), b) ||
+		    in_list(ucl_object_lookup(t, "leaves"), b));
+	return (in_list(ucl_object_lookup(t, "leaves"), a) && in_list(
+	    ucl_object_lookup(t, "roots"), b));
+}
+
+/* Does a tunnel meet a policy's criteria of the way (§9.12.2)? */
+static bool
+tunnel_fits(const ucl_object_t *t, const ucl_object_t *pol, bool backup_ok)
+{
+	const ucl_object_t	*cr;
+	const char		*v;
+
+	cr = pol != NULL ? ucl_object_lookup(pol, "criteria") : NULL;
+	v = str(cr, "encryption");
+	if (v != NULL && strcmp(v, "required-always") == 0 && !ucl_flag(t,
+	    "encrypted"))
+		return (false);
+	if (v != NULL && strcmp(v, "required-public-only") == 0 && ucl_flag(t,
+	    "public") && !ucl_flag(t, "encrypted"))
+		return (false);
+	v = str(cr, "public-private");
+	if (v != NULL && strcmp(v, "private-only") == 0 && ucl_flag(t,
+	    "public"))
+		return (false);
+	v = str(cr, "billing-method");
+	if (v != NULL && str(t, "billing") != NULL && ((strcmp(v,
+	    "flat-rate-only") == 0 && strcmp(str(t, "billing"), "flat-rate") !=
+	    0) || (strcmp(v, "usage-based-only") == 0 && strcmp(str(t,
+	    "billing"), "usage-based") != 0)))
+		return (false);
+	if (ucl_flag(t, "backup") && !backup_ok)
+		return (false);
+	return (true);
+}
+
+/* The interface an end point's UNI is: its own, or the VLAN made on it. */
+static const char *
+uni_ifname(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
+    char *buf, size_t len)
+{
+	const ucl_object_t	*u, *al;
+	char			 key[200];
+
+	u = ucl_object_lookup(ep, "uni");
+	if (ucl_object_toint(ucl_object_lookup(u, "vlan")) <= 0)
+		return (str(u, "interface"));
+	snprintf(key, sizeof(key), "vlan:%s/%s", str(sw, "id"), str(ep, "id"));
+	al = ucl_object_lookup(pl->alloc, key);
+	snprintf(buf, len, "vlan%jd", (intmax_t)ucl_object_toint(
+	    ucl_object_lookup(al, "unit")));
+	return (buf);
+}
+
+static void
+rule(ucl_object_t *rules, int num, const char *fmt, ...)
+{
+	char	line[1200];
+	va_list	ap;
+	size_t	n;
+
+	n = (size_t)snprintf(line, sizeof(line), "%d ", num);
+	va_start(ap, fmt);
+	vsnprintf(line + n, sizeof(line) - n, fmt, ap);
+	va_end(ap);
+	ucl_array_append(rules, S(line));
+}
+
+static ucl_object_t *
+table(ucl_object_t *tables, const char *name, const char *valtype)
+{
+	ucl_object_t	*t;
+
+	if ((t = (ucl_object_t *)(uintptr_t)by(tables, "name", name)) != NULL)
+		return (t);
+	t = ucl_object_typed_new(UCL_OBJECT);
+	put(t, "name", S(name));
+	put(t, "valtype", S(valtype));
+	put(t, "entries", ucl_object_typed_new(UCL_ARRAY));
+	ucl_array_append(tables, t);
+	return (t);
+}
+
+static void
+entry(ucl_object_t *t, const char *key, const char *value)
+{
+	ucl_object_t	*e;
+
+	e = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(e, S(key));
+	ucl_array_append(e, S(value));
+	ucl_array_append((ucl_object_t *)(uintptr_t)ucl_object_lookup(t,
+	    "entries"), e);
+}
+
+/*
+ * The steering of one table: for each far prefix the tunnels that may
+ * carry it, in order: no backup first, a private one before a public
+ * one; the console's manager reorders them by the performance.
+ */
+static void
+steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
+    const ucl_object_t *ep, const ucl_object_t *zone, const ucl_object_t *pol,
+    const char *tname, int fam, bool backup_ok)
+{
+	const ucl_object_t	*ep2, *p, *t, *e0, *e1, *far, *dz;
+	ucl_object_iter_t	 it, pit, tit;
+	ucl_object_t		*pfx, *en, *cands, *c;
+	int			 af, pass;
+
+	af = fam == 4 ? AF_INET : AF_INET6;
+	it = NULL;
+	while ((ep2 = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep2, "edge"), str(ep, "edge")) == 0 ||
+		    !vt_allows(sw, pol, str(ep, "id"), str(ep2, "id")))
+			continue;
+		pfx = ucl_object_typed_new(UCL_ARRAY);
+		uni_prefixes(ep2, pfx);
+		pit = NULL;
+		while ((p = ucl_object_iterate(pfx, &pit, true)) != NULL) {
+			if (family(ucl_object_tostring(p)) != af)
+				continue;
+			dz = zone_of(sw, ucl_object_tostring(p));
+			if (!zone_allowed(pol, zone, dz))
+				continue;
+			if (by(entries, "prefix", ucl_object_tostring(p)) !=
+			    NULL)
+				continue;
+			cands = ucl_object_typed_new(UCL_ARRAY);
+			/* Those that are no backup, then the backups. */
+			for (pass = 0; pass < 2; pass++) {
+				tit = NULL;
+				while ((t = ucl_object_iterate(pl->tunnels, &tit,
+				    true)) != NULL) {
+					if (strcmp(str(t, "swvc"), str(sw, "id"))
+					    != 0 || ucl_flag(t, "backup") !=
+					    (pass == 1) || !tunnel_fits(t, pol,
+					    backup_ok))
+						continue;
+					e0 = ucl_array_find_index(
+					    ucl_object_lookup(t, "ends"), 0);
+					e1 = ucl_array_find_index(
+					    ucl_object_lookup(t, "ends"), 1);
+					if (strcmp(str(e0, "edge"), str(ep,
+					    "edge")) == 0 && strcmp(str(e1,
+					    "edge"), str(ep2, "edge")) == 0)
+						far = e1;
+					else if (strcmp(str(e1, "edge"), str(ep,
+					    "edge")) == 0 && strcmp(str(e0,
+					    "edge"), str(ep2, "edge")) == 0)
+						far = e0;
+					else
+						continue;
+					if (str(far, fam == 4 ? "inner4" :
+					    "inner6") == NULL)
+						continue;
+					c = ucl_object_typed_new(UCL_OBJECT);
+					put(c, "id", S(str(t, "id")));
+					put(c, "via", S(str(far, fam == 4 ?
+					    "inner4" : "inner6")));
+					put(c, "public", B(ucl_flag(t,
+					    "public")));
+					ucl_array_append(cands, c);
+				}
+			}
+			if (ucl_array_size(cands) == 0) {
+				ucl_object_unref(cands);
+				continue;
+			}
+			/* A private one before a public one. */
+			en = ucl_object_typed_new(UCL_OBJECT);
+			put(en, "table", S(tname));
+			put(en, "prefix", S(ucl_object_tostring(p)));
+			put(en, "swvc", S(str(sw, "id")));
+			put(en, "policy", S(str(pol, "name")));
+			put(en, "candidates", cands);
+			ucl_array_append(entries, en);
+		}
+		ucl_object_unref(pfx);
+	}
+}
+
+/*
+ * The rules of one edge, and its steering: for each service with an
+ * end point here, the zone table and each zone's block, each flow
+ * with the policy it gets, each policy's tables.
+ */
+static bool
+rules_build(struct plan *pl, const char *sid)
+{
+	const ucl_object_t	*sw, *ep, *zone, *afs, *pol, *v;
+	ucl_object_iter_t	 it, eit, zit, ait;
+	ucl_object_t		*o, *tables, *rules, *entries, *zt, *j;
+	char			 ifn[32], tname[64], zname[64], words[2000];
+	char			 key[200];
+	const char		*uni, *pname;
+	int			 next, zi, pi, fam, nuni, k;
+	bool			 any, multi;
+
+	tables = ucl_object_typed_new(UCL_ARRAY);
+	rules = ucl_object_typed_new(UCL_ARRAY);
+	entries = ucl_object_typed_new(UCL_ARRAY);
+	next = RULE_FROM + 2;
+	any = false;
+	/* First the way in: the UNIs' packets to their zone's block. */
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(pl->doc, "swvcs"),
+	    &it, true)) != NULL) {
+		snprintf(zname, sizeof(zname), "sw%jd_zone", (intmax_t)
+		    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+		eit = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+		    "end_points"), &eit, true)) != NULL) {
+			if (strcmp(str(ep, "edge"), sid) != 0)
+				continue;
+			any = true;
+			uni = uni_ifname(pl, sw, ep, ifn, sizeof(ifn));
+			/* [D1]: source routing dropped. */
+			rule(rules, RULE_FROM, "deny ip from any to any ipoptions "
+			    "lsrr,ssrr,rr in recv %s", uni);
+			rule(rules, RULE_FROM, "skipto tablearg ip from table(%s) "
+			    "to any in recv %s", zname, uni);
+			/* No zone: dropped (R23). */
+			rule(rules, RULE_FROM + 1, "deny ip from any to any in "
+			    "recv %s", uni);
+		}
+	}
+	if (!any) {
+		ucl_object_unref(tables);
+		ucl_object_unref(rules);
+		ucl_object_unref(entries);
+		return (true);
+	}
+	rule(rules, RULE_FROM + 1, "skipto %d ip from any to any", RULE_TO);
+	/* Then each service's zones: a block each. */
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(pl->doc, "swvcs"),
+	    &it, true)) != NULL) {
+		nuni = 0;
+		eit = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+		    "end_points"), &eit, true)) != NULL)
+			if (strcmp(str(ep, "edge"), sid) == 0)
+				nuni++;
+		if (nuni == 0)
+			continue;
+		multi = nuni > 1;
+		snprintf(zname, sizeof(zname), "sw%jd_zone", (intmax_t)
+		    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+		zt = table(tables, zname, "skipto");
+		zi = 0;
+		zit = NULL;
+		while ((zone = ucl_object_iterate(ucl_object_lookup(sw, "zones"),
+		    &zit, true)) != NULL) {
+			char	num[16];
+
+			if (next >= RULE_TO) {
+				snprintf(pl->why, sizeof(pl->why), "edge %s: more "
+				    "zones than rule numbers %d to %d hold",
+				    server_name_of(sid), RULE_FROM, RULE_TO);
+				ucl_object_unref(tables);
+				ucl_object_unref(rules);
+				ucl_object_unref(entries);
+				return (false);
+			}
+			snprintf(num, sizeof(num), "%d", next);
+			v = ucl_object_lookup(zone, "prefixes");
+			if (ucl_object_type(v) == UCL_STRING) {
+				entry(zt, "0.0.0.0/0", num);
+				entry(zt, "::/0", num);
+			} else {
+				const ucl_object_t	*p;
+				ucl_object_iter_t	 pit;
+
+				pit = NULL;
+				while ((p = ucl_object_iterate(v, &pit, true)) !=
+				    NULL)
+					entry(zt, ucl_object_tostring_forced(p),
+					    num);
+			}
+			/* The block: each end point's flows, in order. */
+			eit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &eit, true)) != NULL) {
+				char	recv[48];
+
+				if (strcmp(str(ep, "edge"), sid) != 0)
+					continue;
+				uni = uni_ifname(pl, sw, ep, ifn, sizeof(ifn));
+				recv[0] = '\0';
+				if (multi)
+					snprintf(recv, sizeof(recv), " in recv %s",
+					    uni);
+				ait = NULL;
+				while ((afs = ucl_object_iterate(
+				    ucl_object_lookup(sw, "flows"), &ait, true))
+				    != NULL) {
+					const ucl_object_t	*cr, *ap;
+					ucl_object_iter_t	 apit;
+					const char		*appid;
+					int			 nap;
+
+					pname = policy_for(ep, zone, afs);
+					pol = pname != NULL && strcmp(pname,
+					    "Block") != 0 ? by(ucl_object_lookup(
+					    sw, "policies"), "name", pname) :
+					    NULL;
+					pi = 0;
+					if (pol != NULL) {
+						const ucl_object_t *q;
+						ucl_object_iter_t qit = NULL;
+
+						while ((q = ucl_object_iterate(
+						    ucl_object_lookup(sw,
+						    "policies"), &qit, true)) !=
+						    NULL && q != pol)
+							pi++;
+					}
+					cr = ucl_object_lookup(afs, "criteria");
+					ap = ucl_object_lookup(cr, "appid");
+					nap = ap != NULL ? (int)ucl_array_size(
+					    ap) : 1;
+					apit = NULL;
+					for (k = 0; k < nap; k++) {
+						appid = ap != NULL ?
+						    ucl_object_tostring_forced(
+						    ucl_object_iterate(ap, &apit,
+						    true)) : NULL;
+						if (pol == NULL) {
+							/* None, or Block (R112,
+							 * R113). */
+							if (afs_words(cr, NULL,
+							    appid, words,
+							    sizeof(words), &fam))
+								rule(rules, next,
+								    "deny %s%s",
+								    words, recv);
+							continue;
+						}
+						for (fam = 4; fam <= 6; fam += 2) {
+							char	tbl[80];
+							int	f2;
+
+							snprintf(tname, sizeof(
+							    tname), "sw%jd_z%dp%d_%d",
+							    (intmax_t)
+							    ucl_object_toint(
+							    ucl_object_lookup(sw,
+							    "fib")), zi, pi, fam);
+							snprintf(tbl, sizeof(tbl),
+							    "table(%s)", tname);
+							if (!afs_words(cr, tbl,
+							    appid, words,
+							    sizeof(words), &f2))
+								continue;
+							if (f2 != 0 && f2 != fam)
+								continue;
+							/* ip of the family only. */
+							if (f2 == 0 && strncmp(
+							    words, "ip ", 3) == 0) {
+								char	w2[2000];
+
+								snprintf(w2,
+								    sizeof(w2),
+								    "ip%d %s", fam,
+								    words + 3);
+								memcpy(words, w2,
+								    sizeof(w2));
+							}
+							table(tables, tname, fam ==
+							    4 ? "ipv4" : "ipv6");
+							rule(rules, next, "fwd "
+							    "tablearg %s%s", words,
+							    recv);
+							steer_table(pl, entries,
+							    sw, ep, zone, pol,
+							    tname, fam, str(
+							    ucl_object_lookup(pol,
+							    "criteria"), "backup")
+							    != NULL && strcmp(str(
+							    ucl_object_lookup(pol,
+							    "criteria"), "backup"),
+							    "enabled") == 0);
+						}
+						/* The rest of the flow: its own
+						 * UNI's hosts, and what step 5
+						 * decides of (breakout, zones). */
+						if (afs_words(cr, NULL, appid,
+						    words, sizeof(words), &fam))
+							rule(rules, next,
+							    "allow %s%s", words,
+							    recv);
+					}
+				}
+				/* No flow matched: dropped (R96). */
+				rule(rules, next, "deny ip from any to any%s",
+				    recv);
+			}
+			next++;
+			zi++;
+		}
+	}
+	rule(rules, RULE_TO, "count ip from any to any");
+	/* The two objects: the rules, then the steering of their tables. */
+	snprintf(key, sizeof(key), "rules");
+	o = object(pl, sid, key, PH_RULES, "the rules: %u, in ipfw set %d, "
+	    "numbers %d to %d, with %u tables", ucl_array_size(rules), IPFW_SET,
+	    RULE_FROM, RULE_TO, ucl_array_size(tables));
+	if (o != NULL) {
+		j = job("sdwan-rules", "set", I(IPFW_SET), "tables", tables,
+		    "rules", rules, NULL);
+		make(o, j);
+		unmake(o, job("sdwan-rules", "set", I(IPFW_SET), "tables",
+		    ucl_object_typed_new(UCL_ARRAY), "rules",
+		    ucl_object_typed_new(UCL_ARRAY), NULL));
+	} else {
+		ucl_object_unref(tables);
+		ucl_object_unref(rules);
+	}
+	o = object(pl, sid, "steer", PH_STEER, "the steering: %u far "
+	    "prefix%s, each by the tunnels that may carry it",
+	    ucl_array_size(entries), ucl_array_size(entries) == 1 ? "" : "es");
+	if (o != NULL) {
+		make(o, job("sdwan-steer", "entries", entries, NULL));
+		unmake(o, job("sdwan-steer", "entries", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	} else
+		ucl_object_unref(entries);
+	return (true);
+}
+
 /*
  * What every edge is to have: pl->edges, each edge's objects; NULL and
  * pl->why when it cannot be said.
@@ -1218,6 +1928,16 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &it2, true)) != NULL)
 			if (!uni_obj(pl, sw, ep))
+				return (false);
+	}
+	/* The rules of each edge, and the steering of their tables. */
+	{
+		const ucl_object_t	*edge;
+
+		it = NULL;
+		while ((edge = ucl_object_iterate(ucl_object_lookup(doc,
+		    "edges"), &it, true)) != NULL)
+			if (!rules_build(pl, str(edge, "server")))
 				return (false);
 	}
 	return (true);
@@ -1456,15 +2176,25 @@ job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 		snprintf(why, wlen, "no server %s", sid);
 		return (false);
 	}
-	/* The probes are the console's own ask, not a job of the host. */
-	if (strcmp(str(j, "kind"), "sdwan-probes") == 0) {
-		char	*targets;
-		bool	 ok;
+	/* The probes, rules and steering are the console's own asks, not
+	 * jobs of the host. */
+	if (strncmp(str(j, "kind"), "sdwan-", 6) == 0) {
+		ucl_object_t	*body;
+		char		*text;
+		bool		 ok;
 
-		targets = emit(ucl_object_lookup(j, "targets"));
-		json = hosts_sdwan_probes(uri, peer, name, targets != NULL ?
-		    targets : "[]", &status);
-		free(targets);
+		if (strcmp(str(j, "kind"), "sdwan-probes") == 0)
+			text = emit(ucl_object_lookup(j, "targets"));
+		else {
+			body = ucl_object_copy(j);
+			(void)ucl_object_delete_key(body, "kind");
+			text = emit(body);
+			ucl_object_unref(body);
+		}
+		json = hosts_sdwan_set(uri, peer, name, str(j, "kind") + 6,
+		    text != NULL ? text : strcmp(str(j, "kind"),
+		    "sdwan-probes") == 0 ? "[]" : "{}", &status);
+		free(text);
 		ans = parse(json);
 		free(json);
 		ok = status == 200 && ans != NULL && ucl_flag(ans, "ok");
@@ -1723,7 +2453,9 @@ run_main(void *arg)
 				continue;
 			if (strcmp(ch, "unmake") == 0)
 				(void)do_unmake(r, s);
-			else if (strcmp(str(s, "key"), "probes") != 0) {
+			else if (strcmp(str(s, "key"), "probes") != 0 &&
+			    strcmp(str(s, "key"), "rules") != 0 &&
+			    strcmp(str(s, "key"), "steer") != 0) {
 				/* Its old self, then the new one below; the
 				 * probes set anew replace the old ones. */
 				(void)do_unmake(r, s);
@@ -1782,6 +2514,323 @@ run_main(void *arg)
 	return (NULL);
 }
 
+
+/* ---- The manager: each policy's tunnels ordered by performance ------ */
+
+#define	MGR_LOCK	"sdwan-mgr.lock"
+#define	MGR_TICK_S	5
+#define	MGR_RESEND_S	300	/* the order sent again, unchanged, after */
+
+/* A tunnel's last sample at an edge: delay, ipdv, loss; false if none. */
+static bool
+metrics_of(const ucl_object_t *sd, const char *id, double *m)
+{
+	const ucl_object_t	*t, *s;
+	ucl_object_iter_t	 it;
+	unsigned int		 n;
+
+	it = NULL;
+	while ((t = ucl_object_iterate(ucl_object_lookup(sd, "targets"), &it,
+	    true)) != NULL) {
+		if (str(t, "id") == NULL || strcmp(str(t, "id"), id) != 0)
+			continue;
+		if (str(t, "state") != NULL && strcmp(str(t, "state"), "down")
+		    == 0)
+			return (false);
+		n = ucl_object_lookup(t, "samples") != NULL ? ucl_array_size(
+		    ucl_object_lookup(t, "samples")) : 0;
+		if (n == 0)
+			return (false);
+		s = ucl_array_find_index(ucl_object_lookup(t, "samples"), n - 1);
+		m[0] = ucl_object_todouble(ucl_array_find_index(s, 1));
+		m[1] = ucl_object_todouble(ucl_array_find_index(s, 2));
+		m[2] = ucl_object_todouble(ucl_array_find_index(s, 3));
+		return (true);
+	}
+	return (false);
+}
+
+static int
+metric_index(const char *name)
+{
+
+	return (name == NULL ? 0 : strcmp(name, "ipdv") == 0 ? 1 : strcmp(name,
+	    "loss") == 0 ? 2 : 0);
+}
+
+/* Does a path meet every threshold of the performance criterion? */
+static bool
+meets(const ucl_object_t *perf, const double *m)
+{
+	const ucl_object_t	*pri, *e, *th;
+	ucl_object_iter_t	 it;
+
+	pri = ucl_object_lookup(perf, "primary");
+	th = ucl_object_lookup(pri, "threshold");
+	if (th != NULL && ucl_object_type(th) != UCL_NULL && m[metric_index(
+	    str(pri, "metric"))] > ucl_object_todouble(th))
+		return (false);
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(perf, "secondary"),
+	    &it, true)) != NULL)
+		if (m[metric_index(str(e, "metric"))] > ucl_object_todouble(
+		    ucl_object_lookup(e, "threshold")))
+			return (false);
+	return (true);
+}
+
+/*
+ * One entry's candidates in the order the performance criterion wants
+ * them (R69, R70): those that meet every threshold first, by the
+ * primary metric; the one in use stays first while it meets them and
+ * is under the ceiling (R73, O1).  Those without a measurement keep
+ * their place after the measured.  True when the order changed.
+ */
+static bool
+reorder(const ucl_object_t *perf, const ucl_object_t *sd, ucl_object_t *cands,
+    const char *current)
+{
+	const ucl_object_t	*c, *pri, *ce;
+	ucl_object_iter_t	 it;
+	struct {
+		const ucl_object_t	*c;
+		double			 m[3];
+		bool			 has, ok;
+	}			 v[CANDS_MAX_ORDER];
+	ucl_object_t		*out;
+	int			 n, i, k, idx, first;
+	bool			 changed;
+
+	pri = ucl_object_lookup(perf, "primary");
+	idx = metric_index(str(pri, "metric"));
+	ce = ucl_object_lookup(pri, "ceiling");
+	n = 0;
+	it = NULL;
+	while ((c = ucl_object_iterate(cands, &it, true)) != NULL && n <
+	    CANDS_MAX_ORDER) {
+		v[n].c = c;
+		v[n].has = metrics_of(sd, str(c, "id"), v[n].m);
+		v[n].ok = v[n].has && meets(perf, v[n].m);
+		n++;
+	}
+	/* Sort: ok by the primary metric, then measured, then the rest. */
+	for (i = 1; i < n; i++)
+		for (k = i; k > 0; k--) {
+			int	a = (v[k].ok ? 0 : v[k].has ? 1 : 2);
+			int	b = (v[k - 1].ok ? 0 : v[k - 1].has ? 1 : 2);
+
+			if (a < b || (a == b && a < 2 && v[k].m[idx] < v[k -
+			    1].m[idx])) {
+				__typeof__(v[0]) t = v[k];
+
+				v[k] = v[k - 1];
+				v[k - 1] = t;
+			} else
+				break;
+		}
+	/* The one in use stays, while it is good enough. */
+	first = -1;
+	for (i = 0; current != NULL && i < n; i++)
+		if (strcmp(str(v[i].c, "id"), current) == 0)
+			first = i;
+	if (first > 0 && v[first].ok && (ce == NULL || ucl_object_type(ce) ==
+	    UCL_NULL || v[first].m[idx] < ucl_object_todouble(ce))) {
+		__typeof__(v[0]) t = v[first];
+
+		for (i = first; i > 0; i--)
+			v[i] = v[i - 1];
+		v[0] = t;
+	}
+	changed = false;
+	out = ucl_object_typed_new(UCL_ARRAY);
+	i = 0;
+	it = NULL;
+	while ((c = ucl_object_iterate(cands, &it, true)) != NULL && i < n) {
+		if (c != v[i].c)
+			changed = true;
+		i++;
+	}
+	for (i = 0; i < n; i++)
+		ucl_array_append(out, ucl_object_copy(v[i].c));
+	/* cands' own objects replaced by the ordered copies. */
+	while (ucl_array_size(cands) > 0)
+		ucl_object_unref(ucl_array_pop_last(cands));
+	for (i = 0; i < n; i++)
+		ucl_array_append(cands, ucl_object_copy(ucl_array_find_index(
+		    out, (unsigned int)i)));
+	ucl_object_unref(out);
+	return (changed);
+}
+
+/* The steering an edge was last sent, from the state. */
+static const ucl_object_t *
+sent_of(const ucl_object_t *st, const char *sid)
+{
+
+	return (ucl_object_lookup(ucl_object_lookup(st, "steer_sent"), sid));
+}
+
+/* One tick: every edge's steering looked at, and sent where changed. */
+static void
+manager_tick(void)
+{
+	ucl_object_t		*st, *doc, *entries, *sent, *e, *cands, *all;
+	const ucl_object_t	*ap, *s, *spec, *sw, *pol, *perf, *was, *w;
+	ucl_object_iter_t	 it, eit;
+	char			 uri[256], peer[256], name[128], *json, *text;
+	const char		*sid, *current;
+	int			 status;
+	bool			 changed, busy;
+	time_t			 now;
+
+	pthread_mutex_lock(&st_lock);
+	busy = applying;
+	st = busy ? NULL : state_load();
+	pthread_mutex_unlock(&st_lock);
+	if (st == NULL)
+		return;
+	ap = ucl_object_lookup(st, "applied");
+	doc = sdwan_load();
+	now = time(NULL);
+	all = (ucl_object_t *)(uintptr_t)ucl_object_lookup(st, "steer_sent");
+	if (all == NULL) {
+		all = ucl_object_typed_new(UCL_OBJECT);
+		put(st, "steer_sent", all);
+	}
+	it = NULL;
+	while ((s = ucl_object_iterate(ap, &it, true)) != NULL) {
+		ucl_object_t	*sd;
+
+		sid = ucl_object_key(s);
+		if ((spec = ucl_object_lookup(s, "steer")) == NULL ||
+		    (spec = parse(str(spec, "spec"))) == NULL)
+			continue;
+		entries = (ucl_object_t *)(uintptr_t)ucl_object_lookup(
+		    ucl_array_find_index(ucl_object_lookup(spec, "make"), 0),
+		    "entries");
+		if (entries == NULL || ucl_array_size(entries) == 0 ||
+		    !host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+		    sizeof(name))) {
+			ucl_object_unref((ucl_object_t *)(uintptr_t)spec);
+			continue;
+		}
+		/* What its probes see now. */
+		json = hosts_read(uri, peer, name, "sdwan", &status);
+		sd = parse(json);
+		free(json);
+		if (sd == NULL || ucl_object_lookup(sd, "data") == NULL) {
+			if (sd != NULL)
+				ucl_object_unref(sd);
+			ucl_object_unref((ucl_object_t *)(uintptr_t)spec);
+			continue;
+		}
+		was = sent_of(st, sid);
+		changed = was == NULL || now - ucl_object_toint(ucl_object_lookup(
+		    was, "at")) > MGR_RESEND_S;
+		eit = NULL;
+		while ((e = (ucl_object_t *)(uintptr_t)ucl_object_iterate(entries,
+		    &eit, true)) != NULL) {
+			sw = by(ucl_object_lookup(doc, "swvcs"), "id", str(e,
+			    "swvc"));
+			pol = by(ucl_object_lookup(sw, "policies"), "name", str(e,
+			    "policy"));
+			perf = ucl_object_lookup(ucl_object_lookup(pol,
+			    "criteria"), "performance");
+			if (perf == NULL || ucl_object_type(perf) != UCL_OBJECT)
+				continue;
+			cands = (ucl_object_t *)(uintptr_t)ucl_object_lookup(e,
+			    "candidates");
+			/* The one in use: the first sent last time. */
+			current = NULL;
+			if (was != NULL) {
+				const ucl_object_t	*o;
+				ucl_object_iter_t	 oit;
+
+				oit = NULL;
+				while ((o = ucl_object_iterate(
+				    ucl_object_lookup(was, "entries"), &oit,
+				    true)) != NULL)
+					if (strcmp(str(o, "table"), str(e,
+					    "table")) == 0 && strcmp(str(o,
+					    "prefix"), str(e, "prefix")) == 0)
+						current = str(ucl_array_find_index(
+						    ucl_object_lookup(o,
+						    "candidates"), 0), "id");
+			}
+			if (reorder(perf, ucl_object_lookup(sd, "data"), cands,
+			    current))
+				changed = true;
+			else if (current != NULL && strcmp(str(
+			    ucl_array_find_index(cands, 0), "id"), current) != 0)
+				changed = true;
+		}
+		if (changed) {
+			ucl_object_t	*body;
+
+			body = ucl_object_typed_new(UCL_OBJECT);
+			put(body, "entries", ucl_object_copy(entries));
+			text = emit(body);
+			ucl_object_unref(body);
+			json = hosts_sdwan_set(uri, peer, name, "steer", text,
+			    &status);
+			free(text);
+			w = parse(json);
+			free(json);
+			if (status == 200 && w != NULL && ucl_flag(w, "ok")) {
+				sent = ucl_object_typed_new(UCL_OBJECT);
+				put(sent, "at", I(now));
+				put(sent, "entries", ucl_object_copy(entries));
+				put(all, sid, sent);
+				thread_log(LOG_INFO, "sdwan: %s steered by the "
+				    "performance", name);
+			} else
+				thread_log(LOG_WARNING, "sdwan: %s not steered: "
+				    "%s", name, w != NULL && str(w, "error") !=
+				    NULL ? str(w, "error") : "no answer");
+			if (w != NULL)
+				ucl_object_unref((ucl_object_t *)(uintptr_t)w);
+		}
+		ucl_object_unref(sd);
+		ucl_object_unref((ucl_object_t *)(uintptr_t)spec);
+	}
+	ucl_object_unref(doc);
+	pthread_mutex_lock(&st_lock);
+	if (!applying)
+		(void)store_save(STATE_FILE, st);
+	pthread_mutex_unlock(&st_lock);
+	ucl_object_unref(st);
+}
+
+static void *
+manager(void *arg __unused)
+{
+
+	for (;;) {
+		sleep(MGR_TICK_S);
+		manager_tick();
+	}
+	return (NULL);
+}
+
+/* At the worker's start: the one that takes the lock runs the manager. */
+void
+sdwan_init(void)
+{
+	pthread_t	tid;
+	char		path[MAXPATHLEN];
+	int		fd;
+
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, MGR_LOCK);
+	if ((fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600)) == -1)
+		return;
+	if (flock(fd, LOCK_EX | LOCK_NB) == -1) {
+		close(fd);
+		return;
+	}
+	if (pthread_create(&tid, NULL, manager, NULL) == 0)
+		(void)pthread_detach(tid);
+}
+
 /* ---- The API --------------------------------------------------------- */
 
 static const char *
@@ -1832,6 +2881,17 @@ api_sdwan_edges(struct http_request *req)
 	if (req->method == HTTP_METHOD_GET) {
 		if (!guard(req, false))
 			return (KORE_RESULT_OK);
+		if (strcmp(req->path, "/api/sdwan/steer") == 0) {
+			pthread_mutex_lock(&st_lock);
+			st = state_load();
+			pthread_mutex_unlock(&st_lock);
+			body = ucl_object_typed_new(UCL_OBJECT);
+			put(body, "sent", ucl_object_lookup(st, "steer_sent") !=
+			    NULL ? ucl_object_copy(ucl_object_lookup(st,
+			    "steer_sent")) : ucl_object_typed_new(UCL_OBJECT));
+			ucl_object_unref(st);
+			return (reply_json(req, 200, body));
+		}
 		if (apply) {
 			pthread_mutex_lock(&st_lock);
 			st = state_load();

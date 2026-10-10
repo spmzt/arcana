@@ -2372,9 +2372,20 @@ sdwan_head()
 }
 sdwan_body()
 {
+	# ipfw(8) as a stand-in: what it was run with, and the file it was
+	# given to read.
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+echo "ipfw \$*" >> $(pwd)/ipfw.log
+[ "\$1" = -q ] && [ -f "\$2" ] && cat "\$2" >> $(pwd)/ipfw.log
+exit 0
+EOS
+	chmod +x fake-ipfw
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
-	    "$JGC" -c "$SOCK" sdwan
+	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\]\}' \
+	    -o match:'"steer":\[\],"steered":false' "$JGC" -c "$SOCK" sdwan
 	# What is not a target list.
 	atf_check -s exit:1 -e match:'JSON array' -o ignore \
 	    "$JGC" -c "$SOCK" sdwan probes '{"id":"x"}'
@@ -2408,6 +2419,57 @@ sdwan_body()
 	# All of them stopped.
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '[]'
 	atf_check -o match:'"targets":\[\]' "$JGC" -c "$SOCK" sdwan
+
+	# The rules: what is not a ruleset; one applied, its set emptied
+	# and filled while disabled, the tables made, the file loaded.
+	atf_check -s exit:1 -e match:'2 to 31' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":1,"tables":[],"rules":["10 allow ip from any to any"]}'
+	atf_check -s exit:1 -e match:'no set of its own' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"rules":["10 allow ip from any to any set 0"]}'
+	atf_check -s exit:1 -e match:'valtype' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"t","valtype":"nat"}],"rules":[]}'
+	atf_check -s exit:1 -e match:'no rules are applied' -o ignore "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"nowhere","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"sw1_zone","valtype":"skipto","entries":[["10.1.0.0/16","12"],["0.0.0.0/0","13"]]},{"name":"sw1_z0p0_4","valtype":"ipv4"}],"rules":["10 skipto tablearg ip from table(sw1_zone) to any in recv lo1","12 fwd tablearg ip4 from any to table(sw1_z0p0_4)","12 deny ip from any to any","99 count ip from any to any"]}'
+	atf_check -o match:'^ipfw -q set disable 30$' \
+	    -o match:'^ipfw -q -f delete set 30$' \
+	    -o match:'^table sw1_zone create type addr valtype skipto$' \
+	    -o match:'^table sw1_zone add 10.1.0.0/16 12$' \
+	    -o match:'^table sw1_zone add 0.0.0.0/0 13$' \
+	    -o match:'^table sw1_z0p0_4 create type addr valtype ipv4$' \
+	    -o match:'^add 10 set 30 skipto tablearg ip from table\(sw1_zone\) to any in recv lo1$' \
+	    -o match:'^add 12 set 30 deny ip from any to any$' \
+	    -o match:'^ipfw -q set enable 30$' cat ipfw.log
+	# Disabled, loaded, enabled: in that order.
+	atf_check -o inline:'1\n' sh -c "grep -n 'set disable 30' ipfw.log | cut -d: -f1 | head -1"
+	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\]\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -e match:'not one of the rules' -o ignore "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"nowhere","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
+	# The steering: the first candidate not down goes in, beside the
+	# table in use, and is swapped in.
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"sw1_z0p0_4","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"},{"id":"t2","via":"100.64.0.3"}]},{"table":"sw1_z0p0_4","prefix":"10.30.0.0/24","candidates":[{"id":"t2","via":"100.64.0.3"}]}]}'
+	atf_check -o match:'^ipfw -q table sw1_z0p0_4_alt create type addr valtype ipv4$' \
+	    -o match:'^ipfw -q table sw1_z0p0_4_alt atomic add 10.20.0.0/24 100.64.0.1 10.30.0.0/24 100.64.0.3$' \
+	    -o match:'^ipfw -q table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
+	atf_check -o match:'"steer":\[\{"table":"sw1_z0p0_4","prefix":"10.20.0.0/24","chosen":0,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed"\}' \
+	    -o match:'"steered":true' "$JGC" -c "$SOCK" sdwan
+	# Kept, both, and applied again at the next start.
+	: > ipfw.log
+	stop_daemon
+	start_daemon
+	atf_check -o match:'^add 12 set 30 deny ip from any to any$' \
+	    -o match:'^ipfw -q table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
+	# No rules: the set emptied, the tables gone.
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
+	atf_check -o match:'^ipfw -q table sw1_zone destroy$' \
+	    -o match:'^ipfw -q table sw1_z0p0_4_alt destroy$' cat ipfw.log
+	atf_check -o match:'"rules":\{"set":0,' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()
 {

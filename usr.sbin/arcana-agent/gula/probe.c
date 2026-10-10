@@ -53,7 +53,8 @@
 #define	SAMPLES_MAX	100000
 #define	PKT_MAX		10000
 
-enum { ST_UNKNOWN, ST_UP, ST_DOWN, ST_ENDED, ST_ERROR };
+enum { ST_UNKNOWN = PROBE_UNKNOWN, ST_UP = PROBE_UP, ST_DOWN = PROBE_DOWN,
+    ST_ENDED = PROBE_ENDED, ST_ERROR = PROBE_ERROR };
 static const char *const state_names[] = { "unknown", "up", "down", "ended",
     "error" };
 
@@ -95,6 +96,7 @@ static pthread_mutex_t	 lock = PTHREAD_MUTEX_INITIALIZER;
 static struct target	*targets;
 static int		 ntargets;
 static bool		 started;
+static bool		 changed;	/* a state did, since the steering looked */
 
 static double
 now_s(void)
@@ -205,6 +207,7 @@ state_set(struct target *t, int state)
 		return;
 	t->state = state;
 	t->since = time(NULL);
+	changed = true;
 	if (state != ST_UP && state != ST_DOWN)
 		return;
 	/* Its id as JSON: a quote or a backslash in it escaped. */
@@ -430,6 +433,7 @@ prober(void *arg __unused)
 	struct target	*t;
 	double		 now, wait, d;
 	int		 i, n, ms;
+	bool		 moved;
 
 	pfd = calloc(TARGETS_MAX, sizeof(*pfd));
 	for (;;) {
@@ -456,7 +460,13 @@ prober(void *arg __unused)
 			pfd[n].revents = 0;
 			n++;
 		}
+		moved = changed;
+		changed = false;
 		pthread_mutex_unlock(&lock);
+		/* A tunnel down or up: the steering made again, outside the
+		 * lock, as it asks the states back. */
+		if (moved)
+			sdwan_probe_changed();
 		ms = wait > 0 ? (int)(wait * 1000) : 0;
 		if (poll(pfd, (nfds_t)n, ms < 1 ? 1 : ms) <= 0)
 			continue;
@@ -761,6 +771,23 @@ probe_start(void)
 		logmsg(LOG_ERR, "sdwan probes: no thread: %s", strerror(errno));
 }
 
+/* A target's state by its id; PROBE_NONE when it is none. */
+int
+probe_state_of(const char *id)
+{
+	int	i, st;
+
+	st = PROBE_NONE;
+	pthread_mutex_lock(&lock);
+	for (i = 0; i < ntargets; i++)
+		if (strcmp(targets[i].id, id) == 0) {
+			st = targets[i].state;
+			break;
+		}
+	pthread_mutex_unlock(&lock);
+	return (st);
+}
+
 /* What the probes have seen, as JSON. */
 int
 do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
@@ -859,6 +886,7 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 	    false);
 	ucl_object_insert_key(top, ucl_object_frombool(started), "probing", 0,
 	    false);
+	sdwan_json(top);
 	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
 	if (json == NULL) {

@@ -595,6 +595,7 @@ main(int argc, char *argv[])
 	jobs_init();
 	history_start();
 	probe_start();
+	sdwan_start();
 	kmsg_start();
 	route_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);

@@ -440,6 +440,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* ipfw(8): its rules are canned, the rest is logged; a file it
 	 * is to check is refused when it has the word bogus. */
 	put("fake-ipfw", "#!/bin/sh\necho \"ipfw $*\" >> ipfw.log\n"
+	    "[ \"$1\" = -q ] && [ -f \"$2\" ] && cat \"$2\" >> ipfw.log\n"
 	    "case \"$*\" in\n"
 	    "'-S show')\n"
 	    "printf '00005     12      900 set 0 skipto 500 ip from any to "

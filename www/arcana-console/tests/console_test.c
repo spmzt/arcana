@@ -3509,6 +3509,35 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-probes\",\"targets\":[{"
 	    "\"id\":\"acme/a-inet-b-inet\",\"address\":\"100.64.0.1\",\"fib\":1,"
 	    "\"eval\":1000}") != NULL, "%s", r.body);
+	/* The rules: the UNI's packets to their zone's block, each flow
+	 * with its policy's table, the rest dropped; and the steering. */
+	ATF_CHECK_MSG(strstr(r.body, "\"10 skipto tablearg ip from table("
+	    "sw1_zone) to any in recv lo0\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"10 deny ip from any to any ipoptions "
+	    "lsrr,ssrr,rr in recv lo0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 skipto 99 ip from any to any\"") != NULL);
+	/* The office zone (block 12): web, tcp to 80 and https, by policy
+	 * fast (the first policy, 0) in IPv4 and IPv6 tables; voice, sip,
+	 * dropped (no policy); all, by hubonly (policy 1). */
+	ATF_CHECK_MSG(strstr(r.body, "\"12 fwd tablearg tcp from any to table("
+	    "sw1_z0p0_4) dst-port 80,https\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"12 fwd tablearg tcp from any to table("
+	    "sw1_z0p0_6) dst-port 80,https\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 allow tcp from any to any dst-port "
+	    "80,https\"") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"12 deny ip from any to any { src-port "
+	    "5060,5061 or dst-port 5060,5061 } dscp 46\"") != NULL, "%s",
+	    r.body);
+	ATF_CHECK(strstr(r.body, "\"12 fwd tablearg ip4 from any to table("
+	    "sw1_z0p1_4)\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 deny ip from any to any\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"99 count ip from any to any\"") != NULL);
+	ATF_CHECK(strstr(r.body, "[\"10.1.0.0/16\",\"12\"]") != NULL);
+	ATF_CHECK(strstr(r.body, "[\"0.0.0.0/0\",\"13\"]") != NULL);
+	/* hq's branch is a leaf of the hub topology: hubonly reaches it,
+	 * over the private tunnel first, the public one after. */
+	ATF_CHECK_MSG(strstr(r.body, "\"table\":\"sw1_z1p1_6\",\"prefix\":"
+	    "\"2001:db8:1::/64\"") == NULL, "%s", r.body);
 	resp_free(&r);
 
 	/* Applied: each made, in the order, IPsec with the far key. */
@@ -3539,7 +3568,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "swanctl/conf.d/arcana-sdw*.conf") == 0);
 	ATF_CHECK(system("grep -q 'dynamic\\[gre\\]' "
 	    "swanctl/conf.d/arcana-sdw*.conf") == 0);
-	/* The agent probes them from now on (without root, it says so). */
+	/* The agent probes them from now on (without root, it says so),
+	 * and holds the rules in set 30 and their tables. */
 	snprintf(body, sizeof(body), "/api/servers/%s/sdwan", sa);
 	http("GET", body, NULL, &r);
 	EXPECT(&r, 200);
@@ -3547,6 +3577,30 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    strstr(r.body, "\"id\":\"acme/a-mpls-b-mpls\"") != NULL, "%s",
 	    r.body);
 	ATF_CHECK(jstr(&r, "data.targets.0.state") != NULL);
+	ATF_CHECK_MSG(jstr(&r, "data.rules.set") != NULL && strcmp(jstr(&r,
+	    "data.rules.set"), "30") == 0, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q 'add 12 set 30 fwd tablearg tcp from any to "
+	    "table(sw1_z0p0_4) dst-port 80,https' ipfw.log") == 0);
+	ATF_CHECK(system("grep -q 'ipfw -q set enable 30' ipfw.log") == 0);
+	/* The manager: on its first tick it sends each edge its steering,
+	 * and says what it sent; branch's web flows reach hq's prefixes by
+	 * the encrypted public tunnel (the private one is a backup). */
+	for (i = 0; i < 60; i++) {
+		http("GET", "/api/sdwan/steer", NULL, &r);
+		EXPECT(&r, 200);
+		snprintf(body, sizeof(body), "sent.%s.entries.0.prefix", sb);
+		if (jstr(&r, body) != NULL)
+			break;
+		resp_free(&r);
+		usleep(300000);
+	}
+	ATF_REQUIRE_MSG(i < 60, "the manager sent nothing");
+	ATF_CHECK_STREQ("10.1.0.0/24", jstr(&r, body));
+	snprintf(body, sizeof(body), "sent.%s.entries.0.candidates.0.id", sb);
+	ATF_CHECK_STREQ("acme/a-inet-b-inet", jstr(&r, body));
+	snprintf(body, sizeof(body), "sent.%s.entries.0.policy", sb);
+	ATF_CHECK_STREQ("fast", jstr(&r, body));
 	resp_free(&r);
 	/* Again: nothing to do. */
 	http("GET", "/api/sdwan/plan", NULL, &r);

@@ -1107,6 +1107,63 @@ view_paths(struct html *h)
 	    "tunnels")) == 0)
 		h_raw(h, "<p class=\"dim\">No tunnel: a service with end points "
 		    "on two edges or more has them.</p>");
+	/* The steering: each edge's far prefixes, by which tunnel each goes
+	 * now, and the others in the order the console gave. */
+	h_raw(h, "<div class=\"sd-block\"><h3>Steering <small class=\"dim\">"
+	    "each far prefix by the first tunnel of its policy's order that "
+	    "is not down, chosen on the edge; the order is the console's, by "
+	    "the policy's performance criteria</small></h3><table class=\"net "
+	    "sd\"><thead><tr><th>Edge</th><th>Prefix</th><th>Policy</th><th>"
+	    "Goes by</th><th>Then</th></tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while (sd.paths != NULL && (f = ucl_object_iterate(sd.paths, &it,
+	    true)) != NULL) {
+		fit = NULL;
+		while ((e = ucl_object_iterate(jget(f, "steer"), &fit, true)) !=
+		    NULL) {
+			const ucl_object_t	*c;
+			ucl_object_iter_t	 cit;
+			long long		 chosen;
+			int			 i;
+
+			n++;
+			chosen = jint(e, "chosen", -1);
+			h_raw(h, "<tr><td><b>");
+			h_txt(h, host_name(ucl_object_key(f)));
+			h_raw(h, "</b></td><td class=\"mono\">");
+			h_txt(h, jstr(e, "prefix"));
+			h_raw(h, "</td><td class=\"mono dim\">");
+			h_txt(h, jstr(e, "table") != NULL ? jstr(e, "table") : "");
+			h_raw(h, "</td><td>");
+			if (chosen < 0)
+				h_raw(h, "<span class=\"chip st-down\">no tunnel "
+				    "up</span>");
+			h_raw(h, "</td><td class=\"dim\">");
+			i = 0;
+			cit = NULL;
+			while ((c = ucl_object_iterate(jget(e, "candidates"),
+			    &cit, true)) != NULL) {
+				if (i == chosen) {
+					/* Into the Goes by cell: drawn in place
+					 * of the empty one above. */
+					;
+				}
+				h_fmt(h, "%s<span class=\"%s\">", i > 0 ? ", " : "",
+				    i == chosen ? "chosen" : "");
+				h_txt(h, jstr(c, "id"));
+				h_fmt(h, " <small>%s</small></span>", jstr(c,
+				    "state") != NULL ? jstr(c, "state") : "");
+				i++;
+			}
+			h_raw(h, "</td></tr>");
+		}
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: a policy "
+		    "with a far prefix to reach has entries once applied.</td>"
+		    "</tr>");
+	h_raw(h, "</tbody></table></div>");
 	/* The faults: tunnels that went down or came up, the newest first. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Faults <small class=\"dim\">a "
 	    "tunnel down or up again, as the edges told it</small></h3><ul "

@@ -299,6 +299,8 @@ worker(void *arg)
 	struct arc_traceroute_rsp trr;
 	struct arc_sdwan_probes_rsp spr;
 	struct arc_sdwan_rsp	sdr;
+	struct arc_sdwan_rules_rsp srr;
+	struct arc_sdwan_steer_rsp sstr;
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
@@ -669,6 +671,34 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &spr.trace.v, &spr.trace.n);
 		rc = arc_sdwan_probes_reply(j->req, &spr);
+		break;
+	case ARC_CMD_SDWAN_RULES:
+		what = "sdwan rules";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&srr, 0, sizeof(srr));
+		error = NULL;
+		ok = do_sdwan_rules(&w, j->ref, &error) == 0;
+		srr.has_ok = true;
+		srr.ok = ok;
+		srr.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &srr.trace.v, &srr.trace.n);
+		rc = arc_sdwan_rules_reply(j->req, &srr);
+		break;
+	case ARC_CMD_SDWAN_STEER:
+		what = "sdwan steer";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&sstr, 0, sizeof(sstr));
+		error = NULL;
+		ok = do_sdwan_steer(&w, j->ref, &error) == 0;
+		sstr.has_ok = true;
+		sstr.ok = ok;
+		sstr.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sstr.trace.v, &sstr.trace.n);
+		rc = arc_sdwan_steer_reply(j->req, &sstr);
 		break;
 	case ARC_CMD_SDWAN:
 		what = "sdwan";
@@ -1253,6 +1283,38 @@ arc_sdwan_probes_doit(cbl_req *req, const struct arc_sdwan_probes_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_SDWAN_PROBES;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
+arc_sdwan_rules_doit(cbl_req *req, const struct arc_sdwan_rules_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '{')
+		return (reject(req, "the rules are a JSON object"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_RULES;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
+arc_sdwan_steer_doit(cbl_req *req, const struct arc_sdwan_steer_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '{')
+		return (reject(req, "the steering is a JSON object"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_STEER;
 	j->ref = xstrdup(rq->json);
 	return (start(j));
 }

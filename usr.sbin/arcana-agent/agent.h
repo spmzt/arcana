@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.48.0"
+#define	ARCANA_AGENT_VERSION	"0.49.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -396,9 +396,19 @@ bool		 kmsg_lines(struct work *, uint64_t, const char *, uint32_t,
 		    struct kmsg_line **, size_t *, uint64_t *);
 void		 history_save(void);
 /* gula/probe.c: the tunnels measured, ICMP echo again and again. */
+enum { PROBE_NONE = -1, PROBE_UNKNOWN, PROBE_UP, PROBE_DOWN, PROBE_ENDED,
+    PROBE_ERROR };
 void		 probe_start(void);
 int		 do_probes_set(struct work *, const char *, const char **);
 int		 do_sdwan(struct work *, uint64_t, struct arc_sdwan_rsp *);
+int		 probe_state_of(const char *);
+/* invidia/sdwan.c: the rules that steer, and the steering. */
+void		 sdwan_start(void);
+int		 do_sdwan_rules(struct work *, const char *, const char **);
+int		 do_sdwan_steer(struct work *, const char *, const char **);
+void		 sdwan_probe_changed(void);
+struct ucl_object_s;
+void		 sdwan_json(struct ucl_object_s *);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,
