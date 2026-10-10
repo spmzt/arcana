@@ -3664,6 +3664,10 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->start_action);
 	kore_free((char *)(uintptr_t)sp->local_id);
 	kore_free((char *)(uintptr_t)sp->remote_id);
+	kore_free((char *)(uintptr_t)sp->child);
+	kore_free((char *)(uintptr_t)sp->local_cert);
+	kore_free((char *)(uintptr_t)sp->remote_cert);
+	kore_free((char *)(uintptr_t)sp->remote_ca);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -3731,6 +3735,10 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->start_action = jdup(o, "start_action");
 	sp->local_id = jdup(o, "local_id");
 	sp->remote_id = jdup(o, "remote_id");
+	sp->child = jdup(o, "child");
+	sp->local_cert = jdup(o, "local_cert");
+	sp->remote_cert = jdup(o, "remote_cert");
+	sp->remote_ca = jdup(o, "remote_ca");
 	if ((v = ucl_object_lookup(o, "reqid")) != NULL && ucl_object_toint(v) >
 	    0 && ucl_object_toint(v) <= 16383) {
 		sp->has_reqid = true;

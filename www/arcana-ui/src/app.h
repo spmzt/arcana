@@ -332,6 +332,7 @@ enum modal {
 	MODAL_BIRD_RPKI,
 	MODAL_BIRD_FILE,
 	MODAL_IPSEC_CONN,
+	MODAL_IPSEC_CHILD,
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -385,6 +386,7 @@ struct app {
 	char		 net_jail[256];	/* whose network the tab shows: a vnet jail, or "" the host */
 	int		 netsect;	/* the Network section's tab: NETSECT_* */
 	int		 settab;	/* the Settings section's tab: SET_* */
+	char		 ipsec_auth[8];	/* the connection form: how the peer is known */
 	char		 filter[64];
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */

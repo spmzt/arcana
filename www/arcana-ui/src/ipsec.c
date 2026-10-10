@@ -19,6 +19,8 @@
 
 #include "app.h"
 
+static bool	ipsec_child_modal(struct html *);
+
 static void
 ipsec_job(struct server *s, const char *title, const char *fmt, ...)
 {
@@ -129,6 +131,65 @@ view_ipsec(struct html *h, struct server *s, const ucl_object_t *data)
 		    "on the host; its peers are given the public half.</p>");
 	h_raw(h, "</section>");
 
+	/* The certificates in swanctl's x509 and x509ca: a peer known by
+	 * one of them needs no key pasted. */
+	if (jget(data, "certificates") != NULL && ucl_array_size(jget(data,
+	    "certificates")) > 0) {
+		static const struct tcol	kcols[] = {
+			{ "File", "file", false }, { "Where", "where", false },
+			{ "Subject", "subject", false },
+			{ "Names", NULL, false }, { "Until", "not_after", true },
+		};
+		const ucl_object_t	**krows, *x;
+		char			  when[32];
+		int			  kr;
+
+		h_raw(h, "<h4 class=\"family\">Certificates <small class=\"dim"
+		    "\">in swanctl's x509 and x509ca: a peer's, or a CA that "
+		    "signed it, is picked for a connection instead of its key"
+		    "</small></h4><table class=\"net ipsec-certs\">");
+		tbl_head(h, "ipsec-certs", kcols, 5, 0);
+		h_raw(h, "<tbody>");
+		krows = tbl_rows("ipsec-certs", jget(data, "certificates"),
+		    kcols, 5, app.filter);
+		for (kr = 0; (x = krows[kr]) != NULL; kr++) {
+			h_raw(h, "<tr><td class=\"mono\">");
+			h_txt(h, jstr(x, "file"));
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(x, "where"));
+			if (jbool(x, "ca"))
+				h_raw(h, " <span class=\"chip\">CA</span>");
+			h_raw(h, "</td><td>");
+			if (jstr(x, "error") != NULL) {
+				h_raw(h, "<span class=\"bad\">");
+				h_txt(h, jstr(x, "error"));
+				h_raw(h, "</span>");
+			} else {
+				h_txt(h, jstr(x, "subject"));
+				if (!jbool(x, "self_signed")) {
+					h_raw(h, "<small class=\"dim\">by ");
+					h_txt(h, jstr(x, "issuer"));
+					h_raw(h, "</small>");
+				}
+			}
+			h_raw(h, "</td><td>");
+			list(h, jget(x, "names"));
+			h_raw(h, "</td><td>");
+			if (jget(x, "not_after") != NULL) {
+				fmt_age(when, sizeof(when), (double)jint(x,
+				    "not_after", 0) * 1000);
+				h_fmt(h, "<span class=\"%s\">", (double)jint(x,
+				    "not_after", 0) * 1000 < arc_now() ? "bad" :
+				    "");
+				h_txt(h, when);
+				h_raw(h, "</span>");
+			}
+			h_raw(h, "</td></tr>");
+		}
+		free(krows);
+		h_raw(h, "</tbody></table>");
+	}
+
 	if (ucl_array_size(jget(data, "connections")) == 0) {
 		h_raw(h, "<div class=\"empty\"><p>No connections. <b>+ "
 		    "connection</b> joins this host to another by their two "
@@ -169,10 +230,23 @@ view_ipsec(struct html *h, struct server *s, const ucl_object_t *data)
 		h_txt(h, jstr(c, "local-id"));
 		h_raw(h, " ⇄ ");
 		h_txt(h, jstr(c, "remote-id"));
-		h_raw(h, "</small></td><td>");
+		h_raw(h, "</small>");
+		if (jstr(jget(c, "model"), "remote_cert") != NULL) {
+			h_raw(h, "<small class=\"dim\">peer by certificate ");
+			h_txt(h, jstr(jget(c, "model"), "remote_cert"));
+			h_raw(h, "</small>");
+		} else if (jstr(jget(c, "model"), "remote_ca") != NULL) {
+			h_raw(h, "<small class=\"dim\">peer by CA ");
+			h_txt(h, jstr(jget(c, "model"), "remote_ca"));
+			h_raw(h, "</small>");
+		}
+		h_raw(h, "</td><td>");
 		it = NULL;
 		while ((k = ucl_object_iterate(jget(c, "children"), &it,
 		    true)) != NULL) {
+			h_raw(h, "<div class=\"child\"><b>");
+			h_txt(h, jstr(k, "name") != NULL ? jstr(k, "name") : "");
+			h_raw(h, "</b> ");
 			h_txt(h, jstr(k, "mode") != NULL ? jstr(k, "mode") :
 			    "?");
 			h_raw(h, "<small>");
@@ -180,6 +254,21 @@ view_ipsec(struct html *h, struct server *s, const ucl_object_t *data)
 			h_raw(h, " ⇄ ");
 			list(h, jget(k, "remote-ts"));
 			h_raw(h, "</small>");
+			if (jbool(c, "arcana") && jstr(k, "name") != NULL) {
+				h_raw(h, "<button class=\"icon\" data-act=\""
+				    "ipsec-unchild\" title=\"Take the child "
+				    "away\"");
+				h_attr(h, "data-arg", jstr(c, "name"));
+				h_attr(h, "data-value", jstr(k, "name"));
+				h_raw(h, ">×</button>");
+			}
+			h_raw(h, "</div>");
+		}
+		if (jbool(c, "arcana")) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "ipsec-child-add\"");
+			h_attr(h, "data-arg", jstr(c, "name"));
+			h_raw(h, ">+ child</button>");
 		}
 		h_raw(h, "</td><td>");
 		if (sa == NULL)
@@ -224,14 +313,63 @@ view_ipsec(struct html *h, struct server *s, const ucl_object_t *data)
 	h_raw(h, "</tbody></table>");
 }
 
+/* How many certificates the host has, CAs or the others. */
+static int
+ipsec_certs(bool ca)
+{
+	const ucl_object_t	*x;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while ((x = ucl_object_iterate(jget(jget(app.net.data, "data"),
+	    "certificates"), &it, true)) != NULL)
+		if (jstr(x, "error") == NULL && jbool(x, "ca") == ca)
+			n++;
+	return (n);
+}
+
+/* A certificate picked: those in x509, or the CAs in x509ca. */
+static void
+cert_pick(struct html *h, const char *name, const char *label, bool ca)
+{
+	const ucl_object_t	*x;
+	ucl_object_iter_t	 it;
+
+	h_raw(h, "<label>");
+	h_txt(h, label);
+	h_raw(h, "<select");
+	h_attr(h, "name", name);
+	h_raw(h, ">");
+	if (strcmp(name, "local_cert") == 0)
+		h_raw(h, "<option value=\"\">the key arcana made</option>");
+	it = NULL;
+	while ((x = ucl_object_iterate(jget(jget(app.net.data, "data"),
+	    "certificates"), &it, true)) != NULL) {
+		if (jstr(x, "error") != NULL || jbool(x, "ca") != ca)
+			continue;
+		h_raw(h, "<option");
+		h_attr(h, "value", jstr(x, "file"));
+		h_raw(h, ">");
+		h_txt(h, jstr(x, "file"));
+		h_raw(h, ": ");
+		h_txt(h, jstr(x, "subject"));
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select></label>");
+}
+
 bool
 ipsec_modal(struct html *h)
 {
 
+	if (ipsec_child_modal(h))
+		return (true);
 	if (app.modal != MODAL_IPSEC_CONN)
 		return (false);
 	h_raw(h, "<form data-form=\"ipsec-conn\"><h2>An IPsec connection</h2>"
-	    "<p>IKEv2, the two hosts known by their keys. Written as "
+	    "<p>IKEv2, the two hosts known by their keys, or by certificates in swanctl&#39;s x509 and x509ca. Written as "
 	    "<code>conf.d/arcana-</code><i>name</i><code>.conf</code>, which "
 	    "strongSwan reads again; one of that name is replaced. The peer "
 	    "is given this host's key the same way.</p>"
@@ -246,10 +384,30 @@ ipsec_modal(struct html *h)
 	    "<label>Mode<select name=\"mode\"><option value=\"tunnel\">tunnel: "
 	    "packets inside new ones</option><option value=\"transport\">"
 	    "transport: what is sent between the two addresses, as it is"
-	    "</option></select></label>"
-	    "<label>The peer's public key<textarea name=\"pubkey\" rows=\"3\" "
-	    "spellcheck=\"false\" placeholder=\"base64, as the peer's IPsec "
-	    "tab shows it\"></textarea></label>"
+	    "</option></select></label>");
+	/* The peer known by its key, pasted, or by a certificate here. */
+	h_raw(h, "<label>The peer is known by<select name=\"auth\" "
+	    "data-input=\"ipsec-auth\"><option value=\"pubkey\">its public "
+	    "key, pasted</option>");
+	if (ipsec_certs(false) > 0)
+		h_raw(h, "<option value=\"cert\">its certificate, in x509"
+		    "</option>");
+	if (ipsec_certs(true) > 0)
+		h_raw(h, "<option value=\"ca\">a CA in x509ca that signed its "
+		    "certificate</option>");
+	h_raw(h, "</select></label>");
+	if (strcmp(app.ipsec_auth, "cert") == 0)
+		cert_pick(h, "remote_cert", "The peer's certificate", false);
+	else if (strcmp(app.ipsec_auth, "ca") == 0)
+		cert_pick(h, "remote_ca", "The CA", true);
+	else
+		h_raw(h, "<label>The peer's public key<textarea name=\"pubkey\" "
+		    "rows=\"3\" spellcheck=\"false\" placeholder=\"base64, as "
+		    "the peer's IPsec tab shows it\"></textarea></label>");
+	if (ipsec_certs(false) > 0)
+		cert_pick(h, "local_cert", "This host's certificate, if not "
+		    "the key arcana made it", false);
+	h_raw(h,
 	    "<div class=\"two\"><label>This side's traffic<input name=\""
 	    "local_ts\" spellcheck=\"false\" autocomplete=\"off\" placeholder="
 	    "\"its address; 192.0.2.1[gre]\"></label><label>The peer's "
@@ -267,7 +425,41 @@ ipsec_modal(struct html *h)
 	    "local_id\" spellcheck=\"false\" autocomplete=\"off\" placeholder="
 	    "\"its address\"></label><label>The peer's identity<input name=\""
 	    "remote_id\" spellcheck=\"false\" autocomplete=\"off\" "
-	    "placeholder=\"its address\"></label></div>");
+	    "placeholder=\"its address; with a CA, the certificate's name\">"
+	    "</label></div>");
+	return (true);
+}
+
+/* A child of a connection: its own mode and traffic. */
+static bool
+ipsec_child_modal(struct html *h)
+{
+
+	if (app.modal != MODAL_IPSEC_CHILD)
+		return (false);
+	h_raw(h, "<form data-form=\"ipsec-child\"><h2>A child of ");
+	h_txt(h, app.confirm.arg);
+	h_raw(h, "</h2><p>One more thing the connection carries, in its own "
+	    "mode between its own traffic selectors; strongSwan reads it "
+	    "again at once.</p><input type=\"hidden\" name=\"conn\"");
+	h_attr(h, "value", app.confirm.arg);
+	h_raw(h, "><label>Name<input name=\"child\" spellcheck=\"false\" "
+	    "autocomplete=\"off\" maxlength=\"32\" placeholder=\"lan\" "
+	    "autofocus></label>"
+	    "<label>Mode<select name=\"mode\"><option value=\"tunnel\">tunnel"
+	    "</option><option value=\"transport\">transport</option></select>"
+	    "</label>"
+	    "<div class=\"two\"><label>This side's traffic<input name=\""
+	    "local_ts\" spellcheck=\"false\" autocomplete=\"off\" placeholder="
+	    "\"10.1.0.0/24\"></label><label>The peer's traffic<input name=\""
+	    "remote_ts\" spellcheck=\"false\" autocomplete=\"off\" "
+	    "placeholder=\"10.2.0.0/24\"></label></div>"
+	    "<div class=\"two\"><label>reqid<input name=\"reqid\" inputmode="
+	    "\"numeric\" placeholder=\"none\"></label><label>Started<select "
+	    "name=\"start\"><option value=\"trap\">with the first packet"
+	    "</option><option value=\"start\">at once, and kept up</option>"
+	    "<option value=\"none\">only when asked</option></select></label>"
+	    "</div>");
 	return (true);
 }
 
@@ -290,11 +482,53 @@ bool
 ipsec_form(const char *form, const ucl_object_t *f)
 {
 	struct server	*s;
-	const char	*v, *k;
+	const char	*v, *k, *auth;
 	char		 title[160], key[1100], reqid[32], *qn, *ql, *qr, *qm,
-			*qk, *lts, *rts, *lid, *rid, *qs;
+			*qk, *lts, *rts, *lid, *rid, *qs, *way, *lcert;
 	size_t		 n;
 
+	if (strcmp(form, "ipsec-child") == 0) {
+		char	*qc, *qd;
+
+		if ((s = cur_server()) == NULL)
+			return (true);
+		if (jstr(f, "child") == NULL || jstr(f, "child")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A "
+			    "child has a name");
+			return (true);
+		}
+		reqid[0] = '\0';
+		if ((v = jstr(f, "reqid")) != NULL && v[0] != '\0') {
+			if (strlen(v) > 5 || v[strspn(v, "0123456789")] != '\0'
+			    || atoi(v) < 1 || atoi(v) > 16383) {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "A reqid is a number from 1 to 16383");
+				return (true);
+			}
+			snprintf(reqid, sizeof(reqid), ",\"reqid\":%d", atoi(v));
+		}
+		qc = json_quote(jstr(f, "conn"));
+		qd = json_quote(jstr(f, "child"));
+		qm = json_quote(jstr(f, "mode") != NULL ? jstr(f, "mode") :
+		    "tunnel");
+		qs = json_quote(jstr(f, "start") != NULL ? jstr(f, "start") :
+		    "trap");
+		lts = opt(f, "local_ts", "local_ts");
+		rts = opt(f, "remote_ts", "remote_ts");
+		snprintf(title, sizeof(title), "ipsec child %s %s", jstr(f,
+		    "conn"), jstr(f, "child"));
+		ipsec_job(s, title, "{\"kind\":\"ipsec\",\"verb\":\"child\","
+		    "\"conn\":%s,\"child\":%s,\"ipsec_mode\":%s,\"start_action\":"
+		    "%s%s%s%s}", qc, qd, qm, qs, reqid, lts, rts);
+		free(qc);
+		free(qd);
+		free(qm);
+		free(qs);
+		free(lts);
+		free(rts);
+		app.modal = MODAL_NONE;
+		return (true);
+	}
 	if (strcmp(form, "ipsec-conn") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
@@ -306,18 +540,28 @@ ipsec_form(const char *form, const ucl_object_t *f)
 		    "connection has a name and both addresses");
 		return (true);
 	}
-	/* The key as pasted, PEM or not: its base64 alone. */
+	/* The key as pasted, PEM or not: its base64 alone; or a
+	 * certificate, or a CA with the peer's identity. */
 	n = 0;
-	k = jstr(f, "pubkey") != NULL ? jstr(f, "pubkey") : "";
-	if ((v = strstr(k, "-----BEGIN PUBLIC KEY-----")) != NULL)
-		k = v + strlen("-----BEGIN PUBLIC KEY-----");
-	for (; *k != '\0' && *k != '-' && n < sizeof(key) - 1; k++)
-		if (*k != ' ' && *k != '\n' && *k != '\r' && *k != '\t')
-			key[n++] = *k;
-	key[n] = '\0';
-	if (n < 40) {
-		snprintf(app.modal_error, sizeof(app.modal_error), "The peer's "
-		    "public key, as its IPsec tab shows it");
+	key[0] = '\0';
+	auth = jstr(f, "auth") != NULL ? jstr(f, "auth") : "pubkey";
+	if (strcmp(auth, "pubkey") == 0) {
+		k = jstr(f, "pubkey") != NULL ? jstr(f, "pubkey") : "";
+		if ((v = strstr(k, "-----BEGIN PUBLIC KEY-----")) != NULL)
+			k = v + strlen("-----BEGIN PUBLIC KEY-----");
+		for (; *k != '\0' && *k != '-' && n < sizeof(key) - 1; k++)
+			if (*k != ' ' && *k != '\n' && *k != '\r' && *k != '\t')
+				key[n++] = *k;
+		key[n] = '\0';
+		if (n < 40) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "The "
+			    "peer's public key, as its IPsec tab shows it");
+			return (true);
+		}
+	} else if (strcmp(auth, "ca") == 0 && (jstr(f, "remote_id") == NULL ||
+	    jstr(f, "remote_id")[0] == '\0')) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "With a CA, "
+		    "the peer's identity says which certificate is the peer's");
 		return (true);
 	}
 	reqid[0] = '\0';
@@ -341,6 +585,10 @@ ipsec_form(const char *form, const ucl_object_t *f)
 	qr = json_quote(jstr(f, "remote"));
 	qm = json_quote(jstr(f, "mode") != NULL ? jstr(f, "mode") : "tunnel");
 	qk = json_quote(key);
+	way = strcmp(auth, "cert") == 0 ? opt(f, "remote_cert", "remote_cert") :
+	    strcmp(auth, "ca") == 0 ? opt(f, "remote_ca", "remote_ca") :
+	    strdup("");
+	lcert = opt(f, "local_cert", "local_cert");
 	qs = json_quote(jstr(f, "start") != NULL ? jstr(f, "start") : "trap");
 	lts = opt(f, "local_ts", "local_ts");
 	rts = opt(f, "remote_ts", "remote_ts");
@@ -348,10 +596,18 @@ ipsec_form(const char *form, const ucl_object_t *f)
 	rid = opt(f, "remote_id", "remote_id");
 	snprintf(title, sizeof(title), "ipsec conn %s (%s)", jstr(f, "conn"),
 	    jstr(f, "mode") != NULL ? jstr(f, "mode") : "tunnel");
-	ipsec_job(s, title, "{\"kind\":\"ipsec\",\"verb\":\"conn\",\"conn\":%s,"
-	    "\"tunnel_local\":%s,\"tunnel_remote\":%s,\"ipsec_mode\":%s,"
-	    "\"pubkey\":%s,\"start_action\":%s%s%s%s%s%s}", qn, ql, qr, qm, qk,
-	    qs, reqid, lts, rts, lid, rid);
+	if (key[0] != '\0')
+		ipsec_job(s, title, "{\"kind\":\"ipsec\",\"verb\":\"conn\","
+		    "\"conn\":%s,\"tunnel_local\":%s,\"tunnel_remote\":%s,"
+		    "\"ipsec_mode\":%s,\"pubkey\":%s,\"start_action\":%s%s%s%s%s%s%s}",
+		    qn, ql, qr, qm, qk, qs, reqid, lts, rts, lid, rid, lcert);
+	else
+		ipsec_job(s, title, "{\"kind\":\"ipsec\",\"verb\":\"conn\","
+		    "\"conn\":%s,\"tunnel_local\":%s,\"tunnel_remote\":%s,"
+		    "\"ipsec_mode\":%s,\"start_action\":%s%s%s%s%s%s%s%s}", qn,
+		    ql, qr, qm, qs, reqid, lts, rts, lid, rid, way, lcert);
+	free(way);
+	free(lcert);
 	free(qn);
 	free(ql);
 	free(qr);
@@ -372,15 +628,31 @@ ipsec_action(const char *act, const char *arg, const char *value)
 	struct server	*s;
 	char		 body[400], title[160], *qa;
 
-	(void)value;
 	if (strncmp(act, "ipsec-", 6) != 0 && strncmp(act, "do-ipsec-", 9) !=
-	    0)
+	    0 && strcmp(act, "input:ipsec-auth") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
-	if (strcmp(act, "ipsec-conn-add") == 0) {
+	if (strcmp(act, "input:ipsec-auth") == 0) {
+		snprintf(app.ipsec_auth, sizeof(app.ipsec_auth), "%s", value);
+	} else if (strcmp(act, "ipsec-child-add") == 0) {
+		app.modal = MODAL_IPSEC_CHILD;
+		app.modal_error[0] = '\0';
+		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
+	} else if (strcmp(act, "ipsec-unchild") == 0) {
+		char	*qc, *qd;
+
+		qc = json_quote(arg);
+		qd = json_quote(value);
+		snprintf(title, sizeof(title), "ipsec unchild %s %s", arg, value);
+		ipsec_job(s, title, "{\"kind\":\"ipsec\",\"verb\":\"unchild\","
+		    "\"conn\":%s,\"child\":%s}", qc, qd);
+		free(qc);
+		free(qd);
+	} else if (strcmp(act, "ipsec-conn-add") == 0) {
 		app.modal = MODAL_IPSEC_CONN;
 		app.modal_error[0] = '\0';
+		snprintf(app.ipsec_auth, sizeof(app.ipsec_auth), "pubkey");
 	} else if (strcmp(act, "ipsec-init") == 0) {
 		ipsec_job(s, "ipsec init", "{\"kind\":\"ipsec\",\"verb\":"
 		    "\"init\",\"persist\":true}");

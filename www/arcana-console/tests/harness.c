@@ -49,7 +49,7 @@ bool		 harness_webconf_only_local;
 extern char	**environ;
 
 static int	console_socket(void);
-static void	show(const char *);
+void	show(const char *);
 
 void
 put(const char *path, const char *text)
@@ -117,7 +117,7 @@ run_prog(char *const argv[])
 	return (WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
-static void
+void
 show(const char *path)
 {
 	FILE	*fp;
@@ -691,12 +691,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "  [ -f \"$f\" ] || continue; n=${f##*/arcana-}; n=${n%.conf}\n"
 	    "  l=$(sed -n 's/^.*local_addrs = //p' \"$f\")\n"
 	    "  r=$(sed -n 's/^.*remote_addrs = //p' \"$f\")\n"
-	    "  m=$(sed -n 's/^.*mode = //p' \"$f\" | tr a-z A-Z)\n"
+	    "  kids=$(awk '/^\t\t\t[A-Za-z0-9_-]+ \\{$/ { k = $1 } "
+	    "/^\t\t\t\tmode = / { printf \"      %s {\\n        mode = %s\\n"
+	    "      }\\n\", k, toupper($3) }' \"$f\")\n"
 	    "  printf 'list-conn event {\\n  %s {\\n    local_addrs = [\\n"
 	    "      %s\\n    ]\\n    remote_addrs = [\\n      %s\\n    ]\\n"
-	    "    version = IKEv2\\n    children {\\n      %s {\\n"
-	    "        mode = %s\\n      }\\n    }\\n  }\\n}\\n' \"$n\" \"$l\" "
-	    "\"$r\" \"$n\" \"$m\"\n"
+	    "    version = IKEv2\\n    children {\\n%s\\n    }\\n  }\\n}\\n' "
+	    "\"$n\" \"$l\" \"$r\" \"$kids\"\n"
 	    "done ;;\n"
 	    "--list-sas) [ -f swanctl/conf.d/arcana-to-lab2.conf ] && printf "
 	    "'list-sa event {\\n  to-lab2 {\\n    state = ESTABLISHED\\n"
@@ -711,6 +712,18 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(mkdir("swanctl/conf.d", 0755) == 0 || errno == EEXIST);
 	ATF_REQUIRE(mkdir("swanctl/pkcs8", 0700) == 0 || errno == EEXIST);
 	ATF_REQUIRE(mkdir("swanctl/pubkey", 0755) == 0 || errno == EEXIST);
+	/* A peer's certificate and a CA, for a connection to pick. */
+	ATF_REQUIRE(mkdir("swanctl/x509", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("swanctl/x509ca", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(system("openssl req -x509 -newkey ec -pkeyopt "
+	    "ec_paramgen_curve:P-256 -nodes -keyout peer.key -out "
+	    "swanctl/x509/edge-b.pem -days 30 -subj '/CN=edge-b.example' "
+	    "-addext 'basicConstraints=CA:FALSE' "
+	    "-addext 'subjectAltName=DNS:edge-b.example' >/dev/null 2>&1 && "
+	    "openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 "
+	    "-nodes -keyout ca.key -out swanctl/x509ca/lab-ca.pem -days 30 "
+	    "-subj '/CN=Lab CA' -addext 'basicConstraints=critical,CA:TRUE' "
+	    ">/dev/null 2>&1") == 0);
 	ATF_REQUIRE(chmod("fake-wg", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-birdc", 0755) == 0);
 	ATF_REQUIRE(mkdir("wg", 0700) == 0 || errno == EEXIST);

@@ -1799,6 +1799,7 @@ modal(struct html *h)
 			return;
 		break;
 	case MODAL_IPSEC_CONN:
+	case MODAL_IPSEC_CHILD:
 		if (!ipsec_modal(h))
 			return;
 		break;
@@ -2080,6 +2081,9 @@ modal(struct html *h)
 			break;
 		case MODAL_WG_PEER:
 		case MODAL_IPSEC_CONN:
+			h_raw(h, "<button class=\"primary\">Add</button>");
+			break;
+		case MODAL_IPSEC_CHILD:
 			h_raw(h, "<button class=\"primary\">Add</button>");
 			break;
 		case MODAL_STORAGE:

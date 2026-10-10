@@ -756,24 +756,54 @@ With
 strongSwan is also started at boot.
 .It Cm ipsec start
 Start strongSwan's daemon.
-.It Cm ipsec conn Ar name local remote Cm tunnel | transport Ar pubkey Oo Cm reqid Ar n Oc Oo Cm local-ts Ar list Oc Oo Cm remote-ts Ar list Oc Oo Cm start Cm start | trap | none Oc Oo Cm local-id Ar id Oc Oo Cm remote-id Ar id Oc
+.It Cm ipsec conn Ar name local remote Oo Cm mode Cm tunnel | transport Oc Oo Cm pubkey Ar key | Cm remote-cert Ar file | Cm remote-ca Ar file Oc Oo Cm local-cert Ar file Oc Oo Cm reqid Ar n Oc Oo Cm local-ts Ar list Oc Oo Cm remote-ts Ar list Oc Oo Cm start Cm start | trap | none Oc Oo Cm local-id Ar id Oc Oo Cm remote-id Ar id Oc
 Write the IPsec connection
 .Ar name ,
 IKEv2 only, between the addresses
 .Ar local
 and
-.Ar remote ,
-authenticated by this host's key and the peer's,
-.Ar pubkey ,
-with one child in tunnel or transport mode between the traffic
-selectors given, by default the two addresses.
-With
+.Ar remote .
+This host is known by the key arcana made it, or by
+.Cm local-cert ,
+a certificate in swanctl's
+.Pa x509
+whose key is in
+.Pa private
+or
+.Pa pkcs8 ;
+the peer one way of three: by
+.Cm pubkey ,
+its public key as its host tells it; by
+.Cm remote-cert ,
+its certificate, a file in
+.Pa x509 ;
+or by
+.Cm remote-ca ,
+a CA in
+.Pa x509ca
+that signed its certificate, with
+.Cm remote-id
+saying which of the CA's is the peer's.
+The connection's children stay as they were; with
+.Cm mode ,
+one child of the connection's name is written too, in tunnel or
+transport mode between the traffic selectors given, by default the
+two addresses, and with
 .Cm reqid
-it serves the
+serving the
 .Xr ipsec 4
 interface of that reqid: tunnel mode, its policies the interface's.
 strongSwan reads it at once; if it refuses, what was there before is
 put back.
+.It Cm ipsec child Ar conn name Cm tunnel | transport Oo Cm reqid Ar n Oc Oo Cm local-ts Ar list Oc Oo Cm remote-ts Ar list Oc Oo Cm start Cm start | trap | none Oc
+A child of the connection
+.Ar conn
+arcana wrote, named
+.Ar name ,
+added or changed: the mode, the traffic, the reqid and how it starts
+are the child's own.
+.It Cm ipsec unchild Ar conn name
+The child taken away.
 .It Cm ipsec unconn | up | down Ar name
 Take the connection away, its security associations ended first; start
 them; end them.

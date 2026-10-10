@@ -1282,7 +1282,7 @@ EOS
 
 	# A connection: its file and its peer's key, IKEv2, read again.
 	atf_check -o match:'ipsec conn gre12 \(transport\)' \
-	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.2 transport "$PUB" \
+	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.2 mode transport pubkey "$PUB" \
 	    local-ts '10.202.0.1[gre]' remote-ts '10.202.0.2[gre]' start start
 	atf_check -o match:'^		version = 2$' -o match:'^		local_addrs = 10.202.0.1$' \
 	    -o match:'^			pubkeys = arcana-gre12.pub$' \
@@ -1297,7 +1297,7 @@ EOS
 	atf_check -o match:'"name":"gre12".*"arcana":true' "$JGC" -c "$SOCK" net ipsec
 	# Of an ipsec interface: tunnel mode, its policies the interface's.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec conn vti12 fd00:5a::1 fd00:5a::2 \
-	    tunnel "$PUB" reqid 100
+	    mode tunnel pubkey "$PUB" reqid 100
 	atf_check -o match:'^				reqid = 100$' -o match:'^				policies = no$' \
 	    -o match:'^				local_ts = 0.0.0.0/0,::/0$' \
 	    -o match:'^				start_action = trap$' \
@@ -1305,28 +1305,87 @@ EOS
 
 	# What is not right is refused before anything is written.
 	atf_check -s exit:1 -e match:'tunnel or transport' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 beet "$PUB"
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode beet pubkey "$PUB"
 	atf_check -s exit:1 -e match:"peer's public key" -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 tunnel bm90IGEga2V5
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode tunnel pubkey bm90IGEga2V5
 	atf_check -s exit:1 -e match:'are IPv4, or both IPv6' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 2001:db8::2 tunnel "$PUB"
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 2001:db8::2 mode tunnel pubkey "$PUB"
 	atf_check -s exit:1 -e match:'is in tunnel mode' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 transport "$PUB" reqid 5
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode transport pubkey "$PUB" reqid 5
 	atf_check -s exit:1 -e match:'traffic selectors' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 tunnel "$PUB" local-ts '10.0.0.0/8 }'
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode tunnel pubkey "$PUB" local-ts '10.0.0.0/8 }'
 	atf_check -s exit:1 -e match:'letters, digits, - and _' -o ignore \
 	    "$JGC" -c "$SOCK" ipsec up '../x'
 	atf_check -s exit:1 -e match:'identity is one word' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 tunnel "$PUB" remote-id 'a=b'
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode tunnel pubkey "$PUB" remote-id 'a=b'
 	test ! -f swanctl/conf.d/arcana-x.conf || atf_fail "a refused connection was written"
+	# The peer known one way, and one only.
+	atf_check -s exit:1 -e match:'one way' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2
+	atf_check -s exit:1 -e match:'one way' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 pubkey "$PUB" remote-cert peer.pem
+	# Children of their own: gre12's kept as the connection is
+	# written again without a mode; one added, named; one taken away.
+	atf_check -o match:'ipsec conn gre12' "$JGC" -c "$SOCK" ipsec conn gre12 \
+	    10.202.0.1 10.202.0.2 pubkey "$PUB" remote-id peer.example
+	atf_check -o match:'^			gre12 \{$' -o match:'mode = transport' \
+	    -o match:'id = peer.example' cat swanctl/conf.d/arcana-gre12.conf
+	atf_check -o match:'"children":\{"gre12":\{"mode":"transport"' \
+	    cat swanctl/conf.d/arcana-gre12.json
+	atf_check -o match:'ipsec child gre12 lan' "$JGC" -c "$SOCK" ipsec child gre12 lan tunnel \
+	    local-ts 10.1.0.0/24 remote-ts 10.2.0.0/24 start start
+	atf_check -o match:'^			gre12 \{$' -o match:'^			lan \{$' \
+	    -o match:'local_ts = 10.1.0.0/24' -o match:'start_action = start' \
+	    cat swanctl/conf.d/arcana-gre12.conf
+	atf_check -s exit:1 -o match:'no connection nope' -e ignore \
+	    "$JGC" -c "$SOCK" ipsec child nope lan tunnel
+	atf_check -s exit:1 -o match:'has no child far' -e ignore \
+	    "$JGC" -c "$SOCK" ipsec unchild gre12 far
+	atf_check -o match:'ipsec unchild gre12 lan' "$JGC" -c "$SOCK" ipsec unchild gre12 lan
+	atf_check -o not-match:'lan \{' -o match:'^			gre12 \{$' \
+	    cat swanctl/conf.d/arcana-gre12.conf
+	# The connection known by what it tells of itself: its children.
+	atf_check -o match:'"model":\{"children":\{"gre12":' \
+	    -o match:'"remote_id":"peer.example"' "$JGC" -c "$SOCK" net ipsec
+	# Certificates in x509 and x509ca, read: a peer known by its own,
+	# or by the CA that signed it, needs no key pasted.
+	mkdir -p swanctl/x509 swanctl/x509ca
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	    -keyout ca.key -out swanctl/x509ca/lab-ca.pem -days 2 \
+	    -subj '/CN=Lab CA' -addext 'basicConstraints=critical,CA:TRUE' >/dev/null 2>&1
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	    -keyout peer.key -out swanctl/x509/peer.pem -days 2 \
+	    -subj '/CN=peer.example' -addext 'basicConstraints=CA:FALSE' \
+	    -addext 'subjectAltName=DNS:peer.example,IP:10.202.0.2' >/dev/null 2>&1
+	echo "not a cert" > swanctl/x509/junk.pem
+	atf_check -o save:certs.json "$JGC" -c "$SOCK" net ipsec
+	atf_check -o match:'"file":"peer.pem","where":"x509","subject":"CN=peer.example","issuer":"CN=peer.example",[^}]*"ca":false,"self_signed":true,"names":\["peer.example","10.202.0.2"\],"sha256":"[0-9a-f:]+"' \
+	    -o match:'"file":"lab-ca.pem","where":"x509ca",[^}]*"ca":true' \
+	    -o match:'"file":"junk.pem","where":"x509","error":"not a certificate in PEM"' \
+	    cat certs.json
+	atf_check -s exit:1 -o match:'nope.pem is not in swanctl.s x509' -e ignore \
+	    "$JGC" -c "$SOCK" ipsec conn bycert 10.202.0.1 10.202.0.2 remote-cert nope.pem
+	atf_check -s exit:1 -e match:'remote-id' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn byca 10.202.0.1 10.202.0.2 remote-ca lab-ca.pem
+	atf_check -o match:'ipsec conn bycert' "$JGC" -c "$SOCK" ipsec conn bycert \
+	    10.202.0.1 10.202.0.2 mode tunnel remote-cert peer.pem
+	atf_check -o match:'certs = peer.pem' -o match:'pubkeys = arcana.pub' \
+	    -o not-match:'arcana-bycert.pub' cat swanctl/conf.d/arcana-bycert.conf
+	test ! -f swanctl/pubkey/arcana-bycert.pub || atf_fail "a key where none was given"
+	atf_check -o match:'ipsec conn byca' "$JGC" -c "$SOCK" ipsec conn byca \
+	    10.202.0.1 10.202.0.2 mode tunnel remote-ca lab-ca.pem remote-id peer.example local-cert peer.pem
+	atf_check -o match:'cacerts = lab-ca.pem' -o match:'certs = peer.pem' \
+	    -o match:'id = peer.example' cat swanctl/conf.d/arcana-byca.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec unconn byca
+	test ! -f swanctl/conf.d/arcana-byca.json || atf_fail "the model stayed"
 
 	# Refused by strongSwan: the files as they were.
 	cp swanctl/conf.d/arcana-gre12.conf gre12.was
 	touch refuse
 	atf_check -s exit:1 -o match:'failed' -e ignore \
-	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.9 transport "$PUB"
+	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.9 mode transport pubkey "$PUB"
 	atf_check -s exit:1 -o ignore -e ignore \
-	    "$JGC" -c "$SOCK" ipsec conn fresh 10.202.0.1 10.202.0.9 tunnel "$PUB"
+	    "$JGC" -c "$SOCK" ipsec conn fresh 10.202.0.1 10.202.0.9 mode tunnel pubkey "$PUB"
 	rm refuse
 	atf_check cmp gre12.was swanctl/conf.d/arcana-gre12.conf
 	test ! -f swanctl/conf.d/arcana-fresh.conf || atf_fail "a refused connection stayed"
@@ -2093,7 +2152,7 @@ EOS
 	atf_check -o match:'ipsec conn to-host \(tunnel\)' \
 	    -o match:'fake-jexec 4 .*/fake-swanctl --load-all' \
 	    "$JGC" -j gateway -c "$SOCK" ipsec conn to-host 10.99.0.2 \
-	    10.99.0.1 tunnel "$PUB"
+	    10.99.0.1 mode tunnel pubkey "$PUB"
 	atf_check -o match:'^		local_addrs = 10.99.0.2$' \
 	    cat "$R$(pwd)/swanctl/conf.d/arcana-to-host.conf"
 	atf_check test ! -e swanctl/conf.d/arcana-to-host.conf

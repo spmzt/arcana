@@ -4492,3 +4492,7 @@ ul.sd-faults li.st-down .led { background: var(--red); }
 .tree .titem .chip.here { margin: 0 .3rem; padding: 0 .3rem; font-size: .6rem; vertical-align: middle; }
 .hostbar .host-id .chip.here { margin: .1rem 0 .35rem; }
 table.net.sd .chosen { color: var(--fg); font-weight: 600; }
+
+/* IPsec: a connection's children, each on a line, with its cross. */
+table.ipsec td .child { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
+table.ipsec td .child small { color: var(--dim); }

@@ -30,6 +30,7 @@
 #include <arpa/inet.h>
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -41,8 +42,13 @@
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/x509.h>
+#include <openssl/x509v3.h>
 
 #include "agent.h"
+
+static char	*bio_text(struct work *, BIO *);
+static ucl_object_t *model_load(struct work *, const char *);
+static void	 certs_of(struct work *, const char *, ucl_object_t *);
 
 #define	IPSEC_PROPOSALS	"aes256gcm16-prfsha384-ecp384,aes256-sha384-ecp384"
 #define	ESP_PROPOSALS	"aes256gcm16-ecp384,aes256-sha384-ecp384"
@@ -54,7 +60,8 @@ static void
 put(ucl_object_t *o, const char *key, ucl_object_t *v)
 {
 
-	ucl_object_insert_key(o, v, key, 0, true);
+	/* Replaced when there: a repeated key would make an array. */
+	ucl_object_replace_key(o, v, key, 0, true);
 }
 
 static char *
@@ -118,6 +125,21 @@ id_ok(const char *s)
 	return (true);
 }
 
+/* A certificate's file name under swanctl's x509 or x509ca: no path. */
+static bool
+file_ok(const char *s)
+{
+	size_t	i;
+
+	if (s == NULL || s[0] == '\0' || s[0] == '.' || strlen(s) > 128)
+		return (false);
+	for (i = 0; s[i] != '\0'; i++)
+		if (!isalnum((unsigned char)s[i]) && strchr("._-@", s[i]) ==
+		    NULL)
+			return (false);
+	return (true);
+}
+
 /* A public key in base64 (DER), and what it is; NULL for none. */
 static EVP_PKEY *
 pubkey_of(const char *b64)
@@ -153,31 +175,74 @@ const char *
 ipsec_check(const struct arc_job_spec *sp)
 {
 	EVP_PKEY	*k;
+	int		 ways;
 
 	if (sp->verb == NULL)
-		return ("ipsec: say init, start, conn, unconn, up or down");
+		return ("ipsec: say init, start, conn, unconn, child, unchild, "
+		    "up or down");
 	if (strcmp(sp->verb, "init") == 0 || strcmp(sp->verb, "start") == 0)
 		return (NULL);
 	if (strcmp(sp->verb, "conn") != 0 && strcmp(sp->verb, "unconn") !=
-	    0 && strcmp(sp->verb, "up") != 0 && strcmp(sp->verb, "down") != 0)
-		return ("ipsec: say init, start, conn, unconn, up or down");
+	    0 && strcmp(sp->verb, "child") != 0 && strcmp(sp->verb,
+	    "unchild") != 0 && strcmp(sp->verb, "up") != 0 && strcmp(sp->verb,
+	    "down") != 0)
+		return ("ipsec: say init, start, conn, unconn, child, unchild, "
+		    "up or down");
 	if (!conn_ok(sp->conn))
 		return ("ipsec: a connection is named with letters, digits, - "
 		    "and _, 32 at most");
-	if (strcmp(sp->verb, "conn") != 0)
+	if (strcmp(sp->verb, "child") == 0 || strcmp(sp->verb, "unchild") ==
+	    0) {
+		if (!conn_ok(sp->child))
+			return ("ipsec: a child is named with letters, digits, "
+			    "- and _, 32 at most");
+		if (strcmp(sp->verb, "unchild") == 0)
+			return (NULL);
+		if (sp->ipsec_mode == NULL)
+			return ("ipsec: a child's mode is tunnel or transport");
+	} else if (strcmp(sp->verb, "conn") != 0)
 		return (NULL);
-	if (!addr_ok(sp->tunnel_local) || !addr_ok(sp->tunnel_remote))
-		return ("ipsec: a connection is between two addresses, "
-		    "tunnel-local and tunnel-remote");
-	if (addr_family(sp->tunnel_local) != addr_family(sp->tunnel_remote))
-		return ("ipsec: both addresses are IPv4, or both IPv6");
-	if (sp->ipsec_mode == NULL || (strcmp(sp->ipsec_mode, "tunnel") != 0 &&
-	    strcmp(sp->ipsec_mode, "transport") != 0))
+	if (strcmp(sp->verb, "conn") == 0) {
+		if (!addr_ok(sp->tunnel_local) || !addr_ok(sp->tunnel_remote))
+			return ("ipsec: a connection is between two addresses, "
+			    "tunnel-local and tunnel-remote");
+		if (addr_family(sp->tunnel_local) != addr_family(
+		    sp->tunnel_remote))
+			return ("ipsec: both addresses are IPv4, or both IPv6");
+		/* How the peer is known: one way of the three. */
+		ways = (sp->pubkey != NULL) + (sp->remote_cert != NULL) +
+		    (sp->remote_ca != NULL);
+		if (ways != 1)
+			return ("ipsec: the peer is known one way: its public "
+			    "key (pubkey), its certificate in x509 "
+			    "(remote-cert), or the CA in x509ca that signed it "
+			    "(remote-ca)");
+		if (sp->pubkey != NULL) {
+			if ((k = pubkey_of(sp->pubkey)) == NULL)
+				return ("ipsec: the peer's public key, in "
+				    "base64, as its host tells it");
+			EVP_PKEY_free(k);
+		}
+		if ((sp->remote_cert != NULL && !file_ok(sp->remote_cert)) ||
+		    (sp->remote_ca != NULL && !file_ok(sp->remote_ca)) ||
+		    (sp->local_cert != NULL && !file_ok(sp->local_cert)))
+			return ("ipsec: a certificate is named by its file in "
+			    "swanctl's x509 or x509ca, without a path");
+		if (sp->remote_ca != NULL && (sp->remote_id == NULL ||
+		    sp->remote_id[0] == '\0'))
+			return ("ipsec: with a CA, the peer's identity "
+			    "(remote-id) says which certificate of the CA's is "
+			    "the peer's");
+		if ((sp->local_id != NULL && !id_ok(sp->local_id)) ||
+		    (sp->remote_id != NULL && !id_ok(sp->remote_id)))
+			return ("ipsec: an identity is one word, without "
+			    "quotes, braces, =, # or ;");
+		if (sp->ipsec_mode == NULL)
+			return (NULL);	/* the connection alone, its children kept */
+	}
+	if (strcmp(sp->ipsec_mode, "tunnel") != 0 && strcmp(sp->ipsec_mode,
+	    "transport") != 0)
 		return ("ipsec: the mode is tunnel or transport");
-	if (sp->pubkey == NULL || (k = pubkey_of(sp->pubkey)) == NULL)
-		return ("ipsec: the peer's public key, in base64, as its "
-		    "host tells it");
-	EVP_PKEY_free(k);
 	if ((sp->local_ts != NULL && !ts_ok(sp->local_ts)) ||
 	    (sp->remote_ts != NULL && !ts_ok(sp->remote_ts)))
 		return ("ipsec: traffic selectors are networks, with commas, "
@@ -191,10 +256,6 @@ ipsec_check(const struct arc_job_spec *sp)
 	    0 && strcmp(sp->start_action, "trap") != 0 &&
 	    strcmp(sp->start_action, "none") != 0)
 		return ("ipsec: start-action is start, trap or none");
-	if ((sp->local_id != NULL && !id_ok(sp->local_id)) ||
-	    (sp->remote_id != NULL && !id_ok(sp->remote_id)))
-		return ("ipsec: an identity is one word, without quotes, "
-		    "braces, =, # or ;");
 	return (NULL);
 }
 
@@ -290,8 +351,9 @@ pretty(struct work *w, const char *out, const char *event, ucl_object_t *arr,
 			if (depth > 0)
 				continue;
 			/* An answer: what it holds, each with its name. */
-			if (strcmp(ucl_object_tostring_forced(ucl_object_lookup(
-			    o, "\x01")), event) == 0) {
+			if (ucl_object_lookup(o, "\x01") != NULL && strcmp(
+			    ucl_object_tostring_forced(ucl_object_lookup(o,
+			    "\x01")), event) == 0) {
 				ucl_object_delete_key(o, "\x01");
 				items = named(o);
 				it = NULL;
@@ -391,7 +453,7 @@ int
 do_ipsec(struct work *w, struct arc_network_rsp *rsp)
 {
 	struct execres		 res;
-	ucl_object_t		*top, *conns, *sas;
+	ucl_object_t		*top, *conns, *sas, *certs;
 	const ucl_object_t	*c, *side;
 	ucl_object_iter_t	 it;
 	unsigned char		*json;
@@ -439,11 +501,29 @@ do_ipsec(struct work *w, struct arc_network_rsp *rsp)
 		    scope_slurp(w, sw_path(w, wfmt(w, "conf.d/arcana-%s.conf",
 		    name)), NULL) != NULL));
 	}
+	/* What arcana knows of its own: how the peer is known, and the
+	 * children as it wrote them. */
+	it = NULL;
+	while ((c = ucl_object_iterate(conns, &it, true)) != NULL) {
+		ucl_object_t	*m;
+
+		if (!ucl_object_toboolean(ucl_object_lookup(c, "arcana")) ||
+		    (m = model_load(w, ucl_object_tostring(ucl_object_lookup(c,
+		    "name")))) == NULL)
+			continue;
+		(void)ucl_object_delete_key(m, "local");
+		(void)ucl_object_delete_key(m, "remote");
+		put((ucl_object_t *)(uintptr_t)c, "model", m);
+	}
+	certs = ucl_object_typed_new(UCL_ARRAY);
+	certs_of(w, "x509", certs);
+	certs_of(w, "x509ca", certs);
 	top = ucl_object_typed_new(UCL_OBJECT);
 	put(top, "running", ucl_object_frombool(running));
 	put(top, "kernel", ucl_object_frombool(in_kernel()));
 	if ((pub = own_pub(w)) != NULL)
 		put(top, "public-key", ucl_object_fromstring(pub));
+	put(top, "certificates", certs);
 	put(top, "connections", conns);
 	put(top, "sas", sas);
 	put(top, "now", ucl_object_fromint(time(NULL)));
@@ -457,6 +537,115 @@ do_ipsec(struct work *w, struct arc_network_rsp *rsp)
 	rsp->json = wtext(w, wadopt(w, json));
 	rsp->ok = true;
 	return (0);
+}
+
+/* A certificate's name, one line as RFC 2253 writes it. */
+static char *
+name_text(struct work *w, X509_NAME *n)
+{
+	BIO	*b;
+	char	*t;
+
+	if ((b = BIO_new(BIO_s_mem())) == NULL)
+		return (wstrdup(w, ""));
+	X509_NAME_print_ex(b, n, 0, XN_FLAG_RFC2253);
+	t = bio_text(w, b);
+	BIO_free(b);
+	return (t);
+}
+
+/*
+ * The certificates in swanctl's x509 (hosts', this one's and its
+ * peers') and x509ca (the CAs), each PEM file's first: its file, where,
+ * subject, issuer, when it is valid from and until, its names (SAN),
+ * whether it is a CA, and its SHA-256 fingerprint.
+ */
+static void
+certs_of(struct work *w, const char *dir, ucl_object_t *arr)
+{
+	DIR		*d;
+	struct dirent	*e;
+	X509		*x;
+	BIO		*b;
+	GENERAL_NAMES	*sans;
+	ucl_object_t	*o, *names;
+	unsigned char	 md[EVP_MAX_MD_SIZE];
+	unsigned int	 mdlen, i;
+	char		*text, fp[EVP_MAX_MD_SIZE * 3 + 1], *p;
+	struct tm	 tm;
+	int		 fd, k;
+
+	if ((fd = scope_dirfd(w, sw_path(w, dir))) == -1)
+		return;
+	if ((d = fdopendir(fd)) == NULL) {
+		close(fd);
+		return;
+	}
+	while ((e = readdir(d)) != NULL) {
+		if (e->d_name[0] == '.' || e->d_type == DT_DIR)
+			continue;
+		if ((text = scope_slurp(w, sw_path(w, wfmt(w, "%s/%s", dir,
+		    e->d_name)), NULL)) == NULL)
+			continue;
+		if ((b = BIO_new_mem_buf(text, -1)) == NULL)
+			continue;
+		x = PEM_read_bio_X509(b, NULL, NULL, NULL);
+		BIO_free(b);
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put(o, "file", ucl_object_fromstring(e->d_name));
+		put(o, "where", ucl_object_fromstring(dir));
+		if (x == NULL) {
+			put(o, "error", ucl_object_fromstring("not a "
+			    "certificate in PEM"));
+			ucl_array_append(arr, o);
+			continue;
+		}
+		put(o, "subject", ucl_object_fromstring(name_text(w,
+		    X509_get_subject_name(x))));
+		put(o, "issuer", ucl_object_fromstring(name_text(w,
+		    X509_get_issuer_name(x))));
+		if (ASN1_TIME_to_tm(X509_get0_notBefore(x), &tm) == 1)
+			put(o, "not_before", ucl_object_fromint(timegm(&tm)));
+		if (ASN1_TIME_to_tm(X509_get0_notAfter(x), &tm) == 1)
+			put(o, "not_after", ucl_object_fromint(timegm(&tm)));
+		put(o, "ca", ucl_object_frombool(X509_check_ca(x) > 0));
+		put(o, "self_signed", ucl_object_frombool(X509_NAME_cmp(
+		    X509_get_subject_name(x), X509_get_issuer_name(x)) == 0));
+		names = ucl_object_typed_new(UCL_ARRAY);
+		if ((sans = X509_get_ext_d2i(x, NID_subject_alt_name, NULL,
+		    NULL)) != NULL) {
+			for (k = 0; k < sk_GENERAL_NAME_num(sans); k++) {
+				GENERAL_NAME	*g = sk_GENERAL_NAME_value(sans, k);
+				char		 ip[64];
+
+				if (g->type == GEN_DNS || g->type == GEN_EMAIL)
+					ucl_array_append(names,
+					    ucl_object_fromlstring((const char *)
+					    ASN1_STRING_get0_data(g->d.ia5),
+					    (size_t)ASN1_STRING_length(
+					    g->d.ia5)));
+				else if (g->type == GEN_IPADD && (
+				    ASN1_STRING_length(g->d.ip) == 4 ||
+				    ASN1_STRING_length(g->d.ip) == 16) &&
+				    inet_ntop(ASN1_STRING_length(g->d.ip) == 4 ?
+				    AF_INET : AF_INET6, ASN1_STRING_get0_data(
+				    g->d.ip), ip, sizeof(ip)) != NULL)
+					ucl_array_append(names,
+					    ucl_object_fromstring(ip));
+			}
+			GENERAL_NAMES_free(sans);
+		}
+		put(o, "names", names);
+		if (X509_digest(x, EVP_sha256(), md, &mdlen) == 1) {
+			for (i = 0, p = fp; i < mdlen; i++)
+				p += snprintf(p, sizeof(fp) - (size_t)(p - fp),
+				    "%s%02x", i > 0 ? ":" : "", md[i]);
+			put(o, "sha256", ucl_object_fromstring(fp));
+		}
+		X509_free(x);
+		ucl_array_append(arr, o);
+	}
+	closedir(d);
 }
 
 /* What a BIO holds, as text of w's. */
@@ -559,22 +748,117 @@ then(const char *start)
 	return (strcmp(start, "start") == 0 ? "start" : "none");
 }
 
-/* The connection's file, as arcana writes it. */
-static char *
-conn_text(struct work *w, const struct arc_job_spec *sp)
+/*
+ * A connection as arcana keeps it beside its file, conf.d/
+ * arcana-<conn>.json: the two addresses and identities, how the peer
+ * is known (its key, its certificate, or a CA), this host's
+ * certificate when it has one, and its children, each with its mode,
+ * traffic, reqid and how it starts.  The .conf is made from it.
+ */
+static ucl_object_t *
+model_load(struct work *w, const char *conn)
 {
-	const char	*lts, *rts, *start;
-	bool		 iface;
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	char			*text;
 
-	iface = sp->has_reqid;
-	start = sp->start_action != NULL ? sp->start_action : "trap";
-	lts = sp->local_ts != NULL && sp->local_ts[0] != '\0' ? sp->local_ts :
-	    iface ? "0.0.0.0/0,::/0" : NULL;
-	rts = sp->remote_ts != NULL && sp->remote_ts[0] != '\0' ?
-	    sp->remote_ts : iface ? "0.0.0.0/0,::/0" : NULL;
+	if ((text = scope_slurp(w, sw_path(w, wfmt(w,
+	    "conf.d/arcana-%s.json", conn)), NULL)) == NULL)
+		return (NULL);
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	o = ucl_parser_add_string(p, text, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	if (o != NULL && ucl_object_type(o) != UCL_OBJECT) {
+		ucl_object_unref(o);
+		o = NULL;
+	}
+	if (o != NULL && ucl_object_lookup(o, "children") == NULL)
+		put(o, "children", ucl_object_typed_new(UCL_OBJECT));
+	return (o);
+}
+
+static void
+model_str(ucl_object_t *m, const char *key, const char *v)
+{
+
+	if (v != NULL && v[0] != '\0')
+		put(m, key, ucl_object_fromstring(v));
+	else
+		(void)ucl_object_delete_key(m, key);
+}
+
+/* A child as the spec says it, into the model under its name. */
+static void
+model_child(ucl_object_t *m, const char *name, const struct arc_job_spec *sp)
+{
+	ucl_object_t	*c, *kids;
+
+	kids = (ucl_object_t *)(uintptr_t)ucl_object_lookup(m, "children");
+	c = ucl_object_typed_new(UCL_OBJECT);
+	put(c, "mode", ucl_object_fromstring(sp->ipsec_mode));
+	model_str(c, "local_ts", sp->local_ts);
+	model_str(c, "remote_ts", sp->remote_ts);
+	if (sp->has_reqid)
+		put(c, "reqid", ucl_object_fromint(sp->reqid));
+	model_str(c, "start", sp->start_action != NULL ? sp->start_action :
+	    "trap");
+	(void)ucl_object_delete_key(kids, name);
+	ucl_object_insert_key(kids, c, name, 0, true);
+}
+
+static const char *
+mstr(const ucl_object_t *o, const char *key)
+{
+	const ucl_object_t	*v;
+
+	return ((v = ucl_object_lookup(o, key)) != NULL && ucl_object_type(v)
+	    == UCL_STRING ? ucl_object_tostring(v) : NULL);
+}
+
+/* The connection's file, as arcana writes it from the model. */
+static char *
+conn_text(struct work *w, const char *conn, const ucl_object_t *m)
+{
+	const ucl_object_t	*c;
+	ucl_object_iter_t	 it;
+	const char		*lts, *rts, *start, *local, *remote, *kids;
+	bool			 iface;
+
+	local = mstr(m, "local");
+	remote = mstr(m, "remote");
+	kids = "";
+	it = NULL;
+	while ((c = ucl_object_iterate(ucl_object_lookup(m, "children"), &it,
+	    true)) != NULL) {
+		iface = ucl_object_lookup(c, "reqid") != NULL;
+		start = mstr(c, "start") != NULL ? mstr(c, "start") : "trap";
+		lts = mstr(c, "local_ts") != NULL ? mstr(c, "local_ts") : iface ?
+		    "0.0.0.0/0,::/0" : NULL;
+		rts = mstr(c, "remote_ts") != NULL ? mstr(c, "remote_ts") :
+		    iface ? "0.0.0.0/0,::/0" : NULL;
+		kids = wfmt(w, "%s"
+		    "\t\t\t%s {\n"
+		    "\t\t\t\tmode = %s\n"
+		    "%s%s%s%s"
+		    "\t\t\t\tesp_proposals = " ESP_PROPOSALS "\n"
+		    "\t\t\t\tstart_action = %s\n"
+		    "\t\t\t\tdpd_action = %s\n"
+		    "\t\t\t\tclose_action = %s\n"
+		    "\t\t\t}\n", kids, ucl_object_key(c), mstr(c, "mode"),
+		    iface ? wfmt(w, "\t\t\t\treqid = %jd\n\t\t\t\tpolicies = no\n",
+		    (intmax_t)ucl_object_toint(ucl_object_lookup(c, "reqid"))) :
+		    "", lts != NULL ? wfmt(w, "\t\t\t\tlocal_ts = %s\n", lts) :
+		    "", rts != NULL ? wfmt(w, "\t\t\t\tremote_ts = %s\n", rts) :
+		    "", "", start, strcmp(start, "none") == 0 ? "clear" :
+		    then(start), strcmp(start, "none") == 0 ? "none" :
+		    then(start));
+	}
 	return (wfmt(w,
 	    "# Written by arcana-agent (ipsec conn %s): changed by it, and\n"
-	    "# taken away by ipsec unconn.  IKEv2 only.\n"
+	    "# taken away by ipsec unconn; its children by ipsec child and\n"
+	    "# unchild.  IKEv2 only.\n"
 	    "connections {\n"
 	    "\t%s {\n"
 	    "\t\tversion = 2\n"
@@ -584,39 +868,31 @@ conn_text(struct work *w, const struct arc_job_spec *sp)
 	    "\t\tdpd_delay = 10s\n"
 	    "\t\tlocal {\n"
 	    "\t\t\tauth = pubkey\n"
-	    "\t\t\tpubkeys = arcana.pub\n"
+	    "\t\t\t%s = %s\n"
 	    "\t\t\tid = %s\n"
 	    "\t\t}\n"
 	    "\t\tremote {\n"
 	    "\t\t\tauth = pubkey\n"
-	    "\t\t\tpubkeys = arcana-%s.pub\n"
+	    "\t\t\t%s = %s\n"
 	    "\t\t\tid = %s\n"
 	    "\t\t}\n"
 	    "\t\tchildren {\n"
-	    "\t\t\t%s {\n"
-	    "\t\t\t\tmode = %s\n"
-	    "%s%s%s%s%s%s"
-	    "\t\t\t\tesp_proposals = " ESP_PROPOSALS "\n"
-	    "\t\t\t\tstart_action = %s\n"
-	    "\t\t\t\tdpd_action = %s\n"
-	    "\t\t\t\tclose_action = %s\n"
-	    "\t\t\t}\n"
+	    "%s"
 	    "\t\t}\n"
 	    "\t}\n"
 	    "}\n",
-	    sp->conn, sp->conn, sp->tunnel_local, sp->tunnel_remote,
-	    sp->local_id != NULL && sp->local_id[0] != '\0' ? sp->local_id :
-	    sp->tunnel_local, sp->conn, sp->remote_id != NULL &&
-	    sp->remote_id[0] != '\0' ? sp->remote_id : sp->tunnel_remote,
-	    sp->conn, sp->ipsec_mode,
-	    iface ? wfmt(w, "\t\t\t\treqid = %u\n", sp->reqid) : "",
-	    iface ? "\t\t\t\tpolicies = no\n" : "",
-	    lts != NULL ? "\t\t\t\tlocal_ts = " : "", lts != NULL ? wfmt(w,
-	    "%s\n", lts) : "",
-	    rts != NULL ? "\t\t\t\tremote_ts = " : "", rts != NULL ? wfmt(w,
-	    "%s\n", rts) : "",
-	    start, strcmp(start, "none") == 0 ? "clear" : then(start),
-	    strcmp(start, "none") == 0 ? "none" : then(start)));
+	    conn, conn, local, remote,
+	    mstr(m, "local_cert") != NULL ? "certs" : "pubkeys",
+	    mstr(m, "local_cert") != NULL ? mstr(m, "local_cert") :
+	    "arcana.pub",
+	    mstr(m, "local_id") != NULL ? mstr(m, "local_id") : local,
+	    mstr(m, "remote_cert") != NULL ? "certs" : mstr(m, "remote_ca") !=
+	    NULL ? "cacerts" : "pubkeys",
+	    mstr(m, "remote_cert") != NULL ? mstr(m, "remote_cert") : mstr(m,
+	    "remote_ca") != NULL ? mstr(m, "remote_ca") : wfmt(w,
+	    "arcana-%s.pub", conn),
+	    mstr(m, "remote_id") != NULL ? mstr(m, "remote_id") : remote,
+	    kids));
 }
 
 /* The daemon reads conf.d again: what was taken out is unloaded. */
@@ -647,32 +923,38 @@ put_back(struct work *w, const char *path, const char *keep, bool had)
 		(void)scope_rename(w, path, base, NULL);
 }
 
+/*
+ * The model written, and the .conf made from it; the daemon reads
+ * conf.d again, and both files go back as they were if it refuses.
+ */
 static int
-do_conn(struct work *w, const struct arc_job_spec *sp, const char **errp)
+model_write(struct work *w, const char *conn, const ucl_object_t *m,
+    const char **errp)
 {
-	const char	*conf, *pub, *text, *e;
-	bool		 had_conf, had_pub;
+	const char	*conf, *json, *text, *e;
+	unsigned char	*emitted;
+	bool		 had_conf, had_json;
 	int		 step;
 
-	conf = sw_path(w, wfmt(w, "conf.d/arcana-%s.conf", sp->conn));
-	pub = sw_path(w, wfmt(w, "pubkey/arcana-%s.pub", sp->conn));
+	conf = sw_path(w, wfmt(w, "conf.d/arcana-%s.conf", conn));
+	json = sw_path(w, wfmt(w, "conf.d/arcana-%s.json", conn));
 	had_conf = scope_slurp(w, conf, NULL) != NULL;
-	had_pub = scope_slurp(w, pub, NULL) != NULL;
-	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s, %s", pub,
-	    conf);
-	text = pem_of(w, sp->pubkey);
-	if (scope_replace(w, pub, text, strlen(text), 0644, wfmt(w,
-	    ".arcana-%s.pub.was", sp->conn)) != 0) {
+	had_json = scope_slurp(w, json, NULL) != NULL;
+	step = step_begin(w, ARC_STEP_KIND_FILE, "write", "%s", conf);
+	emitted = ucl_object_emit(m, UCL_EMIT_JSON_COMPACT);
+	text = emitted != NULL ? wtext(w, wadopt(w, emitted)) : "{}";
+	if (scope_replace(w, json, text, strlen(text), 0644, wfmt(w,
+	    ".arcana-%s.json.was", conn)) != 0) {
 		step_end(w, step, false, "%s", strerror(errno));
-		*errp = wfmt(w, "%s: %s", pub, strerror(errno));
+		*errp = wfmt(w, "%s: %s", json, strerror(errno));
 		return (-1);
 	}
-	text = conn_text(w, sp);
+	text = conn_text(w, conn, m);
 	if (scope_replace(w, conf, text, strlen(text), 0644, wfmt(w,
-	    ".arcana-%s.conf.was", sp->conn)) != 0) {
+	    ".arcana-%s.conf.was", conn)) != 0) {
 		e = strerror(errno);
-		put_back(w, pub, wfmt(w, ".arcana-%s.pub.was", sp->conn),
-		    had_pub);
+		put_back(w, json, wfmt(w, ".arcana-%s.json.was", conn),
+		    had_json);
 		step_end(w, step, false, "%s", e);
 		*errp = wfmt(w, "%s: %s", conf, e);
 		return (-1);
@@ -681,11 +963,104 @@ do_conn(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	if (reload(w, errp) == 0)
 		return (0);
 	/* Refused: the files as they were, and read again. */
-	put_back(w, conf, wfmt(w, ".arcana-%s.conf.was", sp->conn), had_conf);
-	put_back(w, pub, wfmt(w, ".arcana-%s.pub.was", sp->conn), had_pub);
+	put_back(w, conf, wfmt(w, ".arcana-%s.conf.was", conn), had_conf);
+	put_back(w, json, wfmt(w, ".arcana-%s.json.was", conn), had_json);
 	e = NULL;
 	(void)reload(w, &e);
 	return (-1);
+}
+
+/* A certificate named is one in swanctl's x509 or x509ca. */
+static bool
+cert_there(struct work *w, const char *dir, const char *file)
+{
+
+	return (file == NULL || scope_slurp(w, sw_path(w, wfmt(w, "%s/%s",
+	    dir, file)), NULL) != NULL);
+}
+
+static int
+do_conn(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	ucl_object_t	*m;
+	const char	*pub, *text;
+	bool		 had_pub;
+	int		 rc;
+
+	if (!cert_there(w, "x509", sp->local_cert) || !cert_there(w, "x509",
+	    sp->remote_cert) || !cert_there(w, "x509ca", sp->remote_ca)) {
+		*errp = wfmt(w, "%s is not in swanctl's %s", sp->remote_ca !=
+		    NULL && !cert_there(w, "x509ca", sp->remote_ca) ?
+		    sp->remote_ca : !cert_there(w, "x509", sp->local_cert) ?
+		    sp->local_cert : sp->remote_cert, sp->remote_ca != NULL &&
+		    !cert_there(w, "x509ca", sp->remote_ca) ? "x509ca" :
+		    "x509");
+		return (-1);
+	}
+	/* As it was, its children kept; the connection's own anew. */
+	if ((m = model_load(w, sp->conn)) == NULL) {
+		m = ucl_object_typed_new(UCL_OBJECT);
+		put(m, "children", ucl_object_typed_new(UCL_OBJECT));
+	}
+	model_str(m, "local", sp->tunnel_local);
+	model_str(m, "remote", sp->tunnel_remote);
+	model_str(m, "local_id", sp->local_id);
+	model_str(m, "remote_id", sp->remote_id);
+	model_str(m, "local_cert", sp->local_cert);
+	model_str(m, "remote_cert", sp->remote_cert);
+	model_str(m, "remote_ca", sp->remote_ca);
+	put(m, "pubkey", ucl_object_frombool(sp->pubkey != NULL));
+	/* With a mode, a child of the connection's name, as before. */
+	if (sp->ipsec_mode != NULL)
+		model_child(m, sp->conn, sp);
+	pub = sw_path(w, wfmt(w, "pubkey/arcana-%s.pub", sp->conn));
+	had_pub = scope_slurp(w, pub, NULL) != NULL;
+	if (sp->pubkey != NULL) {
+		text = pem_of(w, sp->pubkey);
+		if (scope_replace(w, pub, text, strlen(text), 0644, wfmt(w,
+		    ".arcana-%s.pub.was", sp->conn)) != 0) {
+			*errp = wfmt(w, "%s: %s", pub, strerror(errno));
+			ucl_object_unref(m);
+			return (-1);
+		}
+	} else if (had_pub)
+		(void)scope_rename(w, pub, strrchr(pub, '/') + 1, NULL);
+	rc = model_write(w, sp->conn, m, errp);
+	if (rc != 0 && sp->pubkey != NULL)
+		put_back(w, pub, wfmt(w, ".arcana-%s.pub.was", sp->conn),
+		    had_pub);
+	ucl_object_unref(m);
+	return (rc);
+}
+
+/* A child of a connection arcana wrote: added or changed, or gone. */
+static int
+do_child(struct work *w, const struct arc_job_spec *sp, bool remove,
+    const char **errp)
+{
+	ucl_object_t	*m;
+	int		 rc;
+
+	if ((m = model_load(w, sp->conn)) == NULL) {
+		*errp = wfmt(w, "no connection %s of arcana's: ipsec conn "
+		    "makes one", sp->conn);
+		return (-1);
+	}
+	if (remove) {
+		if (ucl_object_lookup(ucl_object_lookup(m, "children"),
+		    sp->child) == NULL) {
+			*errp = wfmt(w, "connection %s has no child %s",
+			    sp->conn, sp->child);
+			ucl_object_unref(m);
+			return (-1);
+		}
+		(void)ucl_object_delete_key((ucl_object_t *)(uintptr_t)
+		    ucl_object_lookup(m, "children"), sp->child);
+	} else
+		model_child(m, sp->child, sp);
+	rc = model_write(w, sp->conn, m, errp);
+	ucl_object_unref(m);
+	return (rc);
 }
 
 static int
@@ -705,6 +1080,9 @@ do_unconn(struct work *w, const char *conn, const char **errp)
 	    pub);
 	ok = (scope_rename(w, conf, strrchr(conf, '/') + 1, NULL) == 0 ||
 	    errno == ENOENT);
+	conf = sw_path(w, wfmt(w, "conf.d/arcana-%s.json", conn));
+	ok = (scope_rename(w, conf, strrchr(conf, '/') + 1, NULL) == 0 ||
+	    errno == ENOENT) && ok;
 	ok = (scope_rename(w, pub, strrchr(pub, '/') + 1, NULL) == 0 ||
 	    errno == ENOENT) && ok;
 	step_end(w, step, ok, ok ? NULL : "%s", strerror(errno));
@@ -772,6 +1150,8 @@ do_ipsec_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (do_conn(w, sp, errp));
 	if (strcmp(sp->verb, "unconn") == 0)
 		return (do_unconn(w, sp->conn, errp));
+	if (strcmp(sp->verb, "child") == 0 || strcmp(sp->verb, "unchild") == 0)
+		return (do_child(w, sp, strcmp(sp->verb, "unchild") == 0, errp));
 	if (strcmp(sp->verb, "up") == 0) {
 		if (swanctl(w, &res, "--initiate", "--child", sp->conn,
 		    "--timeout", "20") != 0) {

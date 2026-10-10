@@ -213,13 +213,18 @@ definitions:
           host, whose public half the ipsec network kind tells; start
           starts the daemon (service strongswan onestart); conn
           writes the connection named conn, between tunnel-local and
-          tunnel-remote, authenticated by the two hosts' keys (pubkey
-          is the peer's), with one child of ipsec-mode tunnel or
-          transport between local-ts and remote-ts, and with reqid the
-          ipsec(4) interface of that reqid; unconn takes it away; up
+          tunnel-remote, this host known by its key or by local-cert,
+          the peer by pubkey (its key), remote-cert (its certificate)
+          or remote-ca (a CA that signed it, remote-id saying which),
+          its children kept, and with ipsec-mode one child of the
+          connection's name, tunnel or transport between local-ts and
+          remote-ts, with reqid the ipsec(4) interface of that reqid;
+          child adds or changes the child named child the same way,
+          unchild takes it away; unconn takes the connection away; up
           and down start and stop its security associations.  What is
           written is in conf.d, a file of its own that the daemon reads
-          again, and is there after a boot.
+          again and is there after a boot, beside a .json arcana keeps
+          of it.
       - name: pkg-install
         doc: |
           pkg install -y of the packages names, on the host or in a
@@ -1216,6 +1221,37 @@ attribute-sets:
         doc: |
           For if-set and if-create of a tunnel (gif, gre, vxlan, geneve,
           wg), the routing table its outer packets are sent by.
+      - name: child
+        type: text
+        doc: |
+          For ipsec child and unchild, the child's name under the
+          connection conn: its mode, traffic, reqid and start are the
+          child's.
+        checks:
+          max-len: 32
+      - name: local-cert
+        type: text
+        doc: |
+          For ipsec conn, this host's certificate, a file in swanctl's
+          x509 (its key in private or pkcs8), in place of the key
+          arcana made it.
+        checks:
+          max-len: 128
+      - name: remote-cert
+        type: text
+        doc: |
+          For ipsec conn, the peer's certificate, a file in swanctl's
+          x509, in place of its public key.
+        checks:
+          max-len: 128
+      - name: remote-ca
+        type: text
+        doc: |
+          For ipsec conn, a CA in swanctl's x509ca that signed the
+          peer's certificate, which remote-id names, in place of its
+          public key.
+        checks:
+          max-len: 128
 
   - name: job
     attributes:

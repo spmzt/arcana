@@ -455,6 +455,7 @@ prologue(const atf_tc_t *tc, int nservers)
 	wait_js("document.querySelector('.tree .titem.server.selected') && "
 	    "document.querySelector('.tiles .tile')", 20);
 	/* Its jails unfolded in the tree, as the cases find them. */
+	wait_js("document.querySelector('.tree button[data-act=fold]')", 20);
 	run("document.querySelector('.tree button[data-act=fold]').click()");
 	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 4",
 	    5);
@@ -1783,6 +1784,58 @@ part_plugins(void)
 	    "swanctl/conf.d/arcana-to-lab2.conf") == 0);
 	run("document.querySelector('.dock > header').click()");
 	shot("7e-ipsec");
+	/* The certificates in swanctl's x509 and x509ca are listed, and a
+	 * peer may be known by one; a child of the connection's own,
+	 * added and taken away. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.ipsec-certs "
+	    "tbody tr')].some(r => r.textContent.includes('edge-b.pem') && "
+	    "r.textContent.includes('CN=edge-b.example')) && [...document."
+	    "querySelectorAll('table.ipsec-certs tbody tr')].some(r => r."
+	    "textContent.includes('lab-ca.pem') && r.textContent.includes("
+	    "'CA'))"));
+	run("document.querySelector('table.ipsec button[data-act="
+	    "ipsec-child-add]').click()");
+	wait_js("document.querySelector('form[data-form=ipsec-child] "
+	    "input[name=child]')", 5);
+	run("const f = document.querySelector('form[data-form=ipsec-child]'); "
+	    "f.child.value = 'lan'; f.local_ts.value = '10.1.0.0/24'; "
+	    "f.remote_ts.value = '10.2.0.0/24'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q 'local_ts = 10.1.0.0/24' "
+	    "swanctl/conf.d/arcana-to-lab2.conf 2>/dev/null") != 0; i++)
+		usleep(50000);
+	if (i == 200) {
+		show("arcana-agent.out");
+		atf_tc_fail("the child lan was not written");
+	}
+	wait_js("[...document.querySelectorAll('table.ipsec td .child')].some("
+	    "c => c.textContent.includes('lan') && c.textContent.includes("
+	    "'TUNNEL'))", 20);
+	shot("7e-ipsec-child");
+	run("[...document.querySelectorAll('table.ipsec td .child')].find(c => "
+	    "c.textContent.includes('lan')).querySelector('button[data-act="
+	    "ipsec-unchild]').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("![...document.querySelectorAll('table.ipsec td .child')]."
+	    "some(c => c.textContent.includes('lan'))", 20);
+	/* The form offers the certificate and the CA as ways to know the
+	 * peer. */
+	run("document.querySelector('button[data-act=ipsec-conn-add]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=ipsec-conn] "
+	    "select[name=auth] option[value=cert]') && document.querySelector("
+	    "'form[data-form=ipsec-conn] select[name=auth] option[value=ca]')",
+	    5);
+	run("const s = document.querySelector('form[data-form=ipsec-conn] "
+	    "select[name=auth]'); s.value = 'cert'; s.dispatchEvent(new "
+	    "Event('input', { bubbles: true }));");
+	wait_js("document.querySelector('form[data-form=ipsec-conn] "
+	    "select[name=remote_cert] option[value=\"edge-b.pem\"]')", 5);
+	shot("7e-ipsec-by-certificate");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
 	run("document.querySelector('table.ipsec button[data-act="
 	    "ipsec-unconn]').click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);

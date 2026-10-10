@@ -589,23 +589,38 @@ The console is laid out as a tree and tabs.
     saying `version = 2`. **Make its key** has the host make a key of
     its own, ECDSA P-256, whose private half stays on the host; the tab
     shows the public half, which is what a peer is given: two hosts
-    know each other by their keys, no CA between them. **At boot**
-    keeps strongSwan started with the host (`strongswan_enable`), and
+    know each other by their keys, no CA between them. Where there are
+    certificates, the tab reads them from swanctl's `x509` (hosts'
+    own, and peers') and `x509ca` (the CAs) and lists them, with each
+    one's subject, names and expiry, so that a peer is known one of
+    three ways: by its public key, pasted; by its certificate, picked
+    from `x509`; or by a CA picked from `x509ca` that signed its
+    certificate, with the peer's identity saying which. This host can
+    use a certificate of its own from `x509` too, its key in `private`
+    or `pkcs8`, instead of the key arcana made it. **At boot** keeps
+    strongSwan started with the host (`strongswan_enable`), and
     **Start** starts it when it is not running. **+ connection** joins
-    this host to another between two addresses, in **tunnel** mode or
-    in **transport** mode, where what is sent between the two addresses
-    is protected as it is: a gre, gif or WireGuard tunnel between them,
-    with the traffic named as `192.0.2.1[gre]`. With a **reqid** a
-    connection serves the `ipsec` interface made with that reqid
-    (**+ interface**, type ipsec): tunnel mode, the interface's routes
-    deciding what goes through it. A connection is written as
-    `swanctl/conf.d/arcana-<name>.conf` with the peer's key beside it,
-    and strongSwan reads them all again; if it refuses, the files are
-    put back as they were. The table has each connection with its
-    child, its SA's state and algorithm, and its traffic; **Up**,
-    **Down**, and the cross, for arcana's, takes it away, its SAs ended
-    first. A connection that is not IKEv2 is marked so. From a shell:
-    `arcanactl ipsec init | start | conn | unconn | up | down`.
+    this host to another between two addresses, with one child in
+    **tunnel** mode or in **transport** mode, where what is sent
+    between the two addresses is protected as it is: a gre, gif or
+    WireGuard tunnel between them, with the traffic named as
+    `192.0.2.1[gre]`. A connection is the IKE side, the two addresses
+    and how each is known; its children are what it carries, each in
+    its own mode between its own traffic selectors, and **+ child** on
+    a connection adds one, the cross on a child takes it away, the
+    connection and the others untouched. With a **reqid** a child
+    serves the `ipsec` interface made with that reqid (**+ interface**,
+    type ipsec): tunnel mode, the interface's routes deciding what goes
+    through it. A connection is written as
+    `swanctl/conf.d/arcana-<name>.conf` from what arcana keeps of it
+    beside it (`.json`), with the peer's key in `pubkey` when it is
+    known by its key, and strongSwan reads them all again; if it
+    refuses, the files are put back as they were. The table has each
+    connection with its children, its SA's state and algorithm, and
+    its traffic; **Up**, **Down**, and the cross, for arcana's, takes
+    it away, its SAs ended first. A connection that is not IKEv2 is
+    marked so. From a shell: `arcanactl ipsec init | start | conn |
+    child | unchild | unconn | up | down`.
     In a vnet jail, strongSwan is the jail's own, installed in it
     (`pkg -r` or **+ packages** for the jail): its key, its
     `swanctl/conf.d` and its `strongswan_enable` are beneath the jail's
