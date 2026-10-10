@@ -39,11 +39,22 @@ static const char *icon_flows = TREE_ICON("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 "
     "0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9");
 static const char *icon_sdwan = TREE_ICON("M5 7a2 2 0 1 0 0-.01M19 7a2 2 0 "
     "1 0 0-.01M12 19a2 2 0 1 0 0-.01M7 7h10M6 9l5 8M18 9l-5 8");
+static const char *icon_gear = TREE_ICON("M12 15a3 3 0 1 0 0-6 3 3 0 0 0 "
+    "0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 "
+    "1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 "
+    "0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 "
+    "0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 "
+    "1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 "
+    "0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 "
+    "1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 "
+    "0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 "
+    "1z");
 static const char *icon_enrol = TREE_ICON("M9 15l6-6M11 6l1-1a4 4 0 0 1 6 "
     "6l-1 1M13 18l-1 1a4 4 0 0 1-6-6l1-1");
 static const char *icon_plus = TREE_ICON("M12 5v14M5 12h14");
 
 static void	topbar(struct html *);
+static void	view_settings(struct html *);
 static void	banner(struct html *);
 static void	install_offer(struct html *);
 static void	rail(struct html *);
@@ -201,12 +212,13 @@ topbar(struct html *h)
 	h_raw(h, "</div><nav class=\"crumbs\">");
 	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
 	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS ||
-	    app.node == NODE_SDWAN)
+	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
 		    app.node == NODE_USAGE ? "Utilization" : app.node ==
 		    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ?
-		    "SD-WAN" : "All hosts");
+		    "SD-WAN" : app.node == NODE_SETTINGS ? "Settings" :
+		    "All hosts");
 	else if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
 		h_txt(h, s->name);
@@ -231,13 +243,9 @@ topbar(struct html *h)
 	link_led(h, "HOST", host, s == NULL ? "No server selected" :
 	    s->failed ? s->error : "arcana-agent answers");
 	h_fmt(h, "</div><button class=\"ghost more%s\" data-act=\"who-toggle\" "
-	    "title=\"Settings, keys, log out\" aria-label=\"Menu\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5h.01M12 12h.01M12 19h.01\"/></svg></button>"
+	    "title=\"Notifications, log out\" aria-label=\"Menu\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5h.01M12 12h.01M12 19h.01\"/></svg></button>"
 	    "<div class=\"who%s\">", app.who_open ? " on" : "", app.who_open ?
 	    " open" : "");
-	h_fmt(h, "<button class=\"ghost%s\" data-act=\"fx\" title=\"Blur and "
-	    "idle animations: %s. Off is lighter on slow browsers; the "
-	    "choice stays in this browser.\">Motion</button>", app.fx ? " on" :
-	    "", app.fx ? "on" : "off");
 	if (app.notify != 3)
 		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
 		    "Notify when a task that took more than ten seconds "
@@ -246,10 +254,7 @@ topbar(struct html *h)
 		    app.notify_off ? "off, press to turn on" : "on, press to "
 		    "turn off" : app.notify == 2 ? "blocked in the browser's "
 		    "settings" : "off, press to allow");
-	h_raw(h, "<button class=\"ghost\" data-act=\"settings\" title=\""
-	    "The console's settings\">Settings</button>"
-	    "<button class=\"ghost\" data-act=\"keys\">Keys</button>"
-	    "<button class=\"ghost\" data-act=\"logout\">Log out</button>"
+	h_raw(h, "<button class=\"ghost\" data-act=\"logout\">Log out</button>"
 	    "</div></header>");
 }
 
@@ -403,7 +408,7 @@ rail(struct html *h)
 	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
 	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
 	    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ? "SD-WAN" :
-	    app.node ==
+	    app.node == NODE_SETTINGS ? "Settings" : app.node ==
 	    NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
@@ -535,7 +540,12 @@ rail(struct html *h)
 				    1 : 0));
 		}
 	}
-	h_raw(h, "</ul>" RESIZER("x", "rail") "</aside>");
+	/* At the foot of the side bar: the console's own settings. */
+	h_fmt(h, "</ul><ul class=\"tree rail-foot\"><li class=\"titem fleet "
+	    "setnode%s\" data-act=\"settings\"><span class=\"twig\">%s"
+	    "</span><span class=\"name\">Settings</span></li></ul>",
+	    app.node == NODE_SETTINGS ? " selected" : "", icon_gear);
+	h_raw(h, RESIZER("x", "rail") "</aside>");
 }
 
 static void
@@ -813,6 +823,12 @@ stage(struct html *h)
 	if (!app.servers_loaded) {
 		h_raw(h, "<div class=\"empty\"><div class=\"loader\"></div>"
 		    "</div></main>");
+		return;
+	}
+	/* Settings are the console's own: there with no host as well. */
+	if (app.node == NODE_SETTINGS) {
+		view_settings(h);
+		h_raw(h, "</main>");
 		return;
 	}
 	if ((s = cur_server()) == NULL) {
@@ -1367,6 +1383,318 @@ static const struct {
 	{ "mint", "Mint" },
 };
 
+/*
+ * Settings, a section of its own: a tab for each part.  What is kept in
+ * this browser (the look), who is told when a task ends, the read-only
+ * API tokens, the keys that sign in, the console's own settings, and
+ * what web.conf alone sets.
+ */
+static const struct {
+	int		 tab;
+	const char	*arg, *title;
+} settabs[] = {
+	{ SET_LOOK, "look", "Look" },
+	{ SET_NOTIFY, "notify", "Notifications" },
+	{ SET_TOKENS, "tokens", "API tokens" },
+	{ SET_KEYS, "keys", "Sign-in keys" },
+	{ SET_CONSOLE, "console", "Console" },
+	{ SET_WEBCONF, "webconf", "web.conf" },
+};
+
+int
+settab_of(const char *arg)
+{
+	size_t	i;
+
+	for (i = 0; i < sizeof(settabs) / sizeof(settabs[0]); i++)
+		if (strcmp(settabs[i].arg, arg) == 0)
+			return (settabs[i].tab);
+	return (SET_LOOK);
+}
+
+static void
+set_look(struct html *h)
+{
+	int	i;
+
+	h_raw(h, "<h3>Theme</h3><div class=\"themes\">");
+	for (i = 0; i < (int)(sizeof(themes) / sizeof(themes[0])); i++)
+		h_fmt(h, "<button type=\"button\" class=\"theme t-%s%s\" "
+		    "data-act=\"theme\" data-arg=\"%s\"><i></i>%s</button>",
+		    themes[i].name[0] != '\0' ? themes[i].name : "graphite",
+		    strcmp(app.theme, themes[i].name) == 0 ? " on" : "",
+		    themes[i].name, themes[i].title);
+	h_fmt(h, "</div><p class=\"dim\">Kept in this browser. Graphite is "
+	    "the default; Tron, Amber, Matrix and Synth are the neon ones, "
+	    "with glow and capitals.</p><h3>Motion</h3><label class=\""
+	    "toggle\"><input type=\"checkbox\" data-act=\"fx\"%s><span>Blur "
+	    "and idle animations <em>off is lighter on slow browsers; kept "
+	    "in this browser</em></span></label>", app.fx ? " checked" : "");
+}
+
+static void
+set_notify(struct html *h)
+{
+	const ucl_object_t	*k;
+	ucl_object_iter_t	 it;
+	char			*here;
+	int			 n;
+
+	h_raw(h, "<p class=\"dim\">A change that ends in one browser is told "
+	    "to the others listed here, open or not. A browser joins when "
+	    "notifications are allowed in it, with <b>Notify</b> in the top "
+	    "bar.</p>");
+	here = arc_push_here();
+	n = 0;
+	it = NULL;
+	h_raw(h, "<ul class=\"keys devices\">");
+	while ((k = ucl_object_iterate(jget(app.push, "devices"), &it,
+	    true)) != NULL) {
+		char when[32];
+
+		n++;
+		h_raw(h, "<li><span class=\"name\">");
+		h_txt(h, jstr(k, "name"));
+		if (jstr(k, "endpoint") != NULL && strcmp(jstr(k, "endpoint"),
+		    here) == 0)
+			h_raw(h, " <em>this one</em>");
+		h_raw(h, "</span><span class=\"dim\">");
+		h_txt(h, jstr(k, "service"));
+		fmt_age(when, sizeof(when), (double)jint(k, "added", 0) * 1000);
+		h_raw(h, " · since ");
+		h_txt(h, when);
+		h_raw(h, "</span><button type=\"button\" class=\"icon\" "
+		    "data-act=\"push-remove\" title=\"Stop telling this "
+		    "device\"");
+		h_attr(h, "data-arg", jstr(k, "endpoint"));
+		h_raw(h, ">×</button></li>");
+	}
+	if (n == 0)
+		h_raw(h, "<li class=\"dim\">No device yet.</li>");
+	h_raw(h, "</ul>");
+	free(here);
+}
+
+static void
+set_tokens(struct html *h)
+{
+	const ucl_object_t	*k;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	h_raw(h, "<p class=\"dim\">For a program to read what the console "
+	    "says of the hosts, with <code>Authorization: Bearer</code>: "
+	    "their jails, network, storage, logs and the rest, and nothing "
+	    "that changes them, nor this console's settings or sign-in. Its "
+	    "value is shown once, when it is made.</p>");
+	if (app.token_value[0] != '\0') {
+		h_raw(h, "<div class=\"notice info\"><b>Copy it now: it is not "
+		    "shown again.</b><pre class=\"out token\">");
+		h_txt(h, app.token_value);
+		h_raw(h, "</pre></div>");
+	}
+	n = 0;
+	it = NULL;
+	h_raw(h, "<ul class=\"keys tokens\">");
+	while ((k = ucl_object_iterate(jget(app.tokens, "tokens"), &it,
+	    true)) != NULL) {
+		char made[32], used[32];
+
+		n++;
+		fmt_age(made, sizeof(made), (double)jint(k, "created", 0) *
+		    1000);
+		fmt_age(used, sizeof(used), (double)jint(k, "last", 0) * 1000);
+		h_raw(h, "<li><span class=\"name\">");
+		h_txt(h, jstr(k, "name"));
+		h_raw(h, "</span><span class=\"dim\">made ");
+		h_txt(h, made);
+		h_raw(h, " · ");
+		if (jint(k, "last", 0) > 0) {
+			h_raw(h, "used ");
+			h_txt(h, used);
+		} else
+			h_raw(h, "never used");
+		h_raw(h, "</span><button type=\"button\" class=\"icon\" "
+		    "data-act=\"token-del\" title=\"Delete it\"");
+		h_attr(h, "data-arg", jstr(k, "id"));
+		h_raw(h, ">×</button></li>");
+	}
+	if (n == 0)
+		h_raw(h, "<li class=\"dim\">No token.</li>");
+	h_raw(h, "</ul><div class=\"token-new\"><input data-input=\""
+	    "token-name\" spellcheck=\"false\" autocomplete=\"off\" "
+	    "maxlength=\"64\" placeholder=\"what will use it\"");
+	h_attr(h, "value", app.token_name);
+	h_raw(h, "><button type=\"button\" class=\"small\" data-act=\""
+	    "token-new\">Make a token</button></div>");
+}
+
+static void
+set_keys(struct html *h)
+{
+	const ucl_object_t	*k;
+	ucl_object_iter_t	 it;
+
+	h_raw(h, "<form data-form=\"add-key\" class=\"set-form\"><ul class=\""
+	    "keys\">");
+	it = NULL;
+	while ((k = ucl_object_iterate(app.keys, &it, true)) != NULL) {
+		char when[32];
+
+		h_raw(h, "<li><span class=\"name\">");
+		h_txt(h, jstr(k, "name"));
+		h_raw(h, "</span><span class=\"dim\">");
+		h_txt(h, jint(k, "alg", 0) == -8 ? "Ed25519" : jint(k, "alg",
+		    0) == -7 ? "ES256" : "RS256");
+		if (jget(k, "last_used") != NULL) {
+			fmt_age(when, sizeof(when), jint(k, "last_used", 0) *
+			    1000.0);
+			h_raw(h, " · used ");
+			h_txt(h, when);
+		}
+		h_raw(h, "</span><button type=\"button\" class=\"icon\" "
+		    "data-act=\"delete-key\" title=\"Remove\"");
+		h_attr(h, "data-arg", jstr(k, "id"));
+		h_raw(h, ">×</button></li>");
+	}
+	h_fmt(h, "</ul><p class=\"dim\">A spare security key, or a passkey: "
+	    "open the console on the phone, log in here once, and register "
+	    "from there.</p><label>Add a spare key<input name=\"name\" "
+	    "placeholder=\"Spare YubiKey, or Pixel\" maxlength=\"64\"></label>"
+	    "<div class=\"actions\"><button class=\"primary\"%s>Register key"
+	    "</button></div></form>", app.modal_busy ? " disabled" : "");
+}
+
+static void
+set_console(struct html *h)
+{
+	const ucl_object_t	*k;
+	ucl_object_iter_t	 it;
+
+	if (app.settings == NULL) {
+		h_raw(h, "<div class=\"loader\"></div>");
+		return;
+	}
+	h_raw(h, "<form data-form=\"settings\" class=\"settings set-form\">"
+	    "<p class=\"dim\">What is set here is kept in <code>");
+	h_txt(h, jstr(app.settings, "file"));
+	h_raw(h, "</code> and takes the place of <code>web.conf</code>'s "
+	    "value; a field put back to that value follows <code>web.conf"
+	    "</code> again.</p>");
+	it = NULL;
+	while ((k = ucl_object_iterate(jget(app.settings, "settings"), &it,
+	    true)) != NULL) {
+		if (!jbool(k, "editable"))
+			continue;
+		if (jstr(k, "type") != NULL && strcmp(jstr(k, "type"),
+		    "bool") == 0) {
+			h_raw(h, "<fieldset class=\"toggles\"><label class=\""
+			    "toggle\"><input type=\"checkbox\"");
+			h_attr(h, "name", jstr(k, "key"));
+			h_raw(h, jstr(k, "value") != NULL && strcmp(jstr(k,
+			    "value"), "true") == 0 ? " checked" : "");
+			h_raw(h, "><span>");
+			h_txt(h, jstr(k, "label"));
+			h_raw(h, " <em>");
+			h_txt(h, jstr(k, "help"));
+			h_raw(h, "</em></span></label></fieldset>");
+			continue;
+		}
+		h_raw(h, "<label>");
+		h_txt(h, jstr(k, "label"));
+		h_raw(h, "<input spellcheck=\"false\" autocomplete=\"off\"");
+		h_attr(h, "name", jstr(k, "key"));
+		h_attr(h, "value", jstr(k, "value"));
+		h_attr(h, "placeholder", jstr(k, "base"));
+		h_raw(h, "><small>");
+		h_txt(h, jstr(k, "help"));
+		if (jbool(k, "overridden")) {
+			h_raw(h, " web.conf says: ");
+			h_txt(h, jstr(k, "base") != NULL && jstr(k, "base")[0] !=
+			    '\0' ? jstr(k, "base") : "nothing");
+			h_raw(h, ".");
+		}
+		h_raw(h, "</small></label>");
+	}
+	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
+	    "</button></div></form>", app.modal_busy ? " disabled" : "");
+}
+
+static void
+set_webconf(struct html *h)
+{
+	const ucl_object_t	*k;
+	ucl_object_iter_t	 it;
+
+	if (app.settings == NULL) {
+		h_raw(h, "<div class=\"loader\"></div>");
+		return;
+	}
+	h_raw(h, "<p class=\"dim\">Every registered key is bound to the "
+	    "relying party and the origin, and these are read once, when the "
+	    "console starts: a wrong value locks everyone out. They are "
+	    "changed in <code>web.conf</code> only.</p><dl class=\"kv\">");
+	it = NULL;
+	while ((k = ucl_object_iterate(jget(app.settings, "settings"), &it,
+	    true)) != NULL) {
+		if (jbool(k, "editable"))
+			continue;
+		h_raw(h, "<dt>");
+		h_txt(h, jstr(k, "label"));
+		h_raw(h, "</dt><dd class=\"mono\">");
+		h_txt(h, jstr(k, "value"));
+		h_raw(h, "</dd>");
+	}
+	h_raw(h, "</dl>");
+}
+
+static void
+view_settings(struct html *h)
+{
+	size_t	i;
+
+	h_raw(h, "<section class=\"setsect\"><div class=\"set-head\"><h2>"
+	    "Settings</h2><span class=\"versions dim\">Arcana console ");
+	h_txt(h, app.version[0] != '\0' ? app.version : "?");
+	if (app.agent_version[0] != '\0') {
+		h_raw(h, " · sends arcana-agent ");
+		h_txt(h, app.agent_version);
+	}
+	h_raw(h, "</span></div><nav class=\"tabs\">");
+	for (i = 0; i < sizeof(settabs) / sizeof(settabs[0]); i++)
+		h_fmt(h, "<button class=\"tab%s\" data-act=\"set-tab\" "
+		    "data-arg=\"%s\">%s</button>", app.settab ==
+		    settabs[i].tab ? " on" : "", settabs[i].arg,
+		    settabs[i].title);
+	h_raw(h, "</nav><div class=\"set-body\">");
+	if (app.modal_error[0] != '\0' && app.modal == MODAL_NONE) {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, app.modal_error);
+		h_raw(h, "</div>");
+	}
+	switch (app.settab) {
+	case SET_NOTIFY:
+		set_notify(h);
+		break;
+	case SET_TOKENS:
+		set_tokens(h);
+		break;
+	case SET_KEYS:
+		set_keys(h);
+		break;
+	case SET_CONSOLE:
+		set_console(h);
+		break;
+	case SET_WEBCONF:
+		set_webconf(h);
+		break;
+	default:
+		set_look(h);
+		break;
+	}
+	h_raw(h, "</div></section>");
+}
+
 static void
 modal(struct html *h)
 {
@@ -1374,7 +1702,6 @@ modal(struct html *h)
 	const ucl_object_t *k;
 	ucl_object_iter_t it;
 	bool		 add, changed;
-	char		*here;
 	int		 i, n;
 
 	if (app.modal == MODAL_NONE)
@@ -1624,170 +1951,6 @@ modal(struct html *h)
 			h_raw(h, "</pre>");
 		}
 		break;
-	case MODAL_SETTINGS:
-		h_raw(h, "<form data-form=\"settings\" class=\"settings\">"
-		    "<h2>Settings</h2><p class=\"versions\">Arcana console ");
-		h_txt(h, app.version[0] != '\0' ? app.version : "?");
-		if (app.agent_version[0] != '\0') {
-			h_raw(h, " · sends arcana-agent ");
-			h_txt(h, app.agent_version);
-		}
-		h_raw(h, "</p><h4>Look</h4><div class=\"themes\">");
-		for (i = 0; i < (int)(sizeof(themes) / sizeof(themes[0])); i++)
-			h_fmt(h, "<button type=\"button\" class=\"theme t-%s%s\" "
-			    "data-act=\"theme\" data-arg=\"%s\"><i></i>%s</button>",
-			    themes[i].name[0] != '\0' ? themes[i].name :
-			    "graphite",
-			    strcmp(app.theme, themes[i].name) == 0 ? " on" : "",
-			    themes[i].name, themes[i].title);
-		h_raw(h, "</div><p class=\"dim\">Kept in this browser.</p>"
-		    "<h4>Notifications</h4><p class=\"dim\">A change that "
-		    "ends in one browser is told to the others listed here, "
-		    "open or not. A browser joins when notifications are "
-		    "allowed in it, with <b>Notify</b> in the top bar.</p>");
-		here = arc_push_here();
-		n = 0;
-		it = NULL;
-		h_raw(h, "<ul class=\"keys devices\">");
-		while ((k = ucl_object_iterate(jget(app.push, "devices"), &it,
-		    true)) != NULL) {
-			char when[32];
-
-			n++;
-			h_raw(h, "<li><span class=\"name\">");
-			h_txt(h, jstr(k, "name"));
-			if (jstr(k, "endpoint") != NULL && strcmp(jstr(k,
-			    "endpoint"), here) == 0)
-				h_raw(h, " <em>this one</em>");
-			h_raw(h, "</span><span class=\"dim\">");
-			h_txt(h, jstr(k, "service"));
-			fmt_age(when, sizeof(when), (double)jint(k, "added",
-			    0) * 1000);
-			h_raw(h, " · since ");
-			h_txt(h, when);
-			h_raw(h, "</span><button type=\"button\" class=\"icon\" "
-			    "data-act=\"push-remove\" title=\"Stop telling this "
-			    "device\"");
-			h_attr(h, "data-arg", jstr(k, "endpoint"));
-			h_raw(h, ">×</button></li>");
-		}
-		if (n == 0)
-			h_raw(h, "<li class=\"dim\">No device yet.</li>");
-		h_raw(h, "</ul>");
-		free(here);
-		/* Read-only API tokens: for a program to look, not to do. */
-		h_raw(h, "<h4>API tokens</h4><p class=\"dim\">For a program to "
-		    "read what the console says of the hosts, with <code>"
-		    "Authorization: Bearer</code>: their jails, network, "
-		    "storage, logs and the rest, and nothing that changes "
-		    "them, nor this console's settings or sign-in. Its value "
-		    "is shown once, when it is made.</p>");
-		if (app.token_value[0] != '\0') {
-			h_raw(h, "<div class=\"notice info\"><b>Copy it now: it is "
-			    "not shown again.</b><pre class=\"out token\">");
-			h_txt(h, app.token_value);
-			h_raw(h, "</pre></div>");
-		}
-		n = 0;
-		it = NULL;
-		h_raw(h, "<ul class=\"keys tokens\">");
-		while ((k = ucl_object_iterate(jget(app.tokens, "tokens"), &it,
-		    true)) != NULL) {
-			char made[32], used[32];
-
-			n++;
-			fmt_age(made, sizeof(made), (double)jint(k, "created", 0) *
-			    1000);
-			fmt_age(used, sizeof(used), (double)jint(k, "last", 0) *
-			    1000);
-			h_raw(h, "<li><span class=\"name\">");
-			h_txt(h, jstr(k, "name"));
-			h_raw(h, "</span><span class=\"dim\">made ");
-			h_txt(h, made);
-			h_raw(h, " · ");
-			if (jint(k, "last", 0) > 0) {
-				h_raw(h, "used ");
-				h_txt(h, used);
-			} else
-				h_raw(h, "never used");
-			h_raw(h, "</span><button type=\"button\" class=\"icon\" "
-			    "data-act=\"token-del\" title=\"Delete it\"");
-			h_attr(h, "data-arg", jstr(k, "id"));
-			h_raw(h, ">×</button></li>");
-		}
-		if (n == 0)
-			h_raw(h, "<li class=\"dim\">No token.</li>");
-		h_raw(h, "</ul><div class=\"token-new\"><input data-input=\""
-		    "token-name\" spellcheck=\"false\" autocomplete=\"off\" "
-		    "maxlength=\"64\" placeholder=\"what will use it\"");
-		h_attr(h, "value", app.token_name);
-		h_raw(h, "><button type=\"button\" class=\"small\" data-act=\""
-		    "token-new\">Make a token</button></div>");
-		h_raw(h, "<h4>Console</h4>");
-		if (app.settings == NULL) {
-			h_raw(h, "<div class=\"loader\"></div>");
-			break;
-		}
-		h_raw(h, "<p>What is set here is kept in <code>");
-		h_txt(h, jstr(app.settings, "file"));
-		h_raw(h, "</code> and takes the place of <code>web.conf</code>"
-		    "'s value; a field put back to that value follows "
-		    "<code>web.conf</code> again.</p>");
-		it = NULL;
-		while ((k = ucl_object_iterate(jget(app.settings, "settings"),
-		    &it, true)) != NULL) {
-			if (!jbool(k, "editable"))
-				continue;
-			if (jstr(k, "type") != NULL && strcmp(jstr(k, "type"),
-			    "bool") == 0) {
-				h_raw(h, "<fieldset class=\"toggles\"><label "
-				    "class=\"toggle\"><input type=\"checkbox\"");
-				h_attr(h, "name", jstr(k, "key"));
-				h_raw(h, jstr(k, "value") != NULL && strcmp(jstr(k,
-				    "value"), "true") == 0 ? " checked" : "");
-				h_raw(h, "><span>");
-				h_txt(h, jstr(k, "label"));
-				h_raw(h, " <em>");
-				h_txt(h, jstr(k, "help"));
-				h_raw(h, "</em></span></label></fieldset>");
-				continue;
-			}
-			h_raw(h, "<label>");
-			h_txt(h, jstr(k, "label"));
-			h_raw(h, "<input spellcheck=\"false\" "
-			    "autocomplete=\"off\"");
-			h_attr(h, "name", jstr(k, "key"));
-			h_attr(h, "value", jstr(k, "value"));
-			h_attr(h, "placeholder", jstr(k, "base"));
-			h_raw(h, "><small>");
-			h_txt(h, jstr(k, "help"));
-			if (jbool(k, "overridden")) {
-				h_raw(h, " web.conf says: ");
-				h_txt(h, jstr(k, "base") != NULL && jstr(k,
-				    "base")[0] != '\0' ? jstr(k, "base") :
-				    "nothing");
-				h_raw(h, ".");
-			}
-			h_raw(h, "</small></label>");
-		}
-		h_raw(h, "<h4>Set in web.conf only</h4><p class=\"dim\">Every "
-		    "registered key is bound to the relying party and the "
-		    "origin, and these are read once, when the console "
-		    "starts: a wrong value locks everyone out.</p>"
-		    "<dl class=\"kv\">");
-		it = NULL;
-		while ((k = ucl_object_iterate(jget(app.settings, "settings"),
-		    &it, true)) != NULL) {
-			if (jbool(k, "editable"))
-				continue;
-			h_raw(h, "<dt>");
-			h_txt(h, jstr(k, "label"));
-			h_raw(h, "</dt><dd class=\"mono\">");
-			h_txt(h, jstr(k, "value"));
-			h_raw(h, "</dd>");
-		}
-		h_raw(h, "</dl>");
-		break;
 	case MODAL_AGENT_UPDATE:
 		h_raw(h, "<form data-form=\"agent-update\"><h2>Update "
 		    "arcana-agent</h2><p>The console sends its arcana-agent");
@@ -1846,36 +2009,6 @@ modal(struct html *h)
 			h_txt(h, app.preview);
 			h_raw(h, "</pre>");
 		}
-		break;
-	case MODAL_KEYS:
-		h_raw(h, "<form data-form=\"add-key\"><h2>Security keys</h2>"
-		    "<ul class=\"keys\">");
-		it = NULL;
-		while ((k = ucl_object_iterate(app.keys, &it, true)) != NULL) {
-			char when[32];
-
-			h_raw(h, "<li><span class=\"name\">");
-			h_txt(h, jstr(k, "name"));
-			h_raw(h, "</span><span class=\"dim\">");
-			h_txt(h, jint(k, "alg", 0) == -8 ? "Ed25519" :
-			    jint(k, "alg", 0) == -7 ? "ES256" : "RS256");
-			if (jget(k, "last_used") != NULL) {
-				fmt_age(when, sizeof(when),
-				    jint(k, "last_used", 0) * 1000.0);
-				h_raw(h, " · used ");
-				h_txt(h, when);
-			}
-			h_raw(h, "</span><button type=\"button\" "
-			    "class=\"icon\" data-act=\"delete-key\" "
-			    "title=\"Remove\"");
-			h_attr(h, "data-arg", jstr(k, "id"));
-			h_raw(h, ">×</button></li>");
-		}
-		h_raw(h, "</ul><p class=\"dim\">A spare security key, or a "
-		    "passkey: open the console on the phone, log in here once, "
-		    "and register from there.</p><label>Add a spare key<input "
-		    "name=\"name\" placeholder=\"Spare YubiKey, or Pixel\" "
-		    "maxlength=\"64\"></label>");
 		break;
 	case MODAL_RAW:
 		view_trace(h, NULL);
@@ -1961,21 +2094,12 @@ modal(struct html *h)
 			    "host_keys") == NULL ? "Build again" :
 			    "Trust these keys and build");
 			break;
-		case MODAL_SETTINGS:
-			h_fmt(h, "<button class=\"primary\"%s>Save</button>",
-			    app.modal_busy || app.settings == NULL ?
-			    " disabled" : "");
-			break;
 		case MODAL_ADDRESS:
 			h_fmt(h, "<button class=\"ghost\" value=\"preview\"%s>"
 			    "Preview</button><button class=\"primary\" "
 			    "value=\"apply\"%s>Apply</button>",
 			    app.modal_busy ? " disabled" : "",
 			    app.modal_busy ? " disabled" : "");
-			break;
-		case MODAL_KEYS:
-			h_fmt(h, "<button class=\"primary\"%s>Register "
-			    "key</button>", app.modal_busy ? " disabled" : "");
 			break;
 		default:
 			break;

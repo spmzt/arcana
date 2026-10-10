@@ -1277,13 +1277,26 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.rail_open = !app.rail_open;
 	} else if (strcmp(act, "who-toggle") == 0) {
 		app.who_open = !app.who_open;
-	} else if (strcmp(act, "settings") == 0) {
-		app.modal = MODAL_SETTINGS;
+	} else if (strcmp(act, "settings") == 0 || strcmp(act, "keys") == 0 ||
+	    strcmp(act, "set-tab") == 0) {
+		/* Settings, a section: opened at its first tab, or one named. */
+		if (app.node != NODE_SETTINGS) {
+			app.node = NODE_SETTINGS;
+			app.jail[0] = '\0';
+			app.rail_open = false;
+			app.who_open = false;
+			app.settab = SET_LOOK;
+			load_settings();
+			load_tokens();
+			load_keys();
+		}
+		if (strcmp(act, "keys") == 0)
+			app.settab = SET_KEYS;
+		else if (strcmp(act, "set-tab") == 0)
+			app.settab = settab_of(arg);
 		app.modal_error[0] = '\0';
-		/* A token's value is shown once: not again on reopening. */
+		/* A token's value is shown once: not again on another tab. */
 		app.token_value[0] = '\0';
-		load_settings();
-		load_tokens();
 	} else if (strcmp(act, "input:token-name") == 0) {
 		snprintf(app.token_name, sizeof(app.token_name), "%s", value);
 	} else if (strcmp(act, "token-new") == 0) {
@@ -1294,16 +1307,11 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "Delete", true, "", "do-token-del", arg, "");
 	} else if (strcmp(act, "do-token-del") == 0) {
 		token_del(arg);
-	} else if (strcmp(act, "keys") == 0) {
-		app.modal = MODAL_KEYS;
-		app.modal_error[0] = '\0';
-		load_keys();
 	} else if (strcmp(act, "delete-key") == 0) {
 		confirm("Remove security key", "This key will no longer log "
 		    "in. The last key cannot be removed.", "Remove", true, "",
 		    "do-delete-key", arg, "");
 	} else if (strcmp(act, "do-delete-key") == 0) {
-		app.modal = MODAL_KEYS;
 		delete_key(arg);
 	} else if (strcmp(act, "servers-again") == 0) {
 		refresh_servers();

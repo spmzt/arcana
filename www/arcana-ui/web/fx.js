@@ -22,7 +22,18 @@ try {
  * are for the others.
  */
 try {
-	var arcTheme = localStorage.getItem("arc_theme");
+	var arcTheme;
+
+	/*
+	 * Graphite became the default after other themes were kept as
+	 * one: every browser is moved to it once, and keeps what is
+	 * picked after.
+	 */
+	if (localStorage.getItem("arc_theme_v") !== "2") {
+		localStorage.removeItem("arc_theme");
+		localStorage.setItem("arc_theme_v", "2");
+	}
+	arcTheme = localStorage.getItem("arc_theme");
 
 	if (arcTheme)
 		document.documentElement.dataset.theme = arcTheme;

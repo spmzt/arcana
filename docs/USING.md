@@ -754,7 +754,11 @@ The console is laid out as a tree and tabs.
 - The tree, the activity bar, the list of tasks in it and the service
   drawer are resized by dragging their edge; the browser keeps the
   sizes, and a double click on the edge goes back to the usual one.
-- **Settings** has **API tokens**: read-only tokens for a program to
+- **Settings** is a section of its own, at the foot of the tree, with
+  a tab for each part: **Look**, **Notifications**, **API tokens**,
+  **Sign-in keys**, **Console** and **web.conf**. It opens with no host
+  as well.
+- **Settings**, **API tokens**: read-only tokens for a program to
   look at the hosts through the API without a passkey, sent as
   `Authorization: Bearer arcr_…`. One is made with a name and its
   value is shown that once; the console keeps only its SHA-256, and
@@ -774,29 +778,30 @@ The console is laid out as a tree and tabs.
   as: glow, a display face, capitals spaced out. The one picked takes
   at once and is kept in that browser. A theme is a set of colours in
   `web/style.css` (`html[data-theme="…"]`): the accent, the surfaces
-  and the text, which everything else is drawn from. **Motion** in the
-  top bar turns the blur and the idle animations off or on.
+  and the text, which everything else is drawn from. A browser that
+  kept another theme before Graphite was the default is moved to
+  Graphite once. **Motion**, under **Look** too, turns the blur and the
+  idle animations off or on.
 - On a phone the tree is one line under the top bar, showing what is
   selected; a tap unfolds it, and picking something folds it again. The
   top bar's buttons are a row of their own, tables scroll inside
   themselves, and notifications appear above the activity bar.
-- **Settings** in the top bar changes the console's own settings: the
+- **Settings**, **Console**, changes the console's own settings: the
   name keys show, the release check and its feed, the `arcana-agent` it
   sends, and the repository and branch a host builds it from. They are
   kept in `settings.json` in the data directory and override `web.conf`;
   a field put back to `web.conf`'s value follows it again. The relying
   party, the origin, the data directory and the certificates are shown
-  there and changed only in `web.conf`: keys are bound to the first two,
+  under **web.conf** and changed only there: keys are bound to the first two,
   and all are read once, at the start. Whoever can log in can set the
   repository, and so decides what is built and sent to every host as
   root.
-- In the top bar: **FX** turns the blur and idle animations off for this
-  browser, **Notify** allows a notification when a task that
+- In the top bar: **Notify** allows a notification when a task that
   took more than ten seconds ends, and has this browser told of changes
   made in the others (below); once the browser has allowed them, the
   same button turns them off and on again for this browser, which also
-  stops what is pushed to it. **Keys** manages security keys and
-  passkeys.
+  stops what is pushed to it. **Settings**, **Sign-in keys**, manages
+  security keys and passkeys.
 - **Notifications on other devices**: a change asked for in one browser
   is told, when it ends, to every other browser where **Notify** was
   allowed, whether or not the console is open there: the phone hears of
@@ -808,7 +813,8 @@ The console is laid out as a tree and tabs.
   (VAPID; `vapid.pem` in the data directory). The push service sees who
   sends and to whom, not what. The console must be able to reach those
   services over HTTPS, port 443, and the page must be served over HTTPS
-  for a browser to subscribe. **Settings** lists the devices
+  for a browser to subscribe. **Settings**, **Notifications**, lists the
+  devices
   (`push.json`) and removes one; a device whose browser dropped the
   subscription is forgotten by itself. Up to 16 devices.
 

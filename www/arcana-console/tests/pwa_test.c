@@ -446,36 +446,55 @@ ATF_TC_BODY(pwa, tc)
 	    "auth: 'BTBZMqHH6r4Tts7J_aSIgg', name: 'Chrome on Android' }) })"
 	    ".then(r => { window.subbed = r.ok; });");
 	wait_js("window.subbed", 10);
-	run("document.querySelector('button[data-act=settings]').click()");
-	wait_js("document.querySelector('form[data-form=settings] "
-	    "input[name=agent_source]')", 10);
-	ATF_CHECK(js_true("document.querySelector('form.settings dl.kv')."
-	    "textContent.includes('localhost')"));
+	/*
+	 * Settings, a section at the foot of the side bar, a tab for each
+	 * part; the top bar has no Settings or Keys any more.
+	 */
+	ATF_CHECK(!js_true("document.querySelector('header button[data-act="
+	    "settings]') || document.querySelector('header button[data-act="
+	    "keys]')"));
+	run("document.querySelector('.rail-foot li[data-act=settings]')"
+	    ".click()");
+	wait_js("document.querySelector('section.setsect button.tab.on"
+	    "[data-arg=look]') && document.querySelector('.crumb.place')"
+	    ".textContent === 'Settings'", 10);
+	run("document.querySelector('button[data-act=set-tab][data-arg="
+	    "webconf]').click()");
+	wait_js("document.querySelector('section.setsect dl.kv') && document."
+	    "querySelector('section.setsect dl.kv').textContent.includes("
+	    "'localhost')", 10);
 	/* A device that subscribed to be told of tasks is listed, and
 	 * taken off with its cross. */
+	run("document.querySelector('button[data-act=set-tab][data-arg="
+	    "notify]').click()");
 	wait_js("document.querySelector('ul.devices li .name') && document."
 	    "querySelector('ul.devices').textContent.includes('Chrome on "
 	    "Android')", 10);
 	ATF_CHECK(js_true("document.querySelector('ul.devices').textContent"
 	    ".includes('push.example.org')"));
-	/*
-	 * What is typed in a field stays there when the box is drawn
-	 * again under it, as it is when the list of devices changes or
-	 * their age does: the key's path typed first is still there when
-	 * the form is sent, and is what the console keeps.
-	 */
-	run("const f = document.querySelector('form[data-form=settings]'); "
-	    "f.agent_ssh_key.value = '/usr/local/etc/arcana/id_ed25519'; "
-	    "f.update_check.checked = !f.update_check.checked; "
-	    "window.wasChecked = f.update_check.checked;");
 	run("document.querySelector('ul.devices button[data-act=push-remove]')"
 	    ".click()");
 	wait_js("document.querySelector('ul.devices').textContent.includes("
 	    "'No device yet')", 10);
+	/*
+	 * What is typed in a field stays there when the page is drawn
+	 * again under it: the key's path typed first is still there when
+	 * the form is sent, and is what the console keeps.
+	 */
+	run("document.querySelector('button[data-act=set-tab][data-arg="
+	    "console]').click()");
+	wait_js("document.querySelector('form[data-form=settings] "
+	    "input[name=agent_source]')", 10);
+	run("const f = document.querySelector('form[data-form=settings]'); "
+	    "f.agent_ssh_key.value = '/usr/local/etc/arcana/id_ed25519'; "
+	    "f.update_check.checked = !f.update_check.checked; "
+	    "window.wasChecked = f.update_check.checked; "
+	    "window.dispatchEvent(new Event('resize'));");
+	usleep(300000);
 	ATF_CHECK_MSG(js_true("document.querySelector('form[data-form="
 	    "settings]').agent_ssh_key.value === "
 	    "'/usr/local/etc/arcana/id_ed25519'"), "what was typed was lost "
-	    "when the box was drawn again");
+	    "when the page was drawn again");
 	ATF_CHECK(js_true("document.querySelector('form[data-form=settings]')"
 	    ".update_check.checked === window.wasChecked"));
 	shot("0a-settings");
@@ -483,14 +502,19 @@ ATF_TC_BODY(pwa, tc)
 	    "f.update_check.checked = !f.update_check.checked; "
 	    "f.agent_source.value = 'git@git.example.org:me/arcana.git'; "
 	    "f.requestSubmit();");
-	wait_js("!document.querySelector('form[data-form=settings]') && "
-	    "[...document.querySelectorAll('.toast')].some(t => "
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('Settings saved'))", 10);
 	ATF_CHECK(system("grep -q '/usr/local/etc/arcana/id_ed25519' "
 	    "data/settings.json") == 0);
+	/* The keys that sign in, a tab of their own. */
+	run("document.querySelector('button[data-act=set-tab][data-arg=keys]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
+	    ".name')", 10);
 	/* A read-only API token: made with a name in the settings, its
 	 * value shown once, listed, and deleted once confirmed. */
-	run("document.querySelector('button[data-act=settings]').click()");
+	run("document.querySelector('button[data-act=set-tab][data-arg="
+	    "tokens]').click()");
 	wait_js("document.querySelector('input[data-input=token-name]')", 10);
 	run("const i = document.querySelector('input[data-input=token-name]'); "
 	    "i.value = 'overlay planner'; i.dispatchEvent(new Event('input', "
@@ -512,6 +536,8 @@ ATF_TC_BODY(pwa, tc)
 	    "data/tokens.json") == 0; i++)
 		usleep(50000);
 	ATF_CHECK(system("! grep -q 'overlay planner' data/tokens.json") == 0);
+	run("document.querySelector('li[data-act=select-fleet]').click()");
+	wait_js("!document.querySelector('section.setsect')", 10);
 	/* There is no such key here: the builds below use the host's own. */
 	run("window.unset = false; fetch('/api/settings', { method: 'POST', "
 	    "headers: { 'Content-Type': 'application/json', 'X-Arcana': '1' }, "
@@ -1264,8 +1290,11 @@ ATF_TC_BODY(pwa, tc)
 	usleep(500000);
 	shot("m7-activity");
 	run("document.querySelector('.dock > header').click()");
-	run("document.querySelector('button[data-act=settings]').click()");
-	wait_js("document.querySelector('form[data-form=settings] input')", 10);
+	run("document.querySelector('.rail-foot li[data-act=settings]')"
+	    ".click()");
+	wait_js("document.querySelector('section.setsect .themes') && "
+	    "document.documentElement.scrollWidth <= window.innerWidth + 1",
+	    10);
 	shot("m8-settings");
 	/* A theme is picked there, takes at once, and is kept. */
 	run("document.querySelector('button.theme[data-arg=amber]').click()");
@@ -1324,8 +1353,25 @@ ATF_TC_BODY(pwa, tc)
 	usleep(500000);
 	ATF_CHECK(js_true("!document.documentElement.dataset.theme"));
 	shot("m10a-phone-default");
+	/* A theme kept from before Graphite was the default: moved to it
+	 * once; one picked after that stays. */
+	run("localStorage.setItem('arc_theme', 'tron'); localStorage."
+	    "removeItem('arc_theme_v'); const s = document.createElement("
+	    "'script'); s.src = '/fx.js?once'; document.head.appendChild(s);");
+	usleep(500000);
+	ATF_CHECK(js_true("!document.documentElement.dataset.theme && "
+	    "localStorage.getItem('arc_theme') === null && localStorage."
+	    "getItem('arc_theme_v') === '2'"));
+	run("localStorage.setItem('arc_theme', 'amber'); const s = document."
+	    "createElement('script'); s.src = '/fx.js?kept'; document.head."
+	    "appendChild(s);");
+	usleep(500000);
+	ATF_CHECK(js_true("document.documentElement.dataset.theme === "
+	    "'amber'"));
+	run("localStorage.removeItem('arc_theme')");
 	run("delete document.documentElement.dataset.theme");
-	run("document.querySelector('.modal button[data-act=close]').click()");
+	run("document.querySelector('li[data-act=select-fleet]').click()");
+	wait_js("document.querySelector('.hosts .hostcard')", 10);
 	run("document.querySelector('.hosts .hostcard').click()");
 	phone(false);
 

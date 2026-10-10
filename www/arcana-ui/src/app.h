@@ -141,6 +141,7 @@ enum node {
 	NODE_USAGE,		/* how busy every host has been, drawn */
 	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
 	NODE_SDWAN,		/* SD-WAN services, as MEF 70.2 says them */
+	NODE_SETTINGS,		/* the console's settings, a tab each */
 };
 
 enum tab {
@@ -383,6 +384,7 @@ struct app {
 	char		 jail[256];	/* open in the drawer, or "" */
 	char		 net_jail[256];	/* whose network the tab shows: a vnet jail, or "" the host */
 	int		 netsect;	/* the Network section's tab: NETSECT_* */
+	int		 settab;	/* the Settings section's tab: SET_* */
 	char		 filter[64];
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
@@ -664,6 +666,10 @@ void		 workflows_open(void);
 void		 workflows_tick(double);
 void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
+/* view.c: the settings' tabs. */
+enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
+    SET_WEBCONF };
+int		 settab_of(const char *);
 /* sdwan.c: the SD-WAN services the console keeps. */
 void		 sdwan_open(void);
 void		 sdwan_tick(double);

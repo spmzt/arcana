@@ -4440,3 +4440,22 @@ table.net.sd .pmap { white-space: nowrap; }
 	table.net.sd .pmap { white-space: normal; }
 	.sd-doc textarea { min-height: 60vh; }
 }
+
+/* Settings, a section: its tabs, each part one form wide. */
+.tree.rail-foot { flex: none; overflow: visible; border-top: 1px solid var(--line); padding-top: .4rem; padding-bottom: .5rem; }
+.titem.setnode .twig { color: var(--fg-2); }
+section.setsect { display: flex; flex-direction: column; gap: .9rem; max-width: 52rem; }
+section.setsect .set-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: .4rem 1rem; }
+section.setsect .set-head h2 { margin: 0; font-size: 1.1rem; }
+section.setsect .versions { font-size: .78rem; }
+section.setsect nav.tabs { margin-bottom: 0; }
+section.setsect .set-body { display: flex; flex-direction: column; gap: .7rem; }
+section.setsect h3 { margin: .4rem 0 0; font-size: .9rem; }
+section.setsect .set-form { display: flex; flex-direction: column; gap: .7rem; }
+section.setsect .set-form label { display: flex; flex-direction: column; gap: .25rem; }
+section.setsect .set-form label.toggle { flex-direction: row; }
+section.setsect .set-form label small { color: var(--dim); font-size: .74rem; }
+section.setsect .actions { display: flex; gap: .5rem; }
+section.setsect dl.kv { font-size: .8rem; }
+section.setsect .token-new { display: flex; gap: .5rem; flex-wrap: wrap; }
+section.setsect .token-new input { flex: 1; min-width: 12rem; }
