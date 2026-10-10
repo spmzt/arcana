@@ -1435,8 +1435,7 @@ main(void)
 	{
 		char *t = arc_theme_get();
 
-		snprintf(app.theme, sizeof(app.theme), "%s", strcmp(t,
-		    "tron") == 0 ? "" : t);
+		snprintf(app.theme, sizeof(app.theme), "%s", t);
 		free(t);
 	}
 	app.trace_schema = true;

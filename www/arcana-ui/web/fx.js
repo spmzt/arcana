@@ -16,18 +16,17 @@ try {
 	document.documentElement.classList.add("fx");
 }
 
-/* The theme chosen in this browser; none is the default one. */
+/*
+ * The theme chosen in this browser; none is the default one, Graphite.
+ * Those of glow and capitals are "neon": the stylesheet's plain rules
+ * are for the others.
+ */
 try {
 	var arcTheme = localStorage.getItem("arc_theme");
 
-	/*
-	 * On a phone, where nothing was chosen, the plain one: glow and
-	 * a display face are much on a small screen.  Tron chosen there
-	 * is kept as "tron", which the stylesheet has no rules for.
-	 */
 	if (arcTheme)
 		document.documentElement.dataset.theme = arcTheme;
-	else if (window.matchMedia("(max-width: 620px)").matches)
-		document.documentElement.dataset.theme = "slate";
+	if (/^(tron|amber|matrix|synth)$/.test(arcTheme || ""))
+		document.documentElement.classList.add("neon");
 } catch (e) {
 }

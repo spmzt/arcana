@@ -761,12 +761,19 @@ The console is laid out as a tree and tabs.
   read the console's settings, sign-in, push or enrolment. Deleted, it
   opens nothing at once.
 - **Settings** has the console's version, and under **Look** its
-  themes: Tron, Amber, Matrix, Synth, Slate, Onyx (black, white and one
-  red, in a plain face, without glow) and the light ones: Paper,
-  the warm Sand, the cool Mist and the green Mint. The one
-  picked takes at once and is kept in that browser. A theme is a set of
-  colours in `web/style.css` (`html[data-theme="…"]`): the accent, the
-  surfaces and the text, which everything else is drawn from.
+  themes. **Graphite**, the default everywhere, is calm: surfaces of
+  one hue, one blue for what can be acted on, green, amber and red for
+  how things are, a plain face for reading and the fixed one for what
+  is read character by character (addresses, keys, code), words as they
+  are written and nothing glowing. Slate, Onyx (black, white and one
+  red) and the light ones, Paper, the warm Sand, the cool Mist and the
+  green Mint, are drawn the same way in their colours. The neon ones,
+  Tron, Amber, Matrix and Synth, are the console on a dark grid it began
+  as: glow, a display face, capitals spaced out. The one picked takes
+  at once and is kept in that browser. A theme is a set of colours in
+  `web/style.css` (`html[data-theme="…"]`): the accent, the surfaces
+  and the text, which everything else is drawn from. **Motion** in the
+  top bar turns the blur and the idle animations off or on.
 - On a phone the tree is one line under the top bar, showing what is
   selected; a tap unfolds it, and picking something folds it again. The
   top bar's buttons are a row of their own, tables scroll inside
@@ -823,8 +830,10 @@ The console is laid out as a tree and tabs.
   along the top and the legend one along the foot, each scrolled
   sideways, and **Arrange** puts the hosts on a tall ellipse that the
   screen holds.
-- On a phone that has no theme chosen the plain **Slate** is used;
-  Tron and the others are chosen in Settings as anywhere.
+- Choices of one kind (the views of a tab, a family, a range of time)
+  are one joined row that does not break into a grid, and scrolls
+  sideways where there is no room; a page's tabs too. A table row with
+  more than three actions shows two and **…**, which shows the rest.
 - **Every table's columns** are as wide as their borders are dragged
   in the head; a double click on a border lets the column be as wide
   as what is in it again. A box with a mark before its name (a

@@ -26,6 +26,20 @@ static const char *icon_key =
 static const char *icon_refresh =
     "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 12a8 8 "
     "0 1 1-2.3-5.7M20 4v4h-4\"/></svg>";
+/* The tree's own nodes, and its head's buttons: drawn, not glyphs a
+ * face may lack. */
+#define	TREE_ICON(d)	"<svg class=\"ti\" viewBox=\"0 0 24 24\" " \
+    "aria-hidden=\"true\"><path d=\"" d "\"/></svg>"
+static const char *icon_hosts = TREE_ICON("M4 5h16v5H4zM4 14h16v5H4zM7 "
+    "7.5h.01M7 16.5h.01");
+static const char *icon_network = TREE_ICON("M12 4v6M12 10l-6 7M12 10l6 "
+    "7M10 2h4v4h-4zM4 17h4v4H4zM16 17h4v4h-4z");
+static const char *icon_usage = TREE_ICON("M3 12h4l3-7 4 14 3-7h4");
+static const char *icon_flows = TREE_ICON("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 "
+    "0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9");
+static const char *icon_enrol = TREE_ICON("M9 15l6-6M11 6l1-1a4 4 0 0 1 6 "
+    "6l-1 1M13 18l-1 1a4 4 0 0 1-6-6l1-1");
+static const char *icon_plus = TREE_ICON("M12 5v14M5 12h14");
 
 static void	topbar(struct html *);
 static void	banner(struct html *);
@@ -213,12 +227,12 @@ topbar(struct html *h)
 	link_led(h, "HOST", host, s == NULL ? "No server selected" :
 	    s->failed ? s->error : "arcana-agent answers");
 	h_fmt(h, "</div><button class=\"ghost more%s\" data-act=\"who-toggle\" "
-	    "title=\"Settings, keys, log out\" aria-label=\"Menu\">⋮</button>"
+	    "title=\"Settings, keys, log out\" aria-label=\"Menu\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 5h.01M12 12h.01M12 19h.01\"/></svg></button>"
 	    "<div class=\"who%s\">", app.who_open ? " on" : "", app.who_open ?
 	    " open" : "");
 	h_fmt(h, "<button class=\"ghost%s\" data-act=\"fx\" title=\"Blur and "
 	    "idle animations: %s. Off is lighter on slow browsers; the "
-	    "choice stays in this browser.\">FX</button>", app.fx ? " on" :
+	    "choice stays in this browser.\">Motion</button>", app.fx ? " on" :
 	    "", app.fx ? "on" : "off");
 	if (app.notify != 3)
 		h_fmt(h, "<button class=\"ghost%s\" data-act=\"notify\" title=\""
@@ -393,22 +407,26 @@ rail(struct html *h)
 	}
 	h_raw(h, "</button>"
 	    "<span class=\"label\">Fleet</span>"
-	    "<button class=\"icon\" data-act=\"enrol\" title=\"Enrol a host\">"
-	    "⇄</button><button class=\"icon\" data-act=\"add-server\" "
-	    "title=\"Add a server\">+</button></div><ul class=\"tree\">");
+	    "<button class=\"icon\" data-act=\"enrol\" title=\"Enrol a host\">");
+	h_raw(h, icon_enrol);
+	h_raw(h, "</button><button class=\"icon\" data-act=\"add-server\" "
+	    "title=\"Add a server\">");
+	h_raw(h, icon_plus);
+	h_raw(h, "</button></div><ul class=\"tree\">");
 	h_fmt(h, "<li class=\"titem fleet%s\" data-act=\"select-fleet\">"
-	    "<span class=\"twig\">◈</span><span class=\"name\">All hosts</span>"
+	    "<span class=\"twig\">%s</span><span class=\"name\">All hosts</span>"
 	    "<span class=\"count\">%d</span></li>"
 	    "<li class=\"titem fleet netnode%s\" data-act=\"select-network\">"
-	    "<span class=\"twig\">⌬</span><span class=\"name\">Network</span>"
+	    "<span class=\"twig\">%s</span><span class=\"name\">Network</span>"
 	    "</li><li class=\"titem fleet usagenode%s\" data-act=\""
-	    "select-usage\"><span class=\"twig\">◔</span><span class=\"name\">"
+	    "select-usage\"><span class=\"twig\">%s</span><span class=\"name\">"
 	    "Utilization</span></li><li class=\"titem fleet wfnode%s\" "
-	    "data-act=\"select-workflows\"><span class=\"twig\">⛓</span>"
+	    "data-act=\"select-workflows\"><span class=\"twig\">%s</span>"
 	    "<span class=\"name\">Workflows</span></li>", app.node ==
-	    NODE_FLEET ? " selected" : "", app.nservers, app.node ==
-	    NODE_NETWORK ? " selected" : "", app.node == NODE_USAGE ?
-	    " selected" : "", app.node == NODE_WORKFLOWS ? " selected" : "");
+	    NODE_FLEET ? " selected" : "", icon_hosts, app.nservers,
+	    app.node == NODE_NETWORK ? " selected" : "", icon_network,
+	    app.node == NODE_USAGE ? " selected" : "", icon_usage,
+	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows);
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
@@ -558,37 +576,40 @@ hostbar(struct html *h, struct server *s)
 			h_txt(h, jstr(host, "version"));
 			h_raw(h, "</span>");
 		}
-		if (agent_outdated(s)) {
-			h_raw(h, "<button class=\"ghost small\" "
-			    "data-act=\"agent-update\"");
-			h_attr(h, "data-arg", s->id);
-			h_raw(h, " title=\"Send this host the console's "
-			    "arcana-agent\">Update agent</button>");
-		}
-		if (app.agent_source[0] != '\0') {
-			h_raw(h, "<button class=\"ghost small\" "
-			    "data-act=\"agent-build\"");
-			h_attr(h, "title", app.agent_source);
-			h_raw(h, ">Build agent here</button>");
-			/* The console's own update: on the host it runs
-			 * on, which is the one reached by a local socket. */
-			if (strncmp(s->uri, "unix:", 5) == 0) {
-				h_raw(h, "<button class=\"ghost small\" "
-				    "data-act=\"console-update\"");
-				h_attr(h, "title", app.agent_source);
-				h_raw(h, ">Update console</button>");
-			}
-		}
 	} else {
 		h_raw(h, "<span>");
 		h_txt(h, s->uri);
 		h_raw(h, "</span>");
 	}
-	h_raw(h, "</div></div><div class=\"freshness\">");
+	h_raw(h, "</div></div>");
+	/* What is done to Arcana itself on this host: apart, at the right. */
+	h_raw(h, "<div class=\"host-actions\">");
+	if (host != NULL && agent_outdated(s)) {
+		h_raw(h, "<button class=\"small primary\" "
+		    "data-act=\"agent-update\"");
+		h_attr(h, "data-arg", s->id);
+		h_raw(h, " title=\"Send this host the console's "
+		    "arcana-agent\">Update agent</button>");
+	}
+	if (host != NULL && app.agent_source[0] != '\0') {
+		h_raw(h, "<button class=\"ghost small\" "
+		    "data-act=\"agent-build\"");
+		h_attr(h, "title", app.agent_source);
+		h_raw(h, ">Build agent here</button>");
+		/* The console's own update: on the host it runs on, which
+		 * is the one reached by a local socket. */
+		if (strncmp(s->uri, "unix:", 5) == 0) {
+			h_raw(h, "<button class=\"ghost small\" "
+			    "data-act=\"console-update\"");
+			h_attr(h, "title", app.agent_source);
+			h_raw(h, ">Update console</button>");
+		}
+	}
+	h_raw(h, "</div><div class=\"freshness\">");
 	if (s->list != NULL) {
 		fmt_age(age, sizeof(age), s->fetched);
 		h_fmt(h, "<span class=\"age%s\">", stale(s) ? " stale" : "");
-		h_raw(h, stale(s) ? "STALE · " : "");
+		h_raw(h, stale(s) ? "stale · " : "");
 		h_txt(h, age);
 		h_raw(h, "</span>");
 	}
@@ -1326,7 +1347,8 @@ dock(struct html *h)
 static const struct {
 	const char	*name, *title;
 } themes[] = {
-	{ "", "Tron" }, { "amber", "Amber" }, { "matrix", "Matrix" },
+	{ "", "Graphite" }, { "tron", "Tron" }, { "amber", "Amber" },
+	{ "matrix", "Matrix" },
 	{ "synth", "Synth" }, { "slate", "Slate" }, { "onyx", "Onyx" },
 	{ "paper", "Paper" }, { "sand", "Sand" }, { "mist", "Mist" },
 	{ "mint", "Mint" },
@@ -1601,7 +1623,8 @@ modal(struct html *h)
 		for (i = 0; i < (int)(sizeof(themes) / sizeof(themes[0])); i++)
 			h_fmt(h, "<button type=\"button\" class=\"theme t-%s%s\" "
 			    "data-act=\"theme\" data-arg=\"%s\"><i></i>%s</button>",
-			    themes[i].name[0] != '\0' ? themes[i].name : "tron",
+			    themes[i].name[0] != '\0' ? themes[i].name :
+			    "graphite",
 			    strcmp(app.theme, themes[i].name) == 0 ? " on" : "",
 			    themes[i].name, themes[i].title);
 		h_raw(h, "</div><p class=\"dim\">Kept in this browser.</p>"

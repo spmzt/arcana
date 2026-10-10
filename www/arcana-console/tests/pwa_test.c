@@ -1304,18 +1304,25 @@ ATF_TC_BODY(pwa, tc)
 			shot(name);
 		}
 	}
-	/* The first one, chosen on a phone, is a choice like another: the
-	 * phone's own default is the plain one. */
-	run("document.querySelector('button.theme[data-arg=\"\"]').click()");
+	/* Tron, the neon one: its glow and capitals. */
+	run("document.querySelector('button.theme[data-arg=tron]').click()");
 	wait_js("document.documentElement.dataset.theme === 'tron' && "
 	    "localStorage.getItem('arc_theme') === 'tron' && document."
-	    "querySelector('button.theme[data-arg=\"\"]').classList.contains("
-	    "'on') && getComputedStyle(document.documentElement)."
-	    "getPropertyValue('--cyan').trim() === '#3be8ff'", 5);
-	run("localStorage.removeItem('arc_theme'); delete document."
-	    "documentElement.dataset.theme; const s = document.createElement("
-	    "'script'); s.src = '/fx.js?again'; document.head.appendChild(s);");
-	wait_js("document.documentElement.dataset.theme === 'slate'", 10);
+	    "documentElement.classList.contains('neon') && getComputedStyle("
+	    "document.documentElement).getPropertyValue('--cyan').trim() === "
+	    "'#3be8ff'", 5);
+	shot("m10b-tron");
+	/* Graphite, the default, everywhere: none kept, no neon. */
+	run("document.querySelector('button.theme[data-arg=\"\"]').click()");
+	wait_js("!document.documentElement.dataset.theme && localStorage."
+	    "getItem('arc_theme') === null && !document.documentElement."
+	    "classList.contains('neon') && document.querySelector('button."
+	    "theme[data-arg=\"\"]').classList.contains('on') && !getComputedStyle("
+	    "document.body).fontFamily.startsWith('\"JetBrains')", 5);
+	run("const s = document.createElement('script'); s.src = '/fx.js?again';"
+	    " document.head.appendChild(s);");
+	usleep(500000);
+	ATF_CHECK(js_true("!document.documentElement.dataset.theme"));
 	shot("m10a-phone-default");
 	run("delete document.documentElement.dataset.theme");
 	run("document.querySelector('.modal button[data-act=close]').click()");

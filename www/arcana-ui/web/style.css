@@ -3,8 +3,8 @@
  *
  * Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
  *
- * Arcana: an operations console on a dark grid.  Cyan is alive, amber
- * is changing, red is wrong, slate is at rest.
+ * Arcana: an operations console.  Graphite by default, calm and plain;
+ * the neon themes are the console on a dark grid it began as.
  */
 
 @font-face {
@@ -33,6 +33,55 @@
 }
 
 :root {
+	/*
+	 * Graphite, the default: calm surfaces of one hue, one blue for
+	 * what can be acted on, green, amber and red for how things are;
+	 * a plain face for reading, the fixed one for what is read
+	 * character by character.
+	 */
+	color-scheme: dark;
+	--bg: #0f1216;
+	--bg-2: #161b21;
+	--accent-rgb: 76, 141, 255;
+	--surface-rgb: 22, 27, 34;
+	--red-rgb: 240, 93, 94;
+	--amber-rgb: 227, 163, 58;
+	--violet-rgb: 167, 139, 250;
+	/* Of each theme's own colours, so that a light one is light. */
+	--panel: rgb(var(--surface-rgb));
+	--panel-2: color-mix(in srgb, rgb(var(--surface-rgb)) 90%, var(--fg));
+	--line: color-mix(in srgb, var(--fg) 9%, transparent);
+	--line-2: color-mix(in srgb, var(--fg) 17%, transparent);
+	--fg: #e6e9ef;
+	--fg-2: #a7afbd;
+	--dim: #747d8d;
+	--cyan: #4c8dff;
+	--amber: #e3a33a;
+	--red: #f05d5e;
+	--slate: #6b7585;
+	--violet: #a78bfa;
+	--green: #3fb97a;
+	--blue: #60a5fa;
+	--teal: #2dd4bf;
+	--magenta: #e879c6;
+	--sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto,
+	    "Helvetica Neue", Arial, sans-serif;
+	--mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas,
+	    monospace;
+	--display: var(--sans);
+	--cut: 8px;
+	--radius: 6px;
+	--ease: cubic-bezier(.2, .7, .2, 1);
+	--top: env(safe-area-inset-top, 0px);
+	--bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/*
+ * The neon themes (Tron, and Amber, Matrix and Synth after it): an
+ * operations console on a dark grid, cyan alive, amber changing, red
+ * wrong, slate at rest; capitals spaced out and a display face.
+ */
+html.neon {
 	color-scheme: dark;
 	--bg: #04070c;
 	--bg-2: #07101b;
@@ -2583,9 +2632,10 @@ ul.devices em { color: var(--cyan); font-style: normal; font-size: .7rem; }
 	width: .8rem;
 	height: .8rem;
 	border-radius: 50%;
-	background: #3be8ff;
-	box-shadow: 0 0 0 2px #04070c;
+	background: #4c8dff;
+	box-shadow: 0 0 0 2px #0f1216;
 }
+.themes .theme.t-tron i { background: #3be8ff; box-shadow: 0 0 0 2px #04070c; }
 .themes .theme.t-amber i { background: #ffb547; box-shadow: 0 0 0 2px #0a0703; }
 .themes .theme.t-matrix i { background: #5cf2a8; box-shadow: 0 0 0 2px #020a05; }
 .themes .theme.t-synth i { background: #ff74d4; box-shadow: 0 0 0 2px #0a0512; }
@@ -4070,3 +4120,305 @@ td.mtr-bar > span > i {
 	height: 10px;
 	background: var(--cyan);
 }
+
+/* ==================================================================
+ * The plain rules: every theme but the neon ones.  A face for reading
+ * and the fixed one for data; words as they are written, not spaced
+ * out in capitals; nothing glows; one radius, one height for a control
+ * of a size, and a control of choices as one joined row.
+ * ================================================================== */
+html:not(.neon) body {
+	font: 400 14px/1.5 var(--sans);
+	font-feature-settings: "cv11", "ss01";
+}
+html:not(.neon) body::before,
+html:not(.neon) body::after { display: none; }
+html:not(.neon) *,
+html:not(.neon) *::before,
+html:not(.neon) *::after {
+	letter-spacing: normal !important;
+	text-shadow: none !important;
+}
+html:not(.neon) :is(button, .tab, .label, .state, th, h1, h2, h3, h4, h5,
+    .pane h4, .drawer h4, .node .nh, .auth .sub, nav.fw-tabs .sep,
+    table.fw-layout tr.group td, .apiop .method, .age, .brand, .ecmp-side h5) {
+	text-transform: none;
+}
+/* What is read character by character: the fixed face. */
+html:not(.neon) :is(code, pre, kbd, .mono, textarea.code,
+    .terminal, svg.topo text, .key, .ifname) {
+	font-family: var(--mono);
+	font-size: .92em;
+}
+html:not(.neon) :is(td, .num, .tally, .gauge, .stat, .facts) {
+	font-variant-numeric: tabular-nums;
+}
+/* The corners of the HUD, and the glow, are the neon themes'. */
+html:not(.neon) :is(.jail, .modal, .auth .panel)::before,
+html:not(.neon) :is(.jail, .modal, .auth .panel)::after { display: none; }
+html:not(.neon) .led { box-shadow: 0 0 0 2px rgba(0, 0, 0, .25); }
+/* Running is green here: the accent is for what can be acted on. */
+html:not(.neon) :is(.link.up, .s-running, .server.up, .tree .titem.up,
+    .tnode.up) { --c: var(--green); }
+
+/* Headings. */
+html:not(.neon) :is(h1, h2, h3) { font-weight: 600; }
+html:not(.neon) .hostbar h1 { font-size: 1.3rem; font-weight: 600; }
+html:not(.neon) :is(h4, .pane h4) {
+	font-size: .86rem;
+	font-weight: 600;
+	color: var(--fg);
+}
+html:not(.neon) .label {
+	font-size: .72rem;
+	font-weight: 600;
+	color: var(--dim);
+}
+
+/* Controls: one height a size, one radius. */
+html:not(.neon) button {
+	min-height: 32px;
+	padding: 0 .85rem;
+	border-radius: var(--radius);
+	border-color: var(--line-2);
+	background: var(--panel-2);
+	color: var(--fg);
+	font-size: .84rem;
+	font-weight: 500;
+	line-height: 1.2;
+	box-shadow: none;
+}
+html:not(.neon) button:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--fg) 30%, transparent);
+	background: color-mix(in srgb, var(--panel-2) 85%, var(--fg));
+	box-shadow: none;
+}
+html:not(.neon) button.small {
+	min-height: 28px;
+	padding: 0 .65rem;
+	font-size: .8rem;
+}
+html:not(.neon) button.ghost {
+	background: transparent;
+	border-color: var(--line-2);
+	color: var(--fg-2);
+}
+html:not(.neon) button.ghost:hover:not(:disabled) { color: var(--fg); }
+html:not(.neon) button.primary {
+	background: var(--cyan);
+	border-color: var(--cyan);
+	color: #fff;
+	font-weight: 600;
+	box-shadow: none;
+}
+html:not(.neon) button.primary:hover:not(:disabled) {
+	background: color-mix(in srgb, var(--cyan) 88%, #fff);
+	border-color: color-mix(in srgb, var(--cyan) 88%, #fff);
+}
+html:not(.neon) button.danger {
+	background: rgba(var(--red-rgb), .12);
+	border-color: rgba(var(--red-rgb), .45);
+	color: var(--red);
+}
+html:not(.neon) button.icon {
+	min-height: 0;
+	width: 30px;
+	height: 30px;
+	border-color: transparent;
+	background: transparent;
+	color: var(--fg-2);
+}
+html:not(.neon) button.icon:hover:not(:disabled) {
+	background: var(--panel-2);
+	color: var(--fg);
+}
+html:not(.neon) :is(input, select, textarea) {
+	border-radius: var(--radius);
+	border-color: var(--line-2);
+	background: var(--bg);
+	color: var(--fg);
+}
+html:not(.neon) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select) {
+	min-height: 32px;
+	padding: 0 .7rem;
+	font-size: .86rem;
+}
+html:not(.neon) :is(input, select, textarea):focus {
+	border-color: var(--cyan);
+	box-shadow: 0 0 0 3px rgba(var(--accent-rgb), .2);
+}
+html:not(.neon) label {
+	font-size: .78rem;
+	color: var(--fg-2);
+}
+
+/* Choices of one kind, side by side: a single joined row that does not
+ * break into a grid; where there is no room it scrolls. */
+html:not(.neon) nav.sub {
+	display: inline-flex;
+	flex-wrap: nowrap;
+	max-width: 100%;
+	overflow-x: auto;
+	gap: 0;
+	padding: 2px;
+	border: 1px solid var(--line-2);
+	border-radius: calc(var(--radius) + 2px);
+	background: var(--bg);
+	scrollbar-width: none;
+}
+html:not(.neon) nav.sub::-webkit-scrollbar { display: none; }
+html:not(.neon) nav.sub > button {
+	flex: none;
+	min-height: 26px;
+	padding: 0 .7rem;
+	border: 0;
+	border-radius: var(--radius);
+	background: transparent;
+	color: var(--fg-2);
+	font-size: .8rem;
+	white-space: nowrap;
+}
+html:not(.neon) nav.sub > button:hover:not(:disabled) {
+	background: var(--panel-2);
+	color: var(--fg);
+}
+html:not(.neon) nav.sub > button.on {
+	background: var(--panel-2);
+	color: var(--fg);
+	box-shadow: 0 0 0 1px var(--line-2) inset;
+}
+html:not(.neon) nav.sub.plugins { margin-left: 0; }
+html:not(.neon) .toolbar {
+	flex-wrap: wrap;
+	gap: .5rem .75rem;
+	align-items: center;
+}
+html:not(.neon) .toolbar > .filter { margin-left: auto; min-width: 12rem; }
+
+/* The tabs of a page. */
+html:not(.neon) .tabs { gap: .1rem; border-bottom: 1px solid var(--line); }
+html:not(.neon) .tabs .tab {
+	min-height: 0;
+	padding: .55rem .75rem;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	background: transparent;
+	color: var(--fg-2);
+	font-size: .86rem;
+	font-weight: 500;
+}
+html:not(.neon) .tabs .tab:hover:not(:disabled) {
+	background: transparent;
+	color: var(--fg);
+}
+html:not(.neon) .tabs .tab.on {
+	border-bottom-color: var(--cyan);
+	color: var(--fg);
+}
+
+/* Surfaces: a panel is a card, one radius. */
+html:not(.neon) :is(.pane, .notice, .jail, .gauge, .stat, .hostcard,
+    .card, .map-panel .facts, .ecmp-group, .wfedstep, .apiop, .peek-box) {
+	border-radius: calc(var(--radius) + 2px);
+}
+html:not(.neon) :is(.pane, .jail, .gauge, .stat, .hostcard) {
+	background: var(--panel);
+	border-color: var(--line);
+	box-shadow: none;
+}
+html:not(.neon) .modal {
+	border-radius: calc(var(--radius) + 4px);
+	border-color: var(--line-2);
+	background: var(--panel);
+	box-shadow: 0 24px 60px -12px rgba(0, 0, 0, .6);
+}
+
+/* Tables: quiet headings, rows that show where the pointer is. */
+html:not(.neon) table th {
+	font-size: .76rem;
+	font-weight: 600;
+	color: var(--dim);
+}
+html:not(.neon) table.net tbody tr:hover td { background: color-mix(in srgb, var(--fg) 3%, transparent); }
+
+/* Notices said, not shouted. */
+html:not(.neon) .toasts { gap: .4rem; }
+html:not(.neon) .toast {
+	max-width: 360px;
+	padding: .55rem .8rem;
+	border-radius: var(--radius);
+	border: 1px solid var(--line-2);
+	border-left: 3px solid var(--cyan);
+	background: var(--panel-2);
+	box-shadow: 0 10px 30px -10px rgba(0, 0, 0, .6);
+	font-size: .82rem;
+}
+html:not(.neon) .toast.bad { border-left-color: var(--red); }
+html:not(.neon) .toast:nth-last-child(n+4) { display: none; }
+
+/* The host's head: who it is at the left, what is done to it at the
+ * right. */
+.hostbar { align-items: center; }
+.host-actions { display: flex; flex-wrap: wrap; gap: .4rem; justify-content: flex-end; }
+.host-actions:empty { display: none; }
+html:not(.neon) .facts { gap: .2rem .9rem; font-size: .8rem; }
+html:not(.neon) .facts { gap: .15rem 1.1rem; }
+@media (max-width: 620px) {
+	.hostbar { flex-wrap: wrap; }
+	.host-actions { order: 3; flex: 1 1 100%; justify-content: flex-start; }
+}
+
+/* Drawn icons: the tree's nodes and the buttons of its head. */
+svg.ti {
+	width: 16px;
+	height: 16px;
+	fill: none;
+	stroke: currentColor;
+	stroke-width: 1.8;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	vertical-align: -3px;
+}
+button.icon svg.ti { width: 16px; height: 16px; }
+.tree .titem.fleet .twig { display: inline-grid; place-items: center; width: 18px; color: var(--fg-2); }
+.tree .titem.fleet.selected .twig { color: var(--cyan); }
+html:not(.neon) .tree .titem.fleet .name { font-family: var(--sans); font-size: .9rem; font-weight: 500; }
+/* A page's tabs in one row, that scrolls where there is no room. */
+.tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs .tab { flex: none; white-space: nowrap; }
+html:not(.neon) table th { font-family: var(--sans); }
+
+/* A row's actions beyond its first two, on a wide screen, behind ⋯:
+ * shown in the row when it is pressed. */
+table.net:not(.cards) td.acts.many { white-space: nowrap; }
+table.net:not(.cards) td.acts.many > button:not(.acts-more):nth-of-type(n+3) { display: none; }
+table.net:not(.cards) td.acts.many.open { white-space: normal; }
+table.net:not(.cards) td.acts.many.open > button:not(.acts-more) { display: inline-flex; margin: 0 .2rem .2rem 0; }
+table.net:not(.cards) td.acts .acts-more { margin-left: .2rem; min-width: 2.2rem; }
+/* Prose in a table, a part's words: the reading face. */
+html:not(.neon) table.net td { font-family: var(--sans); font-size: .88rem; }
+html:not(.neon) table.net td :is(code, .mono, .chip, .nhg-gw), html:not(.neon) table.net td.mono { font-family: var(--mono); font-size: .82rem; }
+
+/* A workflow's step: its number, id, name and kind on one line. */
+.wfedhead {
+	display: grid;
+	grid-template-columns: 1.6rem minmax(5rem, 8rem) minmax(8rem, 1fr)
+	    minmax(10rem, 18rem) auto;
+	align-items: center;
+}
+.wfedhead > * { min-width: 0; }
+@media (max-width: 760px) {
+	.wfedhead { grid-template-columns: 1.6rem 1fr auto; }
+	.wfedhead > :is(input, select) { grid-column: 2 / -1; }
+}
+
+/* On a phone the host's head: its age and refresh beside its name. */
+@media (max-width: 620px) {
+	.hostbar .freshness { position: absolute; right: 1rem; }
+	.hostbar { position: relative; }
+	.host-actions button { flex: 1 1 auto; }
+}
+svg.ti path { stroke-width: inherit; }
+button.icon svg.ti, .topbar .more svg.ti { stroke-width: 2.4; }
