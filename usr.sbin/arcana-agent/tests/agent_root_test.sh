@@ -44,7 +44,7 @@ $JAIL {
 EOF2
 	SOCK="unix:$(pwd)/s.sock"
 	"$JGD" -F -l "$SOCK" -f "$(pwd)/etc/jail.conf" \
-	    -D "$(pwd)/etc/jail.conf.d" > daemon.out 2>&1 &
+	    -D "$(pwd)/etc/jail.conf.d" ${DAEMON_ARGS:-} > daemon.out 2>&1 &
 	echo $! > daemon.pid
 	for i in $(seq 1 100); do
 		grep -q 'ready' daemon.out 2>/dev/null && return
@@ -422,6 +422,58 @@ kmsg_cleanup()
 	true
 }
 
+atf_test_case sdwan_probe cleanup
+sdwan_probe_head()
+{
+	atf_set "descr" "a tunnel measured for real: the loopback pinged every 50 ms, up with its samples, and an address nothing routes to down, each an event"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+sdwan_probe_body()
+{
+	printf '#!/bin/sh\necho "ipfw $*" >> %s/ipfw.log\nexit 0\n' "$(pwd)" > fake-ipfw
+	chmod +x fake-ipfw
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw"
+	start_daemon
+	last=$("$JGC" -c "$SOCK" events | sed -E 's/^\{"last":([0-9]+).*/\1/')
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '[{"id":"lo","address":"127.0.0.1","interval":50,"eval":300,"down":2,"up":2,"timeout":200}]'
+	sleep 2
+	atf_check -o save:up.json "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"id":"lo","address":"127.0.0.1","family":"inet","fib":0,"state":"up"' \
+	    -o match:'"samples":\[\[[0-9]+,[0-9.]+,[0-9.]+,0(\.0+)?,[0-9.]+,[0-9.]+,[1-9][0-9]*,[1-9][0-9]*\]' cat up.json
+	atf_check -o match:'"kind":"sdwan-tunnel","data":\{"id":"lo","address":"127.0.0.1","state":"up"' \
+	    "$JGC" -c "$SOCK" events "$last"
+	# A table with no way to it: every probe lost, down in two.
+	if setfib 2 route -n get 192.0.2.77 >/dev/null 2>&1; then
+		atf_skip "fib 2 has a route to 192.0.2.77"
+	fi
+	# The steering follows the probes: the way through void first,
+	# while nothing says it is down; once its probes do, the next one.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"swt_p_4","valtype":"ipv4"}],"rules":["12 fwd tablearg ip4 from any to table(swt_p_4)"]}'
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"swt_p_4","prefix":"10.20.0.0/24","candidates":[{"id":"void","via":"100.64.0.9"},{"id":"lo","via":"100.64.0.1"}]}]}'
+	atf_check -o match:'atomic add 10.20.0.0/24 100.64.0.9' cat ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '[{"id":"lo","address":"127.0.0.1","interval":50,"eval":300,"down":2,"up":2,"timeout":200},{"id":"void","address":"192.0.2.77","fib":2,"interval":50,"eval":300,"down":2,"timeout":100}]'
+	sleep 1.5
+	atf_check -o match:'atomic add 10.20.0.0/24 100.64.0.1' cat ipfw.log
+	atf_check -o match:'"chosen":1,"candidates":\[\{"id":"void","via":"100.64.0.9","state":"down"\},\{"id":"lo","via":"100.64.0.1","state":"up"\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"id":"void","address":"192.0.2.77","family":"inet","fib":2,"state":"down"' \
+	    -o match:'"id":"lo",[^}]*"state":"up"' "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"data":\{"id":"void","address":"192.0.2.77","state":"down","misses":[0-9]+' \
+	    "$JGC" -c "$SOCK" events "$last"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '[]'
+}
+sdwan_probe_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
 atf_test_case resnapshot cleanup
 resnapshot_head()
 {
@@ -476,4 +528,5 @@ atf_init_test_cases()
 	atf_add_test_case fw_trace
 	atf_add_test_case resnapshot
 	atf_add_test_case kmsg
+	atf_add_test_case sdwan_probe
 }

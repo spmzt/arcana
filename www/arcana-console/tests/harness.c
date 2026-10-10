@@ -185,7 +185,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[88];
+	char	*argv[90];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -314,7 +314,15 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("fake-service", buf);
 	ATF_REQUIRE(chmod("fake-service", 0755) == 0);
 	/* netstat -O: a group of two next hops, two shares to one. */
-	put("fake-netstat", "#!/bin/sh\ncase \"$*\" in *-OnW*) echo '{"
+	put("fake-netstat", "#!/bin/sh\ncase \"$*\" in *-onW*) printf '{"
+	    "\"statistics\": {\"route-nhop-information\": {\"nhop-table\": "
+	    "{\"rt-family\": [{\"address-family\": \"Internet\", \"nh-entry\": "
+	    "['; i=1; while [ $i -le 300 ]; do [ $i -gt 1 ] && printf ,; "
+	    "printf '{\"index\": %d, \"type_str\": \"gw\", \"gateway\": "
+	    "\"10.0.0.%d\", \"interface-name\": \"em0\", \"mtu\": 1500, "
+	    "\"refcount\": 1, \"flags\": \"UGS\"}' $i $((i % 250)); "
+	    "i=$((i + 1)); done; echo ']}]}}}}'; exit 0 ;;\n"
+	    "*-OnW*) echo '{"
 	    "\"statistics\": {\"route-nhgrp-information\": {\"nhgrp-table\": "
 	    "{\"rt-family\": [{\"address-family\": \"Internet\", "
 	    "\"nhgrp-entry\": [{\"nhgrp-index\": 7, \"nhg-refcnt\": 3, "
@@ -359,10 +367,25 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* git clone makes a tree; make "builds" by copying the agent. */
 	put("fake-git", "#!/bin/sh\necho \"$*\" >> git.log\n"
 	    "[ \"$1\" = -c ] && shift 2\n"
+	    /* The commit a clone is at; the head, from ./head. */
+	    "[ \"$1\" = -C ] && [ \"$3\" = rev-parse ] && { cat head 2>/dev/null "
+	    "|| echo 1111111111111111111111111111111111111111; exit 0; }\n"
+	    "[ \"$1\" = ls-remote ] && { printf '%s\\tHEAD\\n' \"$(cat head "
+	    "2>/dev/null || echo 1111111111111111111111111111111111111111)\"; "
+	    "exit 0; }\n"
 	    "[ \"$1\" = clone ] || exit 2\n"
 	    "for a; do last=$a; done\n"
 	    "mkdir -p \"$last/lib/libjailconf\" \"$last/usr.sbin/arcana-agent\"\n");
 	ATF_REQUIRE(chmod("fake-git", 0755) == 0);
+	/* traceroute(8): the host itself first, then a hop that answers
+	 * every other round, then the address. */
+	put("fake-traceroute", "#!/bin/sh\nfor a; do last=$a; done\n"
+	    "echo \" 1  127.0.0.1  0.100 ms\"\n"
+	    "n=$(cat mtr.n 2>/dev/null || echo 0); n=$((n + 1)); echo $n > mtr.n\n"
+	    "if [ $((n % 2)) = 0 ]; then echo \" 2  *\"; "
+	    "else echo \" 2  198.51.100.1  5.000 ms\"; fi\n"
+	    "echo \" 3  $last  9.500 ms\"\n");
+	ATF_REQUIRE(chmod("fake-traceroute", 0755) == 0);
 	snprintf(buf, sizeof(buf), "#!/bin/sh\ndir=$2\ncase \" $* \" in\n"
 	    "*\" -V .OBJDIR \"*) echo \"$dir/obj\" ;;\n"
 	    "*/usr.sbin/arcana-agent*) mkdir -p \"$dir/obj\" && "
@@ -417,6 +440,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	/* ipfw(8): its rules are canned, the rest is logged; a file it
 	 * is to check is refused when it has the word bogus. */
 	put("fake-ipfw", "#!/bin/sh\necho \"ipfw $*\" >> ipfw.log\n"
+	    "[ \"$1\" = -q ] && [ -f \"$2\" ] && cat \"$2\" >> ipfw.log\n"
 	    "case \"$*\" in\n"
 	    "'-S show')\n"
 	    "printf '00005     12      900 set 0 skipto 500 ip from any to "
@@ -817,7 +841,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[83] = (char *)(uintptr_t)"./fake-swanctl";
 	argv[84] = (char *)(uintptr_t)"-5";
 	argv[85] = (char *)(uintptr_t)"swanctl";
-	argv[86] = NULL;
+	argv[86] = (char *)(uintptr_t)"-X";
+	argv[87] = (char *)(uintptr_t)"./fake-traceroute";
+	argv[88] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

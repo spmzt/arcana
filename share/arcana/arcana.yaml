@@ -808,6 +808,21 @@ attribute-sets:
       - name: zfs-recursive
         type: flag
         doc: For zfs-send, the datasets under the snapshot's too (-R).
+      - name: from-rc
+        type: flag
+        doc: |
+          For ipfw-rules, nothing written: the file rc.conf's
+          firewall_type names, as kept rules.
+      - name: rc-file
+        type: text
+        doc: For ipfw-rules with from-rc, the file that was read.
+      - name: commit
+        type: text
+        doc: |
+          The commit of a repository: what source-head found at its
+          head, or what agent-build and console-update built.
+        checks:
+          max-len: 64
 
   - name: host
     attributes:
@@ -1052,7 +1067,10 @@ attribute-sets:
           max-len: 512
       - name: fib
         type: u32
-        doc: For route, the routing table; 0 when not given.
+        doc: |
+          For route, the routing table; 0 when not given.  For if-set
+          and if-create, the interface's: what is received on it is
+          looked up there.
       - name: mtu
         type: u32
         doc: For if-set and if-create.
@@ -1193,6 +1211,11 @@ attribute-sets:
         doc: For ipsec conn, the peer's identity, as local-id.
         checks:
           max-len: 128
+      - name: tunnelfib
+        type: u32
+        doc: |
+          For if-set and if-create of a tunnel (gif, gre, vxlan, geneve,
+          wg), the routing table its outer packets are sent by.
 
   - name: job
     attributes:
@@ -1747,6 +1770,7 @@ operations:
           - fingerprints
           - deploy-key
           - trace
+          - commit
 
   - name: console-update
     attribute-set: arcana
@@ -1776,6 +1800,7 @@ operations:
           - deploy-key
           - restarting
           - trace
+          - commit
 
   - name: route-lookup
     attribute-set: arcana
@@ -1969,7 +1994,12 @@ operations:
       read it without doing it (ipfw -n) and found nothing wrong:
       sha256 is that of the text it was made from.  The one before is
       kept beside it.  With dry-run it is only checked.  jail is the
-      vnet jail whose firewall it is.
+      vnet jail whose firewall it is.  With from-rc, the file the host
+      (or the jail) loads now, as rc.conf's firewall_type names it, is
+      read and made into kept rules, which are not written: what
+      applying does itself (flush, set, delete, options) is left in
+      as comments.  sha256 is still the kept file's, for a change
+      made from it.
     do:
       request:
         attributes:
@@ -1977,6 +2007,7 @@ operations:
           - sha256
           - dry-run
           - jail
+          - from-rc
       reply:
         attributes:
           - ok
@@ -1984,6 +2015,7 @@ operations:
           - conf-text
           - sha256
           - trace
+          - rc-file
 
   - name: processes
     attribute-set: arcana
@@ -2123,7 +2155,12 @@ operations:
       over, when a figure of history crosses its limit, either way.
       kmsg, with seq and text, a line the kernel wrote, the moment the
       agent sees it; or with more, how many came in that second
-      beyond the twenty said one by one.
+      beyond the twenty said one by one.  sdwan-tunnel, with id,
+      address, state (up or down) and misses, when a tunnel the agent
+      measures (sdwan-probes) goes down or comes up.  The sdwan reply
+      has "rules" (the set, how many rules and which tables) and
+      "steer" (each prefix's candidates with their states and which
+      is chosen) too.
     do:
       request:
         attributes:
@@ -2256,6 +2293,151 @@ operations:
       reply:
         attributes:
           - ok
+
+  - name: source-head
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The commit at the head of a repository's branch (ref, or its
+      default), as git ls-remote tells it, fetched as agent-build
+      fetches: over SSH with the host keys a person confirmed, never
+      one taken on trust.  Nothing is cloned or built.
+    do:
+      request:
+        attributes:
+          - source
+          - ref
+          - host-keys
+          - ssh-key
+        required:
+          - source
+      reply:
+        attributes:
+          - ok
+          - error
+          - commit
+          - host-keys
+          - fingerprints
+          - deploy-key
+          - trace
+
+  - name: traceroute
+    attribute-set: arcana
+    auth: true
+    doc: |
+      One round of traceroute(8), or traceroute6(8), from this host to
+      an address: a probe for each hop, numeric, a second's wait each,
+      30 hops at most.  A JSON object with "address", "family", "hops"
+      (each with its "ttl" and the "address" that answered, its "rtt"
+      in milliseconds and what traceroute noted of it, or "lost") and
+      "reached".  The console asks again and again, as mtr(8) does.
+    do:
+      request:
+        attributes:
+          - lookup
+        required:
+          - lookup
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: sdwan-probes
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The tunnels the agent is to measure from now on, as the console
+      has an SD-WAN edge measure them (Mplify 119 §11.4): json, an
+      array of targets, each with its "id" and "address", and maybe
+      "fib" (the table it is reached by, 0), "interval" (ms between
+      two probes, 100), "size" (bytes, 64), "count" (probes, 0 for
+      without end), "dscp" (0), "down" and "up" (misses in a row that
+      make it down, 3; answers that make it up, 3), "timeout" (ms,
+      1000), "eval" (ms of one sample, 1000), "history" (samples kept,
+      3600) and "report".  Kept for the next start.  An empty array
+      stops them all.  Each is ICMP echo on a raw socket: root.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+  - name: sdwan
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What the probes have seen, as a JSON object: "targets", each
+      with its id, address, family, fib, state (unknown, up, down,
+      ended, error, with error why), since (when the state began),
+      interval, size, eval, dscp, sent, received, misses (in a row),
+      last_rtt (ms), "now" (the sample in progress: sent, recv, delay,
+      ipdv, loss, age) and "samples", the last kept, the oldest
+      first (with after, only those after that time), each an array
+      of the time, the one-way delay (ms, half
+      the mean round trip), the delay variation (ms), the loss ratio,
+      the least and the most, and the probes sent and answered; and
+      "probing", whether the thread runs.  A target that goes down or
+      comes up is an event, sdwan-tunnel, with its id, address, state
+      and misses.
+    do:
+      request:
+        attributes:
+          - after
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: sdwan-rules
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The rules that classify what comes in at the SD-WAN UNIs and
+      steer it, as the console compiles them: json, an object with
+      "set" (2 to 31, the ipfw set they live in, emptied and filled
+      while disabled), "tables" (each a "name", a "valtype" of skipto,
+      ipv4 or ipv6, and "entries", each a prefix and a value) and
+      "rules" (each its number and its words).  Kept for the next
+      start.  With no rules, the set is emptied.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+  - name: sdwan-steer
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What the policy tables of the rules hold: json, an object with
+      "entries", each a "table", a "prefix" and its "candidates", each
+      a tunnel's "id" (as the probes know it) and the address it goes
+      "via", in the console's order.  The first whose far end the
+      probes do not say is down is the one, made again here when a
+      probe's state changes.  Kept for the next start.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
 
 mcast-groups:
   - name: events

@@ -270,6 +270,7 @@ start_daemon()
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
+	    -X "$(pwd)/fake-traceroute" \
 	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
@@ -969,6 +970,18 @@ EOS
 	    cat rc.conf
 	atf_check -s exit:1 -o match:'Invalid argument' \
 	    "$JGC" -c "$SOCK" interface lo0 mtu 9999
+	# Its routing tables: what it receives, and a tunnel's outer
+	# packets; kept as words of ifconfig_<if>, 0 taken out again.
+	atf_check -o match:'fake-ifconfig lo0 fib 2' -o match:'set fib' \
+	    "$JGC" -p -c "$SOCK" interface lo0 fib 2
+	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up fib 2"$' \
+	    cat rc.conf
+	atf_check -o match:'fake-ifconfig lo0 tunnelfib 1' \
+	    "$JGC" -c "$SOCK" interface lo0 tunnelfib 1
+	atf_check -o match:'fake-ifconfig lo0 fib 0' \
+	    "$JGC" -p -c "$SOCK" interface lo0 fib 0
+	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' \
+	    cat rc.conf
 	atf_check -s exit:1 -o match:'without quotes' \
 	    "$JGC" -p -c "$SOCK" interface lo0 description 'a"; reboot'
 
@@ -1022,6 +1035,18 @@ EOS
 	atf_check -o match:'^create_args_vlan5="vlan 5 vlandev lo0"$' cat rc.conf
 	atf_check -o match:'vxlan9 create vxlanid 42 vxlanlocal 192.0.2.1 vxlanremote 192.0.2.9' \
 	    "$JGC" -c "$SOCK" interface vxlan9 create id 42 tunnel 192.0.2.1 192.0.2.9
+	# Its tables are set before its ends and its addresses: the route
+	# of its address is made in its table.
+	: > ifconfig.log
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface gre4 create tunnel \
+	    192.0.2.1 192.0.2.2 address 10.255.1.0/31 peer 10.255.1.1 fib 3 \
+	    tunnelfib 0
+	atf_check -o inline:'gre4 create\ngre4 fib 3\ngre4 tunnelfib 0\ngre4 tunnel 192.0.2.1 192.0.2.2\ngre4 inet 10.255.1.0/31 10.255.1.1\ngre4 up\n' \
+	    cat ifconfig.log
+	atf_check -o match:'^ifconfig_gre4="tunnel 192.0.2.1 192.0.2.2 fib 3 up"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface gre4 destroy
+	atf_check -o not-match:'gre4' cat rc.conf
 	# What cannot be finished is destroyed again, and not kept.
 	atf_check -s exit:1 -o match:'Invalid argument' \
 	    -o match:'fake-ifconfig gre1 destroy' \
@@ -1828,7 +1853,7 @@ interfaces) echo '{"interfaces":[{"name":"epair91b","up":true,"mtu":1500,"addres
 exists) case "\$4" in epair91b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
 up) echo 1 ;;
 sysctl-int) [ -f $(pwd)/fw-on ] && echo 1 || echo 0 ;;
-current) printf '1500\tto the host' ;;
+current) printf '1500\t0\t-1\tto the host' ;;
 prefix) [ "\$5" = 10.99.0.2 ] && echo 10.99.0.2/24 ;;
 esac
 exit 0
@@ -1871,6 +1896,9 @@ EOS
 	atf_check -o match:'^-Q 4 interfaces - 0$' cat helper.log
 	atf_check -o match:'"name":"lo0"' -o not-match:'epair91b' \
 	    "$JGC" -c "$SOCK" net interfaces
+	# Its bridges and geneve tunnels: ifconfig told the jail once.
+	atf_check -o ignore "$JGC" -j gateway -c "$SOCK" net bridges
+	atf_check -o match:'^-j 4 -av$' cat ifconfig.log
 	# Its routes and its route to an address: the host's programs,
 	# told which jail.
 	atf_check -o match:'fake-helper -Q 4 routes 4 0 - -' \
@@ -2298,6 +2326,156 @@ agent_restart_cleanup()
 	stop_daemon
 }
 
+atf_test_case traceroute cleanup
+traceroute_head()
+{
+	atf_set "descr" "One round of traceroute, as JSON: each hop's address, time and loss"
+}
+traceroute_body()
+{
+	# traceroute(8) as it prints: the header on standard error, a
+	# line a hop, a lost probe a star, what it noted after the time.
+	cat > fake-traceroute <<'EOS'
+#!/bin/sh
+for a; do last=$a; done
+echo "traceroute to $last ($last), 30 hops max, 40 byte packets" >&2
+echo "$0 $*" >> "$(dirname $0)/traceroute.log"
+echo " 1  10.0.0.1  0.312 ms"
+echo " 2  *"
+echo " 3  198.51.100.7  12.5 ms !H"
+echo " 4  $last  20.125 ms"
+EOS
+	cp fake-traceroute fake-traceroute6
+	chmod +x fake-traceroute fake-traceroute6
+	start_daemon
+	atf_check -o match:'"hops":\[\{"ttl":1,"address":"10.0.0.1","rtt":0\.312[0-9]*\},\{"ttl":2,"lost":true\},\{"ttl":3,"address":"198.51.100.7","rtt":12\.5[0-9]*,"note":"!H"\}' \
+	    -o match:'"reached":true' "$JGC" -c "$SOCK" traceroute 192.0.2.9
+	atf_check -o match:'fake-traceroute -n -q 1 -w 1 -m 30 192.0.2.9$' \
+	    cat traceroute.log
+	# IPv6 by traceroute6.
+	atf_check -o match:'"family":"inet6"' -o match:'"reached":true' \
+	    "$JGC" -c "$SOCK" traceroute 2001:db8::9
+	atf_check -o match:'fake-traceroute6 -n -q 1 -w 1 -m 30 2001:db8::9$' \
+	    cat traceroute.log
+	atf_check -s exit:1 -e match:'address to trace' -o ignore \
+	    "$JGC" -c "$SOCK" traceroute example.org
+}
+traceroute_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sdwan cleanup
+sdwan_head()
+{
+	atf_set "descr" "The tunnels to measure: set, kept for the next start, read back with their state; without root each says so"
+}
+sdwan_body()
+{
+	# ipfw(8) as a stand-in: what it was run with, and the file it was
+	# given to read.
+	cat > fake-ipfw <<EOS
+#!/bin/sh
+echo "ipfw \$*" >> $(pwd)/ipfw.log
+[ "\$1" = -q ] && [ -f "\$2" ] && cat "\$2" >> $(pwd)/ipfw.log
+exit 0
+EOS
+	chmod +x fake-ipfw
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw"
+	start_daemon
+	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
+	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\]\}' \
+	    -o match:'"steer":\[\],"steered":false' "$JGC" -c "$SOCK" sdwan
+	# What is not a target list.
+	atf_check -s exit:1 -e match:'JSON array' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '{"id":"x"}'
+	atf_check -s exit:1 -e match:'id and an address' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x"}]'
+	atf_check -s exit:1 -e match:'is not an address' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x","address":"nowhere"}]'
+	atf_check -s exit:1 -e match:'interval' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x","address":"127.0.0.1","interval":1}]'
+	atf_check -s exit:1 -e match:'there twice' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x","address":"127.0.0.1"},{"id":"x","address":"::1"}]'
+	# Two targets, with their settings and the defaults.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '[{"id":"acme/a-b","address":"100.64.0.1","fib":1,"interval":200,"dscp":46},{"id":"v6","address":"fd00::2","eval":500}]'
+	atf_check -o save:sd.json "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"id":"acme/a-b","address":"100.64.0.1","family":"inet","fib":1,"state":"(error|unknown|up|down)"' \
+	    -o match:'"interval":200,"size":64,"eval":1000,"dscp":46' \
+	    -o match:'"id":"v6","address":"fd00::2","family":"inet6","fib":0' \
+	    -o match:'"eval":500' cat sd.json
+	if [ "$(id -u)" != 0 ]; then
+		atf_check -o match:'"state":"error","error":"socket: [^"]*needs root' \
+		    cat sd.json
+	fi
+	# Kept beside history.conf, and read again at the next start.
+	f=$(find . -name sdwan-probes.json)
+	atf_check -o match:'"id":"v6"' cat "$f"
+	stop_daemon
+	start_daemon
+	atf_check -o match:'"id":"acme/a-b"' -o match:'"id":"v6"' \
+	    "$JGC" -c "$SOCK" sdwan
+	# All of them stopped.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '[]'
+	atf_check -o match:'"targets":\[\]' "$JGC" -c "$SOCK" sdwan
+
+	# The rules: what is not a ruleset; one applied, its set emptied
+	# and filled while disabled, the tables made, the file loaded.
+	atf_check -s exit:1 -e match:'2 to 31' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":1,"tables":[],"rules":["10 allow ip from any to any"]}'
+	atf_check -s exit:1 -e match:'no set of its own' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"rules":["10 allow ip from any to any set 0"]}'
+	atf_check -s exit:1 -e match:'valtype' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"t","valtype":"nat"}],"rules":[]}'
+	atf_check -s exit:1 -e match:'no rules are applied' -o ignore "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"nowhere","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"sw1_zone","valtype":"skipto","entries":[["10.1.0.0/16","12"],["0.0.0.0/0","13"]]},{"name":"sw1_z0p0_4","valtype":"ipv4"}],"rules":["10 skipto tablearg ip from table(sw1_zone) to any in recv lo1","12 fwd tablearg ip4 from any to table(sw1_z0p0_4)","12 deny ip from any to any","99 count ip from any to any"]}'
+	atf_check -o match:'^ipfw -q set disable 30$' \
+	    -o match:'^ipfw -q -f delete set 30$' \
+	    -o match:'^table sw1_zone create type addr valtype skipto$' \
+	    -o match:'^table sw1_zone add 10.1.0.0/16 12$' \
+	    -o match:'^table sw1_zone add 0.0.0.0/0 13$' \
+	    -o match:'^table sw1_z0p0_4 create type addr valtype ipv4$' \
+	    -o match:'^add 10 set 30 skipto tablearg ip from table\(sw1_zone\) to any in recv lo1$' \
+	    -o match:'^add 12 set 30 deny ip from any to any$' \
+	    -o match:'^ipfw -q set enable 30$' cat ipfw.log
+	# Disabled, loaded, enabled: in that order.
+	atf_check -o inline:'1\n' sh -c "grep -n 'set disable 30' ipfw.log | cut -d: -f1 | head -1"
+	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\]\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -e match:'not one of the rules' -o ignore "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"nowhere","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
+	# The steering: the first candidate not down goes in, beside the
+	# table in use, and is swapped in.
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"sw1_z0p0_4","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"},{"id":"t2","via":"100.64.0.3"}]},{"table":"sw1_z0p0_4","prefix":"10.30.0.0/24","candidates":[{"id":"t2","via":"100.64.0.3"}]}]}'
+	atf_check -o match:'^ipfw -q table sw1_z0p0_4_alt create type addr valtype ipv4$' \
+	    -o match:'^ipfw -q table sw1_z0p0_4_alt atomic add 10.20.0.0/24 100.64.0.1 10.30.0.0/24 100.64.0.3$' \
+	    -o match:'^ipfw -q table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
+	atf_check -o match:'"steer":\[\{"table":"sw1_z0p0_4","prefix":"10.20.0.0/24","chosen":0,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed"\}' \
+	    -o match:'"steered":true' "$JGC" -c "$SOCK" sdwan
+	# Kept, both, and applied again at the next start.
+	: > ipfw.log
+	stop_daemon
+	start_daemon
+	atf_check -o match:'^add 12 set 30 deny ip from any to any$' \
+	    -o match:'^ipfw -q table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
+	# No rules: the set emptied, the tables gone.
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
+	atf_check -o match:'^ipfw -q table sw1_zone destroy$' \
+	    -o match:'^ipfw -q table sw1_z0p0_4_alt destroy$' cat ipfw.log
+	atf_check -o match:'"rules":\{"set":0,' "$JGC" -c "$SOCK" sdwan
+}
+sdwan_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case agent_build cleanup
 agent_build_head()
 {
@@ -2310,6 +2488,13 @@ agent_build_body()
 	cat > fake-git <<EOS
 #!/bin/sh
 [ "\$1" = -c ] && shift 2
+# The commit a clone is at, and the head of the repository's branch.
+[ "\$1" = -C ] && [ "\$3" = rev-parse ] && { echo 1111111111111111111111111111111111111111; exit 0; }
+if [ "\$1" = ls-remote ]; then
+	case "\$4" in nope) exit 2 ;; esac
+	printf '%s\trefs/heads/%s\n' "\$(cat $(pwd)/head 2>/dev/null || echo 2222222222222222222222222222222222222222)" "\$4"
+	exit 0
+fi
 [ "\$1" = clone ] || exit 2
 for a; do last=\$a; done
 case " \$* " in *" --branch chatty "*) jot 400 | sed 's/^/remote: line /' >&2; exit 128 ;; esac
@@ -2349,6 +2534,21 @@ EOS
 	    "$JGC" -t -c "$SOCK" agent-build -o built https://example.org/arcana.git main
 	atf_check cmp -s "$JGD" built
 	atf_check test -x built
+	# What was built is said by its commit, and the head of the
+	# repository is asked without cloning or building anything.
+	atf_check -o match:'^Commit: +1111111111111111111111111111111111111111$' \
+	    "$JGC" -c "$SOCK" agent-build -o built https://example.org/arcana.git main
+	rm made
+	echo 3333333333333333333333333333333333333333 > head
+	atf_check -o match:'^Commit: +3333333333333333333333333333333333333333$' \
+	    "$JGC" -c "$SOCK" source-head https://example.org/arcana.git main
+	atf_check test ! -e made
+	atf_check -s exit:1 -e match:'git failed' -o ignore \
+	    "$JGC" -c "$SOCK" source-head https://example.org/arcana.git nope
+	# Over SSH as a build is: the host key is not taken on trust.
+	atf_check -s exit:1 -o match:'Host key: ' \
+	    -e match:'does not know the SSH host key of git.example.org' \
+	    "$JGC" -c "$SOCK" source-head git@git.example.org:me/arcana.git
 	# The host's own settings went into the tree.
 	atf_check -o match:'CBLINK_PREFIX' cat build/src/config.mk
 	# A build that fails says why, and nothing is written.
@@ -3287,11 +3487,35 @@ add 00010 set 1 allow ip from table(T46) to any
 	atf_check -s exit:1 -o match:'Invalid argument' "$JGC" -c "$SOCK" ipfw apply
 	atf_check -o not-match:'swap' cat ipfw.log
 
+	# The file the host loads now, as rc.conf names it, made into kept
+	# rules and not written: what applying does left as comments, the
+	# options before a command taken off.
+	atf_check -s exit:1 -e match:'sets no firewall_type' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw rules -r
+	printf 'firewall_type="open"\n' >> rc.conf
+	atf_check -s exit:1 -e match:"one of rc.firewall's own" -o ignore \
+	    "$JGC" -c "$SOCK" ipfw rules -r
+	printf '# the host'"'"'s own\n-f flush\nadd 100 allow ip from any to any via lo0\n-q add 200 deny ip from any to 127.0.0.0/8\ntable T9 create type addr\nset disable 3\n' > host.rules
+	sed -i '' -e '/^firewall_type=/d' rc.conf
+	printf 'firewall_type="%s/host.rules"\n' "$(pwd)" >> rc.conf
+	atf_check -o inline:"# from $(pwd)/host.rules
+# the host's own
+# left out, applying does it: -f flush
+add 100 allow ip from any to any via lo0
+add 200 deny ip from any to 127.0.0.0/8
+table T9 create type addr
+# left out, applying does it: set disable 3
+" "$JGC" -c "$SOCK" ipfw rules -r
+	atf_check -o file:f.rules cat fw/ipfw.rules
+	sed -i '' -e '/^firewall_type=/d' rc.conf
+
 	# On and off, kept in rc.conf with where the rules are.
 	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw enable
 	atf_check -o match:'^ipfw -q enable firewall$' tail -1 ipfw.log
 	atf_check -o match:'^firewall_enable="YES"$' \
 	    -o match:'^firewall_type=".*/fw/ipfw.rules"$' cat rc.conf
+	atf_check -s exit:1 -e match:'already: the kept rules are what the firewall loads' \
+	    -o ignore "$JGC" -c "$SOCK" ipfw rules -r
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw zero 5
 	atf_check -o match:'^ipfw -q zero 5$' tail -1 ipfw.log
 	# What a rule names and is not one: a table's entry, a NAT
@@ -3734,8 +3958,10 @@ atf_init_test_cases()
 {
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
+	atf_add_test_case sdwan
 	atf_add_test_case vpn
 	atf_add_test_case vnet
+	atf_add_test_case traceroute
 	atf_add_test_case kernel
 	atf_add_test_case l2
 	atf_add_test_case fw_trace

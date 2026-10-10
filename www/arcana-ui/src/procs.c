@@ -403,7 +403,7 @@ view_procs(struct html *h, struct server *s)
 	h_fmt(h, "</span><button class=\"ghost small live%s\" data-act=\""
 	    "ps-live\" title=\"Read again every three seconds while this is "
 	    "shown, and no process is picked\"><span class=\"led\"></span>Live</button><button class=\""
-	    "icon\" data-act=\"refresh\" title=\"Read again\">⟳</button>"
+	    "icon\" data-act=\"refresh\" title=\"Read again\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4\"/></svg></button>"
 	    "</div>", pr.paused ? "" : " on");
 	if (strcmp(pr.sid, s->id) == 0 && pr.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");

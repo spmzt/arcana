@@ -34,7 +34,9 @@
  *	DELETE /api/runs/<n>		one running stopped
  *
  * The workflows are kept in workflows.json and the last runs in
- * runs.json, written as they go.  A run has a thread of its own and one
+ * runs.json, written as they go, each run's traces in a file of its
+ * own under runs/, so that the list stays small however much the
+ * steps answered.  A run has a thread of its own and one
  * for each of its hosts.  What runs by itself is started by one worker,
  * the one holding workflows.lock: a thread of it looks every few
  * seconds at what is due and at the hosts' events.  Threads never look
@@ -46,6 +48,7 @@
 #include <sys/file.h>
 #include <sys/queue.h>
 #include <sys/stat.h>
+
 
 #include <ctype.h>
 #include <errno.h>
@@ -63,6 +66,7 @@
 
 #define	WF_FILE		"workflows.json"
 #define	RUNS_FILE	"runs.json"
+#define	RUNS_DIR	"runs"
 #define	WF_LOCK		"workflows.lock"
 #define	WF_MAX		64
 #define	WF_STEPS_MAX	64
@@ -136,6 +140,29 @@ refs_copy(void)
 	memcpy(refs, v, sizeof(v[0]) * (size_t)n);
 	nrefs = n;
 	pthread_mutex_unlock(&ref_lock);
+}
+
+/* In the worker, before a thread of another part looks at the servers. */
+void
+host_refs(void)
+{
+
+	refs_copy();
+}
+
+/* Where a server is reached, for a thread of another part. */
+bool
+host_ref(const char *sid, char *uri, size_t ulen, char *peer, size_t plen,
+    char *name, size_t nlen)
+{
+	struct hostref	h;
+
+	if (!ref_get(sid, &h))
+		return (false);
+	snprintf(uri, ulen, "%s", h.uri);
+	snprintf(peer, plen, "%s", h.peer);
+	snprintf(name, nlen, "%s", h.name);
+	return (true);
 }
 
 /* ---- What jobs.yaml says of a kind ---------------------------------- */
@@ -470,6 +497,9 @@ static const char *const reads[] = { "hello", "jails", "services", "stats",
     "events", "history", "packages" };
 static const char *const ops[] = { "eq", "ne", "contains", "gt", "lt",
     "exists", "missing" };
+/* What a step does to Arcana itself (run_arcana). */
+static const char *const arcana_steps[] = { "check", "build", "agents",
+    "console" };
 
 static bool
 in_list(const char *s, const char *const *v, size_t n)
@@ -576,11 +606,22 @@ wf_check(const ucl_object_t *in, const char **whyp)
 		    ucl_str(st, "name") : ids[n]));
 		job = ucl_object_lookup(st, "job");
 		of = ucl_str(st, "read");
-		if ((job != NULL) == (of != NULL)) {
+		if ((job != NULL) + (of != NULL) + (ucl_object_lookup(st,
+		    "arcana") != NULL) != 1) {
 			ucl_object_unref(s);
-			REFUSE("step %s is a job or a read", ids[n]);
+			REFUSE("step %s is a job, a read or Arcana's own",
+			    ids[n]);
 		}
-		if (job != NULL) {
+		if (ucl_object_lookup(st, "arcana") != NULL) {
+			if (!in_list(ucl_str(st, "arcana"), arcana_steps,
+			    nitems(arcana_steps))) {
+				ucl_object_unref(s);
+				REFUSE("step %s: Arcana's own steps are check, "
+				    "build, agents and console", ids[n]);
+			}
+			put(s, "arcana", ucl_object_fromstring(ucl_str(st,
+			    "arcana")));
+		} else if (job != NULL) {
 			hurts = false;
 			if ((*whyp = job_check(job, &hurts)) != NULL) {
 				ucl_object_unref(s);
@@ -822,24 +863,38 @@ run_object(struct run *r, bool traces)
 	return (o);
 }
 
+/* The file a run's traces are in: runs/<id>.json. */
+static const char *
+run_file(uint32_t id, char *buf, size_t len)
+{
+
+	snprintf(buf, len, "%s/%u.json", RUNS_DIR, id);
+	return (buf);
+}
+
 /*
- * The run written into runs.json, in its place or as the newest; a stop
- * asked of another worker is read back.  Called with r->lock held.
+ * The run written into runs.json, in its place or as the newest, and
+ * with its traces into its own file; a stop asked of another worker is
+ * read back.  Called with r->lock held.
  */
 static void
 run_save(struct run *r)
 {
-	ucl_object_t		*top, *keep, *mine;
+	ucl_object_t		*top, *keep, *mine, *full;
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	size_t			 n;
+	char			 file[64], path[MAXPATHLEN];
 	bool			 found;
 
 	pthread_mutex_lock(&wf_lock);
 	if ((top = store_load(RUNS_FILE)) == NULL)
 		top = ucl_object_typed_new(UCL_OBJECT);
 	keep = ucl_object_typed_new(UCL_ARRAY);
-	mine = run_object(r, true);
+	full = run_object(r, true);
+	(void)store_save(run_file(r->id, file, sizeof(file)), full);
+	ucl_object_unref(full);
+	mine = run_object(r, false);
 	found = false;
 	n = 0;
 	it = NULL;
@@ -860,7 +915,14 @@ run_save(struct run *r)
 		n++;
 	}
 	while (n > RUNS_KEEP) {
-		ucl_object_unref(ucl_array_pop_first(keep));
+		ucl_object_t	*old = ucl_array_pop_first(keep);
+
+		/* Its traces go with it. */
+		snprintf(path, sizeof(path), "%s/%s", cfg.datadir, run_file(
+		    (uint32_t)ucl_object_toint(ucl_object_lookup(old, "id")),
+		    file, sizeof(file)));
+		(void)unlink(path);
+		ucl_object_unref(old);
 		n--;
 	}
 	ucl_object_unref(mine);
@@ -996,9 +1058,11 @@ run_job(struct hostrun *hr, int k, const ucl_object_t *step)
 			continue;
 		}
 		st = ucl_object_tostring_forced(path_get(jr, "job.state"));
-		if (strcmp(st, "done") == 0 || strcmp(st, "failed") == 0 ||
-		    strcmp(st, "cancelled") == 0) {
-			ok = strcmp(st, "done") == 0;
+		if (strcmp(st, "done") == 0 || strcmp(st, "cancelled") == 0) {
+			/* Done is how it ended, ok whether it did it. */
+			ok = strcmp(st, "done") == 0 && ucl_object_type(
+			    path_get(jr, "job.ok")) == UCL_BOOLEAN &&
+			    ucl_object_toboolean(path_get(jr, "job.ok"));
 			pthread_mutex_lock(&hr->run->lock);
 			free(x->trace);
 			x->trace = strlen(json) < TRACE_MAX ? strdup(json) :
@@ -1049,6 +1113,221 @@ run_read(struct hostrun *hr, int k, const ucl_object_t *step)
 	pthread_mutex_unlock(&hr->run->lock);
 	free(json);
 	ucl_object_insert_key(hr->answers, ans, ucl_str(step, "id"), 0, true);
+	step_set(hr, k, "done", NULL);
+	return (true);
+}
+
+/*
+ * Arcana itself, from the repository agent_source names (web.conf):
+ *
+ *	check	the commit at its head, asked of the step's host, beside
+ *		the one last built, the one the agents were last sent and
+ *		the one the console last updated itself to: {"commit",
+ *		"built", "agents", "updated", "new_agents", "new_console",
+ *		"new"}, each new when the head is not that, and new when
+ *		either is
+ *	build	arcana-agent built on the step's host, kept to be sent
+ *	agents	that agent sent to every host of the console, each
+ *		restarted with it
+ *	console	the console updated where it runs, through the step's
+ *		host, which is the one it runs on (a server added by its
+ *		local socket); it restarts once the step has ended
+ *
+ * What was built and updated to is kept in arcana-source.json.
+ */
+#define	SOURCE_FILE	"arcana-source.json"
+
+static pthread_mutex_t	source_lock = PTHREAD_MUTEX_INITIALIZER;
+
+static ucl_object_t *
+source_state(void)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	char			 path[MAXPATHLEN];
+
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, SOURCE_FILE);
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+	o = ucl_parser_add_file(p, path) ? ucl_parser_get_object(p) : NULL;
+	ucl_parser_free(p);
+	return (o != NULL ? o : ucl_object_typed_new(UCL_OBJECT));
+}
+
+static void
+source_note(const char *key, const char *commit)
+{
+	ucl_object_t	*o;
+	unsigned char	*json;
+	char		 path[MAXPATHLEN], tmp[MAXPATHLEN];
+	FILE		*fp;
+
+	if (commit == NULL || commit[0] == '\0')
+		return;
+	pthread_mutex_lock(&source_lock);
+	o = source_state();
+	put(o, key, ucl_object_fromstring(commit));
+	json = ucl_object_emit(o, UCL_EMIT_JSON);
+	ucl_object_unref(o);
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, SOURCE_FILE);
+	snprintf(tmp, sizeof(tmp), "%s.new", path);
+	if (json != NULL && (fp = fopen(tmp, "we")) != NULL) {
+		fputs((char *)json, fp);
+		if (fclose(fp) == 0)
+			(void)rename(tmp, path);
+	}
+	free(json);
+	pthread_mutex_unlock(&source_lock);
+}
+
+/* An answer of a call: kept as the step's trace and for the steps after. */
+static void
+step_answer(struct hostrun *hr, int k, const ucl_object_t *step,
+    ucl_object_t *ans)
+{
+	unsigned char	*json;
+
+	json = ucl_object_emit(ans, UCL_EMIT_JSON_COMPACT);
+	pthread_mutex_lock(&hr->run->lock);
+	free(hr->steps[k].trace);
+	hr->steps[k].trace = json != NULL && strlen((char *)json) < TRACE_MAX ?
+	    strdup((char *)json) : NULL;
+	pthread_mutex_unlock(&hr->run->lock);
+	free(json);
+	ucl_object_insert_key(hr->answers, ans, ucl_str(step, "id"), 0, true);
+}
+
+/* One call of Arcana's to a host, as JSON; NULL and why when it failed. */
+static ucl_object_t *
+arcana_call(const struct hostref *h, const char *what, char *why,
+    size_t len)
+{
+	ucl_object_t	*ans;
+	char		*json;
+	int		 status;
+
+	json = hosts_arcana(h->uri, h->peer, h->name, what, &status);
+	ans = parse(json);
+	free(json);
+	if (ans == NULL || status != 200 || !ucl_object_toboolean(
+	    ucl_object_lookup(ans, "ok"))) {
+		snprintf(why, len, "%s: %s", h->name, ans != NULL && ucl_str(ans,
+		    "error") != NULL ? ucl_str(ans, "error") : ans != NULL &&
+		    ucl_str(ans, "host_keys") != NULL ? "its SSH host key is "
+		    "to be confirmed by hand first (Build agent here)" :
+		    "the host did not answer");
+		if (ans != NULL)
+			ucl_object_unref(ans);
+		return (NULL);
+	}
+	return (ans);
+}
+
+static bool
+run_arcana(struct hostrun *hr, int k, const ucl_object_t *step)
+{
+	struct hostref	 all[256];
+	ucl_object_t	*ans, *st, *list, *one;
+	const char	*what, *head, *updated, *agents;
+	char		 why[400];
+	int		 i, n, failed;
+	bool		 na, nc;
+
+	what = ucl_str(step, "arcana");
+	if (cfg.agent_source == NULL) {
+		step_set(hr, k, "failed", "agent_source in web.conf names no "
+		    "repository");
+		return (false);
+	}
+	if (strcmp(what, "check") == 0) {
+		if ((ans = arcana_call(&hr->h, "source-head", why,
+		    sizeof(why))) == NULL) {
+			step_set(hr, k, "failed", "%s", why);
+			return (false);
+		}
+		pthread_mutex_lock(&source_lock);
+		st = source_state();
+		pthread_mutex_unlock(&source_lock);
+		head = ucl_str(ans, "commit");
+		updated = ucl_str(st, "updated");
+		agents = ucl_str(st, "agents");
+		put(ans, "built", ucl_object_fromstring(ucl_str(st, "built") !=
+		    NULL ? ucl_str(st, "built") : ""));
+		put(ans, "agents", ucl_object_fromstring(agents != NULL ?
+		    agents : ""));
+		put(ans, "updated", ucl_object_fromstring(updated != NULL ?
+		    updated : ""));
+		na = head != NULL && (agents == NULL || strcmp(head, agents) !=
+		    0);
+		nc = head != NULL && (updated == NULL || strcmp(head, updated) !=
+		    0);
+		put(ans, "new_agents", ucl_object_frombool(na));
+		put(ans, "new_console", ucl_object_frombool(nc));
+		put(ans, "new", ucl_object_frombool(na || nc));
+		ucl_object_unref(st);
+		step_answer(hr, k, step, ans);
+		step_set(hr, k, "done", NULL);
+		return (true);
+	}
+	if (strcmp(what, "build") == 0 || strcmp(what, "console") == 0) {
+		if (strcmp(what, "console") == 0 && strncmp(hr->h.uri, "unix:",
+		    5) != 0) {
+			step_set(hr, k, "failed", "the console is updated "
+			    "through the agent of the host it runs on: a "
+			    "server added by its local socket");
+			return (false);
+		}
+		if ((ans = arcana_call(&hr->h, strcmp(what, "build") == 0 ?
+		    "agent-build" : "console-update", why, sizeof(why))) ==
+		    NULL) {
+			step_set(hr, k, "failed", "%s", why);
+			return (false);
+		}
+		source_note(strcmp(what, "build") == 0 ? "built" : "updated",
+		    ucl_str(ans, "commit"));
+		step_answer(hr, k, step, ans);
+		step_set(hr, k, "done", NULL);
+		return (true);
+	}
+	/* agents: every host the console has, one after the other. */
+	pthread_mutex_lock(&ref_lock);
+	n = nrefs;
+	memcpy(all, refs, sizeof(all[0]) * (size_t)n);
+	pthread_mutex_unlock(&ref_lock);
+	list = ucl_object_typed_new(UCL_ARRAY);
+	failed = 0;
+	for (i = 0; i < n && !cancelled(hr->run); i++) {
+		one = ucl_object_typed_new(UCL_OBJECT);
+		put(one, "host", ucl_object_fromstring(all[i].name));
+		if ((ans = arcana_call(&all[i], "agent-update", why,
+		    sizeof(why))) == NULL) {
+			failed++;
+			put(one, "ok", ucl_object_frombool(false));
+			put(one, "error", ucl_object_fromstring(why));
+		} else {
+			put(one, "ok", ucl_object_frombool(true));
+			if (ucl_str(ans, "version") != NULL)
+				put(one, "version", ucl_object_fromstring(
+				    ucl_str(ans, "version")));
+			ucl_object_unref(ans);
+		}
+		ucl_array_append(list, one);
+	}
+	ans = ucl_object_typed_new(UCL_OBJECT);
+	put(ans, "hosts", list);
+	put(ans, "failed", ucl_object_fromint(failed));
+	step_answer(hr, k, step, ans);
+	if (failed > 0) {
+		step_set(hr, k, "failed", "%d of %d hosts did not take it",
+		    failed, n);
+		return (false);
+	}
+	/* What they run now: what was built last. */
+	pthread_mutex_lock(&source_lock);
+	st = source_state();
+	pthread_mutex_unlock(&source_lock);
+	if (ucl_str(st, "built") != NULL)
+		source_note("agents", ucl_str(st, "built"));
+	ucl_object_unref(st);
 	step_set(hr, k, "done", NULL);
 	return (true);
 }
@@ -1108,7 +1387,8 @@ host_run(void *arg)
 		}
 		step_set(hr, k, "running", NULL);
 		ok = ucl_object_lookup(step, "job") != NULL ? run_job(hr, k,
-		    step) : run_read(hr, k, step);
+		    step) : ucl_object_lookup(step, "arcana") != NULL ?
+		    run_arcana(hr, k, step) : run_read(hr, k, step);
 		if (ok)
 			continue;
 		of = ucl_str(step, "on_fail");
@@ -1167,7 +1447,7 @@ run_main(void *arg)
 	r->ended = time(NULL);
 	run_save(r);
 	pthread_mutex_unlock(&r->lock);
-	kore_log(LOG_NOTICE, "workflow %s, run %u: %s",
+	thread_log(LOG_NOTICE, "workflow %s, run %u: %s",
 	    ucl_str(r->wf, "name"), r->id, r->state);
 	pthread_mutex_lock(&running_lock);
 	for (k = 0; k < 64; k++)
@@ -1596,6 +1876,8 @@ workflows_init(void)
 
 	refs_copy();
 	(void)kore_timer_add(refs_tick, 2000, NULL, 0);
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, RUNS_DIR);
+	(void)mkdir(path, 0700);
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, WF_LOCK);
 	if ((lockfd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600)) == -1 ||
 	    flock(lockfd, LOCK_EX | LOCK_NB) == -1) {
@@ -1834,7 +2116,20 @@ api_runs(struct http_request *req)
 		put(top, "ok", ucl_object_frombool(true));
 		return (reply_json(req, 200, top));
 	}
-	one = ucl_object_ref(one);
+	/* With its traces, from its own file; its state as the list has
+	 * it, which a restart may have made interrupted. */
+	{
+		ucl_object_t	*full;
+		char		 file[64];
+
+		if ((full = store_load(run_file(n, file, sizeof(file)))) !=
+		    NULL) {
+			put(full, "state", ucl_object_copy(ucl_object_lookup(
+			    one, "state")));
+			one = full;
+		} else
+			one = ucl_object_ref(one);
+	}
 	pthread_mutex_unlock(&wf_lock);
 	ucl_object_unref(top);
 	return (reply_json(req, 200, one));

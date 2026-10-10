@@ -465,7 +465,7 @@ out:
 	if (tconn != NULL)
 		hosts_shared_done(tconn, true);
 	xf_record(r, state, why[0] != '\0' ? why : NULL, time(NULL), NULL);
-	kore_log(LOG_NOTICE, "transfer %u %s: %s to %s%s%s", r->id,
+	thread_log(LOG_NOTICE, "transfer %u %s: %s to %s%s%s", r->id,
 	    xf_states[state], r->snapshot, r->dataset, why[0] != '\0' ? ": " :
 	    "", why);
 	while ((q = STAILQ_FIRST(&r->chunks)) != NULL) {

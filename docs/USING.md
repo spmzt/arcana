@@ -20,14 +20,37 @@ The console is laid out as a tree and tabs.
   shows the rest.
 - **All hosts**: every host as a card with CPU, memory and ZFS, how many
   jails run, and the fleet as a graph from the console through the
-  hosts to their jails; nodes are links.
+  hosts to their jails; nodes are links. The agent on the console's
+  own host, added by its socket, wears a **console's host** label in
+  the tree and on its page: besides what every agent does, it builds
+  `arcana-agent` from the repository for every host, and **Update
+  console** builds and installs the console itself there.
 - **Network**: the fleet as a map; see [The network](#the-network).
+- A workflow's run is a task of the activity bar as well, begun by
+  hand, by the clock or by an event, and ended there as the run ends,
+  with why when it failed. The runs' traces are kept each in a file of
+  its own (`runs/<id>.json` in the data directory), the list in
+  `runs.json` without them, so that the list stays quick to read and
+  write however much the steps answered. What cannot be read is said
+  on the page, with a way to try again.
 - **Workflows**: chains of steps the console keeps and runs on
   several hosts at once. A step is a job of any kind, its fields
   those `share/arcana/jobs.yaml` says the kind needs (marked) and
   uses, with a choice where a field is one of a few; or a read of the
   host (hello, jails, services, stats, events, history, packages)
-  whose answer a later step looks at. **Only when…** puts a condition
+  whose answer a later step looks at; or one of Arcana's own, from
+  the repository the console builds from (`agent_source`): **is its
+  repository newer** asks the step's host for the commit at its head
+  (`git ls-remote`, nothing cloned) and answers `new_agents`,
+  `new_console` and `new` (either), each true when the head is not
+  what the agents, or the console, were last updated to; **build the
+  agent** has the host build arcana-agent, kept by the console;
+  **update every host's agent** sends it to every host, each
+  restarted with it; **update the console** builds and installs all
+  of Arcana on the host the console runs on (a server added by its
+  local socket), the console restarting once the step has ended. What
+  was built and updated to is kept in `arcana-source.json`. **Only
+  when…** puts a condition
   before a step: a read made then, or what an earlier step answered,
   a path in it (`jails[name=web].state`, `host.hostname`) and a test
   (eq, ne, contains, gt, lt, exists, missing); a step whose condition
@@ -48,9 +71,16 @@ The console is laid out as a tree and tabs.
   and how each host's went; a run is drawn as its chain, a row for each
   host, each step coloured by how it went, and a step picked shows its
   trace. What waits in the queue becomes a workflow with **As a
-  workflow**. The console keeps the workflows in `workflows.json` and
+  workflow**, and **From a template…** starts one made already, to be
+  looked over and saved: Arcana kept up to date from its repository
+  (every hour: the check, then the agent built, sent to every host,
+  and the console updated, each only when the head is newer), a jail
+  started again when it stops, packages upgraded every week, and a
+  service restarted when its host answers again. The console keeps the workflows in `workflows.json` and
   the last 30 runs in `runs.json`; what runs by itself is started by
   one worker of the console's, the one holding `workflows.lock`.
+- **SD-WAN**: the SD-WAN services the console keeps, as MEF 70.2
+  says them; see [SD-WAN](#sd-wan).
 - **Utilization**: how busy every host has been, as lines over the
   last five minutes, quarter of an hour, hour, or all that is kept.
   Each agent looks at its host by itself, every five seconds and an
@@ -142,10 +172,25 @@ The console is laid out as a tree and tabs.
     gateway may be several addresses with commas between, each with
     its share after an `@` (`10.0.0.1@2,10.0.0.2`): that is one route
     with as many next hops (ECMP), which the table shows as a row for
-    each, **Path** saying which of how many, and **Nexthops**, in
+    each, **Path** saying which of how many; a route's **Nhop** opens
+    its next hop in a box (its type, gateway, interface, MTU, flags
+    and how many routes use it), or for a route of several ways the
+    group they share with what each way carried, and **Nexthops**, in
     **Groups**, as the group the kernel made of them: each
     group a row, its next hops one under the other, each with its
-    gateway, interface and a bar of its share. A second route to a
+    gateway, interface and a bar of its share. Under each group, what
+    it carried, from the samples the agents keep (the history): on
+    the left what the host **sent** by each next hop's interface, on
+    the right what the gateways **received**, on the interface with
+    the gateway's address, where the gateway is a host of this
+    console. Each is a chart of columns over the last 5, 15 or 60
+    minutes, every column the shares of that moment stacked to the
+    whole, with the weights dashed across where the shares would
+    meet if they were kept; beside it each next hop's share against
+    its weight, and its rate. An interface's traffic is all of it,
+    not only the group's, and next hops by one interface are one
+    share: the samples cannot tell them apart. A jail's groups have
+    no chart, its interfaces not being sampled. A second route to a
     destination that has one makes such a group too; one way of it
     is deleted by its gateway. A route of several gateways is not
     kept in `rc.conf` from here. A route can be given its
@@ -334,6 +379,12 @@ The console is laid out as a tree and tabs.
     **Kept rules as text** shows it to be changed as a whole, checked
     by ipfw without being done, and for a host that has none **Start
     from the layout** fills it with the chain, its calls and returns.
+    When rc.conf's `firewall_type` names a file of the host's own,
+    which the firewall loads now, **Load the current file** puts that
+    file in the text as kept rules: what applying does itself
+    (`flush`, `set`, `delete`) left in as comments and the options
+    before a command (`-q`, `-f`) taken off, nothing kept until
+    **Keep**.
     **Apply the kept rules** makes them the whole ruleset without a
     gap: they are loaded into set 1 while it is disabled, and set 1
     is swapped with set 0, so no packet meets half a ruleset. The
@@ -345,7 +396,7 @@ The console is laid out as a tree and tabs.
     does not load it. From a shell: `arcanactl net ipfw`, `arcanactl
     [-p] ipfw add number rule…`, `ipfw keep add …`, `ipfw [keep]
     delete number`, `[-s] ipfw apply`, `ipfw enable | disable`,
-    `ipfw rules [-w file] [-n]`, `ipfw trace address [seconds
+    `ipfw rules [-r | -w file [-n]]`, `ipfw trace address [seconds
     [packets]]`.
     While the Firewall tab is shown its parts are in the side bar, in
     place of the hosts: **Overview**, **Dynamic states**, **Kept rules
@@ -714,7 +765,11 @@ The console is laid out as a tree and tabs.
 - The tree, the activity bar, the list of tasks in it and the service
   drawer are resized by dragging their edge; the browser keeps the
   sizes, and a double click on the edge goes back to the usual one.
-- **Settings** has **API tokens**: read-only tokens for a program to
+- **Settings** is a section of its own, at the foot of the tree, with
+  a tab for each part: **Look**, **Notifications**, **API tokens**,
+  **Sign-in keys**, **Console** and **web.conf**. It opens with no host
+  as well.
+- **Settings**, **API tokens**: read-only tokens for a program to
   look at the hosts through the API without a passkey, sent as
   `Authorization: Bearer arcr_…`. One is made with a name and its
   value is shown that once; the console keeps only its SHA-256, and
@@ -723,33 +778,41 @@ The console is laid out as a tree and tabs.
   read the console's settings, sign-in, push or enrolment. Deleted, it
   opens nothing at once.
 - **Settings** has the console's version, and under **Look** its
-  themes: Tron, Amber, Matrix, Synth, Slate, Onyx (black, white and one
-  red, in a plain face, without glow) and the light ones: Paper,
-  the warm Sand, the cool Mist and the green Mint. The one
-  picked takes at once and is kept in that browser. A theme is a set of
-  colours in `web/style.css` (`html[data-theme="…"]`): the accent, the
-  surfaces and the text, which everything else is drawn from.
+  themes. **Graphite**, the default everywhere, is calm: surfaces of
+  one hue, one blue for what can be acted on, green, amber and red for
+  how things are, a plain face for reading and the fixed one for what
+  is read character by character (addresses, keys, code), words as they
+  are written and nothing glowing. Slate, Onyx (black, white and one
+  red) and the light ones, Paper, the warm Sand, the cool Mist and the
+  green Mint, are drawn the same way in their colours. The neon ones,
+  Tron, Amber, Matrix and Synth, are the console on a dark grid it began
+  as: glow, a display face, capitals spaced out. The one picked takes
+  at once and is kept in that browser. A theme is a set of colours in
+  `web/style.css` (`html[data-theme="…"]`): the accent, the surfaces
+  and the text, which everything else is drawn from. A browser that
+  kept another theme before Graphite was the default is moved to
+  Graphite once. **Motion**, under **Look** too, turns the blur and the
+  idle animations off or on.
 - On a phone the tree is one line under the top bar, showing what is
   selected; a tap unfolds it, and picking something folds it again. The
   top bar's buttons are a row of their own, tables scroll inside
   themselves, and notifications appear above the activity bar.
-- **Settings** in the top bar changes the console's own settings: the
+- **Settings**, **Console**, changes the console's own settings: the
   name keys show, the release check and its feed, the `arcana-agent` it
   sends, and the repository and branch a host builds it from. They are
   kept in `settings.json` in the data directory and override `web.conf`;
   a field put back to `web.conf`'s value follows it again. The relying
   party, the origin, the data directory and the certificates are shown
-  there and changed only in `web.conf`: keys are bound to the first two,
+  under **web.conf** and changed only there: keys are bound to the first two,
   and all are read once, at the start. Whoever can log in can set the
   repository, and so decides what is built and sent to every host as
   root.
-- In the top bar: **FX** turns the blur and idle animations off for this
-  browser, **Notify** allows a notification when a task that
+- In the top bar: **Notify** allows a notification when a task that
   took more than ten seconds ends, and has this browser told of changes
   made in the others (below); once the browser has allowed them, the
   same button turns them off and on again for this browser, which also
-  stops what is pushed to it. **Keys** manages security keys and
-  passkeys.
+  stops what is pushed to it. **Settings**, **Sign-in keys**, manages
+  security keys and passkeys.
 - **Notifications on other devices**: a change asked for in one browser
   is told, when it ends, to every other browser where **Notify** was
   allowed, whether or not the console is open there: the phone hears of
@@ -761,7 +824,8 @@ The console is laid out as a tree and tabs.
   (VAPID; `vapid.pem` in the data directory). The push service sees who
   sends and to whom, not what. The console must be able to reach those
   services over HTTPS, port 443, and the page must be served over HTTPS
-  for a browser to subscribe. **Settings** lists the devices
+  for a browser to subscribe. **Settings**, **Notifications**, lists the
+  devices
   (`push.json`) and removes one; a device whose browser dropped the
   subscription is forgotten by itself. Up to 16 devices.
 
@@ -785,8 +849,10 @@ The console is laid out as a tree and tabs.
   along the top and the legend one along the foot, each scrolled
   sideways, and **Arrange** puts the hosts on a tall ellipse that the
   screen holds.
-- On a phone that has no theme chosen the plain **Slate** is used;
-  Tron and the others are chosen in Settings as anywhere.
+- Choices of one kind (the views of a tab, a family, a range of time)
+  are one joined row that does not break into a grid, and scrolls
+  sideways where there is no room; a page's tabs too. A table row with
+  more than three actions shows two and **…**, which shows the rest.
 - **Every table's columns** are as wide as their borders are dragged
   in the head; a double click on a border lets the column be as wide
   as what is in it again. A box with a mark before its name (a
@@ -846,9 +912,12 @@ The console is laid out as a tree and tabs.
 
 ## The network
 
-**Network** in the tree shows the fleet as a map. Nothing is configured
-for it: the console reads each host's interfaces every few seconds and
-works the links out.
+**Network** in the tree shows the fleet as a map, its first tab. Nothing
+is configured for it: the console reads each host's interfaces every
+few seconds and works the links out. Its second tab, **Nexthop
+groups**, has every host's routes of several next hops with what each
+next hop sent and what its gateway received, as a host's Nexthops tab
+draws them (above).
 
 - A **link** is drawn only between hosts of this console: a tunnel
   whose far end is an address of another host, a point-to-point address
@@ -916,11 +985,193 @@ works the links out.
   of two hosts of the console are drawn as a tunnel. Each is made in safe mode, and kept in `rc.conf`
   unless told otherwise. A tunnel picked on the map is destroyed with
   one button, both ends.
-- **Route between hosts** asks each host on the way which route it
+- **Look up the route** asks each host on the way which route it
   takes to an address (the agent's `route-lookup`), follows the gateway
   to the host that has its address, and draws the way over the map hop
   by hop, until the address is reached, the way leaves the hosts of this
   console, or it comes back to where it was. Beside each hop are the
   routes that would be taken in its place when the best one goes, drawn
   dashed.
+- **Traceroute**, the section's third tab, is the way the packets take
+  in fact, as `mtr` shows it: from a host of this console to an address
+  or another host, a round of `traceroute` every second, a probe a hop,
+  each hop with what it lost and its last, average, best and worst
+  times and their deviation, and a bar from the best to the worst
+  with the average marked. A hop that answers differently over the
+  rounds, a way of several, says how many more answered. Where a hop is
+  a host of this console it is named, with the interface the probe came
+  in by; and of the host it starts from and each of ours on the way,
+  the interface it sends on towards the address, by which gateway, and
+  that interface's MTU: the smallest of them is as large as the path's
+  MTU can be. From a shell: `arcanactl traceroute address`.
 
+## SD-WAN
+
+**SD-WAN** in the tree holds the SD-WAN services the console keeps,
+named as MEF 70.2 (SD-WAN Service Attributes and Service Framework)
+names them. It is one document with three parts:
+
+- `ucs`: the underlays (Underlay Connectivity Services, §12). Each has
+  an `id`, a `type` (`public`, an Internet Access, or `private`), a
+  `billing` (`flat-rate`, `usage-based` or `other`), and the
+  `tunnel` the edges make over it: `kind` `gre`, `gif`, `geneve` or
+  `wg`, and for the first three `ipsec`, true for IPsec IKEv2 under
+  it.
+- `edges`: the hosts that are SD-WAN Edges (§7.8). Each names its
+  `server` and lists its `ucs_end_points` (§12.3): an `id`, its
+  `ucs`, the `interface` it is on, and maybe an `address`, a
+  `gateway`, a `bandwidth` in bits per second, `backup` (used only
+  when nothing else is left) and `breakout` (traffic for the Internet
+  leaves here; only on a public underlay).
+- `swvcs`: the services (SD-WAN Virtual Connections, §9). Each has
+  an `id`, the `fib` it has on its edges (1 or more; FIB 0 is the
+  underlay's), its `ucs`, `reserved_prefixes` (the provider's own
+  addresses, tunnels' among them), and:
+  - `zones` (§9.5): a `name` and `prefixes`, a list or `Default`, and
+    `policies`, each an `app` (a flow or a group) and the ingress
+    `policy` it gets in the whole zone, or `Block`;
+  - `flows` (§9.14), matched in order, the first that matches: a
+    `name`, `criteria` that all must match (`sav4`, `dav4`, `sdav4`,
+    `sav6`, `dav6`, `sdav6`, `protv4`, `nextheadv6`, `dscp`, `sport`,
+    `dport`, `sdport`, `ethertype`, `appid`, or `any` alone) and
+    maybe a `group` of `groups`;
+  - `policies` (§9.12): a `name`, a `direction`, `ingress` or
+    `egress`, and `criteria`. Ingress: `encryption`,
+    `public-private`, `internet-breakout`, `backup`,
+    `virtual-topology`, `allowed-destination-zones`,
+    `billing-method`, `business-importance`, `performance` (a
+    `primary` metric, `delay`, `ipdv` or `loss`, with `threshold`,
+    `ceiling` and `remediation`, and `secondary` ones with a
+    threshold), `bandwidth` (`commit` and `limit`, or a rate
+    limiter's name) and `af-security-ingress`. Egress:
+    `egress-block` and `af-security-egress`;
+  - `topologies` (§9.6): `multipoint-to-multipoint` with
+    `end_points`, or `rooted-multipoint` with `roots` and `leaves`;
+    `Swvc`, all to all, is always there;
+  - `intervals` (§9.7: `eval`, `arrival`, `ir`, in milliseconds),
+    `rate_limiters`, `security_policies`, `importance` (`levels`,
+    high to low, and a `default`) and `probe`, how its tunnels are
+    measured;
+  - `end_points` (§10): an `id`, the `edge` it is on, its `uni` (§11:
+    an `id`, the `interface`, a `vlan` or 0, `max_frame`, `ipv4` and
+    `ipv6` addressing, `none` or `static` with a `prefix` and the
+    `provider`'s addresses in it, `ll-only` for IPv6 too, and static
+    `routes`), its `policy_map` (each a `zone` or `Internet`, an `app`,
+    and its `ingress` and `egress` policies, over the zone's own) and
+    its `nat`.
+
+**Overview** shows the underlays, the edges and the services in
+tables; **Services** one service's end points, zones, flows (in the
+order they are matched), policies, topologies and rate limiters;
+**Document** the whole of it as JSON. **Check** asks the console
+whether it is one the standard allows and **Keep** keeps it; what the
+console says no to names where, and the requirement:
+
+    swvc office, policy realtime: performance: the ceiling is the
+    threshold or above it (R72)
+
+A change is made from the version it was read at; one made from an
+older version is refused, so two pages do not undo each other. **Start
+from an example** writes one with two of the console's hosts as its
+edges.
+
+**Edges** shows what the kept services make on the edges, and makes
+it. Each edge is to have, for each service on it:
+
+- `net.fibs` raised to the highest service FIB on it, and one (never
+  lowered). It is per vnet: a fresh vnet has 1. `net.add_addr_allfibs`
+  must be 0, the default: at 1 an interface's addresses are routed in
+  every table and no service can have one of its own, so the step
+  fails and says so.
+- strongSwan's key and daemon, when one of its tunnels wants IPsec.
+- Its end of each tunnel (a Tunnel Virtual Connection, §7.10): one
+  between each two edges of a service, over each two of their UCS End
+  Points that a tunnel can join (the same underlay, or two public
+  ones), each End Point with its outer `address`. The tunnel is the
+  underlay's `tunnel`: gre, gif or geneve, under IPsec IKEv2 in
+  transport mode when it says `ipsec` (a public underlay does unless it
+  says otherwise; and every tunnel of a service does when one of its
+  policies says `encryption` `required-always`, R39, which an underlay
+  that says no IPsec cannot meet), or wg. One IKEv2 connection serves
+  every tunnel of a kind between the same two outer addresses: in
+  transport mode it protects all of them, and two would conflict. It is in the service's FIB, its outer packets
+  in FIB 0, its inner addresses a /31 and a /127 of the service's
+  reserved prefixes; each end has its own unit (`gre100`, `gre101`),
+  since two ends may be one host. The far end is told once both ends
+  have a key: the wg peer, or the IKEv2 connection with the far host's
+  key, protecting only the tunnel's own packets (GRE, IP-in-IP, or
+  UDP for geneve).
+- Routes in the service's FIB: each far end point's prefixes by a
+  tunnel to its edge, one that is no backup first and a private one
+  before a public one; and each UNI's static routes. A prefix no tunnel
+  can carry (an IPv6 one with no IPv6 reserved prefix for the tunnels'
+  inner addresses, say) is left out, and the plan says so in a note.
+- The UNIs, last: the interface, or a VLAN on it, in the service's FIB,
+  with the provider's addresses.
+
+Each is a row with the jobs that make it, and whether it is to be
+made, made again (its jobs changed), taken away, or is as it is.
+**Apply** takes away what goes, last made first, and then makes what
+comes in Mplify 119's order (FIBs, IPsec, tunnels, their far ends,
+routes, UNIs), each step on every edge before the next; a step that
+fails takes away what it made and stops the apply. What was made is
+kept in `sdwan-state.json` with the jobs that take it away again, and
+the tunnels' units and addresses, so that one added moves none of the
+others. **Make all again** takes everything made away first.
+
+A wg tunnel's FIB is set, but not kept across a reboot: wg-quick(8),
+which brings wg up at boot, gives its addresses before any table can
+be set. gre, gif and geneve keep theirs in `rc.conf`.
+
+**Paths** shows what each edge's probes see of each tunnel. After the
+tunnels and their far ends, an apply tells each edge the tunnels to
+measure (`sdwan-probes`): the far inner address of each, pinged (ICMP
+echo, a raw socket, so the agent must be root) through the service's
+table, as Mplify 119 §11.4 has an edge measure its tunnels. Of each
+eval interval the agent keeps a sample: the one-way delay, half the
+mean round trip (MEF 105); the delay variation, the mean difference
+between one round trip and the next; the loss; the least and the
+most. So many misses in a row and the tunnel is down, so many answers
+and it is up again, each an event (`sdwan-tunnel`) the Faults list
+shows. The service's `probe` sets how: `interval` (ms, 100), `size`
+(bytes, 64), `count` (0 for without end), `dscp`, `down` and `up` (3
+and 3), `timeout` (ms, 1000), `history` (samples kept, 3600) and
+`report`; `intervals.eval` is the sample's length. The targets are
+kept beside `history.conf` for the agent's next start; `arcanactl
+sdwan` reads what they saw, `arcanactl sdwan probes json` sets them.
+
+**The rules** (after the probes, before the routes and UNIs): the
+console compiles each edge's services into one ipfw ruleset of their
+own, in set 30, rules 10 to 99, kept apart from the kept rules and
+loaded again at the agent's start (`sdwan-rules`). What comes in at a
+UNI goes by its source to its zone's block (`skipto tablearg` by the
+zone table; no zone, dropped, R23; a packet with source routing
+dropped, D1); the block has the flows in order, each with the ingress
+policy the end point's map or the zone gives it (R109–R112): a flow
+with none, or Block, is dropped; one with a policy is forwarded by the
+policy's table (`fwd tablearg`), which maps each far prefix to the
+inner address of the tunnel chosen for it, and what is not in the
+table goes on; a packet no flow matches is dropped (R96). A flow's
+criteria are said as ipfw says them (addresses, protocols, ports,
+DSCP, `appid` by a small catalog: dns, http, https, ssh, sip, ntp,
+smtp, imap, pop3, ldap, rdp, snmp, syslog, ike, bgp, quic, dhcp,
+icmp); `ethertype` cannot be, and a flow with IPv4 and IPv6 criteria
+both matches nothing.
+
+**The steering** (`sdwan-steer`): for each policy's table, each far
+prefix the policy may reach (its virtual topology, R47–R51; its
+allowed destination zones, R58–R62, Self alone by default) with the
+tunnels that fit the policy (encryption, public or private, billing,
+backup only when enabled, R63) in order: no backup first, private
+before public. The edge takes the first whose far end its probes do
+not say is down, fills a second table beside the one in use and swaps
+it in, and chooses again the moment a probe's state changes: the local
+failover, with no console. Where a policy has `performance`, the
+console's manager reads every edge's probes every five seconds and
+orders the tunnels by it (R69, R70): those that meet every threshold
+first, by the primary metric, and the one in use stays first while it
+meets them and is under the ceiling (R73); an order that changed is
+sent to the edge. `GET /api/sdwan/steer` says what was sent last;
+Paths shows each edge's prefixes, by which tunnel each goes now and
+the others' states. What a flow may do beyond the tunnels, breakout
+and the hosts of the edge's own UNI, is the next step's.

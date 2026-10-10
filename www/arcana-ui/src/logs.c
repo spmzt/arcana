@@ -515,7 +515,7 @@ view_logs(struct html *h, struct server *s)
 	    "lg-live\" title=\"Follow the log: what is written is read every "
 	    "three seconds while this is shown\"><span class=\"led\"></span>"
 	    "Live</button><button class=\"icon\" data-act=\"refresh\" title="
-	    "\"Read again\">⟳</button></div>", lg.paused ? "" : " on");
+	    "\"Read again\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4\"/></svg></button></div>", lg.paused ? "" : " on");
 	if (strcmp(lg.sid, s->id) == 0 && lg.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, lg.error);

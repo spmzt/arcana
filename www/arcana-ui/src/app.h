@@ -140,6 +140,8 @@ enum node {
 	NODE_API,		/* the console's API, as it is documented */
 	NODE_USAGE,		/* how busy every host has been, drawn */
 	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
+	NODE_SDWAN,		/* SD-WAN services, as MEF 70.2 says them */
+	NODE_SETTINGS,		/* the console's settings, a tab each */
 };
 
 enum tab {
@@ -335,6 +337,7 @@ enum modal {
 	MODAL_IF_VNET,
 	MODAL_STORAGE,
 	MODAL_LOOKUP,
+	MODAL_NHOP,
 };
 
 struct confirm {
@@ -380,6 +383,8 @@ struct app {
 	int		 sel;		/* selected server, or -1 */
 	char		 jail[256];	/* open in the drawer, or "" */
 	char		 net_jail[256];	/* whose network the tab shows: a vnet jail, or "" the host */
+	int		 netsect;	/* the Network section's tab: NETSECT_* */
+	int		 settab;	/* the Settings section's tab: SET_* */
 	char		 filter[64];
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
@@ -446,6 +451,8 @@ struct server	*cur_server(void);
 struct jailui	*jailui(struct server *, const char *);
 const ucl_object_t *find_jail(const struct server *, const char *);
 struct op	*op_find(int);
+struct op	*op_begin(const char *, const char *);
+void		 op_end(struct op *, bool, const char *);
 void		 confirm(const char *, const char *, const char *, bool,
 		    const char *, const char *, const char *, const char *);
 
@@ -619,6 +626,28 @@ bool		 logs_form(const char *, const ucl_object_t *);
 bool		 logs_action(const char *, const char *, const char *);
 void		 usage_open(void);
 void		 usage_tick(double);
+int		 usage_if_rates(const char *, const char *, bool, double,
+		    double *, double *, int);
+int		 usage_step(const char *);
+int		 topo_addr_owner(const char *, char *, size_t, char *, size_t);
+void		 topo_poll_all(void);
+int		 topo_gw_owner(const char *, int, const char *, char *, size_t,
+		    char *, size_t);
+bool		 ecmp_shown(void);
+void		 ecmp_tick(double);
+void		 ecmp_group(struct html *, const struct server *,
+		    const ucl_object_t *);
+void		 view_ecmp(struct html *);
+void		 nhop_modal(struct html *);
+bool		 nhop_action(const char *, const char *, const char *);
+void		 ecmp_head(struct html *);
+enum { NETSECT_MAP, NETSECT_GROUPS, NETSECT_TRACE };
+void		 view_traceroute(struct html *);
+bool		 mtr_action(const char *, const char *, const char *);
+void		 mtr_tick(double);
+int		 topo_if_mtu(int, const char *);
+const char	*topo_host_addr(int, int);
+bool		 ecmp_action(const char *, const char *, const char *);
 void		 view_usage(struct html *);
 bool		 usage_action(const char *, const char *, const char *);
 bool		 usage_form(const char *, const ucl_object_t *);
@@ -639,6 +668,16 @@ void		 workflows_open(void);
 void		 workflows_tick(double);
 void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
+/* view.c: the settings' tabs. */
+enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
+    SET_WEBCONF };
+int		 settab_of(const char *);
+/* sdwan.c: the SD-WAN services the console keeps. */
+void		 sdwan_open(void);
+void		 sdwan_tick(double);
+void		 view_sdwan(struct html *);
+bool		 sdwan_action(const char *, const char *, const char *);
+bool		 sdwan_form(const char *, const ucl_object_t *);
 bool		 workflows_form(const char *, const ucl_object_t *);
 bool		 workflows_modal(struct html *);
 void		 storage_tick(double);

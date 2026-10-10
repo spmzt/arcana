@@ -387,7 +387,7 @@ With
 of that jail's own firewall, as every
 .Cm ipfw
 command is: ipfw is run in the jail.
-.It Cm ipfw rules Oo Fl w Ar file Oc Op Fl n
+.It Cm ipfw rules Oo Fl r | Fl w Ar file Oo Fl n Oc Oc
 The kept rules, a file of
 .Xr ipfw 8
 commands: printed, or with
@@ -397,6 +397,13 @@ replaced by
 once ipfw has read it without doing it; with
 .Fl n
 only checked.
+With
+.Fl r ,
+the file
+.Xr rc.conf 5 Ns 's
+.Va firewall_type
+names, which the firewall loads now, printed as kept rules: what
+applying does itself left in as comments, nothing written.
 .It Cm ipfw trace Ar address Op Ar seconds Op Ar packets
 Packets to or from
 .Ar address
@@ -632,11 +639,45 @@ by, as
 .Xr route 8
 get tells it, and the other routes of the table that cover the address,
 each with the length of its prefix: what is left when the best goes.
+.It Cm sdwan
+What the agent's probes of its SD-WAN tunnels have seen, as JSON:
+each target's state, the sample in progress and the samples kept
+(the one-way delay, its variation, the loss, each eval interval).
+.It Cm sdwan probes Ar json
+The targets the agent is to measure from now on, a JSON array as the
+sdwan-probes operation takes it: each an id and an address, and maybe
+fib, interval, size, count, dscp, down, up, timeout, eval, history and
+report.
+An empty array stops them all.
+.It Cm sdwan rules Ar json
+The rules that classify what comes in at the SD-WAN UNIs and steer
+it, as the sdwan-rules operation takes them: an object with the set,
+the tables and the rules.
+.It Cm sdwan steer Ar json
+What the policy tables hold, as the sdwan-steer operation takes it:
+each prefix's candidate tunnels in order; the first not down is
+chosen, and chosen again when a probe's state changes.
+.It Cm traceroute Ar address
+One round of
+.Xr traceroute 8 ,
+or
+.Xr traceroute6 8 ,
+from the host to
+.Ar address :
+a probe a hop, a second's wait, 30 hops at most, as JSON.
+The console's Traceroute asks again and again, as
+.Xr mtr 8
+does.
 .It Cm interface Ar name Cm mtu Ar number
 .It Cm interface Ar name Cm description Ar text
 Set an interface's MTU or its description; an empty text takes the
 description off.
-.It Cm interface Ar name Cm create Oo Cm tunnel Ar local remote Oc Oo Cm address Ar address Oo Cm peer Ar address Oc Oc Oo Cm mtu Ar number Oc Oo Cm description Ar text Oc Oo Cm id Ar number Oc Oo Cm parent Ar interface Oc Oo Cm reqid Ar number Oc
+.It Cm interface Ar name Cm fib | tunnelfib Ar number
+Set the routing table what the interface receives is looked up in,
+or a tunnel's, which its outer packets are sent by; kept, 0 is taken
+out of
+.Va ifconfig_ Ns Ar name .
+.It Cm interface Ar name Cm create Oo Cm tunnel Ar local remote Oc Oo Cm address Ar address Oo Cm peer Ar address Oc Oc Oo Cm mtu Ar number Oc Oo Cm description Ar text Oc Oo Cm id Ar number Oc Oo Cm parent Ar interface Oc Oo Cm reqid Ar number Oc Oo Cm fib Ar number Oc Oo Cm tunnelfib Ar number Oc
 Create a cloned interface and set it up.
 .Ar name
 is a type with its unit, as
@@ -657,6 +698,11 @@ the interface a VLAN rides or a bridge takes in, and
 the reqid of an
 .Xr ipsec 4
 interface, from 1 to 16383, for the IPsec connection that serves it.
+.Cm fib
+and
+.Cm tunnelfib
+are set before its ends and addresses, so that the routes of its
+addresses are made in its table.
 A tunnel's ends are both IPv4 or both IPv6.
 What cannot be finished is destroyed again.
 .It Cm interface Ar name Cm give | take Ar jail
@@ -863,6 +909,20 @@ build all of Arcana there, install it over what is installed and
 restart the
 .Nm arcana_console
 service: the console's own update, on the host it runs on.
+.Fl y
+and
+.Fl i
+are as for
+.Cm agent-build .
+.It Cm source-head Oo Fl y Oc Oo Fl i Ar key Oc Ar repository Op Ar ref
+The commit at the head of the
+.Ar repository Ns 's
+branch
+.Ar ref ,
+or of its default, as
+.Nm git ls-remote
+on the host tells it: whether there is anything new to build, without
+cloning or building.
 .Fl y
 and
 .Fl i

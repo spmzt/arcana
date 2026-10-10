@@ -11,8 +11,10 @@
  */
 
 #include <sys/types.h>
+#include <sys/queue.h>
 
 #include <locale.h>
+#include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,7 +22,7 @@
 
 #include "console.h"
 
-#define	BODY_MAX	(64 * 1024)
+#define	BODY_MAX	(1024 * 1024)	/* as http_body_max */
 
 int
 reply_json(struct http_request *req, int status, ucl_object_t *o)
@@ -222,6 +224,71 @@ api_health(struct http_request *req)
 	return (reply_json(req, 200, o));
 }
 
+/*
+ * kore_log() is the worker's: it writes on the worker's channel to the
+ * parent, which a thread of the console's own (a workflow's run, a
+ * transfer, a host's events followed) must not touch while the worker
+ * does.  Such a thread's line waits here, and the worker logs it at its
+ * next tick.
+ */
+struct tlog {
+	STAILQ_ENTRY(tlog)	 next;
+	int			 prio;
+	char			*msg;
+};
+static STAILQ_HEAD(, tlog) tlogs = STAILQ_HEAD_INITIALIZER(tlogs);
+static pthread_mutex_t	tlog_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_t	worker_thread;
+
+void
+thread_log(int prio, const char *fmt, ...)
+{
+	struct tlog	*t;
+	va_list		 ap;
+	char		*msg;
+
+	va_start(ap, fmt);
+	if (vasprintf(&msg, fmt, ap) == -1)
+		msg = NULL;
+	va_end(ap);
+	if (msg == NULL)
+		return;
+	if (pthread_equal(pthread_self(), worker_thread)) {
+		kore_log(prio, "%s", msg);
+		free(msg);
+		return;
+	}
+	if ((t = malloc(sizeof(*t))) == NULL) {
+		free(msg);
+		return;
+	}
+	t->prio = prio;
+	t->msg = msg;
+	pthread_mutex_lock(&tlog_lock);
+	STAILQ_INSERT_TAIL(&tlogs, t, next);
+	pthread_mutex_unlock(&tlog_lock);
+}
+
+static void
+tlog_tick(void *arg, u_int64_t now)
+{
+	STAILQ_HEAD(, tlog)	 q;
+	struct tlog		*t;
+
+	(void)arg;
+	(void)now;
+	STAILQ_INIT(&q);
+	pthread_mutex_lock(&tlog_lock);
+	STAILQ_CONCAT(&q, &tlogs);
+	pthread_mutex_unlock(&tlog_lock);
+	while ((t = STAILQ_FIRST(&q)) != NULL) {
+		STAILQ_REMOVE_HEAD(&q, next);
+		kore_log(t->prio, "%s", t->msg);
+		free(t->msg);
+		free(t);
+	}
+}
+
 /* Called by Kore in every worker when the module is loaded. */
 int
 arcw_onload(int action)
@@ -230,6 +297,8 @@ arcw_onload(int action)
 
 	if (action != KORE_MODULE_LOAD)
 		return (KORE_RESULT_OK);
+	worker_thread = pthread_self();
+	(void)kore_timer_add(tlog_tick, 500, NULL, 0);
 	/* vis(3) treats UTF-8 in program output as printable. */
 	(void)setlocale(LC_CTYPE, "C.UTF-8");
 	if ((path = getenv("ARCANA_WEB_CONF")) == NULL)
@@ -243,5 +312,6 @@ arcw_onload(int action)
 	servers_init();
 	transfers_init();
 	workflows_init();
+	sdwan_init();
 	return (KORE_RESULT_OK);
 }

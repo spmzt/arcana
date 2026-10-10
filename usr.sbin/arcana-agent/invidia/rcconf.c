@@ -192,27 +192,45 @@ rc_alias(struct work *w, const char *ifname, const char *af, const char *addr,
 }
 
 /*
- * "mtu N" in ifconfig_<if>: the number replaced where the word is,
- * the pair added where it is not.
+ * "word N" in ifconfig_<if>, word mtu, fib or tunnelfib: the number
+ * replaced where the word is, the pair added where it is not; with
+ * value NULL, the pair taken out.
  */
 int
-rc_mtu(struct work *w, const char *ifname, unsigned int mtu,
-    const char **errp)
+rc_word(struct work *w, const char *ifname, const char *word,
+    const char *value, const char **errp)
 {
 	const char	*v, *p, *e;
-	char		*name;
+	char		*name, *key;
+	size_t		 len;
 
 	name = wfmt(w, "ifconfig_%s", rc_ifname(w, ifname));
+	key = wfmt(w, "%s ", word);
+	len = strlen(key);
 	if ((v = rc_get(w, name)) == NULL)
-		return (rc_set(w, name, "=", wfmt(w, "mtu %u", mtu), errp));
-	for (p = v; (p = strstr(p, "mtu ")) != NULL; p += 4) {
+		return (value == NULL ? 0 : rc_set(w, name, "=", wfmt(w,
+		    "%s%s", key, value), errp));
+	for (p = v; (p = strstr(p, key)) != NULL; p += len) {
 		if (p != v && p[-1] != ' ')
 			continue;
-		e = p + 4 + strspn(p + 4, "0123456789");
-		return (rc_set(w, name, "=", wfmt(w, "%.*smtu %u%s",
-		    (int)(p - v), v, mtu, e), errp));
+		e = p + len + strspn(p + len, "0123456789");
+		if (value != NULL)
+			return (rc_set(w, name, "=", wfmt(w, "%.*s%s%s%s",
+			    (int)(p - v), v, key, value, e), errp));
+		/* Out, and the space after it, or before it at the end. */
+		e += strspn(e, " ");
+		if (*e == '\0')
+			while (p > v && p[-1] == ' ')
+				p--;
+		if (p == v && *e == '\0') {
+			rc_unset(w, name);
+			return (0);
+		}
+		return (rc_set(w, name, "=", wfmt(w, "%.*s%s", (int)(p - v),
+		    v, e), errp));
 	}
-	return (rc_set(w, name, "=", wfmt(w, "%s mtu %u", v, mtu), errp));
+	return (value == NULL ? 0 : rc_set(w, name, "=", wfmt(w, "%s %s%s", v,
+	    key, value), errp));
 }
 
 /* Every variable rc.conf keeps of a cloned interface that is no more. */

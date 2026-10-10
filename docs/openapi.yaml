@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.69.0
+  version: 0.82.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -46,6 +46,8 @@ tags:
     description: Jail state and changes, through arcana-agent.
   - name: workflows
     description: Chains of steps the console runs on several hosts.
+  - name: sdwan
+    description: SD-WAN services, as MEF 70.2 says them.
 
 paths:
   /api/health:
@@ -488,8 +490,12 @@ paths:
           required: true
           schema:
             type: string
-            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, neighbours, ipsec]
-          description: The kernel's routes through netlink(4) (each with
+            enum: [routes, nexthops, nhgroups, connections, sockets, interfaces, netgraph, wireguard, bird, bird-routes, lookup, traceroute, neighbours, ipsec]
+          description: traceroute?to=ADDRESS is one round of traceroute(8)
+            or traceroute6(8) from the host, a probe a hop, as
+            {"address","family","hops":[{"ttl","address","rtt","note"} or
+            {"ttl","lost"}],"reached"}; the page asks again and again, as
+            mtr(8) does. The kernel's routes through netlink(4) (each with
             destination, gateway, flags, nhop, mtu, interface-name,
             metric, weight, fib, prefixlen, source and expire-time when
             it has them, and path of paths for one next hop of
@@ -673,15 +679,21 @@ paths:
         sha256 of it. The rules themselves, with their sets and
         counters, are read with net/ipfw; a rule is added or deleted,
         the kept rules applied and the firewall turned on or off by
-        jobs of kind ipfw.
+        jobs of kind ipfw. With from=rc, text is instead the file
+        rc.conf's firewall_type names (rc_file), which the firewall
+        loads now, made into kept rules and not written; sha256 is
+        still the kept file's, for a change made from it.
       parameters:
         - $ref: "#/components/parameters/server"
         - name: jail
           in: query
           schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, enum: [rc] }
       responses:
         "200":
-          description: ok, text and sha256, or error
+          description: ok, text and sha256 (and rc_file), or error
     post:
       tags: [servers]
       summary: Replace the kept rules, or only check them
@@ -769,6 +781,18 @@ paths:
         "200":
           description: ok and data, or error
         "400": { $ref: "#/components/responses/Error" }
+  /api/servers/{server}/sdwan:
+    get:
+      tags: [sdwan]
+      summary: What the host's probes of its SD-WAN tunnels have seen
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: data as the agent's sdwan operation answers it:
+            targets, each with its id, address, family, fib, state,
+            since, sent, received, misses, last_rtt, now and samples
+            (each t, delay, ipdv, loss, min, max, sent, recv); probing.
   /api/servers/{server}/history:
     get:
       tags: [servers]
@@ -1113,6 +1137,86 @@ paths:
                     items: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/sdwan:
+    get:
+      tags: [sdwan]
+      summary: The SD-WAN document
+      responses:
+        "200":
+          description: version, changed, ucs, edges and swvcs; version 0
+            when nothing was kept yet.
+    put:
+      tags: [sdwan]
+      summary: A new SD-WAN document, checked and kept
+      description: The whole document, with the version it was made
+        from. It is checked against MEF 70.2 as far as the console
+        implements it; a refusal names the requirement, e.g. "(R72)".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: the document as kept, its version one more
+        "400": { $ref: "#/components/responses/Error" }
+        "409":
+          description: it was made from an older version
+  /api/sdwan/check:
+    post:
+      tags: [sdwan]
+      summary: An SD-WAN document checked, not kept
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: "{ok: true}"
+        "400": { $ref: "#/components/responses/Error" }
+  /api/sdwan/plan:
+    get:
+      tags: [sdwan]
+      summary: What an apply would make on the edges
+      responses:
+        "200":
+          description: changes, each an edge's object (key, phase, title,
+            server, name, change of make, remake, unmake or keep, and
+            its make and unmake jobs); tunnels, each with its kind,
+            ipsec, encrypted, public, backup, fib, vni and its two ends
+            (edge, ucs_ep, underlay, unit, ifname, inner4, inner6); and
+            notes, what the plan leaves out and why.
+        "409": { $ref: "#/components/responses/Error" }
+  /api/sdwan/apply:
+    get:
+      tags: [sdwan]
+      summary: How the last apply went
+      responses:
+        "200":
+          description: applying, and apply (state running, done or
+            failed; started, ended, fresh, its steps each with its
+            state and detail, and the tunnels).
+    post:
+      tags: [sdwan]
+      summary: Apply, in a thread of the console
+      description: '{"fresh": true} takes away everything made first.'
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: "{steps: n}"
+        "409": { $ref: "#/components/responses/Error" }
+  /api/sdwan/steer:
+    get:
+      tags: [sdwan]
+      summary: The steering the console's manager last sent each edge
+      responses:
+        "200":
+          description: sent, by server id, each with at and entries
+            (table, prefix, swvc, policy, candidates in order).
   /api/workflows:
     get:
       tags: [workflows]
@@ -1127,7 +1231,11 @@ paths:
       description: Each step has an id and a job (an object as the jobs
         API takes one, its kind's fields as share/arcana/jobs.yaml says)
         or a read (hello, jails, services, stats, events, history,
-        packages); with when, a condition (read or step, path, op of eq,
+        packages), or arcana, one of Arcana's own (check, build, agents,
+        console: the head of agent_source against what was last built
+        and updated to, the agent built on the step's host, sent to
+        every host, the console updated where it runs); with when, a
+        condition (read or step, path, op of eq,
         ne, contains, gt, lt, exists, missing, and value); with on_fail,
         stop, continue or a later step's id. Values may be ${param.X},
         ${host.id}, ${host.name}, ${step.ID.PATH} or ${event.PATH}.
@@ -1181,7 +1289,7 @@ paths:
   /api/runs:
     get:
       tags: [workflows]
-      summary: The last runs
+      summary: The last runs, without their steps' traces
       description: The last 30, each with its trigger, params, state and
         each host's steps with their state, job, title and error; not
         their traces.

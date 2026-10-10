@@ -37,9 +37,19 @@ static struct {
 	char		 pick[32];	/* "host:step" whose trace is shown */
 	char		 run_wf[16];	/* the one asked to run */
 	char		 error[300];
+	char		 load_error[300];	/* the lists could not be read */
 	double		 at;
 	bool		 loading;
+	/* The runs in the activity bar: each a task until it ends. */
+	struct {
+		long long	run;
+		int		op;
+	}		 watched[16];
+	int		 nwatched;
+	double		 watched_at;
 } wf;
+
+static void	runs_watch(void);
 
 static void	wf_load(void);
 
@@ -50,13 +60,105 @@ list_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	ucl_object_t	**slot = arg;
 
-	(void)err;
 	wf.loading = false;
-	if (status != 200)
+	if (status != 200) {
+		/* Said, not a loader for ever. */
+		snprintf(wf.load_error, sizeof(wf.load_error), "%s: %s",
+		    slot == &wf.jobs ? "jobs.json" : slot == &wf.runs ?
+		    "the runs" : slot == &wf.run ? "the run" : "the workflows",
+		    jstr(o, "error.message") != NULL ? jstr(o,
+		    "error.message") : err != NULL ? err : "no answer");
 		return;
+	}
+	wf.load_error[0] = '\0';
 	if (*slot != NULL)
 		ucl_object_unref(*slot);
 	*slot = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	if (slot == &wf.runs)
+		runs_watch();
+}
+
+/* The name of a workflow by its id, as the lists have it. */
+static const char *
+wf_name(const char *id)
+{
+	const ucl_object_t	*w;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (id != NULL && (w = ucl_object_iterate(jget(wf.list,
+	    "workflows"), &it, true)) != NULL)
+		if (jstr(w, "id") != NULL && strcmp(jstr(w, "id"), id) == 0)
+			return (jstr(w, "name"));
+	return (id != NULL ? id : "workflow");
+}
+
+/*
+ * Each run in the activity bar: one running becomes a task there, and
+ * ends as the run does, whether it was begun here, by the clock or by
+ * an event.
+ */
+static void
+runs_watch(void)
+{
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+	struct op		*o;
+	long long		 id;
+	int			 i, k;
+	bool			 running;
+	char			 title[160];
+
+	it = NULL;
+	while ((r = ucl_object_iterate(jget(wf.runs, "runs"), &it, true)) !=
+	    NULL) {
+		id = jint(r, "id", 0);
+		running = jstr(r, "state") != NULL && strcmp(jstr(r, "state"),
+		    "running") == 0;
+		for (i = 0; i < wf.nwatched; i++)
+			if (wf.watched[i].run == id)
+				break;
+		if (i == wf.nwatched) {
+			if (!running || wf.nwatched == 16)
+				continue;
+			snprintf(title, sizeof(title), "workflow %s", wf_name(
+			    jstr(r, "workflow")));
+			o = op_begin(title, "console");
+			wf.watched[i].run = id;
+			wf.watched[i].op = o->id;
+			wf.nwatched++;
+			continue;
+		}
+		if (running)
+			continue;
+		o = op_find(wf.watched[i].op);
+		if (o != NULL) {
+			const ucl_object_t	*h, *s;
+			ucl_object_iter_t	 hit, sit;
+			const char		*why;
+
+			/* Why it failed: the first step that did. */
+			why = NULL;
+			hit = NULL;
+			while (why == NULL && (h = ucl_object_iterate(jget(r,
+			    "hosts"), &hit, true)) != NULL) {
+				sit = NULL;
+				while ((s = ucl_object_iterate(jget(h, "steps"),
+				    &sit, true)) != NULL)
+					if (jstr(s, "state") != NULL && strcmp(
+					    jstr(s, "state"), "failed") == 0) {
+						why = jstr(s, "detail");
+						break;
+					}
+			}
+			op_end(o, strcmp(jstr(r, "state"), "done") == 0, why !=
+			    NULL ? why : strcmp(jstr(r, "state"), "done") != 0 ?
+			    jstr(r, "state") : NULL);
+		}
+		for (k = i; k + 1 < wf.nwatched; k++)
+			wf.watched[k] = wf.watched[k + 1];
+		wf.nwatched--;
+	}
 }
 
 static void
@@ -105,6 +207,12 @@ void
 workflows_tick(double now)
 {
 
+	/* The runs in the activity bar are followed from any page. */
+	if (wf.nwatched > 0 && app.online && now - wf.watched_at >
+	    WF_EVERY_MS) {
+		wf.watched_at = now;
+		api("GET", "/api/runs", NULL, list_cb, &wf.runs);
+	}
 	if (app.node != NODE_WORKFLOWS || !app.visible || wf.mode == WM_EDIT)
 		return;
 	if (now - wf.at > (any_running() ? WF_EVERY_MS : 15000))
@@ -314,6 +422,123 @@ triggers(struct html *h, const ucl_object_t *w)
 	h_raw(h, "</span>");
 }
 
+/* Arcana's own steps, as the console runs them (workflows.c). */
+static const struct {
+	const char	*what, *title, *hint;
+} arcana_steps[] = {
+	{ "check", "is its repository newer",
+	    "Asks the step's host for the commit at the head of the "
+	    "repository the console builds from (agent_source), beside the "
+	    "ones the agents and the console were last updated to: its "
+	    "answer has <code>new_agents</code>, <code>new_console</code> "
+	    "and <code>new</code> (either), true when the head is newer, for "
+	    "the steps after to be run only then." },
+	{ "build", "build the agent",
+	    "Has the step's host build arcana-agent from the repository; "
+	    "the console keeps it, to send to the hosts." },
+	{ "agents", "update every host's agent",
+	    "Sends the agent the console keeps to every host it has, each "
+	    "restarted with it, one after the other." },
+	{ "console", "update the console",
+	    "Builds all of Arcana on the host the console runs on (a server "
+	    "added by its local socket) and installs it; the console "
+	    "restarts once the step has ended, so it is the last." },
+};
+
+/*
+ * Workflows made already: a draft each, to be looked over, given its
+ * hosts and saved.  ${LOCAL} is the host the console runs on, or the
+ * one picked.
+ */
+static const struct {
+	const char	*name, *title, *json;
+} templates[] = {
+	{ "arcana-update", "Arcana kept up to date from its repository",
+	    "{\"name\": \"Arcana from its repository\", \"every\": 3600, "
+	    "\"hosts\": [\"${LOCAL}\"], \"steps\": ["
+	    "{\"id\": \"check\", \"name\": \"Is there a newer commit\", "
+	    "\"arcana\": \"check\"}, "
+	    "{\"id\": \"build\", \"name\": \"Build the agent\", "
+	    "\"arcana\": \"build\", \"when\": {\"step\": \"check\", "
+	    "\"path\": \"new\", \"op\": \"eq\", \"value\": \"true\"}}, "
+	    "{\"id\": \"agents\", \"name\": \"Every host's agent\", "
+	    "\"arcana\": \"agents\", \"when\": {\"step\": \"check\", "
+	    "\"path\": \"new_agents\", \"op\": \"eq\", \"value\": \"true\"}}, "
+	    "{\"id\": \"console\", \"name\": \"The console itself\", "
+	    "\"arcana\": \"console\", \"when\": {\"step\": \"check\", "
+	    "\"path\": \"new_console\", \"op\": \"eq\", \"value\": "
+	    "\"true\"}}]}" },
+	{ "jail-restart", "A jail started again when it stops",
+	    "{\"name\": \"Jails kept running\", \"hosts\": [\"${LOCAL}\"], "
+	    "\"on\": [{\"event\": \"jail-state\", \"match\": {\"state\": "
+	    "\"stopped\"}}], \"steps\": [{\"id\": \"start\", \"name\": "
+	    "\"Start it\", \"job\": {\"kind\": \"jail-action\", \"jail\": "
+	    "\"${event.jail}\", \"action\": \"start\"}}]}" },
+	{ "pkg-weekly", "Packages upgraded every week",
+	    "{\"name\": \"Weekly upgrade\", \"every\": 604800, \"hosts\": "
+	    "[\"${LOCAL}\"], \"steps\": [{\"id\": \"upgrade\", \"name\": "
+	    "\"Upgrade the host's packages\", \"job\": {\"kind\": "
+	    "\"pkg-upgrade\"}}]}" },
+	{ "service-back", "A service restarted when its host answers again",
+	    "{\"name\": \"Service back with its host\", \"hosts\": "
+	    "[\"${LOCAL}\"], \"params\": [{\"name\": \"service\", "
+	    "\"default\": \"nginx\"}], \"on\": [{\"event\": \"host-up\"}], "
+	    "\"steps\": [{\"id\": \"restart\", \"name\": \"Restart it\", "
+	    "\"job\": {\"kind\": \"service-action\", \"service\": "
+	    "\"${param.service}\", \"action\": \"restart\"}}]}" },
+};
+
+/* The host a template names as ${LOCAL}: where the console runs. */
+static const char *
+local_host(void)
+{
+	struct server	*s;
+	int		 i;
+
+	for (i = 0; i < app.nservers; i++)
+		if (strncmp(app.servers[i].uri, "unix:", 5) == 0)
+			return (app.servers[i].id);
+	return ((s = cur_server()) != NULL ? s->id : "");
+}
+
+static bool
+draft_template(const char *name)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	const char		*at;
+	char			*json;
+	size_t			 i;
+
+	for (i = 0; i < nitems(templates); i++)
+		if (strcmp(templates[i].name, name) == 0)
+			break;
+	if (i == nitems(templates))
+		return (false);
+	/* ${LOCAL}, once, as the host's id. */
+	at = strstr(templates[i].json, "${LOCAL}");
+	if (asprintf(&json, "%.*s%s%s", (int)(at - templates[i].json),
+	    templates[i].json, local_host(), at + 8) == -1)
+		return (false);
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS);
+	o = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	free(json);
+	if (o == NULL)
+		return (false);
+	if (ucl_object_lookup(o, "params") == NULL)
+		ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+		    "params", 0, true);
+	if (ucl_object_lookup(o, "on") == NULL)
+		ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY), "on",
+		    0, true);
+	if (wf.draft != NULL)
+		ucl_object_unref(wf.draft);
+	wf.draft = o;
+	return (true);
+}
+
 static void
 view_list(struct html *h)
 {
@@ -323,7 +548,18 @@ view_list(struct html *h)
 	int			 n;
 
 	h_raw(h, "<div class=\"toolbar\"><h3>Workflows</h3><button class=\""
-	    "small\" data-act=\"wf-new\">+ workflow</button>");
+	    "small\" data-act=\"wf-new\">+ workflow</button><select class=\""
+	    "wf-template\" data-input=\"wf-template\" title=\"A workflow "
+	    "made already, to be looked over and saved\"><option value=\"\">"
+	    "From a template…</option>");
+	for (n = 0; n < (int)nitems(templates); n++) {
+		h_raw(h, "<option");
+		h_attr(h, "value", templates[n].name);
+		h_raw(h, ">");
+		h_txt(h, templates[n].title);
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select>");
 	if (app.nbatch > 0)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"queue-to-wf\" "
 		    "title=\"What waits in the queue, kept as a workflow\">The "
@@ -688,11 +924,23 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 		h_fmt(h, "<option value=\"read:%s\"%s>a read of %s</option>",
 		    reads[r], jstr(st, "read") != NULL && strcmp(jstr(st,
 		    "read"), reads[r]) == 0 ? " selected" : "", reads[r]);
+	for (r = 0; r < nitems(arcana_steps); r++)
+		h_fmt(h, "<option value=\"arcana:%s\"%s>Arcana: %s</option>",
+		    arcana_steps[r].what, jstr(st, "arcana") != NULL &&
+		    strcmp(jstr(st, "arcana"), arcana_steps[r].what) == 0 ?
+		    " selected" : "", arcana_steps[r].title);
 	h_fmt(h, "</select><span class=\"acts\"><button class=\"icon\" "
 	    "data-act=\"wf-step-up\" data-arg=\"%d\" title=\"Earlier\"%s>↑"
 	    "</button><button class=\"icon\" data-act=\"wf-step-del\" "
 	    "data-arg=\"%d\" title=\"Take it away\">×</button></span></div>",
 	    i, i == 0 ? " disabled" : "", i);
+	for (r = 0; jstr(st, "arcana") != NULL && r < nitems(arcana_steps);
+	    r++)
+		if (strcmp(jstr(st, "arcana"), arcana_steps[r].what) == 0) {
+			h_raw(h, "<p class=\"dim wfhint\">");
+			h_raw(h, arcana_steps[r].hint);
+			h_raw(h, "</p>");
+		}
 	if (job != NULL) {
 		h_fmt(h, "<label>Kind<select data-input=\"wf-kind\" data-arg="
 		    "\"%d\"><option value=\"\">—</option>", i);
@@ -897,7 +1145,13 @@ view_workflows(struct html *h)
 {
 
 	h_raw(h, "<section class=\"workflows\">");
-	if (wf.jobs == NULL || wf.list == NULL)
+	if (wf.load_error[0] != '\0' && (wf.jobs == NULL || wf.list == NULL)) {
+		h_raw(h, "<div class=\"notice bad\">The workflows could not be "
+		    "read: ");
+		h_txt(h, wf.load_error);
+		h_raw(h, "</div><button class=\"small\" data-act=\"wf-reload\">"
+		    "Try again</button>");
+	} else if (wf.jobs == NULL || wf.list == NULL)
 		h_raw(h, "<div class=\"loader\"></div>");
 	else if (wf.mode == WM_EDIT && wf.draft != NULL)
 		view_edit(h);
@@ -942,6 +1196,7 @@ started_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	snprintf(wf.run_id, sizeof(wf.run_id), "%lld", (long long)jint(o,
 	    "run", 0));
+	wf.watched_at = 0;	/* into the activity bar at once */
 	wf.mode = WM_RUN;
 	wf.pick[0] = '\0';
 	if (wf.run != NULL)
@@ -1177,9 +1432,13 @@ workflows_action(const char *act, const char *arg, const char *value)
 		    ucl_array_find_index(st, (unsigned int)i)) != NULL) {
 			(void)ucl_object_delete_key(st, "job");
 			(void)ucl_object_delete_key(st, "read");
+			(void)ucl_object_delete_key(st, "arcana");
 			if (strncmp(value, "read:", 5) == 0)
 				ucl_object_insert_key(st, ucl_object_fromstring(
 				    value + 5), "read", 0, true);
+			else if (strncmp(value, "arcana:", 7) == 0)
+				ucl_object_insert_key(st, ucl_object_fromstring(
+				    value + 7), "arcana", 0, true);
 			else
 				ucl_object_insert_key(st, ucl_object_typed_new(
 				    UCL_OBJECT), "job", 0, true);
@@ -1209,6 +1468,11 @@ workflows_action(const char *act, const char *arg, const char *value)
 		draft_new();
 		wf.error[0] = '\0';
 		wf.mode = WM_EDIT;
+	} else if (strcmp(act, "input:wf-template") == 0) {
+		if (draft_template(value)) {
+			wf.error[0] = '\0';
+			wf.mode = WM_EDIT;
+		}
 	} else if (strcmp(act, "queue-to-wf") == 0) {
 		if (app.node != NODE_WORKFLOWS)
 			workflows_open();
@@ -1223,6 +1487,9 @@ workflows_action(const char *act, const char *arg, const char *value)
 		wf.draft = ucl_object_copy(w);
 		wf.error[0] = '\0';
 		wf.mode = WM_EDIT;
+	} else if (strcmp(act, "wf-reload") == 0) {
+		wf.load_error[0] = '\0';
+		wf_load();
 	} else if (strcmp(act, "wf-back") == 0) {
 		wf.mode = WM_LIST;
 		wf_load();

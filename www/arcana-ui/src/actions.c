@@ -183,6 +183,21 @@ server_by_id(const char *id)
 }
 
 /* A new entry at the top of the activity log. */
+/* A task of the console's own, begun and ended by another part. */
+struct op *
+op_begin(const char *title, const char *server)
+{
+
+	return (op_new(title, server));
+}
+
+void
+op_end(struct op *o, bool ok, const char *err)
+{
+
+	op_done(o, ok, NULL, err);
+}
+
 static struct op *
 op_new(const char *title, const char *server)
 {

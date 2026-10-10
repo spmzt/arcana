@@ -2,6 +2,28 @@
 
 ## To do
 
+- SD-WAN (MEF 70.2 now, Mplify 119 later), step by step. Done: the
+  services kept and checked by the console, and shown; the edges made
+  from them (a FIB per service, the UNIs and tunnels in it, gre, gif,
+  geneve or wg, IPsec IKEv2 in transport mode where asked, routes by
+  the tunnels), planned, applied and kept. A wg tunnel's FIB is not
+  kept across a reboot (wg-quick gives the addresses first); the
+  tunnels measured by the agents (ICMP echo through the service's
+  table, the interval, size, count, DSCP and the down and up counts
+  set per service), the Paths tab with each end's delay, variation and
+  loss, and faults; the flows classified by ipfw in a set of their own
+  and steered by the policy tables, the edge taking the first tunnel
+  not down (the local failover), the console's manager ordering them
+  by the performance criteria. The probes and the rules run where the
+  agent runs: an edge that is a vnet jail is not measured or steered
+  yet. Next: what is not forwarded by a tunnel is let through for
+  now; breakout and NAT,
+  classified and steered by ipfw in a set of its own, the console
+  ordering each policy's tunnels by its performance criteria and the
+  agent taking the first that answers; breakout and NAT, bandwidth and
+  importance by dummynet, egress blocks, backup and billing, virtual
+  topologies; BGP and OSPF, DHCP and SLAAC at a UNI. Later: Mplify
+  119's tunnel (GRE carrying an MPLS label inside IPsec, BGP L3VPN).
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a
@@ -126,6 +148,16 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- SD-WAN's probes (2026-10-10, the root test): the loopback pinged
+  every 50 ms, up with its samples (a tenth of a millisecond each
+  way), and an address in a table with no route to it down after two
+  misses, each an event.
+- SD-WAN's jobs on two vnet jails joined by an epair (2026-10-10): a
+  gre tunnel made in FIB 1 with its /31, its route and the far UNI's
+  in FIB 1 and not in FIB 0, IKEv2 in transport mode carrying the GRE
+  (ESP AES-GCM-256, the first packet lost to the trap), and a ping
+  from one UNI to the other through it; the UNI's address cannot be
+  used from FIB 0. net.fibs is per vnet: a new one has 1.
 - Building the agent as `nobody` when `arcana-agent` runs as root
   (2026-10-04, on the console's host): the clone over SSH with the key
   set for it, make, and the program run with `-V`, each under

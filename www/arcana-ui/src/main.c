@@ -216,8 +216,11 @@ tick(void *arg)
 			procs_tick(now);
 			logs_tick(now);
 			usage_tick(now);
+			ecmp_tick(now);
+			mtr_tick(now);
 			storage_tick(now);
 			workflows_tick(now);
+			sdwan_tick(now);
 		}
 	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
@@ -317,7 +320,7 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
-	    ipsec_form(form, f) || workflows_form(form, f) ||
+	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
 	    firewall_form(form, f) || l2_form(form, f))
@@ -569,10 +572,12 @@ dispatch(const char *act, const char *arg, const char *value)
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
+	    sdwan_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
 	    sysctl_action(act, arg, value) || apidoc_action(act, arg, value) ||
 	    procs_action(act, arg, value) || logs_action(act, arg, value) ||
-	    usage_action(act, arg, value) ||
+	    usage_action(act, arg, value) || ecmp_action(act, arg, value) ||
+	    nhop_action(act, arg, value) || mtr_action(act, arg, value) ||
 	    firewall_action(act, arg, value) || l2_action(act, arg, value) ||
 	    tbl_action(act, arg, value))
 		return;
@@ -1272,13 +1277,26 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.rail_open = !app.rail_open;
 	} else if (strcmp(act, "who-toggle") == 0) {
 		app.who_open = !app.who_open;
-	} else if (strcmp(act, "settings") == 0) {
-		app.modal = MODAL_SETTINGS;
+	} else if (strcmp(act, "settings") == 0 || strcmp(act, "keys") == 0 ||
+	    strcmp(act, "set-tab") == 0) {
+		/* Settings, a section: opened at its first tab, or one named. */
+		if (app.node != NODE_SETTINGS) {
+			app.node = NODE_SETTINGS;
+			app.jail[0] = '\0';
+			app.rail_open = false;
+			app.who_open = false;
+			app.settab = SET_LOOK;
+			load_settings();
+			load_tokens();
+			load_keys();
+		}
+		if (strcmp(act, "keys") == 0)
+			app.settab = SET_KEYS;
+		else if (strcmp(act, "set-tab") == 0)
+			app.settab = settab_of(arg);
 		app.modal_error[0] = '\0';
-		/* A token's value is shown once: not again on reopening. */
+		/* A token's value is shown once: not again on another tab. */
 		app.token_value[0] = '\0';
-		load_settings();
-		load_tokens();
 	} else if (strcmp(act, "input:token-name") == 0) {
 		snprintf(app.token_name, sizeof(app.token_name), "%s", value);
 	} else if (strcmp(act, "token-new") == 0) {
@@ -1289,16 +1307,11 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "Delete", true, "", "do-token-del", arg, "");
 	} else if (strcmp(act, "do-token-del") == 0) {
 		token_del(arg);
-	} else if (strcmp(act, "keys") == 0) {
-		app.modal = MODAL_KEYS;
-		app.modal_error[0] = '\0';
-		load_keys();
 	} else if (strcmp(act, "delete-key") == 0) {
 		confirm("Remove security key", "This key will no longer log "
 		    "in. The last key cannot be removed.", "Remove", true, "",
 		    "do-delete-key", arg, "");
 	} else if (strcmp(act, "do-delete-key") == 0) {
-		app.modal = MODAL_KEYS;
 		delete_key(arg);
 	} else if (strcmp(act, "servers-again") == 0) {
 		refresh_servers();
@@ -1432,8 +1445,7 @@ main(void)
 	{
 		char *t = arc_theme_get();
 
-		snprintf(app.theme, sizeof(app.theme), "%s", strcmp(t,
-		    "tron") == 0 ? "" : t);
+		snprintf(app.theme, sizeof(app.theme), "%s", t);
 		free(t);
 	}
 	app.trace_schema = true;

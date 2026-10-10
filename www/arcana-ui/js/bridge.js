@@ -133,7 +133,14 @@ addToLibrary({
 		}
 
 		document.addEventListener("click", function (e) {
-			var t = e.target.closest("[data-act]");
+			var t = e.target.closest("[data-act]"), more;
+
+			/* A row's ⋯: its actions shown or put away. */
+			more = e.target.closest("button.acts-more");
+			if (more !== null && typeof arcActsToggle === "function") {
+				arcActsToggle(more);
+				return;
+			}
 
 			if (t === null || t.disabled)
 				return;
@@ -148,9 +155,12 @@ addToLibrary({
 			e.preventDefault();
 			o.__submit = e.submitter && e.submitter.value ?
 			    e.submitter.value : "";
+			/* Of the buttons, only the one pressed says anything. */
+			if (e.submitter && e.submitter.name)
+				o[e.submitter.name] = e.submitter.value;
 			for (i = 0; i < f.elements.length; i++) {
 				el = f.elements[i];
-				if (!el.name)
+				if (!el.name || el.tagName === "BUTTON")
 					continue;
 				o[el.name] = el.type === "checkbox" ?
 				    el.checked : el.value;
@@ -480,14 +490,22 @@ addToLibrary({
 		 */
 		var actsOpen = {};
 
-		function cardActs(t, tr) {
+		window.arcActsToggle = function (more) {
+			var td = more.parentElement;
+
+			actsOpen[more.dataset.key] = !td.classList.contains(
+			    "open");
+			td.classList.toggle("open");
+		};
+
+		function cardActs(t, tr, most) {
 			var td = tr.querySelector("td.acts"), more, key, n;
 
 			if (td === null)
 				return;
 			n = td.querySelectorAll("button:not(.acts-more)").length;
 			more = td.querySelector("button.acts-more");
-			if (n <= 2) {
+			if (n <= most) {
 				if (more !== null)
 					more.remove();
 				td.classList.remove("many");
@@ -502,14 +520,13 @@ addToLibrary({
 				more.type = "button";
 				more.className = "ghost small acts-more";
 				more.title = "Its actions";
-				more.textContent = "⋯";
-				more.addEventListener("click", function (e) {
-					e.stopPropagation();
-					actsOpen[more.dataset.key] =
-					    !td.classList.contains("open");
-					td.classList.toggle("open");
-				});
-				td.insertBefore(more, td.firstChild);
+				more.textContent = "…";
+				more.setAttribute("aria-label", "More actions");
+				/* No listener of its own: the page's one
+				 * click handler toggles it (arcActsToggle),
+				 * since morphdom may make this element
+				 * another button. */
+				td.appendChild(more);
 			}
 			more.dataset.key = key;
 			td.classList.toggle("open", actsOpen[key] === true);
@@ -523,8 +540,16 @@ addToLibrary({
 			ts = root.querySelectorAll("table.net");
 			for (i = 0; i < ts.length; i++) {
 				t = ts[i];
+				/*
+				 * On a wide screen a row keeps three of its
+				 * actions in sight, the first two and the one
+				 * that shows the rest.
+				 */
 				if (!narrow) {
 					t.classList.remove("cards");
+					rows = t.querySelectorAll("tbody > tr");
+					for (j = 0; j < rows.length; j++)
+						cardActs(t, rows[j], 3);
 					continue;
 				}
 				t.classList.add("cards");
@@ -550,7 +575,7 @@ addToLibrary({
 					}
 					rows[j].classList.toggle("titled",
 					    title > 0);
-					cardActs(t, rows[j]);
+					cardActs(t, rows[j], 2);
 				}
 			}
 		};
@@ -973,14 +998,13 @@ addToLibrary({
 	arc_theme_set: function (namep) {
 		var name = UTF8ToString(namep), meta;
 
-		/* The default one, chosen where it is not the default. */
-		if (name === "" && window.matchMedia("(max-width: 620px)")
-		    .matches)
-			name = "tron";
 		if (name === "")
 			delete document.documentElement.dataset.theme;
 		else
 			document.documentElement.dataset.theme = name;
+		/* Glow and capitals, or the plain rules (fx.js). */
+		document.documentElement.classList.toggle("neon",
+		    /^(tron|amber|matrix|synth)$/.test(name));
 		try {
 			if (name === "")
 				localStorage.removeItem("arc_theme");

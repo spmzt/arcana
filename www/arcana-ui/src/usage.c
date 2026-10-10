@@ -247,7 +247,8 @@ usage_tick(double now)
 	struct uhost	*u;
 	int		 i;
 
-	if (app.node != NODE_USAGE || !app.visible)
+	/* Also while a nexthop group's shares are drawn from them. */
+	if ((app.node != NODE_USAGE && !ecmp_shown()) || !app.visible)
 		return;
 	for (i = 0; i < app.nservers; i++) {
 		u = uhost(app.servers[i].id, false);
@@ -264,6 +265,44 @@ usage_tick(double now)
 
 /* Sample i of the host: its time first. */
 #define	T(u, i)	((u)->v + (size_t)(i) * (size_t)(u)->stride)
+
+/*
+ * The samples of one interface of a host since t0 (seconds), bytes a
+ * second in or out, the oldest first, at most max of them: how many,
+ * or -1 when the agent does not sample that interface (or has not said
+ * yet what it samples).
+ */
+int
+usage_if_rates(const char *sid, const char *ifname, bool out, double t0,
+    double *t, double *v, int max)
+{
+	const struct uhost	*u;
+	int			 k, i, n;
+
+	if ((u = uhost(sid, false)) == NULL || !u->known)
+		return (-1);
+	for (k = 0; k < u->nn && strcmp(u->nets[k], ifname) != 0; k++)
+		;
+	if (k == u->nn)
+		return (-1);
+	n = 0;
+	for (i = 0; i < u->n && n < max; i++) {
+		if (T(u, i)[F_T] < t0)
+			continue;
+		t[n] = T(u, i)[F_T];
+		v[n++] = T(u, i)[NF + 2 * k + (out ? 1 : 0)];
+	}
+	return (n);
+}
+
+/* How often a host's agent samples, in seconds; 0 not known yet. */
+int
+usage_step(const char *sid)
+{
+	const struct uhost	*u;
+
+	return ((u = uhost(sid, false)) != NULL && u->known ? u->step : 0);
+}
 
 /* What field f of sample i is, in what it is drawn in. */
 static double

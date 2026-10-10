@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.69.0"
+#define	ARCW_VERSION		"0.82.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -95,7 +95,14 @@ bool		 token_readable(const char *);
 int		 api_tokens(struct http_request *);
 int		 api_workflows(struct http_request *);
 int		 api_runs(struct http_request *);
+int		 api_sdwan(struct http_request *);
+/* sdwan.c and sdwan_edge.c: SD-WAN, kept, checked, made on the edges. */
+ucl_object_t	*sdwan_load(void);
+bool		 sdwan_valid(const ucl_object_t *, char *, size_t);
+int		 api_sdwan_edges(struct http_request *);
+void		 sdwan_init(void);
 void		 workflows_init(void);
+void		 thread_log(int, const char *, ...) __printflike(2, 3);
 int		 api_transfers(struct http_request *);
 void		 transfers_init(void);
 bool		 capture(struct http_request *, int, char *, size_t);
@@ -133,10 +140,22 @@ char		*hosts_submit(const char *, const char *, const char *,
 		    const ucl_object_t *, int *, const char **);
 char		*hosts_job(const char *, const char *, const char *, uint64_t,
 		    int *);
+char		*hosts_arcana(const char *, const char *, const char *,
+		    const char *, int *);
 char		*hosts_read(const char *, const char *, const char *,
 		    const char *, int *);
 char		*hosts_events(const char *, const char *, const char *,
 		    uint64_t, int *);
+char		*hosts_net(const char *, const char *, const char *,
+		    const char *, int *);
+char		*hosts_sysctl(const char *, const char *, const char *,
+		    const char *, int *);
+char		*hosts_sdwan_set(const char *, const char *, const char *,
+		    const char *, const char *, int *);
+int		 api_sdwan_state(struct http_request *);
+bool		 host_ref(const char *, char *, size_t, char *, size_t, char *,
+		    size_t);
+void		 host_refs(void);
 const char	*hosts_connect(const char *, const char *, cbl_conn **,
 		    cbl_tls **, struct arc_client *);
 void		 hosts_release(const char *, const char *, cbl_conn *,

@@ -274,7 +274,7 @@ view_sysctl(struct html *h, struct server *s)
 		h_txt(h, age);
 	}
 	h_raw(h, "</span><button class=\"icon\" data-act=\"refresh\" title=\""
-	    "Read again\">⟳</button></div>");
+	    "Read again\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4\"/></svg></button></div>");
 	if (strcmp(sy.sid, s->id) == 0 && sy.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, sy.error);

@@ -47,6 +47,7 @@ struct job {
 	struct arc_pkg_upgrade_req pkg;
 	bool			 refresh;
 	bool			 installed;	/* packages: pkg query */
+	bool			 from_rc;	/* ipfw-rules: rc.conf's file */
 	uint8_t			 pkg_ip;	/* packages: pkg -4, -6 */
 	uint8_t			*binary;	/* agent-update */
 	size_t			 binlen;
@@ -295,6 +296,11 @@ worker(void *arg)
 	struct arc_service_config_rsp scr;
 	struct arc_network_rsp	 nr;
 	struct arc_route_lookup_rsp rlr;
+	struct arc_traceroute_rsp trr;
+	struct arc_sdwan_probes_rsp spr;
+	struct arc_sdwan_rsp	sdr;
+	struct arc_sdwan_rules_rsp srr;
+	struct arc_sdwan_steer_rsp sstr;
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
@@ -315,6 +321,7 @@ worker(void *arg)
 	struct arc_pkg_upgrade_rsp ur;
 	struct arc_agent_update_rsp aur;
 	struct arc_agent_build_rsp abr;
+	struct arc_source_head_rsp shr;
 	struct arc_console_update_rsp cur;
 	const char		*what, *error;
 	bool			 console;
@@ -427,8 +434,8 @@ worker(void *arg)
 		break;
 	case ARC_CMD_IPFW_RULES:
 		/* The text rides in ref, its checksum in sha256. */
-		what = wfmt(&w, "ipfw rules %s", j->ref == NULL ? "read" :
-		    j->refresh ? "check" : "write");
+		what = wfmt(&w, "ipfw rules %s", j->from_rc ? "from rc.conf" :
+		    j->ref == NULL ? "read" : j->refresh ? "check" : "write");
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "%s", what);
 		memset(&irq, 0, sizeof(irq));
@@ -436,6 +443,7 @@ worker(void *arg)
 		irq.conf_text = j->ref;
 		irq.sha256 = j->sha256;
 		irq.dry_run = j->refresh;
+		irq.from_rc = j->from_rc;
 		irr.has_ok = true;
 		if (scope_enter(&w, j->jail, &irr.error) != 0)
 			;
@@ -638,6 +646,72 @@ worker(void *arg)
 		trace_steps(&w, &rlr.trace.v, &rlr.trace.n);
 		rc = arc_route_lookup_reply(j->req, &rlr);
 		break;
+	case ARC_CMD_TRACEROUTE:
+		what = wfmt(&w, "traceroute to %s", j->source);
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&trr, 0, sizeof(trr));
+		do_traceroute(&w, j->source, &trr);
+		ok = trr.ok;
+		error = trr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &trr.trace.v, &trr.trace.n);
+		rc = arc_traceroute_reply(j->req, &trr);
+		break;
+	case ARC_CMD_SDWAN_PROBES:
+		what = "sdwan probes";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&spr, 0, sizeof(spr));
+		error = NULL;
+		ok = do_probes_set(&w, j->ref, &error) == 0;
+		spr.has_ok = true;
+		spr.ok = ok;
+		spr.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &spr.trace.v, &spr.trace.n);
+		rc = arc_sdwan_probes_reply(j->req, &spr);
+		break;
+	case ARC_CMD_SDWAN_RULES:
+		what = "sdwan rules";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&srr, 0, sizeof(srr));
+		error = NULL;
+		ok = do_sdwan_rules(&w, j->ref, &error) == 0;
+		srr.has_ok = true;
+		srr.ok = ok;
+		srr.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &srr.trace.v, &srr.trace.n);
+		rc = arc_sdwan_rules_reply(j->req, &srr);
+		break;
+	case ARC_CMD_SDWAN_STEER:
+		what = "sdwan steer";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&sstr, 0, sizeof(sstr));
+		error = NULL;
+		ok = do_sdwan_steer(&w, j->ref, &error) == 0;
+		sstr.has_ok = true;
+		sstr.ok = ok;
+		sstr.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sstr.trace.v, &sstr.trace.n);
+		rc = arc_sdwan_steer_reply(j->req, &sstr);
+		break;
+	case ARC_CMD_SDWAN:
+		what = "sdwan";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&sdr, 0, sizeof(sdr));
+		do_sdwan(&w, j->pos, &sdr);
+		ok = sdr.ok;
+		error = sdr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sdr.trace.v, &sdr.trace.n);
+		rc = arc_sdwan_reply(j->req, &sdr);
+		break;
 	case ARC_CMD_SERVICES:
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "services");
@@ -711,6 +785,23 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &abr.trace.v, &abr.trace.n);
 		rc = arc_agent_build_reply(j->req, &abr);
+		break;
+	case ARC_CMD_SOURCE_HEAD:
+		what = wfmt(&w, "source head of %s%s%s", j->source,
+		    j->ref != NULL ? " at " : "", j->ref != NULL ? j->ref : "");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&shr, 0, sizeof(shr));
+		/* The build directory's keys are shared with the builds. */
+		pthread_mutex_lock(&build_lock);
+		do_source_head(&w, j->source, j->ref, j->host_keys, j->ssh_key,
+		    &shr);
+		pthread_mutex_unlock(&build_lock);
+		ok = shr.ok;
+		error = shr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &shr.trace.v, &shr.trace.n);
+		rc = arc_source_head_reply(j->req, &shr);
 		break;
 	case ARC_CMD_AGENT_UPDATE:
 		what = wfmt(&w, "agent update%s", j->restart ?
@@ -1024,6 +1115,24 @@ arc_agent_build_doit(cbl_req *req, const struct arc_agent_build_req *rq,
 }
 
 int
+arc_source_head_doit(cbl_req *req, const struct arc_source_head_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SOURCE_HEAD;
+	j->source = xstrdup(rq->source);
+	j->ref = rq->ref != NULL && rq->ref[0] != '\0' ? xstrdup(rq->ref) :
+	    NULL;
+	j->host_keys = rq->host_keys != NULL ? xstrdup(rq->host_keys) : NULL;
+	j->ssh_key = rq->ssh_key != NULL ? xstrdup(rq->ssh_key) : NULL;
+	return (start(j));
+}
+
+int
 arc_console_update_doit(cbl_req *req, const struct arc_console_update_req *rq,
     void *arg __unused)
 {
@@ -1145,6 +1254,86 @@ arc_route_lookup_doit(cbl_req *req, const struct arc_route_lookup_req *rq,
 }
 
 int
+arc_traceroute_doit(cbl_req *req, const struct arc_traceroute_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->lookup == NULL || rq->lookup[0] == '-' || rq->lookup[strspn(
+	    rq->lookup, "0123456789abcdefABCDEF.:")] != '\0')
+		return (reject(req, "an address to trace the route to is "
+		    "needed"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_TRACEROUTE;
+	j->source = xstrdup(rq->lookup);
+	return (start(j));
+}
+
+int
+arc_sdwan_probes_doit(cbl_req *req, const struct arc_sdwan_probes_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '[')
+		return (reject(req, "the targets are a JSON array"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_PROBES;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
+arc_sdwan_rules_doit(cbl_req *req, const struct arc_sdwan_rules_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '{')
+		return (reject(req, "the rules are a JSON object"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_RULES;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
+arc_sdwan_steer_doit(cbl_req *req, const struct arc_sdwan_steer_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '{')
+		return (reject(req, "the steering is a JSON object"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_STEER;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
+arc_sdwan_doit(cbl_req *req, const struct arc_sdwan_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN;
+	j->pos = rq->has_after ? rq->after : 0;
+	return (start(j));
+}
+
+int
 arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
     void *arg __unused)
 {
@@ -1203,7 +1392,9 @@ arc_ipfw_rules_doit(cbl_req *req, const struct arc_ipfw_rules_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_IPFW_RULES;
-	j->ref = rq->conf_text != NULL ? xstrdup(rq->conf_text) : NULL;
+	j->from_rc = rq->from_rc;
+	j->ref = rq->conf_text != NULL && !rq->from_rc ? xstrdup(
+	    rq->conf_text) : NULL;
 	j->sha256 = rq->sha256 != NULL ? xstrdup(rq->sha256) : NULL;
 	j->refresh = rq->dry_run;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
@@ -1582,8 +1773,13 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_IF_SET:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))
 			return ("invalid interface name");
-		if ((!sp->has_mtu || sp->mtu == 0) && sp->description == NULL)
-			return ("say what to set: mtu, description or both");
+		if ((!sp->has_mtu || sp->mtu == 0) && sp->description == NULL &&
+		    !sp->has_fib && !sp->has_tunnelfib)
+			return ("say what to set: mtu, description, fib, "
+			    "tunnelfib, or several");
+		if ((sp->has_fib && sp->fib > 65535) || (sp->has_tunnelfib &&
+		    sp->tunnelfib > 65535))
+			return ("a routing table is a number of one");
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))

@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.43.0"
+#define	ARCANA_AGENT_VERSION	"0.49.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -33,6 +33,7 @@
 #define	PATH_ZPOOL_BIN		"/sbin/zpool"
 #define	PATH_PKG_BIN		"/usr/sbin/pkg"
 #define	PATH_GIT_BIN		"/usr/local/bin/git"
+#define	PATH_TRACEROUTE_BIN	"/usr/sbin/traceroute"
 #define	PATH_IFCONFIG_BIN	"/sbin/ifconfig"
 #define	PATH_NGCTL_BIN		"/usr/sbin/ngctl"
 #define	PATH_JLS_BIN		"/usr/sbin/jls"
@@ -108,6 +109,7 @@ struct opts {
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
+	const char	*traceroute_bin;	/* and the same with 6 */
 	const char	*keyscan_bin;	/* ssh-keyscan(1) */
 	const char	*keygen_bin;	/* ssh-keygen(1) */
 	const char	*make_bin;
@@ -283,19 +285,28 @@ int		 do_network(struct work *, uint8_t, uint8_t, const char *,
 		    uint32_t, uint32_t, struct arc_network_rsp *);
 int		 do_route_lookup(struct work *, const char *, uint32_t,
 		    struct arc_route_lookup_rsp *);
+int		 do_traceroute(struct work *, const char *,
+		    struct arc_traceroute_rsp *);
 
 /* invidia/interfaces.c */
 int		 do_interfaces(struct work *, uint8_t, struct arc_network_rsp *);
 int		 do_if_address(struct work *, const char *, const char *, bool,
 		    bool, const char **);
 int		 do_if_state(struct work *, const char *, bool, const char **);
-int		 do_if_set(struct work *, const char *, unsigned int,
-		    const char *, bool, const char **);
+/* What an if-set changes: 0, -1 and NULL leave each as it is. */
+struct if_change {
+	unsigned int	 mtu;
+	const char	*descr;		/* "" takes it off */
+	int		 fib;
+	int		 tunnelfib;
+};
+int		 do_if_set(struct work *, const char *,
+		    const struct if_change *, bool, const char **);
 int		 do_if_create(struct work *, const struct arc_job_spec *,
 		    const char **, const char **);
 int		 do_if_destroy(struct work *, const char *, bool, const char **);
-void		 if_current(struct work *, const char *, unsigned int *, char *,
-		    size_t);
+void		 if_current(struct work *, const char *, unsigned int *, int *,
+		    int *, char *, size_t);
 bool		 if_is_up(struct work *, const char *, bool *);
 bool		 if_exists(struct work *, const char *);
 const char	*if_json(struct work *);
@@ -323,8 +334,8 @@ int		 rc_set(struct work *, const char *, const char *, const char *,
 void		 rc_unset(struct work *, const char *);
 int		 rc_alias(struct work *, const char *, const char *,
 		    const char *, const char *, bool, const char **);
-int		 rc_mtu(struct work *, const char *, unsigned int,
-		    const char **);
+int		 rc_word(struct work *, const char *, const char *,
+		    const char *, const char **);
 void		 rc_forget_if(struct work *, const char *);
 
 /* luxuria/wireguard.c: a plugin, through wg(8). */
@@ -384,6 +395,20 @@ void		 kmsg_start(void);
 bool		 kmsg_lines(struct work *, uint64_t, const char *, uint32_t,
 		    struct kmsg_line **, size_t *, uint64_t *);
 void		 history_save(void);
+/* gula/probe.c: the tunnels measured, ICMP echo again and again. */
+enum { PROBE_NONE = -1, PROBE_UNKNOWN, PROBE_UP, PROBE_DOWN, PROBE_ENDED,
+    PROBE_ERROR };
+void		 probe_start(void);
+int		 do_probes_set(struct work *, const char *, const char **);
+int		 do_sdwan(struct work *, uint64_t, struct arc_sdwan_rsp *);
+int		 probe_state_of(const char *);
+/* invidia/sdwan.c: the rules that steer, and the steering. */
+void		 sdwan_start(void);
+int		 do_sdwan_rules(struct work *, const char *, const char **);
+int		 do_sdwan_steer(struct work *, const char *, const char **);
+void		 sdwan_probe_changed(void);
+struct ucl_object_s;
+void		 sdwan_json(struct ucl_object_s *);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,
@@ -529,6 +554,8 @@ void		 pools_measure(struct work *, struct arc_stats *);
 /* ira/build.c */
 int		 do_agent_build(struct work *, const char *, const char *,
 		    const char *, const char *, struct arc_agent_build_rsp *);
+int		 do_source_head(struct work *, const char *, const char *,
+		    const char *, const char *, struct arc_source_head_rsp *);
 
 int		 do_console_update(struct work *, const char *, const char *,
 		    const char *, const char *, struct arc_console_update_rsp *);

@@ -37,6 +37,8 @@ struct qjob {
 	time_t			 confirm_by;	/* or is undone at this time */
 	const char		*undo_address;	/* in w's pool, or NULL */
 	unsigned int		 undo_mtu;	/* if-set: what it was */
+	int			 undo_fib;
+	int			 undo_tunnelfib;
 	const char		*undo_descr;
 	const char		*made;		/* if-create: the name it got */
 	struct arc_variable	*undo_vars;	/* service-config: as they were */
@@ -145,9 +147,11 @@ title_of(const struct arc_job_spec *sp)
 		    sp->persist ? " (kept)" : "");
 		break;
 	case ARC_JOB_KIND_IF_SET:
-		rc = asprintf(&t, "%s: set%s%s", sp->interface, sp->has_mtu &&
-		    sp->mtu != 0 ? " mtu" : "", sp->description != NULL ?
-		    " description" : "");
+		rc = asprintf(&t, "%s: set%s%s%s%s", sp->interface,
+		    sp->has_mtu && sp->mtu != 0 ? " mtu" : "",
+		    sp->description != NULL ? " description" : "",
+		    sp->has_fib ? " fib" : "", sp->has_tunnelfib ?
+		    " tunnelfib" : "");
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
 		rc = asprintf(&t, "create %s%s%s%s%s", sp->interface,
@@ -445,8 +449,8 @@ undo_prepare(struct qjob *j)
 			j->undo_none = true;
 		break;
 	case ARC_JOB_KIND_IF_SET:
-		if_current(&j->w, sp->interface, &j->undo_mtu, descr,
-		    sizeof(descr));
+		if_current(&j->w, sp->interface, &j->undo_mtu, &j->undo_fib,
+		    &j->undo_tunnelfib, descr, sizeof(descr));
 		j->undo_descr = wstrdup(&j->w, descr);
 		break;
 	case ARC_JOB_KIND_SERVICE_CONFIG:
@@ -635,9 +639,18 @@ undo(struct qjob *j)
 		}
 		break;
 	case ARC_JOB_KIND_IF_SET:
-		rc = do_if_set(&j->w, sp->interface, sp->has_mtu && sp->mtu !=
-		    0 ? j->undo_mtu : 0, sp->description != NULL ?
-		    j->undo_descr : NULL, sp->persist, &e);
+		{
+			struct if_change	 ch;
+
+			ch.mtu = sp->has_mtu && sp->mtu != 0 ? j->undo_mtu : 0;
+			ch.descr = sp->description != NULL ? j->undo_descr :
+			    NULL;
+			ch.fib = sp->has_fib ? j->undo_fib : -1;
+			ch.tunnelfib = sp->has_tunnelfib ? j->undo_tunnelfib :
+			    -1;
+			rc = do_if_set(&j->w, sp->interface, &ch, sp->persist,
+			    &e);
+		}
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
 		rc = do_if_destroy(&j->w, j->made != NULL ? j->made :
@@ -762,8 +775,17 @@ run(struct qjob *j)
 		break;
 	case ARC_JOB_KIND_IF_SET:
 		error = NULL;
-		ok = do_if_set(&j->w, sp->interface, sp->has_mtu ? sp->mtu : 0,
-		    sp->description, sp->persist, &error) == 0;
+		{
+			struct if_change	 ch;
+
+			ch.mtu = sp->has_mtu ? sp->mtu : 0;
+			ch.descr = sp->description;
+			ch.fib = sp->has_fib ? (int)sp->fib : -1;
+			ch.tunnelfib = sp->has_tunnelfib ? (int)sp->tunnelfib :
+			    -1;
+			ok = do_if_set(&j->w, sp->interface, &ch, sp->persist,
+			    &error) == 0;
+		}
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
 		error = NULL;

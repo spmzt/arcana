@@ -134,13 +134,17 @@ usage(void)
 	    "    interface name add | remove address\n"
 	    "    interface name mtu number\n"
 	    "    interface name description text\n"
+	    "    interface name fib | tunnelfib number\n"
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface] [reqid number]\n"
+	    "        [fib number] [tunnelfib number]\n"
 	    "    route add destination gateway[@share][,gateway[@share]...] [metric n] [weight n] "
 	    "[source address]\n"
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
+	    "    traceroute address\n"
+	    "    sdwan [probes | rules | steer json]\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
 	    "    wg interface init [port]\n"
@@ -189,7 +193,7 @@ usage(void)
 	    "    ipfw apply | enable | disable | zero [number]\n"
 	    "    ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | "
 	    "pipe |\n        queue | sched name word ...\n"
-	    "    ipfw rules [-w file] [-n]\n"
+	    "    ipfw rules [-r | -w file [-n]]\n"
 	    "    ipfw trace address [seconds [packets]]\n"
 	    "    storage disks | pools | datasets | mounts | importable | health\n"
 	    "    zfs load-key | unload-key [-r] dataset\n"
@@ -238,6 +242,7 @@ usage(void)
 	    "    agent-update [-r] program\n"
 	    "    agent-build [-y] [-i key] [-o file] repository [ref]\n"
 	    "    console-update [-y] [-i key] repository [ref]\n"
+	    "    source-head [-y] [-i key] repository [ref]\n"
 	    "with -q, start, stop, restart, kill, address, service (but "
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
 	    "instead of waited for.\n-p keeps a change to an interface or a "
@@ -885,6 +890,8 @@ again:
 		xo_emit("{Lwc:Built}{:agent-version/%s}{P: }{:sha256/%s}"
 		    "{P: }{:file/%s}\n", rsp->agent_version != NULL ?
 		    rsp->agent_version : "?", hex, out);
+		if (rsp->commit != NULL)
+			xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
 	} else
 		xo_warnx("agent-build: %s", rsp->error != NULL ? rsp->error :
 		    "failed");
@@ -952,8 +959,74 @@ again:
 	else
 		xo_warnx("console-update: %s", rsp->error != NULL ?
 		    rsp->error : "failed");
+	if (rsp->ok && rsp->commit != NULL)
+		xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
 	error = rsp->ok ? 0 : 1;
 	arc_console_update_rsp_free(rsp);
+	free(keys);
+	return (error);
+}
+
+/*
+ * source-head [-y] [-i key] repository [ref]: the commit at the head of
+ * the repository's branch, as the host sees it: whether there is
+ * anything new to build.
+ */
+static int
+cmd_source_head(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_source_head_req	 req;
+	struct arc_source_head_rsp	*rsp;
+	char				*keys;
+	size_t				 i;
+	bool				 trust;
+	int				 ch, error;
+
+	memset(&req, 0, sizeof(req));
+	trust = false;
+	keys = NULL;
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "i:y")) != -1) {
+		switch (ch) {
+		case 'i':
+			req.ssh_key = optarg;
+			break;
+		case 'y':
+			trust = true;
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc - optind < 1 || argc - optind > 2)
+		usage();
+	req.source = argv[optind];
+	req.ref = argv[optind + 1];
+again:
+	if ((error = arc_source_head(cl, &req, &rsp)) != 0)
+		fail(cl, error, "source-head");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	if (!rsp->ok && rsp->host_keys != NULL) {
+		for (i = 0; i < rsp->fingerprints.n; i++)
+			xo_emit("{Lwc:Host key}{l:fingerprint/%s}\n",
+			    rsp->fingerprints.v[i]);
+		if (trust && keys == NULL) {
+			if ((keys = strdup(rsp->host_keys)) == NULL)
+				xo_err(1, "strdup");
+			req.host_keys = keys;
+			arc_source_head_rsp_free(rsp);
+			goto again;
+		}
+	}
+	if (!rsp->ok && rsp->deploy_key != NULL)
+		xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n", rsp->deploy_key);
+	if (rsp->ok)
+		xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
+	else
+		xo_warnx("source-head: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+	error = rsp->ok ? 0 : 1;
+	arc_source_head_rsp_free(rsp);
 	free(keys);
 	return (error);
 }
@@ -1183,6 +1256,86 @@ cmd_route_get(struct arc_client *cl, int argc, char **argv)
 	return (error);
 }
 
+static int	json_out(const char *, bool, const char *, const char *,
+		    const struct arc_step *, size_t);
+
+/* traceroute address: one round, a probe a hop, as JSON. */
+/* sdwan: what the probes have seen; sdwan probes json: the targets. */
+static int
+cmd_sdwan(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_sdwan_req		 req;
+	struct arc_sdwan_rsp		*rsp;
+	struct arc_sdwan_probes_req	 preq;
+	struct arc_sdwan_probes_rsp	*prsp;
+	int				 error;
+
+	if (argc == 3 && strcmp(argv[1], "probes") == 0) {
+		memset(&preq, 0, sizeof(preq));
+		preq.json = argv[2];
+		if ((error = arc_sdwan_probes(cl, &preq, &prsp)) != 0)
+			fail(cl, error, "sdwan probes");
+		error = json_out("sdwan-probes", prsp->ok, prsp->error, NULL,
+		    prsp->trace.v, prsp->trace.n);
+		arc_sdwan_probes_rsp_free(prsp);
+		return (error);
+	}
+	if (argc == 3 && strcmp(argv[1], "rules") == 0) {
+		struct arc_sdwan_rules_req	 rq;
+		struct arc_sdwan_rules_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = argv[2];
+		if ((error = arc_sdwan_rules(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan rules");
+		error = json_out("sdwan-rules", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_rules_rsp_free(rs);
+		return (error);
+	}
+	if (argc == 3 && strcmp(argv[1], "steer") == 0) {
+		struct arc_sdwan_steer_req	 rq;
+		struct arc_sdwan_steer_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = argv[2];
+		if ((error = arc_sdwan_steer(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan steer");
+		error = json_out("sdwan-steer", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_steer_rsp_free(rs);
+		return (error);
+	}
+	if (argc != 1)
+		usage();
+	memset(&req, 0, sizeof(req));
+	if ((error = arc_sdwan(cl, &req, &rsp)) != 0)
+		fail(cl, error, "sdwan");
+	error = json_out("sdwan", rsp->ok, rsp->error, rsp->json, rsp->trace.v,
+	    rsp->trace.n);
+	arc_sdwan_rsp_free(rsp);
+	return (error);
+}
+
+static int
+cmd_traceroute(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_traceroute_req	 req;
+	struct arc_traceroute_rsp	*rsp;
+	int				 error;
+
+	if (argc != 2)
+		usage();
+	memset(&req, 0, sizeof(req));
+	req.lookup = argv[1];
+	if ((error = arc_traceroute(cl, &req, &rsp)) != 0)
+		fail(cl, error, "traceroute");
+	error = json_out("traceroute", rsp->ok, rsp->error, rsp->json,
+	    rsp->trace.v, rsp->trace.n);
+	arc_traceroute_rsp_free(rsp);
+	return (error);
+}
+
 static int
 cmd_interface(struct arc_client *cl, int argc, char **argv)
 {
@@ -1329,6 +1482,19 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	} else if (strcmp(argv[2], "description") == 0 && argc == 4) {
 		sp.kind = ARC_JOB_KIND_IF_SET;
 		sp.description = argv[3];
+	} else if ((strcmp(argv[2], "fib") == 0 || strcmp(argv[2],
+	    "tunnelfib") == 0) && argc == 4) {
+		sp.kind = ARC_JOB_KIND_IF_SET;
+		num = (uint32_t)strtonum(argv[3], 0, 65535, &errstr);
+		if (errstr != NULL)
+			xo_errx(2, "%s %s: %s", argv[2], argv[3], errstr);
+		if (argv[2][0] == 'f') {
+			sp.has_fib = true;
+			sp.fib = num;
+		} else {
+			sp.has_tunnelfib = true;
+			sp.tunnelfib = num;
+		}
 	} else if (strcmp(argv[2], "create") == 0) {
 		/* Words and what follows each, in any order. */
 		sp.kind = ARC_JOB_KIND_IF_CREATE;
@@ -1353,8 +1519,23 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 				if (errstr != NULL)
 					xo_errx(2, "reqid %s: %s", argv[i], errstr);
 			}
-			else if ((strcmp(argv[i], "mtu") == 0 || strcmp(argv[i],
-			    "id") == 0) && i + 1 < argc) {
+			else if ((strcmp(argv[i], "fib") == 0 || strcmp(argv[i],
+			    "tunnelfib") == 0) && i + 1 < argc) {
+				num = (uint32_t)strtonum(argv[i + 1], 0, 65535,
+				    &errstr);
+				if (errstr != NULL)
+					xo_errx(2, "%s %s: %s", argv[i],
+					    argv[i + 1], errstr);
+				if (argv[i][0] == 'f') {
+					sp.has_fib = true;
+					sp.fib = num;
+				} else {
+					sp.has_tunnelfib = true;
+					sp.tunnelfib = num;
+				}
+				i++;
+			} else if ((strcmp(argv[i], "mtu") == 0 ||
+			    strcmp(argv[i], "id") == 0) && i + 1 < argc) {
 				num = (uint32_t)strtonum(argv[i + 1], 0,
 				    16777215, &errstr);
 				if (errstr != NULL)
@@ -1921,7 +2102,8 @@ cmd_transport(struct arc_client *cl, int argc, char **argv)
  * ipfw add | delete: a rule, now; with -p kept too, and after "keep"
  * kept only.  ipfw apply: the kept rules as the whole ruleset, through
  * set 1; with -s taken back unless confirmed.  ipfw rules: the kept
- * file read, or with -w put in place, with -n only checked.
+ * file read, or with -w put in place, with -n only checked; with -r the
+ * file rc.conf's firewall_type names, as kept rules, nothing written.
  */
 static int
 cmd_ipfw(struct arc_client *cl, int argc, char **argv)
@@ -1976,10 +2158,13 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 		argv++;
 		optind = 1;
 		optreset = 1;
-		while ((ch = getopt(argc, argv, "nw:")) != -1) {
+		while ((ch = getopt(argc, argv, "nrw:")) != -1) {
 			switch (ch) {
 			case 'n':
 				req.dry_run = true;
+				break;
+			case 'r':
+				req.from_rc = true;
 				break;
 			case 'w':
 				from = optarg;
@@ -1988,7 +2173,8 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 				usage();
 			}
 		}
-		if (argc != optind || (req.dry_run && from == NULL))
+		if (argc != optind || (req.dry_run && from == NULL) ||
+		    (req.from_rc && from != NULL))
 			usage();
 		if (from != NULL) {
 			if ((fd = open(from, O_RDONLY)) == -1 || fstat(fd,
@@ -2005,7 +2191,9 @@ cmd_ipfw(struct arc_client *cl, int argc, char **argv)
 		}
 		if ((error = arc_ipfw_rules(cl, &req, &rsp)) != 0)
 			fail(cl, error, "ipfw rules");
-		if (from == NULL && rsp->conf_text != NULL)
+		if (req.from_rc && rsp->rc_file != NULL)
+			xo_emit("{:rc-file/# from %s}\n", rsp->rc_file);
+		if (from == NULL && rsp->conf_text != NULL && rsp->ok)
 			xo_emit("{:text/%s}", rsp->conf_text);
 		else if (rsp->ok)
 			xo_emit("{:result/%s}\n", req.dry_run ? "ipfw has "
@@ -2933,6 +3121,12 @@ main(int argc, char *argv[])
 		rc = cmd_agent_update(&cl, argc, argv);
 	else if (strcmp(argv[0], "agent-build") == 0)
 		rc = cmd_agent_build(&cl, argc, argv);
+	else if (strcmp(argv[0], "traceroute") == 0)
+		rc = cmd_traceroute(&cl, argc, argv);
+	else if (strcmp(argv[0], "sdwan") == 0)
+		rc = cmd_sdwan(&cl, argc, argv);
+	else if (strcmp(argv[0], "source-head") == 0)
+		rc = cmd_source_head(&cl, argc, argv);
 	else if (strcmp(argv[0], "console-update") == 0)
 		rc = cmd_console_update(&cl, argc, argv);
 	else

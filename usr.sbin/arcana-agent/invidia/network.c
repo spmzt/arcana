@@ -17,6 +17,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#include <ctype.h>
 #include <err.h>
 #include <inttypes.h>
 #include <stdlib.h>
@@ -484,3 +485,103 @@ do_route_lookup(struct work *w, const char *address, uint32_t fib,
 	return (0);
 }
 
+
+/*
+ * One round of traceroute(8) to an address: a probe a hop, numeric, a
+ * second's wait.  " 3  10.0.0.1  0.312 ms !H" or " 4  *", a line a hop;
+ * the first, "traceroute to …", goes to standard error.
+ */
+int
+do_traceroute(struct work *w, const char *address,
+    struct arc_traceroute_rsp *rsp)
+{
+	struct execres	 res;
+	ucl_object_t	*top, *hops, *h;
+	unsigned char	*json;
+	char		*argv[10], *text, *line, *p, *tok, *last;
+	uint8_t		 raw[16];
+	int		 af, ttl;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	if (inet_pton(AF_INET, address, raw) == 1)
+		af = AF_INET;
+	else if (inet_pton(AF_INET6, address, raw) == 1)
+		af = AF_INET6;
+	else {
+		rsp->error = wfmt(w, "%s is not an IPv4 or IPv6 address",
+		    address);
+		return (0);
+	}
+	argv[0] = af == AF_INET ? (char *)(uintptr_t)opts.traceroute_bin :
+	    wfmt(w, "%s6", opts.traceroute_bin);
+	argv[1] = (char *)(uintptr_t)"-n";
+	argv[2] = (char *)(uintptr_t)"-q";
+	argv[3] = (char *)(uintptr_t)"1";
+	argv[4] = (char *)(uintptr_t)"-w";
+	argv[5] = (char *)(uintptr_t)"1";
+	argv[6] = (char *)(uintptr_t)"-m";
+	argv[7] = (char *)(uintptr_t)"30";
+	argv[8] = (char *)(uintptr_t)address;
+	argv[9] = NULL;
+	if (run_exec(w, argv, &res) != 0 && res.outlen == 0) {
+		rsp->error = wtext(w, exec_error(w, &res, "traceroute"));
+		return (0);
+	}
+	top = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(top, ucl_object_fromstring(address), "address", 0,
+	    false);
+	ucl_object_insert_key(top, ucl_object_fromstring(af == AF_INET ?
+	    "inet" : "inet6"), "family", 0, false);
+	hops = ucl_object_typed_new(UCL_ARRAY);
+	text = wstrndup(w, res.out != NULL ? res.out : "", res.outlen);
+	last = NULL;
+	p = text;
+	while ((line = strsep(&p, "\n")) != NULL) {
+		if ((tok = strsep(&line, " \t")) != NULL && tok[0] == '\0')
+			while (line != NULL && (tok = strsep(&line, " \t")) !=
+			    NULL && tok[0] == '\0')
+				;
+		if (tok == NULL || (ttl = atoi(tok)) <= 0)
+			continue;
+		h = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(h, ucl_object_fromint(ttl), "ttl", 0,
+		    false);
+		while (line != NULL && (tok = strsep(&line, " \t")) != NULL) {
+			if (tok[0] == '\0' || strcmp(tok, "ms") == 0)
+				continue;
+			if (strcmp(tok, "*") == 0) {
+				if (ucl_object_lookup(h, "lost") == NULL)
+					ucl_object_insert_key(h,
+					    ucl_object_frombool(true), "lost", 0,
+					    true);
+			}
+			else if (tok[0] == '!')
+				ucl_object_insert_key(h, ucl_object_fromstring(
+				    tok), "note", 0, true);
+			else if (inet_pton(af, tok, raw) == 1) {
+				if (ucl_object_lookup(h, "address") == NULL)
+					ucl_object_insert_key(h,
+					    ucl_object_fromstring(tok), "address",
+					    0, true);
+				last = tok;
+			} else if (isdigit((unsigned char)tok[0]) &&
+			    ucl_object_lookup(h, "rtt") == NULL)
+				ucl_object_insert_key(h, ucl_object_fromdouble(
+				    strtod(tok, NULL)), "rtt", 0, true);
+		}
+		if (ucl_object_lookup(h, "address") == NULL &&
+		    ucl_object_lookup(h, "lost") == NULL)
+			ucl_object_insert_key(h, ucl_object_frombool(true),
+			    "lost", 0, true);
+		ucl_array_append(hops, h);
+	}
+	ucl_object_insert_key(top, hops, "hops", 0, false);
+	ucl_object_insert_key(top, ucl_object_frombool(last != NULL &&
+	    strcmp(last, address) == 0), "reached", 0, false);
+	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(top);
+	rsp->json = wtext(w, wadopt(w, json));
+	rsp->ok = true;
+	return (0);
+}

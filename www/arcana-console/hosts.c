@@ -52,7 +52,13 @@ enum op {
 	OP_AGENT_UPDATE,
 	OP_AGENT_BUILD,
 	OP_CONSOLE_UPDATE,
+	OP_SOURCE_HEAD,
 	OP_ROUTE_LOOKUP,
+	OP_TRACEROUTE,
+	OP_SDWAN,
+	OP_SDWAN_PROBES,
+	OP_SDWAN_RULES,
+	OP_SDWAN_STEER,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_STORAGE,
@@ -89,6 +95,7 @@ struct call {
 	char			 scope[256];	/* the vnet jail whose network it is */
 	bool			 refresh;	/* packages */
 	bool			 dry_run;	/* pkg-upgrade */
+	bool			 from_rc;	/* ipfw-rules: the file rc.conf names */
 	bool			 anyos;		/* pkg-upgrade: IGNORE_OSVERSION */
 	bool			 installed;	/* packages: those installed */
 	uint8_t			 pkg_ip;	/* packages: pkg -4, -6, or 0 */
@@ -1030,7 +1037,12 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    "arc_job_cancel" : c->op == OP_AGENT_UPDATE ? "arc_agent_update" :
 	    c->op == OP_AGENT_BUILD ? "arc_agent_build" :
 	    c->op == OP_CONSOLE_UPDATE ? "arc_console_update" :
+	    c->op == OP_SOURCE_HEAD ? "arc_source_head" :
 	    c->op == OP_ROUTE_LOOKUP ? "arc_route_lookup" :
+	    c->op == OP_TRACEROUTE ? "arc_traceroute" :
+	    c->op == OP_SDWAN ? "arc_sdwan" : c->op == OP_SDWAN_PROBES ?
+	    "arc_sdwan_probes" : c->op == OP_SDWAN_RULES ? "arc_sdwan_rules" :
+	    c->op == OP_SDWAN_STEER ? "arc_sdwan_steer" :
 	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
@@ -1363,6 +1375,18 @@ call_run(struct kore_task *t)
 	struct arc_agent_build_rsp *abr;
 	struct arc_console_update_req cuq;
 	struct arc_console_update_rsp *cur;
+	struct arc_source_head_req shq;
+	struct arc_traceroute_req trq;
+	struct arc_traceroute_rsp *trr;
+	struct arc_sdwan_req	sdq;
+	struct arc_sdwan_rsp	*sdr;
+	struct arc_sdwan_probes_req spq;
+	struct arc_sdwan_probes_rsp *spr;
+	struct arc_sdwan_rules_req srq;
+	struct arc_sdwan_rules_rsp *srr;
+	struct arc_sdwan_steer_req ssq;
+	struct arc_sdwan_steer_rsp *ssr;
+	struct arc_source_head_rsp *shr;
 	uint8_t			*bin;
 	size_t			 binlen;
 	char			 sha[65];
@@ -1423,6 +1447,8 @@ call_run(struct kore_task *t)
 	aur = NULL;
 	abr = NULL;
 	cur = NULL;
+	shr = NULL;
+	trr = NULL;
 	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
@@ -1835,6 +1861,81 @@ connected:
 		steps = rlr->trace.v;
 		nsteps = rlr->trace.n;
 		break;
+	case OP_TRACEROUTE:
+		memset(&trq, 0, sizeof(trq));
+		trq.lookup = c->address;
+		if ((error = arc_traceroute(&cl, &trq, &trr)) != 0)
+			goto rpcfail;
+		ok = trr->ok;
+		put_str(top, "error", trr->error);
+		e = NULL;
+		if (trr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, trr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = trr->trace.v;
+		nsteps = trr->trace.n;
+		break;
+	case OP_SDWAN:
+		memset(&sdq, 0, sizeof(sdq));
+		sdq.has_after = c->has_pos;
+		sdq.after = c->pos;
+		if ((error = arc_sdwan(&cl, &sdq, &sdr)) != 0)
+			goto rpcfail;
+		ok = sdr->ok;
+		put_str(top, "error", sdr->error);
+		e = NULL;
+		if (sdr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, sdr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = sdr->trace.v;
+		nsteps = sdr->trace.n;
+		break;
+	case OP_SDWAN_PROBES:
+		memset(&spq, 0, sizeof(spq));
+		spq.json = c->text;
+		if ((error = arc_sdwan_probes(&cl, &spq, &spr)) != 0)
+			goto rpcfail;
+		ok = spr->ok;
+		put_str(top, "error", spr->error);
+		steps = spr->trace.v;
+		nsteps = spr->trace.n;
+		break;
+	case OP_SDWAN_RULES:
+		memset(&srq, 0, sizeof(srq));
+		srq.json = c->text;
+		if ((error = arc_sdwan_rules(&cl, &srq, &srr)) != 0)
+			goto rpcfail;
+		ok = srr->ok;
+		put_str(top, "error", srr->error);
+		steps = srr->trace.v;
+		nsteps = srr->trace.n;
+		break;
+	case OP_SDWAN_STEER:
+		memset(&ssq, 0, sizeof(ssq));
+		ssq.json = c->text;
+		if ((error = arc_sdwan_steer(&cl, &ssq, &ssr)) != 0)
+			goto rpcfail;
+		ok = ssr->ok;
+		put_str(top, "error", ssr->error);
+		steps = ssr->trace.v;
+		nsteps = ssr->trace.n;
+		break;
 	case OP_STORAGE:
 		/* The dataset rides where a jail's name does. */
 		memset(&sgq, 0, sizeof(sgq));
@@ -1873,12 +1974,14 @@ connected:
 		irq.sha256 = c->address[0] != '\0' ? c->address : NULL;
 		irq.dry_run = c->dry_run;
 		irq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		irq.from_rc = c->from_rc;
 		if ((error = arc_ipfw_rules(&cl, &irq, &irr)) != 0)
 			goto rpcfail;
 		ok = irr->ok;
 		put_str(top, "error", irr->error);
 		put_str(top, "text", irr->conf_text);
 		put_str(top, "sha256", irr->sha256);
+		put_str(top, "rc_file", irr->rc_file);
 		steps = irr->trace.v;
 		nsteps = irr->trace.n;
 		break;
@@ -2072,8 +2175,28 @@ connected:
 			    cur->fingerprints.n));
 		put_str(top, "deploy_key", cur->deploy_key);
 		put(top, "restarting", ucl_object_frombool(cur->restarting));
+		put_str(top, "commit", cur->commit);
 		steps = cur->trace.v;
 		nsteps = cur->trace.n;
+		break;
+	case OP_SOURCE_HEAD:
+		memset(&shq, 0, sizeof(shq));
+		shq.source = cfg.agent_source;
+		shq.ref = cfg.agent_ref;
+		shq.ssh_key = cfg.agent_ssh_key;
+		shq.host_keys = c->host_keys;
+		if ((error = arc_source_head(&cl, &shq, &shr)) != 0)
+			goto rpcfail;
+		ok = shr->ok;
+		put_str(top, "error", shr->error);
+		put_str(top, "commit", shr->commit);
+		put_str(top, "host_keys", shr->host_keys);
+		if (shr->fingerprints.n > 0)
+			put(top, "fingerprints", strs(shr->fingerprints.v,
+			    shr->fingerprints.n));
+		put_str(top, "deploy_key", shr->deploy_key);
+		steps = shr->trace.v;
+		nsteps = shr->trace.n;
 		break;
 	case OP_AGENT_BUILD:
 		memset(&abq, 0, sizeof(abq));
@@ -2118,6 +2241,7 @@ connected:
 		}
 		put_str(top, "version", abr->agent_version);
 		put_str(top, "sha256", sha);
+		put_str(top, "commit", abr->commit);
 		break;
 	case OP_AGENT_UPDATE:
 		if ((msg = agent_binary(&bin, &binlen, sha)) != NULL) {
@@ -2268,6 +2392,10 @@ done:
 		arc_agent_build_rsp_free(abr);
 	if (cur != NULL)
 		arc_console_update_rsp_free(cur);
+	if (shr != NULL)
+		arc_source_head_rsp_free(shr);
+	if (trr != NULL)
+		arc_traceroute_rsp_free(trr);
 	free(bin);
 	/*
 	 * Kept for the next request when it answered: also when the agent
@@ -2719,6 +2847,7 @@ pick_fib(struct http_request *req, struct call *c)
 /*
  * GET /api/servers/<id>/net/<kind>[?family=inet|inet6&fib=N]
  * GET /api/servers/<id>/net/lookup?to=<address>[&fib=N]
+ * GET /api/servers/<id>/net/traceroute?to=<address>: one round
  */
 int
 api_network(struct http_request *req)
@@ -2731,9 +2860,10 @@ api_network(struct http_request *req)
 
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
-	lookup = capture(req, 5, kind, sizeof(kind)) && strcmp(kind,
-	    "lookup") == 0;
-	if ((c = call_new(req, lookup ? OP_ROUTE_LOOKUP : OP_NETWORK)) == NULL)
+	lookup = capture(req, 5, kind, sizeof(kind)) && (strcmp(kind,
+	    "lookup") == 0 || strcmp(kind, "traceroute") == 0);
+	if ((c = call_new(req, !lookup ? OP_NETWORK : strcmp(kind,
+	    "lookup") == 0 ? OP_ROUTE_LOOKUP : OP_TRACEROUTE)) == NULL)
 		return (KORE_RESULT_OK);
 	if (lookup) {
 		/* An address is hex digits, dots and colons: no escaping. */
@@ -2923,9 +3053,10 @@ api_storage(struct http_request *req)
 
 /*
  * GET /api/servers/<id>/ipfw/rules[?jail=]: the kept rules of the
- * firewall and the SHA-256 of their text.  POST {"text", "sha256",
- * "check"}: put the text in their place, once ipfw has nothing against
- * it.
+ * firewall and the SHA-256 of their text; with ?from=rc, the file
+ * rc.conf's firewall_type names instead, made into kept rules and not
+ * written ("rc_file" is that file).  POST {"text", "sha256", "check"}:
+ * put the text in their place, once ipfw has nothing against it.
  */
 int
 api_ipfw_rules(struct http_request *req)
@@ -2940,6 +3071,14 @@ api_ipfw_rules(struct http_request *req)
 	if ((c = call_new(req, OP_IPFW_RULES)) == NULL)
 		return (KORE_RESULT_OK);
 	bad = !pick_scope(req, c);
+	if (!bad && req->method == HTTP_METHOD_GET) {
+		char	from[8];
+
+		if (query_param(req, "from", from, sizeof(from))) {
+			c->from_rc = strcmp(from, "rc") == 0;
+			bad = !c->from_rc;
+		}
+	}
 	if (!bad && req->method != HTTP_METHOD_GET) {
 		if ((body = read_json(req)) == NULL)
 			bad = true;
@@ -2962,7 +3101,7 @@ api_ipfw_rules(struct http_request *req)
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "a change needs text "
 		    "and the sha256 of what it was made from; jail is a "
-		    "jail's name"));
+		    "jail's name; from is rc"));
 	}
 	return (call_start(req, c));
 }
@@ -3618,10 +3757,18 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		sp->has_mtu = true;
 		sp->mtu = (uint32_t)ucl_object_toint(v);
 	}
-	if ((v = ucl_object_lookup(o, "fib")) != NULL && ucl_object_toint(v) >
-	    0 && ucl_object_toint(v) <= 65535) {
+	/* 0 too: an interface put back in the first table. */
+	if ((v = ucl_object_lookup(o, "fib")) != NULL && ucl_object_type(v) ==
+	    UCL_INT && ucl_object_toint(v) >= 0 && ucl_object_toint(v) <=
+	    65535) {
 		sp->has_fib = true;
 		sp->fib = (uint32_t)ucl_object_toint(v);
+	}
+	if ((v = ucl_object_lookup(o, "tunnelfib")) != NULL &&
+	    ucl_object_type(v) == UCL_INT && ucl_object_toint(v) >= 0 &&
+	    ucl_object_toint(v) <= 65535) {
+		sp->has_tunnelfib = true;
+		sp->tunnelfib = (uint32_t)ucl_object_toint(v);
 	}
 	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
 	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
@@ -3938,6 +4085,41 @@ hosts_job(const char *uri, const char *peer, const char *name, uint64_t id,
 }
 
 /*
+ * Arcana itself, for a workflow's steps: the head of its repository
+ * (source-head), the agent built from it and kept to send
+ * (agent-build), the agent sent and restarted (agent-update), the
+ * console updated where it runs (console-update).  NULL when what is
+ * none of them.
+ */
+char *
+hosts_arcana(const char *uri, const char *peer, const char *name,
+    const char *what, int *status)
+{
+	static const struct {
+		const char	*what;
+		enum op		 op;
+	} ops[] = {
+		{ "source-head", OP_SOURCE_HEAD },
+		{ "agent-build", OP_AGENT_BUILD },
+		{ "agent-update", OP_AGENT_UPDATE },
+		{ "console-update", OP_CONSOLE_UPDATE },
+	};
+	struct call	*c;
+	size_t		 i;
+
+	for (i = 0; i < nitems(ops); i++)
+		if (strcmp(ops[i].what, what) == 0)
+			break;
+	if (i == nitems(ops))
+		return (NULL);
+	c = kore_calloc(1, sizeof(*c));
+	c->op = ops[i].op;
+	c->restart = ops[i].op == OP_AGENT_UPDATE;
+	c->reads = ops[i].op == OP_SOURCE_HEAD;
+	return (self_call(c, uri, peer, name, what, status));
+}
+
+/*
  * What a workflow's condition reads of a host: hello, jails, services,
  * stats, events, history or packages (those installed).  NULL when it
  * is none of them.
@@ -3953,6 +4135,7 @@ hosts_read(const char *uri, const char *peer, const char *name,
 		{ "hello", OP_HELLO }, { "jails", OP_LIST },
 		{ "services", OP_SERVICES }, { "stats", OP_STATS },
 		{ "events", OP_EVENTS }, { "history", OP_HISTORY },
+		{ "sdwan", OP_SDWAN },
 		{ "packages", OP_PACKAGES },
 	};
 	struct call	*c;
@@ -3968,6 +4151,79 @@ hosts_read(const char *uri, const char *peer, const char *name,
 	c->reads = true;
 	c->installed = reads[i].op == OP_PACKAGES;
 	return (self_call(c, uri, peer, name, what, status));
+}
+
+/*
+ * A kind of the host's network (routes, interfaces, wireguard, ipsec,
+ * as GET /api/servers/<id>/net/<kind> answers), for a thread of the
+ * console's own; NULL when kind is none.
+ */
+char *
+hosts_net(const char *uri, const char *peer, const char *name,
+    const char *kind, int *status)
+{
+	struct call	*c;
+	size_t		 i;
+
+	for (i = 0; i < nitems(net_kind_names); i++)
+		if (net_kind_names[i] != NULL && strcmp(kind,
+		    net_kind_names[i]) == 0)
+			break;
+	if (i == nitems(net_kind_names))
+		return (NULL);
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_NETWORK;
+	c->action = (uint8_t)i;
+	c->family = ARC_NET_FAMILY_ALL;
+	c->reads = true;
+	return (self_call(c, uri, peer, name, kind, status));
+}
+
+/*
+ * The host's SD-WAN told: what is probes (the targets, an array),
+ * rules (the ruleset) or steer (the tables' entries), json as the
+ * operation takes it.
+ */
+char *
+hosts_sdwan_set(const char *uri, const char *peer, const char *name,
+    const char *what, const char *json, int *status)
+{
+	struct call	*c;
+	char		 label[32];
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = strcmp(what, "rules") == 0 ? OP_SDWAN_RULES : strcmp(what,
+	    "steer") == 0 ? OP_SDWAN_STEER : OP_SDWAN_PROBES;
+	c->text = kore_strdup(json);
+	snprintf(label, sizeof(label), "sdwan-%s", what);
+	return (self_call(c, uri, peer, name, label, status));
+}
+
+/* GET /api/servers/<id>/sdwan: what the host's probes have seen. */
+int
+api_sdwan_state(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_SDWAN)) == NULL)
+		return (KORE_RESULT_OK);
+	return (call_start(req, c));
+}
+
+/* The host's sysctls whose names begin with prefix. */
+char *
+hosts_sysctl(const char *uri, const char *peer, const char *name,
+    const char *prefix, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_SYSCTL;
+	c->reads = true;
+	snprintf(c->jail, sizeof(c->jail), "%s", prefix);
+	return (self_call(c, uri, peer, name, "sysctl", status));
 }
 
 /* The host's events after the number after, for a workflow's trigger. */
