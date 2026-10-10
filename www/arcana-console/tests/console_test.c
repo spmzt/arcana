@@ -1291,6 +1291,19 @@ ATF_TC_BODY(tokens, tc)
 	http_bearer("GET", "/api/push", token, NULL, &r);
 	EXPECT(&r, 401);
 	resp_free(&r);
+	/* Every other read is its: the workflows and their runs too. */
+	http_bearer("GET", "/api/workflows", token, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http_bearer("GET", "/api/runs", token, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http_bearer("GET", "/api/sdwan", token, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http_bearer("POST", "/api/sdwan/check", token, "{}", &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
 	http_bearer("GET", "/api/servers", "arcr_0000000000000000000000000000"
 	    "000000000000000000000000000000000000", NULL, &r);
 	EXPECT(&r, 401);

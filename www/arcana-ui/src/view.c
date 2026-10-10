@@ -1507,10 +1507,11 @@ set_tokens(struct html *h)
 	int			 n;
 
 	h_raw(h, "<p class=\"dim\">For a program to read what the console "
-	    "says of the hosts, with <code>Authorization: Bearer</code>: "
-	    "their jails, network, storage, logs and the rest, and nothing "
-	    "that changes them, nor this console's settings or sign-in. Its "
-	    "value is shown once, when it is made.</p>");
+	    "says, with <code>Authorization: Bearer</code>: the hosts, their "
+	    "jails, network, storage and logs, the workflows and their runs, "
+	    "SD-WAN, and the rest, and nothing that changes them, nor this "
+	    "console's settings, sign-in or enrolment. Its value is shown "
+	    "once, when it is made.</p>");
 	if (app.token_value[0] != '\0') {
 		h_raw(h, "<div class=\"notice info\"><b>Copy it now: it is not "
 		    "shown again.</b><pre class=\"out token\">");

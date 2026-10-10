@@ -789,9 +789,10 @@ The console is laid out as a tree and tabs.
   look at the hosts through the API without a passkey, sent as
   `Authorization: Bearer arcr_…`. One is made with a name and its
   value is shown that once; the console keeps only its SHA-256, and
-  when it was last used. It reads what is said of the hosts (GET under
-  `/api/servers`) and nothing else: it changes nothing, and does not
-  read the console's settings, sign-in, push or enrolment. Deleted, it
+  when it was last used. It reads whatever the API tells, the hosts,
+  the workflows and their runs, SD-WAN, transfers, and nothing else:
+  it changes nothing, and does not read the console's settings,
+  sign-in, push or enrolment. Deleted, it
   opens nothing at once.
 - **Settings** has the console's version, and under **Look** its
   themes. **Graphite**, the default everywhere, is calm: surfaces of
