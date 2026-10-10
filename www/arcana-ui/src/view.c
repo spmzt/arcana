@@ -37,6 +37,8 @@ static const char *icon_network = TREE_ICON("M12 4v6M12 10l-6 7M12 10l6 "
 static const char *icon_usage = TREE_ICON("M3 12h4l3-7 4 14 3-7h4");
 static const char *icon_flows = TREE_ICON("M6 3v12M18 9a3 3 0 1 0 0-6 3 3 "
     "0 0 0 0 6zM6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9a9 9 0 0 1-9 9");
+static const char *icon_sdwan = TREE_ICON("M5 7a2 2 0 1 0 0-.01M19 7a2 2 0 "
+    "1 0 0-.01M12 19a2 2 0 1 0 0-.01M7 7h10M6 9l5 8M18 9l-5 8");
 static const char *icon_enrol = TREE_ICON("M9 15l6-6M11 6l1-1a4 4 0 0 1 6 "
     "6l-1 1M13 18l-1 1a4 4 0 0 1-6-6l1-1");
 static const char *icon_plus = TREE_ICON("M12 5v14M5 12h14");
@@ -198,11 +200,13 @@ topbar(struct html *h)
 	}
 	h_raw(h, "</div><nav class=\"crumbs\">");
 	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
-	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS)
+	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS ||
+	    app.node == NODE_SDWAN)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
 		    app.node == NODE_USAGE ? "Utilization" : app.node ==
-		    NODE_WORKFLOWS ? "Workflows" : "All hosts");
+		    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ?
+		    "SD-WAN" : "All hosts");
 	else if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
 		h_txt(h, s->name);
@@ -398,7 +402,8 @@ rail(struct html *h)
 	    " open" : "", app.rail_open ? "▴" : "▾");
 	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
 	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
-	    NODE_WORKFLOWS ? "Workflows" : app.node ==
+	    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ? "SD-WAN" :
+	    app.node ==
 	    NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
@@ -422,11 +427,14 @@ rail(struct html *h)
 	    "select-usage\"><span class=\"twig\">%s</span><span class=\"name\">"
 	    "Utilization</span></li><li class=\"titem fleet wfnode%s\" "
 	    "data-act=\"select-workflows\"><span class=\"twig\">%s</span>"
-	    "<span class=\"name\">Workflows</span></li>", app.node ==
+	    "<span class=\"name\">Workflows</span></li><li class=\"titem fleet "
+	    "sdnode%s\" data-act=\"select-sdwan\"><span class=\"twig\">%s"
+	    "</span><span class=\"name\">SD-WAN</span></li>", app.node ==
 	    NODE_FLEET ? " selected" : "", icon_hosts, app.nservers,
 	    app.node == NODE_NETWORK ? " selected" : "", icon_network,
 	    app.node == NODE_USAGE ? " selected" : "", icon_usage,
-	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows);
+	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows,
+	    app.node == NODE_SDWAN ? " selected" : "", icon_sdwan);
 	for (i = 0; i < app.nservers; i++) {
 		s = &app.servers[i];
 		run = count_state(s, "running");
@@ -886,6 +894,11 @@ stage(struct html *h)
 	}
 	if (app.node == NODE_WORKFLOWS) {
 		view_workflows(h);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.node == NODE_SDWAN) {
+		view_sdwan(h);
 		h_raw(h, "</main>");
 		return;
 	}

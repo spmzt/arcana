@@ -3203,6 +3203,176 @@ ATF_TC_BODY(enrol, tc)
 	resp_free(&r);
 }
 
+/* A service as MEF 70.2 says one, with two edges: @A and @B are them. */
+static const char sdwan_good[] =
+    "{\"version\":0,"
+    "\"ucs\":[{\"id\":\"inet\",\"type\":\"public\",\"billing\":\"flat-rate\","
+    "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}},{\"id\":\"mpls\","
+    "\"type\":\"private\",\"billing\":\"flat-rate\",\"tunnel\":{\"kind\":"
+    "\"geneve\"}}],"
+    "\"edges\":[{\"server\":\"@A\",\"ucs_end_points\":[{\"id\":\"a-inet\","
+    "\"ucs\":\"inet\",\"interface\":\"vtnet0\",\"breakout\":true},{\"id\":"
+    "\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"}]},{\"server\":"
+    "\"@B\",\"ucs_end_points\":[{\"id\":\"b-inet\",\"ucs\":\"inet\","
+    "\"interface\":\"vtnet0\"},{\"id\":\"b-mpls\",\"ucs\":\"mpls\","
+    "\"interface\":\"vtnet1\",\"backup\":true}]}],"
+    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"ucs\":[\"inet\",\"mpls\"],"
+    "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
+    "\"zones\":[{\"name\":\"office\",\"prefixes\":[\"10.1.0.0/16\"],"
+    "\"policies\":[{\"app\":\"web\",\"policy\":\"fast\"}]},{\"name\":"
+    "\"rest\",\"prefixes\":\"Default\"}],"
+    "\"topologies\":[{\"name\":\"hub\",\"type\":\"rooted-multipoint\","
+    "\"roots\":[\"hq\"],\"leaves\":[\"branch\"]}],"
+    "\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},"
+    "\"rate_limiters\":[{\"name\":\"shared\",\"commit\":1000000,\"limit\":"
+    "5000000}],"
+    "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
+    "\"groups\":[\"bulk\"],"
+    "\"flows\":[{\"name\":\"web\",\"criteria\":{\"dport\":[80,\"https\"],"
+    "\"protv4\":[\"tcp\"]}},{\"name\":\"voice\",\"criteria\":{\"appid\":"
+    "[\"sip\"],\"dscp\":[46]},\"group\":\"bulk\"},{\"name\":\"all\","
+    "\"criteria\":{\"any\":true}}],"
+    "\"policies\":[{\"name\":\"fast\",\"direction\":\"ingress\",\"criteria\":"
+    "{\"encryption\":\"required-public-only\",\"performance\":{\"primary\":"
+    "{\"metric\":\"delay\",\"threshold\":10,\"ceiling\":12,\"remediation\":"
+    "9},\"secondary\":[{\"metric\":\"loss\",\"threshold\":0.05}]},"
+    "\"bandwidth\":\"shared\",\"business-importance\":\"high\"}},{\"name\":"
+    "\"hubonly\",\"direction\":\"ingress\",\"criteria\":{"
+    "\"virtual-topology\":\"hub\"}},{\"name\":\"quiet\",\"direction\":"
+    "\"egress\",\"criteria\":{\"egress-block\":\"allow\"}}],"
+    "\"end_points\":[{\"id\":\"hq\",\"edge\":\"@A\",\"uni\":{\"id\":"
+    "\"uni-hq\",\"interface\":\"vtnet2\",\"ipv4\":{\"mode\":\"static\","
+    "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"]},\"routes\":"
+    "[{\"prefix\":\"10.1.8.0/22\",\"next_hop\":\"10.1.0.2\",\"distance\":"
+    "10}]},\"policy_map\":[{\"zone\":\"office\",\"app\":\"all\",\"ingress\":"
+    "\"hubonly\",\"egress\":\"quiet\"}],\"nat\":{\"ip_version\":\"ipv4\","
+    "\"public_prefix\":\"198.51.100.0/30\"}},{\"id\":\"branch\",\"edge\":"
+    "\"@B\",\"uni\":{\"id\":\"uni-br\",\"interface\":\"vtnet2\",\"vlan\":20,"
+    "\"ipv6\":{\"mode\":\"static\",\"prefix\":\"2001:db8:1::/64\","
+    "\"provider\":[\"2001:db8:1::1\"]}}}]}]}";
+
+/* s with its first from made to, into out; false when from is not there. */
+static bool
+swap_in(const char *s, const char *from, const char *to, char *out,
+    size_t len)
+{
+	const char	*p;
+
+	if ((p = strstr(s, from)) == NULL)
+		return (false);
+	snprintf(out, len, "%.*s%s%s", (int)(p - s), s, to, p + strlen(from));
+	return (true);
+}
+
+CONSOLE_TC(sdwan, "SD-WAN services are checked as MEF 70.2 says, and kept")
+ATF_TC_BODY(sdwan, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[8192], t1[8192], bad[8192];
+	size_t		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+
+	/* Nothing yet: version 0. */
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("0", jstr(&r, "version"));
+	resp_free(&r);
+	http("POST", "/api/sdwan/check", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
+	/* Each change that breaks a requirement, and what it is told. */
+	static const char *const breaks[][3] = {
+		{ "\"type\":\"public\"", "\"type\":\"cloud\"", "R170" },
+		{ "\"fib\":1", "\"fib\":0", "FIB 0" },
+		{ "\"10.1.0.0/16\"", "\"10.1.0.0/16\",\"10.1.4.0/24\"",
+		    "(R20)" },
+		{ "\"prefixes\":\"Default\"", "\"prefixes\":\"Default\"},"
+		    "{\"name\":\"more\",\"prefixes\":\"Default\"", "(R21)" },
+		{ "\"name\":\"rest\"", "\"name\":\"Internet\"", "(§9.5)" },
+		{ "\"ceiling\":12", "\"ceiling\":8", "(R72)" },
+		{ "\"remediation\":9", "\"remediation\":12", "(R75)" },
+		{ "{\"any\":true}", "{\"any\":true,\"dscp\":[1]}", "(R99)" },
+		{ "\"limit\":5000000", "\"limit\":10", "(R7)" },
+		{ "\"ingress\":\"hubonly\"", "\"ingress\":\"quiet\"", "(R106)" },
+		{ "\"zone\":\"office\"", "\"zone\":\"Internet\"", "(R107)" },
+		{ "\"provider\":[\"10.1.0.1\"]", "\"provider\":[\"10.2.0.1\"]",
+		    "(R131)" },
+		{ "\"leaves\":[\"branch\"]", "\"leaves\":[\"hq\"]", "(R31)" },
+		{ "\"vlan\":20", "\"vlan\":5000", "(§11.2)" },
+		{ "\"virtual-topology\":\"hub\"", "\"virtual-topology\":\"nope\"",
+		    "(R47)" },
+		{ "\"metric\":\"loss\"", "\"metric\":\"delay\"", "(R68)" },
+		{ "\"kind\":\"geneve\"", "\"kind\":\"wg\",\"ipsec\":true",
+		    "wg encrypts" },
+		{ "\"interface\":\"vtnet1\"}", "\"interface\":\"vtnet1\","
+		    "\"breakout\":true}", "(§12.3)" },
+		{ "\"business-importance\":\"high\"",
+		    "\"business-importance\":\"mid\"", "importance levels" },
+		{ "\"next_hop\":\"10.1.0.2\"", "\"next_hop\":\"10.9.0.2\"",
+		    "(§11.6.1)" },
+		{ "\"dport\":[80,\"https\"]", "\"dport\":[80,\"nosuchport\"]",
+		    "nosuchport is not one" },
+		{ "\"groups\":[\"bulk\"]", "\"groups\":[\"bulk\",\"web\"]",
+		    "(R92)" },
+		{ "\"egress-block\":\"allow\"", "\"encryption\":\"optional\"",
+		    "egress policy" },
+		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
+	};
+	for (i = 0; i < nitems(breaks); i++) {
+		ATF_REQUIRE_MSG(swap_in(doc, breaks[i][0], breaks[i][1], bad,
+		    sizeof(bad)), "%s is not in the document", breaks[i][0]);
+		http("POST", "/api/sdwan/check", bad, &r);
+		ATF_CHECK_MSG(r.status == 400 && strstr(r.body, breaks[i][2]) !=
+		    NULL, "%s: HTTP %d, %s", breaks[i][1], r.status, r.body);
+		resp_free(&r);
+	}
+
+	/* Kept, as version 1; one from version 0 again is too old. */
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("1", jstr(&r, "version"));
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("1", jstr(&r, "version"));
+	ATF_CHECK_STREQ("acme", jstr(&r, "swvcs.0.id"));
+	ATF_CHECK_STREQ("10", jstr(&r,
+	    "swvcs.0.policies.0.criteria.performance.primary.threshold"));
+	resp_free(&r);
+	/* Without a session, nothing. */
+	cookie[0] = '\0';
+	http("GET", "/api/sdwan", NULL, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -3224,6 +3394,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, tokens);
 	ATF_TP_ADD_TC(tp, transfers);
 	ATF_TP_ADD_TC(tp, workflows);
+	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);

@@ -4422,3 +4422,21 @@ html:not(.neon) table.net td :is(code, .mono, .chip, .nhg-gw), html:not(.neon) t
 }
 svg.ti path { stroke-width: inherit; }
 button.icon svg.ti, .topbar .more svg.ti { stroke-width: 2.4; }
+
+/* SD-WAN: the services the console keeps, as MEF 70.2 says them. */
+section.sdwan { display: flex; flex-direction: column; gap: 1rem; }
+section.sdwan nav.tabs { margin-bottom: 0; }
+.sd-block h3 { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 .4rem; font-size: .95rem; }
+.sd-block h3 small { font-weight: 400; font-size: .75rem; }
+.sd-block { overflow-x: auto; }
+table.net.sd td { vertical-align: top; }
+table.net.sd .chip { margin: 0 .25rem .2rem 0; }
+table.net.sd .crit { display: inline-block; margin: 0 .6rem .15rem 0; }
+table.net.sd .crit b { font-weight: 500; color: var(--fg-2); }
+table.net.sd .pmap { white-space: nowrap; }
+.sd-doc textarea { width: 100%; min-height: 24rem; font-size: .8rem; tab-size: 4; }
+.sd-doc .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+@media (max-width: 720px) {
+	table.net.sd .pmap { white-space: normal; }
+	.sd-doc textarea { min-height: 60vh; }
+}

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.76.0
+  version: 0.77.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -46,6 +46,8 @@ tags:
     description: Jail state and changes, through arcana-agent.
   - name: workflows
     description: Chains of steps the console runs on several hosts.
+  - name: sdwan
+    description: SD-WAN services, as MEF 70.2 says them.
 
 paths:
   /api/health:
@@ -1123,6 +1125,44 @@ paths:
                     items: { $ref: "#/components/schemas/Job" }
         "400": { $ref: "#/components/responses/Error" }
 
+  /api/sdwan:
+    get:
+      tags: [sdwan]
+      summary: The SD-WAN document
+      responses:
+        "200":
+          description: version, changed, ucs, edges and swvcs; version 0
+            when nothing was kept yet.
+    put:
+      tags: [sdwan]
+      summary: A new SD-WAN document, checked and kept
+      description: The whole document, with the version it was made
+        from. It is checked against MEF 70.2 as far as the console
+        implements it; a refusal names the requirement, e.g. "(R72)".
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: the document as kept, its version one more
+        "400": { $ref: "#/components/responses/Error" }
+        "409":
+          description: it was made from an older version
+  /api/sdwan/check:
+    post:
+      tags: [sdwan]
+      summary: An SD-WAN document checked, not kept
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: "{ok: true}"
+        "400": { $ref: "#/components/responses/Error" }
   /api/workflows:
     get:
       tags: [workflows]

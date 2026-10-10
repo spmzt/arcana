@@ -68,6 +68,8 @@ The console is laid out as a tree and tabs.
   service restarted when its host answers again. The console keeps the workflows in `workflows.json` and
   the last 30 runs in `runs.json`; what runs by itself is started by
   one worker of the console's, the one holding `workflows.lock`.
+- **SD-WAN**: the SD-WAN services the console keeps, as MEF 70.2
+  says them; see [SD-WAN](#sd-wan).
 - **Utilization**: how busy every host has been, as lines over the
   last five minutes, quarter of an hour, hour, or all that is kept.
   Each agent looks at its host by itself, every five seconds and an
@@ -986,3 +988,73 @@ draws them (above).
   that interface's MTU: the smallest of them is as large as the path's
   MTU can be. From a shell: `arcanactl traceroute address`.
 
+## SD-WAN
+
+**SD-WAN** in the tree holds the SD-WAN services the console keeps,
+named as MEF 70.2 (SD-WAN Service Attributes and Service Framework)
+names them. It is one document with three parts:
+
+- `ucs`: the underlays (Underlay Connectivity Services, §12). Each has
+  an `id`, a `type` (`public`, an Internet Access, or `private`), a
+  `billing` (`flat-rate`, `usage-based` or `other`), and the
+  `tunnel` the edges make over it: `kind` `gre`, `gif`, `geneve` or
+  `wg`, and for the first three `ipsec`, true for IPsec IKEv2 under
+  it.
+- `edges`: the hosts that are SD-WAN Edges (§7.8). Each names its
+  `server` and lists its `ucs_end_points` (§12.3): an `id`, its
+  `ucs`, the `interface` it is on, and maybe an `address`, a
+  `gateway`, a `bandwidth` in bits per second, `backup` (used only
+  when nothing else is left) and `breakout` (traffic for the Internet
+  leaves here; only on a public underlay).
+- `swvcs`: the services (SD-WAN Virtual Connections, §9). Each has
+  an `id`, the `fib` it has on its edges (1 or more; FIB 0 is the
+  underlay's), its `ucs`, `reserved_prefixes` (the provider's own
+  addresses, tunnels' among them), and:
+  - `zones` (§9.5): a `name` and `prefixes`, a list or `Default`, and
+    `policies`, each an `app` (a flow or a group) and the ingress
+    `policy` it gets in the whole zone, or `Block`;
+  - `flows` (§9.14), matched in order, the first that matches: a
+    `name`, `criteria` that all must match (`sav4`, `dav4`, `sdav4`,
+    `sav6`, `dav6`, `sdav6`, `protv4`, `nextheadv6`, `dscp`, `sport`,
+    `dport`, `sdport`, `ethertype`, `appid`, or `any` alone) and
+    maybe a `group` of `groups`;
+  - `policies` (§9.12): a `name`, a `direction`, `ingress` or
+    `egress`, and `criteria`. Ingress: `encryption`,
+    `public-private`, `internet-breakout`, `backup`,
+    `virtual-topology`, `allowed-destination-zones`,
+    `billing-method`, `business-importance`, `performance` (a
+    `primary` metric, `delay`, `ipdv` or `loss`, with `threshold`,
+    `ceiling` and `remediation`, and `secondary` ones with a
+    threshold), `bandwidth` (`commit` and `limit`, or a rate
+    limiter's name) and `af-security-ingress`. Egress:
+    `egress-block` and `af-security-egress`;
+  - `topologies` (§9.6): `multipoint-to-multipoint` with
+    `end_points`, or `rooted-multipoint` with `roots` and `leaves`;
+    `Swvc`, all to all, is always there;
+  - `intervals` (§9.7: `eval`, `arrival`, `ir`, in milliseconds),
+    `rate_limiters`, `security_policies`, `importance` (`levels`,
+    high to low, and a `default`) and `probe`, how its tunnels are
+    measured;
+  - `end_points` (§10): an `id`, the `edge` it is on, its `uni` (§11:
+    an `id`, the `interface`, a `vlan` or 0, `max_frame`, `ipv4` and
+    `ipv6` addressing, `none` or `static` with a `prefix` and the
+    `provider`'s addresses in it, `ll-only` for IPv6 too, and static
+    `routes`), its `policy_map` (each a `zone` or `Internet`, an `app`,
+    and its `ingress` and `egress` policies, over the zone's own) and
+    its `nat`.
+
+**Overview** shows the underlays, the edges and the services in
+tables; **Services** one service's end points, zones, flows (in the
+order they are matched), policies, topologies and rate limiters;
+**Document** the whole of it as JSON. **Check** asks the console
+whether it is one the standard allows and **Keep** keeps it; what the
+console says no to names where, and the requirement:
+
+    swvc office, policy realtime: performance: the ceiling is the
+    threshold or above it (R72)
+
+A change is made from the version it was read at; one made from an
+older version is refused, so two pages do not undo each other. **Start
+from an example** writes one with two of the console's hosts as its
+edges. Nothing is sent to the hosts yet: what the edges are to do is
+the next part.

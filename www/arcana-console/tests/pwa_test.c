@@ -3447,6 +3447,64 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('li[data-act=select-server]').click()");
 	wait_js("document.querySelector('button.tab[data-arg=jails]')", 10);
 
+	/*
+	 * SD-WAN, a section of its own: nothing kept yet; the example, as
+	 * the document, checked; one that breaks a requirement told which;
+	 * kept, and then in the overview and the service's own tables.
+	 */
+	run("document.querySelector('li[data-act=select-sdwan]').click()");
+	wait_js("document.querySelector('section.sdwan .sd-block') && "
+	    "document.querySelector('section.sdwan').textContent.includes("
+	    "'None yet')", 20);
+	ATF_CHECK(js_true("document.querySelector('.crumb.place').textContent "
+	    "=== 'SD-WAN'"));
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "document]').click()");
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')", 10);
+	run("document.querySelector('button[data-act=sd-example]').click()");
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')"
+	    ".value.includes('\"office\"')", 10);
+	run("window.sdText = document.querySelector('form[data-form=sd-doc] "
+	    "textarea').value;");
+	run("document.querySelector('form[data-form=sd-doc] button[value="
+	    "check]').click()");
+	wait_js("(document.querySelector('section.sdwan .notice') || {})."
+	    "textContent?.includes('MEF 70.2 allows')", 20);
+	run("const t = document.querySelector('form[data-form=sd-doc] "
+	    "textarea'); t.value = window.sdText.replace('\"ceiling\": 50', "
+	    "'\"ceiling\": 20');");
+	run("document.querySelector('form[data-form=sd-doc] button[value="
+	    "check]').click()");
+	wait_js("(document.querySelector('section.sdwan .notice.bad') || {})."
+	    "textContent?.includes('(R72)')", 20);
+	shot("9-sdwan-refused");
+	run("const t = document.querySelector('form[data-form=sd-doc] "
+	    "textarea'); t.value = window.sdText;");
+	run("document.querySelector('form[data-form=sd-doc] button[value="
+	    "keep]').click()");
+	wait_js("(document.querySelector('section.sdwan .notice') || {})."
+	    "textContent?.includes('version 1')", 20);
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "overview]').click()");
+	wait_js("[...document.querySelectorAll('section.sdwan table.sd')]"
+	    ".length === 3 && document.querySelector('section.sdwan "
+	    "button[data-act=sd-swvc]')?.textContent === 'office'", 10);
+	ATF_CHECK(js_true("document.querySelectorAll('section.sdwan table.sd')"
+	    "[1].querySelectorAll('tbody tr').length === 4"));
+	shot("9-sdwan-overview");
+	run("document.querySelector('button[data-act=sd-swvc]').click()");
+	wait_js("[...document.querySelectorAll('section.sdwan h3')].some(h => "
+	    "h.textContent.startsWith('End points')) && document."
+	    "querySelector('select[data-input=sd-swvc]')", 10);
+	ATF_CHECK(js_true("document.querySelector('section.sdwan').textContent"
+	    ".includes('10.10.0.0/24')"));
+	shot("9-sdwan-service");
+	phone(true);
+	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",
+	    10);
+	shot("m12-sdwan");
+	phone(false);
+
 	/* Log out, and in again with the key. */
 	run("document.querySelector('button[data-act=logout]').click()");
 	wait_js("document.querySelector('button[data-act=login]')", 10);

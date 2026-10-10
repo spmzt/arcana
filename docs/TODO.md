@@ -2,6 +2,18 @@
 
 ## To do
 
+- SD-WAN (MEF 70.2 now, Mplify 119 later), step by step. Done: the
+  services kept and checked by the console, and shown. Next: the edges
+  made from them (a FIB per service, interfaces in it, tunnels between
+  edges of gre, gif, geneve or wg, with IPsec IKEv2 where asked); the
+  tunnels measured by the agents (ICMP, its interval, size, count,
+  DSCP and thresholds set per service and per tunnel); flows
+  classified and steered by ipfw in a set of its own, the console
+  ordering each policy's tunnels by its performance criteria and the
+  agent taking the first that answers; breakout and NAT, bandwidth and
+  importance by dummynet, egress blocks, backup and billing, virtual
+  topologies; BGP and OSPF, DHCP and SLAAC at a UNI. Later: Mplify
+  119's tunnel (GRE carrying an MPLS label inside IPsec, BGP L3VPN).
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a

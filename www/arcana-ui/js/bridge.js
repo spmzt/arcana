@@ -155,9 +155,12 @@ addToLibrary({
 			e.preventDefault();
 			o.__submit = e.submitter && e.submitter.value ?
 			    e.submitter.value : "";
+			/* Of the buttons, only the one pressed says anything. */
+			if (e.submitter && e.submitter.name)
+				o[e.submitter.name] = e.submitter.value;
 			for (i = 0; i < f.elements.length; i++) {
 				el = f.elements[i];
-				if (!el.name)
+				if (!el.name || el.tagName === "BUTTON")
 					continue;
 				o[el.name] = el.type === "checkbox" ?
 				    el.checked : el.value;

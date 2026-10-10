@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.76.0"
+#define	ARCW_VERSION		"0.77.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -95,6 +95,7 @@ bool		 token_readable(const char *);
 int		 api_tokens(struct http_request *);
 int		 api_workflows(struct http_request *);
 int		 api_runs(struct http_request *);
+int		 api_sdwan(struct http_request *);
 void		 workflows_init(void);
 void		 thread_log(int, const char *, ...) __printflike(2, 3);
 int		 api_transfers(struct http_request *);

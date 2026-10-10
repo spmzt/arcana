@@ -22,7 +22,7 @@
 
 #include "console.h"
 
-#define	BODY_MAX	(64 * 1024)
+#define	BODY_MAX	(1024 * 1024)	/* as http_body_max */
 
 int
 reply_json(struct http_request *req, int status, ucl_object_t *o)

@@ -140,6 +140,7 @@ enum node {
 	NODE_API,		/* the console's API, as it is documented */
 	NODE_USAGE,		/* how busy every host has been, drawn */
 	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
+	NODE_SDWAN,		/* SD-WAN services, as MEF 70.2 says them */
 };
 
 enum tab {
@@ -663,6 +664,12 @@ void		 workflows_open(void);
 void		 workflows_tick(double);
 void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
+/* sdwan.c: the SD-WAN services the console keeps. */
+void		 sdwan_open(void);
+void		 sdwan_tick(double);
+void		 view_sdwan(struct html *);
+bool		 sdwan_action(const char *, const char *, const char *);
+bool		 sdwan_form(const char *, const ucl_object_t *);
 bool		 workflows_form(const char *, const ucl_object_t *);
 bool		 workflows_modal(struct html *);
 void		 storage_tick(double);
