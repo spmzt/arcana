@@ -3341,10 +3341,22 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"egress-block\":\"allow\"", "\"encryption\":\"optional\"",
 		    "egress policy" },
 		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
+		/* Another service with a UNI on the same interface and VLAN
+		 * of the same edge. */
+		{ "\"swvcs\":[", "\"swvcs\":[{\"id\":\"other\",\"fib\":2,\"ucs\":"
+		    "[\"inet\"],\"zones\":[{\"name\":\"z\",\"prefixes\":\"Default\"}],"
+		    "\"flows\":[{\"name\":\"all\",\"criteria\":{\"any\":true}}],"
+		    "\"policies\":[{\"name\":\"p\",\"direction\":\"ingress\"}],"
+		    "\"end_points\":[{\"id\":\"o1\",\"edge\":\"@A\",\"uni\":{\"id\":"
+		    "\"uni-o1\",\"interface\":\"vtnet2\",\"ipv4\":{\"mode\":\"static\","
+		    "\"prefix\":\"10.5.0.0/24\",\"provider\":[\"10.5.0.1\"]}}}]},",
+		    "(R3)" },
 	};
 	for (i = 0; i < nitems(breaks); i++) {
 		ATF_REQUIRE_MSG(swap_in(doc, breaks[i][0], breaks[i][1], bad,
 		    sizeof(bad)), "%s is not in the document", breaks[i][0]);
+		while (swap_in(bad, "@A", sa, t1, sizeof(t1)))
+			snprintf(bad, sizeof(bad), "%s", t1);
 		http("POST", "/api/sdwan/check", bad, &r);
 		ATF_CHECK_MSG(r.status == 400 && strstr(r.body, breaks[i][2]) !=
 		    NULL, "%s: HTTP %d, %s", breaks[i][1], r.status, r.body);
@@ -3492,6 +3504,11 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_EQ(0, changes_of(&r, "keep"));
 	ATF_CHECK(changes_of(&r, "make") > 10);
 	ATF_CHECK(strstr(r.body, "\"key\":\"uni:branch\"") != NULL);
+	/* Each edge measures its tunnels: the far inner address, through
+	 * the service's table, as the service's probe settings say. */
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-probes\",\"targets\":[{"
+	    "\"id\":\"acme/a-inet-b-inet\",\"address\":\"100.64.0.1\",\"fib\":1,"
+	    "\"eval\":1000}") != NULL, "%s", r.body);
 	resp_free(&r);
 
 	/* Applied: each made, in the order, IPsec with the far key. */
@@ -3515,10 +3532,22 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q 'vlan104 create vlan 20 vlandev lo0' "
 	    "ifconfig.log") == 0);
+	/* One IPsec connection for the pair of outer addresses and kind. */
+	ATF_CHECK(system("ls swanctl/conf.d/arcana-sdw*.conf | wc -l | grep -q "
+	    "'^ *2$'") == 0);
 	ATF_CHECK(system("grep -q 'mode = transport' "
-	    "swanctl/conf.d/arcana-sdw100.conf") == 0);
+	    "swanctl/conf.d/arcana-sdw*.conf") == 0);
 	ATF_CHECK(system("grep -q 'dynamic\\[gre\\]' "
-	    "swanctl/conf.d/arcana-sdw100.conf") == 0);
+	    "swanctl/conf.d/arcana-sdw*.conf") == 0);
+	/* The agent probes them from now on (without root, it says so). */
+	snprintf(body, sizeof(body), "/api/servers/%s/sdwan", sa);
+	http("GET", body, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"id\":\"acme/a-inet-b-inet\"") != NULL &&
+	    strstr(r.body, "\"id\":\"acme/a-mpls-b-mpls\"") != NULL, "%s",
+	    r.body);
+	ATF_CHECK(jstr(&r, "data.targets.0.state") != NULL);
+	resp_free(&r);
 	/* Again: nothing to do. */
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
@@ -3553,14 +3582,54 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(system("! grep -q '\"units\":\\[102' data/sdwan-state.json") ==
 	    0);
 
+	/* A policy that requires encryption always: the private tunnel
+	 * is under IPsec too; a UCS that says no IPsec cannot be. */
+	ATF_REQUIRE(swap_in(doc, "\"encryption\":\"required-public-only\"",
+	    "\"encryption\":\"required-always\"", t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":2", t1,
+	    sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"ucs\":[\"inet\"]",
+	    "\"ucs\":[\"inet\",\"mpls\"]", doc, sizeof(doc)));
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "tunnels.1.ipsec"));
+	ATF_CHECK_STREQ("gif", jstr(&r, "tunnels.1.kind"));
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"",
+	    "\"kind\":\"gif\",\"ipsec\":false", t1, sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"version\":2", "\"version\":3", doc,
+	    sizeof(doc)));
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	ATF_CHECK_MSG(r.status == 409 && strstr(r.body, "(R39)") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\",\"ipsec\":false",
+	    "\"kind\":\"gif\"", t1, sizeof(t1)));
+	ATF_REQUIRE(swap_in(t1, "\"encryption\":\"required-always\"",
+	    "\"encryption\":\"required-public-only\"", doc, sizeof(doc)));
+	ATF_REQUIRE(swap_in(doc, "\"version\":3", "\"version\":4", t1,
+	    sizeof(t1)));
+	http("PUT", "/api/sdwan", t1, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* An IPv6 UNI with no IPv6 inner addresses: the plan says so. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"notes\":[\"swvc acme: no tunnel from a "
+	    "to b carries 2001:db8:1::/64") != NULL, "%s", r.body);
+	resp_free(&r);
 	/* A geneve tunnel: one VNI at both ends, its table after it. */
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"", "\"kind\":\"geneve\"",
 	    t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"ucs\":[\"inet\"]",
-	    "\"ucs\":[\"inet\",\"mpls\"]", t1, sizeof(t1)));
-	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":2", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":3", "\"version\":5", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);

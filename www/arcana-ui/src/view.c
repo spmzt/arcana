@@ -460,7 +460,15 @@ rail(struct html *h)
 		h_raw(h, "<i class=\"led\"></i><div class=\"meta\">"
 		    "<span class=\"name\">");
 		h_txt(h, s->name);
-		h_raw(h, "</span><span class=\"uri\">");
+		h_raw(h, "</span>");
+		/* The agent beside the console: it builds the agent sent to
+		 * the others, and updates the console itself. */
+		if (s->local)
+			h_raw(h, "<span class=\"chip here\" title=\"The agent on "
+			    "the console's own host, by its socket: it builds "
+			    "arcana-agent for the others and updates the console "
+			    "itself\">console's host</span>");
+		h_raw(h, "<span class=\"uri\">");
 		h_txt(h, s->uri);
 		h_raw(h, "</span>");
 		if (s->list != NULL && jstr(s->list, "host.version") != NULL) {
@@ -560,7 +568,15 @@ hostbar(struct html *h, struct server *s)
 	    "<h1>");
 	h_txt(h, jstr(host, "hostname") != NULL ? jstr(host, "hostname") :
 	    s->name);
-	h_raw(h, "</h1><div class=\"facts\">");
+	h_raw(h, "</h1>");
+	if (s->local)
+		h_raw(h, "<span class=\"chip here\" title=\"The agent on the "
+		    "console's own host, reached by its socket. Besides what "
+		    "every agent does, it builds arcana-agent from the "
+		    "repository for every host, and Update console builds and "
+		    "installs the console itself here\">console's host: builds "
+		    "the agent, updates the console</span>");
+	h_raw(h, "<div class=\"facts\">");
 	if (host != NULL) {
 		snprintf(buf, sizeof(buf), "%s %s %s", jstr(host, "sysname"),
 		    jstr(host, "release"), jstr(host, "machine"));

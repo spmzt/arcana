@@ -7,9 +7,12 @@
   from them (a FIB per service, the UNIs and tunnels in it, gre, gif,
   geneve or wg, IPsec IKEv2 in transport mode where asked, routes by
   the tunnels), planned, applied and kept. A wg tunnel's FIB is not
-  kept across a reboot (wg-quick gives the addresses first). Next: the
-  tunnels measured by the agents (ICMP, its interval, size, count,
-  DSCP and thresholds set per service and per tunnel); flows
+  kept across a reboot (wg-quick gives the addresses first); the
+  tunnels measured by the agents (ICMP echo through the service's
+  table, the interval, size, count, DSCP and the down and up counts
+  set per service), the Paths tab with each end's delay, variation and
+  loss, and faults. The probes run where the agent runs: an edge that
+  is a vnet jail is not measured yet. Next: flows
   classified and steered by ipfw in a set of its own, the console
   ordering each policy's tunnels by its performance criteria and the
   agent taking the first that answers; breakout and NAT, bandwidth and
@@ -140,6 +143,10 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- SD-WAN's probes (2026-10-10, the root test): the loopback pinged
+  every 50 ms, up with its samples (a tenth of a millisecond each
+  way), and an address in a table with no route to it down after two
+  misses, each an event.
 - SD-WAN's jobs on two vnet jails joined by an epair (2026-10-10): a
   gre tunnel made in FIB 1 with its /31, its route and the far UNI's
   in FIB 1 and not in FIB 0, IKEv2 in transport mode carrying the GRE

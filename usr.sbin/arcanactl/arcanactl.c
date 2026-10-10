@@ -144,6 +144,7 @@ usage(void)
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
+	    "    sdwan [probes json]\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
 	    "    wg interface init [port]\n"
@@ -1259,6 +1260,37 @@ static int	json_out(const char *, bool, const char *, const char *,
 		    const struct arc_step *, size_t);
 
 /* traceroute address: one round, a probe a hop, as JSON. */
+/* sdwan: what the probes have seen; sdwan probes json: the targets. */
+static int
+cmd_sdwan(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_sdwan_req		 req;
+	struct arc_sdwan_rsp		*rsp;
+	struct arc_sdwan_probes_req	 preq;
+	struct arc_sdwan_probes_rsp	*prsp;
+	int				 error;
+
+	if (argc == 3 && strcmp(argv[1], "probes") == 0) {
+		memset(&preq, 0, sizeof(preq));
+		preq.json = argv[2];
+		if ((error = arc_sdwan_probes(cl, &preq, &prsp)) != 0)
+			fail(cl, error, "sdwan probes");
+		error = json_out("sdwan-probes", prsp->ok, prsp->error, NULL,
+		    prsp->trace.v, prsp->trace.n);
+		arc_sdwan_probes_rsp_free(prsp);
+		return (error);
+	}
+	if (argc != 1)
+		usage();
+	memset(&req, 0, sizeof(req));
+	if ((error = arc_sdwan(cl, &req, &rsp)) != 0)
+		fail(cl, error, "sdwan");
+	error = json_out("sdwan", rsp->ok, rsp->error, rsp->json, rsp->trace.v,
+	    rsp->trace.n);
+	arc_sdwan_rsp_free(rsp);
+	return (error);
+}
+
 static int
 cmd_traceroute(struct arc_client *cl, int argc, char **argv)
 {
@@ -3065,6 +3097,8 @@ main(int argc, char *argv[])
 		rc = cmd_agent_build(&cl, argc, argv);
 	else if (strcmp(argv[0], "traceroute") == 0)
 		rc = cmd_traceroute(&cl, argc, argv);
+	else if (strcmp(argv[0], "sdwan") == 0)
+		rc = cmd_sdwan(&cl, argc, argv);
 	else if (strcmp(argv[0], "source-head") == 0)
 		rc = cmd_source_head(&cl, argc, argv);
 	else if (strcmp(argv[0], "console-update") == 0)

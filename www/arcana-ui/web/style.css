@@ -4472,3 +4472,22 @@ section.setsect .token-new input { flex: 1; min-width: 12rem; }
 table.sd-plan tr.ch-keep { opacity: .65; }
 ul.sd-jobs { margin: .3rem 0 0; padding-left: 1rem; font-family: var(--mono); font-size: .72rem; }
 table.sd-plan details summary { cursor: pointer; color: var(--fg-2); }
+
+/* Paths: what the probes see of each tunnel. */
+.sd-path h3 .mono { font-size: .85rem; }
+svg.spark { width: 120px; height: 24px; display: block; }
+svg.spark path { fill: none; stroke: var(--cyan); stroke-width: 1; vector-effect: non-scaling-stroke; }
+svg.spark rect.loss { fill: var(--red); }
+.chip.st-up { border-color: var(--green); }
+.chip.st-down, .chip.st-error { border-color: var(--red); }
+table.net.sd small.bad { display: block; color: var(--red); }
+ul.sd-faults { list-style: none; margin: 0; padding: 0; font-size: .82rem; }
+ul.sd-faults li { display: flex; align-items: baseline; gap: .5rem; padding: .25rem 0; border-bottom: 1px solid var(--line); }
+ul.sd-faults li .led { background: var(--dim); }
+ul.sd-faults li.st-up .led { background: var(--green); }
+ul.sd-faults li.st-down .led { background: var(--red); }
+
+/* The agent on the console's own host, told apart. */
+.chip.here { border-color: var(--cyan); color: var(--fg-2); font-size: .68rem; }
+.tree .titem .chip.here { margin: 0 .3rem; padding: 0 .3rem; font-size: .6rem; vertical-align: middle; }
+.hostbar .host-id .chip.here { margin: .1rem 0 .35rem; }

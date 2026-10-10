@@ -3498,6 +3498,10 @@ ATF_TC_BODY(pwa, tc)
 	 * the document, checked; one that breaks a requirement told which;
 	 * kept, and then in the overview and the service's own tables.
 	 */
+	/* The agent on the console's own host, by its socket, is told
+	 * apart in the tree and on its page. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('.tree .titem.server "
+	    ".chip.here')].length === 2"));
 	run("document.querySelector('li[data-act=select-sdwan]').click()");
 	wait_js("document.querySelector('section.sdwan .sd-block') && "
 	    "document.querySelector('section.sdwan').textContent.includes("
@@ -3569,6 +3573,15 @@ ATF_TC_BODY(pwa, tc)
 	ATF_CHECK(js_true("document.querySelector('.sd-applied h3')"
 	    ".textContent.startsWith('Last apply: done')"));
 	shot("9-sdwan-edges-applied");
+	/* Paths: each tunnel's two ends, as their probes see them; the
+	 * agent here runs without root, so each end says so. */
+	run("document.querySelector('button[data-act=sd-tab][data-arg=paths]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('.sd-path').length === 2 && "
+	    "[...document.querySelectorAll('.sd-path .chip')].length === 4 && "
+	    "document.querySelector('.sd-path').textContent.includes('needs "
+	    "root')", 30);
+	shot("9-sdwan-paths");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",
 	    10);

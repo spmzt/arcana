@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.47.0"
+#define	ARCANA_AGENT_VERSION	"0.48.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -395,6 +395,10 @@ void		 kmsg_start(void);
 bool		 kmsg_lines(struct work *, uint64_t, const char *, uint32_t,
 		    struct kmsg_line **, size_t *, uint64_t *);
 void		 history_save(void);
+/* gula/probe.c: the tunnels measured, ICMP echo again and again. */
+void		 probe_start(void);
+int		 do_probes_set(struct work *, const char *, const char **);
+int		 do_sdwan(struct work *, uint64_t, struct arc_sdwan_rsp *);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,

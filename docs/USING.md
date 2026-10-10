@@ -20,7 +20,11 @@ The console is laid out as a tree and tabs.
   shows the rest.
 - **All hosts**: every host as a card with CPU, memory and ZFS, how many
   jails run, and the fleet as a graph from the console through the
-  hosts to their jails; nodes are links.
+  hosts to their jails; nodes are links. The agent on the console's
+  own host, added by its socket, wears a **console's host** label in
+  the tree and on its page: besides what every agent does, it builds
+  `arcana-agent` from the repository for every host, and **Update
+  console** builds and installs the console itself there.
 - **Network**: the fleet as a map; see [The network](#the-network).
 - **Workflows**: chains of steps the console keeps and runs on
   several hosts at once. A step is a job of any kind, its fields
@@ -1068,7 +1072,10 @@ edges.
 it. Each edge is to have, for each service on it:
 
 - `net.fibs` raised to the highest service FIB on it, and one (never
-  lowered). It is per vnet: a fresh vnet has 1.
+  lowered). It is per vnet: a fresh vnet has 1. `net.add_addr_allfibs`
+  must be 0, the default: at 1 an interface's addresses are routed in
+  every table and no service can have one of its own, so the step
+  fails and says so.
 - strongSwan's key and daemon, when one of its tunnels wants IPsec.
 - Its end of each tunnel (a Tunnel Virtual Connection, §7.10): one
   between each two edges of a service, over each two of their UCS End
@@ -1076,7 +1083,11 @@ it. Each edge is to have, for each service on it:
   ones), each End Point with its outer `address`. The tunnel is the
   underlay's `tunnel`: gre, gif or geneve, under IPsec IKEv2 in
   transport mode when it says `ipsec` (a public underlay does unless it
-  says otherwise), or wg. It is in the service's FIB, its outer packets
+  says otherwise; and every tunnel of a service does when one of its
+  policies says `encryption` `required-always`, R39, which an underlay
+  that says no IPsec cannot meet), or wg. One IKEv2 connection serves
+  every tunnel of a kind between the same two outer addresses: in
+  transport mode it protects all of them, and two would conflict. It is in the service's FIB, its outer packets
   in FIB 0, its inner addresses a /31 and a /127 of the service's
   reserved prefixes; each end has its own unit (`gre100`, `gre101`),
   since two ends may be one host. The far end is told once both ends
@@ -1085,7 +1096,9 @@ it. Each edge is to have, for each service on it:
   UDP for geneve).
 - Routes in the service's FIB: each far end point's prefixes by a
   tunnel to its edge, one that is no backup first and a private one
-  before a public one; and each UNI's static routes.
+  before a public one; and each UNI's static routes. A prefix no tunnel
+  can carry (an IPv6 one with no IPv6 reserved prefix for the tunnels'
+  inner addresses, say) is left out, and the plan says so in a note.
 - The UNIs, last: the interface, or a VLAN on it, in the service's FIB,
   with the provider's addresses.
 
@@ -1102,3 +1115,20 @@ others. **Make all again** takes everything made away first.
 A wg tunnel's FIB is set, but not kept across a reboot: wg-quick(8),
 which brings wg up at boot, gives its addresses before any table can
 be set. gre, gif and geneve keep theirs in `rc.conf`.
+
+**Paths** shows what each edge's probes see of each tunnel. After the
+tunnels and their far ends, an apply tells each edge the tunnels to
+measure (`sdwan-probes`): the far inner address of each, pinged (ICMP
+echo, a raw socket, so the agent must be root) through the service's
+table, as Mplify 119 §11.4 has an edge measure its tunnels. Of each
+eval interval the agent keeps a sample: the one-way delay, half the
+mean round trip (MEF 105); the delay variation, the mean difference
+between one round trip and the next; the loss; the least and the
+most. So many misses in a row and the tunnel is down, so many answers
+and it is up again, each an event (`sdwan-tunnel`) the Faults list
+shows. The service's `probe` sets how: `interval` (ms, 100), `size`
+(bytes, 64), `count` (0 for without end), `dscp`, `down` and `up` (3
+and 3), `timeout` (ms, 1000), `history` (samples kept, 3600) and
+`report`; `intervals.eval` is the sample's length. The targets are
+kept beside `history.conf` for the agent's next start; `arcanactl
+sdwan` reads what they saw, `arcanactl sdwan probes json` sets them.

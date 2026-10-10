@@ -20,6 +20,9 @@
  *			service's reserved prefixes
  *	peer:ID		the tunnel's far end told: the wg peer, or the
  *			IKEv2 connection, with the far host's key
+ *	probes		the tunnels measured: each one's far inner address,
+ *			pinged by the agent through the service's FIB
+ *			(sdwan-probes), as the service's probe settings say
  *	route:S:P	a route in the service's FIB: a far UNI's prefix
  *			by a tunnel, or a UNI's static route
  *	uni:EP		the SD-WAN UNI: its interface (or a VLAN on it) in
@@ -68,13 +71,15 @@
 #define	WG_PORT		51000	/* + the unit: a wg tunnel's port */
 #define	JOB_POLL_US	300000
 #define	JOB_WAIT_S	600
-#define	PHASES		6
+#define	PHASES		7
 #define	LIST_SUBS	16	/* a UNI's subnets, the first and more */
 
-enum { PH_FIBS = 1, PH_IPSEC, PH_TVC, PH_PEER, PH_ROUTE, PH_UNI };
+enum { PH_FIBS = 1, PH_IPSEC, PH_TVC, PH_PEER, PH_PROBE, PH_ROUTE, PH_UNI };
 
 static pthread_mutex_t	st_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool		applying;
+
+static const char	*server_name_of(const char *);
 
 static void
 put(ucl_object_t *o, const char *key, ucl_object_t *v)
@@ -298,6 +303,7 @@ struct plan {
 	ucl_object_t		*edges;		/* sid: [objects] */
 	ucl_object_t		*tunnels;	/* the tunnels, both ends */
 	ucl_object_t		*used;		/* the allocations they have */
+	ucl_object_t		*notes;		/* what the plan leaves out, and why */
 	char			 why[300];
 };
 
@@ -380,9 +386,13 @@ unmake(ucl_object_t *o, ucl_object_t *j)
 	    "unmake"), j);
 }
 
-/* What a tunnel over a UCS is, when the UCS does not say. */
+/*
+ * What a tunnel over a UCS is, when the UCS does not say; *saidp,
+ * whether the UCS said about IPsec itself.
+ */
 static void
-tunnel_of(const ucl_object_t *ucs, const char **kindp, bool *ipsecp)
+tunnel_of(const ucl_object_t *ucs, const char **kindp, bool *ipsecp,
+    bool *saidp)
 {
 	const ucl_object_t	*t;
 	bool			 public;
@@ -391,12 +401,31 @@ tunnel_of(const ucl_object_t *ucs, const char **kindp, bool *ipsecp)
 	    "public") == 0;
 	t = ucl_object_lookup(ucs, "tunnel");
 	*kindp = t != NULL && str(t, "kind") != NULL ? str(t, "kind") : "gre";
+	*saidp = t != NULL && ucl_object_lookup(t, "ipsec") != NULL;
 	if (strcmp(*kindp, "wg") == 0)
 		*ipsecp = false;
-	else if (t != NULL && ucl_object_lookup(t, "ipsec") != NULL)
+	else if (*saidp)
 		*ipsecp = ucl_flag(t, "ipsec");
 	else
 		*ipsecp = public;	/* the Internet's, encrypted */
+}
+
+/* Does a policy of the service require encryption always (§9.12.2.1)? */
+static bool
+always_encrypted(const ucl_object_t *sw)
+{
+	const ucl_object_t	*p;
+	ucl_object_iter_t	 it;
+	const char		*e;
+
+	it = NULL;
+	while ((p = ucl_object_iterate(ucl_object_lookup(sw, "policies"), &it,
+	    true)) != NULL) {
+		e = str(ucl_object_lookup(p, "criteria"), "encryption");
+		if (e != NULL && strcmp(e, "required-always") == 0)
+			return (true);
+	}
+	return (false);
 }
 
 static const char *
@@ -418,22 +447,31 @@ ts_of(const char *kind)
 	    strcmp(kind, "geneve") == 0 ? "dynamic[udp]" : "dynamic[gre]");
 }
 
-/* FNV-1a, to say a far end changed without its whole jobs. */
+/* FNV-1a of a text, as 16 hex digits. */
 static char *
-digest(const ucl_object_t *o, char *buf, size_t len)
+digest_text(const char *s, char *buf, size_t len)
 {
-	char		*s;
-	uint64_t	 h;
-	size_t		 i;
+	uint64_t	h;
+	size_t		i;
 
-	s = emit(o);
 	h = 0xcbf29ce484222325ULL;
 	for (i = 0; s != NULL && s[i] != '\0'; i++) {
 		h ^= (unsigned char)s[i];
 		h *= 0x100000001b3ULL;
 	}
-	free(s);
 	snprintf(buf, len, "%016jx", (uintmax_t)h);
+	return (buf);
+}
+
+/* The same of an object, to say a far end changed without its jobs. */
+static char *
+digest(const ucl_object_t *o, char *buf, size_t len)
+{
+	char	*s;
+
+	s = emit(o);
+	digest_text(s, buf, len);
+	free(s);
 	return (buf);
 }
 
@@ -540,8 +578,27 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		    S("0.0.0.0/0,::/0"), "keepalive", I(25), "persist", B(true),
 		    NULL);
 	} else {
+		/*
+		 * One connection for the pair of outer addresses and the
+		 * kind of tunnel: in transport mode it protects every such
+		 * tunnel between the two, and two would conflict.
+		 */
+		snprintf(key, sizeof(key), "%s|%s|%s", str(a, "underlay"), str(b,
+		    "underlay"), kind);
+		snprintf(port, sizeof(port), "sdw%.8s", digest_text(key, h,
+		    sizeof(h)));
+		snprintf(key, sizeof(key), "peer:%s", port);
+		if (by(edge_list(pl, sid), "key", key) != NULL) {
+			/* Shared with a tunnel before: the one object. */
+			ucl_object_t	*a2;
+
+			a2 = edge_list(pl, sid);
+			ucl_array_pop_last(a2);
+			ucl_object_unref(o);
+			return;
+		}
+		put(o, "key", S(key));
 		snprintf(key, sizeof(key), "${ipsec:%s}", str(b, "edge"));
-		snprintf(port, sizeof(port), "sdw%jd", (intmax_t)unit);
 		p = job("ipsec", "verb", S("conn"), "conn", S(port),
 		    "tunnel_local", S(str(a, "underlay")), "tunnel_remote",
 		    S(str(b, "underlay")), "ipsec_mode", S("transport"),
@@ -551,8 +608,10 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		unmake(o, job("ipsec", "verb", S("unconn"), "conn", S(port),
 		    "persist", B(true), NULL));
 	}
-	/* Made again when the far end's interface is: a new key. */
-	put(p, "_after", S(digest(t, h, sizeof(h))));
+	/* A wg peer is made again when the far end's interface is: a new
+	 * key; an IPsec key is the host's, and stays. */
+	if (strcmp(kind, "wg") == 0)
+		put(p, "_after", S(digest(t, h, sizeof(h))));
 	make(o, p);
 }
 
@@ -567,10 +626,11 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 	const char		*kind, *k2, *sid;
 	char			 id[300], p[80], a[64], b[64];
 	int64_t			 unit;
-	bool			 ipsec, ip2, public;
+	bool			 ipsec, ip2, public, said, said2, always;
 	size_t			 i, j;
 
 	doc = pl->doc;
+	always = always_encrypted(sw);
 	/* Its edges, each once, in the order its end points name them. */
 	edges = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
@@ -626,9 +686,35 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					if (family(str(x, "address")) !=
 					    family(str(y, "address")))
 						continue;
-					tunnel_of(ux, &kind, &ipsec);
-					tunnel_of(uy, &k2, &ip2);
+					tunnel_of(ux, &kind, &ipsec, &said);
+					tunnel_of(uy, &k2, &ip2, &said2);
 					ipsec = ipsec || ip2;
+					/* A policy that wants every tunnel
+					 * encrypted (R39): so it is, unless the
+					 * UCS says no, which no path mends. */
+					if (always && !ipsec && strcmp(kind,
+					    "wg") != 0) {
+						if ((said && !ucl_flag(
+						    ucl_object_lookup(ux,
+						    "tunnel"), "ipsec")) ||
+						    (said2 && !ucl_flag(
+						    ucl_object_lookup(uy,
+						    "tunnel"), "ipsec"))) {
+							snprintf(pl->why, sizeof(
+							    pl->why), "swvc %s: "
+							    "a policy requires "
+							    "encryption always, "
+							    "and UCS %s says no "
+							    "IPsec under its "
+							    "tunnels (R39)",
+							    str(sw, "id"), said
+							    ? str(ux, "id") :
+							    str(uy, "id"));
+							ucl_object_unref(edges);
+							return (false);
+						}
+						ipsec = true;
+					}
 					snprintf(id, sizeof(id), "%s/%s-%s", str(sw,
 					    "id"), str(x, "id"), str(y, "id"));
 					/* Its unit and inner pair, as kept. */
@@ -947,6 +1033,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	pl->edges = ucl_object_typed_new(UCL_OBJECT);
 	pl->tunnels = ucl_object_typed_new(UCL_ARRAY);
 	pl->used = ucl_object_typed_new(UCL_OBJECT);
+	pl->notes = ucl_object_typed_new(UCL_ARRAY);
 	/* The tunnels first: their units and pairs, in the document's order. */
 	it = NULL;
 	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
@@ -999,6 +1086,64 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 		tvc_end(pl, t, 0);
 		tvc_end(pl, t, 1);
 	}
+	/* Each edge's probes: one target per tunnel end it has. */
+	it = NULL;
+	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
+		const ucl_object_t	*ends = ucl_object_lookup(t, "ends");
+		int			 k;
+
+		for (k = 0; k < 2; k++) {
+			const ucl_object_t	*a, *b, *swo, *po;
+			ucl_object_t		*tg, *targets, *j;
+			const char		*faddr;
+
+			a = ucl_array_find_index(ends, (unsigned int)k);
+			b = ucl_array_find_index(ends, (unsigned int)!k);
+			faddr = str(b, "inner4") != NULL ? str(b, "inner4") :
+			    str(b, "inner6");
+			if (faddr == NULL)
+				continue;
+			o = (ucl_object_t *)(uintptr_t)by(ucl_object_lookup(
+			    pl->edges, str(a, "edge")), "key", "probes");
+			if (o == NULL) {
+				o = object(pl, str(a, "edge"), "probes", PH_PROBE,
+				    "the tunnels measured: ICMP echo through "
+				    "the service's table");
+				targets = ucl_object_typed_new(UCL_ARRAY);
+				make(o, job("sdwan-probes", "targets", targets,
+				    NULL));
+				targets = ucl_object_typed_new(UCL_ARRAY);
+				unmake(o, job("sdwan-probes", "targets", targets,
+				    NULL));
+			}
+			j = (ucl_object_t *)(uintptr_t)ucl_array_find_index(
+			    ucl_object_lookup(o, "make"), 0);
+			targets = (ucl_object_t *)(uintptr_t)ucl_object_lookup(j,
+			    "targets");
+			tg = ucl_object_typed_new(UCL_OBJECT);
+			put(tg, "id", S(str(t, "id")));
+			put(tg, "address", S(faddr));
+			put(tg, "fib", I(ucl_object_toint(ucl_object_lookup(t,
+			    "fib"))));
+			/* The service's probe settings, and its eval interval. */
+			swo = by(ucl_object_lookup(doc, "swvcs"), "id", str(t,
+			    "swvc"));
+			if ((po = ucl_object_lookup(ucl_object_lookup(swo,
+			    "intervals"), "eval")) != NULL)
+				put(tg, "eval", ucl_object_copy(po));
+			if ((po = ucl_object_lookup(swo, "probe")) != NULL) {
+				const ucl_object_t	*v;
+				ucl_object_iter_t	 pit;
+
+				pit = NULL;
+				while ((v = ucl_object_iterate(po, &pit, true)) !=
+				    NULL)
+					put(tg, ucl_object_key(v),
+					    ucl_object_copy(v));
+			}
+			ucl_array_append(targets, tg);
+		}
+	}
 	/* Routes: a far end point's prefixes by a tunnel to its edge; a
 	 * UNI's static routes by their next hop. */
 	it = NULL;
@@ -1032,8 +1177,26 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 					    str(ep, "edge"), str(ep2, "edge"),
 					    family(ucl_object_tostring(p)),
 					    &far);
-					if (tt == NULL)
+					if (tt == NULL) {
+						char	note[300];
+
+						snprintf(note, sizeof(note),
+						    "swvc %s: no tunnel from %s "
+						    "to %s carries %s: none has "
+						    "an inner %s address (a "
+						    "reserved prefix of that "
+						    "family)", str(sw, "id"),
+						    server_name_of(str(ep,
+						    "edge")), server_name_of(
+						    str(ep2, "edge")),
+						    ucl_object_tostring(p),
+						    family(ucl_object_tostring(
+						    p)) == AF_INET ? "IPv4" :
+						    "IPv6");
+						ucl_array_append(pl->notes,
+						    S(note));
 						continue;
+					}
 					fe = ucl_array_find_index(
 					    ucl_object_lookup(tt, "ends"),
 					    (unsigned int)far);
@@ -1072,6 +1235,8 @@ plan_free(struct plan *pl)
 		ucl_object_unref(pl->tunnels);
 	if (pl->used != NULL)
 		ucl_object_unref(pl->used);
+	if (pl->notes != NULL)
+		ucl_object_unref(pl->notes);
 	memset(pl, 0, sizeof(*pl));
 }
 
@@ -1291,6 +1456,26 @@ job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 		snprintf(why, wlen, "no server %s", sid);
 		return (false);
 	}
+	/* The probes are the console's own ask, not a job of the host. */
+	if (strcmp(str(j, "kind"), "sdwan-probes") == 0) {
+		char	*targets;
+		bool	 ok;
+
+		targets = emit(ucl_object_lookup(j, "targets"));
+		json = hosts_sdwan_probes(uri, peer, name, targets != NULL ?
+		    targets : "[]", &status);
+		free(targets);
+		ans = parse(json);
+		free(json);
+		ok = status == 200 && ans != NULL && ucl_flag(ans, "ok");
+		if (!ok)
+			snprintf(why, wlen, "%s", ans != NULL && str(ans,
+			    "error") != NULL ? str(ans, "error") : "the host "
+			    "did not take the probes");
+		if (ans != NULL)
+			ucl_object_unref(ans);
+		return (ok);
+	}
 	if ((json = hosts_submit(uri, peer, name, j, &status, &e)) == NULL) {
 		snprintf(why, wlen, "%s", e != NULL ? e : "not sent");
 		return (false);
@@ -1346,9 +1531,19 @@ job_run(const char *sid, const ucl_object_t *j, char *why, size_t wlen)
 	}
 }
 
-/* net.fibs on the host, or -1. */
+/* A sysctl of the host as a number, or -1. */
+static int64_t
+sysctl_of(const char *sid, const char *name);
+
 static int64_t
 fibs_now(const char *sid)
+{
+
+	return (sysctl_of(sid, "net.fibs"));
+}
+
+static int64_t
+sysctl_of(const char *sid, const char *oid)
 {
 	char		 uri[256], peer[256], name[128], *json;
 	const ucl_object_t *v;
@@ -1360,15 +1555,14 @@ fibs_now(const char *sid)
 	if (!host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
 	    sizeof(name)))
 		return (-1);
-	json = hosts_sysctl(uri, peer, name, "net.fibs", &status);
+	json = hosts_sysctl(uri, peer, name, oid, &status);
 	ans = parse(json);
 	free(json);
 	n = -1;
 	it = NULL;
 	while ((v = ucl_object_iterate(at_path(ans, "data", "values"), &it,
 	    true)) != NULL)
-		if (str(v, "name") != NULL && strcmp(str(v, "name"),
-		    "net.fibs") == 0)
+		if (str(v, "name") != NULL && strcmp(str(v, "name"), oid) == 0)
 			n = strtoll(ucl_object_tostring_forced(
 			    ucl_object_lookup(v, "value")), NULL, 10);
 	if (ans != NULL)
@@ -1439,12 +1633,23 @@ do_make(struct run *r, ucl_object_t *s)
 	int64_t			 have;
 	int			 done;
 
-	/* net.fibs only ever goes up. */
-	if (ucl_object_lookup(s, "fibs") != NULL && (have = fibs_now(str(s,
-	    "server"))) >= ucl_object_toint(ucl_object_lookup(s, "fibs"))) {
-		snprintf(why, sizeof(why), "it has %jd already",
-		    (intmax_t)have);
-		goto made;
+	if (ucl_object_lookup(s, "fibs") != NULL) {
+		/* An address's route in every table would cross the
+		 * services: the kernel's default, 0, is what works. */
+		if (sysctl_of(str(s, "server"), "net.add_addr_allfibs") > 0) {
+			step_set(r, s, "failed", "net.add_addr_allfibs is 1 on "
+			    "the host: an interface's addresses are routed in "
+			    "every table, so a service cannot have one of its "
+			    "own; set it to 0 (sysctl.conf) first");
+			return (false);
+		}
+		/* net.fibs only ever goes up. */
+		if ((have = fibs_now(str(s, "server"))) >= ucl_object_toint(
+		    ucl_object_lookup(s, "fibs"))) {
+			snprintf(why, sizeof(why), "it has %jd already",
+			    (intmax_t)have);
+			goto made;
+		}
 	}
 	why[0] = '\0';
 	un = ucl_object_copy(ucl_object_lookup(s, "unmake"));
@@ -1488,8 +1693,8 @@ made:
 	put(keep, "phase", I(ucl_object_toint(ucl_object_lookup(s, "phase"))));
 	put(keep, "spec", S(str(s, "spec")));
 	put(keep, "unmake", ucl_object_copy(ucl_object_lookup(s, "unmake")));
-	ucl_object_insert_key(applied_of(r, str(s, "server")), keep, str(s,
-	    "key"), 0, true);
+	/* In the old one's place: insert_key would keep both. */
+	put(applied_of(r, str(s, "server")), str(s, "key"), keep);
 	step_set(r, s, "done", why[0] != '\0' ? why : NULL);
 	return (true);
 }
@@ -1518,8 +1723,9 @@ run_main(void *arg)
 				continue;
 			if (strcmp(ch, "unmake") == 0)
 				(void)do_unmake(r, s);
-			else {
-				/* Its old self, then the new one below. */
+			else if (strcmp(str(s, "key"), "probes") != 0) {
+				/* Its old self, then the new one below; the
+				 * probes set anew replace the old ones. */
 				(void)do_unmake(r, s);
 				put(s, "state", S("pending"));
 			}
@@ -1605,6 +1811,7 @@ plan_reply(const struct plan *pl, const ucl_object_t *chg)
 	}
 	put(top, "changes", arr);
 	put(top, "tunnels", ucl_object_copy(pl->tunnels));
+	put(top, "notes", ucl_object_copy(pl->notes));
 	return (top);
 }
 

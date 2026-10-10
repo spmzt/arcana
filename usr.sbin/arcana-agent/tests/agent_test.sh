@@ -2365,6 +2365,55 @@ traceroute_cleanup()
 	stop_daemon
 }
 
+atf_test_case sdwan cleanup
+sdwan_head()
+{
+	atf_set "descr" "The tunnels to measure: set, kept for the next start, read back with their state; without root each says so"
+}
+sdwan_body()
+{
+	start_daemon
+	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	# What is not a target list.
+	atf_check -s exit:1 -e match:'JSON array' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '{"id":"x"}'
+	atf_check -s exit:1 -e match:'id and an address' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x"}]'
+	atf_check -s exit:1 -e match:'is not an address' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x","address":"nowhere"}]'
+	atf_check -s exit:1 -e match:'interval' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x","address":"127.0.0.1","interval":1}]'
+	atf_check -s exit:1 -e match:'there twice' -o ignore \
+	    "$JGC" -c "$SOCK" sdwan probes '[{"id":"x","address":"127.0.0.1"},{"id":"x","address":"::1"}]'
+	# Two targets, with their settings and the defaults.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes \
+	    '[{"id":"acme/a-b","address":"100.64.0.1","fib":1,"interval":200,"dscp":46},{"id":"v6","address":"fd00::2","eval":500}]'
+	atf_check -o save:sd.json "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"id":"acme/a-b","address":"100.64.0.1","family":"inet","fib":1,"state":"(error|unknown|up|down)"' \
+	    -o match:'"interval":200,"size":64,"eval":1000,"dscp":46' \
+	    -o match:'"id":"v6","address":"fd00::2","family":"inet6","fib":0' \
+	    -o match:'"eval":500' cat sd.json
+	if [ "$(id -u)" != 0 ]; then
+		atf_check -o match:'"state":"error","error":"socket: [^"]*needs root' \
+		    cat sd.json
+	fi
+	# Kept beside history.conf, and read again at the next start.
+	f=$(find . -name sdwan-probes.json)
+	atf_check -o match:'"id":"v6"' cat "$f"
+	stop_daemon
+	start_daemon
+	atf_check -o match:'"id":"acme/a-b"' -o match:'"id":"v6"' \
+	    "$JGC" -c "$SOCK" sdwan
+	# All of them stopped.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan probes '[]'
+	atf_check -o match:'"targets":\[\]' "$JGC" -c "$SOCK" sdwan
+}
+sdwan_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case agent_build cleanup
 agent_build_head()
 {
@@ -3847,6 +3896,7 @@ atf_init_test_cases()
 {
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
+	atf_add_test_case sdwan
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute

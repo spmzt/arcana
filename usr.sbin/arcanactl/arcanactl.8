@@ -639,6 +639,16 @@ by, as
 .Xr route 8
 get tells it, and the other routes of the table that cover the address,
 each with the length of its prefix: what is left when the best goes.
+.It Cm sdwan
+What the agent's probes of its SD-WAN tunnels have seen, as JSON:
+each target's state, the sample in progress and the samples kept
+(the one-way delay, its variation, the loss, each eval interval).
+.It Cm sdwan probes Ar json
+The targets the agent is to measure from now on, a JSON array as the
+sdwan-probes operation takes it: each an id and an address, and maybe
+fib, interval, size, count, dscp, down, up, timeout, eval, history and
+report.
+An empty array stops them all.
 .It Cm traceroute Ar address
 One round of
 .Xr traceroute 8 ,

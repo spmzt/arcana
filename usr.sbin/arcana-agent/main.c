@@ -594,6 +594,7 @@ main(int argc, char *argv[])
 	transport_init(ctx, loop, tls);
 	jobs_init();
 	history_start();
+	probe_start();
 	kmsg_start();
 	route_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);

@@ -55,6 +55,8 @@ enum op {
 	OP_SOURCE_HEAD,
 	OP_ROUTE_LOOKUP,
 	OP_TRACEROUTE,
+	OP_SDWAN,
+	OP_SDWAN_PROBES,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_STORAGE,
@@ -1036,6 +1038,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SOURCE_HEAD ? "arc_source_head" :
 	    c->op == OP_ROUTE_LOOKUP ? "arc_route_lookup" :
 	    c->op == OP_TRACEROUTE ? "arc_traceroute" :
+	    c->op == OP_SDWAN ? "arc_sdwan" : c->op == OP_SDWAN_PROBES ?
+	    "arc_sdwan_probes" :
 	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
@@ -1371,6 +1375,10 @@ call_run(struct kore_task *t)
 	struct arc_source_head_req shq;
 	struct arc_traceroute_req trq;
 	struct arc_traceroute_rsp *trr;
+	struct arc_sdwan_req	sdq;
+	struct arc_sdwan_rsp	*sdr;
+	struct arc_sdwan_probes_req spq;
+	struct arc_sdwan_probes_rsp *spr;
 	struct arc_source_head_rsp *shr;
 	uint8_t			*bin;
 	size_t			 binlen;
@@ -1867,6 +1875,39 @@ connected:
 			put(top, "data", e);
 		steps = trr->trace.v;
 		nsteps = trr->trace.n;
+		break;
+	case OP_SDWAN:
+		memset(&sdq, 0, sizeof(sdq));
+		sdq.has_after = c->has_pos;
+		sdq.after = c->pos;
+		if ((error = arc_sdwan(&cl, &sdq, &sdr)) != 0)
+			goto rpcfail;
+		ok = sdr->ok;
+		put_str(top, "error", sdr->error);
+		e = NULL;
+		if (sdr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, sdr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = sdr->trace.v;
+		nsteps = sdr->trace.n;
+		break;
+	case OP_SDWAN_PROBES:
+		memset(&spq, 0, sizeof(spq));
+		spq.json = c->text;
+		if ((error = arc_sdwan_probes(&cl, &spq, &spr)) != 0)
+			goto rpcfail;
+		ok = spr->ok;
+		put_str(top, "error", spr->error);
+		steps = spr->trace.v;
+		nsteps = spr->trace.n;
 		break;
 	case OP_STORAGE:
 		/* The dataset rides where a jail's name does. */
@@ -4067,6 +4108,7 @@ hosts_read(const char *uri, const char *peer, const char *name,
 		{ "hello", OP_HELLO }, { "jails", OP_LIST },
 		{ "services", OP_SERVICES }, { "stats", OP_STATS },
 		{ "events", OP_EVENTS }, { "history", OP_HISTORY },
+		{ "sdwan", OP_SDWAN },
 		{ "packages", OP_PACKAGES },
 	};
 	struct call	*c;
@@ -4108,6 +4150,32 @@ hosts_net(const char *uri, const char *peer, const char *name,
 	c->family = ARC_NET_FAMILY_ALL;
 	c->reads = true;
 	return (self_call(c, uri, peer, name, kind, status));
+}
+
+/* The tunnels the host is to measure: json, an array of targets. */
+char *
+hosts_sdwan_probes(const char *uri, const char *peer, const char *name,
+    const char *json, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_SDWAN_PROBES;
+	c->text = kore_strdup(json);
+	return (self_call(c, uri, peer, name, "sdwan-probes", status));
+}
+
+/* GET /api/servers/<id>/sdwan: what the host's probes have seen. */
+int
+api_sdwan_state(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_SDWAN)) == NULL)
+		return (KORE_RESULT_OK);
+	return (call_start(req, c));
 }
 
 /* The host's sysctls whose names begin with prefix. */

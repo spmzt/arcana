@@ -21,7 +21,10 @@
 
 #define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
 
-enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_DOCUMENT };
+enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_PATHS, SD_DOCUMENT };
+
+#define	PATHS_EVERY_MS	2000	/* the probes read again, on the Paths tab */
+#define	SPARK_N		120	/* samples a spark line shows */
 
 static struct {
 	int		 tab;
@@ -36,6 +39,9 @@ static struct {
 	char		 plan_error[600];
 	double		 plan_at, apply_at;
 	bool		 applying;
+	ucl_object_t	*paths;		/* sid: /api/servers/<sid>/sdwan data */
+	ucl_object_t	*faults;	/* sid: the sdwan-tunnel events */
+	double		 paths_at;
 } sd;
 
 /* ---- Reading -------------------------------------------------------- */
@@ -146,6 +152,85 @@ plan_load(void)
 	sd.plan_at = sd.apply_at = arc_now();
 	api("GET", "/api/sdwan/plan", NULL, plan_cb, NULL);
 	api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
+}
+
+/* What one edge's probes have seen, under its id. */
+static void
+paths_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	char	*sid = arg;
+
+	(void)err;
+	if (status == 200 && jget(o, "data") != NULL) {
+		if (sd.paths == NULL)
+			sd.paths = ucl_object_typed_new(UCL_OBJECT);
+		(void)ucl_object_delete_key(sd.paths, sid);
+		ucl_object_insert_key(sd.paths, ucl_object_copy(jget(o,
+		    "data")), sid, 0, true);
+	}
+	free(sid);
+}
+
+static void
+faults_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	char			*sid = arg;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*mine;
+
+	(void)err;
+	if (status == 200) {
+		if (sd.faults == NULL)
+			sd.faults = ucl_object_typed_new(UCL_OBJECT);
+		mine = ucl_object_typed_new(UCL_ARRAY);
+		it = NULL;
+		while ((e = ucl_object_iterate(jget(o, "events"), &it, true)) !=
+		    NULL)
+			if (jstr(e, "kind") != NULL && strcmp(jstr(e, "kind"),
+			    "sdwan-tunnel") == 0)
+				ucl_array_append(mine, ucl_object_copy(e));
+		(void)ucl_object_delete_key(sd.faults, sid);
+		ucl_object_insert_key(sd.faults, mine, sid, 0, true);
+	}
+	free(sid);
+}
+
+/* Every edge of the plan's tunnels asked what its probes saw. */
+static void
+paths_load(void)
+{
+	const ucl_object_t	*t, *e;
+	ucl_object_iter_t	 it, eit;
+	ucl_object_t		*asked;
+	char			 url[96];
+
+	sd.paths_at = arc_now();
+	if (sd.plan == NULL) {
+		api("GET", "/api/sdwan/plan", NULL, plan_cb, NULL);
+		return;
+	}
+	asked = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((t = ucl_object_iterate(jget(sd.plan, "tunnels"), &it, true)) !=
+	    NULL) {
+		eit = NULL;
+		while ((e = ucl_object_iterate(jget(t, "ends"), &eit, true)) !=
+		    NULL) {
+			if (jstr(e, "edge") == NULL || ucl_object_lookup(asked,
+			    jstr(e, "edge")) != NULL)
+				continue;
+			ucl_object_insert_key(asked, ucl_object_frombool(true),
+			    jstr(e, "edge"), 0, true);
+			snprintf(url, sizeof(url), "/api/servers/%s/sdwan",
+			    jstr(e, "edge"));
+			api("GET", url, NULL, paths_cb, strdup(jstr(e, "edge")));
+			snprintf(url, sizeof(url), "/api/servers/%s/events",
+			    jstr(e, "edge"));
+			api("GET", url, NULL, faults_cb, strdup(jstr(e, "edge")));
+		}
+	}
+	ucl_object_unref(asked);
 }
 
 /* ---- Small things ---------------------------------------------------- */
@@ -801,6 +886,19 @@ view_edges(struct html *h)
 		h_raw(h, "</div>");
 		return;
 	}
+	/* What the plan leaves out, and why. */
+	{
+		const ucl_object_t	*n;
+		ucl_object_iter_t	 nit;
+
+		nit = NULL;
+		while ((n = ucl_object_iterate(jget(sd.plan, "notes"), &nit,
+		    true)) != NULL) {
+			h_raw(h, "<div class=\"notice warn\">");
+			h_txt(h, ucl_object_tostring_forced(n));
+			h_raw(h, "</div>");
+		}
+	}
 	view_applied(h);
 	view_tunnels(h, jget(sd.plan, "tunnels"));
 	/* What each edge is to have, and what becomes of it. */
@@ -831,6 +929,216 @@ view_edges(struct html *h)
 		h_raw(h, "</ul></details></td></tr>");
 	}
 	h_raw(h, "</tbody></table></div>");
+}
+
+/* ---- The paths: what the probes see of each tunnel ------------------- */
+
+/* The target an edge probes for a tunnel: its id is the tunnel's. */
+static const ucl_object_t *
+target_of(const char *sid, const char *tid)
+{
+	const ucl_object_t	*t;
+	ucl_object_iter_t	 it;
+
+	if (sd.paths == NULL || sid == NULL)
+		return (NULL);
+	it = NULL;
+	while ((t = ucl_object_iterate(jget(jget(sd.paths, sid), "targets"),
+	    &it, true)) != NULL)
+		if (jstr(t, "id") != NULL && strcmp(jstr(t, "id"), tid) == 0)
+			return (t);
+	return (NULL);
+}
+
+static const char *
+ms(double v, char *buf, size_t len)
+{
+
+	snprintf(buf, len, v >= 100 ? "%.0f ms" : v >= 10 ? "%.1f ms" :
+	    "%.2f ms", v);
+	return (buf);
+}
+
+/* The last samples' delay as a line, loss as marks under it. */
+static void
+spark(struct html *h, const ucl_object_t *samples)
+{
+	const ucl_object_t	*s;
+	double			 max, v, loss;
+	unsigned int		 n, from, i;
+
+	n = samples != NULL ? ucl_array_size(samples) : 0;
+	if (n == 0) {
+		h_raw(h, "<span class=\"dim\">no sample yet</span>");
+		return;
+	}
+	from = n > SPARK_N ? n - SPARK_N : 0;
+	max = 0;
+	for (i = from; i < n; i++) {
+		s = ucl_array_find_index(samples, i);
+		v = ucl_object_todouble(ucl_array_find_index(s, 5));
+		if (v > max)
+			max = v;
+	}
+	if (max <= 0)
+		max = 1;
+	h_fmt(h, "<svg class=\"spark\" viewBox=\"0 0 %d 24\" preserveAspectRatio="
+	    "\"none\" aria-hidden=\"true\"><path d=\"", SPARK_N);
+	for (i = from; i < n; i++) {
+		s = ucl_array_find_index(samples, i);
+		v = ucl_object_todouble(ucl_array_find_index(s, 1));
+		h_fmt(h, "%c%u %.1f ", i == from ? 'M' : 'L', i - from, 22 -
+		    v / max * 20);
+	}
+	h_raw(h, "\"/>");
+	for (i = from; i < n; i++) {
+		s = ucl_array_find_index(samples, i);
+		loss = ucl_object_todouble(ucl_array_find_index(s, 3));
+		if (loss > 0)
+			h_fmt(h, "<rect class=\"loss\" x=\"%u\" y=\"22\" width=\"1\""
+			    " height=\"2\"/>", i - from);
+	}
+	h_fmt(h, "</svg><small class=\"dim\">%u samples, up to %s</small>", n -
+	    from, ms(max, (char[32]){ 0 }, 32));
+}
+
+static void
+view_paths(struct html *h)
+{
+	const ucl_object_t	*t, *e, *tg, *now, *sm, *f, *d;
+	ucl_object_iter_t	 it, eit, fit;
+	const char		*st;
+	char			 b1[32], b2[32], b3[32], age[32];
+	unsigned int		 n;
+	int			 k, nf;
+
+	if (sd.plan == NULL) {
+		h_raw(h, sd.plan_error[0] != '\0' ? "<div class=\"notice bad\">" :
+		    "<div class=\"loader\"></div>");
+		if (sd.plan_error[0] != '\0') {
+			h_txt(h, sd.plan_error);
+			h_raw(h, "</div>");
+		}
+		return;
+	}
+	h_raw(h, "<p class=\"dim\">Each edge pings the far end of each of its "
+	    "tunnels through the service's table, as its probe settings say; "
+	    "of each eval interval it keeps the one-way delay (half the round "
+	    "trip), its variation, the loss, the least and the most. Read "
+	    "every two seconds while this is open.</p>");
+	it = NULL;
+	while ((t = ucl_object_iterate(jget(sd.plan, "tunnels"), &it, true)) !=
+	    NULL) {
+		h_raw(h, "<div class=\"sd-block sd-path\"><h3><span class=\"mono"
+		    "\">");
+		h_txt(h, jstr(t, "id"));
+		h_fmt(h, "</span> <small class=\"dim\">%s%s%s%s</small></h3>"
+		    "<table class=\"net sd\"><thead><tr><th>From</th><th>State"
+		    "</th><th>Delay</th><th>Variation</th><th>Loss</th><th>"
+		    "Least / most</th><th>Probes</th><th>Last samples</th></tr>"
+		    "</thead><tbody>", jstr(t, "kind"), jbool(t, "ipsec") ?
+		    " + IPsec" : "", jbool(t, "public") ? ", public" : "",
+		    jbool(t, "backup") ? ", backup" : "");
+		for (k = 0; k < 2; k++) {
+			e = ucl_array_find_index(jget(t, "ends"), (unsigned int)k);
+			tg = target_of(jstr(e, "edge"), jstr(t, "id"));
+			h_raw(h, "<tr><td><b>");
+			h_txt(h, host_name(jstr(e, "edge")));
+			h_raw(h, "</b> <span class=\"mono dim\">");
+			h_txt(h, jstr(e, "ifname"));
+			h_raw(h, "</span></td>");
+			if (tg == NULL) {
+				h_raw(h, "<td colspan=\"7\" class=\"dim\">not "
+				    "probed: not applied, or not read yet</td>"
+				    "</tr>");
+				continue;
+			}
+			st = jstr(tg, "state") != NULL ? jstr(tg, "state") :
+			    "unknown";
+			fmt_age(age, sizeof(age), (double)jint(tg, "since", 0) *
+			    1000);
+			h_fmt(h, "<td><span class=\"chip st-%s\">%s</span> <small "
+			    "class=\"dim\">", st, st);
+			h_txt(h, age);
+			h_raw(h, "</small>");
+			if (jstr(tg, "error") != NULL) {
+				h_raw(h, "<small class=\"bad\">");
+				h_txt(h, jstr(tg, "error"));
+				h_raw(h, "</small>");
+			}
+			/* The last whole sample, with the one in progress. */
+			n = jget(tg, "samples") != NULL ? ucl_array_size(jget(tg,
+			    "samples")) : 0;
+			sm = n > 0 ? ucl_array_find_index(jget(tg, "samples"),
+			    n - 1) : NULL;
+			now = jget(tg, "now");
+			if (sm != NULL) {
+				h_fmt(h, "</td><td class=\"num\">%s</td><td "
+				    "class=\"num\">%s</td><td class=\"num\">%.1f%%"
+				    "</td><td class=\"num\">%s / %s</td>",
+				    ms(ucl_object_todouble(ucl_array_find_index(
+				    sm, 1)), b1, sizeof(b1)), ms(
+				    ucl_object_todouble(ucl_array_find_index(sm,
+				    2)), b2, sizeof(b2)), ucl_object_todouble(
+				    ucl_array_find_index(sm, 3)) * 100, ms(
+				    ucl_object_todouble(ucl_array_find_index(sm,
+				    4)), b3, sizeof(b3)), ms(ucl_object_todouble(
+				    ucl_array_find_index(sm, 5)), (char[32]){ 0 },
+				    32));
+			} else if (now != NULL && jint(now, "sent", 0) > 0) {
+				h_fmt(h, "</td><td class=\"num\">%s</td><td "
+				    "class=\"num\">%s</td><td class=\"num\">%.1f%%"
+				    "</td><td class=\"dim\">so far</td>", ms(jnum(
+				    now, "delay", 0), b1, sizeof(b1)), ms(jnum(now,
+				    "ipdv", 0), b2, sizeof(b2)), jnum(now, "loss",
+				    0) * 100);
+			} else
+				h_raw(h, "</td><td class=\"dim\" colspan=\"4\">"
+				    "nothing yet</td>");
+			h_fmt(h, "<td class=\"num\">%lld / %lld</td><td>",
+			    (long long)jint(tg, "received", 0), (long long)jint(
+			    tg, "sent", 0));
+			spark(h, jget(tg, "samples"));
+			h_raw(h, "</td></tr>");
+		}
+		h_raw(h, "</tbody></table></div>");
+	}
+	if (jget(sd.plan, "tunnels") == NULL || ucl_array_size(jget(sd.plan,
+	    "tunnels")) == 0)
+		h_raw(h, "<p class=\"dim\">No tunnel: a service with end points "
+		    "on two edges or more has them.</p>");
+	/* The faults: tunnels that went down or came up, the newest first. */
+	h_raw(h, "<div class=\"sd-block\"><h3>Faults <small class=\"dim\">a "
+	    "tunnel down or up again, as the edges told it</small></h3><ul "
+	    "class=\"sd-faults\">");
+	nf = 0;
+	it = NULL;
+	while (sd.faults != NULL && (f = ucl_object_iterate(sd.faults, &it,
+	    true)) != NULL) {
+		fit = NULL;
+		while ((e = ucl_object_iterate(f, &fit, true)) != NULL) {
+			d = jget(e, "data");
+			if (nf++ >= 40)
+				break;
+			fmt_age(age, sizeof(age), (double)jint(e, "t", 0) * 1000);
+			h_fmt(h, "<li class=\"st-%s\"><span class=\"led\"></span>"
+			    "<b>", jstr(d, "state") != NULL ? jstr(d, "state") :
+			    "unknown");
+			h_txt(h, host_name(ucl_object_key(f)));
+			h_raw(h, "</b> <span class=\"mono\">");
+			h_txt(h, jstr(d, "id") != NULL ? jstr(d, "id") : "?");
+			h_raw(h, "</span> ");
+			h_txt(h, jstr(d, "state") != NULL ? jstr(d, "state") :
+			    "");
+			h_raw(h, " <span class=\"dim\">");
+			h_txt(h, age);
+			h_raw(h, "</span></li>");
+		}
+	}
+	(void)eit;
+	if (nf == 0)
+		h_raw(h, "<li class=\"dim\">None.</li>");
+	h_raw(h, "</ul></div>");
 }
 
 /* ---- The document ----------------------------------------------------- */
@@ -879,10 +1187,13 @@ view_sdwan(struct html *h)
 	    "</button><button class=\"tab%s\" data-act=\"sd-tab\" data-arg=\""
 	    "edges\" title=\"What the edges are to have, and Apply\">Edges"
 	    "</button><button class=\"tab%s\" data-act=\"sd-tab\" data-arg=\""
-	    "document\" title=\"All of it as JSON, checked against MEF 70.2"
-	    "\">Document</button></nav>", sd.tab == SD_OVERVIEW ? " on" : "",
-	    sd.tab == SD_SERVICES ? " on" : "", sd.tab == SD_EDGES ? " on" : "",
-	    sd.tab == SD_DOCUMENT ? " on" : "");
+	    "paths\" title=\"What the edges' probes see of each tunnel: "
+	    "delay, variation, loss\">Paths</button><button class=\"tab%s\" "
+	    "data-act=\"sd-tab\" data-arg=\"document\" title=\"All of it as "
+	    "JSON, checked against MEF 70.2\">Document</button></nav>",
+	    sd.tab == SD_OVERVIEW ? " on" : "", sd.tab == SD_SERVICES ? " on" :
+	    "", sd.tab == SD_EDGES ? " on" : "", sd.tab == SD_PATHS ? " on" :
+	    "", sd.tab == SD_DOCUMENT ? " on" : "");
 	if (sd.doc == NULL) {
 		if (sd.error[0] != '\0') {
 			h_raw(h, "<div class=\"notice bad\">");
@@ -894,6 +1205,8 @@ view_sdwan(struct html *h)
 		view_service(h);
 	else if (sd.tab == SD_EDGES)
 		view_edges(h);
+	else if (sd.tab == SD_PATHS)
+		view_paths(h);
 	else if (sd.tab == SD_DOCUMENT)
 		view_document(h);
 	else
@@ -1078,9 +1391,12 @@ sdwan_action(const char *act, const char *arg, const char *value)
 	if (strcmp(act, "sd-tab") == 0) {
 		sd.tab = strcmp(arg, "services") == 0 ? SD_SERVICES :
 		    strcmp(arg, "edges") == 0 ? SD_EDGES : strcmp(arg,
-		    "document") == 0 ? SD_DOCUMENT : SD_OVERVIEW;
+		    "paths") == 0 ? SD_PATHS : strcmp(arg, "document") == 0 ?
+		    SD_DOCUMENT : SD_OVERVIEW;
 		if (sd.tab == SD_EDGES)
 			plan_load();
+		else if (sd.tab == SD_PATHS)
+			paths_load();
 		sd.note[0] = '\0';
 		if (sd.tab != SD_DOCUMENT)
 			sd.error[0] = '\0';
@@ -1114,6 +1430,9 @@ sdwan_tick(double now)
 {
 	static double	at;
 
+	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_PATHS &&
+	    now - sd.paths_at > PATHS_EVERY_MS)
+		paths_load();
 	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_EDGES &&
 	    sd.applying && now - sd.apply_at > 1000) {
 		sd.apply_at = now;

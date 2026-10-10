@@ -297,6 +297,8 @@ worker(void *arg)
 	struct arc_network_rsp	 nr;
 	struct arc_route_lookup_rsp rlr;
 	struct arc_traceroute_rsp trr;
+	struct arc_sdwan_probes_rsp spr;
+	struct arc_sdwan_rsp	sdr;
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
@@ -653,6 +655,32 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &trr.trace.v, &trr.trace.n);
 		rc = arc_traceroute_reply(j->req, &trr);
+		break;
+	case ARC_CMD_SDWAN_PROBES:
+		what = "sdwan probes";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&spr, 0, sizeof(spr));
+		error = NULL;
+		ok = do_probes_set(&w, j->ref, &error) == 0;
+		spr.has_ok = true;
+		spr.ok = ok;
+		spr.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &spr.trace.v, &spr.trace.n);
+		rc = arc_sdwan_probes_reply(j->req, &spr);
+		break;
+	case ARC_CMD_SDWAN:
+		what = "sdwan";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&sdr, 0, sizeof(sdr));
+		do_sdwan(&w, j->pos, &sdr);
+		ok = sdr.ok;
+		error = sdr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sdr.trace.v, &sdr.trace.n);
+		rc = arc_sdwan_reply(j->req, &sdr);
 		break;
 	case ARC_CMD_SERVICES:
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
@@ -1210,6 +1238,36 @@ arc_traceroute_doit(cbl_req *req, const struct arc_traceroute_req *rq,
 	j->req = req;
 	j->cmd = ARC_CMD_TRACEROUTE;
 	j->source = xstrdup(rq->lookup);
+	return (start(j));
+}
+
+int
+arc_sdwan_probes_doit(cbl_req *req, const struct arc_sdwan_probes_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '[')
+		return (reject(req, "the targets are a JSON array"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_PROBES;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
+arc_sdwan_doit(cbl_req *req, const struct arc_sdwan_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN;
+	j->pos = rq->has_after ? rq->after : 0;
 	return (start(j));
 }
 

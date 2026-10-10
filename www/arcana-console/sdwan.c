@@ -917,7 +917,7 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 
 static bool
 swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
-    ucl_object_t *seen_ep, ucl_object_t *seen_uni)
+    ucl_object_t *seen_ep, ucl_object_t *seen_uni, ucl_object_t *seen_if)
 {
 	const ucl_object_t	*v, *e, *z, *zp, *t, *p, *ep, *m;
 	ucl_object_iter_t	 it, it2, it3;
@@ -1182,19 +1182,20 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			    "(R3, R16)", str(u, "id")));
 		ucl_object_insert_key(seen_uni, ucl_object_frombool(true),
 		    str(u, "id"), 0, true);
-		/* One UNI an interface and VLAN of an edge, once. */
-		it2 = NULL;
-		while ((e = ucl_object_iterate(ucl_object_lookup(sw,
-		    "end_points"), &it2, true)) != NULL && e != ep) {
-			const ucl_object_t *eu = ucl_object_lookup(e, "uni");
+		/* One UNI an interface and VLAN of an edge, once: in this
+		 * service and in every other (R3, R16). */
+		{
+			char	ifkey[320];
 
-			if (strcmp(str(e, "edge"), str(ep, "edge")) == 0 &&
-			    strcmp(str(eu, "interface"), str(u, "interface"))
-			    == 0 && ucl_object_toint(ucl_object_lookup(eu,
-			    "vlan")) == ucl_object_toint(ucl_object_lookup(u,
-			    "vlan")))
-				return (fail(c, "its UNI and %s's are one "
-				    "interface and VLAN", str(e, "id")));
+			snprintf(ifkey, sizeof(ifkey), "%s %s %jd", str(ep,
+			    "edge"), str(u, "interface"), (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(u, "vlan")));
+			if ((e = ucl_object_lookup(seen_if, ifkey)) != NULL)
+				return (fail(c, "its UNI is end point %s's "
+				    "interface and VLAN too (R3)",
+				    ucl_object_tostring(e)));
+			ucl_object_insert_key(seen_if, ucl_object_fromstring(
+			    str(ep, "id")), ifkey, 0, true);
 		}
 		for (i = 0; i < nnets; i++)
 			for (j = 0; j < nr; j++)
@@ -1360,6 +1361,7 @@ check(const ucl_object_t *doc, struct ck *c)
 	const ucl_object_t	*v, *e, *sw, *t;
 	ucl_object_iter_t	 it, it2, it3;
 	ucl_object_t		*seen_ep, *seen_uni, *seen_ucsep, *fibs;
+	ucl_object_t		*seen_if;
 	const char		*s;
 	struct pfx		 a;
 	bool			 ok;
@@ -1452,6 +1454,7 @@ check(const ucl_object_t *doc, struct ck *c)
 		return (false);
 	seen_ep = ucl_object_typed_new(UCL_OBJECT);
 	seen_uni = ucl_object_typed_new(UCL_OBJECT);
+	seen_if = ucl_object_typed_new(UCL_OBJECT);
 	fibs = ucl_object_typed_new(UCL_OBJECT);
 	it = NULL;
 	while (ok && (sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
@@ -1459,7 +1462,7 @@ check(const ucl_object_t *doc, struct ck *c)
 		char	fib[16];
 
 		at(c, 0, "swvc %s", str(sw, "id"));
-		if (!swvc(c, doc, sw, seen_ep, seen_uni)) {
+		if (!swvc(c, doc, sw, seen_ep, seen_uni, seen_if)) {
 			ok = false;
 			break;
 		}
@@ -1515,6 +1518,7 @@ check(const ucl_object_t *doc, struct ck *c)
 	}
 	ucl_object_unref(seen_ep);
 	ucl_object_unref(seen_uni);
+	ucl_object_unref(seen_if);
 	ucl_object_unref(fibs);
 	return (ok);
 }

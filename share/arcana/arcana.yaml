@@ -2155,7 +2155,9 @@ operations:
       over, when a figure of history crosses its limit, either way.
       kmsg, with seq and text, a line the kernel wrote, the moment the
       agent sees it; or with more, how many came in that second
-      beyond the twenty said one by one.
+      beyond the twenty said one by one.  sdwan-tunnel, with id,
+      address, state (up or down) and misses, when a tunnel the agent
+      measures (sdwan-probes) goes down or comes up.
     do:
       request:
         attributes:
@@ -2332,6 +2334,58 @@ operations:
           - lookup
         required:
           - lookup
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+  - name: sdwan-probes
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The tunnels the agent is to measure from now on, as the console
+      has an SD-WAN edge measure them (Mplify 119 §11.4): json, an
+      array of targets, each with its "id" and "address", and maybe
+      "fib" (the table it is reached by, 0), "interval" (ms between
+      two probes, 100), "size" (bytes, 64), "count" (probes, 0 for
+      without end), "dscp" (0), "down" and "up" (misses in a row that
+      make it down, 3; answers that make it up, 3), "timeout" (ms,
+      1000), "eval" (ms of one sample, 1000), "history" (samples kept,
+      3600) and "report".  Kept for the next start.  An empty array
+      stops them all.  Each is ICMP echo on a raw socket: root.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+  - name: sdwan
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What the probes have seen, as a JSON object: "targets", each
+      with its id, address, family, fib, state (unknown, up, down,
+      ended, error, with error why), since (when the state began),
+      interval, size, eval, dscp, sent, received, misses (in a row),
+      last_rtt (ms), "now" (the sample in progress: sent, recv, delay,
+      ipdv, loss, age) and "samples", the last kept, the oldest
+      first (with after, only those after that time), each an array
+      of the time, the one-way delay (ms, half
+      the mean round trip), the delay variation (ms), the loss ratio,
+      the least and the most, and the probes sent and answered; and
+      "probing", whether the thread runs.  A target that goes down or
+      comes up is an event, sdwan-tunnel, with its id, address, state
+      and misses.
+    do:
+      request:
+        attributes:
+          - after
       reply:
         attributes:
           - ok
