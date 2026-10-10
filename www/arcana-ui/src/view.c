@@ -551,8 +551,16 @@ rail(struct html *h)
 	/* At the foot of the side bar: the console's own settings. */
 	h_fmt(h, "</ul><ul class=\"tree rail-foot\"><li class=\"titem fleet "
 	    "setnode%s\" data-act=\"settings\"><span class=\"twig\">%s"
-	    "</span><span class=\"name\">Settings</span></li></ul>",
+	    "</span><span class=\"name\">Settings</span>",
 	    app.node == NODE_SETTINGS ? " selected" : "", icon_gear);
+	/* The console's version, where a phone shows it: the top bar
+	 * has no room for it there. */
+	if (app.version[0] != '\0') {
+		h_raw(h, "<span class=\"ver\" title=\"The console's version\">");
+		h_txt(h, app.version);
+		h_raw(h, "</span>");
+	}
+	h_raw(h, "</li></ul>");
 	h_raw(h, RESIZER("x", "rail") "</aside>");
 }
 

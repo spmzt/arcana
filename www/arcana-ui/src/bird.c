@@ -82,6 +82,7 @@ static struct {
 
 static void	conf_load(struct server *, bool);
 static bool	name_ok(const char *);
+static const char *past(const char *);
 
 /* The end of what starts at p and is not to be read: blanks, comments. */
 static const char *
@@ -233,6 +234,11 @@ set_kind(int i)
 		return ("value");
 	pairs = triples = others = 0;
 	for (p++; p < e && *p != ']'; p++) {
+		/* A comment says nothing of what the set holds. */
+		if (*p == '#' || (p[0] == '/' && p[1] == '*')) {
+			p = past(p) - 1;
+			continue;
+		}
 		if (*p != '(') {
 			if (!isspace((unsigned char)*p) && *p != ',')
 				others++;
@@ -268,7 +274,7 @@ static char *
 set_lines(int i)
 {
 	struct html	 h;
-	const char	*p, *e;
+	const char	*p, *e, *q;
 	int		 depth;
 	bool		 any;
 
@@ -280,11 +286,41 @@ set_lines(int i)
 	depth = 0;
 	any = false;
 	for (p++; p < e && !(*p == ']' && depth == 0); p++) {
+		/*
+		 * A comment stays with the entry on its line, after the
+		 * comma that ends the entry, or is a line of its own.
+		 */
+		if (*p == '#' || (p[0] == '/' && p[1] == '*')) {
+			q = past(p);
+			if (any)
+				h_raw(&h, " ");
+			for (; p < q && *p != '\n'; p++)
+				h_fmt(&h, "%c", *p);
+			if (*p == '#' || q[-1] != '/' || !any) {
+				h_raw(&h, "\n");
+				any = false;
+			}
+			p = q - 1;
+			continue;
+		}
 		if (*p == '(')
 			depth++;
 		else if (*p == ')')
 			depth--;
 		if (*p == ',' && depth == 0) {
+			/* The entry's comment, if one follows on its line. */
+			for (q = p + 1; *q == ' ' || *q == '\t'; q++)
+				;
+			if (*q == '#' || (q[0] == '/' && q[1] == '*')) {
+				p = q - 1;
+				continue;
+			}
+			h_raw(&h, "\n");
+			any = false;
+			continue;
+		}
+		if (*p == '\n' && any) {
+			/* An entry without a comma: the last, or a mistake. */
 			h_raw(&h, "\n");
 			any = false;
 			continue;
@@ -294,6 +330,9 @@ set_lines(int i)
 		h_fmt(&h, "%c", *p);
 		any = true;
 	}
+	/* Not ending in a blank line. */
+	while (h.s != NULL && h.len > 0 && h.s[h.len - 1] == '\n')
+		h.s[--h.len] = '\0';
 	return (h.s != NULL ? h.s : strdup(""));
 }
 
@@ -1630,7 +1669,7 @@ bird_form(const char *form, const ucl_object_t *f)
 	struct html	 b;
 	const ucl_object_t	*o;
 	ucl_object_iter_t	 it;
-	const char	*text, *name, *host, *port, *r4, *r6, *p, *nl;
+	const char	*text, *name, *host, *port, *r4, *r6, *p, *nl, *last;
 	char		*all, *mine;
 	bool		 first;
 
@@ -1726,19 +1765,52 @@ bird_form(const char *form, const ucl_object_t *f)
 			    "%s is defined already", name);
 			return (true);
 		}
-		/* One entry a line becomes one set, a few to a line. */
+		/*
+		 * One entry a line becomes one set, a few to a line; a
+		 * comment on a line stays after its entry's comma, or on a
+		 * line of its own.  The last entry has no comma, so which
+		 * is last is found first.
+		 */
 		memset(&b, 0, sizeof(b));
 		h_fmt(&b, "define %s = [", name);
 		first = true;
-		for (p = text; *p != '\0'; p = *nl != '\0' ? nl + 1 : nl) {
+		for (last = NULL, p = text; *p != '\0'; p = *nl != '\0' ? nl +
+		    1 : nl) {
 			nl = p + strcspn(p, "\n");
 			while (p < nl && isspace((unsigned char)*p))
 				p++;
-			if (p == nl)
+			if (p < nl && *p != '#' && !(p[0] == '/' && p[1] ==
+			    '*') && *p != '\r')
+				last = p;
+		}
+		for (p = text; *p != '\0'; p = *nl != '\0' ? nl + 1 : nl) {
+			const char	*c, *ee;
+
+			nl = p + strcspn(p, "\n");
+			while (p < nl && isspace((unsigned char)*p))
+				p++;
+			ee = nl - (nl > p && nl[-1] == '\r' ? 1 : 0);
+			if (p == ee)
 				continue;
-			h_fmt(&b, "%s\n\t%.*s", first ? "" : ",", (int)(nl - p -
-			    (nl > p && nl[-1] == '\r' ? 1 : 0)), p);
+			/* The entry ends where its comment starts. */
+			for (c = p; c < ee && *c != '#' && !(c[0] == '/' &&
+			    c[1] == '*'); c++)
+				if (*c == '"')
+					c += strcspn(c + 1, "\"\n") + 1;
+			c = c > ee ? ee : c;
+			if (c == p) {
+				h_fmt(&b, "\n\t%.*s", (int)(ee - p), p);
+				continue;
+			}
 			first = false;
+			for (nl = c; nl > p && isspace((unsigned char)nl[-1]);
+			    nl--)
+				;
+			h_fmt(&b, "\n\t%.*s%s", (int)(nl - p), p, p == last ?
+			    "" : ",");
+			if (c < ee)
+				h_fmt(&b, " %.*s", (int)(ee - c), c);
+			nl = p + strcspn(p, "\n");
 		}
 		h_raw(&b, first ? " ];" : "\n];");
 		all = spliced(bd.edit, b.s);

@@ -4496,3 +4496,6 @@ table.net.sd .chosen { color: var(--fg); font-weight: 600; }
 /* IPsec: a connection's children, each on a line, with its cross. */
 table.ipsec td .child { display: flex; align-items: baseline; gap: .4rem; flex-wrap: wrap; }
 table.ipsec td .child small { color: var(--dim); }
+
+/* The console's version at the foot of the side bar, beside Settings. */
+.tree.rail-foot .titem .ver { display: inline; margin-left: auto; padding-left: .5rem; font-size: .7rem; }

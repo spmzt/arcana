@@ -670,7 +670,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(mkdir("bird", 0755) == 0 || errno == EEXIST);
 	put("bird/bird.conf", "# The lab's routing.\nrouter id 192.0.2.1;\n\n"
 	    "define MY_AS = 65000;\ndefine CUSTOMERS = [ (65000,100), "
-	    "(65000,200) ];\ndefine BLACKHOLE_LC = [ (65000,666,0) ];\n\n"
+	    "(65000,200) ];\ndefine BLACKHOLE_LC = [ (65000,666,0) ];\n"
+	    "define PEERS = [\n\t# the exchange\n\t(65000,300), # ix-a\n"
+	    "\t(65000,301) /* ix-b */\n];\n\n"
 	    "roa4 table r4;\n\nfilter bgp_in {\n\tif bgp_community ~ CUSTOMERS "
 	    "then accept;\n\treject;\n}\n\nfilter bgp_out {\n\taccept;\n}\n\n"
 	    "protocol device device1 {\n}\n\nprotocol bgp bgp_core {\n"

@@ -169,7 +169,9 @@ wait_js(const char *expr, int seconds)
 	shot("failed");
 	/* With what the page last said, which is most often why. */
 	v = js("return ([...document.querySelectorAll('.toast, .err')].map("
-	    "t => t.textContent.slice(0, 120)).join(' | ').slice(-700));");
+	    "t => t.textContent.slice(0, 120)).join(' | ').slice(-700) + ' / "
+	    "the textarea: ' + JSON.stringify((document.querySelector('.modal "
+	    "textarea') || {}).value || ''));");
 	atf_tc_fail("timed out waiting for %s; the page says: %s", expr,
 	    v != NULL && ucl_object_tostring(v) != NULL ?
 	    ucl_object_tostring(v) : "nothing");
@@ -1960,6 +1962,27 @@ part_plugins(void)
 	    "l.textContent.includes('300..399'))", 20);
 	ATF_CHECK(system("grep -q '(65000, 300..399)' bird/bird.conf && "
 	    "grep -q '^define CUSTOMERS = \\[$' bird/bird.conf") == 0);
+	/* A set with comments in it is communities all the same, each
+	 * comment kept on its entry's line and written back after the
+	 * entry's comma. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('.conf-grid ul.blocks "
+	    "li')].some(l => l.querySelector('b').textContent === 'PEERS' && "
+	    "l.querySelector('.dim').textContent === 'communities')"));
+	run("[...document.querySelectorAll('.conf-grid ul.blocks li')].find("
+	    "l => l.querySelector('b').textContent === 'PEERS').click()");
+	wait_js("document.querySelector('form[data-form=bird-set] textarea') "
+	    "&& document.querySelector('form[data-form=bird-set] textarea')"
+	    ".value === '# the exchange\\n(65000,300) # ix-a\\n(65000,301) "
+	    "/* ix-b */'", 5);
+	run("const t = document.querySelector('form[data-form=bird-set] "
+	    "textarea'); t.value += '\\n(65000,302)'; t.form.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('.conf-grid ul.blocks li')].some(l => "
+	    "l.textContent.includes('(65000,302)'))", 20);
+	ATF_CHECK(system("grep -q '^\t# the exchange$' bird/bird.conf && "
+	    "grep -q '^\t(65000,300), # ix-a$' bird/bird.conf && grep -q "
+	    "'^\t(65000,301), /\\* ix-b \\*/$' bird/bird.conf && grep -q "
+	    "'^\t(65000,302)$' bird/bird.conf") == 0);
 	/* A set of large communities, new. */
 	run("document.querySelector('button[data-act=bird-new][data-arg=lset]')"
 	    ".click()");

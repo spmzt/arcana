@@ -644,7 +644,8 @@ The console is laid out as a tree and tabs.
     **filters and functions**, what BGP and OSPF take in and give out,
     each edited as it is written; **communities and sets**, the named
     lists filters test against, edited as a list, one entry a line, a
-    community as `(AS, value)` and a large one as `(AS, a, b)`;
+    community as `(AS, value)` and a large one as `(AS, a, b)`, a
+    comment kept on its entry's line;
     **RPKI**, the caches with their state and the ROA tables with how
     many origins each holds, and **+ cache**, which adds the tables,
     the protocol and a function `rpki_invalid()` for filters to ask;
