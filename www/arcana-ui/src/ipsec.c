@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "app.h"
 
@@ -176,13 +177,26 @@ view_ipsec(struct html *h, struct server *s, const ucl_object_t *data)
 			list(h, jget(x, "names"));
 			h_raw(h, "</td><td>");
 			if (jget(x, "not_after") != NULL) {
-				fmt_age(when, sizeof(when), (double)jint(x,
-				    "not_after", 0) * 1000);
-				h_fmt(h, "<span class=\"%s\">", (double)jint(x,
-				    "not_after", 0) * 1000 < arc_now() ? "bad" :
-				    "");
+				/* The day it ends, and how far off: a month
+				 * away is amber, past is red. */
+				time_t		t = (time_t)jint(x, "not_after", 0);
+				double		left = (double)t - arc_now() / 1000;
+				struct tm	tm;
+
+				localtime_r(&t, &tm);
+				strftime(when, sizeof(when), "%Y-%m-%d", &tm);
+				h_fmt(h, "<span class=\"%s\" title=\"%s\">", left <
+				    0 ? "bad" : left < 30 * 86400 ? "warn" : "",
+				    left < 0 ? "ended" : "valid");
 				h_txt(h, when);
 				h_raw(h, "</span>");
+				if (left < 0)
+					h_raw(h, " <small class=\"dim\">ended</small>");
+				else if (left < 86400)
+					h_raw(h, " <small class=\"dim\">today</small>");
+				else if (left < 30 * 86400)
+					h_fmt(h, " <small class=\"dim\">in %.0f days"
+					    "</small>", left / 86400);
 			}
 			h_raw(h, "</td></tr>");
 		}

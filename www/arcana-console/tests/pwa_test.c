@@ -1795,6 +1795,12 @@ part_plugins(void)
 	    "querySelectorAll('table.ipsec-certs tbody tr')].some(r => r."
 	    "textContent.includes('lab-ca.pem') && r.textContent.includes("
 	    "'CA'))"));
+	/* Until when: a date, and the days left when few. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.ipsec-certs "
+	    "tbody tr')].every(r => /\\d{4}-\\d{2}-\\d{2}/.test(r.lastElementChild"
+	    ".textContent) && r.lastElementChild.textContent.includes('in ') "
+	    "&& r.lastElementChild.querySelector('.warn'))"));
+	shot("7e-ipsec-certs");
 	run("document.querySelector('table.ipsec button[data-act="
 	    "ipsec-child-add]').click()");
 	wait_js("document.querySelector('form[data-form=ipsec-child] "
