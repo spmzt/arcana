@@ -80,6 +80,9 @@ fields:
   - field: fib
     type: number
     label: Routing table
+  - field: tunnelfib
+    type: number
+    label: Routing table of the tunnel's outer packets
   - field: metric
     type: number
     label: Metric
@@ -174,13 +177,13 @@ kinds:
     needs: destination
     uses: jail gateway remove fib metric weight source persist safe
   - kind: if-set
-    title: An interface's MTU or description
+    title: An interface's MTU, description or routing tables
     needs: interface
-    uses: jail mtu description persist safe
+    uses: jail mtu description fib tunnelfib persist safe
   - kind: if-create
     title: An interface made
     needs: interface
-    uses: jail tunnel_local tunnel_remote address destination description mtu id parent reqid persist
+    uses: jail tunnel_local tunnel_remote address destination description mtu fib tunnelfib id parent reqid persist
   - kind: if-destroy
     title: An interface destroyed
     needs: interface

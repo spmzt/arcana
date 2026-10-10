@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.78.0
+  version: 0.79.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1163,6 +1163,39 @@ paths:
         "200":
           description: "{ok: true}"
         "400": { $ref: "#/components/responses/Error" }
+  /api/sdwan/plan:
+    get:
+      tags: [sdwan]
+      summary: What an apply would make on the edges
+      responses:
+        "200":
+          description: changes, each an edge's object (key, phase, title,
+            server, name, change of make, remake, unmake or keep, and
+            its make and unmake jobs), and tunnels, each with its kind,
+            ipsec, encrypted, public, backup, fib, vni and its two ends
+            (edge, ucs_ep, underlay, unit, ifname, inner4, inner6).
+        "409": { $ref: "#/components/responses/Error" }
+  /api/sdwan/apply:
+    get:
+      tags: [sdwan]
+      summary: How the last apply went
+      responses:
+        "200":
+          description: applying, and apply (state running, done or
+            failed; started, ended, fresh, its steps each with its
+            state and detail, and the tunnels).
+    post:
+      tags: [sdwan]
+      summary: Apply, in a thread of the console
+      description: '{"fresh": true} takes away everything made first.'
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: "{steps: n}"
+        "409": { $ref: "#/components/responses/Error" }
   /api/workflows:
     get:
       tags: [workflows]

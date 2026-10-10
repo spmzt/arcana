@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.46.0"
+#define	ARCANA_AGENT_VERSION	"0.47.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -293,13 +293,20 @@ int		 do_interfaces(struct work *, uint8_t, struct arc_network_rsp *);
 int		 do_if_address(struct work *, const char *, const char *, bool,
 		    bool, const char **);
 int		 do_if_state(struct work *, const char *, bool, const char **);
-int		 do_if_set(struct work *, const char *, unsigned int,
-		    const char *, bool, const char **);
+/* What an if-set changes: 0, -1 and NULL leave each as it is. */
+struct if_change {
+	unsigned int	 mtu;
+	const char	*descr;		/* "" takes it off */
+	int		 fib;
+	int		 tunnelfib;
+};
+int		 do_if_set(struct work *, const char *,
+		    const struct if_change *, bool, const char **);
 int		 do_if_create(struct work *, const struct arc_job_spec *,
 		    const char **, const char **);
 int		 do_if_destroy(struct work *, const char *, bool, const char **);
-void		 if_current(struct work *, const char *, unsigned int *, char *,
-		    size_t);
+void		 if_current(struct work *, const char *, unsigned int *, int *,
+		    int *, char *, size_t);
 bool		 if_is_up(struct work *, const char *, bool *);
 bool		 if_exists(struct work *, const char *);
 const char	*if_json(struct work *);
@@ -327,8 +334,8 @@ int		 rc_set(struct work *, const char *, const char *, const char *,
 void		 rc_unset(struct work *, const char *);
 int		 rc_alias(struct work *, const char *, const char *,
 		    const char *, const char *, bool, const char **);
-int		 rc_mtu(struct work *, const char *, unsigned int,
-		    const char **);
+int		 rc_word(struct work *, const char *, const char *,
+		    const char *, const char **);
 void		 rc_forget_if(struct work *, const char *);
 
 /* luxuria/wireguard.c: a plugin, through wg(8). */

@@ -1521,6 +1521,32 @@ check(const ucl_object_t *doc, struct ck *c)
 
 /* ---- The API --------------------------------------------------------- */
 
+static ucl_object_t	*sd_load(void);
+
+/* The document as kept, for another part; to be unref'd. */
+ucl_object_t *
+sdwan_load(void)
+{
+	ucl_object_t	*doc;
+
+	pthread_mutex_lock(&sd_lock);
+	doc = sd_load();
+	pthread_mutex_unlock(&sd_lock);
+	return (doc);
+}
+
+/* Is it one MEF 70.2 allows, as far as checked; why not, when not. */
+bool
+sdwan_valid(const ucl_object_t *doc, char *why, size_t len)
+{
+	struct ck	c;
+
+	if (check(doc, &c))
+		return (true);
+	snprintf(why, len, "%s", c.why);
+	return (false);
+}
+
 static ucl_object_t *
 sd_load(void)
 {

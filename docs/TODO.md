@@ -3,9 +3,11 @@
 ## To do
 
 - SD-WAN (MEF 70.2 now, Mplify 119 later), step by step. Done: the
-  services kept and checked by the console, and shown. Next: the edges
-  made from them (a FIB per service, interfaces in it, tunnels between
-  edges of gre, gif, geneve or wg, with IPsec IKEv2 where asked); the
+  services kept and checked by the console, and shown; the edges made
+  from them (a FIB per service, the UNIs and tunnels in it, gre, gif,
+  geneve or wg, IPsec IKEv2 in transport mode where asked, routes by
+  the tunnels), planned, applied and kept. A wg tunnel's FIB is not
+  kept across a reboot (wg-quick gives the addresses first). Next: the
   tunnels measured by the agents (ICMP, its interval, size, count,
   DSCP and thresholds set per service and per tunnel); flows
   classified and steered by ipfw in a set of its own, the console
@@ -138,6 +140,12 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- SD-WAN's jobs on two vnet jails joined by an epair (2026-10-10): a
+  gre tunnel made in FIB 1 with its /31, its route and the far UNI's
+  in FIB 1 and not in FIB 0, IKEv2 in transport mode carrying the GRE
+  (ESP AES-GCM-256, the first packet lost to the trap), and a ping
+  from one UNI to the other through it; the UNI's address cannot be
+  used from FIB 0. net.fibs is per vnet: a new one has 1.
 - Building the agent as `nobody` when `arcana-agent` runs as root
   (2026-10-04, on the console's host): the clone over SSH with the key
   set for it, make, and the program run with `-V`, each under

@@ -1067,7 +1067,10 @@ attribute-sets:
           max-len: 512
       - name: fib
         type: u32
-        doc: For route, the routing table; 0 when not given.
+        doc: |
+          For route, the routing table; 0 when not given.  For if-set
+          and if-create, the interface's: what is received on it is
+          looked up there.
       - name: mtu
         type: u32
         doc: For if-set and if-create.
@@ -1208,6 +1211,11 @@ attribute-sets:
         doc: For ipsec conn, the peer's identity, as local-id.
         checks:
           max-len: 128
+      - name: tunnelfib
+        type: u32
+        doc: |
+          For if-set and if-create of a tunnel (gif, gre, vxlan, geneve,
+          wg), the routing table its outer packets are sent by.
 
   - name: job
     attributes:

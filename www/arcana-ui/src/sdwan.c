@@ -21,7 +21,7 @@
 
 #define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
 
-enum { SD_OVERVIEW, SD_SERVICES, SD_DOCUMENT };
+enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_DOCUMENT };
 
 static struct {
 	int		 tab;
@@ -31,6 +31,11 @@ static struct {
 	char		 error[600];
 	char		 note[200];
 	bool		 loading, busy;
+	ucl_object_t	*plan;		/* /api/sdwan/plan */
+	ucl_object_t	*applied;	/* /api/sdwan/apply */
+	char		 plan_error[600];
+	double		 plan_at, apply_at;
+	bool		 applying;
 } sd;
 
 /* ---- Reading -------------------------------------------------------- */
@@ -88,6 +93,59 @@ sdwan_open(void)
 	app.jail[0] = '\0';
 	app.rail_open = false;
 	sd_load();
+}
+
+static void
+plan_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200) {
+		snprintf(sd.plan_error, sizeof(sd.plan_error), "%s", jstr(o,
+		    "error.message") != NULL ? jstr(o, "error.message") : err !=
+		    NULL ? err : "no answer");
+		if (sd.plan != NULL)
+			ucl_object_unref(sd.plan);
+		sd.plan = NULL;
+		return;
+	}
+	sd.plan_error[0] = '\0';
+	if (sd.plan != NULL)
+		ucl_object_unref(sd.plan);
+	sd.plan = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+}
+
+static void
+applied_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	bool	was;
+
+	(void)arg;
+	(void)err;
+	if (status != 200)
+		return;
+	if (sd.applied != NULL)
+		ucl_object_unref(sd.applied);
+	sd.applied = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	was = sd.applying;
+	sd.applying = jbool(o, "applying");
+	/* It ended: what is left to do now. */
+	if (was && !sd.applying) {
+		toast(strcmp(jstr(o, "apply.state") != NULL ? jstr(o,
+		    "apply.state") : "", "done") != 0, "SD-WAN apply %s",
+		    jstr(o, "apply.state") != NULL ? jstr(o, "apply.state") :
+		    "ended");
+		api("GET", "/api/sdwan/plan", NULL, plan_cb, NULL);
+	}
+}
+
+static void
+plan_load(void)
+{
+
+	sd.plan_at = sd.apply_at = arc_now();
+	api("GET", "/api/sdwan/plan", NULL, plan_cb, NULL);
+	api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
 }
 
 /* ---- Small things ---------------------------------------------------- */
@@ -547,6 +605,234 @@ view_service(struct html *h)
 	}
 }
 
+/* ---- The edges -------------------------------------------------------- */
+
+static int
+count_change(const char *change)
+{
+	const ucl_object_t	*c;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while ((c = ucl_object_iterate(jget(sd.plan, "changes"), &it, true)) !=
+	    NULL)
+		if (strcmp(jstr(c, "change"), change) == 0)
+			n++;
+	return (n);
+}
+
+static const char *
+change_word(const char *c)
+{
+
+	return (strcmp(c, "make") == 0 ? "to make" : strcmp(c, "remake") ==
+	    0 ? "to make again" : strcmp(c, "unmake") == 0 ? "to take away" :
+	    "as it is");
+}
+
+/* A job as a line: its kind and its fields. */
+static void
+job_line(struct html *h, const ucl_object_t *j)
+{
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	char			*s;
+
+	h_raw(h, "<li><b>");
+	h_txt(h, jstr(j, "kind"));
+	h_raw(h, "</b>");
+	it = NULL;
+	while ((v = ucl_object_iterate(j, &it, true)) != NULL) {
+		if (strcmp(ucl_object_key(v), "kind") == 0 ||
+		    ucl_object_key(v)[0] == '_')
+			continue;
+		h_raw(h, " <span class=\"dim\">");
+		h_txt(h, ucl_object_key(v));
+		h_raw(h, "</span> ");
+		if (ucl_object_type(v) == UCL_ARRAY) {
+			s = (char *)ucl_object_emit(v, UCL_EMIT_JSON_COMPACT);
+			h_txt(h, s);
+			free(s);
+		} else
+			h_txt(h, ucl_object_tostring_forced(v));
+	}
+	h_raw(h, "</li>");
+}
+
+static void
+view_tunnels(struct html *h, const ucl_object_t *tunnels)
+{
+	const ucl_object_t	*t, *e;
+	ucl_object_iter_t	 it;
+	int			 k;
+
+	h_raw(h, "<div class=\"sd-block\"><h3>Tunnels <small class=\"dim\">"
+	    "TVCs, §7.10: between each two edges of a service, over each two "
+	    "of their underlays that reach each other</small></h3><table "
+	    "class=\"net sd\"><thead><tr><th>Tunnel</th><th>Kind</th><th>End"
+	    "</th><th>End</th><th></th></tr></thead><tbody>");
+	it = NULL;
+	while ((t = ucl_object_iterate(tunnels, &it, true)) != NULL) {
+		h_raw(h, "<tr><td class=\"mono\">");
+		h_txt(h, jstr(t, "id"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(t, "kind"));
+		if (jbool(t, "ipsec"))
+			h_raw(h, " + IPsec");
+		h_fmt(h, " <span class=\"dim\">fib %lld</span></td>",
+		    (long long)jint(t, "fib", 0));
+		for (k = 0; k < 2; k++) {
+			e = ucl_array_find_index(jget(t, "ends"),
+			    (unsigned int)k);
+			h_raw(h, "<td><b>");
+			h_txt(h, host_name(jstr(e, "edge")));
+			h_raw(h, "</b> <span class=\"mono\">");
+			h_txt(h, jstr(e, "ifname"));
+			h_raw(h, "</span><small class=\"dim\"> ");
+			h_txt(h, jstr(e, "inner4") != NULL ? jstr(e, "inner4") :
+			    jstr(e, "inner6") != NULL ? jstr(e, "inner6") : "");
+			h_raw(h, " over ");
+			h_txt(h, jstr(e, "underlay"));
+			h_raw(h, "</small></td>");
+		}
+		h_raw(h, "<td>");
+		h_raw(h, jbool(t, "encrypted") ? "<span class=\"chip\">"
+		    "encrypted</span> " : "<span class=\"chip warn\">clear"
+		    "</span> ");
+		if (jbool(t, "public"))
+			h_raw(h, "<span class=\"chip\">public</span> ");
+		if (jbool(t, "backup"))
+			h_raw(h, "<span class=\"chip\">backup</span>");
+		h_raw(h, "</td></tr>");
+	}
+	if (ucl_array_size(tunnels) == 0)
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: a service "
+		    "with end points on two edges or more has them.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
+}
+
+/* The last apply: how far it went, each step and how it ended. */
+static void
+view_applied(struct html *h)
+{
+	const ucl_object_t	*ap, *s;
+	ucl_object_iter_t	 it;
+	char			 age[32];
+	int			 n, done, failed;
+
+	ap = jget(sd.applied, "apply");
+	if (ap == NULL || jstr(ap, "state") == NULL)
+		return;
+	n = done = failed = 0;
+	it = NULL;
+	while ((s = ucl_object_iterate(jget(ap, "steps"), &it, true)) != NULL) {
+		n++;
+		if (strcmp(jstr(s, "state"), "done") == 0)
+			done++;
+		else if (strcmp(jstr(s, "state"), "failed") == 0)
+			failed++;
+	}
+	fmt_age(age, sizeof(age), (double)jint(ap, "started", 0) * 1000);
+	h_fmt(h, "<div class=\"sd-block sd-applied %s\"><h3>%s <small class="
+	    "\"dim\">", jstr(ap, "state"), sd.applying ? "Applying" :
+	    strcmp(jstr(ap, "state"), "done") == 0 ? "Last apply: done" :
+	    "Last apply: failed");
+	h_txt(h, age);
+	h_fmt(h, " · %d of %d steps done%s</small></h3>", done, n,
+	    failed > 0 ? ", some failed" : "");
+	if (sd.applying || failed > 0) {
+		h_raw(h, "<ul class=\"sd-steps\">");
+		it = NULL;
+		while ((s = ucl_object_iterate(jget(ap, "steps"), &it,
+		    true)) != NULL) {
+			h_fmt(h, "<li class=\"%s\"><span class=\"led\"></span>"
+			    "<b>", jstr(s, "state"));
+			h_txt(h, jstr(s, "name"));
+			h_raw(h, "</b> ");
+			h_txt(h, jstr(s, "title"));
+			h_fmt(h, " <span class=\"dim\">%s · %s</span>",
+			    change_word(jstr(s, "change")), jstr(s, "state"));
+			if (jstr(s, "detail") != NULL) {
+				h_raw(h, "<small>");
+				h_txt(h, jstr(s, "detail"));
+				h_raw(h, "</small>");
+			}
+			h_raw(h, "</li>");
+		}
+		h_raw(h, "</ul>");
+	}
+	h_raw(h, "</div>");
+}
+
+static void
+view_edges(struct html *h)
+{
+	const ucl_object_t	*c;
+	ucl_object_iter_t	 it, jit;
+	const ucl_object_t	*j;
+	const char		*last;
+	int			 todo;
+
+	if (sd.plan == NULL && sd.plan_error[0] == '\0') {
+		h_raw(h, "<div class=\"loader\"></div>");
+		return;
+	}
+	todo = sd.plan != NULL ? count_change("make") + count_change(
+	    "remake") + count_change("unmake") : 0;
+	h_fmt(h, "<div class=\"toolbar\"><button class=\"primary small\" "
+	    "data-act=\"sd-apply\"%s title=\"Make on the edges what the "
+	    "services say, in Mplify 119's order: FIBs, IPsec, tunnels, their "
+	    "far ends, routes, and the UNIs last\">Apply%s</button><button "
+	    "class=\"ghost small\" data-act=\"sd-apply-fresh\"%s title=\""
+	    "Everything the console made taken away and made again\">Make "
+	    "all again</button><span class=\"age\">",
+	    todo == 0 || sd.applying ? " disabled" : "", todo > 0 ?
+	    "" : ": nothing to do", sd.applying ? " disabled" : "");
+	if (sd.plan != NULL)
+		h_fmt(h, "%d to make, %d to make again, %d to take away, %d as "
+		    "they are", count_change("make"), count_change("remake"),
+		    count_change("unmake"), count_change("keep"));
+	h_raw(h, "</span></div>");
+	if (sd.plan_error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, sd.plan_error);
+		h_raw(h, "</div>");
+		return;
+	}
+	view_applied(h);
+	view_tunnels(h, jget(sd.plan, "tunnels"));
+	/* What each edge is to have, and what becomes of it. */
+	h_raw(h, "<div class=\"sd-block\"><h3>On the edges <small class=\"dim"
+	    "\">what each is to have, as jobs</small></h3><table class=\"net "
+	    "sd sd-plan\"><thead><tr><th>Edge</th><th>What</th><th>Change</th>"
+	    "<th>Jobs</th></tr></thead><tbody>");
+	last = "";
+	it = NULL;
+	while ((c = ucl_object_iterate(jget(sd.plan, "changes"), &it, true)) !=
+	    NULL) {
+		h_fmt(h, "<tr class=\"ch-%s\"><td>", jstr(c, "change"));
+		if (strcmp(last, jstr(c, "server")) != 0)
+			h_txt(h, jstr(c, "name"));
+		last = jstr(c, "server");
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(c, "title"));
+		h_fmt(h, "</td><td><span class=\"chip ch-%s\">%s</span></td>"
+		    "<td><details><summary>%u</summary><ul class=\"sd-jobs\">",
+		    jstr(c, "change"), change_word(jstr(c, "change")),
+		    strcmp(jstr(c, "change"), "unmake") == 0 ?
+		    ucl_array_size(jget(c, "unmake")) : ucl_array_size(jget(c,
+		    "make")));
+		jit = NULL;
+		while ((j = ucl_object_iterate(jget(c, strcmp(jstr(c, "change"),
+		    "unmake") == 0 ? "unmake" : "make"), &jit, true)) != NULL)
+			job_line(h, j);
+		h_raw(h, "</ul></details></td></tr>");
+	}
+	h_raw(h, "</tbody></table></div>");
+}
+
 /* ---- The document ----------------------------------------------------- */
 
 static void
@@ -591,10 +877,12 @@ view_sdwan(struct html *h)
 	    "sd-tab\" data-arg=\"overview\">Overview</button><button class=\""
 	    "tab%s\" data-act=\"sd-tab\" data-arg=\"services\">Services"
 	    "</button><button class=\"tab%s\" data-act=\"sd-tab\" data-arg=\""
+	    "edges\" title=\"What the edges are to have, and Apply\">Edges"
+	    "</button><button class=\"tab%s\" data-act=\"sd-tab\" data-arg=\""
 	    "document\" title=\"All of it as JSON, checked against MEF 70.2"
 	    "\">Document</button></nav>", sd.tab == SD_OVERVIEW ? " on" : "",
-	    sd.tab == SD_SERVICES ? " on" : "", sd.tab == SD_DOCUMENT ? " on" :
-	    "");
+	    sd.tab == SD_SERVICES ? " on" : "", sd.tab == SD_EDGES ? " on" : "",
+	    sd.tab == SD_DOCUMENT ? " on" : "");
 	if (sd.doc == NULL) {
 		if (sd.error[0] != '\0') {
 			h_raw(h, "<div class=\"notice bad\">");
@@ -604,6 +892,8 @@ view_sdwan(struct html *h)
 			h_raw(h, "<div class=\"loader\"></div>");
 	} else if (sd.tab == SD_SERVICES)
 		view_service(h);
+	else if (sd.tab == SD_EDGES)
+		view_edges(h);
 	else if (sd.tab == SD_DOCUMENT)
 		view_document(h);
 	else
@@ -686,14 +976,15 @@ example(void)
 	    "\t\"edges\": [\n"
 	    "\t\t{\"server\": \"%s\", \"ucs_end_points\": [\n"
 	    "\t\t\t{\"id\": \"hq-inet\", \"ucs\": \"internet\", \"interface\": "
-	    "\"vtnet0\", \"breakout\": true},\n"
+	    "\"vtnet0\", \"address\": \"192.0.2.10\",\n\t\t\t \"breakout\": "
+	    "true},\n"
 	    "\t\t\t{\"id\": \"hq-mpls\", \"ucs\": \"mpls\", \"interface\": "
-	    "\"vtnet1\"}]},\n"
+	    "\"vtnet1\", \"address\": \"10.99.0.1\"}]},\n"
 	    "\t\t{\"server\": \"%s\", \"ucs_end_points\": [\n"
 	    "\t\t\t{\"id\": \"br-inet\", \"ucs\": \"internet\", \"interface\": "
-	    "\"vtnet0\"},\n"
+	    "\"vtnet0\", \"address\": \"198.51.100.20\"},\n"
 	    "\t\t\t{\"id\": \"br-mpls\", \"ucs\": \"mpls\", \"interface\": "
-	    "\"vtnet1\", \"backup\": true}]}\n"
+	    "\"vtnet1\", \"address\": \"10.99.0.2\",\n\t\t\t \"backup\": true}]}\n"
 	    "\t],\n"
 	    "\t\"swvcs\": [{\n"
 	    "\t\t\"id\": \"office\", \"fib\": 1, \"ucs\": [\"internet\", "
@@ -743,6 +1034,20 @@ example(void)
 	    "and addresses are to be made your own.");
 }
 
+static void
+apply_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200) {
+		sd.applying = false;
+		toast(true, "Not applied: %s", jstr(o, "error.message") != NULL ?
+		    jstr(o, "error.message") : err != NULL ? err : "no answer");
+		return;
+	}
+	api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
+}
+
 bool
 sdwan_form(const char *form, const ucl_object_t *f)
 {
@@ -767,11 +1072,15 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sdwan_open();
 		return (true);
 	}
-	if (strncmp(act, "sd-", 3) != 0 && strcmp(act, "input:sd-swvc") != 0)
+	if (strncmp(act, "sd-", 3) != 0 && strcmp(act, "input:sd-swvc") != 0 &&
+	    strcmp(act, "do-sd-apply-fresh") != 0)
 		return (false);
 	if (strcmp(act, "sd-tab") == 0) {
 		sd.tab = strcmp(arg, "services") == 0 ? SD_SERVICES :
-		    strcmp(arg, "document") == 0 ? SD_DOCUMENT : SD_OVERVIEW;
+		    strcmp(arg, "edges") == 0 ? SD_EDGES : strcmp(arg,
+		    "document") == 0 ? SD_DOCUMENT : SD_OVERVIEW;
+		if (sd.tab == SD_EDGES)
+			plan_load();
 		sd.note[0] = '\0';
 		if (sd.tab != SD_DOCUMENT)
 			sd.error[0] = '\0';
@@ -782,6 +1091,16 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		snprintf(sd.swvc, sizeof(sd.swvc), "%s", value);
 	else if (strcmp(act, "sd-example") == 0)
 		example();
+	else if (strcmp(act, "sd-apply") == 0 || strcmp(act,
+	    "do-sd-apply-fresh") == 0) {
+		sd.applying = true;
+		api("POST", "/api/sdwan/apply", strcmp(act, "sd-apply") == 0 ?
+		    "{}" : "{\"fresh\":true}", apply_cb, NULL);
+	} else if (strcmp(act, "sd-apply-fresh") == 0)
+		confirm("Make all again", "Everything the console made on the "
+		    "edges is taken away and made again: tunnels go down for a "
+		    "while.", "Make all again", true, "", "do-sd-apply-fresh",
+		    "", "");
 	else if (strcmp(act, "sd-revert") == 0) {
 		free(sd.text);
 		sd.text = sd.doc != NULL ? pretty(sd.doc) : NULL;
@@ -795,6 +1114,11 @@ sdwan_tick(double now)
 {
 	static double	at;
 
+	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_EDGES &&
+	    sd.applying && now - sd.apply_at > 1000) {
+		sd.apply_at = now;
+		api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
+	}
 	/* Kept elsewhere meanwhile: read again, unless a change is typed. */
 	if (app.node != NODE_SDWAN || !app.visible || sd.tab == SD_DOCUMENT ||
 	    sd.loading || now - at < 30000)

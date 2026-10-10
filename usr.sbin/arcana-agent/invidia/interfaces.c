@@ -48,7 +48,8 @@ static const char	*ifq(struct work *, const char *, const char *,
 static bool		 host_is_up(const char *, bool *);
 static const char	*host_prefix(struct work *, const char *,
 			    const char *);
-static void		 host_current(const char *, unsigned int *, char *,
+static void		 host_current(const char *, unsigned int *, int *, int *,
+			    char *,
 			    size_t);
 
 static const struct {
@@ -475,13 +476,15 @@ do_if_state(struct work *w, const char *ifname, bool up, const char **errp)
 
 /* The MTU and the description an interface has now, here. */
 static void
-host_current(const char *ifname, unsigned int *mtup, char *descr, size_t len)
+host_current(const char *ifname, unsigned int *mtup, int *fibp, int *tfibp,
+    char *descr, size_t len)
 {
 	struct ifreq	ifr;
 	char		buf[256];
 	int		s;
 
 	*mtup = 0;
+	*fibp = *tfibp = -1;
 	descr[0] = '\0';
 	if ((s = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1 &&
 	    (s = socket(AF_INET6, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
@@ -490,6 +493,11 @@ host_current(const char *ifname, unsigned int *mtup, char *descr, size_t len)
 	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
 	if (ioctl(s, SIOCGIFMTU, &ifr) == 0)
 		*mtup = (unsigned int)ifr.ifr_mtu;
+	/* Its table, and a tunnel's for what it sends outside. */
+	if (ioctl(s, SIOCGIFFIB, &ifr) == 0)
+		*fibp = (int)ifr.ifr_fib;
+	if (ioctl(s, SIOCGTUNFIB, &ifr) == 0)
+		*tfibp = (int)ifr.ifr_fib;
 	memset(&ifr, 0, sizeof(ifr));
 	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
 	ifr.ifr_buffer.buffer = buf;
@@ -512,17 +520,41 @@ valid_descr(const char *s)
 	return (true);
 }
 
-/*
- * Set an interface's MTU (0 leaves it), its description (NULL leaves
- * it, "" takes it off), or both.
- */
-int
-do_if_set(struct work *w, const char *ifname, unsigned int mtu,
-    const char *descr, bool persist, const char **errp)
+/* ifconfig name word value, and its error. */
+static int
+ifset_word(struct work *w, const char *ifname, const char *word,
+    const char *value, const char **errp)
 {
 	struct execres	 res;
 	char		*argv[5];
 
+	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[1] = (char *)(uintptr_t)ifname;
+	argv[2] = (char *)(uintptr_t)word;
+	argv[3] = (char *)(uintptr_t)value;
+	argv[4] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+		return (-1);
+	}
+	return (0);
+}
+
+/*
+ * Set an interface's MTU, its description ("" takes it off), the
+ * routing table what it receives is looked up in, a tunnel's for what
+ * it sends outside, or several: what ch leaves at 0, NULL or -1 stays.
+ * Kept, each is a word of ifconfig_<if> (a table of 0 is taken out of
+ * it, the kernel's own).
+ */
+int
+do_if_set(struct work *w, const char *ifname, const struct if_change *ch,
+    bool persist, const char **errp)
+{
+	const char	*descr;
+	int		 i;
+
+	descr = ch->descr;
 	if (!if_exists(w, ifname)) {
 		*errp = wfmt(w, "no interface %s %s", ifname, w->jail != NULL ?
 		    "in that jail" : "on this host");
@@ -534,24 +566,36 @@ do_if_set(struct work *w, const char *ifname, unsigned int mtu,
 		    "quotes, $ or \\";
 		return (-1);
 	}
-	if (mtu != 0 && (mtu < 68 || mtu > 65535)) {
+	if (ch->mtu != 0 && (ch->mtu < 68 || ch->mtu > 65535)) {
 		*errp = "an MTU is between 68 and 65535";
 		return (-1);
 	}
-	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
-	argv[1] = (char *)(uintptr_t)ifname;
-	if (mtu != 0) {
-		argv[2] = (char *)(uintptr_t)"mtu";
-		argv[3] = wfmt(w, "%u", mtu);
-		argv[4] = NULL;
-		if (run_exec(w, argv, &res) != 0) {
-			*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+	if (ch->mtu != 0) {
+		if (ifset_word(w, ifname, "mtu", wfmt(w, "%u", ch->mtu),
+		    errp) != 0)
 			return (-1);
-		}
-		if (persist && rc_mtu(w, ifname, mtu, errp) != 0)
+		if (persist && rc_word(w, ifname, "mtu", wfmt(w, "%u",
+		    ch->mtu), errp) != 0)
+			return (-1);
+	}
+	for (i = 0; i < 2; i++) {
+		const char	*word = i == 0 ? "fib" : "tunnelfib";
+		int		 v = i == 0 ? ch->fib : ch->tunnelfib;
+
+		if (v < 0)
+			continue;
+		if (ifset_word(w, ifname, word, wfmt(w, "%d", v), errp) != 0)
+			return (-1);
+		if (persist && rc_word(w, ifname, word, v != 0 ? wfmt(w, "%d",
+		    v) : NULL, errp) != 0)
 			return (-1);
 	}
 	if (descr != NULL) {
+		struct execres	 res;
+		char		*argv[5];
+
+		argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+		argv[1] = (char *)(uintptr_t)ifname;
 		argv[2] = (char *)(uintptr_t)(descr[0] != '\0' ? "description" :
 		    "-description");
 		argv[3] = descr[0] != '\0' ? (char *)(uintptr_t)descr : NULL;
@@ -808,6 +852,16 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	}
 
 	argv[1] = (char *)(uintptr_t)name;
+	/*
+	 * Its tables first: an address added after is routed in the
+	 * interface's table, and a tunnel's ends are looked up in its own.
+	 */
+	if (sp->has_fib && ifset_word(w, name, "fib", wfmt(w, "%u", sp->fib),
+	    &e) != 0)
+		goto undo_said;
+	if (sp->has_tunnelfib && ifset_word(w, name, "tunnelfib", wfmt(w,
+	    "%u", sp->tunnelfib), &e) != 0)
+		goto undo_said;
 	if (how == CL_TUNNEL) {
 		n = 2;
 		if (six)
@@ -899,7 +953,10 @@ do_if_create(struct work *w, const struct arc_job_spec *sp,
 	    how == CL_TUNNEL ? sp->tunnel_remote : "", how == CL_TUNNEL ? " " :
 	    "", how == CL_BRIDGE && sp->parent != NULL ? wfmt(w, "addm %s ",
 	    sp->parent) : "", sp->has_mtu && sp->mtu != 0 ? wfmt(w, "mtu %u ",
-	    sp->mtu) : "", ""), &e) != 0)
+	    sp->mtu) : "", wfmt(w, "%s%s", sp->has_fib && sp->fib != 0 ?
+	    wfmt(w, "fib %u ", sp->fib) : "", sp->has_tunnelfib &&
+	    sp->tunnelfib != 0 ? wfmt(w, "tunnelfib %u ", sp->tunnelfib) :
+	    "")), &e) != 0)
 		goto undo_said;
 	if (alias != NULL && rc_set(w, wfmt(w, "ifconfig_%s_alias0", rcif), "=",
 	    alias, &e) != 0)
@@ -977,6 +1034,7 @@ ifq_text(const char *what, const char *ifname, const char *arg)
 	const char		*s;
 	char			*out, descr[256];
 	unsigned int		 mtu;
+	int			 fib, tfib;
 	bool			 up;
 
 	work_init(&w);
@@ -992,8 +1050,9 @@ ifq_text(const char *what, const char *ifname, const char *arg)
 	} else if (strcmp(what, "exists") == 0) {
 		out = strdup(if_nametoindex(ifname) != 0 ? "1" : "0");
 	} else if (strcmp(what, "current") == 0) {
-		host_current(ifname, &mtu, descr, sizeof(descr));
-		if (asprintf(&out, "%u\t%s", mtu, descr) == -1)
+		host_current(ifname, &mtu, &fib, &tfib, descr, sizeof(descr));
+		if (asprintf(&out, "%u\t%d\t%d\t%s", mtu, fib, tfib, descr) ==
+		    -1)
 			out = NULL;
 	} else if (strcmp(what, "up") == 0) {
 		out = strdup(!host_is_up(ifname, &up) ? "?" : up ? "1" : "0");
@@ -1048,21 +1107,30 @@ if_is_up(struct work *w, const char *ifname, bool *upp)
 	return (true);
 }
 
-/* The MTU and the description an interface has now. */
+/*
+ * The MTU, the routing tables (-1 where it has none: tunnelfib is a
+ * tunnel's) and the description an interface has now.
+ */
 void
-if_current(struct work *w, const char *ifname, unsigned int *mtup,
-    char *descr, size_t len)
+if_current(struct work *w, const char *ifname, unsigned int *mtup, int *fibp,
+    int *tfibp, char *descr, size_t len)
 {
-	const char	*a, *tab;
+	const char	*a;
+	char		*p;
 
 	*mtup = 0;
+	*fibp = *tfibp = -1;
 	descr[0] = '\0';
 	if ((a = ifq(w, "current", ifname, NULL)) == NULL)
 		return;
-	*mtup = (unsigned int)strtoul(a, NULL, 10);
-	if ((tab = strchr(a, '\t')) != NULL)
-		snprintf(descr, len, "%.*s", (int)strcspn(tab + 1, "\n"),
-		    tab + 1);
+	*mtup = (unsigned int)strtoul(a, &p, 10);
+	if (*p == '\t')
+		*fibp = (int)strtol(p + 1, &p, 10);
+	if (*p == '\t')
+		*tfibp = (int)strtol(p + 1, &p, 10);
+	if (*p == '\t')
+		snprintf(descr, len, "%.*s", (int)strcspn(p + 1, "\n"),
+		    p + 1);
 }
 
 /*

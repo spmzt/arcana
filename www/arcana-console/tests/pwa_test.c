@@ -1362,12 +1362,12 @@ ATF_TC_BODY(pwa, tc)
 	ATF_CHECK(js_true("!document.documentElement.dataset.theme && "
 	    "localStorage.getItem('arc_theme') === null && localStorage."
 	    "getItem('arc_theme_v') === '2'"));
-	run("localStorage.setItem('arc_theme', 'amber'); const s = document."
+	run("localStorage.setItem('arc_theme', 'paper'); const s = document."
 	    "createElement('script'); s.src = '/fx.js?kept'; document.head."
 	    "appendChild(s);");
 	usleep(500000);
 	ATF_CHECK(js_true("document.documentElement.dataset.theme === "
-	    "'amber'"));
+	    "'paper'"));
 	run("localStorage.removeItem('arc_theme')");
 	run("delete document.documentElement.dataset.theme");
 	run("document.querySelector('li[data-act=select-fleet]').click()");
@@ -3524,8 +3524,11 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("(document.querySelector('section.sdwan .notice.bad') || {})."
 	    "textContent?.includes('(R72)')", 20);
 	shot("9-sdwan-refused");
+	/* Its UNIs on lo0 and gif for geneve: what the stand-ins can make. */
 	run("const t = document.querySelector('form[data-form=sd-doc] "
-	    "textarea'); t.value = window.sdText;");
+	    "textarea'); t.value = window.sdText.replaceAll('\"vtnet2\"', "
+	    "'\"lo0\"').replace('\"geneve\"', '\"gif\"').replace(', "
+	    "\"fd00:64::/64\"', '');");
 	run("document.querySelector('form[data-form=sd-doc] button[value="
 	    "keep]').click()");
 	wait_js("(document.querySelector('section.sdwan .notice') || {})."
@@ -3545,6 +3548,27 @@ ATF_TC_BODY(pwa, tc)
 	ATF_CHECK(js_true("document.querySelector('section.sdwan').textContent"
 	    ".includes('10.10.0.0/24')"));
 	shot("9-sdwan-service");
+	/*
+	 * Edges: the tunnels and what each edge is to have; applied, each
+	 * step done, and then nothing left to do.
+	 */
+	run("document.querySelector('button[data-act=sd-tab][data-arg=edges]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.sd-plan tbody tr').length > 8 "
+	    "&& document.querySelector('button[data-act=sd-apply]') && "
+	    "!document.querySelector('button[data-act=sd-apply]').disabled",
+	    20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
+	    ".find(h => h.textContent.startsWith('Tunnels')).closest('.sd-block')"
+	    ".querySelectorAll('tbody tr').length === 2"));
+	shot("9-sdwan-edges-plan");
+	run("document.querySelector('button[data-act=sd-apply]').click()");
+	wait_js("(document.querySelector('.sd-applied h3') || {}).textContent"
+	    "?.startsWith('Last apply') && document.querySelector("
+	    "'button[data-act=sd-apply]').disabled", 60);
+	ATF_CHECK(js_true("document.querySelector('.sd-applied h3')"
+	    ".textContent.startsWith('Last apply: done')"));
+	shot("9-sdwan-edges-applied");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",
 	    10);

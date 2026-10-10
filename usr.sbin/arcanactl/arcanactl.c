@@ -134,9 +134,11 @@ usage(void)
 	    "    interface name add | remove address\n"
 	    "    interface name mtu number\n"
 	    "    interface name description text\n"
+	    "    interface name fib | tunnelfib number\n"
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface] [reqid number]\n"
+	    "        [fib number] [tunnelfib number]\n"
 	    "    route add destination gateway[@share][,gateway[@share]...] [metric n] [weight n] "
 	    "[source address]\n"
 	    "    route delete destination [gateway] [metric n]\n"
@@ -1422,6 +1424,19 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	} else if (strcmp(argv[2], "description") == 0 && argc == 4) {
 		sp.kind = ARC_JOB_KIND_IF_SET;
 		sp.description = argv[3];
+	} else if ((strcmp(argv[2], "fib") == 0 || strcmp(argv[2],
+	    "tunnelfib") == 0) && argc == 4) {
+		sp.kind = ARC_JOB_KIND_IF_SET;
+		num = (uint32_t)strtonum(argv[3], 0, 65535, &errstr);
+		if (errstr != NULL)
+			xo_errx(2, "%s %s: %s", argv[2], argv[3], errstr);
+		if (argv[2][0] == 'f') {
+			sp.has_fib = true;
+			sp.fib = num;
+		} else {
+			sp.has_tunnelfib = true;
+			sp.tunnelfib = num;
+		}
 	} else if (strcmp(argv[2], "create") == 0) {
 		/* Words and what follows each, in any order. */
 		sp.kind = ARC_JOB_KIND_IF_CREATE;
@@ -1446,8 +1461,23 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 				if (errstr != NULL)
 					xo_errx(2, "reqid %s: %s", argv[i], errstr);
 			}
-			else if ((strcmp(argv[i], "mtu") == 0 || strcmp(argv[i],
-			    "id") == 0) && i + 1 < argc) {
+			else if ((strcmp(argv[i], "fib") == 0 || strcmp(argv[i],
+			    "tunnelfib") == 0) && i + 1 < argc) {
+				num = (uint32_t)strtonum(argv[i + 1], 0, 65535,
+				    &errstr);
+				if (errstr != NULL)
+					xo_errx(2, "%s %s: %s", argv[i],
+					    argv[i + 1], errstr);
+				if (argv[i][0] == 'f') {
+					sp.has_fib = true;
+					sp.fib = num;
+				} else {
+					sp.has_tunnelfib = true;
+					sp.tunnelfib = num;
+				}
+				i++;
+			} else if ((strcmp(argv[i], "mtu") == 0 ||
+			    strcmp(argv[i], "id") == 0) && i + 1 < argc) {
 				num = (uint32_t)strtonum(argv[i + 1], 0,
 				    16777215, &errstr);
 				if (errstr != NULL)

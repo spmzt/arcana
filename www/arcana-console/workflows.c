@@ -138,6 +138,29 @@ refs_copy(void)
 	pthread_mutex_unlock(&ref_lock);
 }
 
+/* In the worker, before a thread of another part looks at the servers. */
+void
+host_refs(void)
+{
+
+	refs_copy();
+}
+
+/* Where a server is reached, for a thread of another part. */
+bool
+host_ref(const char *sid, char *uri, size_t ulen, char *peer, size_t plen,
+    char *name, size_t nlen)
+{
+	struct hostref	h;
+
+	if (!ref_get(sid, &h))
+		return (false);
+	snprintf(uri, ulen, "%s", h.uri);
+	snprintf(peer, plen, "%s", h.peer);
+	snprintf(name, nlen, "%s", h.name);
+	return (true);
+}
+
 /* ---- What jobs.yaml says of a kind ---------------------------------- */
 
 static const struct jobkind *
@@ -1010,9 +1033,11 @@ run_job(struct hostrun *hr, int k, const ucl_object_t *step)
 			continue;
 		}
 		st = ucl_object_tostring_forced(path_get(jr, "job.state"));
-		if (strcmp(st, "done") == 0 || strcmp(st, "failed") == 0 ||
-		    strcmp(st, "cancelled") == 0) {
-			ok = strcmp(st, "done") == 0;
+		if (strcmp(st, "done") == 0 || strcmp(st, "cancelled") == 0) {
+			/* Done is how it ended, ok whether it did it. */
+			ok = strcmp(st, "done") == 0 && ucl_object_type(
+			    path_get(jr, "job.ok")) == UCL_BOOLEAN &&
+			    ucl_object_toboolean(path_get(jr, "job.ok"));
 			pthread_mutex_lock(&hr->run->lock);
 			free(x->trace);
 			x->trace = strlen(json) < TRACE_MAX ? strdup(json) :

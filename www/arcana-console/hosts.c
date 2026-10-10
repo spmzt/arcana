@@ -3689,10 +3689,18 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		sp->has_mtu = true;
 		sp->mtu = (uint32_t)ucl_object_toint(v);
 	}
-	if ((v = ucl_object_lookup(o, "fib")) != NULL && ucl_object_toint(v) >
-	    0 && ucl_object_toint(v) <= 65535) {
+	/* 0 too: an interface put back in the first table. */
+	if ((v = ucl_object_lookup(o, "fib")) != NULL && ucl_object_type(v) ==
+	    UCL_INT && ucl_object_toint(v) >= 0 && ucl_object_toint(v) <=
+	    65535) {
 		sp->has_fib = true;
 		sp->fib = (uint32_t)ucl_object_toint(v);
+	}
+	if ((v = ucl_object_lookup(o, "tunnelfib")) != NULL &&
+	    ucl_object_type(v) == UCL_INT && ucl_object_toint(v) >= 0 &&
+	    ucl_object_toint(v) <= 65535) {
+		sp->has_tunnelfib = true;
+		sp->tunnelfib = (uint32_t)ucl_object_toint(v);
 	}
 	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
 	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
@@ -4074,6 +4082,46 @@ hosts_read(const char *uri, const char *peer, const char *name,
 	c->reads = true;
 	c->installed = reads[i].op == OP_PACKAGES;
 	return (self_call(c, uri, peer, name, what, status));
+}
+
+/*
+ * A kind of the host's network (routes, interfaces, wireguard, ipsec,
+ * as GET /api/servers/<id>/net/<kind> answers), for a thread of the
+ * console's own; NULL when kind is none.
+ */
+char *
+hosts_net(const char *uri, const char *peer, const char *name,
+    const char *kind, int *status)
+{
+	struct call	*c;
+	size_t		 i;
+
+	for (i = 0; i < nitems(net_kind_names); i++)
+		if (net_kind_names[i] != NULL && strcmp(kind,
+		    net_kind_names[i]) == 0)
+			break;
+	if (i == nitems(net_kind_names))
+		return (NULL);
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_NETWORK;
+	c->action = (uint8_t)i;
+	c->family = ARC_NET_FAMILY_ALL;
+	c->reads = true;
+	return (self_call(c, uri, peer, name, kind, status));
+}
+
+/* The host's sysctls whose names begin with prefix. */
+char *
+hosts_sysctl(const char *uri, const char *peer, const char *name,
+    const char *prefix, int *status)
+{
+	struct call	*c;
+
+	c = kore_calloc(1, sizeof(*c));
+	c->op = OP_SYSCTL;
+	c->reads = true;
+	snprintf(c->jail, sizeof(c->jail), "%s", prefix);
+	return (self_call(c, uri, peer, name, "sysctl", status));
 }
 
 /* The host's events after the number after, for a workflow's trigger. */

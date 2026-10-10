@@ -3373,6 +3373,208 @@ ATF_TC_BODY(sdwan, tc)
 	resp_free(&r);
 }
 
+/* The apply's end: done or failed; its state, into r. */
+static void
+sdwan_wait(struct resp *r)
+{
+	int	i;
+
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/sdwan/apply", NULL, r);
+		if (r->status == 200 && jstr(r, "applying") != NULL &&
+		    strcmp(jstr(r, "applying"), "false") == 0 && jstr(r,
+		    "apply.state") != NULL && strcmp(jstr(r, "apply.state"),
+		    "running") != 0)
+			return;
+		resp_free(r);
+		usleep(200000);
+	}
+	ATF_REQUIRE_MSG(false, "the apply did not end");
+}
+
+/* How many of the plan's changes are of that kind. */
+static int
+changes_of(const struct resp *r, const char *change)
+{
+	const ucl_object_t	*c;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while ((c = ucl_object_iterate(ucl_object_lookup(r->json, "changes"),
+	    &it, true)) != NULL)
+		if (strcmp(ucl_object_tostring_forced(ucl_object_lookup(c,
+		    "change")), change) == 0)
+			n++;
+	return (n);
+}
+
+CONSOLE_TC(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")
+ATF_TC_BODY(sdwan_apply, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[8192], t1[8192];
+	size_t		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	/* The good one, its underlays with addresses, its UNIs on lo0. */
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	static const char *const edits[][2] = {
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+		/* gif: geneve's address needs an interface the kernel has. */
+		{ "\"kind\":\"geneve\"", "\"kind\":\"gif\"" },
+	};
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)));
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
+	/*
+	 * The plan: two tunnels, over the Internet (gre under IPsec) and
+	 * over the MPLS (geneve), each a unit of its own and a /31 of the
+	 * reserved prefix; nothing made yet.
+	 */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_EQ(2, (int)ucl_array_size(ucl_object_lookup(r.json,
+	    "tunnels")));
+	ATF_CHECK_STREQ("gre", jstr(&r, "tunnels.0.kind"));
+	ATF_CHECK_STREQ("true", jstr(&r, "tunnels.0.ipsec"));
+	ATF_CHECK_STREQ("gre100", jstr(&r, "tunnels.0.ends.0.ifname"));
+	ATF_CHECK_STREQ("gre101", jstr(&r, "tunnels.0.ends.1.ifname"));
+	ATF_CHECK_STREQ("100.64.0.0", jstr(&r, "tunnels.0.ends.0.inner4"));
+	ATF_CHECK_STREQ("100.64.0.1", jstr(&r, "tunnels.0.ends.1.inner4"));
+	ATF_CHECK_STREQ("gif", jstr(&r, "tunnels.1.kind"));
+	ATF_CHECK_STREQ("false", jstr(&r, "tunnels.1.ipsec"));
+	ATF_CHECK_STREQ("true", jstr(&r, "tunnels.1.backup"));
+	ATF_CHECK_STREQ("100.64.0.2", jstr(&r, "tunnels.1.ends.0.inner4"));
+	ATF_CHECK_EQ(0, changes_of(&r, "keep"));
+	ATF_CHECK(changes_of(&r, "make") > 10);
+	ATF_CHECK(strstr(r.body, "\"key\":\"uni:branch\"") != NULL);
+	resp_free(&r);
+
+	/* Applied: each made, in the order, IPsec with the far key. */
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^gre100 create' ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q '^gre100 fib 1' ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q '^gre100 tunnel 192.0.2.1 192.0.2.2' "
+	    "ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q '^gre101 tunnel 192.0.2.2 192.0.2.1' "
+	    "ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q '^gre100 inet 100.64.0.0/31 100.64.0.1' "
+	    "ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q '^gif102 tunnel 10.99.0.1 10.99.0.2' "
+	    "ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q 'vlan104 create vlan 20 vlandev lo0' "
+	    "ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q 'mode = transport' "
+	    "swanctl/conf.d/arcana-sdw100.conf") == 0);
+	ATF_CHECK(system("grep -q 'dynamic\\[gre\\]' "
+	    "swanctl/conf.d/arcana-sdw100.conf") == 0);
+	/* Again: nothing to do. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_EQ(0, changes_of(&r, "make") + changes_of(&r, "remake") +
+	    changes_of(&r, "unmake"));
+	resp_free(&r);
+
+	/* The MPLS no longer the service's: its tunnel taken away. */
+	ATF_REQUIRE(swap_in(doc, "\"ucs\":[\"inet\",\"mpls\"]",
+	    "\"ucs\":[\"inet\"]", t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":1", t1,
+	    sizeof(t1)));
+	http("PUT", "/api/sdwan", t1, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_EQ(2, changes_of(&r, "unmake"));
+	ATF_CHECK_EQ(1, (int)ucl_array_size(ucl_object_lookup(r.json,
+	    "tunnels")));
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^gif102 destroy' ifconfig.log") == 0);
+	ATF_CHECK(system("grep -q '^gif103 destroy' ifconfig.log") == 0);
+	ATF_CHECK(system("! grep -q '\"units\":\\[102' data/sdwan-state.json") ==
+	    0);
+
+	/* A geneve tunnel: one VNI at both ends, its table after it. */
+	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"", "\"kind\":\"geneve\"",
+	    t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	ATF_REQUIRE(swap_in(doc, "\"ucs\":[\"inet\"]",
+	    "\"ucs\":[\"inet\",\"mpls\"]", t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":2", t1,
+	    sizeof(t1)));
+	http("PUT", "/api/sdwan", t1, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
+	    "\"local\",\"10.99.0.1\",\"remote\",\"10.99.0.2\"]") != NULL &&
+	    strstr(r.body, "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
+	    "\"local\",\"10.99.0.2\",\"remote\",\"10.99.0.1\"]") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -3395,6 +3597,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, transfers);
 	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, sdwan);
+	ATF_TP_ADD_TC(tp, sdwan_apply);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);

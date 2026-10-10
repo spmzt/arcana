@@ -654,7 +654,12 @@ does.
 .It Cm interface Ar name Cm description Ar text
 Set an interface's MTU or its description; an empty text takes the
 description off.
-.It Cm interface Ar name Cm create Oo Cm tunnel Ar local remote Oc Oo Cm address Ar address Oo Cm peer Ar address Oc Oc Oo Cm mtu Ar number Oc Oo Cm description Ar text Oc Oo Cm id Ar number Oc Oo Cm parent Ar interface Oc Oo Cm reqid Ar number Oc
+.It Cm interface Ar name Cm fib | tunnelfib Ar number
+Set the routing table what the interface receives is looked up in,
+or a tunnel's, which its outer packets are sent by; kept, 0 is taken
+out of
+.Va ifconfig_ Ns Ar name .
+.It Cm interface Ar name Cm create Oo Cm tunnel Ar local remote Oc Oo Cm address Ar address Oo Cm peer Ar address Oc Oc Oo Cm mtu Ar number Oc Oo Cm description Ar text Oc Oo Cm id Ar number Oc Oo Cm parent Ar interface Oc Oo Cm reqid Ar number Oc Oo Cm fib Ar number Oc Oo Cm tunnelfib Ar number Oc
 Create a cloned interface and set it up.
 .Ar name
 is a type with its unit, as
@@ -675,6 +680,11 @@ the interface a VLAN rides or a bridge takes in, and
 the reqid of an
 .Xr ipsec 4
 interface, from 1 to 16383, for the IPsec connection that serves it.
+.Cm fib
+and
+.Cm tunnelfib
+are set before its ends and addresses, so that the routes of its
+addresses are made in its table.
 A tunnel's ends are both IPv4 or both IPv6.
 What cannot be finished is destroyed again.
 .It Cm interface Ar name Cm give | take Ar jail

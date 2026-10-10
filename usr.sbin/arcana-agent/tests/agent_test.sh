@@ -970,6 +970,18 @@ EOS
 	    cat rc.conf
 	atf_check -s exit:1 -o match:'Invalid argument' \
 	    "$JGC" -c "$SOCK" interface lo0 mtu 9999
+	# Its routing tables: what it receives, and a tunnel's outer
+	# packets; kept as words of ifconfig_<if>, 0 taken out again.
+	atf_check -o match:'fake-ifconfig lo0 fib 2' -o match:'set fib' \
+	    "$JGC" -p -c "$SOCK" interface lo0 fib 2
+	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up fib 2"$' \
+	    cat rc.conf
+	atf_check -o match:'fake-ifconfig lo0 tunnelfib 1' \
+	    "$JGC" -c "$SOCK" interface lo0 tunnelfib 1
+	atf_check -o match:'fake-ifconfig lo0 fib 0' \
+	    "$JGC" -p -c "$SOCK" interface lo0 fib 0
+	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' \
+	    cat rc.conf
 	atf_check -s exit:1 -o match:'without quotes' \
 	    "$JGC" -p -c "$SOCK" interface lo0 description 'a"; reboot'
 
@@ -1023,6 +1035,18 @@ EOS
 	atf_check -o match:'^create_args_vlan5="vlan 5 vlandev lo0"$' cat rc.conf
 	atf_check -o match:'vxlan9 create vxlanid 42 vxlanlocal 192.0.2.1 vxlanremote 192.0.2.9' \
 	    "$JGC" -c "$SOCK" interface vxlan9 create id 42 tunnel 192.0.2.1 192.0.2.9
+	# Its tables are set before its ends and its addresses: the route
+	# of its address is made in its table.
+	: > ifconfig.log
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface gre4 create tunnel \
+	    192.0.2.1 192.0.2.2 address 10.255.1.0/31 peer 10.255.1.1 fib 3 \
+	    tunnelfib 0
+	atf_check -o inline:'gre4 create\ngre4 fib 3\ngre4 tunnelfib 0\ngre4 tunnel 192.0.2.1 192.0.2.2\ngre4 inet 10.255.1.0/31 10.255.1.1\ngre4 up\n' \
+	    cat ifconfig.log
+	atf_check -o match:'^ifconfig_gre4="tunnel 192.0.2.1 192.0.2.2 fib 3 up"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" interface gre4 destroy
+	atf_check -o not-match:'gre4' cat rc.conf
 	# What cannot be finished is destroyed again, and not kept.
 	atf_check -s exit:1 -o match:'Invalid argument' \
 	    -o match:'fake-ifconfig gre1 destroy' \
@@ -1829,7 +1853,7 @@ interfaces) echo '{"interfaces":[{"name":"epair91b","up":true,"mtu":1500,"addres
 exists) case "\$4" in epair91b|wg0|lo0) echo 1 ;; *) echo 0 ;; esac ;;
 up) echo 1 ;;
 sysctl-int) [ -f $(pwd)/fw-on ] && echo 1 || echo 0 ;;
-current) printf '1500\tto the host' ;;
+current) printf '1500\t0\t-1\tto the host' ;;
 prefix) [ "\$5" = 10.99.0.2 ] && echo 10.99.0.2/24 ;;
 esac
 exit 0
@@ -1872,6 +1896,9 @@ EOS
 	atf_check -o match:'^-Q 4 interfaces - 0$' cat helper.log
 	atf_check -o match:'"name":"lo0"' -o not-match:'epair91b' \
 	    "$JGC" -c "$SOCK" net interfaces
+	# Its bridges and geneve tunnels: ifconfig told the jail once.
+	atf_check -o ignore "$JGC" -j gateway -c "$SOCK" net bridges
+	atf_check -o match:'^-j 4 -av$' cat ifconfig.log
 	# Its routes and its route to an address: the host's programs,
 	# told which jail.
 	atf_check -o match:'fake-helper -Q 4 routes 4 0 - -' \

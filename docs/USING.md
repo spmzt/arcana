@@ -1062,5 +1062,43 @@ console says no to names where, and the requirement:
 A change is made from the version it was read at; one made from an
 older version is refused, so two pages do not undo each other. **Start
 from an example** writes one with two of the console's hosts as its
-edges. Nothing is sent to the hosts yet: what the edges are to do is
-the next part.
+edges.
+
+**Edges** shows what the kept services make on the edges, and makes
+it. Each edge is to have, for each service on it:
+
+- `net.fibs` raised to the highest service FIB on it, and one (never
+  lowered). It is per vnet: a fresh vnet has 1.
+- strongSwan's key and daemon, when one of its tunnels wants IPsec.
+- Its end of each tunnel (a Tunnel Virtual Connection, §7.10): one
+  between each two edges of a service, over each two of their UCS End
+  Points that a tunnel can join (the same underlay, or two public
+  ones), each End Point with its outer `address`. The tunnel is the
+  underlay's `tunnel`: gre, gif or geneve, under IPsec IKEv2 in
+  transport mode when it says `ipsec` (a public underlay does unless it
+  says otherwise), or wg. It is in the service's FIB, its outer packets
+  in FIB 0, its inner addresses a /31 and a /127 of the service's
+  reserved prefixes; each end has its own unit (`gre100`, `gre101`),
+  since two ends may be one host. The far end is told once both ends
+  have a key: the wg peer, or the IKEv2 connection with the far host's
+  key, protecting only the tunnel's own packets (GRE, IP-in-IP, or
+  UDP for geneve).
+- Routes in the service's FIB: each far end point's prefixes by a
+  tunnel to its edge, one that is no backup first and a private one
+  before a public one; and each UNI's static routes.
+- The UNIs, last: the interface, or a VLAN on it, in the service's FIB,
+  with the provider's addresses.
+
+Each is a row with the jobs that make it, and whether it is to be
+made, made again (its jobs changed), taken away, or is as it is.
+**Apply** takes away what goes, last made first, and then makes what
+comes in Mplify 119's order (FIBs, IPsec, tunnels, their far ends,
+routes, UNIs), each step on every edge before the next; a step that
+fails takes away what it made and stops the apply. What was made is
+kept in `sdwan-state.json` with the jobs that take it away again, and
+the tunnels' units and addresses, so that one added moves none of the
+others. **Make all again** takes everything made away first.
+
+A wg tunnel's FIB is set, but not kept across a reboot: wg-quick(8),
+which brings wg up at boot, gives its addresses before any table can
+be set. gre, gif and geneve keep theirs in `rc.conf`.

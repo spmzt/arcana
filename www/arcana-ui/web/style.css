@@ -4459,3 +4459,16 @@ section.setsect .actions { display: flex; gap: .5rem; }
 section.setsect dl.kv { font-size: .8rem; }
 section.setsect .token-new { display: flex; gap: .5rem; flex-wrap: wrap; }
 section.setsect .token-new input { flex: 1; min-width: 12rem; }
+.sd-applied ul.sd-steps { list-style: none; margin: 0; padding: 0; font-size: .82rem; }
+.sd-applied ul.sd-steps li { display: flex; flex-wrap: wrap; align-items: baseline; gap: .2rem .5rem; padding: .25rem 0; border-bottom: 1px solid var(--line); }
+.sd-applied ul.sd-steps li small { flex-basis: 100%; color: var(--red); padding-left: 1.2rem; }
+.sd-applied ul.sd-steps li .led { background: var(--dim); }
+.sd-applied ul.sd-steps li.done .led { background: var(--green); }
+.sd-applied ul.sd-steps li.failed .led { background: var(--red); }
+.sd-applied ul.sd-steps li.pending { opacity: .6; }
+.chip.ch-make { border-color: var(--green); }
+.chip.ch-remake { border-color: var(--amber); }
+.chip.ch-unmake { border-color: var(--red); }
+table.sd-plan tr.ch-keep { opacity: .65; }
+ul.sd-jobs { margin: .3rem 0 0; padding-left: 1rem; font-family: var(--mono); font-size: .72rem; }
+table.sd-plan details summary { cursor: pointer; color: var(--fg-2); }

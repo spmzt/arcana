@@ -346,7 +346,8 @@ do_l2(struct work *w, bool geneve, struct arc_network_rsp *rsp)
 	/* -v: a geneve tunnel's ttl, df and table are said only so. */
 	argv[1] = (char *)(uintptr_t)"-av";
 	argv[2] = NULL;
-	if (run_exec(w, scope_argv(w, argv), &res) != 0) {
+	/* run_exec() runs it in w's jail: -j once. */
+	if (run_exec(w, argv, &res) != 0) {
 		rsp->error = scope_missing(w, &res, "ifconfig", NULL);
 		if (rsp->error == NULL)
 			rsp->error = wtext(w, exec_error(w, &res, "ifconfig"));

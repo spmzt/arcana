@@ -1653,8 +1653,13 @@ check_spec(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_IF_SET:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))
 			return ("invalid interface name");
-		if ((!sp->has_mtu || sp->mtu == 0) && sp->description == NULL)
-			return ("say what to set: mtu, description or both");
+		if ((!sp->has_mtu || sp->mtu == 0) && sp->description == NULL &&
+		    !sp->has_fib && !sp->has_tunnelfib)
+			return ("say what to set: mtu, description, fib, "
+			    "tunnelfib, or several");
+		if ((sp->has_fib && sp->fib > 65535) || (sp->has_tunnelfib &&
+		    sp->tunnelfib > 65535))
+			return ("a routing table is a number of one");
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))
