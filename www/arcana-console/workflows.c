@@ -34,7 +34,9 @@
  *	DELETE /api/runs/<n>		one running stopped
  *
  * The workflows are kept in workflows.json and the last runs in
- * runs.json, written as they go.  A run has a thread of its own and one
+ * runs.json, written as they go, each run's traces in a file of its
+ * own under runs/, so that the list stays small however much the
+ * steps answered.  A run has a thread of its own and one
  * for each of its hosts.  What runs by itself is started by one worker,
  * the one holding workflows.lock: a thread of it looks every few
  * seconds at what is due and at the hosts' events.  Threads never look
@@ -46,6 +48,7 @@
 #include <sys/file.h>
 #include <sys/queue.h>
 #include <sys/stat.h>
+
 
 #include <ctype.h>
 #include <errno.h>
@@ -63,6 +66,7 @@
 
 #define	WF_FILE		"workflows.json"
 #define	RUNS_FILE	"runs.json"
+#define	RUNS_DIR	"runs"
 #define	WF_LOCK		"workflows.lock"
 #define	WF_MAX		64
 #define	WF_STEPS_MAX	64
@@ -859,24 +863,38 @@ run_object(struct run *r, bool traces)
 	return (o);
 }
 
+/* The file a run's traces are in: runs/<id>.json. */
+static const char *
+run_file(uint32_t id, char *buf, size_t len)
+{
+
+	snprintf(buf, len, "%s/%u.json", RUNS_DIR, id);
+	return (buf);
+}
+
 /*
- * The run written into runs.json, in its place or as the newest; a stop
- * asked of another worker is read back.  Called with r->lock held.
+ * The run written into runs.json, in its place or as the newest, and
+ * with its traces into its own file; a stop asked of another worker is
+ * read back.  Called with r->lock held.
  */
 static void
 run_save(struct run *r)
 {
-	ucl_object_t		*top, *keep, *mine;
+	ucl_object_t		*top, *keep, *mine, *full;
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	size_t			 n;
+	char			 file[64], path[MAXPATHLEN];
 	bool			 found;
 
 	pthread_mutex_lock(&wf_lock);
 	if ((top = store_load(RUNS_FILE)) == NULL)
 		top = ucl_object_typed_new(UCL_OBJECT);
 	keep = ucl_object_typed_new(UCL_ARRAY);
-	mine = run_object(r, true);
+	full = run_object(r, true);
+	(void)store_save(run_file(r->id, file, sizeof(file)), full);
+	ucl_object_unref(full);
+	mine = run_object(r, false);
 	found = false;
 	n = 0;
 	it = NULL;
@@ -897,7 +915,14 @@ run_save(struct run *r)
 		n++;
 	}
 	while (n > RUNS_KEEP) {
-		ucl_object_unref(ucl_array_pop_first(keep));
+		ucl_object_t	*old = ucl_array_pop_first(keep);
+
+		/* Its traces go with it. */
+		snprintf(path, sizeof(path), "%s/%s", cfg.datadir, run_file(
+		    (uint32_t)ucl_object_toint(ucl_object_lookup(old, "id")),
+		    file, sizeof(file)));
+		(void)unlink(path);
+		ucl_object_unref(old);
 		n--;
 	}
 	ucl_object_unref(mine);
@@ -1851,6 +1876,8 @@ workflows_init(void)
 
 	refs_copy();
 	(void)kore_timer_add(refs_tick, 2000, NULL, 0);
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, RUNS_DIR);
+	(void)mkdir(path, 0700);
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, WF_LOCK);
 	if ((lockfd = open(path, O_RDWR | O_CREAT | O_CLOEXEC, 0600)) == -1 ||
 	    flock(lockfd, LOCK_EX | LOCK_NB) == -1) {
@@ -2089,7 +2116,20 @@ api_runs(struct http_request *req)
 		put(top, "ok", ucl_object_frombool(true));
 		return (reply_json(req, 200, top));
 	}
-	one = ucl_object_ref(one);
+	/* With its traces, from its own file; its state as the list has
+	 * it, which a restart may have made interrupted. */
+	{
+		ucl_object_t	*full;
+		char		 file[64];
+
+		if ((full = store_load(run_file(n, file, sizeof(file)))) !=
+		    NULL) {
+			put(full, "state", ucl_object_copy(ucl_object_lookup(
+			    one, "state")));
+			one = full;
+		} else
+			one = ucl_object_ref(one);
+	}
 	pthread_mutex_unlock(&wf_lock);
 	ucl_object_unref(top);
 	return (reply_json(req, 200, one));

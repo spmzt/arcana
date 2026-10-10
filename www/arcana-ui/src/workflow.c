@@ -37,9 +37,19 @@ static struct {
 	char		 pick[32];	/* "host:step" whose trace is shown */
 	char		 run_wf[16];	/* the one asked to run */
 	char		 error[300];
+	char		 load_error[300];	/* the lists could not be read */
 	double		 at;
 	bool		 loading;
+	/* The runs in the activity bar: each a task until it ends. */
+	struct {
+		long long	run;
+		int		op;
+	}		 watched[16];
+	int		 nwatched;
+	double		 watched_at;
 } wf;
+
+static void	runs_watch(void);
 
 static void	wf_load(void);
 
@@ -50,13 +60,105 @@ list_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	ucl_object_t	**slot = arg;
 
-	(void)err;
 	wf.loading = false;
-	if (status != 200)
+	if (status != 200) {
+		/* Said, not a loader for ever. */
+		snprintf(wf.load_error, sizeof(wf.load_error), "%s: %s",
+		    slot == &wf.jobs ? "jobs.json" : slot == &wf.runs ?
+		    "the runs" : slot == &wf.run ? "the run" : "the workflows",
+		    jstr(o, "error.message") != NULL ? jstr(o,
+		    "error.message") : err != NULL ? err : "no answer");
 		return;
+	}
+	wf.load_error[0] = '\0';
 	if (*slot != NULL)
 		ucl_object_unref(*slot);
 	*slot = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	if (slot == &wf.runs)
+		runs_watch();
+}
+
+/* The name of a workflow by its id, as the lists have it. */
+static const char *
+wf_name(const char *id)
+{
+	const ucl_object_t	*w;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (id != NULL && (w = ucl_object_iterate(jget(wf.list,
+	    "workflows"), &it, true)) != NULL)
+		if (jstr(w, "id") != NULL && strcmp(jstr(w, "id"), id) == 0)
+			return (jstr(w, "name"));
+	return (id != NULL ? id : "workflow");
+}
+
+/*
+ * Each run in the activity bar: one running becomes a task there, and
+ * ends as the run does, whether it was begun here, by the clock or by
+ * an event.
+ */
+static void
+runs_watch(void)
+{
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+	struct op		*o;
+	long long		 id;
+	int			 i, k;
+	bool			 running;
+	char			 title[160];
+
+	it = NULL;
+	while ((r = ucl_object_iterate(jget(wf.runs, "runs"), &it, true)) !=
+	    NULL) {
+		id = jint(r, "id", 0);
+		running = jstr(r, "state") != NULL && strcmp(jstr(r, "state"),
+		    "running") == 0;
+		for (i = 0; i < wf.nwatched; i++)
+			if (wf.watched[i].run == id)
+				break;
+		if (i == wf.nwatched) {
+			if (!running || wf.nwatched == 16)
+				continue;
+			snprintf(title, sizeof(title), "workflow %s", wf_name(
+			    jstr(r, "workflow")));
+			o = op_begin(title, "console");
+			wf.watched[i].run = id;
+			wf.watched[i].op = o->id;
+			wf.nwatched++;
+			continue;
+		}
+		if (running)
+			continue;
+		o = op_find(wf.watched[i].op);
+		if (o != NULL) {
+			const ucl_object_t	*h, *s;
+			ucl_object_iter_t	 hit, sit;
+			const char		*why;
+
+			/* Why it failed: the first step that did. */
+			why = NULL;
+			hit = NULL;
+			while (why == NULL && (h = ucl_object_iterate(jget(r,
+			    "hosts"), &hit, true)) != NULL) {
+				sit = NULL;
+				while ((s = ucl_object_iterate(jget(h, "steps"),
+				    &sit, true)) != NULL)
+					if (jstr(s, "state") != NULL && strcmp(
+					    jstr(s, "state"), "failed") == 0) {
+						why = jstr(s, "detail");
+						break;
+					}
+			}
+			op_end(o, strcmp(jstr(r, "state"), "done") == 0, why !=
+			    NULL ? why : strcmp(jstr(r, "state"), "done") != 0 ?
+			    jstr(r, "state") : NULL);
+		}
+		for (k = i; k + 1 < wf.nwatched; k++)
+			wf.watched[k] = wf.watched[k + 1];
+		wf.nwatched--;
+	}
 }
 
 static void
@@ -105,6 +207,12 @@ void
 workflows_tick(double now)
 {
 
+	/* The runs in the activity bar are followed from any page. */
+	if (wf.nwatched > 0 && app.online && now - wf.watched_at >
+	    WF_EVERY_MS) {
+		wf.watched_at = now;
+		api("GET", "/api/runs", NULL, list_cb, &wf.runs);
+	}
 	if (app.node != NODE_WORKFLOWS || !app.visible || wf.mode == WM_EDIT)
 		return;
 	if (now - wf.at > (any_running() ? WF_EVERY_MS : 15000))
@@ -1037,7 +1145,13 @@ view_workflows(struct html *h)
 {
 
 	h_raw(h, "<section class=\"workflows\">");
-	if (wf.jobs == NULL || wf.list == NULL)
+	if (wf.load_error[0] != '\0' && (wf.jobs == NULL || wf.list == NULL)) {
+		h_raw(h, "<div class=\"notice bad\">The workflows could not be "
+		    "read: ");
+		h_txt(h, wf.load_error);
+		h_raw(h, "</div><button class=\"small\" data-act=\"wf-reload\">"
+		    "Try again</button>");
+	} else if (wf.jobs == NULL || wf.list == NULL)
 		h_raw(h, "<div class=\"loader\"></div>");
 	else if (wf.mode == WM_EDIT && wf.draft != NULL)
 		view_edit(h);
@@ -1082,6 +1196,7 @@ started_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	snprintf(wf.run_id, sizeof(wf.run_id), "%lld", (long long)jint(o,
 	    "run", 0));
+	wf.watched_at = 0;	/* into the activity bar at once */
 	wf.mode = WM_RUN;
 	wf.pick[0] = '\0';
 	if (wf.run != NULL)
@@ -1372,6 +1487,9 @@ workflows_action(const char *act, const char *arg, const char *value)
 		wf.draft = ucl_object_copy(w);
 		wf.error[0] = '\0';
 		wf.mode = WM_EDIT;
+	} else if (strcmp(act, "wf-reload") == 0) {
+		wf.load_error[0] = '\0';
+		wf_load();
 	} else if (strcmp(act, "wf-back") == 0) {
 		wf.mode = WM_LIST;
 		wf_load();

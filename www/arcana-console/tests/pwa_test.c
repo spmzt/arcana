@@ -2399,10 +2399,12 @@ ATF_TC_BODY(pwa, tc)
 	    "{ 'Content-Type': 'application/json', 'X-Arcana': '1' }, body: "
 	    "JSON.stringify({ step: 5, keep: 720, cpu: cpu, mem: mem, swap: "
 	    "50 }) }))));");
+	/* The agent samples every five seconds and the console asks for
+	 * events every five: two clocks in a row, and the page's draw. */
 	run("window.lim(90, 1);");
 	wait_js("[...document.querySelectorAll('table.logs tbody tr')].some("
 	    "r => r.textContent.includes('threshold') && r.textContent."
-	    "includes('mem at'))", 20);
+	    "includes('mem at'))", 40);
 	/* Nothing was asked again for it: it came by itself. */
 	ATF_CHECK(js_true("!performance.getEntriesByType('resource').some("
 	    "e => e.name.includes('/events?after=') && e.startTime > "
@@ -2412,7 +2414,7 @@ ATF_TC_BODY(pwa, tc)
 	wait_js("[...document.querySelectorAll('table.logs tbody tr')].some("
 	    "r => r.textContent.includes('back under its limit of 90%')) && "
 	    "document.querySelector('.stage').textContent.includes("
-	    "'the moment the agent tells it')", 20);
+	    "'the moment the agent tells it')", 40);
 	shot("7r-events-live");
 	run("const s = document.querySelector('label.lg-file select'); "
 	    "s.value = 'auth.log'; s.dispatchEvent(new Event('input', "
@@ -2970,6 +2972,10 @@ ATF_TC_BODY(pwa, tc)
 	    "f.p_svc.value = 'sshd'; f.requestSubmit();");
 	wait_js("document.querySelectorAll('.wfgraph button.wfstep.done')."
 	    "length === 2", 30);
+	/* The run is a task of the activity bar too, and ended there. */
+	wait_js("document.querySelector('.dock').textContent.includes("
+	    "'workflow restart a service') && document.querySelector('.dock')"
+	    ".textContent.includes('done')", 15);
 	run("document.querySelector('.wfgraph button.wfstep').click()");
 	wait_js("document.querySelector('section.wftrace') && document."
 	    "querySelector('section.wftrace').textContent.includes('sshd')",

@@ -451,6 +451,8 @@ struct server	*cur_server(void);
 struct jailui	*jailui(struct server *, const char *);
 const ucl_object_t *find_jail(const struct server *, const char *);
 struct op	*op_find(int);
+struct op	*op_begin(const char *, const char *);
+void		 op_end(struct op *, bool, const char *);
 void		 confirm(const char *, const char *, const char *, bool,
 		    const char *, const char *, const char *, const char *);
 

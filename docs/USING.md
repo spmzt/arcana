@@ -26,6 +26,13 @@ The console is laid out as a tree and tabs.
   `arcana-agent` from the repository for every host, and **Update
   console** builds and installs the console itself there.
 - **Network**: the fleet as a map; see [The network](#the-network).
+- A workflow's run is a task of the activity bar as well, begun by
+  hand, by the clock or by an event, and ended there as the run ends,
+  with why when it failed. The runs' traces are kept each in a file of
+  its own (`runs/<id>.json` in the data directory), the list in
+  `runs.json` without them, so that the list stays quick to read and
+  write however much the steps answered. What cannot be read is said
+  on the page, with a way to try again.
 - **Workflows**: chains of steps the console keeps and runs on
   several hosts at once. A step is a job of any kind, its fields
   those `share/arcana/jobs.yaml` says the kind needs (marked) and

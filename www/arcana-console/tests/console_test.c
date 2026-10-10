@@ -973,6 +973,16 @@ ATF_TC_BODY(workflows, tc)
 	    "hosts.0.steps.1.title"));
 	ATF_CHECK(jstr(&r, "hosts.0.steps.1.trace.job.trace.0.label") !=
 	    NULL);
+	/* Its traces are in the run's own file, not in the list. */
+	snprintf(body, sizeof(body), "test -s data/runs/%s.json", run);
+	ATF_CHECK(system(body) == 0);
+	resp_free(&r);
+	http("GET", "/api/runs", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(strstr(r.body, "\"trace\"") == NULL);
+	ATF_CHECK(strstr(r.body, "\"state\":\"done\"") != NULL);
+	snprintf(path, sizeof(path), "/api/runs/%s", run);
+	http("GET", path, NULL, &r);
 	ATF_CHECK_STREQ("failed", jstr(&r, "hosts.0.steps.2.state"));
 	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.0.steps.3.state"));
 	ATF_CHECK_STREQ("done", jstr(&r, "hosts.0.steps.4.state"));
