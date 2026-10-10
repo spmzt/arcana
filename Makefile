@@ -32,24 +32,30 @@ TESTDIRS+=	www/arcana-console/tests
 .endif
 
 # A failed or broken test fails the target, with kyua's report on it
-# (less the environment, which can hold secrets).  The cases of a suite
-# run side by side, CHECK_JOBS of them at once: each has a directory and
-# sockets of its own.
+# (less the environment, which can hold secrets).  The suites run at
+# the same time, and the cases of each side by side, CHECK_JOBS of them
+# at once: each has a directory and sockets of its own.  Each suite's
+# lines carry its name, as they come interleaved; the build before it
+# is made with as many jobs.
 CHECK_JOBS?=	8
 # "all" as a dependency would not recurse: bsd.subdir.mk only descends
 # for targets named on the command line.
 check: .PHONY
-	@${MAKE} -C ${.CURDIR} all
-.for _d in ${TESTDIRS}
-	@echo "===> ${_d} (check)"
-	@set -o pipefail; cd ${.OBJDIR}/${_d} && kyua \
-	    -v parallelism=${CHECK_JOBS} \
-	    -v test_suites.FreeBSD.kore=${KORE_BIN} \
-	    -v test_suites.FreeBSD.dhparam=${KORE_DHPARAM} \
-	    test -k Kyuafile | sed -n '/->/p;$$p' || { kyua report \
-	    --verbose --results-filter broken,failed | awk '/^===> /{ \
-	    ctx = $$0 == "===> Execution context" } !ctx'; exit 1; }
-.endfor
+	@${MAKE} -j${CHECK_JOBS} -C ${.CURDIR} all
+	@rc=0; pids=""; \
+	for d in ${TESTDIRS}; do \
+	    ( set -o pipefail; cd ${.OBJDIR}/$$d && kyua \
+	        -v parallelism=${CHECK_JOBS} \
+	        -v test_suites.FreeBSD.kore=${KORE_BIN} \
+	        -v test_suites.FreeBSD.dhparam=${KORE_DHPARAM} \
+	        test -k Kyuafile 2>&1 | sed -n '/->/p;$$p' | \
+	        sed "s|^|$$d: |" || { kyua report --verbose \
+	        --results-filter broken,failed | awk '/^===> /{ \
+	        ctx = $$0 == "===> Execution context" } !ctx'; \
+	        exit 1; } ) & pids="$$pids $$!"; \
+	done; \
+	for p in $$pids; do wait $$p || rc=1; done; \
+	exit $$rc
 
 # Everything built is under obj/.
 clean cleandir: .PHONY
