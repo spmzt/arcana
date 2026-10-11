@@ -62,8 +62,10 @@
   supported: it would be kernel work, which Arcana does not take on
   (2026-10-11); the domains keep their own tunnels. 119-5: a control
   plane host per service, an edge whose BIRD reflects the others'
-  routes, each peering with it alone (5.1). Next: 5.2, the CPI as a
-  tunnel of its own and what remains of RFC 4364. Later: SASE.
+  routes, each peering with it alone (5.1); the CTVC, a control
+  tunnel of its own from each edge to the host over a UCS the
+  service names, the iBGP by it alone (5.2). Next: 5.3, the phase
+  closed on the lab with three jails. Later: SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:
