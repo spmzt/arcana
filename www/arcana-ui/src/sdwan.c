@@ -1043,15 +1043,24 @@ addressing(struct html *h, const ucl_object_t *v)
 		h_raw(h, "<span class=\"dim\">none</span>");
 		return;
 	}
-	if (strcmp(mode, "static") != 0) {
+	if (strcmp(mode, "static") != 0 && strcmp(mode, "dhcp") != 0 &&
+	    strcmp(mode, "slaac") != 0) {
 		h_txt(h, mode);
 		return;
 	}
-	/* One span: a card keeps the prefix and its gateway together. */
+	/* One span: a card keeps the prefix and its gateway together; the
+	 * hosts addressed by the edge say by what (dnsmasq, rtadvd). */
 	h_raw(h, "<span><span class=\"mono\">");
 	h_txt(h, jstr(v, "prefix"));
 	h_raw(h, "</span> <span class=\"dim\">via ");
 	joined(h, jget(v, "provider"), "—");
+	if (strcmp(mode, "dhcp") == 0)
+		h_raw(h, " · <span class=\"chip\" title=\"The edge gives the hosts "
+		    "their addresses: dnsmasq in the service's table\">DHCP</span>");
+	else if (strcmp(mode, "slaac") == 0)
+		h_raw(h, " · <span class=\"chip\" title=\"The hosts address "
+		    "themselves by the edge's router advertisements: rtadvd\">"
+		    "SLAAC</span>");
 	h_raw(h, "</span></span>");
 }
 
@@ -2260,6 +2269,67 @@ view_paths(struct html *h)
 	if (nf == 0)
 		h_raw(h, "<li class=\"dim\">None.</li>");
 	h_raw(h, "</ul></div>");
+	/* The hosts' addresses at the UNIs: each edge's dnsmasq instances,
+	 * a service each, and the leases they gave. */
+	h_raw(h, "<div class=\"sd-block\"><h3>Addresses given <small class=\"dim"
+	    "\">DHCP at the UNIs: dnsmasq, an instance of each service on each "
+	    "edge, in the service's table; the leases it gave</small></h3><table "
+	    "class=\"net sd sd-dhcp\"><thead><tr><th>Edge</th><th>Instance</th>"
+	    "<th>State</th><th>Address</th><th>Host</th><th>Client</th><th>"
+	    "Expires</th></tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while (sd.paths != NULL && (f = ucl_object_iterate(sd.paths, &it,
+	    true)) != NULL) {
+		const ucl_object_t	*di, *ls;
+		ucl_object_iter_t	 dit, lit;
+		unsigned int		 nl;
+
+		dit = NULL;
+		while ((di = ucl_object_iterate(jget(f, "dhcp"), &dit, true)) !=
+		    NULL) {
+			nl = jget(di, "leases") != NULL ? ucl_array_size(jget(di,
+			    "leases")) : 0;
+			n++;
+			h_raw(h, "<tr><td><b>");
+			h_txt(h, host_name(ucl_object_key(f)));
+			h_fmt(h, "</b></td><td class=\"mono\">%s <span class=\"dim\">"
+			    "fib %lld</span></td><td><span class=\"chip st-%s\">%s"
+			    "</span></td><td class=\"dim\" colspan=\"4\">%u lease%s"
+			    "</td></tr>", jstr(di, "name"), (long long)jint(di,
+			    "fib", 0), jbool(di, "running") ? "up" : "down", jbool(
+			    di, "running") ? "running" : "not running", nl, nl == 1
+			    ? "" : "s");
+			lit = NULL;
+			while ((ls = ucl_object_iterate(jget(di, "leases"), &lit,
+			    true)) != NULL) {
+				fmt_age(age, sizeof(age), (double)jint(ls, "expires",
+				    0) * 1000);
+				h_raw(h, "<tr><td></td><td></td><td></td><td class=\""
+				    "mono\">");
+				h_txt(h, jstr(ls, "address") != NULL ? jstr(ls,
+				    "address") : "");
+				h_raw(h, "</td><td>");
+				h_txt(h, jstr(ls, "name") != NULL ? jstr(ls, "name") :
+				    "");
+				h_raw(h, "</td><td class=\"mono dim\">");
+				h_txt(h, jstr(ls, "id") != NULL ? jstr(ls, "id") : "");
+				h_raw(h, "</td><td class=\"dim\">");
+				/* An expiry ahead reads as "in"; fmt_age says ago. */
+				if ((double)jint(ls, "expires", 0) * 1000 > arc_now())
+					h_fmt(h, "in %.0f min", ((double)jint(ls,
+					    "expires", 0) * 1000 - arc_now()) / 60000);
+				else
+					h_txt(h, age);
+				h_raw(h, "</td></tr>");
+			}
+		}
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">No DHCP at a UNI: an "
+		    "end point whose hosts are addressed by DHCP gets an instance "
+		    "once applied.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
 	/* Routing at the UNIs: each edge's BIRD instances, a service each,
 	 * and their protocols as birdc lists them. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Routing <small class=\"dim\">BGP "
@@ -2734,6 +2804,7 @@ sdwan_modal_service(struct html *h)
 	const char		*ifn, *val;
 	int			 i, n, fib;
 	bool			 edit;
+	char			 lb[600], lb2[300];
 
 	sw = swvc_shown();
 	if (app.modal == MODAL_SD_SWVC) {
@@ -3096,6 +3167,21 @@ sdwan_modal_service(struct html *h)
 		    NULL ? ucl_object_tostring_forced(ucl_array_find_index(jget(v,
 		    "provider"), 0)) : "", "10.1.0.1", "Their gateway, on the "
 		    "interface.");
+		h_raw(h, "</div><div class=\"two\"><label>The hosts' IPv4 addresses"
+		    "<select name=\"m4\">");
+		option(h, "static", "Static: the hosts set their own", jstr(v,
+		    "mode"));
+		option(h, "dhcp", "DHCP: given by the edge (dnsmasq)", jstr(v,
+		    "mode"));
+		h_raw(h, "</select><small>With DHCP the edge runs dnsmasq in the "
+		    "service's table, giving the subnet less what is reserved."
+		    "</small></label>");
+		text_field(h, "Reserved, not given out", "r4", csv(jget(v, "reserved"), lb, sizeof(lb)), "10.1.0.0/28, 10.1.0.200/30", "Prefixes inside the "
+		    "subnet, by commas (§11.4).");
+		h_raw(h, "</div><div class=\"two\">");
+		text_field(h, "DNS servers told", "d4", csv(jget(v, "dns"), lb2, sizeof(lb2)),
+		    "10.1.0.1", "IPv4 addresses, by commas.");
+		text_field(h, "Lease", "l4", jstr(v, "lease"), "12h", "m, h or d.");
 		h_raw(h, "</div><div class=\"two\">");
 		v = jget(u, "ipv6");
 		text_field(h, "IPv6 subnet", "p6", jstr(v, "prefix"), "2001:db8:1::/"
@@ -3103,6 +3189,23 @@ sdwan_modal_service(struct html *h)
 		text_field(h, "The edge's IPv6 address", "a6", jget(v, "provider") !=
 		    NULL ? ucl_object_tostring_forced(ucl_array_find_index(jget(v,
 		    "provider"), 0)) : "", "2001:db8:1::1", NULL);
+		h_raw(h, "</div><div class=\"two\"><label>The hosts' IPv6 addresses"
+		    "<select name=\"m6\">");
+		option(h, "static", "Static: the hosts set their own", jstr(v,
+		    "mode"));
+		option(h, "slaac", "SLAAC: by the edge's advertisements (rtadvd)",
+		    jstr(v, "mode"));
+		option(h, "dhcp", "DHCPv6: given by the edge (dnsmasq)", jstr(v,
+		    "mode"));
+		h_raw(h, "</select><small>SLAAC by the base system's rtadvd, a "
+		    "/64; DHCPv6 by dnsmasq, the hosts told to ask by its "
+		    "advertisements.</small></label>");
+		text_field(h, "Reserved, not given out", "r6", csv(jget(v, "reserved"), lb, sizeof(lb)), "2001:db8:1::/120", "Prefixes inside the subnet, "
+		    "by commas (§11.5).");
+		h_raw(h, "</div><div class=\"two\">");
+		text_field(h, "DNS servers told", "d6", csv(jget(v, "dns"), lb2, sizeof(lb2)),
+		    "2001:db8:1::1", "IPv6 addresses, by commas (RDNSS with SLAAC).");
+		text_field(h, "Lease", "l6", jstr(v, "lease"), "12h", "DHCPv6 only.");
 		h_raw(h, "</div>");
 		v = jget(o, "nat");
 		text_field(h, "NAT public prefix", "nat", v != NULL && ucl_object_type(
@@ -3740,17 +3843,29 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		put_int(u, "vlan", jstr(f, "vlan"));
 		for (i = 0; i < 2; i++) {
 			const char	*pk = i == 0 ? "p4" : "p6", *ak = i == 0 ? "a4" :
-			    "a6";
+			    "a6", *mk = i == 0 ? "m4" : "m6", *rk = i == 0 ? "r4" :
+			    "r6", *dk = i == 0 ? "d4" : "d6", *lk = i == 0 ? "l4" :
+			    "l6";
 
 			t = ucl_object_typed_new(UCL_OBJECT);
 			if (jstr(f, pk) != NULL && jstr(f, pk)[0] != '\0') {
-				put_str(t, "mode", "static");
+				put_str(t, "mode", jstr(f, mk) != NULL && jstr(f, mk)[0]
+				    != '\0' ? jstr(f, mk) : "static");
 				put_str(t, "prefix", jstr(f, pk));
 				arr = ucl_object_typed_new(UCL_ARRAY);
 				if (jstr(f, ak) != NULL && jstr(f, ak)[0] != '\0')
 					ucl_array_append(arr, ucl_object_fromstring(
 					    jstr(f, ak)));
 				ucl_object_insert_key(t, arr, "provider", 0, false);
+				/* What the edge's addressing takes. */
+				if (jstr(f, rk) != NULL && jstr(f, rk)[0] != '\0')
+					ucl_object_insert_key(t, list_of(jstr(f, rk)),
+					    "reserved", 0, false);
+				if (jstr(f, dk) != NULL && jstr(f, dk)[0] != '\0')
+					ucl_object_insert_key(t, list_of(jstr(f, dk)),
+					    "dns", 0, false);
+				if (jstr(f, lk) != NULL && jstr(f, lk)[0] != '\0')
+					put_str(t, "lease", jstr(f, lk));
 			} else
 				put_str(t, "mode", "none");
 			ucl_object_insert_key(u, t, i == 0 ? "ipv4" : "ipv6", 0,

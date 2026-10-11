@@ -3269,8 +3269,10 @@ static const char sdwan_good[] =
     "\"virtual-topology\":\"hub\"}},{\"name\":\"quiet\",\"direction\":"
     "\"egress\",\"criteria\":{\"egress-block\":\"discard\"}}],"
     "\"end_points\":[{\"id\":\"hq\",\"edge\":\"@A\",\"uni\":{\"id\":"
-    "\"uni-hq\",\"interface\":\"vtnet2\",\"ipv4\":{\"mode\":\"static\","
-    "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"]},\"routes\":"
+    "\"uni-hq\",\"interface\":\"vtnet2\",\"ipv4\":{\"mode\":\"dhcp\","
+    "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"],\"reserved\":"
+    "[\"10.1.0.0/26\",\"10.1.0.200/30\"],\"dns\":[\"10.1.0.1\"],\"lease\":"
+    "\"1h\"},\"routes\":"
     "[{\"prefix\":\"10.1.8.0/22\",\"next_hop\":\"10.1.0.2\",\"distance\":"
     "10}],\"bgp\":{\"family\":\"ipv4\",\"as\":65010,\"neighbors\":"
     "[\"10.1.0.2\"],\"password\":\"s3cret\",\"hold_time\":90,\"distance\":"
@@ -3278,8 +3280,8 @@ static const char sdwan_good[] =
     "\"hubonly\",\"egress\":\"quiet\"}],\"nat\":{\"ip_version\":\"ipv4\","
     "\"public_prefix\":\"198.51.100.0/30\"}},{\"id\":\"branch\",\"edge\":"
     "\"@B\",\"uni\":{\"id\":\"uni-br\",\"interface\":\"vtnet2\",\"vlan\":20,"
-    "\"ipv6\":{\"mode\":\"static\",\"prefix\":\"2001:db8:1::/64\","
-    "\"provider\":[\"2001:db8:1::1\"]}}}]}]}";
+    "\"ipv6\":{\"mode\":\"slaac\",\"prefix\":\"2001:db8:1::/64\","
+    "\"provider\":[\"2001:db8:1::1\"],\"dns\":[\"2001:db8:1::1\"]}}}]}]}";
 
 /* s with its first from made to, into out; false when from is not there. */
 static bool
@@ -3630,6 +3632,28 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "then reject;\\n\\tif net ~ [ 100.64.0.0/24+ ] then reject;\\n\\taccept;"
 	    "\\n}") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "export filter to_edges;") != NULL);
+	/* The hosts' addresses: hq's IPv4 by DHCP, dnsmasq from packages in
+	 * the service's table, its ranges the subnet less the reserved
+	 * prefixes and the provider's address, the router and DNS told;
+	 * branch's IPv6 by SLAAC, rtadvd on the VLAN with RDNSS; the
+	 * kernel forwarding on both edges. */
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"pkg-install\",\"packages\":[\"dnsmasq"
+	    "\"]") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-dhcp\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana "
+	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
+	    "%s", r.body);
+	/* The UNI is lo0 here (swapped in for the apply). */
+	ATF_CHECK_MSG(strstr(r.body, "interface=lo0\\ndhcp-range=set:lo0,"
+	    "10.1.0.64,10.1.0.199,255.255.255.0,1h\\ndhcp-range=set:lo0,"
+	    "10.1.0.204,10.1.0.254,255.255.255.0,1h\\ndhcp-option=tag:lo0,"
+	    "option:router,10.1.0.1\\ndhcp-option=tag:lo0,option:dns-server,"
+	    "10.1.0.1\\n") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"rtadvd\",\"interface\":\"vlan")
+	    != NULL && strstr(r.body, "\"args\":[\"2001:db8:1::/64\",\"2001:db8:1::1"
+	    "\"],\"persist\":true") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"kind\":\"sysctl\",\"args\":[\"net.inet6.ip6."
+	    "forwarding\",\"1\"]") != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b\\nprotocol bgp "
 	    "edge0 from edge {\\n\\tlocal 100.64.0.0 as 64600;\\n\\tneighbor "
 	    "100.64.0.1 as 64600;\\n}") != NULL, "%s", r.body);
@@ -3714,6 +3738,11 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(jstr(&r, "data.rules.set") != NULL && strcmp(jstr(&r,
 	    "data.rules.set"), "30") == 0, "%s", r.body);
 	resp_free(&r);
+	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-dnsmasq -C .*sdwan-dhcp-sw1"
+	    ".conf -x ' setfib.log") == 0);
+	ATF_CHECK(system("grep -q 'addr=\"2001:db8:1::\":prefixlen#64:rdnss=\""
+	    "2001:db8:1::1\":' rtadvd.conf && grep -q '^vlan[0-9]*:' rtadvd.conf "
+	    "&& grep -q '^rtadvd_enable=\"YES\"' rc.conf") == 0);
 	ATF_CHECK(system("grep -q '^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1"
 	    ".conf -s ' setfib.log") == 0);
 	ATF_CHECK(system("grep -q '^server ntp.example.org iburst$' ntp.conf && "

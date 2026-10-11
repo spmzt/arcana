@@ -231,6 +231,11 @@ kinds:
     needs: args
     uses: remove persist
     destroys: remove
+  - kind: rtadvd
+    title: Router advertisements on an interface, for SLAAC
+    needs: interface args
+    uses: remove persist
+    destroys: remove
   - kind: zfs
     title: zfs
     needs: verb args

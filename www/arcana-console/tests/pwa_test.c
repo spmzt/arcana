@@ -3520,8 +3520,18 @@ part_flows(void)
 	    "interface] option') && document.querySelector('form[data-form="
 	    "sd-ep] input[name=p4]').value === '10.10.0.0/24'", 15);
 	shot("9-sdwan-form-endpoint");
-	run("document.querySelector('.modal button[data-act=close]').click()");
-	wait_js("!document.querySelector('.modal')", 5);
+	/* The hosts' IPv4 addresses given by the edge (DHCP by dnsmasq),
+	 * with a reserved prefix, the DNS server told and a lease; the
+	 * service's table says DHCP, the document holds it. */
+	run("const f = document.querySelector('form[data-form=sd-ep]'); "
+	    "f.m4.value = 'dhcp'; f.r4.value = '10.10.0.0/28'; f.d4.value = "
+	    "'10.10.0.1'; f.l4.value = '2h'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-ep]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('hq') && r.textContent."
+	    "includes('DHCP'))", 20);
+	ATF_CHECK(system("grep -q dhcp data/sdwan.json && grep -q 10.10.0.0/28 "
+	    "data/sdwan.json && grep -q '\"2h\"' data/sdwan.json") == 0);
 	/*
 	 * Edges: the tunnels and what each edge is to have; applied, each
 	 * step done, and then nothing left to do.

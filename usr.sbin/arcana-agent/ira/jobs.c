@@ -181,6 +181,11 @@ title_of(const struct arc_job_spec *sp)
 		rc = asprintf(&t, "kld%s %s%s", sp->verb, sp->names.v[0],
 		    sp->persist ? " (kept)" : "");
 		break;
+	case ARC_JOB_KIND_RTADVD:
+		rc = asprintf(&t, "rtadvd %s %s%s%s", sp->remove ? "off" : "on",
+		    sp->interface, !sp->remove && sp->names.n > 0 ? " " : "",
+		    !sp->remove && sp->names.n > 0 ? sp->names.v[0] : "");
+		break;
 	case ARC_JOB_KIND_NTP:
 		rc = asprintf(&t, "ntp %s%s%s%s", sp->remove ? "servers removed" :
 		    "servers ", sp->remove || sp->names.n == 0 ? "" :
@@ -615,6 +620,10 @@ undo(struct qjob *j)
 	case ARC_JOB_KIND_NTP:
 		rc = do_ntp(&j->w, NULL, 0, true, sp->persist, &e);
 		break;
+	case ARC_JOB_KIND_RTADVD:
+		rc = do_rtadvd(&j->w, sp->interface, NULL, 0, true, sp->persist,
+		    &e);
+		break;
 	case ARC_JOB_KIND_IPFW:
 		/*
 		 * The rules that were there are swapped back in; a rule
@@ -830,6 +839,11 @@ run(struct qjob *j)
 		error = NULL;
 		ok = do_ntp(&j->w, sp->names.v, sp->names.n, sp->remove,
 		    sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_RTADVD:
+		error = NULL;
+		ok = do_rtadvd(&j->w, sp->interface, sp->names.v, sp->names.n,
+		    sp->remove, sp->persist, &error) == 0;
 		break;
 	case ARC_JOB_KIND_SYSCTL:
 		error = NULL;

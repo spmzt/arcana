@@ -37,9 +37,11 @@
   and the sampler, and threshold crossing alerts from the probes
   (1.6, 1.7; storage as a resource fault and interface-down are not
   raised yet); the lab run of 119-1 (1.8, in the verified list); the
-  monitor charts of each tunnel on Paths (UX-5). Next: DHCP and SLAAC
-  at a UNI (0.1, 0.2), then 119-2 on. Later: Mplify 119's tunnel (GRE
-  carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
+  monitor charts of each tunnel on Paths (UX-5); SLAAC at a UNI by
+  rtadvd and DHCP by dnsmasq in the service's table, with the kernel's
+  forwarding turned on by the apply (0.1, 0.2; verified with stand-ins,
+  the lab run to come). Next: 119-2 on. Later: Mplify 119's tunnel
+  (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.

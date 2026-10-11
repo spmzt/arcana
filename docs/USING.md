@@ -1072,11 +1072,13 @@ names them. It is one document with three parts:
     measured;
   - `end_points` (§10): an `id`, the `edge` it is on, its `uni` (§11:
     an `id`, the `interface`, a `vlan` or 0, `max_frame`, `ipv4` and
-    `ipv6` addressing, `none` or `static` with a `prefix` and the
-    `provider`'s addresses in it, `ll-only` for IPv6 too, and static
-    `routes`), its `policy_map` (each a `zone` or `Internet`, an `app`,
-    and its `ingress` and `egress` policies, over the zone's own) and
-    its `nat`.
+    `ipv6` addressing, `none`, `static`, `dhcp` or (IPv6) `slaac`, each
+    but none with a `prefix` and the `provider`'s addresses in it,
+    `ll-only` for IPv6 too; with dhcp or slaac the `reserved` prefixes
+    not given out, the `dns` servers told to the hosts and a `lease`
+    (§11.4, §11.5); and static `routes`), its `policy_map` (each a
+    `zone` or `Internet`, an `app`, and its `ingress` and `egress`
+    policies, over the zone's own) and its `nat`.
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,
@@ -1304,6 +1306,27 @@ written into its `ntp.conf` and ntpd enabled and restarted, with the
 FIBs, so faults line up and keys can turn together (Mplify 119
 §12.2.2); the `ntp` job does it, and `arcanactl ntp` by hand.
 
+**The hosts' addresses at a UNI** (§11.4, §11.5): with `static` the
+hosts set their own and the edge only has the provider's addresses on
+the interface. With `slaac` (IPv6, a /64) the base system's rtadvd
+advertises the prefix on the UNI, and the `dns` servers as RDNSS: an
+entry for the interface in `rtadvd.conf` between arcana's marks, the
+interface on `rtadvd_interfaces`, rtadvd enabled and restarted (the
+`rtadvd` job; `arcanactl rtadvd` by hand). With `dhcp` the edge gives
+the addresses: the base system has no DHCP server, so dnsmasq from
+packages (installed by the apply), an instance of each service on each
+edge, run in the service's table by setfib like the BIRD instances,
+checked by `dnsmasq --test` first, its pid and lease files beside the
+agent's kept files, started again at the agent's start (`sdwan-dhcp`;
+`arcanactl sdwan dhcp json`). It serves no DNS; its ranges are the
+subnet's hosts less the provider's addresses and the `reserved`
+prefixes (for IPv6, ::100 to ::ffff of the /64, less the reserved),
+the router the provider's first address, the `dns` servers told, the
+`lease` 12h unless said; for IPv6 it sends the router advertisements
+that tell the hosts to ask. The apply also turns the kernel's
+forwarding on, both families, kept in `sysctl.conf`. Paths lists each
+edge's instances and the leases they gave, under Addresses given.
+
 **Faults** (Mplify 119 §11.3): each edge keeps the day's faults, each
 with its time, type, severity (Warning, Minor, Major, Critical, and
 Cleared), what it is of, who saw it and a line: a tunnel the probes
@@ -1320,7 +1343,6 @@ and `damping`, intervals in a row, 1 by default) gives the probes the
 thresholds: a metric over its threshold for so many intervals is a
 fault, cleared when under it again for as many (MEF 105 §7.4,
 stateless, O1); the service form asks for them. AS override, damping and extended communities are
-refused, BIRD having no word for them; DHCP and SLAAC at a UNI are
-still to come. Paths shows each edge's instances and their protocols,
+refused, BIRD having no word for them. Paths shows each edge's instances and their protocols,
 as `birdc show protocols` lists them; `arcanactl sdwan bird json`
 sets them by hand.
