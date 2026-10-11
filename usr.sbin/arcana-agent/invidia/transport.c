@@ -19,6 +19,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/sysctl.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 
@@ -195,6 +196,23 @@ sctp_start(void *arg __unused)
 }
 
 /*
+ * Does the kernel have SCTP: compiled in, which kern.features.sctp
+ * says (the module registers it too), or the module loaded.
+ */
+static bool
+kernel_has_sctp(void)
+{
+	int	have;
+	size_t	len;
+
+	len = sizeof(have);
+	if (sysctlbyname("kern.features.sctp", &have, &len, NULL, 0) == 0 &&
+	    have != 0)
+		return (true);
+	return (kmod_loaded("sctp"));
+}
+
+/*
  * After the listeners asked for are up: an SCTP one for every TCP one,
  * started now when the kernel has SCTP, and left for transport_retry()
  * when it has not.
@@ -225,11 +243,12 @@ transport_init(cbl_ctx *ctx, cbl_loop *loop, cbl_tls *tls)
 		lst[nlst].sctp = true;
 		nlst++;
 	}
-	have = kmod_loaded("sctp");
+	have = kernel_has_sctp();
 	for (i = n; i < nlst; i++)
 		if (!have)
 			snprintf(lst[i].error, sizeof(lst[i].error), "the "
-			    "kernel has no SCTP: the sctp module is not "
+			    "kernel has no SCTP: not compiled in "
+			    "(kern.features.sctp), and the sctp module is not "
 			    "loaded");
 	if (have && nlst > n)
 		sctp_start(NULL);
@@ -241,9 +260,10 @@ transport_retry(void)
 {
 	int	error;
 
-	if (!kmod_loaded("sctp"))
-		return ("the kernel has no SCTP: load the sctp module first, "
-		    "from the kernel's modules");
+	if (!kernel_has_sctp())
+		return ("the kernel has no SCTP: it is not compiled in "
+		    "(kern.features.sctp), so load the sctp module first, from "
+		    "the kernel's modules");
 	pthread_mutex_lock(&t_lock);
 	while (t_busy)
 		pthread_cond_wait(&t_cv, &t_lock);

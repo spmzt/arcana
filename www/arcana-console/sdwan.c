@@ -1186,6 +1186,31 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    "underlay's"));
 	if (!domains(c, sw))
 		return (false);
+	/* The control plane (Mplify 119 §8.3, R9-R13): an edge of the
+	 * service the others' iBGP goes to, a route reflector. */
+	if ((v = ucl_object_lookup(sw, "control_plane")) != NULL && !is_null(
+	    v)) {
+		struct pfx	cid;
+		bool		here = false;
+
+		if (ucl_object_type(v) != UCL_OBJECT || str(v, "host") == NULL)
+			return (fail(c, "control_plane names its host, the edge "
+			    "whose BIRD reflects the others' routes (Mplify 119 "
+			    "§8.3)"));
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(sw,
+		    "end_points"), &it, true)) != NULL)
+			if (str(e, "edge") != NULL && strcmp(str(e, "edge"), str(v,
+			    "host")) == 0)
+				here = true;
+		if (!here)
+			return (fail(c, "control_plane.host is an edge of this "
+			    "service, with an end point in it"));
+		if (str(v, "cluster_id") != NULL && (!address(str(v,
+		    "cluster_id"), &cid) || cid.af != AF_INET))
+			return (fail(c, "control_plane.cluster_id is an IPv4 "
+			    "address, the reflector's cluster (RFC 4456)"));
+	}
 	/* SWVC List of UCSs (§9.3). */
 	if (!names(c, ucl_object_lookup(sw, "ucs"), "ucs", false))
 		return (false);
@@ -1637,7 +1662,7 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 }
 
 static const char *const tunnel_kinds[] = { "gre", "gif", "geneve", "wg",
-    NULL };
+    "uswe", NULL };
 
 /* The whole document, checked; false and why when it is not one. */
 static bool
@@ -1674,11 +1699,30 @@ check(const ucl_object_t *doc, struct ck *c)
 		if ((t = ucl_object_lookup(v, "tunnel")) != NULL) {
 			if (!one_of(str(t, "kind"), tunnel_kinds))
 				return (fail(c, "its tunnels are gre, gif, "
-				    "geneve or wg"));
-			if (strcmp(str(t, "kind"), "wg") == 0 && ucl_flag(t,
-			    "ipsec"))
-				return (fail(c, "wg encrypts by itself: no "
-				    "IPsec under it"));
+				    "geneve, wg or uswe"));
+			if ((strcmp(str(t, "kind"), "wg") == 0 || strcmp(str(t,
+			    "kind"), "uswe") == 0) && ucl_flag(t, "ipsec"))
+				return (fail(c, "%s encrypts by itself: no IPsec "
+				    "IKEv2 under it", str(t, "kind")));
+			/* The USWE tunnel (Mplify 119 §10): IPsec keyed by the
+			 * edges themselves, its algorithms and flags here. */
+			if (str(t, "algorithms") != NULL && !one_of(str(t,
+			    "algorithms"), (const char *const[]){
+			    "aes-cbc-hmac-sha2-256", "aes-gcm-16", NULL }))
+				return (fail(c, "algorithms is aes-cbc-hmac-sha2-256 "
+				    "or aes-gcm-16 (R44, R45)"));
+			if (ucl_object_lookup(t, "lifetime") != NULL && !is_int(
+			    ucl_object_lookup(t, "lifetime"), 120, 31536000,
+			    NULL))
+				return (fail(c, "lifetime is seconds, 120 to a "
+				    "year: the keys turn at its half (R110, "
+				    "R112)"));
+			if (strcmp(str(t, "kind"), "uswe") != 0 && (str(t,
+			    "algorithms") != NULL || ucl_object_lookup(t, "esn")
+			    != NULL || ucl_object_lookup(t, "encap") != NULL ||
+			    ucl_object_lookup(t, "lifetime") != NULL))
+				return (fail(c, "algorithms, esn, encap and lifetime "
+				    "are a uswe tunnel's"));
 		}
 	}
 	c->where[0] = '\0';

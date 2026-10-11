@@ -14,7 +14,7 @@
  *	fibs		net.fibs raised to the highest service FIB on it
  *	ipsec		strongSwan's key and daemon, when a tunnel wants it
  *	tvc:ID		its end of a tunnel (a Tunnel Virtual Connection,
- *			MEF 70.2 §7.10): gre, gif or geneve, maybe under
+ *			MEF 70.2 §7.10): gre, gif, geneve, wg or uswe, maybe under
  *			IPsec IKEv2, or wg; in the service's FIB, its outer
  *			packets in FIB 0, an inner /31 and /127 from the
  *			service's reserved prefixes
@@ -87,6 +87,8 @@ enum { PH_FIBS = 1, PH_IPSEC, PH_TVC, PH_PEER, PH_PROBE, PH_RULES, PH_STEER,
 
 static pthread_mutex_t	st_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool		applying;
+static bool		rekeying;	/* a uswe tunnel's keys being turned */
+#define	USWE_LIFETIME_S	86400	/* a uswe tunnel's keys, unless the UCS says */
 
 static const char	*server_name_of(const char *);
 struct plan;
@@ -521,8 +523,8 @@ tunnel_of(const ucl_object_t *ucs, const char **kindp, bool *ipsecp,
 	t = ucl_object_lookup(ucs, "tunnel");
 	*kindp = t != NULL && str(t, "kind") != NULL ? str(t, "kind") : "gre";
 	*saidp = t != NULL && ucl_object_lookup(t, "ipsec") != NULL;
-	if (strcmp(*kindp, "wg") == 0)
-		*ipsecp = false;
+	if (strcmp(*kindp, "wg") == 0 || strcmp(*kindp, "uswe") == 0)
+		*ipsecp = false;	/* encrypted by itself */
 	else if (*saidp)
 		*ipsecp = ucl_flag(t, "ipsec");
 	else
@@ -553,7 +555,8 @@ ifname_of(const char *kind, int64_t unit, char *buf, size_t len)
 
 	snprintf(buf, len, "%s%jd", strcmp(kind, "wg") == 0 ? "wg" :
 	    strcmp(kind, "geneve") == 0 ? "geneve" : strcmp(kind, "gif") ==
-	    0 ? "gif" : "gre", (intmax_t)unit);
+	    0 ? "gif" : strcmp(kind, "uswe") == 0 ? "ipsec" : "gre",
+	    (intmax_t)unit);
 	return (buf);
 }
 
@@ -659,6 +662,10 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 				put(p, "tunnelfib", I(ucl_object_toint(
 				    ucl_object_lookup(a, "vrf"))));
 		}
+		/* A USWE tunnel is an ipsec(4) interface whose SAs the agent
+		 * keys: its reqid is its unit. */
+		if (strcmp(kind, "uswe") == 0)
+			put(p, "reqid", I(unit));
 		if (str(a, "inner4") != NULL) {
 			snprintf(port, sizeof(port), "%s/31", str(a, "inner4"));
 			put(p, "address", S(port));
@@ -678,6 +685,66 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 	unmake(o, job("if-destroy", "interface", S(ifn), "persist", B(true),
 	    NULL));
 
+	/* A USWE tunnel (Mplify 119 §10): this end's key pair before the
+	 * interface, the SAs of both directions derived from the far end's
+	 * public half after it, as ${uswe:SID:IF} once that end has one. */
+	if (strcmp(kind, "uswe") == 0) {
+		const ucl_object_t	*tt;
+		ucl_object_t		*args;
+		const char		*alg;
+
+		snprintf(key, sizeof(key), "uswekey:%s", ifn);
+		o = object(pl, sid, key, PH_IPSEC, "%s: its key pair, X25519, "
+		    "kept by the agent", ifn);
+		if (o != NULL)
+			make(o, job("ipsec-sa", "verb", S("key"), "interface",
+			    S(ifn), NULL));
+		snprintf(key, sizeof(key), "peer:%s", id);
+		o = object(pl, sid, key, PH_PEER, "%s: the far end, %s, its "
+		    "keys from the two halves", ifn, str(b, "underlay"));
+		if (o == NULL)
+			return;
+		tt = ucl_object_lookup(t, "tunnel");
+		alg = str(tt, "algorithms") != NULL ? str(tt, "algorithms") :
+		    "aes-cbc-hmac-sha2-256";
+		args = ucl_object_typed_new(UCL_ARRAY);
+		ucl_array_append(args, S("peer"));
+		snprintf(key, sizeof(key), "${uswe:%s:%s}", str(b, "edge"), str(b,
+		    "ifname"));
+		ucl_array_append(args, S(key));
+		ucl_array_append(args, S("enc"));
+		ucl_array_append(args, S(strcmp(alg, "aes-gcm-16") == 0 ?
+		    "aes-gcm-16" : "aes-cbc"));
+		if (strcmp(alg, "aes-gcm-16") != 0) {
+			ucl_array_append(args, S("auth"));
+			ucl_array_append(args, S("hmac-sha2-256"));
+		}
+		if (tt == NULL || ucl_object_lookup(tt, "encap") == NULL ||
+		    ucl_flag(tt, "encap"))
+			ucl_array_append(args, S("encap"));
+		if (tt == NULL || ucl_object_lookup(tt, "esn") == NULL ||
+		    ucl_flag(tt, "esn"))
+			ucl_array_append(args, S("esn"));
+		ucl_array_append(args, S("epoch"));
+		ucl_array_append(args, S("0"));
+		/* The lifetime, kept with the SAs: the manager turns the keys
+		 * at its half (R110, R112). */
+		ucl_array_append(args, S("lifetime"));
+		snprintf(key, sizeof(key), "%jd", (intmax_t)(tt != NULL &&
+		    ucl_object_lookup(tt, "lifetime") != NULL ? ucl_object_toint(
+		    ucl_object_lookup(tt, "lifetime")) : USWE_LIFETIME_S));
+		ucl_array_append(args, S(key));
+		p = job("ipsec-sa", "verb", S("derive"), "interface", S(ifn),
+		    "reqid", I(unit), "tunnel_local", S(str(a, "underlay")),
+		    "tunnel_remote", S(str(b, "underlay")), "args", args, NULL);
+		/* Made again when the far end's interface is: a new pair. */
+		put(p, "_after", S(digest(t, h, sizeof(h))));
+		make(o, p);
+		unmake(o, job("ipsec-sa", "verb", S("clear"), "interface", S(ifn),
+		    "reqid", I(unit), "tunnel_local", S(str(a, "underlay")),
+		    "tunnel_remote", S(str(b, "underlay")), NULL));
+		return;
+	}
 	/* The far end, as it is known: its key, made again with it. */
 	if (strcmp(kind, "wg") != 0 && !ipsec)
 		return;
@@ -835,7 +902,8 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					 * encrypted (R39): so it is, unless the
 					 * UCS says no, which no path mends. */
 					if (always && !ipsec && strcmp(kind,
-					    "wg") != 0) {
+					    "wg") != 0 && strcmp(kind, "uswe") !=
+					    0) {
 						if ((said && !ucl_flag(
 						    ucl_object_lookup(ux,
 						    "tunnel"), "ipsec")) ||
@@ -915,9 +983,15 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					put(t, "fib", I(ucl_object_toint(
 					    ucl_object_lookup(sw, "fib"))));
 					put(t, "kind", S(kind));
+					/* The UCS's tunnel entry, for what a uswe
+					 * tunnel's SAs are made of. */
+					if (ucl_object_lookup(ux, "tunnel") != NULL)
+						put(t, "tunnel", ucl_object_copy(
+						    ucl_object_lookup(ux, "tunnel")));
 					put(t, "ipsec", B(ipsec));
 					put(t, "encrypted", B(ipsec ||
-					    strcmp(kind, "wg") == 0));
+					    strcmp(kind, "wg") == 0 || strcmp(kind,
+					    "uswe") == 0));
 					put(t, "public", B(public));
 					put(t, "backup", B(ucl_flag(x,
 					    "backup") || ucl_flag(y, "backup")));
@@ -2996,7 +3070,7 @@ static char *
 bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 {
 	struct kore_buf		*b;
-	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *v;
+	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *v, *cp;
 	ucl_object_iter_t	 it, tit;
 	const char		*rid, *ifn;
 	char			 ifbuf[32], ifaces[1200], sym[80], *out;
@@ -3108,7 +3182,9 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		    "multiplier") != NULL ? ucl_object_toint(ucl_object_lookup(
 		    bfd, "multiplier")) : 3));
 	}
-	/* iBGP with each other edge, by each tunnel between them. */
+	/* iBGP with each other edge, by each tunnel between them; or, with
+	 * a control plane (Mplify 119 §8.3), with its host alone, which
+	 * reflects to all (RFC 4456). */
 	/* What goes to the other edges: the UNIs' subnets and what the
 	 * UNIs learn, not what the kernel's table holds of the console's
 	 * (each edge has its own) nor the tunnels' own addresses, which a
@@ -3147,6 +3223,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	kore_buf_appendf(b, "\tipv4 {\n\t\timport all;\n\t\texport filter "
 	    "to_edges;\n\t\tnext hop self;\n\t};\n\tipv6 {\n\t\timport all;\n\t\t"
 	    "export filter to_edges;\n\t\tnext hop self;\n\t};\n}\n\n");
+	cp = is_nullish(ucl_object_lookup(sw, "control_plane")) ? NULL :
+	    ucl_object_lookup(sw, "control_plane");
 	k = 0;
 	it = NULL;
 	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
@@ -3164,12 +3242,25 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 			continue;
 		if (str(far, "inner4") == NULL && str(far, "inner6") == NULL)
 			continue;
-		kore_buf_appendf(b, "# %s, to %s\nprotocol bgp edge%d from edge {\n\tlocal "
-		    "%s as %jd;\n\tneighbor %s as %jd;\n}\n\n", str(t, "id"),
-		    server_name_of(str(far, "edge")), k++, str(me, "inner4") !=
-		    NULL ? str(me, "inner4") : str(me, "inner6"), (intmax_t)as,
-		    str(far, "inner4") != NULL ? str(far, "inner4") : str(far,
-		    "inner6"), (intmax_t)as);
+		/* An edge of a service with a control plane peers with its
+		 * host alone; the host, with every edge, as their reflector. */
+		if (cp != NULL && strcmp(sid, str(cp, "host")) != 0 && strcmp(
+		    str(far, "edge"), str(cp, "host")) != 0)
+			continue;
+		kore_buf_appendf(b, "# %s, to %s%s\nprotocol bgp edge%d from edge {\n\t"
+		    "local %s as %jd;\n\tneighbor %s as %jd;\n", str(t, "id"),
+		    server_name_of(str(far, "edge")), cp == NULL ? "" : strcmp(sid,
+		    str(cp, "host")) == 0 ? ", a client of this reflector" : ", "
+		    "the control plane", k++, str(me, "inner4") != NULL ? str(me,
+		    "inner4") : str(me, "inner6"), (intmax_t)as, str(far, "inner4")
+		    != NULL ? str(far, "inner4") : str(far, "inner6"), (intmax_t)as);
+		if (cp != NULL && strcmp(sid, str(cp, "host")) == 0) {
+			kore_buf_appendf(b, "\trr client;\n");
+			if (str(cp, "cluster_id") != NULL)
+				kore_buf_appendf(b, "\trr cluster id %s;\n", str(cp,
+				    "cluster_id"));
+		}
+		kore_buf_appendf(b, "}\n\n");
 	}
 	/* At each UNI here: BGP, OSPF, as its entry says. */
 	it = NULL;
@@ -3874,6 +3965,46 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				return (false);
 	}
 	/* Routing at the UNIs, once they are up; the hosts' addresses. */
+	/* A control plane host reflects for every other edge of its service:
+	 * each must have a tunnel to it (R9). */
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
+	    true)) != NULL) {
+		const ucl_object_t	*cp, *e0, *e1;
+
+		if (is_nullish(cp = ucl_object_lookup(sw, "control_plane")))
+			continue;
+		it2 = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+		    &it2, true)) != NULL) {
+			bool	joined = false;
+
+			if (strcmp(str(ep, "edge"), str(cp, "host")) == 0)
+				continue;
+			it3 = NULL;
+			while (!joined && (t = ucl_object_iterate(pl->tunnels, &it3,
+			    true)) != NULL) {
+				if (strcmp(str(t, "swvc"), str(sw, "id")) != 0)
+					continue;
+				e0 = ucl_array_find_index(ucl_object_lookup(t, "ends"),
+				    0);
+				e1 = ucl_array_find_index(ucl_object_lookup(t, "ends"),
+				    1);
+				joined = (strcmp(str(e0, "edge"), str(ep, "edge")) == 0
+				    && strcmp(str(e1, "edge"), str(cp, "host")) == 0) ||
+				    (strcmp(str(e1, "edge"), str(ep, "edge")) == 0 &&
+				    strcmp(str(e0, "edge"), str(cp, "host")) == 0);
+			}
+			if (!joined) {
+				snprintf(pl->why, sizeof(pl->why), "service %s: its "
+				    "control plane host %s has no tunnel to edge %s, "
+				    "which the topology would need for its routes to "
+				    "be reflected", str(sw, "id"), server_name_of(str(
+				    cp, "host")), server_name_of(str(ep, "edge")));
+				return (false);
+			}
+		}
+	}
 	bird_build(pl, doc);
 	dhcp_build(pl, doc);
 	return (true);
@@ -4031,13 +4162,15 @@ resolve(struct run *r, const char *ref, char *why, size_t wlen)
 	ucl_object_iter_t it;
 	ucl_object_t	*ans;
 	int		 status;
-	bool		 wg;
+	bool		 wg, uswe;
 
 	if ((v = ucl_object_lookup(r->keys, ref)) != NULL)
 		return (strdup(ucl_object_tostring(v)));
 	wg = strncmp(ref, "${wg:", 5) == 0;
+	uswe = strncmp(ref, "${uswe:", 7) == 0;
 	ifn[0] = '\0';
-	if (wg ? sscanf(ref, "${wg:%15[^:]:%31[^}]}", sid, ifn) != 2 :
+	if (wg ? sscanf(ref, "${wg:%15[^:]:%31[^}]}", sid, ifn) != 2 : uswe ?
+	    sscanf(ref, "${uswe:%15[^:]:%31[^}]}", sid, ifn) != 2 :
 	    sscanf(ref, "${ipsec:%15[^}]}", sid) != 1) {
 		snprintf(why, wlen, "%s is not a reference", ref);
 		return (NULL);
@@ -4047,11 +4180,20 @@ resolve(struct run *r, const char *ref, char *why, size_t wlen)
 		snprintf(why, wlen, "no server %s", sid);
 		return (NULL);
 	}
-	json = hosts_net(uri, peer, name, wg ? "wireguard" : "ipsec", &status);
+	json = uswe ? hosts_read(uri, peer, name, "sdwan", &status) : hosts_net(
+	    uri, peer, name, wg ? "wireguard" : "ipsec", &status);
 	ans = parse(json);
 	free(json);
 	out = NULL;
-	if (wg) {
+	if (uswe) {
+		/* The public half of that end's pair, as its agent tells it. */
+		it = NULL;
+		while ((i = ucl_object_iterate(at_path(ans, "data", "keys"), &it,
+		    true)) != NULL)
+			if (str(i, "interface") != NULL && strcmp(str(i,
+			    "interface"), ifn) == 0 && str(i, "public") != NULL)
+				out = strdup(str(i, "public"));
+	} else if (wg) {
 		it = NULL;
 		while ((i = ucl_object_iterate(at_path(ans, "data",
 		    "interfaces"), &it, true)) != NULL)
@@ -4063,8 +4205,8 @@ resolve(struct run *r, const char *ref, char *why, size_t wlen)
 	if (ans != NULL)
 		ucl_object_unref(ans);
 	if (out == NULL) {
-		snprintf(why, wlen, "%s has no %s key yet", name, wg ? ifn :
-		    "IPsec");
+		snprintf(why, wlen, "%s has no %s key yet", name, wg || uswe ?
+		    ifn : "IPsec");
 		return (NULL);
 	}
 	ucl_object_insert_key(r->keys, S(out), ref, 0, true);
@@ -4084,6 +4226,32 @@ job_ready(struct run *r, const ucl_object_t *j, char *why, size_t wlen)
 	(void)ucl_object_delete_key(c, "_after");
 	it = NULL;
 	while ((v = ucl_object_iterate(j, &it, true)) != NULL) {
+		if (ucl_object_type(v) == UCL_ARRAY) {
+			/* A list of words with a reference among them. */
+			const ucl_object_t	*e;
+			ucl_object_iter_t	 ait;
+			ucl_object_t		*list;
+			unsigned int		 k = 0;
+
+			list = (ucl_object_t *)(uintptr_t)ucl_object_lookup(c,
+			    ucl_object_key(v));
+			ait = NULL;
+			while ((e = ucl_object_iterate(v, &ait, true)) != NULL) {
+				if (ucl_object_type(e) == UCL_STRING && strncmp(
+				    ucl_object_tostring(e), "${", 2) == 0) {
+					if ((val = resolve(r, ucl_object_tostring(e),
+					    why, wlen)) == NULL) {
+						ucl_object_unref(c);
+						return (NULL);
+					}
+					ucl_object_unref(ucl_array_replace_index(
+					    list, S(val), k));
+					free(val);
+				}
+				k++;
+			}
+			continue;
+		}
 		if (ucl_object_type(v) != UCL_STRING || strncmp(
 		    ucl_object_tostring(v), "${", 2) != 0)
 			continue;
@@ -4676,6 +4844,308 @@ sent_of(const ucl_object_t *st, const char *sid)
 }
 
 /* One tick: every edge's steering looked at, and sent where changed. */
+/* ---- The keys turned at the half-life (Mplify 119 R110, R112) -------- */
+
+#define	MGR_REKEY_RETRY_S	120	/* a rotation that failed, tried again after */
+
+/*
+ * The derive job of one end of a uswe tunnel, as applied, and the
+ * server it is on (not the one to skip); NULL when there is none.
+ */
+static ucl_object_t *
+rekey_end(const ucl_object_t *ap, const char *id, const char *skip,
+    char *sid, size_t slen)
+{
+	const ucl_object_t	*s, *d, *j;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*spec, *c;
+	char			 key[200];
+
+	snprintf(key, sizeof(key), "peer:%s", id);
+	it = NULL;
+	while ((s = ucl_object_iterate(ap, &it, true)) != NULL) {
+		if (skip != NULL && strcmp(ucl_object_key(s), skip) == 0)
+			continue;
+		if ((d = ucl_object_lookup(s, key)) == NULL || (spec = parse(
+		    str(d, "spec"))) == NULL)
+			continue;
+		j = ucl_array_find_index(ucl_object_lookup(spec, "make"), 0);
+		if (j != NULL && str(j, "kind") != NULL && strcmp(str(j, "kind"),
+		    "ipsec-sa") == 0 && str(j, "verb") != NULL && strcmp(str(j,
+		    "verb"), "derive") == 0) {
+			c = ucl_object_copy(j);
+			ucl_object_unref(spec);
+			(void)ucl_object_delete_key(c, "_after");
+			snprintf(sid, slen, "%s", ucl_object_key(s));
+			return (c);
+		}
+		ucl_object_unref(spec);
+	}
+	return (NULL);
+}
+
+/* An interface's keys entry of its host's sdwan read, or NULL. */
+static ucl_object_t *
+rekey_keys_of(const char *sid, const char *ifn, char *why, size_t wlen)
+{
+	char			 uri[256], peer[256], name[128], *json;
+	ucl_object_t		*ans, *out;
+	const ucl_object_t	*i;
+	ucl_object_iter_t	 it;
+	int			 status;
+
+	if (!host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+	    sizeof(name))) {
+		snprintf(why, wlen, "no server %s", sid);
+		return (NULL);
+	}
+	json = hosts_read(uri, peer, name, "sdwan", &status);
+	ans = parse(json);
+	free(json);
+	out = NULL;
+	it = NULL;
+	while (ans != NULL && (i = ucl_object_iterate(at_path(ans, "data",
+	    "keys"), &it, true)) != NULL)
+		if (str(i, "interface") != NULL && strcmp(str(i, "interface"),
+		    ifn) == 0)
+			out = ucl_object_copy(i);
+	if (ans != NULL)
+		ucl_object_unref(ans);
+	if (out == NULL)
+		snprintf(why, wlen, "%s tells of no keys for %s", name, ifn);
+	return (out);
+}
+
+/* What is known of a tunnel's rotation, kept and written as it goes. */
+static void
+rekey_set(ucl_object_t *st, const char *id, const char *state,
+    const char *step, const char *why)
+{
+	ucl_object_t	*all, *rk;
+
+	if ((all = (ucl_object_t *)(uintptr_t)ucl_object_lookup(st,
+	    "rekeys")) == NULL) {
+		all = ucl_object_typed_new(UCL_OBJECT);
+		put(st, "rekeys", all);
+	}
+	rk = ucl_object_typed_new(UCL_OBJECT);
+	put(rk, "at", I(time(NULL)));
+	put(rk, "state", S(state));
+	put(rk, "step", S(step));
+	if (why != NULL)
+		put(rk, "why", S(why));
+	put(all, id, rk);
+	pthread_mutex_lock(&st_lock);
+	if (!applying)
+		state_save(st);
+	pthread_mutex_unlock(&st_lock);
+}
+
+/*
+ * One tunnel's keys turned, both ends in step (Mplify 119 R110, R112):
+ * the next pair made on each, its public half read, the new SAs from
+ * the two put in inbound on both, then outbound, then committed on
+ * both; so neither end ever sends on keys the other has not got, and
+ * no packet is lost.  What goes wrong is kept here, and the end it
+ * went wrong on says so as a fault.
+ */
+static bool
+rekey_run(ucl_object_t *st, const char *id, char *why, size_t wlen)
+{
+	static const char *const dirs[] = { "in", "out" };
+	ucl_object_t		*end[2], *j, *args, *keys;
+	const ucl_object_t	*a;
+	char			 sid[2][40], *next[2], w2[300];
+	const char		*ifn[2], *stage;
+	size_t			 k, d, i, n;
+	bool			 ok;
+
+	pthread_mutex_lock(&st_lock);
+	rekeying = true;
+	pthread_mutex_unlock(&st_lock);
+	end[0] = rekey_end(ucl_object_lookup(st, "applied"), id, NULL, sid[0],
+	    sizeof(sid[0]));
+	end[1] = end[0] != NULL ? rekey_end(ucl_object_lookup(st, "applied"),
+	    id, sid[0], sid[1], sizeof(sid[1])) : NULL;
+	if (end[1] == NULL) {
+		snprintf(why, wlen, "%s is not a uswe tunnel applied on two "
+		    "edges", id);
+		if (end[0] != NULL)
+			ucl_object_unref(end[0]);
+		rekey_set(st, id, "failed", "ends", why);
+		pthread_mutex_lock(&st_lock);
+		rekeying = false;
+		pthread_mutex_unlock(&st_lock);
+		return (false);
+	}
+	ifn[0] = str(end[0], "interface");
+	ifn[1] = str(end[1], "interface");
+	next[0] = next[1] = NULL;
+	ok = true;
+	stage = "keys";
+	rekey_set(st, id, "running", stage, NULL);
+	/* The next pair on each end. */
+	for (k = 0; ok && k < 2; k++) {
+		args = ucl_object_typed_new(UCL_ARRAY);
+		ucl_array_append(args, S("next"));
+		j = job("ipsec-sa", "verb", S("key"), "interface", S(ifn[k]),
+		    "args", args, NULL);
+		if (!job_run(sid[k], j, w2, sizeof(w2))) {
+			snprintf(why, wlen, "%s: %s", server_name_of(sid[k]), w2);
+			ok = false;
+		}
+		ucl_object_unref(j);
+	}
+	/* Its public half, read from each. */
+	for (k = 0; ok && k < 2; k++) {
+		keys = rekey_keys_of(sid[k], ifn[k], w2, sizeof(w2));
+		if (keys == NULL || str(keys, "next") == NULL) {
+			if (keys != NULL)
+				snprintf(w2, sizeof(w2), "%s has no next half for "
+				    "%s", server_name_of(sid[k]), ifn[k]);
+			snprintf(why, wlen, "%s", w2);
+			ok = false;
+		} else
+			next[k] = strdup(str(keys, "next"));
+		if (keys != NULL)
+			ucl_object_unref(keys);
+	}
+	/* The new SAs in, then out, on both: each end's derive as applied,
+	 * the far half the far end's next one. */
+	for (d = 0; ok && d < 2; d++) {
+		stage = dirs[d];
+		rekey_set(st, id, "running", stage, NULL);
+		for (k = 0; ok && k < 2; k++) {
+			j = ucl_object_copy(end[k]);
+			args = (ucl_object_t *)(uintptr_t)ucl_object_lookup(j,
+			    "args");
+			n = args != NULL ? ucl_array_size(args) : 0;
+			for (i = 0; i < n; i++) {
+				a = ucl_array_find_index(args, (unsigned int)i);
+				if (ucl_object_type(a) == UCL_STRING && strncmp(
+				    ucl_object_tostring(a), "${uswe:", 7) == 0)
+					ucl_object_unref(ucl_array_replace_index(
+					    args, S(next[!k]), (unsigned int)i));
+			}
+			ucl_array_append(args, S("next"));
+			ucl_array_append(args, S("install"));
+			ucl_array_append(args, S(dirs[d]));
+			if (!job_run(sid[k], j, w2, sizeof(w2))) {
+				snprintf(why, wlen, "%s, %s: %s", server_name_of(
+				    sid[k]), dirs[d], w2);
+				ok = false;
+			}
+			ucl_object_unref(j);
+		}
+	}
+	/* Committed on both: the old out, the next pair the pair. */
+	if (ok) {
+		stage = "commit";
+		rekey_set(st, id, "running", stage, NULL);
+	}
+	for (k = 0; ok && k < 2; k++) {
+		j = job("ipsec-sa", "verb", S("commit"), "interface", S(ifn[k]),
+		    "reqid", I(ucl_object_toint(ucl_object_lookup(end[k],
+		    "reqid"))), "tunnel_local", S(str(end[k], "tunnel_local")),
+		    "tunnel_remote", S(str(end[k], "tunnel_remote")), NULL);
+		if (!job_run(sid[k], j, w2, sizeof(w2))) {
+			snprintf(why, wlen, "%s, commit: %s", server_name_of(sid[k]),
+			    w2);
+			ok = false;
+		}
+		ucl_object_unref(j);
+	}
+	rekey_set(st, id, ok ? "done" : "failed", stage, ok ? NULL : why);
+	thread_log(ok ? LOG_INFO : LOG_WARNING, "sdwan: the keys of %s %s", id,
+	    ok ? "turned" : why);
+	free(next[0]);
+	free(next[1]);
+	ucl_object_unref(end[0]);
+	ucl_object_unref(end[1]);
+	pthread_mutex_lock(&st_lock);
+	rekeying = false;
+	pthread_mutex_unlock(&st_lock);
+	return (ok);
+}
+
+/* Is an end past the half-life of its keys, or a rotation left half done? */
+static bool
+rekey_due(const char *sid, const char *ifn, time_t now)
+{
+	ucl_object_t	*keys;
+	char		 why[300];
+	int64_t		 at, life;
+	bool		 due;
+
+	if ((keys = rekey_keys_of(sid, ifn, why, sizeof(why))) == NULL)
+		return (false);
+	at = ucl_object_toint(ucl_object_lookup(keys, "keyed_at"));
+	life = ucl_object_toint(ucl_object_lookup(keys, "lifetime"));
+	due = ucl_flag(keys, "pending") || (at > 0 && life > 0 && now - at >=
+	    life / 2);
+	ucl_object_unref(keys);
+	return (due);
+}
+
+/*
+ * Each applied uswe tunnel, once: its keys turned when either end is
+ * past the half-life, or was left with a rotation half done; not again
+ * for a while after one that failed.
+ */
+static void
+rekey_tick(ucl_object_t *st, time_t now)
+{
+	const ucl_object_t	*ap, *s, *d, *rk, *j, *a;
+	ucl_object_iter_t	 it, dit, ait;
+	ucl_object_t		*spec, *seen;
+	char			 far[16], farif[32], why[300];
+	const char		*id;
+
+	ap = ucl_object_lookup(st, "applied");
+	seen = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((s = ucl_object_iterate(ap, &it, true)) != NULL) {
+		dit = NULL;
+		while ((d = ucl_object_iterate(s, &dit, true)) != NULL) {
+			if (strncmp(ucl_object_key(d), "peer:", 5) != 0 || (spec =
+			    parse(str(d, "spec"))) == NULL)
+				continue;
+			id = ucl_object_key(d) + 5;
+			j = ucl_array_find_index(ucl_object_lookup(spec, "make"), 0);
+			if (j == NULL || str(j, "kind") == NULL || strcmp(str(j,
+			    "kind"), "ipsec-sa") != 0 || str(j, "verb") == NULL ||
+			    strcmp(str(j, "verb"), "derive") != 0 ||
+			    ucl_object_lookup(seen, id) != NULL) {
+				ucl_object_unref(spec);
+				continue;
+			}
+			put(seen, id, B(true));
+			/* Not twice at once, nor right after a failure. */
+			rk = at_path(st, "rekeys", id);
+			if (rk != NULL && str(rk, "state") != NULL && (strcmp(str(rk,
+			    "state"), "running") == 0 || (strcmp(str(rk, "state"),
+			    "failed") == 0 && now - ucl_object_toint(
+			    ucl_object_lookup(rk, "at")) < MGR_REKEY_RETRY_S))) {
+				ucl_object_unref(spec);
+				continue;
+			}
+			/* The far end, from the reference in the words. */
+			far[0] = farif[0] = '\0';
+			ait = NULL;
+			while ((a = ucl_object_iterate(ucl_object_lookup(j, "args"),
+			    &ait, true)) != NULL)
+				if (ucl_object_type(a) == UCL_STRING)
+					(void)sscanf(ucl_object_tostring(a),
+					    "${uswe:%15[^:]:%31[^}]}", far, farif);
+			if (rekey_due(ucl_object_key(s), str(j, "interface"), now) ||
+			    (far[0] != '\0' && rekey_due(far, farif, now)))
+				(void)rekey_run(st, id, why, sizeof(why));
+			ucl_object_unref(spec);
+		}
+	}
+	ucl_object_unref(seen);
+}
+
 static void
 manager_tick(void)
 {
@@ -4799,11 +5269,106 @@ manager_tick(void)
 		ucl_object_unref((ucl_object_t *)(uintptr_t)spec);
 	}
 	ucl_object_unref(doc);
+	rekey_tick(st, now);
 	pthread_mutex_lock(&st_lock);
 	if (!applying)
 		(void)store_save(STATE_FILE, st);
 	pthread_mutex_unlock(&st_lock);
 	ucl_object_unref(st);
+}
+
+/* A rotation asked for by hand, in a thread of the console. */
+static void *
+rekey_main(void *arg)
+{
+	ucl_object_t	*st;
+	char		 why[300];
+
+	pthread_mutex_lock(&st_lock);
+	st = state_load();
+	pthread_mutex_unlock(&st_lock);
+	(void)rekey_run(st, arg, why, sizeof(why));
+	ucl_object_unref(st);
+	free(arg);
+	return (NULL);
+}
+
+int
+api_sdwan_rekey(struct http_request *req)
+{
+	ucl_object_t	*st, *body, *e0, *e1;
+	pthread_t	 tid;
+	const char	*id;
+	char		 sid[2][40], *arg;
+
+	if (req->method == HTTP_METHOD_GET) {
+		if (!guard(req, false))
+			return (KORE_RESULT_OK);
+		pthread_mutex_lock(&st_lock);
+		st = state_load();
+		pthread_mutex_unlock(&st_lock);
+		body = ucl_object_typed_new(UCL_OBJECT);
+		put(body, "rekeys", ucl_object_lookup(st, "rekeys") != NULL ?
+		    ucl_object_copy(ucl_object_lookup(st, "rekeys")) :
+		    ucl_object_typed_new(UCL_OBJECT));
+		put(body, "rekeying", B(rekeying));
+		ucl_object_unref(st);
+		return (reply_json(req, 200, body));
+	}
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	body = read_json(req);
+	id = body != NULL ? str(body, "tunnel") : NULL;
+	if (id == NULL || id[0] == '\0' || strlen(id) > 150) {
+		if (body != NULL)
+			ucl_object_unref(body);
+		return (reply_error(req, 400, "tunnel", "say which tunnel: its "
+		    "id"));
+	}
+	pthread_mutex_lock(&st_lock);
+	if (applying || rekeying) {
+		bool	keys = !applying;
+
+		pthread_mutex_unlock(&st_lock);
+		ucl_object_unref(body);
+		return (reply_error(req, 409, "busy", keys ? "a key rotation is "
+		    "running" : "an apply is running"));
+	}
+	st = state_load();
+	pthread_mutex_unlock(&st_lock);
+	/* Both ends applied, else there is nothing to turn. */
+	e0 = rekey_end(ucl_object_lookup(st, "applied"), id, NULL, sid[0],
+	    sizeof(sid[0]));
+	e1 = e0 != NULL ? rekey_end(ucl_object_lookup(st, "applied"), id,
+	    sid[0], sid[1], sizeof(sid[1])) : NULL;
+	ucl_object_unref(st);
+	if (e0 != NULL)
+		ucl_object_unref(e0);
+	if (e1 != NULL)
+		ucl_object_unref(e1);
+	if (e1 == NULL) {
+		ucl_object_unref(body);
+		return (reply_error(req, 404, "tunnel", "no uswe tunnel %s "
+		    "applied on two edges", id));
+	}
+	host_refs();
+	arg = strdup(id);
+	pthread_mutex_lock(&st_lock);
+	rekeying = true;
+	pthread_mutex_unlock(&st_lock);
+	if (pthread_create(&tid, NULL, rekey_main, arg) != 0) {
+		pthread_mutex_lock(&st_lock);
+		rekeying = false;
+		pthread_mutex_unlock(&st_lock);
+		free(arg);
+		ucl_object_unref(body);
+		return (reply_error(req, 500, "thread", "%s", strerror(errno)));
+	}
+	(void)pthread_detach(tid);
+	st = ucl_object_typed_new(UCL_OBJECT);
+	put(st, "tunnel", S(id));
+	ucl_object_unref(body);
+	return (reply_json(req, 200, st));
 }
 
 static void *
@@ -4948,8 +5513,10 @@ api_sdwan_edges(struct http_request *req)
 	pthread_mutex_lock(&st_lock);
 	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, LOCK_FILE);
 	fd = -1;
-	if (applying || (fd = open(path, O_RDWR | O_CREAT | O_CLOEXEC,
-	    0600)) == -1 || flock(fd, LOCK_EX | LOCK_NB) == -1) {
+	if (applying || rekeying || (fd = open(path, O_RDWR | O_CREAT |
+	    O_CLOEXEC, 0600)) == -1 || flock(fd, LOCK_EX | LOCK_NB) == -1) {
+		bool	keys = !applying && rekeying;
+
 		pthread_mutex_unlock(&st_lock);
 		if (fd != -1)
 			close(fd);
@@ -4957,7 +5524,8 @@ api_sdwan_edges(struct http_request *req)
 		plan_free(&pl);
 		ucl_object_unref(doc);
 		ucl_object_unref(st);
-		return (reply_error(req, 409, "busy", "an apply is running"));
+		return (reply_error(req, 409, "busy", keys ? "a key rotation is "
+		    "running" : "an apply is running"));
 	}
 	applying = true;
 	pthread_mutex_unlock(&st_lock);

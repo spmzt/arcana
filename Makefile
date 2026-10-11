@@ -55,12 +55,14 @@ TESTDIRS+=	www/arcana-console/tests
 # the same time, and the cases of each side by side, CHECK_JOBS of them
 # at once: each has a directory and sockets of its own.  Each suite's
 # lines carry its name, as they come interleaved; the build before it
-# is made with as many jobs.
+# is made with as many jobs.  kyua's directories under $HOME are made
+# first: four kyua starting at once on a fresh home race for them.
 CHECK_JOBS?=	12
 # "all" as a dependency would not recurse: bsd.subdir.mk only descends
 # for targets named on the command line.
 check: .PHONY
 	@${MAKE} -j${CHECK_JOBS} -C ${.CURDIR} all
+	@mkdir -p "$${HOME}/.kyua/logs" "$${HOME}/.kyua/store"
 	@rc=0; pids=""; \
 	for d in ${TESTDIRS}; do \
 	    ( set -o pipefail; cd ${.OBJDIR}/$$d && kyua \

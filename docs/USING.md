@@ -209,12 +209,20 @@ The console is laid out as a tree and tabs.
     address, a tunnel's two ends, traffic in all and as it is now. An
     address is added with **+ address** and taken off with its cross;
     **Up** and **Down** change the interface's state, **Edit** its MTU
-    and description. **+ interface** creates a cloned one: an epair, a
-    gif, gre, ipsec or vxlan tunnel with its two ends, a VLAN on its
-    parent, a bridge, and the rest; the cross on a cloned interface
-    destroys it. These are jobs that run `ifconfig(8)`. A change is
-    made live, and with **Keep it in rc.conf** also written there
-    through `sysrc(8)`, to be there after a boot: an address as the
+    and description. **+ interface** creates a cloned one: the kind
+    chosen from a list (epair, gif, gre, ipsec, me, vxlan, vlan,
+    bridge, lagg, tap, tun, lo, wg, ovpn), the number or the next
+    free, and the fields that kind takes: a tunnel's two ends, an
+    ipsec interface's reqid, a VXLAN's identifier, a VLAN's tag and
+    parent, a bridge's first member, an address and a peer's, MTU and
+    description; the cross on a cloned interface destroys it. The
+    WireGuard tab's **+ interface** opens the same form with wg chosen.
+    These are jobs that run `ifconfig(8)`. A change is made live, and
+    with **Keep it in rc.conf** also written there through `sysrc(8)`,
+    to be there after a boot: a created interface on
+    `cloned_interfaces` with its `create_args_<if>` and `ifconfig_<if>`
+    lines (a wg one is kept for wg-quick(8) instead, once it has its
+    key), an address as the
     next `ifconfig_<if>_alias<n>`, a route under a name of its own in
     `static_routes`, an interface in `cloned_interfaces`.
     **Netgraph** draws the host's netgraph(4) nodes and the hooks that
@@ -1032,7 +1040,7 @@ names them. It is one document with three parts:
 - `ucs`: the underlays (Underlay Connectivity Services, §12). Each has
   an `id`, a `type` (`public`, an Internet Access, or `private`), a
   `billing` (`flat-rate`, `usage-based` or `other`), and the
-  `tunnel` the edges make over it: `kind` `gre`, `gif`, `geneve` or
+  `tunnel` the edges make over it: `kind` `gre`, `gif`, `geneve`, `uswe` or
   `wg`, and for the first three `ipsec`, true for IPsec IKEv2 under
   it.
 - `edges`: the hosts that are SD-WAN Edges (§7.8). Each names its
@@ -1091,7 +1099,8 @@ names them. It is one document with three parts:
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,
-gif, geneve and wg, IPsec by strongSwan, the rules in an ipfw set),
+gif, geneve, wg and uswe, IPsec by strongSwan or keyed by the agents,
+the rules in an ipfw set),
 draws the edges with the tunnels between them as their probes see them
 (green up, red down, dashed a backup, a lock encrypted, the delay and
 loss on each) or as planned before an apply, and lists the underlays,
@@ -1310,7 +1319,16 @@ session that goes down after it was up, or comes up again, is a fault
 (`sdwan-tunnel`, by bfd, R60), and the steering takes BFD's word over the probe's where
 there is a session. Paths shows BFD's state beside the probe's. With
 `md5` in a service, the edges' iBGP sessions are signed with TCP MD5
-(R12). An edge with `ntp` (its servers, in the edge form) gets them
+(R12). With `control_plane` (`host`, an edge of the service, and maybe
+a `cluster_id`), the full mesh gives way to Mplify 119's control plane
+(§8.3, R9–R13): every other edge peers with that host alone, by each
+tunnel to it, and the host's BIRD reflects their routes to all (RFC
+4456, `rr client`, the cluster id its router id unless said); a plan
+refuses a topology where an edge has no tunnel to the host. The
+service form asks for the host. RFC 4364's VPN routes with the
+domains' route distinguishers, targets and labels (R14–R20) are not
+written: they need BIRD's l3vpn protocol, which the FreeBSD port of
+BIRD 3 does not build (known limits). An edge with `ntp` (its servers, in the edge form) gets them
 written into its `ntp.conf` and ntpd enabled and restarted, with the
 FIBs, so faults line up and keys can turn together (Mplify 119
 §12.2.2); the `ntp` job does it, and `arcanactl ntp` by hand.
@@ -1332,6 +1350,57 @@ and the edges' iBGP keeps it to themselves like them; its `fib` is
 kept for the control plane interface to come. The route
 distinguishers, targets and labels are checked and kept for the
 tunnel format to come; nothing uses them yet.
+
+**The uswe tunnel** (Mplify 119 §10): a UCS whose `tunnel` is of kind
+`uswe` gets, for each pair of edges, an ipsec(4) interface at each end
+whose reqid is its unit, ESP in tunnel mode keyed by the agents
+themselves: the apply has each end make its X25519 pair (`ipsec-sa
+key`), makes the interface with its outer ends, and then has each end
+derive the SAs from the far end's public half, which the console reads
+from that end's `sdwan` read and passes as `${uswe:SID:IF}` the way it
+passes a wg key; `algorithms` picks AES-256-CBC with HMAC-SHA-256 or
+AES-256-GCM, `esn` and `encap` (ESP in UDP) are on unless said
+otherwise, and `lifetime` (seconds, a day unless said) is what the
+keys are good for. No IKEv2 under it. The UCS form asks for it all
+under "uswe only".
+
+**The keys turned** (Mplify 119 R110, R112): the console's manager
+turns a uswe tunnel's keys at the half-life of their lifetime, both
+ends in step and without a packet lost: a next pair made on each end
+(`ipsec-sa key next`), its public half read from the sdwan read, the
+new SAs from the two pairs put in inbound on both ends, then outbound,
+each end's old outbound SA taken out as its new one goes in (`derive …
+next install in | out`; the kernel would keep sending on the old one
+otherwise, net.key.preferred_oldsa), then committed on both (`commit`:
+the old inbound SAs taken out, the next pair made the pair). A rotation that
+fails is kept with its step and why, tried again after two minutes,
+and the end it failed on raises a `key-rotation` fault until one is
+done. The Paths tab's Keys table shows each end's half, when it was
+keyed and when it turns, and **turn the keys** does it now
+(`POST /api/sdwan/rekey`); an apply waits for a rotation and a
+rotation for an apply.
+
+**Manually keyed security associations** (Mplify 119 §10, R41–R50,
+R55): the `ipsec-sa` job sets the two SAs of an ipsec(4) interface,
+out and in, each its SPI and keys, ESP in tunnel mode on the
+interface's reqid, with ESN and ESP in UDP (port 4500) where said,
+AES-CBC with HMAC-SHA-1, -256 or -512, or AES-GCM-16 on its own; the
+base system's setkey(8) reads them from a file the agent writes 0600
+and takes out again, and neither the trace nor the job's title has the
+keys. `clear` deletes every SA between the two outer addresses.
+`arcanactl ipsec-sa` by hand. Rather than given, the keys are derived
+(R51–R54): `key` makes an interface its X25519 pair, the private half
+a PEM file 0600 beside the agent's kept files that nothing else reads,
+the public half 44 characters of base64 in the `sdwan` read under
+`keys`; `derive` takes the far end's public half (`peer`), the
+algorithms and the flags, and computes both directions' SPIs and keys
+from the agreement by HKDF-SHA256 (the two public halves in order and
+an `epoch` number as the context), so the two ends, each with the
+other's public half, set the same SAs mirrored; another epoch gives
+other keys, for the rotation to come. Every SA gets an anti-replay
+window of 1024 packets: without one, the kernel's two ends disagree
+on the authenticated data of an AEAD cipher under ESN and every
+packet fails its check.
 
 **The UCS End Points, addressed and routed** (Mplify 119 §12.2.3):
 with `addressing` dhcp the apply puts the interface on DHCP (the DHCP

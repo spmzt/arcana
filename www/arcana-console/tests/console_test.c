@@ -3400,6 +3400,11 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"hold_time\":90", "\"hold_time\":90,\"as_override\":true",
 		    "as_override" },
 		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
+		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
+		    "\"control_plane\":{\"host\":\"nobody\"},", "control_plane.host" },
+		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
+		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"x\"},",
+		    "cluster_id" },
 		{ "\"multiplier\":3", "\"multiplier\":1", "(R159)" },
 		{ "\"10.99.0.9\"]", "\"not a host!\"]", "ntp:" },
 		{ "\"damping\":2", "\"damping\":0", "(CR2)" },
@@ -3517,6 +3522,177 @@ changes_of(const struct resp *r, const char *change)
 	return (n);
 }
 
+/*
+ * A USWE tunnel (Mplify 119 §10): the public underlay's tunnels made
+ * ipsec(4) interfaces keyed by the agents: a pair each, the SAs derived
+ * from the far end's public half, which the apply reads from that end.
+ */
+CONSOLE_TC(sdwan_uswe, "SD-WAN with a uswe tunnel: keys made, SAs derived")
+ATF_TC_BODY(sdwan_uswe, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[1024], body[400], sa[16], sb[16];
+	char		doc[8192], t1[8192], t2[400];
+	size_t		i;
+
+	start(tc, 0, NULL);
+	enrol(&a);
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	snprintf(body, sizeof(body), "{\"name\":\"a\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sa, sizeof(sa), "%s", jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"b\",\"uri\":\"unix:%s/./"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
+	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	snprintf(doc, sizeof(doc), "%s", sdwan_good);
+	static const char *const edits[][2] = {
+		{ "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}",
+		    "\"tunnel\":{\"kind\":\"uswe\",\"algorithms\":\"aes-gcm-16\"}" },
+		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
+		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.1\"" },
+		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
+		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
+		    "\"address\":\"192.0.2.2\"" },
+		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
+		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
+		    "\"address\":\"10.99.0.2\"" },
+		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
+		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
+		    "\"id\":\"uni-br\",\"interface\":\"lo0\"" },
+		{ "\"kind\":\"geneve\"", "\"kind\":\"gif\"" },
+	};
+	for (i = 0; i < nitems(edits); i++) {
+		ATF_REQUIRE(swap_in(doc, edits[i][0], edits[i][1], t1,
+		    sizeof(t1)));
+		snprintf(doc, sizeof(doc), "%s", t1);
+	}
+	while (swap_in(doc, "@A", sa, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	while (swap_in(doc, "@B", sb, t1, sizeof(t1)))
+		snprintf(doc, sizeof(doc), "%s", t1);
+	/* IPsec IKEv2 under a uswe tunnel is refused. */
+	ATF_REQUIRE(swap_in(doc, "\"kind\":\"uswe\",", "\"kind\":\"uswe\","
+	    "\"ipsec\":true,", t1, sizeof(t1)));
+	http("PUT", "/api/sdwan", t1, &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "encrypts by itself")
+	    != NULL, "%s", r.body);
+	resp_free(&r);
+	http("PUT", "/api/sdwan", doc, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* The plan: ipsec100 and ipsec101 with their reqid, a key pair each
+	 * before, the SAs derived after from the far end's public half,
+	 * GCM without a separate authentication, ESN and UDP by default. */
+	http("GET", "/api/sdwan/plan", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"if-create\",\"interface\":"
+	    "\"ipsec100\",\"fib\":1,\"description\":\"sdwan\",\"persist\":true,"
+	    "\"tunnel_local\":\"192.0.2.1\",\"tunnel_remote\":\"192.0.2.2\","
+	    "\"reqid\":100") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"key\":\"uswekey:ipsec100\",\"phase\":2") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "\"kind\":\"ipsec-sa\",\"verb\":\"key\","
+	    "\"interface\":\"ipsec101\"") != NULL);
+	snprintf(t2, sizeof(t2), "\"kind\":\"ipsec-sa\",\"verb\":\"derive\","
+	    "\"interface\":\"ipsec100\",\"reqid\":100,\"tunnel_local\":"
+	    "\"192.0.2.1\",\"tunnel_remote\":\"192.0.2.2\",\"args\":[\"peer\","
+	    "\"${uswe:%s:ipsec101}\",\"enc\",\"aes-gcm-16\",\"encap\",\"esn\","
+	    "\"epoch\",\"0\",\"lifetime\",\"86400\"]", sb);
+	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"verb\":\"clear\",\"interface\":\"ipsec100\"")
+	    != NULL);
+	ATF_CHECK(strstr(r.body, "\"kind\":\"ipsec\",\"verb\":\"conn\"") == NULL);
+	resp_free(&r);
+	/* Applied: the pairs made (one agent stands for both ends, so two
+	 * files), the far halves read from the sdwan read, the two SAs each
+	 * way set by setkey, mirrored. */
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	sdwan_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_CHECK(system("test -f sdwan-key-ipsec100.pem -a -f "
+	    "sdwan-key-ipsec101.pem") == 0);
+	ATF_CHECK(system("grep -q '^ipsec100 create reqid 100' ifconfig.log && "
+	    "grep -q '^ipsec101 create reqid 101' ifconfig.log") == 0);
+	ATF_CHECK(system("grep -c '^add 192.0.2.1 192.0.2.2 esp 0x[0-9a-f]* -m "
+	    "tunnel -u 10[01] -r 128 -esn -natt 192.0.2.1\\[4500\\] 192.0.2.2"
+	    "\\[4500\\] -E aes-gcm-16 0x[0-9a-f]*' setkey.conf | grep -q '^2$'")
+	    == 0);
+	ATF_CHECK(system("grep '^add 192.0.2.1 192.0.2.2 ' setkey.conf | sed "
+	    "'s/-u 10[01]/-u N/' | sort -u | wc -l | grep -q '^ *1$'") == 0);
+	/* Its SPIs are the same both ways: what a derive on each end set. */
+	ATF_CHECK(system("grep '^add 192.0.2.2 192.0.2.1 ' setkey.conf | sed "
+	    "'s/-u 10[01]/-u N/' | sort -u | wc -l | grep -q '^ *1$'") == 0);
+	/* The keys turned by hand (Mplify 119 R110, R112): a next pair on
+	 * each end, the new SAs from them put in inbound on both, then
+	 * outbound, then the old taken out and the next pair made the pair;
+	 * the apply refused meanwhile; the rotation's state kept. */
+	ATF_CHECK(system("cp sdwan-key-ipsec100.pem k100.was && cp "
+	    "sdwan-key-ipsec101.pem k101.was") == 0);
+	http("POST", "/api/sdwan/rekey", "{\"tunnel\":\"acme/none\"}", &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("POST", "/api/sdwan/rekey", "{\"tunnel\":\"acme/a-inet-b-inet\"}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	ATF_CHECK_MSG(r.status == 409 && strstr(r.body, "key rotation") != NULL,
+	    "%d %s", r.status, r.body);
+	resp_free(&r);
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/sdwan/rekey", NULL, &r);
+		if (r.status == 200 && jstr(&r, "rekeys.acme/a-inet-b-inet.state")
+		    != NULL && strcmp(jstr(&r, "rekeys.acme/a-inet-b-inet.state"),
+		    "running") != 0)
+			break;
+		resp_free(&r);
+		usleep(200000);
+	}
+	ATF_CHECK_MSG(jstr(&r, "rekeys.acme/a-inet-b-inet.state") != NULL &&
+	    strcmp(jstr(&r, "rekeys.acme/a-inet-b-inet.state"), "done") == 0,
+	    "%s", r.body);
+	ATF_CHECK(jstr(&r, "rekeying") != NULL && strcmp(jstr(&r, "rekeying"),
+	    "false") == 0);
+	resp_free(&r);
+	/* Eight SAs added in all (four, then the new four: the two inbound
+	 * ones, then the two outbound, each with the old outbound taken
+	 * out after it), then the two old inbound taken out: in that
+	 * order; the new SPIs not the old; the next pairs made the pairs. */
+	ATF_CHECK(system("grep -c '^add ' setkey.conf | grep -q '^8$'") == 0);
+	ATF_CHECK(system("grep -c '^delete ' setkey.conf | grep -q '^4$'") == 0);
+	ATF_CHECK(system("grep '^add \\|^delete ' setkey.conf | sed -n '5,12p' | "
+	    "cut -c1-3 | tr -d '\\n' | grep -q '^addaddadddeladddeldeldel$'") ==
+	    0);
+	ATF_CHECK(system("grep '^add \\|^delete ' setkey.conf | sed -n '5,6p' | "
+	    "grep -c '^add 192.0.2.2 192.0.2.1 .* -u 100 \\|^add 192.0.2.1 "
+	    "192.0.2.2 .* -u 101 ' | grep -q '^2$'") == 0);
+	ATF_CHECK(system("grep '^add \\|^delete ' setkey.conf | sed -n '8p;10p' | "
+	    "grep -c '^delete 192.0.2.1 192.0.2.2 \\|^delete 192.0.2.2 192.0.2.1 "
+	    "' | grep -q '^2$'") == 0);
+	ATF_CHECK(system("grep '^add ' setkey.conf | sed 's/-u 10[01]//' | awk "
+	    "'{print $5}' | sort -u | wc -l | grep -q '^ *4$'") == 0);
+	ATF_CHECK(system("test ! -e sdwan-key-ipsec100-next.pem && ! cmp -s "
+	    "k100.was sdwan-key-ipsec100.pem && ! cmp -s k101.was "
+	    "sdwan-key-ipsec101.pem") == 0);
+}
+
 CONSOLE_TC(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")
 ATF_TC_BODY(sdwan_apply, tc)
 {
@@ -3545,6 +3721,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	/* The good one, its underlays with addresses, its UNIs on lo0. */
 	snprintf(doc, sizeof(doc), "%s", sdwan_good);
 	static const char *const edits[][2] = {
+		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
+		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"192.0.2.1\"},"
+		    },
 		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
 		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\","
@@ -3763,9 +3942,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"],\"persist\":true") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"kind\":\"sysctl\",\"args\":[\"net.inet6.ip6."
 	    "forwarding\",\"1\"]") != NULL);
-	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b\\nprotocol bgp "
-	    "edge0 from edge {\\n\\tlocal 100.64.0.0 as 64600;\\n\\tneighbor "
-	    "100.64.0.1 as 64600;\\n}") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b, a client of this "
+	    "reflector\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.0 as "
+	    "64600;\\n\\tneighbor 100.64.0.1 as 64600;\\n\\trr client;\\n\\trr "
+	    "cluster id 192.0.2.1;\\n}") != NULL, "%s", r.body);
+	/* The other edge peers with the control plane host alone. */
+	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to a, the control "
+	    "plane\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.1 as "
+	    "64600;\\n\\tneighbor 100.64.0.0 as 64600;\\n}") != NULL, "%s",
+	    r.body);
 	/* BFD on the edge's tunnel interfaces, the iBGP sessions by it. */
 	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
 	    "\\\"gif102\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier 3;\\n\\t};"
@@ -4000,6 +4185,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, workflows);
 	ATF_TP_ADD_TC(tp, sdwan);
 	ATF_TP_ADD_TC(tp, sdwan_apply);
+	ATF_TP_ADD_TC(tp, sdwan_uswe);
 	ATF_TP_ADD_TC(tp, load);
 	ATF_TP_ADD_TC(tp, session_restart);
 	ATF_TP_ADD_TC(tp, unreachable);

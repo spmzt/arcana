@@ -48,17 +48,22 @@
   the jails have no Internet to break out to); the UCS End Points
   addressed by DHCP or SLAAC (the address learned from the host at
   each plan), in a table of their own, and routed with the underlay by
-  a BIRD instance of the edge (2.4; stand-ins, the lab run to come).
-  Next: 2.5, the phase closed on the jails; then 119-3. Later: Mplify 119's tunnel
-  (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
-- The interface form (asked 2026-10-11): it helps too little. An
-  enum of interface kinds (gre, gif, ipsec, wg, vlan, vxlan, geneve,
-  bridge, epair, lagg, tap, tun, lo, ovpn) and the fields of each
-  shown for it alone (a tunnel's ends, a VLAN's tag and parent, a
-  VXLAN's id, a bridge's members, ...); a persist switch that keeps
-  the interface in rc.conf's cloned_interfaces with its ifconfig_
-  line; and WireGuard's tab makes a wg interface by the same job as
-  the form (if-create), then its keys and peers.
+  a BIRD instance of the edge (2.4; DHCP on the jails, in the verified
+  list); manually keyed SAs on an ipsec(4) interface by setkey, the
+  keys never in a trace (119-3 task 3.1); a key pair per tunnel end
+  and the SAs of both directions derived from the agreement by
+  HKDF-SHA256, the same on both ends (3.2); the uswe tunnel kind: an
+  ipsec(4) interface each end with its unit as reqid, the pairs made,
+  the SAs derived from the far public half the apply reads from that
+  end (3.3); the keys turned at the half-life, both ends in step,
+  inbound before outbound, by the manager or by hand, a failure a
+  fault (3.4); the phase closed on the lab, the packets seen on the
+  wire as ESP in UDP under ESN (3.5). MPLS in GRE (119-4) is not
+  supported: it would be kernel work, which Arcana does not take on
+  (2026-10-11); the domains keep their own tunnels. 119-5: a control
+  plane host per service, an edge whose BIRD reflects the others'
+  routes, each peering with it alone (5.1). Next: 5.2, the CPI as a
+  tunnel of its own and what remains of RFC 4364. Later: SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:
@@ -265,6 +270,50 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- The wire of a derived-SA tunnel between two vnet jails (Mplify 119
+  R46, R48; task 3.5, 2026-10-11): tcpdump on the underlay shows the
+  ping as UDP-encap ESP on port 4500 both ways, the SPIs the derived
+  ones, the sequence numbers climbing; setkey -D shows each SA with
+  replay=128 and flags 0x440, NAT-T and ESN, state mature.
+- The keys of a derived-SA tunnel turned between two vnet jails
+  (Mplify 119 R110, R112; task 3.4, 2026-10-11, the lab's rekey step
+  by hand as the console's manager does it): a next pair on each, the
+  halves swapped, the new SAs in inbound on both, then outbound, then
+  committed, while ping ran at ten a second: 100 of 100 answered,
+  the old SAs gone, the next pair the pair. Found: with the old
+  outbound SA left in until the commit, three packets were lost,
+  since this kernel keeps sending on the old SA
+  (net.key.preferred_oldsa=1 on the VM) while the far end's commit
+  had taken its old inbound out; so the out step takes the old
+  outbound out with it, and none is lost whatever the kernel prefers.
+- Derived IPsec keys between two vnet jails (Mplify 119 R51-R54;
+  task 3.2, 2026-10-11, the lab's sakey step): a key pair made on
+  each by the agent, the public halves read from the sdwan read and
+  given to the other side, the SAs derived on each from the
+  agreement: setkey -D shows the same two SPIs mirrored on both,
+  ping crosses with AES-256-CBC, HMAC-SHA-256, ESN and ESP in UDP.
+  Found: AES-GCM-16 with ESN dropped every packet as "bad
+  authentication" until the SAs got a replay window: a kernel bug in
+  the AAD of AEAD with ESN (known limits); with -r 128 GCM and ESN
+  work together.
+- Manually keyed IPsec between two vnet jails (Mplify 119 §10; task
+  3.1, 2026-10-11, the lab's sa step): an ipsec(4) interface with
+  reqid 100 on each, made by the agent's if-create, the two SAs each
+  way set by the ipsec-sa job (setkey from a file, AES-256-CBC with
+  HMAC-SHA-256, ESN, ESP in UDP): setkey -D shows them esp-udp in
+  tunnel mode on the reqid, ping crosses the tunnel, tcpdump on the
+  underlay shows UDP-encap ESP on port 4500 both ways, and the trace
+  says "not kept: it has keys in it" in place of setkey's output.
+- A UCS End Point addressed by DHCP (Mplify 119 §12.2.3.2; task
+  2.4, 2026-10-11, the lab's ucsdhcp step): the second edge's dnsmasq
+  on the underlay epair, the first edge's interface put on DHCP by
+  the if-set job (rc.conf's DHCP word, dhclient restarted): it leased
+  10.202.0.142, the agent's interfaces read tells it, which is what
+  the console's plan learns, and the lease is listed at the server.
+  Found on the way: the agent's queued jobs kept only the first weeks'
+  text attributes of their spec; the rest pointed into the freed
+  request (agent 0.61.0). Not run in the lab: SLAAC on a UCS, a vrf,
+  BGP with the underlay.
 - SLAAC and DHCP at a UNI (MEF 70.2 §11.4, §11.5; tasks 0.1 and 0.2,
   2026-10-11, the lab's sub step): a third vnet jail on an epair
   behind the first edge's UNI, the UNI in FIB 1 with the prefixes,
@@ -405,6 +454,24 @@ What was once in the list above, and when it was run:
   one.
 
 ## Known limits
+
+- RFC 4364 VPN routes (Mplify 119 R14-R20: VPNv4 and VPNv6 with the
+  domains' route distinguishers, targets and labels) are not written
+  for the control plane: BIRD's l3vpn protocol would carry them, and
+  the FreeBSD port of BIRD 3 (net/bird3, 3.3.3 on the VM) does not
+  build it (no L3VPN option; "protocol l3vpn" is a syntax error). The
+  reflector carries plain IPv4 and IPv6 routes. A port with the
+  protocol built would be the way (2026-10-11).
+- IPsec: a FreeBSD kernel bug found 2026-10-11 (16.0-CURRENT,
+  sys/netipsec/xform_esp.c): with an AEAD cipher (AES-GCM, ChaCha20)
+  and ESN, esp_input adds the ESN high bits to the separate AAD only
+  when the SA has a replay window (wsize != 0), while esp_output adds
+  them whenever the SA has replay state; an SA without a window
+  (setkey without -r) sends an ICV over four more bytes than the
+  receiver checks, and every packet is a bad authentication. The
+  agent sets -r 128 on every SA, which is right anyway (R47), and
+  then GCM with ESN works; worth a fix upstream (the same test on both
+  paths).
 
 - The GitHub workflow (2026-10-11): the images it builds on
   (ghcr.io/spmzt/freebsd-emscripten, cblink) carry a 16.0-CURRENT

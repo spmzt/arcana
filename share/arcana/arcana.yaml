@@ -248,6 +248,32 @@ definitions:
           rtadvd_interfaces in rc.conf; rtadvd restarted.  With remove,
           the interface's entry taken out, and rtadvd stopped when the
           block is empty.
+      - name: ipsec-sa
+        doc: |
+          Manually keyed security associations for an ipsec(4)
+          interface (Mplify 119 §10, R41-R50, R55): verb key, set,
+          derive or clear, interface, reqid, the outer addresses
+          tunnel-local and tunnel-remote, and as names the words
+          spi-in n, spi-out n,
+          enc aes-cbc|aes-gcm-16, auth hmac-sha1|hmac-sha2-256|
+          hmac-sha2-512 (not with gcm), key-in hex, key-out hex,
+          akey-in hex, akey-out hex, and the flags encap (ESP in UDP,
+          port 4500) and esn.  Written as a file for setkey(8), ESP in
+          tunnel mode with the reqid, and taken out again; the keys
+          are not in the trace.  clear deletes every SA between the
+          two addresses.  key makes the interface its X25519 pair,
+          kept 0600, the public half in the sdwan read; derive takes
+          peer, the far public half, and epoch n, and computes both
+          directions from the agreement by HKDF-SHA256, the same on
+          both ends (R51-R54); lifetime s is kept with the SAs.  A
+          rotation (R110, R112): key with the word next makes the
+          pair to come (its public half next in the read); derive
+          with next and install in, then install out, puts the new
+          SAs in beside the old, inbound first on both ends, the old
+          outbound one out as the new goes in; commit takes the old
+          inbound out and makes the next pair the pair.  A
+          rotation that fails is a fault, key-rotation, until one is
+          done.
   - name: job-state
     type: enum
     entries:

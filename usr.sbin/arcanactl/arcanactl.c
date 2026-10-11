@@ -160,6 +160,14 @@ usage(void)
 	    "    ipsec child conn name tunnel | transport [reqid n] [local-ts list]\n"
 	    "        [remote-ts list] [start start | trap | none]\n"
 	    "    ipsec unchild conn name\n"
+	    "    ipsec-sa set interface reqid local remote spi-in n spi-out n\n"
+	    "        enc alg [auth alg] key-in hex key-out hex [akey-in hex\n"
+	    "        akey-out hex] [encap] [esn]\n"
+	    "    ipsec-sa key interface [next]\n"
+	    "    ipsec-sa derive interface reqid local remote peer key enc alg\n"
+	    "        [auth alg] [epoch n] [encap] [esn] [lifetime s] [next]\n"
+	    "        [install both | in | out]\n"
+	    "    ipsec-sa commit | clear interface reqid local remote\n"
 	    "    ipsec unconn | up | down name\n"
 	    "    bird enable | disable | restart | reload protocol\n"
 	    "    bird configure\n"
@@ -1796,6 +1804,40 @@ cmd_ntp(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * ipsec-sa set|clear interface reqid local remote [words]: manually
+ * keyed SAs of an ipsec(4) interface; the words as the job takes them.
+ */
+static int
+cmd_ipsec_sa(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	const char		*errstr;
+
+	if (argc < 3 || (strcmp(argv[1], "key") != 0 && argc < 6))
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_IPSEC_SA;
+	sp.jail = netjail;
+	sp.verb = argv[1];
+	sp.interface = argv[2];
+	if (strcmp(argv[1], "key") == 0) {
+		sp.names.v = (const char **)(uintptr_t)&argv[3];
+		sp.names.n = (size_t)argc - 3;
+		return (submit(cl, &sp));
+	}
+	sp.has_reqid = true;
+	sp.reqid = (uint32_t)strtonum(argv[3], 1, 16383, &errstr);
+	if (errstr != NULL)
+		xo_errx(2, "reqid %s: %s", argv[3], errstr);
+	sp.tunnel_local = argv[4];
+	sp.tunnel_remote = argv[5];
+	sp.names.v = (const char **)(uintptr_t)&argv[6];
+	sp.names.n = (size_t)argc - 6;
+	return (submit(cl, &sp));
+}
+
+/*
  * rtadvd interface prefix [dns ...]; rtadvd interface remove: router
  * advertisements on an interface, for SLAAC.
  */
@@ -3193,6 +3235,8 @@ main(int argc, char *argv[])
 		rc = cmd_ntp(&cl, argc, argv);
 	else if (strcmp(argv[0], "rtadvd") == 0)
 		rc = cmd_rtadvd(&cl, argc, argv);
+	else if (strcmp(argv[0], "ipsec-sa") == 0)
+		rc = cmd_ipsec_sa(&cl, argc, argv);
 	else if (strcmp(argv[0], "kmod") == 0)
 		rc = cmd_kmod(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
