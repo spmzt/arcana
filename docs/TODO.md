@@ -87,7 +87,23 @@
   ones, versioned, named by the policies into their tables and DNS
   filter (S2.1); large tables: the entries in chunks of atomic adds,
   a changed table swapped in place without the rules reloaded, the
-  limit raised (S2.2). Next: S2.3, the record.
+  limit raised (S2.2); the record: the denies logged to the routing
+  socket, read by the agent into a day's record and events, shown and
+  exported (S2.3). Next: SASE-3, access by identity.
+- Verified on the lab 2026-10-11 (S2.3): a deny rule with `log logdst
+  rtsock` on arcswan1 as the console compiles one, a web connection
+  from arcswan2 by the tunnel: the entry (rule 12, deny, 10.20.0.1 to
+  10.10.0.1, gre100, "security office guard src") and its event in
+  the agent's record in the try's own second; the record read back
+  after the agent's restart (`bfd-lab.sh record`).
+- Found on the lab 2026-10-11 (S2.3): nothing coming in by the
+  IPsec-carried GRE tunnel ever reached the SD-WAN rules, since
+  `net.inet.ipsec.filtertunnel=0` (the default) lets what IPsec
+  decrypted bypass the firewall, the GRE payload included. The agent
+  now sets it and `net.inet6.ipsec6.filtertunnel` when it loads the
+  rules. This is why S1.3's protocol-filter forward did not answer
+  on the lab (drill's network error): the forward rule is `in recv
+  gre100` and never saw the query.
 - A luxuria plugin installed in a vnet jail and not on the host does
   not get its tab (reported 2026-10-11). The agent lists a running
   vnet jail's plugins by access(X_OK) on the program under the jail's

@@ -846,6 +846,24 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 			(void)sysctlbyname("net.inet.ip.fw.tables_max", NULL, NULL,
 			    &want, sizeof(want));
 	}
+	/* What IPsec decrypted goes past the firewall on its way in unless
+	 * net.inet.ipsec.filtertunnel says otherwise, and a tunnel's
+	 * payload with it: the rules would never see what comes in by an
+	 * IPsec-carried tunnel.  Both families' set, in this vnet. */
+	{
+		int	one = 1, have = 0;
+		size_t	len = sizeof(have);
+
+		if (sysctlbyname("net.inet.ipsec.filtertunnel", &have, &len, NULL,
+		    0) == 0 && have == 0)
+			(void)sysctlbyname("net.inet.ipsec.filtertunnel", NULL, NULL,
+			    &one, sizeof(one));
+		len = sizeof(have);
+		if (sysctlbyname("net.inet6.ipsec6.filtertunnel", &have, &len,
+		    NULL, 0) == 0 && have == 0)
+			(void)sysctlbyname("net.inet6.ipsec6.filtertunnel", NULL,
+			    NULL, &one, sizeof(one));
+	}
 	/* The file ipfw reads: the tables, their entries, the rules. */
 	sdwan_conf_path(RULES_FILE, path, sizeof(path));
 	if (strrchr(path, '/') != NULL) {
@@ -915,6 +933,15 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	if (set != 0)
 		rules_clear(w, set);
 	rules_clear(w, (int)s);
+	/* And the new tables' names, should an earlier agent have left
+	 * them in the kernel: a table is made anew, never reused. */
+	for (int ti = 0; ti < n; ti++) {
+		(void)ipfw_words(w, NULL, 1, "table", nt[ti].name, "destroy",
+		    NULL);
+		snprintf(tmp, sizeof(tmp), "%s_alt", nt[ti].name);
+		(void)ipfw_words(w, NULL, 1, "table", tmp, "destroy", NULL);
+	}
+	snprintf(tmp, sizeof(tmp), "%s.load", path);
 	memcpy(tables, nt, sizeof(*nt) * (size_t)n);
 	ntables = n;
 	memcpy(objects, no, sizeof(*no) * (size_t)nob);

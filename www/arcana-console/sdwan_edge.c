@@ -2705,22 +2705,30 @@ sec_rules(ucl_object_t *tables, ucl_object_t *rules, int num,
 		}
 		if (!has[0])
 			continue;
-		/* To a denied prefix, and from one. */
+		/* To a denied prefix, and from one.  With log, each packet is
+		 * told on the routing socket (ipfw's logdst rtsock), which
+		 * the agent reads into its record; the rule's comment names
+		 * the service and the policy for it (SASE-2).  A thousand a
+		 * rule between resets, which the agent asks for. */
 		snprintf(tbl, sizeof(tbl), "table(%s)", name[0]);
 		not[0] = '\0';
 		if (has[1])
 			snprintf(not, sizeof(not), " not dst-ip table(%s)", name[1]);
 		if (afs_words(cr, tbl, appid, words, sizeof(words), &f2) && (f2 ==
 		    0 || f2 == fam))
-			rule(rules, num, "deny%s %s%s%s", logit ? " log" : "", words,
-			    not, tail);
+			rule(rules, num, "deny%s %s%s%s%s%.30s %.30s dst", logit ?
+			    " log logdst rtsock logamount 1000" : "", words, not, tail,
+			    logit ? " // security " : "", logit ? str(sw, "id") : "",
+			    logit ? str(sec, "name") : "");
 		not[0] = '\0';
 		if (has[1])
 			snprintf(not, sizeof(not), " not src-ip table(%s)", name[1]);
 		if (afs_words(cr, NULL, appid, words, sizeof(words), &f2) && (f2 ==
 		    0 || f2 == fam))
-			rule(rules, num, "deny%s %s src-ip table(%s)%s%s", logit ?
-			    " log" : "", words, name[0], not, tail);
+			rule(rules, num, "deny%s %s src-ip table(%s)%s%s%s%.30s %.30s "
+			    "src", logit ? " log logdst rtsock logamount 1000" : "",
+			    words, name[0], not, tail, logit ? " // security " : "",
+			    logit ? str(sw, "id") : "", logit ? str(sec, "name") : "");
 	}
 }
 
@@ -5543,6 +5551,113 @@ api_sdwan_lists(struct http_request *req)
 	out = ucl_object_typed_new(UCL_OBJECT);
 	put(out, "kept", B(true));
 	return (reply_json(req, 200, out));
+}
+
+/* ---- The record (SASE-2): what the edges' security rules logged ----- */
+
+/*
+ * GET /api/sdwan/record[.csv]?swvc=&policy=&edge=&since=: the edges'
+ * records (each agent keeps a day of what its logged rules saw) read
+ * now and put together, newest first, each with its edge; a service
+ * or a policy picks by the rules' comments, since by the time.  As
+ * CSV with .csv.
+ */
+int
+api_sdwan_record(struct http_request *req)
+{
+	ucl_object_t		*doc, *out, *all, *e2;
+	const ucl_object_t	*edge, *e, *swvc, *policy, *since, *only;
+	ucl_object_iter_t	 it, eit;
+	char			 uri[256], peer[256], name[128], *json, *v;
+	char			 want[130];
+	ucl_object_t		*ans;
+	struct kore_buf		*b;
+	int			 status;
+	int64_t			 from;
+	bool			 csv;
+
+	if (!guard(req, false))
+		return (KORE_RESULT_OK);
+	csv = strstr(req->path, ".csv") != NULL;
+	http_populate_get(req);
+	swvc = policy = since = only = NULL;
+	want[0] = '\0';
+	if (http_argument_get_string(req, "swvc", &v))
+		snprintf(want, sizeof(want), "%.30s", v);
+	if (http_argument_get_string(req, "policy", &v) && want[0] != '\0')
+		snprintf(want + strlen(want), sizeof(want) - strlen(want), " %.30s",
+		    v);
+	from = 0;
+	if (http_argument_get_string(req, "since", &v))
+		from = strtoll(v, NULL, 10);
+	v = NULL;
+	(void)http_argument_get_string(req, "edge", &v);
+	host_refs();
+	doc = sdwan_load();
+	all = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		if (v != NULL && strcmp(v, str(edge, "server")) != 0)
+			continue;
+		if (!host_ref(str(edge, "server"), uri, sizeof(uri), peer,
+		    sizeof(peer), name, sizeof(name)))
+			continue;
+		json = hosts_read(uri, peer, name, "sdwan", &status);
+		ans = parse(json);
+		free(json);
+		eit = NULL;
+		while (ans != NULL && (e = ucl_object_iterate(at_path(at_path(ans,
+		    "data", "record"), "last", NULL), &eit, true)) != NULL) {
+			if (from > 0 && ucl_object_toint(ucl_object_lookup(e, "t")) <
+			    from)
+				continue;
+			if (want[0] != '\0' && (str(e, "comment") == NULL ||
+			    strncmp(str(e, "comment"), "security ", 9) != 0 ||
+			    strncmp(str(e, "comment") + 9, want, strlen(want)) != 0))
+				continue;
+			e2 = ucl_object_copy(e);
+			put(e2, "edge", S(str(edge, "server")));
+			put(e2, "name", S(name));
+			ucl_array_append(all, e2);
+		}
+		if (ans != NULL)
+			ucl_object_unref(ans);
+	}
+	ucl_object_unref(doc);
+	(void)swvc;
+	(void)policy;
+	(void)since;
+	(void)only;
+	if (!csv) {
+		out = ucl_object_typed_new(UCL_OBJECT);
+		put(out, "record", all);
+		return (reply_json(req, 200, out));
+	}
+	b = kore_buf_alloc(4096);
+	kore_buf_appendf(b, "time,edge,rule,action,source,destination,interface,"
+	    "comment\n");
+	eit = NULL;
+	while ((e = ucl_object_iterate(all, &eit, true)) != NULL) {
+		char	when[32];
+		time_t	t = (time_t)ucl_object_toint(ucl_object_lookup(e, "t"));
+
+		strftime(when, sizeof(when), "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
+		kore_buf_appendf(b, "%s,%s,%jd,%s,%s,%s,%s,\"%s\"\n", when,
+		    str(e, "name"), (intmax_t)ucl_object_toint(ucl_object_lookup(e,
+		    "rule")), str(e, "action") != NULL ? str(e, "action") : "",
+		    str(e, "src") != NULL ? str(e, "src") : "", str(e, "dst") !=
+		    NULL ? str(e, "dst") : "", str(e, "iface") != NULL ? str(e,
+		    "iface") : "", str(e, "comment") != NULL ? str(e, "comment") :
+		    "");
+	}
+	ucl_object_unref(all);
+	http_response_header(req, "content-type", "text/csv; charset=utf-8");
+	http_response_header(req, "content-disposition", "attachment; "
+	    "filename=\"sdwan-record.csv\"");
+	http_response(req, 200, b->data, b->offset);
+	kore_buf_free(b);
+	return (KORE_RESULT_OK);
 }
 
 /* ---- The manager: each policy's tunnels ordered by performance ------ */
