@@ -310,8 +310,12 @@ steer_apply(struct work *w, bool force, const char **errp)
 			continue;
 		t = table_find(steers[i].table);
 		snprintf(alt, sizeof(alt), "%s_alt", t->name);
-		(void)ipfw_words(w, NULL, 1, "table", alt, "create", "type",
-		    "addr", "valtype", t->valtype, NULL);
+		if (strcmp(t->valtype, "legacy") == 0)
+			(void)ipfw_words(w, NULL, 1, "table", alt, "create", "type",
+			    "addr", NULL);
+		else
+			(void)ipfw_words(w, NULL, 1, "table", alt, "create", "type",
+			    "addr", "valtype", t->valtype, NULL);
 		if (ipfw_words(w, errp, 1, "table", alt, "flush", NULL) != 0)
 			return (-1);
 		any = false;
@@ -687,8 +691,13 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	it = NULL;
 	while ((t = ucl_object_iterate(ucl_object_lookup(top, "tables"), &it,
 	    true)) != NULL) {
-		fprintf(fp, "table %s create type addr valtype %s\n", sval(t,
-		    "name"), sval(t, "valtype"));
+		/* legacy, a plain number, is ipfw's default and not a word it
+		 * takes any more. */
+		if (strcmp(sval(t, "valtype"), "legacy") == 0)
+			fprintf(fp, "table %s create type addr\n", sval(t, "name"));
+		else
+			fprintf(fp, "table %s create type addr valtype %s\n", sval(t,
+			    "name"), sval(t, "valtype"));
 		eit = NULL;
 		while ((e = ucl_object_iterate(ucl_object_lookup(t, "entries"),
 		    &eit, true)) != NULL)
