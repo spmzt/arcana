@@ -147,11 +147,12 @@ title_of(const struct arc_job_spec *sp)
 		    sp->persist ? " (kept)" : "");
 		break;
 	case ARC_JOB_KIND_IF_SET:
-		rc = asprintf(&t, "%s: set%s%s%s%s", sp->interface,
+		rc = asprintf(&t, "%s: set%s%s%s%s%s%s", sp->interface,
 		    sp->has_mtu && sp->mtu != 0 ? " mtu" : "",
 		    sp->description != NULL ? " description" : "",
 		    sp->has_fib ? " fib" : "", sp->has_tunnelfib ?
-		    " tunnelfib" : "");
+		    " tunnelfib" : "", sp->addressing != NULL ? " addressing " :
+		    "", sp->addressing != NULL ? sp->addressing : "");
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
 		rc = asprintf(&t, "create %s%s%s%s%s", sp->interface,
@@ -668,6 +669,7 @@ undo(struct qjob *j)
 			ch.fib = sp->has_fib ? j->undo_fib : -1;
 			ch.tunnelfib = sp->has_tunnelfib ? j->undo_tunnelfib :
 			    -1;
+			ch.addressing = sp->addressing != NULL ? "static" : NULL;
 			rc = do_if_set(&j->w, sp->interface, &ch, sp->persist,
 			    &e);
 		}
@@ -803,6 +805,7 @@ run(struct qjob *j)
 			ch.fib = sp->has_fib ? (int)sp->fib : -1;
 			ch.tunnelfib = sp->has_tunnelfib ? (int)sp->tunnelfib :
 			    -1;
+			ch.addressing = sp->addressing;
 			ok = do_if_set(&j->w, sp->interface, &ch, sp->persist,
 			    &error) == 0;
 		}

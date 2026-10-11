@@ -189,9 +189,9 @@ kinds:
     needs: destination
     uses: jail gateway remove fib metric weight source persist safe
   - kind: if-set
-    title: An interface's MTU, description or routing tables
+    title: An interface's MTU, description, routing tables or addressing
     needs: interface
-    uses: jail mtu description fib tunnelfib persist safe
+    uses: jail mtu description fib tunnelfib addressing persist safe
   - kind: if-create
     title: An interface made
     needs: interface

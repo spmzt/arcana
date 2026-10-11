@@ -1039,8 +1039,12 @@ names them. It is one document with three parts:
   `server` and lists its `ucs_end_points` (§12.3): an `id`, its
   `ucs`, the `interface` it is on, and maybe an `address`, a
   `gateway`, a `bandwidth` in bits per second, `backup` (used only
-  when nothing else is left) and `breakout` (traffic for the Internet
-  leaves here; only on a public underlay).
+  when nothing else is left), `breakout` (traffic for the Internet
+  leaves here; only on a public underlay), and, Mplify 119 §12.2.3,
+  its `addressing` (`static`, `dhcp` or `slaac`: by the last two the
+  address is the host's own, learned when a plan is made), a `vrf`
+  (a routing table of the underlay's own) and its `routing` (`bgp`,
+  `ospf`, shaped as a UNI's).
 - `swvcs`: the services (SD-WAN Virtual Connections, §9). Each has
   an `id`, the `fib` it has on its edges (1 or more; FIB 0 is the
   underlay's), its `ucs`, `reserved_prefixes` (the provider's own
@@ -1328,6 +1332,24 @@ and the edges' iBGP keeps it to themselves like them; its `fib` is
 kept for the control plane interface to come. The route
 distinguishers, targets and labels are checked and kept for the
 tunnel format to come; nothing uses them yet.
+
+**The UCS End Points, addressed and routed** (Mplify 119 §12.2.3):
+with `addressing` dhcp the apply puts the interface on DHCP (the DHCP
+word of `ifconfig_<if>` in rc.conf, which dhclient's rc script reads,
+and `service dhclient restart <if>`), with slaac on router
+advertisements (`inet6 accept_rtadv` and rtsol once, kept in
+`ifconfig_<if>_ipv6`); the `if-set` job's `addressing`, `arcanactl
+interface <if> addressing` by hand. The end point's `address` may then
+be left out: the plan asks the host for the interface's first global
+address and uses it as the tunnels' outer one, and an end point whose
+host has none yet is left without tunnels, with a note, until the
+next apply. With a `vrf` the interface goes into that table and the
+tunnels over it send their outer packets by it (`tunnelfib`; IPsec and
+WireGuard keep the first table). With `routing` (`bgp` with the
+underlay's `as` and `neighbors`, or `ospf`, as a UNI's entry) the edge
+runs a BIRD instance of its own for the underlay, `ucs<vrf>`, in that
+table, with the kernel's routes learned and kept and the interface's
+connected ones; `sdwan-bird` keeps it with the services'.
 
 **The hosts' addresses at a UNI** (§11.4, §11.5): with `static` the
 hosts set their own and the edge only has the provider's addresses on

@@ -1836,9 +1836,13 @@ check_spec(const struct arc_job_spec *sp)
 		if (sp->interface == NULL || !valid_ifname(sp->interface))
 			return ("invalid interface name");
 		if ((!sp->has_mtu || sp->mtu == 0) && sp->description == NULL &&
-		    !sp->has_fib && !sp->has_tunnelfib)
+		    !sp->has_fib && !sp->has_tunnelfib && sp->addressing == NULL)
 			return ("say what to set: mtu, description, fib, "
-			    "tunnelfib, or several");
+			    "tunnelfib, addressing, or several");
+		if (sp->addressing != NULL && strcmp(sp->addressing, "dhcp") != 0
+		    && strcmp(sp->addressing, "slaac") != 0 && strcmp(
+		    sp->addressing, "static") != 0)
+			return ("addressing is dhcp, slaac or static");
 		if ((sp->has_fib && sp->fib > 65535) || (sp->has_tunnelfib &&
 		    sp->tunnelfib > 65535))
 			return ("a routing table is a number of one");

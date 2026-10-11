@@ -135,6 +135,7 @@ usage(void)
 	    "    interface name mtu number\n"
 	    "    interface name description text\n"
 	    "    interface name fib | tunnelfib number\n"
+	    "    interface name addressing dhcp | slaac | static\n"
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface] [reqid number]\n"
@@ -1513,6 +1514,9 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	} else if (strcmp(argv[2], "description") == 0 && argc == 4) {
 		sp.kind = ARC_JOB_KIND_IF_SET;
 		sp.description = argv[3];
+	} else if (strcmp(argv[2], "addressing") == 0 && argc == 4) {
+		sp.kind = ARC_JOB_KIND_IF_SET;
+		sp.addressing = argv[3];
 	} else if ((strcmp(argv[2], "fib") == 0 || strcmp(argv[2],
 	    "tunnelfib") == 0) && argc == 4) {
 		sp.kind = ARC_JOB_KIND_IF_SET;

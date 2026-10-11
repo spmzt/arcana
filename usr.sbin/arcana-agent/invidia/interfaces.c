@@ -547,6 +547,9 @@ ifset_word(struct work *w, const char *ifname, const char *word,
  * Kept, each is a word of ifconfig_<if> (a table of 0 is taken out of
  * it, the kernel's own).
  */
+static int	 if_addressing(struct work *, const char *, const char *, bool,
+		    const char **);
+
 int
 do_if_set(struct work *w, const char *ifname, const struct if_change *ch,
     bool persist, const char **errp)
@@ -590,6 +593,9 @@ do_if_set(struct work *w, const char *ifname, const struct if_change *ch,
 		    v) : NULL, errp) != 0)
 			return (-1);
 	}
+	if (ch->addressing != NULL && if_addressing(w, ifname, ch->addressing,
+	    persist, errp) != 0)
+		return (-1);
 	if (descr != NULL) {
 		struct execres	 res;
 		char		*argv[5];
@@ -610,6 +616,110 @@ do_if_set(struct work *w, const char *ifname, const struct if_change *ch,
 		else if (persist && rc_set(w, wfmt(w, "ifconfig_%s_descr",
 		    rc_ifname(w, ifname)), "=", descr, errp) != 0)
 			return (-1);
+	}
+	return (0);
+}
+
+/*
+ * How an interface gets its address (Mplify 119 §12.2.3.2, §12.2.3.3):
+ * dhcp, dhclient(8) by the DHCP word of ifconfig_<if> in rc.conf,
+ * which its rc script insists on, so kept; slaac, inet6 accept_rtadv on
+ * the interface and rtsol(8) once, kept in ifconfig_<if>_ipv6; static,
+ * both off, dhclient stopped.
+ */
+static int
+if_addressing(struct work *w, const char *ifname, const char *how,
+    bool persist, const char **errp)
+{
+	struct execres	 res;
+	const char	*v, *rcn, *rc6;
+	char		*argv[6], *words, *word, *rest, out[600];
+	bool		 dhcp, slaac;
+
+	dhcp = strcmp(how, "dhcp") == 0;
+	slaac = strcmp(how, "slaac") == 0;
+	if (!dhcp && !slaac && strcmp(how, "static") != 0) {
+		*errp = "addressing is dhcp, slaac or static";
+		return (-1);
+	}
+	if (dhcp && !persist) {
+		*errp = "DHCP on an interface is kept in rc.conf, which its "
+		    "rc script reads: say persist";
+		return (-1);
+	}
+	rcn = wfmt(w, "ifconfig_%s", rc_ifname(w, ifname));
+	rc6 = wfmt(w, "ifconfig_%s_ipv6", rc_ifname(w, ifname));
+	if (persist) {
+		/* ifconfig_<if>: DHCP first, or neither word. */
+		out[0] = '\0';
+		if (dhcp)
+			strlcpy(out, "DHCP", sizeof(out));
+		words = wstrdup(w, (v = rc_get(w, rcn)) != NULL ? v : "");
+		for (rest = words; (word = strsep(&rest, " ")) != NULL; ) {
+			if (word[0] == '\0' || strcmp(word, "DHCP") == 0 ||
+			    strcmp(word, "SYNCDHCP") == 0 || strcmp(word,
+			    "NOAUTO") == 0)
+				continue;
+			if (strlen(out) + strlen(word) + 2 < sizeof(out))
+				snprintf(out + strlen(out), sizeof(out) -
+				    strlen(out), "%s%s", out[0] != '\0' ? " " :
+				    "", word);
+		}
+		if (out[0] == '\0')
+			rc_unset(w, rcn);
+		else if (rc_set(w, rcn, "=", out, errp) != 0)
+			return (-1);
+		/* ifconfig_<if>_ipv6: inet6 accept_rtadv, or without it. */
+		out[0] = '\0';
+		words = wstrdup(w, (v = rc_get(w, rc6)) != NULL ? v : "");
+		for (rest = words; (word = strsep(&rest, " ")) != NULL; ) {
+			if (word[0] == '\0' || strcmp(word, "accept_rtadv") == 0
+			    || strcmp(word, "-accept_rtadv") == 0 || strcmp(word,
+			    "inet6") == 0)
+				continue;
+			if (strlen(out) + strlen(word) + 2 < sizeof(out))
+				snprintf(out + strlen(out), sizeof(out) -
+				    strlen(out), "%s%s", out[0] != '\0' ? " " :
+				    "", word);
+		}
+		if (slaac)
+			snprintf(out + strlen(out), sizeof(out) - strlen(out),
+			    "%sinet6 accept_rtadv", out[0] != '\0' ? " " : "");
+		else if (out[0] != '\0')
+			memmove(out, wfmt(w, "inet6 %s", out), strlen(out) + 7);
+		if (out[0] == '\0')
+			rc_unset(w, rc6);
+		else if (rc_set(w, rc6, "=", out, errp) != 0)
+			return (-1);
+	}
+	/* Now: the kernel's flag, and the daemons. */
+	argv[0] = (char *)(uintptr_t)opts.ifconfig_bin;
+	argv[1] = (char *)(uintptr_t)ifname;
+	argv[2] = (char *)(uintptr_t)"inet6";
+	argv[3] = (char *)(uintptr_t)(slaac ? "accept_rtadv" : "-accept_rtadv");
+	argv[4] = (char *)(uintptr_t)(slaac ? "-ifdisabled" : NULL);
+	argv[5] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "ifconfig"));
+		return (-1);
+	}
+	if (slaac) {
+		argv[0] = (char *)(uintptr_t)opts.rtsol_bin;
+		argv[1] = (char *)(uintptr_t)ifname;
+		argv[2] = NULL;
+		if (run_exec(w, argv, &res) != 0) {
+			*errp = wtext(w, exec_error(w, &res, "rtsol"));
+			return (-1);
+		}
+	}
+	argv[0] = (char *)(uintptr_t)opts.service_bin;
+	argv[1] = (char *)(uintptr_t)"dhclient";
+	argv[2] = (char *)(uintptr_t)(dhcp ? "restart" : "stop");
+	argv[3] = (char *)(uintptr_t)ifname;
+	argv[4] = NULL;
+	if (run_exec(w, argv, &res) != 0 && dhcp) {
+		*errp = wtext(w, exec_error(w, &res, "service dhclient"));
+		return (-1);
 	}
 	return (0);
 }

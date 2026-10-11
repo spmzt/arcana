@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.58.0"
+#define	ARCANA_AGENT_VERSION	"0.59.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -56,6 +56,7 @@
 #define	PATH_NTP_CONF		"/etc/ntp.conf"
 #define	PATH_RTADVD_CONF	"/etc/rtadvd.conf"
 #define	PATH_DNSMASQ_BIN	"/usr/local/sbin/dnsmasq"
+#define	PATH_RTSOL_BIN		"/sbin/rtsol"
 #define	PATH_BIRD_CONF		"/usr/local/etc/bird.conf"
 #define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
@@ -114,6 +115,7 @@ struct opts {
 	const char	*ntp_conf;	/* ntp.conf, for the ntp job */
 	const char	*rtadvd_conf;	/* rtadvd.conf, for the rtadvd job */
 	const char	*dnsmasq_bin;	/* dnsmasq(8): the UNIs' DHCP */
+	const char	*rtsol_bin;	/* rtsol(8): an interface's SLAAC */
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
@@ -307,6 +309,7 @@ struct if_change {
 	const char	*descr;		/* "" takes it off */
 	int		 fib;
 	int		 tunnelfib;
+	const char	*addressing;	/* dhcp, slaac or static; NULL as is */
 };
 int		 do_if_set(struct work *, const char *,
 		    const struct if_change *, bool, const char **);
