@@ -58,9 +58,10 @@
   end (3.3); the keys turned at the half-life, both ends in step,
   inbound before outbound, by the manager or by hand, a failure a
   fault (3.4); the phase closed on the lab, the packets seen on the
-  wire as ESP in UDP under ESN (3.5). Next: 119-4, MPLS in GRE, the
-  kernel module. Later: Mplify 119's tunnel
-  (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
+  wire as ESP in UDP under ESN (3.5). MPLS in GRE (119-4) is not
+  supported: it would be kernel work, which Arcana does not take on
+  (2026-10-11); the domains keep their own tunnels. Next: 119-5, the
+  control plane as RFC 4364. Later: SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:
