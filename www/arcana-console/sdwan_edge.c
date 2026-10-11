@@ -64,6 +64,7 @@
 #include <syslog.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <fetch.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
@@ -345,8 +346,11 @@ static void	 bird_routing(struct kore_buf *, const ucl_object_t *,
 static const ucl_object_t *at_path(const ucl_object_t *, const char *,
 		    const char *);
 
+static ucl_object_t *lists_kept(void);
+
 struct plan {
 	const ucl_object_t	*doc;
+	ucl_object_t		*lists;		/* the lists kept, by name */
 	ucl_object_t		*alloc;		/* the state's, with new ones */
 	ucl_object_t		*edges;		/* sid: [objects] */
 	ucl_object_t		*tunnels;	/* the tunnels, both ends */
@@ -1706,7 +1710,7 @@ dns_filters(const ucl_object_t *sw, bool *protop)
  * deny (always_nxdomain, the names beneath too).
  */
 static char *
-dns_conf(const ucl_object_t *sw, const char *sid)
+dns_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *lists)
 {
 	struct kore_buf		*b;
 	const ucl_object_t	*ep, *u, *v, *a, *pol, *sec, *sc, *d;
@@ -1755,6 +1759,29 @@ dns_conf(const ucl_object_t *sw, const char *sid)
 				kore_buf_appendf(b, "\tlocal-zone: \"%s.\" "
 				    "always_nxdomain\n",
 				    ucl_object_tostring_forced(d));
+			/* And the named lists' domains, as kept. */
+			dit = NULL;
+			while ((d = ucl_object_iterate(ucl_object_lookup(
+			    ucl_object_lookup(sc, "dns-domain-filter"), "lists"),
+			    &dit, true)) != NULL) {
+				const ucl_object_t	*le;
+				ucl_object_iter_t	 eit = NULL;
+				const char		*s;
+
+				while ((le = ucl_object_iterate(at_path(
+				    ucl_object_lookup(lists, "lists"),
+				    ucl_object_tostring_forced(d), "entries"), &eit,
+				    true)) != NULL) {
+					s = ucl_object_tostring_forced(le);
+					if (strchr(s, '/') != NULL || strchr(s, ':') !=
+					    NULL || (isdigit((unsigned char)s[0]) &&
+					    strchr(s, '.') != NULL && strpbrk(s,
+					    "abcdefghijklmnopqrstuvwxyz") == NULL))
+						continue;	/* a prefix */
+					kore_buf_appendf(b, "\tlocal-zone: \"%s.\" "
+					    "always_nxdomain\n", s);
+				}
+			}
 		}
 	out = strdup(kore_buf_stringify(b, NULL));
 	kore_buf_free(b);
@@ -1801,7 +1828,7 @@ dns_build(struct plan *pl, const ucl_object_t *doc)
 			put(inst, "name", S(name));
 			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
 			    "fib"))));
-			text = dns_conf(sw, sid);
+			text = dns_conf(sw, sid, pl->lists);
 			put(inst, "conf", S(text));
 			free(text);
 			ucl_array_append(list, inst);
@@ -2608,7 +2635,8 @@ sec_of(const ucl_object_t *sw, const ucl_object_t *pol, const char *crit,
 static void
 sec_rules(ucl_object_t *tables, ucl_object_t *rules, int num,
     const ucl_object_t *sw, const ucl_object_t *sec, int si,
-    const ucl_object_t *cr, const char *appid, const char *tail)
+    const ucl_object_t *cr, const char *appid, const char *tail,
+    const ucl_object_t *lists_of)
 {
 	static const char *const lists[] = { "deny", "allow" };
 	const ucl_object_t	*ib, *p;
@@ -2624,23 +2652,56 @@ sec_rules(ucl_object_t *tables, ucl_object_t *rules, int num,
 	logit = ucl_flag(ucl_object_lookup(sec, "criteria"), "log");
 	for (fam = 4; fam <= 6; fam += 2) {
 		for (i = 0; i < 2; i++) {
+			bool	fresh;
+
 			snprintf(name[i], sizeof(name[i]), "sw%jd_s%d%c%d",
 			    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")),
 			    si, lists[i][0], fam);
 			has[i] = false;
+			fresh = by(tables, "name", name[i]) == NULL;
 			it = NULL;
 			while ((p = ucl_object_iterate(ucl_object_lookup(ib,
 			    lists[i]), &it, true)) != NULL) {
 				s = ucl_object_tostring_forced(p);
 				if ((strchr(s, ':') != NULL) != (fam == 6))
 					continue;
-				if (by(tables, "name", name[i]) == NULL)
+				if (fresh)
 					entry(table(tables, name[i], "legacy"), s,
 					    "0");
-				else if (!has[i])
-					table(tables, name[i], "legacy");
 				has[i] = true;
 			}
+			/* And the named lists' prefixes (the deny ones; feeds
+			 * and pasted lists, as kept), of the family. */
+			if (i == 0) {
+				const ucl_object_t	*ln, *le;
+				ucl_object_iter_t	 lit, eit;
+
+				lit = NULL;
+				while ((ln = ucl_object_iterate(ucl_object_lookup(ib,
+				    "lists"), &lit, true)) != NULL) {
+					eit = NULL;
+					while ((le = ucl_object_iterate(at_path(
+					    ucl_object_lookup(lists_of, "lists"),
+					    ucl_object_tostring_forced(ln), "entries"),
+					    &eit, true)) != NULL) {
+						s = ucl_object_tostring_forced(le);
+						if (strchr(s, '/') == NULL && !(
+						    strchr(s, ':') != NULL || (isdigit(
+						    (unsigned char)s[0]) && strchr(s,
+						    '.') != NULL)))
+							continue;	/* a domain */
+						if ((strchr(s, ':') != NULL) != (fam ==
+						    6))
+							continue;
+						if (fresh)
+							entry(table(tables, name[i],
+							    "legacy"), s, "0");
+						has[i] = true;
+					}
+				}
+			}
+			if (has[i] && !fresh)
+				table(tables, name[i], "legacy");
 		}
 		if (!has[0])
 			continue;
@@ -2977,7 +3038,7 @@ rules_build(struct plan *pl, const char *sid)
 						if (pol != NULL && sec != NULL)
 							sec_rules(tables, rules, next,
 							    sw, sec, si, cr, appid,
-							    recv);
+							    recv, pl->lists);
 						if (pol == NULL) {
 							/* None, or Block (R112,
 							 * R113). */
@@ -3219,7 +3280,7 @@ rules_build(struct plan *pl, const char *sid)
 								sec_rules(tables, pre,
 								    RULE_FROM + 1, sw,
 								    sec, si, cr, appid,
-								    tail);
+								    tail, pl->lists);
 							if (v != NULL && afs_words(cr,
 							    NULL, appid, words,
 							    sizeof(words), &fam))
@@ -3931,6 +3992,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	pl->alloc = ucl_object_copy(ucl_object_lookup(st, "alloc"));
 	pl->edges = ucl_object_typed_new(UCL_OBJECT);
 	pl->tunnels = ucl_object_typed_new(UCL_ARRAY);
+	pl->lists = lists_kept();
 	pl->used = ucl_object_typed_new(UCL_OBJECT);
 	pl->notes = ucl_object_typed_new(UCL_ARRAY);
 	pl->learned = ucl_object_typed_new(UCL_OBJECT);
@@ -4388,6 +4450,8 @@ plan_free(struct plan *pl)
 
 	if (pl->alloc != NULL)
 		ucl_object_unref(pl->alloc);
+	if (pl->lists != NULL)
+		ucl_object_unref(pl->lists);
 	if (pl->edges != NULL)
 		ucl_object_unref(pl->edges);
 	if (pl->tunnels != NULL)
@@ -5060,6 +5124,427 @@ run_main(void *arg)
 }
 
 
+/* ---- The lists (MEF 88, SASE-2): feeds fetched by the console, pasted
+ * lists, versioned and named by the security policies -------------------- */
+
+#define	LISTS_FILE	"sdwan-lists.json"
+#define	LIST_MAX_BYTES	(8 * 1024 * 1024)
+#define	LIST_MAX_ENTRIES	200000
+#define	FEED_INTERVAL_H	6
+
+/*
+ * What is kept: {"interval": hours, "feeds": [{"name", "url"} or
+ * {"name", "entries": [...]} for a pasted list], "lists": {name:
+ * {"version", "fetched_at", "entries", "error"}}, "fetched_at"}.
+ */
+static ucl_object_t *
+lists_kept(void)
+{
+	ucl_object_t	*o;
+
+	if ((o = store_load(LISTS_FILE)) == NULL)
+		o = ucl_object_typed_new(UCL_OBJECT);
+	if (ucl_object_lookup(o, "feeds") == NULL)
+		put(o, "feeds", ucl_object_typed_new(UCL_ARRAY));
+	if (ucl_object_lookup(o, "lists") == NULL)
+		put(o, "lists", ucl_object_typed_new(UCL_OBJECT));
+	return (o);
+}
+
+/* A name a list may have: letters, digits, - and _, 32 at most. */
+static bool
+list_name_ok(const char *s)
+{
+	size_t	i;
+
+	if (s == NULL || s[0] == '\0' || strlen(s) > 32)
+		return (false);
+	for (i = 0; s[i] != '\0'; i++)
+		if (!isalnum((unsigned char)s[i]) && s[i] != '-' && s[i] != '_')
+			return (false);
+	return (true);
+}
+
+/* An entry of a list: a prefix or address, or a domain name. */
+static bool
+list_entry_ok(const char *s)
+{
+	size_t	n, lab;
+
+	if (s == NULL || (n = strlen(s)) == 0 || n > 253)
+		return (false);
+	lab = 0;
+	for (; *s != '\0'; s++) {
+		if (*s == '.' || *s == '/' || *s == ':') {
+			lab = 0;
+			continue;
+		}
+		if (!isalnum((unsigned char)*s) && *s != '-' && *s != '_')
+			return (false);
+		if (++lab > 63)
+			return (false);
+	}
+	return (true);
+}
+
+/*
+ * The text of a feed or a pasted list into entries: one each line,
+ * what follows # or ; left out, blank lines too; false when one is
+ * not an entry, or there are too many.
+ */
+static bool
+list_parse(const char *text, ucl_object_t *entries, char *why, size_t wlen)
+{
+	const char	*p, *nl;
+	char		 line[300];
+	size_t		 n, k;
+
+	for (p = text; *p != '\0'; p = *nl != '\0' ? nl + 1 : nl) {
+		nl = p + strcspn(p, "\n");
+		n = (size_t)(nl - p);
+		if (n >= sizeof(line))
+			n = sizeof(line) - 1;
+		memcpy(line, p, n);
+		line[n] = '\0';
+		line[strcspn(line, "#;\r")] = '\0';
+		for (k = 0; line[k] == ' ' || line[k] == '\t'; k++)
+			;
+		n = strlen(line + k);
+		while (n > 0 && (line[k + n - 1] == ' ' || line[k + n - 1] == '\t'))
+			line[k + --n] = '\0';
+		if (n == 0)
+			continue;
+		if (!list_entry_ok(line + k)) {
+			snprintf(why, wlen, "%.60s is not a prefix nor a domain",
+			    line + k);
+			return (false);
+		}
+		if (ucl_array_size(entries) >= LIST_MAX_ENTRIES) {
+			snprintf(why, wlen, "more than %d entries", LIST_MAX_ENTRIES);
+			return (false);
+		}
+		ucl_array_append(entries, S(line + k));
+	}
+	return (true);
+}
+
+/* Are two lists' entries the same, in order? */
+static bool
+list_same(const ucl_object_t *a, const ucl_object_t *b)
+{
+	const ucl_object_t	*x, *y;
+	ucl_object_iter_t	 ix, iy;
+
+	if (a == NULL || b == NULL || ucl_array_size(a) != ucl_array_size(b))
+		return (false);
+	ix = iy = NULL;
+	while ((x = ucl_object_iterate(a, &ix, true)) != NULL) {
+		y = ucl_object_iterate(b, &iy, true);
+		if (y == NULL || strcmp(ucl_object_tostring_forced(x),
+		    ucl_object_tostring_forced(y)) != 0)
+			return (false);
+	}
+	return (true);
+}
+
+/*
+ * A list's entries made the kept ones: a new version when they differ
+ * from the last, the time noted, the error cleared.
+ */
+static void
+list_keep(ucl_object_t *kept, const char *name, ucl_object_t *entries,
+    const char *error)
+{
+	ucl_object_t		*all, *l;
+	const ucl_object_t	*was;
+	int64_t			 version;
+
+	all = (ucl_object_t *)(uintptr_t)ucl_object_lookup(kept, "lists");
+	was = ucl_object_lookup(all, name);
+	version = was != NULL ? ucl_object_toint(ucl_object_lookup(was,
+	    "version")) : 0;
+	l = ucl_object_typed_new(UCL_OBJECT);
+	if (entries != NULL) {
+		if (was == NULL || !list_same(ucl_object_lookup(was, "entries"),
+		    entries))
+			version++;
+		put(l, "entries", entries);
+		put(l, "fetched_at", I(time(NULL)));
+	} else {
+		/* A failed fetch keeps the last. */
+		put(l, "entries", was != NULL && ucl_object_lookup(was,
+		    "entries") != NULL ? ucl_object_copy(ucl_object_lookup(was,
+		    "entries")) : ucl_object_typed_new(UCL_ARRAY));
+		if (was != NULL && ucl_object_lookup(was, "fetched_at") != NULL)
+			put(l, "fetched_at", I(ucl_object_toint(ucl_object_lookup(
+			    was, "fetched_at"))));
+	}
+	put(l, "version", I(version));
+	put(l, "tried_at", I(time(NULL)));
+	if (error != NULL)
+		put(l, "error", S(error));
+	put(all, name, l);
+}
+
+/*
+ * Every feed fetched by the console's host with the base system's
+ * libfetch (file, http and https), each pasted list taken as it is;
+ * what is kept written.  Run by the manager at the interval, and on
+ * request.
+ */
+static void
+lists_fetch(ucl_object_t *kept, const char *only)
+{
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*entries;
+	FILE			*fp;
+	char			*buf, why[200];
+	size_t			 len, n;
+
+	it = NULL;
+	while ((f = ucl_object_iterate(ucl_object_lookup(kept, "feeds"), &it,
+	    true)) != NULL) {
+		if (str(f, "name") == NULL || (only != NULL && strcmp(str(f,
+		    "name"), only) != 0))
+			continue;
+		entries = ucl_object_typed_new(UCL_ARRAY);
+		if (str(f, "url") == NULL) {
+			/* Pasted: its entries are what was given. */
+			if (ucl_object_lookup(f, "entries") != NULL) {
+				ucl_object_unref(entries);
+				entries = ucl_object_copy(ucl_object_lookup(f,
+				    "entries"));
+			}
+			list_keep(kept, str(f, "name"), entries, NULL);
+			continue;
+		}
+		fetchTimeout = 30;
+		if ((fp = fetchGetURL(str(f, "url"), "")) == NULL) {
+			ucl_object_unref(entries);
+			list_keep(kept, str(f, "name"), NULL, fetchLastErrString);
+			thread_log(LOG_WARNING, "sdwan: list %s not fetched from "
+			    "%s: %s", str(f, "name"), str(f, "url"),
+			    fetchLastErrString);
+			continue;
+		}
+		if ((buf = malloc(LIST_MAX_BYTES)) == NULL) {
+			fclose(fp);
+			ucl_object_unref(entries);
+			list_keep(kept, str(f, "name"), NULL, "out of memory");
+			continue;
+		}
+		for (len = 0; len < LIST_MAX_BYTES - 1; len += n)
+			if ((n = fread(buf + len, 1, LIST_MAX_BYTES - 1 - len, fp))
+			    == 0)
+				break;
+		buf[len] = '\0';
+		fclose(fp);
+		if (len >= LIST_MAX_BYTES - 1) {
+			free(buf);
+			ucl_object_unref(entries);
+			list_keep(kept, str(f, "name"), NULL, "more than 8 MB");
+			continue;
+		}
+		if (!list_parse(buf, entries, why, sizeof(why))) {
+			free(buf);
+			ucl_object_unref(entries);
+			list_keep(kept, str(f, "name"), NULL, why);
+			thread_log(LOG_WARNING, "sdwan: list %s from %s: %s", str(f,
+			    "name"), str(f, "url"), why);
+			continue;
+		}
+		free(buf);
+		list_keep(kept, str(f, "name"), entries, NULL);
+	}
+	put(kept, "fetched_at", I(time(NULL)));
+	pthread_mutex_lock(&st_lock);
+	(void)store_save(LISTS_FILE, kept);
+	pthread_mutex_unlock(&st_lock);
+}
+
+/* The feeds fetched again when the interval has passed. */
+static void
+lists_tick(time_t now)
+{
+	ucl_object_t	*kept;
+	int64_t		 hours;
+
+	kept = lists_kept();
+	hours = ucl_object_lookup(kept, "interval") != NULL ? ucl_object_toint(
+	    ucl_object_lookup(kept, "interval")) : FEED_INTERVAL_H;
+	if (ucl_array_size(ucl_object_lookup(kept, "feeds")) > 0 && now -
+	    ucl_object_toint(ucl_object_lookup(kept, "fetched_at")) >= hours *
+	    3600)
+		lists_fetch(kept, NULL);
+	ucl_object_unref(kept);
+}
+
+/* Does a list of the name exist, as kept or as a feed to come? */
+bool
+sdwan_list_exists(const char *name)
+{
+	ucl_object_t	*kept;
+	bool		 yes;
+
+	kept = lists_kept();
+	yes = by(ucl_object_lookup(kept, "feeds"), "name", name) != NULL ||
+	    ucl_object_lookup(ucl_object_lookup(kept, "lists"), name) != NULL;
+	ucl_object_unref(kept);
+	return (yes);
+}
+
+/*
+ * GET /api/sdwan/lists: the feeds and the pasted lists, the interval,
+ * and each list as kept (version, fetched_at, count, error).  PUT: the
+ * feeds and the interval, checked, the pasted lists' entries parsed;
+ * what was kept of a list that is gone, gone.  POST
+ * /api/sdwan/lists/fetch, {"name"} or {}: fetched now.
+ */
+int
+api_sdwan_lists(struct http_request *req)
+{
+	ucl_object_t		*kept, *body, *out, *feeds, *f2, *ls, *entries;
+	const ucl_object_t	*f, *l;
+	ucl_object_iter_t	 it;
+	char			 why[200];
+	bool			 fetch;
+
+	fetch = strcmp(req->path, "/api/sdwan/lists/fetch") == 0;
+	if (req->method == HTTP_METHOD_GET) {
+		if (!guard(req, false))
+			return (KORE_RESULT_OK);
+		kept = lists_kept();
+		out = ucl_object_typed_new(UCL_OBJECT);
+		put(out, "interval", I(ucl_object_lookup(kept, "interval") != NULL
+		    ? ucl_object_toint(ucl_object_lookup(kept, "interval")) :
+		    FEED_INTERVAL_H));
+		put(out, "feeds", ucl_object_copy(ucl_object_lookup(kept, "feeds")));
+		ls = ucl_object_typed_new(UCL_OBJECT);
+		it = NULL;
+		while ((l = ucl_object_iterate(ucl_object_lookup(kept, "lists"),
+		    &it, true)) != NULL) {
+			f2 = ucl_object_typed_new(UCL_OBJECT);
+			put(f2, "version", I(ucl_object_toint(ucl_object_lookup(l,
+			    "version"))));
+			if (ucl_object_lookup(l, "fetched_at") != NULL)
+				put(f2, "fetched_at", I(ucl_object_toint(
+				    ucl_object_lookup(l, "fetched_at"))));
+			put(f2, "count", I((int64_t)ucl_array_size(ucl_object_lookup(
+			    l, "entries"))));
+			if (str(l, "error") != NULL)
+				put(f2, "error", S(str(l, "error")));
+			put(ls, ucl_object_key(l), f2);
+		}
+		put(out, "lists", ls);
+		ucl_object_unref(kept);
+		return (reply_json(req, 200, out));
+	}
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	kept = lists_kept();
+	if (fetch) {
+		body = read_json(req);
+		lists_fetch(kept, body != NULL ? str(body, "name") : NULL);
+		if (body != NULL)
+			ucl_object_unref(body);
+		ucl_object_unref(kept);
+		out = ucl_object_typed_new(UCL_OBJECT);
+		put(out, "fetched", B(true));
+		return (reply_json(req, 200, out));
+	}
+	if ((body = read_json(req)) == NULL) {
+		ucl_object_unref(kept);
+		return (reply_error(req, 400, "json", "an object with feeds and "
+		    "interval"));
+	}
+	if (ucl_object_lookup(body, "interval") != NULL && (ucl_object_type(
+	    ucl_object_lookup(body, "interval")) != UCL_INT || ucl_object_toint(
+	    ucl_object_lookup(body, "interval")) < 1 || ucl_object_toint(
+	    ucl_object_lookup(body, "interval")) > 24 * 30)) {
+		ucl_object_unref(body);
+		ucl_object_unref(kept);
+		return (reply_error(req, 400, "interval", "interval is hours, 1 "
+		    "to 720"));
+	}
+	feeds = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((f = ucl_object_iterate(ucl_object_lookup(body, "feeds"), &it,
+	    true)) != NULL) {
+		if (!list_name_ok(str(f, "name")) || by(feeds, "name", str(f,
+		    "name")) != NULL || (str(f, "url") == NULL && str(f, "text") ==
+		    NULL) || ucl_array_size(feeds) >= 64) {
+			ucl_object_unref(feeds);
+			ucl_object_unref(body);
+			ucl_object_unref(kept);
+			return (reply_error(req, 400, "feeds", "each feed a name "
+			    "of letters, digits, - and _ (32 at most, once) and a "
+			    "url, or text pasted; 64 at most"));
+		}
+		if (str(f, "url") != NULL && (strlen(str(f, "url")) > 500 || (
+		    strncmp(str(f, "url"), "https://", 8) != 0 && strncmp(str(f,
+		    "url"), "http://", 7) != 0 && strncmp(str(f, "url"),
+		    "file:///", 8) != 0))) {
+			ucl_object_unref(feeds);
+			ucl_object_unref(body);
+			ucl_object_unref(kept);
+			return (reply_error(req, 400, "feeds", "a feed's url is "
+			    "https, http or file"));
+		}
+		f2 = ucl_object_typed_new(UCL_OBJECT);
+		put(f2, "name", S(str(f, "name")));
+		if (str(f, "url") != NULL)
+			put(f2, "url", S(str(f, "url")));
+		else {
+			entries = ucl_object_typed_new(UCL_ARRAY);
+			if (!list_parse(str(f, "text"), entries, why, sizeof(why))) {
+				ucl_object_unref(entries);
+				ucl_object_unref(f2);
+				ucl_object_unref(feeds);
+				ucl_object_unref(body);
+				ucl_object_unref(kept);
+				return (reply_error(req, 400, "feeds", "list %s: %s",
+				    str(f, "name"), why));
+			}
+			put(f2, "entries", entries);
+		}
+		ucl_array_append(feeds, f2);
+	}
+	put(kept, "feeds", feeds);
+	if (ucl_object_lookup(body, "interval") != NULL)
+		put(kept, "interval", I(ucl_object_toint(ucl_object_lookup(body,
+		    "interval"))));
+	/* What was kept of a list that is no more, gone. */
+	{
+		ucl_object_t		*all = (ucl_object_t *)(uintptr_t)
+		    ucl_object_lookup(kept, "lists");
+		ucl_object_t		*gone = ucl_object_typed_new(UCL_ARRAY);
+		const ucl_object_t	*g;
+		ucl_object_iter_t	 git;
+
+		it = NULL;
+		while ((l = ucl_object_iterate(all, &it, true)) != NULL)
+			if (by(feeds, "name", ucl_object_key(l)) == NULL)
+				ucl_array_append(gone, S(ucl_object_key(l)));
+		git = NULL;
+		while ((g = ucl_object_iterate(gone, &git, true)) != NULL)
+			(void)ucl_object_delete_key(all, ucl_object_tostring(g));
+		ucl_object_unref(gone);
+	}
+	/* The pasted ones take effect at once; the feeds at the next
+	 * fetch, or now when asked. */
+	lists_fetch(kept, "");
+	it = NULL;
+	while ((f = ucl_object_iterate(feeds, &it, true)) != NULL)
+		if (str(f, "url") == NULL)
+			lists_fetch(kept, str(f, "name"));
+	ucl_object_unref(body);
+	ucl_object_unref(kept);
+	out = ucl_object_typed_new(UCL_OBJECT);
+	put(out, "kept", B(true));
+	return (reply_json(req, 200, out));
+}
+
 /* ---- The manager: each policy's tunnels ordered by performance ------ */
 
 #define	MGR_LOCK	"sdwan-mgr.lock"
@@ -5642,6 +6127,7 @@ manager_tick(void)
 	}
 	ucl_object_unref(doc);
 	rekey_tick(st, now);
+	lists_tick(now);
 	pthread_mutex_lock(&st_lock);
 	if (!applying)
 		(void)store_save(STATE_FILE, st);

@@ -3412,6 +3412,8 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"rate-limit\":2000000", "\"rate-limit\":10", "1000 or more" },
 		{ "\"log\":true}}", "\"log\":true,\"url-filter\":true}}",
 		    "not a criterion" },
+		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/24\"],"
+		    "\"lists\":[\"nowhere\"]", "no list nowhere" },
 		{ "\"dns-protocol-filter\":true", "\"dns-protocol-filter\":\"yes\"",
 		    "true or false" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
@@ -3718,6 +3720,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	char		cwd[1024], body[400], sa[16], sb[16];
 	char		doc[8192], t1[8192], t2[300], lifn[32], laddr[64];
 	size_t		i;
+	FILE		*fp;
 
 	start(tc, 0, NULL);
 	enrol(&a);
@@ -3735,9 +3738,55 @@ ATF_TC_BODY(sdwan_apply, tc)
 	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
 	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
 	resp_free(&r);
+	/* The lists the security policy names (SASE-2): one pasted, one a
+	 * feed from a file the console's host reads with libfetch; each
+	 * kept with a version, a failed feed with its error. */
+	snprintf(t2, sizeof(t2), "%s/feed.txt", cwd);
+	ATF_REQUIRE((fp = fopen(t2, "w")) != NULL);
+	fprintf(fp, "# a feed\n203.0.113.0/24 ; evil\n\nbad-feed.example\n");
+	fclose(fp);
+	snprintf(body, sizeof(body), "{\"interval\":2,\"feeds\":[{\"name\":"
+	    "\"blocked\",\"text\":\"198.51.100.0/24\\nbad.example\\n\"},{\"name\":"
+	    "\"feedlist\",\"url\":\"file://%s\"},{\"name\":\"dead\",\"url\":"
+	    "\"file://%s/none.txt\"}]}", t2, cwd);
+	http("PUT", "/api/sdwan/lists", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/sdwan/lists/fetch", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/lists", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "lists.blocked.version") != NULL && strcmp(jstr(
+	    &r, "lists.blocked.version"), "1") == 0 && strcmp(jstr(&r,
+	    "lists.blocked.count"), "2") == 0 && strcmp(jstr(&r,
+	    "lists.feedlist.version"), "1") == 0 && strcmp(jstr(&r,
+	    "lists.feedlist.count"), "2") == 0 && jstr(&r, "lists.dead.error")
+	    != NULL && strcmp(jstr(&r, "lists.dead.count"), "0") == 0, "%s",
+	    r.body);
+	ATF_CHECK_STREQ("2", jstr(&r, "interval"));
+	resp_free(&r);
+	/* Fetched again unchanged: the version stays. */
+	http("POST", "/api/sdwan/lists/fetch", "{\"name\":\"feedlist\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/lists", NULL, &r);
+	ATF_CHECK_STREQ("1", jstr(&r, "lists.feedlist.version"));
+	resp_free(&r);
+	http("PUT", "/api/sdwan/lists", "{\"feeds\":[{\"name\":\"x\",\"text\":"
+	    "\"not a prefix!\"}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "not a prefix nor a "
+	    "domain") != NULL, "%s", r.body);
+	resp_free(&r);
 	/* The good one, its underlays with addresses, its UNIs on lo0. */
 	snprintf(doc, sizeof(doc), "%s", sdwan_good);
 	static const char *const edits[][2] = {
+		{ "\"ip-block\":{\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]}",
+		    "\"ip-block\":{\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"],"
+		    "\"lists\":[\"blocked\",\"feedlist\"]}" },
+		{ "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]}",
+		    "\"dns-domain-filter\":{\"deny\":[\"ads.example\"],\"lists\":["
+		    "\"feedlist\",\"blocked\"]}" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
 		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"192.0.2.1\","
 		    "\"ctvc\":\"inet\"}," },
@@ -3875,8 +3924,14 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "\"12 deny log tcp from any to any dst-port "
 	    "80,https src-ip table(sw1_s0d4) not src-ip table(sw1_s0a4)\"") !=
 	    NULL);
-	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_s0d4\",\"valtype\":\"legacy\","
-	    "\"entries\":[[\"192.0.2.0/24\",\"0\"]]") != NULL);
+	/* With the lists' prefixes after the policy's own, the domains of
+	 * both in the DNS filter. */
+	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"sw1_s0d4\",\"valtype\":\"legacy\","
+	    "\"entries\":[[\"192.0.2.0/24\",\"0\"],[\"198.51.100.0/24\",\"0\"],"
+	    "[\"203.0.113.0/24\",\"0\"]]") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"bad-feed.example.\\\" "
+	    "always_nxdomain\\n\\tlocal-zone: \\\"bad.example.\\\" always_nxdomain"
+	    "\\n") != NULL);
 	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_s0a4\",\"valtype\":\"legacy\","
 	    "\"entries\":[[\"10.1.0.0/16\",\"0\"]]") != NULL);
 	ATF_CHECK(strstr(r.body, "sw1_s0d6") == NULL);

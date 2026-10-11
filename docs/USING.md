@@ -1133,6 +1133,20 @@ counts for each policy what its deny rules dropped on every edge
 made, which the `sdwan` read carries as `rules.counters`, each rule's
 number, packets, bytes and text).
 
+**Lists** (SASE-2): a security policy's `ip-block` and
+`dns-domain-filter` may name `lists` beside their own entries. A list
+is a feed, a URL the console's host fetches with the base system's
+fetch(3) (https, http or file) every `interval` hours (6 unless said),
+or entries pasted on the Security tab: one a line, prefixes and domain
+names, `#` for a note. Each is kept in `sdwan-lists.json` with a
+version that moves when its entries change, when it was fetched, and
+the error of a fetch that failed, which keeps the last entries. The
+prefixes of a named list go into the policy's deny tables after its
+own, the domains into its DNS filter; the document is refused for a
+list that is not there. `GET` and `PUT /api/sdwan/lists` carry the
+feeds and the interval, `POST /api/sdwan/lists/fetch` fetches now
+(`{"name"}` for one); **Fetch now** on the tab does the same.
+
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,
 gif, geneve, wg and uswe, IPsec by strongSwan or keyed by the agents,
