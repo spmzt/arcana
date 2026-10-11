@@ -39,6 +39,54 @@
   raised yet). Next: the lab run of 119-1 (1.8), DHCP and SLAAC at a
   UNI, the UX tasks. Later: Mplify 119's tunnel (GRE
   carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
+- Asked for on 2026-10-11, each a task of its own, in no order yet:
+  - Users and groups, roles (RBAC) and tenants in the console: who
+    sees and changes which hosts and services.
+  - Mail notifications of faults, jobs and runs.
+  - The console's CA: one imported, or made and self-signed from the
+    panel, given to each agent and trusted there; the console as a CA
+    and as an intermediate CA under another.
+  - A session's lifetime set in Settings.
+  - LDAP for the console's sign-in.
+  - The base system's ssh, further: the banner, the users let in,
+    authorized keys, host keys and their fingerprints, host keys
+    signed by a CA key.
+  - IDS/IPS by Snort, a plugin (luxuria) as before: Snort and its
+    rules updated and configured from the panel.
+  - The console clustered; disaster recovery across console clusters.
+  - Agents in an HA pair on identical hardware and ports (CARP, the
+    state shared), with CARP on its own for a host.
+  - VPN groups and road warrior setups of several clients, policies
+    and pools.
+  - A Devices page of its own, a table of the hosts (sorted and
+    filtered), the rail's host list moved there.
+  - A certificates tab per host, by certctl and OpenSSL.
+  - Configuration templates: a host's setup exported to one and a
+    template applied to a host; YAML where the standard allows,
+    UCL otherwise.
+  - A span tab: traffic mirrored by a BPF interface, or by ipfw rules
+    with BPF.
+  - Labels on interfaces, for the UCS they carry.
+  - The device's rollback timer (safe mode's wait) set in the console.
+  - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
+  - IGMP and MLD configured.
+  - NDP and ARP entries added and deleted by hand, temporary or
+    permanent.
+  - MSS clamping on transports.
+  - QoS on ipfw by forms: pipes, schedulers, queues, their masks and
+    the rules that use them, beyond what SD-WAN makes.
+  - Every table exported as CSV.
+  - Prefix lists kept by the console and used on any host.
+  - SD-WAN policies by lists, in MEF 70.2's terms: lists of UCS
+    (Viptela's colours), of prefixes (its prefix lists, our zones'
+    prefixes), of edges (its sites), of UCS End Points (its TLOCs:
+    the edge's underlay address, the UCS, the tunnel kind and a
+    preference) and of services (its VPNs); and a policy made in
+    three steps as the vendors do: the lists first (groups of
+    interest, called by a match or an action), then the traffic
+    rules (the AFS match and the policy's action), then the policies
+    applied to edges and services (the policy map at each SWVC End
+    Point).
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a

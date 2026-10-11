@@ -885,8 +885,9 @@ The console is laid out as a tree and tabs.
   gave it, and a dashed line to the jail whose end of an epair is in
   the bridge; pressed, it opens the host's bridges.
 - **Recent tasks** along the bottom: the last few, each with its host,
-  how it ended and how long it took, always in sight; one picked opens
-  the list at it, where each also has the time it began. The tasks
+  how it ended and how long it took, in sight while the dock is
+  closed; one picked opens the list at it, where each also has the
+  time it began, and the strip goes while the list is open. The tasks
   that ended are kept in the browser and are still there when the
   page is opened again, without their traces.
 - **Bridges**, in a host's network or a jail's: each bridge drawn as

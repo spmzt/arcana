@@ -841,7 +841,10 @@ part_hosts(void)
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	ATF_CHECK(js_true("document.querySelector('#j-web.s-stopped')"));
 	run("document.querySelector('button[data-act=queue-run]').click()");
-	wait_js("document.querySelector('.dock .last.o-ok') && "
+	/* The dock opened with the queue, so the task is in its list, not
+	 * the strip along the header (that one shows while it is closed). */
+	wait_js("document.querySelector('.dock.open ol.ops .op.o-ok') && "
+	    "!document.querySelector('.dock .recent .last') && "
 	    "!document.querySelector('button[data-act=queue-run]')", 20);
 
 	/* The tree and the dock are resized by dragging their edges; the
