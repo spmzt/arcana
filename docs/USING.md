@@ -1084,9 +1084,13 @@ names them. It is one document with three parts:
     `end_points`, or `rooted-multipoint` with `roots` and `leaves`;
     `Swvc`, all to all, is always there;
   - `intervals` (§9.7: `eval`, `arrival`, `ir`, in milliseconds),
-    `rate_limiters`, `security_policies`, `importance` (`levels`,
-    high to low, and a `default`) and `probe`, how its tunnels are
-    measured;
+    `rate_limiters`, `security_policies` (§9.10, each a `name` and
+    MEF 88 `criteria`: `ip-block` with `allow` and `deny` lists of
+    prefixes, `dns-domain-filter` with the domains in `deny`,
+    `dns-protocol-filter`, `rate-limit` in bits per second, `log`;
+    a flow's policy names one by `af-security-ingress` or
+    `af-security-egress`), `importance` (`levels`, high to low, and a
+    `default`) and `probe`, how its tunnels are measured;
   - `end_points` (§10): an `id`, the `edge` it is on, its `uni` (§11:
     an `id`, the `interface`, a `vlan` or 0, `max_frame`, `ipv4` and
     `ipv6` addressing, `none`, `static`, `dhcp` or (IPv6) `slaac`, each
@@ -1096,6 +1100,12 @@ names them. It is one document with three parts:
     (§11.4, §11.5); and static `routes`), its `policy_map` (each a
     `zone` or `Internet`, an `app`, and its `ingress` and `egress`
     policies, over the zone's own) and its `nat`.
+
+**Security** lists the service's security policies (MEF 88): the
+addresses allowed and denied, the domains denied and whether DNS is
+kept to the provider's resolver, the rate limit, the log, and which
+policies name each; **+ policy** and the pencil edit one. What they
+do on the edges comes with the rules (SASE-1).
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,

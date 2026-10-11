@@ -69,8 +69,10 @@
   no tunnel between them (5.3; RFC 4364's VPN routes stay out, known
   limits); the Edges tab's steps named as §12.1's activity flow, the
   guide's table from each of R89-R160 to its attribute, and the list
-  of what is not done (119-6). Mplify 119 is through. Next: SASE-1,
-  MEF 88 security policies.
+  of what is not done (119-6). Mplify 119 is through. SASE-1: the
+  security policies in the document with MEF 88's criteria, checked,
+  on a Security tab with a form, the example carrying one (S1.1).
+  Next: S1.2, the addresses and rates in the rules.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:

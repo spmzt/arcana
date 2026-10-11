@@ -3257,6 +3257,10 @@ static const char sdwan_good[] =
     "\"tca\":{\"delay\":30,\"loss\":0.05,\"damping\":2},"
     "\"rate_limiters\":[{\"name\":\"shared\",\"commit\":1000000,\"limit\":"
     "5000000}],"
+    "\"security_policies\":[{\"name\":\"guard\",\"criteria\":{\"ip-block\":{"
+    "\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]},"
+    "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]},"
+    "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true}}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
     "\"groups\":[\"bulk\"],"
     "\"flows\":[{\"name\":\"web\",\"criteria\":{\"dport\":[80,\"https\"],"
@@ -3400,6 +3404,15 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"hold_time\":90", "\"hold_time\":90,\"as_override\":true",
 		    "as_override" },
 		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
+		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/33\"]",
+		    "is not a prefix" },
+		{ "\"deny\":[\"ads.example\"]", "\"deny\":[\"ads..example\"]",
+		    "not a domain name" },
+		{ "\"rate-limit\":2000000", "\"rate-limit\":10", "1000 or more" },
+		{ "\"log\":true}}", "\"log\":true,\"url-filter\":true}}",
+		    "not a criterion" },
+		{ "\"dns-protocol-filter\":true", "\"dns-protocol-filter\":\"yes\"",
+		    "true or false" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
 		    "\"control_plane\":{\"host\":\"nobody\"},", "control_plane.host" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
