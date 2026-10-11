@@ -1064,6 +1064,99 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 
 /* ---- One SWVC ----------------------------------------------------- */
 
+/* A route distinguisher or target: ASN:n or A.B.C.D:n (RFC 4364 §4.2). */
+static bool
+rd_ok(const char *s)
+{
+	const char	*colon;
+	struct pfx	 a;
+	char		 left[32];
+	size_t		 i;
+
+	if (s == NULL || (colon = strrchr(s, ':')) == NULL || colon == s ||
+	    colon[1] == '\0' || (size_t)(colon - s) >= sizeof(left))
+		return (false);
+	for (i = 1; colon[i] != '\0'; i++)
+		if (!isdigit((unsigned char)colon[i]))
+			return (false);
+	snprintf(left, sizeof(left), "%.*s", (int)(colon - s), s);
+	for (i = 0; left[i] != '\0'; i++)
+		if (!isdigit((unsigned char)left[i]) && left[i] != '.')
+			return (false);
+	return (strchr(left, '.') == NULL || (address(left, &a) && a.af ==
+	    AF_INET));
+}
+
+/*
+ * The routing domains of a service (Mplify 119 §7.3, R15-R26): the
+ * service domain (the tunnels' addresses from its prefix; its FIB kept
+ * for the control plane), the breakout domain (a FIB of its own for
+ * the Internet, the UNIs' routes imported into it) and the subscriber
+ * domain (the service's own FIB); each a route distinguisher, route
+ * targets and an MPLS label for the tunnel format to come.
+ */
+static bool
+domains(struct ck *c, const ucl_object_t *sw)
+{
+	static const char *const names[] = { "service", "breakout",
+	    "subscriber" };
+	const ucl_object_t	*d, *v, *e;
+	ucl_object_iter_t	 it;
+	struct pfx		 p;
+	int64_t			 own, fib;
+	int			 i;
+
+	if ((d = ucl_object_lookup(sw, "domains")) == NULL || is_null(d))
+		return (true);
+	if (ucl_object_type(d) != UCL_OBJECT)
+		return (fail(c, "domains is an object: service, breakout, "
+		    "subscriber (Mplify 119 §7.3)"));
+	own = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	for (i = 0; i < 3; i++) {
+		if ((v = ucl_object_lookup(d, names[i])) == NULL || is_null(v))
+			continue;
+		if (ucl_object_type(v) != UCL_OBJECT)
+			return (fail(c, "domains.%s is an object", names[i]));
+		if (i < 2 && ucl_object_lookup(v, "fib") != NULL) {
+			if (!is_int(ucl_object_lookup(v, "fib"), 1, FIB_MAX, &fib)
+			    || fib == own)
+				return (fail(c, "domains.%s.fib is a routing table "
+				    "of its own, 1 or more and not the service's "
+				    "(R20)", names[i]));
+			if (i == 1 && ucl_object_lookup(ucl_object_lookup(d,
+			    "service"), "fib") != NULL && ucl_object_toint(
+			    ucl_object_lookup(ucl_object_lookup(d, "service"),
+			    "fib")) == fib)
+				return (fail(c, "domains: the breakout and the "
+				    "service domains have a table each"));
+		}
+		if (i == 0 && str(v, "prefix") != NULL && (!prefix(str(v,
+		    "prefix"), &p, false) || p.len > (p.af == AF_INET ? 30 :
+		    126)))
+			return (fail(c, "domains.service.prefix is the service "
+			    "domain's prefix, the tunnels' addresses from it"));
+		if (str(v, "rd") != NULL && !rd_ok(str(v, "rd")))
+			return (fail(c, "domains.%s.rd is a route distinguisher, "
+			    "ASN:n or A.B.C.D:n (R16)", names[i]));
+		if ((e = ucl_object_lookup(v, "rt")) != NULL && (ucl_object_type(
+		    e) != UCL_ARRAY || ucl_array_size(e) > 8))
+			return (fail(c, "domains.%s.rt is a list of route targets, "
+			    "8 at most (R17)", names[i]));
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(v, "rt"), &it,
+		    true)) != NULL)
+			if (!rd_ok(ucl_object_tostring_forced(e)))
+				return (fail(c, "domains.%s.rt: %s is not a route "
+				    "target, ASN:n or A.B.C.D:n (R17)", names[i],
+				    ucl_object_tostring_forced(e)));
+		if (ucl_object_lookup(v, "label") != NULL && !is_int(
+		    ucl_object_lookup(v, "label"), 16, 1048575, NULL))
+			return (fail(c, "domains.%s.label is an MPLS label, 16 to "
+			    "1048575 (R19)", names[i]));
+	}
+	return (true);
+}
+
 static bool
 swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
     ucl_object_t *seen_ep, ucl_object_t *seen_uni, ucl_object_t *seen_if)
@@ -1089,6 +1182,8 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 	if (!is_int(ucl_object_lookup(sw, "fib"), 1, FIB_MAX, NULL))
 		return (fail(c, "its fib is 1 or more: FIB 0 is the "
 		    "underlay's"));
+	if (!domains(c, sw))
+		return (false);
 	/* SWVC List of UCSs (§9.3). */
 	if (!names(c, ucl_object_lookup(sw, "ucs"), "ucs", false))
 		return (false);
@@ -1686,6 +1781,45 @@ check(const ucl_object_t *doc, struct ck *c)
 		}
 		ucl_object_insert_key(fibs, ucl_object_frombool(true), fib, 0,
 		    true);
+		/* The domains' tables and labels too: one service's each
+		 * (Mplify 119 R15-R20). */
+		{
+			static const char *const dn[] = { "service", "breakout",
+			    "subscriber" };
+			const ucl_object_t	*dom;
+			int			 i;
+
+			for (i = 0; ok && i < 3; i++) {
+				dom = ucl_object_lookup(ucl_object_lookup(sw,
+				    "domains"), dn[i]);
+				if (dom == NULL)
+					continue;
+				if (ucl_object_lookup(dom, "fib") != NULL) {
+					snprintf(fib, sizeof(fib), "%jd", (intmax_t)
+					    ucl_object_toint(ucl_object_lookup(dom,
+					    "fib")));
+					if (ucl_object_lookup(fibs, fib) != NULL) {
+						ok = fail(c, "domains.%s.fib %s is "
+						    "another's (R20)", dn[i], fib);
+						break;
+					}
+					ucl_object_insert_key(fibs,
+					    ucl_object_frombool(true), fib, 0, true);
+				}
+				if (ucl_object_lookup(dom, "label") != NULL) {
+					snprintf(fib, sizeof(fib), "label %jd",
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(dom, "label")));
+					if (ucl_object_lookup(fibs, fib) != NULL) {
+						ok = fail(c, "domains.%s.%s is "
+						    "another's (R19)", dn[i], fib);
+						break;
+					}
+					ucl_object_insert_key(fibs,
+					    ucl_object_frombool(true), fib, 0, true);
+				}
+			}
+		}
 		/* A private UCS is one SWVC's alone (R5). */
 		it2 = NULL;
 		while (ok && (e = ucl_object_iterate(ucl_object_lookup(sw,

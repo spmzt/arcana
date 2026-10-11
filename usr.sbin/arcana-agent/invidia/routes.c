@@ -85,6 +85,33 @@ route_name(struct work *w, const char *dest, uint32_t fib)
  * of an interface, or delete the route to destination; in the routing
  * table fib, and with persist in rc.conf as well.
  */
+/*
+ * The name of an interface of a kind that is cloned, with its unit:
+ * one not there yet may be made by the same apply (a tunnel before
+ * its routes), and the kernel refuses a route by it otherwise.
+ */
+static bool
+ifname_cloneable(const char *s)
+{
+	static const char *const kinds[] = { "gre", "gif", "wg", "geneve",
+	    "vxlan", "vlan", "ipsec", "tun", "lo", "epair", "bridge", "ng" };
+	size_t	i, k;
+
+	if (s == NULL || strlen(s) > 15)
+		return (false);
+	for (k = 0; k < nitems(kinds); k++) {
+		i = strlen(kinds[k]);
+		if (strncmp(s, kinds[k], i) == 0 && isdigit((unsigned char)s[i]))
+			break;
+	}
+	if (k == nitems(kinds))
+		return (false);
+	for (; s[i] != '\0'; i++)
+		if (!isdigit((unsigned char)s[i]) && s[i] != 'a' && s[i] != 'b')
+			return (false);
+	return (true);
+}
+
 int
 do_route(struct work *w, const char *destination, const char *gateway,
     bool remove, uint32_t fib, const struct route_more *more, bool persist,
@@ -152,7 +179,9 @@ do_route(struct work *w, const char *destination, const char *gateway,
 			gaf = AF_INET;
 		else if (inet_pton(AF_INET6, gateway, raw) == 1)
 			gaf = AF_INET6;
-		else if (if_exists(w, gateway))
+		else if (if_exists(w, gateway) || ifname_cloneable(gateway))
+			/* One not there yet (a tunnel the same apply makes) is
+			 * the kernel's to refuse, by the helper. */
 			iface = true;
 		else {
 			*errp = wfmt(w, "%s is neither an address nor an "

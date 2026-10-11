@@ -1109,6 +1109,21 @@ view_service(struct html *h)
 	if (jget(sw, "bfd") != NULL && ucl_object_type(jget(sw, "bfd")) ==
 	    UCL_OBJECT)
 		h_raw(h, " · BFD");
+	/* Its routing domains (Mplify 119 §7.3), where set. */
+	{
+		const ucl_object_t	*d = jget(sw, "domains"), *b, *s;
+
+		b = jget(d, "breakout");
+		s = jget(d, "service");
+		if (b != NULL && jint(b, "fib", 0) > 0)
+			h_fmt(h, " · breakout in FIB %lld", (long long)jint(b,
+			    "fib", 0));
+		if (s != NULL && jstr(s, "prefix") != NULL) {
+			h_raw(h, " · the tunnels from <span class=\"mono\">");
+			h_txt(h, jstr(s, "prefix"));
+			h_raw(h, "</span>");
+		}
+	}
 	h_raw(h, "</span></div>");
 	if (sd.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
@@ -2836,6 +2851,57 @@ sdwan_modal_service(struct html *h)
 		    "fd00:64::/64", "100.64.0.0/24, fd00:64::/64", "The tunnels' "
 		    "inner addresses come from these, a /31 or /127 each "
 		    "(§9.4).");
+		{
+			const ucl_object_t	*d = edit ? jget(o, "domains") : NULL;
+			const ucl_object_t	*ds = jget(d, "service"), *db = jget(d,
+			    "breakout"), *du = jget(d, "subscriber");
+			char			 nb[32], rt[200];
+
+			h_raw(h, "<fieldset><legend>Routing domains <small class=\""
+			    "dim\">Mplify 119 §7.3: each a table, a route "
+			    "distinguisher, route targets and an MPLS label; all "
+			    "optional</small></legend><div class=\"two\">");
+			snprintf(nb, sizeof(nb), "%lld", (long long)jint(db, "fib",
+			    0));
+			text_field(h, "Breakout domain: FIB", "dom_bfib", jint(db,
+			    "fib", 0) > 0 ? nb : "", "2", "A table of its own for "
+			    "the Internet: the default route there, the UNIs' routes "
+			    "imported into it (R20-R26); the service's table holds "
+			    "no default route then.");
+			text_field(h, "Service domain: prefix", "dom_sprefix", jstr(
+			    ds, "prefix"), "100.64.0.0/24", "The tunnels' addresses "
+			    "come from it (else from the reserved prefixes).");
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(nb, sizeof(nb), "%lld", (long long)jint(ds, "fib",
+			    0));
+			text_field(h, "Service domain: FIB", "dom_sfib", jint(ds,
+			    "fib", 0) > 0 ? nb : "", "3", "Kept for the control "
+			    "plane interface (119-4).");
+			text_field(h, "Route distinguishers", "dom_rd", (jstr(ds,
+			    "rd") != NULL || jstr(db, "rd") != NULL || jstr(du, "rd")
+			    != NULL) ? (snprintf(rt, sizeof(rt), "%s, %s, %s", jstr(
+			    ds, "rd") != NULL ? jstr(ds, "rd") : "", jstr(db, "rd") !=
+			    NULL ? jstr(db, "rd") : "", jstr(du, "rd") != NULL ?
+			    jstr(du, "rd") : ""), rt) : "", "64600:1, 64600:2, "
+			    "64600:3", "Service, breakout, subscriber: ASN:n or "
+			    "A.B.C.D:n each, by commas (R16).");
+			h_raw(h, "</div><div class=\"two\">");
+			text_field(h, "Route targets", "dom_rt", (jget(ds, "rt") !=
+			    NULL || jget(db, "rt") != NULL || jget(du, "rt") != NULL)
+			    ? (snprintf(rt, sizeof(rt), "%s, %s, %s", csv(jget(ds,
+			    "rt"), lb, sizeof(lb)), csv(jget(db, "rt"), lb2, sizeof(
+			    lb2)), csv(jget(du, "rt"), nb, sizeof(nb))), rt) : "",
+			    "64600:1, 64600:2, 64600:3", "One each, in the same "
+			    "order (R17).");
+			text_field(h, "Labels", "dom_label", (jint(ds, "label", 0) >
+			    0 || jint(db, "label", 0) > 0 || jint(du, "label", 0) >
+			    0) ? (snprintf(rt, sizeof(rt), "%lld, %lld, %lld", (long
+			    long)jint(ds, "label", 0), (long long)jint(db, "label",
+			    0), (long long)jint(du, "label", 0)), rt) : "", "1001, "
+			    "1002, 1003", "MPLS labels, 16 to 1048575, in the same "
+			    "order (R19); for the tunnel format to come.");
+			h_raw(h, "</div></fieldset>");
+		}
 		h_raw(h, "<fieldset><legend>Underlays it uses</legend>");
 		n = 0;
 		it = NULL;
@@ -3583,7 +3649,7 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		for (i = 0; i < 12; i++) {
 			static const char *const keys[] = { "id", "fib", "as",
 			    "md5", "reserved_prefixes", "ucs", "bfd", "intervals",
-			    "tca", NULL };
+			    "tca", "domains", NULL };
 
 			if (keys[i] == NULL)
 				break;
@@ -3595,6 +3661,54 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		put_int(o, "as", jstr(f, "as"));
 		put_str(o, "md5", jstr(f, "md5"));
 		put_list(o, "reserved_prefixes", jstr(f, "reserved"));
+		/* The routing domains: the three in order where a field has
+		 * three values by commas; each only with something in it. */
+		{
+			static const char *const dn[] = { "service", "breakout",
+			    "subscriber" };
+			ucl_object_t	*dom, *dd, *rds, *rts, *lbs;
+			const char	*fibk[] = { "dom_sfib", "dom_bfib", NULL };
+			int		 k;
+
+			rds = list_of(jstr(f, "dom_rd"));
+			rts = list_of(jstr(f, "dom_rt"));
+			lbs = list_of(jstr(f, "dom_label"));
+			dom = ucl_object_typed_new(UCL_OBJECT);
+			for (k = 0; k < 3; k++) {
+				const ucl_object_t	*x;
+
+				dd = ucl_object_typed_new(UCL_OBJECT);
+				if (fibk[k] != NULL && jstr(f, fibk[k]) != NULL &&
+				    jstr(f, fibk[k])[0] != '\0')
+					put_int(dd, "fib", jstr(f, fibk[k]));
+				if (k == 0 && jstr(f, "dom_sprefix") != NULL && jstr(
+				    f, "dom_sprefix")[0] != '\0')
+					put_str(dd, "prefix", jstr(f, "dom_sprefix"));
+				x = ucl_array_find_index(rds, (unsigned int)k);
+				if (x != NULL && ucl_object_tostring(x)[0] != '\0')
+					put_str(dd, "rd", ucl_object_tostring(x));
+				x = ucl_array_find_index(rts, (unsigned int)k);
+				if (x != NULL && ucl_object_tostring(x)[0] != '\0')
+					ucl_object_insert_key(dd, list_of(
+					    ucl_object_tostring(x)), "rt", 0, false);
+				x = ucl_array_find_index(lbs, (unsigned int)k);
+				if (x != NULL && ucl_object_tostring(x)[0] != '\0')
+					put_int(dd, "label", ucl_object_tostring(x));
+				if (ucl_object_iterate(dd, &(ucl_object_iter_t){
+				    NULL }, true) == NULL)
+					ucl_object_unref(dd);
+				else
+					ucl_object_insert_key(dom, dd, dn[k], 0, false);
+			}
+			ucl_object_unref(rds);
+			ucl_object_unref(rts);
+			ucl_object_unref(lbs);
+			if (ucl_object_iterate(dom, &(ucl_object_iter_t){ NULL },
+			    true) == NULL)
+				ucl_object_unref(dom);
+			else
+				ucl_object_insert_key(o, dom, "domains", 0, false);
+		}
 		arr = ucl_object_typed_new(UCL_ARRAY);
 		for (i = 0; i < 64; i++) {
 			snprintf(name, sizeof(name), "ucs_%d", i);
@@ -4114,6 +4228,11 @@ example(void)
 	    "\t\t\"id\": \"office\", \"fib\": 1, \"ucs\": [\"internet\", "
 	    "\"mpls\"],\n"
 	    "\t\t\"reserved_prefixes\": [\"100.64.0.0/24\", \"fd00:64::/64\"],\n"
+	    "\t\t\"domains\": {\"service\": {\"prefix\": \"100.64.0.0/24\", "
+	    "\"rd\": \"64600:1\", \"label\": 1001},\n"
+	    "\t\t\t\"breakout\": {\"fib\": 2, \"rd\": \"64600:2\", \"label\": "
+	    "1002},\n\t\t\t\"subscriber\": {\"rd\": \"64600:3\", \"label\": "
+	    "1003}},\n"
 	    "\t\t\"intervals\": {\"eval\": 1000, \"arrival\": 100, \"ir\": 500},\n"
 	    "\t\t\"zones\": [{\"name\": \"staff\", \"prefixes\": \"Default\",\n"
 	    "\t\t\t\"policies\": [{\"app\": \"voice\", \"policy\": \"realtime\"},"

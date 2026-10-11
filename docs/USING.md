@@ -1044,7 +1044,12 @@ names them. It is one document with three parts:
 - `swvcs`: the services (SD-WAN Virtual Connections, §9). Each has
   an `id`, the `fib` it has on its edges (1 or more; FIB 0 is the
   underlay's), its `ucs`, `reserved_prefixes` (the provider's own
-  addresses, tunnels' among them), and:
+  addresses, tunnels' among them), its `domains` (Mplify 119 §7.3,
+  all optional: `service`, with the `prefix` the tunnels' addresses
+  come from and a `fib` kept for the control plane; `breakout`, with
+  the `fib` the Internet traffic goes by; `subscriber`; each with a
+  route distinguisher `rd`, route targets `rt` and an MPLS `label`,
+  R15–R20, one service's each), and:
   - `zones` (§9.5): a `name` and `prefixes`, a list or `Default`, and
     `policies`, each an `app` (a flow or a group) and the ingress
     `policy` it gets in the whole zone, or `Block`;
@@ -1305,6 +1310,24 @@ there is a session. Paths shows BFD's state beside the probe's. With
 written into its `ntp.conf` and ntpd enabled and restarted, with the
 FIBs, so faults line up and keys can turn together (Mplify 119
 §12.2.2); the `ntp` job does it, and `arcanactl ntp` by hand.
+
+**The routing domains** (Mplify 119 §7.3, R15–R26): a service's
+`domains` name its tables beyond its own. With a `breakout` domain's
+`fib`, the apply keeps the Internet apart from the subscriber's table:
+the default route (by the local breakout gateway, or by the tunnel to
+the edge that breaks out, whose far end gets a route by the tunnel
+interface there) goes into the breakout table, the edge's own UNIs'
+subnets and static routes are imported into it (R25, R26) once the
+UNIs are up, so what comes back finds the hosts, the flows that break
+out are sent to it by `setfib` before they leave, and what comes back
+in at the breakout interface is set to it too; the service's own table
+holds no default route then. net.fibs is raised over the domains'
+tables as well. With a `service` domain's `prefix`, the tunnels' inner
+addresses are taken from it rather than from the reserved prefixes,
+and the edges' iBGP keeps it to themselves like them; its `fib` is
+kept for the control plane interface to come. The route
+distinguishers, targets and labels are checked and kept for the
+tunnel format to come; nothing uses them yet.
 
 **The hosts' addresses at a UNI** (§11.4, §11.5): with `static` the
 hosts set their own and the edge only has the provider's addresses on

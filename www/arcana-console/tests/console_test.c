@@ -3243,6 +3243,10 @@ static const char sdwan_good[] =
     "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"as\":64600,\"md5\":\"edges-secret\","
     "\"ucs\":[\"inet\",\"mpls\"],"
     "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
+    "\"domains\":{\"service\":{\"prefix\":\"100.64.0.0/24\",\"rd\":\"64600:1\","
+    "\"rt\":[\"64600:1\"],\"label\":1001},\"breakout\":{\"fib\":2,\"rd\":"
+    "\"64600:2\",\"label\":1002},\"subscriber\":{\"rd\":\"64600:3\",\"label\":"
+    "1003}},"
     "\"zones\":[{\"name\":\"office\",\"prefixes\":[\"10.1.0.0/16\"],"
     "\"policies\":[{\"app\":\"web\",\"policy\":\"fast\"}]},{\"name\":"
     "\"rest\",\"prefixes\":\"Default\"}],"
@@ -3381,6 +3385,11 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"egress-block\":\"discard\"", "\"encryption\":\"optional\"",
 		    "egress policy" },
 		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
+		/* The routing domains (Mplify 119). */
+		{ "\"breakout\":{\"fib\":2", "\"breakout\":{\"fib\":1", "(R20)" },
+		{ "\"label\":1001", "\"label\":7", "(R19)" },
+		{ "\"label\":1002", "\"label\":1001", "(R19)" },
+		{ "\"rd\":\"64600:1\"", "\"rd\":\"x:1\"", "(R16)" },
 		/* Another service with a UNI on the same interface and VLAN
 		 * of the same edge. */
 		{ "\"swvcs\":[", "\"swvcs\":[{\"id\":\"other\",\"fib\":2,\"ucs\":"
@@ -3600,18 +3609,34 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "\"nat 3001 config ip 198.51.100.1\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"11 nat 3001 ip4 from table(sw1_known) to "
 	    "not table(sw1_known) out xmit vtnet0\"") != NULL);
-	ATF_CHECK(strstr(r.body, "\"11 setfib 1 ip from any to 198.51.100.1 in "
+	ATF_CHECK(strstr(r.body, "\"11 setfib 2 ip from any to 198.51.100.1 in "
 	    "recv vtnet0\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"11 nat 3001 ip4 from any to 198.51.100.1 in "
 	    "recv vtnet0\"") != NULL);
-	ATF_CHECK(strstr(r.body, "\"11 setfib 1 ip from any to table(sw1_known) "
+	ATF_CHECK(strstr(r.body, "\"11 setfib 2 ip from any to table(sw1_known) "
 	    "in recv vtnet0\"") != NULL);
-	ATF_CHECK(strstr(r.body, "\"key\":\"route:acme:192.0.2.254/32\"") !=
+	ATF_CHECK(strstr(r.body, "\"key\":\"route:acme:2:192.0.2.254/32\"") !=
 	    NULL);
 	ATF_CHECK_MSG(strstr(r.body, "\"title\":\"0.0.0.0/0 via 192.0.2.254, "
-	    "fib 1 (the Internet, by local breakout)\"") != NULL, "%s", r.body);
+	    "fib 2 (the Internet, by local breakout)\"") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"title\":\"0.0.0.0/0 via 100.64.0.0, fib "
-	    "1 (the Internet, by breakout at a)\"") != NULL, "%s", r.body);
+	    "2 (the Internet, by breakout at a)\"") != NULL, "%s", r.body);
+	/* The breakout domain (Mplify 119 R20-R26): the UNIs' routes in
+	 * its table, the flows that break out sent to it, the way back in
+	 * by it; the service's own table without a default route. */
+	ATF_CHECK_MSG(strstr(r.body, "/24 via lo0, fib 2 (the UNI's hosts, in the "
+	    "breakout domain (R25))\"") != NULL || strstr(r.body, "/24 via vtnet2, "
+	    "fib 2 (the UNI's hosts, in the breakout domain (R25))\"") != NULL,
+	    "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"10.1.8.0/22 via 10.1.0.2, fib 2 (behind the "
+	    "UNI, in the breakout domain (R26))\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 setfib 2 tcp from any to not table("
+	    "sw1_known) dst-port 80,https\"") != NULL);
+	ATF_CHECK(strstr(r.body, "setfib 2 ip from any to table(sw1_known) in "
+	    "recv vtnet0") != NULL);
+	ATF_CHECK(strstr(r.body, "\"100.64.0.0/32 via gre101, fib 2 (the tunnel's "
+	    "far end, in the breakout domain)\"") != NULL);
+	ATF_CHECK(strstr(r.body, "0.0.0.0/0 via 192.0.2.254, fib 1 (") == NULL);
 	/* Routing: a BIRD instance of the service on each edge, in its
 	 * table, iBGP between them by each tunnel, and at hq's UNI BGP
 	 * with the subscriber as the entry says. */
@@ -3629,7 +3654,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "import filter { preference = 200; accept; };") !=
 	    NULL);
 	ATF_CHECK_MSG(strstr(r.body, "filter to_edges {\\n\\tif source = RTS_INHERIT "
-	    "then reject;\\n\\tif net ~ [ 100.64.0.0/24+ ] then reject;\\n\\taccept;"
+	    "then reject;\\n\\tif net ~ [ 100.64.0.0/24+, 100.64.0.0/24+ ] then reject;"
+	    "\\n\\taccept;"
 	    "\\n}") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "export filter to_edges;") != NULL);
 	/* The hosts' addresses: hq's IPv4 by DHCP, dnsmasq from packages in
