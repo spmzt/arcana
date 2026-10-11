@@ -1358,10 +1358,10 @@ algorithms and the flags, and computes both directions' SPIs and keys
 from the agreement by HKDF-SHA256 (the two public halves in order and
 an `epoch` number as the context), so the two ends, each with the
 other's public half, set the same SAs mirrored; another epoch gives
-other keys, for the rotation to come. On the test VM's kernel
-AES-GCM-16 with ESN drops every packet as a bad authentication; GCM
-without ESN and AES-CBC with HMAC under ESN both work, so those are
-the pairs to ask for.
+other keys, for the rotation to come. Every SA gets an anti-replay
+window of 1024 packets: without one, the kernel's two ends disagree
+on the authenticated data of an AEAD cipher under ESN and every
+packet fails its check.
 
 **The UCS End Points, addressed and routed** (Mplify 119 §12.2.3):
 with `addressing` dhcp the apply puts the interface on DHCP (the DHCP

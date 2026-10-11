@@ -592,8 +592,12 @@ do_sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		fprintf(fp, "deleteall %s %s esp ;\ndeleteall %s %s esp ;\n", l, r,
 		    r, l);
 	else {
-		/* Out, then in: ESP in tunnel mode on the interface's reqid. */
-		fprintf(fp, "add %s %s esp %#x -m tunnel -u %u%s", l, r,
+		/* Out, then in: ESP in tunnel mode on the interface's reqid,
+		 * with an anti-replay window of 1024 packets (R47) always: ESN
+		 * without one has the kernel's two ends disagree on the AAD of
+		 * an AEAD cipher (xform_esp.c, the window checked on input
+		 * only), and every ICV fails. */
+		fprintf(fp, "add %s %s esp %#x -m tunnel -u %u -r 128%s", l, r,
 		    sw.spi_out, sp->reqid, sw.esn ? " -esn" : "");
 		if (sw.encap)
 			fprintf(fp, " -natt %s[4500] %s[4500]", l, r);
@@ -601,7 +605,7 @@ do_sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		if (sw.auth != NULL)
 			fprintf(fp, " -A %s 0x%s", sw.auth, sw.akey_out);
 		fprintf(fp, " ;\n");
-		fprintf(fp, "add %s %s esp %#x -m tunnel -u %u%s", r, l,
+		fprintf(fp, "add %s %s esp %#x -m tunnel -u %u -r 128%s", r, l,
 		    sw.spi_in, sp->reqid, sw.esn ? " -esn" : "");
 		if (sw.encap)
 			fprintf(fp, " -natt %s[4500] %s[4500]", r, l);
