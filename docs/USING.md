@@ -1262,7 +1262,13 @@ reaches them all; and at each UNI the protocol its entry says, the
 `distance` its preference (256 less it, R140–R142). What a UNI learns
 goes by the service's table and the tunnel iBGP chose, not by the
 policies' tables: steering by performance is of the prefixes written
-in the document. AS override, damping and extended communities are
+in the document. With `bfd` in a service (`interval` 100 to 300 ms,
+`multiplier`, Mplify 119 §10.5 and R159), the instance watches each
+tunnel interface by BFD and the edges' iBGP sessions go by it; the
+agent reads the sessions every second into the `sdwan` read, a
+session that goes down or comes up is a fault (`sdwan-tunnel`, by
+bfd, R60), and the steering takes BFD's word over the probe's where
+there is a session. Paths shows BFD's state beside the probe's. AS override, damping and extended communities are
 refused, BIRD having no word for them; DHCP and SLAAC at a UNI are
 still to come. Paths shows each edge's instances and their protocols,
 as `birdc show protocols` lists them; `arcanactl sdwan bird json`

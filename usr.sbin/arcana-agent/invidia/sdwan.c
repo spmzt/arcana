@@ -291,7 +291,10 @@ steer_apply(struct work *w, bool force, const char **errp)
 	for (i = 0; i < nsteers; i++) {
 		c = -1;
 		for (k = 0; k < steers[i].ncand && c == -1; k++) {
-			st = probe_state_of(steers[i].cand[k].id);
+			/* BFD's word where there is a session, else the probe's. */
+			st = sdwan_bfd_state(steers[i].cand[k].via);
+			if (st == PROBE_NONE)
+				st = probe_state_of(steers[i].cand[k].id);
 			if (st != PROBE_DOWN)
 				c = k;
 		}
@@ -766,6 +769,25 @@ bad:
 	return (-1);
 }
 
+/* The tunnel a steering candidate goes by this address; NULL for none. */
+const char *
+sdwan_tunnel_by_via(const char *via)
+{
+	static _Thread_local char	id[128];
+	int				i, k;
+
+	pthread_mutex_lock(&lock);
+	for (i = 0; via != NULL && i < nsteers; i++)
+		for (k = 0; k < steers[i].ncand; k++)
+			if (strcmp(steers[i].cand[k].via, via) == 0) {
+				snprintf(id, sizeof(id), "%s", steers[i].cand[k].id);
+				pthread_mutex_unlock(&lock);
+				return (id);
+			}
+	pthread_mutex_unlock(&lock);
+	return (NULL);
+}
+
 /* At the start: the rules and the steering kept, applied again. */
 void
 sdwan_start(void)
@@ -829,6 +851,11 @@ sdwan_json(ucl_object_t *top)
 			    PROBE_DOWN ? "down" : st == PROBE_UP ? "up" : st ==
 			    PROBE_NONE ? "not probed" : "unknown"), "state", 0,
 			    false);
+			st = sdwan_bfd_state(steers[i].cand[k].via);
+			if (st != PROBE_NONE)
+				ucl_object_insert_key(c, ucl_object_fromstring(st ==
+				    PROBE_DOWN ? "down" : st == PROBE_UP ? "up" :
+				    "unknown"), "bfd", 0, false);
 			ucl_array_append(cs, c);
 		}
 		ucl_object_insert_key(e, cs, "candidates", 0, false);

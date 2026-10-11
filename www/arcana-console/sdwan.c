@@ -1416,6 +1416,18 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			return (fail(c, "availability is a percentage"));
 	}
 	c->where[base] = '\0';
+	/* BFD on the tunnels (Mplify 119 §10.5, R58-R60, R159). */
+	if ((v = ucl_object_lookup(sw, "bfd")) != NULL && !is_null(v)) {
+		if (ucl_object_type(v) != UCL_OBJECT)
+			return (fail(c, "bfd is an object: interval, multiplier"));
+		if ((e = ucl_object_lookup(v, "interval")) != NULL &&
+		    !is_int(e, 100, 300, NULL))
+			return (fail(c, "bfd: interval is 100 to 300 ms (R159)"));
+		if ((e = ucl_object_lookup(v, "multiplier")) != NULL &&
+		    !is_int(e, 2, 10, NULL))
+			return (fail(c, "bfd: multiplier is 2 to 10, 3 as a rule "
+			    "(R159)"));
+	}
 	/* Probing (Mplify 119 §11.4): the defaults of its tunnels. */
 	if ((v = ucl_object_lookup(sw, "probe")) != NULL) {
 		if (ucl_object_type(v) != UCL_OBJECT)

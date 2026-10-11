@@ -1529,6 +1529,27 @@ view_paths(struct html *h)
 			    "class=\"dim\">", st, st);
 			h_txt(h, age);
 			h_raw(h, "</small>");
+			/* BFD's word on it, when the service watches by BFD. */
+			{
+				const ucl_object_t	*bi, *bs;
+				ucl_object_iter_t	 iit, sit;
+				const char		*far = jstr(tg, "address");
+
+				iit = NULL;
+				while (far != NULL && (bi = ucl_object_iterate(jget(
+				    jget(sd.paths, jstr(e, "edge")), "bird"), &iit,
+				    true)) != NULL) {
+					sit = NULL;
+					while ((bs = ucl_object_iterate(jget(bi, "bfd"),
+					    &sit, true)) != NULL)
+						if (jstr(bs, "address") != NULL && strcmp(
+						    jstr(bs, "address"), far) == 0)
+							h_fmt(h, " <span class=\"chip st-%s\" "
+							    "title=\"BFD, by BIRD\">bfd %s"
+							    "</span>", jstr(bs, "state"),
+							    jstr(bs, "state"));
+				}
+			}
 			if (jstr(tg, "error") != NULL) {
 				h_raw(h, "<small class=\"bad\">");
 				h_txt(h, jstr(tg, "error"));
@@ -1655,6 +1676,11 @@ view_paths(struct html *h)
 			h_raw(h, "</span> ");
 			h_txt(h, jstr(d, "state") != NULL ? jstr(d, "state") :
 			    "");
+			if (jstr(d, "by") != NULL) {
+				h_raw(h, " <small class=\"dim\">by ");
+				h_txt(h, jstr(d, "by"));
+				h_raw(h, "</small>");
+			}
 			h_raw(h, " <span class=\"dim\">");
 			h_txt(h, age);
 			h_raw(h, "</span></li>");

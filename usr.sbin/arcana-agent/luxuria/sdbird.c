@@ -39,9 +39,23 @@ struct instance {
 	int	fib;
 };
 
+/* A BFD session as an instance lists it: the far address, where. */
+struct bfd {
+	char	instance[40];
+	char	address[64];
+	char	iface[32];
+	char	since[32];
+	int	state;		/* PROBE_UP, PROBE_DOWN, else PROBE_UNKNOWN */
+};
+
+#define	BFD_MAX		512
+#define	BFD_EVERY_S	1
+
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
 static struct instance	instances[INSTANCES_MAX];
 static int		ninstances;
+static struct bfd	bfds[BFD_MAX];
+static int		nbfds;
 
 static bool
 name_ok(const char *s)
@@ -286,13 +300,146 @@ do_sdwan_bird(struct work *w, const char *json, const char **errp)
 	return (0);
 }
 
-/* At the start: the instances kept, started again. */
+/*
+ * The BFD sessions of an instance, as "show bfd sessions" lists them:
+ * a heading, then a line each of address, interface, state, since,
+ * interval, timeout; into out, at most max; how many.
+ */
+static int
+bfd_read(struct work *w, const char *name, struct bfd *out, int max)
+{
+	struct execres	 res;
+	char		*text, *line, *p, *f[6];
+	int		 n, k;
+
+	if (inst_birdc(w, name, "show", "bfd sessions", &res) != 0 || res.out ==
+	    NULL)
+		return (0);
+	n = 0;
+	text = wstrdup(w, res.out);
+	while (n < max && (line = strsep(&text, "\n")) != NULL) {
+		if (line[0] == '\0' || line[0] == ' ' || strncmp(line, "BIRD", 4)
+		    == 0 || strncmp(line, "IP address", 10) == 0 || line[strlen(
+		    line) - 1] == ':')
+			continue;
+		p = line;
+		for (k = 0; k < 6; k++) {
+			while (*p == ' ' || *p == '\t')
+				p++;
+			f[k] = p;
+			while (*p != '\0' && *p != ' ' && *p != '\t')
+				p++;
+			if (*p != '\0')
+				*p++ = '\0';
+		}
+		if (f[2][0] == '\0')
+			continue;
+		snprintf(out[n].instance, sizeof(out[n].instance), "%s", name);
+		snprintf(out[n].address, sizeof(out[n].address), "%s", f[0]);
+		snprintf(out[n].iface, sizeof(out[n].iface), "%s", f[1]);
+		snprintf(out[n].since, sizeof(out[n].since), "%s", f[3]);
+		out[n].state = strcasecmp(f[2], "up") == 0 ? PROBE_UP : strcasecmp(
+		    f[2], "down") == 0 ? PROBE_DOWN : PROBE_UNKNOWN;
+		n++;
+	}
+	return (n);
+}
+
+/*
+ * The sessions read again every second, each change an event
+ * (sdwan-tunnel, by bfd, R60), and the steering told, which takes
+ * BFD's word over the probe's where there is a session.
+ */
+static void *
+bfd_watch(void *arg __unused)
+{
+	struct work	 w;
+	struct instance	 in[INSTANCES_MAX];
+	struct bfd	*now, *chg;
+	int		 n, i, k, m, was, nchg;
+	bool		 changed;
+
+	if ((now = calloc(BFD_MAX, sizeof(*now))) == NULL || (chg = calloc(
+	    BFD_MAX, sizeof(*chg))) == NULL)
+		return (NULL);
+	for (;;) {
+		sleep(BFD_EVERY_S);
+		pthread_mutex_lock(&lock);
+		n = ninstances;
+		memcpy(in, instances, sizeof(*in) * (size_t)n);
+		pthread_mutex_unlock(&lock);
+		if (n == 0)
+			continue;
+		work_init(&w);
+		m = 0;
+		for (i = 0; i < n && m < BFD_MAX; i++)
+			m += bfd_read(&w, in[i].name, now + m, BFD_MAX - m);
+		changed = false;
+		nchg = 0;
+		pthread_mutex_lock(&lock);
+		for (k = 0; k < m; k++) {
+			was = PROBE_NONE;
+			for (i = 0; i < nbfds; i++)
+				if (strcmp(bfds[i].address, now[k].address) == 0 &&
+				    strcmp(bfds[i].iface, now[k].iface) == 0) {
+					was = bfds[i].state;
+					break;
+				}
+			if (was != now[k].state && (was != PROBE_NONE || now[k].
+			    state == PROBE_DOWN)) {
+				chg[nchg++] = now[k];
+				changed = true;
+			}
+		}
+		if (m != nbfds)
+			changed = true;
+		memcpy(bfds, now, sizeof(*now) * (size_t)m);
+		nbfds = m;
+		pthread_mutex_unlock(&lock);
+		/* Told without the lock: the steering has a lock of its own,
+		 * taken the other way round when it asks BFD. */
+		for (k = 0; k < nchg; k++) {
+			const char	*id = sdwan_tunnel_by_via(chg[k].address);
+
+			event_add("sdwan-tunnel", "{\"id\":\"%s\",\"address\":\"%s\","
+			    "\"interface\":\"%s\",\"state\":\"%s\",\"by\":\"bfd\"}",
+			    id != NULL ? id : chg[k].iface, chg[k].address,
+			    chg[k].iface, chg[k].state == PROBE_UP ? "up" :
+			    chg[k].state == PROBE_DOWN ? "down" : "unknown");
+		}
+		work_free(&w);
+		if (changed)
+			sdwan_probe_changed();
+	}
+	return (NULL);
+}
+
+/* What BFD says of the tunnel whose far address this is; NONE without. */
+int
+sdwan_bfd_state(const char *address)
+{
+	int	i, st;
+
+	st = PROBE_NONE;
+	pthread_mutex_lock(&lock);
+	for (i = 0; address != NULL && i < nbfds; i++)
+		if (strcmp(bfds[i].address, address) == 0) {
+			st = bfds[i].state;
+			break;
+		}
+	pthread_mutex_unlock(&lock);
+	return (st);
+}
+
+/* At the start: the instances kept, started again; the sessions watched. */
 void
 sdwan_bird_start(void)
 {
 	struct work	 w;
 	char		*json;
 	const char	*e;
+	pthread_t	 tid;
+	int		 error;
 
 	work_init(&w);
 	if ((json = sdwan_kept_read(BIRD_FILE)) != NULL) {
@@ -302,6 +449,11 @@ sdwan_bird_start(void)
 		free(json);
 	}
 	work_free(&w);
+	if ((error = pthread_create(&tid, NULL, bfd_watch, NULL)) != 0)
+		logmsg(LOG_WARNING, "sdwan bird: no BFD watch: %s", strerror(
+		    error));
+	else
+		pthread_detach(tid);
 }
 
 /*
@@ -366,6 +518,24 @@ sdwan_bird_json(struct work *w, ucl_object_t *top)
 			ucl_object_insert_key(o, ucl_object_frombool(false),
 			    "running", 0, false);
 		ucl_object_insert_key(o, ps, "protocols", 0, false);
+		/* Its BFD sessions, as last read. */
+		ps = ucl_object_typed_new(UCL_ARRAY);
+		for (k = 0; k < nbfds; k++) {
+			if (strcmp(bfds[k].instance, instances[i].name) != 0)
+				continue;
+			p = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(p, ucl_object_fromstring(
+			    bfds[k].address), "address", 0, false);
+			ucl_object_insert_key(p, ucl_object_fromstring(
+			    bfds[k].iface), "interface", 0, false);
+			ucl_object_insert_key(p, ucl_object_fromstring(
+			    bfds[k].state == PROBE_UP ? "up" : bfds[k].state ==
+			    PROBE_DOWN ? "down" : "unknown"), "state", 0, false);
+			ucl_object_insert_key(p, ucl_object_fromstring(
+			    bfds[k].since), "since", 0, false);
+			ucl_array_append(ps, p);
+		}
+		ucl_object_insert_key(o, ps, "bfd", 0, false);
 		ucl_array_append(arr, o);
 	}
 	ucl_object_insert_key(top, arr, "bird", 0, false);

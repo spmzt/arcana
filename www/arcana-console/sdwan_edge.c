@@ -2383,6 +2383,14 @@ symbol(const char *id, char *buf, size_t len)
 	return (buf);
 }
 
+/* Does the service watch its tunnels by BFD? */
+static bool
+sw_bfd(const ucl_object_t *sw)
+{
+
+	return (!is_nullish(ucl_object_lookup(sw, "bfd")));
+}
+
 /* Does the service route at any UNI, BGP or OSPF? */
 static bool
 sw_routes(const ucl_object_t *sw)
@@ -2483,11 +2491,41 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    "RTS_DEVICE && source != RTS_INHERIT;\n\t};\n}\n\n", (intmax_t)
 	    ucl_object_toint(ucl_object_lookup(sw, "fib")), (intmax_t)
 	    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+	/* BFD on each tunnel interface here (R58, R59, R159): the iBGP
+	 * sessions go down with it, and the agent reads the sessions. */
+	if (sw_bfd(sw)) {
+		const ucl_object_t	*bfd = ucl_object_lookup(sw, "bfd");
+		int			 first = 1;
+
+		kore_buf_appendf(b, "protocol bfd {\n\tinterface ");
+		it = NULL;
+		while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
+			if (strcmp(str(t, "swvc"), str(sw, "id")) != 0)
+				continue;
+			tit = NULL;
+			while ((me = ucl_object_iterate(ucl_object_lookup(t,
+			    "ends"), &tit, true)) != NULL)
+				if (strcmp(str(me, "edge"), sid) == 0 && str(me,
+				    "ifname") != NULL) {
+					kore_buf_appendf(b, "%s\"%s\"", first ? "" :
+					    ", ", str(me, "ifname"));
+					first = 0;
+				}
+		}
+		if (first)
+			kore_buf_appendf(b, "\"none\"");
+		kore_buf_appendf(b, " {\n\t\tinterval %jd ms;\n\t\tmultiplier "
+		    "%jd;\n\t};\n}\n\n", (intmax_t)(ucl_object_lookup(bfd,
+		    "interval") != NULL ? ucl_object_toint(ucl_object_lookup(bfd,
+		    "interval")) : 200), (intmax_t)(ucl_object_lookup(bfd,
+		    "multiplier") != NULL ? ucl_object_toint(ucl_object_lookup(
+		    bfd, "multiplier")) : 3));
+	}
 	/* iBGP with each other edge, by each tunnel between them. */
 	kore_buf_appendf(b, "template bgp edge {\n\tlocal as %jd;\n\thold time 30;\n"
-	    "\tipv4 {\n\t\timport all;\n\t\texport all;\n\t\tnext hop self;\n"
+	    "%s\tipv4 {\n\t\timport all;\n\t\texport all;\n\t\tnext hop self;\n"
 	    "\t};\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t\tnext hop "
-	    "self;\n\t};\n}\n\n", (intmax_t)as);
+	    "self;\n\t};\n}\n\n", (intmax_t)as, sw_bfd(sw) ? "\tbfd on;\n" : "");
 	k = 0;
 	it = NULL;
 	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
@@ -2653,7 +2691,7 @@ bird_build(struct plan *pl, const ucl_object_t *doc)
 		eit = NULL;
 		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
 		    &eit, true)) != NULL) {
-			if (!sw_routes(sw))
+			if (!sw_routes(sw) && !sw_bfd(sw))
 				continue;
 			here = false;
 			pit = NULL;
@@ -2678,9 +2716,9 @@ bird_build(struct plan *pl, const ucl_object_t *doc)
 			ucl_object_unref(list);
 			continue;
 		}
-		o = object(pl, sid, "bird", PH_BIRD, "routing at the UNIs: BIRD, "
-		    "%u instance%s in the services' tables, BGP or OSPF with "
-		    "the subscriber, iBGP with the other edges",
+		o = object(pl, sid, "bird", PH_BIRD, "BIRD: %u instance%s in the "
+		    "services' tables, BGP or OSPF with the subscriber at a UNI, "
+		    "iBGP with the other edges, BFD on the tunnels",
 		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
 		if (o == NULL) {
 			ucl_object_unref(list);

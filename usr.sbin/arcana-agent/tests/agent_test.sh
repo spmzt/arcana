@@ -2561,6 +2561,7 @@ sock="\$2"; shift 2
 case "\$*" in
 'show status') printf 'BIRD 3.3.2 ready.\nBIRD 3.3.2\nDaemon is up and running\n' ;;
 'show protocols') printf 'BIRD 3.3.2 ready.\nName       Proto      Table      State  Since         Info\ndevice1    Device     ---        up     21:00:00.000  \nuni_hq_0   BGP        ---        start  21:00:00.000  Active        Socket: Connection refused\n' ;;
+'show bfd sessions') st=Up; [ -e $(pwd)/bfd.down ] && st=Down; printf 'BIRD 3.3.2 ready.\nbfd1:\nIP address                Interface  State      Since         Interval  Timeout\n100.64.0.1                gre100     %s         21:00:00.000    0.200    0.600\n' "\$st" ;;
 configure) printf 'BIRD 3.3.2 ready.\nReading configuration from %s\nReconfigured\n' "\$sock" ;;
 down) rm -f "\$sock" ;;
 esac
@@ -2584,8 +2585,36 @@ EOS
 	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\n"}]}'
 	atf_check -o match:'^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1.conf -s .*sdwan-bird-sw1.ctl -P .*sdwan-bird-sw1.pid$' cat setfib.log
 	atf_check -o match:'^router id 100.64.0.0;$' cat "$(dirname "$f")/sdwan-bird-sw1.conf"
-	atf_check -o match:'"bird":\[\{"name":"sw1","fib":1,"running":true,"protocols":\[\{"name":"device1","proto":"Device","state":"up"\},\{"name":"uni_hq_0","proto":"BGP","state":"start","info":"Active        Socket: Connection refused"\}\]\}\]' \
+	atf_check -o match:'"bird":\[\{"name":"sw1","fib":1,"running":true,"protocols":\[\{"name":"device1","proto":"Device","state":"up"\},\{"name":"uni_hq_0","proto":"BGP","state":"start","info":"Active        Socket: Connection refused"\}\]' \
 	    "$JGC" -c "$SOCK" sdwan
+	# BFD: the sessions read every second into the sdwan read; a
+	# session down is an event and the steering takes BFD's word over
+	# the probe's where there is a session: the second candidate then.
+	for i in $(seq 1 30); do
+		"$JGC" -c "$SOCK" sdwan | grep -q '"bfd":\[{"address":"100.64.0.1","interface":"gre100","state":"up"' && break
+		sleep 0.2
+	done
+	atf_check -o match:'"bfd":\[\{"address":"100.64.0.1","interface":"gre100","state":"up","since":"21:00:00.000"\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"sw1_known","prefix":"10.1.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"},{"id":"t2","via":"100.64.0.3"}]}]}'
+	atf_check -o match:'"chosen":0,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed","bfd":"up"\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	touch bfd.down
+	for i in $(seq 1 30); do
+		"$JGC" -c "$SOCK" sdwan | grep -q '"chosen":1' && break
+		sleep 0.2
+	done
+	atf_check -o match:'"chosen":1,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed","bfd":"down"\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"kind":"sdwan-tunnel","data":\{"id":"t1","address":"100.64.0.1","interface":"gre100","state":"down","by":"bfd"\}' \
+	    "$JGC" -c "$SOCK" events
+	rm -f bfd.down
+	for i in $(seq 1 30); do
+		"$JGC" -c "$SOCK" sdwan | grep -q '"chosen":0' && break
+		sleep 0.2
+	done
+	atf_check -o match:'"chosen":0' "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\nprotocol static {}\n"}]}'
 	atf_check -o match:'configure$' cat birdc.log

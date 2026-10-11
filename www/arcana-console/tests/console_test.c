@@ -3247,6 +3247,7 @@ static const char sdwan_good[] =
     "\"topologies\":[{\"name\":\"hub\",\"type\":\"rooted-multipoint\","
     "\"roots\":[\"hq\"],\"leaves\":[\"branch\"]}],"
     "\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},"
+    "\"bfd\":{\"interval\":200,\"multiplier\":3},"
     "\"rate_limiters\":[{\"name\":\"shared\",\"commit\":1000000,\"limit\":"
     "5000000}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
@@ -3353,6 +3354,7 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"hold_time\":90", "\"hold_time\":90,\"as_override\":true",
 		    "as_override" },
 		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
+		{ "\"multiplier\":3", "\"multiplier\":1", "(R159)" },
 		{ "\"vlan\":20", "\"vlan\":5000", "(§11.2)" },
 		{ "\"virtual-topology\":\"hub\"", "\"virtual-topology\":\"nope\"",
 		    "(R47)" },
@@ -3616,6 +3618,11 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b\\nprotocol bgp "
 	    "edge0 from edge {\\n\\tlocal 100.64.0.0 as 64600;\\n\\tneighbor "
 	    "100.64.0.1 as 64600;\\n}") != NULL, "%s", r.body);
+	/* BFD on the edge's tunnel interfaces, the iBGP sessions by it. */
+	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
+	    "\\\"gif102\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier 3;\\n\\t};"
+	    "\\n}") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\tbfd on;\\n") != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
 	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
 	    "\\n\\tpreference 106;\\n\\tpassword \\\"s3cret\\\";\\n\\thold time "

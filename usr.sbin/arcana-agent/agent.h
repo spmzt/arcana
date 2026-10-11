@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.52.0"
+#define	ARCANA_AGENT_VERSION	"0.53.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -419,6 +419,8 @@ char		*sdwan_kept_read(const char *);
 int		 do_sdwan_bird(struct work *, const char *, const char **);
 void		 sdwan_bird_start(void);
 void		 sdwan_bird_json(struct work *, struct ucl_object_s *);
+int		 sdwan_bfd_state(const char *);
+const char	*sdwan_tunnel_by_via(const char *);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,
