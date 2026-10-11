@@ -893,8 +893,10 @@ uni_prefixes(const ucl_object_t *ep, ucl_object_t *out)
 	u = ucl_object_lookup(ep, "uni");
 	for (i = 0; i < 2; i++) {
 		v = ucl_object_lookup(u, fams[i]);
-		if (str(v, "mode") == NULL || strcmp(str(v, "mode"), "static") !=
-		    0)
+		/* A subnet whoever addresses its hosts. */
+		if (str(v, "mode") == NULL || (strcmp(str(v, "mode"), "static")
+		    != 0 && strcmp(str(v, "mode"), "dhcp") != 0 && strcmp(str(v,
+		    "mode"), "slaac") != 0))
 			continue;
 		ucl_array_append(out, S(str(v, "prefix")));
 		it = NULL;
@@ -985,8 +987,10 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 	}
 	for (i = 0; i < 2; i++) {
 		v = ucl_object_lookup(u, fams[i]);
-		if (str(v, "mode") == NULL || strcmp(str(v, "mode"), "static") !=
-		    0)
+		/* The provider's addresses go on, whoever addresses the hosts. */
+		if (str(v, "mode") == NULL || (strcmp(str(v, "mode"), "static")
+		    != 0 && strcmp(str(v, "mode"), "dhcp") != 0 && strcmp(str(v,
+		    "mode"), "slaac") != 0))
 			continue;
 		ns = 0;
 		subs[ns++] = v;
@@ -1022,7 +1026,336 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 	if (vlan == 0)
 		unmake(o, job("if-set", "interface", S(ifn), "fib", I(0),
 		    "persist", B(true), NULL));
+	/* SLAAC (§11.5): the base system's rtadvd advertises the prefix on
+	 * the UNI, and the DNS servers, for the hosts to address
+	 * themselves. */
+	v = ucl_object_lookup(u, "ipv6");
+	if (str(v, "mode") != NULL && strcmp(str(v, "mode"), "slaac") == 0) {
+		ucl_object_t	*names;
+
+		snprintf(key, sizeof(key), "rtadvd:%s", str(ep, "id"));
+		o = object(pl, str(ep, "edge"), key, PH_UNI, "UNI %s: router "
+		    "advertisements of %s on %s by rtadvd (SLAAC)", str(u, "id"),
+		    str(v, "prefix"), ifn);
+		if (o != NULL) {
+			names = ucl_object_typed_new(UCL_ARRAY);
+			ucl_array_append(names, S(str(v, "prefix")));
+			ait = NULL;
+			while ((a = ucl_object_iterate(ucl_object_lookup(v, "dns"),
+			    &ait, true)) != NULL)
+				ucl_array_append(names, S(ucl_object_tostring_forced(
+				    a)));
+			make(o, job("rtadvd", "interface", S(ifn), "args", names,
+			    "persist", B(true), NULL));
+			unmake(o, job("rtadvd", "interface", S(ifn), "args",
+			    ucl_object_typed_new(UCL_ARRAY), "remove", B(true),
+			    "persist", B(true), NULL));
+		}
+	}
 	return (true);
+}
+
+/* ---- DHCP at the UNIs (§11.4, §11.5): dnsmasq, a service an instance -- */
+
+static const char *uni_ifname(struct plan *, const ucl_object_t *,
+		    const ucl_object_t *, char *, size_t);
+
+/* An IPv4 address as a number, and back. */
+static uint32_t
+v4num(const uint8_t *a)
+{
+
+	return ((uint32_t)a[0] << 24 | (uint32_t)a[1] << 16 | (uint32_t)a[2] <<
+	    8 | a[3]);
+}
+
+static const char *
+v4str(uint32_t n, char *buf, size_t len)
+{
+
+	snprintf(buf, len, "%u.%u.%u.%u", n >> 24, (n >> 16) & 255, (n >> 8) &
+	    255, n & 255);
+	return (buf);
+}
+
+/*
+ * The IPv4 ranges dnsmasq gives out at a UNI: the subnet's hosts, less
+ * the provider's addresses and the reserved prefixes (§11.4), as
+ * dhcp-range lines.
+ */
+static void
+dhcp_ranges4(struct kore_buf *b, const ucl_object_t *v, const char *tag)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	struct net		 n, r;
+	uint32_t		 lo, hi, from, to, x[66][2], t;
+	const char		*lease;
+	char			 s1[20], s2[20], mask[20];
+	int			 nx = 0, i, k;
+
+	if (!net_parse(str(v, "prefix"), &n) || n.af != AF_INET || n.len > 30)
+		return;
+	lo = v4num(n.a) & (n.len == 0 ? 0 : 0xffffffffu << (32 - n.len));
+	hi = lo | (n.len == 0 ? 0xffffffffu : 0xffffffffu >> n.len);
+	lease = str(v, "lease") != NULL ? str(v, "lease") : "12h";
+	/* What is not given: the provider's, the reserved. */
+	it = NULL;
+	while (nx < 64 && (e = ucl_object_iterate(ucl_object_lookup(v,
+	    "provider"), &it, true)) != NULL)
+		if (net_parse(ucl_object_tostring_forced(e), &r) && r.af ==
+		    AF_INET) {
+			x[nx][0] = x[nx][1] = v4num(r.a);
+			nx++;
+		}
+	it = NULL;
+	while (nx < 64 && (e = ucl_object_iterate(ucl_object_lookup(v,
+	    "reserved"), &it, true)) != NULL)
+		if (net_parse(ucl_object_tostring_forced(e), &r) && r.af ==
+		    AF_INET) {
+			x[nx][0] = v4num(r.a) & (r.len == 0 ? 0 : 0xffffffffu <<
+			    (32 - r.len));
+			x[nx][1] = x[nx][0] | (r.len == 0 ? 0xffffffffu :
+			    0xffffffffu >> r.len);
+			nx++;
+		}
+	/* In order, by the start. */
+	for (i = 1; i < nx; i++)
+		for (k = i; k > 0 && x[k][0] < x[k - 1][0]; k--) {
+			t = x[k][0]; x[k][0] = x[k - 1][0]; x[k - 1][0] = t;
+			t = x[k][1]; x[k][1] = x[k - 1][1]; x[k - 1][1] = t;
+		}
+	v4str(n.len == 0 ? 0 : 0xffffffffu << (32 - n.len), mask, sizeof(mask));
+	from = lo + 1;
+	to = hi - 1;
+	for (i = 0; i <= nx; i++) {
+		uint32_t	end = i < nx ? (x[i][0] > 0 ? x[i][0] - 1 : 0) : to;
+
+		if (i == nx || x[i][0] > from) {
+			if (end > to)
+				end = to;
+			if (from <= end && from > lo)
+				kore_buf_appendf(b, "dhcp-range=set:%s,%s,%s,%s,%s\n",
+				    tag, v4str(from, s1, sizeof(s1)), v4str(end, s2,
+				    sizeof(s2)), mask, lease);
+		}
+		if (i < nx && x[i][1] + 1 > from)
+			from = x[i][1] + 1;
+	}
+}
+
+/*
+ * The IPv6 range at a UNI (§11.5): ::100 to ::ffff of the /64, less a
+ * reserved prefix that overlaps it, which splits it, by the low 64 bits.
+ */
+static void
+dhcp_ranges6(struct kore_buf *b, const ucl_object_t *v, const char *tag)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	struct net		 n, r;
+	uint64_t		 from, to, x[66][2], t, rlo, rhi;
+	const char		*lease;
+	char			 pfx[48], s1[64], s2[64];
+	int			 nx = 0, i, k;
+
+	if (!net_parse(str(v, "prefix"), &n) || n.af != AF_INET6 || n.len != 64)
+		return;
+	snprintf(pfx, sizeof(pfx), "%x:%x:%x:%x", n.a[0] << 8 | n.a[1], n.a[2]
+	    << 8 | n.a[3], n.a[4] << 8 | n.a[5], n.a[6] << 8 | n.a[7]);
+	lease = str(v, "lease") != NULL ? str(v, "lease") : "12h";
+	it = NULL;
+	while (nx < 64 && (e = ucl_object_iterate(ucl_object_lookup(v,
+	    "reserved"), &it, true)) != NULL) {
+		if (!net_parse(ucl_object_tostring_forced(e), &r) || r.af !=
+		    AF_INET6 || r.len < 64)
+			continue;
+		rlo = 0;
+		for (k = 8; k < 16; k++)
+			rlo = rlo << 8 | r.a[k];
+		rlo &= r.len == 128 ? ~(uint64_t)0 : ~(uint64_t)0 << (128 -
+		    r.len);
+		rhi = rlo | (r.len == 128 ? 0 : ~(uint64_t)0 >> (r.len - 64));
+		x[nx][0] = rlo;
+		x[nx][1] = rhi;
+		nx++;
+	}
+	for (i = 1; i < nx; i++)
+		for (k = i; k > 0 && x[k][0] < x[k - 1][0]; k--) {
+			t = x[k][0]; x[k][0] = x[k - 1][0]; x[k - 1][0] = t;
+			t = x[k][1]; x[k][1] = x[k - 1][1]; x[k - 1][1] = t;
+		}
+	from = 0x100;
+	to = 0xffff;
+	for (i = 0; i <= nx; i++) {
+		uint64_t	end = i < nx ? (x[i][0] > 0 ? x[i][0] - 1 : 0) : to;
+
+		if (i == nx || x[i][0] > from) {
+			if (end > to)
+				end = to;
+			if (from <= end) {
+				snprintf(s1, sizeof(s1), "%s:%jx:%jx:%jx:%jx", pfx,
+				    (uintmax_t)(from >> 48), (uintmax_t)((from >> 32)
+				    & 0xffff), (uintmax_t)((from >> 16) & 0xffff),
+				    (uintmax_t)(from & 0xffff));
+				snprintf(s2, sizeof(s2), "%s:%jx:%jx:%jx:%jx", pfx,
+				    (uintmax_t)(end >> 48), (uintmax_t)((end >> 32) &
+				    0xffff), (uintmax_t)((end >> 16) & 0xffff),
+				    (uintmax_t)(end & 0xffff));
+				kore_buf_appendf(b, "dhcp-range=set:%s,%s,%s,64,%s\n",
+				    tag, s1, s2, lease);
+			}
+		}
+		if (i < nx && x[i][1] + 1 > from)
+			from = x[i][1] + 1;
+	}
+}
+
+/* dnsmasq's configuration for a service at an edge: its DHCP UNIs. */
+static char *
+dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
+{
+	struct kore_buf		*b;
+	const ucl_object_t	*ep, *u, *v, *a, *e;
+	ucl_object_iter_t	 it, ait;
+	const char		*ifn;
+	char			 vif[32], *out;
+	int			 i;
+	bool			 ra = false;
+
+	b = kore_buf_alloc(2048);
+	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	    "at %s, in routing table %jd.\n# The hosts' addresses at the UNIs "
+	    "(MEF 70.2 §11.4, §11.5); no DNS served here.\nport=0\n"
+	    "bind-interfaces\nno-resolv\nno-hosts\ndhcp-authoritative\n", str(sw,
+	    "id"), server_name_of(sid), (intmax_t)ucl_object_toint(ucl_object_lookup(sw,
+	    "fib")));
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep, "edge"), sid) != 0)
+			continue;
+		u = ucl_object_lookup(ep, "uni");
+		ifn = uni_ifname(pl, sw, ep, vif, sizeof(vif));
+		for (i = 0; i < 2; i++) {
+			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
+			if (str(v, "mode") == NULL || strcmp(str(v, "mode"), "dhcp")
+			    != 0)
+				continue;
+			kore_buf_appendf(b, "\n# UNI %s, %s\ninterface=%s\n", str(u,
+			    "id"), str(v, "prefix"), ifn);
+			if (i == 0) {
+				dhcp_ranges4(b, v, ifn);
+				/* Their router: the provider's first address. */
+				a = ucl_array_find_index(ucl_object_lookup(v,
+				    "provider"), 0);
+				if (a != NULL)
+					kore_buf_appendf(b, "dhcp-option=tag:%s,option:"
+					    "router,%s\n", ifn,
+					    ucl_object_tostring_forced(a));
+			} else {
+				dhcp_ranges6(b, v, ifn);
+				ra = true;
+			}
+			/* The DNS servers told to the hosts, one line. */
+			if (ucl_object_lookup(v, "dns") != NULL && ucl_array_size(
+			    ucl_object_lookup(v, "dns")) > 0) {
+				kore_buf_appendf(b, "dhcp-option=tag:%s,option%s:"
+				    "dns-server", ifn, i == 0 ? "" : "6");
+				ait = NULL;
+				while ((e = ucl_object_iterate(ucl_object_lookup(v,
+				    "dns"), &ait, true)) != NULL)
+					kore_buf_appendf(b, ",%s%s%s", i == 0 ? "" : "[",
+					    ucl_object_tostring_forced(e), i == 0 ? "" :
+					    "]");
+				kore_buf_appendf(b, "\n");
+			}
+		}
+	}
+	if (ra)
+		kore_buf_appendf(b, "\n# IPv6: the hosts told by router advertisements "
+		    "to ask (M flag)\nenable-ra\n");
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
+ * Each edge's DHCP servers: dnsmasq from packages (the base system has
+ * no DHCP server), an instance per service with a DHCP UNI at the edge,
+ * in the service's table.
+ */
+static void
+dhcp_build(struct plan *pl, const ucl_object_t *doc)
+{
+	const ucl_object_t	*sw, *edge, *ep, *u, *v;
+	ucl_object_iter_t	 it, eit, pit;
+	ucl_object_t		*o, *inst, *list, *names;
+	char			 name[32];
+	const char		*sid;
+	char			*text;
+	bool			 here;
+	int			 i;
+
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		sid = str(edge, "server");
+		list = ucl_object_typed_new(UCL_ARRAY);
+		eit = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &eit, true)) != NULL) {
+			here = false;
+			pit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &pit, true)) != NULL) {
+				if (strcmp(str(ep, "edge"), sid) != 0)
+					continue;
+				u = ucl_object_lookup(ep, "uni");
+				for (i = 0; i < 2; i++) {
+					v = ucl_object_lookup(u, i == 0 ? "ipv4" :
+					    "ipv6");
+					if (str(v, "mode") != NULL && strcmp(str(v,
+					    "mode"), "dhcp") == 0)
+						here = true;
+				}
+			}
+			if (!here)
+				continue;
+			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+			inst = ucl_object_typed_new(UCL_OBJECT);
+			put(inst, "name", S(name));
+			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
+			    "fib"))));
+			text = dhcp_conf(pl, sw, sid);
+			put(inst, "conf", S(text));
+			free(text);
+			ucl_array_append(list, inst);
+		}
+		if (ucl_array_size(list) == 0) {
+			ucl_object_unref(list);
+			continue;
+		}
+		/* The package, with the tables: once. */
+		o = object(pl, sid, "dnsmasq", PH_FIBS, "dnsmasq from packages: "
+		    "the DHCP server at the UNIs, which the base system has not");
+		if (o != NULL) {
+			names = ucl_object_typed_new(UCL_ARRAY);
+			ucl_array_append(names, S("dnsmasq"));
+			make(o, job("pkg-install", "packages", names, NULL));
+		}
+		o = object(pl, sid, "dhcp", PH_BIRD, "DHCP: dnsmasq, %u instance%s "
+		    "in the services' tables, the hosts' addresses at the UNIs",
+		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
+		if (o == NULL) {
+			ucl_object_unref(list);
+			continue;
+		}
+		make(o, job("sdwan-dhcp", "instances", list, NULL));
+		unmake(o, job("sdwan-dhcp", "instances", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	}
 }
 
 
@@ -2833,6 +3166,28 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			}
 		}
 	}
+	/* An edge routes between its UNIs and its tunnels: the kernel's
+	 * forwarding on, both families, kept (sysctl.conf). */
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		static const char *const oids[] = { "net.inet.ip.forwarding",
+		    "net.inet6.ip6.forwarding" };
+		int	i;
+
+		o = object(pl, str(e, "server"), "forwarding", PH_FIBS,
+		    "forwarding: the kernel routes between the UNIs and the "
+		    "tunnels (net.inet.ip.forwarding, net.inet6.ip6.forwarding)");
+		if (o == NULL)
+			continue;
+		for (i = 0; i < 2; i++) {
+			args = ucl_object_typed_new(UCL_ARRAY);
+			ucl_array_append(args, S(oids[i]));
+			ucl_array_append(args, S("1"));
+			make(o, job("sysctl", "args", args, "persist", B(true),
+			    NULL));
+		}
+	}
 	/* NTP where an edge says its servers: the time for faults to line
 	 * up and keys to turn (Mplify 119 §12.2.2), with the FIBs. */
 	it = NULL;
@@ -3079,8 +3434,9 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			if (!rules_build(pl, str(edge, "server")))
 				return (false);
 	}
-	/* Routing at the UNIs, once they are up. */
+	/* Routing at the UNIs, once they are up; the hosts' addresses. */
 	bird_build(pl, doc);
+	dhcp_build(pl, doc);
 	return (true);
 }
 

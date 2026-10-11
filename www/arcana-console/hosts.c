@@ -60,6 +60,7 @@ enum op {
 	OP_SDWAN_RULES,
 	OP_SDWAN_STEER,
 	OP_SDWAN_BIRD,
+	OP_SDWAN_DHCP,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_STORAGE,
@@ -1045,6 +1046,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    "arc_sdwan_probes" : c->op == OP_SDWAN_RULES ? "arc_sdwan_rules" :
 	    c->op == OP_SDWAN_STEER ? "arc_sdwan_steer" :
 	    c->op == OP_SDWAN_BIRD ? "arc_sdwan_bird" :
+	    c->op == OP_SDWAN_DHCP ? "arc_sdwan_dhcp" :
 	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
@@ -1390,6 +1392,8 @@ call_run(struct kore_task *t)
 	struct arc_sdwan_steer_rsp *ssr;
 	struct arc_sdwan_bird_req sbq;
 	struct arc_sdwan_bird_rsp *sbr;
+	struct arc_sdwan_dhcp_req sdq2;
+	struct arc_sdwan_dhcp_rsp *sdr2;
 	struct arc_source_head_rsp *shr;
 	uint8_t			*bin;
 	size_t			 binlen;
@@ -1949,6 +1953,16 @@ connected:
 		put_str(top, "error", sbr->error);
 		steps = sbr->trace.v;
 		nsteps = sbr->trace.n;
+		break;
+	case OP_SDWAN_DHCP:
+		memset(&sdq2, 0, sizeof(sdq2));
+		sdq2.json = c->text;
+		if ((error = arc_sdwan_dhcp(&cl, &sdq2, &sdr2)) != 0)
+			goto rpcfail;
+		ok = sdr2->ok;
+		put_str(top, "error", sdr2->error);
+		steps = sdr2->trace.v;
+		nsteps = sdr2->trace.n;
 		break;
 	case OP_STORAGE:
 		/* The dataset rides where a jail's name does. */
@@ -3613,6 +3627,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_IPSEC] = "ipsec",
 	[ARC_JOB_KIND_PKG_INSTALL] = "pkg-install",
 	[ARC_JOB_KIND_NTP] = "ntp",
+	[ARC_JOB_KIND_RTADVD] = "rtadvd",
 };
 
 static const char *job_state_names[] = {
@@ -3892,6 +3907,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_GENEVE:
 	case ARC_JOB_KIND_PROCESS:
 	case ARC_JOB_KIND_NTP:
+	case ARC_JOB_KIND_RTADVD:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -3899,6 +3915,15 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			if (ucl_array_size(names) != 2)
 				return ("a sysctl job needs a name and a "
 				    "value as its args");
+			sp->verb = NULL;
+		} else if (sp->kind == ARC_JOB_KIND_RTADVD) {
+			/* The interface; the prefix and the DNS servers, or
+			 * remove; no verb. */
+			if (sp->interface == NULL || ucl_array_size(names) > 9 ||
+			    (ucl_array_size(names) == 0 && !sp->remove))
+				return ("an rtadvd job needs an interface, and "
+				    "the prefix then up to 8 DNS servers as "
+				    "its args, or says remove");
 			sp->verb = NULL;
 		} else if (sp->kind == ARC_JOB_KIND_NTP) {
 			/* The servers, and no verb; none with remove. */
@@ -4225,7 +4250,8 @@ hosts_sdwan_set(const char *uri, const char *peer, const char *name,
 	c = kore_calloc(1, sizeof(*c));
 	c->op = strcmp(what, "rules") == 0 ? OP_SDWAN_RULES : strcmp(what,
 	    "steer") == 0 ? OP_SDWAN_STEER : strcmp(what, "bird") == 0 ?
-	    OP_SDWAN_BIRD : OP_SDWAN_PROBES;
+	    OP_SDWAN_BIRD : strcmp(what, "dhcp") == 0 ? OP_SDWAN_DHCP :
+	    OP_SDWAN_PROBES;
 	c->text = kore_strdup(json);
 	snprintf(label, sizeof(label), "sdwan-%s", what);
 	return (self_call(c, uri, peer, name, label, status));

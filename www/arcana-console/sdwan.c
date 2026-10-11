@@ -833,11 +833,61 @@ connection(struct ck *c, const ucl_object_t *v, int af, bool *none)
 	*none = false;
 	if (af == AF_INET6 && strcmp(mode, "ll-only") == 0)
 		return (true);
-	if (strcmp(mode, "static") != 0)
-		return (fail(c, "%s is none or static%s; DHCP and SLAAC come "
-		    "later", what, af == AF_INET6 ? ", or ll-only" : ""));
+	if (strcmp(mode, "static") != 0 && strcmp(mode, "dhcp") != 0 &&
+	    (af == AF_INET || strcmp(mode, "slaac") != 0))
+		return (fail(c, "%s is none, static or dhcp%s (§11.%d)", what,
+		    af == AF_INET6 ? ", slaac or ll-only" : "", af == AF_INET ?
+		    4 : 5));
 	if (!subnet(c, v, af, what))
 		return (false);
+	if (strcmp(mode, "static") != 0) {
+		/* The edge gives the hosts their addresses: by dnsmasq (DHCP)
+		 * or by rtadvd (SLAAC), a /64 for IPv6 as hosts expect; the
+		 * reserved prefixes are not given out (§11.4, §11.5); the DNS
+		 * servers told to the hosts; a lease's length. */
+		struct pfx	 p, r;
+		const char	*lease;
+		size_t		 i;
+
+		(void)prefix(str(v, "prefix"), &p, false);
+		if (af == AF_INET6 && p.len != 64)
+			return (fail(c, "%s: %s at a UNI is a /64 prefix, as the "
+			    "hosts expect (R137)", what, mode));
+		if (af == AF_INET && p.len > 30)
+			return (fail(c, "%s: dhcp needs a subnet with hosts in it, "
+			    "a /30 at most", what));
+		e = ucl_object_lookup(v, "reserved");
+		if (e != NULL && ucl_object_type(e) != UCL_ARRAY)
+			return (fail(c, "%s: reserved is a list of prefixes", what));
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(v, "reserved"),
+		    &it, true)) != NULL)
+			if (!prefix(ucl_object_tostring_forced(e), &r, false) ||
+			    !holds(&p, &r))
+				return (fail(c, "%s: a reserved prefix is inside %s "
+				    "(§11.%d)", what, str(v, "prefix"), af == AF_INET
+				    ? 4 : 5));
+		e = ucl_object_lookup(v, "dns");
+		if (e != NULL && (ucl_object_type(e) != UCL_ARRAY || count(e) >
+		    4))
+			return (fail(c, "%s: dns is a list of 4 addresses at most",
+			    what));
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(v, "dns"), &it,
+		    true)) != NULL)
+			if (!address(ucl_object_tostring_forced(e), &r) || r.af !=
+			    af)
+				return (fail(c, "%s: a dns server is an %s address",
+				    what, af == AF_INET ? "IPv4" : "IPv6"));
+		if ((lease = str(v, "lease")) != NULL) {
+			for (i = 0; isdigit((unsigned char)lease[i]); i++)
+				;
+			if (i == 0 || i > 6 || strchr("mhd", lease[i]) == NULL ||
+			    lease[i + 1] != '\0')
+				return (fail(c, "%s: a lease is a number of m, h or "
+				    "d, as 12h", what));
+		}
+	}
 	/* Secondary subnets: each a prefix and the provider's addresses. */
 	sec = ucl_object_lookup(v, "secondary");
 	if (sec != NULL && ucl_object_type(sec) != UCL_ARRAY)

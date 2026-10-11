@@ -183,10 +183,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
-	char	 ntpconf[MAXPATHLEN];
+	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[94];
+	char	*argv[98];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -290,8 +290,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "-a|-A) sed -e 's/=\"\\(.*\\)\"$/: \\1/' \"$conf\" ;;\n"
 	    "-x) grep -v \"^$2=\" \"$conf\" > c.new; mv c.new \"$conf\" ;;\n"
 	    "*+=*|*-=*) k=${1%%%%[+-]=*}; v=${1#*=}; o=$(sed -n \"s/^$k=\\\"\\("
-	    ".*\\)\\\"\\$/\\1/p\" \"$conf\"); case \"$1\" in *+=*) n=\"${o:+$o }"
-	    "$v\" ;; *) n=$(echo \" $o \" | sed \"s/ $v / /\" | xargs) ;; esac; "
+	    ".*\\)\\\"\\$/\\1/p\" \"$conf\"); case \"$1\" in *+=*) case \" $o \" "
+	    "in *\" $v \"*) n=$o ;; *) n=\"${o:+$o }$v\" ;; esac ;; *) n=$(echo "
+	    "\" $o \" | sed \"s/ $v / /\" | xargs) ;; esac; "
 	    "grep -v \"^$k=\" \"$conf\" > c.new; printf '%%s=\"%%s\"\\n' \"$k\" "
 	    "\"$n\" >> c.new; mv c.new \"$conf\" ;;\n"
 	    "*=*) k=${1%%%%=*}; v=${1#*=}; grep -v \"^$k=\" \"$conf\" > c.new; "
@@ -561,6 +562,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    ";;\n"
 	    "*) printf 'BIRD 2.15.1 ready.\\n%s: done\\n' \"$2\" ;;\n"
 	    "esac\nexit 0\n");
+	/* dnsmasq: --test takes any file; started by fake-setfib. */
+	put("fake-dnsmasq", "#!/bin/sh\necho \"dnsmasq $*\" >> dnsmasq.log\n"
+	    "exit 0\n");
+	ATF_REQUIRE(chmod("fake-dnsmasq", 0755) == 0);
 	put("fake-bird", "#!/bin/sh\necho \"fake-bird $*\" >&2\n"
 	    "grep -q BROKEN \"$3\" && { echo \"bird: $3:2:1 syntax error\" >&2; "
 	    "exit 1; }\nexit 0\n");
@@ -868,9 +873,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[89] = (char *)(uintptr_t)"./fake-setfib";
 	argv[90] = (char *)(uintptr_t)"-4";
 	argv[91] = ntpconf;
-	argv[92] = NULL;
+	argv[92] = (char *)(uintptr_t)"-6";
+	argv[93] = rtadvdconf;
+	argv[94] = (char *)(uintptr_t)"-7";
+	argv[95] = (char *)(uintptr_t)"./fake-dnsmasq";
+	argv[96] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
+	snprintf(rtadvdconf, sizeof(rtadvdconf), "%s/rtadvd.conf", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);

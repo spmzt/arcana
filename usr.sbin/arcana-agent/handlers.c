@@ -302,6 +302,7 @@ worker(void *arg)
 	struct arc_sdwan_rules_rsp srr;
 	struct arc_sdwan_steer_rsp sstr;
 	struct arc_sdwan_bird_rsp sbr;
+	struct arc_sdwan_dhcp_rsp sdhr;
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
@@ -714,6 +715,20 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &sbr.trace.v, &sbr.trace.n);
 		rc = arc_sdwan_bird_reply(j->req, &sbr);
+		break;
+	case ARC_CMD_SDWAN_DHCP:
+		what = "sdwan dhcp";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&sdhr, 0, sizeof(sdhr));
+		error = NULL;
+		ok = do_sdwan_dhcp(&w, j->ref, &error) == 0;
+		sdhr.has_ok = true;
+		sdhr.ok = ok;
+		sdhr.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sdhr.trace.v, &sdhr.trace.n);
+		rc = arc_sdwan_dhcp_reply(j->req, &sdhr);
 		break;
 	case ARC_CMD_SDWAN:
 		what = "sdwan";
@@ -1351,6 +1366,22 @@ arc_sdwan_bird_doit(cbl_req *req, const struct arc_sdwan_bird_req *rq,
 }
 
 int
+arc_sdwan_dhcp_doit(cbl_req *req, const struct arc_sdwan_dhcp_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '{')
+		return (reject(req, "the instances are a JSON object"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_DHCP;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
 arc_sdwan_doit(cbl_req *req, const struct arc_sdwan_req *rq,
     void *arg __unused)
 {
@@ -1762,7 +1793,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_NTP)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_RTADVD)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1881,6 +1912,24 @@ check_spec(const struct arc_job_spec *sp)
 		if (strcmp(sp->verb, "unload") == 0 && (strcmp(sp->names.v[0],
 		    "kernel") == 0 || strcmp(sp->names.v[0], "kernel.ko") == 0))
 			return ("the kernel itself is not unloaded");
+		break;
+	case ARC_JOB_KIND_RTADVD:
+		if (sp->interface == NULL || sp->interface[0] == '\0')
+			return ("an rtadvd job needs an interface");
+		if (!sp->remove && (sp->names.n == 0 || !rtadvd_prefix_ok(
+		    sp->names.v[0])))
+			return ("an rtadvd job names the prefix advertised, an "
+			    "IPv6 one of length 64, then the DNS servers; or "
+			    "says remove");
+		if (sp->names.n > 9)
+			return ("at most 8 DNS servers are advertised");
+		for (i = 1; !sp->remove && i < sp->names.n; i++) {
+			struct in6_addr	a6;
+
+			if (inet_pton(AF_INET6, sp->names.v[i], &a6) != 1)
+				return ("a DNS server advertised is an IPv6 "
+				    "address: not an IPv6 address");
+		}
 		break;
 	case ARC_JOB_KIND_NTP:
 		if (sp->jail != NULL && sp->jail[0] != '\0')

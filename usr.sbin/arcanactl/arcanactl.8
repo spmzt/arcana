@@ -169,6 +169,20 @@ enabled in
 too.
 .It Cm ntp remove
 The marks and what is between them taken out, and ntpd restarted.
+.It Cm rtadvd Ar interface prefix Op Ar dns ...
+Router advertisements on the interface, for the hosts behind it to
+address themselves (SLAAC): an entry for it written into
+.Pa /etc/rtadvd.conf
+between arcana's marks, the prefix (a /64) and the DNS servers to
+advertise, and
+.Xr rtadvd 8
+restarted; with
+.Fl p ,
+enabled and the interface on rtadvd_interfaces in
+.Xr rc.conf 5
+too.
+.It Cm rtadvd Ar interface Cm remove
+The interface's entry taken out; rtadvd stopped when none is left.
 .It Cm kmod load | unload Ar module
 Load a kernel module with
 .Xr kldload 8 ,
@@ -674,6 +688,12 @@ The BIRD instances of the services at this edge, as the sdwan-bird
 operation takes them: each a name, the fib it runs in and its
 configuration; parsed first, started or told to read it again, those
 not named stopped.
+.It Cm sdwan dhcp Ar json
+The DHCP servers of the services at this edge, as the sdwan-dhcp
+operation takes them: each a name, the fib it runs in and its
+.Xr dnsmasq 8
+configuration; checked first, started or started again, those not
+named stopped.
 .It Cm traceroute Ar address
 One round of
 .Xr traceroute 8 ,

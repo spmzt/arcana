@@ -237,6 +237,17 @@ definitions:
           marks, the lines there before taken out; with persist, ntpd
           enabled in rc.conf; ntpd restarted.  With remove, the marks
           and what is between them taken out and ntpd restarted.
+      - name: rtadvd
+        doc: |
+          Router advertisements on an interface, for the hosts behind
+          it to address themselves (SLAAC, MEF 70.2 §11.5): interface,
+          and names, the prefix (a /64) and then the DNS servers to
+          advertise (RDNSS), at most 8; an entry written into
+          rtadvd.conf between arcana's marks, the interface's old one
+          taken out; with persist, rtadvd enabled and the interface on
+          rtadvd_interfaces in rc.conf; rtadvd restarted.  With remove,
+          the interface's entry taken out, and rtadvd stopped when the
+          block is empty.
   - name: job-state
     type: enum
     entries:
@@ -2505,6 +2516,32 @@ operations:
       and a pid file of its own beside the agent's kept files; those
       not named any more are stopped.  Kept for the next start.  The
       sdwan read tells each instance and its protocols.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+
+  - name: sdwan-dhcp
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The DHCP servers of the SD-WAN services at this edge (dnsmasq,
+      one instance per service, in its table), as the console writes
+      them: json, an object with "instances", each a "name", the "fib"
+      it runs in and its "conf", dnsmasq's configuration text, to which
+      the agent adds the pid and lease files.  Each is checked by
+      dnsmasq --test before it is made the instance's; one running is
+      stopped and started again on it, one not yet is started in its
+      table (setfib); those not named any more are stopped.  Kept for
+      the next start.  The sdwan read tells each instance and the
+      leases it gave.
     do:
       request:
         attributes:

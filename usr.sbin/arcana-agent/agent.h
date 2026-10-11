@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.56.0"
+#define	ARCANA_AGENT_VERSION	"0.57.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -54,6 +54,8 @@
 #define	PATH_BIRD_BIN		"/usr/local/sbin/bird"
 #define	PATH_SETFIB_BIN		"/usr/sbin/setfib"
 #define	PATH_NTP_CONF		"/etc/ntp.conf"
+#define	PATH_RTADVD_CONF	"/etc/rtadvd.conf"
+#define	PATH_DNSMASQ_BIN	"/usr/local/sbin/dnsmasq"
 #define	PATH_BIRD_CONF		"/usr/local/etc/bird.conf"
 #define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
@@ -110,6 +112,8 @@ struct opts {
 	const char	*bird_bin;	/* bird(8), to parse a configuration */
 	const char	*setfib_bin;	/* setfib(1): a daemon in a table */
 	const char	*ntp_conf;	/* ntp.conf, for the ntp job */
+	const char	*rtadvd_conf;	/* rtadvd.conf, for the rtadvd job */
+	const char	*dnsmasq_bin;	/* dnsmasq(8): the UNIs' DHCP */
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
@@ -426,6 +430,12 @@ char		*sdwan_kept_read(const char *);
 int		 do_sdwan_bird(struct work *, const char *, const char **);
 void		 sdwan_bird_start(void);
 void		 sdwan_bird_json(struct work *, struct ucl_object_s *);
+int		 do_sdwan_dhcp(struct work *, const char *, const char **);
+void		 sdwan_dhcp_start(void);
+void		 sdwan_dhcp_json(struct work *, struct ucl_object_s *);
+int		 do_rtadvd(struct work *, const char *, const char *const *,
+		    size_t, bool, bool, const char **);
+bool		 rtadvd_prefix_ok(const char *);
 int		 sdwan_bfd_state(const char *);
 const char	*sdwan_tunnel_by_via(const char *);
 
