@@ -4520,3 +4520,8 @@ svg.sd-topo .tun text.lock { font-size: 11px; }
 .sd-block h3 .pane-actions { margin: 0 0 0 auto; }
 table.sd td.acts { white-space: nowrap; text-align: right; }
 table.sd tr.sd-edge-row td { border-bottom: 1px solid var(--line-2); padding-top: .15rem; padding-bottom: .35rem; }
+
+/* The flow form's applications, in columns. */
+.modal fieldset.sd-apps { display: flex; flex-wrap: wrap; gap: .1rem .9rem; }
+.modal fieldset.sd-apps legend { flex-basis: 100%; }
+.modal fieldset.sd-apps label.toggle { flex: 0 0 auto; min-width: 5.5rem; }

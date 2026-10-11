@@ -31,9 +31,10 @@
   subscriber router; BFD on the tunnels by the same instances, the
   sessions read every second, a change a fault and the steering's
   word (Mplify 119 tasks 1.1 to 1.3 of docs/PLAN-119-SASE.md; BIRD
-  has no DSCP for BFD, so R159's DSCP is not set). Next: the rest of
-  119-1 (TCP MD5, NTP, the fault catalogue, threshold alerts), DHCP
-  and SLAAC at a UNI, the UX tasks. Later: Mplify 119's tunnel (GRE
+  has no DSCP for BFD, so R159's DSCP is not set); TCP MD5 on the
+  edges' iBGP and NTP as a step (tasks 1.4, 1.5). Next: the fault
+  catalogue and threshold alerts (1.6, 1.7), DHCP and SLAAC at a UNI,
+  the UX tasks. Later: Mplify 119's tunnel (GRE
   carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: a key that is typed, for

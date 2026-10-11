@@ -230,6 +230,13 @@ definitions:
           pkg install -y of the packages names, on the host or in a
           running jail; with force, also of packages built for a newer
           FreeBSD (IGNORE_OSVERSION).
+      - name: ntp
+        doc: |
+          The NTP servers the host keeps time by (Mplify 119 §12.2.2):
+          names the servers, written into ntp.conf between arcana's
+          marks, the lines there before taken out; with persist, ntpd
+          enabled in rc.conf; ntpd restarted.  With remove, the marks
+          and what is between them taken out and ntpd restarted.
   - name: job-state
     type: enum
     entries:

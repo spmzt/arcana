@@ -226,6 +226,11 @@ kinds:
     needs: verb args
     uses: persist
     values: verb=load|unload
+  - kind: ntp
+    title: The NTP servers the host keeps time by
+    needs: args
+    uses: remove persist
+    destroys: remove
   - kind: zfs
     title: zfs
     needs: verb args

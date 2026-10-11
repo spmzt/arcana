@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.53.0"
+#define	ARCANA_AGENT_VERSION	"0.54.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -53,6 +53,7 @@
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
 #define	PATH_BIRD_BIN		"/usr/local/sbin/bird"
 #define	PATH_SETFIB_BIN		"/usr/sbin/setfib"
+#define	PATH_NTP_CONF		"/etc/ntp.conf"
 #define	PATH_BIRD_CONF		"/usr/local/etc/bird.conf"
 #define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
@@ -108,6 +109,7 @@ struct opts {
 	const char	*birdc_bin;
 	const char	*bird_bin;	/* bird(8), to parse a configuration */
 	const char	*setfib_bin;	/* setfib(1): a daemon in a table */
+	const char	*ntp_conf;	/* ntp.conf, for the ntp job */
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
@@ -374,6 +376,11 @@ int		 do_kernel(struct work *, struct arc_kernel_rsp *);
 int		 do_kmod(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 kmod_name_ok(const char *);
+
+/* superbia/ntp.c: the NTP servers. */
+int		 do_ntp(struct work *, const char *const *, size_t, bool, bool,
+		    const char **);
+bool		 ntp_server_ok(const char *);
 /* gula: what runs, what was written down, how busy it has been. */
 int		 do_processes(struct work *, const char *,
 		    struct arc_processes_rsp *);

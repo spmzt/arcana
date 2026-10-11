@@ -183,9 +183,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
+	char	 ntpconf[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[92];
+	char	*argv[94];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -865,8 +866,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[87] = (char *)(uintptr_t)"./fake-traceroute";
 	argv[88] = (char *)(uintptr_t)"-3";
 	argv[89] = (char *)(uintptr_t)"./fake-setfib";
-	argv[90] = NULL;
+	argv[90] = (char *)(uintptr_t)"-4";
+	argv[91] = ntpconf;
+	argv[92] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
+	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);

@@ -270,7 +270,7 @@ start_daemon()
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
-	    -X "$(pwd)/fake-traceroute" \
+	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
@@ -4116,8 +4116,41 @@ storage_cleanup()
 	stop_daemon
 }
 
+atf_test_case ntp cleanup
+ntp_head()
+{
+	atf_set "descr" "The NTP servers: ntp.conf between arcana's marks, ntpd enabled and restarted; taken away again"
+}
+ntp_body()
+{
+	write_rc
+	printf 'driftfile /var/db/ntpd.drift\nserver 0.freebsd.pool.ntp.org iburst\n' > ntp.conf
+	start_daemon
+	atf_check -s exit:1 -e match:'a server is a name' -o ignore "$JGC" -c "$SOCK" ntp 'bad host'
+	atf_check -o match:'ntp servers ntp.example.org and more \(kept\)' "$JGC" -c "$SOCK" -p ntp ntp.example.org 10.99.0.9
+	atf_check -o match:'^server 0.freebsd.pool.ntp.org iburst$' \
+	    -o match:'^# arcana: the NTP servers, set by the console; begin$' \
+	    -o match:'^server ntp.example.org iburst$' \
+	    -o match:'^server 10.99.0.9 iburst$' \
+	    -o match:'^# arcana: end$' cat ntp.conf
+	atf_check -o match:'^ntpd_enable="YES"$' cat rc.conf
+	test -f running.ntpd || atf_fail "ntpd was not restarted"
+	# Set again: one block, the new servers only.
+	atf_check -o ignore "$JGC" -c "$SOCK" -p ntp 10.99.0.10
+	atf_check -o inline:'1\n' sh -c "grep -c '^# arcana: end' ntp.conf"
+	atf_check -o not-match:'ntp.example.org' -o match:'^server 10.99.0.10 iburst$' cat ntp.conf
+	# Taken away: the block goes, the line before stays.
+	atf_check -o match:'ntp servers removed' "$JGC" -c "$SOCK" ntp remove
+	atf_check -o not-match:'arcana' -o not-match:'10.99.0.10' -o match:'^server 0.freebsd.pool.ntp.org iburst$' cat ntp.conf
+}
+ntp_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case ntp
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan

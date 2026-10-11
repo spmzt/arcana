@@ -3612,6 +3612,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_PKG_CLEAN] = "pkg-clean",
 	[ARC_JOB_KIND_IPSEC] = "ipsec",
 	[ARC_JOB_KIND_PKG_INSTALL] = "pkg-install",
+	[ARC_JOB_KIND_NTP] = "ntp",
 };
 
 static const char *job_state_names[] = {
@@ -3890,6 +3891,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:
 	case ARC_JOB_KIND_PROCESS:
+	case ARC_JOB_KIND_NTP:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -3897,6 +3899,13 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 			if (ucl_array_size(names) != 2)
 				return ("a sysctl job needs a name and a "
 				    "value as its args");
+			sp->verb = NULL;
+		} else if (sp->kind == ARC_JOB_KIND_NTP) {
+			/* The servers, and no verb; none with remove. */
+			if (ucl_array_size(names) > 8 || (ucl_array_size(names)
+			    == 0 && !sp->remove))
+				return ("an ntp job names 1 to 8 servers, or "
+				    "says remove");
 			sp->verb = NULL;
 		} else
 		if (sp->verb == NULL || (n = ucl_array_size(names)) >

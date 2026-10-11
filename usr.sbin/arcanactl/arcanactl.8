@@ -157,6 +157,18 @@ loads at boot; and the largest of the kernel's
 types and
 .Xr uma 9
 zones.
+.It Cm ntp Ar server ...
+The NTP servers the host keeps time by: written into
+.Pa /etc/ntp.conf
+between arcana's marks, what was between them before taken out, and
+.Xr ntpd 8
+restarted; with
+.Fl p ,
+enabled in
+.Xr rc.conf 5
+too.
+.It Cm ntp remove
+The marks and what is between them taken out, and ntpd restarted.
 .It Cm kmod load | unload Ar module
 Load a kernel module with
 .Xr kldload 8 ,

@@ -1281,7 +1281,12 @@ tunnel interface by BFD and the edges' iBGP sessions go by it; the
 agent reads the sessions every second into the `sdwan` read, a
 session that goes down or comes up is a fault (`sdwan-tunnel`, by
 bfd, R60), and the steering takes BFD's word over the probe's where
-there is a session. Paths shows BFD's state beside the probe's. AS override, damping and extended communities are
+there is a session. Paths shows BFD's state beside the probe's. With
+`md5` in a service, the edges' iBGP sessions are signed with TCP MD5
+(R12). An edge with `ntp` (its servers, in the edge form) gets them
+written into its `ntp.conf` and ntpd enabled and restarted, with the
+FIBs, so faults line up and keys can turn together (Mplify 119
+§12.2.2); the `ntp` job does it, and `arcanactl ntp` by hand. AS override, damping and extended communities are
 refused, BIRD having no word for them; DHCP and SLAAC at a UNI are
 still to come. Paths shows each edge's instances and their protocols,
 as `birdc show protocols` lists them; `arcanactl sdwan bird json`

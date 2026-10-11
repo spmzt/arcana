@@ -2523,9 +2523,13 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	}
 	/* iBGP with each other edge, by each tunnel between them. */
 	kore_buf_appendf(b, "template bgp edge {\n\tlocal as %jd;\n\thold time 30;\n"
-	    "%s\tipv4 {\n\t\timport all;\n\t\texport all;\n\t\tnext hop self;\n"
-	    "\t};\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t\tnext hop "
-	    "self;\n\t};\n}\n\n", (intmax_t)as, sw_bfd(sw) ? "\tbfd on;\n" : "");
+	    "%s", (intmax_t)as, sw_bfd(sw) ? "\tbfd on;\n" : "");
+	/* TCP MD5 on the sessions (Mplify 119 R11, R12). */
+	if (str(sw, "md5") != NULL)
+		kore_buf_appendf(b, "\tpassword \"%s\";\n", str(sw, "md5"));
+	kore_buf_appendf(b, "\tipv4 {\n\t\timport all;\n\t\texport all;\n\t\tnext "
+	    "hop self;\n\t};\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t\t"
+	    "next hop self;\n\t};\n}\n\n");
 	k = 0;
 	it = NULL;
 	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
@@ -2785,6 +2789,26 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				    B(true), NULL));
 			}
 		}
+	}
+	/* NTP where an edge says its servers: the time for faults to line
+	 * up and keys to turn (Mplify 119 §12.2.2), with the FIBs. */
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		const ucl_object_t	*ns;
+
+		if ((ns = ucl_object_lookup(e, "ntp")) == NULL ||
+		    ucl_object_type(ns) != UCL_ARRAY || ucl_array_size(ns) == 0)
+			continue;
+		o = object(pl, str(e, "server"), "ntp", PH_FIBS, "NTP: ntpd by "
+		    "%u server%s, for the time faults and keys go by",
+		    ucl_array_size(ns), ucl_array_size(ns) == 1 ? "" : "s");
+		if (o == NULL)
+			continue;
+		make(o, job("ntp", "args", ucl_object_copy(ns), "persist",
+		    B(true), NULL));
+		unmake(o, job("ntp", "args", ucl_object_typed_new(UCL_ARRAY),
+		    "remove", B(true), "persist", B(true), NULL));
 	}
 	/* IPsec where a tunnel wants it; then each tunnel's two ends. */
 	it = NULL;

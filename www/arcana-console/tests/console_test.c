@@ -3233,13 +3233,15 @@ static const char sdwan_good[] =
     "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}},{\"id\":\"mpls\","
     "\"type\":\"private\",\"billing\":\"flat-rate\",\"tunnel\":{\"kind\":"
     "\"geneve\"}}],"
-    "\"edges\":[{\"server\":\"@A\",\"ucs_end_points\":[{\"id\":\"a-inet\","
+    "\"edges\":[{\"server\":\"@A\",\"ntp\":[\"ntp.example.org\",\"10.99.0.9\"],"
+    "\"ucs_end_points\":[{\"id\":\"a-inet\","
     "\"ucs\":\"inet\",\"interface\":\"vtnet0\",\"breakout\":true},{\"id\":"
     "\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"}]},{\"server\":"
     "\"@B\",\"ucs_end_points\":[{\"id\":\"b-inet\",\"ucs\":\"inet\","
     "\"interface\":\"vtnet0\"},{\"id\":\"b-mpls\",\"ucs\":\"mpls\","
     "\"interface\":\"vtnet1\",\"backup\":true}]}],"
-    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"as\":64600,\"ucs\":[\"inet\",\"mpls\"],"
+    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"as\":64600,\"md5\":\"edges-secret\","
+    "\"ucs\":[\"inet\",\"mpls\"],"
     "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
     "\"zones\":[{\"name\":\"office\",\"prefixes\":[\"10.1.0.0/16\"],"
     "\"policies\":[{\"app\":\"web\",\"policy\":\"fast\"}]},{\"name\":"
@@ -3355,6 +3357,7 @@ ATF_TC_BODY(sdwan, tc)
 		    "as_override" },
 		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
 		{ "\"multiplier\":3", "\"multiplier\":1", "(R159)" },
+		{ "\"10.99.0.9\"]", "\"not a host!\"]", "ntp:" },
 		{ "\"vlan\":20", "\"vlan\":5000", "(§11.2)" },
 		{ "\"virtual-topology\":\"hub\"", "\"virtual-topology\":\"nope\"",
 		    "(R47)" },
@@ -3622,7 +3625,13 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
 	    "\\\"gif102\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier 3;\\n\\t};"
 	    "\\n}") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\tbfd on;\\n") != NULL);
+	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\tbfd on;\\n\\tpassword "
+	    "\\\"edges-secret\\\";\\n") != NULL);
+	/* NTP at a, with the FIBs, by the ntp job; taken away by it too. */
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"ntp\",\"phase\":1,\"title\":\"NTP: "
+	    "ntpd by 2 servers, for the time faults and keys go by\",\"make\":[{"
+	    "\"kind\":\"ntp\",\"args\":[\"ntp.example.org\",\"10.99.0.9\"],"
+	    "\"persist\":true}]") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
 	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
 	    "\\n\\tpreference 106;\\n\\tpassword \\\"s3cret\\\";\\n\\thold time "
@@ -3690,6 +3699,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1"
 	    ".conf -s ' setfib.log") == 0);
+	ATF_CHECK(system("grep -q '^server ntp.example.org iburst$' ntp.conf && "
+	    "grep -q '^server 10.99.0.9 iburst$' ntp.conf && grep -q "
+	    "'^ntpd_enable=\"YES\"' rc.conf") == 0);
 	ATF_CHECK(system("grep -q 'add 12 set 30 fwd tablearg tcp from any to "
 	    "table(sw1_z0p0_4) dst-port 80,https' ipfw.log") == 0);
 	ATF_CHECK(system("grep -q 'ipfw -q set enable 30' ipfw.log") == 0);

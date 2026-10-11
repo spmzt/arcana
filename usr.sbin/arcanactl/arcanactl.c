@@ -169,6 +169,7 @@ usage(void)
 	    "        [table name] [all]\n"
 	    "    stats\n"
 	    "    kmod [load | unload module]\n"
+	    "    ntp server ... | remove\n"
 	    "    sysctl [name | start of a name]\n"
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
@@ -1755,6 +1756,27 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
  * kmod: the kernel's modules and its memory, as the host says them.
  * kmod load | unload module: a job; with -p also in rc.conf's kld_list.
  */
+/* ntp server...; ntp remove: the NTP servers of the host. */
+static int
+cmd_ntp(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	sp;
+
+	if (argc < 2)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_NTP;
+	sp.persist = persist;
+	if (argc == 2 && strcmp(argv[1], "remove") == 0)
+		sp.remove = true;
+	else {
+		sp.names.v = (const char **)(uintptr_t)&argv[1];
+		sp.names.n = (size_t)argc - 1;
+	}
+	return (submit(cl, &sp));
+}
+
 static int
 cmd_kmod(struct arc_client *cl, int argc, char **argv)
 {
@@ -3124,6 +3146,8 @@ main(int argc, char *argv[])
 		rc = cmd_net(&cl, argc, argv);
 	else if (strcmp(argv[0], "stats") == 0 && argc == 1)
 		rc = cmd_stats(&cl);
+	else if (strcmp(argv[0], "ntp") == 0)
+		rc = cmd_ntp(&cl, argc, argv);
 	else if (strcmp(argv[0], "kmod") == 0)
 		rc = cmd_kmod(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)

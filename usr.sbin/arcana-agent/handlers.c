@@ -1762,7 +1762,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_PKG_INSTALL)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_NTP)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -1881,6 +1881,16 @@ check_spec(const struct arc_job_spec *sp)
 		if (strcmp(sp->verb, "unload") == 0 && (strcmp(sp->names.v[0],
 		    "kernel") == 0 || strcmp(sp->names.v[0], "kernel.ko") == 0))
 			return ("the kernel itself is not unloaded");
+		break;
+	case ARC_JOB_KIND_NTP:
+		if (sp->jail != NULL && sp->jail[0] != '\0')
+			return ("a jail keeps the host's time");
+		if (!sp->remove && sp->names.n == 0)
+			return ("name the NTP servers, or say remove");
+		for (i = 0; i < sp->names.n; i++)
+			if (!ntp_server_ok(sp->names.v[i]))
+				return ("a server is a name or an address: "
+				    "letters, digits and . - :");
 		break;
 	case ARC_JOB_KIND_IF_VNET:
 		if (sp->interface == NULL || !valid_ifname(sp->interface))

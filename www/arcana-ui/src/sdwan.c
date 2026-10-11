@@ -31,6 +31,10 @@ enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_PATHS, SD_DOCUMENT };
 
 static const ucl_object_t *target_of(const char *, const char *);
 static bool	 sdwan_modal_service(struct html *);
+static const char *csv(const ucl_object_t *, char *, size_t);
+static void	 text_field(struct html *, const char *, const char *, const char *,
+		    const char *, const char *);
+static ucl_object_t *list_of(const char *);
 static const ucl_object_t *swvc_shown(void);
 static void	 paths_load(void);
 static void	 plan_load(void);
@@ -877,9 +881,17 @@ view_overview(struct html *h)
 		h_raw(h, "</td><td colspan=\"6\"><button class=\"ghost small\" "
 		    "data-act=\"sd-link-add\"");
 		h_attr(h, "data-arg", jstr(v, "server"));
-		h_raw(h, ">+ WAN link</button></td><td class=\"acts\"><button "
-		    "class=\"icon\" data-act=\"sd-edge-del\" title=\"Take the "
-		    "edge away, with its links\"");
+		h_raw(h, ">+ WAN link</button>");
+		if (jget(v, "ntp") != NULL && ucl_array_size(jget(v, "ntp")) > 0) {
+			h_raw(h, " <small class=\"dim\">NTP by ");
+			joined(h, jget(v, "ntp"), "");
+			h_raw(h, "</small>");
+		}
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" data-act="
+		    "\"sd-edge-edit\" title=\"Change the edge: its NTP servers\"");
+		h_attr(h, "data-arg", jstr(v, "server"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-edge-del\" title=\"Take the edge away, with its links\"");
 		h_attr(h, "data-arg", jstr(v, "server"));
 		h_raw(h, ">×</button></td></tr>");
 	}
@@ -2039,14 +2051,22 @@ sdwan_modal(struct html *h)
 		return (true);
 	}
 	if (app.modal == MODAL_SD_EDGE) {
-		h_raw(h, "<form data-form=\"sd-edge\"><h2>An edge</h2><p>A host "
+		char	ntp[600];
+
+		e = edge_by(sd.edit);
+		h_fmt(h, "<form data-form=\"sd-edge\"><h2>%s</h2><p>A host "
 		    "running arcana-agent that stands between the subscriber "
 		    "and the underlays (an SD-WAN Edge, §7.8). Its WAN links "
-		    "come next, one on each underlay it reaches.</p><label>Host"
-		    "<select name=\"host\" autofocus>");
+		    "come next, one on each underlay it reaches.</p><input "
+		    "type=\"hidden\" name=\"was\"", e != NULL ? "An edge, changed" :
+		    "An edge");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><label>Host<select name=\"host\" autofocus>");
 		n = 0;
 		for (i = 0; i < app.nservers; i++) {
-			if (edge_by(app.servers[i].id) != NULL)
+			if (e == NULL && edge_by(app.servers[i].id) != NULL)
+				continue;
+			if (e != NULL && strcmp(app.servers[i].id, sd.edit) != 0)
 				continue;
 			option(h, app.servers[i].id, app.servers[i].name, NULL);
 			n++;
@@ -2056,6 +2076,10 @@ sdwan_modal(struct html *h)
 			h_raw(h, "<small>Every host the console has is an edge "
 			    "already.</small>");
 		h_raw(h, "</label>");
+		text_field(h, "NTP servers", "ntp", e != NULL ? csv(jget(e, "ntp"),
+		    ntp, sizeof(ntp)) : "", "0.freebsd.pool.ntp.org", "With "
+		    "commas; the edge keeps time by them (ntpd), so faults line "
+		    "up and keys turn together. Empty: as the host is.");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_LINK) {
@@ -2291,6 +2315,9 @@ sdwan_modal_service(struct html *h)
 		text_field(h, "Provider AS", "as", edit && jget(o, "as") != NULL ?
 		    buf : "", "64512", "For BGP at a UNI and between the edges; "
 		    "64512 if empty.");
+		text_field(h, "iBGP password", "md5", edit ? jstr(o, "md5") : "",
+		    "", "TCP MD5 on the sessions between the edges (Mplify 119 "
+		    "R12); empty for none.");
 		snprintf(buf, sizeof(buf), "%lld", (long long)jint(jget(o,
 		    "intervals"), "eval", 1000));
 		text_field(h, "Evaluation interval, ms", "eval", buf, "1000", "The "
@@ -2351,8 +2378,8 @@ sdwan_modal_service(struct html *h)
 		    "any\" value=\"1\"%s> Everything: the last flow, what no other "
 		    "matched</label>", cr != NULL && jget(cr, "any") != NULL ?
 		    " checked" : "");
-		h_raw(h, "<fieldset><legend>Applications, by port (APPID, Table "
-		    "8)</legend>");
+		h_raw(h, "<fieldset class=\"sd-apps\"><legend>Applications, by "
+		    "port (APPID, Table 8)</legend>");
 		for (i = 0; i < (int)(sizeof(apps) / sizeof(apps[0])); i++) {
 			h_fmt(h, "<label class=\"toggle inline\"><input type=\""
 			    "checkbox\" name=\"app_%s\" value=\"1\"%s> %s</label>",
@@ -2768,7 +2795,10 @@ sd_forms(const char *form, const ucl_object_t *f)
 			}
 		}
 	} else if (strcmp(form, "sd-edge") == 0) {
+		ucl_object_t	*ed;
+
 		id = jstr(f, "host");
+		was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
 		if (id == NULL || id[0] == '\0') {
 			snprintf(app.modal_error, sizeof(app.modal_error), "Pick a "
 			    "host");
@@ -2780,12 +2810,18 @@ sd_forms(const char *form, const ucl_object_t *f)
 			arr = ucl_object_typed_new(UCL_ARRAY);
 			ucl_object_insert_key(doc, arr, "edges", 0, false);
 		}
-		o = ucl_object_typed_new(UCL_OBJECT);
-		ucl_object_insert_key(o, ucl_object_fromstring(id), "server", 0,
-		    false);
-		ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
-		    "ucs_end_points", 0, false);
-		ucl_array_append(arr, o);
+		ed = (ucl_object_t *)(uintptr_t)jfind(arr, "server", was);
+		if (ed == NULL) {
+			ed = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(ed, ucl_object_fromstring(id),
+			    "server", 0, false);
+			ucl_object_insert_key(ed, ucl_object_typed_new(UCL_ARRAY),
+			    "ucs_end_points", 0, false);
+			ucl_array_append(arr, ed);
+		}
+		(void)ucl_object_delete_key(ed, "ntp");
+		if ((v = jstr(f, "ntp")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(ed, list_of(v), "ntp", 0, false);
 	} else {
 		ucl_object_t	*ed;
 
@@ -2953,7 +2989,8 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		    UCL_OBJECT);
 		for (i = 0; i < 12; i++) {
 			static const char *const keys[] = { "id", "fib", "as",
-			    "reserved_prefixes", "ucs", "bfd", "intervals", NULL };
+			    "md5", "reserved_prefixes", "ucs", "bfd", "intervals",
+			    NULL };
 
 			if (keys[i] == NULL)
 				break;
@@ -2963,6 +3000,7 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		put_int(o, "fib", jstr(f, "fib") != NULL && jstr(f, "fib")[0] !=
 		    '\0' ? jstr(f, "fib") : "1");
 		put_int(o, "as", jstr(f, "as"));
+		put_str(o, "md5", jstr(f, "md5"));
 		put_list(o, "reserved_prefixes", jstr(f, "reserved"));
 		arr = ucl_object_typed_new(UCL_ARRAY);
 		for (i = 0; i < 64; i++) {
@@ -3549,7 +3587,10 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		app.modal_error[0] = '\0';
 		return (true);
 	}
-	if (strcmp(act, "sd-edge-add") == 0) {
+	if (strcmp(act, "sd-edge-add") == 0 || strcmp(act, "sd-edge-edit") ==
+	    0) {
+		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act,
+		    "sd-edge-edit") == 0 ? arg : "");
 		app.modal = MODAL_SD_EDGE;
 		app.modal_error[0] = '\0';
 		return (true);

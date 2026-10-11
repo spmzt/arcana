@@ -1028,6 +1028,10 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 	const char		*s;
 
 	base = strlen(c->where);
+	if (str(sw, "md5") != NULL && (strlen(str(sw, "md5")) > 80 ||
+	    strpbrk(str(sw, "md5"), "\"\\\n") != NULL))
+		return (fail(c, "md5 is the edges' iBGP password, 80 characters "
+		    "at most, no quotes (Mplify 119 R12)"));
 	if (ucl_object_lookup(sw, "as") != NULL && !is_int(ucl_object_lookup(
 	    sw, "as"), 1, 4294967295LL, NULL))
 		return (fail(c, "as is the provider's AS number, the edges' "
@@ -1525,6 +1529,30 @@ check(const ucl_object_t *doc, struct ck *c)
 		if (server_find(str(v, "server")) == NULL) {
 			ok = fail(c, "no such server");
 			break;
+		}
+		/* NTP (Mplify 119 §12.2.2): the servers the edge keeps time by. */
+		if ((e = ucl_object_lookup(v, "ntp")) != NULL && !is_null(e)) {
+			const ucl_object_t	*ns;
+			ucl_object_iter_t	 nit;
+
+			if (ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e)
+			    == 0 || ucl_array_size(e) > 8) {
+				ok = fail(c, "ntp is a list of servers, 1 to 8");
+				break;
+			}
+			nit = NULL;
+			while (ok && (ns = ucl_object_iterate(e, &nit, true)) !=
+			    NULL) {
+				const char	*h = ucl_object_tostring_forced(ns);
+
+				if (h == NULL || h[0] == '\0' || strlen(h) > 253 ||
+				    h[strspn(h, "abcdefghijklmnopqrstuvwxyzABCDEFGHI"
+				    "JKLMNOPQRSTUVWXYZ0123456789.-:")] != '\0')
+					ok = fail(c, "ntp: %s is not a server's name "
+					    "or address", h != NULL ? h : "");
+			}
+			if (!ok)
+				break;
 		}
 		if (!objects(c, ucl_object_lookup(v, "ucs_end_points"),
 		    "ucs_end_points", "id", false, seen_ucsep, "R176")) {
