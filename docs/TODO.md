@@ -173,6 +173,24 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- Mplify 119 tasks 1.1 to 1.7 on two vnet jails (2026-10-11, the
+  lab build/lab/bfd-lab.sh): an arcana-agent of its own inside each
+  jail, a gre tunnel in FIB 1, a BIRD 3.3.3 instance each with BFD on
+  the tunnel and iBGP signed by MD5, probes with a threshold, NTP
+  written and ntpd enabled. BFD and BGP established, the far UNI's
+  prefix installed by BGP, ping UNI to UNI in FIB 1. The epair cut:
+  the probe's tunnel fault and the BFD fault within seconds, BGP down
+  by BFD; mended: both cleared, BGP back within the error wait time.
+  A threshold under the delay: a tca fault; over it: cleared. Found
+  and fixed on the way: a peer's kernel-learned host routes exported
+  by iBGP made the next hop resolve in a circle (now only the UNIs'
+  routes go to the edges, and the console's static routes outrank
+  BGP's); BFD and BGP start down, so a fault needs them up once; a
+  BFD session that vanishes with its BGP counts as down; BIRD's
+  "Reconfiguration in progress" is taken; a running instance is told
+  again rather than started; an instance that stops answering is
+  started again within five seconds, with a fault saying so. Not done in the
+  lab: the steering by BFD (no rules on the jails), resource faults.
 - Building the agent as `nobody` when `arcana-agent` runs as root
   (2026-10-04, on the console's host): the clone over SSH with the key
   set for it, make, and the program run with `-V`, each under

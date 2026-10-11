@@ -2478,17 +2478,37 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    "protocol device {\n}\n\n", str(sw, "id"), server_name_of(sid),
 	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")), rid !=
 	    NULL ? rid : "0.0.0.1");
+	/* The tunnels' own interfaces too: a neighbour's next hop is
+	 * resolved by them, else its routes would be unreachable. */
+	it = NULL;
+	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
+		if (strcmp(str(t, "swvc"), str(sw, "id")) != 0)
+			continue;
+		tit = NULL;
+		while ((me = ucl_object_iterate(ucl_object_lookup(t, "ends"),
+		    &tit, true)) != NULL)
+			if (strcmp(str(me, "edge"), sid) == 0 && str(me, "ifname")
+			    != NULL && strlen(ifaces) + 40 < sizeof(ifaces))
+				snprintf(ifaces + strlen(ifaces), sizeof(ifaces) -
+				    strlen(ifaces), "%s\"%s\"", n++ > 0 ? ", " : "",
+				    str(me, "ifname"));
+	}
 	if (n > 0)
 		kore_buf_appendf(b, "protocol direct {\n\tipv4;\n\tipv6;\n\tinterface "
 		    "%s;\n}\n\n", ifaces);
 	/* The kernel's table: what the console put there is learned and
-	 * kept; what is learned here goes in, but not the connected. */
+	 * kept, and outranks what BGP brings (preference 200 to 100), so
+	 * the document's routes stay as they are and BGP's fill in the
+	 * rest; what is learned here goes in, but not the connected, nor
+	 * a route to nowhere. */
 	kore_buf_appendf(b, "protocol kernel kernel4 {\n\tkernel table %jd;\n\tlearn;\n"
-	    "\tpersist;\n\tipv4 {\n\t\timport all;\n\t\texport where source != "
-	    "RTS_DEVICE && source != RTS_INHERIT;\n\t};\n}\n\n"
-	    "protocol kernel kernel6 {\n\tkernel table %jd;\n\tlearn;\n"
-	    "\tpersist;\n\tipv6 {\n\t\timport all;\n\t\texport where source != "
-	    "RTS_DEVICE && source != RTS_INHERIT;\n\t};\n}\n\n", (intmax_t)
+	    "\tpersist;\n\tipv4 {\n\t\timport filter { preference = 200; accept; "
+	    "};\n\t\texport where source != RTS_DEVICE && source != RTS_INHERIT "
+	    "&& dest = RTD_UNICAST;\n\t};\n}\n\nprotocol kernel kernel6 {\n\t"
+	    "kernel table %jd;\n\tlearn;\n\tpersist;\n\tipv6 {\n\t\timport filter { "
+	    "preference = 200; accept; };\n\t\texport where source != RTS_DEVICE "
+	    "&& source != RTS_INHERIT && dest = RTD_UNICAST;\n\t};\n}\n\n",
+	    (intmax_t)
 	    ucl_object_toint(ucl_object_lookup(sw, "fib")), (intmax_t)
 	    ucl_object_toint(ucl_object_lookup(sw, "fib")));
 	/* BFD on each tunnel interface here (R58, R59, R159): the iBGP
@@ -2522,14 +2542,37 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		    bfd, "multiplier")) : 3));
 	}
 	/* iBGP with each other edge, by each tunnel between them. */
+	/* What goes to the other edges: the UNIs' subnets and what the
+	 * UNIs learn, not what the kernel's table holds of the console's
+	 * (each edge has its own) nor the tunnels' own addresses, which a
+	 * peer would resolve its next hop by in a circle. */
+	{
+		const ucl_object_t	*rp;
+		ucl_object_iter_t	 rit;
+		char			 resv[600];
+		int			 nr = 0;
+
+		resv[0] = '\0';
+		rit = NULL;
+		while ((rp = ucl_object_iterate(ucl_object_lookup(sw,
+		    "reserved_prefixes"), &rit, true)) != NULL && strlen(resv) +
+		    60 < sizeof(resv))
+			snprintf(resv + strlen(resv), sizeof(resv) - strlen(resv),
+			    "%s%s+", nr++ > 0 ? ", " : "",
+			    ucl_object_tostring_forced(rp));
+		kore_buf_appendf(b, "filter to_edges {\n\tif source = RTS_INHERIT "
+		    "then reject;\n%s%s%s\taccept;\n}\n\n", nr > 0 ? "\tif net ~ [ "
+		    : "", nr > 0 ? resv : "", nr > 0 ? " ] then reject;\n" : "");
+	}
 	kore_buf_appendf(b, "template bgp edge {\n\tlocal as %jd;\n\thold time 30;\n"
-	    "%s", (intmax_t)as, sw_bfd(sw) ? "\tbfd on;\n" : "");
+	    "\terror wait time 10, 60;\n%s", (intmax_t)as, sw_bfd(sw) ?
+	    "\tbfd on;\n" : "");
 	/* TCP MD5 on the sessions (Mplify 119 R11, R12). */
 	if (str(sw, "md5") != NULL)
 		kore_buf_appendf(b, "\tpassword \"%s\";\n", str(sw, "md5"));
-	kore_buf_appendf(b, "\tipv4 {\n\t\timport all;\n\t\texport all;\n\t\tnext "
-	    "hop self;\n\t};\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t\t"
-	    "next hop self;\n\t};\n}\n\n");
+	kore_buf_appendf(b, "\tipv4 {\n\t\timport all;\n\t\texport filter "
+	    "to_edges;\n\t\tnext hop self;\n\t};\n\tipv6 {\n\t\timport all;\n\t\t"
+	    "export filter to_edges;\n\t\tnext hop self;\n\t};\n}\n\n");
 	k = 0;
 	it = NULL;
 	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
