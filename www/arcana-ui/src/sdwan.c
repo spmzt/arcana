@@ -2642,16 +2642,40 @@ view_security(struct html *h)
 	h_raw(h, "<div class=\"sd-block\"><h3>Security policies <small class=\""
 	    "dim\">MEF 88, by name (§9.10): addresses allowed and denied "
 	    "(ipfw tables), domains denied and DNS kept to the provider's "
-	    "resolver (Unbound), a rate limit (dummynet), a log; a flow's "
-	    "policy names one by af-security-ingress or -egress</small><span "
-	    "class=\"pane-actions\"><button class=\"ghost small\" data-act=\""
-	    "sd-secpol-add\">+ policy</button></span></h3><table class=\"net sd"
-	    "\"><thead><tr><th>Name</th><th>Addresses</th><th>DNS</th><th>Rate"
-	    "</th><th>Log</th><th>Named by</th><th></th></tr></thead><tbody>");
+	    "resolver (unbound), a rate limit (dummynet), a log; a flow's "
+	    "policy names one by af-security-ingress or -egress; what each "
+	    "denied, counted on the edges' rules since they were made</small>"
+	    "<span class=\"pane-actions\"><button class=\"ghost small\" data-act="
+	    "\"sd-secpol-add\">+ policy</button></span></h3><table class=\"net "
+	    "sd\"><thead><tr><th>Name</th><th>Addresses</th><th>Denied</th><th>"
+	    "DNS</th><th>Rate</th><th>Log</th><th>Named by</th><th></th></tr>"
+	    "</thead><tbody>");
 	n = 0;
 	it = NULL;
 	while ((v = ucl_object_iterate(jget(sw, "security_policies"), &it,
 	    true)) != NULL) {
+		const ucl_object_t	*f, *cn;
+		ucl_object_iter_t	 fit, cit;
+		char			 tbl[64];
+		long long		 pkts = 0, bytes = 0;
+
+		/* The deny rules of this policy, by its tables' names, on
+		 * every edge: sw<fib>_s<n>d4 and d6. */
+		snprintf(tbl, sizeof(tbl), "table(sw%lld_s%dd", (long long)jint(sw,
+		    "fib", 0), n);
+		fit = NULL;
+		while (sd.paths != NULL && (f = ucl_object_iterate(sd.paths, &fit,
+		    true)) != NULL) {
+			cit = NULL;
+			while ((cn = ucl_object_iterate(jget(jget(f, "rules"),
+			    "counters"), &cit, true)) != NULL)
+				if (jstr(cn, "text") != NULL && strncmp(jstr(cn, "text"),
+				    "deny", 4) == 0 && strstr(jstr(cn, "text"), tbl) !=
+				    NULL) {
+					pkts += jint(cn, "pkts", 0);
+					bytes += jint(cn, "bytes", 0);
+				}
+		}
 		n++;
 		cr = jget(v, "criteria");
 		h_raw(h, "<tr><td class=\"mono\">");
@@ -2666,6 +2690,12 @@ view_security(struct html *h)
 			    : 0);
 		} else
 			h_raw(h, "<span class=\"dim\">—</span>");
+		h_raw(h, "</td><td>");
+		if (pkts > 0)
+			h_fmt(h, "<b>%lld</b> packet%s, %lld bytes", pkts, pkts == 1 ?
+			    "" : "s", bytes);
+		else
+			h_raw(h, "<span class=\"dim\">none</span>");
 		h_raw(h, "</td><td>");
 		b = jget(cr, "dns-domain-filter");
 		if (b != NULL)
@@ -2707,7 +2737,7 @@ view_security(struct html *h)
 		h_raw(h, ">×</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">None yet.</td></tr>");
+		h_raw(h, "<tr><td colspan=\"8\" class=\"dim\">None yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 	/* The DNS filters on the edges: each edge's unbound instances, a
 	 * service each, as the edges' reads tell them. */

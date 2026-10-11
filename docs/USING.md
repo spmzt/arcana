@@ -1127,7 +1127,11 @@ denied domain and the names beneath it with NXDOMAIN (a local zone
 each; the domains of all the service's filtering policies together).
 With `dns-protocol-filter`, every DNS query from the UNI, UDP or TCP,
 is forwarded to that instance by an ipfw rule (`fwd provider,53`),
-whatever resolver the host asked. Security lists the instances.
+whatever resolver the host asked. Security lists the instances, and
+counts for each policy what its deny rules dropped on every edge
+(packets and bytes, as `ipfw -S show` counts them since the rules were
+made, which the `sdwan` read carries as `rules.counters`, each rule's
+number, packets, bytes and text).
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,

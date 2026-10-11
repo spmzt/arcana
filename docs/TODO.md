@@ -76,8 +76,10 @@
   rules, ingress before the forward and egress by the UNI (S1.2);
   the DNS filter, an unbound instance of the base system per service
   on each edge, the denied domains its local zones, every query from
-  the UNI forwarded to it where the protocol filter says so (S1.3).
-  Next: S1.4, the counts.
+  the UNI forwarded to it where the protocol filter says so (S1.3);
+  the rules' counters in the sdwan read, the Security tab counting
+  what each policy denied (S1.4). Next: S1.5, the phase closed on the
+  lab.
 - A luxuria plugin installed in a vnet jail and not on the host does
   not get its tab (reported 2026-10-11). The agent lists a running
   vnet jail's plugins by access(X_OK) on the program under the jail's
