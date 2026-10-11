@@ -3920,15 +3920,17 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 				    "value as its args");
 			sp->verb = NULL;
 		} else if (sp->kind == ARC_JOB_KIND_IPSEC_SA) {
-			/* The verb, the interface, its reqid and the outer
-			 * addresses; the words of the SAs; the host checks. */
+			/* The verb and the interface; but for key, its reqid and
+			 * the outer addresses too; the words of the SAs; the
+			 * host checks. */
 			if (sp->verb == NULL || sp->interface == NULL ||
-			    !sp->has_reqid || sp->tunnel_local == NULL ||
-			    sp->tunnel_remote == NULL || ucl_array_size(names) >
-			    24)
-				return ("an ipsec-sa job needs a verb, an "
-				    "interface, its reqid, tunnel_local and "
-				    "tunnel_remote, and the SAs' words as args");
+			    ucl_array_size(names) > 24 || (strcmp(sp->verb, "key")
+			    != 0 && (!sp->has_reqid || sp->tunnel_local == NULL ||
+			    sp->tunnel_remote == NULL)))
+				return ("an ipsec-sa job needs a verb and an "
+				    "interface, and but for key its reqid, "
+				    "tunnel_local and tunnel_remote, and the SAs' "
+				    "words as args");
 		} else if (sp->kind == ARC_JOB_KIND_RTADVD) {
 			/* The interface; the prefix and the DNS servers, or
 			 * remove; no verb. */

@@ -52,8 +52,11 @@
   list); manually keyed SAs on an ipsec(4) interface by setkey, the
   keys never in a trace (119-3 task 3.1); a key pair per tunnel end
   and the SAs of both directions derived from the agreement by
-  HKDF-SHA256, the same on both ends (3.2). Next: 3.3, the uswe
-  tunnel kind in the document and the plan. Later: Mplify 119's tunnel
+  HKDF-SHA256, the same on both ends (3.2); the uswe tunnel kind: an
+  ipsec(4) interface each end with its unit as reqid, the pairs made,
+  the SAs derived from the far public half the apply reads from that
+  end (3.3; stand-ins, the lab run with 3.4). Next: 3.4, the keys
+  turned at the half-life without loss. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
