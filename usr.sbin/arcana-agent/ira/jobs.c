@@ -211,6 +211,11 @@ title_of(const struct arc_job_spec *sp)
 		    NULL ? sp->ipsec_mode : "", sp->ipsec_mode != NULL ? ")" :
 		    "");
 		break;
+	case ARC_JOB_KIND_IPSEC_SA:
+		/* Never the keys. */
+		rc = asprintf(&t, "ipsec sa %s %s reqid %u", sp->verb, sp->interface,
+		    sp->reqid);
+		break;
 	case ARC_JOB_KIND_PKG_INSTALL:
 		rc = asprintf(&t, "pkg install %s%s%s%s%s", sp->names.n > 0 ?
 		    sp->names.v[0] : "", sp->names.n > 1 ? " and more" : "",
@@ -900,6 +905,10 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_IPSEC:
 		error = NULL;
 		ok = do_ipsec_job(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_IPSEC_SA:
+		error = NULL;
+		ok = do_sa_job(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_BRIDGE:
 	case ARC_JOB_KIND_GENEVE:

@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.61.0"
+#define	ARCANA_AGENT_VERSION	"0.62.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -57,6 +57,7 @@
 #define	PATH_RTADVD_CONF	"/etc/rtadvd.conf"
 #define	PATH_DNSMASQ_BIN	"/usr/local/sbin/dnsmasq"
 #define	PATH_RTSOL_BIN		"/sbin/rtsol"
+#define	PATH_SETKEY_BIN		"/sbin/setkey"
 #define	PATH_BIRD_CONF		"/usr/local/etc/bird.conf"
 #define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
@@ -116,6 +117,7 @@ struct opts {
 	const char	*rtadvd_conf;	/* rtadvd.conf, for the rtadvd job */
 	const char	*dnsmasq_bin;	/* dnsmasq(8): the UNIs' DHCP */
 	const char	*rtsol_bin;	/* rtsol(8): an interface's SLAAC */
+	const char	*setkey_bin;	/* setkey(8): manual SAs */
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
@@ -438,6 +440,10 @@ void		 sdwan_dhcp_start(void);
 void		 sdwan_dhcp_json(struct work *, struct ucl_object_s *);
 int		 do_rtadvd(struct work *, const char *, const char *const *,
 		    size_t, bool, bool, const char **);
+/* invidia/sa.c: manually keyed SAs by setkey(8). */
+const char	*sa_check(const struct arc_job_spec *);
+int		 do_sa_job(struct work *, const struct arc_job_spec *,
+		    const char **);
 bool		 rtadvd_prefix_ok(const char *);
 int		 sdwan_bfd_state(const char *);
 const char	*sdwan_tunnel_by_via(const char *);

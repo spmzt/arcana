@@ -83,6 +83,7 @@ struct opts opts = {
 	.rtadvd_conf = PATH_RTADVD_CONF,
 	.dnsmasq_bin = PATH_DNSMASQ_BIN,
 	.rtsol_bin = PATH_RTSOL_BIN,
+	.setkey_bin = PATH_SETKEY_BIN,
 	.safe_wait = 60,
 	.make_bin = PATH_MAKE_BIN,
 	.keyscan_bin = PATH_KEYSCAN_BIN,
@@ -316,7 +317,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:1:2:3:4:5:6:7:8:x:Y:y:Z:z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:1:2:3:4:5:6:7:8:9:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -474,6 +475,9 @@ main(int argc, char *argv[])
 			break;
 		case '8':
 			opts.rtsol_bin = optarg;
+			break;
+		case '9':
+			opts.setkey_bin = optarg;
 			break;
 		case 'b':
 			opts.birdc_bin = optarg;

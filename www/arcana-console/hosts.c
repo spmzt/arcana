@@ -3628,6 +3628,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_PKG_INSTALL] = "pkg-install",
 	[ARC_JOB_KIND_NTP] = "ntp",
 	[ARC_JOB_KIND_RTADVD] = "rtadvd",
+	[ARC_JOB_KIND_IPSEC_SA] = "ipsec-sa",
 };
 
 static const char *job_state_names[] = {
@@ -3909,6 +3910,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_PROCESS:
 	case ARC_JOB_KIND_NTP:
 	case ARC_JOB_KIND_RTADVD:
+	case ARC_JOB_KIND_IPSEC_SA:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
@@ -3917,6 +3919,16 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 				return ("a sysctl job needs a name and a "
 				    "value as its args");
 			sp->verb = NULL;
+		} else if (sp->kind == ARC_JOB_KIND_IPSEC_SA) {
+			/* The verb, the interface, its reqid and the outer
+			 * addresses; the words of the SAs; the host checks. */
+			if (sp->verb == NULL || sp->interface == NULL ||
+			    !sp->has_reqid || sp->tunnel_local == NULL ||
+			    sp->tunnel_remote == NULL || ucl_array_size(names) >
+			    24)
+				return ("an ipsec-sa job needs a verb, an "
+				    "interface, its reqid, tunnel_local and "
+				    "tunnel_remote, and the SAs' words as args");
 		} else if (sp->kind == ARC_JOB_KIND_RTADVD) {
 			/* The interface; the prefix and the DNS servers, or
 			 * remove; no verb. */
