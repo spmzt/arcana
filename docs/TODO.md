@@ -77,16 +77,13 @@
     the rules that use them, beyond what SD-WAN makes.
   - Every table exported as CSV.
   - Prefix lists kept by the console and used on any host.
-  - SD-WAN policies by lists, in MEF 70.2's terms: lists of UCS
-    (Viptela's colours), of prefixes (its prefix lists, our zones'
-    prefixes), of edges (its sites), of UCS End Points (its TLOCs:
-    the edge's underlay address, the UCS, the tunnel kind and a
-    preference) and of services (its VPNs); and a policy made in
-    three steps as the vendors do: the lists first (groups of
-    interest, called by a match or an action), then the traffic
-    rules (the AFS match and the policy's action), then the policies
-    applied to edges and services (the policy map at each SWVC End
-    Point).
+  - SD-WAN policies by named lists (MEF 70.2, no vendor's model):
+    lists of UCS, of prefixes (as the zones hold them), of edges, of
+    UCS End Points (the edge's underlay address, the UCS, the tunnel
+    kind and a preference) and of services, kept once and called by
+    an AFS match or a policy's criteria; and the policy made in
+    three steps: the lists, then the flows (the AFS) and the policy
+    they get, then the policy map at each SWVC End Point.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a
