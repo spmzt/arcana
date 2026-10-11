@@ -82,8 +82,10 @@
   policy criteria, ip-block, dns-domain-filter, dns-protocol-filter,
   rate-limit and log are done; lists by name come with the feeds
   (SASE-2), and url-filtering, malware detection and intrusion
-  detection with the proxy (SASE-4). Next: SASE-2, feeds and the
-  record.
+  detection with the proxy (SASE-4). SASE-2: the lists, feeds the
+  console's host fetches with the base system's libfetch and pasted
+  ones, versioned, named by the policies into their tables and DNS
+  filter (S2.1). Next: S2.2, large tables.
 - A luxuria plugin installed in a vnet jail and not on the host does
   not get its tab (reported 2026-10-11). The agent lists a running
   vnet jail's plugins by access(X_OK) on the program under the jail's

@@ -1745,6 +1745,20 @@ security_policy(struct ck *c, const ucl_object_t *v)
 			if (ucl_object_type(k) != UCL_OBJECT)
 				return (fail(c, "ip-block has allow and deny, lists "
 				    "of prefixes"));
+			if ((e = ucl_object_lookup(k, "lists")) != NULL) {
+				if (ucl_object_type(e) != UCL_ARRAY)
+					return (fail(c, "ip-block.lists names lists, "
+					    "feeds or pasted (Security)"));
+				eit = NULL;
+				while ((e = ucl_object_iterate(ucl_object_lookup(k,
+				    "lists"), &eit, true)) != NULL)
+					if (ucl_object_type(e) != UCL_STRING ||
+					    !sdwan_list_exists(ucl_object_tostring(e)))
+						return (fail(c, "ip-block.lists: no list "
+						    "%s (a feed or a pasted list, under "
+						    "Security)", ucl_object_tostring_forced(
+						    e)));
+			}
 			for (i = 0; i < 2; i++) {
 				if ((e = ucl_object_lookup(k, lists[i])) == NULL)
 					continue;
@@ -1762,12 +1776,22 @@ security_policy(struct ck *c, const ucl_object_t *v)
 						    ucl_object_tostring_forced(e)));
 			}
 		} else if (strcmp(ucl_object_key(k), "dns-domain-filter") == 0) {
-			if (ucl_object_type(k) != UCL_OBJECT || (e =
-			    ucl_object_lookup(k, "deny")) == NULL ||
+			if (ucl_object_type(k) != UCL_OBJECT || ((e =
+			    ucl_object_lookup(k, "deny")) == NULL &&
+			    ucl_object_lookup(k, "lists") == NULL) || (e != NULL && (
 			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
-			    LIST_MAX)
+			    LIST_MAX)))
 				return (fail(c, "dns-domain-filter has deny, a list "
-				    "of domains, %d at most", LIST_MAX));
+				    "of domains, %d at most, or lists by name",
+				    LIST_MAX));
+			eit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(k, "lists"),
+			    &eit, true)) != NULL)
+				if (ucl_object_type(e) != UCL_STRING ||
+				    !sdwan_list_exists(ucl_object_tostring(e)))
+					return (fail(c, "dns-domain-filter.lists: no "
+					    "list %s (a feed or a pasted list, under "
+					    "Security)", ucl_object_tostring_forced(e)));
 			eit = NULL;
 			while ((e = ucl_object_iterate(ucl_object_lookup(k, "deny"),
 			    &eit, true)) != NULL)

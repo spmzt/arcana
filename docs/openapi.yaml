@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.114.0
+  version: 0.115.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1239,6 +1239,51 @@ paths:
         "200":
           description: sent, by server id, each with at and entries
             (table, prefix, swvc, policy, candidates in order).
+  /api/sdwan/lists:
+    get:
+      tags: [sdwan]
+      summary: The lists the security policies name, as kept
+      responses:
+        "200":
+          description: interval (hours), feeds (each name and url, or
+            name and entries for a pasted list), lists by name (version,
+            fetched_at, count, error).
+    put:
+      tags: [sdwan]
+      summary: The feeds and the interval, kept; pasted lists take effect at once
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                interval: { type: integer, description: hours, 1 to 720 }
+                feeds:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name: { type: string }
+                      url: { type: string, description: https, http or file }
+                      text: { type: string, description: pasted entries, one a line }
+      responses:
+        "200":
+          description: "{kept: true}"
+        "400": { $ref: "#/components/responses/Error" }
+  /api/sdwan/lists/fetch:
+    post:
+      tags: [sdwan]
+      summary: Fetch every feed now, or one
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string }
+      responses:
+        "200":
+          description: "{fetched: true}"
   /api/sdwan/rekey:
     get:
       tags: [sdwan]
