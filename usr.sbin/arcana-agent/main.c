@@ -624,6 +624,7 @@ main(int argc, char *argv[])
 	history_start();
 	probe_start();
 	faults_start();
+	record_start();
 	sdwan_start();
 	sdwan_bird_start();
 	sdwan_dhcp_start();

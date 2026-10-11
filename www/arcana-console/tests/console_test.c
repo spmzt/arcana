@@ -3918,12 +3918,12 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * forward, web to or from a denied prefix dropped and logged, the
 	 * allowed prefixes excepted, by tables of the policy's own; its
 	 * rate limit a pipe of its own on the way out by the tunnels. */
-	ATF_CHECK_MSG(strstr(r.body, "\"12 deny log tcp from any to table("
-	    "sw1_s0d4) dst-port 80,https not dst-ip table(sw1_s0a4)\"") != NULL,
-	    "%s", r.body);
-	ATF_CHECK(strstr(r.body, "\"12 deny log tcp from any to any dst-port "
-	    "80,https src-ip table(sw1_s0d4) not src-ip table(sw1_s0a4)\"") !=
-	    NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"12 deny log logdst rtsock logamount 1000 "
+	    "tcp from any to table(sw1_s0d4) dst-port 80,https not dst-ip table("
+	    "sw1_s0a4) // security acme guard dst\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"12 deny log logdst rtsock logamount 1000 tcp "
+	    "from any to any dst-port 80,https src-ip table(sw1_s0d4) not src-ip "
+	    "table(sw1_s0a4) // security acme guard src\"") != NULL);
 	/* With the lists' prefixes after the policy's own, the domains of
 	 * both in the DNS filter. */
 	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"sw1_s0d4\",\"valtype\":\"legacy\","
@@ -4103,6 +4103,16 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * over the private tunnel first, the public one after. */
 	ATF_CHECK_MSG(strstr(r.body, "\"table\":\"sw1_z1p1_6\",\"prefix\":"
 	    "\"2001:db8:1::/64\"") == NULL, "%s", r.body);
+	resp_free(&r);
+	/* The record: the edges' logged packets read now; none yet. */
+	http("GET", "/api/sdwan/record?swvc=acme&policy=guard", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"record\":[]") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/sdwan/record.csv", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strncmp(r.body, "time,edge,rule,action,source,destination,"
+	    "interface,comment\n", 60) == 0, "%s", r.body);
 	resp_free(&r);
 
 	/* Applied: each made, in the order, IPsec with the far key. */

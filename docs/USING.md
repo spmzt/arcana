@@ -1143,7 +1143,26 @@ version that moves when its entries change, when it was fetched, and
 the error of a fetch that failed, which keeps the last entries. The
 prefixes of a named list go into the policy's deny tables after its
 own, the domains into its DNS filter; the document is refused for a
-list that is not there. `GET` and `PUT /api/sdwan/lists` carry the
+list that is not there.
+
+What IPsec decrypts goes past the firewall on its way in by default
+(`net.inet.ipsec.filtertunnel=0`), and a tunnel's payload with it, so
+the agent sets that and its IPv6 twin to 1 whenever it loads the
+rules: what comes in by an IPsec-carried tunnel is then filtered like
+the rest.
+
+**The record** (SASE-2): a policy with `log` has its deny rules log
+each packet to the routing socket (ipfw's `logdst rtsock`, a thousand
+a rule between resets, which the agent asks for), where the agent
+reads them (RTM_IPFWLOG: the rule, its action, the addresses, the
+interface and the rule's comment, which names the service and the
+policy) into a record it keeps for a day beside its files, each an
+event `sdwan-security` as it comes, twenty a second at most. The
+`sdwan` read carries the day's count and the latest 500; Security
+shows them from every edge, newest first, with a filter, and **CSV**
+downloads the day's from every edge (`GET /api/sdwan/record.csv`;
+`/api/sdwan/record` as JSON, `?swvc=`, `&policy=`, `&edge=`,
+`&since=` to pick). `GET` and `PUT /api/sdwan/lists` carry the
 feeds and the interval, `POST /api/sdwan/lists/fetch` fetches now
 (`{"name"}` for one); **Fetch now** on the tab does the same. A list
 may be large: the agent writes a table's entries 64 to a line as

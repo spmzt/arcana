@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.67.0"
+#define	ARCANA_AGENT_VERSION	"0.68.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -461,6 +461,9 @@ void		 fault_clear(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
 void		 faults_json(struct ucl_object_s *);
 void		 faults_start(void);
+/* gula/record.c: what the security rules logged, a day of it. */
+void		 record_start(void);
+void		 record_json(struct ucl_object_s *);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,

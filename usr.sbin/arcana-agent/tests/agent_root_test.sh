@@ -474,6 +474,35 @@ sdwan_probe_cleanup()
 	true
 }
 
+atf_test_case sdwan_record cleanup
+sdwan_record_head()
+{
+	atf_set "descr" "what a rule logs to the routing socket (ipfw logdst rtsock) is the agent's record: a count rule on the loopback, a ping, the entry with the rule's comment and an event"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+sdwan_record_body()
+{
+	ipfw list >/dev/null 2>&1 || atf_skip "no ipfw here"
+	ipfw list 65010 >/dev/null 2>&1 && atf_skip "rule 65010 is taken"
+	start_daemon
+	last=$("$JGC" -c "$SOCK" events | sed -E 's/^\{"last":([0-9]+).*/\1/')
+	atf_check -o ignore ipfw -q add 65010 count log logdst rtsock logamount 100 icmp from 127.0.0.1 to 127.0.0.1 // security lab guard dst
+	atf_check -o ignore ping -c 1 -q 127.0.0.1
+	sleep 1
+	atf_check -o match:'"record":\{"count":[1-9][0-9]*,"seq":[0-9]+,"untold":0,"last":\[\{"t":[0-9]+,"seq":[0-9]+,"rule":65010,"action":"count","src":"127.0.0.1","dst":"127.0.0.1","iface":"lo0","comment":"security lab guard dst"\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"kind":"sdwan-security","data":\{"seq":[0-9]+,"rule":65010,"action":"count","src":"127.0.0.1","dst":"127.0.0.1","iface":"lo0","comment":"security lab guard dst"\}' \
+	    "$JGC" -c "$SOCK" events "$last"
+	ipfw -q delete 65010
+}
+sdwan_record_cleanup()
+{
+	ipfw -q delete 65010 2>/dev/null
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
 atf_test_case resnapshot cleanup
 resnapshot_head()
 {
@@ -529,4 +558,5 @@ atf_init_test_cases()
 	atf_add_test_case resnapshot
 	atf_add_test_case kmsg
 	atf_add_test_case sdwan_probe
+	atf_add_test_case sdwan_record
 }

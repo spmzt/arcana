@@ -12,7 +12,8 @@ SRCS+=		bird.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c wireguard.c
 SRCS+=		build.c exec.c jail.c jails.c jobs.c lifecycle.c packages.c \
 		services.c update.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
-SRCS+=		pools.c storage.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
+SRCS+=		record.c \
+		pools.c storage.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
 		history.c events.c faults.c kmsg.c probe.c
 .PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
 		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula \

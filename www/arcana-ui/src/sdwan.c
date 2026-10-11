@@ -13,6 +13,8 @@
  * requirement.
  */
 
+#define	_GNU_SOURCE		/* strcasestr(3) */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,6 +71,7 @@ static struct {
 	ucl_object_t	*faults;	/* sid: the agent's faults of the day */
 	ucl_object_t	*rekeys;	/* /api/sdwan/rekey: the rotations */
 	ucl_object_t	*lists;		/* /api/sdwan/lists: the feeds and lists */
+	char		 record_filter[80];	/* the record's filter text */
 	double		 paths_at;
 	int		 mon_span;	/* seconds the monitor charts draw */
 	/* The forms: what is edited, and the host's interfaces for a link. */
@@ -2879,6 +2882,81 @@ view_security(struct html *h)
 	if (n == 0)
 		h_raw(h, "<tr><td colspan=\"6\" class=\"dim\">None yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
+	/* The record: what the edges' logged security rules saw, as each
+	 * agent keeps a day of it, the latest first; a filter on the text,
+	 * a CSV of what is shown. */
+	{
+		struct html	csvb;
+		int		shown = 0;
+
+		memset(&csvb, 0, sizeof(csvb));
+		h_fmt(&csvb, "time,edge,rule,action,source,destination,interface,"
+		    "comment\n");
+		h_raw(h, "<div class=\"sd-block\"><h3>Record <small class=\"dim\">"
+		    "what the policies' deny rules logged on each edge (ipfw's "
+		    "log to the routing socket, read by the agent, a day kept); "
+		    "the latest first</small><span class=\"pane-actions\"><input "
+		    "type=\"search\" data-input=\"sd-record-filter\" placeholder=\""
+		    "filter: an address, a policy, an edge\"");
+		h_attr(h, "value", sd.record_filter);
+		h_raw(h, "><a class=\"ghost small\" href=\"/api/sdwan/record.csv\" "
+		    "download=\"sdwan-record.csv\" title=\"Every edge's record of "
+		    "the day as CSV, from the console\">CSV</a></span></h3><table "
+		    "class=\"net sd\"><thead><tr><th>When</th><th>Edge</th><th>Rule"
+		    "</th><th>Action</th><th>From</th><th>To</th><th>Interface</th>"
+		    "<th>Policy</th></tr></thead><tbody>");
+		it = NULL;
+		while (sd.paths != NULL && (v = ucl_object_iterate(sd.paths, &it,
+		    true)) != NULL) {
+			const ucl_object_t	*re;
+			ucl_object_iter_t	 rit = NULL;
+			char			 line[400];
+
+			while ((re = ucl_object_iterate(jget(jget(v, "record"),
+			    "last"), &rit, true)) != NULL) {
+				snprintf(line, sizeof(line), "%s %lld %s %s %s %s %s",
+				    host_name(ucl_object_key(v)), jint(re, "rule", 0),
+				    jstr(re, "action") != NULL ? jstr(re, "action") : "",
+				    jstr(re, "src") != NULL ? jstr(re, "src") : "",
+				    jstr(re, "dst") != NULL ? jstr(re, "dst") : "",
+				    jstr(re, "iface") != NULL ? jstr(re, "iface") : "",
+				    jstr(re, "comment") != NULL ? jstr(re, "comment") :
+				    "");
+				if (sd.record_filter[0] != '\0' && strcasestr(line,
+				    sd.record_filter) == NULL)
+					continue;
+				if (++shown > 500)
+					break;
+				fmt_age(age, sizeof(age), (double)jint(re, "t", 0) *
+				    1000);
+				h_raw(h, "<tr><td class=\"dim\">");
+				h_txt(h, age);
+				h_raw(h, "</td><td><b>");
+				h_txt(h, host_name(ucl_object_key(v)));
+				h_fmt(h, "</b></td><td class=\"mono\">%lld</td><td>",
+				    jint(re, "rule", 0));
+				h_txt(h, jstr(re, "action") != NULL ? jstr(re, "action") :
+				    "");
+				h_raw(h, "</td><td class=\"mono\">");
+				h_txt(h, jstr(re, "src") != NULL ? jstr(re, "src") : "");
+				h_raw(h, "</td><td class=\"mono\">");
+				h_txt(h, jstr(re, "dst") != NULL ? jstr(re, "dst") : "");
+				h_raw(h, "</td><td class=\"mono dim\">");
+				h_txt(h, jstr(re, "iface") != NULL ? jstr(re, "iface") :
+				    "");
+				h_raw(h, "</td><td class=\"dim\">");
+				h_txt(h, jstr(re, "comment") != NULL ? jstr(re, "comment")
+				    : "");
+				h_raw(h, "</td></tr>");
+			}
+		}
+		if (shown == 0)
+			h_raw(h, "<tr><td colspan=\"8\" class=\"dim\">Nothing logged "
+			    "yet: a policy with log sends what it denies here.</td>"
+			    "</tr>");
+		h_raw(h, "</tbody></table></div>");
+		free(csvb.s);
+	}
 	/* The DNS filters on the edges: each edge's unbound instances, a
 	 * service each, as the edges' reads tell them. */
 	h_raw(h, "<div class=\"sd-block\"><h3>DNS filters <small class=\"dim\">"
@@ -5329,6 +5407,8 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sd.tab = SD_SERVICES;
 	} else if (strcmp(act, "input:sd-swvc") == 0)
 		snprintf(sd.swvc, sizeof(sd.swvc), "%s", value);
+	else if (strcmp(act, "input:sd-record-filter") == 0)
+		snprintf(sd.record_filter, sizeof(sd.record_filter), "%s", value);
 	else if (strcmp(act, "sd-example") == 0)
 		example();
 	else if (strcmp(act, "sd-list-add") == 0 || strcmp(act, "sd-list-edit")
