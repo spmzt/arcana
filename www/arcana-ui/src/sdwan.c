@@ -23,7 +23,8 @@
 
 #define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
 
-enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_PATHS, SD_DOCUMENT };
+enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_PATHS, SD_SECURITY,
+    SD_DOCUMENT };
 
 #define	PATHS_EVERY_MS	2000	/* the probes read again, on the Paths tab */
 #define	MON_BINS	120	/* columns of a monitor chart */
@@ -79,16 +80,61 @@ static struct {
 	bool		 show_kept;	/* the Edges tab shows what stays too */
 } sd;
 
-/* The plan's phases, as Mplify 119 orders them (§12.1). */
-static const char *const phase_names[] = { "", "routing tables", "IPsec",
-    "tunnels", "far ends", "probes", "rules", "steering", "routes", "UNIs",
-    "BIRD" };
-
+/*
+ * The step of Mplify 119's activity flow (§12.1, steps 1 to 13) a change
+ * belongs to, by what it makes; the apply runs them in that order, the
+ * UNIs enabled last (step 13, R169).
+ */
 static const char *
-phase_name(long long ph)
+step_label(const ucl_object_t *c)
 {
+	const ucl_object_t	*t, *e;
+	ucl_object_iter_t	 it, eit;
+	const char		*k;
+	bool			 control;
 
-	return (ph >= 1 && ph <= 10 ? phase_names[ph] : "");
+	if ((k = jstr(c, "key")) == NULL)
+		return ("");
+	if (strcmp(k, "fibs") == 0 || strcmp(k, "forwarding") == 0)
+		return ("1 · VRFs");
+	if (strcmp(k, "ntp") == 0)
+		return ("2 · synchronization");
+	if (strncmp(k, "ucs:", 4) == 0)
+		return ("3 · UCS UNIs");
+	if (strncmp(k, "tvc:", 4) == 0 || strncmp(k, "peer:", 5) == 0)
+		return (strstr(k, "/ctvc") != NULL ? "4 · control plane" :
+		    "5 · UTVCs");
+	if (strncmp(k, "uswekey:", 8) == 0) {
+		/* The pair of a control tunnel's interface, or a data one's. */
+		control = false;
+		it = NULL;
+		while (sd.plan != NULL && (t = ucl_object_iterate(jget(sd.plan,
+		    "tunnels"), &it, true)) != NULL) {
+			eit = NULL;
+			while ((e = ucl_object_iterate(jget(t, "ends"), &eit, true))
+			    != NULL)
+				if (jstr(e, "ifname") != NULL && strcmp(jstr(e,
+				    "ifname"), k + 8) == 0 && jbool(t, "control"))
+					control = true;
+		}
+		return (control ? "4 · control plane" : "5 · UTVCs");
+	}
+	if (strcmp(k, "ipsec") == 0)
+		return ("5 · UTVCs");
+	if (strncmp(k, "uni:", 4) == 0 || strncmp(k, "rtadvd:", 7) == 0 ||
+	    strncmp(k, "dhcp:", 5) == 0)
+		return ("6 · SD-WAN UNIs, 13 · enabled");
+	if (strncmp(k, "route:", 6) == 0)
+		return ("7 · subscriber routing");
+	if (strcmp(k, "bird") == 0)
+		return ("7 · subscriber routing, 11 · BFD");
+	if (strcmp(k, "rules") == 0)
+		return ("8 · flows, 9 · zones");
+	if (strcmp(k, "steer") == 0)
+		return ("10 · policy map");
+	if (strcmp(k, "probes") == 0)
+		return ("12 · performance monitoring");
+	return ("");
 }
 
 /* The document changed by a form, sent to be kept. */
@@ -1623,7 +1669,8 @@ view_edges(struct html *h)
 	h_fmt(h, "<div class=\"sd-block\"><h3>On the edges <small class=\"dim"
 	    "\">what each is to have, as jobs, in the order it is made: %s"
 	    "</small></h3><table class=\"net sd sd-plan\"><thead><tr><th>Edge"
-	    "</th><th>Step</th><th>What</th><th>Change</th><th>Jobs</th></tr>"
+	    "</th><th title=\"Mplify 119 §12.1, the activity flow's steps 1 to 13\">"
+	    "Step</th><th>What</th><th>Change</th><th>Jobs</th></tr>"
 	    "</thead><tbody>", todo > 0 && !sd.show_kept ? "the changes" :
 	    "everything");
 	last = "";
@@ -1685,8 +1732,9 @@ view_edges(struct html *h)
 		if (!sd.show_kept && todo > 0 && strcmp(jstr(c, "change"), "keep")
 		    == 0)
 			continue;
-		h_fmt(h, "<tr class=\"ch-%s\"><td></td><td class=\"dim\">%s</td>"
-		    "<td>", jstr(c, "change"), phase_name(jint(c, "phase", 0)));
+		h_fmt(h, "<tr class=\"ch-%s\"><td></td><td class=\"dim\" title=\""
+		    "Mplify 119 §12.1, the step of its activity flow\">%s</td><td>",
+		    jstr(c, "change"), step_label(c));
 		h_txt(h, jstr(c, "title"));
 		h_fmt(h, "</td><td><span class=\"chip ch-%s\">%s</span></td>"
 		    "<td><details><summary>%u</summary><ul class=\"sd-jobs\">",
@@ -2560,6 +2608,109 @@ view_paths(struct html *h)
 
 /* ---- The document ----------------------------------------------------- */
 
+/*
+ * The security policies of the service shown (MEF 88): each a name and
+ * its criteria, where a policy's af-security-ingress or -egress names
+ * it; what each denied comes with the counts (SASE-1).
+ */
+static void
+view_security(struct html *h)
+{
+	const ucl_object_t	*sw, *v, *cr, *b, *pol, *pc;
+	ucl_object_iter_t	 it, pit;
+	int			 n;
+
+	h_raw(h, "<div class=\"toolbar\"><label class=\"inline\">Service "
+	    "<select data-input=\"sd-swvc\">");
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sd.doc, "swvcs"), &it, true)) !=
+	    NULL) {
+		h_raw(h, "<option");
+		h_attr(h, "value", jstr(v, "id"));
+		if (strcmp(jstr(v, "id"), sd.swvc) == 0)
+			h_raw(h, " selected");
+		h_raw(h, ">");
+		h_txt(h, jstr(v, "id"));
+		h_raw(h, "</option>");
+	}
+	h_raw(h, "</select></label></div>");
+	if ((sw = swvc_shown()) == NULL) {
+		h_raw(h, "<p class=\"dim\">No service yet: the Services tab adds "
+		    "one.</p>");
+		return;
+	}
+	h_raw(h, "<div class=\"sd-block\"><h3>Security policies <small class=\""
+	    "dim\">MEF 88, by name (§9.10): addresses allowed and denied "
+	    "(ipfw tables), domains denied and DNS kept to the provider's "
+	    "resolver (Unbound), a rate limit (dummynet), a log; a flow's "
+	    "policy names one by af-security-ingress or -egress</small><span "
+	    "class=\"pane-actions\"><button class=\"ghost small\" data-act=\""
+	    "sd-secpol-add\">+ policy</button></span></h3><table class=\"net sd"
+	    "\"><thead><tr><th>Name</th><th>Addresses</th><th>DNS</th><th>Rate"
+	    "</th><th>Log</th><th>Named by</th><th></th></tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sw, "security_policies"), &it,
+	    true)) != NULL) {
+		n++;
+		cr = jget(v, "criteria");
+		h_raw(h, "<tr><td class=\"mono\">");
+		h_txt(h, jstr(v, "name"));
+		h_raw(h, "</td><td>");
+		b = jget(cr, "ip-block");
+		if (b != NULL) {
+			h_fmt(h, "<span class=\"chip st-up\">%u allowed</span> <span "
+			    "class=\"chip st-down\">%u denied</span>", jget(b,
+			    "allow") != NULL ? ucl_array_size(jget(b, "allow")) : 0,
+			    jget(b, "deny") != NULL ? ucl_array_size(jget(b, "deny"))
+			    : 0);
+		} else
+			h_raw(h, "<span class=\"dim\">—</span>");
+		h_raw(h, "</td><td>");
+		b = jget(cr, "dns-domain-filter");
+		if (b != NULL)
+			h_fmt(h, "<span class=\"chip st-down\">%u domain%s denied"
+			    "</span> ", jget(b, "deny") != NULL ? ucl_array_size(
+			    jget(b, "deny")) : 0, jget(b, "deny") != NULL &&
+			    ucl_array_size(jget(b, "deny")) == 1 ? "" : "s");
+		if (jbool(cr, "dns-protocol-filter"))
+			h_raw(h, "<span class=\"chip\">provider's resolver only"
+			    "</span>");
+		if (b == NULL && !jbool(cr, "dns-protocol-filter"))
+			h_raw(h, "<span class=\"dim\">—</span>");
+		h_raw(h, "</td><td>");
+		if (jget(cr, "rate-limit") != NULL)
+			h_fmt(h, "%lld kbit/s", jint(cr, "rate-limit", 0) / 1000);
+		else
+			h_raw(h, "<span class=\"dim\">—</span>");
+		h_raw(h, "</td><td>");
+		h_raw(h, jbool(cr, "log") ? "yes" : "<span class=\"dim\">no</span>");
+		h_raw(h, "</td><td class=\"dim\">");
+		pit = NULL;
+		while ((pol = ucl_object_iterate(jget(sw, "policies"), &pit, true))
+		    != NULL) {
+			pc = jget(pol, "criteria");
+			if ((jstr(pc, "af-security-ingress") != NULL && strcmp(jstr(
+			    pc, "af-security-ingress"), jstr(v, "name")) == 0) ||
+			    (jstr(pc, "af-security-egress") != NULL && strcmp(jstr(
+			    pc, "af-security-egress"), jstr(v, "name")) == 0)) {
+				h_txt(h, jstr(pol, "name"));
+				h_raw(h, " ");
+			}
+		}
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" data-act=\""
+		    "sd-secpol-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-secpol-del\" title=\"Take the policy away\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">×</button></td></tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">None yet.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
+}
+
 static void
 view_document(struct html *h)
 {
@@ -2606,11 +2757,14 @@ view_sdwan(struct html *h)
 	    "</button><button class=\"tab%s\" data-act=\"sd-tab\" data-arg=\""
 	    "paths\" title=\"What the edges' probes see of each tunnel: "
 	    "delay, variation, loss\">Paths</button><button class=\"tab%s\" "
-	    "data-act=\"sd-tab\" data-arg=\"document\" title=\"All of it as "
-	    "JSON, checked against MEF 70.2\">Document</button></nav>",
+	    "data-act=\"sd-tab\" data-arg=\"security\" title=\"The security "
+	    "policies of each service, MEF 88\">Security</button><button class="
+	    "\"tab%s\" data-act=\"sd-tab\" data-arg=\"document\" title=\"All of "
+	    "it as JSON, checked against MEF 70.2\">Document</button></nav>",
 	    sd.tab == SD_OVERVIEW ? " on" : "", sd.tab == SD_SERVICES ? " on" :
 	    "", sd.tab == SD_EDGES ? " on" : "", sd.tab == SD_PATHS ? " on" :
-	    "", sd.tab == SD_DOCUMENT ? " on" : "");
+	    "", sd.tab == SD_SECURITY ? " on" : "", sd.tab == SD_DOCUMENT ?
+	    " on" : "");
 	if (sd.doc == NULL) {
 		if (sd.error[0] != '\0') {
 			h_raw(h, "<div class=\"notice bad\">");
@@ -2624,6 +2778,8 @@ view_sdwan(struct html *h)
 		view_edges(h);
 	else if (sd.tab == SD_PATHS)
 		view_paths(h);
+	else if (sd.tab == SD_SECURITY)
+		view_security(h);
 	else if (sd.tab == SD_DOCUMENT)
 		view_document(h);
 	else
@@ -3160,6 +3316,21 @@ sdwan_modal_service(struct html *h)
 		    "control_plane") != NULL ? jstr(jget(o, "control_plane"),
 		    "cluster_id") : "", "", "The reflector's, an IPv4 address; its "
 		    "router id if empty.");
+		h_raw(h, "</div><div class=\"two\"><label>Control tunnel over"
+		    "<select name=\"cp_ctvc\">");
+		option(h, "", "none: the iBGP by the data tunnels", edit && jget(o,
+		    "control_plane") != NULL ? jstr(jget(o, "control_plane"),
+		    "ctvc") : "");
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
+		    NULL)
+			option(h, jstr(v, "id"), jstr(v, "id"), edit && jget(o,
+			    "control_plane") != NULL ? jstr(jget(o, "control_plane"),
+			    "ctvc") : "");
+		h_raw(h, "</select><small>A tunnel of the control plane's own "
+		    "from each edge to the host over this underlay (the CTVC, "
+		    "Mplify 119 R5, R6), carrying the iBGP and nothing else.</small>"
+		    "</label>");
 		snprintf(buf, sizeof(buf), "%lld", (long long)jint(jget(o,
 		    "intervals"), "eval", 1000));
 		text_field(h, "Evaluation interval, ms", "eval", buf, "1000", "The "
@@ -3211,6 +3382,47 @@ sdwan_modal_service(struct html *h)
 		    v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "", "10.1.0.0/16, "
 		    "2001:db8:1::/48", "Empty: the Default zone, every host no "
 		    "other zone names (one service has one).");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_SECPOL) {
+		o = sd.edit[0] != '\0' ? jfind(jget(sw, "security_policies"),
+		    "name", sd.edit) : NULL;
+		cr = jget(o, "criteria");
+		h_fmt(h, "<form data-form=\"sd-secpol\"><h2>%s</h2><p>A security "
+		    "policy (MEF 88): what a flow's traffic may not do, where a "
+		    "policy names it by af-security-ingress or -egress. Each "
+		    "part is optional.</p><input type=\"hidden\" name=\"was\"", o !=
+		    NULL ? "A security policy, changed" : "A security policy");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, ">");
+		text_field(h, "Name", "name", jstr(o, "name"), "guard", NULL);
+		v = jget(jget(cr, "ip-block"), "allow");
+		text_field(h, "Addresses allowed", "allow", v != NULL &&
+		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
+		    "10.1.0.0/16", "Prefixes let through before the denied are "
+		    "looked at (ip-block).");
+		v = jget(jget(cr, "ip-block"), "deny");
+		text_field(h, "Addresses denied", "deny", v != NULL &&
+		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
+		    "192.0.2.0/24, 2001:db8:bad::/48", "Prefixes dropped, as "
+		    "source or destination (ip-block).");
+		v = jget(jget(cr, "dns-domain-filter"), "deny");
+		text_field(h, "Domains denied", "domains", v != NULL &&
+		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
+		    "ads.example, tracker.example", "Names that do not resolve, "
+		    "with everything under them (dns-domain-filter).");
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "dnsproto\" value=\"1\"%s> DNS only to the provider's resolver "
+		    "(dns-protocol-filter)</label>", jbool(cr, "dns-protocol-filter")
+		    ? " checked" : "");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(cr, "rate-limit",
+		    0));
+		text_field(h, "Rate limit, bits per second", "rate", jget(cr,
+		    "rate-limit") != NULL ? buf : "", "2000000", "A cap on the "
+		    "flow's traffic, by dummynet (rate-limit); empty for none.");
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "log\" value=\"1\"%s> Log what is denied (log)</label>", jbool(
+		    cr, "log") ? " checked" : "");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_FLOW) {
@@ -3907,7 +4119,8 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 
 	if (strcmp(form, "sd-swvc") != 0 && strcmp(form, "sd-zone") != 0 &&
 	    strcmp(form, "sd-flow") != 0 && strcmp(form, "sd-policy") != 0 &&
-	    strcmp(form, "sd-ep") != 0 && strcmp(form, "sd-map") != 0)
+	    strcmp(form, "sd-ep") != 0 && strcmp(form, "sd-map") != 0 &&
+	    strcmp(form, "sd-secpol") != 0)
 		return (false);
 	if (sd.doc == NULL)
 		return (true);
@@ -3945,6 +4158,8 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			if (jstr(f, "cp_cluster") != NULL && jstr(f, "cp_cluster")[0]
 			    != '\0')
 				put_str(cp, "cluster_id", jstr(f, "cp_cluster"));
+			if (jstr(f, "cp_ctvc") != NULL && jstr(f, "cp_ctvc")[0] != '\0')
+				put_str(cp, "ctvc", jstr(f, "cp_ctvc"));
 			ucl_object_insert_key(o, cp, "control_plane", 0, false);
 		}
 		put_list(o, "reserved_prefixes", jstr(f, "reserved"));
@@ -4081,6 +4296,42 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
 			    "policies", 0, false);
 		list_put(sw, "zones", "name", was, o);
+	} else if (strcmp(form, "sd-secpol") == 0) {
+		ucl_object_t	*cr, *b;
+
+		if (jstr(f, "name") == NULL || jstr(f, "name")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A "
+			    "security policy has a name");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put_str(o, "name", jstr(f, "name"));
+		cr = ucl_object_typed_new(UCL_OBJECT);
+		if ((jstr(f, "allow") != NULL && jstr(f, "allow")[0] != '\0') ||
+		    (jstr(f, "deny") != NULL && jstr(f, "deny")[0] != '\0')) {
+			b = ucl_object_typed_new(UCL_OBJECT);
+			if (jstr(f, "allow") != NULL && jstr(f, "allow")[0] != '\0')
+				put_list(b, "allow", jstr(f, "allow"));
+			if (jstr(f, "deny") != NULL && jstr(f, "deny")[0] != '\0')
+				put_list(b, "deny", jstr(f, "deny"));
+			ucl_object_insert_key(cr, b, "ip-block", 0, false);
+		}
+		if (jstr(f, "domains") != NULL && jstr(f, "domains")[0] != '\0') {
+			b = ucl_object_typed_new(UCL_OBJECT);
+			put_list(b, "deny", jstr(f, "domains"));
+			ucl_object_insert_key(cr, b, "dns-domain-filter", 0, false);
+		}
+		if (checked(f, "dnsproto"))
+			ucl_object_insert_key(cr, ucl_object_frombool(true),
+			    "dns-protocol-filter", 0, false);
+		if (jstr(f, "rate") != NULL && jstr(f, "rate")[0] != '\0')
+			put_int(cr, "rate-limit", jstr(f, "rate"));
+		if (checked(f, "log"))
+			ucl_object_insert_key(cr, ucl_object_frombool(true), "log", 0,
+			    false);
+		ucl_object_insert_key(o, cr, "criteria", 0, false);
+		list_put(sw, "security_policies", "name", was, o);
 	} else if (strcmp(form, "sd-flow") == 0) {
 		static const char *const apps[] = { "dns", "http", "https", "ssh",
 		    "sip", "ntp", "smtp", "imap", "pop3", "ldap", "rdp", "snmp",
@@ -4369,6 +4620,7 @@ sd_service_remove(const char *what, const char *arg, const char *value)
 	} else {
 		list = strcmp(what, "zone") == 0 ? "zones" : strcmp(what, "flow")
 		    == 0 ? "flows" : strcmp(what, "policy") == 0 ? "policies" :
+		    strcmp(what, "secpol") == 0 ? "security_policies" :
 		    "end_points";
 		key = strcmp(what, "ep") == 0 ? "id" : "name";
 		arr = (ucl_object_t *)(uintptr_t)jget(sw, list);
@@ -4541,7 +4793,15 @@ example(void)
 	    "\"criteria\": {\n"
 	    "\t\t\t\t\"encryption\": \"required-public-only\",\n"
 	    "\t\t\t\t\"allowed-destination-zones\": \"All\",\n"
-	    "\t\t\t\t\"internet-breakout\": \"enabled\"}}\n"
+	    "\t\t\t\t\"internet-breakout\": \"enabled\",\n"
+	    "\t\t\t\t\"af-security-ingress\": \"guard\"}}\n"
+	    "\t\t],\n"
+	    "\t\t\"security_policies\": [\n"
+	    "\t\t\t{\"name\": \"guard\", \"criteria\": {\n"
+	    "\t\t\t\t\"ip-block\": {\"deny\": [\"192.0.2.0/24\"]},\n"
+	    "\t\t\t\t\"dns-domain-filter\": {\"deny\": [\"ads.example\"]},\n"
+	    "\t\t\t\t\"dns-protocol-filter\": true,\n"
+	    "\t\t\t\t\"log\": true}}\n"
 	    "\t\t],\n"
 	    "\t\t\"end_points\": [\n"
 	    "\t\t\t{\"id\": \"hq\", \"edge\": \"%s\", \"uni\": {\"id\": "
@@ -4662,7 +4922,8 @@ sdwan_action(const char *act, const char *arg, const char *value)
 	if (strncmp(act, "sd-swvc-", 8) == 0 || strncmp(act, "sd-zone-", 8) ==
 	    0 || strncmp(act, "sd-flow-", 8) == 0 || strncmp(act, "sd-policy-",
 	    10) == 0 || strncmp(act, "sd-ep-", 6) == 0 || strncmp(act,
-	    "sd-map-", 7) == 0 || strncmp(act, "sd-zmap-", 8) == 0) {
+	    "sd-map-", 7) == 0 || strncmp(act, "sd-zmap-", 8) == 0 || strncmp(
+	    act, "sd-secpol-", 10) == 0) {
 		const char	*what, *verb;
 		char		 kind[12], body[300];
 
@@ -4681,7 +4942,8 @@ sdwan_action(const char *act, const char *arg, const char *value)
 			    strcmp(kind, "zone") == 0 ? MODAL_SD_ZONE : strcmp(kind,
 			    "flow") == 0 ? MODAL_SD_FLOW : strcmp(kind, "policy") ==
 			    0 ? MODAL_SD_POLICY : strcmp(kind, "ep") == 0 ?
-			    MODAL_SD_EP : MODAL_SD_MAP;
+			    MODAL_SD_EP : strcmp(kind, "secpol") == 0 ?
+			    MODAL_SD_SECPOL : MODAL_SD_MAP;
 			app.modal_error[0] = '\0';
 			if (app.modal == MODAL_SD_EP) {
 				const ucl_object_t	*ep = jfind(jget(swvc_shown(),
@@ -4722,7 +4984,8 @@ sdwan_action(const char *act, const char *arg, const char *value)
 	    4) == 0 || strncmp(act + 6, "zone", 4) == 0 || strncmp(act + 6,
 	    "flow", 4) == 0 || strncmp(act + 6, "policy", 6) == 0 || strncmp(
 	    act + 6, "ep-", 3) == 0 || strncmp(act + 6, "map", 3) == 0 ||
-	    strncmp(act + 6, "zmap", 4) == 0)) {
+	    strncmp(act + 6, "zmap", 4) == 0 || strncmp(act + 6, "secpol", 6)
+	    == 0)) {
 		char	kind[12];
 
 		snprintf(kind, sizeof(kind), "%.*s", (int)(strrchr(act, '-') -
@@ -4780,8 +5043,9 @@ sdwan_action(const char *act, const char *arg, const char *value)
 	if (strcmp(act, "sd-tab") == 0) {
 		sd.tab = strcmp(arg, "services") == 0 ? SD_SERVICES :
 		    strcmp(arg, "edges") == 0 ? SD_EDGES : strcmp(arg,
-		    "paths") == 0 ? SD_PATHS : strcmp(arg, "document") == 0 ?
-		    SD_DOCUMENT : SD_OVERVIEW;
+		    "paths") == 0 ? SD_PATHS : strcmp(arg, "security") == 0 ?
+		    SD_SECURITY : strcmp(arg, "document") == 0 ? SD_DOCUMENT :
+		    SD_OVERVIEW;
 		if (sd.tab == SD_EDGES || sd.tab == SD_OVERVIEW)
 			plan_load();
 		else if (sd.tab == SD_PATHS)

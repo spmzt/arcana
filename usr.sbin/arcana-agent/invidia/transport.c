@@ -328,7 +328,7 @@ do_transport(struct work *w, bool retry, struct arc_transport_rsp *rsp)
 		ucl_array_append(arr, o);
 	}
 	ucl_object_insert_key(top, arr, "listeners", 0, false);
-	ucl_object_insert_key(top, ucl_object_frombool(kmod_loaded("sctp")),
+	ucl_object_insert_key(top, ucl_object_frombool(kernel_has_sctp()),
 	    "sctp", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	pthread_mutex_lock(&t_lock);

@@ -636,8 +636,8 @@ policy(struct ck *c, const ucl_object_t *sw, const ucl_object_t *p)
 					return (fail(c, "egress-block is allow "
 					    "or discard"));
 			} else if (strcmp(k, "af-security-egress") == 0) {
-				if (!is_null(v) && !in_names(ucl_object_lookup(
-				    sw, "security_policies"), s))
+				if (!is_null(v) && (s == NULL || by(ucl_object_lookup(
+				    sw, "security_policies"), "name", s) == NULL))
 					return (fail(c, "af-security-egress is "
 					    "one of security_policies"));
 			} else
@@ -724,8 +724,8 @@ policy(struct ck *c, const ucl_object_t *sw, const ucl_object_t *p)
 				    "bandwidth is a commit and a limit, or a "
 				    "rate limiter's name"));
 		} else if (strcmp(k, "af-security-ingress") == 0) {
-			if (!is_null(v) && !in_names(ucl_object_lookup(sw,
-			    "security_policies"), s))
+			if (!is_null(v) && (s == NULL || by(ucl_object_lookup(sw,
+			    "security_policies"), "name", s) == NULL))
 				return (fail(c, "af-security-ingress is one of "
 				    "security_policies"));
 		} else
@@ -1159,6 +1159,8 @@ domains(struct ck *c, const ucl_object_t *sw)
 	return (true);
 }
 
+static bool security_policy(struct ck *, const ucl_object_t *);
+
 static bool
 swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
     ucl_object_t *seen_ep, ucl_object_t *seen_uni, ucl_object_t *seen_if)
@@ -1210,6 +1212,21 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    "cluster_id"), &cid) || cid.af != AF_INET))
 			return (fail(c, "control_plane.cluster_id is an IPv4 "
 			    "address, the reflector's cluster (RFC 4456)"));
+		/* The CTVC (R5, R6): a tunnel of the control plane's own over
+		 * one of the service's UCSs, between the host and each edge. */
+		if (str(v, "ctvc") != NULL) {
+			here = false;
+			it = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(sw, "ucs"),
+			    &it, true)) != NULL)
+				if (ucl_object_type(e) == UCL_STRING && strcmp(
+				    ucl_object_tostring(e), str(v, "ctvc")) == 0)
+					here = true;
+			if (!here)
+				return (fail(c, "control_plane.ctvc is one of the "
+				    "service's UCSs, the control tunnel's underlay "
+				    "(Mplify 119 R5, R6)"));
+		}
 	}
 	/* SWVC List of UCSs (§9.3). */
 	if (!names(c, ucl_object_lookup(sw, "ucs"), "ucs", false))
@@ -1337,10 +1354,19 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			return (false);
 	}
 	c->where[base] = '\0';
-	/* Security policies (§9.10) and importance levels (§9.11). */
-	if (!names(c, ucl_object_lookup(sw, "security_policies"),
-	    "security_policies", true))
+	/* Security policies (§9.10; their criteria MEF 88's) and importance
+	 * levels (§9.11). */
+	if (!objects(c, ucl_object_lookup(sw, "security_policies"),
+	    "security_policies", "name", true, NULL, "§9.10"))
 		return (false);
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(sw,
+	    "security_policies"), &it, true)) != NULL) {
+		at(c, base, "security policy %s", str(v, "name"));
+		if (!security_policy(c, v))
+			return (false);
+	}
+	c->where[base] = '\0';
 	v = ucl_object_lookup(sw, "importance");
 	if (!is_null(v)) {
 		if (!names(c, ucl_object_lookup(v, "levels"),
@@ -1657,6 +1683,105 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    !is_int(e, 1, 1000, &n))
 			return (fail(c, "probe: report is so many eval "
 			    "intervals, 1 to 1000"));
+	}
+	return (true);
+}
+
+/* A domain name as a DNS filter takes it: labels of letters, digits and
+ * hyphens, 253 characters at most. */
+static bool
+domain_ok(const char *s)
+{
+	size_t	n, lab;
+
+	if (s == NULL || (n = strlen(s)) == 0 || n > 253 || s[0] == '.' ||
+	    s[n - 1] == '.')
+		return (false);
+	lab = 0;
+	for (; *s != '\0'; s++) {
+		if (*s == '.') {
+			if (lab == 0)
+				return (false);
+			lab = 0;
+			continue;
+		}
+		if (!isalnum((unsigned char)*s) && *s != '-' && *s != '_')
+			return (false);
+		if (++lab > 63)
+			return (false);
+	}
+	return (true);
+}
+
+/*
+ * A security policy (MEF 88): a name and criteria, each optional:
+ * ip-block with allow and deny lists of prefixes, dns-domain-filter with
+ * the domains denied, dns-protocol-filter, rate-limit in bits per
+ * second, and log.
+ */
+static bool
+security_policy(struct ck *c, const ucl_object_t *v)
+{
+	static const char *const known[] = { "ip-block", "dns-domain-filter",
+	    "dns-protocol-filter", "rate-limit", "log", NULL };
+	const ucl_object_t	*cr, *k, *e;
+	ucl_object_iter_t	 it, eit;
+	struct pfx		 p;
+	int			 i;
+
+	if ((cr = ucl_object_lookup(v, "criteria")) == NULL ||
+	    ucl_object_type(cr) != UCL_OBJECT)
+		return (fail(c, "it has criteria: ip-block, dns-domain-filter, "
+		    "dns-protocol-filter, rate-limit, log (MEF 88)"));
+	it = NULL;
+	while ((k = ucl_object_iterate(cr, &it, true)) != NULL) {
+		if (!one_of(ucl_object_key(k), known))
+			return (fail(c, "%s is not a criterion: ip-block, "
+			    "dns-domain-filter, dns-protocol-filter, rate-limit or "
+			    "log", ucl_object_key(k)));
+		if (strcmp(ucl_object_key(k), "ip-block") == 0) {
+			static const char *const lists[] = { "allow", "deny" };
+
+			if (ucl_object_type(k) != UCL_OBJECT)
+				return (fail(c, "ip-block has allow and deny, lists "
+				    "of prefixes"));
+			for (i = 0; i < 2; i++) {
+				if ((e = ucl_object_lookup(k, lists[i])) == NULL)
+					continue;
+				if (ucl_object_type(e) != UCL_ARRAY || ucl_array_size(
+				    e) > LIST_MAX)
+					return (fail(c, "ip-block.%s is a list of "
+					    "prefixes, %d at most", lists[i], LIST_MAX));
+				eit = NULL;
+				while ((e = ucl_object_iterate(ucl_object_lookup(k,
+				    lists[i]), &eit, true)) != NULL)
+					if (ucl_object_type(e) != UCL_STRING || !prefix(
+					    ucl_object_tostring(e), &p, true))
+						return (fail(c, "ip-block.%s: %s is not a "
+						    "prefix", lists[i],
+						    ucl_object_tostring_forced(e)));
+			}
+		} else if (strcmp(ucl_object_key(k), "dns-domain-filter") == 0) {
+			if (ucl_object_type(k) != UCL_OBJECT || (e =
+			    ucl_object_lookup(k, "deny")) == NULL ||
+			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
+			    LIST_MAX)
+				return (fail(c, "dns-domain-filter has deny, a list "
+				    "of domains, %d at most", LIST_MAX));
+			eit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(k, "deny"),
+			    &eit, true)) != NULL)
+				if (ucl_object_type(e) != UCL_STRING || !domain_ok(
+				    ucl_object_tostring(e)))
+					return (fail(c, "dns-domain-filter.deny: %s is "
+					    "not a domain name",
+					    ucl_object_tostring_forced(e)));
+		} else if (strcmp(ucl_object_key(k), "rate-limit") == 0) {
+			if (!is_int(k, 1000, 1000000000000LL, NULL))
+				return (fail(c, "rate-limit is bits per second, 1000 "
+				    "or more"));
+		} else if (ucl_object_type(k) != UCL_BOOLEAN)
+			return (fail(c, "%s is true or false", ucl_object_key(k)));
 	}
 	return (true);
 }

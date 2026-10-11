@@ -62,8 +62,26 @@
   supported: it would be kernel work, which Arcana does not take on
   (2026-10-11); the domains keep their own tunnels. 119-5: a control
   plane host per service, an edge whose BIRD reflects the others'
-  routes, each peering with it alone (5.1). Next: 5.2, the CPI as a
-  tunnel of its own and what remains of RFC 4364. Later: SASE.
+  routes, each peering with it alone (5.1); the CTVC, a control
+  tunnel of its own from each edge to the host over a UCS the
+  service names, the iBGP by it alone (5.2); the phase closed on the
+  lab with three jails, the host reflecting between two edges with
+  no tunnel between them (5.3; RFC 4364's VPN routes stay out, known
+  limits); the Edges tab's steps named as §12.1's activity flow, the
+  guide's table from each of R89-R160 to its attribute, and the list
+  of what is not done (119-6). Mplify 119 is through. SASE-1: the
+  security policies in the document with MEF 88's criteria, checked,
+  on a Security tab with a form, the example carrying one (S1.1);
+  the ip-block denies and allows, the log and the rate pipe in the
+  rules, ingress before the forward and egress by the UNI (S1.2).
+  Next: S1.3, the DNS filter by Unbound.
+- A luxuria plugin installed in a vnet jail and not on the host does
+  not get its tab (reported 2026-10-11). The agent lists a running
+  vnet jail's plugins by access(X_OK) on the program under the jail's
+  root, and the page gives the tab to a host one of whose running vnet
+  jails has it; to find out: the jail's name, whether the agent runs
+  as root (a root 0700 cannot be looked into otherwise), and what the
+  host's list read says under that jail's plugins.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:
@@ -270,6 +288,32 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- A security policy's denies on a vnet jail (MEF 88; task S1.2,
+  2026-10-11, by hand with arcanactl sdwan rules as the plan writes
+  them): the tables of the denied and the allowed prefixes made, the
+  two deny log rules taken by ipfw as written, a ping to a denied
+  prefix dropped and counted on the rule, the hosts reachable again
+  once the rules are cleared. Found: ipfw on 16.0-CURRENT no longer
+  takes "valtype legacy" on table create (the plain number is its
+  default and the word is gone), which every zone and known-hosts
+  table used; the agent leaves the word out for legacy now.
+- A control plane host between two edges on three vnet jails (Mplify
+  119 §8.3, R5, R6, R9-R13; task 5.3, 2026-10-11, build/lab/rr-lab.sh,
+  BIRD 3.3.3 as the console writes it): a control tunnel (gre in FIB
+  1) from each edge to the host, no tunnel between the edges; the
+  host's two sessions rr client with a cluster id, each edge's one
+  session to the host, all Established with TCP MD5 (BIRD puts the
+  tcp-md5 SAs in the kernel itself, four of them on the host, the
+  tcpmd5 module loaded, no setkey), BFD Up at 100 ms on each
+  (BIRD chooses multihop BFD, port 4784, over the point-to-point
+  tunnel; it works the same); each edge's UNI prefix reaches the
+  other by the reflector with next hop the host, and a ping between
+  the two UNIs crosses the host, forwarding on. Found: BIRD's BFD
+  binds its sockets to the tunnel addresses at start and gives them
+  up for good when they are not there yet ("bind: Can't assign
+  requested address", the sessions left Down as multihop), so the
+  instance starts after the tunnel interfaces have their addresses,
+  as the apply orders it.
 - The wire of a derived-SA tunnel between two vnet jails (Mplify 119
   R46, R48; task 3.5, 2026-10-11): tcpdump on the underlay shows the
   ping as UDP-encap ESP on port 4500 both ways, the SPIs the derived

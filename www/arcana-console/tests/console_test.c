@@ -3257,6 +3257,10 @@ static const char sdwan_good[] =
     "\"tca\":{\"delay\":30,\"loss\":0.05,\"damping\":2},"
     "\"rate_limiters\":[{\"name\":\"shared\",\"commit\":1000000,\"limit\":"
     "5000000}],"
+    "\"security_policies\":[{\"name\":\"guard\",\"criteria\":{\"ip-block\":{"
+    "\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]},"
+    "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]},"
+    "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true}}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
     "\"groups\":[\"bulk\"],"
     "\"flows\":[{\"name\":\"web\",\"criteria\":{\"dport\":[80,\"https\"],"
@@ -3268,7 +3272,8 @@ static const char sdwan_good[] =
     "{\"metric\":\"delay\",\"threshold\":10,\"ceiling\":12,\"remediation\":"
     "9},\"secondary\":[{\"metric\":\"loss\",\"threshold\":0.05}]},"
     "\"bandwidth\":\"shared\",\"business-importance\":\"high\","
-    "\"internet-breakout\":\"enabled\"}},{\"name\":"
+    "\"internet-breakout\":\"enabled\",\"af-security-ingress\":\"guard\"}},"
+    "{\"name\":"
     "\"hubonly\",\"direction\":\"ingress\",\"criteria\":{"
     "\"virtual-topology\":\"hub\"}},{\"name\":\"quiet\",\"direction\":"
     "\"egress\",\"criteria\":{\"egress-block\":\"discard\"}}],"
@@ -3400,11 +3405,23 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"hold_time\":90", "\"hold_time\":90,\"as_override\":true",
 		    "as_override" },
 		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
+		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/33\"]",
+		    "is not a prefix" },
+		{ "\"deny\":[\"ads.example\"]", "\"deny\":[\"ads..example\"]",
+		    "not a domain name" },
+		{ "\"rate-limit\":2000000", "\"rate-limit\":10", "1000 or more" },
+		{ "\"log\":true}}", "\"log\":true,\"url-filter\":true}}",
+		    "not a criterion" },
+		{ "\"dns-protocol-filter\":true", "\"dns-protocol-filter\":\"yes\"",
+		    "true or false" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
 		    "\"control_plane\":{\"host\":\"nobody\"},", "control_plane.host" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
 		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"x\"},",
 		    "cluster_id" },
+		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
+		    "\"control_plane\":{\"host\":\"@A\",\"ctvc\":\"dsl\"},",
+		    "control_plane.ctvc" },
 		{ "\"multiplier\":3", "\"multiplier\":1", "(R159)" },
 		{ "\"10.99.0.9\"]", "\"not a host!\"]", "ntp:" },
 		{ "\"damping\":2", "\"damping\":0", "(CR2)" },
@@ -3722,8 +3739,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	snprintf(doc, sizeof(doc), "%s", sdwan_good);
 	static const char *const edits[][2] = {
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
-		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"192.0.2.1\"},"
-		    },
+		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"192.0.2.1\","
+		    "\"ctvc\":\"inet\"}," },
 		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
 		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\","
@@ -3777,8 +3794,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 */
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_REQUIRE_EQ_MSG(2, (int)ucl_array_size(ucl_object_lookup(r.json,
+	ATF_REQUIRE_EQ_MSG(3, (int)ucl_array_size(ucl_object_lookup(r.json,
 	    "tunnels")), "%s", r.body);
+	/* The third is the control plane's own, over inet, after the data
+	 * tunnels: gre again, marked control, addresses after theirs. */
+	ATF_CHECK_STREQ("acme/a-inet-b-inet/ctvc", jstr(&r, "tunnels.2.id"));
+	ATF_CHECK_STREQ("true", jstr(&r, "tunnels.2.control"));
+	ATF_CHECK_STREQ("gre104", jstr(&r, "tunnels.2.ends.0.ifname"));
+	ATF_CHECK_STREQ("100.64.0.4", jstr(&r, "tunnels.2.ends.0.inner4"));
+	ATF_CHECK_STREQ("100.64.0.5", jstr(&r, "tunnels.2.ends.1.inner4"));
 	ATF_CHECK_STREQ("gre", jstr(&r, "tunnels.0.kind"));
 	ATF_CHECK_STREQ("true", jstr(&r, "tunnels.0.ipsec"));
 	ATF_CHECK_STREQ("gre100", jstr(&r, "tunnels.0.ends.0.ifname"));
@@ -3841,6 +3865,25 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * UNI. */
 	ATF_CHECK(strstr(r.body, "\"11 deny ip from any to any src-ip table("
 	    "sw1_zp0) out xmit lo0\"") != NULL);
+	/* The security policy guard, named by fast (MEF 88): before the
+	 * forward, web to or from a denied prefix dropped and logged, the
+	 * allowed prefixes excepted, by tables of the policy's own; its
+	 * rate limit a pipe of its own on the way out by the tunnels. */
+	ATF_CHECK_MSG(strstr(r.body, "\"12 deny log tcp from any to table("
+	    "sw1_s0d4) dst-port 80,https not dst-ip table(sw1_s0a4)\"") != NULL,
+	    "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"12 deny log tcp from any to any dst-port "
+	    "80,https src-ip table(sw1_s0d4) not src-ip table(sw1_s0a4)\"") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_s0d4\",\"valtype\":\"legacy\","
+	    "\"entries\":[[\"192.0.2.0/24\",\"0\"]]") != NULL);
+	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_s0a4\",\"valtype\":\"legacy\","
+	    "\"entries\":[[\"10.1.0.0/16\",\"0\"]]") != NULL);
+	ATF_CHECK(strstr(r.body, "sw1_s0d6") == NULL);
+	ATF_CHECK(strstr(r.body, "\"pipe 3002 config bw 2000000bit/s\"") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"11 pipe 3002 tcp from any to any "
+	    "dst-port 80,https src-ip table(sw1_zp0) out { xmit gre100 or xmit "
+	    "gif102 }\"") != NULL, "%s", r.body);
 	/* Breakout at a, by a-inet: the NAT of hq's public prefix, out by
 	 * vtnet0 and back in to the service's table; the default route
 	 * by the gateway, reached by the interface.  At b, by a tunnel to
@@ -3910,8 +3953,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tpersist;") !=
 	    NULL);
 	ATF_CHECK_MSG(strstr(r.body, "protocol direct {\\n\\tipv4;\\n\\tipv6;\\n"
-	    "\\tinterface \\\"lo0\\\", \\\"gre100\\\", \\\"gif102\\\";\\n}") != NULL,
-	    "%s", r.body);
+	    "\\tinterface \\\"lo0\\\", \\\"gre100\\\", \\\"gif102\\\", \\\"gre104\\\";"
+	    "\\n}") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "&& dest = RTD_UNICAST;") != NULL);
 	ATF_CHECK(strstr(r.body, "import filter { preference = 200; accept; };") !=
 	    NULL);
@@ -3942,19 +3985,22 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"],\"persist\":true") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"kind\":\"sysctl\",\"args\":[\"net.inet6.ip6."
 	    "forwarding\",\"1\"]") != NULL);
-	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b, a client of this "
-	    "reflector\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.0 as "
-	    "64600;\\n\\tneighbor 100.64.0.1 as 64600;\\n\\trr client;\\n\\trr "
+	/* The iBGP by the control tunnel alone: the host a reflector, b its
+	 * client and nothing else; no session by the data tunnels. */
+	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet/ctvc, to b, a client of "
+	    "this reflector\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.4 "
+	    "as 64600;\\n\\tneighbor 100.64.0.5 as 64600;\\n\\trr client;\\n\\trr "
 	    "cluster id 192.0.2.1;\\n}") != NULL, "%s", r.body);
-	/* The other edge peers with the control plane host alone. */
-	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to a, the control "
-	    "plane\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.1 as "
-	    "64600;\\n\\tneighbor 100.64.0.0 as 64600;\\n}") != NULL, "%s",
+	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet/ctvc, to a, the control "
+	    "plane\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.5 as "
+	    "64600;\\n\\tneighbor 100.64.0.4 as 64600;\\n}") != NULL, "%s",
 	    r.body);
+	ATF_CHECK(strstr(r.body, "# acme/a-inet-b-inet, to") == NULL);
+	ATF_CHECK(strstr(r.body, "protocol bgp edge1 from edge") == NULL);
 	/* BFD on the edge's tunnel interfaces, the iBGP sessions by it. */
 	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
-	    "\\\"gif102\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier 3;\\n\\t};"
-	    "\\n}") != NULL, "%s", r.body);
+	    "\\\"gif102\\\", \\\"gre104\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier "
+	    "3;\\n\\t};\\n}") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\terror wait time 10, 60;\\n\\tbfd "
 	    "on;\\n\\tpassword \\\"edges-secret\\\";\\n") != NULL);
 	/* NTP at a, with the FIBs, by the ntp job; taken away by it too. */
@@ -4012,7 +4058,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "ifconfig.log", laddr);
 	ATF_CHECK_MSG(system(t2) == 0, "%s", t2);
 	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
-	ATF_CHECK(system("grep -q 'vlan104 create vlan 20 vlandev lo0' "
+	ATF_CHECK(system("grep -q 'vlan106 create vlan 20 vlandev lo0' "
 	    "ifconfig.log") == 0);
 	/* One IPsec connection for the pair of outer addresses and kind. */
 	ATF_CHECK(system("ls swanctl/conf.d/arcana-sdw*.conf | wc -l | grep -q "
@@ -4084,7 +4130,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_EQ(2, changes_of(&r, "unmake"));
-	ATF_CHECK_EQ(1, (int)ucl_array_size(ucl_object_lookup(r.json,
+	ATF_CHECK_EQ(2, (int)ucl_array_size(ucl_object_lookup(r.json,
 	    "tunnels")));
 	resp_free(&r);
 	http("POST", "/api/sdwan/apply", "{}", &r);

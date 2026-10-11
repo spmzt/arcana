@@ -263,7 +263,7 @@ BSD-2-Clause. The fonts in `www/arcana-ui/vendor/fonts` are under the
 SIL Open Font License 1.1 and morphdom under the MIT licence; see
 `www/arcana-ui/vendor/README`.
 
-## Acknowledgement
+## Disclosure
 
-Arcana is developed with the help of Anthropic's Open-Source Program.
-Claude Fable 5.1 and Claude Opus 5.5 were used during its development.
+Claude Fable 5.1 and Claude Opus 5.5 were used during Arcana's
+development.
