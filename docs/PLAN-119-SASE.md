@@ -453,7 +453,7 @@ Not supported: see the summary above. No tasks.
   atomic adds and the limits raised; a table swap on a list change
   without a rules reload. T. Done when a 100k-entry list applies in
   seconds on the VM.
-- **S2.3 The record.** A: ipfw log lines (kmsg reader) parsed into
+- **S2.3 The record.** A: ipfw's log to the routing socket (logdst rtsock, RTM_IPFWLOG) read into
   `sdwan-security` events with the rule number mapped to flow,
   policy and list; kept 24 hours. C: collected per service. U:
   Security tab shows the record with filters, and exports it as CSV.
