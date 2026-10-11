@@ -168,7 +168,7 @@ wait_js(const char *expr, int seconds)
 	}
 	shot("failed");
 	/* With what the page last said, which is most often why. */
-	v = js("return ([...document.querySelectorAll('.toast, .err')].map("
+	v = js("return ([...document.querySelectorAll('.toast, .err, .notice')].map("
 	    "t => t.textContent.slice(0, 120)).join(' | ').slice(-700) + ' / "
 	    "the textarea: ' + JSON.stringify((document.querySelector('.modal "
 	    "textarea') || {}).value || ''));");
@@ -3437,7 +3437,8 @@ part_flows(void)
 	    "f.ucs.value = 'lte'; f.breakout.checked = true; f.requestSubmit();");
 	wait_js("!document.querySelector('form[data-form=sd-link]') && [..."
 	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
-	    ".some(r => r.textContent.includes('lab-lte'))", 20);
+	    ".some(r => r.textContent.includes('lab-lte') && r.textContent."
+	    "includes('breakout'))", 20);
 	run("[...document.querySelectorAll('button[data-act=sd-link-del]')]"
 	    ".find(b => b.dataset.value === 'lab-lte').click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
@@ -3459,6 +3460,65 @@ part_flows(void)
 	ATF_CHECK(js_true("document.querySelector('section.sdwan').textContent"
 	    ".includes('10.10.0.0/24')"));
 	shot("9-sdwan-service");
+	/*
+	 * The service's parts by forms: a zone, a flow matching an
+	 * application, a policy with a performance threshold, and a rule
+	 * at an end point tying them; each kept and checked.
+	 */
+	run("document.querySelector('button[data-act=sd-zone-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-zone] input[name="
+	    "name]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-zone]'); "
+	    "f.name.value = 'guests'; f.prefixes.value = '10.10.9.0/24'; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-zone]') && "
+	    "document.querySelector('section.sdwan').textContent.includes("
+	    "'guests')", 20);
+	run("document.querySelector('button[data-act=sd-flow-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-flow] input[name="
+	    "name]')", 5);
+	shot("9-sdwan-form-flow");
+	run("const f = document.querySelector('form[data-form=sd-flow]'); "
+	    "f.name.value = 'web'; f.app_https.checked = true; f.app_http."
+	    "checked = true; f.proto.value = 'tcp'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-flow]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('web') && r.textContent."
+	    "includes('http'))", 20);
+	run("document.querySelector('button[data-act=sd-policy-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-policy] select[name="
+	    "metric]')", 5);
+	shot("9-sdwan-form-policy");
+	run("const f = document.querySelector('form[data-form=sd-policy]'); "
+	    "f.name.value = 'cheap'; f['internet-breakout'].value = 'enabled'; "
+	    "f.metric.value = 'loss'; f.threshold.value = '0.02'; f.commit.value"
+	    " = '2000000'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-policy]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('cheap') && r.textContent."
+	    "includes('loss'))", 20);
+	run("document.querySelector('button[data-act=sd-map-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-map] select[name="
+	    "zone] option[value=guests]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-map]'); "
+	    "f.zone.value = 'guests'; f.app.value = 'web'; f.ingress.value = "
+	    "'cheap'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-map]') && [..."
+	    "document.querySelectorAll('section.sdwan .pmap')].some(p => p."
+	    "textContent.includes('guests') && p.textContent.includes('web') "
+	    "&& p.textContent.includes('cheap'))", 20);
+	ATF_CHECK(system("grep -q guests data/sdwan.json && grep -q https "
+	    "data/sdwan.json && grep -q internet-breakout data/sdwan.json") ==
+	    0);
+	/* The end point form, with the edge's interfaces. */
+	run("[...document.querySelectorAll('button[data-act=sd-ep-edit]')]"
+	    ".find(b => b.dataset.arg === 'hq').click()");
+	wait_js("document.querySelector('form[data-form=sd-ep] select[name="
+	    "interface] option') && document.querySelector('form[data-form="
+	    "sd-ep] input[name=p4]').value === '10.10.0.0/24'", 15);
+	shot("9-sdwan-form-endpoint");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
 	/*
 	 * Edges: the tunnels and what each edge is to have; applied, each
 	 * step done, and then nothing left to do.

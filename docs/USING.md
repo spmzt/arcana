@@ -1089,7 +1089,20 @@ type, billing, the tunnel kind over it and IPsec under it), **+ edge**
 interface picked from the host's own list with the address it has, the
 gateway, bandwidth, breakout and backup), each changed with the pencil
 or taken away with the cross, the document kept at each step and
-checked as a whole; **Services** shows one service's
+checked as a whole; **Services** has the same for a service and its
+parts: **+ service** (id, routing table, reserved prefixes, underlays,
+provider AS, evaluation interval, BFD), **+ end point** (an edge, its
+interface from the host's list, a VLAN tag, the IPv4 and IPv6 subnets
+with the edge's address in each, a NAT prefix), **+ zone** (name and
+prefixes, or the Default), **+ flow** (applications from the catalog,
+DSCP, protocol, ports, prefixes, or everything), **+ policy** (the
+tunnel criteria, breakout, the destination zones, performance by a
+metric with threshold, ceiling and remediation, bandwidth by a limiter
+or a commit and limit, importance; for egress, the block), and **+
+rule** on an end point (zone, flow or group, ingress and egress policy)
+or on a zone (flow and policy). What a form does not ask for, as
+virtual topologies, rate limiters, secondary subnets or BGP at a UNI,
+stays as it is and the Document tab writes. It shows one service's
 end points, zones, flows (in the
 order they are matched), policies, topologies and rate limiters;
 **Document** the whole of it as JSON. **Check** asks the console

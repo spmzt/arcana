@@ -1815,6 +1815,12 @@ modal(struct html *h)
 	case MODAL_SD_UCS:
 	case MODAL_SD_EDGE:
 	case MODAL_SD_LINK:
+	case MODAL_SD_SWVC:
+	case MODAL_SD_ZONE:
+	case MODAL_SD_FLOW:
+	case MODAL_SD_POLICY:
+	case MODAL_SD_EP:
+	case MODAL_SD_MAP:
 		if (!sdwan_modal(h))
 			return;
 		break;
@@ -2096,6 +2102,12 @@ modal(struct html *h)
 			break;
 		case MODAL_SD_UCS:
 		case MODAL_SD_LINK:
+		case MODAL_SD_SWVC:
+		case MODAL_SD_ZONE:
+		case MODAL_SD_FLOW:
+		case MODAL_SD_POLICY:
+		case MODAL_SD_EP:
+		case MODAL_SD_MAP:
 			h_raw(h, "<button class=\"primary\">Keep</button>");
 			break;
 		case MODAL_SD_EDGE:
