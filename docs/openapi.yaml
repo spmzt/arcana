@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.105.0
+  version: 0.106.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1236,6 +1236,32 @@ paths:
         "200":
           description: sent, by server id, each with at and entries
             (table, prefix, swvc, policy, candidates in order).
+  /api/sdwan/rekey:
+    get:
+      tags: [sdwan]
+      summary: The uswe tunnels' key rotations, as the console keeps them
+      responses:
+        "200":
+          description: rekeys, by tunnel id, each with at, state (running,
+            done or failed), step (keys, in, out, commit) and why; and
+            rekeying, whether one runs now. The manager turns a tunnel's
+            keys at the half-life of their lifetime (Mplify 119 R110,
+            R112), both ends in step.
+    post:
+      tags: [sdwan]
+      summary: Turn a uswe tunnel's keys now, in a thread of the console
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tunnel: { type: string, description: the tunnel's id }
+      responses:
+        "200":
+          description: "{tunnel: id}"
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
   /api/workflows:
     get:
       tags: [workflows]

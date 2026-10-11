@@ -55,8 +55,9 @@
   HKDF-SHA256, the same on both ends (3.2); the uswe tunnel kind: an
   ipsec(4) interface each end with its unit as reqid, the pairs made,
   the SAs derived from the far public half the apply reads from that
-  end (3.3; stand-ins, the lab run with 3.4). Next: 3.4, the keys
-  turned at the half-life without loss. Later: Mplify 119's tunnel
+  end (3.3); the keys turned at the half-life, both ends in step,
+  inbound before outbound, by the manager or by hand, a failure a
+  fault (3.4). Next: 3.5, the phase closed on the lab. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
@@ -264,6 +265,17 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- The keys of a derived-SA tunnel turned between two vnet jails
+  (Mplify 119 R110, R112; task 3.4, 2026-10-11, the lab's rekey step
+  by hand as the console's manager does it): a next pair on each, the
+  halves swapped, the new SAs in inbound on both, then outbound, then
+  committed, while ping ran at ten a second: 100 of 100 answered,
+  the old SAs gone, the next pair the pair. Found: with the old
+  outbound SA left in until the commit, three packets were lost,
+  since this kernel keeps sending on the old SA
+  (net.key.preferred_oldsa=1 on the VM) while the far end's commit
+  had taken its old inbound out; so the out step takes the old
+  outbound out with it, and none is lost whatever the kernel prefers.
 - Derived IPsec keys between two vnet jails (Mplify 119 R51-R54;
   task 3.2, 2026-10-11, the lab's sakey step): a key pair made on
   each by the agent, the public halves read from the sdwan read and

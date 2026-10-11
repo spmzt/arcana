@@ -1687,10 +1687,11 @@ check(const ucl_object_t *doc, struct ck *c)
 				return (fail(c, "algorithms is aes-cbc-hmac-sha2-256 "
 				    "or aes-gcm-16 (R44, R45)"));
 			if (ucl_object_lookup(t, "lifetime") != NULL && !is_int(
-			    ucl_object_lookup(t, "lifetime"), 600, 31536000,
+			    ucl_object_lookup(t, "lifetime"), 120, 31536000,
 			    NULL))
-				return (fail(c, "lifetime is seconds, 600 to a "
-				    "year (R110)"));
+				return (fail(c, "lifetime is seconds, 120 to a "
+				    "year: the keys turn at its half (R110, "
+				    "R112)"));
 			if (strcmp(str(t, "kind"), "uswe") != 0 && (str(t,
 			    "algorithms") != NULL || ucl_object_lookup(t, "esn")
 			    != NULL || ucl_object_lookup(t, "encap") != NULL ||

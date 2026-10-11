@@ -201,11 +201,16 @@ and the flags
 .Cm encap
 (ESP in UDP, port 4500) and
 .Cm esn .
-.It Cm ipsec-sa key Ar interface
+.It Cm ipsec-sa key Ar interface Op Cm next
 A key pair for the interface (X25519), made once and kept 0600 beside
 the agent's files; its public half is in the
 .Cm sdwan
 read.
+With
+.Cm next ,
+the pair to come is made anew, its public half told as
+.Va next
+there (Mplify 119 R110).
 .It Cm ipsec-sa derive Ar interface reqid local remote Cm peer Ar key Ar words ...
 The SAs of both directions derived from the pair and the far end's
 public half
@@ -217,11 +222,28 @@ words
 .Cm encap
 and
 .Cm esn
-as for set, and
+as for set,
 .Cm epoch Ar n
-for another set of keys from the same pair.
+for another set of keys from the same pair,
+.Cm lifetime Ar seconds
+kept with the SAs for the manager to turn the keys by, and for a
+rotation
+.Cm next
+(from the next pair, the SPIs kept as the next ones) with
+.Cm install in | out | both
+(the directions put in: a rotation puts in the inbound SAs on both
+ends, then the outbound, each end's old outbound SA taken out as the
+new goes in, so neither end sends on keys the other has not got).
+The SAs set before by the same interface are taken out first.
+.It Cm ipsec-sa commit Ar interface reqid local remote
+The old inbound SA taken out, the next pair made the pair and the
+next SPIs the SPIs: the last step of a rotation.
+A rotation that fails is a fault
+.Pq Va key-rotation
+until one is done.
 .It Cm ipsec-sa clear Ar interface reqid local remote
-Every SA between the two addresses deleted.
+Every SA between the two addresses deleted, the next pair and what was
+kept of the SAs with them.
 .It Cm rtadvd Ar interface prefix Op Ar dns ...
 Router advertisements on the interface, for the hosts behind it to
 address themselves (SLAAC): an entry for it written into

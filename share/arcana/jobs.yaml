@@ -240,7 +240,7 @@ kinds:
     title: Manually keyed IPsec security associations
     needs: verb interface
     uses: reqid tunnel_local tunnel_remote args
-    values: verb=key|set|derive|clear
+    values: verb=key|set|derive|commit|clear
     destroys: verb=clear
   - kind: zfs
     title: zfs

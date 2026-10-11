@@ -66,6 +66,7 @@ static struct {
 	bool		 applying;
 	ucl_object_t	*paths;		/* sid: /api/servers/<sid>/sdwan data */
 	ucl_object_t	*faults;	/* sid: the agent's faults of the day */
+	ucl_object_t	*rekeys;	/* /api/sdwan/rekey: the rotations */
 	double		 paths_at;
 	int		 mon_span;	/* seconds the monitor charts draw */
 	/* The forms: what is edited, and the host's interfaces for a link. */
@@ -330,6 +331,37 @@ paths_after(const char *sid)
 
 /* What one edge's probes have seen, under its id. */
 static void
+rekeys_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	if (status != 200 || jget(o, "rekeys") == NULL)
+		return;
+	if (sd.rekeys != NULL)
+		ucl_object_unref(sd.rekeys);
+	sd.rekeys = ucl_object_copy(jget(o, "rekeys"));
+	if (app.node == NODE_SDWAN && sd.tab == SD_PATHS)
+		render();
+}
+
+static void
+rekey_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200) {
+		toast(true, "The keys not turned: %s", jstr(o, "error.message") !=
+		    NULL ? jstr(o, "error.message") : err != NULL ? err : "no "
+		    "answer");
+		return;
+	}
+	toast(false, "The keys of %s are being turned, both ends in step",
+	    jstr(o, "tunnel"));
+	paths_load();
+}
+
+static void
 paths_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	char		*sid = arg;
@@ -391,6 +423,7 @@ paths_load(void)
 		}
 	}
 	ucl_object_unref(asked);
+	api("GET", "/api/sdwan/rekey", NULL, rekeys_cb, NULL);
 }
 
 /* ---- Small things ---------------------------------------------------- */
@@ -2192,6 +2225,108 @@ view_paths(struct html *h)
 	    "tunnels")) == 0)
 		h_raw(h, "<p class=\"dim\">No tunnel: a service with end points "
 		    "on two edges or more has them.</p>");
+	/* The uswe tunnels' keys: each end's, when they were set and the
+	 * half-life they turn at; a rotation on its way; one by hand. */
+	n = 0;
+	it = NULL;
+	while ((t = ucl_object_iterate(jget(sd.plan, "tunnels"), &it, true)) !=
+	    NULL) {
+		const ucl_object_t	*rk;
+		bool			 first;
+
+		if (jstr(t, "kind") == NULL || strcmp(jstr(t, "kind"), "uswe") != 0)
+			continue;
+		if (n++ == 0)
+			h_raw(h, "<div class=\"sd-block\"><h3>Keys <small class=\""
+			    "dim\">a uswe tunnel's SAs are keyed by the edges "
+			    "themselves from a pair each (X25519, HKDF, setkey); the "
+			    "console turns them at the half-life of their lifetime, "
+			    "both ends in step, inbound before outbound, so no packet "
+			    "is lost (Mplify 119 R110, R112)</small></h3><table class"
+			    "=\"net sd\"><thead><tr><th>Tunnel</th><th>Edge</th><th>"
+			    "Interface</th><th>Public half</th><th>Keyed</th><th>Turn"
+			    "</th><th>Rotation</th><th></th></tr></thead><tbody>");
+		rk = sd.rekeys != NULL ? jget(sd.rekeys, jstr(t, "id")) : NULL;
+		first = true;
+		eit = NULL;
+		while ((e = ucl_object_iterate(jget(t, "ends"), &eit, true)) !=
+		    NULL) {
+			const ucl_object_t	*kk = NULL, *x;
+			ucl_object_iter_t	 kit = NULL;
+			long long		 at, life, left;
+
+			while (sd.paths != NULL && (x = ucl_object_iterate(jget(
+			    jget(sd.paths, jstr(e, "edge")), "keys"), &kit, true))
+			    != NULL)
+				if (jstr(x, "interface") != NULL && jstr(e, "ifname")
+				    != NULL && strcmp(jstr(x, "interface"), jstr(e,
+				    "ifname")) == 0)
+					kk = x;
+			h_raw(h, "<tr><td class=\"mono\">");
+			if (first)
+				h_txt(h, jstr(t, "id"));
+			h_raw(h, "</td><td><b>");
+			h_txt(h, host_name(jstr(e, "edge")));
+			h_raw(h, "</b></td><td class=\"mono\">");
+			h_txt(h, jstr(e, "ifname") != NULL ? jstr(e, "ifname") : "");
+			h_raw(h, "</td><td class=\"mono dim\" title=\"");
+			h_txt(h, kk != NULL && jstr(kk, "public") != NULL ? jstr(kk,
+			    "public") : "");
+			h_raw(h, "\">");
+			if (kk != NULL && jstr(kk, "public") != NULL)
+				h_fmt(h, "%.12s…%s", jstr(kk, "public"), jstr(kk, "next")
+				    != NULL ? " <span class=\"chip\">next made</span>" :
+				    "");
+			else
+				h_raw(h, "<span class=\"dim\">no pair yet</span>");
+			h_raw(h, "</td><td>");
+			at = kk != NULL ? jint(kk, "keyed_at", 0) : 0;
+			life = kk != NULL ? jint(kk, "lifetime", 0) : 0;
+			if (at > 0) {
+				fmt_age(age, sizeof(age), (double)at * 1000);
+				h_txt(h, age);
+			}
+			h_raw(h, "</td><td>");
+			if (at > 0 && life > 0) {
+				left = at + life / 2 - (long long)(arc_now() / 1000);
+				if (left <= 0)
+					h_raw(h, "<span class=\"chip warn\">due</span>");
+				else
+					h_fmt(h, "in %lld min", (left + 59) / 60);
+			}
+			if (kk != NULL && jbool(kk, "pending"))
+				h_raw(h, " <span class=\"chip warn\">half done</span>");
+			h_raw(h, "</td><td>");
+			if (first && rk != NULL && jstr(rk, "state") != NULL) {
+				fmt_age(age, sizeof(age), (double)jint(rk, "at", 0) *
+				    1000);
+				h_fmt(h, "<span class=\"chip %s\">%s</span> <span class"
+				    "=\"dim\">%s, %s</span>", strcmp(jstr(rk, "state"),
+				    "done") == 0 ? "st-up" : strcmp(jstr(rk, "state"),
+				    "failed") == 0 ? "st-down" : "warn", jstr(rk,
+				    "state"), jstr(rk, "step") != NULL ? jstr(rk,
+				    "step") : "", age);
+				if (jstr(rk, "why") != NULL) {
+					h_raw(h, "<br><small class=\"dim\">");
+					h_txt(h, jstr(rk, "why"));
+					h_raw(h, "</small>");
+				}
+			}
+			h_raw(h, "</td><td class=\"right\">");
+			if (first) {
+				h_raw(h, "<button class=\"ghost small\" data-act=\""
+				    "sd-rekey\"");
+				h_attr(h, "data-arg", jstr(t, "id"));
+				h_raw(h, " title=\"A new pair on each end, the SAs "
+				    "from them put in beside the old, the old taken out"
+				    "\">turn the keys</button>");
+			}
+			h_raw(h, "</td></tr>");
+			first = false;
+		}
+	}
+	if (n > 0)
+		h_raw(h, "</tbody></table></div>");
 	/* The steering: each edge's far prefixes, by which tunnel each goes
 	 * now, and the others in the order the console gave. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Steering <small class=\"dim\">"
@@ -4636,7 +4771,18 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		snprintf(sd.swvc, sizeof(sd.swvc), "%s", value);
 	else if (strcmp(act, "sd-example") == 0)
 		example();
-	else if (strcmp(act, "sd-apply") == 0 || strcmp(act,
+	else if (strcmp(act, "sd-rekey") == 0) {
+		ucl_object_t	*o;
+		unsigned char	*json;
+
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(arg), "tunnel", 0,
+		    false);
+		json = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(o);
+		api("POST", "/api/sdwan/rekey", (const char *)json, rekey_cb, NULL);
+		free(json);
+	} else if (strcmp(act, "sd-apply") == 0 || strcmp(act,
 	    "do-sd-apply-fresh") == 0) {
 		sd.applying = true;
 		api("POST", "/api/sdwan/apply", strcmp(act, "sd-apply") == 0 ?
