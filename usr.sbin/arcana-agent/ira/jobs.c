@@ -282,6 +282,21 @@ spec_copy(struct arc_job_spec *d, const struct arc_job_spec *s)
 	d->endpoint = xdup(s->endpoint);
 	d->allowed_ips = xdup(s->allowed_ips);
 	d->source = xdup(s->source);
+	/* Every text the spec can carry: one left pointing into the request
+	 * that brought it is freed memory by the time the job runs. */
+	d->conn = xdup(s->conn);
+	d->ipsec_mode = xdup(s->ipsec_mode);
+	d->local_ts = xdup(s->local_ts);
+	d->remote_ts = xdup(s->remote_ts);
+	d->pubkey = xdup(s->pubkey);
+	d->start_action = xdup(s->start_action);
+	d->local_id = xdup(s->local_id);
+	d->remote_id = xdup(s->remote_id);
+	d->child = xdup(s->child);
+	d->local_cert = xdup(s->local_cert);
+	d->remote_cert = xdup(s->remote_cert);
+	d->remote_ca = xdup(s->remote_ca);
+	d->addressing = xdup(s->addressing);
 	d->variables.v = NULL;
 	d->names.v = NULL;
 	if (s->variables.n > 0) {
@@ -331,6 +346,19 @@ job_free(struct qjob *j)
 	free((char *)(uintptr_t)j->spec.endpoint);
 	free((char *)(uintptr_t)j->spec.allowed_ips);
 	free((char *)(uintptr_t)j->spec.source);
+	free((char *)(uintptr_t)j->spec.conn);
+	free((char *)(uintptr_t)j->spec.ipsec_mode);
+	free((char *)(uintptr_t)j->spec.local_ts);
+	free((char *)(uintptr_t)j->spec.remote_ts);
+	free((char *)(uintptr_t)j->spec.pubkey);
+	free((char *)(uintptr_t)j->spec.start_action);
+	free((char *)(uintptr_t)j->spec.local_id);
+	free((char *)(uintptr_t)j->spec.remote_id);
+	free((char *)(uintptr_t)j->spec.child);
+	free((char *)(uintptr_t)j->spec.local_cert);
+	free((char *)(uintptr_t)j->spec.remote_cert);
+	free((char *)(uintptr_t)j->spec.remote_ca);
+	free((char *)(uintptr_t)j->spec.addressing);
 	free(j->title);
 	free(j->peer);
 	work_free(&j->w);
