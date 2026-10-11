@@ -3605,7 +3605,7 @@ ATF_TC_BODY(sdwan_uswe, tc)
 	    "\"interface\":\"ipsec100\",\"reqid\":100,\"tunnel_local\":"
 	    "\"192.0.2.1\",\"tunnel_remote\":\"192.0.2.2\",\"args\":[\"peer\","
 	    "\"${uswe:%s:ipsec101}\",\"enc\",\"aes-gcm-16\",\"encap\",\"esn\","
-	    "\"epoch\",\"0\"]", sb);
+	    "\"epoch\",\"0\",\"lifetime\",\"86400\"]", sb);
 	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"verb\":\"clear\",\"interface\":\"ipsec100\"")
 	    != NULL);
@@ -3634,6 +3634,58 @@ ATF_TC_BODY(sdwan_uswe, tc)
 	/* Its SPIs are the same both ways: what a derive on each end set. */
 	ATF_CHECK(system("grep '^add 192.0.2.2 192.0.2.1 ' setkey.conf | sed "
 	    "'s/-u 10[01]/-u N/' | sort -u | wc -l | grep -q '^ *1$'") == 0);
+	/* The keys turned by hand (Mplify 119 R110, R112): a next pair on
+	 * each end, the new SAs from them put in inbound on both, then
+	 * outbound, then the old taken out and the next pair made the pair;
+	 * the apply refused meanwhile; the rotation's state kept. */
+	ATF_CHECK(system("cp sdwan-key-ipsec100.pem k100.was && cp "
+	    "sdwan-key-ipsec101.pem k101.was") == 0);
+	http("POST", "/api/sdwan/rekey", "{\"tunnel\":\"acme/none\"}", &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("POST", "/api/sdwan/rekey", "{\"tunnel\":\"acme/a-inet-b-inet\"}",
+	    &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	ATF_CHECK_MSG(r.status == 409 && strstr(r.body, "key rotation") != NULL,
+	    "%d %s", r.status, r.body);
+	resp_free(&r);
+	for (i = 0; i < 300; i++) {
+		http("GET", "/api/sdwan/rekey", NULL, &r);
+		if (r.status == 200 && jstr(&r, "rekeys.acme/a-inet-b-inet.state")
+		    != NULL && strcmp(jstr(&r, "rekeys.acme/a-inet-b-inet.state"),
+		    "running") != 0)
+			break;
+		resp_free(&r);
+		usleep(200000);
+	}
+	ATF_CHECK_MSG(jstr(&r, "rekeys.acme/a-inet-b-inet.state") != NULL &&
+	    strcmp(jstr(&r, "rekeys.acme/a-inet-b-inet.state"), "done") == 0,
+	    "%s", r.body);
+	ATF_CHECK(jstr(&r, "rekeying") != NULL && strcmp(jstr(&r, "rekeying"),
+	    "false") == 0);
+	resp_free(&r);
+	/* Eight SAs added in all (four, then the new four: the two inbound
+	 * ones, then the two outbound, each with the old outbound taken
+	 * out after it), then the two old inbound taken out: in that
+	 * order; the new SPIs not the old; the next pairs made the pairs. */
+	ATF_CHECK(system("grep -c '^add ' setkey.conf | grep -q '^8$'") == 0);
+	ATF_CHECK(system("grep -c '^delete ' setkey.conf | grep -q '^4$'") == 0);
+	ATF_CHECK(system("grep '^add \\|^delete ' setkey.conf | sed -n '5,12p' | "
+	    "cut -c1-3 | tr -d '\\n' | grep -q '^addaddadddeladddeldeldel$'") ==
+	    0);
+	ATF_CHECK(system("grep '^add \\|^delete ' setkey.conf | sed -n '5,6p' | "
+	    "grep -c '^add 192.0.2.2 192.0.2.1 .* -u 100 \\|^add 192.0.2.1 "
+	    "192.0.2.2 .* -u 101 ' | grep -q '^2$'") == 0);
+	ATF_CHECK(system("grep '^add \\|^delete ' setkey.conf | sed -n '8p;10p' | "
+	    "grep -c '^delete 192.0.2.1 192.0.2.2 \\|^delete 192.0.2.2 192.0.2.1 "
+	    "' | grep -q '^2$'") == 0);
+	ATF_CHECK(system("grep '^add ' setkey.conf | sed 's/-u 10[01]//' | awk "
+	    "'{print $5}' | sort -u | wc -l | grep -q '^ *4$'") == 0);
+	ATF_CHECK(system("test ! -e sdwan-key-ipsec100-next.pem && ! cmp -s "
+	    "k100.was sdwan-key-ipsec100.pem && ! cmp -s k101.was "
+	    "sdwan-key-ipsec101.pem") == 0);
 }
 
 CONSOLE_TC(sdwan_apply, "SD-WAN made on the edges: planned, applied, kept")

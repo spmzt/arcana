@@ -4250,8 +4250,8 @@ EOS
 	atf_check -o match:'^600$' stat -f %Lp "$(dirname "$f")/sdwan-key-ipsec0.pem"
 	atf_check -o match:'BEGIN PRIVATE KEY' cat "$(dirname "$f")/sdwan-key-ipsec0.pem"
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1
-	P0=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"ipsec0"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
-	P1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"ipsec1"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
+	P0=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec0"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
+	P1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec1"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
 	test ${#P0} -eq 44 -a ${#P1} -eq 44 -a "$P0" != "$P1" || atf_fail "the public halves: $P0 $P1"
 	# Made again: the same pair.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec0
@@ -4267,10 +4267,65 @@ EOS
 	atf_check -o inline:'1\n' sh -c "grep '^add 10.202.0.1 10.202.0.2 ' setkey.conf | sed 's/-u 10[01]/-u N/' | sort -u | wc -l | tr -d ' '"
 	atf_check -o inline:'1\n' sh -c "grep '^add 10.202.0.2 10.202.0.1 ' setkey.conf | sed 's/-u 10[01]/-u N/' | sort -u | wc -l | tr -d ' '"
 	atf_check -o match:'^add 10.202.0.1 10.202.0.2 esp 0x[0-9a-f]+ -m tunnel -u 100 -r 128 -esn -natt 10.202.0.1\[4500\] 10.202.0.2\[4500\] -E aes-cbc 0x[0-9a-f]{64} -A hmac-sha2-256 0x[0-9a-f]{64} ;$' cat setkey.conf
-	# Another epoch: other keys.
+	# Another epoch: other keys; the SAs set before taken out first.
+	S_IN=$(grep '^add 10.202.0.2 10.202.0.1 .* -u 100 ' setkey.conf | sed -E 's/.*esp (0x[0-9a-f]+).*/\1/')
+	S_OUT=$(grep '^add 10.202.0.1 10.202.0.2 .* -u 100 ' setkey.conf | sed -E 's/.*esp (0x[0-9a-f]+).*/\1/')
 	rm -f setkey.conf
-	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P1" enc aes-gcm-16 epoch 1
-	atf_check -o match:'^add 10.202.0.1 10.202.0.2 esp 0x[0-9a-f]+ -m tunnel -u 100 -r 128 -E aes-gcm-16 0x[0-9a-f]{72} ;$' cat setkey.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P1" enc aes-gcm-16 epoch 1 lifetime 3600
+	atf_check -o match:"^delete 10.202.0.2 10.202.0.1 esp $S_IN ;\$" -o match:"^delete 10.202.0.1 10.202.0.2 esp $S_OUT ;\$" -o match:'^add 10.202.0.1 10.202.0.2 esp 0x[0-9a-f]+ -m tunnel -u 100 -r 128 -E aes-gcm-16 0x[0-9a-f]{72} ;$' cat setkey.conf
+	# What was set, kept and told: the SPIs, when, the lifetime.
+	atf_check -o match:'"interface":"ipsec0","public":"[^"]*","keyed_at":[0-9]{10},"lifetime":3600,"spi_in":[0-9]+,"spi_out":[0-9]+,"pending":false' "$JGC" -c "$SOCK" sdwan
+	# A rotation (R110, R112): the next pair on each end, its public
+	# half told; the new SAs from the next pairs put in inbound on
+	# both ends, then outbound, beside the old; then committed: the
+	# old taken out, the next pair the pair.
+	atf_check -s exit:1 -e match:'next at most' -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec0 soon
+	atf_check -s exit:1 -e match:"next is derive's" -o ignore "$JGC" -c "$SOCK" ipsec-sa set ipsec0 100 10.202.0.1 10.202.0.2 spi-in 0x1001 spi-out 0x1002 enc aes-gcm-16 key-in ${K}00112233 key-out ${K}00112233 next
+	atf_check -s exit:1 -o match:'nothing to commit' -e ignore "$JGC" -c "$SOCK" ipsec-sa commit ipsec0 100 10.202.0.1 10.202.0.2
+	atf_check -s exit:1 -o match:'no next pair yet' -e ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P1" enc aes-gcm-16 next install in
+	atf_check -o match:'"type":"key-rotation"' -o match:'"object":"ipsec0"' "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'sdwan-key-ipsec0-next.pem' "$JGC" -t -c "$SOCK" ipsec-sa key ipsec0 next
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1 next
+	atf_check -o match:'^600$' stat -f %Lp "$(dirname "$f")/sdwan-key-ipsec0-next.pem"
+	N0=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec0"' | sed -E 's/.*"next":"([^"]*)".*/\1/')
+	N1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec1"' | sed -E 's/.*"next":"([^"]*)".*/\1/')
+	test ${#N0} -eq 44 -a ${#N1} -eq 44 -a "$N0" != "$P0" -a "$N0" != "$N1" || atf_fail "the next halves: $N0 $N1"
+	# ipsec1's SAs, derived plainly, as the ones to turn.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec1 101 10.202.0.2 10.202.0.1 peer "$P0" enc aes-gcm-16 epoch 1
+	rm -f setkey.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$N1" enc aes-gcm-16 next install in
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec1 101 10.202.0.2 10.202.0.1 peer "$N0" enc aes-gcm-16 next install in
+	# Inbound only: on ipsec0 the SA from .2, on ipsec1 the one from .1.
+	atf_check -o inline:'2\n' sh -c "grep -c '^add ' setkey.conf"
+	atf_check -o match:'^add 10.202.0.2 10.202.0.1 esp 0x[0-9a-f]+ -m tunnel -u 100 ' -o match:'^add 10.202.0.1 10.202.0.2 esp 0x[0-9a-f]+ -m tunnel -u 101 ' -o not-match:'^delete ' cat setkey.conf
+	atf_check -o match:'"interface":"ipsec0",.*"pending":true' "$JGC" -c "$SOCK" sdwan
+	# Run again, the same inbound SA: taken out and put in again.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$N1" enc aes-gcm-16 next install in
+	atf_check -o match:'^delete 10.202.0.2 10.202.0.1 esp 0x[0-9a-f]+ ;$' cat setkey.conf
+	# Outbound: the new SA in, and the old outbound one out with it.
+	O_OUT=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec0"' | sed -E 's/.*"spi_out":([0-9]+).*/\1/')
+	rm -f setkey.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$N1" enc aes-gcm-16 next install out
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec1 101 10.202.0.2 10.202.0.1 peer "$N0" enc aes-gcm-16 next install out
+	atf_check -o inline:'2\n' sh -c "grep -c '^add ' setkey.conf"
+	atf_check -o inline:'2\n' sh -c "grep -c '^delete ' setkey.conf"
+	atf_check -o match:'^add 10.202.0.1 10.202.0.2 esp 0x[0-9a-f]+ -m tunnel -u 100 ' -o match:'^add 10.202.0.2 10.202.0.1 esp 0x[0-9a-f]+ -m tunnel -u 101 ' -o match:"^delete 10.202.0.1 10.202.0.2 esp $(printf '0x%x' "$O_OUT") ;\$" cat setkey.conf
+	# The new SAs the same on both, mirrored, and not the old ones.
+	atf_check -o inline:'1\n' sh -c "grep '^add 10.202.0.1 10.202.0.2 ' setkey.conf | sed 's/-u 10[01]/-u N/' | sort -u | wc -l | tr -d ' '"
+	# Committed: the old inbound SPI out, the next pair the pair, the
+	# fault cleared.
+	O_IN=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"interface":"ipsec0"' | sed -E 's/.*"spi_in":([0-9]+).*/\1/')
+	rm -f setkey.conf
+	atf_check -o match:'ipsec sa commit ipsec0 reqid 100' -o match:'spi in 0x' "$JGC" -t -c "$SOCK" ipsec-sa commit ipsec0 100 10.202.0.1 10.202.0.2
+	atf_check -o inline:'1\n' sh -c "grep -c '^delete ' setkey.conf"
+	atf_check -o match:"^delete 10.202.0.2 10.202.0.1 esp $(printf '0x%x' "$O_IN") ;\$" -o not-match:'^add ' cat setkey.conf
+	test ! -e "$(dirname "$f")/sdwan-key-ipsec0-next.pem" || atf_fail "the next pair still there"
+	atf_check -o match:"\"interface\":\"ipsec0\",\"public\":\"$(echo "$N0" | sed 's|/|\\/|g; s|+|\\+|g')\"" -o match:'"interface":"ipsec0",.*"pending":false' -o match:'"type":"key-rotation",.*"cleared":true' "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -o match:'nothing to commit' -e ignore "$JGC" -c "$SOCK" ipsec-sa commit ipsec0 100 10.202.0.1 10.202.0.2
+	# Cleared: the next pair and what was kept go with the SAs.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1 next
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa clear ipsec1 101 10.202.0.2 10.202.0.1
+	test ! -e "$(dirname "$f")/sdwan-key-ipsec1-next.pem" -a ! -e "$(dirname "$f")/sdwan-sa-ipsec1.json" || atf_fail "ipsec1 not cleared"
 }
 ipsec_sa_cleanup()
 {

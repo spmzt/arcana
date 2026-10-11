@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <openssl/core_names.h>
@@ -50,6 +51,8 @@
  * material is laid out A to B first.
  */
 #define	KEY_FILE	"sdwan-key-%s.pem"
+#define	NEXT_FILE	"sdwan-key-%s-next.pem"	/* the pair to come (R110) */
+#define	STATE_FILE	"sdwan-sa-%s.json"	/* the SPIs set, when, for how long */
 #define	HKDF_SALT	"arcana uswe v1"
 #define	PUB_B64		44	/* 32 bytes as base64 */
 
@@ -60,7 +63,10 @@ struct sa_words {
 	const char	*key_in, *key_out, *akey_in, *akey_out;
 	const char	*peer;		/* derive: the far public half */
 	uint32_t	 epoch;		/* derive: which keys of the pair */
+	uint32_t	 lifetime;	/* seconds the keys are good for */
+	int		 install;	/* 0 both directions, 1 in only, 2 out */
 	bool		 encap, esn;
+	bool		 next;		/* derive: from the next pair */
 };
 
 static const struct {
@@ -77,23 +83,25 @@ static const struct {
 };
 
 static const char *
-key_path(struct work *w, const char *ifname)
+key_path(struct work *w, const char *ifname, bool next)
 {
 	char	buf[MAXPATHLEN];
 
-	sdwan_conf_path(wfmt(w, KEY_FILE, ifname), buf, sizeof(buf));
+	sdwan_conf_path(wfmt(w, next ? NEXT_FILE : KEY_FILE, ifname), buf,
+	    sizeof(buf));
 	return (wstrdup(w, buf));
 }
 
 /* The pair of an interface, read; NULL and why when there is none. */
 static EVP_PKEY *
-key_load(struct work *w, const char *ifname, const char **errp)
+key_load(struct work *w, const char *ifname, bool next, const char **errp)
 {
 	EVP_PKEY	*k;
 	FILE		*fp;
 
-	if ((fp = fopen(key_path(w, ifname), "r")) == NULL) {
-		*errp = wfmt(w, "%s has no key pair yet: ipsec-sa key first",
+	if ((fp = fopen(key_path(w, ifname, next), "r")) == NULL) {
+		*errp = wfmt(w, next ? "%s has no next pair yet: ipsec-sa key "
+		    "next first" : "%s has no key pair yet: ipsec-sa key first",
 		    ifname);
 		return (NULL);
 	}
@@ -118,19 +126,24 @@ key_public(EVP_PKEY *k, char *b64, size_t len)
 	return (true);
 }
 
-/* A pair made for an interface unless it has one; its public half. */
+/*
+ * A pair made for an interface unless it has one, or its next pair made
+ * anew (R110: a new pair for the keys to come); its public half.
+ */
 static int
-key_make(struct work *w, const char *ifname, char *pub, size_t plen,
-    const char **errp)
+key_make(struct work *w, const char *ifname, bool next, char *pub,
+    size_t plen, const char **errp)
 {
 	EVP_PKEY	*k;
 	FILE		*fp;
 	const char	*path;
 	int		 fd, step;
 
-	path = key_path(w, ifname);
-	if (access(path, F_OK) == 0) {
-		if ((k = key_load(w, ifname, errp)) == NULL)
+	path = key_path(w, ifname, next);
+	if (next)
+		(void)unlink(path);
+	else if (access(path, F_OK) == 0) {
+		if ((k = key_load(w, ifname, false, errp)) == NULL)
 			return (-1);
 		if (!key_public(k, pub, plen)) {
 			EVP_PKEY_free(k);
@@ -178,8 +191,8 @@ key_make(struct work *w, const char *ifname, char *pub, size_t plen,
  */
 static int
 key_derive(struct work *w, const char *ifname, const char *peer_b64,
-    uint32_t epoch, unsigned char *okm, size_t okmlen, bool *lower,
-    const char **errp)
+    uint32_t epoch, bool next, unsigned char *okm, size_t okmlen,
+    bool *lower, const char **errp)
 {
 	EVP_PKEY	*me, *far = NULL;
 	EVP_PKEY_CTX	*ctx = NULL;
@@ -197,7 +210,7 @@ key_derive(struct work *w, const char *ifname, const char *peer_b64,
 		    "base64";
 		return (-1);
 	}
-	if ((me = key_load(w, ifname, errp)) == NULL)
+	if ((me = key_load(w, ifname, next, errp)) == NULL)
 		return (-1);
 	n = sizeof(mypub);
 	if (EVP_PKEY_get_raw_public_key(me, mypub, &n) != 1 || !key_public(me,
@@ -284,12 +297,76 @@ spi_of(const unsigned char *b)
 	return (n < 256 ? n + 256 : n);
 }
 
+/* What an interface's SAs are, as kept beside its keys: the SPIs set
+ * (and the next ones, between a derive with next and the commit), when,
+ * and the lifetime; NULL when nothing is kept. */
+static ucl_object_t *
+sa_state_load(struct work *w, const char *ifname)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+	FILE			*fp;
+	char			 path[MAXPATHLEN], buf[600];
+	size_t			 n;
+
+	sdwan_conf_path(wfmt(w, STATE_FILE, ifname), path, sizeof(path));
+	if ((fp = fopen(path, "r")) == NULL)
+		return (NULL);
+	n = fread(buf, 1, sizeof(buf) - 1, fp);
+	fclose(fp);
+	buf[n] = '\0';
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	o = ucl_parser_add_string(p, buf, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	return (o);
+}
+
+static int
+sa_state_save(struct work *w, const char *ifname, const ucl_object_t *o,
+    const char **errp)
+{
+	char	 path[MAXPATHLEN], *json;
+	FILE	*fp;
+	int	 fd;
+
+	sdwan_conf_path(wfmt(w, STATE_FILE, ifname), path, sizeof(path));
+	if (o == NULL) {
+		(void)unlink(path);
+		return (0);
+	}
+	json = (char *)ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+	if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600)) == -1 ||
+	    (fp = fdopen(fd, "w")) == NULL) {
+		*errp = wfmt(w, "%s: %s", path, strerror(errno));
+		if (fd != -1)
+			close(fd);
+		free(json);
+		return (-1);
+	}
+	fputs(json, fp);
+	fclose(fp);
+	free(json);
+	return (0);
+}
+
+static uint32_t
+u32(const ucl_object_t *o, const char *key)
+{
+	const ucl_object_t	*v;
+
+	v = o != NULL ? ucl_object_lookup(o, key) : NULL;
+	return (v == NULL ? 0 : (uint32_t)ucl_object_toint(v));
+}
+
 /* The public halves this host keeps, for the sdwan read: keys, each an
- * interface and its public. */
+ * interface, its public, its next when one waits, and what was set
+ * (keyed_at, lifetime, spi_in, spi_out, pending). */
 void
 sa_keys_json(struct work *w, ucl_object_t *top)
 {
-	ucl_object_t	*arr, *o;
+	ucl_object_t	*arr, *o, *stt;
 	EVP_PKEY	*k;
 	DIR		*d;
 	struct dirent	*de;
@@ -309,7 +386,8 @@ sa_keys_json(struct work *w, ucl_object_t *top)
 				continue;
 			n = strlen(de->d_name);
 			if (n < 15 || strcmp(de->d_name + n - 4, ".pem") != 0 ||
-			    n - 14 >= sizeof(ifn))
+			    n - 14 >= sizeof(ifn) || (n > 19 && strcmp(de->d_name +
+			    n - 9, "-next.pem") == 0))
 				continue;
 			snprintf(ifn, sizeof(ifn), "%.*s", (int)(n - 14),
 			    de->d_name + 10);
@@ -326,9 +404,37 @@ sa_keys_json(struct work *w, ucl_object_t *top)
 				    "interface", 0, false);
 				ucl_object_insert_key(o, ucl_object_fromstring(pub),
 				    "public", 0, false);
+				EVP_PKEY_free(k);
+				k = NULL;
+				if ((fp = fopen(wfmt(w, "%s/sdwan-key-%s-next.pem",
+				    dir, ifn), "r")) != NULL) {
+					k = PEM_read_PrivateKey(fp, NULL, NULL, NULL);
+					fclose(fp);
+					if (k != NULL && key_public(k, pub, sizeof(pub)))
+						ucl_object_insert_key(o,
+						    ucl_object_fromstring(pub), "next",
+						    0, false);
+				}
+				if ((stt = sa_state_load(w, ifn)) != NULL) {
+					static const char *const nums[] = { "at",
+					    "lifetime", "spi_in", "spi_out" };
+
+					for (size_t i = 0; i < nitems(nums); i++)
+						if (ucl_object_lookup(stt, nums[i]) !=
+						    NULL)
+							ucl_object_insert_key(o,
+							    ucl_object_fromint(u32(stt,
+							    nums[i])), i == 0 ? "keyed_at"
+							    : nums[i], 0, false);
+					ucl_object_insert_key(o, ucl_object_frombool(
+					    ucl_object_lookup(stt, "next_spi_in") !=
+					    NULL), "pending", 0, false);
+					ucl_object_unref(stt);
+				}
 				ucl_array_append(arr, o);
 			}
-			EVP_PKEY_free(k);
+			if (k != NULL)
+				EVP_PKEY_free(k);
 		}
 		closedir(d);
 	}
@@ -393,11 +499,39 @@ sa_parse(const struct arc_job_spec *sp, struct sa_words *w, bool derive)
 			w->esn = true;
 			continue;
 		}
+		if (strcmp(k, "next") == 0) {
+			if (!derive)
+				return ("next is derive's: the SAs from the next "
+				    "pair");
+			w->next = true;
+			continue;
+		}
 		if (i + 1 >= sp->names.n)
 			return ("a word's value is missing");
 		v = sp->names.v[++i];
 		if (strcmp(k, "peer") == 0) {
 			w->peer = v;
+			continue;
+		}
+		if (strcmp(k, "install") == 0) {
+			if (strcmp(v, "both") == 0)
+				w->install = 0;
+			else if (strcmp(v, "in") == 0)
+				w->install = 1;
+			else if (strcmp(v, "out") == 0)
+				w->install = 2;
+			else
+				return ("install is both, in or out: the directions "
+				    "set");
+			continue;
+		}
+		if (strcmp(k, "lifetime") == 0) {
+			errno = 0;
+			n = strtoull(v, (char **)(uintptr_t)&e, 10);
+			if (errno != 0 || e == v || *e != 0 || n < 60 || n >
+			    0xffffffffULL)
+				return ("a lifetime is seconds, 60 or more");
+			w->lifetime = (uint32_t)n;
 			continue;
 		}
 		if (strcmp(k, "epoch") == 0) {
@@ -433,8 +567,8 @@ sa_parse(const struct arc_job_spec *sp, struct sa_words *w, bool derive)
 			w->akey_out = v;
 		else
 			return ("the words are spi-in, spi-out, enc, auth, key-in, "
-			    "key-out, akey-in, akey-out, peer, epoch, encap and "
-			    "esn");
+			    "key-out, akey-in, akey-out, peer, epoch, encap, esn, "
+			    "next, install and lifetime");
 	}
 	for (j = 0; j < nitems(encs); j++)
 		if (w->enc != NULL && strcmp(w->enc, encs[j].name) == 0)
@@ -491,51 +625,155 @@ sa_check(const struct arc_job_spec *sp)
 
 	if (sp->verb == NULL || (strcmp(sp->verb, "set") != 0 && strcmp(
 	    sp->verb, "clear") != 0 && strcmp(sp->verb, "key") != 0 && strcmp(
-	    sp->verb, "derive") != 0))
-		return ("ipsec-sa: say key, set, derive or clear");
+	    sp->verb, "derive") != 0 && strcmp(sp->verb, "commit") != 0))
+		return ("ipsec-sa: say key, set, derive, commit or clear");
 	if (sp->interface == NULL || strncmp(sp->interface, "ipsec", 5) != 0 ||
 	    sp->interface[5 + strspn(sp->interface + 5, "0123456789")] != '\0'
 	    || sp->interface[5] == '\0')
 		return ("ipsec-sa: the interface is an ipsec(4) one, ipsec0");
-	if (strcmp(sp->verb, "key") == 0)
+	if (strcmp(sp->verb, "key") == 0) {
+		for (size_t i = 0; i < sp->names.n; i++)
+			if (strcmp(sp->names.v[i], "next") != 0)
+				return ("ipsec-sa key takes next at most: the pair "
+				    "to come");
 		return (NULL);
+	}
 	if (!sp->has_reqid || sp->reqid < 1 || sp->reqid > 16383)
 		return ("ipsec-sa: the interface's reqid, 1 to 16383");
 	if (!addr_ok(sp->tunnel_local, &af1) || !addr_ok(sp->tunnel_remote,
 	    &af2) || af1 != af2)
 		return ("ipsec-sa: tunnel-local and tunnel-remote are the outer "
 		    "addresses, of one family");
-	if (strcmp(sp->verb, "clear") == 0)
+	if (strcmp(sp->verb, "clear") == 0 || strcmp(sp->verb, "commit") == 0)
 		return (NULL);
 	return (sa_parse(sp, &w, strcmp(sp->verb, "derive") == 0));
 }
 
+static bool
+word_next(const struct arc_job_spec *sp)
+{
+
+	for (size_t i = 0; i < sp->names.n; i++)
+		if (strcmp(sp->names.v[i], "next") == 0)
+			return (true);
+	return (false);
+}
+
+/* A file for setkey -f, 0600, taken out again; what it said when strict. */
+static int
+sa_setkey(struct work *w, const char *text, bool strict, const char **errp)
+{
+	struct execres	 res;
+	char		 path[] = "/tmp/arcana-sa.XXXXXX", *argv[4];
+	FILE		*fp;
+	int		 fd, rc;
+
+	if ((fd = mkstemp(path)) == -1 || (fp = fdopen(fd, "w")) == NULL) {
+		*errp = wfmt(w, "a file for setkey: %s", strerror(errno));
+		if (fd != -1) {
+			close(fd);
+			(void)unlink(path);
+		}
+		return (-1);
+	}
+	(void)fchmod(fd, 0600);
+	fputs(text, fp);
+	fclose(fp);
+	argv[0] = (char *)(uintptr_t)opts.setkey_bin;
+	argv[1] = (char *)(uintptr_t)"-f";
+	argv[2] = path;
+	argv[3] = NULL;
+	/* The file has the keys: what setkey says of it is not kept. */
+	exec_set_secret(true);
+	rc = run_exec(w, argv, &res);
+	exec_set_secret(false);
+	(void)unlink(path);
+	if (rc != 0 && strict) {
+		*errp = wfmt(w, "setkey: exit status %d%s%.200s", res.status,
+		    res.errlen > 0 ? ": " : "", res.errlen > 0 ? res.err : "");
+		return (-1);
+	}
+	return (0);
+}
+
 /*
- * The SAs set, or every one between the two addresses cleared: a file
- * for setkey -f, 0600, removed after.
+ * One SA's line: ESP in tunnel mode on the interface's reqid, with an
+ * anti-replay window of 1024 packets (R47) always: ESN without one has
+ * the kernel's two ends disagree on the AAD of an AEAD cipher
+ * (xform_esp.c, the window checked on input only), and every ICV
+ * fails.
  */
-int
-do_sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
+static void
+sa_add_line(char *buf, size_t len, const struct sa_words *sw, uint32_t reqid,
+    const char *src, const char *dst, uint32_t spi, const char *key,
+    const char *akey)
+{
+	size_t	n;
+
+	n = strlen(buf);
+	n += (size_t)snprintf(buf + n, len - n, "add %s %s esp %#x -m tunnel -u "
+	    "%u -r 128%s", src, dst, spi, reqid, sw->esn ? " -esn" : "");
+	if (sw->encap && n < len)
+		n += (size_t)snprintf(buf + n, len - n, " -natt %s[4500] "
+		    "%s[4500]", src, dst);
+	if (n < len)
+		n += (size_t)snprintf(buf + n, len - n, " -E %s 0x%s", sw->enc,
+		    key);
+	if (sw->auth != NULL && n < len)
+		n += (size_t)snprintf(buf + n, len - n, " -A %s 0x%s", sw->auth,
+		    akey);
+	if (n < len)
+		(void)snprintf(buf + n, len - n, " ;\n");
+}
+
+static void
+sa_del_line(char *buf, size_t len, const char *src, const char *dst,
+    uint32_t spi)
+{
+	size_t	n;
+
+	n = strlen(buf);
+	if (spi != 0 && n < len)
+		(void)snprintf(buf + n, len - n, "delete %s %s esp %#x ;\n", src,
+		    dst, spi);
+}
+
+/*
+ * The SAs set, derived, turned or cleared.  set and derive put both
+ * directions in (the old ones kept here taken out first, so a step
+ * can be run again); derive with next, from the next pair, puts in
+ * the directions install says and keeps the SPIs as the next ones, the
+ * old outbound SA taken out with the new one in (the kernel keeps
+ * sending on the old one otherwise, net.key.preferred_oldsa); commit
+ * takes the old inbound SA out, makes the next pair the pair, and the
+ * next SPIs the SPIs: a rotation in three steps on each end, in, out,
+ * commit, so neither end sends on keys the other has not got, nor
+ * drops what the other still sends (R110, R112).  The file for setkey
+ * is 0600 and taken out again.
+ */
+static int
+sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	struct sa_words	 sw;
-	struct execres	 res;
+	ucl_object_t	*stt;
 	const char	*e, *l, *r;
-	char		 path[] = "/tmp/arcana-sa.XXXXXX", *argv[4], pub[PUB_B64 + 1];
-	char		 kout[80], kin[80], aout[136], ain[136];
+	char		 pub[PUB_B64 + 1], kout[80], kin[80], aout[136], ain[136];
+	char		 text[1600], del[400];
 	unsigned char	 okm[2 * (36 + 64) + 8];
-	FILE		*fp;
 	size_t		 enclen, authlen, at;
-	int		 fd, rc, step;
-	bool		 clear, derive, lower;
+	int		 step, rc;
+	bool		 clear, derive, commit, rotate, lower, in, out;
 
 	if ((e = sa_check(sp)) != NULL) {
 		*errp = e;
 		return (-1);
 	}
 	if (strcmp(sp->verb, "key") == 0) {
+		rotate = word_next(sp);
 		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s: "
-		    "its key pair", sp->interface);
-		if (key_make(w, sp->interface, pub, sizeof(pub), errp) != 0) {
+		    "its %skey pair", sp->interface, rotate ? "next " : "");
+		if (key_make(w, sp->interface, rotate, pub, sizeof(pub), errp) !=
+		    0) {
 			step_end(w, step, false, "%s", *errp);
 			return (-1);
 		}
@@ -543,18 +781,85 @@ do_sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (0);
 	}
 	clear = strcmp(sp->verb, "clear") == 0;
+	commit = strcmp(sp->verb, "commit") == 0;
 	derive = strcmp(sp->verb, "derive") == 0;
-	kout[0] = kin[0] = aout[0] = ain[0] = 0;
-	if (!clear)
+	l = sp->tunnel_local;
+	r = sp->tunnel_remote;
+	memset(&sw, 0, sizeof(sw));
+	kout[0] = kin[0] = aout[0] = ain[0] = '\0';
+	text[0] = del[0] = '\0';
+	if (!clear && !commit)
 		(void)sa_parse(sp, &sw, derive);
+	if ((stt = sa_state_load(w, sp->interface)) == NULL)
+		stt = ucl_object_typed_new(UCL_OBJECT);
+	rotate = derive && sw.next;
+	in = sw.install != 2;
+	out = sw.install != 1;
+	if (clear) {
+		snprintf(text, sizeof(text), "deleteall %s %s esp ;\ndeleteall %s "
+		    "%s esp ;\n", l, r, r, l);
+		(void)sa_setkey(w, text, false, errp);
+		(void)unlink(key_path(w, sp->interface, true));
+		(void)sa_state_save(w, sp->interface, NULL, errp);
+		ucl_object_unref(stt);
+		return (0);
+	}
+	if (commit) {
+		if (ucl_object_lookup(stt, "next_spi_in") == NULL ||
+		    ucl_object_lookup(stt, "next_spi_out") == NULL) {
+			*errp = wfmt(w, "%s: nothing to commit: derive with next, "
+			    "install in and out, first", sp->interface);
+			ucl_object_unref(stt);
+			return (-1);
+		}
+		if (access(key_path(w, sp->interface, true), F_OK) != 0) {
+			*errp = wfmt(w, "%s has no next pair to commit",
+			    sp->interface);
+			ucl_object_unref(stt);
+			return (-1);
+		}
+		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s: "
+		    "the next keys the keys", sp->interface);
+		/* The old inbound SA out (the outbound went with the new one
+		 * in), the next pair the pair. */
+		sa_del_line(del, sizeof(del), r, l, u32(stt, "spi_in"));
+		if (del[0] != '\0')
+			(void)sa_setkey(w, del, false, errp);
+		if (rename(key_path(w, sp->interface, true), key_path(w,
+		    sp->interface, false)) != 0) {
+			*errp = wfmt(w, "%s: the next pair not made the pair: %s",
+			    sp->interface, strerror(errno));
+			step_end(w, step, false, "%s", *errp);
+			ucl_object_unref(stt);
+			return (-1);
+		}
+		ucl_object_replace_key(stt, ucl_object_fromint(u32(stt,
+		    "next_spi_in")), "spi_in", 0, false);
+		ucl_object_replace_key(stt, ucl_object_fromint(u32(stt,
+		    "next_spi_out")), "spi_out", 0, false);
+		ucl_object_replace_key(stt, ucl_object_fromint((int64_t)time(NULL)),
+		    "at", 0, false);
+		(void)ucl_object_delete_key(stt, "next_spi_in");
+		(void)ucl_object_delete_key(stt, "next_spi_out");
+		rc = sa_state_save(w, sp->interface, stt, errp);
+		if (rc == 0)
+			step_end(w, step, true, "spi in %#x out %#x", u32(stt,
+			    "spi_in"), u32(stt, "spi_out"));
+		else
+			step_end(w, step, false, "%s", *errp);
+		ucl_object_unref(stt);
+		return (rc);
+	}
 	if (derive) {
 		/* 256-bit AES, or GCM with its nonce; the HMAC of its size. */
 		enclen = strcmp(sw.enc, "aes-gcm-16") == 0 ? 36 : 32;
 		authlen = sw.auth == NULL ? 0 : strcmp(sw.auth, "hmac-sha1") == 0
 		    ? 20 : strcmp(sw.auth, "hmac-sha2-256") == 0 ? 32 : 64;
-		if (key_derive(w, sp->interface, sw.peer, sw.epoch, okm, 2 *
-		    (enclen + authlen) + 8, &lower, errp) != 0)
+		if (key_derive(w, sp->interface, sw.peer, sw.epoch, sw.next, okm,
+		    2 * (enclen + authlen) + 8, &lower, errp) != 0) {
+			ucl_object_unref(stt);
 			return (-1);
+		}
 		/* A to B first: out for A, in for B. */
 		at = 0;
 		hex_of(okm + at, enclen, lower ? kout : kin);
@@ -577,61 +882,79 @@ do_sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		sw.akey_in = authlen > 0 ? ain : NULL;
 		OPENSSL_cleanse(okm, sizeof(okm));
 	}
-	l = sp->tunnel_local;
-	r = sp->tunnel_remote;
-	if ((fd = mkstemp(path)) == -1 || (fp = fdopen(fd, "w")) == NULL) {
-		*errp = wfmt(w, "a file for setkey: %s", strerror(errno));
-		if (fd != -1) {
-			close(fd);
-			(void)unlink(path);
-		}
-		return (-1);
+	/* What is being put in, taken out first where it is in already. */
+	if (rotate) {
+		if (in)
+			sa_del_line(del, sizeof(del), r, l, u32(stt, "next_spi_in"));
+		if (out)
+			sa_del_line(del, sizeof(del), l, r, u32(stt,
+			    "next_spi_out"));
+	} else {
+		sa_del_line(del, sizeof(del), r, l, u32(stt, "spi_in"));
+		sa_del_line(del, sizeof(del), l, r, u32(stt, "spi_out"));
 	}
-	(void)fchmod(fd, 0600);
-	if (clear)
-		fprintf(fp, "deleteall %s %s esp ;\ndeleteall %s %s esp ;\n", l, r,
-		    r, l);
-	else {
-		/* Out, then in: ESP in tunnel mode on the interface's reqid,
-		 * with an anti-replay window of 1024 packets (R47) always: ESN
-		 * without one has the kernel's two ends disagree on the AAD of
-		 * an AEAD cipher (xform_esp.c, the window checked on input
-		 * only), and every ICV fails. */
-		fprintf(fp, "add %s %s esp %#x -m tunnel -u %u -r 128%s", l, r,
-		    sw.spi_out, sp->reqid, sw.esn ? " -esn" : "");
-		if (sw.encap)
-			fprintf(fp, " -natt %s[4500] %s[4500]", l, r);
-		fprintf(fp, " -E %s 0x%s", sw.enc, sw.key_out);
-		if (sw.auth != NULL)
-			fprintf(fp, " -A %s 0x%s", sw.auth, sw.akey_out);
-		fprintf(fp, " ;\n");
-		fprintf(fp, "add %s %s esp %#x -m tunnel -u %u -r 128%s", r, l,
-		    sw.spi_in, sp->reqid, sw.esn ? " -esn" : "");
-		if (sw.encap)
-			fprintf(fp, " -natt %s[4500] %s[4500]", r, l);
-		fprintf(fp, " -E %s 0x%s", sw.enc, sw.key_in);
-		if (sw.auth != NULL)
-			fprintf(fp, " -A %s 0x%s", sw.auth, sw.akey_in);
-		fprintf(fp, " ;\n");
+	if (del[0] != '\0')
+		(void)sa_setkey(w, del, false, errp);
+	/* Out, then in. */
+	if (out)
+		sa_add_line(text, sizeof(text), &sw, sp->reqid, l, r, sw.spi_out,
+		    sw.key_out, sw.akey_out);
+	if (in)
+		sa_add_line(text, sizeof(text), &sw, sp->reqid, r, l, sw.spi_in,
+		    sw.key_in, sw.akey_in);
+	rc = sa_setkey(w, text, true, errp);
+	/* A rotation's new outbound SA in: the old one out at once, so this
+	 * end sends on the new keys from here on, whatever the kernel
+	 * prefers; the far end has the new inbound one already. */
+	if (rc == 0 && rotate && out && u32(stt, "spi_out") != 0 && u32(stt,
+	    "spi_out") != sw.spi_out) {
+		del[0] = '\0';
+		sa_del_line(del, sizeof(del), l, r, u32(stt, "spi_out"));
+		(void)sa_setkey(w, del, false, errp);
 	}
-	fclose(fp);
-	argv[0] = (char *)(uintptr_t)opts.setkey_bin;
-	argv[1] = (char *)(uintptr_t)"-f";
-	argv[2] = path;
-	argv[3] = NULL;
-	/* The file has the keys: what setkey says of it is not kept. */
-	exec_set_secret(true);
-	rc = run_exec(w, argv, &res);
-	exec_set_secret(false);
-	(void)unlink(path);
+	OPENSSL_cleanse(text, sizeof(text));
 	OPENSSL_cleanse(kout, sizeof(kout));
 	OPENSSL_cleanse(kin, sizeof(kin));
 	OPENSSL_cleanse(aout, sizeof(aout));
 	OPENSSL_cleanse(ain, sizeof(ain));
-	if (rc != 0 && !clear) {
-		*errp = wfmt(w, "setkey: exit status %d%s%.200s", res.status,
-		    res.errlen > 0 ? ": " : "", res.errlen > 0 ? res.err : "");
+	if (rc != 0) {
+		ucl_object_unref(stt);
 		return (-1);
 	}
-	return (0);
+	/* Kept: the SPIs put in, for a rotation to take out; when; for how
+	 * long. */
+	if (in)
+		ucl_object_replace_key(stt, ucl_object_fromint(sw.spi_in), rotate ?
+		    "next_spi_in" : "spi_in", 0, false);
+	if (out)
+		ucl_object_replace_key(stt, ucl_object_fromint(sw.spi_out), rotate ?
+		    "next_spi_out" : "spi_out", 0, false);
+	if (!rotate)
+		ucl_object_replace_key(stt, ucl_object_fromint((int64_t)time(NULL)),
+		    "at", 0, false);
+	if (sw.lifetime != 0)
+		ucl_object_replace_key(stt, ucl_object_fromint(sw.lifetime),
+		    "lifetime", 0, false);
+	rc = sa_state_save(w, sp->interface, stt, errp);
+	ucl_object_unref(stt);
+	return (rc);
+}
+
+/* A rotation that fails is a fault on the interface, until one is done. */
+int
+do_sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	int	rc;
+	bool	rotation;
+
+	rc = sa_job(w, sp, errp);
+	rotation = sp->verb != NULL && sp->interface != NULL && (strcmp(sp->verb,
+	    "commit") == 0 || (strcmp(sp->verb, "derive") == 0 && word_next(sp)));
+	if (rotation && rc != 0)
+		fault_set("key-rotation", "Major", sp->interface, "arcana-agent",
+		    "the keys of %s were not turned: %s", sp->interface, *errp);
+	else if (rotation && strcmp(sp->verb, "commit") == 0)
+		fault_clear("key-rotation", sp->interface, "the keys of %s turned",
+		    sp->interface);
+	return (rc);
 }

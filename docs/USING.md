@@ -1351,8 +1351,25 @@ derive the SAs from the far end's public half, which the console reads
 from that end's `sdwan` read and passes as `${uswe:SID:IF}` the way it
 passes a wg key; `algorithms` picks AES-256-CBC with HMAC-SHA-256 or
 AES-256-GCM, `esn` and `encap` (ESP in UDP) are on unless said
-otherwise, and `lifetime` is for the rotation to come. No IKEv2 under
-it. The UCS form asks for it all under "uswe only".
+otherwise, and `lifetime` (seconds, a day unless said) is what the
+keys are good for. No IKEv2 under it. The UCS form asks for it all
+under "uswe only".
+
+**The keys turned** (Mplify 119 R110, R112): the console's manager
+turns a uswe tunnel's keys at the half-life of their lifetime, both
+ends in step and without a packet lost: a next pair made on each end
+(`ipsec-sa key next`), its public half read from the sdwan read, the
+new SAs from the two pairs put in inbound on both ends, then outbound,
+each end's old outbound SA taken out as its new one goes in (`derive …
+next install in | out`; the kernel would keep sending on the old one
+otherwise, net.key.preferred_oldsa), then committed on both (`commit`:
+the old inbound SAs taken out, the next pair made the pair). A rotation that
+fails is kept with its step and why, tried again after two minutes,
+and the end it failed on raises a `key-rotation` fault until one is
+done. The Paths tab's Keys table shows each end's half, when it was
+keyed and when it turns, and **turn the keys** does it now
+(`POST /api/sdwan/rekey`); an apply waits for a rotation and a
+rotation for an apply.
 
 **Manually keyed security associations** (Mplify 119 §10, R41–R50,
 R55): the `ipsec-sa` job sets the two SAs of an ipsec(4) interface,
