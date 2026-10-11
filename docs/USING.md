@@ -1145,7 +1145,14 @@ prefixes of a named list go into the policy's deny tables after its
 own, the domains into its DNS filter; the document is refused for a
 list that is not there. `GET` and `PUT /api/sdwan/lists` carry the
 feeds and the interval, `POST /api/sdwan/lists/fetch` fetches now
-(`{"name"}` for one); **Fetch now** on the tab does the same.
+(`{"name"}` for one); **Fetch now** on the tab does the same. A list
+may be large: the agent writes a table's entries 64 to a line as
+`table … atomic add`, one call each, all or nothing, and raises
+`net.inet.ip.fw.tables_max` when the tables would not fit; and when
+only entries changed since the rules were applied (a list fetched
+anew), each changed table is filled beside itself and swapped in with
+`table … swap`, the rules and the steering left as they are.
+`arcanactl sdwan rules @file` reads the JSON from a file.
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,

@@ -1275,6 +1275,28 @@ static int	json_out(const char *, bool, const char *, const char *,
 
 /* traceroute address: one round, a probe a hop, as JSON. */
 /* sdwan: what the probes have seen; sdwan probes json: the targets. */
+/* A JSON argument: as given, or the contents of a file after @. */
+static const char *
+json_arg(const char *arg)
+{
+	FILE	*fp;
+	char	*text;
+	size_t	len, n;
+
+	if (arg == NULL || arg[0] != '@')
+		return (arg);
+	if ((fp = fopen(arg + 1, "r")) == NULL)
+		xo_err(1, "%s", arg + 1);
+	if ((text = malloc(8 * 1024 * 1024)) == NULL)
+		xo_err(1, "malloc");
+	for (len = 0; len < 8 * 1024 * 1024 - 1; len += n)
+		if ((n = fread(text + len, 1, 8 * 1024 * 1024 - 1 - len, fp)) == 0)
+			break;
+	text[len] = '\0';
+	fclose(fp);
+	return (text);
+}
+
 static int
 cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 {
@@ -1299,7 +1321,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		struct arc_sdwan_rules_rsp	*rs;
 
 		memset(&rq, 0, sizeof(rq));
-		rq.json = argv[2];
+		rq.json = json_arg(argv[2]);
 		if ((error = arc_sdwan_rules(cl, &rq, &rs)) != 0)
 			fail(cl, error, "sdwan rules");
 		error = json_out("sdwan-rules", rs->ok, rs->error, NULL,
@@ -1312,7 +1334,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		struct arc_sdwan_steer_rsp	*rs;
 
 		memset(&rq, 0, sizeof(rq));
-		rq.json = argv[2];
+		rq.json = json_arg(argv[2]);
 		if ((error = arc_sdwan_steer(cl, &rq, &rs)) != 0)
 			fail(cl, error, "sdwan steer");
 		error = json_out("sdwan-steer", rs->ok, rs->error, NULL,
@@ -1325,7 +1347,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		struct arc_sdwan_bird_rsp	*rs;
 
 		memset(&rq, 0, sizeof(rq));
-		rq.json = argv[2];
+		rq.json = json_arg(argv[2]);
 		if ((error = arc_sdwan_bird(cl, &rq, &rs)) != 0)
 			fail(cl, error, "sdwan bird");
 		error = json_out("sdwan-bird", rs->ok, rs->error, NULL,
@@ -1338,7 +1360,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		struct arc_sdwan_dhcp_rsp	*rs;
 
 		memset(&rq, 0, sizeof(rq));
-		rq.json = argv[2];
+		rq.json = json_arg(argv[2]);
 		if ((error = arc_sdwan_dhcp(cl, &rq, &rs)) != 0)
 			fail(cl, error, "sdwan dhcp");
 		error = json_out("sdwan-dhcp", rs->ok, rs->error, NULL,
@@ -1351,7 +1373,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		struct arc_sdwan_dns_rsp	*rs;
 
 		memset(&rq, 0, sizeof(rq));
-		rq.json = argv[2];
+		rq.json = json_arg(argv[2]);
 		if ((error = arc_sdwan_dns(cl, &rq, &rs)) != 0)
 			fail(cl, error, "sdwan dns");
 		error = json_out("sdwan-dns", rs->ok, rs->error, NULL,

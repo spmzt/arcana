@@ -85,7 +85,9 @@
   detection with the proxy (SASE-4). SASE-2: the lists, feeds the
   console's host fetches with the base system's libfetch and pasted
   ones, versioned, named by the policies into their tables and DNS
-  filter (S2.1). Next: S2.2, large tables.
+  filter (S2.1); large tables: the entries in chunks of atomic adds,
+  a changed table swapped in place without the rules reloaded, the
+  limit raised (S2.2). Next: S2.3, the record.
 - A luxuria plugin installed in a vnet jail and not on the host does
   not get its tab (reported 2026-10-11). The agent lists a running
   vnet jail's plugins by access(X_OK) on the program under the jail's
@@ -299,6 +301,12 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- A 100000-entry table on a vnet jail (SASE-2 task S2.2, 2026-10-12,
+  arcanactl sdwan rules @file against the jail's agent): the rules
+  with the table loaded in 0.23 s, ipfw table info 100000 items; the
+  same rules with one entry changed swapped the table in place in
+  2.1 s (1563 atomic adds of 64, a process each) with no rules
+  reload, the changed entry found by lookup; cleared after.
 - A security policy's DNS filter on a vnet jail (MEF 88; task S1.3,
   2026-10-11, the lab's dns step): the base system's local-unbound
   started by the agent in FIB 1 on the UNI's address with the denied
