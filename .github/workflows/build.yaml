@@ -29,6 +29,8 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          submodules: recursive
 
       # The image build compiles arcana and runs its test suite, so a
       # pull request is checked the same way; only pushes publish the

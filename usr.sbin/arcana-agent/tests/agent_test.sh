@@ -2747,7 +2747,7 @@ EOS
 	start_daemon
 
 	atf_check -o match:'^Built: +[0-9]+\.[0-9]+' \
-	    -o match:'git clone --depth 1 --branch main -- https://example.org/arcana.git' \
+	    -o match:'git clone --depth 1 --recurse-submodules --shallow-submodules --branch main -- https://example.org/arcana.git' \
 	    "$JGC" -t -c "$SOCK" agent-build -o built https://example.org/arcana.git main
 	atf_check cmp -s "$JGD" built
 	atf_check test -x built
