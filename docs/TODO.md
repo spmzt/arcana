@@ -51,10 +51,6 @@
   a BIRD instance of the edge (2.4; DHCP on the jails, in the verified
   list). Next: 2.5, the phase closed; then 119-3. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
-- The network map draws a WireGuard link twice when both families
-  are set on it and one end has no IPv4 (asked 2026-10-11): a link is
-  one per interface and peer, whatever families it carries, the
-  families said on it, not a link each.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:
