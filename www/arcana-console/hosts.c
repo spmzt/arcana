@@ -4241,6 +4241,8 @@ api_sdwan_state(struct http_request *req)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_SDWAN)) == NULL)
 		return (KORE_RESULT_OK);
+	/* Only the samples after a time, for a page that keeps the rest. */
+	c->has_pos = query_u64(req, "after", INT64_MAX, &c->pos);
 	return (call_start(req, c));
 }
 
