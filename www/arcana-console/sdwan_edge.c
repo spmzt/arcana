@@ -1207,7 +1207,8 @@ breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
-		u = ucl_object_lookup(ep, "uni");
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		for (i = 0; i < 2; i++) {
 			v = ucl_object_lookup(u, fams[i]);
@@ -1538,7 +1539,8 @@ dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
-		u = ucl_object_lookup(ep, "uni");
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
 		ifn = uni_ifname(pl, sw, ep, vif, sizeof(vif));
 		for (i = 0; i < 2; i++) {
 			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
@@ -1614,7 +1616,8 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 			    "end_points"), &pit, true)) != NULL) {
 				if (strcmp(str(ep, "edge"), sid) != 0)
 					continue;
-				u = ucl_object_lookup(ep, "uni");
+				if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+					continue;
 				for (i = 0; i < 2; i++) {
 					v = ucl_object_lookup(u, i == 0 ? "ipv4" :
 					    "ipv6");
@@ -1730,7 +1733,8 @@ dns_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *lists)
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
-		u = ucl_object_lookup(ep, "uni");
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
 		for (i = 0; i < 2; i++) {
 			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
 			if (str(v, "prefix") == NULL)
@@ -2387,7 +2391,8 @@ breaks_here(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	eit = NULL;
 	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
 	    &eit, true)) != NULL) {
-		if (strcmp(str(ep, "edge"), sid) != 0)
+		if (strcmp(str(ep, "edge"), sid) != 0 || ucl_object_lookup(ep,
+		    "uni") == NULL)
 			continue;
 		zit = NULL;
 		while ((zone = ucl_object_iterate(ucl_object_lookup(sw,
@@ -2801,7 +2806,8 @@ own_words(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	it = NULL;
 	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
 	    &it, true)) != NULL) {
-		if (strcmp(str(ep, "edge"), sid) != 0)
+		if (strcmp(str(ep, "edge"), sid) != 0 || ucl_object_lookup(ep,
+		    "uni") == NULL)
 			continue;
 		pfx = ucl_object_typed_new(UCL_ARRAY);
 		uni_prefixes(ep, pfx);
@@ -2860,7 +2866,8 @@ rules_build(struct plan *pl, const char *sid)
 		eit = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &eit, true)) != NULL) {
-			if (strcmp(str(ep, "edge"), sid) != 0)
+			if (strcmp(str(ep, "edge"), sid) != 0 || ucl_object_lookup(
+			    ep, "uni") == NULL)
 				continue;
 			any = true;
 			uni = uni_ifname(pl, sw, ep, ifn, sizeof(ifn));
@@ -2911,7 +2918,8 @@ rules_build(struct plan *pl, const char *sid)
 		eit = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &eit, true)) != NULL)
-			if (strcmp(str(ep, "edge"), sid) == 0)
+			if (strcmp(str(ep, "edge"), sid) == 0 && ucl_object_lookup(
+			    ep, "uni") != NULL)
 				nuni++;
 		if (nuni == 0)
 			continue;
@@ -3536,7 +3544,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
-		u = ucl_object_lookup(ep, "uni");
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		snprintf(ifaces + strlen(ifaces), sizeof(ifaces) - strlen(ifaces),
 		    "%s\"%s\"", n++ > 0 ? ", " : "", ifn);
@@ -3705,7 +3714,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
-		u = ucl_object_lookup(ep, "uni");
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		symbol(str(ep, "id"), sym, sizeof(sym));
 		bird_routing(b, u, "UNI", str(u, "id"), sym, ifn, as);
@@ -4308,7 +4318,8 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 		it2 = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &it2, true)) != NULL)
-			if (!uni_obj(pl, sw, ep))
+			if (ucl_object_lookup(ep, "uni") != NULL && !uni_obj(pl, sw,
+			    ep))
 				return (false);
 	}
 	/*

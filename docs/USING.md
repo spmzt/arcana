@@ -1101,7 +1101,12 @@ names them. It is one document with three parts:
     not given out, the `dns` servers told to the hosts and a `lease`
     (§11.4, §11.5); and static `routes`), its `policy_map` (each a
     `zone` or `Internet`, an `app`, and its `ingress` and `egress`
-    policies, over the zone's own) and its `nat`.
+    policies, over the zone's own) and its `nat`. In place of a `uni`,
+    a `remote` (SASE-3, access by identity): a wg `interface` of the
+    edge, the `prefix` the identities' addresses come from, the `port`
+    it listens on (51820) and its `identities`, each a `name`, a `zone`
+    of the service and a WireGuard `public_key`; the policies apply to
+    an identity as to a UNI's hosts.
 
 **Security** lists the service's security policies (MEF 88): the
 addresses allowed and denied, the domains denied and whether DNS is

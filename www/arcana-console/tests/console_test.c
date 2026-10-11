@@ -3290,7 +3290,11 @@ static const char sdwan_good[] =
     "\"public_prefix\":\"198.51.100.0/30\"}},{\"id\":\"branch\",\"edge\":"
     "\"@B\",\"uni\":{\"id\":\"uni-br\",\"interface\":\"vtnet2\",\"vlan\":20,"
     "\"ipv6\":{\"mode\":\"slaac\",\"prefix\":\"2001:db8:1::/64\","
-    "\"provider\":[\"2001:db8:1::1\"],\"dns\":[\"2001:db8:1::1\"]}}}]}]}";
+    "\"provider\":[\"2001:db8:1::1\"],\"dns\":[\"2001:db8:1::1\"]}}},"
+    "{\"id\":\"road\",\"edge\":\"@A\",\"remote\":{\"interface\":\"wg5\","
+    "\"prefix\":\"10.30.0.0/24\",\"port\":51820,\"identities\":[{\"name\":"
+    "\"alice\",\"zone\":\"office\",\"public_key\":"
+    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\"}]}}]}]}";
 
 /* s with its first from made to, into out; false when from is not there. */
 /* An interface of this host with an IPv4 address that is not the
@@ -3446,6 +3450,15 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"egress-block\":\"discard\"", "\"encryption\":\"optional\"",
 		    "egress policy" },
 		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
+		/* A remote end point (SASE-3): its port, an identity's zone
+		 * and key, and not a UNI besides. */
+		{ "\"port\":51820", "\"port\":70000", "port is 1 to 65535" },
+		{ "\"zone\":\"office\",\"public_key\"", "\"zone\":\"nowhere\","
+		    "\"public_key\"", "its zone is one of the zones" },
+		{ "\"public_key\":\"xTIB", "\"public_key\":\"short", "a WireGuard "
+		    "one" },
+		{ "\"remote\":{", "\"uni\":{\"id\":\"x\"},\"remote\":{", "not "
+		    "both" },
 		/* The UCS end points' addressing and routing (Mplify 119). */
 		{ "\"interface\":\"vtnet1\",\"backup\":true", "\"interface\":"
 		    "\"vtnet1\",\"backup\":true,\"addressing\":\"ppp\"",
