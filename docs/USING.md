@@ -1319,7 +1319,16 @@ session that goes down after it was up, or comes up again, is a fault
 (`sdwan-tunnel`, by bfd, R60), and the steering takes BFD's word over the probe's where
 there is a session. Paths shows BFD's state beside the probe's. With
 `md5` in a service, the edges' iBGP sessions are signed with TCP MD5
-(R12). An edge with `ntp` (its servers, in the edge form) gets them
+(R12). With `control_plane` (`host`, an edge of the service, and maybe
+a `cluster_id`), the full mesh gives way to Mplify 119's control plane
+(§8.3, R9–R13): every other edge peers with that host alone, by each
+tunnel to it, and the host's BIRD reflects their routes to all (RFC
+4456, `rr client`, the cluster id its router id unless said); a plan
+refuses a topology where an edge has no tunnel to the host. The
+service form asks for the host. RFC 4364's VPN routes with the
+domains' route distinguishers, targets and labels (R14–R20) are not
+written: they need BIRD's l3vpn protocol, which the FreeBSD port of
+BIRD 3 does not build (known limits). An edge with `ntp` (its servers, in the edge form) gets them
 written into its `ntp.conf` and ntpd enabled and restarted, with the
 FIBs, so faults line up and keys can turn together (Mplify 119
 §12.2.2); the `ntp` job does it, and `arcanactl ntp` by hand.
