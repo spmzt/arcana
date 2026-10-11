@@ -384,6 +384,10 @@ struct app {
 	char		 agent_build[65]; /* of the arcana-agent it sends */
 	char		 agent_version[32]; /* and its version */
 	char		 agent_source[256]; /* repository a host builds it from */
+	ucl_object_t	*notes;		/* /api/update/notes: what is new */
+	bool		 notes_busy;
+	char		 notes_error[200];
+	char		 notes_for[16];	/* console or agent */
 	char		 update_latest[64];	/* a newer release, or "" */
 	char		 update_url[512];
 	char		 auth_error[256];
@@ -499,6 +503,8 @@ bool		 has_plugin(const struct server *, const char *);
 void		 refresh_stats(struct server *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);
+bool		 version_older(const char *, const char *);
+void		 notes_load(const char *, const char *, const char *, bool);
 void		 agent_build(struct server *, const char *, bool);
 void		 agent_restarts(double);
 void		 op_cancel(struct op *);
@@ -684,7 +690,7 @@ void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
 /* view.c: the settings' tabs. */
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
-    SET_WEBCONF };
+    SET_WEBCONF, SET_NEWS };
 int		 settab_of(const char *);
 /* sdwan.c: the SD-WAN services the console keeps. */
 void		 sdwan_open(void);

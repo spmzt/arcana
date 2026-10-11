@@ -95,6 +95,14 @@
   the wg interface in the service's table, a peer per identity with
   an address of the prefix kept for it, the zone table's entries
   (S3.2). Next: S3.3, issuing and revoking.
+- 2026-10-11: what is new, in the update boxes and Settings' last
+  tab: the agent's source-log (a bare blob:none clone in the build
+  directory), the console's /api/update/notes (the tags' messages as
+  release notes when any, else the commit messages, new until the
+  running version's own commit). Found on the way: Kore hands a
+  handler only the query parameters its route declares, so the
+  record API's filters (swvc, policy, edge, since) were never seen;
+  declared now with a validator.
 - Verified on the lab 2026-10-11 (S3.2): a client jail arcroad as an
   identity, arcswan1's wg5 in FIB 1 with 10.30.0.1/24 and the client
   its peer by the agent as the console's plan has it; the client,

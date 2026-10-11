@@ -46,7 +46,9 @@ The console is laid out as a tree and tabs.
   what the agents, or the console, were last updated to; **build the
   agent** has the host build arcana-agent, kept by the console;
   **update every host's agent** sends it to every host, each
-  restarted with it; **update the console** builds and installs all
+  restarted with it (its box says what they get: the release notes,
+  or the commit messages where there are none, from the version the
+  oldest of them runs to the console's); **update the console** builds and installs all
   of Arcana on the host the console runs on (a server added by its
   local socket), the console restarting once the step has ended. What
   was built and updated to is kept in `arcana-source.json`. **Only
@@ -935,6 +937,18 @@ The console is laid out as a tree and tabs.
 - **Connections** and **Sockets**, in a host's network, are read again
   every two seconds while they are shown, without a task of their own
   in the activity; **Live** pauses that.
+
+**What's new** (Settings, its last tab; the update boxes too): what
+the repository the console builds from (`agent_source`) has, read by
+the host the console runs on (`arcanactl source-log`: a bare clone
+without the files, `--filter=blob:none`, kept in the build directory
+as `log.git` and fetched again each time) and kept five minutes:
+the release notes, where the repository's tags carry messages, else
+the commit messages, newest first; above the version running, what an
+update brings, the version's own commit marked (every commit that
+bumps a version names it, `console 0.119.0`, `agent 0.69.0`), below
+it what this console has. `GET /api/update/notes?component=console|
+agent&from=VERSION[&to=VERSION]` gives it as JSON.
 
 ## The network
 

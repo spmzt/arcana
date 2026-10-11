@@ -266,6 +266,29 @@ tick(void *arg)
 	}
 }
 
+/* Is version a older than b?  "1.2.3" against "1.10.0", as numbers. */
+bool
+version_older(const char *a, const char *b)
+{
+	long	x, y;
+	char	*ea, *eb;
+
+	if (*a == 'v')
+		a++;
+	if (*b == 'v')
+		b++;
+	for (;;) {
+		x = strtol(a, &ea, 10);
+		y = strtol(b, &eb, 10);
+		if (x != y)
+			return (x < y);
+		if (*ea != '.' || *eb != '.')
+			return (false);
+		a = ea + 1;
+		b = eb + 1;
+	}
+}
+
 void
 confirm(const char *title, const char *body, const char *button,
     bool danger, const char *typed, const char *act, const char *arg,
@@ -1255,6 +1278,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "take several minutes.", s->name, app.agent_source);
 		confirm("Update the console", body, "Update", true, "",
 		    "do-agent-build", s->id, "console");
+		/* What the update brings: the box reads it. */
+		notes_load("console", app.version, NULL, false);
 	} else if (strcmp(act, "do-agent-build") == 0) {
 		for (i = 0; i < app.nservers; i++)
 			if (strcmp(app.servers[i].id, arg) == 0)
@@ -1270,6 +1295,24 @@ dispatch(const char *act, const char *arg, const char *value)
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
 		app.modal = MODAL_AGENT_UPDATE;
 		app.modal_error[0] = '\0';
+		/* What the hosts get: from the oldest of theirs to the
+		 * console's. */
+		{
+			const char	*from, *hv;
+
+			from = NULL;
+			for (i = 0; i < app.nservers; i++) {
+				if (arg[0] != '\0' ? strcmp(app.servers[i].id, arg)
+				    != 0 : !agent_outdated(&app.servers[i]))
+					continue;
+				hv = jstr(app.servers[i].list, "host.version");
+				if (hv != NULL && (from == NULL || version_older(hv,
+				    from)))
+					from = hv;
+			}
+			notes_load("agent", from != NULL ? from : "0",
+			    app.agent_version, false);
+		}
 	} else if (strcmp(act, "theme") == 0) {
 		snprintf(app.theme, sizeof(app.theme), "%s", arg);
 		arc_theme_set(app.theme);
@@ -1294,6 +1337,11 @@ dispatch(const char *act, const char *arg, const char *value)
 			app.settab = SET_KEYS;
 		else if (strcmp(act, "set-tab") == 0)
 			app.settab = settab_of(arg);
+		if (app.settab == SET_NEWS && !app.notes_busy && (app.notes ==
+		    NULL || strcmp(app.notes_for, "console") != 0))
+			notes_load("console", app.version, NULL, false);
+	} else if (strcmp(act, "notes-reload") == 0) {
+		notes_load("console", app.version, NULL, true);
 		app.modal_error[0] = '\0';
 		/* A token's value is shown once: not again on another tab. */
 		app.token_value[0] = '\0';

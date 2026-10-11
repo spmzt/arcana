@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.118.0
+  version: 0.119.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1664,6 +1664,19 @@ paths:
         "409": { $ref: "#/components/responses/Error" }
         "502": { $ref: "#/components/responses/Error" }
 
+  /api/update/notes:
+    get:
+      tags: [console]
+      summary: What is new in the repository since a version, the release notes or the commits
+      parameters:
+        - { name: component, in: query, schema: { type: string, enum: [console, agent] } }
+        - { name: from, in: query, schema: { type: string }, description: the version running }
+        - { name: to, in: query, schema: { type: string }, description: up to this version, for the agents }
+      responses:
+        "200":
+          description: component, from, to, kind (tags or commits), head,
+            host, read, source and notes, each id, when, title, body, new
+            and here.
   /api/servers/{server}/console-update:
     post:
       tags: [servers]

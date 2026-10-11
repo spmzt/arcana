@@ -375,6 +375,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "[ \"$1\" = ls-remote ] && { printf '%s\\tHEAD\\n' \"$(cat head "
 	    "2>/dev/null || echo 1111111111111111111111111111111111111111)\"; "
 	    "exit 0; }\n"
+	    /* The log clone: made bare, fetched, read from ./log and ./tags. */
+	    "[ \"$1\" = -C ] && [ \"$3\" = fetch ] && exit 0\n"
+	    "[ \"$1\" = -C ] && [ \"$3\" = log ] && { cat commits 2>/dev/null; "
+	    "exit 0; }\n"
+	    "[ \"$1\" = -C ] && [ \"$3\" = for-each-ref ] && { cat tags "
+	    "2>/dev/null; exit 0; }\n"
+	    "[ \"$1\" = clone ] && [ \"$2\" = --bare ] && { for a; do last=$a; "
+	    "done; mkdir -p \"$last\"; echo bare > \"$last/HEAD\"; exit 0; }\n"
 	    "[ \"$1\" = clone ] || exit 2\n"
 	    "for a; do last=$a; done\n"
 	    "mkdir -p \"$last/lib/libjailconf\" \"$last/usr.sbin/arcana-agent\"\n");

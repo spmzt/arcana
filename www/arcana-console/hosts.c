@@ -53,6 +53,7 @@ enum op {
 	OP_AGENT_BUILD,
 	OP_CONSOLE_UPDATE,
 	OP_SOURCE_HEAD,
+	OP_SOURCE_LOG,
 	OP_ROUTE_LOOKUP,
 	OP_TRACEROUTE,
 	OP_SDWAN,
@@ -1041,6 +1042,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_AGENT_BUILD ? "arc_agent_build" :
 	    c->op == OP_CONSOLE_UPDATE ? "arc_console_update" :
 	    c->op == OP_SOURCE_HEAD ? "arc_source_head" :
+	    c->op == OP_SOURCE_LOG ? "arc_source_log" :
 	    c->op == OP_ROUTE_LOOKUP ? "arc_route_lookup" :
 	    c->op == OP_TRACEROUTE ? "arc_traceroute" :
 	    c->op == OP_SDWAN ? "arc_sdwan" : c->op == OP_SDWAN_PROBES ?
@@ -1382,6 +1384,8 @@ call_run(struct kore_task *t)
 	struct arc_console_update_req cuq;
 	struct arc_console_update_rsp *cur;
 	struct arc_source_head_req shq;
+	struct arc_source_log_req slq;
+	struct arc_source_log_rsp *slr;
 	struct arc_traceroute_req trq;
 	struct arc_traceroute_rsp *trr;
 	struct arc_sdwan_req	sdq;
@@ -1460,6 +1464,7 @@ call_run(struct kore_task *t)
 	abr = NULL;
 	cur = NULL;
 	shr = NULL;
+	slr = NULL;
 	trr = NULL;
 	bin = NULL;
 	msg = NULL;
@@ -2240,6 +2245,28 @@ connected:
 		steps = shr->trace.v;
 		nsteps = shr->trace.n;
 		break;
+	case OP_SOURCE_LOG:
+		/* What is new in the repository: the latest commits and the
+		 * tags, read by the host as source-head reads the head. */
+		memset(&slq, 0, sizeof(slq));
+		slq.source = cfg.agent_source;
+		slq.ref = cfg.agent_ref;
+		slq.ssh_key = cfg.agent_ssh_key;
+		slq.host_keys = c->host_keys;
+		slq.has_count = true;
+		slq.count = 100;
+		if ((error = arc_source_log(&cl, &slq, &slr)) != 0)
+			goto rpcfail;
+		ok = slr->ok;
+		put_str(top, "error", slr->error);
+		put_str(top, "commit", slr->commit);
+		put_str(top, "log", slr->log);
+		put_str(top, "tags", slr->tags);
+		put_str(top, "host_keys", slr->host_keys);
+		put_str(top, "deploy_key", slr->deploy_key);
+		steps = slr->trace.v;
+		nsteps = slr->trace.n;
+		break;
 	case OP_AGENT_BUILD:
 		memset(&abq, 0, sizeof(abq));
 		abq.source = cfg.agent_source;
@@ -2436,6 +2463,8 @@ done:
 		arc_console_update_rsp_free(cur);
 	if (shr != NULL)
 		arc_source_head_rsp_free(shr);
+	if (slr != NULL)
+		arc_source_log_rsp_free(slr);
 	if (trr != NULL)
 		arc_traceroute_rsp_free(trr);
 	free(bin);
@@ -4185,6 +4214,7 @@ hosts_arcana(const char *uri, const char *peer, const char *name,
 		enum op		 op;
 	} ops[] = {
 		{ "source-head", OP_SOURCE_HEAD },
+		{ "source-log", OP_SOURCE_LOG },
 		{ "agent-build", OP_AGENT_BUILD },
 		{ "agent-update", OP_AGENT_UPDATE },
 		{ "console-update", OP_CONSOLE_UPDATE },
@@ -4200,7 +4230,7 @@ hosts_arcana(const char *uri, const char *peer, const char *name,
 	c = kore_calloc(1, sizeof(*c));
 	c->op = ops[i].op;
 	c->restart = ops[i].op == OP_AGENT_UPDATE;
-	c->reads = ops[i].op == OP_SOURCE_HEAD;
+	c->reads = ops[i].op == OP_SOURCE_HEAD || ops[i].op == OP_SOURCE_LOG;
 	return (self_call(c, uri, peer, name, what, status));
 }
 
