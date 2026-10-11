@@ -1298,6 +1298,30 @@ link_add(int a, int b, int kind, const char *ifa, const char *ifb,
 	return (l);
 }
 
+/*
+ * A link already joining the same two interfaces of the same two hosts,
+ * whatever it was made of (a tunnel's ends, a point-to-point pair, a
+ * network shared, a WireGuard peering): one link, however many
+ * families or networks it carries; -1 for none.
+ */
+static int
+link_same(int a, int b, const char *ifa, const char *ifb)
+{
+	int	i;
+
+	for (i = 0; i < nlinks; i++) {
+		if (links[i].b < 0 || links[i].kind > LK_LAN)
+			continue;
+		if (links[i].a == a && links[i].b == b && strcmp(links[i].ifa,
+		    ifa) == 0 && strcmp(links[i].ifb, ifb) == 0)
+			return (i);
+		if (links[i].a == b && links[i].b == a && strcmp(links[i].ifa,
+		    ifb) == 0 && strcmp(links[i].ifb, ifa) == 0)
+			return (i);
+	}
+	return (-1);
+}
+
 /* The links, from the interfaces every host has now. */
 static void
 links_build(void)
@@ -1343,8 +1367,15 @@ links_build(void)
 					if ((peer = owner(jstr(a, "destination"),
 					    ifb, sizeof(ifb))) != -1 && peer !=
 					    s) {
-						if ((l = link_add(s, peer, LK_P2P,
-						    jstr(o, "name"), ifb,
+						/* The other family of the same
+						 * pair: the one link. */
+						if ((k = link_same(s, peer, jstr(o,
+						    "name"), ifb)) != -1) {
+							links[k].more++;
+							links[k].up = links[k].up ||
+							    jbool(o, "up");
+						} else if ((l = link_add(s, peer,
+						    LK_P2P, jstr(o, "name"), ifb,
 						    jstr(a, "address"),
 						    jstr(a, "destination"))) !=
 						    NULL)
@@ -1404,9 +1435,20 @@ links_build(void)
 					    wg_iface(&hosts[k], jstr(p,
 					    "public-key"), NULL)) == NULL)
 						continue;
-					if ((l = link_add(s, peer, LK_TUNNEL,
-					    jstr(o, "name"), other, jstr(o,
-					    "public-key"), jstr(p,
+					/* Its addresses may have joined the two
+					 * already: that link is the peering. */
+					if ((m = link_same(s, peer, jstr(o,
+					    "name"), other)) != -1) {
+						l = &links[m];
+						l->kind = LK_TUNNEL;
+						l->up = true;
+						snprintf(l->label,
+						    sizeof(l->label),
+						    "WireGuard %s ⇄ %s", jstr(o,
+						    "name"), other);
+					} else if ((l = link_add(s, peer,
+					    LK_TUNNEL, jstr(o, "name"), other,
+					    jstr(o, "public-key"), jstr(p,
 					    "public-key"))) != NULL) {
 						l->up = true;
 						snprintf(l->label,
@@ -1513,6 +1555,13 @@ links_build(void)
 				    sg->member[1] && links[i].b ==
 				    sg->member[0])))
 					break;
+			/* Or the tunnel, pair or WireGuard peering between
+			 * the same two interfaces: the network rides it. */
+			if (i == nlinks)
+				i = link_same(sg->member[0], sg->member[1],
+				    sg->ifn[0], sg->ifn[1]) == -1 ? nlinks :
+				    link_same(sg->member[0], sg->member[1],
+				    sg->ifn[0], sg->ifn[1]);
 			if (i < nlinks) {
 				links[i].more++;
 				continue;
