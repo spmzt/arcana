@@ -78,8 +78,12 @@
   on each edge, the denied domains its local zones, every query from
   the UNI forwarded to it where the protocol filter says so (S1.3);
   the rules' counters in the sdwan read, the Security tab counting
-  what each policy denied (S1.4). Next: S1.5, the phase closed on the
-  lab.
+  what each policy denied (S1.4); the phase closed (S1.5): of MEF 88's
+  policy criteria, ip-block, dns-domain-filter, dns-protocol-filter,
+  rate-limit and log are done; lists by name come with the feeds
+  (SASE-2), and url-filtering, malware detection and intrusion
+  detection with the proxy (SASE-4). Next: SASE-2, feeds and the
+  record.
 - A luxuria plugin installed in a vnet jail and not on the host does
   not get its tab (reported 2026-10-11). The agent lists a running
   vnet jail's plugins by access(X_OK) on the program under the jail's
