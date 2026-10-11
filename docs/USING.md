@@ -1106,7 +1106,17 @@ names them. It is one document with three parts:
     edge, the `prefix` the identities' addresses come from, the `port`
     it listens on (51820) and its `identities`, each a `name`, a `zone`
     of the service and a WireGuard `public_key`; the policies apply to
-    an identity as to a UNI's hosts.
+    an identity as to a UNI's hosts. On the edge, the apply makes the
+    wg interface in the service's table with the prefix's first host
+    as its address, listening on the port, and each identity a peer
+    allowed its own address, the lowest free from the second, kept
+    for it; the zone table sends that address to its zone's block, so
+    the identity's flows get the zone's policies and the security
+    policies as a UNI's host's do; the other edges route the prefix by
+    their tunnels to this one. The far ends tell the prefix's zone by
+    the zones' own prefixes, as they do a UNI's, so a zone the
+    identities are in is best the Default one, or one whose prefixes
+    hold the remote's.
 
 **Security** lists the service's security policies (MEF 88): the
 addresses allowed and denied, the domains denied and whether DNS is

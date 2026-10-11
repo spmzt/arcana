@@ -77,6 +77,7 @@
 #define	LOCK_FILE	"sdwan.lock"
 #define	UNIT_FIRST	100	/* tunnels' and VLANs' units, from here */
 #define	WG_PORT		51000	/* + the unit: a wg tunnel's port */
+#define	WG_REMOTE_PORT	51820	/* a remote end point's, unless said */
 #define	JOB_POLL_US	300000
 #define	JOB_WAIT_S	600
 #define	PHASES		10
@@ -1133,6 +1134,12 @@ uni_prefixes(const ucl_object_t *ep, ucl_object_t *out)
 	int			 i;
 
 	u = ucl_object_lookup(ep, "uni");
+	if (u == NULL && ucl_object_lookup(ep, "remote") != NULL) {
+		/* A remote end point's: the identities' addresses (SASE-3). */
+		ucl_array_append(out, S(str(ucl_object_lookup(ep, "remote"),
+		    "prefix")));
+		return;
+	}
 	for (i = 0; i < 2; i++) {
 		v = ucl_object_lookup(u, fams[i]);
 		/* A subnet whoever addresses its hosts. */
@@ -1234,6 +1241,131 @@ breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
 				    "prefix"), str(r, "next_hop"), "behind the UNI, "
 				    "in the breakout domain (R26)");
 	}
+}
+
+/*
+ * A remote end point's addresses (SASE-3): the edge's own is the
+ * prefix's first host; each identity's is kept in the allocations as
+ * ident:SWVC/EP/NAME with its host number, so that it keeps it while
+ * others come and go, a new one taking the lowest free from the
+ * second.
+ */
+static bool
+remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
+    const char *name, char *buf, size_t len)
+{
+	const ucl_object_t	*r, *al, *v;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*nal;
+	struct net		 n;
+	char			 key[200], pre[200];
+	uint64_t		 host, max;
+	bool			 taken;
+
+	r = ucl_object_lookup(ep, "remote");
+	if (r == NULL || !net_parse(str(r, "prefix"), &n))
+		return (false);
+	if (name == NULL) {
+		net_nth(&n, 1, buf, len);
+		return (true);
+	}
+	snprintf(pre, sizeof(pre), "ident:%s/%s/", str(sw, "id"), str(ep, "id"));
+	snprintf(key, sizeof(key), "%s%s", pre, name);
+	if ((al = ucl_object_lookup(pl->alloc, key)) == NULL) {
+		max = n.af == AF_INET ? (1ULL << (32 - n.len)) - 2 : 65534;
+		for (host = 2; host <= max; host++) {
+			taken = false;
+			it = NULL;
+			while (!taken && (v = ucl_object_iterate(pl->alloc, &it,
+			    true)) != NULL)
+				taken = strncmp(ucl_object_key(v), pre, strlen(pre))
+				    == 0 && (uint64_t)ucl_object_toint(
+				    ucl_object_lookup(v, "host")) == host;
+			if (!taken)
+				break;
+		}
+		if (host > max)
+			return (false);
+		nal = ucl_object_typed_new(UCL_OBJECT);
+		put(nal, "host", I((int64_t)host));
+		put(nal, "swvc", S(str(sw, "id")));
+		ucl_object_insert_key(pl->alloc, nal, key, 0, true);
+		al = nal;
+	}
+	ucl_object_insert_key(pl->used, B(true), key, 0, true);
+	net_nth(&n, (uint64_t)ucl_object_toint(ucl_object_lookup(al, "host")),
+	    buf, len);
+	return (true);
+}
+
+/*
+ * A remote end point (SASE-3): its wg interface in the service's table
+ * with the edge's own address, listening on its port; each identity a
+ * peer allowed its address alone, so that the rules tell it by that
+ * address as they do a UNI's host.  An identity gone is a peer
+ * removed at the next apply.
+ */
+static bool
+remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
+{
+	const ucl_object_t	*r, *id;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*o;
+	struct net		 n;
+	char			 key[200], addr[80], own[80];
+	int64_t			 fib, port;
+
+	r = ucl_object_lookup(ep, "remote");
+	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	port = ucl_object_lookup(r, "port") != NULL ? ucl_object_toint(
+	    ucl_object_lookup(r, "port")) : WG_REMOTE_PORT;
+	if (!net_parse(str(r, "prefix"), &n) || !remote_addr(pl, sw, ep, NULL,
+	    own, sizeof(own))) {
+		snprintf(pl->why, sizeof(pl->why), "end point %s: its prefix",
+		    str(ep, "id"));
+		return (false);
+	}
+	snprintf(key, sizeof(key), "remote:%s", str(ep, "id"));
+	o = object(pl, str(ep, "edge"), key, PH_TVC, "remote %s: %s in fib %jd, "
+	    "the identities' way in by WireGuard, port %jd", str(ep, "id"),
+	    str(r, "interface"), (intmax_t)fib, (intmax_t)port);
+	if (o != NULL) {
+		snprintf(addr, sizeof(addr), "%s/%d", own, n.len);
+		make(o, job("if-create", "interface", S(str(r, "interface")),
+		    "fib", I(fib), "description", S("sdwan"), "address", S(addr),
+		    "persist", B(true), NULL));
+		make(o, job("wireguard", "verb", S("init"), "interface", S(str(r,
+		    "interface")), "listen_port", I(port), "persist", B(true),
+		    NULL));
+		unmake(o, job("if-destroy", "interface", S(str(r, "interface")),
+		    "persist", B(true), NULL));
+	}
+	it = NULL;
+	while ((id = ucl_object_iterate(ucl_object_lookup(r, "identities"), &it,
+	    true)) != NULL) {
+		if (!remote_addr(pl, sw, ep, str(id, "name"), addr, sizeof(addr))) {
+			snprintf(pl->why, sizeof(pl->why), "end point %s: no address "
+			    "is left in %s for identity %s", str(ep, "id"), str(r,
+			    "prefix"), str(id, "name"));
+			return (false);
+		}
+		snprintf(key, sizeof(key), "ident:%s/%s", str(ep, "id"), str(id,
+		    "name"));
+		o = object(pl, str(ep, "edge"), key, PH_PEER, "identity %s: a peer "
+		    "of %s, %s, zone %s", str(id, "name"), str(r, "interface"),
+		    addr, str(id, "zone"));
+		if (o == NULL)
+			continue;
+		snprintf(own, sizeof(own), "%s/%d", addr, n.af == AF_INET ? 32 :
+		    128);
+		make(o, job("wireguard", "verb", S("peer"), "interface", S(str(r,
+		    "interface")), "peer", S(str(id, "public_key")), "allowed_ips",
+		    S(own), "persist", B(true), NULL));
+		unmake(o, job("wireguard", "verb", S("unpeer"), "interface", S(str(
+		    r, "interface")), "peer", S(str(id, "public_key")), "persist",
+		    B(true), NULL));
+	}
+	return (true);
 }
 
 /* The UNI: in the service's FIB, the provider's addresses on it. */
@@ -2166,6 +2298,8 @@ uni_ifname(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 	char			 key[200];
 
 	u = ucl_object_lookup(ep, "uni");
+	if (u == NULL && ucl_object_lookup(ep, "remote") != NULL)
+		return (str(ucl_object_lookup(ep, "remote"), "interface"));
 	if (ucl_object_toint(ucl_object_lookup(u, "vlan")) <= 0)
 		return (str(u, "interface"));
 	snprintf(key, sizeof(key), "vlan:%s/%s", str(sw, "id"), str(ep, "id"));
@@ -2391,8 +2525,7 @@ breaks_here(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	eit = NULL;
 	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
 	    &eit, true)) != NULL) {
-		if (strcmp(str(ep, "edge"), sid) != 0 || ucl_object_lookup(ep,
-		    "uni") == NULL)
+		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
 		zit = NULL;
 		while ((zone = ucl_object_iterate(ucl_object_lookup(sw,
@@ -2806,8 +2939,7 @@ own_words(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	it = NULL;
 	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
 	    &it, true)) != NULL) {
-		if (strcmp(str(ep, "edge"), sid) != 0 || ucl_object_lookup(ep,
-		    "uni") == NULL)
+		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
 		pfx = ucl_object_typed_new(UCL_ARRAY);
 		uni_prefixes(ep, pfx);
@@ -2866,8 +2998,7 @@ rules_build(struct plan *pl, const char *sid)
 		eit = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &eit, true)) != NULL) {
-			if (strcmp(str(ep, "edge"), sid) != 0 || ucl_object_lookup(
-			    ep, "uni") == NULL)
+			if (strcmp(str(ep, "edge"), sid) != 0)
 				continue;
 			any = true;
 			uni = uni_ifname(pl, sw, ep, ifn, sizeof(ifn));
@@ -2881,17 +3012,25 @@ rules_build(struct plan *pl, const char *sid)
 				const ucl_object_t	*pv, *pa;
 				bool			 proto;
 
+				char			 rown[80];
+				const char		*at;
+
 				pv = ucl_object_lookup(ucl_object_lookup(ep, "uni"),
 				    "ipv4");
 				pa = pv != NULL ? ucl_array_find_index(
 				    ucl_object_lookup(pv, "provider"), 0) : NULL;
-				if (pa != NULL && dns_filters(sw, &proto) && proto) {
+				at = pa != NULL ? ucl_object_tostring_forced(pa) :
+				    NULL;
+				/* A remote end point's: the edge's own there. */
+				if (pa == NULL && ucl_object_lookup(ep, "remote") !=
+				    NULL && remote_addr(pl, sw, ep, NULL, rown,
+				    sizeof(rown)) && family(rown) == AF_INET)
+					at = rown;
+				if (at != NULL && dns_filters(sw, &proto) && proto) {
 					rule(rules, RULE_FROM, "fwd %s,53 udp from any "
-					    "to any dst-port 53 in recv %s",
-					    ucl_object_tostring_forced(pa), uni);
+					    "to any dst-port 53 in recv %s", at, uni);
 					rule(rules, RULE_FROM, "fwd %s,53 tcp from any "
-					    "to any dst-port 53 in recv %s",
-					    ucl_object_tostring_forced(pa), uni);
+					    "to any dst-port 53 in recv %s", at, uni);
 				}
 			}
 			rule(rules, RULE_FROM, "skipto tablearg ip from table(%s) "
@@ -2918,8 +3057,7 @@ rules_build(struct plan *pl, const char *sid)
 		eit = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &eit, true)) != NULL)
-			if (strcmp(str(ep, "edge"), sid) == 0 && ucl_object_lookup(
-			    ep, "uni") != NULL)
+			if (strcmp(str(ep, "edge"), sid) == 0)
 				nuni++;
 		if (nuni == 0)
 			continue;
@@ -2987,6 +3125,40 @@ rules_build(struct plan *pl, const char *sid)
 					    num);
 					entry(table(tables, zp, "legacy"),
 					    ucl_object_tostring_forced(p), "0");
+				}
+			}
+			/* The identities of the zone at this edge's remote end
+			 * points (SASE-3): each by its address; a Default
+			 * zone has them already. */
+			if (ucl_object_type(v) != UCL_STRING) {
+				const ucl_object_t	*rep, *id;
+				ucl_object_iter_t	 rit, iit;
+				char			 ia[80];
+				int			 af;
+
+				rit = NULL;
+				while ((rep = ucl_object_iterate(ucl_object_lookup(
+				    sw, "end_points"), &rit, true)) != NULL) {
+					if (strcmp(str(rep, "edge"), sid) != 0 ||
+					    ucl_object_lookup(rep, "remote") == NULL)
+						continue;
+					iit = NULL;
+					while ((id = ucl_object_iterate(ucl_object_lookup(
+					    ucl_object_lookup(rep, "remote"),
+					    "identities"), &iit, true)) != NULL) {
+						if (str(id, "zone") == NULL || strcmp(str(
+						    id, "zone"), str(zone, "name")) != 0 ||
+						    !remote_addr(pl, sw, rep, str(id,
+						    "name"), ia, sizeof(ia)))
+							continue;
+						af = family(ia);
+						snprintf(ia + strlen(ia), sizeof(ia) -
+						    strlen(ia), "/%d", af == AF_INET ? 32 :
+						    128);
+						entry(zt, ia, num);
+						entry(table(tables, zp, "legacy"), ia,
+						    "0");
+					}
 				}
 			}
 			/* The block: each end point's flows, in order. */
@@ -4318,8 +4490,9 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 		it2 = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &it2, true)) != NULL)
-			if (ucl_object_lookup(ep, "uni") != NULL && !uni_obj(pl, sw,
-			    ep))
+			if (ucl_object_lookup(ep, "uni") != NULL ? !uni_obj(pl, sw,
+			    ep) : ucl_object_lookup(ep, "remote") != NULL &&
+			    !remote_obj(pl, sw, ep))
 				return (false);
 	}
 	/*

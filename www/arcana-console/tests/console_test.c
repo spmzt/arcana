@@ -3902,15 +3902,17 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * edge's own UNI (queued, as fast has bandwidth), the Internet by
 	 * breakout (fast enables it; not known is the Internet), and
 	 * nothing else; a flow with no bandwidth is let through. */
+	/* Two end points on the edge, the UNI and the remote: each rule
+	 * of the block names the interface it is for. */
 	ATF_CHECK_MSG(strstr(r.body, "\"12 queue 3001 tcp from any to "
-	    "10.1.0.0/24,10.1.8.0/22 dst-port 80,https\"") != NULL, "%s",
-	    r.body);
+	    "10.1.0.0/24,10.1.8.0/22 dst-port 80,https in recv lo0\"") != NULL,
+	    "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"12 queue 3001 tcp from any to not table("
 	    "sw1_known) dst-port 80,https\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"12 deny tcp from any to any dst-port "
 	    "80,https\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"12 allow ip4 from any to 10.1.0.0/24,"
-	    "10.1.8.0/22\"") != NULL);
+	    "10.1.8.0/22 in recv lo0\"") != NULL);
 	ATF_CHECK(strstr(r.body, "[\"10.1.8.0/22\",\"0\"],[\"2001:db8:1::/64\","
 	    "\"0\"]") != NULL);
 	/* Its bandwidth: the shared limiter a pipe of its limit, the flow
@@ -4107,7 +4109,13 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "5060,5061 or dst-port 5060,5061 } dscp 46\"") != NULL, "%s",
 	    r.body);
 	ATF_CHECK(strstr(r.body, "\"12 fwd tablearg ip4 from any to table("
-	    "sw1_z0p1_4)\"") != NULL);
+	    "sw1_z0p1_4) in recv lo0\"") != NULL);
+	/* The remote's identities get the zone's own policies, having no
+	 * map of their own: the block's rules for wg5. */
+	ATF_CHECK(strstr(r.body, "\"12 fwd tablearg tcp from any to table("
+	    "sw1_z0p0_4) dst-port 80,https in recv wg5\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 deny ip from any to any in recv wg5\"")
+	    != NULL);
 	ATF_CHECK(strstr(r.body, "\"12 deny ip from any to any\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"99 count ip from any to any\"") != NULL);
 	ATF_CHECK(strstr(r.body, "[\"10.1.0.0/16\",\"12\"]") != NULL);
@@ -4116,6 +4124,24 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * over the private tunnel first, the public one after. */
 	ATF_CHECK_MSG(strstr(r.body, "\"table\":\"sw1_z1p1_6\",\"prefix\":"
 	    "\"2001:db8:1::/64\"") == NULL, "%s", r.body);
+	/* A remote end point (SASE-3): wg5 in the service's table with the
+	 * prefix's first host, listening; the identity a peer allowed its
+	 * address, the second host, which the zone table sends to its
+	 * zone's block, and its packets in by wg5 as a UNI's. */
+	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"if-create\",\"interface\":"
+	    "\"wg5\",\"fib\":1,\"description\":\"sdwan\",\"address\":"
+	    "\"10.30.0.1/24\",\"persist\":true}") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "{\"kind\":\"wireguard\",\"verb\":\"init\","
+	    "\"interface\":\"wg5\",\"listen_port\":51820,\"persist\":true}") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "{\"kind\":\"wireguard\",\"verb\":\"peer\","
+	    "\"interface\":\"wg5\",\"peer\":"
+	    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\",\"allowed_ips\":"
+	    "\"10.30.0.2/32\",\"persist\":true}") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "[\"10.30.0.2/32\",\"12\"]") != NULL, "%s",
+	    r.body);
+	ATF_CHECK(strstr(r.body, "\"10 skipto tablearg ip from table(sw1_zone) "
+	    "to any in recv wg5\"") != NULL);
 	resp_free(&r);
 	/* The record: the edges' logged packets read now; none yet. */
 	http("GET", "/api/sdwan/record?swvc=acme&policy=guard", NULL, &r);
@@ -4155,6 +4181,11 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q 'vlan106 create vlan 20 vlandev lo0' "
 	    "ifconfig.log") == 0);
+	/* The remote end point's wg, by the stand-in: listening, the
+	 * identity its peer. */
+	ATF_CHECK(system("grep -q '^set wg5 listen-port 51820' wg.log && grep "
+	    "-q '^set wg5 peer xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg= "
+	    "allowed-ips 10.30.0.2/32' wg.log") == 0);
 	/* One IPsec connection for the pair of outer addresses and kind. */
 	ATF_CHECK(system("ls swanctl/conf.d/arcana-sdw*.conf | wc -l | grep -q "
 	    "'^ *2$'") == 0);
