@@ -1330,6 +1330,22 @@ view_service(struct html *h)
 		h_raw(h, "</td><td>");
 		h_txt(h, host_name(jstr(e, "edge")));
 		h_raw(h, "</td><td class=\"mono\">");
+		if (u == NULL && jget(e, "remote") != NULL) {
+			/* A remote end point (SASE-3): the identities' own
+			 * WireGuard interface, its prefix theirs. */
+			u = jget(e, "remote");
+			h_txt(h, jstr(u, "interface"));
+			h_fmt(h, " <span class=\"dim\">remote, %u identit%s, port "
+			    "%lld</span></td><td class=\"mono\">", jget(u,
+			    "identities") != NULL ? ucl_array_size(jget(u,
+			    "identities")) : 0, jget(u, "identities") != NULL &&
+			    ucl_array_size(jget(u, "identities")) == 1 ? "y" : "ies",
+			    (long long)jint(u, "port", 51820));
+			h_txt(h, jstr(u, "prefix"));
+			h_raw(h, "</td><td class=\"dim\">—</td><td class=\"num\">0"
+			    "</td><td>");
+			goto map;
+		}
 		h_txt(h, jstr(u, "interface"));
 		if (jint(u, "vlan", 0) > 0)
 			h_fmt(h, " <span class=\"dim\">vlan %lld</span>",
@@ -1340,6 +1356,7 @@ view_service(struct html *h)
 		addressing(h, jget(u, "ipv6"));
 		h_fmt(h, "</td><td class=\"num\">%u</td><td>", jget(u, "routes")
 		    != NULL ? ucl_array_size(jget(u, "routes")) : 0);
+map:
 		n = 0;
 		mit = NULL;
 		while ((m = ucl_object_iterate(jget(e, "policy_map"), &mit,
@@ -5160,10 +5177,15 @@ example(void)
 	    "\t\t\t{\"id\": \"branch\", \"edge\": \"%s\", \"uni\": {\"id\": "
 	    "\"br-lan\", \"interface\": \"vtnet2\",\n"
 	    "\t\t\t\t\"ipv4\": {\"mode\": \"static\", \"prefix\": "
-	    "\"10.20.0.0/24\", \"provider\": [\"10.20.0.1\"]}}}\n"
+	    "\"10.20.0.0/24\", \"provider\": [\"10.20.0.1\"]}}},\n"
+	    "\t\t\t{\"id\": \"road\", \"edge\": \"%s\", \"remote\": {"
+	    "\"interface\": \"wg5\", \"prefix\": \"10.30.0.0/24\",\n"
+	    "\t\t\t\t\"port\": 51820, \"identities\": [{\"name\": \"alice\", "
+	    "\"zone\": \"staff\",\n\t\t\t\t\t\"public_key\": "
+	    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\"}]}}\n"
 	    "\t\t]\n"
 	    "\t}]\n"
-	    "}\n", a, z, a, z);
+	    "}\n", a, z, a, z, a);
 	free(sd.text);
 	sd.text = b.s;
 	sd.error[0] = '\0';

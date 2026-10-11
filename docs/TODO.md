@@ -89,7 +89,10 @@
   a changed table swapped in place without the rules reloaded, the
   limit raised (S2.2); the record: the denies logged to the routing
   socket, read by the agent into a day's record and events, shown and
-  exported (S2.3). Next: SASE-3, access by identity.
+  exported (S2.3). SASE-3: the remote end point in the document, an
+  edge's wg interface, a prefix, a port and the identities, each a
+  name, a zone and a key, the example carrying one (S3.1). Next:
+  S3.2, the apply.
 - Verified on the lab 2026-10-11 (S2.3): a deny rule with `log logdst
   rtsock` on arcswan1 as the console compiles one, a web connection
   from arcswan2 by the tunnel: the entry (rule 12, deny, 10.20.0.1 to
