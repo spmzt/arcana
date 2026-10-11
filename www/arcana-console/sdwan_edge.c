@@ -89,6 +89,9 @@ static pthread_mutex_t	st_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool		applying;
 
 static const char	*server_name_of(const char *);
+struct plan;
+static const char *uni_ifname(struct plan *, const ucl_object_t *,
+		    const ucl_object_t *, char *, size_t);
 
 static void
 put(ucl_object_t *o, const char *key, ucl_object_t *v)
@@ -271,20 +274,29 @@ unit_new(const ucl_object_t *alloc)
 	return (-1);
 }
 
-/* The lowest pair of a service's reserved prefix of af none has. */
+/*
+ * The lowest pair of af none has: of the service domain's prefix
+ * (Mplify 119 §7.3, the tunnels' addresses), else of the service's
+ * reserved prefixes.
+ */
 static bool
 pair_new(const ucl_object_t *alloc, const ucl_object_t *sw, int af,
     const char *key, char *p, size_t len)
 {
-	const ucl_object_t	*v, *r;
+	const ucl_object_t	*v, *r, *sd;
 	ucl_object_iter_t	 it, rit;
 	char			 a[64], b[64];
 	uint64_t		 k;
 	bool			 used;
+	int			 pass;
 
+	sd = ucl_object_lookup(ucl_object_lookup(sw, "domains"), "service");
+	for (pass = 0; pass < 2; pass++) {
 	rit = NULL;
-	while ((r = ucl_object_iterate(ucl_object_lookup(sw,
-	    "reserved_prefixes"), &rit, true)) != NULL) {
+	while ((r = pass == 0 ? (rit == NULL && str(sd, "prefix") != NULL ?
+	    (rit = (void *)1, ucl_object_lookup(sd, "prefix")) : NULL) :
+	    ucl_object_iterate(ucl_object_lookup(sw, "reserved_prefixes"),
+	    &rit, true)) != NULL) {
 		if (family(ucl_object_tostring_forced(r)) != af)
 			continue;
 		for (k = 0; k < 65536; k++) {
@@ -301,7 +313,21 @@ pair_new(const ucl_object_t *alloc, const ucl_object_t *sw, int af,
 				return (true);
 		}
 	}
+	}
 	return (false);
+}
+
+/* The table a service's breakout goes by: its breakout domain's, else
+ * its own (Mplify 119 R20-R26). */
+static int64_t
+bo_fib_of(const ucl_object_t *sw)
+{
+	const ucl_object_t	*d;
+
+	d = ucl_object_lookup(ucl_object_lookup(sw, "domains"), "breakout");
+	if (d != NULL && ucl_object_lookup(d, "fib") != NULL)
+		return (ucl_object_toint(ucl_object_lookup(d, "fib")));
+	return (ucl_object_toint(ucl_object_lookup(sw, "fib")));
 }
 
 /* ---- What each edge is to have ------------------------------------- */
@@ -910,24 +936,87 @@ uni_prefixes(const ucl_object_t *ep, ucl_object_t *out)
 		ucl_array_append(out, S(str(e, "prefix")));
 }
 
-/* A route in a service's FIB, made and taken away. */
+/* A route in a table of a service's, made and taken away. */
 static void
-route_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
-    const char *prefix, const char *gw, const char *why)
+route_fib_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
+    int64_t fib, int phase, const char *prefix, const char *gw,
+    const char *why)
 {
 	ucl_object_t	*o;
 	char		 key[200];
-	int64_t		 fib;
 
-	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
-	snprintf(key, sizeof(key), "route:%s:%s", str(sw, "id"), prefix);
-	if ((o = object(pl, sid, key, PH_ROUTE, "%s via %s, fib %jd (%s)",
+	if (fib == ucl_object_toint(ucl_object_lookup(sw, "fib")))
+		snprintf(key, sizeof(key), "route:%s:%s", str(sw, "id"), prefix);
+	else
+		snprintf(key, sizeof(key), "route:%s:%jd:%s", str(sw, "id"),
+		    (intmax_t)fib, prefix);
+	if ((o = object(pl, sid, key, phase, "%s via %s, fib %jd (%s)",
 	    prefix, gw, (intmax_t)fib, why)) == NULL)
 		return;
 	make(o, job("route", "destination", S(prefix), "gateway", S(gw), "fib",
 	    I(fib), "persist", B(true), NULL));
 	unmake(o, job("route", "destination", S(prefix), "gateway", S(gw),
 	    "fib", I(fib), "remove", B(true), "persist", B(true), NULL));
+}
+
+/* A route in a service's own FIB. */
+static void
+route_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
+    const char *prefix, const char *gw, const char *why)
+{
+
+	route_fib_obj(pl, sid, sw, ucl_object_toint(ucl_object_lookup(sw,
+	    "fib")), PH_ROUTE, prefix, gw, why);
+}
+
+/*
+ * The breakout domain's table (Mplify 119 R25, R26): the edge's own
+ * UNIs of the service reachable from it, their subnets by their
+ * interfaces and their static routes, so what comes back from the
+ * Internet finds the hosts.
+ */
+static void
+breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
+    int64_t fib)
+{
+	const ucl_object_t	*ep, *u, *v, *e, *r;
+	ucl_object_iter_t	 it, sit, rit;
+	const char *const	 fams[] = { "ipv4", "ipv6" };
+	const char		*ifn;
+	char			 ifbuf[32];
+	int			 i;
+
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep, "edge"), sid) != 0)
+			continue;
+		u = ucl_object_lookup(ep, "uni");
+		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
+		for (i = 0; i < 2; i++) {
+			v = ucl_object_lookup(u, fams[i]);
+			if (str(v, "mode") == NULL || str(v, "prefix") == NULL ||
+			    strcmp(str(v, "mode"), "none") == 0 || strcmp(str(v,
+			    "mode"), "ll-only") == 0)
+				continue;
+			route_fib_obj(pl, sid, sw, fib, PH_UNI, str(v, "prefix"),
+			    ifn, "the UNI's hosts, in the breakout domain (R25)");
+			sit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(v,
+			    "secondary"), &sit, true)) != NULL)
+				if (str(e, "prefix") != NULL)
+					route_fib_obj(pl, sid, sw, fib, PH_UNI, str(e,
+					    "prefix"), ifn, "the UNI's hosts, in the "
+					    "breakout domain (R25)");
+		}
+		rit = NULL;
+		while ((r = ucl_object_iterate(ucl_object_lookup(u, "routes"),
+		    &rit, true)) != NULL)
+			if (str(r, "prefix") != NULL && str(r, "next_hop") != NULL)
+				route_fib_obj(pl, sid, sw, fib, PH_UNI, str(r,
+				    "prefix"), str(r, "next_hop"), "behind the UNI, "
+				    "in the breakout domain (R26)");
+	}
 }
 
 /* The UNI: in the service's FIB, the provider's addresses on it. */
@@ -1057,8 +1146,6 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 
 /* ---- DHCP at the UNIs (§11.4, §11.5): dnsmasq, a service an instance -- */
 
-static const char *uni_ifname(struct plan *, const ucl_object_t *,
-		    const ucl_object_t *, char *, size_t);
 
 /* An IPv4 address as a number, and back. */
 static uint32_t
@@ -1673,7 +1760,20 @@ uni_ifname(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 	if (ucl_object_toint(ucl_object_lookup(u, "vlan")) <= 0)
 		return (str(u, "interface"));
 	snprintf(key, sizeof(key), "vlan:%s/%s", str(sw, "id"), str(ep, "id"));
-	al = ucl_object_lookup(pl->alloc, key);
+	if ((al = ucl_object_lookup(pl->alloc, key)) == NULL) {
+		/* Its unit, allocated now and kept; the UNI object finds it. */
+		ucl_object_t	*na;
+		int64_t		 unit;
+
+		if ((unit = unit_new(pl->alloc)) < 0)
+			return (str(u, "interface"));
+		na = ucl_object_typed_new(UCL_OBJECT);
+		put(na, "unit", I(unit));
+		put(na, "swvc", S(str(sw, "id")));
+		ucl_object_insert_key(pl->alloc, na, key, 0, true);
+		al = na;
+	}
+	ucl_object_insert_key(pl->used, B(true), key, 0, true);
 	snprintf(buf, len, "vlan%jd", (intmax_t)ucl_object_toint(
 	    ucl_object_lookup(al, "unit")));
 	return (buf);
@@ -2447,6 +2547,26 @@ rules_build(struct plan *pl, const char *sid)
 							if (afs_words(cr, nk,
 							    appid, words,
 							    sizeof(words), &fam)) {
+								/* By the breakout
+								 * domain's table
+								 * where there is
+								 * one (R20-R24):
+								 * setfib goes on
+								 * to the next
+								 * rule. */
+								if (bo_fib_of(sw) !=
+								    ucl_object_toint(
+								    ucl_object_lookup(
+								    sw, "fib")))
+									rule(rules,
+									    next,
+									    "setfib "
+									    "%jd %s%s",
+									    (intmax_t)
+									    bo_fib_of(
+									    sw),
+									    words,
+									    recv);
 								if (q >= 0)
 									rule(rules,
 									    next,
@@ -2615,8 +2735,7 @@ rules_build(struct plan *pl, const char *sid)
 				    "to not table(%s) out xmit %s", nat, kname,
 				    kname, bif);
 				rule(pre, RULE_FROM + 1, "setfib %jd ip from any "
-				    "to %s in recv %s", (intmax_t)
-				    ucl_object_toint(ucl_object_lookup(sw, "fib")),
+				    "to %s in recv %s", (intmax_t)bo_fib_of(sw),
 				    natip != NULL ? natip : str(bo, "address") !=
 				    NULL ? str(bo, "address") : "me", bif);
 				if (natip != NULL)
@@ -2624,9 +2743,8 @@ rules_build(struct plan *pl, const char *sid)
 					    "any to %s in recv %s", nat, natip,
 					    bif);
 				rule(pre, RULE_FROM + 1, "setfib %jd ip from any "
-				    "to table(%s) in recv %s", (intmax_t)
-				    ucl_object_toint(ucl_object_lookup(sw, "fib")),
-				    kname, bif);
+				    "to table(%s) in recv %s", (intmax_t)bo_fib_of(
+				    sw), kname, bif);
 			}
 		}
 	}
@@ -2893,6 +3011,13 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 			snprintf(resv + strlen(resv), sizeof(resv) - strlen(resv),
 			    "%s%s+", nr++ > 0 ? ", " : "",
 			    ucl_object_tostring_forced(rp));
+		/* The service domain's prefix, the tunnels' addresses, too. */
+		rp = ucl_object_lookup(ucl_object_lookup(ucl_object_lookup(sw,
+		    "domains"), "service"), "prefix");
+		if (rp != NULL && strlen(resv) + 60 < sizeof(resv))
+			snprintf(resv + strlen(resv), sizeof(resv) - strlen(resv),
+			    "%s%s+", nr++ > 0 ? ", " : "",
+			    ucl_object_tostring_forced(rp));
 		kore_buf_appendf(b, "filter to_edges {\n\tif source = RTS_INHERIT "
 		    "then reject;\n%s%s%s\taccept;\n}\n\n", nr > 0 ? "\tif net ~ [ "
 		    : "", nr > 0 ? resv : "", nr > 0 ? " ] then reject;\n" : "");
@@ -3138,11 +3263,21 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	    true)) != NULL)
 		if (!tunnels(pl, sw))
 			return (false);
-	/* Each edge's FIBs: as many as its highest service's, and one. */
+	/* Each edge's FIBs: as many as its highest service's, its domains'
+	 * among them, and one. */
 	it = NULL;
 	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
 	    true)) != NULL) {
+		const ucl_object_t	*sdom;
+
 		fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+		if (bo_fib_of(sw) > fib)
+			fib = bo_fib_of(sw);
+		sdom = ucl_object_lookup(ucl_object_lookup(sw, "domains"),
+		    "service");
+		if (sdom != NULL && ucl_object_lookup(sdom, "fib") != NULL &&
+		    ucl_object_toint(ucl_object_lookup(sdom, "fib")) > fib)
+			fib = ucl_object_toint(ucl_object_lookup(sdom, "fib"));
 		it2 = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &it2, true)) != NULL) {
@@ -3354,6 +3489,16 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			}
 		}
 	}
+	/* The UNIs, last. */
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
+	    true)) != NULL) {
+		it2 = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+		    "end_points"), &it2, true)) != NULL)
+			if (!uni_obj(pl, sw, ep))
+				return (false);
+	}
 	/*
 	 * Breakout (§9.12.2.5): where a flow of an edge's UNI may leave
 	 * for the Internet, the service's default route: by the edge's
@@ -3376,6 +3521,12 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			if (!breaks_here(pl, sw, sid))
 				continue;
 			bo = breakout_of(pl, sw, sid, &local, &bo_sid);
+			/* A breakout domain of its own (Mplify 119 R20-R26):
+			 * the default route there, the UNIs' routes with it,
+			 * the subscriber's table without a default route. */
+			fib = bo_fib_of(sw);
+			if (fib != ucl_object_toint(ucl_object_lookup(sw, "fib")))
+				breakout_uni_routes(pl, sid, sw, fib);
 			if (local) {
 				gw = str(bo, "gateway");
 				if (gw == NULL) {
@@ -3392,11 +3543,12 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				af = family(gw);
 				snprintf(n, sizeof(n), "%s/%d", gw, af == AF_INET ?
 				    32 : 128);
-				route_obj(pl, sid, sw, n, str(bo, "interface"),
-				    "the breakout gateway, by its interface");
-				route_obj(pl, sid, sw, af == AF_INET ? "0.0.0.0/0"
-				    : "::/0", gw, "the Internet, by local "
-				    "breakout");
+				route_fib_obj(pl, sid, sw, fib, PH_ROUTE, n, str(bo,
+				    "interface"), "the breakout gateway, by its "
+				    "interface");
+				route_fib_obj(pl, sid, sw, fib, PH_ROUTE, af ==
+				    AF_INET ? "0.0.0.0/0" : "::/0", gw, "the Internet, "
+				    "by local breakout");
 				continue;
 			}
 			for (af = AF_INET; af != AF_UNSPEC; af = af == AF_INET ?
@@ -3408,21 +3560,25 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				    "ends"), (unsigned int)far);
 				snprintf(why, sizeof(why), "the Internet, by "
 				    "breakout at %s", server_name_of(bo_sid));
-				route_obj(pl, sid, sw, af == AF_INET ? "0.0.0.0/0"
-				    : "::/0", str(fe, af == AF_INET ? "inner4" :
-				    "inner6"), why);
+				if (fib != ucl_object_toint(ucl_object_lookup(sw,
+				    "fib"))) {
+					/* The far end by the tunnel, in that
+					 * table too. */
+					snprintf(n, sizeof(n), "%s/%d", str(fe, af
+					    == AF_INET ? "inner4" : "inner6"), af ==
+					    AF_INET ? 32 : 128);
+					route_fib_obj(pl, sid, sw, fib, PH_ROUTE, n,
+					    str(ucl_array_find_index(
+					    ucl_object_lookup(tt, "ends"),
+					    (unsigned int)(1 - far)), "ifname"),
+					    "the tunnel's far end, in the breakout "
+					    "domain");
+				}
+				route_fib_obj(pl, sid, sw, fib, PH_ROUTE, af ==
+				    AF_INET ? "0.0.0.0/0" : "::/0", str(fe, af ==
+				    AF_INET ? "inner4" : "inner6"), why);
 			}
 		}
-	}
-	/* The UNIs, last. */
-	it = NULL;
-	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
-	    true)) != NULL) {
-		it2 = NULL;
-		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
-		    "end_points"), &it2, true)) != NULL)
-			if (!uni_obj(pl, sw, ep))
-				return (false);
 	}
 	/* The rules of each edge, and the steering of their tables. */
 	{

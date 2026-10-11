@@ -39,8 +39,14 @@
   raised yet); the lab run of 119-1 (1.8, in the verified list); the
   monitor charts of each tunnel on Paths (UX-5); SLAAC at a UNI by
   rtadvd and DHCP by dnsmasq in the service's table, with the kernel's
-  forwarding turned on by the apply (0.1, 0.2, in the verified list).
-  Next: 119-2 on. Later: Mplify 119's tunnel
+  forwarding turned on by the apply (0.1, 0.2, in the verified list);
+  the routing domains (Mplify 119 §7.3): a service's domains in the
+  document, checked and unique, the breakout domain a table of its
+  own with the default route, the UNIs' routes imported and the flows
+  sent to it by setfib, the tunnels' addresses from the service
+  domain's prefix (119-2 tasks 2.1 to 2.3; stand-ins, not the lab:
+  the jails have no Internet to break out to). Next: 2.4, the UCS
+  interfaces addressed by DHCP or SLAAC and routed. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
