@@ -43,12 +43,13 @@ things are new in kind.
    half sent to the manager, which passes it to the far edges) and
    rotates at the half-life of a key lifetime the manager sets, with
    an activation time it also sets, so NTP is a step of its own
-   (§12.2.2). Inside the IPsec tunnel, every packet is **GRE with
-   protocol type 0x8847 carrying one MPLS label** that names the
-   routing domain (R61–R64): one label for the subscriber domain, one
-   for the service domain, one for breakout (R66). FreeBSD's gre(4)
-   carries IP and IPv6 only and the kernel has no MPLS, so this needs
-   a small piece of our own (below).
+   (§12.2.2). Inside the IPsec tunnel, Mplify 119 wants every packet
+   as GRE with protocol type 0x8847 carrying one MPLS label that names
+   the routing domain (R61–R64, R66). FreeBSD's gre(4) carries IP and
+   IPv6 only and the kernel has no MPLS; that would take a kernel
+   piece of our own, which Arcana does not carry. **Not supported for
+   now**: the routing domains keep their own tunnels, and the labels
+   a document reserves are kept for the day it is (see 119-4 below).
 
 3. **Faults by BFD** (§10.5, R58–R60, R159): every tunnel is watched
    by single-hop BFD (MEF 66 §7.2.1.2), 100 to 300 ms, multiplier 3,
@@ -127,18 +128,13 @@ so.
   we have stay for MEF 70.2 services. Lab: two jails, SAs by setkey,
   a rekey at the half-life without loss.
 
-- **119-4, MPLS in GRE.** A netgraph node of our own, `ng_mplsgre`,
-  in the repo as a kernel module the agent loads like the others: one
-  `lower` hook towards the ipsec(4) interface (through ng_ipfw or an
-  ng_ksocket raw IP hook), and one hook per routing domain
-  (`rd<label>`), each connected to an ng_eiface in that domain's FIB.
-  Sending, it prepends the label and a GRE header of type 0x8847
-  (R61, R63); receiving, it pops the label and hands the packet to
-  the domain's hook (R62, R64), dropping an unknown label. The three
-  labels per service from 119-2. This is the one real piece of kernel
-  work in the plan: about the size of ng_vlan, with a test module
-  and a root test. Lab: two jails, subscriber and breakout traffic
-  told apart by the label.
+- **119-4, MPLS in GRE: not supported.** The labels on one tunnel
+  would need a netgraph node of our own in the kernel (a GRE of type
+  0x8847 carrying one label, the label naming the domain), which is
+  kernel work Arcana does not take on. Decided 2026-10-11. The domains
+  are told apart by their own tunnels instead, and a document's
+  labels stay reserved. A node written that day lives outside this
+  repository, in ~/code/ng_mplsgre, should the decision change.
 
 - **119-5, the control plane as RFC 4364.** The CPI: a CTVC per edge
   to the control plane's host (a UTVC in kind, R5, R6, encrypted the
@@ -248,8 +244,8 @@ configuration plumbing already handles installing and running these.
 
 119-1 and SASE-1 are independent and each about the size of a 70.2
 phase; they come first, in that order, unless you say otherwise.
-119-2 and 119-3 follow; 119-4 is the kernel module and the longest;
-119-5 depends on 119-2 to 119-4. SASE-2 and SASE-3 follow SASE-1;
+119-2 and 119-3 follow; 119-4 is not done (no kernel work);
+119-5 depends on 119-2 and 119-3. SASE-2 and SASE-3 follow SASE-1;
 SASE-4 brings packages and a proxy and is reviewed on its own; SASE-5
 last. Nothing here changes a MEF 70.2 service that does not ask for
 it: USWE is a tunnel kind and a control plane a service opts into,
@@ -387,28 +383,7 @@ said under Order and effort.
 
 ### 119-4 MPLS in GRE
 
-- **4.1 The node.** `sys/netgraph/ng_mplsgre.c` and its module
-  directory in the repo, built with the port: hooks `lower` and
-  `rd<label>`; send prepends label and GRE type 0x8847 (R61, R63);
-  receive pops the label to its hook, counts and drops unknown ones
-  (R62, R64); control messages to add and remove a label, and to
-  read counters. T: a kernel test module is too much; a root test
-  with two nodes joined by ng_socket pairs and a packet each way.
-  Done when the root test passes on the VM.
-- **4.2 Loading and the graph.** A: the module built and loaded by
-  the agent (the kmod plumbing); `netgraph` job verbs suffice for
-  mkpeer, connect, name; ng_eiface per domain put in its FIB by
-  if-set. T: agent test with the stand-in ngctl. Done when the apply
-  can build the graph on a jail.
-- **4.3 The apply for uswe.** C: for a `uswe` tunnel the objects:
-  ipsec(4) interface (3.3), the node, one eiface per domain (the
-  subscriber's in the service FIB, the breakout's in the breakout
-  FIB, the service domain's for the control plane), the labels from
-  2.1; routes by the eifaces; the probes by the service eiface. T:
-  apply test. Done when the plan lists them in order.
-- **4.4 Phase close.** L: subscriber and breakout traffic between two
-  jails told apart by label, tcpdump showing GRE 0x8847 and the
-  labels; docs, TODO.
+Not supported: see the summary above. No tasks.
 
 ### 119-5 The control plane as RFC 4364
 
