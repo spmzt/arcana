@@ -57,7 +57,9 @@
   the SAs derived from the far public half the apply reads from that
   end (3.3); the keys turned at the half-life, both ends in step,
   inbound before outbound, by the manager or by hand, a failure a
-  fault (3.4). Next: 3.5, the phase closed on the lab. Later: Mplify 119's tunnel
+  fault (3.4); the phase closed on the lab, the packets seen on the
+  wire as ESP in UDP under ESN (3.5). Next: 119-4, MPLS in GRE, the
+  kernel module. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
@@ -265,6 +267,11 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- The wire of a derived-SA tunnel between two vnet jails (Mplify 119
+  R46, R48; task 3.5, 2026-10-11): tcpdump on the underlay shows the
+  ping as UDP-encap ESP on port 4500 both ways, the SPIs the derived
+  ones, the sequence numbers climbing; setkey -D shows each SA with
+  replay=128 and flags 0x440, NAT-T and ESN, state mature.
 - The keys of a derived-SA tunnel turned between two vnet jails
   (Mplify 119 R110, R112; task 3.4, 2026-10-11, the lab's rekey step
   by hand as the console's manager does it): a next pair on each, the
