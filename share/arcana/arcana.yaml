@@ -251,16 +251,21 @@ definitions:
       - name: ipsec-sa
         doc: |
           Manually keyed security associations for an ipsec(4)
-          interface (Mplify 119 §10, R41-R50, R55): verb set or clear,
-          interface, reqid, the outer addresses tunnel-local and
-          tunnel-remote, and as names the words spi-in n, spi-out n,
+          interface (Mplify 119 §10, R41-R50, R55): verb key, set,
+          derive or clear, interface, reqid, the outer addresses
+          tunnel-local and tunnel-remote, and as names the words
+          spi-in n, spi-out n,
           enc aes-cbc|aes-gcm-16, auth hmac-sha1|hmac-sha2-256|
           hmac-sha2-512 (not with gcm), key-in hex, key-out hex,
           akey-in hex, akey-out hex, and the flags encap (ESP in UDP,
           port 4500) and esn.  Written as a file for setkey(8), ESP in
           tunnel mode with the reqid, and taken out again; the keys
           are not in the trace.  clear deletes every SA between the
-          two addresses.
+          two addresses.  key makes the interface its X25519 pair,
+          kept 0600, the public half in the sdwan read; derive takes
+          peer, the far public half, and epoch n, and computes both
+          directions from the agreement by HKDF-SHA256, the same on
+          both ends (R51-R54).
   - name: job-state
     type: enum
     entries:

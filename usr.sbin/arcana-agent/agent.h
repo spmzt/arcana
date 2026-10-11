@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.62.0"
+#define	ARCANA_AGENT_VERSION	"0.63.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -444,6 +444,7 @@ int		 do_rtadvd(struct work *, const char *, const char *const *,
 const char	*sa_check(const struct arc_job_spec *);
 int		 do_sa_job(struct work *, const struct arc_job_spec *,
 		    const char **);
+void		 sa_keys_json(struct work *, struct ucl_object_s *);
 bool		 rtadvd_prefix_ok(const char *);
 int		 sdwan_bfd_state(const char *);
 const char	*sdwan_tunnel_by_via(const char *);

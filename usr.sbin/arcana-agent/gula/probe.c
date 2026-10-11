@@ -957,6 +957,7 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 	sdwan_json(top);
 	sdwan_bird_json(w, top);
 	sdwan_dhcp_json(w, top);
+	sa_keys_json(w, top);
 	faults_json(top);
 	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);

@@ -163,6 +163,9 @@ usage(void)
 	    "    ipsec-sa set interface reqid local remote spi-in n spi-out n\n"
 	    "        enc alg [auth alg] key-in hex key-out hex [akey-in hex\n"
 	    "        akey-out hex] [encap] [esn]\n"
+	    "    ipsec-sa key interface\n"
+	    "    ipsec-sa derive interface reqid local remote peer key enc alg\n"
+	    "        [auth alg] [epoch n] [encap] [esn]\n"
 	    "    ipsec-sa clear interface reqid local remote\n"
 	    "    ipsec unconn | up | down name\n"
 	    "    bird enable | disable | restart | reload protocol\n"
@@ -1809,7 +1812,7 @@ cmd_ipsec_sa(struct arc_client *cl, int argc, char **argv)
 	struct arc_job_spec	 sp;
 	const char		*errstr;
 
-	if (argc < 6)
+	if (argc < 3 || (strcmp(argv[1], "key") != 0 && argc < 6))
 		usage();
 	memset(&sp, 0, sizeof(sp));
 	sp.has_kind = true;
@@ -1817,6 +1820,8 @@ cmd_ipsec_sa(struct arc_client *cl, int argc, char **argv)
 	sp.jail = netjail;
 	sp.verb = argv[1];
 	sp.interface = argv[2];
+	if (strcmp(argv[1], "key") == 0)
+		return (submit(cl, &sp));
 	sp.has_reqid = true;
 	sp.reqid = (uint32_t)strtonum(argv[3], 1, 16383, &errstr);
 	if (errstr != NULL)
