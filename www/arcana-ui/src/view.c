@@ -1274,14 +1274,16 @@ dock(struct html *h)
 	int		 i;
 
 	h_fmt(h, "<section class=\"dock%s\">%s<header data-act=\"dock\">"
-	    "<span class=\"label\">Recent tasks</span><div class=\"recent\">",
+	    "<span class=\"label\">%s</span><div class=\"recent\">",
 	    app.dock_open ? " open" : "", app.dock_open ? RESIZER("y",
-	    "dock") : "");
+	    "dock") : "", app.dock_open ? "Tasks" : "Recent tasks");
 	/*
-	 * The last few, always in sight: what each was, on which host,
-	 * how it ended and how long it took.  One picked opens below.
+	 * The last few, always in sight while the dock is closed: what
+	 * each was, on which host, how it ended and how long it took.
+	 * One picked opens below.  Open, the list below has them all, so
+	 * the strip goes.
 	 */
-	for (i = 0; i < app.nops && i < 6; i++) {
+	for (i = 0; !app.dock_open && i < app.nops && i < 6; i++) {
 		o = &app.ops[i];
 		h_fmt(h, "<span class=\"last o-%s%s\" data-act=\"trace\" "
 		    "data-arg=\"%d\"", o->state == OP_RUNNING ? "running" :
