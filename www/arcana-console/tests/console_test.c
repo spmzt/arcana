@@ -3272,7 +3272,8 @@ static const char sdwan_good[] =
     "{\"metric\":\"delay\",\"threshold\":10,\"ceiling\":12,\"remediation\":"
     "9},\"secondary\":[{\"metric\":\"loss\",\"threshold\":0.05}]},"
     "\"bandwidth\":\"shared\",\"business-importance\":\"high\","
-    "\"internet-breakout\":\"enabled\"}},{\"name\":"
+    "\"internet-breakout\":\"enabled\",\"af-security-ingress\":\"guard\"}},"
+    "{\"name\":"
     "\"hubonly\",\"direction\":\"ingress\",\"criteria\":{"
     "\"virtual-topology\":\"hub\"}},{\"name\":\"quiet\",\"direction\":"
     "\"egress\",\"criteria\":{\"egress-block\":\"discard\"}}],"
@@ -3864,6 +3865,25 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * UNI. */
 	ATF_CHECK(strstr(r.body, "\"11 deny ip from any to any src-ip table("
 	    "sw1_zp0) out xmit lo0\"") != NULL);
+	/* The security policy guard, named by fast (MEF 88): before the
+	 * forward, web to or from a denied prefix dropped and logged, the
+	 * allowed prefixes excepted, by tables of the policy's own; its
+	 * rate limit a pipe of its own on the way out by the tunnels. */
+	ATF_CHECK_MSG(strstr(r.body, "\"12 deny log tcp from any to table("
+	    "sw1_s0d4) dst-port 80,https not dst-ip table(sw1_s0a4)\"") != NULL,
+	    "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"12 deny log tcp from any to any dst-port "
+	    "80,https src-ip table(sw1_s0d4) not src-ip table(sw1_s0a4)\"") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_s0d4\",\"valtype\":\"legacy\","
+	    "\"entries\":[[\"192.0.2.0/24\",\"0\"]]") != NULL);
+	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_s0a4\",\"valtype\":\"legacy\","
+	    "\"entries\":[[\"10.1.0.0/16\",\"0\"]]") != NULL);
+	ATF_CHECK(strstr(r.body, "sw1_s0d6") == NULL);
+	ATF_CHECK(strstr(r.body, "\"pipe 3002 config bw 2000000bit/s\"") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"11 pipe 3002 tcp from any to any "
+	    "dst-port 80,https src-ip table(sw1_zp0) out { xmit gre100 or xmit "
+	    "gif102 }\"") != NULL, "%s", r.body);
 	/* Breakout at a, by a-inet: the NAT of hq's public prefix, out by
 	 * vtnet0 and back in to the service's table; the default route
 	 * by the gateway, reached by the interface.  At b, by a tunnel to

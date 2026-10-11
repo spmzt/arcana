@@ -1106,8 +1106,16 @@ names them. It is one document with three parts:
 **Security** lists the service's security policies (MEF 88): the
 addresses allowed and denied, the domains denied and whether DNS is
 kept to the provider's resolver, the rate limit, the log, and which
-policies name each; **+ policy** and the pencil edit one. What they
-do on the edges comes with the rules (SASE-1).
+policies name each; **+ policy** and the pencil edit one. On the
+edges, where a flow's policy names one by `af-security-ingress`, the
+rules of that flow's block get, before the forward, a `deny` of what
+goes to a prefix of the policy's deny list and one of what comes from
+one, each with a `not` for the allow list, `log` where the policy
+says, the prefixes in tables of the policy's own (`sw<fib>_s<n>d4`,
+`d6`, `a4`, `a6`); a `rate-limit` is a dummynet pipe of the policy's
+own, the flow sent through it on the way out by the tunnels. Named by
+`af-security-egress`, the same denies stand on the way out by the UNI.
+The DNS criteria come with the DNS filter (next).
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,
