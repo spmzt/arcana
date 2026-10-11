@@ -185,7 +185,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[90];
+	char	*argv[92];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -386,6 +386,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "else echo \" 2  198.51.100.1  5.000 ms\"; fi\n"
 	    "echo \" 3  $last  9.500 ms\"\n");
 	ATF_REQUIRE(chmod("fake-traceroute", 0755) == 0);
+	/* setfib: the program run as it is, and said so. */
+	put("fake-setfib", "#!/bin/sh\necho \"setfib $*\" >> setfib.log\n"
+	    "shift 2\nexec \"$@\"\n");
+	ATF_REQUIRE(chmod("fake-setfib", 0755) == 0);
 	snprintf(buf, sizeof(buf), "#!/bin/sh\ndir=$2\ncase \" $* \" in\n"
 	    "*\" -V .OBJDIR \"*) echo \"$dir/obj\" ;;\n"
 	    "*/usr.sbin/arcana-agent*) mkdir -p \"$dir/obj\" && "
@@ -504,7 +508,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\\t0\\t0\\t0\\n' \"$4\" > wg.peers ;;\n"
 	    "esac\nexit 0\n");
 	put("fake-birdc", "#!/bin/sh\necho \"$*\" >> birdc.log\n"
-	    "[ \"$1\" = -r ] && shift\ncase \"$*\" in\n"
+	    "[ \"$1\" = -r ] && shift\n[ \"$1\" = -s ] && shift 2\n"
+	    "case \"$*\" in\n"
 	    "'show status') printf 'BIRD 2.15.1 ready.\\nBIRD 2.15.1\\n"
 	    "Router ID is 192.0.2.1\\nDaemon is up and running\\n' ;;\n"
 	    "'show protocols all') printf 'BIRD 2.15.1 ready.\\nName Proto Table "
@@ -858,7 +863,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[85] = (char *)(uintptr_t)"swanctl";
 	argv[86] = (char *)(uintptr_t)"-X";
 	argv[87] = (char *)(uintptr_t)"./fake-traceroute";
-	argv[88] = NULL;
+	argv[88] = (char *)(uintptr_t)"-3";
+	argv[89] = (char *)(uintptr_t)"./fake-setfib";
+	argv[90] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

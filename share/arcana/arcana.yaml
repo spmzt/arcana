@@ -2479,6 +2479,31 @@ operations:
           - error
           - trace
 
+  - name: sdwan-bird
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The BIRD instances of the SD-WAN services at this edge, one each,
+      as the console writes them: json, an object with "instances",
+      each a "name", the "fib" it runs in and its "conf", BIRD's
+      configuration text.  Each file is parsed by bird(8) before it is
+      made the instance's; one running is told to read it again, one
+      not yet is started in its table (setfib) with a control socket
+      and a pid file of its own beside the agent's kept files; those
+      not named any more are stopped.  Kept for the next start.  The
+      sdwan read tells each instance and its protocols.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+
 mcast-groups:
   - name: events
     auth: true

@@ -144,7 +144,7 @@ usage(void)
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
-	    "    sdwan [probes | rules | steer json]\n"
+	    "    sdwan [probes | rules | steer | bird json]\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
 	    "    wg interface init [port]\n"
@@ -1307,6 +1307,19 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		error = json_out("sdwan-steer", rs->ok, rs->error, NULL,
 		    rs->trace.v, rs->trace.n);
 		arc_sdwan_steer_rsp_free(rs);
+		return (error);
+	}
+	if (argc == 3 && strcmp(argv[1], "bird") == 0) {
+		struct arc_sdwan_bird_req	 rq;
+		struct arc_sdwan_bird_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = argv[2];
+		if ((error = arc_sdwan_bird(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan bird");
+		error = json_out("sdwan-bird", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_bird_rsp_free(rs);
 		return (error);
 	}
 	if (argc != 1)

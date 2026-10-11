@@ -92,8 +92,8 @@ static struct steer	*steers;
 static int		nsteers;
 static bool		steered;	/* the tables hold the choices */
 
-static const char *
-conf_path(const char *file, char *buf, size_t len)
+const char *
+sdwan_conf_path(const char *file, char *buf, size_t len)
 {
 	const char	*slash;
 
@@ -105,13 +105,13 @@ conf_path(const char *file, char *buf, size_t len)
 	return (buf);
 }
 
-static int
-conf_write(const char *file, const char *text, const char **errp)
+int
+sdwan_conf_write(const char *file, const char *text, const char **errp)
 {
 	char	path[MAXPATHLEN], tmp[MAXPATHLEN];
 	FILE	*fp;
 
-	conf_path(file, path, sizeof(path));
+	sdwan_conf_path(file, path, sizeof(path));
 	if (strrchr(path, '/') != NULL) {
 		snprintf(tmp, sizeof(tmp), "%.*s", (int)(strrchr(path, '/') -
 		    path), path);
@@ -129,14 +129,14 @@ conf_write(const char *file, const char *text, const char **errp)
 	return (0);
 }
 
-static char *
-kept_read(const char *file)
+char *
+sdwan_kept_read(const char *file)
 {
 	char	path[MAXPATHLEN], *text;
 	FILE	*fp;
 	long	len;
 
-	conf_path(file, path, sizeof(path));
+	sdwan_conf_path(file, path, sizeof(path));
 	if ((fp = fopen(path, "re")) == NULL)
 		return (NULL);
 	text = NULL;
@@ -462,7 +462,7 @@ do_sdwan_steer(struct work *w, const char *json, const char **errp)
 	if (rc != 0)
 		return (-1);
 	e = NULL;
-	if (conf_write(STEER_FILE, json, &e) != 0) {
+	if (sdwan_conf_write(STEER_FILE, json, &e) != 0) {
 		*errp = wfmt(w, "%s: %s", STEER_FILE, e);
 		return (-1);
 	}
@@ -661,7 +661,7 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		}
 	}
 	/* The file ipfw reads: the tables, their entries, the rules. */
-	conf_path(RULES_FILE, path, sizeof(path));
+	sdwan_conf_path(RULES_FILE, path, sizeof(path));
 	if (strrchr(path, '/') != NULL) {
 		snprintf(tmp, sizeof(tmp), "%.*s", (int)(strrchr(path, '/') -
 		    path), path);
@@ -753,7 +753,7 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	free(no);
 	ucl_object_unref(top);
 	text = NULL;
-	if (conf_write(RULES_FILE, json, &err) != 0) {
+	if (sdwan_conf_write(RULES_FILE, json, &err) != 0) {
 		*errp = wfmt(w, "%s: %s", RULES_FILE, err);
 		return (-1);
 	}
@@ -775,13 +775,13 @@ sdwan_start(void)
 	const char	*e;
 
 	work_init(&w);
-	if ((json = kept_read(RULES_FILE)) != NULL) {
+	if ((json = sdwan_kept_read(RULES_FILE)) != NULL) {
 		e = NULL;
 		if (do_sdwan_rules(&w, json, &e) != 0)
 			logmsg(LOG_WARNING, "sdwan rules: %s", e);
 		free(json);
 	}
-	if ((json = kept_read(STEER_FILE)) != NULL) {
+	if ((json = sdwan_kept_read(STEER_FILE)) != NULL) {
 		e = NULL;
 		if (do_sdwan_steer(&w, json, &e) != 0)
 			logmsg(LOG_WARNING, "sdwan steer: %s", e);

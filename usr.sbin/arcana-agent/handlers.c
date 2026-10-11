@@ -301,6 +301,7 @@ worker(void *arg)
 	struct arc_sdwan_rsp	sdr;
 	struct arc_sdwan_rules_rsp srr;
 	struct arc_sdwan_steer_rsp sstr;
+	struct arc_sdwan_bird_rsp sbr;
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
@@ -699,6 +700,20 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &sstr.trace.v, &sstr.trace.n);
 		rc = arc_sdwan_steer_reply(j->req, &sstr);
+		break;
+	case ARC_CMD_SDWAN_BIRD:
+		what = "sdwan bird";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&sbr, 0, sizeof(sbr));
+		error = NULL;
+		ok = do_sdwan_bird(&w, j->ref, &error) == 0;
+		sbr.has_ok = true;
+		sbr.ok = ok;
+		sbr.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sbr.trace.v, &sbr.trace.n);
+		rc = arc_sdwan_bird_reply(j->req, &sbr);
 		break;
 	case ARC_CMD_SDWAN:
 		what = "sdwan";
@@ -1315,6 +1330,22 @@ arc_sdwan_steer_doit(cbl_req *req, const struct arc_sdwan_steer_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_SDWAN_STEER;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
+arc_sdwan_bird_doit(cbl_req *req, const struct arc_sdwan_bird_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '{')
+		return (reject(req, "the instances are a JSON object"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_BIRD;
 	j->ref = xstrdup(rq->json);
 	return (start(j));
 }

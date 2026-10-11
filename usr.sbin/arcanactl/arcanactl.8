@@ -657,6 +657,11 @@ the tables and the rules.
 What the policy tables hold, as the sdwan-steer operation takes it:
 each prefix's candidate tunnels in order; the first not down is
 chosen, and chosen again when a probe's state changes.
+.It Cm sdwan bird Ar json
+The BIRD instances of the services at this edge, as the sdwan-bird
+operation takes them: each a name, the fib it runs in and its
+configuration; parsed first, started or told to read it again, those
+not named stopped.
 .It Cm traceroute Ar address
 One round of
 .Xr traceroute 8 ,

@@ -22,9 +22,15 @@
   runs: an edge that is a vnet jail is not measured or steered yet.
   The bandwidth commit is a weight among the flows of one limiter's
   pipe, not a guarantee against other traffic on the UCS; the pipes
-  and nat are verified with ipfw on the lab VM, not under load. Next:
-  BGP and OSPF, DHCP and SLAAC at a UNI. Later: Mplify 119's tunnel
-  (GRE carrying an MPLS label inside IPsec, BGP L3VPN).
+  and nat are verified with ipfw on the lab VM, not under load; BGP
+  and OSPF at a UNI by a BIRD instance of each service on each edge,
+  in the service's table, iBGP between the edges by the tunnels (what
+  a UNI learns goes by the table and the tunnel iBGP chose, not by the
+  policy tables). The instances are run by the agent (setfib, a
+  socket each) and verified with stand-ins, not yet against a real
+  subscriber router. Next: DHCP and SLAAC at a UNI. Later: Mplify
+  119's tunnel (GRE carrying an MPLS label inside IPsec, BGP L3VPN),
+  and SASE.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a

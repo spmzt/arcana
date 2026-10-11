@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.87.0
+  version: 0.88.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -792,7 +792,10 @@ paths:
           description: data as the agent's sdwan operation answers it:
             targets, each with its id, address, family, fib, state,
             since, sent, received, misses, last_rtt, now and samples
-            (each t, delay, ipdv, loss, min, max, sent, recv); probing.
+            (each t, delay, ipdv, loss, min, max, sent, recv); probing;
+            rules (set, rules, tables, objects), steer and steered; bird,
+            the services' BIRD instances at the edge, each its name, fib,
+            running and protocols (name, proto, state, info).
   /api/servers/{server}/history:
     get:
       tags: [servers]

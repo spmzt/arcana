@@ -2442,7 +2442,7 @@ EOS
 	chmod +x fake-ipfw
 	printf '#!/bin/sh\necho "kldload $*" >> %s/kldload.log\nexit 0\n' "$(pwd)" > fake-kldload
 	chmod +x fake-kldload
-	DAEMON_ARGS="-h $(pwd)/fake-ipfw"
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
 	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0\}' \
@@ -2544,6 +2544,56 @@ EOS
 	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^pipe 3000' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^add 12' ipfw.log | cut -d: -f1 | head -1) && echo yes"
 	atf_check -o match:'dummynet' -o match:'ipfw_nat' cat kldload.log
 	atf_check -o match:'"objects":3' "$JGC" -c "$SOCK" sdwan
+	# BIRD instances: a bad list refused; one started in its table by
+	# setfib once its file parses, told to read it again when running,
+	# stopped when not named; listed with its protocols.
+	cat > fake-bird <<EOS
+#!/bin/sh
+echo "bird \$*" >> $(pwd)/bird.log
+grep -q BROKEN "\$3" && { echo "bird: \$3:1:1 syntax error" >&2; exit 1; }
+exit 0
+EOS
+	cat > fake-birdc <<EOS
+#!/bin/sh
+echo "birdc \$*" >> $(pwd)/birdc.log
+sock="\$2"; shift 2
+[ -e "\$sock" ] || { echo "birdc: Unable to connect to server control socket (\$sock): No such file or directory" >&2; exit 1; }
+case "\$*" in
+'show status') printf 'BIRD 3.3.2 ready.\nBIRD 3.3.2\nDaemon is up and running\n' ;;
+'show protocols') printf 'BIRD 3.3.2 ready.\nName       Proto      Table      State  Since         Info\ndevice1    Device     ---        up     21:00:00.000  \nuni_hq_0   BGP        ---        start  21:00:00.000  Active        Socket: Connection refused\n' ;;
+configure) printf 'BIRD 3.3.2 ready.\nReading configuration from %s\nReconfigured\n' "\$sock" ;;
+down) rm -f "\$sock" ;;
+esac
+exit 0
+EOS
+	cat > fake-setfib <<EOS
+#!/bin/sh
+echo "setfib \$*" >> $(pwd)/setfib.log
+# bird -c conf -s sock -P pid: started, says the socket.
+shift 3; shift 2; touch "\$2"
+exit 0
+EOS
+	chmod +x fake-bird fake-birdc fake-setfib
+	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
+	atf_check -s exit:1 -e match:'named twice' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"a"},{"name":"sw1","fib":2,"conf":"b"}]}'
+	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"BROKEN"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\n"}]}'
+	atf_check -o match:'^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1.conf -s .*sdwan-bird-sw1.ctl -P .*sdwan-bird-sw1.pid$' cat setfib.log
+	atf_check -o match:'^router id 100.64.0.0;$' cat "$(dirname "$f")/sdwan-bird-sw1.conf"
+	atf_check -o match:'"bird":\[\{"name":"sw1","fib":1,"running":true,"protocols":\[\{"name":"device1","proto":"Device","state":"up"\},\{"name":"uni_hq_0","proto":"BGP","state":"start","info":"Active        Socket: Connection refused"\}\]\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\nprotocol static {}\n"}]}'
+	atf_check -o match:'configure$' cat birdc.log
+	atf_check -o inline:'1\n' sh -c "grep -c '^setfib' setfib.log"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird '{"instances":[]}'
+	atf_check -o match:'down$' cat birdc.log
+	test ! -f "$(dirname "$f")/sdwan-bird-sw1.conf" || atf_fail "the instance's file stayed"
+	atf_check -o match:'"bird":\[\]' "$JGC" -c "$SOCK" sdwan
 	# No rules: the set emptied, the tables gone, the objects deleted.
 	: > ipfw.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'

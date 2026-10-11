@@ -65,6 +65,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -77,12 +78,12 @@
 #define	WG_PORT		51000	/* + the unit: a wg tunnel's port */
 #define	JOB_POLL_US	300000
 #define	JOB_WAIT_S	600
-#define	PHASES		9
+#define	PHASES		10
 #define	LIST_SUBS	16	/* a UNI's subnets, the first and more */
 #define	CANDS_MAX_ORDER	16	/* an entry's candidates the manager orders */
 
 enum { PH_FIBS = 1, PH_IPSEC, PH_TVC, PH_PEER, PH_PROBE, PH_RULES, PH_STEER,
-    PH_ROUTE, PH_UNI };
+    PH_ROUTE, PH_UNI, PH_BIRD };
 
 static pthread_mutex_t	st_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool		applying;
@@ -2358,6 +2359,340 @@ rules_build(struct plan *pl, const char *sid)
 	return (true);
 }
 
+/* ---- Routing at the UNIs: BIRD, one instance a service (§11.6) ----- */
+
+#define	DEFAULT_AS	64512
+
+static bool
+is_nullish(const ucl_object_t *o)
+{
+
+	return (o == NULL || ucl_object_type(o) == UCL_NULL);
+}
+
+/* An identifier as a BIRD symbol: letters, digits and _ of it. */
+static const char *
+symbol(const char *id, char *buf, size_t len)
+{
+	size_t	i, n;
+
+	n = 0;
+	for (i = 0; id != NULL && id[i] != '\0' && n + 1 < len; i++)
+		buf[n++] = isalnum((unsigned char)id[i]) ? id[i] : '_';
+	buf[n] = '\0';
+	return (buf);
+}
+
+/* Does the service route at any UNI, BGP or OSPF? */
+static bool
+sw_routes(const ucl_object_t *sw)
+{
+	const ucl_object_t	*ep, *u;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		u = ucl_object_lookup(ep, "uni");
+		if (!is_nullish(ucl_object_lookup(u, "bgp")) || !is_nullish(
+		    ucl_object_lookup(u, "ospf")))
+			return (true);
+	}
+	return (false);
+}
+
+/* BIRD's channel of a family, with what comes in and goes out. */
+static void
+bird_channel(struct kore_buf *b, const char *fam, const char *export)
+{
+
+	kore_buf_appendf(b, "\t%s {\n\t\timport all;\n\t\texport %s;\n\t};\n", fam, export);
+}
+
+/*
+ * The BIRD configuration of a service at an edge: the kernel's table
+ * learned and kept (the routes the console made stay), the UNIs'
+ * connected routes, iBGP with every other edge by each tunnel (next
+ * hop self: the far end's inner address), and at each UNI BGP or
+ * OSPF with the subscriber as its entry says, its distance as the
+ * preference (R140-R142: the lower, the better; connected first).
+ */
+static char *
+bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
+{
+	struct kore_buf		*b;
+	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *r, *m, *v;
+	ucl_object_iter_t	 it, tit, nit;
+	const char		*rid, *fam, *ifn;
+	char			 ifbuf[32], ifaces[1200], sym[80], *out;
+	int64_t			 as, dist;
+	int			 n, k;
+
+	b = kore_buf_alloc(8192);
+	as = ucl_object_lookup(sw, "as") != NULL ? ucl_object_toint(
+	    ucl_object_lookup(sw, "as")) : DEFAULT_AS;
+	/* The router id: the edge's first inner IPv4 address in the
+	 * service, else a UNI's provider address. */
+	rid = NULL;
+	it = NULL;
+	while (rid == NULL && (t = ucl_object_iterate(pl->tunnels, &it, true))
+	    != NULL) {
+		if (strcmp(str(t, "swvc"), str(sw, "id")) != 0)
+			continue;
+		tit = NULL;
+		while ((me = ucl_object_iterate(ucl_object_lookup(t, "ends"),
+		    &tit, true)) != NULL)
+			if (strcmp(str(me, "edge"), sid) == 0 && str(me, "inner4")
+			    != NULL) {
+				rid = str(me, "inner4");
+				break;
+			}
+	}
+	ifaces[0] = '\0';
+	n = 0;
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep, "edge"), sid) != 0)
+			continue;
+		u = ucl_object_lookup(ep, "uni");
+		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
+		snprintf(ifaces + strlen(ifaces), sizeof(ifaces) - strlen(ifaces),
+		    "%s\"%s\"", n++ > 0 ? ", " : "", ifn);
+		v = ucl_object_lookup(ucl_object_lookup(u, "ipv4"), "provider");
+		if (rid == NULL && v != NULL && ucl_array_size(v) > 0)
+			rid = ucl_object_tostring_forced(ucl_array_find_index(v,
+			    0));
+	}
+	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s at %s, "
+	    "in routing table %jd.\n# Changed by the console's next apply.\n"
+	    "router id %s;\nlog syslog { warning, error };\n\n"
+	    "protocol device {\n}\n\n", str(sw, "id"), server_name_of(sid),
+	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")), rid !=
+	    NULL ? rid : "0.0.0.1");
+	if (n > 0)
+		kore_buf_appendf(b, "protocol direct {\n\tipv4;\n\tipv6;\n\tinterface "
+		    "%s;\n}\n\n", ifaces);
+	/* The kernel's table: what the console put there is learned and
+	 * kept; what is learned here goes in, but not the connected. */
+	kore_buf_appendf(b, "protocol kernel kernel4 {\n\tkernel table %jd;\n\tlearn;\n"
+	    "\tpersist;\n\tipv4 {\n\t\timport all;\n\t\texport where source != "
+	    "RTS_DEVICE && source != RTS_INHERIT;\n\t};\n}\n\n"
+	    "protocol kernel kernel6 {\n\tkernel table %jd;\n\tlearn;\n"
+	    "\tpersist;\n\tipv6 {\n\t\timport all;\n\t\texport where source != "
+	    "RTS_DEVICE && source != RTS_INHERIT;\n\t};\n}\n\n", (intmax_t)
+	    ucl_object_toint(ucl_object_lookup(sw, "fib")), (intmax_t)
+	    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+	/* iBGP with each other edge, by each tunnel between them. */
+	kore_buf_appendf(b, "template bgp edge {\n\tlocal as %jd;\n\thold time 30;\n"
+	    "\tipv4 {\n\t\timport all;\n\t\texport all;\n\t\tnext hop self;\n"
+	    "\t};\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t\tnext hop "
+	    "self;\n\t};\n}\n\n", (intmax_t)as);
+	k = 0;
+	it = NULL;
+	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
+		if (strcmp(str(t, "swvc"), str(sw, "id")) != 0)
+			continue;
+		e0 = ucl_array_find_index(ucl_object_lookup(t, "ends"), 0);
+		e1 = ucl_array_find_index(ucl_object_lookup(t, "ends"), 1);
+		if (strcmp(str(e0, "edge"), sid) == 0) {
+			me = e0;
+			far = e1;
+		} else if (strcmp(str(e1, "edge"), sid) == 0) {
+			me = e1;
+			far = e0;
+		} else
+			continue;
+		if (str(far, "inner4") == NULL && str(far, "inner6") == NULL)
+			continue;
+		kore_buf_appendf(b, "# %s, to %s\nprotocol bgp edge%d from edge {\n\tlocal "
+		    "%s as %jd;\n\tneighbor %s as %jd;\n}\n\n", str(t, "id"),
+		    server_name_of(str(far, "edge")), k++, str(me, "inner4") !=
+		    NULL ? str(me, "inner4") : str(me, "inner6"), (intmax_t)as,
+		    str(far, "inner4") != NULL ? str(far, "inner4") : str(far,
+		    "inner6"), (intmax_t)as);
+	}
+	/* At each UNI here: BGP, OSPF, as its entry says. */
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep, "edge"), sid) != 0)
+			continue;
+		u = ucl_object_lookup(ep, "uni");
+		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
+		symbol(str(ep, "id"), sym, sizeof(sym));
+		r = ucl_object_lookup(u, "bgp");
+		if (!is_nullish(r)) {
+			fam = str(r, "family");
+			dist = ucl_object_lookup(r, "distance") != NULL ?
+			    ucl_object_toint(ucl_object_lookup(r, "distance")) :
+			    200;
+			n = 0;
+			nit = NULL;
+			while ((m = ucl_object_iterate(ucl_object_lookup(r,
+			    "neighbors"), &nit, true)) != NULL) {
+				const ucl_object_t	*cm;
+				ucl_object_iter_t	 cit;
+				char			 exp[1200];
+
+				/* What goes to the subscriber carries the
+				 * communities agreed. */
+				snprintf(exp, sizeof(exp), "all");
+				if (ucl_array_size(ucl_object_lookup(r,
+				    "communities")) > 0) {
+					snprintf(exp, sizeof(exp), "filter {\n");
+					cit = NULL;
+					while ((cm = ucl_object_iterate(
+					    ucl_object_lookup(r, "communities"),
+					    &cit, true)) != NULL)
+						snprintf(exp + strlen(exp),
+						    sizeof(exp) - strlen(exp),
+						    "\t\t\tbgp_community.add((%jd, "
+						    "%jd));\n", (intmax_t)
+						    ucl_object_toint(
+						    ucl_array_find_index(cm, 0)),
+						    (intmax_t)ucl_object_toint(
+						    ucl_array_find_index(cm, 1)));
+					snprintf(exp + strlen(exp), sizeof(exp) -
+					    strlen(exp), "\t\t\taccept;\n\t\t}");
+				}
+				kore_buf_appendf(b, "# UNI %s, the subscriber's %s\nprotocol "
+				    "bgp uni_%s_%d {\n\tlocal as %jd;\n\tneighbor "
+				    "%s as %jd;\n\tinterface \"%s\";\n"
+				    "\tpreference %jd;\n", str(u, "id"),
+				    ucl_object_tostring_forced(m),
+				    sym, n++, (intmax_t)as,
+				    ucl_object_tostring_forced(m), (intmax_t)
+				    ucl_object_toint(ucl_object_lookup(r, "as")),
+				    ifn, (intmax_t)(256 - dist));
+				if (str(r, "password") != NULL)
+					kore_buf_appendf(b, "\tpassword \"%s\";\n", str(r,
+					    "password"));
+				if (ucl_object_lookup(r, "hold_time") != NULL)
+					kore_buf_appendf(b, "\thold time %jd;\n", (intmax_t)
+					    ucl_object_toint(ucl_object_lookup(r,
+					    "hold_time")));
+				if (strcmp(fam, "ipv6") != 0 && family(
+				    ucl_object_tostring_forced(m)) == AF_INET)
+					bird_channel(b, "ipv4", exp);
+				if (strcmp(fam, "ipv4") != 0 && family(
+				    ucl_object_tostring_forced(m)) == AF_INET6)
+					bird_channel(b, "ipv6", exp);
+				kore_buf_appendf(b, "}\n\n");
+			}
+		}
+		r = ucl_object_lookup(u, "ospf");
+		if (!is_nullish(r)) {
+			const char	*vers[] = { "v2", "v3" };
+			int		 vi;
+
+			fam = str(r, "family");
+			dist = ucl_object_lookup(r, "distance") != NULL ?
+			    ucl_object_toint(ucl_object_lookup(r, "distance")) :
+			    200;
+			for (vi = 0; vi < 2; vi++) {
+				if ((vi == 0 && strcmp(fam, "ipv6") == 0) || (vi ==
+				    1 && strcmp(fam, "ipv4") == 0))
+					continue;
+				kore_buf_appendf(b, "# UNI %s, OSPF%s with the subscriber\n"
+				    "protocol ospf %s uni_%s_%s {\n\tpreference "
+				    "%jd;\n", str(u, "id"), vi == 0 ? "v2" : "v3",
+				    vers[vi], sym, vers[vi],
+				    (intmax_t)(256 - dist));
+				bird_channel(b, vi == 0 ? "ipv4" : "ipv6", "all");
+				kore_buf_appendf(b, "\tarea %jd {\n\t\tinterface \"%s\" {\n",
+				    (intmax_t)(ucl_object_lookup(r, "area") != NULL
+				    ? ucl_object_toint(ucl_object_lookup(r, "area"))
+				    : 0), ifn);
+				if (ucl_object_lookup(r, "cost") != NULL)
+					kore_buf_appendf(b, "\t\t\tcost %jd;\n", (intmax_t)
+					    ucl_object_toint(ucl_object_lookup(r,
+					    "cost")));
+				if (ucl_object_lookup(r, "hello") != NULL)
+					kore_buf_appendf(b, "\t\t\thello %jd;\n", (intmax_t)
+					    ucl_object_toint(ucl_object_lookup(r,
+					    "hello")));
+				if (ucl_object_lookup(r, "dead") != NULL)
+					kore_buf_appendf(b, "\t\t\tdead %jd;\n", (intmax_t)
+					    ucl_object_toint(ucl_object_lookup(r,
+					    "dead")));
+				if (str(r, "password") != NULL)
+					kore_buf_appendf(b, "\t\t\tauthentication "
+					    "cryptographic;\n\t\t\tpassword \"%s\";"
+					    "\n", str(r, "password"));
+				kore_buf_appendf(b, "\t\t};\n\t};\n}\n\n");
+			}
+		}
+	}
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
+ * Each edge's BIRD instances: one for each service that routes at a
+ * UNI, on every edge of the service (what one UNI learns reaches the
+ * others by iBGP), named sw<fib>.
+ */
+static void
+bird_build(struct plan *pl, const ucl_object_t *doc)
+{
+	const ucl_object_t	*sw, *edge, *ep;
+	ucl_object_iter_t	 it, eit, pit;
+	ucl_object_t		*o, *inst, *list, *j;
+	char			 name[32];
+	const char		*sid;
+	char			*text;
+	bool			 here;
+
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		sid = str(edge, "server");
+		list = ucl_object_typed_new(UCL_ARRAY);
+		eit = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &eit, true)) != NULL) {
+			if (!sw_routes(sw))
+				continue;
+			here = false;
+			pit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &pit, true)) != NULL)
+				if (strcmp(str(ep, "edge"), sid) == 0)
+					here = true;
+			if (!here)
+				continue;
+			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+			inst = ucl_object_typed_new(UCL_OBJECT);
+			put(inst, "name", S(name));
+			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
+			    "fib"))));
+			text = bird_conf(pl, sw, sid);
+			put(inst, "conf", S(text));
+			free(text);
+			ucl_array_append(list, inst);
+		}
+		if (ucl_array_size(list) == 0) {
+			ucl_object_unref(list);
+			continue;
+		}
+		o = object(pl, sid, "bird", PH_BIRD, "routing at the UNIs: BIRD, "
+		    "%u instance%s in the services' tables, BGP or OSPF with "
+		    "the subscriber, iBGP with the other edges",
+		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
+		if (o == NULL) {
+			ucl_object_unref(list);
+			continue;
+		}
+		j = job("sdwan-bird", "instances", list, NULL);
+		make(o, j);
+		unmake(o, job("sdwan-bird", "instances", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	}
+}
+
 /*
  * What every edge is to have: pl->edges, each edge's objects; NULL and
  * pl->why when it cannot be said.
@@ -2635,6 +2970,8 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			if (!rules_build(pl, str(edge, "server")))
 				return (false);
 	}
+	/* Routing at the UNIs, once they are up. */
+	bird_build(pl, doc);
 	return (true);
 }
 

@@ -1196,6 +1196,67 @@ view_paths(struct html *h)
 	if (nf == 0)
 		h_raw(h, "<li class=\"dim\">None.</li>");
 	h_raw(h, "</ul></div>");
+	/* Routing at the UNIs: each edge's BIRD instances, a service each,
+	 * and their protocols as birdc lists them. */
+	h_raw(h, "<div class=\"sd-block\"><h3>Routing <small class=\"dim\">BGP "
+	    "or OSPF with the subscriber at a UNI, iBGP between the edges: a "
+	    "BIRD instance of each service on each edge, in the service's "
+	    "table</small></h3><table class=\"net sd sd-bird\"><thead><tr><th>"
+	    "Edge</th><th>Instance</th><th>Protocol</th><th>State</th><th>"
+	    "Info</th></tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while (sd.paths != NULL && (f = ucl_object_iterate(sd.paths, &it,
+	    true)) != NULL) {
+		fit = NULL;
+		while ((e = ucl_object_iterate(jget(f, "bird"), &fit, true)) !=
+		    NULL) {
+			const ucl_object_t	*pr;
+			ucl_object_iter_t	 pit;
+			bool			 first = true;
+
+			n++;
+			pit = NULL;
+			while ((pr = ucl_object_iterate(jget(e, "protocols"), &pit,
+			    true)) != NULL || first) {
+				h_raw(h, "<tr><td><b>");
+				h_txt(h, first ? host_name(ucl_object_key(f)) : "");
+				h_raw(h, "</b></td><td class=\"mono\">");
+				if (first) {
+					h_txt(h, jstr(e, "name"));
+					h_fmt(h, " <small class=\"dim\">fib %lld%s"
+					    "</small>", jint(e, "fib", 0), jbool(e,
+					    "running") ? "" : ", not running");
+				}
+				h_raw(h, "</td><td class=\"mono\">");
+				if (pr != NULL) {
+					h_txt(h, jstr(pr, "name") != NULL ? jstr(pr,
+					    "name") : "");
+					h_raw(h, " <small class=\"dim\">");
+					h_txt(h, jstr(pr, "proto") != NULL ? jstr(pr,
+					    "proto") : "");
+					h_raw(h, "</small>");
+				}
+				h_fmt(h, "</td><td><span class=\"chip st-%s\">", pr !=
+				    NULL && jstr(pr, "state") != NULL && strcmp(jstr(
+				    pr, "state"), "up") == 0 ? "up" : "down");
+				h_txt(h, pr != NULL && jstr(pr, "state") != NULL ?
+				    jstr(pr, "state") : jbool(e, "running") ? "no "
+				    "protocol" : "down");
+				h_raw(h, "</span></td><td class=\"dim\">");
+				h_txt(h, pr != NULL && jstr(pr, "info") != NULL ? jstr(
+				    pr, "info") : "");
+				h_raw(h, "</td></tr>");
+				first = false;
+				if (pr == NULL)
+					break;
+			}
+		}
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: a UNI with "
+		    "bgp or ospf in its service has one once applied.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
 }
 
 /* ---- The document ----------------------------------------------------- */

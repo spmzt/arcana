@@ -3239,7 +3239,7 @@ static const char sdwan_good[] =
     "\"@B\",\"ucs_end_points\":[{\"id\":\"b-inet\",\"ucs\":\"inet\","
     "\"interface\":\"vtnet0\"},{\"id\":\"b-mpls\",\"ucs\":\"mpls\","
     "\"interface\":\"vtnet1\",\"backup\":true}]}],"
-    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"ucs\":[\"inet\",\"mpls\"],"
+    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"as\":64600,\"ucs\":[\"inet\",\"mpls\"],"
     "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
     "\"zones\":[{\"name\":\"office\",\"prefixes\":[\"10.1.0.0/16\"],"
     "\"policies\":[{\"app\":\"web\",\"policy\":\"fast\"}]},{\"name\":"
@@ -3268,7 +3268,9 @@ static const char sdwan_good[] =
     "\"uni-hq\",\"interface\":\"vtnet2\",\"ipv4\":{\"mode\":\"static\","
     "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"]},\"routes\":"
     "[{\"prefix\":\"10.1.8.0/22\",\"next_hop\":\"10.1.0.2\",\"distance\":"
-    "10}]},\"policy_map\":[{\"zone\":\"office\",\"app\":\"all\",\"ingress\":"
+    "10}],\"bgp\":{\"family\":\"ipv4\",\"as\":65010,\"neighbors\":"
+    "[\"10.1.0.2\"],\"password\":\"s3cret\",\"hold_time\":90,\"distance\":"
+    "150,\"communities\":[[64600,100]]}},\"policy_map\":[{\"zone\":\"office\",\"app\":\"all\",\"ingress\":"
     "\"hubonly\",\"egress\":\"quiet\"}],\"nat\":{\"ip_version\":\"ipv4\","
     "\"public_prefix\":\"198.51.100.0/30\"}},{\"id\":\"branch\",\"edge\":"
     "\"@B\",\"uni\":{\"id\":\"uni-br\",\"interface\":\"vtnet2\",\"vlan\":20,"
@@ -3346,6 +3348,11 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"provider\":[\"10.1.0.1\"]", "\"provider\":[\"10.2.0.1\"]",
 		    "(R131)" },
 		{ "\"leaves\":[\"branch\"]", "\"leaves\":[\"hq\"]", "(R31)" },
+		{ "\"neighbors\":[\"10.1.0.2\"]", "\"neighbors\":[\"10.9.0.2\"]",
+		    "(§11.6.2)" },
+		{ "\"hold_time\":90", "\"hold_time\":90,\"as_override\":true",
+		    "as_override" },
+		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
 		{ "\"vlan\":20", "\"vlan\":5000", "(§11.2)" },
 		{ "\"virtual-topology\":\"hub\"", "\"virtual-topology\":\"nope\"",
 		    "(R47)" },
@@ -3595,6 +3602,30 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "fib 1 (the Internet, by local breakout)\"") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"title\":\"0.0.0.0/0 via 100.64.0.0, fib "
 	    "1 (the Internet, by breakout at a)\"") != NULL, "%s", r.body);
+	/* Routing: a BIRD instance of the service on each edge, in its
+	 * table, iBGP between them by each tunnel, and at hq's UNI BGP
+	 * with the subscriber as the entry says. */
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-bird\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana "
+	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
+	    "%s", r.body);
+	ATF_CHECK(strstr(r.body, "router id 100.64.0.0;") != NULL);
+	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tpersist;") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "interface \\\"lo0\\\";") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b\\nprotocol bgp "
+	    "edge0 from edge {\\n\\tlocal 100.64.0.0 as 64600;\\n\\tneighbor "
+	    "100.64.0.1 as 64600;\\n}") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
+	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
+	    "\\n\\tpreference 106;\\n\\tpassword \\\"s3cret\\\";\\n\\thold time "
+	    "90;\\n\\tipv4 {\\n\\t\\timport all;\\n\\t\\texport filter {\\n\\t\\t"
+	    "\\tbgp_community.add((64600, 100));\\n\\t\\t\\taccept;\\n\\t\\t};"
+	    "\\n\\t};\\n}") != NULL, "%s", r.body);
+	/* b has no routing at its UNI, but the service's instance all the
+	 * same: what hq learns reaches it. */
+	ATF_CHECK(strstr(r.body, "SD-WAN service acme at b, in routing table 1.")
+	    != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "\"12 deny ip from any to any { src-port "
 	    "5060,5061 or dst-port 5060,5061 } dscp 46\"") != NULL, "%s",
 	    r.body);
@@ -3650,6 +3681,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(jstr(&r, "data.rules.set") != NULL && strcmp(jstr(&r,
 	    "data.rules.set"), "30") == 0, "%s", r.body);
 	resp_free(&r);
+	ATF_CHECK(system("grep -q '^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1"
+	    ".conf -s ' setfib.log") == 0);
 	ATF_CHECK(system("grep -q 'add 12 set 30 fwd tablearg tcp from any to "
 	    "table(sw1_z0p0_4) dst-port 80,https' ipfw.log") == 0);
 	ATF_CHECK(system("grep -q 'ipfw -q set enable 30' ipfw.log") == 0);

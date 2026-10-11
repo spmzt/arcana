@@ -1230,3 +1230,28 @@ of the zone whose egress policy says `egress-block: discard` is
 dropped leaving by that end point's UNI. Backup and billing are in
 the steering above (R63, R64); a rooted-multipoint topology gives a
 leaf its roots only, so no edge forwards for another (R50, R51).
+
+**Routing at a UNI** (§11.6): besides its static `routes`, a UNI may
+have `bgp` (`family` ipv4, ipv6 or both, the subscriber's `as`, its
+`neighbors` at the UNI, within the UNI's prefixes, and maybe a
+`password`, a `hold_time`, `communities` as `[as, value]` pairs added
+to what the subscriber is sent, and a `distance`) or `ospf` (`family`,
+`area`, and maybe `cost`, `hello`, `dead`, a `password` and a
+`distance`); one of each, for one family or both (R139). A service
+with any such UNI gets a BIRD instance of its own on each of its
+edges, named `sw<fib>` and run by the agent in the service's table
+(`setfib`, with a control socket and a pid file beside the agent's
+kept files; `sdwan-bird`, kept and started again with the agent): the
+kernel's table learned and kept, so what the console put there stays
+and is advertised; the UNIs' connected routes; iBGP with every other
+edge by each tunnel between them (the service's `as`, 64512 unless
+said), next hop the tunnel's own address, so what one UNI learns
+reaches them all; and at each UNI the protocol its entry says, the
+`distance` its preference (256 less it, R140–R142). What a UNI learns
+goes by the service's table and the tunnel iBGP chose, not by the
+policies' tables: steering by performance is of the prefixes written
+in the document. AS override, damping and extended communities are
+refused, BIRD having no word for them; DHCP and SLAAC at a UNI are
+still to come. Paths shows each edge's instances and their protocols,
+as `birdc show protocols` lists them; `arcanactl sdwan bird json`
+sets them by hand.
