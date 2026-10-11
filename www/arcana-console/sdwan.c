@@ -1210,6 +1210,21 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    "cluster_id"), &cid) || cid.af != AF_INET))
 			return (fail(c, "control_plane.cluster_id is an IPv4 "
 			    "address, the reflector's cluster (RFC 4456)"));
+		/* The CTVC (R5, R6): a tunnel of the control plane's own over
+		 * one of the service's UCSs, between the host and each edge. */
+		if (str(v, "ctvc") != NULL) {
+			here = false;
+			it = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(sw, "ucs"),
+			    &it, true)) != NULL)
+				if (ucl_object_type(e) == UCL_STRING && strcmp(
+				    ucl_object_tostring(e), str(v, "ctvc")) == 0)
+					here = true;
+			if (!here)
+				return (fail(c, "control_plane.ctvc is one of the "
+				    "service's UCSs, the control tunnel's underlay "
+				    "(Mplify 119 R5, R6)"));
+		}
 	}
 	/* SWVC List of UCSs (§9.3). */
 	if (!names(c, ucl_object_lookup(sw, "ucs"), "ucs", false))

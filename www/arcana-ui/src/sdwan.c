@@ -3160,6 +3160,21 @@ sdwan_modal_service(struct html *h)
 		    "control_plane") != NULL ? jstr(jget(o, "control_plane"),
 		    "cluster_id") : "", "", "The reflector's, an IPv4 address; its "
 		    "router id if empty.");
+		h_raw(h, "</div><div class=\"two\"><label>Control tunnel over"
+		    "<select name=\"cp_ctvc\">");
+		option(h, "", "none: the iBGP by the data tunnels", edit && jget(o,
+		    "control_plane") != NULL ? jstr(jget(o, "control_plane"),
+		    "ctvc") : "");
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
+		    NULL)
+			option(h, jstr(v, "id"), jstr(v, "id"), edit && jget(o,
+			    "control_plane") != NULL ? jstr(jget(o, "control_plane"),
+			    "ctvc") : "");
+		h_raw(h, "</select><small>A tunnel of the control plane's own "
+		    "from each edge to the host over this underlay (the CTVC, "
+		    "Mplify 119 R5, R6), carrying the iBGP and nothing else.</small>"
+		    "</label>");
 		snprintf(buf, sizeof(buf), "%lld", (long long)jint(jget(o,
 		    "intervals"), "eval", 1000));
 		text_field(h, "Evaluation interval, ms", "eval", buf, "1000", "The "
@@ -3945,6 +3960,8 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			if (jstr(f, "cp_cluster") != NULL && jstr(f, "cp_cluster")[0]
 			    != '\0')
 				put_str(cp, "cluster_id", jstr(f, "cp_cluster"));
+			if (jstr(f, "cp_ctvc") != NULL && jstr(f, "cp_ctvc")[0] != '\0')
+				put_str(cp, "ctvc", jstr(f, "cp_ctvc"));
 			ucl_object_insert_key(o, cp, "control_plane", 0, false);
 		}
 		put_list(o, "reserved_prefixes", jstr(f, "reserved"));

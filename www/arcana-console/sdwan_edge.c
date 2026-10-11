@@ -805,21 +805,32 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 }
 
 /* The tunnels of a service: between each two of its edges, over each
- * two of their UCS End Points a tunnel can join (§7.10). */
+ * two of their UCS End Points a tunnel can join (§7.10); and, where the
+ * control plane names a UCS for its own tunnel (Mplify 119 R5, R6, the
+ * CTVC), one more between its host and each edge over that UCS, after
+ * the others, marked control: the iBGP goes by it and nothing else. */
 static bool
 tunnels(struct plan *pl, const ucl_object_t *sw)
 {
-	const ucl_object_t	*doc, *e1, *e2, *x, *y, *ux, *uy, *ep;
+	const ucl_object_t	*doc, *e1, *e2, *x, *y, *ux, *uy, *ep, *cp;
 	ucl_object_iter_t	 it, it2, xit, yit;
 	ucl_object_t		*edges, *t, *ends, *end, *al;
-	const char		*kind, *k2, *sid, *ax, *ay;
+	const char		*kind, *k2, *sid, *ax, *ay, *ctvc, *cphost;
 	char			 id[300], p[80], a[64], b[64];
 	int64_t			 unit;
 	bool			 ipsec, ip2, public, said, said2, always;
 	size_t			 i, j;
+	int			 pass;
 
 	doc = pl->doc;
 	always = always_encrypted(sw);
+	ctvc = cphost = NULL;
+	cp = ucl_object_lookup(sw, "control_plane");
+	if (cp != NULL && ucl_object_type(cp) == UCL_OBJECT && str(cp, "ctvc")
+	    != NULL) {
+		ctvc = str(cp, "ctvc");
+		cphost = str(cp, "host");
+	}
 	/* Its edges, each once, in the order its end points name them. */
 	edges = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
@@ -827,6 +838,7 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 	    &it, true)) != NULL)
 		if (!in_list(edges, str(ep, "edge")))
 			ucl_array_append(edges, S(str(ep, "edge")));
+	for (pass = 0; pass < (ctvc != NULL ? 2 : 1); pass++)
 	for (i = 0; i < ucl_array_size(edges); i++)
 		for (j = i + 1; j < ucl_array_size(edges); j++) {
 			e1 = by(ucl_object_lookup(doc, "edges"), "server",
@@ -860,6 +872,13 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					    != 0 && !(strcmp(str(ux, "type"),
 					    "public") == 0 && strcmp(str(uy,
 					    "type"), "public") == 0))
+						continue;
+					/* The control tunnel: over the UCS named,
+					 * between the host and each edge. */
+					if (pass == 1 && (strcmp(str(x, "ucs"), ctvc)
+					    != 0 || strcmp(str(y, "ucs"), ctvc) != 0 ||
+					    (strcmp(str(e1, "server"), cphost) != 0 &&
+					    strcmp(str(e2, "server"), cphost) != 0)))
 						continue;
 					ax = ucs_address(pl, str(e1, "server"), x);
 					ay = ucs_address(pl, str(e2, "server"), y);
@@ -925,7 +944,8 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 						}
 						ipsec = true;
 					}
-					snprintf(id, sizeof(id), "%s/%s-%s", str(sw,
+					snprintf(id, sizeof(id), pass == 1 ?
+					    "%s/%s-%s/ctvc" : "%s/%s-%s", str(sw,
 					    "id"), str(x, "id"), str(y, "id"));
 					/* Its unit and inner pair, as kept. */
 					if ((al = (ucl_object_t *)(uintptr_t)
@@ -979,6 +999,8 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					    id, 0, true);
 					t = ucl_object_typed_new(UCL_OBJECT);
 					put(t, "id", S(id));
+					if (pass == 1)
+						put(t, "control", B(true));
 					put(t, "swvc", S(str(sw, "id")));
 					put(t, "fib", I(ucl_object_toint(
 					    ucl_object_lookup(sw, "fib"))));
@@ -1070,7 +1092,7 @@ tunnel_for(struct plan *pl, const char *swvc, const char *a, const char *b,
 	bscore = 99;
 	it = NULL;
 	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
-		if (strcmp(str(t, "swvc"), swvc) != 0)
+		if (strcmp(str(t, "swvc"), swvc) != 0 || ucl_flag(t, "control"))
 			continue;
 		e0 = ucl_array_find_index(ucl_object_lookup(t, "ends"), 0);
 		e1 = ucl_array_find_index(ucl_object_lookup(t, "ends"), 1);
@@ -2051,9 +2073,9 @@ steer_table(struct plan *pl, ucl_object_t *entries, const ucl_object_t *sw,
 				while ((t = ucl_object_iterate(pl->tunnels, &tit,
 				    true)) != NULL) {
 					if (strcmp(str(t, "swvc"), str(sw, "id"))
-					    != 0 || ucl_flag(t, "backup") !=
-					    (pass == 1) || !tunnel_fits(t, pol,
-					    backup_ok))
+					    != 0 || ucl_flag(t, "control") ||
+					    ucl_flag(t, "backup") != (pass == 1) ||
+					    !tunnel_fits(t, pol, backup_ok))
 						continue;
 					e0 = ucl_array_find_index(
 					    ucl_object_lookup(t, "ends"), 0);
@@ -2365,7 +2387,8 @@ app_has(const ucl_object_t *afs, const char *app)
 	    afs, "group"), app) == 0)));
 }
 
-/* The tunnel interfaces of the service at the edge, as xmit words. */
+/* The tunnel interfaces of the service at the edge, as xmit words: the
+ * data tunnels', not the control plane's own. */
 static const char *
 xmit_words(struct plan *pl, const ucl_object_t *sw, const char *sid,
     char *buf, size_t len)
@@ -2378,7 +2401,8 @@ xmit_words(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	buf[0] = '\0';
 	it = NULL;
 	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
-		if (strcmp(str(t, "swvc"), str(sw, "id")) != 0)
+		if (strcmp(str(t, "swvc"), str(sw, "id")) != 0 || ucl_flag(t,
+		    "control"))
 			continue;
 		eit = NULL;
 		while ((e = ucl_object_iterate(ucl_object_lookup(t, "ends"),
@@ -3243,9 +3267,14 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		if (str(far, "inner4") == NULL && str(far, "inner6") == NULL)
 			continue;
 		/* An edge of a service with a control plane peers with its
-		 * host alone; the host, with every edge, as their reflector. */
+		 * host alone; the host, with every edge, as their reflector;
+		 * by the control tunnel alone where the control plane has one
+		 * (the CTVC, R5, R6). */
 		if (cp != NULL && strcmp(sid, str(cp, "host")) != 0 && strcmp(
 		    str(far, "edge"), str(cp, "host")) != 0)
+			continue;
+		if ((cp != NULL && str(cp, "ctvc") != NULL) != ucl_flag(t,
+		    "control"))
 			continue;
 		kore_buf_appendf(b, "# %s, to %s%s\nprotocol bgp edge%d from edge {\n\t"
 		    "local %s as %jd;\n\tneighbor %s as %jd;\n", str(t, "id"),
@@ -3990,6 +4019,8 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				    0);
 				e1 = ucl_array_find_index(ucl_object_lookup(t, "ends"),
 				    1);
+				if ((str(cp, "ctvc") != NULL) != ucl_flag(t, "control"))
+					continue;
 				joined = (strcmp(str(e0, "edge"), str(ep, "edge")) == 0
 				    && strcmp(str(e1, "edge"), str(cp, "host")) == 0) ||
 				    (strcmp(str(e1, "edge"), str(ep, "edge")) == 0 &&
@@ -3997,10 +4028,11 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			}
 			if (!joined) {
 				snprintf(pl->why, sizeof(pl->why), "service %s: its "
-				    "control plane host %s has no tunnel to edge %s, "
-				    "which the topology would need for its routes to "
-				    "be reflected", str(sw, "id"), server_name_of(str(
-				    cp, "host")), server_name_of(str(ep, "edge")));
+				    "control plane host %s has no %stunnel to edge %s, "
+				    "which it needs for the edge's routes to be "
+				    "reflected", str(sw, "id"), server_name_of(str(cp,
+				    "host")), str(cp, "ctvc") != NULL ? "control " :
+				    "", server_name_of(str(ep, "edge")));
 				return (false);
 			}
 		}

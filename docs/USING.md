@@ -1324,8 +1324,14 @@ a `cluster_id`), the full mesh gives way to Mplify 119's control plane
 (§8.3, R9–R13): every other edge peers with that host alone, by each
 tunnel to it, and the host's BIRD reflects their routes to all (RFC
 4456, `rr client`, the cluster id its router id unless said); a plan
-refuses a topology where an edge has no tunnel to the host. The
-service form asks for the host. RFC 4364's VPN routes with the
+refuses a topology where an edge has no tunnel to the host. With
+`ctvc`, one of the service's UCSs, the control plane gets a tunnel of
+its own from each edge to the host over that underlay (the CTVC,
+R5, R6: the UCS's tunnel kind, addresses from the service domain's
+prefix, BFD and probes like any, steered by no policy), and the iBGP
+goes by it and nothing else; without it the sessions ride the data
+tunnels (the CPI as a virtual interface, R2). The service form asks
+for the host, the cluster id and the control tunnel's underlay. RFC 4364's VPN routes with the
 domains' route distinguishers, targets and labels (R14–R20) are not
 written: they need BIRD's l3vpn protocol, which the FreeBSD port of
 BIRD 3 does not build (known limits). An edge with `ntp` (its servers, in the edge form) gets them
