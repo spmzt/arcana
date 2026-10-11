@@ -2517,8 +2517,7 @@ EOS
 	atf_check -o match:'^ipfw -q set disable 30$' \
 	    -o match:'^ipfw -q -f delete set 30$' \
 	    -o match:'^table sw1_zone create type addr valtype skipto$' \
-	    -o match:'^table sw1_zone add 10.1.0.0/16 12$' \
-	    -o match:'^table sw1_zone add 0.0.0.0/0 13$' \
+	    -o match:'^table sw1_zone atomic add 10.1.0.0/16 12 0.0.0.0/0 13$' \
 	    -o match:'^table sw1_z0p0_4 create type addr valtype ipv4$' \
 	    -o match:'^add 10 set 30 skipto tablearg ip from table\(sw1_zone\) to any in recv lo1$' \
 	    -o match:'^add 12 set 30 deny ip from any to any$' \
@@ -2563,6 +2562,16 @@ EOS
 	    -o match:'^add 12 set 30 queue 3001 ip from any to any$' cat ipfw.log
 	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^pipe 3000' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^add 12' ipfw.log | cut -d: -f1 | head -1) && echo yes"
 	atf_check -o match:'dummynet' -o match:'ipfw_nat' cat kldload.log
+	atf_check -o match:'"objects":3' "$JGC" -c "$SOCK" sdwan
+	# Only a table's entries changed (a list fetched anew): the table
+	# filled beside itself and swapped in; the rules not reloaded.
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"sw1_known","valtype":"legacy","entries":[["10.1.0.0/24","0"],["10.2.0.0/24","0"]]}],"objects":["pipe 3000 config bw 5000000bit/s","queue 3001 config pipe 3000 weight 75","nat 3001 config ip 198.51.100.1"],"rules":["11 nat 3001 ip4 from table(sw1_known) to not table(sw1_known) out xmit vtnet0","12 queue 3001 ip from any to any","99 count ip from any to any"]}'
+	atf_check -o match:'^ipfw -q table sw1_known_alt create type addr$' \
+	    -o match:'^ipfw -q table sw1_known_alt atomic add 10.1.0.0/24 0 10.2.0.0/24 0$' \
+	    -o match:'^ipfw -q table sw1_known swap sw1_known_alt$' \
+	    -o not-match:'set disable 30' -o not-match:'^add 12 ' cat ipfw.log
 	atf_check -o match:'"objects":3' "$JGC" -c "$SOCK" sdwan
 	# BIRD instances: a bad list refused; one started in its table by
 	# setfib once its file parses, told to read it again when running,

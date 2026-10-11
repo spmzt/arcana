@@ -751,6 +751,11 @@ fib, interval, size, count, dscp, down, up, timeout, eval, history and
 report.
 An empty array stops them all.
 .It Cm sdwan rules Ar json
+A
+.Ar json
+of any of these may be
+.Cm @ Ns Ar file ,
+the file's contents (a large list of prefixes, say).
 The rules that classify what comes in at the SD-WAN UNIs and steer
 it, as the sdwan-rules operation takes them: an object with the set,
 the tables and the rules.
