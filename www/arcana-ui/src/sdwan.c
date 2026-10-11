@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <math.h>
+
 #include "app.h"
 
 #define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
@@ -24,7 +26,15 @@
 enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_PATHS, SD_DOCUMENT };
 
 #define	PATHS_EVERY_MS	2000	/* the probes read again, on the Paths tab */
+#define	DASH_EVERY_MS	5000	/* and on the dashboard */
 #define	SPARK_N		120	/* samples a spark line shows */
+
+static const ucl_object_t *target_of(const char *, const char *);
+static void	 paths_load(void);
+static void	 plan_load(void);
+static void	 applied_cb(int, const ucl_object_t *, const char *, void *);
+static const char *ms(double, char *, size_t);
+static void	 view_overview(struct html *);
 
 static struct {
 	int		 tab;
@@ -99,6 +109,8 @@ sdwan_open(void)
 	app.jail[0] = '\0';
 	app.rail_open = false;
 	sd_load();
+	if (sd.tab == SD_OVERVIEW)
+		plan_load();
 }
 
 static void
@@ -119,6 +131,11 @@ plan_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (sd.plan != NULL)
 		ucl_object_unref(sd.plan);
 	sd.plan = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	/* The dashboard and Paths want the probes as soon as the plan
+	 * says which edges to ask. */
+	if (app.node == NODE_SDWAN && (sd.tab == SD_OVERVIEW || sd.tab ==
+	    SD_PATHS))
+		paths_load();
 }
 
 static void
@@ -329,6 +346,347 @@ bits(int64_t b)
 }
 
 /* ---- Overview --------------------------------------------------------- */
+
+/* A tunnel's state from its two ends' probes: up, down, or unknown. */
+static const char *
+tunnel_state(const ucl_object_t *t, double *delay, double *loss)
+{
+	const ucl_object_t	*e, *tg, *sm, *now;
+	unsigned int		 n;
+	int			 k, up, down;
+
+	up = down = 0;
+	*delay = -1;
+	*loss = 0;
+	for (k = 0; k < 2; k++) {
+		e = ucl_array_find_index(jget(t, "ends"), (unsigned int)k);
+		if ((tg = target_of(jstr(e, "edge"), jstr(t, "id"))) == NULL ||
+		    jstr(tg, "state") == NULL)
+			continue;
+		if (strcmp(jstr(tg, "state"), "up") == 0)
+			up++;
+		else if (strcmp(jstr(tg, "state"), "down") == 0)
+			down++;
+		n = jget(tg, "samples") != NULL ? ucl_array_size(jget(tg,
+		    "samples")) : 0;
+		sm = n > 0 ? ucl_array_find_index(jget(tg, "samples"), n - 1) :
+		    NULL;
+		now = jget(tg, "now");
+		if (sm != NULL) {
+			if (ucl_object_todouble(ucl_array_find_index(sm, 1)) >
+			    *delay)
+				*delay = ucl_object_todouble(ucl_array_find_index(
+				    sm, 1));
+			if (ucl_object_todouble(ucl_array_find_index(sm, 3)) >
+			    *loss)
+				*loss = ucl_object_todouble(ucl_array_find_index(
+				    sm, 3));
+		} else if (now != NULL && jint(now, "sent", 0) > 0 && jnum(now,
+		    "delay", 0) > *delay)
+			*delay = jnum(now, "delay", 0);
+	}
+	return (down > 0 ? "down" : up == 2 ? "up" : up == 1 ? "half" :
+	    "unknown");
+}
+
+/*
+ * The dashboard: what there is and how it is, in numbers; the edges
+ * and their tunnels drawn, each tunnel as its probes see it; then the
+ * underlays, edges and services listed.  Every number names the
+ * FreeBSD piece that does the work.
+ */
+static void
+view_dashboard(struct html *h)
+{
+	const ucl_object_t	*v, *e, *t, *ap, *s, *f;
+	ucl_object_iter_t	 it, eit;
+	const char		*st;
+	char			 age[32], b1[32];
+	double			 delay, loss, cx, cy, r, ang, x[64], y[64];
+	int			 nedges, nlinks, nucs, nsw, nfibs, nt, tup, tdown;
+	int			 nfaults, ndone, nsteps, i, k, a, b, prev;
+
+	nedges = nlinks = nucs = nsw = nfibs = nt = tup = tdown = 0;
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
+	    NULL)
+		nucs++;
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sd.doc, "edges"), &it, true)) !=
+	    NULL) {
+		if (nedges < 64) {
+			nedges++;
+			eit = NULL;
+			while ((e = ucl_object_iterate(jget(v, "ucs_end_points"),
+			    &eit, true)) != NULL)
+				nlinks++;
+		}
+	}
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sd.doc, "swvcs"), &it, true)) !=
+	    NULL) {
+		nsw++;
+		if (jint(v, "fib", 0) > nfibs)
+			nfibs = (int)jint(v, "fib", 0);
+	}
+	it = NULL;
+	while (sd.plan != NULL && (t = ucl_object_iterate(jget(sd.plan,
+	    "tunnels"), &it, true)) != NULL) {
+		nt++;
+		st = tunnel_state(t, &delay, &loss);
+		if (strcmp(st, "up") == 0)
+			tup++;
+		else if (strcmp(st, "down") == 0)
+			tdown++;
+	}
+	nfaults = 0;
+	it = NULL;
+	while (sd.faults != NULL && (f = ucl_object_iterate(sd.faults, &it,
+	    true)) != NULL) {
+		eit = NULL;
+		while ((e = ucl_object_iterate(f, &eit, true)) != NULL)
+			if ((double)jint(e, "t", 0) * 1000 > arc_now() - 86400 *
+			    1000.0)
+				nfaults++;
+	}
+	ap = jget(sd.applied, "apply");
+	ndone = nsteps = 0;
+	it = NULL;
+	while (ap != NULL && (s = ucl_object_iterate(jget(ap, "steps"), &it,
+	    true)) != NULL) {
+		nsteps++;
+		if (jstr(s, "state") != NULL && strcmp(jstr(s, "state"), "done")
+		    == 0)
+			ndone++;
+	}
+	h_raw(h, "<div class=\"tiles sd-tiles\">");
+	h_fmt(h, "<div class=\"tile\"><b>%d</b><span>edge%s · FreeBSD hosts "
+	    "running arcana-agent</span></div>", nedges, nedges == 1 ? "" : "s");
+	h_fmt(h, "<div class=\"tile\"><b>%d</b><span>WAN link%s on %d "
+	    "underlay%s · the edges' interfaces</span></div>", nlinks, nlinks ==
+	    1 ? "" : "s", nucs, nucs == 1 ? "" : "s");
+	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>service%s · a routing "
+	    "table each, setfib(1), up to fib %d</span></div>", nsw > 0 ? "ok" :
+	    "", nsw, nsw == 1 ? "" : "s", nfibs);
+	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>tunnel%s · %d up, %d "
+	    "down · gre, gif, geneve, wg; IPsec by strongSwan</span></div>",
+	    tdown > 0 ? "warn" : nt > 0 && tup == nt ? "ok" : "", nt, nt == 1 ?
+	    "" : "s", tup, tdown);
+	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>fault%s in 24 h · "
+	    "tunnels down or up again</span></div>", nfaults > 0 ? "warn" : "",
+	    nfaults, nfaults == 1 ? "" : "s");
+	if (ap != NULL && jstr(ap, "state") != NULL) {
+		fmt_age(age, sizeof(age), (double)jint(ap, "started", 0) * 1000);
+		h_fmt(h, "<div class=\"tile %s\"><b>%s</b><span>last apply, %s · "
+		    "%d of %d steps · ipfw set %d, routes, interfaces</span>"
+		    "</div>", strcmp(jstr(ap, "state"), "done") == 0 ? "ok" :
+		    "warn", sd.applying ? "applying" : jstr(ap, "state"), age,
+		    ndone, nsteps, 30);
+	} else
+		h_raw(h, "<div class=\"tile\"><b>—</b><span>not applied yet · "
+		    "Edges, then Apply</span></div>");
+	h_raw(h, "</div>");
+
+	/* The topology: edges around a circle, tunnels between them. */
+	if (nedges > 0) {
+		h_raw(h, "<div class=\"sd-block\"><h3>Topology <small class=\""
+		    "dim\">the edges and the tunnels between them, each as its "
+		    "probes see it: green up, red down, dashed a backup, a lock "
+		    "encrypted</small></h3><div class=\"sd-topo-wrap\"><svg "
+		    "class=\"sd-topo\" viewBox=\"0 0 640 300\" role=\"img\">");
+		cx = 320;
+		cy = 150;
+		r = nedges > 2 ? 110 : 0;
+		i = 0;
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "edges"), &it, true))
+		    != NULL && i < nedges) {
+			if (nedges == 1) {
+				x[i] = cx;
+				y[i] = cy;
+			} else if (nedges == 2) {
+				x[i] = i == 0 ? 160 : 480;
+				y[i] = cy;
+			} else {
+				ang = -M_PI / 2 + 2 * M_PI * i / nedges;
+				x[i] = cx + r * cos(ang);
+				y[i] = cy + r * sin(ang);
+			}
+			i++;
+		}
+		/* The tunnels first, under the nodes; a pair's second and
+		 * later bow out a little. */
+		prev = -1;
+		it = NULL;
+		while (sd.plan != NULL && (t = ucl_object_iterate(jget(sd.plan,
+		    "tunnels"), &it, true)) != NULL) {
+			const ucl_object_t	*ea, *eb;
+			double			 mx, my, dx, dy, len, ox, oy;
+
+			ea = ucl_array_find_index(jget(t, "ends"), 0);
+			eb = ucl_array_find_index(jget(t, "ends"), 1);
+			a = b = -1;
+			i = 0;
+			eit = NULL;
+			while ((v = ucl_object_iterate(jget(sd.doc, "edges"),
+			    &eit, true)) != NULL && i < nedges) {
+				if (jstr(v, "server") != NULL && jstr(ea, "edge")
+				    != NULL && strcmp(jstr(v, "server"), jstr(ea,
+				    "edge")) == 0)
+					a = i;
+				if (jstr(v, "server") != NULL && jstr(eb, "edge")
+				    != NULL && strcmp(jstr(v, "server"), jstr(eb,
+				    "edge")) == 0)
+					b = i;
+				i++;
+			}
+			if (a < 0 || b < 0)
+				continue;
+			st = tunnel_state(t, &delay, &loss);
+			k = a * 64 + b;
+			prev = prev == k ? prev : -1;
+			mx = (x[a] + x[b]) / 2;
+			my = (y[a] + y[b]) / 2;
+			dx = x[b] - x[a];
+			dy = y[b] - y[a];
+			len = sqrt(dx * dx + dy * dy);
+			ox = len > 0 ? -dy / len * 22 : 0;
+			oy = len > 0 ? dx / len * 22 : 0;
+			/* Count the tunnels of this pair seen so far. */
+			{
+				const ucl_object_t	*t2;
+				ucl_object_iter_t	 it2 = NULL;
+				int			 same = 0;
+
+				while ((t2 = ucl_object_iterate(jget(sd.plan,
+				    "tunnels"), &it2, true)) != NULL && t2 != t) {
+					const ucl_object_t *fa = ucl_array_find_index(
+					    jget(t2, "ends"), 0);
+					const ucl_object_t *fb = ucl_array_find_index(
+					    jget(t2, "ends"), 1);
+
+					if (jstr(fa, "edge") != NULL && jstr(fb,
+					    "edge") != NULL && ((strcmp(jstr(fa,
+					    "edge"), jstr(ea, "edge")) == 0 &&
+					    strcmp(jstr(fb, "edge"), jstr(eb,
+					    "edge")) == 0) || (strcmp(jstr(fa,
+					    "edge"), jstr(eb, "edge")) == 0 &&
+					    strcmp(jstr(fb, "edge"), jstr(ea,
+					    "edge")) == 0)))
+						same++;
+				}
+				ox *= same % 2 == 0 ? same / 2 : -(same + 1) / 2;
+				oy *= same % 2 == 0 ? same / 2 : -(same + 1) / 2;
+			}
+			h_fmt(h, "<g class=\"tun st-%s%s\"><title>", st, jbool(t,
+			    "backup") ? " backup" : "");
+			h_txt(h, jstr(t, "id"));
+			h_fmt(h, ": %s%s%s", st, delay >= 0 ? ", " : "", delay >= 0
+			    ? ms(delay, b1, sizeof(b1)) : "");
+			if (loss > 0)
+				h_fmt(h, ", %.1f%% loss", loss * 100);
+			h_fmt(h, "</title><path d=\"M%.0f %.0f Q%.0f %.0f %.0f "
+			    "%.0f\"/>", x[a], y[a], mx + ox * 2, my + oy * 2, x[b],
+			    y[b]);
+			if (jbool(t, "encrypted"))
+				h_fmt(h, "<text class=\"lock\" x=\"%.0f\" y=\"%.0f\">"
+				    "&#x1F512;</text>", mx + ox - 16, my + oy + 4);
+			if (delay >= 0)
+				h_fmt(h, "<text class=\"lbl\" x=\"%.0f\" y=\"%.0f\">"
+				    "%s%s</text>", mx + ox, my + oy + 4, ms(delay,
+				    b1, sizeof(b1)), loss > 0 ? " · loss" : "");
+			else
+				h_fmt(h, "<text class=\"lbl\" x=\"%.0f\" y=\"%.0f\">"
+				    "%s</text>", mx + ox, my + oy + 4, strcmp(st,
+				    "unknown") == 0 ? "not measured" : st);
+			h_raw(h, "</g>");
+		}
+		/* Before a plan: the pairs each service joins, as planned. */
+		if (sd.plan == NULL || jget(sd.plan, "tunnels") == NULL ||
+		    ucl_array_size(jget(sd.plan, "tunnels")) == 0) {
+			const ucl_object_t	*sw, *ea, *eb;
+			ucl_object_iter_t	 sit, ait, bit;
+
+			sit = NULL;
+			while ((sw = ucl_object_iterate(jget(sd.doc, "swvcs"),
+			    &sit, true)) != NULL) {
+				ait = NULL;
+				while ((ea = ucl_object_iterate(jget(sw,
+				    "end_points"), &ait, true)) != NULL) {
+					bit = NULL;
+					while ((eb = ucl_object_iterate(jget(sw,
+					    "end_points"), &bit, true)) != NULL) {
+						if (eb == ea || jstr(ea, "edge") ==
+						    NULL || jstr(eb, "edge") == NULL
+						    || strcmp(jstr(ea, "edge"),
+						    jstr(eb, "edge")) >= 0)
+							continue;
+						a = b = -1;
+						i = 0;
+						eit = NULL;
+						while ((v = ucl_object_iterate(jget(
+						    sd.doc, "edges"), &eit, true)) !=
+						    NULL && i < nedges) {
+							if (strcmp(jstr(v, "server"),
+							    jstr(ea, "edge")) == 0)
+								a = i;
+							if (strcmp(jstr(v, "server"),
+							    jstr(eb, "edge")) == 0)
+								b = i;
+							i++;
+						}
+						if (a < 0 || b < 0)
+							continue;
+						h_fmt(h, "<g class=\"tun st-unknown\">"
+						    "<title>%s: planned</title><path "
+						    "d=\"M%.0f %.0f L%.0f %.0f\"/><text "
+						    "class=\"lbl\" x=\"%.0f\" y=\"%.0f\">"
+						    "planned</text></g>", jstr(sw, "id"),
+						    x[a], y[a], x[b], y[b], (x[a] +
+						    x[b]) / 2, (y[a] + y[b]) / 2 - 6);
+					}
+				}
+			}
+		}
+		i = 0;
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "edges"), &it, true))
+		    != NULL && i < nedges) {
+			int	nl = 0, nbo = 0;
+
+			eit = NULL;
+			while ((e = ucl_object_iterate(jget(v, "ucs_end_points"),
+			    &eit, true)) != NULL) {
+				nl++;
+				if (jbool(e, "breakout"))
+					nbo++;
+			}
+			h_fmt(h, "<g class=\"node\" transform=\"translate(%.0f "
+			    "%.0f)\"><title>", x[i], y[i]);
+			h_txt(h, host_name(jstr(v, "server")));
+			h_fmt(h, ": %d WAN link%s%s</title><circle r=\"22\"/>"
+			    "<text class=\"name\" y=\"4\">", nl, nl == 1 ? "" :
+			    "s", nbo > 0 ? ", breaks out" : "");
+			h_txt(h, host_name(jstr(v, "server")));
+			h_fmt(h, "</text><text class=\"sub\" y=\"36\">%d link%s%s"
+			    "</text></g>", nl, nl == 1 ? "" : "s", nbo > 0 ?
+			    " · breakout" : "");
+			i++;
+		}
+		h_raw(h, "</svg></div></div>");
+	} else
+		h_raw(h, "<div class=\"sd-block sd-start\"><h3>Start here</h3><ol>"
+		    "<li><b>Underlays</b>: the carriers the edges reach each "
+		    "other over, public or private, and the tunnel each "
+		    "carries.</li><li><b>Edges</b>: the FreeBSD hosts, and the "
+		    "interface each has on each underlay.</li><li><b>A service"
+		    "</b>: its UNIs, zones, application flows and policies.</li>"
+		    "<li><b>Edges, Apply</b>: the console plans what each host "
+		    "is to have and makes it.</li></ol><p class=\"dim\">The "
+		    "example in <b>Document</b> has all four, written for the "
+		    "first two hosts.</p></div>");
+	view_overview(h);
+}
 
 static void
 view_overview(struct html *h)
@@ -1300,7 +1658,7 @@ view_sdwan(struct html *h)
 
 	h_raw(h, "<section class=\"sdwan\">");
 	h_fmt(h, "<nav class=\"tabs\"><button class=\"tab%s\" data-act=\""
-	    "sd-tab\" data-arg=\"overview\">Overview</button><button class=\""
+	    "sd-tab\" data-arg=\"overview\">Dashboard</button><button class=\""
 	    "tab%s\" data-act=\"sd-tab\" data-arg=\"services\">Services"
 	    "</button><button class=\"tab%s\" data-act=\"sd-tab\" data-arg=\""
 	    "edges\" title=\"What the edges are to have, and Apply\">Edges"
@@ -1328,7 +1686,7 @@ view_sdwan(struct html *h)
 	else if (sd.tab == SD_DOCUMENT)
 		view_document(h);
 	else
-		view_overview(h);
+		view_dashboard(h);
 	h_raw(h, "</section>");
 }
 
@@ -1357,6 +1715,10 @@ sent_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	    (long long)jint(o, "version", 0));
 	toast(false, "SD-WAN kept");
 	doc_cb(status, o, err, NULL);
+	/* The plan was of the document before: made again when wanted. */
+	if (sd.plan != NULL)
+		ucl_object_unref(sd.plan);
+	sd.plan = NULL;
 }
 
 /* The box's text sent, with the version it was made from. */
@@ -1511,7 +1873,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "edges") == 0 ? SD_EDGES : strcmp(arg,
 		    "paths") == 0 ? SD_PATHS : strcmp(arg, "document") == 0 ?
 		    SD_DOCUMENT : SD_OVERVIEW;
-		if (sd.tab == SD_EDGES)
+		if (sd.tab == SD_EDGES || sd.tab == SD_OVERVIEW)
 			plan_load();
 		else if (sd.tab == SD_PATHS)
 			paths_load();
@@ -1548,9 +1910,15 @@ sdwan_tick(double now)
 {
 	static double	at;
 
-	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_PATHS &&
-	    now - sd.paths_at > PATHS_EVERY_MS)
+	if (app.node == NODE_SDWAN && app.visible && ((sd.tab == SD_PATHS &&
+	    now - sd.paths_at > PATHS_EVERY_MS) || (sd.tab == SD_OVERVIEW &&
+	    now - sd.paths_at > DASH_EVERY_MS)))
 		paths_load();
+	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_OVERVIEW &&
+	    sd.applied == NULL && now - sd.apply_at > 5000) {
+		sd.apply_at = now;
+		api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
+	}
 	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_EDGES &&
 	    sd.applying && now - sd.apply_at > 1000) {
 		sd.apply_at = now;

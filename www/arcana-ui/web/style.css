@@ -4499,3 +4499,19 @@ table.ipsec td .child small { color: var(--dim); }
 
 /* The console's version at the foot of the side bar, beside Settings. */
 .tree.rail-foot .titem .ver { display: inline; margin-left: auto; padding-left: .5rem; font-size: .7rem; }
+
+/* SD-WAN dashboard: the topology of edges and tunnels. */
+.sd-topo-wrap { max-width: 760px; }
+svg.sd-topo { width: 100%; height: auto; display: block; font-family: var(--font); }
+svg.sd-topo .node circle { fill: rgba(var(--surface-rgb), .9); stroke: var(--accent); stroke-width: 2; }
+svg.sd-topo .node text { text-anchor: middle; fill: var(--fg); font-size: 12px; }
+svg.sd-topo .node text.sub { fill: var(--dim); font-size: 10px; }
+svg.sd-topo .tun path { fill: none; stroke: var(--line-2); stroke-width: 3; }
+svg.sd-topo .tun.st-up path { stroke: var(--green); }
+svg.sd-topo .tun.st-half path { stroke: var(--amber); }
+svg.sd-topo .tun.st-down path { stroke: var(--red); }
+svg.sd-topo .tun.backup path { stroke-dasharray: 8 6; }
+svg.sd-topo .tun text { text-anchor: middle; fill: var(--fg-2); font-size: 10px; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
+svg.sd-topo .tun text.lock { font-size: 11px; }
+.sd-start ol { margin: .2rem 0 .6rem 1.2rem; line-height: 1.6; }
+.sd-tiles .tile b { font-size: 1.4rem; }

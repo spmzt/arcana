@@ -1077,8 +1077,14 @@ names them. It is one document with three parts:
     and its `ingress` and `egress` policies, over the zone's own) and
     its `nat`.
 
-**Overview** shows the underlays, the edges and the services in
-tables; **Services** one service's end points, zones, flows (in the
+**Dashboard** counts what there is, each number naming the FreeBSD
+piece that does the work (routing tables by setfib, tunnels by gre,
+gif, geneve and wg, IPsec by strongSwan, the rules in an ipfw set),
+draws the edges with the tunnels between them as their probes see them
+(green up, red down, dashed a backup, a lock encrypted, the delay and
+loss on each) or as planned before an apply, and lists the underlays,
+the edges and the services in tables; **Services** shows one service's
+end points, zones, flows (in the
 order they are matched), policies, topologies and rate limiters;
 **Document** the whole of it as JSON. **Check** asks the console
 whether it is one the standard allows and **Keep** keeps it; what the

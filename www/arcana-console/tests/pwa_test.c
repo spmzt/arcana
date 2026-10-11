@@ -3391,6 +3391,12 @@ part_flows(void)
 	    "button[data-act=sd-swvc]')?.textContent === 'office'", 10);
 	ATF_CHECK(js_true("document.querySelectorAll('section.sdwan table.sd')"
 	    "[1].querySelectorAll('tbody tr').length === 4"));
+	/* The dashboard: the tiles, and the topology with the two edges
+	 * and the plan's two tunnels between them. */
+	wait_js("document.querySelectorAll('svg.sd-topo g.node').length === 2 "
+	    "&& document.querySelectorAll('svg.sd-topo g.tun').length === 2 && "
+	    "document.querySelector('.sd-tiles .tile b').textContent === '2'",
+	    20);
 	shot("9-sdwan-overview");
 	run("document.querySelector('button[data-act=sd-swvc]').click()");
 	wait_js("[...document.querySelectorAll('section.sdwan h3')].some(h => "
