@@ -872,6 +872,25 @@ attribute-sets:
           head, or what agent-build and console-update built.
         checks:
           max-len: 64
+      - name: count
+        type: u32
+        doc: How many at most.
+      - name: log
+        type: text
+        doc: |
+          The latest commits of a repository's branch, newest first,
+          as a JSON list: each its commit, time, subject and body.
+        checks:
+          max-len: max-output
+      - name: tags
+        type: text
+        doc: |
+          The repository's tags, newest first, as a JSON list: each its
+          name, time and message; the release notes where their
+          messages are.
+        checks:
+          max-len: max-output
+
 
   - name: host
     attributes:
@@ -1480,7 +1499,6 @@ attribute-sets:
         nested-attributes: route
         multi-attr: true
         doc: The next routes, typed.
-
   - name: chunk
     attributes:
       - name: data
@@ -2414,6 +2432,38 @@ operations:
           - ok
           - error
           - commit
+          - host-keys
+          - fingerprints
+          - deploy-key
+          - trace
+
+  - name: source-log
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What is new in a repository's branch: its latest commits (count,
+      100 unless said), newest first, each its hash, time, subject and
+      body, and its tags with their messages, the release notes where
+      there are any.  A bare clone without the files (blob:none) is
+      kept in the build directory as log.git and fetched again each
+      time, over SSH as agent-build fetches.  Nothing is built.
+    do:
+      request:
+        attributes:
+          - source
+          - ref
+          - host-keys
+          - ssh-key
+          - count
+        required:
+          - source
+      reply:
+        attributes:
+          - ok
+          - error
+          - commit
+          - log
+          - tags
           - host-keys
           - fingerprints
           - deploy-key

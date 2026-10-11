@@ -257,6 +257,7 @@ usage(void)
 	    "    agent-build [-y] [-i key] [-o file] repository [ref]\n"
 	    "    console-update [-y] [-i key] repository [ref]\n"
 	    "    source-head [-y] [-i key] repository [ref]\n"
+	    "    source-log [-i key] [-n count] repository [ref]\n"
 	    "with -q, start, stop, restart, kill, address, service (but "
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
 	    "instead of waited for.\n-p keeps a change to an interface or a "
@@ -1043,6 +1044,60 @@ again:
 	arc_source_head_rsp_free(rsp);
 	free(keys);
 	return (error);
+}
+
+/*
+ * source-log [-i key] [-n count] repository [ref]: the latest commits
+ * of the repository's branch, newest first, and its tags: what is new.
+ */
+static int
+cmd_source_log(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_source_log_req	 req;
+	struct arc_source_log_rsp	*rsp;
+	const char			*errstr;
+	int				 ch, error;
+
+	memset(&req, 0, sizeof(req));
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "i:n:")) != -1) {
+		switch (ch) {
+		case 'i':
+			req.ssh_key = optarg;
+			break;
+		case 'n':
+			req.has_count = true;
+			req.count = (uint32_t)strtonum(optarg, 1, 10000, &errstr);
+			if (errstr != NULL)
+				xo_errx(2, "count %s: %s", optarg, errstr);
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc - optind < 1 || argc - optind > 2)
+		usage();
+	req.source = argv[optind];
+	req.ref = argv[optind + 1];
+	if ((error = arc_source_log(cl, &req, &rsp)) != 0)
+		fail(cl, error, "source-log");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	if (!rsp->ok) {
+		if (rsp->deploy_key != NULL)
+			xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n",
+			    rsp->deploy_key);
+		xo_warnx("source-log: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+		arc_source_log_rsp_free(rsp);
+		return (1);
+	}
+	xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
+	/* The commits and the tags as the agent lists them, JSON each. */
+	xo_emit("{Lwc:Commits}{:commits/%s}\n", rsp->log != NULL ? rsp->log :
+	    "[]");
+	xo_emit("{Lwc:Tags}{:tags/%s}\n", rsp->tags != NULL ? rsp->tags : "[]");
+	arc_source_log_rsp_free(rsp);
+	return (0);
 }
 
 /* agent-update [-r] program: put a new arcana-agent in place. */
@@ -3322,6 +3377,8 @@ main(int argc, char *argv[])
 		rc = cmd_sdwan(&cl, argc, argv);
 	else if (strcmp(argv[0], "source-head") == 0)
 		rc = cmd_source_head(&cl, argc, argv);
+	else if (strcmp(argv[0], "source-log") == 0)
+		rc = cmd_source_log(&cl, argc, argv);
 	else if (strcmp(argv[0], "console-update") == 0)
 		rc = cmd_console_update(&cl, argc, argv);
 	else

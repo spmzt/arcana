@@ -26,6 +26,7 @@
 
 #define	UPDATE_CACHE	(6 * 60 * 60)
 #define	UPDATE_MAX	(64 * 1024)
+#define	NOTES_CACHE	(5 * 60)
 
 struct check {
 	struct kore_task	 task;		/* first: Kore frees the check */
@@ -142,6 +143,229 @@ reply(struct http_request *req)
 		ucl_object_insert_key(o, ucl_object_fromint(cache.checked),
 		    "checked", 0, false);
 	return (reply_json(req, 200, o));
+}
+
+/* ---- What is new in the repository ---------------------------------- */
+
+/* The repository's latest commits and tags, as a host last read them. */
+static struct {
+	ucl_object_t	*ans;
+	time_t		 at;
+	char		 host[128];
+} notes;
+
+/* A host's answer, as it came. */
+static ucl_object_t *
+parse(const char *json)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*top;
+
+	if (json == NULL)
+		return (NULL);
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	top = ucl_parser_add_string(p, json, 0) ? ucl_parser_get_object(p) :
+	    NULL;
+	ucl_parser_free(p);
+	return (top);
+}
+
+/* Is version b named in subject s, as "<component> <b>" and no more? */
+static bool
+names_version(const char *s, const char *component, const char *b)
+{
+	const char	*p;
+	char		 key[96];
+	size_t		 n;
+
+	if (s == NULL || b == NULL || b[0] == '\0')
+		return (false);
+	snprintf(key, sizeof(key), "%s %s", component, b[0] == 'v' ? b + 1 : b);
+	n = strlen(key);
+	for (p = s; (p = strstr(p, key)) != NULL; p++)
+		if ((p == s || !isalnum((unsigned char)p[-1])) && !isdigit(
+		    (unsigned char)p[n]) && p[n] != '.')
+			return (true);
+	return (false);
+}
+
+/*
+ * GET /api/update/notes?component=console|agent&from=VERSION[&to=VERSION]:
+ * what is new in the repository since the version running, for the
+ * update boxes and the What's new tab.  The host the console runs on
+ * (reached by its local socket), else the first, reads the
+ * repository's latest commits and tags (source-log); the tags with
+ * messages are the release notes, when any is newer than the version;
+ * else the commits are, each marked new when it came after the one
+ * that brought the version (its subject names "<component> <version>",
+ * as every commit that bumps one does), and that one marked here.
+ * With to, only what is up to the version named.  The host's answer
+ * is kept five minutes, unless fresh is asked.
+ */
+int
+api_update_notes(struct http_request *req)
+{
+	const struct server	*s, *pick;
+	ucl_object_t		*out, *list, *n, *ans, *tagl, *logl;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*comp, *from, *to;
+	char			*json, *v;
+	int			 status, i, ntags;
+	bool			 usetags, before_from, after_to, fresh;
+
+	if (!guard(req, false))
+		return (KORE_RESULT_OK);
+	http_populate_get(req);
+	fresh = http_argument_get_string(req, "fresh", &v) && v[0] != '\0';
+	comp = "console";
+	if (http_argument_get_string(req, "component", &v) && strcmp(v,
+	    "agent") == 0)
+		comp = "agent";
+	from = to = NULL;
+	if (http_argument_get_string(req, "from", &v) && v[0] != '\0')
+		from = v;
+	if (http_argument_get_string(req, "to", &v) && v[0] != '\0')
+		to = v;
+	if (cfg.agent_source == NULL)
+		return (reply_error(req, 409, "source", "agent_source in "
+		    "web.conf names no repository"));
+	pick = NULL;
+	for (i = 0; (s = server_at(i)) != NULL; i++) {
+		if (pick == NULL)
+			pick = s;
+		if (strncmp(s->uri, "unix:", 5) == 0) {
+			pick = s;
+			break;
+		}
+	}
+	if (pick == NULL)
+		return (reply_error(req, 409, "server", "no server to read the "
+		    "repository through: add the host the console runs on"));
+	if (notes.ans == NULL || fresh || time(NULL) - notes.at > NOTES_CACHE) {
+		json = hosts_arcana(pick->uri, pick->peer_name, pick->name,
+		    "source-log", &status);
+		ans = parse(json);
+		free(json);
+		if (ans == NULL || status != 200 || !ucl_object_toboolean(
+		    ucl_object_lookup(ans, "ok"))) {
+			status = reply_error(req, 502, "source", "%s: %s", pick->name,
+			    ans != NULL && ucl_str(ans, "error") != NULL ? ucl_str(
+			    ans, "error") : ans != NULL && ucl_str(ans, "host_keys")
+			    != NULL ? "its SSH host key is to be confirmed by hand "
+			    "first (Build agent here)" : "the host did not answer");
+			if (ans != NULL)
+				ucl_object_unref(ans);
+			return (status);
+		}
+		if (notes.ans != NULL)
+			ucl_object_unref(notes.ans);
+		notes.ans = ans;
+		notes.at = time(NULL);
+		snprintf(notes.host, sizeof(notes.host), "%s", pick->name);
+	}
+	list = ucl_object_typed_new(UCL_ARRAY);
+	tagl = parse(ucl_str(notes.ans, "tags"));
+	logl = parse(ucl_str(notes.ans, "log"));
+	/* The tags with messages: the release notes, when any is newer. */
+	ntags = 0;
+	usetags = false;
+	it = NULL;
+	while ((e = ucl_object_iterate(tagl, &it, true)) != NULL) {
+		if (ucl_str(e, "name") == NULL || ucl_str(e, "message") == NULL ||
+		    ucl_str(e, "message")[0] == '\0')
+			continue;
+		ntags++;
+		if (from == NULL || newer(ucl_str(e, "name"), from))
+			usetags = true;
+	}
+	if (usetags) {
+		it = NULL;
+		while ((e = ucl_object_iterate(tagl, &it, true)) != NULL) {
+			const char	*name = ucl_str(e, "name");
+
+			if (name == NULL || ucl_str(e, "message") == NULL ||
+			    ucl_str(e, "message")[0] == '\0')
+				continue;
+			n = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(n, ucl_object_fromstring(name), "id", 0,
+			    false);
+			ucl_object_insert_key(n, ucl_object_fromint(ucl_object_toint(
+			    ucl_object_lookup(e, "time"))), "when", 0, false);
+			ucl_object_insert_key(n, ucl_object_fromstring(name), "title",
+			    0, false);
+			ucl_object_insert_key(n, ucl_object_fromstring(ucl_str(e,
+			    "message")), "body", 0, false);
+			ucl_object_insert_key(n, ucl_object_frombool((from == NULL ||
+			    newer(name, from)) && (to == NULL || !newer(name, to))),
+			    "new", 0, false);
+			ucl_object_insert_key(n, ucl_object_frombool(from != NULL &&
+			    !newer(name, from) && !newer(from, name)), "here", 0,
+			    false);
+			ucl_array_append(list, n);
+		}
+	} else {
+		/* The commits: new until the one that brought the version. */
+		before_from = true;
+		after_to = to == NULL;
+		it = NULL;
+		while ((e = ucl_object_iterate(logl, &it, true)) != NULL) {
+			const char	*subj = ucl_str(e, "subject");
+			bool		 here;
+
+			if (ucl_str(e, "commit") == NULL || subj == NULL)
+				continue;
+			if (!after_to && names_version(subj, comp, to))
+				after_to = true;
+			here = before_from && from != NULL && names_version(subj,
+			    comp, from);
+			if (here)
+				before_from = false;
+			n = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(n, ucl_object_fromstring(ucl_str(e,
+			    "commit")), "id", 0, false);
+			ucl_object_insert_key(n, ucl_object_fromint(ucl_object_toint(
+			    ucl_object_lookup(e, "time"))), "when", 0, false);
+			ucl_object_insert_key(n, ucl_object_fromstring(subj), "title",
+			    0, false);
+			ucl_object_insert_key(n, ucl_object_fromstring(ucl_str(e,
+			    "body") != NULL ? ucl_str(e, "body") : ""), "body", 0,
+			    false);
+			ucl_object_insert_key(n, ucl_object_frombool(before_from &&
+			    after_to), "new", 0, false);
+			ucl_object_insert_key(n, ucl_object_frombool(here), "here", 0,
+			    false);
+			ucl_array_append(list, n);
+		}
+	}
+	if (tagl != NULL)
+		ucl_object_unref(tagl);
+	if (logl != NULL)
+		ucl_object_unref(logl);
+	out = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(out, ucl_object_fromstring(comp), "component", 0,
+	    false);
+	if (from != NULL)
+		ucl_object_insert_key(out, ucl_object_fromstring(from), "from", 0,
+		    false);
+	if (to != NULL)
+		ucl_object_insert_key(out, ucl_object_fromstring(to), "to", 0,
+		    false);
+	ucl_object_insert_key(out, ucl_object_fromstring(usetags ? "tags" :
+	    "commits"), "kind", 0, false);
+	ucl_object_insert_key(out, ucl_object_fromint(ntags), "tags", 0, false);
+	if (ucl_str(notes.ans, "commit") != NULL)
+		ucl_object_insert_key(out, ucl_object_fromstring(ucl_str(notes.ans,
+		    "commit")), "head", 0, false);
+	ucl_object_insert_key(out, ucl_object_fromstring(notes.host), "host", 0,
+	    false);
+	ucl_object_insert_key(out, ucl_object_fromint(notes.at), "read", 0,
+	    false);
+	ucl_object_insert_key(out, ucl_object_fromstring(cfg.agent_source),
+	    "source", 0, false);
+	ucl_object_insert_key(out, list, "notes", 0, false);
+	return (reply_json(req, 200, out));
 }
 
 /* GET /api/update: the newest release against this one. */

@@ -2751,6 +2751,11 @@ agent_build_body()
 [ "\$1" = -c ] && shift 2
 # The commit a clone is at, and the head of the repository's branch.
 [ "\$1" = -C ] && [ "\$3" = rev-parse ] && { echo 1111111111111111111111111111111111111111; exit 0; }
+# The log clone: made bare, fetched, read; what ./log and ./tags hold.
+[ "\$1" = -C ] && [ "\$3" = fetch ] && exit 0
+[ "\$1" = -C ] && [ "\$3" = log ] && { cat $(pwd)/log 2>/dev/null; exit 0; }
+[ "\$1" = -C ] && [ "\$3" = for-each-ref ] && { cat $(pwd)/tags 2>/dev/null; exit 0; }
+[ "\$1" = clone ] && [ "\$2" = --bare ] && { for a; do last=\$a; done; mkdir -p "\$last"; echo "\$*" > "\$last/HEAD"; exit 0; }
 if [ "\$1" = ls-remote ]; then
 	case "\$4" in nope) exit 2 ;; esac
 	printf '%s\trefs/heads/%s\n' "\$(cat $(pwd)/head 2>/dev/null || echo 2222222222222222222222222222222222222222)" "\$4"
@@ -2804,6 +2809,15 @@ EOS
 	atf_check -o match:'^Commit: +3333333333333333333333333333333333333333$' \
 	    "$JGC" -c "$SOCK" source-head https://example.org/arcana.git main
 	atf_check test ! -e made
+	# What is new: the latest commits and the tags, by a bare clone
+	# without the files kept in the build directory, fetched again.
+	printf 'aaaa\037100\037agent 0.2.0: two\037the body\036bbbb\03790\037agent 0.1.0: one\037\036' > log
+	printf 'v0.2.0\037100\037Release two\036' > tags
+	atf_check -o match:'^Commit: +1111111111111111111111111111111111111111$' \
+	    -o match:'^Commits: +\[\{"commit":"aaaa","time":100,"subject":"agent 0.2.0: two","body":"the body"\},\{"commit":"bbbb","time":90,"subject":"agent 0.1.0: one","body":""\}\]$' \
+	    -o match:'^Tags: +\[\{"name":"v0.2.0","time":100,"message":"Release two"\}\]$' \
+	    "$JGC" -c "$SOCK" source-log -n 2 https://example.org/arcana.git main
+	atf_check -o match:'clone --bare --filter=blob:none --single-branch --branch main -- https://example.org/arcana.git' cat build/log.git/HEAD
 	atf_check -s exit:1 -e match:'git failed' -o ignore \
 	    "$JGC" -c "$SOCK" source-head https://example.org/arcana.git nope
 	# Over SSH as a build is: the host key is not taken on trust.

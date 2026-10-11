@@ -618,6 +618,84 @@ ATF_TC_BODY(agent_update, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(update_notes, "What is new in the repository since the version "
+    "running: the commit messages, new until the version's own commit, or "
+    "the tags' messages where there are any")
+ATF_TC_BODY(update_notes, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	FILE		*fp;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	harness_other_agent = true;
+	snprintf(harness_webconf, sizeof(harness_webconf), "agent_source = "
+	    "\"https://example.org/arcana.git\";\nagent_ref = \"main\";\n");
+	start(tc, 0, NULL);
+	enrol(&a);
+	/* No server yet: nothing to read the repository through. */
+	http("GET", "/api/update/notes?component=console&from=0.2.0", NULL, &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* Three commits, the middle one the version running: the newest
+	 * is new, the running one marked, the oldest neither. */
+	ATF_REQUIRE((fp = fopen("commits", "w")) != NULL);
+	fprintf(fp, "cccc\037300\037console 0.3.0: three\037the third's body\036"
+	    "bbbb\037200\037agent 0.9.0, console 0.2.0: two\037\036"
+	    "aaaa\037100\037console 0.1.0: one\037\036");
+	fclose(fp);
+	http("GET", "/api/update/notes?component=console&from=0.2.0", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE_MSG(jstr(&r, "kind") != NULL && jstr(&r, "host") != NULL &&
+	    jstr(&r, "notes.0.title") != NULL, "%d %s", r.status, r.body);
+	ATF_CHECK_STREQ("commits", jstr(&r, "kind"));
+	ATF_CHECK_STREQ("here", jstr(&r, "host"));
+	ATF_CHECK_STREQ("console 0.3.0: three", jstr(&r, "notes.0.title"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.0.new"));
+	ATF_CHECK_STREQ("the third's body", jstr(&r, "notes.0.body"));
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.1.new"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.1.here"));
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.2.new"));
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.2.here"));
+	resp_free(&r);
+	/* The agents: what is up to the console's version, from a version
+	 * no commit names: everything up to it. */
+	http("GET", "/api/update/notes?component=agent&from=0.8.0&to=0.9.0",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.0.new"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.1.new"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.2.new"));
+	resp_free(&r);
+	/* Tags with messages, one newer: the release notes instead, read
+	 * again when asked fresh. */
+	ATF_REQUIRE((fp = fopen("tags", "w")) != NULL);
+	fprintf(fp, "v0.3.0\037300\037Release three\n\nWith the record.\036"
+	    "v0.2.0\037200\037Release two\036");
+	fclose(fp);
+	http("GET", "/api/update/notes?component=console&from=0.2.0", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("commits", jstr(&r, "kind"));
+	resp_free(&r);
+	http("GET", "/api/update/notes?component=console&from=0.2.0&fresh=1",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("tags", jstr(&r, "kind"));
+	ATF_CHECK_STREQ("v0.3.0", jstr(&r, "notes.0.title"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.0.new"));
+	ATF_CHECK_MSG(strncmp(jstr(&r, "notes.0.body"), "Release three", 13) == 0,
+	    "%s", r.body);
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.1.here"));
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.1.new"));
+	resp_free(&r);
+}
+
 CONSOLE_TC(agent_build, "A host builds arcana-agent from the repository "
     "the console names, and the console keeps it to send")
 ATF_TC_BODY(agent_build, tc)
@@ -4350,6 +4428,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, services);
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);
+	ATF_TP_ADD_TC(tp, update_notes);
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, local_agent);
 	ATF_TP_ADD_TC(tp, local_same);

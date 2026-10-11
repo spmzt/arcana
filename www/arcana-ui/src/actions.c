@@ -2572,6 +2572,47 @@ agent_build_cb(int status, const ucl_object_t *o, const char *err, void *arg)
  * With console, it is the whole tree, installed there, and the console
  * restarted: its own update, on the host it runs on.
  */
+static void
+notes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	app.notes_busy = false;
+	if (status != 200 || jget(o, "notes") == NULL) {
+		snprintf(app.notes_error, sizeof(app.notes_error), "%s", err !=
+		    NULL ? err : "cannot read what is new");
+		return;
+	}
+	if (app.notes != NULL)
+		ucl_object_unref(app.notes);
+	app.notes = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	app.notes_error[0] = '\0';
+}
+
+/*
+ * What is new in the repository since a version (and up to another),
+ * for the update boxes and the What's new tab: the release notes, or
+ * the commits.
+ */
+void
+notes_load(const char *component, const char *from, const char *to,
+    bool fresh)
+{
+	char	url[256];
+
+	snprintf(url, sizeof(url), "/api/update/notes?component=%s&from=%s%s%s"
+	    "%s", component, from != NULL ? from : "", to != NULL && to[0] !=
+	    '\0' ? "&to=" : "", to != NULL ? to : "", fresh ? "&fresh=1" : "");
+	snprintf(app.notes_for, sizeof(app.notes_for), "%s", component);
+	app.notes_busy = true;
+	app.notes_error[0] = '\0';
+	if (app.notes != NULL) {
+		ucl_object_unref(app.notes);
+		app.notes = NULL;
+	}
+	api("GET", url, NULL, notes_cb, NULL);
+}
+
 void
 agent_build(struct server *s, const char *host_keys, bool console)
 {
