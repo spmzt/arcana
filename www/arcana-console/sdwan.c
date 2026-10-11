@@ -1087,9 +1087,10 @@ remote(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
 	if (!ifname(str(r, "interface")) || strncmp(str(r, "interface"), "wg",
 	    2) != 0)
 		return (fail(c, "its remote is on a wg interface of the edge"));
-	if (!prefix(str(r, "prefix"), &p, false))
+	if (!prefix(str(r, "prefix"), &p, false) || p.len > (p.af == AF_INET ?
+	    30 : 126))
 		return (fail(c, "its remote has the prefix the identities' "
-		    "addresses come from"));
+		    "addresses come from, /30 or /126 at most"));
 	*nnets = 0;
 	nets[(*nnets)++] = p;
 	if (ucl_object_lookup(r, "port") != NULL && !is_int(ucl_object_lookup(

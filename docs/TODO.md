@@ -91,8 +91,18 @@
   socket, read by the agent into a day's record and events, shown and
   exported (S2.3). SASE-3: the remote end point in the document, an
   edge's wg interface, a prefix, a port and the identities, each a
-  name, a zone and a key, the example carrying one (S3.1). Next:
-  S3.2, the apply.
+  name, a zone and a key, the example carrying one (S3.1); the apply,
+  the wg interface in the service's table, a peer per identity with
+  an address of the prefix kept for it, the zone table's entries
+  (S3.2). Next: S3.3, issuing and revoking.
+- Verified on the lab 2026-10-11 (S3.2): a client jail arcroad as an
+  identity, arcswan1's wg5 in FIB 1 with 10.30.0.1/24 and the client
+  its peer by the agent as the console's plan has it; the client,
+  10.30.0.2, pinged the far UNI 10.20.0.1 through arcswan1's tunnel,
+  3 of 3, the handshake and bytes in wg's dump (`bfd-lab.sh road`).
+  On this VM `pkg -r <root> install` hangs on the kmods catalogue as
+  root, so the step fetches wireguard-tools with -U and adds the
+  files, IGNORE_OSVERSION for the newer package.
 - Verified on the lab 2026-10-11 (S2.3): a deny rule with `log logdst
   rtsock` on arcswan1 as the console compiles one, a web connection
   from arcswan2 by the tunnel: the entry (rule 12, deny, 10.20.0.1 to
