@@ -1291,7 +1291,23 @@ there is a session. Paths shows BFD's state beside the probe's. With
 (R12). An edge with `ntp` (its servers, in the edge form) gets them
 written into its `ntp.conf` and ntpd enabled and restarted, with the
 FIBs, so faults line up and keys can turn together (Mplify 119
-§12.2.2); the `ntp` job does it, and `arcanactl ntp` by hand. AS override, damping and extended communities are
+§12.2.2); the `ntp` job does it, and `arcanactl ntp` by hand.
+
+**Faults** (Mplify 119 §11.3): each edge keeps the day's faults, each
+with its time, type, severity (Warning, Minor, Major, Critical, and
+Cleared), what it is of, who saw it and a line: a tunnel the probes
+lost (tunnel), a BFD session down (bfd), a BGP neighbour not up or a
+BIRD instance not answering (bgp-neighbor, bird-instance), a metric
+over a threshold (tca), CPU or memory over the sampler's limit (cpu,
+memory). One of a type and object is open at a time; set and cleared
+are events (`sdwan-fault`) within the second (R71), and `GET
+/api/servers/<id>/sdwan` lists the day's; Paths lists them, open
+first, and the dashboard counts the open ones. A service's `tca`
+(thresholds for `delay` and `ipdv` in ms and `loss` as a fraction,
+and `damping`, intervals in a row, 1 by default) gives the probes the
+thresholds: a metric over its threshold for so many intervals is a
+fault, cleared when under it again for as many (MEF 105 §7.4,
+stateless, O1); the service form asks for them. AS override, damping and extended communities are
 refused, BIRD having no word for them; DHCP and SLAAC at a UNI are
 still to come. Paths shows each edge's instances and their protocols,
 as `birdc show protocols` lists them; `arcanactl sdwan bird json`

@@ -1432,6 +1432,25 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			return (fail(c, "bfd: multiplier is 2 to 10, 3 as a rule "
 			    "(R159)"));
 	}
+	/* Threshold crossing alerts (Mplify 119 §11.4, MEF 105 §7.4). */
+	if ((v = ucl_object_lookup(sw, "tca")) != NULL && !is_null(v)) {
+		double	d;
+
+		if (ucl_object_type(v) != UCL_OBJECT)
+			return (fail(c, "tca is an object: delay, ipdv, loss, "
+			    "damping"));
+		if (((e = ucl_object_lookup(v, "delay")) != NULL && (!is_num(e,
+		    &d) || d <= 0)) || ((e = ucl_object_lookup(v, "ipdv")) !=
+		    NULL && (!is_num(e, &d) || d <= 0)))
+			return (fail(c, "tca: delay and ipdv are ms, more than 0"));
+		if ((e = ucl_object_lookup(v, "loss")) != NULL && (!is_num(e, &d)
+		    || d <= 0 || d > 1))
+			return (fail(c, "tca: loss is a fraction, 0 to 1"));
+		if ((e = ucl_object_lookup(v, "damping")) != NULL && !is_int(e,
+		    1, 100, NULL))
+			return (fail(c, "tca: damping is intervals in a row, 1 to "
+			    "100 (CR2)"));
+	}
 	/* Probing (Mplify 119 §11.4): the defaults of its tunnels. */
 	if ((v = ucl_object_lookup(sw, "probe")) != NULL) {
 		if (ucl_object_type(v) != UCL_OBJECT)

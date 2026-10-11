@@ -3250,6 +3250,7 @@ static const char sdwan_good[] =
     "\"roots\":[\"hq\"],\"leaves\":[\"branch\"]}],"
     "\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},"
     "\"bfd\":{\"interval\":200,\"multiplier\":3},"
+    "\"tca\":{\"delay\":30,\"loss\":0.05,\"damping\":2},"
     "\"rate_limiters\":[{\"name\":\"shared\",\"commit\":1000000,\"limit\":"
     "5000000}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
@@ -3358,6 +3359,7 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
 		{ "\"multiplier\":3", "\"multiplier\":1", "(R159)" },
 		{ "\"10.99.0.9\"]", "\"not a host!\"]", "ntp:" },
+		{ "\"damping\":2", "\"damping\":0", "(CR2)" },
 		{ "\"vlan\":20", "\"vlan\":5000", "(§11.2)" },
 		{ "\"virtual-topology\":\"hub\"", "\"virtual-topology\":\"nope\"",
 		    "(R47)" },
@@ -3544,7 +3546,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * the service's table, as the service's probe settings say. */
 	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-probes\",\"targets\":[{"
 	    "\"id\":\"acme/a-inet-b-inet\",\"address\":\"100.64.0.1\",\"fib\":1,"
-	    "\"eval\":1000}") != NULL, "%s", r.body);
+	    "\"eval\":1000,\"tca\":{\"delay\":30,\"loss\":0.050000,\"damping\":2}}")
+	    != NULL, "%s", r.body);
 	/* The rules: the UNI's packets to their zone's block, each flow
 	 * with its policy's table, the rest dropped; and the steering. */
 	ATF_CHECK_MSG(strstr(r.body, "\"10 skipto tablearg ip from table("

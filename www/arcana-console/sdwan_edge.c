@@ -2883,6 +2883,10 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 					put(tg, ucl_object_key(v),
 					    ucl_object_copy(v));
 			}
+			/* Its threshold crossing alerts. */
+			if ((po = ucl_object_lookup(swo, "tca")) != NULL &&
+			    ucl_object_type(po) == UCL_OBJECT)
+				put(tg, "tca", ucl_object_copy(po));
 			ucl_array_append(targets, tg);
 		}
 	}

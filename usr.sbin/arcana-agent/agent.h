@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.54.0"
+#define	ARCANA_AGENT_VERSION	"0.55.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -428,6 +428,14 @@ void		 sdwan_bird_start(void);
 void		 sdwan_bird_json(struct work *, struct ucl_object_s *);
 int		 sdwan_bfd_state(const char *);
 const char	*sdwan_tunnel_by_via(const char *);
+
+/* gula/faults.c: the faults, kept a day. */
+void		 fault_set(const char *, const char *, const char *, const char *,
+		    const char *, ...) __printflike(5, 6);
+void		 fault_clear(const char *, const char *, const char *, ...)
+		    __printflike(3, 4);
+void		 faults_json(struct ucl_object_s *);
+void		 faults_start(void);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,

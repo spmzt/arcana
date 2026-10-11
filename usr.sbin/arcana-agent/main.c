@@ -603,6 +603,7 @@ main(int argc, char *argv[])
 	jobs_init();
 	history_start();
 	probe_start();
+	faults_start();
 	sdwan_start();
 	sdwan_bird_start();
 	kmsg_start();

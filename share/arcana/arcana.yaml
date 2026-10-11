@@ -2200,7 +2200,10 @@ operations:
       agent sees it; or with more, how many came in that second
       beyond the twenty said one by one.  sdwan-tunnel, with id,
       address, state (up or down) and misses, when a tunnel the agent
-      measures (sdwan-probes) goes down or comes up.  The sdwan reply
+      measures (sdwan-probes) goes down or comes up, or by bfd when
+      BFD says so.  sdwan-fault, with type, severity, object, by,
+      description and state (set or cleared), when a fault is seen or
+      cleared (Mplify 119 §11.3): the sdwan reply lists the day's.  The sdwan reply
       has "rules" (the set, how many rules and which tables) and
       "steer" (each prefix's candidates with their states and which
       is chosen) too.
@@ -2398,7 +2401,10 @@ operations:
       without end), "dscp" (0), "down" and "up" (misses in a row that
       make it down, 3; answers that make it up, 3), "timeout" (ms,
       1000), "eval" (ms of one sample, 1000), "history" (samples kept,
-      3600) and "report".  Kept for the next start.  An empty array
+      3600), "report" and "tca" (thresholds a metric: "delay" and
+      "ipdv" in ms, "loss" a fraction, and "damping", intervals in a
+      row, 1; a metric over its threshold is a fault, tca, cleared
+      under it again).  Kept for the next start.  An empty array
       stops them all.  Each is ICMP echo on a raw socket: root.
     do:
       request:

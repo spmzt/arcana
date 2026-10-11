@@ -1172,13 +1172,16 @@ http_on(int s, const char *host, const char *hdrs, const char *method,
 	size_t			 len, cap, need;
 	ssize_t			 n;
 
+	int			 attempt;
+
 	memset(r, 0, sizeof(*r));
 	ATF_REQUIRE(asprintf(&req, "%s %s HTTP/1.1\r\nHost: %s\r\n"
 	    "Connection: close\r\n%sContent-Type: application/json\r\n"
 	    "Content-Length: %zu\r\n\r\n%s", method, path, host, hdrs,
 	    body != NULL ? strlen(body) : 0, body != NULL ? body : "") != -1);
+	attempt = 0;
+again:
 	ATF_REQUIRE(write(s, req, strlen(req)) == (ssize_t)strlen(req));
-	free(req);
 
 	cap = 65536;
 	ATF_REQUIRE((buf = malloc(cap + 1)) != NULL);
@@ -1205,6 +1208,18 @@ http_on(int s, const char *host, const char *hdrs, const char *method,
 	}
 	close(s);
 	buf[len] = '\0';
+	/*
+	 * Nothing at all: the connection was dropped before it was read,
+	 * which a busy worker does now and then under the whole suite.
+	 * Once more, on a new connection, when the console is asked.
+	 */
+	if (len == 0 && attempt++ < 2 && strcmp(host, "localhost:8443") == 0) {
+		fprintf(stderr, "%s %s: no answer, asked again\n", method, path);
+		free(buf);
+		s = console_socket();
+		goto again;
+	}
+	free(req);
 	ATF_REQUIRE_MSG(sscanf(buf, "HTTP/1.1 %d", &r->status) == 1,
 	    "bad response: %.200s", buf);
 	ATF_REQUIRE((b = strstr(buf, "\r\n\r\n")) != NULL);

@@ -51,6 +51,8 @@ struct bfd {
 #define	BFD_MAX		512
 #define	BFD_EVERY_S	1
 
+static void	 protocols_watch(struct work *, const char *);
+
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
 static struct instance	instances[INSTANCES_MAX];
 static int		ninstances;
@@ -356,12 +358,13 @@ bfd_watch(void *arg __unused)
 	struct work	 w;
 	struct instance	 in[INSTANCES_MAX];
 	struct bfd	*now, *chg;
-	int		 n, i, k, m, was, nchg;
+	int		 n, i, k, m, was, nchg, round;
 	bool		 changed;
 
 	if ((now = calloc(BFD_MAX, sizeof(*now))) == NULL || (chg = calloc(
 	    BFD_MAX, sizeof(*chg))) == NULL)
 		return (NULL);
+	round = 0;
 	for (;;) {
 		sleep(BFD_EVERY_S);
 		pthread_mutex_lock(&lock);
@@ -406,12 +409,70 @@ bfd_watch(void *arg __unused)
 			    id != NULL ? id : chg[k].iface, chg[k].address,
 			    chg[k].iface, chg[k].state == PROBE_UP ? "up" :
 			    chg[k].state == PROBE_DOWN ? "down" : "unknown");
+			if (chg[k].state == PROBE_DOWN)
+				fault_set("bfd", "Major", id != NULL ? id :
+				    chg[k].iface, "bfd", "BFD to %s on %s is down",
+				    chg[k].address, chg[k].iface);
+			else if (chg[k].state == PROBE_UP)
+				fault_clear("bfd", id != NULL ? id : chg[k].iface,
+				    "BFD to %s on %s is up", chg[k].address,
+				    chg[k].iface);
 		}
+		/* Every five seconds, the instances and their BGP neighbours. */
+		if (++round % 5 == 0)
+			for (i = 0; i < n; i++)
+				protocols_watch(&w, in[i].name);
 		work_free(&w);
 		if (changed)
 			sdwan_probe_changed();
 	}
 	return (NULL);
+}
+
+/*
+ * An instance that does not answer is a fault (Critical: nothing is
+ * routed by it), and each BGP neighbour of it that is not up is one
+ * (Major), cleared when it is (Table 4).
+ */
+static void
+protocols_watch(struct work *w, const char *name)
+{
+	struct execres	 res;
+	char		*text, *line, *word, *rest, obj[160];
+	int		 k;
+
+	if (inst_birdc(w, name, "show", "protocols", &res) != 0 || res.out ==
+	    NULL) {
+		fault_set("bird-instance", "Critical", name, "bird", "the BIRD "
+		    "instance %s does not answer", name);
+		return;
+	}
+	fault_clear("bird-instance", name, "the BIRD instance %s answers again",
+	    name);
+	text = wstrdup(w, res.out);
+	while ((line = strsep(&text, "\n")) != NULL) {
+		char	*f[4];
+
+		if (line[0] == '\0' || line[0] == ' ' || strncmp(line, "BIRD", 4)
+		    == 0 || strncmp(line, "Name ", 5) == 0)
+			continue;
+		rest = line;
+		for (k = 0; k < 4 && (word = strsep(&rest, " ")) != NULL; k++) {
+			f[k] = word;
+			while (rest != NULL && *rest == ' ')
+				rest++;
+		}
+		if (k < 4 || strcmp(f[1], "BGP") != 0)
+			continue;
+		snprintf(obj, sizeof(obj), "%s/%s", name, f[0]);
+		if (strcmp(f[3], "up") == 0)
+			fault_clear("bgp-neighbor", obj, "BGP %s of %s is up", f[0],
+			    name);
+		else
+			fault_set("bgp-neighbor", "Major", obj, "bird", "BGP %s of %s "
+			    "is %s%s%s", f[0], name, f[3], rest != NULL && rest[0]
+			    != '\0' ? ": " : "", rest != NULL ? rest : "");
+	}
 }
 
 /* What BFD says of the tunnel whose far address this is; NONE without. */

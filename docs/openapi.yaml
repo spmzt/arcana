@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.94.0
+  version: 0.95.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -797,7 +797,9 @@ paths:
             the services' BIRD instances at the edge, each its name, fib,
             running, protocols (name, proto, state, info) and bfd, its
             sessions (address, interface, state, since); a steering
-            candidate with a session says bfd too.
+            candidate with a session says bfd too; faults, the day's,
+            each t, type, severity (Cleared when it is), was, object,
+            by, description, cleared and cleared_at.
   /api/servers/{server}/history:
     get:
       tags: [servers]

@@ -610,6 +610,14 @@ thresholds(const float *row)
 		event_add("threshold", "{\"what\":\"%s\",\"value\":%.0f,"
 		    "\"limit\":%u,\"over\":%s}", what[i], v[i], limits[i],
 		    over[i] ? "true" : "false");
+		/* And a fault of the host's resources (Mplify 119, Table 4). */
+		if (over[i])
+			fault_set(i == 0 ? "cpu" : "memory", "Major", what[i],
+			    "sampler", "%s at %.0f%%, over %u%%", what[i], v[i],
+			    limits[i]);
+		else
+			fault_clear(i == 0 ? "cpu" : "memory", what[i], "%s at "
+			    "%.0f%%, under %u%% again", what[i], v[i], limits[i]);
 	}
 	rules_check(row);
 }

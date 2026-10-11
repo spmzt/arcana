@@ -2608,13 +2608,20 @@ EOS
 	atf_check -o match:'"chosen":1,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed","bfd":"down"\}' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"kind":"sdwan-tunnel","data":\{"id":"t1","address":"100.64.0.1","interface":"gre100","state":"down","by":"bfd"\}' \
+	    -o match:'"kind":"sdwan-fault","data":\{"type":"bfd","severity":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","state":"set"\}' \
 	    "$JGC" -c "$SOCK" events
+	# A fault of the day, open; cleared when BFD is up again.
+	atf_check -o match:'"faults":\[\{"t":[0-9]+,"type":"bfd","severity":"Major","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","cleared":false\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	test -f sdwan-faults.json || atf_fail "the faults are not kept"
 	rm -f bfd.down
 	for i in $(seq 1 30); do
 		"$JGC" -c "$SOCK" sdwan | grep -q '"chosen":0' && break
 		sleep 0.2
 	done
 	atf_check -o match:'"chosen":0' "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"type":"bfd","severity":"Cleared","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is up","cleared":true,"cleared_at":[0-9]+' \
+	    "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\nprotocol static {}\n"}]}'
 	atf_check -o match:'configure$' cat birdc.log

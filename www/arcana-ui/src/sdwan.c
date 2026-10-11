@@ -57,7 +57,7 @@ static struct {
 	double		 plan_at, apply_at;
 	bool		 applying;
 	ucl_object_t	*paths;		/* sid: /api/servers/<sid>/sdwan data */
-	ucl_object_t	*faults;	/* sid: the sdwan-tunnel events */
+	ucl_object_t	*faults;	/* sid: the agent's faults of the day */
 	double		 paths_at;
 	/* The forms: what is edited, and the host's interfaces for a link. */
 	char		 edit[80];	/* the id edited, "" for a new one */
@@ -263,31 +263,13 @@ paths_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		(void)ucl_object_delete_key(sd.paths, sid);
 		ucl_object_insert_key(sd.paths, ucl_object_copy(jget(o,
 		    "data")), sid, 0, true);
-	}
-	free(sid);
-}
-
-static void
-faults_cb(int status, const ucl_object_t *o, const char *err, void *arg)
-{
-	char			*sid = arg;
-	const ucl_object_t	*e;
-	ucl_object_iter_t	 it;
-	ucl_object_t		*mine;
-
-	(void)err;
-	if (status == 200) {
+		/* Its faults of the day, as the agent keeps them. */
 		if (sd.faults == NULL)
 			sd.faults = ucl_object_typed_new(UCL_OBJECT);
-		mine = ucl_object_typed_new(UCL_ARRAY);
-		it = NULL;
-		while ((e = ucl_object_iterate(jget(o, "events"), &it, true)) !=
-		    NULL)
-			if (jstr(e, "kind") != NULL && strcmp(jstr(e, "kind"),
-			    "sdwan-tunnel") == 0)
-				ucl_array_append(mine, ucl_object_copy(e));
 		(void)ucl_object_delete_key(sd.faults, sid);
-		ucl_object_insert_key(sd.faults, mine, sid, 0, true);
+		ucl_object_insert_key(sd.faults, jget(jget(o, "data"), "faults")
+		    != NULL ? ucl_object_copy(jget(jget(o, "data"), "faults")) :
+		    ucl_object_typed_new(UCL_ARRAY), sid, 0, true);
 	}
 	free(sid);
 }
@@ -321,9 +303,6 @@ paths_load(void)
 			snprintf(url, sizeof(url), "/api/servers/%s/sdwan",
 			    jstr(e, "edge"));
 			api("GET", url, NULL, paths_cb, strdup(jstr(e, "edge")));
-			snprintf(url, sizeof(url), "/api/servers/%s/events",
-			    jstr(e, "edge"));
-			api("GET", url, NULL, faults_cb, strdup(jstr(e, "edge")));
 		}
 	}
 	ucl_object_unref(asked);
@@ -524,8 +503,7 @@ view_dashboard(struct html *h)
 	    true)) != NULL) {
 		eit = NULL;
 		while ((e = ucl_object_iterate(f, &eit, true)) != NULL)
-			if ((double)jint(e, "t", 0) * 1000 > arc_now() - 86400 *
-			    1000.0)
+			if (!jbool(e, "cleared"))
 				nfaults++;
 	}
 	ap = jget(sd.applied, "apply");
@@ -551,9 +529,9 @@ view_dashboard(struct html *h)
 	    "down · gre, gif, geneve, wg; IPsec by strongSwan</span></div>",
 	    tdown > 0 ? "warn" : nt > 0 && tup == nt ? "ok" : "", nt, nt == 1 ?
 	    "" : "s", tup, tdown);
-	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>fault%s in 24 h · "
-	    "tunnels down or up again</span></div>", nfaults > 0 ? "warn" : "",
-	    nfaults, nfaults == 1 ? "" : "s");
+	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>open fault%s · tunnels, "
+	    "BFD, BGP, thresholds, the hosts' resources</span></div>", nfaults >
+	    0 ? "warn" : "", nfaults, nfaults == 1 ? "" : "s");
 	if (ap != NULL && jstr(ap, "state") != NULL) {
 		fmt_age(age, sizeof(age), (double)jint(ap, "started", 0) * 1000);
 		h_fmt(h, "<div class=\"tile %s\"><b>%s</b><span>last apply, %s · "
@@ -1863,40 +1841,53 @@ view_paths(struct html *h)
 		    "with a far prefix to reach has entries once applied.</td>"
 		    "</tr>");
 	h_raw(h, "</tbody></table></div>");
-	/* The faults: tunnels that went down or came up, the newest first. */
-	h_raw(h, "<div class=\"sd-block\"><h3>Faults <small class=\"dim\">a "
-	    "tunnel down or up again, as the edges told it</small></h3><ul "
-	    "class=\"sd-faults\">");
+	/* The faults of the day, as each edge keeps them (Mplify 119
+	 * §11.3): type, severity, what it is of, who saw it; the open
+	 * ones first, then the cleared. */
+	h_raw(h, "<div class=\"sd-block\"><h3>Faults <small class=\"dim\">of "
+	    "the day, as the edges keep them: tunnels and BFD, BGP "
+	    "neighbours, threshold crossings, CPU and memory; open first"
+	    "</small></h3><ul class=\"sd-faults\">");
 	nf = 0;
-	it = NULL;
-	while (sd.faults != NULL && (f = ucl_object_iterate(sd.faults, &it,
-	    true)) != NULL) {
-		fit = NULL;
-		while ((e = ucl_object_iterate(f, &fit, true)) != NULL) {
-			d = jget(e, "data");
-			if (nf++ >= 40)
-				break;
-			fmt_age(age, sizeof(age), (double)jint(e, "t", 0) * 1000);
-			h_fmt(h, "<li class=\"st-%s\"><span class=\"led\"></span>"
-			    "<b>", jstr(d, "state") != NULL ? jstr(d, "state") :
-			    "unknown");
-			h_txt(h, host_name(ucl_object_key(f)));
-			h_raw(h, "</b> <span class=\"mono\">");
-			h_txt(h, jstr(d, "id") != NULL ? jstr(d, "id") : "?");
-			h_raw(h, "</span> ");
-			h_txt(h, jstr(d, "state") != NULL ? jstr(d, "state") :
-			    "");
-			if (jstr(d, "by") != NULL) {
-				h_raw(h, " <small class=\"dim\">by ");
-				h_txt(h, jstr(d, "by"));
-				h_raw(h, "</small>");
+	for (k = 0; k < 2; k++) {
+		it = NULL;
+		while (sd.faults != NULL && (f = ucl_object_iterate(sd.faults,
+		    &it, true)) != NULL) {
+			fit = NULL;
+			while ((e = ucl_object_iterate(f, &fit, true)) != NULL) {
+				if (jbool(e, "cleared") != (k == 1))
+					continue;
+				if (nf++ >= 60)
+					break;
+				fmt_age(age, sizeof(age), (double)jint(e, k == 1 ?
+				    "cleared_at" : "t", 0) * 1000);
+				h_fmt(h, "<li class=\"st-%s sev-%s\"><span class=\"led\">"
+				    "</span><span class=\"chip\">%s</span> <b>", k == 1
+				    ? "up" : "down", jstr(e, "severity") != NULL ?
+				    jstr(e, "severity") : "", jstr(e, "severity") !=
+				    NULL ? jstr(e, "severity") : "");
+				h_txt(h, host_name(ucl_object_key(f)));
+				h_raw(h, "</b> <span class=\"dim\">");
+				h_txt(h, jstr(e, "type") != NULL ? jstr(e, "type") :
+				    "");
+				h_raw(h, "</span> <span class=\"mono\">");
+				h_txt(h, jstr(e, "object") != NULL ? jstr(e, "object")
+				    : "");
+				h_raw(h, "</span> ");
+				h_txt(h, jstr(e, "description") != NULL ? jstr(e,
+				    "description") : "");
+				h_raw(h, " <span class=\"dim\">");
+				h_txt(h, age);
+				if (jstr(e, "by") != NULL) {
+					h_raw(h, " · by ");
+					h_txt(h, jstr(e, "by"));
+				}
+				h_raw(h, "</span></li>");
 			}
-			h_raw(h, " <span class=\"dim\">");
-			h_txt(h, age);
-			h_raw(h, "</span></li>");
 		}
 	}
 	(void)eit;
+	(void)d;
 	if (nf == 0)
 		h_raw(h, "<li class=\"dim\">None.</li>");
 	h_raw(h, "</ul></div>");
@@ -2444,7 +2435,24 @@ sdwan_modal_service(struct html *h)
 		    "interval", 200));
 		text_field(h, "BFD interval, ms", "bfd_interval", buf, "200", "100 "
 		    "to 300; three missed and the tunnel is down.");
-		h_raw(h, "</div>");
+		h_raw(h, "</div><fieldset><legend>Threshold crossing alerts: a "
+		    "fault when a tunnel's metric passes one (Mplify 119 §11.4)"
+		    "</legend><div class=\"two\">");
+		v = jget(o, "tca");
+		snprintf(buf, sizeof(buf), "%g", jnum(v, "delay", 0));
+		text_field(h, "Delay, ms", "tca_delay", jget(v, "delay") != NULL ?
+		    buf : "", "none", NULL);
+		snprintf(buf, sizeof(buf), "%g", jnum(v, "ipdv", 0));
+		text_field(h, "Variation, ms", "tca_ipdv", jget(v, "ipdv") != NULL ?
+		    buf : "", "none", NULL);
+		h_raw(h, "</div><div class=\"two\">");
+		snprintf(buf, sizeof(buf), "%g", jnum(v, "loss", 0));
+		text_field(h, "Loss, a fraction", "tca_loss", jget(v, "loss") != NULL
+		    ? buf : "", "none", "0.01 is one percent.");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(v, "damping", 1));
+		text_field(h, "Damping, intervals in a row", "tca_damping", buf,
+		    "1", NULL);
+		h_raw(h, "</div></fieldset>");
 		return (true);
 	}
 	if (sw == NULL)
@@ -3103,7 +3111,7 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		for (i = 0; i < 12; i++) {
 			static const char *const keys[] = { "id", "fib", "as",
 			    "md5", "reserved_prefixes", "ucs", "bfd", "intervals",
-			    NULL };
+			    "tca", NULL };
 
 			if (keys[i] == NULL)
 				break;
@@ -3130,6 +3138,19 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			ucl_object_insert_key(t, ucl_object_fromint(3), "multiplier",
 			    0, false);
 			ucl_object_insert_key(o, t, "bfd", 0, false);
+		}
+		if ((jstr(f, "tca_delay") != NULL && jstr(f, "tca_delay")[0] !=
+		    '\0') || (jstr(f, "tca_ipdv") != NULL && jstr(f, "tca_ipdv")[0]
+		    != '\0') || (jstr(f, "tca_loss") != NULL && jstr(f,
+		    "tca_loss")[0] != '\0')) {
+			t = ucl_object_typed_new(UCL_OBJECT);
+			put_num(t, "delay", jstr(f, "tca_delay"));
+			put_num(t, "ipdv", jstr(f, "tca_ipdv"));
+			put_num(t, "loss", jstr(f, "tca_loss"));
+			put_int(t, "damping", jstr(f, "tca_damping") != NULL && jstr(
+			    f, "tca_damping")[0] != '\0' ? jstr(f, "tca_damping") :
+			    "1");
+			ucl_object_insert_key(o, t, "tca", 0, false);
 		}
 		t = old != NULL && jget(old, "intervals") != NULL ?
 		    ucl_object_copy(jget(old, "intervals")) :
