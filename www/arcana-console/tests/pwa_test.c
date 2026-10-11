@@ -3562,6 +3562,16 @@ part_flows(void)
 	    "root')", 30);
 	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
 	    ".some(h => h.textContent.startsWith('Steering'))"));
+	/* The monitor of each tunnel: nothing to draw without root, and
+	 * a span to choose. */
+	ATF_CHECK(js_true("document.querySelectorAll('.sd-path .sd-mon').length"
+	    " === 2 && document.querySelector('.sd-path .sd-mon p').textContent"
+	    ".includes('No sample in the last 15 min')"));
+	run("document.querySelector('button[data-act=sd-span][data-arg=\"3600\"]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=sd-span][data-arg="
+	    "\"3600\"].on') && document.querySelector('.sd-path .sd-mon p')"
+	    ".textContent.includes('last 60 min')", 5);
 	shot("9-sdwan-paths");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",

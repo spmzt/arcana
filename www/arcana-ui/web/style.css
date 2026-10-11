@@ -4521,6 +4521,36 @@ svg.sd-topo .tun text.lock { font-size: 11px; }
 table.sd td.acts { white-space: nowrap; text-align: right; }
 table.sd tr.sd-edge-row td { border-bottom: 1px solid var(--line-2); padding-top: .15rem; padding-bottom: .35rem; }
 
+/* The monitor charts of a tunnel: three side by side, one under the
+ * other on a phone; an end a colour of its own. */
+.sd-mon { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem 1rem; margin: .6rem 0 .2rem; }
+.sd-mon > p { grid-column: 1 / -1; margin: 0; font-size: .76rem; }
+.sd-mon-side { min-width: 0; }
+.sd-mon-side h5 { margin: 0 0 .3rem; font-size: .7rem; letter-spacing: .08em; text-transform: uppercase; color: var(--fg-2); }
+.sd-mon-side h5 small { text-transform: none; letter-spacing: 0; font-weight: 400; }
+svg.sd-chart { display: block; width: 100%; height: 90px; background: rgba(var(--surface-rgb), .6); border: 1px solid var(--line); }
+svg.sd-chart .hit { fill: transparent; }
+svg.sd-chart .hit:hover { fill: rgba(255, 255, 255, .08); }
+svg.sd-chart .mean { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+svg.sd-chart .band { fill-opacity: .18; stroke: none; }
+svg.sd-chart .lost { fill-opacity: .85; }
+svg.sd-chart .e0 { stroke: var(--nh-1); fill: var(--nh-1); }
+svg.sd-chart .e1 { stroke: var(--nh-2); fill: var(--nh-2); }
+svg.sd-chart .mean.e0 { fill: none; }
+svg.sd-chart .mean.e1 { fill: none; }
+svg.sd-chart .thr { stroke: var(--amber); stroke-width: 1; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+svg.sd-chart .fault { fill: var(--red); fill-opacity: .14; }
+svg.sd-chart .fault.minor { fill: var(--amber); fill-opacity: .16; }
+.sd-mon-key { grid-column: 1 / -1; margin-top: 0; }
+.sd-mon-key i.e0 { background: var(--nh-1); }
+.sd-mon-key i.e1 { background: var(--nh-2); }
+.sd-mon-key i.thr { background: none; border-top: 2px dashed var(--amber); height: 0; }
+.sd-mon-key i.fault { background: rgba(var(--red-rgb), .25); }
+.sd-span { margin: 0 0 0 auto; }
+@media (max-width: 760px) {
+	.sd-mon { grid-template-columns: 1fr; }
+}
+
 /* The flow form's applications, in columns. */
 .modal fieldset.sd-apps { display: flex; flex-wrap: wrap; gap: .1rem .9rem; }
 .modal fieldset.sd-apps legend { flex-basis: 100%; }

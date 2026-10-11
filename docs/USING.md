@@ -1187,6 +1187,14 @@ and 3), `timeout` (ms, 1000), `history` (samples kept, 3600) and
 `report`; `intervals.eval` is the sample's length. The targets are
 kept beside `history.conf` for the agent's next start; `arcanactl
 sdwan` reads what they saw, `arcanactl sdwan probes json` sets them.
+Under each tunnel's table, its **monitor**: three charts over the last
+5, 15 or 60 minutes (the buttons at the top), the delay (each end's
+mean a line, its least to most a band), the variation and the loss,
+both ends each in a colour, the service's `tca` threshold a dashed
+line where set, and the tunnel's faults (tunnel, bfd, tca) as bands of
+the time they were open; a column hovered gives its figures. The page
+asks each edge only for the samples after the last it gave (`after`)
+and keeps the earlier ones, as many as the agent does.
 
 **The rules** (after the probes, before the routes and UNIs): the
 console compiles each edge's services into one ipfw ruleset of their

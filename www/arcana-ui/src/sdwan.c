@@ -26,6 +26,10 @@
 enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_PATHS, SD_DOCUMENT };
 
 #define	PATHS_EVERY_MS	2000	/* the probes read again, on the Paths tab */
+#define	MON_BINS	120	/* columns of a monitor chart */
+#define	MON_W		600	/* its box */
+#define	MON_H		80
+#define	MON_KEEP	3600	/* samples kept of a target, as the agent's */
 #define	DASH_EVERY_MS	5000	/* and on the dashboard */
 #define	SPARK_N		120	/* samples a spark line shows */
 
@@ -42,6 +46,8 @@ static void	 send(const char *, bool);
 static void	 applied_cb(int, const ucl_object_t *, const char *, void *);
 static const char *ms(double, char *, size_t);
 static void	 view_overview(struct html *);
+static const ucl_object_t *jfind(const ucl_object_t *, const char *,
+		    const char *);
 
 static struct {
 	int		 tab;
@@ -59,6 +65,7 @@ static struct {
 	ucl_object_t	*paths;		/* sid: /api/servers/<sid>/sdwan data */
 	ucl_object_t	*faults;	/* sid: the agent's faults of the day */
 	double		 paths_at;
+	int		 mon_span;	/* seconds the monitor charts draw */
 	/* The forms: what is edited, and the host's interfaces for a link. */
 	char		 edit[80];	/* the id edited, "" for a new one */
 	char		 edit2[80];	/* what it belongs to: an end point, a zone */
@@ -250,19 +257,91 @@ plan_load(void)
 	api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
 }
 
+/*
+ * The samples an edge was asked for are those after the last it gave,
+ * so the earlier ones it already gave are kept in front of them, up
+ * to what the agent itself keeps.
+ */
+static void
+samples_merge(ucl_object_t *data, const ucl_object_t *old)
+{
+	const ucl_object_t	*tg, *ot, *ns, *os, *row;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*merged;
+	int64_t			 first;
+	unsigned int		 nn, no, from, i;
+
+	it = NULL;
+	while ((tg = ucl_object_iterate(jget(data, "targets"), &it, true)) !=
+	    NULL) {
+		ot = jfind(jget(old, "targets"), "id", jstr(tg, "id"));
+		os = ot != NULL ? jget(ot, "samples") : NULL;
+		no = os != NULL ? ucl_array_size(os) : 0;
+		if (no == 0)
+			continue;
+		ns = jget(tg, "samples");
+		nn = ns != NULL ? ucl_array_size(ns) : 0;
+		first = nn > 0 ? ucl_object_toint(ucl_array_find_index(
+		    ucl_array_find_index(ns, 0), 0)) : INT64_MAX;
+		merged = ucl_object_typed_new(UCL_ARRAY);
+		from = no + nn > MON_KEEP ? no + nn - MON_KEEP : 0;
+		for (i = from; i < no; i++) {
+			row = ucl_array_find_index(os, i);
+			if (ucl_object_toint(ucl_array_find_index(row, 0)) >=
+			    first)
+				break;
+			ucl_array_append(merged, ucl_object_ref(row));
+		}
+		for (i = 0; i < nn; i++)
+			ucl_array_append(merged, ucl_object_ref(
+			    ucl_array_find_index(ns, i)));
+		ucl_object_replace_key((ucl_object_t *)(uintptr_t)tg, merged,
+		    "samples", 0, false);
+	}
+}
+
+/* The time after which an edge's samples are asked: the last its
+ * targets all have, 0 when any has none. */
+static int64_t
+paths_after(const char *sid)
+{
+	const ucl_object_t	*tg, *s;
+	ucl_object_iter_t	 it;
+	int64_t			 after, last;
+	unsigned int		 n;
+	bool			 any = false;
+
+	after = 0;
+	it = NULL;
+	while (sd.paths != NULL && (tg = ucl_object_iterate(jget(jget(sd.paths,
+	    sid), "targets"), &it, true)) != NULL) {
+		s = jget(tg, "samples");
+		n = s != NULL ? ucl_array_size(s) : 0;
+		last = n > 0 ? ucl_object_toint(ucl_array_find_index(
+		    ucl_array_find_index(s, n - 1), 0)) : 0;
+		if (!any || last < after)
+			after = last;
+		any = true;
+	}
+	return (after);
+}
+
 /* What one edge's probes have seen, under its id. */
 static void
 paths_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
-	char	*sid = arg;
+	char		*sid = arg;
+	ucl_object_t	*data;
 
 	(void)err;
 	if (status == 200 && jget(o, "data") != NULL) {
 		if (sd.paths == NULL)
 			sd.paths = ucl_object_typed_new(UCL_OBJECT);
+		data = ucl_object_copy(jget(o, "data"));
+		if (jget(sd.paths, sid) != NULL)
+			samples_merge(data, jget(sd.paths, sid));
 		(void)ucl_object_delete_key(sd.paths, sid);
-		ucl_object_insert_key(sd.paths, ucl_object_copy(jget(o,
-		    "data")), sid, 0, true);
+		ucl_object_insert_key(sd.paths, data, sid, 0, true);
 		/* Its faults of the day, as the agent keeps them. */
 		if (sd.faults == NULL)
 			sd.faults = ucl_object_typed_new(UCL_OBJECT);
@@ -302,6 +381,10 @@ paths_load(void)
 			    jstr(e, "edge"), 0, true);
 			snprintf(url, sizeof(url), "/api/servers/%s/sdwan",
 			    jstr(e, "edge"));
+			if (paths_after(jstr(e, "edge")) > 0)
+				snprintf(url + strlen(url), sizeof(url) - strlen(url),
+				    "?after=%lld", (long long)paths_after(jstr(e,
+				    "edge")));
 			api("GET", url, NULL, paths_cb, strdup(jstr(e, "edge")));
 		}
 	}
@@ -1658,6 +1741,275 @@ spark(struct html *h, const ucl_object_t *samples)
 	    from, ms(max, (char[32]){ 0 }, 32));
 }
 
+/* A round figure at or over v, for a chart's top: 1, 2, 5 of a power of ten. */
+static double
+nice(double v)
+{
+	double	m = 1;
+
+	if (v <= 0)
+		return (1);
+	while (v / m >= 10)
+		m *= 10;
+	while (v / m < 1)
+		m /= 10;
+	return (v / m <= 1 ? m : v / m <= 2 ? 2 * m : v / m <= 5 ? 5 * m : 10 *
+	    m);
+}
+
+static void
+mon_ago(char *buf, size_t len, double secs)
+{
+
+	if (secs < 90)
+		snprintf(buf, len, "%.0f s ago", secs);
+	else if (secs < 5400)
+		snprintf(buf, len, "%.0f min ago", secs / 60);
+	else
+		snprintf(buf, len, "%.1f h ago", secs / 3600);
+}
+
+struct monbin {
+	double		delay, ipdv, min, max;	/* sums, the least, the most */
+	long long	sent, lost;
+	int		n;
+};
+
+/*
+ * A tunnel's monitor: its two ends' samples over the span, binned
+ * into columns, as three charts, the delay (its mean a line, its
+ * least to most a band), the variation and the loss, each with the
+ * service's threshold where there is one, and the faults of the
+ * tunnel as bands of time; a column hovered tells its figures.
+ */
+static void
+monitor(struct html *h, const ucl_object_t *t)
+{
+	static const char *const titles[] = { "Delay", "Variation", "Loss" };
+	const ucl_object_t	*e, *tg, *s, *row, *sw, *tca, *fl, *f;
+	ucl_object_iter_t	 fit;
+	struct monbin		 bins[2][MON_BINS], *bn;
+	const char		*tid, *obj, *sev;
+	double			 now, t0, w, top[3], thr[3], v, x, y, y2, ft, fc;
+	char			 tip[500], when[32], b1[32], b2[32];
+	unsigned int		 n, i;
+	int			 span, k, b, p, len;
+	bool			 any = false, drawing;
+
+	span = sd.mon_span > 0 ? sd.mon_span : 900;
+	now = arc_now() / 1000;
+	t0 = now - span;
+	w = (double)span / MON_BINS;
+	tid = jstr(t, "id");
+	memset(bins, 0, sizeof(bins));
+	for (k = 0; k < 2; k++) {
+		e = ucl_array_find_index(jget(t, "ends"), (unsigned int)k);
+		tg = target_of(jstr(e, "edge"), tid);
+		s = tg != NULL ? jget(tg, "samples") : NULL;
+		n = s != NULL ? ucl_array_size(s) : 0;
+		for (i = 0; i < n; i++) {
+			row = ucl_array_find_index(s, i);
+			b = (int)((ucl_object_todouble(ucl_array_find_index(row,
+			    0)) - t0) / w);
+			if (b < 0 || b >= MON_BINS)
+				continue;
+			bn = &bins[k][b];
+			v = ucl_object_todouble(ucl_array_find_index(row, 4));
+			if (bn->n == 0 || v < bn->min)
+				bn->min = v;
+			v = ucl_object_todouble(ucl_array_find_index(row, 5));
+			if (bn->n == 0 || v > bn->max)
+				bn->max = v;
+			bn->delay += ucl_object_todouble(ucl_array_find_index(row,
+			    1));
+			bn->ipdv += ucl_object_todouble(ucl_array_find_index(row,
+			    2));
+			bn->sent += ucl_object_toint(ucl_array_find_index(row, 6));
+			bn->lost += ucl_object_toint(ucl_array_find_index(row, 6))
+			    - ucl_object_toint(ucl_array_find_index(row, 7));
+			bn->n++;
+			any = true;
+		}
+	}
+	/* The service's thresholds, drawn where set (Mplify 119 §11.4). */
+	sw = jfind(jget(sd.doc, "swvcs"), "id", jstr(t, "swvc"));
+	tca = sw != NULL ? jget(sw, "tca") : NULL;
+	thr[0] = tca != NULL ? jnum(tca, "delay", 0) : 0;
+	thr[1] = tca != NULL ? jnum(tca, "ipdv", 0) : 0;
+	thr[2] = tca != NULL ? jnum(tca, "loss", 0) * 100 : 0;
+	h_raw(h, "<div class=\"sd-mon\">");
+	if (!any) {
+		h_fmt(h, "<p class=\"dim\">No sample in the last %d min to draw: "
+		    "the ends' probes have not reported yet, or not for that "
+		    "long.</p></div>", span / 60);
+		return;
+	}
+	for (p = 0; p < 3; p++) {
+		top[p] = thr[p] * 1.15;
+		for (k = 0; k < 2; k++)
+			for (b = 0; b < MON_BINS; b++) {
+				bn = &bins[k][b];
+				if (bn->n == 0)
+					continue;
+				v = p == 0 ? bn->max : p == 1 ? bn->ipdv / bn->n :
+				    bn->sent > 0 ? 100.0 * bn->lost / bn->sent : 0;
+				if (v > top[p])
+					top[p] = v;
+			}
+		top[p] = nice(top[p] > 0 ? top[p] : p == 2 ? 1 : 0.1);
+	}
+	for (p = 0; p < 3; p++) {
+		h_fmt(h, "<div class=\"sd-mon-side\"><h5>%s <small class=\"dim\">"
+		    "up to %s%s</small></h5><svg class=\"sd-chart\" viewBox=\"0 0 "
+		    "%d %d\" preserveAspectRatio=\"none\" role=\"img\">", titles[p],
+		    p == 2 ? (snprintf(b1, sizeof(b1), "%.3g", top[p]), b1) :
+		    ms(top[p], b1, sizeof(b1)), p == 2 ? "%" : "", MON_W, MON_H);
+		/* The faults of the tunnel on each end, as bands of time. */
+		for (k = 0; k < 2; k++) {
+			e = ucl_array_find_index(jget(t, "ends"), (unsigned int)k);
+			fl = sd.faults != NULL ? jget(sd.faults, jstr(e, "edge")) :
+			    NULL;
+			fit = NULL;
+			while (fl != NULL && (f = ucl_object_iterate(fl, &fit, true))
+			    != NULL) {
+				obj = jstr(f, "object");
+				len = tid != NULL ? (int)strlen(tid) : 0;
+				if (obj == NULL || tid == NULL || strncmp(obj, tid,
+				    (size_t)len) != 0 || (obj[len] != '\0' && obj[len]
+				    != '/'))
+					continue;
+				ft = (double)jint(f, "t", 0);
+				fc = jbool(f, "cleared") ? (double)jint(f,
+				    "cleared_at", 0) : now;
+				if (fc < t0 || ft > now)
+					continue;
+				if (ft < t0)
+					ft = t0;
+				sev = jstr(f, "severity");
+				h_fmt(h, "<rect class=\"fault %s\" x=\"%.2f\" y=\"0\" "
+				    "width=\"%.2f\" height=\"%d\"><title>", sev != NULL
+				    && (strcmp(sev, "Major") == 0 || strcmp(sev,
+				    "Critical") == 0) ? "major" : "minor", (ft - t0) /
+				    span * MON_W, (fc - ft) / span * MON_W > 1 ? (fc -
+				    ft) / span * MON_W : 1, MON_H);
+				h_txt(h, jstr(f, "description") != NULL ? jstr(f,
+				    "description") : "");
+				h_raw(h, "</title></rect>");
+			}
+		}
+		if (thr[p] > 0)
+			h_fmt(h, "<line class=\"thr\" x1=\"0\" x2=\"%d\" y1=\"%.2f\" "
+			    "y2=\"%.2f\"><title>threshold %.3g%s</title></line>",
+			    MON_W, MON_H - 4 - thr[p] / top[p] * (MON_H - 10), MON_H -
+			    4 - thr[p] / top[p] * (MON_H - 10), thr[p], p == 2 ?
+			    "%" : " ms");
+		for (k = 0; k < 2; k++) {
+			if (p == 0) {
+				/* The least to the most, as a band. */
+				h_fmt(h, "<path class=\"band e%d\" d=\"", k);
+				drawing = false;
+				for (b = 0; b <= MON_BINS; b++) {
+					bn = b < MON_BINS ? &bins[k][b] : NULL;
+					if (bn == NULL || bn->n == 0) {
+						if (drawing) {
+							/* Back along the least. */
+							for (i = (unsigned int)b; i-- > 0 &&
+							    bins[k][i].n > 0;)
+								h_fmt(h, "L%.1f %.2f ", (i + 0.5) *
+								    MON_W / MON_BINS, MON_H - 4 -
+								    bins[k][i].min / top[0] * (MON_H
+								    - 10));
+							h_raw(h, "Z ");
+						}
+						drawing = false;
+						continue;
+					}
+					h_fmt(h, "%c%.1f %.2f ", drawing ? 'L' : 'M', (b +
+					    0.5) * MON_W / MON_BINS, MON_H - 4 - bn->max /
+					    top[0] * (MON_H - 10));
+					drawing = true;
+				}
+				h_raw(h, "\"/>");
+			}
+			if (p < 2) {
+				h_fmt(h, "<path class=\"mean e%d\" d=\"", k);
+				drawing = false;
+				for (b = 0; b < MON_BINS; b++) {
+					bn = &bins[k][b];
+					if (bn->n == 0) {
+						drawing = false;
+						continue;
+					}
+					v = (p == 0 ? bn->delay : bn->ipdv) / bn->n;
+					h_fmt(h, "%c%.1f %.2f ", drawing ? 'L' : 'M', (b +
+					    0.5) * MON_W / MON_BINS, MON_H - 4 - v / top[p] *
+					    (MON_H - 10));
+					drawing = true;
+				}
+				h_raw(h, "\"/>");
+			} else
+				for (b = 0; b < MON_BINS; b++) {
+					bn = &bins[k][b];
+					if (bn->n == 0 || bn->sent == 0 || bn->lost == 0)
+						continue;
+					v = 100.0 * bn->lost / bn->sent;
+					y = MON_H - 4 - v / top[2] * (MON_H - 10);
+					h_fmt(h, "<rect class=\"lost e%d\" x=\"%.2f\" y=\""
+					    "%.2f\" width=\"%.2f\" height=\"%.2f\"/>", k, (b +
+					    (k == 0 ? 0.05 : 0.5)) * MON_W / MON_BINS, y,
+					    0.45 * MON_W / MON_BINS, MON_H - 4 - y);
+				}
+		}
+		/* The hover: a column's figures of both ends. */
+		for (b = 0; b < MON_BINS; b++) {
+			if (bins[0][b].n == 0 && bins[1][b].n == 0)
+				continue;
+			mon_ago(when, sizeof(when), span - (b + 0.5) * w);
+			snprintf(tip, sizeof(tip), "%s", when);
+			for (k = 0; k < 2; k++) {
+				bn = &bins[k][b];
+				if (bn->n == 0)
+					continue;
+				e = ucl_array_find_index(jget(t, "ends"),
+				    (unsigned int)k);
+				len = (int)strlen(tip);
+				snprintf(tip + len, sizeof(tip) - (size_t)len,
+				    "\nfrom %.24s: delay %s (%s to %s), variation %s, "
+				    "loss %.1f%% of %lld", host_name(jstr(e, "edge")),
+				    ms(bn->delay / bn->n, b1, sizeof(b1)), ms(bn->min,
+				    b2, sizeof(b2)), ms(bn->max, (char[32]){ 0 }, 32),
+				    ms(bn->ipdv / bn->n, (char[32]){ 0 }, 32), bn->sent
+				    > 0 ? 100.0 * bn->lost / bn->sent : 0, bn->sent);
+			}
+			h_fmt(h, "<rect class=\"hit\" x=\"%.2f\" y=\"0\" width=\"%.2f\" "
+			    "height=\"%d\"><title>", b * (double)MON_W / MON_BINS,
+			    (double)MON_W / MON_BINS, MON_H);
+			h_txt(h, tip);
+			h_raw(h, "</title></rect>");
+		}
+		h_raw(h, "</svg><div class=\"ecmp-axis\"><span>");
+		mon_ago(when, sizeof(when), span);
+		h_txt(h, when);
+		h_raw(h, "</span><span>now</span></div></div>");
+	}
+	/* The key: each end's colour, the thresholds, the faults. */
+	h_raw(h, "<ul class=\"ecmp-key sd-mon-key\">");
+	for (k = 0; k < 2; k++) {
+		e = ucl_array_find_index(jget(t, "ends"), (unsigned int)k);
+		h_fmt(h, "<li><i class=\"e%d\"></i><span>from <b>", k);
+		h_txt(h, host_name(jstr(e, "edge")));
+		h_raw(h, "</b>, as its probes see the far end</span></li>");
+	}
+	if (thr[0] > 0 || thr[1] > 0 || thr[2] > 0)
+		h_raw(h, "<li><i class=\"thr\"></i><span>the service's threshold"
+		    "</span></li>");
+	h_raw(h, "<li><i class=\"fault\"></i><span>a fault of the tunnel, while "
+	    "it was open</span></li></ul>");
+	(void)y2;
+	(void)x;
+	h_raw(h, "</div>");
+}
+
 static void
 view_paths(struct html *h)
 {
@@ -1677,11 +2029,26 @@ view_paths(struct html *h)
 		}
 		return;
 	}
-	h_raw(h, "<p class=\"dim\">Each edge pings the far end of each of its "
-	    "tunnels through the service's table, as its probe settings say; "
-	    "of each eval interval it keeps the one-way delay (half the round "
-	    "trip), its variation, the loss, the least and the most. Read "
-	    "every two seconds while this is open.</p>");
+	h_raw(h, "<div class=\"ecmp-head\"><p class=\"dim ecmp-note\">Each edge "
+	    "pings the far end of each of its tunnels through the service's "
+	    "table, as its probe settings say; of each eval interval it keeps "
+	    "the one-way delay (half the round trip), its variation, the "
+	    "loss, the least and the most. Read every two seconds while this "
+	    "is open; the charts draw what the agents keep, an hour of "
+	    "samples unless the service's probe says otherwise.</p>");
+	{
+		static const int	 secs[] = { 300, 900, 3600 };
+		size_t			 i;
+		int			 span = sd.mon_span > 0 ? sd.mon_span : 900;
+
+		h_raw(h, "<nav class=\"sub sd-span\" title=\"How far back the "
+		    "charts draw\">");
+		for (i = 0; i < nitems(secs); i++)
+			h_fmt(h, "<button class=\"ghost small%s\" data-act=\"sd-span"
+			    "\" data-arg=\"%d\">%d min</button>", span == secs[i] ?
+			    " on" : "", secs[i], secs[i] / 60);
+		h_raw(h, "</nav></div>");
+	}
 	it = NULL;
 	while ((t = ucl_object_iterate(jget(sd.plan, "tunnels"), &it, true)) !=
 	    NULL) {
@@ -1778,7 +2145,9 @@ view_paths(struct html *h)
 			spark(h, jget(tg, "samples"));
 			h_raw(h, "</td></tr>");
 		}
-		h_raw(h, "</tbody></table></div>");
+		h_raw(h, "</tbody></table>");
+		monitor(h, t);
+		h_raw(h, "</div>");
 	}
 	if (jget(sd.plan, "tunnels") == NULL || ucl_array_size(jget(sd.plan,
 	    "tunnels")) == 0)
@@ -3899,7 +4268,9 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sd.note[0] = '\0';
 		if (sd.tab != SD_DOCUMENT)
 			sd.error[0] = '\0';
-	} else if (strcmp(act, "sd-swvc") == 0) {
+	} else if (strcmp(act, "sd-span") == 0)
+		sd.mon_span = atoi(arg);
+	else if (strcmp(act, "sd-swvc") == 0) {
 		snprintf(sd.swvc, sizeof(sd.swvc), "%s", arg);
 		sd.tab = SD_SERVICES;
 	} else if (strcmp(act, "input:sd-swvc") == 0)
