@@ -73,6 +73,13 @@
   security policies in the document with MEF 88's criteria, checked,
   on a Security tab with a form, the example carrying one (S1.1).
   Next: S1.2, the addresses and rates in the rules.
+- A luxuria plugin installed in a vnet jail and not on the host does
+  not get its tab (reported 2026-10-11). The agent lists a running
+  vnet jail's plugins by access(X_OK) on the program under the jail's
+  root, and the page gives the tab to a host one of whose running vnet
+  jails has it; to find out: the jail's name, whether the agent runs
+  as root (a root 0700 cannot be looked into otherwise), and what the
+  host's list read says under that jail's plugins.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:

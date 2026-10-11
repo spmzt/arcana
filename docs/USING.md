@@ -955,7 +955,9 @@ draws them (above).
   session or an OSPF adjacency between two hosts as a link of its own
   kind, and a neighbour that is not a host of this console as a small
   node beside the host that speaks to it, with its AS or router ID;
-  picking one opens that host's BIRD. **Peers** hides them.
+  picking one opens that host's BIRD. **Peers** hides them. A running
+  vnet jail is a node of its own with its links; **VNet jails** hides
+  them all, and the choice is kept in the browser.
 - With nothing picked, the panel lists every **WireGuard session**: each
   peer of each host, by the other host's name when it is one, with its
   endpoint and when it last shook hands.
