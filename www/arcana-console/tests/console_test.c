@@ -3288,6 +3288,43 @@ static const char sdwan_good[] =
     "\"provider\":[\"2001:db8:1::1\"],\"dns\":[\"2001:db8:1::1\"]}}}]}]}";
 
 /* s with its first from made to, into out; false when from is not there. */
+/* An interface of this host with an IPv4 address that is not the
+ * loopback's, and the address: the first up, by ifconfig(8). */
+static bool
+host_iface(char *ifn, size_t ilen, char *addr, size_t alen)
+{
+	FILE	*fp;
+	char	 line[200], *p, *q;
+
+	ifn[0] = addr[0] = '\0';
+	if ((fp = popen("ifconfig -l -u", "r")) == NULL)
+		return (false);
+	if (fgets(line, sizeof(line), fp) == NULL)
+		line[0] = '\0';
+	pclose(fp);
+	for (p = line; (q = strsep(&p, " \n")) != NULL; ) {
+		char	cmd[200];
+
+		if (q[0] == '\0' || strncmp(q, "lo", 2) == 0 || strncmp(q, "cni",
+		    3) == 0 || strncmp(q, "pflog", 5) == 0)
+			continue;
+		snprintf(cmd, sizeof(cmd), "ifconfig %s inet 2>/dev/null | awk "
+		    "'/inet /{print $2; exit}'", q);
+		if ((fp = popen(cmd, "r")) == NULL)
+			continue;
+		if (fgets(addr, (int)alen, fp) != NULL && addr[0] != '\0' &&
+		    addr[0] != '\n') {
+			addr[strcspn(addr, "\n")] = '\0';
+			pclose(fp);
+			snprintf(ifn, ilen, "%s", q);
+			return (true);
+		}
+		pclose(fp);
+		addr[0] = '\0';
+	}
+	return (false);
+}
+
 static bool
 swap_in(const char *s, const char *from, const char *to, char *out,
     size_t len)
@@ -3385,6 +3422,15 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"egress-block\":\"discard\"", "\"encryption\":\"optional\"",
 		    "egress policy" },
 		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
+		/* The UCS end points' addressing and routing (Mplify 119). */
+		{ "\"interface\":\"vtnet1\",\"backup\":true", "\"interface\":"
+		    "\"vtnet1\",\"backup\":true,\"addressing\":\"ppp\"",
+		    "(Mplify 119 §12.2.3.2)" },
+		{ "\"interface\":\"vtnet1\",\"backup\":true", "\"interface\":"
+		    "\"vtnet1\",\"backup\":true,\"vrf\":0", "(§12.2.3.4)" },
+		{ "\"interface\":\"vtnet1\",\"backup\":true", "\"interface\":"
+		    "\"vtnet1\",\"backup\":true,\"routing\":{\"bgp\":{\"family\":"
+		    "\"ipv4\",\"neighbors\":[\"10.99.0.9\"]}}", "AS number" },
 		/* The routing domains (Mplify 119). */
 		{ "\"breakout\":{\"fib\":2", "\"breakout\":{\"fib\":1", "(R20)" },
 		{ "\"label\":1001", "\"label\":7", "(R19)" },
@@ -3477,7 +3523,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	struct authn	a;
 	struct resp	r;
 	char		cwd[1024], body[400], sa[16], sb[16];
-	char		doc[8192], t1[8192];
+	char		doc[8192], t1[8192], t2[300], lifn[32], laddr[64];
 	size_t		i;
 
 	start(tc, 0, NULL);
@@ -3501,16 +3547,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	static const char *const edits[][2] = {
 		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
-		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\","
+		    "\"vrf\":3,\"routing\":{\"bgp\":{\"family\":\"ipv4\",\"as\":"
+		    "65000,\"neighbors\":[\"192.0.2.254\"],\"password\":\"up\"}}" },
 		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
 		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
 		    "\"address\":\"10.99.0.1\"" },
 		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
 		    "\"address\":\"192.0.2.2\"" },
-		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
-		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
-		    "\"address\":\"10.99.0.2\"" },
 		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
 		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
 		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
@@ -3518,6 +3563,21 @@ ATF_TC_BODY(sdwan_apply, tc)
 		/* gif: geneve's address needs an interface the kernel has. */
 		{ "\"kind\":\"geneve\"", "\"kind\":\"gif\"" },
 	};
+	/* b-mpls addressed by DHCP (Mplify 119 §12.2.3.2): its address is
+	 * not in the document but learned from the host, so it is an
+	 * interface of this host with an IPv4 address, whichever that is;
+	 * a host without one keeps the address in the document. */
+	if (host_iface(lifn, sizeof(lifn), laddr, sizeof(laddr)))
+		snprintf(t2, sizeof(t2), "\"id\":\"b-mpls\",\"ucs\":\"mpls\","
+		    "\"interface\":\"%s\",\"addressing\":\"dhcp\"", lifn);
+	else {
+		snprintf(laddr, sizeof(laddr), "10.99.0.2");
+		snprintf(t2, sizeof(t2), "\"id\":\"b-mpls\",\"ucs\":\"mpls\","
+		    "\"interface\":\"vtnet1\",\"address\":\"10.99.0.2\"");
+	}
+	ATF_REQUIRE(swap_in(doc, "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":"
+	    "\"vtnet1\"", t2, t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
 	for (i = 0; i < nitems(edits); i++) {
 		ATF_REQUIRE(swap_in(doc, edits[i][0], edits[i][1], t1,
 		    sizeof(t1)));
@@ -3538,8 +3598,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 */
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK_EQ(2, (int)ucl_array_size(ucl_object_lookup(r.json,
-	    "tunnels")));
+	ATF_REQUIRE_EQ_MSG(2, (int)ucl_array_size(ucl_object_lookup(r.json,
+	    "tunnels")), "%s", r.body);
 	ATF_CHECK_STREQ("gre", jstr(&r, "tunnels.0.kind"));
 	ATF_CHECK_STREQ("true", jstr(&r, "tunnels.0.ipsec"));
 	ATF_CHECK_STREQ("gre100", jstr(&r, "tunnels.0.ends.0.ifname"));
@@ -3637,6 +3697,29 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "\"100.64.0.0/32 via gre101, fib 2 (the tunnel's "
 	    "far end, in the breakout domain)\"") != NULL);
 	ATF_CHECK(strstr(r.body, "0.0.0.0/0 via 192.0.2.254, fib 1 (") == NULL);
+	/* The UCS end points (Mplify 119 §12.2.3): b-mpls addressed by
+	 * DHCP, its address learned from the host (the helper says
+	 * epair1b has 10.99.0.2), so the geneve tunnel still has its far
+	 * end; a-inet in its own table, the gre tunnel's outer packets by
+	 * it, BGP with the underlay by a BIRD instance of its own. */
+	if (lifn[0] != '\0') {
+		snprintf(t2, sizeof(t2), "\"kind\":\"if-set\",\"interface\":\"%s\","
+		    "\"persist\":true,\"addressing\":\"dhcp\"", lifn);
+		ATF_CHECK_MSG(strstr(r.body, "\"key\":\"ucs:b-mpls\"") != NULL &&
+		    strstr(r.body, t2) != NULL, "%s", r.body);
+	}
+	snprintf(t2, sizeof(t2), "\"tunnel_remote\":\"%s\"", laddr);
+	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"if-set\",\"interface\":\"vtnet0\","
+	    "\"persist\":true,\"fib\":3") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"tunnel_remote\":\"192.0.2.2\",\"tunnelfib\":3")
+	    != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "{\"name\":\"ucs3\",\"fib\":3,\"conf\":\"# "
+	    "Written by the Arcana console: UCS end point a-inet at a, routing "
+	    "with the underlay in table 3.") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "protocol bgp ucs_a_inet_0 {\\n\\tlocal as 64512;"
+	    "\\n\\tneighbor 192.0.2.254 as 65000;\\n\\tinterface \\\"vtnet0\\\";")
+	    != NULL);
 	/* Routing: a BIRD instance of the service on each edge, in its
 	 * table, iBGP between them by each tunnel, and at hq's UNI BGP
 	 * with the subscriber as the entry says. */
@@ -3740,8 +3823,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q '^gre100 inet 100.64.0.0/31 100.64.0.1' "
 	    "ifconfig.log") == 0);
-	ATF_CHECK(system("grep -q '^gif102 tunnel 10.99.0.1 10.99.0.2' "
-	    "ifconfig.log") == 0);
+	snprintf(t2, sizeof(t2), "grep -q '^gif102 tunnel 10.99.0.1 %s' "
+	    "ifconfig.log", laddr);
+	ATF_CHECK_MSG(system(t2) == 0, "%s", t2);
 	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q 'vlan104 create vlan 20 vlandev lo0' "
 	    "ifconfig.log") == 0);
@@ -3884,11 +3968,12 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK_MSG(strstr(r.body, "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
-	    "\"local\",\"10.99.0.1\",\"remote\",\"10.99.0.2\"]") != NULL &&
-	    strstr(r.body, "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
-	    "\"local\",\"10.99.0.2\",\"remote\",\"10.99.0.1\"]") != NULL,
-	    "%s", r.body);
+	snprintf(t2, sizeof(t2), "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
+	    "\"local\",\"10.99.0.1\",\"remote\",\"%s\"]", laddr);
+	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
+	snprintf(t2, sizeof(t2), "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
+	    "\"local\",\"%s\",\"remote\",\"10.99.0.1\"]", laddr);
+	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
 	resp_free(&r);
 }
 

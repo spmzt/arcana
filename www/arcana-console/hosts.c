@@ -3808,6 +3808,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		sp->has_tunnelfib = true;
 		sp->tunnelfib = (uint32_t)ucl_object_toint(v);
 	}
+	sp->addressing = jdup(o, "addressing");
 	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
 	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
 		sp->has_metric = true;

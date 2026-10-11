@@ -273,7 +273,7 @@ start_daemon()
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
-	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" \
+	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
 	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
@@ -987,6 +987,21 @@ EOS
 	    cat rc.conf
 	atf_check -s exit:1 -o match:'without quotes' \
 	    "$JGC" -p -c "$SOCK" interface lo0 description 'a"; reboot'
+	# How it gets its address: DHCP by rc.conf's word and dhclient
+	# (kept, as its rc script insists), SLAAC by accept_rtadv and
+	# rtsol, kept in ifconfig_lo0_ipv6; static takes both off.
+	printf '#!/bin/sh\necho "rtsol $*" >> %s/rtsol.log\n' "$(pwd)" > fake-rtsol
+	chmod +x fake-rtsol
+	atf_check -s exit:1 -o match:'say persist' "$JGC" -c "$SOCK" interface lo0 addressing dhcp
+	atf_check -o match:'lo0: set addressing dhcp' "$JGC" -p -c "$SOCK" interface lo0 addressing dhcp
+	atf_check -o match:'^ifconfig_lo0="DHCP inet 127.0.0.1/8 mtu 1300 up"$' cat rc.conf
+	test -f running.dhclient || atf_fail "dhclient was not started"
+	atf_check -o match:'fake-ifconfig lo0 inet6 accept_rtadv -ifdisabled' "$JGC" -p -c "$SOCK" interface lo0 addressing slaac
+	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' -o match:'^ifconfig_lo0_ipv6="inet6 accept_rtadv"$' cat rc.conf
+	atf_check -o match:'^rtsol lo0$' cat rtsol.log
+	test ! -f running.dhclient || atf_fail "dhclient was not stopped"
+	atf_check -o match:'fake-ifconfig lo0 inet6 -accept_rtadv' "$JGC" -p -c "$SOCK" interface lo0 addressing static
+	atf_check -o not-match:'ifconfig_lo0_ipv6' -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' cat rc.conf
 
 	# Addresses kept as aliases: numbered from 0, and without gaps
 	# when one in the middle goes.

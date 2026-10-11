@@ -45,9 +45,47 @@
   own with the default route, the UNIs' routes imported and the flows
   sent to it by setfib, the tunnels' addresses from the service
   domain's prefix (119-2 tasks 2.1 to 2.3; stand-ins, not the lab:
-  the jails have no Internet to break out to). Next: 2.4, the UCS
-  interfaces addressed by DHCP or SLAAC and routed. Later: Mplify 119's tunnel
+  the jails have no Internet to break out to); the UCS End Points
+  addressed by DHCP or SLAAC (the address learned from the host at
+  each plan), in a table of their own, and routed with the underlay by
+  a BIRD instance of the edge (2.4; stand-ins, the lab run to come).
+  Next: 2.5, the phase closed on the jails; then 119-3. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
+- The interface form (asked 2026-10-11): it helps too little. An
+  enum of interface kinds (gre, gif, ipsec, wg, vlan, vxlan, geneve,
+  bridge, epair, lagg, tap, tun, lo, ovpn) and the fields of each
+  shown for it alone (a tunnel's ends, a VLAN's tag and parent, a
+  VXLAN's id, a bridge's members, ...); a persist switch that keeps
+  the interface in rc.conf's cloned_interfaces with its ifconfig_
+  line; and WireGuard's tab makes a wg interface by the same job as
+  the form (if-create), then its keys and peers.
+- Jails made and changed from the console (asked 2026-10-11), the way
+  the user makes them on his servers. A shared `/etc/jail.conf` holds
+  the defaults, the user's domain in place of example.net:
+  `path = "/usr/jails/${name}"`, `host.hostname =
+  "${name}.<domain>"`, `host.domainname = "<domain>"`, `exec.start =
+  "/bin/sh /etc/rc"`, `exec.stop = "/bin/sh /etc/rc.shutdown jail"`,
+  `exec.consolelog = "/var/log/${name}_console.log"`, `exec.clean`,
+  `mount.devfs`. One ZFS dataset per jail, mounted at the path (as
+  `<pool>/jails/<name>`, under a dataset for the jails of the host):
+  made with the jail from a base jail's snapshot, two ways to choose
+  from: `zfs clone` (quick, tied to the snapshot) or `zfs send | zfs
+  recv` (a copy of its own, independent of the base); listed with the
+  jail, destroyed with it only when asked.
+  Each jail is a file of its own,
+  `/etc/jail.conf.d/<name>.conf`, that begins with `.include
+  "/etc/jail.conf";` and has the jail's block: `devfs_ruleset`,
+  `sysvsem = new` and the like, `allow.raw_sockets`, `ip4.addr =
+  "bridge0|172.23.1.43"`, `ip6.addr = "bridge0.20|2a01:...:443"` (an
+  interface and an address each), and `.include`s of templates kept
+  beside it, such as a certbot one that adds `exec.created +=` and
+  `exec.poststop +=` lines (directories made, nullfs mounts of another
+  jail's certificates, unmounted at stop); a template is written once
+  and included by every jail that needs it. The console's forms: the
+  shared defaults once per host, a jail (name, dataset, addresses on
+  their interfaces, the switches, the templates to include), a
+  template (its lines); the agent writes the files (libjailconf
+  already parses them), makes the dataset and starts the jail.
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.
@@ -367,6 +405,16 @@ What was once in the list above, and when it was run:
   one.
 
 ## Known limits
+
+- The GitHub workflow (2026-10-11): the images it builds on
+  (ghcr.io/spmzt/freebsd-emscripten, cblink) carry a 16.0-CURRENT
+  userland, and vmactions/freebsd-vm boots 15.1 at most, so inside the
+  container head(1), tail(1) and the like die on casper ("Invalid
+  pdflags at fork") and the agent's test suite fails there while it
+  passes on a 16.0 host; the same skew is the likely cause of the
+  ipsec and vnet cases' garbled arguments. The images need a 15.1
+  base, or the tests a kernel of their own. Until then the build
+  cannot go green.
 
 From a review of the whole code for flaws of security and design; what
 it found and could be fixed was, and this is what stays:

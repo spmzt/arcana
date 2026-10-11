@@ -948,10 +948,12 @@ routing(struct ck *c, const ucl_object_t *v, const char *what,
 			    (a.af == AF_INET6 && strcmp(fam, "ipv4") == 0))
 				return (fail(c, "bgp: %s is not of the family",
 				    ucl_object_tostring_forced(m)));
+			/* At a UNI, within its prefixes; a UCS has none to
+			 * check against. */
 			for (i = 0; i < nnets; i++)
 				if (holds(&nets[i], &a))
 					break;
-			if (i == nnets)
+			if (nnets > 0 && i == nnets)
 				return (fail(c, "bgp: %s is not within the UNI's "
 				    "prefixes (§11.6.2)",
 				    ucl_object_tostring_forced(m)));
@@ -1749,6 +1751,29 @@ check(const ucl_object_t *doc, struct ck *c)
 			    !is_int(ucl_object_lookup(e, "bandwidth"), 0,
 			    INT64_MAX, NULL))
 				ok = fail(c, "its bandwidth is bits per second");
+			/* How it is addressed and routed (Mplify 119 §12.2.3):
+			 * by DHCP or SLAAC the address is learned from the
+			 * host; a vrf is a table of its own; bgp or ospf with
+			 * the underlay as at a UNI. */
+			else if (str(e, "addressing") != NULL && !one_of(str(e,
+			    "addressing"), (const char *const[]){ "static", "dhcp",
+			    "slaac", NULL }))
+				ok = fail(c, "its addressing is static, dhcp or slaac "
+				    "(Mplify 119 §12.2.3.2)");
+			else if (ucl_object_lookup(e, "vrf") != NULL && !is_int(
+			    ucl_object_lookup(e, "vrf"), 1, FIB_MAX, NULL))
+				ok = fail(c, "its vrf is a routing table, 1 or more "
+				    "(§12.2.3.4)");
+			else if (ucl_object_lookup(e, "routing") != NULL &&
+			    !is_null(ucl_object_lookup(e, "routing")) &&
+			    ucl_object_type(ucl_object_lookup(e, "routing")) !=
+			    UCL_OBJECT)
+				ok = fail(c, "its routing is an object: bgp, ospf");
+			else if (!routing(c, ucl_object_lookup(ucl_object_lookup(e,
+			    "routing"), "bgp"), "bgp", NULL, 0) || !routing(c,
+			    ucl_object_lookup(ucl_object_lookup(e, "routing"),
+			    "ospf"), "ospf", NULL, 0))
+				ok = false;
 		}
 	}
 	ucl_object_unref(seen_ucsep);

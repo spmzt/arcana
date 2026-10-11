@@ -1270,6 +1270,16 @@ attribute-sets:
           public key.
         checks:
           max-len: 128
+      - name: addressing
+        type: text
+        doc: |
+          For if-set, how the interface gets its address: dhcp
+          (dhclient, by rc.conf's DHCP word, so with persist), slaac
+          (inet6 accept_rtadv and rtsol, kept in ifconfig_<if>_ipv6)
+          or static, which takes both off (Mplify 119 §12.2.3.2,
+          §12.2.3.3).
+        checks:
+          max-len: 8
 
   - name: job
     attributes:

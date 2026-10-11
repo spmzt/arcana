@@ -48,6 +48,8 @@ static const char *ms(double, char *, size_t);
 static void	 view_overview(struct html *);
 static const ucl_object_t *jfind(const ucl_object_t *, const char *,
 		    const char *);
+static void	 put_str(ucl_object_t *, const char *, const char *);
+static void	 put_int(ucl_object_t *, const char *, const char *);
 
 static struct {
 	int		 tab;
@@ -918,6 +920,18 @@ view_overview(struct html *h)
 			h_raw(h, "</td><td class=\"mono\">");
 			h_txt(h, jstr(e, "address") != NULL ? jstr(e, "address") :
 			    "");
+			if (jstr(e, "addressing") != NULL && strcmp(jstr(e,
+			    "addressing"), "static") != 0)
+				h_fmt(h, " <span class=\"chip\" title=\"The address is "
+				    "learned from the host\">%s</span>", strcmp(jstr(e,
+				    "addressing"), "dhcp") == 0 ? "DHCP" : "SLAAC");
+			if (jint(e, "vrf", 0) > 0)
+				h_fmt(h, " <span class=\"dim\">fib %lld</span>", (long
+				    long)jint(e, "vrf", 0));
+			if (jget(jget(e, "routing"), "bgp") != NULL || jget(jget(e,
+			    "routing"), "ospf") != NULL)
+				h_raw(h, " <span class=\"chip\" title=\"Routed with the "
+				    "underlay by BIRD\">routed</span>");
 			if (jstr(e, "gateway") != NULL) {
 				h_raw(h, " <span class=\"dim\">via ");
 				h_txt(h, jstr(e, "gateway"));
@@ -2723,6 +2737,51 @@ sdwan_modal(struct html *h)
 		    "Backup: used only when nothing else is left</label></div>"
 		    "</div>", lk != NULL && jbool(lk, "breakout") ? " checked" :
 		    "", lk != NULL && jbool(lk, "backup") ? " checked" : "");
+		/* How the interface is addressed and routed (Mplify 119
+		 * §12.2.3): by DHCP or SLAAC the address is learned from the
+		 * host at each plan; a table of its own; BGP or OSPF with the
+		 * underlay by a BIRD instance of the edge. */
+		{
+			const ucl_object_t	*rt = lk != NULL ? jget(lk, "routing") :
+			    NULL, *bg = jget(rt, "bgp"), *os = jget(rt, "ospf");
+			char			 nb[32], lb3[300];
+
+			h_raw(h, "<fieldset><legend>Addressed and routed <small "
+			    "class=\"dim\">Mplify 119 §12.2.3; all optional</small>"
+			    "</legend><div class=\"two\"><label>The interface's "
+			    "address<select name=\"addressing\">");
+			option(h, "static", "Static: as given above", lk != NULL ?
+			    jstr(lk, "addressing") : NULL);
+			option(h, "dhcp", "DHCP: dhclient, learned at each plan", lk
+			    != NULL ? jstr(lk, "addressing") : NULL);
+			option(h, "slaac", "SLAAC: router advertisements, rtsol", lk
+			    != NULL ? jstr(lk, "addressing") : NULL);
+			h_raw(h, "</select><small>With DHCP or SLAAC the address "
+			    "above may stay empty: the edge's is read from the host "
+			    "when a plan is made.</small></label>");
+			snprintf(nb, sizeof(nb), "%lld", lk != NULL ? (long long)
+			    jint(lk, "vrf", 0) : 0LL);
+			text_field(h, "Routing table (VRF)", "vrf", lk != NULL &&
+			    jint(lk, "vrf", 0) > 0 ? nb : "", "3", "A table of the "
+			    "underlay's own (setfib): the interface and the tunnels' "
+			    "outer packets go by it (§12.2.3.4).");
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(nb, sizeof(nb), "%lld", (long long)jint(bg, "as", 0));
+			text_field(h, "BGP: the underlay's AS", "bgp_as", jint(bg,
+			    "as", 0) > 0 ? nb : "", "65000", "With a neighbour, BGP "
+			    "with the underlay by BIRD (§12.2.3.5).");
+			text_field(h, "BGP neighbours", "bgp_neighbors", csv(jget(bg,
+			    "neighbors"), lb3, sizeof(lb3)), "192.0.2.254", "Addresses,"
+			    " by commas.");
+			h_raw(h, "</div><div class=\"two\">");
+			text_field(h, "BGP password", "bgp_password", jstr(bg,
+			    "password"), "", "TCP MD5, if agreed.");
+			snprintf(nb, sizeof(nb), "%lld", (long long)jint(os, "area",
+			    0));
+			text_field(h, "OSPF area", "ospf_area", os != NULL ? nb : "",
+			    "0", "Set, OSPF with the underlay on the interface.");
+			h_raw(h, "</div></fieldset>");
+		}
 		return (true);
 	}
 	return (false);
@@ -3531,6 +3590,41 @@ sd_forms(const char *form, const ucl_object_t *f)
 		if (checked(f, "backup"))
 			ucl_object_insert_key(o, ucl_object_frombool(true),
 			    "backup", 0, false);
+		if ((v = jstr(f, "addressing")) != NULL && v[0] != '\0' && strcmp(v,
+		    "static") != 0)
+			ucl_object_insert_key(o, ucl_object_fromstring(v),
+			    "addressing", 0, false);
+		if ((v = jstr(f, "vrf")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL,
+			    10)), "vrf", 0, false);
+		{
+			ucl_object_t	*rt = ucl_object_typed_new(UCL_OBJECT), *bg;
+
+			if ((v = jstr(f, "bgp_as")) != NULL && v[0] != '\0') {
+				bg = ucl_object_typed_new(UCL_OBJECT);
+				put_str(bg, "family", "both");
+				put_int(bg, "as", v);
+				if ((v = jstr(f, "bgp_neighbors")) != NULL && v[0] !=
+				    '\0')
+					ucl_object_insert_key(bg, list_of(v), "neighbors",
+					    0, false);
+				if ((v = jstr(f, "bgp_password")) != NULL && v[0] !=
+				    '\0')
+					put_str(bg, "password", v);
+				ucl_object_insert_key(rt, bg, "bgp", 0, false);
+			}
+			if ((v = jstr(f, "ospf_area")) != NULL && v[0] != '\0') {
+				bg = ucl_object_typed_new(UCL_OBJECT);
+				put_str(bg, "family", "both");
+				put_int(bg, "area", v);
+				ucl_object_insert_key(rt, bg, "ospf", 0, false);
+			}
+			if (ucl_object_iterate(rt, &(ucl_object_iter_t){ NULL }, true)
+			    == NULL)
+				ucl_object_unref(rt);
+			else
+				ucl_object_insert_key(o, rt, "routing", 0, false);
+		}
 		n = ucl_array_size(links);
 		for (i = 0; was[0] != '\0' && i < n; i++) {
 			e = ucl_array_find_index(links, i);
