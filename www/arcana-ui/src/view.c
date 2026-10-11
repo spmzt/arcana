@@ -1812,6 +1812,12 @@ modal(struct html *h)
 		if (!ipsec_modal(h))
 			return;
 		break;
+	case MODAL_SD_UCS:
+	case MODAL_SD_EDGE:
+	case MODAL_SD_LINK:
+		if (!sdwan_modal(h))
+			return;
+		break;
 	case MODAL_BIRD_PROTO:
 	case MODAL_BIRD_BLOCK:
 	case MODAL_BIRD_RPKI:
@@ -2087,6 +2093,13 @@ modal(struct html *h)
 		case MODAL_IF_SET:
 		case MODAL_WG_INIT:
 			h_raw(h, "<button class=\"primary\">Set</button>");
+			break;
+		case MODAL_SD_UCS:
+		case MODAL_SD_LINK:
+			h_raw(h, "<button class=\"primary\">Keep</button>");
+			break;
+		case MODAL_SD_EDGE:
+			h_raw(h, "<button class=\"primary\">Add the edge</button>");
 			break;
 		case MODAL_WG_PEER:
 		case MODAL_IPSEC_CONN:

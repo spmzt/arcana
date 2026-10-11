@@ -3389,8 +3389,11 @@ part_flows(void)
 	wait_js("[...document.querySelectorAll('section.sdwan table.sd')]"
 	    ".length === 3 && document.querySelector('section.sdwan "
 	    "button[data-act=sd-swvc]')?.textContent === 'office'", 10);
+	/* Four WAN links, and each edge's own line below its links. */
 	ATF_CHECK(js_true("document.querySelectorAll('section.sdwan table.sd')"
-	    "[1].querySelectorAll('tbody tr').length === 4"));
+	    "[1].querySelectorAll('tbody tr').length === 6 && document."
+	    "querySelectorAll('section.sdwan table.sd')[1].querySelectorAll("
+	    "'tbody tr.sd-edge-row').length === 2"));
 	/* The dashboard: the tiles, and the topology with the two edges
 	 * and the plan's two tunnels between them. */
 	wait_js("document.querySelectorAll('svg.sd-topo g.node').length === 2 "
@@ -3398,6 +3401,57 @@ part_flows(void)
 	    "document.querySelector('.sd-tiles .tile b').textContent === '2'",
 	    20);
 	shot("9-sdwan-overview");
+	/*
+	 * The forms: an underlay added, changed and taken away; a WAN link
+	 * on an edge, its interface picked from the host's own list, with
+	 * the address the interface has; the document kept each time.
+	 */
+	run("document.querySelector('button[data-act=sd-ucs-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]')",
+	    5);
+	shot("9-sdwan-form-underlay");
+	run("const f = document.querySelector('form[data-form=sd-ucs]'); "
+	    "f.id.value = 'lte'; f.type.value = 'public'; f.kind.value = 'wg'; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-ucs]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd')][0]"
+	    ".textContent.includes('lte') && [...document.querySelectorAll("
+	    "'section.sdwan table.sd')][0].textContent.includes('wg')", 20);
+	run("[...document.querySelectorAll('button[data-act=sd-ucs-edit]')]"
+	    ".find(b => b.dataset.arg === 'lte').click()");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]')"
+	    "?.value === 'lte'", 5);
+	run("const f = document.querySelector('form[data-form=sd-ucs]'); "
+	    "f.billing.value = 'usage-based'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-ucs]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('lte') && r.textContent."
+	    "includes('usage-based'))", 20);
+	run("document.querySelector('button[data-act=sd-link-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-link] "
+	    "select[name=interface] option')", 15);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=sd-link] "
+	    "input[name=address]').value.length > 0"));
+	shot("9-sdwan-form-link");
+	run("const f = document.querySelector('form[data-form=sd-link]'); "
+	    "f.ucs.value = 'lte'; f.breakout.checked = true; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-link]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('lab-lte'))", 20);
+	run("[...document.querySelectorAll('button[data-act=sd-link-del]')]"
+	    ".find(b => b.dataset.value === 'lab-lte').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=confirm]') && ![..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('lab-lte'))", 20);
+	run("[...document.querySelectorAll('button[data-act=sd-ucs-del]')]"
+	    ".find(b => b.dataset.arg === 'lte').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=confirm]') && ![..."
+	    "document.querySelectorAll('section.sdwan table.sd')][0]"
+	    ".textContent.includes('lte')", 20);
 	run("document.querySelector('button[data-act=sd-swvc]').click()");
 	wait_js("[...document.querySelectorAll('section.sdwan h3')].some(h => "
 	    "h.textContent.startsWith('End points')) && document."

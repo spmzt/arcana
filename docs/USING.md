@@ -1083,7 +1083,13 @@ gif, geneve and wg, IPsec by strongSwan, the rules in an ipfw set),
 draws the edges with the tunnels between them as their probes see them
 (green up, red down, dashed a backup, a lock encrypted, the delay and
 loss on each) or as planned before an apply, and lists the underlays,
-the edges and the services in tables; **Services** shows one service's
+the edges and the services in tables, with forms: **+ underlay** (its
+type, billing, the tunnel kind over it and IPsec under it), **+ edge**
+(a host the console has), **+ WAN link** on an edge (the underlay, the
+interface picked from the host's own list with the address it has, the
+gateway, bandwidth, breakout and backup), each changed with the pencil
+or taken away with the cross, the document kept at each step and
+checked as a whole; **Services** shows one service's
 end points, zones, flows (in the
 order they are matched), policies, topologies and rate limiters;
 **Document** the whole of it as JSON. **Check** asks the console

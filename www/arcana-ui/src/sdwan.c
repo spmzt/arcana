@@ -32,6 +32,7 @@ enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_PATHS, SD_DOCUMENT };
 static const ucl_object_t *target_of(const char *, const char *);
 static void	 paths_load(void);
 static void	 plan_load(void);
+static void	 send(const char *, bool);
 static void	 applied_cb(int, const ucl_object_t *, const char *, void *);
 static const char *ms(double, char *, size_t);
 static void	 view_overview(struct html *);
@@ -52,7 +53,63 @@ static struct {
 	ucl_object_t	*paths;		/* sid: /api/servers/<sid>/sdwan data */
 	ucl_object_t	*faults;	/* sid: the sdwan-tunnel events */
 	double		 paths_at;
+	/* The forms: what is edited, and the host's interfaces for a link. */
+	char		 edit[80];	/* the id edited, "" for a new one */
+	char		 link_host[9];
+	char		 link_if[32];
+	ucl_object_t	*ifs;		/* the link host's interfaces */
+	bool		 ifs_loading;
 } sd;
+
+/* The document changed by a form, sent to be kept. */
+static void
+doc_send(ucl_object_t *o)
+{
+	unsigned char	*json;
+
+	json = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(o);
+	if (json != NULL)
+		send((const char *)json, true);
+	free(json);
+}
+
+static void
+ifs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	sd.ifs_loading = false;
+	if (sd.ifs != NULL)
+		ucl_object_unref(sd.ifs);
+	sd.ifs = status == 200 && jget(o, "data") != NULL ? ucl_object_copy(
+	    jget(o, "data")) : NULL;
+}
+
+/* The first address of a family on an interface of the link's host. */
+static const char *
+link_address(const char *ifn, int af)
+{
+	const ucl_object_t	*o, *a;
+	ucl_object_iter_t	 it, ait;
+
+	it = NULL;
+	while (ifn != NULL && (o = ucl_object_iterate(jget(sd.ifs,
+	    "interfaces"), &it, true)) != NULL) {
+		if (jstr(o, "name") == NULL || strcmp(jstr(o, "name"), ifn) != 0)
+			continue;
+		ait = NULL;
+		while ((a = ucl_object_iterate(jget(o, "addresses"), &ait,
+		    true)) != NULL)
+			if (jstr(a, "family") != NULL && jstr(a, "address") !=
+			    NULL && strcmp(jstr(a, "family"), af == 4 ? "inet" :
+			    "inet6") == 0 && strncmp(jstr(a, "address"), "fe80",
+			    4) != 0)
+				return (jstr(a, "address"));
+	}
+	return (NULL);
+}
 
 /* ---- Reading -------------------------------------------------------- */
 
@@ -92,6 +149,8 @@ doc_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(sd.swvc, sizeof(sd.swvc), "%s", jstr(sd.doc,
 		    "swvcs.0.id") != NULL ? jstr(sd.doc, "swvcs.0.id") : "");
 }
+
+static void	send(const char *, bool);
 
 static void
 sd_load(void)
@@ -696,11 +755,18 @@ view_overview(struct html *h)
 	int			 n;
 	bool			 first;
 
+	if (sd.error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, sd.error);
+		h_raw(h, "</div>");
+	}
 	/* The underlays. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Underlays <small class=\"dim\">"
-	    "UCS, MEF 70.2 §12</small></h3><table class=\"net sd\"><thead><tr>"
-	    "<th>Id</th><th>Type</th><th>Billing</th><th>Tunnels over it</th>"
-	    "</tr></thead><tbody>");
+	    "UCS, MEF 70.2 §12: the carriers the edges reach each other over"
+	    "</small><span class=\"pane-actions\"><button class=\"ghost small\" "
+	    "data-act=\"sd-ucs-add\">+ underlay</button></span></h3><table "
+	    "class=\"net sd\"><thead><tr><th>Id</th><th>Type</th><th>Billing"
+	    "</th><th>Tunnels over it</th><th></th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
 	while ((v = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
@@ -717,37 +783,50 @@ view_overview(struct html *h)
 		h_raw(h, "</td><td>");
 		t = jget(v, "tunnel");
 		if (t == NULL)
-			h_raw(h, "<span class=\"dim\">the default</span>");
+			h_raw(h, "<span class=\"dim\">gre</span>");
 		else {
 			h_txt(h, jstr(t, "kind"));
 			if (jbool(t, "ipsec"))
 				h_raw(h, " + IPsec IKEv2");
 		}
-		h_raw(h, "</td></tr>");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" data-act="
+		    "\"sd-ucs-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "id"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-ucs-del\" title=\"Take it away\"");
+		h_attr(h, "data-arg", jstr(v, "id"));
+		h_raw(h, ">×</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"4\" class=\"dim\">None yet.</td>"
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None yet: add one, "
+		    "public (the Internet) or private (an MPLS, a line).</td>"
 		    "</tr>");
 	h_raw(h, "</tbody></table></div>");
 
 	/* The edges and where each meets its underlays. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Edges <small class=\"dim\">"
-	    "SD-WAN Edges and their UCS End Points, §7.8, §12.3</small></h3>"
-	    "<table class=\"net sd\"><thead><tr><th>Host</th><th>End point</th>"
-	    "<th>Underlay</th><th>Interface</th><th>Bandwidth</th><th></th>"
-	    "</tr></thead><tbody>");
+	    "SD-WAN Edges, the hosts, and their WAN links, one on each "
+	    "underlay they reach (UCS End Points, §7.8, §12.3)</small><span "
+	    "class=\"pane-actions\"><button class=\"ghost small\" data-act=\""
+	    "sd-edge-add\">+ edge</button></span></h3><table class=\"net sd\">"
+	    "<thead><tr><th>Host</th><th>WAN link</th><th>Underlay</th><th>"
+	    "Interface</th><th>Address</th><th>Bandwidth</th><th></th><th>"
+	    "</th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
 	while ((v = ucl_object_iterate(jget(sd.doc, "edges"), &it, true)) !=
 	    NULL) {
 		first = true;
+		n++;
 		eit = NULL;
 		while ((e = ucl_object_iterate(jget(v, "ucs_end_points"), &eit,
 		    true)) != NULL) {
-			n++;
 			h_raw(h, "<tr><td>");
-			if (first)
+			if (first) {
+				h_raw(h, "<b>");
 				h_txt(h, host_name(jstr(v, "server")));
+				h_raw(h, "</b>");
+			}
 			first = false;
 			h_raw(h, "</td><td class=\"mono\">");
 			h_txt(h, jstr(e, "id"));
@@ -755,6 +834,14 @@ view_overview(struct html *h)
 			h_txt(h, jstr(e, "ucs"));
 			h_raw(h, "</td><td class=\"mono\">");
 			h_txt(h, jstr(e, "interface"));
+			h_raw(h, "</td><td class=\"mono\">");
+			h_txt(h, jstr(e, "address") != NULL ? jstr(e, "address") :
+			    "");
+			if (jstr(e, "gateway") != NULL) {
+				h_raw(h, " <span class=\"dim\">via ");
+				h_txt(h, jstr(e, "gateway"));
+				h_raw(h, "</span>");
+			}
 			h_raw(h, "</td><td>");
 			if (jget(e, "bandwidth") != NULL)
 				h_txt(h, bits(jint(e, "bandwidth", 0)));
@@ -767,12 +854,35 @@ view_overview(struct html *h)
 				h_raw(h, "<span class=\"chip\" title=\"Used "
 				    "only when nothing else is left\">backup"
 				    "</span>");
-			h_raw(h, "</td></tr>");
+			h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" "
+			    "data-act=\"sd-link-edit\" title=\"Change it\"");
+			h_attr(h, "data-arg", jstr(v, "server"));
+			h_attr(h, "data-value", jstr(e, "id"));
+			h_raw(h, ">&#9998;</button><button class=\"icon\" data-act="
+			    "\"sd-link-del\" title=\"Take the link away\"");
+			h_attr(h, "data-arg", jstr(v, "server"));
+			h_attr(h, "data-value", jstr(e, "id"));
+			h_raw(h, ">×</button></td></tr>");
 		}
+		/* The edge's own line: a link more, or the edge away. */
+		h_raw(h, "<tr class=\"sd-edge-row\"><td>");
+		if (first) {
+			h_raw(h, "<b>");
+			h_txt(h, host_name(jstr(v, "server")));
+			h_raw(h, "</b>");
+		}
+		h_raw(h, "</td><td colspan=\"6\"><button class=\"ghost small\" "
+		    "data-act=\"sd-link-add\"");
+		h_attr(h, "data-arg", jstr(v, "server"));
+		h_raw(h, ">+ WAN link</button></td><td class=\"acts\"><button "
+		    "class=\"icon\" data-act=\"sd-edge-del\" title=\"Take the "
+		    "edge away, with its links\"");
+		h_attr(h, "data-arg", jstr(v, "server"));
+		h_raw(h, ">×</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"6\" class=\"dim\">None yet.</td>"
-		    "</tr>");
+		h_raw(h, "<tr><td colspan=\"8\" class=\"dim\">None yet: add a "
+		    "host as an edge, then its WAN links.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 
 	/* The services. */
@@ -1690,6 +1800,430 @@ view_sdwan(struct html *h)
 	h_raw(h, "</section>");
 }
 
+/* ---- The forms: underlays, edges, WAN links --------------------------- */
+
+/* The element of a list whose key is the value. */
+static const ucl_object_t *
+jfind(const ucl_object_t *arr, const char *key, const char *value)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (value != NULL && (e = ucl_object_iterate(arr, &it, true)) !=
+	    NULL)
+		if (jstr(e, key) != NULL && strcmp(jstr(e, key), value) == 0)
+			return (e);
+	return (NULL);
+}
+
+static const ucl_object_t *
+ucs_by(const char *id)
+{
+
+	return (id != NULL ? jfind(jget(sd.doc, "ucs"), "id", id) : NULL);
+}
+
+static const ucl_object_t *
+edge_by(const char *sid)
+{
+
+	return (sid != NULL ? jfind(jget(sd.doc, "edges"), "server", sid) :
+	    NULL);
+}
+
+static void
+option(struct html *h, const char *value, const char *label,
+    const char *current)
+{
+
+	h_raw(h, "<option");
+	h_attr(h, "value", value);
+	if (current != NULL && strcmp(current, value) == 0)
+		h_raw(h, " selected");
+	h_raw(h, ">");
+	h_txt(h, label);
+	h_raw(h, "</option>");
+}
+
+bool
+sdwan_modal(struct html *h)
+{
+	const ucl_object_t	*u, *t, *e, *o, *lk;
+	ucl_object_iter_t	 it;
+	const char		*v, *ifn;
+	char			 buf[120];
+	int			 i, n;
+
+	if (app.modal == MODAL_SD_UCS) {
+		u = ucs_by(sd.edit);
+		t = jget(u, "tunnel");
+		h_fmt(h, "<form data-form=\"sd-ucs\"><h2>%s</h2><p>A carrier the "
+		    "edges reach each other over (an Underlay Connectivity "
+		    "Service, MEF 70.2 §12): the Internet, an MPLS, a line. Each "
+		    "edge gets a WAN link on it; tunnels go between the links, "
+		    "the kind said here.</p><input type=\"hidden\" name=\"was\"",
+		    u != NULL ? "An underlay, changed" : "An underlay");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><label>Id<input name=\"id\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" maxlength=\"64\" placeholder=\"internet\""
+		    " autofocus");
+		h_attr(h, "value", u != NULL ? jstr(u, "id") : "");
+		h_raw(h, "></label><div class=\"two\"><label>Type<select name=\""
+		    "type\">");
+		option(h, "public", "public: the Internet, shared", jstr(u,
+		    "type"));
+		option(h, "private", "private: an MPLS, a line, yours", jstr(u,
+		    "type"));
+		h_raw(h, "</select></label><label>Billing<select name=\""
+		    "billing\">");
+		option(h, "flat-rate", "flat rate", jstr(u, "billing"));
+		option(h, "usage-based", "by usage", jstr(u, "billing"));
+		option(h, "other", "other", jstr(u, "billing"));
+		h_raw(h, "</select></label></div><div class=\"two\"><label>Tunnel "
+		    "over it<select name=\"kind\">");
+		option(h, "gre", "gre: gre(4), IP in IP with a key", jstr(t,
+		    "kind") != NULL ? jstr(t, "kind") : "gre");
+		option(h, "gif", "gif: gif(4), IP in IP", jstr(t, "kind"));
+		option(h, "geneve", "geneve: over UDP, a VNI each", jstr(t,
+		    "kind"));
+		option(h, "wg", "wg: WireGuard, encrypted by itself", jstr(t,
+		    "kind"));
+		h_fmt(h, "</select></label><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"ipsec\" value=\"1\"%s> IPsec IKEv2 under "
+		    "it, by strongSwan<small>Required on a public underlay by "
+		    "a policy that says so.</small></label></div>", t != NULL &&
+		    jbool(t, "ipsec") ? " checked" : "");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_EDGE) {
+		h_raw(h, "<form data-form=\"sd-edge\"><h2>An edge</h2><p>A host "
+		    "running arcana-agent that stands between the subscriber "
+		    "and the underlays (an SD-WAN Edge, §7.8). Its WAN links "
+		    "come next, one on each underlay it reaches.</p><label>Host"
+		    "<select name=\"host\" autofocus>");
+		n = 0;
+		for (i = 0; i < app.nservers; i++) {
+			if (edge_by(app.servers[i].id) != NULL)
+				continue;
+			option(h, app.servers[i].id, app.servers[i].name, NULL);
+			n++;
+		}
+		h_raw(h, "</select>");
+		if (n == 0)
+			h_raw(h, "<small>Every host the console has is an edge "
+			    "already.</small>");
+		h_raw(h, "</label>");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_LINK) {
+		e = edge_by(sd.link_host);
+		lk = sd.edit[0] != '\0' ? jfind(jget(e, "ucs_end_points"), "id",
+		    sd.edit) : NULL;
+		h_fmt(h, "<form data-form=\"sd-link\"><h2>%s on %s</h2><p>Where "
+		    "the host meets an underlay: the interface, its address on "
+		    "it, and the gateway (a UCS End Point, §12.3). Tunnels to "
+		    "the other edges' links on the same underlay start here."
+		    "</p><input type=\"hidden\" name=\"host\"", lk != NULL ? "A "
+		    "WAN link, changed" : "A WAN link", host_name(sd.link_host));
+		h_attr(h, "value", sd.link_host);
+		h_raw(h, "><input type=\"hidden\" name=\"was\"");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><div class=\"two\"><label>Underlay<select name=\"ucs\">");
+		it = NULL;
+		while ((u = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
+		    NULL)
+			option(h, jstr(u, "id"), jstr(u, "id"), jstr(lk, "ucs"));
+		h_raw(h, "</select></label><label>Id<input name=\"id\" spellcheck="
+		    "\"false\" autocomplete=\"off\" maxlength=\"64\" placeholder=\""
+		    "the host and the underlay, if empty\"");
+		h_attr(h, "value", lk != NULL ? jstr(lk, "id") : "");
+		h_raw(h, "></label></div>");
+		/* The interface: from the host's own list, when it answers. */
+		ifn = sd.link_if[0] != '\0' ? sd.link_if : lk != NULL ? jstr(lk,
+		    "interface") : NULL;
+		h_raw(h, "<label>Interface");
+		if (sd.ifs_loading)
+			h_raw(h, "<span class=\"dim\"> · asking the host</span>");
+		if (sd.ifs != NULL && jget(sd.ifs, "interfaces") != NULL) {
+			h_raw(h, "<select name=\"interface\" data-input=\"sd-link-if"
+			    "\">");
+			it = NULL;
+			while ((o = ucl_object_iterate(jget(sd.ifs, "interfaces"),
+			    &it, true)) != NULL) {
+				if (jstr(o, "name") == NULL || strncmp(jstr(o,
+				    "name"), "lo", 2) == 0 || strncmp(jstr(o, "name"),
+				    "pflog", 5) == 0 || strncmp(jstr(o, "name"),
+				    "enc", 3) == 0)
+					continue;
+				v = link_address(jstr(o, "name"), 4);
+				if (v == NULL)
+					v = link_address(jstr(o, "name"), 6);
+				snprintf(buf, sizeof(buf), "%s%s%s", jstr(o, "name"),
+				    v != NULL ? " · " : "", v != NULL ? v : "");
+				option(h, jstr(o, "name"), buf, ifn);
+				if (ifn == NULL)
+					ifn = jstr(o, "name");
+			}
+			h_raw(h, "</select>");
+		} else {
+			h_raw(h, "<input name=\"interface\" spellcheck=\"false\" "
+			    "autocomplete=\"off\" placeholder=\"vtnet0\"");
+			h_attr(h, "value", ifn != NULL ? ifn : "");
+			h_raw(h, ">");
+		}
+		h_raw(h, "</label><div class=\"two\"><label>Address<input name=\""
+		    "address\" spellcheck=\"false\" autocomplete=\"off\" "
+		    "placeholder=\"the interface's\"");
+		v = lk != NULL && sd.link_if[0] == '\0' ? jstr(lk, "address") :
+		    link_address(ifn, 4) != NULL ? link_address(ifn, 4) :
+		    link_address(ifn, 6);
+		h_attr(h, "value", v != NULL ? v : "");
+		h_raw(h, "><small>The tunnels' outer address here.</small></label>"
+		    "<label>Gateway<input name=\"gateway\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"for breakout\"");
+		h_attr(h, "value", lk != NULL && jstr(lk, "gateway") != NULL ?
+		    jstr(lk, "gateway") : "");
+		h_raw(h, "></label></div><div class=\"two\"><label>Bandwidth, bits "
+		    "per second<input name=\"bandwidth\" inputmode=\"numeric\" "
+		    "placeholder=\"100000000\"");
+		if (lk != NULL && jget(lk, "bandwidth") != NULL) {
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(lk,
+			    "bandwidth", 0));
+			h_attr(h, "value", buf);
+		}
+		h_fmt(h, "></label><div><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"breakout\" value=\"1\"%s> Breakout: the "
+		    "Internet is reached here</label><label class=\"toggle\">"
+		    "<input type=\"checkbox\" name=\"backup\" value=\"1\"%s> "
+		    "Backup: used only when nothing else is left</label></div>"
+		    "</div>", lk != NULL && jbool(lk, "breakout") ? " checked" :
+		    "", lk != NULL && jbool(lk, "backup") ? " checked" : "");
+		return (true);
+	}
+	return (false);
+}
+
+/* The forms' answers: the document changed and kept. */
+static bool
+sd_forms(const char *form, const ucl_object_t *f)
+{
+	ucl_object_t		*doc, *arr, *o, *t, *links;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*id, *was, *v;
+	char			 buf[160];
+	unsigned int		 i, n;
+
+	if (strcmp(form, "sd-ucs") != 0 && strcmp(form, "sd-edge") != 0 &&
+	    strcmp(form, "sd-link") != 0)
+		return (false);
+	if (sd.doc == NULL)
+		return (true);
+	doc = ucl_object_copy(sd.doc);
+	if (strcmp(form, "sd-ucs") == 0) {
+		id = jstr(f, "id") != NULL ? jstr(f, "id") : "";
+		was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
+		if (id[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "An "
+			    "underlay has an id");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		if ((arr = (ucl_object_t *)(uintptr_t)jget(doc, "ucs")) == NULL) {
+			arr = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(doc, arr, "ucs", 0, false);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(id), "id", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "type") !=
+		    NULL ? jstr(f, "type") : "public"), "type", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "billing")
+		    != NULL ? jstr(f, "billing") : "flat-rate"), "billing", 0,
+		    false);
+		t = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(t, ucl_object_fromstring(jstr(f, "kind") !=
+		    NULL ? jstr(f, "kind") : "gre"), "kind", 0, false);
+		if (jstr(f, "ipsec") != NULL && strcmp(jstr(f, "ipsec"), "1") == 0)
+			ucl_object_insert_key(t, ucl_object_frombool(true), "ipsec",
+			    0, false);
+		ucl_object_insert_key(o, t, "tunnel", 0, false);
+		/* In the place of the one changed, else at the end. */
+		n = ucl_array_size(arr);
+		for (i = 0; was[0] != '\0' && i < n; i++) {
+			e = ucl_array_find_index(arr, i);
+			if (jstr(e, "id") != NULL && strcmp(jstr(e, "id"), was) ==
+			    0) {
+				ucl_object_unref(ucl_array_replace_index(arr, o,
+				    i));
+				break;
+			}
+		}
+		if (was[0] == '\0' || i == n)
+			ucl_array_append(arr, o);
+		/* The links and services named it: renamed with it. */
+		if (was[0] != '\0' && strcmp(was, id) != 0) {
+			const ucl_object_t	*ed, *lk, *sw;
+			ucl_object_iter_t	 eit, lit, sit;
+
+			eit = NULL;
+			while ((ed = ucl_object_iterate(jget(doc, "edges"), &eit,
+			    true)) != NULL) {
+				lit = NULL;
+				while ((lk = ucl_object_iterate(jget(ed,
+				    "ucs_end_points"), &lit, true)) != NULL)
+					if (jstr(lk, "ucs") != NULL && strcmp(jstr(
+					    lk, "ucs"), was) == 0) {
+						ucl_object_t *l = (ucl_object_t *)
+						    (uintptr_t)lk;
+
+						(void)ucl_object_delete_key(l, "ucs");
+						ucl_object_insert_key(l,
+						    ucl_object_fromstring(id), "ucs",
+						    0, false);
+					}
+			}
+			sit = NULL;
+			while ((sw = ucl_object_iterate(jget(doc, "swvcs"), &sit,
+			    true)) != NULL) {
+				ucl_object_t	*ul = (ucl_object_t *)(uintptr_t)
+				    jget(sw, "ucs");
+
+				n = ul != NULL ? ucl_array_size(ul) : 0;
+				for (i = 0; i < n; i++)
+					if (strcmp(ucl_object_tostring_forced(
+					    ucl_array_find_index(ul, i)), was) == 0)
+						ucl_object_unref(
+						    ucl_array_replace_index(ul,
+						    ucl_object_fromstring(id), i));
+			}
+		}
+	} else if (strcmp(form, "sd-edge") == 0) {
+		id = jstr(f, "host");
+		if (id == NULL || id[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "Pick a "
+			    "host");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		if ((arr = (ucl_object_t *)(uintptr_t)jget(doc, "edges")) ==
+		    NULL) {
+			arr = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(doc, arr, "edges", 0, false);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(id), "server", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+		    "ucs_end_points", 0, false);
+		ucl_array_append(arr, o);
+	} else {
+		ucl_object_t	*ed;
+
+		id = jstr(f, "host");
+		was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
+		if ((ed = (ucl_object_t *)(uintptr_t)jfind(jget(doc, "edges"),
+		    "server", id)) == NULL) {
+			ucl_object_unref(doc);
+			return (true);
+		}
+		if (jstr(f, "interface") == NULL || jstr(f, "interface")[0] ==
+		    '\0' || jstr(f, "ucs") == NULL) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A link "
+			    "is on an interface, on an underlay");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		if ((links = (ucl_object_t *)(uintptr_t)jget(ed,
+		    "ucs_end_points")) == NULL) {
+			links = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(ed, links, "ucs_end_points", 0,
+			    false);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		if (jstr(f, "id") != NULL && jstr(f, "id")[0] != '\0')
+			snprintf(buf, sizeof(buf), "%s", jstr(f, "id"));
+		else
+			snprintf(buf, sizeof(buf), "%s-%s", host_name(id), jstr(f,
+			    "ucs"));
+		ucl_object_insert_key(o, ucl_object_fromstring(buf), "id", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "ucs")),
+		    "ucs", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f,
+		    "interface")), "interface", 0, false);
+		if ((v = jstr(f, "address")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromstring(v),
+			    "address", 0, false);
+		if ((v = jstr(f, "gateway")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromstring(v),
+			    "gateway", 0, false);
+		if ((v = jstr(f, "bandwidth")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL,
+			    10)), "bandwidth", 0, false);
+		if (jstr(f, "breakout") != NULL && strcmp(jstr(f, "breakout"),
+		    "1") == 0)
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "breakout", 0, false);
+		if (jstr(f, "backup") != NULL && strcmp(jstr(f, "backup"), "1") ==
+		    0)
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "backup", 0, false);
+		n = ucl_array_size(links);
+		for (i = 0; was[0] != '\0' && i < n; i++) {
+			e = ucl_array_find_index(links, i);
+			if (jstr(e, "id") != NULL && strcmp(jstr(e, "id"), was) ==
+			    0) {
+				ucl_object_unref(ucl_array_replace_index(links, o,
+				    i));
+				break;
+			}
+		}
+		if (was[0] == '\0' || i == n)
+			ucl_array_append(links, o);
+	}
+	(void)it;
+	app.modal = MODAL_NONE;
+	doc_send(doc);
+	return (true);
+}
+
+/* An underlay, an edge or a link taken out of the document. */
+static void
+sd_remove(const char *what, const char *arg, const char *value)
+{
+	ucl_object_t		*doc, *arr;
+	const ucl_object_t	*e;
+	unsigned int		 i, n;
+	const char		*key, *id;
+
+	if (sd.doc == NULL)
+		return;
+	doc = ucl_object_copy(sd.doc);
+	if (strcmp(what, "link") == 0) {
+		arr = (ucl_object_t *)(uintptr_t)jget(jfind(jget(doc, "edges"),
+		    "server", arg), "ucs_end_points");
+		key = "id";
+		id = value;
+	} else {
+		arr = (ucl_object_t *)(uintptr_t)jget(doc, strcmp(what, "ucs") ==
+		    0 ? "ucs" : "edges");
+		key = strcmp(what, "ucs") == 0 ? "id" : "server";
+		id = arg;
+	}
+	n = arr != NULL ? ucl_array_size(arr) : 0;
+	for (i = 0; i < n; i++) {
+		e = ucl_array_find_index(arr, i);
+		if (jstr(e, key) != NULL && strcmp(jstr(e, key), id) == 0) {
+			ucl_object_unref(ucl_array_delete(arr, (ucl_object_t *)
+			    (uintptr_t)e));
+			break;
+		}
+	}
+	doc_send(doc);
+}
+
 /* ---- What is done ---------------------------------------------------- */
 
 static void
@@ -1846,6 +2380,8 @@ sdwan_form(const char *form, const ucl_object_t *f)
 {
 	const char	*text;
 
+	if (sd_forms(form, f))
+		return (true);
 	if (strcmp(form, "sd-doc") != 0)
 		return (false);
 	text = jstr(f, "text") != NULL ? jstr(f, "text") : "";
@@ -1863,6 +2399,84 @@ sdwan_action(const char *act, const char *arg, const char *value)
 
 	if (strcmp(act, "select-sdwan") == 0) {
 		sdwan_open();
+		return (true);
+	}
+	if (strcmp(act, "sd-ucs-add") == 0 || strcmp(act, "sd-ucs-edit") == 0) {
+		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act,
+		    "sd-ucs-edit") == 0 ? arg : "");
+		app.modal = MODAL_SD_UCS;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "sd-edge-add") == 0) {
+		app.modal = MODAL_SD_EDGE;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "sd-link-add") == 0 || strcmp(act, "sd-link-edit") ==
+	    0) {
+		char	url[96];
+
+		snprintf(sd.link_host, sizeof(sd.link_host), "%s", arg);
+		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act,
+		    "sd-link-edit") == 0 ? value : "");
+		sd.link_if[0] = '\0';
+		if (sd.ifs != NULL)
+			ucl_object_unref(sd.ifs);
+		sd.ifs = NULL;
+		sd.ifs_loading = true;
+		snprintf(url, sizeof(url), "/api/servers/%s/net/interfaces", arg);
+		api("GET", url, NULL, ifs_cb, NULL);
+		app.modal = MODAL_SD_LINK;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "input:sd-link-if") == 0) {
+		snprintf(sd.link_if, sizeof(sd.link_if), "%s", value);
+		return (true);
+	}
+	if (strcmp(act, "sd-ucs-del") == 0) {
+		char	body[300];
+
+		snprintf(body, sizeof(body), "The underlay %s goes out of the "
+		    "document, with nothing else changed: links and services "
+		    "that name it will not pass the check until they are "
+		    "changed too. Nothing is made or unmade until Apply.", arg);
+		confirm("Take the underlay away", body, "Take away", true, "",
+		    "do-sd-ucs-del", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "sd-edge-del") == 0) {
+		char	body[300];
+
+		snprintf(body, sizeof(body), "The edge %s goes out of the "
+		    "document with its WAN links; services with an end point "
+		    "on it will not pass the check until changed. Nothing is "
+		    "made or unmade until Apply.", host_name(arg));
+		confirm("Take the edge away", body, "Take away", true, "",
+		    "do-sd-edge-del", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "sd-link-del") == 0) {
+		char	body[300];
+
+		snprintf(body, sizeof(body), "The WAN link %s of %s goes out of "
+		    "the document. Nothing is made or unmade until Apply.",
+		    value, host_name(arg));
+		confirm("Take the link away", body, "Take away", true, "",
+		    "do-sd-link-del", arg, value);
+		return (true);
+	}
+	if (strcmp(act, "do-sd-ucs-del") == 0) {
+		sd_remove("ucs", arg, value);
+		return (true);
+	}
+	if (strcmp(act, "do-sd-edge-del") == 0) {
+		sd_remove("edge", arg, value);
+		return (true);
+	}
+	if (strcmp(act, "do-sd-link-del") == 0) {
+		sd_remove("link", arg, value);
 		return (true);
 	}
 	if (strncmp(act, "sd-", 3) != 0 && strcmp(act, "input:sd-swvc") != 0 &&

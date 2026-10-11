@@ -333,6 +333,9 @@ enum modal {
 	MODAL_BIRD_FILE,
 	MODAL_IPSEC_CONN,
 	MODAL_IPSEC_CHILD,
+	MODAL_SD_UCS,
+	MODAL_SD_EDGE,
+	MODAL_SD_LINK,
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -680,6 +683,7 @@ void		 sdwan_tick(double);
 void		 view_sdwan(struct html *);
 bool		 sdwan_action(const char *, const char *, const char *);
 bool		 sdwan_form(const char *, const ucl_object_t *);
+bool		 sdwan_modal(struct html *);
 bool		 workflows_form(const char *, const ucl_object_t *);
 bool		 workflows_modal(struct html *);
 void		 storage_tick(double);
