@@ -1349,8 +1349,19 @@ AES-CBC with HMAC-SHA-1, -256 or -512, or AES-GCM-16 on its own; the
 base system's setkey(8) reads them from a file the agent writes 0600
 and takes out again, and neither the trace nor the job's title has the
 keys. `clear` deletes every SA between the two outer addresses.
-`arcanactl ipsec-sa` by hand. The keys are given for now; the next
-steps derive them from a key pair of each end.
+`arcanactl ipsec-sa` by hand. Rather than given, the keys are derived
+(R51–R54): `key` makes an interface its X25519 pair, the private half
+a PEM file 0600 beside the agent's kept files that nothing else reads,
+the public half 44 characters of base64 in the `sdwan` read under
+`keys`; `derive` takes the far end's public half (`peer`), the
+algorithms and the flags, and computes both directions' SPIs and keys
+from the agreement by HKDF-SHA256 (the two public halves in order and
+an `epoch` number as the context), so the two ends, each with the
+other's public half, set the same SAs mirrored; another epoch gives
+other keys, for the rotation to come. On the test VM's kernel
+AES-GCM-16 with ESN drops every packet as a bad authentication; GCM
+without ESN and AES-CBC with HMAC under ESN both work, so those are
+the pairs to ask for.
 
 **The UCS End Points, addressed and routed** (Mplify 119 §12.2.3):
 with `addressing` dhcp the apply puts the interface on DHCP (the DHCP

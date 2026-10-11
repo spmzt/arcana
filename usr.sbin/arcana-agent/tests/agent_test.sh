@@ -4241,6 +4241,36 @@ EOS
 	# Cleared: every SA between the two, both ways.
 	atf_check -o match:'ipsec sa clear ipsec0 reqid 100' "$JGC" -c "$SOCK" ipsec-sa clear ipsec0 100 10.202.0.1 10.202.0.2
 	atf_check -o match:'^deleteall 10.202.0.1 10.202.0.2 esp ;$' -o match:'^deleteall 10.202.0.2 10.202.0.1 esp ;$' cat setkey.conf
+	# A key pair an interface's own, 0600, made once; its public half
+	# in the sdwan read; derived SAs: the two ends (two interfaces of
+	# this one host standing for them) each take the other's public
+	# half and come out with the same SAs, mirrored.
+	atf_check -s exit:1 -o match:'no key pair yet' -e ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA= enc aes-cbc auth hmac-sha2-256
+	atf_check -o match:'ipsec sa key ipsec0' -o match:'public [A-Za-z0-9+/]{43}=' "$JGC" -t -c "$SOCK" ipsec-sa key ipsec0
+	atf_check -o match:'^600$' stat -f %Lp "$(dirname "$f")/sdwan-key-ipsec0.pem"
+	atf_check -o match:'BEGIN PRIVATE KEY' cat "$(dirname "$f")/sdwan-key-ipsec0.pem"
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec1
+	P0=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"ipsec0"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
+	P1=$("$JGC" -c "$SOCK" sdwan | sed -E 's/.*"keys":\[//' | tr '}' '\n' | grep '"ipsec1"' | sed -E 's/.*"public":"([^"]*)".*/\1/')
+	test ${#P0} -eq 44 -a ${#P1} -eq 44 -a "$P0" != "$P1" || atf_fail "the public halves: $P0 $P1"
+	# Made again: the same pair.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa key ipsec0
+	atf_check -o match:"\"public\":\"$(echo "$P0" | sed 's|/|\\/|g; s|+|\\+|g')\"" "$JGC" -c "$SOCK" sdwan
+	atf_check -s exit:1 -o match:'own public half' -e ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P0" enc aes-cbc auth hmac-sha2-256
+	atf_check -s exit:1 -e match:'no SPIs or keys' -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P1" enc aes-cbc auth hmac-sha2-256 spi-in 0x1001
+	rm -f setkey.conf
+	atf_check -o not-match:'0x[0-9a-f]{40}' "$JGC" -t -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P1" enc aes-cbc auth hmac-sha2-256 encap esn
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec1 101 10.202.0.2 10.202.0.1 peer "$P0" enc aes-cbc auth hmac-sha2-256 encap esn
+	atf_check -o inline:'4\n' sh -c "grep -c '^add ' setkey.conf"
+	# The SA from .1 to .2 as ipsec0 set it out and as ipsec1 set it in:
+	# one and the same but for the reqid; the other way too.
+	atf_check -o inline:'1\n' sh -c "grep '^add 10.202.0.1 10.202.0.2 ' setkey.conf | sed 's/-u 10[01]/-u N/' | sort -u | wc -l | tr -d ' '"
+	atf_check -o inline:'1\n' sh -c "grep '^add 10.202.0.2 10.202.0.1 ' setkey.conf | sed 's/-u 10[01]/-u N/' | sort -u | wc -l | tr -d ' '"
+	atf_check -o match:'^add 10.202.0.1 10.202.0.2 esp 0x[0-9a-f]+ -m tunnel -u 100 -esn -natt 10.202.0.1\[4500\] 10.202.0.2\[4500\] -E aes-cbc 0x[0-9a-f]{64} -A hmac-sha2-256 0x[0-9a-f]{64} ;$' cat setkey.conf
+	# Another epoch: other keys.
+	rm -f setkey.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa derive ipsec0 100 10.202.0.1 10.202.0.2 peer "$P1" enc aes-gcm-16 epoch 1
+	atf_check -o match:'^add 10.202.0.1 10.202.0.2 esp 0x[0-9a-f]+ -m tunnel -u 100 -E aes-gcm-16 0x[0-9a-f]{72} ;$' cat setkey.conf
 }
 ipsec_sa_cleanup()
 {

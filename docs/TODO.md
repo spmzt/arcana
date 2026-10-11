@@ -50,8 +50,10 @@
   each plan), in a table of their own, and routed with the underlay by
   a BIRD instance of the edge (2.4; DHCP on the jails, in the verified
   list); manually keyed SAs on an ipsec(4) interface by setkey, the
-  keys never in a trace (119-3 task 3.1). Next: 3.2, a key pair per
-  tunnel end and the SA keys derived from the agreement. Later: Mplify 119's tunnel
+  keys never in a trace (119-3 task 3.1); a key pair per tunnel end
+  and the SAs of both directions derived from the agreement by
+  HKDF-SHA256, the same on both ends (3.2). Next: 3.3, the uswe
+  tunnel kind in the document and the plan. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
@@ -259,6 +261,16 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- Derived IPsec keys between two vnet jails (Mplify 119 R51-R54;
+  task 3.2, 2026-10-11, the lab's sakey step): a key pair made on
+  each by the agent, the public halves read from the sdwan read and
+  given to the other side, the SAs derived on each from the
+  agreement: setkey -D shows the same two SPIs mirrored on both,
+  ping crosses with AES-256-CBC, HMAC-SHA-256, ESN and ESP in UDP.
+  Found: on this kernel (16.0-CURRENT) AES-GCM-16 with ESN drops
+  every packet as "bad authentication" while GCM without ESN and CBC
+  with ESN both carry traffic, derived or given; so GCM is used
+  without ESN here (known limits).
 - Manually keyed IPsec between two vnet jails (Mplify 119 §10; task
   3.1, 2026-10-11, the lab's sa step): an ipsec(4) interface with
   reqid 100 on each, made by the agent's if-create, the two SAs each
@@ -417,6 +429,12 @@ What was once in the list above, and when it was run:
   one.
 
 ## Known limits
+
+- IPsec: AES-GCM-16 with ESN drops every packet as a bad
+  authentication on the 16.0-CURRENT kernel of the test VM (2026-10-11,
+  the lab's derived SAs: GCM alone and CBC with HMAC under ESN both
+  work). Until the kernel does both, a uswe tunnel that wants ESN gets
+  AES-256-CBC with HMAC-SHA-256, and GCM goes without ESN.
 
 - The GitHub workflow (2026-10-11): the images it builds on
   (ghcr.io/spmzt/freebsd-emscripten, cblink) carry a 16.0-CURRENT
