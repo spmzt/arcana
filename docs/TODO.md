@@ -64,8 +64,11 @@
   plane host per service, an edge whose BIRD reflects the others'
   routes, each peering with it alone (5.1); the CTVC, a control
   tunnel of its own from each edge to the host over a UCS the
-  service names, the iBGP by it alone (5.2). Next: 5.3, the phase
-  closed on the lab with three jails. Later: SASE.
+  service names, the iBGP by it alone (5.2); the phase closed on the
+  lab with three jails, the host reflecting between two edges with
+  no tunnel between them (5.3; RFC 4364's VPN routes stay out, known
+  limits). Next: 119-6, the management plane's steps named and the
+  conformance list. Later: SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:
@@ -272,6 +275,23 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- A control plane host between two edges on three vnet jails (Mplify
+  119 §8.3, R5, R6, R9-R13; task 5.3, 2026-10-11, build/lab/rr-lab.sh,
+  BIRD 3.3.3 as the console writes it): a control tunnel (gre in FIB
+  1) from each edge to the host, no tunnel between the edges; the
+  host's two sessions rr client with a cluster id, each edge's one
+  session to the host, all Established with TCP MD5 (BIRD puts the
+  tcp-md5 SAs in the kernel itself, four of them on the host, the
+  tcpmd5 module loaded, no setkey), BFD Up at 100 ms on each
+  (BIRD chooses multihop BFD, port 4784, over the point-to-point
+  tunnel; it works the same); each edge's UNI prefix reaches the
+  other by the reflector with next hop the host, and a ping between
+  the two UNIs crosses the host, forwarding on. Found: BIRD's BFD
+  binds its sockets to the tunnel addresses at start and gives them
+  up for good when they are not there yet ("bind: Can't assign
+  requested address", the sessions left Down as multihop), so the
+  instance starts after the tunnel interfaces have their addresses,
+  as the apply orders it.
 - The wire of a derived-SA tunnel between two vnet jails (Mplify 119
   R46, R48; task 3.5, 2026-10-11): tcpdump on the underlay shows the
   ping as UDP-encap ESP on port 4500 both ways, the SPIs the derived
