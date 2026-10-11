@@ -954,7 +954,7 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 	    false);
 	ucl_object_insert_key(top, ucl_object_frombool(started), "probing", 0,
 	    false);
-	sdwan_json(top);
+	sdwan_json(w, top);
 	sdwan_bird_json(w, top);
 	sdwan_dhcp_json(w, top);
 	sdwan_dns_json(w, top);

@@ -2456,6 +2456,7 @@ sdwan_body()
 #!/bin/sh
 echo "ipfw \$*" >> $(pwd)/ipfw.log
 [ "\$1" = -q ] && [ -f "\$2" ] && cat "\$2" >> $(pwd)/ipfw.log
+[ "\$*" = "-S show" ] && printf '00012      2      168 set 30 deny log tcp from any to table(sw1_s0d4) 80,443\n00100      1        1 set 0 allow ip from any to any\n00999      5      500 set 30 count ip from any to any\n'
 exit 0
 EOS
 	chmod +x fake-ipfw
@@ -2464,7 +2465,7 @@ EOS
 	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
-	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0\}' \
+	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0,"counters":\[\]\}' \
 	    -o match:'"steer":\[\],"steered":false' "$JGC" -c "$SOCK" sdwan
 	# What is not a target list.
 	atf_check -s exit:1 -e match:'JSON array' -o ignore \
@@ -2524,7 +2525,7 @@ EOS
 	    -o match:'^ipfw -q set enable 30$' cat ipfw.log
 	# Disabled, loaded, enabled: in that order.
 	atf_check -o inline:'1\n' sh -c "grep -n 'set disable 30' ipfw.log | cut -d: -f1 | head -1"
-	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\],"objects":0\}' \
+	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\],"objects":0,"counters":' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -e match:'not one of the rules' -o ignore "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[{"table":"nowhere","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
@@ -2673,6 +2674,10 @@ EOS
 	atf_check -o match:'down$' cat birdc.log
 	test ! -f "$(dirname "$f")/sdwan-bird-sw1.conf" || atf_fail "the instance's file stayed"
 	atf_check -o match:'"bird":\[\]' "$JGC" -c "$SOCK" sdwan
+	# The counters of the set's rules, as ipfw -S show has them, in the
+	# read: the console counts what a security policy denied by them.
+	atf_check -o match:'"counters":\[\{"rule":12,"pkts":2,"bytes":168,"text":"deny log tcp from any to table\(sw1_s0d4\) 80,443"\},\{"rule":999,"pkts":5,"bytes":500,"text":"count ip from any to any"\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
 	# No rules: the set emptied, the tables gone, the objects deleted.
 	: > ipfw.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'

@@ -821,9 +821,55 @@ sdwan_start(void)
 	work_free(&w);
 }
 
+/*
+ * The counters of the rules in the set, as ipfw -S show prints them
+ * ("number packets bytes set N rest"): each its rule number, packets,
+ * bytes and text, for the console to count what a policy denied (MEF
+ * 88, SASE-1); none when no set is applied.
+ */
+static ucl_object_t *
+counters_json(struct work *w, int inset)
+{
+	struct execres	 res;
+	ucl_object_t	*arr, *c;
+	const char	*p, *nl;
+	char		*argv[4], *line, *rest;
+	unsigned long long num, pkts, bytes;
+	int		 rs, n;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if (inset <= 0)
+		return (arr);
+	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
+	argv[1] = (char *)(uintptr_t)"-S";
+	argv[2] = (char *)(uintptr_t)"show";
+	argv[3] = NULL;
+	if (run_exec_max(w, argv, &res, ARC_MAX_JSON) != 0 || res.out == NULL)
+		return (arr);
+	for (p = res.out; *p != '\0'; p = *nl != '\0' ? nl + 1 : nl) {
+		nl = p + strcspn(p, "\n");
+		line = wstrndup(w, p, (size_t)(nl - p));
+		if (sscanf(line, "%llu %llu %llu set %d %n", &num, &pkts, &bytes,
+		    &rs, &n) != 4 || rs != inset)
+			continue;
+		rest = line + n;
+		c = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(c, ucl_object_fromint((int64_t)num), "rule",
+		    0, false);
+		ucl_object_insert_key(c, ucl_object_fromint((int64_t)pkts), "pkts",
+		    0, false);
+		ucl_object_insert_key(c, ucl_object_fromint((int64_t)bytes),
+		    "bytes", 0, false);
+		ucl_object_insert_key(c, ucl_object_fromstring(rest), "text", 0,
+		    false);
+		ucl_array_append(arr, c);
+	}
+	return (arr);
+}
+
 /* The rules and the steering, as they are, into the sdwan reply. */
 void
-sdwan_json(ucl_object_t *top)
+sdwan_json(struct work *w, ucl_object_t *top)
 {
 	ucl_object_t	*o, *arr, *e, *c, *cs;
 	int		 i, k, st;
@@ -838,6 +884,7 @@ sdwan_json(ucl_object_t *top)
 	ucl_object_insert_key(o, arr, "tables", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromint(nobjects), "objects", 0,
 	    false);
+	ucl_object_insert_key(o, counters_json(w, set), "counters", 0, false);
 	ucl_object_insert_key(top, o, "rules", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0; i < nsteers; i++) {
