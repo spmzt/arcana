@@ -2377,6 +2377,126 @@ dn_objects(const struct dn *dn, ucl_object_t *objects)
 	}
 }
 
+/*
+ * A security policy's rate limit (MEF 88): a pipe of its own, one per
+ * policy of the service; -1 for none or too many.
+ */
+static int
+sec_pipe(struct dn *dn, const ucl_object_t *sw, const ucl_object_t *sec)
+{
+	const ucl_object_t	*v;
+	char			 key[160];
+	int			 i;
+
+	v = ucl_object_lookup(ucl_object_lookup(sec, "criteria"), "rate-limit");
+	if (v == NULL || ucl_object_type(v) != UCL_INT)
+		return (-1);
+	snprintf(key, sizeof(key), "%s/security/%s", str(sw, "id"), str(sec,
+	    "name"));
+	for (i = 0; i < dn->nlim; i++)
+		if (strcmp(dn->lim[i].key, key) == 0)
+			return (dn->lim[i].pipe);
+	if (dn->nlim == DN_MAX)
+		return (-1);
+	snprintf(dn->lim[i].key, sizeof(dn->lim[i].key), "%s", key);
+	dn->lim[i].pipe = dn->next++;
+	dn->lim[i].commit = dn->lim[i].limit = ucl_object_toint(v);
+	dn->lim[i].sum = 0;
+	dn->nlim++;
+	return (dn->lim[i].pipe);
+}
+
+/*
+ * The security policy a policy names for a direction, and its place in
+ * the service's list (for its tables' names); NULL for none.
+ */
+static const ucl_object_t *
+sec_of(const ucl_object_t *sw, const ucl_object_t *pol, const char *crit,
+    int *sip)
+{
+	const ucl_object_t	*sp;
+	ucl_object_iter_t	 it;
+	const char		*name;
+
+	*sip = 0;
+	if (pol == NULL || (name = str(ucl_object_lookup(pol, "criteria"),
+	    crit)) == NULL)
+		return (NULL);
+	it = NULL;
+	while ((sp = ucl_object_iterate(ucl_object_lookup(sw,
+	    "security_policies"), &it, true)) != NULL) {
+		if (str(sp, "name") != NULL && strcmp(str(sp, "name"), name) == 0)
+			return (sp);
+		(*sip)++;
+	}
+	return (NULL);
+}
+
+/*
+ * The rules of a security policy's ip-block for a flow (MEF 88): what
+ * is to or from a denied prefix is dropped, unless the prefix is among
+ * the allowed, logged where the policy says; the prefixes in tables of
+ * the policy's own, sw<fib>_s<i>d4, d6, a4 and a6, filled once.  The
+ * tail is what ends each rule: where it comes in, or goes out.
+ */
+static void
+sec_rules(ucl_object_t *tables, ucl_object_t *rules, int num,
+    const ucl_object_t *sw, const ucl_object_t *sec, int si,
+    const ucl_object_t *cr, const char *appid, const char *tail)
+{
+	static const char *const lists[] = { "deny", "allow" };
+	const ucl_object_t	*ib, *p;
+	ucl_object_iter_t	 it;
+	char			 name[2][64], tbl[80], words[2000], not[100];
+	const char		*s;
+	bool			 has[2], logit;
+	int			 fam, f2, i;
+
+	ib = ucl_object_lookup(ucl_object_lookup(sec, "criteria"), "ip-block");
+	if (ib == NULL)
+		return;
+	logit = ucl_flag(ucl_object_lookup(sec, "criteria"), "log");
+	for (fam = 4; fam <= 6; fam += 2) {
+		for (i = 0; i < 2; i++) {
+			snprintf(name[i], sizeof(name[i]), "sw%jd_s%d%c%d",
+			    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")),
+			    si, lists[i][0], fam);
+			has[i] = false;
+			it = NULL;
+			while ((p = ucl_object_iterate(ucl_object_lookup(ib,
+			    lists[i]), &it, true)) != NULL) {
+				s = ucl_object_tostring_forced(p);
+				if ((strchr(s, ':') != NULL) != (fam == 6))
+					continue;
+				if (by(tables, "name", name[i]) == NULL)
+					entry(table(tables, name[i], "legacy"), s,
+					    "0");
+				else if (!has[i])
+					table(tables, name[i], "legacy");
+				has[i] = true;
+			}
+		}
+		if (!has[0])
+			continue;
+		/* To a denied prefix, and from one. */
+		snprintf(tbl, sizeof(tbl), "table(%s)", name[0]);
+		not[0] = '\0';
+		if (has[1])
+			snprintf(not, sizeof(not), " not dst-ip table(%s)", name[1]);
+		if (afs_words(cr, tbl, appid, words, sizeof(words), &f2) && (f2 ==
+		    0 || f2 == fam))
+			rule(rules, num, "deny%s %s%s%s", logit ? " log" : "", words,
+			    not, tail);
+		not[0] = '\0';
+		if (has[1])
+			snprintf(not, sizeof(not), " not src-ip table(%s)", name[1]);
+		if (afs_words(cr, NULL, appid, words, sizeof(words), &f2) && (f2 ==
+		    0 || f2 == fam))
+			rule(rules, num, "deny%s %s src-ip table(%s)%s%s", logit ?
+			    " log" : "", words, name[0], not, tail);
+	}
+}
+
 /* The flows an application names: the one of the name, or a group's. */
 static bool
 app_has(const ucl_object_t *afs, const char *app)
@@ -2474,16 +2594,16 @@ own_words(struct plan *pl, const ucl_object_t *sw, const char *sid,
 static bool
 rules_build(struct plan *pl, const char *sid)
 {
-	const ucl_object_t	*sw, *ep, *zone, *afs, *pol, *v, *bo, *r;
+	const ucl_object_t	*sw, *ep, *zone, *afs, *pol, *v, *bo, *r, *sec;
 	ucl_object_iter_t	 it, eit, zit, ait;
 	ucl_object_t		*o, *tables, *rules, *entries, *zt, *j, *pre;
 	ucl_object_t		*objects, *kt;
 	struct dn		*dn;
 	char			 ifn[32], tname[64], zname[64], words[2000];
 	char			 key[200], kname[64], zp[64], xmit[1200], own[1200];
-	char			 host[64], note[400];
+	char			 host[64], note[400], tail[120];
 	const char		*uni, *pname, *bo_sid, *bif;
-	int			 next, zi, pi, fam, nuni, k, lim, q, nat;
+	int			 next, zi, pi, fam, nuni, k, lim, q, nat, si, rp;
 	bool			 any, multi, local, breaks;
 
 	tables = ucl_object_typed_new(UCL_ARRAY);
@@ -2655,12 +2775,23 @@ rules_build(struct plan *pl, const char *sid)
 					if (pol != NULL && (lim = limiter_of(dn,
 					    sw, pol, ep)) >= 0)
 						q = queue_of(dn, lim, sw, pol);
+					/* Its security policy (MEF 88, by
+					 * af-security-ingress): a pipe for its
+					 * rate limit, its denies before the
+					 * forward. */
+					sec = sec_of(sw, pol, "af-security-ingress",
+					    &si);
+					rp = sec != NULL ? sec_pipe(dn, sw, sec) : -1;
 					apit = NULL;
 					for (k = 0; k < nap; k++) {
 						appid = ap != NULL ?
 						    ucl_object_tostring_forced(
 						    ucl_object_iterate(ap, &apit,
 						    true)) : NULL;
+						if (pol != NULL && sec != NULL)
+							sec_rules(tables, rules, next,
+							    sw, sec, si, cr, appid,
+							    recv);
 						if (pol == NULL) {
 							/* None, or Block (R112,
 							 * R113). */
@@ -2820,13 +2951,21 @@ rules_build(struct plan *pl, const char *sid)
 							rule(rules, next,
 							    "deny %s%s", words,
 							    recv);
-						/* By the tunnels, its queue. */
+						/* By the tunnels, its queue; and the
+						 * security policy's pipe. */
 						if (q >= 0 && xmit[0] != '\0' &&
 						    afs_words(cr, NULL, appid,
 						    words, sizeof(words), &fam))
 							rule(pre, RULE_FROM + 1,
 							    "queue %d %s src-ip "
 							    "table(%s) out %s", q,
+							    words, zp, xmit);
+						if (rp >= 0 && xmit[0] != '\0' &&
+						    afs_words(cr, NULL, appid,
+						    words, sizeof(words), &fam))
+							rule(pre, RULE_FROM + 1,
+							    "pipe %d %s src-ip "
+							    "table(%s) out %s", rp,
 							    words, zp, xmit);
 					}
 				}
@@ -2858,10 +2997,19 @@ rules_build(struct plan *pl, const char *sid)
 					v = epol != NULL ? ucl_object_lookup(
 					    ucl_object_lookup(epol, "criteria"),
 					    "egress-block") : NULL;
-					if (v == NULL || ucl_object_type(v) !=
+					/* And its security policy (MEF 88, by
+					 * af-security-egress): the denies on the
+					 * way out by the UNI. */
+					sec = sec_of(sw, epol, "af-security-egress",
+					    &si);
+					if (v != NULL && (ucl_object_type(v) !=
 					    UCL_STRING || strcmp(
-					    ucl_object_tostring(v), "discard") != 0)
+					    ucl_object_tostring(v), "discard") != 0))
+						v = NULL;
+					if (v == NULL && sec == NULL)
 						continue;
+					snprintf(tail, sizeof(tail), " src-ip "
+					    "table(%s) out xmit %s", zp, uni);
 					ait = NULL;
 					while ((afs = ucl_object_iterate(
 					    ucl_object_lookup(sw, "flows"), &ait,
@@ -2881,8 +3029,13 @@ rules_build(struct plan *pl, const char *sid)
 							    ucl_object_iterate(ap,
 							    &apit, true)) : NULL;
 
-							if (afs_words(cr, NULL,
-							    appid, words,
+							if (sec != NULL)
+								sec_rules(tables, pre,
+								    RULE_FROM + 1, sw,
+								    sec, si, cr, appid,
+								    tail);
+							if (v != NULL && afs_words(cr,
+							    NULL, appid, words,
 							    sizeof(words), &fam))
 								rule(pre, RULE_FROM +
 								    1, "deny %s "

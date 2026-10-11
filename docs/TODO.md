@@ -71,8 +71,10 @@
   guide's table from each of R89-R160 to its attribute, and the list
   of what is not done (119-6). Mplify 119 is through. SASE-1: the
   security policies in the document with MEF 88's criteria, checked,
-  on a Security tab with a form, the example carrying one (S1.1).
-  Next: S1.2, the addresses and rates in the rules.
+  on a Security tab with a form, the example carrying one (S1.1);
+  the ip-block denies and allows, the log and the rate pipe in the
+  rules, ingress before the forward and egress by the UNI (S1.2).
+  Next: S1.3, the DNS filter by Unbound.
 - A luxuria plugin installed in a vnet jail and not on the host does
   not get its tab (reported 2026-10-11). The agent lists a running
   vnet jail's plugins by access(X_OK) on the program under the jail's
