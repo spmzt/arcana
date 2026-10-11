@@ -267,10 +267,10 @@ What was once in the list above, and when it was run:
   given to the other side, the SAs derived on each from the
   agreement: setkey -D shows the same two SPIs mirrored on both,
   ping crosses with AES-256-CBC, HMAC-SHA-256, ESN and ESP in UDP.
-  Found: on this kernel (16.0-CURRENT) AES-GCM-16 with ESN drops
-  every packet as "bad authentication" while GCM without ESN and CBC
-  with ESN both carry traffic, derived or given; so GCM is used
-  without ESN here (known limits).
+  Found: AES-GCM-16 with ESN dropped every packet as "bad
+  authentication" until the SAs got a replay window: a kernel bug in
+  the AAD of AEAD with ESN (known limits); with -r 128 GCM and ESN
+  work together.
 - Manually keyed IPsec between two vnet jails (Mplify 119 §10; task
   3.1, 2026-10-11, the lab's sa step): an ipsec(4) interface with
   reqid 100 on each, made by the agent's if-create, the two SAs each
@@ -430,11 +430,16 @@ What was once in the list above, and when it was run:
 
 ## Known limits
 
-- IPsec: AES-GCM-16 with ESN drops every packet as a bad
-  authentication on the 16.0-CURRENT kernel of the test VM (2026-10-11,
-  the lab's derived SAs: GCM alone and CBC with HMAC under ESN both
-  work). Until the kernel does both, a uswe tunnel that wants ESN gets
-  AES-256-CBC with HMAC-SHA-256, and GCM goes without ESN.
+- IPsec: a FreeBSD kernel bug found 2026-10-11 (16.0-CURRENT,
+  sys/netipsec/xform_esp.c): with an AEAD cipher (AES-GCM, ChaCha20)
+  and ESN, esp_input adds the ESN high bits to the separate AAD only
+  when the SA has a replay window (wsize != 0), while esp_output adds
+  them whenever the SA has replay state; an SA without a window
+  (setkey without -r) sends an ICV over four more bytes than the
+  receiver checks, and every packet is a bad authentication. The
+  agent sets -r 128 on every SA, which is right anyway (R47), and
+  then GCM with ESN works; worth a fix upstream (the same test on both
+  paths).
 
 - The GitHub workflow (2026-10-11): the images it builds on
   (ghcr.io/spmzt/freebsd-emscripten, cblink) carry a 16.0-CURRENT
