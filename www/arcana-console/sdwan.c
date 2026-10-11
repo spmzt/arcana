@@ -1186,6 +1186,31 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    "underlay's"));
 	if (!domains(c, sw))
 		return (false);
+	/* The control plane (Mplify 119 §8.3, R9-R13): an edge of the
+	 * service the others' iBGP goes to, a route reflector. */
+	if ((v = ucl_object_lookup(sw, "control_plane")) != NULL && !is_null(
+	    v)) {
+		struct pfx	cid;
+		bool		here = false;
+
+		if (ucl_object_type(v) != UCL_OBJECT || str(v, "host") == NULL)
+			return (fail(c, "control_plane names its host, the edge "
+			    "whose BIRD reflects the others' routes (Mplify 119 "
+			    "§8.3)"));
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(sw,
+		    "end_points"), &it, true)) != NULL)
+			if (str(e, "edge") != NULL && strcmp(str(e, "edge"), str(v,
+			    "host")) == 0)
+				here = true;
+		if (!here)
+			return (fail(c, "control_plane.host is an edge of this "
+			    "service, with an end point in it"));
+		if (str(v, "cluster_id") != NULL && (!address(str(v,
+		    "cluster_id"), &cid) || cid.af != AF_INET))
+			return (fail(c, "control_plane.cluster_id is an IPv4 "
+			    "address, the reflector's cluster (RFC 4456)"));
+	}
 	/* SWVC List of UCSs (§9.3). */
 	if (!names(c, ucl_object_lookup(sw, "ucs"), "ucs", false))
 		return (false);

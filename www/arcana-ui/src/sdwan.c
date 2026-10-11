@@ -3143,6 +3143,23 @@ sdwan_modal_service(struct html *h)
 		text_field(h, "iBGP password", "md5", edit ? jstr(o, "md5") : "",
 		    "", "TCP MD5 on the sessions between the edges (Mplify 119 "
 		    "R12); empty for none.");
+		h_raw(h, "</div><div class=\"two\"><label>Control plane<select "
+		    "name=\"cp_host\">");
+		option(h, "", "none: iBGP between every two edges", edit && jget(o,
+		    "control_plane") != NULL ? jstr(jget(o, "control_plane"),
+		    "host") : "");
+		for (i = 0; i < app.nservers; i++)
+			if (edge_by(app.servers[i].id) != NULL)
+				option(h, app.servers[i].id, app.servers[i].name, edit
+				    && jget(o, "control_plane") != NULL ? jstr(jget(o,
+				    "control_plane"), "host") : "");
+		h_raw(h, "</select><small>An edge of the service whose BIRD "
+		    "reflects the others' routes (RFC 4456, Mplify 119 §8.3): "
+		    "each edge peers with it alone.</small></label>");
+		text_field(h, "Cluster id", "cp_cluster", edit && jget(o,
+		    "control_plane") != NULL ? jstr(jget(o, "control_plane"),
+		    "cluster_id") : "", "", "The reflector's, an IPv4 address; its "
+		    "router id if empty.");
 		snprintf(buf, sizeof(buf), "%lld", (long long)jint(jget(o,
 		    "intervals"), "eval", 1000));
 		text_field(h, "Evaluation interval, ms", "eval", buf, "1000", "The "
@@ -3909,7 +3926,7 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		for (i = 0; i < 12; i++) {
 			static const char *const keys[] = { "id", "fib", "as",
 			    "md5", "reserved_prefixes", "ucs", "bfd", "intervals",
-			    "tca", "domains", NULL };
+			    "tca", "domains", "control_plane", NULL };
 
 			if (keys[i] == NULL)
 				break;
@@ -3920,6 +3937,16 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		    '\0' ? jstr(f, "fib") : "1");
 		put_int(o, "as", jstr(f, "as"));
 		put_str(o, "md5", jstr(f, "md5"));
+		if (jstr(f, "cp_host") != NULL && jstr(f, "cp_host")[0] != '\0') {
+			ucl_object_t	*cp;
+
+			cp = ucl_object_typed_new(UCL_OBJECT);
+			put_str(cp, "host", jstr(f, "cp_host"));
+			if (jstr(f, "cp_cluster") != NULL && jstr(f, "cp_cluster")[0]
+			    != '\0')
+				put_str(cp, "cluster_id", jstr(f, "cp_cluster"));
+			ucl_object_insert_key(o, cp, "control_plane", 0, false);
+		}
 		put_list(o, "reserved_prefixes", jstr(f, "reserved"));
 		/* The routing domains: the three in order where a field has
 		 * three values by commas; each only with something in it. */

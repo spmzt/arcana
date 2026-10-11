@@ -60,8 +60,10 @@
   fault (3.4); the phase closed on the lab, the packets seen on the
   wire as ESP in UDP under ESN (3.5). MPLS in GRE (119-4) is not
   supported: it would be kernel work, which Arcana does not take on
-  (2026-10-11); the domains keep their own tunnels. Next: 119-5, the
-  control plane as RFC 4364. Later: SASE.
+  (2026-10-11); the domains keep their own tunnels. 119-5: a control
+  plane host per service, an edge whose BIRD reflects the others'
+  routes, each peering with it alone (5.1). Next: 5.2, the CPI as a
+  tunnel of its own and what remains of RFC 4364. Later: SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:
@@ -454,6 +456,13 @@ What was once in the list above, and when it was run:
 
 ## Known limits
 
+- RFC 4364 VPN routes (Mplify 119 R14-R20: VPNv4 and VPNv6 with the
+  domains' route distinguishers, targets and labels) are not written
+  for the control plane: BIRD's l3vpn protocol would carry them, and
+  the FreeBSD port of BIRD 3 (net/bird3, 3.3.3 on the VM) does not
+  build it (no L3VPN option; "protocol l3vpn" is a syntax error). The
+  reflector carries plain IPv4 and IPv6 routes. A port with the
+  protocol built would be the way (2026-10-11).
 - IPsec: a FreeBSD kernel bug found 2026-10-11 (16.0-CURRENT,
   sys/netipsec/xform_esp.c): with an AEAD cipher (AES-GCM, ChaCha20)
   and ESN, esp_input adds the ESN high bits to the separate AAD only

@@ -3400,6 +3400,11 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"hold_time\":90", "\"hold_time\":90,\"as_override\":true",
 		    "as_override" },
 		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
+		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
+		    "\"control_plane\":{\"host\":\"nobody\"},", "control_plane.host" },
+		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
+		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"x\"},",
+		    "cluster_id" },
 		{ "\"multiplier\":3", "\"multiplier\":1", "(R159)" },
 		{ "\"10.99.0.9\"]", "\"not a host!\"]", "ntp:" },
 		{ "\"damping\":2", "\"damping\":0", "(CR2)" },
@@ -3716,6 +3721,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	/* The good one, its underlays with addresses, its UNIs on lo0. */
 	snprintf(doc, sizeof(doc), "%s", sdwan_good);
 	static const char *const edits[][2] = {
+		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
+		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"192.0.2.1\"},"
+		    },
 		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
 		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\","
@@ -3934,9 +3942,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"],\"persist\":true") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"kind\":\"sysctl\",\"args\":[\"net.inet6.ip6."
 	    "forwarding\",\"1\"]") != NULL);
-	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b\\nprotocol bgp "
-	    "edge0 from edge {\\n\\tlocal 100.64.0.0 as 64600;\\n\\tneighbor "
-	    "100.64.0.1 as 64600;\\n}") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b, a client of this "
+	    "reflector\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.0 as "
+	    "64600;\\n\\tneighbor 100.64.0.1 as 64600;\\n\\trr client;\\n\\trr "
+	    "cluster id 192.0.2.1;\\n}") != NULL, "%s", r.body);
+	/* The other edge peers with the control plane host alone. */
+	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to a, the control "
+	    "plane\\nprotocol bgp edge0 from edge {\\n\\tlocal 100.64.0.1 as "
+	    "64600;\\n\\tneighbor 100.64.0.0 as 64600;\\n}") != NULL, "%s",
+	    r.body);
 	/* BFD on the edge's tunnel interfaces, the iBGP sessions by it. */
 	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
 	    "\\\"gif102\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier 3;\\n\\t};"

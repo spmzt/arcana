@@ -3070,7 +3070,7 @@ static char *
 bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 {
 	struct kore_buf		*b;
-	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *v;
+	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *v, *cp;
 	ucl_object_iter_t	 it, tit;
 	const char		*rid, *ifn;
 	char			 ifbuf[32], ifaces[1200], sym[80], *out;
@@ -3182,7 +3182,9 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		    "multiplier") != NULL ? ucl_object_toint(ucl_object_lookup(
 		    bfd, "multiplier")) : 3));
 	}
-	/* iBGP with each other edge, by each tunnel between them. */
+	/* iBGP with each other edge, by each tunnel between them; or, with
+	 * a control plane (Mplify 119 §8.3), with its host alone, which
+	 * reflects to all (RFC 4456). */
 	/* What goes to the other edges: the UNIs' subnets and what the
 	 * UNIs learn, not what the kernel's table holds of the console's
 	 * (each edge has its own) nor the tunnels' own addresses, which a
@@ -3221,6 +3223,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	kore_buf_appendf(b, "\tipv4 {\n\t\timport all;\n\t\texport filter "
 	    "to_edges;\n\t\tnext hop self;\n\t};\n\tipv6 {\n\t\timport all;\n\t\t"
 	    "export filter to_edges;\n\t\tnext hop self;\n\t};\n}\n\n");
+	cp = is_nullish(ucl_object_lookup(sw, "control_plane")) ? NULL :
+	    ucl_object_lookup(sw, "control_plane");
 	k = 0;
 	it = NULL;
 	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
@@ -3238,12 +3242,25 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 			continue;
 		if (str(far, "inner4") == NULL && str(far, "inner6") == NULL)
 			continue;
-		kore_buf_appendf(b, "# %s, to %s\nprotocol bgp edge%d from edge {\n\tlocal "
-		    "%s as %jd;\n\tneighbor %s as %jd;\n}\n\n", str(t, "id"),
-		    server_name_of(str(far, "edge")), k++, str(me, "inner4") !=
-		    NULL ? str(me, "inner4") : str(me, "inner6"), (intmax_t)as,
-		    str(far, "inner4") != NULL ? str(far, "inner4") : str(far,
-		    "inner6"), (intmax_t)as);
+		/* An edge of a service with a control plane peers with its
+		 * host alone; the host, with every edge, as their reflector. */
+		if (cp != NULL && strcmp(sid, str(cp, "host")) != 0 && strcmp(
+		    str(far, "edge"), str(cp, "host")) != 0)
+			continue;
+		kore_buf_appendf(b, "# %s, to %s%s\nprotocol bgp edge%d from edge {\n\t"
+		    "local %s as %jd;\n\tneighbor %s as %jd;\n", str(t, "id"),
+		    server_name_of(str(far, "edge")), cp == NULL ? "" : strcmp(sid,
+		    str(cp, "host")) == 0 ? ", a client of this reflector" : ", "
+		    "the control plane", k++, str(me, "inner4") != NULL ? str(me,
+		    "inner4") : str(me, "inner6"), (intmax_t)as, str(far, "inner4")
+		    != NULL ? str(far, "inner4") : str(far, "inner6"), (intmax_t)as);
+		if (cp != NULL && strcmp(sid, str(cp, "host")) == 0) {
+			kore_buf_appendf(b, "\trr client;\n");
+			if (str(cp, "cluster_id") != NULL)
+				kore_buf_appendf(b, "\trr cluster id %s;\n", str(cp,
+				    "cluster_id"));
+		}
+		kore_buf_appendf(b, "}\n\n");
 	}
 	/* At each UNI here: BGP, OSPF, as its entry says. */
 	it = NULL;
@@ -3948,6 +3965,46 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				return (false);
 	}
 	/* Routing at the UNIs, once they are up; the hosts' addresses. */
+	/* A control plane host reflects for every other edge of its service:
+	 * each must have a tunnel to it (R9). */
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
+	    true)) != NULL) {
+		const ucl_object_t	*cp, *e0, *e1;
+
+		if (is_nullish(cp = ucl_object_lookup(sw, "control_plane")))
+			continue;
+		it2 = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+		    &it2, true)) != NULL) {
+			bool	joined = false;
+
+			if (strcmp(str(ep, "edge"), str(cp, "host")) == 0)
+				continue;
+			it3 = NULL;
+			while (!joined && (t = ucl_object_iterate(pl->tunnels, &it3,
+			    true)) != NULL) {
+				if (strcmp(str(t, "swvc"), str(sw, "id")) != 0)
+					continue;
+				e0 = ucl_array_find_index(ucl_object_lookup(t, "ends"),
+				    0);
+				e1 = ucl_array_find_index(ucl_object_lookup(t, "ends"),
+				    1);
+				joined = (strcmp(str(e0, "edge"), str(ep, "edge")) == 0
+				    && strcmp(str(e1, "edge"), str(cp, "host")) == 0) ||
+				    (strcmp(str(e1, "edge"), str(ep, "edge")) == 0 &&
+				    strcmp(str(e0, "edge"), str(cp, "host")) == 0);
+			}
+			if (!joined) {
+				snprintf(pl->why, sizeof(pl->why), "service %s: its "
+				    "control plane host %s has no tunnel to edge %s, "
+				    "which the topology would need for its routes to "
+				    "be reflected", str(sw, "id"), server_name_of(str(
+				    cp, "host")), server_name_of(str(ep, "edge")));
+				return (false);
+			}
+		}
+	}
 	bird_build(pl, doc);
 	dhcp_build(pl, doc);
 	return (true);
