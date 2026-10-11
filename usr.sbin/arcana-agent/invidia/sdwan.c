@@ -27,6 +27,7 @@
  */
 
 #include <sys/param.h>
+#include <sys/sysctl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 
@@ -187,6 +188,115 @@ ipfw_words(struct work *w, const char **errp, int quiet, ...)
 		words[n++] = a;
 	va_end(ap);
 	return (ipfw_run(w, errp, quiet, words, n));
+}
+
+static const char *sval(const ucl_object_t *, const char *);
+
+/*
+ * A table's entries put in by ipfw, ADD_CHUNK of them an atomic add
+ * (one call each, all or nothing), into the table named; -1 and why.
+ */
+static int
+table_fill(struct work *w, const char *name, const ucl_object_t *entries,
+    const char **errp)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*words[ADD_CHUNK * 2 + 4];
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(entries, &it, true)) != NULL) {
+		if (n == 0) {
+			words[n++] = "table";
+			words[n++] = name;
+			words[n++] = "atomic";
+			words[n++] = "add";
+		}
+		words[n++] = ucl_object_tostring_forced(ucl_array_find_index(e, 0));
+		words[n++] = ucl_object_tostring_forced(ucl_array_find_index(e, 1));
+		if (n >= ADD_CHUNK * 2 + 4 - 2) {
+			if (ipfw_run(w, errp, 1, words, n) != 0)
+				return (-1);
+			n = 0;
+		}
+	}
+	if (n > 0 && ipfw_run(w, errp, 1, words, n) != 0)
+		return (-1);
+	return (0);
+}
+
+/* Are two tables' entries the same, as JSON? */
+static bool
+entries_same(const ucl_object_t *a, const ucl_object_t *b)
+{
+	unsigned char	*ja, *jb;
+	bool		 same;
+
+	if ((a == NULL) != (b == NULL))
+		return (a == NULL ? ucl_array_size(b) == 0 : ucl_array_size(a) ==
+		    0);
+	if (a == NULL)
+		return (true);
+	ja = ucl_object_emit(a, UCL_EMIT_JSON_COMPACT);
+	jb = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
+	same = ja != NULL && jb != NULL && strcmp((char *)ja, (char *)jb) == 0;
+	free(ja);
+	free(jb);
+	return (same);
+}
+
+/*
+ * Only the tables' entries changed since the rules were applied: the
+ * same set, objects, rules and tables (names and value types, in
+ * order), as kept; then the tables can be swapped in place and the
+ * rules left as they are.
+ */
+static bool
+tables_only(const ucl_object_t *top, const ucl_object_t *kept)
+{
+	const ucl_object_t	*a, *b;
+	ucl_object_iter_t	 ia, ib;
+	unsigned char		*ja, *jb;
+	bool			 same;
+
+	if (kept == NULL || set == 0 || ucl_object_toint(ucl_object_lookup(top,
+	    "set")) != set)
+		return (false);
+	ja = ucl_object_emit(ucl_object_lookup(top, "rules"),
+	    UCL_EMIT_JSON_COMPACT);
+	jb = ucl_object_emit(ucl_object_lookup(kept, "rules"),
+	    UCL_EMIT_JSON_COMPACT);
+	same = ja != NULL && jb != NULL && strcmp((char *)ja, (char *)jb) == 0;
+	free(ja);
+	free(jb);
+	if (!same)
+		return (false);
+	a = ucl_object_lookup(top, "objects");
+	b = ucl_object_lookup(kept, "objects");
+	ja = a != NULL ? ucl_object_emit(a, UCL_EMIT_JSON_COMPACT) : NULL;
+	jb = b != NULL ? ucl_object_emit(b, UCL_EMIT_JSON_COMPACT) : NULL;
+	same = (ja == NULL && jb == NULL) || (ja != NULL && jb != NULL && strcmp(
+	    (char *)ja, (char *)jb) == 0);
+	free(ja);
+	free(jb);
+	if (!same)
+		return (false);
+	if (ucl_array_size(ucl_object_lookup(top, "tables")) != ucl_array_size(
+	    ucl_object_lookup(kept, "tables")))
+		return (false);
+	ia = ib = NULL;
+	while ((a = ucl_object_iterate(ucl_object_lookup(top, "tables"), &ia,
+	    true)) != NULL) {
+		b = ucl_object_iterate(ucl_object_lookup(kept, "tables"), &ib, true);
+		if (b == NULL || sval(a, "name") == NULL || sval(b, "name") == NULL
+		    || strcmp(sval(a, "name"), sval(b, "name")) != 0 || sval(a,
+		    "valtype") == NULL || sval(b, "valtype") == NULL || strcmp(
+		    sval(a, "valtype"), sval(b, "valtype")) != 0)
+			return (false);
+	}
+	return (true);
 }
 
 static bool
@@ -563,13 +673,14 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	ucl_object_t		*top;
 	const ucl_object_t	*t, *r, *e, *k;
 	ucl_object_iter_t	 it, eit;
+	ucl_object_t		*kept;
 	struct table		*nt;
 	struct object		*no;
 	char			 path[MAXPATHLEN], tmp[MAXPATHLEN], num[16];
-	char			*text;
+	char			*text, alt[72];
 	FILE			*fp;
 	int64_t			 s;
-	int			 n, nr, step, fd, nob;
+	int			 n, nr, step, fd, nob, kk;
 	const char		*line, *err;
 	bool			 ok, dn, natm;
 
@@ -667,6 +778,92 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 			goto bad;
 		}
 	}
+	/* Only entries changed, the rules as they are (a list fetched
+	 * anew): each table whose entries differ from the kept ones is
+	 * filled afresh beside itself and swapped in, in one call; the
+	 * rules are not reloaded and the steering stays. */
+	text = sdwan_kept_read(RULES_FILE);
+	kept = text != NULL ? parse(text) : NULL;
+	free(text);
+	pthread_mutex_lock(&lock);
+	if (kept != NULL && tables_only(top, kept)) {
+		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "set %jd: "
+		    "the tables' entries swapped in, the rules as they are",
+		    (intmax_t)s);
+		ok = true;
+		err = NULL;
+		it = NULL;
+		eit = NULL;
+		while (ok && (t = ucl_object_iterate(ucl_object_lookup(top,
+		    "tables"), &it, true)) != NULL) {
+			k = ucl_object_iterate(ucl_object_lookup(kept, "tables"),
+			    &eit, true);
+			if (entries_same(ucl_object_lookup(t, "entries"),
+			    ucl_object_lookup(k, "entries")))
+				continue;
+			snprintf(alt, sizeof(alt), "%s_alt", sval(t, "name"));
+			if (strcmp(sval(t, "valtype"), "legacy") == 0)
+				(void)ipfw_words(w, NULL, 1, "table", alt, "create",
+				    "type", "addr", NULL);
+			else
+				(void)ipfw_words(w, NULL, 1, "table", alt, "create",
+				    "type", "addr", "valtype", sval(t, "valtype"),
+				    NULL);
+			if (ipfw_words(w, &err, 1, "table", alt, "flush", NULL) != 0 ||
+			    table_fill(w, alt, ucl_object_lookup(t, "entries"), &err)
+			    != 0 || ipfw_words(w, &err, 1, "table", sval(t, "name"),
+			    "swap", alt, NULL) != 0)
+				ok = false;
+			(void)ipfw_words(w, NULL, 1, "table", alt, "flush", NULL);
+		}
+		step_end(w, step, ok, ok ? NULL : "%s", err);
+		pthread_mutex_unlock(&lock);
+		ucl_object_unref(kept);
+		free(nt);
+		free(no);
+		ucl_object_unref(top);
+		if (!ok) {
+			*errp = err;
+			return (-1);
+		}
+		if (sdwan_conf_write(RULES_FILE, json, &err) != 0) {
+			*errp = wfmt(w, "%s: %s", RULES_FILE, err);
+			return (-1);
+		}
+		return (0);
+	}
+	pthread_mutex_unlock(&lock);
+	if (kept != NULL)
+		ucl_object_unref(kept);
+	/* Room for the tables: ipfw's limit raised when they would not fit. */
+	{
+		int	have = 0, want;
+		size_t	len = sizeof(have);
+
+		want = n * 2 > 128 ? (n * 2 > 4096 ? n * 2 : 4096) : 0;
+		if (want > 0 && (sysctlbyname("net.inet.ip.fw.tables_max", &have,
+		    &len, NULL, 0) != 0 || have < want))
+			(void)sysctlbyname("net.inet.ip.fw.tables_max", NULL, NULL,
+			    &want, sizeof(want));
+	}
+	/* What IPsec decrypted goes past the firewall on its way in unless
+	 * net.inet.ipsec.filtertunnel says otherwise, and a tunnel's
+	 * payload with it: the rules would never see what comes in by an
+	 * IPsec-carried tunnel.  Both families' set, in this vnet. */
+	{
+		int	one = 1, have = 0;
+		size_t	len = sizeof(have);
+
+		if (sysctlbyname("net.inet.ipsec.filtertunnel", &have, &len, NULL,
+		    0) == 0 && have == 0)
+			(void)sysctlbyname("net.inet.ipsec.filtertunnel", NULL, NULL,
+			    &one, sizeof(one));
+		len = sizeof(have);
+		if (sysctlbyname("net.inet6.ipsec6.filtertunnel", &have, &len,
+		    NULL, 0) == 0 && have == 0)
+			(void)sysctlbyname("net.inet6.ipsec6.filtertunnel", NULL,
+			    NULL, &one, sizeof(one));
+	}
 	/* The file ipfw reads: the tables, their entries, the rules. */
 	sdwan_conf_path(RULES_FILE, path, sizeof(path));
 	if (strrchr(path, '/') != NULL) {
@@ -698,13 +895,24 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		else
 			fprintf(fp, "table %s create type addr valtype %s\n", sval(t,
 			    "name"), sval(t, "valtype"));
+		/* Its entries, ADD_CHUNK an atomic add: a line each, not a call
+		 * each (SASE-2, large lists). */
 		eit = NULL;
+		kk = 0;
 		while ((e = ucl_object_iterate(ucl_object_lookup(t, "entries"),
-		    &eit, true)) != NULL)
-			fprintf(fp, "table %s add %s %s\n", sval(t, "name"),
-			    ucl_object_tostring_forced(ucl_array_find_index(e,
-			    0)), ucl_object_tostring_forced(ucl_array_find_index(
-			    e, 1)));
+		    &eit, true)) != NULL) {
+			if (kk == 0)
+				fprintf(fp, "table %s atomic add", sval(t, "name"));
+			fprintf(fp, " %s %s", ucl_object_tostring_forced(
+			    ucl_array_find_index(e, 0)), ucl_object_tostring_forced(
+			    ucl_array_find_index(e, 1)));
+			if (++kk == ADD_CHUNK) {
+				fprintf(fp, "\n");
+				kk = 0;
+			}
+		}
+		if (kk > 0)
+			fprintf(fp, "\n");
 	}
 	it = NULL;
 	while ((r = ucl_object_iterate(ucl_object_lookup(top, "rules"), &it,
@@ -725,6 +933,15 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	if (set != 0)
 		rules_clear(w, set);
 	rules_clear(w, (int)s);
+	/* And the new tables' names, should an earlier agent have left
+	 * them in the kernel: a table is made anew, never reused. */
+	for (int ti = 0; ti < n; ti++) {
+		(void)ipfw_words(w, NULL, 1, "table", nt[ti].name, "destroy",
+		    NULL);
+		snprintf(tmp, sizeof(tmp), "%s_alt", nt[ti].name);
+		(void)ipfw_words(w, NULL, 1, "table", tmp, "destroy", NULL);
+	}
+	snprintf(tmp, sizeof(tmp), "%s.load", path);
 	memcpy(tables, nt, sizeof(*nt) * (size_t)n);
 	ntables = n;
 	memcpy(objects, no, sizeof(*no) * (size_t)nob);
@@ -821,9 +1038,55 @@ sdwan_start(void)
 	work_free(&w);
 }
 
+/*
+ * The counters of the rules in the set, as ipfw -S show prints them
+ * ("number packets bytes set N rest"): each its rule number, packets,
+ * bytes and text, for the console to count what a policy denied (MEF
+ * 88, SASE-1); none when no set is applied.
+ */
+static ucl_object_t *
+counters_json(struct work *w, int inset)
+{
+	struct execres	 res;
+	ucl_object_t	*arr, *c;
+	const char	*p, *nl;
+	char		*argv[4], *line, *rest;
+	unsigned long long num, pkts, bytes;
+	int		 rs, n;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if (inset <= 0)
+		return (arr);
+	argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
+	argv[1] = (char *)(uintptr_t)"-S";
+	argv[2] = (char *)(uintptr_t)"show";
+	argv[3] = NULL;
+	if (run_exec_max(w, argv, &res, ARC_MAX_JSON) != 0 || res.out == NULL)
+		return (arr);
+	for (p = res.out; *p != '\0'; p = *nl != '\0' ? nl + 1 : nl) {
+		nl = p + strcspn(p, "\n");
+		line = wstrndup(w, p, (size_t)(nl - p));
+		if (sscanf(line, "%llu %llu %llu set %d %n", &num, &pkts, &bytes,
+		    &rs, &n) != 4 || rs != inset)
+			continue;
+		rest = line + n;
+		c = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(c, ucl_object_fromint((int64_t)num), "rule",
+		    0, false);
+		ucl_object_insert_key(c, ucl_object_fromint((int64_t)pkts), "pkts",
+		    0, false);
+		ucl_object_insert_key(c, ucl_object_fromint((int64_t)bytes),
+		    "bytes", 0, false);
+		ucl_object_insert_key(c, ucl_object_fromstring(rest), "text", 0,
+		    false);
+		ucl_array_append(arr, c);
+	}
+	return (arr);
+}
+
 /* The rules and the steering, as they are, into the sdwan reply. */
 void
-sdwan_json(ucl_object_t *top)
+sdwan_json(struct work *w, ucl_object_t *top)
 {
 	ucl_object_t	*o, *arr, *e, *c, *cs;
 	int		 i, k, st;
@@ -838,6 +1101,7 @@ sdwan_json(ucl_object_t *top)
 	ucl_object_insert_key(o, arr, "tables", 0, false);
 	ucl_object_insert_key(o, ucl_object_fromint(nobjects), "objects", 0,
 	    false);
+	ucl_object_insert_key(o, counters_json(w, set), "counters", 0, false);
 	ucl_object_insert_key(top, o, "rules", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0; i < nsteers; i++) {

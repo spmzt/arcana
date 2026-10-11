@@ -82,6 +82,7 @@ struct opts opts = {
 	.ntp_conf = PATH_NTP_CONF,
 	.rtadvd_conf = PATH_RTADVD_CONF,
 	.dnsmasq_bin = PATH_DNSMASQ_BIN,
+	.unbound_bin = PATH_UNBOUND_BIN,
 	.rtsol_bin = PATH_RTSOL_BIN,
 	.setkey_bin = PATH_SETKEY_BIN,
 	.safe_wait = 60,
@@ -317,7 +318,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:1:2:3:4:5:6:7:8:9:x:Y:y:Z:z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:0:1:2:3:4:5:6:7:8:9:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -473,6 +474,9 @@ main(int argc, char *argv[])
 		case '7':
 			opts.dnsmasq_bin = optarg;
 			break;
+		case '0':
+			opts.unbound_bin = optarg;
+			break;
 		case '8':
 			opts.rtsol_bin = optarg;
 			break;
@@ -620,9 +624,11 @@ main(int argc, char *argv[])
 	history_start();
 	probe_start();
 	faults_start();
+	record_start();
 	sdwan_start();
 	sdwan_bird_start();
 	sdwan_dhcp_start();
+	sdwan_dns_start();
 	kmsg_start();
 	route_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);

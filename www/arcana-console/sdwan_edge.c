@@ -64,6 +64,7 @@
 #include <syslog.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <fetch.h>
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
@@ -76,6 +77,7 @@
 #define	LOCK_FILE	"sdwan.lock"
 #define	UNIT_FIRST	100	/* tunnels' and VLANs' units, from here */
 #define	WG_PORT		51000	/* + the unit: a wg tunnel's port */
+#define	WG_REMOTE_PORT	51820	/* a remote end point's, unless said */
 #define	JOB_POLL_US	300000
 #define	JOB_WAIT_S	600
 #define	PHASES		10
@@ -345,8 +347,11 @@ static void	 bird_routing(struct kore_buf *, const ucl_object_t *,
 static const ucl_object_t *at_path(const ucl_object_t *, const char *,
 		    const char *);
 
+static ucl_object_t *lists_kept(void);
+
 struct plan {
 	const ucl_object_t	*doc;
+	ucl_object_t		*lists;		/* the lists kept, by name */
 	ucl_object_t		*alloc;		/* the state's, with new ones */
 	ucl_object_t		*edges;		/* sid: [objects] */
 	ucl_object_t		*tunnels;	/* the tunnels, both ends */
@@ -1129,6 +1134,12 @@ uni_prefixes(const ucl_object_t *ep, ucl_object_t *out)
 	int			 i;
 
 	u = ucl_object_lookup(ep, "uni");
+	if (u == NULL && ucl_object_lookup(ep, "remote") != NULL) {
+		/* A remote end point's: the identities' addresses (SASE-3). */
+		ucl_array_append(out, S(str(ucl_object_lookup(ep, "remote"),
+		    "prefix")));
+		return;
+	}
 	for (i = 0; i < 2; i++) {
 		v = ucl_object_lookup(u, fams[i]);
 		/* A subnet whoever addresses its hosts. */
@@ -1203,7 +1214,8 @@ breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
-		u = ucl_object_lookup(ep, "uni");
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		for (i = 0; i < 2; i++) {
 			v = ucl_object_lookup(u, fams[i]);
@@ -1229,6 +1241,131 @@ breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
 				    "prefix"), str(r, "next_hop"), "behind the UNI, "
 				    "in the breakout domain (R26)");
 	}
+}
+
+/*
+ * A remote end point's addresses (SASE-3): the edge's own is the
+ * prefix's first host; each identity's is kept in the allocations as
+ * ident:SWVC/EP/NAME with its host number, so that it keeps it while
+ * others come and go, a new one taking the lowest free from the
+ * second.
+ */
+static bool
+remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
+    const char *name, char *buf, size_t len)
+{
+	const ucl_object_t	*r, *al, *v;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*nal;
+	struct net		 n;
+	char			 key[200], pre[200];
+	uint64_t		 host, max;
+	bool			 taken;
+
+	r = ucl_object_lookup(ep, "remote");
+	if (r == NULL || !net_parse(str(r, "prefix"), &n))
+		return (false);
+	if (name == NULL) {
+		net_nth(&n, 1, buf, len);
+		return (true);
+	}
+	snprintf(pre, sizeof(pre), "ident:%s/%s/", str(sw, "id"), str(ep, "id"));
+	snprintf(key, sizeof(key), "%s%s", pre, name);
+	if ((al = ucl_object_lookup(pl->alloc, key)) == NULL) {
+		max = n.af == AF_INET ? (1ULL << (32 - n.len)) - 2 : 65534;
+		for (host = 2; host <= max; host++) {
+			taken = false;
+			it = NULL;
+			while (!taken && (v = ucl_object_iterate(pl->alloc, &it,
+			    true)) != NULL)
+				taken = strncmp(ucl_object_key(v), pre, strlen(pre))
+				    == 0 && (uint64_t)ucl_object_toint(
+				    ucl_object_lookup(v, "host")) == host;
+			if (!taken)
+				break;
+		}
+		if (host > max)
+			return (false);
+		nal = ucl_object_typed_new(UCL_OBJECT);
+		put(nal, "host", I((int64_t)host));
+		put(nal, "swvc", S(str(sw, "id")));
+		ucl_object_insert_key(pl->alloc, nal, key, 0, true);
+		al = nal;
+	}
+	ucl_object_insert_key(pl->used, B(true), key, 0, true);
+	net_nth(&n, (uint64_t)ucl_object_toint(ucl_object_lookup(al, "host")),
+	    buf, len);
+	return (true);
+}
+
+/*
+ * A remote end point (SASE-3): its wg interface in the service's table
+ * with the edge's own address, listening on its port; each identity a
+ * peer allowed its address alone, so that the rules tell it by that
+ * address as they do a UNI's host.  An identity gone is a peer
+ * removed at the next apply.
+ */
+static bool
+remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
+{
+	const ucl_object_t	*r, *id;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*o;
+	struct net		 n;
+	char			 key[200], addr[80], own[80];
+	int64_t			 fib, port;
+
+	r = ucl_object_lookup(ep, "remote");
+	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	port = ucl_object_lookup(r, "port") != NULL ? ucl_object_toint(
+	    ucl_object_lookup(r, "port")) : WG_REMOTE_PORT;
+	if (!net_parse(str(r, "prefix"), &n) || !remote_addr(pl, sw, ep, NULL,
+	    own, sizeof(own))) {
+		snprintf(pl->why, sizeof(pl->why), "end point %s: its prefix",
+		    str(ep, "id"));
+		return (false);
+	}
+	snprintf(key, sizeof(key), "remote:%s", str(ep, "id"));
+	o = object(pl, str(ep, "edge"), key, PH_TVC, "remote %s: %s in fib %jd, "
+	    "the identities' way in by WireGuard, port %jd", str(ep, "id"),
+	    str(r, "interface"), (intmax_t)fib, (intmax_t)port);
+	if (o != NULL) {
+		snprintf(addr, sizeof(addr), "%s/%d", own, n.len);
+		make(o, job("if-create", "interface", S(str(r, "interface")),
+		    "fib", I(fib), "description", S("sdwan"), "address", S(addr),
+		    "persist", B(true), NULL));
+		make(o, job("wireguard", "verb", S("init"), "interface", S(str(r,
+		    "interface")), "listen_port", I(port), "persist", B(true),
+		    NULL));
+		unmake(o, job("if-destroy", "interface", S(str(r, "interface")),
+		    "persist", B(true), NULL));
+	}
+	it = NULL;
+	while ((id = ucl_object_iterate(ucl_object_lookup(r, "identities"), &it,
+	    true)) != NULL) {
+		if (!remote_addr(pl, sw, ep, str(id, "name"), addr, sizeof(addr))) {
+			snprintf(pl->why, sizeof(pl->why), "end point %s: no address "
+			    "is left in %s for identity %s", str(ep, "id"), str(r,
+			    "prefix"), str(id, "name"));
+			return (false);
+		}
+		snprintf(key, sizeof(key), "ident:%s/%s", str(ep, "id"), str(id,
+		    "name"));
+		o = object(pl, str(ep, "edge"), key, PH_PEER, "identity %s: a peer "
+		    "of %s, %s, zone %s", str(id, "name"), str(r, "interface"),
+		    addr, str(id, "zone"));
+		if (o == NULL)
+			continue;
+		snprintf(own, sizeof(own), "%s/%d", addr, n.af == AF_INET ? 32 :
+		    128);
+		make(o, job("wireguard", "verb", S("peer"), "interface", S(str(r,
+		    "interface")), "peer", S(str(id, "public_key")), "allowed_ips",
+		    S(own), "persist", B(true), NULL));
+		unmake(o, job("wireguard", "verb", S("unpeer"), "interface", S(str(
+		    r, "interface")), "peer", S(str(id, "public_key")), "persist",
+		    B(true), NULL));
+	}
+	return (true);
 }
 
 /* The UNI: in the service's FIB, the provider's addresses on it. */
@@ -1534,7 +1671,8 @@ dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
-		u = ucl_object_lookup(ep, "uni");
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
 		ifn = uni_ifname(pl, sw, ep, vif, sizeof(vif));
 		for (i = 0; i < 2; i++) {
 			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
@@ -1610,7 +1748,8 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 			    "end_points"), &pit, true)) != NULL) {
 				if (strcmp(str(ep, "edge"), sid) != 0)
 					continue;
-				u = ucl_object_lookup(ep, "uni");
+				if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+					continue;
 				for (i = 0; i < 2; i++) {
 					v = ucl_object_lookup(u, i == 0 ? "ipv4" :
 					    "ipv6");
@@ -1657,6 +1796,196 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 	}
 }
 
+
+/* ---- DNS filters (MEF 88): the base system's unbound, a service an
+ * instance ------------------------------------------------------------- */
+
+static const ucl_object_t *sec_of(const ucl_object_t *, const ucl_object_t *,
+    const char *, int *);
+
+/*
+ * The security policies of a service that filter DNS, as any of its
+ * policies names them by af-security-ingress or -egress: whether any
+ * denies domains, whether any keeps DNS to the provider's resolver.
+ */
+static bool
+dns_filters(const ucl_object_t *sw, bool *protop)
+{
+	const ucl_object_t	*pol, *cr, *sec, *sc;
+	ucl_object_iter_t	 it;
+	int			 si, i;
+	bool			 any = false;
+
+	*protop = false;
+	it = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &it, true)) != NULL) {
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec == NULL)
+				continue;
+			sc = ucl_object_lookup(sec, "criteria");
+			if (ucl_object_lookup(sc, "dns-domain-filter") != NULL)
+				any = true;
+			if (ucl_flag(sc, "dns-protocol-filter")) {
+				any = true;
+				*protop = true;
+			}
+		}
+		(void)cr;
+	}
+	return (any);
+}
+
+/*
+ * unbound's configuration for a service at an edge: it listens on the
+ * UNIs' provider addresses, answers the UNIs' subnets, resolves by
+ * itself, and denies every domain the service's filtering policies
+ * deny (always_nxdomain, the names beneath too).
+ */
+static char *
+dns_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *lists)
+{
+	struct kore_buf		*b;
+	const ucl_object_t	*ep, *u, *v, *a, *pol, *sec, *sc, *d;
+	ucl_object_iter_t	 it, pit, dit;
+	char			*out;
+	int			 i, si;
+
+	b = kore_buf_alloc(2048);
+	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	    "at %s, in routing table %jd.\n# The DNS filter of its security "
+	    "policies (MEF 88), by the base system's unbound.\nserver:\n\t"
+	    "verbosity: 0\n\tdo-daemonize: yes\n\tmodule-config: \"iterator\"\n"
+	    "\tdo-not-query-localhost: no\n", str(sw, "id"), server_name_of(sid),
+	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")));
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep, "edge"), sid) != 0)
+			continue;
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
+		for (i = 0; i < 2; i++) {
+			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
+			if (str(v, "prefix") == NULL)
+				continue;
+			a = ucl_array_find_index(ucl_object_lookup(v, "provider"), 0);
+			if (a == NULL)
+				continue;
+			kore_buf_appendf(b, "\t# UNI %s\n\tinterface: %s\n\t"
+			    "access-control: %s allow\n", str(u, "id"),
+			    ucl_object_tostring_forced(a), str(v, "prefix"));
+		}
+	}
+	pit = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &pit, true)) != NULL)
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec == NULL)
+				continue;
+			sc = ucl_object_lookup(sec, "criteria");
+			dit = NULL;
+			while ((d = ucl_object_iterate(ucl_object_lookup(
+			    ucl_object_lookup(sc, "dns-domain-filter"), "deny"),
+			    &dit, true)) != NULL)
+				kore_buf_appendf(b, "\tlocal-zone: \"%s.\" "
+				    "always_nxdomain\n",
+				    ucl_object_tostring_forced(d));
+			/* And the named lists' domains, as kept. */
+			dit = NULL;
+			while ((d = ucl_object_iterate(ucl_object_lookup(
+			    ucl_object_lookup(sc, "dns-domain-filter"), "lists"),
+			    &dit, true)) != NULL) {
+				const ucl_object_t	*le;
+				ucl_object_iter_t	 eit = NULL;
+				const char		*s;
+
+				while ((le = ucl_object_iterate(at_path(
+				    ucl_object_lookup(lists, "lists"),
+				    ucl_object_tostring_forced(d), "entries"), &eit,
+				    true)) != NULL) {
+					s = ucl_object_tostring_forced(le);
+					if (strchr(s, '/') != NULL || strchr(s, ':') !=
+					    NULL || (isdigit((unsigned char)s[0]) &&
+					    strchr(s, '.') != NULL && strpbrk(s,
+					    "abcdefghijklmnopqrstuvwxyz") == NULL))
+						continue;	/* a prefix */
+					kore_buf_appendf(b, "\tlocal-zone: \"%s.\" "
+					    "always_nxdomain\n", s);
+				}
+			}
+		}
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
+ * Each edge's DNS filters: an instance per service whose policies name
+ * a security policy that filters DNS, where the edge has a UNI of the
+ * service, in the service's table.
+ */
+static void
+dns_build(struct plan *pl, const ucl_object_t *doc)
+{
+	const ucl_object_t	*sw, *edge, *ep;
+	ucl_object_iter_t	 it, eit, pit;
+	ucl_object_t		*o, *inst, *list;
+	char			 name[32];
+	const char		*sid;
+	char			*text;
+	bool			 here, proto;
+
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		sid = str(edge, "server");
+		list = ucl_object_typed_new(UCL_ARRAY);
+		eit = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &eit, true)) != NULL) {
+			if (!dns_filters(sw, &proto))
+				continue;
+			here = false;
+			pit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &pit, true)) != NULL)
+				if (strcmp(str(ep, "edge"), sid) == 0)
+					here = true;
+			if (!here)
+				continue;
+			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+			inst = ucl_object_typed_new(UCL_OBJECT);
+			put(inst, "name", S(name));
+			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
+			    "fib"))));
+			text = dns_conf(sw, sid, pl->lists);
+			put(inst, "conf", S(text));
+			free(text);
+			ucl_array_append(list, inst);
+		}
+		if (ucl_array_size(list) == 0) {
+			ucl_object_unref(list);
+			continue;
+		}
+		o = object(pl, sid, "dns", PH_BIRD, "DNS filters: unbound, %u "
+		    "instance%s in the services' tables, the domains the security "
+		    "policies deny", ucl_array_size(list), ucl_array_size(list) ==
+		    1 ? "" : "s");
+		if (o == NULL) {
+			ucl_object_unref(list);
+			continue;
+		}
+		make(o, job("sdwan-dns", "instances", list, NULL));
+		unmake(o, job("sdwan-dns", "instances", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	}
+}
 
 /* ---- The rules: classification and steering (§8, §9.12, §10.4) ----- */
 
@@ -1969,6 +2298,8 @@ uni_ifname(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 	char			 key[200];
 
 	u = ucl_object_lookup(ep, "uni");
+	if (u == NULL && ucl_object_lookup(ep, "remote") != NULL)
+		return (str(ucl_object_lookup(ep, "remote"), "interface"));
 	if (ucl_object_toint(ucl_object_lookup(u, "vlan")) <= 0)
 		return (str(u, "interface"));
 	snprintf(key, sizeof(key), "vlan:%s/%s", str(sw, "id"), str(ep, "id"));
@@ -2442,7 +2773,8 @@ sec_of(const ucl_object_t *sw, const ucl_object_t *pol, const char *crit,
 static void
 sec_rules(ucl_object_t *tables, ucl_object_t *rules, int num,
     const ucl_object_t *sw, const ucl_object_t *sec, int si,
-    const ucl_object_t *cr, const char *appid, const char *tail)
+    const ucl_object_t *cr, const char *appid, const char *tail,
+    const ucl_object_t *lists_of)
 {
 	static const char *const lists[] = { "deny", "allow" };
 	const ucl_object_t	*ib, *p;
@@ -2458,42 +2790,83 @@ sec_rules(ucl_object_t *tables, ucl_object_t *rules, int num,
 	logit = ucl_flag(ucl_object_lookup(sec, "criteria"), "log");
 	for (fam = 4; fam <= 6; fam += 2) {
 		for (i = 0; i < 2; i++) {
+			bool	fresh;
+
 			snprintf(name[i], sizeof(name[i]), "sw%jd_s%d%c%d",
 			    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")),
 			    si, lists[i][0], fam);
 			has[i] = false;
+			fresh = by(tables, "name", name[i]) == NULL;
 			it = NULL;
 			while ((p = ucl_object_iterate(ucl_object_lookup(ib,
 			    lists[i]), &it, true)) != NULL) {
 				s = ucl_object_tostring_forced(p);
 				if ((strchr(s, ':') != NULL) != (fam == 6))
 					continue;
-				if (by(tables, "name", name[i]) == NULL)
+				if (fresh)
 					entry(table(tables, name[i], "legacy"), s,
 					    "0");
-				else if (!has[i])
-					table(tables, name[i], "legacy");
 				has[i] = true;
 			}
+			/* And the named lists' prefixes (the deny ones; feeds
+			 * and pasted lists, as kept), of the family. */
+			if (i == 0) {
+				const ucl_object_t	*ln, *le;
+				ucl_object_iter_t	 lit, eit;
+
+				lit = NULL;
+				while ((ln = ucl_object_iterate(ucl_object_lookup(ib,
+				    "lists"), &lit, true)) != NULL) {
+					eit = NULL;
+					while ((le = ucl_object_iterate(at_path(
+					    ucl_object_lookup(lists_of, "lists"),
+					    ucl_object_tostring_forced(ln), "entries"),
+					    &eit, true)) != NULL) {
+						s = ucl_object_tostring_forced(le);
+						if (strchr(s, '/') == NULL && !(
+						    strchr(s, ':') != NULL || (isdigit(
+						    (unsigned char)s[0]) && strchr(s,
+						    '.') != NULL)))
+							continue;	/* a domain */
+						if ((strchr(s, ':') != NULL) != (fam ==
+						    6))
+							continue;
+						if (fresh)
+							entry(table(tables, name[i],
+							    "legacy"), s, "0");
+						has[i] = true;
+					}
+				}
+			}
+			if (has[i] && !fresh)
+				table(tables, name[i], "legacy");
 		}
 		if (!has[0])
 			continue;
-		/* To a denied prefix, and from one. */
+		/* To a denied prefix, and from one.  With log, each packet is
+		 * told on the routing socket (ipfw's logdst rtsock), which
+		 * the agent reads into its record; the rule's comment names
+		 * the service and the policy for it (SASE-2).  A thousand a
+		 * rule between resets, which the agent asks for. */
 		snprintf(tbl, sizeof(tbl), "table(%s)", name[0]);
 		not[0] = '\0';
 		if (has[1])
 			snprintf(not, sizeof(not), " not dst-ip table(%s)", name[1]);
 		if (afs_words(cr, tbl, appid, words, sizeof(words), &f2) && (f2 ==
 		    0 || f2 == fam))
-			rule(rules, num, "deny%s %s%s%s", logit ? " log" : "", words,
-			    not, tail);
+			rule(rules, num, "deny%s %s%s%s%s%.30s %.30s dst", logit ?
+			    " log logdst rtsock logamount 1000" : "", words, not, tail,
+			    logit ? " // security " : "", logit ? str(sw, "id") : "",
+			    logit ? str(sec, "name") : "");
 		not[0] = '\0';
 		if (has[1])
 			snprintf(not, sizeof(not), " not src-ip table(%s)", name[1]);
 		if (afs_words(cr, NULL, appid, words, sizeof(words), &f2) && (f2 ==
 		    0 || f2 == fam))
-			rule(rules, num, "deny%s %s src-ip table(%s)%s%s", logit ?
-			    " log" : "", words, name[0], not, tail);
+			rule(rules, num, "deny%s %s src-ip table(%s)%s%s%s%.30s %.30s "
+			    "src", logit ? " log logdst rtsock logamount 1000" : "",
+			    words, name[0], not, tail, logit ? " // security " : "",
+			    logit ? str(sw, "id") : "", logit ? str(sec, "name") : "");
 	}
 }
 
@@ -2632,6 +3005,34 @@ rules_build(struct plan *pl, const char *sid)
 			/* [D1]: source routing dropped. */
 			rule(rules, RULE_FROM, "deny ip from any to any ipoptions "
 			    "lsrr,ssrr,rr in recv %s", uni);
+			/* DNS kept to the provider's resolver, where a security
+			 * policy says so (MEF 88 dns-protocol-filter): every
+			 * query from the UNI goes to the filter here. */
+			{
+				const ucl_object_t	*pv, *pa;
+				bool			 proto;
+
+				char			 rown[80];
+				const char		*at;
+
+				pv = ucl_object_lookup(ucl_object_lookup(ep, "uni"),
+				    "ipv4");
+				pa = pv != NULL ? ucl_array_find_index(
+				    ucl_object_lookup(pv, "provider"), 0) : NULL;
+				at = pa != NULL ? ucl_object_tostring_forced(pa) :
+				    NULL;
+				/* A remote end point's: the edge's own there. */
+				if (pa == NULL && ucl_object_lookup(ep, "remote") !=
+				    NULL && remote_addr(pl, sw, ep, NULL, rown,
+				    sizeof(rown)) && family(rown) == AF_INET)
+					at = rown;
+				if (at != NULL && dns_filters(sw, &proto) && proto) {
+					rule(rules, RULE_FROM, "fwd %s,53 udp from any "
+					    "to any dst-port 53 in recv %s", at, uni);
+					rule(rules, RULE_FROM, "fwd %s,53 tcp from any "
+					    "to any dst-port 53 in recv %s", at, uni);
+				}
+			}
 			rule(rules, RULE_FROM, "skipto tablearg ip from table(%s) "
 			    "to any in recv %s", zname, uni);
 			/* No zone: dropped (R23). */
@@ -2726,6 +3127,40 @@ rules_build(struct plan *pl, const char *sid)
 					    ucl_object_tostring_forced(p), "0");
 				}
 			}
+			/* The identities of the zone at this edge's remote end
+			 * points (SASE-3): each by its address; a Default
+			 * zone has them already. */
+			if (ucl_object_type(v) != UCL_STRING) {
+				const ucl_object_t	*rep, *id;
+				ucl_object_iter_t	 rit, iit;
+				char			 ia[80];
+				int			 af;
+
+				rit = NULL;
+				while ((rep = ucl_object_iterate(ucl_object_lookup(
+				    sw, "end_points"), &rit, true)) != NULL) {
+					if (strcmp(str(rep, "edge"), sid) != 0 ||
+					    ucl_object_lookup(rep, "remote") == NULL)
+						continue;
+					iit = NULL;
+					while ((id = ucl_object_iterate(ucl_object_lookup(
+					    ucl_object_lookup(rep, "remote"),
+					    "identities"), &iit, true)) != NULL) {
+						if (str(id, "zone") == NULL || strcmp(str(
+						    id, "zone"), str(zone, "name")) != 0 ||
+						    !remote_addr(pl, sw, rep, str(id,
+						    "name"), ia, sizeof(ia)))
+							continue;
+						af = family(ia);
+						snprintf(ia + strlen(ia), sizeof(ia) -
+						    strlen(ia), "/%d", af == AF_INET ? 32 :
+						    128);
+						entry(zt, ia, num);
+						entry(table(tables, zp, "legacy"), ia,
+						    "0");
+					}
+				}
+			}
 			/* The block: each end point's flows, in order. */
 			eit = NULL;
 			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
@@ -2791,7 +3226,7 @@ rules_build(struct plan *pl, const char *sid)
 						if (pol != NULL && sec != NULL)
 							sec_rules(tables, rules, next,
 							    sw, sec, si, cr, appid,
-							    recv);
+							    recv, pl->lists);
 						if (pol == NULL) {
 							/* None, or Block (R112,
 							 * R113). */
@@ -3033,7 +3468,7 @@ rules_build(struct plan *pl, const char *sid)
 								sec_rules(tables, pre,
 								    RULE_FROM + 1, sw,
 								    sec, si, cr, appid,
-								    tail);
+								    tail, pl->lists);
 							if (v != NULL && afs_words(cr,
 							    NULL, appid, words,
 							    sizeof(words), &fam))
@@ -3281,7 +3716,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
-		u = ucl_object_lookup(ep, "uni");
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		snprintf(ifaces + strlen(ifaces), sizeof(ifaces) - strlen(ifaces),
 		    "%s\"%s\"", n++ > 0 ? ", " : "", ifn);
@@ -3450,7 +3886,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    &it, true)) != NULL) {
 		if (strcmp(str(ep, "edge"), sid) != 0)
 			continue;
-		u = ucl_object_lookup(ep, "uni");
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;	/* a remote end point (SASE-3) */
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		symbol(str(ep, "id"), sym, sizeof(sym));
 		bird_routing(b, u, "UNI", str(u, "id"), sym, ifn, as);
@@ -3745,6 +4182,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	pl->alloc = ucl_object_copy(ucl_object_lookup(st, "alloc"));
 	pl->edges = ucl_object_typed_new(UCL_OBJECT);
 	pl->tunnels = ucl_object_typed_new(UCL_ARRAY);
+	pl->lists = lists_kept();
 	pl->used = ucl_object_typed_new(UCL_OBJECT);
 	pl->notes = ucl_object_typed_new(UCL_ARRAY);
 	pl->learned = ucl_object_typed_new(UCL_OBJECT);
@@ -4052,7 +4490,9 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 		it2 = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &it2, true)) != NULL)
-			if (!uni_obj(pl, sw, ep))
+			if (ucl_object_lookup(ep, "uni") != NULL ? !uni_obj(pl, sw,
+			    ep) : ucl_object_lookup(ep, "remote") != NULL &&
+			    !remote_obj(pl, sw, ep))
 				return (false);
 	}
 	/*
@@ -4191,6 +4631,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 		}
 	}
 	bird_build(pl, doc);
+	dns_build(pl, doc);
 	dhcp_build(pl, doc);
 	return (true);
 }
@@ -4201,6 +4642,8 @@ plan_free(struct plan *pl)
 
 	if (pl->alloc != NULL)
 		ucl_object_unref(pl->alloc);
+	if (pl->lists != NULL)
+		ucl_object_unref(pl->lists);
 	if (pl->edges != NULL)
 		ucl_object_unref(pl->edges);
 	if (pl->tunnels != NULL)
@@ -4873,6 +5316,534 @@ run_main(void *arg)
 }
 
 
+/* ---- The lists (MEF 88, SASE-2): feeds fetched by the console, pasted
+ * lists, versioned and named by the security policies -------------------- */
+
+#define	LISTS_FILE	"sdwan-lists.json"
+#define	LIST_MAX_BYTES	(8 * 1024 * 1024)
+#define	LIST_MAX_ENTRIES	200000
+#define	FEED_INTERVAL_H	6
+
+/*
+ * What is kept: {"interval": hours, "feeds": [{"name", "url"} or
+ * {"name", "entries": [...]} for a pasted list], "lists": {name:
+ * {"version", "fetched_at", "entries", "error"}}, "fetched_at"}.
+ */
+static ucl_object_t *
+lists_kept(void)
+{
+	ucl_object_t	*o;
+
+	if ((o = store_load(LISTS_FILE)) == NULL)
+		o = ucl_object_typed_new(UCL_OBJECT);
+	if (ucl_object_lookup(o, "feeds") == NULL)
+		put(o, "feeds", ucl_object_typed_new(UCL_ARRAY));
+	if (ucl_object_lookup(o, "lists") == NULL)
+		put(o, "lists", ucl_object_typed_new(UCL_OBJECT));
+	return (o);
+}
+
+/* A name a list may have: letters, digits, - and _, 32 at most. */
+static bool
+list_name_ok(const char *s)
+{
+	size_t	i;
+
+	if (s == NULL || s[0] == '\0' || strlen(s) > 32)
+		return (false);
+	for (i = 0; s[i] != '\0'; i++)
+		if (!isalnum((unsigned char)s[i]) && s[i] != '-' && s[i] != '_')
+			return (false);
+	return (true);
+}
+
+/* An entry of a list: a prefix or address, or a domain name. */
+static bool
+list_entry_ok(const char *s)
+{
+	size_t	n, lab;
+
+	if (s == NULL || (n = strlen(s)) == 0 || n > 253)
+		return (false);
+	lab = 0;
+	for (; *s != '\0'; s++) {
+		if (*s == '.' || *s == '/' || *s == ':') {
+			lab = 0;
+			continue;
+		}
+		if (!isalnum((unsigned char)*s) && *s != '-' && *s != '_')
+			return (false);
+		if (++lab > 63)
+			return (false);
+	}
+	return (true);
+}
+
+/*
+ * The text of a feed or a pasted list into entries: one each line,
+ * what follows # or ; left out, blank lines too; false when one is
+ * not an entry, or there are too many.
+ */
+static bool
+list_parse(const char *text, ucl_object_t *entries, char *why, size_t wlen)
+{
+	const char	*p, *nl;
+	char		 line[300];
+	size_t		 n, k;
+
+	for (p = text; *p != '\0'; p = *nl != '\0' ? nl + 1 : nl) {
+		nl = p + strcspn(p, "\n");
+		n = (size_t)(nl - p);
+		if (n >= sizeof(line))
+			n = sizeof(line) - 1;
+		memcpy(line, p, n);
+		line[n] = '\0';
+		line[strcspn(line, "#;\r")] = '\0';
+		for (k = 0; line[k] == ' ' || line[k] == '\t'; k++)
+			;
+		n = strlen(line + k);
+		while (n > 0 && (line[k + n - 1] == ' ' || line[k + n - 1] == '\t'))
+			line[k + --n] = '\0';
+		if (n == 0)
+			continue;
+		if (!list_entry_ok(line + k)) {
+			snprintf(why, wlen, "%.60s is not a prefix nor a domain",
+			    line + k);
+			return (false);
+		}
+		if (ucl_array_size(entries) >= LIST_MAX_ENTRIES) {
+			snprintf(why, wlen, "more than %d entries", LIST_MAX_ENTRIES);
+			return (false);
+		}
+		ucl_array_append(entries, S(line + k));
+	}
+	return (true);
+}
+
+/* Are two lists' entries the same, in order? */
+static bool
+list_same(const ucl_object_t *a, const ucl_object_t *b)
+{
+	const ucl_object_t	*x, *y;
+	ucl_object_iter_t	 ix, iy;
+
+	if (a == NULL || b == NULL || ucl_array_size(a) != ucl_array_size(b))
+		return (false);
+	ix = iy = NULL;
+	while ((x = ucl_object_iterate(a, &ix, true)) != NULL) {
+		y = ucl_object_iterate(b, &iy, true);
+		if (y == NULL || strcmp(ucl_object_tostring_forced(x),
+		    ucl_object_tostring_forced(y)) != 0)
+			return (false);
+	}
+	return (true);
+}
+
+/*
+ * A list's entries made the kept ones: a new version when they differ
+ * from the last, the time noted, the error cleared.
+ */
+static void
+list_keep(ucl_object_t *kept, const char *name, ucl_object_t *entries,
+    const char *error)
+{
+	ucl_object_t		*all, *l;
+	const ucl_object_t	*was;
+	int64_t			 version;
+
+	all = (ucl_object_t *)(uintptr_t)ucl_object_lookup(kept, "lists");
+	was = ucl_object_lookup(all, name);
+	version = was != NULL ? ucl_object_toint(ucl_object_lookup(was,
+	    "version")) : 0;
+	l = ucl_object_typed_new(UCL_OBJECT);
+	if (entries != NULL) {
+		if (was == NULL || !list_same(ucl_object_lookup(was, "entries"),
+		    entries))
+			version++;
+		put(l, "entries", entries);
+		put(l, "fetched_at", I(time(NULL)));
+	} else {
+		/* A failed fetch keeps the last. */
+		put(l, "entries", was != NULL && ucl_object_lookup(was,
+		    "entries") != NULL ? ucl_object_copy(ucl_object_lookup(was,
+		    "entries")) : ucl_object_typed_new(UCL_ARRAY));
+		if (was != NULL && ucl_object_lookup(was, "fetched_at") != NULL)
+			put(l, "fetched_at", I(ucl_object_toint(ucl_object_lookup(
+			    was, "fetched_at"))));
+	}
+	put(l, "version", I(version));
+	put(l, "tried_at", I(time(NULL)));
+	if (error != NULL)
+		put(l, "error", S(error));
+	put(all, name, l);
+}
+
+/*
+ * Every feed fetched by the console's host with the base system's
+ * libfetch (file, http and https), each pasted list taken as it is;
+ * what is kept written.  Run by the manager at the interval, and on
+ * request.
+ */
+static void
+lists_fetch(ucl_object_t *kept, const char *only)
+{
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*entries;
+	FILE			*fp;
+	char			*buf, why[200];
+	size_t			 len, n;
+
+	it = NULL;
+	while ((f = ucl_object_iterate(ucl_object_lookup(kept, "feeds"), &it,
+	    true)) != NULL) {
+		if (str(f, "name") == NULL || (only != NULL && strcmp(str(f,
+		    "name"), only) != 0))
+			continue;
+		entries = ucl_object_typed_new(UCL_ARRAY);
+		if (str(f, "url") == NULL) {
+			/* Pasted: its entries are what was given. */
+			if (ucl_object_lookup(f, "entries") != NULL) {
+				ucl_object_unref(entries);
+				entries = ucl_object_copy(ucl_object_lookup(f,
+				    "entries"));
+			}
+			list_keep(kept, str(f, "name"), entries, NULL);
+			continue;
+		}
+		fetchTimeout = 30;
+		if ((fp = fetchGetURL(str(f, "url"), "")) == NULL) {
+			ucl_object_unref(entries);
+			list_keep(kept, str(f, "name"), NULL, fetchLastErrString);
+			thread_log(LOG_WARNING, "sdwan: list %s not fetched from "
+			    "%s: %s", str(f, "name"), str(f, "url"),
+			    fetchLastErrString);
+			continue;
+		}
+		if ((buf = malloc(LIST_MAX_BYTES)) == NULL) {
+			fclose(fp);
+			ucl_object_unref(entries);
+			list_keep(kept, str(f, "name"), NULL, "out of memory");
+			continue;
+		}
+		for (len = 0; len < LIST_MAX_BYTES - 1; len += n)
+			if ((n = fread(buf + len, 1, LIST_MAX_BYTES - 1 - len, fp))
+			    == 0)
+				break;
+		buf[len] = '\0';
+		fclose(fp);
+		if (len >= LIST_MAX_BYTES - 1) {
+			free(buf);
+			ucl_object_unref(entries);
+			list_keep(kept, str(f, "name"), NULL, "more than 8 MB");
+			continue;
+		}
+		if (!list_parse(buf, entries, why, sizeof(why))) {
+			free(buf);
+			ucl_object_unref(entries);
+			list_keep(kept, str(f, "name"), NULL, why);
+			thread_log(LOG_WARNING, "sdwan: list %s from %s: %s", str(f,
+			    "name"), str(f, "url"), why);
+			continue;
+		}
+		free(buf);
+		list_keep(kept, str(f, "name"), entries, NULL);
+	}
+	put(kept, "fetched_at", I(time(NULL)));
+	pthread_mutex_lock(&st_lock);
+	(void)store_save(LISTS_FILE, kept);
+	pthread_mutex_unlock(&st_lock);
+}
+
+/* The feeds fetched again when the interval has passed. */
+static void
+lists_tick(time_t now)
+{
+	ucl_object_t	*kept;
+	int64_t		 hours;
+
+	kept = lists_kept();
+	hours = ucl_object_lookup(kept, "interval") != NULL ? ucl_object_toint(
+	    ucl_object_lookup(kept, "interval")) : FEED_INTERVAL_H;
+	if (ucl_array_size(ucl_object_lookup(kept, "feeds")) > 0 && now -
+	    ucl_object_toint(ucl_object_lookup(kept, "fetched_at")) >= hours *
+	    3600)
+		lists_fetch(kept, NULL);
+	ucl_object_unref(kept);
+}
+
+/* Does a list of the name exist, as kept or as a feed to come? */
+bool
+sdwan_list_exists(const char *name)
+{
+	ucl_object_t	*kept;
+	bool		 yes;
+
+	kept = lists_kept();
+	yes = by(ucl_object_lookup(kept, "feeds"), "name", name) != NULL ||
+	    ucl_object_lookup(ucl_object_lookup(kept, "lists"), name) != NULL;
+	ucl_object_unref(kept);
+	return (yes);
+}
+
+/*
+ * GET /api/sdwan/lists: the feeds and the pasted lists, the interval,
+ * and each list as kept (version, fetched_at, count, error).  PUT: the
+ * feeds and the interval, checked, the pasted lists' entries parsed;
+ * what was kept of a list that is gone, gone.  POST
+ * /api/sdwan/lists/fetch, {"name"} or {}: fetched now.
+ */
+int
+api_sdwan_lists(struct http_request *req)
+{
+	ucl_object_t		*kept, *body, *out, *feeds, *f2, *ls, *entries;
+	const ucl_object_t	*f, *l;
+	ucl_object_iter_t	 it;
+	char			 why[200];
+	bool			 fetch;
+
+	fetch = strcmp(req->path, "/api/sdwan/lists/fetch") == 0;
+	if (req->method == HTTP_METHOD_GET) {
+		if (!guard(req, false))
+			return (KORE_RESULT_OK);
+		kept = lists_kept();
+		out = ucl_object_typed_new(UCL_OBJECT);
+		put(out, "interval", I(ucl_object_lookup(kept, "interval") != NULL
+		    ? ucl_object_toint(ucl_object_lookup(kept, "interval")) :
+		    FEED_INTERVAL_H));
+		put(out, "feeds", ucl_object_copy(ucl_object_lookup(kept, "feeds")));
+		ls = ucl_object_typed_new(UCL_OBJECT);
+		it = NULL;
+		while ((l = ucl_object_iterate(ucl_object_lookup(kept, "lists"),
+		    &it, true)) != NULL) {
+			f2 = ucl_object_typed_new(UCL_OBJECT);
+			put(f2, "version", I(ucl_object_toint(ucl_object_lookup(l,
+			    "version"))));
+			if (ucl_object_lookup(l, "fetched_at") != NULL)
+				put(f2, "fetched_at", I(ucl_object_toint(
+				    ucl_object_lookup(l, "fetched_at"))));
+			put(f2, "count", I((int64_t)ucl_array_size(ucl_object_lookup(
+			    l, "entries"))));
+			if (str(l, "error") != NULL)
+				put(f2, "error", S(str(l, "error")));
+			put(ls, ucl_object_key(l), f2);
+		}
+		put(out, "lists", ls);
+		ucl_object_unref(kept);
+		return (reply_json(req, 200, out));
+	}
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	kept = lists_kept();
+	if (fetch) {
+		body = read_json(req);
+		lists_fetch(kept, body != NULL ? str(body, "name") : NULL);
+		if (body != NULL)
+			ucl_object_unref(body);
+		ucl_object_unref(kept);
+		out = ucl_object_typed_new(UCL_OBJECT);
+		put(out, "fetched", B(true));
+		return (reply_json(req, 200, out));
+	}
+	if ((body = read_json(req)) == NULL) {
+		ucl_object_unref(kept);
+		return (reply_error(req, 400, "json", "an object with feeds and "
+		    "interval"));
+	}
+	if (ucl_object_lookup(body, "interval") != NULL && (ucl_object_type(
+	    ucl_object_lookup(body, "interval")) != UCL_INT || ucl_object_toint(
+	    ucl_object_lookup(body, "interval")) < 1 || ucl_object_toint(
+	    ucl_object_lookup(body, "interval")) > 24 * 30)) {
+		ucl_object_unref(body);
+		ucl_object_unref(kept);
+		return (reply_error(req, 400, "interval", "interval is hours, 1 "
+		    "to 720"));
+	}
+	feeds = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((f = ucl_object_iterate(ucl_object_lookup(body, "feeds"), &it,
+	    true)) != NULL) {
+		if (!list_name_ok(str(f, "name")) || by(feeds, "name", str(f,
+		    "name")) != NULL || (str(f, "url") == NULL && str(f, "text") ==
+		    NULL) || ucl_array_size(feeds) >= 64) {
+			ucl_object_unref(feeds);
+			ucl_object_unref(body);
+			ucl_object_unref(kept);
+			return (reply_error(req, 400, "feeds", "each feed a name "
+			    "of letters, digits, - and _ (32 at most, once) and a "
+			    "url, or text pasted; 64 at most"));
+		}
+		if (str(f, "url") != NULL && (strlen(str(f, "url")) > 500 || (
+		    strncmp(str(f, "url"), "https://", 8) != 0 && strncmp(str(f,
+		    "url"), "http://", 7) != 0 && strncmp(str(f, "url"),
+		    "file:///", 8) != 0))) {
+			ucl_object_unref(feeds);
+			ucl_object_unref(body);
+			ucl_object_unref(kept);
+			return (reply_error(req, 400, "feeds", "a feed's url is "
+			    "https, http or file"));
+		}
+		f2 = ucl_object_typed_new(UCL_OBJECT);
+		put(f2, "name", S(str(f, "name")));
+		if (str(f, "url") != NULL)
+			put(f2, "url", S(str(f, "url")));
+		else {
+			entries = ucl_object_typed_new(UCL_ARRAY);
+			if (!list_parse(str(f, "text"), entries, why, sizeof(why))) {
+				ucl_object_unref(entries);
+				ucl_object_unref(f2);
+				ucl_object_unref(feeds);
+				ucl_object_unref(body);
+				ucl_object_unref(kept);
+				return (reply_error(req, 400, "feeds", "list %s: %s",
+				    str(f, "name"), why));
+			}
+			put(f2, "entries", entries);
+		}
+		ucl_array_append(feeds, f2);
+	}
+	put(kept, "feeds", feeds);
+	if (ucl_object_lookup(body, "interval") != NULL)
+		put(kept, "interval", I(ucl_object_toint(ucl_object_lookup(body,
+		    "interval"))));
+	/* What was kept of a list that is no more, gone. */
+	{
+		ucl_object_t		*all = (ucl_object_t *)(uintptr_t)
+		    ucl_object_lookup(kept, "lists");
+		ucl_object_t		*gone = ucl_object_typed_new(UCL_ARRAY);
+		const ucl_object_t	*g;
+		ucl_object_iter_t	 git;
+
+		it = NULL;
+		while ((l = ucl_object_iterate(all, &it, true)) != NULL)
+			if (by(feeds, "name", ucl_object_key(l)) == NULL)
+				ucl_array_append(gone, S(ucl_object_key(l)));
+		git = NULL;
+		while ((g = ucl_object_iterate(gone, &git, true)) != NULL)
+			(void)ucl_object_delete_key(all, ucl_object_tostring(g));
+		ucl_object_unref(gone);
+	}
+	/* The pasted ones take effect at once; the feeds at the next
+	 * fetch, or now when asked. */
+	lists_fetch(kept, "");
+	it = NULL;
+	while ((f = ucl_object_iterate(feeds, &it, true)) != NULL)
+		if (str(f, "url") == NULL)
+			lists_fetch(kept, str(f, "name"));
+	ucl_object_unref(body);
+	ucl_object_unref(kept);
+	out = ucl_object_typed_new(UCL_OBJECT);
+	put(out, "kept", B(true));
+	return (reply_json(req, 200, out));
+}
+
+/* ---- The record (SASE-2): what the edges' security rules logged ----- */
+
+/*
+ * GET /api/sdwan/record[.csv]?swvc=&policy=&edge=&since=: the edges'
+ * records (each agent keeps a day of what its logged rules saw) read
+ * now and put together, newest first, each with its edge; a service
+ * or a policy picks by the rules' comments, since by the time.  As
+ * CSV with .csv.
+ */
+int
+api_sdwan_record(struct http_request *req)
+{
+	ucl_object_t		*doc, *out, *all, *e2;
+	const ucl_object_t	*edge, *e, *swvc, *policy, *since, *only;
+	ucl_object_iter_t	 it, eit;
+	char			 uri[256], peer[256], name[128], *json, *v;
+	char			 want[130];
+	ucl_object_t		*ans;
+	struct kore_buf		*b;
+	int			 status;
+	int64_t			 from;
+	bool			 csv;
+
+	if (!guard(req, false))
+		return (KORE_RESULT_OK);
+	csv = strstr(req->path, ".csv") != NULL;
+	http_populate_get(req);
+	swvc = policy = since = only = NULL;
+	want[0] = '\0';
+	if (http_argument_get_string(req, "swvc", &v))
+		snprintf(want, sizeof(want), "%.30s", v);
+	if (http_argument_get_string(req, "policy", &v) && want[0] != '\0')
+		snprintf(want + strlen(want), sizeof(want) - strlen(want), " %.30s",
+		    v);
+	from = 0;
+	if (http_argument_get_string(req, "since", &v))
+		from = strtoll(v, NULL, 10);
+	v = NULL;
+	(void)http_argument_get_string(req, "edge", &v);
+	host_refs();
+	doc = sdwan_load();
+	all = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		if (v != NULL && strcmp(v, str(edge, "server")) != 0)
+			continue;
+		if (!host_ref(str(edge, "server"), uri, sizeof(uri), peer,
+		    sizeof(peer), name, sizeof(name)))
+			continue;
+		json = hosts_read(uri, peer, name, "sdwan", &status);
+		ans = parse(json);
+		free(json);
+		eit = NULL;
+		while (ans != NULL && (e = ucl_object_iterate(at_path(at_path(ans,
+		    "data", "record"), "last", NULL), &eit, true)) != NULL) {
+			if (from > 0 && ucl_object_toint(ucl_object_lookup(e, "t")) <
+			    from)
+				continue;
+			if (want[0] != '\0' && (str(e, "comment") == NULL ||
+			    strncmp(str(e, "comment"), "security ", 9) != 0 ||
+			    strncmp(str(e, "comment") + 9, want, strlen(want)) != 0))
+				continue;
+			e2 = ucl_object_copy(e);
+			put(e2, "edge", S(str(edge, "server")));
+			put(e2, "name", S(name));
+			ucl_array_append(all, e2);
+		}
+		if (ans != NULL)
+			ucl_object_unref(ans);
+	}
+	ucl_object_unref(doc);
+	(void)swvc;
+	(void)policy;
+	(void)since;
+	(void)only;
+	if (!csv) {
+		out = ucl_object_typed_new(UCL_OBJECT);
+		put(out, "record", all);
+		return (reply_json(req, 200, out));
+	}
+	b = kore_buf_alloc(4096);
+	kore_buf_appendf(b, "time,edge,rule,action,source,destination,interface,"
+	    "comment\n");
+	eit = NULL;
+	while ((e = ucl_object_iterate(all, &eit, true)) != NULL) {
+		char	when[32];
+		time_t	t = (time_t)ucl_object_toint(ucl_object_lookup(e, "t"));
+
+		strftime(when, sizeof(when), "%Y-%m-%dT%H:%M:%SZ", gmtime(&t));
+		kore_buf_appendf(b, "%s,%s,%jd,%s,%s,%s,%s,\"%s\"\n", when,
+		    str(e, "name"), (intmax_t)ucl_object_toint(ucl_object_lookup(e,
+		    "rule")), str(e, "action") != NULL ? str(e, "action") : "",
+		    str(e, "src") != NULL ? str(e, "src") : "", str(e, "dst") !=
+		    NULL ? str(e, "dst") : "", str(e, "iface") != NULL ? str(e,
+		    "iface") : "", str(e, "comment") != NULL ? str(e, "comment") :
+		    "");
+	}
+	ucl_object_unref(all);
+	http_response_header(req, "content-type", "text/csv; charset=utf-8");
+	http_response_header(req, "content-disposition", "attachment; "
+	    "filename=\"sdwan-record.csv\"");
+	http_response(req, 200, b->data, b->offset);
+	kore_buf_free(b);
+	return (KORE_RESULT_OK);
+}
+
 /* ---- The manager: each policy's tunnels ordered by performance ------ */
 
 #define	MGR_LOCK	"sdwan-mgr.lock"
@@ -5455,6 +6426,7 @@ manager_tick(void)
 	}
 	ucl_object_unref(doc);
 	rekey_tick(st, now);
+	lists_tick(now);
 	pthread_mutex_lock(&st_lock);
 	if (!applying)
 		(void)store_save(STATE_FILE, st);

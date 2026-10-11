@@ -7,12 +7,13 @@ SRCS+=		confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c parts.c pcb.c rcconf.c \
 		routes.c scope.c sdwan.c vnet.c
 # Luxuria: what is not FreeBSD's own, the plugins.
-SRCS+=		bird.c ipsec.c plugins.c sdbird.c sddhcp.c wireguard.c
+SRCS+=		bird.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c wireguard.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jobs.c lifecycle.c packages.c \
 		services.c update.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
-SRCS+=		pools.c storage.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
+SRCS+=		record.c \
+		pools.c storage.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
 		history.c events.c faults.c kmsg.c probe.c
 .PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
 		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula \

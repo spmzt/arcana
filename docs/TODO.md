@@ -73,8 +73,58 @@
   security policies in the document with MEF 88's criteria, checked,
   on a Security tab with a form, the example carrying one (S1.1);
   the ip-block denies and allows, the log and the rate pipe in the
-  rules, ingress before the forward and egress by the UNI (S1.2).
-  Next: S1.3, the DNS filter by Unbound.
+  rules, ingress before the forward and egress by the UNI (S1.2);
+  the DNS filter, an unbound instance of the base system per service
+  on each edge, the denied domains its local zones, every query from
+  the UNI forwarded to it where the protocol filter says so (S1.3);
+  the rules' counters in the sdwan read, the Security tab counting
+  what each policy denied (S1.4); the phase closed (S1.5): of MEF 88's
+  policy criteria, ip-block, dns-domain-filter, dns-protocol-filter,
+  rate-limit and log are done; lists by name come with the feeds
+  (SASE-2), and url-filtering, malware detection and intrusion
+  detection with the proxy (SASE-4). SASE-2: the lists, feeds the
+  console's host fetches with the base system's libfetch and pasted
+  ones, versioned, named by the policies into their tables and DNS
+  filter (S2.1); large tables: the entries in chunks of atomic adds,
+  a changed table swapped in place without the rules reloaded, the
+  limit raised (S2.2); the record: the denies logged to the routing
+  socket, read by the agent into a day's record and events, shown and
+  exported (S2.3). SASE-3: the remote end point in the document, an
+  edge's wg interface, a prefix, a port and the identities, each a
+  name, a zone and a key, the example carrying one (S3.1); the apply,
+  the wg interface in the service's table, a peer per identity with
+  an address of the prefix kept for it, the zone table's entries
+  (S3.2). Next: S3.3, issuing and revoking.
+- 2026-10-11: what is new, in the update boxes and Settings' last
+  tab: the agent's source-log (a bare blob:none clone in the build
+  directory), the console's /api/update/notes (the tags' messages as
+  release notes when any, else the commit messages, new until the
+  running version's own commit). Found on the way: Kore hands a
+  handler only the query parameters its route declares, so the
+  record API's filters (swvc, policy, edge, since) were never seen;
+  declared now with a validator.
+- Verified on the lab 2026-10-11 (S3.2): a client jail arcroad as an
+  identity, arcswan1's wg5 in FIB 1 with 10.30.0.1/24 and the client
+  its peer by the agent as the console's plan has it; the client,
+  10.30.0.2, pinged the far UNI 10.20.0.1 through arcswan1's tunnel,
+  3 of 3, the handshake and bytes in wg's dump (`bfd-lab.sh road`).
+  On this VM `pkg -r <root> install` hangs on the kmods catalogue as
+  root, so the step fetches wireguard-tools with -U and adds the
+  files, IGNORE_OSVERSION for the newer package.
+- Verified on the lab 2026-10-11 (S2.3): a deny rule with `log logdst
+  rtsock` on arcswan1 as the console compiles one, a web connection
+  from arcswan2 by the tunnel: the entry (rule 12, deny, 10.20.0.1 to
+  10.10.0.1, gre100, "security office guard src") and its event in
+  the agent's record in the try's own second; the record read back
+  after the agent's restart (`bfd-lab.sh record`).
+- Found on the lab 2026-10-11 (S2.3): nothing coming in by the
+  IPsec-carried GRE tunnel ever reached the SD-WAN rules, since
+  `net.inet.ipsec.filtertunnel=0` (the default) lets what IPsec
+  decrypted bypass the firewall, the GRE payload included. The agent
+  now sets it and `net.inet6.ipsec6.filtertunnel` when it loads the
+  rules. This is why S1.3's protocol-filter forward did not answer
+  on the lab (drill's network error): the forward rule is `in recv
+  gre100` and never saw the query.
 - A luxuria plugin installed in a vnet jail and not on the host does
   not get its tab (reported 2026-10-11). The agent lists a running
   vnet jail's plugins by access(X_OK) on the program under the jail's
@@ -288,6 +338,23 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- A 100000-entry table on a vnet jail (SASE-2 task S2.2, 2026-10-12,
+  arcanactl sdwan rules @file against the jail's agent): the rules
+  with the table loaded in 0.23 s, ipfw table info 100000 items; the
+  same rules with one entry changed swapped the table in place in
+  2.1 s (1563 atomic adds of 64, a process each) with no rules
+  reload, the changed entry found by lookup; cleared after.
+- A security policy's DNS filter on a vnet jail (MEF 88; task S1.3,
+  2026-10-11, the lab's dns step): the base system's local-unbound
+  started by the agent in FIB 1 on the UNI's address with the denied
+  domain a local zone, told running in the sdwan read; asked from the
+  other jail over the tunnel, the denied domain and a name beneath it
+  answer NXDOMAIN; the instance stopped when not named. The protocol
+  filter's forward (fwd 10.10.0.1,53 udp ... in recv gre100) is taken
+  by ipfw as the plan writes it; a query from the far jail to a
+  foreign resolver through the tunnel could not be sent by drill
+  there (a lab routing matter, not the rule's), so the forward itself
+  is seen accepted, not exercised: to do with the next lab.
 - A security policy's denies on a vnet jail (MEF 88; task S1.2,
   2026-10-11, by hand with arcanactl sdwan rules as the plan writes
   them): the tables of the denied and the allowed prefixes made, the

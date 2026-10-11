@@ -13,6 +13,8 @@
  * requirement.
  */
 
+#define	_GNU_SOURCE		/* strcasestr(3) */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -68,6 +70,8 @@ static struct {
 	ucl_object_t	*paths;		/* sid: /api/servers/<sid>/sdwan data */
 	ucl_object_t	*faults;	/* sid: the agent's faults of the day */
 	ucl_object_t	*rekeys;	/* /api/sdwan/rekey: the rotations */
+	ucl_object_t	*lists;		/* /api/sdwan/lists: the feeds and lists */
+	char		 record_filter[80];	/* the record's filter text */
 	double		 paths_at;
 	int		 mon_span;	/* seconds the monitor charts draw */
 	/* The forms: what is edited, and the host's interfaces for a link. */
@@ -269,7 +273,7 @@ plan_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	/* The dashboard and Paths want the probes as soon as the plan
 	 * says which edges to ask. */
 	if (app.node == NODE_SDWAN && (sd.tab == SD_OVERVIEW || sd.tab ==
-	    SD_PATHS))
+	    SD_PATHS || sd.tab == SD_SECURITY))
 		paths_load();
 }
 
@@ -392,6 +396,88 @@ rekeys_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 }
 
 static void
+lists_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	if (status != 200)
+		return;
+	if (sd.lists != NULL)
+		ucl_object_unref(sd.lists);
+	sd.lists = ucl_object_copy(o);
+	if (app.node == NODE_SDWAN && sd.tab == SD_SECURITY)
+		render();
+}
+
+static void
+lists_put_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200) {
+		toast(true, "The lists not kept: %s", jstr(o, "error.message") !=
+		    NULL ? jstr(o, "error.message") : err != NULL ? err : "no "
+		    "answer");
+		return;
+	}
+	app.modal = MODAL_NONE;
+	api("GET", "/api/sdwan/lists", NULL, lists_cb, NULL);
+}
+
+/* The feeds as kept, with one changed or added, sent to be kept. */
+static void
+lists_send(const char *was, ucl_object_t *feed)
+{
+	ucl_object_t		*body, *feeds;
+	const ucl_object_t	*f;
+	ucl_object_iter_t	 it;
+	unsigned char		*json;
+
+	body = ucl_object_typed_new(UCL_OBJECT);
+	if (sd.lists != NULL && jget(sd.lists, "interval") != NULL)
+		ucl_object_insert_key(body, ucl_object_copy(jget(sd.lists,
+		    "interval")), "interval", 0, false);
+	feeds = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while (sd.lists != NULL && (f = ucl_object_iterate(jget(sd.lists,
+	    "feeds"), &it, true)) != NULL) {
+		if (jstr(f, "name") != NULL && was != NULL && strcmp(jstr(f,
+		    "name"), was) == 0)
+			continue;
+		if (feed != NULL && jstr(f, "name") != NULL && jstr(feed, "name")
+		    != NULL && strcmp(jstr(f, "name"), jstr(feed, "name")) == 0)
+			continue;
+		if (jget(f, "entries") != NULL) {
+			/* A pasted one goes back as text. */
+			ucl_object_t		*p = ucl_object_typed_new(UCL_OBJECT);
+			const ucl_object_t	*e;
+			ucl_object_iter_t	 eit = NULL;
+			struct html		 b;
+
+			memset(&b, 0, sizeof(b));
+			while ((e = ucl_object_iterate(jget(f, "entries"), &eit,
+			    true)) != NULL)
+				h_fmt(&b, "%s\n", ucl_object_tostring_forced(e));
+			ucl_object_insert_key(p, ucl_object_fromstring(jstr(f,
+			    "name")), "name", 0, false);
+			ucl_object_insert_key(p, ucl_object_fromstring(b.s != NULL ?
+			    b.s : ""), "text", 0, false);
+			free(b.s);
+			ucl_array_append(feeds, p);
+		} else
+			ucl_array_append(feeds, ucl_object_copy(f));
+	}
+	if (feed != NULL)
+		ucl_array_append(feeds, feed);
+	ucl_object_insert_key(body, feeds, "feeds", 0, false);
+	json = ucl_object_emit(body, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(body);
+	api("PUT", "/api/sdwan/lists", (const char *)json, lists_put_cb, NULL);
+	free(json);
+}
+
+static void
 rekey_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 
@@ -470,6 +556,8 @@ paths_load(void)
 	}
 	ucl_object_unref(asked);
 	api("GET", "/api/sdwan/rekey", NULL, rekeys_cb, NULL);
+	if (sd.tab == SD_SECURITY)
+		api("GET", "/api/sdwan/lists", NULL, lists_cb, NULL);
 }
 
 /* ---- Small things ---------------------------------------------------- */
@@ -1242,6 +1330,22 @@ view_service(struct html *h)
 		h_raw(h, "</td><td>");
 		h_txt(h, host_name(jstr(e, "edge")));
 		h_raw(h, "</td><td class=\"mono\">");
+		if (u == NULL && jget(e, "remote") != NULL) {
+			/* A remote end point (SASE-3): the identities' own
+			 * WireGuard interface, its prefix theirs. */
+			u = jget(e, "remote");
+			h_txt(h, jstr(u, "interface"));
+			h_fmt(h, " <span class=\"dim\">remote, %u identit%s, port "
+			    "%lld</span></td><td class=\"mono\">", jget(u,
+			    "identities") != NULL ? ucl_array_size(jget(u,
+			    "identities")) : 0, jget(u, "identities") != NULL &&
+			    ucl_array_size(jget(u, "identities")) == 1 ? "y" : "ies",
+			    (long long)jint(u, "port", 51820));
+			h_txt(h, jstr(u, "prefix"));
+			h_raw(h, "</td><td class=\"dim\">—</td><td class=\"num\">0"
+			    "</td><td>");
+			goto map;
+		}
 		h_txt(h, jstr(u, "interface"));
 		if (jint(u, "vlan", 0) > 0)
 			h_fmt(h, " <span class=\"dim\">vlan %lld</span>",
@@ -1252,6 +1356,7 @@ view_service(struct html *h)
 		addressing(h, jget(u, "ipv6"));
 		h_fmt(h, "</td><td class=\"num\">%u</td><td>", jget(u, "routes")
 		    != NULL ? ucl_array_size(jget(u, "routes")) : 0);
+map:
 		n = 0;
 		mit = NULL;
 		while ((m = ucl_object_iterate(jget(e, "policy_map"), &mit,
@@ -2618,6 +2723,7 @@ view_security(struct html *h)
 {
 	const ucl_object_t	*sw, *v, *cr, *b, *pol, *pc;
 	ucl_object_iter_t	 it, pit;
+	char			 age[32];
 	int			 n;
 
 	h_raw(h, "<div class=\"toolbar\"><label class=\"inline\">Service "
@@ -2642,16 +2748,40 @@ view_security(struct html *h)
 	h_raw(h, "<div class=\"sd-block\"><h3>Security policies <small class=\""
 	    "dim\">MEF 88, by name (§9.10): addresses allowed and denied "
 	    "(ipfw tables), domains denied and DNS kept to the provider's "
-	    "resolver (Unbound), a rate limit (dummynet), a log; a flow's "
-	    "policy names one by af-security-ingress or -egress</small><span "
-	    "class=\"pane-actions\"><button class=\"ghost small\" data-act=\""
-	    "sd-secpol-add\">+ policy</button></span></h3><table class=\"net sd"
-	    "\"><thead><tr><th>Name</th><th>Addresses</th><th>DNS</th><th>Rate"
-	    "</th><th>Log</th><th>Named by</th><th></th></tr></thead><tbody>");
+	    "resolver (unbound), a rate limit (dummynet), a log; a flow's "
+	    "policy names one by af-security-ingress or -egress; what each "
+	    "denied, counted on the edges' rules since they were made</small>"
+	    "<span class=\"pane-actions\"><button class=\"ghost small\" data-act="
+	    "\"sd-secpol-add\">+ policy</button></span></h3><table class=\"net "
+	    "sd\"><thead><tr><th>Name</th><th>Addresses</th><th>Denied</th><th>"
+	    "DNS</th><th>Rate</th><th>Log</th><th>Named by</th><th></th></tr>"
+	    "</thead><tbody>");
 	n = 0;
 	it = NULL;
 	while ((v = ucl_object_iterate(jget(sw, "security_policies"), &it,
 	    true)) != NULL) {
+		const ucl_object_t	*f, *cn;
+		ucl_object_iter_t	 fit, cit;
+		char			 tbl[64];
+		long long		 pkts = 0, bytes = 0;
+
+		/* The deny rules of this policy, by its tables' names, on
+		 * every edge: sw<fib>_s<n>d4 and d6. */
+		snprintf(tbl, sizeof(tbl), "table(sw%lld_s%dd", (long long)jint(sw,
+		    "fib", 0), n);
+		fit = NULL;
+		while (sd.paths != NULL && (f = ucl_object_iterate(sd.paths, &fit,
+		    true)) != NULL) {
+			cit = NULL;
+			while ((cn = ucl_object_iterate(jget(jget(f, "rules"),
+			    "counters"), &cit, true)) != NULL)
+				if (jstr(cn, "text") != NULL && strncmp(jstr(cn, "text"),
+				    "deny", 4) == 0 && strstr(jstr(cn, "text"), tbl) !=
+				    NULL) {
+					pkts += jint(cn, "pkts", 0);
+					bytes += jint(cn, "bytes", 0);
+				}
+		}
 		n++;
 		cr = jget(v, "criteria");
 		h_raw(h, "<tr><td class=\"mono\">");
@@ -2666,6 +2796,12 @@ view_security(struct html *h)
 			    : 0);
 		} else
 			h_raw(h, "<span class=\"dim\">—</span>");
+		h_raw(h, "</td><td>");
+		if (pkts > 0)
+			h_fmt(h, "<b>%lld</b> packet%s, %lld bytes", pkts, pkts == 1 ?
+			    "" : "s", bytes);
+		else
+			h_raw(h, "<span class=\"dim\">none</span>");
 		h_raw(h, "</td><td>");
 		b = jget(cr, "dns-domain-filter");
 		if (b != NULL)
@@ -2707,7 +2843,168 @@ view_security(struct html *h)
 		h_raw(h, ">×</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">None yet.</td></tr>");
+		h_raw(h, "<tr><td colspan=\"8\" class=\"dim\">None yet.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
+	/* The lists the policies name: feeds the console fetches, and
+	 * pasted ones, each as kept with its version. */
+	h_fmt(h, "<div class=\"sd-block\"><h3>Lists <small class=\"dim\">named "
+	    "by a policy's ip-block or dns-domain-filter: feeds the console's "
+	    "host fetches every %lld hours with the base system's fetch(3), "
+	    "and lists pasted here; prefixes go to the policy's tables, "
+	    "domains to its DNS filter; a feed that fails keeps its last"
+	    "</small><span class=\"pane-actions\"><button class=\"ghost small\" "
+	    "data-act=\"sd-list-add\">+ list</button><button class=\"ghost "
+	    "small\" data-act=\"sd-lists-fetch\" title=\"Every feed fetched now"
+	    "\">Fetch now</button></span></h3><table class=\"net sd\"><thead><tr>"
+	    "<th>Name</th><th>From</th><th>Entries</th><th>Version</th><th>"
+	    "Fetched</th><th></th></tr></thead><tbody>", sd.lists != NULL ?
+	    jint(sd.lists, "interval", 6) : 6);
+	n = 0;
+	it = NULL;
+	while (sd.lists != NULL && (v = ucl_object_iterate(jget(sd.lists,
+	    "feeds"), &it, true)) != NULL) {
+		const ucl_object_t	*st = jget(jget(sd.lists, "lists"), jstr(v,
+		    "name"));
+
+		n++;
+		h_raw(h, "<tr><td class=\"mono\">");
+		h_txt(h, jstr(v, "name"));
+		h_raw(h, "</td><td class=\"mono dim\">");
+		h_txt(h, jstr(v, "url") != NULL ? jstr(v, "url") : "pasted");
+		h_raw(h, "</td><td>");
+		if (st != NULL)
+			h_fmt(h, "%lld", jint(st, "count", 0));
+		h_raw(h, "</td><td>");
+		if (st != NULL)
+			h_fmt(h, "%lld", jint(st, "version", 0));
+		h_raw(h, "</td><td>");
+		if (st != NULL && jget(st, "fetched_at") != NULL) {
+			fmt_age(age, sizeof(age), (double)jint(st, "fetched_at", 0) *
+			    1000);
+			h_txt(h, age);
+		}
+		if (st != NULL && jstr(st, "error") != NULL) {
+			h_raw(h, " <span class=\"chip st-down\" title=\"");
+			h_txt(h, jstr(st, "error"));
+			h_raw(h, "\">failed</span>");
+		}
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" data-act=\""
+		    "sd-list-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-list-del\" title=\"Take the list away\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">×</button></td></tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"6\" class=\"dim\">None yet.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
+	/* The record: what the edges' logged security rules saw, as each
+	 * agent keeps a day of it, the latest first; a filter on the text,
+	 * a CSV of what is shown. */
+	{
+		struct html	csvb;
+		int		shown = 0;
+
+		memset(&csvb, 0, sizeof(csvb));
+		h_fmt(&csvb, "time,edge,rule,action,source,destination,interface,"
+		    "comment\n");
+		h_raw(h, "<div class=\"sd-block\"><h3>Record <small class=\"dim\">"
+		    "what the policies' deny rules logged on each edge (ipfw's "
+		    "log to the routing socket, read by the agent, a day kept); "
+		    "the latest first</small><span class=\"pane-actions\"><input "
+		    "type=\"search\" data-input=\"sd-record-filter\" placeholder=\""
+		    "filter: an address, a policy, an edge\"");
+		h_attr(h, "value", sd.record_filter);
+		h_raw(h, "><a class=\"ghost small\" href=\"/api/sdwan/record.csv\" "
+		    "download=\"sdwan-record.csv\" title=\"Every edge's record of "
+		    "the day as CSV, from the console\">CSV</a></span></h3><table "
+		    "class=\"net sd\"><thead><tr><th>When</th><th>Edge</th><th>Rule"
+		    "</th><th>Action</th><th>From</th><th>To</th><th>Interface</th>"
+		    "<th>Policy</th></tr></thead><tbody>");
+		it = NULL;
+		while (sd.paths != NULL && (v = ucl_object_iterate(sd.paths, &it,
+		    true)) != NULL) {
+			const ucl_object_t	*re;
+			ucl_object_iter_t	 rit = NULL;
+			char			 line[400];
+
+			while ((re = ucl_object_iterate(jget(jget(v, "record"),
+			    "last"), &rit, true)) != NULL) {
+				snprintf(line, sizeof(line), "%s %lld %s %s %s %s %s",
+				    host_name(ucl_object_key(v)), jint(re, "rule", 0),
+				    jstr(re, "action") != NULL ? jstr(re, "action") : "",
+				    jstr(re, "src") != NULL ? jstr(re, "src") : "",
+				    jstr(re, "dst") != NULL ? jstr(re, "dst") : "",
+				    jstr(re, "iface") != NULL ? jstr(re, "iface") : "",
+				    jstr(re, "comment") != NULL ? jstr(re, "comment") :
+				    "");
+				if (sd.record_filter[0] != '\0' && strcasestr(line,
+				    sd.record_filter) == NULL)
+					continue;
+				if (++shown > 500)
+					break;
+				fmt_age(age, sizeof(age), (double)jint(re, "t", 0) *
+				    1000);
+				h_raw(h, "<tr><td class=\"dim\">");
+				h_txt(h, age);
+				h_raw(h, "</td><td><b>");
+				h_txt(h, host_name(ucl_object_key(v)));
+				h_fmt(h, "</b></td><td class=\"mono\">%lld</td><td>",
+				    jint(re, "rule", 0));
+				h_txt(h, jstr(re, "action") != NULL ? jstr(re, "action") :
+				    "");
+				h_raw(h, "</td><td class=\"mono\">");
+				h_txt(h, jstr(re, "src") != NULL ? jstr(re, "src") : "");
+				h_raw(h, "</td><td class=\"mono\">");
+				h_txt(h, jstr(re, "dst") != NULL ? jstr(re, "dst") : "");
+				h_raw(h, "</td><td class=\"mono dim\">");
+				h_txt(h, jstr(re, "iface") != NULL ? jstr(re, "iface") :
+				    "");
+				h_raw(h, "</td><td class=\"dim\">");
+				h_txt(h, jstr(re, "comment") != NULL ? jstr(re, "comment")
+				    : "");
+				h_raw(h, "</td></tr>");
+			}
+		}
+		if (shown == 0)
+			h_raw(h, "<tr><td colspan=\"8\" class=\"dim\">Nothing logged "
+			    "yet: a policy with log sends what it denies here.</td>"
+			    "</tr>");
+		h_raw(h, "</tbody></table></div>");
+		free(csvb.s);
+	}
+	/* The DNS filters on the edges: each edge's unbound instances, a
+	 * service each, as the edges' reads tell them. */
+	h_raw(h, "<div class=\"sd-block\"><h3>DNS filters <small class=\"dim\">"
+	    "the base system's unbound, an instance of each service whose "
+	    "policies filter DNS, on each edge in the service's table, on the "
+	    "UNIs' provider addresses; the denied domains do not resolve, and "
+	    "with the protocol filter every query from the UNI is sent to it"
+	    "</small></h3><table class=\"net sd\"><thead><tr><th>Edge</th><th>"
+	    "Instance</th><th>State</th></tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while (sd.paths != NULL && (v = ucl_object_iterate(sd.paths, &it, true))
+	    != NULL) {
+		const ucl_object_t	*di;
+		ucl_object_iter_t	 dit = NULL;
+
+		while ((di = ucl_object_iterate(jget(v, "dns"), &dit, true)) !=
+		    NULL) {
+			n++;
+			h_raw(h, "<tr><td><b>");
+			h_txt(h, host_name(ucl_object_key(v)));
+			h_fmt(h, "</b></td><td class=\"mono\">%s <span class=\"dim\">"
+			    "fib %lld</span></td><td><span class=\"chip st-%s\">%s"
+			    "</span></td></tr>", jstr(di, "name"), (long long)jint(di,
+			    "fib", 0), jbool(di, "running") ? "up" : "down", jbool(
+			    di, "running") ? "running" : "not running");
+		}
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"3\" class=\"dim\">None: no policy "
+		    "filters DNS, or nothing is applied yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 }
 
@@ -3384,6 +3681,38 @@ sdwan_modal_service(struct html *h)
 		    "other zone names (one service has one).");
 		return (true);
 	}
+	if (app.modal == MODAL_SD_LIST) {
+		const ucl_object_t	*lf = sd.edit[0] != '\0' && sd.lists != NULL ?
+		    jfind(jget(sd.lists, "feeds"), "name", sd.edit) : NULL;
+		char			*text = NULL;
+
+		h_fmt(h, "<form data-form=\"sd-list\"><h2>%s</h2><p>A list for the "
+		    "security policies: a feed the console's host fetches on its "
+		    "schedule, or entries pasted here, one a line, prefixes and "
+		    "domain names, # for a note.</p><input type=\"hidden\" name=\""
+		    "was\"", lf != NULL ? "A list, changed" : "A list");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, ">");
+		text_field(h, "Name", "name", jstr(lf, "name"), "blocked", NULL);
+		text_field(h, "Feed URL", "url", jstr(lf, "url"), "https://…/"
+		    "list.txt", "Empty for a pasted list.");
+		if (lf != NULL && jget(lf, "entries") != NULL) {
+			const ucl_object_t	*e;
+			ucl_object_iter_t	 eit = NULL;
+			struct html		 b;
+
+			memset(&b, 0, sizeof(b));
+			while ((e = ucl_object_iterate(jget(lf, "entries"), &eit,
+			    true)) != NULL)
+				h_fmt(&b, "%s\n", ucl_object_tostring_forced(e));
+			text = b.s;
+		}
+		h_raw(h, "<label>Entries<textarea name=\"text\" rows=\"8\">");
+		h_txt(h, text != NULL ? text : "");
+		h_raw(h, "</textarea></label>");
+		free(text);
+		return (true);
+	}
 	if (app.modal == MODAL_SD_SECPOL) {
 		o = sd.edit[0] != '\0' ? jfind(jget(sw, "security_policies"),
 		    "name", sd.edit) : NULL;
@@ -3406,11 +3735,20 @@ sdwan_modal_service(struct html *h)
 		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
 		    "192.0.2.0/24, 2001:db8:bad::/48", "Prefixes dropped, as "
 		    "source or destination (ip-block).");
+		v = jget(jget(cr, "ip-block"), "lists");
+		text_field(h, "Address lists", "iplists", v != NULL &&
+		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
+		    "blocked", "Lists by name (the Security tab's), their "
+		    "prefixes denied (ip-block).");
 		v = jget(jget(cr, "dns-domain-filter"), "deny");
 		text_field(h, "Domains denied", "domains", v != NULL &&
 		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
 		    "ads.example, tracker.example", "Names that do not resolve, "
 		    "with everything under them (dns-domain-filter).");
+		v = jget(jget(cr, "dns-domain-filter"), "lists");
+		text_field(h, "Domain lists", "dnslists", v != NULL &&
+		    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "",
+		    "blocked", "Lists by name, their domains denied.");
 		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
 		    "dnsproto\" value=\"1\"%s> DNS only to the provider's resolver "
 		    "(dns-protocol-filter)</label>", jbool(cr, "dns-protocol-filter")
@@ -4117,6 +4455,24 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 	char			 name[32], buf[160];
 	int			 i;
 
+	if (strcmp(form, "sd-list") == 0) {
+		ucl_object_t	*lf;
+
+		if (jstr(f, "name") == NULL || jstr(f, "name")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A list "
+			    "has a name");
+			return (true);
+		}
+		lf = ucl_object_typed_new(UCL_OBJECT);
+		put_str(lf, "name", jstr(f, "name"));
+		if (jstr(f, "url") != NULL && jstr(f, "url")[0] != '\0')
+			put_str(lf, "url", jstr(f, "url"));
+		else
+			put_str(lf, "text", jstr(f, "text") != NULL ? jstr(f, "text") :
+			    "");
+		lists_send(jstr(f, "was"), lf);
+		return (true);
+	}
 	if (strcmp(form, "sd-swvc") != 0 && strcmp(form, "sd-zone") != 0 &&
 	    strcmp(form, "sd-flow") != 0 && strcmp(form, "sd-policy") != 0 &&
 	    strcmp(form, "sd-ep") != 0 && strcmp(form, "sd-map") != 0 &&
@@ -4309,17 +4665,25 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		put_str(o, "name", jstr(f, "name"));
 		cr = ucl_object_typed_new(UCL_OBJECT);
 		if ((jstr(f, "allow") != NULL && jstr(f, "allow")[0] != '\0') ||
-		    (jstr(f, "deny") != NULL && jstr(f, "deny")[0] != '\0')) {
+		    (jstr(f, "deny") != NULL && jstr(f, "deny")[0] != '\0') ||
+		    (jstr(f, "iplists") != NULL && jstr(f, "iplists")[0] != '\0')) {
 			b = ucl_object_typed_new(UCL_OBJECT);
 			if (jstr(f, "allow") != NULL && jstr(f, "allow")[0] != '\0')
 				put_list(b, "allow", jstr(f, "allow"));
 			if (jstr(f, "deny") != NULL && jstr(f, "deny")[0] != '\0')
 				put_list(b, "deny", jstr(f, "deny"));
+			if (jstr(f, "iplists") != NULL && jstr(f, "iplists")[0] != '\0')
+				put_list(b, "lists", jstr(f, "iplists"));
 			ucl_object_insert_key(cr, b, "ip-block", 0, false);
 		}
-		if (jstr(f, "domains") != NULL && jstr(f, "domains")[0] != '\0') {
+		if ((jstr(f, "domains") != NULL && jstr(f, "domains")[0] != '\0') ||
+		    (jstr(f, "dnslists") != NULL && jstr(f, "dnslists")[0] != '\0')) {
 			b = ucl_object_typed_new(UCL_OBJECT);
-			put_list(b, "deny", jstr(f, "domains"));
+			if (jstr(f, "domains") != NULL && jstr(f, "domains")[0] != '\0')
+				put_list(b, "deny", jstr(f, "domains"));
+			if (jstr(f, "dnslists") != NULL && jstr(f, "dnslists")[0] !=
+			    '\0')
+				put_list(b, "lists", jstr(f, "dnslists"));
 			ucl_object_insert_key(cr, b, "dns-domain-filter", 0, false);
 		}
 		if (checked(f, "dnsproto"))
@@ -4813,10 +5177,15 @@ example(void)
 	    "\t\t\t{\"id\": \"branch\", \"edge\": \"%s\", \"uni\": {\"id\": "
 	    "\"br-lan\", \"interface\": \"vtnet2\",\n"
 	    "\t\t\t\t\"ipv4\": {\"mode\": \"static\", \"prefix\": "
-	    "\"10.20.0.0/24\", \"provider\": [\"10.20.0.1\"]}}}\n"
+	    "\"10.20.0.0/24\", \"provider\": [\"10.20.0.1\"]}}},\n"
+	    "\t\t\t{\"id\": \"road\", \"edge\": \"%s\", \"remote\": {"
+	    "\"interface\": \"wg5\", \"prefix\": \"10.30.0.0/24\",\n"
+	    "\t\t\t\t\"port\": 51820, \"identities\": [{\"name\": \"alice\", "
+	    "\"zone\": \"staff\",\n\t\t\t\t\t\"public_key\": "
+	    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\"}]}}\n"
 	    "\t\t]\n"
 	    "\t}]\n"
-	    "}\n", a, z, a, z);
+	    "}\n", a, z, a, z, a);
 	free(sd.text);
 	sd.text = b.s;
 	sd.error[0] = '\0';
@@ -5048,7 +5417,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    SD_OVERVIEW;
 		if (sd.tab == SD_EDGES || sd.tab == SD_OVERVIEW)
 			plan_load();
-		else if (sd.tab == SD_PATHS)
+		else if (sd.tab == SD_PATHS || sd.tab == SD_SECURITY)
 			paths_load();
 		sd.note[0] = '\0';
 		if (sd.tab != SD_DOCUMENT)
@@ -5060,9 +5429,25 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sd.tab = SD_SERVICES;
 	} else if (strcmp(act, "input:sd-swvc") == 0)
 		snprintf(sd.swvc, sizeof(sd.swvc), "%s", value);
+	else if (strcmp(act, "input:sd-record-filter") == 0)
+		snprintf(sd.record_filter, sizeof(sd.record_filter), "%s", value);
 	else if (strcmp(act, "sd-example") == 0)
 		example();
-	else if (strcmp(act, "sd-rekey") == 0) {
+	else if (strcmp(act, "sd-list-add") == 0 || strcmp(act, "sd-list-edit")
+	    == 0) {
+		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act, "sd-list-edit")
+		    == 0 ? arg : "");
+		app.modal = MODAL_SD_LIST;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "sd-list-del") == 0) {
+		confirm("Take it away", "The list goes; a policy that names it "
+		    "will not pass the check until changed.", "Take away", true, "",
+		    "do-sd-list-del", arg, value);
+	} else if (strcmp(act, "do-sd-list-del") == 0) {
+		lists_send(arg, NULL);
+	} else if (strcmp(act, "sd-lists-fetch") == 0) {
+		api("POST", "/api/sdwan/lists/fetch", "{}", lists_put_cb, NULL);
+	} else if (strcmp(act, "sd-rekey") == 0) {
 		ucl_object_t	*o;
 		unsigned char	*json;
 

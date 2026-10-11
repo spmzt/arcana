@@ -4561,3 +4561,16 @@ table.sd-plan tr.sd-edge-head td { background: rgba(var(--surface-rgb), .5); bor
 .sd-progress { display: inline-block; width: 8rem; height: .5rem; vertical-align: middle; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--bg); }
 .sd-progress .bar { display: block; height: 100%; background: var(--green); transition: width .4s; }
 .sd-progress .bar.failed { background: var(--red); }
+
+/* What is new: the release notes or the commits, in an update box and
+ * in Settings. */
+.notes h3 { margin: 1rem 0 .4rem; font-size: 1rem; }
+ul.notes { list-style: none; margin: 0; padding: 0; max-height: 40vh;
+  overflow: auto; border-left: 2px solid var(--line, #8884); }
+ul.notes li { padding: .3rem .6rem; }
+ul.notes li.had { opacity: .7; }
+ul.notes li.here { border-left: 2px solid var(--accent, #4a8); margin-left: -2px; }
+ul.notes li.new b::before { content: "+ "; color: var(--accent, #4a8); }
+.notes-body { white-space: pre-wrap; margin: .2rem 0 0; font-size: .85em;
+  max-height: 12rem; overflow: auto; }
+.setsect .notes ul.notes { max-height: none; }

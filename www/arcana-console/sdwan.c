@@ -1064,6 +1064,71 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 	return (true);
 }
 
+/*
+ * A remote end point (SASE-3): no UNI, but a WireGuard interface of
+ * the edge in the service's table, a prefix the identities' addresses
+ * come from, the port it listens on, and the identities, each a name,
+ * a zone of the service and a WireGuard public key.
+ */
+#define	IDENTITIES_MAX	4096
+
+static bool
+remote(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
+    struct pfx *nets, int *nnets)
+{
+	const ucl_object_t	*ids, *id, *o;
+	ucl_object_iter_t	 it, it2;
+	struct pfx		 p;
+	const char		*k;
+	size_t			 i, n;
+
+	if (r == NULL || ucl_object_type(r) != UCL_OBJECT)
+		return (fail(c, "remote is an object"));
+	if (!ifname(str(r, "interface")) || strncmp(str(r, "interface"), "wg",
+	    2) != 0)
+		return (fail(c, "its remote is on a wg interface of the edge"));
+	if (!prefix(str(r, "prefix"), &p, false) || p.len > (p.af == AF_INET ?
+	    30 : 126))
+		return (fail(c, "its remote has the prefix the identities' "
+		    "addresses come from, /30 or /126 at most"));
+	*nnets = 0;
+	nets[(*nnets)++] = p;
+	if (ucl_object_lookup(r, "port") != NULL && !is_int(ucl_object_lookup(
+	    r, "port"), 1, 65535, NULL))
+		return (fail(c, "its remote's port is 1 to 65535"));
+	ids = ucl_object_lookup(r, "identities");
+	if (ids != NULL && ucl_object_type(ids) != UCL_ARRAY)
+		return (fail(c, "identities is a list"));
+	if (count(ids) > IDENTITIES_MAX)
+		return (fail(c, "identities: %d at most", IDENTITIES_MAX));
+	it = NULL;
+	while ((id = ucl_object_iterate(ids, &it, true)) != NULL) {
+		if (!ident(str(id, "name")))
+			return (fail(c, "an identity has a name, printable ASCII "
+			    "(R12)"));
+		if (str(id, "zone") == NULL || by(ucl_object_lookup(sw, "zones"),
+		    "name", str(id, "zone")) == NULL)
+			return (fail(c, "identity %s: its zone is one of the "
+			    "zones", str(id, "name")));
+		k = str(id, "public_key");
+		n = k != NULL ? strlen(k) : 0;
+		for (i = 0; k != NULL && i < n; i++)
+			if (!isalnum((unsigned char)k[i]) && k[i] != '+' && k[i] !=
+			    '/' && k[i] != '=')
+				break;
+		if (n != 44 || i != n || k[43] != '=')
+			return (fail(c, "identity %s: its public key is a "
+			    "WireGuard one, 32 bytes in base64", str(id, "name")));
+		it2 = NULL;
+		while ((o = ucl_object_iterate(ids, &it2, true)) != NULL && o != id)
+			if (strcmp(str(o, "name"), str(id, "name")) == 0 || strcmp(
+			    str(o, "public_key"), k) == 0)
+				return (fail(c, "identity %s is there twice, by "
+				    "name or key", str(id, "name")));
+	}
+	return (true);
+}
+
 /* ---- One SWVC ----------------------------------------------------- */
 
 /* A route distinguisher or target: ASN:n or A.B.C.D:n (RFC 4364 §4.2). */
@@ -1480,15 +1545,26 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		    "edge")) == NULL)
 			return (fail(c, "its edge is one of the edges"));
 		u = ucl_object_lookup(ep, "uni");
-		if (!uni(c, u, nets, &nnets))
-			return (false);
-		if (ucl_object_lookup(seen_uni, str(u, "id")) != NULL)
-			return (fail(c, "UNI %s is another end point's too "
-			    "(R3, R16)", str(u, "id")));
-		ucl_object_insert_key(seen_uni, ucl_object_frombool(true),
-		    str(u, "id"), 0, true);
+		if (ucl_object_lookup(ep, "remote") != NULL) {
+			/* A remote end point (SASE-3): the identities' own. */
+			if (u != NULL)
+				return (fail(c, "a UNI or a remote, not both"));
+			if (!remote(c, sw, ucl_object_lookup(ep, "remote"), nets,
+			    &nnets))
+				return (false);
+			u = ucl_object_lookup(ep, "remote");
+		} else {
+			if (!uni(c, u, nets, &nnets))
+				return (false);
+			if (ucl_object_lookup(seen_uni, str(u, "id")) != NULL)
+				return (fail(c, "UNI %s is another end point's "
+				    "too (R3, R16)", str(u, "id")));
+			ucl_object_insert_key(seen_uni, ucl_object_frombool(true),
+			    str(u, "id"), 0, true);
+		}
 		/* One UNI an interface and VLAN of an edge, once: in this
-		 * service and in every other (R3, R16). */
+		 * service and in every other (R3, R16); a remote's interface
+		 * the same. */
 		{
 			char	ifkey[320];
 
@@ -1745,6 +1821,20 @@ security_policy(struct ck *c, const ucl_object_t *v)
 			if (ucl_object_type(k) != UCL_OBJECT)
 				return (fail(c, "ip-block has allow and deny, lists "
 				    "of prefixes"));
+			if ((e = ucl_object_lookup(k, "lists")) != NULL) {
+				if (ucl_object_type(e) != UCL_ARRAY)
+					return (fail(c, "ip-block.lists names lists, "
+					    "feeds or pasted (Security)"));
+				eit = NULL;
+				while ((e = ucl_object_iterate(ucl_object_lookup(k,
+				    "lists"), &eit, true)) != NULL)
+					if (ucl_object_type(e) != UCL_STRING ||
+					    !sdwan_list_exists(ucl_object_tostring(e)))
+						return (fail(c, "ip-block.lists: no list "
+						    "%s (a feed or a pasted list, under "
+						    "Security)", ucl_object_tostring_forced(
+						    e)));
+			}
 			for (i = 0; i < 2; i++) {
 				if ((e = ucl_object_lookup(k, lists[i])) == NULL)
 					continue;
@@ -1762,12 +1852,22 @@ security_policy(struct ck *c, const ucl_object_t *v)
 						    ucl_object_tostring_forced(e)));
 			}
 		} else if (strcmp(ucl_object_key(k), "dns-domain-filter") == 0) {
-			if (ucl_object_type(k) != UCL_OBJECT || (e =
-			    ucl_object_lookup(k, "deny")) == NULL ||
+			if (ucl_object_type(k) != UCL_OBJECT || ((e =
+			    ucl_object_lookup(k, "deny")) == NULL &&
+			    ucl_object_lookup(k, "lists") == NULL) || (e != NULL && (
 			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
-			    LIST_MAX)
+			    LIST_MAX)))
 				return (fail(c, "dns-domain-filter has deny, a list "
-				    "of domains, %d at most", LIST_MAX));
+				    "of domains, %d at most, or lists by name",
+				    LIST_MAX));
+			eit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(k, "lists"),
+			    &eit, true)) != NULL)
+				if (ucl_object_type(e) != UCL_STRING ||
+				    !sdwan_list_exists(ucl_object_tostring(e)))
+					return (fail(c, "dns-domain-filter.lists: no "
+					    "list %s (a feed or a pasted list, under "
+					    "Security)", ucl_object_tostring_forced(e)));
 			eit = NULL;
 			while ((e = ucl_object_iterate(ucl_object_lookup(k, "deny"),
 			    &eit, true)) != NULL)

@@ -145,7 +145,7 @@ usage(void)
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
-	    "    sdwan [probes | rules | steer | bird json]\n"
+	    "    sdwan [probes | rules | steer | bird | dhcp | dns json]\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
 	    "    wg interface init [port]\n"
@@ -257,6 +257,7 @@ usage(void)
 	    "    agent-build [-y] [-i key] [-o file] repository [ref]\n"
 	    "    console-update [-y] [-i key] repository [ref]\n"
 	    "    source-head [-y] [-i key] repository [ref]\n"
+	    "    source-log [-i key] [-n count] repository [ref]\n"
 	    "with -q, start, stop, restart, kill, address, service (but "
 	    "config without\nvalues) and pkg-upgrade are queued as a job "
 	    "instead of waited for.\n-p keeps a change to an interface or a "
@@ -1045,6 +1046,60 @@ again:
 	return (error);
 }
 
+/*
+ * source-log [-i key] [-n count] repository [ref]: the latest commits
+ * of the repository's branch, newest first, and its tags: what is new.
+ */
+static int
+cmd_source_log(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_source_log_req	 req;
+	struct arc_source_log_rsp	*rsp;
+	const char			*errstr;
+	int				 ch, error;
+
+	memset(&req, 0, sizeof(req));
+	optreset = optind = 1;
+	while ((ch = getopt(argc, argv, "i:n:")) != -1) {
+		switch (ch) {
+		case 'i':
+			req.ssh_key = optarg;
+			break;
+		case 'n':
+			req.has_count = true;
+			req.count = (uint32_t)strtonum(optarg, 1, 10000, &errstr);
+			if (errstr != NULL)
+				xo_errx(2, "count %s: %s", optarg, errstr);
+			break;
+		default:
+			usage();
+		}
+	}
+	if (argc - optind < 1 || argc - optind > 2)
+		usage();
+	req.source = argv[optind];
+	req.ref = argv[optind + 1];
+	if ((error = arc_source_log(cl, &req, &rsp)) != 0)
+		fail(cl, error, "source-log");
+	emit_trace(rsp->trace.v, rsp->trace.n);
+	if (!rsp->ok) {
+		if (rsp->deploy_key != NULL)
+			xo_emit("{Lwc:Deploy key}{:deploy-key/%s}\n",
+			    rsp->deploy_key);
+		xo_warnx("source-log: %s", rsp->error != NULL ? rsp->error :
+		    "failed");
+		arc_source_log_rsp_free(rsp);
+		return (1);
+	}
+	xo_emit("{Lwc:Commit}{:commit/%s}\n", rsp->commit);
+	/* The commits and the tags as the agent lists them, JSON each. */
+	xo_emit("{Lwc:Commits}{:commits/%s}\n", rsp->log != NULL ? rsp->log :
+	    "[]");
+	xo_emit("{Lwc:Tags}{:tags/%s}\n", rsp->tags != NULL ? rsp->tags : "[]");
+	arc_source_log_rsp_free(rsp);
+	return (0);
+}
+
 /* agent-update [-r] program: put a new arcana-agent in place. */
 static int
 cmd_agent_update(struct arc_client *cl, int argc, char **argv)
@@ -1275,6 +1330,28 @@ static int	json_out(const char *, bool, const char *, const char *,
 
 /* traceroute address: one round, a probe a hop, as JSON. */
 /* sdwan: what the probes have seen; sdwan probes json: the targets. */
+/* A JSON argument: as given, or the contents of a file after @. */
+static const char *
+json_arg(const char *arg)
+{
+	FILE	*fp;
+	char	*text;
+	size_t	len, n;
+
+	if (arg == NULL || arg[0] != '@')
+		return (arg);
+	if ((fp = fopen(arg + 1, "r")) == NULL)
+		xo_err(1, "%s", arg + 1);
+	if ((text = malloc(8 * 1024 * 1024)) == NULL)
+		xo_err(1, "malloc");
+	for (len = 0; len < 8 * 1024 * 1024 - 1; len += n)
+		if ((n = fread(text + len, 1, 8 * 1024 * 1024 - 1 - len, fp)) == 0)
+			break;
+	text[len] = '\0';
+	fclose(fp);
+	return (text);
+}
+
 static int
 cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 {
@@ -1299,7 +1376,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		struct arc_sdwan_rules_rsp	*rs;
 
 		memset(&rq, 0, sizeof(rq));
-		rq.json = argv[2];
+		rq.json = json_arg(argv[2]);
 		if ((error = arc_sdwan_rules(cl, &rq, &rs)) != 0)
 			fail(cl, error, "sdwan rules");
 		error = json_out("sdwan-rules", rs->ok, rs->error, NULL,
@@ -1312,7 +1389,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		struct arc_sdwan_steer_rsp	*rs;
 
 		memset(&rq, 0, sizeof(rq));
-		rq.json = argv[2];
+		rq.json = json_arg(argv[2]);
 		if ((error = arc_sdwan_steer(cl, &rq, &rs)) != 0)
 			fail(cl, error, "sdwan steer");
 		error = json_out("sdwan-steer", rs->ok, rs->error, NULL,
@@ -1325,7 +1402,7 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		struct arc_sdwan_bird_rsp	*rs;
 
 		memset(&rq, 0, sizeof(rq));
-		rq.json = argv[2];
+		rq.json = json_arg(argv[2]);
 		if ((error = arc_sdwan_bird(cl, &rq, &rs)) != 0)
 			fail(cl, error, "sdwan bird");
 		error = json_out("sdwan-bird", rs->ok, rs->error, NULL,
@@ -1338,12 +1415,25 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		struct arc_sdwan_dhcp_rsp	*rs;
 
 		memset(&rq, 0, sizeof(rq));
-		rq.json = argv[2];
+		rq.json = json_arg(argv[2]);
 		if ((error = arc_sdwan_dhcp(cl, &rq, &rs)) != 0)
 			fail(cl, error, "sdwan dhcp");
 		error = json_out("sdwan-dhcp", rs->ok, rs->error, NULL,
 		    rs->trace.v, rs->trace.n);
 		arc_sdwan_dhcp_rsp_free(rs);
+		return (error);
+	}
+	if (argc == 3 && strcmp(argv[1], "dns") == 0) {
+		struct arc_sdwan_dns_req	 rq;
+		struct arc_sdwan_dns_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = json_arg(argv[2]);
+		if ((error = arc_sdwan_dns(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan dns");
+		error = json_out("sdwan-dns", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_dns_rsp_free(rs);
 		return (error);
 	}
 	if (argc != 1)
@@ -3287,6 +3377,8 @@ main(int argc, char *argv[])
 		rc = cmd_sdwan(&cl, argc, argv);
 	else if (strcmp(argv[0], "source-head") == 0)
 		rc = cmd_source_head(&cl, argc, argv);
+	else if (strcmp(argv[0], "source-log") == 0)
+		rc = cmd_source_log(&cl, argc, argv);
 	else if (strcmp(argv[0], "console-update") == 0)
 		rc = cmd_console_update(&cl, argc, argv);
 	else

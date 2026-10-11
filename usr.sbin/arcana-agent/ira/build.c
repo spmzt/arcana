@@ -26,6 +26,8 @@
 
 #include <openssl/evp.h>
 
+#include <ucl.h>
+
 #include "agent.h"
 
 #define	BUILD_USER	"nobody"
@@ -830,6 +832,179 @@ source_head(struct work *w, const char *source, const char *ref,
 	return (0);
 }
 
+/*
+ * What git printed, a record a line ended by 0x1e and its fields apart
+ * by 0x1f, as a JSON list: of commits, each commit, time, subject and
+ * body; of tags, each name, time and message.
+ */
+static const char *
+records_json(struct work *w, const char *out, size_t len, bool commits)
+{
+	ucl_object_t	*arr, *o;
+	unsigned char	*json;
+	const char	*text;
+	char		*copy, *p, *rec, *f[4];
+	int		 i;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	copy = out != NULL ? wstrndup(w, out, len) : wstrdup(w, "");
+	for (p = copy; (rec = strsep(&p, "\036")) != NULL;) {
+		if (rec[0] == '\n')
+			rec++;
+		for (i = 0; i < 4; i++)
+			f[i] = strsep(&rec, "\037");
+		if (f[0] == NULL || f[0][0] == '\0' || f[1] == NULL || f[2] ==
+		    NULL)
+			continue;
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(f[0]), commits ?
+		    "commit" : "name", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromint(strtoll(f[1], NULL,
+		    10)), "time", 0, false);
+		if (commits) {
+			ucl_object_insert_key(o, ucl_object_fromstring(f[2]),
+			    "subject", 0, false);
+			ucl_object_insert_key(o, ucl_object_fromstring(f[3] != NULL ?
+			    f[3] : ""), "body", 0, false);
+		} else
+			ucl_object_insert_key(o, ucl_object_fromstring(f[2]),
+			    "message", 0, false);
+		ucl_array_append(arr, o);
+	}
+	json = ucl_object_emit(arr, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(arr);
+	text = wstrdup(w, json != NULL ? (const char *)json : "[]");
+	free(json);
+	return (text);
+}
+
+/*
+ * What is new in the repository's branch, for the update boxes and
+ * the What's new tab: a bare clone without the files (blob:none),
+ * kept in the build directory as log.git and fetched again each time,
+ * over SSH as the builds fetch; then its latest commits, newest
+ * first, each its hash, time, subject and body, and its tags with
+ * their messages, the release notes where there are any.  Nothing is
+ * built.
+ */
+static int
+source_log(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey, uint32_t count,
+    struct arc_source_log_rsp *rsp)
+{
+	struct fetched	 f;
+	struct gitssh	 g;
+	struct execres	 res;
+	const char	*argv[MAX_ARGS], *dir, *refname;
+	char		 num[16];
+	bool		 unpriv;
+	int		 n;
+
+	rsp->has_ok = true;
+	rsp->ok = false;
+	unpriv = geteuid() == 0;
+	memset(&f, 0, sizeof(f));
+	if (!fetch_ready(w, source, ref, unpriv, &f) || !git_ssh(w, source,
+	    accepted, sshkey, unpriv, &g, &f)) {
+		rsp->error = f.error;
+		rsp->host_keys = f.host_keys;
+		rsp->deploy_key = f.deploy_key;
+		rsp->fingerprints.v = f.fingerprints.v;
+		rsp->fingerprints.n = f.fingerprints.n;
+		return (0);
+	}
+	dir = wfmt(w, "%s/log.git", opts.build_dir);
+	refname = ref != NULL && ref[0] != '\0' ? ref : "HEAD";
+	if (access(wfmt(w, "%s/HEAD", dir), F_OK) != 0) {
+		n = 0;
+		argv[n++] = opts.git_bin;
+		if (g.cmd != NULL) {
+			argv[n++] = "-c";
+			argv[n++] = g.cmd;
+		}
+		argv[n++] = "clone";
+		argv[n++] = "--bare";
+		argv[n++] = "--filter=blob:none";
+		argv[n++] = "--single-branch";
+		if (ref != NULL && ref[0] != '\0') {
+			argv[n++] = "--branch";
+			argv[n++] = ref;
+		}
+		argv[n++] = "--";
+		argv[n++] = source;
+		argv[n++] = dir;
+		argv[n] = NULL;
+		if (run_as(w, unpriv, argv, &res) != 0) {
+			rsp->error = git_error(w, &res);
+			return (0);
+		}
+	}
+	n = 0;
+	argv[n++] = opts.git_bin;
+	if (g.cmd != NULL) {
+		argv[n++] = "-c";
+		argv[n++] = g.cmd;
+	}
+	argv[n++] = "-C";
+	argv[n++] = dir;
+	argv[n++] = "fetch";
+	argv[n++] = "--filter=blob:none";
+	argv[n++] = "--force";
+	argv[n++] = "--tags";
+	argv[n++] = "origin";
+	argv[n++] = refname;
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) != 0) {
+		rsp->error = git_error(w, &res);
+		return (0);
+	}
+	n = 0;
+	argv[n++] = opts.git_bin;
+	argv[n++] = "-C";
+	argv[n++] = dir;
+	argv[n++] = "rev-parse";
+	argv[n++] = "FETCH_HEAD";
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) != 0 || res.out == NULL || (rsp->commit =
+	    commit_of(w, res.out, res.outlen)) == NULL) {
+		rsp->error = wfmt(w, "%s has no %s", source, refname);
+		return (0);
+	}
+	snprintf(num, sizeof(num), "%u", count > 0 ? count : 100);
+	n = 0;
+	argv[n++] = opts.git_bin;
+	argv[n++] = "-C";
+	argv[n++] = dir;
+	argv[n++] = "log";
+	argv[n++] = "--format=%H%x1f%ct%x1f%s%x1f%b%x1e";
+	argv[n++] = "-n";
+	argv[n++] = num;
+	argv[n++] = "FETCH_HEAD";
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) != 0) {
+		rsp->error = git_error(w, &res);
+		return (0);
+	}
+	rsp->log = records_json(w, res.out, res.outlen, true);
+	n = 0;
+	argv[n++] = opts.git_bin;
+	argv[n++] = "-C";
+	argv[n++] = dir;
+	argv[n++] = "for-each-ref";
+	argv[n++] = "--sort=-creatordate";
+	argv[n++] = "--format=%(refname:short)\037%(creatordate:unix)\037"
+	    "%(contents)\036";
+	argv[n++] = "refs/tags";
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) != 0) {
+		rsp->error = git_error(w, &res);
+		return (0);
+	}
+	rsp->tags = records_json(w, res.out, res.outlen, false);
+	rsp->ok = true;
+	return (0);
+}
+
 /* The builds, with the build directory as the home of what they run. */
 int
 do_agent_build(struct work *w, const char *source, const char *ref,
@@ -852,6 +1027,19 @@ do_source_head(struct work *w, const char *source, const char *ref,
 
 	exec_set_home(w, opts.build_dir);
 	rc = source_head(w, source, ref, accepted, sshkey, rsp);
+	exec_set_home(w, NULL);
+	return (rc);
+}
+
+int
+do_source_log(struct work *w, const char *source, const char *ref,
+    const char *accepted, const char *sshkey, uint32_t count,
+    struct arc_source_log_rsp *rsp)
+{
+	int	rc;
+
+	exec_set_home(w, opts.build_dir);
+	rc = source_log(w, source, ref, accepted, sshkey, count, rsp);
 	exec_set_home(w, NULL);
 	return (rc);
 }

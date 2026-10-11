@@ -46,7 +46,9 @@ The console is laid out as a tree and tabs.
   what the agents, or the console, were last updated to; **build the
   agent** has the host build arcana-agent, kept by the console;
   **update every host's agent** sends it to every host, each
-  restarted with it; **update the console** builds and installs all
+  restarted with it (its box says what they get: the release notes,
+  or the commit messages where there are none, from the version the
+  oldest of them runs to the console's); **update the console** builds and installs all
   of Arcana on the host the console runs on (a server added by its
   local socket), the console restarting once the step has ended. What
   was built and updated to is kept in `arcana-source.json`. **Only
@@ -936,6 +938,18 @@ The console is laid out as a tree and tabs.
   every two seconds while they are shown, without a task of their own
   in the activity; **Live** pauses that.
 
+**What's new** (Settings, its last tab; the update boxes too): what
+the repository the console builds from (`agent_source`) has, read by
+the host the console runs on (`arcanactl source-log`: a bare clone
+without the files, `--filter=blob:none`, kept in the build directory
+as `log.git` and fetched again each time) and kept five minutes:
+the release notes, where the repository's tags carry messages, else
+the commit messages, newest first; above the version running, what an
+update brings, the version's own commit marked (every commit that
+bumps a version names it, `console 0.119.0`, `agent 0.69.0`), below
+it what this console has. `GET /api/update/notes?component=console|
+agent&from=VERSION[&to=VERSION]` gives it as JSON.
+
 ## The network
 
 **Network** in the tree shows the fleet as a map, its first tab. Nothing
@@ -1101,7 +1115,22 @@ names them. It is one document with three parts:
     not given out, the `dns` servers told to the hosts and a `lease`
     (§11.4, §11.5); and static `routes`), its `policy_map` (each a
     `zone` or `Internet`, an `app`, and its `ingress` and `egress`
-    policies, over the zone's own) and its `nat`.
+    policies, over the zone's own) and its `nat`. In place of a `uni`,
+    a `remote` (SASE-3, access by identity): a wg `interface` of the
+    edge, the `prefix` the identities' addresses come from, the `port`
+    it listens on (51820) and its `identities`, each a `name`, a `zone`
+    of the service and a WireGuard `public_key`; the policies apply to
+    an identity as to a UNI's hosts. On the edge, the apply makes the
+    wg interface in the service's table with the prefix's first host
+    as its address, listening on the port, and each identity a peer
+    allowed its own address, the lowest free from the second, kept
+    for it; the zone table sends that address to its zone's block, so
+    the identity's flows get the zone's policies and the security
+    policies as a UNI's host's do; the other edges route the prefix by
+    their tunnels to this one. The far ends tell the prefix's zone by
+    the zones' own prefixes, as they do a UNI's, so a zone the
+    identities are in is best the Default one, or one whose prefixes
+    hold the remote's.
 
 **Security** lists the service's security policies (MEF 88): the
 addresses allowed and denied, the domains denied and whether DNS is
@@ -1115,7 +1144,63 @@ says, the prefixes in tables of the policy's own (`sw<fib>_s<n>d4`,
 `d6`, `a4`, `a6`); a `rate-limit` is a dummynet pipe of the policy's
 own, the flow sent through it on the way out by the tunnels. Named by
 `af-security-egress`, the same denies stand on the way out by the UNI.
-The DNS criteria come with the DNS filter (next).
+The DNS criteria are the base system's unbound(8), `local-unbound`:
+where any policy of a service names a security policy with
+`dns-domain-filter` or `dns-protocol-filter`, each edge with a UNI of
+the service runs an instance of it in the service's table (`sdwan-dns`;
+`arcanactl sdwan dns json` by hand; checked by local-unbound-checkconf
+first, its pid file beside the agent's kept files, started again at
+the agent's start), listening on the UNIs' provider addresses,
+answering the UNIs' subnets, resolving by itself, and answering every
+denied domain and the names beneath it with NXDOMAIN (a local zone
+each; the domains of all the service's filtering policies together).
+With `dns-protocol-filter`, every DNS query from the UNI, UDP or TCP,
+is forwarded to that instance by an ipfw rule (`fwd provider,53`),
+whatever resolver the host asked. Security lists the instances, and
+counts for each policy what its deny rules dropped on every edge
+(packets and bytes, as `ipfw -S show` counts them since the rules were
+made, which the `sdwan` read carries as `rules.counters`, each rule's
+number, packets, bytes and text).
+
+**Lists** (SASE-2): a security policy's `ip-block` and
+`dns-domain-filter` may name `lists` beside their own entries. A list
+is a feed, a URL the console's host fetches with the base system's
+fetch(3) (https, http or file) every `interval` hours (6 unless said),
+or entries pasted on the Security tab: one a line, prefixes and domain
+names, `#` for a note. Each is kept in `sdwan-lists.json` with a
+version that moves when its entries change, when it was fetched, and
+the error of a fetch that failed, which keeps the last entries. The
+prefixes of a named list go into the policy's deny tables after its
+own, the domains into its DNS filter; the document is refused for a
+list that is not there.
+
+What IPsec decrypts goes past the firewall on its way in by default
+(`net.inet.ipsec.filtertunnel=0`), and a tunnel's payload with it, so
+the agent sets that and its IPv6 twin to 1 whenever it loads the
+rules: what comes in by an IPsec-carried tunnel is then filtered like
+the rest.
+
+**The record** (SASE-2): a policy with `log` has its deny rules log
+each packet to the routing socket (ipfw's `logdst rtsock`, a thousand
+a rule between resets, which the agent asks for), where the agent
+reads them (RTM_IPFWLOG: the rule, its action, the addresses, the
+interface and the rule's comment, which names the service and the
+policy) into a record it keeps for a day beside its files, each an
+event `sdwan-security` as it comes, twenty a second at most. The
+`sdwan` read carries the day's count and the latest 500; Security
+shows them from every edge, newest first, with a filter, and **CSV**
+downloads the day's from every edge (`GET /api/sdwan/record.csv`;
+`/api/sdwan/record` as JSON, `?swvc=`, `&policy=`, `&edge=`,
+`&since=` to pick). `GET` and `PUT /api/sdwan/lists` carry the
+feeds and the interval, `POST /api/sdwan/lists/fetch` fetches now
+(`{"name"}` for one); **Fetch now** on the tab does the same. A list
+may be large: the agent writes a table's entries 64 to a line as
+`table … atomic add`, one call each, all or nothing, and raises
+`net.inet.ip.fw.tables_max` when the tables would not fit; and when
+only entries changed since the rules were applied (a list fetched
+anew), each changed table is filled beside itself and swapped in with
+`table … swap`, the rules and the steering left as they are.
+`arcanactl sdwan rules @file` reads the JSON from a file.
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,

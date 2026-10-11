@@ -751,6 +751,11 @@ fib, interval, size, count, dscp, down, up, timeout, eval, history and
 report.
 An empty array stops them all.
 .It Cm sdwan rules Ar json
+A
+.Ar json
+of any of these may be
+.Cm @ Ns Ar file ,
+the file's contents (a large list of prefixes, say).
 The rules that classify what comes in at the SD-WAN UNIs and steer
 it, as the sdwan-rules operation takes them: an object with the set,
 the tables and the rules.
@@ -768,6 +773,14 @@ The DHCP servers of the services at this edge, as the sdwan-dhcp
 operation takes them: each a name, the fib it runs in and its
 .Xr dnsmasq 8
 configuration; checked first, started or started again, those not
+named stopped.
+.It Cm sdwan dns Ar json
+The DNS filters of the services at this edge (MEF 88), as the
+sdwan-dns operation takes them: each a name, the fib it runs in and
+its
+.Xr unbound 8
+configuration, run by the base system's local-unbound; checked by
+local-unbound-checkconf first, started or started again, those not
 named stopped.
 .It Cm traceroute Ar address
 One round of

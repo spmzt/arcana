@@ -1425,6 +1425,7 @@ static const struct {
 	{ SET_KEYS, "keys", "Sign-in keys" },
 	{ SET_CONSOLE, "console", "Console" },
 	{ SET_WEBCONF, "webconf", "web.conf" },
+	{ SET_NEWS, "news", "What's new" },
 };
 
 int
@@ -1675,6 +1676,94 @@ set_webconf(struct html *h)
 	h_raw(h, "</dl>");
 }
 
+/*
+ * What is new, as the console read it from the repository: the release
+ * notes (the tags with messages) or the commits, newest first.  In an
+ * update box only what is new; in Settings all of it, the version
+ * running marked.
+ */
+static void
+notes_block(struct html *h, bool only_new)
+{
+	const ucl_object_t	*n;
+	ucl_object_iter_t	 it;
+	const char		*kind, *body;
+	char			 age[32];
+	int			 shown;
+
+	if (app.notes_busy) {
+		h_raw(h, "<p class=\"dim notes-wait\">Reading what is new in the "
+		    "repository…</p>");
+		return;
+	}
+	if (app.notes_error[0] != '\0') {
+		h_raw(h, "<p class=\"dim notes-error\">What is new could not be "
+		    "read: ");
+		h_txt(h, app.notes_error);
+		h_raw(h, "</p>");
+		return;
+	}
+	if (app.notes == NULL)
+		return;
+	kind = jstr(app.notes, "kind");
+	h_fmt(h, "<div class=\"notes\"><h3>What is new <small class=\"dim\">"
+	    "%s, as %s read them</small></h3><ul class=\"notes\">", kind != NULL
+	    && strcmp(kind, "tags") == 0 ? "the release notes" : "the commit "
+	    "messages, there being no release notes", jstr(app.notes, "host")
+	    != NULL ? jstr(app.notes, "host") : "a host");
+	shown = 0;
+	it = NULL;
+	while ((n = ucl_object_iterate(jget(app.notes, "notes"), &it, true)) !=
+	    NULL) {
+		if (only_new && !jbool(n, "new"))
+			continue;
+		if (!only_new && ++shown > 60)
+			break;
+		if (only_new)
+			shown++;
+		fmt_age(age, sizeof(age), (double)jint(n, "when", 0) * 1000);
+		h_fmt(h, "<li class=\"%s%s\"><b>", jbool(n, "new") ? "new" : "had",
+		    jbool(n, "here") ? " here" : "");
+		h_txt(h, jstr(n, "title") != NULL ? jstr(n, "title") : "");
+		h_raw(h, "</b> <span class=\"dim\">");
+		h_txt(h, age);
+		if (jbool(n, "here"))
+			h_raw(h, " · this one is running");
+		else if (!jbool(n, "new") && !only_new)
+			h_raw(h, " · in it");
+		h_raw(h, "</span>");
+		body = jstr(n, "body");
+		if (body != NULL && body[0] != '\0') {
+			h_raw(h, "<pre class=\"dim notes-body\">");
+			h_txt(h, body);
+			h_raw(h, "</pre>");
+		}
+		h_raw(h, "</li>");
+	}
+	h_raw(h, "</ul>");
+	if (shown == 0)
+		h_raw(h, "<p class=\"dim\">Nothing newer than what runs here.</p>");
+	h_raw(h, "</div>");
+}
+
+/* Settings, What's new: the repository's latest, the running one marked. */
+static void
+set_news(struct html *h)
+{
+
+	h_raw(h, "<p class=\"dim\">What the repository the console builds "
+	    "from has, newest first: above the version running, what an "
+	    "update brings; below it, what this console has. ");
+	if (app.notes != NULL && jstr(app.notes, "source") != NULL) {
+		h_raw(h, "Read from <code>");
+		h_txt(h, jstr(app.notes, "source"));
+		h_raw(h, "</code>. ");
+	}
+	h_raw(h, "<button class=\"ghost small\" data-act=\"notes-reload\">Read "
+	    "again</button></p>");
+	notes_block(h, false);
+}
+
 static void
 view_settings(struct html *h)
 {
@@ -1715,6 +1804,9 @@ view_settings(struct html *h)
 	case SET_WEBCONF:
 		set_webconf(h);
 		break;
+	case SET_NEWS:
+		set_news(h);
+		break;
 	default:
 		set_look(h);
 		break;
@@ -1751,6 +1843,10 @@ modal(struct html *h)
 			    "autocomplete=\"off\" spellcheck=\"false\" "
 			    "autofocus></label>");
 		}
+		/* The console's update: what it brings. */
+		if (strcmp(c->act, "do-agent-build") == 0 && strcmp(c->value,
+		    "console") == 0 && strcmp(app.notes_for, "console") == 0)
+			notes_block(h, true);
 		break;
 	case MODAL_ADD_SERVER:
 		h_raw(h, "<form data-form=\"add-server\"><h2>Add a server</h2>"
@@ -2015,7 +2111,10 @@ modal(struct html *h)
 		}
 		h_raw(h, ". Each host checks that the program runs there "
 		    "before it replaces the one installed, which it keeps "
-		    "beside it as <code>arcana-agent.old</code>.</p>"
+		    "beside it as <code>arcana-agent.old</code>.</p>");
+		if (strcmp(app.notes_for, "agent") == 0)
+			notes_block(h, true);
+		h_raw(h, ""
 		    "<fieldset class=\"toggles\"><label class=\"toggle\">"
 		    "<input type=\"checkbox\" name=\"restart\" checked>"
 		    "<span>Restart the agent now <em>otherwise the new "

@@ -186,7 +186,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[102];
+	char	*argv[104];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -375,6 +375,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "[ \"$1\" = ls-remote ] && { printf '%s\\tHEAD\\n' \"$(cat head "
 	    "2>/dev/null || echo 1111111111111111111111111111111111111111)\"; "
 	    "exit 0; }\n"
+	    /* The log clone: made bare, fetched, read from ./log and ./tags. */
+	    "[ \"$1\" = -C ] && [ \"$3\" = fetch ] && exit 0\n"
+	    "[ \"$1\" = -C ] && [ \"$3\" = log ] && { cat commits 2>/dev/null; "
+	    "exit 0; }\n"
+	    "[ \"$1\" = -C ] && [ \"$3\" = for-each-ref ] && { cat tags "
+	    "2>/dev/null; exit 0; }\n"
+	    "[ \"$1\" = clone ] && [ \"$2\" = --bare ] && { for a; do last=$a; "
+	    "done; mkdir -p \"$last\"; echo bare > \"$last/HEAD\"; exit 0; }\n"
 	    "[ \"$1\" = clone ] || exit 2\n"
 	    "for a; do last=$a; done\n"
 	    "mkdir -p \"$last/lib/libjailconf\" \"$last/usr.sbin/arcana-agent\"\n");
@@ -500,14 +508,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "case \"$1 $2 $3\" in\n"
 	    "'show all dump') printf 'wg0\\t%s\\t%s\\t51820\\toff\\n' "
 	    "\"$key\" \"$pub\"\n"
-	    "  [ -f wg.peers ] && cat wg.peers ;;\n"
-	    "'show wg0 private-key') echo \"$key\" ;;\n"
-	    "'showconf wg0 ') printf '[Interface]\\nPrivateKey = %s\\n' "
+	    "  cat wg.peers.* 2>/dev/null ;;\n"
+	    "\"show $2 private-key\") echo \"$key\" ;;\n"
+	    "\"showconf $2 \") printf '[Interface]\\nPrivateKey = %s\\n' "
 	    "\"$key\" ;;\n"
-	    "'set wg0 private-key') cp \"$4\" wg.key ;;\n"
-	    "'set wg0 peer') [ \"$5\" = remove ] && rm -f wg.peers || "
-	    "printf 'wg0\\t%s\\t(none)\\t192.0.2.9:51820\\t10.9.9.2/32\\t0"
-	    "\\t0\\t0\\t0\\n' \"$4\" > wg.peers ;;\n"
+	    "\"set $2 private-key\") cp \"$4\" wg.key ;;\n"
+	    "\"set $2 peer\") [ \"$5\" = remove ] && rm -f wg.peers.$2 || "
+	    "printf '%s\\t%s\\t(none)\\t192.0.2.9:51820\\t10.9.9.2/32\\t0"
+	    "\\t0\\t0\\t0\\n' \"$2\" \"$4\" > wg.peers.$2 ;;\n"
 	    "esac\nexit 0\n");
 	put("fake-birdc", "#!/bin/sh\necho \"$*\" >> birdc.log\n"
 	    "[ \"$1\" = -r ] && shift\n[ \"$1\" = -s ] && shift 2\n"
@@ -567,6 +575,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "exit 0\n");
 	ATF_REQUIRE(chmod("fake-dnsmasq", 0755) == 0);
 	put("fake-rtsol", "#!/bin/sh\necho \"rtsol $*\" >> rtsol.log\nexit 0\n");
+	/* local-unbound: checkconf takes any file; started by fake-setfib. */
+	put("fake-local-unbound", "#!/bin/sh\necho \"unbound $*\" >> "
+	    "unbound.log\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-local-unbound", 0755) == 0);
+	put("fake-local-unbound-checkconf", "#!/bin/sh\necho \"checkconf $*\" >> "
+	    "unbound.log\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-local-unbound-checkconf", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-rtsol", 0755) == 0);
 	put("fake-setkey", "#!/bin/sh\necho \"setkey $*\" >> setkey.log\n[ \"$1\" "
 	    "= -f ] && cat \"$2\" >> setkey.conf\nexit 0\n");
@@ -886,7 +901,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[97] = (char *)(uintptr_t)"./fake-rtsol";
 	argv[98] = (char *)(uintptr_t)"-9";
 	argv[99] = (char *)(uintptr_t)"./fake-setkey";
-	argv[100] = NULL;
+	argv[100] = (char *)(uintptr_t)"-0";
+	argv[101] = (char *)(uintptr_t)"./fake-local-unbound";
+	argv[102] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
 	snprintf(rtadvdconf, sizeof(rtadvdconf), "%s/rtadvd.conf", cwd);

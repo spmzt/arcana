@@ -274,7 +274,7 @@ start_daemon()
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
-	    -9 "$(pwd)/fake-setkey" \
+	    -9 "$(pwd)/fake-setkey" -0 "$(pwd)/fake-local-unbound" \
 	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
@@ -2456,6 +2456,7 @@ sdwan_body()
 #!/bin/sh
 echo "ipfw \$*" >> $(pwd)/ipfw.log
 [ "\$1" = -q ] && [ -f "\$2" ] && cat "\$2" >> $(pwd)/ipfw.log
+[ "\$*" = "-S show" ] && printf '00012      2      168 set 30 deny log tcp from any to table(sw1_s0d4) 80,443\n00100      1        1 set 0 allow ip from any to any\n00999      5      500 set 30 count ip from any to any\n'
 exit 0
 EOS
 	chmod +x fake-ipfw
@@ -2464,7 +2465,7 @@ EOS
 	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
-	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0\}' \
+	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0,"counters":\[\]\}' \
 	    -o match:'"steer":\[\],"steered":false' "$JGC" -c "$SOCK" sdwan
 	# What is not a target list.
 	atf_check -s exit:1 -e match:'JSON array' -o ignore \
@@ -2516,15 +2517,14 @@ EOS
 	atf_check -o match:'^ipfw -q set disable 30$' \
 	    -o match:'^ipfw -q -f delete set 30$' \
 	    -o match:'^table sw1_zone create type addr valtype skipto$' \
-	    -o match:'^table sw1_zone add 10.1.0.0/16 12$' \
-	    -o match:'^table sw1_zone add 0.0.0.0/0 13$' \
+	    -o match:'^table sw1_zone atomic add 10.1.0.0/16 12 0.0.0.0/0 13$' \
 	    -o match:'^table sw1_z0p0_4 create type addr valtype ipv4$' \
 	    -o match:'^add 10 set 30 skipto tablearg ip from table\(sw1_zone\) to any in recv lo1$' \
 	    -o match:'^add 12 set 30 deny ip from any to any$' \
 	    -o match:'^ipfw -q set enable 30$' cat ipfw.log
 	# Disabled, loaded, enabled: in that order.
 	atf_check -o inline:'1\n' sh -c "grep -n 'set disable 30' ipfw.log | cut -d: -f1 | head -1"
-	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\],"objects":0\}' \
+	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\],"objects":0,"counters":' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -e match:'not one of the rules' -o ignore "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[{"table":"nowhere","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
@@ -2563,6 +2563,16 @@ EOS
 	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^pipe 3000' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^add 12' ipfw.log | cut -d: -f1 | head -1) && echo yes"
 	atf_check -o match:'dummynet' -o match:'ipfw_nat' cat kldload.log
 	atf_check -o match:'"objects":3' "$JGC" -c "$SOCK" sdwan
+	# Only a table's entries changed (a list fetched anew): the table
+	# filled beside itself and swapped in; the rules not reloaded.
+	: > ipfw.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"sw1_known","valtype":"legacy","entries":[["10.1.0.0/24","0"],["10.2.0.0/24","0"]]}],"objects":["pipe 3000 config bw 5000000bit/s","queue 3001 config pipe 3000 weight 75","nat 3001 config ip 198.51.100.1"],"rules":["11 nat 3001 ip4 from table(sw1_known) to not table(sw1_known) out xmit vtnet0","12 queue 3001 ip from any to any","99 count ip from any to any"]}'
+	atf_check -o match:'^ipfw -q table sw1_known_alt create type addr$' \
+	    -o match:'^ipfw -q table sw1_known_alt atomic add 10.1.0.0/24 0 10.2.0.0/24 0$' \
+	    -o match:'^ipfw -q table sw1_known swap sw1_known_alt$' \
+	    -o not-match:'set disable 30' -o not-match:'^add 12 ' cat ipfw.log
+	atf_check -o match:'"objects":3' "$JGC" -c "$SOCK" sdwan
 	# BIRD instances: a bad list refused; one started in its table by
 	# setfib once its file parses, told to read it again when running,
 	# stopped when not named; listed with its protocols.
@@ -2593,6 +2603,8 @@ shift 2
 case "\$1" in
 # dnsmasq -C conf -x pid: started, says the pid file, this agent's pid.
 *dnsmasq) sleep 300 & echo \$! > "\$5" ;;
+# local-unbound -c conf: started, says the pid file named in the conf.
+*local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
 # bird -c conf -s sock -P pid: started, says the socket.
 *) shift 3; touch "\$2" ;;
 esac
@@ -2604,7 +2616,18 @@ echo "dnsmasq \$*" >> $(pwd)/dnsmasq.log
 [ "\$1" = --test ] && { grep -q BROKEN "\$3" && { echo "dnsmasq: bad option at line 1 of \$3" >&2; exit 1; }; exit 0; }
 exit 0
 EOS
-	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq
+	cat > fake-local-unbound <<EOS
+#!/bin/sh
+echo "unbound \$*" >> $(pwd)/unbound.log
+exit 0
+EOS
+	cat > fake-local-unbound-checkconf <<EOS
+#!/bin/sh
+echo "checkconf \$*" >> $(pwd)/unbound.log
+grep -q BROKEN "\$1" && { echo "unbound-checkconf: error: syntax error" >&2; exit 1; }
+exit 0
+EOS
+	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
 	atf_check -s exit:1 -e match:'named twice' -o ignore "$JGC" -c "$SOCK" sdwan bird \
@@ -2660,6 +2683,10 @@ EOS
 	atf_check -o match:'down$' cat birdc.log
 	test ! -f "$(dirname "$f")/sdwan-bird-sw1.conf" || atf_fail "the instance's file stayed"
 	atf_check -o match:'"bird":\[\]' "$JGC" -c "$SOCK" sdwan
+	# The counters of the set's rules, as ipfw -S show has them, in the
+	# read: the console counts what a security policy denied by them.
+	atf_check -o match:'"counters":\[\{"rule":12,"pkts":2,"bytes":168,"text":"deny log tcp from any to table\(sw1_s0d4\) 80,443"\},\{"rule":999,"pkts":5,"bytes":500,"text":"count ip from any to any"\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
 	# No rules: the set emptied, the tables gone, the objects deleted.
 	: > ipfw.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
@@ -2688,6 +2715,22 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan dhcp '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-dhcp-sw1.conf" || atf_fail "the dhcp instance's file stayed"
 	atf_check -o match:'"dhcp":\[\]' "$JGC" -c "$SOCK" sdwan
+	# DNS filters (the base system's unbound): one not taken by
+	# local-unbound-checkconf not run; one started in its table with
+	# the pid file and the run as root added to its file; listed;
+	# stopped when not named.
+	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan dns \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"BROKEN"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"server:\n\tinterface: 10.1.0.1\n\tlocal-zone: \"ads.example.\" always_nxdomain\n"}]}'
+	atf_check -o match:'^setfib -F 1 .*fake-local-unbound -c .*sdwan-dns-sw1.conf$' cat setfib.log
+	atf_check -o match:'^checkconf .*sdwan-dns-sw1.conf$' cat unbound.log
+	atf_check -o match:'^	interface: 10.1.0.1$' -o match:'^	pidfile: ".*sdwan-dns-sw1.pid"$' -o match:'^	username: ""$' \
+	    cat "$(dirname "$f")/sdwan-dns-sw1.conf"
+	atf_check -o match:'"dns":\[\{"name":"sw1","fib":1,"running":true\}\]' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns '{"instances":[]}'
+	test ! -f "$(dirname "$f")/sdwan-dns-sw1.conf" || atf_fail "the dns instance's file stayed"
+	atf_check -o match:'"dns":\[\]' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()
 {
@@ -2708,6 +2751,11 @@ agent_build_body()
 [ "\$1" = -c ] && shift 2
 # The commit a clone is at, and the head of the repository's branch.
 [ "\$1" = -C ] && [ "\$3" = rev-parse ] && { echo 1111111111111111111111111111111111111111; exit 0; }
+# The log clone: made bare, fetched, read; what ./log and ./tags hold.
+[ "\$1" = -C ] && [ "\$3" = fetch ] && exit 0
+[ "\$1" = -C ] && [ "\$3" = log ] && { cat $(pwd)/log 2>/dev/null; exit 0; }
+[ "\$1" = -C ] && [ "\$3" = for-each-ref ] && { cat $(pwd)/tags 2>/dev/null; exit 0; }
+[ "\$1" = clone ] && [ "\$2" = --bare ] && { for a; do last=\$a; done; mkdir -p "\$last"; echo "\$*" > "\$last/HEAD"; exit 0; }
 if [ "\$1" = ls-remote ]; then
 	case "\$4" in nope) exit 2 ;; esac
 	printf '%s\trefs/heads/%s\n' "\$(cat $(pwd)/head 2>/dev/null || echo 2222222222222222222222222222222222222222)" "\$4"
@@ -2761,6 +2809,15 @@ EOS
 	atf_check -o match:'^Commit: +3333333333333333333333333333333333333333$' \
 	    "$JGC" -c "$SOCK" source-head https://example.org/arcana.git main
 	atf_check test ! -e made
+	# What is new: the latest commits and the tags, by a bare clone
+	# without the files kept in the build directory, fetched again.
+	printf 'aaaa\037100\037agent 0.2.0: two\037the body\036bbbb\03790\037agent 0.1.0: one\037\036' > log
+	printf 'v0.2.0\037100\037Release two\036' > tags
+	atf_check -o match:'^Commit: +1111111111111111111111111111111111111111$' \
+	    -o match:'^Commits: +\[\{"commit":"aaaa","time":100,"subject":"agent 0.2.0: two","body":"the body"\},\{"commit":"bbbb","time":90,"subject":"agent 0.1.0: one","body":""\}\]$' \
+	    -o match:'^Tags: +\[\{"name":"v0.2.0","time":100,"message":"Release two"\}\]$' \
+	    "$JGC" -c "$SOCK" source-log -n 2 https://example.org/arcana.git main
+	atf_check -o match:'clone --bare --filter=blob:none --single-branch --branch main -- https://example.org/arcana.git' cat build/log.git/HEAD
 	atf_check -s exit:1 -e match:'git failed' -o ignore \
 	    "$JGC" -c "$SOCK" source-head https://example.org/arcana.git nope
 	# Over SSH as a build is: the host key is not taken on trust.

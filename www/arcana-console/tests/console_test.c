@@ -618,6 +618,84 @@ ATF_TC_BODY(agent_update, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(update_notes, "What is new in the repository since the version "
+    "running: the commit messages, new until the version's own commit, or "
+    "the tags' messages where there are any")
+ATF_TC_BODY(update_notes, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	FILE		*fp;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN];
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	harness_other_agent = true;
+	snprintf(harness_webconf, sizeof(harness_webconf), "agent_source = "
+	    "\"https://example.org/arcana.git\";\nagent_ref = \"main\";\n");
+	start(tc, 0, NULL);
+	enrol(&a);
+	/* No server yet: nothing to read the repository through. */
+	http("GET", "/api/update/notes?component=console&from=0.2.0", NULL, &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	/* Three commits, the middle one the version running: the newest
+	 * is new, the running one marked, the oldest neither. */
+	ATF_REQUIRE((fp = fopen("commits", "w")) != NULL);
+	fprintf(fp, "cccc\037300\037console 0.3.0: three\037the third's body\036"
+	    "bbbb\037200\037agent 0.9.0, console 0.2.0: two\037\036"
+	    "aaaa\037100\037console 0.1.0: one\037\036");
+	fclose(fp);
+	http("GET", "/api/update/notes?component=console&from=0.2.0", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE_MSG(jstr(&r, "kind") != NULL && jstr(&r, "host") != NULL &&
+	    jstr(&r, "notes.0.title") != NULL, "%d %s", r.status, r.body);
+	ATF_CHECK_STREQ("commits", jstr(&r, "kind"));
+	ATF_CHECK_STREQ("here", jstr(&r, "host"));
+	ATF_CHECK_STREQ("console 0.3.0: three", jstr(&r, "notes.0.title"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.0.new"));
+	ATF_CHECK_STREQ("the third's body", jstr(&r, "notes.0.body"));
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.1.new"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.1.here"));
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.2.new"));
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.2.here"));
+	resp_free(&r);
+	/* The agents: what is up to the console's version, from a version
+	 * no commit names: everything up to it. */
+	http("GET", "/api/update/notes?component=agent&from=0.8.0&to=0.9.0",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.0.new"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.1.new"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.2.new"));
+	resp_free(&r);
+	/* Tags with messages, one newer: the release notes instead, read
+	 * again when asked fresh. */
+	ATF_REQUIRE((fp = fopen("tags", "w")) != NULL);
+	fprintf(fp, "v0.3.0\037300\037Release three\n\nWith the record.\036"
+	    "v0.2.0\037200\037Release two\036");
+	fclose(fp);
+	http("GET", "/api/update/notes?component=console&from=0.2.0", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("commits", jstr(&r, "kind"));
+	resp_free(&r);
+	http("GET", "/api/update/notes?component=console&from=0.2.0&fresh=1",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("tags", jstr(&r, "kind"));
+	ATF_CHECK_STREQ("v0.3.0", jstr(&r, "notes.0.title"));
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.0.new"));
+	ATF_CHECK_MSG(strncmp(jstr(&r, "notes.0.body"), "Release three", 13) == 0,
+	    "%s", r.body);
+	ATF_CHECK_STREQ("true", jstr(&r, "notes.1.here"));
+	ATF_CHECK_STREQ("false", jstr(&r, "notes.1.new"));
+	resp_free(&r);
+}
+
 CONSOLE_TC(agent_build, "A host builds arcana-agent from the repository "
     "the console names, and the console keeps it to send")
 ATF_TC_BODY(agent_build, tc)
@@ -3290,7 +3368,11 @@ static const char sdwan_good[] =
     "\"public_prefix\":\"198.51.100.0/30\"}},{\"id\":\"branch\",\"edge\":"
     "\"@B\",\"uni\":{\"id\":\"uni-br\",\"interface\":\"vtnet2\",\"vlan\":20,"
     "\"ipv6\":{\"mode\":\"slaac\",\"prefix\":\"2001:db8:1::/64\","
-    "\"provider\":[\"2001:db8:1::1\"],\"dns\":[\"2001:db8:1::1\"]}}}]}]}";
+    "\"provider\":[\"2001:db8:1::1\"],\"dns\":[\"2001:db8:1::1\"]}}},"
+    "{\"id\":\"road\",\"edge\":\"@A\",\"remote\":{\"interface\":\"wg5\","
+    "\"prefix\":\"10.30.0.0/24\",\"port\":51820,\"identities\":[{\"name\":"
+    "\"alice\",\"zone\":\"office\",\"public_key\":"
+    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\"}]}}]}]}";
 
 /* s with its first from made to, into out; false when from is not there. */
 /* An interface of this host with an IPv4 address that is not the
@@ -3412,6 +3494,8 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"rate-limit\":2000000", "\"rate-limit\":10", "1000 or more" },
 		{ "\"log\":true}}", "\"log\":true,\"url-filter\":true}}",
 		    "not a criterion" },
+		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/24\"],"
+		    "\"lists\":[\"nowhere\"]", "no list nowhere" },
 		{ "\"dns-protocol-filter\":true", "\"dns-protocol-filter\":\"yes\"",
 		    "true or false" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
@@ -3444,6 +3528,15 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"egress-block\":\"discard\"", "\"encryption\":\"optional\"",
 		    "egress policy" },
 		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
+		/* A remote end point (SASE-3): its port, an identity's zone
+		 * and key, and not a UNI besides. */
+		{ "\"port\":51820", "\"port\":70000", "port is 1 to 65535" },
+		{ "\"zone\":\"office\",\"public_key\"", "\"zone\":\"nowhere\","
+		    "\"public_key\"", "its zone is one of the zones" },
+		{ "\"public_key\":\"xTIB", "\"public_key\":\"short", "a WireGuard "
+		    "one" },
+		{ "\"remote\":{", "\"uni\":{\"id\":\"x\"},\"remote\":{", "not "
+		    "both" },
 		/* The UCS end points' addressing and routing (Mplify 119). */
 		{ "\"interface\":\"vtnet1\",\"backup\":true", "\"interface\":"
 		    "\"vtnet1\",\"backup\":true,\"addressing\":\"ppp\"",
@@ -3718,6 +3811,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	char		cwd[1024], body[400], sa[16], sb[16];
 	char		doc[8192], t1[8192], t2[300], lifn[32], laddr[64];
 	size_t		i;
+	FILE		*fp;
 
 	start(tc, 0, NULL);
 	enrol(&a);
@@ -3735,9 +3829,55 @@ ATF_TC_BODY(sdwan_apply, tc)
 	snprintf(sb, sizeof(sb), "%s", strcmp(jstr(&r, "servers.0.id"), sa) ==
 	    0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
 	resp_free(&r);
+	/* The lists the security policy names (SASE-2): one pasted, one a
+	 * feed from a file the console's host reads with libfetch; each
+	 * kept with a version, a failed feed with its error. */
+	snprintf(t2, sizeof(t2), "%s/feed.txt", cwd);
+	ATF_REQUIRE((fp = fopen(t2, "w")) != NULL);
+	fprintf(fp, "# a feed\n203.0.113.0/24 ; evil\n\nbad-feed.example\n");
+	fclose(fp);
+	snprintf(body, sizeof(body), "{\"interval\":2,\"feeds\":[{\"name\":"
+	    "\"blocked\",\"text\":\"198.51.100.0/24\\nbad.example\\n\"},{\"name\":"
+	    "\"feedlist\",\"url\":\"file://%s\"},{\"name\":\"dead\",\"url\":"
+	    "\"file://%s/none.txt\"}]}", t2, cwd);
+	http("PUT", "/api/sdwan/lists", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/sdwan/lists/fetch", "{}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/lists", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(jstr(&r, "lists.blocked.version") != NULL && strcmp(jstr(
+	    &r, "lists.blocked.version"), "1") == 0 && strcmp(jstr(&r,
+	    "lists.blocked.count"), "2") == 0 && strcmp(jstr(&r,
+	    "lists.feedlist.version"), "1") == 0 && strcmp(jstr(&r,
+	    "lists.feedlist.count"), "2") == 0 && jstr(&r, "lists.dead.error")
+	    != NULL && strcmp(jstr(&r, "lists.dead.count"), "0") == 0, "%s",
+	    r.body);
+	ATF_CHECK_STREQ("2", jstr(&r, "interval"));
+	resp_free(&r);
+	/* Fetched again unchanged: the version stays. */
+	http("POST", "/api/sdwan/lists/fetch", "{\"name\":\"feedlist\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("GET", "/api/sdwan/lists", NULL, &r);
+	ATF_CHECK_STREQ("1", jstr(&r, "lists.feedlist.version"));
+	resp_free(&r);
+	http("PUT", "/api/sdwan/lists", "{\"feeds\":[{\"name\":\"x\",\"text\":"
+	    "\"not a prefix!\"}]}", &r);
+	ATF_CHECK_MSG(r.status == 400 && strstr(r.body, "not a prefix nor a "
+	    "domain") != NULL, "%s", r.body);
+	resp_free(&r);
 	/* The good one, its underlays with addresses, its UNIs on lo0. */
 	snprintf(doc, sizeof(doc), "%s", sdwan_good);
 	static const char *const edits[][2] = {
+		{ "\"ip-block\":{\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]}",
+		    "\"ip-block\":{\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"],"
+		    "\"lists\":[\"blocked\",\"feedlist\"]}" },
+		{ "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]}",
+		    "\"dns-domain-filter\":{\"deny\":[\"ads.example\"],\"lists\":["
+		    "\"feedlist\",\"blocked\"]}" },
 		{ "\"md5\":\"edges-secret\",", "\"md5\":\"edges-secret\","
 		    "\"control_plane\":{\"host\":\"@A\",\"cluster_id\":\"192.0.2.1\","
 		    "\"ctvc\":\"inet\"}," },
@@ -3840,15 +3980,17 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * edge's own UNI (queued, as fast has bandwidth), the Internet by
 	 * breakout (fast enables it; not known is the Internet), and
 	 * nothing else; a flow with no bandwidth is let through. */
+	/* Two end points on the edge, the UNI and the remote: each rule
+	 * of the block names the interface it is for. */
 	ATF_CHECK_MSG(strstr(r.body, "\"12 queue 3001 tcp from any to "
-	    "10.1.0.0/24,10.1.8.0/22 dst-port 80,https\"") != NULL, "%s",
-	    r.body);
+	    "10.1.0.0/24,10.1.8.0/22 dst-port 80,https in recv lo0\"") != NULL,
+	    "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"12 queue 3001 tcp from any to not table("
 	    "sw1_known) dst-port 80,https\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"12 deny tcp from any to any dst-port "
 	    "80,https\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"12 allow ip4 from any to 10.1.0.0/24,"
-	    "10.1.8.0/22\"") != NULL);
+	    "10.1.8.0/22 in recv lo0\"") != NULL);
 	ATF_CHECK(strstr(r.body, "[\"10.1.8.0/22\",\"0\"],[\"2001:db8:1::/64\","
 	    "\"0\"]") != NULL);
 	/* Its bandwidth: the shared limiter a pipe of its limit, the flow
@@ -3869,14 +4011,20 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * forward, web to or from a denied prefix dropped and logged, the
 	 * allowed prefixes excepted, by tables of the policy's own; its
 	 * rate limit a pipe of its own on the way out by the tunnels. */
-	ATF_CHECK_MSG(strstr(r.body, "\"12 deny log tcp from any to table("
-	    "sw1_s0d4) dst-port 80,https not dst-ip table(sw1_s0a4)\"") != NULL,
-	    "%s", r.body);
-	ATF_CHECK(strstr(r.body, "\"12 deny log tcp from any to any dst-port "
-	    "80,https src-ip table(sw1_s0d4) not src-ip table(sw1_s0a4)\"") !=
-	    NULL);
-	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_s0d4\",\"valtype\":\"legacy\","
-	    "\"entries\":[[\"192.0.2.0/24\",\"0\"]]") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"12 deny log logdst rtsock logamount 1000 "
+	    "tcp from any to table(sw1_s0d4) dst-port 80,https not dst-ip table("
+	    "sw1_s0a4) // security acme guard dst\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"12 deny log logdst rtsock logamount 1000 tcp "
+	    "from any to any dst-port 80,https src-ip table(sw1_s0d4) not src-ip "
+	    "table(sw1_s0a4) // security acme guard src\"") != NULL);
+	/* With the lists' prefixes after the policy's own, the domains of
+	 * both in the DNS filter. */
+	ATF_CHECK_MSG(strstr(r.body, "\"name\":\"sw1_s0d4\",\"valtype\":\"legacy\","
+	    "\"entries\":[[\"192.0.2.0/24\",\"0\"],[\"198.51.100.0/24\",\"0\"],"
+	    "[\"203.0.113.0/24\",\"0\"]]") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"bad-feed.example.\\\" "
+	    "always_nxdomain\\n\\tlocal-zone: \\\"bad.example.\\\" always_nxdomain"
+	    "\\n") != NULL);
 	ATF_CHECK(strstr(r.body, "\"name\":\"sw1_s0a4\",\"valtype\":\"legacy\","
 	    "\"entries\":[[\"10.1.0.0/16\",\"0\"]]") != NULL);
 	ATF_CHECK(strstr(r.body, "sw1_s0d6") == NULL);
@@ -3884,6 +4032,23 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"11 pipe 3002 tcp from any to any "
 	    "dst-port 80,https src-ip table(sw1_zp0) out { xmit gre100 or xmit "
 	    "gif102 }\"") != NULL, "%s", r.body);
+	/* Its DNS: an unbound instance of the service at a, on hq's
+	 * provider address, the denied domain a local zone; every query
+	 * from the UNI forwarded to it (dns-protocol-filter). */
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"dns\",\"phase\":10,\"title\":"
+	    "\"DNS filters: unbound, 1 instance in the services' tables, the "
+	    "domains the security policies deny\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"kind\":\"sdwan-dns\",\"instances\":[{\"name\":"
+	    "\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana console: SD-WAN "
+	    "service acme at a, in routing table 1.") != NULL);
+	ATF_CHECK(strstr(r.body, "\\tinterface: 10.1.0.1\\n\\taccess-control: "
+	    "10.1.0.0/24 allow\\n") != NULL);
+	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"ads.example.\\\" "
+	    "always_nxdomain\\n") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"10 fwd 10.1.0.1,53 udp from any to any "
+	    "dst-port 53 in recv lo0\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"10 fwd 10.1.0.1,53 tcp from any to any "
+	    "dst-port 53 in recv lo0\"") != NULL);
 	/* Breakout at a, by a-inet: the NAT of hq's public prefix, out by
 	 * vtnet0 and back in to the service's table; the default route
 	 * by the gateway, reached by the interface.  At b, by a tunnel to
@@ -4022,7 +4187,13 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "5060,5061 or dst-port 5060,5061 } dscp 46\"") != NULL, "%s",
 	    r.body);
 	ATF_CHECK(strstr(r.body, "\"12 fwd tablearg ip4 from any to table("
-	    "sw1_z0p1_4)\"") != NULL);
+	    "sw1_z0p1_4) in recv lo0\"") != NULL);
+	/* The remote's identities get the zone's own policies, having no
+	 * map of their own: the block's rules for wg5. */
+	ATF_CHECK(strstr(r.body, "\"12 fwd tablearg tcp from any to table("
+	    "sw1_z0p0_4) dst-port 80,https in recv wg5\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 deny ip from any to any in recv wg5\"")
+	    != NULL);
 	ATF_CHECK(strstr(r.body, "\"12 deny ip from any to any\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"99 count ip from any to any\"") != NULL);
 	ATF_CHECK(strstr(r.body, "[\"10.1.0.0/16\",\"12\"]") != NULL);
@@ -4031,6 +4202,34 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * over the private tunnel first, the public one after. */
 	ATF_CHECK_MSG(strstr(r.body, "\"table\":\"sw1_z1p1_6\",\"prefix\":"
 	    "\"2001:db8:1::/64\"") == NULL, "%s", r.body);
+	/* A remote end point (SASE-3): wg5 in the service's table with the
+	 * prefix's first host, listening; the identity a peer allowed its
+	 * address, the second host, which the zone table sends to its
+	 * zone's block, and its packets in by wg5 as a UNI's. */
+	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"if-create\",\"interface\":"
+	    "\"wg5\",\"fib\":1,\"description\":\"sdwan\",\"address\":"
+	    "\"10.30.0.1/24\",\"persist\":true}") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "{\"kind\":\"wireguard\",\"verb\":\"init\","
+	    "\"interface\":\"wg5\",\"listen_port\":51820,\"persist\":true}") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "{\"kind\":\"wireguard\",\"verb\":\"peer\","
+	    "\"interface\":\"wg5\",\"peer\":"
+	    "\"xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=\",\"allowed_ips\":"
+	    "\"10.30.0.2/32\",\"persist\":true}") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "[\"10.30.0.2/32\",\"12\"]") != NULL, "%s",
+	    r.body);
+	ATF_CHECK(strstr(r.body, "\"10 skipto tablearg ip from table(sw1_zone) "
+	    "to any in recv wg5\"") != NULL);
+	resp_free(&r);
+	/* The record: the edges' logged packets read now; none yet. */
+	http("GET", "/api/sdwan/record?swvc=acme&policy=guard", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"record\":[]") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/sdwan/record.csv", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strncmp(r.body, "time,edge,rule,action,source,destination,"
+	    "interface,comment\n", 60) == 0, "%s", r.body);
 	resp_free(&r);
 
 	/* Applied: each made, in the order, IPsec with the far key. */
@@ -4060,6 +4259,11 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q 'vlan106 create vlan 20 vlandev lo0' "
 	    "ifconfig.log") == 0);
+	/* The remote end point's wg, by the stand-in: listening, the
+	 * identity its peer. */
+	ATF_CHECK(system("grep -q '^set wg5 listen-port 51820' wg.log && grep "
+	    "-q '^set wg5 peer xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg= "
+	    "allowed-ips 10.30.0.2/32' wg.log") == 0);
 	/* One IPsec connection for the pair of outer addresses and kind. */
 	ATF_CHECK(system("ls swanctl/conf.d/arcana-sdw*.conf | wc -l | grep -q "
 	    "'^ *2$'") == 0);
@@ -4079,6 +4283,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(jstr(&r, "data.rules.set") != NULL && strcmp(jstr(&r,
 	    "data.rules.set"), "30") == 0, "%s", r.body);
 	resp_free(&r);
+	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-local-unbound -c .*sdwan-dns-"
+	    "sw1.conf' setfib.log && grep -q '^checkconf .*sdwan-dns-sw1.conf' "
+	    "unbound.log") == 0);
 	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-dnsmasq -C .*sdwan-dhcp-sw1"
 	    ".conf -x ' setfib.log") == 0);
 	ATF_CHECK(system("grep -q 'addr=\"2001:db8:1::\":prefixlen#64:rdnss=\""
@@ -4221,6 +4428,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, services);
 	ATF_TP_ADD_TC(tp, agent_update);
 	ATF_TP_ADD_TC(tp, agent_build);
+	ATF_TP_ADD_TC(tp, update_notes);
 	ATF_TP_ADD_TC(tp, settings);
 	ATF_TP_ADD_TC(tp, local_agent);
 	ATF_TP_ADD_TC(tp, local_same);

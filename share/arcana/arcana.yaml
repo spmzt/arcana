@@ -872,6 +872,25 @@ attribute-sets:
           head, or what agent-build and console-update built.
         checks:
           max-len: 64
+      - name: count
+        type: u32
+        doc: How many at most.
+      - name: log
+        type: text
+        doc: |
+          The latest commits of a repository's branch, newest first,
+          as a JSON list: each its commit, time, subject and body.
+        checks:
+          max-len: max-output
+      - name: tags
+        type: text
+        doc: |
+          The repository's tags, newest first, as a JSON list: each its
+          name, time and message; the release notes where their
+          messages are.
+        checks:
+          max-len: max-output
+
 
   - name: host
     attributes:
@@ -1480,7 +1499,6 @@ attribute-sets:
         nested-attributes: route
         multi-attr: true
         doc: The next routes, typed.
-
   - name: chunk
     attributes:
       - name: data
@@ -2250,10 +2268,15 @@ operations:
       measures (sdwan-probes) goes down or comes up, or by bfd when
       BFD says so.  sdwan-fault, with type, severity, object, by,
       description and state (set or cleared), when a fault is seen or
-      cleared (Mplify 119 §11.3): the sdwan reply lists the day's.  The sdwan reply
-      has "rules" (the set, how many rules and which tables) and
+      cleared (Mplify 119 §11.3): the sdwan reply lists the day's.
+      sdwan-security, with seq, rule, action, src, dst, iface and
+      comment, when a rule logged to the routing socket (ipfw's logdst
+      rtsock) sees a packet: the security policies' denies; twenty a
+      second at most, the rest counted into the record.  The sdwan reply
+      has "rules" (the set, how many rules and which tables),
       "steer" (each prefix's candidates with their states and which
-      is chosen) too.
+      is chosen) and "record" (count, the day's; seq; last, the latest
+      500, each t, seq, rule, action, src, dst, iface, comment) too.
     do:
       request:
         attributes:
@@ -2409,6 +2432,38 @@ operations:
           - ok
           - error
           - commit
+          - host-keys
+          - fingerprints
+          - deploy-key
+          - trace
+
+  - name: source-log
+    attribute-set: arcana
+    auth: true
+    doc: |
+      What is new in a repository's branch: its latest commits (count,
+      100 unless said), newest first, each its hash, time, subject and
+      body, and its tags with their messages, the release notes where
+      there are any.  A bare clone without the files (blob:none) is
+      kept in the build directory as log.git and fetched again each
+      time, over SSH as agent-build fetches.  Nothing is built.
+    do:
+      request:
+        attributes:
+          - source
+          - ref
+          - host-keys
+          - ssh-key
+          - count
+        required:
+          - source
+      reply:
+        attributes:
+          - ok
+          - error
+          - commit
+          - log
+          - tags
           - host-keys
           - fingerprints
           - deploy-key
@@ -2578,6 +2633,32 @@ operations:
       table (setfib); those not named any more are stopped.  Kept for
       the next start.  The sdwan read tells each instance and the
       leases it gave.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+
+  - name: sdwan-dns
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The DNS filters of the SD-WAN services at this edge (MEF 88: the
+      base system's unbound, local-unbound, one instance per service,
+      in its table), as the console writes them: json, an object with
+      "instances", each a "name", the "fib" it runs in and its "conf",
+      unbound's configuration text, to which the agent adds the pid
+      file.  Each is checked by local-unbound-checkconf before it is
+      made the instance's; one running is stopped and started again on
+      it, one not yet is started in its table (setfib); those not
+      named any more are stopped.  Kept for the next start.  The sdwan
+      read tells each instance.
     do:
       request:
         attributes:

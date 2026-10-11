@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.64.3"
+#define	ARCANA_AGENT_VERSION	"0.69.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -56,6 +56,7 @@
 #define	PATH_NTP_CONF		"/etc/ntp.conf"
 #define	PATH_RTADVD_CONF	"/etc/rtadvd.conf"
 #define	PATH_DNSMASQ_BIN	"/usr/local/sbin/dnsmasq"
+#define	PATH_UNBOUND_BIN	"/usr/sbin/local-unbound"
 #define	PATH_RTSOL_BIN		"/sbin/rtsol"
 #define	PATH_SETKEY_BIN		"/sbin/setkey"
 #define	PATH_BIRD_CONF		"/usr/local/etc/bird.conf"
@@ -116,6 +117,7 @@ struct opts {
 	const char	*ntp_conf;	/* ntp.conf, for the ntp job */
 	const char	*rtadvd_conf;	/* rtadvd.conf, for the rtadvd job */
 	const char	*dnsmasq_bin;	/* dnsmasq(8): the UNIs' DHCP */
+	const char	*unbound_bin;	/* local-unbound(8): the DNS filters */
 	const char	*rtsol_bin;	/* rtsol(8): an interface's SLAAC */
 	const char	*setkey_bin;	/* setkey(8): manual SAs */
 	const char	*bird_conf;	/* its main file */
@@ -426,7 +428,7 @@ int		 do_sdwan_rules(struct work *, const char *, const char **);
 int		 do_sdwan_steer(struct work *, const char *, const char **);
 void		 sdwan_probe_changed(void);
 struct ucl_object_s;
-void		 sdwan_json(struct ucl_object_s *);
+void		 sdwan_json(struct work *, struct ucl_object_s *);
 const char	*sdwan_conf_path(const char *, char *, size_t);
 int		 sdwan_conf_write(const char *, const char *, const char **);
 char		*sdwan_kept_read(const char *);
@@ -438,6 +440,9 @@ void		 sdwan_bird_json(struct work *, struct ucl_object_s *);
 int		 do_sdwan_dhcp(struct work *, const char *, const char **);
 void		 sdwan_dhcp_start(void);
 void		 sdwan_dhcp_json(struct work *, struct ucl_object_s *);
+int		 do_sdwan_dns(struct work *, const char *, const char **);
+void		 sdwan_dns_start(void);
+void		 sdwan_dns_json(struct work *, struct ucl_object_s *);
 int		 do_rtadvd(struct work *, const char *, const char *const *,
 		    size_t, bool, bool, const char **);
 /* invidia/sa.c: manually keyed SAs by setkey(8). */
@@ -456,6 +461,9 @@ void		 fault_clear(const char *, const char *, const char *, ...)
 		    __printflike(3, 4);
 void		 faults_json(struct ucl_object_s *);
 void		 faults_start(void);
+/* gula/record.c: what the security rules logged, a day of it. */
+void		 record_start(void);
+void		 record_json(struct ucl_object_s *);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,
@@ -603,6 +611,9 @@ int		 do_agent_build(struct work *, const char *, const char *,
 		    const char *, const char *, struct arc_agent_build_rsp *);
 int		 do_source_head(struct work *, const char *, const char *,
 		    const char *, const char *, struct arc_source_head_rsp *);
+int		 do_source_log(struct work *, const char *, const char *,
+		    const char *, const char *, uint32_t,
+		    struct arc_source_log_rsp *);
 
 int		 do_console_update(struct work *, const char *, const char *,
 		    const char *, const char *, struct arc_console_update_rsp *);

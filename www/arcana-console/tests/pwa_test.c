@@ -3583,6 +3583,17 @@ part_flows(void)
 	    "\"3600\"].on') && document.querySelector('.sd-path .sd-mon p')"
 	    ".textContent.includes('last 60 min')", 5);
 	shot("9-sdwan-paths");
+	/* Security: the policies, and the record of what their deny rules
+	 * logged, nothing yet; its filter and the CSV link. */
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "security]').click()");
+	wait_js("[...document.querySelectorAll('section.sdwan h3')].some(h => "
+	    "h.textContent.startsWith('Record')) && document.querySelector("
+	    "'section.sdwan').textContent.includes('Nothing logged yet')", 20);
+	ATF_CHECK(js_true("document.querySelector('input[data-input="
+	    "sd-record-filter]') !== null && document.querySelector('a[href="
+	    "\"/api/sdwan/record.csv\"]') !== null"));
+	shot("9-sdwan-security");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",
 	    10);
