@@ -236,6 +236,12 @@ kinds:
     needs: interface args
     uses: remove persist
     destroys: remove
+  - kind: ipsec-sa
+    title: Manually keyed IPsec security associations
+    needs: verb interface reqid tunnel_local tunnel_remote
+    uses: args
+    values: verb=set|clear
+    destroys: verb=clear
   - kind: zfs
     title: zfs
     needs: verb args

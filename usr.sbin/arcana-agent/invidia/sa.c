@@ -1,0 +1,269 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ *
+ * Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+ */
+
+/*
+ * Manually keyed security associations for an ipsec(4) interface, by
+ * the base system's setkey(8) (Mplify 119 §10: ESP in tunnel mode, ESN,
+ * ESP in UDP, the keys given, R41-R50, R55).  The two SAs of a tunnel,
+ * out and in, each its SPI and keys, with the interface's reqid so its
+ * policies take them; written as a file setkey reads, 0600 and taken
+ * out again, and the keys never in a trace or a title.
+ */
+
+#include <sys/param.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+
+#include <netinet/in.h>
+
+#include <arpa/inet.h>
+
+#include <ctype.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "agent.h"
+
+/* What the words say: the SAs of the two directions. */
+struct sa_words {
+	uint32_t	 spi_in, spi_out;
+	const char	*enc, *auth;
+	const char	*key_in, *key_out, *akey_in, *akey_out;
+	bool		 encap, esn;
+};
+
+static const struct {
+	const char	*name;
+	int		 keylens[3];	/* hex digits allowed, 0 ends */
+	bool		 aead;
+} encs[] = {
+	{ "aes-cbc", { 32, 48, 64 }, false },
+	{ "aes-gcm-16", { 40, 56, 72 }, true },
+}, auths[] = {
+	{ "hmac-sha1", { 40, 0, 0 }, false },
+	{ "hmac-sha2-256", { 64, 0, 0 }, false },
+	{ "hmac-sha2-512", { 128, 0, 0 }, false },
+};
+
+static bool
+hex_ok(const char *s, const int *lens)
+{
+	size_t	i, n;
+
+	if (s == NULL)
+		return (false);
+	n = strlen(s);
+	for (i = 0; i < n; i++)
+		if (!isxdigit((unsigned char)s[i]))
+			return (false);
+	for (i = 0; i < 3 && lens[i] != 0; i++)
+		if ((size_t)lens[i] == n)
+			return (true);
+	return (false);
+}
+
+static bool
+addr_ok(const char *s, int *af)
+{
+	unsigned char	raw[16];
+
+	if (s == NULL)
+		return (false);
+	if (inet_pton(AF_INET, s, raw) == 1) {
+		*af = AF_INET;
+		return (true);
+	}
+	if (inet_pton(AF_INET6, s, raw) == 1) {
+		*af = AF_INET6;
+		return (true);
+	}
+	return (false);
+}
+
+/*
+ * The words parsed: "spi-in n spi-out n enc a auth a key-in hex key-out
+ * hex akey-in hex akey-out hex encap esn", a key's pair in either order;
+ * NULL or what is wrong.
+ */
+static const char *
+sa_parse(const struct arc_job_spec *sp, struct sa_words *w)
+{
+	const char	*k, *v, *e;
+	size_t		 i, j;
+	unsigned long long n;
+
+	memset(w, 0, sizeof(*w));
+	for (i = 0; i < sp->names.n; i++) {
+		k = sp->names.v[i];
+		if (strcmp(k, "encap") == 0) {
+			w->encap = true;
+			continue;
+		}
+		if (strcmp(k, "esn") == 0) {
+			w->esn = true;
+			continue;
+		}
+		if (i + 1 >= sp->names.n)
+			return ("a word's value is missing");
+		v = sp->names.v[++i];
+		if (strcmp(k, "spi-in") == 0 || strcmp(k, "spi-out") == 0) {
+			errno = 0;
+			n = strtoull(v, (char **)(uintptr_t)&e, 0);
+			if (errno != 0 || e == v || *e != '\0' || n < 256 || n >
+			    0xffffffffULL)
+				return ("an SPI is a number from 256 to "
+				    "4294967295, 0x for hex");
+			if (k[4] == 'i')
+				w->spi_in = (uint32_t)n;
+			else
+				w->spi_out = (uint32_t)n;
+		} else if (strcmp(k, "enc") == 0)
+			w->enc = v;
+		else if (strcmp(k, "auth") == 0)
+			w->auth = v;
+		else if (strcmp(k, "key-in") == 0)
+			w->key_in = v;
+		else if (strcmp(k, "key-out") == 0)
+			w->key_out = v;
+		else if (strcmp(k, "akey-in") == 0)
+			w->akey_in = v;
+		else if (strcmp(k, "akey-out") == 0)
+			w->akey_out = v;
+		else
+			return ("the words are spi-in, spi-out, enc, auth, key-in, "
+			    "key-out, akey-in, akey-out, encap and esn");
+	}
+	if (w->spi_in == 0 || w->spi_out == 0 || w->spi_in == w->spi_out)
+		return ("spi-in and spi-out are needed, and differ");
+	for (j = 0; j < nitems(encs); j++)
+		if (w->enc != NULL && strcmp(w->enc, encs[j].name) == 0)
+			break;
+	if (j == nitems(encs))
+		return ("enc is aes-cbc or aes-gcm-16");
+	if (!hex_ok(w->key_in, encs[j].keylens) || !hex_ok(w->key_out,
+	    encs[j].keylens))
+		return ("key-in and key-out are hex of the algorithm's length: "
+		    "32, 48 or 64 digits for aes-cbc, 40, 56 or 72 (the nonce "
+		    "after the key) for aes-gcm-16");
+	if (encs[j].aead) {
+		if (w->auth != NULL || w->akey_in != NULL || w->akey_out != NULL)
+			return ("aes-gcm-16 authenticates by itself: no auth");
+		return (NULL);
+	}
+	for (j = 0; j < nitems(auths); j++)
+		if (w->auth != NULL && strcmp(w->auth, auths[j].name) == 0)
+			break;
+	if (j == nitems(auths))
+		return ("auth is hmac-sha1, hmac-sha2-256 or hmac-sha2-512 with "
+		    "aes-cbc");
+	if (!hex_ok(w->akey_in, auths[j].keylens) || !hex_ok(w->akey_out,
+	    auths[j].keylens))
+		return ("akey-in and akey-out are hex of the algorithm's length: "
+		    "40 digits for hmac-sha1, 64 for hmac-sha2-256, 128 for "
+		    "hmac-sha2-512");
+	return (NULL);
+}
+
+/* What is wrong with the job, or NULL. */
+const char *
+sa_check(const struct arc_job_spec *sp)
+{
+	struct sa_words	w;
+	int		af1, af2;
+
+	if (sp->verb == NULL || (strcmp(sp->verb, "set") != 0 && strcmp(
+	    sp->verb, "clear") != 0))
+		return ("ipsec-sa: say set or clear");
+	if (sp->interface == NULL || strncmp(sp->interface, "ipsec", 5) != 0 ||
+	    sp->interface[5 + strspn(sp->interface + 5, "0123456789")] != '\0'
+	    || sp->interface[5] == '\0')
+		return ("ipsec-sa: the interface is an ipsec(4) one, ipsec0");
+	if (!sp->has_reqid || sp->reqid < 1 || sp->reqid > 16383)
+		return ("ipsec-sa: the interface's reqid, 1 to 16383");
+	if (!addr_ok(sp->tunnel_local, &af1) || !addr_ok(sp->tunnel_remote,
+	    &af2) || af1 != af2)
+		return ("ipsec-sa: tunnel-local and tunnel-remote are the outer "
+		    "addresses, of one family");
+	if (strcmp(sp->verb, "clear") == 0)
+		return (NULL);
+	return (sa_parse(sp, &w));
+}
+
+/*
+ * The SAs set, or every one between the two addresses cleared: a file
+ * for setkey -f, 0600, removed after.
+ */
+int
+do_sa_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	struct sa_words	 sw;
+	struct execres	 res;
+	const char	*e, *l, *r;
+	char		 path[] = "/tmp/arcana-sa.XXXXXX", *argv[4];
+	FILE		*fp;
+	int		 fd, rc;
+	bool		 clear;
+
+	if ((e = sa_check(sp)) != NULL) {
+		*errp = e;
+		return (-1);
+	}
+	clear = strcmp(sp->verb, "clear") == 0;
+	if (!clear)
+		(void)sa_parse(sp, &sw);
+	l = sp->tunnel_local;
+	r = sp->tunnel_remote;
+	if ((fd = mkstemp(path)) == -1 || (fp = fdopen(fd, "w")) == NULL) {
+		*errp = wfmt(w, "a file for setkey: %s", strerror(errno));
+		if (fd != -1) {
+			close(fd);
+			(void)unlink(path);
+		}
+		return (-1);
+	}
+	(void)fchmod(fd, 0600);
+	if (clear)
+		fprintf(fp, "deleteall %s %s esp ;\ndeleteall %s %s esp ;\n", l, r,
+		    r, l);
+	else {
+		/* Out, then in: ESP in tunnel mode on the interface's reqid. */
+		fprintf(fp, "add %s %s esp %#x -m tunnel -u %u%s", l, r,
+		    sw.spi_out, sp->reqid, sw.esn ? " -esn" : "");
+		if (sw.encap)
+			fprintf(fp, " -natt %s[4500] %s[4500]", l, r);
+		fprintf(fp, " -E %s 0x%s", sw.enc, sw.key_out);
+		if (sw.auth != NULL)
+			fprintf(fp, " -A %s 0x%s", sw.auth, sw.akey_out);
+		fprintf(fp, " ;\n");
+		fprintf(fp, "add %s %s esp %#x -m tunnel -u %u%s", r, l,
+		    sw.spi_in, sp->reqid, sw.esn ? " -esn" : "");
+		if (sw.encap)
+			fprintf(fp, " -natt %s[4500] %s[4500]", r, l);
+		fprintf(fp, " -E %s 0x%s", sw.enc, sw.key_in);
+		if (sw.auth != NULL)
+			fprintf(fp, " -A %s 0x%s", sw.auth, sw.akey_in);
+		fprintf(fp, " ;\n");
+	}
+	fclose(fp);
+	argv[0] = (char *)(uintptr_t)opts.setkey_bin;
+	argv[1] = (char *)(uintptr_t)"-f";
+	argv[2] = path;
+	argv[3] = NULL;
+	/* The file has the keys: what setkey says of it is not kept. */
+	exec_set_secret(true);
+	rc = run_exec(w, argv, &res);
+	exec_set_secret(false);
+	(void)unlink(path);
+	if (rc != 0 && !clear) {
+		*errp = wfmt(w, "setkey: exit status %d%s%.200s", res.status,
+		    res.errlen > 0 ? ": " : "", res.errlen > 0 ? res.err : "");
+		return (-1);
+	}
+	return (0);
+}

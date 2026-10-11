@@ -186,7 +186,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[100];
+	char	*argv[102];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -568,6 +568,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(chmod("fake-dnsmasq", 0755) == 0);
 	put("fake-rtsol", "#!/bin/sh\necho \"rtsol $*\" >> rtsol.log\nexit 0\n");
 	ATF_REQUIRE(chmod("fake-rtsol", 0755) == 0);
+	put("fake-setkey", "#!/bin/sh\necho \"setkey $*\" >> setkey.log\n[ \"$1\" "
+	    "= -f ] && cat \"$2\" >> setkey.conf\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-setkey", 0755) == 0);
 	put("fake-bird", "#!/bin/sh\necho \"fake-bird $*\" >&2\n"
 	    "grep -q BROKEN \"$3\" && { echo \"bird: $3:2:1 syntax error\" >&2; "
 	    "exit 1; }\nexit 0\n");
@@ -881,7 +884,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[95] = (char *)(uintptr_t)"./fake-dnsmasq";
 	argv[96] = (char *)(uintptr_t)"-8";
 	argv[97] = (char *)(uintptr_t)"./fake-rtsol";
-	argv[98] = NULL;
+	argv[98] = (char *)(uintptr_t)"-9";
+	argv[99] = (char *)(uintptr_t)"./fake-setkey";
+	argv[100] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
 	snprintf(rtadvdconf, sizeof(rtadvdconf), "%s/rtadvd.conf", cwd);

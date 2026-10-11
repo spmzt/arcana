@@ -248,6 +248,19 @@ definitions:
           rtadvd_interfaces in rc.conf; rtadvd restarted.  With remove,
           the interface's entry taken out, and rtadvd stopped when the
           block is empty.
+      - name: ipsec-sa
+        doc: |
+          Manually keyed security associations for an ipsec(4)
+          interface (Mplify 119 §10, R41-R50, R55): verb set or clear,
+          interface, reqid, the outer addresses tunnel-local and
+          tunnel-remote, and as names the words spi-in n, spi-out n,
+          enc aes-cbc|aes-gcm-16, auth hmac-sha1|hmac-sha2-256|
+          hmac-sha2-512 (not with gcm), key-in hex, key-out hex,
+          akey-in hex, akey-out hex, and the flags encap (ESP in UDP,
+          port 4500) and esn.  Written as a file for setkey(8), ESP in
+          tunnel mode with the reqid, and taken out again; the keys
+          are not in the trace.  clear deletes every SA between the
+          two addresses.
   - name: job-state
     type: enum
     entries:

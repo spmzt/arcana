@@ -49,7 +49,9 @@
   addressed by DHCP or SLAAC (the address learned from the host at
   each plan), in a table of their own, and routed with the underlay by
   a BIRD instance of the edge (2.4; DHCP on the jails, in the verified
-  list). Next: 2.5, the phase closed; then 119-3. Later: Mplify 119's tunnel
+  list); manually keyed SAs on an ipsec(4) interface by setkey, the
+  keys never in a trace (119-3 task 3.1). Next: 3.2, a key pair per
+  tunnel end and the SA keys derived from the agreement. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
@@ -257,6 +259,14 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- Manually keyed IPsec between two vnet jails (Mplify 119 §10; task
+  3.1, 2026-10-11, the lab's sa step): an ipsec(4) interface with
+  reqid 100 on each, made by the agent's if-create, the two SAs each
+  way set by the ipsec-sa job (setkey from a file, AES-256-CBC with
+  HMAC-SHA-256, ESN, ESP in UDP): setkey -D shows them esp-udp in
+  tunnel mode on the reqid, ping crosses the tunnel, tcpdump on the
+  underlay shows UDP-encap ESP on port 4500 both ways, and the trace
+  says "not kept: it has keys in it" in place of setkey's output.
 - A UCS End Point addressed by DHCP (Mplify 119 §12.2.3.2; task
   2.4, 2026-10-11, the lab's ucsdhcp step): the second edge's dnsmasq
   on the underlay epair, the first edge's interface put on DHCP by

@@ -274,6 +274,7 @@ start_daemon()
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
+	    -9 "$(pwd)/fake-setkey" \
 	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
@@ -4203,6 +4204,49 @@ ntp_cleanup()
 	stop_daemon
 }
 
+atf_test_case ipsec_sa cleanup
+ipsec_sa_head()
+{
+	atf_set "descr" "Manually keyed SAs of an ipsec(4) interface by setkey(8) from a file; the keys never in the trace; cleared again"
+}
+ipsec_sa_body()
+{
+	write_rc
+	cat > fake-setkey <<EOS
+#!/bin/sh
+echo "setkey \$*" >> $(pwd)/setkey.log
+[ "\$1" = -f ] && { stat -f %Lp "\$2" >> $(pwd)/setkey.log; cat "\$2" >> $(pwd)/setkey.conf; }
+exit 0
+EOS
+	chmod +x fake-setkey
+	start_daemon
+	K=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+	A=0011223344556677889900112233445566778899
+	atf_check -s exit:1 -e match:'an ipsec\(4\) one' -o ignore "$JGC" -c "$SOCK" ipsec-sa set gre0 100 10.202.0.1 10.202.0.2 spi-in 0x1001 spi-out 0x1002
+	atf_check -s exit:1 -e match:'from 256' -o ignore "$JGC" -c "$SOCK" ipsec-sa set ipsec0 100 10.202.0.1 10.202.0.2 spi-in 10 spi-out 0x1002 enc aes-cbc auth hmac-sha1 key-in $K key-out $K akey-in $A akey-out $A
+	atf_check -s exit:1 -e match:'32, 48 or 64' -o ignore "$JGC" -c "$SOCK" ipsec-sa set ipsec0 100 10.202.0.1 10.202.0.2 spi-in 0x1001 spi-out 0x1002 enc aes-cbc auth hmac-sha1 key-in 0011 key-out $K akey-in $A akey-out $A
+	atf_check -s exit:1 -e match:'authenticates by itself' -o ignore "$JGC" -c "$SOCK" ipsec-sa set ipsec0 100 10.202.0.1 10.202.0.2 spi-in 0x1001 spi-out 0x1002 enc aes-gcm-16 auth hmac-sha1 key-in ${K}00112233 key-out ${K}00112233
+	atf_check -s exit:1 -e match:'of one family' -o ignore "$JGC" -c "$SOCK" ipsec-sa set ipsec0 100 10.202.0.1 fd00::2 spi-in 0x1001 spi-out 0x1002 enc aes-cbc auth hmac-sha1 key-in $K key-out $K akey-in $A akey-out $A
+	# Set: the two SAs, out then in, on the reqid, ESN and ESP in UDP;
+	# the file 0600; the trace without the keys, the title too.
+	atf_check -o save:sa.out "$JGC" -t -c "$SOCK" ipsec-sa set ipsec0 100 10.202.0.1 10.202.0.2 spi-in 0x1001 spi-out 0x1002 enc aes-cbc auth hmac-sha1 key-in $K key-out $K akey-in $A akey-out $A encap esn
+	atf_check -o match:'ipsec sa set ipsec0 reqid 100' -o not-match:"$K" -o not-match:"$A" -o match:'not kept: it has keys' cat sa.out
+	atf_check -o match:'^600$' -o match:'^setkey -f /tmp/arcana-sa\.' cat setkey.log
+	atf_check -o match:"^add 10.202.0.1 10.202.0.2 esp 0x1002 -m tunnel -u 100 -esn -natt 10.202.0.1\[4500\] 10.202.0.2\[4500\] -E aes-cbc 0x$K -A hmac-sha1 0x$A ;\$" \
+	    -o match:"^add 10.202.0.2 10.202.0.1 esp 0x1001 -m tunnel -u 100 -esn -natt 10.202.0.2\[4500\] 10.202.0.1\[4500\] -E aes-cbc 0x$K -A hmac-sha1 0x$A ;\$" cat setkey.conf
+	test ! -e /tmp/arcana-sa.* 2>/dev/null || true
+	# GCM: no auth; neither flag.
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec-sa set ipsec1 101 10.202.0.1 10.202.0.2 spi-in 0x2001 spi-out 0x2002 enc aes-gcm-16 key-in ${K}00112233 key-out ${K}00112233
+	atf_check -o match:"^add 10.202.0.1 10.202.0.2 esp 0x2002 -m tunnel -u 101 -E aes-gcm-16 0x${K}00112233 ;\$" cat setkey.conf
+	# Cleared: every SA between the two, both ways.
+	atf_check -o match:'ipsec sa clear ipsec0 reqid 100' "$JGC" -c "$SOCK" ipsec-sa clear ipsec0 100 10.202.0.1 10.202.0.2
+	atf_check -o match:'^deleteall 10.202.0.1 10.202.0.2 esp ;$' -o match:'^deleteall 10.202.0.2 10.202.0.1 esp ;$' cat setkey.conf
+}
+ipsec_sa_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case rtadvd cleanup
 rtadvd_head()
 {
@@ -4249,6 +4293,7 @@ atf_init_test_cases()
 {
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd
+	atf_add_test_case ipsec_sa
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan

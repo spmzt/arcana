@@ -1341,6 +1341,17 @@ kept for the control plane interface to come. The route
 distinguishers, targets and labels are checked and kept for the
 tunnel format to come; nothing uses them yet.
 
+**Manually keyed security associations** (Mplify 119 §10, R41–R50,
+R55): the `ipsec-sa` job sets the two SAs of an ipsec(4) interface,
+out and in, each its SPI and keys, ESP in tunnel mode on the
+interface's reqid, with ESN and ESP in UDP (port 4500) where said,
+AES-CBC with HMAC-SHA-1, -256 or -512, or AES-GCM-16 on its own; the
+base system's setkey(8) reads them from a file the agent writes 0600
+and takes out again, and neither the trace nor the job's title has the
+keys. `clear` deletes every SA between the two outer addresses.
+`arcanactl ipsec-sa` by hand. The keys are given for now; the next
+steps derive them from a key pair of each end.
+
 **The UCS End Points, addressed and routed** (Mplify 119 §12.2.3):
 with `addressing` dhcp the apply puts the interface on DHCP (the DHCP
 word of `ifconfig_<if>` in rc.conf, which dhclient's rc script reads,
