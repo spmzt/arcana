@@ -1273,10 +1273,12 @@ edges, named `sw<fib>` and run by the agent in the service's table
 (`setfib`, with a control socket and a pid file beside the agent's
 kept files; `sdwan-bird`, kept and started again with the agent): the
 kernel's table learned and kept, so what the console put there stays
-and is advertised; the UNIs' connected routes; iBGP with every other
-edge by each tunnel between them (the service's `as`, 64512 unless
-said), next hop the tunnel's own address, so what one UNI learns
-reaches them all; and at each UNI the protocol its entry says, the
+and outranks what BGP brings; the UNIs' and the tunnels' connected
+routes; iBGP with every other edge by each tunnel between them (the
+service's `as`, 64512 unless said), next hop the tunnel's own address,
+advertising the UNIs' routes and what they learn (not the kernel's
+own, nor the reserved prefixes: a peer would resolve its next hop by
+them in a circle), so what one UNI learns reaches them all; and at each UNI the protocol its entry says, the
 `distance` its preference (256 less it, R140–R142). What a UNI learns
 goes by the service's table and the tunnel iBGP chose, not by the
 policies' tables: steering by performance is of the prefixes written
@@ -1284,8 +1286,8 @@ in the document. With `bfd` in a service (`interval` 100 to 300 ms,
 `multiplier`, Mplify 119 §10.5 and R159), the instance watches each
 tunnel interface by BFD and the edges' iBGP sessions go by it; the
 agent reads the sessions every second into the `sdwan` read, a
-session that goes down or comes up is a fault (`sdwan-tunnel`, by
-bfd, R60), and the steering takes BFD's word over the probe's where
+session that goes down after it was up, or comes up again, is a fault
+(`sdwan-tunnel`, by bfd, R60), and the steering takes BFD's word over the probe's where
 there is a session. Paths shows BFD's state beside the probe's. With
 `md5` in a service, the edges' iBGP sessions are signed with TCP MD5
 (R12). An edge with `ntp` (its servers, in the edge form) gets them
@@ -1296,8 +1298,9 @@ FIBs, so faults line up and keys can turn together (Mplify 119
 **Faults** (Mplify 119 §11.3): each edge keeps the day's faults, each
 with its time, type, severity (Warning, Minor, Major, Critical, and
 Cleared), what it is of, who saw it and a line: a tunnel the probes
-lost (tunnel), a BFD session down (bfd), a BGP neighbour not up or a
-BIRD instance not answering (bgp-neighbor, bird-instance), a metric
+lost (tunnel), a BFD session down (bfd), a BGP neighbour down after
+it was up (bgp-neighbor), a BIRD instance that stopped answering, which
+the agent starts again at once (bird-instance), a metric
 over a threshold (tca), CPU or memory over the sampler's limit (cpu,
 memory). One of a type and object is open at a time; set and cleared
 are events (`sdwan-fault`) within the second (R71), and `GET

@@ -51,7 +51,30 @@ struct bfd {
 #define	BFD_MAX		512
 #define	BFD_EVERY_S	1
 
-static void	 protocols_watch(struct work *, const char *);
+static void	 protocols_watch(struct work *, const struct instance *);
+static int	 inst_start(struct work *, const struct instance *,
+		    const char **);
+
+/*
+ * What was up once: a BFD session or a BGP neighbour starts down, and
+ * only its going down after being up is a fault.
+ */
+#define	SEEN_MAX	512
+static char		seen_up[SEEN_MAX][160];
+static int		nseen;
+
+static bool
+was_up(const char *key, bool now_up)
+{
+	int	i;
+
+	for (i = 0; i < nseen; i++)
+		if (strcmp(seen_up[i], key) == 0)
+			return (true);
+	if (now_up && nseen < SEEN_MAX)
+		snprintf(seen_up[nseen++], sizeof(seen_up[0]), "%s", key);
+	return (false);
+}
 
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
 static struct instance	instances[INSTANCES_MAX];
@@ -107,6 +130,9 @@ inst_alive(struct work *w, const char *name)
 {
 	struct execres	res;
 
+	/* Its socket there, and answering. */
+	if (access(inst_path(w, name, "ctl"), F_OK) != 0)
+		return (false);
 	return (inst_birdc(w, name, "show", "status", &res) == 0 && res.out !=
 	    NULL && strstr(res.out, "BIRD") != NULL && strstr(res.out,
 	    "Shutdown") == NULL);
@@ -118,12 +144,15 @@ inst_up(struct work *w, const struct instance *in, bool was,
     const char **errp)
 {
 	struct execres	 res;
-	char		*argv[10];
-	int		 n;
 
-	if (was && inst_alive(w, in->name)) {
+	/* One that answers on its socket is told again, whether this agent
+	 * started it or one before it did. */
+	(void)was;
+	if (inst_alive(w, in->name)) {
+		/* "Reconfigured", or "Reconfiguration in progress" (or queued)
+		 * while its sessions settle: taken, either way. */
 		if (inst_birdc(w, in->name, "configure", NULL, &res) != 0 ||
-		    res.out == NULL || strstr(res.out, "Reconfigured") == NULL) {
+		    res.out == NULL || strstr(res.out, "Reconfigur") == NULL) {
 			*errp = wfmt(w, "%s: bird did not take its "
 			    "configuration: %s", in->name, res.out != NULL ?
 			    res.out : "no answer");
@@ -131,6 +160,17 @@ inst_up(struct work *w, const struct instance *in, bool was,
 		}
 		return (0);
 	}
+	return (inst_start(w, in, errp));
+}
+
+/* An instance started in its table, with a socket and pid file of its own. */
+static int
+inst_start(struct work *w, const struct instance *in, const char **errp)
+{
+	struct execres	 res;
+	char		*argv[10];
+	int		 n;
+
 	n = 0;
 	argv[n++] = (char *)(uintptr_t)opts.setfib_bin;
 	argv[n++] = (char *)(uintptr_t)"-F";
@@ -379,6 +419,10 @@ bfd_watch(void *arg __unused)
 			m += bfd_read(&w, in[i].name, now + m, BFD_MAX - m);
 		changed = false;
 		nchg = 0;
+		/* Seen up once: from then on, down is a fault. */
+		for (k = 0; k < m; k++)
+			if (now[k].state == PROBE_UP)
+				(void)was_up(now[k].address, true);
 		pthread_mutex_lock(&lock);
 		for (k = 0; k < m; k++) {
 			was = PROBE_NONE;
@@ -391,6 +435,21 @@ bfd_watch(void *arg __unused)
 			if (was != now[k].state && (was != PROBE_NONE || now[k].
 			    state == PROBE_DOWN)) {
 				chg[nchg++] = now[k];
+				changed = true;
+			}
+		}
+		/* One that was up and is listed no more went down with the
+		 * session that asked for it (BGP's, on its fault). */
+		for (i = 0; i < nbfds && nchg < BFD_MAX; i++) {
+			if (bfds[i].state != PROBE_UP)
+				continue;
+			for (k = 0; k < m; k++)
+				if (strcmp(bfds[i].address, now[k].address) == 0 &&
+				    strcmp(bfds[i].iface, now[k].iface) == 0)
+					break;
+			if (k == m) {
+				chg[nchg] = bfds[i];
+				chg[nchg++].state = PROBE_DOWN;
 				changed = true;
 			}
 		}
@@ -409,19 +468,22 @@ bfd_watch(void *arg __unused)
 			    id != NULL ? id : chg[k].iface, chg[k].address,
 			    chg[k].iface, chg[k].state == PROBE_UP ? "up" :
 			    chg[k].state == PROBE_DOWN ? "down" : "unknown");
-			if (chg[k].state == PROBE_DOWN)
+			if (chg[k].state == PROBE_DOWN && was_up(chg[k].address,
+			    false))
 				fault_set("bfd", "Major", id != NULL ? id :
-				    chg[k].iface, "bfd", "BFD to %s on %s is down",
+				    chg[k].address, "bfd", "BFD to %s on %s is down",
 				    chg[k].address, chg[k].iface);
-			else if (chg[k].state == PROBE_UP)
-				fault_clear("bfd", id != NULL ? id : chg[k].iface,
+			else if (chg[k].state == PROBE_UP) {
+				(void)was_up(chg[k].address, true);
+				fault_clear("bfd", id != NULL ? id : chg[k].address,
 				    "BFD to %s on %s is up", chg[k].address,
 				    chg[k].iface);
+			}
 		}
 		/* Every five seconds, the instances and their BGP neighbours. */
 		if (++round % 5 == 0)
 			for (i = 0; i < n; i++)
-				protocols_watch(&w, in[i].name);
+				protocols_watch(&w, &in[i]);
 		work_free(&w);
 		if (changed)
 			sdwan_probe_changed();
@@ -435,16 +497,23 @@ bfd_watch(void *arg __unused)
  * (Major), cleared when it is (Table 4).
  */
 static void
-protocols_watch(struct work *w, const char *name)
+protocols_watch(struct work *w, const struct instance *in)
 {
 	struct execres	 res;
+	const char	*name = in->name, *e;
 	char		*text, *line, *word, *rest, obj[160];
 	int		 k;
 
 	if (inst_birdc(w, name, "show", "protocols", &res) != 0 || res.out ==
 	    NULL) {
+		/* Gone (BIRD 3.3.3 has died on a reconfigure): started
+		 * again, on its file as it is. */
 		fault_set("bird-instance", "Critical", name, "bird", "the BIRD "
-		    "instance %s does not answer", name);
+		    "instance %s does not answer: started again", name);
+		e = NULL;
+		if (inst_start(w, in, &e) != 0)
+			logmsg(LOG_WARNING, "sdwan bird: %s not started again: %s",
+			    name, e);
 		return;
 	}
 	fault_clear("bird-instance", name, "the BIRD instance %s answers again",
@@ -465,10 +534,11 @@ protocols_watch(struct work *w, const char *name)
 		if (k < 4 || strcmp(f[1], "BGP") != 0)
 			continue;
 		snprintf(obj, sizeof(obj), "%s/%s", name, f[0]);
-		if (strcmp(f[3], "up") == 0)
+		if (strcmp(f[3], "up") == 0) {
+			(void)was_up(obj, true);
 			fault_clear("bgp-neighbor", obj, "BGP %s of %s is up", f[0],
 			    name);
-		else
+		} else if (was_up(obj, false))
 			fault_set("bgp-neighbor", "Major", obj, "bird", "BGP %s of %s "
 			    "is %s%s%s", f[0], name, f[3], rest != NULL && rest[0]
 			    != '\0' ? ": " : "", rest != NULL ? rest : "");

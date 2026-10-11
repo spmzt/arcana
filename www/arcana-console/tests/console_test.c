@@ -3620,7 +3620,16 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "router id 100.64.0.0;") != NULL);
 	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tpersist;") !=
 	    NULL);
-	ATF_CHECK(strstr(r.body, "interface \\\"lo0\\\";") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "protocol direct {\\n\\tipv4;\\n\\tipv6;\\n"
+	    "\\tinterface \\\"lo0\\\", \\\"gre100\\\", \\\"gif102\\\";\\n}") != NULL,
+	    "%s", r.body);
+	ATF_CHECK(strstr(r.body, "&& dest = RTD_UNICAST;") != NULL);
+	ATF_CHECK(strstr(r.body, "import filter { preference = 200; accept; };") !=
+	    NULL);
+	ATF_CHECK_MSG(strstr(r.body, "filter to_edges {\\n\\tif source = RTS_INHERIT "
+	    "then reject;\\n\\tif net ~ [ 100.64.0.0/24+ ] then reject;\\n\\taccept;"
+	    "\\n}") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "export filter to_edges;") != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b\\nprotocol bgp "
 	    "edge0 from edge {\\n\\tlocal 100.64.0.0 as 64600;\\n\\tneighbor "
 	    "100.64.0.1 as 64600;\\n}") != NULL, "%s", r.body);
@@ -3628,8 +3637,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
 	    "\\\"gif102\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier 3;\\n\\t};"
 	    "\\n}") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\tbfd on;\\n\\tpassword "
-	    "\\\"edges-secret\\\";\\n") != NULL);
+	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\terror wait time 10, 60;\\n\\tbfd "
+	    "on;\\n\\tpassword \\\"edges-secret\\\";\\n") != NULL);
 	/* NTP at a, with the FIBs, by the ntp job; taken away by it too. */
 	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"ntp\",\"phase\":1,\"title\":\"NTP: "
 	    "ntpd by 2 servers, for the time faults and keys go by\",\"make\":[{"
