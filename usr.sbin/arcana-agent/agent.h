@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.49.0"
+#define	ARCANA_AGENT_VERSION	"0.53.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -52,6 +52,7 @@
 #define	PATH_SWANCTL_DIR	"/usr/local/etc/swanctl"
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
 #define	PATH_BIRD_BIN		"/usr/local/sbin/bird"
+#define	PATH_SETFIB_BIN		"/usr/sbin/setfib"
 #define	PATH_BIRD_CONF		"/usr/local/etc/bird.conf"
 #define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
@@ -106,6 +107,7 @@ struct opts {
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
 	const char	*bird_bin;	/* bird(8), to parse a configuration */
+	const char	*setfib_bin;	/* setfib(1): a daemon in a table */
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
@@ -409,6 +411,16 @@ int		 do_sdwan_steer(struct work *, const char *, const char **);
 void		 sdwan_probe_changed(void);
 struct ucl_object_s;
 void		 sdwan_json(struct ucl_object_s *);
+const char	*sdwan_conf_path(const char *, char *, size_t);
+int		 sdwan_conf_write(const char *, const char *, const char **);
+char		*sdwan_kept_read(const char *);
+
+/* luxuria/sdbird.c: a BIRD instance of each service, at the UNIs. */
+int		 do_sdwan_bird(struct work *, const char *, const char **);
+void		 sdwan_bird_start(void);
+void		 sdwan_bird_json(struct work *, struct ucl_object_s *);
+int		 sdwan_bfd_state(const char *);
+const char	*sdwan_tunnel_by_via(const char *);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,

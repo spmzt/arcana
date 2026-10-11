@@ -52,6 +52,7 @@
 #define	STEER_FILE	"sdwan-steer.json"
 #define	TABLES_MAX	512
 #define	RULES_MAX	4096
+#define	OBJECTS_MAX	512
 #define	STEER_MAX	4096
 #define	CANDS_MAX	16
 #define	ADD_CHUNK	64	/* table entries in one ipfw atomic add */
@@ -59,6 +60,12 @@
 struct table {
 	char	name[64];
 	char	valtype[16];
+};
+
+/* A dummynet pipe or queue, or a nat instance: its kind and number. */
+struct object {
+	char	kind[8];
+	char	num[8];
 };
 
 struct cand {
@@ -78,13 +85,15 @@ static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
 static int		set;		/* the set the rules are in, 0: none */
 static struct table	tables[TABLES_MAX];
 static int		ntables;
+static struct object	objects[OBJECTS_MAX];
+static int		nobjects;
 static int		nrules;
 static struct steer	*steers;
 static int		nsteers;
 static bool		steered;	/* the tables hold the choices */
 
-static const char *
-conf_path(const char *file, char *buf, size_t len)
+const char *
+sdwan_conf_path(const char *file, char *buf, size_t len)
 {
 	const char	*slash;
 
@@ -96,13 +105,13 @@ conf_path(const char *file, char *buf, size_t len)
 	return (buf);
 }
 
-static int
-conf_write(const char *file, const char *text, const char **errp)
+int
+sdwan_conf_write(const char *file, const char *text, const char **errp)
 {
 	char	path[MAXPATHLEN], tmp[MAXPATHLEN];
 	FILE	*fp;
 
-	conf_path(file, path, sizeof(path));
+	sdwan_conf_path(file, path, sizeof(path));
 	if (strrchr(path, '/') != NULL) {
 		snprintf(tmp, sizeof(tmp), "%.*s", (int)(strrchr(path, '/') -
 		    path), path);
@@ -120,14 +129,14 @@ conf_write(const char *file, const char *text, const char **errp)
 	return (0);
 }
 
-static char *
-kept_read(const char *file)
+char *
+sdwan_kept_read(const char *file)
 {
 	char	path[MAXPATHLEN], *text;
 	FILE	*fp;
 	long	len;
 
-	conf_path(file, path, sizeof(path));
+	sdwan_conf_path(file, path, sizeof(path));
 	if ((fp = fopen(path, "re")) == NULL)
 		return (NULL);
 	text = NULL;
@@ -282,7 +291,10 @@ steer_apply(struct work *w, bool force, const char **errp)
 	for (i = 0; i < nsteers; i++) {
 		c = -1;
 		for (k = 0; k < steers[i].ncand && c == -1; k++) {
-			st = probe_state_of(steers[i].cand[k].id);
+			/* BFD's word where there is a session, else the probe's. */
+			st = sdwan_bfd_state(steers[i].cand[k].via);
+			if (st == PROBE_NONE)
+				st = probe_state_of(steers[i].cand[k].id);
 			if (st != PROBE_DOWN)
 				c = k;
 		}
@@ -453,7 +465,7 @@ do_sdwan_steer(struct work *w, const char *json, const char **errp)
 	if (rc != 0)
 		return (-1);
 	e = NULL;
-	if (conf_write(STEER_FILE, json, &e) != 0) {
+	if (sdwan_conf_write(STEER_FILE, json, &e) != 0) {
 		*errp = wfmt(w, "%s: %s", STEER_FILE, e);
 		return (-1);
 	}
@@ -479,6 +491,61 @@ rules_clear(struct work *w, int s)
 		snprintf(alt, sizeof(alt), "%s_alt", tables[i].name);
 		(void)ipfw_words(w, NULL, 1, "table", alt, "destroy", NULL);
 	}
+	/* The queues before the pipes they are in. */
+	for (i = nobjects - 1; i >= 0; i--)
+		(void)ipfw_words(w, NULL, 1, objects[i].kind, objects[i].num,
+		    "delete", NULL);
+}
+
+/*
+ * An object of the rules: "pipe N config ...", "queue N config ...",
+ * "nat N config ...", words ipfw takes, nothing a shell would read;
+ * its kind and number into o.
+ */
+static bool
+object_ok(const char *line, struct object *o)
+{
+	const char	*p;
+	size_t		 i, n;
+
+	if (line == NULL || strlen(line) > 400 || strpbrk(line, "\n\r;`$'\"\\")
+	    != NULL)
+		return (false);
+	n = strcspn(line, " ");
+	if (n >= sizeof(o->kind) || (strncmp(line, "pipe", n) != 0 && strncmp(
+	    line, "queue", n) != 0 && strncmp(line, "sched", n) != 0 &&
+	    strncmp(line, "nat", n) != 0))
+		return (false);
+	snprintf(o->kind, sizeof(o->kind), "%.*s", (int)n, line);
+	p = line + n + strspn(line + n, " ");
+	n = strspn(p, "0123456789");
+	if (n == 0 || n >= sizeof(o->num) || p[n] != ' ' || strtol(p, NULL,
+	    10) < 1 || strtol(p, NULL, 10) > 65535)
+		return (false);
+	snprintf(o->num, sizeof(o->num), "%.*s", (int)n, p);
+	p += n + 1;
+	if (strncmp(p, "config ", 7) != 0)
+		return (false);
+	for (i = 0; p[i] != '\0'; i++)
+		if (!isalnum((unsigned char)p[i]) && strchr(" ._:/,-", p[i]) ==
+		    NULL)
+			return (false);
+	return (true);
+}
+
+/* The module an object's kind needs, loaded if it is not. */
+static void
+object_module(struct work *w, const char *kind)
+{
+	struct execres	 res;
+	char		*argv[4];
+
+	argv[0] = (char *)(uintptr_t)opts.kldload_bin;
+	argv[1] = (char *)(uintptr_t)"-n";
+	argv[2] = (char *)(uintptr_t)(strcmp(kind, "nat") == 0 ? "ipfw_nat" :
+	    "dummynet");
+	argv[3] = NULL;
+	(void)run_exec(w, argv, &res);
 }
 
 /*
@@ -493,13 +560,14 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	const ucl_object_t	*t, *r, *e, *k;
 	ucl_object_iter_t	 it, eit;
 	struct table		*nt;
+	struct object		*no;
 	char			 path[MAXPATHLEN], tmp[MAXPATHLEN], num[16];
 	char			*text;
 	FILE			*fp;
 	int64_t			 s;
-	int			 n, nr, step, fd;
+	int			 n, nr, step, fd, nob;
 	const char		*line, *err;
-	bool			 ok;
+	bool			 ok, dn, natm;
 
 	if ((top = parse(json)) == NULL || ucl_object_type(top) != UCL_OBJECT) {
 		if (top != NULL)
@@ -518,6 +586,33 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		*errp = strerror(errno);
 		return (-1);
 	}
+	if ((no = calloc(OBJECTS_MAX, sizeof(*no))) == NULL) {
+		free(nt);
+		ucl_object_unref(top);
+		*errp = strerror(errno);
+		return (-1);
+	}
+	nob = 0;
+	dn = natm = false;
+	it = NULL;
+	while ((r = ucl_object_iterate(ucl_object_lookup(top, "objects"), &it,
+	    true)) != NULL) {
+		if (nob == OBJECTS_MAX) {
+			*errp = wfmt(w, "%d objects at most", OBJECTS_MAX);
+			goto bad;
+		}
+		if (!object_ok(ucl_object_type(r) == UCL_STRING ?
+		    ucl_object_tostring(r) : NULL, &no[nob])) {
+			*errp = "an object is a pipe, queue, sched or nat, its "
+			    "number, config and its words";
+			goto bad;
+		}
+		if (strcmp(no[nob].kind, "nat") == 0)
+			natm = true;
+		else
+			dn = true;
+		nob++;
+	}
 	n = 0;
 	it = NULL;
 	while ((t = ucl_object_iterate(ucl_object_lookup(top, "tables"), &it,
@@ -529,9 +624,9 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		if (!name_ok(sval(t, "name")) || sval(t, "valtype") == NULL ||
 		    (strcmp(sval(t, "valtype"), "skipto") != 0 && strcmp(sval(t,
 		    "valtype"), "ipv4") != 0 && strcmp(sval(t, "valtype"),
-		    "ipv6") != 0)) {
+		    "ipv6") != 0 && strcmp(sval(t, "valtype"), "legacy") != 0)) {
 			*errp = "a table has a name of letters, digits and _, "
-			    "and a valtype of skipto, ipv4 or ipv6";
+			    "and a valtype of skipto, ipv4, ipv6 or legacy";
 			goto bad;
 		}
 		eit = NULL;
@@ -569,7 +664,7 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		}
 	}
 	/* The file ipfw reads: the tables, their entries, the rules. */
-	conf_path(RULES_FILE, path, sizeof(path));
+	sdwan_conf_path(RULES_FILE, path, sizeof(path));
 	if (strrchr(path, '/') != NULL) {
 		snprintf(tmp, sizeof(tmp), "%.*s", (int)(strrchr(path, '/') -
 		    path), path);
@@ -584,6 +679,11 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		goto bad;
 	}
 	snprintf(num, sizeof(num), "%jd", (intmax_t)s);
+	/* The objects first: the rules name them. */
+	it = NULL;
+	while ((r = ucl_object_iterate(ucl_object_lookup(top, "objects"), &it,
+	    true)) != NULL)
+		fprintf(fp, "%s\n", ucl_object_tostring(r));
 	it = NULL;
 	while ((t = ucl_object_iterate(ucl_object_lookup(top, "tables"), &it,
 	    true)) != NULL) {
@@ -611,21 +711,28 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	pthread_mutex_lock(&lock);
 	/* The old set and tables go, the new ones come, while disabled. */
 	step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent", "set %s: %d "
-	    "table%s, %d rule%s", num, n, n == 1 ? "" : "s", nr, nr == 1 ? "" :
-	    "s");
+	    "table%s, %d rule%s, %d object%s", num, n, n == 1 ? "" : "s", nr,
+	    nr == 1 ? "" : "s", nob, nob == 1 ? "" : "s");
 	if (set != 0)
 		rules_clear(w, set);
 	rules_clear(w, (int)s);
 	memcpy(tables, nt, sizeof(*nt) * (size_t)n);
 	ntables = n;
+	memcpy(objects, no, sizeof(*no) * (size_t)nob);
+	nobjects = nob;
 	nrules = nr;
 	set = (int)s;
 	ok = true;
 	err = NULL;
+	if (dn)
+		object_module(w, "pipe");
+	if (natm)
+		object_module(w, "nat");
 	if (nr > 0 && ipfw_words(w, &err, 1, tmp, NULL) != 0) {
 		ok = false;
 		rules_clear(w, (int)s);
 		ntables = 0;
+		nobjects = 0;
 		nrules = 0;
 		set = 0;
 	} else if (nr > 0 && ipfw_words(w, &err, 1, "set", "enable", num,
@@ -646,9 +753,10 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 		logmsg(LOG_WARNING, "sdwan: steering not applied: %s", err);
 	pthread_mutex_unlock(&lock);
 	free(nt);
+	free(no);
 	ucl_object_unref(top);
 	text = NULL;
-	if (conf_write(RULES_FILE, json, &err) != 0) {
+	if (sdwan_conf_write(RULES_FILE, json, &err) != 0) {
 		*errp = wfmt(w, "%s: %s", RULES_FILE, err);
 		return (-1);
 	}
@@ -656,8 +764,28 @@ do_sdwan_rules(struct work *w, const char *json, const char **errp)
 	return (0);
 bad:
 	free(nt);
+	free(no);
 	ucl_object_unref(top);
 	return (-1);
+}
+
+/* The tunnel a steering candidate goes by this address; NULL for none. */
+const char *
+sdwan_tunnel_by_via(const char *via)
+{
+	static _Thread_local char	id[128];
+	int				i, k;
+
+	pthread_mutex_lock(&lock);
+	for (i = 0; via != NULL && i < nsteers; i++)
+		for (k = 0; k < steers[i].ncand; k++)
+			if (strcmp(steers[i].cand[k].via, via) == 0) {
+				snprintf(id, sizeof(id), "%s", steers[i].cand[k].id);
+				pthread_mutex_unlock(&lock);
+				return (id);
+			}
+	pthread_mutex_unlock(&lock);
+	return (NULL);
 }
 
 /* At the start: the rules and the steering kept, applied again. */
@@ -669,13 +797,13 @@ sdwan_start(void)
 	const char	*e;
 
 	work_init(&w);
-	if ((json = kept_read(RULES_FILE)) != NULL) {
+	if ((json = sdwan_kept_read(RULES_FILE)) != NULL) {
 		e = NULL;
 		if (do_sdwan_rules(&w, json, &e) != 0)
 			logmsg(LOG_WARNING, "sdwan rules: %s", e);
 		free(json);
 	}
-	if ((json = kept_read(STEER_FILE)) != NULL) {
+	if ((json = sdwan_kept_read(STEER_FILE)) != NULL) {
 		e = NULL;
 		if (do_sdwan_steer(&w, json, &e) != 0)
 			logmsg(LOG_WARNING, "sdwan steer: %s", e);
@@ -699,6 +827,8 @@ sdwan_json(ucl_object_t *top)
 	for (i = 0; i < ntables; i++)
 		ucl_array_append(arr, ucl_object_fromstring(tables[i].name));
 	ucl_object_insert_key(o, arr, "tables", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromint(nobjects), "objects", 0,
+	    false);
 	ucl_object_insert_key(top, o, "rules", 0, false);
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0; i < nsteers; i++) {
@@ -721,6 +851,11 @@ sdwan_json(ucl_object_t *top)
 			    PROBE_DOWN ? "down" : st == PROBE_UP ? "up" : st ==
 			    PROBE_NONE ? "not probed" : "unknown"), "state", 0,
 			    false);
+			st = sdwan_bfd_state(steers[i].cand[k].via);
+			if (st != PROBE_NONE)
+				ucl_object_insert_key(c, ucl_object_fromstring(st ==
+				    PROBE_DOWN ? "down" : st == PROBE_UP ? "up" :
+				    "unknown"), "bfd", 0, false);
 			ucl_array_append(cs, c);
 		}
 		ucl_object_insert_key(e, cs, "candidates", 0, false);

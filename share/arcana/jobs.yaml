@@ -143,6 +143,18 @@ fields:
   - field: remote_id
     type: text
     label: The peer's identity
+  - field: child
+    type: text
+    label: Child
+  - field: local_cert
+    type: text
+    label: This host's certificate (x509)
+  - field: remote_cert
+    type: text
+    label: The peer's certificate (x509)
+  - field: remote_ca
+    type: text
+    label: The peer's CA (x509ca)
 
 kinds:
   - kind: jail-action
@@ -264,9 +276,9 @@ kinds:
   - kind: ipsec
     title: IPsec, strongSwan
     needs: verb
-    uses: jail conn tunnel_local tunnel_remote ipsec_mode pubkey local_ts remote_ts reqid start_action local_id remote_id persist
-    values: verb=init|start|conn|unconn|up|down ipsec_mode=tunnel|transport start_action=start|trap|none
-    destroys: verb=unconn
+    uses: jail conn child tunnel_local tunnel_remote ipsec_mode pubkey local_cert remote_cert remote_ca local_ts remote_ts reqid start_action local_id remote_id persist
+    values: verb=init|start|conn|unconn|child|unchild|up|down ipsec_mode=tunnel|transport start_action=start|trap|none
+    destroys: verb=unconn|unchild
   - kind: pkg-install
     title: Packages installed
     needs: packages

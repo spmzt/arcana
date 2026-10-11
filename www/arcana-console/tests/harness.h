@@ -41,6 +41,7 @@ void		 put(const char *, const char *);
 pid_t		 spawn(char *const [], const char *);
 pid_t		 spawn_server(char *const [], const char *);
 void		 wait_for(const char *);
+void		 show(const char *);
 bool		 run_prog(char *const []);
 void		 start(const atf_tc_t *, int, const char *);
 void		 stop(void);

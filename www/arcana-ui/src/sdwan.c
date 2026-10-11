@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <math.h>
+
 #include "app.h"
 
 #define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
@@ -24,7 +26,18 @@
 enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_PATHS, SD_DOCUMENT };
 
 #define	PATHS_EVERY_MS	2000	/* the probes read again, on the Paths tab */
+#define	DASH_EVERY_MS	5000	/* and on the dashboard */
 #define	SPARK_N		120	/* samples a spark line shows */
+
+static const ucl_object_t *target_of(const char *, const char *);
+static bool	 sdwan_modal_service(struct html *);
+static const ucl_object_t *swvc_shown(void);
+static void	 paths_load(void);
+static void	 plan_load(void);
+static void	 send(const char *, bool);
+static void	 applied_cb(int, const ucl_object_t *, const char *, void *);
+static const char *ms(double, char *, size_t);
+static void	 view_overview(struct html *);
 
 static struct {
 	int		 tab;
@@ -42,7 +55,64 @@ static struct {
 	ucl_object_t	*paths;		/* sid: /api/servers/<sid>/sdwan data */
 	ucl_object_t	*faults;	/* sid: the sdwan-tunnel events */
 	double		 paths_at;
+	/* The forms: what is edited, and the host's interfaces for a link. */
+	char		 edit[80];	/* the id edited, "" for a new one */
+	char		 edit2[80];	/* what it belongs to: an end point, a zone */
+	char		 link_host[9];
+	char		 link_if[32];
+	ucl_object_t	*ifs;		/* the link host's interfaces */
+	bool		 ifs_loading;
 } sd;
+
+/* The document changed by a form, sent to be kept. */
+static void
+doc_send(ucl_object_t *o)
+{
+	unsigned char	*json;
+
+	json = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT);
+	ucl_object_unref(o);
+	if (json != NULL)
+		send((const char *)json, true);
+	free(json);
+}
+
+static void
+ifs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	sd.ifs_loading = false;
+	if (sd.ifs != NULL)
+		ucl_object_unref(sd.ifs);
+	sd.ifs = status == 200 && jget(o, "data") != NULL ? ucl_object_copy(
+	    jget(o, "data")) : NULL;
+}
+
+/* The first address of a family on an interface of the link's host. */
+static const char *
+link_address(const char *ifn, int af)
+{
+	const ucl_object_t	*o, *a;
+	ucl_object_iter_t	 it, ait;
+
+	it = NULL;
+	while (ifn != NULL && (o = ucl_object_iterate(jget(sd.ifs,
+	    "interfaces"), &it, true)) != NULL) {
+		if (jstr(o, "name") == NULL || strcmp(jstr(o, "name"), ifn) != 0)
+			continue;
+		ait = NULL;
+		while ((a = ucl_object_iterate(jget(o, "addresses"), &ait,
+		    true)) != NULL)
+			if (jstr(a, "family") != NULL && jstr(a, "address") !=
+			    NULL && strcmp(jstr(a, "family"), af == 4 ? "inet" :
+			    "inet6") == 0 && strncmp(jstr(a, "address"), "fe80",
+			    4) != 0)
+				return (jstr(a, "address"));
+	}
+	return (NULL);
+}
 
 /* ---- Reading -------------------------------------------------------- */
 
@@ -83,6 +153,8 @@ doc_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		    "swvcs.0.id") != NULL ? jstr(sd.doc, "swvcs.0.id") : "");
 }
 
+static void	send(const char *, bool);
+
 static void
 sd_load(void)
 {
@@ -99,6 +171,8 @@ sdwan_open(void)
 	app.jail[0] = '\0';
 	app.rail_open = false;
 	sd_load();
+	if (sd.tab == SD_OVERVIEW)
+		plan_load();
 }
 
 static void
@@ -119,6 +193,11 @@ plan_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (sd.plan != NULL)
 		ucl_object_unref(sd.plan);
 	sd.plan = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	/* The dashboard and Paths want the probes as soon as the plan
+	 * says which edges to ask. */
+	if (app.node == NODE_SDWAN && (sd.tab == SD_OVERVIEW || sd.tab ==
+	    SD_PATHS))
+		paths_load();
 }
 
 static void
@@ -330,6 +409,347 @@ bits(int64_t b)
 
 /* ---- Overview --------------------------------------------------------- */
 
+/* A tunnel's state from its two ends' probes: up, down, or unknown. */
+static const char *
+tunnel_state(const ucl_object_t *t, double *delay, double *loss)
+{
+	const ucl_object_t	*e, *tg, *sm, *now;
+	unsigned int		 n;
+	int			 k, up, down;
+
+	up = down = 0;
+	*delay = -1;
+	*loss = 0;
+	for (k = 0; k < 2; k++) {
+		e = ucl_array_find_index(jget(t, "ends"), (unsigned int)k);
+		if ((tg = target_of(jstr(e, "edge"), jstr(t, "id"))) == NULL ||
+		    jstr(tg, "state") == NULL)
+			continue;
+		if (strcmp(jstr(tg, "state"), "up") == 0)
+			up++;
+		else if (strcmp(jstr(tg, "state"), "down") == 0)
+			down++;
+		n = jget(tg, "samples") != NULL ? ucl_array_size(jget(tg,
+		    "samples")) : 0;
+		sm = n > 0 ? ucl_array_find_index(jget(tg, "samples"), n - 1) :
+		    NULL;
+		now = jget(tg, "now");
+		if (sm != NULL) {
+			if (ucl_object_todouble(ucl_array_find_index(sm, 1)) >
+			    *delay)
+				*delay = ucl_object_todouble(ucl_array_find_index(
+				    sm, 1));
+			if (ucl_object_todouble(ucl_array_find_index(sm, 3)) >
+			    *loss)
+				*loss = ucl_object_todouble(ucl_array_find_index(
+				    sm, 3));
+		} else if (now != NULL && jint(now, "sent", 0) > 0 && jnum(now,
+		    "delay", 0) > *delay)
+			*delay = jnum(now, "delay", 0);
+	}
+	return (down > 0 ? "down" : up == 2 ? "up" : up == 1 ? "half" :
+	    "unknown");
+}
+
+/*
+ * The dashboard: what there is and how it is, in numbers; the edges
+ * and their tunnels drawn, each tunnel as its probes see it; then the
+ * underlays, edges and services listed.  Every number names the
+ * FreeBSD piece that does the work.
+ */
+static void
+view_dashboard(struct html *h)
+{
+	const ucl_object_t	*v, *e, *t, *ap, *s, *f;
+	ucl_object_iter_t	 it, eit;
+	const char		*st;
+	char			 age[32], b1[32];
+	double			 delay, loss, cx, cy, r, ang, x[64], y[64];
+	int			 nedges, nlinks, nucs, nsw, nfibs, nt, tup, tdown;
+	int			 nfaults, ndone, nsteps, i, k, a, b, prev;
+
+	nedges = nlinks = nucs = nsw = nfibs = nt = tup = tdown = 0;
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
+	    NULL)
+		nucs++;
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sd.doc, "edges"), &it, true)) !=
+	    NULL) {
+		if (nedges < 64) {
+			nedges++;
+			eit = NULL;
+			while ((e = ucl_object_iterate(jget(v, "ucs_end_points"),
+			    &eit, true)) != NULL)
+				nlinks++;
+		}
+	}
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sd.doc, "swvcs"), &it, true)) !=
+	    NULL) {
+		nsw++;
+		if (jint(v, "fib", 0) > nfibs)
+			nfibs = (int)jint(v, "fib", 0);
+	}
+	it = NULL;
+	while (sd.plan != NULL && (t = ucl_object_iterate(jget(sd.plan,
+	    "tunnels"), &it, true)) != NULL) {
+		nt++;
+		st = tunnel_state(t, &delay, &loss);
+		if (strcmp(st, "up") == 0)
+			tup++;
+		else if (strcmp(st, "down") == 0)
+			tdown++;
+	}
+	nfaults = 0;
+	it = NULL;
+	while (sd.faults != NULL && (f = ucl_object_iterate(sd.faults, &it,
+	    true)) != NULL) {
+		eit = NULL;
+		while ((e = ucl_object_iterate(f, &eit, true)) != NULL)
+			if ((double)jint(e, "t", 0) * 1000 > arc_now() - 86400 *
+			    1000.0)
+				nfaults++;
+	}
+	ap = jget(sd.applied, "apply");
+	ndone = nsteps = 0;
+	it = NULL;
+	while (ap != NULL && (s = ucl_object_iterate(jget(ap, "steps"), &it,
+	    true)) != NULL) {
+		nsteps++;
+		if (jstr(s, "state") != NULL && strcmp(jstr(s, "state"), "done")
+		    == 0)
+			ndone++;
+	}
+	h_raw(h, "<div class=\"tiles sd-tiles\">");
+	h_fmt(h, "<div class=\"tile\"><b>%d</b><span>edge%s · FreeBSD hosts "
+	    "running arcana-agent</span></div>", nedges, nedges == 1 ? "" : "s");
+	h_fmt(h, "<div class=\"tile\"><b>%d</b><span>WAN link%s on %d "
+	    "underlay%s · the edges' interfaces</span></div>", nlinks, nlinks ==
+	    1 ? "" : "s", nucs, nucs == 1 ? "" : "s");
+	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>service%s · a routing "
+	    "table each, setfib(1), up to fib %d</span></div>", nsw > 0 ? "ok" :
+	    "", nsw, nsw == 1 ? "" : "s", nfibs);
+	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>tunnel%s · %d up, %d "
+	    "down · gre, gif, geneve, wg; IPsec by strongSwan</span></div>",
+	    tdown > 0 ? "warn" : nt > 0 && tup == nt ? "ok" : "", nt, nt == 1 ?
+	    "" : "s", tup, tdown);
+	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>fault%s in 24 h · "
+	    "tunnels down or up again</span></div>", nfaults > 0 ? "warn" : "",
+	    nfaults, nfaults == 1 ? "" : "s");
+	if (ap != NULL && jstr(ap, "state") != NULL) {
+		fmt_age(age, sizeof(age), (double)jint(ap, "started", 0) * 1000);
+		h_fmt(h, "<div class=\"tile %s\"><b>%s</b><span>last apply, %s · "
+		    "%d of %d steps · ipfw set %d, routes, interfaces</span>"
+		    "</div>", strcmp(jstr(ap, "state"), "done") == 0 ? "ok" :
+		    "warn", sd.applying ? "applying" : jstr(ap, "state"), age,
+		    ndone, nsteps, 30);
+	} else
+		h_raw(h, "<div class=\"tile\"><b>—</b><span>not applied yet · "
+		    "Edges, then Apply</span></div>");
+	h_raw(h, "</div>");
+
+	/* The topology: edges around a circle, tunnels between them. */
+	if (nedges > 0) {
+		h_raw(h, "<div class=\"sd-block\"><h3>Topology <small class=\""
+		    "dim\">the edges and the tunnels between them, each as its "
+		    "probes see it: green up, red down, dashed a backup, a lock "
+		    "encrypted</small></h3><div class=\"sd-topo-wrap\"><svg "
+		    "class=\"sd-topo\" viewBox=\"0 0 640 300\" role=\"img\">");
+		cx = 320;
+		cy = 150;
+		r = nedges > 2 ? 110 : 0;
+		i = 0;
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "edges"), &it, true))
+		    != NULL && i < nedges) {
+			if (nedges == 1) {
+				x[i] = cx;
+				y[i] = cy;
+			} else if (nedges == 2) {
+				x[i] = i == 0 ? 160 : 480;
+				y[i] = cy;
+			} else {
+				ang = -M_PI / 2 + 2 * M_PI * i / nedges;
+				x[i] = cx + r * cos(ang);
+				y[i] = cy + r * sin(ang);
+			}
+			i++;
+		}
+		/* The tunnels first, under the nodes; a pair's second and
+		 * later bow out a little. */
+		prev = -1;
+		it = NULL;
+		while (sd.plan != NULL && (t = ucl_object_iterate(jget(sd.plan,
+		    "tunnels"), &it, true)) != NULL) {
+			const ucl_object_t	*ea, *eb;
+			double			 mx, my, dx, dy, len, ox, oy;
+
+			ea = ucl_array_find_index(jget(t, "ends"), 0);
+			eb = ucl_array_find_index(jget(t, "ends"), 1);
+			a = b = -1;
+			i = 0;
+			eit = NULL;
+			while ((v = ucl_object_iterate(jget(sd.doc, "edges"),
+			    &eit, true)) != NULL && i < nedges) {
+				if (jstr(v, "server") != NULL && jstr(ea, "edge")
+				    != NULL && strcmp(jstr(v, "server"), jstr(ea,
+				    "edge")) == 0)
+					a = i;
+				if (jstr(v, "server") != NULL && jstr(eb, "edge")
+				    != NULL && strcmp(jstr(v, "server"), jstr(eb,
+				    "edge")) == 0)
+					b = i;
+				i++;
+			}
+			if (a < 0 || b < 0)
+				continue;
+			st = tunnel_state(t, &delay, &loss);
+			k = a * 64 + b;
+			prev = prev == k ? prev : -1;
+			mx = (x[a] + x[b]) / 2;
+			my = (y[a] + y[b]) / 2;
+			dx = x[b] - x[a];
+			dy = y[b] - y[a];
+			len = sqrt(dx * dx + dy * dy);
+			ox = len > 0 ? -dy / len * 22 : 0;
+			oy = len > 0 ? dx / len * 22 : 0;
+			/* Count the tunnels of this pair seen so far. */
+			{
+				const ucl_object_t	*t2;
+				ucl_object_iter_t	 it2 = NULL;
+				int			 same = 0;
+
+				while ((t2 = ucl_object_iterate(jget(sd.plan,
+				    "tunnels"), &it2, true)) != NULL && t2 != t) {
+					const ucl_object_t *fa = ucl_array_find_index(
+					    jget(t2, "ends"), 0);
+					const ucl_object_t *fb = ucl_array_find_index(
+					    jget(t2, "ends"), 1);
+
+					if (jstr(fa, "edge") != NULL && jstr(fb,
+					    "edge") != NULL && ((strcmp(jstr(fa,
+					    "edge"), jstr(ea, "edge")) == 0 &&
+					    strcmp(jstr(fb, "edge"), jstr(eb,
+					    "edge")) == 0) || (strcmp(jstr(fa,
+					    "edge"), jstr(eb, "edge")) == 0 &&
+					    strcmp(jstr(fb, "edge"), jstr(ea,
+					    "edge")) == 0)))
+						same++;
+				}
+				ox *= same % 2 == 0 ? same / 2 : -(same + 1) / 2;
+				oy *= same % 2 == 0 ? same / 2 : -(same + 1) / 2;
+			}
+			h_fmt(h, "<g class=\"tun st-%s%s\"><title>", st, jbool(t,
+			    "backup") ? " backup" : "");
+			h_txt(h, jstr(t, "id"));
+			h_fmt(h, ": %s%s%s", st, delay >= 0 ? ", " : "", delay >= 0
+			    ? ms(delay, b1, sizeof(b1)) : "");
+			if (loss > 0)
+				h_fmt(h, ", %.1f%% loss", loss * 100);
+			h_fmt(h, "</title><path d=\"M%.0f %.0f Q%.0f %.0f %.0f "
+			    "%.0f\"/>", x[a], y[a], mx + ox * 2, my + oy * 2, x[b],
+			    y[b]);
+			if (jbool(t, "encrypted"))
+				h_fmt(h, "<text class=\"lock\" x=\"%.0f\" y=\"%.0f\">"
+				    "&#x1F512;</text>", mx + ox - 16, my + oy + 4);
+			if (delay >= 0)
+				h_fmt(h, "<text class=\"lbl\" x=\"%.0f\" y=\"%.0f\">"
+				    "%s%s</text>", mx + ox, my + oy + 4, ms(delay,
+				    b1, sizeof(b1)), loss > 0 ? " · loss" : "");
+			else
+				h_fmt(h, "<text class=\"lbl\" x=\"%.0f\" y=\"%.0f\">"
+				    "%s</text>", mx + ox, my + oy + 4, strcmp(st,
+				    "unknown") == 0 ? "not measured" : st);
+			h_raw(h, "</g>");
+		}
+		/* Before a plan: the pairs each service joins, as planned. */
+		if (sd.plan == NULL || jget(sd.plan, "tunnels") == NULL ||
+		    ucl_array_size(jget(sd.plan, "tunnels")) == 0) {
+			const ucl_object_t	*sw, *ea, *eb;
+			ucl_object_iter_t	 sit, ait, bit;
+
+			sit = NULL;
+			while ((sw = ucl_object_iterate(jget(sd.doc, "swvcs"),
+			    &sit, true)) != NULL) {
+				ait = NULL;
+				while ((ea = ucl_object_iterate(jget(sw,
+				    "end_points"), &ait, true)) != NULL) {
+					bit = NULL;
+					while ((eb = ucl_object_iterate(jget(sw,
+					    "end_points"), &bit, true)) != NULL) {
+						if (eb == ea || jstr(ea, "edge") ==
+						    NULL || jstr(eb, "edge") == NULL
+						    || strcmp(jstr(ea, "edge"),
+						    jstr(eb, "edge")) >= 0)
+							continue;
+						a = b = -1;
+						i = 0;
+						eit = NULL;
+						while ((v = ucl_object_iterate(jget(
+						    sd.doc, "edges"), &eit, true)) !=
+						    NULL && i < nedges) {
+							if (strcmp(jstr(v, "server"),
+							    jstr(ea, "edge")) == 0)
+								a = i;
+							if (strcmp(jstr(v, "server"),
+							    jstr(eb, "edge")) == 0)
+								b = i;
+							i++;
+						}
+						if (a < 0 || b < 0)
+							continue;
+						h_fmt(h, "<g class=\"tun st-unknown\">"
+						    "<title>%s: planned</title><path "
+						    "d=\"M%.0f %.0f L%.0f %.0f\"/><text "
+						    "class=\"lbl\" x=\"%.0f\" y=\"%.0f\">"
+						    "planned</text></g>", jstr(sw, "id"),
+						    x[a], y[a], x[b], y[b], (x[a] +
+						    x[b]) / 2, (y[a] + y[b]) / 2 - 6);
+					}
+				}
+			}
+		}
+		i = 0;
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "edges"), &it, true))
+		    != NULL && i < nedges) {
+			int	nl = 0, nbo = 0;
+
+			eit = NULL;
+			while ((e = ucl_object_iterate(jget(v, "ucs_end_points"),
+			    &eit, true)) != NULL) {
+				nl++;
+				if (jbool(e, "breakout"))
+					nbo++;
+			}
+			h_fmt(h, "<g class=\"node\" transform=\"translate(%.0f "
+			    "%.0f)\"><title>", x[i], y[i]);
+			h_txt(h, host_name(jstr(v, "server")));
+			h_fmt(h, ": %d WAN link%s%s</title><circle r=\"22\"/>"
+			    "<text class=\"name\" y=\"4\">", nl, nl == 1 ? "" :
+			    "s", nbo > 0 ? ", breaks out" : "");
+			h_txt(h, host_name(jstr(v, "server")));
+			h_fmt(h, "</text><text class=\"sub\" y=\"36\">%d link%s%s"
+			    "</text></g>", nl, nl == 1 ? "" : "s", nbo > 0 ?
+			    " · breakout" : "");
+			i++;
+		}
+		h_raw(h, "</svg></div></div>");
+	} else
+		h_raw(h, "<div class=\"sd-block sd-start\"><h3>Start here</h3><ol>"
+		    "<li><b>Underlays</b>: the carriers the edges reach each "
+		    "other over, public or private, and the tunnel each "
+		    "carries.</li><li><b>Edges</b>: the FreeBSD hosts, and the "
+		    "interface each has on each underlay.</li><li><b>A service"
+		    "</b>: its UNIs, zones, application flows and policies.</li>"
+		    "<li><b>Edges, Apply</b>: the console plans what each host "
+		    "is to have and makes it.</li></ol><p class=\"dim\">The "
+		    "example in <b>Document</b> has all four, written for the "
+		    "first two hosts.</p></div>");
+	view_overview(h);
+}
+
 static void
 view_overview(struct html *h)
 {
@@ -338,11 +758,18 @@ view_overview(struct html *h)
 	int			 n;
 	bool			 first;
 
+	if (sd.error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, sd.error);
+		h_raw(h, "</div>");
+	}
 	/* The underlays. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Underlays <small class=\"dim\">"
-	    "UCS, MEF 70.2 §12</small></h3><table class=\"net sd\"><thead><tr>"
-	    "<th>Id</th><th>Type</th><th>Billing</th><th>Tunnels over it</th>"
-	    "</tr></thead><tbody>");
+	    "UCS, MEF 70.2 §12: the carriers the edges reach each other over"
+	    "</small><span class=\"pane-actions\"><button class=\"ghost small\" "
+	    "data-act=\"sd-ucs-add\">+ underlay</button></span></h3><table "
+	    "class=\"net sd\"><thead><tr><th>Id</th><th>Type</th><th>Billing"
+	    "</th><th>Tunnels over it</th><th></th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
 	while ((v = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
@@ -359,37 +786,50 @@ view_overview(struct html *h)
 		h_raw(h, "</td><td>");
 		t = jget(v, "tunnel");
 		if (t == NULL)
-			h_raw(h, "<span class=\"dim\">the default</span>");
+			h_raw(h, "<span class=\"dim\">gre</span>");
 		else {
 			h_txt(h, jstr(t, "kind"));
 			if (jbool(t, "ipsec"))
 				h_raw(h, " + IPsec IKEv2");
 		}
-		h_raw(h, "</td></tr>");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" data-act="
+		    "\"sd-ucs-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "id"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-ucs-del\" title=\"Take it away\"");
+		h_attr(h, "data-arg", jstr(v, "id"));
+		h_raw(h, ">×</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"4\" class=\"dim\">None yet.</td>"
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None yet: add one, "
+		    "public (the Internet) or private (an MPLS, a line).</td>"
 		    "</tr>");
 	h_raw(h, "</tbody></table></div>");
 
 	/* The edges and where each meets its underlays. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Edges <small class=\"dim\">"
-	    "SD-WAN Edges and their UCS End Points, §7.8, §12.3</small></h3>"
-	    "<table class=\"net sd\"><thead><tr><th>Host</th><th>End point</th>"
-	    "<th>Underlay</th><th>Interface</th><th>Bandwidth</th><th></th>"
-	    "</tr></thead><tbody>");
+	    "SD-WAN Edges, the hosts, and their WAN links, one on each "
+	    "underlay they reach (UCS End Points, §7.8, §12.3)</small><span "
+	    "class=\"pane-actions\"><button class=\"ghost small\" data-act=\""
+	    "sd-edge-add\">+ edge</button></span></h3><table class=\"net sd\">"
+	    "<thead><tr><th>Host</th><th>WAN link</th><th>Underlay</th><th>"
+	    "Interface</th><th>Address</th><th>Bandwidth</th><th></th><th>"
+	    "</th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
 	while ((v = ucl_object_iterate(jget(sd.doc, "edges"), &it, true)) !=
 	    NULL) {
 		first = true;
+		n++;
 		eit = NULL;
 		while ((e = ucl_object_iterate(jget(v, "ucs_end_points"), &eit,
 		    true)) != NULL) {
-			n++;
 			h_raw(h, "<tr><td>");
-			if (first)
+			if (first) {
+				h_raw(h, "<b>");
 				h_txt(h, host_name(jstr(v, "server")));
+				h_raw(h, "</b>");
+			}
 			first = false;
 			h_raw(h, "</td><td class=\"mono\">");
 			h_txt(h, jstr(e, "id"));
@@ -397,6 +837,14 @@ view_overview(struct html *h)
 			h_txt(h, jstr(e, "ucs"));
 			h_raw(h, "</td><td class=\"mono\">");
 			h_txt(h, jstr(e, "interface"));
+			h_raw(h, "</td><td class=\"mono\">");
+			h_txt(h, jstr(e, "address") != NULL ? jstr(e, "address") :
+			    "");
+			if (jstr(e, "gateway") != NULL) {
+				h_raw(h, " <span class=\"dim\">via ");
+				h_txt(h, jstr(e, "gateway"));
+				h_raw(h, "</span>");
+			}
 			h_raw(h, "</td><td>");
 			if (jget(e, "bandwidth") != NULL)
 				h_txt(h, bits(jint(e, "bandwidth", 0)));
@@ -409,12 +857,35 @@ view_overview(struct html *h)
 				h_raw(h, "<span class=\"chip\" title=\"Used "
 				    "only when nothing else is left\">backup"
 				    "</span>");
-			h_raw(h, "</td></tr>");
+			h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" "
+			    "data-act=\"sd-link-edit\" title=\"Change it\"");
+			h_attr(h, "data-arg", jstr(v, "server"));
+			h_attr(h, "data-value", jstr(e, "id"));
+			h_raw(h, ">&#9998;</button><button class=\"icon\" data-act="
+			    "\"sd-link-del\" title=\"Take the link away\"");
+			h_attr(h, "data-arg", jstr(v, "server"));
+			h_attr(h, "data-value", jstr(e, "id"));
+			h_raw(h, ">×</button></td></tr>");
 		}
+		/* The edge's own line: a link more, or the edge away. */
+		h_raw(h, "<tr class=\"sd-edge-row\"><td>");
+		if (first) {
+			h_raw(h, "<b>");
+			h_txt(h, host_name(jstr(v, "server")));
+			h_raw(h, "</b>");
+		}
+		h_raw(h, "</td><td colspan=\"6\"><button class=\"ghost small\" "
+		    "data-act=\"sd-link-add\"");
+		h_attr(h, "data-arg", jstr(v, "server"));
+		h_raw(h, ">+ WAN link</button></td><td class=\"acts\"><button "
+		    "class=\"icon\" data-act=\"sd-edge-del\" title=\"Take the "
+		    "edge away, with its links\"");
+		h_attr(h, "data-arg", jstr(v, "server"));
+		h_raw(h, ">×</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"6\" class=\"dim\">None yet.</td>"
-		    "</tr>");
+		h_raw(h, "<tr><td colspan=\"8\" class=\"dim\">None yet: add a "
+		    "host as an edge, then its WAN links.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 
 	/* The services. */
@@ -518,22 +989,46 @@ view_service(struct html *h)
 		h_txt(h, jstr(v, "id"));
 		h_raw(h, "</option>");
 	}
-	h_raw(h, "</select></label>");
+	h_raw(h, "</select></label><button class=\"ghost small\" data-act=\""
+	    "sd-swvc-add\">+ service</button>");
 	if ((sw = swvc_shown()) == NULL) {
-		h_raw(h, "</div><p class=\"dim\">No service yet.</p>");
+		h_raw(h, "</div><p class=\"dim\">No service yet: add one, then "
+		    "its end points, zones, flows and policies.</p>");
+		if (sd.error[0] != '\0') {
+			h_raw(h, "<div class=\"notice bad\">");
+			h_txt(h, sd.error);
+			h_raw(h, "</div>");
+		}
 		return;
 	}
+	h_raw(h, "<button class=\"icon\" data-act=\"sd-swvc-edit\" title=\""
+	    "Change the service\"");
+	h_attr(h, "data-arg", jstr(sw, "id"));
+	h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\"sd-swvc-del"
+	    "\" title=\"Take the service away\"");
+	h_attr(h, "data-arg", jstr(sw, "id"));
+	h_raw(h, ">×</button>");
 	h_fmt(h, "<span class=\"age\">FIB %lld on its edges · ", (long long)
 	    jint(sw, "fib", 0));
 	joined(h, jget(sw, "reserved_prefixes"), "no reserved prefixes");
+	if (jget(sw, "bfd") != NULL && ucl_object_type(jget(sw, "bfd")) ==
+	    UCL_OBJECT)
+		h_raw(h, " · BFD");
 	h_raw(h, "</span></div>");
+	if (sd.error[0] != '\0') {
+		h_raw(h, "<div class=\"notice bad\">");
+		h_txt(h, sd.error);
+		h_raw(h, "</div>");
+	}
 
 	/* End points: where the subscriber meets it. */
 	h_raw(h, "<div class=\"sd-block\"><h3>End points <small class=\"dim\">"
-	    "each at an SD-WAN UNI, §10, §11</small></h3><table class=\"net sd\">"
-	    "<thead><tr><th>Id</th><th>Edge</th><th>UNI</th><th>IPv4</th>"
-	    "<th>IPv6</th><th>Static routes</th><th>Policy map</th></tr>"
-	    "</thead><tbody>");
+	    "each at an SD-WAN UNI, where the subscriber's hosts meet the "
+	    "service, §10, §11</small><span class=\"pane-actions\"><button "
+	    "class=\"ghost small\" data-act=\"sd-ep-add\">+ end point</button>"
+	    "</span></h3><table class=\"net sd\"><thead><tr><th>Id</th><th>Edge"
+	    "</th><th>UNI</th><th>IPv4</th><th>IPv6</th><th>Static routes</th>"
+	    "<th>Policy map</th><th></th></tr></thead><tbody>");
 	it = NULL;
 	while ((e = ucl_object_iterate(jget(sw, "end_points"), &it, true)) !=
 	    NULL) {
@@ -557,7 +1052,9 @@ view_service(struct html *h)
 		mit = NULL;
 		while ((m = ucl_object_iterate(jget(e, "policy_map"), &mit,
 		    true)) != NULL) {
-			n++;
+			char	idx[16];
+
+			snprintf(idx, sizeof(idx), "%d", n++);
 			h_raw(h, "<div class=\"pmap\"><span class=\"mono\">");
 			h_txt(h, jstr(m, "zone"));
 			h_raw(h, " · ");
@@ -569,19 +1066,38 @@ view_service(struct html *h)
 				h_raw(h, " <span class=\"dim\">out</span> ");
 				h_txt(h, jstr(m, "egress"));
 			}
-			h_raw(h, "</div>");
+			h_raw(h, " <button class=\"icon\" data-act=\"sd-map-edit\" "
+			    "title=\"Change the rule\"");
+			h_attr(h, "data-arg", jstr(e, "id"));
+			h_attr(h, "data-value", idx);
+			h_raw(h, ">&#9998;</button><button class=\"icon\" data-act="
+			    "\"sd-map-del\" title=\"Take the rule away\"");
+			h_attr(h, "data-arg", jstr(e, "id"));
+			h_attr(h, "data-value", idx);
+			h_raw(h, ">×</button></div>");
 		}
 		if (n == 0)
-			h_raw(h, "<span class=\"dim\">the zones' own</span>");
-		h_raw(h, "</td></tr>");
+			h_raw(h, "<span class=\"dim\">the zones' own</span> ");
+		h_raw(h, "<button class=\"ghost small\" data-act=\"sd-map-add\"");
+		h_attr(h, "data-arg", jstr(e, "id"));
+		h_raw(h, ">+ rule</button></td><td class=\"acts\"><button class=\""
+		    "icon\" data-act=\"sd-ep-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(e, "id"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-ep-del\" title=\"Take the end point away\"");
+		h_attr(h, "data-arg", jstr(e, "id"));
+		h_raw(h, ">×</button></td></tr>");
 	}
 	h_raw(h, "</tbody></table></div>");
 
 	/* Zones. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Zones <small class=\"dim\">"
-	    "by source address, §9.5</small></h3><table class=\"net sd\"><thead>"
-	    "<tr><th>Name</th><th>Prefixes</th><th>Policies, zone-wide</th>"
-	    "</tr></thead><tbody>");
+	    "by source address, §9.5; a zone's rules hold at every end point "
+	    "whose map says nothing</small><span class=\"pane-actions\"><button "
+	    "class=\"ghost small\" data-act=\"sd-zone-add\">+ zone</button>"
+	    "</span></h3><table class=\"net sd\"><thead><tr><th>Name</th><th>"
+	    "Prefixes</th><th>Rules, zone-wide</th><th></th></tr></thead>"
+	    "<tbody>");
 	it = NULL;
 	while ((v = ucl_object_iterate(jget(sw, "zones"), &it, true)) != NULL) {
 		h_raw(h, "<tr><td class=\"mono\">");
@@ -593,24 +1109,45 @@ view_service(struct html *h)
 		mit = NULL;
 		while ((m = ucl_object_iterate(jget(v, "policies"), &mit,
 		    true)) != NULL) {
-			if (n++ > 0)
-				h_raw(h, ", ");
+			char	idx[16];
+
+			snprintf(idx, sizeof(idx), "%d", n++);
+			h_raw(h, "<div class=\"pmap\">");
 			h_txt(h, jstr(m, "app"));
 			h_raw(h, " → ");
 			h_txt(h, jstr(m, "policy"));
+			h_raw(h, " <button class=\"icon\" data-act=\"sd-zmap-edit\" "
+			    "title=\"Change the rule\"");
+			h_attr(h, "data-arg", jstr(v, "name"));
+			h_attr(h, "data-value", idx);
+			h_raw(h, ">&#9998;</button><button class=\"icon\" data-act="
+			    "\"sd-zmap-del\" title=\"Take the rule away\"");
+			h_attr(h, "data-arg", jstr(v, "name"));
+			h_attr(h, "data-value", idx);
+			h_raw(h, ">×</button></div>");
 		}
 		if (n == 0)
 			h_raw(h, "<span class=\"dim\">none: dropped unless an end "
-			    "point's map says (R112)</span>");
-		h_raw(h, "</td></tr>");
+			    "point's map says (R112)</span> ");
+		h_raw(h, "<button class=\"ghost small\" data-act=\"sd-zmap-add\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">+ rule</button></td><td class=\"acts\"><button class=\""
+		    "icon\" data-act=\"sd-zone-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-zone-del\" title=\"Take the zone away\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">×</button></td></tr>");
 	}
 	h_raw(h, "</tbody></table></div>");
 
 	/* Application flows, in the order they are matched. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Application flows <small class="
-	    "\"dim\">the first that matches, §9.14</small></h3><table class=\""
-	    "net sd\"><thead><tr><th>#</th><th>Name</th><th>Matches</th><th>Group"
-	    "</th></tr></thead><tbody>");
+	    "\"dim\">what a packet is, by the first that matches, §9.14; the "
+	    "rules name them</small><span class=\"pane-actions\"><button class="
+	    "\"ghost small\" data-act=\"sd-flow-add\">+ flow</button></span>"
+	    "</h3><table class=\"net sd\"><thead><tr><th>#</th><th>Name</th><th>"
+	    "Matches</th><th>Group</th><th></th></tr></thead><tbody>");
 	n = 0;
 	it = NULL;
 	while ((v = ucl_object_iterate(jget(sw, "flows"), &it, true)) != NULL) {
@@ -620,14 +1157,24 @@ view_service(struct html *h)
 		criteria(h, jget(v, "criteria"));
 		h_raw(h, "</td><td>");
 		h_txt(h, jstr(v, "group") != NULL ? jstr(v, "group") : "");
-		h_raw(h, "</td></tr>");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" data-act="
+		    "\"sd-flow-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-flow-del\" title=\"Take the flow away\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">×</button></td></tr>");
 	}
 	h_raw(h, "</tbody></table></div>");
 
 	/* Policies. */
 	h_raw(h, "<div class=\"sd-block\"><h3>Policies <small class=\"dim\">"
-	    "§9.12</small></h3><table class=\"net sd\"><thead><tr><th>Name</th>"
-	    "<th>Direction</th><th>Criteria</th></tr></thead><tbody>");
+	    "how a flow is carried: which tunnels, the Internet, its "
+	    "performance, its bandwidth, §9.12</small><span class=\""
+	    "pane-actions\"><button class=\"ghost small\" data-act=\""
+	    "sd-policy-add\">+ policy</button></span></h3><table class=\"net "
+	    "sd\"><thead><tr><th>Name</th><th>Direction</th><th>Criteria</th>"
+	    "<th></th></tr></thead><tbody>");
 	it = NULL;
 	while ((v = ucl_object_iterate(jget(sw, "policies"), &it, true)) !=
 	    NULL) {
@@ -637,7 +1184,13 @@ view_service(struct html *h)
 		h_txt(h, jstr(v, "direction"));
 		h_raw(h, "</td><td>");
 		criteria(h, jget(v, "criteria"));
-		h_raw(h, "</td></tr>");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" data-act="
+		    "\"sd-policy-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-policy-del\" title=\"Take the policy away\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">×</button></td></tr>");
 	}
 	h_raw(h, "</tbody></table></div>");
 
@@ -1061,6 +1614,27 @@ view_paths(struct html *h)
 			    "class=\"dim\">", st, st);
 			h_txt(h, age);
 			h_raw(h, "</small>");
+			/* BFD's word on it, when the service watches by BFD. */
+			{
+				const ucl_object_t	*bi, *bs;
+				ucl_object_iter_t	 iit, sit;
+				const char		*far = jstr(tg, "address");
+
+				iit = NULL;
+				while (far != NULL && (bi = ucl_object_iterate(jget(
+				    jget(sd.paths, jstr(e, "edge")), "bird"), &iit,
+				    true)) != NULL) {
+					sit = NULL;
+					while ((bs = ucl_object_iterate(jget(bi, "bfd"),
+					    &sit, true)) != NULL)
+						if (jstr(bs, "address") != NULL && strcmp(
+						    jstr(bs, "address"), far) == 0)
+							h_fmt(h, " <span class=\"chip st-%s\" "
+							    "title=\"BFD, by BIRD\">bfd %s"
+							    "</span>", jstr(bs, "state"),
+							    jstr(bs, "state"));
+				}
+			}
 			if (jstr(tg, "error") != NULL) {
 				h_raw(h, "<small class=\"bad\">");
 				h_txt(h, jstr(tg, "error"));
@@ -1187,6 +1761,11 @@ view_paths(struct html *h)
 			h_raw(h, "</span> ");
 			h_txt(h, jstr(d, "state") != NULL ? jstr(d, "state") :
 			    "");
+			if (jstr(d, "by") != NULL) {
+				h_raw(h, " <small class=\"dim\">by ");
+				h_txt(h, jstr(d, "by"));
+				h_raw(h, "</small>");
+			}
 			h_raw(h, " <span class=\"dim\">");
 			h_txt(h, age);
 			h_raw(h, "</span></li>");
@@ -1196,6 +1775,67 @@ view_paths(struct html *h)
 	if (nf == 0)
 		h_raw(h, "<li class=\"dim\">None.</li>");
 	h_raw(h, "</ul></div>");
+	/* Routing at the UNIs: each edge's BIRD instances, a service each,
+	 * and their protocols as birdc lists them. */
+	h_raw(h, "<div class=\"sd-block\"><h3>Routing <small class=\"dim\">BGP "
+	    "or OSPF with the subscriber at a UNI, iBGP between the edges: a "
+	    "BIRD instance of each service on each edge, in the service's "
+	    "table</small></h3><table class=\"net sd sd-bird\"><thead><tr><th>"
+	    "Edge</th><th>Instance</th><th>Protocol</th><th>State</th><th>"
+	    "Info</th></tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while (sd.paths != NULL && (f = ucl_object_iterate(sd.paths, &it,
+	    true)) != NULL) {
+		fit = NULL;
+		while ((e = ucl_object_iterate(jget(f, "bird"), &fit, true)) !=
+		    NULL) {
+			const ucl_object_t	*pr;
+			ucl_object_iter_t	 pit;
+			bool			 first = true;
+
+			n++;
+			pit = NULL;
+			while ((pr = ucl_object_iterate(jget(e, "protocols"), &pit,
+			    true)) != NULL || first) {
+				h_raw(h, "<tr><td><b>");
+				h_txt(h, first ? host_name(ucl_object_key(f)) : "");
+				h_raw(h, "</b></td><td class=\"mono\">");
+				if (first) {
+					h_txt(h, jstr(e, "name"));
+					h_fmt(h, " <small class=\"dim\">fib %lld%s"
+					    "</small>", jint(e, "fib", 0), jbool(e,
+					    "running") ? "" : ", not running");
+				}
+				h_raw(h, "</td><td class=\"mono\">");
+				if (pr != NULL) {
+					h_txt(h, jstr(pr, "name") != NULL ? jstr(pr,
+					    "name") : "");
+					h_raw(h, " <small class=\"dim\">");
+					h_txt(h, jstr(pr, "proto") != NULL ? jstr(pr,
+					    "proto") : "");
+					h_raw(h, "</small>");
+				}
+				h_fmt(h, "</td><td><span class=\"chip st-%s\">", pr !=
+				    NULL && jstr(pr, "state") != NULL && strcmp(jstr(
+				    pr, "state"), "up") == 0 ? "up" : "down");
+				h_txt(h, pr != NULL && jstr(pr, "state") != NULL ?
+				    jstr(pr, "state") : jbool(e, "running") ? "no "
+				    "protocol" : "down");
+				h_raw(h, "</span></td><td class=\"dim\">");
+				h_txt(h, pr != NULL && jstr(pr, "info") != NULL ? jstr(
+				    pr, "info") : "");
+				h_raw(h, "</td></tr>");
+				first = false;
+				if (pr == NULL)
+					break;
+			}
+		}
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: a UNI with "
+		    "bgp or ospf in its service has one once applied.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
 }
 
 /* ---- The document ----------------------------------------------------- */
@@ -1239,7 +1879,7 @@ view_sdwan(struct html *h)
 
 	h_raw(h, "<section class=\"sdwan\">");
 	h_fmt(h, "<nav class=\"tabs\"><button class=\"tab%s\" data-act=\""
-	    "sd-tab\" data-arg=\"overview\">Overview</button><button class=\""
+	    "sd-tab\" data-arg=\"overview\">Dashboard</button><button class=\""
 	    "tab%s\" data-act=\"sd-tab\" data-arg=\"services\">Services"
 	    "</button><button class=\"tab%s\" data-act=\"sd-tab\" data-arg=\""
 	    "edges\" title=\"What the edges are to have, and Apply\">Edges"
@@ -1267,8 +1907,1462 @@ view_sdwan(struct html *h)
 	else if (sd.tab == SD_DOCUMENT)
 		view_document(h);
 	else
-		view_overview(h);
+		view_dashboard(h);
 	h_raw(h, "</section>");
+}
+
+/* ---- The forms: underlays, edges, WAN links --------------------------- */
+
+/* The element of a list whose key is the value. */
+static const ucl_object_t *
+jfind(const ucl_object_t *arr, const char *key, const char *value)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (value != NULL && (e = ucl_object_iterate(arr, &it, true)) !=
+	    NULL)
+		if (jstr(e, key) != NULL && strcmp(jstr(e, key), value) == 0)
+			return (e);
+	return (NULL);
+}
+
+/* A checkbox as the bridge sends it: true or false, or "1" by hand. */
+static bool
+checked(const ucl_object_t *f, const char *name)
+{
+	const ucl_object_t	*v;
+
+	if ((v = jget(f, name)) == NULL)
+		return (false);
+	if (ucl_object_type(v) == UCL_BOOLEAN)
+		return (ucl_object_toboolean(v));
+	return (ucl_object_tostring_forced(v) != NULL && (strcmp(
+	    ucl_object_tostring_forced(v), "1") == 0 || strcmp(
+	    ucl_object_tostring_forced(v), "true") == 0));
+}
+
+/* Is the string in the list? */
+static bool
+jfind_str(const ucl_object_t *arr, const char *s)
+{
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (s != NULL && (v = ucl_object_iterate(arr, &it, true)) != NULL)
+		if (strcmp(ucl_object_tostring_forced(v), s) == 0)
+			return (true);
+	return (false);
+}
+
+static const ucl_object_t *
+ucs_by(const char *id)
+{
+
+	return (id != NULL ? jfind(jget(sd.doc, "ucs"), "id", id) : NULL);
+}
+
+static const ucl_object_t *
+edge_by(const char *sid)
+{
+
+	return (sid != NULL ? jfind(jget(sd.doc, "edges"), "server", sid) :
+	    NULL);
+}
+
+static void
+option(struct html *h, const char *value, const char *label,
+    const char *current)
+{
+
+	h_raw(h, "<option");
+	h_attr(h, "value", value);
+	if (current != NULL && strcmp(current, value) == 0)
+		h_raw(h, " selected");
+	h_raw(h, ">");
+	h_txt(h, label);
+	h_raw(h, "</option>");
+}
+
+bool
+sdwan_modal(struct html *h)
+{
+	const ucl_object_t	*u, *t, *e, *o, *lk;
+	ucl_object_iter_t	 it;
+	const char		*v, *ifn;
+	char			 buf[120];
+	int			 i, n;
+
+	if (sdwan_modal_service(h))
+		return (true);
+	if (app.modal == MODAL_SD_UCS) {
+		u = ucs_by(sd.edit);
+		t = jget(u, "tunnel");
+		h_fmt(h, "<form data-form=\"sd-ucs\"><h2>%s</h2><p>A carrier the "
+		    "edges reach each other over (an Underlay Connectivity "
+		    "Service, MEF 70.2 §12): the Internet, an MPLS, a line. Each "
+		    "edge gets a WAN link on it; tunnels go between the links, "
+		    "the kind said here.</p><input type=\"hidden\" name=\"was\"",
+		    u != NULL ? "An underlay, changed" : "An underlay");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><label>Id<input name=\"id\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" maxlength=\"64\" placeholder=\"internet\""
+		    " autofocus");
+		h_attr(h, "value", u != NULL ? jstr(u, "id") : "");
+		h_raw(h, "></label><div class=\"two\"><label>Type<select name=\""
+		    "type\">");
+		option(h, "public", "public: the Internet, shared", jstr(u,
+		    "type"));
+		option(h, "private", "private: an MPLS, a line, yours", jstr(u,
+		    "type"));
+		h_raw(h, "</select></label><label>Billing<select name=\""
+		    "billing\">");
+		option(h, "flat-rate", "flat rate", jstr(u, "billing"));
+		option(h, "usage-based", "by usage", jstr(u, "billing"));
+		option(h, "other", "other", jstr(u, "billing"));
+		h_raw(h, "</select></label></div><div class=\"two\"><label>Tunnel "
+		    "over it<select name=\"kind\">");
+		option(h, "gre", "gre: gre(4), IP in IP with a key", jstr(t,
+		    "kind") != NULL ? jstr(t, "kind") : "gre");
+		option(h, "gif", "gif: gif(4), IP in IP", jstr(t, "kind"));
+		option(h, "geneve", "geneve: over UDP, a VNI each", jstr(t,
+		    "kind"));
+		option(h, "wg", "wg: WireGuard, encrypted by itself", jstr(t,
+		    "kind"));
+		h_fmt(h, "</select></label><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"ipsec\" value=\"1\"%s> IPsec IKEv2 under "
+		    "it, by strongSwan<small>Required on a public underlay by "
+		    "a policy that says so.</small></label></div>", t != NULL &&
+		    jbool(t, "ipsec") ? " checked" : "");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_EDGE) {
+		h_raw(h, "<form data-form=\"sd-edge\"><h2>An edge</h2><p>A host "
+		    "running arcana-agent that stands between the subscriber "
+		    "and the underlays (an SD-WAN Edge, §7.8). Its WAN links "
+		    "come next, one on each underlay it reaches.</p><label>Host"
+		    "<select name=\"host\" autofocus>");
+		n = 0;
+		for (i = 0; i < app.nservers; i++) {
+			if (edge_by(app.servers[i].id) != NULL)
+				continue;
+			option(h, app.servers[i].id, app.servers[i].name, NULL);
+			n++;
+		}
+		h_raw(h, "</select>");
+		if (n == 0)
+			h_raw(h, "<small>Every host the console has is an edge "
+			    "already.</small>");
+		h_raw(h, "</label>");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_LINK) {
+		e = edge_by(sd.link_host);
+		lk = sd.edit[0] != '\0' ? jfind(jget(e, "ucs_end_points"), "id",
+		    sd.edit) : NULL;
+		h_fmt(h, "<form data-form=\"sd-link\"><h2>%s on %s</h2><p>Where "
+		    "the host meets an underlay: the interface, its address on "
+		    "it, and the gateway (a UCS End Point, §12.3). Tunnels to "
+		    "the other edges' links on the same underlay start here."
+		    "</p><input type=\"hidden\" name=\"host\"", lk != NULL ? "A "
+		    "WAN link, changed" : "A WAN link", host_name(sd.link_host));
+		h_attr(h, "value", sd.link_host);
+		h_raw(h, "><input type=\"hidden\" name=\"was\"");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><div class=\"two\"><label>Underlay<select name=\"ucs\">");
+		it = NULL;
+		while ((u = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
+		    NULL)
+			option(h, jstr(u, "id"), jstr(u, "id"), jstr(lk, "ucs"));
+		h_raw(h, "</select></label><label>Id<input name=\"id\" spellcheck="
+		    "\"false\" autocomplete=\"off\" maxlength=\"64\" placeholder=\""
+		    "the host and the underlay, if empty\"");
+		h_attr(h, "value", lk != NULL ? jstr(lk, "id") : "");
+		h_raw(h, "></label></div>");
+		/* The interface: from the host's own list, when it answers. */
+		ifn = sd.link_if[0] != '\0' ? sd.link_if : lk != NULL ? jstr(lk,
+		    "interface") : NULL;
+		h_raw(h, "<label>Interface");
+		if (sd.ifs_loading)
+			h_raw(h, "<span class=\"dim\"> · asking the host</span>");
+		if (sd.ifs != NULL && jget(sd.ifs, "interfaces") != NULL) {
+			h_raw(h, "<select name=\"interface\" data-input=\"sd-link-if"
+			    "\">");
+			it = NULL;
+			while ((o = ucl_object_iterate(jget(sd.ifs, "interfaces"),
+			    &it, true)) != NULL) {
+				if (jstr(o, "name") == NULL || strncmp(jstr(o,
+				    "name"), "lo", 2) == 0 || strncmp(jstr(o, "name"),
+				    "pflog", 5) == 0 || strncmp(jstr(o, "name"),
+				    "enc", 3) == 0)
+					continue;
+				v = link_address(jstr(o, "name"), 4);
+				if (v == NULL)
+					v = link_address(jstr(o, "name"), 6);
+				snprintf(buf, sizeof(buf), "%s%s%s", jstr(o, "name"),
+				    v != NULL ? " · " : "", v != NULL ? v : "");
+				option(h, jstr(o, "name"), buf, ifn);
+				if (ifn == NULL)
+					ifn = jstr(o, "name");
+			}
+			h_raw(h, "</select>");
+		} else {
+			h_raw(h, "<input name=\"interface\" spellcheck=\"false\" "
+			    "autocomplete=\"off\" placeholder=\"vtnet0\"");
+			h_attr(h, "value", ifn != NULL ? ifn : "");
+			h_raw(h, ">");
+		}
+		h_raw(h, "</label><div class=\"two\"><label>Address<input name=\""
+		    "address\" spellcheck=\"false\" autocomplete=\"off\" "
+		    "placeholder=\"the interface's\"");
+		v = lk != NULL && sd.link_if[0] == '\0' ? jstr(lk, "address") :
+		    link_address(ifn, 4) != NULL ? link_address(ifn, 4) :
+		    link_address(ifn, 6);
+		h_attr(h, "value", v != NULL ? v : "");
+		h_raw(h, "><small>The tunnels' outer address here.</small></label>"
+		    "<label>Gateway<input name=\"gateway\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"for breakout\"");
+		h_attr(h, "value", lk != NULL && jstr(lk, "gateway") != NULL ?
+		    jstr(lk, "gateway") : "");
+		h_raw(h, "></label></div><div class=\"two\"><label>Bandwidth, bits "
+		    "per second<input name=\"bandwidth\" inputmode=\"numeric\" "
+		    "placeholder=\"100000000\"");
+		if (lk != NULL && jget(lk, "bandwidth") != NULL) {
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(lk,
+			    "bandwidth", 0));
+			h_attr(h, "value", buf);
+		}
+		h_fmt(h, "></label><div><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"breakout\" value=\"1\"%s> Breakout: the "
+		    "Internet is reached here</label><label class=\"toggle\">"
+		    "<input type=\"checkbox\" name=\"backup\" value=\"1\"%s> "
+		    "Backup: used only when nothing else is left</label></div>"
+		    "</div>", lk != NULL && jbool(lk, "breakout") ? " checked" :
+		    "", lk != NULL && jbool(lk, "backup") ? " checked" : "");
+		return (true);
+	}
+	return (false);
+}
+
+/* A list's values as one comma line, into buf. */
+static const char *
+csv(const ucl_object_t *arr, char *buf, size_t len)
+{
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	buf[0] = '\0';
+	n = 0;
+	it = NULL;
+	while ((v = ucl_object_iterate(arr, &it, true)) != NULL)
+		snprintf(buf + strlen(buf), len - strlen(buf), "%s%s", n++ > 0 ?
+		    ", " : "", ucl_object_tostring_forced(v));
+	return (buf);
+}
+
+/* A comma line as a list: numbers as numbers, the rest as text. */
+static ucl_object_t *
+list_of(const char *text)
+{
+	ucl_object_t	*arr;
+	char		*copy, *p, *tok;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if (text == NULL)
+		return (arr);
+	copy = strdup(text);
+	p = copy;
+	while ((tok = strsep(&p, ",")) != NULL) {
+		while (*tok == ' ' || *tok == '\t')
+			tok++;
+		while (strlen(tok) > 0 && (tok[strlen(tok) - 1] == ' ' ||
+		    tok[strlen(tok) - 1] == '\t'))
+			tok[strlen(tok) - 1] = '\0';
+		if (*tok == '\0')
+			continue;
+		if (strspn(tok, "0123456789") == strlen(tok))
+			ucl_array_append(arr, ucl_object_fromint(strtoll(tok, NULL,
+			    10)));
+		else
+			ucl_array_append(arr, ucl_object_fromstring(tok));
+	}
+	free(copy);
+	return (arr);
+}
+
+static void
+text_field(struct html *h, const char *label, const char *name,
+    const char *value, const char *hint, const char *small)
+{
+
+	h_raw(h, "<label>");
+	h_txt(h, label);
+	h_fmt(h, "<input name=\"%s\" spellcheck=\"false\" autocomplete=\"off\"",
+	    name);
+	h_attr(h, "placeholder", hint != NULL ? hint : "");
+	h_attr(h, "value", value != NULL ? value : "");
+	h_raw(h, ">");
+	if (small != NULL) {
+		h_raw(h, "<small>");
+		h_txt(h, small);
+		h_raw(h, "</small>");
+	}
+	h_raw(h, "</label>");
+}
+
+/* The criteria's one value as text: a list joined, a scalar as it is. */
+static const char *
+crit_text(const ucl_object_t *cr, const char *key, char *buf, size_t len)
+{
+	const ucl_object_t	*v;
+
+	if ((v = jget(cr, key)) == NULL)
+		return ("");
+	if (ucl_object_type(v) == UCL_ARRAY)
+		return (csv(v, buf, len));
+	snprintf(buf, len, "%s", ucl_object_tostring_forced(v));
+	return (buf);
+}
+
+/* The modals of a service's parts: true when one was drawn. */
+static bool
+sdwan_modal_service(struct html *h)
+{
+	const ucl_object_t	*sw, *o, *cr, *v, *u, *e, *m, *a;
+	ucl_object_iter_t	 it;
+	char			 buf[600], b2[64];
+	const char		*ifn, *val;
+	int			 i, n, fib;
+	bool			 edit;
+
+	sw = swvc_shown();
+	if (app.modal == MODAL_SD_SWVC) {
+		o = sd.edit[0] != '\0' ? jfind(jget(sd.doc, "swvcs"), "id",
+		    sd.edit) : NULL;
+		edit = o != NULL;
+		fib = 1;
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "swvcs"), &it, true))
+		    != NULL)
+			if (jint(v, "fib", 0) >= fib)
+				fib = (int)jint(v, "fib", 0) + 1;
+		h_fmt(h, "<form data-form=\"sd-swvc\"><h2>%s</h2><p>A service "
+		    "joins the subscriber's sites (an SWVC, MEF 70.2 §9): each "
+		    "edge gives it a routing table of its own (setfib), the "
+		    "tunnels between its edges go in it, and the policies say "
+		    "how each flow is carried.</p><input type=\"hidden\" name=\""
+		    "was\"", edit ? "A service, changed" : "A service");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><div class=\"two\">");
+		text_field(h, "Id", "id", edit ? jstr(o, "id") : "", "office", NULL);
+		snprintf(buf, sizeof(buf), "%lld", edit ? (long long)jint(o, "fib",
+		    1) : (long long)fib);
+		text_field(h, "Routing table (FIB)", "fib", buf, "1", "1 or more, "
+		    "one a service; net.fibs is raised on the edges as needed.");
+		h_raw(h, "</div>");
+		text_field(h, "Reserved prefixes", "reserved", edit ? csv(jget(o,
+		    "reserved_prefixes"), buf, sizeof(buf)) : "100.64.0.0/24, "
+		    "fd00:64::/64", "100.64.0.0/24, fd00:64::/64", "The tunnels' "
+		    "inner addresses come from these, a /31 or /127 each "
+		    "(§9.4).");
+		h_raw(h, "<fieldset><legend>Underlays it uses</legend>");
+		n = 0;
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
+		    NULL) {
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"ucs_%d\"", n++);
+			h_attr(h, "value", jstr(v, "id"));
+			if (!edit || jget(o, "ucs") == NULL || jfind_str(jget(o,
+			    "ucs"), jstr(v, "id")))
+				h_raw(h, " checked");
+			h_raw(h, "> ");
+			h_txt(h, jstr(v, "id"));
+			h_raw(h, "</label>");
+		}
+		if (n == 0)
+			h_raw(h, "<small>No underlay yet: the dashboard adds "
+			    "them.</small>");
+		h_raw(h, "</fieldset><div class=\"two\">");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(o, "as", 0));
+		text_field(h, "Provider AS", "as", edit && jget(o, "as") != NULL ?
+		    buf : "", "64512", "For BGP at a UNI and between the edges; "
+		    "64512 if empty.");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(jget(o,
+		    "intervals"), "eval", 1000));
+		text_field(h, "Evaluation interval, ms", "eval", buf, "1000", "The "
+		    "probes' sample, and how often the manager looks (§9.7).");
+		h_raw(h, "</div><div class=\"two\">");
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "bfd\" value=\"1\"%s> BFD on the tunnels, by BIRD</label>", edit
+		    && jget(o, "bfd") != NULL && ucl_object_type(jget(o, "bfd")) ==
+		    UCL_OBJECT ? " checked" : "");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(jget(o, "bfd"),
+		    "interval", 200));
+		text_field(h, "BFD interval, ms", "bfd_interval", buf, "200", "100 "
+		    "to 300; three missed and the tunnel is down.");
+		h_raw(h, "</div>");
+		return (true);
+	}
+	if (sw == NULL)
+		return (false);
+	if (app.modal == MODAL_SD_ZONE) {
+		o = sd.edit[0] != '\0' ? jfind(jget(sw, "zones"), "name", sd.edit)
+		    : NULL;
+		h_fmt(h, "<form data-form=\"sd-zone\"><h2>%s</h2><p>Hosts by "
+		    "their source address (§9.5): the rules of a zone say what "
+		    "its flows may do, at every end point whose own map says "
+		    "nothing.</p><input type=\"hidden\" name=\"was\"", o != NULL ?
+		    "A zone, changed" : "A zone");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, ">");
+		text_field(h, "Name", "name", jstr(o, "name"), "staff", NULL);
+		v = jget(o, "prefixes");
+		text_field(h, "Prefixes", "prefixes", v != NULL && ucl_object_type(
+		    v) == UCL_ARRAY ? csv(v, buf, sizeof(buf)) : "", "10.1.0.0/16, "
+		    "2001:db8:1::/48", "Empty: the Default zone, every host no "
+		    "other zone names (one service has one).");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_FLOW) {
+		static const char *const apps[] = { "dns", "http", "https", "ssh",
+		    "sip", "ntp", "smtp", "imap", "pop3", "ldap", "rdp", "snmp",
+		    "syslog", "ike", "bgp", "quic", "dhcp", "icmp" };
+
+		o = sd.edit[0] != '\0' ? jfind(jget(sw, "flows"), "name", sd.edit)
+		    : NULL;
+		cr = jget(o, "criteria");
+		h_fmt(h, "<form data-form=\"sd-flow\"><h2>%s</h2><p>What a packet "
+		    "is (an Application Flow Specification, §9.14): the first "
+		    "flow that matches names it, so the order of the list "
+		    "counts. Everything said here must hold at once.</p><input "
+		    "type=\"hidden\" name=\"was\"", o != NULL ? "A flow, changed" :
+		    "A flow");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><div class=\"two\">");
+		text_field(h, "Name", "name", jstr(o, "name"), "voice", NULL);
+		text_field(h, "Group", "group", jstr(o, "group"), "none", "Flows of "
+		    "a group share a rule by the group's name (§9.13).");
+		h_raw(h, "</div>");
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "any\" value=\"1\"%s> Everything: the last flow, what no other "
+		    "matched</label>", cr != NULL && jget(cr, "any") != NULL ?
+		    " checked" : "");
+		h_raw(h, "<fieldset><legend>Applications, by port (APPID, Table "
+		    "8)</legend>");
+		for (i = 0; i < (int)(sizeof(apps) / sizeof(apps[0])); i++) {
+			h_fmt(h, "<label class=\"toggle inline\"><input type=\""
+			    "checkbox\" name=\"app_%s\" value=\"1\"%s> %s</label>",
+			    apps[i], jfind_str(jget(cr, "appid"), apps[i]) ?
+			    " checked" : "", apps[i]);
+		}
+		h_raw(h, "</fieldset><div class=\"two\">");
+		text_field(h, "DSCP", "dscp", crit_text(cr, "dscp", buf, sizeof(buf)),
+		    "46", "Numbers, with commas.");
+		text_field(h, "Protocol", "proto", crit_text(cr, jget(cr,
+		    "nextheadv6") != NULL ? "nextheadv6" : "protv4", buf,
+		    sizeof(buf)), "tcp, udp", "tcp, udp, icmp, a number.");
+		h_raw(h, "</div><div class=\"two\">");
+		text_field(h, "Destination ports", "dport", crit_text(cr, "dport",
+		    buf, sizeof(buf)), "80, 443", NULL);
+		text_field(h, "Source ports", "sport", crit_text(cr, "sport", buf,
+		    sizeof(buf)), "", NULL);
+		h_raw(h, "</div><div class=\"two\">");
+		text_field(h, "From prefixes", "src", crit_text(cr, jget(cr,
+		    "sav6") != NULL ? "sav6" : "sav4", buf, sizeof(buf)),
+		    "10.1.0.0/24", "IPv4 or IPv6, not both in one flow.");
+		text_field(h, "To prefixes", "dst", crit_text(cr, jget(cr, "dav6")
+		    != NULL ? "dav6" : "dav4", buf, sizeof(buf)), "10.2.0.0/24",
+		    NULL);
+		h_raw(h, "</div>");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_POLICY) {
+		static const struct {
+			const char	*key, *label, *hint;
+			const char	*values[5];
+			const char	*words[5];
+		} picks[] = {
+			{ "encryption", "Encryption", "What the tunnels must be.",
+			    { "", "required-always", "required-public-only",
+			    "optional", NULL }, { "as the underlay is", "always "
+			    "encrypted", "encrypted on a public underlay",
+			    "optional", NULL } },
+			{ "public-private", "Underlays", NULL, { "", "private-only",
+			    "either", NULL }, { "any", "private only", "either",
+			    NULL } },
+			{ "internet-breakout", "Internet breakout", "Enabled: "
+			    "Internet traffic leaves by a breakout link.", { "",
+			    "enabled", "disabled", NULL }, { "disabled (R57)",
+			    "enabled", "disabled", NULL } },
+			{ "backup", "Backup links", NULL, { "", "enabled",
+			    "disabled", NULL }, { "not used (R65)", "used when "
+			    "nothing else is left", "not used", NULL } },
+			{ "billing-method", "Billing", NULL, { "", "flat-rate-only",
+			    "usage-based-only", "either", NULL }, { "either",
+			    "flat rate only", "usage based only", "either", NULL } },
+		};
+		const char *const	metrics[] = { "", "delay", "ipdv", "loss" };
+		const char *const	mwords[] = { "none", "delay", "variation",
+		    "loss" };
+		const ucl_object_t	*pf, *pr;
+		int			 k;
+
+		o = sd.edit[0] != '\0' ? jfind(jget(sw, "policies"), "name",
+		    sd.edit) : NULL;
+		cr = jget(o, "criteria");
+		pf = jget(cr, "performance");
+		pr = jget(pf, "primary");
+		h_fmt(h, "<form data-form=\"sd-policy\"><h2>%s</h2><p>How a flow "
+		    "is carried (a Policy, §9.12): which tunnels may carry it, "
+		    "whether it may leave for the Internet, the performance it "
+		    "wants, which the console steers it by, and its bandwidth, "
+		    "by dummynet. What is left unsaid takes the standard's "
+		    "default.</p><input type=\"hidden\" name=\"was\"", o != NULL ?
+		    "A policy, changed" : "A policy");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><div class=\"two\">");
+		text_field(h, "Name", "name", jstr(o, "name"), "realtime", NULL);
+		h_raw(h, "<label>Direction<select name=\"direction\" data-input=\""
+		    "sd-policy-dir\">");
+		val = sd.edit2[0] != '\0' ? sd.edit2 : jstr(o, "direction") != NULL
+		    ? jstr(o, "direction") : "ingress";
+		option(h, "ingress", "ingress: as it comes in at a UNI", val);
+		option(h, "egress", "egress: as it leaves by a UNI", val);
+		h_raw(h, "</select></label></div>");
+		if (strcmp(val, "egress") == 0) {
+			h_raw(h, "<label>Egress block<select name=\"egress-block\">");
+			option(h, "allow", "allow", jstr(cr, "egress-block") != NULL ?
+			    jstr(cr, "egress-block") : "allow");
+			option(h, "discard", "discard: the flow is dropped leaving "
+			    "by the UNI (R85)", jstr(cr, "egress-block"));
+			h_raw(h, "</select></label>");
+			return (true);
+		}
+		h_raw(h, "<div class=\"two\">");
+		for (k = 0; k < (int)(sizeof(picks) / sizeof(picks[0])); k++) {
+			h_raw(h, "<label>");
+			h_txt(h, picks[k].label);
+			h_fmt(h, "<select name=\"%s\">", picks[k].key);
+			for (i = 0; picks[k].values[i] != NULL; i++)
+				option(h, picks[k].values[i], picks[k].words[i],
+				    jstr(cr, picks[k].key) != NULL ? jstr(cr,
+				    picks[k].key) : "");
+			h_raw(h, "</select>");
+			if (picks[k].hint != NULL) {
+				h_raw(h, "<small>");
+				h_txt(h, picks[k].hint);
+				h_raw(h, "</small>");
+			}
+			h_raw(h, "</label>");
+		}
+		/* Destination zones: All, Self, or a list. */
+		v = jget(cr, "allowed-destination-zones");
+		text_field(h, "Destination zones", "zones", v == NULL ? "" :
+		    ucl_object_type(v) == UCL_STRING ? ucl_object_tostring(v) :
+		    csv(v, buf, sizeof(buf)), "Self", "All, or zones with commas; "
+		    "Self alone if empty (R62).");
+		h_raw(h, "</div><fieldset><legend>Performance: the tunnel is "
+		    "chosen by it (§9.12.2.9)</legend><div class=\"two\"><label>"
+		    "Metric<select name=\"metric\">");
+		for (i = 0; i < 4; i++)
+			option(h, metrics[i], mwords[i], jstr(pr, "metric") != NULL ?
+			    jstr(pr, "metric") : "");
+		h_raw(h, "</select><small>Delay and variation in ms, loss as a "
+		    "fraction (0.01 is 1%).</small></label>");
+		snprintf(buf, sizeof(buf), "%g", jnum(pr, "threshold", 0));
+		text_field(h, "Threshold", "threshold", jget(pr, "threshold") != NULL
+		    ? buf : "", "30", "Met: the tunnel does; the best of those "
+		    "that meet it is taken.");
+		h_raw(h, "</div><div class=\"two\">");
+		snprintf(buf, sizeof(buf), "%g", jnum(pr, "ceiling", 0));
+		text_field(h, "Ceiling", "ceiling", jget(pr, "ceiling") != NULL ?
+		    buf : "", "50", "The tunnel in use is left until it passes "
+		    "this (R73).");
+		snprintf(buf, sizeof(buf), "%g", jnum(pr, "remediation", 0));
+		text_field(h, "Remediation", "remediation", jget(pr, "remediation")
+		    != NULL ? buf : "", "", "Below this, back to the tunnel "
+		    "(R75).");
+		h_raw(h, "</div></fieldset><fieldset><legend>Bandwidth, by "
+		    "dummynet (§9.12.2.11)</legend><div class=\"two\">");
+		v = jget(cr, "bandwidth");
+		h_raw(h, "<label>Rate limiter<select name=\"limiter\">");
+		option(h, "", "its own, below", v != NULL && ucl_object_type(v) ==
+		    UCL_STRING ? ucl_object_tostring(v) : "");
+		it = NULL;
+		while ((m = ucl_object_iterate(jget(sw, "rate_limiters"), &it,
+		    true)) != NULL)
+			option(h, jstr(m, "name"), jstr(m, "name"), v != NULL &&
+			    ucl_object_type(v) == UCL_STRING ? ucl_object_tostring(v)
+			    : "");
+		h_raw(h, "</select><small>Shared by every flow that names it."
+		    "</small></label>");
+		h_raw(h, "<label>Importance<select name=\"importance\">");
+		option(h, "", "the service's default", jstr(cr,
+		    "business-importance"));
+		it = NULL;
+		while ((m = ucl_object_iterate(jget(jget(sw, "importance"),
+		    "levels"), &it, true)) != NULL)
+			option(h, ucl_object_tostring_forced(m),
+			    ucl_object_tostring_forced(m), jstr(cr,
+			    "business-importance"));
+		h_raw(h, "</select></label></div><div class=\"two\">");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(v, "commit", 0));
+		text_field(h, "Commit, bits per second", "commit", v != NULL &&
+		    ucl_object_type(v) == UCL_OBJECT ? buf : "", "", "Its share "
+		    "under contention.");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(v, "limit", 0));
+		text_field(h, "Limit, bits per second", "limit", v != NULL &&
+		    ucl_object_type(v) == UCL_OBJECT && jget(v, "limit") != NULL &&
+		    ucl_object_type(jget(v, "limit")) == UCL_INT ? buf : "", "",
+		    "At most; empty for none.");
+		h_raw(h, "</div></fieldset>");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_EP) {
+		o = sd.edit[0] != '\0' ? jfind(jget(sw, "end_points"), "id",
+		    sd.edit) : NULL;
+		u = jget(o, "uni");
+		h_fmt(h, "<form data-form=\"sd-ep\"><h2>%s</h2><p>Where the "
+		    "subscriber's hosts meet the service (an SWVC End Point at "
+		    "an SD-WAN UNI, §10, §11): an interface of an edge, put in "
+		    "the service's routing table, with the address the edge has "
+		    "for them.</p><input type=\"hidden\" name=\"was\"", o != NULL ?
+		    "An end point, changed" : "An end point");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><div class=\"two\">");
+		text_field(h, "Id", "id", jstr(o, "id"), "hq", NULL);
+		h_raw(h, "<label>Edge<select name=\"edge\" data-input=\"sd-ep-edge"
+		    "\">");
+		it = NULL;
+		while ((e = ucl_object_iterate(jget(sd.doc, "edges"), &it, true))
+		    != NULL)
+			option(h, jstr(e, "server"), host_name(jstr(e, "server")),
+			    sd.link_host[0] != '\0' ? sd.link_host : jstr(o, "edge"));
+		h_raw(h, "</select></label></div><div class=\"two\">");
+		ifn = sd.link_if[0] != '\0' ? sd.link_if : jstr(u, "interface");
+		h_raw(h, "<label>Interface");
+		if (sd.ifs_loading)
+			h_raw(h, "<span class=\"dim\"> · asking the host</span>");
+		if (sd.ifs != NULL && jget(sd.ifs, "interfaces") != NULL) {
+			h_raw(h, "<select name=\"interface\" data-input=\"sd-link-if"
+			    "\">");
+			it = NULL;
+			while ((a = ucl_object_iterate(jget(sd.ifs, "interfaces"),
+			    &it, true)) != NULL) {
+				if (jstr(a, "name") == NULL || strncmp(jstr(a,
+				    "name"), "pflog", 5) == 0 || strncmp(jstr(a,
+				    "name"), "enc", 3) == 0)
+					continue;
+				option(h, jstr(a, "name"), jstr(a, "name"), ifn);
+			}
+			h_raw(h, "</select>");
+		} else {
+			h_raw(h, "<input name=\"interface\" spellcheck=\"false\" "
+			    "autocomplete=\"off\" placeholder=\"vtnet2\"");
+			h_attr(h, "value", ifn != NULL ? ifn : "");
+			h_raw(h, ">");
+		}
+		h_raw(h, "<small>The LAN side; a VLAN on it if a tag is given."
+		    "</small></label>");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(u, "vlan", 0));
+		text_field(h, "VLAN tag", "vlan", jint(u, "vlan", 0) > 0 ? buf : "",
+		    "none", NULL);
+		h_raw(h, "</div><div class=\"two\">");
+		v = jget(u, "ipv4");
+		text_field(h, "IPv4 subnet", "p4", jstr(v, "prefix"), "10.1.0.0/24",
+		    "The hosts' subnet (§11.4).");
+		text_field(h, "The edge's IPv4 address", "a4", jget(v, "provider") !=
+		    NULL ? ucl_object_tostring_forced(ucl_array_find_index(jget(v,
+		    "provider"), 0)) : "", "10.1.0.1", "Their gateway, on the "
+		    "interface.");
+		h_raw(h, "</div><div class=\"two\">");
+		v = jget(u, "ipv6");
+		text_field(h, "IPv6 subnet", "p6", jstr(v, "prefix"), "2001:db8:1::/"
+		    "64", NULL);
+		text_field(h, "The edge's IPv6 address", "a6", jget(v, "provider") !=
+		    NULL ? ucl_object_tostring_forced(ucl_array_find_index(jget(v,
+		    "provider"), 0)) : "", "2001:db8:1::1", NULL);
+		h_raw(h, "</div>");
+		v = jget(o, "nat");
+		text_field(h, "NAT public prefix", "nat", v != NULL && ucl_object_type(
+		    v) == UCL_OBJECT ? jstr(v, "public_prefix") : "", "198.51.100.0/"
+		    "30", "For breakout: the hosts are translated to its first "
+		    "address, by ipfw nat (§10.5). Empty: none.");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_MAP) {
+		bool	zone_wide = sd.edit2[0] == 'z';
+		const char	*owner = sd.edit2 + 1;
+		int	idx = sd.edit[0] != '\0' ? atoi(sd.edit) : -1;
+
+		if (zone_wide) {
+			e = jfind(jget(sw, "zones"), "name", owner);
+			m = idx >= 0 ? ucl_array_find_index(jget(e, "policies"),
+			    (unsigned int)idx) : NULL;
+		} else {
+			e = jfind(jget(sw, "end_points"), "id", owner);
+			m = idx >= 0 ? ucl_array_find_index(jget(e, "policy_map"),
+			    (unsigned int)idx) : NULL;
+		}
+		h_fmt(h, "<form data-form=\"sd-map\"><h2>A rule %s %s</h2><p>%s"
+		    "</p><input type=\"hidden\" name=\"owner\"", zone_wide ? "of "
+		    "zone" : "at", owner, zone_wide ? "The flow, or the group, "
+		    "and the policy that carries it from this zone, wherever an "
+		    "end point's own map says nothing (§9.5)." : "What a flow of "
+		    "a zone gets at this end point (the Policy Map, §10.4): it "
+		    "comes before the zone's own rule (R109).");
+		h_attr(h, "value", sd.edit2);
+		h_raw(h, "><input type=\"hidden\" name=\"was\"");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, "><div class=\"two\">");
+		if (!zone_wide) {
+			h_raw(h, "<label>Zone<select name=\"zone\">");
+			it = NULL;
+			while ((v = ucl_object_iterate(jget(sw, "zones"), &it, true))
+			    != NULL)
+				option(h, jstr(v, "name"), jstr(v, "name"), jstr(m,
+				    "zone"));
+			h_raw(h, "</select></label>");
+		}
+		h_raw(h, "<label>Flow or group<select name=\"app\">");
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sw, "flows"), &it, true)) !=
+		    NULL)
+			option(h, jstr(v, "name"), jstr(v, "name"), jstr(m, "app"));
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sw, "groups"), &it, true)) !=
+		    NULL) {
+			snprintf(b2, sizeof(b2), "%s (a group)",
+			    ucl_object_tostring_forced(v));
+			option(h, ucl_object_tostring_forced(v), b2, jstr(m, "app"));
+		}
+		h_raw(h, "</select></label></div><div class=\"two\">");
+		h_fmt(h, "<label>%s<select name=\"ingress\">", zone_wide ? "Policy"
+		    : "Ingress policy");
+		val = zone_wide ? jstr(m, "policy") : jstr(m, "ingress");
+		if (!zone_wide)
+			option(h, "", "none: the zone's own rule", val);
+		option(h, "Block", "Block: dropped", val);
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sw, "policies"), &it, true))
+		    != NULL)
+			if (jstr(v, "direction") != NULL && strcmp(jstr(v,
+			    "direction"), "ingress") == 0)
+				option(h, jstr(v, "name"), jstr(v, "name"), val);
+		h_raw(h, "</select></label>");
+		if (!zone_wide) {
+			h_raw(h, "<label>Egress policy<select name=\"egress\">");
+			option(h, "", "none", jstr(m, "egress"));
+			it = NULL;
+			while ((v = ucl_object_iterate(jget(sw, "policies"), &it,
+			    true)) != NULL)
+				if (jstr(v, "direction") != NULL && strcmp(jstr(v,
+				    "direction"), "egress") == 0)
+					option(h, jstr(v, "name"), jstr(v, "name"), jstr(
+					    m, "egress"));
+			h_raw(h, "</select></label>");
+		}
+		h_raw(h, "</div>");
+		return (true);
+	}
+	return (false);
+}
+
+/* The forms' answers: the document changed and kept. */
+static bool
+sd_forms(const char *form, const ucl_object_t *f)
+{
+	ucl_object_t		*doc, *arr, *o, *t, *links;
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	const char		*id, *was, *v;
+	char			 buf[160];
+	unsigned int		 i, n;
+
+	if (strcmp(form, "sd-ucs") != 0 && strcmp(form, "sd-edge") != 0 &&
+	    strcmp(form, "sd-link") != 0)
+		return (false);
+	if (sd.doc == NULL)
+		return (true);
+	doc = ucl_object_copy(sd.doc);
+	if (strcmp(form, "sd-ucs") == 0) {
+		id = jstr(f, "id") != NULL ? jstr(f, "id") : "";
+		was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
+		if (id[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "An "
+			    "underlay has an id");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		if ((arr = (ucl_object_t *)(uintptr_t)jget(doc, "ucs")) == NULL) {
+			arr = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(doc, arr, "ucs", 0, false);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(id), "id", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "type") !=
+		    NULL ? jstr(f, "type") : "public"), "type", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "billing")
+		    != NULL ? jstr(f, "billing") : "flat-rate"), "billing", 0,
+		    false);
+		t = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(t, ucl_object_fromstring(jstr(f, "kind") !=
+		    NULL ? jstr(f, "kind") : "gre"), "kind", 0, false);
+		if (checked(f, "ipsec"))
+			ucl_object_insert_key(t, ucl_object_frombool(true), "ipsec",
+			    0, false);
+		ucl_object_insert_key(o, t, "tunnel", 0, false);
+		/* In the place of the one changed, else at the end. */
+		n = ucl_array_size(arr);
+		for (i = 0; was[0] != '\0' && i < n; i++) {
+			e = ucl_array_find_index(arr, i);
+			if (jstr(e, "id") != NULL && strcmp(jstr(e, "id"), was) ==
+			    0) {
+				ucl_object_unref(ucl_array_replace_index(arr, o,
+				    i));
+				break;
+			}
+		}
+		if (was[0] == '\0' || i == n)
+			ucl_array_append(arr, o);
+		/* The links and services named it: renamed with it. */
+		if (was[0] != '\0' && strcmp(was, id) != 0) {
+			const ucl_object_t	*ed, *lk, *sw;
+			ucl_object_iter_t	 eit, lit, sit;
+
+			eit = NULL;
+			while ((ed = ucl_object_iterate(jget(doc, "edges"), &eit,
+			    true)) != NULL) {
+				lit = NULL;
+				while ((lk = ucl_object_iterate(jget(ed,
+				    "ucs_end_points"), &lit, true)) != NULL)
+					if (jstr(lk, "ucs") != NULL && strcmp(jstr(
+					    lk, "ucs"), was) == 0) {
+						ucl_object_t *l = (ucl_object_t *)
+						    (uintptr_t)lk;
+
+						(void)ucl_object_delete_key(l, "ucs");
+						ucl_object_insert_key(l,
+						    ucl_object_fromstring(id), "ucs",
+						    0, false);
+					}
+			}
+			sit = NULL;
+			while ((sw = ucl_object_iterate(jget(doc, "swvcs"), &sit,
+			    true)) != NULL) {
+				ucl_object_t	*ul = (ucl_object_t *)(uintptr_t)
+				    jget(sw, "ucs");
+
+				n = ul != NULL ? ucl_array_size(ul) : 0;
+				for (i = 0; i < n; i++)
+					if (strcmp(ucl_object_tostring_forced(
+					    ucl_array_find_index(ul, i)), was) == 0)
+						ucl_object_unref(
+						    ucl_array_replace_index(ul,
+						    ucl_object_fromstring(id), i));
+			}
+		}
+	} else if (strcmp(form, "sd-edge") == 0) {
+		id = jstr(f, "host");
+		if (id == NULL || id[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "Pick a "
+			    "host");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		if ((arr = (ucl_object_t *)(uintptr_t)jget(doc, "edges")) ==
+		    NULL) {
+			arr = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(doc, arr, "edges", 0, false);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(id), "server", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+		    "ucs_end_points", 0, false);
+		ucl_array_append(arr, o);
+	} else {
+		ucl_object_t	*ed;
+
+		id = jstr(f, "host");
+		was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
+		if ((ed = (ucl_object_t *)(uintptr_t)jfind(jget(doc, "edges"),
+		    "server", id)) == NULL) {
+			ucl_object_unref(doc);
+			return (true);
+		}
+		if (jstr(f, "interface") == NULL || jstr(f, "interface")[0] ==
+		    '\0' || jstr(f, "ucs") == NULL) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A link "
+			    "is on an interface, on an underlay");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		if ((links = (ucl_object_t *)(uintptr_t)jget(ed,
+		    "ucs_end_points")) == NULL) {
+			links = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(ed, links, "ucs_end_points", 0,
+			    false);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		if (jstr(f, "id") != NULL && jstr(f, "id")[0] != '\0')
+			snprintf(buf, sizeof(buf), "%s", jstr(f, "id"));
+		else
+			snprintf(buf, sizeof(buf), "%s-%s", host_name(id), jstr(f,
+			    "ucs"));
+		ucl_object_insert_key(o, ucl_object_fromstring(buf), "id", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f, "ucs")),
+		    "ucs", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(jstr(f,
+		    "interface")), "interface", 0, false);
+		if ((v = jstr(f, "address")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromstring(v),
+			    "address", 0, false);
+		if ((v = jstr(f, "gateway")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromstring(v),
+			    "gateway", 0, false);
+		if ((v = jstr(f, "bandwidth")) != NULL && v[0] != '\0')
+			ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL,
+			    10)), "bandwidth", 0, false);
+		if (checked(f, "breakout"))
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "breakout", 0, false);
+		if (checked(f, "backup"))
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "backup", 0, false);
+		n = ucl_array_size(links);
+		for (i = 0; was[0] != '\0' && i < n; i++) {
+			e = ucl_array_find_index(links, i);
+			if (jstr(e, "id") != NULL && strcmp(jstr(e, "id"), was) ==
+			    0) {
+				ucl_object_unref(ucl_array_replace_index(links, o,
+				    i));
+				break;
+			}
+		}
+		if (was[0] == '\0' || i == n)
+			ucl_array_append(links, o);
+	}
+	(void)it;
+	app.modal = MODAL_NONE;
+	doc_send(doc);
+	return (true);
+}
+
+/* The mutable copy of the service shown, in a copy of the document. */
+static ucl_object_t *
+swvc_mut(ucl_object_t *doc)
+{
+
+	return ((ucl_object_t *)(uintptr_t)jfind(jget(doc, "swvcs"), "id",
+	    sd.swvc));
+}
+
+/* In a list of objects: the one whose key is was replaced, else o added. */
+static void
+list_put(ucl_object_t *owner, const char *list, const char *key,
+    const char *was, ucl_object_t *o)
+{
+	ucl_object_t		*arr;
+	const ucl_object_t	*e;
+	unsigned int		 i, n;
+
+	if ((arr = (ucl_object_t *)(uintptr_t)jget(owner, list)) == NULL) {
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		ucl_object_insert_key(owner, arr, list, 0, false);
+	}
+	n = ucl_array_size(arr);
+	for (i = 0; was != NULL && was[0] != '\0' && i < n; i++) {
+		e = ucl_array_find_index(arr, i);
+		if (jstr(e, key) != NULL && strcmp(jstr(e, key), was) == 0) {
+			ucl_object_unref(ucl_array_replace_index(arr, o, i));
+			return;
+		}
+	}
+	ucl_array_append(arr, o);
+}
+
+static void
+put_str(ucl_object_t *o, const char *key, const char *v)
+{
+
+	if (v != NULL && v[0] != '\0')
+		ucl_object_insert_key(o, ucl_object_fromstring(v), key, 0, false);
+}
+
+static void
+put_int(ucl_object_t *o, const char *key, const char *v)
+{
+
+	if (v != NULL && v[0] != '\0')
+		ucl_object_insert_key(o, ucl_object_fromint(strtoll(v, NULL, 10)),
+		    key, 0, false);
+}
+
+static void
+put_num(ucl_object_t *o, const char *key, const char *v)
+{
+
+	if (v != NULL && v[0] != '\0')
+		ucl_object_insert_key(o, ucl_object_fromdouble(strtod(v, NULL)),
+		    key, 0, false);
+}
+
+static void
+put_list(ucl_object_t *o, const char *key, const char *v)
+{
+
+	if (v != NULL && v[0] != '\0')
+		ucl_object_insert_key(o, list_of(v), key, 0, false);
+}
+
+
+/* The service's parts: the forms' answers into the document. */
+static bool
+sd_service_forms(const char *form, const ucl_object_t *f)
+{
+	ucl_object_t		*doc, *sw, *o, *cr, *t, *u, *arr;
+	const ucl_object_t	*old, *ocr;
+	const char		*was, *v;
+	char			 name[32], buf[160];
+	int			 i;
+
+	if (strcmp(form, "sd-swvc") != 0 && strcmp(form, "sd-zone") != 0 &&
+	    strcmp(form, "sd-flow") != 0 && strcmp(form, "sd-policy") != 0 &&
+	    strcmp(form, "sd-ep") != 0 && strcmp(form, "sd-map") != 0)
+		return (false);
+	if (sd.doc == NULL)
+		return (true);
+	was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
+	doc = ucl_object_copy(sd.doc);
+	if (strcmp(form, "sd-swvc") == 0) {
+		if (jstr(f, "id") == NULL || jstr(f, "id")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A "
+			    "service has an id");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		old = was[0] != '\0' ? jfind(jget(doc, "swvcs"), "id", was) : NULL;
+		o = old != NULL ? ucl_object_copy(old) : ucl_object_typed_new(
+		    UCL_OBJECT);
+		for (i = 0; i < 12; i++) {
+			static const char *const keys[] = { "id", "fib", "as",
+			    "reserved_prefixes", "ucs", "bfd", "intervals", NULL };
+
+			if (keys[i] == NULL)
+				break;
+			(void)ucl_object_delete_key(o, keys[i]);
+		}
+		put_str(o, "id", jstr(f, "id"));
+		put_int(o, "fib", jstr(f, "fib") != NULL && jstr(f, "fib")[0] !=
+		    '\0' ? jstr(f, "fib") : "1");
+		put_int(o, "as", jstr(f, "as"));
+		put_list(o, "reserved_prefixes", jstr(f, "reserved"));
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < 64; i++) {
+			snprintf(name, sizeof(name), "ucs_%d", i);
+			if ((v = jstr(f, name)) != NULL && v[0] != '\0')
+				ucl_array_append(arr, ucl_object_fromstring(v));
+		}
+		ucl_object_insert_key(o, arr, "ucs", 0, false);
+		if (checked(f, "bfd")) {
+			t = ucl_object_typed_new(UCL_OBJECT);
+			put_int(t, "interval", jstr(f, "bfd_interval") != NULL &&
+			    jstr(f, "bfd_interval")[0] != '\0' ? jstr(f,
+			    "bfd_interval") : "200");
+			ucl_object_insert_key(t, ucl_object_fromint(3), "multiplier",
+			    0, false);
+			ucl_object_insert_key(o, t, "bfd", 0, false);
+		}
+		t = old != NULL && jget(old, "intervals") != NULL ?
+		    ucl_object_copy(jget(old, "intervals")) :
+		    ucl_object_typed_new(UCL_OBJECT);
+		(void)ucl_object_delete_key(t, "eval");
+		put_int(t, "eval", jstr(f, "eval") != NULL && jstr(f, "eval")[0] !=
+		    '\0' ? jstr(f, "eval") : "1000");
+		if (jget(t, "arrival") == NULL)
+			ucl_object_insert_key(t, ucl_object_fromint(100), "arrival",
+			    0, false);
+		if (jget(t, "ir") == NULL)
+			ucl_object_insert_key(t, ucl_object_fromint(500), "ir", 0,
+			    false);
+		ucl_object_insert_key(o, t, "intervals", 0, false);
+		if (old == NULL) {
+			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+			    "zones", 0, false);
+			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+			    "flows", 0, false);
+			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+			    "policies", 0, false);
+			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+			    "end_points", 0, false);
+		}
+		list_put(doc, "swvcs", "id", was, o);
+		snprintf(sd.swvc, sizeof(sd.swvc), "%s", jstr(f, "id"));
+		app.modal = MODAL_NONE;
+		doc_send(doc);
+		return (true);
+	}
+	if ((sw = swvc_mut(doc)) == NULL) {
+		ucl_object_unref(doc);
+		app.modal = MODAL_NONE;
+		return (true);
+	}
+	if (strcmp(form, "sd-zone") == 0) {
+		if (jstr(f, "name") == NULL || jstr(f, "name")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A zone "
+			    "has a name");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		old = jfind(jget(sw, "zones"), "name", was);
+		o = old != NULL ? ucl_object_copy(old) : ucl_object_typed_new(
+		    UCL_OBJECT);
+		(void)ucl_object_delete_key(o, "name");
+		(void)ucl_object_delete_key(o, "prefixes");
+		put_str(o, "name", jstr(f, "name"));
+		if (jstr(f, "prefixes") != NULL && jstr(f, "prefixes")[0] != '\0')
+			put_list(o, "prefixes", jstr(f, "prefixes"));
+		else
+			ucl_object_insert_key(o, ucl_object_fromstring("Default"),
+			    "prefixes", 0, false);
+		if (jget(o, "policies") == NULL)
+			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+			    "policies", 0, false);
+		list_put(sw, "zones", "name", was, o);
+	} else if (strcmp(form, "sd-flow") == 0) {
+		static const char *const apps[] = { "dns", "http", "https", "ssh",
+		    "sip", "ntp", "smtp", "imap", "pop3", "ldap", "rdp", "snmp",
+		    "syslog", "ike", "bgp", "quic", "dhcp", "icmp" };
+		bool	v6;
+
+		if (jstr(f, "name") == NULL || jstr(f, "name")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A flow "
+			    "has a name");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put_str(o, "name", jstr(f, "name"));
+		put_str(o, "group", jstr(f, "group"));
+		cr = ucl_object_typed_new(UCL_OBJECT);
+		if (checked(f, "any"))
+			ucl_object_insert_key(cr, ucl_object_frombool(true), "any", 0,
+			    false);
+		else {
+			arr = ucl_object_typed_new(UCL_ARRAY);
+			for (i = 0; i < (int)(sizeof(apps) / sizeof(apps[0])); i++) {
+				snprintf(name, sizeof(name), "app_%s", apps[i]);
+				if (checked(f, name))
+					ucl_array_append(arr, ucl_object_fromstring(
+					    apps[i]));
+			}
+			if (ucl_array_size(arr) > 0)
+				ucl_object_insert_key(cr, arr, "appid", 0, false);
+			else
+				ucl_object_unref(arr);
+			put_list(cr, "dscp", jstr(f, "dscp"));
+			v6 = (jstr(f, "src") != NULL && strchr(jstr(f, "src"), ':') !=
+			    NULL) || (jstr(f, "dst") != NULL && strchr(jstr(f, "dst"),
+			    ':') != NULL);
+			put_list(cr, v6 ? "nextheadv6" : "protv4", jstr(f, "proto"));
+			put_list(cr, "dport", jstr(f, "dport"));
+			put_list(cr, "sport", jstr(f, "sport"));
+			put_list(cr, v6 ? "sav6" : "sav4", jstr(f, "src"));
+			put_list(cr, v6 ? "dav6" : "dav4", jstr(f, "dst"));
+			if (ucl_object_lookup(cr, "appid") == NULL && jget(cr, "dscp")
+			    == NULL && jget(cr, v6 ? "nextheadv6" : "protv4") == NULL
+			    && jget(cr, "dport") == NULL && jget(cr, "sport") == NULL
+			    && jget(cr, v6 ? "sav6" : "sav4") == NULL && jget(cr, v6 ?
+			    "dav6" : "dav4") == NULL) {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "A flow matches something: an application, a "
+				    "DSCP, a protocol, ports or prefixes, or "
+				    "everything");
+				ucl_object_unref(cr);
+				ucl_object_unref(o);
+				ucl_object_unref(doc);
+				return (true);
+			}
+		}
+		ucl_object_insert_key(o, cr, "criteria", 0, false);
+		list_put(sw, "flows", "name", was, o);
+	} else if (strcmp(form, "sd-policy") == 0) {
+		static const char *const picks[] = { "encryption",
+		    "public-private", "internet-breakout", "backup",
+		    "billing-method", NULL };
+
+		if (jstr(f, "name") == NULL || jstr(f, "name")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A "
+			    "policy has a name");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		old = jfind(jget(sw, "policies"), "name", was);
+		ocr = jget(old, "criteria");
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put_str(o, "name", jstr(f, "name"));
+		put_str(o, "direction", jstr(f, "direction") != NULL ? jstr(f,
+		    "direction") : "ingress");
+		cr = ucl_object_typed_new(UCL_OBJECT);
+		if (jstr(f, "direction") != NULL && strcmp(jstr(f, "direction"),
+		    "egress") == 0) {
+			put_str(cr, "egress-block", jstr(f, "egress-block"));
+			if (jstr(ocr, "af-security-egress") != NULL)
+				put_str(cr, "af-security-egress", jstr(ocr,
+				    "af-security-egress"));
+		} else {
+			for (i = 0; picks[i] != NULL; i++)
+				put_str(cr, picks[i], jstr(f, picks[i]));
+			if ((v = jstr(f, "zones")) != NULL && v[0] != '\0') {
+				if (strcmp(v, "All") == 0)
+					put_str(cr, "allowed-destination-zones", "All");
+				else
+					put_list(cr, "allowed-destination-zones", v);
+			}
+			put_str(cr, "business-importance", jstr(f, "importance"));
+			if ((v = jstr(f, "limiter")) != NULL && v[0] != '\0')
+				put_str(cr, "bandwidth", v);
+			else if (jstr(f, "commit") != NULL && jstr(f, "commit")[0] !=
+			    '\0') {
+				t = ucl_object_typed_new(UCL_OBJECT);
+				put_int(t, "commit", jstr(f, "commit"));
+				if (jstr(f, "limit") != NULL && jstr(f, "limit")[0] !=
+				    '\0')
+					put_int(t, "limit", jstr(f, "limit"));
+				else
+					ucl_object_insert_key(t, ucl_object_typed_new(
+					    UCL_NULL), "limit", 0, false);
+				ucl_object_insert_key(cr, t, "bandwidth", 0, false);
+			}
+			if ((v = jstr(f, "metric")) != NULL && v[0] != '\0') {
+				ucl_object_t	*pf, *pr;
+
+				pf = ucl_object_typed_new(UCL_OBJECT);
+				pr = ucl_object_typed_new(UCL_OBJECT);
+				put_str(pr, "metric", v);
+				put_num(pr, "threshold", jstr(f, "threshold"));
+				put_num(pr, "ceiling", jstr(f, "ceiling"));
+				put_num(pr, "remediation", jstr(f, "remediation"));
+				ucl_object_insert_key(pf, pr, "primary", 0, false);
+				if (jget(jget(ocr, "performance"), "secondary") != NULL)
+					ucl_object_insert_key(pf, ucl_object_copy(jget(
+					    jget(ocr, "performance"), "secondary")),
+					    "secondary", 0, false);
+				ucl_object_insert_key(cr, pf, "performance", 0, false);
+			}
+			if (jstr(ocr, "virtual-topology") != NULL)
+				put_str(cr, "virtual-topology", jstr(ocr,
+				    "virtual-topology"));
+			if (jstr(ocr, "af-security-ingress") != NULL)
+				put_str(cr, "af-security-ingress", jstr(ocr,
+				    "af-security-ingress"));
+		}
+		ucl_object_insert_key(o, cr, "criteria", 0, false);
+		list_put(sw, "policies", "name", was, o);
+	} else if (strcmp(form, "sd-ep") == 0) {
+		if (jstr(f, "id") == NULL || jstr(f, "id")[0] == '\0' || jstr(f,
+		    "edge") == NULL || jstr(f, "interface") == NULL || jstr(f,
+		    "interface")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "An end "
+			    "point has an id, an edge and an interface");
+			ucl_object_unref(doc);
+			return (true);
+		}
+		old = jfind(jget(sw, "end_points"), "id", was);
+		o = old != NULL ? ucl_object_copy(old) : ucl_object_typed_new(
+		    UCL_OBJECT);
+		(void)ucl_object_delete_key(o, "id");
+		(void)ucl_object_delete_key(o, "edge");
+		(void)ucl_object_delete_key(o, "nat");
+		put_str(o, "id", jstr(f, "id"));
+		put_str(o, "edge", jstr(f, "edge"));
+		u = jget(old, "uni") != NULL ? ucl_object_copy(jget(old, "uni")) :
+		    ucl_object_typed_new(UCL_OBJECT);
+		(void)ucl_object_delete_key(o, "uni");
+		for (i = 0; i < 5; i++) {
+			static const char *const keys[] = { "id", "interface",
+			    "vlan", "ipv4", "ipv6" };
+
+			(void)ucl_object_delete_key(u, keys[i]);
+		}
+		snprintf(buf, sizeof(buf), "uni-%s", jstr(f, "id"));
+		put_str(u, "id", jstr(old != NULL ? jget(old, "uni") : NULL, "id")
+		    != NULL ? jstr(jget(old, "uni"), "id") : buf);
+		put_str(u, "interface", jstr(f, "interface"));
+		put_int(u, "vlan", jstr(f, "vlan"));
+		for (i = 0; i < 2; i++) {
+			const char	*pk = i == 0 ? "p4" : "p6", *ak = i == 0 ? "a4" :
+			    "a6";
+
+			t = ucl_object_typed_new(UCL_OBJECT);
+			if (jstr(f, pk) != NULL && jstr(f, pk)[0] != '\0') {
+				put_str(t, "mode", "static");
+				put_str(t, "prefix", jstr(f, pk));
+				arr = ucl_object_typed_new(UCL_ARRAY);
+				if (jstr(f, ak) != NULL && jstr(f, ak)[0] != '\0')
+					ucl_array_append(arr, ucl_object_fromstring(
+					    jstr(f, ak)));
+				ucl_object_insert_key(t, arr, "provider", 0, false);
+			} else
+				put_str(t, "mode", "none");
+			ucl_object_insert_key(u, t, i == 0 ? "ipv4" : "ipv6", 0,
+			    false);
+		}
+		ucl_object_insert_key(o, u, "uni", 0, false);
+		if (jstr(f, "nat") != NULL && jstr(f, "nat")[0] != '\0') {
+			t = ucl_object_typed_new(UCL_OBJECT);
+			put_str(t, "ip_version", "ipv4");
+			put_str(t, "public_prefix", jstr(f, "nat"));
+			ucl_object_insert_key(o, t, "nat", 0, false);
+		}
+		if (jget(o, "policy_map") == NULL)
+			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+			    "policy_map", 0, false);
+		list_put(sw, "end_points", "id", was, o);
+	} else {
+		/* A rule: at an end point ("e<id>") or of a zone ("z<name>"). */
+		const char	*owner = jstr(f, "owner");
+		ucl_object_t	*ow;
+		bool		 zone_wide;
+
+		if (owner == NULL || owner[0] == '\0') {
+			ucl_object_unref(doc);
+			return (true);
+		}
+		zone_wide = owner[0] == 'z';
+		ow = (ucl_object_t *)(uintptr_t)(zone_wide ? jfind(jget(sw,
+		    "zones"), "name", owner + 1) : jfind(jget(sw, "end_points"),
+		    "id", owner + 1));
+		if (ow == NULL) {
+			ucl_object_unref(doc);
+			return (true);
+		}
+		o = ucl_object_typed_new(UCL_OBJECT);
+		if (zone_wide) {
+			put_str(o, "app", jstr(f, "app"));
+			put_str(o, "policy", jstr(f, "ingress"));
+			if (jstr(o, "policy") == NULL) {
+				snprintf(app.modal_error, sizeof(app.modal_error), "A "
+				    "zone's rule names a policy, or Block");
+				ucl_object_unref(o);
+				ucl_object_unref(doc);
+				return (true);
+			}
+		} else {
+			put_str(o, "zone", jstr(f, "zone"));
+			put_str(o, "app", jstr(f, "app"));
+			put_str(o, "ingress", jstr(f, "ingress"));
+			put_str(o, "egress", jstr(f, "egress"));
+		}
+		if ((arr = (ucl_object_t *)(uintptr_t)jget(ow, zone_wide ?
+		    "policies" : "policy_map")) == NULL) {
+			arr = ucl_object_typed_new(UCL_ARRAY);
+			ucl_object_insert_key(ow, arr, zone_wide ? "policies" :
+			    "policy_map", 0, false);
+		}
+		if (was[0] != '\0' && (unsigned int)atoi(was) < ucl_array_size(arr))
+			ucl_object_unref(ucl_array_replace_index(arr, o,
+			    (unsigned int)atoi(was)));
+		else
+			ucl_array_append(arr, o);
+	}
+	app.modal = MODAL_NONE;
+	doc_send(doc);
+	return (true);
+}
+
+/* A part of the service taken out: by its name, or a rule by its place. */
+static void
+sd_service_remove(const char *what, const char *arg, const char *value)
+{
+	ucl_object_t		*doc, *sw, *arr;
+	const ucl_object_t	*e;
+	unsigned int		 i, n;
+	const char		*list, *key;
+
+	if (sd.doc == NULL)
+		return;
+	doc = ucl_object_copy(sd.doc);
+	if (strcmp(what, "swvc") == 0) {
+		arr = (ucl_object_t *)(uintptr_t)jget(doc, "swvcs");
+		key = "id";
+	} else if ((sw = swvc_mut(doc)) == NULL) {
+		ucl_object_unref(doc);
+		return;
+	} else if (strcmp(what, "map") == 0 || strcmp(what, "zmap") == 0) {
+		ucl_object_t	*ow = (ucl_object_t *)(uintptr_t)(strcmp(what,
+		    "zmap") == 0 ? jfind(jget(sw, "zones"), "name", arg) : jfind(
+		    jget(sw, "end_points"), "id", arg));
+
+		arr = (ucl_object_t *)(uintptr_t)jget(ow, strcmp(what, "zmap") ==
+		    0 ? "policies" : "policy_map");
+		if (arr != NULL && (unsigned int)atoi(value) < ucl_array_size(arr))
+			ucl_object_unref(ucl_array_delete(arr, (ucl_object_t *)
+			    (uintptr_t)ucl_array_find_index(arr, (unsigned int)atoi(
+			    value))));
+		doc_send(doc);
+		return;
+	} else {
+		list = strcmp(what, "zone") == 0 ? "zones" : strcmp(what, "flow")
+		    == 0 ? "flows" : strcmp(what, "policy") == 0 ? "policies" :
+		    "end_points";
+		key = strcmp(what, "ep") == 0 ? "id" : "name";
+		arr = (ucl_object_t *)(uintptr_t)jget(sw, list);
+	}
+	n = arr != NULL ? ucl_array_size(arr) : 0;
+	for (i = 0; i < n; i++) {
+		e = ucl_array_find_index(arr, i);
+		if (jstr(e, key) != NULL && strcmp(jstr(e, key), arg) == 0) {
+			ucl_object_unref(ucl_array_delete(arr, (ucl_object_t *)
+			    (uintptr_t)e));
+			break;
+		}
+	}
+	if (strcmp(what, "swvc") == 0)
+		sd.swvc[0] = '\0';
+	doc_send(doc);
+}
+
+/* An underlay, an edge or a link taken out of the document. */
+static void
+sd_remove(const char *what, const char *arg, const char *value)
+{
+	ucl_object_t		*doc, *arr;
+	const ucl_object_t	*e;
+	unsigned int		 i, n;
+	const char		*key, *id;
+
+	if (sd.doc == NULL)
+		return;
+	doc = ucl_object_copy(sd.doc);
+	if (strcmp(what, "link") == 0) {
+		arr = (ucl_object_t *)(uintptr_t)jget(jfind(jget(doc, "edges"),
+		    "server", arg), "ucs_end_points");
+		key = "id";
+		id = value;
+	} else {
+		arr = (ucl_object_t *)(uintptr_t)jget(doc, strcmp(what, "ucs") ==
+		    0 ? "ucs" : "edges");
+		key = strcmp(what, "ucs") == 0 ? "id" : "server";
+		id = arg;
+	}
+	n = arr != NULL ? ucl_array_size(arr) : 0;
+	for (i = 0; i < n; i++) {
+		e = ucl_array_find_index(arr, i);
+		if (jstr(e, key) != NULL && strcmp(jstr(e, key), id) == 0) {
+			ucl_object_unref(ucl_array_delete(arr, (ucl_object_t *)
+			    (uintptr_t)e));
+			break;
+		}
+	}
+	doc_send(doc);
 }
 
 /* ---- What is done ---------------------------------------------------- */
@@ -1296,6 +3390,10 @@ sent_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	    (long long)jint(o, "version", 0));
 	toast(false, "SD-WAN kept");
 	doc_cb(status, o, err, NULL);
+	/* The plan was of the document before: made again when wanted. */
+	if (sd.plan != NULL)
+		ucl_object_unref(sd.plan);
+	sd.plan = NULL;
 }
 
 /* The box's text sent, with the version it was made from. */
@@ -1346,8 +3444,8 @@ example(void)
 	    "\t\"edges\": [\n"
 	    "\t\t{\"server\": \"%s\", \"ucs_end_points\": [\n"
 	    "\t\t\t{\"id\": \"hq-inet\", \"ucs\": \"internet\", \"interface\": "
-	    "\"vtnet0\", \"address\": \"192.0.2.10\",\n\t\t\t \"breakout\": "
-	    "true},\n"
+	    "\"vtnet0\", \"address\": \"192.0.2.10\",\n\t\t\t \"gateway\": "
+	    "\"192.0.2.1\", \"breakout\": true},\n"
 	    "\t\t\t{\"id\": \"hq-mpls\", \"ucs\": \"mpls\", \"interface\": "
 	    "\"vtnet1\", \"address\": \"10.99.0.1\"}]},\n"
 	    "\t\t{\"server\": \"%s\", \"ucs_end_points\": [\n"
@@ -1423,6 +3521,8 @@ sdwan_form(const char *form, const ucl_object_t *f)
 {
 	const char	*text;
 
+	if (sd_forms(form, f) || sd_service_forms(form, f))
+		return (true);
 	if (strcmp(form, "sd-doc") != 0)
 		return (false);
 	text = jstr(f, "text") != NULL ? jstr(f, "text") : "";
@@ -1442,6 +3542,173 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sdwan_open();
 		return (true);
 	}
+	if (strcmp(act, "sd-ucs-add") == 0 || strcmp(act, "sd-ucs-edit") == 0) {
+		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act,
+		    "sd-ucs-edit") == 0 ? arg : "");
+		app.modal = MODAL_SD_UCS;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "sd-edge-add") == 0) {
+		app.modal = MODAL_SD_EDGE;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "sd-link-add") == 0 || strcmp(act, "sd-link-edit") ==
+	    0) {
+		char	url[96];
+
+		snprintf(sd.link_host, sizeof(sd.link_host), "%s", arg);
+		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act,
+		    "sd-link-edit") == 0 ? value : "");
+		sd.link_if[0] = '\0';
+		if (sd.ifs != NULL)
+			ucl_object_unref(sd.ifs);
+		sd.ifs = NULL;
+		sd.ifs_loading = true;
+		snprintf(url, sizeof(url), "/api/servers/%s/net/interfaces", arg);
+		api("GET", url, NULL, ifs_cb, NULL);
+		app.modal = MODAL_SD_LINK;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "input:sd-link-if") == 0) {
+		snprintf(sd.link_if, sizeof(sd.link_if), "%s", value);
+		return (true);
+	}
+	if (strcmp(act, "input:sd-policy-dir") == 0) {
+		snprintf(sd.edit2, sizeof(sd.edit2), "%s", value);
+		return (true);
+	}
+	if (strcmp(act, "input:sd-ep-edge") == 0) {
+		char	url[96];
+
+		snprintf(sd.link_host, sizeof(sd.link_host), "%s", value);
+		sd.link_if[0] = '\0';
+		if (sd.ifs != NULL)
+			ucl_object_unref(sd.ifs);
+		sd.ifs = NULL;
+		sd.ifs_loading = true;
+		snprintf(url, sizeof(url), "/api/servers/%s/net/interfaces", value);
+		api("GET", url, NULL, ifs_cb, NULL);
+		return (true);
+	}
+	/* The service's parts: a form each, a word before taking one away. */
+	if (strncmp(act, "sd-swvc-", 8) == 0 || strncmp(act, "sd-zone-", 8) ==
+	    0 || strncmp(act, "sd-flow-", 8) == 0 || strncmp(act, "sd-policy-",
+	    10) == 0 || strncmp(act, "sd-ep-", 6) == 0 || strncmp(act,
+	    "sd-map-", 7) == 0 || strncmp(act, "sd-zmap-", 8) == 0) {
+		const char	*what, *verb;
+		char		 kind[12], body[300];
+
+		what = act + 3;
+		verb = strrchr(act, '-') + 1;
+		snprintf(kind, sizeof(kind), "%.*s", (int)(verb - what - 1), what);
+		if (strcmp(verb, "add") == 0 || strcmp(verb, "edit") == 0) {
+			snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(verb, "edit")
+			    == 0 ? (strcmp(kind, "map") == 0 || strcmp(kind, "zmap")
+			    == 0 ? value : arg) : "");
+			sd.edit2[0] = '\0';
+			if (strcmp(kind, "map") == 0 || strcmp(kind, "zmap") == 0)
+				snprintf(sd.edit2, sizeof(sd.edit2), "%c%s",
+				    strcmp(kind, "zmap") == 0 ? 'z' : 'e', arg);
+			app.modal = strcmp(kind, "swvc") == 0 ? MODAL_SD_SWVC :
+			    strcmp(kind, "zone") == 0 ? MODAL_SD_ZONE : strcmp(kind,
+			    "flow") == 0 ? MODAL_SD_FLOW : strcmp(kind, "policy") ==
+			    0 ? MODAL_SD_POLICY : strcmp(kind, "ep") == 0 ?
+			    MODAL_SD_EP : MODAL_SD_MAP;
+			app.modal_error[0] = '\0';
+			if (app.modal == MODAL_SD_EP) {
+				const ucl_object_t	*ep = jfind(jget(swvc_shown(),
+				    "end_points"), "id", sd.edit);
+				const ucl_object_t	*ed = jget(sd.doc, "edges");
+				const char		*host = ep != NULL ? jstr(ep,
+				    "edge") : ed != NULL && ucl_array_size(ed) > 0 ?
+				    jstr(ucl_array_find_index(ed, 0), "server") :
+				    NULL;
+
+				if (host != NULL)
+					sdwan_action("input:sd-ep-edge", "", host);
+			}
+			return (true);
+		}
+		if (strcmp(verb, "del") == 0) {
+			char	daction[40];
+
+			snprintf(daction, sizeof(daction), "do-%s", act);
+			snprintf(body, sizeof(body), strcmp(kind, "swvc") == 0 ?
+			    "The service %s goes out of the document with all "
+			    "its parts; its tunnels, rules and tables are taken "
+			    "off the edges at the next Apply." : strcmp(kind,
+			    "map") == 0 || strcmp(kind, "zmap") == 0 ? "The rule "
+			    "goes out of the document (%s). Nothing is made or "
+			    "unmade until Apply." : "The %s goes out of the "
+			    "document; what names it will not pass the check "
+			    "until changed. Nothing is made or unmade until "
+			    "Apply.", strcmp(kind, "map") == 0 || strcmp(kind,
+			    "zmap") == 0 || strcmp(kind, "swvc") == 0 ? arg : kind);
+			confirm("Take it away", body, "Take away", true, "", daction,
+			    arg, value);
+			return (true);
+		}
+	}
+	if (strncmp(act, "do-sd-", 6) == 0 && strrchr(act, '-') != NULL &&
+	    strcmp(strrchr(act, '-'), "-del") == 0 && (strncmp(act + 6, "swvc",
+	    4) == 0 || strncmp(act + 6, "zone", 4) == 0 || strncmp(act + 6,
+	    "flow", 4) == 0 || strncmp(act + 6, "policy", 6) == 0 || strncmp(
+	    act + 6, "ep-", 3) == 0 || strncmp(act + 6, "map", 3) == 0 ||
+	    strncmp(act + 6, "zmap", 4) == 0)) {
+		char	kind[12];
+
+		snprintf(kind, sizeof(kind), "%.*s", (int)(strrchr(act, '-') -
+		    (act + 6)), act + 6);
+		sd_service_remove(kind, arg, value);
+		return (true);
+	}
+	if (strcmp(act, "sd-ucs-del") == 0) {
+		char	body[300];
+
+		snprintf(body, sizeof(body), "The underlay %s goes out of the "
+		    "document, with nothing else changed: links and services "
+		    "that name it will not pass the check until they are "
+		    "changed too. Nothing is made or unmade until Apply.", arg);
+		confirm("Take the underlay away", body, "Take away", true, "",
+		    "do-sd-ucs-del", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "sd-edge-del") == 0) {
+		char	body[300];
+
+		snprintf(body, sizeof(body), "The edge %s goes out of the "
+		    "document with its WAN links; services with an end point "
+		    "on it will not pass the check until changed. Nothing is "
+		    "made or unmade until Apply.", host_name(arg));
+		confirm("Take the edge away", body, "Take away", true, "",
+		    "do-sd-edge-del", arg, "");
+		return (true);
+	}
+	if (strcmp(act, "sd-link-del") == 0) {
+		char	body[300];
+
+		snprintf(body, sizeof(body), "The WAN link %s of %s goes out of "
+		    "the document. Nothing is made or unmade until Apply.",
+		    value, host_name(arg));
+		confirm("Take the link away", body, "Take away", true, "",
+		    "do-sd-link-del", arg, value);
+		return (true);
+	}
+	if (strcmp(act, "do-sd-ucs-del") == 0) {
+		sd_remove("ucs", arg, value);
+		return (true);
+	}
+	if (strcmp(act, "do-sd-edge-del") == 0) {
+		sd_remove("edge", arg, value);
+		return (true);
+	}
+	if (strcmp(act, "do-sd-link-del") == 0) {
+		sd_remove("link", arg, value);
+		return (true);
+	}
 	if (strncmp(act, "sd-", 3) != 0 && strcmp(act, "input:sd-swvc") != 0 &&
 	    strcmp(act, "do-sd-apply-fresh") != 0)
 		return (false);
@@ -1450,7 +3717,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "edges") == 0 ? SD_EDGES : strcmp(arg,
 		    "paths") == 0 ? SD_PATHS : strcmp(arg, "document") == 0 ?
 		    SD_DOCUMENT : SD_OVERVIEW;
-		if (sd.tab == SD_EDGES)
+		if (sd.tab == SD_EDGES || sd.tab == SD_OVERVIEW)
 			plan_load();
 		else if (sd.tab == SD_PATHS)
 			paths_load();
@@ -1487,9 +3754,15 @@ sdwan_tick(double now)
 {
 	static double	at;
 
-	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_PATHS &&
-	    now - sd.paths_at > PATHS_EVERY_MS)
+	if (app.node == NODE_SDWAN && app.visible && ((sd.tab == SD_PATHS &&
+	    now - sd.paths_at > PATHS_EVERY_MS) || (sd.tab == SD_OVERVIEW &&
+	    now - sd.paths_at > DASH_EVERY_MS)))
 		paths_load();
+	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_OVERVIEW &&
+	    sd.applied == NULL && now - sd.apply_at > 5000) {
+		sd.apply_at = now;
+		api("GET", "/api/sdwan/apply", NULL, applied_cb, NULL);
+	}
 	if (app.node == NODE_SDWAN && app.visible && sd.tab == SD_EDGES &&
 	    sd.applying && now - sd.apply_at > 1000) {
 		sd.apply_at = now;

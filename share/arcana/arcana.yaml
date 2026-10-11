@@ -213,13 +213,18 @@ definitions:
           host, whose public half the ipsec network kind tells; start
           starts the daemon (service strongswan onestart); conn
           writes the connection named conn, between tunnel-local and
-          tunnel-remote, authenticated by the two hosts' keys (pubkey
-          is the peer's), with one child of ipsec-mode tunnel or
-          transport between local-ts and remote-ts, and with reqid the
-          ipsec(4) interface of that reqid; unconn takes it away; up
+          tunnel-remote, this host known by its key or by local-cert,
+          the peer by pubkey (its key), remote-cert (its certificate)
+          or remote-ca (a CA that signed it, remote-id saying which),
+          its children kept, and with ipsec-mode one child of the
+          connection's name, tunnel or transport between local-ts and
+          remote-ts, with reqid the ipsec(4) interface of that reqid;
+          child adds or changes the child named child the same way,
+          unchild takes it away; unconn takes the connection away; up
           and down start and stop its security associations.  What is
           written is in conf.d, a file of its own that the daemon reads
-          again, and is there after a boot.
+          again and is there after a boot, beside a .json arcana keeps
+          of it.
       - name: pkg-install
         doc: |
           pkg install -y of the packages names, on the host or in a
@@ -1216,6 +1221,37 @@ attribute-sets:
         doc: |
           For if-set and if-create of a tunnel (gif, gre, vxlan, geneve,
           wg), the routing table its outer packets are sent by.
+      - name: child
+        type: text
+        doc: |
+          For ipsec child and unchild, the child's name under the
+          connection conn: its mode, traffic, reqid and start are the
+          child's.
+        checks:
+          max-len: 32
+      - name: local-cert
+        type: text
+        doc: |
+          For ipsec conn, this host's certificate, a file in swanctl's
+          x509 (its key in private or pkcs8), in place of the key
+          arcana made it.
+        checks:
+          max-len: 128
+      - name: remote-cert
+        type: text
+        doc: |
+          For ipsec conn, the peer's certificate, a file in swanctl's
+          x509, in place of its public key.
+        checks:
+          max-len: 128
+      - name: remote-ca
+        type: text
+        doc: |
+          For ipsec conn, a CA in swanctl's x509ca that signed the
+          peer's certificate, which remote-id names, in place of its
+          public key.
+        checks:
+          max-len: 128
 
   - name: job
     attributes:
@@ -2403,9 +2439,13 @@ operations:
       steer it, as the console compiles them: json, an object with
       "set" (2 to 31, the ipfw set they live in, emptied and filled
       while disabled), "tables" (each a "name", a "valtype" of skipto,
-      ipv4 or ipv6, and "entries", each a prefix and a value) and
-      "rules" (each its number and its words).  Kept for the next
-      start.  With no rules, the set is emptied.
+      ipv4, ipv6 or legacy, and "entries", each a prefix and a value),
+      "objects" (dummynet pipes and queues and nat instances the rules
+      name: each "pipe N config ...", "queue N config ...", "sched N
+      config ..." or "nat N config ...", made before the rules, deleted
+      with them, their modules loaded) and "rules" (each its number and
+      its words).  Kept for the next start.  With no rules, the set is
+      emptied.
     do:
       request:
         attributes:
@@ -2427,6 +2467,31 @@ operations:
       "via", in the console's order.  The first whose far end the
       probes do not say is down is the one, made again here when a
       probe's state changes.  Kept for the next start.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+
+  - name: sdwan-bird
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The BIRD instances of the SD-WAN services at this edge, one each,
+      as the console writes them: json, an object with "instances",
+      each a "name", the "fib" it runs in and its "conf", BIRD's
+      configuration text.  Each file is parsed by bird(8) before it is
+      made the instance's; one running is told to read it again, one
+      not yet is started in its table (setfib) with a control socket
+      and a pid file of its own beside the agent's kept files; those
+      not named any more are stopped.  Kept for the next start.  The
+      sdwan read tells each instance and its protocols.
     do:
       request:
         attributes:

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.82.0
+  version: 0.92.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -792,7 +792,12 @@ paths:
           description: data as the agent's sdwan operation answers it:
             targets, each with its id, address, family, fib, state,
             since, sent, received, misses, last_rtt, now and samples
-            (each t, delay, ipdv, loss, min, max, sent, recv); probing.
+            (each t, delay, ipdv, loss, min, max, sent, recv); probing;
+            rules (set, rules, tables, objects), steer and steered; bird,
+            the services' BIRD instances at the edge, each its name, fib,
+            running, protocols (name, proto, state, info) and bfd, its
+            sessions (address, interface, state, since); a steering
+            candidate with a session says bfd too.
   /api/servers/{server}/history:
     get:
       tags: [servers]
@@ -1904,10 +1909,11 @@ components:
       type: http
       scheme: bearer
       description: A read-only API token (arcr_ and 64 hex digits), made
-        in a session with POST /api/tokens. It is taken for GET under
-        /api/servers and for /api/health and GET /api/tokens only, and
-        refused with 401 for anything that changes something, the
-        console's settings, push, sign-in and enrolment.
+        in a session with POST /api/tokens. It is taken for every read
+        (the hosts, workflows and runs, SD-WAN, transfers, health, the
+        tokens) and refused with 401 for anything that changes
+        something, and for the console's settings, push, sign-in and
+        enrolment.
 
   parameters:
     server:

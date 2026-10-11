@@ -49,7 +49,7 @@ bool		 harness_webconf_only_local;
 extern char	**environ;
 
 static int	console_socket(void);
-static void	show(const char *);
+void	show(const char *);
 
 void
 put(const char *path, const char *text)
@@ -117,7 +117,7 @@ run_prog(char *const argv[])
 	return (WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
-static void
+void
 show(const char *path)
 {
 	FILE	*fp;
@@ -185,7 +185,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[90];
+	char	*argv[92];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -386,6 +386,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "else echo \" 2  198.51.100.1  5.000 ms\"; fi\n"
 	    "echo \" 3  $last  9.500 ms\"\n");
 	ATF_REQUIRE(chmod("fake-traceroute", 0755) == 0);
+	/* setfib: the program run as it is, and said so. */
+	put("fake-setfib", "#!/bin/sh\necho \"setfib $*\" >> setfib.log\n"
+	    "shift 2\nexec \"$@\"\n");
+	ATF_REQUIRE(chmod("fake-setfib", 0755) == 0);
 	snprintf(buf, sizeof(buf), "#!/bin/sh\ndir=$2\ncase \" $* \" in\n"
 	    "*\" -V .OBJDIR \"*) echo \"$dir/obj\" ;;\n"
 	    "*/usr.sbin/arcana-agent*) mkdir -p \"$dir/obj\" && "
@@ -504,7 +508,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "\\t0\\t0\\t0\\n' \"$4\" > wg.peers ;;\n"
 	    "esac\nexit 0\n");
 	put("fake-birdc", "#!/bin/sh\necho \"$*\" >> birdc.log\n"
-	    "[ \"$1\" = -r ] && shift\ncase \"$*\" in\n"
+	    "[ \"$1\" = -r ] && shift\n[ \"$1\" = -s ] && shift 2\n"
+	    "case \"$*\" in\n"
 	    "'show status') printf 'BIRD 2.15.1 ready.\\nBIRD 2.15.1\\n"
 	    "Router ID is 192.0.2.1\\nDaemon is up and running\\n' ;;\n"
 	    "'show protocols all') printf 'BIRD 2.15.1 ready.\\nName Proto Table "
@@ -670,7 +675,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(mkdir("bird", 0755) == 0 || errno == EEXIST);
 	put("bird/bird.conf", "# The lab's routing.\nrouter id 192.0.2.1;\n\n"
 	    "define MY_AS = 65000;\ndefine CUSTOMERS = [ (65000,100), "
-	    "(65000,200) ];\ndefine BLACKHOLE_LC = [ (65000,666,0) ];\n\n"
+	    "(65000,200) ];\ndefine BLACKHOLE_LC = [ (65000,666,0) ];\n"
+	    "define PEERS = [\n\t# the exchange\n\t(65000,300), # ix-a\n"
+	    "\t(65000,301) /* ix-b */\n];\n\n"
 	    "roa4 table r4;\n\nfilter bgp_in {\n\tif bgp_community ~ CUSTOMERS "
 	    "then accept;\n\treject;\n}\n\nfilter bgp_out {\n\taccept;\n}\n\n"
 	    "protocol device device1 {\n}\n\nprotocol bgp bgp_core {\n"
@@ -691,12 +698,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "  [ -f \"$f\" ] || continue; n=${f##*/arcana-}; n=${n%.conf}\n"
 	    "  l=$(sed -n 's/^.*local_addrs = //p' \"$f\")\n"
 	    "  r=$(sed -n 's/^.*remote_addrs = //p' \"$f\")\n"
-	    "  m=$(sed -n 's/^.*mode = //p' \"$f\" | tr a-z A-Z)\n"
+	    "  kids=$(awk '/^\t\t\t[A-Za-z0-9_-]+ \\{$/ { k = $1 } "
+	    "/^\t\t\t\tmode = / { printf \"      %s {\\n        mode = %s\\n"
+	    "      }\\n\", k, toupper($3) }' \"$f\")\n"
 	    "  printf 'list-conn event {\\n  %s {\\n    local_addrs = [\\n"
 	    "      %s\\n    ]\\n    remote_addrs = [\\n      %s\\n    ]\\n"
-	    "    version = IKEv2\\n    children {\\n      %s {\\n"
-	    "        mode = %s\\n      }\\n    }\\n  }\\n}\\n' \"$n\" \"$l\" "
-	    "\"$r\" \"$n\" \"$m\"\n"
+	    "    version = IKEv2\\n    children {\\n%s\\n    }\\n  }\\n}\\n' "
+	    "\"$n\" \"$l\" \"$r\" \"$kids\"\n"
 	    "done ;;\n"
 	    "--list-sas) [ -f swanctl/conf.d/arcana-to-lab2.conf ] && printf "
 	    "'list-sa event {\\n  to-lab2 {\\n    state = ESTABLISHED\\n"
@@ -711,6 +719,18 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	ATF_REQUIRE(mkdir("swanctl/conf.d", 0755) == 0 || errno == EEXIST);
 	ATF_REQUIRE(mkdir("swanctl/pkcs8", 0700) == 0 || errno == EEXIST);
 	ATF_REQUIRE(mkdir("swanctl/pubkey", 0755) == 0 || errno == EEXIST);
+	/* A peer's certificate and a CA, for a connection to pick. */
+	ATF_REQUIRE(mkdir("swanctl/x509", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(mkdir("swanctl/x509ca", 0755) == 0 || errno == EEXIST);
+	ATF_REQUIRE(system("openssl req -x509 -newkey ec -pkeyopt "
+	    "ec_paramgen_curve:P-256 -nodes -keyout peer.key -out "
+	    "swanctl/x509/edge-b.pem -days 30 -subj '/CN=edge-b.example' "
+	    "-addext 'basicConstraints=CA:FALSE' "
+	    "-addext 'subjectAltName=DNS:edge-b.example' >/dev/null 2>&1 && "
+	    "openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 "
+	    "-nodes -keyout ca.key -out swanctl/x509ca/lab-ca.pem -days 30 "
+	    "-subj '/CN=Lab CA' -addext 'basicConstraints=critical,CA:TRUE' "
+	    ">/dev/null 2>&1") == 0);
 	ATF_REQUIRE(chmod("fake-wg", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-birdc", 0755) == 0);
 	ATF_REQUIRE(mkdir("wg", 0700) == 0 || errno == EEXIST);
@@ -843,7 +863,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[85] = (char *)(uintptr_t)"swanctl";
 	argv[86] = (char *)(uintptr_t)"-X";
 	argv[87] = (char *)(uintptr_t)"./fake-traceroute";
-	argv[88] = NULL;
+	argv[88] = (char *)(uintptr_t)"-3";
+	argv[89] = (char *)(uintptr_t)"./fake-setfib";
+	argv[90] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);

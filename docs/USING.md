@@ -589,23 +589,38 @@ The console is laid out as a tree and tabs.
     saying `version = 2`. **Make its key** has the host make a key of
     its own, ECDSA P-256, whose private half stays on the host; the tab
     shows the public half, which is what a peer is given: two hosts
-    know each other by their keys, no CA between them. **At boot**
-    keeps strongSwan started with the host (`strongswan_enable`), and
+    know each other by their keys, no CA between them. Where there are
+    certificates, the tab reads them from swanctl's `x509` (hosts'
+    own, and peers') and `x509ca` (the CAs) and lists them, with each
+    one's subject, names and expiry, so that a peer is known one of
+    three ways: by its public key, pasted; by its certificate, picked
+    from `x509`; or by a CA picked from `x509ca` that signed its
+    certificate, with the peer's identity saying which. This host can
+    use a certificate of its own from `x509` too, its key in `private`
+    or `pkcs8`, instead of the key arcana made it. **At boot** keeps
+    strongSwan started with the host (`strongswan_enable`), and
     **Start** starts it when it is not running. **+ connection** joins
-    this host to another between two addresses, in **tunnel** mode or
-    in **transport** mode, where what is sent between the two addresses
-    is protected as it is: a gre, gif or WireGuard tunnel between them,
-    with the traffic named as `192.0.2.1[gre]`. With a **reqid** a
-    connection serves the `ipsec` interface made with that reqid
-    (**+ interface**, type ipsec): tunnel mode, the interface's routes
-    deciding what goes through it. A connection is written as
-    `swanctl/conf.d/arcana-<name>.conf` with the peer's key beside it,
-    and strongSwan reads them all again; if it refuses, the files are
-    put back as they were. The table has each connection with its
-    child, its SA's state and algorithm, and its traffic; **Up**,
-    **Down**, and the cross, for arcana's, takes it away, its SAs ended
-    first. A connection that is not IKEv2 is marked so. From a shell:
-    `arcanactl ipsec init | start | conn | unconn | up | down`.
+    this host to another between two addresses, with one child in
+    **tunnel** mode or in **transport** mode, where what is sent
+    between the two addresses is protected as it is: a gre, gif or
+    WireGuard tunnel between them, with the traffic named as
+    `192.0.2.1[gre]`. A connection is the IKE side, the two addresses
+    and how each is known; its children are what it carries, each in
+    its own mode between its own traffic selectors, and **+ child** on
+    a connection adds one, the cross on a child takes it away, the
+    connection and the others untouched. With a **reqid** a child
+    serves the `ipsec` interface made with that reqid (**+ interface**,
+    type ipsec): tunnel mode, the interface's routes deciding what goes
+    through it. A connection is written as
+    `swanctl/conf.d/arcana-<name>.conf` from what arcana keeps of it
+    beside it (`.json`), with the peer's key in `pubkey` when it is
+    known by its key, and strongSwan reads them all again; if it
+    refuses, the files are put back as they were. The table has each
+    connection with its children, its SA's state and algorithm, and
+    its traffic; **Up**, **Down**, and the cross, for arcana's, takes
+    it away, its SAs ended first. A connection that is not IKEv2 is
+    marked so. From a shell: `arcanactl ipsec init | start | conn |
+    child | unchild | unconn | up | down`.
     In a vnet jail, strongSwan is the jail's own, installed in it
     (`pkg -r` or **+ packages** for the jail): its key, its
     `swanctl/conf.d` and its `strongswan_enable` are beneath the jail's
@@ -629,7 +644,8 @@ The console is laid out as a tree and tabs.
     **filters and functions**, what BGP and OSPF take in and give out,
     each edited as it is written; **communities and sets**, the named
     lists filters test against, edited as a list, one entry a line, a
-    community as `(AS, value)` and a large one as `(AS, a, b)`;
+    community as `(AS, value)` and a large one as `(AS, a, b)`, a
+    comment kept on its entry's line;
     **RPKI**, the caches with their state and the ROA tables with how
     many origins each holds, and **+ cache**, which adds the tables,
     the protocol and a function `rpki_invalid()` for filters to ask;
@@ -773,9 +789,10 @@ The console is laid out as a tree and tabs.
   look at the hosts through the API without a passkey, sent as
   `Authorization: Bearer arcr_…`. One is made with a name and its
   value is shown that once; the console keeps only its SHA-256, and
-  when it was last used. It reads what is said of the hosts (GET under
-  `/api/servers`) and nothing else: it changes nothing, and does not
-  read the console's settings, sign-in, push or enrolment. Deleted, it
+  when it was last used. It reads whatever the API tells, the hosts,
+  the workflows and their runs, SD-WAN, transfers, and nothing else:
+  it changes nothing, and does not read the console's settings,
+  sign-in, push or enrolment. Deleted, it
   opens nothing at once.
 - **Settings** has the console's version, and under **Look** its
   themes. **Graphite**, the default everywhere, is calm: surfaces of
@@ -1060,8 +1077,33 @@ names them. It is one document with three parts:
     and its `ingress` and `egress` policies, over the zone's own) and
     its `nat`.
 
-**Overview** shows the underlays, the edges and the services in
-tables; **Services** one service's end points, zones, flows (in the
+**Dashboard** counts what there is, each number naming the FreeBSD
+piece that does the work (routing tables by setfib, tunnels by gre,
+gif, geneve and wg, IPsec by strongSwan, the rules in an ipfw set),
+draws the edges with the tunnels between them as their probes see them
+(green up, red down, dashed a backup, a lock encrypted, the delay and
+loss on each) or as planned before an apply, and lists the underlays,
+the edges and the services in tables, with forms: **+ underlay** (its
+type, billing, the tunnel kind over it and IPsec under it), **+ edge**
+(a host the console has), **+ WAN link** on an edge (the underlay, the
+interface picked from the host's own list with the address it has, the
+gateway, bandwidth, breakout and backup), each changed with the pencil
+or taken away with the cross, the document kept at each step and
+checked as a whole; **Services** has the same for a service and its
+parts: **+ service** (id, routing table, reserved prefixes, underlays,
+provider AS, evaluation interval, BFD), **+ end point** (an edge, its
+interface from the host's list, a VLAN tag, the IPv4 and IPv6 subnets
+with the edge's address in each, a NAT prefix), **+ zone** (name and
+prefixes, or the Default), **+ flow** (applications from the catalog,
+DSCP, protocol, ports, prefixes, or everything), **+ policy** (the
+tunnel criteria, breakout, the destination zones, performance by a
+metric with threshold, ceiling and remediation, bandwidth by a limiter
+or a commit and limit, importance; for egress, the block), and **+
+rule** on an end point (zone, flow or group, ingress and egress policy)
+or on a zone (flow and policy). What a form does not ask for, as
+virtual topologies, rate limiters, secondary subnets or BGP at a UNI,
+stays as it is and the Document tab writes. It shows one service's
+end points, zones, flows (in the
 order they are matched), policies, topologies and rate limiters;
 **Document** the whole of it as JSON. **Check** asks the console
 whether it is one the standard allows and **Keep** keeps it; what the
@@ -1173,5 +1215,74 @@ first, by the primary metric, and the one in use stays first while it
 meets them and is under the ceiling (R73); an order that changed is
 sent to the edge. `GET /api/sdwan/steer` says what was sent last;
 Paths shows each edge's prefixes, by which tunnel each goes now and
-the others' states. What a flow may do beyond the tunnels, breakout
-and the hosts of the edge's own UNI, is the next step's.
+the others' states.
+
+**Beyond the tunnels**, a flow with a policy may reach the hosts of
+the edge's own UNIs of the service whose zone it is allowed, and the
+Internet where its policy says `internet-breakout: enabled`
+(R53–R57): what is not a prefix of the service's UNIs (the table
+`sw<fib>_known`) is the Internet. Where it leaves is the edge's own
+UCS end point marked `breakout` (local: the service's default route
+by its `gateway`, reached by its interface, in the service's table),
+else the first edge of the document that has one and a tunnel to it
+(remote: the default route by the tunnel). Leaving locally, IPv4 is
+translated by an ipfw nat instance (`3000 + fib`) to the first host
+of the `nat.public_prefix` of the edge's end point that has one, else
+the interface's address, with `nat.exceptions` left as they are; what
+comes back in by that interface to the translated address or to the
+service's prefixes is forwarded by the service's table (`setfib`),
+and when no flow at the edge's UNIs breaks out, what comes in from
+the Internet for the service's prefixes is dropped (R56). The nat
+instance's output does not go through the kept rules. A flow's
+packets that none of this lets through are dropped by the flow's own
+last rule, so a later flow never sees them (R96); a policy without
+`internet-breakout` drops the flow's Internet traffic (R57).
+
+**Bandwidth** (`bandwidth` in a policy: a rate limiter's name, shared
+by every flow naming it, or the policy's own `commit` and `limit`,
+R77–R83): each limiter is a dummynet pipe of its `limit` (none: no
+limit), each flow in it a queue of that pipe weighted 1 to 100, half
+by its commit's share of the pipe's commits and half by its
+`business-importance` among the service's `importance.levels`, the
+first level the highest (D4). The queue meters the flow after the
+policy says it is forwarded (R79): on the way out by the service's
+tunnels, and in the flow's rule for its own UNIs' hosts and for
+breakout. The pipes and queues are numbered from 3000 and are made
+and deleted with the rules; `dummynet` and `ipfw_nat` are loaded as
+needed. A packet out of a pipe leaves the firewall (ipfw's one_pass).
+**Egress** (`egress` in an end point's policy map, R85, R86): a flow
+of the zone whose egress policy says `egress-block: discard` is
+dropped leaving by that end point's UNI. Backup and billing are in
+the steering above (R63, R64); a rooted-multipoint topology gives a
+leaf its roots only, so no edge forwards for another (R50, R51).
+
+**Routing at a UNI** (§11.6): besides its static `routes`, a UNI may
+have `bgp` (`family` ipv4, ipv6 or both, the subscriber's `as`, its
+`neighbors` at the UNI, within the UNI's prefixes, and maybe a
+`password`, a `hold_time`, `communities` as `[as, value]` pairs added
+to what the subscriber is sent, and a `distance`) or `ospf` (`family`,
+`area`, and maybe `cost`, `hello`, `dead`, a `password` and a
+`distance`); one of each, for one family or both (R139). A service
+with any such UNI gets a BIRD instance of its own on each of its
+edges, named `sw<fib>` and run by the agent in the service's table
+(`setfib`, with a control socket and a pid file beside the agent's
+kept files; `sdwan-bird`, kept and started again with the agent): the
+kernel's table learned and kept, so what the console put there stays
+and is advertised; the UNIs' connected routes; iBGP with every other
+edge by each tunnel between them (the service's `as`, 64512 unless
+said), next hop the tunnel's own address, so what one UNI learns
+reaches them all; and at each UNI the protocol its entry says, the
+`distance` its preference (256 less it, R140–R142). What a UNI learns
+goes by the service's table and the tunnel iBGP chose, not by the
+policies' tables: steering by performance is of the prefixes written
+in the document. With `bfd` in a service (`interval` 100 to 300 ms,
+`multiplier`, Mplify 119 §10.5 and R159), the instance watches each
+tunnel interface by BFD and the edges' iBGP sessions go by it; the
+agent reads the sessions every second into the `sdwan` read, a
+session that goes down or comes up is a fault (`sdwan-tunnel`, by
+bfd, R60), and the steering takes BFD's word over the probe's where
+there is a session. Paths shows BFD's state beside the probe's. AS override, damping and extended communities are
+refused, BIRD having no word for them; DHCP and SLAAC at a UNI are
+still to come. Paths shows each edge's instances and their protocols,
+as `birdc show protocols` lists them; `arcanactl sdwan bird json`
+sets them by hand.

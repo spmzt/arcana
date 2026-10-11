@@ -73,8 +73,9 @@ wd(const char *method, const char *path, const char *body)
 	memcpy(saved, cookie, sizeof(saved));
 	http_on(tcp_socket(wd_port), host, "", method, full, body, &r);
 	memcpy(cookie, saved, sizeof(saved));
-	ATF_REQUIRE_MSG(r.status == 200, "WebDriver %s %s: %d %.400s", method,
-	    full, r.status, r.body);
+		ATF_REQUIRE_MSG(r.status == 200, "WebDriver %s %s: %d %.400s; sent: "
+	    "%.300s", method, path, r.status, r.body != NULL ? r.body : "",
+	    body != NULL ? body : "");
 	v = r.json != NULL ? ucl_object_lookup(r.json, "value") : NULL;
 	out = v != NULL ? ucl_object_ref((ucl_object_t *)(uintptr_t)v) : NULL;
 	resp_free(&r);
@@ -167,8 +168,10 @@ wait_js(const char *expr, int seconds)
 	}
 	shot("failed");
 	/* With what the page last said, which is most often why. */
-	v = js("return ([...document.querySelectorAll('.toast, .err')].map("
-	    "t => t.textContent.slice(0, 120)).join(' | ').slice(-700));");
+	v = js("return ([...document.querySelectorAll('.toast, .err, .notice')].map("
+	    "t => t.textContent.slice(0, 120)).join(' | ').slice(-700) + ' / "
+	    "the textarea: ' + JSON.stringify((document.querySelector('.modal "
+	    "textarea') || {}).value || ''));");
 	atf_tc_fail("timed out waiting for %s; the page says: %s", expr,
 	    v != NULL && ucl_object_tostring(v) != NULL ?
 	    ucl_object_tostring(v) : "nothing");
@@ -361,20 +364,28 @@ offline(bool off)
 		ucl_object_unref(v);
 }
 
-ATF_TC_WITH_CLEANUP(pwa);
-ATF_TC_HEAD(pwa, tc)
-{
+/*
+ * Each case of the browser: the console started with a copy of the shell
+ * and Chromium with a virtual security key, enrolled; with servers, the
+ * one agent here added as lab (with a third jail, so the tree has one to
+ * leave out) and, by another name of its socket, as lab2, lab selected
+ * again after.  The cases run side by side, each its own console.
+ */
+static char	cwd[MAXPATHLEN];	/* the case's directory, for the parts */
 
-	atf_tc_set_md_var(tc, "descr", "Enrol, manage jails, see the workflow, "
-	    "log in again and go offline, in Chromium");
-	atf_tc_set_md_var(tc, "timeout", "300");
-}
-ATF_TC_BODY(pwa, tc)
+static void
+prologue(const atf_tc_t *tc, int nservers)
 {
-	char		 web[MAXPATHLEN], cwd[MAXPATHLEN], script[2048];
+	char		 web[MAXPATHLEN], script[2048];
 	char		*token;
 	FILE		*fp;
 	int		 i;
+
+	(void)web;
+	(void)script;
+	(void)token;
+	(void)fp;
+	(void)i;
 
 	snprintf(web, sizeof(web), "%s", locate(tc, "../../arcana-ui/dist",
 	    "webroot", "/usr/local/www/arcana-console"));
@@ -419,6 +430,69 @@ ATF_TC_BODY(pwa, tc)
 	/* The effects class comes from a script in the head: the page's
 	 * Content-Security-Policy must let it run. */
 	ATF_CHECK(js_true("document.documentElement.classList.contains('fx')"));
+	/* A repository to build the agent from, so the hosts offer the
+	 * build; no key for it here: the builds use the host's own. */
+	run("window.unset = false; fetch('/api/settings', { method: 'POST', "
+	    "headers: { 'Content-Type': 'application/json', 'X-Arcana': '1' }, "
+	    "body: JSON.stringify({ set: { agent_ssh_key: '', agent_source: "
+	    "'git@git.example.org:me/arcana.git' } }) }).then(r => "
+	    "{ window.unset = r.ok; });");
+	wait_js("window.unset", 10);
+	/* The page learns of the repository from the console's health,
+	 * read as it opens: opened again. */
+	go("/");
+	wait_js("document.querySelector('.shell')", 20);
+	if (nservers == 0)
+		return;
+	ATF_REQUIRE((fp = fopen("etc/jail.conf.d/cache.conf", "w")) != NULL);
+	fprintf(fp, "cache {\n\tpath = \"/jails/cache\";\n\tip4.addr = "
+	    "10.0.0.30;\n}\n");
+	fclose(fp);
+	run("document.querySelector('button[data-act=add-server]').click()");
+	wait_js("document.querySelector('form[data-form=add-server]')", 5);
+	snprintf(script, sizeof(script), "const f = document.querySelector("
+	    "'form[data-form=add-server]'); f.name.value = 'lab'; f.uri.value "
+	    "= 'unix:%s/jgd.sock'; f.requestSubmit();", cwd);
+	run(script);
+	wait_js("document.querySelector('.tree .titem.server.selected') && "
+	    "document.querySelector('.tiles .tile')", 20);
+	/* Its jails unfolded in the tree, as the cases find them. */
+	wait_js("document.querySelector('.tree button[data-act=fold]')", 20);
+	run("document.querySelector('.tree button[data-act=fold]').click()");
+	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 4",
+	    5);
+	if (nservers == 1)
+		return;
+	ATF_REQUIRE(symlink("jgd.sock", "jgd2.sock") == 0);
+	run("document.querySelector('button[data-act=add-server]').click()");
+	wait_js("document.querySelector('form[data-form=add-server]')", 5);
+	snprintf(script, sizeof(script), "const f = document.querySelector("
+	    "'form[data-form=add-server]'); f.name.value = 'lab2'; f.uri.value "
+	    "= 'unix:%s/jgd2.sock'; f.requestSubmit();", cwd);
+	run(script);
+	wait_js("document.querySelector('.tree .titem.server.selected .name') "
+	    "&& document.querySelector('.tree .titem.server.selected .name')"
+	    ".textContent === 'lab2'", 20);
+	run("document.querySelector('li[data-act=select-server]').click()");
+	wait_js("document.querySelector('.tree .titem.server.selected .name')"
+	    ".textContent === 'lab' && document.querySelector('.tiles .tile')",
+	    10);
+}
+
+static void
+part_shell(void)
+{
+	char		 web[MAXPATHLEN], script[2048];
+	char		*token;
+	FILE		*fp;
+	int		 i;
+
+	(void)web;
+	(void)script;
+	(void)token;
+	(void)fp;
+	(void)i;
+
 	/* Notify: allowed once by the browser (a stand-in here), then
 	 * turned off and on again by the button, and kept so. */
 	run("Object.defineProperty(Notification, 'permission', { get: () => "
@@ -571,12 +645,64 @@ ATF_TC_BODY(pwa, tc)
 	ATF_CHECK_MSG(access("data/setup-token", F_OK) == -1,
 	    "setup token not consumed");
 
+	/* Log out, and in again with the key. */
+	run("document.querySelector('button[data-act=logout]').click()");
+	wait_js("document.querySelector('button[data-act=login]')", 10);
+	run("document.querySelector('button[data-act=login]').click()");
+	wait_js("document.querySelector('.shell')", 20);
+
+	/* The shell works offline and says the data needs the network. */
+	run("return navigator.serviceWorker.ready.then(() => true)");
+	if (!js_true("navigator.serviceWorker.controller")) {
+		go("/");
+		wait_js("document.querySelector('.shell')", 20);
+	}
+	ATF_REQUIRE(js_true("navigator.serviceWorker.controller"));
+	offline(true);
+	go("/");
+	wait_js("document.querySelector('.auth .offline')", 20);
+	offline(false);
+	wait_js("document.querySelector('.shell')", 30);
+	/*
+	 * A newer shell on the console: the page finds it when it comes
+	 * back into view, takes it and loads itself again, still logged
+	 * in, and what it shows is the new files, not copies it kept.
+	 */
+	ATF_REQUIRE((fp = fopen("www-copy/style.css", "a")) != NULL);
+	fprintf(fp, "\n/* v2 */\n");
+	fclose(fp);
+	ATF_REQUIRE(system("sed -i '' 's/const CACHE = \"arcana-/const CACHE "
+	    "= \"arcana-2-/' www-copy/sw.js") == 0);
+	run("window.before = true; "
+	    "document.dispatchEvent(new Event('visibilitychange'));");
+	wait_js("window.before === undefined && "
+	    "document.querySelector('.shell')", 40);
+	run("fetch('style.css').then(r => r.text()).then(t => { "
+	    "window.v2 = t.includes('/* v2 */'); });");
+	wait_js("window.v2 === true", 10);
+}
+
+static void
+part_hosts(void)
+{
+	char		 web[MAXPATHLEN], script[2048];
+	char		*token;
+	FILE		*fp;
+	int		 i;
+
+	(void)web;
+	(void)script;
+	(void)token;
+	(void)fp;
+	(void)i;
+
 	/* A server, its jails, and starting one. */
 	/* A third jail, so the tree has something to leave out. */
 	ATF_REQUIRE((fp = fopen("etc/jail.conf.d/cache.conf", "w")) != NULL);
 	fprintf(fp, "cache {\n\tpath = \"/jails/cache\";\n\tip4.addr = "
 	    "10.0.0.30;\n}\n");
 	fclose(fp);
+	wait_js("document.querySelector('button[data-act=add-server]')", 10);
 	run("document.querySelector('button[data-act=add-server]').click()");
 	wait_js("document.querySelector('form[data-form=add-server]')", 5);
 	snprintf(script, sizeof(script), "const f = document.querySelector("
@@ -929,6 +1055,42 @@ ATF_TC_BODY(pwa, tc)
 	ATF_REQUIRE(system("rm newer-os && mv pending.keep pending") == 0);
 	run("document.querySelector('button[data-act=pkg-ip][data-arg=\"0\"]')"
 	    ".click()");
+
+	/* The page opened again: what ended is still along the bottom. */
+	go("/");
+	wait_js("document.querySelector('.shell')", 20);
+	/*
+	 * The page was loaded again: the tasks that ended before are
+	 * still along the bottom, with their hosts and how they ended;
+	 * one picked opens the list at it.
+	 */
+	wait_js("document.querySelectorAll('.dock .recent .last').length >= 4 "
+	    "&& [...document.querySelectorAll('.dock .recent .last small')]."
+	    "some(e => /done|failed/.test(e.textContent))", 20);
+	ATF_CHECK(js_true("(localStorage.getItem('arc_tasks') || '').split("
+	    "'\\n').length > 5"));
+	shot("9a-recent-tasks");
+	run("[...document.querySelectorAll('.dock .recent .last')].pop()."
+	    "click()");
+	wait_js("document.querySelector('.dock.open ol.ops li.op.selected .w')",
+	    5);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("!document.querySelector('.dock.open')", 5);
+}
+
+static void
+part_nettab(void)
+{
+	char		 web[MAXPATHLEN], script[2048];
+	char		*token;
+	FILE		*fp;
+	int		 i;
+
+	(void)web;
+	(void)script;
+	(void)token;
+	(void)fp;
+	(void)i;
 
 	/* The interfaces, in the network tab: an address is added to one
 	 * through the queue, as any change is. */
@@ -1375,6 +1537,22 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('.hosts .hostcard').click()");
 	phone(false);
 
+}
+
+static void
+part_plugins(void)
+{
+	char		 web[MAXPATHLEN], script[2048];
+	char		*token;
+	FILE		*fp;
+	int		 i;
+
+	(void)web;
+	(void)script;
+	(void)token;
+	(void)fp;
+	(void)i;
+
 	/*
 	 * Two hosts with a service of the same name: an action on the one
 	 * leaves the other's alone.  The second host here is the same
@@ -1608,6 +1786,64 @@ ATF_TC_BODY(pwa, tc)
 	    "swanctl/conf.d/arcana-to-lab2.conf") == 0);
 	run("document.querySelector('.dock > header').click()");
 	shot("7e-ipsec");
+	/* The certificates in swanctl's x509 and x509ca are listed, and a
+	 * peer may be known by one; a child of the connection's own,
+	 * added and taken away. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.ipsec-certs "
+	    "tbody tr')].some(r => r.textContent.includes('edge-b.pem') && "
+	    "r.textContent.includes('CN=edge-b.example')) && [...document."
+	    "querySelectorAll('table.ipsec-certs tbody tr')].some(r => r."
+	    "textContent.includes('lab-ca.pem') && r.textContent.includes("
+	    "'CA'))"));
+	/* Until when: a date, and the days left when few. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.ipsec-certs "
+	    "tbody tr')].every(r => /\\d{4}-\\d{2}-\\d{2}/.test(r.lastElementChild"
+	    ".textContent) && r.lastElementChild.textContent.includes('in ') "
+	    "&& r.lastElementChild.querySelector('.warn'))"));
+	shot("7e-ipsec-certs");
+	run("document.querySelector('table.ipsec button[data-act="
+	    "ipsec-child-add]').click()");
+	wait_js("document.querySelector('form[data-form=ipsec-child] "
+	    "input[name=child]')", 5);
+	run("const f = document.querySelector('form[data-form=ipsec-child]'); "
+	    "f.child.value = 'lan'; f.local_ts.value = '10.1.0.0/24'; "
+	    "f.remote_ts.value = '10.2.0.0/24'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q 'local_ts = 10.1.0.0/24' "
+	    "swanctl/conf.d/arcana-to-lab2.conf 2>/dev/null") != 0; i++)
+		usleep(50000);
+	if (i == 200) {
+		show("arcana-agent.out");
+		atf_tc_fail("the child lan was not written");
+	}
+	wait_js("[...document.querySelectorAll('table.ipsec td .child')].some("
+	    "c => c.textContent.includes('lan') && c.textContent.includes("
+	    "'TUNNEL'))", 20);
+	shot("7e-ipsec-child");
+	run("[...document.querySelectorAll('table.ipsec td .child')].find(c => "
+	    "c.textContent.includes('lan')).querySelector('button[data-act="
+	    "ipsec-unchild]').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("![...document.querySelectorAll('table.ipsec td .child')]."
+	    "some(c => c.textContent.includes('lan'))", 20);
+	/* The form offers the certificate and the CA as ways to know the
+	 * peer. */
+	run("document.querySelector('button[data-act=ipsec-conn-add]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=ipsec-conn] "
+	    "select[name=auth] option[value=cert]') && document.querySelector("
+	    "'form[data-form=ipsec-conn] select[name=auth] option[value=ca]')",
+	    5);
+	run("const s = document.querySelector('form[data-form=ipsec-conn] "
+	    "select[name=auth]'); s.value = 'cert'; s.dispatchEvent(new "
+	    "Event('input', { bubbles: true }));");
+	wait_js("document.querySelector('form[data-form=ipsec-conn] "
+	    "select[name=remote_cert] option[value=\"edge-b.pem\"]')", 5);
+	shot("7e-ipsec-by-certificate");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
 	run("document.querySelector('table.ipsec button[data-act="
 	    "ipsec-unconn]').click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
@@ -1732,6 +1968,27 @@ ATF_TC_BODY(pwa, tc)
 	    "l.textContent.includes('300..399'))", 20);
 	ATF_CHECK(system("grep -q '(65000, 300..399)' bird/bird.conf && "
 	    "grep -q '^define CUSTOMERS = \\[$' bird/bird.conf") == 0);
+	/* A set with comments in it is communities all the same, each
+	 * comment kept on its entry's line and written back after the
+	 * entry's comma. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('.conf-grid ul.blocks "
+	    "li')].some(l => l.querySelector('b').textContent === 'PEERS' && "
+	    "l.querySelector('.dim').textContent === 'communities')"));
+	run("[...document.querySelectorAll('.conf-grid ul.blocks li')].find("
+	    "l => l.querySelector('b').textContent === 'PEERS').click()");
+	wait_js("document.querySelector('form[data-form=bird-set] textarea') "
+	    "&& document.querySelector('form[data-form=bird-set] textarea')"
+	    ".value === '# the exchange\\n(65000,300) # ix-a\\n(65000,301) "
+	    "/* ix-b */'", 5);
+	run("const t = document.querySelector('form[data-form=bird-set] "
+	    "textarea'); t.value += '\\n(65000,302)'; t.form.requestSubmit();");
+	wait_js("!document.querySelector('.modal') && [...document."
+	    "querySelectorAll('.conf-grid ul.blocks li')].some(l => "
+	    "l.textContent.includes('(65000,302)'))", 20);
+	ATF_CHECK(system("grep -q '^\t# the exchange$' bird/bird.conf && "
+	    "grep -q '^\t(65000,300), # ix-a$' bird/bird.conf && grep -q "
+	    "'^\t(65000,301), /\\* ix-b \\*/$' bird/bird.conf && grep -q "
+	    "'^\t(65000,302)$' bird/bird.conf") == 0);
 	/* A set of large communities, new. */
 	run("document.querySelector('button[data-act=bird-new][data-arg=lset]')"
 	    ".click()");
@@ -1798,6 +2055,22 @@ ATF_TC_BODY(pwa, tc)
 	    "'table.broutes tbody tr.best')", 20);
 	ATF_CHECK(system("grep -q '^-r show route protocol bgp_edge$' birdc.log")
 	    == 0);
+
+}
+
+static void
+part_storage(void)
+{
+	char		 web[MAXPATHLEN], script[2048];
+	char		*token;
+	FILE		*fp;
+	int		 i;
+
+	(void)web;
+	(void)script;
+	(void)token;
+	(void)fp;
+	(void)i;
 
 	/*
 	 * Storage: the pools with their devices, the datasets, a snapshot
@@ -2493,6 +2766,22 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('section.ucard .uname').click()");
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
 
+}
+
+static void
+part_firewall(void)
+{
+	char		 web[MAXPATHLEN], script[2048];
+	char		*token;
+	FILE		*fp;
+	int		 i;
+
+	(void)web;
+	(void)script;
+	(void)token;
+	(void)fp;
+	(void)i;
+
 	/*
 	 * The firewall: the layout with a tab for each of its parts; a
 	 * part's rules, those of now and those only kept; a rule added
@@ -2900,6 +3189,22 @@ ATF_TC_BODY(pwa, tc)
 	run("WebSocket.prototype.send = window.ws0; document.querySelector("
 	    "'button[data-act=net-live]').click()");
 
+}
+
+static void
+part_flows(void)
+{
+	char		 web[MAXPATHLEN], script[2048];
+	char		*token;
+	FILE		*fp;
+	int		 i;
+
+	(void)web;
+	(void)script;
+	(void)token;
+	(void)fp;
+	(void)i;
+
 	/*
 	 * Workflows: one made in the editor, its steps' forms from
 	 * jobs.json, a parameter, a condition; run, its chain drawn as it
@@ -3034,6 +3339,239 @@ ATF_TC_BODY(pwa, tc)
 	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
 	run("document.querySelector('.tree .titem.server').click()");
 	wait_js("document.querySelector('button.tab[data-arg=summary]')", 10);
+
+	/*
+	 * SD-WAN, a section of its own: nothing kept yet; the example, as
+	 * the document, checked; one that breaks a requirement told which;
+	 * kept, and then in the overview and the service's own tables.
+	 */
+	/* The agent on the console's own host, by its socket, is told
+	 * apart in the tree and on its page. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('.tree .titem.server "
+	    ".chip.here')].length === 2"));
+	run("document.querySelector('li[data-act=select-sdwan]').click()");
+	wait_js("document.querySelector('section.sdwan .sd-block') && "
+	    "document.querySelector('section.sdwan').textContent.includes("
+	    "'None yet')", 20);
+	ATF_CHECK(js_true("document.querySelector('.crumb.place').textContent "
+	    "=== 'SD-WAN'"));
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "document]').click()");
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')", 10);
+	run("document.querySelector('button[data-act=sd-example]').click()");
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')"
+	    ".value.includes('\"office\"')", 10);
+	run("window.sdText = document.querySelector('form[data-form=sd-doc] "
+	    "textarea').value;");
+	run("document.querySelector('form[data-form=sd-doc] button[value="
+	    "check]').click()");
+	wait_js("(document.querySelector('section.sdwan .notice') || {})."
+	    "textContent?.includes('MEF 70.2 allows')", 20);
+	run("const t = document.querySelector('form[data-form=sd-doc] "
+	    "textarea'); t.value = window.sdText.replace('\"ceiling\": 50', "
+	    "'\"ceiling\": 20');");
+	run("document.querySelector('form[data-form=sd-doc] button[value="
+	    "check]').click()");
+	wait_js("(document.querySelector('section.sdwan .notice.bad') || {})."
+	    "textContent?.includes('(R72)')", 20);
+	shot("9-sdwan-refused");
+	/* Its UNIs on lo0 and gif for geneve: what the stand-ins can make. */
+	run("const t = document.querySelector('form[data-form=sd-doc] "
+	    "textarea'); t.value = window.sdText.replaceAll('\"vtnet2\"', "
+	    "'\"lo0\"').replace('\"geneve\"', '\"gif\"').replace(', "
+	    "\"fd00:64::/64\"', '');");
+	run("document.querySelector('form[data-form=sd-doc] button[value="
+	    "keep]').click()");
+	wait_js("(document.querySelector('section.sdwan .notice') || {})."
+	    "textContent?.includes('version 1')", 20);
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "overview]').click()");
+	wait_js("[...document.querySelectorAll('section.sdwan table.sd')]"
+	    ".length === 3 && document.querySelector('section.sdwan "
+	    "button[data-act=sd-swvc]')?.textContent === 'office'", 10);
+	/* Four WAN links, and each edge's own line below its links. */
+	ATF_CHECK(js_true("document.querySelectorAll('section.sdwan table.sd')"
+	    "[1].querySelectorAll('tbody tr').length === 6 && document."
+	    "querySelectorAll('section.sdwan table.sd')[1].querySelectorAll("
+	    "'tbody tr.sd-edge-row').length === 2"));
+	/* The dashboard: the tiles, and the topology with the two edges
+	 * and the plan's two tunnels between them. */
+	wait_js("document.querySelectorAll('svg.sd-topo g.node').length === 2 "
+	    "&& document.querySelectorAll('svg.sd-topo g.tun').length === 2 && "
+	    "document.querySelector('.sd-tiles .tile b').textContent === '2'",
+	    20);
+	shot("9-sdwan-overview");
+	/*
+	 * The forms: an underlay added, changed and taken away; a WAN link
+	 * on an edge, its interface picked from the host's own list, with
+	 * the address the interface has; the document kept each time.
+	 */
+	run("document.querySelector('button[data-act=sd-ucs-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]')",
+	    5);
+	shot("9-sdwan-form-underlay");
+	run("const f = document.querySelector('form[data-form=sd-ucs]'); "
+	    "f.id.value = 'lte'; f.type.value = 'public'; f.kind.value = 'wg'; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-ucs]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd')][0]"
+	    ".textContent.includes('lte') && [...document.querySelectorAll("
+	    "'section.sdwan table.sd')][0].textContent.includes('wg')", 20);
+	run("[...document.querySelectorAll('button[data-act=sd-ucs-edit]')]"
+	    ".find(b => b.dataset.arg === 'lte').click()");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]')"
+	    "?.value === 'lte'", 5);
+	run("const f = document.querySelector('form[data-form=sd-ucs]'); "
+	    "f.billing.value = 'usage-based'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-ucs]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('lte') && r.textContent."
+	    "includes('usage-based'))", 20);
+	run("document.querySelector('button[data-act=sd-link-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-link] "
+	    "select[name=interface] option')", 15);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=sd-link] "
+	    "input[name=address]').value.length > 0"));
+	shot("9-sdwan-form-link");
+	run("const f = document.querySelector('form[data-form=sd-link]'); "
+	    "f.ucs.value = 'lte'; f.breakout.checked = true; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-link]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('lab-lte') && r.textContent."
+	    "includes('breakout'))", 20);
+	run("[...document.querySelectorAll('button[data-act=sd-link-del]')]"
+	    ".find(b => b.dataset.value === 'lab-lte').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=confirm]') && ![..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('lab-lte'))", 20);
+	run("[...document.querySelectorAll('button[data-act=sd-ucs-del]')]"
+	    ".find(b => b.dataset.arg === 'lte').click()");
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]').requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=confirm]') && ![..."
+	    "document.querySelectorAll('section.sdwan table.sd')][0]"
+	    ".textContent.includes('lte')", 20);
+	run("document.querySelector('button[data-act=sd-swvc]').click()");
+	wait_js("[...document.querySelectorAll('section.sdwan h3')].some(h => "
+	    "h.textContent.startsWith('End points')) && document."
+	    "querySelector('select[data-input=sd-swvc]')", 10);
+	ATF_CHECK(js_true("document.querySelector('section.sdwan').textContent"
+	    ".includes('10.10.0.0/24')"));
+	shot("9-sdwan-service");
+	/*
+	 * The service's parts by forms: a zone, a flow matching an
+	 * application, a policy with a performance threshold, and a rule
+	 * at an end point tying them; each kept and checked.
+	 */
+	run("document.querySelector('button[data-act=sd-zone-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-zone] input[name="
+	    "name]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-zone]'); "
+	    "f.name.value = 'guests'; f.prefixes.value = '10.10.9.0/24'; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-zone]') && "
+	    "document.querySelector('section.sdwan').textContent.includes("
+	    "'guests')", 20);
+	run("document.querySelector('button[data-act=sd-flow-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-flow] input[name="
+	    "name]')", 5);
+	shot("9-sdwan-form-flow");
+	run("const f = document.querySelector('form[data-form=sd-flow]'); "
+	    "f.name.value = 'web'; f.app_https.checked = true; f.app_http."
+	    "checked = true; f.proto.value = 'tcp'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-flow]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('web') && r.textContent."
+	    "includes('http'))", 20);
+	run("document.querySelector('button[data-act=sd-policy-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-policy] select[name="
+	    "metric]')", 5);
+	shot("9-sdwan-form-policy");
+	run("const f = document.querySelector('form[data-form=sd-policy]'); "
+	    "f.name.value = 'cheap'; f['internet-breakout'].value = 'enabled'; "
+	    "f.metric.value = 'loss'; f.threshold.value = '0.02'; f.commit.value"
+	    " = '2000000'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-policy]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('cheap') && r.textContent."
+	    "includes('loss'))", 20);
+	run("document.querySelector('button[data-act=sd-map-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-map] select[name="
+	    "zone] option[value=guests]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-map]'); "
+	    "f.zone.value = 'guests'; f.app.value = 'web'; f.ingress.value = "
+	    "'cheap'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-map]') && [..."
+	    "document.querySelectorAll('section.sdwan .pmap')].some(p => p."
+	    "textContent.includes('guests') && p.textContent.includes('web') "
+	    "&& p.textContent.includes('cheap'))", 20);
+	ATF_CHECK(system("grep -q guests data/sdwan.json && grep -q https "
+	    "data/sdwan.json && grep -q internet-breakout data/sdwan.json") ==
+	    0);
+	/* The end point form, with the edge's interfaces. */
+	run("[...document.querySelectorAll('button[data-act=sd-ep-edit]')]"
+	    ".find(b => b.dataset.arg === 'hq').click()");
+	wait_js("document.querySelector('form[data-form=sd-ep] select[name="
+	    "interface] option') && document.querySelector('form[data-form="
+	    "sd-ep] input[name=p4]').value === '10.10.0.0/24'", 15);
+	shot("9-sdwan-form-endpoint");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	wait_js("!document.querySelector('.modal')", 5);
+	/*
+	 * Edges: the tunnels and what each edge is to have; applied, each
+	 * step done, and then nothing left to do.
+	 */
+	run("document.querySelector('button[data-act=sd-tab][data-arg=edges]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('table.sd-plan tbody tr').length > 8 "
+	    "&& document.querySelector('button[data-act=sd-apply]') && "
+	    "!document.querySelector('button[data-act=sd-apply]').disabled",
+	    20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
+	    ".find(h => h.textContent.startsWith('Tunnels')).closest('.sd-block')"
+	    ".querySelectorAll('tbody tr').length === 2"));
+	shot("9-sdwan-edges-plan");
+	run("document.querySelector('button[data-act=sd-apply]').click()");
+	wait_js("(document.querySelector('.sd-applied h3') || {}).textContent"
+	    "?.startsWith('Last apply') && document.querySelector("
+	    "'button[data-act=sd-apply]').disabled", 60);
+	ATF_CHECK(js_true("document.querySelector('.sd-applied h3')"
+	    ".textContent.startsWith('Last apply: done')"));
+	shot("9-sdwan-edges-applied");
+	/* Paths: each tunnel's two ends, as their probes see them; the
+	 * agent here runs without root, so each end says so. */
+	run("document.querySelector('button[data-act=sd-tab][data-arg=paths]')"
+	    ".click()");
+	wait_js("document.querySelectorAll('.sd-path').length === 2 && "
+	    "[...document.querySelectorAll('.sd-path .chip')].length === 4 && "
+	    "document.querySelector('.sd-path').textContent.includes('needs "
+	    "root')", 30);
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
+	    ".some(h => h.textContent.startsWith('Steering'))"));
+	shot("9-sdwan-paths");
+	phone(true);
+	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",
+	    10);
+	shot("m12-sdwan");
+	phone(false);
+
+}
+
+static void
+part_netsect(void)
+{
+	char		 web[MAXPATHLEN], script[2048];
+	char		*token;
+	FILE		*fp;
+	int		 i;
+
+	(void)web;
+	(void)script;
+	(void)token;
+	(void)fp;
+	(void)i;
 
 	/*
 	 * The network: every host a node of a map, joined to the others
@@ -3499,158 +4037,137 @@ ATF_TC_BODY(pwa, tc)
 	run("document.querySelector('li[data-act=select-server]').click()");
 	wait_js("document.querySelector('button.tab[data-arg=jails]')", 10);
 
-	/*
-	 * SD-WAN, a section of its own: nothing kept yet; the example, as
-	 * the document, checked; one that breaks a requirement told which;
-	 * kept, and then in the overview and the service's own tables.
-	 */
-	/* The agent on the console's own host, by its socket, is told
-	 * apart in the tree and on its page. */
-	ATF_CHECK(js_true("[...document.querySelectorAll('.tree .titem.server "
-	    ".chip.here')].length === 2"));
-	run("document.querySelector('li[data-act=select-sdwan]').click()");
-	wait_js("document.querySelector('section.sdwan .sd-block') && "
-	    "document.querySelector('section.sdwan').textContent.includes("
-	    "'None yet')", 20);
-	ATF_CHECK(js_true("document.querySelector('.crumb.place').textContent "
-	    "=== 'SD-WAN'"));
-	run("document.querySelector('button[data-act=sd-tab][data-arg="
-	    "document]').click()");
-	wait_js("document.querySelector('form[data-form=sd-doc] textarea')", 10);
-	run("document.querySelector('button[data-act=sd-example]').click()");
-	wait_js("document.querySelector('form[data-form=sd-doc] textarea')"
-	    ".value.includes('\"office\"')", 10);
-	run("window.sdText = document.querySelector('form[data-form=sd-doc] "
-	    "textarea').value;");
-	run("document.querySelector('form[data-form=sd-doc] button[value="
-	    "check]').click()");
-	wait_js("(document.querySelector('section.sdwan .notice') || {})."
-	    "textContent?.includes('MEF 70.2 allows')", 20);
-	run("const t = document.querySelector('form[data-form=sd-doc] "
-	    "textarea'); t.value = window.sdText.replace('\"ceiling\": 50', "
-	    "'\"ceiling\": 20');");
-	run("document.querySelector('form[data-form=sd-doc] button[value="
-	    "check]').click()");
-	wait_js("(document.querySelector('section.sdwan .notice.bad') || {})."
-	    "textContent?.includes('(R72)')", 20);
-	shot("9-sdwan-refused");
-	/* Its UNIs on lo0 and gif for geneve: what the stand-ins can make. */
-	run("const t = document.querySelector('form[data-form=sd-doc] "
-	    "textarea'); t.value = window.sdText.replaceAll('\"vtnet2\"', "
-	    "'\"lo0\"').replace('\"geneve\"', '\"gif\"').replace(', "
-	    "\"fd00:64::/64\"', '');");
-	run("document.querySelector('form[data-form=sd-doc] button[value="
-	    "keep]').click()");
-	wait_js("(document.querySelector('section.sdwan .notice') || {})."
-	    "textContent?.includes('version 1')", 20);
-	run("document.querySelector('button[data-act=sd-tab][data-arg="
-	    "overview]').click()");
-	wait_js("[...document.querySelectorAll('section.sdwan table.sd')]"
-	    ".length === 3 && document.querySelector('section.sdwan "
-	    "button[data-act=sd-swvc]')?.textContent === 'office'", 10);
-	ATF_CHECK(js_true("document.querySelectorAll('section.sdwan table.sd')"
-	    "[1].querySelectorAll('tbody tr').length === 4"));
-	shot("9-sdwan-overview");
-	run("document.querySelector('button[data-act=sd-swvc]').click()");
-	wait_js("[...document.querySelectorAll('section.sdwan h3')].some(h => "
-	    "h.textContent.startsWith('End points')) && document."
-	    "querySelector('select[data-input=sd-swvc]')", 10);
-	ATF_CHECK(js_true("document.querySelector('section.sdwan').textContent"
-	    ".includes('10.10.0.0/24')"));
-	shot("9-sdwan-service");
-	/*
-	 * Edges: the tunnels and what each edge is to have; applied, each
-	 * step done, and then nothing left to do.
-	 */
-	run("document.querySelector('button[data-act=sd-tab][data-arg=edges]')"
-	    ".click()");
-	wait_js("document.querySelectorAll('table.sd-plan tbody tr').length > 8 "
-	    "&& document.querySelector('button[data-act=sd-apply]') && "
-	    "!document.querySelector('button[data-act=sd-apply]').disabled",
-	    20);
-	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
-	    ".find(h => h.textContent.startsWith('Tunnels')).closest('.sd-block')"
-	    ".querySelectorAll('tbody tr').length === 2"));
-	shot("9-sdwan-edges-plan");
-	run("document.querySelector('button[data-act=sd-apply]').click()");
-	wait_js("(document.querySelector('.sd-applied h3') || {}).textContent"
-	    "?.startsWith('Last apply') && document.querySelector("
-	    "'button[data-act=sd-apply]').disabled", 60);
-	ATF_CHECK(js_true("document.querySelector('.sd-applied h3')"
-	    ".textContent.startsWith('Last apply: done')"));
-	shot("9-sdwan-edges-applied");
-	/* Paths: each tunnel's two ends, as their probes see them; the
-	 * agent here runs without root, so each end says so. */
-	run("document.querySelector('button[data-act=sd-tab][data-arg=paths]')"
-	    ".click()");
-	wait_js("document.querySelectorAll('.sd-path').length === 2 && "
-	    "[...document.querySelectorAll('.sd-path .chip')].length === 4 && "
-	    "document.querySelector('.sd-path').textContent.includes('needs "
-	    "root')", 30);
-	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
-	    ".some(h => h.textContent.startsWith('Steering'))"));
-	shot("9-sdwan-paths");
-	phone(true);
-	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",
-	    10);
-	shot("m12-sdwan");
-	phone(false);
-
-	/* Log out, and in again with the key. */
-	run("document.querySelector('button[data-act=logout]').click()");
-	wait_js("document.querySelector('button[data-act=login]')", 10);
-	run("document.querySelector('button[data-act=login]').click()");
-	wait_js("document.querySelector('.shell')", 20);
-
-	/* The shell works offline and says the data needs the network. */
-	run("return navigator.serviceWorker.ready.then(() => true)");
-	if (!js_true("navigator.serviceWorker.controller")) {
-		go("/");
-		wait_js("document.querySelector('.shell')", 20);
-	}
-	ATF_REQUIRE(js_true("navigator.serviceWorker.controller"));
-	offline(true);
-	go("/");
-	wait_js("document.querySelector('.auth .offline')", 20);
-	offline(false);
-	wait_js("document.querySelector('.shell')", 30);
-	/*
-	 * The page was loaded again: the tasks that ended before are
-	 * still along the bottom, with their hosts and how they ended;
-	 * one picked opens the list at it.
-	 */
-	wait_js("document.querySelectorAll('.dock .recent .last').length >= 4 "
-	    "&& [...document.querySelectorAll('.dock .recent .last small')]."
-	    "some(e => /done|failed/.test(e.textContent))", 20);
-	ATF_CHECK(js_true("(localStorage.getItem('arc_tasks') || '').split("
-	    "'\\n').length > 5"));
-	shot("9a-recent-tasks");
-	run("[...document.querySelectorAll('.dock .recent .last')].pop()."
-	    "click()");
-	wait_js("document.querySelector('.dock.open ol.ops li.op.selected .w')",
-	    5);
-	run("document.querySelector('.dock > header').click()");
-	wait_js("!document.querySelector('.dock.open')", 5);
-
-	/*
-	 * A newer shell on the console: the page finds it when it comes
-	 * back into view, takes it and loads itself again, still logged
-	 * in, and what it shows is the new files, not copies it kept.
-	 */
-	ATF_REQUIRE((fp = fopen("www-copy/style.css", "a")) != NULL);
-	fprintf(fp, "\n/* v2 */\n");
-	fclose(fp);
-	ATF_REQUIRE(system("sed -i '' 's/const CACHE = \"arcana-/const CACHE "
-	    "= \"arcana-2-/' www-copy/sw.js") == 0);
-	run("window.before = true; "
-	    "document.dispatchEvent(new Event('visibilitychange'));");
-	wait_js("window.before === undefined && "
-	    "document.querySelector('.shell')", 40);
-	run("fetch('style.css').then(r => r.text()).then(t => { "
-	    "window.v2 = t.includes('/* v2 */'); });");
-	wait_js("window.v2 === true", 10);
 }
-ATF_TC_CLEANUP(pwa, tc)
+
+ATF_TC_WITH_CLEANUP(pwa_shell);
+ATF_TC_HEAD(pwa_shell, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Enrol, the settings, the install offer, log in again, offline, and a newer shell, in Chromium");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_shell, tc)
+{
+
+	prologue(tc, 0);
+	part_shell();
+}
+ATF_TC_CLEANUP(pwa_shell, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_hosts);
+ATF_TC_HEAD(pwa_hosts, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "A host added, its summary, agent and jails, services and packages, the queue, and the tasks kept");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_hosts, tc)
+{
+
+	prologue(tc, 0);
+	part_hosts();
+}
+ATF_TC_CLEANUP(pwa_hosts, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_nettab);
+ATF_TC_HEAD(pwa_nettab, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The network tab, jobs, and every page on a phone with its themes");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_nettab, tc)
+{
+
+	prologue(tc, 1);
+	part_nettab();
+}
+ATF_TC_CLEANUP(pwa_nettab, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_plugins);
+ATF_TC_HEAD(pwa_plugins, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Two hosts, vnet jails, WireGuard, IPsec and BIRD, and the network map");
+	atf_tc_set_md_var(tc, "timeout", "400");
+}
+ATF_TC_BODY(pwa_plugins, tc)
+{
+
+	prologue(tc, 1);
+	part_plugins();
+	part_netsect();
+}
+ATF_TC_CLEANUP(pwa_plugins, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_storage);
+ATF_TC_HEAD(pwa_storage, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Storage, the kernel, sysctl, processes, logs, events and utilization");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_storage, tc)
+{
+
+	prologue(tc, 2);
+	part_storage();
+}
+ATF_TC_CLEANUP(pwa_storage, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_firewall);
+ATF_TC_HEAD(pwa_firewall, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The firewall, a bridge, geneve tunnels and the transport");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_firewall, tc)
+{
+
+	prologue(tc, 1);
+	part_firewall();
+}
+ATF_TC_CLEANUP(pwa_firewall, tc)
+{
+
+	browser_stop();
+}
+
+ATF_TC_WITH_CLEANUP(pwa_flows);
+ATF_TC_HEAD(pwa_flows, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "Workflows, the API, and SD-WAN");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_flows, tc)
+{
+
+	prologue(tc, 2);
+	part_flows();
+}
+ATF_TC_CLEANUP(pwa_flows, tc)
 {
 
 	browser_stop();
@@ -3659,6 +4176,12 @@ ATF_TC_CLEANUP(pwa, tc)
 ATF_TP_ADD_TCS(tp)
 {
 
-	ATF_TP_ADD_TC(tp, pwa);
+	ATF_TP_ADD_TC(tp, pwa_shell);
+	ATF_TP_ADD_TC(tp, pwa_hosts);
+	ATF_TP_ADD_TC(tp, pwa_nettab);
+	ATF_TP_ADD_TC(tp, pwa_plugins);
+	ATF_TP_ADD_TC(tp, pwa_storage);
+	ATF_TP_ADD_TC(tp, pwa_firewall);
+	ATF_TP_ADD_TC(tp, pwa_flows);
 	return (atf_no_error());
 }

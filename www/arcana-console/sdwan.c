@@ -849,6 +849,105 @@ connection(struct ck *c, const ucl_object_t *v, int af, bool *none)
 	return (true);
 }
 
+/*
+ * BGP or OSPF across the UNI (§11.6.2, §11.6.3): one entry each, for
+ * one family or both (R139), with what the two sides agree on.  What
+ * BIRD has no word for is refused: AS override, damping, extended
+ * communities.
+ */
+static bool
+routing(struct ck *c, const ucl_object_t *v, const char *what,
+    const struct pfx *nets, int nnets)
+{
+	const ucl_object_t	*e, *m;
+	ucl_object_iter_t	 it;
+	struct pfx		 a;
+	const char		*fam;
+	int			 i;
+
+	if (is_null(v))
+		return (true);
+	if (ucl_object_type(v) != UCL_OBJECT)
+		return (fail(c, "its UNI's %s is an object", what));
+	fam = str(v, "family");
+	if (!one_of(fam, (const char *const[]){ "ipv4", "ipv6", "both",
+	    NULL }))
+		return (fail(c, "%s: family is ipv4, ipv6 or both (§11.6)",
+		    what));
+	if (ucl_object_lookup(v, "distance") != NULL && !is_int(
+	    ucl_object_lookup(v, "distance"), 1, 255, NULL))
+		return (fail(c, "%s: distance is 1 to 255", what));
+	if (str(v, "password") != NULL && (strlen(str(v, "password")) > 80 ||
+	    strpbrk(str(v, "password"), "\"\\\n") != NULL))
+		return (fail(c, "%s: a password is 80 characters at most, no "
+		    "quotes", what));
+	if (strcmp(what, "bgp") == 0) {
+		if (!is_int(ucl_object_lookup(v, "as"), 1, 4294967295LL, NULL))
+			return (fail(c, "bgp: as is the subscriber's AS number"));
+		e = ucl_object_lookup(v, "neighbors");
+		if (e == NULL || ucl_object_type(e) != UCL_ARRAY ||
+		    ucl_array_size(e) == 0 || ucl_array_size(e) > LIST_MAX)
+			return (fail(c, "bgp: neighbors are the subscriber's "
+			    "addresses at the UNI, one at least"));
+		it = NULL;
+		while ((m = ucl_object_iterate(e, &it, true)) != NULL) {
+			if (!address(ucl_object_tostring_forced(m), &a))
+				return (fail(c, "bgp: %s is not an address",
+				    ucl_object_tostring_forced(m)));
+			if ((a.af == AF_INET && strcmp(fam, "ipv6") == 0) ||
+			    (a.af == AF_INET6 && strcmp(fam, "ipv4") == 0))
+				return (fail(c, "bgp: %s is not of the family",
+				    ucl_object_tostring_forced(m)));
+			for (i = 0; i < nnets; i++)
+				if (holds(&nets[i], &a))
+					break;
+			if (i == nnets)
+				return (fail(c, "bgp: %s is not within the UNI's "
+				    "prefixes (§11.6.2)",
+				    ucl_object_tostring_forced(m)));
+		}
+		if (ucl_object_lookup(v, "hold_time") != NULL && !is_int(
+		    ucl_object_lookup(v, "hold_time"), 3, 65535, NULL))
+			return (fail(c, "bgp: hold_time is 3 to 65535 seconds"));
+		e = ucl_object_lookup(v, "communities");
+		if (e != NULL && (ucl_object_type(e) != UCL_ARRAY ||
+		    ucl_array_size(e) > LIST_MAX))
+			return (fail(c, "bgp: communities is a list of [as, "
+			    "value]"));
+		it = NULL;
+		while ((m = ucl_object_iterate(e, &it, true)) != NULL)
+			if (ucl_object_type(m) != UCL_ARRAY || ucl_array_size(m)
+			    != 2 || !is_int(ucl_array_find_index(m, 0), 0,
+			    65535, NULL) || !is_int(ucl_array_find_index(m, 1),
+			    0, 65535, NULL))
+				return (fail(c, "bgp: a community is [as, "
+				    "value], each 0 to 65535"));
+		if (ucl_object_lookup(v, "ext_communities") != NULL)
+			return (fail(c, "bgp: extended communities are not "
+			    "written yet"));
+		if (ucl_flag(v, "as_override"))
+			return (fail(c, "bgp: as_override is not what BIRD does: "
+			    "leave it off"));
+		if (!is_null(ucl_object_lookup(v, "damping")))
+			return (fail(c, "bgp: damping is not what BIRD does: "
+			    "leave it off"));
+		return (true);
+	}
+	if (ucl_object_lookup(v, "area") != NULL && !is_int(
+	    ucl_object_lookup(v, "area"), 0, 4294967295LL, NULL))
+		return (fail(c, "ospf: area is a number, 0 the backbone"));
+	if (ucl_object_lookup(v, "cost") != NULL && !is_int(
+	    ucl_object_lookup(v, "cost"), 1, 65535, NULL))
+		return (fail(c, "ospf: cost is 1 to 65535"));
+	if (ucl_object_lookup(v, "hello") != NULL && !is_int(
+	    ucl_object_lookup(v, "hello"), 1, 65535, NULL))
+		return (fail(c, "ospf: hello is seconds, 1 to 65535"));
+	if (ucl_object_lookup(v, "dead") != NULL && !is_int(
+	    ucl_object_lookup(v, "dead"), 2, 65535, NULL))
+		return (fail(c, "ospf: dead is seconds, 2 to 65535"));
+	return (true);
+}
+
 static bool
 uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 {
@@ -907,9 +1006,9 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 		    ucl_object_lookup(e, "distance"), 1, 255, &n))
 			return (fail(c, "a route's distance is 1 to 255"));
 	}
-	if (ucl_object_lookup(u, "bgp") != NULL || ucl_object_lookup(u,
-	    "ospf") != NULL)
-		return (fail(c, "BGP and OSPF at a UNI come later"));
+	if (!routing(c, ucl_object_lookup(u, "bgp"), "bgp", nets, *nnets) ||
+	    !routing(c, ucl_object_lookup(u, "ospf"), "ospf", nets, *nnets))
+		return (false);
 	return (true);
 }
 
@@ -929,6 +1028,10 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 	const char		*s;
 
 	base = strlen(c->where);
+	if (ucl_object_lookup(sw, "as") != NULL && !is_int(ucl_object_lookup(
+	    sw, "as"), 1, 4294967295LL, NULL))
+		return (fail(c, "as is the provider's AS number, the edges' "
+		    "among themselves and at the UNIs (§11.6.2)"));
 	if (!is_int(ucl_object_lookup(sw, "fib"), 1, FIB_MAX, NULL))
 		return (fail(c, "its fib is 1 or more: FIB 0 is the "
 		    "underlay's"));
@@ -1313,6 +1416,18 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			return (fail(c, "availability is a percentage"));
 	}
 	c->where[base] = '\0';
+	/* BFD on the tunnels (Mplify 119 §10.5, R58-R60, R159). */
+	if ((v = ucl_object_lookup(sw, "bfd")) != NULL && !is_null(v)) {
+		if (ucl_object_type(v) != UCL_OBJECT)
+			return (fail(c, "bfd is an object: interval, multiplier"));
+		if ((e = ucl_object_lookup(v, "interval")) != NULL &&
+		    !is_int(e, 100, 300, NULL))
+			return (fail(c, "bfd: interval is 100 to 300 ms (R159)"));
+		if ((e = ucl_object_lookup(v, "multiplier")) != NULL &&
+		    !is_int(e, 2, 10, NULL))
+			return (fail(c, "bfd: multiplier is 2 to 10, 3 as a rule "
+			    "(R159)"));
+	}
 	/* Probing (Mplify 119 §11.4): the defaults of its tunnels. */
 	if ((v = ucl_object_lookup(sw, "probe")) != NULL) {
 		if (ucl_object_type(v) != UCL_OBJECT)

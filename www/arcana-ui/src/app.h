@@ -332,6 +332,16 @@ enum modal {
 	MODAL_BIRD_RPKI,
 	MODAL_BIRD_FILE,
 	MODAL_IPSEC_CONN,
+	MODAL_IPSEC_CHILD,
+	MODAL_SD_UCS,
+	MODAL_SD_EDGE,
+	MODAL_SD_LINK,
+	MODAL_SD_SWVC,
+	MODAL_SD_ZONE,
+	MODAL_SD_FLOW,
+	MODAL_SD_POLICY,
+	MODAL_SD_EP,
+	MODAL_SD_MAP,
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -385,6 +395,7 @@ struct app {
 	char		 net_jail[256];	/* whose network the tab shows: a vnet jail, or "" the host */
 	int		 netsect;	/* the Network section's tab: NETSECT_* */
 	int		 settab;	/* the Settings section's tab: SET_* */
+	char		 ipsec_auth[8];	/* the connection form: how the peer is known */
 	char		 filter[64];
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
@@ -678,6 +689,7 @@ void		 sdwan_tick(double);
 void		 view_sdwan(struct html *);
 bool		 sdwan_action(const char *, const char *, const char *);
 bool		 sdwan_form(const char *, const ucl_object_t *);
+bool		 sdwan_modal(struct html *);
 bool		 workflows_form(const char *, const ucl_object_t *);
 bool		 workflows_modal(struct html *);
 void		 storage_tick(double);

@@ -59,6 +59,7 @@ enum op {
 	OP_SDWAN_PROBES,
 	OP_SDWAN_RULES,
 	OP_SDWAN_STEER,
+	OP_SDWAN_BIRD,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_STORAGE,
@@ -1043,6 +1044,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SDWAN ? "arc_sdwan" : c->op == OP_SDWAN_PROBES ?
 	    "arc_sdwan_probes" : c->op == OP_SDWAN_RULES ? "arc_sdwan_rules" :
 	    c->op == OP_SDWAN_STEER ? "arc_sdwan_steer" :
+	    c->op == OP_SDWAN_BIRD ? "arc_sdwan_bird" :
 	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
@@ -1386,6 +1388,8 @@ call_run(struct kore_task *t)
 	struct arc_sdwan_rules_rsp *srr;
 	struct arc_sdwan_steer_req ssq;
 	struct arc_sdwan_steer_rsp *ssr;
+	struct arc_sdwan_bird_req sbq;
+	struct arc_sdwan_bird_rsp *sbr;
 	struct arc_source_head_rsp *shr;
 	uint8_t			*bin;
 	size_t			 binlen;
@@ -1935,6 +1939,16 @@ connected:
 		put_str(top, "error", ssr->error);
 		steps = ssr->trace.v;
 		nsteps = ssr->trace.n;
+		break;
+	case OP_SDWAN_BIRD:
+		memset(&sbq, 0, sizeof(sbq));
+		sbq.json = c->text;
+		if ((error = arc_sdwan_bird(&cl, &sbq, &sbr)) != 0)
+			goto rpcfail;
+		ok = sbr->ok;
+		put_str(top, "error", sbr->error);
+		steps = sbr->trace.v;
+		nsteps = sbr->trace.n;
 		break;
 	case OP_STORAGE:
 		/* The dataset rides where a jail's name does. */
@@ -3664,6 +3678,10 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->start_action);
 	kore_free((char *)(uintptr_t)sp->local_id);
 	kore_free((char *)(uintptr_t)sp->remote_id);
+	kore_free((char *)(uintptr_t)sp->child);
+	kore_free((char *)(uintptr_t)sp->local_cert);
+	kore_free((char *)(uintptr_t)sp->remote_cert);
+	kore_free((char *)(uintptr_t)sp->remote_ca);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -3731,6 +3749,10 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->start_action = jdup(o, "start_action");
 	sp->local_id = jdup(o, "local_id");
 	sp->remote_id = jdup(o, "remote_id");
+	sp->child = jdup(o, "child");
+	sp->local_cert = jdup(o, "local_cert");
+	sp->remote_cert = jdup(o, "remote_cert");
+	sp->remote_ca = jdup(o, "remote_ca");
 	if ((v = ucl_object_lookup(o, "reqid")) != NULL && ucl_object_toint(v) >
 	    0 && ucl_object_toint(v) <= 16383) {
 		sp->has_reqid = true;
@@ -4193,7 +4215,8 @@ hosts_sdwan_set(const char *uri, const char *peer, const char *name,
 
 	c = kore_calloc(1, sizeof(*c));
 	c->op = strcmp(what, "rules") == 0 ? OP_SDWAN_RULES : strcmp(what,
-	    "steer") == 0 ? OP_SDWAN_STEER : OP_SDWAN_PROBES;
+	    "steer") == 0 ? OP_SDWAN_STEER : strcmp(what, "bird") == 0 ?
+	    OP_SDWAN_BIRD : OP_SDWAN_PROBES;
 	c->text = kore_strdup(json);
 	snprintf(label, sizeof(label), "sdwan-%s", what);
 	return (self_call(c, uri, peer, name, label, status));

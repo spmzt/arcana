@@ -55,14 +55,19 @@ put(ucl_object_t *o, const char *key, ucl_object_t *v)
 	ucl_object_insert_key(o, v, key, 0, true);
 }
 
-/* What a token may read: the hosts, the console's health, the tokens. */
+/*
+ * What a token may read: anything the API tells, but the console's
+ * own settings, sign-in, push and the enrolment tokens that let a host
+ * join.  A read is what guard() is told is not a change.
+ */
 bool
 token_readable(const char *path)
 {
 
-	return (strcmp(path, "/api/servers") == 0 || strncmp(path,
-	    "/api/servers/", 13) == 0 || strcmp(path, "/api/health") == 0 ||
-	    strcmp(path, "/api/tokens") == 0);
+	return (strncmp(path, "/api/", 5) == 0 && strncmp(path,
+	    "/api/settings", 13) != 0 && strncmp(path, "/api/auth", 9) != 0 &&
+	    strncmp(path, "/api/push", 9) != 0 && strncmp(path, "/api/enrol",
+	    10) != 0);
 }
 
 static void

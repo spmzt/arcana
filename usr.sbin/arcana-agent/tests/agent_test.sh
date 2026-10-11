@@ -1282,7 +1282,7 @@ EOS
 
 	# A connection: its file and its peer's key, IKEv2, read again.
 	atf_check -o match:'ipsec conn gre12 \(transport\)' \
-	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.2 transport "$PUB" \
+	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.2 mode transport pubkey "$PUB" \
 	    local-ts '10.202.0.1[gre]' remote-ts '10.202.0.2[gre]' start start
 	atf_check -o match:'^		version = 2$' -o match:'^		local_addrs = 10.202.0.1$' \
 	    -o match:'^			pubkeys = arcana-gre12.pub$' \
@@ -1297,7 +1297,7 @@ EOS
 	atf_check -o match:'"name":"gre12".*"arcana":true' "$JGC" -c "$SOCK" net ipsec
 	# Of an ipsec interface: tunnel mode, its policies the interface's.
 	atf_check -o ignore "$JGC" -c "$SOCK" ipsec conn vti12 fd00:5a::1 fd00:5a::2 \
-	    tunnel "$PUB" reqid 100
+	    mode tunnel pubkey "$PUB" reqid 100
 	atf_check -o match:'^				reqid = 100$' -o match:'^				policies = no$' \
 	    -o match:'^				local_ts = 0.0.0.0/0,::/0$' \
 	    -o match:'^				start_action = trap$' \
@@ -1305,28 +1305,87 @@ EOS
 
 	# What is not right is refused before anything is written.
 	atf_check -s exit:1 -e match:'tunnel or transport' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 beet "$PUB"
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode beet pubkey "$PUB"
 	atf_check -s exit:1 -e match:"peer's public key" -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 tunnel bm90IGEga2V5
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode tunnel pubkey bm90IGEga2V5
 	atf_check -s exit:1 -e match:'are IPv4, or both IPv6' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 2001:db8::2 tunnel "$PUB"
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 2001:db8::2 mode tunnel pubkey "$PUB"
 	atf_check -s exit:1 -e match:'is in tunnel mode' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 transport "$PUB" reqid 5
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode transport pubkey "$PUB" reqid 5
 	atf_check -s exit:1 -e match:'traffic selectors' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 tunnel "$PUB" local-ts '10.0.0.0/8 }'
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode tunnel pubkey "$PUB" local-ts '10.0.0.0/8 }'
 	atf_check -s exit:1 -e match:'letters, digits, - and _' -o ignore \
 	    "$JGC" -c "$SOCK" ipsec up '../x'
 	atf_check -s exit:1 -e match:'identity is one word' -o ignore \
-	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 tunnel "$PUB" remote-id 'a=b'
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 mode tunnel pubkey "$PUB" remote-id 'a=b'
 	test ! -f swanctl/conf.d/arcana-x.conf || atf_fail "a refused connection was written"
+	# The peer known one way, and one only.
+	atf_check -s exit:1 -e match:'one way' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2
+	atf_check -s exit:1 -e match:'one way' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn x 192.0.2.1 192.0.2.2 pubkey "$PUB" remote-cert peer.pem
+	# Children of their own: gre12's kept as the connection is
+	# written again without a mode; one added, named; one taken away.
+	atf_check -o match:'ipsec conn gre12' "$JGC" -c "$SOCK" ipsec conn gre12 \
+	    10.202.0.1 10.202.0.2 pubkey "$PUB" remote-id peer.example
+	atf_check -o match:'^			gre12 \{$' -o match:'mode = transport' \
+	    -o match:'id = peer.example' cat swanctl/conf.d/arcana-gre12.conf
+	atf_check -o match:'"children":\{"gre12":\{"mode":"transport"' \
+	    cat swanctl/conf.d/arcana-gre12.json
+	atf_check -o match:'ipsec child gre12 lan' "$JGC" -c "$SOCK" ipsec child gre12 lan tunnel \
+	    local-ts 10.1.0.0/24 remote-ts 10.2.0.0/24 start start
+	atf_check -o match:'^			gre12 \{$' -o match:'^			lan \{$' \
+	    -o match:'local_ts = 10.1.0.0/24' -o match:'start_action = start' \
+	    cat swanctl/conf.d/arcana-gre12.conf
+	atf_check -s exit:1 -o match:'no connection nope' -e ignore \
+	    "$JGC" -c "$SOCK" ipsec child nope lan tunnel
+	atf_check -s exit:1 -o match:'has no child far' -e ignore \
+	    "$JGC" -c "$SOCK" ipsec unchild gre12 far
+	atf_check -o match:'ipsec unchild gre12 lan' "$JGC" -c "$SOCK" ipsec unchild gre12 lan
+	atf_check -o not-match:'lan \{' -o match:'^			gre12 \{$' \
+	    cat swanctl/conf.d/arcana-gre12.conf
+	# The connection known by what it tells of itself: its children.
+	atf_check -o match:'"model":\{"children":\{"gre12":' \
+	    -o match:'"remote_id":"peer.example"' "$JGC" -c "$SOCK" net ipsec
+	# Certificates in x509 and x509ca, read: a peer known by its own,
+	# or by the CA that signed it, needs no key pasted.
+	mkdir -p swanctl/x509 swanctl/x509ca
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	    -keyout ca.key -out swanctl/x509ca/lab-ca.pem -days 2 \
+	    -subj '/CN=Lab CA' -addext 'basicConstraints=critical,CA:TRUE' >/dev/null 2>&1
+	openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	    -keyout peer.key -out swanctl/x509/peer.pem -days 2 \
+	    -subj '/CN=peer.example' -addext 'basicConstraints=CA:FALSE' \
+	    -addext 'subjectAltName=DNS:peer.example,IP:10.202.0.2' >/dev/null 2>&1
+	echo "not a cert" > swanctl/x509/junk.pem
+	atf_check -o save:certs.json "$JGC" -c "$SOCK" net ipsec
+	atf_check -o match:'"file":"peer.pem","where":"x509","subject":"CN=peer.example","issuer":"CN=peer.example",[^}]*"ca":false,"self_signed":true,"names":\["peer.example","10.202.0.2"\],"sha256":"[0-9a-f:]+"' \
+	    -o match:'"file":"lab-ca.pem","where":"x509ca",[^}]*"ca":true' \
+	    -o match:'"file":"junk.pem","where":"x509","error":"not a certificate in PEM"' \
+	    cat certs.json
+	atf_check -s exit:1 -o match:'nope.pem is not in swanctl.s x509' -e ignore \
+	    "$JGC" -c "$SOCK" ipsec conn bycert 10.202.0.1 10.202.0.2 remote-cert nope.pem
+	atf_check -s exit:1 -e match:'remote-id' -o ignore \
+	    "$JGC" -c "$SOCK" ipsec conn byca 10.202.0.1 10.202.0.2 remote-ca lab-ca.pem
+	atf_check -o match:'ipsec conn bycert' "$JGC" -c "$SOCK" ipsec conn bycert \
+	    10.202.0.1 10.202.0.2 mode tunnel remote-cert peer.pem
+	atf_check -o match:'certs = peer.pem' -o match:'pubkeys = arcana.pub' \
+	    -o not-match:'arcana-bycert.pub' cat swanctl/conf.d/arcana-bycert.conf
+	test ! -f swanctl/pubkey/arcana-bycert.pub || atf_fail "a key where none was given"
+	atf_check -o match:'ipsec conn byca' "$JGC" -c "$SOCK" ipsec conn byca \
+	    10.202.0.1 10.202.0.2 mode tunnel remote-ca lab-ca.pem remote-id peer.example local-cert peer.pem
+	atf_check -o match:'cacerts = lab-ca.pem' -o match:'certs = peer.pem' \
+	    -o match:'id = peer.example' cat swanctl/conf.d/arcana-byca.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" ipsec unconn byca
+	test ! -f swanctl/conf.d/arcana-byca.json || atf_fail "the model stayed"
 
 	# Refused by strongSwan: the files as they were.
 	cp swanctl/conf.d/arcana-gre12.conf gre12.was
 	touch refuse
 	atf_check -s exit:1 -o match:'failed' -e ignore \
-	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.9 transport "$PUB"
+	    "$JGC" -c "$SOCK" ipsec conn gre12 10.202.0.1 10.202.0.9 mode transport pubkey "$PUB"
 	atf_check -s exit:1 -o ignore -e ignore \
-	    "$JGC" -c "$SOCK" ipsec conn fresh 10.202.0.1 10.202.0.9 tunnel "$PUB"
+	    "$JGC" -c "$SOCK" ipsec conn fresh 10.202.0.1 10.202.0.9 mode tunnel pubkey "$PUB"
 	rm refuse
 	atf_check cmp gre12.was swanctl/conf.d/arcana-gre12.conf
 	test ! -f swanctl/conf.d/arcana-fresh.conf || atf_fail "a refused connection stayed"
@@ -2093,7 +2152,7 @@ EOS
 	atf_check -o match:'ipsec conn to-host \(tunnel\)' \
 	    -o match:'fake-jexec 4 .*/fake-swanctl --load-all' \
 	    "$JGC" -j gateway -c "$SOCK" ipsec conn to-host 10.99.0.2 \
-	    10.99.0.1 tunnel "$PUB"
+	    10.99.0.1 mode tunnel pubkey "$PUB"
 	atf_check -o match:'^		local_addrs = 10.99.0.2$' \
 	    cat "$R$(pwd)/swanctl/conf.d/arcana-to-host.conf"
 	atf_check test ! -e swanctl/conf.d/arcana-to-host.conf
@@ -2381,10 +2440,12 @@ echo "ipfw \$*" >> $(pwd)/ipfw.log
 exit 0
 EOS
 	chmod +x fake-ipfw
-	DAEMON_ARGS="-h $(pwd)/fake-ipfw"
+	printf '#!/bin/sh\necho "kldload $*" >> %s/kldload.log\nexit 0\n' "$(pwd)" > fake-kldload
+	chmod +x fake-kldload
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
-	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\]\}' \
+	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0\}' \
 	    -o match:'"steer":\[\],"steered":false' "$JGC" -c "$SOCK" sdwan
 	# What is not a target list.
 	atf_check -s exit:1 -e match:'JSON array' -o ignore \
@@ -2444,7 +2505,7 @@ EOS
 	    -o match:'^ipfw -q set enable 30$' cat ipfw.log
 	# Disabled, loaded, enabled: in that order.
 	atf_check -o inline:'1\n' sh -c "grep -n 'set disable 30' ipfw.log | cut -d: -f1 | head -1"
-	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\]\}' \
+	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\],"objects":0\}' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -e match:'not one of the rules' -o ignore "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[{"table":"nowhere","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
@@ -2464,11 +2525,112 @@ EOS
 	start_daemon
 	atf_check -o match:'^add 12 set 30 deny ip from any to any$' \
 	    -o match:'^ipfw -q table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
-	# No rules: the set emptied, the tables gone.
+	# Objects: dummynet pipes and queues, nat instances, made before
+	# the rules, their modules loaded, deleted with the rules, queues
+	# before their pipes; nothing a shell would read.
+	atf_check -s exit:1 -e match:'an object is' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"objects":["pipe 3000 config bw 1Mbit/s; reboot"],"rules":["10 allow ip from any to any"]}'
+	atf_check -s exit:1 -e match:'an object is' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"objects":["table t create"],"rules":["10 allow ip from any to any"]}'
+	: > ipfw.log
+	: > kldload.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"sw1_known","valtype":"legacy","entries":[["10.1.0.0/24","0"]]}],"objects":["pipe 3000 config bw 5000000bit/s","queue 3001 config pipe 3000 weight 75","nat 3001 config ip 198.51.100.1"],"rules":["11 nat 3001 ip4 from table(sw1_known) to not table(sw1_known) out xmit vtnet0","12 queue 3001 ip from any to any","99 count ip from any to any"]}'
+	atf_check -o match:'^pipe 3000 config bw 5000000bit/s$' \
+	    -o match:'^queue 3001 config pipe 3000 weight 75$' \
+	    -o match:'^nat 3001 config ip 198.51.100.1$' \
+	    -o match:'^table sw1_known create type addr valtype legacy$' \
+	    -o match:'^add 12 set 30 queue 3001 ip from any to any$' cat ipfw.log
+	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^pipe 3000' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^add 12' ipfw.log | cut -d: -f1 | head -1) && echo yes"
+	atf_check -o match:'dummynet' -o match:'ipfw_nat' cat kldload.log
+	atf_check -o match:'"objects":3' "$JGC" -c "$SOCK" sdwan
+	# BIRD instances: a bad list refused; one started in its table by
+	# setfib once its file parses, told to read it again when running,
+	# stopped when not named; listed with its protocols.
+	cat > fake-bird <<EOS
+#!/bin/sh
+echo "bird \$*" >> $(pwd)/bird.log
+grep -q BROKEN "\$3" && { echo "bird: \$3:1:1 syntax error" >&2; exit 1; }
+exit 0
+EOS
+	cat > fake-birdc <<EOS
+#!/bin/sh
+echo "birdc \$*" >> $(pwd)/birdc.log
+sock="\$2"; shift 2
+[ -e "\$sock" ] || { echo "birdc: Unable to connect to server control socket (\$sock): No such file or directory" >&2; exit 1; }
+case "\$*" in
+'show status') printf 'BIRD 3.3.2 ready.\nBIRD 3.3.2\nDaemon is up and running\n' ;;
+'show protocols') printf 'BIRD 3.3.2 ready.\nName       Proto      Table      State  Since         Info\ndevice1    Device     ---        up     21:00:00.000  \nuni_hq_0   BGP        ---        start  21:00:00.000  Active        Socket: Connection refused\n' ;;
+'show bfd sessions') st=Up; [ -e $(pwd)/bfd.down ] && st=Down; printf 'BIRD 3.3.2 ready.\nbfd1:\nIP address                Interface  State      Since         Interval  Timeout\n100.64.0.1                gre100     %s         21:00:00.000    0.200    0.600\n' "\$st" ;;
+configure) printf 'BIRD 3.3.2 ready.\nReading configuration from %s\nReconfigured\n' "\$sock" ;;
+down) rm -f "\$sock" ;;
+esac
+exit 0
+EOS
+	cat > fake-setfib <<EOS
+#!/bin/sh
+echo "setfib \$*" >> $(pwd)/setfib.log
+# bird -c conf -s sock -P pid: started, says the socket.
+shift 3; shift 2; touch "\$2"
+exit 0
+EOS
+	chmod +x fake-bird fake-birdc fake-setfib
+	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
+	atf_check -s exit:1 -e match:'named twice' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"a"},{"name":"sw1","fib":2,"conf":"b"}]}'
+	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"BROKEN"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\n"}]}'
+	atf_check -o match:'^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1.conf -s .*sdwan-bird-sw1.ctl -P .*sdwan-bird-sw1.pid$' cat setfib.log
+	atf_check -o match:'^router id 100.64.0.0;$' cat "$(dirname "$f")/sdwan-bird-sw1.conf"
+	atf_check -o match:'"bird":\[\{"name":"sw1","fib":1,"running":true,"protocols":\[\{"name":"device1","proto":"Device","state":"up"\},\{"name":"uni_hq_0","proto":"BGP","state":"start","info":"Active        Socket: Connection refused"\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
+	# BFD: the sessions read every second into the sdwan read; a
+	# session down is an event and the steering takes BFD's word over
+	# the probe's where there is a session: the second candidate then.
+	for i in $(seq 1 30); do
+		"$JGC" -c "$SOCK" sdwan | grep -q '"bfd":\[{"address":"100.64.0.1","interface":"gre100","state":"up"' && break
+		sleep 0.2
+	done
+	atf_check -o match:'"bfd":\[\{"address":"100.64.0.1","interface":"gre100","state":"up","since":"21:00:00.000"\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan steer \
+	    '{"entries":[{"table":"sw1_known","prefix":"10.1.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"},{"id":"t2","via":"100.64.0.3"}]}]}'
+	atf_check -o match:'"chosen":0,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed","bfd":"up"\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	touch bfd.down
+	for i in $(seq 1 30); do
+		"$JGC" -c "$SOCK" sdwan | grep -q '"chosen":1' && break
+		sleep 0.2
+	done
+	atf_check -o match:'"chosen":1,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed","bfd":"down"\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"kind":"sdwan-tunnel","data":\{"id":"t1","address":"100.64.0.1","interface":"gre100","state":"down","by":"bfd"\}' \
+	    "$JGC" -c "$SOCK" events
+	rm -f bfd.down
+	for i in $(seq 1 30); do
+		"$JGC" -c "$SOCK" sdwan | grep -q '"chosen":0' && break
+		sleep 0.2
+	done
+	atf_check -o match:'"chosen":0' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\nprotocol static {}\n"}]}'
+	atf_check -o match:'configure$' cat birdc.log
+	atf_check -o inline:'1\n' sh -c "grep -c '^setfib' setfib.log"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird '{"instances":[]}'
+	atf_check -o match:'down$' cat birdc.log
+	test ! -f "$(dirname "$f")/sdwan-bird-sw1.conf" || atf_fail "the instance's file stayed"
+	atf_check -o match:'"bird":\[\]' "$JGC" -c "$SOCK" sdwan
+	# No rules: the set emptied, the tables gone, the objects deleted.
 	: > ipfw.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
-	atf_check -o match:'^ipfw -q table sw1_zone destroy$' \
-	    -o match:'^ipfw -q table sw1_z0p0_4_alt destroy$' cat ipfw.log
+	atf_check -o match:'^ipfw -q table sw1_known destroy$' \
+	    -o match:'^ipfw -q nat 3001 delete$' \
+	    -o match:'^ipfw -q queue 3001 delete$' \
+	    -o match:'^ipfw -q pipe 3000 delete$' cat ipfw.log
+	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^ipfw -q queue 3001 delete' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^ipfw -q pipe 3000 delete' ipfw.log | cut -d: -f1 | head -1) && echo yes"
 	atf_check -o match:'"rules":\{"set":0,' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()

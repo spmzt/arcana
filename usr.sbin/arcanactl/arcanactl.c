@@ -144,7 +144,7 @@ usage(void)
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
-	    "    sdwan [probes | rules | steer json]\n"
+	    "    sdwan [probes | rules | steer | bird json]\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
 	    "    wg interface init [port]\n"
@@ -152,10 +152,13 @@ usage(void)
 	    "list]\n        [keepalive seconds]\n"
 	    "    wg interface unpeer key\n"
 	    "    ipsec init | start\n"
-	    "    ipsec conn name local remote tunnel | transport pubkey "
-	    "[reqid n]\n        [local-ts list] [remote-ts list] "
-	    "[start start | trap | none]\n        [local-id id] "
-	    "[remote-id id]\n"
+	    "    ipsec conn name local remote [mode tunnel | transport] [pubkey key |\n"
+	    "        remote-cert file | remote-ca file] [local-cert file] [reqid n]\n"
+	    "        [local-ts list] [remote-ts list] [start start | trap | none]\n"
+	    "        [local-id id] [remote-id id]\n"
+	    "    ipsec child conn name tunnel | transport [reqid n] [local-ts list]\n"
+	    "        [remote-ts list] [start start | trap | none]\n"
+	    "    ipsec unchild conn name\n"
 	    "    ipsec unconn | up | down name\n"
 	    "    bird enable | disable | restart | reload protocol\n"
 	    "    bird configure\n"
@@ -1304,6 +1307,19 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		error = json_out("sdwan-steer", rs->ok, rs->error, NULL,
 		    rs->trace.v, rs->trace.n);
 		arc_sdwan_steer_rsp_free(rs);
+		return (error);
+	}
+	if (argc == 3 && strcmp(argv[1], "bird") == 0) {
+		struct arc_sdwan_bird_req	 rq;
+		struct arc_sdwan_bird_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = argv[2];
+		if ((error = arc_sdwan_bird(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan bird");
+		error = json_out("sdwan-bird", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_bird_rsp_free(rs);
 		return (error);
 	}
 	if (argc != 1)
@@ -2683,19 +2699,50 @@ cmd_ipsec(struct arc_client *cl, int argc, char **argv)
 	if (argc < 3)
 		usage();
 	sp.conn = argv[2];
-	if (strcmp(argv[1], "conn") != 0) {
+	if (strcmp(argv[1], "unconn") == 0 || strcmp(argv[1], "up") == 0 ||
+	    strcmp(argv[1], "down") == 0) {
 		if (argc != 3)
 			usage();
 		return (submit(cl, &sp));
 	}
-	if (argc < 7)
+	if (strcmp(argv[1], "unchild") == 0) {
+		if (argc != 4)
+			usage();
+		sp.child = argv[3];
+		return (submit(cl, &sp));
+	}
+	/*
+	 * conn name local remote [words]: the connection, this host and
+	 * the peer by pubkey KEY, remote-cert FILE or remote-ca FILE, and
+	 * with mode a child of its name; child conn name mode [words]: a
+	 * child of its own.  The words come in pairs, in any order.
+	 */
+	if (strcmp(argv[1], "conn") == 0) {
+		if (argc < 5)
+			usage();
+		sp.tunnel_local = argv[3];
+		sp.tunnel_remote = argv[4];
+		i = 5;
+	} else if (strcmp(argv[1], "child") == 0) {
+		if (argc < 5)
+			usage();
+		sp.child = argv[3];
+		sp.ipsec_mode = argv[4];
+		i = 5;
+	} else
 		usage();
-	sp.tunnel_local = argv[3];
-	sp.tunnel_remote = argv[4];
-	sp.ipsec_mode = argv[5];
-	sp.pubkey = argv[6];
-	for (i = 7; i + 1 < argc; i += 2) {
-		if (strcmp(argv[i], "reqid") == 0) {
+	for (; i + 1 < argc; i += 2) {
+		if (strcmp(argv[i], "mode") == 0)
+			sp.ipsec_mode = argv[i + 1];
+		else if (strcmp(argv[i], "pubkey") == 0)
+			sp.pubkey = argv[i + 1];
+		else if (strcmp(argv[i], "local-cert") == 0)
+			sp.local_cert = argv[i + 1];
+		else if (strcmp(argv[i], "remote-cert") == 0)
+			sp.remote_cert = argv[i + 1];
+		else if (strcmp(argv[i], "remote-ca") == 0)
+			sp.remote_ca = argv[i + 1];
+		else if (strcmp(argv[i], "reqid") == 0) {
 			sp.has_reqid = true;
 			sp.reqid = (uint32_t)strtonum(argv[i + 1], 1, 16383,
 			    &errstr);

@@ -1291,6 +1291,19 @@ ATF_TC_BODY(tokens, tc)
 	http_bearer("GET", "/api/push", token, NULL, &r);
 	EXPECT(&r, 401);
 	resp_free(&r);
+	/* Every other read is its: the workflows and their runs too. */
+	http_bearer("GET", "/api/workflows", token, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http_bearer("GET", "/api/runs", token, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http_bearer("GET", "/api/sdwan", token, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http_bearer("POST", "/api/sdwan/check", token, "{}", &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
 	http_bearer("GET", "/api/servers", "arcr_0000000000000000000000000000"
 	    "000000000000000000000000000000000000", NULL, &r);
 	EXPECT(&r, 401);
@@ -3226,7 +3239,7 @@ static const char sdwan_good[] =
     "\"@B\",\"ucs_end_points\":[{\"id\":\"b-inet\",\"ucs\":\"inet\","
     "\"interface\":\"vtnet0\"},{\"id\":\"b-mpls\",\"ucs\":\"mpls\","
     "\"interface\":\"vtnet1\",\"backup\":true}]}],"
-    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"ucs\":[\"inet\",\"mpls\"],"
+    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"as\":64600,\"ucs\":[\"inet\",\"mpls\"],"
     "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
     "\"zones\":[{\"name\":\"office\",\"prefixes\":[\"10.1.0.0/16\"],"
     "\"policies\":[{\"app\":\"web\",\"policy\":\"fast\"}]},{\"name\":"
@@ -3234,6 +3247,7 @@ static const char sdwan_good[] =
     "\"topologies\":[{\"name\":\"hub\",\"type\":\"rooted-multipoint\","
     "\"roots\":[\"hq\"],\"leaves\":[\"branch\"]}],"
     "\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},"
+    "\"bfd\":{\"interval\":200,\"multiplier\":3},"
     "\"rate_limiters\":[{\"name\":\"shared\",\"commit\":1000000,\"limit\":"
     "5000000}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
@@ -3246,15 +3260,18 @@ static const char sdwan_good[] =
     "{\"encryption\":\"required-public-only\",\"performance\":{\"primary\":"
     "{\"metric\":\"delay\",\"threshold\":10,\"ceiling\":12,\"remediation\":"
     "9},\"secondary\":[{\"metric\":\"loss\",\"threshold\":0.05}]},"
-    "\"bandwidth\":\"shared\",\"business-importance\":\"high\"}},{\"name\":"
+    "\"bandwidth\":\"shared\",\"business-importance\":\"high\","
+    "\"internet-breakout\":\"enabled\"}},{\"name\":"
     "\"hubonly\",\"direction\":\"ingress\",\"criteria\":{"
     "\"virtual-topology\":\"hub\"}},{\"name\":\"quiet\",\"direction\":"
-    "\"egress\",\"criteria\":{\"egress-block\":\"allow\"}}],"
+    "\"egress\",\"criteria\":{\"egress-block\":\"discard\"}}],"
     "\"end_points\":[{\"id\":\"hq\",\"edge\":\"@A\",\"uni\":{\"id\":"
     "\"uni-hq\",\"interface\":\"vtnet2\",\"ipv4\":{\"mode\":\"static\","
     "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"]},\"routes\":"
     "[{\"prefix\":\"10.1.8.0/22\",\"next_hop\":\"10.1.0.2\",\"distance\":"
-    "10}]},\"policy_map\":[{\"zone\":\"office\",\"app\":\"all\",\"ingress\":"
+    "10}],\"bgp\":{\"family\":\"ipv4\",\"as\":65010,\"neighbors\":"
+    "[\"10.1.0.2\"],\"password\":\"s3cret\",\"hold_time\":90,\"distance\":"
+    "150,\"communities\":[[64600,100]]}},\"policy_map\":[{\"zone\":\"office\",\"app\":\"all\",\"ingress\":"
     "\"hubonly\",\"egress\":\"quiet\"}],\"nat\":{\"ip_version\":\"ipv4\","
     "\"public_prefix\":\"198.51.100.0/30\"}},{\"id\":\"branch\",\"edge\":"
     "\"@B\",\"uni\":{\"id\":\"uni-br\",\"interface\":\"vtnet2\",\"vlan\":20,"
@@ -3332,6 +3349,12 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"provider\":[\"10.1.0.1\"]", "\"provider\":[\"10.2.0.1\"]",
 		    "(R131)" },
 		{ "\"leaves\":[\"branch\"]", "\"leaves\":[\"hq\"]", "(R31)" },
+		{ "\"neighbors\":[\"10.1.0.2\"]", "\"neighbors\":[\"10.9.0.2\"]",
+		    "(§11.6.2)" },
+		{ "\"hold_time\":90", "\"hold_time\":90,\"as_override\":true",
+		    "as_override" },
+		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
+		{ "\"multiplier\":3", "\"multiplier\":1", "(R159)" },
 		{ "\"vlan\":20", "\"vlan\":5000", "(§11.2)" },
 		{ "\"virtual-topology\":\"hub\"", "\"virtual-topology\":\"nope\"",
 		    "(R47)" },
@@ -3348,7 +3371,7 @@ ATF_TC_BODY(sdwan, tc)
 		    "nosuchport is not one" },
 		{ "\"groups\":[\"bulk\"]", "\"groups\":[\"bulk\",\"web\"]",
 		    "(R92)" },
-		{ "\"egress-block\":\"allow\"", "\"encryption\":\"optional\"",
+		{ "\"egress-block\":\"discard\"", "\"encryption\":\"optional\"",
 		    "egress policy" },
 		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
 		/* Another service with a UNI on the same interface and VLAN
@@ -3462,7 +3485,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	static const char *const edits[][2] = {
 		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
-		    "\"address\":\"192.0.2.1\"" },
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
 		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
 		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
 		    "\"address\":\"10.99.0.1\"" },
@@ -3533,8 +3556,83 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "sw1_z0p0_4) dst-port 80,https\"") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"12 fwd tablearg tcp from any to table("
 	    "sw1_z0p0_6) dst-port 80,https\"") != NULL);
-	ATF_CHECK(strstr(r.body, "\"12 allow tcp from any to any dst-port "
+	/* Then what the flow may do beyond the tunnels: the hosts of the
+	 * edge's own UNI (queued, as fast has bandwidth), the Internet by
+	 * breakout (fast enables it; not known is the Internet), and
+	 * nothing else; a flow with no bandwidth is let through. */
+	ATF_CHECK_MSG(strstr(r.body, "\"12 queue 3001 tcp from any to "
+	    "10.1.0.0/24,10.1.8.0/22 dst-port 80,https\"") != NULL, "%s",
+	    r.body);
+	ATF_CHECK(strstr(r.body, "\"12 queue 3001 tcp from any to not table("
+	    "sw1_known) dst-port 80,https\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 deny tcp from any to any dst-port "
 	    "80,https\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 allow ip4 from any to 10.1.0.0/24,"
+	    "10.1.8.0/22\"") != NULL);
+	ATF_CHECK(strstr(r.body, "[\"10.1.8.0/22\",\"0\"],[\"2001:db8:1::/64\","
+	    "\"0\"]") != NULL);
+	/* Its bandwidth: the shared limiter a pipe of its limit, the flow
+	 * a queue in it, weighted by its commit and importance (high),
+	 * on the way out by the tunnels. */
+	ATF_CHECK(strstr(r.body, "\"pipe 3000 config bw 5000000bit/s\"") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "\"queue 3001 config pipe 3000 weight 100\"")
+	    != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"11 queue 3001 tcp from any to any "
+	    "dst-port 80,https src-ip table(sw1_zp0) out { xmit gre100 or xmit "
+	    "gif102 }\"") != NULL, "%s", r.body);
+	/* Egress: quiet discards all of the office zone leaving by hq's
+	 * UNI. */
+	ATF_CHECK(strstr(r.body, "\"11 deny ip from any to any src-ip table("
+	    "sw1_zp0) out xmit lo0\"") != NULL);
+	/* Breakout at a, by a-inet: the NAT of hq's public prefix, out by
+	 * vtnet0 and back in to the service's table; the default route
+	 * by the gateway, reached by the interface.  At b, by a tunnel to
+	 * a. */
+	ATF_CHECK(strstr(r.body, "\"nat 3001 config ip 198.51.100.1\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 nat 3001 ip4 from table(sw1_known) to "
+	    "not table(sw1_known) out xmit vtnet0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 setfib 1 ip from any to 198.51.100.1 in "
+	    "recv vtnet0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 nat 3001 ip4 from any to 198.51.100.1 in "
+	    "recv vtnet0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 setfib 1 ip from any to table(sw1_known) "
+	    "in recv vtnet0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"key\":\"route:acme:192.0.2.254/32\"") !=
+	    NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"title\":\"0.0.0.0/0 via 192.0.2.254, "
+	    "fib 1 (the Internet, by local breakout)\"") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"title\":\"0.0.0.0/0 via 100.64.0.0, fib "
+	    "1 (the Internet, by breakout at a)\"") != NULL, "%s", r.body);
+	/* Routing: a BIRD instance of the service on each edge, in its
+	 * table, iBGP between them by each tunnel, and at hq's UNI BGP
+	 * with the subscriber as the entry says. */
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-bird\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana "
+	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
+	    "%s", r.body);
+	ATF_CHECK(strstr(r.body, "router id 100.64.0.0;") != NULL);
+	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tpersist;") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "interface \\\"lo0\\\";") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b\\nprotocol bgp "
+	    "edge0 from edge {\\n\\tlocal 100.64.0.0 as 64600;\\n\\tneighbor "
+	    "100.64.0.1 as 64600;\\n}") != NULL, "%s", r.body);
+	/* BFD on the edge's tunnel interfaces, the iBGP sessions by it. */
+	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
+	    "\\\"gif102\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier 3;\\n\\t};"
+	    "\\n}") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\tbfd on;\\n") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
+	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
+	    "\\n\\tpreference 106;\\n\\tpassword \\\"s3cret\\\";\\n\\thold time "
+	    "90;\\n\\tipv4 {\\n\\t\\timport all;\\n\\t\\texport filter {\\n\\t\\t"
+	    "\\tbgp_community.add((64600, 100));\\n\\t\\t\\taccept;\\n\\t\\t};"
+	    "\\n\\t};\\n}") != NULL, "%s", r.body);
+	/* b has no routing at its UNI, but the service's instance all the
+	 * same: what hq learns reaches it. */
+	ATF_CHECK(strstr(r.body, "SD-WAN service acme at b, in routing table 1.")
+	    != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "\"12 deny ip from any to any { src-port "
 	    "5060,5061 or dst-port 5060,5061 } dscp 46\"") != NULL, "%s",
 	    r.body);
@@ -3590,6 +3688,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(jstr(&r, "data.rules.set") != NULL && strcmp(jstr(&r,
 	    "data.rules.set"), "30") == 0, "%s", r.body);
 	resp_free(&r);
+	ATF_CHECK(system("grep -q '^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1"
+	    ".conf -s ' setfib.log") == 0);
 	ATF_CHECK(system("grep -q 'add 12 set 30 fwd tablearg tcp from any to "
 	    "table(sw1_z0p0_4) dst-port 80,https' ipfw.log") == 0);
 	ATF_CHECK(system("grep -q 'ipfw -q set enable 30' ipfw.log") == 0);

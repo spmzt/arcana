@@ -115,10 +115,9 @@ guard(struct http_request *req, bool mutate)
 	config_refresh();
 	if (!session_valid(req)) {
 		/*
-		 * A read-only API token (tokens.c): only to read what the
-		 * console says of the hosts, never to change anything, nor
-		 * to read the console's own settings, sign-in or the keys
-		 * that let a host join.
+		 * A read-only API token (tokens.c): to read, never to
+		 * change anything, nor to read the console's own settings,
+		 * sign-in, push or the keys that let a host join.
 		 */
 		if (!mutate && token_readable(req->path) && token_valid(req))
 			return (true);

@@ -192,10 +192,12 @@ title_of(const struct arc_job_spec *sp)
 		rc = (t = proc_title(sp)) != NULL ? 0 : -1;
 		break;
 	case ARC_JOB_KIND_IPSEC:
-		rc = asprintf(&t, "ipsec %s%s%s%s%s%s", sp->verb, sp->conn !=
+		rc = asprintf(&t, "ipsec %s%s%s%s%s%s%s%s", sp->verb, sp->conn !=
 		    NULL ? " " : "", sp->conn != NULL ? sp->conn : "",
-		    sp->ipsec_mode != NULL ? " (" : "", sp->ipsec_mode != NULL ?
-		    sp->ipsec_mode : "", sp->ipsec_mode != NULL ? ")" : "");
+		    sp->child != NULL ? " " : "", sp->child != NULL ? sp->child :
+		    "", sp->ipsec_mode != NULL ? " (" : "", sp->ipsec_mode !=
+		    NULL ? sp->ipsec_mode : "", sp->ipsec_mode != NULL ? ")" :
+		    "");
 		break;
 	case ARC_JOB_KIND_PKG_INSTALL:
 		rc = asprintf(&t, "pkg install %s%s%s%s%s", sp->names.n > 0 ?

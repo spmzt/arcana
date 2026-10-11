@@ -551,8 +551,16 @@ rail(struct html *h)
 	/* At the foot of the side bar: the console's own settings. */
 	h_fmt(h, "</ul><ul class=\"tree rail-foot\"><li class=\"titem fleet "
 	    "setnode%s\" data-act=\"settings\"><span class=\"twig\">%s"
-	    "</span><span class=\"name\">Settings</span></li></ul>",
+	    "</span><span class=\"name\">Settings</span>",
 	    app.node == NODE_SETTINGS ? " selected" : "", icon_gear);
+	/* The console's version, where a phone shows it: the top bar
+	 * has no room for it there. */
+	if (app.version[0] != '\0') {
+		h_raw(h, "<span class=\"ver\" title=\"The console's version\">");
+		h_txt(h, app.version);
+		h_raw(h, "</span>");
+	}
+	h_raw(h, "</li></ul>");
 	h_raw(h, RESIZER("x", "rail") "</aside>");
 }
 
@@ -1499,10 +1507,11 @@ set_tokens(struct html *h)
 	int			 n;
 
 	h_raw(h, "<p class=\"dim\">For a program to read what the console "
-	    "says of the hosts, with <code>Authorization: Bearer</code>: "
-	    "their jails, network, storage, logs and the rest, and nothing "
-	    "that changes them, nor this console's settings or sign-in. Its "
-	    "value is shown once, when it is made.</p>");
+	    "says, with <code>Authorization: Bearer</code>: the hosts, their "
+	    "jails, network, storage and logs, the workflows and their runs, "
+	    "SD-WAN, and the rest, and nothing that changes them, nor this "
+	    "console's settings, sign-in or enrolment. Its value is shown "
+	    "once, when it is made.</p>");
 	if (app.token_value[0] != '\0') {
 		h_raw(h, "<div class=\"notice info\"><b>Copy it now: it is not "
 		    "shown again.</b><pre class=\"out token\">");
@@ -1799,7 +1808,20 @@ modal(struct html *h)
 			return;
 		break;
 	case MODAL_IPSEC_CONN:
+	case MODAL_IPSEC_CHILD:
 		if (!ipsec_modal(h))
+			return;
+		break;
+	case MODAL_SD_UCS:
+	case MODAL_SD_EDGE:
+	case MODAL_SD_LINK:
+	case MODAL_SD_SWVC:
+	case MODAL_SD_ZONE:
+	case MODAL_SD_FLOW:
+	case MODAL_SD_POLICY:
+	case MODAL_SD_EP:
+	case MODAL_SD_MAP:
+		if (!sdwan_modal(h))
 			return;
 		break;
 	case MODAL_BIRD_PROTO:
@@ -2078,8 +2100,24 @@ modal(struct html *h)
 		case MODAL_WG_INIT:
 			h_raw(h, "<button class=\"primary\">Set</button>");
 			break;
+		case MODAL_SD_UCS:
+		case MODAL_SD_LINK:
+		case MODAL_SD_SWVC:
+		case MODAL_SD_ZONE:
+		case MODAL_SD_FLOW:
+		case MODAL_SD_POLICY:
+		case MODAL_SD_EP:
+		case MODAL_SD_MAP:
+			h_raw(h, "<button class=\"primary\">Keep</button>");
+			break;
+		case MODAL_SD_EDGE:
+			h_raw(h, "<button class=\"primary\">Add the edge</button>");
+			break;
 		case MODAL_WG_PEER:
 		case MODAL_IPSEC_CONN:
+			h_raw(h, "<button class=\"primary\">Add</button>");
+			break;
+		case MODAL_IPSEC_CHILD:
 			h_raw(h, "<button class=\"primary\">Add</button>");
 			break;
 		case MODAL_STORAGE:

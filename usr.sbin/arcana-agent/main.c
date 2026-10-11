@@ -78,6 +78,7 @@ struct opts opts = {
 	.birdc_bin = PATH_BIRDC_BIN,
 	.bird_bin = PATH_BIRD_BIN,
 	.bird_conf = PATH_BIRD_CONF,
+	.setfib_bin = PATH_SETFIB_BIN,
 	.safe_wait = 60,
 	.make_bin = PATH_MAKE_BIN,
 	.keyscan_bin = PATH_KEYSCAN_BIN,
@@ -311,7 +312,7 @@ main(int argc, char *argv[])
 	/* Run again by the daemon, to look at a jail from inside it. */
 	if (argc >= 2 && strcmp(argv[1], "-Q") == 0)
 		return (scope_helper(argc - 2, argv + 2));
-	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:1:2:5:x:Y:y:Z:z:")) != -1) {
+	while ((ch = getopt(argc, argv, "A:a:B:b:C:c:D:dE:e:Ff:G:g:H:h:I:J:j:K:k:L:l:M:N:n:O:o:P:p:Q:R:r:s:i:m:q:S:T:t:u:U:Vv:w:W:X:1:2:3:5:x:Y:y:Z:z:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -455,6 +456,9 @@ main(int argc, char *argv[])
 		case '5':
 			opts.swanctl_dir = optarg;
 			break;
+		case '3':
+			opts.setfib_bin = optarg;
+			break;
 		case 'b':
 			opts.birdc_bin = optarg;
 			break;
@@ -596,6 +600,7 @@ main(int argc, char *argv[])
 	history_start();
 	probe_start();
 	sdwan_start();
+	sdwan_bird_start();
 	kmsg_start();
 	route_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);

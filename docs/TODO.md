@@ -14,16 +14,27 @@
   loss, and faults; the flows classified by ipfw in a set of their own
   and steered by the policy tables, the edge taking the first tunnel
   not down (the local failover), the console's manager ordering them
-  by the performance criteria. The probes and the rules run where the
-  agent runs: an edge that is a vnet jail is not measured or steered
-  yet. Next: what is not forwarded by a tunnel is let through for
-  now; breakout and NAT,
-  classified and steered by ipfw in a set of its own, the console
-  ordering each policy's tunnels by its performance criteria and the
-  agent taking the first that answers; breakout and NAT, bandwidth and
-  importance by dummynet, egress blocks, backup and billing, virtual
-  topologies; BGP and OSPF, DHCP and SLAAC at a UNI. Later: Mplify
-  119's tunnel (GRE carrying an MPLS label inside IPsec, BGP L3VPN).
+  by the performance criteria; breakout, local by the edge's own
+  Internet access with NAT or remote by a tunnel, each flow let to
+  its own UNIs' hosts and the Internet by its policy and nothing
+  else; bandwidth and importance by dummynet pipes and weighted
+  queues; egress blocks. The probes and the rules run where the agent
+  runs: an edge that is a vnet jail is not measured or steered yet.
+  The bandwidth commit is a weight among the flows of one limiter's
+  pipe, not a guarantee against other traffic on the UCS; the pipes
+  and nat are verified with ipfw on the lab VM, not under load; BGP
+  and OSPF at a UNI by a BIRD instance of each service on each edge,
+  in the service's table, iBGP between the edges by the tunnels (what
+  a UNI learns goes by the table and the tunnel iBGP chose, not by the
+  policy tables). The instances are run by the agent (setfib, a
+  socket each) and verified with stand-ins, not yet against a real
+  subscriber router; BFD on the tunnels by the same instances, the
+  sessions read every second, a change a fault and the steering's
+  word (Mplify 119 tasks 1.1 to 1.3 of docs/PLAN-119-SASE.md; BIRD
+  has no DSCP for BFD, so R159's DSCP is not set). Next: the rest of
+  119-1 (TCP MD5, NTP, the fault catalogue, threshold alerts), DHCP
+  and SLAAC at a UNI, the UX tasks. Later: Mplify 119's tunnel (GRE
+  carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a
