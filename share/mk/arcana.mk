@@ -40,17 +40,39 @@ TESTSBASE?=	${PREFIX}/tests
 CSTD?=		c17
 WARNS?=		6
 
-# cblink: the transport between arcana-agent and its clients.
+# cblink: the transport between arcana-agent and its clients.  It comes
+# with the tree as the submodule cblink/ (git submodule update --init):
+# the top-level make builds it first, in its own object directory, and
+# the programs use it from there, finding libcblink.so by an rpath, so
+# nothing of it need be installed to build or to test; make install
+# installs it with the rest.  Without the submodule (a release tarball,
+# the port) an installed cblink is used, devel/cblink's at CBLINK_PREFIX.
+.if !defined(CBLINK_PREFIX) && exists(${ARC_TOP}/cblink/share/cblink/cblink.mk)
+CBLINK_SUBMODULE=	yes
+.if defined(MAKEOBJDIRPREFIX)
+CBLINK_OBJ?=	${MAKEOBJDIRPREFIX}${ARC_TOP}/cblink
+.else
+CBLINK_OBJ?=	${ARC_TOP}/cblink/obj
+.endif
+CBLINK_MK?=	${ARC_TOP}/cblink/share/cblink/cblink.mk
+CBLINK_GEN?=	${CBLINK_OBJ}/usr.bin/cblink-gen/cblink-gen
+CBLINK_CFLAGS?=	-I${ARC_TOP}/cblink/lib/libcblink
+CBLINK_LIBS?=	-L${CBLINK_OBJ}/lib/libcblink -lcblink
+LDFLAGS+=	-Wl,-rpath,${CBLINK_OBJ}/lib/libcblink
+.else
+CBLINK_SUBMODULE=	no
 CBLINK_PREFIX?=	${LOCALBASE}
 CBLINK_MK?=	${CBLINK_PREFIX}/share/cblink/cblink.mk
 .if !exists(${CBLINK_MK})
 .error cblink is not at CBLINK_PREFIX=${CBLINK_PREFIX} (no ${CBLINK_MK}): \
-install devel/cblink, or set CBLINK_PREFIX in ${ARC_TOP}/config.mk, \
-where the top of the tree is $${ARC_TOP}
+check out the submodule (git submodule update --init), install \
+devel/cblink, or set CBLINK_PREFIX in ${ARC_TOP}/config.mk, where \
+the top of the tree is $${ARC_TOP}
 .endif
 CBLINK_GEN?=	${CBLINK_PREFIX}/bin/cblink-gen
 CBLINK_CFLAGS?=	-I${CBLINK_PREFIX}/include
 CBLINK_LIBS?=	-L${CBLINK_PREFIX}/lib -lcblink
+.endif
 
 # Kore, for the web console module: its headers and the feature flags it
 # was built with, which change struct layouts; an installed Kore records

@@ -11,10 +11,11 @@
 # lists its settings.
 #
 # The first stage builds Kore and the tree on the emscripten image (base
-# toolchain and emcc, from spmzt/images) with cblink taken from its
-# image, runs the test suite as an unprivileged user (a failing test
-# fails the build; set ARCANA_TESTS=no to skip it) and installs the
-# runtime files; the second has only those, on the cblink image.
+# toolchain and emcc, from spmzt/images), cblink from the submodule with
+# it, runs the test suite as an unprivileged user (a failing test fails
+# the build; set ARCANA_TESTS=no to skip it) and installs the runtime
+# files; the second has only those, on the cblink image, whose libcblink
+# the one built here replaces.
 # arcana-agent(8) runs on each host itself: it manages that host's jails.
 
 ARG CBLINK_IMAGE=ghcr.io/spmzt/cblink:latest
@@ -32,12 +33,6 @@ ARG LIBUCL_SHA256=319d8ff13441f55d91cd7f3708a54bd03779733e26958c2346c5109014520a
 # jail(8) for the tests, gmake for Kore, libcbor for libcblink.
 RUN pkg install -y FreeBSD-jail gmake libcbor && \
     pkg-cleanup
-COPY --from=cblink /usr/local/bin/cblink-gen /usr/local/bin/
-COPY --from=cblink /usr/local/include/cblink.h /usr/local/include/
-COPY --from=cblink /usr/local/lib/libcblink.so.1 /usr/local/lib/
-COPY --from=cblink /usr/local/share/cblink/ /usr/local/share/cblink/
-RUN ln -s libcblink.so.1 /usr/local/lib/libcblink.so && \
-    ldconfig -m /usr/local/lib
 
 # Kore, with tasks, as arcana-console.so needs it.  It builds as C99 with
 # -Werror, and base's basename(3) is a C11 _Generic macro.  The port's
@@ -65,9 +60,11 @@ RUN fetch -o libucl.tar.gz \
         "${LIBUCL_SHA256}" ] && \
     tar -xzf libucl.tar.gz --strip-components 1 && rm libucl.tar.gz
 
+# The submodule cblink/ must be checked out in what is copied.
 COPY . /usr/src/arcana
 WORKDIR /usr/src/arcana
-RUN make -j "$(sysctl -n hw.ncpu)" LIBUCL_SRC=/usr/src/libucl
+RUN test -f cblink/Makefile || { echo "cblink/ is empty: git submodule update --init" >&2; exit 1; } && \
+    make -j "$(sysctl -n hw.ncpu)" LIBUCL_SRC=/usr/src/libucl
 # The tests that need root drive real jails; as another user they are
 # skipped, as is the browser test without Chromium.
 RUN if [ "${ARCANA_TESTS}" = yes ]; then \

@@ -128,7 +128,8 @@ From a shell, `arcanactl agent-build -y` confirms the keys shown, and
 `-i key` names the key.
 
 The host that builds needs what the build needs: `git`, the base
-compiler, and `devel/cblink` with its `libcbor`. If cblink or the linker
+compiler and `devel/libcbor`; cblink is cloned with the tree, a
+submodule, and built with it. If the linker
 are somewhere else on it, `/usr/local/etc/arcana/config.mk` there is
 copied into the tree as its `config.mk`. When the agent is root, git
 and make run as `nobody`. From a shell, `arcanactl agent-build [-o

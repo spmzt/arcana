@@ -4,14 +4,27 @@
 #	make install [DESTDIR=dir] [PREFIX=/usr/local]
 #
 # Build products go to obj/, mirroring the tree (share/mk/arcana.mk).
-# Needs cblink (libcblink, cblink-gen, cblink.mk), and for the console
-# Kore's headers and emcc(1); see config.mk.sample to point at copies not
+# cblink (libcblink, cblink-gen, cblink.mk) is the submodule cblink/,
+# checked out with git submodule update --init and built first, in its
+# own obj/; devel/libcbor is what it needs.  The console needs Kore's
+# headers and emcc(1); see config.mk.sample to point at copies not
 # installed in ${LOCALBASE}.  WITHOUT_CONSOLE=yes builds only the jail
 # host's programs.  "make check" runs the tests in the build tree: those
 # that need root are skipped unless it runs as root, the browser test
 # unless Chromium and chromedriver are installed.
 
 .include "share/mk/arcana.mk"
+
+# cblink from the submodule, built before anything made from its spec,
+# without its tests; installed with the rest, since the programs need
+# libcblink.so.1 at run time and a host that builds the agent cblink-gen.
+.if ${CBLINK_SUBMODULE} == "yes"
+_CBLINK_MAKE=	${MAKE} -C ${.CURDIR}/cblink WITH_AUTO_OBJ=yes WITHOUT_TESTS=yes
+cblink-build: .PHONY
+	@${_CBLINK_MAKE} all
+beforeinstall: .PHONY
+	@${_CBLINK_MAKE} install DESTDIR=${DESTDIR} PREFIX=${PREFIX}
+.endif
 
 SUBDIR=		lib/libjailconf \
 		usr.sbin/jailconf \
@@ -23,6 +36,12 @@ SUBDIR.${MK_CONSOLE}+= www/arcana-ui \
 SUBDIR.${MK_TESTS}+= tests
 SUBDIR_DEPEND_usr.sbin/jailconf=	lib/libjailconf
 SUBDIR_DEPEND_usr.sbin/arcana-agent=	lib/libjailconf
+
+.if ${CBLINK_SUBMODULE} == "yes"
+.for _d in ${SUBDIR} ${SUBDIR.yes}
+all_subdir_${_d}: cblink-build
+.endfor
+.endif
 
 TESTDIRS=	lib/libjailconf/tests \
 		usr.sbin/jailconf/tests \
@@ -57,8 +76,8 @@ check: .PHONY
 	for p in $$pids; do wait $$p || rc=1; done; \
 	exit $$rc
 
-# Everything built is under obj/.
+# Everything built is under obj/, cblink's under its own.
 clean cleandir: .PHONY
-	rm -rf ${ARC_TOP}/obj
+	rm -rf ${ARC_TOP}/obj ${ARC_TOP}/cblink/obj
 
 .include <bsd.subdir.mk>

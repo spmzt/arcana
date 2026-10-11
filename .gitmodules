@@ -1,0 +1,3 @@
+[submodule "cblink"]
+	path = cblink
+	url = https://github.com/spmzt/cblink.git

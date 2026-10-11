@@ -3,8 +3,9 @@
 # Use another linker, e.g. when the base ld.lld is broken:
 #LDFLAGS+=	--ld-path=/usr/local/llvm21/bin/ld.lld
 
-# Where cblink is installed, if not in ${LOCALBASE}; with an rpath so the
-# programs find libcblink.so there:
+# cblink comes from the submodule cblink/ and is built with the tree.
+# To use an installed one instead (devel/cblink's, or a copy), say where
+# it is; with an rpath so the programs find libcblink.so there:
 #CBLINK_PREFIX=	/path/to/cblink-root/usr/local
 #LDFLAGS+=	-Wl,-rpath,${CBLINK_PREFIX}/lib
 
