@@ -48,17 +48,13 @@
   the jails have no Internet to break out to); the UCS End Points
   addressed by DHCP or SLAAC (the address learned from the host at
   each plan), in a table of their own, and routed with the underlay by
-  a BIRD instance of the edge (2.4; stand-ins, the lab run to come).
-  Next: 2.5, the phase closed on the jails; then 119-3. Later: Mplify 119's tunnel
+  a BIRD instance of the edge (2.4; DHCP on the jails, in the verified
+  list). Next: 2.5, the phase closed; then 119-3. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
-- The interface form (asked 2026-10-11): it helps too little. An
-  enum of interface kinds (gre, gif, ipsec, wg, vlan, vxlan, geneve,
-  bridge, epair, lagg, tap, tun, lo, ovpn) and the fields of each
-  shown for it alone (a tunnel's ends, a VLAN's tag and parent, a
-  VXLAN's id, a bridge's members, ...); a persist switch that keeps
-  the interface in rc.conf's cloned_interfaces with its ifconfig_
-  line; and WireGuard's tab makes a wg interface by the same job as
-  the form (if-create), then its keys and peers.
+- The network map draws a WireGuard link twice when both families
+  are set on it and one end has no IPv4 (asked 2026-10-11): a link is
+  one per interface and peer, whatever families it carries, the
+  families said on it, not a link each.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:
@@ -265,6 +261,16 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- A UCS End Point addressed by DHCP (Mplify 119 §12.2.3.2; task
+  2.4, 2026-10-11, the lab's ucsdhcp step): the second edge's dnsmasq
+  on the underlay epair, the first edge's interface put on DHCP by
+  the if-set job (rc.conf's DHCP word, dhclient restarted): it leased
+  10.202.0.142, the agent's interfaces read tells it, which is what
+  the console's plan learns, and the lease is listed at the server.
+  Found on the way: the agent's queued jobs kept only the first weeks'
+  text attributes of their spec; the rest pointed into the freed
+  request (agent 0.61.0). Not run in the lab: SLAAC on a UCS, a vrf,
+  BGP with the underlay.
 - SLAAC and DHCP at a UNI (MEF 70.2 §11.4, §11.5; tasks 0.1 and 0.2,
   2026-10-11, the lab's sub step): a third vnet jail on an epair
   behind the first edge's UNI, the UNI in FIB 1 with the prefixes,
