@@ -3259,10 +3259,11 @@ static const char sdwan_good[] =
     "{\"encryption\":\"required-public-only\",\"performance\":{\"primary\":"
     "{\"metric\":\"delay\",\"threshold\":10,\"ceiling\":12,\"remediation\":"
     "9},\"secondary\":[{\"metric\":\"loss\",\"threshold\":0.05}]},"
-    "\"bandwidth\":\"shared\",\"business-importance\":\"high\"}},{\"name\":"
+    "\"bandwidth\":\"shared\",\"business-importance\":\"high\","
+    "\"internet-breakout\":\"enabled\"}},{\"name\":"
     "\"hubonly\",\"direction\":\"ingress\",\"criteria\":{"
     "\"virtual-topology\":\"hub\"}},{\"name\":\"quiet\",\"direction\":"
-    "\"egress\",\"criteria\":{\"egress-block\":\"allow\"}}],"
+    "\"egress\",\"criteria\":{\"egress-block\":\"discard\"}}],"
     "\"end_points\":[{\"id\":\"hq\",\"edge\":\"@A\",\"uni\":{\"id\":"
     "\"uni-hq\",\"interface\":\"vtnet2\",\"ipv4\":{\"mode\":\"static\","
     "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"]},\"routes\":"
@@ -3361,7 +3362,7 @@ ATF_TC_BODY(sdwan, tc)
 		    "nosuchport is not one" },
 		{ "\"groups\":[\"bulk\"]", "\"groups\":[\"bulk\",\"web\"]",
 		    "(R92)" },
-		{ "\"egress-block\":\"allow\"", "\"encryption\":\"optional\"",
+		{ "\"egress-block\":\"discard\"", "\"encryption\":\"optional\"",
 		    "egress policy" },
 		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
 		/* Another service with a UNI on the same interface and VLAN
@@ -3475,7 +3476,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	static const char *const edits[][2] = {
 		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
-		    "\"address\":\"192.0.2.1\"" },
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
 		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
 		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
 		    "\"address\":\"10.99.0.1\"" },
@@ -3546,8 +3547,54 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "sw1_z0p0_4) dst-port 80,https\"") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "\"12 fwd tablearg tcp from any to table("
 	    "sw1_z0p0_6) dst-port 80,https\"") != NULL);
-	ATF_CHECK(strstr(r.body, "\"12 allow tcp from any to any dst-port "
+	/* Then what the flow may do beyond the tunnels: the hosts of the
+	 * edge's own UNI (queued, as fast has bandwidth), the Internet by
+	 * breakout (fast enables it; not known is the Internet), and
+	 * nothing else; a flow with no bandwidth is let through. */
+	ATF_CHECK_MSG(strstr(r.body, "\"12 queue 3001 tcp from any to "
+	    "10.1.0.0/24,10.1.8.0/22 dst-port 80,https\"") != NULL, "%s",
+	    r.body);
+	ATF_CHECK(strstr(r.body, "\"12 queue 3001 tcp from any to not table("
+	    "sw1_known) dst-port 80,https\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 deny tcp from any to any dst-port "
 	    "80,https\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 allow ip4 from any to 10.1.0.0/24,"
+	    "10.1.8.0/22\"") != NULL);
+	ATF_CHECK(strstr(r.body, "[\"10.1.8.0/22\",\"0\"],[\"2001:db8:1::/64\","
+	    "\"0\"]") != NULL);
+	/* Its bandwidth: the shared limiter a pipe of its limit, the flow
+	 * a queue in it, weighted by its commit and importance (high),
+	 * on the way out by the tunnels. */
+	ATF_CHECK(strstr(r.body, "\"pipe 3000 config bw 5000000bit/s\"") !=
+	    NULL);
+	ATF_CHECK(strstr(r.body, "\"queue 3001 config pipe 3000 weight 100\"")
+	    != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"11 queue 3001 tcp from any to any "
+	    "dst-port 80,https src-ip table(sw1_zp0) out { xmit gre100 or xmit "
+	    "gif102 }\"") != NULL, "%s", r.body);
+	/* Egress: quiet discards all of the office zone leaving by hq's
+	 * UNI. */
+	ATF_CHECK(strstr(r.body, "\"11 deny ip from any to any src-ip table("
+	    "sw1_zp0) out xmit lo0\"") != NULL);
+	/* Breakout at a, by a-inet: the NAT of hq's public prefix, out by
+	 * vtnet0 and back in to the service's table; the default route
+	 * by the gateway, reached by the interface.  At b, by a tunnel to
+	 * a. */
+	ATF_CHECK(strstr(r.body, "\"nat 3001 config ip 198.51.100.1\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 nat 3001 ip4 from table(sw1_known) to "
+	    "not table(sw1_known) out xmit vtnet0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 setfib 1 ip from any to 198.51.100.1 in "
+	    "recv vtnet0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 nat 3001 ip4 from any to 198.51.100.1 in "
+	    "recv vtnet0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"11 setfib 1 ip from any to table(sw1_known) "
+	    "in recv vtnet0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"key\":\"route:acme:192.0.2.254/32\"") !=
+	    NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"title\":\"0.0.0.0/0 via 192.0.2.254, "
+	    "fib 1 (the Internet, by local breakout)\"") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"title\":\"0.0.0.0/0 via 100.64.0.0, fib "
+	    "1 (the Internet, by breakout at a)\"") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"12 deny ip from any to any { src-port "
 	    "5060,5061 or dst-port 5060,5061 } dscp 46\"") != NULL, "%s",
 	    r.body);

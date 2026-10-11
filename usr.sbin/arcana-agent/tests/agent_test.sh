@@ -2440,10 +2440,12 @@ echo "ipfw \$*" >> $(pwd)/ipfw.log
 exit 0
 EOS
 	chmod +x fake-ipfw
+	printf '#!/bin/sh\necho "kldload $*" >> %s/kldload.log\nexit 0\n' "$(pwd)" > fake-kldload
+	chmod +x fake-kldload
 	DAEMON_ARGS="-h $(pwd)/fake-ipfw"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
-	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\]\}' \
+	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0\}' \
 	    -o match:'"steer":\[\],"steered":false' "$JGC" -c "$SOCK" sdwan
 	# What is not a target list.
 	atf_check -s exit:1 -e match:'JSON array' -o ignore \
@@ -2503,7 +2505,7 @@ EOS
 	    -o match:'^ipfw -q set enable 30$' cat ipfw.log
 	# Disabled, loaded, enabled: in that order.
 	atf_check -o inline:'1\n' sh -c "grep -n 'set disable 30' ipfw.log | cut -d: -f1 | head -1"
-	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\]\}' \
+	atf_check -o match:'"rules":\{"set":30,"rules":4,"tables":\["sw1_zone","sw1_z0p0_4"\],"objects":0\}' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -s exit:1 -e match:'not one of the rules' -o ignore "$JGC" -c "$SOCK" sdwan steer \
 	    '{"entries":[{"table":"nowhere","prefix":"10.20.0.0/24","candidates":[{"id":"t1","via":"100.64.0.1"}]}]}'
@@ -2523,11 +2525,33 @@ EOS
 	start_daemon
 	atf_check -o match:'^add 12 set 30 deny ip from any to any$' \
 	    -o match:'^ipfw -q table sw1_z0p0_4 swap sw1_z0p0_4_alt$' cat ipfw.log
-	# No rules: the set emptied, the tables gone.
+	# Objects: dummynet pipes and queues, nat instances, made before
+	# the rules, their modules loaded, deleted with the rules, queues
+	# before their pipes; nothing a shell would read.
+	atf_check -s exit:1 -e match:'an object is' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"objects":["pipe 3000 config bw 1Mbit/s; reboot"],"rules":["10 allow ip from any to any"]}'
+	atf_check -s exit:1 -e match:'an object is' -o ignore "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[],"objects":["table t create"],"rules":["10 allow ip from any to any"]}'
+	: > ipfw.log
+	: > kldload.log
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules \
+	    '{"set":30,"tables":[{"name":"sw1_known","valtype":"legacy","entries":[["10.1.0.0/24","0"]]}],"objects":["pipe 3000 config bw 5000000bit/s","queue 3001 config pipe 3000 weight 75","nat 3001 config ip 198.51.100.1"],"rules":["11 nat 3001 ip4 from table(sw1_known) to not table(sw1_known) out xmit vtnet0","12 queue 3001 ip from any to any","99 count ip from any to any"]}'
+	atf_check -o match:'^pipe 3000 config bw 5000000bit/s$' \
+	    -o match:'^queue 3001 config pipe 3000 weight 75$' \
+	    -o match:'^nat 3001 config ip 198.51.100.1$' \
+	    -o match:'^table sw1_known create type addr valtype legacy$' \
+	    -o match:'^add 12 set 30 queue 3001 ip from any to any$' cat ipfw.log
+	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^pipe 3000' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^add 12' ipfw.log | cut -d: -f1 | head -1) && echo yes"
+	atf_check -o match:'dummynet' -o match:'ipfw_nat' cat kldload.log
+	atf_check -o match:'"objects":3' "$JGC" -c "$SOCK" sdwan
+	# No rules: the set emptied, the tables gone, the objects deleted.
 	: > ipfw.log
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan rules '{"set":30,"tables":[],"rules":[]}'
-	atf_check -o match:'^ipfw -q table sw1_zone destroy$' \
-	    -o match:'^ipfw -q table sw1_z0p0_4_alt destroy$' cat ipfw.log
+	atf_check -o match:'^ipfw -q table sw1_known destroy$' \
+	    -o match:'^ipfw -q nat 3001 delete$' \
+	    -o match:'^ipfw -q queue 3001 delete$' \
+	    -o match:'^ipfw -q pipe 3000 delete$' cat ipfw.log
+	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^ipfw -q queue 3001 delete' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^ipfw -q pipe 3000 delete' ipfw.log | cut -d: -f1 | head -1) && echo yes"
 	atf_check -o match:'"rules":\{"set":0,' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()

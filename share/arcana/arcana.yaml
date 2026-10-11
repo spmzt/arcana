@@ -2439,9 +2439,13 @@ operations:
       steer it, as the console compiles them: json, an object with
       "set" (2 to 31, the ipfw set they live in, emptied and filled
       while disabled), "tables" (each a "name", a "valtype" of skipto,
-      ipv4 or ipv6, and "entries", each a prefix and a value) and
-      "rules" (each its number and its words).  Kept for the next
-      start.  With no rules, the set is emptied.
+      ipv4, ipv6 or legacy, and "entries", each a prefix and a value),
+      "objects" (dummynet pipes and queues and nat instances the rules
+      name: each "pipe N config ...", "queue N config ...", "sched N
+      config ..." or "nat N config ...", made before the rules, deleted
+      with them, their modules loaded) and "rules" (each its number and
+      its words).  Kept for the next start.  With no rules, the set is
+      emptied.
     do:
       request:
         attributes:
