@@ -48,7 +48,7 @@
  *	GET  /api/sdwan/plan	what an apply would do, edge by edge
  *	POST /api/sdwan/apply	do it; {"fresh": true} takes everything
  *				made away first and makes it again
- *	GET  /api/sdwan/apply	how the last apply went, and the tunnels
+ *	GET  /api/sdwan/apply	how the last apply went, the history, and the tunnels
  */
 
 #include <sys/param.h>
@@ -3593,6 +3593,73 @@ run_main(void *arg)
 			put(s, "state", S("not run"));
 	put(ap, "state", S(ok ? "done" : "failed"));
 	put(ap, "ended", I(time(NULL)));
+	/* Into the history: when, how it went, what it did; 50 kept. */
+	{
+		ucl_object_t		*hist, *h, *by;
+		const ucl_object_t	*hs;
+		ucl_object_iter_t	 hit;
+		int			 made, remade, unmade, failed, nsteps;
+
+		if ((hist = (ucl_object_t *)(uintptr_t)ucl_object_lookup(r->st,
+		    "history")) == NULL) {
+			hist = ucl_object_typed_new(UCL_ARRAY);
+			put(r->st, "history", hist);
+		}
+		made = remade = unmade = failed = nsteps = 0;
+		by = ucl_object_typed_new(UCL_OBJECT);
+		hit = NULL;
+		while ((hs = ucl_object_iterate(ucl_object_lookup(ap, "steps"),
+		    &hit, true)) != NULL) {
+			ucl_object_t	*e;
+			const char	*sid = str(hs, "server");
+
+			nsteps++;
+			if (str(hs, "state") != NULL && strcmp(str(hs, "state"),
+			    "failed") == 0)
+				failed++;
+			else if (str(hs, "change") != NULL && strcmp(str(hs,
+			    "change"), "make") == 0)
+				made++;
+			else if (str(hs, "change") != NULL && strcmp(str(hs,
+			    "change"), "remake") == 0)
+				remade++;
+			else if (str(hs, "change") != NULL && strcmp(str(hs,
+			    "change"), "unmake") == 0)
+				unmade++;
+			if (sid == NULL)
+				continue;
+			if ((e = (ucl_object_t *)(uintptr_t)ucl_object_lookup(by,
+			    sid)) == NULL) {
+				e = ucl_object_typed_new(UCL_OBJECT);
+				put(e, "name", S(str(hs, "name") != NULL ? str(hs,
+				    "name") : sid));
+				put(e, "steps", I(0));
+				put(e, "failed", I(0));
+				ucl_object_insert_key(by, e, sid, 0, true);
+			}
+			put(e, "steps", I(ucl_object_toint(ucl_object_lookup(e,
+			    "steps")) + 1));
+			if (str(hs, "state") != NULL && strcmp(str(hs, "state"),
+			    "failed") == 0)
+				put(e, "failed", I(ucl_object_toint(
+				    ucl_object_lookup(e, "failed")) + 1));
+		}
+		h = ucl_object_typed_new(UCL_OBJECT);
+		put(h, "started", I(ucl_object_toint(ucl_object_lookup(ap,
+		    "started"))));
+		put(h, "ended", I(time(NULL)));
+		put(h, "state", S(ok ? "done" : "failed"));
+		put(h, "fresh", B(ucl_flag(ap, "fresh")));
+		put(h, "steps", I(nsteps));
+		put(h, "made", I(made));
+		put(h, "remade", I(remade));
+		put(h, "unmade", I(unmade));
+		put(h, "failed", I(failed));
+		put(h, "edges", by);
+		ucl_array_append(hist, h);
+		while (ucl_array_size(hist) > 50)
+			ucl_object_unref(ucl_array_pop_first(hist));
+	}
 	state_save(r->st);
 	thread_log(ok ? LOG_NOTICE : LOG_ERR, "sdwan: apply %s", ok ? "done" :
 	    "failed");
@@ -3995,6 +4062,9 @@ api_sdwan_edges(struct http_request *req)
 			    NULL ? ucl_object_copy(ucl_object_lookup(st,
 			    "apply")) : ucl_object_typed_new(UCL_OBJECT));
 			put(body, "applying", B(applying));
+			put(body, "history", ucl_object_lookup(st, "history") !=
+			    NULL ? ucl_object_copy(ucl_object_lookup(st,
+			    "history")) : ucl_object_typed_new(UCL_ARRAY));
 			ucl_object_unref(st);
 			return (reply_json(req, 200, body));
 		}

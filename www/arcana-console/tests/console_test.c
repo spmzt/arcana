@@ -3664,6 +3664,11 @@ ATF_TC_BODY(sdwan_apply, tc)
 	sdwan_wait(&r);
 	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
 	    r.body);
+	/* Into the history: this one, done, with what it made. */
+	ATF_CHECK_MSG(jstr(&r, "history.0.state") != NULL && strcmp(jstr(&r,
+	    "history.0.state"), "done") == 0 && jstr(&r, "history.0.made") !=
+	    NULL && atoi(jstr(&r, "history.0.made")) > 10 && jstr(&r,
+	    "history.1.state") == NULL, "%s", r.body);
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^gre100 create' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q '^gre100 fib 1' ifconfig.log") == 0);

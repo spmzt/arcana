@@ -66,7 +66,20 @@ static struct {
 	char		 link_if[32];
 	ucl_object_t	*ifs;		/* the link host's interfaces */
 	bool		 ifs_loading;
+	bool		 show_kept;	/* the Edges tab shows what stays too */
 } sd;
+
+/* The plan's phases, as Mplify 119 orders them (§12.1). */
+static const char *const phase_names[] = { "", "routing tables", "IPsec",
+    "tunnels", "far ends", "probes", "rules", "steering", "routes", "UNIs",
+    "BIRD" };
+
+static const char *
+phase_name(long long ph)
+{
+
+	return (ph >= 1 && ph <= 10 ? phase_names[ph] : "");
+}
 
 /* The document changed by a form, sent to be kept. */
 static void
@@ -1432,14 +1445,17 @@ view_edges(struct html *h)
 	todo = sd.plan != NULL ? count_change("make") + count_change(
 	    "remake") + count_change("unmake") : 0;
 	h_fmt(h, "<div class=\"toolbar\"><button class=\"primary small\" "
-	    "data-act=\"sd-apply\"%s title=\"Make on the edges what the "
+	    "data-act=\"sd-apply-ask\"%s title=\"Make on the edges what the "
 	    "services say, in Mplify 119's order: FIBs, IPsec, tunnels, their "
-	    "far ends, routes, and the UNIs last\">Apply%s</button><button "
+	    "far ends, routes, and the UNIs last\">Deploy%s</button><button "
 	    "class=\"ghost small\" data-act=\"sd-apply-fresh\"%s title=\""
 	    "Everything the console made taken away and made again\">Make "
-	    "all again</button><span class=\"age\">",
+	    "all again</button><button class=\"ghost small\" data-act=\""
+	    "sd-show-kept\" title=\"The changes alone, or everything the edges "
+	    "are to have\">%s</button><span class=\"age\">",
 	    todo == 0 || sd.applying ? " disabled" : "", todo > 0 ?
-	    "" : ": nothing to do", sd.applying ? " disabled" : "");
+	    "" : ": nothing to do", sd.applying ? " disabled" : "", sd.show_kept
+	    ? "Changes only" : "Show all");
 	if (sd.plan != NULL)
 		h_fmt(h, "%d to make, %d to make again, %d to take away, %d as "
 		    "they are", count_change("make"), count_change("remake"),
@@ -1466,20 +1482,78 @@ view_edges(struct html *h)
 	}
 	view_applied(h);
 	view_tunnels(h, jget(sd.plan, "tunnels"));
-	/* What each edge is to have, and what becomes of it. */
-	h_raw(h, "<div class=\"sd-block\"><h3>On the edges <small class=\"dim"
-	    "\">what each is to have, as jobs</small></h3><table class=\"net "
-	    "sd sd-plan\"><thead><tr><th>Edge</th><th>What</th><th>Change</th>"
-	    "<th>Jobs</th></tr></thead><tbody>");
+	/*
+	 * What each edge is to have, and what becomes of it: by edge, in
+	 * the order it is made, the changes alone unless asked for all;
+	 * while an apply runs, each edge's steps done so far.
+	 */
+	h_fmt(h, "<div class=\"sd-block\"><h3>On the edges <small class=\"dim"
+	    "\">what each is to have, as jobs, in the order it is made: %s"
+	    "</small></h3><table class=\"net sd sd-plan\"><thead><tr><th>Edge"
+	    "</th><th>Step</th><th>What</th><th>Change</th><th>Jobs</th></tr>"
+	    "</thead><tbody>", todo > 0 && !sd.show_kept ? "the changes" :
+	    "everything");
 	last = "";
 	it = NULL;
 	while ((c = ucl_object_iterate(jget(sd.plan, "changes"), &it, true)) !=
 	    NULL) {
-		h_fmt(h, "<tr class=\"ch-%s\"><td>", jstr(c, "change"));
-		if (strcmp(last, jstr(c, "server")) != 0)
+		if (strcmp(last, jstr(c, "server")) != 0) {
+			/* The edge's own line: its counts, and its progress. */
+			const ucl_object_t	*c2, *ap, *s;
+			ucl_object_iter_t	 it2;
+			int			 nmk, nrm, num, nk, done, all, failed;
+
+			nmk = nrm = num = nk = done = all = failed = 0;
+			it2 = NULL;
+			while ((c2 = ucl_object_iterate(jget(sd.plan, "changes"),
+			    &it2, true)) != NULL) {
+				if (strcmp(jstr(c2, "server"), jstr(c, "server")) != 0)
+					continue;
+				if (strcmp(jstr(c2, "change"), "make") == 0)
+					nmk++;
+				else if (strcmp(jstr(c2, "change"), "remake") == 0)
+					nrm++;
+				else if (strcmp(jstr(c2, "change"), "unmake") == 0)
+					num++;
+				else
+					nk++;
+			}
+			ap = jget(sd.applied, "apply");
+			it2 = NULL;
+			while (sd.applying && (s = ucl_object_iterate(jget(ap,
+			    "steps"), &it2, true)) != NULL) {
+				if (jstr(s, "server") == NULL || strcmp(jstr(s,
+				    "server"), jstr(c, "server")) != 0)
+					continue;
+				all++;
+				if (jstr(s, "state") != NULL && strcmp(jstr(s, "state"),
+				    "done") == 0)
+					done++;
+				else if (jstr(s, "state") != NULL && strcmp(jstr(s,
+				    "state"), "failed") == 0)
+					failed++;
+			}
+			h_raw(h, "<tr class=\"sd-edge-head\"><td colspan=\"5\"><b>");
 			h_txt(h, jstr(c, "name"));
+			h_fmt(h, "</b> <span class=\"dim\">%d to make, %d to make "
+			    "again, %d to take away, %d as they are</span>", nmk,
+			    nrm, num, nk);
+			if (all > 0)
+				h_fmt(h, " <span class=\"sd-progress\" title=\"%d of %d "
+				    "steps done%s\"><span class=\"bar %s\" style=\"width:"
+				    "%d%%\"></span></span> <span class=\"dim\">%d / %d%s"
+				    "</span>", done, all, failed > 0 ? ", some failed"
+				    : "", failed > 0 ? "failed" : "", all > 0 ? (done +
+				    failed) * 100 / all : 0, done, all, failed > 0 ?
+				    ", failed" : "");
+			h_raw(h, "</td></tr>");
+		}
 		last = jstr(c, "server");
-		h_raw(h, "</td><td>");
+		if (!sd.show_kept && todo > 0 && strcmp(jstr(c, "change"), "keep")
+		    == 0)
+			continue;
+		h_fmt(h, "<tr class=\"ch-%s\"><td></td><td class=\"dim\">%s</td>"
+		    "<td>", jstr(c, "change"), phase_name(jint(c, "phase", 0)));
 		h_txt(h, jstr(c, "title"));
 		h_fmt(h, "</td><td><span class=\"chip ch-%s\">%s</span></td>"
 		    "<td><details><summary>%u</summary><ul class=\"sd-jobs\">",
@@ -1494,6 +1568,45 @@ view_edges(struct html *h)
 		h_raw(h, "</ul></details></td></tr>");
 	}
 	h_raw(h, "</tbody></table></div>");
+	/* The applies before: when, how they went, what they did. */
+	if (jget(sd.applied, "history") != NULL && ucl_array_size(jget(
+	    sd.applied, "history")) > 0) {
+		const ucl_object_t	*hh, *by;
+		ucl_object_iter_t	 bit;
+		char			 age[32];
+		unsigned int		 n, k;
+
+		h_raw(h, "<div class=\"sd-block\"><h3>Past applies <small class=\""
+		    "dim\">the last fifty, the newest first</small></h3><table "
+		    "class=\"net sd sd-history\"><thead><tr><th>When</th><th>How"
+		    "</th><th>Made</th><th>Again</th><th>Taken away</th><th>"
+		    "Failed</th><th>Edges</th></tr></thead><tbody>");
+		n = ucl_array_size(jget(sd.applied, "history"));
+		for (k = n; k > 0; k--) {
+			hh = ucl_array_find_index(jget(sd.applied, "history"), k - 1);
+			fmt_age(age, sizeof(age), (double)jint(hh, "started", 0) *
+			    1000);
+			h_fmt(h, "<tr><td>%s</td><td><span class=\"chip %s\">%s%s"
+			    "</span></td><td class=\"num\">%lld</td><td class=\"num"
+			    "\">%lld</td><td class=\"num\">%lld</td><td class=\"num\">"
+			    "%lld</td><td>", age, jstr(hh, "state") != NULL &&
+			    strcmp(jstr(hh, "state"), "done") == 0 ? "st-up" :
+			    "st-down", jstr(hh, "state") != NULL ? jstr(hh, "state")
+			    : "", jbool(hh, "fresh") ? ", all again" : "", jint(hh,
+			    "made", 0), jint(hh, "remade", 0), jint(hh, "unmade", 0),
+			    jint(hh, "failed", 0));
+			by = jget(hh, "edges");
+			bit = NULL;
+			while ((hh = ucl_object_iterate(by, &bit, true)) != NULL) {
+				h_raw(h, "<span class=\"chip\">");
+				h_txt(h, jstr(hh, "name"));
+				h_fmt(h, " %lld%s</span> ", jint(hh, "steps", 0),
+				    jint(hh, "failed", 0) > 0 ? " · failed" : "");
+			}
+			h_raw(h, "</td></tr>");
+		}
+		h_raw(h, "</tbody></table></div>");
+	}
 }
 
 /* ---- The paths: what the probes see of each tunnel ------------------- */
@@ -3777,6 +3890,19 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sd.applying = true;
 		api("POST", "/api/sdwan/apply", strcmp(act, "sd-apply") == 0 ?
 		    "{}" : "{\"fresh\":true}", apply_cb, NULL);
+	} else if (strcmp(act, "sd-apply-ask") == 0) {
+		char	body[400];
+
+		snprintf(body, sizeof(body), "On the edges, as jobs in Mplify "
+		    "119's order: %d to make, %d to make again, %d to take away; "
+		    "%d stay as they are. Each edge goes through safe mode, so a "
+		    "step that fails is undone; the UNIs come last.",
+		    count_change("make"), count_change("remake"), count_change(
+		    "unmake"), count_change("keep"));
+		confirm("Deploy to the edges", body, "Deploy", false, "",
+		    "sd-apply", "", "");
+	} else if (strcmp(act, "sd-show-kept") == 0) {
+		sd.show_kept = !sd.show_kept;
 	} else if (strcmp(act, "sd-apply-fresh") == 0)
 		confirm("Make all again", "Everything the console made on the "
 		    "edges is taken away and made again: tunnels go down for a "

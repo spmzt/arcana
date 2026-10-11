@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.93.0
+  version: 0.94.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -1196,12 +1196,14 @@ paths:
   /api/sdwan/apply:
     get:
       tags: [sdwan]
-      summary: How the last apply went
+      summary: How the last apply went, and the ones before
       responses:
         "200":
           description: applying, and apply (state running, done or
             failed; started, ended, fresh, its steps each with its
-            state and detail, and the tunnels).
+            state and detail, and the tunnels); history, the last fifty
+            applies, each started, ended, state, fresh, steps, made,
+            remade, unmade, failed, and edges with each one's steps.
     post:
       tags: [sdwan]
       summary: Apply, in a thread of the console

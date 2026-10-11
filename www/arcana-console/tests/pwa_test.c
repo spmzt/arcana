@@ -3526,17 +3526,26 @@ part_flows(void)
 	run("document.querySelector('button[data-act=sd-tab][data-arg=edges]')"
 	    ".click()");
 	wait_js("document.querySelectorAll('table.sd-plan tbody tr').length > 8 "
-	    "&& document.querySelector('button[data-act=sd-apply]') && "
-	    "!document.querySelector('button[data-act=sd-apply]').disabled",
+	    "&& document.querySelector('button[data-act=sd-apply-ask]') && "
+	    "!document.querySelector('button[data-act=sd-apply-ask]').disabled",
 	    20);
 	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
 	    ".find(h => h.textContent.startsWith('Tunnels')).closest('.sd-block')"
 	    ".querySelectorAll('tbody tr').length === 2"));
 	shot("9-sdwan-edges-plan");
-	run("document.querySelector('button[data-act=sd-apply]').click()");
+	/* Deploy asks first, saying what changes; then it runs. */
+	run("document.querySelector('button[data-act=sd-apply-ask]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && document."
+	    "querySelector('form[data-form=confirm]').textContent.includes("
+	    "'to make')", 5);
+	shot("9-sdwan-deploy-ask");
+	run("document.querySelector('form[data-form=confirm]').requestSubmit();");
 	wait_js("(document.querySelector('.sd-applied h3') || {}).textContent"
 	    "?.startsWith('Last apply') && document.querySelector("
-	    "'button[data-act=sd-apply]').disabled", 60);
+	    "'button[data-act=sd-apply-ask]').disabled", 60);
+	ATF_CHECK(js_true("document.querySelector('table.sd-history tbody tr') "
+	    "&& document.querySelectorAll('table.sd-plan tr.sd-edge-head')"
+	    ".length === 2"));
 	ATF_CHECK(js_true("document.querySelector('.sd-applied h3')"
 	    ".textContent.startsWith('Last apply: done')"));
 	shot("9-sdwan-edges-applied");

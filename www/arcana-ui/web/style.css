@@ -4525,3 +4525,9 @@ table.sd tr.sd-edge-row td { border-bottom: 1px solid var(--line-2); padding-top
 .modal fieldset.sd-apps { display: flex; flex-wrap: wrap; gap: .1rem .9rem; }
 .modal fieldset.sd-apps legend { flex-basis: 100%; }
 .modal fieldset.sd-apps label.toggle { flex: 0 0 auto; min-width: 5.5rem; }
+
+/* The deploy table: an edge's own line with its progress. */
+table.sd-plan tr.sd-edge-head td { background: rgba(var(--surface-rgb), .5); border-top: 1px solid var(--line-2); }
+.sd-progress { display: inline-block; width: 8rem; height: .5rem; vertical-align: middle; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; background: var(--bg); }
+.sd-progress .bar { display: block; height: 100%; background: var(--green); transition: width .4s; }
+.sd-progress .bar.failed { background: var(--red); }

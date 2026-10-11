@@ -1118,7 +1118,12 @@ from an example** writes one with two of the console's hosts as its
 edges.
 
 **Edges** shows what the kept services make on the edges, and makes
-it. Each edge is to have, for each service on it:
+it: **Deploy** says first what it will make, make again and take away
+and asks, then runs it, each edge's steps done so far shown on its
+line while it runs; the table lists each edge's objects by step in
+the order they are made, the changes alone until **Show all**; **Past
+applies** lists the last fifty, when, how each went and what it did.
+Each edge is to have, for each service on it:
 
 - `net.fibs` raised to the highest service FIB on it, and one (never
   lowered). It is per vnet: a fresh vnet has 1. `net.add_addr_allfibs`
