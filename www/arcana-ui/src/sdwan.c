@@ -611,7 +611,8 @@ view_dashboard(struct html *h)
 	    "table each, setfib(1), up to fib %d</span></div>", nsw > 0 ? "ok" :
 	    "", nsw, nsw == 1 ? "" : "s", nfibs);
 	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>tunnel%s · %d up, %d "
-	    "down · gre, gif, geneve, wg; IPsec by strongSwan</span></div>",
+	    "down · gre, gif, geneve, wg, uswe; IPsec by strongSwan or the "
+	    "agents' own keys</span></div>",
 	    tdown > 0 ? "warn" : nt > 0 && tup == nt ? "ok" : "", nt, nt == 1 ?
 	    "" : "s", tup, tdown);
 	h_fmt(h, "<div class=\"tile %s\"><b>%d</b><span>open fault%s · tunnels, "
@@ -2615,11 +2616,31 @@ sdwan_modal(struct html *h)
 		    "kind"));
 		option(h, "wg", "wg: WireGuard, encrypted by itself", jstr(t,
 		    "kind"));
+		option(h, "uswe", "uswe: Mplify 119, IPsec keyed by the edges",
+		    jstr(t, "kind"));
 		h_fmt(h, "</select></label><label class=\"toggle\"><input type=\""
 		    "checkbox\" name=\"ipsec\" value=\"1\"%s> IPsec IKEv2 under "
 		    "it, by strongSwan<small>Required on a public underlay by "
-		    "a policy that says so.</small></label></div>", t != NULL &&
-		    jbool(t, "ipsec") ? " checked" : "");
+		    "a policy that says so; not for wg or uswe.</small></label>"
+		    "</div>", t != NULL && jbool(t, "ipsec") ? " checked" : "");
+		/* A USWE tunnel's SAs: the base system's ipsec(4) and
+		 * setkey, the keys made and derived by the agents. */
+		h_raw(h, "<fieldset><legend>uswe only <small class=\"dim\">an "
+		    "ipsec(4) interface each end, ESP in tunnel mode, the keys "
+		    "derived by the two agents from a pair each (Mplify 119 "
+		    "§10)</small></legend><div class=\"two\"><label>Algorithms"
+		    "<select name=\"algorithms\">");
+		option(h, "aes-cbc-hmac-sha2-256", "AES-256-CBC with HMAC-SHA-256",
+		    jstr(t, "algorithms"));
+		option(h, "aes-gcm-16", "AES-256-GCM", jstr(t, "algorithms"));
+		h_fmt(h, "</select></label><div><label class=\"toggle\"><input "
+		    "type=\"checkbox\" name=\"esn\" value=\"1\"%s> Extended "
+		    "sequence numbers (ESN)</label><label class=\"toggle\"><input "
+		    "type=\"checkbox\" name=\"encap\" value=\"1\"%s> ESP in UDP, "
+		    "port 4500 (through NAT)</label></div></div></fieldset>", t ==
+		    NULL || jget(t, "esn") == NULL || jbool(t, "esn") ? " checked" :
+		    "", t == NULL || jget(t, "encap") == NULL || jbool(t, "encap")
+		    ? " checked" : "");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_EDGE) {
@@ -3458,7 +3479,17 @@ sd_forms(const char *form, const ucl_object_t *f)
 		t = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(t, ucl_object_fromstring(jstr(f, "kind") !=
 		    NULL ? jstr(f, "kind") : "gre"), "kind", 0, false);
-		if (checked(f, "ipsec"))
+		if (jstr(f, "kind") != NULL && strcmp(jstr(f, "kind"), "uswe") ==
+		    0) {
+			ucl_object_insert_key(t, ucl_object_fromstring(jstr(f,
+			    "algorithms") != NULL ? jstr(f, "algorithms") :
+			    "aes-cbc-hmac-sha2-256"), "algorithms", 0, false);
+			ucl_object_insert_key(t, ucl_object_frombool(checked(f,
+			    "esn")), "esn", 0, false);
+			ucl_object_insert_key(t, ucl_object_frombool(checked(f,
+			    "encap")), "encap", 0, false);
+		} else if (checked(f, "ipsec") && (jstr(f, "kind") == NULL ||
+		    strcmp(jstr(f, "kind"), "wg") != 0))
 			ucl_object_insert_key(t, ucl_object_frombool(true), "ipsec",
 			    0, false);
 		ucl_object_insert_key(o, t, "tunnel", 0, false);

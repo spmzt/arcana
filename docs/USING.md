@@ -1040,7 +1040,7 @@ names them. It is one document with three parts:
 - `ucs`: the underlays (Underlay Connectivity Services, §12). Each has
   an `id`, a `type` (`public`, an Internet Access, or `private`), a
   `billing` (`flat-rate`, `usage-based` or `other`), and the
-  `tunnel` the edges make over it: `kind` `gre`, `gif`, `geneve` or
+  `tunnel` the edges make over it: `kind` `gre`, `gif`, `geneve`, `uswe` or
   `wg`, and for the first three `ipsec`, true for IPsec IKEv2 under
   it.
 - `edges`: the hosts that are SD-WAN Edges (§7.8). Each names its
@@ -1099,7 +1099,8 @@ names them. It is one document with three parts:
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,
-gif, geneve and wg, IPsec by strongSwan, the rules in an ipfw set),
+gif, geneve, wg and uswe, IPsec by strongSwan or keyed by the agents,
+the rules in an ipfw set),
 draws the edges with the tunnels between them as their probes see them
 (green up, red down, dashed a backup, a lock encrypted, the delay and
 loss on each) or as planned before an apply, and lists the underlays,
@@ -1340,6 +1341,18 @@ and the edges' iBGP keeps it to themselves like them; its `fib` is
 kept for the control plane interface to come. The route
 distinguishers, targets and labels are checked and kept for the
 tunnel format to come; nothing uses them yet.
+
+**The uswe tunnel** (Mplify 119 §10): a UCS whose `tunnel` is of kind
+`uswe` gets, for each pair of edges, an ipsec(4) interface at each end
+whose reqid is its unit, ESP in tunnel mode keyed by the agents
+themselves: the apply has each end make its X25519 pair (`ipsec-sa
+key`), makes the interface with its outer ends, and then has each end
+derive the SAs from the far end's public half, which the console reads
+from that end's `sdwan` read and passes as `${uswe:SID:IF}` the way it
+passes a wg key; `algorithms` picks AES-256-CBC with HMAC-SHA-256 or
+AES-256-GCM, `esn` and `encap` (ESP in UDP) are on unless said
+otherwise, and `lifetime` is for the rotation to come. No IKEv2 under
+it. The UCS form asks for it all under "uswe only".
 
 **Manually keyed security associations** (Mplify 119 §10, R41–R50,
 R55): the `ipsec-sa` job sets the two SAs of an ipsec(4) interface,

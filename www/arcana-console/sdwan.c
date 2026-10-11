@@ -1637,7 +1637,7 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 }
 
 static const char *const tunnel_kinds[] = { "gre", "gif", "geneve", "wg",
-    NULL };
+    "uswe", NULL };
 
 /* The whole document, checked; false and why when it is not one. */
 static bool
@@ -1674,11 +1674,29 @@ check(const ucl_object_t *doc, struct ck *c)
 		if ((t = ucl_object_lookup(v, "tunnel")) != NULL) {
 			if (!one_of(str(t, "kind"), tunnel_kinds))
 				return (fail(c, "its tunnels are gre, gif, "
-				    "geneve or wg"));
-			if (strcmp(str(t, "kind"), "wg") == 0 && ucl_flag(t,
-			    "ipsec"))
-				return (fail(c, "wg encrypts by itself: no "
-				    "IPsec under it"));
+				    "geneve, wg or uswe"));
+			if ((strcmp(str(t, "kind"), "wg") == 0 || strcmp(str(t,
+			    "kind"), "uswe") == 0) && ucl_flag(t, "ipsec"))
+				return (fail(c, "%s encrypts by itself: no IPsec "
+				    "IKEv2 under it", str(t, "kind")));
+			/* The USWE tunnel (Mplify 119 §10): IPsec keyed by the
+			 * edges themselves, its algorithms and flags here. */
+			if (str(t, "algorithms") != NULL && !one_of(str(t,
+			    "algorithms"), (const char *const[]){
+			    "aes-cbc-hmac-sha2-256", "aes-gcm-16", NULL }))
+				return (fail(c, "algorithms is aes-cbc-hmac-sha2-256 "
+				    "or aes-gcm-16 (R44, R45)"));
+			if (ucl_object_lookup(t, "lifetime") != NULL && !is_int(
+			    ucl_object_lookup(t, "lifetime"), 600, 31536000,
+			    NULL))
+				return (fail(c, "lifetime is seconds, 600 to a "
+				    "year (R110)"));
+			if (strcmp(str(t, "kind"), "uswe") != 0 && (str(t,
+			    "algorithms") != NULL || ucl_object_lookup(t, "esn")
+			    != NULL || ucl_object_lookup(t, "encap") != NULL ||
+			    ucl_object_lookup(t, "lifetime") != NULL))
+				return (fail(c, "algorithms, esn, encap and lifetime "
+				    "are a uswe tunnel's"));
 		}
 	}
 	c->where[0] = '\0';

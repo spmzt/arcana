@@ -14,7 +14,7 @@
  *	fibs		net.fibs raised to the highest service FIB on it
  *	ipsec		strongSwan's key and daemon, when a tunnel wants it
  *	tvc:ID		its end of a tunnel (a Tunnel Virtual Connection,
- *			MEF 70.2 §7.10): gre, gif or geneve, maybe under
+ *			MEF 70.2 §7.10): gre, gif, geneve, wg or uswe, maybe under
  *			IPsec IKEv2, or wg; in the service's FIB, its outer
  *			packets in FIB 0, an inner /31 and /127 from the
  *			service's reserved prefixes
@@ -521,8 +521,8 @@ tunnel_of(const ucl_object_t *ucs, const char **kindp, bool *ipsecp,
 	t = ucl_object_lookup(ucs, "tunnel");
 	*kindp = t != NULL && str(t, "kind") != NULL ? str(t, "kind") : "gre";
 	*saidp = t != NULL && ucl_object_lookup(t, "ipsec") != NULL;
-	if (strcmp(*kindp, "wg") == 0)
-		*ipsecp = false;
+	if (strcmp(*kindp, "wg") == 0 || strcmp(*kindp, "uswe") == 0)
+		*ipsecp = false;	/* encrypted by itself */
 	else if (*saidp)
 		*ipsecp = ucl_flag(t, "ipsec");
 	else
@@ -553,7 +553,8 @@ ifname_of(const char *kind, int64_t unit, char *buf, size_t len)
 
 	snprintf(buf, len, "%s%jd", strcmp(kind, "wg") == 0 ? "wg" :
 	    strcmp(kind, "geneve") == 0 ? "geneve" : strcmp(kind, "gif") ==
-	    0 ? "gif" : "gre", (intmax_t)unit);
+	    0 ? "gif" : strcmp(kind, "uswe") == 0 ? "ipsec" : "gre",
+	    (intmax_t)unit);
 	return (buf);
 }
 
@@ -659,6 +660,10 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 				put(p, "tunnelfib", I(ucl_object_toint(
 				    ucl_object_lookup(a, "vrf"))));
 		}
+		/* A USWE tunnel is an ipsec(4) interface whose SAs the agent
+		 * keys: its reqid is its unit. */
+		if (strcmp(kind, "uswe") == 0)
+			put(p, "reqid", I(unit));
 		if (str(a, "inner4") != NULL) {
 			snprintf(port, sizeof(port), "%s/31", str(a, "inner4"));
 			put(p, "address", S(port));
@@ -678,6 +683,59 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 	unmake(o, job("if-destroy", "interface", S(ifn), "persist", B(true),
 	    NULL));
 
+	/* A USWE tunnel (Mplify 119 §10): this end's key pair before the
+	 * interface, the SAs of both directions derived from the far end's
+	 * public half after it, as ${uswe:SID:IF} once that end has one. */
+	if (strcmp(kind, "uswe") == 0) {
+		const ucl_object_t	*tt;
+		ucl_object_t		*args;
+		const char		*alg;
+
+		snprintf(key, sizeof(key), "uswekey:%s", ifn);
+		o = object(pl, sid, key, PH_IPSEC, "%s: its key pair, X25519, "
+		    "kept by the agent", ifn);
+		if (o != NULL)
+			make(o, job("ipsec-sa", "verb", S("key"), "interface",
+			    S(ifn), NULL));
+		snprintf(key, sizeof(key), "peer:%s", id);
+		o = object(pl, sid, key, PH_PEER, "%s: the far end, %s, its "
+		    "keys from the two halves", ifn, str(b, "underlay"));
+		if (o == NULL)
+			return;
+		tt = ucl_object_lookup(t, "tunnel");
+		alg = str(tt, "algorithms") != NULL ? str(tt, "algorithms") :
+		    "aes-cbc-hmac-sha2-256";
+		args = ucl_object_typed_new(UCL_ARRAY);
+		ucl_array_append(args, S("peer"));
+		snprintf(key, sizeof(key), "${uswe:%s:%s}", str(b, "edge"), str(b,
+		    "ifname"));
+		ucl_array_append(args, S(key));
+		ucl_array_append(args, S("enc"));
+		ucl_array_append(args, S(strcmp(alg, "aes-gcm-16") == 0 ?
+		    "aes-gcm-16" : "aes-cbc"));
+		if (strcmp(alg, "aes-gcm-16") != 0) {
+			ucl_array_append(args, S("auth"));
+			ucl_array_append(args, S("hmac-sha2-256"));
+		}
+		if (tt == NULL || ucl_object_lookup(tt, "encap") == NULL ||
+		    ucl_flag(tt, "encap"))
+			ucl_array_append(args, S("encap"));
+		if (tt == NULL || ucl_object_lookup(tt, "esn") == NULL ||
+		    ucl_flag(tt, "esn"))
+			ucl_array_append(args, S("esn"));
+		ucl_array_append(args, S("epoch"));
+		ucl_array_append(args, S("0"));
+		p = job("ipsec-sa", "verb", S("derive"), "interface", S(ifn),
+		    "reqid", I(unit), "tunnel_local", S(str(a, "underlay")),
+		    "tunnel_remote", S(str(b, "underlay")), "args", args, NULL);
+		/* Made again when the far end's interface is: a new pair. */
+		put(p, "_after", S(digest(t, h, sizeof(h))));
+		make(o, p);
+		unmake(o, job("ipsec-sa", "verb", S("clear"), "interface", S(ifn),
+		    "reqid", I(unit), "tunnel_local", S(str(a, "underlay")),
+		    "tunnel_remote", S(str(b, "underlay")), NULL));
+		return;
+	}
 	/* The far end, as it is known: its key, made again with it. */
 	if (strcmp(kind, "wg") != 0 && !ipsec)
 		return;
@@ -835,7 +893,8 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					 * encrypted (R39): so it is, unless the
 					 * UCS says no, which no path mends. */
 					if (always && !ipsec && strcmp(kind,
-					    "wg") != 0) {
+					    "wg") != 0 && strcmp(kind, "uswe") !=
+					    0) {
 						if ((said && !ucl_flag(
 						    ucl_object_lookup(ux,
 						    "tunnel"), "ipsec")) ||
@@ -915,9 +974,15 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					put(t, "fib", I(ucl_object_toint(
 					    ucl_object_lookup(sw, "fib"))));
 					put(t, "kind", S(kind));
+					/* The UCS's tunnel entry, for what a uswe
+					 * tunnel's SAs are made of. */
+					if (ucl_object_lookup(ux, "tunnel") != NULL)
+						put(t, "tunnel", ucl_object_copy(
+						    ucl_object_lookup(ux, "tunnel")));
 					put(t, "ipsec", B(ipsec));
 					put(t, "encrypted", B(ipsec ||
-					    strcmp(kind, "wg") == 0));
+					    strcmp(kind, "wg") == 0 || strcmp(kind,
+					    "uswe") == 0));
 					put(t, "public", B(public));
 					put(t, "backup", B(ucl_flag(x,
 					    "backup") || ucl_flag(y, "backup")));
@@ -4031,13 +4096,15 @@ resolve(struct run *r, const char *ref, char *why, size_t wlen)
 	ucl_object_iter_t it;
 	ucl_object_t	*ans;
 	int		 status;
-	bool		 wg;
+	bool		 wg, uswe;
 
 	if ((v = ucl_object_lookup(r->keys, ref)) != NULL)
 		return (strdup(ucl_object_tostring(v)));
 	wg = strncmp(ref, "${wg:", 5) == 0;
+	uswe = strncmp(ref, "${uswe:", 7) == 0;
 	ifn[0] = '\0';
-	if (wg ? sscanf(ref, "${wg:%15[^:]:%31[^}]}", sid, ifn) != 2 :
+	if (wg ? sscanf(ref, "${wg:%15[^:]:%31[^}]}", sid, ifn) != 2 : uswe ?
+	    sscanf(ref, "${uswe:%15[^:]:%31[^}]}", sid, ifn) != 2 :
 	    sscanf(ref, "${ipsec:%15[^}]}", sid) != 1) {
 		snprintf(why, wlen, "%s is not a reference", ref);
 		return (NULL);
@@ -4047,11 +4114,20 @@ resolve(struct run *r, const char *ref, char *why, size_t wlen)
 		snprintf(why, wlen, "no server %s", sid);
 		return (NULL);
 	}
-	json = hosts_net(uri, peer, name, wg ? "wireguard" : "ipsec", &status);
+	json = uswe ? hosts_read(uri, peer, name, "sdwan", &status) : hosts_net(
+	    uri, peer, name, wg ? "wireguard" : "ipsec", &status);
 	ans = parse(json);
 	free(json);
 	out = NULL;
-	if (wg) {
+	if (uswe) {
+		/* The public half of that end's pair, as its agent tells it. */
+		it = NULL;
+		while ((i = ucl_object_iterate(at_path(ans, "data", "keys"), &it,
+		    true)) != NULL)
+			if (str(i, "interface") != NULL && strcmp(str(i,
+			    "interface"), ifn) == 0 && str(i, "public") != NULL)
+				out = strdup(str(i, "public"));
+	} else if (wg) {
 		it = NULL;
 		while ((i = ucl_object_iterate(at_path(ans, "data",
 		    "interfaces"), &it, true)) != NULL)
@@ -4063,8 +4139,8 @@ resolve(struct run *r, const char *ref, char *why, size_t wlen)
 	if (ans != NULL)
 		ucl_object_unref(ans);
 	if (out == NULL) {
-		snprintf(why, wlen, "%s has no %s key yet", name, wg ? ifn :
-		    "IPsec");
+		snprintf(why, wlen, "%s has no %s key yet", name, wg || uswe ?
+		    ifn : "IPsec");
 		return (NULL);
 	}
 	ucl_object_insert_key(r->keys, S(out), ref, 0, true);
@@ -4084,6 +4160,32 @@ job_ready(struct run *r, const ucl_object_t *j, char *why, size_t wlen)
 	(void)ucl_object_delete_key(c, "_after");
 	it = NULL;
 	while ((v = ucl_object_iterate(j, &it, true)) != NULL) {
+		if (ucl_object_type(v) == UCL_ARRAY) {
+			/* A list of words with a reference among them. */
+			const ucl_object_t	*e;
+			ucl_object_iter_t	 ait;
+			ucl_object_t		*list;
+			unsigned int		 k = 0;
+
+			list = (ucl_object_t *)(uintptr_t)ucl_object_lookup(c,
+			    ucl_object_key(v));
+			ait = NULL;
+			while ((e = ucl_object_iterate(v, &ait, true)) != NULL) {
+				if (ucl_object_type(e) == UCL_STRING && strncmp(
+				    ucl_object_tostring(e), "${", 2) == 0) {
+					if ((val = resolve(r, ucl_object_tostring(e),
+					    why, wlen)) == NULL) {
+						ucl_object_unref(c);
+						return (NULL);
+					}
+					ucl_object_unref(ucl_array_replace_index(
+					    list, S(val), k));
+					free(val);
+				}
+				k++;
+			}
+			continue;
+		}
 		if (ucl_object_type(v) != UCL_STRING || strncmp(
 		    ucl_object_tostring(v), "${", 2) != 0)
 			continue;
