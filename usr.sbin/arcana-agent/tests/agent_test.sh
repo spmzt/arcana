@@ -2558,7 +2558,7 @@ EOS
 	atf_check -o match:'^pipe 3000 config bw 5000000bit/s$' \
 	    -o match:'^queue 3001 config pipe 3000 weight 75$' \
 	    -o match:'^nat 3001 config ip 198.51.100.1$' \
-	    -o match:'^table sw1_known create type addr valtype legacy$' \
+	    -o match:'^table sw1_known create type addr$' \
 	    -o match:'^add 12 set 30 queue 3001 ip from any to any$' cat ipfw.log
 	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^pipe 3000' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^add 12' ipfw.log | cut -d: -f1 | head -1) && echo yes"
 	atf_check -o match:'dummynet' -o match:'ipfw_nat' cat kldload.log

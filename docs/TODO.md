@@ -288,6 +288,15 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- A security policy's denies on a vnet jail (MEF 88; task S1.2,
+  2026-10-11, by hand with arcanactl sdwan rules as the plan writes
+  them): the tables of the denied and the allowed prefixes made, the
+  two deny log rules taken by ipfw as written, a ping to a denied
+  prefix dropped and counted on the rule, the hosts reachable again
+  once the rules are cleared. Found: ipfw on 16.0-CURRENT no longer
+  takes "valtype legacy" on table create (the plain number is its
+  default and the word is gone), which every zone and known-hosts
+  table used; the agent leaves the word out for legacy now.
 - A control plane host between two edges on three vnet jails (Mplify
   119 §8.3, R5, R6, R9-R13; task 5.3, 2026-10-11, build/lab/rr-lab.sh,
   BIRD 3.3.3 as the console writes it): a control tunnel (gre in FIB
