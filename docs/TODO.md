@@ -67,8 +67,10 @@
   service names, the iBGP by it alone (5.2); the phase closed on the
   lab with three jails, the host reflecting between two edges with
   no tunnel between them (5.3; RFC 4364's VPN routes stay out, known
-  limits). Next: 119-6, the management plane's steps named and the
-  conformance list. Later: SASE.
+  limits); the Edges tab's steps named as §12.1's activity flow, the
+  guide's table from each of R89-R160 to its attribute, and the list
+  of what is not done (119-6). Mplify 119 is through. Next: SASE-1,
+  MEF 88 security policies.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:

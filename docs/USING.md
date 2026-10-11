@@ -1180,9 +1180,25 @@ Each edge is to have, for each service on it:
 Each is a row with the jobs that make it, and whether it is to be
 made, made again (its jobs changed), taken away, or is as it is.
 **Apply** takes away what goes, last made first, and then makes what
-comes in Mplify 119's order (FIBs, IPsec, tunnels, their far ends,
-routes, UNIs), each step on every edge before the next; a step that
-fails takes away what it made and stops the apply. What was made is
+comes in the order of Mplify 119's activity flow (§12.1, steps 1 to
+13), each step on every edge before the next; a step that fails takes
+away what it made and stops the apply. The Edges tab names each row's
+step:
+
+| Step (§12.1) | What Arcana makes |
+|---|---|
+| 1 VRFs | the services' tables, the domains' and the underlays' (net.fibs raised, setfib); forwarding on |
+| 2 Synchronization | ntpd by the edge's servers |
+| 3 UCS UNIs | the WAN links' interfaces: their table, addressing, routing with the underlay |
+| 4 Control plane | the control tunnels (CTVC), their key pairs and SAs; the iBGP to the host, by BIRD |
+| 5 UTVCs | the data tunnels: gre, gif, geneve, wg or uswe, IKEv2 under them or the agents' keys; no GRE with MPLS labels (not supported) |
+| 6 SD-WAN UNIs | the UNI interfaces and VLANs, their addresses, router advertisements and DHCP |
+| 7 Subscriber routing | the routes written, and BIRD at the UNIs (static, BGP, OSPF) |
+| 8 Application flows, 9 Zones | the ipfw tables and rules in set 30 |
+| 10 Policy map | the steering: each far prefix by its policy's tunnels in order |
+| 11 Fault management | BFD on the tunnels in BIRD; the agents' faults (§11.3) |
+| 12 Performance monitoring | the probes, their thresholds |
+| 13 Enable SD-WAN UNI | the UNIs come up last (R169) | What was made is
 kept in `sdwan-state.json` with the jobs that take it away again, and
 the tunnels' units and addresses, so that one added moves none of the
 others. **Make all again** takes everything made away first.
@@ -1466,3 +1482,64 @@ stateless, O1); the service form asks for them. AS override, damping and extende
 refused, BIRD having no word for them. Paths shows each edge's instances and their protocols,
 as `birdc show protocols` lists them; `arcanactl sdwan bird json`
 sets them by hand.
+
+### Mplify 119 conformance
+
+What the document carries for each of Mplify 119's management plane
+requirements (§12, R89–R160), and what is not done. The requirements
+are the SD-WAN Vendor Manager's, which the console is; where the
+table says a document attribute, the apply passes it to the edge as
+jobs.
+
+| Requirement | Document attribute | Done by |
+|---|---|---|
+| R89–R92 the VRFs of each UCS, the service, breakout and subscriber domains | `ucs_end_points[].vrf`, `swvcs[].domains.service.fib`, `domains.breakout.fib`, `swvcs[].fib` | routing tables by setfib, net.fibs raised |
+| R93 NTP server addresses | `edges[].ntp` | ntp.conf, ntpd |
+| R94, R95 UCS UNI and End Point interface identifiers | `ucs_end_points[].interface` | the host's interface |
+| R96 MEF 10.4 Ethernet attributes (physical links, frame size, EVC EPs, C-tags, token share, envelopes) | — | not done: the interfaces are what the host has |
+| R97 auto-negotiation | — | not done: ifconfig media is not written |
+| R98–R101 IPv4 and IPv6 address, static or dynamic, prefix, gateway | `ucs_end_points[].address`, `gateway`, `addressing` (static, dhcp, slaac) | the interface's address, dhclient, rtsol; one address per end point, not both families |
+| R102 the VRF of each UCS UNI | `ucs_end_points[].vrf` | ifconfig fib, tunnelfib |
+| R103 the underlay's routing protocol | `ucs_end_points[].routing` (bgp, ospf) | a BIRD instance per underlay table |
+| R104 UCS UNIs put into service | — | the apply's step 3 |
+| R105, R106, R113, R115, R116 the CTVC: interface, address and prefix, its underlay interface, the far address, the service VRF | `swvcs[].control_plane.ctvc` (a UCS) | the control tunnel, step 4, in the service's table |
+| R107, R110, R111 the key pair made by the edge, its public half told, a new pair at the half-life | — (the agent's) | ipsec-sa key, the sdwan read's keys, the manager's rotation |
+| R108, R109, R112 authentication and privacy methods, key length and lifetime, the algorithms, the activation | `ucs[].tunnel` (`kind` uswe, `algorithms`, `esn`, `encap`, `lifetime`) | the derived SAs; the activation is the manager's rotation, in step on both ends, not a date and time |
+| R114 DSCP and PCP of the CTVC | — | not done: the tunnels' outer packets are not marked |
+| R117–R119 the CPI as a virtual interface | `control_plane` without `ctvc` | the iBGP by the data tunnels |
+| R120 BGP router id | — | the edge's tunnel address |
+| R121, R123 route distinguishers and MPLS labels per VRF | `domains.*.rd`, `rt`, `label` | kept, not used: VPN routes and MPLS in GRE are not supported (known limits) |
+| R122 the BGP AS | `swvcs[].as` | BIRD |
+| R124 BGP peer addresses | `control_plane.host` | the host's tunnel addresses |
+| R125, R126 static routes to the control plane | — | not needed: the control plane host is an edge at the tunnel's far end |
+| R127, R128 TCP MD5 on every control plane iBGP session | `swvcs[].md5` | BIRD's password, the tcp-md5 SAs in the kernel |
+| R129, R130, R137, R139, R140 the UTVC: interface, address and prefix, its underlay interface, the far address, the UCS VRF | `ucs[].tunnel`, `ucs_end_points[]` | the data tunnels, step 5, in the service's table, their outer packets by the underlay's |
+| R131–R136 encryption of the UTVC: keys, parameters, algorithms, rotation | `ucs[].tunnel` as the CTVC's | the uswe tunnel |
+| R138 DSCP and PCP of the UTVC | — | not done |
+| R141–R144 GRE of type 0x8847 and the three labels | — | not supported |
+| R145, R146 the SD-WAN UNI's interface, VLAN, state, frame size | `end_points[].uni.interface`, `vlan`, `max_frame` | the interface or a vlan(4) on it, disabled until step 13 |
+| R147–R150 the UNI's IPv4 and IPv6 addresses, static or dynamic | `uni.ipv4`, `uni.ipv6` (`static`, `dhcp`, `slaac`, `none`) | the provider's addresses, dnsmasq, rtadvd |
+| R151 the UNI in the subscriber VRF | `swvcs[].fib` | ifconfig fib |
+| R152 static routes | `uni.routes` | route(8) in the table |
+| R153 BGP peers at the UNI: address, AS, MD5, password | `uni.routing.bgp` (`neighbors`, `as`, `password`) | BIRD |
+| R154 application flows | `swvcs[].flows` | ipfw rules |
+| R155 zones | `swvcs[].zones` | ipfw tables |
+| R156 the policy map: UNI, flow, zone, the tunnels in order, breakout, allowed destinations, block | `end_points[].policy_map`, `policies` | ipfw rules and the steering |
+| R157 irduration | `swvcs[].intervals.ir` | the probes |
+| R158 alarm severities Warning to Critical | — | the agents' faults, all severities, in the sdwan read |
+| R159 BFD 100 to 300 ms with its multiplier on every tunnel | `swvcs[].bfd` | BIRD's BFD |
+| R160 faults retrieved | — | `GET /api/servers/<id>/sdwan` |
+
+Not done, as the table says and beyond it: R96's Ethernet UNI
+attributes and R97's auto-negotiation; one address per end point
+where the specification allows both families; DSCP and PCP marking of
+the tunnels' outer packets (R114, R138); route distinguishers,
+targets and labels in the control plane's routes (R121, R123, RFC
+4364's VPNv4 and VPNv6 by BIRD's l3vpn, which the FreeBSD port does
+not build) and GRE with MPLS labels (R141–R144); a date and time for
+a key's activation (R112, R136: the rotation is run in step on both
+ends instead); more than one subscriber routing domain per service;
+stateful threshold crossing alerts (the probes' are stateless, O1);
+RFC 7317's hardware and virtual machine management (§12.7); and a
+NETCONF, YANG or REST binding of the management plane (§7.5): the
+console's own API and cblink are the management plane.

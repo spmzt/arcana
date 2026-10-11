@@ -79,16 +79,61 @@ static struct {
 	bool		 show_kept;	/* the Edges tab shows what stays too */
 } sd;
 
-/* The plan's phases, as Mplify 119 orders them (§12.1). */
-static const char *const phase_names[] = { "", "routing tables", "IPsec",
-    "tunnels", "far ends", "probes", "rules", "steering", "routes", "UNIs",
-    "BIRD" };
-
+/*
+ * The step of Mplify 119's activity flow (§12.1, steps 1 to 13) a change
+ * belongs to, by what it makes; the apply runs them in that order, the
+ * UNIs enabled last (step 13, R169).
+ */
 static const char *
-phase_name(long long ph)
+step_label(const ucl_object_t *c)
 {
+	const ucl_object_t	*t, *e;
+	ucl_object_iter_t	 it, eit;
+	const char		*k;
+	bool			 control;
 
-	return (ph >= 1 && ph <= 10 ? phase_names[ph] : "");
+	if ((k = jstr(c, "key")) == NULL)
+		return ("");
+	if (strcmp(k, "fibs") == 0 || strcmp(k, "forwarding") == 0)
+		return ("1 · VRFs");
+	if (strcmp(k, "ntp") == 0)
+		return ("2 · synchronization");
+	if (strncmp(k, "ucs:", 4) == 0)
+		return ("3 · UCS UNIs");
+	if (strncmp(k, "tvc:", 4) == 0 || strncmp(k, "peer:", 5) == 0)
+		return (strstr(k, "/ctvc") != NULL ? "4 · control plane" :
+		    "5 · UTVCs");
+	if (strncmp(k, "uswekey:", 8) == 0) {
+		/* The pair of a control tunnel's interface, or a data one's. */
+		control = false;
+		it = NULL;
+		while (sd.plan != NULL && (t = ucl_object_iterate(jget(sd.plan,
+		    "tunnels"), &it, true)) != NULL) {
+			eit = NULL;
+			while ((e = ucl_object_iterate(jget(t, "ends"), &eit, true))
+			    != NULL)
+				if (jstr(e, "ifname") != NULL && strcmp(jstr(e,
+				    "ifname"), k + 8) == 0 && jbool(t, "control"))
+					control = true;
+		}
+		return (control ? "4 · control plane" : "5 · UTVCs");
+	}
+	if (strcmp(k, "ipsec") == 0)
+		return ("5 · UTVCs");
+	if (strncmp(k, "uni:", 4) == 0 || strncmp(k, "rtadvd:", 7) == 0 ||
+	    strncmp(k, "dhcp:", 5) == 0)
+		return ("6 · SD-WAN UNIs, 13 · enabled");
+	if (strncmp(k, "route:", 6) == 0)
+		return ("7 · subscriber routing");
+	if (strcmp(k, "bird") == 0)
+		return ("7 · subscriber routing, 11 · BFD");
+	if (strcmp(k, "rules") == 0)
+		return ("8 · flows, 9 · zones");
+	if (strcmp(k, "steer") == 0)
+		return ("10 · policy map");
+	if (strcmp(k, "probes") == 0)
+		return ("12 · performance monitoring");
+	return ("");
 }
 
 /* The document changed by a form, sent to be kept. */
@@ -1623,7 +1668,8 @@ view_edges(struct html *h)
 	h_fmt(h, "<div class=\"sd-block\"><h3>On the edges <small class=\"dim"
 	    "\">what each is to have, as jobs, in the order it is made: %s"
 	    "</small></h3><table class=\"net sd sd-plan\"><thead><tr><th>Edge"
-	    "</th><th>Step</th><th>What</th><th>Change</th><th>Jobs</th></tr>"
+	    "</th><th title=\"Mplify 119 §12.1, the activity flow's steps 1 to 13\">"
+	    "Step</th><th>What</th><th>Change</th><th>Jobs</th></tr>"
 	    "</thead><tbody>", todo > 0 && !sd.show_kept ? "the changes" :
 	    "everything");
 	last = "";
@@ -1685,8 +1731,9 @@ view_edges(struct html *h)
 		if (!sd.show_kept && todo > 0 && strcmp(jstr(c, "change"), "keep")
 		    == 0)
 			continue;
-		h_fmt(h, "<tr class=\"ch-%s\"><td></td><td class=\"dim\">%s</td>"
-		    "<td>", jstr(c, "change"), phase_name(jint(c, "phase", 0)));
+		h_fmt(h, "<tr class=\"ch-%s\"><td></td><td class=\"dim\" title=\""
+		    "Mplify 119 §12.1, the step of its activity flow\">%s</td><td>",
+		    jstr(c, "change"), step_label(c));
 		h_txt(h, jstr(c, "title"));
 		h_fmt(h, "</td><td><span class=\"chip ch-%s\">%s</span></td>"
 		    "<td><details><summary>%u</summary><ul class=\"sd-jobs\">",
