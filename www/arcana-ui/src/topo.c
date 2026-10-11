@@ -178,6 +178,7 @@ static struct {
 	bool	fitted;			/* shown whole once, at first */
 	bool	refitted;		/* and again, with neighbours outside */
 	bool	jails;			/* each host's running jails around it */
+	bool	novnet;			/* the vnet jails folded into their hosts */
 	bool	nopeers;		/* routing neighbours outside are hidden */
 	char	sel[80];		/* the node picked, or "" */
 	char	sel_if[16];		/* and its interface charted */
@@ -287,9 +288,9 @@ nodes_build(void)
 		if (remote > 0 && strncmp(app.servers[i].uri, "unix:", 5) == 0)
 			continue;
 		it = NULL;
-		while (app.servers[i].list != NULL && (j = ucl_object_iterate(
-		    jget(app.servers[i].list, "jails"), &it, true)) != NULL &&
-		    ntn < MAX_NODES) {
+		while (!tp.novnet && app.servers[i].list != NULL && (j =
+		    ucl_object_iterate(jget(app.servers[i].list, "jails"), &it,
+		    true)) != NULL && ntn < MAX_NODES) {
 			if (!jbool(j, "vnet") || jstr(j, "name") == NULL ||
 			    jstr(j, "state") == NULL || strcmp(jstr(j, "state"),
 			    "running") != 0 || strlen(jstr(j, "name")) >=
@@ -496,6 +497,10 @@ peers_load(void)
 
 	tp.peers_loaded = true;
 	tp.npeers = 0;
+	/* Whether the vnet jails are shown, as last chosen here. */
+	text = arc_store_get("arc_topo_vnet");
+	tp.novnet = text != NULL && strcmp(text, "hidden") == 0;
+	free(text);
 	text = arc_store_get("arc_topo_peers");
 	p = text;
 	while (p != NULL && (line = strsep(&p, "\n")) != NULL &&
@@ -2226,6 +2231,10 @@ map(struct html *h)
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-jails\" "
 	    "title=\"Each host's running jails\">Jails</button>", tp.jails ?
 	    " on" : "");
+	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-vnet\" "
+	    "title=\"The vnet jails as nodes of their own, with their links; "
+	    "off, they are hidden\">VNet jails</button>", tp.novnet ? "" :
+	    " on");
 	h_fmt(h, "<button class=\"ghost small%s\" data-act=\"topo-labels\" "
 	    "title=\"What each kind of line is and carries, written on it\">"
 	    "Labels ▾</button>", tp.labels_open ? " on" : "");
@@ -4178,6 +4187,10 @@ topo_action(const char *act, const char *arg, const char *value)
 		tp.touched = false;
 	} else if (strcmp(act, "topo-jails") == 0) {
 		tp.jails = !tp.jails;
+	} else if (strcmp(act, "topo-vnet") == 0) {
+		tp.novnet = !tp.novnet;
+		arc_store_set("arc_topo_vnet", tp.novnet ? "hidden" : "shown");
+		tp.touched = false;
 	} else if (strcmp(act, "topo-open-wg") == 0 || strcmp(act,
 	    "topo-open-bird") == 0) {
 		if ((n = node_index(arg)) == -1)
