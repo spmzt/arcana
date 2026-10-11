@@ -73,8 +73,11 @@
   security policies in the document with MEF 88's criteria, checked,
   on a Security tab with a form, the example carrying one (S1.1);
   the ip-block denies and allows, the log and the rate pipe in the
-  rules, ingress before the forward and egress by the UNI (S1.2).
-  Next: S1.3, the DNS filter by Unbound.
+  rules, ingress before the forward and egress by the UNI (S1.2);
+  the DNS filter, an unbound instance of the base system per service
+  on each edge, the denied domains its local zones, every query from
+  the UNI forwarded to it where the protocol filter says so (S1.3).
+  Next: S1.4, the counts.
 - A luxuria plugin installed in a vnet jail and not on the host does
   not get its tab (reported 2026-10-11). The agent lists a running
   vnet jail's plugins by access(X_OK) on the program under the jail's
@@ -288,6 +291,17 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- A security policy's DNS filter on a vnet jail (MEF 88; task S1.3,
+  2026-10-11, the lab's dns step): the base system's local-unbound
+  started by the agent in FIB 1 on the UNI's address with the denied
+  domain a local zone, told running in the sdwan read; asked from the
+  other jail over the tunnel, the denied domain and a name beneath it
+  answer NXDOMAIN; the instance stopped when not named. The protocol
+  filter's forward (fwd 10.10.0.1,53 udp ... in recv gre100) is taken
+  by ipfw as the plan writes it; a query from the far jail to a
+  foreign resolver through the tunnel could not be sent by drill
+  there (a lab routing matter, not the rule's), so the forward itself
+  is seen accepted, not exercised: to do with the next lab.
 - A security policy's denies on a vnet jail (MEF 88; task S1.2,
   2026-10-11, by hand with arcanactl sdwan rules as the plan writes
   them): the tables of the denied and the allowed prefixes made, the

@@ -269,7 +269,7 @@ plan_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	/* The dashboard and Paths want the probes as soon as the plan
 	 * says which edges to ask. */
 	if (app.node == NODE_SDWAN && (sd.tab == SD_OVERVIEW || sd.tab ==
-	    SD_PATHS))
+	    SD_PATHS || sd.tab == SD_SECURITY))
 		paths_load();
 }
 
@@ -2709,6 +2709,38 @@ view_security(struct html *h)
 	if (n == 0)
 		h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">None yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
+	/* The DNS filters on the edges: each edge's unbound instances, a
+	 * service each, as the edges' reads tell them. */
+	h_raw(h, "<div class=\"sd-block\"><h3>DNS filters <small class=\"dim\">"
+	    "the base system's unbound, an instance of each service whose "
+	    "policies filter DNS, on each edge in the service's table, on the "
+	    "UNIs' provider addresses; the denied domains do not resolve, and "
+	    "with the protocol filter every query from the UNI is sent to it"
+	    "</small></h3><table class=\"net sd\"><thead><tr><th>Edge</th><th>"
+	    "Instance</th><th>State</th></tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while (sd.paths != NULL && (v = ucl_object_iterate(sd.paths, &it, true))
+	    != NULL) {
+		const ucl_object_t	*di;
+		ucl_object_iter_t	 dit = NULL;
+
+		while ((di = ucl_object_iterate(jget(v, "dns"), &dit, true)) !=
+		    NULL) {
+			n++;
+			h_raw(h, "<tr><td><b>");
+			h_txt(h, host_name(ucl_object_key(v)));
+			h_fmt(h, "</b></td><td class=\"mono\">%s <span class=\"dim\">"
+			    "fib %lld</span></td><td><span class=\"chip st-%s\">%s"
+			    "</span></td></tr>", jstr(di, "name"), (long long)jint(di,
+			    "fib", 0), jbool(di, "running") ? "up" : "down", jbool(
+			    di, "running") ? "running" : "not running");
+		}
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"3\" class=\"dim\">None: no policy "
+		    "filters DNS, or nothing is applied yet.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
 }
 
 static void
@@ -5048,7 +5080,7 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    SD_OVERVIEW;
 		if (sd.tab == SD_EDGES || sd.tab == SD_OVERVIEW)
 			plan_load();
-		else if (sd.tab == SD_PATHS)
+		else if (sd.tab == SD_PATHS || sd.tab == SD_SECURITY)
 			paths_load();
 		sd.note[0] = '\0';
 		if (sd.tab != SD_DOCUMENT)

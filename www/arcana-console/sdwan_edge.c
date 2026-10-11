@@ -1658,6 +1658,172 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 }
 
 
+/* ---- DNS filters (MEF 88): the base system's unbound, a service an
+ * instance ------------------------------------------------------------- */
+
+static const ucl_object_t *sec_of(const ucl_object_t *, const ucl_object_t *,
+    const char *, int *);
+
+/*
+ * The security policies of a service that filter DNS, as any of its
+ * policies names them by af-security-ingress or -egress: whether any
+ * denies domains, whether any keeps DNS to the provider's resolver.
+ */
+static bool
+dns_filters(const ucl_object_t *sw, bool *protop)
+{
+	const ucl_object_t	*pol, *cr, *sec, *sc;
+	ucl_object_iter_t	 it;
+	int			 si, i;
+	bool			 any = false;
+
+	*protop = false;
+	it = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &it, true)) != NULL) {
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec == NULL)
+				continue;
+			sc = ucl_object_lookup(sec, "criteria");
+			if (ucl_object_lookup(sc, "dns-domain-filter") != NULL)
+				any = true;
+			if (ucl_flag(sc, "dns-protocol-filter")) {
+				any = true;
+				*protop = true;
+			}
+		}
+		(void)cr;
+	}
+	return (any);
+}
+
+/*
+ * unbound's configuration for a service at an edge: it listens on the
+ * UNIs' provider addresses, answers the UNIs' subnets, resolves by
+ * itself, and denies every domain the service's filtering policies
+ * deny (always_nxdomain, the names beneath too).
+ */
+static char *
+dns_conf(const ucl_object_t *sw, const char *sid)
+{
+	struct kore_buf		*b;
+	const ucl_object_t	*ep, *u, *v, *a, *pol, *sec, *sc, *d;
+	ucl_object_iter_t	 it, pit, dit;
+	char			*out;
+	int			 i, si;
+
+	b = kore_buf_alloc(2048);
+	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	    "at %s, in routing table %jd.\n# The DNS filter of its security "
+	    "policies (MEF 88), by the base system's unbound.\nserver:\n\t"
+	    "verbosity: 0\n\tdo-daemonize: yes\n\tmodule-config: \"iterator\"\n"
+	    "\tdo-not-query-localhost: no\n", str(sw, "id"), server_name_of(sid),
+	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")));
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep, "edge"), sid) != 0)
+			continue;
+		u = ucl_object_lookup(ep, "uni");
+		for (i = 0; i < 2; i++) {
+			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
+			if (str(v, "prefix") == NULL)
+				continue;
+			a = ucl_array_find_index(ucl_object_lookup(v, "provider"), 0);
+			if (a == NULL)
+				continue;
+			kore_buf_appendf(b, "\t# UNI %s\n\tinterface: %s\n\t"
+			    "access-control: %s allow\n", str(u, "id"),
+			    ucl_object_tostring_forced(a), str(v, "prefix"));
+		}
+	}
+	pit = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &pit, true)) != NULL)
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec == NULL)
+				continue;
+			sc = ucl_object_lookup(sec, "criteria");
+			dit = NULL;
+			while ((d = ucl_object_iterate(ucl_object_lookup(
+			    ucl_object_lookup(sc, "dns-domain-filter"), "deny"),
+			    &dit, true)) != NULL)
+				kore_buf_appendf(b, "\tlocal-zone: \"%s.\" "
+				    "always_nxdomain\n",
+				    ucl_object_tostring_forced(d));
+		}
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
+ * Each edge's DNS filters: an instance per service whose policies name
+ * a security policy that filters DNS, where the edge has a UNI of the
+ * service, in the service's table.
+ */
+static void
+dns_build(struct plan *pl, const ucl_object_t *doc)
+{
+	const ucl_object_t	*sw, *edge, *ep;
+	ucl_object_iter_t	 it, eit, pit;
+	ucl_object_t		*o, *inst, *list;
+	char			 name[32];
+	const char		*sid;
+	char			*text;
+	bool			 here, proto;
+
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		sid = str(edge, "server");
+		list = ucl_object_typed_new(UCL_ARRAY);
+		eit = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &eit, true)) != NULL) {
+			if (!dns_filters(sw, &proto))
+				continue;
+			here = false;
+			pit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &pit, true)) != NULL)
+				if (strcmp(str(ep, "edge"), sid) == 0)
+					here = true;
+			if (!here)
+				continue;
+			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+			inst = ucl_object_typed_new(UCL_OBJECT);
+			put(inst, "name", S(name));
+			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
+			    "fib"))));
+			text = dns_conf(sw, sid);
+			put(inst, "conf", S(text));
+			free(text);
+			ucl_array_append(list, inst);
+		}
+		if (ucl_array_size(list) == 0) {
+			ucl_object_unref(list);
+			continue;
+		}
+		o = object(pl, sid, "dns", PH_BIRD, "DNS filters: unbound, %u "
+		    "instance%s in the services' tables, the domains the security "
+		    "policies deny", ucl_array_size(list), ucl_array_size(list) ==
+		    1 ? "" : "s");
+		if (o == NULL) {
+			ucl_object_unref(list);
+			continue;
+		}
+		make(o, job("sdwan-dns", "instances", list, NULL));
+		unmake(o, job("sdwan-dns", "instances", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	}
+}
+
 /* ---- The rules: classification and steering (§8, §9.12, §10.4) ----- */
 
 #define	RULE_FROM	10	/* the rules' numbers, from here */
@@ -2632,6 +2798,26 @@ rules_build(struct plan *pl, const char *sid)
 			/* [D1]: source routing dropped. */
 			rule(rules, RULE_FROM, "deny ip from any to any ipoptions "
 			    "lsrr,ssrr,rr in recv %s", uni);
+			/* DNS kept to the provider's resolver, where a security
+			 * policy says so (MEF 88 dns-protocol-filter): every
+			 * query from the UNI goes to the filter here. */
+			{
+				const ucl_object_t	*pv, *pa;
+				bool			 proto;
+
+				pv = ucl_object_lookup(ucl_object_lookup(ep, "uni"),
+				    "ipv4");
+				pa = pv != NULL ? ucl_array_find_index(
+				    ucl_object_lookup(pv, "provider"), 0) : NULL;
+				if (pa != NULL && dns_filters(sw, &proto) && proto) {
+					rule(rules, RULE_FROM, "fwd %s,53 udp from any "
+					    "to any dst-port 53 in recv %s",
+					    ucl_object_tostring_forced(pa), uni);
+					rule(rules, RULE_FROM, "fwd %s,53 tcp from any "
+					    "to any dst-port 53 in recv %s",
+					    ucl_object_tostring_forced(pa), uni);
+				}
+			}
 			rule(rules, RULE_FROM, "skipto tablearg ip from table(%s) "
 			    "to any in recv %s", zname, uni);
 			/* No zone: dropped (R23). */
@@ -4191,6 +4377,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 		}
 	}
 	bird_build(pl, doc);
+	dns_build(pl, doc);
 	dhcp_build(pl, doc);
 	return (true);
 }

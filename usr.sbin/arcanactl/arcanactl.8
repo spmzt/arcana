@@ -769,6 +769,14 @@ operation takes them: each a name, the fib it runs in and its
 .Xr dnsmasq 8
 configuration; checked first, started or started again, those not
 named stopped.
+.It Cm sdwan dns Ar json
+The DNS filters of the services at this edge (MEF 88), as the
+sdwan-dns operation takes them: each a name, the fib it runs in and
+its
+.Xr unbound 8
+configuration, run by the base system's local-unbound; checked by
+local-unbound-checkconf first, started or started again, those not
+named stopped.
 .It Cm traceroute Ar address
 One round of
 .Xr traceroute 8 ,

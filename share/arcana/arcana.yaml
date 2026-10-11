@@ -2590,6 +2590,32 @@ operations:
           - error
           - trace
 
+  - name: sdwan-dns
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The DNS filters of the SD-WAN services at this edge (MEF 88: the
+      base system's unbound, local-unbound, one instance per service,
+      in its table), as the console writes them: json, an object with
+      "instances", each a "name", the "fib" it runs in and its "conf",
+      unbound's configuration text, to which the agent adds the pid
+      file.  Each is checked by local-unbound-checkconf before it is
+      made the instance's; one running is stopped and started again on
+      it, one not yet is started in its table (setfib); those not
+      named any more are stopped.  Kept for the next start.  The sdwan
+      read tells each instance.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+
 mcast-groups:
   - name: events
     auth: true
