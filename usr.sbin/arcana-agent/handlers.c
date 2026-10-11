@@ -303,6 +303,7 @@ worker(void *arg)
 	struct arc_sdwan_steer_rsp sstr;
 	struct arc_sdwan_bird_rsp sbr;
 	struct arc_sdwan_dhcp_rsp sdhr;
+	struct arc_sdwan_dns_rsp sdnr;
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
@@ -729,6 +730,20 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &sdhr.trace.v, &sdhr.trace.n);
 		rc = arc_sdwan_dhcp_reply(j->req, &sdhr);
+		break;
+	case ARC_CMD_SDWAN_DNS:
+		what = "sdwan dns";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&sdnr, 0, sizeof(sdnr));
+		error = NULL;
+		ok = do_sdwan_dns(&w, j->ref, &error) == 0;
+		sdnr.has_ok = true;
+		sdnr.ok = ok;
+		sdnr.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sdnr.trace.v, &sdnr.trace.n);
+		rc = arc_sdwan_dns_reply(j->req, &sdnr);
 		break;
 	case ARC_CMD_SDWAN:
 		what = "sdwan";
@@ -1377,6 +1392,22 @@ arc_sdwan_dhcp_doit(cbl_req *req, const struct arc_sdwan_dhcp_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_SDWAN_DHCP;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
+arc_sdwan_dns_doit(cbl_req *req, const struct arc_sdwan_dns_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '{')
+		return (reject(req, "the instances are a JSON object"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_DNS;
 	j->ref = xstrdup(rq->json);
 	return (start(j));
 }

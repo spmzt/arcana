@@ -274,7 +274,7 @@ start_daemon()
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
 	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
 	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
-	    -9 "$(pwd)/fake-setkey" \
+	    -9 "$(pwd)/fake-setkey" -0 "$(pwd)/fake-local-unbound" \
 	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
@@ -2593,6 +2593,8 @@ shift 2
 case "\$1" in
 # dnsmasq -C conf -x pid: started, says the pid file, this agent's pid.
 *dnsmasq) sleep 300 & echo \$! > "\$5" ;;
+# local-unbound -c conf: started, says the pid file named in the conf.
+*local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
 # bird -c conf -s sock -P pid: started, says the socket.
 *) shift 3; touch "\$2" ;;
 esac
@@ -2604,7 +2606,18 @@ echo "dnsmasq \$*" >> $(pwd)/dnsmasq.log
 [ "\$1" = --test ] && { grep -q BROKEN "\$3" && { echo "dnsmasq: bad option at line 1 of \$3" >&2; exit 1; }; exit 0; }
 exit 0
 EOS
-	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq
+	cat > fake-local-unbound <<EOS
+#!/bin/sh
+echo "unbound \$*" >> $(pwd)/unbound.log
+exit 0
+EOS
+	cat > fake-local-unbound-checkconf <<EOS
+#!/bin/sh
+echo "checkconf \$*" >> $(pwd)/unbound.log
+grep -q BROKEN "\$1" && { echo "unbound-checkconf: error: syntax error" >&2; exit 1; }
+exit 0
+EOS
+	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
 	atf_check -s exit:1 -e match:'named twice' -o ignore "$JGC" -c "$SOCK" sdwan bird \
@@ -2688,6 +2701,22 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan dhcp '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-dhcp-sw1.conf" || atf_fail "the dhcp instance's file stayed"
 	atf_check -o match:'"dhcp":\[\]' "$JGC" -c "$SOCK" sdwan
+	# DNS filters (the base system's unbound): one not taken by
+	# local-unbound-checkconf not run; one started in its table with
+	# the pid file and the run as root added to its file; listed;
+	# stopped when not named.
+	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan dns \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"BROKEN"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"server:\n\tinterface: 10.1.0.1\n\tlocal-zone: \"ads.example.\" always_nxdomain\n"}]}'
+	atf_check -o match:'^setfib -F 1 .*fake-local-unbound -c .*sdwan-dns-sw1.conf$' cat setfib.log
+	atf_check -o match:'^checkconf .*sdwan-dns-sw1.conf$' cat unbound.log
+	atf_check -o match:'^	interface: 10.1.0.1$' -o match:'^	pidfile: ".*sdwan-dns-sw1.pid"$' -o match:'^	username: ""$' \
+	    cat "$(dirname "$f")/sdwan-dns-sw1.conf"
+	atf_check -o match:'"dns":\[\{"name":"sw1","fib":1,"running":true\}\]' "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns '{"instances":[]}'
+	test ! -f "$(dirname "$f")/sdwan-dns-sw1.conf" || atf_fail "the dns instance's file stayed"
+	atf_check -o match:'"dns":\[\]' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()
 {

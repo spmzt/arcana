@@ -186,7 +186,7 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[102];
+	char	*argv[104];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -567,6 +567,13 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "exit 0\n");
 	ATF_REQUIRE(chmod("fake-dnsmasq", 0755) == 0);
 	put("fake-rtsol", "#!/bin/sh\necho \"rtsol $*\" >> rtsol.log\nexit 0\n");
+	/* local-unbound: checkconf takes any file; started by fake-setfib. */
+	put("fake-local-unbound", "#!/bin/sh\necho \"unbound $*\" >> "
+	    "unbound.log\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-local-unbound", 0755) == 0);
+	put("fake-local-unbound-checkconf", "#!/bin/sh\necho \"checkconf $*\" >> "
+	    "unbound.log\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-local-unbound-checkconf", 0755) == 0);
 	ATF_REQUIRE(chmod("fake-rtsol", 0755) == 0);
 	put("fake-setkey", "#!/bin/sh\necho \"setkey $*\" >> setkey.log\n[ \"$1\" "
 	    "= -f ] && cat \"$2\" >> setkey.conf\nexit 0\n");
@@ -886,7 +893,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[97] = (char *)(uintptr_t)"./fake-rtsol";
 	argv[98] = (char *)(uintptr_t)"-9";
 	argv[99] = (char *)(uintptr_t)"./fake-setkey";
-	argv[100] = NULL;
+	argv[100] = (char *)(uintptr_t)"-0";
+	argv[101] = (char *)(uintptr_t)"./fake-local-unbound";
+	argv[102] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
 	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
 	snprintf(rtadvdconf, sizeof(rtadvdconf), "%s/rtadvd.conf", cwd);

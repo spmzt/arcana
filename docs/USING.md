@@ -1115,7 +1115,19 @@ says, the prefixes in tables of the policy's own (`sw<fib>_s<n>d4`,
 `d6`, `a4`, `a6`); a `rate-limit` is a dummynet pipe of the policy's
 own, the flow sent through it on the way out by the tunnels. Named by
 `af-security-egress`, the same denies stand on the way out by the UNI.
-The DNS criteria come with the DNS filter (next).
+The DNS criteria are the base system's unbound(8), `local-unbound`:
+where any policy of a service names a security policy with
+`dns-domain-filter` or `dns-protocol-filter`, each edge with a UNI of
+the service runs an instance of it in the service's table (`sdwan-dns`;
+`arcanactl sdwan dns json` by hand; checked by local-unbound-checkconf
+first, its pid file beside the agent's kept files, started again at
+the agent's start), listening on the UNIs' provider addresses,
+answering the UNIs' subnets, resolving by itself, and answering every
+denied domain and the names beneath it with NXDOMAIN (a local zone
+each; the domains of all the service's filtering policies together).
+With `dns-protocol-filter`, every DNS query from the UNI, UDP or TCP,
+is forwarded to that instance by an ipfw rule (`fwd provider,53`),
+whatever resolver the host asked. Security lists the instances.
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,

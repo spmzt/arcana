@@ -3884,6 +3884,23 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"11 pipe 3002 tcp from any to any "
 	    "dst-port 80,https src-ip table(sw1_zp0) out { xmit gre100 or xmit "
 	    "gif102 }\"") != NULL, "%s", r.body);
+	/* Its DNS: an unbound instance of the service at a, on hq's
+	 * provider address, the denied domain a local zone; every query
+	 * from the UNI forwarded to it (dns-protocol-filter). */
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"dns\",\"phase\":10,\"title\":"
+	    "\"DNS filters: unbound, 1 instance in the services' tables, the "
+	    "domains the security policies deny\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"kind\":\"sdwan-dns\",\"instances\":[{\"name\":"
+	    "\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana console: SD-WAN "
+	    "service acme at a, in routing table 1.") != NULL);
+	ATF_CHECK(strstr(r.body, "\\tinterface: 10.1.0.1\\n\\taccess-control: "
+	    "10.1.0.0/24 allow\\n") != NULL);
+	ATF_CHECK(strstr(r.body, "\\tlocal-zone: \\\"ads.example.\\\" "
+	    "always_nxdomain\\n") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "\"10 fwd 10.1.0.1,53 udp from any to any "
+	    "dst-port 53 in recv lo0\"") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"10 fwd 10.1.0.1,53 tcp from any to any "
+	    "dst-port 53 in recv lo0\"") != NULL);
 	/* Breakout at a, by a-inet: the NAT of hq's public prefix, out by
 	 * vtnet0 and back in to the service's table; the default route
 	 * by the gateway, reached by the interface.  At b, by a tunnel to
@@ -4079,6 +4096,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(jstr(&r, "data.rules.set") != NULL && strcmp(jstr(&r,
 	    "data.rules.set"), "30") == 0, "%s", r.body);
 	resp_free(&r);
+	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-local-unbound -c .*sdwan-dns-"
+	    "sw1.conf' setfib.log && grep -q '^checkconf .*sdwan-dns-sw1.conf' "
+	    "unbound.log") == 0);
 	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-dnsmasq -C .*sdwan-dhcp-sw1"
 	    ".conf -x ' setfib.log") == 0);
 	ATF_CHECK(system("grep -q 'addr=\"2001:db8:1::\":prefixlen#64:rdnss=\""
