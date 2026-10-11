@@ -39,8 +39,8 @@
   raised yet); the lab run of 119-1 (1.8, in the verified list); the
   monitor charts of each tunnel on Paths (UX-5); SLAAC at a UNI by
   rtadvd and DHCP by dnsmasq in the service's table, with the kernel's
-  forwarding turned on by the apply (0.1, 0.2; verified with stand-ins,
-  the lab run to come). Next: 119-2 on. Later: Mplify 119's tunnel
+  forwarding turned on by the apply (0.1, 0.2, in the verified list).
+  Next: 119-2 on. Later: Mplify 119's tunnel
   (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
@@ -221,6 +221,19 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- SLAAC and DHCP at a UNI (MEF 70.2 §11.4, §11.5; tasks 0.1 and 0.2,
+  2026-10-11, the lab's sub step): a third vnet jail on an epair
+  behind the first edge's UNI, the UNI in FIB 1 with the prefixes,
+  the agent told as the apply would: rtadvd with the /64 and RDNSS,
+  dnsmasq in FIB 1 with a range, the router and the DNS server. The
+  host's rtsol got it a 2001:db8:10::/64 address and a default route
+  by the edge's link-local; dhclient got it 10.10.0.125 with the
+  router; it pinged the far UNI through the edge and the gre tunnel;
+  the agent listed the lease with the host's name. Found: a vnet
+  jail's devfs hides bpf, which dnsmasq's DHCP and dhclient need
+  (no ruleset of this host unhides it; the lab unhides it by hand).
+  Not run: DHCPv6 (dnsmasq's enable-ra), the unmake (rtadvd's entry
+  removed, dnsmasq stopped), which the stand-ins cover.
 - Mplify 119 tasks 1.1 to 1.7 on two vnet jails (2026-10-11, the
   lab build/lab/bfd-lab.sh): an arcana-agent of its own inside each
   jail, a gre tunnel in FIB 1, a BIRD 3.3.3 instance each with BFD on
