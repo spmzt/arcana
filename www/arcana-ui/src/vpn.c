@@ -81,6 +81,11 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 
 	(void)s;
 	now = jint(data, "now", 0);
+	/* A wg interface made here, by the same job as the network's
+	 * interface form, then its key and port. */
+	h_raw(h, "<p class=\"pane-actions\"><button class=\"ghost small\" data-act"
+	    "=\"wg-if-create\" title=\"A wg interface made with ifconfig "
+	    "create; its key and port after\">+ interface</button></p>");
 	n = 0;
 	it = NULL;
 	while ((o = ucl_object_iterate(jget(data, "interfaces"), &it, true)) !=
@@ -311,6 +316,11 @@ vpn_action(const char *act, const char *arg, const char *value)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(act, "wg-if-create") == 0) {
+		if ((s = cur_server()) != NULL)
+			topo_if_create_open(s->id, "wg");
+		return (true);
+	}
 	if (strcmp(act, "wg-init") == 0 || strcmp(act, "wg-peer-add") == 0) {
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
 		app.modal = act[3] == 'i' ? MODAL_WG_INIT : MODAL_WG_PEER;

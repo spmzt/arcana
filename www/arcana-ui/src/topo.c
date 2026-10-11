@@ -188,6 +188,7 @@ static struct {
 	bool	loaded;			/* the places kept were read */
 	char	tun_a[80], tun_b[80];	/* the tunnel asked for */
 	char	create_sid[80];		/* the node an interface is made on */
+	char	create_kind[16];	/* and the kind of interface chosen */
 	int	fit_n;			/* the nodes there were when fitted */
 	double	vw, vh;			/* the room the map has, in pixels */
 	double	fit_w, fit_h;		/* and had when fitted */
@@ -3114,6 +3115,75 @@ addr_options(struct html *h, struct thost *t, const char *chosen)
 	}
 }
 
+/*
+ * The kinds of interface the host clones, and what each takes in the
+ * form: a tunnel its two ends, an ipsec one a reqid, a VXLAN its
+ * identifier, a VLAN its tag and parent, a bridge a first member, most
+ * an address.
+ */
+#define	IFK_TUNNEL	1
+#define	IFK_REQID	2
+#define	IFK_VNI		4
+#define	IFK_VLAN	8
+#define	IFK_MEMBER	16
+#define	IFK_ADDRESS	32
+static const struct {
+	const char	*kind, *label;
+	int		 has;
+} if_kinds[] = {
+	{ "epair", "epair: a pair of ends, one for a vnet jail", IFK_ADDRESS },
+	{ "gif", "gif: IP in IP tunnel", IFK_TUNNEL | IFK_ADDRESS },
+	{ "gre", "gre: GRE tunnel", IFK_TUNNEL | IFK_ADDRESS },
+	{ "ipsec", "ipsec: if_ipsec(4) tunnel", IFK_TUNNEL | IFK_REQID |
+	    IFK_ADDRESS },
+	{ "me", "me: minimal encapsulation tunnel", IFK_TUNNEL | IFK_ADDRESS },
+	{ "vxlan", "vxlan: VXLAN", IFK_TUNNEL | IFK_VNI | IFK_ADDRESS },
+	{ "vlan", "vlan: an 802.1Q VLAN on an interface", IFK_VLAN |
+	    IFK_ADDRESS },
+	{ "bridge", "bridge: if_bridge(4)", IFK_MEMBER | IFK_ADDRESS },
+	{ "lagg", "lagg: link aggregation", IFK_ADDRESS },
+	{ "tap", "tap: a layer 2 tunnel device", IFK_ADDRESS },
+	{ "tun", "tun: a layer 3 tunnel device", IFK_ADDRESS },
+	{ "lo", "lo: another loopback", IFK_ADDRESS },
+	{ "wg", "wg: WireGuard", IFK_ADDRESS },
+	{ "ovpn", "ovpn: OpenVPN DCO", IFK_ADDRESS },
+};
+
+static const char *
+if_kind_of(const char *kind)
+{
+	size_t	i;
+
+	for (i = 0; kind != NULL && i < (sizeof(if_kinds) / sizeof(if_kinds[0])); i++)
+		if (strcmp(if_kinds[i].kind, kind) == 0)
+			return (if_kinds[i].kind);
+	return (NULL);
+}
+
+static bool
+if_kind_has(const char *kind, int what)
+{
+	size_t	i;
+
+	for (i = 0; kind != NULL && i < (sizeof(if_kinds) / sizeof(if_kinds[0])); i++)
+		if (strcmp(if_kinds[i].kind, kind) == 0)
+			return ((if_kinds[i].has & what) == what);
+	return (false);
+}
+
+/* The interface form opened for a host, a kind chosen; another part's
+ * (the WireGuard tab's) way in. */
+void
+topo_if_create_open(const char *sid, const char *kind)
+{
+
+	snprintf(tp.create_sid, sizeof(tp.create_sid), "%s", sid);
+	snprintf(tp.create_kind, sizeof(tp.create_kind), "%s", if_kind_of(kind)
+	    != NULL ? kind : "epair");
+	app.modal = MODAL_IF_CREATE;
+	app.modal_error[0] = '\0';
+}
+
 static const char keep_field[] = "<label class=\"toggle\"><input type=\""
     "checkbox\" name=\"persist\" checked><span>Keep it in <code>rc.conf"
     "</code>, to be there after a boot</span></label>";
@@ -3243,31 +3313,71 @@ topo_modal(struct html *h)
 		h_txt(h, tn[a].label);
 		h_raw(h, "</h2><p>A cloned interface, with <code>ifconfig "
 		    "create</code>; what cannot be finished is destroyed "
-		    "again.</p><label>Interface<input name=\"name\" "
-		    "spellcheck=\"false\" autocomplete=\"off\" placeholder=\""
-		    "epair, gif0, bridge1, vlan100…\" autofocus><small>A kind "
-		    "alone, for the next free one, or with its number: epair, "
-		    "gif, gre, ipsec, me, vxlan, vlan, bridge, lagg, tap, tun, "
-		    "lo, wg, ovpn.</small></label><div class=\"two\"><label>"
-		    "Tunnel: this end<input name=\"tunnel_local\" spellcheck="
-		    "\"false\" autocomplete=\"off\" placeholder=\"for gif, "
-		    "gre, ipsec, vxlan\"></label><label>Tunnel: far end<input "
-		    "name=\"tunnel_remote\" spellcheck=\"false\" autocomplete="
-		    "\"off\"></label></div><div class=\"two\"><label>Address"
-		    "<input name=\"address\" spellcheck=\"false\" autocomplete="
-		    "\"off\" placeholder=\"10.0.0.1/30\"></label><label>Peer's "
-		    "address<input name=\"peer\" spellcheck=\"false\" "
-		    "autocomplete=\"off\" placeholder=\"point to point only\">"
-		    "</label></div><div class=\"two\"><label>Number<input "
-		    "name=\"id\" inputmode=\"numeric\" placeholder=\"VLAN tag "
-		    "or VXLAN identifier\"></label><label>Parent<input name=\""
-		    "parent\" spellcheck=\"false\" autocomplete=\"off\" "
-		    "placeholder=\"a VLAN's interface, a bridge's member\">"
-		    "</label></div><div class=\"two\"><label>MTU<input name=\""
-		    "mtu\" inputmode=\"numeric\"></label><label>Description"
-		    "<input name=\"description\" autocomplete=\"off\"></label>"
-		    "</div>");
-		h_raw(h, keep_field);
+		    "again.</p><div class=\"two\"><label>Kind<select name=\""
+		    "kind\" data-input=\"topo-if-kind\">");
+		for (size_t ki = 0; ki < (sizeof(if_kinds) / sizeof(if_kinds[0])); ki++) {
+			h_raw(h, "<option");
+			h_attr(h, "value", if_kinds[ki].kind);
+			if (strcmp(if_kinds[ki].kind, tp.create_kind) == 0)
+				h_raw(h, " selected");
+			h_raw(h, ">");
+			h_txt(h, if_kinds[ki].label);
+			h_raw(h, "</option>");
+		}
+		h_raw(h, "</select></label><label>Number<input name=\"number\" "
+		    "inputmode=\"numeric\" autocomplete=\"off\" placeholder=\""
+		    "the next free one\"><small>gif0, vlan100: the unit; empty, "
+		    "the host picks the next.</small></label></div>");
+		if (if_kind_has(tp.create_kind, IFK_TUNNEL))
+			h_raw(h, "<div class=\"two\"><label>Tunnel: this end<input "
+			    "name=\"tunnel_local\" spellcheck=\"false\" autocomplete="
+			    "\"off\" placeholder=\"192.0.2.1\"><small>An address of "
+			    "this host the outer packets leave from.</small></label>"
+			    "<label>Tunnel: far end<input name=\"tunnel_remote\" "
+			    "spellcheck=\"false\" autocomplete=\"off\" placeholder=\""
+			    "192.0.2.2\"></label></div>");
+		if (if_kind_has(tp.create_kind, IFK_REQID))
+			h_raw(h, "<label>reqid<input name=\"reqid\" inputmode=\""
+			    "numeric\" autocomplete=\"off\" placeholder=\"1 to 16383\">"
+			    "<small>The IPsec security association's request id "
+			    "that if_ipsec(4) binds the interface to.</small></label>");
+		if (if_kind_has(tp.create_kind, IFK_VNI))
+			h_raw(h, "<label>VXLAN identifier<input name=\"id\" "
+			    "inputmode=\"numeric\" autocomplete=\"off\" placeholder=\""
+			    "up to 16777215\" required></label>");
+		if (if_kind_has(tp.create_kind, IFK_VLAN))
+			h_raw(h, "<div class=\"two\"><label>VLAN tag<input name=\"id\" "
+			    "inputmode=\"numeric\" autocomplete=\"off\" placeholder=\""
+			    "1 to 4094\" required></label><label>Parent<input name="
+			    "\"parent\" spellcheck=\"false\" autocomplete=\"off\" "
+			    "placeholder=\"the interface it rides\" required></label>"
+			    "</div>");
+		if (if_kind_has(tp.create_kind, IFK_MEMBER))
+			h_raw(h, "<label>First member<input name=\"parent\" "
+			    "spellcheck=\"false\" autocomplete=\"off\" placeholder=\""
+			    "an interface put in the bridge; empty for none yet\">"
+			    "</label>");
+		if (if_kind_has(tp.create_kind, IFK_ADDRESS))
+			h_raw(h, "<div class=\"two\"><label>Address<input name=\""
+			    "address\" spellcheck=\"false\" autocomplete=\"off\" "
+			    "placeholder=\"10.0.0.1/30\"></label><label>Peer's "
+			    "address<input name=\"peer\" spellcheck=\"false\" "
+			    "autocomplete=\"off\" placeholder=\"point to point only\">"
+			    "</label></div>");
+		h_raw(h, "<div class=\"two\"><label>MTU<input name=\"mtu\" "
+		    "inputmode=\"numeric\" autocomplete=\"off\"></label><label>"
+		    "Description<input name=\"description\" autocomplete=\"off\">"
+		    "</label></div>");
+		if (strcmp(tp.create_kind, "wg") == 0)
+			h_raw(h, "<p class=\"dim\">A WireGuard interface gets its key "
+			    "and port on the WireGuard tab once it is made, and is "
+			    "kept for wg-quick(8) there, not in rc.conf.</p>");
+		else
+			h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"persist\" checked><span>Keep it in <code>rc.conf"
+			    "</code>: on <code>cloned_interfaces</code>, with its "
+			    "<code>create_args_</code> and <code>ifconfig_</code> "
+			    "lines, so rc(8) makes it again at boot</span></label>");
 		return (true);
 	case MODAL_IF_SET:
 		mtu = (unsigned int)atoi(app.confirm.value);
@@ -3573,14 +3683,45 @@ topo_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	if (strcmp(form, "if-create") == 0) {
+		const char	*kind, *num;
+		char		 nbuf[32], *rq;
+
 		if ((n = node_index(tp.create_sid)) == -1)
 			return (true);
-		name = jstr(f, "name") != NULL ? jstr(f, "name") : "";
-		if (name[0] == '\0' || name[strspn(name, "abcdefghijklmnopqrstu"
-		    "vwxyz0123456789")] != '\0') {
+		kind = jstr(f, "kind") != NULL ? jstr(f, "kind") : tp.create_kind;
+		if (if_kind_has(kind, 0) == false && if_kind_of(kind) == NULL) {
 			snprintf(app.modal_error, sizeof(app.modal_error),
-			    "Name the kind of interface, with or without its "
-			    "number: gif, epair0, vlan100");
+			    "Choose the kind of interface");
+			return (true);
+		}
+		num = jstr(f, "number") != NULL ? jstr(f, "number") : "";
+		if (num[strspn(num, "0123456789")] != '\0' || strlen(num) > 5) {
+			snprintf(app.modal_error, sizeof(app.modal_error),
+			    "The number is digits, or empty for the next free");
+			return (true);
+		}
+		snprintf(nbuf, sizeof(nbuf), "%s%s", kind, num);
+		name = nbuf;
+		/* What the kind needs, said before the host says it. */
+		if (if_kind_has(kind, IFK_TUNNEL) && (jstr(f, "tunnel_local") ==
+		    NULL || jstr(f, "tunnel_local")[0] == '\0' || jstr(f,
+		    "tunnel_remote") == NULL || jstr(f, "tunnel_remote")[0] ==
+		    '\0')) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A %s "
+			    "tunnel needs both its ends", kind);
+			return (true);
+		}
+		if (if_kind_has(kind, IFK_VLAN) && (jstr(f, "id") == NULL ||
+		    jstr(f, "id")[0] == '\0' || jstr(f, "parent") == NULL || jstr(
+		    f, "parent")[0] == '\0')) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A VLAN "
+			    "needs its tag and the interface it rides");
+			return (true);
+		}
+		if (if_kind_has(kind, IFK_VNI) && (jstr(f, "id") == NULL ||
+		    jstr(f, "id")[0] == '\0')) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A VXLAN "
+			    "needs its identifier");
 			return (true);
 		}
 		a = field(f, "tunnel_local", "tunnel_local");
@@ -3591,12 +3732,13 @@ topo_form(const char *form, const ucl_object_t *f)
 		g = field(f, "parent", "parent");
 		i = number(f, "mtu", "mtu");
 		k = number(f, "id", "id");
+		rq = number(f, "reqid", "reqid");
 		snprintf(title, sizeof(title), "create %s", name);
-		/* name is letters and digits: checked above. */
+		/* name is a kind of the list and digits. */
 		node_job(n, title, name, "{\"kind\":\"if-create\",\"interface\":"
-		    "\"%s\"%s%s%s%s%s%s%s%s,\"persist\":%s,\"safe\":true}", name,
-		    a, b, c, d, e, g, i, k, jbool(f, "persist") ? "true" :
-		    "false");
+		    "\"%s\"%s%s%s%s%s%s%s%s%s,\"persist\":%s,\"safe\":true}", name,
+		    a, b, c, d, e, g, i, k, rq, jbool(f, "persist") && strcmp(
+		    kind, "wg") != 0 ? "true" : "false");
 		free(a);
 		free(b);
 		free(c);
@@ -3605,6 +3747,7 @@ topo_form(const char *form, const ucl_object_t *f)
 		free(g);
 		free(i);
 		free(k);
+		free(rq);
 		app.modal = MODAL_NONE;
 		tp.last_poll = 0;
 		return (true);
@@ -4047,10 +4190,11 @@ topo_action(const char *act, const char *arg, const char *value)
 		if (arg[0] != '\0' ? node_index(arg) == -1 : (s =
 		    cur_server()) == NULL)
 			return (true);
-		snprintf(tp.create_sid, sizeof(tp.create_sid), "%s", arg[0] !=
-		    '\0' ? arg : s->id);
-		app.modal = MODAL_IF_CREATE;
-		app.modal_error[0] = '\0';
+		topo_if_create_open(arg[0] != '\0' ? arg : s->id, "epair");
+	} else if (strcmp(act, "input:topo-if-kind") == 0) {
+		if (if_kind_of(value) != NULL)
+			snprintf(tp.create_kind, sizeof(tp.create_kind), "%s",
+			    value);
 	} else if (strcmp(act, "topo-tunnel-destroy") == 0) {
 		for (i = 0; i < nlinks; i++)
 			if (strcmp(links[i].key, arg) == 0)

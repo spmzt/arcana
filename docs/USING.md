@@ -209,12 +209,20 @@ The console is laid out as a tree and tabs.
     address, a tunnel's two ends, traffic in all and as it is now. An
     address is added with **+ address** and taken off with its cross;
     **Up** and **Down** change the interface's state, **Edit** its MTU
-    and description. **+ interface** creates a cloned one: an epair, a
-    gif, gre, ipsec or vxlan tunnel with its two ends, a VLAN on its
-    parent, a bridge, and the rest; the cross on a cloned interface
-    destroys it. These are jobs that run `ifconfig(8)`. A change is
-    made live, and with **Keep it in rc.conf** also written there
-    through `sysrc(8)`, to be there after a boot: an address as the
+    and description. **+ interface** creates a cloned one: the kind
+    chosen from a list (epair, gif, gre, ipsec, me, vxlan, vlan,
+    bridge, lagg, tap, tun, lo, wg, ovpn), the number or the next
+    free, and the fields that kind takes: a tunnel's two ends, an
+    ipsec interface's reqid, a VXLAN's identifier, a VLAN's tag and
+    parent, a bridge's first member, an address and a peer's, MTU and
+    description; the cross on a cloned interface destroys it. The
+    WireGuard tab's **+ interface** opens the same form with wg chosen.
+    These are jobs that run `ifconfig(8)`. A change is made live, and
+    with **Keep it in rc.conf** also written there through `sysrc(8)`,
+    to be there after a boot: a created interface on
+    `cloned_interfaces` with its `create_args_<if>` and `ifconfig_<if>`
+    lines (a wg one is kept for wg-quick(8) instead, once it has its
+    key), an address as the
     next `ifconfig_<if>_alias<n>`, a route under a name of its own in
     `static_routes`, an interface in `cloned_interfaces`.
     **Netgraph** draws the host's netgraph(4) nodes and the hooks that

@@ -567,6 +567,7 @@ bool		 topo_action(const char *, const char *, const char *);
 bool		 ng_action(const char *, const char *, const char *);
 bool		 topo_form(const char *, const ucl_object_t *);
 bool		 topo_modal(struct html *);
+void		 topo_if_create_open(const char *, const char *);
 void		 fmt_rate(char *, size_t, double);
 
 /* vpn.c: a host's WireGuard interfaces and its BIRD. */

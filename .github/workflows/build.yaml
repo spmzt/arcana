@@ -1,11 +1,16 @@
 name: FreeBSD OCI Image
 
+# By hand only for now (2026-10-11): the images are a 16.0-CURRENT
+# userland and the action's VM a 15.1 kernel, so the test suite cannot
+# pass inside the container (docs/TODO.md, known limits). Put the push
+# and pull_request triggers back once the images match a release:
+#
+#   push:
+#     branches: [ "main" ]
+#     tags: [ "v*" ]
+#   pull_request:
+#     branches: [ "main" ]
 on:
-  push:
-    branches: [ "main" ]
-    tags: [ "v*" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
 
 jobs:
