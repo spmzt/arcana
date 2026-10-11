@@ -42,10 +42,16 @@ For the host's programs (arcana-agent, arcanactl, arcana-enrol,
 jailconf):
 
 - [cblink](https://github.com/spmzt/cblink): libcblink, `cblink-gen` and
-  `cblink.mk`, from its port `devel/cblink` or its own tree;
+  `cblink.mk`. It is the submodule `cblink/` of this tree, built by
+  `make` before the rest and used from its build directory, so nothing
+  of it need be installed; `make install` installs it with the rest. A
+  tree without the submodule (a release tarball, the port) uses an
+  installed `devel/cblink`;
 - `devel/libcbor`, which cblink needs.
 
 ```sh
+git clone --recurse-submodules https://github.com/spmzt/arcana.git
+# or, in a checkout: git submodule update --init
 pkg install libcbor
 ```
 
@@ -70,7 +76,7 @@ pkg install emscripten chromium
 Then:
 
 ```sh
-cp config.mk.sample config.mk     # where cblink and Kore are, if not /usr/local
+cp config.mk.sample config.mk     # where Kore is, if not /usr/local
 make                              # LIBUCL_SRC=/path/to/libucl without /usr/src
 make check                        # the test suite, with kyua(1)
 make install                      # PREFIX=/usr/local by default

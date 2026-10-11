@@ -31,10 +31,106 @@
   subscriber router; BFD on the tunnels by the same instances, the
   sessions read every second, a change a fault and the steering's
   word (Mplify 119 tasks 1.1 to 1.3 of docs/PLAN-119-SASE.md; BIRD
-  has no DSCP for BFD, so R159's DSCP is not set). Next: the rest of
-  119-1 (TCP MD5, NTP, the fault catalogue, threshold alerts), DHCP
-  and SLAAC at a UNI, the UX tasks. Later: Mplify 119's tunnel (GRE
-  carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
+  has no DSCP for BFD, so R159's DSCP is not set); TCP MD5 on the
+  edges' iBGP and NTP as a step (tasks 1.4, 1.5); the faults kept a
+  day with Mplify's types and severities, from the probes, BFD, BIRD
+  and the sampler, and threshold crossing alerts from the probes
+  (1.6, 1.7; storage as a resource fault and interface-down are not
+  raised yet); the lab run of 119-1 (1.8, in the verified list); the
+  monitor charts of each tunnel on Paths (UX-5); SLAAC at a UNI by
+  rtadvd and DHCP by dnsmasq in the service's table, with the kernel's
+  forwarding turned on by the apply (0.1, 0.2, in the verified list);
+  the routing domains (Mplify 119 §7.3): a service's domains in the
+  document, checked and unique, the breakout domain a table of its
+  own with the default route, the UNIs' routes imported and the flows
+  sent to it by setfib, the tunnels' addresses from the service
+  domain's prefix (119-2 tasks 2.1 to 2.3; stand-ins, not the lab:
+  the jails have no Internet to break out to); the UCS End Points
+  addressed by DHCP or SLAAC (the address learned from the host at
+  each plan), in a table of their own, and routed with the underlay by
+  a BIRD instance of the edge (2.4; stand-ins, the lab run to come).
+  Next: 2.5, the phase closed on the jails; then 119-3. Later: Mplify 119's tunnel
+  (GRE carrying an MPLS label inside IPsec, BGP L3VPN), and SASE.
+- The interface form (asked 2026-10-11): it helps too little. An
+  enum of interface kinds (gre, gif, ipsec, wg, vlan, vxlan, geneve,
+  bridge, epair, lagg, tap, tun, lo, ovpn) and the fields of each
+  shown for it alone (a tunnel's ends, a VLAN's tag and parent, a
+  VXLAN's id, a bridge's members, ...); a persist switch that keeps
+  the interface in rc.conf's cloned_interfaces with its ifconfig_
+  line; and WireGuard's tab makes a wg interface by the same job as
+  the form (if-create), then its keys and peers.
+- Jails made and changed from the console (asked 2026-10-11), the way
+  the user makes them on his servers. A shared `/etc/jail.conf` holds
+  the defaults, the user's domain in place of example.net:
+  `path = "/usr/jails/${name}"`, `host.hostname =
+  "${name}.<domain>"`, `host.domainname = "<domain>"`, `exec.start =
+  "/bin/sh /etc/rc"`, `exec.stop = "/bin/sh /etc/rc.shutdown jail"`,
+  `exec.consolelog = "/var/log/${name}_console.log"`, `exec.clean`,
+  `mount.devfs`. One ZFS dataset per jail, mounted at the path (as
+  `<pool>/jails/<name>`, under a dataset for the jails of the host):
+  made with the jail from a base jail's snapshot, two ways to choose
+  from: `zfs clone` (quick, tied to the snapshot) or `zfs send | zfs
+  recv` (a copy of its own, independent of the base); listed with the
+  jail, destroyed with it only when asked.
+  Each jail is a file of its own,
+  `/etc/jail.conf.d/<name>.conf`, that begins with `.include
+  "/etc/jail.conf";` and has the jail's block: `devfs_ruleset`,
+  `sysvsem = new` and the like, `allow.raw_sockets`, `ip4.addr =
+  "bridge0|172.23.1.43"`, `ip6.addr = "bridge0.20|2a01:...:443"` (an
+  interface and an address each), and `.include`s of templates kept
+  beside it, such as a certbot one that adds `exec.created +=` and
+  `exec.poststop +=` lines (directories made, nullfs mounts of another
+  jail's certificates, unmounted at stop); a template is written once
+  and included by every jail that needs it. The console's forms: the
+  shared defaults once per host, a jail (name, dataset, addresses on
+  their interfaces, the switches, the templates to include), a
+  template (its lines); the agent writes the files (libjailconf
+  already parses them), makes the dataset and starts the jail.
+- Asked for on 2026-10-11, each a task of its own, in no order yet:
+  - Users and groups, roles (RBAC) and tenants in the console: who
+    sees and changes which hosts and services.
+  - Mail notifications of faults, jobs and runs.
+  - The console's CA: one imported, or made and self-signed from the
+    panel, given to each agent and trusted there; the console as a CA
+    and as an intermediate CA under another.
+  - A session's lifetime set in Settings.
+  - LDAP for the console's sign-in.
+  - The base system's ssh, further: the banner, the users let in,
+    authorized keys, host keys and their fingerprints, host keys
+    signed by a CA key.
+  - IDS/IPS by Snort, a plugin (luxuria) as before: Snort and its
+    rules updated and configured from the panel.
+  - The console clustered; disaster recovery across console clusters.
+  - Agents in an HA pair on identical hardware and ports (CARP, the
+    state shared), with CARP on its own for a host.
+  - VPN groups and road warrior setups of several clients, policies
+    and pools.
+  - A Devices page of its own, a table of the hosts (sorted and
+    filtered), the rail's host list moved there.
+  - A certificates tab per host, by certctl and OpenSSL.
+  - Configuration templates: a host's setup exported to one and a
+    template applied to a host; YAML where the standard allows,
+    UCL otherwise.
+  - A span tab: traffic mirrored by a BPF interface, or by ipfw rules
+    with BPF.
+  - Labels on interfaces, for the UCS they carry.
+  - The device's rollback timer (safe mode's wait) set in the console.
+  - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
+  - IGMP and MLD configured.
+  - NDP and ARP entries added and deleted by hand, temporary or
+    permanent.
+  - MSS clamping on transports.
+  - QoS on ipfw by forms: pipes, schedulers, queues, their masks and
+    the rules that use them, beyond what SD-WAN makes.
+  - Every table exported as CSV.
+  - Prefix lists kept by the console and used on any host.
+  - SD-WAN policies by named lists (MEF 70.2, no vendor's model):
+    lists of UCS, of prefixes (as the zones hold them), of edges, of
+    UCS End Points (the edge's underlay address, the UCS, the tunnel
+    kind and a preference) and of services, kept once and called by
+    an AFS match or a policy's criteria; and the policy made in
+    three steps: the lists, then the flows (the AFS) and the policy
+    they get, then the policy map at each SWVC End Point.
 - WireGuard: preshared keys; a peer's key rotated.
 - Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a
@@ -169,6 +265,37 @@ What was once in the list above, and when it was run:
   (ESP AES-GCM-256, the first packet lost to the trap), and a ping
   from one UNI to the other through it; the UNI's address cannot be
   used from FIB 0. net.fibs is per vnet: a new one has 1.
+- SLAAC and DHCP at a UNI (MEF 70.2 §11.4, §11.5; tasks 0.1 and 0.2,
+  2026-10-11, the lab's sub step): a third vnet jail on an epair
+  behind the first edge's UNI, the UNI in FIB 1 with the prefixes,
+  the agent told as the apply would: rtadvd with the /64 and RDNSS,
+  dnsmasq in FIB 1 with a range, the router and the DNS server. The
+  host's rtsol got it a 2001:db8:10::/64 address and a default route
+  by the edge's link-local; dhclient got it 10.10.0.125 with the
+  router; it pinged the far UNI through the edge and the gre tunnel;
+  the agent listed the lease with the host's name. Found: a vnet
+  jail's devfs hides bpf, which dnsmasq's DHCP and dhclient need
+  (no ruleset of this host unhides it; the lab unhides it by hand).
+  Not run: DHCPv6 (dnsmasq's enable-ra), the unmake (rtadvd's entry
+  removed, dnsmasq stopped), which the stand-ins cover.
+- Mplify 119 tasks 1.1 to 1.7 on two vnet jails (2026-10-11, the
+  lab build/lab/bfd-lab.sh): an arcana-agent of its own inside each
+  jail, a gre tunnel in FIB 1, a BIRD 3.3.3 instance each with BFD on
+  the tunnel and iBGP signed by MD5, probes with a threshold, NTP
+  written and ntpd enabled. BFD and BGP established, the far UNI's
+  prefix installed by BGP, ping UNI to UNI in FIB 1. The epair cut:
+  the probe's tunnel fault and the BFD fault within seconds, BGP down
+  by BFD; mended: both cleared, BGP back within the error wait time.
+  A threshold under the delay: a tca fault; over it: cleared. Found
+  and fixed on the way: a peer's kernel-learned host routes exported
+  by iBGP made the next hop resolve in a circle (now only the UNIs'
+  routes go to the edges, and the console's static routes outrank
+  BGP's); BFD and BGP start down, so a fault needs them up once; a
+  BFD session that vanishes with its BGP counts as down; BIRD's
+  "Reconfiguration in progress" is taken; a running instance is told
+  again rather than started; an instance that stops answering is
+  started again within five seconds, with a fault saying so. Not done in the
+  lab: the steering by BFD (no rules on the jails), resource faults.
 - Building the agent as `nobody` when `arcana-agent` runs as root
   (2026-10-04, on the console's host): the clone over SSH with the key
   set for it, make, and the program run with `-V`, each under
@@ -278,6 +405,16 @@ What was once in the list above, and when it was run:
   one.
 
 ## Known limits
+
+- The GitHub workflow (2026-10-11): the images it builds on
+  (ghcr.io/spmzt/freebsd-emscripten, cblink) carry a 16.0-CURRENT
+  userland, and vmactions/freebsd-vm boots 15.1 at most, so inside the
+  container head(1), tail(1) and the like die on casper ("Invalid
+  pdflags at fork") and the agent's test suite fails there while it
+  passes on a 16.0 host; the same skew is the likely cause of the
+  ipsec and vnet cases' garbled arguments. The images need a 15.1
+  base, or the tests a kernel of their own. Until then the build
+  cannot go green.
 
 From a review of the whole code for flaws of security and design; what
 it found and could be fixed was, and this is what stays:

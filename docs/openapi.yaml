@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.92.0
+  version: 0.101.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -787,6 +787,12 @@ paths:
       summary: What the host's probes of its SD-WAN tunnels have seen
       parameters:
         - $ref: "#/components/parameters/server"
+        - name: after
+          in: query
+          schema: { type: integer }
+          description: Only the samples after this time (seconds since
+            the epoch), for a reader that keeps the earlier ones; the
+            rest of the answer is whole.
       responses:
         "200":
           description: data as the agent's sdwan operation answers it:
@@ -797,7 +803,13 @@ paths:
             the services' BIRD instances at the edge, each its name, fib,
             running, protocols (name, proto, state, info) and bfd, its
             sessions (address, interface, state, since); a steering
-            candidate with a session says bfd too.
+            candidate with a session says bfd too; dhcp, the services'
+            dnsmasq instances at the edge, each its name, fib, running
+            and leases (expires, id, address, name); bird lists the
+            UCS end points' instances (ucs<vrf>) with the services';
+            faults, the day's,
+            each t, type, severity (Cleared when it is), was, object,
+            by, description, cleared and cleared_at.
   /api/servers/{server}/history:
     get:
       tags: [servers]
@@ -1196,12 +1208,14 @@ paths:
   /api/sdwan/apply:
     get:
       tags: [sdwan]
-      summary: How the last apply went
+      summary: How the last apply went, and the ones before
       responses:
         "200":
           description: applying, and apply (state running, done or
             failed; started, ended, fresh, its steps each with its
-            state and detail, and the tunnels).
+            state and detail, and the tunnels); history, the last fifty
+            applies, each started, ended, state, fresh, steps, made,
+            remade, unmade, failed, and edges with each one's steps.
     post:
       tags: [sdwan]
       summary: Apply, in a thread of the console

@@ -3233,14 +3233,20 @@ static const char sdwan_good[] =
     "\"tunnel\":{\"kind\":\"gre\",\"ipsec\":true}},{\"id\":\"mpls\","
     "\"type\":\"private\",\"billing\":\"flat-rate\",\"tunnel\":{\"kind\":"
     "\"geneve\"}}],"
-    "\"edges\":[{\"server\":\"@A\",\"ucs_end_points\":[{\"id\":\"a-inet\","
+    "\"edges\":[{\"server\":\"@A\",\"ntp\":[\"ntp.example.org\",\"10.99.0.9\"],"
+    "\"ucs_end_points\":[{\"id\":\"a-inet\","
     "\"ucs\":\"inet\",\"interface\":\"vtnet0\",\"breakout\":true},{\"id\":"
     "\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"}]},{\"server\":"
     "\"@B\",\"ucs_end_points\":[{\"id\":\"b-inet\",\"ucs\":\"inet\","
     "\"interface\":\"vtnet0\"},{\"id\":\"b-mpls\",\"ucs\":\"mpls\","
     "\"interface\":\"vtnet1\",\"backup\":true}]}],"
-    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"as\":64600,\"ucs\":[\"inet\",\"mpls\"],"
+    "\"swvcs\":[{\"id\":\"acme\",\"fib\":1,\"as\":64600,\"md5\":\"edges-secret\","
+    "\"ucs\":[\"inet\",\"mpls\"],"
     "\"reserved_prefixes\":[\"100.64.0.0/24\"],"
+    "\"domains\":{\"service\":{\"prefix\":\"100.64.0.0/24\",\"rd\":\"64600:1\","
+    "\"rt\":[\"64600:1\"],\"label\":1001},\"breakout\":{\"fib\":2,\"rd\":"
+    "\"64600:2\",\"label\":1002},\"subscriber\":{\"rd\":\"64600:3\",\"label\":"
+    "1003}},"
     "\"zones\":[{\"name\":\"office\",\"prefixes\":[\"10.1.0.0/16\"],"
     "\"policies\":[{\"app\":\"web\",\"policy\":\"fast\"}]},{\"name\":"
     "\"rest\",\"prefixes\":\"Default\"}],"
@@ -3248,6 +3254,7 @@ static const char sdwan_good[] =
     "\"roots\":[\"hq\"],\"leaves\":[\"branch\"]}],"
     "\"intervals\":{\"eval\":1000,\"arrival\":100,\"ir\":500},"
     "\"bfd\":{\"interval\":200,\"multiplier\":3},"
+    "\"tca\":{\"delay\":30,\"loss\":0.05,\"damping\":2},"
     "\"rate_limiters\":[{\"name\":\"shared\",\"commit\":1000000,\"limit\":"
     "5000000}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
@@ -3266,8 +3273,10 @@ static const char sdwan_good[] =
     "\"virtual-topology\":\"hub\"}},{\"name\":\"quiet\",\"direction\":"
     "\"egress\",\"criteria\":{\"egress-block\":\"discard\"}}],"
     "\"end_points\":[{\"id\":\"hq\",\"edge\":\"@A\",\"uni\":{\"id\":"
-    "\"uni-hq\",\"interface\":\"vtnet2\",\"ipv4\":{\"mode\":\"static\","
-    "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"]},\"routes\":"
+    "\"uni-hq\",\"interface\":\"vtnet2\",\"ipv4\":{\"mode\":\"dhcp\","
+    "\"prefix\":\"10.1.0.0/24\",\"provider\":[\"10.1.0.1\"],\"reserved\":"
+    "[\"10.1.0.0/26\",\"10.1.0.200/30\"],\"dns\":[\"10.1.0.1\"],\"lease\":"
+    "\"1h\"},\"routes\":"
     "[{\"prefix\":\"10.1.8.0/22\",\"next_hop\":\"10.1.0.2\",\"distance\":"
     "10}],\"bgp\":{\"family\":\"ipv4\",\"as\":65010,\"neighbors\":"
     "[\"10.1.0.2\"],\"password\":\"s3cret\",\"hold_time\":90,\"distance\":"
@@ -3275,10 +3284,47 @@ static const char sdwan_good[] =
     "\"hubonly\",\"egress\":\"quiet\"}],\"nat\":{\"ip_version\":\"ipv4\","
     "\"public_prefix\":\"198.51.100.0/30\"}},{\"id\":\"branch\",\"edge\":"
     "\"@B\",\"uni\":{\"id\":\"uni-br\",\"interface\":\"vtnet2\",\"vlan\":20,"
-    "\"ipv6\":{\"mode\":\"static\",\"prefix\":\"2001:db8:1::/64\","
-    "\"provider\":[\"2001:db8:1::1\"]}}}]}]}";
+    "\"ipv6\":{\"mode\":\"slaac\",\"prefix\":\"2001:db8:1::/64\","
+    "\"provider\":[\"2001:db8:1::1\"],\"dns\":[\"2001:db8:1::1\"]}}}]}]}";
 
 /* s with its first from made to, into out; false when from is not there. */
+/* An interface of this host with an IPv4 address that is not the
+ * loopback's, and the address: the first up, by ifconfig(8). */
+static bool
+host_iface(char *ifn, size_t ilen, char *addr, size_t alen)
+{
+	FILE	*fp;
+	char	 line[200], *p, *q;
+
+	ifn[0] = addr[0] = '\0';
+	if ((fp = popen("ifconfig -l -u", "r")) == NULL)
+		return (false);
+	if (fgets(line, sizeof(line), fp) == NULL)
+		line[0] = '\0';
+	pclose(fp);
+	for (p = line; (q = strsep(&p, " \n")) != NULL; ) {
+		char	cmd[200];
+
+		if (q[0] == '\0' || strncmp(q, "lo", 2) == 0 || strncmp(q, "cni",
+		    3) == 0 || strncmp(q, "pflog", 5) == 0)
+			continue;
+		snprintf(cmd, sizeof(cmd), "ifconfig %s inet 2>/dev/null | awk "
+		    "'/inet /{print $2; exit}'", q);
+		if ((fp = popen(cmd, "r")) == NULL)
+			continue;
+		if (fgets(addr, (int)alen, fp) != NULL && addr[0] != '\0' &&
+		    addr[0] != '\n') {
+			addr[strcspn(addr, "\n")] = '\0';
+			pclose(fp);
+			snprintf(ifn, ilen, "%s", q);
+			return (true);
+		}
+		pclose(fp);
+		addr[0] = '\0';
+	}
+	return (false);
+}
+
 static bool
 swap_in(const char *s, const char *from, const char *to, char *out,
     size_t len)
@@ -3355,6 +3401,8 @@ ATF_TC_BODY(sdwan, tc)
 		    "as_override" },
 		{ "\"as\":65010", "\"as\":0", "subscriber's AS" },
 		{ "\"multiplier\":3", "\"multiplier\":1", "(R159)" },
+		{ "\"10.99.0.9\"]", "\"not a host!\"]", "ntp:" },
+		{ "\"damping\":2", "\"damping\":0", "(CR2)" },
 		{ "\"vlan\":20", "\"vlan\":5000", "(§11.2)" },
 		{ "\"virtual-topology\":\"hub\"", "\"virtual-topology\":\"nope\"",
 		    "(R47)" },
@@ -3374,6 +3422,20 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"egress-block\":\"discard\"", "\"encryption\":\"optional\"",
 		    "egress policy" },
 		{ "\"ipv6\":{", "\"ipv6\":{\"mode\":\"none\"},\"x\":{", "(R128)" },
+		/* The UCS end points' addressing and routing (Mplify 119). */
+		{ "\"interface\":\"vtnet1\",\"backup\":true", "\"interface\":"
+		    "\"vtnet1\",\"backup\":true,\"addressing\":\"ppp\"",
+		    "(Mplify 119 §12.2.3.2)" },
+		{ "\"interface\":\"vtnet1\",\"backup\":true", "\"interface\":"
+		    "\"vtnet1\",\"backup\":true,\"vrf\":0", "(§12.2.3.4)" },
+		{ "\"interface\":\"vtnet1\",\"backup\":true", "\"interface\":"
+		    "\"vtnet1\",\"backup\":true,\"routing\":{\"bgp\":{\"family\":"
+		    "\"ipv4\",\"neighbors\":[\"10.99.0.9\"]}}", "AS number" },
+		/* The routing domains (Mplify 119). */
+		{ "\"breakout\":{\"fib\":2", "\"breakout\":{\"fib\":1", "(R20)" },
+		{ "\"label\":1001", "\"label\":7", "(R19)" },
+		{ "\"label\":1002", "\"label\":1001", "(R19)" },
+		{ "\"rd\":\"64600:1\"", "\"rd\":\"x:1\"", "(R16)" },
 		/* Another service with a UNI on the same interface and VLAN
 		 * of the same edge. */
 		{ "\"swvcs\":[", "\"swvcs\":[{\"id\":\"other\",\"fib\":2,\"ucs\":"
@@ -3461,7 +3523,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	struct authn	a;
 	struct resp	r;
 	char		cwd[1024], body[400], sa[16], sb[16];
-	char		doc[8192], t1[8192];
+	char		doc[8192], t1[8192], t2[300], lifn[32], laddr[64];
 	size_t		i;
 
 	start(tc, 0, NULL);
@@ -3485,16 +3547,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	static const char *const edits[][2] = {
 		{ "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"a-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
-		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\"" },
+		    "\"address\":\"192.0.2.1\",\"gateway\":\"192.0.2.254\","
+		    "\"vrf\":3,\"routing\":{\"bgp\":{\"family\":\"ipv4\",\"as\":"
+		    "65000,\"neighbors\":[\"192.0.2.254\"],\"password\":\"up\"}}" },
 		{ "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
 		    "\"id\":\"a-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
 		    "\"address\":\"10.99.0.1\"" },
 		{ "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\"",
 		    "\"id\":\"b-inet\",\"ucs\":\"inet\",\"interface\":\"vtnet0\","
 		    "\"address\":\"192.0.2.2\"" },
-		{ "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\"",
-		    "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":\"vtnet1\","
-		    "\"address\":\"10.99.0.2\"" },
 		{ "\"id\":\"uni-hq\",\"interface\":\"vtnet2\"",
 		    "\"id\":\"uni-hq\",\"interface\":\"lo0\"" },
 		{ "\"id\":\"uni-br\",\"interface\":\"vtnet2\"",
@@ -3502,6 +3563,21 @@ ATF_TC_BODY(sdwan_apply, tc)
 		/* gif: geneve's address needs an interface the kernel has. */
 		{ "\"kind\":\"geneve\"", "\"kind\":\"gif\"" },
 	};
+	/* b-mpls addressed by DHCP (Mplify 119 §12.2.3.2): its address is
+	 * not in the document but learned from the host, so it is an
+	 * interface of this host with an IPv4 address, whichever that is;
+	 * a host without one keeps the address in the document. */
+	if (host_iface(lifn, sizeof(lifn), laddr, sizeof(laddr)))
+		snprintf(t2, sizeof(t2), "\"id\":\"b-mpls\",\"ucs\":\"mpls\","
+		    "\"interface\":\"%s\",\"addressing\":\"dhcp\"", lifn);
+	else {
+		snprintf(laddr, sizeof(laddr), "10.99.0.2");
+		snprintf(t2, sizeof(t2), "\"id\":\"b-mpls\",\"ucs\":\"mpls\","
+		    "\"interface\":\"vtnet1\",\"address\":\"10.99.0.2\"");
+	}
+	ATF_REQUIRE(swap_in(doc, "\"id\":\"b-mpls\",\"ucs\":\"mpls\",\"interface\":"
+	    "\"vtnet1\"", t2, t1, sizeof(t1)));
+	snprintf(doc, sizeof(doc), "%s", t1);
 	for (i = 0; i < nitems(edits); i++) {
 		ATF_REQUIRE(swap_in(doc, edits[i][0], edits[i][1], t1,
 		    sizeof(t1)));
@@ -3522,8 +3598,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 */
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK_EQ(2, (int)ucl_array_size(ucl_object_lookup(r.json,
-	    "tunnels")));
+	ATF_REQUIRE_EQ_MSG(2, (int)ucl_array_size(ucl_object_lookup(r.json,
+	    "tunnels")), "%s", r.body);
 	ATF_CHECK_STREQ("gre", jstr(&r, "tunnels.0.kind"));
 	ATF_CHECK_STREQ("true", jstr(&r, "tunnels.0.ipsec"));
 	ATF_CHECK_STREQ("gre100", jstr(&r, "tunnels.0.ends.0.ifname"));
@@ -3541,7 +3617,8 @@ ATF_TC_BODY(sdwan_apply, tc)
 	 * the service's table, as the service's probe settings say. */
 	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-probes\",\"targets\":[{"
 	    "\"id\":\"acme/a-inet-b-inet\",\"address\":\"100.64.0.1\",\"fib\":1,"
-	    "\"eval\":1000}") != NULL, "%s", r.body);
+	    "\"eval\":1000,\"tca\":{\"delay\":30,\"loss\":0.050000,\"damping\":2}}")
+	    != NULL, "%s", r.body);
 	/* The rules: the UNI's packets to their zone's block, each flow
 	 * with its policy's table, the rest dropped; and the steering. */
 	ATF_CHECK_MSG(strstr(r.body, "\"10 skipto tablearg ip from table("
@@ -3592,18 +3669,57 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "\"nat 3001 config ip 198.51.100.1\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"11 nat 3001 ip4 from table(sw1_known) to "
 	    "not table(sw1_known) out xmit vtnet0\"") != NULL);
-	ATF_CHECK(strstr(r.body, "\"11 setfib 1 ip from any to 198.51.100.1 in "
+	ATF_CHECK(strstr(r.body, "\"11 setfib 2 ip from any to 198.51.100.1 in "
 	    "recv vtnet0\"") != NULL);
 	ATF_CHECK(strstr(r.body, "\"11 nat 3001 ip4 from any to 198.51.100.1 in "
 	    "recv vtnet0\"") != NULL);
-	ATF_CHECK(strstr(r.body, "\"11 setfib 1 ip from any to table(sw1_known) "
+	ATF_CHECK(strstr(r.body, "\"11 setfib 2 ip from any to table(sw1_known) "
 	    "in recv vtnet0\"") != NULL);
-	ATF_CHECK(strstr(r.body, "\"key\":\"route:acme:192.0.2.254/32\"") !=
+	ATF_CHECK(strstr(r.body, "\"key\":\"route:acme:2:192.0.2.254/32\"") !=
 	    NULL);
 	ATF_CHECK_MSG(strstr(r.body, "\"title\":\"0.0.0.0/0 via 192.0.2.254, "
-	    "fib 1 (the Internet, by local breakout)\"") != NULL, "%s", r.body);
+	    "fib 2 (the Internet, by local breakout)\"") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"title\":\"0.0.0.0/0 via 100.64.0.0, fib "
-	    "1 (the Internet, by breakout at a)\"") != NULL, "%s", r.body);
+	    "2 (the Internet, by breakout at a)\"") != NULL, "%s", r.body);
+	/* The breakout domain (Mplify 119 R20-R26): the UNIs' routes in
+	 * its table, the flows that break out sent to it, the way back in
+	 * by it; the service's own table without a default route. */
+	ATF_CHECK_MSG(strstr(r.body, "/24 via lo0, fib 2 (the UNI's hosts, in the "
+	    "breakout domain (R25))\"") != NULL || strstr(r.body, "/24 via vtnet2, "
+	    "fib 2 (the UNI's hosts, in the breakout domain (R25))\"") != NULL,
+	    "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"10.1.8.0/22 via 10.1.0.2, fib 2 (behind the "
+	    "UNI, in the breakout domain (R26))\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"12 setfib 2 tcp from any to not table("
+	    "sw1_known) dst-port 80,https\"") != NULL);
+	ATF_CHECK(strstr(r.body, "setfib 2 ip from any to table(sw1_known) in "
+	    "recv vtnet0") != NULL);
+	ATF_CHECK(strstr(r.body, "\"100.64.0.0/32 via gre101, fib 2 (the tunnel's "
+	    "far end, in the breakout domain)\"") != NULL);
+	ATF_CHECK(strstr(r.body, "0.0.0.0/0 via 192.0.2.254, fib 1 (") == NULL);
+	/* The UCS end points (Mplify 119 §12.2.3): b-mpls addressed by
+	 * DHCP, its address learned from the host (the helper says
+	 * epair1b has 10.99.0.2), so the geneve tunnel still has its far
+	 * end; a-inet in its own table, the gre tunnel's outer packets by
+	 * it, BGP with the underlay by a BIRD instance of its own. */
+	if (lifn[0] != '\0') {
+		snprintf(t2, sizeof(t2), "\"kind\":\"if-set\",\"interface\":\"%s\","
+		    "\"persist\":true,\"addressing\":\"dhcp\"", lifn);
+		ATF_CHECK_MSG(strstr(r.body, "\"key\":\"ucs:b-mpls\"") != NULL &&
+		    strstr(r.body, t2) != NULL, "%s", r.body);
+	}
+	snprintf(t2, sizeof(t2), "\"tunnel_remote\":\"%s\"", laddr);
+	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"if-set\",\"interface\":\"vtnet0\","
+	    "\"persist\":true,\"fib\":3") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"tunnel_remote\":\"192.0.2.2\",\"tunnelfib\":3")
+	    != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "{\"name\":\"ucs3\",\"fib\":3,\"conf\":\"# "
+	    "Written by the Arcana console: UCS end point a-inet at a, routing "
+	    "with the underlay in table 3.") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "protocol bgp ucs_a_inet_0 {\\n\\tlocal as 64512;"
+	    "\\n\\tneighbor 192.0.2.254 as 65000;\\n\\tinterface \\\"vtnet0\\\";")
+	    != NULL);
 	/* Routing: a BIRD instance of the service on each edge, in its
 	 * table, iBGP between them by each tunnel, and at hq's UNI BGP
 	 * with the subscriber as the entry says. */
@@ -3614,7 +3730,39 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(strstr(r.body, "router id 100.64.0.0;") != NULL);
 	ATF_CHECK(strstr(r.body, "kernel table 1;\\n\\tlearn;\\n\\tpersist;") !=
 	    NULL);
-	ATF_CHECK(strstr(r.body, "interface \\\"lo0\\\";") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "protocol direct {\\n\\tipv4;\\n\\tipv6;\\n"
+	    "\\tinterface \\\"lo0\\\", \\\"gre100\\\", \\\"gif102\\\";\\n}") != NULL,
+	    "%s", r.body);
+	ATF_CHECK(strstr(r.body, "&& dest = RTD_UNICAST;") != NULL);
+	ATF_CHECK(strstr(r.body, "import filter { preference = 200; accept; };") !=
+	    NULL);
+	ATF_CHECK_MSG(strstr(r.body, "filter to_edges {\\n\\tif source = RTS_INHERIT "
+	    "then reject;\\n\\tif net ~ [ 100.64.0.0/24+, 100.64.0.0/24+ ] then reject;"
+	    "\\n\\taccept;"
+	    "\\n}") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "export filter to_edges;") != NULL);
+	/* The hosts' addresses: hq's IPv4 by DHCP, dnsmasq from packages in
+	 * the service's table, its ranges the subnet less the reserved
+	 * prefixes and the provider's address, the router and DNS told;
+	 * branch's IPv6 by SLAAC, rtadvd on the VLAN with RDNSS; the
+	 * kernel forwarding on both edges. */
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"pkg-install\",\"packages\":[\"dnsmasq"
+	    "\"]") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-dhcp\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana "
+	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
+	    "%s", r.body);
+	/* The UNI is lo0 here (swapped in for the apply). */
+	ATF_CHECK_MSG(strstr(r.body, "interface=lo0\\ndhcp-range=set:lo0,"
+	    "10.1.0.64,10.1.0.199,255.255.255.0,1h\\ndhcp-range=set:lo0,"
+	    "10.1.0.204,10.1.0.254,255.255.255.0,1h\\ndhcp-option=tag:lo0,"
+	    "option:router,10.1.0.1\\ndhcp-option=tag:lo0,option:dns-server,"
+	    "10.1.0.1\\n") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"rtadvd\",\"interface\":\"vlan")
+	    != NULL && strstr(r.body, "\"args\":[\"2001:db8:1::/64\",\"2001:db8:1::1"
+	    "\"],\"persist\":true") != NULL, "%s", r.body);
+	ATF_CHECK(strstr(r.body, "\"kind\":\"sysctl\",\"args\":[\"net.inet6.ip6."
+	    "forwarding\",\"1\"]") != NULL);
 	ATF_CHECK_MSG(strstr(r.body, "# acme/a-inet-b-inet, to b\\nprotocol bgp "
 	    "edge0 from edge {\\n\\tlocal 100.64.0.0 as 64600;\\n\\tneighbor "
 	    "100.64.0.1 as 64600;\\n}") != NULL, "%s", r.body);
@@ -3622,7 +3770,13 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "protocol bfd {\\n\\tinterface \\\"gre100\\\", "
 	    "\\\"gif102\\\" {\\n\\t\\tinterval 200 ms;\\n\\t\\tmultiplier 3;\\n\\t};"
 	    "\\n}") != NULL, "%s", r.body);
-	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\tbfd on;\\n") != NULL);
+	ATF_CHECK(strstr(r.body, "hold time 30;\\n\\terror wait time 10, 60;\\n\\tbfd "
+	    "on;\\n\\tpassword \\\"edges-secret\\\";\\n") != NULL);
+	/* NTP at a, with the FIBs, by the ntp job; taken away by it too. */
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"ntp\",\"phase\":1,\"title\":\"NTP: "
+	    "ntpd by 2 servers, for the time faults and keys go by\",\"make\":[{"
+	    "\"kind\":\"ntp\",\"args\":[\"ntp.example.org\",\"10.99.0.9\"],"
+	    "\"persist\":true}]") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "protocol bgp uni_hq_0 {\\n\\tlocal as "
 	    "64600;\\n\\tneighbor 10.1.0.2 as 65010;\\n\\tinterface \\\"lo0\\\";"
 	    "\\n\\tpreference 106;\\n\\tpassword \\\"s3cret\\\";\\n\\thold time "
@@ -3655,6 +3809,11 @@ ATF_TC_BODY(sdwan_apply, tc)
 	sdwan_wait(&r);
 	ATF_CHECK_MSG(strcmp(jstr(&r, "apply.state"), "done") == 0, "%s",
 	    r.body);
+	/* Into the history: this one, done, with what it made. */
+	ATF_CHECK_MSG(jstr(&r, "history.0.state") != NULL && strcmp(jstr(&r,
+	    "history.0.state"), "done") == 0 && jstr(&r, "history.0.made") !=
+	    NULL && atoi(jstr(&r, "history.0.made")) > 10 && jstr(&r,
+	    "history.1.state") == NULL, "%s", r.body);
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^gre100 create' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q '^gre100 fib 1' ifconfig.log") == 0);
@@ -3664,8 +3823,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q '^gre100 inet 100.64.0.0/31 100.64.0.1' "
 	    "ifconfig.log") == 0);
-	ATF_CHECK(system("grep -q '^gif102 tunnel 10.99.0.1 10.99.0.2' "
-	    "ifconfig.log") == 0);
+	snprintf(t2, sizeof(t2), "grep -q '^gif102 tunnel 10.99.0.1 %s' "
+	    "ifconfig.log", laddr);
+	ATF_CHECK_MSG(system(t2) == 0, "%s", t2);
 	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q 'vlan104 create vlan 20 vlandev lo0' "
 	    "ifconfig.log") == 0);
@@ -3688,8 +3848,16 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(jstr(&r, "data.rules.set") != NULL && strcmp(jstr(&r,
 	    "data.rules.set"), "30") == 0, "%s", r.body);
 	resp_free(&r);
+	ATF_CHECK(system("grep -q '^setfib -F 1 ./fake-dnsmasq -C .*sdwan-dhcp-sw1"
+	    ".conf -x ' setfib.log") == 0);
+	ATF_CHECK(system("grep -q 'addr=\"2001:db8:1::\":prefixlen#64:rdnss=\""
+	    "2001:db8:1::1\":' rtadvd.conf && grep -q '^vlan[0-9]*:' rtadvd.conf "
+	    "&& grep -q '^rtadvd_enable=\"YES\"' rc.conf") == 0);
 	ATF_CHECK(system("grep -q '^setfib -F 1 .*fake-bird -c .*sdwan-bird-sw1"
 	    ".conf -s ' setfib.log") == 0);
+	ATF_CHECK(system("grep -q '^server ntp.example.org iburst$' ntp.conf && "
+	    "grep -q '^server 10.99.0.9 iburst$' ntp.conf && grep -q "
+	    "'^ntpd_enable=\"YES\"' rc.conf") == 0);
 	ATF_CHECK(system("grep -q 'add 12 set 30 fwd tablearg tcp from any to "
 	    "table(sw1_z0p0_4) dst-port 80,https' ipfw.log") == 0);
 	ATF_CHECK(system("grep -q 'ipfw -q set enable 30' ipfw.log") == 0);
@@ -3800,11 +3968,12 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	http("GET", "/api/sdwan/plan", NULL, &r);
 	EXPECT(&r, 200);
-	ATF_CHECK_MSG(strstr(r.body, "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
-	    "\"local\",\"10.99.0.1\",\"remote\",\"10.99.0.2\"]") != NULL &&
-	    strstr(r.body, "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
-	    "\"local\",\"10.99.0.2\",\"remote\",\"10.99.0.1\"]") != NULL,
-	    "%s", r.body);
+	snprintf(t2, sizeof(t2), "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
+	    "\"local\",\"10.99.0.1\",\"remote\",\"%s\"]", laddr);
+	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
+	snprintf(t2, sizeof(t2), "\"args\":[\"mode\",\"l3\",\"id\",\"102\","
+	    "\"local\",\"%s\",\"remote\",\"10.99.0.1\"]", laddr);
+	ATF_CHECK_MSG(strstr(r.body, t2) != NULL, "%s", r.body);
 	resp_free(&r);
 }
 

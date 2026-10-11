@@ -70,6 +70,11 @@ struct target {
 	struct sockaddr_storage	 sa;
 	int			 fib, interval, size, count, dscp, down, up;
 	int			 timeout, eval, history, report;
+	/* Threshold crossing alerts (Mplify 119 §11.4, MEF 105 §7.4): a
+	 * threshold a metric, 0 for none; damping, intervals in a row. */
+	double			 tca[3];
+	int			 damping, tca_over[3], tca_under[3];
+	bool			 tca_on[3];
 	int			 sock;
 	uint16_t		 ident, seq;
 	struct {
@@ -222,6 +227,48 @@ state_set(struct target *t, int state)
 	    t->misses);
 	logmsg(state == ST_UP ? LOG_NOTICE : LOG_WARNING, "sdwan: %s (%s) is "
 	    "%s", t->id, t->address, state_names[state]);
+	if (state == ST_DOWN)
+		fault_set("tunnel", "Major", t->id, "probe", "no answer from %s "
+		    "after %d probes", t->address, t->misses);
+	else
+		fault_clear("tunnel", t->id, "%s answers again", t->address);
+}
+
+/* The sample against the thresholds: an alert set or cleared. */
+static void
+tca_check(struct target *t, const struct sample *s)
+{
+	static const char *const names[] = { "delay", "ipdv", "loss" };
+	static const char *const units[] = { " ms", " ms", "" };
+	double		v[3];
+	char		obj[160];
+	int		i;
+
+	v[0] = s->delay;
+	v[1] = s->ipdv;
+	v[2] = s->loss;
+	for (i = 0; i < 3; i++) {
+		if (t->tca[i] <= 0)
+			continue;
+		snprintf(obj, sizeof(obj), "%s/%s", t->id, names[i]);
+		if (v[i] > t->tca[i]) {
+			t->tca_under[i] = 0;
+			if (!t->tca_on[i] && ++t->tca_over[i] >= t->damping) {
+				t->tca_on[i] = true;
+				fault_set("tca", "Minor", obj, "probe", "%s %.3g%s "
+				    "over the threshold %.3g%s", names[i], v[i],
+				    units[i], t->tca[i], units[i]);
+			}
+		} else {
+			t->tca_over[i] = 0;
+			if (t->tca_on[i] && ++t->tca_under[i] >= t->damping) {
+				t->tca_on[i] = false;
+				fault_clear("tca", obj, "%s %.3g%s, under the "
+				    "threshold %.3g%s again", names[i], v[i],
+				    units[i], t->tca[i], units[i]);
+			}
+		}
+	}
 }
 
 static void
@@ -248,6 +295,8 @@ window_end(struct target *t, double now)
 	    0;
 	s->min = t->w_recv > 0 ? t->w_min / 2 : 0;
 	s->max = t->w_recv > 0 ? t->w_max / 2 : 0;
+	if (t->w_sent > 0)
+		tca_check(t, s);
 reset:
 	t->w_sent = t->w_recv = t->w_ipdv_n = 0;
 	t->w_sum = t->w_ipdv_sum = 0;
@@ -589,6 +638,22 @@ targets_parse(struct work *w, const char *json, struct target *new,
 		t->eval = (int)num(o, "eval", 1000, 100, 86400000, &bad);
 		t->history = (int)num(o, "history", 3600, 0, SAMPLES_MAX, &bad);
 		t->report = (int)num(o, "report", 1, 1, 1000, &bad);
+		/* Thresholds: delay and ipdv in ms, loss a fraction. */
+		{
+			const ucl_object_t	*tc = ucl_object_lookup(o, "tca");
+
+			t->tca[0] = tc != NULL ? ucl_object_todouble(
+			    ucl_object_lookup(tc, "delay")) : 0;
+			t->tca[1] = tc != NULL ? ucl_object_todouble(
+			    ucl_object_lookup(tc, "ipdv")) : 0;
+			t->tca[2] = tc != NULL ? ucl_object_todouble(
+			    ucl_object_lookup(tc, "loss")) : 0;
+			t->damping = tc != NULL ? (int)num(tc, "damping", 1, 1, 100,
+			    &bad) : 1;
+			if (t->tca[0] < 0 || t->tca[1] < 0 || t->tca[2] < 0 ||
+			    t->tca[2] > 1)
+				bad = "tca";
+		}
 		if (bad != NULL) {
 			*errp = wfmt(w, "target %s: fib, interval (10-60000 ms), "
 			    "size (8-%d), count, dscp (0-63), down and up "
@@ -633,10 +698,13 @@ targets_swap(struct target *new, int n)
 		if (k < nold) {
 			int	iv = t->interval, cnt = t->count, dn = t->down;
 			int	up = t->up, to = t->timeout, ev = t->eval;
-			int	hi = t->history, rp = t->report;
+			int	hi = t->history, rp = t->report, dm = t->damping;
+			double	tc[3] = { t->tca[0], t->tca[1], t->tca[2] };
 
 			/* As it was, with what may change under it. */
 			*t = *o;
+			memcpy(t->tca, tc, sizeof(tc));
+			t->damping = dm;
 			memset(o, 0, sizeof(*o));
 			o->sock = -1;
 			t->interval = iv;
@@ -888,6 +956,8 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 	    false);
 	sdwan_json(top);
 	sdwan_bird_json(w, top);
+	sdwan_dhcp_json(w, top);
+	faults_json(top);
 	json = ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	ucl_object_unref(top);
 	if (json == NULL) {

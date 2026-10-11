@@ -230,6 +230,24 @@ definitions:
           pkg install -y of the packages names, on the host or in a
           running jail; with force, also of packages built for a newer
           FreeBSD (IGNORE_OSVERSION).
+      - name: ntp
+        doc: |
+          The NTP servers the host keeps time by (Mplify 119 §12.2.2):
+          names the servers, written into ntp.conf between arcana's
+          marks, the lines there before taken out; with persist, ntpd
+          enabled in rc.conf; ntpd restarted.  With remove, the marks
+          and what is between them taken out and ntpd restarted.
+      - name: rtadvd
+        doc: |
+          Router advertisements on an interface, for the hosts behind
+          it to address themselves (SLAAC, MEF 70.2 §11.5): interface,
+          and names, the prefix (a /64) and then the DNS servers to
+          advertise (RDNSS), at most 8; an entry written into
+          rtadvd.conf between arcana's marks, the interface's old one
+          taken out; with persist, rtadvd enabled and the interface on
+          rtadvd_interfaces in rc.conf; rtadvd restarted.  With remove,
+          the interface's entry taken out, and rtadvd stopped when the
+          block is empty.
   - name: job-state
     type: enum
     entries:
@@ -1252,6 +1270,16 @@ attribute-sets:
           public key.
         checks:
           max-len: 128
+      - name: addressing
+        type: text
+        doc: |
+          For if-set, how the interface gets its address: dhcp
+          (dhclient, by rc.conf's DHCP word, so with persist), slaac
+          (inet6 accept_rtadv and rtsol, kept in ifconfig_<if>_ipv6)
+          or static, which takes both off (Mplify 119 §12.2.3.2,
+          §12.2.3.3).
+        checks:
+          max-len: 8
 
   - name: job
     attributes:
@@ -2193,7 +2221,10 @@ operations:
       agent sees it; or with more, how many came in that second
       beyond the twenty said one by one.  sdwan-tunnel, with id,
       address, state (up or down) and misses, when a tunnel the agent
-      measures (sdwan-probes) goes down or comes up.  The sdwan reply
+      measures (sdwan-probes) goes down or comes up, or by bfd when
+      BFD says so.  sdwan-fault, with type, severity, object, by,
+      description and state (set or cleared), when a fault is seen or
+      cleared (Mplify 119 §11.3): the sdwan reply lists the day's.  The sdwan reply
       has "rules" (the set, how many rules and which tables) and
       "steer" (each prefix's candidates with their states and which
       is chosen) too.
@@ -2391,7 +2422,10 @@ operations:
       without end), "dscp" (0), "down" and "up" (misses in a row that
       make it down, 3; answers that make it up, 3), "timeout" (ms,
       1000), "eval" (ms of one sample, 1000), "history" (samples kept,
-      3600) and "report".  Kept for the next start.  An empty array
+      3600), "report" and "tca" (thresholds a metric: "delay" and
+      "ipdv" in ms, "loss" a fraction, and "damping", intervals in a
+      row, 1; a metric over its threshold is a fault, tca, cleared
+      under it again).  Kept for the next start.  An empty array
       stops them all.  Each is ICMP echo on a raw socket: root.
     do:
       request:
@@ -2492,6 +2526,32 @@ operations:
       and a pid file of its own beside the agent's kept files; those
       not named any more are stopped.  Kept for the next start.  The
       sdwan read tells each instance and its protocols.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+
+  - name: sdwan-dhcp
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The DHCP servers of the SD-WAN services at this edge (dnsmasq,
+      one instance per service, in its table), as the console writes
+      them: json, an object with "instances", each a "name", the "fib"
+      it runs in and its "conf", dnsmasq's configuration text, to which
+      the agent adds the pid and lease files.  Each is checked by
+      dnsmasq --test before it is made the instance's; one running is
+      stopped and started again on it, one not yet is started in its
+      table (setfib); those not named any more are stopped.  Kept for
+      the next start.  The sdwan read tells each instance and the
+      leases it gave.
     do:
       request:
         attributes:

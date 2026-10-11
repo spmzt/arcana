@@ -147,11 +147,12 @@ title_of(const struct arc_job_spec *sp)
 		    sp->persist ? " (kept)" : "");
 		break;
 	case ARC_JOB_KIND_IF_SET:
-		rc = asprintf(&t, "%s: set%s%s%s%s", sp->interface,
+		rc = asprintf(&t, "%s: set%s%s%s%s%s%s", sp->interface,
 		    sp->has_mtu && sp->mtu != 0 ? " mtu" : "",
 		    sp->description != NULL ? " description" : "",
 		    sp->has_fib ? " fib" : "", sp->has_tunnelfib ?
-		    " tunnelfib" : "");
+		    " tunnelfib" : "", sp->addressing != NULL ? " addressing " :
+		    "", sp->addressing != NULL ? sp->addressing : "");
 		break;
 	case ARC_JOB_KIND_IF_CREATE:
 		rc = asprintf(&t, "create %s%s%s%s%s", sp->interface,
@@ -180,6 +181,17 @@ title_of(const struct arc_job_spec *sp)
 	case ARC_JOB_KIND_KMOD:
 		rc = asprintf(&t, "kld%s %s%s", sp->verb, sp->names.v[0],
 		    sp->persist ? " (kept)" : "");
+		break;
+	case ARC_JOB_KIND_RTADVD:
+		rc = asprintf(&t, "rtadvd %s %s%s%s", sp->remove ? "off" : "on",
+		    sp->interface, !sp->remove && sp->names.n > 0 ? " " : "",
+		    !sp->remove && sp->names.n > 0 ? sp->names.v[0] : "");
+		break;
+	case ARC_JOB_KIND_NTP:
+		rc = asprintf(&t, "ntp %s%s%s%s", sp->remove ? "servers removed" :
+		    "servers ", sp->remove || sp->names.n == 0 ? "" :
+		    sp->names.v[0], !sp->remove && sp->names.n > 1 ? " and more" :
+		    "", sp->persist ? " (kept)" : "");
 		break;
 	case ARC_JOB_KIND_SYSCTL:
 		rc = asprintf(&t, "sysctl %s=%s%s", sp->names.v[0],
@@ -606,6 +618,13 @@ undo(struct qjob *j)
 		rc = do_kmod(&j->w, strcmp(sp->verb, "load") == 0 ? "unload" :
 		    "load", sp->names.v[0], sp->persist, &e);
 		break;
+	case ARC_JOB_KIND_NTP:
+		rc = do_ntp(&j->w, NULL, 0, true, sp->persist, &e);
+		break;
+	case ARC_JOB_KIND_RTADVD:
+		rc = do_rtadvd(&j->w, sp->interface, NULL, 0, true, sp->persist,
+		    &e);
+		break;
 	case ARC_JOB_KIND_IPFW:
 		/*
 		 * The rules that were there are swapped back in; a rule
@@ -650,6 +669,7 @@ undo(struct qjob *j)
 			ch.fib = sp->has_fib ? j->undo_fib : -1;
 			ch.tunnelfib = sp->has_tunnelfib ? j->undo_tunnelfib :
 			    -1;
+			ch.addressing = sp->addressing != NULL ? "static" : NULL;
 			rc = do_if_set(&j->w, sp->interface, &ch, sp->persist,
 			    &e);
 		}
@@ -785,6 +805,7 @@ run(struct qjob *j)
 			ch.fib = sp->has_fib ? (int)sp->fib : -1;
 			ch.tunnelfib = sp->has_tunnelfib ? (int)sp->tunnelfib :
 			    -1;
+			ch.addressing = sp->addressing;
 			ok = do_if_set(&j->w, sp->interface, &ch, sp->persist,
 			    &error) == 0;
 		}
@@ -816,6 +837,16 @@ run(struct qjob *j)
 		error = NULL;
 		ok = do_kmod(&j->w, sp->verb, sp->names.v[0], sp->persist,
 		    &error) == 0;
+		break;
+	case ARC_JOB_KIND_NTP:
+		error = NULL;
+		ok = do_ntp(&j->w, sp->names.v, sp->names.n, sp->remove,
+		    sp->persist, &error) == 0;
+		break;
+	case ARC_JOB_KIND_RTADVD:
+		error = NULL;
+		ok = do_rtadvd(&j->w, sp->interface, sp->names.v, sp->names.n,
+		    sp->remove, sp->persist, &error) == 0;
 		break;
 	case ARC_JOB_KIND_SYSCTL:
 		error = NULL;

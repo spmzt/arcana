@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.53.0"
+#define	ARCANA_AGENT_VERSION	"0.60.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -53,6 +53,10 @@
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
 #define	PATH_BIRD_BIN		"/usr/local/sbin/bird"
 #define	PATH_SETFIB_BIN		"/usr/sbin/setfib"
+#define	PATH_NTP_CONF		"/etc/ntp.conf"
+#define	PATH_RTADVD_CONF	"/etc/rtadvd.conf"
+#define	PATH_DNSMASQ_BIN	"/usr/local/sbin/dnsmasq"
+#define	PATH_RTSOL_BIN		"/sbin/rtsol"
 #define	PATH_BIRD_CONF		"/usr/local/etc/bird.conf"
 #define	OWN_SERVICE		"arcana_agent"	/* the rc.d name of this daemon */
 #define	PATH_MAKE_BIN		"/usr/bin/make"
@@ -108,6 +112,10 @@ struct opts {
 	const char	*birdc_bin;
 	const char	*bird_bin;	/* bird(8), to parse a configuration */
 	const char	*setfib_bin;	/* setfib(1): a daemon in a table */
+	const char	*ntp_conf;	/* ntp.conf, for the ntp job */
+	const char	*rtadvd_conf;	/* rtadvd.conf, for the rtadvd job */
+	const char	*dnsmasq_bin;	/* dnsmasq(8): the UNIs' DHCP */
+	const char	*rtsol_bin;	/* rtsol(8): an interface's SLAAC */
 	const char	*bird_conf;	/* its main file */
 	int		 safe_wait;	/* s, for a safe change to be confirmed */
 	const char	*git_bin;
@@ -301,6 +309,7 @@ struct if_change {
 	const char	*descr;		/* "" takes it off */
 	int		 fib;
 	int		 tunnelfib;
+	const char	*addressing;	/* dhcp, slaac or static; NULL as is */
 };
 int		 do_if_set(struct work *, const char *,
 		    const struct if_change *, bool, const char **);
@@ -374,6 +383,11 @@ int		 do_kernel(struct work *, struct arc_kernel_rsp *);
 int		 do_kmod(struct work *, const char *, const char *, bool,
 		    const char **);
 bool		 kmod_name_ok(const char *);
+
+/* superbia/ntp.c: the NTP servers. */
+int		 do_ntp(struct work *, const char *const *, size_t, bool, bool,
+		    const char **);
+bool		 ntp_server_ok(const char *);
 /* gula: what runs, what was written down, how busy it has been. */
 int		 do_processes(struct work *, const char *,
 		    struct arc_processes_rsp *);
@@ -419,8 +433,22 @@ char		*sdwan_kept_read(const char *);
 int		 do_sdwan_bird(struct work *, const char *, const char **);
 void		 sdwan_bird_start(void);
 void		 sdwan_bird_json(struct work *, struct ucl_object_s *);
+int		 do_sdwan_dhcp(struct work *, const char *, const char **);
+void		 sdwan_dhcp_start(void);
+void		 sdwan_dhcp_json(struct work *, struct ucl_object_s *);
+int		 do_rtadvd(struct work *, const char *, const char *const *,
+		    size_t, bool, bool, const char **);
+bool		 rtadvd_prefix_ok(const char *);
 int		 sdwan_bfd_state(const char *);
 const char	*sdwan_tunnel_by_via(const char *);
+
+/* gula/faults.c: the faults, kept a day. */
+void		 fault_set(const char *, const char *, const char *, const char *,
+		    const char *, ...) __printflike(5, 6);
+void		 fault_clear(const char *, const char *, const char *, ...)
+		    __printflike(3, 4);
+void		 faults_json(struct ucl_object_s *);
+void		 faults_start(void);
 int		 do_process(struct work *, uint32_t, struct arc_processes_rsp *);
 
 int		 do_sysctl(struct work *, const char *,

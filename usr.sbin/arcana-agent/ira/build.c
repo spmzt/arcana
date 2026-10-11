@@ -546,6 +546,9 @@ tree_fetch(struct work *w, const char *source, const char *ref,
 	argv[n++] = "clone";
 	argv[n++] = "--depth";
 	argv[n++] = "1";
+	/* cblink, a submodule, comes with the tree. */
+	argv[n++] = "--recurse-submodules";
+	argv[n++] = "--shallow-submodules";
 	if (ref != NULL && ref[0] != '\0') {
 		argv[n++] = "--branch";
 		argv[n++] = ref;

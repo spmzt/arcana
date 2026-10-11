@@ -841,7 +841,10 @@ part_hosts(void)
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	ATF_CHECK(js_true("document.querySelector('#j-web.s-stopped')"));
 	run("document.querySelector('button[data-act=queue-run]').click()");
-	wait_js("document.querySelector('.dock .last.o-ok') && "
+	/* The dock opened with the queue, so the task is in its list, not
+	 * the strip along the header (that one shows while it is closed). */
+	wait_js("document.querySelector('.dock.open ol.ops .op.o-ok') && "
+	    "!document.querySelector('.dock .recent .last') && "
 	    "!document.querySelector('button[data-act=queue-run]')", 20);
 
 	/* The tree and the dock are resized by dragging their edges; the
@@ -3517,8 +3520,18 @@ part_flows(void)
 	    "interface] option') && document.querySelector('form[data-form="
 	    "sd-ep] input[name=p4]').value === '10.10.0.0/24'", 15);
 	shot("9-sdwan-form-endpoint");
-	run("document.querySelector('.modal button[data-act=close]').click()");
-	wait_js("!document.querySelector('.modal')", 5);
+	/* The hosts' IPv4 addresses given by the edge (DHCP by dnsmasq),
+	 * with a reserved prefix, the DNS server told and a lease; the
+	 * service's table says DHCP, the document holds it. */
+	run("const f = document.querySelector('form[data-form=sd-ep]'); "
+	    "f.m4.value = 'dhcp'; f.r4.value = '10.10.0.0/28'; f.d4.value = "
+	    "'10.10.0.1'; f.l4.value = '2h'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-ep]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('hq') && r.textContent."
+	    "includes('DHCP'))", 20);
+	ATF_CHECK(system("grep -q dhcp data/sdwan.json && grep -q 10.10.0.0/28 "
+	    "data/sdwan.json && grep -q '\"2h\"' data/sdwan.json") == 0);
 	/*
 	 * Edges: the tunnels and what each edge is to have; applied, each
 	 * step done, and then nothing left to do.
@@ -3526,17 +3539,26 @@ part_flows(void)
 	run("document.querySelector('button[data-act=sd-tab][data-arg=edges]')"
 	    ".click()");
 	wait_js("document.querySelectorAll('table.sd-plan tbody tr').length > 8 "
-	    "&& document.querySelector('button[data-act=sd-apply]') && "
-	    "!document.querySelector('button[data-act=sd-apply]').disabled",
+	    "&& document.querySelector('button[data-act=sd-apply-ask]') && "
+	    "!document.querySelector('button[data-act=sd-apply-ask]').disabled",
 	    20);
 	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
 	    ".find(h => h.textContent.startsWith('Tunnels')).closest('.sd-block')"
 	    ".querySelectorAll('tbody tr').length === 2"));
 	shot("9-sdwan-edges-plan");
-	run("document.querySelector('button[data-act=sd-apply]').click()");
+	/* Deploy asks first, saying what changes; then it runs. */
+	run("document.querySelector('button[data-act=sd-apply-ask]').click()");
+	wait_js("document.querySelector('form[data-form=confirm]') && document."
+	    "querySelector('form[data-form=confirm]').textContent.includes("
+	    "'to make')", 5);
+	shot("9-sdwan-deploy-ask");
+	run("document.querySelector('form[data-form=confirm]').requestSubmit();");
 	wait_js("(document.querySelector('.sd-applied h3') || {}).textContent"
 	    "?.startsWith('Last apply') && document.querySelector("
-	    "'button[data-act=sd-apply]').disabled", 60);
+	    "'button[data-act=sd-apply-ask]').disabled", 60);
+	ATF_CHECK(js_true("document.querySelector('table.sd-history tbody tr') "
+	    "&& document.querySelectorAll('table.sd-plan tr.sd-edge-head')"
+	    ".length === 2"));
 	ATF_CHECK(js_true("document.querySelector('.sd-applied h3')"
 	    ".textContent.startsWith('Last apply: done')"));
 	shot("9-sdwan-edges-applied");
@@ -3550,6 +3572,16 @@ part_flows(void)
 	    "root')", 30);
 	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
 	    ".some(h => h.textContent.startsWith('Steering'))"));
+	/* The monitor of each tunnel: nothing to draw without root, and
+	 * a span to choose. */
+	ATF_CHECK(js_true("document.querySelectorAll('.sd-path .sd-mon').length"
+	    " === 2 && document.querySelector('.sd-path .sd-mon p').textContent"
+	    ".includes('No sample in the last 15 min')"));
+	run("document.querySelector('button[data-act=sd-span][data-arg=\"3600\"]')"
+	    ".click()");
+	wait_js("document.querySelector('button[data-act=sd-span][data-arg="
+	    "\"3600\"].on') && document.querySelector('.sd-path .sd-mon p')"
+	    ".textContent.includes('last 60 min')", 5);
 	shot("9-sdwan-paths");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",

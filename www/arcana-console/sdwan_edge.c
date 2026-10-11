@@ -48,7 +48,7 @@
  *	GET  /api/sdwan/plan	what an apply would do, edge by edge
  *	POST /api/sdwan/apply	do it; {"fresh": true} takes everything
  *				made away first and makes it again
- *	GET  /api/sdwan/apply	how the last apply went, and the tunnels
+ *	GET  /api/sdwan/apply	how the last apply went, the history, and the tunnels
  */
 
 #include <sys/param.h>
@@ -89,6 +89,9 @@ static pthread_mutex_t	st_lock = PTHREAD_MUTEX_INITIALIZER;
 static bool		applying;
 
 static const char	*server_name_of(const char *);
+struct plan;
+static const char *uni_ifname(struct plan *, const ucl_object_t *,
+		    const ucl_object_t *, char *, size_t);
 
 static void
 put(ucl_object_t *o, const char *key, ucl_object_t *v)
@@ -271,20 +274,29 @@ unit_new(const ucl_object_t *alloc)
 	return (-1);
 }
 
-/* The lowest pair of a service's reserved prefix of af none has. */
+/*
+ * The lowest pair of af none has: of the service domain's prefix
+ * (Mplify 119 §7.3, the tunnels' addresses), else of the service's
+ * reserved prefixes.
+ */
 static bool
 pair_new(const ucl_object_t *alloc, const ucl_object_t *sw, int af,
     const char *key, char *p, size_t len)
 {
-	const ucl_object_t	*v, *r;
+	const ucl_object_t	*v, *r, *sd;
 	ucl_object_iter_t	 it, rit;
 	char			 a[64], b[64];
 	uint64_t		 k;
 	bool			 used;
+	int			 pass;
 
+	sd = ucl_object_lookup(ucl_object_lookup(sw, "domains"), "service");
+	for (pass = 0; pass < 2; pass++) {
 	rit = NULL;
-	while ((r = ucl_object_iterate(ucl_object_lookup(sw,
-	    "reserved_prefixes"), &rit, true)) != NULL) {
+	while ((r = pass == 0 ? (rit == NULL && str(sd, "prefix") != NULL ?
+	    (rit = (void *)1, ucl_object_lookup(sd, "prefix")) : NULL) :
+	    ucl_object_iterate(ucl_object_lookup(sw, "reserved_prefixes"),
+	    &rit, true)) != NULL) {
 		if (family(ucl_object_tostring_forced(r)) != af)
 			continue;
 		for (k = 0; k < 65536; k++) {
@@ -301,10 +313,35 @@ pair_new(const ucl_object_t *alloc, const ucl_object_t *sw, int af,
 				return (true);
 		}
 	}
+	}
 	return (false);
 }
 
+/* The table a service's breakout goes by: its breakout domain's, else
+ * its own (Mplify 119 R20-R26). */
+static int64_t
+bo_fib_of(const ucl_object_t *sw)
+{
+	const ucl_object_t	*d;
+
+	d = ucl_object_lookup(ucl_object_lookup(sw, "domains"), "breakout");
+	if (d != NULL && ucl_object_lookup(d, "fib") != NULL)
+		return (ucl_object_toint(ucl_object_lookup(d, "fib")));
+	return (ucl_object_toint(ucl_object_lookup(sw, "fib")));
+}
+
 /* ---- What each edge is to have ------------------------------------- */
+
+struct plan;
+static const char *ucs_address(struct plan *, const char *,
+		    const ucl_object_t *);
+static int64_t	 sysctl_of(const char *, const char *);
+static ucl_object_t *parse(const char *);
+static void	 bird_routing(struct kore_buf *, const ucl_object_t *,
+		    const char *, const char *, const char *, const char *,
+		    int64_t);
+static const ucl_object_t *at_path(const ucl_object_t *, const char *,
+		    const char *);
 
 struct plan {
 	const ucl_object_t	*doc;
@@ -313,6 +350,7 @@ struct plan {
 	ucl_object_t		*tunnels;	/* the tunnels, both ends */
 	ucl_object_t		*used;		/* the allocations they have */
 	ucl_object_t		*notes;		/* what the plan leaves out, and why */
+	ucl_object_t		*learned;	/* sid/ifname: the host's address */
 	char			 why[300];
 };
 
@@ -378,6 +416,78 @@ job(const char *kind, ...)
 #define	S(x)	ucl_object_fromstring(x)
 #define	I(x)	ucl_object_fromint(x)
 #define	B(x)	ucl_object_frombool(x)
+
+/*
+ * A UCS End Point's address: the document's, or, when the host gets it
+ * by DHCP or SLAAC (Mplify 119 §12.2.3.2, §12.2.3.3), the first global
+ * address its interface has now, asked of the host once a plan and
+ * kept; NULL when it has none yet.
+ */
+static const char *
+ucs_address(struct plan *pl, const char *sid, const ucl_object_t *uep)
+{
+	const ucl_object_t	*ifc, *a, *v;
+	ucl_object_iter_t	 it, ait;
+	ucl_object_t		*ans;
+	char			 key[100], uri[256], peer[256], name[128];
+	char			*json;
+	const char		*s, *found;
+	int			 status;
+
+	if (str(uep, "address") != NULL)
+		return (str(uep, "address"));
+	if (str(uep, "addressing") == NULL || strcmp(str(uep, "addressing"),
+	    "static") == 0 || str(uep, "interface") == NULL)
+		return (NULL);
+	snprintf(key, sizeof(key), "%s/%s", sid, str(uep, "interface"));
+	if ((v = ucl_object_lookup(pl->learned, key)) != NULL)
+		return (ucl_object_type(v) == UCL_STRING ? ucl_object_tostring(v) :
+		    NULL);
+	found = NULL;
+	if (host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+	    sizeof(name))) {
+		json = hosts_net(uri, peer, name, "interfaces", &status);
+		ans = parse(json);
+		free(json);
+		it = NULL;
+		while (found == NULL && (ifc = ucl_object_iterate(at_path(ans,
+		    "data", "interfaces"), &it, true)) != NULL) {
+			if (str(ifc, "name") == NULL || strcmp(str(ifc, "name"),
+			    str(uep, "interface")) != 0)
+				continue;
+			/* Its first IPv4 address, else its first global IPv6
+			 * one: not link-local, not the loopback's. */
+			for (int pass = 0; found == NULL && pass < 2; pass++) {
+				ait = NULL;
+				while (found == NULL && (a = ucl_object_iterate(
+				    ucl_object_lookup(ifc, "addresses"), &ait,
+				    true)) != NULL) {
+					s = str(a, "address");
+					if (s == NULL || str(a, "family") == NULL ||
+					    strcmp(str(a, "family"), pass == 0 ? "inet"
+					    : "inet6") != 0)
+						continue;
+					if (strncasecmp(s, "fe80:", 5) == 0 ||
+					    strncmp(s, "127.", 4) == 0 || strcmp(s,
+					    "::1") == 0 || strncmp(s, "169.254.", 8)
+					    == 0)
+						continue;
+					found = s;
+				}
+			}
+		}
+		ucl_object_insert_key(pl->learned, found != NULL ? S(found) :
+		    ucl_object_typed_new(UCL_NULL), key, 0, true);
+		if (ans != NULL)
+			ucl_object_unref(ans);
+	} else
+		ucl_object_insert_key(pl->learned, ucl_object_typed_new(UCL_NULL),
+		    key, 0, true);
+	v = ucl_object_lookup(pl->learned, key);
+	return (v != NULL && ucl_object_type(v) == UCL_STRING ?
+	    ucl_object_tostring(v) : NULL);
+}
+
 
 static void
 make(ucl_object_t *o, ucl_object_t *j)
@@ -545,6 +655,9 @@ tvc_end(struct plan *pl, const ucl_object_t *t, int me)
 		if (strcmp(kind, "wg") != 0) {
 			put(p, "tunnel_local", S(str(a, "underlay")));
 			put(p, "tunnel_remote", S(str(b, "underlay")));
+			if (ucl_object_lookup(a, "vrf") != NULL)
+				put(p, "tunnelfib", I(ucl_object_toint(
+				    ucl_object_lookup(a, "vrf"))));
 		}
 		if (str(a, "inner4") != NULL) {
 			snprintf(port, sizeof(port), "%s/31", str(a, "inner4"));
@@ -632,7 +745,7 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 	const ucl_object_t	*doc, *e1, *e2, *x, *y, *ux, *uy, *ep;
 	ucl_object_iter_t	 it, it2, xit, yit;
 	ucl_object_t		*edges, *t, *ends, *end, *al;
-	const char		*kind, *k2, *sid;
+	const char		*kind, *k2, *sid, *ax, *ay;
 	char			 id[300], p[80], a[64], b[64];
 	int64_t			 unit;
 	bool			 ipsec, ip2, public, said, said2, always;
@@ -681,19 +794,39 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 					    "public") == 0 && strcmp(str(uy,
 					    "type"), "public") == 0))
 						continue;
-					if (str(x, "address") == NULL ||
-					    str(y, "address") == NULL) {
+					ax = ucs_address(pl, str(e1, "server"), x);
+					ay = ucs_address(pl, str(e2, "server"), y);
+					if (ax == NULL || ay == NULL) {
+						const ucl_object_t *z = ax == NULL ?
+						    x : y;
+
+						/* Learned once the host has one
+						 * (DHCP, SLAAC): the next plan. */
+						if (str(z, "addressing") != NULL &&
+						    strcmp(str(z, "addressing"),
+						    "static") != 0) {
+							char	note[300];
+
+							snprintf(note, sizeof(note),
+							    "ucs end point %s has no "
+							    "address yet (%s on %s): "
+							    "no tunnel over it until "
+							    "the host has one; apply "
+							    "again then", str(z, "id"),
+							    str(z, "addressing"),
+							    str(z, "interface"));
+							ucl_array_append(pl->notes,
+							    S(note));
+							continue;
+						}
 						snprintf(pl->why, sizeof(pl->why),
 						    "ucs end point %s has no "
 						    "address: a tunnel needs its "
-						    "outer one", str(x,
-						    "address") == NULL ? str(x,
-						    "id") : str(y, "id"));
+						    "outer one", str(z, "id"));
 						ucl_object_unref(edges);
 						return (false);
 					}
-					if (family(str(x, "address")) !=
-					    family(str(y, "address")))
+					if (family(ax) != family(ay))
 						continue;
 					tunnel_of(ux, &kind, &ipsec, &said);
 					tunnel_of(uy, &k2, &ip2, &said2);
@@ -806,8 +939,17 @@ tunnels(struct plan *pl, const ucl_object_t *sw)
 						    UCL_OBJECT);
 						put(end, "edge", S(sid));
 						put(end, "ucs_ep", S(str(u, "id")));
-						put(end, "underlay", S(str(u,
-						    "address")));
+						put(end, "underlay", S(k == 0 ? ax :
+						    ay));
+						/* Its own table, when the UCS has
+						 * one (§12.2.3.4): the tunnel's
+						 * outer packets go by it. */
+						if (ucl_object_lookup(u, "vrf") !=
+						    NULL)
+							put(end, "vrf", I(
+							    ucl_object_toint(
+							    ucl_object_lookup(u,
+							    "vrf"))));
 						unit = ucl_object_toint(
 						    ucl_array_find_index(
 						    ucl_object_lookup(al, "units"),
@@ -893,8 +1035,10 @@ uni_prefixes(const ucl_object_t *ep, ucl_object_t *out)
 	u = ucl_object_lookup(ep, "uni");
 	for (i = 0; i < 2; i++) {
 		v = ucl_object_lookup(u, fams[i]);
-		if (str(v, "mode") == NULL || strcmp(str(v, "mode"), "static") !=
-		    0)
+		/* A subnet whoever addresses its hosts. */
+		if (str(v, "mode") == NULL || (strcmp(str(v, "mode"), "static")
+		    != 0 && strcmp(str(v, "mode"), "dhcp") != 0 && strcmp(str(v,
+		    "mode"), "slaac") != 0))
 			continue;
 		ucl_array_append(out, S(str(v, "prefix")));
 		it = NULL;
@@ -908,24 +1052,87 @@ uni_prefixes(const ucl_object_t *ep, ucl_object_t *out)
 		ucl_array_append(out, S(str(e, "prefix")));
 }
 
-/* A route in a service's FIB, made and taken away. */
+/* A route in a table of a service's, made and taken away. */
 static void
-route_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
-    const char *prefix, const char *gw, const char *why)
+route_fib_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
+    int64_t fib, int phase, const char *prefix, const char *gw,
+    const char *why)
 {
 	ucl_object_t	*o;
 	char		 key[200];
-	int64_t		 fib;
 
-	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
-	snprintf(key, sizeof(key), "route:%s:%s", str(sw, "id"), prefix);
-	if ((o = object(pl, sid, key, PH_ROUTE, "%s via %s, fib %jd (%s)",
+	if (fib == ucl_object_toint(ucl_object_lookup(sw, "fib")))
+		snprintf(key, sizeof(key), "route:%s:%s", str(sw, "id"), prefix);
+	else
+		snprintf(key, sizeof(key), "route:%s:%jd:%s", str(sw, "id"),
+		    (intmax_t)fib, prefix);
+	if ((o = object(pl, sid, key, phase, "%s via %s, fib %jd (%s)",
 	    prefix, gw, (intmax_t)fib, why)) == NULL)
 		return;
 	make(o, job("route", "destination", S(prefix), "gateway", S(gw), "fib",
 	    I(fib), "persist", B(true), NULL));
 	unmake(o, job("route", "destination", S(prefix), "gateway", S(gw),
 	    "fib", I(fib), "remove", B(true), "persist", B(true), NULL));
+}
+
+/* A route in a service's own FIB. */
+static void
+route_obj(struct plan *pl, const char *sid, const ucl_object_t *sw,
+    const char *prefix, const char *gw, const char *why)
+{
+
+	route_fib_obj(pl, sid, sw, ucl_object_toint(ucl_object_lookup(sw,
+	    "fib")), PH_ROUTE, prefix, gw, why);
+}
+
+/*
+ * The breakout domain's table (Mplify 119 R25, R26): the edge's own
+ * UNIs of the service reachable from it, their subnets by their
+ * interfaces and their static routes, so what comes back from the
+ * Internet finds the hosts.
+ */
+static void
+breakout_uni_routes(struct plan *pl, const char *sid, const ucl_object_t *sw,
+    int64_t fib)
+{
+	const ucl_object_t	*ep, *u, *v, *e, *r;
+	ucl_object_iter_t	 it, sit, rit;
+	const char *const	 fams[] = { "ipv4", "ipv6" };
+	const char		*ifn;
+	char			 ifbuf[32];
+	int			 i;
+
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep, "edge"), sid) != 0)
+			continue;
+		u = ucl_object_lookup(ep, "uni");
+		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
+		for (i = 0; i < 2; i++) {
+			v = ucl_object_lookup(u, fams[i]);
+			if (str(v, "mode") == NULL || str(v, "prefix") == NULL ||
+			    strcmp(str(v, "mode"), "none") == 0 || strcmp(str(v,
+			    "mode"), "ll-only") == 0)
+				continue;
+			route_fib_obj(pl, sid, sw, fib, PH_UNI, str(v, "prefix"),
+			    ifn, "the UNI's hosts, in the breakout domain (R25)");
+			sit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(v,
+			    "secondary"), &sit, true)) != NULL)
+				if (str(e, "prefix") != NULL)
+					route_fib_obj(pl, sid, sw, fib, PH_UNI, str(e,
+					    "prefix"), ifn, "the UNI's hosts, in the "
+					    "breakout domain (R25)");
+		}
+		rit = NULL;
+		while ((r = ucl_object_iterate(ucl_object_lookup(u, "routes"),
+		    &rit, true)) != NULL)
+			if (str(r, "prefix") != NULL && str(r, "next_hop") != NULL)
+				route_fib_obj(pl, sid, sw, fib, PH_UNI, str(r,
+				    "prefix"), str(r, "next_hop"), "behind the UNI, "
+				    "in the breakout domain (R26)");
+	}
 }
 
 /* The UNI: in the service's FIB, the provider's addresses on it. */
@@ -985,8 +1192,10 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 	}
 	for (i = 0; i < 2; i++) {
 		v = ucl_object_lookup(u, fams[i]);
-		if (str(v, "mode") == NULL || strcmp(str(v, "mode"), "static") !=
-		    0)
+		/* The provider's addresses go on, whoever addresses the hosts. */
+		if (str(v, "mode") == NULL || (strcmp(str(v, "mode"), "static")
+		    != 0 && strcmp(str(v, "mode"), "dhcp") != 0 && strcmp(str(v,
+		    "mode"), "slaac") != 0))
 			continue;
 		ns = 0;
 		subs[ns++] = v;
@@ -1022,7 +1231,334 @@ uni_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 	if (vlan == 0)
 		unmake(o, job("if-set", "interface", S(ifn), "fib", I(0),
 		    "persist", B(true), NULL));
+	/* SLAAC (§11.5): the base system's rtadvd advertises the prefix on
+	 * the UNI, and the DNS servers, for the hosts to address
+	 * themselves. */
+	v = ucl_object_lookup(u, "ipv6");
+	if (str(v, "mode") != NULL && strcmp(str(v, "mode"), "slaac") == 0) {
+		ucl_object_t	*names;
+
+		snprintf(key, sizeof(key), "rtadvd:%s", str(ep, "id"));
+		o = object(pl, str(ep, "edge"), key, PH_UNI, "UNI %s: router "
+		    "advertisements of %s on %s by rtadvd (SLAAC)", str(u, "id"),
+		    str(v, "prefix"), ifn);
+		if (o != NULL) {
+			names = ucl_object_typed_new(UCL_ARRAY);
+			ucl_array_append(names, S(str(v, "prefix")));
+			ait = NULL;
+			while ((a = ucl_object_iterate(ucl_object_lookup(v, "dns"),
+			    &ait, true)) != NULL)
+				ucl_array_append(names, S(ucl_object_tostring_forced(
+				    a)));
+			make(o, job("rtadvd", "interface", S(ifn), "args", names,
+			    "persist", B(true), NULL));
+			unmake(o, job("rtadvd", "interface", S(ifn), "args",
+			    ucl_object_typed_new(UCL_ARRAY), "remove", B(true),
+			    "persist", B(true), NULL));
+		}
+	}
 	return (true);
+}
+
+/* ---- DHCP at the UNIs (§11.4, §11.5): dnsmasq, a service an instance -- */
+
+
+/* An IPv4 address as a number, and back. */
+static uint32_t
+v4num(const uint8_t *a)
+{
+
+	return ((uint32_t)a[0] << 24 | (uint32_t)a[1] << 16 | (uint32_t)a[2] <<
+	    8 | a[3]);
+}
+
+static const char *
+v4str(uint32_t n, char *buf, size_t len)
+{
+
+	snprintf(buf, len, "%u.%u.%u.%u", n >> 24, (n >> 16) & 255, (n >> 8) &
+	    255, n & 255);
+	return (buf);
+}
+
+/*
+ * The IPv4 ranges dnsmasq gives out at a UNI: the subnet's hosts, less
+ * the provider's addresses and the reserved prefixes (§11.4), as
+ * dhcp-range lines.
+ */
+static void
+dhcp_ranges4(struct kore_buf *b, const ucl_object_t *v, const char *tag)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	struct net		 n, r;
+	uint32_t		 lo, hi, from, to, x[66][2], t;
+	const char		*lease;
+	char			 s1[20], s2[20], mask[20];
+	int			 nx = 0, i, k;
+
+	if (!net_parse(str(v, "prefix"), &n) || n.af != AF_INET || n.len > 30)
+		return;
+	lo = v4num(n.a) & (n.len == 0 ? 0 : 0xffffffffu << (32 - n.len));
+	hi = lo | (n.len == 0 ? 0xffffffffu : 0xffffffffu >> n.len);
+	lease = str(v, "lease") != NULL ? str(v, "lease") : "12h";
+	/* What is not given: the provider's, the reserved. */
+	it = NULL;
+	while (nx < 64 && (e = ucl_object_iterate(ucl_object_lookup(v,
+	    "provider"), &it, true)) != NULL)
+		if (net_parse(ucl_object_tostring_forced(e), &r) && r.af ==
+		    AF_INET) {
+			x[nx][0] = x[nx][1] = v4num(r.a);
+			nx++;
+		}
+	it = NULL;
+	while (nx < 64 && (e = ucl_object_iterate(ucl_object_lookup(v,
+	    "reserved"), &it, true)) != NULL)
+		if (net_parse(ucl_object_tostring_forced(e), &r) && r.af ==
+		    AF_INET) {
+			x[nx][0] = v4num(r.a) & (r.len == 0 ? 0 : 0xffffffffu <<
+			    (32 - r.len));
+			x[nx][1] = x[nx][0] | (r.len == 0 ? 0xffffffffu :
+			    0xffffffffu >> r.len);
+			nx++;
+		}
+	/* In order, by the start. */
+	for (i = 1; i < nx; i++)
+		for (k = i; k > 0 && x[k][0] < x[k - 1][0]; k--) {
+			t = x[k][0]; x[k][0] = x[k - 1][0]; x[k - 1][0] = t;
+			t = x[k][1]; x[k][1] = x[k - 1][1]; x[k - 1][1] = t;
+		}
+	v4str(n.len == 0 ? 0 : 0xffffffffu << (32 - n.len), mask, sizeof(mask));
+	from = lo + 1;
+	to = hi - 1;
+	for (i = 0; i <= nx; i++) {
+		uint32_t	end = i < nx ? (x[i][0] > 0 ? x[i][0] - 1 : 0) : to;
+
+		if (i == nx || x[i][0] > from) {
+			if (end > to)
+				end = to;
+			if (from <= end && from > lo)
+				kore_buf_appendf(b, "dhcp-range=set:%s,%s,%s,%s,%s\n",
+				    tag, v4str(from, s1, sizeof(s1)), v4str(end, s2,
+				    sizeof(s2)), mask, lease);
+		}
+		if (i < nx && x[i][1] + 1 > from)
+			from = x[i][1] + 1;
+	}
+}
+
+/*
+ * The IPv6 range at a UNI (§11.5): ::100 to ::ffff of the /64, less a
+ * reserved prefix that overlaps it, which splits it, by the low 64 bits.
+ */
+static void
+dhcp_ranges6(struct kore_buf *b, const ucl_object_t *v, const char *tag)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	struct net		 n, r;
+	uint64_t		 from, to, x[66][2], t, rlo, rhi;
+	const char		*lease;
+	char			 pfx[48], s1[64], s2[64];
+	int			 nx = 0, i, k;
+
+	if (!net_parse(str(v, "prefix"), &n) || n.af != AF_INET6 || n.len != 64)
+		return;
+	snprintf(pfx, sizeof(pfx), "%x:%x:%x:%x", n.a[0] << 8 | n.a[1], n.a[2]
+	    << 8 | n.a[3], n.a[4] << 8 | n.a[5], n.a[6] << 8 | n.a[7]);
+	lease = str(v, "lease") != NULL ? str(v, "lease") : "12h";
+	it = NULL;
+	while (nx < 64 && (e = ucl_object_iterate(ucl_object_lookup(v,
+	    "reserved"), &it, true)) != NULL) {
+		if (!net_parse(ucl_object_tostring_forced(e), &r) || r.af !=
+		    AF_INET6 || r.len < 64)
+			continue;
+		rlo = 0;
+		for (k = 8; k < 16; k++)
+			rlo = rlo << 8 | r.a[k];
+		rlo &= r.len == 128 ? ~(uint64_t)0 : ~(uint64_t)0 << (128 -
+		    r.len);
+		rhi = rlo | (r.len == 128 ? 0 : ~(uint64_t)0 >> (r.len - 64));
+		x[nx][0] = rlo;
+		x[nx][1] = rhi;
+		nx++;
+	}
+	for (i = 1; i < nx; i++)
+		for (k = i; k > 0 && x[k][0] < x[k - 1][0]; k--) {
+			t = x[k][0]; x[k][0] = x[k - 1][0]; x[k - 1][0] = t;
+			t = x[k][1]; x[k][1] = x[k - 1][1]; x[k - 1][1] = t;
+		}
+	from = 0x100;
+	to = 0xffff;
+	for (i = 0; i <= nx; i++) {
+		uint64_t	end = i < nx ? (x[i][0] > 0 ? x[i][0] - 1 : 0) : to;
+
+		if (i == nx || x[i][0] > from) {
+			if (end > to)
+				end = to;
+			if (from <= end) {
+				snprintf(s1, sizeof(s1), "%s:%jx:%jx:%jx:%jx", pfx,
+				    (uintmax_t)(from >> 48), (uintmax_t)((from >> 32)
+				    & 0xffff), (uintmax_t)((from >> 16) & 0xffff),
+				    (uintmax_t)(from & 0xffff));
+				snprintf(s2, sizeof(s2), "%s:%jx:%jx:%jx:%jx", pfx,
+				    (uintmax_t)(end >> 48), (uintmax_t)((end >> 32) &
+				    0xffff), (uintmax_t)((end >> 16) & 0xffff),
+				    (uintmax_t)(end & 0xffff));
+				kore_buf_appendf(b, "dhcp-range=set:%s,%s,%s,64,%s\n",
+				    tag, s1, s2, lease);
+			}
+		}
+		if (i < nx && x[i][1] + 1 > from)
+			from = x[i][1] + 1;
+	}
+}
+
+/* dnsmasq's configuration for a service at an edge: its DHCP UNIs. */
+static char *
+dhcp_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
+{
+	struct kore_buf		*b;
+	const ucl_object_t	*ep, *u, *v, *a, *e;
+	ucl_object_iter_t	 it, ait;
+	const char		*ifn;
+	char			 vif[32], *out;
+	int			 i;
+	bool			 ra = false;
+
+	b = kore_buf_alloc(2048);
+	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	    "at %s, in routing table %jd.\n# The hosts' addresses at the UNIs "
+	    "(MEF 70.2 §11.4, §11.5); no DNS served here.\nport=0\n"
+	    "bind-interfaces\nno-resolv\nno-hosts\ndhcp-authoritative\n", str(sw,
+	    "id"), server_name_of(sid), (intmax_t)ucl_object_toint(ucl_object_lookup(sw,
+	    "fib")));
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep, "edge"), sid) != 0)
+			continue;
+		u = ucl_object_lookup(ep, "uni");
+		ifn = uni_ifname(pl, sw, ep, vif, sizeof(vif));
+		for (i = 0; i < 2; i++) {
+			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
+			if (str(v, "mode") == NULL || strcmp(str(v, "mode"), "dhcp")
+			    != 0)
+				continue;
+			kore_buf_appendf(b, "\n# UNI %s, %s\ninterface=%s\n", str(u,
+			    "id"), str(v, "prefix"), ifn);
+			if (i == 0) {
+				dhcp_ranges4(b, v, ifn);
+				/* Their router: the provider's first address. */
+				a = ucl_array_find_index(ucl_object_lookup(v,
+				    "provider"), 0);
+				if (a != NULL)
+					kore_buf_appendf(b, "dhcp-option=tag:%s,option:"
+					    "router,%s\n", ifn,
+					    ucl_object_tostring_forced(a));
+			} else {
+				dhcp_ranges6(b, v, ifn);
+				ra = true;
+			}
+			/* The DNS servers told to the hosts, one line. */
+			if (ucl_object_lookup(v, "dns") != NULL && ucl_array_size(
+			    ucl_object_lookup(v, "dns")) > 0) {
+				kore_buf_appendf(b, "dhcp-option=tag:%s,option%s:"
+				    "dns-server", ifn, i == 0 ? "" : "6");
+				ait = NULL;
+				while ((e = ucl_object_iterate(ucl_object_lookup(v,
+				    "dns"), &ait, true)) != NULL)
+					kore_buf_appendf(b, ",%s%s%s", i == 0 ? "" : "[",
+					    ucl_object_tostring_forced(e), i == 0 ? "" :
+					    "]");
+				kore_buf_appendf(b, "\n");
+			}
+		}
+	}
+	if (ra)
+		kore_buf_appendf(b, "\n# IPv6: the hosts told by router advertisements "
+		    "to ask (M flag)\nenable-ra\n");
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
+ * Each edge's DHCP servers: dnsmasq from packages (the base system has
+ * no DHCP server), an instance per service with a DHCP UNI at the edge,
+ * in the service's table.
+ */
+static void
+dhcp_build(struct plan *pl, const ucl_object_t *doc)
+{
+	const ucl_object_t	*sw, *edge, *ep, *u, *v;
+	ucl_object_iter_t	 it, eit, pit;
+	ucl_object_t		*o, *inst, *list, *names;
+	char			 name[32];
+	const char		*sid;
+	char			*text;
+	bool			 here;
+	int			 i;
+
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		sid = str(edge, "server");
+		list = ucl_object_typed_new(UCL_ARRAY);
+		eit = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &eit, true)) != NULL) {
+			here = false;
+			pit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &pit, true)) != NULL) {
+				if (strcmp(str(ep, "edge"), sid) != 0)
+					continue;
+				u = ucl_object_lookup(ep, "uni");
+				for (i = 0; i < 2; i++) {
+					v = ucl_object_lookup(u, i == 0 ? "ipv4" :
+					    "ipv6");
+					if (str(v, "mode") != NULL && strcmp(str(v,
+					    "mode"), "dhcp") == 0)
+						here = true;
+				}
+			}
+			if (!here)
+				continue;
+			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+			inst = ucl_object_typed_new(UCL_OBJECT);
+			put(inst, "name", S(name));
+			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
+			    "fib"))));
+			text = dhcp_conf(pl, sw, sid);
+			put(inst, "conf", S(text));
+			free(text);
+			ucl_array_append(list, inst);
+		}
+		if (ucl_array_size(list) == 0) {
+			ucl_object_unref(list);
+			continue;
+		}
+		/* The package, with the tables: once. */
+		o = object(pl, sid, "dnsmasq", PH_FIBS, "dnsmasq from packages: "
+		    "the DHCP server at the UNIs, which the base system has not");
+		if (o != NULL) {
+			names = ucl_object_typed_new(UCL_ARRAY);
+			ucl_array_append(names, S("dnsmasq"));
+			make(o, job("pkg-install", "packages", names, NULL));
+		}
+		o = object(pl, sid, "dhcp", PH_BIRD, "DHCP: dnsmasq, %u instance%s "
+		    "in the services' tables, the hosts' addresses at the UNIs",
+		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
+		if (o == NULL) {
+			ucl_object_unref(list);
+			continue;
+		}
+		make(o, job("sdwan-dhcp", "instances", list, NULL));
+		unmake(o, job("sdwan-dhcp", "instances", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	}
 }
 
 
@@ -1340,7 +1876,20 @@ uni_ifname(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 	if (ucl_object_toint(ucl_object_lookup(u, "vlan")) <= 0)
 		return (str(u, "interface"));
 	snprintf(key, sizeof(key), "vlan:%s/%s", str(sw, "id"), str(ep, "id"));
-	al = ucl_object_lookup(pl->alloc, key);
+	if ((al = ucl_object_lookup(pl->alloc, key)) == NULL) {
+		/* Its unit, allocated now and kept; the UNI object finds it. */
+		ucl_object_t	*na;
+		int64_t		 unit;
+
+		if ((unit = unit_new(pl->alloc)) < 0)
+			return (str(u, "interface"));
+		na = ucl_object_typed_new(UCL_OBJECT);
+		put(na, "unit", I(unit));
+		put(na, "swvc", S(str(sw, "id")));
+		ucl_object_insert_key(pl->alloc, na, key, 0, true);
+		al = na;
+	}
+	ucl_object_insert_key(pl->used, B(true), key, 0, true);
 	snprintf(buf, len, "vlan%jd", (intmax_t)ucl_object_toint(
 	    ucl_object_lookup(al, "unit")));
 	return (buf);
@@ -2114,6 +2663,26 @@ rules_build(struct plan *pl, const char *sid)
 							if (afs_words(cr, nk,
 							    appid, words,
 							    sizeof(words), &fam)) {
+								/* By the breakout
+								 * domain's table
+								 * where there is
+								 * one (R20-R24):
+								 * setfib goes on
+								 * to the next
+								 * rule. */
+								if (bo_fib_of(sw) !=
+								    ucl_object_toint(
+								    ucl_object_lookup(
+								    sw, "fib")))
+									rule(rules,
+									    next,
+									    "setfib "
+									    "%jd %s%s",
+									    (intmax_t)
+									    bo_fib_of(
+									    sw),
+									    words,
+									    recv);
 								if (q >= 0)
 									rule(rules,
 									    next,
@@ -2282,18 +2851,16 @@ rules_build(struct plan *pl, const char *sid)
 				    "to not table(%s) out xmit %s", nat, kname,
 				    kname, bif);
 				rule(pre, RULE_FROM + 1, "setfib %jd ip from any "
-				    "to %s in recv %s", (intmax_t)
-				    ucl_object_toint(ucl_object_lookup(sw, "fib")),
-				    natip != NULL ? natip : str(bo, "address") !=
-				    NULL ? str(bo, "address") : "me", bif);
+				    "to %s in recv %s", (intmax_t)bo_fib_of(sw),
+				    natip != NULL ? natip : ucs_address(pl, sid, bo)
+				    != NULL ? ucs_address(pl, sid, bo) : "me", bif);
 				if (natip != NULL)
 					rule(pre, RULE_FROM + 1, "nat %d ip4 from "
 					    "any to %s in recv %s", nat, natip,
 					    bif);
 				rule(pre, RULE_FROM + 1, "setfib %jd ip from any "
-				    "to table(%s) in recv %s", (intmax_t)
-				    ucl_object_toint(ucl_object_lookup(sw, "fib")),
-				    kname, bif);
+				    "to table(%s) in recv %s", (intmax_t)bo_fib_of(
+				    sw), kname, bif);
 			}
 		}
 	}
@@ -2429,11 +2996,11 @@ static char *
 bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 {
 	struct kore_buf		*b;
-	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *r, *m, *v;
-	ucl_object_iter_t	 it, tit, nit;
-	const char		*rid, *fam, *ifn;
+	const ucl_object_t	*ep, *u, *t, *e0, *e1, *me, *far, *v;
+	ucl_object_iter_t	 it, tit;
+	const char		*rid, *ifn;
 	char			 ifbuf[32], ifaces[1200], sym[80], *out;
-	int64_t			 as, dist;
+	int64_t			 as;
 	int			 n, k;
 
 	b = kore_buf_alloc(8192);
@@ -2478,17 +3045,37 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 	    "protocol device {\n}\n\n", str(sw, "id"), server_name_of(sid),
 	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")), rid !=
 	    NULL ? rid : "0.0.0.1");
+	/* The tunnels' own interfaces too: a neighbour's next hop is
+	 * resolved by them, else its routes would be unreachable. */
+	it = NULL;
+	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
+		if (strcmp(str(t, "swvc"), str(sw, "id")) != 0)
+			continue;
+		tit = NULL;
+		while ((me = ucl_object_iterate(ucl_object_lookup(t, "ends"),
+		    &tit, true)) != NULL)
+			if (strcmp(str(me, "edge"), sid) == 0 && str(me, "ifname")
+			    != NULL && strlen(ifaces) + 40 < sizeof(ifaces))
+				snprintf(ifaces + strlen(ifaces), sizeof(ifaces) -
+				    strlen(ifaces), "%s\"%s\"", n++ > 0 ? ", " : "",
+				    str(me, "ifname"));
+	}
 	if (n > 0)
 		kore_buf_appendf(b, "protocol direct {\n\tipv4;\n\tipv6;\n\tinterface "
 		    "%s;\n}\n\n", ifaces);
 	/* The kernel's table: what the console put there is learned and
-	 * kept; what is learned here goes in, but not the connected. */
+	 * kept, and outranks what BGP brings (preference 200 to 100), so
+	 * the document's routes stay as they are and BGP's fill in the
+	 * rest; what is learned here goes in, but not the connected, nor
+	 * a route to nowhere. */
 	kore_buf_appendf(b, "protocol kernel kernel4 {\n\tkernel table %jd;\n\tlearn;\n"
-	    "\tpersist;\n\tipv4 {\n\t\timport all;\n\t\texport where source != "
-	    "RTS_DEVICE && source != RTS_INHERIT;\n\t};\n}\n\n"
-	    "protocol kernel kernel6 {\n\tkernel table %jd;\n\tlearn;\n"
-	    "\tpersist;\n\tipv6 {\n\t\timport all;\n\t\texport where source != "
-	    "RTS_DEVICE && source != RTS_INHERIT;\n\t};\n}\n\n", (intmax_t)
+	    "\tpersist;\n\tipv4 {\n\t\timport filter { preference = 200; accept; "
+	    "};\n\t\texport where source != RTS_DEVICE && source != RTS_INHERIT "
+	    "&& dest = RTD_UNICAST;\n\t};\n}\n\nprotocol kernel kernel6 {\n\t"
+	    "kernel table %jd;\n\tlearn;\n\tpersist;\n\tipv6 {\n\t\timport filter { "
+	    "preference = 200; accept; };\n\t\texport where source != RTS_DEVICE "
+	    "&& source != RTS_INHERIT && dest = RTD_UNICAST;\n\t};\n}\n\n",
+	    (intmax_t)
 	    ucl_object_toint(ucl_object_lookup(sw, "fib")), (intmax_t)
 	    ucl_object_toint(ucl_object_lookup(sw, "fib")));
 	/* BFD on each tunnel interface here (R58, R59, R159): the iBGP
@@ -2522,10 +3109,44 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		    bfd, "multiplier")) : 3));
 	}
 	/* iBGP with each other edge, by each tunnel between them. */
+	/* What goes to the other edges: the UNIs' subnets and what the
+	 * UNIs learn, not what the kernel's table holds of the console's
+	 * (each edge has its own) nor the tunnels' own addresses, which a
+	 * peer would resolve its next hop by in a circle. */
+	{
+		const ucl_object_t	*rp;
+		ucl_object_iter_t	 rit;
+		char			 resv[600];
+		int			 nr = 0;
+
+		resv[0] = '\0';
+		rit = NULL;
+		while ((rp = ucl_object_iterate(ucl_object_lookup(sw,
+		    "reserved_prefixes"), &rit, true)) != NULL && strlen(resv) +
+		    60 < sizeof(resv))
+			snprintf(resv + strlen(resv), sizeof(resv) - strlen(resv),
+			    "%s%s+", nr++ > 0 ? ", " : "",
+			    ucl_object_tostring_forced(rp));
+		/* The service domain's prefix, the tunnels' addresses, too. */
+		rp = ucl_object_lookup(ucl_object_lookup(ucl_object_lookup(sw,
+		    "domains"), "service"), "prefix");
+		if (rp != NULL && strlen(resv) + 60 < sizeof(resv))
+			snprintf(resv + strlen(resv), sizeof(resv) - strlen(resv),
+			    "%s%s+", nr++ > 0 ? ", " : "",
+			    ucl_object_tostring_forced(rp));
+		kore_buf_appendf(b, "filter to_edges {\n\tif source = RTS_INHERIT "
+		    "then reject;\n%s%s%s\taccept;\n}\n\n", nr > 0 ? "\tif net ~ [ "
+		    : "", nr > 0 ? resv : "", nr > 0 ? " ] then reject;\n" : "");
+	}
 	kore_buf_appendf(b, "template bgp edge {\n\tlocal as %jd;\n\thold time 30;\n"
-	    "%s\tipv4 {\n\t\timport all;\n\t\texport all;\n\t\tnext hop self;\n"
-	    "\t};\n\tipv6 {\n\t\timport all;\n\t\texport all;\n\t\tnext hop "
-	    "self;\n\t};\n}\n\n", (intmax_t)as, sw_bfd(sw) ? "\tbfd on;\n" : "");
+	    "\terror wait time 10, 60;\n%s", (intmax_t)as, sw_bfd(sw) ?
+	    "\tbfd on;\n" : "");
+	/* TCP MD5 on the sessions (Mplify 119 R11, R12). */
+	if (str(sw, "md5") != NULL)
+		kore_buf_appendf(b, "\tpassword \"%s\";\n", str(sw, "md5"));
+	kore_buf_appendf(b, "\tipv4 {\n\t\timport all;\n\t\texport filter "
+	    "to_edges;\n\t\tnext hop self;\n\t};\n\tipv6 {\n\t\timport all;\n\t\t"
+	    "export filter to_edges;\n\t\tnext hop self;\n\t};\n}\n\n");
 	k = 0;
 	it = NULL;
 	while ((t = ucl_object_iterate(pl->tunnels, &it, true)) != NULL) {
@@ -2559,6 +3180,29 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 		u = ucl_object_lookup(ep, "uni");
 		ifn = uni_ifname(pl, sw, ep, ifbuf, sizeof(ifbuf));
 		symbol(str(ep, "id"), sym, sizeof(sym));
+		bird_routing(b, u, "UNI", str(u, "id"), sym, ifn, as);
+	}
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
+ * BGP and OSPF with a neighbour at an interface, as an entry says them
+ * (§11.6.2, §11.6.3): a UNI's with the subscriber (protocols uni_*), a
+ * UCS End Point's with the underlay (ucs_*, Mplify 119 §12.2.3.5).
+ */
+static void
+bird_routing(struct kore_buf *b, const ucl_object_t *u, const char *what,
+    const char *id, const char *sym, const char *ifn, int64_t as)
+{
+	const ucl_object_t	*r, *m;
+	ucl_object_iter_t	 nit;
+	const char		*fam, *pfx;
+	int64_t			 dist;
+	int			 n;
+
+	pfx = strcmp(what, "UNI") == 0 ? "uni" : "ucs";
 		r = ucl_object_lookup(u, "bgp");
 		if (!is_nullish(r)) {
 			fam = str(r, "family");
@@ -2594,12 +3238,12 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 					snprintf(exp + strlen(exp), sizeof(exp) -
 					    strlen(exp), "\t\t\taccept;\n\t\t}");
 				}
-				kore_buf_appendf(b, "# UNI %s, the subscriber's %s\nprotocol "
-				    "bgp uni_%s_%d {\n\tlocal as %jd;\n\tneighbor "
+				kore_buf_appendf(b, "# %s %s, the neighbour's %s\nprotocol "
+				    "bgp %s_%s_%d {\n\tlocal as %jd;\n\tneighbor "
 				    "%s as %jd;\n\tinterface \"%s\";\n"
-				    "\tpreference %jd;\n", str(u, "id"),
+				    "\tpreference %jd;\n", what, id,
 				    ucl_object_tostring_forced(m),
-				    sym, n++, (intmax_t)as,
+				    pfx, sym, n++, (intmax_t)as,
 				    ucl_object_tostring_forced(m), (intmax_t)
 				    ucl_object_toint(ucl_object_lookup(r, "as")),
 				    ifn, (intmax_t)(256 - dist));
@@ -2632,10 +3276,10 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 				if ((vi == 0 && strcmp(fam, "ipv6") == 0) || (vi ==
 				    1 && strcmp(fam, "ipv4") == 0))
 					continue;
-				kore_buf_appendf(b, "# UNI %s, OSPF%s with the subscriber\n"
-				    "protocol ospf %s uni_%s_%s {\n\tpreference "
-				    "%jd;\n", str(u, "id"), vi == 0 ? "v2" : "v3",
-				    vers[vi], sym, vers[vi],
+				kore_buf_appendf(b, "# %s %s, OSPF%s with the neighbour\n"
+				    "protocol ospf %s %s_%s_%s {\n\tpreference "
+				    "%jd;\n", what, id, vi == 0 ? "v2" : "v3",
+				    vers[vi], pfx, sym, vers[vi],
 				    (intmax_t)(256 - dist));
 				bird_channel(b, vi == 0 ? "ipv4" : "ipv6", "all");
 				kore_buf_appendf(b, "\tarea %jd {\n\t\tinterface \"%s\" {\n",
@@ -2661,7 +3305,54 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 				kore_buf_appendf(b, "\t\t};\n\t};\n}\n\n");
 			}
 		}
-	}
+}
+
+/* "\tkernel table N;\n" for a table that is not the first. */
+static const char *
+wfmt_table(int64_t fib)
+{
+	static char	buf[48];
+
+	snprintf(buf, sizeof(buf), "\tkernel table %jd;\n", (intmax_t)fib);
+	return (buf);
+}
+
+/* A UCS End Point's BIRD instance text: routing with the underlay in
+ * the end point's table (Mplify 119 §12.2.3.5). */
+static char *
+ucs_bird_conf(struct plan *pl, const ucl_object_t *edge,
+    const ucl_object_t *uep, int64_t vrf)
+{
+	struct kore_buf	*b;
+	const char	*addr;
+	char		 sym[80], *out;
+	int64_t		 as;
+
+	b = kore_buf_alloc(4096);
+	addr = ucs_address(pl, str(edge, "server"), uep);
+	as = ucl_object_lookup(ucl_object_lookup(ucl_object_lookup(uep,
+	    "routing"), "bgp"), "as") != NULL ? ucl_object_toint(
+	    ucl_object_lookup(ucl_object_lookup(ucl_object_lookup(uep,
+	    "routing"), "bgp"), "local_as")) : DEFAULT_AS;
+	if (ucl_object_lookup(ucl_object_lookup(ucl_object_lookup(uep,
+	    "routing"), "bgp"), "local_as") == NULL)
+		as = DEFAULT_AS;
+	kore_buf_appendf(b, "# Written by the Arcana console: UCS end point %s at "
+	    "%s, routing with the underlay in table %jd.\n# Changed by the "
+	    "console's next apply.\nrouter id %s;\nlog syslog { warning, error "
+	    "};\n\nprotocol device {\n}\n\nprotocol direct {\n\tipv4;\n\tipv6;\n\t"
+	    "interface \"%s\";\n}\n\nprotocol kernel kernel4 {\n%s\tlearn;\n\t"
+	    "persist;\n\tipv4 {\n\t\timport all;\n\t\texport where source != "
+	    "RTS_DEVICE && source != RTS_INHERIT && dest = RTD_UNICAST;\n\t};\n}"
+	    "\n\nprotocol kernel kernel6 {\n%s\tlearn;\n\tpersist;\n\tipv6 {\n\t\t"
+	    "import all;\n\t\texport where source != RTS_DEVICE && source != "
+	    "RTS_INHERIT && dest = RTD_UNICAST;\n\t};\n}\n\n", str(uep, "id"),
+	    server_name_of(str(edge, "server")), (intmax_t)vrf, addr != NULL &&
+	    family(addr) == AF_INET ? addr : "0.0.0.2", str(uep, "interface"),
+	    vrf > 0 ? wfmt_table(vrf) : "", vrf > 0 ? wfmt_table(vrf) : "");
+	symbol(str(uep, "id"), sym, sizeof(sym));
+	bird_routing(b, ucl_object_lookup(uep, "routing"), "UCS", str(uep, "id"),
+	    sym, str(uep, "interface"), as);
 	out = strdup(kore_buf_stringify(b, NULL));
 	kore_buf_free(b);
 	return (out);
@@ -2670,7 +3361,8 @@ bird_conf(struct plan *pl, const ucl_object_t *sw, const char *sid)
 /*
  * Each edge's BIRD instances: one for each service that routes at a
  * UNI, on every edge of the service (what one UNI learns reaches the
- * others by iBGP), named sw<fib>.
+ * others by iBGP), named sw<fib>; and one per UCS End Point that routes
+ * with the underlay, named ucs<vrf> (ucs0 in the first table).
  */
 static void
 bird_build(struct plan *pl, const ucl_object_t *doc)
@@ -2712,6 +3404,36 @@ bird_build(struct plan *pl, const ucl_object_t *doc)
 			free(text);
 			ucl_array_append(list, inst);
 		}
+		/* The UCS End Points that route with the underlay. */
+		{
+			const ucl_object_t	*uep;
+			ucl_object_iter_t	 uit;
+			int64_t			 vrf;
+
+			uit = NULL;
+			while ((uep = ucl_object_iterate(ucl_object_lookup(edge,
+			    "ucs_end_points"), &uit, true)) != NULL) {
+				if (is_nullish(ucl_object_lookup(uep, "routing")) ||
+				    (is_nullish(ucl_object_lookup(ucl_object_lookup(
+				    uep, "routing"), "bgp")) && is_nullish(
+				    ucl_object_lookup(ucl_object_lookup(uep,
+				    "routing"), "ospf"))))
+					continue;
+				vrf = ucl_object_lookup(uep, "vrf") != NULL ?
+				    ucl_object_toint(ucl_object_lookup(uep, "vrf")) :
+				    0;
+				snprintf(name, sizeof(name), "ucs%jd", (intmax_t)vrf);
+				if (by(list, "name", name) != NULL)
+					continue;
+				inst = ucl_object_typed_new(UCL_OBJECT);
+				put(inst, "name", S(name));
+				put(inst, "fib", I(vrf));
+				text = ucs_bird_conf(pl, edge, uep, vrf);
+				put(inst, "conf", S(text));
+				free(text);
+				ucl_array_append(list, inst);
+			}
+		}
 		if (ucl_array_size(list) == 0) {
 			ucl_object_unref(list);
 			continue;
@@ -2752,17 +3474,49 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	pl->tunnels = ucl_object_typed_new(UCL_ARRAY);
 	pl->used = ucl_object_typed_new(UCL_OBJECT);
 	pl->notes = ucl_object_typed_new(UCL_ARRAY);
+	pl->learned = ucl_object_typed_new(UCL_OBJECT);
+	/* The hosts as they are reached now: a UCS end point's address may
+	 * be asked of its host (ucs_address). */
+	host_refs();
 	/* The tunnels first: their units and pairs, in the document's order. */
 	it = NULL;
 	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
 	    true)) != NULL)
 		if (!tunnels(pl, sw))
 			return (false);
-	/* Each edge's FIBs: as many as its highest service's, and one. */
+	/* Each edge's FIBs: as many as its highest service's, its domains'
+	 * among them, and one. */
 	it = NULL;
 	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
 	    true)) != NULL) {
+		const ucl_object_t	*sdom;
+
 		fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+		if (bo_fib_of(sw) > fib)
+			fib = bo_fib_of(sw);
+		{
+			/* The UCS End Points' tables of the service's edges. */
+			const ucl_object_t	*ed, *uep;
+			ucl_object_iter_t	 dit, uit;
+
+			dit = NULL;
+			while ((ed = ucl_object_iterate(ucl_object_lookup(doc,
+			    "edges"), &dit, true)) != NULL) {
+				uit = NULL;
+				while ((uep = ucl_object_iterate(ucl_object_lookup(ed,
+				    "ucs_end_points"), &uit, true)) != NULL)
+					if (ucl_object_lookup(uep, "vrf") != NULL &&
+					    ucl_object_toint(ucl_object_lookup(uep,
+					    "vrf")) > fib)
+						fib = ucl_object_toint(
+						    ucl_object_lookup(uep, "vrf"));
+			}
+		}
+		sdom = ucl_object_lookup(ucl_object_lookup(sw, "domains"),
+		    "service");
+		if (sdom != NULL && ucl_object_lookup(sdom, "fib") != NULL &&
+		    ucl_object_toint(ucl_object_lookup(sdom, "fib")) > fib)
+			fib = ucl_object_toint(ucl_object_lookup(sdom, "fib"));
 		it2 = NULL;
 		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
 		    "end_points"), &it2, true)) != NULL) {
@@ -2785,6 +3539,92 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				    B(true), NULL));
 			}
 		}
+	}
+	/* Each UCS End Point as its entry says (Mplify 119 §12.2.3): its
+	 * interface addressed by DHCP or SLAAC, in its own table (vrf). */
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		const ucl_object_t	*uep;
+		ucl_object_t		*j;
+		ucl_object_iter_t	 uit;
+		const char		*how;
+		int64_t			 vrf;
+
+		uit = NULL;
+		while ((uep = ucl_object_iterate(ucl_object_lookup(e,
+		    "ucs_end_points"), &uit, true)) != NULL) {
+			how = str(uep, "addressing");
+			vrf = ucl_object_lookup(uep, "vrf") != NULL ?
+			    ucl_object_toint(ucl_object_lookup(uep, "vrf")) : 0;
+			if ((how == NULL || strcmp(how, "static") == 0) && vrf == 0)
+				continue;
+			snprintf(n, sizeof(n), "ucs:%s", str(uep, "id"));
+			o = object(pl, str(e, "server"), n, PH_FIBS, "UCS end point "
+			    "%s: %s%s%s%s", str(uep, "id"), str(uep, "interface"),
+			    how != NULL && strcmp(how, "static") != 0 ? " addressed "
+			    "by " : "", how != NULL && strcmp(how, "static") != 0 ?
+			    (strcmp(how, "dhcp") == 0 ? "DHCP (dhclient)" : "SLAAC "
+			    "(rtsol)") : "", vrf > 0 ? ", in its own table" : "");
+			if (o == NULL)
+				continue;
+			j = job("if-set", "interface", S(str(uep, "interface")),
+			    "persist", B(true), NULL);
+			if (how != NULL && strcmp(how, "static") != 0)
+				put(j, "addressing", S(how));
+			if (vrf > 0)
+				put(j, "fib", I(vrf));
+			make(o, j);
+			j = job("if-set", "interface", S(str(uep, "interface")),
+			    "persist", B(true), NULL);
+			if (how != NULL && strcmp(how, "static") != 0)
+				put(j, "addressing", S("static"));
+			if (vrf > 0)
+				put(j, "fib", I(0));
+			unmake(o, j);
+		}
+	}
+	/* An edge routes between its UNIs and its tunnels: the kernel's
+	 * forwarding on, both families, kept (sysctl.conf). */
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		static const char *const oids[] = { "net.inet.ip.forwarding",
+		    "net.inet6.ip6.forwarding" };
+		int	i;
+
+		o = object(pl, str(e, "server"), "forwarding", PH_FIBS,
+		    "forwarding: the kernel routes between the UNIs and the "
+		    "tunnels (net.inet.ip.forwarding, net.inet6.ip6.forwarding)");
+		if (o == NULL)
+			continue;
+		for (i = 0; i < 2; i++) {
+			args = ucl_object_typed_new(UCL_ARRAY);
+			ucl_array_append(args, S(oids[i]));
+			ucl_array_append(args, S("1"));
+			make(o, job("sysctl", "args", args, "persist", B(true),
+			    NULL));
+		}
+	}
+	/* NTP where an edge says its servers: the time for faults to line
+	 * up and keys to turn (Mplify 119 §12.2.2), with the FIBs. */
+	it = NULL;
+	while ((e = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		const ucl_object_t	*ns;
+
+		if ((ns = ucl_object_lookup(e, "ntp")) == NULL ||
+		    ucl_object_type(ns) != UCL_ARRAY || ucl_array_size(ns) == 0)
+			continue;
+		o = object(pl, str(e, "server"), "ntp", PH_FIBS, "NTP: ntpd by "
+		    "%u server%s, for the time faults and keys go by",
+		    ucl_array_size(ns), ucl_array_size(ns) == 1 ? "" : "s");
+		if (o == NULL)
+			continue;
+		make(o, job("ntp", "args", ucl_object_copy(ns), "persist",
+		    B(true), NULL));
+		unmake(o, job("ntp", "args", ucl_object_typed_new(UCL_ARRAY),
+		    "remove", B(true), "persist", B(true), NULL));
 	}
 	/* IPsec where a tunnel wants it; then each tunnel's two ends. */
 	it = NULL;
@@ -2859,6 +3699,10 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 					put(tg, ucl_object_key(v),
 					    ucl_object_copy(v));
 			}
+			/* Its threshold crossing alerts. */
+			if ((po = ucl_object_lookup(swo, "tca")) != NULL &&
+			    ucl_object_type(po) == UCL_OBJECT)
+				put(tg, "tca", ucl_object_copy(po));
 			ucl_array_append(targets, tg);
 		}
 	}
@@ -2928,6 +3772,16 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			}
 		}
 	}
+	/* The UNIs, last. */
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
+	    true)) != NULL) {
+		it2 = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+		    "end_points"), &it2, true)) != NULL)
+			if (!uni_obj(pl, sw, ep))
+				return (false);
+	}
 	/*
 	 * Breakout (§9.12.2.5): where a flow of an edge's UNI may leave
 	 * for the Internet, the service's default route: by the edge's
@@ -2950,6 +3804,12 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			if (!breaks_here(pl, sw, sid))
 				continue;
 			bo = breakout_of(pl, sw, sid, &local, &bo_sid);
+			/* A breakout domain of its own (Mplify 119 R20-R26):
+			 * the default route there, the UNIs' routes with it,
+			 * the subscriber's table without a default route. */
+			fib = bo_fib_of(sw);
+			if (fib != ucl_object_toint(ucl_object_lookup(sw, "fib")))
+				breakout_uni_routes(pl, sid, sw, fib);
 			if (local) {
 				gw = str(bo, "gateway");
 				if (gw == NULL) {
@@ -2966,11 +3826,12 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				af = family(gw);
 				snprintf(n, sizeof(n), "%s/%d", gw, af == AF_INET ?
 				    32 : 128);
-				route_obj(pl, sid, sw, n, str(bo, "interface"),
-				    "the breakout gateway, by its interface");
-				route_obj(pl, sid, sw, af == AF_INET ? "0.0.0.0/0"
-				    : "::/0", gw, "the Internet, by local "
-				    "breakout");
+				route_fib_obj(pl, sid, sw, fib, PH_ROUTE, n, str(bo,
+				    "interface"), "the breakout gateway, by its "
+				    "interface");
+				route_fib_obj(pl, sid, sw, fib, PH_ROUTE, af ==
+				    AF_INET ? "0.0.0.0/0" : "::/0", gw, "the Internet, "
+				    "by local breakout");
 				continue;
 			}
 			for (af = AF_INET; af != AF_UNSPEC; af = af == AF_INET ?
@@ -2982,21 +3843,25 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 				    "ends"), (unsigned int)far);
 				snprintf(why, sizeof(why), "the Internet, by "
 				    "breakout at %s", server_name_of(bo_sid));
-				route_obj(pl, sid, sw, af == AF_INET ? "0.0.0.0/0"
-				    : "::/0", str(fe, af == AF_INET ? "inner4" :
-				    "inner6"), why);
+				if (fib != ucl_object_toint(ucl_object_lookup(sw,
+				    "fib"))) {
+					/* The far end by the tunnel, in that
+					 * table too. */
+					snprintf(n, sizeof(n), "%s/%d", str(fe, af
+					    == AF_INET ? "inner4" : "inner6"), af ==
+					    AF_INET ? 32 : 128);
+					route_fib_obj(pl, sid, sw, fib, PH_ROUTE, n,
+					    str(ucl_array_find_index(
+					    ucl_object_lookup(tt, "ends"),
+					    (unsigned int)(1 - far)), "ifname"),
+					    "the tunnel's far end, in the breakout "
+					    "domain");
+				}
+				route_fib_obj(pl, sid, sw, fib, PH_ROUTE, af ==
+				    AF_INET ? "0.0.0.0/0" : "::/0", str(fe, af ==
+				    AF_INET ? "inner4" : "inner6"), why);
 			}
 		}
-	}
-	/* The UNIs, last. */
-	it = NULL;
-	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
-	    true)) != NULL) {
-		it2 = NULL;
-		while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
-		    "end_points"), &it2, true)) != NULL)
-			if (!uni_obj(pl, sw, ep))
-				return (false);
 	}
 	/* The rules of each edge, and the steering of their tables. */
 	{
@@ -3008,8 +3873,9 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 			if (!rules_build(pl, str(edge, "server")))
 				return (false);
 	}
-	/* Routing at the UNIs, once they are up. */
+	/* Routing at the UNIs, once they are up; the hosts' addresses. */
 	bird_build(pl, doc);
+	dhcp_build(pl, doc);
 	return (true);
 }
 
@@ -3027,6 +3893,8 @@ plan_free(struct plan *pl)
 		ucl_object_unref(pl->used);
 	if (pl->notes != NULL)
 		ucl_object_unref(pl->notes);
+	if (pl->learned != NULL)
+		ucl_object_unref(pl->learned);
 	memset(pl, 0, sizeof(*pl));
 }
 
@@ -3569,6 +4437,73 @@ run_main(void *arg)
 			put(s, "state", S("not run"));
 	put(ap, "state", S(ok ? "done" : "failed"));
 	put(ap, "ended", I(time(NULL)));
+	/* Into the history: when, how it went, what it did; 50 kept. */
+	{
+		ucl_object_t		*hist, *h, *by;
+		const ucl_object_t	*hs;
+		ucl_object_iter_t	 hit;
+		int			 made, remade, unmade, failed, nsteps;
+
+		if ((hist = (ucl_object_t *)(uintptr_t)ucl_object_lookup(r->st,
+		    "history")) == NULL) {
+			hist = ucl_object_typed_new(UCL_ARRAY);
+			put(r->st, "history", hist);
+		}
+		made = remade = unmade = failed = nsteps = 0;
+		by = ucl_object_typed_new(UCL_OBJECT);
+		hit = NULL;
+		while ((hs = ucl_object_iterate(ucl_object_lookup(ap, "steps"),
+		    &hit, true)) != NULL) {
+			ucl_object_t	*e;
+			const char	*sid = str(hs, "server");
+
+			nsteps++;
+			if (str(hs, "state") != NULL && strcmp(str(hs, "state"),
+			    "failed") == 0)
+				failed++;
+			else if (str(hs, "change") != NULL && strcmp(str(hs,
+			    "change"), "make") == 0)
+				made++;
+			else if (str(hs, "change") != NULL && strcmp(str(hs,
+			    "change"), "remake") == 0)
+				remade++;
+			else if (str(hs, "change") != NULL && strcmp(str(hs,
+			    "change"), "unmake") == 0)
+				unmade++;
+			if (sid == NULL)
+				continue;
+			if ((e = (ucl_object_t *)(uintptr_t)ucl_object_lookup(by,
+			    sid)) == NULL) {
+				e = ucl_object_typed_new(UCL_OBJECT);
+				put(e, "name", S(str(hs, "name") != NULL ? str(hs,
+				    "name") : sid));
+				put(e, "steps", I(0));
+				put(e, "failed", I(0));
+				ucl_object_insert_key(by, e, sid, 0, true);
+			}
+			put(e, "steps", I(ucl_object_toint(ucl_object_lookup(e,
+			    "steps")) + 1));
+			if (str(hs, "state") != NULL && strcmp(str(hs, "state"),
+			    "failed") == 0)
+				put(e, "failed", I(ucl_object_toint(
+				    ucl_object_lookup(e, "failed")) + 1));
+		}
+		h = ucl_object_typed_new(UCL_OBJECT);
+		put(h, "started", I(ucl_object_toint(ucl_object_lookup(ap,
+		    "started"))));
+		put(h, "ended", I(time(NULL)));
+		put(h, "state", S(ok ? "done" : "failed"));
+		put(h, "fresh", B(ucl_flag(ap, "fresh")));
+		put(h, "steps", I(nsteps));
+		put(h, "made", I(made));
+		put(h, "remade", I(remade));
+		put(h, "unmade", I(unmade));
+		put(h, "failed", I(failed));
+		put(h, "edges", by);
+		ucl_array_append(hist, h);
+		while (ucl_array_size(hist) > 50)
+			ucl_object_unref(ucl_array_pop_first(hist));
+	}
 	state_save(r->st);
 	thread_log(ok ? LOG_NOTICE : LOG_ERR, "sdwan: apply %s", ok ? "done" :
 	    "failed");
@@ -3971,6 +4906,9 @@ api_sdwan_edges(struct http_request *req)
 			    NULL ? ucl_object_copy(ucl_object_lookup(st,
 			    "apply")) : ucl_object_typed_new(UCL_OBJECT));
 			put(body, "applying", B(applying));
+			put(body, "history", ucl_object_lookup(st, "history") !=
+			    NULL ? ucl_object_copy(ucl_object_lookup(st,
+			    "history")) : ucl_object_typed_new(UCL_ARRAY));
 			ucl_object_unref(st);
 			return (reply_json(req, 200, body));
 		}

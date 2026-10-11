@@ -833,11 +833,61 @@ connection(struct ck *c, const ucl_object_t *v, int af, bool *none)
 	*none = false;
 	if (af == AF_INET6 && strcmp(mode, "ll-only") == 0)
 		return (true);
-	if (strcmp(mode, "static") != 0)
-		return (fail(c, "%s is none or static%s; DHCP and SLAAC come "
-		    "later", what, af == AF_INET6 ? ", or ll-only" : ""));
+	if (strcmp(mode, "static") != 0 && strcmp(mode, "dhcp") != 0 &&
+	    (af == AF_INET || strcmp(mode, "slaac") != 0))
+		return (fail(c, "%s is none, static or dhcp%s (§11.%d)", what,
+		    af == AF_INET6 ? ", slaac or ll-only" : "", af == AF_INET ?
+		    4 : 5));
 	if (!subnet(c, v, af, what))
 		return (false);
+	if (strcmp(mode, "static") != 0) {
+		/* The edge gives the hosts their addresses: by dnsmasq (DHCP)
+		 * or by rtadvd (SLAAC), a /64 for IPv6 as hosts expect; the
+		 * reserved prefixes are not given out (§11.4, §11.5); the DNS
+		 * servers told to the hosts; a lease's length. */
+		struct pfx	 p, r;
+		const char	*lease;
+		size_t		 i;
+
+		(void)prefix(str(v, "prefix"), &p, false);
+		if (af == AF_INET6 && p.len != 64)
+			return (fail(c, "%s: %s at a UNI is a /64 prefix, as the "
+			    "hosts expect (R137)", what, mode));
+		if (af == AF_INET && p.len > 30)
+			return (fail(c, "%s: dhcp needs a subnet with hosts in it, "
+			    "a /30 at most", what));
+		e = ucl_object_lookup(v, "reserved");
+		if (e != NULL && ucl_object_type(e) != UCL_ARRAY)
+			return (fail(c, "%s: reserved is a list of prefixes", what));
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(v, "reserved"),
+		    &it, true)) != NULL)
+			if (!prefix(ucl_object_tostring_forced(e), &r, false) ||
+			    !holds(&p, &r))
+				return (fail(c, "%s: a reserved prefix is inside %s "
+				    "(§11.%d)", what, str(v, "prefix"), af == AF_INET
+				    ? 4 : 5));
+		e = ucl_object_lookup(v, "dns");
+		if (e != NULL && (ucl_object_type(e) != UCL_ARRAY || count(e) >
+		    4))
+			return (fail(c, "%s: dns is a list of 4 addresses at most",
+			    what));
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(v, "dns"), &it,
+		    true)) != NULL)
+			if (!address(ucl_object_tostring_forced(e), &r) || r.af !=
+			    af)
+				return (fail(c, "%s: a dns server is an %s address",
+				    what, af == AF_INET ? "IPv4" : "IPv6"));
+		if ((lease = str(v, "lease")) != NULL) {
+			for (i = 0; isdigit((unsigned char)lease[i]); i++)
+				;
+			if (i == 0 || i > 6 || strchr("mhd", lease[i]) == NULL ||
+			    lease[i + 1] != '\0')
+				return (fail(c, "%s: a lease is a number of m, h or "
+				    "d, as 12h", what));
+		}
+	}
 	/* Secondary subnets: each a prefix and the provider's addresses. */
 	sec = ucl_object_lookup(v, "secondary");
 	if (sec != NULL && ucl_object_type(sec) != UCL_ARRAY)
@@ -898,10 +948,12 @@ routing(struct ck *c, const ucl_object_t *v, const char *what,
 			    (a.af == AF_INET6 && strcmp(fam, "ipv4") == 0))
 				return (fail(c, "bgp: %s is not of the family",
 				    ucl_object_tostring_forced(m)));
+			/* At a UNI, within its prefixes; a UCS has none to
+			 * check against. */
 			for (i = 0; i < nnets; i++)
 				if (holds(&nets[i], &a))
 					break;
-			if (i == nnets)
+			if (nnets > 0 && i == nnets)
 				return (fail(c, "bgp: %s is not within the UNI's "
 				    "prefixes (§11.6.2)",
 				    ucl_object_tostring_forced(m)));
@@ -1014,6 +1066,99 @@ uni(struct ck *c, const ucl_object_t *u, struct pfx *nets, int *nnets)
 
 /* ---- One SWVC ----------------------------------------------------- */
 
+/* A route distinguisher or target: ASN:n or A.B.C.D:n (RFC 4364 §4.2). */
+static bool
+rd_ok(const char *s)
+{
+	const char	*colon;
+	struct pfx	 a;
+	char		 left[32];
+	size_t		 i;
+
+	if (s == NULL || (colon = strrchr(s, ':')) == NULL || colon == s ||
+	    colon[1] == '\0' || (size_t)(colon - s) >= sizeof(left))
+		return (false);
+	for (i = 1; colon[i] != '\0'; i++)
+		if (!isdigit((unsigned char)colon[i]))
+			return (false);
+	snprintf(left, sizeof(left), "%.*s", (int)(colon - s), s);
+	for (i = 0; left[i] != '\0'; i++)
+		if (!isdigit((unsigned char)left[i]) && left[i] != '.')
+			return (false);
+	return (strchr(left, '.') == NULL || (address(left, &a) && a.af ==
+	    AF_INET));
+}
+
+/*
+ * The routing domains of a service (Mplify 119 §7.3, R15-R26): the
+ * service domain (the tunnels' addresses from its prefix; its FIB kept
+ * for the control plane), the breakout domain (a FIB of its own for
+ * the Internet, the UNIs' routes imported into it) and the subscriber
+ * domain (the service's own FIB); each a route distinguisher, route
+ * targets and an MPLS label for the tunnel format to come.
+ */
+static bool
+domains(struct ck *c, const ucl_object_t *sw)
+{
+	static const char *const names[] = { "service", "breakout",
+	    "subscriber" };
+	const ucl_object_t	*d, *v, *e;
+	ucl_object_iter_t	 it;
+	struct pfx		 p;
+	int64_t			 own, fib;
+	int			 i;
+
+	if ((d = ucl_object_lookup(sw, "domains")) == NULL || is_null(d))
+		return (true);
+	if (ucl_object_type(d) != UCL_OBJECT)
+		return (fail(c, "domains is an object: service, breakout, "
+		    "subscriber (Mplify 119 §7.3)"));
+	own = ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	for (i = 0; i < 3; i++) {
+		if ((v = ucl_object_lookup(d, names[i])) == NULL || is_null(v))
+			continue;
+		if (ucl_object_type(v) != UCL_OBJECT)
+			return (fail(c, "domains.%s is an object", names[i]));
+		if (i < 2 && ucl_object_lookup(v, "fib") != NULL) {
+			if (!is_int(ucl_object_lookup(v, "fib"), 1, FIB_MAX, &fib)
+			    || fib == own)
+				return (fail(c, "domains.%s.fib is a routing table "
+				    "of its own, 1 or more and not the service's "
+				    "(R20)", names[i]));
+			if (i == 1 && ucl_object_lookup(ucl_object_lookup(d,
+			    "service"), "fib") != NULL && ucl_object_toint(
+			    ucl_object_lookup(ucl_object_lookup(d, "service"),
+			    "fib")) == fib)
+				return (fail(c, "domains: the breakout and the "
+				    "service domains have a table each"));
+		}
+		if (i == 0 && str(v, "prefix") != NULL && (!prefix(str(v,
+		    "prefix"), &p, false) || p.len > (p.af == AF_INET ? 30 :
+		    126)))
+			return (fail(c, "domains.service.prefix is the service "
+			    "domain's prefix, the tunnels' addresses from it"));
+		if (str(v, "rd") != NULL && !rd_ok(str(v, "rd")))
+			return (fail(c, "domains.%s.rd is a route distinguisher, "
+			    "ASN:n or A.B.C.D:n (R16)", names[i]));
+		if ((e = ucl_object_lookup(v, "rt")) != NULL && (ucl_object_type(
+		    e) != UCL_ARRAY || ucl_array_size(e) > 8))
+			return (fail(c, "domains.%s.rt is a list of route targets, "
+			    "8 at most (R17)", names[i]));
+		it = NULL;
+		while ((e = ucl_object_iterate(ucl_object_lookup(v, "rt"), &it,
+		    true)) != NULL)
+			if (!rd_ok(ucl_object_tostring_forced(e)))
+				return (fail(c, "domains.%s.rt: %s is not a route "
+				    "target, ASN:n or A.B.C.D:n (R17)", names[i],
+				    ucl_object_tostring_forced(e)));
+		if (ucl_object_lookup(v, "label") != NULL && !is_int(
+		    ucl_object_lookup(v, "label"), 16, 1048575, NULL))
+			return (fail(c, "domains.%s.label is an MPLS label, 16 to "
+			    "1048575 (R19)", names[i]));
+	}
+	return (true);
+}
+
 static bool
 swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
     ucl_object_t *seen_ep, ucl_object_t *seen_uni, ucl_object_t *seen_if)
@@ -1028,6 +1173,10 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 	const char		*s;
 
 	base = strlen(c->where);
+	if (str(sw, "md5") != NULL && (strlen(str(sw, "md5")) > 80 ||
+	    strpbrk(str(sw, "md5"), "\"\\\n") != NULL))
+		return (fail(c, "md5 is the edges' iBGP password, 80 characters "
+		    "at most, no quotes (Mplify 119 R12)"));
 	if (ucl_object_lookup(sw, "as") != NULL && !is_int(ucl_object_lookup(
 	    sw, "as"), 1, 4294967295LL, NULL))
 		return (fail(c, "as is the provider's AS number, the edges' "
@@ -1035,6 +1184,8 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 	if (!is_int(ucl_object_lookup(sw, "fib"), 1, FIB_MAX, NULL))
 		return (fail(c, "its fib is 1 or more: FIB 0 is the "
 		    "underlay's"));
+	if (!domains(c, sw))
+		return (false);
 	/* SWVC List of UCSs (§9.3). */
 	if (!names(c, ucl_object_lookup(sw, "ucs"), "ucs", false))
 		return (false);
@@ -1428,6 +1579,25 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 			return (fail(c, "bfd: multiplier is 2 to 10, 3 as a rule "
 			    "(R159)"));
 	}
+	/* Threshold crossing alerts (Mplify 119 §11.4, MEF 105 §7.4). */
+	if ((v = ucl_object_lookup(sw, "tca")) != NULL && !is_null(v)) {
+		double	d;
+
+		if (ucl_object_type(v) != UCL_OBJECT)
+			return (fail(c, "tca is an object: delay, ipdv, loss, "
+			    "damping"));
+		if (((e = ucl_object_lookup(v, "delay")) != NULL && (!is_num(e,
+		    &d) || d <= 0)) || ((e = ucl_object_lookup(v, "ipdv")) !=
+		    NULL && (!is_num(e, &d) || d <= 0)))
+			return (fail(c, "tca: delay and ipdv are ms, more than 0"));
+		if ((e = ucl_object_lookup(v, "loss")) != NULL && (!is_num(e, &d)
+		    || d <= 0 || d > 1))
+			return (fail(c, "tca: loss is a fraction, 0 to 1"));
+		if ((e = ucl_object_lookup(v, "damping")) != NULL && !is_int(e,
+		    1, 100, NULL))
+			return (fail(c, "tca: damping is intervals in a row, 1 to "
+			    "100 (CR2)"));
+	}
 	/* Probing (Mplify 119 §11.4): the defaults of its tunnels. */
 	if ((v = ucl_object_lookup(sw, "probe")) != NULL) {
 		if (ucl_object_type(v) != UCL_OBJECT)
@@ -1526,6 +1696,30 @@ check(const ucl_object_t *doc, struct ck *c)
 			ok = fail(c, "no such server");
 			break;
 		}
+		/* NTP (Mplify 119 §12.2.2): the servers the edge keeps time by. */
+		if ((e = ucl_object_lookup(v, "ntp")) != NULL && !is_null(e)) {
+			const ucl_object_t	*ns;
+			ucl_object_iter_t	 nit;
+
+			if (ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e)
+			    == 0 || ucl_array_size(e) > 8) {
+				ok = fail(c, "ntp is a list of servers, 1 to 8");
+				break;
+			}
+			nit = NULL;
+			while (ok && (ns = ucl_object_iterate(e, &nit, true)) !=
+			    NULL) {
+				const char	*h = ucl_object_tostring_forced(ns);
+
+				if (h == NULL || h[0] == '\0' || strlen(h) > 253 ||
+				    h[strspn(h, "abcdefghijklmnopqrstuvwxyzABCDEFGHI"
+				    "JKLMNOPQRSTUVWXYZ0123456789.-:")] != '\0')
+					ok = fail(c, "ntp: %s is not a server's name "
+					    "or address", h != NULL ? h : "");
+			}
+			if (!ok)
+				break;
+		}
 		if (!objects(c, ucl_object_lookup(v, "ucs_end_points"),
 		    "ucs_end_points", "id", false, seen_ucsep, "R176")) {
 			ok = false;
@@ -1557,6 +1751,29 @@ check(const ucl_object_t *doc, struct ck *c)
 			    !is_int(ucl_object_lookup(e, "bandwidth"), 0,
 			    INT64_MAX, NULL))
 				ok = fail(c, "its bandwidth is bits per second");
+			/* How it is addressed and routed (Mplify 119 §12.2.3):
+			 * by DHCP or SLAAC the address is learned from the
+			 * host; a vrf is a table of its own; bgp or ospf with
+			 * the underlay as at a UNI. */
+			else if (str(e, "addressing") != NULL && !one_of(str(e,
+			    "addressing"), (const char *const[]){ "static", "dhcp",
+			    "slaac", NULL }))
+				ok = fail(c, "its addressing is static, dhcp or slaac "
+				    "(Mplify 119 §12.2.3.2)");
+			else if (ucl_object_lookup(e, "vrf") != NULL && !is_int(
+			    ucl_object_lookup(e, "vrf"), 1, FIB_MAX, NULL))
+				ok = fail(c, "its vrf is a routing table, 1 or more "
+				    "(§12.2.3.4)");
+			else if (ucl_object_lookup(e, "routing") != NULL &&
+			    !is_null(ucl_object_lookup(e, "routing")) &&
+			    ucl_object_type(ucl_object_lookup(e, "routing")) !=
+			    UCL_OBJECT)
+				ok = fail(c, "its routing is an object: bgp, ospf");
+			else if (!routing(c, ucl_object_lookup(ucl_object_lookup(e,
+			    "routing"), "bgp"), "bgp", NULL, 0) || !routing(c,
+			    ucl_object_lookup(ucl_object_lookup(e, "routing"),
+			    "ospf"), "ospf", NULL, 0))
+				ok = false;
 		}
 	}
 	ucl_object_unref(seen_ucsep);
@@ -1589,6 +1806,45 @@ check(const ucl_object_t *doc, struct ck *c)
 		}
 		ucl_object_insert_key(fibs, ucl_object_frombool(true), fib, 0,
 		    true);
+		/* The domains' tables and labels too: one service's each
+		 * (Mplify 119 R15-R20). */
+		{
+			static const char *const dn[] = { "service", "breakout",
+			    "subscriber" };
+			const ucl_object_t	*dom;
+			int			 i;
+
+			for (i = 0; ok && i < 3; i++) {
+				dom = ucl_object_lookup(ucl_object_lookup(sw,
+				    "domains"), dn[i]);
+				if (dom == NULL)
+					continue;
+				if (ucl_object_lookup(dom, "fib") != NULL) {
+					snprintf(fib, sizeof(fib), "%jd", (intmax_t)
+					    ucl_object_toint(ucl_object_lookup(dom,
+					    "fib")));
+					if (ucl_object_lookup(fibs, fib) != NULL) {
+						ok = fail(c, "domains.%s.fib %s is "
+						    "another's (R20)", dn[i], fib);
+						break;
+					}
+					ucl_object_insert_key(fibs,
+					    ucl_object_frombool(true), fib, 0, true);
+				}
+				if (ucl_object_lookup(dom, "label") != NULL) {
+					snprintf(fib, sizeof(fib), "label %jd",
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(dom, "label")));
+					if (ucl_object_lookup(fibs, fib) != NULL) {
+						ok = fail(c, "domains.%s.%s is "
+						    "another's (R19)", dn[i], fib);
+						break;
+					}
+					ucl_object_insert_key(fibs,
+					    ucl_object_frombool(true), fib, 0, true);
+				}
+			}
+		}
 		/* A private UCS is one SWVC's alone (R5). */
 		it2 = NULL;
 		while (ok && (e = ucl_object_iterate(ucl_object_lookup(sw,

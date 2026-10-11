@@ -101,7 +101,9 @@ case "\$1" in
 	grep -v "^\$2=" "\$conf" > "\$conf.new"; mv "\$conf.new" "\$conf" ;;
 *+=*)	key=\${1%%+=*}; val=\${1#*+=}
 	old=\$(sed -n "s/^\$key=\"\(.*\)\"\\\$/\1/p" "\$conf")
-	put "\$key" "\${old:+\$old }\$val"; echo "\$key: \$old -> \$val" ;;
+	# As sysrc(8): appended when not already present.
+	case " \$old " in *" \$val "*) ;; *) put "\$key" "\${old:+\$old }\$val" ;; esac
+	echo "\$key: \$old -> \$val" ;;
 *-=*)	key=\${1%%-=*}; val=\${1#*-=}
 	old=\$(sed -n "s/^\$key=\"\(.*\)\"\\\$/\1/p" "\$conf")
 	new=\$(echo " \$old " | sed -e "s/ \$val / /" -e 's/^ *//' -e 's/ *\$//')
@@ -270,7 +272,8 @@ start_daemon()
 	    -L "$(pwd)/fake-jls" -x "$(pwd)/fake-jexec" \
 	    -H "$(pwd)/fake-helper" -T "$(pwd)/fake-kldload" \
 	    -t "$(pwd)/fake-kldunload" -1 "$(pwd)/history.conf" -w 2 \
-	    -X "$(pwd)/fake-traceroute" \
+	    -X "$(pwd)/fake-traceroute" -4 "$(pwd)/ntp.conf" \
+	    -6 "$(pwd)/rtadvd.conf" -7 "$(pwd)/fake-dnsmasq" -8 "$(pwd)/fake-rtsol" \
 	    $DAEMON_ARGS \
 	    > daemon.out 2>&1 &
 	echo $! > daemon.pid
@@ -984,6 +987,21 @@ EOS
 	    cat rc.conf
 	atf_check -s exit:1 -o match:'without quotes' \
 	    "$JGC" -p -c "$SOCK" interface lo0 description 'a"; reboot'
+	# How it gets its address: DHCP by rc.conf's word and dhclient
+	# (kept, as its rc script insists), SLAAC by accept_rtadv and
+	# rtsol, kept in ifconfig_lo0_ipv6; static takes both off.
+	printf '#!/bin/sh\necho "rtsol $*" >> %s/rtsol.log\n' "$(pwd)" > fake-rtsol
+	chmod +x fake-rtsol
+	atf_check -s exit:1 -o match:'say persist' "$JGC" -c "$SOCK" interface lo0 addressing dhcp
+	atf_check -o match:'lo0: set addressing dhcp' "$JGC" -p -c "$SOCK" interface lo0 addressing dhcp
+	atf_check -o match:'^ifconfig_lo0="DHCP inet 127.0.0.1/8 mtu 1300 up"$' cat rc.conf
+	test -f running.dhclient || atf_fail "dhclient was not started"
+	atf_check -o match:'fake-ifconfig lo0 inet6 accept_rtadv -ifdisabled' "$JGC" -p -c "$SOCK" interface lo0 addressing slaac
+	atf_check -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' -o match:'^ifconfig_lo0_ipv6="inet6 accept_rtadv"$' cat rc.conf
+	atf_check -o match:'^rtsol lo0$' cat rtsol.log
+	test ! -f running.dhclient || atf_fail "dhclient was not stopped"
+	atf_check -o match:'fake-ifconfig lo0 inet6 -accept_rtadv' "$JGC" -p -c "$SOCK" interface lo0 addressing static
+	atf_check -o not-match:'ifconfig_lo0_ipv6' -o match:'^ifconfig_lo0="inet 127.0.0.1/8 mtu 1300 up"$' cat rc.conf
 
 	# Addresses kept as aliases: numbered from 0, and without gaps
 	# when one in the middle goes.
@@ -2570,11 +2588,22 @@ EOS
 	cat > fake-setfib <<EOS
 #!/bin/sh
 echo "setfib \$*" >> $(pwd)/setfib.log
+shift 2
+case "\$1" in
+# dnsmasq -C conf -x pid: started, says the pid file, this agent's pid.
+*dnsmasq) sleep 300 & echo \$! > "\$5" ;;
 # bird -c conf -s sock -P pid: started, says the socket.
-shift 3; shift 2; touch "\$2"
+*) shift 3; touch "\$2" ;;
+esac
 exit 0
 EOS
-	chmod +x fake-bird fake-birdc fake-setfib
+	cat > fake-dnsmasq <<EOS
+#!/bin/sh
+echo "dnsmasq \$*" >> $(pwd)/dnsmasq.log
+[ "\$1" = --test ] && { grep -q BROKEN "\$3" && { echo "dnsmasq: bad option at line 1 of \$3" >&2; exit 1; }; exit 0; }
+exit 0
+EOS
+	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
 	atf_check -s exit:1 -e match:'named twice' -o ignore "$JGC" -c "$SOCK" sdwan bird \
@@ -2608,13 +2637,20 @@ EOS
 	atf_check -o match:'"chosen":1,"candidates":\[\{"id":"t1","via":"100.64.0.1","state":"not probed","bfd":"down"\}' \
 	    "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"kind":"sdwan-tunnel","data":\{"id":"t1","address":"100.64.0.1","interface":"gre100","state":"down","by":"bfd"\}' \
+	    -o match:'"kind":"sdwan-fault","data":\{"type":"bfd","severity":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","state":"set"\}' \
 	    "$JGC" -c "$SOCK" events
+	# A fault of the day, open; cleared when BFD is up again.
+	atf_check -o match:'"faults":\[\{"t":[0-9]+,"type":"bfd","severity":"Major","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is down","cleared":false\}' \
+	    "$JGC" -c "$SOCK" sdwan
+	test -f sdwan-faults.json || atf_fail "the faults are not kept"
 	rm -f bfd.down
 	for i in $(seq 1 30); do
 		"$JGC" -c "$SOCK" sdwan | grep -q '"chosen":0' && break
 		sleep 0.2
 	done
 	atf_check -o match:'"chosen":0' "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"type":"bfd","severity":"Cleared","was":"Major","object":"t1","by":"bfd","description":"BFD to 100.64.0.1 on gre100 is up","cleared":true,"cleared_at":[0-9]+' \
+	    "$JGC" -c "$SOCK" sdwan
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"sw1","fib":1,"conf":"router id 100.64.0.0;\nprotocol device {}\nprotocol static {}\n"}]}'
 	atf_check -o match:'configure$' cat birdc.log
@@ -2632,6 +2668,25 @@ EOS
 	    -o match:'^ipfw -q pipe 3000 delete$' cat ipfw.log
 	atf_check -o inline:'yes\n' sh -c "test \$(grep -n '^ipfw -q queue 3001 delete' ipfw.log | cut -d: -f1 | head -1) -lt \$(grep -n '^ipfw -q pipe 3000 delete' ipfw.log | cut -d: -f1 | head -1) && echo yes"
 	atf_check -o match:'"rules":\{"set":0,' "$JGC" -c "$SOCK" sdwan
+	# DHCP instances (dnsmasq): a bad list refused, one not taken by
+	# dnsmasq --test not run; one started in its table with the pid and
+	# lease files added to its file; listed with the leases it gave;
+	# stopped when not named.
+	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan dhcp \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"BROKEN"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dhcp \
+	    '{"instances":[{"name":"sw1","fib":1,"conf":"port=0\ninterface=lo1\ndhcp-range=10.1.0.2,10.1.0.254,255.255.255.0,12h"}]}'
+	atf_check -o match:'^setfib -F 1 .*fake-dnsmasq -C .*sdwan-dhcp-sw1.conf -x .*sdwan-dhcp-sw1.pid$' cat setfib.log
+	atf_check -o match:'^dnsmasq --test -C .*sdwan-dhcp-sw1.conf$' cat dnsmasq.log
+	atf_check -o match:'^interface=lo1$' -o match:'^pid-file=.*sdwan-dhcp-sw1.pid$' -o match:'^dhcp-leasefile=.*sdwan-dhcp-sw1.leases$' \
+	    cat "$(dirname "$f")/sdwan-dhcp-sw1.conf"
+	printf '1791716017 00:11:22:33:44:55 10.1.0.50 host1 01:00:11:22:33:44:55\nduid 00:01:00:01\n1791716099 123456 2001:db8:1::100 host2 00:01:00:01:aa\n' \
+	    > "$(dirname "$f")/sdwan-dhcp-sw1.leases"
+	atf_check -o match:'"dhcp":\[\{"name":"sw1","fib":1,"running":true,"leases":\[\{"expires":1791716017,"id":"00:11:22:33:44:55","address":"10.1.0.50","name":"host1"\},\{"expires":1791716099,"id":"123456","address":"2001:db8:1::100","name":"host2"\}\]\}\]' \
+	    "$JGC" -c "$SOCK" sdwan
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan dhcp '{"instances":[]}'
+	test ! -f "$(dirname "$f")/sdwan-dhcp-sw1.conf" || atf_fail "the dhcp instance's file stayed"
+	atf_check -o match:'"dhcp":\[\]' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()
 {
@@ -2692,7 +2747,7 @@ EOS
 	start_daemon
 
 	atf_check -o match:'^Built: +[0-9]+\.[0-9]+' \
-	    -o match:'git clone --depth 1 --branch main -- https://example.org/arcana.git' \
+	    -o match:'git clone --depth 1 --recurse-submodules --shallow-submodules --branch main -- https://example.org/arcana.git' \
 	    "$JGC" -t -c "$SOCK" agent-build -o built https://example.org/arcana.git main
 	atf_check cmp -s "$JGD" built
 	atf_check test -x built
@@ -4116,8 +4171,84 @@ storage_cleanup()
 	stop_daemon
 }
 
+atf_test_case ntp cleanup
+ntp_head()
+{
+	atf_set "descr" "The NTP servers: ntp.conf between arcana's marks, ntpd enabled and restarted; taken away again"
+}
+ntp_body()
+{
+	write_rc
+	printf 'driftfile /var/db/ntpd.drift\nserver 0.freebsd.pool.ntp.org iburst\n' > ntp.conf
+	start_daemon
+	atf_check -s exit:1 -e match:'a server is a name' -o ignore "$JGC" -c "$SOCK" ntp 'bad host'
+	atf_check -o match:'ntp servers ntp.example.org and more \(kept\)' "$JGC" -c "$SOCK" -p ntp ntp.example.org 10.99.0.9
+	atf_check -o match:'^server 0.freebsd.pool.ntp.org iburst$' \
+	    -o match:'^# arcana: the NTP servers, set by the console; begin$' \
+	    -o match:'^server ntp.example.org iburst$' \
+	    -o match:'^server 10.99.0.9 iburst$' \
+	    -o match:'^# arcana: end$' cat ntp.conf
+	atf_check -o match:'^ntpd_enable="YES"$' cat rc.conf
+	test -f running.ntpd || atf_fail "ntpd was not restarted"
+	# Set again: one block, the new servers only.
+	atf_check -o ignore "$JGC" -c "$SOCK" -p ntp 10.99.0.10
+	atf_check -o inline:'1\n' sh -c "grep -c '^# arcana: end' ntp.conf"
+	atf_check -o not-match:'ntp.example.org' -o match:'^server 10.99.0.10 iburst$' cat ntp.conf
+	# Taken away: the block goes, the line before stays.
+	atf_check -o match:'ntp servers removed' "$JGC" -c "$SOCK" ntp remove
+	atf_check -o not-match:'arcana' -o not-match:'10.99.0.10' -o match:'^server 0.freebsd.pool.ntp.org iburst$' cat ntp.conf
+}
+ntp_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case rtadvd cleanup
+rtadvd_head()
+{
+	atf_set "descr" "Router advertisements on an interface: an entry in rtadvd.conf between arcana's marks, the interface on rtadvd_interfaces, rtadvd enabled and restarted; taken away again"
+}
+rtadvd_body()
+{
+	write_rc
+	printf 'em0:\\\n\t:addr="2001:db8:9::":prefixlen#64:\n' > rtadvd.conf
+	start_daemon
+	atf_check -s exit:1 -e match:'length 64' -o ignore "$JGC" -c "$SOCK" rtadvd gre100 2001:db8:1::/48
+	atf_check -s exit:1 -e match:'not an IPv6 address' -o ignore "$JGC" -c "$SOCK" rtadvd gre100 2001:db8:1::/64 8.8.8.8
+	atf_check -o match:'rtadvd on gre100 2001:db8:1::/64' "$JGC" -c "$SOCK" -p rtadvd gre100 2001:db8:1::/64 2001:db8::53 2001:db8::54
+	atf_check -o match:'^em0:' \
+	    -o match:'^# arcana: the UNIs. router advertisements, set by the console; begin$' \
+	    -o match:'^gre100:\\$' \
+	    -o match:'^	:addr="2001:db8:1::":prefixlen#64:rdnss="2001:db8::53,2001:db8::54":$' \
+	    -o match:'^# arcana: end$' cat rtadvd.conf
+	atf_check -o match:'^rtadvd_enable="YES"$' -o match:'^rtadvd_interfaces="gre100"$' cat rc.conf
+	test -f running.rtadvd || atf_fail "rtadvd was not restarted"
+	# A second interface: two entries in the one block; the first set
+	# again: its entry once, the new prefix.
+	atf_check -o ignore "$JGC" -c "$SOCK" -p rtadvd vlan100 2001:db8:2::/64
+	atf_check -o ignore "$JGC" -c "$SOCK" -p rtadvd gre100 2001:db8:3::/64
+	atf_check -o inline:'1\n' sh -c "grep -c '^# arcana: end' rtadvd.conf"
+	atf_check -o inline:'1\n' sh -c "grep -c '^gre100:' rtadvd.conf"
+	atf_check -o match:'addr="2001:db8:3::"' -o not-match:'2001:db8:1::' -o match:'^vlan100:' cat rtadvd.conf
+	atf_check -o match:'^rtadvd_interfaces="gre100 vlan100"$' cat rc.conf
+	# Taken away one by one: the other stays; the last takes the block
+	# and rtadvd with it.
+	atf_check -o match:'rtadvd off gre100' "$JGC" -c "$SOCK" -p rtadvd gre100 remove
+	atf_check -o not-match:'gre100' -o match:'^vlan100:' -o match:'arcana' cat rtadvd.conf
+	atf_check -o match:'^rtadvd_enable="YES"$' -o match:'^rtadvd_interfaces="vlan100"$' cat rc.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" -p rtadvd vlan100 remove
+	atf_check -o not-match:'arcana' -o not-match:'vlan100' -o match:'^em0:' cat rtadvd.conf
+	atf_check -o match:'^rtadvd_enable="NO"$' cat rc.conf
+}
+rtadvd_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case ntp
+	atf_add_test_case rtadvd
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan

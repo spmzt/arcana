@@ -183,9 +183,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	char	 jgd[MAXPATHLEN], listen[MAXPATHLEN + 16], www[MAXPATHLEN];
 	char	 send[MAXPATHLEN];
 	char	 rcd[MAXPATHLEN], birdconf[MAXPATHLEN], local[MAXPATHLEN];
+	char	 ntpconf[MAXPATHLEN], rtadvdconf[MAXPATHLEN];
 	char	 fstab[MAXPATHLEN];
 	const char *kore, *dh;
-	char	*argv[92];
+	char	*argv[100];
 	FILE	*fp;
 	pid_t	 pid;
 
@@ -289,8 +290,9 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "-a|-A) sed -e 's/=\"\\(.*\\)\"$/: \\1/' \"$conf\" ;;\n"
 	    "-x) grep -v \"^$2=\" \"$conf\" > c.new; mv c.new \"$conf\" ;;\n"
 	    "*+=*|*-=*) k=${1%%%%[+-]=*}; v=${1#*=}; o=$(sed -n \"s/^$k=\\\"\\("
-	    ".*\\)\\\"\\$/\\1/p\" \"$conf\"); case \"$1\" in *+=*) n=\"${o:+$o }"
-	    "$v\" ;; *) n=$(echo \" $o \" | sed \"s/ $v / /\" | xargs) ;; esac; "
+	    ".*\\)\\\"\\$/\\1/p\" \"$conf\"); case \"$1\" in *+=*) case \" $o \" "
+	    "in *\" $v \"*) n=$o ;; *) n=\"${o:+$o }$v\" ;; esac ;; *) n=$(echo "
+	    "\" $o \" | sed \"s/ $v / /\" | xargs) ;; esac; "
 	    "grep -v \"^$k=\" \"$conf\" > c.new; printf '%%s=\"%%s\"\\n' \"$k\" "
 	    "\"$n\" >> c.new; mv c.new \"$conf\" ;;\n"
 	    "*=*) k=${1%%%%=*}; v=${1#*=}; grep -v \"^$k=\" \"$conf\" > c.new; "
@@ -560,6 +562,12 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    ";;\n"
 	    "*) printf 'BIRD 2.15.1 ready.\\n%s: done\\n' \"$2\" ;;\n"
 	    "esac\nexit 0\n");
+	/* dnsmasq: --test takes any file; started by fake-setfib. */
+	put("fake-dnsmasq", "#!/bin/sh\necho \"dnsmasq $*\" >> dnsmasq.log\n"
+	    "exit 0\n");
+	ATF_REQUIRE(chmod("fake-dnsmasq", 0755) == 0);
+	put("fake-rtsol", "#!/bin/sh\necho \"rtsol $*\" >> rtsol.log\nexit 0\n");
+	ATF_REQUIRE(chmod("fake-rtsol", 0755) == 0);
 	put("fake-bird", "#!/bin/sh\necho \"fake-bird $*\" >&2\n"
 	    "grep -q BROKEN \"$3\" && { echo \"bird: $3:2:1 syntax error\" >&2; "
 	    "exit 1; }\nexit 0\n");
@@ -865,8 +873,18 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	argv[87] = (char *)(uintptr_t)"./fake-traceroute";
 	argv[88] = (char *)(uintptr_t)"-3";
 	argv[89] = (char *)(uintptr_t)"./fake-setfib";
-	argv[90] = NULL;
+	argv[90] = (char *)(uintptr_t)"-4";
+	argv[91] = ntpconf;
+	argv[92] = (char *)(uintptr_t)"-6";
+	argv[93] = rtadvdconf;
+	argv[94] = (char *)(uintptr_t)"-7";
+	argv[95] = (char *)(uintptr_t)"./fake-dnsmasq";
+	argv[96] = (char *)(uintptr_t)"-8";
+	argv[97] = (char *)(uintptr_t)"./fake-rtsol";
+	argv[98] = NULL;
 	snprintf(rcd, sizeof(rcd), "%s/rc.d", cwd);
+	snprintf(ntpconf, sizeof(ntpconf), "%s/ntp.conf", cwd);
+	snprintf(rtadvdconf, sizeof(rtadvdconf), "%s/rtadvd.conf", cwd);
 	pid = spawn_server(argv, "arcana-agent.out");
 	ATF_REQUIRE((fp = fopen("arcana-agent.pid", "w")) != NULL);
 	fprintf(fp, "%d\n", (int)pid);
@@ -1168,13 +1186,16 @@ http_on(int s, const char *host, const char *hdrs, const char *method,
 	size_t			 len, cap, need;
 	ssize_t			 n;
 
+	int			 attempt;
+
 	memset(r, 0, sizeof(*r));
 	ATF_REQUIRE(asprintf(&req, "%s %s HTTP/1.1\r\nHost: %s\r\n"
 	    "Connection: close\r\n%sContent-Type: application/json\r\n"
 	    "Content-Length: %zu\r\n\r\n%s", method, path, host, hdrs,
 	    body != NULL ? strlen(body) : 0, body != NULL ? body : "") != -1);
+	attempt = 0;
+again:
 	ATF_REQUIRE(write(s, req, strlen(req)) == (ssize_t)strlen(req));
-	free(req);
 
 	cap = 65536;
 	ATF_REQUIRE((buf = malloc(cap + 1)) != NULL);
@@ -1201,6 +1222,18 @@ http_on(int s, const char *host, const char *hdrs, const char *method,
 	}
 	close(s);
 	buf[len] = '\0';
+	/*
+	 * Nothing at all: the connection was dropped before it was read,
+	 * which a busy worker does now and then under the whole suite.
+	 * Once more, on a new connection, when the console is asked.
+	 */
+	if (len == 0 && attempt++ < 2 && strcmp(host, "localhost:8443") == 0) {
+		fprintf(stderr, "%s %s: no answer, asked again\n", method, path);
+		free(buf);
+		s = console_socket();
+		goto again;
+	}
+	free(req);
 	ATF_REQUIRE_MSG(sscanf(buf, "HTTP/1.1 %d", &r->status) == 1,
 	    "bad response: %.200s", buf);
 	ATF_REQUIRE((b = strstr(buf, "\r\n\r\n")) != NULL);

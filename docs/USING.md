@@ -885,8 +885,9 @@ The console is laid out as a tree and tabs.
   gave it, and a dashed line to the jail whose end of an epair is in
   the bridge; pressed, it opens the host's bridges.
 - **Recent tasks** along the bottom: the last few, each with its host,
-  how it ended and how long it took, always in sight; one picked opens
-  the list at it, where each also has the time it began. The tasks
+  how it ended and how long it took, in sight while the dock is
+  closed; one picked opens the list at it, where each also has the
+  time it began, and the strip goes while the list is open. The tasks
   that ended are kept in the browser and are still there when the
   page is opened again, without their traces.
 - **Bridges**, in a host's network or a jail's: each bridge drawn as
@@ -1038,12 +1039,21 @@ names them. It is one document with three parts:
   `server` and lists its `ucs_end_points` (§12.3): an `id`, its
   `ucs`, the `interface` it is on, and maybe an `address`, a
   `gateway`, a `bandwidth` in bits per second, `backup` (used only
-  when nothing else is left) and `breakout` (traffic for the Internet
-  leaves here; only on a public underlay).
+  when nothing else is left), `breakout` (traffic for the Internet
+  leaves here; only on a public underlay), and, Mplify 119 §12.2.3,
+  its `addressing` (`static`, `dhcp` or `slaac`: by the last two the
+  address is the host's own, learned when a plan is made), a `vrf`
+  (a routing table of the underlay's own) and its `routing` (`bgp`,
+  `ospf`, shaped as a UNI's).
 - `swvcs`: the services (SD-WAN Virtual Connections, §9). Each has
   an `id`, the `fib` it has on its edges (1 or more; FIB 0 is the
   underlay's), its `ucs`, `reserved_prefixes` (the provider's own
-  addresses, tunnels' among them), and:
+  addresses, tunnels' among them), its `domains` (Mplify 119 §7.3,
+  all optional: `service`, with the `prefix` the tunnels' addresses
+  come from and a `fib` kept for the control plane; `breakout`, with
+  the `fib` the Internet traffic goes by; `subscriber`; each with a
+  route distinguisher `rd`, route targets `rt` and an MPLS `label`,
+  R15–R20, one service's each), and:
   - `zones` (§9.5): a `name` and `prefixes`, a list or `Default`, and
     `policies`, each an `app` (a flow or a group) and the ingress
     `policy` it gets in the whole zone, or `Block`;
@@ -1071,11 +1081,13 @@ names them. It is one document with three parts:
     measured;
   - `end_points` (§10): an `id`, the `edge` it is on, its `uni` (§11:
     an `id`, the `interface`, a `vlan` or 0, `max_frame`, `ipv4` and
-    `ipv6` addressing, `none` or `static` with a `prefix` and the
-    `provider`'s addresses in it, `ll-only` for IPv6 too, and static
-    `routes`), its `policy_map` (each a `zone` or `Internet`, an `app`,
-    and its `ingress` and `egress` policies, over the zone's own) and
-    its `nat`.
+    `ipv6` addressing, `none`, `static`, `dhcp` or (IPv6) `slaac`, each
+    but none with a `prefix` and the `provider`'s addresses in it,
+    `ll-only` for IPv6 too; with dhcp or slaac the `reserved` prefixes
+    not given out, the `dns` servers told to the hosts and a `lease`
+    (§11.4, §11.5); and static `routes`), its `policy_map` (each a
+    `zone` or `Internet`, an `app`, and its `ingress` and `egress`
+    policies, over the zone's own) and its `nat`.
 
 **Dashboard** counts what there is, each number naming the FreeBSD
 piece that does the work (routing tables by setfib, tunnels by gre,
@@ -1118,7 +1130,12 @@ from an example** writes one with two of the console's hosts as its
 edges.
 
 **Edges** shows what the kept services make on the edges, and makes
-it. Each edge is to have, for each service on it:
+it: **Deploy** says first what it will make, make again and take away
+and asks, then runs it, each edge's steps done so far shown on its
+line while it runs; the table lists each edge's objects by step in
+the order they are made, the changes alone until **Show all**; **Past
+applies** lists the last fifty, when, how each went and what it did.
+Each edge is to have, for each service on it:
 
 - `net.fibs` raised to the highest service FIB on it, and one (never
   lowered). It is per vnet: a fresh vnet has 1. `net.add_addr_allfibs`
@@ -1181,6 +1198,14 @@ and 3), `timeout` (ms, 1000), `history` (samples kept, 3600) and
 `report`; `intervals.eval` is the sample's length. The targets are
 kept beside `history.conf` for the agent's next start; `arcanactl
 sdwan` reads what they saw, `arcanactl sdwan probes json` sets them.
+Under each tunnel's table, its **monitor**: three charts over the last
+5, 15 or 60 minutes (the buttons at the top), the delay (each end's
+mean a line, its least to most a band), the variation and the loss,
+both ends each in a colour, the service's `tca` threshold a dashed
+line where set, and the tunnel's faults (tunnel, bfd, tca) as bands of
+the time they were open; a column hovered gives its figures. The page
+asks each edge only for the samples after the last it gave (`after`)
+and keeps the earlier ones, as many as the agent does.
 
 **The rules** (after the probes, before the routes and UNIs): the
 console compiles each edge's services into one ipfw ruleset of their
@@ -1268,10 +1293,12 @@ edges, named `sw<fib>` and run by the agent in the service's table
 (`setfib`, with a control socket and a pid file beside the agent's
 kept files; `sdwan-bird`, kept and started again with the agent): the
 kernel's table learned and kept, so what the console put there stays
-and is advertised; the UNIs' connected routes; iBGP with every other
-edge by each tunnel between them (the service's `as`, 64512 unless
-said), next hop the tunnel's own address, so what one UNI learns
-reaches them all; and at each UNI the protocol its entry says, the
+and outranks what BGP brings; the UNIs' and the tunnels' connected
+routes; iBGP with every other edge by each tunnel between them (the
+service's `as`, 64512 unless said), next hop the tunnel's own address,
+advertising the UNIs' routes and what they learn (not the kernel's
+own, nor the reserved prefixes: a peer would resolve its next hop by
+them in a circle), so what one UNI learns reaches them all; and at each UNI the protocol its entry says, the
 `distance` its preference (256 less it, R140–R142). What a UNI learns
 goes by the service's table and the tunnel iBGP chose, not by the
 policies' tables: steering by performance is of the prefixes written
@@ -1279,10 +1306,88 @@ in the document. With `bfd` in a service (`interval` 100 to 300 ms,
 `multiplier`, Mplify 119 §10.5 and R159), the instance watches each
 tunnel interface by BFD and the edges' iBGP sessions go by it; the
 agent reads the sessions every second into the `sdwan` read, a
-session that goes down or comes up is a fault (`sdwan-tunnel`, by
-bfd, R60), and the steering takes BFD's word over the probe's where
-there is a session. Paths shows BFD's state beside the probe's. AS override, damping and extended communities are
-refused, BIRD having no word for them; DHCP and SLAAC at a UNI are
-still to come. Paths shows each edge's instances and their protocols,
+session that goes down after it was up, or comes up again, is a fault
+(`sdwan-tunnel`, by bfd, R60), and the steering takes BFD's word over the probe's where
+there is a session. Paths shows BFD's state beside the probe's. With
+`md5` in a service, the edges' iBGP sessions are signed with TCP MD5
+(R12). An edge with `ntp` (its servers, in the edge form) gets them
+written into its `ntp.conf` and ntpd enabled and restarted, with the
+FIBs, so faults line up and keys can turn together (Mplify 119
+§12.2.2); the `ntp` job does it, and `arcanactl ntp` by hand.
+
+**The routing domains** (Mplify 119 §7.3, R15–R26): a service's
+`domains` name its tables beyond its own. With a `breakout` domain's
+`fib`, the apply keeps the Internet apart from the subscriber's table:
+the default route (by the local breakout gateway, or by the tunnel to
+the edge that breaks out, whose far end gets a route by the tunnel
+interface there) goes into the breakout table, the edge's own UNIs'
+subnets and static routes are imported into it (R25, R26) once the
+UNIs are up, so what comes back finds the hosts, the flows that break
+out are sent to it by `setfib` before they leave, and what comes back
+in at the breakout interface is set to it too; the service's own table
+holds no default route then. net.fibs is raised over the domains'
+tables as well. With a `service` domain's `prefix`, the tunnels' inner
+addresses are taken from it rather than from the reserved prefixes,
+and the edges' iBGP keeps it to themselves like them; its `fib` is
+kept for the control plane interface to come. The route
+distinguishers, targets and labels are checked and kept for the
+tunnel format to come; nothing uses them yet.
+
+**The UCS End Points, addressed and routed** (Mplify 119 §12.2.3):
+with `addressing` dhcp the apply puts the interface on DHCP (the DHCP
+word of `ifconfig_<if>` in rc.conf, which dhclient's rc script reads,
+and `service dhclient restart <if>`), with slaac on router
+advertisements (`inet6 accept_rtadv` and rtsol once, kept in
+`ifconfig_<if>_ipv6`); the `if-set` job's `addressing`, `arcanactl
+interface <if> addressing` by hand. The end point's `address` may then
+be left out: the plan asks the host for the interface's first global
+address and uses it as the tunnels' outer one, and an end point whose
+host has none yet is left without tunnels, with a note, until the
+next apply. With a `vrf` the interface goes into that table and the
+tunnels over it send their outer packets by it (`tunnelfib`; IPsec and
+WireGuard keep the first table). With `routing` (`bgp` with the
+underlay's `as` and `neighbors`, or `ospf`, as a UNI's entry) the edge
+runs a BIRD instance of its own for the underlay, `ucs<vrf>`, in that
+table, with the kernel's routes learned and kept and the interface's
+connected ones; `sdwan-bird` keeps it with the services'.
+
+**The hosts' addresses at a UNI** (§11.4, §11.5): with `static` the
+hosts set their own and the edge only has the provider's addresses on
+the interface. With `slaac` (IPv6, a /64) the base system's rtadvd
+advertises the prefix on the UNI, and the `dns` servers as RDNSS: an
+entry for the interface in `rtadvd.conf` between arcana's marks, the
+interface on `rtadvd_interfaces`, rtadvd enabled and restarted (the
+`rtadvd` job; `arcanactl rtadvd` by hand). With `dhcp` the edge gives
+the addresses: the base system has no DHCP server, so dnsmasq from
+packages (installed by the apply), an instance of each service on each
+edge, run in the service's table by setfib like the BIRD instances,
+checked by `dnsmasq --test` first, its pid and lease files beside the
+agent's kept files, started again at the agent's start (`sdwan-dhcp`;
+`arcanactl sdwan dhcp json`). It serves no DNS; its ranges are the
+subnet's hosts less the provider's addresses and the `reserved`
+prefixes (for IPv6, ::100 to ::ffff of the /64, less the reserved),
+the router the provider's first address, the `dns` servers told, the
+`lease` 12h unless said; for IPv6 it sends the router advertisements
+that tell the hosts to ask. The apply also turns the kernel's
+forwarding on, both families, kept in `sysctl.conf`. Paths lists each
+edge's instances and the leases they gave, under Addresses given.
+
+**Faults** (Mplify 119 §11.3): each edge keeps the day's faults, each
+with its time, type, severity (Warning, Minor, Major, Critical, and
+Cleared), what it is of, who saw it and a line: a tunnel the probes
+lost (tunnel), a BFD session down (bfd), a BGP neighbour down after
+it was up (bgp-neighbor), a BIRD instance that stopped answering, which
+the agent starts again at once (bird-instance), a metric
+over a threshold (tca), CPU or memory over the sampler's limit (cpu,
+memory). One of a type and object is open at a time; set and cleared
+are events (`sdwan-fault`) within the second (R71), and `GET
+/api/servers/<id>/sdwan` lists the day's; Paths lists them, open
+first, and the dashboard counts the open ones. A service's `tca`
+(thresholds for `delay` and `ipdv` in ms and `loss` as a fraction,
+and `damping`, intervals in a row, 1 by default) gives the probes the
+thresholds: a metric over its threshold for so many intervals is a
+fault, cleared when under it again for as many (MEF 105 §7.4,
+stateless, O1); the service form asks for them. AS override, damping and extended communities are
+refused, BIRD having no word for them. Paths shows each edge's instances and their protocols,
 as `birdc show protocols` lists them; `arcanactl sdwan bird json`
 sets them by hand.

@@ -135,6 +135,7 @@ usage(void)
 	    "    interface name mtu number\n"
 	    "    interface name description text\n"
 	    "    interface name fib | tunnelfib number\n"
+	    "    interface name addressing dhcp | slaac | static\n"
 	    "    interface name create [tunnel local remote] [address "
 	    "address [peer address]]\n        [mtu number] [description "
 	    "text] [id number] [parent interface] [reqid number]\n"
@@ -169,6 +170,8 @@ usage(void)
 	    "        [table name] [all]\n"
 	    "    stats\n"
 	    "    kmod [load | unload module]\n"
+	    "    ntp server ... | remove\n"
+	    "    rtadvd interface prefix [dns ...] | interface remove\n"
 	    "    sysctl [name | start of a name]\n"
 	    "    sysctl parts [name | start of a name]\n"
 	    "    sysctl name=value\n"
@@ -1322,6 +1325,19 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		arc_sdwan_bird_rsp_free(rs);
 		return (error);
 	}
+	if (argc == 3 && strcmp(argv[1], "dhcp") == 0) {
+		struct arc_sdwan_dhcp_req	 rq;
+		struct arc_sdwan_dhcp_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = argv[2];
+		if ((error = arc_sdwan_dhcp(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan dhcp");
+		error = json_out("sdwan-dhcp", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_dhcp_rsp_free(rs);
+		return (error);
+	}
 	if (argc != 1)
 		usage();
 	memset(&req, 0, sizeof(req));
@@ -1498,6 +1514,9 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 	} else if (strcmp(argv[2], "description") == 0 && argc == 4) {
 		sp.kind = ARC_JOB_KIND_IF_SET;
 		sp.description = argv[3];
+	} else if (strcmp(argv[2], "addressing") == 0 && argc == 4) {
+		sp.kind = ARC_JOB_KIND_IF_SET;
+		sp.addressing = argv[3];
 	} else if ((strcmp(argv[2], "fib") == 0 || strcmp(argv[2],
 	    "tunnelfib") == 0) && argc == 4) {
 		sp.kind = ARC_JOB_KIND_IF_SET;
@@ -1755,6 +1774,52 @@ cmd_net(struct arc_client *cl, int argc, char **argv)
  * kmod: the kernel's modules and its memory, as the host says them.
  * kmod load | unload module: a job; with -p also in rc.conf's kld_list.
  */
+/* ntp server...; ntp remove: the NTP servers of the host. */
+static int
+cmd_ntp(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	sp;
+
+	if (argc < 2)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_NTP;
+	sp.persist = persist;
+	if (argc == 2 && strcmp(argv[1], "remove") == 0)
+		sp.remove = true;
+	else {
+		sp.names.v = (const char **)(uintptr_t)&argv[1];
+		sp.names.n = (size_t)argc - 1;
+	}
+	return (submit(cl, &sp));
+}
+
+/*
+ * rtadvd interface prefix [dns ...]; rtadvd interface remove: router
+ * advertisements on an interface, for SLAAC.
+ */
+static int
+cmd_rtadvd(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	sp;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_RTADVD;
+	sp.persist = persist;
+	sp.interface = argv[1];
+	if (argc == 3 && strcmp(argv[2], "remove") == 0)
+		sp.remove = true;
+	else {
+		sp.names.v = (const char **)(uintptr_t)&argv[2];
+		sp.names.n = (size_t)argc - 2;
+	}
+	return (submit(cl, &sp));
+}
+
 static int
 cmd_kmod(struct arc_client *cl, int argc, char **argv)
 {
@@ -3124,6 +3189,10 @@ main(int argc, char *argv[])
 		rc = cmd_net(&cl, argc, argv);
 	else if (strcmp(argv[0], "stats") == 0 && argc == 1)
 		rc = cmd_stats(&cl);
+	else if (strcmp(argv[0], "ntp") == 0)
+		rc = cmd_ntp(&cl, argc, argv);
+	else if (strcmp(argv[0], "rtadvd") == 0)
+		rc = cmd_rtadvd(&cl, argc, argv);
 	else if (strcmp(argv[0], "kmod") == 0)
 		rc = cmd_kmod(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
