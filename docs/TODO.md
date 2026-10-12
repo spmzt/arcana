@@ -98,8 +98,10 @@
   pair made there and the configuration shown once, a
   re-authorisation interval after which the peer goes (S3.3); each
   identity's session from the edge's wg read, the handshake and the
-  bytes, on the tab (S3.4); SASE-3 closed. Next: SASE-4, the proxy
-  functions, which the plan says get a review of their own first.
+  bytes, on the tab (S3.4); SASE-3 closed. SASE-4: the URL filter,
+  Squid as a plugin, an instance per service, the TLS names looked at
+  or TLS opened with the agent's CA, HTTP and TLS forwarded to it
+  (S4.1). Next: S4.2, malware.
 - 2026-10-11: what is new, in the update boxes and Settings' last
   tab: the agent's source-log (a bare blob:none clone in the build
   directory), the console's /api/update/notes (the tags' messages as
@@ -108,6 +110,22 @@
   handler only the query parameters its route declares, so the
   record API's filters (swvc, policy, edge, since) were never seen;
   declared now with a validator.
+- Lab hygiene, 2026-10-12: a lab jail left dying (squid, unbound or
+  the client's processes still in it) shows up in the console's web
+  tests as extra tree leaves, so the cases wait in vain for four; the
+  down step kills them now, and `jls -d` tells when one lingers.
+- Verified on the lab 2026-10-12 (S4.1): Squid 7.7 added into
+  arcswan1 from fetched packages (a plugin; the agent refused the
+  instance while it was missing, naming pkg install squid), an
+  instance in FIB 1 on the road end point's own address with the
+  service's DNS filter beside it, HTTP and TLS from the client
+  forwarded by the rules: an allowed name served through it, a denied
+  one 403 over HTTP, and over TLS refused by its SNI (TCP_DENIED at
+  the peek, then the proxy's own 403 page); `bfd-lab.sh proxy`. Two
+  lessons kept in the code: Squid's certificate maker and its cache
+  are needed in mode sni too, and an intercepting Squid resolves every
+  name it is asked for, so the configuration names the service's DNS
+  filter as its resolver where there is one.
 - Verified on the lab 2026-10-12 (S3.3): the client's peer removed at
   arcswan1 as the console's apply does it for a revoked identity: the
   ping to the far UNI that answered 3 of 3 loses all, no peer left on

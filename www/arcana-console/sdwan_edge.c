@@ -1826,6 +1826,11 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 
 static const ucl_object_t *sec_of(const ucl_object_t *, const ucl_object_t *,
     const char *, int *);
+static bool	 url_filters(const ucl_object_t *, bool *);
+static bool	 remote_addr(struct plan *, const ucl_object_t *,
+		    const ucl_object_t *, const char *, char *, size_t);
+static const char *uni_ifname(struct plan *, const ucl_object_t *,
+		    const ucl_object_t *, char *, size_t);
 
 /*
  * The security policies of a service that filter DNS, as any of its
@@ -1860,6 +1865,264 @@ dns_filters(const ucl_object_t *sw, bool *protop)
 		(void)cr;
 	}
 	return (any);
+}
+
+/*
+ * The security policies of a service that filter URLs (SASE-4), as any
+ * of its policies names them: whether any does, and whether any opens
+ * TLS (inspect) rather than looking at its names (sni).
+ */
+static bool
+url_filters(const ucl_object_t *sw, bool *inspectp)
+{
+	const ucl_object_t	*pol, *sec, *sc, *uf;
+	ucl_object_iter_t	 it;
+	int			 si, i;
+	bool			 any = false;
+
+	*inspectp = false;
+	it = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &it, true)) != NULL)
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec == NULL)
+				continue;
+			sc = ucl_object_lookup(sec, "criteria");
+			if ((uf = ucl_object_lookup(sc, "url-filter")) == NULL)
+				continue;
+			any = true;
+			if (str(uf, "mode") != NULL && strcmp(str(uf, "mode"),
+			    "inspect") == 0)
+				*inspectp = true;
+		}
+	return (any);
+}
+
+/*
+ * The addresses a service's proxy or DNS filter listens on at an edge:
+ * each UNI's first IPv4 provider address, and each remote end point's
+ * own; into out, one per line as fmt says, with its interface.
+ */
+static void
+edge_own4(struct plan *pl, const ucl_object_t *sw, const char *sid,
+    ucl_object_t *out)
+{
+	const ucl_object_t	*ep, *u, *v, *a;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*o;
+	char			 own[80], ifn[64];
+
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if (strcmp(str(ep, "edge"), sid) != 0)
+			continue;
+		own[0] = '\0';
+		if ((u = ucl_object_lookup(ep, "uni")) != NULL) {
+			v = ucl_object_lookup(u, "ipv4");
+			a = v != NULL && ucl_object_lookup(v, "provider") != NULL ?
+			    ucl_array_find_index(ucl_object_lookup(v, "provider"), 0) :
+			    NULL;
+			if (a != NULL)
+				snprintf(own, sizeof(own), "%s",
+				    ucl_object_tostring_forced(a));
+		} else if (ucl_object_lookup(ep, "remote") != NULL)
+			(void)remote_addr(pl, sw, ep, NULL, own, sizeof(own));
+		if (own[0] == '\0' || family(own) != AF_INET)
+			continue;
+		o = ucl_object_typed_new(UCL_OBJECT);
+		put(o, "address", S(own));
+		put(o, "interface", S(uni_ifname(pl, sw, ep, ifn, sizeof(ifn))));
+		put(o, "end_point", S(str(ep, "id")));
+		ucl_array_append(out, o);
+	}
+}
+
+/*
+ * Squid's configuration for a service at an edge (SASE-4): it takes
+ * what ipfw forwards to it on each UNI's address, ports 3128 (HTTP)
+ * and 3129 (TLS); it looks at the TLS names (peek) and ends a
+ * connection to a denied one (terminate), the rest let through
+ * unopened (splice) or, in mode inspect, opened (bump) with the
+ * instance's CA; HTTP to a denied domain is denied.  What the agent
+ * places is marked: @PID@, @CA@, @SSLDB@, @CERTGEN@, @DENY@.  The
+ * domains denied go in the deny text, one a line, each with the names
+ * beneath it.
+ */
+static char *
+proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
+    bool inspect, char **denyp)
+{
+	struct kore_buf		*b, *d;
+	const ucl_object_t	*ep, *o, *pol, *sec, *sc, *uf, *e, *p;
+	ucl_object_iter_t	 it, pit, dit, eit;
+	ucl_object_t		*owns, *pfx;
+	char			*out;
+	int			 i, si;
+	bool			 dnsproto;
+
+	b = kore_buf_alloc(4096);
+	d = kore_buf_alloc(1024);
+	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	    "at %s, in routing table %jd.\n# The URL filter of its security "
+	    "policies (MEF 88), by Squid, mode %s.\npid_filename @PID@\n"
+	    "access_log /var/log/squid/sdwan-sw%jd-access.log\ncache_log "
+	    "/var/log/squid/sdwan-sw%jd-cache.log\ncache deny all\n"
+	    "visible_hostname sdwan-sw%jd\n", str(sw, "id"), server_name_of(sid),
+	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")), inspect ?
+	    "inspect" : "sni", (intmax_t)ucl_object_toint(ucl_object_lookup(sw,
+	    "fib")), (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")),
+	    (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib")));
+	owns = ucl_object_typed_new(UCL_ARRAY);
+	edge_own4(pl, sw, sid, owns);
+	it = NULL;
+	while ((o = ucl_object_iterate(owns, &it, true)) != NULL)
+		kore_buf_appendf(b, "# %s\nhttp_port %s:3128 intercept\n"
+		    "https_port %s:3129 intercept ssl-bump tls-cert=@CA@ "
+		    "generate-host-certificates=on dynamic_cert_mem_cache_size=4MB"
+		    "\n", str(o, "end_point"), str(o, "address"), str(o, "address"));
+	/* The names it is asked for, resolved by the service's DNS filter
+	 * where there is one, else by the edge's own resolver. */
+	if (dns_filters(sw, &dnsproto) && ucl_array_size(owns) > 0)
+		kore_buf_appendf(b, "dns_nameservers %s\n", str(
+		    ucl_array_find_index(owns, 0), "address"));
+	ucl_object_unref(owns);
+	kore_buf_appendf(b, "sslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n"
+	    "sslcrtd_children 3\n");
+	/* The service's own hosts: every end point's prefixes. */
+	kore_buf_appendf(b, "acl localnet src");
+	i = 0;
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		pfx = ucl_object_typed_new(UCL_ARRAY);
+		uni_prefixes(ep, pfx);
+		eit = NULL;
+		while ((p = ucl_object_iterate(pfx, &eit, true)) != NULL) {
+			kore_buf_appendf(b, " %s", ucl_object_tostring(p));
+			i++;
+		}
+		ucl_object_unref(pfx);
+	}
+	if (i == 0)
+		kore_buf_appendf(b, " 0.0.0.0/0");
+	kore_buf_appendf(b, "\nacl denied_site ssl::server_name \"@DENY@\"\n"
+	    "acl denied_url dstdomain \"@DENY@\"\nacl step1 at_step SslBump1\n"
+	    "ssl_bump peek step1\nssl_bump terminate denied_site\nssl_bump %s all"
+	    "\nhttp_access deny denied_url\nhttp_access allow localnet\n"
+	    "http_access deny all\n", inspect ? "bump" : "splice");
+	/* The domains denied, each with the names beneath it. */
+	pit = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &pit, true)) != NULL)
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec == NULL)
+				continue;
+			sc = ucl_object_lookup(sec, "criteria");
+			if ((uf = ucl_object_lookup(sc, "url-filter")) == NULL)
+				continue;
+			dit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(uf, "deny"),
+			    &dit, true)) != NULL)
+				kore_buf_appendf(d, ".%s\n", ucl_object_tostring_forced(
+				    e));
+			dit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(uf, "lists"),
+			    &dit, true)) != NULL) {
+				const ucl_object_t	*le;
+				const char		*s;
+
+				eit = NULL;
+				while ((le = ucl_object_iterate(at_path(
+				    ucl_object_lookup(pl->lists, "lists"),
+				    ucl_object_tostring_forced(e), "entries"), &eit,
+				    true)) != NULL) {
+					s = ucl_object_tostring_forced(le);
+					if (strchr(s, '/') != NULL || strchr(s, ':') !=
+					    NULL || (isdigit((unsigned char)s[0]) &&
+					    strchr(s, '.') != NULL && strpbrk(s,
+					    "abcdefghijklmnopqrstuvwxyz") == NULL))
+						continue;	/* a prefix */
+					kore_buf_appendf(d, ".%s\n", s);
+				}
+			}
+		}
+	*denyp = strdup(kore_buf_stringify(d, NULL));
+	kore_buf_free(d);
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
+ * Each edge's proxies (SASE-4): an instance per service whose policies
+ * name a security policy that filters URLs, where the edge has an end
+ * point of the service, in the service's table; Squid is a plugin the
+ * edge has installed, which the apply tells when it has not.
+ */
+static void
+proxy_build(struct plan *pl, const ucl_object_t *doc)
+{
+	const ucl_object_t	*sw, *edge, *ep;
+	ucl_object_iter_t	 it, eit, pit;
+	ucl_object_t		*o, *inst, *list;
+	char			 name[32];
+	const char		*sid;
+	char			*text, *deny;
+	bool			 here, inspect;
+
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		sid = str(edge, "server");
+		list = ucl_object_typed_new(UCL_ARRAY);
+		eit = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &eit, true)) != NULL) {
+			if (!url_filters(sw, &inspect))
+				continue;
+			here = false;
+			pit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &pit, true)) != NULL)
+				if (strcmp(str(ep, "edge"), sid) == 0)
+					here = true;
+			if (!here)
+				continue;
+			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+			inst = ucl_object_typed_new(UCL_OBJECT);
+			put(inst, "name", S(name));
+			put(inst, "fib", I(ucl_object_toint(ucl_object_lookup(sw,
+			    "fib"))));
+			put(inst, "mode", S(inspect ? "inspect" : "sni"));
+			text = proxy_conf(pl, sw, sid, inspect, &deny);
+			put(inst, "conf", S(text));
+			put(inst, "deny", S(deny));
+			free(text);
+			free(deny);
+			ucl_array_append(list, inst);
+		}
+		if (ucl_array_size(list) == 0) {
+			ucl_object_unref(list);
+			continue;
+		}
+		o = object(pl, sid, "proxy", PH_BIRD, "URL filters: Squid, a "
+		    "plugin, %u instance%s in the services' tables, the TLS names "
+		    "looked at, the domains the security policies deny",
+		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
+		if (o == NULL) {
+			ucl_object_unref(list);
+			continue;
+		}
+		make(o, job("sdwan-proxy", "instances", list, NULL));
+		unmake(o, job("sdwan-proxy", "instances", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	}
 }
 
 /*
@@ -3055,6 +3318,15 @@ rules_build(struct plan *pl, const char *sid)
 					    "to any dst-port 53 in recv %s", at, uni);
 					rule(rules, RULE_FROM, "fwd %s,53 tcp from any "
 					    "to any dst-port 53 in recv %s", at, uni);
+				}
+				/* URLs filtered by the proxy (SASE-4): HTTP and
+				 * TLS from the end point to it, on the edge's own
+				 * address there. */
+				if (at != NULL && url_filters(sw, &proto)) {
+					rule(rules, RULE_FROM, "fwd %s,3128 tcp from any "
+					    "to any dst-port 80 in recv %s", at, uni);
+					rule(rules, RULE_FROM, "fwd %s,3129 tcp from any "
+					    "to any dst-port 443 in recv %s", at, uni);
 				}
 			}
 			rule(rules, RULE_FROM, "skipto tablearg ip from table(%s) "
@@ -4658,6 +4930,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	}
 	bird_build(pl, doc);
 	dns_build(pl, doc);
+	proxy_build(pl, doc);
 	dhcp_build(pl, doc);
 	return (true);
 }

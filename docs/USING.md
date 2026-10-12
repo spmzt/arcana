@@ -1132,6 +1132,24 @@ names them. It is one document with three parts:
     identities are in is best the Default one, or one whose prefixes
     hold the remote's.
 
+**URL filters** (SASE-4, MEF 88's `url-filter`): a security policy
+with `url-filter` (`mode` sni or inspect, `deny` domains, `lists` by
+name) has HTTP and TLS from the service's end points forwarded by
+ipfw (ports 80 and 443, to 3128 and 3129 on the edge's own address at
+each end point) to Squid on the edge, an instance per service in its
+table (`sdwan-proxy`, `arcanactl sdwan proxy`). Squid is a plugin:
+installed by hand (`pkg install squid`, the package has SSL, SSL_CRTD
+and TP_IPFW), never by Arcana, and the apply says so where it is
+missing. In mode sni Squid looks at the TLS names (peek) and ends a
+connection to a denied domain, the rest let through unopened
+(splice); in mode inspect it opens TLS (bump) with a CA of the
+instance's own, made once by the agent with `openssl(1)` and kept
+beside its files, whose certificate the Security tab offers for the
+clients to trust. HTTP to a denied domain is refused outright. The
+denied domains, the policy's own and its lists', each cover the
+names beneath. The Security tab lists each edge's instances, their
+mode and state; the `sdwan` read has them as `proxy`.
+
 **Identities** (SASE-3): the tab lists every remote end point's
 identities with the address the plan gave each, when it was issued
 and until when it is authorised. **+ identity** issues one at an end

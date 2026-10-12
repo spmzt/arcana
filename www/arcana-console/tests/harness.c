@@ -668,6 +668,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "{\"passed\":true},\"temperature\":{\"current\":34},"
 	    "\"power_on_time\":{\"hours\":1200}}'\n");
 	put("tools/newfs", "#!/bin/sh\necho \"newfs $*\" >> storage.log\n");
+	/* squid(8), a plugin, and its certificate maker: what they were
+	 * run with; a parse fails on BROKEN. */
+	put("tools/squid", "#!/bin/sh\necho \"squid $*\" >> squid.log\n"
+	    "[ \"$2\" = parse ] && { grep -q BROKEN \"$4\" && exit 1; exit 0; }\n"
+	    "[ \"$1\" = -f ] && echo $$ > \"$(dirname \"$2\")/sdwan-proxy-sw1.pid\"\n"
+	    "exit 0\n");
+	put("tools/security_file_certgen", "#!/bin/sh\necho \"certgen $*\" >> "
+	    "squid.log\nmkdir -p \"$3\"\n");
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");
