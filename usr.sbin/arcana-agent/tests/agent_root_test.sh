@@ -631,6 +631,19 @@ jail_make_body()
 	atf_check -o inline:"the base\n" cat "$r/arcw-jm2/marker"
 	atf_check -o inline:"$r/arcw-jm1 arcw-jm1.example.org\n" jls -j arcw-jm1 path host.hostname
 	atf_check -o inline:"$r/arcw-jm2 arcw-jm2.example.org\n" jls -j arcw-jm2 path host.hostname
+	# A host with no dataset for its jails yet: the one above made, not
+	# mounted of its own; a jail refused takes it away again.
+	printf '.include "%s/jail.conf";\narcw-jm3 {\n}\n' "$d" > arcw-jm3.conf
+	atf_check -o match:'done +jail make arcw-jm3' \
+	    "$JGC" -c "$SOCK" jailconf make arcw-jm3 arcw-jm3.conf arcw_jm/more/jails/arcw-jm3 arcw_jm/jails/base@1 clone "$r/arcw-jm3"
+	atf_check -o inline:"off\n" zfs get -H -o value canmount arcw_jm/more/jails
+	atf_check -o inline:"the base\n" cat "$r/arcw-jm3/marker"
+	atf_check -o match:'done +jail remove arcw-jm3' \
+	    "$JGC" -c "$SOCK" jailconf remove arcw-jm3 arcw_jm/more/jails/arcw-jm3
+	printf '.include "%s/jail.conf";\nother {\n}\n' "$d" > arcw-jm4.conf
+	atf_check -s exit:1 -o match:'not the one jail arcw-jm4' \
+	    "$JGC" -c "$SOCK" jailconf make arcw-jm4 arcw-jm4.conf arcw_jm/new/jails/arcw-jm4 arcw_jm/jails/base@1 clone "$r/arcw-jm4"
+	atf_check -s exit:1 -e ignore zfs list arcw_jm/new
 	# Taken away: not with a dataset that is not its; then with its own,
 	# stopped and destroyed.
 	atf_check -s exit:1 -o match:'is not mounted at the jail' \

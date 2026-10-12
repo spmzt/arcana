@@ -299,8 +299,11 @@
   there: it was stopped before the dataset was asked about), then each
   taken away with its own.  Not yet: changing a made jail's file from
   the page (it is made and taken away; its block is edited as any
-  jail's is), and the dataset under a parent made for the host's jails
-  when there is none.
+  jail's is).  The datasets above a jail's that are not there are made
+  (canmount=off), and taken away again when the make fails; a pool is
+  never made nor taken away.  The IPFW tab's Load the current file
+  verified in a jail with its own rc.conf and script (the lab's
+  arcswan1 root).
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.
