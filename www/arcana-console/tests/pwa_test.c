@@ -3285,6 +3285,32 @@ part_flows(void)
 	run("document.querySelector('button[data-act=wf-step-add]').click()");
 	wait_js("document.querySelectorAll('li.wfedstep').length === 2", 5);
 	run("setf('select[data-input=wf-type][data-arg=\"1\"]', 'read:hello')");
+	/*
+	 * Steps dragged by their number to another place: the read put
+	 * first, and back again.
+	 */
+	run("window.dragto = (from, to, where) => { const g = document."
+	    "querySelector('li.wfedstep[data-arg=\"' + from + '\"] .grip'), "
+	    "t = document.querySelector('li.wfedstep[data-arg=\"' + to + "
+	    "'\"]'), b = t.getBoundingClientRect(), dt = new DataTransfer(), "
+	    "y = where === 'before' ? b.top + 2 : b.bottom - 2; g.dispatchEvent("
+	    "new DragEvent('dragstart', { bubbles: true, dataTransfer: dt })); "
+	    "t.dispatchEvent(new DragEvent('dragover', { bubbles: true, "
+	    "cancelable: true, dataTransfer: dt, clientY: y })); t.dispatchEvent("
+	    "new DragEvent('drop', { bubbles: true, cancelable: true, "
+	    "dataTransfer: dt, clientY: y })); g.dispatchEvent(new DragEvent("
+	    "'dragend', { bubbles: true, dataTransfer: dt })); };");
+	run("dragto(1, 0, 'before')");
+	wait_js("document.querySelector('select[data-input=wf-type][data-arg="
+	    "\"0\"]').value === 'read:hello'", 5);
+	run("dragto(1, 0, 'before')");
+	wait_js("document.querySelector('select[data-input=wf-type][data-arg="
+	    "\"1\"]').value === 'read:hello' && document.querySelector("
+	    "'input[data-arg=\"text:steps.0.job.service\"]').value === "
+	    "'${param.svc}'", 5);
+	/* On a failure of the first, on at the second: drawn as a jump. */
+	run("setf('select[data-arg=\"text:steps.0.on_fail\"]', document."
+	    "querySelector('input[data-arg=\"text:steps.1.id\"]').value)");
 	shot("9a-workflow-edit");
 	run("document.querySelector('button[data-act=wf-save]').click()");
 	wait_js("document.querySelector('ul.wflist button[data-act=wf-run]') "
@@ -3298,6 +3324,11 @@ part_flows(void)
 	    "f.p_svc.value = 'sshd'; f.requestSubmit();");
 	wait_js("document.querySelectorAll('.wfgraph button.wfstep.done')."
 	    "length === 2", 30);
+	/* The jump drawn under the row, not taken: the first did not fail. */
+	ATF_CHECK(js_true("document.querySelector('.wfgraph .wfjump') && "
+	    "!document.querySelector('.wfgraph .wfjump.taken') && document."
+	    "querySelector('.wfgraph .wfjump').textContent.includes("
+	    "'on a failure')"));
 	/* The run is a task of the activity bar too, and ended there. */
 	wait_js("document.querySelector('.dock').textContent.includes("
 	    "'workflow restart a service') && document.querySelector('.dock')"

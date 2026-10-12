@@ -39,9 +39,15 @@
  * steps answered.  A run has a thread of its own and one
  * for each of its hosts.  What runs by itself is started by one worker,
  * the one holding workflows.lock: a thread of it looks every few
- * seconds at what is due and at the hosts' events.  Threads never look
- * at the servers themselves: a timer of the worker's copies where each
- * is reached into a table they read.
+ * seconds at what is due, and keeps a subscription to the events of
+ * each host a workflow waits on, in a thread of its own: an event runs
+ * what it begins as soon as it is told.  What a host said while it was
+ * not heard (a connection that dropped, a console that restarted) is
+ * read once it answers again.  When each workflow last ran by its
+ * interval is kept in every.json, so that the interval counts from
+ * then after a restart.  Threads never look at the servers themselves:
+ * a timer of the worker's copies where each is reached into a table
+ * they read.
  */
 
 #include <sys/param.h>
@@ -53,8 +59,10 @@
 #include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <pthread.h>
 #include <stdarg.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -75,6 +83,10 @@
 #define	RUNS_KEEP	30
 #define	RUN_HOSTS_MAX	32
 #define	TICK_S		5
+#define	EVERY_FILE	"every.json"	/* when each ran by its interval */
+#define	SUB_QUEUE	256		/* events heard, not yet looked at */
+#define	SUB_RETRY_S	5		/* after a host stopped answering */
+#define	SUB_WAKE_MS	250		/* how soon a stop is seen */
 #define	JOB_POLL_US	500000
 #define	JOB_WAIT_S	3600
 #define	TRACE_MAX	(64 * 1024)	/* of a step's answer, kept */
@@ -1594,11 +1606,21 @@ fail:
 
 struct watched {
 	char		 sid[9];
+	/* The subscription's, its thread's alone. */
 	uint64_t	 last;		/* the newest event seen */
 	bool		 known;		/* last is what it says */
 	bool		 down;
+	/* The scheduler's: a jail whose state changed. */
 	bool		 jails_known;
 	ucl_object_t	*jails;		/* name: state, as last seen */
+	/* Between the two. */
+	atomic_bool	 running;	/* its thread is there */
+	atomic_bool	 stop;		/* no workflow waits on it now */
+	/* What the subscription heard, for the thread to look at. */
+	pthread_mutex_t	 qlock;
+	char		*queue[SUB_QUEUE];
+	int		 nqueue;
+	bool		 lost;		/* the queue was full: read again */
 };
 
 static struct watched	watched[256];
@@ -1607,16 +1629,19 @@ static int		nwatched;
 static struct watched *
 watched_of(const char *sid)
 {
-	int	i;
+	struct watched	*x;
+	int		 i;
 
 	for (i = 0; i < nwatched; i++)
 		if (strcmp(watched[i].sid, sid) == 0)
 			return (&watched[i]);
 	if (nwatched == (int)nitems(watched))
 		return (NULL);
-	memset(&watched[nwatched], 0, sizeof(watched[0]));
-	snprintf(watched[nwatched].sid, sizeof(watched[0].sid), "%s", sid);
-	return (&watched[nwatched++]);
+	x = &watched[nwatched++];
+	memset(x, 0, sizeof(*x));
+	snprintf(x->sid, sizeof(x->sid), "%s", sid);
+	pthread_mutex_init(&x->qlock, NULL);
+	return (x);
 }
 
 /* Does an event match a trigger: its name, and each of match's? */
@@ -1682,55 +1707,239 @@ fire(const ucl_object_t *wfs, const char *sid, const char *kind,
 	}
 }
 
-/* What a host said since it was last looked at, and how it answers. */
+/* In a subscription's thread: what it heard begins what it begins. */
 static void
-watch(const ucl_object_t *wfs, const char *sid, bool jails)
+sub_fire(struct watched *x, const char *kind, const ucl_object_t *data)
 {
-	struct watched		*x;
-	struct hostref		 h;
-	ucl_object_t		*ans, *now;
-	const ucl_object_t	*e, *j, *was;
+	ucl_object_t	*top;
+
+	pthread_mutex_lock(&wf_lock);
+	top = wf_load();
+	pthread_mutex_unlock(&wf_lock);
+	fire(ucl_object_lookup(top, "workflows"), x->sid, kind, data);
+	ucl_object_unref(top);
+}
+
+/* An event, heard or read: once each, and none from before the first. */
+static void
+sub_event(struct watched *x, const ucl_object_t *e)
+{
+	uint64_t	n;
+
+	n = (uint64_t)ucl_object_toint(ucl_object_lookup(e, "n"));
+	if (n <= x->last)
+		return;
+	if (x->known)
+		sub_fire(x, ucl_object_tostring_forced(ucl_object_lookup(e,
+		    "kind")), ucl_object_lookup(e, "data"));
+	x->last = n;
+}
+
+/*
+ * What the host said since it was last heard: read, as the events it
+ * keeps.  The first look only says where the events are.  False when
+ * it does not answer.
+ */
+static bool
+sub_catch_up(struct watched *x, const struct hostref *h)
+{
+	ucl_object_t		*ans;
+	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
 	char			*json;
 	int			 status;
-	uint64_t		 n;
 
-	if ((x = watched_of(sid)) == NULL || !ref_get(sid, &h))
-		return;
-	json = hosts_events(h.uri, h.peer, h.name, x->known ? x->last : 0,
+	json = hosts_events(h->uri, h->peer, h->name, x->known ? x->last : 0,
 	    &status);
 	ans = parse(json);
 	free(json);
 	if (status != 200 || ans == NULL) {
 		if (ans != NULL)
 			ucl_object_unref(ans);
-		if (!x->down) {
-			x->down = true;
-			fire(wfs, sid, "host-down", NULL);
-		}
-		return;
+		return (false);
 	}
-	if (x->down) {
-		x->down = false;
-		fire(wfs, sid, "host-up", NULL);
-	}
-	/* The first look only says where the events are. */
 	it = NULL;
 	while ((e = ucl_object_iterate(path_get(ans, "data.events"), &it,
-	    true)) != NULL) {
-		n = (uint64_t)ucl_object_toint(ucl_object_lookup(e, "n"));
-		if (x->known && n > x->last)
-			fire(wfs, sid, ucl_object_tostring_forced(
-			    ucl_object_lookup(e, "kind")), ucl_object_lookup(e,
-			    "data"));
-	}
-	if (path_get(ans, "data.last") != NULL)
-		x->last = (uint64_t)ucl_object_toint(path_get(ans, "data.last"));
+	    true)) != NULL)
+		sub_event(x, e);
+	if (path_get(ans, "data.last") != NULL && (uint64_t)ucl_object_toint(
+	    path_get(ans, "data.last")) > x->last)
+		x->last = (uint64_t)ucl_object_toint(path_get(ans,
+		    "data.last"));
 	x->known = true;
 	ucl_object_unref(ans);
-	if (!jails)
+	return (true);
+}
+
+/* Told by the host: kept for the thread, which looks after each read. */
+static void
+sub_heard(const struct arc_event_ntf *ntf, void *arg)
+{
+	struct watched	*x = arg;
+	char		*text;
+
+	if (ntf->json == NULL || ntf->json[0] != '{')
 		return;
-	/* A jail whose state is not what it was: jail-state. */
+	pthread_mutex_lock(&x->qlock);
+	if (x->nqueue == SUB_QUEUE || (text = strdup(ntf->json)) == NULL)
+		x->lost = true;
+	else
+		x->queue[x->nqueue++] = text;
+	pthread_mutex_unlock(&x->qlock);
+}
+
+/* What was heard, looked at in order; true when some were lost. */
+static bool
+sub_drain(struct watched *x)
+{
+	char		*q[SUB_QUEUE];
+	ucl_object_t	*e;
+	int		 i, n;
+	bool		 lost;
+
+	pthread_mutex_lock(&x->qlock);
+	n = x->nqueue;
+	memcpy(q, x->queue, (size_t)n * sizeof(q[0]));
+	x->nqueue = 0;
+	lost = x->lost;
+	x->lost = false;
+	pthread_mutex_unlock(&x->qlock);
+	for (i = 0; i < n; i++) {
+		if ((e = parse(q[i])) != NULL) {
+			sub_event(x, e);
+			ucl_object_unref(e);
+		}
+		free(q[i]);
+	}
+	return (lost);
+}
+
+/* A host that stopped answering, or answers again: once each way. */
+static void
+sub_state(struct watched *x, bool up)
+{
+
+	if (x->down == !up)
+		return;
+	x->down = !up;
+	sub_fire(x, up ? "host-up" : "host-down", NULL);
+}
+
+/* Some seconds, or less when told to stop. */
+static void
+sub_pause(struct watched *x, int seconds)
+{
+	int	i;
+
+	for (i = 0; i < seconds * 1000 / SUB_WAKE_MS &&
+	    !atomic_load(&x->stop); i++)
+		(void)poll(NULL, 0, SUB_WAKE_MS);
+}
+
+/*
+ * A host's events as they come: subscribed to, on a connection of its
+ * own, and subscribed to again when it drops.
+ */
+static void *
+sub_run(void *arg)
+{
+	static const struct arc_events_handlers hd = { .event = sub_heard };
+	struct watched		*x = arg;
+	struct hostref		 h;
+	struct arc_client	 cl;
+	struct pollfd		 pfd;
+	cbl_conn		*conn;
+	cbl_tls			*tls;
+	cbl_sub			*sub;
+	int			 ev, ms;
+
+	while (!atomic_load(&x->stop)) {
+		if (!ref_get(x->sid, &h)) {
+			sub_pause(x, SUB_RETRY_S);
+			continue;
+		}
+		if (hosts_connect(h.uri, h.peer, &conn, &tls, &cl) != NULL) {
+			sub_state(x, false);
+			sub_pause(x, SUB_RETRY_S);
+			continue;
+		}
+		if (arc_events_subscribe(&cl, &hd, x, &sub) != 0) {
+			hosts_release(h.uri, h.peer, conn, tls, &cl, false);
+			sub_state(x, false);
+			sub_pause(x, SUB_RETRY_S);
+			continue;
+		}
+		/* Subscribed first, read after: nothing falls between. */
+		if (!sub_catch_up(x, &h)) {
+			hosts_release(h.uri, h.peer, conn, tls, &cl, false);
+			sub_state(x, false);
+			sub_pause(x, SUB_RETRY_S);
+			continue;
+		}
+		sub_state(x, true);
+		while (!atomic_load(&x->stop)) {
+			if (sub_drain(x) && !sub_catch_up(x, &h))
+				break;
+			ev = 0;
+			ms = -1;
+			(void)cbl_conn_interest(conn, &ev, &ms);
+			pfd.fd = cbl_conn_fd(conn);
+			pfd.events = ((ev & CBL_EV_READ) != 0 ? POLLIN : 0) |
+			    ((ev & CBL_EV_WRITE) != 0 ? POLLOUT : 0);
+			pfd.revents = 0;
+			if (poll(&pfd, 1, ms < 0 || ms > SUB_WAKE_MS ?
+			    SUB_WAKE_MS : ms) == -1)
+				continue;
+			ev = ((pfd.revents & (POLLIN | POLLHUP | POLLERR)) !=
+			    0 ? CBL_EV_READ : 0) | ((pfd.revents & POLLOUT) !=
+			    0 ? CBL_EV_WRITE : 0);
+			if (cbl_conn_process(conn, ev) != 0)
+				break;
+		}
+		(void)sub_drain(x);
+		/* A connection with a subscription on it is no one else's. */
+		hosts_release(h.uri, h.peer, conn, tls, &cl, false);
+		if (!atomic_load(&x->stop)) {
+			thread_log(LOG_NOTICE, "workflows: the events of %s "
+			    "stopped coming", x->sid);
+			sub_state(x, false);
+			sub_pause(x, SUB_RETRY_S);
+		}
+	}
+	atomic_store(&x->running, false);
+	return (NULL);
+}
+
+/* A host a workflow waits on: its subscription, kept or begun. */
+static void
+sub_keep(struct watched *x)
+{
+	pthread_t	tid;
+
+	atomic_store(&x->stop, false);
+	if (atomic_load(&x->running))
+		return;
+	atomic_store(&x->running, true);
+	if (pthread_create(&tid, NULL, sub_run, x) != 0) {
+		atomic_store(&x->running, false);
+		return;
+	}
+	pthread_detach(tid);
+}
+
+/* A jail whose state is not what it was: jail-state, read each tick. */
+static void
+watch_jails(const ucl_object_t *wfs, struct watched *x)
+{
+	struct hostref		 h;
+	ucl_object_t		*ans, *now;
+	const ucl_object_t	*j, *was;
+	ucl_object_iter_t	 it;
+	char			*json;
+	int			 status;
+
+	if (!ref_get(x->sid, &h))
+		return;
 	json = hosts_read(h.uri, h.peer, h.name, "jails", &status);
 	ans = parse(json);
 	free(json);
@@ -1760,7 +1969,7 @@ watch(const ucl_object_t *wfs, const char *sid, bool jails)
 			if (was != NULL)
 				put(d, "was", ucl_object_fromstring(
 				    ucl_object_tostring_forced(was)));
-			fire(wfs, sid, "jail-state", d);
+			fire(wfs, x->sid, "jail-state", d);
 			ucl_object_unref(d);
 		}
 	}
@@ -1769,6 +1978,32 @@ watch(const ucl_object_t *wfs, const char *sid, bool jails)
 	x->jails = now;
 	x->jails_known = true;
 	ucl_object_unref(ans);
+}
+
+/* When the workflow last ran by its interval, as every.json keeps it. */
+static time_t
+every_last(const char *id)
+{
+	ucl_object_t	*top;
+	time_t		 t;
+
+	if ((top = store_load(EVERY_FILE)) == NULL)
+		return (0);
+	t = (time_t)ucl_object_toint(ucl_object_lookup(top, id));
+	ucl_object_unref(top);
+	return (t);
+}
+
+static void
+every_ran(const char *id, time_t t)
+{
+	ucl_object_t	*top;
+
+	if ((top = store_load(EVERY_FILE)) == NULL)
+		top = ucl_object_typed_new(UCL_OBJECT);
+	put(top, id, ucl_object_fromint(t));
+	(void)store_save(EVERY_FILE, top);
+	ucl_object_unref(top);
 }
 
 static void *
@@ -1781,12 +2016,13 @@ scheduler(void *arg __unused)
 		char	id[9];
 		time_t	last;
 	}			 due[WF_MAX];
+	struct watched		*x;
 	int			 ndue, k;
-	time_t			 now;
+	time_t			 now, t;
 	const char		*why;
 	char			 sids[256][9];
 	bool			 sjails[256];
-	int			 nsids, s;
+	int			 nsids, s, i;
 
 	ndue = 0;
 	for (;;) {
@@ -1808,14 +2044,21 @@ scheduler(void *arg __unused)
 					    0)
 						break;
 				if (k == ndue && ndue < WF_MAX) {
-					/* Counted from when it was first seen. */
+					/*
+					 * Counted from when it last ran by
+					 * its interval, which a restart does
+					 * not forget; else from now.
+					 */
 					snprintf(due[k].id, sizeof(due[k].id), "%s",
 					    ucl_str(w, "id"));
-					due[k].last = now;
+					t = every_last(due[k].id);
+					due[k].last = t > 0 && t <= now ? t : now;
 					ndue++;
-				} else if (k < ndue && now - due[k].last >= every &&
+				}
+				if (k < ndue && now - due[k].last >= every &&
 				    !wf_running(ucl_str(w, "id"))) {
 					due[k].last = now;
+					every_ran(due[k].id, now);
 					(void)run_start(w, NULL, NULL, NULL,
 					    "every", &why);
 				}
@@ -1844,9 +2087,22 @@ scheduler(void *arg __unused)
 						sjails[s] = true;
 			}
 		}
-		for (s = 0; s < nsids; s++)
-			watch(ucl_object_lookup(top, "workflows"), sids[s],
-			    sjails[s]);
+		/* Each host waited on is subscribed to; the others not. */
+		for (i = 0; i < nwatched; i++) {
+			for (s = 0; s < nsids; s++)
+				if (strcmp(sids[s], watched[i].sid) == 0)
+					break;
+			if (s == nsids)
+				atomic_store(&watched[i].stop, true);
+		}
+		for (s = 0; s < nsids; s++) {
+			if ((x = watched_of(sids[s])) == NULL)
+				continue;
+			sub_keep(x);
+			if (sjails[s])
+				watch_jails(ucl_object_lookup(top, "workflows"),
+				    x);
+		}
 		ucl_object_unref(top);
 	}
 	return (NULL);

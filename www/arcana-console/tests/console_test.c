@@ -953,7 +953,8 @@ ATF_TC_BODY(workflows, tc)
 	struct authn	a;
 	struct resp	r;
 	char		cwd[1024], body[4096], sid[16], run[32], wid[16];
-	char		path[128];
+	char		path[128], every[16];
+	FILE		*fp;
 	int		i;
 
 	start(tc, 0, NULL);
@@ -1145,6 +1146,39 @@ ATF_TC_BODY(workflows, tc)
 	resp_free(&r);
 	ATF_CHECK(system("! grep -q clone git.log") == 0);
 
+	/*
+	 * At an interval, counted from when it last ran by it, which a
+	 * restart of the console does not forget: kept as having run 58 s
+	 * before, a workflow of every minute runs within a tick or two of
+	 * the console's start, not a minute after.
+	 */
+	snprintf(body, sizeof(body), "{\"name\":\"each minute\",\"hosts\":"
+	    "[\"%s\"],\"every\":60,\"steps\":[{\"id\":\"s\",\"read\":"
+	    "\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "id") != NULL);
+	snprintf(every, sizeof(every), "%s", jstr(&r, "id"));
+	resp_free(&r);
+	ATF_REQUIRE((fp = fopen("data/every.json", "w")) != NULL);
+	fprintf(fp, "{\"%s\": %lld}\n", every, (long long)time(NULL) - 58);
+	fclose(fp);
+	restart_console();
+	for (i = 0; i < 150; i++) {
+		http("GET", "/api/runs", NULL, &r);
+		if (strstr(r.body, "\"each minute\"") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 150, "the interval was counted from the restart");
+	ATF_CHECK(i == 150 || strstr(r.body, "\"trigger\":\"every\"") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/workflows/%s", every);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
 	/* Begun by the host's events: a threshold crossed, then the host
 	 * that stops answering. */
 	snprintf(body, sizeof(body), "{\"name\":\"on mem\",\"hosts\":[\"%s\"],"
@@ -1188,6 +1222,9 @@ ATF_TC_BODY(workflows, tc)
 	if (i == 200)
 		(void)system("tail -20 kore.out >&2");
 	ATF_CHECK_MSG(i < 200, "no run begun by the host going away");
+	/* Subscribed to, not asked every few seconds: a host that goes is
+	 * known at once. */
+	ATF_CHECK_MSG(i < 30, "host-down came after %d ms", i * 100);
 	resp_free(&r);
 
 	ATF_CHECK(system("! grep -q 'exited with status' kore.out") == 0);

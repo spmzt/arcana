@@ -34,12 +34,16 @@ beforeinstall: .PHONY
 	${INSTALL} -d ${DESTDIR}${LIBDIR} ${DESTDIR}${CONFDIR}
 
 # The kinds of job, as share/arcana/jobs.yaml says: a workflow's steps
-# are checked against it.
+# are checked against it, and it against arcana.yaml's job-kind and
+# job-spec, which stops the build where they differ.
 DPSRCS+=	jobs_table.h
-CLEANFILES+=	jobs_table.h
-jobs_table.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk
+CLEANFILES+=	jobs_table.h jobs_table.h.tmp
+jobs_table.h: ${ARC_TOP}/share/arcana/jobs.yaml ${ARC_TOP}/share/arcana/jobs.awk \
+    ${ARC_TOP}/share/arcana/arcana.yaml
 	awk -v out=c -f ${ARC_TOP}/share/arcana/jobs.awk \
-	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}
+	    ${ARC_TOP}/share/arcana/arcana.yaml \
+	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
+	mv ${.TARGET}.tmp ${.TARGET}
 workflows.pico workflows.o: jobs_table.h
 
 HAS_TESTS=
