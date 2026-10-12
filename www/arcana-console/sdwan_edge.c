@@ -1751,7 +1751,7 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 {
 	const ucl_object_t	*sw, *edge, *ep, *u, *v;
 	ucl_object_iter_t	 it, eit, pit;
-	ucl_object_t		*o, *inst, *list, *names;
+	ucl_object_t		*o, *inst, *list;
 	char			 name[32];
 	const char		*sid;
 	char			*text;
@@ -1799,14 +1799,10 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 			ucl_object_unref(list);
 			continue;
 		}
-		/* The package, with the tables: once. */
-		o = object(pl, sid, "dnsmasq", PH_FIBS, "dnsmasq from packages: "
-		    "the DHCP server at the UNIs, which the base system has not");
-		if (o != NULL) {
-			names = ucl_object_typed_new(UCL_ARRAY);
-			ucl_array_append(names, S("dnsmasq"));
-			make(o, job("pkg-install", "packages", names, NULL));
-		}
+		/*
+		 * dnsmasq is a plugin, as BIRD is: installed before, never
+		 * by the apply (see plan_needs()).
+		 */
 		o = object(pl, sid, "dhcp", PH_BIRD, "DHCP: dnsmasq, %u instance%s "
 		    "in the services' tables, the hosts' addresses at the UNIs",
 		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
@@ -7357,6 +7353,128 @@ server_name_of(const char *sid)
 	return ((s = server_find(sid)) != NULL ? s->name : sid);
 }
 
+/*
+ * What SD-WAN needs installed on an edge that is not FreeBSD's own, by
+ * the kinds of job the plan has for it: each a plugin the agent reports
+ * when its program is there.  Nothing is installed for it by the apply:
+ * what is missing is said, and the apply waits until it is installed.
+ */
+static const struct sdwan_need {
+	const char	*kind;		/* a job of this kind needs it */
+	const char	*plugin;	/* as the agent reports it */
+	const char	*package;
+	const char	*what;
+} sdwan_needs[] = {
+	{ "ipsec", "strongswan", "strongswan",
+	    "strongSwan, for the tunnels under IPsec IKEv2" },
+	{ "sdwan-bird", "bird", "bird3",
+	    "BIRD, for routing at the UNIs, BGP between the edges and BFD" },
+	{ "wireguard", "wireguard", "wireguard-tools",
+	    "wg(8), for WireGuard tunnels and remote end points (in the base "
+	    "system from FreeBSD 15)" },
+	{ "sdwan-dhcp", "dnsmasq", "dnsmasq",
+	    "dnsmasq, the DHCP server at the UNIs" },
+	{ "sdwan-proxy", "squid", "squid",
+	    "Squid, for URL filtering" },
+};
+
+/*
+ * Each edge's needs, with whether the host has each: [{server, name,
+ * plugin, package, what, there}].  An edge that does not answer is
+ * said to have none of them.
+ */
+static ucl_object_t *
+plan_needs(const struct plan *pl)
+{
+	const ucl_object_t	*objs, *o, *j, *pl_list, *p;
+	ucl_object_iter_t	 it, oit, jit, pit;
+	ucl_object_t		*out, *e, *ans;
+	char			 uri[256], peer[256], name[128], *json;
+	bool			 want[nitems(sdwan_needs)], there;
+	size_t			 i;
+	int			 status;
+
+	out = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((objs = ucl_object_iterate(pl->edges, &it, true)) != NULL) {
+		memset(want, 0, sizeof(want));
+		oit = NULL;
+		while ((o = ucl_object_iterate(objs, &oit, true)) != NULL) {
+			jit = NULL;
+			while ((j = ucl_object_iterate(ucl_object_lookup(o,
+			    "make"), &jit, true)) != NULL)
+				for (i = 0; i < nitems(sdwan_needs); i++)
+					if (str(j, "kind") != NULL && strcmp(str(j,
+					    "kind"), sdwan_needs[i].kind) == 0)
+						want[i] = true;
+		}
+		ans = NULL;
+		for (i = 0; i < nitems(sdwan_needs); i++)
+			if (want[i])
+				break;
+		if (i < nitems(sdwan_needs) && host_ref(ucl_object_key(objs),
+		    uri, sizeof(uri), peer, sizeof(peer), name, sizeof(name))) {
+			json = hosts_read(uri, peer, name, "hello", &status);
+			ans = status == 200 ? parse(json) : NULL;
+			free(json);
+		}
+		pl_list = ans != NULL ? ucl_object_lookup(ans, "host") : NULL;
+		pl_list = pl_list != NULL ? ucl_object_lookup(pl_list,
+		    "plugins") : NULL;
+		for (i = 0; i < nitems(sdwan_needs); i++) {
+			if (!want[i])
+				continue;
+			there = false;
+			pit = NULL;
+			while ((p = ucl_object_iterate(pl_list, &pit, true)) !=
+			    NULL)
+				there = there || strcmp(ucl_object_tostring_forced(
+				    p), sdwan_needs[i].plugin) == 0;
+			e = ucl_object_typed_new(UCL_OBJECT);
+			put(e, "server", S(ucl_object_key(objs)));
+			put(e, "name", S(server_name_of(ucl_object_key(objs))));
+			put(e, "plugin", S(sdwan_needs[i].plugin));
+			put(e, "package", S(sdwan_needs[i].package));
+			put(e, "what", S(sdwan_needs[i].what));
+			put(e, "there", B(there));
+			ucl_array_append(out, e);
+		}
+		if (ans != NULL)
+			ucl_object_unref(ans);
+	}
+	return (out);
+}
+
+/*
+ * False, with why, when an edge lacks what the services need there:
+ * the apply does not begin, and says what to install where.
+ */
+static bool
+needs_met(const ucl_object_t *needs, char *why, size_t wlen)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	char			 list[600];
+	size_t			 n;
+
+	list[0] = '\0';
+	n = 0;
+	it = NULL;
+	while ((e = ucl_object_iterate(needs, &it, true)) != NULL) {
+		if (ucl_object_toboolean(ucl_object_lookup(e, "there")))
+			continue;
+		if (n++ < 12)
+			snprintf(list + strlen(list), sizeof(list) - strlen(list),
+			    "%s%s: pkg install %s", list[0] != '\0' ? "; " : "",
+			    str(e, "name"), str(e, "package"));
+	}
+	if (n == 0)
+		return (true);
+	snprintf(why, wlen, "install what SD-WAN needs on the edges first, "
+	    "then deploy (nothing is installed by the apply): %s", list);
+	return (false);
+}
+
 /* The changes as the API shows them: no job's own fields of ours. */
 static ucl_object_t *
 plan_reply(const struct plan *pl, const ucl_object_t *chg)
@@ -7377,6 +7495,7 @@ plan_reply(const struct plan *pl, const ucl_object_t *chg)
 	put(top, "changes", arr);
 	put(top, "tunnels", ucl_object_copy(pl->tunnels));
 	put(top, "notes", ucl_object_copy(pl->notes));
+	put(top, "needs", plan_needs(pl));
 	return (top);
 }
 
@@ -7495,7 +7614,7 @@ static bool
 apply_now(ucl_object_t *doc, char *why, size_t wlen)
 {
 	struct plan	 pl;
-	ucl_object_t	*st, *chg;
+	ucl_object_t	*st, *chg, *needs;
 	int		 status;
 
 	if (!sdwan_valid(doc, why, wlen)) {
@@ -7512,6 +7631,15 @@ apply_now(ucl_object_t *doc, char *why, size_t wlen)
 		ucl_object_unref(st);
 		return (false);
 	}
+	needs = plan_needs(&pl);
+	if (!needs_met(needs, why, wlen)) {
+		ucl_object_unref(needs);
+		plan_free(&pl);
+		ucl_object_unref(doc);
+		ucl_object_unref(st);
+		return (false);
+	}
+	ucl_object_unref(needs);
 	chg = changes(&pl, st, false);
 	if (apply_begin(&pl, st, chg, false, why, wlen, &status) < 0) {
 		ucl_object_unref(doc);
@@ -7524,7 +7652,7 @@ apply_now(ucl_object_t *doc, char *why, size_t wlen)
 int
 api_sdwan_edges(struct http_request *req)
 {
-	ucl_object_t		*doc, *st, *chg, *body;
+	ucl_object_t		*doc, *st, *chg, *body, *needs;
 	struct plan		 pl;
 	char			 why[300];
 	bool			 apply, fresh;
@@ -7592,6 +7720,16 @@ api_sdwan_edges(struct http_request *req)
 		ucl_object_unref(st);
 		return (reply_json(req, 200, body));
 	}
+	needs = plan_needs(&pl);
+	if (!needs_met(needs, why, sizeof(why))) {
+		ucl_object_unref(needs);
+		ucl_object_unref(chg);
+		plan_free(&pl);
+		ucl_object_unref(doc);
+		ucl_object_unref(st);
+		return (reply_error(req, 409, "missing", "%s", why));
+	}
+	ucl_object_unref(needs);
 	n = apply_begin(&pl, st, chg, fresh, why, sizeof(why), &status);
 	ucl_object_unref(doc);
 	if (n < 0)

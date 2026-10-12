@@ -8,6 +8,7 @@
  * Luxuria: what is not FreeBSD's own.  A plugin works through a program
  * that has to be installed, and is there only where its program is:
  * BIRD through birdc(8), strongSwan's IPsec through swanctl(8),
+ * Squid and dnsmasq for SD-WAN's proxy and DHCP,
  * WireGuard's keys and peers through wg(8) (the
  * interface itself, if_wg(4) made by ifconfig(8), is the base system's
  * and Invidia's).  A host says which it has, and so does a jail with a
@@ -56,13 +57,18 @@ static const struct {
 	{ "wireguard", &opts.wg_bin, wg_base_bin, PATH_WG_BIN },
 	{ "strongswan", &opts.swanctl_bin, NULL, NULL },
 	{ "squid", &opts.squid_bin, NULL, NULL },
+	{ "dnsmasq", &opts.dnsmasq_bin, NULL, NULL },
 };
 
-/* Each plugin has two bits: its program, and the base system's. */
-#define	BIT_PROG(i)	(1u << (2 * (i)))
-#define	BIT_BASE(i)	(1u << (2 * (i) + 1))
+/*
+ * A bit for each plugin's program, and after them one for the base
+ * system's wg(8), the only plugin with a program of the base system's:
+ * a child says them in the eight bits of its exit status.
+ */
+#define	BIT_PROG(i)	(1u << (i))
+#define	BIT_BASE(i)	(plugins[i].base != NULL ? 1u << nitems(plugins) : 0u)
 #define	FOUND_NONE	0xffffffffu
-_Static_assert(nitems(plugins) <= 4, "eight bits of an exit status");
+_Static_assert(nitems(plugins) + 1 <= 7, "seven bits of an exit status");
 
 static struct {
 	int		jid;
@@ -96,6 +102,29 @@ found_here(void)
 			m |= BIT_PROG(i);
 		if (base != NULL && access(base, X_OK) == 0)
 			m |= BIT_BASE(i);
+	}
+	return (m);
+}
+
+/*
+ * On the host, a program of the tools directory (-2) counts as the
+ * plugin's, as it does where the program is run.
+ */
+static unsigned int
+found_tools(void)
+{
+	const char	*base;
+	char		 path[MAXPATHLEN];
+	unsigned int	 m;
+	size_t		 i;
+
+	m = 0;
+	for (i = 0; opts.tools_dir != NULL && i < nitems(plugins); i++) {
+		base = strrchr(*plugins[i].program, '/');
+		base = base != NULL ? base + 1 : *plugins[i].program;
+		snprintf(path, sizeof(path), "%s/%s", opts.tools_dir, base);
+		if (access(path, X_OK) == 0)
+			m |= BIT_PROG(i);
 	}
 	return (m);
 }
@@ -162,7 +191,7 @@ found_in(int jid, const char *root)
 	size_t		 i, slot;
 
 	if (jid <= 0)
-		return (found_here());
+		return (found_here() | found_tools());
 	now = time(NULL);
 	pthread_mutex_lock(&kept_lock);
 	slot = 0;
