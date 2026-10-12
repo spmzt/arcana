@@ -2357,6 +2357,89 @@ part_plugins(void)
 
 }
 
+/*
+ * The certificates OpenSSL trusts: read with OpenSSL, one ending soon
+ * said; one given to the host, one distrusted and trusted again.
+ */
+static void
+part_certs(void)
+{
+	char	 js[8192], pem[4096], *p, *q;
+	FILE	*f;
+	size_t	 n;
+	int	 i;
+
+	ATF_REQUIRE(system("R=tools/certroot; mkdir -p $R/usr/share/certs/"
+	    "trusted && for n in root:400 soon:10 mine:400; do openssl req "
+	    "-x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout "
+	    "${n%:*}.key -out ${n%:*}.pem -days ${n#*:} -subj \"/O=Arcana/"
+	    "CN=Arcana ${n%:*} CA\" 2>/dev/null || exit 1; done; cp root.pem "
+	    "soon.pem $R/usr/share/certs/trusted/ && tools/certctl -D $R "
+	    "rehash") == 0);
+	run("document.querySelector('button.tab[data-arg=certificates]')"
+	    ".click()");
+	wait_js("location.hash.endsWith('/certificates') && [...document."
+	    "querySelectorAll('table.certs tbody tr')].some(r => r.textContent"
+	    ".includes('Arcana root CA') && r.textContent.includes('EC "
+	    "prime256v1'))", 20);
+	ATF_CHECK(js_true("document.querySelector('.chip.warn').textContent"
+	    ".includes('1 ends within 30 days') && [...document."
+	    "querySelectorAll('table.certs td.warn')].length === 1"));
+	/* One given: its PEM pasted, a key never. */
+	ATF_REQUIRE((f = fopen("mine.pem", "r")) != NULL);
+	n = fread(pem, 1, sizeof(pem) - 1, f);
+	fclose(f);
+	pem[n] = '\0';
+	q = js + snprintf(js, sizeof(js), "const f = document.querySelector("
+	    "'form[data-form=cert-add]'); f.name.value = 'mine'; f.pem.value "
+	    "= '");
+	for (p = pem; *p != '\0'; p++) {
+		if (*p == '\n') {
+			*q++ = '\\';
+			*q++ = 'n';
+		} else
+			*q++ = *p;
+	}
+	snprintf(q, sizeof(js) - (size_t)(q - js), "'; f.requestSubmit();");
+	run("document.querySelector('button[data-act=cert-add]').click()");
+	wait_js("document.querySelector('form[data-form=cert-add]')", 5);
+	run(js);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('table.certs tbody tr')].some("
+	    "r => r.textContent.includes('Arcana mine CA') && r.textContent"
+	    ".includes('/usr/local/share/certs/trusted/mine.pem'))", 20);
+	run("document.querySelector('.dock > header').click()");
+	shot("9-certificates");
+	/* Distrusted, and trusted again. */
+	run("document.querySelector('button[data-act=cert-untrust][data-arg="
+	    "\"root.0\"]').click()");
+	wait_js("document.querySelector('.modal button.danger')", 5);
+	run("document.querySelector('.modal button.danger').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("tools/certroot/usr/local/share/certs/"
+	    "untrusted/root.0.pem", F_OK) != 0; i++)
+		usleep(100000);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=certs-show][data-arg="
+	    "untrusted]').click()");
+	wait_js("[...document.querySelectorAll('table.certs tbody tr')].some("
+	    "r => r.textContent.includes('Arcana root CA') && r.querySelector("
+	    "'button[data-act=cert-trust]'))", 20);
+	run("document.querySelector('button[data-act=cert-trust]').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("tools/certroot/usr/local/share/certs/"
+	    "untrusted/root.0.pem", F_OK) == 0; i++)
+		usleep(100000);
+	ATF_CHECK(access("tools/certroot/usr/local/share/certs/untrusted/"
+	    "root.0.pem", F_OK) != 0);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelectorAll('table.certs tbody tr td.dim')"
+	    ".length === 1", 20);
+}
+
 static void
 part_storage(void)
 {
@@ -3064,7 +3147,7 @@ part_storage(void)
 	    "'section.ucard .ujails')"));
 	run("document.querySelector('section.ucard .uname').click()");
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
-
+	part_certs();
 }
 
 static void

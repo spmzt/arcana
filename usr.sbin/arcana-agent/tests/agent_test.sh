@@ -4761,6 +4761,97 @@ neighbours_cleanup()
 	stop_daemon
 }
 
+atf_test_case certs cleanup
+certs_head()
+{
+	atf_set "descr" "The certificates OpenSSL trusts, read with OpenSSL; added, distrusted and trusted again where certctl rehash keeps them"
+}
+certs_body()
+{
+	R=$(pwd)/tools/certroot
+	mkdir -p tools $R/usr/share/certs/trusted
+	# certctl rehash as it is: the store made again from FreeBSD's own,
+	# those given, and those not to be trusted, by fingerprint.
+	cat > tools/certctl <<EOT
+#!/bin/sh
+echo "certctl \$*" >> $(pwd)/certctl.log
+R=\$2
+fp() { openssl x509 -noout -fingerprint -sha256 -in "\$1" | tr -d ' '; }
+rm -rf \$R/etc/ssl/certs \$R/etc/ssl/untrusted
+mkdir -p \$R/etc/ssl/certs \$R/etc/ssl/untrusted
+bad=
+for f in \$R/usr/local/share/certs/untrusted/*; do
+	[ -f "\$f" ] || continue
+	bad="\$bad \$(fp \$f)"
+	cp \$f \$R/etc/ssl/untrusted/\$(basename \$f .pem)
+done
+for f in \$R/usr/share/certs/trusted/* \$R/usr/local/share/certs/trusted/*; do
+	[ -f "\$f" ] || continue
+	case "\$bad" in *\$(fp \$f)*) continue ;; esac
+	cp \$f \$R/etc/ssl/certs/\$(basename \$f .pem).0
+done
+EOT
+	chmod +x tools/certctl
+	for n in root added; do
+		openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+		    -nodes -keyout $n.key -out $n.pem -days 30 \
+		    -subj "/O=Arcana/CN=Arcana $n CA" 2>/dev/null ||
+		    atf_fail "openssl req"
+	done
+	cp root.pem $R/usr/share/certs/trusted/root.pem
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o match:'done +certificate rehash$' "$JGC" -c "$SOCK" cert rehash
+	atf_check -o inline:"certctl -D $R rehash\n" cat certctl.log
+	# Read with OpenSSL: who, its key, when it ends; FreeBSD's own.
+	atf_check -o save:list "$JGC" -c "$SOCK" cert
+	atf_check -o match:'"file":"root.0"' -o match:'"cn":"Arcana root CA"' \
+	    -o match:'"org":"Arcana"' -o match:'"key":"EC prime256v1"' \
+	    -o match:'"self_signed":true' -o match:'"not_after":[0-9]{10}' \
+	    -o match:'"untrusted":\[\]' -o not-match:'"local"' cat list
+	# Given one: kept where rehash finds it, the certificate alone.
+	cat added.key >> added.pem
+	atf_check -s exit:1 -e match:'no key with it' -o ignore \
+	    "$JGC" -c "$SOCK" cert add added added.pem
+	openssl x509 -in added.pem -out added.pem
+	atf_check -o match:'done +certificate add added$' \
+	    "$JGC" -c "$SOCK" cert add added added.pem
+	atf_check -o match:'BEGIN CERTIFICATE' -o not-match:'PRIVATE' \
+	    cat $R/usr/local/share/certs/trusted/added.pem
+	atf_check -o match:'"cn":"Arcana added CA"[^}]*"local":"/usr/local/share/certs/trusted/added.pem"' \
+	    "$JGC" -c "$SOCK" cert
+	# FreeBSD's own not trusted: a copy among the untrusted.
+	atf_check -o match:'done +certificate untrust root.0$' \
+	    "$JGC" -c "$SOCK" cert untrust root.0
+	test -f $R/usr/local/share/certs/untrusted/root.0.pem || atf_fail "no copy"
+	atf_check -o match:'"untrusted":\[\{"file":"root.0"[^]]*"local":"/usr/local/share/certs/untrusted/root.0.pem"' \
+	    -o not-match:'"trusted":\[[^]]*Arcana root' "$JGC" -c "$SOCK" cert
+	# Trusted again: the copy taken away.
+	atf_check -o match:'done +certificate trust root.0$' \
+	    "$JGC" -c "$SOCK" cert trust root.0
+	test -f $R/usr/local/share/certs/untrusted/root.0.pem && atf_fail "copy kept"
+	atf_check -o match:'"untrusted":\[\]' -o match:'"cn":"Arcana root CA"' \
+	    "$JGC" -c "$SOCK" cert
+	# One FreeBSD itself does not trust is not trusted again here.
+	cp root.pem $R/etc/ssl/untrusted/other.0
+	atf_check -s exit:1 -o match:'failed +certificate trust other.0: other.0 is untrusted by FreeBSD itself' \
+	    "$JGC" -c "$SOCK" cert trust other.0
+	atf_check -o match:'done +certificate remove added.pem$' \
+	    "$JGC" -c "$SOCK" cert remove added.pem
+	atf_check -o not-match:'Arcana added' "$JGC" -c "$SOCK" cert
+	atf_check -s exit:1 -o match:'was not given to this host' \
+	    "$JGC" -c "$SOCK" cert remove added.pem
+	atf_check -s exit:1 -e match:'letters, digits' -o ignore \
+	    "$JGC" -c "$SOCK" cert untrust ../root.0
+	echo nothing > junk.pem
+	atf_check -s exit:1 -e match:'no PEM certificate' -o ignore \
+	    "$JGC" -c "$SOCK" cert add junk junk.pem
+}
+certs_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case ntp
@@ -4771,6 +4862,7 @@ atf_init_test_cases()
 	atf_add_test_case sdwan
 	atf_add_test_case jail_conf
 	atf_add_test_case neighbours
+	atf_add_test_case certs
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute

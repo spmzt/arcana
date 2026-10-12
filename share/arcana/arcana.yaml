@@ -302,6 +302,14 @@ definitions:
           kept for a boot as a pair of rc.conf's static_arp_pairs or
           static_ndp_pairs, and with live too it is set now.  In the
           jail whose network it is when jail names one.
+      - name: cert
+        doc: |
+          A certificate OpenSSL trusts, with certctl(8): verb add puts the
+          PEM certificate text in ${LOCALBASE}/share/certs/trusted as
+          path, remove takes one of those away, untrust puts a copy of
+          path of /etc/ssl/certs in ${LOCALBASE}/share/certs/untrusted,
+          trust takes the copies of path of /etc/ssl/untrusted away from
+          there; each then certctl rehash, which rehash alone is.
   - name: job-state
     type: enum
     entries:
@@ -1389,12 +1397,16 @@ attribute-sets:
           max-len: 8
       - name: path
         type: text
-        doc: For jail-conf, the jail's root, its dataset's mountpoint.
+        doc: |
+          For jail-conf, the jail's root, its dataset's mountpoint; for
+          cert, the certificate's file name.
         checks:
           max-len: 1024
       - name: text
         type: text
-        doc: For jail-conf, a file's whole content.
+        doc: |
+          For jail-conf, a file's whole content; for cert add, the
+          certificate as PEM.
         checks:
           max-len: 65536
       - name: start
@@ -2842,6 +2854,29 @@ operations:
       "text"; and "jails", each jail file there with its "name" and
       "text".  Files of 64 KiB and less.
     do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: certs
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The certificates OpenSSL trusts, of the host or of jail, as a JSON
+      object: "trusted", each of /etc/ssl/certs, and "untrusted", each of
+      /etc/ssl/untrusted, with its "file", "subject", "cn", "org",
+      "country", "issuer", "not_before" and "not_after" (seconds of the
+      epoch), "sha256", "key", "ca", "self_signed", and "local", the
+      path of the copy of it the host was given, when it was; and
+      "localbase", "added_dir", "distrusted_dir", "certctl" (whether
+      there is one) and "now".
+    do:
+      request:
+        attributes:
+          - jail
       reply:
         attributes:
           - ok

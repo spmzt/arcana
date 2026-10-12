@@ -334,7 +334,10 @@
     links?), labels on interfaces (a console-side tag, or the
     interface's description?), prefix lists (used by what: ipfw
     tables, BIRD filters, SD-WAN zones?), IGMP and MLD (what to set).
-  - A certificates tab per host, by certctl and OpenSSL.
+  - A certificates tab per host, by certctl and OpenSSL. (Done
+    2026-10-12: trusted and untrusted, read with OpenSSL; a CA given,
+    one distrusted and trusted again, kept where certctl rehash finds
+    them; a jail's too.  Verified with the real certctl in a lab jail.)
   - Configuration templates: a host's setup exported to one and a
     template applied to a host; YAML where the standard allows,
     UCL otherwise.

@@ -157,6 +157,7 @@ enum tab {
 	TAB_STORAGE,
 	TAB_KERNEL,
 	TAB_SYSCTL,
+	TAB_CERTS,
 	TAB_PROCESSES,
 	TAB_LOG,
 	TAB_JOBS,
@@ -299,6 +300,7 @@ enum {
 	JOB_FIREWALL,
 	JOB_STORAGE,
 	JOB_PROCESS,
+	JOB_CERTS,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -339,6 +341,7 @@ enum modal {
 	MODAL_JAIL_TEMPLATE,
 	MODAL_JAIL_REMOVE,
 	MODAL_NEIGH,
+	MODAL_CERT_ADD,
 	MODAL_BIRD_PROTO,
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
@@ -642,6 +645,7 @@ void		 tbl_set(const char *, int, bool);
 int		 tbl_col(const char *, bool *);
 bool		 tbl_action(const char *, const char *, const char *);
 void		 refresh_kernel(struct server *, bool);
+void		 refresh_certs(struct server *, bool);
 void		 apidoc_open(void);
 void		 view_apidoc(struct html *);
 bool		 apidoc_action(const char *, const char *, const char *);
@@ -745,6 +749,11 @@ void		 storage_modal_buttons(struct html *);
 bool		 storage_form(const char *, const ucl_object_t *);
 bool		 storage_action(const char *, const char *, const char *);
 void		 view_kernel(struct html *, struct server *);
+/* certs.c: the certificates OpenSSL trusts, of a host or a jail. */
+void		 view_certs(struct html *, struct server *);
+bool		 certs_modal(struct html *);
+bool		 certs_form(const char *, const ucl_object_t *);
+bool		 certs_action(const char *, const char *, const char *);
 bool		 kernel_form(const char *, const ucl_object_t *);
 bool		 kernel_action(const char *, const char *, const char *);
 void		 topo_poll_host(struct server *);

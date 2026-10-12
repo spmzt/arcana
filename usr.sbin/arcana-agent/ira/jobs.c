@@ -169,6 +169,11 @@ title_of(const struct arc_job_spec *sp)
 		    sp->names.v[0] : "", sp->names.n > 1 ? " " : "",
 		    sp->names.n > 1 ? sp->names.v[1] : "");
 		break;
+	case ARC_JOB_KIND_CERT:
+		rc = asprintf(&t, "certificate %s%s%s", sp->verb, sp->path !=
+		    NULL && strcmp(sp->verb, "rehash") != 0 ? " " : "", sp->path !=
+		    NULL && strcmp(sp->verb, "rehash") != 0 ? sp->path : "");
+		break;
 	case ARC_JOB_KIND_NEIGHBOUR:
 		rc = asprintf(&t, "neighbour %s %s%s%s%s%s", sp->verb,
 		    sp->address, sp->lladdr != NULL && strcmp(sp->verb, "add") ==
@@ -270,7 +275,8 @@ title_of(const struct arc_job_spec *sp)
 	if (rc == -1)
 		err(1, "asprintf");
 	/* A change to a jail's network says whose it is. */
-	if (scoped(sp) && sp->jail != NULL && sp->jail[0] != '\0') {
+	if ((scoped(sp) || sp->kind == ARC_JOB_KIND_CERT) && sp->jail != NULL &&
+	    sp->jail[0] != '\0') {
 		in = t;
 		if (asprintf(&t, "%s: %s", sp->jail, in) == -1)
 			err(1, "asprintf");
@@ -894,6 +900,12 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_NEIGHBOUR:
 		error = NULL;
 		ok = do_neigh(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_CERT:
+		/* Any jail's: its files, not its network. */
+		error = NULL;
+		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
+		    do_cert(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_BIRD:
 		error = NULL;
