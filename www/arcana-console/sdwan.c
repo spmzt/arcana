@@ -1850,8 +1850,8 @@ security_policy(struct ck *c, const ucl_object_t *v)
 	if ((cr = ucl_object_lookup(v, "criteria")) == NULL ||
 	    ucl_object_type(cr) != UCL_OBJECT)
 		return (fail(c, "it has criteria: ip-block, dns-domain-filter, "
-		    "dns-protocol-filter, rate-limit, log, url-filter, malware, ids "
-		    "(MEF 88)"));
+		    "dns-protocol-filter, rate-limit, log, url-filter, malware "
+		    "(MEF 88), ids (Arcana's)"));
 	it = NULL;
 	while ((k = ucl_object_iterate(cr, &it, true)) != NULL) {
 		if (!one_of(ucl_object_key(k), known))

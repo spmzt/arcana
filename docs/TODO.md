@@ -113,7 +113,21 @@
   closed (S4.4): the URL filter, malware scanning and prevention on one
   service together on the lab, what the edge is sent for itself not
   diverted, Suricata taking one-sided flows where the edge answers.
-  Next: SASE-5.
+  SASE-5: the Security tab in MEF 118.1's terms, Access Control
+  Policies Subject Actor to Target Actor from the policy map, Policy
+  End Points, Continuous Monitoring, and the audit trail, Audit Events
+  for what the console does, HMAC-chained (S5.1); the conformance list
+  against the current documents, Mplify 117.1, MEF 138 and MEF 118.1,
+  each attribute in it (S5.2, the book's Conformance: SASE).  Found
+  there: Mplify 117.1 takes its Security Functions from MEF 138, which
+  replaces MEF 88, and none of them has intrusion detection (ids is
+  Arcana's own, mislabelled MEF 88's until now).  SASE-5 closed.
+- To decide (the user's): whether the security policies move to MEF
+  138's model (Security Function Policies each with Block, Allow and
+  Quarantine lists, No-match, Duration; PDNS and DLP added), and which
+  of the conformance list's "no" rows come next (session states, an
+  external IdP with OAuth 2.0, Context Policies, SAAN/SSEN as
+  notifications, event-based Continuous Monitoring).
 - Verified on the lab 2026-10-12 (S4.4, SASE-4 closed): one service
   on arcswan1 for the road end point with Suricata preventing (divert
   9, setfib 10), HTTP and TLS forwarded to Squid (denied.example), and

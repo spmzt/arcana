@@ -2216,7 +2216,8 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 #define	IDS_PORT(fib)	(8000 + (int)(fib))
 
 /*
- * A service's intrusion detection (SASE-4, MEF 88's ids criterion), as
+ * A service's intrusion detection (SASE-4, the ids criterion, Arcana's
+ * own: no MEF Security Function is intrusion detection), as
  * its policies name it: the rules of its own, one a line, each once,
  * whether the ruleset is added, and whether it prevents (one of its
  * policies says prevent).  False when none of its security policies has
@@ -3624,7 +3625,7 @@ rules_build(struct plan *pl, const char *sid)
 			rule(rules, RULE_FROM, "deny ip from any to any ipoptions "
 			    "lsrr,ssrr,rr in recv %s", uni);
 			/*
-			 * Intrusion prevented (MEF 88 ids, prevent): IPv4 that
+			 * Intrusion prevented (ids, prevent): IPv4 that
 			 * comes in at the UNI, and that comes in elsewhere for
 			 * the UNI's subnet, to the service's Suricata first,
 			 * which gives back what it lets by.  Both are taken as
