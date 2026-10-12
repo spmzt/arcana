@@ -3593,6 +3593,12 @@ ul.listeners li.idle .led { background: transparent; box-shadow: inset 0 0 0 1.5
 /* A certificate ending soon, or ended. */
 table.certs td.warn { color: var(--amber); }
 table.certs td.bad { color: var(--red); }
+/* sshd: what a setting is for, and a key's options, wrap. */
+table.ssh-set td.dim, table.ssh-keys td.opts { white-space: normal; }
+table.ssh-hk td.fp, table.ssh-keys td.fp, table.ssh-users td.fp {
+	white-space: normal; overflow-wrap: anywhere;
+}
+form.ssh-banner textarea { width: 100%; }
 nav.fw-tabs { display: flex; flex-wrap: wrap; gap: .25rem; margin: .2rem 0 1rem; align-items: center; }
 nav.fw-tabs button { text-transform: none; letter-spacing: 0; }
 nav.fw-tabs button.on { color: var(--cyan); border-color: var(--cyan); }

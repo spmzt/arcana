@@ -310,6 +310,22 @@ definitions:
           path of /etc/ssl/certs in ${LOCALBASE}/share/certs/untrusted,
           trust takes the copies of path of /etc/ssl/untrusted away from
           there; each then certctl rehash, which rehash alone is.
+      - name: ssh
+        doc: |
+          The base system's sshd(8): verb banner writes text as
+          /etc/ssh/banner and names it Banner (no text: Banner none);
+          set puts the setting path with names as its values (none: the
+          line taken away), of AllowUsers, AllowGroups, DenyUsers,
+          DenyGroups, PermitRootLogin, PasswordAuthentication,
+          KbdInteractiveAuthentication, PubkeyAuthentication,
+          X11Forwarding, MaxAuthTries and Port; sign signs each host key
+          with the CA private key in text (names its principals) for 52
+          weeks and names each certificate HostCertificate.  Each is read
+          by sshd -t first, the file before kept beside it
+          (sshd_config.arcana-before) and put back in safe mode, and sshd
+          reloaded.  authorize adds the key line text to user's
+          authorized_keys, unauthorize takes away the key whose
+          fingerprint text is.  In jail's when jail names one.
   - name: job-state
     type: enum
     entries:
@@ -1428,6 +1444,11 @@ attribute-sets:
       - name: temporary
         type: flag
         doc: For neighbour add, one that ages out as the others do.
+      - name: user
+        type: text
+        doc: For ssh authorize and unauthorize, the user whose keys.
+        checks:
+          max-len: 32
 
   - name: job
     attributes:
@@ -2873,6 +2894,32 @@ operations:
       path of the copy of it the host was given, when it was; and
       "localbase", "added_dir", "distrusted_dir", "certctl" (whether
       there is one) and "now".
+    do:
+      request:
+        attributes:
+          - jail
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: ssh
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The base system's sshd, of the host or of jail, as a JSON object:
+      "settings", what sshd -T says of those that matter here, each key
+      an array of values ("settings_from_file" says why they are the
+      file's instead); "banner_text"; "host_keys", each with its "path",
+      "type", "bits", "fingerprint", "comment" and its "certificate"
+      ("kind", "id", "principals", "valid_after", "valid_before", -1 for
+      forever, "ca", the signing key's fingerprint) and whether
+      "certificate_used"; "users", those who may sign in, each with
+      "name", "uid", "home", "shell", "keys_file" and "keys" (each
+      "type", "fingerprint", "bits", "comment", "options"); "user_cas";
+      "before_kept".
     do:
       request:
         attributes:

@@ -971,7 +971,7 @@ stage(struct html *h)
 			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
-			{ "certificates", "Certificates" },
+			{ "certificates", "Certificates" }, { "ssh", "SSH" },
 			{ "processes", "Processes" }, { "log", "Log" },
 			{ "jobs", "Jobs" },
 		};
@@ -1049,6 +1049,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_CERTS) {
 		view_certs(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_SSH) {
+		view_ssh(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1964,6 +1969,12 @@ modal(struct html *h)
 		if (!certs_modal(h))
 			return;
 		break;
+	case MODAL_SSH_SET:
+	case MODAL_SSH_SIGN:
+	case MODAL_SSH_KEY:
+		if (!ssh_modal(h))
+			return;
+		break;
 	case MODAL_IPSEC_CONN:
 	case MODAL_IPSEC_CHILD:
 		if (!ipsec_modal(h))
@@ -2322,6 +2333,15 @@ modal(struct html *h)
 			break;
 		case MODAL_CERT_ADD:
 			h_raw(h, "<button class=\"primary\">Trust it</button>");
+			break;
+		case MODAL_SSH_SET:
+			h_raw(h, "<button class=\"primary\">Change</button>");
+			break;
+		case MODAL_SSH_SIGN:
+			h_raw(h, "<button class=\"primary\">Sign</button>");
+			break;
+		case MODAL_SSH_KEY:
+			h_raw(h, "<button class=\"primary\">Add the key</button>");
 			break;
 		case MODAL_IPSEC_CHILD:
 			h_raw(h, "<button class=\"primary\">Add</button>");

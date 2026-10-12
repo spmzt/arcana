@@ -69,6 +69,7 @@ enum op {
 	OP_KERNEL,
 	OP_JAIL_FILES,
 	OP_CERTS,
+	OP_SSH,
 	OP_STORAGE,
 	OP_FSTAB,
 	OP_IPFW_RULES,
@@ -1034,7 +1035,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_TRANSPORT ? "arc_transport" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_TRANSPORT ? "arc_transport" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1356,6 +1357,8 @@ call_run(struct kore_task *t)
 	struct arc_jail_files_rsp *jfiles;
 	struct arc_certs_req	 ceq;
 	struct arc_certs_rsp	*cer;
+	struct arc_ssh_req	 sshq;
+	struct arc_ssh_rsp	*sshr;
 	struct arc_transport_req tpq;
 	struct arc_transport_rsp *tpr;
 	struct arc_sysctl_req	 syq;
@@ -1462,6 +1465,7 @@ call_run(struct kore_task *t)
 	kr = NULL;
 	jfiles = NULL;
 	cer = NULL;
+	sshr = NULL;
 	tpr = NULL;
 	syr = NULL;
 	prr = NULL;
@@ -2275,6 +2279,28 @@ connected:
 		steps = cer->trace.v;
 		nsteps = cer->trace.n;
 		break;
+	case OP_SSH:
+		memset(&sshq, 0, sizeof(sshq));
+		sshq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		if ((error = arc_ssh(&cl, &sshq, &sshr)) != 0)
+			goto rpcfail;
+		ok = sshr->ok;
+		put_str(top, "error", sshr->error);
+		e = NULL;
+		if (sshr->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, sshr->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = sshr->trace.v;
+		nsteps = sshr->trace.n;
+		break;
 	case OP_KERNEL:
 		if ((error = arc_kernel(&cl, &kr)) != 0)
 			goto rpcfail;
@@ -2516,6 +2542,8 @@ done:
 		arc_jail_files_rsp_free(jfiles);
 	if (cer != NULL)
 		arc_certs_rsp_free(cer);
+	if (sshr != NULL)
+		arc_ssh_rsp_free(sshr);
 	if (tpr != NULL)
 		arc_transport_rsp_free(tpr);
 	if (syr != NULL)
@@ -3634,6 +3662,27 @@ api_certs(struct http_request *req)
 	return (call_start(req, c));
 }
 
+/* GET /api/servers/<id>/ssh[?jail=]: the base system's sshd there. */
+int
+api_ssh(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_SSH)) == NULL)
+		return (KORE_RESULT_OK);
+	if (!pick_scope(req, c)) {
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "jail is a jail's "
+		    "name"));
+	}
+	return (call_start(req, c));
+}
+
 /* GET /api/servers/<id>/kernel: its modules and its memory. */
 int
 api_kernel(struct http_request *req)
@@ -3805,6 +3854,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_JAIL_CONF] = "jail-conf",
 	[ARC_JOB_KIND_NEIGHBOUR] = "neighbour",
 	[ARC_JOB_KIND_CERT] = "cert",
+	[ARC_JOB_KIND_SSH] = "ssh",
 };
 
 static const char *job_state_names[] = {
@@ -3880,12 +3930,15 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->snapshot);
 	kore_free((char *)(uintptr_t)sp->copy);
 	kore_free((char *)(uintptr_t)sp->path);
+	if (sp->text != NULL)
+		explicit_bzero((char *)(uintptr_t)sp->text, strlen(sp->text));
 	kore_free((char *)(uintptr_t)sp->text);
 	if (sp->preshared_key != NULL)
 		explicit_bzero((char *)(uintptr_t)sp->preshared_key,
 		    strlen(sp->preshared_key));
 	kore_free((char *)(uintptr_t)sp->preshared_key);
 	kore_free((char *)(uintptr_t)sp->lladdr);
+	kore_free((char *)(uintptr_t)sp->user);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -4006,6 +4059,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->preshared_key = jdup(o, "preshared_key");
 	sp->lladdr = jdup(o, "lladdr");
 	sp->temporary = ucl_flag(o, "temporary");
+	sp->user = jdup(o, "user");
 	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
 	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
 		sp->has_metric = true;
@@ -4108,6 +4162,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_RTADVD:
 	case ARC_JOB_KIND_IPSEC_SA:
 	case ARC_JOB_KIND_JAIL_CONF:
+	case ARC_JOB_KIND_SSH:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {
