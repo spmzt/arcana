@@ -311,7 +311,8 @@
   - The console's CA: one imported, or made and self-signed from the
     panel, given to each agent and trusted there; the console as a CA
     and as an intermediate CA under another.
-  - A session's lifetime set in Settings.
+  - A session's lifetime set in Settings. (Done 2026-10-12: idle
+    minutes and the longest, in hours.)
   - LDAP for the console's sign-in.
   - The base system's ssh, further: the banner, the users let in,
     authorized keys, host keys and their fingerprints, host keys

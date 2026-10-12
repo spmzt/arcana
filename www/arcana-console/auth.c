@@ -520,8 +520,8 @@ sessions_load(void)
 		snprintf(s->who, sizeof(s->who), "%s", ucl_object_lookup(e, "who")
 		    != NULL ? ucl_object_tostring_forced(ucl_object_lookup(e,
 		    "who")) : "");
-		if (k < 32 || s->created > now || now - s->last > SESSION_IDLE ||
-		    now - s->created > SESSION_MAX) {
+		if (k < 32 || s->created > now || now - s->last > cfg.session_idle ||
+		    now - s->created > cfg.session_max) {
 			memset(s, 0, sizeof(*s));
 			continue;
 		}
@@ -550,8 +550,8 @@ session_valid(struct http_request *req)
 		s = &sessions[i];
 		if (!s->used || memcmp(s->hash, h, sizeof(h)) != 0)
 			continue;
-		if (now - s->last > SESSION_IDLE ||
-		    now - s->created > SESSION_MAX) {
+		if (now - s->last > cfg.session_idle ||
+		    now - s->created > cfg.session_max) {
 			memset(s, 0, sizeof(*s));
 			sessions_save();
 			return (false);
@@ -621,7 +621,7 @@ session_start(struct http_request *req, const char *who)
 	snprintf(s->who, sizeof(s->who), "%s", who != NULL ? who : "");
 	snprintf(cookie, sizeof(cookie), "%s=%s; Path=/; HttpOnly; "
 	    "SameSite=Strict; Max-Age=%d%s", SESSION_COOKIE, token,
-	    SESSION_MAX, cfg.cookie_secure ? "; Secure" : "");
+	    cfg.session_max, cfg.cookie_secure ? "; Secure" : "");
 	http_response_header(req, "set-cookie", cookie);
 	explicit_bzero(token, sizeof(token));
 	sessions_save();

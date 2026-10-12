@@ -3081,7 +3081,11 @@ stop_body()
 	touch slow
 	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
 	change=$!
-	sleep 0.5
+	# Once the change is under way, not at a guess of when.
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
+		sleep 0.1
+	done
 	# What is under way and is not a job is said with the jobs.
 	atf_check -o match:'Under way: +service sshd restart' \
 	    -o not-match:'Stopping' "$JGC" -c "$SOCK" jobs
@@ -3109,8 +3113,12 @@ stop_body()
 	# Signalled twice, it does not wait.
 	start_daemon
 	pid=$(cat daemon.pid)
+	touch slow
 	"$JGC" -c "$SOCK" service sshd restart > /dev/null 2>&1 &
-	sleep 0.5
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
+		sleep 0.1
+	done
 	kill "$pid"
 	sleep 0.3
 	kill "$pid"
