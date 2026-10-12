@@ -714,20 +714,26 @@ view_text(struct html *h)
 		    "the layout</button>");
 	/*
 	 * The file the firewall loads now, when it is not the kept one:
-	 * rc.conf's firewall_type naming a file.  A jail's rc.conf is not
-	 * read with the rules, so a jail is offered it always.
+	 * the script rc.conf's firewall_script names, when it is the
+	 * host's own and not rc.firewall, else a file firewall_type names.
+	 * A jail's rc.conf is not read with the rules, so a jail is
+	 * offered it always.
 	 */
-	type = jstr(jget(fw.data, "rc"), "firewall_type");
+	type = jstr(jget(fw.data, "rc"), "firewall_script");
+	if (type == NULL || type[0] != '/' || strcmp(type, "/etc/rc.firewall")
+	    == 0)
+		type = jstr(jget(fw.data, "rc"), "firewall_type");
 	if (fw.jail[0] != '\0' || (type != NULL && type[0] == '/' &&
 	    (jstr(fw.data, "path") == NULL || strcmp(type, jstr(fw.data,
 	    "path")) != 0))) {
 		h_fmt(h, "<button type=\"button\" class=\"ghost small\" "
 		    "data-act=\"fw-load-rc\"%s title=\"", fw.file_loading ?
 		    " disabled" : "");
-		if (type != NULL)
+		if (type != NULL && type[0] == '/')
 			h_txt(h, type);
 		else
-			h_raw(h, "The file rc.conf's firewall_type names");
+			h_raw(h, "The script rc.conf's firewall_script names, or "
+			    "the file its firewall_type names");
 		h_raw(h, ", which the firewall loads now, here as kept rules: "
 		    "kept once Keep is pressed\">Load the current file"
 		    "</button>");
