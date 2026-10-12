@@ -133,7 +133,22 @@ addToLibrary({
 		}
 
 		document.addEventListener("click", function (e) {
-			var t = e.target.closest("[data-act]"), more;
+			var t = e.target.closest("[data-act]"), more, c;
+
+			/* A key or a value to paste elsewhere: copied, and
+			 * the page told so it can say it was. */
+			c = e.target.closest("[data-copy]");
+			if (c !== null) {
+				e.preventDefault();
+				if (navigator.clipboard)
+					navigator.clipboard.writeText(c.dataset.copy)
+					    .then(function () {
+						act("copied", "", "");
+					}, function () {
+						act("copied", "", "no");
+					});
+				return;
+			}
 
 			/* A row's ⋯: its actions shown or put away. */
 			more = e.target.closest("button.acts-more");

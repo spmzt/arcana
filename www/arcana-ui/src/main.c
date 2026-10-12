@@ -1625,6 +1625,9 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "fx") == 0) {
 		app.fx = !app.fx;
 		arc_fx_set(app.fx ? 1 : 0);
+	} else if (strcmp(act, "copied") == 0) {
+		toast(value[0] != '\0', value[0] != '\0' ? "The browser would "
+		    "not copy it: select it and copy it by hand" : "Copied");
 	} else if (strcmp(act, "close") == 0 || strcmp(act, "escape") == 0) {
 		if (app.modal != MODAL_NONE)
 			close_modal();
