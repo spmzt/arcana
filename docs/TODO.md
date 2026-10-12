@@ -102,6 +102,11 @@
   Squid as a plugin, an instance per service, the TLS names looked at
   or TLS opened with the agent's CA, HTTP and TLS forwarded to it
   (S4.1). Next: S4.2, malware.
+- 2026-10-12: each host's rollback timer, set on its Summary: the
+  seconds a change made in safe mode waits there to be confirmed,
+  kept with the server and sent with every safe job and BIRD
+  configuration (safe-wait), the agent's own -w when not set;
+  arcanactl -W does the same.
 - 2026-10-11: what is new, in the update boxes and Settings' last
   tab: the agent's source-log (a bare blob:none clone in the build
   directory), the console's /api/update/notes (the tags' messages as
@@ -214,7 +219,6 @@
   - A span tab: traffic mirrored by a BPF interface, or by ipfw rules
     with BPF.
   - Labels on interfaces, for the UCS they carry.
-  - The device's rollback timer (safe mode's wait) set in the console.
   - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
   - IGMP and MLD configured.
   - NDP and ARP entries added and deleted by hand, temporary or

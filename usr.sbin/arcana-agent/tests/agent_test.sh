@@ -2203,6 +2203,13 @@ safe_mode_body()
 	atf_check -o match:'^lo0 inet 10.9.0.6/24 alias$' \
 	    -o not-match:'10.9.0.6 -alias' cat ifconfig.log
 
+	# The client's rollback timer in place of the daemon's own -w.
+	atf_check -o match:'the timer was 15 s' \
+	    -o match:'confirmed: it stays' \
+	    "$JGC" -t -s -W 15 -c "$SOCK" interface lo0 add 10.9.0.7/24
+	atf_check -s exit:2 -e match:'too small' \
+	    "$JGC" -s -W 5 -c "$SOCK" interface lo0 add 10.9.0.7/24
+
 	# One that is not heard from again: each change is taken back.
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 add 10.9.0.8/24
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 down
@@ -2218,7 +2225,7 @@ safe_mode_body()
 		sleep 0.1
 	done
 	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
-	    "$JGC" -c "$SOCK" job 2
+	    "$JGC" -c "$SOCK" job 3
 	atf_check -o match:'^lo0 inet 10.9.0.8/24 alias$' \
 	    -o match:'^lo0 inet 10.9.0.8 -alias$' \
 	    -o match:'^lo0 down$' -o match:'^lo0 up$' \

@@ -58,6 +58,7 @@ struct job {
 	char			*host_keys;
 	char			*ssh_key;
 	uint32_t		 log_count;	/* source-log: commits at most */
+	int			 safe_wait;	/* bird-config: s, 0 the agent's */
 	char			*peer;
 };
 
@@ -921,6 +922,8 @@ worker(void *arg)
 		bcq.dry_run = j->refresh;
 		bcq.safe = j->restart;
 		bcq.confirm = j->config_only;
+		bcq.has_safe_wait = j->safe_wait > 0;
+		bcq.safe_wait = (uint32_t)j->safe_wait;
 		bcr.has_ok = true;
 		if (scope_enter(&w, j->jail, &bcr.error) != 0)
 			;
@@ -1518,6 +1521,7 @@ arc_bird_config_doit(cbl_req *req, const struct arc_bird_config_req *rq,
 	/* Safe rides where a restart does, confirm where config-only. */
 	j->restart = rq->safe;
 	j->config_only = rq->confirm;
+	j->safe_wait = rq->has_safe_wait ? (int)rq->safe_wait : 0;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
 	return (start(j));

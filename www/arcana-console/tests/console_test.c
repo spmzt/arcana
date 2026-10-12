@@ -1915,6 +1915,20 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 
 	/*
+	 * The host's rollback timer: kept with the server, refused out
+	 * of its range, and sent with each safe change.
+	 */
+	snprintf(body, sizeof(body), "%.*s", (int)(strlen(base) -
+	    strlen("/services")), base);
+	http("POST", body, "{\"safe_wait\":5}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", body, "{\"safe_wait\":15}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("15", jstr(&r, "servers.0.safe_wait"));
+	resp_free(&r);
+
+	/*
 	 * A safe change waits to hear from the console again; reading
 	 * the job is that, so the change stays.
 	 */
@@ -1935,6 +1949,13 @@ ATF_TC_BODY(services, tc)
 	}
 	ATF_REQUIRE_MSG(i < 200, "the safe job did not finish");
 	ATF_CHECK_STREQ("true", jstr(&r, "job.ok"));
+	ATF_CHECK_MSG(strstr(r.body, "the timer was 15 s") != NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "%.*s", (int)(strlen(base) -
+	    strlen("/services")), base);
+	http("POST", body, "{\"safe_wait\":0}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "servers.0.safe_wait") == NULL);
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.6/24 alias$' ifconfig.log "
 	    "&& ! grep -q '10.9.0.6 -alias' ifconfig.log") == 0);

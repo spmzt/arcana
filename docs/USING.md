@@ -704,7 +704,11 @@ The console is laid out as a tree and tabs.
     interface brought back up, the route added or deleted again. The
     job then reads "not confirmed within 60 s: undone". Only a route
     deleted without a gateway cannot be put back, and the console says
-    so before it does it.
+    so before it does it. How long the host waits is its **rollback
+    timer**, set on the Summary tab: 10 to 3600 seconds, or empty for
+    the agent's own (`arcana-agent -w`, a minute unless set); the
+    console sends it with each safe change, and `arcanactl -s -W
+    seconds` does the same from a shell.
   - **Packages**: of the host or a running jail. **Installed**, at
     first, lists what is installed, from the host's own database
     without asking the repository: each package's version, whether it

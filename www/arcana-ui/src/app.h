@@ -250,6 +250,7 @@ struct server {
 	double		 services_fetched;
 	bool		 services_loading;
 	char		 services_error[256];
+	int		 safe_wait;	/* s, its rollback timer; 0 the agent's */
 };
 
 enum opstate {
@@ -681,6 +682,8 @@ void		 network_stream(const ucl_object_t *);
 void		 view_sysctl(struct html *, struct server *);
 bool		 sysctl_form(const char *, const ucl_object_t *);
 bool		 sysctl_action(const char *, const char *, const char *);
+void		 view_safe(struct html *, struct server *);
+void		 servers_cb(int, const ucl_object_t *, const char *, void *);
 void		 refresh_transport(struct server *, bool, bool);
 void		 transport_tick(double);
 void		 view_transport(struct html *, struct server *);
