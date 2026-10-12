@@ -101,7 +101,20 @@
   bytes, on the tab (S3.4); SASE-3 closed. SASE-4: the URL filter,
   Squid as a plugin, an instance per service, the TLS names looked at
   or TLS opened with the agent's CA, HTTP and TLS forwarded to it
-  (S4.1). Next: S4.2, malware.
+  (S4.1); malware scanned, by c-icap and ClamAV behind the same Squid,
+  c-icap on the edge's own address in the service and taking Squid's
+  alone, plugins all (S4.2, in the verified list). Next: S4.3, IDS.
+- Verified on the lab 2026-10-12 (S4.2): Squid, c-icap 0.6.5 with
+  c-icap-modules 0.5.7 and ClamAV 1.5.4 added into arcswan1 from
+  fetched packages, signatures only EICAR's (a one-line eicar.hdb):
+  the client's fetch of the EICAR file over HTTP refused, 403, c-icap
+  logging VIRUS DETECTED: Eicar-Test-Signature with the client's
+  address; a harmless file served (204 from c-icap); the client
+  asking c-icap itself refused, 403, the edge answered.  Found there:
+  in a service's table c-icap could not bind 127.0.0.1 (with
+  bind_all_fibs 0 a socket binds only its table's addresses, and lo0
+  is the host's), so it listens on the edge's own address in the
+  service, with client_access for that address alone.
 - 2026-10-12: the plugins' tabs on every host: where the plugin is
   not installed (host or the jail picked), the tab names its program
   and package with a button that installs it by pkg-install, the host's

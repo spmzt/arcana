@@ -1923,17 +1923,19 @@ malware_scan(const ucl_object_t *sw)
 	return (false);
 }
 
-/* The port a service's c-icap answers Squid on, on the edge's loopback. */
+/* The port a service's c-icap answers its Squid on. */
 #define	ICAP_PORT(fib)	(1344 + 10 * (int)(fib))
 
 /*
  * c-icap's configuration for a service at an edge: an ICAP service
- * avscan that scans with ClamAV's module (c-icap-modules), listening on
- * the loopback for the service's Squid alone.  The agent places
- * @ICAPPID@ and @ICAPCMD@.
+ * avscan that scans with ClamAV's module (c-icap-modules), on the
+ * edge's own address in the service (own), where the service's Squid
+ * reaches it, and taking no one else: the loopback is not the
+ * service's table's (net.inet.tcp.bind_all_fibs is 0), so nothing in
+ * the table can bind it.  The agent places @ICAPPID@ and @ICAPCMD@.
  */
 static char *
-icap_conf(const ucl_object_t *sw, const char *sid)
+icap_conf(const ucl_object_t *sw, const char *sid, const char *own)
 {
 	struct kore_buf	*b;
 	char		*out;
@@ -1945,7 +1947,9 @@ icap_conf(const ucl_object_t *sw, const char *sid)
 	    "at %s, in routing table %jd.\n# Malware scanning of its security "
 	    "policies (MEF 88), by c-icap and ClamAV, for its Squid.\n"
 	    "PidFile @ICAPPID@\nCommandsSocket @ICAPCMD@\n"
-	    "Port 127.0.0.1:%d\nStartServers 1\nMaxServers 4\n"
+	    "Port %s:%d\nacl squid src %s/255.255.255.255\nacl all src "
+	    "0.0.0.0/0.0.0.0\nclient_access allow squid\nclient_access deny all\n"
+	    "StartServers 1\nMaxServers 4\n"
 	    "ServerLog /var/log/c-icap/sdwan-sw%jd-server.log\n"
 	    "AccessLog /var/log/c-icap/sdwan-sw%jd-access.log\n"
 	    "Module common clamav_mod.so\n"
@@ -1953,7 +1957,8 @@ icap_conf(const ucl_object_t *sw, const char *sid)
 	    "virus_scan.ScanFileTypes TEXT DATA EXECUTABLE ARCHIVE DOCUMENT\n"
 	    "virus_scan.SendPercentData 5\nvirus_scan.StartSendPercentDataAfter "
 	    "2M\nvirus_scan.MaxObjectSize 32M\nvirus_scan.DefaultEngine clamav\n",
-	    str(sw, "id"), server_name_of(sid), fib, ICAP_PORT(fib), fib, fib);
+	    str(sw, "id"), server_name_of(sid), fib, own, ICAP_PORT(fib), own,
+	    fib, fib);
 	out = strdup(kore_buf_stringify(b, NULL));
 	kore_buf_free(b);
 	return (out);
@@ -2018,7 +2023,7 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	const ucl_object_t	*ep, *o, *pol, *sec, *sc, *uf, *e, *p;
 	ucl_object_iter_t	 it, pit, dit, eit;
 	ucl_object_t		*owns, *pfx;
-	char			*out;
+	char			*out, own[80];
 	int			 i, si;
 	bool			 dnsproto;
 
@@ -2047,6 +2052,8 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	if (dns_filters(sw, &dnsproto) && ucl_array_size(owns) > 0)
 		kore_buf_appendf(b, "dns_nameservers %s\n", str(
 		    ucl_array_find_index(owns, 0), "address"));
+	snprintf(own, sizeof(own), "%s", ucl_array_size(owns) > 0 ? str(
+	    ucl_array_find_index(owns, 0), "address") : "127.0.0.1");
 	ucl_object_unref(owns);
 	kore_buf_appendf(b, "sslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n"
 	    "sslcrtd_children 3\n");
@@ -2071,8 +2078,8 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	if (malware_scan(sw))
 		kore_buf_appendf(b, "\nicap_enable on\nicap_send_client_ip on\n"
 		    "icap_service sdwan_av respmod_precache bypass=off "
-		    "icap://127.0.0.1:%d/avscan\nadaptation_access sdwan_av allow "
-		    "all", ICAP_PORT(ucl_object_toint(ucl_object_lookup(sw,
+		    "icap://%s:%d/avscan\nadaptation_access sdwan_av allow "
+		    "all", own, ICAP_PORT(ucl_object_toint(ucl_object_lookup(sw,
 		    "fib"))));
 	kore_buf_appendf(b, "\nacl denied_site ssl::server_name \"@DENY@\"\n"
 	    "acl denied_url dstdomain \"@DENY@\"\nacl step1 at_step SslBump1\n"
@@ -2172,7 +2179,14 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 			free(text);
 			free(deny);
 			if (malware_scan(sw)) {
-				text = icap_conf(sw, sid);
+				ucl_object_t	*owns = ucl_object_typed_new(
+				    UCL_ARRAY);
+
+				edge_own4(pl, sw, sid, owns);
+				text = icap_conf(sw, sid, ucl_array_size(owns) > 0 ?
+				    str(ucl_array_find_index(owns, 0), "address") :
+				    "127.0.0.1");
+				ucl_object_unref(owns);
 				put(inst, "icap", S(text));
 				free(text);
 			}
