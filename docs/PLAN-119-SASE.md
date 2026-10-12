@@ -151,7 +151,7 @@ so.
 - **119-6, the management plane's steps and conformance.** The apply
   ordered and named as §12.1's activity flow (steps 1–12), the
   document's attributes mapped one by one to R89–R160 with a table
-  in docs/USING.md saying which requirement each is, and a
+  in the book (arcana-docs) saying which requirement each is, and a
   conformance list with what is not done (multiple subscriber
   domains, the MEF 10.4 Ethernet UNI attributes of R96, stateful TCA
   if not done). The Universal Management Plane's transport (§7.5,
@@ -255,7 +255,7 @@ security policies are named by the policies that want them.
 
 Each task is one commit, reviewed before it goes in, with the agent's
 or the console's version bumped, its tests in the suite, and
-docs/USING.md and openapi.yaml where it shows. A: the agent, C: the
+the book (arcana-docs) and openapi.yaml where it shows. A: the agent, C: the
 console, U: the page, T: tests, L: the lab on the VM. "Done when" is
 what the review looks at. Tasks of one phase run in order; phases as
 said under Order and effort.
@@ -408,7 +408,7 @@ Not supported: see the summary above. No tasks.
 - **6.1 The steps.** C: the apply's phases named and ordered as
   §12.1's steps 1–12, the Edges tab showing them by step. Done when
   the page reads as the document's activity flow.
-- **6.2 The mapping and the list.** docs/USING.md: a table from each
+- **6.2 The mapping and the list.** The book's Mplify 119 chapter: a table from each
   document attribute to R89–R160; a conformance list with what is
   not done (multiple subscriber domains, R96's Ethernet UNI
   attributes, stateful TCA, a NETCONF or REST binding). Done when
