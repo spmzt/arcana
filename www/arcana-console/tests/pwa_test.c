@@ -1084,8 +1084,9 @@ part_hosts(void)
 	wait_js("document.querySelectorAll('.dock .recent .last').length >= 4 "
 	    "&& [...document.querySelectorAll('.dock .recent .last small')]."
 	    "some(e => /done|failed/.test(e.textContent))", 20);
-	ATF_CHECK(js_true("(localStorage.getItem('arc_tasks') || '').split("
-	    "'\\n').length > 5"));
+	/* Kept as the page keeps them, which may come a moment after. */
+	wait_js("(localStorage.getItem('arc_tasks') || '').split('\\n')"
+	    ".length > 5", 5);
 	shot("9a-recent-tasks");
 	run("[...document.querySelectorAll('.dock .recent .last')].pop()."
 	    "click()");
@@ -1329,6 +1330,15 @@ part_nettab(void)
 	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.7/24 alias$' ifconfig.log")
 	    == 0);
 	run("document.querySelector('.dock > header').click()");
+	/* Every table can be had as CSV: its columns by their names, its
+	 * rows as shown, without the buttons. */
+	run("document.querySelector('tr[data-if=lo0]').closest('table')"
+	    ".querySelector('thead button.csv-btn').click()");
+	wait_js("typeof window.arcCsvLast === 'string'", 5);
+	ATF_CHECK(js_true("(() => { const l = window.arcCsvLast.split('\\n');"
+	    " return l.length > 2 && !l[0].startsWith(',') && l.some(x => "
+	    "x.startsWith('lo0,')) && !window.arcCsvLast.includes('+ "
+	    "address'); })()"));
 	/* An address changed: the form with what it is now; the new one
 	 * added, then the old one taken off. */
 	run("document.querySelector('tr[data-if=lo0] button[data-act="
