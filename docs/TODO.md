@@ -359,6 +359,11 @@ Written and tested with stand-ins, never run for real:
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.
+- A login from an Android app named in web.conf's android block, on a
+  real phone: the tests sign as Credential Manager would, with its
+  origin (android:apk-key-hash:...), and read
+  /.well-known/assetlinks.json, but Android has not been seen to accept
+  the file or to sign for the console's rp_id.
 - Notifications on a real phone. A message sent with the console's code
   was delivered to headless Firefox through Mozilla's push service and
   shown; Google's service accepts the console's signature, but the

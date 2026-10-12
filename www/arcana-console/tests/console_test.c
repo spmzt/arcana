@@ -408,6 +408,86 @@ ATF_TC_BODY(login_refused, tc)
 	resp_free(&r);
 }
 
+/* The SHA-256 of a signing certificate, as apksigner prints it. */
+#define	APP_FP	"00:01:02:03:04:05:06:07:08:09:0A:0B:0C:0D:0E:0F:"	\
+		"10:11:12:13:14:15:16:17:18:19:1A:1B:1C:1D:1E:1F"
+
+CONSOLE_TC(android, "The Android app of web.conf: its assetlinks.json, and "
+    "logins made in it, whose origin is its signing key's hash")
+ATF_TC_BODY(android, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	uint8_t		 h[32];
+	char		 origin[128], *h64;
+	int		 i;
+
+	for (i = 0; i < 32; i++)
+		h[i] = (uint8_t)i;
+	h64 = b64url(h, sizeof(h));
+	snprintf(origin, sizeof(origin), "android:apk-key-hash:%s", h64);
+	free(h64);
+	snprintf(harness_webconf, sizeof(harness_webconf), "android {\n"
+	    "\tpackage = \"org.example.arcana\";\n"
+	    "\tfingerprints = [ \"%s\", \"%s\" ];\n}\n", APP_FP,
+	    "1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100");
+	start(tc, 0, NULL);
+
+	/* Before any login: Android asks for it as anyone would. */
+	http("GET", "/.well-known/assetlinks.json", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("android_app", jstr(&r, "0.target.namespace"));
+	ATF_CHECK_STREQ("org.example.arcana", jstr(&r,
+	    "0.target.package_name"));
+	ATF_CHECK_STREQ(APP_FP, jstr(&r, "0.target.sha256_cert_fingerprints.0"));
+	ATF_CHECK_STREQ("1F:1E:1D:1C:1B:1A:19:18:17:16:15:14:13:12:11:10:"
+	    "0F:0E:0D:0C:0B:0A:09:08:07:06:05:04:03:02:01:00", jstr(&r,
+	    "0.target.sha256_cert_fingerprints.1"));
+	ATF_CHECK_STREQ("delegate_permission/common.get_login_creds",
+	    jstr(&r, "0.relation.1"));
+	resp_free(&r);
+
+	enrol(&a);
+	cookie[0] = '\0';
+	do_login(&a, 1, origin, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "authenticated"));
+	resp_free(&r);
+
+	/* Another app, or the right hash under another scheme: no. */
+	cookie[0] = '\0';
+	do_login(&a, 2, "android:apk-key-hash:"
+	    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", RP_ID, NULL, false,
+	    &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_MSG(strstr(r.body, "origin") != NULL, "%s", r.body);
+	resp_free(&r);
+	do_login(&a, 3, origin + strlen("android:"), RP_ID, NULL, false, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+}
+
+CONSOLE_TC(android_none, "Without an Android app, no assetlinks.json and no "
+    "logins from an app")
+ATF_TC_BODY(android_none, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+
+	start(tc, 0, NULL);
+	http("GET", "/.well-known/assetlinks.json", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	enrol(&a);
+	cookie[0] = '\0';
+	do_login(&a, 1, "android:apk-key-hash:"
+	    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8", RP_ID, NULL, false,
+	    &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_MSG(strstr(r.body, "origin") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(second_key, "A spare Ed25519 key, added from a session")
 ATF_TC_BODY(second_key, tc)
 {
@@ -4561,6 +4641,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, setup_token);
 	ATF_TP_ADD_TC(tp, register_login);
 	ATF_TP_ADD_TC(tp, login_refused);
+	ATF_TP_ADD_TC(tp, android);
+	ATF_TP_ADD_TC(tp, android_none);
 	ATF_TP_ADD_TC(tp, second_key);
 	ATF_TP_ADD_TC(tp, csrf);
 	ATF_TP_ADD_TC(tp, jails);

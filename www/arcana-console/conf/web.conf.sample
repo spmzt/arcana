@@ -43,6 +43,16 @@ cookie_secure = true;
 # by default that host makes one and the console shows it to you.
 #agent_ssh_key = "/usr/local/etc/arcana/git_ed25519";
 
+# An Android app that may log in with the keys registered here: its
+# package name, and the SHA-256 fingerprints of the certificates it is
+# signed with ("apksigner verify --print-certs", or keytool).  The
+# console then serves /.well-known/assetlinks.json naming it, and takes
+# logins made in it, whose origin is android:apk-key-hash:...
+#android {
+#	package = "io.github.spmzt.arcana";
+#	fingerprints = [ "AB:CD:...:EF" ];
+#}
+
 # The agent of the host the console runs on is added to the list of
 # servers by itself, once it answers on its local socket: start it with
 # "service arcana_agent enable" and "service arcana_agent start", and
