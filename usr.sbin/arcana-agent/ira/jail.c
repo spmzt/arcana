@@ -79,7 +79,7 @@ jail_record(struct work *w, struct arc_jail *j, const char *name,
 		j->vnet = ji->vnet;
 		/* Its own network may have its own BIRD, its own wg. */
 		if (ji->vnet && ji->path != NULL)
-			plugins_there(w, ji->path, &j->plugins.v,
+			plugins_there(w, ji->jid, ji->path, &j->plugins.v,
 			    &j->plugins.n);
 		j->osrelease = wtext(w, ji->osrelease);
 		j->has_persist = true;

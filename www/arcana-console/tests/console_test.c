@@ -953,7 +953,8 @@ ATF_TC_BODY(workflows, tc)
 	struct authn	a;
 	struct resp	r;
 	char		cwd[1024], body[4096], sid[16], run[32], wid[16];
-	char		path[128];
+	char		path[128], every[16];
+	FILE		*fp;
 	int		i;
 
 	start(tc, 0, NULL);
@@ -1145,6 +1146,39 @@ ATF_TC_BODY(workflows, tc)
 	resp_free(&r);
 	ATF_CHECK(system("! grep -q clone git.log") == 0);
 
+	/*
+	 * At an interval, counted from when it last ran by it, which a
+	 * restart of the console does not forget: kept as having run 58 s
+	 * before, a workflow of every minute runs within a tick or two of
+	 * the console's start, not a minute after.
+	 */
+	snprintf(body, sizeof(body), "{\"name\":\"each minute\",\"hosts\":"
+	    "[\"%s\"],\"every\":60,\"steps\":[{\"id\":\"s\",\"read\":"
+	    "\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	ATF_REQUIRE(jstr(&r, "id") != NULL);
+	snprintf(every, sizeof(every), "%s", jstr(&r, "id"));
+	resp_free(&r);
+	ATF_REQUIRE((fp = fopen("data/every.json", "w")) != NULL);
+	fprintf(fp, "{\"%s\": %lld}\n", every, (long long)time(NULL) - 58);
+	fclose(fp);
+	restart_console();
+	for (i = 0; i < 150; i++) {
+		http("GET", "/api/runs", NULL, &r);
+		if (strstr(r.body, "\"each minute\"") != NULL)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_CHECK_MSG(i < 150, "the interval was counted from the restart");
+	ATF_CHECK(i == 150 || strstr(r.body, "\"trigger\":\"every\"") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "/api/workflows/%s", every);
+	http("DELETE", path, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+
 	/* Begun by the host's events: a threshold crossed, then the host
 	 * that stops answering. */
 	snprintf(body, sizeof(body), "{\"name\":\"on mem\",\"hosts\":[\"%s\"],"
@@ -1188,6 +1222,9 @@ ATF_TC_BODY(workflows, tc)
 	if (i == 200)
 		(void)system("tail -20 kore.out >&2");
 	ATF_CHECK_MSG(i < 200, "no run begun by the host going away");
+	/* Subscribed to, not asked every few seconds: a host that goes is
+	 * known at once. */
+	ATF_CHECK_MSG(i < 30, "host-down came after %d ms", i * 100);
 	resp_free(&r);
 
 	ATF_CHECK(system("! grep -q 'exited with status' kore.out") == 0);
@@ -1915,6 +1952,20 @@ ATF_TC_BODY(services, tc)
 	resp_free(&r);
 
 	/*
+	 * The host's rollback timer: kept with the server, refused out
+	 * of its range, and sent with each safe change.
+	 */
+	snprintf(body, sizeof(body), "%.*s", (int)(strlen(base) -
+	    strlen("/services")), base);
+	http("POST", body, "{\"safe_wait\":5}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", body, "{\"safe_wait\":15}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("15", jstr(&r, "servers.0.safe_wait"));
+	resp_free(&r);
+
+	/*
 	 * A safe change waits to hear from the console again; reading
 	 * the job is that, so the change stays.
 	 */
@@ -1935,6 +1986,13 @@ ATF_TC_BODY(services, tc)
 	}
 	ATF_REQUIRE_MSG(i < 200, "the safe job did not finish");
 	ATF_CHECK_STREQ("true", jstr(&r, "job.ok"));
+	ATF_CHECK_MSG(strstr(r.body, "the timer was 15 s") != NULL, "%s", r.body);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "%.*s", (int)(strlen(base) -
+	    strlen("/services")), base);
+	http("POST", body, "{\"safe_wait\":0}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "servers.0.safe_wait") == NULL);
 	resp_free(&r);
 	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.6/24 alias$' ifconfig.log "
 	    "&& ! grep -q '10.9.0.6 -alias' ifconfig.log") == 0);
@@ -3338,7 +3396,8 @@ static const char sdwan_good[] =
     "\"security_policies\":[{\"name\":\"guard\",\"criteria\":{\"ip-block\":{"
     "\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]},"
     "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]},"
-    "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true}}],"
+    "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true,"
+    "\"url-filter\":{\"mode\":\"sni\",\"deny\":[\"bad.example\"]}}}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
     "\"groups\":[\"bulk\"],"
     "\"flows\":[{\"name\":\"web\",\"criteria\":{\"dport\":[80,\"https\"],"
@@ -3492,8 +3551,11 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"deny\":[\"ads.example\"]", "\"deny\":[\"ads..example\"]",
 		    "not a domain name" },
 		{ "\"rate-limit\":2000000", "\"rate-limit\":10", "1000 or more" },
-		{ "\"log\":true}}", "\"log\":true,\"url-filter\":true}}",
-		    "not a criterion" },
+		{ "\"log\":true,", "\"log\":true,\"nope\":true,", "not a criterion" },
+		/* The URL filter (SASE-4): a mode, sni or inspect; domains. */
+		{ "\"mode\":\"sni\"", "\"mode\":\"spy\"", "sni or inspect" },
+		{ "\"deny\":[\"bad.example\"]", "\"deny\":[\"bad example\"]",
+		    "not a domain name" },
 		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/24\"],"
 		    "\"lists\":[\"nowhere\"]", "no list nowhere" },
 		{ "\"dns-protocol-filter\":true", "\"dns-protocol-filter\":\"yes\"",
@@ -4220,6 +4282,20 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    r.body);
 	ATF_CHECK(strstr(r.body, "\"10 skipto tablearg ip from table(sw1_zone) "
 	    "to any in recv wg5\"") != NULL);
+	/* The URL filter (SASE-4): HTTP and TLS from the end points forwarded
+	 * to Squid on the edge's own addresses, its instance in the plan
+	 * with the TLS names looked at and the domain denied. */
+	ATF_CHECK(strstr(r.body, "\"10 fwd 10.1.0.1,3128 tcp from any to any "
+	    "dst-port 80 in recv lo0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"10 fwd 10.30.0.1,3129 tcp from any to any "
+	    "dst-port 443 in recv wg5\"") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"sdwan-proxy\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"fib\":1,\"mode\":\"sni\",\"conf\":\"# Written by "
+	    "the Arcana console") != NULL && strstr(r.body, "https_port "
+	    "10.1.0.1:3129 intercept ssl-bump tls-cert=@CA@") != NULL && strstr(
+	    r.body, "ssl_bump terminate denied_site\\nssl_bump splice all") !=
+	    NULL && strstr(r.body, "\"deny\":\".bad.example\\n\"") != NULL, "%s",
+	    r.body);
 	resp_free(&r);
 	/* The record: the edges' logged packets read now; none yet. */
 	http("GET", "/api/sdwan/record?swvc=acme&policy=guard", NULL, &r);
@@ -4259,6 +4335,69 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q 'vlan106 create vlan 20 vlandev lo0' "
 	    "ifconfig.log") == 0);
+	/* The proxy, by the stand-ins: parsed, started in the table. */
+	ATF_CHECK(system("grep -q '^squid -k parse -f .*sdwan-proxy-sw1.conf' "
+	    "squid.log && grep -q '^setfib -F 1 .*tools/squid -f .*sdwan-proxy-"
+	    "sw1.conf' setfib.log") == 0);
+	/* Identities (SASE-3): one issued for a name, its key pair made
+	 * here, the configuration answered once with its address, the
+	 * second host after alice's, and the edges applied; listed with
+	 * both; revoked, gone and the peer removed; alice past the
+	 * remote's re-authorisation has no peer. */
+	http("POST", "/api/sdwan/identities", "{\"swvc\":\"acme\",\"end_point\":"
+	    "\"road\",\"name\":\"bob\",\"zone\":\"office\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "name"));
+	ATF_CHECK_MSG(jstr(&r, "config") != NULL && strstr(jstr(&r, "config"),
+	    "[Interface]\nPrivateKey = ") != NULL && strstr(jstr(&r, "config"),
+	    "\nAddress = 10.30.0.3/24\n") != NULL && strstr(jstr(&r, "config"),
+	    "\n[Peer]\nPublicKey = ") != NULL && strstr(jstr(&r, "config"),
+	    "\nEndpoint = 192.0.2.1:51820\n") != NULL && strstr(jstr(&r,
+	    "config"), "AllowedIPs = 10.1.0.0/24, 10.1.8.0/22, 2001:db8:1::/64, "
+	    "10.30.0.0/24\n") != NULL, "%s", r.body);
+	ATF_CHECK_STREQ("true", jstr(&r, "applied"));
+	ATF_CHECK(strlen(jstr(&r, "public_key")) == 44);
+	resp_free(&r);
+	sdwan_wait(&r);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^set wg5 peer .* allowed-ips 10.30.0.3/32' "
+	    "wg.log") == 0);
+	http("GET", "/api/sdwan/identities", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("alice", jstr(&r, "identities.0.name"));
+	ATF_CHECK_STREQ("10.30.0.2", jstr(&r, "identities.0.address"));
+	ATF_CHECK_STREQ("true", jstr(&r, "identities.0.live"));
+	ATF_CHECK_STREQ("bob", jstr(&r, "identities.1.name"));
+	ATF_CHECK_STREQ("10.30.0.3", jstr(&r, "identities.1.address"));
+	ATF_CHECK_STREQ("false", jstr(&r, "identities.1.user"));
+	/* Its session, as the edge's wg tells its peer (S3.4): the stand-in
+	 * keeps the last peer set on an interface. */
+	ATF_CHECK_MSG(jstr(&r, "identities.1.session.endpoint") != NULL &&
+	    strcmp(jstr(&r, "identities.1.session.endpoint"), "192.0.2.9:51820")
+	    == 0 && jstr(&r, "identities.1.session.rx") != NULL, "%s", r.body);
+	resp_free(&r);
+	/* A console user: a sign-in key of the name, or none. */
+	http("POST", "/api/sdwan/identities", "{\"swvc\":\"acme\",\"end_point\":"
+	    "\"road\",\"name\":\"nobody\",\"zone\":\"office\",\"user\":true}",
+	    &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("DELETE", "/api/sdwan/identities?swvc=acme&end_point=road&name=bob",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "revoked"));
+	resp_free(&r);
+	sdwan_wait(&r);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^set wg5 peer .* remove' wg.log") == 0);
+	http("GET", "/api/sdwan/identities", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "identities.1.name") == NULL);
+	resp_free(&r);
+	http("DELETE", "/api/sdwan/identities?swvc=acme&end_point=road&name=bob",
+	    NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
 	/* The remote end point's wg, by the stand-in: listening, the
 	 * identity its peer. */
 	ATF_CHECK(system("grep -q '^set wg5 listen-port 51820' wg.log && grep "
@@ -4329,7 +4468,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_REQUIRE(swap_in(doc, "\"ucs\":[\"inet\",\"mpls\"]",
 	    "\"ucs\":[\"inet\"]", t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":1", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":3", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);
@@ -4357,7 +4496,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_REQUIRE(swap_in(doc, "\"encryption\":\"required-public-only\"",
 	    "\"encryption\":\"required-always\"", t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":2", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":4", t1,
 	    sizeof(t1)));
 	ATF_REQUIRE(swap_in(t1, "\"ucs\":[\"inet\"]",
 	    "\"ucs\":[\"inet\",\"mpls\"]", doc, sizeof(doc)));
@@ -4371,7 +4510,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"",
 	    "\"kind\":\"gif\",\"ipsec\":false", t1, sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "\"version\":2", "\"version\":3", doc,
+	ATF_REQUIRE(swap_in(t1, "\"version\":4", "\"version\":5", doc,
 	    sizeof(doc)));
 	http("PUT", "/api/sdwan", doc, &r);
 	EXPECT(&r, 200);
@@ -4384,7 +4523,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"kind\":\"gif\"", t1, sizeof(t1)));
 	ATF_REQUIRE(swap_in(t1, "\"encryption\":\"required-always\"",
 	    "\"encryption\":\"required-public-only\"", doc, sizeof(doc)));
-	ATF_REQUIRE(swap_in(doc, "\"version\":3", "\"version\":4", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":5", "\"version\":6", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);
@@ -4399,7 +4538,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"", "\"kind\":\"geneve\"",
 	    t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":3", "\"version\":5", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":5", "\"version\":7", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);

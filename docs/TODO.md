@@ -94,7 +94,46 @@
   name, a zone and a key, the example carrying one (S3.1); the apply,
   the wg interface in the service's table, a peer per identity with
   an address of the prefix kept for it, the zone table's entries
-  (S3.2). Next: S3.3, issuing and revoking.
+  (S3.2); identities issued and revoked from the console, the key
+  pair made there and the configuration shown once, a
+  re-authorisation interval after which the peer goes (S3.3); each
+  identity's session from the edge's wg read, the handshake and the
+  bytes, on the tab (S3.4); SASE-3 closed. SASE-4: the URL filter,
+  Squid as a plugin, an instance per service, the TLS names looked at
+  or TLS opened with the agent's CA, HTTP and TLS forwarded to it
+  (S4.1). Next: S4.2, malware.
+- 2026-10-12: the plugins' tabs on every host: where the plugin is
+  not installed (host or the jail picked), the tab names its program
+  and package with a button that installs it by pkg-install, the host's
+  list read again when the job ends and the agent's kept answer for
+  the jails forgotten; a workflow template installing a plugin's
+  package. Squid has no tab, so its package is installed by the
+  template or the Packages tab.
+- 2026-10-12: workflows, further: jobs.yaml checked against
+  arcana.yaml's job-kind and job-spec by jobs.awk at the build, which
+  stops where they differ (a field the API names otherwise says its
+  attribute); a failure that goes on at a later step drawn as an
+  arrow under the run's row; steps dragged to another place; an
+  interval counted from when the workflow last ran by it, kept in
+  every.json across restarts; each host waited on subscribed to, a
+  thread each, its events running what they begin as they come and
+  what was missed read when it answers again, host-down known when
+  the connection drops. jail-state is still a read of the jails at
+  each tick: the agent tells no event of a jail's state.
+- 2026-10-12: a vnet jail's plugins looked for as the jail sees its
+  files: a child of the agent attaches to the jail and asks there, so
+  that a link inside it (a /usr/local leading to /opt/local) leads
+  where it does for the jail and not on the host, where it found
+  nothing; beneath the jail's root without following a link out of it
+  when the agent may not attach; kept ten seconds. wg(8) is found in
+  /usr/bin as well, the base system's since FreeBSD 15, where it is
+  run from then: the VM's own host had no WireGuard tab for that.
+  Verified on the VM by agent_root_test:jail_plugins.
+- 2026-10-12: each host's rollback timer, set on its Summary: the
+  seconds a change made in safe mode waits there to be confirmed,
+  kept with the server and sent with every safe job and BIRD
+  configuration (safe-wait), the agent's own -w when not set;
+  arcanactl -W does the same.
 - 2026-10-11: what is new, in the update boxes and Settings' last
   tab: the agent's source-log (a bare blob:none clone in the build
   directory), the console's /api/update/notes (the tags' messages as
@@ -103,6 +142,26 @@
   handler only the query parameters its route declares, so the
   record API's filters (swvc, policy, edge, since) were never seen;
   declared now with a validator.
+- Lab hygiene, 2026-10-12: a lab jail left dying (squid, unbound or
+  the client's processes still in it) shows up in the console's web
+  tests as extra tree leaves, so the cases wait in vain for four; the
+  down step kills them now, and `jls -d` tells when one lingers.
+- Verified on the lab 2026-10-12 (S4.1): Squid 7.7 added into
+  arcswan1 from fetched packages (a plugin; the agent refused the
+  instance while it was missing, naming pkg install squid), an
+  instance in FIB 1 on the road end point's own address with the
+  service's DNS filter beside it, HTTP and TLS from the client
+  forwarded by the rules: an allowed name served through it, a denied
+  one 403 over HTTP, and over TLS refused by its SNI (TCP_DENIED at
+  the peek, then the proxy's own 403 page); `bfd-lab.sh proxy`. Two
+  lessons kept in the code: Squid's certificate maker and its cache
+  are needed in mode sni too, and an intercepting Squid resolves every
+  name it is asked for, so the configuration names the service's DNS
+  filter as its resolver where there is one.
+- Verified on the lab 2026-10-12 (S3.3): the client's peer removed at
+  arcswan1 as the console's apply does it for a revoked identity: the
+  ping to the far UNI that answered 3 of 3 loses all, no peer left on
+  wg5 (`bfd-lab.sh road`, its end).
 - Verified on the lab 2026-10-11 (S3.2): a client jail arcroad as an
   identity, arcswan1's wg5 in FIB 1 with 10.30.0.1/24 and the client
   its peer by the agent as the console's plan has it; the client,
@@ -125,13 +184,6 @@
   rules. This is why S1.3's protocol-filter forward did not answer
   on the lab (drill's network error): the forward rule is `in recv
   gre100` and never saw the query.
-- A luxuria plugin installed in a vnet jail and not on the host does
-  not get its tab (reported 2026-10-11). The agent lists a running
-  vnet jail's plugins by access(X_OK) on the program under the jail's
-  root, and the page gives the tab to a host one of whose running vnet
-  jails has it; to find out: the jail's name, whether the agent runs
-  as root (a root 0700 cannot be looked into otherwise), and what the
-  host's list read says under that jail's plugins.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:
@@ -187,7 +239,6 @@
   - A span tab: traffic mirrored by a BPF interface, or by ipfw rules
     with BPF.
   - Labels on interfaces, for the UCS they carry.
-  - The device's rollback timer (safe mode's wait) set in the console.
   - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
   - IGMP and MLD configured.
   - NDP and ARP entries added and deleted by hand, temporary or
@@ -223,15 +274,6 @@
   no way to read it from userland (no sysctl as vxlan has, no dump
   through netlink); once it does, shown as a bridge's addresses are.
   A learned address of a bridge deleted, and a static one added.
-- Workflows, further: the console checks a step's job against
-  share/arcana/jobs.yaml, which is apart from arcana.yaml because
-  cblink-gen takes no key of its own there: a kind added to the one
-  is added to the other by hand. A run's chain is drawn as rows of
-  boxes, where a failure goes on written on its box, not drawn as an
-  arrow; steps are moved up one at a time, not dragged. What runs at
-  an interval counts from when the console's worker began, not from
-  its last run, after a restart; the console watches events by asking
-  every five seconds, not by subscribing.
 - Gula, further: older samples thinned instead of dropped; dmesg for
   an agent that is not root, which the kernel refuses unless
   security.bsd.unprivileged_read_msgbuf is on.

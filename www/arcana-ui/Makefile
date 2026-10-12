@@ -81,10 +81,12 @@ ${DIST}/icons/icon-maskable-512.png: ${MKICON}
 # for share/arcana/arcana.yaml, as JSON.
 # The kinds of job, for the workflows' forms: share/arcana/jobs.yaml.
 ${DIST}/jobs.json: ${ARC_TOP}/share/arcana/jobs.yaml \
-    ${ARC_TOP}/share/arcana/jobs.awk
+    ${ARC_TOP}/share/arcana/jobs.awk ${ARC_TOP}/share/arcana/arcana.yaml
 	mkdir -p ${DIST}
 	awk -v out=json -f ${ARC_TOP}/share/arcana/jobs.awk \
-	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}
+	    ${ARC_TOP}/share/arcana/arcana.yaml \
+	    ${ARC_TOP}/share/arcana/jobs.yaml > ${.TARGET}.tmp
+	mv ${.TARGET}.tmp ${.TARGET}
 
 ${DIST}/schema.json: ${ARC_TOP}/share/arcana/arcana.yaml \
     ${.CURDIR}/tools/schema.awk

@@ -63,6 +63,7 @@ enum op {
 	OP_SDWAN_BIRD,
 	OP_SDWAN_DHCP,
 	OP_SDWAN_DNS,
+	OP_SDWAN_PROXY,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_STORAGE,
@@ -88,6 +89,7 @@ struct call {
 	uint64_t		 t0;		/* µs, request arrived */
 	uint64_t		 auth_us;	/* the session check */
 	bool			 config_only;
+	int			 safe_wait;	/* s, the host's rollback timer */
 	char			 jail[256];
 	uint8_t			 action;
 	struct arc_address_req	 addr;
@@ -1051,6 +1053,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SDWAN_BIRD ? "arc_sdwan_bird" :
 	    c->op == OP_SDWAN_DHCP ? "arc_sdwan_dhcp" :
 	    c->op == OP_SDWAN_DNS ? "arc_sdwan_dns" :
+	    c->op == OP_SDWAN_PROXY ? "arc_sdwan_proxy" :
 	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
@@ -1402,6 +1405,8 @@ call_run(struct kore_task *t)
 	struct arc_sdwan_dhcp_rsp *sdr2;
 	struct arc_sdwan_dns_req sdq3;
 	struct arc_sdwan_dns_rsp *sdr3;
+	struct arc_sdwan_proxy_req sdq4;
+	struct arc_sdwan_proxy_rsp *sdr4;
 	struct arc_source_head_rsp *shr;
 	uint8_t			*bin;
 	size_t			 binlen;
@@ -1677,6 +1682,12 @@ connected:
 		memset(&jsq, 0, sizeof(jsq));
 		jsq.batch.v = c->specs;
 		jsq.batch.n = c->nspecs;
+		/* A safe change waits as long as the host's timer says. */
+		for (i = 0; c->safe_wait > 0 && i < c->nspecs; i++)
+			if (c->specs[i].safe) {
+				c->specs[i].has_safe_wait = true;
+				c->specs[i].safe_wait = (uint32_t)c->safe_wait;
+			}
 		if ((error = arc_job_submit(&cl, &jsq, &jsr)) != 0)
 			goto rpcfail;
 		ok = jsr->ok;
@@ -1838,6 +1849,8 @@ connected:
 		bcq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		bcq.safe = c->refresh && c->text != NULL && !c->dry_run;
 		bcq.confirm = c->config_only;
+		bcq.has_safe_wait = bcq.safe && c->safe_wait > 0;
+		bcq.safe_wait = (uint32_t)c->safe_wait;
 		if ((error = arc_bird_config(&cl, &bcq, &bcr)) != 0)
 			goto rpcfail;
 		ok = bcr->ok;
@@ -1972,6 +1985,16 @@ connected:
 		put_str(top, "error", sdr2->error);
 		steps = sdr2->trace.v;
 		nsteps = sdr2->trace.n;
+		break;
+	case OP_SDWAN_PROXY:
+		memset(&sdq4, 0, sizeof(sdq4));
+		sdq4.json = c->text;
+		if ((error = arc_sdwan_proxy(&cl, &sdq4, &sdr4)) != 0)
+			goto rpcfail;
+		ok = sdr4->ok;
+		put_str(top, "error", sdr4->error);
+		steps = sdr4->trace.v;
+		nsteps = sdr4->trace.n;
 		break;
 	case OP_SDWAN_DNS:
 		memset(&sdq3, 0, sizeof(sdq3));
@@ -2527,6 +2550,7 @@ call_new(struct http_request *req, enum op op)
 	c->sname = kore_strdup(s->name);
 	c->uri = kore_strdup(s->uri);
 	c->peer = s->peer_name != NULL ? kore_strdup(s->peer_name) : NULL;
+	c->safe_wait = s->safe_wait;
 	snprintf(c->route, sizeof(c->route), "%s %s",
 	    req->method == HTTP_METHOD_GET ? "GET" :
 	    req->method == HTTP_METHOD_DELETE ? "DELETE" : "POST", req->path);
@@ -4181,6 +4205,7 @@ hosts_submit(const char *uri, const char *peer, const char *name,
 		return (NULL);
 	}
 	*errp = NULL;
+	c->safe_wait = servers_safe_wait(uri);
 	return (self_call(c, uri, peer, name, "job-submit", status));
 }
 
@@ -4310,7 +4335,8 @@ hosts_sdwan_set(const char *uri, const char *peer, const char *name,
 	c->op = strcmp(what, "rules") == 0 ? OP_SDWAN_RULES : strcmp(what,
 	    "steer") == 0 ? OP_SDWAN_STEER : strcmp(what, "bird") == 0 ?
 	    OP_SDWAN_BIRD : strcmp(what, "dhcp") == 0 ? OP_SDWAN_DHCP :
-	    strcmp(what, "dns") == 0 ? OP_SDWAN_DNS : OP_SDWAN_PROBES;
+	    strcmp(what, "dns") == 0 ? OP_SDWAN_DNS : strcmp(what, "proxy") ==
+	    0 ? OP_SDWAN_PROXY : OP_SDWAN_PROBES;
 	c->text = kore_strdup(json);
 	snprintf(label, sizeof(label), "sdwan-%s", what);
 	return (self_call(c, uri, peer, name, label, status));

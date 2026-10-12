@@ -89,6 +89,8 @@ wd(const char *method, const char *path, const char *body)
  */
 static const char	*shots;
 
+static void	run(const char *);
+
 static void
 shot(const char *name)
 {
@@ -103,7 +105,13 @@ shot(const char *name)
 	if (shots == NULL)
 		return;
 	usleep(400000);		/* let transitions end */
-	if ((v = wd("GET", "/session/screenshot", NULL)) == NULL)
+	/* The pictures go into the book: the toasts are not of the page. */
+	run("var t = document.querySelector('.toasts'); if (t) "
+	    "t.style.visibility = 'hidden';");
+	v = wd("GET", "/session/screenshot", NULL);
+	run("var t = document.querySelector('.toasts'); if (t) "
+	    "t.style.visibility = '';");
+	if (v == NULL)
 		return;
 	b64 = ucl_object_tostring(v);
 	len = strlen(b64);
@@ -1690,6 +1698,36 @@ part_plugins(void)
 	 * is given one, made on the host, and then a peer.  And BIRD: its
 	 * protocols, one of them reloaded.
 	 */
+	/*
+	 * A plugin not installed: its tab is there still, and says what
+	 * to install, with a button that installs it by pkg(8).  Put back,
+	 * the tab comes alive once the job is done.
+	 */
+	ATF_REQUIRE(rename("fake-swanctl", "fake-swanctl.off") == 0);
+	run("document.querySelector('button[data-act=refresh]').click()");
+	wait_js("document.querySelector('button.tab.plugin.missing[data-arg="
+	    "ipsec]')", 20);
+	run("document.querySelector('button.tab.plugin[data-arg=ipsec]')"
+	    ".click()");
+	wait_js("document.querySelector('.plugin-missing button[data-act="
+	    "plugin-install][data-arg=strongswan]')", 10);
+	ATF_CHECK(js_true("document.querySelector('.plugin-missing')."
+	    "textContent.includes('Click the button to install it') && "
+	    "document.querySelector('.plugin-missing').textContent.includes("
+	    "'swanctl(8)')"));
+	shot("4p-plugin-missing");
+	ATF_REQUIRE(rename("fake-swanctl.off", "fake-swanctl") == 0);
+	run("document.querySelector('.plugin-missing button[data-act="
+	    "plugin-install]').click()");
+	run("const q = document.querySelector('button[data-act=queue-run]'); "
+	    "if (q) q.click();");
+	for (i = 0; i < 100 && system("grep -q 'install.*strongswan' pkg.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 100, "no pkg install strongswan");
+	wait_js("!document.querySelector('button.tab.plugin.missing') && "
+	    "!document.querySelector('.plugin-missing')", 20);
+
 	/* They are plugins, installed on the host: each a tab of its own,
 	 * not among what the Network tab has of the base system. */
 	run("document.querySelector('button.tab[data-arg=network]').click()");
@@ -3167,6 +3205,24 @@ part_firewall(void)
 	shot("1e-transport");
 
 	/*
+	 * The host's rollback timer, beside it: saved, said, and the
+	 * agent's own again when emptied.
+	 */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=tr-safe]') "
+	    "!== null && document.body.textContent.includes('Rollback "
+	    "timer')"));
+	run("var f = document.querySelector('form[data-form=tr-safe]'); "
+	    "f.querySelector('input[name=wait]').value = '30'; "
+	    "f.requestSubmit();");
+	wait_js("document.body.textContent.includes('This host waits 30 s')",
+	    10);
+	run("var f = document.querySelector('form[data-form=tr-safe]'); "
+	    "f.querySelector('input[name=wait]').value = ''; "
+	    "f.requestSubmit();");
+	wait_js("document.body.textContent.includes('its agent\\'s own')",
+	    10);
+
+	/*
 	 * Connections are read again by themselves while they are shown,
 	 * until paused.
 	 */
@@ -3228,6 +3284,16 @@ part_flows(void)
 	shot("9-workflow-template");
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
+	/* And one that installs a plugin's package, by a parameter. */
+	run("const t = document.querySelector('select[data-input=wf-template]'"
+	    "); t.value = 'plugin-install'; t.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('li.wfedstep').length === 1 && "
+	    "document.querySelector('select[data-input=wf-kind]').value === "
+	    "'pkg-install' && document.querySelector('input[data-arg=\"text:"
+	    "params.0.default\"]').value === 'bird3'", 10);
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
 	run("document.querySelector('button[data-act=wf-new]').click()");
 	wait_js("document.querySelector('select[data-input=wf-kind]') && "
 	    "document.querySelector('select[data-input=wf-kind]').options."
@@ -3267,6 +3333,32 @@ part_flows(void)
 	run("document.querySelector('button[data-act=wf-step-add]').click()");
 	wait_js("document.querySelectorAll('li.wfedstep').length === 2", 5);
 	run("setf('select[data-input=wf-type][data-arg=\"1\"]', 'read:hello')");
+	/*
+	 * Steps dragged by their number to another place: the read put
+	 * first, and back again.
+	 */
+	run("window.dragto = (from, to, where) => { const g = document."
+	    "querySelector('li.wfedstep[data-arg=\"' + from + '\"] .grip'), "
+	    "t = document.querySelector('li.wfedstep[data-arg=\"' + to + "
+	    "'\"]'), b = t.getBoundingClientRect(), dt = new DataTransfer(), "
+	    "y = where === 'before' ? b.top + 2 : b.bottom - 2; g.dispatchEvent("
+	    "new DragEvent('dragstart', { bubbles: true, dataTransfer: dt })); "
+	    "t.dispatchEvent(new DragEvent('dragover', { bubbles: true, "
+	    "cancelable: true, dataTransfer: dt, clientY: y })); t.dispatchEvent("
+	    "new DragEvent('drop', { bubbles: true, cancelable: true, "
+	    "dataTransfer: dt, clientY: y })); g.dispatchEvent(new DragEvent("
+	    "'dragend', { bubbles: true, dataTransfer: dt })); };");
+	run("dragto(1, 0, 'before')");
+	wait_js("document.querySelector('select[data-input=wf-type][data-arg="
+	    "\"0\"]').value === 'read:hello'", 5);
+	run("dragto(1, 0, 'before')");
+	wait_js("document.querySelector('select[data-input=wf-type][data-arg="
+	    "\"1\"]').value === 'read:hello' && document.querySelector("
+	    "'input[data-arg=\"text:steps.0.job.service\"]').value === "
+	    "'${param.svc}'", 5);
+	/* On a failure of the first, on at the second: drawn as a jump. */
+	run("setf('select[data-arg=\"text:steps.0.on_fail\"]', document."
+	    "querySelector('input[data-arg=\"text:steps.1.id\"]').value)");
 	shot("9a-workflow-edit");
 	run("document.querySelector('button[data-act=wf-save]').click()");
 	wait_js("document.querySelector('ul.wflist button[data-act=wf-run]') "
@@ -3280,6 +3372,11 @@ part_flows(void)
 	    "f.p_svc.value = 'sshd'; f.requestSubmit();");
 	wait_js("document.querySelectorAll('.wfgraph button.wfstep.done')."
 	    "length === 2", 30);
+	/* The jump drawn under the row, not taken: the first did not fail. */
+	ATF_CHECK(js_true("document.querySelector('.wfgraph .wfjump') && "
+	    "!document.querySelector('.wfgraph .wfjump.taken') && document."
+	    "querySelector('.wfgraph .wfjump').textContent.includes("
+	    "'on a failure')"));
 	/* The run is a task of the activity bar too, and ended there. */
 	wait_js("document.querySelector('.dock').textContent.includes("
 	    "'workflow restart a service') && document.querySelector('.dock')"
@@ -3594,6 +3691,17 @@ part_flows(void)
 	    "sd-record-filter]') !== null && document.querySelector('a[href="
 	    "\"/api/sdwan/record.csv\"]') !== null"));
 	shot("9-sdwan-security");
+	/* Identities: the example's alice, at the remote end point, with
+	 * the address the plan gave her. */
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "identities]').click()");
+	wait_js("[...document.querySelectorAll('section.sdwan table.sd tbody "
+	    "tr')].some(tr => tr.textContent.includes('alice') && tr.textContent"
+	    ".includes('10.30.0.2'))", 20);
+	ATF_CHECK(js_true("document.querySelector('button[data-act="
+	    "sd-ident-add]') !== null && document.querySelector('button[data-act="
+	    "sd-ident-revoke]') !== null"));
+	shot("9-sdwan-identities");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",
 	    10);

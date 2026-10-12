@@ -54,6 +54,7 @@
 #define	LIST_MAX	256	/* of each list in it */
 #define	FIB_MAX		65535
 
+static ucl_object_t *sd_load(void);
 static pthread_mutex_t	sd_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* Where a check is, and why it failed. */
@@ -1096,6 +1097,10 @@ remote(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
 	if (ucl_object_lookup(r, "port") != NULL && !is_int(ucl_object_lookup(
 	    r, "port"), 1, 65535, NULL))
 		return (fail(c, "its remote's port is 1 to 65535"));
+	if (ucl_object_lookup(r, "reauth") != NULL && !is_int(ucl_object_lookup(
+	    r, "reauth"), 3600, 366 * 86400, NULL))
+		return (fail(c, "its remote's reauth, the seconds an identity is "
+		    "authorised for, is an hour to a year"));
 	ids = ucl_object_lookup(r, "identities");
 	if (ids != NULL && ucl_object_type(ids) != UCL_ARRAY)
 		return (fail(c, "identities is a list"));
@@ -1119,6 +1124,14 @@ remote(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
 		if (n != 44 || i != n || k[43] != '=')
 			return (fail(c, "identity %s: its public key is a "
 			    "WireGuard one, 32 bytes in base64", str(id, "name")));
+		if (ucl_object_lookup(id, "issued") != NULL && !is_int(
+		    ucl_object_lookup(id, "issued"), 0, INT64_MAX, NULL))
+			return (fail(c, "identity %s: issued is a time", str(id,
+			    "name")));
+		if (ucl_object_lookup(id, "user") != NULL && ucl_object_type(
+		    ucl_object_lookup(id, "user")) != UCL_BOOLEAN)
+			return (fail(c, "identity %s: user is true or false", str(
+			    id, "name")));
 		it2 = NULL;
 		while ((o = ucl_object_iterate(ids, &it2, true)) != NULL && o != id)
 			if (strcmp(str(o, "name"), str(id, "name")) == 0 || strcmp(
@@ -1799,7 +1812,7 @@ static bool
 security_policy(struct ck *c, const ucl_object_t *v)
 {
 	static const char *const known[] = { "ip-block", "dns-domain-filter",
-	    "dns-protocol-filter", "rate-limit", "log", NULL };
+	    "dns-protocol-filter", "rate-limit", "log", "url-filter", NULL };
 	const ucl_object_t	*cr, *k, *e;
 	ucl_object_iter_t	 it, eit;
 	struct pfx		 p;
@@ -1808,13 +1821,13 @@ security_policy(struct ck *c, const ucl_object_t *v)
 	if ((cr = ucl_object_lookup(v, "criteria")) == NULL ||
 	    ucl_object_type(cr) != UCL_OBJECT)
 		return (fail(c, "it has criteria: ip-block, dns-domain-filter, "
-		    "dns-protocol-filter, rate-limit, log (MEF 88)"));
+		    "dns-protocol-filter, rate-limit, log, url-filter (MEF 88)"));
 	it = NULL;
 	while ((k = ucl_object_iterate(cr, &it, true)) != NULL) {
 		if (!one_of(ucl_object_key(k), known))
 			return (fail(c, "%s is not a criterion: ip-block, "
-			    "dns-domain-filter, dns-protocol-filter, rate-limit or "
-			    "log", ucl_object_key(k)));
+			    "dns-domain-filter, dns-protocol-filter, rate-limit, "
+			    "log or url-filter", ucl_object_key(k)));
 		if (strcmp(ucl_object_key(k), "ip-block") == 0) {
 			static const char *const lists[] = { "allow", "deny" };
 
@@ -1875,6 +1888,37 @@ security_policy(struct ck *c, const ucl_object_t *v)
 				    ucl_object_tostring(e)))
 					return (fail(c, "dns-domain-filter.deny: %s is "
 					    "not a domain name",
+					    ucl_object_tostring_forced(e)));
+		} else if (strcmp(ucl_object_key(k), "url-filter") == 0) {
+			/* SASE-4: by a proxy on the edge, a plugin; the TLS
+			 * names looked at (sni) or TLS opened (inspect). */
+			static const char *const modes[] = { "sni", "inspect",
+			    NULL };
+
+			if (ucl_object_type(k) != UCL_OBJECT || !one_of(str(k,
+			    "mode"), modes))
+				return (fail(c, "url-filter has a mode, sni or "
+				    "inspect, and deny, a list of domains, or lists "
+				    "by name"));
+			if ((e = ucl_object_lookup(k, "deny")) != NULL && (
+			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
+			    LIST_MAX))
+				return (fail(c, "url-filter.deny is a list of "
+				    "domains, %d at most", LIST_MAX));
+			eit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(k, "deny"),
+			    &eit, true)) != NULL)
+				if (ucl_object_type(e) != UCL_STRING || !domain_ok(
+				    ucl_object_tostring(e)))
+					return (fail(c, "url-filter.deny: %s is not a "
+					    "domain name", ucl_object_tostring_forced(e)));
+			eit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(k, "lists"),
+			    &eit, true)) != NULL)
+				if (ucl_object_type(e) != UCL_STRING ||
+				    !sdwan_list_exists(ucl_object_tostring(e)))
+					return (fail(c, "url-filter.lists: no list %s (a "
+					    "feed or a pasted list, under Security)",
 					    ucl_object_tostring_forced(e)));
 		} else if (strcmp(ucl_object_key(k), "rate-limit") == 0) {
 			if (!is_int(k, 1000, 1000000000000LL, NULL))
@@ -2180,6 +2224,34 @@ sdwan_load(void)
 }
 
 /* Is it one MEF 70.2 allows, as far as checked; why not, when not. */
+/*
+ * A document changed by the console itself (an identity issued or
+ * revoked): checked, its version the kept one's plus one, kept.
+ */
+int
+sdwan_store(ucl_object_t *doc, char *why, size_t len)
+{
+	ucl_object_t	*kept;
+	int64_t		 have;
+
+	if (!sdwan_valid(doc, why, len))
+		return (-1);
+	pthread_mutex_lock(&sd_lock);
+	kept = sd_load();
+	have = ucl_object_toint(ucl_object_lookup(kept, "version"));
+	ucl_object_unref(kept);
+	(void)ucl_object_delete_key(doc, "version");
+	ucl_object_insert_key(doc, ucl_object_fromint(have + 1), "version", 0,
+	    false);
+	if (store_save(SDWAN_FILE, doc) != 0) {
+		pthread_mutex_unlock(&sd_lock);
+		snprintf(why, len, "the document could not be kept");
+		return (-1);
+	}
+	pthread_mutex_unlock(&sd_lock);
+	return (0);
+}
+
 bool
 sdwan_valid(const ucl_object_t *doc, char *why, size_t len)
 {

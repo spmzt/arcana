@@ -506,9 +506,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "[ -f wg.key ] && { key=$(cat wg.key); "
 	    "pub=HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw=; }\n"
 	    "case \"$1 $2 $3\" in\n"
+	    /* Each interface's line, then its peers: wg0 always, another
+	     * where a peer was set on it. */
 	    "'show all dump') printf 'wg0\\t%s\\t%s\\t51820\\toff\\n' "
 	    "\"$key\" \"$pub\"\n"
-	    "  cat wg.peers.* 2>/dev/null ;;\n"
+	    "  cat wg.peers.wg0 2>/dev/null\n"
+	    "  for f in wg.peers.*; do [ -f \"$f\" ] || continue; i=${f#wg.peers.}; "
+	    "[ \"$i\" = wg0 ] && continue; printf '%s\\t%s\\t%s\\t51820\\toff\\n' "
+	    "\"$i\" \"$key\" \"$pub\"; cat \"$f\"; done ;;\n"
 	    "\"show $2 private-key\") echo \"$key\" ;;\n"
 	    "\"showconf $2 \") printf '[Interface]\\nPrivateKey = %s\\n' "
 	    "\"$key\" ;;\n"
@@ -663,6 +668,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "{\"passed\":true},\"temperature\":{\"current\":34},"
 	    "\"power_on_time\":{\"hours\":1200}}'\n");
 	put("tools/newfs", "#!/bin/sh\necho \"newfs $*\" >> storage.log\n");
+	/* squid(8), a plugin, and its certificate maker: what they were
+	 * run with; a parse fails on BROKEN. */
+	put("tools/squid", "#!/bin/sh\necho \"squid $*\" >> squid.log\n"
+	    "[ \"$2\" = parse ] && { grep -q BROKEN \"$4\" && exit 1; exit 0; }\n"
+	    "[ \"$1\" = -f ] && echo $$ > \"$(dirname \"$2\")/sdwan-proxy-sw1.pid\"\n"
+	    "exit 0\n");
+	put("tools/security_file_certgen", "#!/bin/sh\necho \"certgen $*\" >> "
+	    "squid.log\nmkdir -p \"$3\"\n");
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");

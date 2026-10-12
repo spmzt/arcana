@@ -368,6 +368,48 @@ jail_network_cleanup()
 	true
 }
 
+atf_test_case jail_plugins cleanup
+jail_plugins_head()
+{
+	atf_set "descr" "a vnet jail's plugins are looked for as the jail sees its files: a program behind a link inside it is found, though the host has none; wg(8) of the base system counts"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+jail_plugins_body()
+{
+	if jls -j arcw_p1 >/dev/null 2>&1; then
+		atf_skip "a jail arcw_p1 is there already"
+	fi
+	[ -e /opt/local/sbin/squid ] &&
+	    atf_skip "the host has /opt/local/sbin/squid: the link would lead to it"
+	touch mine
+	# Squid behind the jail's own /usr/local, a link to /opt/local
+	# inside it: from the host, that link leads to the host's /opt.
+	mkdir -p root/opt/local/sbin root/usr/bin
+	printf '#!/bin/sh\n' > root/opt/local/sbin/squid
+	printf '#!/bin/sh\n' > root/usr/bin/wg
+	chmod +x root/opt/local/sbin/squid root/usr/bin/wg
+	ln -s /opt/local root/usr/local
+	atf_check -o ignore jail -c name=arcw_p1 vnet persist path="$(pwd)/root"
+	start_daemon
+	atf_check -o save:list.json "$JGC" --libxo json -c "$SOCK" list
+	atf_check -o match:'"name":"arcw_p1"' cat list.json
+	sed -n 's/.*"name":"arcw_p1"\(.*\)/\1/p' list.json > jail.json
+	atf_check -o match:'"plugins": ?\[[^]]*"squid"' \
+	    -o match:'"plugins": ?\[[^]]*"wireguard"' cat jail.json
+	# The host's own: wg(8) of the base system is WireGuard's there too.
+	if [ -x /usr/bin/wg ] && [ ! -e /usr/local/bin/wg ]; then
+		atf_check -o match:'Plugins:.*wireguard' "$JGC" -c "$SOCK" hello
+	fi
+	atf_check -o ignore jail -r arcw_p1
+}
+jail_plugins_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	[ -f mine ] && jail -r arcw_p1 >/dev/null 2>&1
+	true
+}
+
 atf_test_case fw_trace cleanup
 fw_trace_head()
 {
@@ -554,6 +596,7 @@ atf_init_test_cases()
 	atf_add_test_case aliases
 	atf_add_test_case routes
 	atf_add_test_case jail_network
+	atf_add_test_case jail_plugins
 	atf_add_test_case fw_trace
 	atf_add_test_case resnapshot
 	atf_add_test_case kmsg

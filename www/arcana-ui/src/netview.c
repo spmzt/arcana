@@ -82,7 +82,7 @@ static int	table(struct html *, const ucl_object_t *, const struct column *,
 static void	route_delete(struct html *, const ucl_object_t *, const char *);
 static int	interfaces(struct html *, const struct server *,
 		    const ucl_object_t *);
-static void	fmt_bytes(char *, size_t, int64_t);
+
 
 
 /* One cell: the value at path, or "a:b" with path2, as text. */
@@ -270,7 +270,7 @@ nhgroups(struct html *h, const struct server *s, const ucl_object_t *fams)
 }
 
 /* A count of bytes, in the unit that keeps it short. */
-static void
+void
 fmt_bytes(char *buf, size_t len, int64_t n)
 {
 	static const char *units[] = { "B", "KiB", "MiB", "GiB", "TiB" };
@@ -458,7 +458,8 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 
 /*
  * Whose network this is: the host's, or a vnet jail's of it that runs.
- * A plugin's tab offers only where the plugin is.
+ * A plugin's tab offers each, saying where the plugin is not installed:
+ * there it can be.
  */
 static void
 net_jail_pick(struct html *h, const struct server *s)
@@ -473,8 +474,7 @@ net_jail_pick(struct html *h, const struct server *s)
 	it = NULL;
 	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
 	    "jails"), &it, true)) != NULL)
-		if (net_jail_ok(j) && (plugin == NULL || plugin_at(s, jstr(j,
-		    "name"), plugin)) && (strcmp(jstr(j, "name"), net_scope())
+		if (net_jail_ok(j) && (strcmp(jstr(j, "name"), net_scope())
 		    == 0 || (jstr(j, "state") != NULL && strcmp(jstr(j, "state"),
 		    "running") == 0)))
 			n++;
@@ -483,18 +483,17 @@ net_jail_pick(struct html *h, const struct server *s)
 	h_raw(h, "<label class=\"net-jail\" title=\"Whose network: the "
 	    "host's, or a jail's own (vnet), read and changed from the host"
 	    "\"><select data-input=\"net-jail\">");
-	if (plugin == NULL || plugin_at(s, "", plugin)) {
-		h_fmt(h, "<option value=\"\"%s>", net_scope()[0] == '\0' ?
-		    " selected" : "");
-		h_txt(h, s->name);
-		h_raw(h, "</option>");
-	}
+	h_fmt(h, "<option value=\"\"%s>", net_scope()[0] == '\0' ?
+	    " selected" : "");
+	h_txt(h, s->name);
+	if (plugin != NULL && !plugin_at(s, "", plugin))
+		h_raw(h, " (not installed)");
+	h_raw(h, "</option>");
 	it = NULL;
 	while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
 	    "jails"), &it, true)) != NULL) {
 		/* Those that run, and the one picked even if it stopped. */
-		if (!net_jail_ok(j) || (plugin != NULL && !plugin_at(s, jstr(j,
-		    "name"), plugin)) || (strcmp(jstr(j, "name"), net_scope())
+		if (!net_jail_ok(j) || (strcmp(jstr(j, "name"), net_scope())
 		    != 0 && (jstr(j, "state") == NULL || strcmp(jstr(j, "state"),
 		    "running") != 0)))
 			continue;
@@ -505,9 +504,68 @@ net_jail_pick(struct html *h, const struct server *s)
 			h_raw(h, " selected");
 		h_raw(h, ">jail ");
 		h_txt(h, name);
+		if (plugin != NULL && !plugin_at(s, name, plugin))
+			h_raw(h, " (not installed)");
 		h_raw(h, "</option>");
 	}
 	h_raw(h, "</select></label>");
+}
+
+/*
+ * A plugin's tab where its program is not installed: what it needs,
+ * and a button that installs it with pkg(8), on the host or in the
+ * jail picked.  Nothing is installed but when that is pressed.
+ */
+static void
+plugin_missing(struct html *h, const struct server *s)
+{
+	const struct plugin_pkg	*pp;
+	const char		*where;
+
+	if ((pp = plugin_pkg(kind_plugin(app.net.kind))) == NULL)
+		return;
+	h_raw(h, "<div class=\"empty plugin-missing\"><h2>");
+	h_txt(h, pp->title);
+	h_raw(h, " is not installed ");
+	if (net_scope()[0] != '\0') {
+		h_raw(h, "in the jail ");
+		h_txt(h, net_scope());
+	} else {
+		h_raw(h, "on ");
+		h_txt(h, s->name);
+	}
+	h_fmt(h, "</h2><p>This tab works through %s, which comes with the "
+	    "package <code>%s</code>. Click the button to install it%s with "
+	    "<code>pkg install</code>, for this plugin to work: it is a job "
+	    "in the activity bar, and the tab comes alive once it is done."
+	    "</p>", pp->program, pp->package, net_scope()[0] != '\0' ?
+	    " in the jail" : "");
+	if (plugin_installing(s, net_scope()))
+		h_fmt(h, "<button class=\"primary\" disabled>Installing "
+		    "%s…</button>", pp->package);
+	else
+		h_fmt(h, "<button class=\"primary\" data-act=\"plugin-install"
+		    "\" data-arg=\"%s\">Install %s</button>", pp->plugin,
+		    pp->package);
+	/* Where it is already: there to look, rather than here. */
+	if ((where = plugin_where(s, pp->plugin)) != NULL && strcmp(where,
+	    net_scope()) != 0) {
+		h_raw(h, "<p class=\"dim\">");
+		if (where[0] == '\0') {
+			h_raw(h, "The host has it: <button class=\"ghost small\" "
+			    "data-act=\"net-jail-set\" data-arg=\"\">Show the "
+			    "host's</button>");
+		} else {
+			h_raw(h, "The jail ");
+			h_txt(h, where);
+			h_raw(h, " has it: <button class=\"ghost small\" "
+			    "data-act=\"net-jail-set\"");
+			h_attr(h, "data-arg", where);
+			h_raw(h, ">Show the jail's</button>");
+		}
+		h_raw(h, "</p>");
+	}
+	h_raw(h, "</div>");
 }
 
 void
@@ -625,6 +683,11 @@ view_network(struct html *h, struct server *s)
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, app.net.error);
 		h_raw(h, "</div>");
+	}
+	if (plug && s->list != NULL && !has_plugin(s, kind_plugin(
+	    app.net.kind))) {
+		plugin_missing(h, s);
+		return;
 	}
 	if (!mine) {
 		h_raw(h, app.net.loading ? "<div class=\"empty\"><div class="

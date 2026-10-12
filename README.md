@@ -8,7 +8,9 @@ library calls, system calls and programs each change used. Its
 vocabulary, and where it is going, are in
 [docs/NAMING.md](docs/NAMING.md).
 
-Home: <https://github.com/spmzt/arcana>
+Home: <https://github.com/spmzt/arcana>. The manual, a book of its
+own: <https://spmzt.github.io/arcana-docs/> (its source is
+<https://github.com/spmzt/arcana-docs>).
 
 ```
  browser (PWA, C → wasm) ──HTTPS──▶ kore + arcana-console.so ──cblink/mTLS──▶ arcana-agent ──▶ jails
@@ -242,7 +244,9 @@ token.
 The console is a tree and tabs: the fleet, its hosts and their jails on
 the left; a host's Summary, Jails, Services, Network, Packages and Jobs;
 and an activity bar that shows each call as a graph, with its CBOR
-schema. [docs/USING.md](docs/USING.md) goes through all of it.
+schema. [The book](https://spmzt.github.io/arcana-docs/) goes through
+all of it; [docs/USING.md](docs/USING.md) has SD-WAN until the book
+does.
 
 ## Updating
 

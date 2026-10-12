@@ -20,6 +20,8 @@
 
 #include "app.h"
 
+#define	WF_EDIT_STEPS	64	/* as the console takes them */
+
 #define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
 
 #define	WF_EVERY_MS	2000	/* runs read again while one runs */
@@ -479,6 +481,13 @@ static const struct {
 	    "[\"${LOCAL}\"], \"steps\": [{\"id\": \"upgrade\", \"name\": "
 	    "\"Upgrade the host's packages\", \"job\": {\"kind\": "
 	    "\"pkg-upgrade\"}}]}" },
+	{ "plugin-install", "A plugin's package installed",
+	    "{\"name\": \"Plugin installed\", \"hosts\": [\"${LOCAL}\"], "
+	    "\"params\": [{\"name\": \"package\", \"default\": \"bird3\"}], "
+	    "\"steps\": [{\"id\": \"install\", \"name\": \"Install the "
+	    "plugin's package (bird3, wireguard-tools, strongswan, squid)\", "
+	    "\"job\": {\"kind\": \"pkg-install\", \"packages\": "
+	    "[\"${param.package}\"]}}]}" },
 	{ "service-back", "A service restarted when its host answers again",
 	    "{\"name\": \"Service back with its host\", \"hosts\": "
 	    "[\"${LOCAL}\"], \"params\": [{\"name\": \"service\", "
@@ -694,13 +703,24 @@ view_run(struct html *h)
 		return;
 	}
 	w = wf_by_id(jstr(r, "workflow"));
-	/* A row for each host: its steps in order, as they went. */
+	/*
+	 * A row for each host: its steps in order, as they went, on a grid
+	 * whose columns are the steps and the arrows between them.  Where
+	 * a failure goes on at a later step, an arrow is drawn under the
+	 * row from the one to the other, in a lane of its own, bright when
+	 * the run took it.
+	 */
 	h_raw(h, "<div class=\"wfgraph\">");
 	it = NULL;
 	hi = 0;
 	while ((x = ucl_object_iterate(jget(r, "hosts"), &it, true)) != NULL) {
-		h_fmt(h, "<div class=\"wfrow %s\"><span class=\"wfhost\">",
-		    jstr(x, "state") != NULL ? jstr(x, "state") : "");
+		int	n, lane, to;
+
+		n = (int)ucl_array_size(jget(x, "steps"));
+		h_fmt(h, "<div class=\"wfrow %s\" style=\"grid-template-"
+		    "columns:auto repeat(%d,auto)\"><span class=\"wfhost\">",
+		    jstr(x, "state") != NULL ? jstr(x, "state") : "",
+		    n > 0 ? 2 * n - 1 : 1);
 		h_txt(h, jstr(x, "name"));
 		h_raw(h, "</span>");
 		sit = NULL;
@@ -711,11 +731,14 @@ view_run(struct html *h)
 			    (unsigned int)si) : NULL;
 			snprintf(key, sizeof(key), "%d:%d", hi, si);
 			if (si > 0)
-				h_raw(h, "<span class=\"wfarrow\">→</span>");
-			h_fmt(h, "<button class=\"wfstep %s%s\" data-act=\""
+				h_fmt(h, "<span class=\"wfarrow\" style=\""
+				    "grid-row:1;grid-column:%d\">→</span>",
+				    1 + 2 * si);
+			h_fmt(h, "<button class=\"wfstep %s%s\" style=\""
+			    "grid-row:1;grid-column:%d\" data-act=\""
 			    "wf-step-pick\" data-arg=\"%s\"", jstr(s, "state") !=
 			    NULL ? jstr(s, "state") : "", strcmp(wf.pick, key) ==
-			    0 ? " on" : "", key);
+			    0 ? " on" : "", 2 + 2 * si, key);
 			h_attr(h, "title", jstr(s, "error") != NULL ? jstr(s,
 			    "error") : jstr(s, "title"));
 			h_raw(h, "><b>");
@@ -725,15 +748,50 @@ view_run(struct html *h)
 			h_txt(h, jstr(s, "state"));
 			h_raw(h, "</small>");
 			if (def != NULL && jstr(def, "on_fail") != NULL &&
-			    strcmp(jstr(def, "on_fail"), "stop") != 0) {
-				h_raw(h, "<small class=\"jump\">on a failure ");
-				h_txt(h, strcmp(jstr(def, "on_fail"),
-				    "continue") == 0 ? "on" : jstr(def,
-				    "on_fail"));
-				h_raw(h, "</small>");
-			}
+			    strcmp(jstr(def, "on_fail"), "continue") == 0)
+				h_raw(h, "<small class=\"jump\">on a failure "
+				    "on</small>");
 			h_raw(h, "</button>");
 			si++;
+		}
+		/* The jumps: each from its step to the one it names. */
+		lane = 0;
+		for (si = 0; w != NULL && si < n; si++) {
+			const ucl_object_t	*st, *from;
+			const char		*of;
+
+			def = ucl_array_find_index(jget(w, "steps"),
+			    (unsigned int)si);
+			of = jstr(def, "on_fail");
+			if (of == NULL || strcmp(of, "stop") == 0 || strcmp(of,
+			    "continue") == 0)
+				continue;
+			for (to = si + 1; to < n; to++)
+				if (jstr(ucl_array_find_index(jget(w, "steps"),
+				    (unsigned int)to), "id") != NULL && strcmp(
+				    jstr(ucl_array_find_index(jget(w, "steps"),
+				    (unsigned int)to), "id"), of) == 0)
+					break;
+			if (to == n)
+				continue;
+			from = ucl_array_find_index(jget(x, "steps"),
+			    (unsigned int)si);
+			st = ucl_array_find_index(jget(x, "steps"),
+			    (unsigned int)to);
+			h_fmt(h, "<span class=\"wfjump%s\" style=\"grid-row:%d;"
+			    "grid-column:%d / %d\" title=\"On a failure of ",
+			    jstr(from, "state") != NULL && strcmp(jstr(from,
+			    "state"), "failed") == 0 && jstr(st, "state") !=
+			    NULL && (strcmp(jstr(st, "state"), "done") == 0 ||
+			    strcmp(jstr(st, "state"), "failed") == 0 ||
+			    strcmp(jstr(st, "state"), "running") == 0) ?
+			    " taken" : "", 2 + lane, 2 + 2 * si, 3 + 2 * to);
+			h_txt(h, jstr(def, "name") != NULL ? jstr(def, "name") :
+			    jstr(def, "id"));
+			h_raw(h, ", the run goes on at ");
+			h_txt(h, of);
+			h_raw(h, "\"><small>on a failure</small></span>");
+			lane++;
 		}
 		h_raw(h, "</div>");
 		hi++;
@@ -911,8 +969,11 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 	int			 j;
 
 	job = jget(st, "job");
-	h_fmt(h, "<li class=\"wfedstep\"><div class=\"wfedhead\"><span class=\""
-	    "num\">%d</span>", i + 1);
+	/* Dragged by its number to another place among the steps. */
+	h_fmt(h, "<li class=\"wfedstep\" data-reorder=\"wf-step\" data-arg="
+	    "\"%d\"><div class=\"wfedhead\"><span class=\"num grip\" "
+	    "draggable=\"true\" title=\"Drag it to another place among the "
+	    "steps\">%d</span>", i, i + 1);
 	snprintf(path, sizeof(path), "steps.%d.id", i);
 	input(h, "text", path, jstr(st, "id"), "its id");
 	snprintf(path, sizeof(path), "steps.%d.name", i);
@@ -1398,6 +1459,30 @@ draft_from_queue(void)
 	    "name", 0, true);
 }
 
+/* The draft's step at from taken out and put back at to. */
+static void
+step_move(int from, int to)
+{
+	ucl_object_t	*a, *o, *rest[WF_EDIT_STEPS];
+	int		 n, nr;
+
+	a = arr_at("steps");
+	n = (int)ucl_array_size(a);
+	if (from < 0 || from >= n || to < 0 || to >= n || to == from ||
+	    n > WF_EDIT_STEPS)
+		return;
+	o = ucl_array_delete(a, (ucl_object_t *)(uintptr_t)
+	    ucl_array_find_index(a, (unsigned int)from));
+	if (o == NULL)
+		return;
+	nr = 0;
+	while ((int)ucl_array_size(a) > to)
+		rest[nr++] = ucl_array_pop_last(a);
+	ucl_array_append(a, o);
+	while (nr > 0)
+		ucl_array_append(a, rest[--nr]);
+}
+
 bool
 workflows_action(const char *act, const char *arg, const char *value)
 {
@@ -1559,21 +1644,13 @@ workflows_action(const char *act, const char *arg, const char *value)
 		    "job", 0, true);
 		ucl_array_append(arr_at("steps"), st);
 	} else if (strcmp(act, "wf-step-up") == 0 && i > 0) {
-		/* Taken out and put back one earlier. */
-		a = arr_at("steps");
-		o = ucl_array_delete(a, (ucl_object_t *)(uintptr_t)
-		    ucl_array_find_index(a, (unsigned int)i));
-		if (o != NULL) {
-			ucl_object_t	*rest[64];
-			int		 nr = 0;
-
-			while (ucl_array_size(a) > (unsigned int)(i - 1) &&
-			    nr < 64)
-				rest[nr++] = ucl_array_pop_last(a);
-			ucl_array_append(a, o);
-			while (nr > 0)
-				ucl_array_append(a, rest[--nr]);
-		}
+		step_move(i, i - 1);
+	} else if (strcmp(act, "wf-step-drop") == 0) {
+		/* Dropped before or after another: "3:before". */
+		k = atoi(value);
+		if (strstr(value, ":after") != NULL)
+			k++;
+		step_move(i, k > i ? k - 1 : k);
 	} else if (strcmp(act, "wf-on-add") == 0) {
 		o = ucl_object_typed_new(UCL_OBJECT);
 		ucl_object_insert_key(o, ucl_object_fromstring("host-down"),

@@ -26,7 +26,7 @@
 #define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
 
 enum { SD_OVERVIEW, SD_SERVICES, SD_EDGES, SD_PATHS, SD_SECURITY,
-    SD_DOCUMENT };
+    SD_IDENTITIES, SD_DOCUMENT };
 
 #define	PATHS_EVERY_MS	2000	/* the probes read again, on the Paths tab */
 #define	MON_BINS	120	/* columns of a monitor chart */
@@ -49,6 +49,8 @@ static void	 send(const char *, bool);
 static void	 applied_cb(int, const ucl_object_t *, const char *, void *);
 static const char *ms(double, char *, size_t);
 static void	 view_overview(struct html *);
+static void	 view_identities(struct html *);
+static const char *host_name(const char *);
 static const ucl_object_t *jfind(const ucl_object_t *, const char *,
 		    const char *);
 static void	 put_str(ucl_object_t *, const char *, const char *);
@@ -72,6 +74,9 @@ static struct {
 	ucl_object_t	*rekeys;	/* /api/sdwan/rekey: the rotations */
 	ucl_object_t	*lists;		/* /api/sdwan/lists: the feeds and lists */
 	char		 record_filter[80];	/* the record's filter text */
+	ucl_object_t	*identities;	/* /api/sdwan/identities */
+	char		*config;	/* an identity's configuration, shown once */
+	char		 config_name[72];
 	double		 paths_at;
 	int		 mon_span;	/* seconds the monitor charts draw */
 	/* The forms: what is edited, and the host's interfaces for a link. */
@@ -83,6 +88,103 @@ static struct {
 	bool		 ifs_loading;
 	bool		 show_kept;	/* the Edges tab shows what stays too */
 } sd;
+
+/*
+ * Identities (SASE-3): who reaches a service from afar, at its remote
+ * end points, each with the address the plan gave it and whether it is
+ * still authorised; issued here, revoked here.
+ */
+static void
+view_identities(struct html *h)
+{
+	const ucl_object_t	*i;
+	ucl_object_iter_t	 it;
+	char			 age[32], key[300];
+	int			 n;
+
+	h_raw(h, "<div class=\"sd-block\"><h3>Identities <small class=\"dim\">"
+	    "who reaches a service from afar: a WireGuard peer each at a "
+	    "remote end point, its address the zone's policies apply to</small>"
+	    "<span class=\"pane-actions\"><button class=\"ghost small\" "
+	    "data-act=\"sd-ident-add\">+ identity</button></span></h3>"
+	    "<table class=\"net sd\"><thead><tr><th>Name</th><th>Service</th>"
+	    "<th>End point</th><th>Edge</th><th>Zone</th><th>Address</th>"
+	    "<th>Issued</th><th>Authorised</th><th>Session</th><th></th></tr>"
+	    "</thead><tbody>");
+	n = 0;
+	it = NULL;
+	while (sd.identities != NULL && (i = ucl_object_iterate(jget(
+	    sd.identities, "identities"), &it, true)) != NULL) {
+		n++;
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, jstr(i, "name"));
+		h_raw(h, "</b>");
+		if (jbool(i, "user"))
+			h_raw(h, " <span class=\"dim\">console user</span>");
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(i, "swvc"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(i, "end_point"));
+		h_raw(h, "</td><td>");
+		h_txt(h, host_name(jstr(i, "edge")));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(i, "zone"));
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(i, "address") != NULL ? jstr(i, "address") : "");
+		h_raw(h, "</td><td class=\"dim\">");
+		if (jint(i, "issued", 0) > 0) {
+			fmt_age(age, sizeof(age), (double)jint(i, "issued", 0) * 1000);
+			h_txt(h, age);
+		} else
+			h_raw(h, "by the document");
+		h_raw(h, "</td><td>");
+		if (!jbool(i, "live"))
+			h_raw(h, "<span class=\"warn\">ran out: issue again</span>");
+		else if (jint(i, "expires", 0) > 0) {
+			fmt_age(age, sizeof(age), (double)jint(i, "expires", 0) * 1000);
+			h_raw(h, "until ");
+			h_txt(h, age);
+		} else
+			h_raw(h, "<span class=\"dim\">no end</span>");
+		h_raw(h, "</td><td>");
+		if (jget(i, "session") == NULL)
+			h_raw(h, "<span class=\"dim\">no peer on the edge</span>");
+		else if (jint(i, "session.handshake", 0) == 0)
+			h_raw(h, "<span class=\"dim\">no handshake yet</span>");
+		else {
+			char	rx[32], tx[32];
+
+			fmt_age(age, sizeof(age), (double)jint(i, "session.handshake",
+			    0) * 1000);
+			fmt_bytes(rx, sizeof(rx), (double)jint(i, "session.rx", 0));
+			fmt_bytes(tx, sizeof(tx), (double)jint(i, "session.tx", 0));
+			h_raw(h, "handshake ");
+			h_txt(h, age);
+			h_fmt(h, "<br><span class=\"dim\">%s in · %s out", rx, tx);
+			if (jstr(i, "session.endpoint") != NULL) {
+				h_raw(h, " · from ");
+				h_txt(h, jstr(i, "session.endpoint"));
+			}
+			h_raw(h, "</span>");
+		}
+		h_raw(h, "</td><td class=\"num\">");
+		snprintf(key, sizeof(key), "%s|%s|%s", jstr(i, "swvc"), jstr(i,
+		    "end_point"), jstr(i, "name"));
+		h_raw(h, "<button class=\"ghost small\" data-act=\"sd-ident-revoke\"");
+		h_attr(h, "data-arg", key);
+		h_raw(h, ">Revoke</button></td></tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"10\" class=\"dim\">None yet: a service "
+		    "with a remote end point takes identities, issued here or "
+		    "written in the document.</td></tr>");
+	h_raw(h, "</tbody></table><p class=\"dim\">An identity issued here has "
+	    "its key pair made by the console and its configuration shown "
+	    "once; a remote end point's <code>reauth</code> is the seconds it "
+	    "stays authorised, after which its peer is removed until it is "
+	    "issued again; revoked, its peer goes with the apply that follows."
+	    "</p></div>");
+}
 
 /*
  * The step of Mplify 119's activity flow (§12.1, steps 1 to 13) a change
@@ -393,6 +495,68 @@ rekeys_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	sd.rekeys = ucl_object_copy(jget(o, "rekeys"));
 	if (app.node == NODE_SDWAN && sd.tab == SD_PATHS)
 		render();
+}
+
+static void
+identities_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	if (status != 200)
+		return;
+	if (sd.identities != NULL)
+		ucl_object_unref(sd.identities);
+	sd.identities = ucl_object_copy(o);
+	if (app.node == NODE_SDWAN && sd.tab == SD_IDENTITIES)
+		render();
+}
+
+static void
+identities_load(void)
+{
+
+	api("GET", "/api/sdwan/identities", NULL, identities_cb, NULL);
+}
+
+/* An identity issued: its configuration, shown once. */
+static void
+issue_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	app.modal_busy = false;
+	if (status != 200) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "%s", jstr(o,
+		    "error.message") != NULL ? jstr(o, "error.message") : err !=
+		    NULL ? err : "no answer");
+		return;
+	}
+	free(sd.config);
+	sd.config = strdup(jstr(o, "config") != NULL ? jstr(o, "config") : "");
+	snprintf(sd.config_name, sizeof(sd.config_name), "%s", jstr(o, "name")
+	    != NULL ? jstr(o, "name") : "identity");
+	app.modal = MODAL_SD_CONFIG;
+	app.modal_error[0] = '\0';
+	if (!jbool(o, "applied"))
+		toast(true, "Issued, but the edges were not applied: %s", jstr(o,
+		    "why") != NULL ? jstr(o, "why") : "");
+	identities_load();
+}
+
+static void
+revoke_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	if (status != 200) {
+		toast(true, "Not revoked: %s", jstr(o, "error.message") != NULL ?
+		    jstr(o, "error.message") : err != NULL ? err : "no answer");
+		return;
+	}
+	toast(false, "%s revoked%s", jstr(o, "revoked"), jbool(o, "applied") ?
+	    ", the edges applied" : ": the edges were not applied");
+	identities_load();
 }
 
 static void
@@ -3006,6 +3170,74 @@ view_security(struct html *h)
 		h_raw(h, "<tr><td colspan=\"3\" class=\"dim\">None: no policy "
 		    "filters DNS, or nothing is applied yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
+	/* The proxies on the edges (SASE-4): each edge's Squid instances,
+	 * a service each, with the CA of one that opens TLS. */
+	h_raw(h, "<div class=\"sd-block\"><h3>URL filters <small class=\"dim\">"
+	    "Squid on each edge, a plugin installed there by hand, an instance "
+	    "of each service whose policies filter URLs, in the service's "
+	    "table; HTTP and TLS from the end points are forwarded to it; it "
+	    "looks at the TLS names (sni) or opens TLS with a CA of its own "
+	    "(inspect), which the clients then trust</small></h3><table class="
+	    "\"net sd\"><thead><tr><th>Edge</th><th>Instance</th><th>Mode</th>"
+	    "<th>State</th><th>CA</th></tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while (sd.paths != NULL && (v = ucl_object_iterate(sd.paths, &it, true))
+	    != NULL) {
+		const ucl_object_t	*pi;
+		ucl_object_iter_t	 pit = NULL;
+
+		while ((pi = ucl_object_iterate(jget(v, "proxy"), &pit, true)) !=
+		    NULL) {
+			n++;
+			h_raw(h, "<tr><td><b>");
+			h_txt(h, host_name(ucl_object_key(v)));
+			h_fmt(h, "</b></td><td class=\"mono\">%s <span class=\"dim\">"
+			    "fib %lld</span></td><td>%s</td><td><span class=\"chip "
+			    "st-%s\">%s</span></td><td>", jstr(pi, "name"), (long long)
+			    jint(pi, "fib", 0), jstr(pi, "mode") != NULL ? jstr(pi,
+			    "mode") : "", jbool(pi, "running") ? "up" : "down",
+			    jbool(pi, "running") ? "running" : "not running");
+			if (jstr(pi, "ca") != NULL) {
+				h_raw(h, "<a class=\"ghost small\" download=\"");
+				h_txt(h, host_name(ucl_object_key(v)));
+				h_raw(h, "-");
+				h_txt(h, jstr(pi, "name"));
+				h_raw(h, "-ca.crt\" href=\"data:application/x-x509-ca-cert"
+				    ";charset=utf-8,");
+				{
+					const char	*c = jstr(pi, "ca");
+					char		 enc[8192];
+					size_t		 i, k;
+
+					for (i = 0, k = 0; c[i] != '\0' && k + 4 <
+					    sizeof(enc); i++) {
+						if (c[i] == '\n')
+							k += (size_t)snprintf(enc + k, sizeof(enc)
+							    - k, "%%0A");
+						else if (c[i] == '+' || c[i] == '/' || c[i] ==
+						    '=' || c[i] == ' ' || c[i] == '%' || c[i]
+						    == '#' || c[i] == '&')
+							k += (size_t)snprintf(enc + k, sizeof(enc)
+							    - k, "%%%02X", (unsigned char)c[i]);
+						else
+							enc[k++] = c[i];
+					}
+					enc[k] = '\0';
+					h_raw(h, enc);
+				}
+				h_raw(h, "\" title=\"The instance's CA certificate, for "
+				    "the clients to trust where TLS is opened\">"
+				    "certificate</a>");
+			} else
+				h_raw(h, "<span class=\"dim\">—</span>");
+			h_raw(h, "</td></tr>");
+		}
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: no policy "
+		    "filters URLs, or nothing is applied yet.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
 }
 
 static void
@@ -3056,12 +3288,15 @@ view_sdwan(struct html *h)
 	    "delay, variation, loss\">Paths</button><button class=\"tab%s\" "
 	    "data-act=\"sd-tab\" data-arg=\"security\" title=\"The security "
 	    "policies of each service, MEF 88\">Security</button><button class="
+	    "\"tab%s\" data-act=\"sd-tab\" data-arg=\"identities\" title=\"Who "
+	    "reaches a service from afar: the remote end points' identities, "
+	    "issued and revoked\">Identities</button><button class="
 	    "\"tab%s\" data-act=\"sd-tab\" data-arg=\"document\" title=\"All of "
 	    "it as JSON, checked against MEF 70.2\">Document</button></nav>",
 	    sd.tab == SD_OVERVIEW ? " on" : "", sd.tab == SD_SERVICES ? " on" :
 	    "", sd.tab == SD_EDGES ? " on" : "", sd.tab == SD_PATHS ? " on" :
-	    "", sd.tab == SD_SECURITY ? " on" : "", sd.tab == SD_DOCUMENT ?
-	    " on" : "");
+	    "", sd.tab == SD_SECURITY ? " on" : "", sd.tab == SD_IDENTITIES ?
+	    " on" : "", sd.tab == SD_DOCUMENT ? " on" : "");
 	if (sd.doc == NULL) {
 		if (sd.error[0] != '\0') {
 			h_raw(h, "<div class=\"notice bad\">");
@@ -3075,6 +3310,8 @@ view_sdwan(struct html *h)
 		view_edges(h);
 	else if (sd.tab == SD_PATHS)
 		view_paths(h);
+	else if (sd.tab == SD_IDENTITIES)
+		view_identities(h);
 	else if (sd.tab == SD_SECURITY)
 		view_security(h);
 	else if (sd.tab == SD_DOCUMENT)
@@ -3681,6 +3918,80 @@ sdwan_modal_service(struct html *h)
 		    "other zone names (one service has one).");
 		return (true);
 	}
+	if (app.modal == MODAL_SD_CONFIG) {
+		h_raw(h, "<form data-form=\"none\"><h2>");
+		h_txt(h, sd.config_name);
+		h_raw(h, ", its WireGuard configuration</h2><p>Shown once: the "
+		    "private key is kept nowhere by the console. Give it to the "
+		    "person as their <code>wg-quick</code> configuration; to be "
+		    "had again, the identity is issued again.</p><textarea "
+		    "readonly rows=\"14\" class=\"mono\" spellcheck=\"false\">");
+		h_txt(h, sd.config != NULL ? sd.config : "");
+		h_raw(h, "</textarea><div class=\"actions\"><button type=\""
+		    "button\" class=\"primary\" data-act=\"sd-config-done\">Done, "
+		    "I have it</button></div></form>");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_IDENTITY) {
+		const ucl_object_t	*s2, *e2, *z, *k;
+		ucl_object_iter_t	 sit, eit, zit, kit;
+
+		h_raw(h, "<form data-form=\"sd-identity\"><h2>An identity</h2><p>"
+		    "Someone reaching a service from afar, by WireGuard, at one of "
+		    "its remote end points (SASE-3): a console user, by the name "
+		    "of their sign-in key, or a name of its own. The key pair is "
+		    "made here, and the configuration shown once.</p>"
+		    "<label>At<select name=\"at\">");
+		sit = NULL;
+		while ((s2 = ucl_object_iterate(jget(sd.doc, "swvcs"), &sit, true))
+		    != NULL) {
+			eit = NULL;
+			while ((e2 = ucl_object_iterate(jget(s2, "end_points"), &eit,
+			    true)) != NULL) {
+				if (jget(e2, "remote") == NULL)
+					continue;
+				h_raw(h, "<option");
+				h_fmt(h, " value=\"%s|%s\">", jstr(s2, "id"), jstr(e2,
+				    "id"));
+				h_txt(h, jstr(s2, "id"));
+				h_raw(h, " · ");
+				h_txt(h, jstr(e2, "id"));
+				h_raw(h, " on ");
+				h_txt(h, host_name(jstr(e2, "edge")));
+				h_raw(h, "</option>");
+			}
+		}
+		h_raw(h, "</select></label>");
+		text_field(h, "Name", "name", NULL, "alice", "A console user's "
+		    "sign-in key name, or any name.");
+		h_raw(h, "<datalist id=\"sd-users\">");
+		kit = NULL;
+		while ((k = ucl_object_iterate(app.keys, &kit, true)) != NULL) {
+			h_raw(h, "<option");
+			h_attr(h, "value", jstr(k, "name"));
+			h_raw(h, ">");
+		}
+		h_raw(h, "</datalist><fieldset class=\"toggles\"><label class=\""
+		    "toggle\"><input type=\"checkbox\" name=\"user\"><span>A "
+		    "console user <em>the name is one of the sign-in keys'</em>"
+		    "</span></label></fieldset>");
+		h_raw(h, "<label>Zone<input name=\"zone\" list=\"sd-zones\" "
+		    "required spellcheck=\"false\" placeholder=\"staff\"></label>"
+		    "<datalist id=\"sd-zones\">");
+		sit = NULL;
+		while ((s2 = ucl_object_iterate(jget(sd.doc, "swvcs"), &sit, true))
+		    != NULL) {
+			zit = NULL;
+			while ((z = ucl_object_iterate(jget(s2, "zones"), &zit, true))
+			    != NULL) {
+				h_raw(h, "<option");
+				h_attr(h, "value", jstr(z, "name"));
+				h_raw(h, ">");
+			}
+		}
+		h_raw(h, "</datalist>");
+		return (true);
+	}
 	if (app.modal == MODAL_SD_LIST) {
 		const ucl_object_t	*lf = sd.edit[0] != '\0' && sd.lists != NULL ?
 		    jfind(jget(sd.lists, "feeds"), "name", sd.edit) : NULL;
@@ -3761,6 +4072,30 @@ sdwan_modal_service(struct html *h)
 		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
 		    "log\" value=\"1\"%s> Log what is denied (log)</label>", jbool(
 		    cr, "log") ? " checked" : "");
+		/* URLs, by a proxy on the edge (SASE-4): a plugin, Squid. */
+		{
+			const char	*mode = jstr(jget(cr, "url-filter"), "mode");
+
+			h_fmt(h, "<label>URL filter <select name=\"urlmode\"><option "
+			    "value=\"\"%s>none</option><option value=\"sni\"%s>the "
+			    "TLS names looked at, nothing opened (sni)</option>"
+			    "<option value=\"inspect\"%s>TLS opened with the edge's "
+			    "CA (inspect)</option></select><small>By Squid on the "
+			    "edge, a plugin installed there by hand; HTTP and TLS "
+			    "from the end points go through it (url-filter).</small>"
+			    "</label>", mode == NULL ? " selected" : "", mode != NULL
+			    && strcmp(mode, "sni") == 0 ? " selected" : "", mode !=
+			    NULL && strcmp(mode, "inspect") == 0 ? " selected" : "");
+			v = jget(jget(cr, "url-filter"), "deny");
+			text_field(h, "URL domains denied", "urldomains", v != NULL &&
+			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
+			    : "", "bad.example", "Sites refused, with everything "
+			    "under them, by name in TLS or HTTP.");
+			v = jget(jget(cr, "url-filter"), "lists");
+			text_field(h, "URL domain lists", "urllists", v != NULL &&
+			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
+			    : "", "blocked", "Lists by name, their domains refused.");
+		}
 		return (true);
 	}
 	if (app.modal == MODAL_SD_FLOW) {
@@ -4455,6 +4790,37 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 	char			 name[32], buf[160];
 	int			 i;
 
+	if (strcmp(form, "sd-identity") == 0) {
+		ucl_object_t	*b;
+		unsigned char	*json;
+		char		 at[200], *p;
+
+		if (jstr(f, "name") == NULL || jstr(f, "name")[0] == '\0' ||
+		    jstr(f, "at") == NULL || jstr(f, "zone") == NULL || jstr(f,
+		    "zone")[0] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "An "
+			    "identity has a name, an end point and a zone");
+			return (true);
+		}
+		snprintf(at, sizeof(at), "%s", jstr(f, "at"));
+		if ((p = strchr(at, '|')) == NULL)
+			return (true);
+		*p++ = '\0';
+		b = ucl_object_typed_new(UCL_OBJECT);
+		put_str(b, "swvc", at);
+		put_str(b, "end_point", p);
+		put_str(b, "name", jstr(f, "name"));
+		put_str(b, "zone", jstr(f, "zone"));
+		ucl_object_insert_key(b, ucl_object_frombool(checked(f, "user")),
+		    "user", 0, false);
+		json = ucl_object_emit(b, UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(b);
+		app.modal_busy = true;
+		api("POST", "/api/sdwan/identities", (const char *)json, issue_cb,
+		    NULL);
+		free(json);
+		return (true);
+	}
 	if (strcmp(form, "sd-list") == 0) {
 		ucl_object_t	*lf;
 
@@ -4694,6 +5060,17 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		if (checked(f, "log"))
 			ucl_object_insert_key(cr, ucl_object_frombool(true), "log", 0,
 			    false);
+		if (jstr(f, "urlmode") != NULL && jstr(f, "urlmode")[0] != '\0') {
+			b = ucl_object_typed_new(UCL_OBJECT);
+			put_str(b, "mode", jstr(f, "urlmode"));
+			if (jstr(f, "urldomains") != NULL && jstr(f, "urldomains")[0]
+			    != '\0')
+				put_list(b, "deny", jstr(f, "urldomains"));
+			if (jstr(f, "urllists") != NULL && jstr(f, "urllists")[0] !=
+			    '\0')
+				put_list(b, "lists", jstr(f, "urllists"));
+			ucl_object_insert_key(cr, b, "url-filter", 0, false);
+		}
 		ucl_object_insert_key(o, cr, "criteria", 0, false);
 		list_put(sw, "security_policies", "name", was, o);
 	} else if (strcmp(form, "sd-flow") == 0) {
@@ -5413,12 +5790,14 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sd.tab = strcmp(arg, "services") == 0 ? SD_SERVICES :
 		    strcmp(arg, "edges") == 0 ? SD_EDGES : strcmp(arg,
 		    "paths") == 0 ? SD_PATHS : strcmp(arg, "security") == 0 ?
-		    SD_SECURITY : strcmp(arg, "document") == 0 ? SD_DOCUMENT :
-		    SD_OVERVIEW;
+		    SD_SECURITY : strcmp(arg, "identities") == 0 ? SD_IDENTITIES :
+		    strcmp(arg, "document") == 0 ? SD_DOCUMENT : SD_OVERVIEW;
 		if (sd.tab == SD_EDGES || sd.tab == SD_OVERVIEW)
 			plan_load();
 		else if (sd.tab == SD_PATHS || sd.tab == SD_SECURITY)
 			paths_load();
+		else if (sd.tab == SD_IDENTITIES)
+			identities_load();
 		sd.note[0] = '\0';
 		if (sd.tab != SD_DOCUMENT)
 			sd.error[0] = '\0';
@@ -5439,6 +5818,31 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		    == 0 ? arg : "");
 		app.modal = MODAL_SD_LIST;
 		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "sd-ident-add") == 0) {
+		app.modal = MODAL_SD_IDENTITY;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "sd-ident-revoke") == 0) {
+		/* arg: swvc|end_point|name */
+		confirm("Revoke the identity", "Its peer is removed from the edge "
+		    "by the apply that follows; it can be issued again, with a "
+		    "new key.", "Revoke", true, "", "do-sd-ident-revoke", arg, "");
+	} else if (strcmp(act, "do-sd-ident-revoke") == 0) {
+		char	url[400], a[300], *p, *q;
+
+		snprintf(a, sizeof(a), "%s", arg);
+		p = strchr(a, '|');
+		q = p != NULL ? strchr(p + 1, '|') : NULL;
+		if (p != NULL && q != NULL) {
+			*p++ = '\0';
+			*q++ = '\0';
+			snprintf(url, sizeof(url), "/api/sdwan/identities?swvc=%s&"
+			    "end_point=%s&name=%s", a, p, q);
+			api("DELETE", url, NULL, revoke_cb, NULL);
+		}
+	} else if (strcmp(act, "sd-config-done") == 0) {
+		free(sd.config);
+		sd.config = NULL;
+		app.modal = MODAL_NONE;
 	} else if (strcmp(act, "sd-list-del") == 0) {
 		confirm("Take it away", "The list goes; a policy that names it "
 		    "will not pass the check until changed.", "Take away", true, "",

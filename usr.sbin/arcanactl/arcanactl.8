@@ -13,6 +13,7 @@
 .Nm
 .Op Fl -libxo Ar options
 .Op Fl qst
+.Op Fl W Ar seconds
 .Op Fl c Ar uri
 .Op Fl A Ar cafile Fl C Ar certfile Fl K Ar keyfile
 .Op Fl N Ar name
@@ -76,6 +77,12 @@ Queue the change as a job; see the end of the command list.
 .It Fl s
 Make the change in safe mode; see
 .Cm route .
+.It Fl W Ar seconds
+With
+.Fl s ,
+how long the change waits to be confirmed before it is undone, from 10
+to 3600 seconds, in place of the daemon's own
+.Fl w .
 .It Fl t
 Also print the trace: every library call, system call, file and
 program the daemon used, with the programs' output.

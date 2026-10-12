@@ -2203,6 +2203,13 @@ safe_mode_body()
 	atf_check -o match:'^lo0 inet 10.9.0.6/24 alias$' \
 	    -o not-match:'10.9.0.6 -alias' cat ifconfig.log
 
+	# The client's rollback timer in place of the daemon's own -w.
+	atf_check -o match:'the timer was 15 s' \
+	    -o match:'confirmed: it stays' \
+	    "$JGC" -t -s -W 15 -c "$SOCK" interface lo0 add 10.9.0.7/24
+	atf_check -s exit:2 -e match:'too small' \
+	    "$JGC" -s -W 5 -c "$SOCK" interface lo0 add 10.9.0.7/24
+
 	# One that is not heard from again: each change is taken back.
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 add 10.9.0.8/24
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" interface lo0 down
@@ -2218,7 +2225,7 @@ safe_mode_body()
 		sleep 0.1
 	done
 	atf_check -s exit:1 -o match:'not confirmed within 2 s: undone' \
-	    "$JGC" -c "$SOCK" job 2
+	    "$JGC" -c "$SOCK" job 3
 	atf_check -o match:'^lo0 inet 10.9.0.8/24 alias$' \
 	    -o match:'^lo0 inet 10.9.0.8 -alias$' \
 	    -o match:'^lo0 down$' -o match:'^lo0 up$' \
@@ -2462,7 +2469,7 @@ EOS
 	chmod +x fake-ipfw
 	printf '#!/bin/sh\necho "kldload $*" >> %s/kldload.log\nexit 0\n' "$(pwd)" > fake-kldload
 	chmod +x fake-kldload
-	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib"
+	DAEMON_ARGS="-h $(pwd)/fake-ipfw -3 $(pwd)/fake-setfib -2 $(pwd)/tools"
 	start_daemon
 	atf_check -o match:'"targets":\[\]' -o match:'"probing":true' \
 	    -o match:'"rules":\{"set":0,"rules":0,"tables":\[\],"objects":0,"counters":\[\]\}' \
@@ -2605,6 +2612,8 @@ case "\$1" in
 *dnsmasq) sleep 300 & echo \$! > "\$5" ;;
 # local-unbound -c conf: started, says the pid file named in the conf.
 *local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
+# squid -f conf: started, says the pid file named in the conf.
+*squid) echo "squid \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^pid_filename //p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
 # bird -c conf -s sock -P pid: started, says the socket.
 *) shift 3; touch "\$2" ;;
 esac
@@ -2627,6 +2636,20 @@ echo "checkconf \$*" >> $(pwd)/unbound.log
 grep -q BROKEN "\$1" && { echo "unbound-checkconf: error: syntax error" >&2; exit 1; }
 exit 0
 EOS
+	# squid(8) and its certificate maker, in the tools directory (-2).
+	mkdir -p tools
+	cat > tools/squid <<EOS
+#!/bin/sh
+echo "squid \$*" >> $(pwd)/squid.log
+[ "\$2" = parse ] && { grep -q BROKEN "\$4" && { echo "FATAL: Bungled \$4" >&2; exit 1; }; exit 0; }
+exit 0
+EOS
+	cat > tools/security_file_certgen <<EOS
+#!/bin/sh
+echo "certgen \$*" >> $(pwd)/squid.log
+mkdir -p "\$3"
+EOS
+	chmod +x tools/squid tools/security_file_certgen
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
@@ -2731,6 +2754,30 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan dns '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-dns-sw1.conf" || atf_fail "the dns instance's file stayed"
 	atf_check -o match:'"dns":\[\]' "$JGC" -c "$SOCK" sdwan
+	# The proxies (Squid, a plugin): one not taken by squid -k parse not
+	# run; one started in its table, its places filled, its CA made by
+	# openssl once and told; the certificate cache made for inspect;
+	# a running one reconfigured; stopped when not named.
+	atf_check -s exit:1 -e match:'does not take it' -o ignore "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"BROKEN","deny":""}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\nhttps_port 10.1.0.1:3129 intercept ssl-bump tls-cert=@CA@\nacl denied_site ssl::server_name \"@DENY@\"\n","deny":".bad.example\n"}]}'
+	atf_check -o match:'^setfib -F 1 .*tools/squid -f .*sdwan-proxy-sw1.conf$' cat setfib.log
+	atf_check -o match:'^squid -k parse -f .*sdwan-proxy-sw1.conf$' cat squid.log
+	atf_check -o match:'^pid_filename .*sdwan-proxy-sw1.pid$' -o match:'tls-cert=.*sdwan-proxy-sw1.pem$' -o match:'ssl::server_name ".*sdwan-proxy-sw1.deny"$' \
+	    cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
+	atf_check -o match:'^\.bad\.example$' cat "$(dirname "$f")/sdwan-proxy-sw1.deny"
+	atf_check -o match:'BEGIN CERTIFICATE' -o match:'BEGIN PRIVATE KEY' cat "$(dirname "$f")/sdwan-proxy-sw1.pem"
+	atf_check -o match:'"proxy":\[\{"name":"sw1","fib":1,"mode":"sni","running":true,"ca":"-----BEGIN CERTIFICATE-----' "$JGC" -c "$SOCK" sdwan
+	cp "$(dirname "$f")/sdwan-proxy-sw1.crt" ca.was
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"inspect","conf":"pid_filename @PID@\nsslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n","deny":""}]}'
+	atf_check -o match:'^squid -k reconfigure -f .*sdwan-proxy-sw1.conf$' -o match:'^certgen -c -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat squid.log
+	atf_check -o match:'^sslcrtd_program .*tools/security_file_certgen -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
+	atf_check cmp -s ca.was "$(dirname "$f")/sdwan-proxy-sw1.crt"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
+	test ! -f "$(dirname "$f")/sdwan-proxy-sw1.conf" || atf_fail "the proxy instance's file stayed"
+	atf_check -o match:'"proxy":\[\]' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()
 {

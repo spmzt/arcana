@@ -57,6 +57,7 @@ static const char *status_names[] = {
 static bool	show_trace;
 static bool	queue;		/* -q: submit as a job */
 static bool	safe;		/* -s: undo the change unless confirmed */
+static uint32_t	safe_wait;	/* -W: for how long, 0 the agent's own */
 static bool	persist;	/* -p: keep the change in rc.conf too */
 static uint32_t	fib;		/* -F: the routing table */
 static const char *netjail;	/* -j: the vnet jail whose network it is */
@@ -110,7 +111,8 @@ static void
 usage(void)
 {
 
-	xo_error("usage: arcanactl [-pqst] [-F fib] [-j jail] [-c uri] "
+	xo_error("usage: arcanactl [-pqst] [-F fib] [-j jail] [-W seconds] "
+	    "[-c uri] "
 	    "[-A cafile -C certfile\n                 -K keyfile] [-N name] "
 	    "command\n"
 	    "commands:\n"
@@ -145,7 +147,7 @@ usage(void)
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
-	    "    sdwan [probes | rules | steer | bird | dhcp | dns json]\n"
+	    "    sdwan [probes | rules | steer | bird | dhcp | dns | proxy json]\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
 	    "    wg interface init [port]\n"
@@ -1195,6 +1197,8 @@ cmd_bird_config(struct arc_client *cl, int argc, char **argv)
 	req.conf_path = argc - optind == 1 ? argv[optind] : NULL;
 	req.jail = netjail;
 	req.safe = safe && from != NULL && !req.dry_run;
+	req.has_safe_wait = req.safe && safe_wait > 0;
+	req.safe_wait = safe_wait;
 	text = NULL;
 	cur = NULL;
 	if (from != NULL) {
@@ -1421,6 +1425,19 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		error = json_out("sdwan-dhcp", rs->ok, rs->error, NULL,
 		    rs->trace.v, rs->trace.n);
 		arc_sdwan_dhcp_rsp_free(rs);
+		return (error);
+	}
+	if (argc == 3 && strcmp(argv[1], "proxy") == 0) {
+		struct arc_sdwan_proxy_req	 rq;
+		struct arc_sdwan_proxy_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = json_arg(argv[2]);
+		if ((error = arc_sdwan_proxy(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan proxy");
+		error = json_out("sdwan-proxy", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_proxy_rsp_free(rs);
 		return (error);
 	}
 	if (argc == 3 && strcmp(argv[1], "dns") == 0) {
@@ -2806,6 +2823,8 @@ cmd_pkg_clean(struct arc_client *cl, int argc, char **argv)
 		v[n] = sp;
 		v[n].jail = lr->jails.v[i].name;
 		v[n].safe = safe;
+		v[n].has_safe_wait = safe && safe_wait > 0;
+		v[n].safe_wait = safe_wait;
 		n++;
 	}
 	if (n == 0) {
@@ -3062,6 +3081,8 @@ submit(struct arc_client *cl, struct arc_job_spec *sp)
 	int				 error;
 
 	sp->safe = safe;
+	sp->has_safe_wait = safe && safe_wait > 0;
+	sp->safe_wait = safe_wait;
 	memset(&req, 0, sizeof(req));
 	req.batch.v = sp;
 	req.batch.n = 1;
@@ -3223,7 +3244,7 @@ main(int argc, char *argv[])
 		exit(2);
 	uri = PATH_SOCKET;
 	cafile = certfile = keyfile = name = NULL;
-	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:pqst")) != -1) {
+	while ((ch = getopt(argc, argv, "+A:C:c:F:j:K:N:pqstW:")) != -1) {
 		switch (ch) {
 		case 'A':
 			cafile = optarg;
@@ -3256,6 +3277,12 @@ main(int argc, char *argv[])
 			break;
 		case 's':
 			safe = true;
+			break;
+		case 'W':
+			safe_wait = (uint32_t)strtonum(optarg, 10, 3600,
+			    &errstr);
+			if (errstr != NULL)
+				xo_errx(2, "-W %s: %s", optarg, errstr);
 			break;
 		case 't':
 			show_trace = true;

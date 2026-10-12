@@ -3241,6 +3241,11 @@ table.broutes tr.attrs pre { margin: 0 0 .4rem 1.2rem; font-size: .72rem; color:
 /* Plugins: what was installed, apart from what the base system has. */
 nav.tabs .tab.plugin:first-of-type, nav.tabs .tab:not(.plugin) + .tab.plugin { margin-left: 1.2rem; }
 nav.tabs .tab.plugin::before { content: "◆ "; font-size: .6em; vertical-align: .15em; opacity: .7; }
+/* A plugin not installed on the host or a jail of it: there, dimmer. */
+nav.tabs .tab.plugin.missing { opacity: .55; }
+nav.tabs .tab.plugin.missing::before { content: "◇ "; }
+.plugin-missing p { max-width: 38rem; }
+.plugin-missing button.primary { margin-top: .4rem; }
 
 /* The kernel: its modules and its memory. */
 form.kmod-load { display: flex; gap: .5rem; align-items: center; flex: 1 1 20rem; }
@@ -3946,9 +3951,15 @@ ul.wfruns li.cancelled .led { background: var(--dim); }
 .chip.done { border-color: var(--green); }
 .chip.failed { border-color: var(--red); }
 .chip.running { border-color: var(--cyan); }
-.wfgraph { display: flex; flex-direction: column; gap: .7rem; overflow-x: auto; padding: .3rem 0; }
-.wfrow { display: flex; align-items: center; gap: .35rem; flex-wrap: nowrap; }
-.wfrow .wfhost { flex: none; width: 7.5rem; overflow: hidden; text-overflow: ellipsis; font-size: .8rem; color: var(--fg-2); }
+.wfgraph { display: flex; flex-direction: column; gap: .7rem; overflow-x: auto; padding: .3rem 0 1rem; }
+.wfrow { display: grid; align-items: center; justify-content: start; gap: .35rem; }
+.wfrow .wfhost { grid-row: 1; grid-column: 1; width: 7.5rem; overflow: hidden; text-overflow: ellipsis; font-size: .8rem; color: var(--fg-2); }
+/* A failure's jump: from the middle of its step to the middle of the one
+ * it goes on at, under the row, with its head pointing up at the end. */
+.wfjump { position: relative; height: .9rem; margin: -.15rem 3.5rem 0; border: 1.5px solid var(--amber); border-top: none; border-radius: 0 0 8px 8px; opacity: .55; }
+.wfjump::after { content: ""; position: absolute; right: -5.5px; top: -6px; border: 5px solid transparent; border-bottom: 6px solid var(--amber); border-top: none; }
+.wfjump small { position: absolute; left: 50%; bottom: -.55rem; transform: translateX(-50%); padding: 0 .3rem; font-size: .62rem; color: var(--amber); background: var(--bg); white-space: nowrap; }
+.wfjump.taken { opacity: 1; border-width: 2px; }
 .wfarrow { color: var(--dim); flex: none; }
 button.wfstep { flex: none; display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; min-width: 7rem; padding: .35rem .6rem; border: 1px solid var(--line-2); border-radius: 8px; background: rgba(var(--surface-rgb), .7); text-align: left; text-transform: none; letter-spacing: 0; }
 button.wfstep b { font-size: .8rem; color: var(--fg); }
@@ -3971,6 +3982,10 @@ ol.wfsteps { margin: 0; padding: 0; list-style: none; display: flex; flex-direct
 li.wfedstep { border: 1px solid var(--line-2); border-radius: 10px; padding: .6rem .7rem; display: flex; flex-direction: column; gap: .45rem; background: rgba(var(--surface-rgb), .5); }
 .wfedhead { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
 .wfedhead .num { color: var(--dim); font-size: .75rem; width: 1.4rem; }
+.wfedhead .num.grip { cursor: grab; user-select: none; }
+li.wfedstep.dragging { opacity: .4; }
+li.wfedstep.drop-before { box-shadow: 0 -3px 0 var(--cyan); }
+li.wfedstep.drop-after { box-shadow: 0 3px 0 var(--cyan); }
 .wfedhead .acts { margin-left: auto; display: flex; gap: .2rem; }
 .wffields { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .4rem .7rem; }
 .wffields label em, .wfedit label em { font-style: normal; color: var(--amber); font-size: .7rem; }

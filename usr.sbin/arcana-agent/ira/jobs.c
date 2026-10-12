@@ -394,6 +394,15 @@ trim(void)
 	}
 }
 
+/* How long a safe change waits: the console's timer, else the agent's. */
+static int
+safe_wait(const struct arc_job_spec *sp)
+{
+
+	return (sp->has_safe_wait && sp->safe_wait > 0 ? (int)sp->safe_wait :
+	    opts.safe_wait);
+}
+
 /*
  * The change is made: wait for the client to confirm it.  True when it
  * did; false when the time allowed passed without it, or the daemon is
@@ -408,9 +417,9 @@ await_confirm(struct qjob *j)
 
 	step = step_begin(&j->w, ARC_STEP_KIND_DAEMON, "safe mode",
 	    "the change is made; waiting %d s to hear from the client again",
-	    opts.safe_wait);
+	    safe_wait(&j->spec));
 	clock_gettime(CLOCK_REALTIME, &ts);
-	ts.tv_sec += opts.safe_wait;
+	ts.tv_sec += safe_wait(&j->spec);
 	pthread_mutex_lock(&jobs_lock);
 	j->state = ARC_JOB_STATE_UNCONFIRMED;
 	j->confirm_by = ts.tv_sec;
@@ -420,8 +429,9 @@ await_confirm(struct qjob *j)
 	confirmed = j->confirmed;
 	j->state = ARC_JOB_STATE_RUNNING;
 	pthread_mutex_unlock(&jobs_lock);
-	step_end(&j->w, step, confirmed, confirmed ? "confirmed: it stays" :
-	    "not confirmed");
+	step_end(&j->w, step, confirmed, confirmed ? "confirmed: it stays "
+	    "(the timer was %d s)" : "not confirmed within %d s",
+	    safe_wait(&j->spec));
 	logmsg(confirmed ? LOG_INFO : LOG_WARNING, "job %ju: %s: %s",
 	    (uintmax_t)j->id, j->title, confirmed ? "confirmed" :
 	    "not confirmed in time: undoing it");
@@ -637,7 +647,7 @@ undo(struct qjob *j)
 	e = NULL;
 	if (j->undo_none)
 		return (wfmt(&j->w, "not confirmed within %d s; it was so "
-		    "before, and is left so", opts.safe_wait));
+		    "before, and is left so", safe_wait(sp)));
 	switch (sp->kind) {
 	case ARC_JOB_KIND_IF_ADDRESS:
 		rc = do_if_address(&j->w, sp->interface, j->undo_address != NULL ?
@@ -752,9 +762,10 @@ undo(struct qjob *j)
 	}
 	if (rc != 0)
 		return (wfmt(&j->w, "not confirmed within %d s, and it could "
-		    "not be undone: %s", opts.safe_wait, e != NULL ? e :
+		    "not be undone: %s", safe_wait(sp), e != NULL ? e :
 		    "failed"));
-	return (wfmt(&j->w, "not confirmed within %d s: undone", opts.safe_wait));
+	return (wfmt(&j->w, "not confirmed within %d s: undone",
+	    safe_wait(sp)));
 }
 
 /* Do what the job says; its outcome goes into the job. */
@@ -901,6 +912,8 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_PKG_INSTALL:
 		error = NULL;
 		ok = do_pkg_install(&j->w, sp, &error) == 0;
+		/* A plugin may be there now: asked again, not remembered. */
+		plugins_forget();
 		break;
 	case ARC_JOB_KIND_IPSEC:
 		error = NULL;

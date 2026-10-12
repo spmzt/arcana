@@ -250,6 +250,7 @@ struct server {
 	double		 services_fetched;
 	bool		 services_loading;
 	char		 services_error[256];
+	int		 safe_wait;	/* s, its rollback timer; 0 the agent's */
 };
 
 enum opstate {
@@ -336,6 +337,8 @@ enum modal {
 	MODAL_SD_UCS,
 	MODAL_SD_EDGE,
 	MODAL_SD_LINK,
+	MODAL_SD_IDENTITY,
+	MODAL_SD_CONFIG,
 	MODAL_SD_SWVC,
 	MODAL_SD_ZONE,
 	MODAL_SD_SECPOL,
@@ -504,6 +507,7 @@ void		 refresh_stats(struct server *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);
 bool		 version_older(const char *, const char *);
+void		 fmt_bytes(char *, size_t, int64_t);
 void		 notes_load(const char *, const char *, const char *, bool);
 void		 agent_build(struct server *, const char *, bool);
 void		 agent_restarts(double);
@@ -678,6 +682,14 @@ void		 network_stream(const ucl_object_t *);
 void		 view_sysctl(struct html *, struct server *);
 bool		 sysctl_form(const char *, const ucl_object_t *);
 bool		 sysctl_action(const char *, const char *, const char *);
+void		 view_safe(struct html *, struct server *);
+void		 servers_cb(int, const ucl_object_t *, const char *, void *);
+struct plugin_pkg {
+	const char	*plugin, *title, *program, *package;
+};
+const struct plugin_pkg *plugin_pkg(const char *);
+bool		 plugin_installing(const struct server *, const char *);
+void		 plugin_install(struct server *, const char *);
 void		 refresh_transport(struct server *, bool, bool);
 void		 transport_tick(double);
 void		 view_transport(struct html *, struct server *);
