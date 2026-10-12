@@ -4552,6 +4552,40 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    NULL, &r);
 	EXPECT(&r, 404);
 	resp_free(&r);
+	/* The audit trail (MEF 118.1 §13.1): the issue an Allow, the revoke a
+	 * Block, the document kept and the apply by the System
+	 * Administrator, each with who did it, newest first; the chain
+	 * whole.  A line altered on disk, the read says where it broke. */
+	http("GET", "/api/sdwan/audit", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(ucl_object_toboolean(ucl_object_lookup(r.json, "intact"))
+	    && strcmp(jstr(&r, "events.0.event"), "identity-revoked") == 0 &&
+	    strcmp(jstr(&r, "events.0.action"), "Block") == 0 &&
+	    strcmp(jstr(&r, "events.0.who"), "key -7") == 0 && strcmp(jstr(&r,
+	    "events.0.policy"), "office") == 0 && strstr(jstr(&r,
+	    "events.0.where"), "end point road of acme") != NULL && strstr(
+	    r.body, "\"event\":\"identity-issued\",\"action\":\"Allow\"") !=
+	    NULL && strstr(r.body, "\"event\":\"policies-changed\",\"action\":"
+	    "\"Administer\"") != NULL && strstr(r.body, "\"event\":\""
+	    "policies-applied\"") != NULL && strstr(r.body, "\"prev\"") == NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/sdwan/audit.csv", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strncmp(r.body, "seq,when,event,action,policy,how,where,"
+	    "who,why\n", 45) == 0 && strstr(r.body, ",\"identity-revoked\","
+	    "\"Block\",\"office\",") != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(system("sed -i '' '2s/\"Allow\"/\"Block\"/; "
+	    "2s/\"Administer\"/\"Allow\"/' data/sdwan-audit.jsonl") == 0);
+	http("GET", "/api/sdwan/audit", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(!ucl_object_toboolean(ucl_object_lookup(r.json,
+	    "intact")) && ucl_object_toint(ucl_object_lookup(r.json,
+	    "broken_at")) == 2, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("stat -f %Lp data/sdwan-audit.key | grep -qx 600 && "
+	    "stat -f %Lp data/sdwan-audit.jsonl | grep -qx 600") == 0);
 	/* The remote end point's wg, by the stand-in: listening, the
 	 * identity its peer. */
 	ATF_CHECK(system("grep -q '^set wg5 listen-port 51820' wg.log && grep "

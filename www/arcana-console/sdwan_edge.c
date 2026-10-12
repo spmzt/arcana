@@ -6708,6 +6708,7 @@ api_sdwan_identities(struct http_request *req)
 	const ucl_object_t	*sw, *ep, *r, *e;
 	ucl_object_iter_t	 it;
 	struct plan		 pl;
+	char			 where[300], rzone[64];
 	char			 why[300], priv[64], pub[64], *v, *swvc, *epid;
 	char			*name, *conf;
 	const char		*zone;
@@ -6755,12 +6756,22 @@ api_sdwan_identities(struct http_request *req)
 			return (reply_error(req, 404, "identity", "no identity %s",
 			    name != NULL ? name : "?"));
 		}
+		snprintf(rzone, sizeof(rzone), "%s", str(e, "zone") != NULL ?
+		    str(e, "zone") : "");
 		ucl_object_unref(ucl_array_delete(ids, (ucl_object_t *)(uintptr_t)
 		    e));
 		if (sdwan_store(doc, why, sizeof(why)) != 0) {
 			ucl_object_unref(doc);
 			return (reply_error(req, 409, "invalid", "%s", why));
 		}
+		/* A Subject Actor's access taken away (MEF 118.1 §15). */
+		snprintf(where, sizeof(where), "%s, end point %s of %s", str(ep,
+		    "edge") != NULL ? server_name_of(str(ep, "edge")) : "?", epid,
+		    swvc);
+		audit_add("identity-revoked", "Block", rzone, "its WireGuard peer "
+		    "taken away by the apply, its address out of the zone table",
+		    where, session_who(req), "identity %s revoked by the System "
+		    "Administrator", name);
 		why[0] = '\0';
 		applied = apply_now(doc, why, sizeof(why));
 		kore_log(LOG_NOTICE, "identity %s of %s/%s revoked%s%s", name, swvc,
@@ -6853,6 +6864,14 @@ api_sdwan_identities(struct http_request *req)
 	plan_free(&pl);
 	ucl_object_unref(st);
 	explicit_bzero(priv, sizeof(priv));
+	/* A Subject Actor authenticated by its key and let in, its Role
+	 * its zone (MEF 118.1 §9.1). */
+	snprintf(where, sizeof(where), "%s, end point %s of %s", str(ep,
+	    "edge") != NULL ? server_name_of(str(ep, "edge")) : "?", epid, swvc);
+	audit_add("identity-issued", "Allow", zone, "a WireGuard peer, its key "
+	    "pair made by the console, the private half given once", where,
+	    session_who(req), "identity %s%s issued by the System "
+	    "Administrator", name, user ? ", a console user's," : "");
 	why[0] = '\0';
 	applied = apply_now(doc, why, sizeof(why));
 	kore_log(LOG_NOTICE, "identity %s of %s/%s issued%s%s%s", name, swvc,
@@ -6908,8 +6927,27 @@ identities_tick(const ucl_object_t *doc, time_t now)
 				    ucl_object_toint(ucl_object_lookup(id, "issued")) :
 				    0) + ucl_object_toint(ucl_object_lookup(r,
 				    "reauth"));
-				if (prev != 0 && exp > prev && exp <= now)
+				if (prev != 0 && exp > prev && exp <= now) {
+					char	where[300];
+
 					due = true;
+					/* Time-based Continuous Monitoring (MEF
+					 * 118.1 §18.1): the Subject Actor Blocked
+					 * until it authenticates again. */
+					snprintf(where, sizeof(where), "%s, end "
+					    "point %s of %s", str(ep, "edge") != NULL
+					    ? server_name_of(str(ep, "edge")) : "?",
+					    str(ep, "id"), str(sw, "id"));
+					audit_add("reauthorisation-due", "Block",
+					    str(id, "zone") != NULL ? str(id, "zone")
+					    : "", "its peer taken away by the apply",
+					    where, "Continuous Monitoring, by time",
+					    "identity %s: its re-authorisation "
+					    "interval, %jd s, ran out; issued again, "
+					    "it comes back", str(id, "name"),
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(r, "reauth")));
+				}
 			}
 		}
 	}
@@ -8159,6 +8197,11 @@ api_sdwan_edges(struct http_request *req)
 	if (n < 0)
 		return (reply_error(req, status, status == 409 ? "busy" : "thread",
 		    "%s", why));
+	/* The Policies sent to the Policy End Points, the edges. */
+	audit_add("policies-applied", "Administer", "the services' document",
+	    fresh ? "every job made again on the edges" : "the changes made on "
+	    "the edges, in their order", "the edges (Policy End Points)",
+	    session_who(req), "%d step%s of the apply", n, n == 1 ? "" : "s");
 	body = ucl_object_typed_new(UCL_OBJECT);
 	put(body, "steps", I(n));
 	return (reply_json(req, 200, body));

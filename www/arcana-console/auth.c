@@ -59,6 +59,7 @@ struct session {
 	time_t		created;
 	time_t		last;
 	bool		used;
+	char		who[64];	/* the key it was opened with */
 };
 
 static ucl_object_t	*creds;		/* the credentials document */
@@ -93,7 +94,7 @@ static bool	 verify_sig(int, const uint8_t *, size_t, const uint8_t *,
 static bool	 key_matches(int, const uint8_t *, size_t);
 static ucl_object_t *cred_list(void);
 static const ucl_object_t *cred_find(const char *);
-static void	 session_start(struct http_request *);
+static void	 session_start(struct http_request *, const char *);
 static void	 sessions_save(void);
 static void	 sessions_load(void);
 static void	 setup_token_init(void);
@@ -475,6 +476,7 @@ sessions_save(void)
 		put(e, "hash", ucl_object_fromstring(hex));
 		put(e, "created", ucl_object_fromint(sessions[i].created));
 		put(e, "last", ucl_object_fromint(sessions[i].last));
+		put(e, "who", ucl_object_fromstring(sessions[i].who));
 		ucl_array_append(a, e);
 	}
 	put(o, "sessions", a);
@@ -515,6 +517,9 @@ sessions_load(void)
 		}
 		s->created = ucl_object_toint(ucl_object_lookup(e, "created"));
 		s->last = ucl_object_toint(ucl_object_lookup(e, "last"));
+		snprintf(s->who, sizeof(s->who), "%s", ucl_object_lookup(e, "who")
+		    != NULL ? ucl_object_tostring_forced(ucl_object_lookup(e,
+		    "who")) : "");
 		if (k < 32 || s->created > now || now - s->last > SESSION_IDLE ||
 		    now - s->created > SESSION_MAX) {
 			memset(s, 0, sizeof(*s));
@@ -561,9 +566,35 @@ session_valid(struct http_request *req)
 	return (false);
 }
 
-/* A new session in a cookie only the console can read. */
+/*
+ * Who a request comes from: the name of the security key its session
+ * was opened with; NULL with no session (an API token, which reads
+ * only).  For the audit trail (MEF 118.1's who of a Policy Action).
+ */
+const char *
+session_who(struct http_request *req)
+{
+	uint8_t	 h[32];
+	char	*cookie;
+	int	 i;
+
+	http_populate_cookies(req);
+	if (!http_request_cookie(req, SESSION_COOKIE, &cookie) ||
+	    strlen(cookie) != 64)
+		return (NULL);
+	sha256(cookie, strlen(cookie), h);
+	for (i = 0; i < SESSIONS; i++)
+		if (sessions[i].used && memcmp(sessions[i].hash, h, sizeof(h))
+		    == 0)
+			return (sessions[i].who[0] != '\0' ? sessions[i].who :
+			    "a security key");
+	return (NULL);
+}
+
+/* A new session in a cookie only the console can read, opened by the
+ * key named who. */
 static void
-session_start(struct http_request *req)
+session_start(struct http_request *req, const char *who)
 {
 	struct session	*s, *old;
 	uint8_t		 raw[32];
@@ -587,6 +618,7 @@ session_start(struct http_request *req)
 	sha256(token, 64, s->hash);
 	s->created = s->last = time(NULL);
 	s->used = true;
+	snprintf(s->who, sizeof(s->who), "%s", who != NULL ? who : "");
 	snprintf(cookie, sizeof(cookie), "%s=%s; Path=/; HttpOnly; "
 	    "SameSite=Strict; Max-Age=%d%s", SESSION_COOKIE, token,
 	    SESSION_MAX, cfg.cookie_secure ? "; Secure" : "");
@@ -788,7 +820,7 @@ api_register_finish(struct http_request *req)
 	kore_log(LOG_NOTICE, "registered security key \"%s\"",
 	    ucl_str(c, "name"));
 	setup_token_init();
-	session_start(req);
+	session_start(req, ucl_str(c, "name"));
 	status = 200;
 out:
 	kore_free(cd);
@@ -907,7 +939,7 @@ api_login_finish(struct http_request *req)
 	ucl_object_replace_key((ucl_object_t *)(uintptr_t)c,
 	    ucl_object_fromint(time(NULL)), "last_used", 0, true);
 	(void)store_save(CREDENTIALS, creds);
-	session_start(req);
+	session_start(req, ucl_str(c, "name"));
 	kore_log(LOG_NOTICE, "login with \"%s\"", ucl_str(c, "name"));
 out:
 	kore_free(cd);

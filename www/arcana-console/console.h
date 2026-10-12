@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.139.0"
+#define	ARCW_VERSION		"0.140.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -123,6 +123,12 @@ bool		 ucl_flag(const ucl_object_t *, const char *);
 /* auth.c: WebAuthn and sessions. */
 void		 auth_init(void);
 bool		 session_valid(struct http_request *);
+const char	*session_who(struct http_request *);
+/* audit.c: the audit trail of Policy Actions (MEF 118.1 §13.1). */
+void		 audit_add(const char *, const char *, const char *,
+		    const char *, const char *, const char *, const char *, ...)
+		    __printflike(7, 8);
+int		 api_sdwan_audit(struct http_request *);
 
 /* servers.c: the registry of arcana-agent instances. */
 struct server {

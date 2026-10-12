@@ -4444,6 +4444,11 @@ section.sdwan nav.tabs { margin-bottom: 0; }
 .sd-block h3 { display: flex; align-items: baseline; gap: .6rem; margin: 0 0 .4rem; font-size: .95rem; }
 .sd-block h3 small { font-weight: 400; font-size: .75rem; }
 .sd-block { overflow-x: auto; }
+.sd-block h4 { display: flex; align-items: baseline; gap: .6rem; margin: 1rem 0 .4rem; font-size: .85rem; }
+.sd-block h4 small { font-weight: 400; font-size: .75rem; }
+.sd-block h4 .pane-actions { margin-left: auto; }
+.sd-sect { font-size: 1rem; margin: 1.4rem 0 .6rem; }
+.sd-list { margin: 0 0 .4rem; padding-left: 1.2rem; font-size: .85rem; }
 table.net.sd td { vertical-align: top; }
 table.net.sd .chip { margin: 0 .25rem .2rem 0; }
 table.net.sd .crit { display: inline-block; margin: 0 .6rem .15rem 0; }
