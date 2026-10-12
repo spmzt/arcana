@@ -2614,6 +2614,8 @@ case "\$1" in
 *local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
 # squid -f conf: started, says the pid file named in the conf.
 *squid) echo "squid \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^pid_filename //p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
+# c-icap -f conf: started, says the pid file named in the conf.
+*c-icap) echo "c-icap \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^PidFile //p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
 # bird -c conf -s sock -P pid: started, says the socket.
 *) shift 3; touch "\$2" ;;
 esac
@@ -2649,7 +2651,20 @@ EOS
 echo "certgen \$*" >> $(pwd)/squid.log
 mkdir -p "\$3"
 EOS
-	chmod +x tools/squid tools/security_file_certgen
+	printf '#!/bin/sh\nexit 0\n' > tools/c-icap
+	# suricata: -T checks, and refuses BROKEN; run, it writes an alert
+	# and a flow to eve.json in its log directory, and says its pid.
+	cat > tools/suricata <<EOS
+#!/bin/sh
+echo "suricata \$*" >> $(pwd)/suricata.log
+[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { echo "Error: rule BROKEN at line 1" >&2; exit 1; }; exit 0; }
+d=\$(sed -n 's/^default-log-dir: //p' "\$2")
+printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flow","src_ip":"10.30.0.2"}' \\
+    '{"timestamp":"2026-10-12T18:00:01.000000+0000","in_iface":"wg5","event_type":"alert","src_ip":"10.30.0.2","src_port":40000,"dest_ip":"10.20.0.1","dest_port":80,"proto":"TCP","alert":{"action":"allowed","signature_id":1000001,"rev":1,"signature":"ARCANA test \\"quoted\\"","category":"","severity":2}}' >> "\$d/eve.json"
+sleep 300 & echo \$! > "\$4"
+exit 0
+EOS
+	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
@@ -2775,9 +2790,75 @@ EOS
 	atf_check -o match:'^squid -k reconfigure -f .*sdwan-proxy-sw1.conf$' -o match:'^certgen -c -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat squid.log
 	atf_check -o match:'^sslcrtd_program .*tools/security_file_certgen -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
 	atf_check cmp -s ca.was "$(dirname "$f")/sdwan-proxy-sw1.crt"
+	# Malware scanned: c-icap of the instance's own, started first in its
+	# table, its pid file and command socket placed, told in the read;
+	# gone with the instance.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\nicap_enable on\n","deny":"","icap":"PidFile @ICAPPID@\nCommandsSocket @ICAPCMD@\nPort 127.0.0.1:1354\n"}]}'
+	atf_check -o match:'^setfib -F 1 .*tools/c-icap -f .*sdwan-icap-sw1.conf$' cat setfib.log
+	atf_check -o match:'^PidFile .*sdwan-icap-sw1.pid$' -o match:'^CommandsSocket .*sdwan-icap-sw1.ctl$' \
+	    cat "$(dirname "$f")/sdwan-icap-sw1.conf"
+	atf_check -o match:'"proxy":\[\{"name":"sw1","fib":1,"mode":"sni","running":true,"icap":true' "$JGC" -c "$SOCK" sdwan
+	ipid=$(cat "$(dirname "$f")/sdwan-icap-sw1.pid")
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-proxy-sw1.conf" || atf_fail "the proxy instance's file stayed"
+	test ! -f "$(dirname "$f")/sdwan-icap-sw1.conf" || atf_fail "the c-icap file stayed"
+	kill -0 "$ipid" 2>/dev/null && atf_fail "c-icap still runs"
 	atf_check -o match:'"proxy":\[\]' "$JGC" -c "$SOCK" sdwan
+	# Intrusion detection (SASE-4): Suricata of each instance checked,
+	# started on its interfaces, its alerts read into events and the
+	# read; the same files again leave it be; gone with the instance.
+	atf_check -s exit:1 -e match:'watches no interface' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"instances":[{"name":"sw1","interfaces":[],"conf":"x"}]}'
+	atf_check -s exit:1 -e match:'its interfaces are names' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"instances":[{"name":"sw1","interfaces":["wg5; rm"],"conf":"x"}]}'
+	atf_check -s exit:1 -e match:'suricata does not take it: Error: rule BROKEN' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"BROKEN"}]}'
+	ids='{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ids"
+	atf_check -o match:'^suricata -T -c .*sdwan-ids-sw1.yaml$' \
+	    -o match:'^suricata -c .*sdwan-ids-sw1.yaml --pidfile .*sdwan-ids-sw1.pid --pcap -D$' cat suricata.log
+	atf_check -o match:'^default-log-dir: .*sdwan-ids-sw1.d$' -o match:'^  - .*sdwan-ids-sw1.rules$' \
+	    cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -o match:'sid:1000001' cat "$(dirname "$f")/sdwan-ids-sw1.rules"
+	sleep 2
+	atf_check -o match:'"ids":\[\{"name":"sw1","interfaces":\["wg5"\],"mode":"detect","running":true,"alerts_seen":1,"alerts":\[\{"name":"sw1","time":"2026-10-12T18:00:01' \
+	    -o match:'"signature":"ARCANA test quoted","category":"","severity":2' "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"kind":"sdwan-ids","data":\{"name":"sw1",.*"src":"10.30.0.2","sport":40000,"dst":"10.20.0.1","dport":80,"proto":"TCP","iface":"wg5","sid":1000001' \
+	    "$JGC" -c "$SOCK" events
+	spid=$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")
+	atf_check -o match:'suricata sw1 on 1 interface, detects: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$ids"
+	atf_check -o inline:"$spid\n" cat "$(dirname "$f")/sdwan-ids-sw1.pid"
+	# One that prevents: run on its divert port; not running, a
+	# Critical fault (what it guards passes nothing), cleared once it
+	# runs again.
+	atf_check -s exit:1 -e match:'its divert is a port' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"x","divert":70000}]}'
+	ipsd=$(echo "$ids" | sed 's/"name":"sw1",/"name":"sw1","divert":8001,/')
+	atf_check -o match:'suricata sw1 on 1 interface, prevents by divert 8001: started' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$ipsd"
+	atf_check -o match:'^suricata -c .*sdwan-ids-sw1.yaml --pidfile .*sdwan-ids-sw1.pid -d 8001 -D$' cat suricata.log
+	atf_check -o match:'"ids":\[\{"name":"sw1","interfaces":\["wg5"\],"mode":"prevent","divert":8001,"running":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	kill "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
+	sleep 2
+	atf_check -o match:'"kind":"sdwan-fault","data":\{"type":"ids","severity":"Critical","object":"sw1","by":"suricata","description":"Suricata sw1, which prevents, is not running' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ipsd"
+	sleep 2
+	atf_check -o match:'"kind":"sdwan-fault","data":\{"type":"ids","severity":"Cleared","object":"sw1","description":"Suricata sw1 runs again"' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
+	test ! -f "$(dirname "$f")/sdwan-ids-sw1.yaml" || atf_fail "the suricata file stayed"
+	kill -0 "$spid" 2>/dev/null && atf_fail "suricata still runs"
+	atf_check -o match:'"ids":\[\]' "$JGC" -c "$SOCK" sdwan
+	# Made again, its old alerts are not told again: the one it writes
+	# now is.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ids"
+	sleep 2
+	atf_check -o match:'"alerts_seen":1,' "$JGC" -c "$SOCK" sdwan
+	atf_check -o inline:'4\n' sh -c "grep -c '\"event_type\":\"alert\"' '$(dirname "$f")/sdwan-ids-sw1.d/eve.json'"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()
 {
@@ -4478,6 +4559,86 @@ rtadvd_cleanup()
 	stop_daemon
 }
 
+atf_test_case jail_conf cleanup
+jail_conf_head()
+{
+	atf_set "descr" "jail-conf: the jails' defaults, a template, a jail made from a base snapshot with its file, and taken away"
+}
+jail_conf_body()
+{
+	# zfs(8): a dataset there or not by a marker, its mountpoint, what
+	# it is told logged; send writes a stream, recv reads it.
+	cat > fake-zfs <<EOS
+#!/bin/sh
+echo "zfs \$*" >> $(pwd)/zfs.log
+case "\$1" in
+list) [ -e "$(pwd)/ds.\$(echo "\$5" | tr / _)" ] ;;
+get) cat "$(pwd)/mp.\$(echo "\$6" | tr / _)" 2>/dev/null || exit 1 ;;
+clone) touch "$(pwd)/ds.\$(echo "\$5" | tr / _)"; echo "\$3" | sed 's/^mountpoint=//' > "$(pwd)/mp.\$(echo "\$5" | tr / _)" ;;
+send) echo "stream of \$2" ;;
+recv) cat > "$(pwd)/recv.in"; [ -e $(pwd)/recv.fail ] && exit 1; touch "$(pwd)/ds.\$(echo "\$4" | tr / _)" ;;
+destroy) rm -f "$(pwd)/ds.\$(echo "\$3" | tr / _)" ;;
+esac
+EOS
+	chmod +x fake-zfs
+	DAEMON_ARGS="-z $(pwd)/fake-zfs"
+	start_daemon
+	d=$(pwd)/etc
+	# The defaults every jail file includes, the file before kept; one
+	# jail(8) does not take is refused and the one before put back.
+	printf 'path = "/usr/jails/${name}";\nhost.hostname = "${name}.example.org";\nexec.start = "/bin/sh /etc/rc";\nmount.devfs;\n' > defaults.conf
+	atf_check -o match:'done +jail defaults' "$JGC" -c "$SOCK" jailconf defaults defaults.conf
+	atf_check cmp -s defaults.conf "$d/jail.conf"
+	test -f "$d/jail.conf.arcana.bak" || atf_fail "the jail.conf before was not kept"
+	printf 'path = "/usr/jails/${name}";\nbroken {\n' > bad.conf
+	atf_check -s exit:1 -o match:'jail\(8\) does not take it.*the one before put back' "$JGC" -c "$SOCK" jailconf defaults bad.conf
+	atf_check cmp -s defaults.conf "$d/jail.conf"
+	# A template, kept beside the jails, outside rc.d/jail's *.conf.
+	printf 'exec.created += "mkdir -p /usr/jails/${name}/x";\nallow.raw_sockets;\n' > certbot.inc
+	atf_check -o match:'done +jail template certbot' "$JGC" -c "$SOCK" jailconf template certbot certbot.inc
+	atf_check cmp -s certbot.inc "$d/jail.conf.d/certbot.inc"
+	# A jail: its dataset cloned from the base's snapshot at its path,
+	# its file read back by jail(8) and put in place, then started.
+	printf '.include "%s/jail.conf";\nwww {\n\tdevfs_ruleset = 4;\n\tip4.addr = "lo0|127.0.0.9";\n\t.include "%s/jail.conf.d/certbot.inc";\n}\n' "$d" "$d" > www.conf
+	atf_check -o match:'done +jail make www from tank/jails/base@15.0' \
+	    -o match:'fake-jail -f [^ ]+ -c www: exit status 0' \
+	    "$JGC" -t -c "$SOCK" jailconf make www www.conf tank/jails/www tank/jails/base@15.0 clone /usr/jails/www start
+	atf_check -o match:'^zfs clone -o mountpoint=/usr/jails/www tank/jails/base@15.0 tank/jails/www$' cat zfs.log
+	atf_check cmp -s www.conf "$d/jail.conf.d/www.conf"
+	# Not twice; not a file of another jail, nor of two; not where the
+	# path is not the dataset's: nothing made, the dataset taken back.
+	atf_check -s exit:1 -o match:'is there already' "$JGC" -c "$SOCK" jailconf make www www.conf
+	printf '.include "%s/jail.conf";\nmail {\n}\n' "$d" > mail.conf
+	atf_check -s exit:1 -o match:'defines 1 jail, not the one jail web2' "$JGC" -c "$SOCK" jailconf make web2 mail.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
+	test -e ds.tank_jails_web2 && atf_fail "the dataset made for a refused jail stayed"
+	test -e "$d/jail.conf.d/web2.conf" && atf_fail "a refused jail's file stayed"
+	printf '.include "%s/jail.conf";\nweb2 {\n\tpath = /elsewhere;\n}\n' "$d" > web2.conf
+	atf_check -s exit:1 -o match:'path is /elsewhere, not /usr/jails/web2' "$JGC" -c "$SOCK" jailconf make web2 web2.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
+	# A copy of its own: zfs send into zfs recv, mounted at its path.
+	printf '.include "%s/jail.conf";\nweb2 {\n}\n' "$d" > web2.conf
+	atf_check -o match:'done +jail make web2' "$JGC" -c "$SOCK" jailconf make web2 web2.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
+	atf_check -o match:'^zfs send tank/jails/base@15.0$' -o match:'^zfs recv -o mountpoint=/usr/jails/web2 tank/jails/web2$' cat zfs.log
+	atf_check -o inline:'stream of tank/jails/base@15.0\n' cat recv.in
+	# The template kept while a jail includes it.
+	atf_check -s exit:1 -o match:'certbot.inc is included by www.conf: kept' "$JGC" -c "$SOCK" jailconf untemplate certbot
+	# Checked before queued: names, datasets, the copy, the path.
+	atf_check -s exit:1 -e match:'invalid jail name' -o ignore "$JGC" -c "$SOCK" jailconf make 'a b' www.conf
+	atf_check -s exit:1 -e match:'under a pool' -o ignore "$JGC" -c "$SOCK" jailconf make x www.conf tank tank/jails/base@15.0 clone /usr/jails/x
+	atf_check -s exit:1 -e match:'clone or send' -o ignore "$JGC" -c "$SOCK" jailconf make x www.conf tank/jails/x tank/jails/base@15.0 copy /usr/jails/x
+	atf_check -s exit:1 -e match:'an absolute one' -o ignore "$JGC" -c "$SOCK" jailconf make x www.conf tank/jails/x tank/jails/base@15.0 clone usr/jails/x
+	# Taken away: its dataset only where it is mounted at its path.
+	atf_check -s exit:1 -o match:'tank/jails/web2 is not mounted at the jail' "$JGC" -c "$SOCK" jailconf remove www tank/jails/web2
+	test -f "$d/jail.conf.d/www.conf" || atf_fail "a jail was taken away when its dataset was not its"
+	atf_check -o match:'done +jail remove www' "$JGC" -c "$SOCK" jailconf remove www tank/jails/www
+	test -e "$d/jail.conf.d/www.conf" && atf_fail "the jail's file stayed"
+	atf_check -o match:'^zfs destroy -r tank/jails/www$' cat zfs.log
+	atf_check -o match:'done +jail untemplate certbot' "$JGC" -c "$SOCK" jailconf untemplate certbot
+}
+jail_conf_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case ntp
@@ -4486,6 +4647,7 @@ atf_init_test_cases()
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
+	atf_add_test_case jail_conf
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute

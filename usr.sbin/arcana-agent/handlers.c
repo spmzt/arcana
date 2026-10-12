@@ -307,6 +307,7 @@ worker(void *arg)
 	struct arc_sdwan_dhcp_rsp sdhr;
 	struct arc_sdwan_dns_rsp sdnr;
 	struct arc_sdwan_proxy_rsp sdpr;
+	struct arc_sdwan_ids_rsp sdir;
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
@@ -762,6 +763,20 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &sdpr.trace.v, &sdpr.trace.n);
 		rc = arc_sdwan_proxy_reply(j->req, &sdpr);
+		break;
+	case ARC_CMD_SDWAN_IDS:
+		what = "sdwan ids";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&sdir, 0, sizeof(sdir));
+		error = NULL;
+		ok = do_sdwan_ids(&w, j->ref, &error) == 0;
+		sdir.has_ok = true;
+		sdir.ok = ok;
+		sdir.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sdir.trace.v, &sdir.trace.n);
+		rc = arc_sdwan_ids_reply(j->req, &sdir);
 		break;
 	case ARC_CMD_SDWAN:
 		what = "sdwan";
@@ -1452,6 +1467,22 @@ arc_sdwan_dhcp_doit(cbl_req *req, const struct arc_sdwan_dhcp_req *rq,
 }
 
 int
+arc_sdwan_ids_doit(cbl_req *req, const struct arc_sdwan_ids_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '{')
+		return (reject(req, "the instances are a JSON object"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_IDS;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
 arc_sdwan_proxy_doit(cbl_req *req, const struct arc_sdwan_proxy_req *rq,
     void *arg __unused)
 {
@@ -1896,7 +1927,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_IPSEC_SA)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_JAIL_CONF)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2076,6 +2107,8 @@ check_spec(const struct arc_job_spec *sp)
 			return ("netgraph changes cannot be undone: not in "
 			    "safe mode");
 		return (ng_check(sp->verb, sp->names.v, sp->names.n));
+	case ARC_JOB_KIND_JAIL_CONF:
+		return (jail_conf_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

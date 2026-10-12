@@ -1925,6 +1925,8 @@ modal(struct html *h)
 		break;
 	case MODAL_WG_INIT:
 	case MODAL_WG_PEER:
+	case MODAL_WG_CLIENT:
+	case MODAL_WG_CONF:
 		if (!vpn_modal(h))
 			return;
 		break;
@@ -1942,6 +1944,10 @@ modal(struct html *h)
 	case MODAL_SD_POLICY:
 	case MODAL_SD_EP:
 	case MODAL_SD_MAP:
+	case MODAL_SD_SECPOL:
+	case MODAL_SD_LIST:
+	case MODAL_SD_IDENTITY:
+	case MODAL_SD_CONFIG:
 		if (!sdwan_modal(h))
 			return;
 		break;
@@ -2187,7 +2193,8 @@ modal(struct html *h)
 		/* A box that only shows is closed, not cancelled. */
 		h_fmt(h, "<div class=\"buttons\"><button type=\"button\" "
 		    "class=\"ghost\" data-act=\"close\">%s</button>",
-		    app.modal == MODAL_NHOP ? "Close" : "Cancel");
+		    app.modal == MODAL_NHOP || app.modal == MODAL_WG_CONF ?
+		    "Close" : "Cancel");
 		switch (app.modal) {
 		case MODAL_CONFIRM:
 			h_fmt(h, "<button class=\"%s\">",
@@ -2240,6 +2247,10 @@ modal(struct html *h)
 		case MODAL_WG_PEER:
 		case MODAL_IPSEC_CONN:
 			h_raw(h, "<button class=\"primary\">Add</button>");
+			break;
+		case MODAL_WG_CLIENT:
+			h_raw(h, "<button class=\"primary\">Make the client"
+			    "</button>");
 			break;
 		case MODAL_IPSEC_CHILD:
 			h_raw(h, "<button class=\"primary\">Add</button>");
@@ -2298,12 +2309,9 @@ static void
 token_qr(struct html *h, const char *token)
 {
 	static const char	 hex[] = "0123456789ABCDEF";
-	uint8_t			 qr[qrcodegen_BUFFER_LEN_MAX];
-	uint8_t			 tmp[qrcodegen_BUFFER_LEN_MAX];
 	const char		*origin, *p;
 	char			 text[600];
 	size_t			 n;
-	int			 size, x, y;
 
 	origin = app.console_origin[0] != '\0' ? app.console_origin :
 	    arc_origin();
@@ -2321,23 +2329,40 @@ token_qr(struct html *h, const char *token)
 	if (snprintf(text + n, sizeof(text) - n, "&token=%s", token) >=
 	    (int)(sizeof(text) - n))
 		return;
+	qr_svg(h, text, "Scan it with the Arcana app: it sets this console's "
+	    "address and signs in with the token.");
+}
+
+/*
+ * Any text as a QR code, an SVG dark on white whatever the theme, which
+ * is what a camera reads, with a caption under it; nothing when the
+ * text is too long for one.
+ */
+void
+qr_svg(struct html *h, const char *text, const char *caption)
+{
+	uint8_t		 qr[qrcodegen_BUFFER_LEN_MAX];
+	uint8_t		 tmp[qrcodegen_BUFFER_LEN_MAX];
+	int		 size, x, y;
+
 	if (!qrcodegen_encodeText(text, tmp, qr, qrcodegen_Ecc_MEDIUM,
 	    qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO,
 	    true))
 		return;
 	size = qrcodegen_getSize(qr);
 	h_fmt(h, "<figure class=\"token-qr\"><svg viewBox=\"-4 -4 %d %d\" "
-	    "role=\"img\" aria-label=\"The token and this console's address, "
-	    "as a QR code\" shape-rendering=\"crispEdges\"><rect x=\"-4\" "
-	    "y=\"-4\" width=\"%d\" height=\"%d\" fill=\"#fff\"/><path "
-	    "fill=\"#000\" d=\"", size + 8, size + 8, size + 8, size + 8);
+	    "role=\"img\" aria-label=\"", size + 8, size + 8);
+	h_txt(h, caption);
+	h_fmt(h, "\" shape-rendering=\"crispEdges\"><rect x=\"-4\" y=\"-4\" "
+	    "width=\"%d\" height=\"%d\" fill=\"#fff\"/><path fill=\"#000\" "
+	    "d=\"", size + 8, size + 8);
 	for (y = 0; y < size; y++)
 		for (x = 0; x < size; x++)
 			if (qrcodegen_getModule(qr, x, y))
 				h_fmt(h, "M%d %dh1v1h-1z", x, y);
-	h_raw(h, "\"/></svg><figcaption>Scan it with the Arcana app: it "
-	    "sets this console's address and signs in with the token.</figcaption>"
-	    "</figure>");
+	h_raw(h, "\"/></svg><figcaption>");
+	h_txt(h, caption);
+	h_raw(h, "</figcaption></figure>");
 }
 
 static void

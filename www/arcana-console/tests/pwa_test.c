@@ -1806,6 +1806,37 @@ part_plugins(void)
 	ATF_CHECK(system("grep -q '^set wg0 peer xTIBA5rboUvnH4htodjb6e697QjLER"
 	    "t1NAB4mZqp8Dg= endpoint 192.0.2.9:51820 allowed-ips 10.9.9.2/32 "
 	    "persistent-keepalive 25$' wg.log") == 0);
+	/* A client: the form offers the next address after the peers', the
+	 * host and the port, everything through the tunnel; made, its
+	 * configuration is shown once with its QR code, the private key in
+	 * it, the host's peer its public half. */
+	run("document.querySelector('.pane.wg button[data-act=wg-client-add]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=wg-client]')", 5);
+	run("window.wf = document.querySelector('form[data-form=wg-client]');");
+	ATF_CHECK(js_true("wf.address.value === '10.9.9.3/32' && wf.endpoint"
+	    ".value.endsWith(':51820') && wf.allowed.value === '0.0.0.0/0, ::/0' "
+	    "&& wf.keepalive.value === '25'"));
+	run("wf.name.value = 'phone'; wf.dns.value = '10.9.9.1'; "
+	    "wf.persist.checked = false; wf.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=wg-conf] pre.wg-conf') "
+	    "&& document.querySelector('form[data-form=wg-conf] svg')", 10);
+	run("window.wc = document.querySelector('pre.wg-conf').textContent;");
+	ATF_CHECK(js_true("/^\\[Interface\\]\\nPrivateKey = [A-Za-z0-9+\\/]{43}"
+	    "=\\nAddress = 10\\.9\\.9\\.3\\/32\\nDNS = 10\\.9\\.9\\.1\\n\\n"
+	    "\\[Peer\\]\\nPublicKey = HIgo/.test(wc) && wc.includes('AllowedIPs = "
+	    "0.0.0.0/0, ::/0') && wc.includes('PersistentKeepalive = 25') && "
+	    "document.querySelector('form[data-form=wg-conf] a[download="
+	    "\"phone.conf\"]') !== null"));
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -q 'allowed-ips 10.9.9.3/32$' "
+	    "wg.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -Eq '^set wg0 peer [A-Za-z0-9+/]{43}= "
+	    "allowed-ips 10.9.9.3/32$' wg.log") == 0);
+	shot("7c-wireguard-client");
+	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
 	shot("7c-wireguard");
 	/*
@@ -3512,7 +3543,9 @@ part_flows(void)
 	run("const t = document.querySelector('form[data-form=sd-doc] "
 	    "textarea'); t.value = window.sdText.replaceAll('\"vtnet2\"', "
 	    "'\"lo0\"').replace('\"geneve\"', '\"gif\"').replace(', "
-	    "\"fd00:64::/64\"', '');");
+	    "\"fd00:64::/64\"', '').replace('\"log\": true}}', '\"log\": "
+	    "true, \"ids\": {\"mode\": \"detect\", \"ruleset\": true, "
+	    "\"rules\": [\"alert tcp any any -> any 80 (sid:1000001; rev:1;)\"]}}}');");
 	run("document.querySelector('form[data-form=sd-doc] button[value="
 	    "keep]').click()");
 	wait_js("(document.querySelector('section.sdwan .notice') || {})."
@@ -3728,6 +3761,38 @@ part_flows(void)
 	ATF_CHECK(js_true("document.querySelector('input[data-input="
 	    "sd-record-filter]') !== null && document.querySelector('a[href="
 	    "\"/api/sdwan/record.csv\"]') !== null"));
+	/* Zero trust (MEF 118.1): the Access Control Policies, Subject Actor
+	 * to Target Actor, the staff zone Allowed to every zone and the
+	 * Internet, anything else Blocked; the Policy End Points; the audit
+	 * trail, intact, the document kept and applied by this key. */
+	wait_js("[...document.querySelectorAll('section.sdwan h4')].some(h => "
+	    "h.textContent.startsWith('Audit Events')) && document.querySelector("
+	    "'section.sdwan').textContent.includes('policies-applied')", 20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan table.sd "
+	    "tbody tr')].some(tr => tr.textContent.startsWith('staff') && tr"
+	    ".textContent.includes('every zone, the Internet') && tr.textContent"
+	    ".includes('Allow')) && [...document.querySelectorAll('section.sdwan "
+	    "table.sd tbody tr')].some(tr => tr.textContent.startsWith('any "
+	    "other') && tr.textContent.includes('Block')) && [...document"
+	    ".querySelectorAll('section.sdwan .chip')].some(c => c.textContent "
+	    "=== 'intact') && document.querySelector('a[href=\"/api/sdwan/audit"
+	    ".csv\"]') !== null && [...document.querySelectorAll('section.sdwan "
+	    "h4')].some(h => h.textContent.startsWith('Policy End Points'))"));
+	/* Intrusion detection: the policy's IDS in its column, the block of
+	 * the edges' Suricata, and the form's mode, rules and ruleset. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
+	    ".some(h => h.textContent.startsWith('Intrusion detection')) && "
+	    "[...document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(tr => tr.textContent.includes('detect, 1 rule and the "
+	    "ruleset'))"));
+	run("document.querySelector('button[data-act=sd-secpol-edit]').click()");
+	wait_js("document.querySelector('.modal select[name=idsmode]') !== null",
+	    5);
+	ATF_CHECK(js_true("document.querySelector('.modal select[name=idsmode]')"
+	    ".value === 'detect' && document.querySelector('.modal textarea[name="
+	    "idsrules]').value.includes('sid:1000001') && document.querySelector("
+	    "'.modal input[name=idsruleset]').checked"));
+	run("document.querySelector('.modal button[data-act=close]').click()");
 	shot("9-sdwan-security");
 	/* Identities: the example's alice, at the remote end point, with
 	 * the address the plan gave her. */

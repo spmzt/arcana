@@ -76,6 +76,8 @@ static struct {
 	ucl_object_t	*lists;		/* /api/sdwan/lists: the feeds and lists */
 	char		 record_filter[80];	/* the record's filter text */
 	ucl_object_t	*identities;	/* /api/sdwan/identities */
+	ucl_object_t	*audit;		/* /api/sdwan/audit */
+	char		 audit_filter[64];
 	char		*config;	/* an identity's configuration, shown once */
 	char		 config_name[72];
 	double		 paths_at;
@@ -518,6 +520,28 @@ identities_load(void)
 {
 
 	api("GET", "/api/sdwan/identities", NULL, identities_cb, NULL);
+}
+
+static void
+audit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)err;
+	(void)arg;
+	if (status != 200)
+		return;
+	if (sd.audit != NULL)
+		ucl_object_unref(sd.audit);
+	sd.audit = ucl_object_copy(o);
+	if (app.node == NODE_SDWAN && sd.tab == SD_SECURITY)
+		render();
+}
+
+static void
+audit_load(void)
+{
+
+	api("GET", "/api/sdwan/audit", NULL, audit_cb, NULL);
 }
 
 /* An identity issued: its configuration, shown once. */
@@ -1914,7 +1938,11 @@ view_needs(struct html *h, bool brief)
 		{ "wireguard-tools", "wg(8)", "a WireGuard tunnel or a remote "
 		    "end point; FreeBSD 15 and later have wg in the base system" },
 		{ "dnsmasq", "dnsmasq", "DHCP at a UNI" },
-		{ "squid", "Squid", "a security policy with url-filter" },
+		{ "squid", "Squid", "a security policy with url-filter or malware" },
+		{ "c-icap c-icap-modules clamav", "c-icap and ClamAV", "a security "
+		    "policy with malware; then freshclam, for ClamAV's signatures" },
+		{ "suricata", "Suricata", "a security policy with ids; then "
+		    "suricata-update, where the policy adds the ruleset" },
 	};
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
@@ -2993,6 +3021,397 @@ view_paths(struct html *h)
 /* ---- The document ----------------------------------------------------- */
 
 /*
+ * Intrusion detection on the edges (SASE-4): each edge's Suricata
+ * instances, with how many alerts each read, and the latest alerts of
+ * them all, newest first as each edge keeps them.
+ */
+static void
+view_ids(struct html *h)
+{
+	static const struct tcol	cols[] = {
+		{ "Time", "time", false }, { "Edge", "edge", false },
+		{ "Signature", "signature", false }, { "Severity", "severity",
+		true }, { "From", "src", false }, { "To", "dst", false },
+		{ "Interface", "iface", false },
+	};
+	const ucl_object_t	*v, *di, *a, **rows;
+	ucl_object_iter_t	 it, dit, ait;
+	ucl_object_t		*all, *c;
+	int			 n, r;
+
+	h_raw(h, "<div class=\"sd-block\"><h3>Intrusion detection <small "
+	    "class=\"dim\">Suricata on each edge, a plugin installed there by "
+	    "hand, an instance of each service whose policies have ids, "
+	    "watching the service's UNIs by libpcap (detect), or in their "
+	    "way, by ipfw's divert(4) (prevent); each alert comes as an "
+	    "event, sdwan-ids</small></h3><table class=\"net sd\"><thead><tr>"
+	    "<th>Edge</th><th>Instance</th><th>Interfaces</th><th>Mode</th>"
+	    "<th>State</th><th>Alerts</th></tr></thead><tbody>");
+	n = 0;
+	all = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while (sd.paths != NULL && (v = ucl_object_iterate(sd.paths, &it, true))
+	    != NULL) {
+		dit = NULL;
+		while ((di = ucl_object_iterate(jget(v, "ids"), &dit, true)) !=
+		    NULL) {
+			const ucl_object_t	*f;
+			ucl_object_iter_t	 fit = NULL;
+
+			n++;
+			h_raw(h, "<tr><td><b>");
+			h_txt(h, host_name(ucl_object_key(v)));
+			h_raw(h, "</b></td><td class=\"mono\">");
+			h_txt(h, jstr(di, "name"));
+			h_raw(h, "</td><td class=\"mono\">");
+			while ((f = ucl_object_iterate(jget(di, "interfaces"),
+			    &fit, true)) != NULL) {
+				h_txt(h, ucl_object_tostring_forced(f));
+				h_raw(h, " ");
+			}
+			h_raw(h, "</td><td>");
+			if (jint(di, "divert", 0) > 0)
+				h_fmt(h, "prevent <small class=\"dim\">ipfw divert "
+				    "%lld</small>", (long long)jint(di, "divert", 0));
+			else
+				h_raw(h, "detect <small class=\"dim\">libpcap"
+				    "</small>");
+			h_fmt(h, "</td><td><span class=\"chip st-%s\">%s</span>"
+			    "</td><td>%lld</td></tr>", jbool(di, "running") ? "up" :
+			    "down", jbool(di, "running") ? "running" : "not running",
+			    (long long)jint(di, "alerts_seen", 0));
+			ait = NULL;
+			while ((a = ucl_object_iterate(jget(di, "alerts"), &ait,
+			    true)) != NULL) {
+				c = ucl_object_copy(a);
+				ucl_object_replace_key(c, ucl_object_fromstring(
+				    host_name(ucl_object_key(v))), "edge", 0, false);
+				ucl_array_append(all, c);
+			}
+		}
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"6\" class=\"dim\">None: no policy "
+		    "has ids, or nothing is applied yet.</td></tr>");
+	h_raw(h, "</tbody></table>");
+	if (ucl_array_size(all) > 0) {
+		h_raw(h, "<h4>Latest alerts</h4><table class=\"net sd\">");
+		tbl_head(h, "sd-ids", cols, 7, 0);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows("sd-ids", all, cols, 7, app.filter);
+		for (r = 0; (a = rows[r]) != NULL; r++) {
+			h_raw(h, "<tr><td class=\"mono\">");
+			h_txt(h, jstr(a, "time") != NULL ? jstr(a, "time") : "");
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(a, "edge"));
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(a, "signature") != NULL ? jstr(a,
+			    "signature") : "");
+			h_fmt(h, " <small class=\"dim\">sid %lld</small>",
+			    (long long)jint(a, "sid", 0));
+			h_fmt(h, "</td><td><span class=\"chip st-%s\">%lld</span>"
+			    "</td><td class=\"mono\">", jint(a, "severity", 3) <= 1 ?
+			    "down" : "half", (long long)jint(a, "severity", 0));
+			h_txt(h, jstr(a, "src") != NULL ? jstr(a, "src") : "");
+			h_fmt(h, ":%lld</td><td class=\"mono\">", (long long)jint(
+			    a, "sport", 0));
+			h_txt(h, jstr(a, "dst") != NULL ? jstr(a, "dst") : "");
+			h_fmt(h, ":%lld <small class=\"dim\">", (long long)jint(a,
+			    "dport", 0));
+			h_txt(h, jstr(a, "proto") != NULL ? jstr(a, "proto") : "");
+			h_raw(h, "</small></td><td class=\"mono\">");
+			h_txt(h, jstr(a, "iface") != NULL ? jstr(a, "iface") : "");
+			h_raw(h, "</td></tr>");
+		}
+		free(rows);
+		h_raw(h, "</tbody></table>");
+	}
+	ucl_object_unref(all);
+	h_raw(h, "</div>");
+}
+
+/*
+ * The service in MEF 118.1's terms (SASE-5): the Zero Trust Framework's
+ * parts as Arcana has them, then the Access Control Policies, Subject
+ * Actor to Target Actor, as the policy map gives them, the Policy End
+ * Points, the Continuous Monitoring and the audit trail.
+ */
+static void
+view_zt(struct html *h, const ucl_object_t *sw)
+{
+	static const struct tcol	acols[] = {
+		{ "When", "when", false }, { "Event", "event", false },
+		{ "Policy Action", "action", false }, { "Policy", "policy",
+		false }, { "Where", "where", false }, { "Who", "who", false },
+		{ "Why", "why", false },
+	};
+	const ucl_object_t	*z, *pm, *pol, *cr, *adz, *e, *ep, *a, **rows;
+	ucl_object_iter_t	 it, pit, eit;
+	const char		*zn, *pn, *ing;
+	char			 tgt[600];
+	int			 nid, n, r;
+
+	h_raw(h, "<div class=\"sd-block\"><h3>Zero trust <small class=\"dim\">"
+	    "MEF 118.1: Subject Actors reach Target Actors only as a Policy "
+	    "Allows; with no Policy, they are Blocked</small></h3><p class=\""
+	    "dim\">The console is the Policy Administration Point (the "
+	    "document), the Policy Decision Point (its plan) and the Policy "
+	    "Information Point (identities, sessions, lists); each edge is a "
+	    "Policy End Point, its Policy Enforcement Point ipfw with the "
+	    "functions below. The Identity Provider is the console: an "
+	    "identity is authenticated by its WireGuard key, and its Role "
+	    "is its zone. The console's users, each by a security key, are "
+	    "System Administrators: they alone change the Policies.</p>");
+	/* Access Control Policies: a zone's policies, and the end points'
+	 * own map, each a pair with its Policy Action. */
+	h_raw(h, "<h4>Access Control Policies <small class=\"dim\">Subject "
+	    "Actor to Target Actor, by application flow</small></h4><table "
+	    "class=\"net sd\"><thead><tr><th>Subject Actor</th><th>Application "
+	    "flow</th><th>Target Actors</th><th>Policy Action</th><th>Policy"
+	    "</th><th>Security policy</th><th>Where</th></tr></thead><tbody>");
+	n = 0;
+	for (int pass = 0; pass < 2; pass++) {
+		it = NULL;
+		while ((pass == 0 && (z = ucl_object_iterate(jget(sw, "zones"),
+		    &it, true)) != NULL) || (pass == 1 && (z =
+		    ucl_object_iterate(jget(sw, "end_points"), &it, true)) !=
+		    NULL)) {
+			pit = NULL;
+			while ((pm = ucl_object_iterate(jget(z, pass == 0 ?
+			    "policies" : "policy_map"), &pit, true)) != NULL) {
+				zn = pass == 0 ? jstr(z, "name") : jstr(pm, "zone");
+				pn = pass == 0 ? jstr(pm, "policy") : jstr(pm,
+				    "ingress");
+				ing = pn;
+				pol = pn != NULL ? jfind(jget(sw, "policies"),
+				    "name", pn) : NULL;
+				cr = jget(pol, "criteria");
+				/* Who the Subject is: the zone's hosts, and
+				 * the identities whose Role it is. */
+				nid = 0;
+				eit = NULL;
+				while (sd.identities != NULL && (e =
+				    ucl_object_iterate(jget(sd.identities,
+				    "identities"), &eit, true)) != NULL)
+					if (jstr(e, "zone") != NULL && zn != NULL &&
+					    strcmp(jstr(e, "zone"), zn) == 0 &&
+					    jstr(e, "swvc") != NULL && strcmp(jstr(e,
+					    "swvc"), jstr(sw, "id")) == 0)
+						nid++;
+				/* The Targets: the destination zones the
+				 * policy allows (Self when it says none,
+				 * R62), and the Internet where it breaks
+				 * out. */
+				tgt[0] = '\0';
+				adz = jget(cr, "allowed-destination-zones");
+				if (adz != NULL && ucl_object_type(adz) ==
+				    UCL_STRING)
+					snprintf(tgt, sizeof(tgt), "every zone");
+				else if (adz != NULL) {
+					const ucl_object_t	*d;
+					ucl_object_iter_t	 dit = NULL;
+
+					while ((d = ucl_object_iterate(adz, &dit,
+					    true)) != NULL)
+						snprintf(tgt + strlen(tgt), sizeof(tgt) -
+						    strlen(tgt), "%s%s", tgt[0] != '\0' ?
+						    ", " : "", strcmp(
+						    ucl_object_tostring_forced(d),
+						    "Self") == 0 && zn != NULL ? zn :
+						    ucl_object_tostring_forced(d));
+				} else if (pol != NULL && zn != NULL)
+					snprintf(tgt, sizeof(tgt), "%s", zn);
+				if (jstr(cr, "internet-breakout") != NULL &&
+				    strcmp(jstr(cr, "internet-breakout"),
+				    "disabled") != 0)
+					snprintf(tgt + strlen(tgt), sizeof(tgt) -
+					    strlen(tgt), "%sthe Internet", tgt[0] !=
+					    '\0' ? ", " : "");
+				n++;
+				h_raw(h, "<tr><td><b>");
+				h_txt(h, zn != NULL ? zn : "?");
+				h_raw(h, "</b>");
+				if (nid > 0)
+					h_fmt(h, " <small class=\"dim\">and %d "
+					    "identit%s</small>", nid, nid == 1 ? "y" :
+					    "ies");
+				h_raw(h, "</td><td>");
+				h_txt(h, jstr(pm, "app") != NULL ? jstr(pm, "app") :
+				    "");
+				h_raw(h, "</td><td>");
+				h_txt(h, tgt[0] != '\0' ? tgt : "none");
+				if (pol != NULL)
+					h_raw(h, "</td><td><span class=\"chip st-up\">"
+					    "Allow</span></td><td>");
+				else
+					h_raw(h, "</td><td><span class=\"chip "
+					    "st-down\">Block</span></td><td>");
+				h_txt(h, ing != NULL ? ing : "none");
+				h_raw(h, "</td><td>");
+				if (jstr(cr, "af-security-ingress") != NULL)
+					h_txt(h, jstr(cr, "af-security-ingress"));
+				else
+					h_raw(h, "<span class=\"dim\">—</span>");
+				h_raw(h, "</td><td>");
+				if (pass == 0)
+					h_raw(h, "every end point");
+				else {
+					h_raw(h, "end point ");
+					h_txt(h, jstr(z, "id"));
+				}
+				h_raw(h, "</td></tr>");
+			}
+		}
+	}
+	h_fmt(h, "<tr class=\"dim\"><td>any other</td><td>any</td><td>any</td>"
+	    "<td><span class=\"chip st-down\">Block</span></td><td colspan=\"3\">"
+	    "no Policy: Blocked (§7)%s</td></tr></tbody></table>", n == 0 ?
+	    "; this service has none yet" : "");
+	/* The Policy End Points: each edge of the service, its
+	 * enforcement as the agent reads. */
+	h_raw(h, "<h4>Policy End Points <small class=\"dim\">the edges, "
+	    "where the Policies are enforced</small></h4><table class=\"net "
+	    "sd\"><thead><tr><th>Edge</th><th>Policy Enforcement</th></tr>"
+	    "</thead><tbody>");
+	n = 0;
+	it = NULL;
+	while ((ep = ucl_object_iterate(jget(sd.doc, "edges"), &it, true)) !=
+	    NULL) {
+		const ucl_object_t	*st = sd.paths != NULL ? jget(sd.paths,
+		    jstr(ep, "server")) : NULL, *x;
+		ucl_object_iter_t	 xit;
+		bool			 here = false;
+
+		eit = NULL;
+		while ((e = ucl_object_iterate(jget(sw, "end_points"), &eit,
+		    true)) != NULL)
+			if (jstr(e, "edge") != NULL && strcmp(jstr(e, "edge"),
+			    jstr(ep, "server")) == 0)
+				here = true;
+		if (!here)
+			continue;
+		n++;
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, host_name(jstr(ep, "server")));
+		h_fmt(h, "</b></td><td>ipfw, set 30, %lld rule%s", (long long)jint(
+		    jget(st, "rules"), "rules", 0), jint(jget(st, "rules"),
+		    "rules", 0) == 1 ? "" : "s");
+		xit = NULL;
+		while ((x = ucl_object_iterate(jget(st, "dns"), &xit, true)) !=
+		    NULL)
+			h_raw(h, "; unbound, DNS filter");
+		xit = NULL;
+		while ((x = ucl_object_iterate(jget(st, "proxy"), &xit, true)) !=
+		    NULL)
+			h_fmt(h, "; Squid, URL filter%s", jbool(x, "icap") ?
+			    "; c-icap and ClamAV, malware" : "");
+		xit = NULL;
+		while ((x = ucl_object_iterate(jget(st, "ids"), &xit, true)) !=
+		    NULL)
+			h_fmt(h, "; Suricata, %s", jint(x, "divert", 0) > 0 ?
+			    "intrusion prevented" : "intrusion detected");
+		if (st == NULL)
+			h_raw(h, " <span class=\"dim\">(not read yet)</span>");
+		h_raw(h, "</td></tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"2\" class=\"dim\">None: the service "
+		    "has no end point yet.</td></tr>");
+	h_raw(h, "</tbody></table>");
+	/* Continuous Monitoring: by time, the remote end points'
+	 * re-authorisation; by event, what the edges log and alert. */
+	h_raw(h, "<h4>Continuous Monitoring <small class=\"dim\">§18</small>"
+	    "</h4><ul class=\"sd-list\">");
+	it = NULL;
+	n = 0;
+	while ((ep = ucl_object_iterate(jget(sw, "end_points"), &it, true)) !=
+	    NULL) {
+		if ((a = jget(ep, "remote")) == NULL)
+			continue;
+		n++;
+		h_raw(h, "<li><b>By time</b>, end point ");
+		h_txt(h, jstr(ep, "id"));
+		if (jint(a, "reauth", 0) > 0)
+			h_fmt(h, ": every identity authenticates again after "
+			    "%lld min (t), Blocked until then", (long long)jint(a,
+			    "reauth", 0) / 60);
+		else
+			h_raw(h, ": none (t is None); a revoked identity is "
+			    "Blocked at once");
+		h_raw(h, "</li>");
+	}
+	if (n == 0)
+		h_raw(h, "<li><b>By time</b>: none, the service has no remote "
+		    "end point</li>");
+	h_raw(h, "<li><b>By event</b>: each deny a policy logs (the record "
+	    "below), each Suricata alert, each fault, as events of the edges"
+	    "</li></ul>");
+	/* The audit trail: an Audit Event for each Policy Action, the
+	 * chain of it checked by the console. */
+	h_raw(h, "<h4>Audit Events <small class=\"dim\">§13.1: each Policy "
+	    "Action and each change to the Policies, kept by the console, "
+	    "each event's HMAC chained to the one before</small><span class=\""
+	    "pane-actions\"><input type=\"search\" data-input=\""
+	    "sd-audit-filter\" placeholder=\"filter: an identity, a zone, a "
+	    "key\"");
+	h_attr(h, "value", sd.audit_filter);
+	h_raw(h, "><a class=\"ghost small\" href=\"/api/sdwan/audit.csv\" "
+	    "download=\"sdwan-audit.csv\" title=\"The audit trail as CSV\">CSV"
+	    "</a></span></h4>");
+	if (sd.audit == NULL)
+		h_raw(h, "<p class=\"dim\">Reading…</p>");
+	else {
+		if (jbool(sd.audit, "intact"))
+			h_fmt(h, "<p><span class=\"chip st-up\">intact</span> "
+			    "<span class=\"dim\">%lld event%s, the chain whole"
+			    "</span></p>", (long long)jint(sd.audit, "count", 0),
+			    jint(sd.audit, "count", 0) == 1 ? "" : "s");
+		else
+			h_fmt(h, "<p><span class=\"chip st-down\">altered</span> "
+			    "the chain breaks at event %lld: it was changed, or "
+			    "one was taken away or put in, after it was "
+			    "written</p>", (long long)jint(sd.audit, "broken_at",
+			    0));
+		h_raw(h, "<table class=\"net sd\">");
+		tbl_head(h, "sd-audit", acols, 7, 0);
+		h_raw(h, "<tbody>");
+		rows = tbl_rows("sd-audit", jget(sd.audit, "events"), acols, 7,
+		    sd.audit_filter[0] != '\0' ? sd.audit_filter : app.filter);
+		for (r = 0; (a = rows[r]) != NULL; r++) {
+			h_raw(h, "<tr><td class=\"mono\">");
+			h_txt(h, jstr(a, "when") != NULL ? jstr(a, "when") : "");
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(a, "event") != NULL ? jstr(a, "event") : "");
+			h_fmt(h, "</td><td><span class=\"chip st-%s\">",
+			    jstr(a, "action") != NULL && strcmp(jstr(a, "action"),
+			    "Block") == 0 ? "down" : jstr(a, "action") != NULL &&
+			    strcmp(jstr(a, "action"), "Allow") == 0 ? "up" :
+			    "half");
+			h_txt(h, jstr(a, "action") != NULL ? jstr(a, "action") :
+			    "");
+			h_raw(h, "</span></td><td>");
+			h_txt(h, jstr(a, "policy") != NULL ? jstr(a, "policy") :
+			    "");
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(a, "where") != NULL ? jstr(a, "where") : "");
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(a, "who") != NULL ? jstr(a, "who") : "");
+			h_raw(h, "</td><td>");
+			h_txt(h, jstr(a, "why") != NULL ? jstr(a, "why") : "");
+			h_raw(h, "<small class=\"dim\"> ");
+			h_txt(h, jstr(a, "how") != NULL ? jstr(a, "how") : "");
+			h_raw(h, "</small></td></tr>");
+		}
+		if (r == 0)
+			h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">None yet."
+			    "</td></tr>");
+		free(rows);
+		h_raw(h, "</tbody></table>");
+	}
+	h_raw(h, "</div>");
+}
+
+/*
  * The security policies of the service shown (MEF 88): each a name and
  * its criteria, where a policy's af-security-ingress or -egress names
  * it; what each denied comes with the counts (SASE-1).
@@ -3024,6 +3443,8 @@ view_security(struct html *h)
 		    "one.</p>");
 		return;
 	}
+	view_zt(h, sw);
+	h_raw(h, "<h2 class=\"sd-sect\">Security Functions</h2>");
 	h_raw(h, "<div class=\"sd-block\"><h3>Security policies <small class=\""
 	    "dim\">MEF 88, by name (§9.10): addresses allowed and denied "
 	    "(ipfw tables), domains denied and DNS kept to the provider's "
@@ -3033,7 +3454,9 @@ view_security(struct html *h)
 	    "<span class=\"pane-actions\"><button class=\"ghost small\" data-act="
 	    "\"sd-secpol-add\">+ policy</button></span></h3><table class=\"net "
 	    "sd\"><thead><tr><th>Name</th><th>Addresses</th><th>Denied</th><th>"
-	    "DNS</th><th>Rate</th><th>Log</th><th>Named by</th><th></th></tr>"
+	    "DNS</th><th>Rate</th><th>Log</th><th>Malware</th><th>IDS</th><th>"
+	    "Named by</th>"
+	    "<th></th></tr>"
 	    "</thead><tbody>");
 	n = 0;
 	it = NULL;
@@ -3100,6 +3523,19 @@ view_security(struct html *h)
 			h_raw(h, "<span class=\"dim\">—</span>");
 		h_raw(h, "</td><td>");
 		h_raw(h, jbool(cr, "log") ? "yes" : "<span class=\"dim\">no</span>");
+		h_raw(h, "</td><td>");
+		h_raw(h, jbool(cr, "malware") ? "scanned" : "<span class=\"dim\">"
+		    "no</span>");
+		h_raw(h, "</td><td>");
+		if ((b = jget(cr, "ids")) != NULL) {
+			unsigned	nr = jget(b, "rules") != NULL ?
+			    ucl_array_size(jget(b, "rules")) : 0;
+
+			h_fmt(h, "%s, %u rule%s%s", jstr(b, "mode") != NULL ?
+			    jstr(b, "mode") : "detect", nr, nr == 1 ? "" : "s",
+			    jbool(b, "ruleset") ? " and the ruleset" : "");
+		} else
+			h_raw(h, "<span class=\"dim\">no</span>");
 		h_raw(h, "</td><td class=\"dim\">");
 		pit = NULL;
 		while ((pol = ucl_object_iterate(jget(sw, "policies"), &pit, true))
@@ -3122,7 +3558,7 @@ view_security(struct html *h)
 		h_raw(h, ">×</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"8\" class=\"dim\">None yet.</td></tr>");
+		h_raw(h, "<tr><td colspan=\"10\" class=\"dim\">None yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 	/* The lists the policies name: feeds the console fetches, and
 	 * pasted ones, each as kept with its version. */
@@ -3353,6 +3789,7 @@ view_security(struct html *h)
 		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: no policy "
 		    "filters URLs, or nothing is applied yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
+	view_ids(h);
 }
 
 static void
@@ -4212,6 +4649,54 @@ sdwan_modal_service(struct html *h)
 			text_field(h, "URL domain lists", "urllists", v != NULL &&
 			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
 			    : "", "blocked", "Lists by name, their domains refused.");
+		}
+		/* Malware, by c-icap and ClamAV behind the same Squid. */
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "malware\" value=\"1\"%s> Scan for malware (malware)<small>"
+		    "What comes back over HTTP, and over TLS where it is opened "
+		    "(inspect), scanned by ClamAV through c-icap, behind the "
+		    "same Squid: plugins installed by hand (c-icap, "
+		    "c-icap-modules, clamav and its signatures).</small></label>",
+		    jbool(cr, "malware") ? " checked" : "");
+		/* Intrusion detection, by Suricata on the UNIs (SASE-4). */
+		{
+			const ucl_object_t	*ids = jget(cr, "ids"), *r;
+			ucl_object_iter_t	 rit = NULL;
+
+			const char		*m = jstr(ids, "mode");
+
+			h_fmt(h, "<label>Intrusion detection <select name=\""
+			    "idsmode\"><option value=\"\"%s>none</option><option "
+			    "value=\"detect\"%s>alerts, nothing stopped (detect)"
+			    "</option><option value=\"prevent\"%s>in the way, what "
+			    "a drop rule matches stopped (prevent)</option></select>"
+			    "<small>By Suricata on the edges, a plugin installed "
+			    "there by hand, on the service's UNIs; what it finds "
+			    "comes as events (ids). Where it prevents, ipfw diverts "
+			    "the UNIs' traffic through it, and while it is not "
+			    "running nothing passes there.</small></label>", ids ==
+			    NULL ? " selected" : "", ids != NULL && (m == NULL ||
+			    strcmp(m, "prevent") != 0) ? " selected" : "", m !=
+			    NULL && strcmp(m, "prevent") == 0 ? " selected" : "");
+			h_raw(h, "<label>Rules of its own<textarea name=\"idsrules\" "
+			    "rows=\"4\" placeholder=\"alert http any any -&gt; "
+			    "$HOME_NET any (msg:&quot;...&quot;; sid:1000001; rev:1;)"
+			    "\">");
+			while ((r = ucl_object_iterate(jget(ids, "rules"), &rit,
+			    true)) != NULL) {
+				h_txt(h, ucl_object_tostring_forced(r));
+				h_raw(h, "\n");
+			}
+			h_raw(h, "</textarea><small>Suricata rules, one a line; "
+			    "the edge checks them (suricata -T) before they run."
+			    "</small></label>");
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"idsruleset\" value=\"1\"%s> Add the ruleset "
+			    "suricata-update keeps on the edge<small>%s</small>"
+			    "</label>", jbool(ids, "ruleset") ? " checked" : "",
+			    "/var/lib/suricata/rules/suricata.rules, fetched by "
+			    "the admin with suricata-update (Emerging Threats Open "
+			    "by default).");
 		}
 		return (true);
 	}
@@ -5188,6 +5673,40 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 				put_list(b, "lists", jstr(f, "urllists"));
 			ucl_object_insert_key(cr, b, "url-filter", 0, false);
 		}
+		if (checked(f, "malware"))
+			ucl_object_insert_key(cr, ucl_object_frombool(true),
+			    "malware", 0, false);
+		if (jstr(f, "idsmode") != NULL && jstr(f, "idsmode")[0] != '\0') {
+			ucl_object_t	*rl = ucl_object_typed_new(UCL_ARRAY);
+			const char	*t = jstr(f, "idsrules"), *e;
+
+			b = ucl_object_typed_new(UCL_OBJECT);
+			put_str(b, "mode", jstr(f, "idsmode"));
+			while (t != NULL && *t != '\0') {
+				size_t	n;
+
+				e = strchr(t, '\n');
+				n = e != NULL ? (size_t)(e - t) : strlen(t);
+				while (n > 0 && (t[n - 1] == '\r' || t[n - 1] == ' '))
+					n--;
+				while (n > 0 && *t == ' ') {
+					t++;
+					n--;
+				}
+				if (n > 0 && *t != '#')
+					ucl_array_append(rl, ucl_object_fromlstring(t,
+					    n));
+				t = e != NULL ? e + 1 : NULL;
+			}
+			if (ucl_array_size(rl) > 0)
+				ucl_object_insert_key(b, rl, "rules", 0, false);
+			else
+				ucl_object_unref(rl);
+			if (checked(f, "idsruleset"))
+				ucl_object_insert_key(b, ucl_object_frombool(true),
+				    "ruleset", 0, false);
+			ucl_object_insert_key(cr, b, "ids", 0, false);
+		}
 		ucl_object_insert_key(o, cr, "criteria", 0, false);
 		list_put(sw, "security_policies", "name", was, o);
 	} else if (strcmp(form, "sd-flow") == 0) {
@@ -5913,6 +6432,10 @@ sdwan_action(const char *act, const char *arg, const char *value)
 			plan_load();
 		else if (sd.tab == SD_PATHS || sd.tab == SD_SECURITY)
 			paths_load();
+		if (sd.tab == SD_SECURITY) {
+			identities_load();
+			audit_load();
+		}
 		else if (sd.tab == SD_IDENTITIES)
 			identities_load();
 		sd.note[0] = '\0';
@@ -5925,6 +6448,8 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sd.tab = SD_SERVICES;
 	} else if (strcmp(act, "input:sd-swvc") == 0)
 		snprintf(sd.swvc, sizeof(sd.swvc), "%s", value);
+	else if (strcmp(act, "input:sd-audit-filter") == 0)
+		snprintf(sd.audit_filter, sizeof(sd.audit_filter), "%s", value);
 	else if (strcmp(act, "input:sd-record-filter") == 0)
 		snprintf(sd.record_filter, sizeof(sd.record_filter), "%s", value);
 	else if (strcmp(act, "sd-example") == 0)

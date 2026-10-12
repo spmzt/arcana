@@ -3490,7 +3490,10 @@ static const char sdwan_good[] =
     "\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]},"
     "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]},"
     "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true,"
-    "\"url-filter\":{\"mode\":\"sni\",\"deny\":[\"bad.example\"]}}}],"
+    "\"url-filter\":{\"mode\":\"sni\",\"deny\":[\"bad.example\"]},"
+    "\"malware\":true,\"ids\":{\"mode\":\"prevent\",\"ruleset\":true,"
+    "\"rules\":[\"alert http any any -> $HOME_NET any (msg:\\\"x\\\"; "
+    "sid:1000001; rev:1;)\"]}}}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
     "\"groups\":[\"bulk\"],"
     "\"flows\":[{\"name\":\"web\",\"criteria\":{\"dport\":[80,\"https\"],"
@@ -3647,6 +3650,12 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"log\":true,", "\"log\":true,\"nope\":true,", "not a criterion" },
 		/* The URL filter (SASE-4): a mode, sni or inspect; domains. */
 		{ "\"mode\":\"sni\"", "\"mode\":\"spy\"", "sni or inspect" },
+		/* Intrusion detection (SASE-4): detect, rules with a sid. */
+		{ "\"mode\":\"prevent\"", "\"mode\":\"block\"",
+		    "a mode, detect or prevent" },
+		{ "sid:1000001; rev:1;)", "rev:1;)", "is not a Suricata rule" },
+		{ "\"alert http any", "\"shout http any", "is not a Suricata rule" },
+		{ "\"ruleset\":true", "\"ruleset\":\"yes\"", "ids.ruleset is true" },
 		{ "\"deny\":[\"bad.example\"]", "\"deny\":[\"bad example\"]",
 		    "not a domain name" },
 		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/24\"],"
@@ -4393,6 +4402,40 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    r.body, "ssl_bump terminate denied_site\\nssl_bump splice all") !=
 	    NULL && strstr(r.body, "\"deny\":\".bad.example\\n\"") != NULL, "%s",
 	    r.body);
+	/* Malware (MEF 88): what comes back goes to c-icap by ICAP, on the
+	 * edge's own address in the service at the service's port, which
+	 * takes Squid's address alone; c-icap scans with ClamAV. */
+	ATF_CHECK_MSG(strstr(r.body, "icap_service sdwan_av respmod_precache "
+	    "bypass=off icap://10.1.0.1:1354/avscan") != NULL && strstr(r.body,
+	    "\"icap\":\"# Written by the Arcana console") != NULL && strstr(
+	    r.body, "Service avscan virus_scan.so") != NULL && strstr(r.body,
+	    "Port 10.1.0.1:1354\\nacl squid src 10.1.0.1/255.255.255.255") !=
+	    NULL && strstr(r.body, "client_access deny all") != NULL && strstr(
+	    r.body, "\"plugin\":"
+	    "\"c-icap\",\"package\":\"c-icap c-icap-modules clamav\"") !=
+	    NULL, "%s", r.body);
+	/* Intrusion detection (MEF 88): Suricata on the service's UNIs at
+	 * each edge, its home the UNIs' subnets, the policy's rules and the
+	 * ruleset suricata-update keeps; Suricata a need.  It prevents: the
+	 * UNI's traffic both ways diverted to it as it comes in, on the
+	 * service's port, one rule before the way in, and given back to
+	 * the service's table there. */
+	ATF_CHECK_MSG(strstr(r.body, "\"divert\":8001") != NULL && strstr(
+	    r.body, "\"9 divert 8001 ip4 from any to any in recv ") != NULL &&
+	    strstr(r.body, "\"9 divert 8001 ip4 from any to 10.1.0.0/24 in not "
+	    "recv ") != NULL && strstr(r.body, " not dst-ip me\",") != NULL &&
+	    strstr(r.body, "\"10 setfib 1 ip4 from any to 10.1.0.0/24 in "
+	    "diverted-loopback not dst-ip me\"") != NULL && strstr(r.body,
+	    "async-oneside: true\\n  drop-invalid: no") != NULL, "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"sdwan-ids\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"interfaces\":[\"") != NULL && strstr(r.body,
+	    "default-log-dir: @LOGDIR@") != NULL && strstr(r.body,
+	    "HOME_NET: \\\"[10.1.0.0/24") != NULL && strstr(r.body,
+	    "  - @RULES@\\n  - /var/lib/suricata/rules/suricata.rules") != NULL &&
+	    strstr(r.body, "\"rules\":\"alert http any any -> $HOME_NET any "
+	    "(msg:\\\"x\\\"; sid:1000001; rev:1;)\\n\"") != NULL && strstr(
+	    r.body, "\"plugin\":\"suricata\",\"package\":\"suricata\"") != NULL,
+	    "%s", r.body);
 	resp_free(&r);
 	/* The record: the edges' logged packets read now; none yet. */
 	http("GET", "/api/sdwan/record?swvc=acme&policy=guard", NULL, &r);
@@ -4446,6 +4489,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	/* The proxy, by the stand-ins: parsed, started in the table. */
 	ATF_CHECK(system("grep -q '^squid -k parse -f .*sdwan-proxy-sw1.conf' "
 	    "squid.log && grep -q '^setfib -F 1 .*tools/squid -f .*sdwan-proxy-"
+	    "sw1.conf' setfib.log") == 0);
+	/* Its scanner, c-icap, started in the table before it. */
+	ATF_CHECK(system("grep -q '^setfib -F 1 .*tools/c-icap -f .*sdwan-icap-"
 	    "sw1.conf' setfib.log") == 0);
 	/* Identities (SASE-3): one issued for a name, its key pair made
 	 * here, the configuration answered once with its address, the
@@ -4506,6 +4552,40 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    NULL, &r);
 	EXPECT(&r, 404);
 	resp_free(&r);
+	/* The audit trail (MEF 118.1 §13.1): the issue an Allow, the revoke a
+	 * Block, the document kept and the apply by the System
+	 * Administrator, each with who did it, newest first; the chain
+	 * whole.  A line altered on disk, the read says where it broke. */
+	http("GET", "/api/sdwan/audit", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(ucl_object_toboolean(ucl_object_lookup(r.json, "intact"))
+	    && strcmp(jstr(&r, "events.0.event"), "identity-revoked") == 0 &&
+	    strcmp(jstr(&r, "events.0.action"), "Block") == 0 &&
+	    strcmp(jstr(&r, "events.0.who"), "key -7") == 0 && strcmp(jstr(&r,
+	    "events.0.policy"), "office") == 0 && strstr(jstr(&r,
+	    "events.0.where"), "end point road of acme") != NULL && strstr(
+	    r.body, "\"event\":\"identity-issued\",\"action\":\"Allow\"") !=
+	    NULL && strstr(r.body, "\"event\":\"policies-changed\",\"action\":"
+	    "\"Administer\"") != NULL && strstr(r.body, "\"event\":\""
+	    "policies-applied\"") != NULL && strstr(r.body, "\"prev\"") == NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/sdwan/audit.csv", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strncmp(r.body, "seq,when,event,action,policy,how,where,"
+	    "who,why\n", 45) == 0 && strstr(r.body, ",\"identity-revoked\","
+	    "\"Block\",\"office\",") != NULL, "%s", r.body);
+	resp_free(&r);
+	ATF_REQUIRE(system("sed -i '' '2s/\"Allow\"/\"Block\"/; "
+	    "2s/\"Administer\"/\"Allow\"/' data/sdwan-audit.jsonl") == 0);
+	http("GET", "/api/sdwan/audit", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(!ucl_object_toboolean(ucl_object_lookup(r.json,
+	    "intact")) && ucl_object_toint(ucl_object_lookup(r.json,
+	    "broken_at")) == 2, "%s", r.body);
+	resp_free(&r);
+	ATF_CHECK(system("stat -f %Lp data/sdwan-audit.key | grep -qx 600 && "
+	    "stat -f %Lp data/sdwan-audit.jsonl | grep -qx 600") == 0);
 	/* The remote end point's wg, by the stand-in: listening, the
 	 * identity its peer. */
 	ATF_CHECK(system("grep -q '^set wg5 listen-port 51820' wg.log && grep "

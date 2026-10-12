@@ -1823,6 +1823,7 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 static const ucl_object_t *sec_of(const ucl_object_t *, const ucl_object_t *,
     const char *, int *);
 static bool	 url_filters(const ucl_object_t *, bool *);
+static bool	 malware_scan(const ucl_object_t *);
 static bool	 remote_addr(struct plan *, const ucl_object_t *,
 		    const ucl_object_t *, const char *, char *, size_t);
 static const char *uni_ifname(struct plan *, const ucl_object_t *,
@@ -1897,6 +1898,73 @@ url_filters(const ucl_object_t *sw, bool *inspectp)
 }
 
 /*
+ * Whether a service's security policies, as its policies name them,
+ * scan for malware (SASE-4, MEF 88's malware criterion): what comes
+ * back over cleartext HTTP, and over TLS where it is opened, goes from
+ * Squid to c-icap by ICAP and is scanned there by ClamAV.
+ */
+static bool
+malware_scan(const ucl_object_t *sw)
+{
+	const ucl_object_t	*pol, *sec;
+	ucl_object_iter_t	 it;
+	int			 si, i;
+
+	it = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &it, true)) != NULL)
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec != NULL && ucl_object_toboolean(ucl_object_lookup(
+			    ucl_object_lookup(sec, "criteria"), "malware")))
+				return (true);
+		}
+	return (false);
+}
+
+/* The port a service's c-icap answers its Squid on. */
+#define	ICAP_PORT(fib)	(1344 + 10 * (int)(fib))
+
+/*
+ * c-icap's configuration for a service at an edge: an ICAP service
+ * avscan that scans with ClamAV's module (c-icap-modules), on the
+ * edge's own address in the service (own), where the service's Squid
+ * reaches it, and taking no one else: the loopback is not the
+ * service's table's (net.inet.tcp.bind_all_fibs is 0), so nothing in
+ * the table can bind it.  The agent places @ICAPPID@ and @ICAPCMD@.
+ */
+static char *
+icap_conf(const ucl_object_t *sw, const char *sid, const char *own)
+{
+	struct kore_buf	*b;
+	char		*out;
+	intmax_t	 fib;
+
+	fib = (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	b = kore_buf_alloc(1024);
+	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	    "at %s, in routing table %jd.\n# Malware scanning of its security "
+	    "policies (MEF 88), by c-icap and ClamAV, for its Squid.\n"
+	    "PidFile @ICAPPID@\nCommandsSocket @ICAPCMD@\n"
+	    "Port %s:%d\nacl squid src %s/255.255.255.255\nacl all src "
+	    "0.0.0.0/0.0.0.0\nclient_access allow squid\nclient_access deny all\n"
+	    "StartServers 1\nMaxServers 4\n"
+	    "ServerLog /var/log/c-icap/sdwan-sw%jd-server.log\n"
+	    "AccessLog /var/log/c-icap/sdwan-sw%jd-access.log\n"
+	    "Module common clamav_mod.so\n"
+	    "Service avscan virus_scan.so\n"
+	    "virus_scan.ScanFileTypes TEXT DATA EXECUTABLE ARCHIVE DOCUMENT\n"
+	    "virus_scan.SendPercentData 5\nvirus_scan.StartSendPercentDataAfter "
+	    "2M\nvirus_scan.MaxObjectSize 32M\nvirus_scan.DefaultEngine clamav\n",
+	    str(sw, "id"), server_name_of(sid), fib, own, ICAP_PORT(fib), own,
+	    fib, fib);
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
  * The addresses a service's proxy or DNS filter listens on at an edge:
  * each UNI's first IPv4 provider address, and each remote end point's
  * own; into out, one per line as fmt says, with its interface.
@@ -1955,7 +2023,7 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	const ucl_object_t	*ep, *o, *pol, *sec, *sc, *uf, *e, *p;
 	ucl_object_iter_t	 it, pit, dit, eit;
 	ucl_object_t		*owns, *pfx;
-	char			*out;
+	char			*out, own[80];
 	int			 i, si;
 	bool			 dnsproto;
 
@@ -1984,6 +2052,8 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	if (dns_filters(sw, &dnsproto) && ucl_array_size(owns) > 0)
 		kore_buf_appendf(b, "dns_nameservers %s\n", str(
 		    ucl_array_find_index(owns, 0), "address"));
+	snprintf(own, sizeof(own), "%s", ucl_array_size(owns) > 0 ? str(
+	    ucl_array_find_index(owns, 0), "address") : "127.0.0.1");
 	ucl_object_unref(owns);
 	kore_buf_appendf(b, "sslcrtd_program @CERTGEN@ -s @SSLDB@ -M 4MB\n"
 	    "sslcrtd_children 3\n");
@@ -2004,6 +2074,13 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	}
 	if (i == 0)
 		kore_buf_appendf(b, " 0.0.0.0/0");
+	/* What comes back, to c-icap by ICAP, where malware is scanned. */
+	if (malware_scan(sw))
+		kore_buf_appendf(b, "\nicap_enable on\nicap_send_client_ip on\n"
+		    "icap_service sdwan_av respmod_precache bypass=off "
+		    "icap://%s:%d/avscan\nadaptation_access sdwan_av allow "
+		    "all", own, ICAP_PORT(ucl_object_toint(ucl_object_lookup(sw,
+		    "fib"))));
 	kore_buf_appendf(b, "\nacl denied_site ssl::server_name \"@DENY@\"\n"
 	    "acl denied_url dstdomain \"@DENY@\"\nacl step1 at_step SslBump1\n"
 	    "ssl_bump peek step1\nssl_bump terminate denied_site\nssl_bump %s all"
@@ -2079,7 +2156,7 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 		eit = NULL;
 		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
 		    &eit, true)) != NULL) {
-			if (!url_filters(sw, &inspect))
+			if (!url_filters(sw, &inspect) && !malware_scan(sw))
 				continue;
 			here = false;
 			pit = NULL;
@@ -2101,15 +2178,27 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 			put(inst, "deny", S(deny));
 			free(text);
 			free(deny);
+			if (malware_scan(sw)) {
+				ucl_object_t	*owns = ucl_object_typed_new(
+				    UCL_ARRAY);
+
+				edge_own4(pl, sw, sid, owns);
+				text = icap_conf(sw, sid, ucl_array_size(owns) > 0 ?
+				    str(ucl_array_find_index(owns, 0), "address") :
+				    "127.0.0.1");
+				ucl_object_unref(owns);
+				put(inst, "icap", S(text));
+				free(text);
+			}
 			ucl_array_append(list, inst);
 		}
 		if (ucl_array_size(list) == 0) {
 			ucl_object_unref(list);
 			continue;
 		}
-		o = object(pl, sid, "proxy", PH_BIRD, "URL filters: Squid, a "
-		    "plugin, %u instance%s in the services' tables, the TLS names "
-		    "looked at, the domains the security policies deny",
+		o = object(pl, sid, "proxy", PH_BIRD, "URL filters and malware "
+		    "scanning: Squid (and c-icap with ClamAV where malware is "
+		    "scanned), plugins, %u instance%s in the services' tables",
 		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
 		if (o == NULL) {
 			ucl_object_unref(list);
@@ -2117,6 +2206,252 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 		}
 		make(o, job("sdwan-proxy", "instances", list, NULL));
 		unmake(o, job("sdwan-proxy", "instances", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	}
+}
+
+/* The rules suricata-update keeps, where its defaults put them. */
+#define	IDS_RULESET	"/var/lib/suricata/rules/suricata.rules"
+/* The divert port of a service's Suricata, where it prevents. */
+#define	IDS_PORT(fib)	(8000 + (int)(fib))
+
+/*
+ * A service's intrusion detection (SASE-4, the ids criterion, Arcana's
+ * own: no MEF Security Function is intrusion detection), as
+ * its policies name it: the rules of its own, one a line, each once,
+ * whether the ruleset is added, and whether it prevents (one of its
+ * policies says prevent).  False when none of its security policies has
+ * ids.
+ */
+static bool
+ids_of(const ucl_object_t *sw, struct kore_buf *rules, bool *rulesetp,
+    bool *preventp)
+{
+	const ucl_object_t	*pol, *sec, *ids, *r;
+	ucl_object_iter_t	 it, rit;
+	ucl_object_t		*seen;
+	int			 si, i;
+	bool			 any;
+
+	any = false;
+	*rulesetp = false;
+	if (preventp != NULL)
+		*preventp = false;
+	seen = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &it, true)) != NULL)
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec == NULL || (ids = ucl_object_lookup(
+			    ucl_object_lookup(sec, "criteria"), "ids")) == NULL ||
+			    ucl_object_type(ids) != UCL_OBJECT)
+				continue;
+			any = true;
+			if (ucl_object_toboolean(ucl_object_lookup(ids, "ruleset")))
+				*rulesetp = true;
+			if (preventp != NULL && str(ids, "mode") != NULL &&
+			    strcmp(str(ids, "mode"), "prevent") == 0)
+				*preventp = true;
+			rit = NULL;
+			while ((r = ucl_object_iterate(ucl_object_lookup(ids,
+			    "rules"), &rit, true)) != NULL) {
+				if (ucl_object_lookup(seen, ucl_object_tostring(r)) !=
+				    NULL)
+					continue;
+				ucl_object_insert_key(seen, ucl_object_frombool(true),
+				    ucl_object_tostring(r), 0, true);
+				if (rules != NULL)
+					kore_buf_appendf(rules, "%s\n",
+					    ucl_object_tostring(r));
+			}
+		}
+	ucl_object_unref(seen);
+	return (any);
+}
+
+/*
+ * Suricata's configuration for a service at an edge: it watches the
+ * interfaces named (the service's UNIs here) by libpcap, its home
+ * network the service's UNI subnets, and writes its alerts as eve.json
+ * in its log directory, which the agent reads.  The agent places
+ * @LOGDIR@, @RULES@ and @PID@.
+ */
+static char *
+ids_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *ifs,
+    bool ruleset)
+{
+	struct kore_buf		*b;
+	const ucl_object_t	*ep, *u, *v, *f;
+	ucl_object_iter_t	 it;
+	char			*out;
+	int			 i, n;
+
+	b = kore_buf_alloc(4096);
+	kore_buf_appendf(b, "%%YAML 1.1\n---\n# Written by the Arcana console: "
+	    "SD-WAN service %s at %s.\n# The intrusion detection of its "
+	    "security policies (MEF 88), by Suricata.\nvars:\n  "
+	    "address-groups:\n    HOME_NET: \"[", str(sw, "id"),
+	    server_name_of(sid));
+	n = 0;
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;
+		for (i = 0; i < 2; i++) {
+			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
+			if (str(v, "prefix") == NULL)
+				continue;
+			kore_buf_appendf(b, "%s%s", n++ > 0 ? "," : "", str(v,
+			    "prefix"));
+		}
+	}
+	if (n == 0)
+		kore_buf_appendf(b, "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16");
+	kore_buf_appendf(b, "]\"\n    EXTERNAL_NET: \"!$HOME_NET\"\n");
+	/* The groups the common rule sets name, as Suricata's own file has
+	 * them. */
+	kore_buf_appendf(b,
+	    "    HTTP_SERVERS: \"$HOME_NET\"\n    SMTP_SERVERS: \"$HOME_NET\"\n"
+	    "    SQL_SERVERS: \"$HOME_NET\"\n    DNS_SERVERS: \"$HOME_NET\"\n"
+	    "    TELNET_SERVERS: \"$HOME_NET\"\n    AIM_SERVERS: "
+	    "\"$EXTERNAL_NET\"\n    DC_SERVERS: \"$HOME_NET\"\n    DNP3_SERVER: "
+	    "\"$HOME_NET\"\n    DNP3_CLIENT: \"$HOME_NET\"\n    MODBUS_CLIENT: "
+	    "\"$HOME_NET\"\n    MODBUS_SERVER: \"$HOME_NET\"\n    ENIP_CLIENT: "
+	    "\"$HOME_NET\"\n    ENIP_SERVER: \"$HOME_NET\"\n  port-groups:\n"
+	    "    HTTP_PORTS: \"80\"\n    SHELLCODE_PORTS: \"!80\"\n"
+	    "    ORACLE_PORTS: 1521\n    SSH_PORTS: 22\n    DNP3_PORTS: 20000\n"
+	    "    MODBUS_PORTS: 502\n    FILE_DATA_PORTS: \"[$HTTP_PORTS,110,"
+	    "143]\"\n    FTP_PORTS: 21\n    GENEVE_PORTS: 6081\n    VXLAN_PORTS: "
+	    "4789\n    TEREDO_PORTS: 3544\n"
+	    "default-log-dir: @LOGDIR@\n"
+	    "outputs:\n  - eve-log:\n      enabled: yes\n      filetype: regular\n"
+	    "      filename: eve.json\n      types:\n        - alert\n"
+	    "logging:\n  default-log-level: notice\n  outputs:\n    - console:\n"
+	    "        enabled: no\n    - file:\n        enabled: yes\n"
+	    "        level: info\n        filename: suricata.log\n"
+	    "pcap:\n");
+	it = NULL;
+	while ((f = ucl_object_iterate(ifs, &it, true)) != NULL)
+		kore_buf_appendf(b, "  - interface: %s\n",
+		    ucl_object_tostring(f));
+	kore_buf_appendf(b, "rule-files:\n  - @RULES@\n");
+	if (ruleset)
+		kore_buf_appendf(b, "  - %s\n", IDS_RULESET);
+	kore_buf_appendf(b, "classification-file: "
+	    "/usr/local/etc/suricata/classification.config\n"
+	    "reference-config-file: /usr/local/etc/suricata/reference.config\n"
+	    "run-as:\n  user: root\n");
+	/*
+	 * Where it prevents and the edge itself answers some of the UNI's
+	 * traffic (the URL filter's Squid, malware scanning behind it, the
+	 * DNS filter), it sees one side of those flows: what the edge sends
+	 * back goes out to the UNI without it.  Such a flow is taken as it
+	 * comes, and a packet of it that looks wrong for want of the other
+	 * side is let by, not dropped; what its rules drop is dropped all
+	 * the same, though one side alone may let a packet by before.
+	 * Elsewhere it sees both sides and stays strict.
+	 */
+	{
+		bool	x, prevent, rs;
+
+		if (ids_of(sw, NULL, &rs, &prevent) && prevent && (url_filters(
+		    sw, &x) || malware_scan(sw) || (dns_filters(sw, &x) && x)))
+			kore_buf_appendf(b, "stream:\n  midstream: true\n"
+			    "  async-oneside: true\n  drop-invalid: no\n");
+	}
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
+ * Each edge's intrusion detection (SASE-4): an instance per service
+ * whose policies name a security policy with ids, where the edge has an
+ * end point of the service, watching the service's UNIs here; Suricata
+ * is a plugin the edge has installed, which the apply tells when it has
+ * not.
+ */
+static void
+ids_build(struct plan *pl, const ucl_object_t *doc)
+{
+	const ucl_object_t	*sw, *edge, *ep;
+	ucl_object_iter_t	 it, eit, pit;
+	ucl_object_t		*o, *inst, *list, *ifs, *seen;
+	struct kore_buf		*rules;
+	char			 name[32], ifn[64];
+	const char		*sid, *in;
+	char			*text;
+	bool			 ruleset, prevent, prevents;
+
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		sid = str(edge, "server");
+		list = ucl_object_typed_new(UCL_ARRAY);
+		prevents = false;
+		eit = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &eit, true)) != NULL) {
+			if (!ids_of(sw, NULL, &ruleset, &prevent))
+				continue;
+			ifs = ucl_object_typed_new(UCL_ARRAY);
+			seen = ucl_object_typed_new(UCL_OBJECT);
+			pit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &pit, true)) != NULL) {
+				if (strcmp(str(ep, "edge"), sid) != 0 || (in =
+				    uni_ifname(pl, sw, ep, ifn, sizeof(ifn))) ==
+				    NULL || ucl_object_lookup(seen, in) != NULL)
+					continue;
+				ucl_object_insert_key(seen, ucl_object_frombool(
+				    true), in, 0, true);
+				ucl_array_append(ifs, S(in));
+			}
+			ucl_object_unref(seen);
+			if (ucl_array_size(ifs) == 0) {
+				ucl_object_unref(ifs);
+				continue;
+			}
+			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+			inst = ucl_object_typed_new(UCL_OBJECT);
+			put(inst, "name", S(name));
+			text = ids_conf(sw, sid, ifs, ruleset);
+			put(inst, "interfaces", ifs);
+			put(inst, "conf", S(text));
+			free(text);
+			if (prevent) {
+				put(inst, "divert", I(IDS_PORT(ucl_object_toint(
+				    ucl_object_lookup(sw, "fib")))));
+				prevents = true;
+			}
+			rules = kore_buf_alloc(1024);
+			(void)ids_of(sw, rules, &ruleset, NULL);
+			text = kore_buf_stringify(rules, NULL);
+			put(inst, "rules", S(text));
+			kore_buf_free(rules);
+			ucl_array_append(list, inst);
+		}
+		if (ucl_array_size(list) == 0) {
+			ucl_object_unref(list);
+			continue;
+		}
+		/* One that prevents runs before the divert rules come, and
+		 * stays until they are gone: what is diverted to no one does
+		 * not pass. */
+		o = object(pl, sid, "ids", prevents ? PH_PROBE : PH_BIRD,
+		    "intrusion detection%s: Suricata, a plugin, %u instance%s on "
+		    "the services' UNIs", prevents ? " and prevention" : "",
+		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
+		if (o == NULL) {
+			ucl_object_unref(list);
+			continue;
+		}
+		make(o, job("sdwan-ids", "instances", list, NULL));
+		unmake(o, job("sdwan-ids", "instances", ucl_object_typed_new(
 		    UCL_ARRAY), NULL));
 	}
 }
@@ -2272,6 +2607,7 @@ dns_build(struct plan *pl, const ucl_object_t *doc)
 
 /* ---- The rules: classification and steering (§8, §9.12, §10.4) ----- */
 
+#define	RULE_IPS	9	/* the diverts to Suricata, before them */
 #define	RULE_FROM	10	/* the rules' numbers, from here */
 #define	RULE_TO		99	/* to here, the way out of them */
 #define	IPFW_SET	30
@@ -3288,6 +3624,59 @@ rules_build(struct plan *pl, const char *sid)
 			/* [D1]: source routing dropped. */
 			rule(rules, RULE_FROM, "deny ip from any to any ipoptions "
 			    "lsrr,ssrr,rr in recv %s", uni);
+			/*
+			 * Intrusion prevented (ids, prevent): IPv4 that
+			 * comes in at the UNI, and that comes in elsewhere for
+			 * the UNI's subnet, to the service's Suricata first,
+			 * which gives back what it lets by.  Both are taken as
+			 * they come in, not as they go out to the UNI: divert(4)
+			 * gives back what it takes in routing table 0 (a
+			 * PF_DIVERT socket has no table of its own), and one
+			 * given back on its way out is routed there before ipfw
+			 * sees it again, while one given back on its way in is
+			 * put back in the service's table by the rules that
+			 * follow.  divert resumes at the next rule number: the
+			 * diverts are one before the way in.
+			 */
+			{
+				const ucl_object_t	*pv;
+				const char		*pfx[2];
+				bool			 rs, prevent;
+				int			 port, np, x;
+
+				if (ids_of(sw, NULL, &rs, &prevent) && prevent) {
+					port = IDS_PORT(ucl_object_toint(
+					    ucl_object_lookup(sw, "fib")));
+					np = 0;
+					pv = ucl_object_lookup(ucl_object_lookup(ep,
+					    "uni"), "ipv4");
+					if (str(pv, "prefix") != NULL)
+						pfx[np++] = str(pv, "prefix");
+					pv = ucl_object_lookup(ep, "remote");
+					if (str(pv, "prefix") != NULL && strchr(str(pv,
+					    "prefix"), ':') == NULL)
+						pfx[np++] = str(pv, "prefix");
+					rule(rules, RULE_IPS, "divert %d ip4 from any to "
+					    "any in recv %s", port, uni);
+					/* Not what is for the edge itself: what
+					 * it sends back is not seen, and a flow
+					 * seen half from this side is cut. */
+					for (x = 0; x < np; x++)
+						rule(rules, RULE_IPS, "divert %d ip4 from "
+						    "any to %s in not recv %s not dst-ip me",
+						    port, pfx[x], uni);
+					rule(rules, RULE_FROM, "setfib %jd ip4 from any "
+					    "to any in recv %s diverted-loopback",
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(sw, "fib")), uni);
+					for (x = 0; x < np; x++)
+						rule(rules, RULE_FROM, "setfib %jd ip4 from "
+						    "any to %s in diverted-loopback not dst-ip "
+						    "me",
+						    (intmax_t)ucl_object_toint(
+						    ucl_object_lookup(sw, "fib")), pfx[x]);
+				}
+			}
 			/* DNS kept to the provider's resolver, where a security
 			 * policy says so (MEF 88 dns-protocol-filter): every
 			 * query from the UNI goes to the filter here. */
@@ -3854,10 +4243,17 @@ rules_build(struct plan *pl, const char *sid)
 		ucl_object_iter_t	 lit;
 		int			 pass;
 
+		/* The diverts to Suricata before all. */
+		lit = NULL;
+		while ((line = ucl_object_iterate(rules, &lit, true)) != NULL)
+			if (atoi(ucl_object_tostring(line)) == RULE_IPS)
+				ucl_array_append(all, ucl_object_copy(line));
 		for (pass = 0; pass < 3; pass++) {
 			lit = NULL;
 			while ((line = ucl_object_iterate(pass == 1 ? pre : rules,
 			    &lit, true)) != NULL) {
+				if (atoi(ucl_object_tostring(line)) == RULE_IPS)
+					continue;
 				if (pass != 1 && (atoi(ucl_object_tostring(line)) ==
 				    RULE_FROM) != (pass == 0))
 					continue;
@@ -3876,7 +4272,9 @@ rules_build(struct plan *pl, const char *sid)
 	snprintf(key, sizeof(key), "rules");
 	snprintf(words, sizeof(words), "the rules: %u, in ipfw set %d, numbers "
 	    "%d to %d, with %u tables", ucl_array_size(rules), IPFW_SET,
-	    RULE_FROM, RULE_TO, ucl_array_size(tables));
+	    ucl_array_size(rules) > 0 && atoi(ucl_object_tostring(
+	    ucl_array_find_index(rules, 0))) == RULE_IPS ? RULE_IPS : RULE_FROM,
+	    RULE_TO, ucl_array_size(tables));
 	if (ucl_array_size(objects) > 0)
 		snprintf(words + strlen(words), sizeof(words) - strlen(words),
 		    ", %u dummynet and nat objects", ucl_array_size(objects));
@@ -4927,6 +5325,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	bird_build(pl, doc);
 	dns_build(pl, doc);
 	proxy_build(pl, doc);
+	ids_build(pl, doc);
 	dhcp_build(pl, doc);
 	return (true);
 }
@@ -6069,6 +6468,29 @@ wg_keypair(char *priv, size_t plen, char *pub, size_t publen)
 	return (ok);
 }
 
+/*
+ * POST /api/wg/keypair: a fresh WireGuard key pair for a client of a
+ * host's wg interface (the WireGuard tab's + client), both halves in
+ * the reply and kept nowhere: the page puts the private half in the
+ * client's configuration, shown once, and gives the host the public.
+ */
+int
+api_wg_keypair(struct http_request *req)
+{
+	ucl_object_t	*out;
+	char		 priv[64], pub[64];
+
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	if (!wg_keypair(priv, sizeof(priv), pub, sizeof(pub)))
+		return (reply_error(req, 500, "keygen", "no X25519 key pair"));
+	out = ucl_object_typed_new(UCL_OBJECT);
+	put(out, "private_key", S(priv));
+	put(out, "public_key", S(pub));
+	explicit_bzero(priv, sizeof(priv));
+	return (reply_json(req, 200, out));
+}
+
 /* The service, the remote end point and its remote, by their ids. */
 static const ucl_object_t *
 remote_of(const ucl_object_t *doc, const char *swvc, const char *epid,
@@ -6310,6 +6732,7 @@ api_sdwan_identities(struct http_request *req)
 	const ucl_object_t	*sw, *ep, *r, *e;
 	ucl_object_iter_t	 it;
 	struct plan		 pl;
+	char			 where[300], rzone[64];
 	char			 why[300], priv[64], pub[64], *v, *swvc, *epid;
 	char			*name, *conf;
 	const char		*zone;
@@ -6357,12 +6780,22 @@ api_sdwan_identities(struct http_request *req)
 			return (reply_error(req, 404, "identity", "no identity %s",
 			    name != NULL ? name : "?"));
 		}
+		snprintf(rzone, sizeof(rzone), "%s", str(e, "zone") != NULL ?
+		    str(e, "zone") : "");
 		ucl_object_unref(ucl_array_delete(ids, (ucl_object_t *)(uintptr_t)
 		    e));
 		if (sdwan_store(doc, why, sizeof(why)) != 0) {
 			ucl_object_unref(doc);
 			return (reply_error(req, 409, "invalid", "%s", why));
 		}
+		/* A Subject Actor's access taken away (MEF 118.1 §15). */
+		snprintf(where, sizeof(where), "%s, end point %s of %s", str(ep,
+		    "edge") != NULL ? server_name_of(str(ep, "edge")) : "?", epid,
+		    swvc);
+		audit_add("identity-revoked", "Block", rzone, "its WireGuard peer "
+		    "taken away by the apply, its address out of the zone table",
+		    where, session_who(req), "identity %s revoked by the System "
+		    "Administrator", name);
 		why[0] = '\0';
 		applied = apply_now(doc, why, sizeof(why));
 		kore_log(LOG_NOTICE, "identity %s of %s/%s revoked%s%s", name, swvc,
@@ -6455,6 +6888,14 @@ api_sdwan_identities(struct http_request *req)
 	plan_free(&pl);
 	ucl_object_unref(st);
 	explicit_bzero(priv, sizeof(priv));
+	/* A Subject Actor authenticated by its key and let in, its Role
+	 * its zone (MEF 118.1 §9.1). */
+	snprintf(where, sizeof(where), "%s, end point %s of %s", str(ep,
+	    "edge") != NULL ? server_name_of(str(ep, "edge")) : "?", epid, swvc);
+	audit_add("identity-issued", "Allow", zone, "a WireGuard peer, its key "
+	    "pair made by the console, the private half given once", where,
+	    session_who(req), "identity %s%s issued by the System "
+	    "Administrator", name, user ? ", a console user's," : "");
 	why[0] = '\0';
 	applied = apply_now(doc, why, sizeof(why));
 	kore_log(LOG_NOTICE, "identity %s of %s/%s issued%s%s%s", name, swvc,
@@ -6510,8 +6951,27 @@ identities_tick(const ucl_object_t *doc, time_t now)
 				    ucl_object_toint(ucl_object_lookup(id, "issued")) :
 				    0) + ucl_object_toint(ucl_object_lookup(r,
 				    "reauth"));
-				if (prev != 0 && exp > prev && exp <= now)
+				if (prev != 0 && exp > prev && exp <= now) {
+					char	where[300];
+
 					due = true;
+					/* Time-based Continuous Monitoring (MEF
+					 * 118.1 §18.1): the Subject Actor Blocked
+					 * until it authenticates again. */
+					snprintf(where, sizeof(where), "%s, end "
+					    "point %s of %s", str(ep, "edge") != NULL
+					    ? server_name_of(str(ep, "edge")) : "?",
+					    str(ep, "id"), str(sw, "id"));
+					audit_add("reauthorisation-due", "Block",
+					    str(id, "zone") != NULL ? str(id, "zone")
+					    : "", "its peer taken away by the apply",
+					    where, "Continuous Monitoring, by time",
+					    "identity %s: its re-authorisation "
+					    "interval, %jd s, ran out; issued again, "
+					    "it comes back", str(id, "name"),
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(r, "reauth")));
+				}
 			}
 		}
 	}
@@ -7375,7 +7835,13 @@ static const struct sdwan_need {
 	{ "sdwan-dhcp", "dnsmasq", "dnsmasq",
 	    "dnsmasq, the DHCP server at the UNIs" },
 	{ "sdwan-proxy", "squid", "squid",
-	    "Squid, for URL filtering" },
+	    "Squid, for URL filtering and malware scanning" },
+	{ "sdwan-proxy+icap", "c-icap", "c-icap c-icap-modules clamav",
+	    "c-icap with ClamAV's module and signatures (freshclam), for "
+	    "malware scanning" },
+	{ "sdwan-ids", "suricata", "suricata",
+	    "Suricata, for intrusion detection on the UNIs (and "
+	    "suricata-update for its ruleset)" },
 };
 
 /*
@@ -7402,11 +7868,31 @@ plan_needs(const struct plan *pl)
 		while ((o = ucl_object_iterate(objs, &oit, true)) != NULL) {
 			jit = NULL;
 			while ((j = ucl_object_iterate(ucl_object_lookup(o,
-			    "make"), &jit, true)) != NULL)
+			    "make"), &jit, true)) != NULL) {
 				for (i = 0; i < nitems(sdwan_needs); i++)
 					if (str(j, "kind") != NULL && strcmp(str(j,
 					    "kind"), sdwan_needs[i].kind) == 0)
 						want[i] = true;
+				/* A proxy that scans for malware: c-icap. */
+				if (str(j, "kind") != NULL && strcmp(str(j,
+				    "kind"), "sdwan-proxy") == 0) {
+					const ucl_object_t	*in;
+					ucl_object_iter_t	 iit = NULL;
+
+					while ((in = ucl_object_iterate(
+					    ucl_object_lookup(j, "instances"), &iit,
+					    true)) != NULL)
+						if (ucl_object_lookup(in, "icap") !=
+						    NULL)
+							for (i = 0; i <
+							    nitems(sdwan_needs); i++)
+								if (strcmp(sdwan_needs[i]
+								    .kind,
+								    "sdwan-proxy+icap") ==
+								    0)
+									want[i] = true;
+				}
+			}
 		}
 		ans = NULL;
 		for (i = 0; i < nitems(sdwan_needs); i++)
@@ -7735,6 +8221,11 @@ api_sdwan_edges(struct http_request *req)
 	if (n < 0)
 		return (reply_error(req, status, status == 409 ? "busy" : "thread",
 		    "%s", why));
+	/* The Policies sent to the Policy End Points, the edges. */
+	audit_add("policies-applied", "Administer", "the services' document",
+	    fresh ? "every job made again on the edges" : "the changes made on "
+	    "the edges, in their order", "the edges (Policy End Points)",
+	    session_who(req), "%d step%s of the apply", n, n == 1 ? "" : "s");
 	body = ucl_object_typed_new(UCL_OBJECT);
 	put(body, "steps", I(n));
 	return (reply_json(req, 200, body));

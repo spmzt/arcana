@@ -101,7 +101,86 @@
   bytes, on the tab (S3.4); SASE-3 closed. SASE-4: the URL filter,
   Squid as a plugin, an instance per service, the TLS names looked at
   or TLS opened with the agent's CA, HTTP and TLS forwarded to it
-  (S4.1). Next: S4.2, malware.
+  (S4.1); malware scanned, by c-icap and ClamAV behind the same Squid,
+  c-icap on the edge's own address in the service and taking Squid's
+  alone, plugins all (S4.2, in the verified list); intrusion
+  detected by Suricata on the UNIs, a plugin, its alerts events and
+  in the read (S4.3, detect; in the verified list); prevented, mode
+  prevent, ipfw divert(4) to Suricata as packets come in, fail-closed
+  with a Critical fault (S4.3, in the verified list).  Not inspected
+  where it prevents: IPv6 (divert's IPv6 is not trusted), and what
+  comes back from local breakout (after NAT, past the divert); SASE-4
+  closed (S4.4): the URL filter, malware scanning and prevention on one
+  service together on the lab, what the edge is sent for itself not
+  diverted, Suricata taking one-sided flows where the edge answers.
+  SASE-5: the Security tab in MEF 118.1's terms, Access Control
+  Policies Subject Actor to Target Actor from the policy map, Policy
+  End Points, Continuous Monitoring, and the audit trail, Audit Events
+  for what the console does, HMAC-chained (S5.1); the conformance list
+  against the current documents, Mplify 117.1, MEF 138 and MEF 118.1,
+  each attribute in it (S5.2, the book's Conformance: SASE).  Found
+  there: Mplify 117.1 takes its Security Functions from MEF 138, which
+  replaces MEF 88, and none of them has intrusion detection (ids is
+  Arcana's own, mislabelled MEF 88's until now).  SASE-5 closed.
+- To decide (the user's): whether the security policies move to MEF
+  138's model (Security Function Policies each with Block, Allow and
+  Quarantine lists, No-match, Duration; PDNS and DLP added), and which
+  of the conformance list's "no" rows come next (session states, an
+  external IdP with OAuth 2.0, Context Policies, SAAN/SSEN as
+  notifications, event-based Continuous Monitoring).
+- Verified on the lab 2026-10-12 (S4.4, SASE-4 closed): one service
+  on arcswan1 for the road end point with Suricata preventing (divert
+  9, setfib 10), HTTP and TLS forwarded to Squid (denied.example), and
+  c-icap with ClamAV behind it, the rules as the console writes them,
+  three runs alike: a harmless page served, the denied name refused by
+  HTTP and by TLS's SNI, the EICAR file refused (403, VIRUS DETECTED),
+  /attack dropped and told blocked.  Found there: (1) the replies to
+  Squid's own fetches, addressed to the edge in the UNI's subnet, were
+  diverted while Squid's packets out were not, so Suricata saw half of
+  those flows and cut them, and no page came back; what is for the
+  edge itself is not diverted now (not dst-ip me); (2) the end point's
+  flows to Squid are seen from its side alone (Squid answers from the
+  edge, not diverted), and Suricata in IPS mode dropped them as invalid
+  and parsed no HTTP: for such a service Suricata takes one-sided flows
+  (stream.async-oneside, midstream) and does not drop for invalid
+  (drop-invalid: no).  In one prevent run of seven made with those
+  settings, before they were kept to such services, a request matched
+  by a drop rule was told blocked yet reached the far end; the eleven
+  prevent runs after it (with those settings and without) dropped it
+  every time.  They are kept to services the edge answers for.
+- Verified on the lab 2026-10-12 (S4.3, prevent): Suricata on divert
+  port 8001 for wg5, a drop rule for /attack: a harmless request
+  passed, the request for /attack went nowhere and was told blocked;
+  Suricata killed, a ping through the UNI got nothing back and a
+  Critical fault (ids) was raised, cleared when applied again.  Found
+  there: (1) ipfw takes up after a divert at the next rule number, so
+  the diverts are rule 9, before the way in at 10; (2) divert(4) gives
+  back in routing table 0 whatever table its process is in (a
+  PF_DIVERT socket takes none, nor SO_SETFIB), so a packet given back
+  on its way out was routed in table 0 and lost (no route), and
+  Suricata's TX thread died of the error, taking Suricata with it;
+  both directions are diverted as they come in now, and setfib puts
+  them back in the service's table.
+- Verified on the lab 2026-10-12 (S4.3): Suricata 8 added into
+  arcswan1 from fetched packages, an instance on wg5 (the road end
+  point's UNI) with the configuration the console writes and one rule
+  of the service's own (http.uri /attack): the client's request
+  alerted, the alert in the sdwan read and as an sdwan-ids event, 13 s
+  after (Suricata tells of a short flow once done with it).  Found
+  there: a new instance read its log directory's old eve.json from the
+  start, so alerts were told again; one new to the agent is read from
+  where the file ends.
+- Verified on the lab 2026-10-12 (S4.2): Squid, c-icap 0.6.5 with
+  c-icap-modules 0.5.7 and ClamAV 1.5.4 added into arcswan1 from
+  fetched packages, signatures only EICAR's (a one-line eicar.hdb):
+  the client's fetch of the EICAR file over HTTP refused, 403, c-icap
+  logging VIRUS DETECTED: Eicar-Test-Signature with the client's
+  address; a harmless file served (204 from c-icap); the client
+  asking c-icap itself refused, 403, the edge answered.  Found there:
+  in a service's table c-icap could not bind 127.0.0.1 (with
+  bind_all_fibs 0 a socket binds only its table's addresses, and lo0
+  is the host's), so it listens on the edge's own address in the
+  service, with client_access for that address alone.
 - 2026-10-12: the plugins' tabs on every host: where the plugin is
   not installed (host or the jail picked), the tab names its program
   and package with a button that installs it by pkg-install, the host's

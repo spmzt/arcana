@@ -490,22 +490,26 @@ Not supported: see the summary above. No tasks.
   op. C: `url-filter` criterion, `fwd` of 80 and 443 to it. T: agent
   test with a stand-in, apply test. L. Done when a denied domain is
   refused by SNI on the lab.
-- **S4.2 Malware.** A: c-icap and ClamAV from packages, Squid's
-  ICAP service for cleartext HTTP. C: `malware` criterion. T, L with
-  the EICAR file. Done when it is caught.
-- **S4.3 Intrusion detection and prevention.** A: Suricata from
-  packages on the UNI interface, alerts (eve.json) into events;
-  prevention by ipfw divert in a second step. C: `ids: {rules,
-  mode}` criterion. T, L. Done when a test rule alerts on the lab.
-- **S4.4 Phase close.** L, docs, TODO.
+- **S4.2 Malware.** (Done 2026-10-12.) A: c-icap and ClamAV, plugins
+  installed by hand, Squid's ICAP service for cleartext HTTP (and TLS
+  where opened). C: `malware` criterion. T, L with the EICAR file.
+  Done when it is caught.
+- **S4.3 Intrusion detection and prevention.** (Done 2026-10-12.)
+  A: Suricata, a plugin installed by hand, on the UNI interfaces,
+  alerts (eve.json) into events; prevention by ipfw divert, IPv4 as it
+  comes in, fail-closed with a fault. C: `ids: {mode, rules, ruleset}`
+  criterion. T, L. Done when a test rule alerts on the lab.
+- **S4.4 Phase close.** (Done 2026-10-12.) L, docs, TODO.
 
 ### SASE-5 Zero trust and conformance
 
-- **S5.1 The framework's terms.** C and U: actors (identities and
+- **S5.1 The framework's terms.** (Done 2026-10-12.) C and U: actors (identities and
   UNIs' zones), targets (zones, the Internet), the policy per pair as
   the policy map already is, sessions (S3.4), an audit trail of
   issuances, revocations and denies. Done when the Security tab reads
   in MEF 118's terms.
-- **S5.2 Mapping and the list.** With MEF 117 and MEF 88 at hand: each
+- **S5.2 Mapping and the list.** (Done 2026-10-12, against Mplify
+  117.1, MEF 138 and MEF 118.1, which replace MEF 117, MEF 88 and MEF
+  118; the book's Conformance: SASE.) With MEF 117 and MEF 88 at hand: each
   attribute mapped, a conformance list. Done when every attribute is
   in one of the two.

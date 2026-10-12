@@ -1441,6 +1441,21 @@ paths:
         - { name: name, in: query, schema: { type: string } }
       responses:
         "200": { description: "revoked, applied, why" }
+  /api/sdwan/audit:
+    get:
+      tags: [sdwan]
+      summary: The audit trail, MEF 118.1's Audit Events, newest first
+      parameters:
+        - { name: q, in: query, schema: { type: string }, description: keeps the events with it anywhere in them }
+      responses:
+        "200":
+          description: intact, whether the chain of the events' HMACs is
+            whole; broken_at, the first event where it is not, or null;
+            count; events (500 at most), each seq, t, when, event
+            (identity-issued, identity-revoked, reauthorisation-due,
+            policies-changed, policies-applied), action (Allow, Block,
+            Administer), policy, how, where, who and why.
+            /api/sdwan/audit.csv gives the same as CSV.
   /api/sdwan/record:
     get:
       tags: [sdwan]
@@ -1481,6 +1496,17 @@ paths:
           description: "{tunnel: id}"
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/wg/keypair:
+    post:
+      tags: [servers]
+      summary: A fresh WireGuard key pair for a client of a host's wg interface
+      description: Both halves in the reply and kept nowhere by the console;
+        the page puts the private half in the client's configuration, shown
+        once with its QR code, and gives the host the public half as a peer.
+      responses:
+        "200":
+          description: "{private_key, public_key}, base64, X25519"
+        "401": { $ref: "#/components/responses/Error" }
   /api/workflows:
     get:
       tags: [workflows]

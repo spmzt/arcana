@@ -58,17 +58,19 @@ static const struct {
 	{ "strongswan", &opts.swanctl_bin, NULL, NULL },
 	{ "squid", &opts.squid_bin, NULL, NULL },
 	{ "dnsmasq", &opts.dnsmasq_bin, NULL, NULL },
+	{ "c-icap", &opts.cicap_bin, NULL, NULL },
+	{ "suricata", &opts.suricata_bin, NULL, NULL },
 };
 
 /*
  * A bit for each plugin's program, and after them one for the base
  * system's wg(8), the only plugin with a program of the base system's:
- * a child says them in the eight bits of its exit status.
+ * a child in a jail writes them to its parent through a pipe.
  */
 #define	BIT_PROG(i)	(1u << (i))
 #define	BIT_BASE(i)	(plugins[i].base != NULL ? 1u << nitems(plugins) : 0u)
 #define	FOUND_NONE	0xffffffffu
-_Static_assert(nitems(plugins) + 1 <= 7, "seven bits of an exit status");
+_Static_assert(nitems(plugins) + 1 < 32, "the bits of an unsigned int");
 
 static struct {
 	int		jid;
@@ -156,30 +158,42 @@ found_beneath(const char *root)
 }
 
 /*
- * In the jail itself: a child attaches and says by its exit status
- * (eight bits, two for each plugin); FOUND_NONE when it could not.
- * The child only makes system calls, as a child of a process with
- * threads must.
+ * In the jail itself: a child attaches and writes what it found through
+ * a pipe; FOUND_NONE when it could not.  The child only makes system
+ * calls, as a child of a process with threads must.
  */
 static unsigned int
 found_attached(int jid)
 {
-	pid_t	pid;
-	int	status;
+	unsigned int	m;
+	pid_t		pid;
+	ssize_t		n;
+	int		fd[2], status;
 
-	if ((pid = fork()) == -1)
+	if (pipe2(fd, O_CLOEXEC) == -1)
 		return (FOUND_NONE);
-	if (pid == 0) {
-		if (jail_attach(jid) == -1)
-			_exit(255);
-		_exit((int)found_here() & 0xff);
+	if ((pid = fork()) == -1) {
+		close(fd[0]);
+		close(fd[1]);
+		return (FOUND_NONE);
 	}
+	if (pid == 0) {
+		close(fd[0]);
+		if (jail_attach(jid) == -1)
+			_exit(1);
+		m = found_here();
+		_exit(write(fd[1], &m, sizeof(m)) == sizeof(m) ? 0 : 1);
+	}
+	close(fd[1]);
+	while ((n = read(fd[0], &m, sizeof(m))) == -1 && errno == EINTR)
+		;
+	close(fd[0]);
 	while (waitpid(pid, &status, 0) == -1)
 		if (errno != EINTR)
 			return (FOUND_NONE);
-	if (!WIFEXITED(status) || WEXITSTATUS(status) == 255)
+	if (n != sizeof(m) || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
 		return (FOUND_NONE);
-	return ((unsigned int)WEXITSTATUS(status));
+	return (m);
 }
 
 /* What jail jid (rooted at root) has, or the host for jid 0. */

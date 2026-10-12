@@ -959,6 +959,7 @@ do_sdwan(struct work *w, uint64_t after, struct arc_sdwan_rsp *rsp)
 	sdwan_dhcp_json(w, top);
 	sdwan_dns_json(w, top);
 	sdwan_proxy_json(w, top);
+	sdwan_ids_json(w, top);
 	record_json(top);
 	sa_keys_json(w, top);
 	faults_json(top);

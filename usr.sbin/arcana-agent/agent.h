@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.74.0"
+#define	ARCANA_AGENT_VERSION	"0.80.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -51,6 +51,10 @@
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
 #define	PATH_SWANCTL_BIN	"/usr/local/sbin/swanctl"
 #define	PATH_SQUID_BIN		"/usr/local/sbin/squid"
+#define	PATH_CICAP_BIN		"/usr/local/bin/c-icap"
+#define	PATH_SURICATA_BIN	"/usr/local/bin/suricata"
+#define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
+#define	PATH_CLAMAV_DB		"/var/db/clamav"
 #define	PATH_SWANCTL_DIR	"/usr/local/etc/swanctl"
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
 #define	PATH_BIRD_BIN		"/usr/local/sbin/bird"
@@ -113,6 +117,8 @@ struct opts {
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
 	const char	*swanctl_bin;
 	const char	*squid_bin;	/* squid(8): the proxies, a plugin */
+	const char	*cicap_bin;	/* c-icap: malware scanning, a plugin */
+	const char	*suricata_bin;	/* suricata: intrusion detection, a plugin */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
 	const char	*bird_bin;	/* bird(8), to parse a configuration */
@@ -285,6 +291,10 @@ struct arc_jail	*jail_current(struct work *, const char *,
 int		 do_list(struct work *, bool, struct arc_list_rsp *);
 int		 do_action(struct work *, const char *, uint8_t,
 		    struct arc_action_rsp *);
+/* ira/jailmake.c: jails made and taken away, their defaults, templates */
+const char	*jail_conf_check(const struct arc_job_spec *);
+int		 do_jail_conf(struct work *, const struct arc_job_spec *,
+		    const char **);
 int		 do_address(struct work *, const struct arc_address_req *,
 		    struct arc_address_rsp *);
 
@@ -450,6 +460,9 @@ void		 sdwan_dns_json(struct work *, struct ucl_object_s *);
 int		 do_sdwan_proxy(struct work *, const char *, const char **);
 void		 sdwan_proxy_start(void);
 void		 sdwan_proxy_json(struct work *, struct ucl_object_s *);
+int		 do_sdwan_ids(struct work *, const char *, const char **);
+void		 sdwan_ids_start(void);
+void		 sdwan_ids_json(struct work *, struct ucl_object_s *);
 int		 do_rtadvd(struct work *, const char *, const char *const *,
 		    size_t, bool, bool, const char **);
 /* invidia/sa.c: manually keyed SAs by setkey(8). */
