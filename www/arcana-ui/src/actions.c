@@ -1893,7 +1893,8 @@ refresh_network(struct server *s, bool user)
 {
 	static const char *kinds[] = { "routes", "nexthops", "connections",
 	    "sockets", "interfaces", "netgraph", "wireguard", "bird",
-	    "bridges", "geneve", "nhgroups", "neighbours", "ipsec" };
+	    "bridges", "geneve", "nhgroups", "neighbours", "ipsec",
+	    "bridges" };
 	struct ctx	*c;
 	struct op	*op;
 	char		 url[640], title[160], fib[24], c0jail[270];
@@ -1921,6 +1922,9 @@ refresh_network(struct server *s, bool user)
 	snprintf(c0jail, sizeof(c0jail), "%s%s", app.net.jail[0] != '\0' ?
 	    "&jail=" : "", app.net.jail);
 	app.net.loading = true;
+	/* Span is the bridges, and the firewall's taps and the sources. */
+	if (app.net.kind == NET_SPAN)
+		span_refresh(s);
 	if (ns_start(s))
 		return;
 	ns_stop();

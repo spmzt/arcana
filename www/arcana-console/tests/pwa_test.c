@@ -603,8 +603,10 @@ part_shell(void)
 	    "f.update_check.checked = !f.update_check.checked; "
 	    "f.agent_source.value = 'git@git.example.org:me/arcana.git'; "
 	    "f.requestSubmit();");
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('Settings saved'))", 10);
+	/* The mail's "Settings saved" may still be up: the file says. */
+	for (i = 0; i < 100 && system("grep -q '/usr/local/etc/arcana/"
+	    "id_ed25519' data/settings.json") != 0; i++)
+		usleep(100000);
 	ATF_CHECK(system("grep -q '/usr/local/etc/arcana/id_ed25519' "
 	    "data/settings.json") == 0);
 	/* The keys that sign in, a tab of their own. */
@@ -1284,6 +1286,51 @@ part_nettab(void)
 		usleep(100000);
 	ATF_CHECK(system("grep -qx 'arp -d 10.0.0.2' neigh.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Span: a bridge's span port, a rule mirrored to its own tap, and
+	 * packets taken off that tap, with their pcap to save.
+	 */
+	run("document.querySelector('button[data-act=net-kind][data-arg=span]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=span-port]') && "
+	    "document.querySelector('#span-sources option[value=ipfw150]')",
+	    20);
+	run("const f = document.querySelector('form[data-form=span-port]'); "
+	    "f.bridge.value = 'bridge0'; f.port.value = 'em2'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -qx 'bridge0 span em2' "
+	    "ifconfig.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'bridge0 span em2' ifconfig.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("const f = document.querySelector('form[data-form=span-rule]'); "
+	    "f.num.value = '150'; f.proto.value = 'icmp'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -q 'add 150 count log logdst bpf "
+	    "icmp from any to any' ipfw.log 2>/dev/null") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q 'add 150 count log logdst bpf icmp from any "
+	    "to any' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("const f = document.querySelector('form[data-form=span-capture]'); "
+	    "f.source.value = 'ipfw150'; f.filter.value = 'icmp and host "
+	    "10.0.0.2'; f.packets.value = '5'; f.seconds.value = '3'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('pre.span-lines') && document."
+	    "querySelector('pre.span-lines').textContent.includes('ICMP echo "
+	    "reply') && document.querySelector('button[data-act=span-save]')",
+	    20);
+	ATF_CHECK(js_true("document.querySelector('.span-sum').textContent."
+	    "includes('2 packets from ipfw150')"));
+	ATF_CHECK(system("grep -q 'tcpdump -n -U -i ipfw150 -c 5 -w .*/c.pcap "
+	    "icmp and host 10.0.0.2$' tcpdump.log") == 0);
+	/* Nothing left behind. */
+	ATF_CHECK(system("test -z \"$(ls -A tools/tmp)\"") == 0);
+	run("document.querySelector('button[data-act=span-save]').click()");
+	shot("7q-span");
 	/* The nexthop groups, as netstat -O has them, under Nexthops:
 	 * each next hop a line of its own, with its share. */
 	ATF_CHECK(js_true("!document.querySelector('nav.sub button[data-act="

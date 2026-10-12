@@ -4,7 +4,7 @@ SRCS=		main.c handlers.c work.c
 # Superbia: identity, configuration, what is true of the host.
 SRCS+=		certs.c ssh.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c l2.c ipfw.c
 # Invidia: the network.
-SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c parts.c pcb.c rcconf.c \
+SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c capture.c parts.c pcb.c rcconf.c \
 		routes.c scope.c sdwan.c vnet.c
 # Luxuria: what is not FreeBSD's own, the plugins.
 SRCS+=		bird.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c wireguard.c

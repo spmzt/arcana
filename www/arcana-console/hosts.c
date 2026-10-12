@@ -70,6 +70,7 @@ enum op {
 	OP_JAIL_FILES,
 	OP_CERTS,
 	OP_SSH,
+	OP_CAPTURE,
 	OP_STORAGE,
 	OP_FSTAB,
 	OP_IPFW_RULES,
@@ -1035,7 +1036,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_TRANSPORT ? "arc_transport" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_TRANSPORT ? "arc_transport" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1359,6 +1360,8 @@ call_run(struct kore_task *t)
 	struct arc_certs_rsp	*cer;
 	struct arc_ssh_req	 sshq;
 	struct arc_ssh_rsp	*sshr;
+	struct arc_capture_req	 capq;
+	struct arc_capture_rsp	*capr;
 	struct arc_transport_req tpq;
 	struct arc_transport_rsp *tpr;
 	struct arc_sysctl_req	 syq;
@@ -1466,6 +1469,7 @@ call_run(struct kore_task *t)
 	jfiles = NULL;
 	cer = NULL;
 	sshr = NULL;
+	capr = NULL;
 	tpr = NULL;
 	syr = NULL;
 	prr = NULL;
@@ -2279,6 +2283,25 @@ connected:
 		steps = cer->trace.v;
 		nsteps = cer->trace.n;
 		break;
+	case OP_CAPTURE:
+		/* The source rides where an address does, the filter in
+		 * text, seconds in fib and packets in pos. */
+		memset(&capq, 0, sizeof(capq));
+		capq.jail = c->scope[0] != '\0' ? c->scope : NULL;
+		capq.interface = c->address[0] != '\0' ? c->address : NULL;
+		capq.net_filter = c->text;
+		capq.has_seconds = c->fib != 0;
+		capq.seconds = c->fib;
+		capq.has_packets = c->has_pos;
+		capq.packets = (uint32_t)c->pos;
+		if ((error = arc_capture(&cl, &capq, &capr)) != 0)
+			goto rpcfail;
+		ok = capr->ok;
+		put_str(top, "error", capr->error);
+		put_json(top, capr->json);
+		steps = capr->trace.v;
+		nsteps = capr->trace.n;
+		break;
 	case OP_SSH:
 		memset(&sshq, 0, sizeof(sshq));
 		sshq.jail = c->scope[0] != '\0' ? c->scope : NULL;
@@ -2544,6 +2567,8 @@ done:
 		arc_certs_rsp_free(cer);
 	if (sshr != NULL)
 		arc_ssh_rsp_free(sshr);
+	if (capr != NULL)
+		arc_capture_rsp_free(capr);
 	if (tpr != NULL)
 		arc_transport_rsp_free(tpr);
 	if (syr != NULL)
@@ -2625,7 +2650,7 @@ call_new(struct http_request *req, enum op op)
 	t0 = now_us();
 	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
-	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL ||
+	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL || op == OP_CAPTURE ||
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
 	    op == OP_CONSOLE_UPDATE ||
 	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT || op ==
@@ -3679,6 +3704,62 @@ api_ssh(struct http_request *req)
 		kore_free(c);
 		return (reply_error(req, 400, "invalid", "jail is a jail's "
 		    "name"));
+	}
+	return (call_start(req, c));
+}
+
+/*
+ * POST /api/servers/<id>/capture[?jail=], {"source", "filter",
+ * "packets", "seconds"}: packets taken with tcpdump; no source, the
+ * sources there are.  What was on the wire is no read-only token's: a
+ * session's, with the change header, as a change is.
+ */
+int
+api_capture(struct http_request *req)
+{
+	struct call		*c;
+	ucl_object_t		*body;
+	const ucl_object_t	*v;
+	const char		*s;
+	bool			 bad;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_CAPTURE)) == NULL)
+		return (KORE_RESULT_OK);
+	bad = !pick_scope(req, c) || (body = read_json(req)) == NULL;
+	if (!bad) {
+		if ((s = ucl_str(body, "source")) != NULL) {
+			if (strlen(s) >= 16 || s[strspn(s, "abcdefghijklmnopq"
+			    "rstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")] !=
+			    '\0')
+				bad = true;
+			else
+				strlcpy(c->address, s, sizeof(c->address));
+		}
+		if ((s = ucl_str(body, "filter")) != NULL && s[0] != '\0') {
+			if (strlen(s) > 128 || strpbrk(s, "\r\n") != NULL)
+				bad = true;
+			else
+				c->text = kore_strdup(s);
+		}
+		if ((v = ucl_object_lookup(body, "seconds")) != NULL)
+			c->fib = (uint32_t)MAX(0, MIN(60, ucl_object_toint(v)));
+		if ((v = ucl_object_lookup(body, "packets")) != NULL) {
+			c->has_pos = true;
+			c->pos = (uint64_t)MAX(1, MIN(500, ucl_object_toint(v)));
+		}
+		ucl_object_unref(body);
+	}
+	if (bad) {
+		kore_free(c->text);
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "a source is an "
+		    "interface's or a tap's name, a filter one line of 128 "
+		    "characters at most; jail is a jail's name"));
 	}
 	return (call_start(req, c));
 }

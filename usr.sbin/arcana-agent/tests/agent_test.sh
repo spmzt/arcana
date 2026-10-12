@@ -4977,6 +4977,52 @@ sshd_cleanup()
 	stop_daemon
 }
 
+atf_test_case capture cleanup
+capture_head()
+{
+	atf_set "descr" "Packets taken with tcpdump off an interface or a tap: the sources, the lines and the pcap, nothing left behind"
+}
+capture_body()
+{
+	mkdir -p tools/tmp
+	printf '#!/bin/sh\nshift\nexec "$@"\n' > tools/timeout
+	cat > tools/tcpdump <<'EOT'
+#!/bin/sh
+echo "tcpdump $*" >> tcpdump.log
+case "$1" in
+-D)	printf '1.em0 [Up, Running]\n2.ipfw150 [Up]\n' ;;
+-n)	if [ "$2" = -tttt ]; then
+		printf '2026-10-12 10:00:00.000001 IP 10.0.0.2 > 10.0.0.1: ICMP echo request\n'
+		exit 0
+	fi
+	while [ $# -gt 0 ]; do
+		[ "$1" = -w ] && printf PCAPDATA > "$2"
+		[ "$1" = -i ] && [ "$2" = gone0 ] && { echo "tcpdump: gone0: No such device exists" >&2; exit 1; }
+		shift
+	done ;;
+esac
+EOT
+	chmod +x tools/timeout tools/tcpdump
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o inline:'{"sources":["em0","ipfw150"]}\n' "$JGC" -c "$SOCK" capture
+	atf_check -o match:'"source":"ipfw150","filter":"icmp and host 10.0.0.2","packets":1,"limit":5,"seconds":3' \
+	    -o match:'"pcap":"UENBUERBVEE="' -o match:'"bytes":8' -o match:'ICMP echo request' \
+	    "$JGC" -c "$SOCK" capture ipfw150 5 3 icmp and host 10.0.0.2
+	atf_check -o match:'^tcpdump -n -U -i ipfw150 -c 5 -w .*/tmp/\.arcana-capture\.[0-9a-f]*/c\.pcap icmp and host 10\.0\.0\.2$' \
+	    cat tcpdump.log
+	test -z "$(ls -A tools/tmp)" || atf_fail "left behind: $(ls -A tools/tmp)"
+	atf_check -s exit:1 -e match:'No such device exists' -o ignore \
+	    "$JGC" -c "$SOCK" capture gone0 5 3
+	test -z "$(ls -A tools/tmp)" || atf_fail "left behind after a failure"
+	atf_check -s exit:1 -e match:"an interface or a tap's name" -o ignore \
+	    "$JGC" -c "$SOCK" capture 'em0;x' 5 3
+}
+capture_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case ntp
@@ -4989,6 +5035,7 @@ atf_init_test_cases()
 	atf_add_test_case neighbours
 	atf_add_test_case certs
 	atf_add_test_case sshd
+	atf_add_test_case capture
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute

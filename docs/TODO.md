@@ -356,6 +356,10 @@
     UCL otherwise.
   - A span tab: traffic mirrored by a BPF interface, or by ipfw rules
     with BPF.
+    (Done 2026-10-12: Network, Span: a bridge's span ports; rules with
+    log logdst bpf, each a tap ipfw<n> (FreeBSD 16), made and listed;
+    capture by tcpdump from any of them, the lines and the pcap.
+    Verified in a vnet jail with devfs's bpf unhidden.)
   - Labels on interfaces, for the UCS they carry.
   - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
   - IGMP and MLD configured.

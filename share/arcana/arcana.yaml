@@ -2939,6 +2939,34 @@ operations:
           - json
           - trace
 
+  - name: capture
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Packets taken with tcpdump(1) off interface, of the host or of
+      jail's own network (vnet): an interface, a bridge's span port, or
+      a bpf(4) tap, as ipfw's per-rule ipfw<number> of a rule with log
+      (logdst bpf).  net-filter is a pcap-filter(7) expression; packets
+      (50, 500 at most) or seconds (10, 60 at most), whichever ends
+      first.  json: "source", "filter", "lines" (tcpdump -n -tttt's,
+      one a packet), "packets", "limit", "seconds", "timed_out",
+      "bytes" and "pcap", the capture as a pcap file in base64.
+      Without interface, "sources", what tcpdump -D lists.
+    do:
+      request:
+        attributes:
+          - jail
+          - interface
+          - net-filter
+          - seconds
+          - packets
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
 mcast-groups:
   - name: events
     auth: true

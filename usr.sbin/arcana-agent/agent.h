@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.92.0"
+#define	ARCANA_AGENT_VERSION	"0.93.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -302,6 +302,10 @@ void		 do_certs(struct work *, struct arc_certs_rsp *);
 const char	*cert_check(const struct arc_job_spec *);
 int		 do_cert(struct work *, const struct arc_job_spec *,
 		    const char **);
+
+/* invidia/capture.c: packets taken with tcpdump */
+void		 do_capture(struct work *, const struct arc_capture_req *,
+		    struct arc_capture_rsp *);
 
 /* superbia/ssh.c: the base system's sshd */
 void		 do_ssh(struct work *, struct arc_ssh_rsp *);

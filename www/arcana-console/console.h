@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.155.0"
+#define	ARCW_VERSION		"0.156.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -236,6 +236,7 @@ int		 api_kernel(struct http_request *);
 int		 api_jail_files(struct http_request *);
 int		 api_certs(struct http_request *);
 int		 api_ssh(struct http_request *);
+int		 api_capture(struct http_request *);
 int		 api_transport(struct http_request *);
 int		 api_transport_switch(struct http_request *);
 int		 api_sysctl(struct http_request *);

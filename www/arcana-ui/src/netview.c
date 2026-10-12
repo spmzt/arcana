@@ -638,7 +638,7 @@ view_network(struct html *h, struct server *s)
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
 		{ "nhgroups", "Nexthop groups" }, { "neighbours", "Neighbours" },
-		{ "ipsec", "IPsec" },
+		{ "ipsec", "IPsec" }, { "span", "Span" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -683,7 +683,7 @@ view_network(struct html *h, struct server *s)
 		    NET_NEXTHOPS ? " on" : "", app.net.kind == NET_NHGROUPS ?
 		    " on" : "");
 	h_raw(h, "<nav class=\"sub\">");
-	for (i = 0; i < 3 && !plug; i++) {
+	for (i = 0; i < 3 && !plug && app.net.kind != NET_SPAN; i++) {
 		static const int fams[] = { 0, 4, 6 };
 
 		h_fmt(h, "<button class=\"ghost small%s\" data-act=\"net-family\" "
@@ -729,11 +729,13 @@ view_network(struct html *h, struct server *s)
 		    "net-live\" title=\"Read again every two seconds while "
 		    "this is shown\"><span class=\"led\"></span>Live</button>",
 		    app.net.paused ? "" : " on");
-	h_raw(h, "<input class=\"filter\" id=\"filter\" data-input="
-	    "\"filter\" placeholder=\"Filter rows\" autocomplete=\"off\" "
-	    "spellcheck=\"false\"");
-	h_attr(h, "value", app.filter);
-	h_raw(h, ">");
+	if (app.net.kind != NET_SPAN) {
+		h_raw(h, "<input class=\"filter\" id=\"filter\" data-input="
+		    "\"filter\" placeholder=\"Filter rows\" autocomplete=\"off\" "
+		    "spellcheck=\"false\"");
+		h_attr(h, "value", app.filter);
+		h_raw(h, ">");
+	}
 	if (mine) {
 		fmt_age(age, sizeof(age), app.net.fetched);
 		h_raw(h, "<span class=\"tally\">");
@@ -755,6 +757,10 @@ view_network(struct html *h, struct server *s)
 		h_raw(h, app.net.loading ? "<div class=\"empty\"><div class="
 		    "\"loader\"></div></div>" : "<div class=\"empty\"><h2>No "
 		    "data</h2><p>The host has not answered yet.</p></div>");
+		return;
+	}
+	if (app.net.kind == NET_SPAN) {
+		view_span(h, s);
 		return;
 	}
 	/*

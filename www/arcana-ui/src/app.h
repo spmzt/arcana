@@ -47,6 +47,7 @@ char		*arc_store_get(const char *);
 void		 arc_store_set(const char *, const char *);
 char		*arc_theme_get(void);
 void		 arc_theme_set(const char *);
+void		 arc_save_b64(const char *, const char *, const char *);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
@@ -193,6 +194,7 @@ enum netkind {
 	NET_NHGROUPS,
 	NET_NEIGHBOURS,
 	NET_IPSEC,
+	NET_SPAN,		/* bridges' span ports, taps, capture */
 };
 /* A plugin's view: a tab of its own on a host that has it. */
 #define	NET_PLUGIN(k)	((k) == NET_WIREGUARD || (k) == NET_BIRD ||	\
@@ -668,6 +670,11 @@ void		 view_firewall(struct html *, struct server *);
 bool		 firewall_form(const char *, const ucl_object_t *);
 bool		 firewall_action(const char *, const char *, const char *);
 bool		 firewall_qos_modal(struct html *);
+/* span.c: traffic mirrored, and taken. */
+void		 span_refresh(struct server *);
+void		 view_span(struct html *, struct server *);
+bool		 span_form(const char *, const ucl_object_t *);
+bool		 span_action(const char *, const char *, const char *);
 void		 view_bridges(struct html *, struct server *,
 		    const ucl_object_t *);
 void		 view_geneve(struct html *, struct server *,
