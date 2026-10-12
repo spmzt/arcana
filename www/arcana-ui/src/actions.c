@@ -95,6 +95,68 @@ net_scope(void)
 	return (app.net_jail);
 }
 
+/*
+ * What each plugin with a tab needs installed: its program, and the
+ * package that has it.  wg(8) is the base system's since FreeBSD 15;
+ * before, it is wireguard-tools'.
+ */
+static const struct plugin_pkg plugin_pkgs[] = {
+	{ "bird", "BIRD", "birdc(8)", "bird3" },
+	{ "wireguard", "WireGuard", "wg(8)", "wireguard-tools" },
+	{ "strongswan", "strongSwan", "swanctl(8)", "strongswan" },
+};
+
+const struct plugin_pkg *
+plugin_pkg(const char *plugin)
+{
+	size_t	i;
+
+	for (i = 0; plugin != NULL && i < sizeof(plugin_pkgs) /
+	    sizeof(plugin_pkgs[0]); i++)
+		if (strcmp(plugin_pkgs[i].plugin, plugin) == 0)
+			return (&plugin_pkgs[i]);
+	return (NULL);
+}
+
+/* A plugin's packages being installed on s, on the host or in jail. */
+bool
+plugin_installing(const struct server *s, const char *jail)
+{
+	const struct op	*o;
+	int		 i;
+
+	for (i = 0; i < app.nops; i++) {
+		o = &app.ops[i];
+		if (o->state == OP_RUNNING && o->what == JOB_PACKAGES &&
+		    strcmp(o->sid, s->id) == 0 && strcmp(o->target, jail) ==
+		    0 && strncmp(o->title, "pkg install ", 12) == 0)
+			return (true);
+	}
+	return (false);
+}
+
+/* The plugin's packages installed where the tab looks: a job. */
+void
+plugin_install(struct server *s, const char *plugin)
+{
+	const struct plugin_pkg	*pp;
+	const char		*jail;
+	char			*json, *qj, title[300];
+
+	if ((pp = plugin_pkg(plugin)) == NULL)
+		return;
+	jail = net_scope();
+	qj = json_quote(jail);
+	if (asprintf(&json, "{\"kind\":\"pkg-install\",\"packages\":"
+	    "[\"%s\"]%s%s}", pp->package, jail[0] != '\0' ? ",\"jail\":" :
+	    "", jail[0] != '\0' ? qj : "") == -1)
+		abort();
+	free(qj);
+	snprintf(title, sizeof(title), "pkg install %s%s%s", pp->package,
+	    jail[0] != '\0' ? " in " : "", jail);
+	job_send(s, json, title, JOB_PACKAGES, jail);
+}
+
 /* The plugin a view of the network is of, or NULL: of the base system. */
 const char *
 kind_plugin(int kind)
@@ -419,6 +481,14 @@ job_finished(struct op *op, bool ok, const char *err)
 		topo_poll(s);
 		break;
 	default:
+		/*
+		 * A plugin's packages: the host says again what it has, and
+		 * the plugin's tab reads once it does.
+		 */
+		if (ok && strncmp(op->title, "pkg install ", 12) == 0) {
+			s->loading = false;
+			refresh_jails(s, false);
+		}
 		app.pkg.busy = false;
 		if (strcmp(app.pkg.sid, s->id) == 0 &&
 		    strcmp(app.pkg.jail, op->target) == 0) {
@@ -1824,16 +1894,12 @@ refresh_network(struct server *s, bool user)
 		return;
 	/*
 	 * A plugin's view, of a host or jail known not to have the plugin:
-	 * of where on the host it is, or the interfaces if nowhere.
+	 * nothing to ask, and the tab says how to install it.
 	 */
 	if (s->list != NULL && kind_plugin(app.net.kind) != NULL &&
 	    !has_plugin(s, kind_plugin(app.net.kind))) {
-		const char *w = plugin_where(s, kind_plugin(app.net.kind));
-
-		if (w != NULL && s == cur_server())
-			snprintf(app.net_jail, sizeof(app.net_jail), "%s", w);
-		else
-			app.net.kind = NET_INTERFACES;
+		app.net.loading = false;
+		return;
 	}
 	if (strcmp(app.net.sid, s->id) != 0 || strcmp(app.net.jail,
 	    net_scope()) != 0 || app.net.loading) {

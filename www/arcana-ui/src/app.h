@@ -684,6 +684,12 @@ bool		 sysctl_form(const char *, const ucl_object_t *);
 bool		 sysctl_action(const char *, const char *, const char *);
 void		 view_safe(struct html *, struct server *);
 void		 servers_cb(int, const ucl_object_t *, const char *, void *);
+struct plugin_pkg {
+	const char	*plugin, *title, *program, *package;
+};
+const struct plugin_pkg *plugin_pkg(const char *);
+bool		 plugin_installing(const struct server *, const char *);
+void		 plugin_install(struct server *, const char *);
 void		 refresh_transport(struct server *, bool, bool);
 void		 transport_tick(double);
 void		 view_transport(struct html *, struct server *);

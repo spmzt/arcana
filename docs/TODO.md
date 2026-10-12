@@ -102,6 +102,13 @@
   Squid as a plugin, an instance per service, the TLS names looked at
   or TLS opened with the agent's CA, HTTP and TLS forwarded to it
   (S4.1). Next: S4.2, malware.
+- 2026-10-12: the plugins' tabs on every host: where the plugin is
+  not installed (host or the jail picked), the tab names its program
+  and package with a button that installs it by pkg-install, the host's
+  list read again when the job ends and the agent's kept answer for
+  the jails forgotten; a workflow template installing a plugin's
+  package. Squid has no tab, so its package is installed by the
+  template or the Packages tab.
 - 2026-10-12: workflows, further: jobs.yaml checked against
   arcana.yaml's job-kind and job-spec by jobs.awk at the build, which
   stops where they differ (a field the API names otherwise says its
