@@ -64,6 +64,7 @@ enum op {
 	OP_SDWAN_DHCP,
 	OP_SDWAN_DNS,
 	OP_SDWAN_PROXY,
+	OP_SDWAN_IDS,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
 	OP_STORAGE,
@@ -1054,6 +1055,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SDWAN_DHCP ? "arc_sdwan_dhcp" :
 	    c->op == OP_SDWAN_DNS ? "arc_sdwan_dns" :
 	    c->op == OP_SDWAN_PROXY ? "arc_sdwan_proxy" :
+	    c->op == OP_SDWAN_IDS ? "arc_sdwan_ids" :
 	    c->op == OP_BIRD_CONFIG ? "arc_bird_config" :
 	    "arc_service_config";
 	snprintf(label, sizeof(label), "libcblink %s()", fn);
@@ -1410,6 +1412,8 @@ call_run(struct kore_task *t)
 	struct arc_sdwan_dns_rsp *sdr3;
 	struct arc_sdwan_proxy_req sdq4;
 	struct arc_sdwan_proxy_rsp *sdr4;
+	struct arc_sdwan_ids_req sdq5;
+	struct arc_sdwan_ids_rsp *sdr5;
 	struct arc_source_head_rsp *shr;
 	uint8_t			*bin;
 	size_t			 binlen;
@@ -1988,6 +1992,16 @@ connected:
 		put_str(top, "error", sdr2->error);
 		steps = sdr2->trace.v;
 		nsteps = sdr2->trace.n;
+		break;
+	case OP_SDWAN_IDS:
+		memset(&sdq5, 0, sizeof(sdq5));
+		sdq5.json = c->text;
+		if ((error = arc_sdwan_ids(&cl, &sdq5, &sdr5)) != 0)
+			goto rpcfail;
+		ok = sdr5->ok;
+		put_str(top, "error", sdr5->error);
+		steps = sdr5->trace.v;
+		nsteps = sdr5->trace.n;
 		break;
 	case OP_SDWAN_PROXY:
 		memset(&sdq4, 0, sizeof(sdq4));
@@ -4339,7 +4353,8 @@ hosts_sdwan_set(const char *uri, const char *peer, const char *name,
 	    "steer") == 0 ? OP_SDWAN_STEER : strcmp(what, "bird") == 0 ?
 	    OP_SDWAN_BIRD : strcmp(what, "dhcp") == 0 ? OP_SDWAN_DHCP :
 	    strcmp(what, "dns") == 0 ? OP_SDWAN_DNS : strcmp(what, "proxy") ==
-	    0 ? OP_SDWAN_PROXY : OP_SDWAN_PROBES;
+	    0 ? OP_SDWAN_PROXY : strcmp(what, "ids") == 0 ? OP_SDWAN_IDS :
+	    OP_SDWAN_PROBES;
 	c->text = kore_strdup(json);
 	snprintf(label, sizeof(label), "sdwan-%s", what);
 	return (self_call(c, uri, peer, name, label, status));

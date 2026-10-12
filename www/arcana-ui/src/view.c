@@ -1942,6 +1942,10 @@ modal(struct html *h)
 	case MODAL_SD_POLICY:
 	case MODAL_SD_EP:
 	case MODAL_SD_MAP:
+	case MODAL_SD_SECPOL:
+	case MODAL_SD_LIST:
+	case MODAL_SD_IDENTITY:
+	case MODAL_SD_CONFIG:
 		if (!sdwan_modal(h))
 			return;
 		break;

@@ -2652,7 +2652,19 @@ echo "certgen \$*" >> $(pwd)/squid.log
 mkdir -p "\$3"
 EOS
 	printf '#!/bin/sh\nexit 0\n' > tools/c-icap
-	chmod +x tools/squid tools/security_file_certgen tools/c-icap
+	# suricata: -T checks, and refuses BROKEN; run, it writes an alert
+	# and a flow to eve.json in its log directory, and says its pid.
+	cat > tools/suricata <<EOS
+#!/bin/sh
+echo "suricata \$*" >> $(pwd)/suricata.log
+[ "\$1" = -T ] && { grep -q BROKEN "\$3" && { echo "Error: rule BROKEN at line 1" >&2; exit 1; }; exit 0; }
+d=\$(sed -n 's/^default-log-dir: //p' "\$2")
+printf '%s\\n' '{"timestamp":"2026-10-12T18:00:00.000000+0000","event_type":"flow","src_ip":"10.30.0.2"}' \\
+    '{"timestamp":"2026-10-12T18:00:01.000000+0000","in_iface":"wg5","event_type":"alert","src_ip":"10.30.0.2","src_port":40000,"dest_ip":"10.20.0.1","dest_port":80,"proto":"TCP","alert":{"action":"allowed","signature_id":1000001,"rev":1,"signature":"ARCANA test \\"quoted\\"","category":"","severity":2}}' >> "\$d/eve.json"
+sleep 300 & echo \$! > "\$4"
+exit 0
+EOS
+	chmod +x tools/squid tools/security_file_certgen tools/c-icap tools/suricata
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
@@ -2793,6 +2805,34 @@ EOS
 	test ! -f "$(dirname "$f")/sdwan-icap-sw1.conf" || atf_fail "the c-icap file stayed"
 	kill -0 "$ipid" 2>/dev/null && atf_fail "c-icap still runs"
 	atf_check -o match:'"proxy":\[\]' "$JGC" -c "$SOCK" sdwan
+	# Intrusion detection (SASE-4): Suricata of each instance checked,
+	# started on its interfaces, its alerts read into events and the
+	# read; the same files again leave it be; gone with the instance.
+	atf_check -s exit:1 -e match:'watches no interface' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"instances":[{"name":"sw1","interfaces":[],"conf":"x"}]}'
+	atf_check -s exit:1 -e match:'its interfaces are names' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"instances":[{"name":"sw1","interfaces":["wg5; rm"],"conf":"x"}]}'
+	atf_check -s exit:1 -e match:'suricata does not take it: Error: rule BROKEN' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"BROKEN"}]}'
+	ids='{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"default-log-dir: @LOGDIR@\nrule-files:\n  - @RULES@\n","rules":"alert tcp any any -> any 80 (sid:1000001;)\n"}]}'
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ids"
+	atf_check -o match:'^suricata -T -c .*sdwan-ids-sw1.yaml$' \
+	    -o match:'^suricata -c .*sdwan-ids-sw1.yaml --pidfile .*sdwan-ids-sw1.pid --pcap -D$' cat suricata.log
+	atf_check -o match:'^default-log-dir: .*sdwan-ids-sw1.d$' -o match:'^  - .*sdwan-ids-sw1.rules$' \
+	    cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
+	atf_check -o match:'sid:1000001' cat "$(dirname "$f")/sdwan-ids-sw1.rules"
+	sleep 2
+	atf_check -o match:'"ids":\[\{"name":"sw1","interfaces":\["wg5"\],"running":true,"alerts_seen":1,"alerts":\[\{"name":"sw1","time":"2026-10-12T18:00:01' \
+	    -o match:'"signature":"ARCANA test quoted","category":"","severity":2' "$JGC" -c "$SOCK" sdwan
+	atf_check -o match:'"kind":"sdwan-ids","data":\{"name":"sw1",.*"src":"10.30.0.2","sport":40000,"dst":"10.20.0.1","dport":80,"proto":"TCP","iface":"wg5","sid":1000001' \
+	    "$JGC" -c "$SOCK" events
+	spid=$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")
+	atf_check -o match:'suricata sw1 on 1 interface: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$ids"
+	atf_check -o inline:"$spid\n" cat "$(dirname "$f")/sdwan-ids-sw1.pid"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
+	test ! -f "$(dirname "$f")/sdwan-ids-sw1.yaml" || atf_fail "the suricata file stayed"
+	kill -0 "$spid" 2>/dev/null && atf_fail "suricata still runs"
+	atf_check -o match:'"ids":\[\]' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()
 {
