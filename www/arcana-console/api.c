@@ -356,5 +356,6 @@ arcw_onload(int action)
 	transfers_init();
 	workflows_init();
 	sdwan_init();
+	mail_init();
 	return (KORE_RESULT_OK);
 }

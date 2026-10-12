@@ -558,6 +558,23 @@ part_shell(void)
 	    ".click()");
 	wait_js("document.querySelector('ul.devices').textContent.includes("
 	    "'No device yet')", 10);
+	/* By mail: its settings here, and none of them under Console. */
+	wait_js("document.querySelector('form[data-form=settings-mail] "
+	    "input[name=mail_to]')", 10);
+	run("const f = document.querySelector('form[data-form=settings-mail]');"
+	    " f.mail_to.value = 'ops@example.org'; f.mail_faults.value = "
+	    "'Critical'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('Settings saved'))", 10);
+	ATF_CHECK(system("grep -q 'ops@example.org' data/settings.json && "
+	    "grep -q '\"mail_faults\": *\"Critical\"' data/settings.json") ==
+	    0);
+	run("document.querySelector('button[data-act=mail-test]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('A test mail went to ops@example.org'))",
+	    10);
+	ATF_CHECK(system("grep -qx 'To: ops@example.org' mail.out") == 0);
+	shot("0b-mail");
 	/*
 	 * What is typed in a field stays there when the page is drawn
 	 * again under it: the key's path typed first is still there when
@@ -567,6 +584,8 @@ part_shell(void)
 	    "console]').click()");
 	wait_js("document.querySelector('form[data-form=settings] "
 	    "input[name=agent_source]')", 10);
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=settings] "
+	    "input[name=mail_to]')"));
 	run("const f = document.querySelector('form[data-form=settings]'); "
 	    "f.agent_ssh_key.value = '/usr/local/etc/arcana/id_ed25519'; "
 	    "f.update_check.checked = !f.update_check.checked; "

@@ -24,6 +24,8 @@
 #include <syslog.h>
 #include <time.h>
 
+#include <ucl.h>
+
 #include "agent.h"
 
 #define	JOBS_KEPT	64	/* finished jobs remembered */
@@ -1075,6 +1077,27 @@ run(struct qjob *j)
 	logmsg(ok ? LOG_INFO : LOG_NOTICE, "%s: job %ju: %s: %s", j->peer,
 	    (uintmax_t)j->id, j->title, ok ? "ok" : error != NULL ? error :
 	    "failed");
+	{
+		ucl_object_t	*e;
+		char		*js;
+
+		/* An event too, for whoever is told of them (mail). */
+		e = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(e, ucl_object_fromint((int64_t)j->id),
+		    "id", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(j->title),
+		    "title", 0, false);
+		ucl_object_insert_key(e, ucl_object_frombool(ok), "ok", 0,
+		    false);
+		if (!ok)
+			ucl_object_insert_key(e, ucl_object_fromstring(error !=
+			    NULL ? error : "failed"), "error", 0, false);
+		if ((js = (char *)ucl_object_emit(e, UCL_EMIT_JSON_COMPACT)) !=
+		    NULL)
+			event_add("job", "%s", js);
+		free(js);
+		ucl_object_unref(e);
+	}
 	pthread_mutex_lock(&jobs_lock);
 	j->ok = ok;
 	j->error = error;

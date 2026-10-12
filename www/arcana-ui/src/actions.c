@@ -2745,6 +2745,28 @@ settings_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 }
 
+static void
+mail_test_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	app.modal_busy = false;
+	if (status == 200 && jbool(o, "ok"))
+		toast(false, "A test mail went to %s", jstr(o, "to") != NULL ?
+		    jstr(o, "to") : "them");
+	else
+		toast(true, "No mail sent: %s", jstr(o, "error.message") != NULL ?
+		    jstr(o, "error.message") : err != NULL ? err : "failed");
+}
+
+void
+mail_test(void)
+{
+
+	app.modal_busy = true;
+	api("POST", "/api/settings/mail-test", "{}", mail_test_cb, NULL);
+}
+
 void
 load_settings(void)
 {
@@ -2752,9 +2774,13 @@ load_settings(void)
 	api("GET", "/api/settings", NULL, settings_cb, NULL);
 }
 
-/* Send every setting of the form; the console keeps what differs. */
+/*
+ * Send every setting of the form; the console keeps what differs.  The
+ * mail's are a form of their own, on the Notifications tab: each form
+ * sends its own.
+ */
 void
-save_settings(const ucl_object_t *f)
+save_settings(const ucl_object_t *f, bool mail)
 {
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
@@ -2769,7 +2795,8 @@ save_settings(const ucl_object_t *f)
 	it = NULL;
 	while ((e = ucl_object_iterate(jget(app.settings, "settings"), &it,
 	    true)) != NULL) {
-		if (!jbool(e, "editable") || (key = jstr(e, "key")) == NULL)
+		if (!jbool(e, "editable") || (key = jstr(e, "key")) == NULL ||
+		    (strncmp(key, "mail_", 5) == 0) != mail)
 			continue;
 		q = json_quote(key);
 		h_raw(&b, first ? "" : ",");

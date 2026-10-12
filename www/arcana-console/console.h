@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.153.0"
+#define	ARCW_VERSION		"0.154.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -63,6 +63,15 @@ struct config {
 	int		 session_idle;	/* seconds a sign-in may sit idle */
 	int		 session_max;	/* seconds a sign-in lasts at most */
 	char		*local_agent;	/* the agent beside the console, or NULL */
+	char		*sendmail;	/* what mail is sent by */
+	int		 mail_tick;	/* s between reads of the events */
+	/* web.conf's for the mail; what is in force: settings_peek(). */
+	char		*mail_to;	/* addresses, "" for none */
+	char		*mail_from;	/* "": arcana@ the host */
+	char		*mail_faults;	/* the least severity, or "none" */
+	char		*mail_jobs;	/* "failed", "all" or "none" */
+	char		*mail_runs;	/* the same, of workflow runs */
+	bool		 mail_limits;	/* thresholds crossed */
 	char		*android_package;	/* the Android app, or NULL */
 	uint8_t		 android_keys[ANDROID_KEYS][32];	/* SHA-256 of its signers */
 	int		 nandroid_keys;
@@ -72,6 +81,13 @@ extern struct config cfg;
 
 int		 config_load(const char *);
 int		 config_check_certs(void);
+
+/* mail.c: what happened, mailed. */
+void		 mail_init(void);
+int		 mail_send(const char *, const char *, char *, size_t);
+void		 mail_run(const char *, unsigned int, const char *);
+void		 mail_flush(void);
+int		 api_mail_test(struct http_request *);
 
 /* push.c: notifications to the devices that asked, by Web Push. */
 int		 push_init(void);
@@ -84,6 +100,7 @@ void		 api_push_free(struct http_request *);
 /* settings.c: the settings changed from the console. */
 void		 settings_init(const char *, const char *);
 void		 config_refresh(void);
+char		*settings_peek(const char *);
 int		 api_settings(struct http_request *);
 
 /* store.c: small JSON documents in the data directory. */
