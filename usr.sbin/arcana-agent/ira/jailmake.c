@@ -407,11 +407,50 @@ reads_back(struct work *w, const char *file, const char *name,
 	return (0);
 }
 
+/*
+ * The datasets above ds that are not there yet, made (as the jails'
+ * dataset of a host that has none, pool/jails), not mounted of their
+ * own: the topmost one made, for an undo, or "" when all were there.
+ */
+static int
+parents_make(struct work *w, const char *ds, const char **topp,
+    const char **errp)
+{
+	char	*p, *slash;
+
+	*topp = "";
+	p = wstrdup(w, ds);
+	/* Up to the first that is there.  A pool is never one made here,
+	 * nor one taken away again: without it there is nothing to do. */
+	for (;;) {
+		if ((slash = strrchr(p, '/')) == NULL)
+			return (0);
+		*slash = '\0';
+		if (ds_exists(w, p))
+			break;
+		if (strchr(p, '/') == NULL) {
+			*topp = "";
+			*errp = wfmt(w, "there is no pool %s", p);
+			return (-1);
+		}
+		*topp = wstrdup(w, p);
+	}
+	if ((*topp)[0] == '\0')
+		return (0);
+	p = wstrdup(w, ds);
+	*strrchr(p, '/') = '\0';
+	if (zfs(w, errp, "create", "-p", "-o", "canmount=off", p, NULL) != 0) {
+		*topp = "";
+		return (-1);
+	}
+	return (0);
+}
+
 static int
 jail_make(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	struct arc_action_rsp	 ar;
-	const char		*file, *tmp, *e;
+	const char		*file, *tmp, *e, *top;
 	bool			 made;
 
 	file = wfmt(w, "%s/%s.conf", opts.jail_conf_d, sp->jail);
@@ -425,23 +464,26 @@ jail_make(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	}
 	(void)mkdir(opts.jail_conf_d, 0755);
 	made = false;
+	top = "";
 	if (sp->dataset != NULL && sp->dataset[0] != '\0') {
 		if (ds_exists(w, sp->dataset)) {
 			*errp = wfmt(w, "the dataset %s is there already",
 			    sp->dataset);
 			return (-1);
 		}
+		if (parents_make(w, sp->dataset, &top, errp) != 0)
+			return (-1);
 		if (strcmp(sp->copy, "clone") == 0) {
 			if (zfs(w, errp, "clone", "-o", wfmt(w, "mountpoint=%s",
 			    sp->path), sp->snapshot, sp->dataset, NULL) != 0)
-				return (-1);
+				goto undo;
 		} else if (send_recv(w, sp->snapshot, sp->dataset, sp->path,
 		    errp) != 0) {
 			/* A recv cut short leaves nothing, or a part. */
 			if (ds_exists(w, sp->dataset))
 				(void)zfs(w, NULL, "destroy", "-r", sp->dataset,
 				    NULL, NULL, NULL);
-			return (-1);
+			goto undo;
 		}
 		made = true;
 	}
@@ -472,6 +514,9 @@ undo:
 	if (made)
 		(void)zfs(w, NULL, "destroy", "-r", sp->dataset, NULL, NULL,
 		    NULL);
+	/* What was made above it for it, gone with it. */
+	if (top[0] != '\0')
+		(void)zfs(w, NULL, "destroy", "-r", top, NULL, NULL, NULL);
 	return (-1);
 }
 

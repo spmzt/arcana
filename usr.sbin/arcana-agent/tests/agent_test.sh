@@ -4628,6 +4628,7 @@ destroy) rm -f "$(pwd)/ds.\$(echo "\$3" | tr / _)" ;;
 esac
 EOS
 	chmod +x fake-zfs
+	touch ds.tank ds.tank_jails
 	DAEMON_ARGS="-z $(pwd)/fake-zfs"
 	start_daemon
 	d=$(pwd)/etc
@@ -4666,6 +4667,9 @@ EOS
 	atf_check -o match:'done +jail make web2' "$JGC" -c "$SOCK" jailconf make web2 web2.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
 	atf_check -o match:'^zfs send tank/jails/base@15.0$' -o match:'^zfs recv -o mountpoint=/usr/jails/web2 tank/jails/web2$' cat zfs.log
 	atf_check -o inline:'stream of tank/jails/base@15.0\n' cat recv.in
+	# A pool that is not there is not one to make anything in.
+	atf_check -s exit:1 -o match:'there is no pool nopool' "$JGC" -c "$SOCK" jailconf make web3 web2.conf nopool/jails/web3 tank/jails/base@15.0 clone /usr/jails/web3
+	atf_check -o not-match:'destroy -r nopool' -o not-match:'create' cat zfs.log
 	# The template kept while a jail includes it.
 	atf_check -s exit:1 -o match:'certbot.inc is included by www.conf: kept' "$JGC" -c "$SOCK" jailconf untemplate certbot
 	# Checked before queued: names, datasets, the copy, the path.
