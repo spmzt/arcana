@@ -589,6 +589,19 @@ ATF_TC_BODY(jails, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	/* JSON that a strict parser takes: each step's status once, never
+	 * a key twice (",," and an array where a word goes). */
+	ATF_CHECK_MSG(strstr(r.body, ",,") == NULL && strstr(r.body,
+	    "\"status\":[") == NULL, "%s", r.body);
+	{
+		FILE	*fp;
+
+		ATF_REQUIRE((fp = fopen("jails.json", "w")) != NULL);
+		fputs(r.body, fp);
+		fclose(fp);
+		ATF_CHECK_MSG(system("python3 -c 'import json; json.load(open("
+		    "\"jails.json\"))'") == 0, "not strict JSON: %s", r.body);
+	}
 	ATF_CHECK(jail_named(&r, "db") != NULL);
 	ATF_CHECK_STREQ("stopped", jail_str(&r, "web", "state"));
 	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));

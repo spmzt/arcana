@@ -1078,8 +1078,11 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 		    v[i].parent + 3, v[i].kind < nitems(kind_names) ?
 		    kind_names[v[i].kind] : "lib", v[i].label, v[i].detail,
 		    true, v[i].duration_us);
-		put_str(o, "status", v[i].status < nitems(status_names) ?
-		    status_names[v[i].status] : "incomplete");
+		/* step_object() put one already: replaced, not a second key,
+		 * which UCL keeps as an array and JSON cannot have. */
+		ucl_object_replace_key(o, ucl_object_fromstring(v[i].status <
+		    nitems(status_names) ? status_names[v[i].status] :
+		    "incomplete"), "status", 0, true);
 		if (v[i].argv.n > 0) {
 			put(o, "argv", strs(v[i].argv.v, v[i].argv.n));
 			put(o, "exit", ucl_object_fromint(v[i].exit));
