@@ -1114,6 +1114,24 @@ addToLibrary({
 	arc_theme_get: function () {
 		return (arcStr(document.documentElement.dataset.theme || ""));
 	},
+	/* A file made of base64, saved: a capture's pcap. */
+	arc_save_b64__deps: ["$UTF8ToString"],
+	arc_save_b64: function (namep, typep, b64p) {
+		var bin = atob(UTF8ToString(b64p)), bytes = new Uint8Array(
+		    bin.length), i, a, url;
+
+		for (i = 0; i < bin.length; i++)
+			bytes[i] = bin.charCodeAt(i);
+		url = URL.createObjectURL(new Blob([bytes], {
+		    type: UTF8ToString(typep) }));
+		a = document.createElement("a");
+		a.href = url;
+		a.download = UTF8ToString(namep);
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
+	},
 	arc_theme_set__deps: ["$UTF8ToString"],
 	arc_theme_set: function (namep) {
 		var name = UTF8ToString(namep), meta;

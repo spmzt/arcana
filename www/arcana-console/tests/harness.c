@@ -700,6 +700,20 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = -T ] && exit 0\n"
 	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\nexit 0\n");
+	/* tcpdump(1): its sources, a capture written, and read back;
+	 * timeout(1) leaves it be. */
+	ATF_REQUIRE(mkdir("tools/tmp", 0755) == 0 || errno == EEXIST);
+	put("tools/timeout", "#!/bin/sh\nshift\nexec \"$@\"\n");
+	put("tools/tcpdump", "#!/bin/sh\necho \"tcpdump $*\" >> tcpdump.log\n"
+	    "case \"$1\" in\n-D) printf '1.em1 [Up, Running]\\n2.ipfw150 [Up]"
+	    "\\n' ;;\n-n) [ \"$2\" = -tttt ] && { printf '2026-10-12 10:00:00."
+	    "000001 IP 10.0.0.2 > 10.0.0.1: ICMP echo request, id 1, seq 0, "
+	    "length 64\\n2026-10-12 10:00:00.000090 IP 10.0.0.1 > 10.0.0.2: "
+	    "ICMP echo reply, id 1, seq 0, length 64\\n'; exit 0; }\n"
+	    "while [ $# -gt 0 ]; do [ \"$1\" = -w ] && printf 'PCAPDATA' > "
+	    "\"$2\"; shift; done ;;\nesac\nexit 0\n");
+	ATF_REQUIRE(chmod("tools/timeout", 0755) == 0 && chmod("tools/tcpdump",
+	    0755) == 0);
 	/* arp(8) and ndp(8), told what to set. */
 	put("tools/arp", "#!/bin/sh\necho \"arp $*\" >> neigh.log\n");
 	put("tools/ndp", "#!/bin/sh\necho \"ndp $*\" >> neigh.log\n");

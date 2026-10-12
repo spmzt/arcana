@@ -188,6 +188,7 @@ usage(void)
 	    "    neigh add address lladdr [temp] | delete address\n"
 	    "    cert [list] | add name file | remove name | trust file |\n"
 	    "        untrust file | rehash\n"
+	    "    capture [source packets seconds [filter ...]]\n"
 	    "    sshd [list] | banner file | set Setting [value ...] |\n"
 	    "        authorize user keyfile | unauthorize user fingerprint |\n"
 	    "        sign ca-key-file [principal ...]\n"
@@ -2058,6 +2059,60 @@ cmd_neigh(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * capture [source packets seconds [filter ...]]: packets taken with
+ * tcpdump off an interface or a tap, of the host or of -j's jail; with
+ * nothing, the sources there are.
+ */
+static int
+cmd_capture(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_capture_req	 rq;
+	struct arc_capture_rsp	*rs;
+	const char		*errstr;
+	char			*f;
+	size_t			 len;
+	int			 i, error;
+
+	memset(&rq, 0, sizeof(rq));
+	rq.jail = netjail;
+	f = NULL;
+	if (argc != 1) {
+		if (argc < 4)
+			usage();
+		rq.interface = argv[1];
+		rq.has_packets = true;
+		rq.packets = (uint32_t)strtonum(argv[2], 1, 500, &errstr);
+		if (errstr != NULL)
+			errx(2, "packets %s: %s", argv[2], errstr);
+		rq.has_seconds = true;
+		rq.seconds = (uint32_t)strtonum(argv[3], 1, 60, &errstr);
+		if (errstr != NULL)
+			errx(2, "seconds %s: %s", argv[3], errstr);
+		for (len = 1, i = 4; i < argc; i++)
+			len += strlen(argv[i]) + 1;
+		if ((f = calloc(1, len)) == NULL)
+			err(1, "calloc");
+		for (i = 4; i < argc; i++) {
+			if (i > 4)
+				strlcat(f, " ", len);
+			strlcat(f, argv[i], len);
+		}
+		rq.net_filter = f;
+	}
+	if ((error = arc_capture(cl, &rq, &rs)) != 0)
+		fail(cl, error, "capture");
+	if (rs->json != NULL)
+		xo_emit("{:json/%s}\n", rs->json);
+	else if (rs->error != NULL)
+		warnx("%s", rs->error);
+	emit_trace(rs->trace.v, rs->trace.n);
+	error = rs->ok ? 0 : 1;
+	arc_capture_rsp_free(rs);
+	free(f);
+	return (error);
+}
+
+/*
  * sshd [list] | banner file | set Setting [value ...] | authorize user
  * keyfile | unauthorize user fingerprint | sign ca-key-file [principal
  * ...]: the base system's sshd, of the host or of -j's jail; a change is
@@ -2080,7 +2135,7 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
 		if (rs->json != NULL)
 			xo_emit("{:json/%s}\n", rs->json);
 		else if (rs->error != NULL)
-			xo_emit_warn("{:error/%s}", rs->error);
+			warnx("%s", rs->error);
 		emit_trace(rs->trace.v, rs->trace.n);
 		error = rs->ok ? 0 : 1;
 		arc_ssh_rsp_free(rs);
@@ -2136,7 +2191,7 @@ cmd_cert(struct arc_client *cl, int argc, char **argv)
 		if (rs->json != NULL)
 			xo_emit("{:json/%s}\n", rs->json);
 		else if (rs->error != NULL)
-			xo_emit_warn("{:error/%s}", rs->error);
+			warnx("%s", rs->error);
 		emit_trace(rs->trace.v, rs->trace.n);
 		error = rs->ok ? 0 : 1;
 		arc_certs_rsp_free(rs);
@@ -3619,6 +3674,8 @@ main(int argc, char *argv[])
 		rc = cmd_cert(&cl, argc, argv);
 	else if (strcmp(argv[0], "sshd") == 0)
 		rc = cmd_sshd(&cl, argc, argv);
+	else if (strcmp(argv[0], "capture") == 0)
+		rc = cmd_capture(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||

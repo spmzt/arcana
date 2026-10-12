@@ -315,6 +315,8 @@ worker(void *arg)
 	struct arc_jail_files_rsp jfr;
 	struct arc_certs_rsp	 cer;
 	struct arc_ssh_rsp	 sshr;
+	struct arc_capture_req	 capq;
+	struct arc_capture_rsp	 capr;
 	struct arc_transport_rsp tpr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
@@ -628,6 +630,29 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &cer.trace.v, &cer.trace.n);
 		rc = arc_certs_reply(j->req, &cer);
+		break;
+	case ARC_CMD_CAPTURE:
+		what = wfmt(&w, "capture %s%s%s", j->ref != NULL ? j->ref :
+		    "sources", j->jail != NULL ? " in " : "", j->jail != NULL ?
+		    j->jail : "");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&capq, 0, sizeof(capq));
+		memset(&capr, 0, sizeof(capr));
+		capr.has_ok = true;
+		capq.interface = j->ref;
+		capq.net_filter = j->sha256;
+		capq.has_seconds = j->fib > 0;
+		capq.seconds = j->fib;
+		capq.has_packets = j->offset > 0;
+		capq.packets = j->offset;
+		if (scope_enter(&w, j->jail, &capr.error) == 0)
+			do_capture(&w, &capq, &capr);
+		ok = capr.ok;
+		error = capr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &capr.trace.v, &capr.trace.n);
+		rc = arc_capture_reply(j->req, &capr);
 		break;
 	case ARC_CMD_SSH:
 		what = j->jail != NULL ? wfmt(&w, "sshd of %s", j->jail) : "sshd";
@@ -1911,6 +1936,30 @@ arc_certs_doit(cbl_req *req, const struct arc_certs_req *rq,
 	j->cmd = ARC_CMD_CERTS;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
+	return (start(j));
+}
+
+int
+arc_capture_doit(cbl_req *req, const struct arc_capture_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_CAPTURE;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	/* The source rides in ref, the filter in sha256. */
+	j->ref = rq->interface != NULL && rq->interface[0] != '\0' ?
+	    xstrdup(rq->interface) : NULL;
+	j->sha256 = rq->net_filter != NULL ? xstrdup(rq->net_filter) : NULL;
+	/* As fw-trace's: seconds in fib, packets in offset. */
+	j->fib = rq->has_seconds ? rq->seconds : 0;
+	j->offset = rq->has_packets ? rq->packets : 0;
 	return (start(j));
 }
 
