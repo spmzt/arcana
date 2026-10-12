@@ -2833,6 +2833,13 @@ EOS
 	test ! -f "$(dirname "$f")/sdwan-ids-sw1.yaml" || atf_fail "the suricata file stayed"
 	kill -0 "$spid" 2>/dev/null && atf_fail "suricata still runs"
 	atf_check -o match:'"ids":\[\]' "$JGC" -c "$SOCK" sdwan
+	# Made again, its old alerts are not told again: the one it writes
+	# now is.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ids"
+	sleep 2
+	atf_check -o match:'"alerts_seen":1,' "$JGC" -c "$SOCK" sdwan
+	atf_check -o inline:'2\n' sh -c "grep -c '\"event_type\":\"alert\"' '$(dirname "$f")/sdwan-ids-sw1.d/eve.json'"
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()
 {
