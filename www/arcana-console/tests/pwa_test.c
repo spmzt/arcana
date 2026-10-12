@@ -3419,7 +3419,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 11",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 12",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");

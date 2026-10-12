@@ -52,7 +52,8 @@ BEGIN { section = ""; n = 0; block = ""; path = "" }
 			# As written, or a sentence that ran on to the next
 			# line.
 			if (folded)
-				text = text " " esc(trim($0))
+				text = text (text == "" ? "" : " ") \
+				    esc(trim($0))
 			else
 				text = text (text == "" ? "" : "\\n") \
 				    esc(substr($0, blockind + 3))
@@ -109,6 +110,11 @@ n == 0 { next }
 }
 /^      description: \|/ {
 	block = "op"; blockind = 6; text = ""; folded = 0
+	next
+}
+# Folded, for a text with ": " in it, which a plain one cannot hold.
+/^      description: >-?$/ {
+	block = "op"; blockind = 6; text = ""; folded = 1
 	next
 }
 /^      description: [^|]/ {
