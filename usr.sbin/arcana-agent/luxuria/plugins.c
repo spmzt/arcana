@@ -186,6 +186,16 @@ found_in(int jid, const char *root)
 	return (m);
 }
 
+/* What the jails have, forgotten: packages were installed. */
+void
+plugins_forget(void)
+{
+
+	pthread_mutex_lock(&kept_lock);
+	memset(kept, 0, sizeof(kept));
+	pthread_mutex_unlock(&kept_lock);
+}
+
 /*
  * The plugins there are in jail jid, beneath root, or on the host when
  * jid is 0: those whose program can be run there.

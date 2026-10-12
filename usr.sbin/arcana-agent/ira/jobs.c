@@ -912,6 +912,8 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_PKG_INSTALL:
 		error = NULL;
 		ok = do_pkg_install(&j->w, sp, &error) == 0;
+		/* A plugin may be there now: asked again, not remembered. */
+		plugins_forget();
 		break;
 	case ARC_JOB_KIND_IPSEC:
 		error = NULL;

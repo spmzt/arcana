@@ -594,7 +594,15 @@ The console is laid out as a tree and tabs.
     host where its program is installed or one of its running vnet
     jails has it installed, and none where neither does; the picker
     at the left of the tab's toolbar offers only those that have it.
-    Nothing is asked of BIRD or `wg` on a host without them. A jail's
+    Nothing is asked of BIRD or `wg` on a host without them. The
+    three tabs are there on every host all the same: where the plugin
+    is not installed (on the host, or in the jail picked, each marked
+    so in the picker), the tab says which program it works through and
+    which package has it (`bird3`, `wireguard-tools`, `strongswan`),
+    with a button that installs it there with `pkg install`, a job of
+    its own; the tab comes alive once it is done. Nothing is installed
+    but when that is pressed. **From a template… → A plugin's package
+    installed** does the same as a workflow, the package a parameter. A jail's
     programs are looked for as the jail sees them (the agent attaches
     to it to look, so a link inside the jail leads where it does
     there), and `wg` is the base system's `/usr/bin/wg` on FreeBSD 15

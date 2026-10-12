@@ -481,6 +481,13 @@ static const struct {
 	    "[\"${LOCAL}\"], \"steps\": [{\"id\": \"upgrade\", \"name\": "
 	    "\"Upgrade the host's packages\", \"job\": {\"kind\": "
 	    "\"pkg-upgrade\"}}]}" },
+	{ "plugin-install", "A plugin's package installed",
+	    "{\"name\": \"Plugin installed\", \"hosts\": [\"${LOCAL}\"], "
+	    "\"params\": [{\"name\": \"package\", \"default\": \"bird3\"}], "
+	    "\"steps\": [{\"id\": \"install\", \"name\": \"Install the "
+	    "plugin's package (bird3, wireguard-tools, strongswan, squid)\", "
+	    "\"job\": {\"kind\": \"pkg-install\", \"packages\": "
+	    "[\"${param.package}\"]}}]}" },
 	{ "service-back", "A service restarted when its host answers again",
 	    "{\"name\": \"Service back with its host\", \"hosts\": "
 	    "[\"${LOCAL}\"], \"params\": [{\"name\": \"service\", "

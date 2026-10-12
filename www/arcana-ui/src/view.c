@@ -961,9 +961,10 @@ stage(struct html *h)
 			{ "jobs", "Jobs" },
 		};
 		/*
-		 * A plugin has a tab of its own, on a host that has it or
-		 * one of whose vnet jails does: it is what was installed
-		 * there, not the base system's.
+		 * A plugin has a tab of its own on every host: what was
+		 * installed there, not the base system's.  Where neither
+		 * the host nor a vnet jail of it has it, the tab says how
+		 * to install it.
 		 */
 		static const struct {
 			const char	*arg, *title;
@@ -983,16 +984,19 @@ stage(struct html *h)
 			    "data-arg=\"%s\">%s</button>", (int)app.tab == t &&
 			    !(plug && t == TAB_NETWORK) ? " on" : "", tabs[t].arg,
 			    tabs[t].title);
-		for (t = 0; t < 3; t++)
-			if (plugin_where(s, kind_plugin(plugins[t].kind)) !=
-			    NULL)
-				h_fmt(h, "<button class=\"tab plugin%s\" "
-				    "data-act=\"tab\" data-arg=\"%s\" title=\""
-				    "A plugin: installed on this host or a jail "
-				    "of it, not the base system's\">%s</button>",
-				    plug &&
-				    (int)app.net.kind == plugins[t].kind ? " on" :
-				    "", plugins[t].arg, plugins[t].title);
+		for (t = 0; t < 3; t++) {
+			bool	there = s->list == NULL || plugin_where(s,
+			    kind_plugin(plugins[t].kind)) != NULL;
+
+			h_fmt(h, "<button class=\"tab plugin%s%s\" "
+			    "data-act=\"tab\" data-arg=\"%s\" title=\"%s\">"
+			    "%s</button>", plug && (int)app.net.kind ==
+			    plugins[t].kind ? " on" : "", there ? "" :
+			    " missing", plugins[t].arg, there ? "A plugin: "
+			    "installed on this host or a jail of it, not the "
+			    "base system's" : "A plugin, not installed here: "
+			    "open it to install its package", plugins[t].title);
+		}
 		h_raw(h, "</nav>");
 	}
 	if (app.tab == TAB_SUMMARY) {

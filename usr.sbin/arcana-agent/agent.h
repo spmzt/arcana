@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.72.0"
+#define	ARCANA_AGENT_VERSION	"0.73.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -521,6 +521,7 @@ int		 do_storage_job(struct work *, const struct arc_job_spec *,
 void		 plugins_there(struct work *, int, const char *,
 		    const char *const **, size_t *);
 const char	*plugin_bin(struct work *, const char *);
+void		 plugins_forget(void);
 extern const char wg_base_bin[];
 int		 do_if_vnet(struct work *, const char *, const char *, bool,
 		    bool, const char **);

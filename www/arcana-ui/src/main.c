@@ -658,6 +658,16 @@ dispatch(const char *act, const char *arg, const char *value)
 			app.net.kind = arg[0] == 'w' ? NET_WIREGUARD : arg[0] ==
 			    'b' ? NET_BIRD : arg[0] == 'i' ? NET_IPSEC :
 			    NET_INTERFACES;
+			/* Opened where the plugin is, when not here. */
+			if (kind_plugin(app.net.kind) != NULL && s->list !=
+			    NULL && !has_plugin(s, kind_plugin(app.net.kind))) {
+				const char *w = plugin_where(s,
+				    kind_plugin(app.net.kind));
+
+				if (w != NULL)
+					snprintf(app.net_jail,
+					    sizeof(app.net_jail), "%s", w);
+			}
 			app.net.sort = -1;
 			app.net.loading = false;
 			app.net.sid[0] = '\0';
@@ -1063,6 +1073,13 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.net.loading = false;
 		topo_lookup_clear();
 		topo_poll(s);
+		refresh_network(s, true);
+	} else if (strcmp(act, "plugin-install") == 0 && s != NULL) {
+		plugin_install(s, arg);
+	} else if (strcmp(act, "net-jail-set") == 0 && s != NULL) {
+		snprintf(app.net_jail, sizeof(app.net_jail), "%s", arg);
+		app.net.sort = -1;
+		app.net.loading = false;
 		refresh_network(s, true);
 	} else if (strcmp(act, "input:net-jail") == 0 && s != NULL) {
 		snprintf(app.net_jail, sizeof(app.net_jail), "%s", value);

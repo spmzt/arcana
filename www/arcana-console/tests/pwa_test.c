@@ -1690,6 +1690,36 @@ part_plugins(void)
 	 * is given one, made on the host, and then a peer.  And BIRD: its
 	 * protocols, one of them reloaded.
 	 */
+	/*
+	 * A plugin not installed: its tab is there still, and says what
+	 * to install, with a button that installs it by pkg(8).  Put back,
+	 * the tab comes alive once the job is done.
+	 */
+	ATF_REQUIRE(rename("fake-swanctl", "fake-swanctl.off") == 0);
+	run("document.querySelector('button[data-act=refresh]').click()");
+	wait_js("document.querySelector('button.tab.plugin.missing[data-arg="
+	    "ipsec]')", 20);
+	run("document.querySelector('button.tab.plugin[data-arg=ipsec]')"
+	    ".click()");
+	wait_js("document.querySelector('.plugin-missing button[data-act="
+	    "plugin-install][data-arg=strongswan]')", 10);
+	ATF_CHECK(js_true("document.querySelector('.plugin-missing')."
+	    "textContent.includes('Click the button to install it') && "
+	    "document.querySelector('.plugin-missing').textContent.includes("
+	    "'swanctl(8)')"));
+	shot("4p-plugin-missing");
+	ATF_REQUIRE(rename("fake-swanctl.off", "fake-swanctl") == 0);
+	run("document.querySelector('.plugin-missing button[data-act="
+	    "plugin-install]').click()");
+	run("const q = document.querySelector('button[data-act=queue-run]'); "
+	    "if (q) q.click();");
+	for (i = 0; i < 100 && system("grep -q 'install.*strongswan' pkg.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(i < 100, "no pkg install strongswan");
+	wait_js("!document.querySelector('button.tab.plugin.missing') && "
+	    "!document.querySelector('.plugin-missing')", 20);
+
 	/* They are plugins, installed on the host: each a tab of its own,
 	 * not among what the Network tab has of the base system. */
 	run("document.querySelector('button.tab[data-arg=network]').click()");
@@ -3244,6 +3274,16 @@ part_flows(void)
 	    "arcana:console' && document.querySelectorAll('li.wfedstep "
 	    ".wfwhen').length === 3", 10);
 	shot("9-workflow-template");
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
+	/* And one that installs a plugin's package, by a parameter. */
+	run("const t = document.querySelector('select[data-input=wf-template]'"
+	    "); t.value = 'plugin-install'; t.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelectorAll('li.wfedstep').length === 1 && "
+	    "document.querySelector('select[data-input=wf-kind]').value === "
+	    "'pkg-install' && document.querySelector('input[data-arg=\"text:"
+	    "params.0.default\"]').value === 'bird3'", 10);
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
 	run("document.querySelector('button[data-act=wf-new]').click()");
