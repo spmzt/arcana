@@ -777,9 +777,24 @@ submit_form(const char *form, const ucl_object_t *f)
 			return;
 		}
 		app.modal = MODAL_NONE;
-		if ((s2 = cur_server()) != NULL)
+		if ((s2 = cur_server()) == NULL)
+			return;
+		if (app.confirm.value[0] != '\0') {
+			char	old[160];
+
+			/* Unchanged: nothing to do. */
+			if (strcmp(app.confirm.value, s) == 0)
+				return;
+			/* The new one first, then the old one off. */
+			snprintf(old, sizeof(old), "%.*s", (int)strcspn(
+			    app.confirm.value, "/"), app.confirm.value);
 			if_address(s2, app.confirm.arg, s, false, jbool(f,
 			    "persist"));
+			if_address(s2, app.confirm.arg, old, true, true);
+			return;
+		}
+		if_address(s2, app.confirm.arg, s, false, jbool(f,
+		    "persist"));
 	} else if (strcmp(form, "host-key") == 0) {
 		/* Confirmed: build again, with the keys shown as trusted;
 		 * or just again, once the deploy key is allowed. */
@@ -1197,8 +1212,13 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "do-route-delete", arg, value);
 	} else if (strcmp(act, "do-route-delete") == 0 && s != NULL) {
 		route_change(s, arg, value, true, true, app.net.fib, 0, 0, NULL);
-	} else if (strcmp(act, "if-addr-add") == 0 && s != NULL) {
+	} else if ((strcmp(act, "if-addr-add") == 0 || strcmp(act,
+	    "if-addr-edit") == 0) && s != NULL) {
+		/* One changed: the form with what it is now, which goes
+		 * once the new one is there. */
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
+		snprintf(app.confirm.value, sizeof(app.confirm.value), "%s",
+		    strcmp(act, "if-addr-edit") == 0 ? value : "");
 		app.modal = MODAL_IF_ADDRESS;
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "if-addr-remove") == 0 && s != NULL) {

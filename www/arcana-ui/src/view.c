@@ -2060,18 +2060,34 @@ modal(struct html *h)
 		nhop_modal(h);
 		break;
 	case MODAL_IF_ADDRESS:
-		h_raw(h, "<form data-form=\"if-address\"><h2>Add an address to ");
-		h_txt(h, app.confirm.arg);
-		h_raw(h, "</h2><p>As an alias, with <code>ifconfig</code>, now, "
-		    "in safe mode: unless the host is reached again "
-		    "afterwards, it takes the address off.</p><label class=\""
-		    "toggle\"><input type=\"checkbox\" name=\"persist\" checked>"
-		    "<span>Keep it in <code>rc.conf</code>, to be there after "
-		    "a boot</span></label>"
+		if (app.confirm.value[0] != '\0') {
+			h_raw(h, "<form data-form=\"if-address\"><h2>Change an "
+			    "address of ");
+			h_txt(h, app.confirm.arg);
+			h_raw(h, "</h2><p>The new address is added with <code>"
+			    "ifconfig</code>, then <code>");
+			h_txt(h, app.confirm.value);
+			h_raw(h, "</code> is taken off, each in safe mode: unless "
+			    "the host is reached again afterwards, it puts back "
+			    "what was. Where the console reaches the host by the "
+			    "old address, it reaches it by the new one only once "
+			    "the host is added again by it.</p>");
+		} else {
+			h_raw(h, "<form data-form=\"if-address\"><h2>Add an "
+			    "address to ");
+			h_txt(h, app.confirm.arg);
+			h_raw(h, "</h2><p>As an alias, with <code>ifconfig</code>, "
+			    "now, in safe mode: unless the host is reached again "
+			    "afterwards, it takes the address off.</p>");
+		}
+		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"persist\" checked><span>Keep it in <code>rc.conf"
+		    "</code>, to be there after a boot</span></label>"
 		    "<label>Address<input name=\"address\" spellcheck=\"false\" "
-		    "autocomplete=\"off\" placeholder=\"10.0.0.5/24\" autofocus>"
-		    "<small>IPv4 or IPv6, with its prefix length; without one "
-		    "it is /32 or /128.</small></label>");
+		    "autocomplete=\"off\" placeholder=\"10.0.0.5/24\" autofocus");
+		h_attr(h, "value", app.confirm.value);
+		h_raw(h, "><small>IPv4 or IPv6, with its prefix length; without "
+		    "one it is /32 or /128.</small></label>");
 		break;
 	case MODAL_HOST_KEY:
 		k = app.build_reply;
@@ -2226,6 +2242,10 @@ modal(struct html *h)
 			h_raw(h, "<button class=\"primary\">Update</button>");
 			break;
 		case MODAL_IF_ADDRESS:
+			h_raw(h, app.confirm.value[0] != '\0' ? "<button class=\""
+			    "primary\">Change</button>" : "<button class=\""
+			    "primary\">Add</button>");
+			break;
 		case MODAL_ROUTE:
 			h_raw(h, "<button class=\"primary\">Add</button>");
 			break;
