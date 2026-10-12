@@ -224,6 +224,50 @@ api_health(struct http_request *req)
 }
 
 /*
+ * /.well-known/assetlinks.json: the Android app of web.conf's android
+ * block, which Android asks for before it lets the app use the keys
+ * registered for rp_id, and before it opens the console's links in the
+ * app.  Without the block, there is none.
+ */
+int
+api_assetlinks(struct http_request *req)
+{
+	ucl_object_t	*top, *e, *rel, *tgt, *fps;
+	char		 fp[32 * 3];
+	int		 i, n;
+
+	if (cfg.android_package == NULL)
+		return (reply_error(req, 404, "not_found", "no Android app is "
+		    "configured"));
+	fps = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < cfg.nandroid_keys; i++) {
+		/* "AB:CD:...", as apksigner prints it: 32 bytes, 95 chars. */
+		for (n = 0; n < 32; n++)
+			snprintf(fp + (n == 0 ? 0 : n * 3 - 1), sizeof(fp) -
+			    (n == 0 ? 0 : n * 3 - 1), "%s%02X", n > 0 ? ":" : "",
+			    cfg.android_keys[i][n]);
+		ucl_array_append(fps, ucl_object_fromstring(fp));
+	}
+	rel = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(rel, ucl_object_fromstring(
+	    "delegate_permission/common.handle_all_urls"));
+	ucl_array_append(rel, ucl_object_fromstring(
+	    "delegate_permission/common.get_login_creds"));
+	tgt = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(tgt, ucl_object_fromstring("android_app"),
+	    "namespace", 0, false);
+	ucl_object_insert_key(tgt, ucl_object_fromstring(cfg.android_package),
+	    "package_name", 0, false);
+	ucl_object_insert_key(tgt, fps, "sha256_cert_fingerprints", 0, false);
+	e = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(e, rel, "relation", 0, false);
+	ucl_object_insert_key(e, tgt, "target", 0, false);
+	top = ucl_object_typed_new(UCL_ARRAY);
+	ucl_array_append(top, e);
+	return (reply_json(req, 200, top));
+}
+
+/*
  * kore_log() is the worker's: it writes on the worker's channel to the
  * parent, which a thread of the console's own (a workflow's run, a
  * transfer, a host's events followed) must not touch while the worker

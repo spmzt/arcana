@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Arcana console API
-  version: 0.122.0
+  version: 0.126.0
   summary: The JSON API of arcana-console.so, the console's Kore module.
   description: |
     One user, authenticated with WebAuthn.  After a login or registration
@@ -67,6 +67,47 @@ paths:
                   ok: { type: boolean, const: true }
                   version: { type: string, examples: ["0.1.0"] }
                   time: { type: integer, description: Unix time. }
+
+  /.well-known/assetlinks.json:
+    get:
+      tags: [auth]
+      summary: The Android app that may log in, for Android to check
+      description: The app web.conf's android block names, with the
+        SHA-256 fingerprints of its signing certificates. Android reads
+        this at rp_id before it lets the app use the keys registered
+        there; WebAuthn ceremonies made in the app come with the origin
+        android:apk-key-hash and the base64url of one fingerprint, which
+        the console then takes as well as its own origin.
+      security: []
+      responses:
+        "200":
+          description: One statement, for the app.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [relation, target]
+                  properties:
+                    relation:
+                      type: array
+                      items: { type: string }
+                      examples:
+                        - - delegate_permission/common.handle_all_urls
+                          - delegate_permission/common.get_login_creds
+                    target:
+                      type: object
+                      required: [namespace, package_name,
+                        sha256_cert_fingerprints]
+                      properties:
+                        namespace: { type: string, const: android_app }
+                        package_name: { type: string }
+                        sha256_cert_fingerprints:
+                          type: array
+                          items: { type: string, pattern: "^([0-9A-F]{2}:){31}[0-9A-F]{2}$" }
+        "404":
+          $ref: "#/components/responses/Error"
 
   /api/auth/status:
     get:

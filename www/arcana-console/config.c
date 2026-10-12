@@ -21,6 +21,8 @@
 struct config cfg;
 
 static char	*get(const ucl_object_t *, const char *, const char *);
+static int	 android_load(const ucl_object_t *, const char *);
+static int	 hexval(int);
 static int	 check_pem(const char *, const char *, bool, int *);
 
 static char *
@@ -47,6 +49,10 @@ get(const ucl_object_t *top, const char *path, const char *def)
  * it, tls.ca_key names the CA's key when the console is to enrol hosts.
  * update_check = false stops the release checks; update_url names
  * another feed in GitHub's releases/latest shape.
+ *
+ *	android { package = "..."; fingerprints = [ "AB:CD:..." ]; }
+ *
+ * names the Android app that may log in (android_load()).
  */
 int
 config_load(const char *path)
@@ -89,6 +95,10 @@ config_load(const char *path)
 	cfg.local_agent = get(top, "local_agent", ARCW_LOCAL_AGENT);
 	if (cfg.local_agent != NULL && cfg.local_agent[0] == '\0')
 		cfg.local_agent = NULL;
+	if (android_load(top, path) == -1) {
+		ucl_object_unref(top);
+		return (-1);
+	}
 	ucl_object_unref(top);
 
 	if (cfg.rp_id == NULL || cfg.origin == NULL) {
@@ -98,6 +108,87 @@ config_load(const char *path)
 	/* What the console itself changed overrides some of that. */
 	settings_init(check ? "true" : "false", url);
 	return (0);
+}
+
+/*
+ * The Android app: its package name and the SHA-256 fingerprints of
+ * the certificates it is signed with, as apksigner(1) or keytool(1)
+ * print them, with or without colons.  A login made in the app comes
+ * with the origin android:apk-key-hash:<base64url of one of them>
+ * (auth.c), and /.well-known/assetlinks.json names the app with them,
+ * which Android asks before it lets the app use the console's keys.
+ */
+static int
+android_load(const ucl_object_t *top, const char *path)
+{
+	const ucl_object_t	*a, *fps, *fp;
+	ucl_object_iter_t	 it;
+	const char		*s;
+	int			 n, hi, lo;
+
+	cfg.android_package = NULL;
+	cfg.nandroid_keys = 0;
+	if ((a = ucl_object_lookup(top, "android")) == NULL)
+		return (0);
+	cfg.android_package = get(a, "package", NULL);
+	if (cfg.android_package == NULL || cfg.android_package[0] == '\0' ||
+	    strspn(cfg.android_package, "abcdefghijklmnopqrstuvwxyz"
+	    "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.") !=
+	    strlen(cfg.android_package)) {
+		kore_log(LOG_ERR, "%s: android.package must be the app's "
+		    "package name", path);
+		return (-1);
+	}
+	fps = ucl_object_lookup(a, "fingerprints");
+	it = NULL;
+	while (fps != NULL && (fp = ucl_object_iterate(fps, &it, true)) !=
+	    NULL) {
+		if (cfg.nandroid_keys == ANDROID_KEYS) {
+			kore_log(LOG_ERR, "%s: android.fingerprints: at most %d",
+			    path, ANDROID_KEYS);
+			return (-1);
+		}
+		s = ucl_object_tostring_forced(fp);
+		for (n = 0; *s != '\0' && n < 32; n++) {
+			if (*s == ':')
+				s++;
+			hi = hexval((unsigned char)s[0]);
+			lo = hi != -1 ? hexval((unsigned char)s[1]) : -1;
+			if (lo == -1)
+				break;
+			cfg.android_keys[cfg.nandroid_keys][n] =
+			    (uint8_t)(hi << 4 | lo);
+			s += 2;
+		}
+		if (*s != '\0' || n != 32) {
+			kore_log(LOG_ERR, "%s: android.fingerprints: %s is not "
+			    "a SHA-256 fingerprint", path,
+			    ucl_object_tostring_forced(fp));
+			return (-1);
+		}
+		cfg.nandroid_keys++;
+	}
+	if (cfg.nandroid_keys == 0) {
+		kore_log(LOG_ERR, "%s: android.fingerprints names no key", path);
+		return (-1);
+	}
+	kore_log(LOG_INFO, "the Android app %s may log in (%d signing key%s)",
+	    cfg.android_package, cfg.nandroid_keys,
+	    cfg.nandroid_keys == 1 ? "" : "s");
+	return (0);
+}
+
+static int
+hexval(int c)
+{
+
+	if (c >= '0' && c <= '9')
+		return (c - '0');
+	if (c >= 'a' && c <= 'f')
+		return (c - 'a' + 10);
+	if (c >= 'A' && c <= 'F')
+		return (c - 'A' + 10);
+	return (-1);
 }
 
 /*
