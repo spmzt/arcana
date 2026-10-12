@@ -1779,6 +1779,33 @@ part_plugins(void)
 	ATF_CHECK(system("grep -q '^set wg0 peer xTIBA5rboUvnH4htodjb6e697QjLER"
 	    "t1NAB4mZqp8Dg= endpoint 192.0.2.9:51820 allowed-ips 10.9.9.2/32,"
 	    "fd00::2/128$' wg.log") == 0);
+	/* The peer's whole key, to read and copy; and the peer changed: its
+	 * form filled with what it has, the key that names it fixed. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.wgpeers "
+	    "code.key')].some(c => c.textContent === 'xTIBA5rboUvnH4htodjb6e697"
+	    "QjLERt1NAB4mZqp8Dg=') && document.querySelector('table.wgpeers "
+	    "button.copy[data-copy]')"));
+	run("document.querySelector('.pane.wg button[data-act=wg-peer-edit]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=wg-peer]')", 5);
+	run("window.wf = document.querySelector('form[data-form=wg-peer]');");
+	ATF_CHECK(js_true("wf.peer.readOnly && wf.peer.value === "
+	    "'xTIBA5rboUvnH4htodjb6e697QjLERt1NAB4mZqp8Dg=' && wf.endpoint."
+	    "value === '192.0.2.9:51820' && wf.allowed.value === "
+	    "'10.9.9.2/32'"));
+	run("const f = document.querySelector('form[data-form=wg-peer]'); "
+	    "f.keepalive.value = '25'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -q 'persistent-keepalive 25$' "
+	    "wg.log") != 0; i++)
+		usleep(100000);
+	/* What it has now (the stand-in keeps 10.9.9.2/32), with the
+	 * keepalive. */
+	ATF_CHECK(system("grep -q '^set wg0 peer xTIBA5rboUvnH4htodjb6e697QjLER"
+	    "t1NAB4mZqp8Dg= endpoint 192.0.2.9:51820 allowed-ips 10.9.9.2/32 "
+	    "persistent-keepalive 25$' wg.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 	shot("7c-wireguard");
 	/*

@@ -109,7 +109,11 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 		if (jstr(o, "public-key") != NULL) {
 			h_raw(h, "<p>Public key <code class=\"key\">");
 			h_txt(h, jstr(o, "public-key"));
-			h_raw(h, "</code></p>");
+			h_raw(h, "</code> <button class=\"ghost small copy\" "
+			    "title=\"Copy this interface's public key, for its "
+			    "peers\"");
+			h_attr(h, "data-copy", jstr(o, "public-key"));
+			h_raw(h, ">Copy</button></p>");
 		} else
 			h_raw(h, "<p class=\"dim\">It has no key yet: <b>Make "
 			    "its key</b> has the host make one, which stays on "
@@ -126,14 +130,15 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 		rows = tbl_rows(tid, jget(o, "peers"), pcols, 5, app.filter);
 		for (r = 0; (p = rows[r]) != NULL; r++) {
 			hs = jint(p, "latest-handshake", 0);
-			h_fmt(h, "<tr class=\"%s\"><td><code class=\"key\"",
+			/* The whole key, to be read and copied: a peer is
+			 * known by it, and it is no secret. */
+			h_fmt(h, "<tr class=\"%s\"><td><code class=\"key\">",
 			    hs != 0 && now - hs < 180 ? "up" : "down");
-			h_attr(h, "title", jstr(p, "public-key"));
-			h_raw(h, ">");
-			snprintf(buf, sizeof(buf), "%.12s…", jstr(p,
-			    "public-key") != NULL ? jstr(p, "public-key") : "");
-			h_txt(h, buf);
-			h_raw(h, "</code>");
+			h_txt(h, jstr(p, "public-key"));
+			h_raw(h, "</code> <button class=\"ghost small copy\" "
+			    "title=\"Copy the peer's public key\"");
+			h_attr(h, "data-copy", jstr(p, "public-key"));
+			h_raw(h, ">Copy</button>");
 			if (jbool(p, "preshared-key"))
 				h_raw(h, "<small>with a preshared key</small>");
 			h_raw(h, "</td><td>");
@@ -165,6 +170,11 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 			h_raw(h, " / ");
 			h_txt(h, tx);
 			h_raw(h, "</td><td><button class=\"icon\" data-act=\""
+			    "wg-peer-edit\" title=\"Change its endpoint, "
+			    "allowed addresses or keepalive\"");
+			h_attr(h, "data-arg", jstr(o, "name"));
+			h_attr(h, "data-value", jstr(p, "public-key"));
+			h_raw(h, ">✎</button><button class=\"icon\" data-act=\""
 			    "wg-unpeer\" title=\"Remove this peer\"");
 			h_attr(h, "data-arg", jstr(o, "name"));
 			h_attr(h, "data-value", jstr(p, "public-key"));
@@ -179,6 +189,12 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 		    "<b>+ interface</b>, named <code>wg</code>, or draw a "
 		    "tunnel between two hosts in <b>Network</b>.</p></div>");
 }
+
+/* The peer being changed, its form filled with what it has now. */
+static struct {
+	bool	on;
+	char	key[64], endpoint[128], allowed[512], keepalive[8];
+} wge;
 
 static const char keep_wg[] = "<label class=\"toggle\"><input type=\""
     "checkbox\" name=\"persist\" checked><span>Keep the interface for a "
@@ -202,23 +218,38 @@ vpn_modal(struct html *h)
 		h_raw(h, keep_wg);
 		return (true);
 	case MODAL_WG_PEER:
-		h_raw(h, "<form data-form=\"wg-peer\"><h2>A peer of ");
+		h_raw(h, "<form data-form=\"wg-peer\"><h2>");
+		h_raw(h, wge.on ? "A peer of " : "A new peer of ");
 		h_txt(h, app.confirm.arg);
-		h_raw(h, "</h2><p>With <code>wg set</code>. A peer that is "
-		    "there already is changed.</p><label>Its public key<input "
-		    "name=\"peer\" spellcheck=\"false\" autocomplete=\"off\" "
-		    "placeholder=\"44 characters of base64\" autofocus></label>"
-		    "<label>Endpoint<input name=\"endpoint\" spellcheck=\""
-		    "false\" autocomplete=\"off\" placeholder=\"192.0.2.9:"
-		    "51820 or [2001:db8::9]:51820\"><small>Where it is "
-		    "reached; empty for a peer that comes to this host."
+		h_raw(h, "</h2><p>With <code>wg set</code>: what is given here "
+		    "is what the peer has after; its key is what names it."
+		    "</p><label>Its public key<input name=\"peer\" "
+		    "spellcheck=\"false\" autocomplete=\"off\" placeholder="
+		    "\"44 characters of base64\"");
+		if (wge.on) {
+			h_attr(h, "value", wge.key);
+			h_raw(h, " readonly");
+		} else
+			h_raw(h, " autofocus");
+		h_raw(h, "></label><label>Endpoint<input name=\"endpoint\" "
+		    "spellcheck=\"false\" autocomplete=\"off\" placeholder="
+		    "\"192.0.2.9:51820 or [2001:db8::9]:51820\"");
+		if (wge.on)
+			h_attr(h, "value", wge.endpoint);
+		h_raw(h, "><small>Where it is reached; empty for a peer that "
+		    "comes to this host, or to leave it as it is."
 		    "</small></label><label>Allowed addresses<input name=\""
 		    "allowed\" spellcheck=\"false\" autocomplete=\"off\" "
-		    "placeholder=\"10.9.0.2/32, fd00::2/128\"><small>What it "
-		    "may send from, and what is routed to it.</small></label>"
-		    "<label>Keepalive, seconds<input name=\"keepalive\" "
-		    "inputmode=\"numeric\" placeholder=\"none; 25 behind NAT\">"
-		    "</label>");
+		    "placeholder=\"10.9.0.2/32, fd00::2/128\"");
+		if (wge.on)
+			h_attr(h, "value", wge.allowed);
+		h_raw(h, "><small>What it may send from, and what is routed to "
+		    "it: the whole list.</small></label><label>Keepalive, "
+		    "seconds<input name=\"keepalive\" inputmode=\"numeric\" "
+		    "placeholder=\"none; 25 behind NAT\"");
+		if (wge.on)
+			h_attr(h, "value", wge.keepalive);
+		h_raw(h, "><small>0 turns it off.</small></label>");
 		h_raw(h, keep_wg);
 		return (true);
 	default:
@@ -324,6 +355,51 @@ vpn_action(const char *act, const char *arg, const char *value)
 	if (strcmp(act, "wg-init") == 0 || strcmp(act, "wg-peer-add") == 0) {
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
 		app.modal = act[3] == 'i' ? MODAL_WG_INIT : MODAL_WG_PEER;
+		app.modal_error[0] = '\0';
+		wge.on = false;
+	} else if (strcmp(act, "wg-peer-edit") == 0) {
+		/* The form, filled with what the peer has now. */
+		const ucl_object_t	*o, *p, *ip;
+		ucl_object_iter_t	 it, pit, iit;
+		size_t			 n;
+
+		memset(&wge, 0, sizeof(wge));
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(app.net.data,
+		    "data.interfaces"), &it, true)) != NULL) {
+			if (jstr(o, "name") == NULL || strcmp(jstr(o, "name"),
+			    arg) != 0)
+				continue;
+			pit = NULL;
+			while ((p = ucl_object_iterate(jget(o, "peers"), &pit,
+			    true)) != NULL) {
+				if (jstr(p, "public-key") == NULL || strcmp(jstr(p,
+				    "public-key"), value) != 0)
+					continue;
+				wge.on = true;
+				snprintf(wge.key, sizeof(wge.key), "%s", value);
+				snprintf(wge.endpoint, sizeof(wge.endpoint), "%s",
+				    jstr(p, "endpoint") != NULL ? jstr(p,
+				    "endpoint") : "");
+				if (jint(p, "keepalive", 0) > 0)
+					snprintf(wge.keepalive,
+					    sizeof(wge.keepalive), "%lld",
+					    (long long)jint(p, "keepalive", 0));
+				n = 0;
+				iit = NULL;
+				while ((ip = ucl_object_iterate(jget(p,
+				    "allowed-ips"), &iit, true)) != NULL &&
+				    n + 2 < sizeof(wge.allowed))
+					n += (size_t)snprintf(wge.allowed + n,
+					    sizeof(wge.allowed) - n, "%s%s", n > 0 ?
+					    ", " : "", ucl_object_tostring_forced(
+					    ip));
+			}
+		}
+		if (!wge.on)
+			return (true);
+		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
+		app.modal = MODAL_WG_PEER;
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "wg-unpeer") == 0) {
 		snprintf(body, sizeof(body), "wg set %s peer %.12s… remove, on "
