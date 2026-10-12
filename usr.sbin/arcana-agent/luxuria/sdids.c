@@ -11,7 +11,11 @@
  * console with places for what the agent knows: its log directory, its
  * rules file and its pid file.  What it finds it writes as eve.json,
  * which a thread of the agent reads every second: each alert an event,
- * sdwan-ids, and the latest kept for the sdwan read.  Like the proxies
+ * sdwan-ids, and the latest kept for the sdwan read.  One that prevents
+ * (a divert port given) takes the UNIs' packets from ipfw's divert rules
+ * instead and gives back those its rules let by: while it is not
+ * running they pass nothing, so the thread says it, a fault, until it
+ * runs again.  Like the proxies
  * of sdproxy.c: those named are started (again when their files
  * changed), those not named any more are stopped, and the list is kept
  * for the next start.
@@ -51,6 +55,8 @@ struct instance {
 	char	 name[40];
 	char	 ifs[IFS_MAX][IFNAMSIZ];
 	int	 nifs;
+	int	 divert;		/* its divert port, prevent; 0 detect */
+	bool	 down;			/* one that prevents, told not running */
 	off_t	 off;			/* how far its eve.json is read */
 	char	*alerts[ALERTS_KEPT];	/* a ring, newest at head - 1 */
 	int	 head, nalerts;
@@ -115,6 +121,23 @@ suricata_bin(struct work *w)
 	if ((p = tool(w, "suricata")) != NULL)
 		return (p);
 	return (opts.suricata_bin);
+}
+
+/* Whether an instance's process is there, by its pid file. */
+static bool
+running(const char *name)
+{
+	FILE	*fp;
+	char	 path[MAXPATHLEN];
+	long	 pid = 0;
+
+	ids_pathbuf(name, "pid", path, sizeof(path));
+	if ((fp = fopen(path, "r")) == NULL)
+		return (false);
+	if (fscanf(fp, "%ld", &pid) != 1)
+		pid = 0;
+	fclose(fp);
+	return (pid > 1 && kill((pid_t)pid, 0) == 0);
 }
 
 static pid_t
@@ -203,12 +226,16 @@ file_text(struct work *w, const char *path)
 	return (t);
 }
 
-/* Started, as a daemon, on the interfaces its configuration names. */
+/*
+ * Started, as a daemon: on the interfaces its configuration names by
+ * libpcap (detect), or on its divert port, where ipfw's divert rules
+ * hand it the UNIs' packets (prevent).
+ */
 static int
-inst_start(struct work *w, const char *name, const char **errp)
+inst_start(struct work *w, const char *name, int divert, const char **errp)
 {
 	struct execres	 res;
-	char		*argv[9];
+	char		*argv[10];
 	int		 n, i;
 
 	(void)mkdir(inst_path(w, name, "d"), 0750);
@@ -218,7 +245,11 @@ inst_start(struct work *w, const char *name, const char **errp)
 	argv[n++] = (char *)(uintptr_t)inst_path(w, name, "yaml");
 	argv[n++] = (char *)(uintptr_t)"--pidfile";
 	argv[n++] = (char *)(uintptr_t)inst_path(w, name, "pid");
-	argv[n++] = (char *)(uintptr_t)"--pcap";
+	if (divert > 0) {
+		argv[n++] = (char *)(uintptr_t)"-d";
+		argv[n++] = wfmt(w, "%d", divert);
+	} else
+		argv[n++] = (char *)(uintptr_t)"--pcap";
 	argv[n++] = (char *)(uintptr_t)"-D";
 	argv[n] = NULL;
 	if (run_exec(w, argv, &res) != 0) {
@@ -386,6 +417,28 @@ read_eve(struct instance *in)
 	fclose(fp);
 }
 
+/*
+ * One that prevents and is not running: what its UNIs send and get is
+ * diverted to no one and passes not, which is said as a fault until it
+ * runs again.
+ */
+static void
+guard(struct instance *in)
+{
+	bool	up;
+
+	if (in->divert == 0)
+		return;
+	up = running(in->name);
+	if (!up && !in->down)
+		fault_set("ids", "Critical", in->name, "suricata", "Suricata %s, "
+		    "which prevents, is not running: the UNIs it guards pass "
+		    "nothing (ipfw divert %d)", in->name, in->divert);
+	else if (up && in->down)
+		fault_clear("ids", in->name, "Suricata %s runs again", in->name);
+	in->down = !up;
+}
+
 static void *
 reader(void *arg __unused)
 {
@@ -394,11 +447,26 @@ reader(void *arg __unused)
 	for (;;) {
 		sleep(1);
 		pthread_mutex_lock(&lock);
-		for (i = 0; i < ninstances; i++)
+		for (i = 0; i < ninstances; i++) {
 			read_eve(&instances[i]);
+			guard(&instances[i]);
+		}
 		pthread_mutex_unlock(&lock);
 	}
 	return (NULL);
+}
+
+/* The divert port an instance runs with now (the lock held); -1 when
+ * it is not one of them. */
+static int
+divert_was(const char *name)
+{
+	int	i;
+
+	for (i = 0; i < ninstances; i++)
+		if (strcmp(instances[i].name, name) == 0)
+			return (instances[i].divert);
+	return (-1);
 }
 
 /*
@@ -450,6 +518,16 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		}
 		snprintf(ni[n].name, sizeof(ni[n].name), "%s",
 		    ucl_object_tostring(v));
+		if ((f = ucl_object_lookup(in, "divert")) != NULL) {
+			if (ucl_object_type(f) != UCL_INT || ucl_object_toint(f) <
+			    1 || ucl_object_toint(f) > 65535) {
+				ucl_object_unref(top);
+				*errp = wfmt(w, "%s: its divert is a port, 1 to 65535",
+				    ni[n].name);
+				return (-1);
+			}
+			ni[n].divert = (int)ucl_object_toint(f);
+		}
 		fit = NULL;
 		while ((f = ucl_object_iterate(ucl_object_lookup(in,
 		    "interfaces"), &fit, true)) != NULL) {
@@ -493,6 +571,8 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 			    "suricata %s stopped", instances[i].name);
 			inst_stop(w, instances[i].name);
+			fault_clear("ids", instances[i].name, "Suricata %s taken "
+			    "away", instances[i].name);
 			(void)unlink(inst_path(w, instances[i].name, "yaml"));
 			(void)unlink(inst_path(w, instances[i].name, "rules"));
 			step_end(w, step, true, NULL);
@@ -516,10 +596,13 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 		was = file_text(w, inst_path(w, ni[k].name, "yaml"));
 		same = was != NULL && strcmp(was, conf) == 0 && (was = file_text(w,
 		    inst_path(w, ni[k].name, "rules"))) != NULL && strcmp(was,
-		    rules) == 0 && inst_pid(w, ni[k].name) != 0;
+		    rules) == 0 && inst_pid(w, ni[k].name) != 0 && divert_was(
+		    ni[k].name) == ni[k].divert;
 		step = step_begin(w, ARC_STEP_KIND_DAEMON, "arcana-agent",
-		    "suricata %s on %d interface%s: %s", ni[k].name, ni[k].nifs,
-		    ni[k].nifs == 1 ? "" : "s", same ? "as it was" : "started");
+		    "suricata %s on %d interface%s, %s: %s", ni[k].name, ni[k].nifs,
+		    ni[k].nifs == 1 ? "" : "s", ni[k].divert > 0 ? wfmt(w,
+		    "prevents by divert %d", ni[k].divert) : "detects", same ?
+		    "as it was" : "started");
 		if (same) {
 			step_end(w, step, true, NULL);
 			continue;
@@ -549,7 +632,7 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			break;
 		}
 		inst_stop(w, ni[k].name);
-		if (inst_start(w, ni[k].name, &e) != 0) {
+		if (inst_start(w, ni[k].name, ni[k].divert, &e) != 0) {
 			step_end(w, step, false, "%s", e);
 			*errp = wfmt(w, "%s: %s", ni[k].name, e);
 			ok = false;
@@ -570,6 +653,13 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 					ni[k].nalerts = instances[i].nalerts;
 					ni[k].off = instances[i].off;
 					ni[k].seen = instances[i].seen;
+					ni[k].down = instances[i].down &&
+					    ni[k].divert > 0;
+					if (instances[i].divert > 0 &&
+					    ni[k].divert == 0)
+						fault_clear("ids", ni[k].name,
+						    "Suricata %s detects now, "
+						    "nothing diverted", ni[k].name);
 				}
 		for (i = 0; i < ninstances; i++)
 			alerts_free(&instances[i]);
@@ -633,6 +723,11 @@ sdwan_ids_json(struct work *w, ucl_object_t *top)
 			ucl_array_append(ifs, ucl_object_fromstring(
 			    instances[i].ifs[k]));
 		ucl_object_insert_key(o, ifs, "interfaces", 0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(instances[i].divert >
+		    0 ? "prevent" : "detect"), "mode", 0, false);
+		if (instances[i].divert > 0)
+			ucl_object_insert_key(o, ucl_object_fromint(
+			    instances[i].divert), "divert", 0, false);
 		ucl_object_insert_key(o, ucl_object_frombool(inst_pid(w,
 		    instances[i].name) != 0), "running", 0, false);
 		ucl_object_insert_key(o, ucl_object_fromint((int64_t)

@@ -105,8 +105,25 @@
   c-icap on the edge's own address in the service and taking Squid's
   alone, plugins all (S4.2, in the verified list); intrusion
   detected by Suricata on the UNIs, a plugin, its alerts events and
-  in the read (S4.3, detect; in the verified list). Next: prevention
-  (mode prevent, ipfw divert to Suricata), then S4.4.
+  in the read (S4.3, detect; in the verified list); prevented, mode
+  prevent, ipfw divert(4) to Suricata as packets come in, fail-closed
+  with a Critical fault (S4.3, in the verified list).  Not inspected
+  where it prevents: IPv6 (divert's IPv6 is not trusted), and what
+  comes back from local breakout (after NAT, past the divert).  Next:
+  S4.4.
+- Verified on the lab 2026-10-12 (S4.3, prevent): Suricata on divert
+  port 8001 for wg5, a drop rule for /attack: a harmless request
+  passed, the request for /attack went nowhere and was told blocked;
+  Suricata killed, a ping through the UNI got nothing back and a
+  Critical fault (ids) was raised, cleared when applied again.  Found
+  there: (1) ipfw takes up after a divert at the next rule number, so
+  the diverts are rule 9, before the way in at 10; (2) divert(4) gives
+  back in routing table 0 whatever table its process is in (a
+  PF_DIVERT socket takes none, nor SO_SETFIB), so a packet given back
+  on its way out was routed in table 0 and lost (no route), and
+  Suricata's TX thread died of the error, taking Suricata with it;
+  both directions are diverted as they come in now, and setfib puts
+  them back in the service's table.
 - Verified on the lab 2026-10-12 (S4.3): Suricata 8 added into
   arcswan1 from fetched packages, an instance on wg5 (the road end
   point's UNI) with the configuration the console writes and one rule

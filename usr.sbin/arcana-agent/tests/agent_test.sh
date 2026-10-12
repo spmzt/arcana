@@ -2822,13 +2822,32 @@ EOS
 	    cat "$(dirname "$f")/sdwan-ids-sw1.yaml"
 	atf_check -o match:'sid:1000001' cat "$(dirname "$f")/sdwan-ids-sw1.rules"
 	sleep 2
-	atf_check -o match:'"ids":\[\{"name":"sw1","interfaces":\["wg5"\],"running":true,"alerts_seen":1,"alerts":\[\{"name":"sw1","time":"2026-10-12T18:00:01' \
+	atf_check -o match:'"ids":\[\{"name":"sw1","interfaces":\["wg5"\],"mode":"detect","running":true,"alerts_seen":1,"alerts":\[\{"name":"sw1","time":"2026-10-12T18:00:01' \
 	    -o match:'"signature":"ARCANA test quoted","category":"","severity":2' "$JGC" -c "$SOCK" sdwan
 	atf_check -o match:'"kind":"sdwan-ids","data":\{"name":"sw1",.*"src":"10.30.0.2","sport":40000,"dst":"10.20.0.1","dport":80,"proto":"TCP","iface":"wg5","sid":1000001' \
 	    "$JGC" -c "$SOCK" events
 	spid=$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")
-	atf_check -o match:'suricata sw1 on 1 interface: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$ids"
+	atf_check -o match:'suricata sw1 on 1 interface, detects: as it was' "$JGC" -t -c "$SOCK" sdwan ids "$ids"
 	atf_check -o inline:"$spid\n" cat "$(dirname "$f")/sdwan-ids-sw1.pid"
+	# One that prevents: run on its divert port; not running, a
+	# Critical fault (what it guards passes nothing), cleared once it
+	# runs again.
+	atf_check -s exit:1 -e match:'its divert is a port' -o ignore "$JGC" -c "$SOCK" sdwan ids \
+	    '{"instances":[{"name":"sw1","interfaces":["wg5"],"conf":"x","divert":70000}]}'
+	ipsd=$(echo "$ids" | sed 's/"name":"sw1",/"name":"sw1","divert":8001,/')
+	atf_check -o match:'suricata sw1 on 1 interface, prevents by divert 8001: started' \
+	    "$JGC" -t -c "$SOCK" sdwan ids "$ipsd"
+	atf_check -o match:'^suricata -c .*sdwan-ids-sw1.yaml --pidfile .*sdwan-ids-sw1.pid -d 8001 -D$' cat suricata.log
+	atf_check -o match:'"ids":\[\{"name":"sw1","interfaces":\["wg5"\],"mode":"prevent","divert":8001,"running":true' \
+	    "$JGC" -c "$SOCK" sdwan
+	kill "$(cat "$(dirname "$f")/sdwan-ids-sw1.pid")"
+	sleep 2
+	atf_check -o match:'"kind":"sdwan-fault","data":\{"type":"ids","severity":"Critical","object":"sw1","by":"suricata","description":"Suricata sw1, which prevents, is not running' \
+	    "$JGC" -c "$SOCK" events
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ipsd"
+	sleep 2
+	atf_check -o match:'"kind":"sdwan-fault","data":\{"type":"ids","severity":"Cleared","object":"sw1","description":"Suricata sw1 runs again"' \
+	    "$JGC" -c "$SOCK" events
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-ids-sw1.yaml" || atf_fail "the suricata file stayed"
 	kill -0 "$spid" 2>/dev/null && atf_fail "suricata still runs"
@@ -2838,7 +2857,7 @@ EOS
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids "$ids"
 	sleep 2
 	atf_check -o match:'"alerts_seen":1,' "$JGC" -c "$SOCK" sdwan
-	atf_check -o inline:'2\n' sh -c "grep -c '\"event_type\":\"alert\"' '$(dirname "$f")/sdwan-ids-sw1.d/eve.json'"
+	atf_check -o inline:'4\n' sh -c "grep -c '\"event_type\":\"alert\"' '$(dirname "$f")/sdwan-ids-sw1.d/eve.json'"
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan ids '{"instances":[]}'
 }
 sdwan_cleanup()

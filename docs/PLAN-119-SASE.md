@@ -494,10 +494,10 @@ Not supported: see the summary above. No tasks.
   installed by hand, Squid's ICAP service for cleartext HTTP (and TLS
   where opened). C: `malware` criterion. T, L with the EICAR file.
   Done when it is caught.
-- **S4.3 Intrusion detection and prevention.** (Detection done
-  2026-10-12.) A: Suricata, a plugin installed by hand, on the UNI
-  interfaces, alerts (eve.json) into events; prevention by ipfw divert
-  in a second step, still to do. C: `ids: {mode, rules, ruleset}`
+- **S4.3 Intrusion detection and prevention.** (Done 2026-10-12.)
+  A: Suricata, a plugin installed by hand, on the UNI interfaces,
+  alerts (eve.json) into events; prevention by ipfw divert, IPv4 as it
+  comes in, fail-closed with a fault. C: `ids: {mode, rules, ruleset}`
   criterion. T, L. Done when a test rule alerts on the lab.
 - **S4.4 Phase close.** L, docs, TODO.
 
