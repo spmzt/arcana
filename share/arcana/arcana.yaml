@@ -2407,7 +2407,8 @@ operations:
       is chosen), "record" (count, the day's; seq; last, the latest
       500, each t, seq, rule, action, src, dst, iface, comment) and
       "proxy" (each instance's name, fib, mode, running and ca, its
-      certificate) too.
+      certificate) too.  job, with id, title, ok and error, when a
+      job ends.
     do:
       request:
         attributes:

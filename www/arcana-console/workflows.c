@@ -1461,6 +1461,7 @@ run_main(void *arg)
 	pthread_mutex_unlock(&r->lock);
 	thread_log(LOG_NOTICE, "workflow %s, run %u: %s",
 	    ucl_str(r->wf, "name"), r->id, r->state);
+	mail_run(ucl_str(r->wf, "name"), r->id, r->state);
 	pthread_mutex_lock(&running_lock);
 	for (k = 0; k < 64; k++)
 		if (strcmp(running_wf[k], ucl_str(r->wf, "id")) == 0) {

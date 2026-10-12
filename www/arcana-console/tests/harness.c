@@ -833,10 +833,17 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 		snprintf(local, sizeof(local), harness_local_agent ?
 		    "local_agent = \"unix:%s/jgd.sock\";\n" :
 		    "local_agent = \"\";\n", cwd);
+	/* Mail goes into mail.out. */
+	snprintf(buf, sizeof(buf), "#!/bin/sh\n{ echo \"ARGS $*\"; cat; echo "
+	    "--END--; } >> %s/mail.out\n", cwd);
+	ATF_REQUIRE(mkdir("tools", 0755) == 0 || errno == EEXIST);
+	put("tools/sendmail", buf);
+	ATF_REQUIRE(chmod("tools/sendmail", 0755) == 0);
 	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n"
-	    "agent_binary = \"%s\";\n%s%s", RP_ID, harness_origin, cwd, send,
-	    local, harness_webconf);
+	    "agent_binary = \"%s\";\nsendmail = \"%s/tools/sendmail\";\n"
+	    "%s%s", RP_ID, harness_origin, cwd, send, cwd, local,
+	    harness_webconf);
 	put("web.conf", buf);
 	if (port != 0)
 		snprintf(listen, sizeof(listen), "bind 127.0.0.1 %d", port);

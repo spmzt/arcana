@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <time.h>
 
 #include "console.h"
@@ -45,6 +46,10 @@ static const char	*v_ref(const char *);
 static const char	*v_keypath(const char *);
 static const char	*v_minutes(const char *);
 static const char	*v_hours(const char *);
+static const char	*v_mails(const char *);
+static const char	*v_mail(const char *);
+static const char	*v_severity(const char *);
+static const char	*v_which(const char *);
 
 static struct setting {
 	const char	*key;
@@ -85,6 +90,23 @@ static struct setting {
 	{ "session_max", K_TEXT, "A sign-in lasts at most, in hours",
 	    "However much it is used: from 1 to 720 hours. Changed, it holds "
 	    "for the sign-ins there are too.", v_hours, NULL, NULL },
+	{ "mail_to", K_TEXT, "Mail to",
+	    "Addresses, a comma between them; empty for no mail. Sent by "
+	    "sendmail(8) on the console's host: dma(8) as FreeBSD comes, "
+	    "relaying as /etc/dma/dma.conf says.", v_mails, NULL, NULL },
+	{ "mail_from", K_TEXT, "Mail from",
+	    "The sender's address; empty for arcana@ this host's name.",
+	    v_mail, NULL, NULL },
+	{ "mail_faults", K_TEXT, "Faults mailed",
+	    "The least severity mailed, and their clearing: Critical, Major, "
+	    "Minor or Warning; none for none.", v_severity, NULL, NULL },
+	{ "mail_jobs", K_TEXT, "Jobs mailed",
+	    "failed, all or none.", v_which, NULL, NULL },
+	{ "mail_runs", K_TEXT, "Workflow runs mailed",
+	    "failed, all or none.", v_which, NULL, NULL },
+	{ "mail_limits", K_BOOL, "Limits crossed mailed",
+	    "A figure of history (CPU, memory, a disk, a jail's) over its "
+	    "limit, and back under.", NULL, NULL, NULL },
 };
 
 static struct timespec	loaded;		/* settings.json's mtime when read */
@@ -111,6 +133,65 @@ v_count(const char *s, long lo, long hi)
 		return ("");
 	n = strtol(s, &end, 10);
 	return (*end != '\0' || n < lo || n > hi ? "" : NULL);
+}
+
+/* An address: something@somewhere, nothing a header could be made of. */
+static const char *
+v_mail(const char *s)
+{
+	const char	*at;
+
+	if (s[0] == '\0')
+		return (NULL);
+	if (strlen(s) > 254 || (at = strchr(s, '@')) == NULL || at == s ||
+	    at[1] == '\0' || strchr(at + 1, '@') != NULL)
+		return ("an address, name@domain");
+	for (; *s != '\0'; s++)
+		if ((unsigned char)*s <= 0x20 || *s == 0x7f || strchr("<>(),;:\\\"[]",
+		    *s) != NULL)
+			return ("an address, name@domain");
+	return (NULL);
+}
+
+static const char *
+v_mails(const char *s)
+{
+	char		 one[256];
+	const char	*e;
+	size_t		 n;
+
+	if (strlen(s) > 1000)
+		return ("1000 characters at most");
+	for (n = 0; *s != '\0'; s = e, n++) {
+		s += strspn(s, " ,");
+		if (*s == '\0')
+			break;
+		e = s + strcspn(s, " ,");
+		if ((size_t)(e - s) >= sizeof(one) || n >= 16)
+			return ("16 addresses at most, a comma between them");
+		snprintf(one, sizeof(one), "%.*s", (int)(e - s), s);
+		if (v_mail(one) != NULL)
+			return ("addresses, name@domain, a comma between them");
+	}
+	return (NULL);
+}
+
+static const char *
+v_severity(const char *s)
+{
+
+	return (strcmp(s, "Critical") == 0 || strcmp(s, "Major") == 0 ||
+	    strcmp(s, "Minor") == 0 || strcmp(s, "Warning") == 0 ||
+	    strcmp(s, "none") == 0 ? NULL : "Critical, Major, Minor, Warning "
+	    "or none");
+}
+
+static const char *
+v_which(const char *s)
+{
+
+	return (strcmp(s, "failed") == 0 || strcmp(s, "all") == 0 ||
+	    strcmp(s, "none") == 0 ? NULL : "failed, all or none");
 }
 
 static const char *
@@ -235,6 +316,46 @@ value(const char *key)
 	return (s->over != NULL ? s->over : s->base != NULL ? s->base : "");
 }
 
+/*
+ * What a setting is now, for a thread that is not the worker's (mail's):
+ * read from settings.json itself, else web.conf's, nothing shared
+ * changed.  To be freed.
+ */
+char *
+settings_peek(const char *key)
+{
+	struct ucl_parser	*p;
+	struct setting		*s;
+	ucl_object_t		*o;
+	const ucl_object_t	*v;
+	const char		*t;
+	char			 path[1024], *r;
+
+	if ((s = find(key)) == NULL)
+		return (strdup(""));
+	r = NULL;
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, SETTINGS_FILE);
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO);
+	if (access(path, R_OK) == 0 && ucl_parser_add_file(p, path) &&
+	    (o = ucl_parser_get_object(p)) != NULL) {
+		if ((v = ucl_object_lookup(o, key)) != NULL) {
+			t = s->kind == K_BOOL ? (ucl_object_toboolean(v) ?
+			    "true" : "false") : ucl_object_tostring_forced(v);
+			if (t[0] == '\0' || s->valid == NULL || s->valid(t) ==
+			    NULL)
+				r = strdup(t);
+		}
+		ucl_object_unref(o);
+	}
+	ucl_parser_free(p);
+	if (r == NULL)
+		r = strdup(s->base != NULL ? s->base : "");
+	if (r == NULL)
+		abort();
+	return (r);
+}
+
 static bool
 truth(const char *v)
 {
@@ -262,6 +383,7 @@ apply(void)
 	    value("session_idle")) * 60 : SESSION_IDLE;
 	cfg.session_max = v_hours(value("session_max")) == NULL ? atoi(
 	    value("session_max")) * 3600 : SESSION_MAX;
+	/* The mail's are read where they are used: settings_peek(). */
 }
 
 static void
@@ -317,6 +439,13 @@ settings_init(const char *update_check, const char *update_url)
 	find("agent_ssh_key")->base = cfg.agent_ssh_key;
 	find("session_idle")->base = kore_strdup("30");
 	find("session_max")->base = kore_strdup("12");
+	find("mail_to")->base = cfg.mail_to;
+	find("mail_from")->base = cfg.mail_from;
+	find("mail_faults")->base = cfg.mail_faults;
+	find("mail_jobs")->base = cfg.mail_jobs;
+	find("mail_runs")->base = cfg.mail_runs;
+	find("mail_limits")->base = kore_strdup(cfg.mail_limits ? "true" :
+	    "false");
 	load();
 }
 

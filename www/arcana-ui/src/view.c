@@ -1503,6 +1503,8 @@ set_look(struct html *h)
 	    "in this browser</em></span></label>", app.fx ? " checked" : "");
 }
 
+static void	settings_fields(struct html *, bool);
+
 static void
 set_notify(struct html *h)
 {
@@ -1544,6 +1546,23 @@ set_notify(struct html *h)
 		h_raw(h, "<li class=\"dim\">No device yet.</li>");
 	h_raw(h, "</ul>");
 	free(here);
+	/* By mail: what happened on the hosts, open page or not. */
+	h_raw(h, "<h3>By mail</h3>");
+	if (app.settings == NULL) {
+		h_raw(h, "<div class=\"loader\"></div>");
+		return;
+	}
+	h_raw(h, "<form data-form=\"settings-mail\" class=\"settings set-form "
+	    "mail\"><p class=\"dim\">Faults, a limit crossed, jobs and "
+	    "workflow runs, mailed whether or not a page is open: the console "
+	    "reads each host's events, and its host's <code>sendmail(8)</code> "
+	    "sends them, twenty mails an hour at most.</p>");
+	settings_fields(h, true);
+	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
+	    "</button> <button type=\"button\" class=\"ghost\" data-act=\""
+	    "mail-test\"%s>Send a test mail</button></div></form>",
+	    app.modal_busy ? " disabled" : "", app.modal_busy ? " disabled" :
+	    "");
 }
 
 static void
@@ -1642,8 +1661,6 @@ set_keys(struct html *h)
 static void
 set_console(struct html *h)
 {
-	const ucl_object_t	*k;
-	ucl_object_iter_t	 it;
 
 	if (app.settings == NULL) {
 		h_raw(h, "<div class=\"loader\"></div>");
@@ -1655,10 +1672,23 @@ set_console(struct html *h)
 	h_raw(h, "</code> and takes the place of <code>web.conf</code>'s "
 	    "value; a field put back to that value follows <code>web.conf"
 	    "</code> again.</p>");
+	settings_fields(h, false);
+	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
+	    "</button></div></form>", app.modal_busy ? " disabled" : "");
+}
+
+/* The editable settings, the mail's or the others, as fields. */
+static void
+settings_fields(struct html *h, bool mail)
+{
+	const ucl_object_t	*k;
+	ucl_object_iter_t	 it;
+
 	it = NULL;
 	while ((k = ucl_object_iterate(jget(app.settings, "settings"), &it,
 	    true)) != NULL) {
-		if (!jbool(k, "editable"))
+		if (!jbool(k, "editable") || jstr(k, "key") == NULL ||
+		    (strncmp(jstr(k, "key"), "mail_", 5) == 0) != mail)
 			continue;
 		if (jstr(k, "type") != NULL && strcmp(jstr(k, "type"),
 		    "bool") == 0) {
@@ -1690,8 +1720,6 @@ set_console(struct html *h)
 		}
 		h_raw(h, "</small></label>");
 	}
-	h_fmt(h, "<div class=\"actions\"><button class=\"primary\"%s>Save"
-	    "</button></div></form>", app.modal_busy ? " disabled" : "");
 }
 
 static void

@@ -307,7 +307,16 @@
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.
-  - Mail notifications of faults, jobs and runs.
+  - Mail notifications of faults, jobs and runs. (Done 2026-10-12:
+    Settings, Notifications, By mail; one worker reads each host's
+    events, the agent's job ends among them now, and the console's
+    host's sendmail(8) sends them, twenty an hour at most.)  Not
+    understood yet: with web.conf's mail_tick at 1 s in every test's
+    console, the page tests that wait on a safe job (lo0 add in
+    pwa_nettab, and four others) failed about one run in two, the job
+    left waiting to be confirmed; at the default 15 s, and with the
+    thread gone, they pass.  The thread then did nothing but wake.
+    Only the mail test sets 1 s now; worth finding why.
   - The console's CA: one imported, or made and self-signed from the
     panel, given to each agent and trusted there; the console as a CA
     and as an intermediate CA under another.
