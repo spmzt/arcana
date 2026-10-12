@@ -293,6 +293,15 @@ definitions:
           beside it.  template writes text as /etc/jail.conf.d/<name>
           .inc, names its one name; untemplate takes one away that no
           jail includes.
+      - name: neighbour
+        doc: |
+          A neighbour set by hand, ARP's or NDP's, with arp(8) or ndp(8)
+          (-s, -d): verb add or delete, address, and for add lladdr,
+          its link address; with temporary it ages out as the others
+          do, without it it stays (permanent).  With persist it is
+          kept for a boot as a pair of rc.conf's static_arp_pairs or
+          static_ndp_pairs, and with live too it is set now.  In the
+          jail whose network it is when jail names one.
   - name: job-state
     type: enum
     entries:
@@ -1399,6 +1408,14 @@ attribute-sets:
           only while it is read, and in no title nor trace.
         checks:
           max-len: 44
+      - name: lladdr
+        type: text
+        doc: For neighbour add, the link address, six bytes of hex.
+        checks:
+          max-len: 17
+      - name: temporary
+        type: flag
+        doc: For neighbour add, one that ages out as the others do.
 
   - name: job
     attributes:

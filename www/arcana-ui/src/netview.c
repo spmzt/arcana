@@ -153,6 +153,48 @@ table(struct html *h, const ucl_object_t *arr, const struct column *cols,
 }
 
 /*
+ * The neighbours, each with a way to take it away: one set by hand
+ * (permanent) for good, one learnt to be learnt again.
+ */
+static int
+neigh_table(struct html *h, const ucl_object_t *arr)
+{
+	struct tcol		 tc[6];
+	const ucl_object_t	**rows;
+	const char		*a;
+	size_t			 i, c;
+
+	for (c = 0; c < 6; c++) {
+		tc[c].title = neigh_cols[c].title;
+		tc[c].key = neigh_cols[c].path;
+		tc[c].num = false;
+	}
+	h_raw(h, "<table class=\"net\">");
+	tbl_head(h, "net-neigh", tc, 6, 1);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("net-neigh", arr, tc, 6, app.filter);
+	for (i = 0; rows[i] != NULL; i++) {
+		h_raw(h, "<tr>");
+		for (c = 0; c < 6; c++)
+			cell(h, rows[i], &neigh_cols[c]);
+		h_raw(h, "<td>");
+		a = jstr(rows[i], "address");
+		if (a != NULL && strcmp(jstr(rows[i], "lladdr") != NULL ?
+		    jstr(rows[i], "lladdr") : "", "(incomplete)") != 0) {
+			h_raw(h, "<button class=\"icon\" data-act=\""
+			    "neigh-delete\" title=\"Take it away (arp -d, ndp "
+			    "-d); kept in rc.conf, forgotten there too\"");
+			h_attr(h, "data-arg", a);
+			h_raw(h, ">×</button>");
+		}
+		h_raw(h, "</td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	return ((int)i);
+}
+
+/*
  * The last cell of a route's row: a way to delete it, for the static
  * ones (flag S), which are those somebody added.  The default route of
  * IPv6 is named ::/0, as "default" alone is IPv4's.
@@ -667,6 +709,10 @@ view_network(struct html *h, struct server *s)
 			h_fmt(h, " value=\"%d\"", app.net.fib);
 		h_raw(h, " placeholder=\"0\"></label>");
 	}
+	if (app.net.kind == NET_NEIGHBOURS)
+		h_raw(h, "<button class=\"ghost small\" data-act=\"neigh-add\" "
+		    "title=\"An ARP or NDP entry set by hand\">+ neighbour"
+		    "</button>");
 	if (app.net.kind == NET_ROUTES)
 		h_raw(h, "<button class=\"ghost small\" data-act=\"net-lookup\" "
 		    "title=\"Which route this host takes to an address, and "
@@ -796,8 +842,7 @@ view_network(struct html *h, struct server *s)
 		view_geneve(h, s, jget(app.net.data, "data.geneves"));
 		return;
 	case NET_NEIGHBOURS:
-		shown = table(h, jget(app.net.data, "data.neighbours"),
-		    neigh_cols, 6, NULL);
+		shown = neigh_table(h, jget(app.net.data, "data.neighbours"));
 		break;
 	default:
 		shown = table(h, jget(app.net.data, "data.sockstat.socket"),
@@ -994,4 +1039,101 @@ nhop_modal(struct html *h)
 	h_fmt(h, "<p><button type=\"button\" class=\"ghost small\" "
 	    "data-act=\"net-nhop-all\">Every %s of the host</button></p>",
 	    nb.group ? "group" : "nexthop");
+}
+
+/* A neighbour set by hand, or taken away: a job, in the network shown. */
+static void
+neigh_job(struct server *s, const char *verb, const char *addr,
+    const char *ll, bool temp, bool keep)
+{
+	char	*qa, *ql, *json, title[160];
+
+	qa = json_quote(addr);
+	ql = json_quote(ll != NULL ? ll : "");
+	if (asprintf(&json, "{\"kind\":\"neighbour\",\"verb\":\"%s\","
+	    "\"address\":%s%s%s,\"temporary\":%s,\"live\":true,\"persist\""
+	    ":%s}", verb, qa, ll != NULL ? ",\"lladdr\":" : "", ll != NULL ?
+	    ql : "", temp ? "true" : "false", keep ? "true" : "false") == -1)
+		abort();
+	free(qa);
+	free(ql);
+	snprintf(title, sizeof(title), "neighbour %s %s%s%s", verb, addr, ll !=
+	    NULL ? " " : "", ll != NULL ? ll : "");
+	job_send(s, json, title, JOB_IFACE, "neighbours");
+}
+
+bool
+neigh_modal(struct html *h)
+{
+
+	if (app.modal != MODAL_NEIGH)
+		return (false);
+	h_raw(h, "<form data-form=\"neigh\"><h2>A neighbour set by hand</h2>"
+	    "<p>An entry of ARP (IPv4) or NDP (IPv6), with <code>arp -s</code> "
+	    "or <code>ndp -s</code>: the address on one of the networks here, "
+	    "and the link address it is at.</p><label>Address<input name=\""
+	    "address\" spellcheck=\"false\" autocomplete=\"off\" "
+	    "placeholder=\"192.0.2.5 or 2001:db8::5\" autofocus></label>"
+	    "<label>Link address<input name=\"lladdr\" spellcheck=\"false\" "
+	    "autocomplete=\"off\" placeholder=\"00:11:22:33:44:55\"></label>"
+	    "<label class=\"toggle\"><input type=\"checkbox\" name=\"temp\"> "
+	    "It ages out <small>as a learnt one does (temp); without it, it "
+	    "stays (permanent)</small></label><label class=\"toggle\"><input "
+	    "type=\"checkbox\" name=\"persist\"> Keep it for a boot <small>"
+	    "a pair of rc.conf's static_arp_pairs or static_ndp_pairs"
+	    "</small></label>");
+	return (true);
+}
+
+bool
+neigh_form(const char *form, const ucl_object_t *f)
+{
+	struct server	*s;
+	const char	*a, *l;
+
+	if (strcmp(form, "neigh") != 0)
+		return (false);
+	if ((s = cur_server()) == NULL)
+		return (true);
+	a = jstr(f, "address") != NULL ? jstr(f, "address") : "";
+	l = jstr(f, "lladdr") != NULL ? jstr(f, "lladdr") : "";
+	if (a[0] == '\0' || strchr(a, ' ') != NULL || strlen(l) != 17) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "An address, "
+		    "and its link address as 00:11:22:33:44:55");
+		return (true);
+	}
+	if (jbool(f, "temp") && jbool(f, "persist")) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "One that "
+		    "ages out is not kept for a boot");
+		return (true);
+	}
+	neigh_job(s, "add", a, l, jbool(f, "temp"), jbool(f, "persist"));
+	app.modal = MODAL_NONE;
+	return (true);
+}
+
+bool
+neigh_action(const char *act, const char *arg, const char *value)
+{
+	struct server	*s;
+	char		 body[400];
+
+	(void)value;
+	if (strncmp(act, "neigh-", 6) != 0 && strcmp(act, "do-neigh-delete") !=
+	    0)
+		return (false);
+	if ((s = cur_server()) == NULL)
+		return (true);
+	if (strcmp(act, "neigh-add") == 0) {
+		app.modal = MODAL_NEIGH;
+		app.modal_error[0] = '\0';
+	} else if (strcmp(act, "neigh-delete") == 0) {
+		snprintf(body, sizeof(body), "%s taken out of the neighbours of "
+		    "%s, and out of rc.conf where it is kept there. One learnt "
+		    "is learnt again when it is next spoken to.", arg, s->name);
+		confirm("Take the neighbour away", body, "Take away", true, "",
+		    "do-neigh-delete", arg, "");
+	} else if (strcmp(act, "do-neigh-delete") == 0)
+		neigh_job(s, "delete", arg, NULL, false, true);
+	return (true);
 }

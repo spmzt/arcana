@@ -336,7 +336,8 @@
   - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
   - IGMP and MLD configured.
   - NDP and ARP entries added and deleted by hand, temporary or
-    permanent.
+    permanent. (Done 2026-10-12: the neighbour job, kept as rc.conf's
+    static pairs; verified in a vnet jail with arp(8) and ndp(8).)
   - MSS clamping on transports.
   - QoS on ipfw by forms: pipes, schedulers, queues, their masks and
     the rules that use them, beyond what SD-WAN makes.

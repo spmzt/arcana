@@ -337,6 +337,7 @@ enum modal {
 	MODAL_JAIL_FILES,
 	MODAL_JAIL_TEMPLATE,
 	MODAL_JAIL_REMOVE,
+	MODAL_NEIGH,
 	MODAL_BIRD_PROTO,
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
@@ -613,6 +614,10 @@ void		 jailmk_buttons(struct html *);
 bool		 jailmk_modal(struct html *);
 bool		 jailmk_form(const char *, const ucl_object_t *);
 bool		 jailmk_action(const char *, const char *, const char *);
+/* netview.c: a neighbour set by hand. */
+bool		 neigh_modal(struct html *);
+bool		 neigh_form(const char *, const ucl_object_t *);
+bool		 neigh_action(const char *, const char *, const char *);
 
 /* bird.c: BIRD's neighbours and its configuration. */
 bool		 bird_action(const char *, const char *, const char *);

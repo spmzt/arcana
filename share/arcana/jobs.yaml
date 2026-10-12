@@ -182,6 +182,12 @@ fields:
   - field: preshared_key
     type: text
     label: Preshared key
+  - field: lladdr
+    type: text
+    label: Link address
+  - field: temporary
+    type: bool
+    label: Ages out
 
 kinds:
   - kind: jail-action
@@ -332,3 +338,9 @@ kinds:
     uses: jail dataset snapshot copy path text start args
     values: verb=make|remove|defaults|template|untemplate copy=clone|send
     destroys: verb=remove|untemplate
+  - kind: neighbour
+    title: An ARP or NDP neighbour set by hand, or taken away
+    needs: verb address
+    uses: jail lladdr temporary live persist
+    values: verb=add|delete
+    destroys: verb=delete

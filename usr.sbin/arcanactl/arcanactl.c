@@ -185,6 +185,7 @@ usage(void)
 	    "[start]\n"
 	    "    jailconf remove jail [dataset] | defaults file | files\n"
 	    "    jailconf template name file | untemplate name\n"
+	    "    neigh add address lladdr [temp] | delete address\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
 	    "    sysctl [name | start of a name]\n"
@@ -2022,6 +2023,36 @@ slurp(const char *path)
 }
 
 /*
+ * neigh add address lladdr [temp] | delete address: an ARP or NDP
+ * neighbour set by hand, now; with -p kept for a boot too.
+ */
+static int
+cmd_neigh(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_NEIGHBOUR;
+	if (argc >= 4 && argc <= 5 && strcmp(argv[1], "add") == 0) {
+		sp.lladdr = argv[3];
+		if (argc == 5) {
+			if (strcmp(argv[4], "temp") != 0)
+				usage();
+			sp.temporary = true;
+		}
+	} else if (argc != 3 || strcmp(argv[1], "delete") != 0)
+		usage();
+	sp.verb = argv[1];
+	sp.address = argv[2];
+	sp.live = true;
+	sp.persist = persist;
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
  * jailconf make jail file [dataset snapshot clone|send path] [start]
  * jailconf remove jail [dataset]
  * jailconf defaults file
@@ -3475,6 +3506,8 @@ main(int argc, char *argv[])
 		rc = cmd_kmod(&cl, argc, argv);
 	else if (strcmp(argv[0], "jailconf") == 0)
 		rc = cmd_jailconf(&cl, argc, argv);
+	else if (strcmp(argv[0], "neigh") == 0)
+		rc = cmd_neigh(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||
