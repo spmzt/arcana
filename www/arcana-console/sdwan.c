@@ -2395,5 +2395,11 @@ api_sdwan(struct http_request *req)
 		    "written"));
 	}
 	pthread_mutex_unlock(&sd_lock);
+	/* The Policies changed, by the System Administrator alone (MEF
+	 * 118.1 [R41]): the PAP's change, audited. */
+	audit_add("policies-changed", "Administer", "the services' document",
+	    "the whole document kept, checked first as MEF 70.2 says",
+	    "the console (the Policy Administration Point)", session_who(req), "version %jd kept", (intmax_t)(have
+	    + 1));
 	return (reply_json(req, 200, body));
 }

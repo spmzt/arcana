@@ -3730,6 +3730,23 @@ part_flows(void)
 	ATF_CHECK(js_true("document.querySelector('input[data-input="
 	    "sd-record-filter]') !== null && document.querySelector('a[href="
 	    "\"/api/sdwan/record.csv\"]') !== null"));
+	/* Zero trust (MEF 118.1): the Access Control Policies, Subject Actor
+	 * to Target Actor, the staff zone Allowed to every zone and the
+	 * Internet, anything else Blocked; the Policy End Points; the audit
+	 * trail, intact, the document kept and applied by this key. */
+	wait_js("[...document.querySelectorAll('section.sdwan h4')].some(h => "
+	    "h.textContent.startsWith('Audit Events')) && document.querySelector("
+	    "'section.sdwan').textContent.includes('policies-applied')", 20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan table.sd "
+	    "tbody tr')].some(tr => tr.textContent.startsWith('staff') && tr"
+	    ".textContent.includes('every zone, the Internet') && tr.textContent"
+	    ".includes('Allow')) && [...document.querySelectorAll('section.sdwan "
+	    "table.sd tbody tr')].some(tr => tr.textContent.startsWith('any "
+	    "other') && tr.textContent.includes('Block')) && [...document"
+	    ".querySelectorAll('section.sdwan .chip')].some(c => c.textContent "
+	    "=== 'intact') && document.querySelector('a[href=\"/api/sdwan/audit"
+	    ".csv\"]') !== null && [...document.querySelectorAll('section.sdwan "
+	    "h4')].some(h => h.textContent.startsWith('Policy End Points'))"));
 	/* Intrusion detection: the policy's IDS in its column, the block of
 	 * the edges' Suricata, and the form's mode, rules and ruleset. */
 	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
