@@ -29,6 +29,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <ucl.h>
+
 #include "agent.h"
 
 #define	TEXT_MAX	65536
@@ -347,31 +349,98 @@ ds_get(struct work *w, const char *ds, const char *prop)
 }
 
 /*
- * jail(8)'s reading of file: the one jail it defines, that it is the
- * one named, and its path the one asked; *errp otherwise.
+ * jail(8)'s reading of file: the jails it defines beyond those of the
+ * defaults it includes are the one named, alone, and its path is the
+ * one asked; *errp otherwise.
  */
 static int
 reads_back(struct work *w, const char *file, const char *name,
     const char *path, const char **errp)
 {
-	struct cjail	*js;
-	const char	*e, *p;
-	size_t		 n;
+	struct cjail	*js, *ds;
+	const char	*e, *p, *extra;
+	size_t		 n, nd, i, k, mine;
 
+	nd = 0;
+	ds = NULL;
+	if (access(opts.jail_conf, F_OK) == 0 && conf_scope_read(w,
+	    opts.jail_conf, &ds, &nd, &e) == -1)
+		nd = 0;
+	for (k = 0; k < nd; k++)
+		if (strcmp(ds[k].name, name) == 0) {
+			*errp = wfmt(w, "%s defines a jail %s already",
+			    opts.jail_conf, name);
+			return (-1);
+		}
 	if (conf_scope_read(w, file, &js, &n, &e) == -1) {
 		*errp = wfmt(w, "jail(8) does not take it: %s", e != NULL ? e :
 		    "no reason given");
 		return (-1);
 	}
-	if (n != 1 || strcmp(js[0].name, name) != 0) {
-		*errp = wfmt(w, "the file defines %zu jail%s, not the one jail "
-		    "%s", n, n == 1 ? "" : "s", name);
+	mine = n;
+	extra = NULL;
+	for (i = 0; i < n; i++) {
+		for (k = 0; k < nd; k++)
+			if (strcmp(js[i].name, ds[k].name) == 0)
+				break;
+		if (k < nd)
+			continue;
+		if (strcmp(js[i].name, name) == 0)
+			mine = i;
+		else
+			extra = extra == NULL ? js[i].name : wfmt(w, "%s, %s",
+			    extra, js[i].name);
+	}
+	if (mine == n || extra != NULL) {
+		*errp = wfmt(w, "the file defines %s%s%s, not the one jail %s",
+		    mine == n ? "" : name, mine != n && extra != NULL ? " and " :
+		    "", extra != NULL ? extra : mine == n ? "no jail of its own" :
+		    "", name);
 		return (-1);
 	}
-	if (path != NULL && path[0] != '\0' && ((p = cjail_param1(&js[0],
+	if (path != NULL && path[0] != '\0' && ((p = cjail_param1(&js[mine],
 	    "path")) == NULL || strcmp(p, path) != 0)) {
 		*errp = wfmt(w, "the jail's path is %s, not %s, where its "
 		    "dataset is mounted", p != NULL ? p : "not set", path);
+		return (-1);
+	}
+	return (0);
+}
+
+/*
+ * The datasets above ds that are not there yet, made (as the jails'
+ * dataset of a host that has none, pool/jails), not mounted of their
+ * own: the topmost one made, for an undo, or "" when all were there.
+ */
+static int
+parents_make(struct work *w, const char *ds, const char **topp,
+    const char **errp)
+{
+	char	*p, *slash;
+
+	*topp = "";
+	p = wstrdup(w, ds);
+	/* Up to the first that is there.  A pool is never one made here,
+	 * nor one taken away again: without it there is nothing to do. */
+	for (;;) {
+		if ((slash = strrchr(p, '/')) == NULL)
+			return (0);
+		*slash = '\0';
+		if (ds_exists(w, p))
+			break;
+		if (strchr(p, '/') == NULL) {
+			*topp = "";
+			*errp = wfmt(w, "there is no pool %s", p);
+			return (-1);
+		}
+		*topp = wstrdup(w, p);
+	}
+	if ((*topp)[0] == '\0')
+		return (0);
+	p = wstrdup(w, ds);
+	*strrchr(p, '/') = '\0';
+	if (zfs(w, errp, "create", "-p", "-o", "canmount=off", p, NULL) != 0) {
+		*topp = "";
 		return (-1);
 	}
 	return (0);
@@ -381,7 +450,7 @@ static int
 jail_make(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	struct arc_action_rsp	 ar;
-	const char		*file, *tmp, *e;
+	const char		*file, *tmp, *e, *top;
 	bool			 made;
 
 	file = wfmt(w, "%s/%s.conf", opts.jail_conf_d, sp->jail);
@@ -395,23 +464,26 @@ jail_make(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	}
 	(void)mkdir(opts.jail_conf_d, 0755);
 	made = false;
+	top = "";
 	if (sp->dataset != NULL && sp->dataset[0] != '\0') {
 		if (ds_exists(w, sp->dataset)) {
 			*errp = wfmt(w, "the dataset %s is there already",
 			    sp->dataset);
 			return (-1);
 		}
+		if (parents_make(w, sp->dataset, &top, errp) != 0)
+			return (-1);
 		if (strcmp(sp->copy, "clone") == 0) {
 			if (zfs(w, errp, "clone", "-o", wfmt(w, "mountpoint=%s",
 			    sp->path), sp->snapshot, sp->dataset, NULL) != 0)
-				return (-1);
+				goto undo;
 		} else if (send_recv(w, sp->snapshot, sp->dataset, sp->path,
 		    errp) != 0) {
 			/* A recv cut short leaves nothing, or a part. */
 			if (ds_exists(w, sp->dataset))
 				(void)zfs(w, NULL, "destroy", "-r", sp->dataset,
 				    NULL, NULL, NULL);
-			return (-1);
+			goto undo;
 		}
 		made = true;
 	}
@@ -442,6 +514,9 @@ undo:
 	if (made)
 		(void)zfs(w, NULL, "destroy", "-r", sp->dataset, NULL, NULL,
 		    NULL);
+	/* What was made above it for it, gone with it. */
+	if (top[0] != '\0')
+		(void)zfs(w, NULL, "destroy", "-r", top, NULL, NULL, NULL);
 	return (-1);
 }
 
@@ -463,22 +538,23 @@ jail_unmake(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	path = NULL;
 	if (conf_scope_read(w, file, &js, &n, &e) == 0 && n == 1)
 		path = cjail_param1(&js[0], "path");
-	if (jail_getid(sp->jail) >= 0) {
-		memset(&ar, 0, sizeof(ar));
-		do_action(w, sp->jail, ARC_ACTION_STOP, &ar);
-		if (!ar.ok) {
-			*errp = wfmt(w, "%s did not stop: %s", sp->jail, ar.error !=
-			    NULL ? ar.error : "no reason given");
-			return (-1);
-		}
-	}
-	/* Its dataset, only where it is the jail's root. */
+	/* Its dataset, only where it is the jail's root: asked before
+	 * anything is done, the jail left running when it is not. */
 	if (sp->dataset != NULL && sp->dataset[0] != '\0') {
 		mp = ds_get(w, sp->dataset, "mountpoint");
 		if (path == NULL || mp == NULL || strcmp(mp, path) != 0) {
 			*errp = wfmt(w, "%s is not mounted at the jail's path "
 			    "(%s): it is not destroyed, nor is anything else",
 			    sp->dataset, path != NULL ? path : "unknown");
+			return (-1);
+		}
+	}
+	if (jail_getid(sp->jail) >= 0) {
+		memset(&ar, 0, sizeof(ar));
+		do_action(w, sp->jail, ARC_ACTION_STOP, &ar);
+		if (!ar.ok) {
+			*errp = wfmt(w, "%s did not stop: %s", sp->jail, ar.error !=
+			    NULL ? ar.error : "no reason given");
 			return (-1);
 		}
 	}
@@ -619,4 +695,71 @@ do_jail_conf(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (jail_defaults(w, sp, errp));
 	return (jail_template(w, sp, strcmp(sp->verb, "untemplate") == 0,
 	    errp));
+}
+
+/* The jails' defaults, templates and files, as JSON (jail-files). */
+void
+do_jail_files(struct work *w, struct arc_jail_files_rsp *rsp)
+{
+	struct dirent	*d;
+	DIR		*dir;
+	ucl_object_t	*top, *o, *tl, *jl, *e;
+	const char	*f;
+	char		*buf, *json, abs[MAXPATHLEN], absd[MAXPATHLEN];
+	size_t		 len, n;
+
+	/* Absolute, as an .include of them is: jail(8) takes a relative
+	 * one from the including file's directory. */
+	if (realpath(opts.jail_conf, abs) == NULL) {
+		/* None yet: where it is to be. */
+		if (opts.jail_conf[0] == '/' || getcwd(abs, sizeof(abs)) == NULL)
+			snprintf(abs, sizeof(abs), "%s", opts.jail_conf);
+		else {
+			strlcat(abs, "/", sizeof(abs));
+			strlcat(abs, opts.jail_conf, sizeof(abs));
+		}
+	}
+	if (realpath(opts.jail_conf_d, absd) == NULL)
+		snprintf(absd, sizeof(absd), "%s", opts.jail_conf_d);
+	top = ucl_object_typed_new(UCL_OBJECT);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(o, ucl_object_fromstring(abs), "path", 0, false);
+	buf = get_file(w, opts.jail_conf, &len);
+	ucl_object_insert_key(o, buf != NULL ? ucl_object_fromlstring(buf, len) :
+	    ucl_object_typed_new(UCL_NULL), "text", 0, false);
+	ucl_object_insert_key(top, o, "defaults", 0, false);
+	ucl_object_insert_key(top, ucl_object_fromstring(absd), "dir", 0,
+	    false);
+	tl = ucl_object_typed_new(UCL_ARRAY);
+	jl = ucl_object_typed_new(UCL_ARRAY);
+	if ((dir = opendir(opts.jail_conf_d)) != NULL) {
+		while ((d = readdir(dir)) != NULL) {
+			n = strlen(d->d_name);
+			if (d->d_name[0] == '.' || n < 5)
+				continue;
+			if (strcmp(d->d_name + n - 4, ".inc") != 0 && (n < 6 ||
+			    strcmp(d->d_name + n - 5, ".conf") != 0))
+				continue;
+			f = wfmt(w, "%s/%s", opts.jail_conf_d, d->d_name);
+			if ((buf = get_file(w, f, &len)) == NULL || len > TEXT_MAX)
+				continue;
+			e = ucl_object_typed_new(UCL_OBJECT);
+			ucl_object_insert_key(e, ucl_object_fromlstring(d->d_name,
+			    n - (d->d_name[n - 1] == 'c' && d->d_name[n - 2] ==
+			    'n' ? 4 : 5)), "name", 0, true);
+			ucl_object_insert_key(e, ucl_object_fromlstring(buf, len),
+			    "text", 0, false);
+			ucl_array_append(strcmp(d->d_name + n - 4, ".inc") == 0 ?
+			    tl : jl, e);
+		}
+		closedir(dir);
+	}
+	ucl_object_insert_key(top, tl, "templates", 0, false);
+	ucl_object_insert_key(top, jl, "jails", 0, false);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	rsp->json = json != NULL ? wtext(w, wstrdup(w, json)) : NULL;
+	free(json);
+	ucl_object_unref(top);
+	rsp->has_ok = true;
+	rsp->ok = true;
 }

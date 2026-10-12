@@ -140,6 +140,10 @@ wg_check(struct work *w, const struct arc_job_spec *sp)
 		    "prefix lengths, with commas between them");
 	if (sp->has_keepalive && sp->keepalive > 65535)
 		return ("wireguard: a keepalive is at most 65535 seconds");
+	if (sp->preshared_key != NULL && sp->preshared_key[0] != '\0' &&
+	    (strcmp(sp->verb, "peer") != 0 || !wg_key_ok(sp->preshared_key)))
+		return ("wireguard: a preshared key is a peer's, 44 characters "
+		    "of base64");
 	return (NULL);
 }
 
@@ -412,9 +416,10 @@ int
 do_wg(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
 	struct execres	 res;
-	char		*argv[14];
-	int		 n, k;
+	char		*argv[16], *psk;
+	int		 n, k, rc;
 
+	psk = NULL;
 	if ((*errp = wg_check(w, sp)) != NULL)
 		return (-1);
 	n = 0;
@@ -452,10 +457,34 @@ do_wg(struct work *w, const struct arc_job_spec *sp, const char **errp)
 				    "persistent-keepalive";
 				argv[n++] = wfmt(w, "%u", sp->keepalive);
 			}
+			/* The preshared key from a file there only while wg
+			 * reads it: never in an argument, a title or a trace. */
+			if (sp->preshared_key != NULL && sp->preshared_key[0] !=
+			    '\0') {
+				char	text[48];
+
+				psk = wfmt(w, "%s/.%s.psk.%08x", opts.wg_dir,
+				    sp->interface, arc4random());
+				snprintf(text, sizeof(text), "%s\n",
+				    sp->preshared_key);
+				if (scope_replace(w, psk, text, strlen(text), 0600,
+				    NULL) != 0) {
+					explicit_bzero(text, sizeof(text));
+					*errp = wfmt(w, "%s: %s", opts.wg_dir,
+					    strerror(errno));
+					return (-1);
+				}
+				explicit_bzero(text, sizeof(text));
+				argv[n++] = (char *)(uintptr_t)"preshared-key";
+				argv[n++] = psk;
+			}
 		}
 	}
 	argv[n] = NULL;
-	if (n > 3 && run_exec(w, argv, &res) != 0) {
+	rc = n > 3 ? run_exec(w, argv, &res) : 0;
+	if (psk != NULL)
+		(void)scope_rename(w, psk, strrchr(psk, '/') + 1, NULL);
+	if (rc != 0) {
 		*errp = wtext(w, exec_error(w, &res, "wg"));
 		return (-1);
 	}

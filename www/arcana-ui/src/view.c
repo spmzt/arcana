@@ -74,7 +74,6 @@ static void	toasts(struct html *);
 static void	token_qr(struct html *, const char *);
 static void	auth_screen(struct html *);
 static void	fmt_kb(char *, size_t, int64_t);
-static int	count_state(const struct server *, const char *);
 static void	tree_caps(int *);
 static bool	stale(const struct server *);
 
@@ -160,7 +159,7 @@ state_class(const struct server *s, const ucl_object_t *j,
 	return (h_word(st, "unknown"));
 }
 
-static int
+int
 count_state(const struct server *s, const char *state)
 {
 	const ucl_object_t	*j;
@@ -216,12 +215,14 @@ topbar(struct html *h)
 	h_raw(h, "</div><nav class=\"crumbs\">");
 	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
 	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS ||
-	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS)
+	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS || app.node ==
+	    NODE_DEVICES)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
 		    app.node == NODE_USAGE ? "Utilization" : app.node ==
 		    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ?
-		    "SD-WAN" : app.node == NODE_SETTINGS ? "Settings" :
+		    "SD-WAN" : app.node == NODE_SETTINGS ? "Settings" : app.node ==
+		    NODE_DEVICES ? "Devices" :
 		    "All hosts");
 	else if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
@@ -412,8 +413,8 @@ rail(struct html *h)
 	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
 	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
 	    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ? "SD-WAN" :
-	    app.node == NODE_SETTINGS ? "Settings" : app.node ==
-	    NODE_FLEET || s == NULL ? "All hosts" :
+	    app.node == NODE_SETTINGS ? "Settings" : app.node == NODE_DEVICES ?
+	    "Devices" : app.node == NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
 		h_raw(h, " / ");
@@ -430,6 +431,9 @@ rail(struct html *h)
 	h_fmt(h, "<li class=\"titem fleet%s\" data-act=\"select-fleet\">"
 	    "<span class=\"twig\">%s</span><span class=\"name\">All hosts</span>"
 	    "<span class=\"count\">%d</span></li>"
+	    "<li class=\"titem fleet devnode%s\" data-act=\"select-devices\">"
+	    "<span class=\"twig\">%s</span><span class=\"name\">Devices</span>"
+	    "</li>"
 	    "<li class=\"titem fleet netnode%s\" data-act=\"select-network\">"
 	    "<span class=\"twig\">%s</span><span class=\"name\">Network</span>"
 	    "</li><li class=\"titem fleet usagenode%s\" data-act=\""
@@ -440,6 +444,7 @@ rail(struct html *h)
 	    "sdnode%s\" data-act=\"select-sdwan\"><span class=\"twig\">%s"
 	    "</span><span class=\"name\">SD-WAN</span></li>", app.node ==
 	    NODE_FLEET ? " selected" : "", icon_hosts, app.nservers,
+	    app.node == NODE_DEVICES ? " selected" : "", icon_hosts,
 	    app.node == NODE_NETWORK ? " selected" : "", icon_network,
 	    app.node == NODE_USAGE ? " selected" : "", icon_usage,
 	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows,
@@ -897,6 +902,11 @@ stage(struct html *h)
 		    "Add a server</button></div></main>");
 		return;
 	}
+	if (app.node == NODE_DEVICES) {
+		view_devices(h);
+		h_raw(h, "</main>");
+		return;
+	}
 	if (app.node == NODE_FLEET) {
 		view_fleet(h);
 		peek_box(h);
@@ -1089,7 +1099,9 @@ stage(struct html *h)
 		    "data-arg=\"%s\">%s%s</button>", app.jail_sort == n ?
 		    " on" : "", jail_sorts[n], jail_sorts[n],
 		    app.jail_sort != n ? "" : app.jail_sort_desc ? " ▴" : " ▾");
-	h_raw(h, "</span></div>");
+	h_raw(h, "</span>");
+	jailmk_buttons(h);
+	h_raw(h, "</div>");
 	if (s->list == NULL) {
 		h_raw(h, s->failed ? "<div class=\"empty\"><h2>No data</h2>"
 		    "<p>The host has not answered yet.</p></div>" :
@@ -1930,6 +1942,18 @@ modal(struct html *h)
 		if (!vpn_modal(h))
 			return;
 		break;
+	case MODAL_JAIL_NEW:
+	case MODAL_JAIL_DEFAULTS:
+	case MODAL_JAIL_FILES:
+	case MODAL_JAIL_TEMPLATE:
+	case MODAL_JAIL_REMOVE:
+		if (!jailmk_modal(h))
+			return;
+		break;
+	case MODAL_NEIGH:
+		if (!neigh_modal(h))
+			return;
+		break;
 	case MODAL_IPSEC_CONN:
 	case MODAL_IPSEC_CHILD:
 		if (!ipsec_modal(h))
@@ -2050,18 +2074,34 @@ modal(struct html *h)
 		nhop_modal(h);
 		break;
 	case MODAL_IF_ADDRESS:
-		h_raw(h, "<form data-form=\"if-address\"><h2>Add an address to ");
-		h_txt(h, app.confirm.arg);
-		h_raw(h, "</h2><p>As an alias, with <code>ifconfig</code>, now, "
-		    "in safe mode: unless the host is reached again "
-		    "afterwards, it takes the address off.</p><label class=\""
-		    "toggle\"><input type=\"checkbox\" name=\"persist\" checked>"
-		    "<span>Keep it in <code>rc.conf</code>, to be there after "
-		    "a boot</span></label>"
+		if (app.confirm.value[0] != '\0') {
+			h_raw(h, "<form data-form=\"if-address\"><h2>Change an "
+			    "address of ");
+			h_txt(h, app.confirm.arg);
+			h_raw(h, "</h2><p>The new address is added with <code>"
+			    "ifconfig</code>, then <code>");
+			h_txt(h, app.confirm.value);
+			h_raw(h, "</code> is taken off, each in safe mode: unless "
+			    "the host is reached again afterwards, it puts back "
+			    "what was. Where the console reaches the host by the "
+			    "old address, it reaches it by the new one only once "
+			    "the host is added again by it.</p>");
+		} else {
+			h_raw(h, "<form data-form=\"if-address\"><h2>Add an "
+			    "address to ");
+			h_txt(h, app.confirm.arg);
+			h_raw(h, "</h2><p>As an alias, with <code>ifconfig</code>, "
+			    "now, in safe mode: unless the host is reached again "
+			    "afterwards, it takes the address off.</p>");
+		}
+		h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+		    "name=\"persist\" checked><span>Keep it in <code>rc.conf"
+		    "</code>, to be there after a boot</span></label>"
 		    "<label>Address<input name=\"address\" spellcheck=\"false\" "
-		    "autocomplete=\"off\" placeholder=\"10.0.0.5/24\" autofocus>"
-		    "<small>IPv4 or IPv6, with its prefix length; without one "
-		    "it is /32 or /128.</small></label>");
+		    "autocomplete=\"off\" placeholder=\"10.0.0.5/24\" autofocus");
+		h_attr(h, "value", app.confirm.value);
+		h_raw(h, "><small>IPv4 or IPv6, with its prefix length; without "
+		    "one it is /32 or /128.</small></label>");
 		break;
 	case MODAL_HOST_KEY:
 		k = app.build_reply;
@@ -2193,8 +2233,8 @@ modal(struct html *h)
 		/* A box that only shows is closed, not cancelled. */
 		h_fmt(h, "<div class=\"buttons\"><button type=\"button\" "
 		    "class=\"ghost\" data-act=\"close\">%s</button>",
-		    app.modal == MODAL_NHOP || app.modal == MODAL_WG_CONF ?
-		    "Close" : "Cancel");
+		    app.modal == MODAL_NHOP || app.modal == MODAL_WG_CONF ||
+		    app.modal == MODAL_JAIL_FILES ? "Close" : "Cancel");
 		switch (app.modal) {
 		case MODAL_CONFIRM:
 			h_fmt(h, "<button class=\"%s\">",
@@ -2216,6 +2256,10 @@ modal(struct html *h)
 			h_raw(h, "<button class=\"primary\">Update</button>");
 			break;
 		case MODAL_IF_ADDRESS:
+			h_raw(h, app.confirm.value[0] != '\0' ? "<button class=\""
+			    "primary\">Change</button>" : "<button class=\""
+			    "primary\">Add</button>");
+			break;
 		case MODAL_ROUTE:
 			h_raw(h, "<button class=\"primary\">Add</button>");
 			break;
@@ -2251,6 +2295,20 @@ modal(struct html *h)
 		case MODAL_WG_CLIENT:
 			h_raw(h, "<button class=\"primary\">Make the client"
 			    "</button>");
+			break;
+		case MODAL_JAIL_NEW:
+			h_raw(h, "<button class=\"primary\">Make the jail"
+			    "</button>");
+			break;
+		case MODAL_JAIL_DEFAULTS:
+		case MODAL_JAIL_TEMPLATE:
+			h_raw(h, "<button class=\"primary\">Write it</button>");
+			break;
+		case MODAL_JAIL_REMOVE:
+			h_raw(h, "<button class=\"danger\">Take it away</button>");
+			break;
+		case MODAL_NEIGH:
+			h_raw(h, "<button class=\"primary\">Set it</button>");
 			break;
 		case MODAL_IPSEC_CHILD:
 			h_raw(h, "<button class=\"primary\">Add</button>");

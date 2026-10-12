@@ -4600,3 +4600,10 @@ ul.notes li.new b::before { content: "+ "; color: var(--accent, #4a8); }
 .token-qr svg { width: 180px; height: 180px; flex: none; border-radius: 6px; }
 .token-qr figcaption { font-size: .8rem; color: var(--fg-2); max-width: 22rem; }
 .wg-conf { white-space: pre-wrap; word-break: break-all; font-size: .8rem; padding: .6rem; background: rgba(127,127,127,.08); border-radius: 6px; }
+/* Every table's head has a way to its rows as CSV. */
+thead th:last-child { position: relative; }
+button.csv-btn { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 1.4em; height: 1.4em; padding: 0; border: 0; background: transparent; color: var(--muted, inherit); opacity: .45; cursor: pointer; font-size: .8rem; line-height: 1; }
+button.csv-btn::before { content: "\2913"; }
+button.csv-btn:hover, button.csv-btn:focus-visible { opacity: 1; }
+table.cards button.csv-btn { display: none; }
+

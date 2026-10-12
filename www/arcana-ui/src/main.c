@@ -182,6 +182,9 @@ loc_of(char *buf, size_t len)
 	case NODE_SDWAN:
 		snprintf(buf, len, "#/sdwan");
 		break;
+	case NODE_DEVICES:
+		snprintf(buf, len, "#/devices");
+		break;
 	case NODE_SETTINGS:
 		snprintf(buf, len, "#/settings/%s", settab_arg(app.settab));
 		break;
@@ -255,6 +258,8 @@ loc_go(const char *r)
 		dispatch("select-workflows", "", "");
 	else if (IS(0, "sdwan"))
 		dispatch("select-sdwan", "", "");
+	else if (IS(0, "devices"))
+		dispatch("select-devices", "", "");
 	else if (IS(0, "settings")) {
 		loc_dec(arg, sizeof(arg), np > 1 ? f[1] : "");
 		dispatch("set-tab", arg, "");
@@ -459,14 +464,15 @@ tick(void *arg)
 		last_refresh = now;
 		/* The fleet page watches every host, a host page its own. */
 		for (i = 0; (app.node == NODE_FLEET || app.node ==
-		    NODE_NETWORK || app.node == NODE_USAGE) && i <
-		    app.nservers; i++) {
+		    NODE_NETWORK || app.node == NODE_USAGE || app.node ==
+		    NODE_DEVICES) && i < app.nservers; i++) {
 			refresh_jails(&app.servers[i], false);
-			if (app.node == NODE_FLEET)
+			if (app.node == NODE_FLEET || app.node == NODE_DEVICES)
 				refresh_stats(&app.servers[i]);
 		}
 		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
-		    app.node != NODE_USAGE && (s = cur_server()) != NULL) {
+		    app.node != NODE_USAGE && app.node != NODE_DEVICES && (s =
+		    cur_server()) != NULL) {
 			refresh_jails(s, false);
 			refresh_stats(s);
 			if (app.tab == TAB_JOBS)
@@ -479,7 +485,8 @@ tick(void *arg)
 		 * its old self until the page is loaded again.
 		 */
 		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
-		    app.node != NODE_USAGE && ++others_turn >= OTHERS_EVERY) {
+		    app.node != NODE_USAGE && app.node != NODE_DEVICES &&
+		    ++others_turn >= OTHERS_EVERY) {
 			others_turn = 0;
 			for (i = 0; i < app.nservers; i++)
 				if (i != app.sel)
@@ -569,6 +576,7 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
+	    jailmk_form(form, f) || neigh_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
@@ -776,9 +784,24 @@ submit_form(const char *form, const ucl_object_t *f)
 			return;
 		}
 		app.modal = MODAL_NONE;
-		if ((s2 = cur_server()) != NULL)
+		if ((s2 = cur_server()) == NULL)
+			return;
+		if (app.confirm.value[0] != '\0') {
+			char	old[160];
+
+			/* Unchanged: nothing to do. */
+			if (strcmp(app.confirm.value, s) == 0)
+				return;
+			/* The new one first, then the old one off. */
+			snprintf(old, sizeof(old), "%.*s", (int)strcspn(
+			    app.confirm.value, "/"), app.confirm.value);
 			if_address(s2, app.confirm.arg, s, false, jbool(f,
 			    "persist"));
+			if_address(s2, app.confirm.arg, old, true, true);
+			return;
+		}
+		if_address(s2, app.confirm.arg, s, false, jbool(f,
+		    "persist"));
 	} else if (strcmp(form, "host-key") == 0) {
 		/* Confirmed: build again, with the keys shown as trusted;
 		 * or just again, once the deploy key is allowed. */
@@ -820,6 +843,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	s = cur_server();
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
+	    jailmk_action(act, arg, value) || neigh_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
@@ -1195,8 +1219,13 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "do-route-delete", arg, value);
 	} else if (strcmp(act, "do-route-delete") == 0 && s != NULL) {
 		route_change(s, arg, value, true, true, app.net.fib, 0, 0, NULL);
-	} else if (strcmp(act, "if-addr-add") == 0 && s != NULL) {
+	} else if ((strcmp(act, "if-addr-add") == 0 || strcmp(act,
+	    "if-addr-edit") == 0) && s != NULL) {
+		/* One changed: the form with what it is now, which goes
+		 * once the new one is there. */
 		snprintf(app.confirm.arg, sizeof(app.confirm.arg), "%s", arg);
+		snprintf(app.confirm.value, sizeof(app.confirm.value), "%s",
+		    strcmp(act, "if-addr-edit") == 0 ? value : "");
 		app.modal = MODAL_IF_ADDRESS;
 		app.modal_error[0] = '\0';
 	} else if (strcmp(act, "if-addr-remove") == 0 && s != NULL) {
@@ -1325,6 +1354,15 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.net.family = atoi(arg);
 		app.net.loading = false;
 		refresh_network(s, true);
+	} else if (strcmp(act, "select-devices") == 0) {
+		app.rail_open = false;
+		app.node = NODE_DEVICES;
+		app.jail[0] = '\0';
+		close_service();
+		for (i = 0; i < app.nservers; i++) {
+			refresh_jails(&app.servers[i], false);
+			refresh_stats(&app.servers[i]);
+		}
 	} else if (strcmp(act, "select-fleet") == 0) {
 		app.rail_open = false;
 		app.node = NODE_FLEET;

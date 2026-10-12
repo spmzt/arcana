@@ -293,6 +293,15 @@ definitions:
           beside it.  template writes text as /etc/jail.conf.d/<name>
           .inc, names its one name; untemplate takes one away that no
           jail includes.
+      - name: neighbour
+        doc: |
+          A neighbour set by hand, ARP's or NDP's, with arp(8) or ndp(8)
+          (-s, -d): verb add or delete, address, and for add lladdr,
+          its link address; with temporary it ages out as the others
+          do, without it it stays (permanent).  With persist it is
+          kept for a boot as a pair of rc.conf's static_arp_pairs or
+          static_ndp_pairs, and with live too it is set now.  In the
+          jail whose network it is when jail names one.
   - name: job-state
     type: enum
     entries:
@@ -879,8 +888,9 @@ attribute-sets:
       - name: from-rc
         type: flag
         doc: |
-          For ipfw-rules, nothing written: the file rc.conf's
-          firewall_type names, as kept rules.
+          For ipfw-rules, nothing written: the script rc.conf's
+          firewall_script names, or the file firewall_type names, as
+          kept rules.
       - name: rc-file
         type: text
         doc: For ipfw-rules with from-rc, the file that was read.
@@ -1390,6 +1400,22 @@ attribute-sets:
       - name: start
         type: flag
         doc: For jail-conf make, the jail started once made.
+      - name: preshared-key
+        type: text
+        doc: |
+          For wireguard peer, the peer's preshared key, 44 characters of
+          base64: given to wg(8) in a file of the agent's that is there
+          only while it is read, and in no title nor trace.
+        checks:
+          max-len: 44
+      - name: lladdr
+        type: text
+        doc: For neighbour add, the link address, six bytes of hex.
+        checks:
+          max-len: 17
+      - name: temporary
+        type: flag
+        doc: For neighbour add, one that ages out as the others do.
 
   - name: job
     attributes:
@@ -2169,8 +2195,12 @@ operations:
       sha256 is that of the text it was made from.  The one before is
       kept beside it.  With dry-run it is only checked.  jail is the
       vnet jail whose firewall it is.  With from-rc, the file the host
-      (or the jail) loads now, as rc.conf's firewall_type names it, is
-      read and made into kept rules, which are not written: what
+      (or the jail) loads now is read and made into kept rules, which
+      are not written: the script rc.conf's firewall_script names, when
+      it is not /etc/rc.firewall, its ipfw commands taken out of it
+      (ipfw, its path or a variable holding it, the options off) and
+      the shell's own lines left in as comments; else the file
+      firewall_type names.  What
       applying does itself (flush, set, delete, options) is left in
       as comments.  sha256 is still the kept file's, for a change
       made from it.
@@ -2799,6 +2829,24 @@ operations:
         attributes:
           - ok
           - error
+          - trace
+
+  - name: jail-files
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The files jails are made with, as the jail-conf job writes them,
+      as a JSON object: "defaults", the file every jail includes (its
+      "path" and "text", text null when there is none); "dir", where
+      the jails' files are; "templates", each a "name" and its
+      "text"; and "jails", each jail file there with its "name" and
+      "text".  Files of 64 KiB and less.
+    do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
           - trace
 
 mcast-groups:

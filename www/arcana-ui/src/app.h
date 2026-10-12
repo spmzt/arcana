@@ -144,6 +144,7 @@ enum node {
 	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
 	NODE_SDWAN,		/* SD-WAN services, as MEF 70.2 says them */
 	NODE_SETTINGS,		/* the console's settings, a tab each */
+	NODE_DEVICES,		/* the hosts as a table */
 };
 
 enum tab {
@@ -332,6 +333,12 @@ enum modal {
 	MODAL_WG_PEER,
 	MODAL_WG_CLIENT,
 	MODAL_WG_CONF,
+	MODAL_JAIL_NEW,
+	MODAL_JAIL_DEFAULTS,
+	MODAL_JAIL_FILES,
+	MODAL_JAIL_TEMPLATE,
+	MODAL_JAIL_REMOVE,
+	MODAL_NEIGH,
 	MODAL_BIRD_PROTO,
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
@@ -567,6 +574,8 @@ void		 view_network(struct html *, struct server *);
 void		 view_gauges(struct html *, struct server *);
 void		 view_packages(struct html *, struct server *);
 void		 view_fleet(struct html *);
+void		 view_devices(struct html *);
+int		 count_state(const struct server *, const char *);
 void		 view_summary(struct html *, struct server *);
 void		 view_jobs(struct html *, struct server *);
 
@@ -603,6 +612,15 @@ bool		 ipsec_form(const char *, const ucl_object_t *);
 bool		 ipsec_modal(struct html *);
 void		 vpn_age(char *, size_t, int64_t);
 void		 qr_svg(struct html *, const char *, const char *);
+/* jailmk.c: jails made from the page, their defaults and templates. */
+void		 jailmk_buttons(struct html *);
+bool		 jailmk_modal(struct html *);
+bool		 jailmk_form(const char *, const ucl_object_t *);
+bool		 jailmk_action(const char *, const char *, const char *);
+/* netview.c: a neighbour set by hand. */
+bool		 neigh_modal(struct html *);
+bool		 neigh_form(const char *, const ucl_object_t *);
+bool		 neigh_action(const char *, const char *, const char *);
 
 /* bird.c: BIRD's neighbours and its configuration. */
 bool		 bird_action(const char *, const char *, const char *);

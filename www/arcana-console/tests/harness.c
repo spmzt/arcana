@@ -471,6 +471,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "any 5678 in\\n'\n"
 	    "printf '65535     99     9999 set 31 deny ip from any to any"
 	    "\\n' ;;\n"
+	    "'list 1001') printf '01001 allow tcp from any to me6 22 in\\n' "
+	    ";;\n"
 	    "'table all info') printf -- '--- table(T46), set(0) ---\\n "
 	    "kindex: 1, type: addr\\n' ;;\n"
 	    "'table T46 list') printf -- '--- table(T46), set(0) ---\\n"
@@ -686,6 +688,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = -T ] && exit 0\n"
 	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\nexit 0\n");
+	/* arp(8) and ndp(8), told what to set. */
+	put("tools/arp", "#!/bin/sh\necho \"arp $*\" >> neigh.log\n");
+	put("tools/ndp", "#!/bin/sh\necho \"ndp $*\" >> neigh.log\n");
+	ATF_REQUIRE(chmod("tools/arp", 0755) == 0 && chmod("tools/ndp", 0755)
+	    == 0);
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");

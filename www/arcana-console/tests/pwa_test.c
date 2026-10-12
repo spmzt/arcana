@@ -832,6 +832,29 @@ part_hosts(void)
 	ATF_CHECK(js_true("document.querySelector('.topo .tnode.host') && "
 	    "!document.querySelector('.topo .tnode[data-act=peek-jail]')"));
 	shot("2-fleet");
+	/* Devices: the hosts as a table, filtered; a row opens its host. */
+	run("document.querySelector('.tree .titem.devnode').click()");
+	wait_js("document.querySelectorAll('table.devices tbody tr.pick')"
+	    ".length >= 1 && location.hash === '#/devices'", 10);
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.devices thead "
+	    "th')].map(t => t.textContent).join(',').startsWith('Host,Address,"
+	    "State,Agent,FreeBSD,Jails running')"));
+	run("const i = document.querySelector('#filter'); i.value = "
+	    "'nothing-matches-this'; i.dispatchEvent(new Event('input', { "
+	    "bubbles: true }));");
+	wait_js("document.querySelectorAll('table.devices tbody tr.pick')"
+	    ".length === 0", 5);
+	run("const i = document.querySelector('#filter'); i.value = ''; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("document.querySelectorAll('table.devices tbody tr.pick')"
+	    ".length >= 1", 5);
+	shot("2b-devices");
+	run("document.querySelector('table.devices tbody tr.pick').click()");
+	wait_js("document.querySelector('.tree .titem.server.selected') && "
+	    "location.hash.startsWith('#/hosts/')", 10);
+	run("document.querySelector('.tree .titem.fleet[data-act=select-fleet]')"
+	    ".click()");
+	wait_js("document.querySelector('.hosts .hostcard')", 10);
 	run("document.querySelector('.hosts .hostcard').click()");
 	wait_js("document.querySelector('.tree .titem.server.selected')", 5);
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
@@ -1084,8 +1107,9 @@ part_hosts(void)
 	wait_js("document.querySelectorAll('.dock .recent .last').length >= 4 "
 	    "&& [...document.querySelectorAll('.dock .recent .last small')]."
 	    "some(e => /done|failed/.test(e.textContent))", 20);
-	ATF_CHECK(js_true("(localStorage.getItem('arc_tasks') || '').split("
-	    "'\\n').length > 5"));
+	/* Kept as the page keeps them, which may come a moment after. */
+	wait_js("(localStorage.getItem('arc_tasks') || '').split('\\n')"
+	    ".length > 5", 5);
 	shot("9a-recent-tasks");
 	run("[...document.querySelectorAll('.dock .recent .last')].pop()."
 	    "click()");
@@ -1093,6 +1117,83 @@ part_hosts(void)
 	    5);
 	run("document.querySelector('.dock > header').click()");
 	wait_js("!document.querySelector('.dock.open')", 5);
+	/*
+	 * Jails made from the page: a template; a jail of its own file that
+	 * includes the defaults and the template, read back by jail(8),
+	 * then taken away; the defaults written, the file before kept.
+	 */
+	run("document.querySelector('.tree .titem.server').click()");
+	wait_js("document.querySelector('button.tab[data-arg=jails]')", 10);
+	run("document.querySelector('button.tab[data-arg=jails]').click()");
+	wait_js("document.querySelector('button[data-act=jm-new]')", 10);
+	run("document.querySelector('button[data-act=jm-files]').click()");
+	wait_js("document.querySelector('form[data-form=jm-files] button"
+	    "[data-act=jm-tpl-new]')", 5);
+	run("document.querySelector('button[data-act=jm-tpl-new]').click()");
+	wait_js("document.querySelector('form[data-form=jm-template]')", 5);
+	run("const f = document.querySelector('form[data-form=jm-template]'); "
+	    "f.name.value = 'certbot'; f.text.value = 'allow.raw_sockets;\\n'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("etc/jail.conf.d/certbot.inc", F_OK) !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'allow.raw_sockets;' "
+	    "etc/jail.conf.d/certbot.inc") == 0);
+	run("document.querySelector('button[data-act=jm-new]').click()");
+	wait_js("document.querySelector('form[data-form=jm-new] "
+	    "input[name=tpl_certbot]')", 10);
+	shot("4j-jail-new");
+	run("const f = document.querySelector('form[data-form=jm-new]'); "
+	    "f.name.value = 'www'; f.ip4.value = 'lo0|127.0.0.9'; "
+	    "f.ruleset.value = '4'; f.sysvsem.checked = true; "
+	    "f.tpl_certbot.checked = true; f.start.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("etc/jail.conf.d/www.conf", F_OK) != 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -Eqx '\\.include \"/.*/etc/jail\\.conf\";' "
+	    "etc/jail.conf.d/www.conf && grep -qx 'www {' etc/jail.conf.d/www.conf "
+	    "&& grep -q 'devfs_ruleset = 4;' etc/jail.conf.d/www.conf && grep -q "
+	    "'sysvsem = new;' etc/jail.conf.d/www.conf && grep -q 'ip4.addr = "
+	    "\"lo0|127.0.0.9\";' etc/jail.conf.d/www.conf && grep -Eq '\\.include "
+	    "\"/.*/etc/jail\\.conf\\.d/certbot\\.inc\";' etc/jail.conf.d/www.conf") ==
+	    0);
+	/* Taken away again, its file kept beside. */
+	run("document.querySelector('button[data-act=jm-files]').click()");
+	wait_js("document.querySelector('button[data-act=jm-rm][data-arg=www]')",
+	    10);
+	run("document.querySelector('button[data-act=jm-rm][data-arg=www]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=jm-remove]')", 5);
+	run("document.querySelector('form[data-form=jm-remove]')"
+	    ".requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("etc/jail.conf.d/www.conf", F_OK) == 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK(access("etc/jail.conf.d/www.conf", F_OK) != 0 &&
+	    access("etc/jail.conf.d/www.conf.arcana.bak", F_OK) == 0);
+	/* The defaults: the path there now offered, the domain asked. */
+	run("document.querySelector('button[data-act=jm-defaults]').click()");
+	wait_js("document.querySelector('form[data-form=jm-defaults]') && "
+	    "document.querySelector('form[data-form=jm-defaults] details')", 10);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=jm-defaults]')"
+	    ".path.value === '/jails/$name'"));
+	run("const f = document.querySelector('form[data-form=jm-defaults]'); "
+	    "f.domain.value = 'example.org'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -q 'host.domainname = "
+	    "\"example.org\";' etc/jail.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q 'host.hostname = \"${name}.example.org\";' "
+	    "etc/jail.conf && grep -qx 'exec.clean;' etc/jail.conf && grep -q "
+	    "'^web {' etc/jail.conf.arcana.bak") == 0);
 }
 
 static void
@@ -1139,6 +1240,31 @@ part_nettab(void)
 	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
 	    ".some(r => r.textContent.includes('58:9c:fc:00:00:02') && "
 	    "r.textContent.includes('reachable'))", 20);
+	/* One set by hand, aging out; and one taken away. */
+	run("document.querySelector('button[data-act=neigh-add]').click()");
+	wait_js("document.querySelector('form[data-form=neigh]')", 5);
+	run("const f = document.querySelector('form[data-form=neigh]'); "
+	    "f.address.value = '10.0.0.9'; f.lladdr.value = "
+	    "'02:00:00:00:00:09'; f.temp.checked = true; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -qx 'arp -s 10.0.0.9 "
+	    "02:00:00:00:00:09 temp' neigh.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'arp -s 10.0.0.9 02:00:00:00:00:09 temp' "
+	    "neigh.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=neigh-delete][data-arg="
+	    "\"10.0.0.2\"]').click()");
+	wait_js("document.querySelector('.modal button.danger')", 5);
+	run("document.querySelector('.modal button.danger').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -qx 'arp -d 10.0.0.2' neigh.log") !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'arp -d 10.0.0.2' neigh.log") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* The nexthop groups, as netstat -O has them, under Nexthops:
 	 * each next hop a line of its own, with its share. */
 	ATF_CHECK(js_true("!document.querySelector('nav.sub button[data-act="
@@ -1251,6 +1377,34 @@ part_nettab(void)
 	    "t.textContent.includes('lo0: add 10.9.0.7/24: done'))", 20);
 	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.7/24 alias$' ifconfig.log")
 	    == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* Every table can be had as CSV: its columns by their names, its
+	 * rows as shown, without the buttons. */
+	run("document.querySelector('tr[data-if=lo0]').closest('table')"
+	    ".querySelector('thead button.csv-btn').click()");
+	wait_js("typeof window.arcCsvLast === 'string'", 5);
+	ATF_CHECK(js_true("(() => { const l = window.arcCsvLast.split('\\n');"
+	    " return l.length > 2 && !l[0].startsWith(',') && l.some(x => "
+	    "x.startsWith('lo0,')) && !window.arcCsvLast.includes('+ "
+	    "address'); })()"));
+	/* An address changed: the form with what it is now; the new one
+	 * added, then the old one taken off. */
+	run("document.querySelector('tr[data-if=lo0] button[data-act="
+	    "if-addr-edit][data-value=\"127.0.0.1/8\"]').click()");
+	wait_js("document.querySelector('form[data-form=if-address]')", 5);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=if-address]')"
+	    ".address.value === '127.0.0.1/8' && document.querySelector('.modal "
+	    "button.primary').textContent === 'Change'"));
+	run("const f = document.querySelector('form[data-form=if-address]'); "
+	    "f.address.value = '127.0.0.2/8'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('lo0: remove 127.0.0.1: done'))", 20);
+	ATF_CHECK(system("grep -n 'lo0 inet 127.0.0.2/8 alias\\|lo0 inet "
+	    "127.0.0.1 -alias' ifconfig.log | sed 's/:.*inet / /' | tr '\\n' "
+	    "' ' | grep -q '127.0.0.2/8 alias .*127.0.0.1 -alias'") == 0);
 	run("document.querySelector('.dock > header').click()");
 
 	/* A static route, from the routes table: asked for in a dialog,
@@ -1834,8 +1988,48 @@ part_plugins(void)
 	    "wg.log") != 0; i++)
 		usleep(100000);
 	ATF_CHECK(system("grep -Eq '^set wg0 peer [A-Za-z0-9+/]{43}= "
-	    "allowed-ips 10.9.9.3/32$' wg.log") == 0);
+	    "allowed-ips 10.9.9.3/32 preshared-key .*/\\.wg0\\.psk\\.[0-9a-f]{8}$' "
+	    "wg.log") == 0);
+	ATF_CHECK(js_true("/\\nPresharedKey = [A-Za-z0-9+\\/]{43}=\\nEndpoint = "
+	    "/.test(wc)"));
 	shot("7c-wireguard-client");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	/* A new key for a client: its address kept, the new peer in and
+	 * then the old one out. */
+	run("window.rk = document.querySelector('table.wgpeers button"
+	    "[data-act=wg-rekey]').dataset.value; document.querySelector("
+	    "'table.wgpeers button[data-act=wg-rekey]').click()");
+	wait_js("document.querySelector('form[data-form=wg-client]')", 5);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=wg-client] "
+	    "h2').textContent.startsWith('A new key for a client') && "
+	    "document.querySelector('form[data-form=wg-client]').address.value "
+	    "=== '10.9.9.2/32'"));
+	run("const f = document.querySelector('form[data-form=wg-client]'); "
+	    "f.name.value = 'laptop'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=wg-conf] pre.wg-conf')",
+	    10);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	{
+		ucl_object_t	*rk = js("return window.rk;");
+		char		 cmd[300];
+
+		ATF_REQUIRE(rk != NULL && ucl_object_tostring(rk) != NULL);
+		snprintf(cmd, sizeof(cmd), "grep -n '' wg.log | grep -A3 "
+		    "'allowed-ips 10.9.9.2/32 preshared-key' | grep -qF 'peer %s "
+		    "remove'", ucl_object_tostring(rk));
+		for (i = 0; i < 100 && system(cmd) != 0; i++)
+			usleep(100000);
+		ATF_CHECK_MSG(system(cmd) == 0, "the old peer %s was not taken "
+		    "away after the new one came", ucl_object_tostring(rk));
+		ucl_object_unref(rk);
+	}
+	/* The stand-in keeps one peer, which went with the old key: the
+	 * peer of before, back, for what follows. */
+	ATF_REQUIRE(system("printf 'wg0\\txTIBA5rboUvnH4htodjb6e697QjLERt1NAB4"
+	    "mZqp8Dg=\\t(none)\\t192.0.2.9:51820\\t10.9.9.2/32\\t0\\t0\\t0\\t0"
+	    "\\n' > wg.peers.wg0") == 0);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
 	shot("7c-wireguard");
@@ -2993,17 +3187,22 @@ part_firewall(void)
 	    "querySelector('form[data-form=fw-edit]').live.checked && document"
 	    ".querySelector('form[data-form=fw-edit]').persist.checked"));
 	shot("7o-firewall-part");
+	/* One job: the new rule read by ipfw first, then the old one out
+	 * and the new one in; an interface's pattern, quoted the shell's
+	 * way, given to ipfw without its quotes. */
 	run("const f = document.querySelector('form[data-form=fw-edit]'); "
-	    "f.rule.value = 'allow tcp from any to me6 2222 in'; "
+	    "f.rule.value = 'allow tcp from any to me6 2222 in via \"wg[0-1]\"'; "
 	    "f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('ipfw add 1001 allow tcp from any to me6 "
-	    "2222') && t.textContent.includes('done'))", 20);
-	ATF_CHECK(system("grep -q '^ipfw -q delete 1001$' ipfw.log && grep -q "
-	    "'^ipfw -q add 1001 allow tcp from any to me6 2222 in$' ipfw.log "
-	    "&& grep -q '^add 01001 allow tcp from any to me6 2222 in$' "
+	    "t.textContent.includes('ipfw 1001 changed: 1001 allow tcp from any "
+	    "to me6 2222') && t.textContent.includes('done'))", 20);
+	ATF_CHECK(system("grep -n '' ipfw.log | grep -A9 'ipfw -q -n add 1001 "
+	    "allow tcp from any to me6 2222 in via wg\\[0-1\\]$' | grep -q "
+	    "'ipfw -q delete 1001$' && grep -q '^ipfw -q add 1001 allow tcp from "
+	    "any to me6 2222 in via wg\\[0-1\\]$' ipfw.log && grep -q '^add "
+	    "01001 allow tcp from any to me6 2222 in via wg\\[0-1\\]$' "
 	    "ipfw.rules && ! grep -q 'me6 22 in' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
 	/* The kept rules as a text, and the connections let through now,
@@ -3047,7 +3246,30 @@ part_firewall(void)
 	shot("7p-firewall-load-rc");
 	ATF_CHECK(system("grep -q 'add 01500 allow' ipfw.rules && ! grep -q "
 	    "'via lo0' ipfw.rules") == 0);
-	ATF_REQUIRE(system("sed -i '' -e '/^firewall_type=/d' rc.conf") == 0);
+	/* A script of the host's own, as firewall_script names it, read
+	 * first: its ipfw commands taken out, its own lines as comments. */
+	ATF_REQUIRE(system("printf '#!/bin/sh\\nfwcmd=\"/sbin/ipfw -q\"\\n"
+	    "${fwcmd} add 200 allow ip from any to any via lo0\\n' > fw.sh && "
+	    "printf 'firewall_script=\"%s/fw.sh\"\\n' \"$(pwd)\" >> rc.conf")
+	    == 0);
+	run("window.fwn = 0; window.fetch = function (u, o) { if (String(u)"
+	    ".includes('/net/ipfw')) window.fwn++; return window.fetch1(u, o); "
+	    "};");
+	run("document.querySelector('button.tab[data-arg=summary]').click()");
+	run("document.querySelector('button.tab[data-arg=firewall]').click()");
+	wait_js("window.fwn >= 1", 15);
+	run("window.fetch = window.fetch1;");
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
+	    "click()");
+	wait_js("document.querySelector('button[data-act=fw-load-rc]') && "
+	    "document.querySelector('button[data-act=fw-load-rc]').title"
+	    ".includes('fw.sh')", 10);
+	run("document.querySelector('button[data-act=fw-load-rc]').click()");
+	wait_js("document.querySelector('form[data-form=fw-text] textarea')"
+	    ".value === '# left out, the script\\'s own: fwcmd=\"/sbin/ipfw -q\""
+	    "\\nadd 200 allow ip from any to any via lo0\\n'", 10);
+	ATF_REQUIRE(system("sed -i '' -e '/^firewall_type=/d' -e "
+	    "'/^firewall_script=/d' rc.conf") == 0);
 	/*
 	 * A table and what is in it, an entry more; what Apply would
 	 * change; a packet followed through the rules; the firewall of

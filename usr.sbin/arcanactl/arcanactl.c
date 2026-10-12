@@ -72,6 +72,7 @@ static const char *job_states[] = {
 
 static void	usage(void) __dead2;
 static void	fail(struct arc_client *, int, const char *) __dead2;
+static char	*slurp(const char *);
 static const char *join(const char *const *, size_t);
 static void	emit_jail(const struct arc_jail *, bool);
 static void	emit_trace(const struct arc_step *, size_t);
@@ -182,8 +183,9 @@ usage(void)
 	    "    kmod [load | unload module]\n"
 	    "    jailconf make jail file [dataset snapshot clone|send path] "
 	    "[start]\n"
-	    "    jailconf remove jail [dataset] | defaults file\n"
+	    "    jailconf remove jail [dataset] | defaults file | files\n"
 	    "    jailconf template name file | untemplate name\n"
+	    "    neigh add address lladdr [temp] | delete address\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
 	    "    sysctl [name | start of a name]\n"
@@ -210,6 +212,7 @@ usage(void)
 	    "    geneve name flush [all]\n"
 	    "    ipfw [keep] add number rule ...\n"
 	    "    ipfw [keep] delete number\n"
+	    "    ipfw [keep] replace number new-number rule ...\n"
 	    "    ipfw apply | enable | disable | zero [number]\n"
 	    "    ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | "
 	    "pipe |\n        queue | sched name word ...\n"
@@ -1562,6 +1565,14 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 				sp.endpoint = argv[i + 1];
 			else if (strcmp(argv[i], "allowed-ips") == 0)
 				sp.allowed_ips = argv[i + 1];
+			else if (strcmp(argv[i], "preshared-key") == 0) {
+				/* From a file, as wg(8) takes it: not
+				 * on a command line. */
+				char	*k = slurp(argv[i + 1]);
+
+				k[strcspn(k, "\r\n")] = '\0';
+				sp.preshared_key = k;
+			}
 			else if (strcmp(argv[i], "keepalive") == 0) {
 				sp.has_keepalive = true;
 				sp.keepalive = (uint32_t)strtonum(argv[i + 1],
@@ -2012,6 +2023,36 @@ slurp(const char *path)
 }
 
 /*
+ * neigh add address lladdr [temp] | delete address: an ARP or NDP
+ * neighbour set by hand, now; with -p kept for a boot too.
+ */
+static int
+cmd_neigh(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_NEIGHBOUR;
+	if (argc >= 4 && argc <= 5 && strcmp(argv[1], "add") == 0) {
+		sp.lladdr = argv[3];
+		if (argc == 5) {
+			if (strcmp(argv[4], "temp") != 0)
+				usage();
+			sp.temporary = true;
+		}
+	} else if (argc != 3 || strcmp(argv[1], "delete") != 0)
+		usage();
+	sp.verb = argv[1];
+	sp.address = argv[2];
+	sp.live = true;
+	sp.persist = persist;
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
  * jailconf make jail file [dataset snapshot clone|send path] [start]
  * jailconf remove jail [dataset]
  * jailconf defaults file
@@ -2022,8 +2063,20 @@ static int
 cmd_jailconf(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
+	struct arc_jail_files_rsp *rs;
 	const char		*name;
+	int			 error;
 
+	if (argc == 2 && strcmp(argv[1], "files") == 0) {
+		if ((error = arc_jail_files(cl, &rs)) != 0)
+			fail(cl, error, "jail files");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_jail_files_rsp_free(rs);
+		return (error);
+	}
 	if (argc < 3)
 		usage();
 	memset(&sp, 0, sizeof(sp));
@@ -3453,6 +3506,8 @@ main(int argc, char *argv[])
 		rc = cmd_kmod(&cl, argc, argv);
 	else if (strcmp(argv[0], "jailconf") == 0)
 		rc = cmd_jailconf(&cl, argc, argv);
+	else if (strcmp(argv[0], "neigh") == 0)
+		rc = cmd_neigh(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||

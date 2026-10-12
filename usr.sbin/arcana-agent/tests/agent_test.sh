@@ -1467,6 +1467,11 @@ vpn_body()
 #!/bin/sh
 d=$(pwd)
 echo "\$*" >> \$d/wg.log
+prev=
+for a; do
+	[ "\$prev" = preshared-key ] && { cat "\$a" > \$d/psk.got; ls -la "\$a" | cut -c1-10 > \$d/psk.mode; echo "\$a" > \$d/psk.path; }
+	prev=\$a
+done
 key="(none)"; pub="(none)"
 [ -f \$d/wg.key ] && { key=\$(cat \$d/wg.key); pub=$PUB; }
 case "\$1 \$2 \$3" in
@@ -1622,6 +1627,20 @@ EOS
 	    allowed-ips 10.9.9.2/32,fd00::2/128 keepalive 25
 	atf_check -o match:"fake-wg set wg0 peer $PEER endpoint \[2001:db8::9\]:51820" \
 	    "$JGC" -c "$SOCK" wg wg0 peer "$PEER" endpoint '[2001:db8::9]:51820'
+	# With a preshared key: given to wg(8) in a file of the agent's,
+	# 0600, there only while it is read; not in an argument, a title
+	# or the trace.
+	PSK=$(printf 'a%.0s' $(seq 1 43))=
+	printf '%s\n' "$PSK" > psk.in
+	atf_check -o save:psk.out "$JGC" -t -c "$SOCK" wg wg0 peer "$PEER" preshared-key psk.in
+	atf_check -o inline:"$PSK\n" cat psk.got
+	atf_check -o inline:'-rw-------\n' cat psk.mode
+	atf_check -s exit:1 test -e "$(cat psk.path)"
+	atf_check -s exit:1 grep -qF "$PSK" psk.out
+	atf_check -s exit:1 grep -qF "$PSK" wg.log
+	atf_check -s exit:1 grep -qF "$PSK" daemon.out
+	atf_check -s exit:1 -e match:'a preshared key is a peer' -o ignore \
+	    "$JGC" -c "$SOCK" wg wg0 unpeer "$PEER" preshared-key psk.in
 	atf_check -o match:"fake-wg set wg0 peer $PEER remove" \
 	    "$JGC" -c "$SOCK" wg wg0 unpeer "$PEER"
 	atf_check -s exit:1 -o match:'No such device' \
@@ -3062,7 +3081,11 @@ stop_body()
 	touch slow
 	"$JGC" -c "$SOCK" service sshd restart > change.out 2>&1 &
 	change=$!
-	sleep 0.5
+	# Once the change is under way, not at a guess of when.
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
+		sleep 0.1
+	done
 	# What is under way and is not a job is said with the jobs.
 	atf_check -o match:'Under way: +service sshd restart' \
 	    -o not-match:'Stopping' "$JGC" -c "$SOCK" jobs
@@ -3090,8 +3113,12 @@ stop_body()
 	# Signalled twice, it does not wait.
 	start_daemon
 	pid=$(cat daemon.pid)
+	touch slow
 	"$JGC" -c "$SOCK" service sshd restart > /dev/null 2>&1 &
-	sleep 0.5
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" jobs 2>/dev/null | grep -q 'Under way' && break
+		sleep 0.1
+	done
 	kill "$pid"
 	sleep 0.3
 	kill "$pid"
@@ -3778,6 +3805,7 @@ case "\$*" in
 	printf '06101     12     1440 (3s) STATE udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default\n' ;;
 "-n -q "*) grep -q bogus "\$3" && { echo "ipfw: line 2: bad command bogus" >&2; exit 1; } ;;
 "-q add "*" refuse "*) echo "ipfw: unrecognised option refuse" >&2; exit 1 ;;
+"list 1001") printf '01001 allow tcp from any to me6 22 in\n' ;;
 "-q "*.arcana-load) cat "\$2" > $(pwd)/loaded.rules; grep -q fails "\$2" && { echo "ipfw: line 1: getsockopt(IP_FW_XADD): Invalid argument" >&2; exit 1; } ;;
 esac
 exit 0
@@ -3810,6 +3838,24 @@ EOS
 	atf_check test ! -e fw/ipfw.rules
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw delete 1002
 	atf_check -o match:'^ipfw -q delete 1002$' tail -1 ipfw.log
+	# A rule changed as one: ipfw reads the new one first, then the
+	# old one goes and the new one comes; one ipfw does not take after
+	# all leaves the old one put back as it was listed.
+	: > ipfw.log
+	atf_check -s exit:1 -o match:'did not take the new rule: .*refuse; the one before was put back' \
+	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow tcp from any to me6 22 refuse in
+	atf_check -o inline:'ipfw -q -n add 1001 allow tcp from any to me6 22 refuse in
+ipfw list 1001
+ipfw -q delete 1001
+ipfw -q add 1001 allow tcp from any to me6 22 refuse in
+ipfw -q add 1001 allow tcp from any to me6 22 in
+' cat ipfw.log
+	atf_check -s exit:1 -e match:'with no quotes' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow ip from any to any via '"wg[0-1]"'
+	: > ipfw.log
+	atf_check -o match:'done +ipfw replace 1001 1001 allow ip from any to any via wg\[0-1\]' \
+	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow ip from any to any via 'wg[0-1]'
+	atf_check -o match:'^ipfw -q add 1001 allow ip from any to any via wg\[0-1\]$' cat ipfw.log
 	# Kept only: into the file, in the order of the numbers.
 	: > ipfw.log
 	atf_check -o match:'\(kept\)' \
@@ -3893,7 +3939,7 @@ add 00010 set 1 allow ip from table(T46) to any
 	# The file the host loads now, as rc.conf names it, made into kept
 	# rules and not written: what applying does left as comments, the
 	# options before a command taken off.
-	atf_check -s exit:1 -e match:'sets no firewall_type' -o ignore \
+	atf_check -s exit:1 -e match:'sets no firewall_script of its own nor a firewall_type file' -o ignore \
 	    "$JGC" -c "$SOCK" ipfw rules -r
 	printf 'firewall_type="open"\n' >> rc.conf
 	atf_check -s exit:1 -e match:"one of rc.firewall's own" -o ignore \
@@ -3911,6 +3957,34 @@ table T9 create type addr
 " "$JGC" -c "$SOCK" ipfw rules -r
 	atf_check -o file:f.rules cat fw/ipfw.rules
 	sed -i '' -e '/^firewall_type=/d' rc.conf
+	# A script of the host's own, as firewall_script names it: its ipfw
+	# commands (ipfw, its path, a variable holding it) taken out, a
+	# line continued joined, the shell's quoting taken off, the shell's
+	# own lines left in as comments.  It is read first.
+	cat > fw.sh <<'EOS'
+#!/bin/sh
+fwcmd="/sbin/ipfw -q"
+${fwcmd} -f flush
+${fwcmd} add 100 allow ip from any to any via lo0
+ipfw -q add 200 deny tcp from any to me 22 \
+    in via em0
+/sbin/ipfw add 300 allow ip from \( 10.0.0.0/8 or 192.168.0.0/16 \) to any
+if [ -n "$x" ]; then
+	$fwcmd add 400 count ip from any to any
+fi
+EOS
+	printf 'firewall_type="open"\nfirewall_script="%s/fw.sh"\n' "$(pwd)" >> rc.conf
+	atf_check -o inline:"# from $(pwd)/fw.sh
+# left out, the script's own: fwcmd=\"/sbin/ipfw -q\"
+# left out, applying does it: \${fwcmd} -f flush
+add 100 allow ip from any to any via lo0
+add 200 deny tcp from any to me 22 in via em0
+add 300 allow ip from ( 10.0.0.0/8 or 192.168.0.0/16 ) to any
+# left out, the script's own: if [ -n \"\$x\" ]; then
+add 400 count ip from any to any
+# left out, the script's own: fi
+" "$JGC" -c "$SOCK" ipfw rules -r
+	sed -i '' -e '/^firewall_type=/d' -e '/^firewall_script=/d' rc.conf
 
 	# On and off, kept in rc.conf with where the rules are.
 	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw enable
@@ -4581,6 +4655,7 @@ destroy) rm -f "$(pwd)/ds.\$(echo "\$3" | tr / _)" ;;
 esac
 EOS
 	chmod +x fake-zfs
+	touch ds.tank ds.tank_jails
 	DAEMON_ARGS="-z $(pwd)/fake-zfs"
 	start_daemon
 	d=$(pwd)/etc
@@ -4609,7 +4684,7 @@ EOS
 	# path is not the dataset's: nothing made, the dataset taken back.
 	atf_check -s exit:1 -o match:'is there already' "$JGC" -c "$SOCK" jailconf make www www.conf
 	printf '.include "%s/jail.conf";\nmail {\n}\n' "$d" > mail.conf
-	atf_check -s exit:1 -o match:'defines 1 jail, not the one jail web2' "$JGC" -c "$SOCK" jailconf make web2 mail.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
+	atf_check -s exit:1 -o match:'the file defines mail, not the one jail web2' "$JGC" -c "$SOCK" jailconf make web2 mail.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
 	test -e ds.tank_jails_web2 && atf_fail "the dataset made for a refused jail stayed"
 	test -e "$d/jail.conf.d/web2.conf" && atf_fail "a refused jail's file stayed"
 	printf '.include "%s/jail.conf";\nweb2 {\n\tpath = /elsewhere;\n}\n' "$d" > web2.conf
@@ -4619,6 +4694,9 @@ EOS
 	atf_check -o match:'done +jail make web2' "$JGC" -c "$SOCK" jailconf make web2 web2.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
 	atf_check -o match:'^zfs send tank/jails/base@15.0$' -o match:'^zfs recv -o mountpoint=/usr/jails/web2 tank/jails/web2$' cat zfs.log
 	atf_check -o inline:'stream of tank/jails/base@15.0\n' cat recv.in
+	# A pool that is not there is not one to make anything in.
+	atf_check -s exit:1 -o match:'there is no pool nopool' "$JGC" -c "$SOCK" jailconf make web3 web2.conf nopool/jails/web3 tank/jails/base@15.0 clone /usr/jails/web3
+	atf_check -o not-match:'destroy -r nopool' -o not-match:'create' cat zfs.log
 	# The template kept while a jail includes it.
 	atf_check -s exit:1 -o match:'certbot.inc is included by www.conf: kept' "$JGC" -c "$SOCK" jailconf untemplate certbot
 	# Checked before queued: names, datasets, the copy, the path.
@@ -4639,6 +4717,50 @@ jail_conf_cleanup()
 	stop_daemon
 }
 
+atf_test_case neighbours cleanup
+neighbours_head()
+{
+	atf_set "descr" "ARP and NDP neighbours set by hand, permanent or aging out, kept in rc.conf's static pairs, and deleted"
+}
+neighbours_body()
+{
+	mkdir -p tools
+	for p in arp ndp; do
+		printf '#!/bin/sh\necho "%s $*" >> %s/neigh.log\n' "$p" "$(pwd)" > tools/$p
+		chmod +x tools/$p
+	done
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o match:'done +neighbour add 192.0.2.5 00:11:22:33:44:55$' \
+	    "$JGC" -c "$SOCK" neigh add 192.0.2.5 00:11:22:33:44:55
+	atf_check -o match:'done +neighbour add 192.0.2.6 00:11:22:33:44:66 \(ages out\)$' \
+	    "$JGC" -c "$SOCK" neigh add 192.0.2.6 00:11:22:33:44:66 temp
+	# Kept for a boot: a pair of static_ndp_pairs, named by the address.
+	atf_check -o match:'done +neighbour add fe80::1%em0 00:11:22:33:44:77 \(now, and kept\)$' \
+	    "$JGC" -p -c "$SOCK" neigh add 'fe80::1%em0' 00:11:22:33:44:77
+	atf_check -o inline:'arp -s 192.0.2.5 00:11:22:33:44:55
+arp -s 192.0.2.6 00:11:22:33:44:66 temp
+ndp -s fe80::1%em0 00:11:22:33:44:77
+' cat neigh.log
+	atf_check -o match:'^static_ndp_pairs="arcana_fe80__1_em0"$' \
+	    -o match:'^static_ndp_arcana_fe80__1_em0="fe80::1%em0 00:11:22:33:44:77"$' cat rc.conf
+	atf_check -o match:'done +neighbour delete fe80::1%em0' \
+	    "$JGC" -p -c "$SOCK" neigh delete 'fe80::1%em0'
+	atf_check -o match:'^ndp -d fe80::1%em0$' tail -1 neigh.log
+	atf_check -o not-match:'arcana_fe80' cat rc.conf
+	# What is not a neighbour, nor one that ages out kept for a boot.
+	atf_check -s exit:1 -e match:'six bytes of hex' -o ignore \
+	    "$JGC" -c "$SOCK" neigh add 192.0.2.7 00:11:22
+	atf_check -s exit:1 -e match:'an IPv4 or IPv6 address' -o ignore \
+	    "$JGC" -c "$SOCK" neigh add host.example 00:11:22:33:44:55
+	atf_check -s exit:1 -e match:'not kept for a boot' -o ignore \
+	    "$JGC" -p -c "$SOCK" neigh add 192.0.2.8 00:11:22:33:44:88 temp
+}
+neighbours_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case ntp
@@ -4648,6 +4770,7 @@ atf_init_test_cases()
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
 	atf_add_test_case jail_conf
+	atf_add_test_case neighbours
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute

@@ -26,7 +26,8 @@ static struct {
 	char	server[16], iface[32], name[64], address[128], dns[128];
 	char	endpoint[200], allowed[256], keepalive[8], srvpub[64];
 	char	conf[1536];
-	bool	persist;
+	char	replaces[64];	/* the peer whose key this one takes over */
+	bool	persist, psk;
 } wgc;
 
 /* The client's configuration, once shown, forgotten. */
@@ -200,7 +201,13 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 			h_raw(h, " / ");
 			h_txt(h, tx);
 			h_raw(h, "</td><td><button class=\"icon\" data-act=\""
-			    "wg-peer-edit\" title=\"Change its endpoint, "
+			    "wg-rekey\" title=\"A new key for this client: a new "
+			    "configuration and QR code, its addresses kept, this "
+			    "key removed\"");
+			h_attr(h, "data-arg", jstr(o, "name"));
+			h_attr(h, "data-value", jstr(p, "public-key"));
+			h_raw(h, ">&#8635;</button><button class=\"icon\" "
+			    "data-act=\"wg-peer-edit\" title=\"Change its endpoint, "
 			    "allowed addresses or keepalive\"");
 			h_attr(h, "data-arg", jstr(o, "name"));
 			h_attr(h, "data-value", jstr(p, "public-key"));
@@ -283,7 +290,9 @@ vpn_modal(struct html *h)
 		h_raw(h, keep_wg);
 		return (true);
 	case MODAL_WG_CLIENT:
-		h_raw(h, "<form data-form=\"wg-client\"><h2>A new client of ");
+		h_raw(h, "<form data-form=\"wg-client\"><h2>");
+		h_raw(h, wgc.replaces[0] != '\0' ? "A new key for a client of " :
+		    "A new client of ");
 		h_txt(h, wgc.iface);
 		h_raw(h, "</h2><p>The console makes its key pair and keeps "
 		    "neither half: the private one goes into the client's "
@@ -318,7 +327,10 @@ vpn_modal(struct html *h)
 		    "keepalive\" inputmode=\"numeric\"");
 		h_attr(h, "value", wgc.keepalive);
 		h_raw(h, "><small>25 keeps a client behind NAT reachable; empty "
-		    "for none.</small></label>");
+		    "for none.</small></label><label class=\"toggle\"><input "
+		    "type=\"checkbox\" name=\"psk\" checked> With a preshared "
+		    "key <small>a second secret beside the key pair, made by the "
+		    "console with it</small></label>");
 		h_raw(h, keep_wg);
 		return (true);
 	case MODAL_WG_CONF:
@@ -397,7 +409,7 @@ client_keys_cb(int status, const ucl_object_t *o, const char *err,
 {
 	struct server	*s;
 	char		 title[160], addr[128], *qi, *qp, *qa;
-	const char	*priv, *pub;
+	const char	*priv, *pub, *psk;
 	int		 n;
 
 	(void)arg;
@@ -413,15 +425,36 @@ client_keys_cb(int status, const ucl_object_t *o, const char *err,
 	if (n == app.nservers)
 		return;
 	s = &app.servers[n];
+	psk = wgc.psk ? jstr(o, "preshared_key") : NULL;
 	squeeze(wgc.address, addr, sizeof(addr));
 	qi = json_quote(wgc.iface);
 	qp = json_quote(pub);
 	qa = json_quote(addr);
 	snprintf(title, sizeof(title), "%s: wireguard client %s", wgc.iface,
 	    wgc.name);
-	vpn_job(s, title, "{\"kind\":\"wireguard\",\"interface\":%s,\"verb\":"
-	    "\"peer\",\"peer\":%s,\"allowed_ips\":%s,\"persist\":%s}", qi, qp,
-	    qa, wgc.persist ? "true" : "false");
+	{
+		char	*qk = json_quote(psk != NULL ? psk : "");
+
+		vpn_job(s, title, "{\"kind\":\"wireguard\",\"interface\":%s,"
+		    "\"verb\":\"peer\",\"peer\":%s,\"allowed_ips\":%s%s%s,"
+		    "\"persist\":%s}", qi, qp, qa, psk != NULL ?
+		    ",\"preshared_key\":" : "", psk != NULL ? qk : "",
+		    wgc.persist ? "true" : "false");
+		explicit_bzero(qk, strlen(qk));
+		free(qk);
+	}
+	/* A new key for a client: the old one's peer goes once the new
+	 * one is there. */
+	if (wgc.replaces[0] != '\0') {
+		char	*qo = json_quote(wgc.replaces);
+
+		snprintf(title, sizeof(title), "%s: wireguard unpeer %.12s… "
+		    "(its key replaced)", wgc.iface, wgc.replaces);
+		vpn_job(s, title, "{\"kind\":\"wireguard\",\"interface\":%s,"
+		    "\"verb\":\"unpeer\",\"peer\":%s,\"persist\":%s}", qi, qo,
+		    wgc.persist ? "true" : "false");
+		free(qo);
+	}
 	free(qi);
 	free(qp);
 	free(qa);
@@ -433,8 +466,10 @@ client_keys_cb(int status, const ucl_object_t *o, const char *err,
 		    "%s\n", wgc.dns);
 	if (n > 0 && (size_t)n < sizeof(wgc.conf))
 		n += snprintf(wgc.conf + n, sizeof(wgc.conf) - (size_t)n,
-		    "\n[Peer]\nPublicKey = %s\nEndpoint = %s\nAllowedIPs = %s\n",
-		    wgc.srvpub, wgc.endpoint, wgc.allowed);
+		    "\n[Peer]\nPublicKey = %s\n%s%s%sEndpoint = %s\nAllowedIPs = "
+		    "%s\n", wgc.srvpub, psk != NULL ? "PresharedKey = " : "", psk
+		    != NULL ? psk : "", psk != NULL ? "\n" : "", wgc.endpoint,
+		    wgc.allowed);
 	if (wgc.keepalive[0] != '\0' && strcmp(wgc.keepalive, "0") != 0 &&
 	    n > 0 && (size_t)n < sizeof(wgc.conf))
 		(void)snprintf(wgc.conf + n, sizeof(wgc.conf) - (size_t)n,
@@ -461,6 +496,7 @@ client_form(const ucl_object_t *f)
 	TAKE("keepalive", keepalive);
 #undef TAKE
 	wgc.persist = jbool(f, "persist");
+	wgc.psk = jbool(f, "psk");
 	for (v = wgc.name; *v != '\0'; v++)
 		if (!((*v >= 'a' && *v <= 'z') || (*v >= 'A' && *v <= 'Z') ||
 		    (*v >= '0' && *v <= '9') || *v == '-' || *v == '_' || *v ==
@@ -669,8 +705,49 @@ vpn_action(const char *act, const char *arg, const char *value)
 			topo_if_create_open(s->id, "wg");
 		return (true);
 	}
-	if (strcmp(act, "wg-client-add") == 0) {
+	if (strcmp(act, "wg-client-add") == 0 || strcmp(act, "wg-rekey") ==
+	    0) {
 		if (client_open(s, arg)) {
+			/* A new key for that peer: its addresses and its
+			 * keepalive kept, the old peer going after. */
+			if (act[3] == 'r') {
+				const ucl_object_t	*o, *p, *ip;
+				ucl_object_iter_t	 it, pit, iit;
+				size_t			 k;
+
+				snprintf(wgc.replaces, sizeof(wgc.replaces), "%s",
+				    value);
+				it = NULL;
+				while ((o = ucl_object_iterate(jget(app.net.data,
+				    "data.interfaces"), &it, true)) != NULL) {
+					if (jstr(o, "name") == NULL || strcmp(jstr(o,
+					    "name"), arg) != 0)
+						continue;
+					pit = NULL;
+					while ((p = ucl_object_iterate(jget(o,
+					    "peers"), &pit, true)) != NULL) {
+						if (jstr(p, "public-key") == NULL ||
+						    strcmp(jstr(p, "public-key"),
+						    value) != 0)
+							continue;
+						k = 0;
+						wgc.address[0] = '\0';
+						iit = NULL;
+						while ((ip = ucl_object_iterate(jget(p,
+						    "allowed-ips"), &iit, true)) !=
+						    NULL && k + 2 < sizeof(wgc.address))
+							k += (size_t)snprintf(wgc.address +
+							    k, sizeof(wgc.address) - k,
+							    "%s%s", k > 0 ? ", " : "",
+							    ucl_object_tostring_forced(ip));
+						if (jint(p, "keepalive", 0) > 0)
+							snprintf(wgc.keepalive,
+							    sizeof(wgc.keepalive), "%lld",
+							    (long long)jint(p, "keepalive",
+							    0));
+					}
+				}
+			}
 			app.modal = MODAL_WG_CLIENT;
 			app.modal_error[0] = '\0';
 		}

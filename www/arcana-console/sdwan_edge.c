@@ -6471,14 +6471,16 @@ wg_keypair(char *priv, size_t plen, char *pub, size_t publen)
 /*
  * POST /api/wg/keypair: a fresh WireGuard key pair for a client of a
  * host's wg interface (the WireGuard tab's + client), both halves in
- * the reply and kept nowhere: the page puts the private half in the
- * client's configuration, shown once, and gives the host the public.
+ * the reply and kept nowhere, and a preshared key: the page puts the
+ * private half and the preshared key in the client's configuration,
+ * shown once, and gives the host the public half and the preshared key.
  */
 int
 api_wg_keypair(struct http_request *req)
 {
 	ucl_object_t	*out;
-	char		 priv[64], pub[64];
+	unsigned char	 raw[32];
+	char		 priv[64], pub[64], *psk;
 
 	if (!guard(req, true))
 		return (KORE_RESULT_OK);
@@ -6488,6 +6490,14 @@ api_wg_keypair(struct http_request *req)
 	put(out, "private_key", S(priv));
 	put(out, "public_key", S(pub));
 	explicit_bzero(priv, sizeof(priv));
+	/* A preshared key too, 32 random bytes, for the client to use. */
+	arc4random_buf(raw, sizeof(raw));
+	if (kore_base64_encode(raw, sizeof(raw), &psk) == KORE_RESULT_OK) {
+		put(out, "preshared_key", S(psk));
+		explicit_bzero(psk, strlen(psk));
+		kore_free(psk);
+	}
+	explicit_bzero(raw, sizeof(raw));
 	return (reply_json(req, 200, out));
 }
 

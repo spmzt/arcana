@@ -290,6 +290,20 @@
   their interfaces, the switches, the templates to include), a
   template (its lines); the agent writes the files (libjailconf
   already parses them), makes the dataset and starts the jail.
+  Done 2026-10-12: the jail-conf job (make, remove, defaults,
+  template, untemplate) and the jail-files read; the page's + jail,
+  Defaults and Templates; verified as root on a pool of a memory disk
+  (agent_root_test:jail_make): a jail by clone and one by send, started,
+  their datasets at their paths, the base untouched; a removal with a
+  dataset not the jail's refused with the jail left running (found
+  there: it was stopped before the dataset was asked about), then each
+  taken away with its own.  Not yet: changing a made jail's file from
+  the page (it is made and taken away; its block is edited as any
+  jail's is).  The datasets above a jail's that are not there are made
+  (canmount=off), and taken away again when the make fails; a pool is
+  never made nor taken away.  The IPFW tab's Load the current file
+  verified in a jail with its own rc.conf and script (the lab's
+  arcswan1 root).
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.
@@ -297,7 +311,8 @@
   - The console's CA: one imported, or made and self-signed from the
     panel, given to each agent and trusted there; the console as a CA
     and as an intermediate CA under another.
-  - A session's lifetime set in Settings.
+  - A session's lifetime set in Settings. (Done 2026-10-12: idle
+    minutes and the longest, in hours.)
   - LDAP for the console's sign-in.
   - The base system's ssh, further: the banner, the users let in,
     authorized keys, host keys and their fingerprints, host keys
@@ -310,7 +325,15 @@
   - VPN groups and road warrior setups of several clients, policies
     and pools.
   - A Devices page of its own, a table of the hosts (sorted and
-    filtered), the rail's host list moved there.
+    filtered), the rail's host list moved there. (The page done
+    2026-10-12.  The rail's list not moved yet: it is the way to each
+    host's jails, so what the rail keeps after (the open host and its
+    jails?) is the user's to say.)
+  - To ask the user what is meant: MSS clamping "on transports" (the
+    SD-WAN tunnels by ipfw tcp-setmss, an interface's, or the agent's
+    links?), labels on interfaces (a console-side tag, or the
+    interface's description?), prefix lists (used by what: ipfw
+    tables, BIRD filters, SD-WAN zones?), IGMP and MLD (what to set).
   - A certificates tab per host, by certctl and OpenSSL.
   - Configuration templates: a host's setup exported to one and a
     template applied to a host; YAML where the standard allows,
@@ -321,11 +344,13 @@
   - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
   - IGMP and MLD configured.
   - NDP and ARP entries added and deleted by hand, temporary or
-    permanent.
+    permanent. (Done 2026-10-12: the neighbour job, kept as rc.conf's
+    static pairs; verified in a vnet jail with arp(8) and ndp(8).)
   - MSS clamping on transports.
   - QoS on ipfw by forms: pipes, schedulers, queues, their masks and
     the rules that use them, beyond what SD-WAN makes.
-  - Every table exported as CSV.
+  - Every table exported as CSV. (Done 2026-10-12: ⤓ in every
+    table's head, the rows as shown.)
   - Prefix lists kept by the console and used on any host.
   - SD-WAN policies by named lists (MEF 70.2, no vendor's model):
     lists of UCS, of prefixes (as the zones hold them), of edges, of
@@ -334,7 +359,11 @@
     an AFS match or a policy's criteria; and the policy made in
     three steps: the lists, then the flows (the AFS) and the policy
     they get, then the policy map at each SWVC End Point.
-- WireGuard: preshared keys; a peer's key rotated.
+- WireGuard, done 2026-10-12: a client made from the page (its
+  configuration and QR code, the key pair made by the console and kept
+  nowhere), with a preshared key (a job's preshared-key, given to wg in
+  a file there only while it is read), and a client's key turned (↻:
+  the new peer in, then the old one out).
 - Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a
   job; a key changed; file systems other than UFS made; a disk's

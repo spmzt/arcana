@@ -102,6 +102,8 @@ addToLibrary({
 			arcColsApply(el);
 		if (typeof arcCards === "function")
 			arcCards(el);
+		if (typeof arcCsv === "function")
+			arcCsv(el);
 	},
 
 	arc_set_class__deps: ["$UTF8ToString"],
@@ -150,6 +152,15 @@ addToLibrary({
 				return;
 			}
 
+			/* A table as CSV. */
+			c = e.target.closest("button.csv-btn");
+			if (c !== null) {
+				e.preventDefault();
+				e.stopPropagation();
+				arcCsvSave(c.closest("table"));
+				return;
+			}
+
 			/* A row's ⋯: its actions shown or put away. */
 			more = e.target.closest("button.acts-more");
 			if (more !== null && typeof arcActsToggle === "function") {
@@ -181,10 +192,16 @@ addToLibrary({
 				el = f.elements[i];
 				if (!el.name || el.tagName === "BUTTON")
 					continue;
+				/* Of a radio group, the one picked. */
+				if (el.type === "radio" && !el.checked)
+					continue;
 				o[el.name] = el.type === "checkbox" ?
 				    el.checked : el.value;
 			}
-			act("submit:" + (f.dataset.form || f.id), "",
+			/* By its attribute: a field named dataset or id
+			 * would stand for the form's own property. */
+			act("submit:" + (f.getAttribute("data-form") ||
+			    f.getAttribute("id") || ""), "",
 			    JSON.stringify(o));
 		});
 		document.addEventListener("input", function (e) {
@@ -550,6 +567,90 @@ addToLibrary({
 			more.dataset.key = key;
 			td.classList.toggle("open", actsOpen[key] === true);
 		}
+
+		/*
+		 * Every table can be had as CSV: a button in the last cell
+		 * of its head (drawn by CSS, so the head's words stay as
+		 * they are), made again after each patch.
+		 */
+		window.arcCsv = function (root) {
+			var hs = root.querySelectorAll("table > thead > tr:first-child"),
+			    i, last, b;
+
+			for (i = 0; i < hs.length; i++) {
+				last = hs[i].lastElementChild;
+				if (last === null || last.querySelector(
+				    "button.csv-btn") !== null)
+					continue;
+				b = document.createElement("button");
+				b.type = "button";
+				b.className = "csv-btn";
+				b.title = "These rows as CSV";
+				b.setAttribute("aria-label", "These rows as CSV");
+				last.appendChild(b);
+			}
+		};
+
+		/* A cell's words, without its buttons, on one line. */
+		function cellText(c) {
+			var k = c.cloneNode(true), x, i;
+
+			x = k.querySelectorAll("button, input, select, textarea, " +
+			    "svg, .acts-more");
+			for (i = 0; i < x.length; i++)
+				x[i].remove();
+			return (k.textContent.replace(/\s+/g, " ").trim());
+		}
+
+		function csvField(v) {
+			return (/[",\n]/.test(v) ? "\"" + v.replace(/"/g, "\"\"") +
+			    "\"" : v);
+		}
+
+		/* The table's rows as shown, as a file to save. */
+		window.arcCsvSave = function (table) {
+			var ths = table.querySelectorAll("thead > tr:first-child > th"),
+			    rows = table.querySelectorAll("tbody > tr"), n, i, j,
+			    out = [], line, tds, h, name, a, url;
+
+			/* Columns: up to the last one with a name; those after
+			 * it hold buttons. */
+			for (n = ths.length; n > 0 && cellText(ths[n - 1]) ===
+			    ""; n--)
+				;
+			line = [];
+			for (i = 0; i < n; i++)
+				line.push(csvField(cellText(ths[i])));
+			out.push(line.join(","));
+			for (i = 0; i < rows.length; i++) {
+				tds = rows[i].children;
+				if (tds.length < n)
+					continue;
+				line = [];
+				for (j = 0; j < n; j++)
+					line.push(csvField(cellText(tds[j])));
+				out.push(line.join(","));
+			}
+			/* Named by the heading it is under. */
+			h = null;
+			for (a = table; a !== null && h === null; a =
+			    a.parentElement)
+				h = a.querySelector("h2, h3, h4");
+			name = ((h !== null ? cellText(h) : "") || "table")
+			    .toLowerCase().replace(/[^a-z0-9]+/g, "-")
+			    .replace(/^-|-$/g, "").slice(0, 40) || "table";
+			url = URL.createObjectURL(new Blob([out.join("\n") +
+			    "\n"], { type: "text/csv" }));
+			a = document.createElement("a");
+			a.href = url;
+			a.download = name + ".csv";
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			setTimeout(function () { URL.revokeObjectURL(url); },
+			    1000);
+			window.arcCsvLast = out.join("\n");
+		};
 
 		window.arcCards = function (root) {
 			var narrow = window.matchMedia("(max-width: 620px)")
