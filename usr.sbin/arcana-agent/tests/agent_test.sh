@@ -4609,7 +4609,7 @@ EOS
 	# path is not the dataset's: nothing made, the dataset taken back.
 	atf_check -s exit:1 -o match:'is there already' "$JGC" -c "$SOCK" jailconf make www www.conf
 	printf '.include "%s/jail.conf";\nmail {\n}\n' "$d" > mail.conf
-	atf_check -s exit:1 -o match:'defines 1 jail, not the one jail web2' "$JGC" -c "$SOCK" jailconf make web2 mail.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
+	atf_check -s exit:1 -o match:'the file defines mail, not the one jail web2' "$JGC" -c "$SOCK" jailconf make web2 mail.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
 	test -e ds.tank_jails_web2 && atf_fail "the dataset made for a refused jail stayed"
 	test -e "$d/jail.conf.d/web2.conf" && atf_fail "a refused jail's file stayed"
 	printf '.include "%s/jail.conf";\nweb2 {\n\tpath = /elsewhere;\n}\n' "$d" > web2.conf

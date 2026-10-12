@@ -1089,7 +1089,9 @@ stage(struct html *h)
 		    "data-arg=\"%s\">%s%s</button>", app.jail_sort == n ?
 		    " on" : "", jail_sorts[n], jail_sorts[n],
 		    app.jail_sort != n ? "" : app.jail_sort_desc ? " ▴" : " ▾");
-	h_raw(h, "</span></div>");
+	h_raw(h, "</span>");
+	jailmk_buttons(h);
+	h_raw(h, "</div>");
 	if (s->list == NULL) {
 		h_raw(h, s->failed ? "<div class=\"empty\"><h2>No data</h2>"
 		    "<p>The host has not answered yet.</p></div>" :
@@ -1930,6 +1932,14 @@ modal(struct html *h)
 		if (!vpn_modal(h))
 			return;
 		break;
+	case MODAL_JAIL_NEW:
+	case MODAL_JAIL_DEFAULTS:
+	case MODAL_JAIL_FILES:
+	case MODAL_JAIL_TEMPLATE:
+	case MODAL_JAIL_REMOVE:
+		if (!jailmk_modal(h))
+			return;
+		break;
 	case MODAL_IPSEC_CONN:
 	case MODAL_IPSEC_CHILD:
 		if (!ipsec_modal(h))
@@ -2193,8 +2203,8 @@ modal(struct html *h)
 		/* A box that only shows is closed, not cancelled. */
 		h_fmt(h, "<div class=\"buttons\"><button type=\"button\" "
 		    "class=\"ghost\" data-act=\"close\">%s</button>",
-		    app.modal == MODAL_NHOP || app.modal == MODAL_WG_CONF ?
-		    "Close" : "Cancel");
+		    app.modal == MODAL_NHOP || app.modal == MODAL_WG_CONF ||
+		    app.modal == MODAL_JAIL_FILES ? "Close" : "Cancel");
 		switch (app.modal) {
 		case MODAL_CONFIRM:
 			h_fmt(h, "<button class=\"%s\">",
@@ -2251,6 +2261,17 @@ modal(struct html *h)
 		case MODAL_WG_CLIENT:
 			h_raw(h, "<button class=\"primary\">Make the client"
 			    "</button>");
+			break;
+		case MODAL_JAIL_NEW:
+			h_raw(h, "<button class=\"primary\">Make the jail"
+			    "</button>");
+			break;
+		case MODAL_JAIL_DEFAULTS:
+		case MODAL_JAIL_TEMPLATE:
+			h_raw(h, "<button class=\"primary\">Write it</button>");
+			break;
+		case MODAL_JAIL_REMOVE:
+			h_raw(h, "<button class=\"danger\">Take it away</button>");
 			break;
 		case MODAL_IPSEC_CHILD:
 			h_raw(h, "<button class=\"primary\">Add</button>");

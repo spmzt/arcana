@@ -181,10 +181,16 @@ addToLibrary({
 				el = f.elements[i];
 				if (!el.name || el.tagName === "BUTTON")
 					continue;
+				/* Of a radio group, the one picked. */
+				if (el.type === "radio" && !el.checked)
+					continue;
 				o[el.name] = el.type === "checkbox" ?
 				    el.checked : el.value;
 			}
-			act("submit:" + (f.dataset.form || f.id), "",
+			/* By its attribute: a field named dataset or id
+			 * would stand for the form's own property. */
+			act("submit:" + (f.getAttribute("data-form") ||
+			    f.getAttribute("id") || ""), "",
 			    JSON.stringify(o));
 		});
 		document.addEventListener("input", function (e) {

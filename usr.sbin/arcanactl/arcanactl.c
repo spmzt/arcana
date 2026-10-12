@@ -182,7 +182,7 @@ usage(void)
 	    "    kmod [load | unload module]\n"
 	    "    jailconf make jail file [dataset snapshot clone|send path] "
 	    "[start]\n"
-	    "    jailconf remove jail [dataset] | defaults file\n"
+	    "    jailconf remove jail [dataset] | defaults file | files\n"
 	    "    jailconf template name file | untemplate name\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
@@ -2022,8 +2022,20 @@ static int
 cmd_jailconf(struct arc_client *cl, int argc, char **argv)
 {
 	struct arc_job_spec	 sp;
+	struct arc_jail_files_rsp *rs;
 	const char		*name;
+	int			 error;
 
+	if (argc == 2 && strcmp(argv[1], "files") == 0) {
+		if ((error = arc_jail_files(cl, &rs)) != 0)
+			fail(cl, error, "jail files");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_jail_files_rsp_free(rs);
+		return (error);
+	}
 	if (argc < 3)
 		usage();
 	memset(&sp, 0, sizeof(sp));

@@ -2801,6 +2801,24 @@ operations:
           - error
           - trace
 
+  - name: jail-files
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The files jails are made with, as the jail-conf job writes them,
+      as a JSON object: "defaults", the file every jail includes (its
+      "path" and "text", text null when there is none); "dir", where
+      the jails' files are; "templates", each a "name" and its
+      "text"; and "jails", each jail file there with its "name" and
+      "text".  Files of 64 KiB and less.
+    do:
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
 mcast-groups:
   - name: events
     auth: true

@@ -1093,6 +1093,83 @@ part_hosts(void)
 	    5);
 	run("document.querySelector('.dock > header').click()");
 	wait_js("!document.querySelector('.dock.open')", 5);
+	/*
+	 * Jails made from the page: a template; a jail of its own file that
+	 * includes the defaults and the template, read back by jail(8),
+	 * then taken away; the defaults written, the file before kept.
+	 */
+	run("document.querySelector('.tree .titem.server').click()");
+	wait_js("document.querySelector('button.tab[data-arg=jails]')", 10);
+	run("document.querySelector('button.tab[data-arg=jails]').click()");
+	wait_js("document.querySelector('button[data-act=jm-new]')", 10);
+	run("document.querySelector('button[data-act=jm-files]').click()");
+	wait_js("document.querySelector('form[data-form=jm-files] button"
+	    "[data-act=jm-tpl-new]')", 5);
+	run("document.querySelector('button[data-act=jm-tpl-new]').click()");
+	wait_js("document.querySelector('form[data-form=jm-template]')", 5);
+	run("const f = document.querySelector('form[data-form=jm-template]'); "
+	    "f.name.value = 'certbot'; f.text.value = 'allow.raw_sockets;\\n'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("etc/jail.conf.d/certbot.inc", F_OK) !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'allow.raw_sockets;' "
+	    "etc/jail.conf.d/certbot.inc") == 0);
+	run("document.querySelector('button[data-act=jm-new]').click()");
+	wait_js("document.querySelector('form[data-form=jm-new] "
+	    "input[name=tpl_certbot]')", 10);
+	shot("4j-jail-new");
+	run("const f = document.querySelector('form[data-form=jm-new]'); "
+	    "f.name.value = 'www'; f.ip4.value = 'lo0|127.0.0.9'; "
+	    "f.ruleset.value = '4'; f.sysvsem.checked = true; "
+	    "f.tpl_certbot.checked = true; f.start.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("etc/jail.conf.d/www.conf", F_OK) != 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -Eqx '\\.include \"/.*/etc/jail\\.conf\";' "
+	    "etc/jail.conf.d/www.conf && grep -qx 'www {' etc/jail.conf.d/www.conf "
+	    "&& grep -q 'devfs_ruleset = 4;' etc/jail.conf.d/www.conf && grep -q "
+	    "'sysvsem = new;' etc/jail.conf.d/www.conf && grep -q 'ip4.addr = "
+	    "\"lo0|127.0.0.9\";' etc/jail.conf.d/www.conf && grep -Eq '\\.include "
+	    "\"/.*/etc/jail\\.conf\\.d/certbot\\.inc\";' etc/jail.conf.d/www.conf") ==
+	    0);
+	/* Taken away again, its file kept beside. */
+	run("document.querySelector('button[data-act=jm-files]').click()");
+	wait_js("document.querySelector('button[data-act=jm-rm][data-arg=www]')",
+	    10);
+	run("document.querySelector('button[data-act=jm-rm][data-arg=www]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=jm-remove]')", 5);
+	run("document.querySelector('form[data-form=jm-remove]')"
+	    ".requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("etc/jail.conf.d/www.conf", F_OK) == 0;
+	    i++)
+		usleep(100000);
+	ATF_CHECK(access("etc/jail.conf.d/www.conf", F_OK) != 0 &&
+	    access("etc/jail.conf.d/www.conf.arcana.bak", F_OK) == 0);
+	/* The defaults: the path there now offered, the domain asked. */
+	run("document.querySelector('button[data-act=jm-defaults]').click()");
+	wait_js("document.querySelector('form[data-form=jm-defaults]') && "
+	    "document.querySelector('form[data-form=jm-defaults] details')", 10);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=jm-defaults]')"
+	    ".path.value === '/jails/$name'"));
+	run("const f = document.querySelector('form[data-form=jm-defaults]'); "
+	    "f.domain.value = 'example.org'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -q 'host.domainname = "
+	    "\"example.org\";' etc/jail.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q 'host.hostname = \"${name}.example.org\";' "
+	    "etc/jail.conf && grep -qx 'exec.clean;' etc/jail.conf && grep -q "
+	    "'^web {' etc/jail.conf.arcana.bak") == 0);
 }
 
 static void

@@ -312,6 +312,7 @@ worker(void *arg)
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
 	struct arc_kernel_rsp	 kr;
+	struct arc_jail_files_rsp jfr;
 	struct arc_transport_rsp tpr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
@@ -610,6 +611,18 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &fr.trace.v, &fr.trace.n);
 		rc = arc_fstab_reply(j->req, &fr);
+		break;
+	case ARC_CMD_JAIL_FILES:
+		what = "jail files";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "jail files");
+		memset(&jfr, 0, sizeof(jfr));
+		do_jail_files(&w, &jfr);
+		ok = jfr.ok;
+		error = jfr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &jfr.trace.v, &jfr.trace.n);
+		rc = arc_jail_files_reply(j->req, &jfr);
 		break;
 	case ARC_CMD_KERNEL:
 		what = "kernel";
@@ -1850,6 +1863,18 @@ arc_kernel_doit(cbl_req *req, void *arg __unused)
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_KERNEL;
+	return (start(j));
+}
+
+int
+arc_jail_files_doit(cbl_req *req, void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_JAIL_FILES;
 	return (start(j));
 }
 
