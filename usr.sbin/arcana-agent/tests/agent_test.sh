@@ -4717,6 +4717,50 @@ jail_conf_cleanup()
 	stop_daemon
 }
 
+atf_test_case neighbours cleanup
+neighbours_head()
+{
+	atf_set "descr" "ARP and NDP neighbours set by hand, permanent or aging out, kept in rc.conf's static pairs, and deleted"
+}
+neighbours_body()
+{
+	mkdir -p tools
+	for p in arp ndp; do
+		printf '#!/bin/sh\necho "%s $*" >> %s/neigh.log\n' "$p" "$(pwd)" > tools/$p
+		chmod +x tools/$p
+	done
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o match:'done +neighbour add 192.0.2.5 00:11:22:33:44:55$' \
+	    "$JGC" -c "$SOCK" neigh add 192.0.2.5 00:11:22:33:44:55
+	atf_check -o match:'done +neighbour add 192.0.2.6 00:11:22:33:44:66 \(ages out\)$' \
+	    "$JGC" -c "$SOCK" neigh add 192.0.2.6 00:11:22:33:44:66 temp
+	# Kept for a boot: a pair of static_ndp_pairs, named by the address.
+	atf_check -o match:'done +neighbour add fe80::1%em0 00:11:22:33:44:77 \(now, and kept\)$' \
+	    "$JGC" -p -c "$SOCK" neigh add 'fe80::1%em0' 00:11:22:33:44:77
+	atf_check -o inline:'arp -s 192.0.2.5 00:11:22:33:44:55
+arp -s 192.0.2.6 00:11:22:33:44:66 temp
+ndp -s fe80::1%em0 00:11:22:33:44:77
+' cat neigh.log
+	atf_check -o match:'^static_ndp_pairs="arcana_fe80__1_em0"$' \
+	    -o match:'^static_ndp_arcana_fe80__1_em0="fe80::1%em0 00:11:22:33:44:77"$' cat rc.conf
+	atf_check -o match:'done +neighbour delete fe80::1%em0' \
+	    "$JGC" -p -c "$SOCK" neigh delete 'fe80::1%em0'
+	atf_check -o match:'^ndp -d fe80::1%em0$' tail -1 neigh.log
+	atf_check -o not-match:'arcana_fe80' cat rc.conf
+	# What is not a neighbour, nor one that ages out kept for a boot.
+	atf_check -s exit:1 -e match:'six bytes of hex' -o ignore \
+	    "$JGC" -c "$SOCK" neigh add 192.0.2.7 00:11:22
+	atf_check -s exit:1 -e match:'an IPv4 or IPv6 address' -o ignore \
+	    "$JGC" -c "$SOCK" neigh add host.example 00:11:22:33:44:55
+	atf_check -s exit:1 -e match:'not kept for a boot' -o ignore \
+	    "$JGC" -p -c "$SOCK" neigh add 192.0.2.8 00:11:22:33:44:88 temp
+}
+neighbours_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case ntp
@@ -4726,6 +4770,7 @@ atf_init_test_cases()
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
 	atf_add_test_case jail_conf
+	atf_add_test_case neighbours
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute

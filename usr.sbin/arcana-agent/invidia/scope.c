@@ -156,6 +156,30 @@ scope_argv(struct work *w, char *const argv[])
 }
 
 /*
+ * argv run in the jail w works in, by jexec(8), whatever the program:
+ * for one this daemon has no option of its own for (arp, ndp), which
+ * scope_argv() does not know.  argv itself on the host.
+ */
+char *const *
+scope_jexec(struct work *w, char *const argv[])
+{
+	char	**v;
+	size_t	  n, i;
+
+	if (w->jail == NULL)
+		return (argv);
+	for (n = 0; argv[n] != NULL; n++)
+		;
+	v = wcalloc(w, n + 3, sizeof(*v));
+	v[0] = (char *)(uintptr_t)opts.jexec_bin;
+	v[1] = wfmt(w, "%d", w->jid);
+	for (i = 0; i < n; i++)
+		v[2 + i] = argv[i];
+	v[2 + n] = NULL;
+	return (v);
+}
+
+/*
  * The helper's argv for a verb and its n words: this program again,
  * told the jail w works in, or 0 for the host.
  */

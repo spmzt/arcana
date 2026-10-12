@@ -102,7 +102,7 @@ scoped(const struct arc_job_spec *sp)
 	return ((sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->kind <=
 	    ARC_JOB_KIND_BIRD) || sp->kind == ARC_JOB_KIND_IPFW || sp->kind ==
 	    ARC_JOB_KIND_BRIDGE || sp->kind == ARC_JOB_KIND_GENEVE ||
-	    sp->kind == ARC_JOB_KIND_IPSEC);
+	    sp->kind == ARC_JOB_KIND_IPSEC || sp->kind == ARC_JOB_KIND_NEIGHBOUR);
 }
 
 /* What the job does, in words: the activity log's line for it. */
@@ -168,6 +168,13 @@ title_of(const struct arc_job_spec *sp)
 		rc = asprintf(&t, "ngctl %s %s%s%s", sp->verb, sp->names.n > 0 ?
 		    sp->names.v[0] : "", sp->names.n > 1 ? " " : "",
 		    sp->names.n > 1 ? sp->names.v[1] : "");
+		break;
+	case ARC_JOB_KIND_NEIGHBOUR:
+		rc = asprintf(&t, "neighbour %s %s%s%s%s%s", sp->verb,
+		    sp->address, sp->lladdr != NULL && strcmp(sp->verb, "add") ==
+		    0 ? " " : "", sp->lladdr != NULL && strcmp(sp->verb, "add") ==
+		    0 ? sp->lladdr : "", sp->temporary ? " (ages out)" : "",
+		    sp->persist ? sp->live ? " (now, and kept)" : " (kept)" : "");
 		break;
 	case ARC_JOB_KIND_JAIL_CONF:
 		rc = asprintf(&t, "jail %s%s%s%s%s", sp->verb, sp->jail != NULL &&
@@ -883,6 +890,10 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_JAIL_CONF:
 		error = NULL;
 		ok = do_jail_conf(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_NEIGHBOUR:
+		error = NULL;
+		ok = do_neigh(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_BIRD:
 		error = NULL;

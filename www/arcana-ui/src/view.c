@@ -1940,6 +1940,10 @@ modal(struct html *h)
 		if (!jailmk_modal(h))
 			return;
 		break;
+	case MODAL_NEIGH:
+		if (!neigh_modal(h))
+			return;
+		break;
 	case MODAL_IPSEC_CONN:
 	case MODAL_IPSEC_CHILD:
 		if (!ipsec_modal(h))
@@ -2292,6 +2296,9 @@ modal(struct html *h)
 			break;
 		case MODAL_JAIL_REMOVE:
 			h_raw(h, "<button class=\"danger\">Take it away</button>");
+			break;
+		case MODAL_NEIGH:
+			h_raw(h, "<button class=\"primary\">Set it</button>");
 			break;
 		case MODAL_IPSEC_CHILD:
 			h_raw(h, "<button class=\"primary\">Add</button>");

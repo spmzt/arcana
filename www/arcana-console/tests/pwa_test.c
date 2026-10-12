@@ -1217,6 +1217,31 @@ part_nettab(void)
 	wait_js("[...document.querySelectorAll('.stage table.net tbody tr')]"
 	    ".some(r => r.textContent.includes('58:9c:fc:00:00:02') && "
 	    "r.textContent.includes('reachable'))", 20);
+	/* One set by hand, aging out; and one taken away. */
+	run("document.querySelector('button[data-act=neigh-add]').click()");
+	wait_js("document.querySelector('form[data-form=neigh]')", 5);
+	run("const f = document.querySelector('form[data-form=neigh]'); "
+	    "f.address.value = '10.0.0.9'; f.lladdr.value = "
+	    "'02:00:00:00:00:09'; f.temp.checked = true; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -qx 'arp -s 10.0.0.9 "
+	    "02:00:00:00:00:09 temp' neigh.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'arp -s 10.0.0.9 02:00:00:00:00:09 temp' "
+	    "neigh.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=neigh-delete][data-arg="
+	    "\"10.0.0.2\"]').click()");
+	wait_js("document.querySelector('.modal button.danger')", 5);
+	run("document.querySelector('.modal button.danger').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -qx 'arp -d 10.0.0.2' neigh.log") !=
+	    0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'arp -d 10.0.0.2' neigh.log") == 0);
+	run("document.querySelector('.dock > header').click()");
 	/* The nexthop groups, as netstat -O has them, under Nexthops:
 	 * each next hop a line of its own, with its share. */
 	ATF_CHECK(js_true("!document.querySelector('nav.sub button[data-act="

@@ -3753,6 +3753,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_RTADVD] = "rtadvd",
 	[ARC_JOB_KIND_IPSEC_SA] = "ipsec-sa",
 	[ARC_JOB_KIND_JAIL_CONF] = "jail-conf",
+	[ARC_JOB_KIND_NEIGHBOUR] = "neighbour",
 };
 
 static const char *job_state_names[] = {
@@ -3833,6 +3834,7 @@ spec_free(struct arc_job_spec *sp)
 		explicit_bzero((char *)(uintptr_t)sp->preshared_key,
 		    strlen(sp->preshared_key));
 	kore_free((char *)(uintptr_t)sp->preshared_key);
+	kore_free((char *)(uintptr_t)sp->lladdr);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -3951,6 +3953,8 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->text = jdup(o, "text");
 	sp->start = ucl_flag(o, "start");
 	sp->preshared_key = jdup(o, "preshared_key");
+	sp->lladdr = jdup(o, "lladdr");
+	sp->temporary = ucl_flag(o, "temporary");
 	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
 	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
 		sp->has_metric = true;
