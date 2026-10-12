@@ -347,6 +347,7 @@ enum modal {
 	MODAL_SSH_SET,
 	MODAL_SSH_SIGN,
 	MODAL_SSH_KEY,
+	MODAL_FW_QOS,
 	MODAL_BIRD_PROTO,
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
@@ -666,6 +667,7 @@ void		 firewall_tick(double);
 void		 view_firewall(struct html *, struct server *);
 bool		 firewall_form(const char *, const ucl_object_t *);
 bool		 firewall_action(const char *, const char *, const char *);
+bool		 firewall_qos_modal(struct html *);
 void		 view_bridges(struct html *, struct server *,
 		    const ucl_object_t *);
 void		 view_geneve(struct html *, struct server *,

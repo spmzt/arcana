@@ -365,6 +365,14 @@
   - MSS clamping on transports.
   - QoS on ipfw by forms: pipes, schedulers, queues, their masks and
     the rules that use them, beyond what SD-WAN makes.
+    (Done 2026-10-12: the Firewall tab's QoS; dummynet read as
+    objects, each made, changed and taken away by a form and kept as
+    one line; a rule that sends to a pipe or queue.  Masks are each
+    address or all; prefixes and ports in a mask still by ipfw's
+    words.)
+  - Flaky under the whole suite's load (2026-10-12): agent_test:observe
+    expects "samples":[] before the sampler's first look, and under
+    load the sampler is there first.  It passes alone.
   - Every table exported as CSV. (Done 2026-10-12: ⤓ in every
     table's head, the rows as shown.)
   - Prefix lists kept by the console and used on any host.

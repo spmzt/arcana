@@ -2003,6 +2003,10 @@ modal(struct html *h)
 		if (!ssh_modal(h))
 			return;
 		break;
+	case MODAL_FW_QOS:
+		if (!firewall_qos_modal(h))
+			return;
+		break;
 	case MODAL_IPSEC_CONN:
 	case MODAL_IPSEC_CHILD:
 		if (!ipsec_modal(h))
@@ -2370,6 +2374,9 @@ modal(struct html *h)
 			break;
 		case MODAL_SSH_KEY:
 			h_raw(h, "<button class=\"primary\">Add the key</button>");
+			break;
+		case MODAL_FW_QOS:
+			h_raw(h, "<button class=\"primary\">Configure</button>");
 			break;
 		case MODAL_IPSEC_CHILD:
 			h_raw(h, "<button class=\"primary\">Add</button>");
