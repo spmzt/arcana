@@ -1823,6 +1823,7 @@ dhcp_build(struct plan *pl, const ucl_object_t *doc)
 static const ucl_object_t *sec_of(const ucl_object_t *, const ucl_object_t *,
     const char *, int *);
 static bool	 url_filters(const ucl_object_t *, bool *);
+static bool	 malware_scan(const ucl_object_t *);
 static bool	 remote_addr(struct plan *, const ucl_object_t *,
 		    const ucl_object_t *, const char *, char *, size_t);
 static const char *uni_ifname(struct plan *, const ucl_object_t *,
@@ -1894,6 +1895,68 @@ url_filters(const ucl_object_t *sw, bool *inspectp)
 				*inspectp = true;
 		}
 	return (any);
+}
+
+/*
+ * Whether a service's security policies, as its policies name them,
+ * scan for malware (SASE-4, MEF 88's malware criterion): what comes
+ * back over cleartext HTTP, and over TLS where it is opened, goes from
+ * Squid to c-icap by ICAP and is scanned there by ClamAV.
+ */
+static bool
+malware_scan(const ucl_object_t *sw)
+{
+	const ucl_object_t	*pol, *sec;
+	ucl_object_iter_t	 it;
+	int			 si, i;
+
+	it = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &it, true)) != NULL)
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec != NULL && ucl_object_toboolean(ucl_object_lookup(
+			    ucl_object_lookup(sec, "criteria"), "malware")))
+				return (true);
+		}
+	return (false);
+}
+
+/* The port a service's c-icap answers Squid on, on the edge's loopback. */
+#define	ICAP_PORT(fib)	(1344 + 10 * (int)(fib))
+
+/*
+ * c-icap's configuration for a service at an edge: an ICAP service
+ * avscan that scans with ClamAV's module (c-icap-modules), listening on
+ * the loopback for the service's Squid alone.  The agent places
+ * @ICAPPID@ and @ICAPCMD@.
+ */
+static char *
+icap_conf(const ucl_object_t *sw, const char *sid)
+{
+	struct kore_buf	*b;
+	char		*out;
+	intmax_t	 fib;
+
+	fib = (intmax_t)ucl_object_toint(ucl_object_lookup(sw, "fib"));
+	b = kore_buf_alloc(1024);
+	kore_buf_appendf(b, "# Written by the Arcana console: SD-WAN service %s "
+	    "at %s, in routing table %jd.\n# Malware scanning of its security "
+	    "policies (MEF 88), by c-icap and ClamAV, for its Squid.\n"
+	    "PidFile @ICAPPID@\nCommandsSocket @ICAPCMD@\n"
+	    "Port 127.0.0.1:%d\nStartServers 1\nMaxServers 4\n"
+	    "ServerLog /var/log/c-icap/sdwan-sw%jd-server.log\n"
+	    "AccessLog /var/log/c-icap/sdwan-sw%jd-access.log\n"
+	    "Module common clamav_mod.so\n"
+	    "Service avscan virus_scan.so\n"
+	    "virus_scan.ScanFileTypes TEXT DATA EXECUTABLE ARCHIVE DOCUMENT\n"
+	    "virus_scan.SendPercentData 5\nvirus_scan.StartSendPercentDataAfter "
+	    "2M\nvirus_scan.MaxObjectSize 32M\nvirus_scan.DefaultEngine clamav\n",
+	    str(sw, "id"), server_name_of(sid), fib, ICAP_PORT(fib), fib, fib);
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
 }
 
 /*
@@ -2004,6 +2067,13 @@ proxy_conf(struct plan *pl, const ucl_object_t *sw, const char *sid,
 	}
 	if (i == 0)
 		kore_buf_appendf(b, " 0.0.0.0/0");
+	/* What comes back, to c-icap by ICAP, where malware is scanned. */
+	if (malware_scan(sw))
+		kore_buf_appendf(b, "\nicap_enable on\nicap_send_client_ip on\n"
+		    "icap_service sdwan_av respmod_precache bypass=off "
+		    "icap://127.0.0.1:%d/avscan\nadaptation_access sdwan_av allow "
+		    "all", ICAP_PORT(ucl_object_toint(ucl_object_lookup(sw,
+		    "fib"))));
 	kore_buf_appendf(b, "\nacl denied_site ssl::server_name \"@DENY@\"\n"
 	    "acl denied_url dstdomain \"@DENY@\"\nacl step1 at_step SslBump1\n"
 	    "ssl_bump peek step1\nssl_bump terminate denied_site\nssl_bump %s all"
@@ -2079,7 +2149,7 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 		eit = NULL;
 		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
 		    &eit, true)) != NULL) {
-			if (!url_filters(sw, &inspect))
+			if (!url_filters(sw, &inspect) && !malware_scan(sw))
 				continue;
 			here = false;
 			pit = NULL;
@@ -2101,15 +2171,20 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 			put(inst, "deny", S(deny));
 			free(text);
 			free(deny);
+			if (malware_scan(sw)) {
+				text = icap_conf(sw, sid);
+				put(inst, "icap", S(text));
+				free(text);
+			}
 			ucl_array_append(list, inst);
 		}
 		if (ucl_array_size(list) == 0) {
 			ucl_object_unref(list);
 			continue;
 		}
-		o = object(pl, sid, "proxy", PH_BIRD, "URL filters: Squid, a "
-		    "plugin, %u instance%s in the services' tables, the TLS names "
-		    "looked at, the domains the security policies deny",
+		o = object(pl, sid, "proxy", PH_BIRD, "URL filters and malware "
+		    "scanning: Squid (and c-icap with ClamAV where malware is "
+		    "scanned), plugins, %u instance%s in the services' tables",
 		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
 		if (o == NULL) {
 			ucl_object_unref(list);
@@ -7375,7 +7450,10 @@ static const struct sdwan_need {
 	{ "sdwan-dhcp", "dnsmasq", "dnsmasq",
 	    "dnsmasq, the DHCP server at the UNIs" },
 	{ "sdwan-proxy", "squid", "squid",
-	    "Squid, for URL filtering" },
+	    "Squid, for URL filtering and malware scanning" },
+	{ "sdwan-proxy+icap", "c-icap", "c-icap c-icap-modules clamav",
+	    "c-icap with ClamAV's module and signatures (freshclam), for "
+	    "malware scanning" },
 };
 
 /*
@@ -7402,11 +7480,31 @@ plan_needs(const struct plan *pl)
 		while ((o = ucl_object_iterate(objs, &oit, true)) != NULL) {
 			jit = NULL;
 			while ((j = ucl_object_iterate(ucl_object_lookup(o,
-			    "make"), &jit, true)) != NULL)
+			    "make"), &jit, true)) != NULL) {
 				for (i = 0; i < nitems(sdwan_needs); i++)
 					if (str(j, "kind") != NULL && strcmp(str(j,
 					    "kind"), sdwan_needs[i].kind) == 0)
 						want[i] = true;
+				/* A proxy that scans for malware: c-icap. */
+				if (str(j, "kind") != NULL && strcmp(str(j,
+				    "kind"), "sdwan-proxy") == 0) {
+					const ucl_object_t	*in;
+					ucl_object_iter_t	 iit = NULL;
+
+					while ((in = ucl_object_iterate(
+					    ucl_object_lookup(j, "instances"), &iit,
+					    true)) != NULL)
+						if (ucl_object_lookup(in, "icap") !=
+						    NULL)
+							for (i = 0; i <
+							    nitems(sdwan_needs); i++)
+								if (strcmp(sdwan_needs[i]
+								    .kind,
+								    "sdwan-proxy+icap") ==
+								    0)
+									want[i] = true;
+				}
+			}
 		}
 		ans = NULL;
 		for (i = 0; i < nitems(sdwan_needs); i++)

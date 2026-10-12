@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.74.0"
+#define	ARCANA_AGENT_VERSION	"0.75.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -51,6 +51,9 @@
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
 #define	PATH_SWANCTL_BIN	"/usr/local/sbin/swanctl"
 #define	PATH_SQUID_BIN		"/usr/local/sbin/squid"
+#define	PATH_CICAP_BIN		"/usr/local/bin/c-icap"
+#define	PATH_CICAP_MODULES	"/usr/local/lib/c_icap"
+#define	PATH_CLAMAV_DB		"/var/db/clamav"
 #define	PATH_SWANCTL_DIR	"/usr/local/etc/swanctl"
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
 #define	PATH_BIRD_BIN		"/usr/local/sbin/bird"
@@ -113,6 +116,7 @@ struct opts {
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
 	const char	*swanctl_bin;
 	const char	*squid_bin;	/* squid(8): the proxies, a plugin */
+	const char	*cicap_bin;	/* c-icap: malware scanning, a plugin */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
 	const char	*bird_bin;	/* bird(8), to parse a configuration */

@@ -58,6 +58,7 @@ static const struct {
 	{ "strongswan", &opts.swanctl_bin, NULL, NULL },
 	{ "squid", &opts.squid_bin, NULL, NULL },
 	{ "dnsmasq", &opts.dnsmasq_bin, NULL, NULL },
+	{ "c-icap", &opts.cicap_bin, NULL, NULL },
 };
 
 /*

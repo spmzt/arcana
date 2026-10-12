@@ -2614,6 +2614,8 @@ case "\$1" in
 *local-unbound) p=\$(sed -n 's/.*pidfile: "\(.*\)"/\1/p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
 # squid -f conf: started, says the pid file named in the conf.
 *squid) echo "squid \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^pid_filename //p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
+# c-icap -f conf: started, says the pid file named in the conf.
+*c-icap) echo "c-icap \$*" >> $(pwd)/squid.log; p=\$(sed -n 's/^PidFile //p' "\$3"); sleep 300 & echo \$! > "\$p" ;;
 # bird -c conf -s sock -P pid: started, says the socket.
 *) shift 3; touch "\$2" ;;
 esac
@@ -2649,7 +2651,8 @@ EOS
 echo "certgen \$*" >> $(pwd)/squid.log
 mkdir -p "\$3"
 EOS
-	chmod +x tools/squid tools/security_file_certgen
+	printf '#!/bin/sh\nexit 0\n' > tools/c-icap
+	chmod +x tools/squid tools/security_file_certgen tools/c-icap
 	chmod +x fake-bird fake-birdc fake-setfib fake-dnsmasq fake-local-unbound fake-local-unbound-checkconf
 	atf_check -s exit:1 -e match:'an instance is' -o ignore "$JGC" -c "$SOCK" sdwan bird \
 	    '{"instances":[{"name":"../x","fib":1,"conf":"router id 1.1.1.1;"}]}'
@@ -2775,8 +2778,20 @@ EOS
 	atf_check -o match:'^squid -k reconfigure -f .*sdwan-proxy-sw1.conf$' -o match:'^certgen -c -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat squid.log
 	atf_check -o match:'^sslcrtd_program .*tools/security_file_certgen -s .*sdwan-proxy-sw1.ssl_db -M 4MB$' cat "$(dirname "$f")/sdwan-proxy-sw1.conf"
 	atf_check cmp -s ca.was "$(dirname "$f")/sdwan-proxy-sw1.crt"
+	# Malware scanned: c-icap of the instance's own, started first in its
+	# table, its pid file and command socket placed, told in the read;
+	# gone with the instance.
+	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy \
+	    '{"instances":[{"name":"sw1","fib":1,"mode":"sni","conf":"pid_filename @PID@\nicap_enable on\n","deny":"","icap":"PidFile @ICAPPID@\nCommandsSocket @ICAPCMD@\nPort 127.0.0.1:1354\n"}]}'
+	atf_check -o match:'^setfib -F 1 .*tools/c-icap -f .*sdwan-icap-sw1.conf$' cat setfib.log
+	atf_check -o match:'^PidFile .*sdwan-icap-sw1.pid$' -o match:'^CommandsSocket .*sdwan-icap-sw1.ctl$' \
+	    cat "$(dirname "$f")/sdwan-icap-sw1.conf"
+	atf_check -o match:'"proxy":\[\{"name":"sw1","fib":1,"mode":"sni","running":true,"icap":true' "$JGC" -c "$SOCK" sdwan
+	ipid=$(cat "$(dirname "$f")/sdwan-icap-sw1.pid")
 	atf_check -o empty "$JGC" -c "$SOCK" sdwan proxy '{"instances":[]}'
 	test ! -f "$(dirname "$f")/sdwan-proxy-sw1.conf" || atf_fail "the proxy instance's file stayed"
+	test ! -f "$(dirname "$f")/sdwan-icap-sw1.conf" || atf_fail "the c-icap file stayed"
+	kill -0 "$ipid" 2>/dev/null && atf_fail "c-icap still runs"
 	atf_check -o match:'"proxy":\[\]' "$JGC" -c "$SOCK" sdwan
 }
 sdwan_cleanup()

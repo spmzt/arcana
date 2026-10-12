@@ -676,6 +676,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "exit 0\n");
 	put("tools/security_file_certgen", "#!/bin/sh\necho \"certgen $*\" >> "
 	    "squid.log\nmkdir -p \"$3\"\n");
+	/* c-icap, a plugin: started, it stays a while with its pid file
+	 * where its configuration says. */
+	put("tools/c-icap", "#!/bin/sh\necho \"c-icap $*\" >> squid.log\n"
+	    "p=$(sed -n 's/^PidFile //p' \"$2\")\n"
+	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$p\"\nexit 0\n");
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");

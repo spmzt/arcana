@@ -75,6 +75,7 @@ struct opts opts = {
 	.wg_dir = PATH_WG_DIR,
 	.swanctl_bin = PATH_SWANCTL_BIN,
 	.squid_bin = PATH_SQUID_BIN,
+	.cicap_bin = PATH_CICAP_BIN,
 	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
 	.bird_bin = PATH_BIRD_BIN,
