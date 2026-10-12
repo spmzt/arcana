@@ -408,6 +408,86 @@ ATF_TC_BODY(login_refused, tc)
 	resp_free(&r);
 }
 
+/* The SHA-256 of a signing certificate, as apksigner prints it. */
+#define	APP_FP	"00:01:02:03:04:05:06:07:08:09:0A:0B:0C:0D:0E:0F:"	\
+		"10:11:12:13:14:15:16:17:18:19:1A:1B:1C:1D:1E:1F"
+
+CONSOLE_TC(android, "The Android app of web.conf: its assetlinks.json, and "
+    "logins made in it, whose origin is its signing key's hash")
+ATF_TC_BODY(android, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+	uint8_t		 h[32];
+	char		 origin[128], *h64;
+	int		 i;
+
+	for (i = 0; i < 32; i++)
+		h[i] = (uint8_t)i;
+	h64 = b64url(h, sizeof(h));
+	snprintf(origin, sizeof(origin), "android:apk-key-hash:%s", h64);
+	free(h64);
+	snprintf(harness_webconf, sizeof(harness_webconf), "android {\n"
+	    "\tpackage = \"org.example.arcana\";\n"
+	    "\tfingerprints = [ \"%s\", \"%s\" ];\n}\n", APP_FP,
+	    "1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100");
+	start(tc, 0, NULL);
+
+	/* Before any login: Android asks for it as anyone would. */
+	http("GET", "/.well-known/assetlinks.json", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("android_app", jstr(&r, "0.target.namespace"));
+	ATF_CHECK_STREQ("org.example.arcana", jstr(&r,
+	    "0.target.package_name"));
+	ATF_CHECK_STREQ(APP_FP, jstr(&r, "0.target.sha256_cert_fingerprints.0"));
+	ATF_CHECK_STREQ("1F:1E:1D:1C:1B:1A:19:18:17:16:15:14:13:12:11:10:"
+	    "0F:0E:0D:0C:0B:0A:09:08:07:06:05:04:03:02:01:00", jstr(&r,
+	    "0.target.sha256_cert_fingerprints.1"));
+	ATF_CHECK_STREQ("delegate_permission/common.get_login_creds",
+	    jstr(&r, "0.relation.1"));
+	resp_free(&r);
+
+	enrol(&a);
+	cookie[0] = '\0';
+	do_login(&a, 1, origin, RP_ID, NULL, false, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "authenticated"));
+	resp_free(&r);
+
+	/* Another app, or the right hash under another scheme: no. */
+	cookie[0] = '\0';
+	do_login(&a, 2, "android:apk-key-hash:"
+	    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", RP_ID, NULL, false,
+	    &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_MSG(strstr(r.body, "origin") != NULL, "%s", r.body);
+	resp_free(&r);
+	do_login(&a, 3, origin + strlen("android:"), RP_ID, NULL, false, &r);
+	EXPECT(&r, 401);
+	resp_free(&r);
+}
+
+CONSOLE_TC(android_none, "Without an Android app, no assetlinks.json and no "
+    "logins from an app")
+ATF_TC_BODY(android_none, tc)
+{
+	struct authn	 a;
+	struct resp	 r;
+
+	start(tc, 0, NULL);
+	http("GET", "/.well-known/assetlinks.json", NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	enrol(&a);
+	cookie[0] = '\0';
+	do_login(&a, 1, "android:apk-key-hash:"
+	    "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8", RP_ID, NULL, false,
+	    &r);
+	EXPECT(&r, 401);
+	ATF_CHECK_MSG(strstr(r.body, "origin") != NULL, "%s", r.body);
+	resp_free(&r);
+}
+
 CONSOLE_TC(second_key, "A spare Ed25519 key, added from a session")
 ATF_TC_BODY(second_key, tc)
 {
@@ -509,6 +589,19 @@ ATF_TC_BODY(jails, tc)
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	/* JSON that a strict parser takes: each step's status once, never
+	 * a key twice (",," and an array where a word goes). */
+	ATF_CHECK_MSG(strstr(r.body, ",,") == NULL && strstr(r.body,
+	    "\"status\":[") == NULL, "%s", r.body);
+	{
+		FILE	*fp;
+
+		ATF_REQUIRE((fp = fopen("jails.json", "w")) != NULL);
+		fputs(r.body, fp);
+		fclose(fp);
+		ATF_CHECK_MSG(system("python3 -c 'import json; json.load(open("
+		    "\"jails.json\"))'") == 0, "not strict JSON: %s", r.body);
+	}
 	ATF_CHECK(jail_named(&r, "db") != NULL);
 	ATF_CHECK_STREQ("stopped", jail_str(&r, "web", "state"));
 	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
@@ -4190,13 +4283,17 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\\n\\taccept;"
 	    "\\n}") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "export filter to_edges;") != NULL);
-	/* The hosts' addresses: hq's IPv4 by DHCP, dnsmasq from packages in
-	 * the service's table, its ranges the subnet less the reserved
-	 * prefixes and the provider's address, the router and DNS told;
-	 * branch's IPv6 by SLAAC, rtadvd on the VLAN with RDNSS; the
-	 * kernel forwarding on both edges. */
-	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"pkg-install\",\"packages\":[\"dnsmasq"
-	    "\"]") != NULL, "%s", r.body);
+	/* The hosts' addresses: hq's IPv4 by DHCP, dnsmasq (a plugin,
+	 * installed before and never by the apply) in the service's table,
+	 * its ranges the subnet less the reserved prefixes and the
+	 * provider's address, the router and DNS told; branch's IPv6 by
+	 * SLAAC, rtadvd on the VLAN with RDNSS; the kernel forwarding on
+	 * both edges.  What the edges need is listed, each there or not. */
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"pkg-install\"") == NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"plugin\":\"dnsmasq\",\"package\":"
+	    "\"dnsmasq\"") != NULL && strstr(r.body, "\"plugin\":\"squid\"")
+	    != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-dhcp\",\"instances\":[{"
 	    "\"name\":\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana "
 	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
@@ -4309,6 +4406,17 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 
 	/* Applied: each made, in the order, IPsec with the far key. */
+	/* An edge without what a service needs there: nothing is
+	 * installed by the apply, which refuses and says what to install
+	 * where.  Squid back, it goes on. */
+	ATF_REQUIRE(rename("tools/squid", "tools/squid.off") == 0);
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 409);
+	ATF_CHECK_MSG(strstr(r.body, "pkg install squid") != NULL &&
+	    strstr(r.body, "nothing is installed by the apply") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_REQUIRE(rename("tools/squid.off", "tools/squid") == 0);
 	http("POST", "/api/sdwan/apply", "{}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
@@ -4561,6 +4669,8 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, setup_token);
 	ATF_TP_ADD_TC(tp, register_login);
 	ATF_TP_ADD_TC(tp, login_refused);
+	ATF_TP_ADD_TC(tp, android);
+	ATF_TP_ADD_TC(tp, android_none);
 	ATF_TP_ADD_TC(tp, second_key);
 	ATF_TP_ADD_TC(tp, csrf);
 	ATF_TP_ADD_TC(tp, jails);

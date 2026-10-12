@@ -133,7 +133,22 @@ addToLibrary({
 		}
 
 		document.addEventListener("click", function (e) {
-			var t = e.target.closest("[data-act]"), more;
+			var t = e.target.closest("[data-act]"), more, c;
+
+			/* A key or a value to paste elsewhere: copied, and
+			 * the page told so it can say it was. */
+			c = e.target.closest("[data-copy]");
+			if (c !== null) {
+				e.preventDefault();
+				if (navigator.clipboard)
+					navigator.clipboard.writeText(c.dataset.copy)
+					    .then(function () {
+						act("copied", "", "");
+					}, function () {
+						act("copied", "", "no");
+					});
+				return;
+			}
 
 			/* A row's ⋯: its actions shown or put away. */
 			more = e.target.closest("button.acts-more");
@@ -148,6 +163,10 @@ addToLibrary({
 				e.preventDefault();
 			act(t.dataset.act, t.dataset.arg || "",
 			    t.dataset.value || "");
+		});
+		/* Back, forward, or an address typed: go where it says. */
+		window.addEventListener("popstate", function () {
+			Module._arc_on_loc(arcStr(location.hash));
 		});
 		document.addEventListener("submit", function (e) {
 			var f = e.target, o = {}, i, el;
@@ -1250,6 +1269,30 @@ addToLibrary({
 	/* Is the window as narrow as a phone held upright? */
 	arc_narrow: function () {
 		return (window.innerWidth <= 620 ? 1 : 0);
+	},
+
+	/*
+	 * The page's address, #/hosts/<id>/<tab> and the like (main.c):
+	 * read when the page opens, written as what is shown changes, a
+	 * new history entry (push) or in place.
+	 */
+	arc_loc_get__deps: ["$arcStr"],
+	arc_loc_get: function () {
+		return (arcStr(location.hash));
+	},
+	arc_loc_set__deps: ["$UTF8ToString"],
+	arc_loc_set: function (p, push) {
+		var h = UTF8ToString(p);
+
+		if (location.hash === h)
+			return;
+		try {
+			if (push)
+				history.pushState(null, "", h);
+			else
+				history.replaceState(null, "", h);
+		} catch (e) {
+		}
 	},
 
 	arc_title__deps: ["$UTF8ToString"],

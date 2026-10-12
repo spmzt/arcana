@@ -2,7 +2,7 @@
 .\"
 .\" Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
 .\"
-.Dd October 3, 2026
+.Dd October 12, 2026
 .Dt ARCANA-CONSOLE 8
 .Os
 .Sh NAME
@@ -126,6 +126,34 @@ and sends that instead of
 .It Va agent_ref
 The branch or tag to build.
 Default: the repository's own.
+.It Va android
+A block naming an Android app that may log in:
+.Va package ,
+its package name, and
+.Va fingerprints ,
+the SHA-256 fingerprints of the certificates it is signed with, as
+Android's
+.Cm apksigner
+or
+.Cm keytool
+print them, with or without colons; at most 8.
+The console then serves
+.Pa /.well-known/assetlinks.json
+naming the app, which Android asks for before it lets the app use the
+keys registered for
+.Va rp_id ,
+and takes WebAuthn ceremonies made in the app, whose origin is
+.Ql android:apk-key-hash:\&
+and the base64url of one of the fingerprints, as well as those of
+.Va origin .
+.Va rp_id
+must be the host name the console is reached by for Android to find
+the file.
+Without the block,
+.Pa /.well-known/assetlinks.json
+is not found and only
+.Va origin
+is taken.
 .El
 .Pp
 The settings

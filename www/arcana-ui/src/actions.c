@@ -1008,6 +1008,8 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	for (i = 0; i < app.nservers; i++)
 		if (app.servers[i].list == NULL)
 			refresh_jails(&app.servers[i], i == app.sel);
+	/* What the page's address named, now that its host can be found. */
+	loc_pending();
 }
 
 void
@@ -2069,6 +2071,7 @@ origin_check(const char *origin, const char *rp_id)
 	app.origin_error[0] = '\0';
 	if (origin == NULL || rp_id == NULL)
 		return;
+	snprintf(app.console_origin, sizeof(app.console_origin), "%s", origin);
 	here = arc_origin();
 	host = arc_hostname();
 	/* The host without its port, against rp_id as a domain suffix. */

@@ -79,6 +79,7 @@ static struct session	 sessions[SESSIONS];
 static time_t		 sessions_saved;	/* when the file was last written */
 
 static char	*b64url(const void *, size_t);
+static bool	 origin_ours(const char *);
 static uint8_t	*unb64url(const char *, size_t *);
 static void	 sha256(const void *, size_t, uint8_t *);
 static void	 challenge_new(struct challenge *);
@@ -227,6 +228,32 @@ challenge_take(struct challenge *c, const char *value)
 }
 
 /*
+ * The console's origin, or the Android app's named in web.conf: a
+ * credential made or used in the app comes with the origin
+ * android:apk-key-hash:<base64url of its signing certificate's SHA-256>.
+ */
+static bool
+origin_ours(const char *origin)
+{
+	static const char	 pfx[] = "android:apk-key-hash:";
+	char			*h;
+	bool			 ok;
+	int			 i;
+
+	if (strcmp(origin, cfg.origin) == 0)
+		return (true);
+	if (strncmp(origin, pfx, sizeof(pfx) - 1) != 0)
+		return (false);
+	ok = false;
+	for (i = 0; !ok && i < cfg.nandroid_keys; i++) {
+		h = b64url(cfg.android_keys[i], sizeof(cfg.android_keys[i]));
+		ok = h != NULL && strcmp(origin + sizeof(pfx) - 1, h) == 0;
+		kore_free(h);
+	}
+	return (ok);
+}
+
+/*
  * clientDataJSON must be of the expected type, for the challenge we
  * issued, from our origin.  Returns NULL or what is wrong.
  */
@@ -253,8 +280,7 @@ check_client_data(const uint8_t *cd, size_t len, const char *type,
 	    !(chal != NULL ? challenge_take(chal, s) :
 	    login_challenge_take(s)))
 		err = "unknown or expired challenge";
-	else if ((s = ucl_str(o, "origin")) == NULL ||
-	    strcmp(s, cfg.origin) != 0)
+	else if ((s = ucl_str(o, "origin")) == NULL || !origin_ours(s))
 		err = "wrong origin";
 	else if (ucl_flag(o, "crossOrigin"))
 		err = "cross-origin request";

@@ -25,12 +25,13 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.126.0"
+#define	ARCW_VERSION		"0.134.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
 #define	ARCW_AGENT_BINARY	"/usr/local/sbin/arcana-agent"
 
+#define	ANDROID_KEYS		8	/* signing keys of the Android app */
 #define	SESSION_COOKIE		"arc_session"
 #define	SESSION_IDLE		(30 * 60)
 #define	SESSION_MAX		(12 * 60 * 60)
@@ -60,6 +61,9 @@ struct config {
 	char		*agent_ref;	/* its branch or tag, or NULL */
 	char		*agent_ssh_key;	/* a key on the build host, or NULL */
 	char		*local_agent;	/* the agent beside the console, or NULL */
+	char		*android_package;	/* the Android app, or NULL */
+	uint8_t		 android_keys[ANDROID_KEYS][32];	/* SHA-256 of its signers */
+	int		 nandroid_keys;
 };
 
 extern struct config cfg;
@@ -174,6 +178,7 @@ void		 hosts_release(const char *, const char *, cbl_conn *,
 
 /* Route handlers, named in the Kore configuration. */
 int		 api_health(struct http_request *);
+int		 api_assetlinks(struct http_request *);
 int		 api_auth_status(struct http_request *);
 int		 api_register_begin(struct http_request *);
 int		 api_register_finish(struct http_request *);

@@ -67,6 +67,7 @@ static struct {
 	ucl_object_t	*plan;		/* /api/sdwan/plan */
 	ucl_object_t	*applied;	/* /api/sdwan/apply */
 	char		 plan_error[600];
+	char		 need_title[128];	/* an install's, for its task */
 	double		 plan_at, apply_at;
 	bool		 applying;
 	ucl_object_t	*paths;		/* sid: /api/servers/<sid>/sdwan data */
@@ -1877,6 +1878,117 @@ view_applied(struct html *h)
 	h_raw(h, "</div>");
 }
 
+/* The edges that lack what the services need there: how many things. */
+static int
+needs_missing(void)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	int			 n;
+
+	n = 0;
+	it = NULL;
+	while (sd.plan != NULL && (e = ucl_object_iterate(jget(sd.plan,
+	    "needs"), &it, true)) != NULL)
+		if (!jbool(e, "there"))
+			n++;
+	return (n);
+}
+
+/*
+ * Before using SD-WAN: what it needs that is not FreeBSD's own, and of
+ * it what each edge of the kept services lacks.  The apply installs
+ * nothing: each is installed first, by hand or with the button here.
+ * With brief, only when something is missing.
+ */
+static void
+view_needs(struct html *h, bool brief)
+{
+	static const struct {
+		const char	*package, *what, *when;
+	} all[] = {
+		{ "strongswan", "strongSwan's IKEv2", "a tunnel under IPsec "
+		    "(an underlay with ipsec, or a policy that says encryption)" },
+		{ "bird3", "BIRD", "routing at a UNI (static, BGP, OSPF), BFD, "
+		    "a control plane, a WAN link routed on its underlay" },
+		{ "wireguard-tools", "wg(8)", "a WireGuard tunnel or a remote "
+		    "end point; FreeBSD 15 and later have wg in the base system" },
+		{ "dnsmasq", "dnsmasq", "DHCP at a UNI" },
+		{ "squid", "Squid", "a security policy with url-filter" },
+	};
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	size_t			 i;
+	int			 missing;
+
+	if (sd.plan == NULL)
+		return;
+	missing = needs_missing();
+	if (brief && missing == 0)
+		return;
+	h_fmt(h, "<section class=\"pane sd-needs\"><h4><span>Before using "
+	    "SD-WAN</span></h4><p class=\"%s\">", missing > 0 ? "notice warn" :
+	    "dim");
+	if (missing > 0)
+		h_fmt(h, "%d package%s the services need %s not installed on "
+		    "their edges. Install %s first, then deploy: nothing is "
+		    "installed by the apply.", missing, missing == 1 ? "" : "s",
+		    missing == 1 ? "is" : "are", missing == 1 ? "it" : "them");
+	else
+		h_raw(h, "SD-WAN is FreeBSD's own (FIBs, ipfw, dummynet, the "
+		    "tunnels, local-unbound, rtadvd) but for the packages below, "
+		    "which each edge needs installed before a service that uses "
+		    "them is deployed; the apply installs nothing.");
+	h_raw(h, "</p>");
+	if (jget(sd.plan, "needs") != NULL && ucl_array_size(jget(sd.plan,
+	    "needs")) > 0) {
+		h_raw(h, "<table class=\"net\"><thead><tr><th>Edge</th>"
+		    "<th>Package</th><th>For</th><th>Installed</th><th></th>"
+		    "</tr></thead><tbody>");
+		it = NULL;
+		while ((e = ucl_object_iterate(jget(sd.plan, "needs"), &it,
+		    true)) != NULL) {
+			h_raw(h, "<tr><td>");
+			h_txt(h, jstr(e, "name"));
+			h_raw(h, "</td><td><code>");
+			h_txt(h, jstr(e, "package"));
+			h_raw(h, "</code></td><td class=\"dim\">");
+			h_txt(h, jstr(e, "what"));
+			h_fmt(h, "</td><td>%s</td><td>", jbool(e, "there") ?
+			    "<span class=\"chip ok\">yes</span>" : "<span "
+			    "class=\"chip bad\">no</span>");
+			if (!jbool(e, "there")) {
+				h_raw(h, "<code>pkg install ");
+				h_txt(h, jstr(e, "package"));
+				h_raw(h, "</code> <button class=\"ghost small\" "
+				    "data-act=\"sd-need-install\"");
+				h_attr(h, "data-arg", jstr(e, "server"));
+				h_attr(h, "data-value", jstr(e, "package"));
+				h_raw(h, ">Install</button>");
+			}
+			h_raw(h, "</td></tr>");
+		}
+		h_raw(h, "</tbody></table>");
+	}
+	if (!brief) {
+		h_raw(h, "<details><summary>Everything SD-WAN may need</summary>"
+		    "<table class=\"net\"><thead><tr><th>Package</th><th>Is"
+		    "</th><th>Needed for</th></tr></thead><tbody>");
+		for (i = 0; i < nitems(all); i++) {
+			h_raw(h, "<tr><td><code>");
+			h_txt(h, all[i].package);
+			h_raw(h, "</code></td><td>");
+			h_txt(h, all[i].what);
+			h_raw(h, "</td><td class=\"dim\">");
+			h_txt(h, all[i].when);
+			h_raw(h, "</td></tr>");
+		}
+		h_raw(h, "</tbody></table></details>");
+	}
+	h_raw(h, "<div class=\"toolbar\"><button class=\"ghost small\" "
+	    "data-act=\"sd-needs-check\">Check again</button></div></section>");
+}
+
 static void
 view_edges(struct html *h)
 {
@@ -1892,6 +2004,7 @@ view_edges(struct html *h)
 	}
 	todo = sd.plan != NULL ? count_change("make") + count_change(
 	    "remake") + count_change("unmake") : 0;
+	view_needs(h, true);
 	h_fmt(h, "<div class=\"toolbar\"><button class=\"primary small\" "
 	    "data-act=\"sd-apply-ask\"%s title=\"Make on the edges what the "
 	    "services say, in Mplify 119's order: FIBs, IPsec, tunnels, their "
@@ -1901,8 +2014,10 @@ view_edges(struct html *h)
 	    "all again</button><button class=\"ghost small\" data-act=\""
 	    "sd-show-kept\" title=\"The changes alone, or everything the edges "
 	    "are to have\">%s</button><span class=\"age\">",
-	    todo == 0 || sd.applying ? " disabled" : "", todo > 0 ?
-	    "" : ": nothing to do", sd.applying ? " disabled" : "", sd.show_kept
+	    todo == 0 || sd.applying || needs_missing() > 0 ? " disabled" :
+	    "", needs_missing() > 0 ? ": install what is missing first" :
+	    todo > 0 ? "" : ": nothing to do", sd.applying ? " disabled" : "",
+	    sd.show_kept
 	    ? "Changes only" : "Show all");
 	if (sd.plan != NULL)
 		h_fmt(h, "%d to make, %d to make again, %d to take away, %d as "
@@ -3316,8 +3431,10 @@ view_sdwan(struct html *h)
 		view_security(h);
 	else if (sd.tab == SD_DOCUMENT)
 		view_document(h);
-	else
+	else {
+		view_needs(h, false);
 		view_dashboard(h);
+	}
 	h_raw(h, "</section>");
 }
 
@@ -5867,6 +5984,29 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sd.applying = true;
 		api("POST", "/api/sdwan/apply", strcmp(act, "sd-apply") == 0 ?
 		    "{}" : "{\"fresh\":true}", apply_cb, NULL);
+	} else if (strcmp(act, "sd-needs-check") == 0) {
+		plan_load();
+	} else if (strcmp(act, "sd-need-install") == 0) {
+		/* Asked for here, by who looks: a pkg-install job there. */
+		struct server	*s = NULL;
+		char		*q, *json;
+		int		 k;
+
+		for (k = 0; k < app.nservers; k++)
+			if (strcmp(app.servers[k].id, arg) == 0)
+				s = &app.servers[k];
+		if (s == NULL || value[0] == '\0' || strspn(value,
+		    "abcdefghijklmnopqrstuvwxyz0123456789-_.+") !=
+		    strlen(value))
+			return (true);
+		q = json_quote(value);
+		if (asprintf(&json, "{\"kind\":\"pkg-install\",\"packages\":"
+		    "[%s]}", q) == -1)
+			abort();
+		free(q);
+		snprintf(sd.need_title, sizeof(sd.need_title), "pkg install %s",
+		    value);
+		job_send_host(s, json, sd.need_title, JOB_PACKAGES, "");
 	} else if (strcmp(act, "sd-apply-ask") == 0) {
 		char	body[400];
 

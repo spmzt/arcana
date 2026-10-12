@@ -395,7 +395,8 @@ static const char *const proto_names[] = { "icmp", "igmp", "tcp", "udp",
     "gre", "esp", "ah", "ipv6-icmp", "icmp6", "ospf", "pim", "sctp", "vrrp",
     "dccp", "ipip", "ipv6", "l2tp", NULL };
 
-/* APPID (Table 8, [R98]): each says what it matches; see USING.md. */
+/* APPID (Table 8, [R98]): each says what it matches; the book's "Probes,
+ * rules and steering" lists them. */
 static const char *const appids[] = { "dns", "http", "https", "ssh", "sip",
     "ntp", "smtp", "imap", "pop3", "ldap", "rdp", "snmp", "syslog", "ike",
     "bgp", "quic", "dhcp", "icmp", NULL };

@@ -229,6 +229,13 @@ login screen logs in with it, on the phone or, through the phone, on
 any browser. Registration asks for a discoverable credential where the
 authenticator offers one, so security keys keep working as before.
 
+An Android app can log in with the same keys once `web.conf` names it
+in an `android { }` block, its package and the SHA-256 fingerprints of
+its signing certificates: the console then serves
+`/.well-known/assetlinks.json` for Android to check, and takes the
+app's WebAuthn origin (`android:apk-key-hash:…`) beside its own. See
+`arcana-console(8)`.
+
 Security keys work only at the address the console is configured for:
 `rp_id` must be the host name in the address bar (or a parent domain of
 it), `origin` the exact origin, and the page HTTPS unless it is on
@@ -245,8 +252,8 @@ The console is a tree and tabs: the fleet, its hosts and their jails on
 the left; a host's Summary, Jails, Services, Network, Packages and Jobs;
 and an activity bar that shows each call as a graph, with its CBOR
 schema. [The book](https://spmzt.github.io/arcana-docs/) goes through
-all of it; [docs/USING.md](docs/USING.md) has SD-WAN until the book
-does.
+all of it, SD-WAN included; [docs/USING.md](docs/USING.md) lists its
+chapters.
 
 ## Updating
 
