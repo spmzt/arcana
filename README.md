@@ -245,8 +245,8 @@ The console is a tree and tabs: the fleet, its hosts and their jails on
 the left; a host's Summary, Jails, Services, Network, Packages and Jobs;
 and an activity bar that shows each call as a graph, with its CBOR
 schema. [The book](https://spmzt.github.io/arcana-docs/) goes through
-all of it, a part at a time as it is written; until then
-[docs/USING.md](docs/USING.md) does.
+all of it; [docs/USING.md](docs/USING.md) has SD-WAN until the book
+does.
 
 ## Updating
 
