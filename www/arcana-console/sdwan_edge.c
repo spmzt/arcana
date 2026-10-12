@@ -71,6 +71,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <openssl/evp.h>
+
 #include "console.h"
 
 #define	STATE_FILE	"sdwan-state.json"
@@ -1299,11 +1301,29 @@ remote_addr(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep,
 }
 
 /*
+ * Is an identity still authorised: issued within the remote's
+ * re-authorisation interval, when it has one (SASE-3)?  Not so, it has
+ * no peer and no place in the zone table until it is issued again.
+ */
+static bool
+identity_live(const ucl_object_t *r, const ucl_object_t *id, time_t now)
+{
+	int64_t	issued, reauth;
+
+	if (ucl_object_lookup(r, "reauth") == NULL)
+		return (true);
+	reauth = ucl_object_toint(ucl_object_lookup(r, "reauth"));
+	issued = ucl_object_lookup(id, "issued") != NULL ? ucl_object_toint(
+	    ucl_object_lookup(id, "issued")) : 0;
+	return (issued + reauth > now);
+}
+
+/*
  * A remote end point (SASE-3): its wg interface in the service's table
  * with the edge's own address, listening on its port; each identity a
  * peer allowed its address alone, so that the rules tell it by that
- * address as they do a UNI's host.  An identity gone is a peer
- * removed at the next apply.
+ * address as they do a UNI's host.  An identity gone, or past its
+ * re-authorisation, is a peer removed at the next apply.
  */
 static bool
 remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
@@ -1314,6 +1334,7 @@ remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 	struct net		 n;
 	char			 key[200], addr[80], own[80];
 	int64_t			 fib, port;
+	time_t			 now;
 
 	r = ucl_object_lookup(ep, "remote");
 	fib = ucl_object_toint(ucl_object_lookup(sw, "fib"));
@@ -1340,6 +1361,7 @@ remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 		unmake(o, job("if-destroy", "interface", S(str(r, "interface")),
 		    "persist", B(true), NULL));
 	}
+	now = time(NULL);
 	it = NULL;
 	while ((id = ucl_object_iterate(ucl_object_lookup(r, "identities"), &it,
 	    true)) != NULL) {
@@ -1349,6 +1371,8 @@ remote_obj(struct plan *pl, const ucl_object_t *sw, const ucl_object_t *ep)
 			    "prefix"), str(id, "name"));
 			return (false);
 		}
+		if (!identity_live(r, id, now))
+			continue;
 		snprintf(key, sizeof(key), "ident:%s/%s", str(ep, "id"), str(id,
 		    "name"));
 		o = object(pl, str(ep, "edge"), key, PH_PEER, "identity %s: a peer "
@@ -3148,6 +3172,8 @@ rules_build(struct plan *pl, const char *sid)
 					    "identities"), &iit, true)) != NULL) {
 						if (str(id, "zone") == NULL || strcmp(str(
 						    id, "zone"), str(zone, "name")) != 0 ||
+						    !identity_live(ucl_object_lookup(rep,
+						    "remote"), id, time(NULL)) ||
 						    !remote_addr(pl, sw, rep, str(id,
 						    "name"), ia, sizeof(ia)))
 							continue;
@@ -5737,6 +5763,436 @@ api_sdwan_lists(struct http_request *req)
 	return (reply_json(req, 200, out));
 }
 
+static bool	 apply_now(ucl_object_t *, char *, size_t);
+
+/* ---- Identities (SASE-3): issued, listed, revoked ------------------- */
+
+/* A WireGuard key pair, X25519, both halves in base64. */
+static bool
+wg_keypair(char *priv, size_t plen, char *pub, size_t publen)
+{
+	EVP_PKEY	*k;
+	unsigned char	 raw[32];
+	size_t		 n;
+	char		*b64;
+	bool		 ok;
+
+	if ((k = EVP_PKEY_Q_keygen(NULL, NULL, "X25519")) == NULL)
+		return (false);
+	ok = false;
+	n = sizeof(raw);
+	if (EVP_PKEY_get_raw_private_key(k, raw, &n) == 1 && n == sizeof(raw) &&
+	    kore_base64_encode(raw, n, &b64) == KORE_RESULT_OK) {
+		snprintf(priv, plen, "%s", b64);
+		explicit_bzero(b64, strlen(b64));
+		kore_free(b64);
+		n = sizeof(raw);
+		if (EVP_PKEY_get_raw_public_key(k, raw, &n) == 1 && n ==
+		    sizeof(raw) && kore_base64_encode(raw, n, &b64) ==
+		    KORE_RESULT_OK) {
+			snprintf(pub, publen, "%s", b64);
+			kore_free(b64);
+			ok = true;
+		}
+	}
+	explicit_bzero(raw, sizeof(raw));
+	EVP_PKEY_free(k);
+	return (ok);
+}
+
+/* The service, the remote end point and its remote, by their ids. */
+static const ucl_object_t *
+remote_of(const ucl_object_t *doc, const char *swvc, const char *epid,
+    const ucl_object_t **swp, const ucl_object_t **epp)
+{
+	const ucl_object_t	*sw, *ep;
+
+	if ((sw = by(ucl_object_lookup(doc, "swvcs"), "id", swvc)) == NULL ||
+	    (ep = by(ucl_object_lookup(sw, "end_points"), "id", epid)) == NULL
+	    || ucl_object_lookup(ep, "remote") == NULL)
+		return (NULL);
+	*swp = sw;
+	*epp = ep;
+	return (ucl_object_lookup(ep, "remote"));
+}
+
+/*
+ * The identities of every service's remote end points, each with its
+ * address, as the plan gives it, and whether it is still authorised.
+ */
+static ucl_object_t *
+identities_list(const ucl_object_t *doc, ucl_object_t *st)
+{
+	struct plan		 pl;
+	ucl_object_t		*arr, *o;
+	const ucl_object_t	*sw, *ep, *r, *id;
+	ucl_object_iter_t	 it, eit, iit;
+	char			 addr[80];
+	time_t			 now;
+	bool			 planned;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	planned = plan_build(&pl, doc, st);
+	now = time(NULL);
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
+	    true)) != NULL) {
+		eit = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+		    &eit, true)) != NULL) {
+			if ((r = ucl_object_lookup(ep, "remote")) == NULL)
+				continue;
+			iit = NULL;
+			while ((id = ucl_object_iterate(ucl_object_lookup(r,
+			    "identities"), &iit, true)) != NULL) {
+				o = ucl_object_typed_new(UCL_OBJECT);
+				put(o, "swvc", S(str(sw, "id")));
+				put(o, "end_point", S(str(ep, "id")));
+				put(o, "edge", S(str(ep, "edge")));
+				put(o, "interface", S(str(r, "interface")));
+				put(o, "name", S(str(id, "name")));
+				put(o, "zone", S(str(id, "zone")));
+				put(o, "public_key", S(str(id, "public_key")));
+				put(o, "user", B(ucl_flag(id, "user")));
+				put(o, "issued", I(ucl_object_lookup(id, "issued") !=
+				    NULL ? ucl_object_toint(ucl_object_lookup(id,
+				    "issued")) : 0));
+				if (ucl_object_lookup(r, "reauth") != NULL)
+					put(o, "expires", I((ucl_object_lookup(id,
+					    "issued") != NULL ? ucl_object_toint(
+					    ucl_object_lookup(id, "issued")) : 0) +
+					    ucl_object_toint(ucl_object_lookup(r,
+					    "reauth"))));
+				put(o, "live", B(identity_live(r, id, now)));
+				if (planned && remote_addr(&pl, sw, ep, str(id, "name"),
+				    addr, sizeof(addr)))
+					put(o, "address", S(addr));
+				ucl_array_append(arr, o);
+			}
+		}
+	}
+	plan_free(&pl);
+	return (arr);
+}
+
+/*
+ * A client's WireGuard configuration for an identity, shown once: its
+ * address and the private half; the edge's wg key, its address on the
+ * underlay and port, the service's prefixes, and the DNS filter where
+ * the service has one.
+ */
+static char *
+identity_config(struct plan *pl, const ucl_object_t *doc,
+    const ucl_object_t *sw, const ucl_object_t *ep, const char *name,
+    const char *priv)
+{
+	const ucl_object_t	*r, *edge, *ue, *u, *e2, *p;
+	ucl_object_iter_t	 it, pit;
+	ucl_object_t		*pfx, *ans;
+	struct kore_buf		*b;
+	struct net		 n;
+	char			 addr[80], own[80], uri[256], peer[256], hname[128];
+	char			*json, *text;
+	const char		*endpoint, *key;
+	int			 status, k;
+	bool			 proto;
+
+	r = ucl_object_lookup(ep, "remote");
+	if (!net_parse(str(r, "prefix"), &n) || !remote_addr(pl, sw, ep, name,
+	    addr, sizeof(addr)) || !remote_addr(pl, sw, ep, NULL, own,
+	    sizeof(own)))
+		return (NULL);
+	/* The edge's key, as its agent tells it; none before the apply. */
+	key = NULL;
+	ans = NULL;
+	if (host_ref(str(ep, "edge"), uri, sizeof(uri), peer, sizeof(peer),
+	    hname, sizeof(hname))) {
+		json = hosts_net(uri, peer, hname, "wireguard", &status);
+		ans = parse(json);
+		free(json);
+		it = NULL;
+		while ((e2 = ucl_object_iterate(at_path(ans, "data", "interfaces"),
+		    &it, true)) != NULL)
+			if (str(e2, "name") != NULL && strcmp(str(e2, "name"), str(r,
+			    "interface")) == 0 && str(e2, "public-key") != NULL)
+				key = str(e2, "public-key");
+	}
+	/* Where the edge is reached: a public UCS's address, else any. */
+	endpoint = NULL;
+	edge = by(ucl_object_lookup(doc, "edges"), "server", str(ep, "edge"));
+	it = NULL;
+	while ((ue = ucl_object_iterate(ucl_object_lookup(edge, "ucs_end_points"),
+	    &it, true)) != NULL) {
+		if (str(ue, "address") == NULL)
+			continue;
+		u = by(ucl_object_lookup(doc, "ucs"), "id", str(ue, "ucs"));
+		if (endpoint == NULL || (str(u, "type") != NULL && strcmp(str(u,
+		    "type"), "public") == 0))
+			endpoint = str(ue, "address");
+	}
+	b = kore_buf_alloc(2048);
+	kore_buf_appendf(b, "# %s, identity %s of %s: shown once, kept nowhere "
+	    "by the console.\n[Interface]\nPrivateKey = %s\nAddress = %s/%d\n",
+	    str(sw, "id"), name, str(ep, "id"), priv, addr, n.len);
+	if (dns_filters(sw, &proto))
+		kore_buf_appendf(b, "DNS = %s\n", own);
+	kore_buf_appendf(b, "\n[Peer]\nPublicKey = %s\nEndpoint = %s%s%s:%jd\n"
+	    "AllowedIPs = ", key != NULL ? key : "(the edge's, once applied: wg "
+	    "show the interface public-key there)", endpoint != NULL && strchr(
+	    endpoint, ':') != NULL ? "[" : "", endpoint != NULL ? endpoint :
+	    "(the edge's address)", endpoint != NULL && strchr(endpoint, ':') !=
+	    NULL ? "]" : "", (intmax_t)(ucl_object_lookup(r, "port") != NULL ?
+	    ucl_object_toint(ucl_object_lookup(r, "port")) : WG_REMOTE_PORT));
+	/* The service's prefixes: every end point's, this one's with. */
+	k = 0;
+	it = NULL;
+	while ((e2 = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		pfx = ucl_object_typed_new(UCL_ARRAY);
+		uni_prefixes(e2, pfx);
+		pit = NULL;
+		while ((p = ucl_object_iterate(pfx, &pit, true)) != NULL)
+			kore_buf_appendf(b, "%s%s", k++ > 0 ? ", " : "",
+			    ucl_object_tostring(p));
+		ucl_object_unref(pfx);
+	}
+	kore_buf_appendf(b, "\nPersistentKeepalive = 25\n");
+	text = kore_buf_stringify(b, NULL);
+	text = strdup(text);
+	kore_buf_free(b);
+	if (ans != NULL)
+		ucl_object_unref(ans);
+	return (text);
+}
+
+/*
+ * /api/sdwan/identities (SASE-3): GET lists every remote end point's
+ * identities with their addresses; POST {swvc, end_point, name, zone,
+ * user} issues one, a console user's (a sign-in key's name) or a
+ * name's, its key pair made here, the private half in the WireGuard
+ * configuration answered once and kept nowhere, the identity in the
+ * document in place of one of the name, and the edges applied; DELETE
+ * ?swvc=&end_point=&name= revokes one, its peer removed by the apply
+ * that follows.
+ */
+int
+api_sdwan_identities(struct http_request *req)
+{
+	ucl_object_t		*doc, *st, *body, *out, *ids, *id, *o;
+	const ucl_object_t	*sw, *ep, *r, *e;
+	ucl_object_iter_t	 it;
+	struct plan		 pl;
+	char			 why[300], priv[64], pub[64], *v, *swvc, *epid;
+	char			*name, *conf;
+	const char		*zone;
+	bool			 user, applied;
+	int			 i;
+
+	if (req->method == HTTP_METHOD_GET) {
+		if (!guard(req, false))
+			return (KORE_RESULT_OK);
+		doc = sdwan_load();
+		pthread_mutex_lock(&st_lock);
+		st = state_load();
+		pthread_mutex_unlock(&st_lock);
+		out = ucl_object_typed_new(UCL_OBJECT);
+		put(out, "identities", identities_list(doc, st));
+		ucl_object_unref(doc);
+		ucl_object_unref(st);
+		return (reply_json(req, 200, out));
+	}
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	if (req->method == HTTP_METHOD_DELETE) {
+		http_populate_qs(req);
+		swvc = epid = name = NULL;
+		(void)http_argument_get_string(req, "swvc", &swvc);
+		(void)http_argument_get_string(req, "end_point", &epid);
+		(void)http_argument_get_string(req, "name", &name);
+		doc = sdwan_load();
+		if ((r = remote_of(doc, swvc, epid, &sw, &ep)) == NULL) {
+			ucl_object_unref(doc);
+			return (reply_error(req, 404, "end_point", "no remote end "
+			    "point %s in service %s", epid != NULL ? epid : "?", swvc
+			    != NULL ? swvc : "?"));
+		}
+		ids = (ucl_object_t *)(uintptr_t)ucl_object_lookup(r,
+		    "identities");
+		i = 0;
+		it = NULL;
+		while ((e = ucl_object_iterate(ids, &it, true)) != NULL && (str(e,
+		    "name") == NULL || name == NULL || strcmp(str(e, "name"), name)
+		    != 0))
+			i++;
+		if (e == NULL) {
+			ucl_object_unref(doc);
+			return (reply_error(req, 404, "identity", "no identity %s",
+			    name != NULL ? name : "?"));
+		}
+		ucl_object_unref(ucl_array_delete(ids, (ucl_object_t *)(uintptr_t)
+		    e));
+		if (sdwan_store(doc, why, sizeof(why)) != 0) {
+			ucl_object_unref(doc);
+			return (reply_error(req, 409, "invalid", "%s", why));
+		}
+		why[0] = '\0';
+		applied = apply_now(doc, why, sizeof(why));
+		kore_log(LOG_NOTICE, "identity %s of %s/%s revoked%s%s", name, swvc,
+		    epid, applied ? ", the edges applied" : ": no apply, ",
+		    applied ? "" : why);
+		out = ucl_object_typed_new(UCL_OBJECT);
+		put(out, "revoked", S(name));
+		put(out, "applied", B(applied));
+		if (!applied)
+			put(out, "why", S(why));
+		return (reply_json(req, 200, out));
+	}
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "invalid", "a JSON body: swvc, "
+		    "end_point, name, zone, user"));
+	swvc = (char *)(uintptr_t)str(body, "swvc");
+	epid = (char *)(uintptr_t)str(body, "end_point");
+	name = (char *)(uintptr_t)str(body, "name");
+	zone = str(body, "zone");
+	user = ucl_flag(body, "user");
+	for (i = 0; name != NULL && name[i] != '\0'; i++)
+		if (name[i] < 0x20 || name[i] > 0x7e)
+			break;
+	if (name == NULL || name[0] == '\0' || name[i] != '\0' || i > 64) {
+		ucl_object_unref(body);
+		return (reply_error(req, 400, "name", "an identity's name is "
+		    "printable ASCII, 64 at most"));
+	}
+	if (user && !cred_named(name)) {
+		ucl_object_unref(body);
+		return (reply_error(req, 404, "user", "no console user %s: no "
+		    "sign-in key of that name", name));
+	}
+	doc = sdwan_load();
+	if ((r = remote_of(doc, swvc, epid, &sw, &ep)) == NULL) {
+		ucl_object_unref(doc);
+		ucl_object_unref(body);
+		return (reply_error(req, 404, "end_point", "no remote end point "
+		    "%s in service %s", epid != NULL ? epid : "?", swvc != NULL ?
+		    swvc : "?"));
+	}
+	if (zone == NULL || by(ucl_object_lookup(sw, "zones"), "name", zone) ==
+	    NULL) {
+		ucl_object_unref(doc);
+		ucl_object_unref(body);
+		return (reply_error(req, 400, "zone", "the zone is one of service "
+		    "%s's", swvc));
+	}
+	if (!wg_keypair(priv, sizeof(priv), pub, sizeof(pub))) {
+		ucl_object_unref(doc);
+		ucl_object_unref(body);
+		return (reply_error(req, 500, "key", "no key pair could be made"));
+	}
+	/* In place of one of the name: issued again, with a new pair. */
+	ids = (ucl_object_t *)(uintptr_t)ucl_object_lookup(r, "identities");
+	if (ids == NULL) {
+		ids = ucl_object_typed_new(UCL_ARRAY);
+		ucl_object_insert_key((ucl_object_t *)(uintptr_t)r, ids,
+		    "identities", 0, false);
+	}
+	it = NULL;
+	while ((e = ucl_object_iterate(ids, &it, true)) != NULL)
+		if (str(e, "name") != NULL && strcmp(str(e, "name"), name) == 0) {
+			ucl_object_unref(ucl_array_delete(ids, (ucl_object_t *)
+			    (uintptr_t)e));
+			break;
+		}
+	id = ucl_object_typed_new(UCL_OBJECT);
+	put(id, "name", S(name));
+	put(id, "zone", S(zone));
+	put(id, "public_key", S(pub));
+	put(id, "issued", I(time(NULL)));
+	if (user)
+		put(id, "user", B(true));
+	ucl_array_append(ids, id);
+	if (sdwan_store(doc, why, sizeof(why)) != 0) {
+		explicit_bzero(priv, sizeof(priv));
+		ucl_object_unref(doc);
+		ucl_object_unref(body);
+		return (reply_error(req, 409, "invalid", "%s", why));
+	}
+	/* Its configuration, from the plan the apply will make. */
+	pthread_mutex_lock(&st_lock);
+	st = state_load();
+	pthread_mutex_unlock(&st_lock);
+	host_refs();
+	conf = NULL;
+	if (plan_build(&pl, doc, st))
+		conf = identity_config(&pl, doc, sw, ep, name, priv);
+	plan_free(&pl);
+	ucl_object_unref(st);
+	explicit_bzero(priv, sizeof(priv));
+	why[0] = '\0';
+	applied = apply_now(doc, why, sizeof(why));
+	kore_log(LOG_NOTICE, "identity %s of %s/%s issued%s%s%s", name, swvc,
+	    epid, user ? ", a console user's" : "", applied ? ", the edges "
+	    "applied" : ": no apply, ", applied ? "" : why);
+	out = ucl_object_typed_new(UCL_OBJECT);
+	put(out, "name", S(name));
+	put(out, "public_key", S(pub));
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put(out, "config", conf != NULL ? S(conf) : ucl_object_typed_new(
+	    UCL_NULL));
+	ucl_object_unref(o);
+	if (conf != NULL) {
+		explicit_bzero(conf, strlen(conf));
+		free(conf);
+	}
+	put(out, "applied", B(applied));
+	if (!applied)
+		put(out, "why", S(why));
+	ucl_object_unref(body);
+	(void)v;
+	return (reply_json(req, 200, out));
+}
+
+/*
+ * Each tick: an identity whose re-authorisation ran out since the last
+ * is a peer to remove, by an apply of the document as it is.
+ */
+static void
+identities_tick(const ucl_object_t *doc, time_t now)
+{
+	static time_t		 prev;
+	const ucl_object_t	*sw, *ep, *r, *id;
+	ucl_object_iter_t	 it, eit, iit;
+	char			 why[300];
+	int64_t			 exp;
+	bool			 due;
+
+	due = false;
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
+	    true)) != NULL) {
+		eit = NULL;
+		while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+		    &eit, true)) != NULL) {
+			if ((r = ucl_object_lookup(ep, "remote")) == NULL ||
+			    ucl_object_lookup(r, "reauth") == NULL)
+				continue;
+			iit = NULL;
+			while ((id = ucl_object_iterate(ucl_object_lookup(r,
+			    "identities"), &iit, true)) != NULL) {
+				exp = (ucl_object_lookup(id, "issued") != NULL ?
+				    ucl_object_toint(ucl_object_lookup(id, "issued")) :
+				    0) + ucl_object_toint(ucl_object_lookup(r,
+				    "reauth"));
+				if (prev != 0 && exp > prev && exp <= now)
+					due = true;
+			}
+		}
+	}
+	prev = now;
+	if (due && !apply_now(ucl_object_copy(doc), why, sizeof(why)))
+		kore_log(LOG_NOTICE, "identities: an authorisation ran out, no "
+		    "apply: %s", why);
+}
+
 /* ---- The record (SASE-2): what the edges' security rules logged ----- */
 
 /*
@@ -6323,6 +6779,7 @@ manager_tick(void)
 	ap = ucl_object_lookup(st, "applied");
 	doc = sdwan_load();
 	now = time(NULL);
+	identities_tick(doc, now);
 	all = (ucl_object_t *)(uintptr_t)ucl_object_lookup(st, "steer_sent");
 	if (all == NULL) {
 		all = ucl_object_typed_new(UCL_OBJECT);
@@ -6591,18 +7048,155 @@ plan_reply(const struct plan *pl, const ucl_object_t *chg)
 	return (top);
 }
 
+/*
+ * An apply begun from a plan built: the lock, the steps, the thread.
+ * The plan, the changes and the state are consumed.  Refused (-1,
+ * why, the HTTP status) while one runs, or when no thread could be
+ * made; else how many steps there are.
+ */
+static int
+apply_begin(struct plan *plp, ucl_object_t *st, ucl_object_t *chg, bool fresh,
+    char *why, size_t wlen, int *statusp)
+{
+	ucl_object_t		*ap, *steps, *s;
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+	struct run		*r;
+	pthread_t		 tid;
+	char			 path[MAXPATHLEN];
+	int			 fd;
+	/* One apply at a time, in this worker and every other. */
+	pthread_mutex_lock(&st_lock);
+	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, LOCK_FILE);
+	fd = -1;
+	if (applying || rekeying || (fd = open(path, O_RDWR | O_CREAT |
+	    O_CLOEXEC, 0600)) == -1 || flock(fd, LOCK_EX | LOCK_NB) == -1) {
+		bool	keys = !applying && rekeying;
+
+		pthread_mutex_unlock(&st_lock);
+		if (fd != -1)
+			close(fd);
+		ucl_object_unref(chg);
+		plan_free(plp);
+		ucl_object_unref(st);
+		snprintf(why, wlen, "%s", keys ? "a key rotation is running" :
+		    "an apply is running");
+		*statusp = 409;
+		return (-1);
+	}
+	applying = true;
+	pthread_mutex_unlock(&st_lock);
+	/* The servers as they are now, for the thread. */
+	host_refs();
+	/* The steps: each change but what stays as it is. */
+	steps = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((o = ucl_object_iterate(chg, &it, true)) != NULL) {
+		if (strcmp(str(o, "change"), "keep") == 0)
+			continue;
+		s = ucl_object_copy(o);
+		/* Its old unmake for taking it away, its new for keeping. */
+		if (strcmp(str(o, "change"), "remake") == 0 ||
+		    strcmp(str(o, "change"), "make") == 0) {
+			const ucl_object_t	*n;
+
+			n = by(edge_list(plp, str(o, "server")), "key", str(o,
+			    "key"));
+			put(s, "unmake_new", n != NULL ? ucl_object_copy(
+			    ucl_object_lookup(n, "unmake")) :
+			    ucl_object_typed_new(UCL_ARRAY));
+		}
+		put(s, "name", S(server_name_of(str(o, "server"))));
+		put(s, "state", S("pending"));
+		ucl_array_append(steps, s);
+	}
+	ap = ucl_object_typed_new(UCL_OBJECT);
+	put(ap, "state", S("running"));
+	put(ap, "started", I(time(NULL)));
+	put(ap, "fresh", B(fresh));
+	put(ap, "steps", steps);
+	put(ap, "tunnels", ucl_object_copy(plp->tunnels));
+	put(st, "apply", ap);
+	/* The allocations of what is made: new ones now, gone ones after. */
+	{
+		ucl_object_t		*keep;
+		const ucl_object_t	*a;
+
+		keep = ucl_object_typed_new(UCL_OBJECT);
+		it = NULL;
+		while ((a = ucl_object_iterate(plp->alloc, &it, true)) != NULL)
+			if (ucl_object_lookup(plp->used, ucl_object_key(a)) !=
+			    NULL)
+				ucl_object_insert_key(keep, ucl_object_copy(a),
+				    ucl_object_key(a), 0, true);
+		put(st, "alloc", ucl_object_copy(plp->alloc));
+		if ((r = calloc(1, sizeof(*r))) == NULL)
+			abort();
+		r->alloc = keep;
+	}
+	state_save(st);
+	r->st = st;
+	r->steps = (ucl_object_t *)(uintptr_t)ucl_object_lookup(ap, "steps");
+	r->keys = ucl_object_typed_new(UCL_OBJECT);
+	r->lockfd = fd;
+	ucl_object_unref(chg);
+	fd = r->lockfd;
+	plan_free(plp);
+	if (pthread_create(&tid, NULL, run_main, r) != 0) {
+		snprintf(why, wlen, "%s", strerror(errno));
+		close(fd);
+		pthread_mutex_lock(&st_lock);
+		applying = false;
+		pthread_mutex_unlock(&st_lock);
+		*statusp = 500;
+		return (-1);
+	}
+	(void)pthread_detach(tid);
+	return ((int)ucl_array_size(r->steps));
+}
+
+/*
+ * An apply of a document as it is, for the console's own changes (an
+ * identity issued, revoked or expired): the document is consumed.
+ */
+static bool
+apply_now(ucl_object_t *doc, char *why, size_t wlen)
+{
+	struct plan	 pl;
+	ucl_object_t	*st, *chg;
+	int		 status;
+
+	if (!sdwan_valid(doc, why, wlen)) {
+		ucl_object_unref(doc);
+		return (false);
+	}
+	pthread_mutex_lock(&st_lock);
+	st = state_load();
+	pthread_mutex_unlock(&st_lock);
+	if (!plan_build(&pl, doc, st)) {
+		snprintf(why, wlen, "%s", pl.why);
+		plan_free(&pl);
+		ucl_object_unref(doc);
+		ucl_object_unref(st);
+		return (false);
+	}
+	chg = changes(&pl, st, false);
+	if (apply_begin(&pl, st, chg, false, why, wlen, &status) < 0) {
+		ucl_object_unref(doc);
+		return (false);
+	}
+	ucl_object_unref(doc);
+	return (true);
+}
+
 int
 api_sdwan_edges(struct http_request *req)
 {
-	ucl_object_t		*doc, *st, *chg, *body, *ap, *steps, *s;
-	const ucl_object_t	*o;
-	ucl_object_iter_t	 it;
+	ucl_object_t		*doc, *st, *chg, *body;
 	struct plan		 pl;
-	struct run		*r;
-	pthread_t		 tid;
-	char			 why[300], path[MAXPATHLEN];
+	char			 why[300];
 	bool			 apply, fresh;
-	int			 fd;
+	int			 n, status;
 
 	apply = strcmp(req->path, "/api/sdwan/apply") == 0;
 	if (req->method == HTTP_METHOD_GET) {
@@ -6666,92 +7260,12 @@ api_sdwan_edges(struct http_request *req)
 		ucl_object_unref(st);
 		return (reply_json(req, 200, body));
 	}
-	/* One apply at a time, in this worker and every other. */
-	pthread_mutex_lock(&st_lock);
-	snprintf(path, sizeof(path), "%s/%s", cfg.datadir, LOCK_FILE);
-	fd = -1;
-	if (applying || rekeying || (fd = open(path, O_RDWR | O_CREAT |
-	    O_CLOEXEC, 0600)) == -1 || flock(fd, LOCK_EX | LOCK_NB) == -1) {
-		bool	keys = !applying && rekeying;
-
-		pthread_mutex_unlock(&st_lock);
-		if (fd != -1)
-			close(fd);
-		ucl_object_unref(chg);
-		plan_free(&pl);
-		ucl_object_unref(doc);
-		ucl_object_unref(st);
-		return (reply_error(req, 409, "busy", keys ? "a key rotation is "
-		    "running" : "an apply is running"));
-	}
-	applying = true;
-	pthread_mutex_unlock(&st_lock);
-	/* The servers as they are now, for the thread. */
-	host_refs();
-	/* The steps: each change but what stays as it is. */
-	steps = ucl_object_typed_new(UCL_ARRAY);
-	it = NULL;
-	while ((o = ucl_object_iterate(chg, &it, true)) != NULL) {
-		if (strcmp(str(o, "change"), "keep") == 0)
-			continue;
-		s = ucl_object_copy(o);
-		/* Its old unmake for taking it away, its new for keeping. */
-		if (strcmp(str(o, "change"), "remake") == 0 ||
-		    strcmp(str(o, "change"), "make") == 0) {
-			const ucl_object_t	*n;
-
-			n = by(edge_list(&pl, str(o, "server")), "key", str(o,
-			    "key"));
-			put(s, "unmake_new", n != NULL ? ucl_object_copy(
-			    ucl_object_lookup(n, "unmake")) :
-			    ucl_object_typed_new(UCL_ARRAY));
-		}
-		put(s, "name", S(server_name_of(str(o, "server"))));
-		put(s, "state", S("pending"));
-		ucl_array_append(steps, s);
-	}
-	ap = ucl_object_typed_new(UCL_OBJECT);
-	put(ap, "state", S("running"));
-	put(ap, "started", I(time(NULL)));
-	put(ap, "fresh", B(fresh));
-	put(ap, "steps", steps);
-	put(ap, "tunnels", ucl_object_copy(pl.tunnels));
-	put(st, "apply", ap);
-	/* The allocations of what is made: new ones now, gone ones after. */
-	{
-		ucl_object_t		*keep;
-		const ucl_object_t	*a;
-
-		keep = ucl_object_typed_new(UCL_OBJECT);
-		it = NULL;
-		while ((a = ucl_object_iterate(pl.alloc, &it, true)) != NULL)
-			if (ucl_object_lookup(pl.used, ucl_object_key(a)) !=
-			    NULL)
-				ucl_object_insert_key(keep, ucl_object_copy(a),
-				    ucl_object_key(a), 0, true);
-		put(st, "alloc", ucl_object_copy(pl.alloc));
-		if ((r = calloc(1, sizeof(*r))) == NULL)
-			abort();
-		r->alloc = keep;
-	}
-	state_save(st);
-	r->st = st;
-	r->steps = (ucl_object_t *)(uintptr_t)ucl_object_lookup(ap, "steps");
-	r->keys = ucl_object_typed_new(UCL_OBJECT);
-	r->lockfd = fd;
-	ucl_object_unref(chg);
-	body = ucl_object_typed_new(UCL_OBJECT);
-	put(body, "steps", I((int64_t)ucl_array_size(r->steps)));
-	plan_free(&pl);
+	n = apply_begin(&pl, st, chg, fresh, why, sizeof(why), &status);
 	ucl_object_unref(doc);
-	if (pthread_create(&tid, NULL, run_main, r) != 0) {
-		close(fd);
-		pthread_mutex_lock(&st_lock);
-		applying = false;
-		pthread_mutex_unlock(&st_lock);
-		ucl_object_unref(body);
-		return (reply_error(req, 500, "thread", "%s", strerror(errno)));
-	}
-	(void)pthread_detach(tid);
+	if (n < 0)
+		return (reply_error(req, status, status == 409 ? "busy" : "thread",
+		    "%s", why));
+	body = ucl_object_typed_new(UCL_OBJECT);
+	put(body, "steps", I(n));
 	return (reply_json(req, 200, body));
 }

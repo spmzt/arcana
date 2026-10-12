@@ -4259,6 +4259,60 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q 'vlan106 create vlan 20 vlandev lo0' "
 	    "ifconfig.log") == 0);
+	/* Identities (SASE-3): one issued for a name, its key pair made
+	 * here, the configuration answered once with its address, the
+	 * second host after alice's, and the edges applied; listed with
+	 * both; revoked, gone and the peer removed; alice past the
+	 * remote's re-authorisation has no peer. */
+	http("POST", "/api/sdwan/identities", "{\"swvc\":\"acme\",\"end_point\":"
+	    "\"road\",\"name\":\"bob\",\"zone\":\"office\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "name"));
+	ATF_CHECK_MSG(jstr(&r, "config") != NULL && strstr(jstr(&r, "config"),
+	    "[Interface]\nPrivateKey = ") != NULL && strstr(jstr(&r, "config"),
+	    "\nAddress = 10.30.0.3/24\n") != NULL && strstr(jstr(&r, "config"),
+	    "\n[Peer]\nPublicKey = ") != NULL && strstr(jstr(&r, "config"),
+	    "\nEndpoint = 192.0.2.1:51820\n") != NULL && strstr(jstr(&r,
+	    "config"), "AllowedIPs = 10.1.0.0/24, 10.1.8.0/22, 2001:db8:1::/64, "
+	    "10.30.0.0/24\n") != NULL, "%s", r.body);
+	ATF_CHECK_STREQ("true", jstr(&r, "applied"));
+	ATF_CHECK(strlen(jstr(&r, "public_key")) == 44);
+	resp_free(&r);
+	sdwan_wait(&r);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^set wg5 peer .* allowed-ips 10.30.0.3/32' "
+	    "wg.log") == 0);
+	http("GET", "/api/sdwan/identities", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("alice", jstr(&r, "identities.0.name"));
+	ATF_CHECK_STREQ("10.30.0.2", jstr(&r, "identities.0.address"));
+	ATF_CHECK_STREQ("true", jstr(&r, "identities.0.live"));
+	ATF_CHECK_STREQ("bob", jstr(&r, "identities.1.name"));
+	ATF_CHECK_STREQ("10.30.0.3", jstr(&r, "identities.1.address"));
+	ATF_CHECK_STREQ("false", jstr(&r, "identities.1.user"));
+	resp_free(&r);
+	/* A console user: a sign-in key of the name, or none. */
+	http("POST", "/api/sdwan/identities", "{\"swvc\":\"acme\",\"end_point\":"
+	    "\"road\",\"name\":\"nobody\",\"zone\":\"office\",\"user\":true}",
+	    &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
+	http("DELETE", "/api/sdwan/identities?swvc=acme&end_point=road&name=bob",
+	    NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("bob", jstr(&r, "revoked"));
+	resp_free(&r);
+	sdwan_wait(&r);
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^set wg5 peer .* remove' wg.log") == 0);
+	http("GET", "/api/sdwan/identities", NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "identities.1.name") == NULL);
+	resp_free(&r);
+	http("DELETE", "/api/sdwan/identities?swvc=acme&end_point=road&name=bob",
+	    NULL, &r);
+	EXPECT(&r, 404);
+	resp_free(&r);
 	/* The remote end point's wg, by the stand-in: listening, the
 	 * identity its peer. */
 	ATF_CHECK(system("grep -q '^set wg5 listen-port 51820' wg.log && grep "
@@ -4329,7 +4383,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_REQUIRE(swap_in(doc, "\"ucs\":[\"inet\",\"mpls\"]",
 	    "\"ucs\":[\"inet\"]", t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":1", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":3", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);
@@ -4357,7 +4411,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_REQUIRE(swap_in(doc, "\"encryption\":\"required-public-only\"",
 	    "\"encryption\":\"required-always\"", t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":2", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":0", "\"version\":4", t1,
 	    sizeof(t1)));
 	ATF_REQUIRE(swap_in(t1, "\"ucs\":[\"inet\"]",
 	    "\"ucs\":[\"inet\",\"mpls\"]", doc, sizeof(doc)));
@@ -4371,7 +4425,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"",
 	    "\"kind\":\"gif\",\"ipsec\":false", t1, sizeof(t1)));
-	ATF_REQUIRE(swap_in(t1, "\"version\":2", "\"version\":3", doc,
+	ATF_REQUIRE(swap_in(t1, "\"version\":4", "\"version\":5", doc,
 	    sizeof(doc)));
 	http("PUT", "/api/sdwan", doc, &r);
 	EXPECT(&r, 200);
@@ -4384,7 +4438,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\"kind\":\"gif\"", t1, sizeof(t1)));
 	ATF_REQUIRE(swap_in(t1, "\"encryption\":\"required-always\"",
 	    "\"encryption\":\"required-public-only\"", doc, sizeof(doc)));
-	ATF_REQUIRE(swap_in(doc, "\"version\":3", "\"version\":4", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":5", "\"version\":6", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);
@@ -4399,7 +4453,7 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_REQUIRE(swap_in(doc, "\"kind\":\"gif\"", "\"kind\":\"geneve\"",
 	    t1, sizeof(t1)));
 	snprintf(doc, sizeof(doc), "%s", t1);
-	ATF_REQUIRE(swap_in(doc, "\"version\":3", "\"version\":5", t1,
+	ATF_REQUIRE(swap_in(doc, "\"version\":5", "\"version\":7", t1,
 	    sizeof(t1)));
 	http("PUT", "/api/sdwan", t1, &r);
 	EXPECT(&r, 200);

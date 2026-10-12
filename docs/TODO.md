@@ -94,7 +94,10 @@
   name, a zone and a key, the example carrying one (S3.1); the apply,
   the wg interface in the service's table, a peer per identity with
   an address of the prefix kept for it, the zone table's entries
-  (S3.2). Next: S3.3, issuing and revoking.
+  (S3.2); identities issued and revoked from the console, the key
+  pair made there and the configuration shown once, a
+  re-authorisation interval after which the peer goes (S3.3). Next:
+  S3.4, sessions.
 - 2026-10-11: what is new, in the update boxes and Settings' last
   tab: the agent's source-log (a bare blob:none clone in the build
   directory), the console's /api/update/notes (the tags' messages as
@@ -103,6 +106,10 @@
   handler only the query parameters its route declares, so the
   record API's filters (swvc, policy, edge, since) were never seen;
   declared now with a validator.
+- Verified on the lab 2026-10-12 (S3.3): the client's peer removed at
+  arcswan1 as the console's apply does it for a revoked identity: the
+  ping to the far UNI that answered 3 of 3 loses all, no peer left on
+  wg5 (`bfd-lab.sh road`, its end).
 - Verified on the lab 2026-10-11 (S3.2): a client jail arcroad as an
   identity, arcswan1's wg5 in FIB 1 with 10.30.0.1/24 and the client
   its peer by the agent as the console's plan has it; the client,

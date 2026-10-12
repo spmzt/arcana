@@ -54,6 +54,7 @@
 #define	LIST_MAX	256	/* of each list in it */
 #define	FIB_MAX		65535
 
+static ucl_object_t *sd_load(void);
 static pthread_mutex_t	sd_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* Where a check is, and why it failed. */
@@ -1096,6 +1097,10 @@ remote(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
 	if (ucl_object_lookup(r, "port") != NULL && !is_int(ucl_object_lookup(
 	    r, "port"), 1, 65535, NULL))
 		return (fail(c, "its remote's port is 1 to 65535"));
+	if (ucl_object_lookup(r, "reauth") != NULL && !is_int(ucl_object_lookup(
+	    r, "reauth"), 3600, 366 * 86400, NULL))
+		return (fail(c, "its remote's reauth, the seconds an identity is "
+		    "authorised for, is an hour to a year"));
 	ids = ucl_object_lookup(r, "identities");
 	if (ids != NULL && ucl_object_type(ids) != UCL_ARRAY)
 		return (fail(c, "identities is a list"));
@@ -1119,6 +1124,14 @@ remote(struct ck *c, const ucl_object_t *sw, const ucl_object_t *r,
 		if (n != 44 || i != n || k[43] != '=')
 			return (fail(c, "identity %s: its public key is a "
 			    "WireGuard one, 32 bytes in base64", str(id, "name")));
+		if (ucl_object_lookup(id, "issued") != NULL && !is_int(
+		    ucl_object_lookup(id, "issued"), 0, INT64_MAX, NULL))
+			return (fail(c, "identity %s: issued is a time", str(id,
+			    "name")));
+		if (ucl_object_lookup(id, "user") != NULL && ucl_object_type(
+		    ucl_object_lookup(id, "user")) != UCL_BOOLEAN)
+			return (fail(c, "identity %s: user is true or false", str(
+			    id, "name")));
 		it2 = NULL;
 		while ((o = ucl_object_iterate(ids, &it2, true)) != NULL && o != id)
 			if (strcmp(str(o, "name"), str(id, "name")) == 0 || strcmp(
@@ -2180,6 +2193,34 @@ sdwan_load(void)
 }
 
 /* Is it one MEF 70.2 allows, as far as checked; why not, when not. */
+/*
+ * A document changed by the console itself (an identity issued or
+ * revoked): checked, its version the kept one's plus one, kept.
+ */
+int
+sdwan_store(ucl_object_t *doc, char *why, size_t len)
+{
+	ucl_object_t	*kept;
+	int64_t		 have;
+
+	if (!sdwan_valid(doc, why, len))
+		return (-1);
+	pthread_mutex_lock(&sd_lock);
+	kept = sd_load();
+	have = ucl_object_toint(ucl_object_lookup(kept, "version"));
+	ucl_object_unref(kept);
+	(void)ucl_object_delete_key(doc, "version");
+	ucl_object_insert_key(doc, ucl_object_fromint(have + 1), "version", 0,
+	    false);
+	if (store_save(SDWAN_FILE, doc) != 0) {
+		pthread_mutex_unlock(&sd_lock);
+		snprintf(why, len, "the document could not be kept");
+		return (-1);
+	}
+	pthread_mutex_unlock(&sd_lock);
+	return (0);
+}
+
 bool
 sdwan_valid(const ucl_object_t *doc, char *why, size_t len)
 {

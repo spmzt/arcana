@@ -945,6 +945,22 @@ api_credentials(struct http_request *req)
 	return (reply_json(req, 200, e));
 }
 
+/* Is there a sign-in key of this name: a console user (SASE-3)? */
+bool
+cred_named(const char *name)
+{
+	const ucl_object_t	*c;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while (name != NULL && (c = ucl_object_iterate(cred_list(), &it, true))
+	    != NULL)
+		if (ucl_str(c, "name") != NULL && strcmp(ucl_str(c, "name"), name)
+		    == 0)
+			return (true);
+	return (false);
+}
+
 /* DELETE /api/auth/credentials/<id>: never the last one. */
 int
 api_credential(struct http_request *req)
