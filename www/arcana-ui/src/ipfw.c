@@ -82,7 +82,8 @@ static const struct sect {
 #define	FW_DIFF		(-6)	/* what Apply would change */
 #define	FW_TRACE	(-7)	/* a packet followed through the rules */
 #define	FW_LOG		(-8)	/* what the rules with log wrote down */
-#define	FW_FIRST	FW_LOG
+#define	FW_QOS		(-9)	/* dummynet's pipes, schedulers, queues */
+#define	FW_FIRST	FW_QOS
 #define	FW_PREV		2048	/* rules whose counters are remembered */
 #define	FW_HITS		60	/* a rule's rates kept, the newest last */
 #define	FW_HITS_EVERY	5000	/* ms between two looks while a part is shown */
@@ -588,8 +589,10 @@ firewall_rail(struct html *h)
 			{ FW_TRACE, "Follow a packet", "Which rules a packet "
 			    "meets, and what becomes of it" },
 			{ FW_TABLES, "Tables", "The tables and what is in them" },
-			{ FW_OBJECTS, "NAT and pipes", "NAT and NAT64 instances, "
-			    "pipes, queues and schedulers" },
+			{ FW_QOS, "QoS", "dummynet's pipes, schedulers and "
+			    "queues, and the rules that send to them" },
+			{ FW_OBJECTS, "NAT", "NAT and NAT64 instances, and "
+			    "anything else in ipfw's words" },
 			{ FW_LOG, "Logged packets", "What the rules with log "
 			    "wrote into the security log" },
 		};
@@ -876,12 +879,12 @@ view_objects(struct html *h)
 	ucl_object_iter_t	 it;
 	size_t			 i;
 
-	h_raw(h, "<h4 class=\"family\">NAT, pipes and queues</h4><p class=\""
+	h_raw(h, "<h4 class=\"family\">NAT</h4><p class=\""
 	    "dim\">What a rule names by a number or a name and is made "
 	    "apart from the rules: a NAT instance (<code>nat 1 config if "
 	    "em0 same_ports</code>), NAT64 and NPTv6 (<code>nat64lsn NAT64 "
-	    "create prefix4 192.0.2.0/24</code>), a pipe, queue or "
-	    "scheduler of dummynet (<code>pipe 1 config bw 10Mbit/s</code>)."
+	    "create prefix4 192.0.2.0/24</code>), or anything else in "
+	    "ipfw's own words; dummynet's pipes and queues are under QoS."
 	    " The words are ipfw's; with <b>keep</b> they are a line of the "
 	    "kept rules too.</p>");
 	/* A NAT instance, asked for by what it is, not in ipfw's words. */
@@ -908,25 +911,6 @@ view_objects(struct html *h)
 	    "tcp 10.0.0.5:80 8080\"></textarea><label class=\"toggle\"><input "
 	    "type=\"checkbox\" name=\"persist\" checked><span>keep</span>"
 	    "</label><button class=\"small\">Configure</button></form>");
-	/* A pipe of dummynet: how fast, how late, how lossy. */
-	h_raw(h, "<form data-form=\"fw-pipe\" class=\"fw-obj\"><b>Pipe</b>"
-	    "<label>number<input name=\"num\" inputmode=\"numeric\" size=\"5\""
-	    " placeholder=\"1\"></label><label>bandwidth<input name=\"bw\" "
-	    "inputmode=\"decimal\" size=\"6\" placeholder=\"no limit\"><select "
-	    "name=\"unit\"><option>Kbit/s</option><option selected>Mbit/s"
-	    "</option><option>Gbit/s</option></select></label><label>delay"
-	    "<input name=\"delay\" inputmode=\"numeric\" size=\"5\" "
-	    "placeholder=\"0\"><span class=\"dim\">ms</span></label><label>"
-	    "loss<input name=\"plr\" inputmode=\"decimal\" size=\"5\" "
-	    "placeholder=\"0\"><span class=\"dim\">%</span></label><label>"
-	    "queue<input name=\"queue\" inputmode=\"numeric\" size=\"5\" "
-	    "placeholder=\"50\"><span class=\"dim\">slots</span></label>"
-	    "<label>for<select name=\"mask\"><option value=\"\">all at once"
-	    "</option><option value=\"src\">each source address</option>"
-	    "<option value=\"dst\">each destination address</option></select>"
-	    "</label><label class=\"toggle\"><input type=\"checkbox\" name=\""
-	    "persist\" checked><span>keep</span></label><button class=\"small"
-	    "\">Configure</button></form>");
 	h_raw(h, "<form data-form=\"fw-object\" class=\"fw-add\" title=\""
 	    "Anything else, in ipfw's own words\"><select name=\"kind\">");
 	for (i = 0; i < nitems(kinds); i++)
@@ -943,20 +927,6 @@ view_objects(struct html *h)
 		h_raw(h, "<pre class=\"mono\">");
 		it = NULL;
 		while ((o = ucl_object_iterate(jget(fw.data, "nat"), &it,
-		    true)) != NULL) {
-			h_txt(h, ucl_object_tostring_forced(o));
-			h_raw(h, "\n");
-		}
-		h_raw(h, "</pre>");
-	}
-	h_raw(h, "<h4 class=\"family\">Pipes</h4>");
-	if (ucl_array_size(jget(fw.data, "pipes")) == 0)
-		h_raw(h, "<p class=\"dim\">No pipe, or dummynet is not in the "
-		    "kernel.</p>");
-	else {
-		h_raw(h, "<pre class=\"mono\">");
-		it = NULL;
-		while ((o = ucl_object_iterate(jget(fw.data, "pipes"), &it,
 		    true)) != NULL) {
 			h_txt(h, ucl_object_tostring_forced(o));
 			h_raw(h, "\n");
@@ -1903,6 +1873,561 @@ pipe_words(const ucl_object_t *f, char *w, size_t len)
 	return (true);
 }
 
+
+/* ---- QoS: dummynet's pipes, schedulers and queues, by forms ---------- */
+
+static struct {
+	char	kind[8];	/* pipe, sched, queue or rule */
+	long	num;		/* the one changed; 0 for a new one */
+} qos;
+
+static void
+bw_text(char *buf, size_t len, int64_t b)
+{
+
+	if (b <= 0)
+		snprintf(buf, len, "no limit");
+	else if (b % 1000000000 == 0)
+		snprintf(buf, len, "%lld Gbit/s", (long long)(b / 1000000000));
+	else if (b >= 1000000)
+		snprintf(buf, len, "%g Mbit/s", (double)b / 1e6);
+	else
+		snprintf(buf, len, "%g Kbit/s", (double)b / 1e3);
+}
+
+/* Who a mask makes a flow of its own. */
+static void
+per_text(char *buf, size_t len, const ucl_object_t *m)
+{
+	int	src, dst;
+
+	src = m != NULL ? (int)jint(m, "src", 0) : 0;
+	dst = m != NULL ? (int)jint(m, "dst", 0) : 0;
+	if (src == 0 && dst == 0)
+		snprintf(buf, len, "all at once");
+	else if (src != 0 && dst != 0)
+		snprintf(buf, len, "each source /%d to destination /%d", src,
+		    dst);
+	else if (src != 0)
+		snprintf(buf, len, src == 32 ? "each source address" :
+		    "each source /%d", src);
+	else
+		snprintf(buf, len, dst == 32 ? "each destination address" :
+		    "each destination /%d", dst);
+}
+
+static const ucl_object_t *
+qos_find(const char *list, long num)
+{
+	const ucl_object_t	*o;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(jget(fw.data, "qos"), list), &it,
+	    true)) != NULL)
+		if (jint(o, "num", 0) == num)
+			return (o);
+	return (NULL);
+}
+
+/* A row's change and removal. */
+static void
+qos_acts(struct html *h, const char *kind, long long num)
+{
+
+	h_fmt(h, "<td class=\"acts\"><button class=\"icon\" data-act=\""
+	    "fw-qos-edit\" data-arg=\"%s\" data-value=\"%lld\" title=\"Change "
+	    "it\">✎</button><button class=\"icon\" data-act=\"fw-qos-del\" "
+	    "data-arg=\"%s\" data-value=\"%lld\" title=\"Take it away, and "
+	    "out of the kept rules\">×</button></td>", kind, num, kind, num);
+}
+
+static void
+view_qos(struct html *h)
+{
+	static const struct tcol pc[] = {
+		{ "Pipe", "num", true }, { "Bandwidth", "bw", true },
+		{ "Delay ms", "delay", true }, { "Loss", "plr", true },
+		{ "Queue", "slots", true }, { "For", NULL, false },
+		{ "", NULL, false },
+	};
+	static const struct tcol sc[] = {
+		{ "Scheduler", "num", true }, { "Type", "type", false },
+		{ "Bandwidth", "bw", true }, { "For", NULL, false },
+		{ "Queues", NULL, false }, { "", NULL, false },
+		{ "", NULL, false },
+	};
+	static const struct tcol qc[] = {
+		{ "Queue", "num", true }, { "Scheduler", "sched", true },
+		{ "Weight", "weight", true }, { "Slots", "slots", true },
+		{ "For", NULL, false }, { "", NULL, false },
+		{ "", NULL, false },
+	};
+	static const struct tcol rc[] = {
+		{ "Rule", "num", true }, { "Words", "text", false },
+		{ "Packets", "pkts", true }, { "Bytes", "bytes", true },
+	};
+	const ucl_object_t	*q, **rows, *o, *x;
+	ucl_object_iter_t	 it;
+	ucl_object_t		*arr;
+	char			 buf[96];
+	int			 n;
+
+	q = jget(fw.data, "qos");
+	h_raw(h, "<h4 class=\"family\">QoS</h4><p class=\"dim\">dummynet(4), "
+	    "the firewall's traffic shaper. A <b>pipe</b> is a link: how "
+	    "fast, how late and how lossy. A <b>scheduler</b> shares a "
+	    "pipe's bandwidth among the <b>queues</b> that feed it, by "
+	    "their weights (WF2Q+), or keeps each flow's delay down "
+	    "(FQ-CoDel). A <b>rule</b> sends packets to a pipe, or to a "
+	    "queue. Each is kept in the kept rules, before the rules.</p>");
+	if (q == NULL) {
+		h_raw(h, "<p class=\"notice\">dummynet is not in the kernel: it "
+		    "is loaded on the Kernel tab (<code>dummynet</code>).</p>");
+		return;
+	}
+	h_raw(h, "<div class=\"toolbar\"><button class=\"ghost small\" "
+	    "data-act=\"fw-qos-new\" data-arg=\"pipe\">+ pipe</button><button "
+	    "class=\"ghost small\" data-act=\"fw-qos-new\" data-arg=\"sched\">+ "
+	    "scheduler</button><button class=\"ghost small\" data-act=\""
+	    "fw-qos-new\" data-arg=\"queue\">+ queue</button><button class=\""
+	    "ghost small\" data-act=\"fw-qos-new\" data-arg=\"rule\">+ rule"
+	    "</button></div>");
+	/* Pipes. */
+	h_raw(h, "<h5>Pipes</h5><table class=\"net qos-pipes\">");
+	tbl_head(h, "qos-pipes", pc, 7, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("qos-pipes", jget(q, "pipes"), pc, 7, NULL);
+	for (n = 0; (o = rows[n]) != NULL; n++) {
+		h_fmt(h, "<tr><td><b>%lld</b></td>", (long long)jint(o, "num",
+		    0));
+		bw_text(buf, sizeof(buf), jint(o, "bw", 0));
+		h_fmt(h, "<td>%s</td><td>%lld</td>", buf, (long long)jint(o,
+		    "delay", 0));
+		if (jget(o, "plr") != NULL)
+			h_fmt(h, "<td>%g%%</td>", ucl_object_todouble(jget(o,
+			    "plr")) * 100);
+		else
+			h_raw(h, "<td>—</td>");
+		if (jget(o, "bytes") != NULL)
+			h_fmt(h, "<td>%lld KB</td>", (long long)jint(o, "bytes",
+			    0) / 1024);
+		else
+			h_fmt(h, "<td>%lld slots</td>", (long long)jint(o,
+			    "slots", 50));
+		per_text(buf, sizeof(buf), jget(o, "mask"));
+		h_fmt(h, "<td>%s</td>", buf);
+		qos_acts(h, "pipe", (long long)jint(o, "num", 0));
+		h_raw(h, "</tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">No pipe.</td></tr>");
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	/* Schedulers. */
+	h_raw(h, "<h5>Schedulers</h5><table class=\"net qos-scheds\">");
+	tbl_head(h, "qos-scheds", sc, 7, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("qos-scheds", jget(q, "scheds"), sc, 7, NULL);
+	for (n = 0; (o = rows[n]) != NULL; n++) {
+		h_fmt(h, "<tr><td><b>%lld</b></td><td>", (long long)jint(o,
+		    "num", 0));
+		h_txt(h, jstr(o, "type") != NULL ? jstr(o, "type") : "");
+		bw_text(buf, sizeof(buf), jint(o, "bw", 0));
+		h_fmt(h, "</td><td>%s</td>", buf);
+		per_text(buf, sizeof(buf), jget(o, "mask"));
+		h_fmt(h, "<td>%s</td><td>", buf);
+		it = NULL;
+		while ((x = ucl_object_iterate(jget(o, "queues"), &it, true)) !=
+		    NULL)
+			h_fmt(h, "%lld ", (long long)ucl_object_toint(x));
+		h_raw(h, "</td><td class=\"dim\">");
+		h_txt(h, jstr(o, "params") != NULL ? jstr(o, "params") : "");
+		h_raw(h, "</td>");
+		qos_acts(h, "sched", (long long)jint(o, "num", 0));
+		h_raw(h, "</tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">No scheduler."
+		    "</td></tr>");
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	/* Queues. */
+	h_raw(h, "<h5>Queues</h5><table class=\"net qos-queues\">");
+	tbl_head(h, "qos-queues", qc, 7, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("qos-queues", jget(q, "queues"), qc, 7, NULL);
+	for (n = 0; (o = rows[n]) != NULL; n++) {
+		h_fmt(h, "<tr><td><b>%lld</b></td><td>%lld</td><td>%lld</td>",
+		    (long long)jint(o, "num", 0), (long long)jint(o, "sched", 0),
+		    (long long)jint(o, "weight", 0));
+		if (jget(o, "bytes") != NULL)
+			h_fmt(h, "<td>%lld KB</td>", (long long)jint(o, "bytes",
+			    0) / 1024);
+		else
+			h_fmt(h, "<td>%lld</td>", (long long)jint(o, "slots",
+			    50));
+		per_text(buf, sizeof(buf), jget(o, "mask"));
+		h_fmt(h, "<td>%s</td><td class=\"dim\">", buf);
+		h_txt(h, jstr(o, "red") != NULL ? jstr(o, "red") : "");
+		h_raw(h, "</td>");
+		qos_acts(h, "queue", (long long)jint(o, "num", 0));
+		h_raw(h, "</tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">No queue.</td></tr>");
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	/* The rules that send to them. */
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(fw.data, "rules"), &it, true)) !=
+	    NULL)
+		if (jstr(o, "text") != NULL && (strstr(jstr(o, "text"),
+		    "pipe ") != NULL || strstr(jstr(o, "text"), "queue ") !=
+		    NULL))
+			ucl_array_append(arr, ucl_object_ref((ucl_object_t *)
+			    (uintptr_t)o));
+	h_raw(h, "<h4 class=\"family\">Rules that send to them</h4><table "
+	    "class=\"net qos-rules\">");
+	tbl_head(h, "qos-rules", rc, 4, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("qos-rules", arr, rc, 4, NULL);
+	for (n = 0; (o = rows[n]) != NULL; n++) {
+		h_fmt(h, "<tr class=\"pick\" data-act=\"fw-goto\" data-arg=\""
+		    "%lld\"><td><b>%05lld</b></td><td class=\"mono\">", (long
+		    long)jint(o, "num", 0), (long long)jint(o, "num", 0));
+		h_txt(h, jstr(o, "text"));
+		h_fmt(h, "</td><td>%lld</td><td>%lld</td></tr>", (long long)
+		    jint(o, "pkts", 0), (long long)jint(o, "bytes", 0));
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"4\" class=\"dim\">None yet: <b>+ "
+		    "rule</b> sends some traffic to a pipe or a queue.</td>"
+		    "</tr>");
+	free(rows);
+	ucl_object_unref(arr);
+	h_raw(h, "</tbody></table>");
+}
+
+static void
+per_select(struct html *h, const ucl_object_t *m)
+{
+	int	src, dst;
+
+	src = m != NULL ? (int)jint(m, "src", 0) : 0;
+	dst = m != NULL ? (int)jint(m, "dst", 0) : 0;
+	h_fmt(h, "<label>for<select name=\"mask\"><option value=\"\"%s>all at "
+	    "once</option><option value=\"src\"%s>each source address"
+	    "</option><option value=\"dst\"%s>each destination address"
+	    "</option></select></label>", src == 0 && dst == 0 ? " selected" :
+	    "", src != 0 ? " selected" : "", src == 0 && dst != 0 ?
+	    " selected" : "");
+}
+
+/* An object number's field: fixed when it is being changed. */
+static void
+num_field(struct html *h, const char *label)
+{
+
+	h_fmt(h, "<label>%s<input name=\"num\" inputmode=\"numeric\" size=\"5\" "
+	    "placeholder=\"1\"", label);
+	if (qos.num > 0)
+		h_fmt(h, " value=\"%ld\" readonly", qos.num);
+	h_raw(h, "></label>");
+}
+
+bool
+firewall_qos_modal(struct html *h)
+{
+	static const char *const types[] = { "wf2q+", "fifo", "rr", "prio",
+	    "qfq", "fq_codel", "fq_pie" };
+	const ucl_object_t	*o, *x;
+	ucl_object_iter_t	 it;
+	char			 v[32];
+	size_t			 i;
+	double			 bw;
+
+	if (app.modal != MODAL_FW_QOS)
+		return (false);
+	h_fmt(h, "<form data-form=\"fw-qos\"><h2>%s%s</h2>", qos.num > 0 ?
+	    "Change " : "A new ", strcmp(qos.kind, "pipe") == 0 ? "pipe" :
+	    strcmp(qos.kind, "sched") == 0 ? "scheduler" : strcmp(qos.kind,
+	    "queue") == 0 ? "queue" : "rule");
+	if (strcmp(qos.kind, "pipe") == 0) {
+		o = qos.num > 0 ? qos_find("pipes", qos.num) : NULL;
+		h_raw(h, "<p>A link of dummynet: what goes through it goes no "
+		    "faster, comes later and is lost as it says. Empty, ipfw's "
+		    "own: no limit, no delay, nothing lost.</p>");
+		num_field(h, "Number");
+		bw = o != NULL ? (double)jint(o, "bw", 0) : 0;
+		h_raw(h, "<label>Bandwidth<input name=\"bw\" inputmode=\"decimal\" "
+		    "size=\"8\" placeholder=\"no limit\"");
+		if (bw > 0) {
+			snprintf(v, sizeof(v), "%g", bw >= 1e6 ? bw / 1e6 : bw /
+			    1e3);
+			h_attr(h, "value", v);
+		}
+		h_fmt(h, "><select name=\"unit\"><option%s>Kbit/s</option><option"
+		    "%s>Mbit/s</option><option>Gbit/s</option></select></label>",
+		    bw > 0 && bw < 1e6 ? " selected" : "", bw == 0 || bw >= 1e6 ?
+		    " selected" : "");
+		h_raw(h, "<label>Delay, ms<input name=\"delay\" inputmode=\""
+		    "numeric\" size=\"6\" placeholder=\"0\"");
+		if (o != NULL && jint(o, "delay", 0) > 0) {
+			snprintf(v, sizeof(v), "%lld", (long long)jint(o, "delay",
+			    0));
+			h_attr(h, "value", v);
+		}
+		h_raw(h, "></label><label>Loss, %<input name=\"plr\" inputmode=\""
+		    "decimal\" size=\"6\" placeholder=\"0\"");
+		if (o != NULL && jget(o, "plr") != NULL) {
+			snprintf(v, sizeof(v), "%g", ucl_object_todouble(jget(o,
+			    "plr")) * 100);
+			h_attr(h, "value", v);
+		}
+		h_raw(h, "></label><label>Queue, slots<input name=\"queue\" "
+		    "inputmode=\"numeric\" size=\"6\" placeholder=\"50\"");
+		if (o != NULL && jget(o, "slots") != NULL) {
+			snprintf(v, sizeof(v), "%lld", (long long)jint(o, "slots",
+			    50));
+			h_attr(h, "value", v);
+		}
+		h_raw(h, "></label>");
+		per_select(h, o != NULL ? jget(o, "mask") : NULL);
+	} else if (strcmp(qos.kind, "sched") == 0) {
+		o = qos.num > 0 ? qos_find("scheds", qos.num) : NULL;
+		h_raw(h, "<p>How a pipe's bandwidth is shared among the queues "
+		    "that feed it. A scheduler has the number of the pipe whose "
+		    "bandwidth it shares.</p>");
+		num_field(h, "Pipe");
+		h_raw(h, "<label>Type<select name=\"type\">");
+		for (i = 0; i < nitems(types); i++) {
+			snprintf(v, sizeof(v), "%s", types[i]);
+			h_raw(h, "<option");
+			if (o != NULL && jstr(o, "type") != NULL && strcasecmp(
+			    jstr(o, "type"), types[i]) == 0)
+				h_raw(h, " selected");
+			h_fmt(h, ">%s</option>", types[i]);
+		}
+		h_raw(h, "</select></label>");
+		per_select(h, o != NULL ? jget(o, "mask") : NULL);
+		h_raw(h, "<fieldset class=\"fq\"><legend>FQ-CoDel and FQ-PIE"
+		    "</legend><label>target, ms<input name=\"target\" "
+		    "inputmode=\"numeric\" size=\"5\" placeholder=\"5\"></label>"
+		    "<label>interval, ms <small>FQ-CoDel's</small><input name=\""
+		    "interval\" inputmode=\"numeric\" size=\"5\" placeholder=\""
+		    "100\"></label><label "
+		    "class=\"toggle\"><input type=\"checkbox\" name=\"ecn\"> ECN"
+		    "</label></fieldset>");
+	} else if (strcmp(qos.kind, "queue") == 0) {
+		o = qos.num > 0 ? qos_find("queues", qos.num) : NULL;
+		h_raw(h, "<p>A share of a scheduler's pipe: of the queues that "
+		    "feed one scheduler, each gets bandwidth in the measure of "
+		    "its weight, 1 to 100.</p>");
+		num_field(h, "Number");
+		h_raw(h, "<label>Scheduler<select name=\"sched\">");
+		it = NULL;
+		while ((x = ucl_object_iterate(jget(jget(fw.data, "qos"),
+		    "scheds"), &it, true)) != NULL)
+			h_fmt(h, "<option%s>%lld</option>", o != NULL && jint(o,
+			    "sched", 0) == jint(x, "num", -1) ? " selected" : "",
+			    (long long)jint(x, "num", 0));
+		h_raw(h, "</select></label><label>Weight<input name=\"weight\" "
+		    "inputmode=\"numeric\" size=\"4\" placeholder=\"1\"");
+		if (o != NULL) {
+			snprintf(v, sizeof(v), "%lld", (long long)jint(o, "weight",
+			    1));
+			h_attr(h, "value", v);
+		}
+		h_raw(h, "></label><label>Queue, slots<input name=\"queue\" "
+		    "inputmode=\"numeric\" size=\"6\" placeholder=\"50\"");
+		if (o != NULL && jget(o, "slots") != NULL) {
+			snprintf(v, sizeof(v), "%lld", (long long)jint(o, "slots",
+			    50));
+			h_attr(h, "value", v);
+		}
+		h_raw(h, "></label>");
+		per_select(h, o != NULL ? jget(o, "mask") : NULL);
+	} else {
+		h_raw(h, "<p>Traffic sent to a pipe or a queue: a rule of the "
+		    "firewall, now and kept. One that matches is shaped and "
+		    "goes on (<code>net.inet.ip.fw.one_pass</code> says whether "
+		    "the next rules see it again).</p><label>Rule number<input "
+		    "name=\"num\" inputmode=\"numeric\" size=\"5\" "
+		    "placeholder=\"5000\"></label><label>To<select name=\""
+		    "target\">");
+		it = NULL;
+		while ((x = ucl_object_iterate(jget(jget(fw.data, "qos"),
+		    "pipes"), &it, true)) != NULL)
+			h_fmt(h, "<option value=\"pipe %lld\">pipe %lld</option>",
+			    (long long)jint(x, "num", 0), (long long)jint(x,
+			    "num", 0));
+		it = NULL;
+		while ((x = ucl_object_iterate(jget(jget(fw.data, "qos"),
+		    "queues"), &it, true)) != NULL)
+			h_fmt(h, "<option value=\"queue %lld\">queue %lld</option>",
+			    (long long)jint(x, "num", 0), (long long)jint(x,
+			    "num", 0));
+		h_raw(h, "</select></label><label>Protocol<select name=\"proto\">"
+		    "<option>ip</option><option>tcp</option><option>udp"
+		    "</option><option>icmp</option></select></label><label>From"
+		    "<input name=\"from\" spellcheck=\"false\" placeholder=\"any"
+		    "\"></label><label>To address<input name=\"to\" spellcheck=\""
+		    "false\" placeholder=\"any\"></label><label>Its port<input "
+		    "name=\"port\" inputmode=\"numeric\" size=\"6\" placeholder="
+		    "\"any\"></label><label>Way<select name=\"dir\"><option value="
+		    "\"\">in and out</option><option>in</option><option>out"
+		    "</option></select></label><label>Interface<input name=\"via"
+		    "\" spellcheck=\"false\" size=\"8\" placeholder=\"any\">"
+		    "</label>");
+	}
+	h_raw(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+	    "persist\" checked> Keep it <small>a line of the kept rules, made "
+	    "again at boot</small></label>");
+	return (true);
+}
+
+/* Something an address field may hold: an address, a network, any. */
+static bool
+addr_ok(const char *a)
+{
+
+	return (a[0] == '\0' || (strlen(a) < 64 && a[strspn(a,
+	    "0123456789abcdefABCDEF.:/")] == '\0') || strcmp(a, "any") == 0 ||
+	    strcmp(a, "me") == 0);
+}
+
+static bool
+qos_form(const ucl_object_t *f)
+{
+	struct server	*s;
+	struct html	 b;
+	const char	*num, *t, *a;
+	char		 words[600], extra[200], title[200];
+	bool		 keep;
+
+	if ((s = cur_server()) == NULL)
+		return (true);
+	keep = jbool(f, "persist");
+	if (strcmp(qos.kind, "pipe") == 0) {
+		if (!pipe_words(f, words, sizeof(words)))
+			return (true);
+		object_job(s, "pipe", words, keep);
+	} else if (strcmp(qos.kind, "sched") == 0 || strcmp(qos.kind,
+	    "queue") == 0) {
+		num = digits(f, "num", 5);
+		if (num == NULL || atoi(num) < 1 || atoi(num) > 65535) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A "
+			    "number, 1 to 65535");
+			return (true);
+		}
+		if (qos.kind[0] == 's') {
+			t = jstr(f, "type") != NULL ? jstr(f, "type") : "wf2q+";
+			if (t[strspn(t, "abcdefghijklmnopqrstuvwxyz_+2")] != '\0') {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "A type of those listed");
+				return (true);
+			}
+			/* The mask before the type: after the type's own
+			 * words ipfw takes no other, and says so only. */
+			a = jstr(f, "mask") != NULL ? jstr(f, "mask") : "";
+			snprintf(words, sizeof(words), "%s config pipe %s%s type "
+			    "%s", num, num, strcmp(a, "src") == 0 ? " mask src-ip "
+			    "0xffffffff" : strcmp(a, "dst") == 0 ? " mask dst-ip "
+			    "0xffffffff" : "", t);
+			if (strncmp(t, "fq_", 3) == 0) {
+				if ((a = digits(f, "target", 5)) != NULL && a[0] !=
+				    '\0') {
+					snprintf(extra, sizeof(extra), " target %sms",
+					    a);
+					strlcat(words, extra, sizeof(words));
+				}
+				/* FQ-PIE has none. */
+				if (strcmp(t, "fq_codel") == 0 && (a = digits(f,
+				    "interval", 6)) != NULL && a[0] != '\0') {
+					snprintf(extra, sizeof(extra), " interval "
+					    "%sms", a);
+					strlcat(words, extra, sizeof(words));
+				}
+				strlcat(words, jbool(f, "ecn") ? " ecn" : " noecn",
+				    sizeof(words));
+			}
+		} else {
+			t = digits(f, "sched", 5);
+			a = digits(f, "weight", 3);
+			if (t == NULL || t[0] == '\0' || a == NULL || (a[0] !=
+			    '\0' && (atoi(a) < 1 || atoi(a) > 100))) {
+				snprintf(app.modal_error, sizeof(app.modal_error),
+				    "A scheduler, and a weight 1 to 100");
+				return (true);
+			}
+			snprintf(words, sizeof(words), "%s config sched %s weight "
+			    "%s", num, t, a[0] != '\0' ? a : "1");
+			if ((a = digits(f, "queue", 5)) != NULL && a[0] != '\0') {
+				snprintf(extra, sizeof(extra), " queue %s", a);
+				strlcat(words, extra, sizeof(words));
+			}
+		}
+		t = jstr(f, "mask") != NULL ? jstr(f, "mask") : "";
+		if (qos.kind[0] == 'q' && strcmp(t, "src") == 0)
+			strlcat(words, " mask src-ip 0xffffffff", sizeof(words));
+		else if (qos.kind[0] == 'q' && strcmp(t, "dst") == 0)
+			strlcat(words, " mask dst-ip 0xffffffff", sizeof(words));
+		object_job(s, qos.kind, words, keep);
+	} else {
+		const char	*tgt, *proto, *from, *to, *port, *dir, *via;
+
+		num = digits(f, "num", 5);
+		tgt = jstr(f, "target");
+		proto = jstr(f, "proto") != NULL ? jstr(f, "proto") : "ip";
+		from = jstr(f, "from") != NULL ? jstr(f, "from") : "";
+		to = jstr(f, "to") != NULL ? jstr(f, "to") : "";
+		port = digits(f, "port", 5);
+		dir = jstr(f, "dir") != NULL ? jstr(f, "dir") : "";
+		via = jstr(f, "via") != NULL ? jstr(f, "via") : "";
+		if (num == NULL || atoi(num) < 1 || atoi(num) > 65534 || tgt ==
+		    NULL || (strncmp(tgt, "pipe ", 5) != 0 && strncmp(tgt,
+		    "queue ", 6) != 0) || !addr_ok(from) || !addr_ok(to) ||
+		    port == NULL || via[strspn(via, "abcdefghijklmnopqrstuvwxyz"
+		    "0123456789._")] != '\0' || (strcmp(proto, "ip") != 0 &&
+		    strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0 &&
+		    strcmp(proto, "icmp") != 0) || (port[0] != '\0' &&
+		    strcmp(proto, "tcp") != 0 && strcmp(proto, "udp") != 0)) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A rule "
+			    "number 1 to 65534, a pipe or queue, addresses or any; "
+			    "a port is of tcp or udp");
+			return (true);
+		}
+		snprintf(words, sizeof(words), "%s %s from %s to %s", tgt, proto,
+		    from[0] != '\0' ? from : "any", to[0] != '\0' ? to : "any");
+		if (port[0] != '\0') {
+			snprintf(extra, sizeof(extra), " dst-port %s", port);
+			strlcat(words, extra, sizeof(words));
+		}
+		if (strcmp(dir, "in") == 0 || strcmp(dir, "out") == 0) {
+			strlcat(words, " ", sizeof(words));
+			strlcat(words, dir, sizeof(words));
+		}
+		if (via[0] != '\0') {
+			strlcat(words, " via ", sizeof(words));
+			strlcat(words, via, sizeof(words));
+		}
+		memset(&b, 0, sizeof(b));
+		h_fmt(&b, "{\"kind\":\"ipfw\",\"verb\":\"add\",\"args\":[\"%d\"",
+		    atoi(num));
+		rule_args(&b, words);
+		h_fmt(&b, "],\"live\":true,\"persist\":%s}", keep ? "true" :
+		    "false");
+		snprintf(title, sizeof(title), "ipfw add %d %.140s", atoi(num),
+		    words);
+		fw_job(s, b.s, title);
+		free(b.s);
+	}
+	app.modal = MODAL_NONE;
+	return (true);
+}
+
 /* The forms of the views above; true when form is one of them. */
 static bool
 more_form(const char *form, const ucl_object_t *f)
@@ -1914,15 +2439,15 @@ more_form(const char *form, const ucl_object_t *f)
 	if (strcmp(form, "fw-table") != 0 && strcmp(form, "fw-entry") != 0 &&
 	    strcmp(form, "fw-object") != 0 && strcmp(form, "fw-trace") != 0 &&
 	    strcmp(form, "fw-ktrace") != 0 && strcmp(form, "fw-nat") != 0 &&
-	    strcmp(form, "fw-pipe") != 0)
+	    strcmp(form, "fw-qos") != 0)
 		return (false);
+	if (strcmp(form, "fw-qos") == 0)
+		return (qos_form(f));
 	if ((s = cur_server()) == NULL)
 		return (true);
-	if (strcmp(form, "fw-nat") == 0 || strcmp(form, "fw-pipe") == 0) {
-		if (form[3] == 'n' ? nat_words(f, words, sizeof(words)) :
-		    pipe_words(f, words, sizeof(words)))
-			object_job(s, form[3] == 'n' ? "nat" : "pipe", words,
-			    jbool(f, "persist"));
+	if (strcmp(form, "fw-nat") == 0) {
+		if (nat_words(f, words, sizeof(words)))
+			object_job(s, "nat", words, jbool(f, "persist"));
 		return (true);
 	}
 	if (strcmp(form, "fw-ktrace") == 0) {
@@ -2293,6 +2818,10 @@ view_firewall(struct html *h, struct server *s)
 		view_fwlog(h);
 		return;
 	}
+	if (fw.sect == FW_QOS) {
+		view_qos(h);
+		return;
+	}
 	if (fw.sect < 0 || fw.sect >= (int)nitems(sects)) {
 		h_raw(h, "<table class=\"net fw-layout\"><thead><tr><th>Numbers"
 		    "</th><th>Part</th><th>Now</th><th>Kept</th><th></th></tr>"
@@ -2650,6 +3179,30 @@ firewall_action(const char *act, const char *arg, const char *value)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(act, "fw-qos-new") == 0 || strcmp(act, "fw-qos-edit") == 0) {
+		snprintf(qos.kind, sizeof(qos.kind), "%s", arg);
+		qos.num = act[7] == 'e' && value != NULL ? atol(value) : 0;
+		app.modal = MODAL_FW_QOS;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "fw-qos-del") == 0) {
+		snprintf(body, sizeof(body), "%s %s taken away, now and from the "
+		    "kept rules. A rule that sends to it stays, and sends to "
+		    "nothing.", strcmp(arg, "sched") == 0 ? "The scheduler" :
+		    strcmp(arg, "queue") == 0 ? "The queue" : "The pipe", value);
+		confirm("Take it away", body, "Take away", true, "",
+		    "do-fw-qos-del", arg, value);
+		return (true);
+	}
+	if (strcmp(act, "do-fw-qos-del") == 0) {
+		if (strcmp(arg, "pipe") == 0 || strcmp(arg, "sched") == 0 ||
+		    strcmp(arg, "queue") == 0) {
+			snprintf(body, sizeof(body), "%ld delete", atol(value));
+			object_job(s, arg, body, true);
+		}
+		return (true);
+	}
 	if (strcmp(act, "fw-sect") == 0) {
 		fw.sect = atoi(arg);
 		fw.edit = 0;

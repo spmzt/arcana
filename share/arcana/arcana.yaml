@@ -413,7 +413,14 @@ definitions:
           "enabled"; "rules", each with its number, set, counters and
           text, and whether its set is disabled; "tables", each with
           its name, type, count and the first of its entries (key,
-          value); "nat" and "pipes", as ipfw shows them; "verbose";
+          value); "nat" and "pipes", as ipfw shows them; "qos", the
+          pipes, schedulers and queues of dummynet as objects: "pipes"
+          (num, bw in bits a second, 0 for none, delay ms, burst,
+          slots or bytes, plr, mask), "scheds" (num, bw, delay, type,
+          mask, queues, the queues that feed it, and params) and
+          "queues" (num, sched, weight, pri, slots or bytes, plr, mask,
+          red), a mask with src and dst, prefix lengths, the ports and
+          proto; "verbose";
           "kept", the rules of the kept file each with its number and
           text, "other" its lines that are not rules, "path" where it
           is and "rc" what rc.conf says of the firewall.

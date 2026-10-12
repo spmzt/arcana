@@ -3568,23 +3568,122 @@ part_firewall(void)
 	    "10.0.0.6:53 53$' ipfw.log && grep -q '^nat 7 config if em0 "
 	    "same_ports deny_in' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
-	run("const f = document.querySelector('form[data-form=fw-pipe]'); "
+	shot("7o-firewall-objects");
+	/*
+	 * QoS: dummynet's pipes, schedulers and queues read as what they
+	 * are; a pipe, a queue and a rule that sends to it, by forms.
+	 */
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-9\"]').click()");
+	wait_js("[...document.querySelectorAll('table.qos-pipes tbody tr')]"
+	    ".some(r => r.textContent.includes('10 Mbit/s') && r.textContent"
+	    ".includes('1%') && r.textContent.includes('each destination "
+	    "address'))", 10);
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.qos-scheds "
+	    "tbody tr')].some(r => r.textContent.includes('WF2Q+') && r."
+	    "textContent.includes('each source /24'))"));
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.qos-queues "
+	    "tbody tr')].some(r => r.cells[2].textContent === '30')"));
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "pipe]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] input[name="
+	    "bw]')", 5);
+	/* What is not a number is said, and nothing is done. */
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '3'; f.bw.value = 'fast'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('are numbers'))", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
 	    "f.num.value = '3'; f.bw.value = '20'; f.delay.value = '15'; "
 	    "f.plr.value = '1'; f.mask.value = 'src'; f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
-	for (i = 0; i < 200 && system("grep -q '^ipfw -q pipe 3 config' "
-	    "ipfw.log 2>/dev/null") != 0; i++)
+	/* ipfw first, then the kept line. */
+	for (i = 0; i < 200 && system("grep -q '^pipe 3 config' ipfw.rules "
+	    "2>/dev/null") != 0; i++)
 		usleep(50000);
 	ATF_CHECK(system("grep -q '^ipfw -q pipe 3 config bw 20Mbit/s delay "
-	    "15 plr 0.01 mask src-ip 0xffffffff$' ipfw.log") == 0);
+	    "15 plr 0.01 mask src-ip 0xffffffff$' ipfw.log && grep -q '^pipe 3 "
+	    "config bw 20Mbit/s' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
-	/* What is not a number is said, and nothing is done. */
-	run("const f = document.querySelector('form[data-form=fw-pipe]'); "
-	    "f.num.value = '3'; f.bw.value = 'fast'; f.requestSubmit();");
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('are numbers'))", 5);
-	shot("7o-firewall-objects");
+	/* Configured again: one line of it kept, the new. */
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "pipe]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] input[name="
+	    "bw]')", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '3'; f.bw.value = '30'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^pipe 3 config bw 30' "
+	    "ipfw.rules 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("test $(grep -c '^pipe 3 config' ipfw.rules) = 1") ==
+	    0);
+	run("document.querySelector('.dock > header').click()");
+	/* A scheduler: its mask before its type, as ipfw takes it. */
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "sched]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] select[name="
+	    "type]')", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '3'; f.type.value = 'fq_codel'; f.mask.value = "
+	    "'src'; f.target.value = '5'; f.interval.value = '100'; "
+	    "f.ecn.checked = true; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^sched 3 config' ipfw.rules "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q sched 3 config pipe 3 mask src-ip "
+	    "0xffffffff type fq_codel target 5ms interval 100ms ecn$' ipfw.log")
+	    == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* A queue on scheduler 1, and a rule that sends to it. */
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "queue]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] select[name="
+	    "sched]')", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '4'; f.weight.value = '20'; f.mask.value = 'dst'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^ipfw -q queue 4 config' "
+	    "ipfw.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q queue 4 config sched 1 weight 20 "
+	    "mask dst-ip 0xffffffff$' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "rule]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] select[name="
+	    "target]')", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '5000'; f.target.value = 'pipe 1'; f.proto.value = "
+	    "'tcp'; f.port.value = '443'; f.dir.value = 'out'; f.via.value = "
+	    "'em0'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q 'add 5000 pipe 1' ipfw.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q 'add 5000 pipe 1 tcp from any to any "
+	    "dst-port 443 out via em0' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("7p-firewall-qos");
+	/* Taken away, and out of the kept rules. */
+	run("document.querySelector('button[data-act=fw-qos-del][data-arg="
+	    "pipe][data-value=\"1\"]').click()");
+	wait_js("document.querySelector('.modal button.danger')", 5);
+	run("document.querySelector('.modal button.danger').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^ipfw -q pipe 1 delete' "
+	    "ipfw.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q pipe 1 delete' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
 	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
 	    "\"-8\"]').click()");
 	wait_js("document.querySelector('.stage').textContent.includes("
