@@ -3018,10 +3018,11 @@ view_ids(struct html *h)
 	h_raw(h, "<div class=\"sd-block\"><h3>Intrusion detection <small "
 	    "class=\"dim\">Suricata on each edge, a plugin installed there by "
 	    "hand, an instance of each service whose policies have ids, "
-	    "watching the service's UNIs by libpcap; each alert comes as an "
+	    "watching the service's UNIs by libpcap (detect), or in their "
+	    "way, by ipfw's divert(4) (prevent); each alert comes as an "
 	    "event, sdwan-ids</small></h3><table class=\"net sd\"><thead><tr>"
-	    "<th>Edge</th><th>Instance</th><th>Interfaces</th><th>State</th>"
-	    "<th>Alerts</th></tr></thead><tbody>");
+	    "<th>Edge</th><th>Instance</th><th>Interfaces</th><th>Mode</th>"
+	    "<th>State</th><th>Alerts</th></tr></thead><tbody>");
 	n = 0;
 	all = ucl_object_typed_new(UCL_ARRAY);
 	it = NULL;
@@ -3044,6 +3045,13 @@ view_ids(struct html *h)
 				h_txt(h, ucl_object_tostring_forced(f));
 				h_raw(h, " ");
 			}
+			h_raw(h, "</td><td>");
+			if (jint(di, "divert", 0) > 0)
+				h_fmt(h, "prevent <small class=\"dim\">ipfw divert "
+				    "%lld</small>", (long long)jint(di, "divert", 0));
+			else
+				h_raw(h, "detect <small class=\"dim\">libpcap"
+				    "</small>");
 			h_fmt(h, "</td><td><span class=\"chip st-%s\">%s</span>"
 			    "</td><td>%lld</td></tr>", jbool(di, "running") ? "up" :
 			    "down", jbool(di, "running") ? "running" : "not running",
@@ -3059,7 +3067,7 @@ view_ids(struct html *h)
 		}
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: no policy "
+		h_raw(h, "<tr><td colspan=\"6\" class=\"dim\">None: no policy "
 		    "has ids, or nothing is applied yet.</td></tr>");
 	h_raw(h, "</tbody></table>");
 	if (ucl_array_size(all) > 0) {
@@ -4348,14 +4356,21 @@ sdwan_modal_service(struct html *h)
 			const ucl_object_t	*ids = jget(cr, "ids"), *r;
 			ucl_object_iter_t	 rit = NULL;
 
+			const char		*m = jstr(ids, "mode");
+
 			h_fmt(h, "<label>Intrusion detection <select name=\""
 			    "idsmode\"><option value=\"\"%s>none</option><option "
 			    "value=\"detect\"%s>alerts, nothing stopped (detect)"
-			    "</option></select><small>By Suricata on the edges, a "
-			    "plugin installed there by hand, watching the service's "
-			    "UNIs; what it finds comes as events (ids).</small>"
-			    "</label>", ids == NULL ? " selected" : "", ids != NULL ?
-			    " selected" : "");
+			    "</option><option value=\"prevent\"%s>in the way, what "
+			    "a drop rule matches stopped (prevent)</option></select>"
+			    "<small>By Suricata on the edges, a plugin installed "
+			    "there by hand, on the service's UNIs; what it finds "
+			    "comes as events (ids). Where it prevents, ipfw diverts "
+			    "the UNIs' traffic through it, and while it is not "
+			    "running nothing passes there.</small></label>", ids ==
+			    NULL ? " selected" : "", ids != NULL && (m == NULL ||
+			    strcmp(m, "prevent") != 0) ? " selected" : "", m !=
+			    NULL && strcmp(m, "prevent") == 0 ? " selected" : "");
 			h_raw(h, "<label>Rules of its own<textarea name=\"idsrules\" "
 			    "rows=\"4\" placeholder=\"alert http any any -&gt; "
 			    "$HOME_NET any (msg:&quot;...&quot;; sid:1000001; rev:1;)"

@@ -3491,7 +3491,7 @@ static const char sdwan_good[] =
     "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]},"
     "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true,"
     "\"url-filter\":{\"mode\":\"sni\",\"deny\":[\"bad.example\"]},"
-    "\"malware\":true,\"ids\":{\"mode\":\"detect\",\"ruleset\":true,"
+    "\"malware\":true,\"ids\":{\"mode\":\"prevent\",\"ruleset\":true,"
     "\"rules\":[\"alert http any any -> $HOME_NET any (msg:\\\"x\\\"; "
     "sid:1000001; rev:1;)\"]}}}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
@@ -3651,7 +3651,8 @@ ATF_TC_BODY(sdwan, tc)
 		/* The URL filter (SASE-4): a mode, sni or inspect; domains. */
 		{ "\"mode\":\"sni\"", "\"mode\":\"spy\"", "sni or inspect" },
 		/* Intrusion detection (SASE-4): detect, rules with a sid. */
-		{ "\"mode\":\"detect\"", "\"mode\":\"prevent\"", "a mode, detect" },
+		{ "\"mode\":\"prevent\"", "\"mode\":\"block\"",
+		    "a mode, detect or prevent" },
 		{ "sid:1000001; rev:1;)", "rev:1;)", "is not a Suricata rule" },
 		{ "\"alert http any", "\"shout http any", "is not a Suricata rule" },
 		{ "\"ruleset\":true", "\"ruleset\":\"yes\"", "ids.ruleset is true" },
@@ -4415,7 +4416,16 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    NULL, "%s", r.body);
 	/* Intrusion detection (MEF 88): Suricata on the service's UNIs at
 	 * each edge, its home the UNIs' subnets, the policy's rules and the
-	 * ruleset suricata-update keeps; Suricata a need. */
+	 * ruleset suricata-update keeps; Suricata a need.  It prevents: the
+	 * UNI's traffic both ways diverted to it as it comes in, on the
+	 * service's port, one rule before the way in, and given back to
+	 * the service's table there. */
+	ATF_CHECK_MSG(strstr(r.body, "\"divert\":8001") != NULL && strstr(
+	    r.body, "\"9 divert 8001 ip4 from any to any in recv ") != NULL &&
+	    strstr(r.body, "\"9 divert 8001 ip4 from any to 10.1.0.0/24 in not "
+	    "recv ") != NULL && strstr(r.body, "\"10 setfib 1 ip4 from any to "
+	    "10.1.0.0/24 in diverted-loopback\"") != NULL && strstr(r.body,
+	    "diverted-loopback\",\"10 ") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"sdwan-ids\",\"instances\":[{"
 	    "\"name\":\"sw1\",\"interfaces\":[\"") != NULL && strstr(r.body,
 	    "default-log-dir: @LOGDIR@") != NULL && strstr(r.body,

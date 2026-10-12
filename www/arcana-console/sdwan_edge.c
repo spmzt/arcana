@@ -2212,15 +2212,19 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 
 /* The rules suricata-update keeps, where its defaults put them. */
 #define	IDS_RULESET	"/var/lib/suricata/rules/suricata.rules"
+/* The divert port of a service's Suricata, where it prevents. */
+#define	IDS_PORT(fib)	(8000 + (int)(fib))
 
 /*
  * A service's intrusion detection (SASE-4, MEF 88's ids criterion), as
  * its policies name it: the rules of its own, one a line, each once,
- * and whether the ruleset is added.  False when none of its security
- * policies has ids.
+ * whether the ruleset is added, and whether it prevents (one of its
+ * policies says prevent).  False when none of its security policies has
+ * ids.
  */
 static bool
-ids_of(const ucl_object_t *sw, struct kore_buf *rules, bool *rulesetp)
+ids_of(const ucl_object_t *sw, struct kore_buf *rules, bool *rulesetp,
+    bool *preventp)
 {
 	const ucl_object_t	*pol, *sec, *ids, *r;
 	ucl_object_iter_t	 it, rit;
@@ -2230,6 +2234,8 @@ ids_of(const ucl_object_t *sw, struct kore_buf *rules, bool *rulesetp)
 
 	any = false;
 	*rulesetp = false;
+	if (preventp != NULL)
+		*preventp = false;
 	seen = ucl_object_typed_new(UCL_OBJECT);
 	it = NULL;
 	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
@@ -2244,6 +2250,9 @@ ids_of(const ucl_object_t *sw, struct kore_buf *rules, bool *rulesetp)
 			any = true;
 			if (ucl_object_toboolean(ucl_object_lookup(ids, "ruleset")))
 				*rulesetp = true;
+			if (preventp != NULL && str(ids, "mode") != NULL &&
+			    strcmp(str(ids, "mode"), "prevent") == 0)
+				*preventp = true;
 			rit = NULL;
 			while ((r = ucl_object_iterate(ucl_object_lookup(ids,
 			    "rules"), &rit, true)) != NULL) {
@@ -2356,17 +2365,18 @@ ids_build(struct plan *pl, const ucl_object_t *doc)
 	char			 name[32], ifn[64];
 	const char		*sid, *in;
 	char			*text;
-	bool			 ruleset;
+	bool			 ruleset, prevent, prevents;
 
 	it = NULL;
 	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
 	    true)) != NULL) {
 		sid = str(edge, "server");
 		list = ucl_object_typed_new(UCL_ARRAY);
+		prevents = false;
 		eit = NULL;
 		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
 		    &eit, true)) != NULL) {
-			if (!ids_of(sw, NULL, &ruleset))
+			if (!ids_of(sw, NULL, &ruleset, &prevent))
 				continue;
 			ifs = ucl_object_typed_new(UCL_ARRAY);
 			seen = ucl_object_typed_new(UCL_OBJECT);
@@ -2394,8 +2404,13 @@ ids_build(struct plan *pl, const ucl_object_t *doc)
 			put(inst, "interfaces", ifs);
 			put(inst, "conf", S(text));
 			free(text);
+			if (prevent) {
+				put(inst, "divert", I(IDS_PORT(ucl_object_toint(
+				    ucl_object_lookup(sw, "fib")))));
+				prevents = true;
+			}
 			rules = kore_buf_alloc(1024);
-			(void)ids_of(sw, rules, &ruleset);
+			(void)ids_of(sw, rules, &ruleset, NULL);
 			text = kore_buf_stringify(rules, NULL);
 			put(inst, "rules", S(text));
 			kore_buf_free(rules);
@@ -2405,8 +2420,12 @@ ids_build(struct plan *pl, const ucl_object_t *doc)
 			ucl_object_unref(list);
 			continue;
 		}
-		o = object(pl, sid, "ids", PH_BIRD, "intrusion detection: "
-		    "Suricata, a plugin, %u instance%s on the services' UNIs",
+		/* One that prevents runs before the divert rules come, and
+		 * stays until they are gone: what is diverted to no one does
+		 * not pass. */
+		o = object(pl, sid, "ids", prevents ? PH_PROBE : PH_BIRD,
+		    "intrusion detection%s: Suricata, a plugin, %u instance%s on "
+		    "the services' UNIs", prevents ? " and prevention" : "",
 		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
 		if (o == NULL) {
 			ucl_object_unref(list);
@@ -2569,6 +2588,7 @@ dns_build(struct plan *pl, const ucl_object_t *doc)
 
 /* ---- The rules: classification and steering (§8, §9.12, §10.4) ----- */
 
+#define	RULE_IPS	9	/* the diverts to Suricata, before them */
 #define	RULE_FROM	10	/* the rules' numbers, from here */
 #define	RULE_TO		99	/* to here, the way out of them */
 #define	IPFW_SET	30
@@ -3585,6 +3605,55 @@ rules_build(struct plan *pl, const char *sid)
 			/* [D1]: source routing dropped. */
 			rule(rules, RULE_FROM, "deny ip from any to any ipoptions "
 			    "lsrr,ssrr,rr in recv %s", uni);
+			/*
+			 * Intrusion prevented (MEF 88 ids, prevent): IPv4 that
+			 * comes in at the UNI, and that comes in elsewhere for
+			 * the UNI's subnet, to the service's Suricata first,
+			 * which gives back what it lets by.  Both are taken as
+			 * they come in, not as they go out to the UNI: divert(4)
+			 * gives back what it takes in routing table 0 (a
+			 * PF_DIVERT socket has no table of its own), and one
+			 * given back on its way out is routed there before ipfw
+			 * sees it again, while one given back on its way in is
+			 * put back in the service's table by the rules that
+			 * follow.  divert resumes at the next rule number: the
+			 * diverts are one before the way in.
+			 */
+			{
+				const ucl_object_t	*pv;
+				const char		*pfx[2];
+				bool			 rs, prevent;
+				int			 port, np, x;
+
+				if (ids_of(sw, NULL, &rs, &prevent) && prevent) {
+					port = IDS_PORT(ucl_object_toint(
+					    ucl_object_lookup(sw, "fib")));
+					np = 0;
+					pv = ucl_object_lookup(ucl_object_lookup(ep,
+					    "uni"), "ipv4");
+					if (str(pv, "prefix") != NULL)
+						pfx[np++] = str(pv, "prefix");
+					pv = ucl_object_lookup(ep, "remote");
+					if (str(pv, "prefix") != NULL && strchr(str(pv,
+					    "prefix"), ':') == NULL)
+						pfx[np++] = str(pv, "prefix");
+					rule(rules, RULE_IPS, "divert %d ip4 from any to "
+					    "any in recv %s", port, uni);
+					for (x = 0; x < np; x++)
+						rule(rules, RULE_IPS, "divert %d ip4 from "
+						    "any to %s in not recv %s", port, pfx[x],
+						    uni);
+					rule(rules, RULE_FROM, "setfib %jd ip4 from any "
+					    "to any in recv %s diverted-loopback",
+					    (intmax_t)ucl_object_toint(
+					    ucl_object_lookup(sw, "fib")), uni);
+					for (x = 0; x < np; x++)
+						rule(rules, RULE_FROM, "setfib %jd ip4 from "
+						    "any to %s in diverted-loopback",
+						    (intmax_t)ucl_object_toint(
+						    ucl_object_lookup(sw, "fib")), pfx[x]);
+				}
+			}
 			/* DNS kept to the provider's resolver, where a security
 			 * policy says so (MEF 88 dns-protocol-filter): every
 			 * query from the UNI goes to the filter here. */
@@ -4151,10 +4220,17 @@ rules_build(struct plan *pl, const char *sid)
 		ucl_object_iter_t	 lit;
 		int			 pass;
 
+		/* The diverts to Suricata before all. */
+		lit = NULL;
+		while ((line = ucl_object_iterate(rules, &lit, true)) != NULL)
+			if (atoi(ucl_object_tostring(line)) == RULE_IPS)
+				ucl_array_append(all, ucl_object_copy(line));
 		for (pass = 0; pass < 3; pass++) {
 			lit = NULL;
 			while ((line = ucl_object_iterate(pass == 1 ? pre : rules,
 			    &lit, true)) != NULL) {
+				if (atoi(ucl_object_tostring(line)) == RULE_IPS)
+					continue;
 				if (pass != 1 && (atoi(ucl_object_tostring(line)) ==
 				    RULE_FROM) != (pass == 0))
 					continue;
@@ -4173,7 +4249,9 @@ rules_build(struct plan *pl, const char *sid)
 	snprintf(key, sizeof(key), "rules");
 	snprintf(words, sizeof(words), "the rules: %u, in ipfw set %d, numbers "
 	    "%d to %d, with %u tables", ucl_array_size(rules), IPFW_SET,
-	    RULE_FROM, RULE_TO, ucl_array_size(tables));
+	    ucl_array_size(rules) > 0 && atoi(ucl_object_tostring(
+	    ucl_array_find_index(rules, 0))) == RULE_IPS ? RULE_IPS : RULE_FROM,
+	    RULE_TO, ucl_array_size(tables));
 	if (ucl_array_size(objects) > 0)
 		snprintf(words + strlen(words), sizeof(words) - strlen(words),
 		    ", %u dummynet and nat objects", ucl_array_size(objects));

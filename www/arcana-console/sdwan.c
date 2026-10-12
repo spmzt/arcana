@@ -1952,12 +1952,13 @@ security_policy(struct ck *c, const ucl_object_t *v)
 					    ucl_object_tostring_forced(e)));
 		} else if (strcmp(ucl_object_key(k), "ids") == 0) {
 			/* SASE-4: Suricata on the edge, a plugin, watching the
-			 * service's UNIs; detect only for now. */
-			static const char *const modes[] = { "detect", NULL };
+			 * service's UNIs (detect) or in their way (prevent). */
+			static const char *const modes[] = { "detect", "prevent",
+			    NULL };
 
 			if (ucl_object_type(k) != UCL_OBJECT || !one_of(str(k,
 			    "mode"), modes))
-				return (fail(c, "ids has a mode, detect, its own "
+				return (fail(c, "ids has a mode, detect or prevent, its own "
 				    "rules, and ruleset, whether the rules "
 				    "suricata-update keeps are added"));
 			if ((e = ucl_object_lookup(k, "ruleset")) != NULL &&

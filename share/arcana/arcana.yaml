@@ -2732,8 +2732,12 @@ operations:
       instance per service), as the console writes them: json, an
       object with "instances", each a "name", the "interfaces" it
       watches (the service's UNIs here), its "conf", Suricata's YAML
-      with @LOGDIR@, @RULES@ and @PID@ for what the agent places, and
-      "rules", the service's own rules, one a line.  Each is checked by
+      with @LOGDIR@, @RULES@ and @PID@ for what the agent places,
+      "rules", the service's own rules, one a line, and "divert", a
+      port, for one that prevents: it is run on that port (-d), where
+      the console's ipfw divert rules hand it the UNIs' packets, rather
+      than by libpcap; while it is not running they pass nothing, a
+      Critical fault (ids) until it runs again.  Each is checked by
       suricata -T before it runs; one whose files changed is started
       again; those not named any more are stopped.  The alerts each
       writes (eve.json) are read every second into events, sdwan-ids,
