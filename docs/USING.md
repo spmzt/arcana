@@ -1132,6 +1132,22 @@ names them. It is one document with three parts:
     identities are in is best the Default one, or one whose prefixes
     hold the remote's.
 
+**Identities** (SASE-3): the tab lists every remote end point's
+identities with the address the plan gave each, when it was issued
+and until when it is authorised. **+ identity** issues one at an end
+point, for a console user (the name of one of the sign-in keys, with
+the box ticked) or any name: the console makes the X25519 key pair,
+puts the identity in the document (in place of one of the name: issued
+again, with a new key), applies the edges, and shows the WireGuard
+configuration once, the private key kept nowhere: the address, the
+edge's key, its address on a public UCS and the port, the service's
+prefixes, the DNS filter where there is one. **Revoke** takes it out
+of the document and applies: its peer goes. A remote end point's
+`reauth` (an hour to a year, in seconds) is how long an identity stays
+authorised from its `issued` time; past it the manager's tick applies
+and the peer is removed until the identity is issued again. `GET`,
+`POST` and `DELETE /api/sdwan/identities` do the same.
+
 **Security** lists the service's security policies (MEF 88): the
 addresses allowed and denied, the domains denied and whether DNS is
 kept to the provider's resolver, the rate limit, the log, and which
