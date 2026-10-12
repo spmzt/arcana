@@ -82,7 +82,7 @@ static int	table(struct html *, const ucl_object_t *, const struct column *,
 static void	route_delete(struct html *, const ucl_object_t *, const char *);
 static int	interfaces(struct html *, const struct server *,
 		    const ucl_object_t *);
-static void	fmt_bytes(char *, size_t, int64_t);
+
 
 
 /* One cell: the value at path, or "a:b" with path2, as text. */
@@ -270,7 +270,7 @@ nhgroups(struct html *h, const struct server *s, const ucl_object_t *fams)
 }
 
 /* A count of bytes, in the unit that keeps it short. */
-static void
+void
 fmt_bytes(char *buf, size_t len, int64_t n)
 {
 	static const char *units[] = { "B", "KiB", "MiB", "GiB", "TiB" };

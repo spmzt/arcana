@@ -506,9 +506,14 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "[ -f wg.key ] && { key=$(cat wg.key); "
 	    "pub=HIgo9xNzJMWLKASShiTqIybxZ0U3wGLiUeJ1PKf8ykw=; }\n"
 	    "case \"$1 $2 $3\" in\n"
+	    /* Each interface's line, then its peers: wg0 always, another
+	     * where a peer was set on it. */
 	    "'show all dump') printf 'wg0\\t%s\\t%s\\t51820\\toff\\n' "
 	    "\"$key\" \"$pub\"\n"
-	    "  cat wg.peers.* 2>/dev/null ;;\n"
+	    "  cat wg.peers.wg0 2>/dev/null\n"
+	    "  for f in wg.peers.*; do [ -f \"$f\" ] || continue; i=${f#wg.peers.}; "
+	    "[ \"$i\" = wg0 ] && continue; printf '%s\\t%s\\t%s\\t51820\\toff\\n' "
+	    "\"$i\" \"$key\" \"$pub\"; cat \"$f\"; done ;;\n"
 	    "\"show $2 private-key\") echo \"$key\" ;;\n"
 	    "\"showconf $2 \") printf '[Interface]\\nPrivateKey = %s\\n' "
 	    "\"$key\" ;;\n"

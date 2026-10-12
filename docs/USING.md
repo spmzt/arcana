@@ -1146,7 +1146,10 @@ of the document and applies: its peer goes. A remote end point's
 `reauth` (an hour to a year, in seconds) is how long an identity stays
 authorised from its `issued` time; past it the manager's tick applies
 and the peer is removed until the identity is issued again. `GET`,
-`POST` and `DELETE /api/sdwan/identities` do the same.
+`POST` and `DELETE /api/sdwan/identities` do the same. Each identity's
+**session** is its peer as the edge's `wg(8)` tells it, read from the
+edge with the list: the last handshake, the bytes each way and where
+it came from; none when the edge has no peer for it yet.
 
 **Security** lists the service's security policies (MEF 88): the
 addresses allowed and denied, the domains denied and whether DNS is

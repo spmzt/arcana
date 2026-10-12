@@ -109,7 +109,8 @@ view_identities(struct html *h)
 	    "data-act=\"sd-ident-add\">+ identity</button></span></h3>"
 	    "<table class=\"net sd\"><thead><tr><th>Name</th><th>Service</th>"
 	    "<th>End point</th><th>Edge</th><th>Zone</th><th>Address</th>"
-	    "<th>Issued</th><th>Authorised</th><th></th></tr></thead><tbody>");
+	    "<th>Issued</th><th>Authorised</th><th>Session</th><th></th></tr>"
+	    "</thead><tbody>");
 	n = 0;
 	it = NULL;
 	while (sd.identities != NULL && (i = ucl_object_iterate(jget(
@@ -145,6 +146,27 @@ view_identities(struct html *h)
 			h_txt(h, age);
 		} else
 			h_raw(h, "<span class=\"dim\">no end</span>");
+		h_raw(h, "</td><td>");
+		if (jget(i, "session") == NULL)
+			h_raw(h, "<span class=\"dim\">no peer on the edge</span>");
+		else if (jint(i, "session.handshake", 0) == 0)
+			h_raw(h, "<span class=\"dim\">no handshake yet</span>");
+		else {
+			char	rx[32], tx[32];
+
+			fmt_age(age, sizeof(age), (double)jint(i, "session.handshake",
+			    0) * 1000);
+			fmt_bytes(rx, sizeof(rx), (double)jint(i, "session.rx", 0));
+			fmt_bytes(tx, sizeof(tx), (double)jint(i, "session.tx", 0));
+			h_raw(h, "handshake ");
+			h_txt(h, age);
+			h_fmt(h, "<br><span class=\"dim\">%s in · %s out", rx, tx);
+			if (jstr(i, "session.endpoint") != NULL) {
+				h_raw(h, " · from ");
+				h_txt(h, jstr(i, "session.endpoint"));
+			}
+			h_raw(h, "</span>");
+		}
 		h_raw(h, "</td><td class=\"num\">");
 		snprintf(key, sizeof(key), "%s|%s|%s", jstr(i, "swvc"), jstr(i,
 		    "end_point"), jstr(i, "name"));
@@ -153,7 +175,7 @@ view_identities(struct html *h)
 		h_raw(h, ">Revoke</button></td></tr>");
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"9\" class=\"dim\">None yet: a service "
+		h_raw(h, "<tr><td colspan=\"10\" class=\"dim\">None yet: a service "
 		    "with a remote end point takes identities, issued here or "
 		    "written in the document.</td></tr>");
 	h_raw(h, "</tbody></table><p class=\"dim\">An identity issued here has "

@@ -96,8 +96,10 @@
   an address of the prefix kept for it, the zone table's entries
   (S3.2); identities issued and revoked from the console, the key
   pair made there and the configuration shown once, a
-  re-authorisation interval after which the peer goes (S3.3). Next:
-  S3.4, sessions.
+  re-authorisation interval after which the peer goes (S3.3); each
+  identity's session from the edge's wg read, the handshake and the
+  bytes, on the tab (S3.4); SASE-3 closed. Next: SASE-4, the proxy
+  functions, which the plan says get a review of their own first.
 - 2026-10-11: what is new, in the update boxes and Settings' last
   tab: the agent's source-log (a bare blob:none clone in the build
   directory), the console's /api/update/notes (the tags' messages as
