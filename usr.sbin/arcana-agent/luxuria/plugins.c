@@ -12,46 +12,224 @@
  * interface itself, if_wg(4) made by ifconfig(8), is the base system's
  * and Invidia's).  A host says which it has, and so does a jail with a
  * network of its own, where the program is the jail's.
+ *
+ * wg(8) is the base system's since FreeBSD 15, in /usr/bin; before,
+ * and where the package is installed, it is /usr/local/bin's.  The
+ * first that is there is the one run.
+ *
+ * A jail's programs are looked for as the jail sees them: a child
+ * attaches to it and asks there, so that its own links (a /usr/local
+ * that leads elsewhere inside it) and mounts lead where they do for the
+ * jail, and never out of it.  An agent the kernel does not let attach
+ * looks beneath the jail's root instead, without following a link out
+ * of it.  What a jail has is kept a few seconds: it is asked at every
+ * list, and changes when a package is installed.
  */
 
 #include <sys/param.h>
+#include <sys/jail.h>
+#include <sys/wait.h>
 
+#include <errno.h>
+#include <fcntl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "agent.h"
 
+#define	PLUGINS_KEPT_S	10	/* a jail's answer, kept */
+#define	PLUGINS_JAILS	64
+
+/* The base system's wg(8), FreeBSD 15 and later. */
+const char		 wg_base_bin[] = PATH_WG_BASE_BIN;
+
 static const struct {
 	const char		*name;
 	const char *const	*program;
+	const char		*base;	/* the base system's, when it has one */
+	const char		*dflt;	/* tried only where program is this */
 } plugins[] = {
-	{ "bird", &opts.birdc_bin },
-	{ "wireguard", &opts.wg_bin },
-	{ "strongswan", &opts.swanctl_bin },
-	{ "squid", &opts.squid_bin },
+	{ "bird", &opts.birdc_bin, NULL, NULL },
+	{ "wireguard", &opts.wg_bin, wg_base_bin, PATH_WG_BIN },
+	{ "strongswan", &opts.swanctl_bin, NULL, NULL },
+	{ "squid", &opts.squid_bin, NULL, NULL },
 };
 
+/* Each plugin has two bits: its program, and the base system's. */
+#define	BIT_PROG(i)	(1u << (2 * (i)))
+#define	BIT_BASE(i)	(1u << (2 * (i) + 1))
+#define	FOUND_NONE	0xffffffffu
+_Static_assert(nitems(plugins) <= 4, "eight bits of an exit status");
+
+static struct {
+	int		jid;
+	time_t		at;
+	unsigned int	found;
+}			kept[PLUGINS_JAILS];
+static pthread_mutex_t	kept_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* The paths of plugin i, its own and the base system's, or NULL. */
+static void
+paths_of(size_t i, const char **prog, const char **base)
+{
+
+	*prog = *plugins[i].program;
+	*base = plugins[i].base != NULL && plugins[i].dflt != NULL &&
+	    strcmp(*prog, plugins[i].dflt) == 0 ? plugins[i].base : NULL;
+}
+
+/* What is there to run, by access(2) where this process is. */
+static unsigned int
+found_here(void)
+{
+	const char	*prog, *base;
+	unsigned int	 m;
+	size_t		 i;
+
+	m = 0;
+	for (i = 0; i < nitems(plugins); i++) {
+		paths_of(i, &prog, &base);
+		if (access(prog, X_OK) == 0)
+			m |= BIT_PROG(i);
+		if (base != NULL && access(base, X_OK) == 0)
+			m |= BIT_BASE(i);
+	}
+	return (m);
+}
+
+/* The same beneath a jail's root, never through a link out of it. */
+static unsigned int
+found_beneath(const char *root)
+{
+	const char	*prog, *base;
+	unsigned int	 m;
+	size_t		 i;
+	int		 fd;
+
+	if (root == NULL || (fd = open(root, O_RDONLY | O_DIRECTORY |
+	    O_CLOEXEC)) == -1)
+		return (0);
+	m = 0;
+	for (i = 0; i < nitems(plugins); i++) {
+		paths_of(i, &prog, &base);
+		if (faccessat(fd, prog + strspn(prog, "/"), X_OK,
+		    AT_RESOLVE_BENEATH) == 0)
+			m |= BIT_PROG(i);
+		if (base != NULL && faccessat(fd, base + strspn(base, "/"),
+		    X_OK, AT_RESOLVE_BENEATH) == 0)
+			m |= BIT_BASE(i);
+	}
+	close(fd);
+	return (m);
+}
+
 /*
- * The plugins there are beneath root, the root of a jail, or on the
- * host when root is NULL: those whose program can be run there.
+ * In the jail itself: a child attaches and says by its exit status
+ * (eight bits, two for each plugin); FOUND_NONE when it could not.
+ * The child only makes system calls, as a child of a process with
+ * threads must.
+ */
+static unsigned int
+found_attached(int jid)
+{
+	pid_t	pid;
+	int	status;
+
+	if ((pid = fork()) == -1)
+		return (FOUND_NONE);
+	if (pid == 0) {
+		if (jail_attach(jid) == -1)
+			_exit(255);
+		_exit((int)found_here() & 0xff);
+	}
+	while (waitpid(pid, &status, 0) == -1)
+		if (errno != EINTR)
+			return (FOUND_NONE);
+	if (!WIFEXITED(status) || WEXITSTATUS(status) == 255)
+		return (FOUND_NONE);
+	return ((unsigned int)WEXITSTATUS(status));
+}
+
+/* What jail jid (rooted at root) has, or the host for jid 0. */
+static unsigned int
+found_in(int jid, const char *root)
+{
+	unsigned int	 m;
+	time_t		 now;
+	size_t		 i, slot;
+
+	if (jid <= 0)
+		return (found_here());
+	now = time(NULL);
+	pthread_mutex_lock(&kept_lock);
+	slot = 0;
+	for (i = 0; i < nitems(kept); i++) {
+		if (kept[i].jid == jid && now - kept[i].at < PLUGINS_KEPT_S) {
+			m = kept[i].found;
+			pthread_mutex_unlock(&kept_lock);
+			return (m);
+		}
+		if (kept[i].at < kept[slot].at)
+			slot = i;
+	}
+	pthread_mutex_unlock(&kept_lock);
+	if ((m = found_attached(jid)) == FOUND_NONE)
+		m = found_beneath(root);
+	pthread_mutex_lock(&kept_lock);
+	kept[slot].jid = jid;
+	kept[slot].at = now;
+	kept[slot].found = m;
+	pthread_mutex_unlock(&kept_lock);
+	return (m);
+}
+
+/*
+ * The plugins there are in jail jid, beneath root, or on the host when
+ * jid is 0: those whose program can be run there.
  */
 void
-plugins_there(struct work *w, const char *root, const char *const **vp,
-    size_t *np)
+plugins_there(struct work *w, int jid, const char *root,
+    const char *const **vp, size_t *np)
 {
-	const char	**v, *path;
+	const char	**v;
+	unsigned int	  m;
 	size_t		  i, n;
 
+	m = found_in(jid, root);
 	v = wcalloc(w, nitems(plugins), sizeof(*v));
 	n = 0;
-	for (i = 0; i < nitems(plugins); i++) {
-		path = *plugins[i].program;
-		if (root != NULL && strcmp(root, "/") != 0)
-			path = wfmt(w, "%s%s", root, path);
-		if (access(path, X_OK) == 0)
+	for (i = 0; i < nitems(plugins); i++)
+		if ((m & (BIT_PROG(i) | BIT_BASE(i))) != 0)
 			v[n++] = plugins[i].name;
-	}
 	*vp = v;
 	*np = n;
+}
+
+/*
+ * The program that runs the plugin named where w works, the host or
+ * its jail: its own when there, else the base system's; its own when
+ * neither is, for the error to name it.
+ */
+const char *
+plugin_bin(struct work *w, const char *name)
+{
+	const char	*prog, *base;
+	unsigned int	 m;
+	size_t		 i;
+
+	for (i = 0; i < nitems(plugins); i++)
+		if (strcmp(plugins[i].name, name) == 0)
+			break;
+	if (i == nitems(plugins))
+		return (NULL);
+	paths_of(i, &prog, &base);
+	if (base == NULL)
+		return (prog);
+	m = found_in(w->jail != NULL ? w->jid : 0, w->jail != NULL ?
+	    w->jroot : NULL);
+	return ((m & BIT_PROG(i)) == 0 && (m & BIT_BASE(i)) != 0 ? base :
+	    prog);
 }
