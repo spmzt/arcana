@@ -317,6 +317,10 @@
   - The base system's ssh, further: the banner, the users let in,
     authorized keys, host keys and their fingerprints, host keys
     signed by a CA key.
+    (Done 2026-10-12: the SSH tab, of a host or a jail; sshd -T read,
+    each change read by sshd -t first and kept beside, undone in safe
+    mode; verified with the real sshd and ssh-keygen in a lab jail.
+    Not yet: TrustedUserCAKeys (user certificates) set from the page.)
   - IDS/IPS by Snort, a plugin (luxuria) as before: Snort and its
     rules updated and configured from the panel.
   - The console clustered; disaster recovery across console clusters.

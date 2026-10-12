@@ -707,6 +707,16 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "continue\n\tcase \"$bad\" in *$(fp $f)*) continue ;; esac\n"
 	    "\tcp $f $R/etc/ssl/certs/$(basename $f .pem).0\ndone\n");
 	ATF_REQUIRE(chmod("tools/certctl", 0755) == 0);
+	/* sshd: -t refuses what says BAD, -T is the file's settings. */
+	put("tools/sshd", "#!/bin/sh\ncase \"$1\" in\n-t)\tgrep -q BAD \"$3\" "
+	    "&& { echo \"$3: Bad configuration option: BAD\" >&2; exit 255; }"
+	    "\n\texit 0 ;;\n-T)\tawk '!/^[ \\t]*#/ && NF > 1 { if (tolower($1)"
+	    " == \"match\") exit; k = tolower($1); $1 = \"\"; sub(/^ /, \"\"); "
+	    "print k, $0 }' \"$3\"\n\tgrep -qi '^hostkey' \"$3\" || echo "
+	    "\"hostkey /etc/ssh/ssh_host_ed25519_key\"\n\texit 0 ;;\nesac\n"
+	    "exit 1\n");
+	ATF_REQUIRE(chmod("tools/sshd", 0755) == 0);
+	put("tools/ssh-keygen", "#!/bin/sh\nexec /usr/bin/ssh-keygen \"$@\"\n");
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");

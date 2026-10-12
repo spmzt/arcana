@@ -1,0 +1,1252 @@
+/*-
+ * SPDX-License-Identifier: BSD-2-Clause
+ * Copyright (c) 2026 Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>
+ */
+
+/*
+ * Superbia: the base system's sshd(8), of the host or of a jail.  What
+ * it is set to, as sshd -T says (or as its file has it, where sshd
+ * cannot say); its banner; its host keys, each with its fingerprint and
+ * the certificate a CA key signed for it; and who may sign in, each
+ * user with the keys in their authorized_keys.  Keys and certificates
+ * are read here, not by ssh-keygen: a fingerprint is the SHA-256 of
+ * the key's blob, as OpenSSH prints it.
+ *
+ * A change to sshd_config is read by sshd -t before it is put in place,
+ * the file before it kept beside it (sshd_config.arcana-before), and
+ * sshd reloaded; in safe mode, that file is put back unless the change
+ * is confirmed.  A CA key given to sign the host keys is on the disk
+ * only while ssh-keygen reads it, in /etc/ssh, readable by root alone.
+ */
+
+#include <sys/param.h>
+#include <sys/stat.h>
+
+#include <ctype.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <strings.h>
+#include <time.h>
+#include <unistd.h>
+
+#include <openssl/evp.h>
+#include <openssl/sha.h>
+
+#include <ucl.h>
+
+#include "agent.h"
+
+#define	SSH_DIR		"/etc/ssh"
+#define	SSHD_CONFIG	SSH_DIR "/sshd_config"
+#define	BEFORE		"sshd_config.arcana-before"
+#define	BANNER		SSH_DIR "/banner"
+#define	TEXT_MAX	(64 * 1024)
+
+/* What is read of sshd -T, and what may be set from here. */
+static const char *const shown[] = {
+	"port", "listenaddress", "permitrootlogin", "passwordauthentication",
+	"kbdinteractiveauthentication", "pubkeyauthentication", "allowusers",
+	"allowgroups", "denyusers", "denygroups", "maxauthtries", "banner",
+	"x11forwarding", "authorizedkeysfile", "trustedusercakeys",
+	"hostkey", "hostcertificate",
+};
+static const struct {
+	const char	*name;
+	const char	*values;	/* those it takes, | between; NULL: names */
+	bool		 many;
+} settable[] = {
+	{ "AllowUsers", NULL, true },
+	{ "AllowGroups", NULL, true },
+	{ "DenyUsers", NULL, true },
+	{ "DenyGroups", NULL, true },
+	{ "PermitRootLogin", "yes|no|prohibit-password|forced-commands-only",
+	    false },
+	{ "PasswordAuthentication", "yes|no", false },
+	{ "KbdInteractiveAuthentication", "yes|no", false },
+	{ "PubkeyAuthentication", "yes|no", false },
+	{ "X11Forwarding", "yes|no", false },
+	{ "MaxAuthTries", "#", false },
+	{ "Port", "#", true },
+};
+
+/* The tests' sshd, as certctl's: its files beside them. */
+static const char *
+root(struct work *w)
+{
+	char	abs[MAXPATHLEN];
+
+	if (w->jail != NULL || opts.tools_dir == NULL)
+		return ("");
+	if (realpath(opts.tools_dir, abs) == NULL)
+		snprintf(abs, sizeof(abs), "%s", opts.tools_dir);
+	return (wfmt(w, "%s/sshroot", abs));
+}
+
+static const char *
+at(struct work *w, const char *path)
+{
+
+	return (wfmt(w, "%s%s", root(w), path));
+}
+
+/* --- keys, as OpenSSH writes them ------------------------------------ */
+
+struct blob {
+	const unsigned char	*p;
+	size_t			 n;
+};
+
+static bool
+b_u32(struct blob *b, uint32_t *v)
+{
+
+	if (b->n < 4)
+		return (false);
+	*v = (uint32_t)b->p[0] << 24 | (uint32_t)b->p[1] << 16 |
+	    (uint32_t)b->p[2] << 8 | b->p[3];
+	b->p += 4;
+	b->n -= 4;
+	return (true);
+}
+
+static bool
+b_u64(struct blob *b, uint64_t *v)
+{
+	uint32_t	hi, lo;
+
+	if (!b_u32(b, &hi) || !b_u32(b, &lo))
+		return (false);
+	*v = (uint64_t)hi << 32 | lo;
+	return (true);
+}
+
+static bool
+b_str(struct blob *b, struct blob *s)
+{
+	uint32_t	len;
+
+	if (!b_u32(b, &len) || len > b->n)
+		return (false);
+	s->p = b->p;
+	s->n = len;
+	b->p += len;
+	b->n -= len;
+	return (true);
+}
+
+static unsigned char *
+unbase64(struct work *w, const char *s, size_t len, size_t *np)
+{
+	unsigned char	*out;
+	int		 n;
+	size_t		 pad;
+
+	if (len == 0 || len % 4 != 0)
+		return (NULL);
+	out = wmalloc(w, len / 4 * 3 + 1);
+	if ((n = EVP_DecodeBlock(out, (const unsigned char *)s, (int)len)) < 0)
+		return (NULL);
+	for (pad = 0; pad < 2 && s[len - 1 - pad] == '='; pad++)
+		;
+	*np = (size_t)n - pad;
+	return (out);
+}
+
+/* SHA256:..., as ssh-keygen -l prints it. */
+static const char *
+fingerprint(struct work *w, const unsigned char *p, size_t n)
+{
+	unsigned char	md[SHA256_DIGEST_LENGTH];
+	char		b64[64], *e;
+
+	SHA256(p, n, md);
+	EVP_EncodeBlock((unsigned char *)b64, md, sizeof(md));
+	if ((e = strchr(b64, '=')) != NULL)
+		*e = '\0';
+	return (wfmt(w, "SHA256:%s", b64));
+}
+
+static int
+mpint_bits(const struct blob *m)
+{
+	size_t	i;
+	int	bits;
+	unsigned char	c;
+
+	for (i = 0; i < m->n && m->p[i] == 0; i++)
+		;
+	if (i == m->n)
+		return (0);
+	bits = (int)(m->n - i - 1) * 8;
+	for (c = m->p[i]; c != 0; c >>= 1)
+		bits++;
+	return (bits);
+}
+
+/* The size of a key whose blob, past its type, is b. */
+static int
+key_bits(const char *type, struct blob *b)
+{
+	struct blob	e, n;
+
+	if (strstr(type, "mldsa") != NULL)
+		return (0);		/* a hybrid: no one size */
+	if (strstr(type, "ed25519") != NULL)
+		return (256);
+	if (strstr(type, "nistp256") != NULL)
+		return (256);
+	if (strstr(type, "nistp384") != NULL)
+		return (384);
+	if (strstr(type, "nistp521") != NULL)
+		return (521);
+	if (strncmp(type, "ssh-rsa", 7) == 0 && b_str(b, &e) && b_str(b, &n))
+		return (mpint_bits(&n));
+	if (strncmp(type, "ssh-dss", 7) == 0)
+		return (1024);
+	return (0);
+}
+
+/* The key's own fields in a certificate, passed over. */
+static bool
+skip_key(const char *base, struct blob *b)
+{
+	struct blob	s;
+	int		i, n;
+
+	n = strstr(base, "ed25519") != NULL ? 1 : strstr(base, "ecdsa") !=
+	    NULL ? 2 : strncmp(base, "ssh-rsa", 7) == 0 ? 2 :
+	    strncmp(base, "ssh-dss", 7) == 0 ? 4 : -1;
+	if (n < 0)
+		return (false);
+	if (strncmp(base, "sk-", 3) == 0)
+		n++;			/* its application */
+	for (i = 0; i < n; i++)
+		if (!b_str(b, &s))
+			return (false);
+	return (true);
+}
+
+/*
+ * A line of a .pub, an authorized_keys or a -cert.pub: [options] type
+ * base64 [comment].  Its object, NULL for one that is none.
+ */
+static ucl_object_t *
+key_obj(struct work *w, const char *line)
+{
+	static const char *const types[] = { "ssh-", "ecdsa-", "sk-" };
+	ucl_object_t	*o, *c, *pr;
+	struct blob	 b, t, s, p;
+	const char	*l, *opt, *type, *b64, *cm;
+	unsigned char	*raw;
+	uint64_t	 serial, after, before;
+	uint32_t	 ctype;
+	size_t		 i, n, olen, tlen, blen;
+	bool		 quoted, cert;
+
+	l = line + strspn(line, " \t");
+	if (*l == '\0' || *l == '#')
+		return (NULL);
+	opt = NULL;
+	olen = 0;
+	for (i = 0; i < nitems(types); i++)
+		if (strncmp(l, types[i], strlen(types[i])) == 0)
+			break;
+	if (i == nitems(types)) {
+		/* Options first: up to the first blank not in quotes. */
+		quoted = false;
+		for (opt = l; *l != '\0' && (quoted || (*l != ' ' && *l !=
+		    '\t')); l++) {
+			if (*l == '\\' && l[1] != '\0')
+				l++;
+			else if (*l == '"')
+				quoted = !quoted;
+		}
+		olen = (size_t)(l - opt);
+		l += strspn(l, " \t");
+	}
+	type = l;
+	tlen = strcspn(l, " \t");
+	l += tlen;
+	l += strspn(l, " \t");
+	b64 = l;
+	blen = strcspn(l, " \t\r\n");
+	l += blen;
+	l += strspn(l, " \t");
+	cm = l;
+	if (tlen == 0 || blen == 0 || (raw = unbase64(w, b64, blen, &n)) ==
+	    NULL)
+		return (NULL);
+	b.p = raw;
+	b.n = n;
+	if (!b_str(&b, &t) || t.n != tlen || memcmp(t.p, type, tlen) != 0)
+		return (NULL);
+	o = ucl_object_typed_new(UCL_OBJECT);
+	type = wstrndup(w, type, tlen);
+	cert = strstr(type, "-cert-v01@openssh.com") != NULL;
+	ucl_object_insert_key(o, ucl_object_fromstring(type), "type", 0, false);
+	ucl_object_insert_key(o, ucl_object_fromstring(fingerprint(w, raw, n)),
+	    "fingerprint", 0, false);
+	if (opt != NULL)
+		ucl_object_insert_key(o, ucl_object_fromlstring(opt, olen),
+		    "options", 0, false);
+	if (*cm != '\0')
+		ucl_object_insert_key(o, ucl_object_fromlstring(cm, strcspn(cm,
+		    "\r\n")), "comment", 0, false);
+	if (!cert) {
+		ucl_object_insert_key(o, ucl_object_fromint(key_bits(type, &b)),
+		    "bits", 0, false);
+		return (o);
+	}
+	/* A certificate: the key it is of, then what was signed. */
+	if (!b_str(&b, &s) || !skip_key(type, &b) || !b_u64(&b, &serial) ||
+	    !b_u32(&b, &ctype))
+		return (o);
+	c = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(c, ucl_object_fromint((int64_t)serial), "serial",
+	    0, false);
+	ucl_object_insert_key(c, ucl_object_fromstring(ctype == 2 ? "host" :
+	    "user"), "kind", 0, false);
+	if (b_str(&b, &s))
+		ucl_object_insert_key(c, ucl_object_fromlstring((const char *)
+		    s.p, s.n), "id", 0, false);
+	pr = ucl_object_typed_new(UCL_ARRAY);
+	if (b_str(&b, &s)) {
+		while (b_str(&s, &p))
+			ucl_array_append(pr, ucl_object_fromlstring((const char *)
+			    p.p, p.n));
+	}
+	ucl_object_insert_key(c, pr, "principals", 0, false);
+	if (b_u64(&b, &after) && b_u64(&b, &before)) {
+		ucl_object_insert_key(c, ucl_object_fromint((int64_t)after),
+		    "valid_after", 0, false);
+		/* Forever is all ones. */
+		ucl_object_insert_key(c, ucl_object_fromint(before >
+		    (uint64_t)INT64_MAX ? -1 : (int64_t)before),
+		    "valid_before", 0, false);
+	}
+	if (b_str(&b, &s) && b_str(&b, &s) && b_str(&b, &s) && b_str(&b, &s))
+		ucl_object_insert_key(c, ucl_object_fromstring(fingerprint(w,
+		    s.p, s.n)), "ca", 0, false);
+	ucl_object_insert_key(o, c, "certificate", 0, false);
+	return (o);
+}
+
+/* Each key of a file of them, one a line. */
+static ucl_object_t *
+keys_of(struct work *w, const char *text)
+{
+	ucl_object_t	*arr, *k;
+	const char	*l, *e;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (l = text; l != NULL && *l != '\0'; l = *e != '\0' ? e + 1 :
+	    NULL) {
+		e = l + strcspn(l, "\n");
+		if ((k = key_obj(w, wstrndup(w, l, (size_t)(e - l)))) != NULL)
+			ucl_array_append(arr, k);
+	}
+	return (arr);
+}
+
+/* --- sshd's settings ------------------------------------------------- */
+
+static bool
+is_shown(const char *k)
+{
+	size_t	i;
+
+	for (i = 0; i < nitems(shown); i++)
+		if (strcmp(k, shown[i]) == 0)
+			return (true);
+	return (false);
+}
+
+static void
+setting_put(ucl_object_t *top, const char *k, const char *v)
+{
+	ucl_object_t	*a;
+
+	if ((a = (ucl_object_t *)(uintptr_t)ucl_object_lookup(top, k)) ==
+	    NULL) {
+		a = ucl_object_typed_new(UCL_ARRAY);
+		ucl_object_insert_key(top, a, k, 0, true);
+	}
+	ucl_array_append(a, ucl_object_fromstring(v));
+}
+
+/* "key value", lower-cased keys, into settings; Match blocks left. */
+static void
+settings_of(struct work *w, const char *text, ucl_object_t *set,
+    bool file)
+{
+	const char	*l, *e;
+	char		*line, *k, *v;
+	size_t		 i;
+
+	for (l = text; l != NULL && *l != '\0'; l = *e != '\0' ? e + 1 :
+	    NULL) {
+		e = l + strcspn(l, "\n");
+		line = wstrndup(w, l, (size_t)(e - l));
+		k = line + strspn(line, " \t");
+		if (*k == '#' || *k == '\0')
+			continue;
+		v = k + strcspn(k, " \t=");
+		if (*v != '\0')
+			*v++ = '\0';
+		v += strspn(v, " \t=");
+		v[strcspn(v, "\r")] = '\0';
+		for (i = 0; k[i] != '\0'; i++)
+			k[i] = (char)tolower((unsigned char)k[i]);
+		if (file && strcmp(k, "match") == 0)
+			break;
+		if (!is_shown(k))
+			continue;
+		/* In the file, the first says (but for lists, each). */
+		if (file && ucl_object_lookup(set, k) != NULL &&
+		    strcmp(k, "hostkey") != 0 && strcmp(k, "hostcertificate") !=
+		    0 && strcmp(k, "port") != 0 && strcmp(k, "listenaddress") !=
+		    0 && strncmp(k, "allow", 5) != 0 && strncmp(k, "deny", 4) !=
+		    0)
+			continue;
+		setting_put(set, k, v);
+	}
+}
+
+static const char *
+first(const ucl_object_t *set, const char *k)
+{
+	const ucl_object_t	*a;
+
+	if ((a = ucl_object_lookup(set, k)) == NULL || ucl_array_size(a) == 0)
+		return (NULL);
+	return (ucl_object_tostring(ucl_array_find_index(a, 0)));
+}
+
+/* Is value one of the setting's? */
+static bool
+listed(const ucl_object_t *set, const char *k, const char *value)
+{
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(set, k), &it, true)) !=
+	    NULL)
+		if (strcmp(ucl_object_tostring(v), value) == 0)
+			return (true);
+	return (false);
+}
+
+/* sshd -T, or what the file says where sshd cannot say. */
+static ucl_object_t *
+settings(struct work *w, const char **whyp)
+{
+	struct execres	 res;
+	ucl_object_t	*set;
+	const char	*prog;
+	char		*argv[5], *text;
+
+	set = ucl_object_typed_new(UCL_OBJECT);
+	*whyp = NULL;
+	if ((prog = tool(w, "sshd")) != NULL) {
+		argv[0] = (char *)(uintptr_t)prog;
+		argv[1] = (char *)(uintptr_t)"-T";
+		argv[2] = (char *)(uintptr_t)"-f";
+		argv[3] = (char *)(uintptr_t)at(w, SSHD_CONFIG);
+		argv[4] = NULL;
+		if (run_exec(w, scope_jexec(w, argv), &res) == 0 && res.out !=
+		    NULL) {
+			settings_of(w, res.out, set, false);
+			return (set);
+		}
+		*whyp = res.errlen > 0 ? wstrndup(w, res.err, strcspn(res.err,
+		    "\r\n")) : "sshd -T said nothing";
+	} else
+		*whyp = "there is no sshd here";
+	if ((text = scope_slurp(w, at(w, SSHD_CONFIG), NULL)) != NULL)
+		settings_of(w, text, set, true);
+	if (ucl_object_lookup(set, "hostkey") == NULL) {
+		setting_put(set, "hostkey", SSH_DIR "/ssh_host_rsa_key");
+		setting_put(set, "hostkey", SSH_DIR "/ssh_host_ecdsa_key");
+		setting_put(set, "hostkey", SSH_DIR "/ssh_host_ed25519_key");
+	}
+	return (set);
+}
+
+/* --- users ----------------------------------------------------------- */
+
+struct pwent {
+	const char	*name, *home, *shell;
+	uid_t		 uid;
+	gid_t		 gid;
+};
+
+/* Those of passwd who may sign in: root, and the people. */
+static size_t
+users(struct work *w, struct pwent **vp)
+{
+	struct pwent	*v;
+	const char	*l, *e;
+	char		*line, *f[7], *p;
+	size_t		 n, cap;
+	int		 i;
+
+	*vp = NULL;
+	n = cap = 0;
+	v = NULL;
+	for (l = scope_slurp(w, at(w, "/etc/passwd"), NULL); l != NULL &&
+	    *l != '\0'; l = *e != '\0' ? e + 1 : NULL) {
+		e = l + strcspn(l, "\n");
+		line = wstrndup(w, l, (size_t)(e - l));
+		if (line[0] == '#')
+			continue;
+		for (i = 0, p = line; i < 7; i++) {
+			f[i] = p;
+			p += strcspn(p, ":");
+			if (*p == '\0' && i < 6)
+				break;
+			if (*p != '\0')
+				*p++ = '\0';
+		}
+		if (i < 7 || f[0][0] == '\0' || f[0][0] == '+' || f[0][0] == '-')
+			continue;
+		if (strstr(f[6], "nologin") != NULL || strstr(f[6], "/false") !=
+		    NULL || (atoi(f[2]) != 0 && atoi(f[2]) < 1000) ||
+		    atoi(f[2]) == 65534)
+			continue;
+		if (n == cap) {
+			struct pwent	*nv;
+
+			cap = cap == 0 ? 16 : cap * 2;
+			nv = wcalloc(w, cap, sizeof(*nv));
+			if (n > 0)
+				memcpy(nv, v, n * sizeof(*v));
+			v = nv;
+		}
+		v[n].name = f[0];
+		v[n].uid = (uid_t)atoi(f[2]);
+		v[n].gid = (gid_t)atoi(f[3]);
+		v[n].home = f[5];
+		v[n].shell = f[6];
+		n++;
+	}
+	*vp = v;
+	return (n);
+}
+
+/* The user's authorized_keys, by AuthorizedKeysFile's first. */
+static const char *
+akeys_path(struct work *w, const struct pwent *u, const ucl_object_t *set)
+{
+	const char	*f, *s;
+	char		*out;
+	size_t		 o, len;
+
+	f = first(set, "authorizedkeysfile");
+	if (f == NULL || f[0] == '\0' || strcasecmp(f, "none") == 0)
+		f = ".ssh/authorized_keys";
+	len = strcspn(f, " \t");
+	out = wmalloc(w, len * 64 + strlen(u->home) + 2);
+	o = 0;
+	if (f[0] != '/' && f[0] != '%') {
+		o = (size_t)sprintf(out, "%s/", u->home);
+	}
+	for (s = f; (size_t)(s - f) < len; s++) {
+		if (*s == '%' && (size_t)(s - f) + 1 < len) {
+			s++;
+			if (*s == 'h')
+				o += (size_t)sprintf(out + o, "%s", u->home);
+			else if (*s == 'u')
+				o += (size_t)sprintf(out + o, "%s", u->name);
+			else if (*s == '%')
+				out[o++] = '%';
+		} else
+			out[o++] = *s;
+	}
+	out[o] = '\0';
+	return (out);
+}
+
+/* --- the read -------------------------------------------------------- */
+
+void
+do_ssh(struct work *w, struct arc_ssh_rsp *rsp)
+{
+	ucl_object_t		*top, *set, *hk, *k, *ul, *u, *ks;
+	const ucl_object_t	*a, *v;
+	ucl_object_iter_t	 it;
+	struct pwent		*pw;
+	const char		*why, *p, *b;
+	char			*text, *json;
+	size_t			 n, i;
+
+	top = ucl_object_typed_new(UCL_OBJECT);
+	set = settings(w, &why);
+	ucl_object_insert_key(top, ucl_object_fromstring(SSHD_CONFIG),
+	    "config", 0, false);
+	if (why != NULL)
+		ucl_object_insert_key(top, ucl_object_fromstring(why),
+		    "settings_from_file", 0, false);
+	ucl_object_insert_key(top, ucl_object_frombool(scope_slurp(w, at(w,
+	    SSH_DIR "/" BEFORE), NULL) != NULL), "before_kept", 0, false);
+	/* The banner's text. */
+	b = first(set, "banner");
+	if (b != NULL && strcasecmp(b, "none") != 0 && (text = scope_slurp(w,
+	    at(w, b), &n)) != NULL && n <= TEXT_MAX)
+		ucl_object_insert_key(top, ucl_object_fromlstring(text, n),
+		    "banner_text", 0, false);
+	/* Each host key, its fingerprint and its certificate. */
+	hk = ucl_object_typed_new(UCL_ARRAY);
+	a = ucl_object_lookup(set, "hostkey");
+	it = NULL;
+	while ((v = ucl_object_iterate(a, &it, true)) != NULL) {
+		p = ucl_object_tostring(v);
+		if ((text = scope_slurp(w, at(w, wfmt(w, "%s.pub", p)), NULL)) ==
+		    NULL || (k = key_obj(w, text)) == NULL)
+			continue;
+		ucl_object_insert_key(k, ucl_object_fromstring(p), "path", 0,
+		    false);
+		if ((text = scope_slurp(w, at(w, wfmt(w, "%s-cert.pub", p)),
+		    NULL)) != NULL && (ks = key_obj(w, text)) != NULL) {
+			ucl_object_insert_key(k, ucl_object_ref(
+			    (ucl_object_t *)(uintptr_t)ucl_object_lookup(ks,
+			    "certificate")), "certificate", 0, false);
+			ucl_object_insert_key(k, ucl_object_frombool(listed(set,
+			    "hostcertificate", wfmt(w, "%s-cert.pub", p))),
+			    "certificate_used", 0, false);
+			ucl_object_unref(ks);
+		}
+		ucl_array_append(hk, k);
+	}
+	ucl_object_insert_key(top, hk, "host_keys", 0, false);
+	/* Who may sign in, and with which keys. */
+	ul = ucl_object_typed_new(UCL_ARRAY);
+	n = users(w, &pw);
+	for (i = 0; i < n; i++) {
+		u = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(u, ucl_object_fromstring(pw[i].name),
+		    "name", 0, false);
+		ucl_object_insert_key(u, ucl_object_fromint(pw[i].uid), "uid",
+		    0, false);
+		ucl_object_insert_key(u, ucl_object_fromstring(pw[i].home),
+		    "home", 0, false);
+		ucl_object_insert_key(u, ucl_object_fromstring(pw[i].shell),
+		    "shell", 0, false);
+		p = akeys_path(w, &pw[i], set);
+		ucl_object_insert_key(u, ucl_object_fromstring(p), "keys_file",
+		    0, false);
+		text = scope_slurp(w, at(w, p), NULL);
+		ucl_object_insert_key(u, keys_of(w, text), "keys", 0, false);
+		ucl_array_append(ul, u);
+	}
+	ucl_object_insert_key(top, ul, "users", 0, false);
+	/* The CA keys whose user certificates are taken. */
+	if ((p = first(set, "trustedusercakeys")) != NULL && strcasecmp(p,
+	    "none") != 0 && (text = scope_slurp(w, at(w, p), NULL)) != NULL)
+		ucl_object_insert_key(top, keys_of(w, text), "user_cas", 0,
+		    false);
+	ucl_object_insert_key(top, set, "settings", 0, false);
+	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+	rsp->json = json != NULL ? wtext(w, wstrdup(w, json)) : NULL;
+	free(json);
+	ucl_object_unref(top);
+	rsp->ok = rsp->json != NULL;
+	if (!rsp->ok)
+		rsp->error = "sshd was not read";
+}
+
+/* --- changes --------------------------------------------------------- */
+
+static bool
+word_ok(const char *s, const char *extra)
+{
+
+	if (s == NULL || s[0] == '\0' || strlen(s) > 64)
+		return (false);
+	for (; *s != '\0'; s++)
+		if (!isalnum((unsigned char)*s) && strchr(extra, *s) == NULL)
+			return (false);
+	return (true);
+}
+
+static int
+settable_of(const char *name)
+{
+	size_t	i;
+
+	for (i = 0; name != NULL && i < nitems(settable); i++)
+		if (strcasecmp(name, settable[i].name) == 0)
+			return ((int)i);
+	return (-1);
+}
+
+static bool
+value_ok(int i, const char *v)
+{
+	const char	*p, *e;
+	size_t		 n;
+	long		 l;
+	char		*end;
+
+	if (settable[i].values == NULL)
+		return (word_ok(v, "._-@*?!%:/"));
+	if (strcmp(settable[i].values, "#") == 0) {
+		l = strtol(v, &end, 10);
+		return (*v != '\0' && *end == '\0' && l >= 1 && l <= 65535);
+	}
+	n = strlen(v);
+	for (p = settable[i].values; *p != '\0'; p = *e != '\0' ? e + 1 : e) {
+		e = p + strcspn(p, "|");
+		if ((size_t)(e - p) == n && strncmp(p, v, n) == 0)
+			return (true);
+	}
+	return (false);
+}
+
+const char *
+ssh_check(const struct arc_job_spec *sp)
+{
+	size_t	i;
+	int	k;
+
+	if (sp->verb == NULL)
+		return ("ssh: a verb, banner, set, authorize, unauthorize or "
+		    "sign");
+	if (strcmp(sp->verb, "banner") == 0) {
+		if (sp->text != NULL && strlen(sp->text) > TEXT_MAX)
+			return ("ssh: a banner of 64 KiB at most");
+		return (NULL);
+	}
+	if (strcmp(sp->verb, "set") == 0) {
+		if ((k = settable_of(sp->path)) < 0)
+			return ("ssh: set is of AllowUsers, AllowGroups, "
+			    "DenyUsers, DenyGroups, PermitRootLogin, "
+			    "PasswordAuthentication, KbdInteractiveAuthentication, "
+			    "PubkeyAuthentication, X11Forwarding, MaxAuthTries or "
+			    "Port");
+		if (sp->names.n == 0 && (strcmp(settable[k].name, "Port") == 0 ||
+		    settable[k].values != NULL))
+			return ("ssh: a value, or (for a list of names) none to "
+			    "take the line away");
+		if (sp->names.n > 1 && !settable[k].many)
+			return ("ssh: that one takes one value");
+		for (i = 0; i < sp->names.n; i++)
+			if (!value_ok(k, sp->names.v[i]))
+				return (settable[k].values == NULL ? "ssh: a name "
+				    "or pattern of letters, digits and ._-@*?!%:/" :
+				    strcmp(settable[k].values, "#") == 0 ? "ssh: a "
+				    "number" : "ssh: a value it takes");
+		return (NULL);
+	}
+	if (strcmp(sp->verb, "authorize") == 0 || strcmp(sp->verb,
+	    "unauthorize") == 0) {
+		if (!word_ok(sp->user, "._-"))
+			return ("ssh: a user's name");
+		if (sp->safe)
+			return ("ssh: a key is not taken back by itself: not in "
+			    "safe mode");
+		if (sp->text == NULL || sp->text[0] == '\0' || strchr(sp->text,
+		    '\n') != NULL || strlen(sp->text) > 16384)
+			return (strcmp(sp->verb, "authorize") == 0 ? "ssh: a key, "
+			    "one line of authorized_keys" : "ssh: the key's "
+			    "fingerprint, SHA256:...");
+		if (strcmp(sp->verb, "unauthorize") == 0 && strncmp(sp->text,
+		    "SHA256:", 7) != 0)
+			return ("ssh: the key's fingerprint, SHA256:...");
+		return (NULL);
+	}
+	if (strcmp(sp->verb, "sign") == 0) {
+		if (sp->text == NULL || strstr(sp->text, "PRIVATE KEY") == NULL)
+			return ("ssh: the CA's private key, as ssh-keygen wrote "
+			    "it");
+		for (i = 0; i < sp->names.n; i++)
+			if (!word_ok(sp->names.v[i], "._-*"))
+				return ("ssh: a principal is a host's name");
+		return (NULL);
+	}
+	return ("ssh: a verb, banner, set, authorize, unauthorize or sign");
+}
+
+/*
+ * text with key's lines (those before any Match) taken out, and with
+ * value, the line "key value" where the first was, or before the first
+ * Match, or at the end.  With add, the others are left, and the line is
+ * only added when none says the same.
+ */
+static char *
+conf_edit(struct work *w, const char *text, const char *key,
+    const char *value, bool add)
+{
+	const char	*l, *e, *k;
+	char		*out, *line;
+	size_t		 o, klen;
+	bool		 inmatch, put;
+
+	out = wmalloc(w, strlen(text) + strlen(key) + (value != NULL ?
+	    strlen(value) : 0) + 4);
+	o = 0;
+	inmatch = put = false;
+	klen = strlen(key);
+	line = value != NULL ? wfmt(w, "%s %s\n", key, value) : NULL;
+	for (l = text; *l != '\0'; l = e) {
+		e = l + strcspn(l, "\n");
+		if (*e == '\n')
+			e++;
+		k = l + strspn(l, " \t");
+		if (!inmatch && strncasecmp(k, "match", 5) == 0 && (k[5] == ' ' ||
+		    k[5] == '\t')) {
+			inmatch = true;
+			if (line != NULL && !put) {
+				o += (size_t)sprintf(out + o, "%s", line);
+				put = true;
+			}
+		}
+		if (!inmatch && strncasecmp(k, key, klen) == 0 && (k[klen] ==
+		    ' ' || k[klen] == '\t' || k[klen] == '=')) {
+			if (add) {
+				if (line != NULL && strncmp(k + klen + strspn(k +
+				    klen, " \t="), value, strlen(value)) == 0) {
+					put = true;
+				}
+			} else {
+				if (line != NULL && !put) {
+					o += (size_t)sprintf(out + o, "%s", line);
+					put = true;
+				}
+				continue;
+			}
+		}
+		memcpy(out + o, l, (size_t)(e - l));
+		o += (size_t)(e - l);
+	}
+	if (line != NULL && !put) {
+		if (o > 0 && out[o - 1] != '\n')
+			out[o++] = '\n';
+		o += (size_t)sprintf(out + o, "%s", line);
+	}
+	out[o] = '\0';
+	return (out);
+}
+
+/* sshd reloaded where it runs; one that does not is left. */
+static int
+reload(struct work *w, const char **errp)
+{
+	struct execres	 res;
+	char		*argv[4];
+
+	argv[0] = (char *)(uintptr_t)opts.service_bin;
+	argv[1] = (char *)(uintptr_t)"sshd";
+	argv[2] = (char *)(uintptr_t)"reload";
+	argv[3] = NULL;
+	if (run_exec(w, scope_jexec(w, argv), &res) == 0)
+		return (0);
+	if ((res.err != NULL && strstr(res.err, "not running") != NULL) ||
+	    (res.out != NULL && strstr(res.out, "not running") != NULL))
+		return (0);
+	*errp = wtext(w, exec_error(w, &res, "service sshd reload"));
+	return (-1);
+}
+
+/* text as sshd_config, once sshd -t has read it, and sshd reloaded. */
+static int
+conf_put(struct work *w, const char *text, const char **errp)
+{
+	struct execres	 res;
+	const char	*prog, *check;
+	char		*argv[5];
+	int		 rc;
+
+	if ((prog = tool(w, "sshd")) == NULL) {
+		*errp = "there is no sshd here";
+		return (-1);
+	}
+	check = at(w, SSH_DIR "/.sshd_config.arcana");
+	if (scope_replace(w, check, text, strlen(text), 0600, NULL) != 0) {
+		*errp = wfmt(w, "%s: %s", SSH_DIR, strerror(errno));
+		return (-1);
+	}
+	argv[0] = (char *)(uintptr_t)prog;
+	argv[1] = (char *)(uintptr_t)"-t";
+	argv[2] = (char *)(uintptr_t)"-f";
+	argv[3] = (char *)(uintptr_t)check;
+	argv[4] = NULL;
+	rc = run_exec(w, scope_jexec(w, argv), &res);
+	(void)scope_rename(w, check, ".sshd_config.arcana", NULL);
+	if (rc != 0) {
+		*errp = res.errlen > 0 ? wfmt(w, "sshd -t: %s", wstrndup(w,
+		    res.err, strcspn(res.err, "\r\n"))) : wtext(w, exec_error(w,
+		    &res, "sshd -t"));
+		return (-1);
+	}
+	if (scope_replace(w, at(w, SSHD_CONFIG), text, strlen(text), 0644,
+	    BEFORE) != 0) {
+		*errp = wfmt(w, "%s: %s", SSHD_CONFIG, strerror(errno));
+		return (-1);
+	}
+	return (reload(w, errp));
+}
+
+/* The safe change taken back: the file before it, and sshd reloaded. */
+int
+ssh_undo(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+
+	if (scope_rename(w, at(w, SSHD_CONFIG), BEFORE, "sshd_config") != 0) {
+		*errp = wfmt(w, "%s/%s: %s", SSH_DIR, BEFORE, strerror(errno));
+		return (-1);
+	}
+	if (strcmp(sp->verb, "banner") == 0)
+		(void)scope_rename(w, at(w, BANNER), "banner.arcana-before",
+		    "banner");
+	return (reload(w, errp));
+}
+
+/* A file in dfd, written whole and moved in, the user's own. */
+static int
+put_at(int dfd, const char *name, const char *text, size_t len, uid_t uid,
+    gid_t gid)
+{
+	char	tmp[NAME_MAX + 1];
+	int	fd, e;
+
+	snprintf(tmp, sizeof(tmp), ".%s.%08x", name, arc4random());
+	if ((fd = openat(dfd, tmp, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
+	    O_CLOEXEC, 0600)) == -1)
+		return (-1);
+	if (write(fd, text, len) != (ssize_t)len || fsync(fd) == -1 ||
+	    (fchown(fd, uid, gid) == -1 && geteuid() == 0)) {
+		e = errno;
+		close(fd);
+		(void)unlinkat(dfd, tmp, 0);
+		errno = e;
+		return (-1);
+	}
+	close(fd);
+	if (renameat(dfd, tmp, dfd, name) == -1) {
+		e = errno;
+		(void)unlinkat(dfd, tmp, 0);
+		errno = e;
+		return (-1);
+	}
+	return (0);
+}
+
+/*
+ * A user's authorized_keys changed: the key added, or each line with
+ * the fingerprint taken away.  Its directory is opened beneath the
+ * user's home, never through a link, and must be theirs or root's.
+ */
+static int
+authorize(struct work *w, const struct arc_job_spec *sp, bool add,
+    const char **errp)
+{
+	struct stat	 sb;
+	struct pwent	*pw;
+	ucl_object_t	*set, *k;
+	const char	*why, *path, *name, *dir, *fp, *l, *e;
+	char		*text, *out;
+	size_t		 n, i, o, len;
+	int		 hfd, dfd, cut;
+
+	n = users(w, &pw);
+	for (i = 0; i < n && strcmp(pw[i].name, sp->user) != 0; i++)
+		;
+	if (i == n) {
+		*errp = wfmt(w, "ssh: %s is no user who signs in here", sp->user);
+		return (-1);
+	}
+	set = settings(w, &why);
+	path = akeys_path(w, &pw[i], set);
+	ucl_object_unref(set);
+	if (strncmp(path, pw[i].home, strlen(pw[i].home)) != 0 ||
+	    path[strlen(pw[i].home)] != '/') {
+		*errp = wfmt(w, "ssh: %s is not in %s's home", path, sp->user);
+		return (-1);
+	}
+	name = strrchr(path, '/') + 1;
+	dir = wstrndup(w, path + strlen(pw[i].home) + 1, (size_t)(name - path -
+	    strlen(pw[i].home) - 1));
+	if ((hfd = scope_dirfd(w, at(w, pw[i].home))) == -1) {
+		*errp = wfmt(w, "ssh: %s: %s", pw[i].home, strerror(errno));
+		return (-1);
+	}
+	dfd = hfd;
+	if (dir[0] != '\0') {
+		dir = wstrndup(w, dir, strlen(dir) - 1);	/* its / */
+		if (strchr(dir, '/') != NULL) {
+			close(hfd);
+			*errp = "ssh: a keys file in the home or one directory "
+			    "of it";
+			return (-1);
+		}
+		if (add && mkdirat(hfd, dir, 0700) == 0 && fchownat(hfd, dir,
+		    pw[i].uid, pw[i].gid, AT_SYMLINK_NOFOLLOW) == -1 &&
+		    geteuid() == 0) {
+			*errp = wfmt(w, "ssh: %s: %s", dir, strerror(errno));
+			close(hfd);
+			return (-1);
+		}
+		dfd = openat(hfd, dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW |
+		    O_CLOEXEC);
+		close(hfd);
+		if (dfd == -1) {
+			*errp = wfmt(w, "ssh: %s/%s: %s", pw[i].home, dir,
+			    strerror(errno));
+			return (-1);
+		}
+	}
+	if (fstat(dfd, &sb) == -1 || (sb.st_uid != pw[i].uid && sb.st_uid !=
+	    0)) {
+		close(dfd);
+		*errp = wfmt(w, "ssh: %s is not %s's", path, sp->user);
+		return (-1);
+	}
+	/* What is there now, read without a link. */
+	text = NULL;
+	len = 0;
+	{
+		int	fd;
+
+		if ((fd = openat(dfd, name, O_RDONLY | O_NOFOLLOW |
+		    O_CLOEXEC)) != -1) {
+			if (fstat(fd, &sb) == 0 && S_ISREG(sb.st_mode) &&
+			    sb.st_size <= 1024 * 1024) {
+				text = wmalloc(w, (size_t)sb.st_size + 1);
+				len = (size_t)read(fd, text, (size_t)sb.st_size);
+				if (len > (size_t)sb.st_size)
+					len = 0;
+				text[len] = '\0';
+			}
+			close(fd);
+		}
+	}
+	if (text == NULL)
+		text = wstrdup(w, "");
+	if (add) {
+		if ((k = key_obj(w, sp->text)) == NULL) {
+			close(dfd);
+			*errp = "ssh: that is no key OpenSSH reads";
+			return (-1);
+		}
+		fp = wstrdup(w, ucl_object_tostring(ucl_object_lookup(k,
+		    "fingerprint")));
+		ucl_object_unref(k);
+		out = wfmt(w, "%s%s%s\n", text, len > 0 && text[len - 1] != '\n' ?
+		    "\n" : "", sp->text);
+		/* Not twice. */
+		for (l = text; *l != '\0'; l = *e != '\0' ? e + 1 : e) {
+			e = l + strcspn(l, "\n");
+			if ((k = key_obj(w, wstrndup(w, l, (size_t)(e - l)))) !=
+			    NULL) {
+				cut = strcmp(ucl_object_tostring(
+				    ucl_object_lookup(k, "fingerprint")), fp) == 0;
+				ucl_object_unref(k);
+				if (cut) {
+					close(dfd);
+					*errp = wfmt(w, "ssh: %s has that key "
+					    "already (%s)", sp->user, fp);
+					return (-1);
+				}
+			}
+		}
+	} else {
+		out = wmalloc(w, len + 1);
+		o = 0;
+		cut = 0;
+		for (l = text; *l != '\0'; l = e) {
+			e = l + strcspn(l, "\n");
+			if (*e == '\n')
+				e++;
+			if ((k = key_obj(w, wstrndup(w, l, strcspn(l, "\n")))) !=
+			    NULL) {
+				if (strcmp(ucl_object_tostring(ucl_object_lookup(
+				    k, "fingerprint")), sp->text) == 0) {
+					ucl_object_unref(k);
+					cut++;
+					continue;
+				}
+				ucl_object_unref(k);
+			}
+			memcpy(out + o, l, (size_t)(e - l));
+			o += (size_t)(e - l);
+		}
+		out[o] = '\0';
+		if (cut == 0) {
+			close(dfd);
+			*errp = wfmt(w, "ssh: %s has no key %s", sp->user,
+			    sp->text);
+			return (-1);
+		}
+	}
+	if (put_at(dfd, name, out, strlen(out), pw[i].uid, pw[i].gid) != 0) {
+		*errp = wfmt(w, "ssh: %s: %s", path, strerror(errno));
+		close(dfd);
+		return (-1);
+	}
+	close(dfd);
+	return (0);
+}
+
+/*
+ * Each host key signed by the CA key given, its certificate beside it,
+ * and sshd told of each (HostCertificate).  The key is in /etc/ssh only
+ * while ssh-keygen reads it.
+ */
+static int
+sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	struct execres		 res;
+	ucl_object_t		*set;
+	const ucl_object_t	*v;
+	ucl_object_iter_t	 it;
+	const char		*why, *prog, *caf, *ca, *id, *p, *pr;
+	char			*argv[16], *text, host[MAXHOSTNAMELEN];
+	size_t			 i, len;
+	int			 n, rc, signed_;
+
+	if ((prog = tool(w, "ssh-keygen")) == NULL) {
+		*errp = "there is no ssh-keygen here";
+		return (-1);
+	}
+	ca = wfmt(w, ".arcana-ca.%08x", arc4random());
+	caf = at(w, wfmt(w, "%s/%s", SSH_DIR, ca));
+	len = strlen(sp->text);
+	text = wfmt(w, "%s%s", sp->text, len > 0 && sp->text[len - 1] != '\n' ?
+	    "\n" : "");
+	if (scope_replace(w, caf, text, strlen(text), 0600, NULL) != 0) {
+		explicit_bzero(text, strlen(text));
+		*errp = wfmt(w, "%s: %s", SSH_DIR, strerror(errno));
+		return (-1);
+	}
+	explicit_bzero(text, strlen(text));
+	if (w->jail != NULL)
+		id = w->jail;
+	else {
+		gethostname(host, sizeof(host));
+		id = wstrdup(w, host);
+	}
+	pr = NULL;
+	for (i = 0; i < sp->names.n; i++)
+		pr = pr == NULL ? sp->names.v[i] : wfmt(w, "%s,%s", pr,
+		    sp->names.v[i]);
+	set = settings(w, &why);
+	signed_ = 0;
+	rc = 0;
+	it = NULL;
+	while (rc == 0 && (v = ucl_object_iterate(ucl_object_lookup(set,
+	    "hostkey"), &it, true)) != NULL) {
+		p = ucl_object_tostring(v);
+		if (scope_slurp(w, at(w, wfmt(w, "%s.pub", p)), NULL) == NULL)
+			continue;
+		n = 0;
+		argv[n++] = (char *)(uintptr_t)prog;
+		argv[n++] = (char *)(uintptr_t)"-q";
+		argv[n++] = (char *)(uintptr_t)"-s";
+		argv[n++] = (char *)(uintptr_t)caf;
+		argv[n++] = (char *)(uintptr_t)"-I";
+		argv[n++] = (char *)(uintptr_t)wfmt(w, "arcana:%s", id);
+		argv[n++] = (char *)(uintptr_t)"-h";
+		if (pr != NULL) {
+			argv[n++] = (char *)(uintptr_t)"-n";
+			argv[n++] = (char *)(uintptr_t)pr;
+		}
+		argv[n++] = (char *)(uintptr_t)"-V";
+		argv[n++] = (char *)(uintptr_t)"+52w";
+		argv[n++] = (char *)(uintptr_t)at(w, wfmt(w, "%s.pub", p));
+		argv[n] = NULL;
+		if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
+			*errp = res.errlen > 0 ? wfmt(w, "ssh-keygen: %s",
+			    wstrndup(w, res.err, strcspn(res.err, "\r\n"))) :
+			    wtext(w, exec_error(w, &res, "ssh-keygen"));
+			rc = -1;
+		} else
+			signed_++;
+	}
+	(void)scope_rename(w, caf, ca, NULL);
+	if (rc != 0) {
+		ucl_object_unref(set);
+		return (-1);
+	}
+	if (signed_ == 0) {
+		ucl_object_unref(set);
+		*errp = "ssh: no host key to sign";
+		return (-1);
+	}
+	/* sshd told of each certificate. */
+	if ((text = scope_slurp(w, at(w, SSHD_CONFIG), NULL)) == NULL) {
+		ucl_object_unref(set);
+		*errp = wfmt(w, "%s: %s", SSHD_CONFIG, strerror(errno));
+		return (-1);
+	}
+	it = NULL;
+	while ((v = ucl_object_iterate(ucl_object_lookup(set, "hostkey"), &it,
+	    true)) != NULL) {
+		p = ucl_object_tostring(v);
+		if (scope_slurp(w, at(w, wfmt(w, "%s-cert.pub", p)), NULL) !=
+		    NULL && !listed(set, "hostcertificate", wfmt(w,
+		    "%s-cert.pub", p)))
+			text = conf_edit(w, text, "HostCertificate", wfmt(w,
+			    "%s-cert.pub", p), true);
+	}
+	ucl_object_unref(set);
+	return (conf_put(w, text, errp));
+}
+
+int
+do_ssh_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	const char	*text, *v;
+	size_t		 i;
+	int		 k;
+
+	if ((*errp = ssh_check(sp)) != NULL)
+		return (-1);
+	if (strcmp(sp->verb, "authorize") == 0)
+		return (authorize(w, sp, true, errp));
+	if (strcmp(sp->verb, "unauthorize") == 0)
+		return (authorize(w, sp, false, errp));
+	if (strcmp(sp->verb, "sign") == 0)
+		return (sign(w, sp, errp));
+	if ((text = scope_slurp(w, at(w, SSHD_CONFIG), NULL)) == NULL) {
+		*errp = wfmt(w, "%s: %s", SSHD_CONFIG, strerror(errno));
+		return (-1);
+	}
+	if (strcmp(sp->verb, "banner") == 0) {
+		if (sp->text == NULL || sp->text[0] == '\0')
+			text = conf_edit(w, text, "Banner", "none", false);
+		else {
+			if (scope_replace(w, at(w, BANNER), sp->text,
+			    strlen(sp->text), 0644, "banner.arcana-before") != 0) {
+				*errp = wfmt(w, "%s: %s", BANNER, strerror(errno));
+				return (-1);
+			}
+			text = conf_edit(w, text, "Banner", BANNER, false);
+			if (conf_put(w, text, errp) != 0) {
+				(void)scope_rename(w, at(w, BANNER),
+				    "banner.arcana-before", "banner");
+				return (-1);
+			}
+			return (0);
+		}
+		return (conf_put(w, text, errp));
+	}
+	/* set */
+	k = settable_of(sp->path);
+	v = NULL;
+	for (i = 0; i < sp->names.n; i++)
+		v = v == NULL ? sp->names.v[i] : wfmt(w, "%s %s", v,
+		    sp->names.v[i]);
+	if (strcmp(settable[k].name, "Port") == 0 && sp->names.n > 1) {
+		/* Ports are each a line. */
+		text = conf_edit(w, text, "Port", NULL, false);
+		for (i = 0; i < sp->names.n; i++)
+			text = conf_edit(w, text, "Port", sp->names.v[i], true);
+	} else
+		text = conf_edit(w, text, settable[k].name, v, false);
+	return (conf_put(w, text, errp));
+}

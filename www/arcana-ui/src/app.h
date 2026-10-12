@@ -158,6 +158,7 @@ enum tab {
 	TAB_KERNEL,
 	TAB_SYSCTL,
 	TAB_CERTS,
+	TAB_SSH,
 	TAB_PROCESSES,
 	TAB_LOG,
 	TAB_JOBS,
@@ -301,6 +302,7 @@ enum {
 	JOB_STORAGE,
 	JOB_PROCESS,
 	JOB_CERTS,
+	JOB_SSH,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -342,6 +344,9 @@ enum modal {
 	MODAL_JAIL_REMOVE,
 	MODAL_NEIGH,
 	MODAL_CERT_ADD,
+	MODAL_SSH_SET,
+	MODAL_SSH_SIGN,
+	MODAL_SSH_KEY,
 	MODAL_BIRD_PROTO,
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
@@ -646,6 +651,7 @@ int		 tbl_col(const char *, bool *);
 bool		 tbl_action(const char *, const char *, const char *);
 void		 refresh_kernel(struct server *, bool);
 void		 refresh_certs(struct server *, bool);
+void		 refresh_ssh(struct server *, bool);
 void		 apidoc_open(void);
 void		 view_apidoc(struct html *);
 bool		 apidoc_action(const char *, const char *, const char *);
@@ -754,6 +760,11 @@ void		 view_certs(struct html *, struct server *);
 bool		 certs_modal(struct html *);
 bool		 certs_form(const char *, const ucl_object_t *);
 bool		 certs_action(const char *, const char *, const char *);
+/* sshd.c: the base system's sshd, of a host or a jail. */
+void		 view_ssh(struct html *, struct server *);
+bool		 ssh_modal(struct html *);
+bool		 ssh_form(const char *, const ucl_object_t *);
+bool		 ssh_action(const char *, const char *, const char *);
 bool		 kernel_form(const char *, const ucl_object_t *);
 bool		 kernel_action(const char *, const char *, const char *);
 void		 topo_poll_host(struct server *);

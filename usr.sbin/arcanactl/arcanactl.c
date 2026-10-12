@@ -188,6 +188,9 @@ usage(void)
 	    "    neigh add address lladdr [temp] | delete address\n"
 	    "    cert [list] | add name file | remove name | trust file |\n"
 	    "        untrust file | rehash\n"
+	    "    sshd [list] | banner file | set Setting [value ...] |\n"
+	    "        authorize user keyfile | unauthorize user fingerprint |\n"
+	    "        sign ca-key-file [principal ...]\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
 	    "    sysctl [name | start of a name]\n"
@@ -2055,6 +2058,64 @@ cmd_neigh(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * sshd [list] | banner file | set Setting [value ...] | authorize user
+ * keyfile | unauthorize user fingerprint | sign ca-key-file [principal
+ * ...]: the base system's sshd, of the host or of -j's jail; a change is
+ * a job, and with -s undone unless confirmed.
+ */
+static int
+cmd_sshd(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_ssh_req	 rq;
+	struct arc_ssh_rsp	*rs;
+	char			*t;
+	int			 error;
+
+	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
+		memset(&rq, 0, sizeof(rq));
+		rq.jail = netjail;
+		if ((error = arc_ssh(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sshd");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		else if (rs->error != NULL)
+			xo_emit_warn("{:error/%s}", rs->error);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_ssh_rsp_free(rs);
+		return (error);
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_SSH;
+	sp.verb = argv[1];
+	if (argc == 3 && strcmp(argv[1], "banner") == 0)
+		sp.text = strcmp(argv[2], "-") == 0 ? "" : slurp(argv[2]);
+	else if (argc >= 3 && strcmp(argv[1], "set") == 0) {
+		sp.path = argv[2];
+		sp.names.v = (const char **)(uintptr_t)&argv[3];
+		sp.names.n = (size_t)argc - 3;
+	} else if (argc == 4 && strcmp(argv[1], "authorize") == 0) {
+		sp.user = argv[2];
+		t = slurp(argv[3]);
+		t[strcspn(t, "\n")] = '\0';
+		sp.text = t;
+	} else if (argc == 4 && strcmp(argv[1], "unauthorize") == 0) {
+		sp.user = argv[2];
+		sp.text = argv[3];
+	} else if (argc >= 3 && strcmp(argv[1], "sign") == 0) {
+		sp.text = slurp(argv[2]);
+		sp.names.v = (const char **)(uintptr_t)&argv[3];
+		sp.names.n = (size_t)argc - 3;
+	} else
+		usage();
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
  * cert [list] | add name file | remove name | trust file | untrust file |
  * rehash: the certificates OpenSSL trusts, of the host or of -j's jail;
  * a change is a job.
@@ -3556,6 +3617,8 @@ main(int argc, char *argv[])
 		rc = cmd_neigh(&cl, argc, argv);
 	else if (strcmp(argv[0], "cert") == 0)
 		rc = cmd_cert(&cl, argc, argv);
+	else if (strcmp(argv[0], "sshd") == 0)
+		rc = cmd_sshd(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||

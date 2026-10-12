@@ -314,6 +314,7 @@ worker(void *arg)
 	struct arc_kernel_rsp	 kr;
 	struct arc_jail_files_rsp jfr;
 	struct arc_certs_rsp	 cer;
+	struct arc_ssh_rsp	 sshr;
 	struct arc_transport_rsp tpr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
@@ -627,6 +628,20 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &cer.trace.v, &cer.trace.n);
 		rc = arc_certs_reply(j->req, &cer);
+		break;
+	case ARC_CMD_SSH:
+		what = j->jail != NULL ? wfmt(&w, "sshd of %s", j->jail) : "sshd";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&sshr, 0, sizeof(sshr));
+		sshr.has_ok = true;
+		if (scope_enter_jail(&w, j->jail, &sshr.error, false) == 0)
+			do_ssh(&w, &sshr);
+		ok = sshr.ok;
+		error = sshr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sshr.trace.v, &sshr.trace.n);
+		rc = arc_ssh_reply(j->req, &sshr);
 		break;
 	case ARC_CMD_JAIL_FILES:
 		what = "jail files";
@@ -1900,6 +1915,22 @@ arc_certs_doit(cbl_req *req, const struct arc_certs_req *rq,
 }
 
 int
+arc_ssh_doit(cbl_req *req, const struct arc_ssh_req *rq, void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SSH;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
 arc_jail_files_doit(cbl_req *req, void *arg __unused)
 {
 	struct job	*j;
@@ -1985,7 +2016,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_CERT)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SSH)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2171,6 +2202,8 @@ check_spec(const struct arc_job_spec *sp)
 		return (neigh_check(sp));
 	case ARC_JOB_KIND_CERT:
 		return (cert_check(sp));
+	case ARC_JOB_KIND_SSH:
+		return (ssh_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

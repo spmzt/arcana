@@ -4852,6 +4852,131 @@ certs_cleanup()
 	stop_daemon
 }
 
+atf_test_case sshd cleanup
+sshd_head()
+{
+	atf_set "descr" "The base system's sshd: its settings, banner, host keys and their certificates, and the keys users sign in with"
+}
+sshd_body()
+{
+	R=$(pwd)/tools/sshroot
+	mkdir -p tools $R/etc/ssh $R/root $R/home/alice
+	# sshd -t refuses what says BAD; -T is the file's settings.
+	cat > tools/sshd <<'EOT'
+#!/bin/sh
+case "$1" in
+-t)	if grep -q BAD "$3"; then
+		echo "$3 line 1: Bad configuration option: BAD" >&2
+		exit 255
+	fi
+	exit 0 ;;
+-T)	awk '!/^[ \t]*#/ && NF > 1 { if (tolower($1) == "match") exit;
+	    k = tolower($1); $1 = ""; sub(/^ /, ""); print k, $0 }' "$3"
+	grep -qi '^hostkey' "$3" ||
+	    echo "hostkey /etc/ssh/ssh_host_ed25519_key"
+	exit 0 ;;
+esac
+exit 1
+EOT
+	chmod +x tools/sshd
+	ln -s "$(which ssh-keygen)" tools/ssh-keygen
+	printf 'PermitRootLogin no\nPasswordAuthentication yes\nMatch User nobody\n\tPasswordAuthentication no\n' \
+	    > $R/etc/ssh/sshd_config
+	printf 'root:*:0:0:Charlie &:/root:/bin/sh\nalice:*:%d:%d:Alice:/home/alice:/bin/sh\ndaemon:*:1:1::/root:/usr/sbin/nologin\n' \
+	    "$(id -u)" "$(id -g)" > $R/etc/passwd
+	ssh-keygen -q -t ed25519 -N '' -C host -f $R/etc/ssh/ssh_host_ed25519_key
+	ssh-keygen -q -t ed25519 -N '' -C alice@lab -f alice_key
+	ssh-keygen -q -t ed25519 -N '' -C lab-ca -f ca
+	hostfp=$(ssh-keygen -lf $R/etc/ssh/ssh_host_ed25519_key.pub | awk '{print $2}')
+	alicefp=$(ssh-keygen -lf alice_key.pub | awk '{print $2}')
+	cafp=$(ssh-keygen -lf ca.pub | awk '{print $2}')
+	DAEMON_ARGS="-2 $(pwd)/tools -w 2"
+	start_daemon
+	# Read: its settings, its host key's fingerprint, who signs in.
+	atf_check -o save:list "$JGC" -c "$SOCK" sshd
+	atf_check -o match:'"permitrootlogin":\["no"\]' -o match:'"bits":256' \
+	    -o match:'"name":"alice"' -o match:'"name":"root"' \
+	    -o not-match:'"name":"daemon"' cat list
+	grep -qF "\"fingerprint\":\"$hostfp\"" list || atf_fail "host key"
+	# A setting: read by sshd -t, before the first Match, the file kept.
+	atf_check -o match:'done +sshd set PermitRootLogin$' \
+	    "$JGC" -c "$SOCK" sshd set PermitRootLogin prohibit-password
+	atf_check -o inline:'PermitRootLogin prohibit-password\nPasswordAuthentication yes\nMatch User nobody\n\tPasswordAuthentication no\n' \
+	    cat $R/etc/ssh/sshd_config
+	test -f $R/etc/ssh/sshd_config.arcana-before || atf_fail "not kept"
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sshd set AllowUsers alice 'bob@10.*'
+	atf_check -o match:'^AllowUsers alice bob@10\.\*$' cat $R/etc/ssh/sshd_config
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sshd set AllowUsers
+	atf_check -o not-match:'AllowUsers' cat $R/etc/ssh/sshd_config
+	atf_check -s exit:1 -e match:'a value it takes' -o ignore \
+	    "$JGC" -c "$SOCK" sshd set PermitRootLogin maybe
+	atf_check -s exit:1 -e match:'set is of AllowUsers' -o ignore \
+	    "$JGC" -c "$SOCK" sshd set ForceCommand /bin/sh
+	# What sshd -t refuses is not put in place.
+	atf_check -s exit:1 -o match:'sshd -t: .*Bad configuration option: BAD' \
+	    "$JGC" -c "$SOCK" sshd set AllowUsers BAD
+	atf_check -o not-match:'BAD' cat $R/etc/ssh/sshd_config
+	# The banner.
+	echo 'Authorised use only.' > banner.txt
+	atf_check -o match:'done +sshd banner$' "$JGC" -c "$SOCK" sshd banner banner.txt
+	atf_check -o inline:'Authorised use only.\n' cat $R/etc/ssh/banner
+	atf_check -o match:'^Banner /etc/ssh/banner$' cat $R/etc/ssh/sshd_config
+	atf_check -o match:'"banner_text":"Authorised use only.\\n"' \
+	    "$JGC" -c "$SOCK" sshd
+	# A key of alice's: her own .ssh, hers alone.
+	atf_check -o match:'done +sshd authorize of alice$' \
+	    "$JGC" -c "$SOCK" sshd authorize alice alice_key.pub
+	atf_check -o match:'^-rw------- ' ls -l $R/home/alice/.ssh/authorized_keys
+	atf_check -o match:'^drwx------ ' ls -ld $R/home/alice/.ssh
+	atf_check -o save:list "$JGC" -c "$SOCK" sshd
+	grep -qF "\"keys\":[{\"type\":\"ssh-ed25519\",\"fingerprint\":\"$alicefp\",\"comment\":\"alice@lab\"" list ||
+	    atf_fail "alice's key"
+	atf_check -s exit:1 -o match:'has that key already' \
+	    "$JGC" -c "$SOCK" sshd authorize alice alice_key.pub
+	atf_check -s exit:1 -o match:'daemon is no user who signs in here' \
+	    "$JGC" -c "$SOCK" sshd authorize daemon alice_key.pub
+	atf_check -o match:'done +sshd unauthorize of alice$' \
+	    "$JGC" -c "$SOCK" sshd unauthorize alice "$alicefp"
+	atf_check -o empty cat $R/home/alice/.ssh/authorized_keys
+	atf_check -s exit:1 -o match:'has no key' \
+	    "$JGC" -c "$SOCK" sshd unauthorize alice "$alicefp"
+	# A link where .ssh is: not followed.
+	mkdir -p $R/home/eve elsewhere
+	printf 'eve:*:%d:%d:Eve:/home/eve:/bin/sh\n' "$(id -u)" "$(id -g)" >> $R/etc/passwd
+	ln -s $(pwd)/elsewhere $R/home/eve/.ssh
+	atf_check -s exit:1 -o match:'sshd authorize of eve: ' \
+	    "$JGC" -c "$SOCK" sshd authorize eve alice_key.pub
+	test -e elsewhere/authorized_keys && atf_fail "written through a link"
+	# The host key signed by the CA: its certificate, and sshd told.
+	atf_check -o match:'done +sshd sign$' "$JGC" -c "$SOCK" sshd sign ca lab.example
+	test -f $R/etc/ssh/ssh_host_ed25519_key-cert.pub || atf_fail "no certificate"
+	atf_check -o match:'^HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub$' \
+	    cat $R/etc/ssh/sshd_config
+	ls -a $R/etc/ssh | grep -q arcana-ca && atf_fail "the CA key was left"
+	atf_check -o save:list -o match:'"principals":\["lab.example"\]' \
+	    -o match:'"kind":"host"' -o match:'"certificate_used":true' \
+	    "$JGC" -c "$SOCK" sshd
+	grep -qF "\"ca\":\"$cafp\"" list || atf_fail "the CA"
+	atf_check -s exit:1 -e match:"the CA's private key" -o ignore \
+	    "$JGC" -c "$SOCK" sshd sign ca.pub
+	# In safe mode, unconfirmed: the file before it back.
+	cp $R/etc/ssh/sshd_config before
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sshd set PasswordAuthentication no
+	sleep 1
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'not confirmed within 2 s: undone' -s exit:1 \
+	    "$JGC" -c "$SOCK" job 13
+	atf_check -o file:before cat $R/etc/ssh/sshd_config
+}
+sshd_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case ntp
@@ -4863,6 +4988,7 @@ atf_init_test_cases()
 	atf_add_test_case jail_conf
 	atf_add_test_case neighbours
 	atf_add_test_case certs
+	atf_add_test_case sshd
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute

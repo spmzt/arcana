@@ -2440,6 +2440,130 @@ part_certs(void)
 	    ".length === 1", 20);
 }
 
+/* A file's text as a JavaScript string's, between single quotes. */
+static void
+js_text(char *out, size_t len, const char *path)
+{
+	FILE	*f;
+	size_t	 o;
+	int	 c;
+
+	ATF_REQUIRE((f = fopen(path, "r")) != NULL);
+	for (o = 0; o + 3 < len && (c = fgetc(f)) != EOF; ) {
+		if (c == '\n') {
+			out[o++] = '\\';
+			out[o++] = 'n';
+		} else if (c == '\'' || c == '\\') {
+			out[o++] = '\\';
+			out[o++] = (char)c;
+		} else
+			out[o++] = (char)c;
+	}
+	out[o] = '\0';
+	fclose(f);
+}
+
+/*
+ * The base system's sshd: a setting changed, the banner, a user's key
+ * added and taken away, the host key signed by a CA's.
+ */
+static void
+part_ssh(void)
+{
+	char	 key[4096], js[8192];
+	int	 i;
+
+	ATF_REQUIRE(system("R=tools/sshroot; mkdir -p $R/etc/ssh $R/root "
+	    "$R/home/alice && printf 'PermitRootLogin no\\nPasswordAuthentication"
+	    " yes\\n' > $R/etc/ssh/sshd_config && printf 'root:*:0:0::/root:"
+	    "/bin/sh\\nalice:*:%d:%d:Alice:/home/alice:/bin/sh\\n' $(id -u) "
+	    "$(id -g) > $R/etc/passwd && ssh-keygen -q -t ed25519 -N '' -C host "
+	    "-f $R/etc/ssh/ssh_host_ed25519_key && ssh-keygen -q -t ed25519 -N "
+	    "'' -C alice@lab -f alice_key && ssh-keygen -q -t ed25519 -N '' -C "
+	    "lab-ca -f lab_ca") == 0);
+	run("document.querySelector('button.tab[data-arg=ssh]').click()");
+	wait_js("location.hash.endsWith('/ssh') && [...document."
+	    "querySelectorAll('table.ssh-set tbody tr')].some(r => r."
+	    "textContent.includes('PermitRootLogin') && r.textContent."
+	    "includes('no'))", 20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.ssh-hk tbody "
+	    "tr')].some(r => r.textContent.includes('ssh-ed25519') && r."
+	    "textContent.includes('SHA256:'))"));
+	/* A setting, from what it takes. */
+	run("document.querySelector('button[data-act=ssh-set][data-arg="
+	    "PermitRootLogin]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-set] select')", 5);
+	run("const f = document.querySelector('form[data-form=ssh-set]'); "
+	    "f.value.value = 'prohibit-password'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('table.ssh-set tbody tr')]"
+	    ".some(r => r.textContent.includes('prohibit-password'))", 20);
+	ATF_CHECK(system("grep -qx 'PermitRootLogin prohibit-password' "
+	    "tools/sshroot/etc/ssh/sshd_config") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* The banner. */
+	run("const f = document.querySelector('form[data-form=ssh-banner]'); "
+	    "f.text.value = 'Authorised use only.'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	/* The file first, then sshd_config naming it. */
+	for (i = 0; i < 100 && system("grep -qx 'Banner /etc/ssh/banner' "
+	    "tools/sshroot/etc/ssh/sshd_config") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'Authorised use only.' "
+	    "tools/sshroot/etc/ssh/banner") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* alice's key, added and taken away. */
+	js_text(key, sizeof(key), "alice_key.pub");
+	run("document.querySelector('button[data-act=ssh-key-add][data-arg="
+	    "alice]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-key]')", 5);
+	snprintf(js, sizeof(js), "const f = document.querySelector('form"
+	    "[data-form=ssh-key]'); f.key.value = '%s'; f.requestSubmit();",
+	    key);
+	run(js);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('table.ssh-keys tbody tr')]"
+	    ".some(r => r.textContent.includes('alice@lab'))", 20);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=ssh-key-del]').click()");
+	wait_js("document.querySelector('.modal button.danger')", 5);
+	run("document.querySelector('.modal button.danger').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("![...document.querySelectorAll('table.ssh-keys tbody tr')]"
+	    ".some(r => r.textContent.includes('alice@lab'))", 20);
+	ATF_CHECK(system("test ! -s tools/sshroot/home/alice/.ssh/"
+	    "authorized_keys") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* The host key signed: the CA's key given once. */
+	js_text(key, sizeof(key), "lab_ca");
+	run("document.querySelector('button[data-act=ssh-sign]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-sign]')", 5);
+	snprintf(js, sizeof(js), "const f = document.querySelector('form"
+	    "[data-form=ssh-sign]'); f.key.value = '%s'; f.principals.value = "
+	    "'lab.example lab'; f.requestSubmit();", key);
+	run(js);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('table.ssh-hk tbody tr')]"
+	    ".some(r => r.textContent.includes('for lab.example lab'))", 20);
+	ATF_CHECK(system("grep -qx 'HostCertificate /etc/ssh/"
+	    "ssh_host_ed25519_key-cert.pub' tools/sshroot/etc/ssh/sshd_config")
+	    == 0);
+	ATF_CHECK(system("ls -a tools/sshroot/etc/ssh | grep -q arcana-ca") !=
+	    0);
+	run("document.querySelector('.dock > header').click()");
+	/* Nothing wider than the page. */
+	ATF_CHECK(js_true("document.querySelector('.stage').scrollWidth <= "
+	    "document.querySelector('.stage').clientWidth + 1"));
+	shot("9b-ssh");
+	run("document.querySelector('table.ssh-hk').scrollIntoView()");
+	shot("9c-ssh-keys");
+}
+
 static void
 part_storage(void)
 {
@@ -3148,6 +3272,7 @@ part_storage(void)
 	run("document.querySelector('section.ucard .uname').click()");
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
 	part_certs();
+	part_ssh();
 }
 
 static void
