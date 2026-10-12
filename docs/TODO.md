@@ -340,7 +340,8 @@
   - MSS clamping on transports.
   - QoS on ipfw by forms: pipes, schedulers, queues, their masks and
     the rules that use them, beyond what SD-WAN makes.
-  - Every table exported as CSV.
+  - Every table exported as CSV. (Done 2026-10-12: ⤓ in every
+    table's head, the rows as shown.)
   - Prefix lists kept by the console and used on any host.
   - SD-WAN policies by named lists (MEF 70.2, no vendor's model):
     lists of UCS, of prefixes (as the zones hold them), of edges, of
