@@ -556,7 +556,8 @@ paths:
           schema: { type: string }
         - name: filter
           in: query
-          description: For routes, a text searched for on the host
+          description: >-
+            For routes, a text searched for on the host
             (letters, digits and . : / _ -). A table too large to send
             comes with total and truncated.
           schema: { type: string }
@@ -670,11 +671,20 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/HostData"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/KernelData" }
   /api/stream:
     get:
       tags: [servers]
       summary: A WebSocket for what comes in parts
-      description: Upgraded to a WebSocket; it needs the session and an
+      description: >-
+        Upgraded to a WebSocket; it needs the session and an
         Origin that is the console's own. The page sends id, server,
         what (sysctl, routes, connections or sockets), filter, and
         for a table family (inet, inet6 or all), fib and jail, as a
@@ -733,7 +743,8 @@ paths:
     get:
       tags: [servers]
       summary: What runs on the host
-      description: Under data. processes is each process with its pid,
+      description: >-
+        Under data. processes is each process with its pid,
         ppid, user, jid and jail, state (run, sleep, stop, zombie, wait,
         lock, idle) and what it waits on, nice, pri, threads, rss and
         size in bytes, time (CPU seconds used), wcpu (the kernel's
@@ -763,6 +774,14 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/HostData"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/ProcessesData" }
   /api/servers/{server}/log:
     get:
       tags: [servers]
@@ -803,6 +822,14 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/HostData"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/LogData" }
         "400": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/sdwan:
     get:
@@ -818,7 +845,8 @@ paths:
             rest of the answer is whole.
       responses:
         "200":
-          description: data as the agent's sdwan operation answers it:
+          description: >-
+            data as the agent's sdwan operation answers it:
             targets, each with its id, address, family, fib, state,
             since, sent, received, misses, last_rtt, now and samples
             (each t, delay, ipdv, loss, min, max, sent, recv); probing;
@@ -862,6 +890,14 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/HostData"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/HistoryData" }
     post:
       tags: [servers]
       summary: How the agent samples the host
@@ -910,8 +946,11 @@ paths:
         by one), link and link-del (interface, up, carrier, mtu),
         address-add and address-del (interface, address, prefixlen),
         neigh and neigh-del (a neighbour, as net/neighbours has one),
-        and threshold (what, value, limit, over) when a figure of the
-        history crosses its limit. The rest are the kernel's netlink(4)
+        threshold (what, value, limit, over, and name for an
+        interface's, disk's or jail's) when a figure of the history
+        crosses its limit, kmsg (a kernel message), and sdwan-tunnel,
+        sdwan-fault and sdwan-security from the SD-WAN edge; EventsData
+        says what each carries. The rest are the kernel's netlink(4)
         messages of the host's own network, and of each vnet jail's,
         which have jail, its name.
       parameters:
@@ -922,6 +961,14 @@ paths:
       responses:
         "200":
           description: ok and data, or error
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/HostData"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/EventsData" }
   /api/servers/{server}/ipfw/trace:
     get:
       tags: [servers]
@@ -972,7 +1019,22 @@ paths:
           schema: { type: string, pattern: "^[A-Za-z0-9._%-]*$" }
       responses:
         "200":
-          description: ok and data, or error
+          description: ok, data, total and truncated, or error
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/HostData"
+                  - type: object
+                    properties:
+                      data: { $ref: "#/components/schemas/SysctlData" }
+                      total:
+                        type: integer
+                        description: how many names there are under filter, of
+                          which values has the first; when ok.
+                      truncated:
+                        type: boolean
+                        description: values has fewer than total; when ok.
         "400": { $ref: "#/components/responses/Error" }
   /api/servers/{server}/transport:
     get:
@@ -1312,7 +1374,7 @@ paths:
       tags: [sdwan]
       summary: The remote end points' identities, each with its address and whether it is authorised
       responses:
-        "200": { description: identities, each swvc, end_point, edge, interface, name, zone, public_key, user, issued, expires, live, address }
+        "200": { description: "identities, each swvc, end_point, edge, interface, name, zone, public_key, user, issued, expires, live, address" }
     post:
       tags: [sdwan]
       summary: Issue an identity, its key pair made here, the WireGuard configuration answered once
@@ -1328,7 +1390,7 @@ paths:
                 zone: { type: string }
                 user: { type: boolean, description: the name is a sign-in key's }
       responses:
-        "200": { description: name, public_key, config (wg-quick text, shown once), applied, why }
+        "200": { description: "name, public_key, config (wg-quick text, shown once), applied, why" }
     delete:
       tags: [sdwan]
       summary: Revoke an identity; the apply that follows removes its peer
@@ -1337,7 +1399,7 @@ paths:
         - { name: end_point, in: query, schema: { type: string } }
         - { name: name, in: query, schema: { type: string } }
       responses:
-        "200": { description: revoked, applied, why }
+        "200": { description: "revoked, applied, why" }
   /api/sdwan/record:
     get:
       tags: [sdwan]
@@ -1384,12 +1446,21 @@ paths:
       summary: The workflows
       responses:
         "200":
-          description: workflows, each with id, name, hosts, params,
-            steps, every, on and destructive.
+          description: The workflows, as kept.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [workflows]
+                properties:
+                  workflows:
+                    type: array
+                    items: { $ref: "#/components/schemas/Workflow" }
     post:
       tags: [workflows]
       summary: A workflow made, or changed when its id is one
-      description: Each step has an id and a job (an object as the jobs
+      description: >-
+        Each step has an id and a job (an object as the jobs
         API takes one, its kind's fields as share/arcana/jobs.yaml says)
         or a read (hello, jails, services, stats, events, history,
         packages), or arcana, one of Arcana's own (check, build, agents,
@@ -1409,7 +1480,10 @@ paths:
             schema: { type: object }
       responses:
         "200":
-          description: the workflow as kept
+          description: The workflow as kept.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
         "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/workflows/{id}:
@@ -1422,8 +1496,7 @@ paths:
           required: true
           schema: { type: string, pattern: "^[0-9a-f]{8}$" }
       responses:
-        "200":
-          description: ok
+        "200": { $ref: "#/components/responses/Ok" }
         "404": { $ref: "#/components/responses/Error" }
   /api/workflows/{id}/run:
     post:
@@ -1444,7 +1517,14 @@ paths:
                 hosts: { type: array, items: { type: string } }
       responses:
         "200":
-          description: run, its number
+          description: The run begun.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [run]
+                properties:
+                  run: { type: integer, description: Its id in /api/runs. }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/runs:
@@ -1456,7 +1536,16 @@ paths:
         their traces.
       responses:
         "200":
-          description: runs
+          description: The runs kept, oldest first, without the steps' traces.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runs]
+                properties:
+                  runs:
+                    type: array
+                    items: { $ref: "#/components/schemas/Run" }
   /api/runs/{n}:
     get:
       tags: [workflows]
@@ -1468,7 +1557,10 @@ paths:
           schema: { type: integer }
       responses:
         "200":
-          description: the run
+          description: The run, with each step's trace.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
         "404": { $ref: "#/components/responses/Error" }
     delete:
       tags: [workflows]
@@ -1479,8 +1571,7 @@ paths:
           required: true
           schema: { type: integer }
       responses:
-        "200":
-          description: ok
+        "200": { $ref: "#/components/responses/Ok" }
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/transfers:
@@ -1541,7 +1632,25 @@ paths:
         used), never its value.
       responses:
         "200":
-          description: tokens
+          description: The tokens.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tokens]
+                properties:
+                  tokens:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, name, created, last]
+                      properties:
+                        id: { type: string, pattern: "^[0-9a-f]{16}$" }
+                        name: { type: string }
+                        created: { type: integer, description: Unix time. }
+                        last:
+                          type: integer
+                          description: Unix time it last opened something; 0 never.
     post:
       tags: [auth]
       summary: Make a read-only API token
@@ -1558,7 +1667,19 @@ paths:
                 name: { type: string, maxLength: 64 }
       responses:
         "200":
-          description: id, name and token
+          description: The token, its value given this once.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [id, name, token]
+                properties:
+                  id: { type: string, pattern: "^[0-9a-f]{16}$" }
+                  name: { type: string }
+                  token:
+                    type: string
+                    pattern: "^arcr_[0-9a-f]{64}$"
+                    description: Sent as Authorization Bearer.
         "409": { $ref: "#/components/responses/Error" }
   /api/tokens/{id}:
     delete:
@@ -1570,8 +1691,7 @@ paths:
           required: true
           schema: { type: string, pattern: "^[0-9a-f]{16}$" }
       responses:
-        "200":
-          description: ok
+        "200": { $ref: "#/components/responses/Ok" }
         "404": { $ref: "#/components/responses/Error" }
   /api/push:
     get:
@@ -1612,7 +1732,15 @@ paths:
                 auth: { type: string }
                 name: { type: string }
       responses:
-        "200": { description: The number of devices now }
+        "200":
+          description: The number of devices now.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices: { type: integer }
         "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
 
@@ -1629,7 +1757,15 @@ paths:
               properties:
                 endpoint: { type: string }
       responses:
-        "200": { description: The number of devices now }
+        "200":
+          description: The number of devices now.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices: { type: integer }
 
   /api/push/send:
     post:
@@ -1646,7 +1782,31 @@ paths:
                 except: { type: string, description: "the sender's own endpoint" }
       responses:
         "200":
-          description: sent, gone, failed, and what each push service answered
+          description: What each push service answered.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, sent, gone, failed, results]
+                properties:
+                  ok: { type: boolean, const: true }
+                  sent: { type: integer }
+                  gone:
+                    type: integer
+                    description: Devices the push service no longer knows,
+                      taken off the list.
+                  failed: { type: integer }
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      required: [status]
+                      properties:
+                        service: { type: string, description: The push service's host. }
+                        status:
+                          type: integer
+                          description: Its HTTP status; 201 taken, -1 no answer.
+                        said: { type: string }
 
   /api/settings:
     get:
@@ -1725,7 +1885,7 @@ paths:
       parameters:
         - { name: component, in: query, schema: { type: string, enum: [console, agent] } }
         - { name: from, in: query, schema: { type: string }, description: the version running }
-        - { name: to, in: query, schema: { type: string }, description: up to this version, for the agents }
+        - { name: to, in: query, schema: { type: string }, description: "up to this version, for the agents" }
       responses:
         "200":
           description: component, from, to, kind (tags or commits), head,
@@ -2119,6 +2279,15 @@ components:
                 type: array
                 items: { type: string }
               trace: { type: array }
+    Ok:
+      description: Done.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok]
+            properties:
+              ok: { type: boolean, const: true }
     Error:
       description: The request was refused.
       content:
@@ -2270,6 +2439,528 @@ components:
         local:
           type: boolean
           description: A unix socket on the console's own host.
+
+    Workflow:
+      type: object
+      description: As POST /api/workflows takes one, with its id.
+      required: [id, name, steps]
+      properties:
+        id: { type: string, pattern: "^[0-9a-f]{8}$" }
+        name: { type: string }
+        hosts:
+          type: array
+          items: { type: string }
+          description: Server ids it runs on by itself; by hand, those picked.
+        params:
+          type: array
+          items:
+            type: object
+            properties:
+              name: { type: string }
+              default: { type: string }
+        steps:
+          type: array
+          items:
+            type: object
+            required: [id]
+            description: >-
+              A job (job, its kind's fields), a read (read: hello, jails,
+              services, stats, events, history or packages) or one of
+              Arcana's own (arcana), with when and on_fail.
+            properties:
+              id: { type: string }
+              name: { type: string }
+              job: { type: object }
+              read: { type: string }
+              arcana: { type: string, enum: [check, build, agents, console] }
+              when: { type: object }
+              on_fail: { type: string }
+        every: { type: integer, description: Seconds between runs; 0 none. }
+        "on":
+          type: array
+          items:
+            type: object
+            required: [event]
+            properties:
+              event: { type: string }
+        destructive: { type: boolean }
+
+    Run:
+      type: object
+      required: [id, workflow, name, trigger, state, started, hosts]
+      properties:
+        id: { type: integer }
+        workflow: { type: string, description: The workflow's id. }
+        name: { type: string }
+        trigger:
+          type: string
+          description: hand, every, or event and the event's kind.
+          examples: [hand, every, event host-down]
+        state:
+          type: string
+          enum: [running, done, failed, cancelled, interrupted]
+          description: interrupted when the console stopped while it ran.
+        started: { type: integer, description: Unix time. }
+        ended: { type: integer, description: Unix time. }
+        params: { type: object, additionalProperties: { type: string } }
+        event: { type: object, description: The event that began it. }
+        cancel: { type: boolean, description: A stop was asked for. }
+        hosts:
+          type: array
+          items:
+            type: object
+            required: [id, name, state, steps]
+            properties:
+              id: { type: string }
+              name: { type: string }
+              state: { type: string }
+              steps:
+                type: array
+                items:
+                  type: object
+                  required: [id, state]
+                  properties:
+                    id: { type: string }
+                    state:
+                      type: string
+                      enum: [pending, running, done, failed, skipped, cancelled]
+                    job: { type: integer, description: The host's job number. }
+                    title: { type: string }
+                    error: { type: string }
+                    started: { type: integer }
+                    ended: { type: integer }
+                    trace:
+                      type: object
+                      description: >-
+                        The host's whole answer to the step: a job's
+                        reply (job, with its own trace), or what a read
+                        answered; not kept when larger than the console
+                        keeps.
+
+    HostData:
+      allOf:
+        - $ref: "#/components/schemas/HostReply"
+        - type: object
+          required: [ok]
+          properties:
+            ok: { type: boolean }
+            error:
+              type: [string, "null"]
+              description: what went wrong; null when ok.
+
+    EventsData:
+      type: object
+      required: [last, first, kept, events]
+      properties:
+        last:
+          type: integer
+          description: the number of the newest event; 0 before any.
+        first:
+          type: integer
+          description: the number of the oldest event still kept; 0 when
+            none is. Beyond the after asked with, some were missed.
+        kept:
+          type: integer
+          description: how many events are kept at most (512).
+        events:
+          type: array
+          description: the events after the number asked for, the oldest
+            first.
+          items:
+            type: object
+            required: [n, t, kind, data]
+            properties:
+              n: { type: integer, description: "its number, one more than the one before." }
+              t: { type: integer, description: Unix time. }
+              kind:
+                type: string
+                examples: [route-add, route-del, routes, link, link-del,
+                  address-add, address-del, neigh, neigh-del, threshold,
+                  kmsg, sdwan-tunnel, sdwan-fault, sdwan-security]
+              jail:
+                type: string
+                description: the vnet jail whose network it is; absent for
+                  the host's own.
+              data:
+                type: object
+                description: >-
+                  what it is about, by kind: route-add and route-del, the
+                  route as net/routes has one; routes, changed (how many
+                  more changed in a second than are said one by one); link
+                  and link-del, interface, up, carrier, mtu; address-add
+                  and address-del, interface, address, prefixlen; neigh and
+                  neigh-del, a neighbour as net/neighbours has one;
+                  threshold, what (cpu, mem, swap, or net, disk, jail-cpu,
+                  jail-mem with name), value, limit, over; kmsg, seq and
+                  text of a kernel message, or seq and more when more came
+                  than were told one by one; sdwan-tunnel, id, address,
+                  state and misses or interface and by; sdwan-fault, type,
+                  severity, object, by, description, state (set or
+                  cleared); sdwan-security, seq, rule, action, src, dst,
+                  iface, comment.
+
+    HistoryData:
+      type: object
+      required: [limits, rules, racct, step, keep, bytes, ncpu, mem_total,
+        swap_total, fields, nets, disks, jails, samples]
+      properties:
+        limits:
+          type: object
+          description: the percentages over which an event of kind
+            threshold is made; 0 for none.
+          required: [cpu, mem, swap]
+          properties:
+            cpu: { type: integer }
+            mem: { type: integer }
+            swap: { type: integer }
+        rules:
+          type: array
+          description: the limits of one interface, disk or jail each.
+          items:
+            type: object
+            required: [kind, name, limit, over]
+            properties:
+              kind: { type: string, enum: [net, disk, jail-cpu, jail-mem] }
+              name: { type: string }
+              limit:
+                type: integer
+                description: bytes a second for net and disk, percent for
+                  jail-cpu, bytes for jail-mem.
+              over: { type: boolean, description: "over its limit now." }
+        racct:
+          type: boolean
+          description: the kernel accounts for jails (kern.racct.enable);
+            without it jails is empty.
+        step: { type: integer, description: "seconds between two samples." }
+        keep: { type: integer, description: "how many samples are kept." }
+        bytes:
+          type: integer
+          description: the memory the samples take in the agent; 0 when
+            keep is.
+        ncpu: { type: integer }
+        mem_total: { type: integer, description: Bytes. }
+        swap_total: { type: integer, description: Bytes. }
+        fields:
+          type: array
+          description: what each sample begins with, in order.
+          items: { type: string }
+          examples: [[t, cpu, load, mem, swap, rx, tx, read, write]]
+        nets:
+          type: array
+          description: the interfaces, without the loopback; at most 16.
+          items: { type: string }
+        disks:
+          type: array
+          description: the disks told apart; at most 16.
+          items: { type: string }
+        jails:
+          type: array
+          description: the jails racct accounts for; at most 16.
+          items: { type: string }
+        samples:
+          type: array
+          description: >-
+            the samples after the time asked for, the oldest first. Each
+            is the fields (t Unix time, cpu in percent of all CPUs, load
+            the one-minute load average, mem and swap bytes in use, rx
+            and tx bytes a second of all interfaces, read and write bytes
+            a second of all disks), then bytes a second in and out of
+            each of nets, then read and written of each of disks, then
+            the CPU percent and memory bytes of each of jails, as racct
+            has them. All but cpu and load are whole numbers.
+          items:
+            type: array
+            prefixItems:
+              - { type: integer }
+              - { type: number }
+              - { type: number }
+            items: { type: integer }
+
+    ProcessesData:
+      oneOf:
+        - title: Processes
+          type: object
+          description: without pid.
+          required: [processes, jails, ncpu, elapsed]
+          properties:
+            processes:
+              type: array
+              description: the busiest first; with jail only that jail's.
+              items:
+                type: object
+                required: [pid, ppid, user, jid, state, nice, pri, threads,
+                  rss, size, time, wcpu, cpu, in, out, io, start, comm]
+                properties:
+                  pid: { type: integer }
+                  ppid: { type: integer }
+                  user:
+                    type: string
+                    description: the name, or the uid when it has none.
+                  jid: { type: integer, description: "0 for the host's." }
+                  jail: { type: string, description: "its jail's name, when jid is not 0." }
+                  state:
+                    type: string
+                    enum: [run, sleep, stop, zombie, wait, lock, idle, "?"]
+                  wait:
+                    type: string
+                    description: what it waits on, when it sleeps.
+                  nice: { type: integer }
+                  pri: { type: integer }
+                  threads: { type: integer }
+                  rss: { type: integer, description: Bytes. }
+                  size: { type: integer, description: "Bytes, its virtual size." }
+                  time: { type: number, description: "CPU seconds used." }
+                  wcpu:
+                    type: number
+                    description: the kernel's decayed share of one CPU, in
+                      percent.
+                  cpu:
+                    type: number
+                    description: its share of one CPU between this look and
+                      the one before, in percent.
+                  in: { type: integer, description: "blocks read." }
+                  out: { type: integer, description: "blocks written." }
+                  io:
+                    type: number
+                    description: blocks a second since the look before.
+                  start: { type: integer, description: "Unix time it began." }
+                  kernel:
+                    type: boolean
+                    const: true
+                    description: the kernel's own; absent when not.
+                  comm: { type: string }
+                  args:
+                    type: string
+                    description: its command line, at most 300 bytes;
+                      absent when unreadable, or for all when with them
+                      the reply is too large.
+            jails:
+              type: array
+              description: each jail's processes added up.
+              items:
+                type: object
+                required: [jid, procs, threads, rss, cpu, wcpu]
+                properties:
+                  jid: { type: integer }
+                  name: { type: string }
+                  procs: { type: integer }
+                  threads: { type: integer }
+                  rss: { type: integer, description: Bytes. }
+                  cpu: { type: number }
+                  wcpu: { type: number }
+            ncpu: { type: integer }
+            elapsed:
+              type: number
+              description: the seconds between the two looks.
+        - title: Process
+          type: object
+          description: with pid; jail is not looked at.
+          required: [pid, comm, files, threads]
+          properties:
+            pid: { type: integer }
+            comm: { type: string }
+            files:
+              type: array
+              description: its open files, at most 500.
+              items:
+                type: object
+                required: [type]
+                properties:
+                  fd: { type: integer }
+                  use:
+                    type: string
+                    enum: [cwd, root, text, mapped, other]
+                    description: in place of fd, for what has none.
+                  type:
+                    type: string
+                    enum: [file, fifo, socket, pipe, tty, kqueue, mqueue,
+                      shm, sem, process, device, other]
+                  path: { type: string }
+                  proto: { type: string, description: "a socket's." }
+                  local:
+                    type: string
+                    description: a socket's address, host:port or [host]:port,
+                      a unix socket's path; empty for any other.
+                  remote: { type: string, description: "as local." }
+                  mode: { type: string, enum: [r, w, rw] }
+            threads:
+              type: array
+              description: its threads, at most 1000.
+              items:
+                type: object
+                required: [tid, name, state, pri, wcpu, time, cpu]
+                properties:
+                  tid: { type: integer }
+                  name: { type: string }
+                  state:
+                    type: string
+                    enum: [run, sleep, stop, zombie, wait, lock, idle, "?"]
+                  wait: { type: string, description: "what it waits on, when it sleeps." }
+                  pri: { type: integer }
+                  wcpu: { type: number, description: "percent of one CPU." }
+                  time: { type: number, description: "CPU seconds used." }
+                  cpu:
+                    type: integer
+                    description: the CPU it last ran on, not a share.
+
+    LogData:
+      type: object
+      required: [name, lines, position]
+      properties:
+        name: { type: string, description: "the log read." }
+        files:
+          type: array
+          description: the logs that can be read, by name; absent for
+            @dmesg and @audit.
+          items:
+            type: object
+            required: [name, size, mtime]
+            properties:
+              name: { type: string }
+              size: { type: integer, description: Bytes. }
+              mtime: { type: integer, description: Unix time. }
+              packed:
+                type: boolean
+                const: true
+                description: packed by newsyslog (.bz2, .gz, .xz, .zst);
+                  absent when not.
+        lines:
+          type: array
+          description: its last lines, those with filter in them only, the
+            oldest first.
+          items:
+            type: object
+            required: [text]
+            properties:
+              time:
+                type: string
+                description: as syslogd wrote it, "Oct  5 12:00:00" or
+                  RFC 5424.
+              level:
+                type: string
+                description: facility.level, where syslogd -v writes one.
+              host: { type: string }
+              tag: { type: string }
+              pid: { type: string }
+              text: { type: string, description: "the line itself when it is not syslog's." }
+              seq:
+                type: integer
+                description: "@dmesg only: the message's number."
+              seen:
+                type: integer
+                description: "@dmesg only: Unix time the agent saw it."
+        size:
+          type: integer
+          description: the file's size in bytes; absent for @dmesg and
+            @audit.
+        position:
+          type: integer
+          description: where the file ended, to ask again with; of @dmesg,
+            the number of the newest message.
+        rotated:
+          type: boolean
+          const: true
+          description: the file was shorter than position said, and was
+            read from its start; absent when not.
+
+    SysctlData:
+      type: object
+      required: [values, kept]
+      properties:
+        values:
+          type: array
+          description: the names under filter, or of the whole tree, at
+            most 4000.
+          items:
+            type: object
+            required: [name, value, type, rw]
+            properties:
+              name: { type: string }
+              value:
+                type: string
+                description: as sysctl prints it; an array of numbers a
+                  space apart.
+              type: { type: string, enum: [string, integer, unsigned] }
+              rw: { type: boolean, description: "it can be set." }
+              tun:
+                type: boolean
+                const: true
+                description: a loader tunable; absent when not.
+              descr: { type: string }
+        kept:
+          type: array
+          description: what sysctl.conf sets at boot.
+          items:
+            type: object
+            required: [name, value]
+            properties:
+              name: { type: string }
+              value: { type: string }
+
+    KernelData:
+      type: object
+      required: [files, available, kept, memory]
+      properties:
+        files:
+          type: array
+          description: every file linked into the kernel.
+          items:
+            type: object
+            required: [id, name, path, refs, size, address, modules]
+            properties:
+              id: { type: integer }
+              name: { type: string }
+              path: { type: string }
+              refs: { type: integer }
+              size: { type: integer, description: Bytes. }
+              address: { type: string, description: "in hex, 0x..." }
+              modules: { type: array, items: { type: string } }
+        available:
+          type: array
+          description: the modules of the module path that are not loaded,
+            without .ko.
+          items: { type: string }
+        kept:
+          type: array
+          description: what rc.conf's kld_list loads at boot.
+          items: { type: string }
+        memory:
+          type: object
+          required: [files, malloc_total, malloc, zones]
+          properties:
+            files:
+              type: integer
+              description: bytes of all the files linked in.
+            kmem_size: { type: integer }
+            kmem_map_size: { type: integer }
+            kmem_map_free: { type: integer }
+            malloc_total:
+              type: integer
+              description: bytes of all malloc(9) types.
+            malloc:
+              type: array
+              description: the largest malloc(9) types, at most 48.
+              items:
+                type: object
+                required: [name, bytes, count, requests]
+                properties:
+                  name: { type: string }
+                  bytes: { type: integer }
+                  count: { type: integer }
+                  requests: { type: integer }
+            zones:
+              type: array
+              description: the largest uma(9) zones, at most 48.
+              items:
+                type: object
+                required: [name, bytes, count, requests, size, free]
+                properties:
+                  name: { type: string }
+                  bytes: { type: integer, description: "size times count and free." }
+                  count: { type: integer }
+                  requests: { type: integer }
+                  size: { type: integer, description: "bytes of one item." }
+                  free: { type: integer }
 
     HostReply:
       type: object
