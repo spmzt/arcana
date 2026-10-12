@@ -2743,7 +2743,7 @@ part_storage(void)
 	run("const i = document.getElementById('filter'); i.value = ''; "
 	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
 	wait_js("document.querySelectorAll('table.datasets tbody tr').length "
-	    "=== 3", 5);
+	    "=== 4", 5);
 	run("document.querySelector('table.datasets tr[data-ds=\"tank/data\"] "
 	    "button[data-act=st-snapshot]').click()");
 	wait_js("document.querySelector('form[data-form=st-snapshot] input"
@@ -2910,6 +2910,31 @@ part_storage(void)
 		usleep(50000);
 	ATF_CHECK(system("grep -q '^zfs load-key tank/data$' storage.log") ==
 	    0);
+	run("document.querySelector('.dock > header').click()");
+	/*
+	 * One asked for at a prompt: typed, straight to the host, in no
+	 * job; zfs reads it from a file that is gone after.
+	 */
+	ATF_CHECK(js_true("!document.querySelector('tr[data-ds=\"tank/vault\"] "
+	    "button[data-act=st-key]')"));
+	run("document.querySelector('tr[data-ds=\"tank/vault\"] button"
+	    "[data-act=st-typekey][data-arg=load]').click()");
+	wait_js("document.querySelector('form[data-form=st-typekey] input"
+	    "[type=password][name=key]')", 5);
+	run("const f = document.querySelector('form[data-form=st-typekey]'); "
+	    "f.key.value = 'short'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal').textContent.includes("
+	    "'8 characters at least')", 10);
+	run("const f = document.querySelector('form[data-form=st-typekey]'); "
+	    "f.key.value = 'correct horse battery'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('The key is loaded'))", 10);
+	ATF_CHECK(system("grep -qx 'key=correct horse battery' storage.log && "
+	    "grep -q '^zfs load-key -L file://.*/key tank/vault$' storage.log")
+	    == 0);
+	ATF_CHECK(system("test -z \"$(ls -A tools/tmp)\"") == 0);
+	ATF_CHECK(js_true("![...document.querySelectorAll('.dock .op')].some("
+	    "o => o.textContent.includes('correct horse'))"));
 	run("document.querySelector('tr[data-ds=\"tank/data\"] button"
 	    "[data-act=st-ask][data-arg=jail]').click()");
 	wait_js("document.querySelector('form[data-form=st-ask] input[name="

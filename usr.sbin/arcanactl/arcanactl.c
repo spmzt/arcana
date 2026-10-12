@@ -17,6 +17,7 @@
 #include <poll.h>
 #include <sha256.h>
 #include <stdbool.h>
+#include <readpassphrase.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -189,6 +190,7 @@ usage(void)
 	    "    cert [list] | add name file | remove name | trust file |\n"
 	    "        untrust file | rehash\n"
 	    "    capture [source packets seconds [filter ...]]\n"
+	    "    zfskey [-n] dataset\n"
 	    "    sshd [list] | banner file | set Setting [value ...] |\n"
 	    "        authorize user keyfile | unauthorize user fingerprint |\n"
 	    "        sign ca-key-file [principal ...]\n"
@@ -2058,6 +2060,68 @@ cmd_neigh(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
+/* A key, at a prompt that does not show it, or a line of the input. */
+static char *
+key_read(const char *prompt, char *buf, size_t len)
+{
+
+	if (isatty(STDIN_FILENO))
+		return (readpassphrase(prompt, buf, len, RPP_REQUIRE_TTY));
+	if (fgets(buf, (int)len, stdin) == NULL)
+		return (NULL);
+	buf[strcspn(buf, "\r\n")] = '\0';
+	return (buf);
+}
+
+/*
+ * zfskey [-n] dataset: the key of an encrypted dataset asked for at a
+ * prompt, typed: loaded; with -n changed, the key it has first (when it
+ * is not loaded) and the new one.  At a terminal it is asked for; else
+ * a line of the input each.
+ */
+static int
+cmd_zfskey(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_zfs_key_req	 rq;
+	struct arc_zfs_key_rsp	*rs;
+	char			 key[513], nkey[513], again[513];
+	bool			 change;
+	int			 error;
+
+	change = argc == 3 && strcmp(argv[1], "-n") == 0;
+	if (argc != 2 && !change)
+		usage();
+	memset(&rq, 0, sizeof(rq));
+	rq.zfs_dataset = argv[argc - 1];
+	if (key_read(change ? "Key now (empty when it is loaded): " : "Key: ",
+	    key, sizeof(key)) == NULL)
+		errx(1, "no key");
+	rq.zfs_key = key[0] != '\0' ? key : NULL;
+	if (change) {
+		if (key_read("New key: ", nkey, sizeof(nkey)) == NULL)
+			errx(1, "no new key");
+		if (isatty(STDIN_FILENO)) {
+			if (key_read("New key, again: ", again, sizeof(again)) ==
+			    NULL || strcmp(again, nkey) != 0)
+				errx(1, "the new keys differ");
+			explicit_bzero(again, sizeof(again));
+		}
+		rq.zfs_new_key = nkey;
+	}
+	error = arc_zfs_key(cl, &rq, &rs);
+	explicit_bzero(key, sizeof(key));
+	if (change)
+		explicit_bzero(nkey, sizeof(nkey));
+	if (error != 0)
+		fail(cl, error, "zfs key");
+	if (!rs->ok && rs->error != NULL)
+		warnx("%s", rs->error);
+	emit_trace(rs->trace.v, rs->trace.n);
+	error = rs->ok ? 0 : 1;
+	arc_zfs_key_rsp_free(rs);
+	return (error);
+}
+
 /*
  * capture [source packets seconds [filter ...]]: packets taken with
  * tcpdump off an interface or a tap, of the host or of -j's jail; with
@@ -3676,6 +3740,8 @@ main(int argc, char *argv[])
 		rc = cmd_sshd(&cl, argc, argv);
 	else if (strcmp(argv[0], "capture") == 0)
 		rc = cmd_capture(&cl, argc, argv);
+	else if (strcmp(argv[0], "zfskey") == 0)
+		rc = cmd_zfskey(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||
