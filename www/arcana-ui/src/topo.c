@@ -139,6 +139,8 @@ struct seg {
 	char	ifn[MAX_NODES][16];
 	int	n;
 	double	x, y;
+	int	same;		/* drawn as segs[same - 1], whose members it has */
+	char	more[2][64];	/* the networks drawn as this one too */
 };
 
 struct alt {
@@ -170,6 +172,7 @@ static int		nhosts;
 static struct tlink	links[TOPO_LINKS];
 static int		nlinks;
 static struct seg	segs[TOPO_SEGS];
+static bool	seg_same(const struct seg *, const struct seg *);
 static int		nsegs;
 
 static struct {
@@ -1575,6 +1578,26 @@ links_build(void)
 			    sg->ifn[0], sg->ifn[1], sg->net, "")) != NULL)
 				l->up = true;
 		} else if (sg->n > 2) {
+			/*
+			 * The same hosts by the same interfaces as a node
+			 * already made (IPv4 and IPv6 of one network): that
+			 * node, its label saying both.
+			 */
+			for (i = 0; i < k; i++)
+				if (segs[i].n == sg->n && segs[i].same == 0 &&
+				    seg_same(&segs[i], sg))
+					break;
+			if (i < k) {
+				sg->same = i + 1;
+				for (m = 0; m < 2; m++)
+					if (segs[i].more[m][0] == '\0') {
+						snprintf(segs[i].more[m],
+						    sizeof(segs[i].more[m]), "%s",
+						    sg->net);
+						break;
+					}
+				continue;
+			}
 			sg->x = sg->y = 0;
 			for (m = 0; m < sg->n; m++) {
 				t = thost(tn[sg->member[m]].key, false);
@@ -1921,6 +1944,23 @@ map_path(struct html *h)
 	}
 }
 
+/* Two networks of the same hosts, by the same interfaces. */
+static bool
+seg_same(const struct seg *a, const struct seg *b)
+{
+	int	i, j;
+
+	for (i = 0; i < a->n; i++) {
+		for (j = 0; j < b->n; j++)
+			if (a->member[i] == b->member[j] && strcmp(a->ifn[i],
+			    b->ifn[j]) == 0)
+				break;
+		if (j == b->n)
+			return (false);
+	}
+	return (true);
+}
+
 static void
 map_nodes(struct html *h)
 {
@@ -1934,14 +1974,21 @@ map_nodes(struct html *h)
 
 	/* A network several are in: with its lines, or not at all. */
 	for (k = 0; !tp.hide[LK_LAN] && k < nsegs; k++) {
-		if (segs[k].n < 3)
+		if (segs[k].n < 3 || segs[k].same != 0)
 			continue;
 		h_fmt(h, "<g class=\"tseg\" transform=\"translate(%.1f,%.1f)\">"
 		    "<rect x=\"-9\" y=\"-9\" width=\"18\" height=\"18\" "
 		    "transform=\"rotate(45)\"/><text y=\"28\">", segs[k].x,
 		    segs[k].y);
 		h_txt(h, segs[k].net);
-		h_raw(h, "</text></g>");
+		h_raw(h, "</text>");
+		/* The others of the same hosts, one a line under it. */
+		for (i = 0; i < 2 && segs[k].more[i][0] != '\0'; i++) {
+			h_fmt(h, "<text y=\"%d\">", 42 + 14 * i);
+			h_txt(h, segs[k].more[i]);
+			h_raw(h, "</text>");
+		}
+		h_raw(h, "</g>");
 	}
 	/* The routing neighbours outside, fanned out away from the middle. */
 	for (i = 0; !tp.nopeers && i < nexts; i++) {
