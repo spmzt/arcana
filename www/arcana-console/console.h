@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.147.0"
+#define	ARCW_VERSION		"0.148.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -60,6 +60,8 @@ struct config {
 	char		*agent_source;	/* git repository to build it from */
 	char		*agent_ref;	/* its branch or tag, or NULL */
 	char		*agent_ssh_key;	/* a key on the build host, or NULL */
+	int		 session_idle;	/* seconds a sign-in may sit idle */
+	int		 session_max;	/* seconds a sign-in lasts at most */
 	char		*local_agent;	/* the agent beside the console, or NULL */
 	char		*android_package;	/* the Android app, or NULL */
 	uint8_t		 android_keys[ANDROID_KEYS][32];	/* SHA-256 of its signers */

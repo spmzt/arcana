@@ -1820,6 +1820,25 @@ ATF_TC_BODY(settings, tc)
 	ATF_CHECK_STREQ("main", jstr(&r, "agent_ref"));
 	resp_free(&r);
 
+	/* How long a sign-in lasts: in its bounds, and in force. */
+	http("POST", "/api/settings", "{\"set\":{\"session_idle\":\"3\"}}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"session_max\":\"0\"}}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"session_idle\":\"45\","
+	    "\"session_max\":\"48\"}}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_MSG(strstr(r.body, "\"key\":\"session_idle\"") != NULL &&
+	    strstr(r.body, "\"value\":\"45\"") != NULL && strstr(r.body,
+	    "\"value\":\"48\"") != NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", "/api/health", NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
 	/* Back at web.conf's value, or null: the override goes. */
 	http("POST", "/api/settings", "{\"set\":{\"rp_name\":\"Arcana\","
 	    "\"agent_source\":null,\"agent_ref\":\"\"}}", &r);

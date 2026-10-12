@@ -216,10 +216,11 @@ stopper(void *arg __unused)
 	changes_log(cut ? LOG_WARNING : LOG_NOTICE);
 	if (cbl_loop_post(stop_loop, stop_now, NULL) != 0)
 		(void)cbl_loop_stop(stop_loop);
-	/* main() ends the process when the loop has stopped. */
-	sleep(STOP_GRACE);
+	/* main() ends the process when the loop has stopped; cut short,
+	 * what is under way is not waited for, the loop barely. */
+	sleep(cut ? 1 : STOP_GRACE);
 	logmsg(LOG_NOTICE, "the loop did not stop in %d s; exiting",
-	    STOP_GRACE);
+	    cut ? 1 : STOP_GRACE);
 	if (stop_pfh != NULL)
 		pidfile_remove(stop_pfh);
 	_exit(cut ? 1 : 0);

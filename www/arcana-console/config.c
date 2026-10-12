@@ -74,6 +74,8 @@ config_load(const char *path)
 	ucl_parser_free(p);
 
 	cfg.rp_id = get(top, "rp_id", NULL);
+	cfg.session_idle = SESSION_IDLE;
+	cfg.session_max = SESSION_MAX;
 	cfg.rp_name = get(top, "rp_name", "Arcana");
 	cfg.origin = get(top, "origin", NULL);
 	cfg.datadir = get(top, "datadir", "/var/db/arcana");

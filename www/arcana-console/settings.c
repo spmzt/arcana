@@ -43,6 +43,8 @@ static const char	*v_binary(const char *);
 static const char	*v_source(const char *);
 static const char	*v_ref(const char *);
 static const char	*v_keypath(const char *);
+static const char	*v_minutes(const char *);
+static const char	*v_hours(const char *);
 
 static struct setting {
 	const char	*key;
@@ -77,6 +79,12 @@ static struct setting {
 	    "on the build host, readable by nobody, whom git runs as. Empty "
 	    "for a key the host makes for itself and shows you, to allow as "
 	    "a deploy key.", v_keypath, NULL, NULL },
+	{ "session_idle", K_TEXT, "Signed out after, idle, in minutes",
+	    "A sign-in not used for this long ends: from 5 to 1440 minutes.",
+	    v_minutes, NULL, NULL },
+	{ "session_max", K_TEXT, "A sign-in lasts at most, in hours",
+	    "However much it is used: from 1 to 720 hours. Changed, it holds "
+	    "for the sign-ins there are too.", v_hours, NULL, NULL },
 };
 
 static struct timespec	loaded;		/* settings.json's mtime when read */
@@ -91,6 +99,34 @@ v_name(const char *s)
 		if ((unsigned char)*s < 0x20 || *s == 0x7f)
 			return ("no control characters");
 	return (NULL);
+}
+
+static const char *
+v_count(const char *s, long lo, long hi)
+{
+	char	*end;
+	long	 n;
+
+	if (s[0] == '\0' || strlen(s) > 6)
+		return ("");
+	n = strtol(s, &end, 10);
+	return (*end != '\0' || n < lo || n > hi ? "" : NULL);
+}
+
+static const char *
+v_minutes(const char *s)
+{
+
+	return (v_count(s, 5, 1440) != NULL ? "a number of minutes, 5 to "
+	    "1440" : NULL);
+}
+
+static const char *
+v_hours(const char *s)
+{
+
+	return (v_count(s, 1, 720) != NULL ? "a number of hours, 1 to 720" :
+	    NULL);
 }
 
 static const char *
@@ -222,6 +258,10 @@ apply(void)
 	cfg.agent_ref = v[0] != '\0' ? kore_strdup(v) : NULL;
 	v = value("agent_ssh_key");
 	cfg.agent_ssh_key = v[0] != '\0' ? kore_strdup(v) : NULL;
+	cfg.session_idle = v_minutes(value("session_idle")) == NULL ? atoi(
+	    value("session_idle")) * 60 : SESSION_IDLE;
+	cfg.session_max = v_hours(value("session_max")) == NULL ? atoi(
+	    value("session_max")) * 3600 : SESSION_MAX;
 }
 
 static void
@@ -275,6 +315,8 @@ settings_init(const char *update_check, const char *update_url)
 	find("agent_source")->base = cfg.agent_source;
 	find("agent_ref")->base = cfg.agent_ref;
 	find("agent_ssh_key")->base = cfg.agent_ssh_key;
+	find("session_idle")->base = kore_strdup("30");
+	find("session_max")->base = kore_strdup("12");
 	load();
 }
 
