@@ -1804,6 +1804,33 @@ domain_ok(const char *s)
 }
 
 /*
+ * A Suricata rule, as far as the console tells: one line of printable
+ * text, an action first, its options in parentheses with a sid.
+ * suricata -T on the edge says the rest.
+ */
+static bool
+ids_rule_ok(const ucl_object_t *e)
+{
+	static const char *const actions[] = { "alert", "pass", "drop",
+	    "reject", "rejectsrc", "rejectdst", "rejectboth", NULL };
+	const char	*r, *sp;
+	char		 act[16];
+	size_t		 i, n;
+
+	if (ucl_object_type(e) != UCL_STRING || (r = ucl_object_tostring(e))
+	    == NULL || (n = strlen(r)) == 0 || n > 4096)
+		return (false);
+	for (i = 0; i < n; i++)
+		if ((unsigned char)r[i] < 0x20 || (unsigned char)r[i] > 0x7e)
+			return (false);
+	if ((sp = strchr(r, ' ')) == NULL || (size_t)(sp - r) >= sizeof(act))
+		return (false);
+	snprintf(act, sizeof(act), "%.*s", (int)(sp - r), r);
+	return (one_of(act, actions) && strchr(r, '(') != NULL &&
+	    r[n - 1] == ')' && strstr(r, "sid:") != NULL);
+}
+
+/*
  * A security policy (MEF 88): a name and criteria, each optional:
  * ip-block with allow and deny lists of prefixes, dns-domain-filter with
  * the domains denied, dns-protocol-filter, rate-limit in bits per
@@ -1814,7 +1841,7 @@ security_policy(struct ck *c, const ucl_object_t *v)
 {
 	static const char *const known[] = { "ip-block", "dns-domain-filter",
 	    "dns-protocol-filter", "rate-limit", "log", "url-filter", "malware",
-	    NULL };
+	    "ids", NULL };
 	const ucl_object_t	*cr, *k, *e;
 	ucl_object_iter_t	 it, eit;
 	struct pfx		 p;
@@ -1823,13 +1850,14 @@ security_policy(struct ck *c, const ucl_object_t *v)
 	if ((cr = ucl_object_lookup(v, "criteria")) == NULL ||
 	    ucl_object_type(cr) != UCL_OBJECT)
 		return (fail(c, "it has criteria: ip-block, dns-domain-filter, "
-		    "dns-protocol-filter, rate-limit, log, url-filter, malware (MEF 88)"));
+		    "dns-protocol-filter, rate-limit, log, url-filter, malware, ids "
+		    "(MEF 88)"));
 	it = NULL;
 	while ((k = ucl_object_iterate(cr, &it, true)) != NULL) {
 		if (!one_of(ucl_object_key(k), known))
 			return (fail(c, "%s is not a criterion: ip-block, "
 			    "dns-domain-filter, dns-protocol-filter, rate-limit, "
-			    "log, url-filter or malware", ucl_object_key(k)));
+			    "log, url-filter, malware or ids", ucl_object_key(k)));
 		if (strcmp(ucl_object_key(k), "ip-block") == 0) {
 			static const char *const lists[] = { "allow", "deny" };
 
@@ -1922,6 +1950,37 @@ security_policy(struct ck *c, const ucl_object_t *v)
 					return (fail(c, "url-filter.lists: no list %s (a "
 					    "feed or a pasted list, under Security)",
 					    ucl_object_tostring_forced(e)));
+		} else if (strcmp(ucl_object_key(k), "ids") == 0) {
+			/* SASE-4: Suricata on the edge, a plugin, watching the
+			 * service's UNIs; detect only for now. */
+			static const char *const modes[] = { "detect", NULL };
+
+			if (ucl_object_type(k) != UCL_OBJECT || !one_of(str(k,
+			    "mode"), modes))
+				return (fail(c, "ids has a mode, detect, its own "
+				    "rules, and ruleset, whether the rules "
+				    "suricata-update keeps are added"));
+			if ((e = ucl_object_lookup(k, "ruleset")) != NULL &&
+			    ucl_object_type(e) != UCL_BOOLEAN)
+				return (fail(c, "ids.ruleset is true or false"));
+			if ((e = ucl_object_lookup(k, "rules")) != NULL && (
+			    ucl_object_type(e) != UCL_ARRAY || ucl_array_size(e) >
+			    LIST_MAX))
+				return (fail(c, "ids.rules is a list of Suricata "
+				    "rules, %d at most", LIST_MAX));
+			eit = NULL;
+			while ((e = ucl_object_iterate(ucl_object_lookup(k,
+			    "rules"), &eit, true)) != NULL)
+				if (!ids_rule_ok(e))
+					return (fail(c, "ids.rules: %.60s is not a "
+					    "Suricata rule: an action (alert, pass, "
+					    "drop, reject), a header, options in "
+					    "parentheses with a sid, on one line",
+					    ucl_object_tostring_forced(e)));
+			if (ucl_object_lookup(k, "rules") == NULL &&
+			    !ucl_object_toboolean(ucl_object_lookup(k, "ruleset")))
+				return (fail(c, "ids has rules of its own or the "
+				    "ruleset, or both"));
 		} else if (strcmp(ucl_object_key(k), "rate-limit") == 0) {
 			if (!is_int(k, 1000, 1000000000000LL, NULL))
 				return (fail(c, "rate-limit is bits per second, 1000 "

@@ -681,6 +681,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/c-icap", "#!/bin/sh\necho \"c-icap $*\" >> squid.log\n"
 	    "p=$(sed -n 's/^PidFile //p' \"$2\")\n"
 	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$p\"\nexit 0\n");
+	/* suricata, a plugin: checked, it takes all; run, it stays a while
+	 * with its pid file where it is told. */
+	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
+	    "[ \"$1\" = -T ] && exit 0\n"
+	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\nexit 0\n");
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");

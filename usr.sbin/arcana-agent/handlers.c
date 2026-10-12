@@ -307,6 +307,7 @@ worker(void *arg)
 	struct arc_sdwan_dhcp_rsp sdhr;
 	struct arc_sdwan_dns_rsp sdnr;
 	struct arc_sdwan_proxy_rsp sdpr;
+	struct arc_sdwan_ids_rsp sdir;
 	struct arc_bird_config_req bcq;
 	struct arc_bird_config_rsp bcr;
 	struct arc_stats_rsp	 str;
@@ -762,6 +763,20 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &sdpr.trace.v, &sdpr.trace.n);
 		rc = arc_sdwan_proxy_reply(j->req, &sdpr);
+		break;
+	case ARC_CMD_SDWAN_IDS:
+		what = "sdwan ids";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
+		    what);
+		memset(&sdir, 0, sizeof(sdir));
+		error = NULL;
+		ok = do_sdwan_ids(&w, j->ref, &error) == 0;
+		sdir.has_ok = true;
+		sdir.ok = ok;
+		sdir.error = error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sdir.trace.v, &sdir.trace.n);
+		rc = arc_sdwan_ids_reply(j->req, &sdir);
 		break;
 	case ARC_CMD_SDWAN:
 		what = "sdwan";
@@ -1447,6 +1462,22 @@ arc_sdwan_dhcp_doit(cbl_req *req, const struct arc_sdwan_dhcp_req *rq,
 		return (ENOMEM);
 	j->req = req;
 	j->cmd = ARC_CMD_SDWAN_DHCP;
+	j->ref = xstrdup(rq->json);
+	return (start(j));
+}
+
+int
+arc_sdwan_ids_doit(cbl_req *req, const struct arc_sdwan_ids_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->json == NULL || rq->json[0] != '{')
+		return (reject(req, "the instances are a JSON object"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SDWAN_IDS;
 	j->ref = xstrdup(rq->json);
 	return (start(j));
 }

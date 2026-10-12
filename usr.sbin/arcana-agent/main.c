@@ -76,6 +76,7 @@ struct opts opts = {
 	.swanctl_bin = PATH_SWANCTL_BIN,
 	.squid_bin = PATH_SQUID_BIN,
 	.cicap_bin = PATH_CICAP_BIN,
+	.suricata_bin = PATH_SURICATA_BIN,
 	.swanctl_dir = PATH_SWANCTL_DIR,
 	.birdc_bin = PATH_BIRDC_BIN,
 	.bird_bin = PATH_BIRD_BIN,
@@ -632,6 +633,7 @@ main(int argc, char *argv[])
 	sdwan_dhcp_start();
 	sdwan_dns_start();
 	sdwan_proxy_start();
+	sdwan_ids_start();
 	kmsg_start();
 	route_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);

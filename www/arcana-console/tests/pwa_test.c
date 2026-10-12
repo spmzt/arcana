@@ -3512,7 +3512,9 @@ part_flows(void)
 	run("const t = document.querySelector('form[data-form=sd-doc] "
 	    "textarea'); t.value = window.sdText.replaceAll('\"vtnet2\"', "
 	    "'\"lo0\"').replace('\"geneve\"', '\"gif\"').replace(', "
-	    "\"fd00:64::/64\"', '');");
+	    "\"fd00:64::/64\"', '').replace('\"log\": true}}', '\"log\": "
+	    "true, \"ids\": {\"mode\": \"detect\", \"ruleset\": true, "
+	    "\"rules\": [\"alert tcp any any -> any 80 (sid:1000001; rev:1;)\"]}}}');");
 	run("document.querySelector('form[data-form=sd-doc] button[value="
 	    "keep]').click()");
 	wait_js("(document.querySelector('section.sdwan .notice') || {})."
@@ -3728,6 +3730,21 @@ part_flows(void)
 	ATF_CHECK(js_true("document.querySelector('input[data-input="
 	    "sd-record-filter]') !== null && document.querySelector('a[href="
 	    "\"/api/sdwan/record.csv\"]') !== null"));
+	/* Intrusion detection: the policy's IDS in its column, the block of
+	 * the edges' Suricata, and the form's mode, rules and ruleset. */
+	ATF_CHECK(js_true("[...document.querySelectorAll('section.sdwan h3')]"
+	    ".some(h => h.textContent.startsWith('Intrusion detection')) && "
+	    "[...document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(tr => tr.textContent.includes('detect, 1 rule and the "
+	    "ruleset'))"));
+	run("document.querySelector('button[data-act=sd-secpol-edit]').click()");
+	wait_js("document.querySelector('.modal select[name=idsmode]') !== null",
+	    5);
+	ATF_CHECK(js_true("document.querySelector('.modal select[name=idsmode]')"
+	    ".value === 'detect' && document.querySelector('.modal textarea[name="
+	    "idsrules]').value.includes('sid:1000001') && document.querySelector("
+	    "'.modal input[name=idsruleset]').checked"));
+	run("document.querySelector('.modal button[data-act=close]').click()");
 	shot("9-sdwan-security");
 	/* Identities: the example's alice, at the remote end point, with
 	 * the address the plan gave her. */

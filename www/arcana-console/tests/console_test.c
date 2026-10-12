@@ -3491,7 +3491,9 @@ static const char sdwan_good[] =
     "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]},"
     "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true,"
     "\"url-filter\":{\"mode\":\"sni\",\"deny\":[\"bad.example\"]},"
-    "\"malware\":true}}],"
+    "\"malware\":true,\"ids\":{\"mode\":\"detect\",\"ruleset\":true,"
+    "\"rules\":[\"alert http any any -> $HOME_NET any (msg:\\\"x\\\"; "
+    "sid:1000001; rev:1;)\"]}}}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
     "\"groups\":[\"bulk\"],"
     "\"flows\":[{\"name\":\"web\",\"criteria\":{\"dport\":[80,\"https\"],"
@@ -3648,6 +3650,11 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"log\":true,", "\"log\":true,\"nope\":true,", "not a criterion" },
 		/* The URL filter (SASE-4): a mode, sni or inspect; domains. */
 		{ "\"mode\":\"sni\"", "\"mode\":\"spy\"", "sni or inspect" },
+		/* Intrusion detection (SASE-4): detect, rules with a sid. */
+		{ "\"mode\":\"detect\"", "\"mode\":\"prevent\"", "a mode, detect" },
+		{ "sid:1000001; rev:1;)", "rev:1;)", "is not a Suricata rule" },
+		{ "\"alert http any", "\"shout http any", "is not a Suricata rule" },
+		{ "\"ruleset\":true", "\"ruleset\":\"yes\"", "ids.ruleset is true" },
 		{ "\"deny\":[\"bad.example\"]", "\"deny\":[\"bad example\"]",
 		    "not a domain name" },
 		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/24\"],"
@@ -4406,6 +4413,18 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    r.body, "\"plugin\":"
 	    "\"c-icap\",\"package\":\"c-icap c-icap-modules clamav\"") !=
 	    NULL, "%s", r.body);
+	/* Intrusion detection (MEF 88): Suricata on the service's UNIs at
+	 * each edge, its home the UNIs' subnets, the policy's rules and the
+	 * ruleset suricata-update keeps; Suricata a need. */
+	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"sdwan-ids\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"interfaces\":[\"") != NULL && strstr(r.body,
+	    "default-log-dir: @LOGDIR@") != NULL && strstr(r.body,
+	    "HOME_NET: \\\"[10.1.0.0/24") != NULL && strstr(r.body,
+	    "  - @RULES@\\n  - /var/lib/suricata/rules/suricata.rules") != NULL &&
+	    strstr(r.body, "\"rules\":\"alert http any any -> $HOME_NET any "
+	    "(msg:\\\"x\\\"; sid:1000001; rev:1;)\\n\"") != NULL && strstr(
+	    r.body, "\"plugin\":\"suricata\",\"package\":\"suricata\"") != NULL,
+	    "%s", r.body);
 	resp_free(&r);
 	/* The record: the edges' logged packets read now; none yet. */
 	http("GET", "/api/sdwan/record?swvc=acme&policy=guard", NULL, &r);

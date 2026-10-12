@@ -2210,6 +2210,214 @@ proxy_build(struct plan *pl, const ucl_object_t *doc)
 	}
 }
 
+/* The rules suricata-update keeps, where its defaults put them. */
+#define	IDS_RULESET	"/var/lib/suricata/rules/suricata.rules"
+
+/*
+ * A service's intrusion detection (SASE-4, MEF 88's ids criterion), as
+ * its policies name it: the rules of its own, one a line, each once,
+ * and whether the ruleset is added.  False when none of its security
+ * policies has ids.
+ */
+static bool
+ids_of(const ucl_object_t *sw, struct kore_buf *rules, bool *rulesetp)
+{
+	const ucl_object_t	*pol, *sec, *ids, *r;
+	ucl_object_iter_t	 it, rit;
+	ucl_object_t		*seen;
+	int			 si, i;
+	bool			 any;
+
+	any = false;
+	*rulesetp = false;
+	seen = ucl_object_typed_new(UCL_OBJECT);
+	it = NULL;
+	while ((pol = ucl_object_iterate(ucl_object_lookup(sw, "policies"),
+	    &it, true)) != NULL)
+		for (i = 0; i < 2; i++) {
+			sec = sec_of(sw, pol, i == 0 ? "af-security-ingress" :
+			    "af-security-egress", &si);
+			if (sec == NULL || (ids = ucl_object_lookup(
+			    ucl_object_lookup(sec, "criteria"), "ids")) == NULL ||
+			    ucl_object_type(ids) != UCL_OBJECT)
+				continue;
+			any = true;
+			if (ucl_object_toboolean(ucl_object_lookup(ids, "ruleset")))
+				*rulesetp = true;
+			rit = NULL;
+			while ((r = ucl_object_iterate(ucl_object_lookup(ids,
+			    "rules"), &rit, true)) != NULL) {
+				if (ucl_object_lookup(seen, ucl_object_tostring(r)) !=
+				    NULL)
+					continue;
+				ucl_object_insert_key(seen, ucl_object_frombool(true),
+				    ucl_object_tostring(r), 0, true);
+				if (rules != NULL)
+					kore_buf_appendf(rules, "%s\n",
+					    ucl_object_tostring(r));
+			}
+		}
+	ucl_object_unref(seen);
+	return (any);
+}
+
+/*
+ * Suricata's configuration for a service at an edge: it watches the
+ * interfaces named (the service's UNIs here) by libpcap, its home
+ * network the service's UNI subnets, and writes its alerts as eve.json
+ * in its log directory, which the agent reads.  The agent places
+ * @LOGDIR@, @RULES@ and @PID@.
+ */
+static char *
+ids_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *ifs,
+    bool ruleset)
+{
+	struct kore_buf		*b;
+	const ucl_object_t	*ep, *u, *v, *f;
+	ucl_object_iter_t	 it;
+	char			*out;
+	int			 i, n;
+
+	b = kore_buf_alloc(4096);
+	kore_buf_appendf(b, "%%YAML 1.1\n---\n# Written by the Arcana console: "
+	    "SD-WAN service %s at %s.\n# The intrusion detection of its "
+	    "security policies (MEF 88), by Suricata.\nvars:\n  "
+	    "address-groups:\n    HOME_NET: \"[", str(sw, "id"),
+	    server_name_of(sid));
+	n = 0;
+	it = NULL;
+	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
+	    &it, true)) != NULL) {
+		if ((u = ucl_object_lookup(ep, "uni")) == NULL)
+			continue;
+		for (i = 0; i < 2; i++) {
+			v = ucl_object_lookup(u, i == 0 ? "ipv4" : "ipv6");
+			if (str(v, "prefix") == NULL)
+				continue;
+			kore_buf_appendf(b, "%s%s", n++ > 0 ? "," : "", str(v,
+			    "prefix"));
+		}
+	}
+	if (n == 0)
+		kore_buf_appendf(b, "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16");
+	kore_buf_appendf(b, "]\"\n    EXTERNAL_NET: \"!$HOME_NET\"\n");
+	/* The groups the common rule sets name, as Suricata's own file has
+	 * them. */
+	kore_buf_appendf(b,
+	    "    HTTP_SERVERS: \"$HOME_NET\"\n    SMTP_SERVERS: \"$HOME_NET\"\n"
+	    "    SQL_SERVERS: \"$HOME_NET\"\n    DNS_SERVERS: \"$HOME_NET\"\n"
+	    "    TELNET_SERVERS: \"$HOME_NET\"\n    AIM_SERVERS: "
+	    "\"$EXTERNAL_NET\"\n    DC_SERVERS: \"$HOME_NET\"\n    DNP3_SERVER: "
+	    "\"$HOME_NET\"\n    DNP3_CLIENT: \"$HOME_NET\"\n    MODBUS_CLIENT: "
+	    "\"$HOME_NET\"\n    MODBUS_SERVER: \"$HOME_NET\"\n    ENIP_CLIENT: "
+	    "\"$HOME_NET\"\n    ENIP_SERVER: \"$HOME_NET\"\n  port-groups:\n"
+	    "    HTTP_PORTS: \"80\"\n    SHELLCODE_PORTS: \"!80\"\n"
+	    "    ORACLE_PORTS: 1521\n    SSH_PORTS: 22\n    DNP3_PORTS: 20000\n"
+	    "    MODBUS_PORTS: 502\n    FILE_DATA_PORTS: \"[$HTTP_PORTS,110,"
+	    "143]\"\n    FTP_PORTS: 21\n    GENEVE_PORTS: 6081\n    VXLAN_PORTS: "
+	    "4789\n    TEREDO_PORTS: 3544\n"
+	    "default-log-dir: @LOGDIR@\n"
+	    "outputs:\n  - eve-log:\n      enabled: yes\n      filetype: regular\n"
+	    "      filename: eve.json\n      types:\n        - alert\n"
+	    "logging:\n  default-log-level: notice\n  outputs:\n    - console:\n"
+	    "        enabled: no\n    - file:\n        enabled: yes\n"
+	    "        level: info\n        filename: suricata.log\n"
+	    "pcap:\n");
+	it = NULL;
+	while ((f = ucl_object_iterate(ifs, &it, true)) != NULL)
+		kore_buf_appendf(b, "  - interface: %s\n",
+		    ucl_object_tostring(f));
+	kore_buf_appendf(b, "rule-files:\n  - @RULES@\n");
+	if (ruleset)
+		kore_buf_appendf(b, "  - %s\n", IDS_RULESET);
+	kore_buf_appendf(b, "classification-file: "
+	    "/usr/local/etc/suricata/classification.config\n"
+	    "reference-config-file: /usr/local/etc/suricata/reference.config\n"
+	    "run-as:\n  user: root\n");
+	out = strdup(kore_buf_stringify(b, NULL));
+	kore_buf_free(b);
+	return (out);
+}
+
+/*
+ * Each edge's intrusion detection (SASE-4): an instance per service
+ * whose policies name a security policy with ids, where the edge has an
+ * end point of the service, watching the service's UNIs here; Suricata
+ * is a plugin the edge has installed, which the apply tells when it has
+ * not.
+ */
+static void
+ids_build(struct plan *pl, const ucl_object_t *doc)
+{
+	const ucl_object_t	*sw, *edge, *ep;
+	ucl_object_iter_t	 it, eit, pit;
+	ucl_object_t		*o, *inst, *list, *ifs, *seen;
+	struct kore_buf		*rules;
+	char			 name[32], ifn[64];
+	const char		*sid, *in;
+	char			*text;
+	bool			 ruleset;
+
+	it = NULL;
+	while ((edge = ucl_object_iterate(ucl_object_lookup(doc, "edges"), &it,
+	    true)) != NULL) {
+		sid = str(edge, "server");
+		list = ucl_object_typed_new(UCL_ARRAY);
+		eit = NULL;
+		while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"),
+		    &eit, true)) != NULL) {
+			if (!ids_of(sw, NULL, &ruleset))
+				continue;
+			ifs = ucl_object_typed_new(UCL_ARRAY);
+			seen = ucl_object_typed_new(UCL_OBJECT);
+			pit = NULL;
+			while ((ep = ucl_object_iterate(ucl_object_lookup(sw,
+			    "end_points"), &pit, true)) != NULL) {
+				if (strcmp(str(ep, "edge"), sid) != 0 || (in =
+				    uni_ifname(pl, sw, ep, ifn, sizeof(ifn))) ==
+				    NULL || ucl_object_lookup(seen, in) != NULL)
+					continue;
+				ucl_object_insert_key(seen, ucl_object_frombool(
+				    true), in, 0, true);
+				ucl_array_append(ifs, S(in));
+			}
+			ucl_object_unref(seen);
+			if (ucl_array_size(ifs) == 0) {
+				ucl_object_unref(ifs);
+				continue;
+			}
+			snprintf(name, sizeof(name), "sw%jd", (intmax_t)
+			    ucl_object_toint(ucl_object_lookup(sw, "fib")));
+			inst = ucl_object_typed_new(UCL_OBJECT);
+			put(inst, "name", S(name));
+			text = ids_conf(sw, sid, ifs, ruleset);
+			put(inst, "interfaces", ifs);
+			put(inst, "conf", S(text));
+			free(text);
+			rules = kore_buf_alloc(1024);
+			(void)ids_of(sw, rules, &ruleset);
+			text = kore_buf_stringify(rules, NULL);
+			put(inst, "rules", S(text));
+			kore_buf_free(rules);
+			ucl_array_append(list, inst);
+		}
+		if (ucl_array_size(list) == 0) {
+			ucl_object_unref(list);
+			continue;
+		}
+		o = object(pl, sid, "ids", PH_BIRD, "intrusion detection: "
+		    "Suricata, a plugin, %u instance%s on the services' UNIs",
+		    ucl_array_size(list), ucl_array_size(list) == 1 ? "" : "s");
+		if (o == NULL) {
+			ucl_object_unref(list);
+			continue;
+		}
+		make(o, job("sdwan-ids", "instances", list, NULL));
+		unmake(o, job("sdwan-ids", "instances", ucl_object_typed_new(
+		    UCL_ARRAY), NULL));
+	}
+}
+
 /*
  * unbound's configuration for a service at an edge: it listens on the
  * UNIs' provider addresses, answers the UNIs' subnets, resolves by
@@ -5016,6 +5224,7 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	bird_build(pl, doc);
 	dns_build(pl, doc);
 	proxy_build(pl, doc);
+	ids_build(pl, doc);
 	dhcp_build(pl, doc);
 	return (true);
 }
@@ -7468,6 +7677,9 @@ static const struct sdwan_need {
 	{ "sdwan-proxy+icap", "c-icap", "c-icap c-icap-modules clamav",
 	    "c-icap with ClamAV's module and signatures (freshclam), for "
 	    "malware scanning" },
+	{ "sdwan-ids", "suricata", "suricata",
+	    "Suricata, for intrusion detection on the UNIs (and "
+	    "suricata-update for its ruleset)" },
 };
 
 /*
