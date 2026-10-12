@@ -3778,6 +3778,7 @@ case "\$*" in
 	printf '06101     12     1440 (3s) STATE udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default\n' ;;
 "-n -q "*) grep -q bogus "\$3" && { echo "ipfw: line 2: bad command bogus" >&2; exit 1; } ;;
 "-q add "*" refuse "*) echo "ipfw: unrecognised option refuse" >&2; exit 1 ;;
+"list 1001") printf '01001 allow tcp from any to me6 22 in\n' ;;
 "-q "*.arcana-load) cat "\$2" > $(pwd)/loaded.rules; grep -q fails "\$2" && { echo "ipfw: line 1: getsockopt(IP_FW_XADD): Invalid argument" >&2; exit 1; } ;;
 esac
 exit 0
@@ -3810,6 +3811,24 @@ EOS
 	atf_check test ! -e fw/ipfw.rules
 	atf_check -o ignore "$JGC" -c "$SOCK" ipfw delete 1002
 	atf_check -o match:'^ipfw -q delete 1002$' tail -1 ipfw.log
+	# A rule changed as one: ipfw reads the new one first, then the
+	# old one goes and the new one comes; one ipfw does not take after
+	# all leaves the old one put back as it was listed.
+	: > ipfw.log
+	atf_check -s exit:1 -o match:'did not take the new rule: .*refuse; the one before was put back' \
+	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow tcp from any to me6 22 refuse in
+	atf_check -o inline:'ipfw -q -n add 1001 allow tcp from any to me6 22 refuse in
+ipfw list 1001
+ipfw -q delete 1001
+ipfw -q add 1001 allow tcp from any to me6 22 refuse in
+ipfw -q add 1001 allow tcp from any to me6 22 in
+' cat ipfw.log
+	atf_check -s exit:1 -e match:'with no quotes' -o ignore \
+	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow ip from any to any via '"wg[0-1]"'
+	: > ipfw.log
+	atf_check -o match:'done +ipfw replace 1001 1001 allow ip from any to any via wg\[0-1\]' \
+	    "$JGC" -c "$SOCK" ipfw replace 1001 1001 allow ip from any to any via 'wg[0-1]'
+	atf_check -o match:'^ipfw -q add 1001 allow ip from any to any via wg\[0-1\]$' cat ipfw.log
 	# Kept only: into the file, in the order of the numbers.
 	: > ipfw.log
 	atf_check -o match:'\(kept\)' \

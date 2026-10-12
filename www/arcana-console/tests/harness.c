@@ -471,6 +471,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "any 5678 in\\n'\n"
 	    "printf '65535     99     9999 set 31 deny ip from any to any"
 	    "\\n' ;;\n"
+	    "'list 1001') printf '01001 allow tcp from any to me6 22 in\\n' "
+	    ";;\n"
 	    "'table all info') printf -- '--- table(T46), set(0) ---\\n "
 	    "kindex: 1, type: addr\\n' ;;\n"
 	    "'table T46 list') printf -- '--- table(T46), set(0) ---\\n"

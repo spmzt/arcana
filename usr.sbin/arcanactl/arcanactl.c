@@ -210,6 +210,7 @@ usage(void)
 	    "    geneve name flush [all]\n"
 	    "    ipfw [keep] add number rule ...\n"
 	    "    ipfw [keep] delete number\n"
+	    "    ipfw [keep] replace number new-number rule ...\n"
 	    "    ipfw apply | enable | disable | zero [number]\n"
 	    "    ipfw table | nat | nat64lsn | nat64stl | nat64clat | nptv6 | "
 	    "pipe |\n        queue | sched name word ...\n"

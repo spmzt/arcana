@@ -878,6 +878,25 @@ ipfw_check(const struct arc_job_spec *sp)
 			    "are how the kept rules are applied");
 		if (!sp->live && !sp->persist)
 			return ("say live, persist or both");
+	} else if (strcmp(verb, "replace") == 0) {
+		if (sp->names.n < 3 || sp->names.n > IPFW_WORDS + 1 ||
+		    !number_ok(sp->names.v[0]) || !number_ok(sp->names.v[1]))
+			return ("a rule replaced is named by its number, then "
+			    "the new one's number, 1 to 65534, and its words");
+		for (i = 2; i < sp->names.n; i++)
+			if (!word_ok(sp->names.v[i]))
+				return ("a rule's words are ipfw's: letters, "
+				    "digits and . _ : / , - { } ! ( ) = [ ] and "
+				    "the like, with no quotes: ipfw is given them "
+				    "without a shell");
+		if (strcmp(sp->names.v[2], "set") == 0)
+			return ("a rule is not given a set here: the sets "
+			    "are how the kept rules are applied");
+		if (!sp->live && !sp->persist)
+			return ("say live, persist or both");
+		if (sp->safe)
+			return ("a rule replaced is not put back by itself: "
+			    "apply the kept rules in safe mode instead");
 	} else if (strcmp(verb, "delete") == 0) {
 		if (sp->names.n != 1 || !number_ok(sp->names.v[0]))
 			return ("name the rule to delete by its number");
@@ -1197,6 +1216,113 @@ kept_forget(struct work *w, const char *const words[], size_t n,
 	return (rc);
 }
 
+/* ipfw with argv's words after the ones given, in the jail's scope. */
+static int
+ipfw_words(struct work *w, const char **errp, const char *const *pre,
+    size_t npre, const char *const *words, size_t nwords)
+{
+	struct execres	 res;
+	char		*argv[IPFW_WORDS + 8];
+	size_t		 i, n;
+
+	n = 0;
+	argv[n++] = (char *)(uintptr_t)opts.ipfw_bin;
+	for (i = 0; i < npre && n < nitems(argv) - 1; i++)
+		argv[n++] = (char *)(uintptr_t)pre[i];
+	for (i = 0; i < nwords && n < nitems(argv) - 1; i++)
+		argv[n++] = (char *)(uintptr_t)words[i];
+	argv[n] = NULL;
+	if (run_exec(w, scope_argv(w, argv), &res) != 0) {
+		if (errp != NULL) {
+			*errp = scope_missing(w, &res, "ipfw", NULL);
+			if (*errp == NULL)
+				*errp = wtext(w, exec_error(w, &res, "ipfw"));
+		}
+		return (-1);
+	}
+	return (0);
+}
+
+/*
+ * A rule changed as one: the new one read by ipfw without being done
+ * (ipfw -n) before anything is touched; then the rules of the old
+ * number deleted and the new one added; and if ipfw does not take it
+ * after all, the old ones put back as ipfw listed them.  Kept, the
+ * kept file's lines of the old number go and the new one comes.
+ */
+static int
+replace(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	const char *const	 pre_n[] = { "-q", "-n", "add" };
+	const char *const	 pre_add[] = { "-q", "add" };
+	struct execres		 res;
+	const char		**words, *e;
+	char			*argv[5], *text, *p, *line, *rule, *wp, *wd;
+	const char		*oldv[IPFW_WORDS + 2];
+	size_t			 i, len, nw, no;
+	bool			 had;
+
+	words = (const char **)(uintptr_t)(sp->names.v + 1);
+	nw = sp->names.n - 1;
+	text = NULL;
+	if (sp->live) {
+		if (ipfw_words(w, errp, pre_n, nitems(pre_n), words, nw) != 0) {
+			*errp = wfmt(w, "ipfw does not take the new rule, so "
+			    "nothing was changed: %s", *errp);
+			return (-1);
+		}
+		/* The old number's rules, as ipfw lists them. */
+		argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
+		argv[1] = (char *)(uintptr_t)"list";
+		argv[2] = (char *)(uintptr_t)sp->names.v[0];
+		argv[3] = NULL;
+		had = run_exec(w, scope_argv(w, argv), &res) == 0 && res.out !=
+		    NULL && res.outlen > 0;
+		if (had)
+			text = wstrndup(w, res.out, res.outlen);
+		if (had && ipfw(w, errp, true, "delete", sp->names.v[0], NULL) !=
+		    0)
+			return (-1);
+		if (ipfw_words(w, errp, pre_add, nitems(pre_add), words, nw) !=
+		    0) {
+			e = *errp;
+			for (p = text; p != NULL && (line = strsep(&p, "\n")) !=
+			    NULL;) {
+				if (!isdigit((unsigned char)line[0]))
+					continue;
+				no = 0;
+				oldv[no++] = sp->names.v[0];
+				wp = line + strcspn(line, " ");
+				while ((wd = strsep(&wp, " ")) != NULL && no <
+				    nitems(oldv) - 1)
+					if (*wd != '\0')
+						oldv[no++] = wd;
+				(void)ipfw_words(w, NULL, pre_add, nitems(pre_add),
+				    oldv, no);
+			}
+			*errp = wfmt(w, "ipfw did not take the new rule: %s; the "
+			    "one before was put back", e);
+			return (-1);
+		}
+	}
+	if (sp->persist) {
+		len = 1;
+		for (i = 2; i < sp->names.n; i++)
+			len += strlen(sp->names.v[i]) + 1;
+		rule = wcalloc(w, len, 1);
+		for (i = 2; i < sp->names.n; i++) {
+			if (i > 2)
+				strlcat(rule, " ", len);
+			strlcat(rule, sp->names.v[i], len);
+		}
+		if (kept_change(w, strtol(sp->names.v[0], NULL, 10), NULL,
+		    errp) != 0 || kept_change(w, strtol(sp->names.v[1], NULL,
+		    10), rule, errp) != 0)
+			return (-1);
+	}
+	return (0);
+}
+
 /* Do the job.  *heldp says an apply left the old rules to be settled. */
 int
 do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
@@ -1247,6 +1373,8 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 		}
 		return (0);
 	}
+	if (strcmp(verb, "replace") == 0)
+		return (replace(w, sp, errp));
 	if (strcmp(verb, "delete") == 0) {
 		if (sp->live && ipfw(w, errp, true, "delete", sp->names.v[0],
 		    NULL) != 0)

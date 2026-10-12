@@ -3089,17 +3089,22 @@ part_firewall(void)
 	    "querySelector('form[data-form=fw-edit]').live.checked && document"
 	    ".querySelector('form[data-form=fw-edit]').persist.checked"));
 	shot("7o-firewall-part");
+	/* One job: the new rule read by ipfw first, then the old one out
+	 * and the new one in; an interface's pattern, quoted the shell's
+	 * way, given to ipfw without its quotes. */
 	run("const f = document.querySelector('form[data-form=fw-edit]'); "
-	    "f.rule.value = 'allow tcp from any to me6 2222 in'; "
+	    "f.rule.value = 'allow tcp from any to me6 2222 in via \"wg[0-1]\"'; "
 	    "f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('ipfw add 1001 allow tcp from any to me6 "
-	    "2222') && t.textContent.includes('done'))", 20);
-	ATF_CHECK(system("grep -q '^ipfw -q delete 1001$' ipfw.log && grep -q "
-	    "'^ipfw -q add 1001 allow tcp from any to me6 2222 in$' ipfw.log "
-	    "&& grep -q '^add 01001 allow tcp from any to me6 2222 in$' "
+	    "t.textContent.includes('ipfw 1001 changed: 1001 allow tcp from any "
+	    "to me6 2222') && t.textContent.includes('done'))", 20);
+	ATF_CHECK(system("grep -n '' ipfw.log | grep -A9 'ipfw -q -n add 1001 "
+	    "allow tcp from any to me6 2222 in via wg\\[0-1\\]$' | grep -q "
+	    "'ipfw -q delete 1001$' && grep -q '^ipfw -q add 1001 allow tcp from "
+	    "any to me6 2222 in via wg\\[0-1\\]$' ipfw.log && grep -q '^add "
+	    "01001 allow tcp from any to me6 2222 in via wg\\[0-1\\]$' "
 	    "ipfw.rules && ! grep -q 'me6 22 in' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
 	/* The kept rules as a text, and the connections let through now,

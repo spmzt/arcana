@@ -2498,6 +2498,12 @@ rule_args(struct html *b, const char *rule)
 		if (first && strcmp(w, "add") == 0)
 			continue;
 		first = false;
+		/* No shell reads it: its quotes are not ipfw's. */
+		if (strlen(w) >= 2 && (w[0] == '"' || w[0] == '\'') &&
+		    w[strlen(w) - 1] == w[0]) {
+			w[strlen(w) - 1] = '\0';
+			w++;
+		}
 		q = json_quote(w);
 		h_fmt(b, ",%s", q);
 		free(q);
@@ -2585,9 +2591,11 @@ firewall_form(const char *form, const ucl_object_t *f)
 		return (true);
 	}
 	/*
-	 * A rule changed is the old one deleted where it was and the new
-	 * one added where it is to be: two jobs, in that order.
+	 * A rule changed is one job: the host has ipfw read the new one
+	 * first, then takes the old one away and puts the new one in, and
+	 * puts the old one back if ipfw does not take the new.
 	 */
+	memset(&b, 0, sizeof(b));
 	if (edit && fw.edit > 0) {
 		was_live = was_kept = false;
 		it = NULL;
@@ -2596,17 +2604,23 @@ firewall_form(const char *form, const ucl_object_t *f)
 			if (jint(o, "num", 0) == fw.edit)
 				was_live = true;
 		was_kept = kept_text(fw.edit) != NULL;
+		(void)del;
 		if (was_live || was_kept) {
-			snprintf(del, sizeof(del), "{\"kind\":\"ipfw\",\"verb\":"
-			    "\"delete\",\"args\":[\"%lld\"],\"live\":%s,"
-			    "\"persist\":%s}", fw.edit, was_live ? "true" :
-			    "false", was_kept ? "true" : "false");
-			snprintf(title, sizeof(title), "ipfw delete %lld",
-			    fw.edit);
-			fw_job(s, del, title);
+			h_fmt(&b, "{\"kind\":\"ipfw\",\"verb\":\"replace\","
+			    "\"args\":[\"%lld\",\"%d\"", fw.edit, num);
+			rule_args(&b, rule);
+			h_fmt(&b, "],\"live\":%s,\"persist\":%s}", jbool(f,
+			    "live") ? "true" : "false", jbool(f, "persist") ?
+			    "true" : "false");
+			snprintf(title, sizeof(title), "ipfw %lld changed: %d "
+			    "%.130s", fw.edit, num, rule);
+			fw_job(s, b.s, title);
+			free(b.s);
+			fw.edit = 0;
+			fw.move = 0;
+			return (true);
 		}
 	}
-	memset(&b, 0, sizeof(b));
 	h_fmt(&b, "{\"kind\":\"ipfw\",\"verb\":\"add\",\"args\":[\"%d\"", num);
 	rule_args(&b, rule);
 	h_fmt(&b, "],\"live\":%s,\"persist\":%s}", jbool(f, "live") ? "true" :
