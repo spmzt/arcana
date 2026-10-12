@@ -89,6 +89,7 @@ struct call {
 	uint64_t		 t0;		/* µs, request arrived */
 	uint64_t		 auth_us;	/* the session check */
 	bool			 config_only;
+	int			 safe_wait;	/* s, the host's rollback timer */
 	char			 jail[256];
 	uint8_t			 action;
 	struct arc_address_req	 addr;
@@ -1681,6 +1682,12 @@ connected:
 		memset(&jsq, 0, sizeof(jsq));
 		jsq.batch.v = c->specs;
 		jsq.batch.n = c->nspecs;
+		/* A safe change waits as long as the host's timer says. */
+		for (i = 0; c->safe_wait > 0 && i < c->nspecs; i++)
+			if (c->specs[i].safe) {
+				c->specs[i].has_safe_wait = true;
+				c->specs[i].safe_wait = (uint32_t)c->safe_wait;
+			}
 		if ((error = arc_job_submit(&cl, &jsq, &jsr)) != 0)
 			goto rpcfail;
 		ok = jsr->ok;
@@ -1842,6 +1849,8 @@ connected:
 		bcq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		bcq.safe = c->refresh && c->text != NULL && !c->dry_run;
 		bcq.confirm = c->config_only;
+		bcq.has_safe_wait = bcq.safe && c->safe_wait > 0;
+		bcq.safe_wait = (uint32_t)c->safe_wait;
 		if ((error = arc_bird_config(&cl, &bcq, &bcr)) != 0)
 			goto rpcfail;
 		ok = bcr->ok;
@@ -2541,6 +2550,7 @@ call_new(struct http_request *req, enum op op)
 	c->sname = kore_strdup(s->name);
 	c->uri = kore_strdup(s->uri);
 	c->peer = s->peer_name != NULL ? kore_strdup(s->peer_name) : NULL;
+	c->safe_wait = s->safe_wait;
 	snprintf(c->route, sizeof(c->route), "%s %s",
 	    req->method == HTTP_METHOD_GET ? "GET" :
 	    req->method == HTTP_METHOD_DELETE ? "DELETE" : "POST", req->path);
@@ -4195,6 +4205,7 @@ hosts_submit(const char *uri, const char *peer, const char *name,
 		return (NULL);
 	}
 	*errp = NULL;
+	c->safe_wait = servers_safe_wait(uri);
 	return (self_call(c, uri, peer, name, "job-submit", status));
 }
 

@@ -998,6 +998,7 @@ stage(struct html *h)
 	if (app.tab == TAB_SUMMARY) {
 		view_summary(h, s);
 		view_transport(h, s);
+		view_safe(h, s);
 		peek_box(h);
 		h_raw(h, "</main>");
 		return;

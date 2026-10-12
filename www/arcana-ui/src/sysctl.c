@@ -385,6 +385,8 @@ view_sysctl(struct html *h, struct server *s)
 	    "kept, it is also written to <code>/etc/sysctl.conf</code>.</p>");
 }
 
+static void	safe_cb(int, const ucl_object_t *, const char *, void *);
+
 bool
 sysctl_form(const char *form, const ucl_object_t *f)
 {
@@ -392,10 +394,28 @@ sysctl_form(const char *form, const ucl_object_t *f)
 	const char	*v;
 	char		*qn, *qv, *json, title[300];
 
-	if (strcmp(form, "sy-set") != 0 && strcmp(form, "sy-from") != 0)
+	if (strcmp(form, "sy-set") != 0 && strcmp(form, "sy-from") != 0 &&
+	    strcmp(form, "tr-safe") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(form, "tr-safe") == 0) {
+		char	*end, url[64], body[48];
+		long	 k;
+
+		v = jstr(f, "wait") != NULL ? jstr(f, "wait") : "";
+		k = v[0] == '\0' ? 0 : strtol(v, &end, 10);
+		if ((v[0] != '\0' && *end != '\0') || (k != 0 && (k < 10 ||
+		    k > 3600))) {
+			toast(true, "The rollback timer is 10 to 3600 seconds, "
+			    "or empty for the agent's own");
+			return (true);
+		}
+		snprintf(url, sizeof(url), "/api/servers/%s", s->id);
+		snprintf(body, sizeof(body), "{\"safe_wait\":%ld}", k);
+		api("POST", url, body, safe_cb, NULL);
+		return (true);
+	}
 	if (strcmp(form, "sy-from") == 0) {
 		v = jstr(f, "name") != NULL ? jstr(f, "name") : "";
 		if (v[0] != '\0' && !name_ok(v)) {
@@ -531,6 +551,52 @@ same_way(const char *theirs, const char *ours)
 	tp = strrchr(theirs, ':');
 	op = strrchr(ours, ':');
 	return (tp != NULL && op != NULL && strcmp(tp, op) == 0);
+}
+
+static void
+safe_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	if (status != 200) {
+		toast(true, "The rollback timer was not saved: %s", err != NULL ?
+		    err : "the console refused");
+		return;
+	}
+	toast(false, "Rollback timer saved");
+	servers_cb(status, o, err, arg);
+}
+
+/*
+ * The host's rollback timer: how long a change made in safe mode waits
+ * for the console to be heard from again before the agent undoes it.
+ */
+void
+view_safe(struct html *h, struct server *s)
+{
+
+	h_raw(h, "<section class=\"transport\">");
+	box_head(h, "safe", "h3");
+	h_raw(h, "Rollback timer</h3>");
+	if (box_shut("safe")) {
+		h_raw(h, "</section>");
+		return;
+	}
+	h_raw(h, "<p class=\"dim\">A change made in safe mode (an address, a "
+	    "route, an interface, a service, BIRD's configuration) is undone "
+	    "by the agent unless the console reaches the host again within "
+	    "this time: a change that cut the host off puts itself back. ");
+	if (s->safe_wait > 0)
+		h_fmt(h, "This host waits %d s.", s->safe_wait);
+	else
+		h_raw(h, "This host waits as long as its agent's own "
+		    "<code>-w</code> says, 60 s unless set.");
+	h_raw(h, "</p><form class=\"toolbar\" data-form=\"tr-safe\">"
+	    "<label>Seconds <input name=\"wait\" type=\"number\" min=\"10\" "
+	    "max=\"3600\" placeholder=\"the agent's own\"");
+	if (s->safe_wait > 0)
+		h_fmt(h, " value=\"%d\"", s->safe_wait);
+	h_raw(h, "></label><button class=\"ghost small\">Save</button>"
+	    "</form></section>");
 }
 
 /* The pane of the summary: listeners, the console's way in, sessions. */

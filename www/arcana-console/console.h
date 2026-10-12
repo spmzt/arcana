@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.122.0"
+#define	ARCW_VERSION		"0.123.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -126,6 +126,7 @@ struct server {
 	char	*name;
 	char	*uri;
 	char	*peer_name;
+	int	 safe_wait;	/* s a safe change waits; 0 the agent's own */
 };
 
 void		 servers_init(void);
@@ -133,6 +134,9 @@ int		 servers_add(const char *, const char *, const char *);
 const struct server *server_find(const char *);
 const struct server *server_at(int);
 int		 servers_move(const char *, const char *);
+int		 servers_safe_wait(const char *);
+#define	SAFE_WAIT_MIN	10	/* s, a rollback timer at least */
+#define	SAFE_WAIT_MAX	3600
 
 /* pki.c: the console's CA and host enrolment. */
 int		 pki_init(void);

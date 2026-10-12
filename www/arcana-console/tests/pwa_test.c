@@ -3167,6 +3167,24 @@ part_firewall(void)
 	shot("1e-transport");
 
 	/*
+	 * The host's rollback timer, beside it: saved, said, and the
+	 * agent's own again when emptied.
+	 */
+	ATF_CHECK(js_true("document.querySelector('form[data-form=tr-safe]') "
+	    "!== null && document.body.textContent.includes('Rollback "
+	    "timer')"));
+	run("var f = document.querySelector('form[data-form=tr-safe]'); "
+	    "f.querySelector('input[name=wait]').value = '30'; "
+	    "f.requestSubmit();");
+	wait_js("document.body.textContent.includes('This host waits 30 s')",
+	    10);
+	run("var f = document.querySelector('form[data-form=tr-safe]'); "
+	    "f.querySelector('input[name=wait]').value = ''; "
+	    "f.requestSubmit();");
+	wait_js("document.body.textContent.includes('its agent\\'s own')",
+	    10);
+
+	/*
 	 * Connections are read again by themselves while they are shown,
 	 * until paused.
 	 */

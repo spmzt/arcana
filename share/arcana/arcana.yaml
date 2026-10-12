@@ -890,6 +890,15 @@ attribute-sets:
           messages are.
         checks:
           max-len: max-output
+      - name: safe-wait
+        type: u32
+        doc: |
+          For bird-config with safe: the seconds the change waits to be
+          confirmed before it is taken back, in place of the agent's own
+          (-w); the console's rollback timer for the host.
+        checks:
+          min: 10
+          max: 3600
 
 
   - name: host
@@ -1325,6 +1334,15 @@ attribute-sets:
           §12.2.3.3).
         checks:
           max-len: 8
+      - name: safe-wait
+        type: u32
+        doc: |
+          With safe: the seconds the change waits to be confirmed
+          before it is undone, in place of the agent's own (-w); the
+          console's rollback timer for the host.
+        checks:
+          min: 10
+          max: 3600
 
   - name: job
     attributes:
@@ -1959,6 +1977,7 @@ operations:
           - jail
           - safe
           - confirm
+          - safe-wait
       reply:
         attributes:
           - ok

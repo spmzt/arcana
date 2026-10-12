@@ -1017,7 +1017,7 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 	char		*old, *tmp, *bak, *argv[5];
 	size_t		 oldlen, len;
 	pthread_t	 thr;
-	int		 step;
+	int		 step, wait;
 	bool		 had, up;
 
 	rsp->has_ok = true;
@@ -1113,6 +1113,9 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 	 * Safe mode is BIRD's own: a daemon that does not answer has no
 	 * timer to take the change back with.
 	 */
+	/* The console's rollback timer for the host, else the agent's. */
+	wait = rq->has_safe_wait && rq->safe_wait > 0 ? (int)rq->safe_wait :
+	    opts.safe_wait;
 	up = alive(w);
 	if (!up && rq->safe) {
 		rsp->error = "BIRD does not answer: nothing can be changed in "
@@ -1134,7 +1137,7 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 	 * to read when it is started again.
 	 */
 	if (birdc(w, false, "configure", rq->safe ? "timeout" : NULL,
-	    rq->safe ? wfmt(w, "%d", opts.safe_wait) : NULL, &res) != 0 ||
+	    rq->safe ? wfmt(w, "%d", wait) : NULL, &res) != 0 ||
 	    !took(&res)) {
 		if (alive(w)) {
 			rsp->error = wfmt(w, "BIRD did not take it, and the "
@@ -1169,7 +1172,7 @@ do_bird_config(struct work *w, const struct arc_bird_config_req *rq,
 		pend.bak = strdup(bak);
 		pend.sha = strdup(sha_hex(w, rq->conf_text, len));
 		pend.had = had;
-		pend.by = time(NULL) + opts.safe_wait;
+		pend.by = time(NULL) + wait;
 		rsp->has_confirm_by = true;
 		rsp->confirm_by = pend.by;
 		if (pend.path == NULL || pend.base == NULL || pend.bak ==

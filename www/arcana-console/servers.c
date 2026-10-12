@@ -17,6 +17,7 @@
 
 #include <ctype.h>
 #include <errno.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,6 +30,12 @@
 
 static struct server	servers[MAX_SERVERS];
 static int		nservers;
+
+/*
+ * The table is the worker's, but threads ask it the rollback timer of a
+ * URI: what changes a URI, a server or a timer holds this lock.
+ */
+static pthread_mutex_t	table_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static bool	valid_name(const char *);
 static bool	valid_uri(const char *);
@@ -87,12 +94,15 @@ add(const char *id, const char *name, const char *uri, const char *peer)
 {
 	struct server	*s;
 
+	pthread_mutex_lock(&table_lock);
 	s = &servers[nservers++];
 	strlcpy(s->id, id, sizeof(s->id));
 	s->name = kore_strdup(name);
 	s->uri = kore_strdup(uri);
 	s->peer_name = peer != NULL && *peer != '\0' ? kore_strdup(peer) :
 	    NULL;
+	s->safe_wait = 0;
+	pthread_mutex_unlock(&table_lock);
 }
 
 void
@@ -102,6 +112,7 @@ servers_init(void)
 	ucl_object_t		*doc;
 	ucl_object_iter_t	 it;
 	const char		*id, *name, *uri;
+	int64_t			 k;
 
 	if ((doc = store_load(SERVERS)) == NULL)
 		return;
@@ -116,6 +127,9 @@ servers_init(void)
 		    uri == NULL || !valid_uri(uri))
 			continue;
 		add(id, name, uri, ucl_str(o, "peer_name"));
+		k = ucl_object_toint(ucl_object_lookup(o, "safe_wait"));
+		servers[nservers - 1].safe_wait = k >= SAFE_WAIT_MIN &&
+		    k <= SAFE_WAIT_MAX ? (int)k : 0;
 	}
 	local_done = ucl_flag(doc, "local_done");
 	ucl_object_unref(doc);
@@ -269,16 +283,40 @@ servers_move(const char *id, const char *uri)
 		if (k != i && strcmp(servers[k].uri, uri) == 0)
 			return (-1);
 	old = servers[i].uri;
+	pthread_mutex_lock(&table_lock);
 	servers[i].uri = kore_strdup(uri);
+	pthread_mutex_unlock(&table_lock);
 	if (save() == -1) {
+		pthread_mutex_lock(&table_lock);
 		kore_free(servers[i].uri);
 		servers[i].uri = old;
+		pthread_mutex_unlock(&table_lock);
 		return (-1);
 	}
 	kore_log(LOG_NOTICE, "server %s moved: %s to %s", id, old, uri);
 	hosts_forget(old);
 	kore_free(old);
 	return (0);
+}
+
+/*
+ * The rollback timer of the server reached at uri: the seconds a change
+ * made in safe mode waits to be confirmed there, 0 for the agent's own.
+ */
+int
+servers_safe_wait(const char *uri)
+{
+	int	i, k;
+
+	k = 0;
+	pthread_mutex_lock(&table_lock);
+	for (i = 0; uri != NULL && i < nservers; i++)
+		if (strcmp(servers[i].uri, uri) == 0) {
+			k = servers[i].safe_wait;
+			break;
+		}
+	pthread_mutex_unlock(&table_lock);
+	return (k);
 }
 
 const struct server *
@@ -316,6 +354,9 @@ server_object(const struct server *s)
 		    "peer_name", 0, false);
 	ucl_object_insert_key(o, ucl_object_frombool(strncmp(s->uri,
 	    "unix:", 5) == 0), "local", 0, false);
+	if (s->safe_wait > 0)
+		ucl_object_insert_key(o, ucl_object_fromint(s->safe_wait),
+		    "safe_wait", 0, false);
 	return (o);
 }
 
@@ -399,12 +440,19 @@ api_servers(struct http_request *req)
 	return (reply_json(req, 200, o));
 }
 
-/* DELETE /api/servers/<id> */
+/*
+ * DELETE /api/servers/<id>; POST {safe_wait}: its rollback timer, the
+ * seconds a change made in safe mode there waits to be confirmed before
+ * the agent undoes it, 0 for the agent's own (-w).
+ */
 int
 api_server(struct http_request *req)
 {
-	char	id[16];
-	int	i;
+	ucl_object_t	*body;
+	const ucl_object_t *v;
+	char		 id[16];
+	int		 i, was;
+	int64_t		 k;
 
 	if (!guard(req, true))
 		return (KORE_RESULT_OK);
@@ -415,14 +463,43 @@ api_server(struct http_request *req)
 			break;
 	if (i == nservers)
 		return (reply_error(req, 404, "not_found", "no such server"));
+	if (req->method == HTTP_METHOD_POST) {
+		if ((body = read_json(req)) == NULL)
+			return (reply_error(req, 400, "bad_request",
+			    "expected a JSON object"));
+		v = ucl_object_lookup(body, "safe_wait");
+		k = v != NULL && ucl_object_type(v) == UCL_INT ?
+		    ucl_object_toint(v) : -1;
+		ucl_object_unref(body);
+		if (k != 0 && (k < SAFE_WAIT_MIN || k > SAFE_WAIT_MAX))
+			return (reply_error(req, 400, "invalid", "safe_wait is "
+			    "0, the agent's own, or %d to %d seconds",
+			    SAFE_WAIT_MIN, SAFE_WAIT_MAX));
+		pthread_mutex_lock(&table_lock);
+		was = servers[i].safe_wait;
+		servers[i].safe_wait = (int)k;
+		pthread_mutex_unlock(&table_lock);
+		if (save() == -1) {
+			pthread_mutex_lock(&table_lock);
+			servers[i].safe_wait = was;
+			pthread_mutex_unlock(&table_lock);
+			return (reply_error(req, 500, "store", "cannot save"));
+		}
+		kore_log(LOG_NOTICE, "server %s: rollback timer %d s", id,
+		    (int)k);
+		req->method = HTTP_METHOD_GET;
+		return (api_servers(req));
+	}
 	kore_log(LOG_NOTICE, "server %s removed: %s", id, servers[i].uri);
 	hosts_forget(servers[i].uri);
+	pthread_mutex_lock(&table_lock);
 	kore_free(servers[i].name);
 	kore_free(servers[i].uri);
 	kore_free(servers[i].peer_name);
 	memmove(&servers[i], &servers[i + 1],
 	    (size_t)(nservers - i - 1) * sizeof(servers[0]));
 	nservers--;
+	pthread_mutex_unlock(&table_lock);
 	if (save() == -1)
 		return (reply_error(req, 500, "store", "cannot save"));
 	req->method = HTTP_METHOD_GET;

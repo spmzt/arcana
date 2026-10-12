@@ -325,6 +325,29 @@ paths:
         "403": { $ref: "#/components/responses/Error" }
 
   /api/servers/{server}:
+    post:
+      tags: [servers]
+      summary: Set the host's rollback timer
+      description: |
+        How long a change made in safe mode on the host waits to be
+        confirmed before the agent undoes it: 10 to 3600 seconds, or 0
+        for the agent's own (arcana-agent -w, 60 s unless set). Sent
+        with every safe job and BIRD configuration from then on.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [safe_wait]
+              properties:
+                safe_wait: { type: integer, minimum: 0, maximum: 3600 }
+      responses:
+        "200": { $ref: "#/components/responses/Servers" }
+        "400": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
     delete:
       tags: [servers]
       summary: Forget a server; its jails are not touched

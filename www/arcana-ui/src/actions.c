@@ -866,7 +866,7 @@ check_health(void)
 	api("GET", "/api/health", NULL, health_cb, NULL);
 }
 
-static void
+void
 servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 {
 	static struct server	 old[MAX_SERVERS];	/* big for a stack */
@@ -913,6 +913,7 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		snprintf(s->name, sizeof(s->name), "%s", jstr(e, "name"));
 		snprintf(s->uri, sizeof(s->uri), "%s", jstr(e, "uri"));
 		s->local = jbool(e, "local");
+		s->safe_wait = (int)jint(e, "safe_wait", 0);
 	}
 	for (i = 0; i < nold; i++) {
 		if (old[i].id[0] == '\0')
