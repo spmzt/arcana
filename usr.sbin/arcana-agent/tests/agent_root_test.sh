@@ -589,6 +589,76 @@ resnapshot_cleanup()
 	true
 }
 
+atf_test_case jail_make cleanup
+jail_make_head()
+{
+	atf_set "descr" "jails made from a base snapshot on a pool of a memory disk made for it, by clone and by send, started, and taken away with their datasets"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+jail_make_body()
+{
+	zpool list arcw_jm >/dev/null 2>&1 && atf_skip "a pool arcw_jm is there already"
+	for j in arcw-jm1 arcw-jm2; do
+		jls -j "$j" >/dev/null 2>&1 && atf_skip "a jail $j is there already"
+	done
+	md=$(mdconfig -a -t swap -s 256m) || atf_skip "no memory disk"
+	echo "$md" > md
+	r=$(pwd)/jails
+	atf_check zpool create -O mountpoint=none arcw_jm "$md"
+	atf_check zfs create -o mountpoint=none arcw_jm/jails
+	atf_check zfs create -o mountpoint="$r/base" arcw_jm/jails/base
+	echo "the base" > "$r/base/marker"
+	atf_check zfs snapshot arcw_jm/jails/base@1
+	start_daemon
+	d=$(pwd)/etc
+	# The defaults: each jail's path under the test's own, a host name,
+	# and kept running without a command.
+	printf 'path = "%s/${name}";\nhost.hostname = "${name}.example.org";\npersist;\n' "$r" > defaults.conf
+	atf_check -o match:'done +jail defaults' "$JGC" -c "$SOCK" jailconf defaults defaults.conf
+	# One by clone, one by send, each started.
+	for j in arcw-jm1 arcw-jm2; do
+		printf '.include "%s/jail.conf";\n%s {\n\tdevfs_ruleset = 4;\n}\n' "$d" "$j" > "$j.conf"
+	done
+	atf_check -o match:'done +jail make arcw-jm1 from arcw_jm/jails/base@1' \
+	    "$JGC" -c "$SOCK" jailconf make arcw-jm1 arcw-jm1.conf arcw_jm/jails/arcw-jm1 arcw_jm/jails/base@1 clone "$r/arcw-jm1" start
+	atf_check -o match:'done +jail make arcw-jm2 from arcw_jm/jails/base@1' \
+	    "$JGC" -c "$SOCK" jailconf make arcw-jm2 arcw-jm2.conf arcw_jm/jails/arcw-jm2 arcw_jm/jails/base@1 send "$r/arcw-jm2" start
+	atf_check -o inline:"$r/arcw-jm1\n" zfs get -H -o value mountpoint arcw_jm/jails/arcw-jm1
+	atf_check -o inline:"arcw_jm/jails/base@1\n" zfs get -H -o value origin arcw_jm/jails/arcw-jm1
+	atf_check -o inline:"-\n" zfs get -H -o value origin arcw_jm/jails/arcw-jm2
+	atf_check -o inline:"the base\n" cat "$r/arcw-jm1/marker"
+	atf_check -o inline:"the base\n" cat "$r/arcw-jm2/marker"
+	atf_check -o inline:"$r/arcw-jm1 arcw-jm1.example.org\n" jls -j arcw-jm1 path host.hostname
+	atf_check -o inline:"$r/arcw-jm2 arcw-jm2.example.org\n" jls -j arcw-jm2 path host.hostname
+	# Taken away: not with a dataset that is not its; then with its own,
+	# stopped and destroyed.
+	atf_check -s exit:1 -o match:'is not mounted at the jail' \
+	    "$JGC" -c "$SOCK" jailconf remove arcw-jm1 arcw_jm/jails/arcw-jm2
+	atf_check -o ignore jls -j arcw-jm1
+	atf_check -o match:'done +jail remove arcw-jm1' \
+	    "$JGC" -c "$SOCK" jailconf remove arcw-jm1 arcw_jm/jails/arcw-jm1
+	atf_check -s exit:1 -o ignore -e ignore jls -j arcw-jm1
+	atf_check -s exit:1 -e ignore zfs list arcw_jm/jails/arcw-jm1
+	atf_check -o match:'done +jail remove arcw-jm2' \
+	    "$JGC" -c "$SOCK" jailconf remove arcw-jm2 arcw_jm/jails/arcw-jm2
+	atf_check -s exit:1 -e ignore zfs list arcw_jm/jails/arcw-jm2
+	# The base stays as it was.
+	atf_check -o inline:"arcw_jm/jails/base@1\n" zfs list -H -o name -t snapshot -r arcw_jm
+}
+jail_make_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	for j in arcw-jm1 arcw-jm2; do
+		jail -r "$j" >/dev/null 2>&1
+	done
+	if [ -f md ]; then
+		zpool destroy -f arcw_jm >/dev/null 2>&1
+		mdconfig -d -u "$(cat md)" >/dev/null 2>&1
+	fi
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case lifecycle
@@ -602,4 +672,5 @@ atf_init_test_cases()
 	atf_add_test_case kmsg
 	atf_add_test_case sdwan_probe
 	atf_add_test_case sdwan_record
+	atf_add_test_case jail_make
 }

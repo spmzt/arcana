@@ -290,6 +290,17 @@
   their interfaces, the switches, the templates to include), a
   template (its lines); the agent writes the files (libjailconf
   already parses them), makes the dataset and starts the jail.
+  Done 2026-10-12: the jail-conf job (make, remove, defaults,
+  template, untemplate) and the jail-files read; the page's + jail,
+  Defaults and Templates; verified as root on a pool of a memory disk
+  (agent_root_test:jail_make): a jail by clone and one by send, started,
+  their datasets at their paths, the base untouched; a removal with a
+  dataset not the jail's refused with the jail left running (found
+  there: it was stopped before the dataset was asked about), then each
+  taken away with its own.  Not yet: changing a made jail's file from
+  the page (it is made and taken away; its block is edited as any
+  jail's is), and the dataset under a parent made for the host's jails
+  when there is none.
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.
