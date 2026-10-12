@@ -1930,8 +1930,48 @@ part_plugins(void)
 	    "wg.log") != 0; i++)
 		usleep(100000);
 	ATF_CHECK(system("grep -Eq '^set wg0 peer [A-Za-z0-9+/]{43}= "
-	    "allowed-ips 10.9.9.3/32$' wg.log") == 0);
+	    "allowed-ips 10.9.9.3/32 preshared-key .*/\\.wg0\\.psk\\.[0-9a-f]{8}$' "
+	    "wg.log") == 0);
+	ATF_CHECK(js_true("/\\nPresharedKey = [A-Za-z0-9+\\/]{43}=\\nEndpoint = "
+	    "/.test(wc)"));
 	shot("7c-wireguard-client");
+	run("document.querySelector('.modal button[data-act=close]').click()");
+	/* A new key for a client: its address kept, the new peer in and
+	 * then the old one out. */
+	run("window.rk = document.querySelector('table.wgpeers button"
+	    "[data-act=wg-rekey]').dataset.value; document.querySelector("
+	    "'table.wgpeers button[data-act=wg-rekey]').click()");
+	wait_js("document.querySelector('form[data-form=wg-client]')", 5);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=wg-client] "
+	    "h2').textContent.startsWith('A new key for a client') && "
+	    "document.querySelector('form[data-form=wg-client]').address.value "
+	    "=== '10.9.9.2/32'"));
+	run("const f = document.querySelector('form[data-form=wg-client]'); "
+	    "f.name.value = 'laptop'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=wg-conf] pre.wg-conf')",
+	    10);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	{
+		ucl_object_t	*rk = js("return window.rk;");
+		char		 cmd[300];
+
+		ATF_REQUIRE(rk != NULL && ucl_object_tostring(rk) != NULL);
+		snprintf(cmd, sizeof(cmd), "grep -n '' wg.log | grep -A3 "
+		    "'allowed-ips 10.9.9.2/32 preshared-key' | grep -qF 'peer %s "
+		    "remove'", ucl_object_tostring(rk));
+		for (i = 0; i < 100 && system(cmd) != 0; i++)
+			usleep(100000);
+		ATF_CHECK_MSG(system(cmd) == 0, "the old peer %s was not taken "
+		    "away after the new one came", ucl_object_tostring(rk));
+		ucl_object_unref(rk);
+	}
+	/* The stand-in keeps one peer, which went with the old key: the
+	 * peer of before, back, for what follows. */
+	ATF_REQUIRE(system("printf 'wg0\\txTIBA5rboUvnH4htodjb6e697QjLERt1NAB4"
+	    "mZqp8Dg=\\t(none)\\t192.0.2.9:51820\\t10.9.9.2/32\\t0\\t0\\t0\\t0"
+	    "\\n' > wg.peers.wg0") == 0);
 	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
 	shot("7c-wireguard");

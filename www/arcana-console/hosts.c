@@ -3829,6 +3829,10 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->copy);
 	kore_free((char *)(uintptr_t)sp->path);
 	kore_free((char *)(uintptr_t)sp->text);
+	if (sp->preshared_key != NULL)
+		explicit_bzero((char *)(uintptr_t)sp->preshared_key,
+		    strlen(sp->preshared_key));
+	kore_free((char *)(uintptr_t)sp->preshared_key);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -3946,6 +3950,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	sp->path = jdup(o, "path");
 	sp->text = jdup(o, "text");
 	sp->start = ucl_flag(o, "start");
+	sp->preshared_key = jdup(o, "preshared_key");
 	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
 	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
 		sp->has_metric = true;
