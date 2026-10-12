@@ -4589,3 +4589,8 @@ ul.notes li.new b::before { content: "+ "; color: var(--accent, #4a8); }
 .notes-body { white-space: pre-wrap; margin: .2rem 0 0; font-size: .85em;
   max-height: 12rem; overflow: auto; }
 .setsect .notes ul.notes { max-height: none; }
+
+/* A token's QR code, for the Arcana app: dark on white in any theme. */
+.token-qr { margin: .8rem 0 0; display: flex; align-items: center; gap: 1rem; }
+.token-qr svg { width: 180px; height: 180px; flex: none; border-radius: 6px; }
+.token-qr figcaption { font-size: .8rem; color: var(--fg-2); max-width: 22rem; }

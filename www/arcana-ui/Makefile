@@ -25,7 +25,8 @@ UCL_SRCS=	ucl_emitter_streamline.c ucl_emitter_utils.c ucl_emitter.c \
 # expect another LLVM major than the llvm-devel it depends on, and only
 # a clean cache (a port build, a container) runs that check.
 EMCFLAGS=	-O2 -std=gnu17 -Wall -Wextra -Wno-unused-parameter \
-		-Werror -Wno-version-check -I${LIBUCL_SRC}/include
+		-Werror -Wno-version-check -I${LIBUCL_SRC}/include \
+		-I${.CURDIR}/vendor/qrcodegen
 UCLFLAGS=	-O2 -w -I${LIBUCL_SRC}/include -I${LIBUCL_SRC}/src \
 		-I${LIBUCL_SRC}/uthash -I${LIBUCL_SRC}/klib
 EMLDFLAGS=	-sENVIRONMENT=web \
@@ -55,6 +56,12 @@ OBJS+=		${.OBJDIR}/${_s:R}.wo
 ${.OBJDIR}/${_s:R}.wo: ${LIBUCL_SRC}/src/${_s}
 	${EMCC} ${UCLFLAGS} -c ${LIBUCL_SRC}/src/${_s} -o ${.TARGET}
 .endfor
+
+# Project Nayuki's QR code generator, unmodified (vendor/README).
+OBJS+=		${.OBJDIR}/qrcodegen.wo
+${.OBJDIR}/qrcodegen.wo: ${.CURDIR}/vendor/qrcodegen/qrcodegen.c
+	${EMCC} -O2 -std=gnu17 -w -c ${.CURDIR}/vendor/qrcodegen/qrcodegen.c \
+	    -o ${.TARGET}
 
 all: ${DIST}/sw.js
 

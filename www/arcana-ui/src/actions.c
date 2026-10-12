@@ -2071,6 +2071,7 @@ origin_check(const char *origin, const char *rp_id)
 	app.origin_error[0] = '\0';
 	if (origin == NULL || rp_id == NULL)
 		return;
+	snprintf(app.console_origin, sizeof(app.console_origin), "%s", origin);
 	here = arc_origin();
 	host = arc_hostname();
 	/* The host without its port, against rp_id as a domain suffix. */

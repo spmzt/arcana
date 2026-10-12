@@ -9,12 +9,15 @@
  * patches the page so only what differs is touched.
  */
 
+#include <ctype.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
 #include "app.h"
+#include "qrcodegen.h"
 
 static const char *icon_grid =
     "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 3h7v7H3z"
@@ -68,6 +71,7 @@ static void	actions(struct html *, struct server *, const ucl_object_t *,
 static void	dock(struct html *);
 static void	modal(struct html *);
 static void	toasts(struct html *);
+static void	token_qr(struct html *, const char *);
 static void	auth_screen(struct html *);
 static void	fmt_kb(char *, size_t, int64_t);
 static int	count_state(const struct server *, const char *);
@@ -1536,7 +1540,9 @@ set_tokens(struct html *h)
 		h_raw(h, "<div class=\"notice info\"><b>Copy it now: it is not "
 		    "shown again.</b><pre class=\"out token\">");
 		h_txt(h, app.token_value);
-		h_raw(h, "</pre></div>");
+		h_raw(h, "</pre>");
+		token_qr(h, app.token_value);
+		h_raw(h, "</div>");
 	}
 	n = 0;
 	it = NULL;
@@ -2279,6 +2285,59 @@ modal(struct html *h)
 		h_raw(h, "</div></form>");
 	}
 	h_raw(h, "</div>");
+}
+
+/*
+ * A token as a QR code, for the Arcana app to scan: the console's
+ * address and the token, so a fresh install is set up and signed in at
+ * once (arcana://token?console=<origin>&token=<token>).  Drawn while the
+ * value is shown, and only then: it is the same secret.  Dark on white
+ * whatever the theme, which is what a camera reads.
+ */
+static void
+token_qr(struct html *h, const char *token)
+{
+	static const char	 hex[] = "0123456789ABCDEF";
+	uint8_t			 qr[qrcodegen_BUFFER_LEN_MAX];
+	uint8_t			 tmp[qrcodegen_BUFFER_LEN_MAX];
+	const char		*origin, *p;
+	char			 text[600];
+	size_t			 n;
+	int			 size, x, y;
+
+	origin = app.console_origin[0] != '\0' ? app.console_origin :
+	    arc_origin();
+	n = (size_t)snprintf(text, sizeof(text), "arcana://token?console=");
+	for (p = origin; *p != '\0' && n + 4 < sizeof(text); p++) {
+		if (isalnum((unsigned char)*p) || strchr("-._~", *p) != NULL)
+			text[n++] = *p;
+		else {
+			text[n++] = '%';
+			text[n++] = hex[(unsigned char)*p >> 4];
+			text[n++] = hex[(unsigned char)*p & 15];
+		}
+	}
+	text[n] = '\0';
+	if (snprintf(text + n, sizeof(text) - n, "&token=%s", token) >=
+	    (int)(sizeof(text) - n))
+		return;
+	if (!qrcodegen_encodeText(text, tmp, qr, qrcodegen_Ecc_MEDIUM,
+	    qrcodegen_VERSION_MIN, qrcodegen_VERSION_MAX, qrcodegen_Mask_AUTO,
+	    true))
+		return;
+	size = qrcodegen_getSize(qr);
+	h_fmt(h, "<figure class=\"token-qr\"><svg viewBox=\"-4 -4 %d %d\" "
+	    "role=\"img\" aria-label=\"The token and this console's address, "
+	    "as a QR code\" shape-rendering=\"crispEdges\"><rect x=\"-4\" "
+	    "y=\"-4\" width=\"%d\" height=\"%d\" fill=\"#fff\"/><path "
+	    "fill=\"#000\" d=\"", size + 8, size + 8, size + 8, size + 8);
+	for (y = 0; y < size; y++)
+		for (x = 0; x < size; x++)
+			if (qrcodegen_getModule(qr, x, y))
+				h_fmt(h, "M%d %dh1v1h-1z", x, y);
+	h_raw(h, "\"/></svg><figcaption>Scan it with the Arcana app: it "
+	    "sets this console's address and signs in with the token.</figcaption>"
+	    "</figure>");
 }
 
 static void
