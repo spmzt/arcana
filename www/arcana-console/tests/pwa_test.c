@@ -832,6 +832,29 @@ part_hosts(void)
 	ATF_CHECK(js_true("document.querySelector('.topo .tnode.host') && "
 	    "!document.querySelector('.topo .tnode[data-act=peek-jail]')"));
 	shot("2-fleet");
+	/* Devices: the hosts as a table, filtered; a row opens its host. */
+	run("document.querySelector('.tree .titem.devnode').click()");
+	wait_js("document.querySelectorAll('table.devices tbody tr.pick')"
+	    ".length >= 1 && location.hash === '#/devices'", 10);
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.devices thead "
+	    "th')].map(t => t.textContent).join(',').startsWith('Host,Address,"
+	    "State,Agent,FreeBSD,Jails running')"));
+	run("const i = document.querySelector('#filter'); i.value = "
+	    "'nothing-matches-this'; i.dispatchEvent(new Event('input', { "
+	    "bubbles: true }));");
+	wait_js("document.querySelectorAll('table.devices tbody tr.pick')"
+	    ".length === 0", 5);
+	run("const i = document.querySelector('#filter'); i.value = ''; "
+	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
+	wait_js("document.querySelectorAll('table.devices tbody tr.pick')"
+	    ".length >= 1", 5);
+	shot("2b-devices");
+	run("document.querySelector('table.devices tbody tr.pick').click()");
+	wait_js("document.querySelector('.tree .titem.server.selected') && "
+	    "location.hash.startsWith('#/hosts/')", 10);
+	run("document.querySelector('.tree .titem.fleet[data-act=select-fleet]')"
+	    ".click()");
+	wait_js("document.querySelector('.hosts .hostcard')", 10);
 	run("document.querySelector('.hosts .hostcard').click()");
 	wait_js("document.querySelector('.tree .titem.server.selected')", 5);
 	run("document.querySelector('button.tab[data-arg=jails]').click()");

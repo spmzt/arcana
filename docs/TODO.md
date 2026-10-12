@@ -325,7 +325,15 @@
   - VPN groups and road warrior setups of several clients, policies
     and pools.
   - A Devices page of its own, a table of the hosts (sorted and
-    filtered), the rail's host list moved there.
+    filtered), the rail's host list moved there. (The page done
+    2026-10-12.  The rail's list not moved yet: it is the way to each
+    host's jails, so what the rail keeps after (the open host and its
+    jails?) is the user's to say.)
+  - To ask the user what is meant: MSS clamping "on transports" (the
+    SD-WAN tunnels by ipfw tcp-setmss, an interface's, or the agent's
+    links?), labels on interfaces (a console-side tag, or the
+    interface's description?), prefix lists (used by what: ipfw
+    tables, BIRD filters, SD-WAN zones?), IGMP and MLD (what to set).
   - A certificates tab per host, by certctl and OpenSSL.
   - Configuration templates: a host's setup exported to one and a
     template applied to a host; YAML where the standard allows,

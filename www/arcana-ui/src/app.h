@@ -144,6 +144,7 @@ enum node {
 	NODE_WORKFLOWS,		/* chains of steps, run on several hosts */
 	NODE_SDWAN,		/* SD-WAN services, as MEF 70.2 says them */
 	NODE_SETTINGS,		/* the console's settings, a tab each */
+	NODE_DEVICES,		/* the hosts as a table */
 };
 
 enum tab {
@@ -573,6 +574,8 @@ void		 view_network(struct html *, struct server *);
 void		 view_gauges(struct html *, struct server *);
 void		 view_packages(struct html *, struct server *);
 void		 view_fleet(struct html *);
+void		 view_devices(struct html *);
+int		 count_state(const struct server *, const char *);
 void		 view_summary(struct html *, struct server *);
 void		 view_jobs(struct html *, struct server *);
 
