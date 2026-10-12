@@ -274,6 +274,25 @@ definitions:
           inbound out and makes the next pair the pair.  A
           rotation that fails is a fault, key-rotation, until one is
           done.
+      - name: jail-conf
+        doc: |
+          A jail made from the console, the way one is kept by hand: a
+          file of its own, /etc/jail.conf.d/<jail>.conf, beginning
+          with .include "/etc/jail.conf"; and holding its block and
+          the .includes of its templates.  verb make writes it, text
+          its whole content, read back by jail(8) -e before it is put
+          in place (it defines the jail named and no other); with
+          snapshot and dataset, the jail's dataset is made first from
+          the base jail's snapshot, by zfs clone (copy clone) or zfs
+          send | zfs recv (copy send, a copy of its own), mounted at
+          path; with start, the jail is started.  What fails undoes
+          what was done.  remove stops the jail, takes its file away,
+          and with dataset destroys that dataset when it is mounted at
+          the jail's path.  defaults writes text as /etc/jail.conf,
+          the defaults every jail file includes, the file before kept
+          beside it.  template writes text as /etc/jail.conf.d/<name>
+          .inc, names its one name; untemplate takes one away that no
+          jail includes.
   - name: job-state
     type: enum
     entries:
@@ -1343,6 +1362,34 @@ attribute-sets:
         checks:
           min: 10
           max: 3600
+      - name: dataset
+        type: text
+        doc: For jail-conf, the jail's ZFS dataset.
+        checks:
+          max-len: 255
+      - name: snapshot
+        type: text
+        doc: For jail-conf make, the base jail's snapshot it is made from.
+        checks:
+          max-len: 255
+      - name: copy
+        type: text
+        doc: For jail-conf make, clone or send.
+        checks:
+          max-len: 8
+      - name: path
+        type: text
+        doc: For jail-conf, the jail's root, its dataset's mountpoint.
+        checks:
+          max-len: 1024
+      - name: text
+        type: text
+        doc: For jail-conf, a file's whole content.
+        checks:
+          max-len: 65536
+      - name: start
+        type: flag
+        doc: For jail-conf make, the jail started once made.
 
   - name: job
     attributes:

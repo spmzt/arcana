@@ -161,6 +161,24 @@ fields:
   - field: remote_ca
     type: text
     label: The peer's CA (x509ca)
+  - field: dataset
+    type: text
+    label: Dataset
+  - field: snapshot
+    type: text
+    label: Base snapshot
+  - field: copy
+    type: text
+    label: Copied by
+  - field: path
+    type: text
+    label: Path
+  - field: text
+    type: text
+    label: The file
+  - field: start
+    type: bool
+    label: Started once made
 
 kinds:
   - kind: jail-action
@@ -305,3 +323,9 @@ kinds:
     title: Packages installed
     needs: packages
     uses: jail force pkg_ip
+  - kind: jail-conf
+    title: A jail made, removed; the jails' defaults or a template
+    needs: verb
+    uses: jail dataset snapshot copy path text start args
+    values: verb=make|remove|defaults|template|untemplate copy=clone|send
+    destroys: verb=remove|untemplate

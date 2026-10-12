@@ -169,6 +169,14 @@ title_of(const struct arc_job_spec *sp)
 		    sp->names.v[0] : "", sp->names.n > 1 ? " " : "",
 		    sp->names.n > 1 ? sp->names.v[1] : "");
 		break;
+	case ARC_JOB_KIND_JAIL_CONF:
+		rc = asprintf(&t, "jail %s%s%s%s%s", sp->verb, sp->jail != NULL &&
+		    sp->jail[0] != '\0' ? " " : sp->names.n > 0 ? " " : "",
+		    sp->jail != NULL && sp->jail[0] != '\0' ? sp->jail :
+		    sp->names.n > 0 ? sp->names.v[0] : "", sp->snapshot != NULL &&
+		    sp->snapshot[0] != '\0' ? " from " : "", sp->snapshot != NULL ?
+		    sp->snapshot : "");
+		break;
 	case ARC_JOB_KIND_WIREGUARD:
 		rc = asprintf(&t, "%s: wireguard %s%s%.12s%s", sp->interface,
 		    sp->verb, sp->peer != NULL ? " " : "", sp->peer != NULL ?
@@ -871,6 +879,10 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_WIREGUARD:
 		error = NULL;
 		ok = do_wg(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_JAIL_CONF:
+		error = NULL;
+		ok = do_jail_conf(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_BIRD:
 		error = NULL;

@@ -180,6 +180,10 @@ usage(void)
 	    "        [table name] [all]\n"
 	    "    stats\n"
 	    "    kmod [load | unload module]\n"
+	    "    jailconf make jail file [dataset snapshot clone|send path] "
+	    "[start]\n"
+	    "    jailconf remove jail [dataset] | defaults file\n"
+	    "    jailconf template name file | untemplate name\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
 	    "    sysctl [name | start of a name]\n"
@@ -1982,6 +1986,84 @@ cmd_rtadvd(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
+/* A file's whole content, "-" standard input; exits on failure. */
+static char *
+slurp(const char *path)
+{
+	FILE	*fp;
+	char	*buf;
+	size_t	 len, cap, n;
+
+	if ((fp = strcmp(path, "-") == 0 ? stdin : fopen(path, "r")) == NULL)
+		xo_err(1, "%s", path);
+	cap = 4096;
+	len = 0;
+	if ((buf = malloc(cap)) == NULL)
+		xo_err(1, "malloc");
+	while ((n = fread(buf + len, 1, cap - len - 1, fp)) > 0) {
+		len += n;
+		if (cap - len < 2 && (buf = realloc(buf, cap *= 2)) == NULL)
+			xo_err(1, "realloc");
+	}
+	buf[len] = '\0';
+	if (fp != stdin)
+		fclose(fp);
+	return (buf);
+}
+
+/*
+ * jailconf make jail file [dataset snapshot clone|send path] [start]
+ * jailconf remove jail [dataset]
+ * jailconf defaults file
+ * jailconf template name file | untemplate name
+ * A jail made or taken away, the jails' defaults, a template: a job.
+ */
+static int
+cmd_jailconf(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	const char		*name;
+
+	if (argc < 3)
+		usage();
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_JAIL_CONF;
+	sp.verb = argv[1];
+	if (strcmp(argv[1], "make") == 0 && (argc == 4 || argc == 5 ||
+	    argc == 8 || argc == 9)) {
+		sp.jail = argv[2];
+		sp.text = slurp(argv[3]);
+		if (argc >= 8) {
+			sp.dataset = argv[4];
+			sp.snapshot = argv[5];
+			sp.copy = argv[6];
+			sp.path = argv[7];
+		}
+		if ((argc == 5 || argc == 9) && strcmp(argv[argc - 1], "start") ==
+		    0)
+			sp.start = true;
+		else if (argc == 5 || argc == 9)
+			usage();
+	} else if (strcmp(argv[1], "remove") == 0 && (argc == 3 || argc ==
+	    4)) {
+		sp.jail = argv[2];
+		if (argc == 4)
+			sp.dataset = argv[3];
+	} else if (strcmp(argv[1], "defaults") == 0 && argc == 3)
+		sp.text = slurp(argv[2]);
+	else if ((strcmp(argv[1], "template") == 0 && argc == 4) ||
+	    (strcmp(argv[1], "untemplate") == 0 && argc == 3)) {
+		name = argv[2];
+		sp.names.v = &name;
+		sp.names.n = 1;
+		if (argc == 4)
+			sp.text = slurp(argv[3]);
+	} else
+		usage();
+	return (submit(cl, &sp));
+}
+
 static int
 cmd_kmod(struct arc_client *cl, int argc, char **argv)
 {
@@ -3369,6 +3451,8 @@ main(int argc, char *argv[])
 		rc = cmd_ipsec_sa(&cl, argc, argv);
 	else if (strcmp(argv[0], "kmod") == 0)
 		rc = cmd_kmod(&cl, argc, argv);
+	else if (strcmp(argv[0], "jailconf") == 0)
+		rc = cmd_jailconf(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||
