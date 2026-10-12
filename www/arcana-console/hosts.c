@@ -67,6 +67,7 @@ enum op {
 	OP_SDWAN_IDS,
 	OP_BIRD_CONFIG,
 	OP_KERNEL,
+	OP_JAIL_FILES,
 	OP_STORAGE,
 	OP_FSTAB,
 	OP_IPFW_RULES,
@@ -1032,7 +1033,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_TRANSPORT ? "arc_transport" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_TRANSPORT ? "arc_transport" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1351,6 +1352,7 @@ call_run(struct kore_task *t)
 	struct arc_bird_config_rsp *bcr;
 	struct arc_stats_rsp	*str;
 	struct arc_kernel_rsp	*kr;
+	struct arc_jail_files_rsp *jfiles;
 	struct arc_transport_req tpq;
 	struct arc_transport_rsp *tpr;
 	struct arc_sysctl_req	 syq;
@@ -1455,6 +1457,7 @@ call_run(struct kore_task *t)
 	bcr = NULL;
 	str = NULL;
 	kr = NULL;
+	jfiles = NULL;
 	tpr = NULL;
 	syr = NULL;
 	prr = NULL;
@@ -2226,6 +2229,26 @@ connected:
 		steps = syr->trace.v;
 		nsteps = syr->trace.n;
 		break;
+	case OP_JAIL_FILES:
+		if ((error = arc_jail_files(&cl, &jfiles)) != 0)
+			goto rpcfail;
+		ok = jfiles->ok;
+		put_str(top, "error", jfiles->error);
+		e = NULL;
+		if (jfiles->json != NULL) {
+			struct ucl_parser *p;
+
+			p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+			    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+			if (ucl_parser_add_string(p, jfiles->json, 0))
+				e = ucl_parser_get_object(p);
+			ucl_parser_free(p);
+		}
+		if (e != NULL)
+			put(top, "data", e);
+		steps = jfiles->trace.v;
+		nsteps = jfiles->trace.n;
+		break;
 	case OP_KERNEL:
 		if ((error = arc_kernel(&cl, &kr)) != 0)
 			goto rpcfail;
@@ -2463,6 +2486,8 @@ done:
 		arc_stats_rsp_free(str);
 	if (kr != NULL)
 		arc_kernel_rsp_free(kr);
+	if (jfiles != NULL)
+		arc_jail_files_rsp_free(jfiles);
 	if (tpr != NULL)
 		arc_transport_rsp_free(tpr);
 	if (syr != NULL)
@@ -3545,6 +3570,20 @@ api_sysctl(struct http_request *req)
 	return (call_start(req, c));
 }
 
+/* GET /api/servers/<id>/jails/files: the jails' defaults, templates and
+ * files, as the jail-conf job writes them. */
+int
+api_jail_files(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_JAIL_FILES)) == NULL)
+		return (KORE_RESULT_OK);
+	return (call_start(req, c));
+}
+
 /* GET /api/servers/<id>/kernel: its modules and its memory. */
 int
 api_kernel(struct http_request *req)
@@ -3713,6 +3752,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_NTP] = "ntp",
 	[ARC_JOB_KIND_RTADVD] = "rtadvd",
 	[ARC_JOB_KIND_IPSEC_SA] = "ipsec-sa",
+	[ARC_JOB_KIND_JAIL_CONF] = "jail-conf",
 };
 
 static const char *job_state_names[] = {
@@ -3783,6 +3823,12 @@ spec_free(struct arc_job_spec *sp)
 	kore_free((char *)(uintptr_t)sp->local_cert);
 	kore_free((char *)(uintptr_t)sp->remote_cert);
 	kore_free((char *)(uintptr_t)sp->remote_ca);
+	kore_free((char *)(uintptr_t)sp->addressing);
+	kore_free((char *)(uintptr_t)sp->dataset);
+	kore_free((char *)(uintptr_t)sp->snapshot);
+	kore_free((char *)(uintptr_t)sp->copy);
+	kore_free((char *)(uintptr_t)sp->path);
+	kore_free((char *)(uintptr_t)sp->text);
 	for (i = 0; i < sp->variables.n; i++) {
 		kore_free((char *)(uintptr_t)sp->variables.v[i].key);
 		kore_free((char *)(uintptr_t)sp->variables.v[i].value);
@@ -3894,6 +3940,12 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 		sp->tunnelfib = (uint32_t)ucl_object_toint(v);
 	}
 	sp->addressing = jdup(o, "addressing");
+	sp->dataset = jdup(o, "dataset");
+	sp->snapshot = jdup(o, "snapshot");
+	sp->copy = jdup(o, "copy");
+	sp->path = jdup(o, "path");
+	sp->text = jdup(o, "text");
+	sp->start = ucl_flag(o, "start");
 	if ((v = ucl_object_lookup(o, "metric")) != NULL && ucl_object_toint(
 	    v) > 0 && ucl_object_toint(v) <= UINT32_MAX) {
 		sp->has_metric = true;
@@ -3995,6 +4047,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_NTP:
 	case ARC_JOB_KIND_RTADVD:
 	case ARC_JOB_KIND_IPSEC_SA:
+	case ARC_JOB_KIND_JAIL_CONF:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {

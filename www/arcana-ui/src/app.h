@@ -332,6 +332,11 @@ enum modal {
 	MODAL_WG_PEER,
 	MODAL_WG_CLIENT,
 	MODAL_WG_CONF,
+	MODAL_JAIL_NEW,
+	MODAL_JAIL_DEFAULTS,
+	MODAL_JAIL_FILES,
+	MODAL_JAIL_TEMPLATE,
+	MODAL_JAIL_REMOVE,
 	MODAL_BIRD_PROTO,
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
@@ -603,6 +608,11 @@ bool		 ipsec_form(const char *, const ucl_object_t *);
 bool		 ipsec_modal(struct html *);
 void		 vpn_age(char *, size_t, int64_t);
 void		 qr_svg(struct html *, const char *, const char *);
+/* jailmk.c: jails made from the page, their defaults and templates. */
+void		 jailmk_buttons(struct html *);
+bool		 jailmk_modal(struct html *);
+bool		 jailmk_form(const char *, const ucl_object_t *);
+bool		 jailmk_action(const char *, const char *, const char *);
 
 /* bird.c: BIRD's neighbours and its configuration. */
 bool		 bird_action(const char *, const char *, const char *);
