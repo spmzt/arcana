@@ -29,6 +29,7 @@ static const struct {
 	{ "bird", &opts.birdc_bin },
 	{ "wireguard", &opts.wg_bin },
 	{ "strongswan", &opts.swanctl_bin },
+	{ "squid", &opts.squid_bin },
 };
 
 /*

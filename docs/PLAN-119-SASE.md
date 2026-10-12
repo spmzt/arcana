@@ -231,8 +231,8 @@ configuration plumbing already handles installing and running these.
   (c-icap with ClamAV), intrusion detection and prevention (Suricata
   on the UNI, IPS by ipfw divert or netmap), each a security policy
   criterion (`url-filter`, `malware`, `ids` with its rule sets),
-  installed from packages by the apply where a policy needs them,
-  their alerts into the events. Transparent by ipfw `fwd` of ports
+  each a plugin the edge has installed by hand, never by Arcana, which
+  the apply tells when one is missing; their alerts into the events. Transparent by ipfw `fwd` of ports
   80 and 443 from the UNI to the proxy in the service's FIB.
 
 - **SASE-5, zero-trust framework and conformance.** MEF 118's terms
@@ -482,11 +482,13 @@ Not supported: see the summary above. No tasks.
 
 ### SASE-4 The functions that need a proxy
 
-- **S4.1 URL and domain filtering.** A: Squid from packages, an
-  instance per service in its FIB with peek-and-splice on 443 and
-  plain filtering on 80, lists from the policy; `sdwan-proxy` op. C:
-  `url-filter` criterion, `fwd` of 80 and 443 to it. T: agent test
-  with a stand-in, apply test. L. Done when a denied domain is
+- **S4.1 URL and domain filtering.** A: Squid, a plugin the host has
+  installed (never installed by Arcana, as BIRD and strongSwan), an
+  instance per service in its FIB, mode sni (peek and splice on 443,
+  the names looked at) or inspect (TLS opened with a CA the agent
+  makes), plain filtering on 80, lists from the policy; `sdwan-proxy`
+  op. C: `url-filter` criterion, `fwd` of 80 and 443 to it. T: agent
+  test with a stand-in, apply test. L. Done when a denied domain is
   refused by SNI on the lab.
 - **S4.2 Malware.** A: c-icap and ClamAV from packages, Squid's
   ICAP service for cleartext HTTP. C: `malware` criterion. T, L with

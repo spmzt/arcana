@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.69.0"
+#define	ARCANA_AGENT_VERSION	"0.70.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -49,6 +49,7 @@
 #define	PATH_WG_BIN		"/usr/local/bin/wg"
 #define	PATH_WG_DIR		"/usr/local/etc/wireguard"
 #define	PATH_SWANCTL_BIN	"/usr/local/sbin/swanctl"
+#define	PATH_SQUID_BIN		"/usr/local/sbin/squid"
 #define	PATH_SWANCTL_DIR	"/usr/local/etc/swanctl"
 #define	PATH_BIRDC_BIN		"/usr/local/sbin/birdc"
 #define	PATH_BIRD_BIN		"/usr/local/sbin/bird"
@@ -110,6 +111,7 @@ struct opts {
 	const char	*wg_bin;
 	const char	*wg_dir;	/* where wg-quick(8) reads from */
 	const char	*swanctl_bin;
+	const char	*squid_bin;	/* squid(8): the proxies, a plugin */
 	const char	*swanctl_dir;	/* where swanctl(8) reads from */
 	const char	*birdc_bin;
 	const char	*bird_bin;	/* bird(8), to parse a configuration */
@@ -443,6 +445,10 @@ void		 sdwan_dhcp_json(struct work *, struct ucl_object_s *);
 int		 do_sdwan_dns(struct work *, const char *, const char **);
 void		 sdwan_dns_start(void);
 void		 sdwan_dns_json(struct work *, struct ucl_object_s *);
+/* luxuria/sdproxy.c: the services' proxies, Squid. */
+int		 do_sdwan_proxy(struct work *, const char *, const char **);
+void		 sdwan_proxy_start(void);
+void		 sdwan_proxy_json(struct work *, struct ucl_object_s *);
 int		 do_rtadvd(struct work *, const char *, const char *const *,
 		    size_t, bool, bool, const char **);
 /* invidia/sa.c: manually keyed SAs by setkey(8). */

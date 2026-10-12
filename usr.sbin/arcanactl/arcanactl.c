@@ -145,7 +145,7 @@ usage(void)
 	    "    route delete destination [gateway] [metric n]\n"
 	    "    route get address\n"
 	    "    traceroute address\n"
-	    "    sdwan [probes | rules | steer | bird | dhcp | dns json]\n"
+	    "    sdwan [probes | rules | steer | bird | dhcp | dns | proxy json]\n"
 	    "    ng mkpeer | connect | rmhook | shutdown | name argument "
 	    "...\n"
 	    "    wg interface init [port]\n"
@@ -1421,6 +1421,19 @@ cmd_sdwan(struct arc_client *cl, int argc, char **argv)
 		error = json_out("sdwan-dhcp", rs->ok, rs->error, NULL,
 		    rs->trace.v, rs->trace.n);
 		arc_sdwan_dhcp_rsp_free(rs);
+		return (error);
+	}
+	if (argc == 3 && strcmp(argv[1], "proxy") == 0) {
+		struct arc_sdwan_proxy_req	 rq;
+		struct arc_sdwan_proxy_rsp	*rs;
+
+		memset(&rq, 0, sizeof(rq));
+		rq.json = json_arg(argv[2]);
+		if ((error = arc_sdwan_proxy(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sdwan proxy");
+		error = json_out("sdwan-proxy", rs->ok, rs->error, NULL,
+		    rs->trace.v, rs->trace.n);
+		arc_sdwan_proxy_rsp_free(rs);
 		return (error);
 	}
 	if (argc == 3 && strcmp(argv[1], "dns") == 0) {

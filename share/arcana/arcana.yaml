@@ -2275,8 +2275,10 @@ operations:
       second at most, the rest counted into the record.  The sdwan reply
       has "rules" (the set, how many rules and which tables),
       "steer" (each prefix's candidates with their states and which
-      is chosen) and "record" (count, the day's; seq; last, the latest
-      500, each t, seq, rule, action, src, dst, iface, comment) too.
+      is chosen), "record" (count, the day's; seq; last, the latest
+      500, each t, seq, rule, action, src, dst, iface, comment) and
+      "proxy" (each instance's name, fib, mode, running and ca, its
+      certificate) too.
     do:
       request:
         attributes:
@@ -2659,6 +2661,37 @@ operations:
       it, one not yet is started in its table (setfib); those not
       named any more are stopped.  Kept for the next start.  The sdwan
       read tells each instance.
+    do:
+      request:
+        attributes:
+          - json
+        required:
+          - json
+      reply:
+        attributes:
+          - ok
+          - error
+          - trace
+
+  - name: sdwan-proxy
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The proxies of the SD-WAN services at this edge (MEF 88's
+      url-filter: Squid, a plugin the host has installed, one instance
+      per service in its table), as the console writes them: json, an
+      object with "instances", each a "name", the "fib" it runs in,
+      its "mode" (sni, the TLS names looked at and nothing opened;
+      inspect, TLS opened with a CA of the instance's own), its "conf",
+      Squid's configuration text with @PID@, @CA@, @SSLDB@, @CERTGEN@
+      and @DENY@ for what the agent places, and "deny", the domains
+      denied, one a line.  The CA is made by the agent, openssl(1),
+      once per instance and kept; its certificate is in the sdwan read
+      for the clients to trust where TLS is opened.  Each file is
+      checked by squid -k parse before it is made the instance's; one
+      running is told to reconfigure, one not yet is started in its
+      table (setfib); those not named any more are stopped.  Kept for
+      the next start.
     do:
       request:
         attributes:

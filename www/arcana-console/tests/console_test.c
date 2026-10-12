@@ -3338,7 +3338,8 @@ static const char sdwan_good[] =
     "\"security_policies\":[{\"name\":\"guard\",\"criteria\":{\"ip-block\":{"
     "\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]},"
     "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]},"
-    "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true}}],"
+    "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true,"
+    "\"url-filter\":{\"mode\":\"sni\",\"deny\":[\"bad.example\"]}}}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
     "\"groups\":[\"bulk\"],"
     "\"flows\":[{\"name\":\"web\",\"criteria\":{\"dport\":[80,\"https\"],"
@@ -3492,8 +3493,11 @@ ATF_TC_BODY(sdwan, tc)
 		{ "\"deny\":[\"ads.example\"]", "\"deny\":[\"ads..example\"]",
 		    "not a domain name" },
 		{ "\"rate-limit\":2000000", "\"rate-limit\":10", "1000 or more" },
-		{ "\"log\":true}}", "\"log\":true,\"url-filter\":true}}",
-		    "not a criterion" },
+		{ "\"log\":true,", "\"log\":true,\"nope\":true,", "not a criterion" },
+		/* The URL filter (SASE-4): a mode, sni or inspect; domains. */
+		{ "\"mode\":\"sni\"", "\"mode\":\"spy\"", "sni or inspect" },
+		{ "\"deny\":[\"bad.example\"]", "\"deny\":[\"bad example\"]",
+		    "not a domain name" },
 		{ "\"deny\":[\"192.0.2.0/24\"]", "\"deny\":[\"192.0.2.0/24\"],"
 		    "\"lists\":[\"nowhere\"]", "no list nowhere" },
 		{ "\"dns-protocol-filter\":true", "\"dns-protocol-filter\":\"yes\"",
@@ -4220,6 +4224,20 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    r.body);
 	ATF_CHECK(strstr(r.body, "\"10 skipto tablearg ip from table(sw1_zone) "
 	    "to any in recv wg5\"") != NULL);
+	/* The URL filter (SASE-4): HTTP and TLS from the end points forwarded
+	 * to Squid on the edge's own addresses, its instance in the plan
+	 * with the TLS names looked at and the domain denied. */
+	ATF_CHECK(strstr(r.body, "\"10 fwd 10.1.0.1,3128 tcp from any to any "
+	    "dst-port 80 in recv lo0\"") != NULL);
+	ATF_CHECK(strstr(r.body, "\"10 fwd 10.30.0.1,3129 tcp from any to any "
+	    "dst-port 443 in recv wg5\"") != NULL);
+	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"sdwan-proxy\",\"instances\":[{"
+	    "\"name\":\"sw1\",\"fib\":1,\"mode\":\"sni\",\"conf\":\"# Written by "
+	    "the Arcana console") != NULL && strstr(r.body, "https_port "
+	    "10.1.0.1:3129 intercept ssl-bump tls-cert=@CA@") != NULL && strstr(
+	    r.body, "ssl_bump terminate denied_site\\nssl_bump splice all") !=
+	    NULL && strstr(r.body, "\"deny\":\".bad.example\\n\"") != NULL, "%s",
+	    r.body);
 	resp_free(&r);
 	/* The record: the edges' logged packets read now; none yet. */
 	http("GET", "/api/sdwan/record?swvc=acme&policy=guard", NULL, &r);
@@ -4259,6 +4277,10 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK(system("grep -q '^lo0 fib 1' ifconfig.log") == 0);
 	ATF_CHECK(system("grep -q 'vlan106 create vlan 20 vlandev lo0' "
 	    "ifconfig.log") == 0);
+	/* The proxy, by the stand-ins: parsed, started in the table. */
+	ATF_CHECK(system("grep -q '^squid -k parse -f .*sdwan-proxy-sw1.conf' "
+	    "squid.log && grep -q '^setfib -F 1 .*tools/squid -f .*sdwan-proxy-"
+	    "sw1.conf' setfib.log") == 0);
 	/* Identities (SASE-3): one issued for a name, its key pair made
 	 * here, the configuration answered once with its address, the
 	 * second host after alice's, and the edges applied; listed with

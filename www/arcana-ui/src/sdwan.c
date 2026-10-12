@@ -3170,6 +3170,74 @@ view_security(struct html *h)
 		h_raw(h, "<tr><td colspan=\"3\" class=\"dim\">None: no policy "
 		    "filters DNS, or nothing is applied yet.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
+	/* The proxies on the edges (SASE-4): each edge's Squid instances,
+	 * a service each, with the CA of one that opens TLS. */
+	h_raw(h, "<div class=\"sd-block\"><h3>URL filters <small class=\"dim\">"
+	    "Squid on each edge, a plugin installed there by hand, an instance "
+	    "of each service whose policies filter URLs, in the service's "
+	    "table; HTTP and TLS from the end points are forwarded to it; it "
+	    "looks at the TLS names (sni) or opens TLS with a CA of its own "
+	    "(inspect), which the clients then trust</small></h3><table class="
+	    "\"net sd\"><thead><tr><th>Edge</th><th>Instance</th><th>Mode</th>"
+	    "<th>State</th><th>CA</th></tr></thead><tbody>");
+	n = 0;
+	it = NULL;
+	while (sd.paths != NULL && (v = ucl_object_iterate(sd.paths, &it, true))
+	    != NULL) {
+		const ucl_object_t	*pi;
+		ucl_object_iter_t	 pit = NULL;
+
+		while ((pi = ucl_object_iterate(jget(v, "proxy"), &pit, true)) !=
+		    NULL) {
+			n++;
+			h_raw(h, "<tr><td><b>");
+			h_txt(h, host_name(ucl_object_key(v)));
+			h_fmt(h, "</b></td><td class=\"mono\">%s <span class=\"dim\">"
+			    "fib %lld</span></td><td>%s</td><td><span class=\"chip "
+			    "st-%s\">%s</span></td><td>", jstr(pi, "name"), (long long)
+			    jint(pi, "fib", 0), jstr(pi, "mode") != NULL ? jstr(pi,
+			    "mode") : "", jbool(pi, "running") ? "up" : "down",
+			    jbool(pi, "running") ? "running" : "not running");
+			if (jstr(pi, "ca") != NULL) {
+				h_raw(h, "<a class=\"ghost small\" download=\"");
+				h_txt(h, host_name(ucl_object_key(v)));
+				h_raw(h, "-");
+				h_txt(h, jstr(pi, "name"));
+				h_raw(h, "-ca.crt\" href=\"data:application/x-x509-ca-cert"
+				    ";charset=utf-8,");
+				{
+					const char	*c = jstr(pi, "ca");
+					char		 enc[8192];
+					size_t		 i, k;
+
+					for (i = 0, k = 0; c[i] != '\0' && k + 4 <
+					    sizeof(enc); i++) {
+						if (c[i] == '\n')
+							k += (size_t)snprintf(enc + k, sizeof(enc)
+							    - k, "%%0A");
+						else if (c[i] == '+' || c[i] == '/' || c[i] ==
+						    '=' || c[i] == ' ' || c[i] == '%' || c[i]
+						    == '#' || c[i] == '&')
+							k += (size_t)snprintf(enc + k, sizeof(enc)
+							    - k, "%%%02X", (unsigned char)c[i]);
+						else
+							enc[k++] = c[i];
+					}
+					enc[k] = '\0';
+					h_raw(h, enc);
+				}
+				h_raw(h, "\" title=\"The instance's CA certificate, for "
+				    "the clients to trust where TLS is opened\">"
+				    "certificate</a>");
+			} else
+				h_raw(h, "<span class=\"dim\">—</span>");
+			h_raw(h, "</td></tr>");
+		}
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None: no policy "
+		    "filters URLs, or nothing is applied yet.</td></tr>");
+	h_raw(h, "</tbody></table></div>");
 }
 
 static void
@@ -4004,6 +4072,30 @@ sdwan_modal_service(struct html *h)
 		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
 		    "log\" value=\"1\"%s> Log what is denied (log)</label>", jbool(
 		    cr, "log") ? " checked" : "");
+		/* URLs, by a proxy on the edge (SASE-4): a plugin, Squid. */
+		{
+			const char	*mode = jstr(jget(cr, "url-filter"), "mode");
+
+			h_fmt(h, "<label>URL filter <select name=\"urlmode\"><option "
+			    "value=\"\"%s>none</option><option value=\"sni\"%s>the "
+			    "TLS names looked at, nothing opened (sni)</option>"
+			    "<option value=\"inspect\"%s>TLS opened with the edge's "
+			    "CA (inspect)</option></select><small>By Squid on the "
+			    "edge, a plugin installed there by hand; HTTP and TLS "
+			    "from the end points go through it (url-filter).</small>"
+			    "</label>", mode == NULL ? " selected" : "", mode != NULL
+			    && strcmp(mode, "sni") == 0 ? " selected" : "", mode !=
+			    NULL && strcmp(mode, "inspect") == 0 ? " selected" : "");
+			v = jget(jget(cr, "url-filter"), "deny");
+			text_field(h, "URL domains denied", "urldomains", v != NULL &&
+			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
+			    : "", "bad.example", "Sites refused, with everything "
+			    "under them, by name in TLS or HTTP.");
+			v = jget(jget(cr, "url-filter"), "lists");
+			text_field(h, "URL domain lists", "urllists", v != NULL &&
+			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
+			    : "", "blocked", "Lists by name, their domains refused.");
+		}
 		return (true);
 	}
 	if (app.modal == MODAL_SD_FLOW) {
@@ -4968,6 +5060,17 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		if (checked(f, "log"))
 			ucl_object_insert_key(cr, ucl_object_frombool(true), "log", 0,
 			    false);
+		if (jstr(f, "urlmode") != NULL && jstr(f, "urlmode")[0] != '\0') {
+			b = ucl_object_typed_new(UCL_OBJECT);
+			put_str(b, "mode", jstr(f, "urlmode"));
+			if (jstr(f, "urldomains") != NULL && jstr(f, "urldomains")[0]
+			    != '\0')
+				put_list(b, "deny", jstr(f, "urldomains"));
+			if (jstr(f, "urllists") != NULL && jstr(f, "urllists")[0] !=
+			    '\0')
+				put_list(b, "lists", jstr(f, "urllists"));
+			ucl_object_insert_key(cr, b, "url-filter", 0, false);
+		}
 		ucl_object_insert_key(o, cr, "criteria", 0, false);
 		list_put(sw, "security_policies", "name", was, o);
 	} else if (strcmp(form, "sd-flow") == 0) {
