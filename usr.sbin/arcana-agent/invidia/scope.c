@@ -140,7 +140,8 @@ scope_argv(struct work *w, char *const argv[])
 		v[k++] = (char *)(uintptr_t)w->jroot;
 		i = 1;
 	} else if (argv[0] == opts.birdc_bin || argv[0] == opts.bird_bin ||
-	    argv[0] == opts.wg_bin || argv[0] == opts.ipfw_bin ||
+	    argv[0] == opts.wg_bin || argv[0] == wg_base_bin ||
+	    argv[0] == opts.ipfw_bin ||
 	    argv[0] == opts.swanctl_bin) {
 		/* The jail's own: ipfw(8) has no way to name a jail. */
 		v[k++] = (char *)(uintptr_t)opts.jexec_bin;

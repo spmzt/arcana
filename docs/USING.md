@@ -584,7 +584,11 @@ The console is laid out as a tree and tabs.
     host where its program is installed or one of its running vnet
     jails has it installed, and none where neither does; the picker
     at the left of the tab's toolbar offers only those that have it.
-    Nothing is asked of BIRD or `wg` on a host without them.
+    Nothing is asked of BIRD or `wg` on a host without them. A jail's
+    programs are looked for as the jail sees them (the agent attaches
+    to it to look, so a link inside the jail leads where it does
+    there), and `wg` is the base system's `/usr/bin/wg` on FreeBSD 15
+    and later, or the package's in `/usr/local/bin`.
     **WireGuard** lists the `wg` interfaces with their peers: endpoint,
     allowed addresses, last handshake, traffic. **Make its key** has
     the host make the interface's private key, which stays on the host:

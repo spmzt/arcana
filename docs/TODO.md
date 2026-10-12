@@ -102,6 +102,15 @@
   Squid as a plugin, an instance per service, the TLS names looked at
   or TLS opened with the agent's CA, HTTP and TLS forwarded to it
   (S4.1). Next: S4.2, malware.
+- 2026-10-12: a vnet jail's plugins looked for as the jail sees its
+  files: a child of the agent attaches to the jail and asks there, so
+  that a link inside it (a /usr/local leading to /opt/local) leads
+  where it does for the jail and not on the host, where it found
+  nothing; beneath the jail's root without following a link out of it
+  when the agent may not attach; kept ten seconds. wg(8) is found in
+  /usr/bin as well, the base system's since FreeBSD 15, where it is
+  run from then: the VM's own host had no WireGuard tab for that.
+  Verified on the VM by agent_root_test:jail_plugins.
 - 2026-10-12: each host's rollback timer, set on its Summary: the
   seconds a change made in safe mode waits there to be confirmed,
   kept with the server and sent with every safe job and BIRD
@@ -157,13 +166,6 @@
   rules. This is why S1.3's protocol-filter forward did not answer
   on the lab (drill's network error): the forward rule is `in recv
   gre100` and never saw the query.
-- A luxuria plugin installed in a vnet jail and not on the host does
-  not get its tab (reported 2026-10-11). The agent lists a running
-  vnet jail's plugins by access(X_OK) on the program under the jail's
-  root, and the page gives the tab to a host one of whose running vnet
-  jails has it; to find out: the jail's name, whether the agent runs
-  as root (a root 0700 cannot be looked into otherwise), and what the
-  host's list read says under that jail's plugins.
 - Jails made and changed from the console (asked 2026-10-11), the way
   the user makes them on his servers. A shared `/etc/jail.conf` holds
   the defaults, the user's domain in place of example.net:

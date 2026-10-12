@@ -72,5 +72,5 @@ host_info(struct work *w, struct arc_host *h)
 	h->version = ARCANA_AGENT_VERSION;
 	if (opts.build[0] != '\0')
 		h->build = opts.build;
-	plugins_there(w, NULL, &h->plugins.v, &h->plugins.n);
+	plugins_there(w, 0, NULL, &h->plugins.v, &h->plugins.n);
 }
