@@ -4190,6 +4190,103 @@ part_netsect(void)
 
 }
 
+/*
+ * The page's address names what it shows: written as it changes, gone
+ * back through with the browser's history, and followed when the page
+ * is opened at it.
+ */
+static void
+part_routes(void)
+{
+	ucl_object_t	*v;
+	char		 id[16], expr[512], path[128];
+
+	wait_js("location.hash.startsWith('#/hosts/')", 10);
+	v = js("return location.hash.split('/')[2];");
+	ATF_REQUIRE(v != NULL && ucl_object_type(v) == UCL_STRING);
+	snprintf(id, sizeof(id), "%s", ucl_object_tostring(v));
+	ucl_object_unref(v);
+	ATF_REQUIRE_MSG(strlen(id) > 0, "no host in the address");
+	snprintf(expr, sizeof(expr), "location.hash === '#/hosts/%s'", id);
+	wait_js(expr, 5);
+
+	/* A tab, and back. */
+	run("document.querySelector('button[data-act=tab][data-arg=jails]')"
+	    ".click()");
+	snprintf(expr, sizeof(expr), "location.hash === '#/hosts/%s/jails'",
+	    id);
+	wait_js(expr, 5);
+	run("history.back()");
+	snprintf(expr, sizeof(expr), "location.hash === '#/hosts/%s' && "
+	    "document.querySelector('button[data-act=tab][data-arg=summary]"
+	    ".on')", id);
+	wait_js(expr, 5);
+	run("history.forward()");
+	snprintf(expr, sizeof(expr), "location.hash === '#/hosts/%s/jails' && "
+	    "document.querySelector('button[data-act=tab][data-arg=jails].on')",
+	    id);
+	wait_js(expr, 5);
+
+	/* A jail from the tree. */
+	run("document.querySelector('.tree li[data-act=open-jail]"
+	    "[data-arg=cache]').click()");
+	snprintf(expr, sizeof(expr), "location.hash === "
+	    "'#/hosts/%s/jails/cache'", id);
+	wait_js(expr, 5);
+	run("document.querySelector('.tree [data-act=select-fleet]').click()");
+	wait_js("location.hash === '#/'", 5);
+
+	/* An address given, as a link in the page would: followed. */
+	snprintf(path, sizeof(path), "/#/hosts/%s/processes", id);
+	go(path);
+	snprintf(expr, sizeof(expr), "location.hash === '#/hosts/%s/processes' "
+	    "&& document.querySelector('button[data-act=tab]"
+	    "[data-arg=processes].on')", id);
+	wait_js(expr, 20);
+	go("/#/settings/tokens");
+	wait_js("location.hash === '#/settings/tokens' && document."
+	    "querySelector('button[data-act=set-tab][data-arg=tokens].on')", 20);
+	/* A host that is not there: the fleet, and the address says so. */
+	go("/#/hosts/ffffffff/log");
+	wait_js("location.hash === '#/' && document.querySelector("
+	    "'.tree [data-act=select-fleet].selected')", 20);
+
+	/* Opened at an address: there once the hosts are known. */
+	snprintf(path, sizeof(path), "/#/hosts/%s/jails/cache", id);
+	go(path);
+	run("window.before = 1; location.reload();");
+	wait_js("window.before === undefined && document.querySelector("
+	    "'.tree .titem.leaf.selected') && document.querySelector("
+	    "'.tree .titem.leaf.selected').dataset.arg === 'cache'", 30);
+	go("/#/usage");
+	run("window.before = 1; location.reload();");
+	wait_js("window.before === undefined && location.hash === '#/usage' && "
+	    "document.querySelector('.tree [data-act=select-usage].selected')", 30);
+	go("/#/hosts/ffffffff/log");
+	run("window.before = 1; location.reload();");
+	wait_js("window.before === undefined && location.hash === '#/' && "
+	    "document.querySelector('.tree [data-act=select-fleet].selected')", 30);
+}
+
+ATF_TC_WITH_CLEANUP(pwa_routes);
+ATF_TC_HEAD(pwa_routes, tc)
+{
+
+	atf_tc_set_md_var(tc, "descr", "The page's address follows what is shown, the history goes back through it, and opening an address shows what it names");
+	atf_tc_set_md_var(tc, "timeout", "240");
+}
+ATF_TC_BODY(pwa_routes, tc)
+{
+
+	prologue(tc, 1);
+	part_routes();
+}
+ATF_TC_CLEANUP(pwa_routes, tc)
+{
+
+	browser_stop();
+}
+
 ATF_TC_WITH_CLEANUP(pwa_shell);
 ATF_TC_HEAD(pwa_shell, tc)
 {
@@ -4328,6 +4425,7 @@ ATF_TP_ADD_TCS(tp)
 {
 
 	ATF_TP_ADD_TC(tp, pwa_shell);
+	ATF_TP_ADD_TC(tp, pwa_routes);
 	ATF_TP_ADD_TC(tp, pwa_hosts);
 	ATF_TP_ADD_TC(tp, pwa_nettab);
 	ATF_TP_ADD_TC(tp, pwa_plugins);

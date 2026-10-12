@@ -55,6 +55,8 @@ void		 arc_stream_send(const char *);
 int		 arc_map_w(void);
 int		 arc_map_h(void);
 void		 arc_title(const char *);
+char		*arc_loc_get(void);
+void		 arc_loc_set(const char *, int);
 char		*arc_hostname(void);
 char		*arc_origin(void);
 int		 arc_fx_get(void);
@@ -465,6 +467,7 @@ extern struct app app;
 
 /* main.c */
 void		 render(void);
+void		 loc_pending(void);
 void		 toast(bool, const char *, ...)
 		    __attribute__((format(printf, 2, 3)));
 struct server	*cur_server(void);
@@ -704,6 +707,7 @@ bool		 workflows_action(const char *, const char *, const char *);
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
     SET_WEBCONF, SET_NEWS };
 int		 settab_of(const char *);
+const char	*settab_arg(int);
 /* sdwan.c: the SD-WAN services the console keeps. */
 void		 sdwan_open(void);
 void		 sdwan_tick(double);

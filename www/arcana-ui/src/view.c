@@ -1433,6 +1433,18 @@ static const struct {
 	{ SET_NEWS, "news", "What's new" },
 };
 
+/* The name of a Settings tab in the page's address. */
+const char *
+settab_arg(int tab)
+{
+	size_t	i;
+
+	for (i = 0; i < sizeof(settabs) / sizeof(settabs[0]); i++)
+		if (settabs[i].tab == tab)
+			return (settabs[i].arg);
+	return (settabs[0].arg);
+}
+
 int
 settab_of(const char *arg)
 {
