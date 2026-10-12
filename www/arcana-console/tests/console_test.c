@@ -4270,13 +4270,17 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    "\\n\\taccept;"
 	    "\\n}") != NULL, "%s", r.body);
 	ATF_CHECK(strstr(r.body, "export filter to_edges;") != NULL);
-	/* The hosts' addresses: hq's IPv4 by DHCP, dnsmasq from packages in
-	 * the service's table, its ranges the subnet less the reserved
-	 * prefixes and the provider's address, the router and DNS told;
-	 * branch's IPv6 by SLAAC, rtadvd on the VLAN with RDNSS; the
-	 * kernel forwarding on both edges. */
-	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"pkg-install\",\"packages\":[\"dnsmasq"
-	    "\"]") != NULL, "%s", r.body);
+	/* The hosts' addresses: hq's IPv4 by DHCP, dnsmasq (a plugin,
+	 * installed before and never by the apply) in the service's table,
+	 * its ranges the subnet less the reserved prefixes and the
+	 * provider's address, the router and DNS told; branch's IPv6 by
+	 * SLAAC, rtadvd on the VLAN with RDNSS; the kernel forwarding on
+	 * both edges.  What the edges need is listed, each there or not. */
+	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"pkg-install\"") == NULL,
+	    "%s", r.body);
+	ATF_CHECK_MSG(strstr(r.body, "\"plugin\":\"dnsmasq\",\"package\":"
+	    "\"dnsmasq\"") != NULL && strstr(r.body, "\"plugin\":\"squid\"")
+	    != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "\"kind\":\"sdwan-dhcp\",\"instances\":[{"
 	    "\"name\":\"sw1\",\"fib\":1,\"conf\":\"# Written by the Arcana "
 	    "console: SD-WAN service acme at a, in routing table 1.") != NULL,
@@ -4389,6 +4393,17 @@ ATF_TC_BODY(sdwan_apply, tc)
 	resp_free(&r);
 
 	/* Applied: each made, in the order, IPsec with the far key. */
+	/* An edge without what a service needs there: nothing is
+	 * installed by the apply, which refuses and says what to install
+	 * where.  Squid back, it goes on. */
+	ATF_REQUIRE(rename("tools/squid", "tools/squid.off") == 0);
+	http("POST", "/api/sdwan/apply", "{}", &r);
+	EXPECT(&r, 409);
+	ATF_CHECK_MSG(strstr(r.body, "pkg install squid") != NULL &&
+	    strstr(r.body, "nothing is installed by the apply") != NULL, "%s",
+	    r.body);
+	resp_free(&r);
+	ATF_REQUIRE(rename("tools/squid.off", "tools/squid") == 0);
 	http("POST", "/api/sdwan/apply", "{}", &r);
 	EXPECT(&r, 200);
 	resp_free(&r);

@@ -3501,6 +3501,11 @@ part_flows(void)
 	    "document.querySelector('.sd-tiles .tile b').textContent === '2'",
 	    20);
 	shot("9-sdwan-overview");
+	/* What SD-WAN needs on the edges, and that the apply installs none. */
+	wait_js("document.querySelector('section.sd-needs') && document."
+	    "querySelector('section.sd-needs').textContent.includes("
+	    "'Before using SD-WAN') && document.querySelector('section.sd-needs')"
+	    ".textContent.includes('dnsmasq')", 15);
 	/*
 	 * The forms: an underlay added, changed and taken away; a WAN link
 	 * on an edge, its interface picked from the host's own list, with
