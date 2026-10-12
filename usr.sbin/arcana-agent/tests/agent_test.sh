@@ -1467,6 +1467,11 @@ vpn_body()
 #!/bin/sh
 d=$(pwd)
 echo "\$*" >> \$d/wg.log
+prev=
+for a; do
+	[ "\$prev" = preshared-key ] && { cat "\$a" > \$d/psk.got; ls -la "\$a" | cut -c1-10 > \$d/psk.mode; echo "\$a" > \$d/psk.path; }
+	prev=\$a
+done
 key="(none)"; pub="(none)"
 [ -f \$d/wg.key ] && { key=\$(cat \$d/wg.key); pub=$PUB; }
 case "\$1 \$2 \$3" in
@@ -1622,6 +1627,20 @@ EOS
 	    allowed-ips 10.9.9.2/32,fd00::2/128 keepalive 25
 	atf_check -o match:"fake-wg set wg0 peer $PEER endpoint \[2001:db8::9\]:51820" \
 	    "$JGC" -c "$SOCK" wg wg0 peer "$PEER" endpoint '[2001:db8::9]:51820'
+	# With a preshared key: given to wg(8) in a file of the agent's,
+	# 0600, there only while it is read; not in an argument, a title
+	# or the trace.
+	PSK=$(printf 'a%.0s' $(seq 1 43))=
+	printf '%s\n' "$PSK" > psk.in
+	atf_check -o save:psk.out "$JGC" -t -c "$SOCK" wg wg0 peer "$PEER" preshared-key psk.in
+	atf_check -o inline:"$PSK\n" cat psk.got
+	atf_check -o inline:'-rw-------\n' cat psk.mode
+	atf_check -s exit:1 test -e "$(cat psk.path)"
+	atf_check -s exit:1 grep -qF "$PSK" psk.out
+	atf_check -s exit:1 grep -qF "$PSK" wg.log
+	atf_check -s exit:1 grep -qF "$PSK" daemon.out
+	atf_check -s exit:1 -e match:'a preshared key is a peer' -o ignore \
+	    "$JGC" -c "$SOCK" wg wg0 unpeer "$PEER" preshared-key psk.in
 	atf_check -o match:"fake-wg set wg0 peer $PEER remove" \
 	    "$JGC" -c "$SOCK" wg wg0 unpeer "$PEER"
 	atf_check -s exit:1 -o match:'No such device' \

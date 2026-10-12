@@ -72,6 +72,7 @@ static const char *job_states[] = {
 
 static void	usage(void) __dead2;
 static void	fail(struct arc_client *, int, const char *) __dead2;
+static char	*slurp(const char *);
 static const char *join(const char *const *, size_t);
 static void	emit_jail(const struct arc_jail *, bool);
 static void	emit_trace(const struct arc_step *, size_t);
@@ -1563,6 +1564,14 @@ cmd_interface(struct arc_client *cl, int argc, char **argv)
 				sp.endpoint = argv[i + 1];
 			else if (strcmp(argv[i], "allowed-ips") == 0)
 				sp.allowed_ips = argv[i + 1];
+			else if (strcmp(argv[i], "preshared-key") == 0) {
+				/* From a file, as wg(8) takes it: not
+				 * on a command line. */
+				char	*k = slurp(argv[i + 1]);
+
+				k[strcspn(k, "\r\n")] = '\0';
+				sp.preshared_key = k;
+			}
 			else if (strcmp(argv[i], "keepalive") == 0) {
 				sp.has_keepalive = true;
 				sp.keepalive = (uint32_t)strtonum(argv[i + 1],

@@ -1391,6 +1391,14 @@ attribute-sets:
       - name: start
         type: flag
         doc: For jail-conf make, the jail started once made.
+      - name: preshared-key
+        type: text
+        doc: |
+          For wireguard peer, the peer's preshared key, 44 characters of
+          base64: given to wg(8) in a file of the agent's that is there
+          only while it is read, and in no title nor trace.
+        checks:
+          max-len: 44
 
   - name: job
     attributes:

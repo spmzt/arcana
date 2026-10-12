@@ -348,7 +348,11 @@
     an AFS match or a policy's criteria; and the policy made in
     three steps: the lists, then the flows (the AFS) and the policy
     they get, then the policy map at each SWVC End Point.
-- WireGuard: preshared keys; a peer's key rotated.
+- WireGuard, done 2026-10-12: a client made from the page (its
+  configuration and QR code, the key pair made by the console and kept
+  nowhere), with a preshared key (a job's preshared-key, given to wg in
+  a file there only while it is read), and a client's key turned (↻:
+  the new peer in, then the old one out).
 - Storage, beyond what there is: a key that is typed, for
   a dataset whose keylocation is prompt, without it being kept in a
   job; a key changed; file systems other than UFS made; a disk's
