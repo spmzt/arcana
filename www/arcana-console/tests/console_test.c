@@ -4395,12 +4395,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    NULL && strstr(r.body, "\"deny\":\".bad.example\\n\"") != NULL, "%s",
 	    r.body);
 	/* Malware (MEF 88): what comes back goes to c-icap by ICAP, on the
-	 * loopback at the service's port; c-icap scans with ClamAV. */
+	 * edge's own address in the service at the service's port, which
+	 * takes Squid's address alone; c-icap scans with ClamAV. */
 	ATF_CHECK_MSG(strstr(r.body, "icap_service sdwan_av respmod_precache "
-	    "bypass=off icap://127.0.0.1:1354/avscan") != NULL && strstr(r.body,
+	    "bypass=off icap://10.1.0.1:1354/avscan") != NULL && strstr(r.body,
 	    "\"icap\":\"# Written by the Arcana console") != NULL && strstr(
 	    r.body, "Service avscan virus_scan.so") != NULL && strstr(r.body,
-	    "Port 127.0.0.1:1354") != NULL && strstr(r.body, "\"plugin\":"
+	    "Port 10.1.0.1:1354\\nacl squid src 10.1.0.1/255.255.255.255") !=
+	    NULL && strstr(r.body, "client_access deny all") != NULL && strstr(
+	    r.body, "\"plugin\":"
 	    "\"c-icap\",\"package\":\"c-icap c-icap-modules clamav\"") !=
 	    NULL, "%s", r.body);
 	resp_free(&r);

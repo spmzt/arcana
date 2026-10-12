@@ -490,9 +490,10 @@ Not supported: see the summary above. No tasks.
   op. C: `url-filter` criterion, `fwd` of 80 and 443 to it. T: agent
   test with a stand-in, apply test. L. Done when a denied domain is
   refused by SNI on the lab.
-- **S4.2 Malware.** A: c-icap and ClamAV from packages, Squid's
-  ICAP service for cleartext HTTP. C: `malware` criterion. T, L with
-  the EICAR file. Done when it is caught.
+- **S4.2 Malware.** (Done 2026-10-12.) A: c-icap and ClamAV, plugins
+  installed by hand, Squid's ICAP service for cleartext HTTP (and TLS
+  where opened). C: `malware` criterion. T, L with the EICAR file.
+  Done when it is caught.
 - **S4.3 Intrusion detection and prevention.** A: Suricata from
   packages on the UNI interface, alerts (eve.json) into events;
   prevention by ipfw divert in a second step. C: `ids: {rules,
