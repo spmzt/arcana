@@ -2343,6 +2343,24 @@ ids_conf(const ucl_object_t *sw, const char *sid, const ucl_object_t *ifs,
 	    "/usr/local/etc/suricata/classification.config\n"
 	    "reference-config-file: /usr/local/etc/suricata/reference.config\n"
 	    "run-as:\n  user: root\n");
+	/*
+	 * Where it prevents and the edge itself answers some of the UNI's
+	 * traffic (the URL filter's Squid, malware scanning behind it, the
+	 * DNS filter), it sees one side of those flows: what the edge sends
+	 * back goes out to the UNI without it.  Such a flow is taken as it
+	 * comes, and a packet of it that looks wrong for want of the other
+	 * side is let by, not dropped; what its rules drop is dropped all
+	 * the same, though one side alone may let a packet by before.
+	 * Elsewhere it sees both sides and stays strict.
+	 */
+	{
+		bool	x, prevent, rs;
+
+		if (ids_of(sw, NULL, &rs, &prevent) && prevent && (url_filters(
+		    sw, &x) || malware_scan(sw) || (dns_filters(sw, &x) && x)))
+			kore_buf_appendf(b, "stream:\n  midstream: true\n"
+			    "  async-oneside: true\n  drop-invalid: no\n");
+	}
 	out = strdup(kore_buf_stringify(b, NULL));
 	kore_buf_free(b);
 	return (out);
@@ -3639,17 +3657,21 @@ rules_build(struct plan *pl, const char *sid)
 						pfx[np++] = str(pv, "prefix");
 					rule(rules, RULE_IPS, "divert %d ip4 from any to "
 					    "any in recv %s", port, uni);
+					/* Not what is for the edge itself: what
+					 * it sends back is not seen, and a flow
+					 * seen half from this side is cut. */
 					for (x = 0; x < np; x++)
 						rule(rules, RULE_IPS, "divert %d ip4 from "
-						    "any to %s in not recv %s", port, pfx[x],
-						    uni);
+						    "any to %s in not recv %s not dst-ip me",
+						    port, pfx[x], uni);
 					rule(rules, RULE_FROM, "setfib %jd ip4 from any "
 					    "to any in recv %s diverted-loopback",
 					    (intmax_t)ucl_object_toint(
 					    ucl_object_lookup(sw, "fib")), uni);
 					for (x = 0; x < np; x++)
 						rule(rules, RULE_FROM, "setfib %jd ip4 from "
-						    "any to %s in diverted-loopback",
+						    "any to %s in diverted-loopback not dst-ip "
+						    "me",
 						    (intmax_t)ucl_object_toint(
 						    ucl_object_lookup(sw, "fib")), pfx[x]);
 				}

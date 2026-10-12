@@ -109,8 +109,31 @@
   prevent, ipfw divert(4) to Suricata as packets come in, fail-closed
   with a Critical fault (S4.3, in the verified list).  Not inspected
   where it prevents: IPv6 (divert's IPv6 is not trusted), and what
-  comes back from local breakout (after NAT, past the divert).  Next:
-  S4.4.
+  comes back from local breakout (after NAT, past the divert); SASE-4
+  closed (S4.4): the URL filter, malware scanning and prevention on one
+  service together on the lab, what the edge is sent for itself not
+  diverted, Suricata taking one-sided flows where the edge answers.
+  Next: SASE-5.
+- Verified on the lab 2026-10-12 (S4.4, SASE-4 closed): one service
+  on arcswan1 for the road end point with Suricata preventing (divert
+  9, setfib 10), HTTP and TLS forwarded to Squid (denied.example), and
+  c-icap with ClamAV behind it, the rules as the console writes them,
+  three runs alike: a harmless page served, the denied name refused by
+  HTTP and by TLS's SNI, the EICAR file refused (403, VIRUS DETECTED),
+  /attack dropped and told blocked.  Found there: (1) the replies to
+  Squid's own fetches, addressed to the edge in the UNI's subnet, were
+  diverted while Squid's packets out were not, so Suricata saw half of
+  those flows and cut them, and no page came back; what is for the
+  edge itself is not diverted now (not dst-ip me); (2) the end point's
+  flows to Squid are seen from its side alone (Squid answers from the
+  edge, not diverted), and Suricata in IPS mode dropped them as invalid
+  and parsed no HTTP: for such a service Suricata takes one-sided flows
+  (stream.async-oneside, midstream) and does not drop for invalid
+  (drop-invalid: no).  In one prevent run of seven made with those
+  settings, before they were kept to such services, a request matched
+  by a drop rule was told blocked yet reached the far end; the eleven
+  prevent runs after it (with those settings and without) dropped it
+  every time.  They are kept to services the edge answers for.
 - Verified on the lab 2026-10-12 (S4.3, prevent): Suricata on divert
   port 8001 for wg5, a drop rule for /attack: a harmless request
   passed, the request for /attack went nowhere and was told blocked;

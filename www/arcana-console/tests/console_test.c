@@ -4423,9 +4423,10 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_MSG(strstr(r.body, "\"divert\":8001") != NULL && strstr(
 	    r.body, "\"9 divert 8001 ip4 from any to any in recv ") != NULL &&
 	    strstr(r.body, "\"9 divert 8001 ip4 from any to 10.1.0.0/24 in not "
-	    "recv ") != NULL && strstr(r.body, "\"10 setfib 1 ip4 from any to "
-	    "10.1.0.0/24 in diverted-loopback\"") != NULL && strstr(r.body,
-	    "diverted-loopback\",\"10 ") != NULL, "%s", r.body);
+	    "recv ") != NULL && strstr(r.body, " not dst-ip me\",") != NULL &&
+	    strstr(r.body, "\"10 setfib 1 ip4 from any to 10.1.0.0/24 in "
+	    "diverted-loopback not dst-ip me\"") != NULL && strstr(r.body,
+	    "async-oneside: true\\n  drop-invalid: no") != NULL, "%s", r.body);
 	ATF_CHECK_MSG(strstr(r.body, "{\"kind\":\"sdwan-ids\",\"instances\":[{"
 	    "\"name\":\"sw1\",\"interfaces\":[\"") != NULL && strstr(r.body,
 	    "default-log-dir: @LOGDIR@") != NULL && strstr(r.body,

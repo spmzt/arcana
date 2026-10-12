@@ -499,7 +499,7 @@ Not supported: see the summary above. No tasks.
   alerts (eve.json) into events; prevention by ipfw divert, IPv4 as it
   comes in, fail-closed with a fault. C: `ids: {mode, rules, ruleset}`
   criterion. T, L. Done when a test rule alerts on the lab.
-- **S4.4 Phase close.** L, docs, TODO.
+- **S4.4 Phase close.** (Done 2026-10-12.) L, docs, TODO.
 
 ### SASE-5 Zero trust and conformance
 
