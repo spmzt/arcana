@@ -2727,9 +2727,9 @@ operations:
     attribute-set: arcana
     auth: true
     doc: |
-      The intrusion detection of the SD-WAN services at this edge (MEF
-      88's ids criterion: Suricata, a plugin the host has installed, one
-      instance per service), as the console writes them: json, an
+      The intrusion detection of the SD-WAN services at this edge (the
+      ids criterion, Arcana's own: Suricata, a plugin the host has
+      installed, one instance per service), as the console writes them: json, an
       object with "instances", each a "name", the "interfaces" it
       watches (the service's UNIs here), its "conf", Suricata's YAML
       with @LOGDIR@, @RULES@ and @PID@ for what the agent places,

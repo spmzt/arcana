@@ -4,8 +4,9 @@
  */
 
 /*
- * The intrusion detection of the SD-WAN services at this edge (MEF 88's
- * ids criterion of a security policy): Suricata, a plugin the host has
+ * The intrusion detection of the SD-WAN services at this edge (the ids
+ * criterion of a security policy, Arcana's own: neither MEF 88 nor MEF
+ * 138 has intrusion detection among its Security Functions): Suricata, a plugin the host has
  * installed (nothing is installed by Arcana), one instance per service,
  * watching the service's UNIs, its configuration written by the
  * console with places for what the agent knows: its log directory, its

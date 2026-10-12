@@ -503,11 +503,13 @@ Not supported: see the summary above. No tasks.
 
 ### SASE-5 Zero trust and conformance
 
-- **S5.1 The framework's terms.** C and U: actors (identities and
+- **S5.1 The framework's terms.** (Done 2026-10-12.) C and U: actors (identities and
   UNIs' zones), targets (zones, the Internet), the policy per pair as
   the policy map already is, sessions (S3.4), an audit trail of
   issuances, revocations and denies. Done when the Security tab reads
   in MEF 118's terms.
-- **S5.2 Mapping and the list.** With MEF 117 and MEF 88 at hand: each
+- **S5.2 Mapping and the list.** (Done 2026-10-12, against Mplify
+  117.1, MEF 138 and MEF 118.1, which replace MEF 117, MEF 88 and MEF
+  118; the book's Conformance: SASE.) With MEF 117 and MEF 88 at hand: each
   attribute mapped, a conformance list. Done when every attribute is
   in one of the two.
