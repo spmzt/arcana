@@ -5817,14 +5817,68 @@ remote_of(const ucl_object_t *doc, const char *swvc, const char *epid,
 }
 
 /*
+ * An identity's session (S3.4): its peer as the edge's wg(8) tells it,
+ * the last handshake and the bytes each way; the edges' reads kept
+ * by server id for the one listing.
+ */
+static void
+identity_session(ucl_object_t *reads, const char *sid, const char *ifn,
+    const char *pubkey, ucl_object_t *into)
+{
+	const ucl_object_t	*ans, *i, *p;
+	ucl_object_iter_t	 it, pit;
+	ucl_object_t		*s, *got;
+	char			 uri[256], peer[256], name[128], *json;
+	int			 status;
+
+	if ((ans = ucl_object_lookup(reads, sid)) == NULL) {
+		got = NULL;
+		if (host_ref(sid, uri, sizeof(uri), peer, sizeof(peer), name,
+		    sizeof(name))) {
+			json = hosts_net(uri, peer, name, "wireguard", &status);
+			got = parse(json);
+			free(json);
+		}
+		if (got == NULL)
+			got = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(reads, got, sid, 0, true);
+		ans = got;
+	}
+	it = NULL;
+	while ((i = ucl_object_iterate(at_path(ans, "data", "interfaces"), &it,
+	    true)) != NULL) {
+		if (str(i, "name") == NULL || strcmp(str(i, "name"), ifn) != 0)
+			continue;
+		pit = NULL;
+		while ((p = ucl_object_iterate(ucl_object_lookup(i, "peers"), &pit,
+		    true)) != NULL) {
+			if (str(p, "public-key") == NULL || pubkey == NULL || strcmp(
+			    str(p, "public-key"), pubkey) != 0)
+				continue;
+			s = ucl_object_typed_new(UCL_OBJECT);
+			put(s, "handshake", I(ucl_object_toint(ucl_object_lookup(p,
+			    "latest-handshake"))));
+			put(s, "rx", I(ucl_object_toint(ucl_object_lookup(p, "rx"))));
+			put(s, "tx", I(ucl_object_toint(ucl_object_lookup(p, "tx"))));
+			if (str(p, "endpoint") != NULL)
+				put(s, "endpoint", S(str(p, "endpoint")));
+			put(s, "now", I(ucl_object_toint(at_path(ans, "data", "now"))));
+			put(into, "session", s);
+			return;
+		}
+	}
+}
+
+/*
  * The identities of every service's remote end points, each with its
- * address, as the plan gives it, and whether it is still authorised.
+ * address, as the plan gives it, whether it is still authorised, and
+ * its session where the edge has its peer.
  */
 static ucl_object_t *
 identities_list(const ucl_object_t *doc, ucl_object_t *st)
 {
 	struct plan		 pl;
-	ucl_object_t		*arr, *o;
+	ucl_object_t		*arr, *o, *reads;
 	const ucl_object_t	*sw, *ep, *r, *id;
 	ucl_object_iter_t	 it, eit, iit;
 	char			 addr[80];
@@ -5832,6 +5886,8 @@ identities_list(const ucl_object_t *doc, ucl_object_t *st)
 	bool			 planned;
 
 	arr = ucl_object_typed_new(UCL_ARRAY);
+	reads = ucl_object_typed_new(UCL_OBJECT);
+	host_refs();
 	planned = plan_build(&pl, doc, st);
 	now = time(NULL);
 	it = NULL;
@@ -5867,10 +5923,13 @@ identities_list(const ucl_object_t *doc, ucl_object_t *st)
 				if (planned && remote_addr(&pl, sw, ep, str(id, "name"),
 				    addr, sizeof(addr)))
 					put(o, "address", S(addr));
+				identity_session(reads, str(ep, "edge"), str(r,
+				    "interface"), str(id, "public_key"), o);
 				ucl_array_append(arr, o);
 			}
 		}
 	}
+	ucl_object_unref(reads);
 	plan_free(&pl);
 	return (arr);
 }

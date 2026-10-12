@@ -3594,6 +3594,17 @@ part_flows(void)
 	    "sd-record-filter]') !== null && document.querySelector('a[href="
 	    "\"/api/sdwan/record.csv\"]') !== null"));
 	shot("9-sdwan-security");
+	/* Identities: the example's alice, at the remote end point, with
+	 * the address the plan gave her. */
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "identities]').click()");
+	wait_js("[...document.querySelectorAll('section.sdwan table.sd tbody "
+	    "tr')].some(tr => tr.textContent.includes('alice') && tr.textContent"
+	    ".includes('10.30.0.2'))", 20);
+	ATF_CHECK(js_true("document.querySelector('button[data-act="
+	    "sd-ident-add]') !== null && document.querySelector('button[data-act="
+	    "sd-ident-revoke]') !== null"));
+	shot("9-sdwan-identities");
 	phone(true);
 	wait_js("document.documentElement.scrollWidth <= window.innerWidth + 1",
 	    10);

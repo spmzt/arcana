@@ -4290,6 +4290,11 @@ ATF_TC_BODY(sdwan_apply, tc)
 	ATF_CHECK_STREQ("bob", jstr(&r, "identities.1.name"));
 	ATF_CHECK_STREQ("10.30.0.3", jstr(&r, "identities.1.address"));
 	ATF_CHECK_STREQ("false", jstr(&r, "identities.1.user"));
+	/* Its session, as the edge's wg tells its peer (S3.4): the stand-in
+	 * keeps the last peer set on an interface. */
+	ATF_CHECK_MSG(jstr(&r, "identities.1.session.endpoint") != NULL &&
+	    strcmp(jstr(&r, "identities.1.session.endpoint"), "192.0.2.9:51820")
+	    == 0 && jstr(&r, "identities.1.session.rx") != NULL, "%s", r.body);
 	resp_free(&r);
 	/* A console user: a sign-in key of the name, or none. */
 	http("POST", "/api/sdwan/identities", "{\"swvc\":\"acme\",\"end_point\":"

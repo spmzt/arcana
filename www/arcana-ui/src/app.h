@@ -506,6 +506,7 @@ void		 refresh_stats(struct server *);
 bool		 agent_outdated(const struct server *);
 void		 agent_update(struct server *, bool);
 bool		 version_older(const char *, const char *);
+void		 fmt_bytes(char *, size_t, int64_t);
 void		 notes_load(const char *, const char *, const char *, bool);
 void		 agent_build(struct server *, const char *, bool);
 void		 agent_restarts(double);

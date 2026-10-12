@@ -475,9 +475,10 @@ Not supported: see the summary above. No tasks.
   removing the peer within the tick; a re-authorisation interval
   after which a peer is removed until issued again. U: Identities
   tab. T. Done when a revoked lab client loses the tunnel.
-- **S3.4 Sessions.** A: the wg read's last handshake and bytes per
-  peer into the `sdwan` read. U: Identities shows sessions. T. Done
-  when the tab shows the lab client's handshake.
+- **S3.4 Sessions.** C: the wg read's last handshake and bytes per
+  peer, read from each edge with the identities (the agent's
+  wireguard read has them already). U: Identities shows sessions. T.
+  Done when the tab shows the lab client's handshake.
 
 ### SASE-4 The functions that need a proxy
 
