@@ -89,6 +89,8 @@ wd(const char *method, const char *path, const char *body)
  */
 static const char	*shots;
 
+static void	run(const char *);
+
 static void
 shot(const char *name)
 {
@@ -103,7 +105,13 @@ shot(const char *name)
 	if (shots == NULL)
 		return;
 	usleep(400000);		/* let transitions end */
-	if ((v = wd("GET", "/session/screenshot", NULL)) == NULL)
+	/* The pictures go into the book: the toasts are not of the page. */
+	run("var t = document.querySelector('.toasts'); if (t) "
+	    "t.style.visibility = 'hidden';");
+	v = wd("GET", "/session/screenshot", NULL);
+	run("var t = document.querySelector('.toasts'); if (t) "
+	    "t.style.visibility = '';");
+	if (v == NULL)
 		return;
 	b64 = ucl_object_tostring(v);
 	len = strlen(b64);
