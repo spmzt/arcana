@@ -5,6 +5,9 @@ morphdom 2.7.8 sha512-D/fR4xgGUyVRbdMGU6Nejea1RFzYxYtyurG4Fbv2Fi/daKlWKuXGLOdXtl
 @fontsource/orbitron 5.3.0 sha512-+BhPsbUAo/AF7sRcf+TEexm+EWWkgTiR9Zwb7AhYIPkc5oplfvw0C45Oc2xlKPhwVEmxG8hHuA6/Ansbl+Bc6w==
 
 morphdom/morphdom-umd.min.js	dist/morphdom-umd.min.js of the npm package (MIT)
+qrcodegen/qrcodegen.[ch]	c/ of Project Nayuki's QR Code generator v1.8.0
+				(MIT, in the files), compiled into the page:
+				SHA-256 300eff07…81403 (.c), e82df4bf…cb589 (.h)
 fonts/*.woff2			files/*-latin-*-normal.woff2 of the @fontsource packages
 				(SIL Open Font License 1.1)
 

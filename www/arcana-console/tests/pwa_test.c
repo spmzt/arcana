@@ -607,6 +607,12 @@ part_shell(void)
 	    "&& [...document.querySelectorAll('ul.tokens li')].some(l => "
 	    "l.textContent.includes('overlay planner') && l.textContent."
 	    "includes('never used'))", 10);
+	/* Beside it, the code the Arcana app scans: the console's address
+	 * and the token, drawn while the value is shown. */
+	ATF_CHECK(js_true("document.querySelector('.token-qr svg path') && "
+	    "document.querySelector('.token-qr svg path').getAttribute('d')."
+	    "length > 2000 && document.querySelector('.token-qr').closest("
+	    "'.notice').querySelector('pre.out.token')"));
 	shot("0b-token");
 	run("document.querySelector('ul.tokens button[data-act=token-del]')"
 	    ".click()");

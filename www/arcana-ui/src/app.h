@@ -397,6 +397,7 @@ struct app {
 	char		 update_url[512];
 	char		 auth_error[256];
 	char		 origin_error[400];	/* opened at the wrong address */
+	char		 console_origin[256];	/* web.conf's origin, as told */
 	bool		 auth_busy;
 
 	struct server	 servers[MAX_SERVERS];
