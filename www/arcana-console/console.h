@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.140.0"
+#define	ARCW_VERSION		"0.141.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -129,6 +129,7 @@ void		 audit_add(const char *, const char *, const char *,
 		    const char *, const char *, const char *, const char *, ...)
 		    __printflike(7, 8);
 int		 api_sdwan_audit(struct http_request *);
+int		 api_wg_keypair(struct http_request *);
 
 /* servers.c: the registry of arcana-agent instances. */
 struct server {

@@ -4599,3 +4599,4 @@ ul.notes li.new b::before { content: "+ "; color: var(--accent, #4a8); }
 .token-qr { margin: .8rem 0 0; display: flex; align-items: center; gap: 1rem; }
 .token-qr svg { width: 180px; height: 180px; flex: none; border-radius: 6px; }
 .token-qr figcaption { font-size: .8rem; color: var(--fg-2); max-width: 22rem; }
+.wg-conf { white-space: pre-wrap; word-break: break-all; font-size: .8rem; padding: .6rem; background: rgba(127,127,127,.08); border-radius: 6px; }
