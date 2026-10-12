@@ -182,6 +182,9 @@ loc_of(char *buf, size_t len)
 	case NODE_SDWAN:
 		snprintf(buf, len, "#/sdwan");
 		break;
+	case NODE_DEVICES:
+		snprintf(buf, len, "#/devices");
+		break;
 	case NODE_SETTINGS:
 		snprintf(buf, len, "#/settings/%s", settab_arg(app.settab));
 		break;
@@ -255,6 +258,8 @@ loc_go(const char *r)
 		dispatch("select-workflows", "", "");
 	else if (IS(0, "sdwan"))
 		dispatch("select-sdwan", "", "");
+	else if (IS(0, "devices"))
+		dispatch("select-devices", "", "");
 	else if (IS(0, "settings")) {
 		loc_dec(arg, sizeof(arg), np > 1 ? f[1] : "");
 		dispatch("set-tab", arg, "");
@@ -459,14 +464,15 @@ tick(void *arg)
 		last_refresh = now;
 		/* The fleet page watches every host, a host page its own. */
 		for (i = 0; (app.node == NODE_FLEET || app.node ==
-		    NODE_NETWORK || app.node == NODE_USAGE) && i <
-		    app.nservers; i++) {
+		    NODE_NETWORK || app.node == NODE_USAGE || app.node ==
+		    NODE_DEVICES) && i < app.nservers; i++) {
 			refresh_jails(&app.servers[i], false);
-			if (app.node == NODE_FLEET)
+			if (app.node == NODE_FLEET || app.node == NODE_DEVICES)
 				refresh_stats(&app.servers[i]);
 		}
 		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
-		    app.node != NODE_USAGE && (s = cur_server()) != NULL) {
+		    app.node != NODE_USAGE && app.node != NODE_DEVICES && (s =
+		    cur_server()) != NULL) {
 			refresh_jails(s, false);
 			refresh_stats(s);
 			if (app.tab == TAB_JOBS)
@@ -479,7 +485,8 @@ tick(void *arg)
 		 * its old self until the page is loaded again.
 		 */
 		if (app.node != NODE_FLEET && app.node != NODE_NETWORK &&
-		    app.node != NODE_USAGE && ++others_turn >= OTHERS_EVERY) {
+		    app.node != NODE_USAGE && app.node != NODE_DEVICES &&
+		    ++others_turn >= OTHERS_EVERY) {
 			others_turn = 0;
 			for (i = 0; i < app.nservers; i++)
 				if (i != app.sel)
@@ -1347,6 +1354,15 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.net.family = atoi(arg);
 		app.net.loading = false;
 		refresh_network(s, true);
+	} else if (strcmp(act, "select-devices") == 0) {
+		app.rail_open = false;
+		app.node = NODE_DEVICES;
+		app.jail[0] = '\0';
+		close_service();
+		for (i = 0; i < app.nservers; i++) {
+			refresh_jails(&app.servers[i], false);
+			refresh_stats(&app.servers[i]);
+		}
 	} else if (strcmp(act, "select-fleet") == 0) {
 		app.rail_open = false;
 		app.node = NODE_FLEET;

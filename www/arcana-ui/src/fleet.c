@@ -442,3 +442,106 @@ view_jobs(struct html *h, struct server *s)
 	free(rows);
 	h_raw(h, "</tbody></table>");
 }
+
+/*
+ * The hosts as a table: each its name and address, its state, its
+ * agent's version and the release of FreeBSD it runs, its jails, and
+ * how busy it is now; sorted and filtered like every table, a row
+ * opening the host.
+ */
+void
+view_devices(struct html *h)
+{
+	static const struct tcol	cols[] = {
+		{ "Host", "name", false }, { "Address", "uri", false },
+		{ "State", "state", false }, { "Agent", "version", false },
+		{ "FreeBSD", "release", false }, { "Jails running", "running",
+		true }, { "Jails", "jails", true }, { "CPU %", "cpu", true },
+		{ "Memory %", "mem", true }, { "ZFS %", "zfs", true },
+	};
+	struct server		*s;
+	ucl_object_t		*arr, *o;
+	const ucl_object_t	**rows, *r;
+	int			 i, k;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	for (i = 0; i < app.nservers; i++) {
+		s = &app.servers[i];
+		o = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->id), "id", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->name), "name",
+		    0, false);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->uri), "uri", 0,
+		    false);
+		ucl_object_insert_key(o, ucl_object_fromstring(s->failed ? "down" :
+		    s->list != NULL ? "up" : "unknown"), "state", 0, false);
+		if (s->list != NULL && jstr(s->list, "host.version") != NULL)
+			ucl_object_insert_key(o, ucl_object_fromstring(jstr(
+			    s->list, "host.version")), "version", 0, false);
+		if (s->list != NULL && jstr(s->list, "host.release") != NULL)
+			ucl_object_insert_key(o, ucl_object_fromstring(jstr(
+			    s->list, "host.release")), "release", 0, false);
+		if (s->list != NULL) {
+			ucl_object_insert_key(o, ucl_object_fromint(count_state(s,
+			    "running")), "running", 0, false);
+			ucl_object_insert_key(o, ucl_object_fromint(count_state(s,
+			    NULL)), "jails", 0, false);
+		}
+		if (s->nhist > 0) {
+			ucl_object_insert_key(o, ucl_object_fromint((int64_t)
+			    s->hist[0][s->nhist - 1]), "cpu", 0, false);
+			ucl_object_insert_key(o, ucl_object_fromint((int64_t)
+			    s->hist[1][s->nhist - 1]), "mem", 0, false);
+			ucl_object_insert_key(o, ucl_object_fromint((int64_t)
+			    s->hist[2][s->nhist - 1]), "zfs", 0, false);
+		}
+		ucl_array_append(arr, o);
+	}
+	h_raw(h, "<section class=\"hostbar\"><div class=\"host-id\"><h1>Devices"
+	    "</h1><div class=\"facts\">");
+	h_fmt(h, "<span>%d host%s</span></div></div><div class=\"pane-actions\">"
+	    "<button class=\"ghost small\" data-act=\"enrol\">Enrol a host"
+	    "</button><button class=\"ghost small\" data-act=\"add-server\">"
+	    "Add a server</button></div></section>", app.nservers,
+	    app.nservers == 1 ? "" : "s");
+	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
+	    "data-input=\"filter\" placeholder=\"Filter hosts\" "
+	    "autocomplete=\"off\" spellcheck=\"false\"");
+	h_attr(h, "value", app.filter);
+	h_raw(h, "></div><table class=\"net devices\">");
+	tbl_head(h, "devices", cols, 10, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("devices", arr, cols, 10, app.filter);
+	for (k = 0; (r = rows[k]) != NULL; k++) {
+		h_raw(h, "<tr class=\"pick\" data-act=\"select-server\"");
+		h_attr(h, "data-arg", jstr(r, "id"));
+		h_raw(h, "><td><b>");
+		h_txt(h, jstr(r, "name"));
+		h_raw(h, "</b></td><td class=\"mono\">");
+		h_txt(h, jstr(r, "uri"));
+		h_fmt(h, "</td><td><span class=\"chip st-%s\">%s</span></td><td>",
+		    jstr(r, "state"), jstr(r, "state"));
+		h_txt(h, jstr(r, "version") != NULL ? jstr(r, "version") : "—");
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "release") != NULL ? jstr(r, "release") : "—");
+		if (jget(r, "jails") != NULL)
+			h_fmt(h, "</td><td>%lld</td><td>%lld</td>", (long long)jint(r,
+			    "running", 0), (long long)jint(r, "jails", 0));
+		else
+			h_raw(h, "</td><td>—</td><td>—</td>");
+		if (jget(r, "cpu") != NULL)
+			h_fmt(h, "<td>%lld</td><td>%lld</td><td>%lld</td>",
+			    (long long)jint(r, "cpu", 0), (long long)jint(r, "mem",
+			    0), (long long)jint(r, "zfs", 0));
+		else
+			h_raw(h, "<td>—</td><td>—</td><td>—</td>");
+		h_raw(h, "</tr>");
+	}
+	if (k == 0)
+		h_raw(h, "<tr><td colspan=\"10\" class=\"dim\">No host matches."
+		    "</td></tr>");
+	free(rows);
+	h_raw(h, "</tbody></table>");
+	ucl_object_unref(arr);
+}

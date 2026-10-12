@@ -74,7 +74,6 @@ static void	toasts(struct html *);
 static void	token_qr(struct html *, const char *);
 static void	auth_screen(struct html *);
 static void	fmt_kb(char *, size_t, int64_t);
-static int	count_state(const struct server *, const char *);
 static void	tree_caps(int *);
 static bool	stale(const struct server *);
 
@@ -160,7 +159,7 @@ state_class(const struct server *s, const ucl_object_t *j,
 	return (h_word(st, "unknown"));
 }
 
-static int
+int
 count_state(const struct server *s, const char *state)
 {
 	const ucl_object_t	*j;
@@ -216,12 +215,14 @@ topbar(struct html *h)
 	h_raw(h, "</div><nav class=\"crumbs\">");
 	if (app.node == NODE_NETWORK || app.node == NODE_FLEET || app.node ==
 	    NODE_API || app.node == NODE_USAGE || app.node == NODE_WORKFLOWS ||
-	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS)
+	    app.node == NODE_SDWAN || app.node == NODE_SETTINGS || app.node ==
+	    NODE_DEVICES)
 		h_fmt(h, "<span class=\"crumb place\">%s</span>", app.node ==
 		    NODE_NETWORK ? "Network" : app.node == NODE_API ? "API" :
 		    app.node == NODE_USAGE ? "Utilization" : app.node ==
 		    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ?
-		    "SD-WAN" : app.node == NODE_SETTINGS ? "Settings" :
+		    "SD-WAN" : app.node == NODE_SETTINGS ? "Settings" : app.node ==
+		    NODE_DEVICES ? "Devices" :
 		    "All hosts");
 	else if (s != NULL) {
 		h_raw(h, "<span class=\"crumb\">");
@@ -412,8 +413,8 @@ rail(struct html *h)
 	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
 	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
 	    NODE_WORKFLOWS ? "Workflows" : app.node == NODE_SDWAN ? "SD-WAN" :
-	    app.node == NODE_SETTINGS ? "Settings" : app.node ==
-	    NODE_FLEET || s == NULL ? "All hosts" :
+	    app.node == NODE_SETTINGS ? "Settings" : app.node == NODE_DEVICES ?
+	    "Devices" : app.node == NODE_FLEET || s == NULL ? "All hosts" :
 	    s->name);
 	if (app.node == NODE_JAIL && app.jail[0] != '\0') {
 		h_raw(h, " / ");
@@ -430,6 +431,9 @@ rail(struct html *h)
 	h_fmt(h, "<li class=\"titem fleet%s\" data-act=\"select-fleet\">"
 	    "<span class=\"twig\">%s</span><span class=\"name\">All hosts</span>"
 	    "<span class=\"count\">%d</span></li>"
+	    "<li class=\"titem fleet devnode%s\" data-act=\"select-devices\">"
+	    "<span class=\"twig\">%s</span><span class=\"name\">Devices</span>"
+	    "</li>"
 	    "<li class=\"titem fleet netnode%s\" data-act=\"select-network\">"
 	    "<span class=\"twig\">%s</span><span class=\"name\">Network</span>"
 	    "</li><li class=\"titem fleet usagenode%s\" data-act=\""
@@ -440,6 +444,7 @@ rail(struct html *h)
 	    "sdnode%s\" data-act=\"select-sdwan\"><span class=\"twig\">%s"
 	    "</span><span class=\"name\">SD-WAN</span></li>", app.node ==
 	    NODE_FLEET ? " selected" : "", icon_hosts, app.nservers,
+	    app.node == NODE_DEVICES ? " selected" : "", icon_hosts,
 	    app.node == NODE_NETWORK ? " selected" : "", icon_network,
 	    app.node == NODE_USAGE ? " selected" : "", icon_usage,
 	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows,
@@ -895,6 +900,11 @@ stage(struct html *h)
 		    "<button class=\"primary\" data-act=\"enrol\">Enrol a host"
 		    "</button> <button class=\"ghost\" data-act=\"add-server\">"
 		    "Add a server</button></div></main>");
+		return;
+	}
+	if (app.node == NODE_DEVICES) {
+		view_devices(h);
+		h_raw(h, "</main>");
 		return;
 	}
 	if (app.node == NODE_FLEET) {
