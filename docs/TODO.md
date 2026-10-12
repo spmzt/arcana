@@ -396,6 +396,8 @@
   a dataset whose keylocation is prompt, without it being kept in a
   job; a key changed; file systems other than UFS made; a disk's
   self-test started; a vnet jail's datasets from the jail's own page.
+  (A key typed and a key changed done 2026-10-12: zfs-key, a call
+  and not a job, verified as root on a pool of a memory disk.)
 - To look at (2026-10-06): the test VM (FreeBSD 16-CURRENT, labvm)
   stopped answering, and had to be restarted, right after `ifconfig
   bridge0 maxaddr 500` was run by the agent on a bridge it had just

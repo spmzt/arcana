@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.93.0"
+#define	ARCANA_AGENT_VERSION	"0.94.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -302,6 +302,10 @@ void		 do_certs(struct work *, struct arc_certs_rsp *);
 const char	*cert_check(const struct arc_job_spec *);
 int		 do_cert(struct work *, const struct arc_job_spec *,
 		    const char **);
+
+/* acedia/zfskey.c: a dataset's key, typed */
+void		 do_zfs_key(struct work *, const struct arc_zfs_key_req *,
+		    struct arc_zfs_key_rsp *);
 
 /* invidia/capture.c: packets taken with tcpdump */
 void		 do_capture(struct work *, const struct arc_capture_req *,

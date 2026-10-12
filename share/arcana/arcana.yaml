@@ -959,6 +959,23 @@ attribute-sets:
         checks:
           min: 10
           max: 3600
+      - name: zfs-dataset
+        type: text
+        doc: For zfs-key, the encrypted dataset.
+        checks:
+          max-len: 255
+      - name: zfs-key
+        type: text
+        doc: |
+          For zfs-key, the dataset's key as it is typed: a passphrase,
+          or 64 hex digits for keyformat hex.
+        checks:
+          max-len: 512
+      - name: zfs-new-key
+        type: text
+        doc: For zfs-key, the key it is to have from now on.
+        checks:
+          max-len: 512
 
 
   - name: host
@@ -2965,6 +2982,30 @@ operations:
           - ok
           - error
           - json
+          - trace
+
+  - name: zfs-key
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The key of an encrypted dataset whose keylocation is prompt, as
+      it is typed: with zfs-key, loaded (zfs load-key, from a file
+      only root reads while zfs reads it); with zfs-new-key, changed
+      (zfs change-key), its keylocation prompt again after, and loaded
+      first with zfs-key when it is not.  A key is in no job, no trace
+      and no log.
+    do:
+      request:
+        attributes:
+          - zfs-dataset
+          - zfs-key
+          - zfs-new-key
+        required:
+          - zfs-dataset
+      reply:
+        attributes:
+          - ok
+          - error
           - trace
 
 mcast-groups:

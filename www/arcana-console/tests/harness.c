@@ -621,6 +621,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf 'tank/data\\tfilesystem\\t4000000\\t9000000\\t4000000\\t"
 	    "/tank/data\\tlz4\\t2.00\\t8000000\\t0\\tyes\\ton\\t-\\t-\\toff\\t"
 	    "aes-256-gcm\\tunavailable\\tfile:///k\\toff\\n'"
+	    /* One whose key is asked for at a prompt. */
+	    "\nprintf 'tank/vault\\tfilesystem\\t2000000\\t9000000\\t2000000\\t"
+	    "/tank/vault\\tlz4\\t1.00\\t0\\t0\\tno\\ton\\t-\\t-\\toff\\t"
+	    "aes-256-gcm\\tunavailable\\tprompt\\toff\\n'"
 	    "\nprintf 'tank/vol\\tvolume\\t100000\\t9000000\\t100000\\t-\\toff"
 	    "\\t1.00\\t-\\t0\\t-\\t-\\ttank/data@a\\t1048576\\toff\\toff\\t-\\tnone"
 	    "\\toff\\n' ;;\n"
@@ -631,6 +635,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf 'tank/data@a\\ntank/data@b\\n' ;;\n"
 	    /* A snapshot sent: what zsend.data has; received into a file. */
 	    "send*) cat zsend.data ;;\n"
+	    "'get -H -o value keylocation,keystatus,keyformat tank/vault') "
+	    "printf 'prompt\\nunavailable\\npassphrase\\n' ;;\n"
+	    /* What zfs read: the key's file, there while it reads. */
+	    "'load-key -L file://'*) echo \"key=$(cat \"${3#file://}\")\" >> "
+	    "storage.log ;;\n"
 	    "'receive -u tank/fail') cat > /dev/null; echo \"cannot receive "
 	    "new filesystem stream: destination 'tank/fail' exists\" >&2; "
 	    "exit 1 ;;\n"

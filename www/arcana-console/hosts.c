@@ -71,6 +71,7 @@ enum op {
 	OP_CERTS,
 	OP_SSH,
 	OP_CAPTURE,
+	OP_ZFS_KEY,
 	OP_STORAGE,
 	OP_FSTAB,
 	OP_IPFW_RULES,
@@ -118,6 +119,8 @@ struct call {
 	bool			 restart;	/* agent-update */
 	char			*host_keys;	/* agent-build: confirmed */
 	char			*text;		/* bird-config: the new text */
+	char			*key;		/* zfs-key: as typed, zeroed */
+	char			*new_key;
 	struct arc_variable	*vars;		/* service-config: to set */
 	size_t			 nvars;
 	bool			 reads;		/* changes nothing: may be asked twice */
@@ -1036,7 +1039,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_TRANSPORT ? "arc_transport" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TRANSPORT ? "arc_transport" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1362,6 +1365,8 @@ call_run(struct kore_task *t)
 	struct arc_ssh_rsp	*sshr;
 	struct arc_capture_req	 capq;
 	struct arc_capture_rsp	*capr;
+	struct arc_zfs_key_req	 zkq;
+	struct arc_zfs_key_rsp	*zkr;
 	struct arc_transport_req tpq;
 	struct arc_transport_rsp *tpr;
 	struct arc_sysctl_req	 syq;
@@ -1470,6 +1475,7 @@ call_run(struct kore_task *t)
 	cer = NULL;
 	sshr = NULL;
 	capr = NULL;
+	zkr = NULL;
 	tpr = NULL;
 	syr = NULL;
 	prr = NULL;
@@ -2283,6 +2289,18 @@ connected:
 		steps = cer->trace.v;
 		nsteps = cer->trace.n;
 		break;
+	case OP_ZFS_KEY:
+		memset(&zkq, 0, sizeof(zkq));
+		zkq.zfs_dataset = c->text;
+		zkq.zfs_key = c->key;
+		zkq.zfs_new_key = c->new_key;
+		if ((error = arc_zfs_key(&cl, &zkq, &zkr)) != 0)
+			goto rpcfail;
+		ok = zkr->ok;
+		put_str(top, "error", zkr->error);
+		steps = zkr->trace.v;
+		nsteps = zkr->trace.n;
+		break;
 	case OP_CAPTURE:
 		/* The source rides where an address does, the filter in
 		 * text, seconds in fib and packets in pos. */
@@ -2569,6 +2587,8 @@ done:
 		arc_ssh_rsp_free(sshr);
 	if (capr != NULL)
 		arc_capture_rsp_free(capr);
+	if (zkr != NULL)
+		arc_zfs_key_rsp_free(zkr);
 	if (tpr != NULL)
 		arc_transport_rsp_free(tpr);
 	if (syr != NULL)
@@ -2651,6 +2671,7 @@ call_new(struct http_request *req, enum op op)
 	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL || op == OP_CAPTURE ||
+	    op == OP_ZFS_KEY ||
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
 	    op == OP_CONSOLE_UPDATE ||
 	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT || op ==
@@ -2745,6 +2766,13 @@ call_release(struct call *c)
 	c->host_keys = NULL;
 	kore_free(c->text);
 	c->text = NULL;
+	if (c->key != NULL)
+		explicit_bzero(c->key, strlen(c->key));
+	if (c->new_key != NULL)
+		explicit_bzero(c->new_key, strlen(c->new_key));
+	kore_free(c->key);
+	kore_free(c->new_key);
+	c->key = c->new_key = NULL;
 	call_free_vars(c);
 	for (i = 0; i < c->nnames; i++)
 		kore_free(c->names[i]);
@@ -3760,6 +3788,60 @@ api_capture(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "a source is an "
 		    "interface's or a tap's name, a filter one line of 128 "
 		    "characters at most; jail is a jail's name"));
+	}
+	return (call_start(req, c));
+}
+
+/*
+ * POST /api/servers/<id>/zfs/key, {"dataset", "key", "new_key"}: the key
+ * of an encrypted dataset asked for at a prompt, typed: loaded, or
+ * changed.  Not a job: a job is kept.  The keys are zeroed as the call
+ * ends, and are in no log.
+ */
+int
+api_zfs_key(struct http_request *req)
+{
+	struct call	*c;
+	ucl_object_t	*body;
+	const char	*s;
+	bool		 bad;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_ZFS_KEY)) == NULL)
+		return (KORE_RESULT_OK);
+	bad = (body = read_json(req)) == NULL;
+	if (!bad) {
+		if ((s = ucl_str(body, "dataset")) == NULL || s[0] == '\0' ||
+		    strlen(s) > 255)
+			bad = true;
+		else
+			c->text = kore_strdup(s);
+		if ((s = ucl_str(body, "key")) != NULL && s[0] != '\0')
+			c->key = kore_strdup(s);
+		if ((s = ucl_str(body, "new_key")) != NULL && s[0] != '\0')
+			c->new_key = kore_strdup(s);
+		if ((c->key != NULL && strlen(c->key) > 512) || (c->new_key !=
+		    NULL && strlen(c->new_key) > 512) || (c->key == NULL &&
+		    c->new_key == NULL))
+			bad = true;
+		/* The body's copy of them too. */
+		ucl_object_unref(body);
+	}
+	if (bad) {
+		if (c->key != NULL)
+			explicit_bzero(c->key, strlen(c->key));
+		if (c->new_key != NULL)
+			explicit_bzero(c->new_key, strlen(c->new_key));
+		kore_free(c->key);
+		kore_free(c->new_key);
+		kore_free(c->text);
+		kore_free(c->sname);
+		kore_free(c->uri);
+		kore_free(c->peer);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "a dataset, and a key "
+		    "to load or a new one, 512 characters at most"));
 	}
 	return (call_start(req, c));
 }

@@ -317,6 +317,7 @@ worker(void *arg)
 	struct arc_ssh_rsp	 sshr;
 	struct arc_capture_req	 capq;
 	struct arc_capture_rsp	 capr;
+	struct arc_zfs_key_rsp	 zkr;
 	struct arc_transport_rsp tpr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
@@ -630,6 +631,38 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &cer.trace.v, &cer.trace.n);
 		rc = arc_certs_reply(j->req, &cer);
+		break;
+	case ARC_CMD_ZFS_KEY:
+		/* The keys ride in source and ref: in nothing logged. */
+		what = wfmt(&w, "zfs key of %s", j->sha256);
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&zkr, 0, sizeof(zkr));
+		zkr.has_ok = true;
+		{
+			struct arc_zfs_key_req	zq;
+
+			memset(&zq, 0, sizeof(zq));
+			zq.zfs_dataset = j->sha256;
+			zq.zfs_key = j->source;
+			zq.zfs_new_key = j->ref;
+			pthread_mutex_lock(&change_lock);
+			if (change_note("%s", what))
+				do_zfs_key(&w, &zq, &zkr);
+			else
+				zkr.error = STOPPING;
+			change_note(NULL);
+			pthread_mutex_unlock(&change_lock);
+		}
+		if (j->source != NULL)
+			explicit_bzero(j->source, strlen(j->source));
+		if (j->ref != NULL)
+			explicit_bzero(j->ref, strlen(j->ref));
+		ok = zkr.ok;
+		error = zkr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &zkr.trace.v, &zkr.trace.n);
+		rc = arc_zfs_key_reply(j->req, &zkr);
 		break;
 	case ARC_CMD_CAPTURE:
 		what = wfmt(&w, "capture %s%s%s", j->ref != NULL ? j->ref :
@@ -1936,6 +1969,22 @@ arc_certs_doit(cbl_req *req, const struct arc_certs_req *rq,
 	j->cmd = ARC_CMD_CERTS;
 	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
 	    NULL;
+	return (start(j));
+}
+
+int
+arc_zfs_key_doit(cbl_req *req, const struct arc_zfs_key_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_ZFS_KEY;
+	j->sha256 = xstrdup(rq->zfs_dataset);
+	j->source = rq->zfs_key != NULL ? xstrdup(rq->zfs_key) : NULL;
+	j->ref = rq->zfs_new_key != NULL ? xstrdup(rq->zfs_new_key) : NULL;
 	return (start(j));
 }
 
