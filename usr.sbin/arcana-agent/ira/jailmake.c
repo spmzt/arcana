@@ -493,22 +493,23 @@ jail_unmake(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	path = NULL;
 	if (conf_scope_read(w, file, &js, &n, &e) == 0 && n == 1)
 		path = cjail_param1(&js[0], "path");
-	if (jail_getid(sp->jail) >= 0) {
-		memset(&ar, 0, sizeof(ar));
-		do_action(w, sp->jail, ARC_ACTION_STOP, &ar);
-		if (!ar.ok) {
-			*errp = wfmt(w, "%s did not stop: %s", sp->jail, ar.error !=
-			    NULL ? ar.error : "no reason given");
-			return (-1);
-		}
-	}
-	/* Its dataset, only where it is the jail's root. */
+	/* Its dataset, only where it is the jail's root: asked before
+	 * anything is done, the jail left running when it is not. */
 	if (sp->dataset != NULL && sp->dataset[0] != '\0') {
 		mp = ds_get(w, sp->dataset, "mountpoint");
 		if (path == NULL || mp == NULL || strcmp(mp, path) != 0) {
 			*errp = wfmt(w, "%s is not mounted at the jail's path "
 			    "(%s): it is not destroyed, nor is anything else",
 			    sp->dataset, path != NULL ? path : "unknown");
+			return (-1);
+		}
+	}
+	if (jail_getid(sp->jail) >= 0) {
+		memset(&ar, 0, sizeof(ar));
+		do_action(w, sp->jail, ARC_ACTION_STOP, &ar);
+		if (!ar.ok) {
+			*errp = wfmt(w, "%s did not stop: %s", sp->jail, ar.error !=
+			    NULL ? ar.error : "no reason given");
 			return (-1);
 		}
 	}
