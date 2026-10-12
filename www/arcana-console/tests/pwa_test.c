@@ -1329,6 +1329,25 @@ part_nettab(void)
 	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.7/24 alias$' ifconfig.log")
 	    == 0);
 	run("document.querySelector('.dock > header').click()");
+	/* An address changed: the form with what it is now; the new one
+	 * added, then the old one taken off. */
+	run("document.querySelector('tr[data-if=lo0] button[data-act="
+	    "if-addr-edit][data-value=\"127.0.0.1/8\"]').click()");
+	wait_js("document.querySelector('form[data-form=if-address]')", 5);
+	ATF_CHECK(js_true("document.querySelector('form[data-form=if-address]')"
+	    ".address.value === '127.0.0.1/8' && document.querySelector('.modal "
+	    "button.primary').textContent === 'Change'"));
+	run("const f = document.querySelector('form[data-form=if-address]'); "
+	    "f.address.value = '127.0.0.2/8'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('lo0: remove 127.0.0.1: done'))", 20);
+	ATF_CHECK(system("grep -n 'lo0 inet 127.0.0.2/8 alias\\|lo0 inet "
+	    "127.0.0.1 -alias' ifconfig.log | sed 's/:.*inet / /' | tr '\\n' "
+	    "' ' | grep -q '127.0.0.2/8 alias .*127.0.0.1 -alias'") == 0);
+	run("document.querySelector('.dock > header').click()");
 
 	/* A static route, from the routes table: asked for in a dialog,
 	 * queued, and run with route(8). */

@@ -391,6 +391,22 @@ interfaces(struct html *h, const struct server *s, const ucl_object_t *arr)
 				h_txt(h, jstr(a, "destination"));
 			}
 			h_raw(h, "</span><button class=\"icon\" "
+			    "data-act=\"if-addr-edit\" title=\"Change it\"");
+			h_attr(h, "data-arg", name);
+			{
+				char	full[160];
+				size_t	z = strcspn(jstr(a, "address"), "%");
+
+				if (jget(a, "prefixlen") != NULL)
+					snprintf(full, sizeof(full), "%.*s/%lld",
+					    (int)z, jstr(a, "address"), (long long)
+					    jint(a, "prefixlen", 0));
+				else
+					snprintf(full, sizeof(full), "%.*s", (int)z,
+					    jstr(a, "address"));
+				h_attr(h, "data-value", full);
+			}
+			h_raw(h, ">&#9998;</button><button class=\"icon\" "
 			    "data-act=\"if-addr-remove\" title=\"Remove\"");
 			h_attr(h, "data-arg", name);
 			snprintf(buf, sizeof(buf), "%.*s", (int)strcspn(jstr(a,
