@@ -4559,6 +4559,86 @@ rtadvd_cleanup()
 	stop_daemon
 }
 
+atf_test_case jail_conf cleanup
+jail_conf_head()
+{
+	atf_set "descr" "jail-conf: the jails' defaults, a template, a jail made from a base snapshot with its file, and taken away"
+}
+jail_conf_body()
+{
+	# zfs(8): a dataset there or not by a marker, its mountpoint, what
+	# it is told logged; send writes a stream, recv reads it.
+	cat > fake-zfs <<EOS
+#!/bin/sh
+echo "zfs \$*" >> $(pwd)/zfs.log
+case "\$1" in
+list) [ -e "$(pwd)/ds.\$(echo "\$5" | tr / _)" ] ;;
+get) cat "$(pwd)/mp.\$(echo "\$6" | tr / _)" 2>/dev/null || exit 1 ;;
+clone) touch "$(pwd)/ds.\$(echo "\$5" | tr / _)"; echo "\$3" | sed 's/^mountpoint=//' > "$(pwd)/mp.\$(echo "\$5" | tr / _)" ;;
+send) echo "stream of \$2" ;;
+recv) cat > "$(pwd)/recv.in"; [ -e $(pwd)/recv.fail ] && exit 1; touch "$(pwd)/ds.\$(echo "\$4" | tr / _)" ;;
+destroy) rm -f "$(pwd)/ds.\$(echo "\$3" | tr / _)" ;;
+esac
+EOS
+	chmod +x fake-zfs
+	DAEMON_ARGS="-z $(pwd)/fake-zfs"
+	start_daemon
+	d=$(pwd)/etc
+	# The defaults every jail file includes, the file before kept; one
+	# jail(8) does not take is refused and the one before put back.
+	printf 'path = "/usr/jails/${name}";\nhost.hostname = "${name}.example.org";\nexec.start = "/bin/sh /etc/rc";\nmount.devfs;\n' > defaults.conf
+	atf_check -o match:'done +jail defaults' "$JGC" -c "$SOCK" jailconf defaults defaults.conf
+	atf_check cmp -s defaults.conf "$d/jail.conf"
+	test -f "$d/jail.conf.arcana.bak" || atf_fail "the jail.conf before was not kept"
+	printf 'path = "/usr/jails/${name}";\nbroken {\n' > bad.conf
+	atf_check -s exit:1 -o match:'jail\(8\) does not take it.*the one before put back' "$JGC" -c "$SOCK" jailconf defaults bad.conf
+	atf_check cmp -s defaults.conf "$d/jail.conf"
+	# A template, kept beside the jails, outside rc.d/jail's *.conf.
+	printf 'exec.created += "mkdir -p /usr/jails/${name}/x";\nallow.raw_sockets;\n' > certbot.inc
+	atf_check -o match:'done +jail template certbot' "$JGC" -c "$SOCK" jailconf template certbot certbot.inc
+	atf_check cmp -s certbot.inc "$d/jail.conf.d/certbot.inc"
+	# A jail: its dataset cloned from the base's snapshot at its path,
+	# its file read back by jail(8) and put in place, then started.
+	printf '.include "%s/jail.conf";\nwww {\n\tdevfs_ruleset = 4;\n\tip4.addr = "lo0|127.0.0.9";\n\t.include "%s/jail.conf.d/certbot.inc";\n}\n' "$d" "$d" > www.conf
+	atf_check -o match:'done +jail make www from tank/jails/base@15.0' \
+	    -o match:'fake-jail -f [^ ]+ -c www: exit status 0' \
+	    "$JGC" -t -c "$SOCK" jailconf make www www.conf tank/jails/www tank/jails/base@15.0 clone /usr/jails/www start
+	atf_check -o match:'^zfs clone -o mountpoint=/usr/jails/www tank/jails/base@15.0 tank/jails/www$' cat zfs.log
+	atf_check cmp -s www.conf "$d/jail.conf.d/www.conf"
+	# Not twice; not a file of another jail, nor of two; not where the
+	# path is not the dataset's: nothing made, the dataset taken back.
+	atf_check -s exit:1 -o match:'is there already' "$JGC" -c "$SOCK" jailconf make www www.conf
+	printf '.include "%s/jail.conf";\nmail {\n}\n' "$d" > mail.conf
+	atf_check -s exit:1 -o match:'defines 1 jail, not the one jail web2' "$JGC" -c "$SOCK" jailconf make web2 mail.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
+	test -e ds.tank_jails_web2 && atf_fail "the dataset made for a refused jail stayed"
+	test -e "$d/jail.conf.d/web2.conf" && atf_fail "a refused jail's file stayed"
+	printf '.include "%s/jail.conf";\nweb2 {\n\tpath = /elsewhere;\n}\n' "$d" > web2.conf
+	atf_check -s exit:1 -o match:'path is /elsewhere, not /usr/jails/web2' "$JGC" -c "$SOCK" jailconf make web2 web2.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
+	# A copy of its own: zfs send into zfs recv, mounted at its path.
+	printf '.include "%s/jail.conf";\nweb2 {\n}\n' "$d" > web2.conf
+	atf_check -o match:'done +jail make web2' "$JGC" -c "$SOCK" jailconf make web2 web2.conf tank/jails/web2 tank/jails/base@15.0 send /usr/jails/web2
+	atf_check -o match:'^zfs send tank/jails/base@15.0$' -o match:'^zfs recv -o mountpoint=/usr/jails/web2 tank/jails/web2$' cat zfs.log
+	atf_check -o inline:'stream of tank/jails/base@15.0\n' cat recv.in
+	# The template kept while a jail includes it.
+	atf_check -s exit:1 -o match:'certbot.inc is included by www.conf: kept' "$JGC" -c "$SOCK" jailconf untemplate certbot
+	# Checked before queued: names, datasets, the copy, the path.
+	atf_check -s exit:1 -e match:'invalid jail name' -o ignore "$JGC" -c "$SOCK" jailconf make 'a b' www.conf
+	atf_check -s exit:1 -e match:'under a pool' -o ignore "$JGC" -c "$SOCK" jailconf make x www.conf tank tank/jails/base@15.0 clone /usr/jails/x
+	atf_check -s exit:1 -e match:'clone or send' -o ignore "$JGC" -c "$SOCK" jailconf make x www.conf tank/jails/x tank/jails/base@15.0 copy /usr/jails/x
+	atf_check -s exit:1 -e match:'an absolute one' -o ignore "$JGC" -c "$SOCK" jailconf make x www.conf tank/jails/x tank/jails/base@15.0 clone usr/jails/x
+	# Taken away: its dataset only where it is mounted at its path.
+	atf_check -s exit:1 -o match:'tank/jails/web2 is not mounted at the jail' "$JGC" -c "$SOCK" jailconf remove www tank/jails/web2
+	test -f "$d/jail.conf.d/www.conf" || atf_fail "a jail was taken away when its dataset was not its"
+	atf_check -o match:'done +jail remove www' "$JGC" -c "$SOCK" jailconf remove www tank/jails/www
+	test -e "$d/jail.conf.d/www.conf" && atf_fail "the jail's file stayed"
+	atf_check -o match:'^zfs destroy -r tank/jails/www$' cat zfs.log
+	atf_check -o match:'done +jail untemplate certbot' "$JGC" -c "$SOCK" jailconf untemplate certbot
+}
+jail_conf_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case ntp
@@ -4567,6 +4647,7 @@ atf_init_test_cases()
 	atf_add_test_case interfaces
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
+	atf_add_test_case jail_conf
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute

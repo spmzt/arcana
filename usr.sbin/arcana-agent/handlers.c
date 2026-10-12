@@ -1927,7 +1927,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_IPSEC_SA)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_JAIL_CONF)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2107,6 +2107,8 @@ check_spec(const struct arc_job_spec *sp)
 			return ("netgraph changes cannot be undone: not in "
 			    "safe mode");
 		return (ng_check(sp->verb, sp->names.v, sp->names.n));
+	case ARC_JOB_KIND_JAIL_CONF:
+		return (jail_conf_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "

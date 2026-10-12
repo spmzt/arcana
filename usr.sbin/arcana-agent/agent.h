@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.79.0"
+#define	ARCANA_AGENT_VERSION	"0.80.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -291,6 +291,10 @@ struct arc_jail	*jail_current(struct work *, const char *,
 int		 do_list(struct work *, bool, struct arc_list_rsp *);
 int		 do_action(struct work *, const char *, uint8_t,
 		    struct arc_action_rsp *);
+/* ira/jailmake.c: jails made and taken away, their defaults, templates */
+const char	*jail_conf_check(const struct arc_job_spec *);
+int		 do_jail_conf(struct work *, const struct arc_job_spec *,
+		    const char **);
 int		 do_address(struct work *, const struct arc_address_req *,
 		    struct arc_address_rsp *);
 
