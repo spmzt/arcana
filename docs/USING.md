@@ -36,7 +36,9 @@ The console is laid out as a tree and tabs.
 - **Workflows**: chains of steps the console keeps and runs on
   several hosts at once. A step is a job of any kind, its fields
   those `share/arcana/jobs.yaml` says the kind needs (marked) and
-  uses, with a choice where a field is one of a few; or a read of the
+  uses, with a choice where a field is one of a few (the build checks
+  that file against `arcana.yaml`'s kinds of job and their
+  attributes, and stops where they differ); or a read of the
   host (hello, jails, services, stats, events, history, packages)
   whose answer a later step looks at; or one of Arcana's own, from
   the repository the console builds from (`agent_source`): **is its
@@ -67,12 +69,20 @@ The console is laid out as a tree and tabs.
   (`host-up`), a jail whose state changed (`jail-state`), and those the
   host tells (`threshold`, `kmsg`, `link` and the rest), each with what
   it must match (`what=mem`); an event's run is on the host it happened
-  on. One that runs by itself may hold a step that destroys (a dataset
+  on. The console subscribes to the events of each host a workflow
+  waits on, so a run begins as soon as the host tells, and a host
+  that goes is `host-down` at once; what a host said while it was not
+  heard is read when it answers again. An interval counts from when
+  the workflow last ran by it, kept in `every.json` across restarts of
+  the console. One that runs by itself may hold a step that destroys (a dataset
   destroyed, an interface, a partition table) only when **It may
-  destroy, by itself** says so. Each run is listed with what began it
-  and how each host's went; a run is drawn as its chain, a row for each
-  host, each step coloured by how it went, and a step picked shows its
-  trace. What waits in the queue becomes a workflow with **As a
+  destroy, by itself** says so. Steps are put in another order by
+  dragging them by their number, or one earlier with ↑. Each run is
+  listed with what began it and how each host's went; a run is drawn
+  as its chain, a row for each host, each step coloured by how it
+  went, a failure that goes on at a later step drawn as an arrow under
+  the row from the one to the other (bright when the run took it), and
+  a step picked shows its trace. What waits in the queue becomes a workflow with **As a
   workflow**, and **From a template…** starts one made already, to be
   looked over and saved: Arcana kept up to date from its repository
   (every hour: the check, then the agent built, sent to every host,

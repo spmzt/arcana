@@ -5,7 +5,9 @@
 # job-spec they are made into: the console's checks of a workflow's
 # steps and the page's forms for them come from here (jobs.awk), so a
 # new kind is one more entry.  A line is "key: words", the words with
-# spaces between them.
+# spaces between them.  Every kind is one of arcana.yaml's job-kind and
+# every field an attribute of its job-spec, by the same name with - for
+# _ or the one its attribute says: the build stops otherwise.
 
 fields:
   - field: jail
@@ -44,15 +46,19 @@ fields:
   - field: args
     type: list
     label: Arguments
+    attribute: names
   - field: packages
     type: list
     label: Packages
+    attribute: names
   - field: set
     type: map
     label: Variables to set
+    attribute: variables
   - field: unset
     type: list
     label: Variables to unset
+    attribute: variables
   - field: source
     type: text
     label: Source address

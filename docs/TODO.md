@@ -102,6 +102,17 @@
   Squid as a plugin, an instance per service, the TLS names looked at
   or TLS opened with the agent's CA, HTTP and TLS forwarded to it
   (S4.1). Next: S4.2, malware.
+- 2026-10-12: workflows, further: jobs.yaml checked against
+  arcana.yaml's job-kind and job-spec by jobs.awk at the build, which
+  stops where they differ (a field the API names otherwise says its
+  attribute); a failure that goes on at a later step drawn as an
+  arrow under the run's row; steps dragged to another place; an
+  interval counted from when the workflow last ran by it, kept in
+  every.json across restarts; each host waited on subscribed to, a
+  thread each, its events running what they begin as they come and
+  what was missed read when it answers again, host-down known when
+  the connection drops. jail-state is still a read of the jails at
+  each tick: the agent tells no event of a jail's state.
 - 2026-10-12: a vnet jail's plugins looked for as the jail sees its
   files: a child of the agent attaches to the jail and asks there, so
   that a link inside it (a /usr/local leading to /opt/local) leads
@@ -256,15 +267,6 @@
   no way to read it from userland (no sysctl as vxlan has, no dump
   through netlink); once it does, shown as a bridge's addresses are.
   A learned address of a bridge deleted, and a static one added.
-- Workflows, further: the console checks a step's job against
-  share/arcana/jobs.yaml, which is apart from arcana.yaml because
-  cblink-gen takes no key of its own there: a kind added to the one
-  is added to the other by hand. A run's chain is drawn as rows of
-  boxes, where a failure goes on written on its box, not drawn as an
-  arrow; steps are moved up one at a time, not dragged. What runs at
-  an interval counts from when the console's worker began, not from
-  its last run, after a restart; the console watches events by asking
-  every five seconds, not by subscribing.
 - Gula, further: older samples thinned instead of dropped; dmesg for
   an agent that is not root, which the kernel refuses unless
   security.bsd.unprivileged_read_msgbuf is on.
