@@ -322,6 +322,25 @@ alert_json(const char *name, const char *line)
 	return (out);
 }
 
+static void
+eve_path(const char *name, char *buf, size_t len)
+{
+
+	ids_pathbuf(name, "d", buf, len);
+	strlcat(buf, "/eve.json", len);
+}
+
+/* How long an instance's eve.json is, 0 when it has none. */
+static off_t
+eve_size(const char *name)
+{
+	struct stat	st;
+	char		path[MAXPATHLEN];
+
+	eve_path(name, path, sizeof(path));
+	return (stat(path, &st) == 0 ? st.st_size : 0);
+}
+
 /* What an instance wrote since it was last read: its alerts. */
 static void
 read_eve(struct instance *in)
@@ -333,9 +352,7 @@ read_eve(struct instance *in)
 	ssize_t		 n;
 	int		 told;
 
-	snprintf(path, sizeof(path), "%s", "");
-	ids_pathbuf(in->name, "d", path, sizeof(path));
-	strlcat(path, "/eve.json", sizeof(path));
+	eve_path(in->name, path, sizeof(path));
 	if (stat(path, &st) != 0)
 		return;
 	if (st.st_size < in->off)	/* turned over, or made anew */
@@ -481,6 +498,11 @@ do_sdwan_ids(struct work *w, const char *json, const char **errp)
 			step_end(w, step, true, NULL);
 		}
 	}
+	/* One new here is read from where its eve.json ends before it
+	 * starts: what was there was told before, by this agent or one
+	 * before it.  Those that stay keep where they were read to. */
+	for (k = 0; k < n; k++)
+		ni[k].off = eve_size(ni[k].name);
 	ok = true;
 	it = NULL;
 	for (k = 0; k < n; k++) {

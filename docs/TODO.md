@@ -103,7 +103,19 @@
   or TLS opened with the agent's CA, HTTP and TLS forwarded to it
   (S4.1); malware scanned, by c-icap and ClamAV behind the same Squid,
   c-icap on the edge's own address in the service and taking Squid's
-  alone, plugins all (S4.2, in the verified list). Next: S4.3, IDS.
+  alone, plugins all (S4.2, in the verified list); intrusion
+  detected by Suricata on the UNIs, a plugin, its alerts events and
+  in the read (S4.3, detect; in the verified list). Next: prevention
+  (mode prevent, ipfw divert to Suricata), then S4.4.
+- Verified on the lab 2026-10-12 (S4.3): Suricata 8 added into
+  arcswan1 from fetched packages, an instance on wg5 (the road end
+  point's UNI) with the configuration the console writes and one rule
+  of the service's own (http.uri /attack): the client's request
+  alerted, the alert in the sdwan read and as an sdwan-ids event, 13 s
+  after (Suricata tells of a short flow once done with it).  Found
+  there: a new instance read its log directory's old eve.json from the
+  start, so alerts were told again; one new to the agent is read from
+  where the file ends.
 - Verified on the lab 2026-10-12 (S4.2): Squid, c-icap 0.6.5 with
   c-icap-modules 0.5.7 and ClamAV 1.5.4 added into arcswan1 from
   fetched packages, signatures only EICAR's (a one-line eicar.hdb):
