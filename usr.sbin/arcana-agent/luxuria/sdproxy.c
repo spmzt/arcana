@@ -14,8 +14,11 @@
  * at (peek) and a connection to a denied one ended, the rest let
  * through unopened (splice); in mode inspect TLS is opened (bump) with
  * a CA of the instance's own, made once by openssl(1) and kept, its
- * certificate told in the sdwan read for the clients to trust.  Like
- * the DNS filters of sddns.c: those named are started or told to
+ * certificate told in the sdwan read for the clients to trust.  Where
+ * its security policies scan for malware, a c-icap of the service's own
+ * (a plugin too, with ClamAV's module and signatures) answers the Squid
+ * by ICAP on the loopback, in the same table, and is started first.
+ * Like the DNS filters of sddns.c: those named are started or told to
  * reconfigure, those not named any more are stopped, and the list is
  * kept for the next start.
  */
@@ -24,6 +27,7 @@
 #include <sys/stat.h>
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
@@ -47,6 +51,7 @@ struct instance {
 	char	name[40];
 	char	mode[12];
 	int	fib;
+	bool	icap;		/* scans for malware: c-icap beside it */
 };
 
 static pthread_mutex_t	lock = PTHREAD_MUTEX_INITIALIZER;
@@ -140,6 +145,169 @@ inst_pid(struct work *w, const char *name)
 	if (pid <= 1 || kill((pid_t)pid, 0) != 0)
 		return (0);
 	return ((pid_t)pid);
+}
+
+/* c-icap's files of an instance, beside the instance's own. */
+static const char *
+icap_path(struct work *w, const char *name, const char *ext)
+{
+	char	buf[MAXPATHLEN];
+
+	sdwan_conf_path(wfmt(w, "sdwan-icap-%s.%s", name, ext), buf,
+	    sizeof(buf));
+	return (wstrdup(w, buf));
+}
+
+static const char *
+icap_bin(struct work *w)
+{
+	const char	*p;
+
+	if ((p = tool(w, "c-icap")) != NULL)
+		return (p);
+	return (opts.cicap_bin);
+}
+
+/* The pid of an instance's c-icap, when that process is there. */
+static pid_t
+icap_pid(struct work *w, const char *name)
+{
+	FILE	*fp;
+	long	 pid = 0;
+
+	if ((fp = fopen(icap_path(w, name, "pid"), "r")) == NULL)
+		return (0);
+	if (fscanf(fp, "%ld", &pid) != 1)
+		pid = 0;
+	fclose(fp);
+	if (pid <= 1 || kill((pid_t)pid, 0) != 0)
+		return (0);
+	return ((pid_t)pid);
+}
+
+static void
+icap_stop(struct work *w, const char *name)
+{
+	pid_t	pid;
+	int	i;
+
+	if ((pid = icap_pid(w, name)) == 0)
+		return;
+	(void)kill(pid, SIGTERM);
+	for (i = 0; i < 150 && kill(pid, 0) == 0; i++)
+		usleep(20000);
+	if (kill(pid, 0) == 0)
+		(void)kill(pid, SIGKILL);
+}
+
+/*
+ * What malware scanning needs that is not FreeBSD's own: c-icap, its
+ * ClamAV module (c-icap-modules) and ClamAV's signatures; NULL when
+ * all are there, else what to install.  Stand-ins (-2) are taken as
+ * they are.
+ */
+static const char *
+icap_missing(struct work *w)
+{
+	DIR		*d;
+	struct dirent	*de;
+	const char	*x;
+	bool		 sigs;
+
+	if (access(icap_bin(w), X_OK) != 0)
+		return (wfmt(w, "the host has no c-icap (%s): it is a plugin, "
+		    "installed by hand (pkg install c-icap c-icap-modules "
+		    "clamav)", icap_bin(w)));
+	if (opts.tools_dir != NULL)
+		return (NULL);
+	if (access(PATH_CICAP_MODULES "/clamav_mod.so", R_OK) != 0)
+		return ("c-icap has no ClamAV module (" PATH_CICAP_MODULES
+		    "/clamav_mod.so): pkg install c-icap-modules");
+	sigs = false;
+	if ((d = opendir(PATH_CLAMAV_DB)) != NULL) {
+		while (!sigs && (de = readdir(d)) != NULL)
+			if ((x = strrchr(de->d_name, '.')) != NULL && (strcmp(x,
+			    ".cvd") == 0 || strcmp(x, ".cld") == 0 || strcmp(x,
+			    ".hdb") == 0 || strcmp(x, ".ndb") == 0 || strcmp(x,
+			    ".hsb") == 0))
+				sigs = true;
+		closedir(d);
+	}
+	if (!sigs)
+		return ("ClamAV has no signatures in " PATH_CLAMAV_DB ": pkg "
+		    "install clamav, then freshclam (and freshclam_enable in "
+		    "rc.conf to keep them fresh)");
+	return (NULL);
+}
+
+/*
+ * An instance's c-icap, (re)started in its table with its file: the
+ * console's text, its pid file and command socket placed.  Restarted
+ * rather than told, so that what changed is what runs.
+ */
+static int
+icap_start(struct work *w, const struct instance *in, const char *conf,
+    const char **errp)
+{
+	struct execres	 res;
+	char		*argv[7], *text, *p, *q;
+	const char	*from[] = { "@ICAPPID@", "@ICAPCMD@" }, *to[2];
+	size_t		 i, n, len;
+	int		 k;
+
+	to[0] = icap_path(w, in->name, "pid");
+	to[1] = icap_path(w, in->name, "ctl");
+	len = strlen(conf) + 4 * MAXPATHLEN + 1;
+	text = wcalloc(w, 1, len);
+	for (p = (char *)(uintptr_t)conf, q = text; *p != '\0';) {
+		for (i = 0; i < 2; i++) {
+			n = strlen(from[i]);
+			if (strncmp(p, from[i], n) == 0) {
+				q = stpcpy(q, to[i]);
+				p += n;
+				break;
+			}
+		}
+		if (i == 2)
+			*q++ = *p++;
+	}
+	*q = '\0';
+	if (sdwan_conf_write(wfmt(w, "sdwan-icap-%s.conf", in->name), text,
+	    errp) != 0)
+		return (-1);
+	(void)mkdir("/var/log/c-icap", 0755);
+	icap_stop(w, in->name);
+	(void)unlink(to[1]);
+	k = 0;
+	argv[k++] = (char *)(uintptr_t)opts.setfib_bin;
+	argv[k++] = (char *)(uintptr_t)"-F";
+	argv[k++] = wfmt(w, "%d", in->fib);
+	argv[k++] = (char *)(uintptr_t)icap_bin(w);
+	argv[k++] = (char *)(uintptr_t)"-f";
+	argv[k++] = (char *)(uintptr_t)icap_path(w, in->name, "conf");
+	argv[k] = NULL;
+	if (run_exec(w, argv, &res) != 0) {
+		*errp = wtext(w, exec_error(w, &res, "c-icap"));
+		return (-1);
+	}
+	/* It forks: up once its pid file is. */
+	for (k = 0; k < 50 && icap_pid(w, in->name) == 0; k++)
+		usleep(100000);
+	if (icap_pid(w, in->name) == 0) {
+		*errp = "c-icap did not start: see /var/log/c-icap";
+		return (-1);
+	}
+	return (0);
+}
+
+static void
+icap_down(struct work *w, const char *name)
+{
+
+	icap_stop(w, name);
+	(void)unlink(icap_path(w, name, "conf"));
+	(void)unlink(icap_path(w, name, "pid"));
+	(void)unlink(icap_path(w, name, "ctl"));
 }
 
 /* An instance stopped: its process signalled and waited for, briefly. */
@@ -343,6 +511,7 @@ inst_down(struct work *w, const char *name)
 {
 
 	inst_stop(w, name);
+	icap_down(w, name);
 	(void)unlink(inst_path(w, name, "conf"));
 	(void)unlink(inst_path(w, name, "deny"));
 	(void)unlink(inst_path(w, name, "pid"));
@@ -424,6 +593,14 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		    ucl_object_tostring(v));
 		snprintf(ni[n].mode, sizeof(ni[n].mode), "%s", mode);
 		ni[n].fib = (int)ucl_object_toint(ucl_object_lookup(in, "fib"));
+		ni[n].icap = ucl_object_lookup(in, "icap") != NULL;
+		if (ni[n].icap && (ucl_object_type(ucl_object_lookup(in,
+		    "icap")) != UCL_STRING || strlen(ucl_object_tostring(
+		    ucl_object_lookup(in, "icap"))) > CONF_MAX)) {
+			ucl_object_unref(top);
+			*errp = "an instance's icap is c-icap's configuration, a text";
+			return (-1);
+		}
 		n++;
 	}
 	if (n > 0 && access(squid_bin(w), X_OK) != 0) {
@@ -432,6 +609,12 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 		    "installed by hand (pkg install squid)", squid_bin(w));
 		return (-1);
 	}
+	for (k = 0; k < n; k++)
+		if (ni[k].icap && (e = icap_missing(w)) != NULL) {
+			ucl_object_unref(top);
+			*errp = e;
+			return (-1);
+		}
 	pthread_mutex_lock(&lock);
 	for (i = 0; i < ninstances; i++) {
 		for (k = 0; k < n; k++)
@@ -474,6 +657,17 @@ do_sdwan_proxy(struct work *w, const char *json, const char **errp)
 			ok = false;
 			break;
 		}
+		/* Its scanner first: Squid sends to it and waits. */
+		if (ni[k].icap) {
+			if (icap_start(w, &ni[k], ucl_object_tostring(
+			    ucl_object_lookup(in, "icap")), &e) != 0) {
+				step_end(w, step, false, "%s", e);
+				*errp = wfmt(w, "%s: %s", ni[k].name, e);
+				ok = false;
+				break;
+			}
+		} else
+			icap_down(w, ni[k].name);
 		/* Checked first: what squid refuses is not run. */
 		argv[0] = (char *)(uintptr_t)squid_bin(w);
 		argv[1] = (char *)(uintptr_t)"-k";
@@ -552,6 +746,9 @@ sdwan_proxy_json(struct work *w, ucl_object_t *top)
 		    "mode", 0, false);
 		ucl_object_insert_key(o, ucl_object_frombool(inst_pid(w,
 		    instances[i].name) != 0), "running", 0, false);
+		if (instances[i].icap)
+			ucl_object_insert_key(o, ucl_object_frombool(icap_pid(w,
+			    instances[i].name) != 0), "icap", 0, false);
 		if ((ca = file_text(w, inst_path(w, instances[i].name, "crt"))) !=
 		    NULL)
 			ucl_object_insert_key(o, ucl_object_fromstring(ca), "ca", 0,

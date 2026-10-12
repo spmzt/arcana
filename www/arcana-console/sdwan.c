@@ -1813,7 +1813,8 @@ static bool
 security_policy(struct ck *c, const ucl_object_t *v)
 {
 	static const char *const known[] = { "ip-block", "dns-domain-filter",
-	    "dns-protocol-filter", "rate-limit", "log", "url-filter", NULL };
+	    "dns-protocol-filter", "rate-limit", "log", "url-filter", "malware",
+	    NULL };
 	const ucl_object_t	*cr, *k, *e;
 	ucl_object_iter_t	 it, eit;
 	struct pfx		 p;
@@ -1822,13 +1823,13 @@ security_policy(struct ck *c, const ucl_object_t *v)
 	if ((cr = ucl_object_lookup(v, "criteria")) == NULL ||
 	    ucl_object_type(cr) != UCL_OBJECT)
 		return (fail(c, "it has criteria: ip-block, dns-domain-filter, "
-		    "dns-protocol-filter, rate-limit, log, url-filter (MEF 88)"));
+		    "dns-protocol-filter, rate-limit, log, url-filter, malware (MEF 88)"));
 	it = NULL;
 	while ((k = ucl_object_iterate(cr, &it, true)) != NULL) {
 		if (!one_of(ucl_object_key(k), known))
 			return (fail(c, "%s is not a criterion: ip-block, "
 			    "dns-domain-filter, dns-protocol-filter, rate-limit, "
-			    "log or url-filter", ucl_object_key(k)));
+			    "log, url-filter or malware", ucl_object_key(k)));
 		if (strcmp(ucl_object_key(k), "ip-block") == 0) {
 			static const char *const lists[] = { "allow", "deny" };
 

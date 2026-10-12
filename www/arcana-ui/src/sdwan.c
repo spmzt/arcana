@@ -1914,7 +1914,9 @@ view_needs(struct html *h, bool brief)
 		{ "wireguard-tools", "wg(8)", "a WireGuard tunnel or a remote "
 		    "end point; FreeBSD 15 and later have wg in the base system" },
 		{ "dnsmasq", "dnsmasq", "DHCP at a UNI" },
-		{ "squid", "Squid", "a security policy with url-filter" },
+		{ "squid", "Squid", "a security policy with url-filter or malware" },
+		{ "c-icap c-icap-modules clamav", "c-icap and ClamAV", "a security "
+		    "policy with malware; then freshclam, for ClamAV's signatures" },
 	};
 	const ucl_object_t	*e;
 	ucl_object_iter_t	 it;
@@ -3033,7 +3035,8 @@ view_security(struct html *h)
 	    "<span class=\"pane-actions\"><button class=\"ghost small\" data-act="
 	    "\"sd-secpol-add\">+ policy</button></span></h3><table class=\"net "
 	    "sd\"><thead><tr><th>Name</th><th>Addresses</th><th>Denied</th><th>"
-	    "DNS</th><th>Rate</th><th>Log</th><th>Named by</th><th></th></tr>"
+	    "DNS</th><th>Rate</th><th>Log</th><th>Malware</th><th>Named by</th>"
+	    "<th></th></tr>"
 	    "</thead><tbody>");
 	n = 0;
 	it = NULL;
@@ -3100,6 +3103,9 @@ view_security(struct html *h)
 			h_raw(h, "<span class=\"dim\">—</span>");
 		h_raw(h, "</td><td>");
 		h_raw(h, jbool(cr, "log") ? "yes" : "<span class=\"dim\">no</span>");
+		h_raw(h, "</td><td>");
+		h_raw(h, jbool(cr, "malware") ? "scanned" : "<span class=\"dim\">"
+		    "no</span>");
 		h_raw(h, "</td><td class=\"dim\">");
 		pit = NULL;
 		while ((pol = ucl_object_iterate(jget(sw, "policies"), &pit, true))
@@ -4213,6 +4219,14 @@ sdwan_modal_service(struct html *h)
 			    ucl_object_type(v) == UCL_ARRAY ? csv(v, buf, sizeof(buf))
 			    : "", "blocked", "Lists by name, their domains refused.");
 		}
+		/* Malware, by c-icap and ClamAV behind the same Squid. */
+		h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" name=\""
+		    "malware\" value=\"1\"%s> Scan for malware (malware)<small>"
+		    "What comes back over HTTP, and over TLS where it is opened "
+		    "(inspect), scanned by ClamAV through c-icap, behind the "
+		    "same Squid: plugins installed by hand (c-icap, "
+		    "c-icap-modules, clamav and its signatures).</small></label>",
+		    jbool(cr, "malware") ? " checked" : "");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_FLOW) {
@@ -5188,6 +5202,9 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 				put_list(b, "lists", jstr(f, "urllists"));
 			ucl_object_insert_key(cr, b, "url-filter", 0, false);
 		}
+		if (checked(f, "malware"))
+			ucl_object_insert_key(cr, ucl_object_frombool(true),
+			    "malware", 0, false);
 		ucl_object_insert_key(o, cr, "criteria", 0, false);
 		list_put(sw, "security_policies", "name", was, o);
 	} else if (strcmp(form, "sd-flow") == 0) {

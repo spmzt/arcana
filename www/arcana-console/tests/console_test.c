@@ -3490,7 +3490,8 @@ static const char sdwan_good[] =
     "\"allow\":[\"10.1.0.0/16\"],\"deny\":[\"192.0.2.0/24\"]},"
     "\"dns-domain-filter\":{\"deny\":[\"ads.example\"]},"
     "\"dns-protocol-filter\":true,\"rate-limit\":2000000,\"log\":true,"
-    "\"url-filter\":{\"mode\":\"sni\",\"deny\":[\"bad.example\"]}}}],"
+    "\"url-filter\":{\"mode\":\"sni\",\"deny\":[\"bad.example\"]},"
+    "\"malware\":true}}],"
     "\"importance\":{\"levels\":[\"high\",\"low\"],\"default\":\"low\"},"
     "\"groups\":[\"bulk\"],"
     "\"flows\":[{\"name\":\"web\",\"criteria\":{\"dport\":[80,\"https\"],"
@@ -4393,6 +4394,15 @@ ATF_TC_BODY(sdwan_apply, tc)
 	    r.body, "ssl_bump terminate denied_site\\nssl_bump splice all") !=
 	    NULL && strstr(r.body, "\"deny\":\".bad.example\\n\"") != NULL, "%s",
 	    r.body);
+	/* Malware (MEF 88): what comes back goes to c-icap by ICAP, on the
+	 * loopback at the service's port; c-icap scans with ClamAV. */
+	ATF_CHECK_MSG(strstr(r.body, "icap_service sdwan_av respmod_precache "
+	    "bypass=off icap://127.0.0.1:1354/avscan") != NULL && strstr(r.body,
+	    "\"icap\":\"# Written by the Arcana console") != NULL && strstr(
+	    r.body, "Service avscan virus_scan.so") != NULL && strstr(r.body,
+	    "Port 127.0.0.1:1354") != NULL && strstr(r.body, "\"plugin\":"
+	    "\"c-icap\",\"package\":\"c-icap c-icap-modules clamav\"") !=
+	    NULL, "%s", r.body);
 	resp_free(&r);
 	/* The record: the edges' logged packets read now; none yet. */
 	http("GET", "/api/sdwan/record?swvc=acme&policy=guard", NULL, &r);
@@ -4446,6 +4456,9 @@ ATF_TC_BODY(sdwan_apply, tc)
 	/* The proxy, by the stand-ins: parsed, started in the table. */
 	ATF_CHECK(system("grep -q '^squid -k parse -f .*sdwan-proxy-sw1.conf' "
 	    "squid.log && grep -q '^setfib -F 1 .*tools/squid -f .*sdwan-proxy-"
+	    "sw1.conf' setfib.log") == 0);
+	/* Its scanner, c-icap, started in the table before it. */
+	ATF_CHECK(system("grep -q '^setfib -F 1 .*tools/c-icap -f .*sdwan-icap-"
 	    "sw1.conf' setfib.log") == 0);
 	/* Identities (SASE-3): one issued for a name, its key pair made
 	 * here, the configuration answered once with its address, the
