@@ -553,75 +553,179 @@ file_wrong(struct work *w, const char *text, size_t len)
 	return (e);
 }
 
+/* sysrc -n of a variable, in the jail whose firewall it is; "" none. */
+static const char *
+rc_value(struct work *w, const char *var)
+{
+	struct execres	 res;
+	char		*argv[5];
+
+	argv[0] = (char *)(uintptr_t)opts.sysrc_bin;
+	argv[1] = (char *)(uintptr_t)"-i";
+	argv[2] = (char *)(uintptr_t)"-n";
+	argv[3] = (char *)(uintptr_t)var;
+	argv[4] = NULL;
+	if (run_exec(w, scope_argv(w, argv), &res) == 0 && res.out != NULL)
+		return (wstrndup(w, res.out, strcspn(res.out, "\n")));
+	return ("");
+}
+
+/* A shell word of the script taken as it is, its quotes and the
+ * backslashes before ( ) taken off: what ipfw is given. */
+static size_t
+unshell(char *q)
+{
+	char	*r, *t, quote;
+
+	quote = '\0';
+	for (r = t = q; *r != '\0'; r++) {
+		if (quote == '\0' && (*r == '"' || *r == '\'')) {
+			quote = *r;
+			continue;
+		}
+		if (quote != '\0' && *r == quote) {
+			quote = '\0';
+			continue;
+		}
+		if (quote == '\0' && *r == '\\' && r[1] != '\0') {
+			*t++ = *++r;
+			continue;
+		}
+		*t++ = *r;
+	}
+	*t = '\0';
+	return ((size_t)(t - q));
+}
+
 /*
- * The file the host, or the jail, loads now as its firewall: the one
- * rc.conf's firewall_type names, when it names a file and not a kind of
- * rc.firewall's own.  Made into kept rules: what applying does itself
- * (flush, set, delete, an option alone) left in as a comment, and the
- * options before a command (-q, -f) taken off it.
+ * What a line of the firewall's script asks of ipfw, without ipfw and
+ * its options: the line begins with ipfw (or its path) or a variable
+ * holding it ($fwcmd, ${cmd}); NULL for a line of the shell's own.
+ */
+static char *
+script_ipfw(char *q)
+{
+	char	*tok;
+	size_t	 n;
+
+	n = strcspn(q, " \t");
+	tok = q;
+	/* ipfw, a path to it, or a variable: not an assignment. */
+	if (memchr(tok, '=', n) != NULL || !((n == 4 && strncmp(tok, "ipfw",
+	    4) == 0) || (tok[0] == '/' && n > 5 && strncmp(tok + n - 5,
+	    "/ipfw", 5) == 0) || (tok[0] == '$' && n > 1)))
+		return (NULL);
+	q += n;
+	q += strspn(q, " \t");
+	/* A variable may be ipfw with its options already: what follows
+	 * must be ipfw's words, not a shell's. */
+	while (q[0] == '-' && q[1] != '\0' && strchr(" \t", q[2]) != NULL &&
+	    strchr("qfnN", q[1]) != NULL)
+		q += 2 + strspn(q + 2, " \t");
+	if (tok[0] == '$' && strncmp(q, "add", 3) != 0 && strncmp(q, "table",
+	    5) != 0 && strncmp(q, "pipe", 4) != 0 && strncmp(q, "queue", 5) !=
+	    0 && strncmp(q, "sched", 5) != 0 && strncmp(q, "nat", 3) != 0 &&
+	    strncmp(q, "flush", 5) != 0 && strncmp(q, "set", 3) != 0 &&
+	    strncmp(q, "delete", 6) != 0)
+		return (NULL);
+	return (q);
+}
+
+/*
+ * The file the host, or the jail, loads now as its firewall, as kept
+ * rules: the script rc.conf's firewall_script names when it is one of
+ * the host's own, its ipfw commands taken out of it (the shell's own
+ * lines left in as comments); else the file firewall_type names, when
+ * it names a file and not a kind of rc.firewall's own.  What applying
+ * does itself (flush, set, delete, an option alone) is left in as a
+ * comment, and the options before a command (-q, -f) taken off it.
  */
 static const char *
 rc_ruleset(struct work *w, const char **pathp, const char **errp)
 {
 	static const char	 note[] = "# left out, applying does it: ";
-	struct execres		 res;
-	char			*argv[5], *text, *out, *p, *line, *q;
-	const char		*type;
+	static const char	 shnote[] = "# left out, the script's own: ";
+	char			*text, *out, *p, *line, *q, *c;
+	const char		*type, *script, *file;
 	size_t			 len, n, o;
 	int			 step, e;
+	bool			 sh;
 
-	argv[0] = (char *)(uintptr_t)opts.sysrc_bin;
-	argv[1] = (char *)(uintptr_t)"-i";
-	argv[2] = (char *)(uintptr_t)"-n";
-	argv[3] = (char *)(uintptr_t)"firewall_type";
-	argv[4] = NULL;
-	type = NULL;
-	if (run_exec(w, scope_argv(w, argv), &res) == 0 && res.out != NULL)
-		type = wstrndup(w, res.out, strcspn(res.out, "\n"));
-	if (type == NULL || type[0] == '\0') {
-		*errp = "rc.conf sets no firewall_type: there is no file of "
-		    "rules the firewall loads";
+	script = rc_value(w, "firewall_script");
+	type = rc_value(w, "firewall_type");
+	sh = script[0] == '/' && strcmp(script, "/etc/rc.firewall") != 0;
+	if (sh)
+		file = script;
+	else if (type[0] == '/')
+		file = type;
+	else {
+		*errp = type[0] != '\0' ? wfmt(w, "firewall_script is %s and "
+		    "firewall_type %s, one of rc.firewall's own rulesets: there "
+		    "is no file of rules the firewall loads", script[0] != '\0' ?
+		    script : "/etc/rc.firewall", type) : wfmt(w, "rc.conf sets no "
+		    "firewall_script of its own nor a firewall_type file: there "
+		    "is no file of rules the firewall loads");
 		return (NULL);
 	}
-	if (type[0] != '/') {
-		*errp = wfmt(w, "firewall_type is %s, one of rc.firewall's own "
-		    "rulesets, not a file of rules", type);
+	*pathp = file;
+	if (strcmp(file, opts.ipfw_rules) == 0) {
+		*errp = wfmt(w, "%s is %s already: the kept rules are what the "
+		    "firewall loads", sh ? "firewall_script" : "firewall_type",
+		    file);
 		return (NULL);
 	}
-	*pathp = type;
-	if (strcmp(type, opts.ipfw_rules) == 0) {
-		*errp = wfmt(w, "firewall_type is %s already: the kept rules "
-		    "are what the firewall loads", type);
-		return (NULL);
-	}
-	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", type);
-	text = scope_slurp(w, type, &len);
+	step = step_begin(w, ARC_STEP_KIND_FILE, "read", "%s", file);
+	text = scope_slurp(w, file, &len);
 	e = errno;
 	step_end(w, step, text != NULL, text != NULL ? NULL : "%s",
 	    strerror(e));
 	if (text == NULL) {
-		*errp = wfmt(w, "%s: %s", type, strerror(e));
+		*errp = wfmt(w, "%s: %s", file, strerror(e));
 		return (NULL);
 	}
 	if (len > IPFW_FILE_MAX) {
-		*errp = wfmt(w, "%s: too large for a ruleset", type);
+		*errp = wfmt(w, "%s: too large for a ruleset", file);
 		return (NULL);
 	}
+	/* A script's lines continued by a backslash, joined. */
+	if (sh)
+		for (c = text; (c = strstr(c, "\\\n")) != NULL;) {
+			n = 2 + strspn(c + 2, " \t");
+			if (c > text && (c[-1] == ' ' || c[-1] == '\t'))
+				memmove(c, c + n, strlen(c + n) + 1);
+			else {
+				c[0] = ' ';
+				memmove(c + 1, c + n, strlen(c + n) + 1);
+			}
+		}
 	for (n = 1, p = text; *p != '\0'; p++)
 		if (*p == '\n')
 			n++;
-	out = wcalloc(w, len + n * sizeof(note) + 2, 1);
+	out = wcalloc(w, len + n * sizeof(shnote) + 2, 1);
 	o = 0;
 	p = text;
 	while ((line = strsep(&p, "\n")) != NULL) {
 		if (p == NULL && line[0] == '\0')
 			break;
 		q = line + strspn(line, " \t");
-		if (q[0] != '\0' && q[0] != '#') {
+		if (q[0] == '\0' || q[0] == '#') {
+			if (sh && q[0] == '#' && q[1] == '!')
+				continue;
+			q = line;
+		} else if (sh && (c = script_ipfw(q)) == NULL) {
+			/* The shell's own: kept, as a comment. */
+			memcpy(out + o, shnote, sizeof(shnote) - 1);
+			o += sizeof(shnote) - 1;
+		} else {
+			if (sh) {
+				q = c;
+				q[unshell(q)] = '\0';
+			}
 			/* ipfw -q add …: the options are applying's. */
 			while ((q[0] == '-' && (q[1] == 'q' || q[1] == 'f') &&
 			    (q[2] == ' ' || q[2] == '\t')))
 				q += 2 + strspn(q + 2, " \t");
+			/* Left out: the line as it is written. */
 			if (strncmp(q, "flush", 5) == 0 || strncmp(q, "set ",
 			    4) == 0 || strncmp(q, "delete ", 7) == 0 ||
 			    q[0] == '-') {
@@ -629,8 +733,7 @@ rc_ruleset(struct work *w, const char **pathp, const char **errp)
 				o += sizeof(note) - 1;
 				q = line + strspn(line, " \t");
 			}
-		} else
-			q = line;
+		}
 		len = strlen(q);
 		memcpy(out + o, q, len);
 		o += len;

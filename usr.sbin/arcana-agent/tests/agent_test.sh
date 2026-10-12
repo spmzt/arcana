@@ -3893,7 +3893,7 @@ add 00010 set 1 allow ip from table(T46) to any
 	# The file the host loads now, as rc.conf names it, made into kept
 	# rules and not written: what applying does left as comments, the
 	# options before a command taken off.
-	atf_check -s exit:1 -e match:'sets no firewall_type' -o ignore \
+	atf_check -s exit:1 -e match:'sets no firewall_script of its own nor a firewall_type file' -o ignore \
 	    "$JGC" -c "$SOCK" ipfw rules -r
 	printf 'firewall_type="open"\n' >> rc.conf
 	atf_check -s exit:1 -e match:"one of rc.firewall's own" -o ignore \
@@ -3911,6 +3911,34 @@ table T9 create type addr
 " "$JGC" -c "$SOCK" ipfw rules -r
 	atf_check -o file:f.rules cat fw/ipfw.rules
 	sed -i '' -e '/^firewall_type=/d' rc.conf
+	# A script of the host's own, as firewall_script names it: its ipfw
+	# commands (ipfw, its path, a variable holding it) taken out, a
+	# line continued joined, the shell's quoting taken off, the shell's
+	# own lines left in as comments.  It is read first.
+	cat > fw.sh <<'EOS'
+#!/bin/sh
+fwcmd="/sbin/ipfw -q"
+${fwcmd} -f flush
+${fwcmd} add 100 allow ip from any to any via lo0
+ipfw -q add 200 deny tcp from any to me 22 \
+    in via em0
+/sbin/ipfw add 300 allow ip from \( 10.0.0.0/8 or 192.168.0.0/16 \) to any
+if [ -n "$x" ]; then
+	$fwcmd add 400 count ip from any to any
+fi
+EOS
+	printf 'firewall_type="open"\nfirewall_script="%s/fw.sh"\n' "$(pwd)" >> rc.conf
+	atf_check -o inline:"# from $(pwd)/fw.sh
+# left out, the script's own: fwcmd=\"/sbin/ipfw -q\"
+# left out, applying does it: \${fwcmd} -f flush
+add 100 allow ip from any to any via lo0
+add 200 deny tcp from any to me 22 in via em0
+add 300 allow ip from ( 10.0.0.0/8 or 192.168.0.0/16 ) to any
+# left out, the script's own: if [ -n \"\$x\" ]; then
+add 400 count ip from any to any
+# left out, the script's own: fi
+" "$JGC" -c "$SOCK" ipfw rules -r
+	sed -i '' -e '/^firewall_type=/d' -e '/^firewall_script=/d' rc.conf
 
 	# On and off, kept in rc.conf with where the rules are.
 	atf_check -o ignore "$JGC" -p -c "$SOCK" ipfw enable

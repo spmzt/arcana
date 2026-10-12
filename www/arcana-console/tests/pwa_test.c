@@ -3143,7 +3143,30 @@ part_firewall(void)
 	shot("7p-firewall-load-rc");
 	ATF_CHECK(system("grep -q 'add 01500 allow' ipfw.rules && ! grep -q "
 	    "'via lo0' ipfw.rules") == 0);
-	ATF_REQUIRE(system("sed -i '' -e '/^firewall_type=/d' rc.conf") == 0);
+	/* A script of the host's own, as firewall_script names it, read
+	 * first: its ipfw commands taken out, its own lines as comments. */
+	ATF_REQUIRE(system("printf '#!/bin/sh\\nfwcmd=\"/sbin/ipfw -q\"\\n"
+	    "${fwcmd} add 200 allow ip from any to any via lo0\\n' > fw.sh && "
+	    "printf 'firewall_script=\"%s/fw.sh\"\\n' \"$(pwd)\" >> rc.conf")
+	    == 0);
+	run("window.fwn = 0; window.fetch = function (u, o) { if (String(u)"
+	    ".includes('/net/ipfw')) window.fwn++; return window.fetch1(u, o); "
+	    "};");
+	run("document.querySelector('button.tab[data-arg=summary]').click()");
+	run("document.querySelector('button.tab[data-arg=firewall]').click()");
+	wait_js("window.fwn >= 1", 15);
+	run("window.fetch = window.fetch1;");
+	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
+	    "click()");
+	wait_js("document.querySelector('button[data-act=fw-load-rc]') && "
+	    "document.querySelector('button[data-act=fw-load-rc]').title"
+	    ".includes('fw.sh')", 10);
+	run("document.querySelector('button[data-act=fw-load-rc]').click()");
+	wait_js("document.querySelector('form[data-form=fw-text] textarea')"
+	    ".value === '# left out, the script\\'s own: fwcmd=\"/sbin/ipfw -q\""
+	    "\\nadd 200 allow ip from any to any via lo0\\n'", 10);
+	ATF_REQUIRE(system("sed -i '' -e '/^firewall_type=/d' -e "
+	    "'/^firewall_script=/d' rc.conf") == 0);
 	/*
 	 * A table and what is in it, an entry more; what Apply would
 	 * change; a packet followed through the rules; the firewall of
