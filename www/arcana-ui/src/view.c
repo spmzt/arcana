@@ -971,6 +971,7 @@ stage(struct html *h)
 			{ "firewall", "Firewall" },
 			{ "packages", "Packages" }, { "storage", "Storage" },
 			{ "kernel", "Kernel" }, { "sysctl", "Sysctl" },
+			{ "certificates", "Certificates" },
 			{ "processes", "Processes" }, { "log", "Log" },
 			{ "jobs", "Jobs" },
 		};
@@ -1043,6 +1044,11 @@ stage(struct html *h)
 	}
 	if (app.tab == TAB_KERNEL) {
 		view_kernel(h, s);
+		h_raw(h, "</main>");
+		return;
+	}
+	if (app.tab == TAB_CERTS) {
+		view_certs(h, s);
 		h_raw(h, "</main>");
 		return;
 	}
@@ -1954,6 +1960,10 @@ modal(struct html *h)
 		if (!neigh_modal(h))
 			return;
 		break;
+	case MODAL_CERT_ADD:
+		if (!certs_modal(h))
+			return;
+		break;
 	case MODAL_IPSEC_CONN:
 	case MODAL_IPSEC_CHILD:
 		if (!ipsec_modal(h))
@@ -2309,6 +2319,9 @@ modal(struct html *h)
 			break;
 		case MODAL_NEIGH:
 			h_raw(h, "<button class=\"primary\">Set it</button>");
+			break;
+		case MODAL_CERT_ADD:
+			h_raw(h, "<button class=\"primary\">Trust it</button>");
 			break;
 		case MODAL_IPSEC_CHILD:
 			h_raw(h, "<button class=\"primary\">Add</button>");

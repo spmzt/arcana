@@ -693,6 +693,20 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/ndp", "#!/bin/sh\necho \"ndp $*\" >> neigh.log\n");
 	ATF_REQUIRE(chmod("tools/arp", 0755) == 0 && chmod("tools/ndp", 0755)
 	    == 0);
+	/* certctl rehash as it is: the store made again from FreeBSD's own,
+	 * those given, and those not to be trusted, by fingerprint. */
+	put("tools/certctl", "#!/bin/sh\necho \"certctl $*\" >> certctl.log\n"
+	    "R=$2\nfp() { openssl x509 -noout -fingerprint -sha256 -in \"$1\" | "
+	    "tr -d ' '; }\nrm -rf $R/etc/ssl/certs $R/etc/ssl/untrusted\n"
+	    "mkdir -p $R/etc/ssl/certs $R/etc/ssl/untrusted\nbad=\n"
+	    "for f in $R/usr/local/share/certs/untrusted/*; do\n"
+	    "\t[ -f \"$f\" ] || continue\n\tbad=\"$bad $(fp $f)\"\n"
+	    "\tcp $f $R/etc/ssl/untrusted/$(basename $f .pem)\ndone\n"
+	    "for f in $R/usr/share/certs/trusted/* "
+	    "$R/usr/local/share/certs/trusted/*; do\n\t[ -f \"$f\" ] || "
+	    "continue\n\tcase \"$bad\" in *$(fp $f)*) continue ;; esac\n"
+	    "\tcp $f $R/etc/ssl/certs/$(basename $f .pem).0\ndone\n");
+	ATF_REQUIRE(chmod("tools/certctl", 0755) == 0);
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");

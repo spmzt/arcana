@@ -344,3 +344,9 @@ kinds:
     uses: jail lladdr temporary live persist
     values: verb=add|delete
     destroys: verb=delete
+  - kind: cert
+    title: A certificate OpenSSL trusts, added, taken away, trusted or not
+    needs: verb
+    uses: jail path text
+    values: verb=add|remove|trust|untrust|rehash
+    destroys: verb=remove

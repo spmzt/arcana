@@ -83,8 +83,9 @@ scope_enter_jail(struct work *w, const char *jail, const char **errp,
 	argv[5] = (char *)(uintptr_t)"path";
 	argv[6] = NULL;
 	if (run_exec(w, argv, &res) != 0 || res.out == NULL) {
-		*errp = wfmt(w, "the jail %s is not running: its network is "
-		    "there only while it runs", jail);
+		*errp = vnet ? wfmt(w, "the jail %s is not running: its "
+		    "network is there only while it runs", jail) : wfmt(w,
+		    "the jail %s is not running", jail);
 		return (-1);
 	}
 	line = wstrndup(w, res.out, strcspn(res.out, "\n"));

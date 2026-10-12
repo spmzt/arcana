@@ -186,6 +186,8 @@ usage(void)
 	    "    jailconf remove jail [dataset] | defaults file | files\n"
 	    "    jailconf template name file | untemplate name\n"
 	    "    neigh add address lladdr [temp] | delete address\n"
+	    "    cert [list] | add name file | remove name | trust file |\n"
+	    "        untrust file | rehash\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
 	    "    sysctl [name | start of a name]\n"
@@ -2053,6 +2055,50 @@ cmd_neigh(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * cert [list] | add name file | remove name | trust file | untrust file |
+ * rehash: the certificates OpenSSL trusts, of the host or of -j's jail;
+ * a change is a job.
+ */
+static int
+cmd_cert(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_certs_req	 rq;
+	struct arc_certs_rsp	*rs;
+	int			 error;
+
+	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
+		memset(&rq, 0, sizeof(rq));
+		rq.jail = netjail;
+		if ((error = arc_certs(cl, &rq, &rs)) != 0)
+			fail(cl, error, "certs");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		else if (rs->error != NULL)
+			xo_emit_warn("{:error/%s}", rs->error);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_certs_rsp_free(rs);
+		return (error);
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_CERT;
+	sp.verb = argv[1];
+	if (argc == 4 && strcmp(argv[1], "add") == 0) {
+		sp.path = argv[2];
+		sp.text = slurp(argv[3]);
+	} else if (argc == 3 && (strcmp(argv[1], "remove") == 0 ||
+	    strcmp(argv[1], "trust") == 0 || strcmp(argv[1], "untrust") == 0))
+		sp.path = argv[2];
+	else if (argc != 2 || strcmp(argv[1], "rehash") != 0)
+		usage();
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
  * jailconf make jail file [dataset snapshot clone|send path] [start]
  * jailconf remove jail [dataset]
  * jailconf defaults file
@@ -3508,6 +3554,8 @@ main(int argc, char *argv[])
 		rc = cmd_jailconf(&cl, argc, argv);
 	else if (strcmp(argv[0], "neigh") == 0)
 		rc = cmd_neigh(&cl, argc, argv);
+	else if (strcmp(argv[0], "cert") == 0)
+		rc = cmd_cert(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||

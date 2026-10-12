@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.88.0"
+#define	ARCANA_AGENT_VERSION	"0.89.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -296,6 +296,12 @@ const char	*jail_conf_check(const struct arc_job_spec *);
 int		 do_jail_conf(struct work *, const struct arc_job_spec *,
 		    const char **);
 void		 do_jail_files(struct work *, struct arc_jail_files_rsp *);
+
+/* superbia/certs.c: the certificates OpenSSL trusts */
+void		 do_certs(struct work *, struct arc_certs_rsp *);
+const char	*cert_check(const struct arc_job_spec *);
+int		 do_cert(struct work *, const struct arc_job_spec *,
+		    const char **);
 /* invidia/neigh.c: a neighbour set by hand, or taken away */
 const char	*neigh_check(const struct arc_job_spec *);
 int		 do_neigh(struct work *, const struct arc_job_spec *,
