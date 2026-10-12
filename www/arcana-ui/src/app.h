@@ -330,6 +330,8 @@ enum modal {
 	MODAL_NG_MKPEER,
 	MODAL_WG_INIT,
 	MODAL_WG_PEER,
+	MODAL_WG_CLIENT,
+	MODAL_WG_CONF,
 	MODAL_BIRD_PROTO,
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
@@ -600,6 +602,7 @@ bool		 ipsec_action(const char *, const char *, const char *);
 bool		 ipsec_form(const char *, const ucl_object_t *);
 bool		 ipsec_modal(struct html *);
 void		 vpn_age(char *, size_t, int64_t);
+void		 qr_svg(struct html *, const char *, const char *);
 
 /* bird.c: BIRD's neighbours and its configuration. */
 bool		 bird_action(const char *, const char *, const char *);

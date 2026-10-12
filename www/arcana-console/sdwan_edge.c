@@ -6467,6 +6467,29 @@ wg_keypair(char *priv, size_t plen, char *pub, size_t publen)
 	return (ok);
 }
 
+/*
+ * POST /api/wg/keypair: a fresh WireGuard key pair for a client of a
+ * host's wg interface (the WireGuard tab's + client), both halves in
+ * the reply and kept nowhere: the page puts the private half in the
+ * client's configuration, shown once, and gives the host the public.
+ */
+int
+api_wg_keypair(struct http_request *req)
+{
+	ucl_object_t	*out;
+	char		 priv[64], pub[64];
+
+	if (!guard(req, true))
+		return (KORE_RESULT_OK);
+	if (!wg_keypair(priv, sizeof(priv), pub, sizeof(pub)))
+		return (reply_error(req, 500, "keygen", "no X25519 key pair"));
+	out = ucl_object_typed_new(UCL_OBJECT);
+	put(out, "private_key", S(priv));
+	put(out, "public_key", S(pub));
+	explicit_bzero(priv, sizeof(priv));
+	return (reply_json(req, 200, out));
+}
+
 /* The service, the remote end point and its remote, by their ids. */
 static const ucl_object_t *
 remote_of(const ucl_object_t *doc, const char *swvc, const char *epid,

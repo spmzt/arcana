@@ -1496,6 +1496,17 @@ paths:
           description: "{tunnel: id}"
         "404": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
+  /api/wg/keypair:
+    post:
+      tags: [servers]
+      summary: A fresh WireGuard key pair for a client of a host's wg interface
+      description: Both halves in the reply and kept nowhere by the console;
+        the page puts the private half in the client's configuration, shown
+        once with its QR code, and gives the host the public half as a peer.
+      responses:
+        "200":
+          description: "{private_key, public_key}, base64, X25519"
+        "401": { $ref: "#/components/responses/Error" }
   /api/workflows:
     get:
       tags: [workflows]

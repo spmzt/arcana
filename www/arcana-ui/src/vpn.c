@@ -8,7 +8,10 @@
  * In a host's network tab: its WireGuard interfaces with their peers,
  * and its BIRD routing daemon with its protocols.  Of a WireGuard
  * interface the page knows the public key only: the private one is
- * made on the host and never leaves it.
+ * made on the host and never leaves it.  A client made here (+ client)
+ * has its key pair made by the console and kept nowhere: the page puts
+ * the private half in the client's configuration, shown once with its
+ * QR code, and gives the host the public half as a peer.
  */
 
 #include <stdarg.h>
@@ -17,6 +20,22 @@
 #include <string.h>
 
 #include "app.h"
+
+/* A client being made, and its configuration while it is shown. */
+static struct {
+	char	server[16], iface[32], name[64], address[128], dns[128];
+	char	endpoint[200], allowed[256], keepalive[8], srvpub[64];
+	char	conf[1536];
+	bool	persist;
+} wgc;
+
+/* The client's configuration, once shown, forgotten. */
+static void
+wgc_forget(void)
+{
+
+	explicit_bzero(&wgc, sizeof(wgc));
+}
 
 static void
 vpn_job(struct server *s, const char *title, const char *fmt, ...)
@@ -80,6 +99,8 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 	int			 n;
 
 	(void)s;
+	if (app.modal != MODAL_WG_CONF && wgc.conf[0] != '\0')
+		wgc_forget();
 	now = jint(data, "now", 0);
 	/* A wg interface made here, by the same job as the network's
 	 * interface form, then its key and port. */
@@ -105,7 +126,16 @@ view_wireguard(struct html *h, struct server *s, const ucl_object_t *data)
 		    "wg-peer-add\"", jbool(o, "private-key") ? "Port" :
 		    "Make its key");
 		h_attr(h, "data-arg", jstr(o, "name"));
-		h_raw(h, ">+ peer</button></span></h4>");
+		h_raw(h, ">+ peer</button>");
+		if (jstr(o, "public-key") != NULL) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "wg-client-add\" title=\"A client of this interface: "
+			    "its key pair made for it, its configuration and a QR "
+			    "code for the WireGuard app\"");
+			h_attr(h, "data-arg", jstr(o, "name"));
+			h_raw(h, ">+ client</button>");
+		}
+		h_raw(h, "</span></h4>");
 		if (jstr(o, "public-key") != NULL) {
 			h_raw(h, "<p>Public key <code class=\"key\">");
 			h_txt(h, jstr(o, "public-key"));
@@ -252,6 +282,84 @@ vpn_modal(struct html *h)
 		h_raw(h, "><small>0 turns it off.</small></label>");
 		h_raw(h, keep_wg);
 		return (true);
+	case MODAL_WG_CLIENT:
+		h_raw(h, "<form data-form=\"wg-client\"><h2>A new client of ");
+		h_txt(h, wgc.iface);
+		h_raw(h, "</h2><p>The console makes its key pair and keeps "
+		    "neither half: the private one goes into the client's "
+		    "configuration, shown once with a QR code for the WireGuard "
+		    "app; the host gets the public one as a peer.</p>"
+		    "<label>Name<input name=\"name\" autocomplete=\"off\" "
+		    "placeholder=\"laptop\" autofocus");
+		h_attr(h, "value", wgc.name);
+		h_raw(h, "><small>For the file's name; the peer is known by "
+		    "its key.</small></label><label>Its address in the tunnel"
+		    "<input name=\"address\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"10.9.0.2/32\"");
+		h_attr(h, "value", wgc.address);
+		h_raw(h, "><small>One address a family, the host's peer allowed "
+		    "these alone; the next free one after the peers' is "
+		    "offered.</small></label><label>Endpoint<input name=\""
+		    "endpoint\" spellcheck=\"false\" autocomplete=\"off\" "
+		    "placeholder=\"vpn.example.org:51820\"");
+		h_attr(h, "value", wgc.endpoint);
+		h_raw(h, "><small>Where the client reaches this host: its name "
+		    "or public address, and the interface's port.</small>"
+		    "</label><label>What it sends through the tunnel<input "
+		    "name=\"allowed\" spellcheck=\"false\" autocomplete=\"off"
+		    "\"");
+		h_attr(h, "value", wgc.allowed);
+		h_raw(h, "><small>0.0.0.0/0, ::/0 for everything; the "
+		    "tunnel's network alone for a split tunnel.</small></label>"
+		    "<label>DNS<input name=\"dns\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"none, or 10.9.0.1\"");
+		h_attr(h, "value", wgc.dns);
+		h_raw(h, "></label><label>Keepalive, seconds<input name=\""
+		    "keepalive\" inputmode=\"numeric\"");
+		h_attr(h, "value", wgc.keepalive);
+		h_raw(h, "><small>25 keeps a client behind NAT reachable; empty "
+		    "for none.</small></label>");
+		h_raw(h, keep_wg);
+		return (true);
+	case MODAL_WG_CONF:
+		h_raw(h, "<form data-form=\"wg-conf\"><h2>");
+		h_txt(h, wgc.name[0] != '\0' ? wgc.name : "The client");
+		h_raw(h, "</h2><p>Its configuration, with its private key: "
+		    "shown now and not again. Scan the code with the WireGuard "
+		    "app, or copy or download the file for "
+		    "<code>wg-quick</code>.</p>");
+		qr_svg(h, wgc.conf, "For the WireGuard app: Add a tunnel, Scan "
+		    "from QR code.");
+		h_raw(h, "<pre class=\"wg-conf\">");
+		h_txt(h, wgc.conf);
+		h_raw(h, "</pre><p class=\"pane-actions\"><button type=\""
+		    "button\" class=\"ghost small copy\"");
+		h_attr(h, "data-copy", wgc.conf);
+		h_raw(h, ">Copy</button><a class=\"ghost small\" download=\"");
+		h_txt(h, wgc.name[0] != '\0' ? wgc.name : "client");
+		h_raw(h, ".conf\" href=\"data:text/plain;charset=utf-8,");
+		{
+			static const char	 hex[] = "0123456789ABCDEF";
+			const char		*c;
+			char			 e[4];
+
+			for (c = wgc.conf; *c != '\0'; c++) {
+				if ((*c >= 'A' && *c <= 'Z') || (*c >= 'a' &&
+				    *c <= 'z') || (*c >= '0' && *c <= '9') ||
+				    strchr("-_.~", *c) != NULL) {
+					e[0] = *c;
+					e[1] = '\0';
+				} else {
+					e[0] = '%';
+					e[1] = hex[(unsigned char)*c >> 4];
+					e[2] = hex[(unsigned char)*c & 15];
+					e[3] = '\0';
+				}
+				h_raw(h, e);
+			}
+		}
+		h_raw(h, "\">Download</a></p>");
+		return (true);
 	default:
 		return (false);
 	}
@@ -265,6 +373,208 @@ digits(const char *s)
 	    "0123456789")] == '\0');
 }
 
+/* A list as typed, "a, b", as wg(8) and wg-quick take it: "a,b" and
+ * "a, b". */
+static void
+squeeze(const char *in, char *out, size_t len)
+{
+	size_t	n;
+
+	for (n = 0; in != NULL && *in != '\0' && n + 1 < len; in++)
+		if (*in != ' ')
+			out[n++] = *in;
+	out[n] = '\0';
+}
+
+/*
+ * The key pair the console made: the host's peer added with the
+ * public half, and the client's configuration made with the private
+ * half and shown.
+ */
+static void
+client_keys_cb(int status, const ucl_object_t *o, const char *err,
+    void *arg)
+{
+	struct server	*s;
+	char		 title[160], addr[128], *qi, *qp, *qa;
+	const char	*priv, *pub;
+	int		 n;
+
+	(void)arg;
+	if (status != 200 || (priv = jstr(o, "private_key")) == NULL ||
+	    (pub = jstr(o, "public_key")) == NULL) {
+		toast(true, "No key pair: %s", err != NULL ? err : "the console "
+		    "did not make one");
+		return;
+	}
+	for (n = 0; n < app.nservers; n++)
+		if (strcmp(app.servers[n].id, wgc.server) == 0)
+			break;
+	if (n == app.nservers)
+		return;
+	s = &app.servers[n];
+	squeeze(wgc.address, addr, sizeof(addr));
+	qi = json_quote(wgc.iface);
+	qp = json_quote(pub);
+	qa = json_quote(addr);
+	snprintf(title, sizeof(title), "%s: wireguard client %s", wgc.iface,
+	    wgc.name);
+	vpn_job(s, title, "{\"kind\":\"wireguard\",\"interface\":%s,\"verb\":"
+	    "\"peer\",\"peer\":%s,\"allowed_ips\":%s,\"persist\":%s}", qi, qp,
+	    qa, wgc.persist ? "true" : "false");
+	free(qi);
+	free(qp);
+	free(qa);
+	/* What the client keeps: wg-quick's file, which the app reads. */
+	n = snprintf(wgc.conf, sizeof(wgc.conf), "[Interface]\nPrivateKey = "
+	    "%s\nAddress = %s\n", priv, wgc.address);
+	if (wgc.dns[0] != '\0' && n > 0 && (size_t)n < sizeof(wgc.conf))
+		n += snprintf(wgc.conf + n, sizeof(wgc.conf) - (size_t)n, "DNS = "
+		    "%s\n", wgc.dns);
+	if (n > 0 && (size_t)n < sizeof(wgc.conf))
+		n += snprintf(wgc.conf + n, sizeof(wgc.conf) - (size_t)n,
+		    "\n[Peer]\nPublicKey = %s\nEndpoint = %s\nAllowedIPs = %s\n",
+		    wgc.srvpub, wgc.endpoint, wgc.allowed);
+	if (wgc.keepalive[0] != '\0' && strcmp(wgc.keepalive, "0") != 0 &&
+	    n > 0 && (size_t)n < sizeof(wgc.conf))
+		(void)snprintf(wgc.conf + n, sizeof(wgc.conf) - (size_t)n,
+		    "PersistentKeepalive = %s\n", wgc.keepalive);
+	app.modal = MODAL_WG_CONF;
+	app.modal_error[0] = '\0';
+	render();
+}
+
+/* The client's form: checked, then its key pair asked of the console. */
+static bool
+client_form(const ucl_object_t *f)
+{
+	const char	*v;
+
+#define	TAKE(k, field) \
+	snprintf(wgc.field, sizeof(wgc.field), "%s", jstr(f, k) != NULL ? \
+	    jstr(f, k) : "")
+	TAKE("name", name);
+	TAKE("address", address);
+	TAKE("endpoint", endpoint);
+	TAKE("allowed", allowed);
+	TAKE("dns", dns);
+	TAKE("keepalive", keepalive);
+#undef TAKE
+	wgc.persist = jbool(f, "persist");
+	for (v = wgc.name; *v != '\0'; v++)
+		if (!((*v >= 'a' && *v <= 'z') || (*v >= 'A' && *v <= 'Z') ||
+		    (*v >= '0' && *v <= '9') || *v == '-' || *v == '_' || *v ==
+		    '.')) {
+			snprintf(app.modal_error, sizeof(app.modal_error), "A "
+			    "name is letters, digits, -, _ and .");
+			return (true);
+		}
+	if (wgc.address[0] == '\0' || strchr(wgc.address, '/') == NULL) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "Its address "
+		    "with its prefix length: 10.9.0.2/32");
+		return (true);
+	}
+	if (wgc.endpoint[0] == '\0' || strchr(wgc.endpoint, ':') == NULL) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "The endpoint "
+		    "is a name or address and a port: vpn.example.org:51820");
+		return (true);
+	}
+	if (wgc.allowed[0] == '\0') {
+		snprintf(app.modal_error, sizeof(app.modal_error), "What it "
+		    "sends through the tunnel: 0.0.0.0/0, ::/0 for everything");
+		return (true);
+	}
+	if (wgc.keepalive[0] != '\0' && !digits(wgc.keepalive)) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "Keepalive is "
+		    "seconds");
+		return (true);
+	}
+	app.modal_error[0] = '\0';
+	api("POST", "/api/wg/keypair", "{}", client_keys_cb, NULL);
+	return (true);
+}
+
+/*
+ * The form's first values: the next address after the peers' (one
+ * past the highest IPv4 /32 of them), the host's name or address with
+ * the interface's port, everything through the tunnel, a keepalive.
+ */
+static bool
+client_open(struct server *s, const char *ifname)
+{
+	const ucl_object_t	*o, *p, *ip;
+	ucl_object_iter_t	 it, pit, iit;
+	const char		*u, *e;
+	unsigned int		 a[4], best, v;
+	char			 host[160];
+	bool			 found;
+
+	wgc_forget();
+	snprintf(wgc.server, sizeof(wgc.server), "%s", s->id);
+	snprintf(wgc.iface, sizeof(wgc.iface), "%s", ifname);
+	found = false;
+	best = 0;
+	it = NULL;
+	while ((o = ucl_object_iterate(jget(app.net.data, "data.interfaces"),
+	    &it, true)) != NULL) {
+		if (jstr(o, "name") == NULL || strcmp(jstr(o, "name"), ifname) !=
+		    0)
+			continue;
+		found = true;
+		snprintf(wgc.srvpub, sizeof(wgc.srvpub), "%s", jstr(o,
+		    "public-key") != NULL ? jstr(o, "public-key") : "");
+		/* The host: from the agent's address, or the console's. */
+		u = s->uri;
+		if (strncmp(u, "tcp://", 6) == 0) {
+			u += 6;
+			if (*u == '[' && (e = strchr(u, ']')) != NULL)
+				snprintf(host, sizeof(host), "%.*s", (int)(e - u +
+				    1), u);
+			else if ((e = strrchr(u, ':')) != NULL)
+				snprintf(host, sizeof(host), "%.*s", (int)(e - u),
+				    u);
+			else
+				snprintf(host, sizeof(host), "%s", u);
+		} else {
+			u = arc_origin();
+			u = strstr(u, "://") != NULL ? strstr(u, "://") + 3 : u;
+			snprintf(host, sizeof(host), "%s", u);
+			if (host[0] != '[' && (e = strchr(host, ':')) != NULL)
+				host[e - host] = '\0';
+			else if (host[0] == '[' && (e = strchr(host, ']')) !=
+			    NULL)
+				host[e - host + 1] = '\0';
+		}
+		snprintf(wgc.endpoint, sizeof(wgc.endpoint), "%s:%lld", host,
+		    (long long)(jint(o, "listen-port", 0) > 0 ? jint(o,
+		    "listen-port", 0) : 51820));
+		pit = NULL;
+		while ((p = ucl_object_iterate(jget(o, "peers"), &pit, true)) !=
+		    NULL) {
+			iit = NULL;
+			while ((ip = ucl_object_iterate(jget(p, "allowed-ips"),
+			    &iit, true)) != NULL)
+				if (sscanf(ucl_object_tostring_forced(ip),
+				    "%u.%u.%u.%u/32", &a[0], &a[1], &a[2], &a[3])
+				    == 4 && a[0] < 256 && a[1] < 256 && a[2] <
+				    256 && a[3] < 256 && (v = a[0] << 24 | a[1] <<
+				    16 | a[2] << 8 | a[3]) > best)
+					best = v;
+		}
+	}
+	if (!found || wgc.srvpub[0] == '\0') {
+		toast(true, "%s has no key yet: Make its key first", ifname);
+		return (false);
+	}
+	if (best != 0 && (best & 0xff) < 254)
+		snprintf(wgc.address, sizeof(wgc.address), "%u.%u.%u.%u/32",
+		    best >> 24, (best >> 16) & 0xff, (best >> 8) & 0xff, (best &
+		    0xff) + 1);
+	snprintf(wgc.allowed, sizeof(wgc.allowed), "0.0.0.0/0, ::/0");
+	snprintf(wgc.keepalive, sizeof(wgc.keepalive), "25");
+	return (true);
+}
+
 bool
 vpn_form(const char *form, const ucl_object_t *f)
 {
@@ -273,6 +583,13 @@ vpn_form(const char *form, const ucl_object_t *f)
 	char		 title[160], allowed[512], *qi, *qp, *qe, *qa, extra[64];
 	size_t		 n;
 
+	if (strcmp(form, "wg-conf") == 0) {
+		app.modal = MODAL_NONE;
+		wgc_forget();
+		return (true);
+	}
+	if (strcmp(form, "wg-client") == 0)
+		return (client_form(f));
 	if (strcmp(form, "wg-init") != 0 && strcmp(form, "wg-peer") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
@@ -350,6 +667,13 @@ vpn_action(const char *act, const char *arg, const char *value)
 	if (strcmp(act, "wg-if-create") == 0) {
 		if ((s = cur_server()) != NULL)
 			topo_if_create_open(s->id, "wg");
+		return (true);
+	}
+	if (strcmp(act, "wg-client-add") == 0) {
+		if (client_open(s, arg)) {
+			app.modal = MODAL_WG_CLIENT;
+			app.modal_error[0] = '\0';
+		}
 		return (true);
 	}
 	if (strcmp(act, "wg-init") == 0 || strcmp(act, "wg-peer-add") == 0) {

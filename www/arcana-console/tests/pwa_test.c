@@ -1806,6 +1806,37 @@ part_plugins(void)
 	ATF_CHECK(system("grep -q '^set wg0 peer xTIBA5rboUvnH4htodjb6e697QjLER"
 	    "t1NAB4mZqp8Dg= endpoint 192.0.2.9:51820 allowed-ips 10.9.9.2/32 "
 	    "persistent-keepalive 25$' wg.log") == 0);
+	/* A client: the form offers the next address after the peers', the
+	 * host and the port, everything through the tunnel; made, its
+	 * configuration is shown once with its QR code, the private key in
+	 * it, the host's peer its public half. */
+	run("document.querySelector('.pane.wg button[data-act=wg-client-add]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=wg-client]')", 5);
+	run("window.wf = document.querySelector('form[data-form=wg-client]');");
+	ATF_CHECK(js_true("wf.address.value === '10.9.9.3/32' && wf.endpoint"
+	    ".value.endsWith(':51820') && wf.allowed.value === '0.0.0.0/0, ::/0' "
+	    "&& wf.keepalive.value === '25'"));
+	run("wf.name.value = 'phone'; wf.dns.value = '10.9.9.1'; "
+	    "wf.persist.checked = false; wf.requestSubmit();");
+	wait_js("document.querySelector('form[data-form=wg-conf] pre.wg-conf') "
+	    "&& document.querySelector('form[data-form=wg-conf] svg')", 10);
+	run("window.wc = document.querySelector('pre.wg-conf').textContent;");
+	ATF_CHECK(js_true("/^\\[Interface\\]\\nPrivateKey = [A-Za-z0-9+\\/]{43}"
+	    "=\\nAddress = 10\\.9\\.9\\.3\\/32\\nDNS = 10\\.9\\.9\\.1\\n\\n"
+	    "\\[Peer\\]\\nPublicKey = HIgo/.test(wc) && wc.includes('AllowedIPs = "
+	    "0.0.0.0/0, ::/0') && wc.includes('PersistentKeepalive = 25') && "
+	    "document.querySelector('form[data-form=wg-conf] a[download="
+	    "\"phone.conf\"]') !== null"));
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -q 'allowed-ips 10.9.9.3/32$' "
+	    "wg.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -Eq '^set wg0 peer [A-Za-z0-9+/]{43}= "
+	    "allowed-ips 10.9.9.3/32$' wg.log") == 0);
+	shot("7c-wireguard-client");
+	run("document.querySelector('.modal button[data-act=close]').click()");
 	run("document.querySelector('.dock > header').click()");
 	shot("7c-wireguard");
 	/*
