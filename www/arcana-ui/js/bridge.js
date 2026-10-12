@@ -149,6 +149,10 @@ addToLibrary({
 			act(t.dataset.act, t.dataset.arg || "",
 			    t.dataset.value || "");
 		});
+		/* Back, forward, or an address typed: go where it says. */
+		window.addEventListener("popstate", function () {
+			Module._arc_on_loc(arcStr(location.hash));
+		});
 		document.addEventListener("submit", function (e) {
 			var f = e.target, o = {}, i, el;
 
@@ -1250,6 +1254,30 @@ addToLibrary({
 	/* Is the window as narrow as a phone held upright? */
 	arc_narrow: function () {
 		return (window.innerWidth <= 620 ? 1 : 0);
+	},
+
+	/*
+	 * The page's address, #/hosts/<id>/<tab> and the like (main.c):
+	 * read when the page opens, written as what is shown changes, a
+	 * new history entry (push) or in place.
+	 */
+	arc_loc_get__deps: ["$arcStr"],
+	arc_loc_get: function () {
+		return (arcStr(location.hash));
+	},
+	arc_loc_set__deps: ["$UTF8ToString"],
+	arc_loc_set: function (p, push) {
+		var h = UTF8ToString(p);
+
+		if (location.hash === h)
+			return;
+		try {
+			if (push)
+				history.pushState(null, "", h);
+			else
+				history.replaceState(null, "", h);
+		} catch (e) {
+		}
 	},
 
 	arc_title__deps: ["$UTF8ToString"],

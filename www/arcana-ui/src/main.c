@@ -30,6 +30,8 @@ struct app app = {
 };
 
 static double	last_health, last_refresh, last_tick_render, last_update;
+static char	loc_shown[600];	/* the page's address names this */
+static char	loc_wanted[600];	/* to go to once the hosts are known */
 static int	others_turn;	/* refreshes since the other hosts were read */
 
 #define	OTHERS_EVERY	3	/* the hosts not selected: every third refresh */
@@ -39,6 +41,9 @@ static void	dispatch(const char *, const char *, const char *);
 static void	close_service(void);
 static void	submit(const char *, const ucl_object_t *);
 static void	submit_form(const char *, const ucl_object_t *);
+static void	loc_of(char *, size_t);
+static void	loc_go(const char *);
+static void	loc_show(void);
 
 /*
  * Rebuild the page.  On the console, each region is rebuilt in C (cheap)
@@ -87,6 +92,227 @@ render(void)
 	    app.screen == SCREEN_CONSOLE ? s->name : "",
 	    s != NULL && app.screen == SCREEN_CONSOLE ? " · " : "", APP_NAME);
 	arc_title(title);
+	loc_show();
+}
+
+/*
+ * The page's address names what it shows: #/ the fleet, #/network,
+ * #/usage, #/workflows, #/sdwan, #/api, #/settings/<tab>, a host as
+ * #/hosts/<id> or #/hosts/<id>/<tab>, and a jail as
+ * #/hosts/<id>/jails/<name>.  A link, a reload, the browser's back and
+ * forward, and the Android app land where it says.
+ */
+static const char *const tabnames[] = {
+	[TAB_SUMMARY] = "summary", [TAB_JAILS] = "jails",
+	[TAB_SERVICES] = "services", [TAB_NETWORK] = "network",
+	[TAB_FIREWALL] = "firewall", [TAB_PACKAGES] = "packages",
+	[TAB_STORAGE] = "storage", [TAB_KERNEL] = "kernel",
+	[TAB_SYSCTL] = "sysctl", [TAB_PROCESSES] = "processes",
+	[TAB_LOG] = "log", [TAB_JOBS] = "jobs",
+};
+
+/* A jail's name in the address: what is not a letter, a digit or ._- in
+ * %XX. */
+static void
+loc_enc(char *buf, size_t len, const char *s)
+{
+	static const char	hex[] = "0123456789ABCDEF";
+	size_t			n;
+
+	for (n = 0; *s != '\0' && n + 4 < len; s++) {
+		if ((*s >= 'a' && *s <= 'z') || (*s >= 'A' && *s <= 'Z') ||
+		    (*s >= '0' && *s <= '9') || *s == '.' || *s == '_' ||
+		    *s == '-')
+			buf[n++] = *s;
+		else {
+			buf[n++] = '%';
+			buf[n++] = hex[(unsigned char)*s >> 4];
+			buf[n++] = hex[(unsigned char)*s & 15];
+		}
+	}
+	buf[n] = '\0';
+}
+
+static int
+loc_hex(int c)
+{
+
+	return (c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ?
+	    c - 'a' + 10 : c >= 'A' && c <= 'F' ? c - 'A' + 10 : -1);
+}
+
+/* A field of the address, its %XX decoded. */
+static void
+loc_dec(char *buf, size_t len, const char *s)
+{
+	size_t	n;
+	int	hi, lo;
+
+	for (n = 0; *s != '\0' && n + 1 < len; s++) {
+		if (s[0] == '%' && (hi = loc_hex((unsigned char)s[1])) != -1 &&
+		    (lo = loc_hex((unsigned char)s[2])) != -1) {
+			buf[n++] = (char)(hi << 4 | lo);
+			s += 2;
+		} else
+			buf[n++] = *s;
+	}
+	buf[n] = '\0';
+}
+
+static void
+loc_of(char *buf, size_t len)
+{
+	struct server	*s;
+	char		 jail[sizeof(app.jail) * 3];
+
+	s = cur_server();
+	switch (app.node) {
+	case NODE_NETWORK:
+		snprintf(buf, len, "#/network");
+		break;
+	case NODE_API:
+		snprintf(buf, len, "#/api");
+		break;
+	case NODE_USAGE:
+		snprintf(buf, len, "#/usage");
+		break;
+	case NODE_WORKFLOWS:
+		snprintf(buf, len, "#/workflows");
+		break;
+	case NODE_SDWAN:
+		snprintf(buf, len, "#/sdwan");
+		break;
+	case NODE_SETTINGS:
+		snprintf(buf, len, "#/settings/%s", settab_arg(app.settab));
+		break;
+	case NODE_JAIL:
+		if (s != NULL && app.jail[0] != '\0') {
+			loc_enc(jail, sizeof(jail), app.jail);
+			snprintf(buf, len, "#/hosts/%s/jails/%s", s->id, jail);
+			break;
+		}
+		/* FALLTHROUGH */
+	case NODE_HOST:
+		if (s != NULL) {
+			snprintf(buf, len, "#/hosts/%s%s%s", s->id,
+			    app.tab != TAB_SUMMARY ? "/" : "",
+			    app.tab != TAB_SUMMARY ? tabnames[app.tab] : "");
+			break;
+		}
+		/* FALLTHROUGH */
+	default:
+		snprintf(buf, len, "#/");
+		break;
+	}
+}
+
+/*
+ * After every change, the address follows what is shown: a new entry in
+ * the browser's history, so back goes to what was shown before, but
+ * not for the first address, which only says where the page is.
+ */
+static void
+loc_show(void)
+{
+	char	r[sizeof(loc_shown)];
+
+	if (app.screen != SCREEN_CONSOLE || !app.servers_loaded ||
+	    loc_wanted[0] != '\0')
+		return;
+	loc_of(r, sizeof(r));
+	if (strcmp(r, loc_shown) == 0)
+		return;
+	arc_loc_set(r, loc_shown[0] != '\0');
+	snprintf(loc_shown, sizeof(loc_shown), "%s", r);
+}
+
+/* Show what an address names, by the actions the page's controls use. */
+static void
+loc_go(const char *r)
+{
+	char	 buf[sizeof(loc_wanted)], *f[4], *q;
+	char	 id[sizeof(app.servers[0].id)], arg[sizeof(app.jail)];
+	int	 i, np;
+
+	snprintf(buf, sizeof(buf), "%s", r);
+	buf[strcspn(buf, "?")] = '\0';
+	for (q = buf; *q == '#' || *q == '/'; q++)
+		;
+	for (np = 0; np < 4 && *q != '\0'; ) {
+		f[np++] = q;
+		q += strcspn(q, "/");
+		if (*q == '/')
+			*q++ = '\0';
+	}
+#define	IS(i, s)	(np > (i) && strcmp(f[i], (s)) == 0)
+	if (IS(0, "network"))
+		dispatch("select-network", "", "");
+	else if (IS(0, "api"))
+		dispatch("select-api", "", "");
+	else if (IS(0, "usage"))
+		dispatch("select-usage", "", "");
+	else if (IS(0, "workflows"))
+		dispatch("select-workflows", "", "");
+	else if (IS(0, "sdwan"))
+		dispatch("select-sdwan", "", "");
+	else if (IS(0, "settings")) {
+		loc_dec(arg, sizeof(arg), np > 1 ? f[1] : "");
+		dispatch("set-tab", arg, "");
+	} else if (IS(0, "hosts") && np > 1) {
+		loc_dec(id, sizeof(id), f[1]);
+		for (i = 0; i < app.nservers; i++)
+			if (strcmp(app.servers[i].id, id) == 0)
+				break;
+		if (i == app.nservers) {
+			/* A host no longer there: the fleet. */
+			dispatch("select-fleet", "", "");
+			return;
+		}
+		dispatch("select-server", id, "");
+		if (IS(2, "jails") && np > 3) {
+			loc_dec(arg, sizeof(arg), f[3]);
+			dispatch("open-jail", arg, id);
+		} else {
+			loc_dec(arg, sizeof(arg), np > 2 ? f[2] : "summary");
+			dispatch("tab", arg, "");
+		}
+	} else
+		dispatch("select-fleet", "", "");
+#undef IS
+}
+
+/*
+ * The hosts are known: go where the address named when the page was
+ * opened, or before the login it waited for.
+ */
+void
+loc_pending(void)
+{
+	char	r[sizeof(loc_wanted)];
+
+	if (loc_wanted[0] == '\0' || app.screen != SCREEN_CONSOLE)
+		return;
+	snprintf(r, sizeof(r), "%s", loc_wanted);
+	loc_wanted[0] = '\0';
+	loc_go(r);
+	loc_of(loc_shown, sizeof(loc_shown));
+	arc_loc_set(loc_shown, 0);
+}
+
+/* The browser went back or forward, or the address was typed. */
+EMSCRIPTEN_KEEPALIVE void
+arc_on_loc(char *r)
+{
+
+	if (app.screen == SCREEN_CONSOLE && app.servers_loaded) {
+		loc_go(r);
+		/* What it named, as it is said: a host gone is the fleet. */
+		loc_of(loc_shown, sizeof(loc_shown));
+		arc_loc_set(loc_shown, 0);
+		render();
+	} else
+		snprintf(loc_wanted, sizeof(loc_wanted), "%s", r);
+	free(r);
 }
 
 void
@@ -1514,6 +1740,15 @@ main(void)
 		free(t);
 	}
 	app.trace_schema = true;
+	{
+		char *r = arc_loc_get();
+
+		/* An address that names more than the fleet. */
+		if (strcmp(r, "") != 0 && strcmp(r, "#") != 0 &&
+		    strcmp(r, "#/") != 0)
+			snprintf(loc_wanted, sizeof(loc_wanted), "%s", r);
+		free(r);
+	}
 	render();
 	check_health();
 	last_health = last_refresh = arc_now();

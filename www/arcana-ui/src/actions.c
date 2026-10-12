@@ -1008,6 +1008,8 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	for (i = 0; i < app.nservers; i++)
 		if (app.servers[i].list == NULL)
 			refresh_jails(&app.servers[i], i == app.sel);
+	/* What the page's address named, now that its host can be found. */
+	loc_pending();
 }
 
 void
