@@ -196,6 +196,8 @@ route-neighs)
 	[ "\$1" != 6 ] && echo '{"family":"inet","address":"10.0.0.2","lladdr":"58:9c:fc:00:00:02","interface-name":"em0","state":"reachable","next":120}' | grep -e "\${2#-}"
 	[ "\$1" != 4 ] && echo '{"family":"inet6","address":"fe80::1%em0","lladdr":"58:9c:fc:00:00:01","interface-name":"em0","state":"stale","router":true}' | grep -e "\${2#-}"
 	echo "#total 2" ;;
+carp-set)
+	echo "carp-set \$* key=\$(cat)" >> $(pwd)/carp.log ;;
 route-add|route-del)
 	echo "\$jid \$verb \$*" >> $(pwd)/route.log
 	case "\$1" in 10.66.0.0/16) echo "10.66.0.0/16: the route is there already" >&2; exit 1 ;; esac ;;
@@ -4768,6 +4770,53 @@ jail_conf_cleanup()
 	stop_daemon
 }
 
+atf_test_case carp cleanup
+carp_head()
+{
+	atf_set "descr" "A carp(4) address: its vhid set by the helper with the key on its input, the address under it, kept in rc.conf with carp in kld_list; changed there; taken away; what is not one refused"
+}
+carp_body()
+{
+	cat > fake-ifconfig <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/ifconfig.log
+exit 0
+EOS
+	chmod +x fake-ifconfig
+	start_daemon
+	echo 'sekrit' | atf_check -o match:'done +lo0: carp add vhid 3 10.0.0.100/24$' \
+	    -o not-match:'sekrit' "$JGC" -t -p -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=3 advskew=20 key
+	atf_check -o inline:'carp-set lo0 3 advskew=20 key=sekrit\n' cat carp.log
+	atf_check -o match:'^lo0 inet 10.0.0.100/24 vhid 3 alias$' cat ifconfig.log
+	atf_check -o match:'^ifconfig_lo0_alias0="inet vhid 3 advskew 20 pass sekrit 10.0.0.100/24"$' \
+	    -o match:'^kld_list="carp"$' cat rc.conf
+	# Changed: kept as it is now, the key as it was.
+	atf_check -o match:'done +lo0: carp set vhid 3$' \
+	    "$JGC" -p -c "$SOCK" carp set lo0 vhid=3 advskew=40 state=backup
+	atf_check -o match:'^carp-set lo0 3 advskew=40 state=backup key=$' tail -1 carp.log
+	atf_check -o match:'^ifconfig_lo0_alias0="inet vhid 3 advskew 40 pass sekrit 10.0.0.100/24"$' cat rc.conf
+	# Taken away, from rc.conf too.
+	atf_check -o match:'done +lo0: carp remove vhid 3 10.0.0.100' \
+	    "$JGC" -p -c "$SOCK" carp remove lo0 10.0.0.100 vhid=3
+	atf_check -o match:'^lo0 inet 10.0.0.100 -alias$' tail -1 ifconfig.log
+	atf_check -o not-match:'ifconfig_lo0_alias' cat rc.conf
+	# What is not one.
+	atf_check -s exit:1 -e match:'a vhid, 1 to 255' -o ignore \
+	    "$JGC" -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=0
+	atf_check -s exit:1 -e match:'the words are vhid' -o ignore \
+	    "$JGC" -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=3 peer=10.0.0.9
+	echo 'a key with spaces' | atf_check -s exit:1 -e match:'19 characters at most' -o ignore \
+	    "$JGC" -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=3 key
+	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
+	    "$JGC" -s -c "$SOCK" carp set lo0 vhid=3 advskew=1
+	atf_check -s exit:1 -e match:'state master or backup' -o ignore \
+	    "$JGC" -c "$SOCK" carp set lo0 vhid=3 state=init
+}
+carp_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case neighbours cleanup
 neighbours_head()
 {
@@ -5143,6 +5192,7 @@ atf_init_test_cases()
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
 	atf_add_test_case jail_conf
+	atf_add_test_case carp
 	atf_add_test_case neighbours
 	atf_add_test_case certs
 	atf_add_test_case sshd

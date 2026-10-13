@@ -638,7 +638,7 @@ view_network(struct html *h, struct server *s)
 		{ "wireguard", "WireGuard" }, { "bird", "BIRD" },
 		{ "bridges", "Bridges" }, { "geneve", "Geneve" },
 		{ "nhgroups", "Nexthop groups" }, { "neighbours", "Neighbours" },
-		{ "ipsec", "IPsec" }, { "span", "Span" },
+		{ "ipsec", "IPsec" }, { "span", "Span" }, { "carp", "CARP" },
 	};
 	const ucl_object_t	*fam, *arr;
 	ucl_object_iter_t	 it;
@@ -709,6 +709,10 @@ view_network(struct html *h, struct server *s)
 			h_fmt(h, " value=\"%d\"", app.net.fib);
 		h_raw(h, " placeholder=\"0\"></label>");
 	}
+	if (app.net.kind == NET_CARP)
+		h_raw(h, "<button class=\"ghost small\" data-act=\"carp-add\" "
+		    "title=\"An address shared with other hosts by carp(4)\">+ "
+		    "CARP address</button>");
 	if (app.net.kind == NET_NEIGHBOURS)
 		h_raw(h, "<button class=\"ghost small\" data-act=\"neigh-add\" "
 		    "title=\"An ARP or NDP entry set by hand\">+ neighbour"
@@ -761,6 +765,10 @@ view_network(struct html *h, struct server *s)
 	}
 	if (app.net.kind == NET_SPAN) {
 		view_span(h, s);
+		return;
+	}
+	if (app.net.kind == NET_CARP) {
+		view_carp(h, s, jget(app.net.data, "data"));
 		return;
 	}
 	/*

@@ -195,6 +195,7 @@ enum netkind {
 	NET_NEIGHBOURS,
 	NET_IPSEC,
 	NET_SPAN,		/* bridges' span ports, taps, capture */
+	NET_CARP,		/* carp(4)'s vhids, from the interfaces */
 };
 /* A plugin's view: a tab of its own on a host that has it. */
 #define	NET_PLUGIN(k)	((k) == NET_WIREGUARD || (k) == NET_BIRD ||	\
@@ -346,6 +347,7 @@ enum modal {
 	MODAL_JAIL_REMOVE,
 	MODAL_JAIL_FILE,
 	MODAL_NEIGH,
+	MODAL_CARP,
 	MODAL_CERT_ADD,
 	MODAL_SSH_SET,
 	MODAL_SSH_SIGN,
@@ -634,6 +636,11 @@ bool		 jailmk_action(const char *, const char *, const char *);
 bool		 neigh_modal(struct html *);
 bool		 neigh_form(const char *, const ucl_object_t *);
 bool		 neigh_action(const char *, const char *, const char *);
+/* carp.c: carp(4)'s vhids and their addresses. */
+void		 view_carp(struct html *, struct server *, const ucl_object_t *);
+bool		 carp_modal(struct html *);
+bool		 carp_form(const char *, const ucl_object_t *);
+bool		 carp_action(const char *, const char *, const char *);
 
 /* bird.c: BIRD's neighbours and its configuration. */
 bool		 bird_action(const char *, const char *, const char *);

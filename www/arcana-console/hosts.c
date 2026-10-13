@@ -4019,6 +4019,7 @@ static const char *job_kind_names[] = {
 	[ARC_JOB_KIND_NEIGHBOUR] = "neighbour",
 	[ARC_JOB_KIND_CERT] = "cert",
 	[ARC_JOB_KIND_SSH] = "ssh",
+	[ARC_JOB_KIND_CARP] = "carp",
 };
 
 static const char *job_state_names[] = {
@@ -4327,6 +4328,7 @@ spec_from_json(const ucl_object_t *o, struct arc_job_spec *sp)
 	case ARC_JOB_KIND_IPSEC_SA:
 	case ARC_JOB_KIND_JAIL_CONF:
 	case ARC_JOB_KIND_SSH:
+	case ARC_JOB_KIND_CARP:
 		/* Storage's verbs take more words; the host checks each. */
 		names = ucl_object_lookup(o, "args");
 		if (sp->kind == ARC_JOB_KIND_SYSCTL) {

@@ -2128,7 +2128,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SSH)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_CARP)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2312,6 +2312,8 @@ check_spec(const struct arc_job_spec *sp)
 		return (jail_conf_check(sp));
 	case ARC_JOB_KIND_NEIGHBOUR:
 		return (neigh_check(sp));
+	case ARC_JOB_KIND_CARP:
+		return (carp_check(sp));
 	case ARC_JOB_KIND_CERT:
 		return (cert_check(sp));
 	case ARC_JOB_KIND_SSH:

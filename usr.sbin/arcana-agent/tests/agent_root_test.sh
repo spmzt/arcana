@@ -681,6 +681,71 @@ jail_make_cleanup()
 	true
 }
 
+atf_test_case carp cleanup
+carp_head()
+{
+	atf_set "descr" "carp(4) between two vnet jails on one epair: a vhid made with its key by netlink, MASTER and BACKUP as their skews say, one told to step back, changed, and gone with its address; the key in no trace"
+	atf_set "require.user" "root"
+}
+carp_body()
+{
+	kldstat -q -m carp || atf_skip "carp(4) is not loaded"
+	if jls -j arcw_c1 >/dev/null 2>&1 || jls -j arcw_c2 >/dev/null 2>&1; then
+		atf_skip "a jail arcw_c1 or arcw_c2 is there already"
+	fi
+	touch mine
+	ep=$(ifconfig epair create)
+	echo "${ep%a}" > epair
+	atf_check -o ignore jail -c name=arcw_c1 vnet persist path=/ vnet.interface="${ep%a}a"
+	atf_check -o ignore jail -c name=arcw_c2 vnet persist path=/ vnet.interface="${ep%a}b"
+	atf_check jexec arcw_c1 ifconfig "${ep%a}a" inet 192.0.2.2/24 up
+	atf_check jexec arcw_c2 ifconfig "${ep%a}b" inet 192.0.2.3/24 up
+	start_daemon
+	# Not kept (-p): these jails' rc.conf would be the host's.
+	echo 'the-lab-key' | atf_check -o match:"done +arcw_c1: ${ep%a}a: carp add vhid 7 192.0.2.1/24" \
+	    -o not-match:'the-lab-key' "$JGC" -t -c "$SOCK" -j arcw_c1 carp add "${ep%a}a" 192.0.2.1/24 vhid=7 key
+	echo 'the-lab-key' | atf_check -o match:'done' \
+	    "$JGC" -c "$SOCK" -j arcw_c2 carp add "${ep%a}b" 192.0.2.1/24 vhid=7 advskew=100 key
+	sleep 4
+	atf_check -o match:'"carp":true' -o match:'"carp":\[\{"vhid":7,"state":"MASTER","version":2,"advbase":1,"advskew":0' \
+	    -o match:'"address":"192.0.2.1","prefixlen":24,"broadcast":"192.0.2.255","vhid":7' \
+	    "$JGC" -c "$SOCK" -j arcw_c1 net interfaces
+	atf_check -o match:'"state":"BACKUP","version":2,"advbase":1,"advskew":100' \
+	    "$JGC" -c "$SOCK" -j arcw_c2 net interfaces
+	# Told to step back: the other takes it.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" -j arcw_c1 carp set "${ep%a}a" vhid=7 state=backup
+	sleep 5
+	atf_check -o match:'"state":"BACKUP"' "$JGC" -c "$SOCK" -j arcw_c1 net interfaces
+	atf_check -o match:'"state":"MASTER","version":2,"advbase":1,"advskew":100' \
+	    "$JGC" -c "$SOCK" -j arcw_c2 net interfaces
+	# Changed: what is not given stays.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" -j arcw_c2 carp set "${ep%a}b" vhid=7 advskew=50
+	atf_check -o match:'"advbase":1,"advskew":50' "$JGC" -c "$SOCK" -j arcw_c2 net interfaces
+	atf_check -s exit:1 -o match:'version is set when it is made' \
+	    "$JGC" -c "$SOCK" -j arcw_c2 carp set "${ep%a}b" vhid=7 version=3
+	# Gone with its address.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" -j arcw_c1 carp remove "${ep%a}a" 192.0.2.1 vhid=7
+	atf_check -o not-match:'"vhid":7' "$JGC" -c "$SOCK" -j arcw_c1 net interfaces
+	atf_check ifconfig "${ep%a}a" -vnet arcw_c1
+	atf_check ifconfig "${ep%a}b" -vnet arcw_c2
+	atf_check -o ignore jail -r arcw_c1
+	atf_check -o ignore jail -r arcw_c2
+	atf_check ifconfig "${ep%a}a" destroy
+}
+carp_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	if [ -f mine ]; then
+		e=$(cat epair 2>/dev/null)
+		[ -n "$e" ] && ifconfig "${e}a" -vnet arcw_c1 >/dev/null 2>&1
+		[ -n "$e" ] && ifconfig "${e}b" -vnet arcw_c2 >/dev/null 2>&1
+		jail -r arcw_c1 >/dev/null 2>&1
+		jail -r arcw_c2 >/dev/null 2>&1
+		[ -n "$e" ] && ifconfig "${e}a" destroy >/dev/null 2>&1
+	fi
+	true
+}
+
 atf_test_case zfs_key cleanup
 zfs_key_head()
 {
@@ -749,4 +814,5 @@ atf_init_test_cases()
 	atf_add_test_case sdwan_record
 	atf_add_test_case jail_make
 	atf_add_test_case zfs_key
+	atf_add_test_case carp
 }
