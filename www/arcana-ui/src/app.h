@@ -61,7 +61,6 @@ void		 arc_loc_set(const char *, int);
 char		*arc_hostname(void);
 char		*arc_origin(void);
 int		 arc_fx_get(void);
-int		 arc_tree_room(void);
 int		 arc_open_get(const char *);
 void		 arc_open_set(const char *, int);
 int		 arc_queue_get(void);
@@ -254,7 +253,6 @@ struct server {
 	bool		 jobs_loading;
 	double		 restart_until;	/* ms: its agent is restarting after an update; 0 none */
 	double		 restart_asked;	/* ms: when it was last asked how it is */
-	bool		 tree_all;	/* every jail in the tree, room or not */
 	ucl_object_t	*services;	/* last good services reply */
 	double		 services_fetched;
 	bool		 services_loading;

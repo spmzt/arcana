@@ -74,7 +74,6 @@ static void	toasts(struct html *);
 static void	token_qr(struct html *, const char *);
 static void	auth_screen(struct html *);
 static void	fmt_kb(char *, size_t, int64_t);
-static void	tree_caps(int *);
 static bool	stale(const struct server *);
 
 void
@@ -328,87 +327,29 @@ banner(struct html *h)
 }
 
 /*
- * The resource tree: the fleet, its hosts, and under each host its
- * jails.  What is selected here decides what the stage shows.
+ * The side bar: the fleet's views and Settings.  The hosts themselves
+ * are on Devices and All hosts, a host's jails on its Jails tab.
  */
 /* A handle that drags the edge of a part of the page; bridge.js. */
 #define	RESIZER(axis, what)						\
 	"<div class=\"resizer " axis "\" data-resize=\"" what "\" "	\
 	"title=\"Drag to resize; double-click for the usual size\"></div>"
 
-#define	TREE_MIN	2	/* rows a host with more jails than room gets */
-
-/*
- * How many rows each host's jails get in the tree: all of them while
- * they fit in the room under the hosts, a fair share of it otherwise,
- * what a small host leaves going to the larger ones.  A host shown in
- * full takes its rows first; a folded one takes none.
- */
-static void
-tree_caps(int *cap)
-{
-	struct server	*s;
-	int		 n[MAX_SERVERS];
-	int		 i, room, open, share;
-	bool		 again;
-
-	room = arc_tree_room();
-	open = 0;
-	for (i = 0; i < app.nservers; i++) {
-		s = &app.servers[i];
-		n[i] = count_state(s, NULL);
-		cap[i] = n[i];
-		if (n[i] == 0 || arc_open_get(s->id) == 0)
-			n[i] = 0;
-		else if (s->tree_all) {
-			room -= n[i] + 1;
-			n[i] = 0;
-		} else
-			open++;
-	}
-	if (room < 0 && arc_tree_room() < 0)
-		return;			/* not drawn yet: no limit */
-	/* Hosts that fit in a share take what they need. */
-	do {
-		again = false;
-		share = open > 0 ? (room > 0 ? room : 0) / open : 0;
-		for (i = 0; i < app.nservers; i++)
-			if (n[i] > 0 && n[i] <= share) {
-				room -= n[i];
-				n[i] = 0;
-				open--;
-				again = true;
-			}
-	} while (again && open > 0);
-	/* The rest get a share each: at least a jail and the "more" row. */
-	for (i = 0; i < app.nservers; i++)
-		if (n[i] > 0)
-			cap[i] = share < TREE_MIN ? TREE_MIN : share;
-}
-
 static void
 rail(struct html *h)
 {
-	const ucl_object_t	*j;
-	ucl_object_iter_t	 it;
 	struct server		*s;
-	const char		*cls, *name, *st;
-	char			 buf[64];
-	int			 cap[MAX_SERVERS];
-	int			 i, run, all, idx, sidx, lim;
-	bool			 folded, selhere;
 
 	/* The firewall's parts are in the side bar while its tab is shown. */
 	if (firewall_rail(h))
 		return;
-	tree_caps(cap);
 	/* On a narrow screen the tree is one line until it is unfolded. */
 	s = cur_server();
 	if (app.rail_open)
 		h_raw(h, "<div class=\"scrim rail-scrim\" data-act=\"rail-toggle\"></div>");
 	h_fmt(h, "<aside class=\"rail%s\"><div class=\"rail-head\">"
 	    "<button class=\"ghost small rail-toggle\" data-act=\""
-	    "rail-toggle\" title=\"Hosts and jails\">%s ", app.rail_open ?
+	    "rail-toggle\" title=\"Menu\">%s ", app.rail_open ?
 	    " open" : "", app.rail_open ? "▴" : "▾");
 	h_txt(h, app.node == NODE_NETWORK ? "Network" : app.node == NODE_API ?
 	    "API" : app.node == NODE_USAGE ? "Utilization" : app.node ==
@@ -449,114 +390,6 @@ rail(struct html *h)
 	    app.node == NODE_USAGE ? " selected" : "", icon_usage,
 	    app.node == NODE_WORKFLOWS ? " selected" : "", icon_flows,
 	    app.node == NODE_SDWAN ? " selected" : "", icon_sdwan);
-	for (i = 0; i < app.nservers; i++) {
-		s = &app.servers[i];
-		run = count_state(s, "running");
-		all = count_state(s, NULL);
-		cls = s->failed ? "down" : s->list != NULL ? "up" : "unknown";
-		h_fmt(h, "<li class=\"titem server %s%s\"", cls, i == app.sel &&
-		    app.node == NODE_HOST ? " selected" : "");
-		h_raw(h, " data-act=\"select-server\"");
-		h_attr(h, "data-arg", s->id);
-		h_raw(h, ">");
-		folded = arc_open_get(s->id) == 0;
-		if (all > 0) {
-			h_fmt(h, "<button class=\"icon fold\" data-act=\"fold\" "
-			    "title=\"%s its jails\"", folded ? "Show" : "Hide");
-			h_attr(h, "data-arg", s->id);
-			h_fmt(h, ">%s</button>", folded ? "▸" : "▾");
-		}
-		h_raw(h, "<i class=\"led\"></i><div class=\"meta\">"
-		    "<span class=\"name\">");
-		h_txt(h, s->name);
-		h_raw(h, "</span>");
-		/* The agent beside the console: it builds the agent sent to
-		 * the others, and updates the console itself. */
-		if (s->local)
-			h_raw(h, "<span class=\"chip here\" title=\"The agent on "
-			    "the console's own host, by its socket: it builds "
-			    "arcana-agent for the others and updates the console "
-			    "itself\">console's host</span>");
-		h_raw(h, "<span class=\"uri\">");
-		h_txt(h, s->uri);
-		h_raw(h, "</span>");
-		if (s->list != NULL && jstr(s->list, "host.version") != NULL) {
-			const char *ver = jstr(s->list, "host.version");
-
-			h_raw(h, agent_outdated(s) ? "<span class=\"ver warn\" "
-			    "title=\"Not the console's arcana-agent\">" :
-			    "<span class=\"ver\">");
-			h_txt(h, ver);
-			h_raw(h, "</span>");
-		}
-		h_raw(h, "</div>");
-		if (s->list != NULL) {
-			snprintf(buf, sizeof(buf), "%d/%d", run, all);
-			h_raw(h, "<span class=\"count\" title=\"running/"
-			    "known\">");
-			h_txt(h, buf);
-			h_raw(h, "</span>");
-		}
-		h_raw(h, "<button class=\"icon del\" data-act=\"delete-server"
-		    "\" title=\"Remove\"");
-		h_attr(h, "data-arg", s->id);
-		h_raw(h, ">×</button></li>");
-		if (folded)
-			continue;
-		/*
-		 * Its jails, as leaves: as many as there is room for, the
-		 * selected one among them, and a row that shows the rest.
-		 */
-		selhere = i == app.sel && app.node == NODE_JAIL;
-		sidx = -1;
-		idx = 0;
-		it = NULL;
-		while (selhere && s->list != NULL && (j = ucl_object_iterate(
-		    jget(s->list, "jails"), &it, true)) != NULL) {
-			if ((name = jstr(j, "name")) == NULL)
-				continue;
-			if (strcmp(app.jail, name) == 0)
-				sidx = idx;
-			idx++;
-		}
-		lim = all;
-		if (!s->tree_all && cap[i] < all) {
-			lim = cap[i] - 1;	/* a row is the "more" one */
-			if (sidx >= lim)
-				lim--;
-		}
-		idx = 0;
-		it = NULL;
-		while (s->list != NULL && (j = ucl_object_iterate(jget(s->list,
-		    "jails"), &it, true)) != NULL) {
-			if ((name = jstr(j, "name")) == NULL)
-				continue;
-			if (idx++ >= lim && idx - 1 != sidx)
-				continue;
-			st = s->failed ? "unknown" : h_word(jstr(j, "state"),
-			    "unknown");
-			h_fmt(h, "<li class=\"titem leaf s-%s%s\" "
-			    "data-act=\"open-jail\"", st, selhere &&
-			    strcmp(app.jail, name) == 0 ? " selected" : "");
-			h_attr(h, "data-arg", name);
-			h_attr(h, "data-value", s->id);
-			h_raw(h, "><i class=\"led\"></i><span class=\"name\">");
-			h_txt(h, name);
-			h_raw(h, "</span></li>");
-		}
-		if (s->tree_all || cap[i] < all) {
-			h_raw(h, "<li class=\"titem leaf more\" "
-			    "data-act=\"tree-more\"");
-			h_attr(h, "data-arg", s->id);
-			if (s->tree_all)
-				h_raw(h, "><span class=\"name\">show fewer"
-				    "</span></li>");
-			else
-				h_fmt(h, "><span class=\"name\">+%d more…"
-				    "</span></li>", all - lim - (sidx >= lim ?
-				    1 : 0));
-		}
-	}
 	/* At the foot of the side bar: the console's own settings. */
 	h_fmt(h, "</ul><ul class=\"tree rail-foot\"><li class=\"titem fleet "
 	    "setnode%s\" data-act=\"settings\"><span class=\"twig\">%s"
@@ -581,8 +414,9 @@ hostbar(struct html *h, struct server *s)
 	int64_t			 up;
 
 	host = jget(s->list, "host");
-	h_raw(h, "<section class=\"hostbar\"><div class=\"host-id\">"
-	    "<h1>");
+	h_raw(h, "<section class=\"hostbar\"");
+	h_attr(h, "data-server", s->name);
+	h_raw(h, "><div class=\"host-id\"><h1>");
 	h_txt(h, jstr(host, "hostname") != NULL ? jstr(host, "hostname") :
 	    s->name);
 	h_raw(h, "</h1>");

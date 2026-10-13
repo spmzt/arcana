@@ -364,9 +364,9 @@
     and pools.
   - A Devices page of its own, a table of the hosts (sorted and
     filtered), the rail's host list moved there. (The page done
-    2026-10-12.  The rail's list not moved yet: it is the way to each
-    host's jails, so what the rail keeps after (the open host and its
-    jails?) is the user's to say.)
+    2026-10-12.  The side bar's hosts and jails taken away 2026-10-13,
+    as the user asked: hosts are opened from Devices or All hosts, a
+    host's jails from its Jails tab, a host taken off by × on Devices.)
   - To ask the user what is meant: MSS clamping "on transports" (the
     SD-WAN tunnels by ipfw tcp-setmss, an interface's, or the agent's
     links?), labels on interfaces (a console-side tag, or the

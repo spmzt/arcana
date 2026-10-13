@@ -1420,31 +1420,8 @@ addToLibrary({
 	},
 
 	/*
-	 * How many jail rows the tree has room for, besides its other
-	 * rows: the free space under the hosts.  -1 before it is drawn.
-	 * It depends on the tree's height and on the rows that are always
-	 * there, not on the jails shown, so it does not feed on itself.
-	 */
-	arc_tree_room: function () {
-		var tree = document.querySelector(".tree"), leaf, max, h, used;
-
-		if (tree === null)
-			return (-1);
-		max = parseFloat(getComputedStyle(tree).maxHeight);
-		h = isNaN(max) ? tree.clientHeight : max;
-		used = 0;
-		tree.querySelectorAll(".titem:not(.leaf)").forEach(function (e) {
-			used += e.offsetHeight;
-		});
-		leaf = tree.querySelector(".titem.leaf");
-		return (Math.max(0, Math.floor((h - used - 8) /
-		    (leaf !== null && leaf.offsetHeight > 0 ?
-		    leaf.offsetHeight : 27))));
-	},
-
-	/*
-	 * The hosts whose jails are shown in the tree, per browser: a host
-	 * starts folded, so a long fleet is a short list.
+	 * What is folded on the page, per browser: the boxes shut by their
+	 * heads (view.c's box_shut()).
 	 */
 	$arcOpen: function () {
 		try {
