@@ -184,16 +184,20 @@ usage(void)
 	    "    kmod [load | unload module]\n"
 	    "    jailconf make jail file [dataset snapshot clone|send path] "
 	    "[start]\n"
-	    "    jailconf remove jail [dataset] | defaults file | files\n"
+	    "    jailconf edit jail file | remove jail [dataset] |\n"
+	    "        defaults file | files\n"
 	    "    jailconf template name file | untemplate name\n"
 	    "    neigh add address lladdr [temp] | delete address\n"
+	    "    carp add interface address vhid=n [word=value ...] [key] |\n"
+	    "        set interface vhid=n [word=value ...] [key] |\n"
+	    "        remove interface address vhid=n\n"
 	    "    cert [list] | add name file | remove name | trust file |\n"
 	    "        untrust file | rehash\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
 	    "    sshd [list] | banner file | set Setting [value ...] |\n"
 	    "        authorize user keyfile | unauthorize user fingerprint |\n"
-	    "        sign ca-key-file [principal ...]\n"
+	    "        sign ca-key-file [principal ...] | user-cas file\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
 	    "    sysctl [name | start of a name]\n"
@@ -2076,6 +2080,58 @@ key_read(const char *prompt, char *buf, size_t len)
 }
 
 /*
+ * carp add interface address vhid=n [word=value ...] [key] | set
+ * interface vhid=n [word=value ...] [key] | remove interface address
+ * vhid=n: an address carp(4) shares, its vhid; key asks for the vhid's
+ * key, which is never an argument.  With -p kept for a boot too.
+ */
+static int
+cmd_carp(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	char			 key[64];
+	const char		**words;
+	int			 i, first;
+
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_CARP;
+	if (argc < 4)
+		usage();
+	sp.verb = argv[1];
+	sp.interface = argv[2];
+	if (strcmp(argv[1], "add") == 0 || strcmp(argv[1], "remove") == 0) {
+		if (argc < 5)
+			usage();
+		sp.address = argv[3];
+		first = 4;
+	} else if (strcmp(argv[1], "set") == 0)
+		first = 3;
+	else
+		usage();
+	if ((words = calloc((size_t)argc, sizeof(*words))) == NULL)
+		err(1, "calloc");
+	for (i = first; i < argc; i++) {
+		if (strcmp(argv[i], "key") == 0) {
+			if (key_read("The vhid's key: ", key, sizeof(key)) ==
+			    NULL)
+				errx(1, "no key");
+			sp.preshared_key = key;
+			continue;
+		}
+		words[sp.names.n++] = argv[i];
+	}
+	sp.names.v = words;
+	sp.persist = persist;
+	sp.safe = safe;
+	sp.jail = netjail;
+	i = submit(cl, &sp);
+	explicit_bzero(key, sizeof(key));
+	free(words);
+	return (i);
+}
+
+/*
  * zfskey [-n] dataset: the key of an encrypted dataset asked for at a
  * prompt, typed: loaded; with -n changed, the key it has first (when it
  * is not loaded) and the new one.  At a terminal it is asked for; else
@@ -2181,7 +2237,7 @@ cmd_capture(struct arc_client *cl, int argc, char **argv)
 /*
  * sshd [list] | banner file | set Setting [value ...] | authorize user
  * keyfile | unauthorize user fingerprint | sign ca-key-file [principal
- * ...]: the base system's sshd, of the host or of -j's jail; a change is
+ * ...] | user-cas file: the base system's sshd, of the host or of -j's jail; a change is
  * a job, and with -s undone unless confirmed.
  */
 static int
@@ -2211,7 +2267,8 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
 	sp.has_kind = true;
 	sp.kind = ARC_JOB_KIND_SSH;
 	sp.verb = argv[1];
-	if (argc == 3 && strcmp(argv[1], "banner") == 0)
+	if (argc == 3 && (strcmp(argv[1], "banner") == 0 || strcmp(argv[1],
+	    "user-cas") == 0))
 		sp.text = strcmp(argv[2], "-") == 0 ? "" : slurp(argv[2]);
 	else if (argc >= 3 && strcmp(argv[1], "set") == 0) {
 		sp.path = argv[2];
@@ -2282,6 +2339,7 @@ cmd_cert(struct arc_client *cl, int argc, char **argv)
 
 /*
  * jailconf make jail file [dataset snapshot clone|send path] [start]
+ * jailconf edit jail file
  * jailconf remove jail [dataset]
  * jailconf defaults file
  * jailconf template name file | untemplate name
@@ -2326,6 +2384,9 @@ cmd_jailconf(struct arc_client *cl, int argc, char **argv)
 			sp.start = true;
 		else if (argc == 5 || argc == 9)
 			usage();
+	} else if (strcmp(argv[1], "edit") == 0 && argc == 4) {
+		sp.jail = argv[2];
+		sp.text = slurp(argv[3]);
 	} else if (strcmp(argv[1], "remove") == 0 && (argc == 3 || argc ==
 	    4)) {
 		sp.jail = argv[2];
@@ -3738,6 +3799,8 @@ main(int argc, char *argv[])
 		rc = cmd_jailconf(&cl, argc, argv);
 	else if (strcmp(argv[0], "neigh") == 0)
 		rc = cmd_neigh(&cl, argc, argv);
+	else if (strcmp(argv[0], "carp") == 0)
+		rc = cmd_carp(&cl, argc, argv);
 	else if (strcmp(argv[0], "cert") == 0)
 		rc = cmd_cert(&cl, argc, argv);
 	else if (strcmp(argv[0], "sshd") == 0)

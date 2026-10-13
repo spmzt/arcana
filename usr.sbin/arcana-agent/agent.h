@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.98.0"
+#define	ARCANA_AGENT_VERSION	"0.104.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -221,6 +221,7 @@ struct execres {
 
 int		 run_exec(struct work *, char *const [], struct execres *);
 void		 exec_set_home(struct work *, const char *);
+void		 exec_set_stdin(const char *, size_t);
 void		 exec_set_secret(bool);
 int		 run_exec_lines(struct work *, char *const [],
 		    void (*)(const char *, void *), void *);
@@ -317,6 +318,14 @@ const char	*ssh_check(const struct arc_job_spec *);
 int		 do_ssh_job(struct work *, const struct arc_job_spec *,
 		    const char **);
 int		 ssh_undo(struct work *, const struct arc_job_spec *,
+		    const char **);
+/* invidia/carp.c: carp(4)'s vhids, read and set by netlink */
+struct ucl_object_s;
+void		 carp_read(struct ucl_object_s *, struct ucl_object_s *);
+int		 carp_helper(int, char **);
+const char	*carp_check(const struct arc_job_spec *);
+const char	*carp_vhid_of(const struct arc_job_spec *);
+int		 do_carp(struct work *, const struct arc_job_spec *,
 		    const char **);
 /* invidia/neigh.c: a neighbour set by hand, or taken away */
 const char	*neigh_check(const struct arc_job_spec *);

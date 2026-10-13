@@ -339,8 +339,14 @@ kinds:
     title: A jail made, removed; the jails' defaults or a template
     needs: verb
     uses: jail dataset snapshot copy path text start args
-    values: verb=make|remove|defaults|template|untemplate copy=clone|send
+    values: verb=make|remove|defaults|template|untemplate|edit copy=clone|send
     destroys: verb=remove|untemplate
+  - kind: carp
+    title: A carp(4) address shared with other hosts, its vhid set, or taken away
+    needs: verb interface
+    uses: jail address args preshared_key persist safe
+    values: verb=add|set|remove
+    destroys: verb=remove
   - kind: neighbour
     title: An ARP or NDP neighbour set by hand, or taken away
     needs: verb address
@@ -357,5 +363,5 @@ kinds:
     title: The base system's sshd: its banner, settings, keys and host certificates
     needs: verb
     uses: jail path args text user safe
-    values: verb=banner|set|authorize|unauthorize|sign
+    values: verb=banner|set|authorize|unauthorize|sign|user-cas
     destroys: verb=unauthorize

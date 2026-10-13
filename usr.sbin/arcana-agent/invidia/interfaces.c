@@ -286,6 +286,7 @@ do_interfaces(struct work *w, uint8_t family, struct arc_network_rsp *rsp)
 	if (s6 != -1)
 		close(s6);
 	step_end(w, step, true, "%d interfaces", n);
+	carp_read(top, arr);
 	put(top, "interfaces", arr);
 	/* When the counters were read, to make rates of two readings. */
 	clock_gettime(CLOCK_MONOTONIC, &ts);

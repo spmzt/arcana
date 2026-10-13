@@ -44,6 +44,7 @@
 #define	SSHD_CONFIG	SSH_DIR "/sshd_config"
 #define	BEFORE		"sshd_config.arcana-before"
 #define	BANNER		SSH_DIR "/banner"
+#define	USER_CAS	SSH_DIR "/trusted_user_ca_keys"
 #define	TEXT_MAX	(64 * 1024)
 
 /* What is read of sshd -T, and what may be set from here. */
@@ -538,37 +539,56 @@ users(struct work *w, struct pwent **vp)
 	return (n);
 }
 
+/* A path with no part that is empty, . or .. after its first /. */
+static bool
+plain_path(const char *p)
+{
+	const char	*e;
+	size_t		 n;
+
+	if (*p == '/')
+		p++;
+	if (*p == '\0')
+		return (true);
+	for (; ; p = e + 1) {
+		e = p + strcspn(p, "/");
+		n = (size_t)(e - p);
+		if (n == 0 || (n == 1 && p[0] == '.') || (n == 2 && p[0] ==
+		    '.' && p[1] == '.'))
+			return (false);
+		if (*e == '\0')
+			return (true);
+	}
+}
+
 /* The user's authorized_keys, by AuthorizedKeysFile's first. */
 static const char *
 akeys_path(struct work *w, const struct pwent *u, const ucl_object_t *set)
 {
 	const char	*f, *s;
 	char		*out;
-	size_t		 o, len;
+	size_t		 len;
 
 	f = first(set, "authorizedkeysfile");
 	if (f == NULL || f[0] == '\0' || strcasecmp(f, "none") == 0)
 		f = ".ssh/authorized_keys";
 	len = strcspn(f, " \t");
-	out = wmalloc(w, len * 64 + strlen(u->home) + 2);
-	o = 0;
-	if (f[0] != '/' && f[0] != '%') {
-		o = (size_t)sprintf(out, "%s/", u->home);
-	}
-	for (s = f; (size_t)(s - f) < len; s++) {
+	/* What a jail's passwd and sshd say is the jail's: the path is
+	 * made a piece at a time, as long as it comes out. */
+	out = f[0] != '/' && f[0] != '%' ? wfmt(w, "%s/", u->home) : wstrdup(w, "");
+	for (s = f; (size_t)(s - f) < len && strlen(out) < MAXPATHLEN; s++) {
 		if (*s == '%' && (size_t)(s - f) + 1 < len) {
 			s++;
 			if (*s == 'h')
-				o += (size_t)sprintf(out + o, "%s", u->home);
+				out = wfmt(w, "%s%s", out, u->home);
 			else if (*s == 'u')
-				o += (size_t)sprintf(out + o, "%s", u->name);
+				out = wfmt(w, "%s%s", out, u->name);
 			else if (*s == '%')
-				out[o++] = '%';
+				out = wfmt(w, "%s%%", out);
 		} else
-			out[o++] = *s;
+			out = wfmt(w, "%s%c", out, *s);
 	}
-	out[o] = '\0';
-	return (out);
+	return (strlen(out) < MAXPATHLEN ? out : NULL);
 }
 
 /* --- the read -------------------------------------------------------- */
@@ -637,18 +657,24 @@ do_ssh(struct work *w, struct arc_ssh_rsp *rsp)
 		ucl_object_insert_key(u, ucl_object_fromstring(pw[i].shell),
 		    "shell", 0, false);
 		p = akeys_path(w, &pw[i], set);
-		ucl_object_insert_key(u, ucl_object_fromstring(p), "keys_file",
-		    0, false);
-		text = scope_slurp(w, at(w, p), NULL);
+		ucl_object_insert_key(u, ucl_object_fromstring(p != NULL ? p :
+		    ""), "keys_file", 0, false);
+		/* Only a plain path is read: no part of it .. or . */
+		text = p != NULL && p[0] == '/' && plain_path(p) ?
+		    scope_slurp(w, at(w, p), NULL) : NULL;
 		ucl_object_insert_key(u, keys_of(w, text), "keys", 0, false);
 		ucl_array_append(ul, u);
 	}
 	ucl_object_insert_key(top, ul, "users", 0, false);
 	/* The CA keys whose user certificates are taken. */
 	if ((p = first(set, "trustedusercakeys")) != NULL && strcasecmp(p,
-	    "none") != 0 && (text = scope_slurp(w, at(w, p), NULL)) != NULL)
+	    "none") != 0 && (text = scope_slurp(w, at(w, p), &n)) != NULL) {
 		ucl_object_insert_key(top, keys_of(w, text), "user_cas", 0,
 		    false);
+		if (n <= TEXT_MAX)
+			ucl_object_insert_key(top, ucl_object_fromlstring(text,
+			    n), "user_cas_text", 0, false);
+	}
 	ucl_object_insert_key(top, set, "settings", 0, false);
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	rsp->json = json != NULL ? wtext(w, wstrdup(w, json)) : NULL;
@@ -714,11 +740,18 @@ ssh_check(const struct arc_job_spec *sp)
 	int	k;
 
 	if (sp->verb == NULL)
-		return ("ssh: a verb, banner, set, authorize, unauthorize or "
-		    "sign");
+		return ("ssh: a verb, banner, user-cas, set, authorize, "
+		    "unauthorize or sign");
 	if (strcmp(sp->verb, "banner") == 0) {
 		if (sp->text != NULL && strlen(sp->text) > TEXT_MAX)
 			return ("ssh: a banner of 64 KiB at most");
+		return (NULL);
+	}
+	if (strcmp(sp->verb, "user-cas") == 0) {
+		if (sp->text != NULL && strlen(sp->text) > TEXT_MAX)
+			return ("ssh: the CA keys, 64 KiB at most");
+		if (sp->text != NULL && strstr(sp->text, "PRIVATE KEY") != NULL)
+			return ("ssh: the CAs' public keys, not a private one");
 		return (NULL);
 	}
 	if (strcmp(sp->verb, "set") == 0) {
@@ -763,12 +796,17 @@ ssh_check(const struct arc_job_spec *sp)
 		if (sp->text == NULL || strstr(sp->text, "PRIVATE KEY") == NULL)
 			return ("ssh: the CA's private key, as ssh-keygen wrote "
 			    "it");
+		/* None would be a certificate for any name at all. */
+		if (sp->names.n == 0)
+			return ("ssh: the names clients reach it by, one at "
+			    "least: a certificate for none is good for any");
 		for (i = 0; i < sp->names.n; i++)
 			if (!word_ok(sp->names.v[i], "._-*"))
 				return ("ssh: a principal is a host's name");
 		return (NULL);
 	}
-	return ("ssh: a verb, banner, set, authorize, unauthorize or sign");
+	return ("ssh: a verb, banner, user-cas, set, authorize, unauthorize "
+	    "or sign");
 }
 
 /*
@@ -832,7 +870,10 @@ conf_edit(struct work *w, const char *text, const char *key,
 	return (out);
 }
 
-/* sshd reloaded where it runs; one that does not is left. */
+/*
+ * sshd reloaded where it runs, enabled in rc.conf or not (reload alone
+ * says it cannot and exits 0); one that does not run is left.
+ */
 static int
 reload(struct work *w, const char **errp)
 {
@@ -841,14 +882,14 @@ reload(struct work *w, const char **errp)
 
 	argv[0] = (char *)(uintptr_t)opts.service_bin;
 	argv[1] = (char *)(uintptr_t)"sshd";
-	argv[2] = (char *)(uintptr_t)"reload";
+	argv[2] = (char *)(uintptr_t)"onereload";
 	argv[3] = NULL;
 	if (run_exec(w, scope_jexec(w, argv), &res) == 0)
 		return (0);
 	if ((res.err != NULL && strstr(res.err, "not running") != NULL) ||
 	    (res.out != NULL && strstr(res.out, "not running") != NULL))
 		return (0);
-	*errp = wtext(w, exec_error(w, &res, "service sshd reload"));
+	*errp = wtext(w, exec_error(w, &res, "service sshd onereload"));
 	return (-1);
 }
 
@@ -903,6 +944,9 @@ ssh_undo(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	if (strcmp(sp->verb, "banner") == 0)
 		(void)scope_rename(w, at(w, BANNER), "banner.arcana-before",
 		    "banner");
+	if (strcmp(sp->verb, "user-cas") == 0)
+		(void)scope_rename(w, at(w, USER_CAS),
+		    "trusted_user_ca_keys.arcana-before", "trusted_user_ca_keys");
 	return (reload(w, errp));
 }
 
@@ -963,9 +1007,12 @@ authorize(struct work *w, const struct arc_job_spec *sp, bool add,
 	set = settings(w, &why);
 	path = akeys_path(w, &pw[i], set);
 	ucl_object_unref(set);
-	if (strncmp(path, pw[i].home, strlen(pw[i].home)) != 0 ||
-	    path[strlen(pw[i].home)] != '/') {
-		*errp = wfmt(w, "ssh: %s is not in %s's home", path, sp->user);
+	if (path == NULL || pw[i].home[0] != '/' || strncmp(path, pw[i].home,
+	    strlen(pw[i].home)) != 0 || path[strlen(pw[i].home)] != '/' ||
+	    !plain_path(pw[i].home) || !plain_path(path + strlen(
+	    pw[i].home))) {
+		*errp = wfmt(w, "ssh: %s's keys file is not a path in their "
+		    "home", sp->user);
 		return (-1);
 	}
 	name = strrchr(path, '/') + 1;
@@ -992,7 +1039,7 @@ authorize(struct work *w, const struct arc_job_spec *sp, bool add,
 			return (-1);
 		}
 		dfd = openat(hfd, dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW |
-		    O_CLOEXEC);
+		    O_CLOEXEC | O_RESOLVE_BENEATH);
 		close(hfd);
 		if (dfd == -1) {
 			*errp = wfmt(w, "ssh: %s/%s: %s", pw[i].home, dir,
@@ -1006,23 +1053,37 @@ authorize(struct work *w, const struct arc_job_spec *sp, bool add,
 		*errp = wfmt(w, "ssh: %s is not %s's", path, sp->user);
 		return (-1);
 	}
-	/* What is there now, read without a link. */
+	/*
+	 * What is there now: read without a link, and not blocking on a
+	 * FIFO; a file with links of another name (a hard link to one the
+	 * user cannot read) or of another's is left alone.
+	 */
 	text = NULL;
 	len = 0;
 	{
 		int	fd;
 
-		if ((fd = openat(dfd, name, O_RDONLY | O_NOFOLLOW |
+		if ((fd = openat(dfd, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK |
 		    O_CLOEXEC)) != -1) {
-			if (fstat(fd, &sb) == 0 && S_ISREG(sb.st_mode) &&
-			    sb.st_size <= 1024 * 1024) {
-				text = wmalloc(w, (size_t)sb.st_size + 1);
-				len = (size_t)read(fd, text, (size_t)sb.st_size);
-				if (len > (size_t)sb.st_size)
-					len = 0;
-				text[len] = '\0';
+			if (fstat(fd, &sb) != 0 || !S_ISREG(sb.st_mode) ||
+			    sb.st_nlink != 1 || (sb.st_uid != pw[i].uid &&
+			    sb.st_uid != 0) || sb.st_size > 1024 * 1024) {
+				close(fd);
+				close(dfd);
+				*errp = wfmt(w, "ssh: %s is not a file of %s's "
+				    "alone: left as it is", path, sp->user);
+				return (-1);
 			}
+			text = wmalloc(w, (size_t)sb.st_size + 1);
+			len = (size_t)read(fd, text, (size_t)sb.st_size);
+			if (len > (size_t)sb.st_size)
+				len = 0;
+			text[len] = '\0';
 			close(fd);
+		} else if (errno != ENOENT) {
+			close(dfd);
+			*errp = wfmt(w, "ssh: %s: %s", path, strerror(errno));
+			return (-1);
 		}
 	}
 	if (text == NULL)
@@ -1092,10 +1153,89 @@ authorize(struct work *w, const struct arc_job_spec *sp, bool add,
 	return (0);
 }
 
+/* A file of the host's own, whole: one of the signing's directory. */
+static char *
+slurp_host(struct work *w, const char *path, size_t *lenp)
+{
+	struct stat	 sb;
+	char		*buf;
+	ssize_t		 n;
+	int		 fd;
+
+	if ((fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK |
+	    O_CLOEXEC)) == -1)
+		return (NULL);
+	if (fstat(fd, &sb) == -1 || !S_ISREG(sb.st_mode) || sb.st_size >
+	    TEXT_MAX) {
+		close(fd);
+		return (NULL);
+	}
+	buf = wmalloc(w, (size_t)sb.st_size + 1);
+	n = read(fd, buf, (size_t)sb.st_size);
+	close(fd);
+	if (n != sb.st_size)
+		return (NULL);
+	buf[n] = '\0';
+	*lenp = (size_t)n;
+	return (buf);
+}
+
+/* A file of dir, written whole, root's alone. */
+static int
+put_tmp(const char *path, const char *text, size_t len)
+{
+	int	fd, e;
+
+	if ((fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
+	    O_CLOEXEC, 0600)) == -1)
+		return (-1);
+	if (write(fd, text, len) != (ssize_t)len) {
+		e = errno;
+		close(fd);
+		(void)unlink(path);
+		errno = e;
+		return (-1);
+	}
+	close(fd);
+	return (0);
+}
+
+/* The CA key's file overwritten and taken away, and the rest of dir. */
+static void
+tmp_gone(struct work *w, const char *dir, const char *ca, int nkeys)
+{
+	struct stat	sb;
+	char		zero[4096];
+	int		fd, i;
+
+	if ((fd = open(ca, O_WRONLY | O_NOFOLLOW | O_CLOEXEC)) != -1) {
+		off_t	left;
+		ssize_t	wr;
+
+		memset(zero, 0, sizeof(zero));
+		if (fstat(fd, &sb) == 0)
+			for (left = sb.st_size; left > 0; left -= wr)
+				if ((wr = write(fd, zero, (size_t)MIN(left,
+				    (off_t)sizeof(zero)))) <= 0)
+					break;
+		(void)fsync(fd);
+		close(fd);
+	}
+	(void)unlink(ca);
+	for (i = 0; i < nkeys; i++) {
+		(void)unlink(wfmt(w, "%s/k%d.pub", dir, i));
+		(void)unlink(wfmt(w, "%s/k%d-cert.pub", dir, i));
+	}
+	(void)rmdir(dir);
+}
+
 /*
  * Each host key signed by the CA key given, its certificate beside it,
- * and sshd told of each (HostCertificate).  The key is in /etc/ssh only
- * while ssh-keygen reads it.
+ * and sshd told of each (HostCertificate).  The signing is the host's,
+ * in a directory of /tmp only root reads: the CA's key is there only
+ * while ssh-keygen reads it, and never in a jail, whose root could
+ * read it there; of a jail, only its public host keys come out, and
+ * only their certificates go in.
  */
 static int
 sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
@@ -1104,26 +1244,39 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	ucl_object_t		*set;
 	const ucl_object_t	*v;
 	ucl_object_iter_t	 it;
-	const char		*why, *prog, *caf, *ca, *id, *p, *pr;
-	char			*argv[16], *text, host[MAXHOSTNAMELEN];
+	const char		*why, *prog, *ca, *id, *p, *pr, *pub, *cert;
+	char			*argv[16], *text, host[MAXHOSTNAMELEN],
+				 dir[MAXPATHLEN];
 	size_t			 i, len;
-	int			 n, rc, signed_;
+	int			 n, rc, signed_, k;
 
 	if ((prog = tool(w, "ssh-keygen")) == NULL) {
 		*errp = "there is no ssh-keygen here";
 		return (-1);
 	}
-	ca = wfmt(w, ".arcana-ca.%08x", arc4random());
-	caf = at(w, wfmt(w, "%s/%s", SSH_DIR, ca));
-	len = strlen(sp->text);
-	text = wfmt(w, "%s%s", sp->text, len > 0 && sp->text[len - 1] != '\n' ?
-	    "\n" : "");
-	if (scope_replace(w, caf, text, strlen(text), 0600, NULL) != 0) {
-		explicit_bzero(text, strlen(text));
-		*errp = wfmt(w, "%s: %s", SSH_DIR, strerror(errno));
+	snprintf(dir, sizeof(dir), "%s/tmp", opts.tools_dir != NULL ?
+	    opts.tools_dir : "");
+	(void)mkdir(dir, 0755);
+	strlcat(dir, "/.arcana-sign.XXXXXXXX", sizeof(dir));
+	if (mkdtemp(dir) == NULL) {
+		*errp = wfmt(w, "%s: %s", dir, strerror(errno));
 		return (-1);
 	}
-	explicit_bzero(text, strlen(text));
+	ca = wfmt(w, "%s/ca", dir);
+	/* A copy of its own, with its last line ended, zeroed after:
+	 * not by wfmt, whose own copy is not. */
+	len = strlen(sp->text);
+	text = wmalloc(w, len + 2);
+	memcpy(text, sp->text, len);
+	if (len == 0 || text[len - 1] != '\n')
+		text[len++] = '\n';
+	rc = put_tmp(ca, text, len);
+	explicit_bzero(text, len);
+	if (rc != 0) {
+		*errp = wfmt(w, "%s: %s", ca, strerror(errno));
+		(void)rmdir(dir);
+		return (-1);
+	}
 	if (w->jail != NULL)
 		id = w->jail;
 	else {
@@ -1135,19 +1288,28 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		pr = pr == NULL ? sp->names.v[i] : wfmt(w, "%s,%s", pr,
 		    sp->names.v[i]);
 	set = settings(w, &why);
-	signed_ = 0;
+	signed_ = k = 0;
 	rc = 0;
 	it = NULL;
 	while (rc == 0 && (v = ucl_object_iterate(ucl_object_lookup(set,
 	    "hostkey"), &it, true)) != NULL) {
 		p = ucl_object_tostring(v);
-		if (scope_slurp(w, at(w, wfmt(w, "%s.pub", p)), NULL) == NULL)
+		if ((text = scope_slurp(w, at(w, wfmt(w, "%s.pub", p)), &len)) ==
+		    NULL)
 			continue;
+		pub = wfmt(w, "%s/k%d.pub", dir, k);
+		cert = wfmt(w, "%s/k%d-cert.pub", dir, k);
+		k++;
+		if (put_tmp(pub, text, len) != 0) {
+			*errp = wfmt(w, "%s: %s", pub, strerror(errno));
+			rc = -1;
+			break;
+		}
 		n = 0;
 		argv[n++] = (char *)(uintptr_t)prog;
 		argv[n++] = (char *)(uintptr_t)"-q";
 		argv[n++] = (char *)(uintptr_t)"-s";
-		argv[n++] = (char *)(uintptr_t)caf;
+		argv[n++] = (char *)(uintptr_t)ca;
 		argv[n++] = (char *)(uintptr_t)"-I";
 		argv[n++] = (char *)(uintptr_t)wfmt(w, "arcana:%s", id);
 		argv[n++] = (char *)(uintptr_t)"-h";
@@ -1157,17 +1319,26 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		}
 		argv[n++] = (char *)(uintptr_t)"-V";
 		argv[n++] = (char *)(uintptr_t)"+52w";
-		argv[n++] = (char *)(uintptr_t)at(w, wfmt(w, "%s.pub", p));
+		argv[n++] = (char *)(uintptr_t)pub;
 		argv[n] = NULL;
-		if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
+		/* The host's ssh-keygen: run_exec puts it in no jail. */
+		if (run_exec(w, argv, &res) != 0) {
 			*errp = res.errlen > 0 ? wfmt(w, "ssh-keygen: %s",
 			    wstrndup(w, res.err, strcspn(res.err, "\r\n"))) :
 			    wtext(w, exec_error(w, &res, "ssh-keygen"));
 			rc = -1;
-		} else
-			signed_++;
+			break;
+		}
+		if ((text = slurp_host(w, cert, &len)) == NULL ||
+		    scope_replace(w, at(w, wfmt(w, "%s-cert.pub", p)), text,
+		    len, 0644, NULL) != 0) {
+			*errp = wfmt(w, "%s-cert.pub: %s", p, strerror(errno));
+			rc = -1;
+			break;
+		}
+		signed_++;
 	}
-	(void)scope_rename(w, caf, ca, NULL);
+	tmp_gone(w, dir, ca, k);
 	if (rc != 0) {
 		ucl_object_unref(set);
 		return (-1);
@@ -1197,6 +1368,62 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	return (conf_put(w, text, errp));
 }
 
+/*
+ * The CA keys whose user certificates sshd takes: each line a public
+ * key, a comment or blank; none, the TrustedUserCAKeys line taken away.
+ */
+static int
+user_cas(struct work *w, const char *text, const char *conf,
+    const char **errp)
+{
+	ucl_object_t	*k;
+	const char	*l, *e;
+	char		*line;
+	int		 nkeys;
+
+	if (text == NULL || text[strspn(text, " \t\r\n")] == '\0')
+		return (conf_put(w, conf_edit(w, conf, "TrustedUserCAKeys",
+		    NULL, false), errp));
+	nkeys = 0;
+	for (l = text; *l != '\0'; l = *e != '\0' ? e + 1 : e) {
+		e = l + strcspn(l, "\n");
+		line = wstrndup(w, l, (size_t)(e - l));
+		if (line[strspn(line, " \t\r")] == '\0' || line[strspn(line,
+		    " \t")] == '#')
+			continue;
+		k = key_obj(w, line);
+		if (k == NULL || ucl_object_lookup(k, "options") != NULL ||
+		    ucl_object_lookup(k, "certificate") != NULL ||
+		    strstr(ucl_object_tostring(ucl_object_lookup(k, "type")),
+		    "-cert-") != NULL) {
+			if (k != NULL)
+				ucl_object_unref(k);
+			*errp = wfmt(w, "not a CA's public key: %.60s", line);
+			return (-1);
+		}
+		ucl_object_unref(k);
+		nkeys++;
+	}
+	if (nkeys == 0) {
+		*errp = "no key among the lines";
+		return (-1);
+	}
+	if (text[strlen(text) - 1] != '\n')
+		text = wfmt(w, "%s\n", text);
+	if (scope_replace(w, at(w, USER_CAS), text, strlen(text), 0644,
+	    "trusted_user_ca_keys.arcana-before") != 0) {
+		*errp = wfmt(w, "%s: %s", USER_CAS, strerror(errno));
+		return (-1);
+	}
+	if (conf_put(w, conf_edit(w, conf, "TrustedUserCAKeys", USER_CAS,
+	    false), errp) != 0) {
+		(void)scope_rename(w, at(w, USER_CAS),
+		    "trusted_user_ca_keys.arcana-before", "trusted_user_ca_keys");
+		return (-1);
+	}
+	return (0);
+}
+
 int
 do_ssh_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
@@ -1210,12 +1437,20 @@ do_ssh_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (authorize(w, sp, true, errp));
 	if (strcmp(sp->verb, "unauthorize") == 0)
 		return (authorize(w, sp, false, errp));
-	if (strcmp(sp->verb, "sign") == 0)
-		return (sign(w, sp, errp));
+	if (strcmp(sp->verb, "sign") == 0) {
+		int	rc;
+
+		rc = sign(w, sp, errp);
+		/* The CA's key is not kept with the job, which is. */
+		explicit_bzero((char *)(uintptr_t)sp->text, strlen(sp->text));
+		return (rc);
+	}
 	if ((text = scope_slurp(w, at(w, SSHD_CONFIG), NULL)) == NULL) {
 		*errp = wfmt(w, "%s: %s", SSHD_CONFIG, strerror(errno));
 		return (-1);
 	}
+	if (strcmp(sp->verb, "user-cas") == 0)
+		return (user_cas(w, sp->text, text, errp));
 	if (strcmp(sp->verb, "banner") == 0) {
 		if (sp->text == NULL || sp->text[0] == '\0')
 			text = conf_edit(w, text, "Banner", "none", false);

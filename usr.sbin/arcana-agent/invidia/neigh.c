@@ -45,6 +45,7 @@ family_of(const char *s)
 {
 	struct in_addr	a4;
 	struct in6_addr	a6;
+	const char	*z;
 	char		buf[INET6_ADDRSTRLEN + IF_NAMESIZE + 2];
 
 	if (s == NULL || strlen(s) >= sizeof(buf))
@@ -52,6 +53,17 @@ family_of(const char *s)
 	if (inet_pton(AF_INET, s, &a4) == 1)
 		return (4);
 	snprintf(buf, sizeof(buf), "%s", s);
+	/* A zone is an interface's name, and nothing else: it goes into
+	 * rc.conf, which sh reads. */
+	if ((z = strchr(s, '%')) != NULL) {
+		z++;
+		if (*z == '\0' || strlen(z) >= IF_NAMESIZE)
+			return (0);
+		for (; *z != '\0'; z++)
+			if (!isalnum((unsigned char)*z) && strchr("._-", *z) ==
+			    NULL)
+				return (0);
+	}
 	buf[strcspn(buf, "%")] = '\0';
 	return (inet_pton(AF_INET6, buf, &a6) == 1 ? 6 : 0);
 }

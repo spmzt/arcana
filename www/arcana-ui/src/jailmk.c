@@ -28,6 +28,7 @@ static struct {
 	ucl_object_t	*ifs;		/* its interfaces */
 	char		 edit[72];	/* the template edited, "" a new one */
 	char		 rm[72];	/* the jail taken away */
+	char		 file[72];	/* the jail whose file is changed */
 } jm;
 
 static void
@@ -322,7 +323,11 @@ jailmk_modal(struct html *h)
 			h_txt(h, jstr(o, "name"));
 			h_raw(h, "</b><small class=\"dim\">.conf</small></td><td "
 			    "class=\"acts\"><button type=\"button\" class=\"icon\" "
-			    "data-act=\"jm-rm\" title=\"Stop it and take its file "
+			    "data-act=\"jm-file-edit\" title=\"Change its file\"");
+			h_attr(h, "data-arg", jstr(o, "name"));
+			h_raw(h, ">&#9998;</button><button type=\"button\" "
+			    "class=\"icon\" data-act=\"jm-rm\" title=\"Stop it and "
+			    "take its file "
 			    "away, its dataset with it when asked\"");
 			h_attr(h, "data-arg", jstr(o, "name"));
 			h_raw(h, ">×</button></td></tr>");
@@ -352,6 +357,28 @@ jailmk_modal(struct html *h)
 		h_raw(h, t != NULL ? " readonly" : " autofocus");
 		h_raw(h, "></label><label>Lines<textarea name=\"text\" rows=\"8\" "
 		    "spellcheck=\"false\">");
+		h_txt(h, t != NULL && jstr(t, "text") != NULL ? jstr(t, "text") :
+		    "");
+		h_raw(h, "</textarea></label>");
+		return (true);
+	}
+	case MODAL_JAIL_FILE: {
+		const ucl_object_t	*t = NULL;
+
+		it = NULL;
+		while ((o = ucl_object_iterate(jget(jm.files, "jails"), &it,
+		    true)) != NULL)
+			if (jstr(o, "name") != NULL && strcmp(jstr(o, "name"),
+			    jm.file) == 0)
+				t = o;
+		h_raw(h, "<form data-form=\"jm-file\"><h2>");
+		h_txt(h, jm.file);
+		h_raw(h, "<small class=\"dim\">.conf</small></h2><p>Read back "
+		    "by <code>jail -e</code> as this one jail before it is kept, "
+		    "the file before kept beside as <code>.arcana.bak</code>. A "
+		    "running jail keeps its path, and takes the rest when it is "
+		    "restarted.</p><label>The file<textarea name=\"text\" rows="
+		    "\"14\" class=\"mono\" spellcheck=\"false\">");
 		h_txt(h, t != NULL && jstr(t, "text") != NULL ? jstr(t, "text") :
 		    "");
 		h_raw(h, "</textarea></label>");
@@ -495,6 +522,23 @@ jailmk_form(const char *form, const ucl_object_t *f)
 		app.modal = MODAL_NONE;
 		return (true);
 	}
+	if (strcmp(form, "jm-file") == 0) {
+		v = jstr(f, "text") != NULL ? jstr(f, "text") : "";
+		if (v[strspn(v, " \t\r\n")] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "The "
+			    "jail's file: to take it away, use ×");
+			return (true);
+		}
+		q1 = json_quote(jm.file);
+		q2 = json_quote(v);
+		snprintf(title, sizeof(title), "jail edit %s", jm.file);
+		send(s, title, "\"verb\":\"edit\",\"jail\":%s,\"text\":%s", q1,
+		    q2);
+		free(q1);
+		free(q2);
+		app.modal = MODAL_NONE;
+		return (true);
+	}
 	if (strcmp(form, "jm-remove") == 0) {
 		v = jstr(f, "ds") != NULL ? jstr(f, "ds") : "";
 		q1 = json_quote(jm.rm);
@@ -632,6 +676,9 @@ jailmk_action(const char *act, const char *arg, const char *value)
 		send(s, title, "\"verb\":\"untemplate\",\"args\":[%s]", q);
 		free(q);
 		app.modal = MODAL_NONE;
+	} else if (strcmp(act, "jm-file-edit") == 0) {
+		snprintf(jm.file, sizeof(jm.file), "%s", arg);
+		app.modal = MODAL_JAIL_FILE;
 	} else if (strcmp(act, "jm-rm") == 0) {
 		snprintf(jm.rm, sizeof(jm.rm), "%s", arg);
 		app.modal = MODAL_JAIL_REMOVE;

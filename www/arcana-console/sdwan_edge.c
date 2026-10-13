@@ -7348,6 +7348,9 @@ rekey_set(ucl_object_t *st, const char *id, const char *state,
 	pthread_mutex_lock(&st_lock);
 	if (!applying)
 		state_save(st);
+	/* Ended: no reader sees it done and still turning. */
+	if (strcmp(state, "running") != 0)
+		rekeying = false;
 	pthread_mutex_unlock(&st_lock);
 }
 

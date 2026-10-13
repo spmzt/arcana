@@ -135,7 +135,7 @@ start|onestart)	touch "running.\$name"; echo "Starting \$name." ;;
 stop)		rm -f "running.\$name"; echo "Stopping \$name." ;;
 restart)	[ -f slow ] && sleep 2
 		touch "running.\$name"; echo "Restarting \$name." ;;
-reload)		echo "Reloading \$name." ;;
+reload|onereload)	echo "Reloading \$name." ;;
 describe)	echo "The \$name daemon." ;;
 extracommands)	echo "reload configtest" ;;
 *)		echo "fake-service: \$*" >&2; exit 2 ;;
@@ -196,6 +196,8 @@ route-neighs)
 	[ "\$1" != 6 ] && echo '{"family":"inet","address":"10.0.0.2","lladdr":"58:9c:fc:00:00:02","interface-name":"em0","state":"reachable","next":120}' | grep -e "\${2#-}"
 	[ "\$1" != 4 ] && echo '{"family":"inet6","address":"fe80::1%em0","lladdr":"58:9c:fc:00:00:01","interface-name":"em0","state":"stale","router":true}' | grep -e "\${2#-}"
 	echo "#total 2" ;;
+carp-set)
+	echo "carp-set \$* key=\$(cat)" >> $(pwd)/carp.log ;;
 route-add|route-del)
 	echo "\$jid \$verb \$*" >> $(pwd)/route.log
 	case "\$1" in 10.66.0.0/16) echo "10.66.0.0/16: the route is there already" >&2; exit 1 ;; esac ;;
@@ -3693,7 +3695,14 @@ observe_body()
 		print (gsub(/,/, "", s) + 1 == 9 + 2 * nn + 2 * nd) ? "ok" : "width " nn " " nd
 	}' h.json
 	last=$(sed -E 's/.*\[([0-9]+),[^]]*\]\]\}.*/\1/' h.json)
-	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history "$last"
+	# The sampler may have looked again since; what comes is only that.
+	atf_check -o save:after.json "$JGC" -c "$SOCK" history "$last"
+	atf_check -o inline:'ok\n' awk -v last="$last" '{
+		match($0, /"samples":\[.*\]/); s = substr($0, RSTART + 11, RLENGTH - 12)
+		n = split(s, a, /\],?\[?/); ok = 1
+		for (i = 1; i <= n; i++) { sub(/^\[/, "", a[i]); split(a[i], f, ","); if (a[i] != "" && f[1] + 0 <= last) ok = 0 }
+		print ok ? "ok" : "old " s
+	}' after.json
 	# How it samples is set, and written down for the next start: fewer
 	# kept are the newest; none kept is no sampling and no memory.
 	# A limit crossed is an event, once, until it is crossed back; told
@@ -4731,6 +4740,16 @@ EOS
 	# A pool that is not there is not one to make anything in.
 	atf_check -s exit:1 -o match:'there is no pool nopool' "$JGC" -c "$SOCK" jailconf make web3 web2.conf nopool/jails/web3 tank/jails/base@15.0 clone /usr/jails/web3
 	atf_check -o not-match:'destroy -r nopool' -o not-match:'create' cat zfs.log
+	# A made jail's file changed: read back first, the one before kept;
+	# one of another jail refused, the file left; none is no jail made.
+	printf '.include "%s/jail.conf";\nwww {\n\tdevfs_ruleset = 5;\n\tip4.addr = "lo0|127.0.0.9";\n\t.include "%s/jail.conf.d/certbot.inc";\n}\n' "$d" "$d" > www2.conf
+	atf_check -o match:'done +jail edit www$' "$JGC" -c "$SOCK" jailconf edit www www2.conf
+	atf_check cmp -s www2.conf "$d/jail.conf.d/www.conf"
+	atf_check cmp -s www.conf "$d/jail.conf.d/www.conf.arcana.bak"
+	atf_check -s exit:1 -o match:'the file defines mail, not the one jail www' "$JGC" -c "$SOCK" jailconf edit www mail.conf
+	atf_check cmp -s www2.conf "$d/jail.conf.d/www.conf"
+	atf_check -s exit:1 -o match:'nosuch.conf: No such file' "$JGC" -c "$SOCK" jailconf edit nosuch www2.conf
+	test -e "$d/jail.conf.d/nosuch.conf" && atf_fail "edit made a jail"
 	# The template kept while a jail includes it.
 	atf_check -s exit:1 -o match:'certbot.inc is included by www.conf: kept' "$JGC" -c "$SOCK" jailconf untemplate certbot
 	# Checked before queued: names, datasets, the copy, the path.
@@ -4747,6 +4766,53 @@ EOS
 	atf_check -o match:'done +jail untemplate certbot' "$JGC" -c "$SOCK" jailconf untemplate certbot
 }
 jail_conf_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case carp cleanup
+carp_head()
+{
+	atf_set "descr" "A carp(4) address: its vhid set by the helper with the key on its input, the address under it, kept in rc.conf with carp in kld_list; changed there; taken away; what is not one refused"
+}
+carp_body()
+{
+	cat > fake-ifconfig <<EOS
+#!/bin/sh
+echo "\$*" >> $(pwd)/ifconfig.log
+exit 0
+EOS
+	chmod +x fake-ifconfig
+	start_daemon
+	echo 'sekrit' | atf_check -o match:'done +lo0: carp add vhid 3 10.0.0.100/24$' \
+	    -o not-match:'sekrit' "$JGC" -t -p -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=3 advskew=20 key
+	atf_check -o inline:'carp-set lo0 3 advskew=20 key=sekrit\n' cat carp.log
+	atf_check -o match:'^lo0 inet 10.0.0.100/24 vhid 3 alias$' cat ifconfig.log
+	atf_check -o match:'^ifconfig_lo0_alias0="inet vhid 3 advskew 20 pass sekrit 10.0.0.100/24"$' \
+	    -o match:'^kld_list="carp"$' cat rc.conf
+	# Changed: kept as it is now, the key as it was.
+	atf_check -o match:'done +lo0: carp set vhid 3$' \
+	    "$JGC" -p -c "$SOCK" carp set lo0 vhid=3 advskew=40 state=backup
+	atf_check -o match:'^carp-set lo0 3 advskew=40 state=backup key=$' tail -1 carp.log
+	atf_check -o match:'^ifconfig_lo0_alias0="inet vhid 3 advskew 40 pass sekrit 10.0.0.100/24"$' cat rc.conf
+	# Taken away, from rc.conf too.
+	atf_check -o match:'done +lo0: carp remove vhid 3 10.0.0.100' \
+	    "$JGC" -p -c "$SOCK" carp remove lo0 10.0.0.100 vhid=3
+	atf_check -o match:'^lo0 inet 10.0.0.100 -alias$' tail -1 ifconfig.log
+	atf_check -o not-match:'ifconfig_lo0_alias' cat rc.conf
+	# What is not one.
+	atf_check -s exit:1 -e match:'a vhid, 1 to 255' -o ignore \
+	    "$JGC" -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=0
+	atf_check -s exit:1 -e match:'the words are vhid' -o ignore \
+	    "$JGC" -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=3 peer=10.0.0.9
+	echo 'a key with spaces' | atf_check -s exit:1 -e match:'19 characters at most' -o ignore \
+	    "$JGC" -c "$SOCK" carp add lo0 10.0.0.100/24 vhid=3 key
+	atf_check -s exit:1 -e match:'not in safe mode' -o ignore \
+	    "$JGC" -s -c "$SOCK" carp set lo0 vhid=3 advskew=1
+	atf_check -s exit:1 -e match:'state master or backup' -o ignore \
+	    "$JGC" -c "$SOCK" carp set lo0 vhid=3 state=init
+}
+carp_cleanup()
 {
 	stop_daemon
 }
@@ -4787,6 +4853,10 @@ ndp -s fe80::1%em0 00:11:22:33:44:77
 	    "$JGC" -c "$SOCK" neigh add 192.0.2.7 00:11:22
 	atf_check -s exit:1 -e match:'an IPv4 or IPv6 address' -o ignore \
 	    "$JGC" -c "$SOCK" neigh add host.example 00:11:22:33:44:55
+	# A zone is an interface's name: nothing for sh to read in rc.conf.
+	atf_check -s exit:1 -e match:'an IPv4 or IPv6 address' -o ignore \
+	    "$JGC" -p -c "$SOCK" neigh add 'fe80::1%";id>x;"' 00:11:22:33:44:55
+	test -e x && atf_fail "ran"
 	atf_check -s exit:1 -e match:'not kept for a boot' -o ignore \
 	    "$JGC" -p -c "$SOCK" neigh add 192.0.2.8 00:11:22:33:44:88 temp
 }
@@ -4987,12 +5057,15 @@ EOT
 	atf_check -o match:'^HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub$' \
 	    cat $R/etc/ssh/sshd_config
 	ls -a $R/etc/ssh | grep -q arcana-ca && atf_fail "the CA key was left"
+	test -z "$(ls -A tools/tmp 2>/dev/null)" || atf_fail "the signing left $(ls -A tools/tmp)"
 	atf_check -o save:list -o match:'"principals":\["lab.example"\]' \
 	    -o match:'"kind":"host"' -o match:'"certificate_used":true' \
 	    "$JGC" -c "$SOCK" sshd
 	grep -qF "\"ca\":\"$cafp\"" list || atf_fail "the CA"
 	atf_check -s exit:1 -e match:"the CA's private key" -o ignore \
 	    "$JGC" -c "$SOCK" sshd sign ca.pub
+	atf_check -s exit:1 -e match:'good for any' -o ignore \
+	    "$JGC" -c "$SOCK" sshd sign ca
 	# In safe mode, unconfirmed: the file before it back.
 	cp $R/etc/ssh/sshd_config before
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sshd set PasswordAuthentication no
@@ -5005,6 +5078,52 @@ EOT
 	atf_check -o match:'not confirmed within 2 s: undone' -s exit:1 \
 	    "$JGC" -c "$SOCK" job 13
 	atf_check -o file:before cat $R/etc/ssh/sshd_config
+	# What passwd and sshd say is the host's or a jail's, not the
+	# agent's to trust: a long home in a keys file of %h four times
+	# read without harm; a keys file outside the home by .. refused;
+	# a keys file of another name too (a hard link) left alone.
+	c=$(printf '%0200d' 0)
+	long=/home/$c/$c/$c/$c
+	mkdir -p "$R$long"
+	printf 'mallory:*:%d:%d:M:%s:/bin/sh\nroot2:*:%d:%d:R:/:/bin/sh\n' \
+	    "$(id -u)" "$(id -g)" "$long" "$(id -u)" "$(id -g)" >> $R/etc/passwd
+	# Before any Match, where sshd -T reads it.
+	{ printf 'AuthorizedKeysFile %%h%%h%%h%%h\n'; cat $R/etc/ssh/sshd_config; } > c.tmp
+	mv c.tmp $R/etc/ssh/sshd_config
+	atf_check -o match:'"name":"mallory"' "$JGC" -c "$SOCK" sshd
+	atf_check -o match:'"name":"alice"' "$JGC" -c "$SOCK" sshd
+	sed -i '' '/^AuthorizedKeysFile/d' $R/etc/ssh/sshd_config
+	{ printf 'AuthorizedKeysFile ../authorized_keys\n'; cat $R/etc/ssh/sshd_config; } > c.tmp
+	mv c.tmp $R/etc/ssh/sshd_config
+	atf_check -s exit:1 -o match:'not a path in their home' \
+	    "$JGC" -c "$SOCK" sshd authorize root2 alice_key.pub
+	sed -i '' '/^AuthorizedKeysFile/d' $R/etc/ssh/sshd_config
+	echo 'secret of another' > secret
+	rm -f $R/home/alice/.ssh/authorized_keys
+	ln secret $R/home/alice/.ssh/authorized_keys
+	atf_check -s exit:1 -o match:'not a file of alice.s alone' \
+	    "$JGC" -c "$SOCK" sshd authorize alice alice_key.pub
+	atf_check -o inline:'secret of another\n' cat secret
+	# The CAs whose user certificates sshd takes.
+	{ echo '# the lab CA'; cat ca.pub; } > cas.txt
+	atf_check -o match:'done +sshd user-cas$' \
+	    "$JGC" -c "$SOCK" sshd user-cas cas.txt
+	atf_check -o file:cas.txt cat $R/etc/ssh/trusted_user_ca_keys
+	atf_check -o match:'^TrustedUserCAKeys /etc/ssh/trusted_user_ca_keys$' \
+	    cat $R/etc/ssh/sshd_config
+	atf_check -o save:list "$JGC" -c "$SOCK" sshd
+	grep -qF "\"user_cas\":[{\"type\":\"ssh-ed25519\",\"fingerprint\":\"$cafp\"" list ||
+	    atf_fail "the user CA"
+	grep -qF '"user_cas_text":"# the lab CA' list || atf_fail "its text"
+	# A certificate is not a CA's key, nor is a private one.
+	atf_check -s exit:1 -o match:"not a CA's public key" "$JGC" -c "$SOCK" \
+	    sshd user-cas $R/etc/ssh/ssh_host_ed25519_key-cert.pub
+	atf_check -s exit:1 -e match:'not a private one' -o ignore \
+	    "$JGC" -c "$SOCK" sshd user-cas ca
+	atf_check -o file:cas.txt cat $R/etc/ssh/trusted_user_ca_keys
+	# None: the line goes.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sshd user-cas -
+	atf_check -o not-match:'TrustedUserCAKeys' cat $R/etc/ssh/sshd_config
 }
 sshd_cleanup()
 {
@@ -5043,8 +5162,15 @@ EOT
 	atf_check -o match:'"source":"ipfw150","filter":"icmp and host 10.0.0.2","packets":1,"limit":5,"seconds":3' \
 	    -o match:'"pcap":"UENBUERBVEE="' -o match:'"bytes":8' -o match:'ICMP echo request' \
 	    "$JGC" -c "$SOCK" capture ipfw150 5 3 icmp and host 10.0.0.2
-	atf_check -o match:'^tcpdump -n -U -i ipfw150 -c 5 -w .*/tmp/\.arcana-capture\.[0-9a-f]*/c\.pcap icmp and host 10\.0\.0\.2$' \
+	atf_check -o match:'^tcpdump -n -U -i ipfw150 -c 5 -w .*/tmp/\.arcana-capture\.[0-9a-f]*/c\.pcap -- icmp and host 10\.0\.0\.2$' \
 	    cat tcpdump.log
+	# No word of the filter is an option of tcpdump's, which runs as
+	# root: -w a file, -z a command.
+	: > tcpdump.log
+	atf_check -o ignore "$JGC" -c "$SOCK" capture em0 1 1 -w /etc/owned -z /bin/sh
+	atf_check -o match:' -w .*/c\.pcap -- -w /etc/owned -z /bin/sh$' cat tcpdump.log
+	atf_check -s exit:1 -e match:"an interface or a tap's name" -o ignore \
+	    "$JGC" -c "$SOCK" capture -z 1 1
 	test -z "$(ls -A tools/tmp)" || atf_fail "left behind: $(ls -A tools/tmp)"
 	atf_check -s exit:1 -e match:'No such device exists' -o ignore \
 	    "$JGC" -c "$SOCK" capture gone0 5 3
@@ -5066,6 +5192,7 @@ atf_init_test_cases()
 	atf_add_test_case network_more
 	atf_add_test_case sdwan
 	atf_add_test_case jail_conf
+	atf_add_test_case carp
 	atf_add_test_case neighbours
 	atf_add_test_case certs
 	atf_add_test_case sshd

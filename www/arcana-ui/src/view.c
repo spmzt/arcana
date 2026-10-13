@@ -1987,11 +1987,16 @@ modal(struct html *h)
 	case MODAL_JAIL_FILES:
 	case MODAL_JAIL_TEMPLATE:
 	case MODAL_JAIL_REMOVE:
+	case MODAL_JAIL_FILE:
 		if (!jailmk_modal(h))
 			return;
 		break;
 	case MODAL_NEIGH:
 		if (!neigh_modal(h))
+			return;
+		break;
+	case MODAL_CARP:
+		if (!carp_modal(h))
 			return;
 		break;
 	case MODAL_CERT_ADD:
@@ -2356,12 +2361,14 @@ modal(struct html *h)
 			break;
 		case MODAL_JAIL_DEFAULTS:
 		case MODAL_JAIL_TEMPLATE:
+		case MODAL_JAIL_FILE:
 			h_raw(h, "<button class=\"primary\">Write it</button>");
 			break;
 		case MODAL_JAIL_REMOVE:
 			h_raw(h, "<button class=\"danger\">Take it away</button>");
 			break;
 		case MODAL_NEIGH:
+		case MODAL_CARP:
 			h_raw(h, "<button class=\"primary\">Set it</button>");
 			break;
 		case MODAL_CERT_ADD:

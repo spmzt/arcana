@@ -112,11 +112,21 @@ jail_conf_check(const struct arc_job_spec *sp)
 		return ("a jail made or taken away is not undone by a timer: "
 		    "not in safe mode");
 	if (sp->jail != NULL && sp->jail[0] != '\0' && v != NULL &&
-	    strcmp(v, "make") != 0 && strcmp(v, "remove") != 0)
-		return ("only make and remove name a jail");
+	    strcmp(v, "make") != 0 && strcmp(v, "remove") != 0 && strcmp(v,
+	    "edit") != 0)
+		return ("only make, edit and remove name a jail");
 	if (v == NULL)
-		return ("a jail-conf job has a verb: make, remove, defaults, "
-		    "template, untemplate");
+		return ("a jail-conf job has a verb: make, edit, remove, "
+		    "defaults, template, untemplate");
+	if (strcmp(v, "edit") == 0) {
+		if (!word_ok(sp->jail, 64))
+			return ("a jail's name is letters, digits and _ - ., 64 "
+			    "at most");
+		if (sp->text == NULL || sp->text[0] == '\0' || strlen(sp->text) >
+		    TEXT_MAX)
+			return ("edit has the jail's file as text");
+		return (NULL);
+	}
 	if (strcmp(v, "make") == 0 || strcmp(v, "remove") == 0) {
 		if (!word_ok(sp->jail, 64))
 			return ("a jail's name is letters, digits and _ - ., 64 "
@@ -159,8 +169,8 @@ jail_conf_check(const struct arc_job_spec *sp)
 			return ("template has its lines as text");
 		return (NULL);
 	}
-	return ("a jail-conf job's verb is make, remove, defaults, template "
-	    "or untemplate");
+	return ("a jail-conf job's verb is make, edit, remove, defaults, "
+	    "template or untemplate");
 }
 
 /* text written as path, mode 0644, in place at once. */
@@ -520,6 +530,46 @@ undo:
 	return (-1);
 }
 
+/*
+ * A made jail's file written anew: read back by jail(8) as the one jail
+ * of that name first, the one before kept beside.  A running jail keeps
+ * its path, where its root is; it takes the rest when it is restarted.
+ */
+static int
+jail_edit(struct work *w, const struct arc_job_spec *sp, const char **errp)
+{
+	struct cjail	*js;
+	const char	*file, *tmp, *path, *e;
+	char		*old;
+	size_t		 n, len;
+
+	file = wfmt(w, "%s/%s.conf", opts.jail_conf_d, sp->jail);
+	errno = 0;
+	if ((old = get_file(w, file, &len)) == NULL) {
+		*errp = wfmt(w, "%s: %s", file, errno != 0 ? strerror(errno) :
+		    "not read");
+		return (-1);
+	}
+	path = NULL;
+	if (jail_getid(sp->jail) >= 0 && conf_scope_read(w, file, &js, &n,
+	    &e) == 0 && n > 0)
+		path = cjail_param1(&js[0], "path");
+	tmp = wfmt(w, "%s/.%s.conf.arcana-check", opts.jail_conf_d, sp->jail);
+	if (put_file(w, tmp, sp->text, errp) != 0)
+		return (-1);
+	if (reads_back(w, tmp, sp->jail, path, errp) != 0) {
+		(void)unlink(tmp);
+		if (path != NULL && strstr(*errp, "where its dataset") != NULL)
+			*errp = wfmt(w, "%s runs with its root at %s: stop it "
+			    "to move it", sp->jail, path);
+		return (-1);
+	}
+	(void)unlink(tmp);
+	if (write_backup(w, file, old, len, errp) != 0)
+		return (-1);
+	return (put_file(w, file, sp->text, errp));
+}
+
 static int
 jail_unmake(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
@@ -691,6 +741,8 @@ do_jail_conf(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (jail_make(w, sp, errp));
 	if (strcmp(sp->verb, "remove") == 0)
 		return (jail_unmake(w, sp, errp));
+	if (strcmp(sp->verb, "edit") == 0)
+		return (jail_edit(w, sp, errp));
 	if (strcmp(sp->verb, "defaults") == 0)
 		return (jail_defaults(w, sp, errp));
 	return (jail_template(w, sp, strcmp(sp->verb, "untemplate") == 0,

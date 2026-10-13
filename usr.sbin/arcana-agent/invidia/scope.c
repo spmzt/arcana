@@ -454,8 +454,9 @@ scope_slurp(struct work *w, const char *path, size_t *lenp)
 
 	if ((dfd = scope_open_dir(w, path, &base)) == -1)
 		return (NULL);
-	fd = openat(dfd, base, O_RDONLY | O_CLOEXEC | (w->jail != NULL ?
-	    O_NOFOLLOW : 0));
+	/* Not blocking: a FIFO in its place is not waited on. */
+	fd = openat(dfd, base, O_RDONLY | O_NONBLOCK | O_CLOEXEC | (w->jail !=
+	    NULL ? O_NOFOLLOW : 0));
 	e = errno;
 	close(dfd);
 	errno = e;
@@ -572,6 +573,8 @@ scope_helper(int argc, char **argv)
 		return (route_helper(argc - 1, argv + 1));
 	if (strncmp(argv[1], "pcb-", 4) == 0)
 		return (pcb_helper(argc - 1, argv + 1));
+	if (strcmp(argv[1], "carp-set") == 0)
+		return (carp_helper(argc - 1, argv + 1));
 	if (strcmp(argv[1], "zfs-pipe") == 0)
 		return (zfs_pipe(argc - 1, argv + 1));
 	/* A number of the network's, as the jail's own network has it. */

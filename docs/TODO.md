@@ -297,9 +297,10 @@
   their datasets at their paths, the base untouched; a removal with a
   dataset not the jail's refused with the jail left running (found
   there: it was stopped before the dataset was asked about), then each
-  taken away with its own.  Not yet: changing a made jail's file from
-  the page (it is made and taken away; its block is edited as any
-  jail's is).  The datasets above a jail's that are not there are made
+  taken away with its own.  A made jail's file changed from the page
+  (2026-10-13: jail-conf edit, read back by jail -e first, the one
+  before kept; a running jail keeps its path; verified as root on the
+  memory disk's pool, agent_root_test:jail_make).  The datasets above a jail's that are not there are made
   (canmount=off), and taken away again when the make fails; a pool is
   never made nor taken away.  The IPFW tab's Load the current file
   verified in a jail with its own rc.conf and script (the lab's
@@ -310,13 +311,13 @@
   - Mail notifications of faults, jobs and runs. (Done 2026-10-12:
     Settings, Notifications, By mail; one worker reads each host's
     events, the agent's job ends among them now, and the console's
-    host's sendmail(8) sends them, twenty an hour at most.)  Not
-    understood yet: with web.conf's mail_tick at 1 s in every test's
-    console, the page tests that wait on a safe job (lo0 add in
-    pwa_nettab, and four others) failed about one run in two, the job
-    left waiting to be confirmed; at the default 15 s, and with the
-    thread gone, they pass.  The thread then did nothing but wake.
-    Only the mail test sets 1 s now; worth finding why.
+    host's sendmail(8) sends them, twenty an hour at most.)  The page
+    tests that failed with mail_tick at 1 s (2026-10-13): the page
+    tests waited for a button and clicked it in two calls, and a page
+    drawn anew between them left the click on nothing (a safe job
+    never confirmed, the queue never run).  They wait and click in one
+    call now (click_when); with 1 s in every test's console the whole
+    suite passed twice.
   - The console's CA: one imported, or made and self-signed from the
     panel, given to each agent and trusted there; the console as a CA
     and as an intermediate CA under another.
@@ -329,12 +330,18 @@
     (Done 2026-10-12: the SSH tab, of a host or a jail; sshd -T read,
     each change read by sshd -t first and kept beside, undone in safe
     mode; verified with the real sshd and ssh-keygen in a lab jail.
-    Not yet: TrustedUserCAKeys (user certificates) set from the page.)
+    TrustedUserCAKeys, user certificates, done 2026-10-13: the CA
+    public keys kept as /etc/ssh/trusted_user_ca_keys, in the verified
+    list.)
   - IDS/IPS by Snort, a plugin (luxuria) as before: Snort and its
     rules updated and configured from the panel.
   - The console clustered; disaster recovery across console clusters.
   - Agents in an HA pair on identical hardware and ports (CARP, the
-    state shared), with CARP on its own for a host.
+    state shared), with CARP on its own for a host.  (CARP for a host
+    done 2026-10-13: Network, CARP; vhids read and set through carp's
+    netlink family, the key never on a command line; verified between
+    two vnet jails, agent_root_test:carp.  Not done: the pair's state
+    shared; ipfw has no pfsync, which is pf's: the user's to decide.)
   - VPN groups and road warrior setups of several clients, policies
     and pools.
   - A Devices page of its own, a table of the hosts (sorted and
@@ -375,8 +382,9 @@
     address or all; prefixes and ports in a mask still by ipfw's
     words.)
   - Flaky under the whole suite's load (2026-10-12): agent_test:observe
-    expects "samples":[] before the sampler's first look, and under
-    load the sampler is there first.  It passes alone.
+    expected "samples":[] after the last sample, and under load the
+    sampler looked again first.  (Done 2026-10-13: what comes after
+    the last is checked to be only newer.)
   - Every table exported as CSV. (Done 2026-10-12: ⤓ in every
     table's head, the rows as shown.)
   - Prefix lists kept by the console and used on any host.
@@ -487,23 +495,21 @@ Written and tested with stand-ins, never run for real:
 - A vnet jail's network. Run for real, against the jail `gateway` of
   one host: its interfaces, routes, route lookup and BIRD read; an
   address added and removed; an interface brought up; a new epair
-  given, taken back and destroyed. Not run for real: anything kept
-  (the jail's own `rc.conf`, `vnet.interface` in `jail.conf`), BIRD's
-  configuration written in a jail, safe mode in a jail, and the map with a real jail as a node (the browser test tells
-  the page that a jail runs).
+  given, taken back and destroyed. Not run for real: the map with a
+  real jail as a node (the browser test tells the page that a jail
+  runs).
 - A jail's share of the CPUs and its memory from rctl_get_racct(2):
   the test VM's kernel has kern.racct.enable off, and turning it on
   needs a reboot; what is read when it is off was run for real.
-- Loading and unloading a kernel module for real: reading the kernel
-  is real, kldload(8) and kldunload(8) are stand-ins in the tests.
-- The switch to SCTP from the page, and SCTP between two machines:
-  the API was run for real, between a console and an agent on one
-  machine.
-- BIRD's safe mode and what is done when BIRD stops answering, against
-  a real BIRD: the replies looked for are those in BIRD's source, 2.19
-  and 3.3 (`cmd_reconfig_msg()`), and the tests use a stand-in that
-  says them, dies or refuses on demand. `show route` was parsed from
-  the format in `nest/rt-show.c`.
+- The switch to SCTP from the page: the API was run for real, between
+  a console and an agent on one machine.  (SCTP between two network
+  stacks, in the verified list.)
+- For the user to say (2026-10-13): BIRD that stops answering while a
+  safe change waits (run for real: birdc down) leaves the unconfirmed
+  file in place, as bird.c says it should ("one that died is not
+  undone after"), so BIRD's next start reads a change nobody
+  confirmed.  Safe mode's word is that an unconfirmed change is taken
+  back: put the file back there too?
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.
@@ -523,6 +529,40 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- SCTP between two network stacks (2026-10-13): the agent in one vnet
+  jail and arcanactl in another (both rooted at /, nothing installed
+  in either), an epair between them; over sctp://, mutual TLS, the
+  agent named the session sctp from the other jail's address and its
+  kernel held the association; TCP to the same listener too.
+- User certificates against the real sshd (2026-10-13, the lab jail
+  arcsub1, its own lo0 in a vnet): a CA's public key given by
+  `arcanactl -j arcsub1 sshd user-cas`, a user's key signed by it, and
+  the user signed in by ssh with the certificate alone; the CA taken
+  away, the same certificate refused.  Found there: `service sshd
+  reload` says it cannot for an sshd not enabled in rc.conf, and exits
+  0, so the change was not taken; the agent runs onereload now.
+- An interface given to a jail and kept (2026-10-13, a lab jail of a
+  jail.conf of its own): vnet.interface = "epair2b" written into the
+  jail's block, read back by jail(8), and taken out when the interface
+  was taken back.
+- BIRD not answering, against BIRD 3.3.2 (2026-10-13, a vnet jail):
+  the read says so in birdc's words; a configuration written is put in
+  place once it parses, and said to be read when BIRD is started; one
+  in safe mode when BIRD stops answering is left in place (see the
+  question above).
+- A jail's own rc.conf and safe mode in a jail, for real (2026-10-13,
+  a vnet jail): an address kept as ifconfig_lo0_alias0 in the jail's
+  rc.conf by sysrc -R and taken out again; an address added in safe
+  mode, left unconfirmed, and undone after the 2 s it was given.
+- BIRD's configuration written in a jail and its safe mode, against
+  BIRD 3.3.2 (2026-10-13, a vnet jail): a file put in place and BIRD
+  told (its new route there); one BIRD refuses said in BIRD's words
+  and not put in place; one in safe mode left unconfirmed, taken back
+  (the route gone, the file as it was).
+- A kernel module loaded and unloaded for real (2026-10-13, the lab
+  VM, as root): if_disc by the kmod job, listed with its references,
+  disc0 made and destroyed with it, unloaded, and the kernel itself
+  refused before anything ran.
 - WireGuard against the real wg(8), in a vnet jail (2026-10-13): wg0
   made with its address, given a key and a port (init), a peer with
   an endpoint, IPv4 and IPv6 allowed-ips and a keepalive, read back
