@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.166.0"
+#define	ARCW_VERSION		"0.167.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -171,6 +171,7 @@ int		 servers_safe_wait(const char *);
 /* pki.c: the console's CA and host enrolment. */
 int		 pki_init(void);
 char		*pki_sign_host(const char *, const char *, char *, size_t);
+int		 api_ca(struct http_request *);
 
 /* hosts.c: requests to arcana-agent over cblink, in Kore task threads. */
 int		 hosts_init(void);

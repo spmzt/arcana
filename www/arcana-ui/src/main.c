@@ -444,6 +444,7 @@ tick(void *arg)
 			bird_tick(now);
 		if (app.online) {
 			transport_tick(now);
+			ca_tick(now);
 			net_live_tick(now);
 			firewall_tick(now);
 			procs_tick(now);
@@ -578,7 +579,8 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
-	    jailmk_form(form, f) || neigh_form(form, f) || carp_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
+	    jailmk_form(form, f) || neigh_form(form, f) || carp_form(form, f) ||
+	    ca_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
@@ -848,7 +850,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    jailmk_action(act, arg, value) || neigh_action(act, arg, value) ||
-	    carp_action(act, arg, value) ||
+	    carp_action(act, arg, value) || ca_action(act, arg, value) ||
 	    certs_action(act, arg, value) || ssh_action(act, arg, value) ||
 	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||

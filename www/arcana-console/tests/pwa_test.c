@@ -661,6 +661,36 @@ part_shell(void)
 	    "data/tokens.json") == 0; i++)
 		usleep(50000);
 	ATF_CHECK(system("! grep -q 'overlay planner' data/tokens.json") == 0);
+	/*
+	 * The console's CA changed for another: made, rolled out (no host
+	 * over TLS here to give it to), finished; the new one alone is
+	 * trusted after.
+	 */
+	run("document.querySelector('button[data-act=set-tab][data-arg=ca]')"
+	    ".click()");
+	wait_js("[...document.querySelectorAll('#ca-now tbody tr')].some(r => "
+	    "r.textContent.includes('CN=arcana CA'))", 10);
+	run("const f = document.querySelector('form[data-form=ca-make]'); "
+	    "f.cn.value = 'lab CA 2'; f.requestSubmit();");
+	wait_js("document.querySelector('#ca-next') && document.querySelector("
+	    "'#ca-next').textContent.includes('CN=lab CA 2')", 10);
+	shot("0c-ca");
+	click_when("button[data-act=ca-rollout]", 5);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')"
+	    ".requestSubmit();");
+	wait_js("document.querySelector('.set-body').textContent.includes("
+	    "'switched') && document.querySelector('button[data-act="
+	    "ca-finish]')", 20);
+	click_when("button[data-act=ca-finish]", 5);
+	wait_js("document.querySelector('form[data-form=confirm]')", 5);
+	run("document.querySelector('form[data-form=confirm]')"
+	    ".requestSubmit();");
+	wait_js("document.querySelector('.set-body').textContent.includes("
+	    "'finished') && [...document.querySelectorAll('#ca-now tbody tr')]"
+	    ".every(r => r.textContent.includes('lab CA 2'))", 20);
+	ATF_CHECK(system("openssl x509 -in data/console.pem -noout -issuer | "
+	    "grep -q 'lab CA 2'") == 0);
 	run("document.querySelector('li[data-act=select-fleet]').click()");
 	wait_js("!document.querySelector('section.setsect')", 10);
 	/* There is no such key here: the builds below use the host's own. */
