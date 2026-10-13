@@ -129,6 +129,20 @@
   it or takes v9. Also seen: an expired flow waits in a partly filled
   export datagram until it fills or the node shuts down, with no timer
   to send it; a flush would be part of the same kernel work.
+- The panel as live as it gets, without getting in the way (the user,
+  2026-10-13; the order agreed): (1) a task's steps told as the host
+  takes them, over the console's socket: done for the jails and the
+  services read (console 0.173.0, agent 0.108.0: the agent's steps
+  group, told on the asking connection only); the other reads move
+  over one by one. A task on the socket says live, not running, and
+  blinks so; one that stays live, a tab that follows its host, stays
+  in the list as live. (2) Every tab live: what was read stays shown,
+  with how old it is, and is replaced in place when a new read
+  completes, never blanked, keeping the sort, filter, scroll, picked
+  row and an edit under way. (3) Pushed where FreeBSD tells of a
+  change (the routing socket's RTM_IFINFO and RTM_NEWADDR, kqueue's
+  EVFILT_VNODE on rc.conf and EVFILT_PROC, zpool events, the
+  jail-state events there are), polled gently where it does not.
 - The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
   under docs/notes/. Decided 2026-10-13: wire version 2 (D-1), cblink
   2 south and RESTCONF on the console only (D-2), libyang for the
