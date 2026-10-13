@@ -35,6 +35,7 @@ itself, as the plan says, until it holds one by registration.
 | Range | Size | Module | `.sid` file |
 |---|---:|---|---|
 | 2^40 + 0 | 100 | `cblink` | `cblink/share/yang/cblink@2026-10-13.sid` (48 used) |
+| 2^40 + 100 | 100 | `kv`, cblink's example in YANG | `cblink/examples/kvy/kv@2026-10-13.sid` (22 used) |
 
 ## To decide: a registered block
 
