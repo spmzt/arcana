@@ -142,9 +142,11 @@
   of version 1 as one reply, 52 to 54 % as a dump). Done too: 0.2, libyang 3 (the corpus in share/yang, 51
   modules compiled; tools/yangwalk in cblink walking 5075 nodes as
   yanglint does, and the five extensions read through its plugins);
-  0.4.1, ng_netflow exports v5 and v9 only. Waiting: 0.3, BIRD with
-  l3vpn, needs bison (devel/bison), not installed, for the user to
-  install; 0.5, the SID block (share/yang/SIDS.md), for the user to
+  0.4.1, ng_netflow exports v5 and v9 only. 0.3: BIRD's l3vpn carries
+  VPN routes with RD and labels between two jails without kernel MPLS,
+  and a vxlan per VPN with BIRD setting the far end as the gateway
+  forwards across (D-5's evidence; vxlan(4) cannot be made inside a
+  vnet jail, only moved in). Waiting: 0.5, the SID block (share/yang/SIDS.md), for the user to
   decide: an IANA mega-range request as planned, or a PEN, which RFC
   9997 (July 2026) gives SID ranges with no request, 32-bit ones (5-byte
   keys) for a PEN below 100 000; 0.6, the decisions. Y-1 under way in

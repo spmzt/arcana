@@ -170,6 +170,24 @@ static routes per FIB: simplest, no RT semantics, poor convergence.
 Recommendation: (a) now with RD/RT carried and checked for
 uniqueness, (b) tried as a Y-0 spike and taken up in Y-6 if BIRD
 cooperates. Either way `vpn-type` other than `l3vpn` is refused.
+*Y-0's evidence for (b), 2026-10-13, on the lab VM (16-CURRENT):*
+BIRD 3.3.3 from the ports tree, built with `l3vpn` added to
+`RT_PROT` (nothing else changed), in two vnet jails joined by an
+epair: an `mpls` domain and table, a `vpn4` table, a VRF table and an
+`l3vpn` protocol (RD 65000:1, route target (rt, 65000, 1)) in each, one
+iBGP session with `vpn4 mpls` and `next hop self`. BIRD allocates the
+labels (1000 for its own site, 1001 for what it learns) and carries the
+VPN routes with RD and labels both ways with no kernel MPLS; nothing
+reaches the kernel until asked. A vxlan(4) per VPN in FIB 1 (the VRF)
+between the two ends, and a kernel protocol exporting the VRF table to
+FIB 1 through a filter that sets the gateway to the far end of the
+vxlan, forward a ping across, three of three, with FIB 0 untouched.
+So (b) works, with three things learnt: vxlan(4)'s cloner is attached
+in the host's vnet only, so a vxlan for a vnet-jail edge is made on the
+host and moved in; a jail may not set a vxlan's VNI or ends, so they
+are set before the move; and `net.fibs` is per vnet, raised inside the
+jail. The port's `RT_PROT` needs `l3vpn` (a change to send to its
+maintainer), and the plan's 3.4.0 is 3.3.3 in the ports tree today.
 
 **D-6 VRF realisation.** A FIB per `vpn-node` (light, what SD-WAN
 does, but leaky: loopback visible in every FIB unless
@@ -991,7 +1009,8 @@ A step never leaves `main` unbuildable; where a step would, it says
   with `vpn4 mpls` channels; check: routes with RD and labels on both
   sides in `birdc show route table`, nothing in the kernel.
 - 0.3.3 L: a vxlan(4) per VPN with the far VTEP as next hop by a
-  BIRD filter; check: a ping across; the result written to D-5.
+  BIRD filter; check: a ping across; the result written to D-5. Done
+  2026-10-13, 0.3.1 to 0.3.3: see D-5's evidence.
 - 0.4.1 L: `ng_netflow` with `ng_ksocket` to `nfdump`/`nfcapd`; check:
   the version in the records on 15.x and on 16; the result written to
   the TODO item and to 5.6. Done 2026-10-13 on 16-CURRENT, with a
