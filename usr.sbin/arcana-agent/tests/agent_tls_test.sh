@@ -108,6 +108,16 @@ mtls_body()
 	# A client certificate from another CA.
 	atf_check -s exit:1 -e not-empty -o ignore \
 	    "$JGC" -c "$URI" -A ca.pem -C intruder.pem -K intruder.key hello
+	# Another host's, from the same CA: it may reach this one, but asks
+	# nothing as the console does.
+	cert ca otherhost "IP:127.0.0.2,URI:urn:arcana:role:agent" \
+	    "serverAuth,clientAuth"
+	atf_check -s exit:1 -e match:'[Pp]ermission denied' -o ignore \
+	    "$JGC" -c "$URI" -A ca.pem -C otherhost.pem -K otherhost.key hello
+	atf_check -o match:"a host's certificate asked for hello: refused" \
+	    cat daemon.out
+	atf_check -o match:'^Host:' \
+	    "$JGC" -c "$URI" -A ca.pem -C client.pem -K client.key hello
 	# No TLS configuration at all is refused before connecting.
 	atf_check -s exit:1 -e match:'needs -A, -C and -K' -o ignore \
 	    "$JGC" -c "$URI" hello
