@@ -2502,7 +2502,8 @@ js_text(char *out, size_t len, const char *path)
 
 /*
  * The base system's sshd: a setting changed, the banner, a user's key
- * added and taken away, the host key signed by a CA's.
+ * added and taken away, the host key signed by a CA's, and that CA
+ * trusted for user certificates.
  */
 static void
 part_ssh(void)
@@ -2586,6 +2587,20 @@ part_ssh(void)
 	    == 0);
 	ATF_CHECK(system("ls -a tools/sshroot/etc/ssh | grep -q arcana-ca") !=
 	    0);
+	run("document.querySelector('.dock > header').click()");
+	/* The same CA's public key trusted for user certificates. */
+	js_text(key, sizeof(key), "lab_ca.pub");
+	snprintf(js, sizeof(js), "const f = document.querySelector('form"
+	    "[data-form=ssh-cas]'); f.text.value = '%s'; f.requestSubmit();",
+	    key);
+	wait_js("document.querySelector('form[data-form=ssh-cas]')", 5);
+	run(js);
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("[...document.querySelectorAll('table.ssh-cas tbody tr')]"
+	    ".some(r => r.textContent.includes('lab-ca') && r.textContent."
+	    "includes('SHA256:'))", 20);
+	ATF_CHECK(system("grep -qx 'TrustedUserCAKeys /etc/ssh/"
+	    "trusted_user_ca_keys' tools/sshroot/etc/ssh/sshd_config") == 0);
 	run("document.querySelector('.dock > header').click()");
 	/* Nothing wider than the page. */
 	ATF_CHECK(js_true("document.querySelector('.stage').scrollWidth <= "

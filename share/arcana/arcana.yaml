@@ -320,7 +320,11 @@ definitions:
           KbdInteractiveAuthentication, PubkeyAuthentication,
           X11Forwarding, MaxAuthTries and Port; sign signs each host key
           with the CA private key in text (names its principals) for 52
-          weeks and names each certificate HostCertificate.  Each is read
+          weeks and names each certificate HostCertificate; user-cas
+          writes the CA public keys in text, one a line, as
+          /etc/ssh/trusted_user_ca_keys and names it TrustedUserCAKeys
+          (no text: the line taken away), so that users sign in with
+          certificates those CAs signed.  Each is read
           by sshd -t first, the file before kept beside it
           (sshd_config.arcana-before) and put back in safe mode, and sshd
           reloaded.  authorize adds the key line text to user's

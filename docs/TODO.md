@@ -329,7 +329,9 @@
     (Done 2026-10-12: the SSH tab, of a host or a jail; sshd -T read,
     each change read by sshd -t first and kept beside, undone in safe
     mode; verified with the real sshd and ssh-keygen in a lab jail.
-    Not yet: TrustedUserCAKeys (user certificates) set from the page.)
+    TrustedUserCAKeys, user certificates, done 2026-10-13: the CA
+    public keys kept as /etc/ssh/trusted_user_ca_keys, in the verified
+    list.)
   - IDS/IPS by Snort, a plugin (luxuria) as before: Snort and its
     rules updated and configured from the panel.
   - The console clustered; disaster recovery across console clusters.
@@ -522,6 +524,13 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- User certificates against the real sshd (2026-10-13, the lab jail
+  arcsub1, its own lo0 in a vnet): a CA's public key given by
+  `arcanactl -j arcsub1 sshd user-cas`, a user's key signed by it, and
+  the user signed in by ssh with the certificate alone; the CA taken
+  away, the same certificate refused.  Found there: `service sshd
+  reload` says it cannot for an sshd not enabled in rc.conf, and exits
+  0, so the change was not taken; the agent runs onereload now.
 - An interface given to a jail and kept (2026-10-13, a lab jail of a
   jail.conf of its own): vnet.interface = "epair2b" written into the
   jail's block, read back by jail(8), and taken out when the interface
