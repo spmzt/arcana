@@ -271,6 +271,15 @@ ATF_TC_BODY(unauthenticated, tc)
 	http("GET", "/", NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
+	/* An /api/ path the console does not have: a JSON 404. */
+	http("GET", "/api/servers/0123abcd/tls-old", NULL, &r);
+	EXPECT(&r, 404);
+	ATF_CHECK_STREQ("not-found", jstr(&r, "error.code"));
+	resp_free(&r);
+	http("POST", "/api/nowhere", "{}", &r);
+	EXPECT(&r, 404);
+	ATF_CHECK_STREQ("not-found", jstr(&r, "error.code"));
+	resp_free(&r);
 	ATF_CHECK_EQ(0, access("data/setup-token", R_OK));
 }
 
@@ -786,6 +795,16 @@ ATF_TC_BODY(update_notes, tc)
 	    "%s", r.body);
 	ATF_CHECK_STREQ("true", jstr(&r, "notes.1.here"));
 	ATF_CHECK_STREQ("false", jstr(&r, "notes.1.new"));
+	resp_free(&r);
+	/* The repository cannot be fetched: the host's reason, said. */
+	ATF_REQUIRE((fp = fopen("fetch-fails", "w")) != NULL);
+	fclose(fp);
+	http("GET", "/api/update/notes?component=console&from=0.2.0&fresh=1",
+	    NULL, &r);
+	ATF_CHECK_EQ_MSG(502, r.status, "%d %s", r.status, r.body);
+	ATF_CHECK_MSG(jstr(&r, "error.message") != NULL && strstr(jstr(&r,
+	    "error.message"), "host key is known") != NULL, "%d %s", r.status,
+	    r.body);
 	resp_free(&r);
 }
 
@@ -1521,6 +1540,56 @@ ATF_TC_BODY(tokens, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK(jstr(&r, "tokens.0.last") != NULL && strcmp(jstr(&r,
 	    "tokens.0.last"), "0") != 0);
+	resp_free(&r);
+
+	/*
+	 * A write token changes things too, with no session's headers:
+	 * but never the tokens, the console's settings, push or the CA.
+	 */
+	http("POST", "/api/tokens", "{\"name\":\"claude\",\"kind\":\"write\"}",
+	    &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("write", jstr(&r, "kind"));
+	ATF_REQUIRE(jstr(&r, "token") != NULL &&
+	    strncmp(jstr(&r, "token"), "arcw_", 5) == 0);
+	{
+		char wtok[80];
+
+		snprintf(wtok, sizeof(wtok), "%s", jstr(&r, "token"));
+		resp_free(&r);
+		http("GET", "/api/tokens", NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("read", jstr(&r, "tokens.0.kind"));
+		ATF_CHECK_STREQ("write", jstr(&r, "tokens.1.kind"));
+		resp_free(&r);
+		http_bearer("GET", "/api/servers", wtok, NULL, &r);
+		EXPECT(&r, 200);
+		resp_free(&r);
+		http_bearer("POST", "/api/sdwan/check", wtok, "{}", &r);
+		ATF_CHECK_MSG(r.status != 401 && r.status != 403, "%d %s",
+		    r.status, r.body);
+		resp_free(&r);
+		http_bearer("POST", "/api/tokens", wtok, "{\"name\":\"more\"}",
+		    &r);
+		EXPECT(&r, 403);
+		ATF_CHECK(strstr(r.body, "may not change") != NULL);
+		resp_free(&r);
+		http_bearer("GET", "/api/settings", wtok, NULL, &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
+		http_bearer("POST", "/api/settings", wtok, "{}", &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
+		http_bearer("GET", "/api/push", wtok, NULL, &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
+		http_bearer("POST", "/api/ca", wtok, "{\"action\":\"make\"}", &r);
+		EXPECT(&r, 403);
+		resp_free(&r);
+	}
+	http("POST", "/api/tokens", "{\"name\":\"x\",\"kind\":\"root\"}",
+	    &r);
+	EXPECT(&r, 400);
 	resp_free(&r);
 
 	/* Deleted: it opens nothing at once. */

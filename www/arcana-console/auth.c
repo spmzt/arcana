@@ -573,8 +573,8 @@ session_valid(struct http_request *req)
 
 /*
  * Who a request comes from: the name of the security key its session
- * was opened with; NULL with no session (an API token, which reads
- * only).  For the audit trail (MEF 118.1's who of a Policy Action).
+ * was opened with, or "API token <name>" for a write token; NULL else.
+ * For the audit trail (MEF 118.1's who of a Policy Action).
  */
 const char *
 session_who(struct http_request *req)
@@ -586,14 +586,14 @@ session_who(struct http_request *req)
 	http_populate_cookies(req);
 	if (!http_request_cookie(req, SESSION_COOKIE, &cookie) ||
 	    strlen(cookie) != 64)
-		return (NULL);
+		return (token_who(req));
 	sha256(cookie, strlen(cookie), h);
 	for (i = 0; i < SESSIONS; i++)
 		if (sessions[i].used && memcmp(sessions[i].hash, h, sizeof(h))
 		    == 0)
 			return (sessions[i].who[0] != '\0' ? sessions[i].who :
 			    "a security key");
-	return (NULL);
+	return (token_who(req));
 }
 
 /* A new session in a cookie only the console can read, opened by the

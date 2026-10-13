@@ -249,8 +249,12 @@ server_by_id(const char *id)
 struct op *
 op_begin(const char *title, const char *server)
 {
+	struct op	*o;
 
-	return (op_new(title, server));
+	/* Not one request: the part that begins it says what it does. */
+	o = op_new(title, server);
+	o->await = false;
+	return (o);
 }
 
 void
@@ -283,6 +287,7 @@ op_new(const char *title, const char *server)
 	snprintf(o->server, sizeof(o->server), "%s", server);
 	o->state = OP_RUNNING;
 	o->started = arc_now();
+	o->await = true;
 	return (o);
 }
 
@@ -539,6 +544,9 @@ job_poll_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	op->waiting = false;
+	if (jstr(o, "job.state") != NULL)
+		snprintf(op->stage, sizeof(op->stage), "%s", jstr(o,
+		    "job.state"));
 	if ((t = jget(o, "job.trace")) != NULL) {
 		if (op->trace != NULL)
 			ucl_object_unref(op->trace);
@@ -619,6 +627,7 @@ job_submit_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		if (status == 200 && jbool(o, "ok") && jget(o, path) != NULL) {
 			op->job = op->watched = jint(o, path, 0);
 			op->next_poll = arc_now();
+			snprintf(op->stage, sizeof(op->stage), "accepted");
 			continue;
 		}
 		if (status == 200)
@@ -670,6 +679,13 @@ jobs_submit(struct server *s, struct queued *q, int n)
 		}
 	}
 	snprintf(url, sizeof(url), "/api/servers/%s/jobs", s->id);
+	/* One request for them all: each says it. */
+	for (i = 0; i < sub->nops; i++)
+		if ((op = op_find(sub->ops[i])) != NULL) {
+			snprintf(op->method, sizeof(op->method), "POST");
+			snprintf(op->url, sizeof(op->url), "%s", url);
+			op->await = false;
+		}
 	api("POST", url, body, job_submit_cb, sub);
 	free(body);
 }
@@ -1014,9 +1030,11 @@ servers_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			app.sel = i;
 	if (app.sel < 0 && app.nservers > 0)
 		app.sel = 0;
+	/* Every host read once the page has them: in the background, as
+	 * nobody asked for it, whatever page is shown. */
 	for (i = 0; i < app.nservers; i++)
 		if (app.servers[i].list == NULL)
-			refresh_jails(&app.servers[i], i == app.sel);
+			refresh_jails(&app.servers[i], false);
 	/* What the page's address named, now that its host can be found. */
 	loc_pending();
 }
@@ -3003,7 +3021,8 @@ token_new(void)
 		return;
 	}
 	q = json_quote(app.token_name);
-	if (asprintf(&body, "{\"name\":%s}", q) == -1)
+	if (asprintf(&body, "{\"name\":%s,\"kind\":\"%s\"}", q,
+	    app.token_write ? "write" : "read") == -1)
 		abort();
 	free(q);
 	api("POST", "/api/tokens", body, token_made_cb, NULL);

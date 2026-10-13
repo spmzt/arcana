@@ -123,15 +123,39 @@
   replaces MEF 88, and none of them has intrusion detection (ids is
   Arcana's own, mislabelled MEF 88's until now).  SASE-5 closed.
 - For the user to do (2026-10-13): IPFIX export in ng_netflow(4),
-  which exports NetFlow v5 and v9 only; pflow(4) has IPFIX but serves
-  pf. docs/PLAN-SDN-YANG.md's flow telemetry (5.6) waits on it or
-  takes v9.
+  which exports NetFlow v5 and v9 only (seen on the lab, 16-CURRENT,
+  2026-10-13: both hooks at once, nothing else); pflow(4) has IPFIX
+  but serves pf. docs/PLAN-SDN-YANG.md's flow telemetry (5.6) waits on
+  it or takes v9. Also seen: an expired flow waits in a partly filled
+  export datagram until it fills or the node shuts down, with no timer
+  to send it; a flush would be part of the same kernel work.
 - The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
   under docs/notes/. Decided 2026-10-13: wire version 2 (D-1), cblink
   2 south and RESTCONF on the console only (D-2), libyang for the
   generator (D-3), L3NM where it and MEF 70.2 overlap (D-4), STAMP
   for the probes (D-8), no compatibility with the v1 family or `/api`
   (D-9, D-10), BIRD for FlowSpec. Open: D-5 to D-7, D-11, D-12.
+  Done (2026-10-13): Y-0 0.1, the body decoder: YANG-CBOR by SID
+  deltas (cblink sid_test), YANG-CBOR's tags under CBL_CTX_YANG_TAGS,
+  the cblink module and its .sid file (cblink share/yang), and the
+  frame sizes (docs/notes/cblink-v2-frame-sizes.md: version 2 is 43 %
+  of version 1 as one reply, 52 to 54 % as a dump). Done too: 0.2, libyang 3 (the corpus in share/yang, 51
+  modules compiled; tools/yangwalk in cblink walking 5075 nodes as
+  yanglint does, and the five extensions read through its plugins);
+  0.4.1, ng_netflow exports v5 and v9 only. 0.3: BIRD's l3vpn carries
+  VPN routes with RD and labels between two jails without kernel MPLS,
+  and a vxlan per VPN with BIRD setting the far end as the gateway
+  forwards across (D-5's evidence; vxlan(4) cannot be made inside a
+  vnet jail, only moved in). Waiting: 0.5, the SID block (share/yang/SIDS.md), for the user to
+  decide: an IANA mega-range request as planned, or a PEN, which RFC
+  9997 (July 2026) gives SID ranges with no request, 32-bit ones (5-byte
+  keys) for a PEN below 100 000; 0.6, the decisions. Y-1 under way in
+  cblink: 1.1.1 to 1.1.3, cblink-gen's YANG front end on libyang (built
+  when libyang is there), its own schema model with resolved types,
+  checked against yanglint on the corpus. As each operation is
+  converted to YANG (the user, 2026-10-13: with each conversion, not
+  after all of them), its task's { } Schema panel shows its YANG model
+  beside the CBOR schema.
 - To decide (the user's): whether the security policies move to MEF
   138's model (Security Function Policies each with Block, Allow and
   Quarantine lists, No-match, Duration; PDNS and DLP added), and which

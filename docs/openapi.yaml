@@ -67,6 +67,22 @@ paths:
                   ok: { type: boolean, const: true }
                   version: { type: string, examples: ["0.1.0"] }
                   time: { type: integer, description: Unix time. }
+                  agent_build:
+                    type: string
+                    description: The SHA-256 of the arcana-agent the
+                      console sends to hosts; absent when it has none.
+                  agent_version:
+                    type: string
+                    description: That program's version.
+                  agent_source:
+                    type: string
+                    description: The repository a host builds the agent
+                      and the console from. Only to a session or an API
+                      token holder, as an address may say more than a
+                      name.
+                  agent_ref:
+                    type: string
+                    description: Its branch, likewise.
 
   /.well-known/assetlinks.json:
     get:
@@ -1765,9 +1781,9 @@ paths:
   /api/tokens:
     get:
       tags: [auth]
-      summary: The read-only API tokens
-      description: Each with id, name, created and last (when it was last
-        used), never its value.
+      summary: The API tokens
+      description: Each with id, name, kind, created and last (when it
+        was last used), never its value.
       responses:
         "200":
           description: The tokens.
@@ -1781,18 +1797,20 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [id, name, created, last]
+                      required: [id, name, kind, created, last]
                       properties:
                         id: { type: string, pattern: "^[0-9a-f]{16}$" }
                         name: { type: string }
+                        kind: { type: string, enum: [read, write] }
                         created: { type: integer, description: Unix time. }
                         last:
                           type: integer
                           description: Unix time it last opened something; 0 never.
     post:
       tags: [auth]
-      summary: Make a read-only API token
-      description: In a session only. The reply's token is its value,
+      summary: Make an API token, to read or to write
+      description: In a session only. A read token (arcr_) reads; a write
+        token (arcw_) also changes things. The reply's token is its value,
         given this once; the console keeps its SHA-256. At most 32.
       requestBody:
         required: true
@@ -1803,6 +1821,10 @@ paths:
               required: [name]
               properties:
                 name: { type: string, maxLength: 64 }
+                kind:
+                  type: string
+                  enum: [read, write]
+                  default: read
       responses:
         "200":
           description: The token, its value given this once.
@@ -1810,14 +1832,16 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [id, name, token]
+                required: [id, name, kind, token]
                 properties:
                   id: { type: string, pattern: "^[0-9a-f]{16}$" }
                   name: { type: string }
+                  kind: { type: string, enum: [read, write] }
                   token:
                     type: string
-                    pattern: "^arcr_[0-9a-f]{64}$"
+                    pattern: "^arc[rw]_[0-9a-f]{64}$"
                     description: Sent as Authorization Bearer.
+        "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/tokens/{id}:
     delete:
@@ -2012,9 +2036,52 @@ paths:
                   error: { type: string, nullable: true }
                   version: { type: string }
                   sha256: { type: string }
-                  trace: { type: object }
+                  commit:
+                    type: string
+                    description: The commit the program was built from.
+                  host_keys: { type: string, nullable: true }
+                  fingerprints: { type: array, items: { type: string } }
+                  deploy_key: { type: string, nullable: true }
+                  trace:
+                    type: array
+                    items: { $ref: "#/components/schemas/Step" }
         "409": { $ref: "#/components/responses/Error" }
         "502": { $ref: "#/components/responses/Error" }
+
+  /api/update:
+    get:
+      tags: [console]
+      summary: Is there a newer release of Arcana
+      description: The release feed (update_url in web.conf, GitHub's
+        latest release by default) as last read, at most every six
+        hours; read again when older. A session or an API token.
+      responses:
+        "200":
+          description: What the feed said.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [current, enabled]
+                properties:
+                  current: { type: string, description: The console's version. }
+                  enabled:
+                    type: boolean
+                    description: Whether the release check is on.
+                  latest:
+                    type: string
+                    description: The newest release's tag; absent until
+                      the feed was read.
+                  url: { type: string, description: The release's page. }
+                  newer:
+                    type: boolean
+                    description: The latest is newer than the current.
+                  error:
+                    type: string
+                    description: Why the last reading failed.
+                  checked:
+                    type: integer
+                    description: Unix time of the last reading.
 
   /api/update/notes:
     get:
@@ -2024,11 +2091,25 @@ paths:
         - { name: component, in: query, schema: { type: string, enum: [console, agent] } }
         - { name: from, in: query, schema: { type: string }, description: the version running }
         - { name: to, in: query, schema: { type: string }, description: "up to this version, for the agents" }
+        - { name: fresh, in: query, schema: { type: string, enum: ["1"] }, description: "read the repository again rather than the answer kept five minutes" }
       responses:
         "200":
           description: component, from, to, kind (tags or commits), head,
             host, read, source and notes, each id, when, title, body, new
             and here.
+        "409":
+          description: No repository is named (code source), or no server
+            to read it through (code server).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502":
+          description: The host could not read the repository (code
+            source); the message is the host's, as git said it, or that
+            its SSH host key is to be confirmed first.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/servers/{server}/console-update:
     post:
       tags: [servers]
@@ -2051,11 +2132,17 @@ paths:
                   ok: { type: boolean }
                   error: { type: string, nullable: true }
                   restarting: { type: boolean }
+                  commit:
+                    type: string
+                    description: The commit built and installed.
                   host_keys: { type: string, nullable: true }
                   fingerprints: { type: array, items: { type: string } }
                   deploy_key: { type: string, nullable: true }
-                  trace: { type: object }
+                  trace:
+                    type: array
+                    items: { $ref: "#/components/schemas/Step" }
         "409": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
 
   /api/servers/{server}/agent-update:
     post:
@@ -2088,13 +2175,17 @@ paths:
                     type: string
                     description: The version the program in place reports.
                   restarting: { type: boolean }
-                  trace: { type: object }
+                  trace:
+                    type: array
+                    items: { $ref: "#/components/schemas/Step" }
+        "502": { $ref: "#/components/responses/Error" }
       x-note: >-
         GET /api/health carries agent_build and agent_version, the
         SHA-256 and version of the program the console would send, and
         agent_source and agent_ref when a host can be asked to build it;
-        a host reports its own build as host.build.
-        "502": { $ref: "#/components/responses/Error" }
+        a host reports its own build as host.build in its jails reply. A
+        host is behind when its build differs from agent_build: builds
+        are told apart by their SHA-256, not their versions.
 
   /api/servers/{server}/jobs/{job}:
     get:
@@ -2375,12 +2466,16 @@ components:
     token:
       type: http
       scheme: bearer
-      description: A read-only API token (arcr_ and 64 hex digits), made
-        in a session with POST /api/tokens. It is taken for every read
-        (the hosts, workflows and runs, SD-WAN, transfers, health, the
-        tokens) and refused with 401 for anything that changes
-        something, and for the console's settings, push, sign-in and
-        enrolment.
+      description: An API token (arcr_ or arcw_ and 64 hex digits), made
+        in a session with POST /api/tokens. A read token (arcr_) is taken
+        for every read (the hosts, workflows and runs, SD-WAN, transfers,
+        health, the tokens) and refused with 401 for anything that
+        changes something. A write token (arcw_) is also taken for
+        changes, without the session's X-Arcana header, audited under
+        "API token <name>"; it is refused with 403 for changes to the
+        tokens and the CA. Neither is taken for the console's settings,
+        push, sign-in and enrolment (401 for a read token, 403 for a
+        write one).
 
   parameters:
     server:
@@ -2714,7 +2809,8 @@ components:
                 type: string
                 examples: [route-add, route-del, routes, link, link-del,
                   address-add, address-del, neigh, neigh-del, threshold,
-                  kmsg, sdwan-tunnel, sdwan-fault, sdwan-security]
+                  kmsg, sdwan-tunnel, sdwan-fault, sdwan-security, job,
+                  jail-state]
               jail:
                 type: string
                 description: the vnet jail whose network it is; absent for
@@ -2735,7 +2831,11 @@ components:
                   state and misses or interface and by; sdwan-fault, type,
                   severity, object, by, description, state (set or
                   cleared); sdwan-security, seq, rule, action, src, dst,
-                  iface, comment.
+                  iface, comment; job, a job that ended: id, title, ok, and
+                  error when not ok (agent 0.91.0 and later); jail-state,
+                  a jail made or removed, told by the kernel (kqueue's
+                  EVFILT_JAIL): jail (its name), state (running or
+                  stopped) and jid (agent 0.107.0 and later).
 
     HistoryData:
       type: object
@@ -3140,6 +3240,11 @@ components:
           type: boolean
           description: arcana-agent runs as root; without it changes fail.
         version: { type: string, description: arcana-agent's. }
+        build:
+          type: string
+          description: The SHA-256 of the arcana-agent program running;
+            compared with GET /api/health's agent_build to tell a host
+            behind.
         plugins:
           type: array
           items: { type: string, enum: [bird, wireguard, strongswan] }

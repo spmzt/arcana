@@ -170,6 +170,24 @@ static routes per FIB: simplest, no RT semantics, poor convergence.
 Recommendation: (a) now with RD/RT carried and checked for
 uniqueness, (b) tried as a Y-0 spike and taken up in Y-6 if BIRD
 cooperates. Either way `vpn-type` other than `l3vpn` is refused.
+*Y-0's evidence for (b), 2026-10-13, on the lab VM (16-CURRENT):*
+BIRD 3.3.3 from the ports tree, built with `l3vpn` added to
+`RT_PROT` (nothing else changed), in two vnet jails joined by an
+epair: an `mpls` domain and table, a `vpn4` table, a VRF table and an
+`l3vpn` protocol (RD 65000:1, route target (rt, 65000, 1)) in each, one
+iBGP session with `vpn4 mpls` and `next hop self`. BIRD allocates the
+labels (1000 for its own site, 1001 for what it learns) and carries the
+VPN routes with RD and labels both ways with no kernel MPLS; nothing
+reaches the kernel until asked. A vxlan(4) per VPN in FIB 1 (the VRF)
+between the two ends, and a kernel protocol exporting the VRF table to
+FIB 1 through a filter that sets the gateway to the far end of the
+vxlan, forward a ping across, three of three, with FIB 0 untouched.
+So (b) works, with three things learnt: vxlan(4)'s cloner is attached
+in the host's vnet only, so a vxlan for a vnet-jail edge is made on the
+host and moved in; a jail may not set a vxlan's VNI or ends, so they
+are set before the move; and `net.fibs` is per vnet, raised inside the
+jail. The port's `RT_PROT` needs `l3vpn` (a change to send to its
+maintainer), and the plan's 3.4.0 is 3.3.3 in the ports tree today.
 
 **D-6 VRF realisation.** A FIB per `vpn-node` (light, what SD-WAN
 does, but leaky: loopback visible in every FIB unless
@@ -818,6 +836,14 @@ Depends on Y-3; independent of Y-4.
 - **5.6 Flow telemetry.** A: `ng_netflow` per service FIB (by 0.4's
   result), sampling, per-zone; BMP from BIRD to the console; the
   console's compact time-series store with retention per class.
+  0.4's result (2026-10-13, 16-CURRENT): `ng_netflow` exports
+  NetFlow v5 on its `export` hook and v9 on `export9`, both at once,
+  and nothing else; IPFIX stays the TODO item. An expired flow waits
+  in a partly filled datagram until it fills (30 records for v5, some
+  1400 bytes for v9) or the node shuts down, so a quiet service's
+  flows can wait without bound: 5.6 needs a flush on a timer, from the
+  agent (a `flush` message the node does not have, so a kernel change
+  the user decides) or by rebuilding the export hook, or accepts it.
 - **5.7 Phase close.** L, D: the measurement chapter; TODO's verified
   list.
 
@@ -983,10 +1009,14 @@ A step never leaves `main` unbuildable; where a step would, it says
   with `vpn4 mpls` channels; check: routes with RD and labels on both
   sides in `birdc show route table`, nothing in the kernel.
 - 0.3.3 L: a vxlan(4) per VPN with the far VTEP as next hop by a
-  BIRD filter; check: a ping across; the result written to D-5.
+  BIRD filter; check: a ping across; the result written to D-5. Done
+  2026-10-13, 0.3.1 to 0.3.3: see D-5's evidence.
 - 0.4.1 L: `ng_netflow` with `ng_ksocket` to `nfdump`/`nfcapd`; check:
   the version in the records on 15.x and on 16; the result written to
-  the TODO item and to 5.6.
+  the TODO item and to 5.6. Done 2026-10-13 on 16-CURRENT, with a
+  listener of a few lines for the collector (nfdump is not installed)
+  and the node between two eiface(4) interfaces: v5 and v9, no IPFIX.
+  15.x not run: no 15.x host in the lab.
 - 0.5.1 D: the IANA request for a SID mega-range sent; the provisional
   block (2^40) recorded in `share/yang/SIDS.md`.
 - 0.6.1 D: D-5, D-6, D-7, D-11, D-12 taken or deferred, dated here.
@@ -1313,8 +1343,18 @@ A step never leaves `main` unbuildable; where a step would, it says
   and PUT of a setting.
 - 4.4.2 C: the WebAuthn ceremonies, logout, `assetlinks.json`, enrol
   and health moved beside `/restconf`; `/api` removed; check: the
-  console tests rewritten; the Android app's paths updated in its
-  repository in step.
+  console tests rewritten.
+- 4.4.3 (the app's repository, spmzt/arcana-apk): the Android app
+  reimplemented as a RESTCONF client: WebAuthn and the token QR code
+  as today, then every read a `GET` on `/restconf/data/...` with
+  `fields` and `depth`, every change a `PATCH` or `PUT`, every action
+  a `POST` on `/restconf/operations/...`, events and job traces by
+  SSE subscriptions, errors from `ietf-restconf:errors`, and the
+  forms it shows generated from each host's `ietf-yang-library` the
+  way the page's are (4.8.3), so a new module needs no app release;
+  `application/yang-data+cbor` where the app prefers CBOR. Briefed
+  from this plan when 4.1 lands; check: the app against the lab's
+  console.
 - 4.5.1 C: `ietf-vpn-common` and `ietf-l3vpn-ntw` stored as the
   service; check: RFC 9182's Appendix A example accepted.
 - 4.5.2 C: the Arcana augmentations of L3NM: application flows, the
@@ -1409,8 +1449,8 @@ A step never leaves `main` unbuildable; where a step would, it says
 - 5.5.4 A: the in-band variant through STAMP's direct-measurement TLV
   for steering; check: steering on loss without the console.
 - 5.5.5 L: three jails, loss on one tunnel localised to its cluster.
-- 5.6.1 A: `ng_netflow` per service FIB with sampling (v9 or IPFIX by
-  0.4's result); check: records at a collector jail.
+- 5.6.1 A: `ng_netflow` per service FIB with sampling (v9, by 0.4's
+  result: no IPFIX); check: records at a collector jail.
 - 5.6.2 C: BMP from BIRD to the console; check: a session's updates
   seen.
 - 5.6.3 C: a compact time-series store with retention per class;

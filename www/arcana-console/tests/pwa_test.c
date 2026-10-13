@@ -662,8 +662,8 @@ part_shell(void)
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=add-key] ul.keys li "
 	    ".name')", 10);
-	/* A read-only API token: made with a name in the settings, its
-	 * value shown once, listed, and deleted once confirmed. */
+	/* A read API token: made with a name in the settings, its value
+	 * shown once, listed, and deleted once confirmed. */
 	run("document.querySelector('button[data-act=set-tab][data-arg="
 	    "tokens]').click()");
 	wait_js("document.querySelector('input[data-input=token-name]')", 10);
@@ -693,6 +693,19 @@ part_shell(void)
 	    "data/tokens.json") == 0; i++)
 		usleep(50000);
 	ATF_CHECK(system("! grep -q 'overlay planner' data/tokens.json") == 0);
+	/* A write token: chosen beside the name, marked in the list. */
+	run("const k = document.querySelector('select[data-input=token-kind]'); "
+	    "k.value = 'write'; k.dispatchEvent(new Event('input', { bubbles: "
+	    "true })); const i = document.querySelector('input[data-input="
+	    "token-name]'); i.value = 'claude'; i.dispatchEvent(new Event("
+	    "'input', { bubbles: true })); document.querySelector('button["
+	    "data-act=token-new]').click();");
+	wait_js("document.querySelector('pre.out.token') && document."
+	    "querySelector('pre.out.token').textContent.startsWith('arcw_') "
+	    "&& [...document.querySelectorAll('ul.tokens li')].some(l => "
+	    "l.textContent.includes('claude') && l.querySelector('.chip.warn')"
+	    " && l.textContent.includes('write'))", 10);
+	shot("0b2-token-write");
 	/*
 	 * The console's CA changed for another: made, rolled out (no host
 	 * over TLS here to give it to), finished; the new one alone is
@@ -829,12 +842,19 @@ part_hosts(void)
 	    "document.querySelector('.rail .titem.leaf')"));
 	ATF_CHECK(js_true("document.querySelector('.tiles .tile')"));
 	shot("1-host-summary");
-	/* The host runs another build of arcana-agent than the console
-	 * has: the page offers to send its own, here without a restart. */
-	wait_js("document.querySelector('.hostbar button[data-act="
-	    "agent-update]')", 10);
-	run("document.querySelector('.hostbar button[data-act=agent-update]')"
-	    ".click()");
+	/*
+	 * The host runs another build of arcana-agent than the console
+	 * has: its bar says so and leads to Devices, where each host's
+	 * agent is updated, here without a restart.
+	 */
+	click_when(".hostbar button[data-act=select-devices]", 10);
+	wait_js("document.querySelector('table.devices td.warn')", 10);
+	ATF_CHECK(js_true("document.querySelector('.pane-actions button["
+	    "data-act=agent-update]:not([data-arg])').textContent.includes("
+	    "'Update 1 agent')"));
+	shot("1a-devices-update");
+	click_when("table.devices button[data-act=agent-update][data-arg]",
+	    5);
 	wait_js("document.querySelector('form[data-form=agent-update]')", 5);
 	shot("1b-agent-update");
 	run("const f = document.querySelector('form[data-form=agent-update]'); "
@@ -844,14 +864,14 @@ part_hosts(void)
 	ATF_CHECK(access("installed-agent", X_OK) == 0);
 
 	/*
-	 * With the repository set, the host can be asked to build.  It is
-	 * reached over SSH and the host does not know its server: the
-	 * page shows the server's key for the user to confirm, and the
-	 * build goes on once it is.
+	 * With the repository set, the host can be asked to build, from
+	 * its row.  It is reached over SSH and the host does not know its
+	 * server: the page shows the server's key for the user to confirm,
+	 * and the build goes on once it is.
 	 */
 	ATF_REQUIRE(system("ssh-keygen -q -t ed25519 -N '' -f hostkey") == 0);
-	run("document.querySelector('.hostbar button[data-act=agent-build]')"
-	    ".click()");
+	click_when("table.devices td.acts button[data-act=agent-build]",
+	    5);
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')"
 	    ".requestSubmit()");
@@ -865,12 +885,28 @@ part_hosts(void)
 	    ".requestSubmit()");
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('built arcana-agent'))", 30);
-	/* The console's own update is offered on the host it runs on. */
-	ATF_CHECK(js_true("document.querySelector('.hostbar button[data-act="
-	    "console-update]')"));
 	/* What was built is the host's own build here: nothing to send. */
-	wait_js("!document.querySelector('.hostbar button[data-act="
+	wait_js("!document.querySelector('table.devices button[data-act="
 	    "agent-update]')", 10);
+	/* The console's own update, in Settings: on the host it runs on,
+	 * the one reached by a local socket. */
+	run("document.querySelector('.rail-foot li[data-act=settings]')"
+	    ".click()");
+	click_when("button[data-act=set-tab][data-arg=update]", 5);
+	wait_js("document.querySelector('.upd button[data-act=console-update]"
+	    "')", 5);
+	ATF_CHECK(js_true("[...document.querySelectorAll('.upd')].some(d => "
+	    "d.textContent.includes('Every host that answers runs it'))"));
+	/* The tasks of the build, folded away for the picture. */
+	run("document.querySelector('section.dock.open header[data-act=dock]')"
+	    "?.click()");
+	wait_js("!document.querySelector('section.dock.open')", 5);
+	shot("0e-update");
+	/* Back to the host, from its row. */
+	run("document.querySelector('.tree .titem.devnode').click()");
+	click_when("table.devices tr[data-act=select-server]", 5);
+	wait_js("document.querySelector('.hostbar[data-server=lab]') && "
+	    "document.querySelector('.topo .tnode')", 10);
 
 	/* A jail picked in the summary's graph opens in a box over it,
 	 * and the page under it stays the summary. */
@@ -1646,6 +1682,43 @@ part_nettab(void)
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
 	    "t.textContent.includes('lo0: set'))", 20);
 	ATF_CHECK(system("grep -q '^lo0 mtu 9000$' ifconfig.log") == 0);
+	/*
+	 * A task that waits says what it asked and where it is: the
+	 * request held back here, then the job's readings, to see each
+	 * stage.
+	 */
+	run("window.hold = { jobs: true, poll: false }; const of3 = window."
+	    "fetch; window.fetch = function (u, o) { const s = String(u); "
+	    "const wait = k => new Promise(r => { const t = setInterval(() => "
+	    "{ if (!window.hold[k]) { clearInterval(t); r(); } }, 50); }); "
+	    "if (o && o.method === 'POST' && s.endsWith('/jobs') && "
+	    "window.hold.jobs) return wait('jobs').then(() => of3.call(this, "
+	    "u, o)); if (/\\/jobs\\/[0-9]+$/.test(s) && window.hold.poll) "
+	    "return wait('poll').then(() => of3.call(this, u, o)); return "
+	    "of3.call(this, u, o); };");
+	run("document.querySelector('tr[data-if=lo0] button[data-act=if-edit]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=if-set]')", 5);
+	run("const f = document.querySelector('form[data-form=if-set]'); "
+	    "f.mtu.value = '16384'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.dock.open .pending-graph') && "
+	    "document.querySelector('.pending-graph').textContent.includes("
+	    "'POST /api/servers/') && document.querySelector('.pending-graph')"
+	    ".textContent.includes('waiting for the answer') && document."
+	    "querySelector('.pending-graph .node.k-lib.st-incomplete')", 10);
+	shot("5a-task-sent");
+	run("window.hold.poll = true; window.hold.jobs = false;");
+	wait_js("document.querySelector('.pending-graph') && document."
+	    "querySelector('.pending-graph').textContent.includes('job #') && "
+	    "document.querySelector('.pending-graph .node.k-daemon."
+	    "st-incomplete') && document.querySelector('.pending-graph .node."
+	    "k-api.st-ok')", 10);
+	shot("5b-task-waiting");
+	run("window.hold.poll = false;");
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].filter(t => "
+	    "t.textContent.includes('lo0: set')).length >= 2", 20);
 	run("document.querySelector('.dock > header').click()");
 
 	/* Netgraph: the nodes as a graph, with the hooks that join them. */
@@ -5006,6 +5079,19 @@ part_routes(void)
 	wait_js("window.before === undefined && document.querySelector("
 	    "'.jail-page h1') && document.querySelector('.jail-page h1')"
 	    ".textContent === 'cache'", 30);
+	/* Opened on Settings: the hosts are read in the background, and
+	 * no task says so (it was one for the first host, not asked). */
+	go("/#/settings/update");
+	run("window.before = 1; location.reload();");
+	wait_js("window.before === undefined && document.querySelector("
+	    "'button[data-act=set-tab][data-arg=update].on') && document."
+	    "querySelector('.upd')", 30);
+	usleep(1500000);
+	run("document.querySelector('section.dock:not(.open) header[data-act="
+	    "dock]')?.click()");
+	wait_js("document.querySelector('section.dock.open')", 5);
+	ATF_CHECK(js_true("![...document.querySelectorAll('.dock [data-act="
+	    "trace]')].some(t => t.textContent.includes('list jails'))"));
 	go("/#/usage");
 	run("window.before = 1; location.reload();");
 	wait_js("window.before === undefined && location.hash === '#/usage' && "

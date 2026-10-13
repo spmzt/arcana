@@ -13,6 +13,7 @@ context; the plan relies on RFCs only.
 | File | Subject |
 |---|---|
 | [cblink-yang-design.md](cblink-yang-design.md) | cblink as a strict YANG protocol — engineering analysis |
+| [cblink-v2-frame-sizes.md](cblink-v2-frame-sizes.md) | Frame sizes of an interfaces read, wire version 1 against version 2 (step 0.1.4), with its script |
 | [draft-ietf-core-comi.md](draft-ietf-core-comi.md) | draft-ietf-core-comi-21 — CoAP Management Interface (CORECONF) |
 | [freebsd-landscape.md](freebsd-landscape.md) | FreeBSD networking landscape for Arcana (SDN + IETF YANG agent contract) |
 | [rfc10053.md](rfc10053.md) | RFC 10053 — A Framework for Computing-Aware Traffic Steering (CATS) |
