@@ -573,6 +573,8 @@ scope_helper(int argc, char **argv)
 		return (route_helper(argc - 1, argv + 1));
 	if (strncmp(argv[1], "pcb-", 4) == 0)
 		return (pcb_helper(argc - 1, argv + 1));
+	if (strcmp(argv[1], "carp-set") == 0)
+		return (carp_helper(argc - 1, argv + 1));
 	if (strcmp(argv[1], "zfs-pipe") == 0)
 		return (zfs_pipe(argc - 1, argv + 1));
 	/* A number of the network's, as the jail's own network has it. */

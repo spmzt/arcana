@@ -333,6 +333,21 @@ definitions:
           reloaded.  authorize adds the key line text to user's
           authorized_keys, unauthorize takes away the key whose
           fingerprint text is.  In jail's when jail names one.
+      - name: carp
+        doc: |
+          An address that hosts on one network share with carp(4), held
+          by the one that is MASTER of its virtual host: verb add makes
+          the vhid on interface (or changes it) through carp's netlink
+          family and puts address under it with ifconfig; set changes
+          the vhid; remove takes address off, the vhid going with its
+          last.  args are word=value: vhid (1-255), advbase, advskew,
+          version (2 CARP, 3 VRRPv3, when it is made), prio and
+          interval (VRRPv3), state (master or backup, set now only);
+          preshared_key is the vhid's key, never on a command line.
+          With persist the address is kept as an ifconfig_<if>_alias
+          line with the vhid's words, its key too, and carp in kld_list.
+          Only add is taken back in safe mode.  In jail's network when
+          jail names one.
   - name: job-state
     type: enum
     entries:

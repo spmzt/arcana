@@ -1301,6 +1301,42 @@ part_nettab(void)
 		usleep(100000);
 	ATF_CHECK(system("grep -qx 'arp -d 10.0.0.2' neigh.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/* CARP: an address shared under a vhid, its key never on a line. */
+	run("document.querySelector('button[data-act=net-kind]"
+	    "[data-arg=carp]').click()");
+	wait_js("document.querySelector('table.carp') || document."
+	    "querySelector('button[data-act=carp-load]')", 20);
+	run("document.querySelector('button[data-act=carp-add]').click()");
+	wait_js("document.querySelector('form[data-form=carp] select[name="
+	    "ifname] option')", 10);
+	{
+		ucl_object_t	*v;
+		char		 cmd[300], ifn[32];
+
+		v = js("return document.querySelector('form[data-form=carp]')"
+		    ".ifname.value;");
+		snprintf(ifn, sizeof(ifn), "%s", v != NULL &&
+		    ucl_object_tostring(v) != NULL ? ucl_object_tostring(v) : "");
+		if (v != NULL)
+			ucl_object_unref(v);
+		run("const f = document.querySelector('form[data-form=carp]'); "
+		    "f.address.value = '192.0.2.77/24'; f.vhid.value = '9'; "
+		    "f.advskew.value = '20'; f.key.value = 'labkey';");
+		shot("7p2-carp");
+		run("document.querySelector('form[data-form=carp]')"
+		    ".requestSubmit();");
+		click_when("button[data-act=queue-run]", 5);
+		snprintf(cmd, sizeof(cmd), "grep -qx '%s inet 192.0.2.77/24 vhid 9 "
+		    "alias' ifconfig.log", ifn);
+		for (i = 0; i < 100 && system(cmd) != 0; i++)
+			usleep(100000);
+		ATF_CHECK_MSG(system(cmd) == 0, "%s", cmd);
+		snprintf(cmd, sizeof(cmd), "grep -q 'carp-set %s 9 advskew=20$' "
+		    "helper.log && ! grep -q labkey helper.log && grep -q "
+		    "'vhid 9 advskew 20 pass labkey 192.0.2.77/24' rc.conf", ifn);
+		ATF_CHECK_MSG(system(cmd) == 0, "%s", cmd);
+	}
+	run("document.querySelector('.dock > header').click()");
 	/*
 	 * Span: a bridge's span port, a rule mirrored to its own tap, and
 	 * packets taken off that tap, with their pcap to save.
@@ -1451,8 +1487,9 @@ part_nettab(void)
 	run("const f = document.querySelector('form[data-form=if-address]'); "
 	    "f.address.value = '10.9.0.7/24'; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('lo0: add 10.9.0.7/24: done'))", 20);
+	/* Done, as the dock keeps it: a toast goes by itself. */
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('lo0: add 10.9.0.7/24'))", 20);
 	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.7/24 alias$' ifconfig.log")
 	    == 0);
 	run("document.querySelector('.dock > header').click()");

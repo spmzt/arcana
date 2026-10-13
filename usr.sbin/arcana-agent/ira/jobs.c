@@ -104,7 +104,8 @@ scoped(const struct arc_job_spec *sp)
 	return ((sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->kind <=
 	    ARC_JOB_KIND_BIRD) || sp->kind == ARC_JOB_KIND_IPFW || sp->kind ==
 	    ARC_JOB_KIND_BRIDGE || sp->kind == ARC_JOB_KIND_GENEVE ||
-	    sp->kind == ARC_JOB_KIND_IPSEC || sp->kind == ARC_JOB_KIND_NEIGHBOUR);
+	    sp->kind == ARC_JOB_KIND_IPSEC || sp->kind == ARC_JOB_KIND_NEIGHBOUR ||
+	    sp->kind == ARC_JOB_KIND_CARP);
 }
 
 /* What the job does, in words: the activity log's line for it. */
@@ -177,6 +178,12 @@ title_of(const struct arc_job_spec *sp)
 		    strcmp(sp->verb, "set") == 0 && sp->path != NULL ? sp->path :
 		    "", sp->user != NULL ? " of " : "", sp->user != NULL ?
 		    sp->user : "");
+		break;
+	case ARC_JOB_KIND_CARP:
+		rc = asprintf(&t, "%s: carp %s vhid %s%s%s", sp->interface,
+		    sp->verb, carp_vhid_of(sp), sp->address != NULL &&
+		    strcmp(sp->verb, "set") != 0 ? " " : "", sp->address !=
+		    NULL && strcmp(sp->verb, "set") != 0 ? sp->address : "");
 		break;
 	case ARC_JOB_KIND_CERT:
 		rc = asprintf(&t, "certificate %s%s%s", sp->verb, sp->path !=
@@ -711,6 +718,11 @@ undo(struct qjob *j)
 	case ARC_JOB_KIND_IF_STATE:
 		rc = do_if_state(&j->w, sp->interface, !sp->up, &e);
 		break;
+	case ARC_JOB_KIND_CARP:
+		/* Only an address added is in safe mode: off again. */
+		rc = do_if_address(&j->w, sp->interface, sp->address, true,
+		    sp->persist, &e);
+		break;
 	case ARC_JOB_KIND_KMOD:
 		rc = do_kmod(&j->w, strcmp(sp->verb, "load") == 0 ? "unload" :
 		    "load", sp->names.v[0], sp->persist, &e);
@@ -936,6 +948,10 @@ run(struct qjob *j)
 	case ARC_JOB_KIND_NEIGHBOUR:
 		error = NULL;
 		ok = do_neigh(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_CARP:
+		error = NULL;
+		ok = do_carp(&j->w, sp, &error) == 0;
 		break;
 	case ARC_JOB_KIND_SSH:
 		/* As a certificate: any jail's. */

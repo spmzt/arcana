@@ -337,7 +337,11 @@
     rules updated and configured from the panel.
   - The console clustered; disaster recovery across console clusters.
   - Agents in an HA pair on identical hardware and ports (CARP, the
-    state shared), with CARP on its own for a host.
+    state shared), with CARP on its own for a host.  (CARP for a host
+    done 2026-10-13: Network, CARP; vhids read and set through carp's
+    netlink family, the key never on a command line; verified between
+    two vnet jails, agent_root_test:carp.  Not done: the pair's state
+    shared; ipfw has no pfsync, which is pf's: the user's to decide.)
   - VPN groups and road warrior setups of several clients, policies
     and pools.
   - A Devices page of its own, a table of the hosts (sorted and

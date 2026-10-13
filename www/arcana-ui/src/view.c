@@ -1995,6 +1995,10 @@ modal(struct html *h)
 		if (!neigh_modal(h))
 			return;
 		break;
+	case MODAL_CARP:
+		if (!carp_modal(h))
+			return;
+		break;
 	case MODAL_CERT_ADD:
 		if (!certs_modal(h))
 			return;
@@ -2364,6 +2368,7 @@ modal(struct html *h)
 			h_raw(h, "<button class=\"danger\">Take it away</button>");
 			break;
 		case MODAL_NEIGH:
+		case MODAL_CARP:
 			h_raw(h, "<button class=\"primary\">Set it</button>");
 			break;
 		case MODAL_CERT_ADD:
