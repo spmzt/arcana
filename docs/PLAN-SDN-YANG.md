@@ -939,6 +939,654 @@ Depends on Y-4 and Y-5.
   directory and the CA; agents trusting the CA, not one console;
   RFC 8456's failover benchmark becomes applicable.
 
+## The steps, commit by commit
+
+Each task above cut into the smallest steps that can each be one
+reviewed commit with its own test: a step changes one thing, and the
+check named with it is what the commit's test runs. Markers as above.
+A step never leaves `main` unbuildable; where a step would, it says
+"branch". Nothing here is started until the user says so.
+
+### Y-0
+
+- 0.1.1 G: a test program encoding `{1500: {1: [{1: "em0", 3: 1500}]}}`
+  by hand with libcbor and decoding it by SID deltas; check: round trip.
+- 0.1.2 G: tags 4 and 43–47 accepted by `cbl_decode` under a flag,
+  every other tag still refused; check: the fuzzer corpus.
+- 0.1.3 G: the `cblink` module's `error`, `credit`, `hello`, `close`,
+  `notification` written in YANG, their `.sid` file by hand; check:
+  `yanglint` validates the module.
+- 0.1.4 G: frame sizes of an `interfaces` dump, v1 against the
+  hand-encoded v2, in a note under `docs/notes/`; check: the numbers.
+- 0.2.1 G: `net/libyang3` installed on the VM; the module corpus
+  (`share/yang/`: ietf-yang-types, inet-types, interfaces, ip,
+  routing, v4ur, v6ur, network-instance, logical-network-element,
+  yang-library, datastores, origin, schema-mount, netconf-acm,
+  subscribed-notifications, yang-push, yang-patch, restconf,
+  restconf-monitoring, yang-structure-ext, iana-if-type, acl,
+  packet-fields, ethertypes, iana-icmpv4/v6-types, iana-ipv6-ext-types,
+  i2nsf-ikec/ike/ikeless, ipsec-iptfs, vpn-common, l3vpn-ntw, sap-ntw,
+  vn, network-vpn-pm, alarms, key-chain) fetched from the RFCs and
+  checked in; check: `yanglint` compiles every one.
+- 0.2.2 G: a 200-line program against libyang 3.x printing, for the
+  corpus, each node's kind, SID-able name, resolved type with ranges,
+  patterns and enums, `when`/`must` text, config, mandatory, keys,
+  features and deviations; check: output matches `yanglint -f tree`.
+- 0.2.3 G: the five extensions (`sx:structure`,
+  `sx:augment-structure`, `yangmnt:mount-point`,
+  `nacm:default-deny-*`, `sn:subscription-state-notification`) read
+  through libyang's extension plugin interface; check: each found in
+  the corpus.
+- 0.3.1 L: `net/bird3` built with `l3vpn` in `RT_PROT` on the VM; check:
+  `bird --version` and `protocol l3vpn` parses.
+- 0.3.2 L: two jails, an `mpls` domain, `vpn4` tables, one BGP session
+  with `vpn4 mpls` channels; check: routes with RD and labels on both
+  sides in `birdc show route table`, nothing in the kernel.
+- 0.3.3 L: a vxlan(4) per VPN with the far VTEP as next hop by a
+  BIRD filter; check: a ping across; the result written to D-5.
+- 0.4.1 L: `ng_netflow` with `ng_ksocket` to `nfdump`/`nfcapd`; check:
+  the version in the records on 15.x and on 16; the result written to
+  the TODO item and to 5.6.
+- 0.5.1 D: the IANA request for a SID mega-range sent; the provisional
+  block (2^40) recorded in `share/yang/SIDS.md`.
+- 0.6.1 D: D-5, D-6, D-7, D-11, D-12 taken or deferred, dated here.
+
+### Y-1
+
+- 1.1.1 G: `cblink.mk` and the generator's Makefile find libyang in
+  `${LOCALBASE}` (`pkg-config libyang`); check: builds with and fails
+  clearly without.
+- 1.1.2 G: cblink-gen's schema model (`schema.h`: node, type,
+  constraint, identity, feature, module) and the walk from
+  `lysc_node` into it; check: the corpus walked, node counts equal
+  `yanglint`'s.
+- 1.1.3 G: resolved types: integer ranges, string lengths and
+  patterns, enumeration values, bits positions, identityref bases,
+  union members, leafref paths, decimal64 fraction digits, defaults,
+  units; check: a table per module compared with `yanglint -f info`.
+- 1.1.4 G: features applied (`--features`), deviations applied,
+  `if-feature` pruning; check: `ietf-ip` with and without `ipv6-privacy-autoconf`.
+- 1.1.5 G: the extension plugins of 0.2.3 in the generator; check:
+  structures and mount points in the schema model.
+- 1.1.6 G: the profile's refusals (full XPath beyond lite, XSD
+  constructs beyond the subset, `anyxml` validation) as diagnostics
+  `file:line: error:`; check: a pathological module per refusal.
+- 1.2.1 D, G: `net/libyang3` as `BUILD_DEPENDS` of the port's
+  generator; the generated files committed; `make` without libyang
+  skips regeneration; check: a clean build on a host without libyang.
+- 1.3.1 G: XPath-lite tokenizer and parser to an AST (paths, axes,
+  predicates, functions, operators, literals, `$USER`); check: every
+  `when`, `must` and `path` in the corpus parses.
+- 1.3.2 G: the generator rejects AST nodes outside the subset; check:
+  one module with `position()` refused.
+- 1.4.1 G: `.sid` reader (libucl) into the schema model; check: the
+  IANA `.sid` files of RFC 9595 read.
+- 1.4.2 G: `.sid` verifier: every schema item has a SID, no duplicates,
+  ranges respected, obsolete kept; check: a tampered file refused.
+- 1.4.3 G: `--assign`: new items numbered in RFC 9595 §6 order into
+  the module's range, the file rewritten; check: byte-identical on a
+  second run.
+- 1.4.4 G: `ietf-sid-file` structure emitted for `GET-SID`; check:
+  decodes to the input file.
+- 1.5.1 G: XSD regex → ERE translator (`\d \s \w \p{L} \p{N}`, classes,
+  `[^…]`, `{n,m}`, groups, alternation); check: RFC 6991's patterns
+  with good and bad values.
+- 1.5.2 G: unknown XSD constructs refused at generation; check: a
+  pattern with class subtraction refused.
+- 1.6.1 G: struct emission per container, list, rpc input/output,
+  notification, structure; check: compiles for the corpus with
+  `-Wall -Werror`.
+- 1.6.2 G: schema tables (kind, delta, type, constraints, children
+  sorted by delta, keys, when/must ids, defaults, config, mandatory,
+  min/max, ordered-by); check: table size per module reported.
+- 1.6.3 G: identity closure table and feature table; check:
+  `derived-from` lookups for every identityref base.
+- 1.6.4 G: SID table and the mapping delta → child per node; check:
+  dense arrays chosen where deltas are contiguous.
+- 1.6.5 G: builders and parsers per node; check: encode then decode
+  every struct of the corpus with every optional present and absent.
+- 1.6.6 G: handler stubs (`get`, `edit` per top-level node), rpc and
+  action prototypes, notification senders; check: the kv example
+  rewritten in YANG links against them.
+- 1.6.7 G: Markdown and RFC 8340 tree diagrams; check: diff against
+  `yanglint -f tree`.
+- 1.7.1 G: `cbl_frame` version 2 accepted, version 1 refused with
+  `EPROTONOSUPPORT`; check: the fuzzer.
+- 1.7.2 G: `cbl_decode` keyed by SID deltas against the schema tables,
+  the two-pass size-before-allocation behaviour kept; check: limits
+  tests.
+- 1.7.3 G: kinds `empty`, `bits`, `identityref`, `instance-identifier`,
+  `union`, `decimal64`; `flag` and `float` removed; check: one test
+  per kind.
+- 1.7.4 G: the `cblink` structures replace negative keys in
+  `cbl_msg`, errors, credit, hello, close; check: every existing
+  libcblink test rewritten passes.
+- 1.7.5 G: `cbl_policy`, `cbl_attr` and the YAML spec reader removed;
+  `spec.c`, `yaml.c`, `gen_c.c`, `gen_md.c` deleted; check: `make`.
+- 1.7.6 G: `ctrl` regenerated from `cblink-ctrl.yang`; check: resolve,
+  subscribe, ping, hello as before.
+- 1.8.1 G: the static validator over the instance tree: types,
+  ranges, lengths in code points, patterns, enum, bits, identity
+  derivation, union, mandatory, min/max-elements, keys, unique,
+  config-false in edits, choice exclusivity, defaults; check: one
+  test per rule from RFC 7950's examples.
+- 1.9.1 A: `ietf-interfaces` operational collector (getifaddrs,
+  if_data, SIOCGIFFLAGS/MEDIA/DESCR, if_nametoindex); check: equals
+  `ifconfig` and `netstat -i` on the VM.
+- 1.9.2 A: layering (`higher-layer-if`, `lower-layer-if`) from vlan,
+  bridge and lagg ioctls; check: a vlan on a lagg on two members.
+- 1.9.3 A: `arcana-interfaces` augment: vlan, bridge, lagg, epair,
+  mtu, ether, media, groups, fib, capabilities; check: each type made
+  by the existing jobs reads back.
+- 1.9.4 A: rtsock events (RTM_IFINFO, IFANNOUNCE) into the event
+  sources; check: an interface created and destroyed seen.
+- 1.10.1 A: `ietf-ip` addresses v4/v6 with origin and status; check:
+  equals `ifconfig`.
+- 1.10.2 A: neighbours from NET_RT_FLAGS RTF_LLINFO (v4 and v6),
+  `is-router`, state; check: equals `arp -an`, `ndp -an`.
+- 1.10.3 A: the global sysctls with origin `system` and the deviation
+  module `arcana-ip-deviations`; check: `yanglint` with deviations.
+- 1.11.1 A, branch: family 1 registered with `GET` and dump for
+  interfaces and ip; check: `arcanactl` (a `get` verb) dumps them.
+- 1.11.2 C, branch: a translator from the dump to the Network tab's
+  rows; check: the browser test's Network tab unchanged in look.
+- 1.11.3 L: every interface type Arcana makes, read through the new
+  path on the VM; written to TODO's verified list.
+- 1.12.1 G: generator corpus test (`make check` runs cblink-gen on
+  every module and diffs trees against `yanglint`); check: CI green.
+- 1.12.2 G: decoder fuzzer extended with tags and deltas; check: an
+  hour of fuzzing clean.
+- 1.12.3 D: YANG.md (the profile), GENERATOR.md, WIRE-FORMAT.md
+  version 2; SPEC-FORMAT.md removed.
+
+### Y-2
+
+- 2.1.1 G: the instance tree (`cbl_data`): nodes, keys, ordered lists,
+  defaults materialised on demand; check: build, walk, free.
+- 2.1.2 G: edit operations merge, replace, create, delete, remove on
+  the tree with `data-exists`/`data-missing` errors; check: RFC 6241
+  §7.2's examples.
+- 2.1.3 G: insert and move for `ordered-by user` with `point` and
+  `where`; check: RFC 8072's examples.
+- 2.1.4 G: diff between two trees as a YANG Patch; check: round trip.
+- 2.1.5 G: leafref and instance-identifier existence; check: a
+  dangling reference refused.
+- 2.2.1 G: XPath-lite evaluator: node sets, paths, predicates; check:
+  the corpus's `path` statements resolve on sample data.
+- 2.2.2 G: coercions and comparisons with node-set semantics,
+  arithmetic, `and`/`or`; check: RFC 8349's RA `must`s.
+- 2.2.3 G: functions `current`, `deref`, `derived-from(-or-self)`,
+  `enum-value`, `bit-is-set`, `re-match`, `count`, `not`, the string
+  functions; check: one test each.
+- 2.2.4 G: `when` and `must` over the tree with error-message and
+  error-app-tag; check: v4ur's `when`s on augments.
+- 2.2.5 G: subtree filter and XPath filter; NACM path matcher;
+  parent-reference node sets; check: RFC 6241 §6's filter examples.
+- 2.2.6 G: property tests of the evaluator against libyang's
+  evaluator in CI (developer tool); check: no divergence on the
+  corpus.
+- 2.3.1 A: rc.conf reader and writer preserving comments and order
+  (the existing `sysrc`-shaped editor generalised), with
+  `rc.conf.d/` fragments Arcana owns; check: a fixture corpus
+  round-trips byte for byte.
+- 2.3.2 A: the conflict rule: a variable set in the user's rc.conf
+  and in an Arcana fragment refused with a message; check: fixture.
+- 2.3.3 A: loader.conf, sysctl.conf and rtadvd.conf editors; check:
+  fixtures.
+- 2.3.4 A: `running` assembled from the files into an instance tree
+  for interfaces, ip, routing; check: equals the files on the VM.
+- 2.3.5 A: `EDIT` on `running`: validate the result, render the
+  files, apply to the kernel, undo on failure (file copies restored);
+  check: a failing ioctl leaves the files as they were.
+- 2.3.6 A: `arcana:live`: edits applied to the kernel only, origin
+  `dynamic`; check: today's `address live` test passes through it.
+- 2.3.7 A: `candidate`, `commit`, `discard-changes`; check: RFC 6241
+  §8.3's sequence.
+- 2.3.8 A: `confirmed-commit` with timeout and `persist`, the revert
+  = today's safe mode; check: the existing safe-mode tests pass
+  through it, including the one that cuts the connection.
+- 2.3.9 A: operational with `with-origin` (intended, system, dynamic,
+  learned, default); check: a system interface, a configured one, a
+  live address.
+- 2.3.10 A: `with-defaults` report-all, trim, explicit; check: RFC
+  6243's examples.
+- 2.4.1 A: RIB dump per FIB by NET_RT_DUMP with fibnum; `source-
+  protocol`, special next hops, `active`; check: equals `netstat -rn`.
+- 2.4.2 A: ECMP by netlink RTA_MULTIPATH as `next-hop-list`; check:
+  two gateways for one prefix.
+- 2.4.3 A: static routes in `running` ↔ rc.conf `static_routes`,
+  `route_<name>`, `defaultrouter`, IPv6 variants; check: fixtures.
+- 2.4.4 A: static routes applied to the kernel by rtsock or netlink
+  with `-fib`; check: `route -n get`.
+- 2.4.5 A: `active-route` action by RTM_GET; check: equals `route get`.
+- 2.4.6 A: route events per FIB (one rtsock per FIB or netlink
+  groups) into the event sources; `last-updated` tracked; check: an
+  added route seen.
+- 2.5.1 A: rtadvd.conf ↔ the RA submodule, `rtadvctl reload`; check:
+  `rtadvctl show` after an edit.
+- 2.6.1 A: `ietf-network-instance` entries from `net.fibs`, names in
+  `fibs.conf`; check: the list on a host with `net.fibs=4`.
+- 2.6.2 A: `vrf-root` mount serving routing per FIB; check: the FIB's
+  table under the mount.
+- 2.6.3 A: `bind-ni-name` by SIOCGIFFIB/SIOCSIFFIB and rc.conf `fib`;
+  `bind-ni-name-failed`; check: `ifconfig em0 fib 2` reads back.
+- 2.6.4 A: `net.fibs` in loader.conf with the reboot-required flag
+  when a new instance is asked for; check: the flag in the reply.
+- 2.7.1 A: LNE list from `jail_get` with `vnet = new`; check: equals
+  `jls -v`.
+- 2.7.2 A: the attached helper: fork, `jail_attach`, cblink 2 over a
+  socketpair, lazily started, stopped with the jail; check: a jail's
+  interfaces read through it.
+- 2.7.3 A: `root` mount dispatching to the helper; nested NIs inside;
+  check: a FIB's routes inside a jail.
+- 2.7.4 A: `bind-lne-name` by SIOCSIFVNET and jail.conf
+  `vnet.interface` through libjailconf; `bind-lne-name-failed`; check:
+  an epair moved and moved back.
+- 2.7.5 A: jail start and stop seen by `exec.poststart`/`poststop`
+  hooks Arcana writes into jail.conf; check: an event per start.
+- 2.8.1 A: `ietf-yang-library` at the root and under each mount with
+  `content-id`; `yang-library-update` on change; check: `GET` of the
+  library.
+- 2.8.2 A: `ietf-yang-schema-mount` state (`schema-mounts`); check:
+  RFC 8528's examples' shape.
+- 2.9.1 C: persistent and live address edits through `EDIT`; a static
+  route; an interface moved into a jail; check: the browser test.
+- 2.9.2 L: a hand edit of rc.conf shown as drift (intended ≠
+  running); written to TODO's verified list.
+- 2.10.1 G, A: the fixture corpus for every file editor under
+  `tests/fixtures/`; validator tests from RFC 7950's examples; XPath
+  tests; check: `make check`.
+
+### Y-3
+
+- 3.1.1 A: `arcana-jails` from `arcana.yaml`'s jail set and jail(8)'s
+  parameter list; actions start, stop, restart, kill; the LNE link;
+  check: `list` and `action` tests pass through it.
+- 3.1.2 A: `arcana-services`: scripts, rcvars, actions, rc.conf
+  variables as leaves in `running`; check: the services tests.
+- 3.1.3 A: `arcana-packages` and the upgrade rpc with a job; check:
+  the packages tests.
+- 3.1.4 A: `arcana-jobs`: the queue as a list, `submit` rpc, `cancel`
+  and `confirm` actions, traces as a flat list with parent ids; check:
+  the jobs tests; the trace tree rebuilt in the page.
+- 3.1.5 A: `arcana-storage` (GEOM, pools, datasets, snapshots, mounts,
+  fstab; send and receive as streams); check: the storage tests, the
+  root ZFS test.
+- 3.1.6 A: `arcana-sysctl` (`running` ↔ sysctl.conf, operational from
+  sysctl(3)); `arcana-kernel` (modules, `kld_list`); check: tests.
+- 3.1.7 A: `arcana-processes`, `arcana-log`, `arcana-history`,
+  `arcana-events` (numbered, replayable); check: tests.
+- 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph`,
+  `arcana-plugins`; check: the plugin tests.
+- 3.1.9 A: `arcana-host` (facts, router-id, role, capabilities),
+  `arcana-agent` (update and build rpcs); check: `hello`'s tests.
+- 3.1.10 A: `arcana-dummynet` (schedulers, pipes, queues) read and
+  written; check: the QoS tests.
+- 3.1.11 A: `arcana-probe` (sessions, config, results) over today's
+  ICMP engine; check: the probe tests.
+- 3.1.12 A: the SD-WAN reads and writes (`sdwan`, `-rules`, `-steer`,
+  `-bird`, `-dhcp`, `-dns`, `-proxy`, `-ids`) as typed modules; the
+  JSON gone; check: the SD-WAN tests and the two-jail lab.
+- 3.2.1 A: `ietf-subscribed-notifications` streams list, `establish`
+  as a push-stream open with the id in the accept; check: one record.
+- 3.2.2 A: periodic YANG-Push with `period` and `anchor-time`; check:
+  stats pushed every second.
+- 3.2.3 A: on-change with dampening and YANG Patch records from the
+  event sources (interfaces, addresses, routes, jails, jobs); check:
+  an address added arrives as a patch.
+- 3.2.4 A: subtree and XPath filters on subscriptions; check: one
+  interface's counters only.
+- 3.2.5 A: state-change notifications; suspension on credit
+  exhaustion and resumption; `modify`, `kill`, `resync` rpcs; check:
+  a slow subscriber suspended and resumed.
+- 3.2.6 A: replay from the event number for events and job traces;
+  check: a subscription from an old number.
+- 3.2.7 A: configured subscriptions: the agent calling the console
+  as receiver over cblink; check: the console restarted, records
+  resume.
+- 3.2.8 A: subscription monitoring counters; check: `GET` of
+  `subscriptions`.
+- 3.3.1 A: NACM groups from the certificate's subject or the socket's
+  uid, rule-lists in `running`; check: RFC 8341's examples.
+- 3.3.2 A: enforcement for rpcs, data nodes (read as omission) and
+  notifications; counters; check: one test per point.
+- 3.3.3 A, C: the console's user passed per connection to an agent
+  that trusts it by certificate role; check: two users, two views.
+- 3.4.1 C: one long-lived cblink connection per agent with streams;
+  reconnect with backoff; check: an agent restarted.
+- 3.4.2 C: jobs, stats, lists and the SD-WAN read taken from
+  subscriptions, the one-second polls removed; check: the browser
+  test's timings.
+- 3.4.3 C: `events` subscribed and relayed to the page; check: an
+  event within a second in the page.
+- 3.5.1 A, C: `arcana-steer`: candidates, chosen, reason, events;
+  written by local failover and by the console; check: a failover
+  seen on both.
+- 3.5.2 G, A: the control stream: a push stream of its own for steer
+  and probe notifications, its own SCTP stream; check: order kept
+  under a bulk dump.
+- 3.6.1 C: `arcanactl get|set|rpc <path>` with libxo output; the old
+  verbs removed; check: the arcanactl tests rewritten.
+- 3.7.1 A, C: every former operation's test against its module; the
+  root suite on real jails; check: `make check` green as root.
+- 3.8.1 A, C: the branch of 1.11 merged; versions bumped; UPDATING.md
+  on the flag day and the order (agents first from the last v1
+  console); check: a fleet of two updated on the lab in that order.
+
+### Y-4
+
+- 4.1.1 C: `/.well-known/host-meta`, `/restconf`, `yang-library-
+  version`; check: RFC 8040 §3.1's examples.
+- 4.1.2 C: api-path parser (percent-decoding, module qualification,
+  list keys, leaf-list values, empty keys); check: §3.5.3's examples.
+- 4.1.3 C: GET with `content`, `depth`, `fields`, `with-defaults`;
+  check: §4.8's examples.
+- 4.1.4 C: POST, PUT, PATCH (plain), DELETE with the status table,
+  `Location`, 409 on `data-exists`; check: §4's examples.
+- 4.1.5 C: YANG Patch (`application/yang-patch+json`) forwarded as one
+  `EDIT`; check: RFC 8072's examples.
+- 4.1.6 C: ETag and Last-Modified from the host's commit counter;
+  conditional requests; check: §3.4.1.2 and §3.4.1.3.
+- 4.1.7 C: `ietf-restconf:errors` from the agent's error structure
+  with §7's status mapping; check: one test per error-tag.
+- 4.1.8 C: `restconf-state/streams` and SSE delivery with the §6.4
+  envelope; `Last-Event-ID` → replay; check: a stream over curl.
+- 4.1.9 C: `establish-subscription` by POST with the SSE location;
+  check: a periodic subscription from curl.
+- 4.1.10 C: `application/yang-data+cbor` pass-through; check: the
+  PWA's decoder reads it.
+- 4.2.1 C: JSON → CBOR by schema (names → SIDs with module
+  qualification, numbers, strings, base64, empty, bits, enums,
+  identityref, instance-identifier strings, union by canonical form);
+  check: RFC 7951's examples both ways.
+- 4.2.2 C: CBOR → JSON including origin as `@` annotations; check:
+  RFC 7952's example shape.
+- 4.3.1 C: `arcana-fleet` module; the host prefix stripped and the
+  remainder resolved against the host's cached library and SID
+  tables; check: a GET to two hosts of different revisions.
+- 4.3.2 C: the SID and library cache refreshed on
+  `yang-library-update`; check: an agent updated under the console.
+- 4.3.3 C: fan-out subscriptions merged with the host prefix on each
+  record; check: two hosts' events on one stream.
+- 4.4.1 C: `arcana-console` module served from the libucl files
+  (settings, tokens, workflows, enrolment tokens, users); check: GET
+  and PUT of a setting.
+- 4.4.2 C: the WebAuthn ceremonies, logout, `assetlinks.json`, enrol
+  and health moved beside `/restconf`; `/api` removed; check: the
+  console tests rewritten; the Android app's paths updated in its
+  repository in step.
+- 4.5.1 C: `ietf-vpn-common` and `ietf-l3vpn-ntw` stored as the
+  service; check: RFC 9182's Appendix A example accepted.
+- 4.5.2 C: the Arcana augmentations of L3NM: application flows, the
+  policy map, performance criteria, breakout, security policies,
+  tunnel virtual connections, probes, steering criteria, routing
+  domains; check: today's example document expressible.
+- 4.5.3 C: the MEF 70.2 importer (document → L3NM + augments) and
+  exporter; check: the example document imports and exports to the
+  same bytes.
+- 4.5.4 C: the planner reading L3NM: profiles and node overrides
+  resolved, the allocation ledger (FIBs, addresses, RDs, VNIs, table
+  names) persisted; check: the plan of the example equals today's.
+- 4.5.5 C: the planner emitting device edits (interfaces, ip,
+  routing, NI, LNE, dummynet, bird, probe, steer) instead of
+  `sdwan-*` JSON; check: the two-jail lab applies and passes.
+- 4.5.6 C: refusal of the infeasible with the reason and an
+  alternative; check: a bandwidth over the link refused.
+- 4.6.1 A: each agent's node, TPs and SAPs dumped with `sap-status`;
+  check: equals the interface list.
+- 4.6.2 C: the SAP network and the physical network under it; the
+  anomaly rules as checks; check: RFC 9408 §5's cases.
+- 4.6.3 C: the Appendix D flow in the planner (free SAP → access id);
+  check: a service placed on a free SAP.
+- 4.7.1 C: `ietf-vn` view: access points and VNAPs from UNIs, members
+  from tunnels, `oper-status` and `if-selected` from `arcana-steer`;
+  check: RFC 9731's example shape for the lab service.
+- 4.7.2 C: `path-metric-bounds` with Arcana metric identities for
+  loss and delay variation; the `arcana-sdwan-underlay` augment;
+  check: the TCA thresholds round-trip.
+- 4.7.3 C: `vn-compute` as the Check over per-edge feasibility rpcs;
+  check: an infeasible member reported with `error-info`.
+- 4.8.1 P: the page's fetch layer on RESTCONF JSON (or CBOR
+  pass-through); check: the browser test.
+- 4.8.2 P: SSE subscriptions replace the page's polling; check:
+  timings in the browser test.
+- 4.8.3 P: forms generated from the yang-library for the Arcana
+  modules (the schema page's renderer reused); check: a jail made
+  from a generated form.
+- 4.9.1 D: the API page from the RESTCONF description; openapi.yaml
+  retired or generated; the book's chapters (kept by the session on
+  the user's machine).
+- 4.10.1 L: a service written as L3NM through RESTCONF, applied on
+  the lab, read back as VN and SAP, exported as MEF and re-imported
+  unchanged; written to TODO's verified list.
+
+### Y-5
+
+- 5.1.1 A: STAMP reflector, stateless, UDP 862 per service FIB,
+  unauthenticated 44-byte packets, T2/T3 by SO_TIMESTAMP and
+  clock_gettime; check: a TWAMP Light sender gets replies.
+- 5.1.2 A: stateful reflector mode; SSID; check: sequence counters.
+- 5.1.3 A: STAMP sender replacing the ICMP engine's scheduling for
+  Arcana targets, RTT with reflector time removed, directional loss;
+  check: dummynet `plr` seen per direction.
+- 5.1.4 A: timestamp information TLV from `ntp_gettime`; one-way delay
+  only when both error estimates allow, else half RTT flagged; check:
+  dummynet `delay` one way.
+- 5.1.5 A: class-of-service TLV with DSCP echo; check: `tcpdump -v`.
+- 5.1.6 A: direct-measurement TLV from ipfw counters; location TLV;
+  check: NAT detection on the lab.
+- 5.1.7 A: authenticated mode (HMAC-SHA-256-128, libcrypto), keys over
+  cblink, on by default on plain tunnels; check: a tampered packet
+  refused.
+- 5.1.8 A: `arcana-stamp` module (sessions, config, counters) and
+  `kind` in `arcana-probe` (stamp, icmp); check: both kinds in one
+  service.
+- 5.1.9 L: interoperation with one open-source STAMP implementation
+  and a TWAMP Light reflector; written to TODO's verified list.
+- 5.2.1 A: raw samples per measurement interval; three percentiles;
+  loss as count and decimal percentage; microseconds; check: the
+  numbers against a sorted dump.
+- 5.2.2 A: measurement interval (default 60 s) with start and end as
+  date-and-time; per-class sessions per DSCP; check: two classes.
+- 5.3.1 C: `ietf-network-vpn-pm`: one network per service and the
+  underlay, two links per tunnel, `pm` entries from the agents'
+  records; check: RFC 9375's examples' shape.
+- 5.3.2 A: typed TP counters from if_data; per-FIB route counts;
+  check: equals `netstat`.
+- 5.3.3 A, C: underlay-link probes (the far edge's WAN address, FIB
+  0); check: `pm-type-network-link` entries.
+- 5.4.1 A: `ietf-alarms`: faults and TCAs as alarms with
+  instance-identifier resources; check: RFC 8632's examples' shape.
+- 5.4.2 C: alarm inventory and shelving; the Paths tab reads alarms;
+  check: the browser test.
+- 5.5.1 A: `setdscp` colour pairs flipped on timer L per service,
+  `count dscp` rules at the ends with the SD-WAN rules; check: the
+  rules in `ipfw show`.
+- 5.5.2 A: counters read at L/2 by `IP_FW3` with a block number,
+  pushed as records; check: timing within guard band.
+- 5.5.3 C: per-tunnel loss per block; the RFC 9342 §5.1 partition with
+  Appendix A as the unit test; check: four clusters.
+- 5.5.4 A: the in-band variant through STAMP's direct-measurement TLV
+  for steering; check: steering on loss without the console.
+- 5.5.5 L: three jails, loss on one tunnel localised to its cluster.
+- 5.6.1 A: `ng_netflow` per service FIB with sampling (v9 or IPFIX by
+  0.4's result); check: records at a collector jail.
+- 5.6.2 C: BMP from BIRD to the console; check: a session's updates
+  seen.
+- 5.6.3 C: a compact time-series store with retention per class;
+  check: a week of samples on the VM's disk budget.
+- 5.7.1 D: the measurement chapter; TODO.
+
+### Y-6
+
+- 6.1.1 A: ACL bands and the name map; `call`/`return`; attachment
+  rules `in recv`/`out xmit`/`via`; names in comments; check: RFC
+  8519's Appendix A examples installed and read back.
+- 6.1.2 A: the match table of RFC 8519 (eth, ipv4, ipv6, tcp, udp,
+  icmp, ports with operators, interfaces); check: one test per field.
+- 6.1.3 A: the refusals with extended acks (ICMP code, ECN, ihl,
+  offset, identification, TCP fields, ECE/CWR/AE, IPv6 ff/lf, the three
+  extension headers); check: one test per refusal.
+- 6.1.4 A: actions and logging; aggregate statistics from rule
+  counters; check: `ipfw -a list`.
+- 6.1.5 A: RFC 9899 defined sets: prefix sets as tables with shadow
+  swap, port sets as lists or number tables, protocol sets as
+  or-blocks, ICMP sets as lists, aliases decomposed; check: Appendix
+  B's examples.
+- 6.1.6 A: RFC 9899 matches: fragments v4 and v6 isf, extension
+  headers, flags-bitmask, set references; check: Appendix B.1, B.2,
+  B.6.
+- 6.1.7 A: RFC 9899 actions: `rate-limit` as a pipe, `log-action`,
+  `counter-action`; check: B.6 at 20 bytes per second.
+- 6.1.8 A: the Arcana augments: attachment to a FIB, a jail, all
+  interfaces; `default-action`; `stateful`; reject code; check: one
+  test each.
+- 6.1.9 A: ACLs applied inside the set-swap transaction with the
+  SD-WAN rules; `tables_max` raised at start; check: an apply with
+  both.
+- 6.1.10 C: the SASE `ip-block` policies compiled through the ACL
+  module; check: the SASE tests.
+- 6.2.1 A: PF_KEYv2 in-process (libipsec): SADB_ADD/UPDATE/DELETE/GET/
+  DUMP replacing setkey text; check: the SA tests and the root ipsec
+  test.
+- 6.2.2 A: SPD by SADB_X_SPDADD/SPDDELETE/SPDDUMP and the ipsec(4)
+  reqid mapping; check: a policy both ways.
+- 6.2.3 A: SADB_REGISTER; `sadb-acquire` and `sadb-expire`
+  notifications; `sadb-seq-overflow` synthesised; check: a soft
+  expiry seen.
+- 6.2.4 A: `ietf-i2nsf-ikeless` lists over the above; the refusals;
+  `net.key.preferred_oldsa=0`; check: RFC 9061 Appendix B's example.
+- 6.2.5 A, C: uswe's keys as `esp-sa/key` from the agent's own
+  derivation; Appendix D.2's rekey order; check: the rekey test.
+- 6.3.1 A: VICI for `list-sas`, `stats` and events in place of
+  `--list-sas --pretty`; check: the state leaves.
+- 6.3.2 A: `ietf-i2nsf-ike` over the swanctl files: pad entries,
+  connections, lifetimes, proposals from the IANA tables; private
+  keys refused; check: Appendix A's example.
+- 6.3.3 A: `ipsec-stats` per SA (RFC 9348's one usable part); the
+  `traffic-flow-security` augment refused with
+  `operation-not-supported`; an `ipsec-capabilities` dump; check:
+  tests.
+- 6.4.1 A, C: `ietf-key-chain` (RFC 8177) mapped to BIRD passwords,
+  tcp-md5 SAs and swanctl secrets; write-only leaves; check: a BGP
+  session with a chain.
+- 6.5.1 A: BIRD per-service `flow4`/`flow6` channels with `validate
+  on` in the templates; check: a flowspec route accepted and an
+  invalid one refused.
+- 6.5.2 A: the `show route table ... all` flowspec parser; check: RFC
+  8955 §4.3 and RFC 8956 §3.8 examples through BIRD static routes.
+- 6.5.3 A: ordering per §5.1 with the reference Python as oracle;
+  check: property test.
+- 6.5.4 A: the ipfw translation of the 13 components; unsupported
+  specs counted and reported; check: one test per component.
+- 6.5.5 A: actions (deny, pipe, `ng_car`, log and count, terminal
+  composition, `setfib` by RT, `setdscp`); check: one test each.
+- 6.5.6 A: the dedicated set rebuilt atomically before the SD-WAN set;
+  caps; faults; check: a flapping table.
+- 6.5.7 C: flowspec originated as static routes with extended
+  communities on the reflector; check: the round trip on the lab.
+- 6.5.8 L: drop, mark, refib on the lab; a UNI eBGP stand-in accepted
+  for its own prefix and refused for a foreign one.
+- 6.6.1 C, A (if 0.3 succeeded): the port option; `vpn4`/`vpn6` with
+  BIRD's labels and a VXLAN VNI per VPN; RD/RT operational; check:
+  two VPNs over one session.
+- 6.7.1 D: the firewall and IPsec chapters; TODO.
+
+### Y-7
+
+- 7.1.1 A: `arcana-dummynet` NRP objects (scheduler tier templates,
+  queue weight, buffer, DSCP class, tunnel set) referenced by
+  services; check: today's QoS expressed as NRPs.
+- 7.1.2 C: the admission ledger with an overbooking factor per tier;
+  refusal; check: a sum over the link refused.
+- 7.1.3 A, C: isolation tiers as SLEs; probes in the construct's
+  queue, BFD in the control class; check: congestion seen by probes.
+- 7.2.1 C: SDP placement per UNI (VLAN or 5-tuple); constructs P2P,
+  P2MP, A2A mapped to NRPs; check: one of each on the lab.
+- 7.2.2 C: SLOs evaluated from PM; availability with period and
+  maximum single outage; check: an outage counted.
+- 7.3.1 A, C: RFC 9016 traffic specification → per-flow queue and
+  policer; the `prio` tier; the tick raised; check: bounded queueing
+  under load on the lab.
+- 7.3.2 C: console-owned explicit routes per FIB with a reconvergence
+  policy; capability leaves (`worst-case-delay unknown`, estimate);
+  check: a link cut re-planned.
+- 7.3.3 D: the band A/B/C statement; an RFC 9633 profile as a view.
+- 7.4.1 A, C: `arcana-cats`: services with CS-IDs, instances,
+  contact instances, the normalised score; check: the score from
+  `arcana-host` facts.
+- 7.4.2 C, A: candidate sets with dwell and hysteresis; affinity by
+  dynamic state; Egress instance choice by `fwd`; check: two
+  instances, one failing.
+- 7.4.3 A: compute scores as BGP communities through the reflector
+  (optional); check: a community seen.
+- 7.5.1 C: certificates with AcpNodeName, Registrar-ID and node
+  numbers persisted, the ULA and sub-scheme per host; check: a
+  certificate's SAN.
+- 7.5.2 A: the `acp` vnet jail made by the agent with `lo1`, the ULA
+  and the black hole route; check: the jail on a fresh host.
+- 7.5.3 A: `arcana-acp` daemon: DULL GRASP per interface, the
+  adjacency table; check: two jails see each other.
+- 7.5.4 A: IKEv2 channels by strongSwan with the RFC's profile over
+  link-local, if_ipsec per neighbour; Decider/Follower; backoff;
+  check: a channel up between two jails.
+- 7.5.5 A: BIRD Babel in the jail announcing the prefix; check: the
+  far ULA reachable.
+- 7.5.6 A: the ACP GRASP instance (TCP 7017 flooding, TLS 1.3
+  unicast); `SRV.est` flooded by the console host; check: the
+  objective in a host's cache.
+- 7.5.7 C: EST server (`/.well-known/est/cacerts`, `csrattrs`,
+  `simplereenroll`) over the ACP; renewal at 50 %; CRL on the ULA;
+  check: a renewal before expiry.
+- 7.5.8 C, A: configured remote neighbours with the console host as
+  hub (NAT-T); tunneled neighbours over SD-WAN tunnels; check: an edge
+  behind a NAT jail.
+- 7.5.9 C: cblink over the ULA first; check: the data-plane route
+  removed, the console still reads the host.
+- 7.5.10 A: admin down redefined for ACP interfaces; NTP over the ACP;
+  `arcana-acp` state and faults (§9.1); check: the diagnostics view.
+- 7.5.11 L: four jails: L2 adjacency, hub over a WAN jail, ACP over a
+  wg tunnel; written to TODO's verified list.
+- 7.6.1 C: the signed peer directory per service published by
+  YANG-Push; check: a spoke reads it.
+- 7.6.2 A: agents reconciling tunnels from the directory; check: a
+  peer's address changed, tunnels back without a job.
+- 7.6.3 C, A: shortcut tunnels from flow telemetry with lifetimes and
+  hysteresis; reflexive endpoints from the hub; check: two spokes
+  behind NATs shortcut or fall back visibly.
+- 7.6.4 C: multi-gateway entries for remote users; events for every
+  establishment and fallback; check: a user moved between gateways.
+- 7.7.1 A: `arcana-asa`, unprivileged, over the agent's socket; the
+  Instance Manifest; roles in certificates; check: it starts and
+  stops with the agent.
+- 7.7.2 A: `arcana:steer` objective flooded so both ends switch in
+  step; check: a tunnel down, both ends on the same candidate within
+  a second.
+- 7.7.3 A: `arcana:sa-rekey` negotiated with dry run; check: a rekey
+  without the console.
+- 7.8.1 C: `arcana-intent` statements translated into L3NM; the plan
+  showing both; check: a statement becomes the example service.
+- 7.8.2 C: drift and SLO compliance per statement; the "why" record;
+  retraction; check: a retracted statement removes only its own.
+- 7.9.1 D: ARCHITECTURE.md in RFC 7426's terms; the conformance
+  chapter extended.
+
+### Y-8
+
+- 8.1.1 L: `bench/` harness: jails, epairs, bridges, cpuset, the UDP
+  sequence generator, agent and console timestamp logs behind a
+  test-only option; check: one run end to end.
+- 8.1.2 L: the RFC 8456 tests one by one with RFC 8455's names and
+  units; the not-applicable list; check: the report table.
+- 8.1.3 L: the run before 3.4 (from a tag) and after; nightly at the
+  larger scale; check: CI artefact.
+- 8.2.1 D: UPDATING.md on the two flag days.
+- 8.3.1 D: per RFC, features, deviations, refusals and the cannot-map
+  list in the book's conformance chapter and in `ietf-yang-library`.
+- 8.4.1 C: primary/standby consoles sharing the data directory and
+  the CA; agents trusting the CA, not one console; check: the standby
+  takes over; the failover benchmark run.
+
 ## Order and effort
 
 | Phase | Weeks | Needs | Delivers |
