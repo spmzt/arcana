@@ -2901,6 +2901,7 @@ agent_build_body()
 # The commit a clone is at, and the head of the repository's branch.
 [ "\$1" = -C ] && [ "\$3" = rev-parse ] && { echo 1111111111111111111111111111111111111111; exit 0; }
 # The log clone: made bare, fetched, read; what ./log and ./tags hold.
+[ "\$1" = -C ] && [ "\$3" = config ] && { echo "\$5" > "\$2/ORIGIN"; exit 0; }
 [ "\$1" = -C ] && [ "\$3" = fetch ] && exit 0
 [ "\$1" = -C ] && [ "\$3" = log ] && { cat $(pwd)/log 2>/dev/null; exit 0; }
 [ "\$1" = -C ] && [ "\$3" = for-each-ref ] && { cat $(pwd)/tags 2>/dev/null; exit 0; }
@@ -2967,6 +2968,12 @@ EOS
 	    -o match:'^Tags: +\[\{"name":"v0.2.0","time":100,"message":"Release two"\}\]$' \
 	    "$JGC" -c "$SOCK" source-log -n 2 https://example.org/arcana.git main
 	atf_check -o match:'clone --bare --filter=blob:none --single-branch --branch main -- https://example.org/arcana.git' cat build/log.git/HEAD
+	atf_check -o inline:'https://example.org/arcana.git\n' cat build/log.git/ORIGIN
+	# Another repository named: the clone kept, fetched from it.
+	atf_check -o match:'^Commit: ' \
+	    "$JGC" -c "$SOCK" source-log -n 2 https://example.org/moved.git main
+	atf_check -o match:'-- https://example.org/arcana.git' cat build/log.git/HEAD
+	atf_check -o inline:'https://example.org/moved.git\n' cat build/log.git/ORIGIN
 	atf_check -s exit:1 -e match:'git failed' -o ignore \
 	    "$JGC" -c "$SOCK" source-head https://example.org/arcana.git nope
 	# Over SSH as a build is: the host key is not taken on trust.

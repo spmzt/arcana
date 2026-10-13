@@ -446,6 +446,7 @@ struct app {
 	ucl_object_t	*push;		/* /api/push: the devices that are told */
 	ucl_object_t	*tokens;	/* /api/tokens: read-only API tokens */
 	char		 token_name[65];	/* the name typed for a new one */
+	bool		 token_write;	/* and whether it is to write too */
 	char		 token_value[80];	/* a new one's value, shown once */
 	ucl_object_t	*build_reply;	/* a build that needs the user: host keys */
 	char		 build_sid[9];	/* and the host it was asked of */
@@ -758,7 +759,7 @@ void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
 /* view.c: the settings' tabs. */
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
-    SET_WEBCONF, SET_NEWS, SET_CA };
+    SET_WEBCONF, SET_NEWS, SET_CA, SET_UPDATE };
 /* ca.c: Settings, Certificate authority. */
 void		 ca_load(void);
 void		 ca_tick(double);

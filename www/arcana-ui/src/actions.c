@@ -3003,7 +3003,8 @@ token_new(void)
 		return;
 	}
 	q = json_quote(app.token_name);
-	if (asprintf(&body, "{\"name\":%s}", q) == -1)
+	if (asprintf(&body, "{\"name\":%s,\"kind\":\"%s\"}", q,
+	    app.token_write ? "write" : "read") == -1)
 		abort();
 	free(q);
 	api("POST", "/api/tokens", body, token_made_cb, NULL);

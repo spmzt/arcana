@@ -881,8 +881,8 @@ records_json(struct work *w, const char *out, size_t len, bool commits)
 /*
  * What is new in the repository's branch, for the update boxes and
  * the What's new tab: a bare clone without the files (blob:none),
- * kept in the build directory as log.git and fetched again each time,
- * over SSH as the builds fetch; then its latest commits, newest
+ * kept in the build directory as log.git and fetched again each time
+ * from the repository named now, over SSH as the builds fetch; then its latest commits, newest
  * first, each its hash, time, subject and body, and its tags with
  * their messages, the release notes where there are any.  Nothing is
  * built.
@@ -938,6 +938,23 @@ source_log(struct work *w, const char *source, const char *ref,
 			rsp->error = git_error(w, &res);
 			return (0);
 		}
+	}
+	/*
+	 * The clone stays; the repository named may not: origin is set to
+	 * it each time, else a clone made from an earlier source would go
+	 * on fetching from there.
+	 */
+	n = 0;
+	argv[n++] = opts.git_bin;
+	argv[n++] = "-C";
+	argv[n++] = dir;
+	argv[n++] = "config";
+	argv[n++] = "remote.origin.url";
+	argv[n++] = source;
+	argv[n] = NULL;
+	if (run_as(w, unpriv, argv, &res) != 0) {
+		rsp->error = git_error(w, &res);
+		return (0);
 	}
 	n = 0;
 	argv[n++] = opts.git_bin;

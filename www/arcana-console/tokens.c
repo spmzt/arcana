@@ -5,17 +5,24 @@
  */
 
 /*
- * Read-only API tokens: for a program to look at what the console sees
- * without a passkey.  A token is made in a session, shown once, and kept
- * only as its SHA-256 with a name, when it was made and when it was last
- * used (tokens.json in the data directory).  Sent as
+ * API tokens: for a program to use the console without a passkey.  A
+ * token is made in a session, shown once, and kept only as its SHA-256
+ * with a name, its kind, when it was made and when it was last used
+ * (tokens.json in the data directory).  Sent as
  *
- *	Authorization: Bearer arcr_<64 hex digits>
+ *	Authorization: Bearer arcr_<64 hex digits>	(reads)
+ *	Authorization: Bearer arcw_<64 hex digits>	(reads and writes)
  *
- * it opens what a GET opens and nothing else: guard() lets it through
- * only where nothing is changed, so a token cannot make another, change
- * a setting or queue a job.  Deleted, it opens nothing at once, in every
- * worker: the file is read again whenever it changed.
+ * a read token opens what a GET opens and nothing else.  A write token
+ * also changes things: queues jobs, updates hosts and the console; the
+ * session's CSRF checks are not needed, since a browser never sends a
+ * bearer token by itself.  Neither opens the console's own settings,
+ * sign-in, push, the enrolment tokens that let a host join, or, for a
+ * change, the tokens and the CA: a token cannot make another, add a
+ * passkey or change what repository is built as root.  What a write
+ * token does is audited under its name.  Deleted, a token opens
+ * nothing at once, in every worker: the file is read again whenever it
+ * changed.
  */
 
 #include <sys/param.h>
@@ -32,7 +39,8 @@
 
 #define	TOKENS_FILE	"tokens.json"
 #define	TOKENS_MAX	32
-#define	TOKEN_PREFIX	"arcr_"
+#define	TOKEN_PREFIX	"arcr_"		/* a read token */
+#define	TOKEN_WPREFIX	"arcw_"		/* a write token */
 #define	TOKEN_SAVE	60	/* s between two writes of when one was used */
 
 struct token {
@@ -41,6 +49,7 @@ struct token {
 	char		name[65];
 	time_t		created;
 	time_t		last;
+	bool		write;
 };
 
 static struct token	tokens[TOKENS_MAX];
@@ -68,6 +77,16 @@ token_readable(const char *path)
 	    "/api/settings", 13) != 0 && strncmp(path, "/api/auth", 9) != 0 &&
 	    strncmp(path, "/api/push", 9) != 0 && strncmp(path, "/api/enrol",
 	    10) != 0);
+}
+
+/* What a write token may change: what it may read, but the tokens and
+ * the CA. */
+bool
+token_writable(const char *path)
+{
+
+	return (token_readable(path) && strncmp(path, "/api/tokens", 11) !=
+	    0 && strncmp(path, "/api/ca", 7) != 0);
 }
 
 static void
@@ -134,6 +153,8 @@ tokens_load(void)
 		    "created"));
 		tokens[ntokens].last = ucl_object_toint(ucl_object_lookup(e,
 		    "last"));
+		tokens[ntokens].write = ucl_object_toboolean(ucl_object_lookup(
+		    e, "write"));
 		ntokens++;
 	}
 	ucl_object_unref(o);
@@ -156,6 +177,7 @@ tokens_save(void)
 		put(e, "name", ucl_object_fromstring(tokens[i].name));
 		put(e, "created", ucl_object_fromint(tokens[i].created));
 		put(e, "last", ucl_object_fromint(tokens[i].last));
+		put(e, "write", ucl_object_frombool(tokens[i].write));
 		ucl_array_append(a, e);
 	}
 	put(o, "tokens", a);
@@ -169,47 +191,75 @@ tokens_save(void)
 	return (rc);
 }
 
-/* Is the request's bearer a token of ours?  Its use is noted. */
-bool
-token_valid(struct http_request *req)
+/* The request's bearer token, if one of ours; NULL else. */
+static struct token *
+token_of(struct http_request *req)
 {
 	const char	*v;
 	uint8_t		 h[32];
-	time_t		 now;
 	int		 i;
 
 	if (!http_request_header(req, "authorization", &v) ||
 	    strncmp(v, "Bearer ", 7) != 0)
-		return (false);
+		return (NULL);
 	v += 7;
-	if (strncmp(v, TOKEN_PREFIX, strlen(TOKEN_PREFIX)) != 0 ||
+	if ((strncmp(v, TOKEN_PREFIX, strlen(TOKEN_PREFIX)) != 0 &&
+	    strncmp(v, TOKEN_WPREFIX, strlen(TOKEN_WPREFIX)) != 0) ||
 	    strlen(v) != strlen(TOKEN_PREFIX) + 64)
-		return (false);
+		return (NULL);
 	tokens_load();
 	digest(v, h);
-	for (i = 0; i < ntokens; i++) {
-		if (memcmp(tokens[i].hash, h, sizeof(h)) != 0)
-			continue;
-		now = time(NULL);
-		tokens[i].last = now;
-		if (now - tokens_saved >= TOKEN_SAVE)
-			(void)tokens_save();
-		return (true);
-	}
-	return (false);
+	for (i = 0; i < ntokens; i++)
+		if (memcmp(tokens[i].hash, h, sizeof(h)) == 0)
+			return (&tokens[i]);
+	return (NULL);
+}
+
+/*
+ * What the request's bearer token may do: TOKEN_NONE (no token of
+ * ours), TOKEN_READ or TOKEN_WRITE.  Its use is noted.
+ */
+int
+token_kind(struct http_request *req)
+{
+	struct token	*t;
+	time_t		 now;
+
+	if ((t = token_of(req)) == NULL)
+		return (TOKEN_NONE);
+	now = time(NULL);
+	t->last = now;
+	if (now - tokens_saved >= TOKEN_SAVE)
+		(void)tokens_save();
+	return (t->write ? TOKEN_WRITE : TOKEN_READ);
+}
+
+/* Who a write token's request is, for the audit trail; NULL else. */
+const char *
+token_who(struct http_request *req)
+{
+	static char	 who[sizeof(((struct token *)0)->name) + 16];
+	struct token	*t;
+
+	if ((t = token_of(req)) == NULL || !t->write)
+		return (NULL);
+	snprintf(who, sizeof(who), "API token %s", t->name);
+	return (who);
 }
 
 /*
  * GET /api/tokens: the tokens, without what opens them.
- * POST /api/tokens {"name"}: a new one, its value in the reply only.
+ * POST /api/tokens {"name", "kind": "read"|"write"}: a new one, a read
+ * one unless said, its value in the reply only.
  * DELETE /api/tokens/<id>: one gone.
  */
 int
 api_tokens(struct http_request *req)
 {
 	ucl_object_t	*top, *a, *e, *body;
-	const char	*name, *id;
+	const char	*name, *id, *kind;
 	uint8_t		 raw[32];
+	bool		 write;
 	char		 value[sizeof(TOKEN_PREFIX) + 64];
 	int		 i;
 
@@ -225,6 +275,8 @@ api_tokens(struct http_request *req)
 			put(e, "name", ucl_object_fromstring(tokens[i].name));
 			put(e, "created", ucl_object_fromint(tokens[i].created));
 			put(e, "last", ucl_object_fromint(tokens[i].last));
+			put(e, "kind", ucl_object_fromstring(tokens[i].write ?
+			    "write" : "read"));
 			ucl_array_append(a, e);
 		}
 		put(top, "tokens", a);
@@ -259,13 +311,22 @@ api_tokens(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "a token has a name "
 		    "of 1 to 64 characters"));
 	}
+	kind = ucl_str(body, "kind");
+	if (kind != NULL && strcmp(kind, "read") != 0 && strcmp(kind,
+	    "write") != 0) {
+		ucl_object_unref(body);
+		return (reply_error(req, 400, "invalid", "a token's kind is "
+		    "read or write"));
+	}
+	write = kind != NULL && strcmp(kind, "write") == 0;
 	if (ntokens == TOKENS_MAX) {
 		ucl_object_unref(body);
 		return (reply_error(req, 409, "full", "%d tokens at most: "
 		    "delete one first", TOKENS_MAX));
 	}
 	arc4random_buf(raw, sizeof(raw));
-	memcpy(value, TOKEN_PREFIX, strlen(TOKEN_PREFIX));
+	memcpy(value, write ? TOKEN_WPREFIX : TOKEN_PREFIX,
+	    strlen(TOKEN_PREFIX));
 	hex(raw, sizeof(raw), value + strlen(TOKEN_PREFIX));
 	memset(&tokens[ntokens], 0, sizeof(tokens[ntokens]));
 	digest(value, tokens[ntokens].hash);
@@ -273,6 +334,7 @@ api_tokens(struct http_request *req)
 	snprintf(tokens[ntokens].name, sizeof(tokens[ntokens].name), "%s",
 	    name);
 	tokens[ntokens].created = time(NULL);
+	tokens[ntokens].write = write;
 	ntokens++;
 	ucl_object_unref(body);
 	if (tokens_save() != 0) {
@@ -283,6 +345,7 @@ api_tokens(struct http_request *req)
 	top = ucl_object_typed_new(UCL_OBJECT);
 	put(top, "id", ucl_object_fromstring(tokens[ntokens - 1].id));
 	put(top, "name", ucl_object_fromstring(tokens[ntokens - 1].name));
+	put(top, "kind", ucl_object_fromstring(write ? "write" : "read"));
 	put(top, "token", ucl_object_fromstring(value));
 	explicit_bzero(value, sizeof(value));
 	explicit_bzero(raw, sizeof(raw));

@@ -1765,9 +1765,9 @@ paths:
   /api/tokens:
     get:
       tags: [auth]
-      summary: The read-only API tokens
-      description: Each with id, name, created and last (when it was last
-        used), never its value.
+      summary: The API tokens
+      description: Each with id, name, kind, created and last (when it
+        was last used), never its value.
       responses:
         "200":
           description: The tokens.
@@ -1781,18 +1781,20 @@ paths:
                     type: array
                     items:
                       type: object
-                      required: [id, name, created, last]
+                      required: [id, name, kind, created, last]
                       properties:
                         id: { type: string, pattern: "^[0-9a-f]{16}$" }
                         name: { type: string }
+                        kind: { type: string, enum: [read, write] }
                         created: { type: integer, description: Unix time. }
                         last:
                           type: integer
                           description: Unix time it last opened something; 0 never.
     post:
       tags: [auth]
-      summary: Make a read-only API token
-      description: In a session only. The reply's token is its value,
+      summary: Make an API token, to read or to write
+      description: In a session only. A read token (arcr_) reads; a write
+        token (arcw_) also changes things. The reply's token is its value,
         given this once; the console keeps its SHA-256. At most 32.
       requestBody:
         required: true
@@ -1803,6 +1805,10 @@ paths:
               required: [name]
               properties:
                 name: { type: string, maxLength: 64 }
+                kind:
+                  type: string
+                  enum: [read, write]
+                  default: read
       responses:
         "200":
           description: The token, its value given this once.
@@ -1810,14 +1816,16 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [id, name, token]
+                required: [id, name, kind, token]
                 properties:
                   id: { type: string, pattern: "^[0-9a-f]{16}$" }
                   name: { type: string }
+                  kind: { type: string, enum: [read, write] }
                   token:
                     type: string
-                    pattern: "^arcr_[0-9a-f]{64}$"
+                    pattern: "^arc[rw]_[0-9a-f]{64}$"
                     description: Sent as Authorization Bearer.
+        "400": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
   /api/tokens/{id}:
     delete:
@@ -2375,12 +2383,16 @@ components:
     token:
       type: http
       scheme: bearer
-      description: A read-only API token (arcr_ and 64 hex digits), made
-        in a session with POST /api/tokens. It is taken for every read
-        (the hosts, workflows and runs, SD-WAN, transfers, health, the
-        tokens) and refused with 401 for anything that changes
-        something, and for the console's settings, push, sign-in and
-        enrolment.
+      description: An API token (arcr_ or arcw_ and 64 hex digits), made
+        in a session with POST /api/tokens. A read token (arcr_) is taken
+        for every read (the hosts, workflows and runs, SD-WAN, transfers,
+        health, the tokens) and refused with 401 for anything that
+        changes something. A write token (arcw_) is also taken for
+        changes, without the session's X-Arcana header, audited under
+        "API token <name>"; it is refused with 403 for changes to the
+        tokens and the CA. Neither is taken for the console's settings,
+        push, sign-in and enrolment (401 for a read token, 403 for a
+        write one).
 
   parameters:
     server:
