@@ -559,6 +559,13 @@ ssh_form(const char *form, const ucl_object_t *f)
 			    "CA's private key, as ssh-keygen wrote it");
 			return (true);
 		}
+		if (jstr(f, "principals") == NULL || jstr(f, "principals")[
+		    strspn(jstr(f, "principals"), " \t,")] == '\0') {
+			snprintf(app.modal_error, sizeof(app.modal_error), "The "
+			    "names clients reach it by: a certificate for none "
+			    "is good for any");
+			return (true);
+		}
 		ssh_job(s, "sign", NULL, jstr(f, "principals") != NULL ?
 		    jstr(f, "principals") : "", t, NULL, "sign");
 		app.modal = MODAL_NONE;

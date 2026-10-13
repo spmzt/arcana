@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.100.0"
+#define	ARCANA_AGENT_VERSION	"0.101.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -221,6 +221,7 @@ struct execres {
 
 int		 run_exec(struct work *, char *const [], struct execres *);
 void		 exec_set_home(struct work *, const char *);
+void		 exec_set_stdin(const char *, size_t);
 void		 exec_set_secret(bool);
 int		 run_exec_lines(struct work *, char *const [],
 		    void (*)(const char *, void *), void *);

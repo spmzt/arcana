@@ -5,11 +5,11 @@
 
 /*
  * Acedia: the key of an encrypted dataset that is asked for at a
- * prompt, typed on the page: loaded, or changed.  zfs(8) reads it from
- * a file only root reads, in a directory of /tmp made for it, there
- * only while zfs reads it; then it is overwritten and taken away.  It
- * is in no job (a job is kept, and the page keeps what it sent to send
- * again), no argument list, no trace and no log.
+ * prompt, typed on the page: loaded, or changed.  zfs(8) reads it on
+ * its standard input, through a pipe, as it does a key typed when that
+ * is no terminal: it is on no disk, and in no job (a job is kept, and
+ * the page keeps what it sent to send again), no argument list, no
+ * trace and no log.
  */
 
 #include <sys/param.h>
@@ -87,62 +87,6 @@ key_props(struct work *w, const char *ds, char *loc, char *status,
 	return (0);
 }
 
-/* The key in a file of its own; its path, or NULL.  dir to take away. */
-static const char *
-key_file(struct work *w, const char *key, char *dir, size_t dlen,
-    const char **errp)
-{
-	const char	*path;
-	size_t		 len;
-	int		 fd;
-
-	snprintf(dir, dlen, "%s/tmp/.arcana-key.XXXXXXXX", opts.tools_dir !=
-	    NULL ? opts.tools_dir : "");
-	if (mkdtemp(dir) == NULL) {
-		*errp = wfmt(w, "%s: %s", dir, strerror(errno));
-		return (NULL);
-	}
-	path = wfmt(w, "%s/key", dir);
-	if ((fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
-	    O_CLOEXEC, 0600)) == -1) {
-		*errp = wfmt(w, "%s: %s", path, strerror(errno));
-		(void)rmdir(dir);
-		return (NULL);
-	}
-	len = strlen(key);
-	if (write(fd, key, len) != (ssize_t)len) {
-		*errp = wfmt(w, "%s: %s", path, strerror(errno));
-		close(fd);
-		(void)unlink(path);
-		(void)rmdir(dir);
-		return (NULL);
-	}
-	close(fd);
-	return (path);
-}
-
-/* The file overwritten, and it and its directory taken away. */
-static void
-key_gone(const char *path, const char *dir)
-{
-	struct stat	sb;
-	char		zero[512];
-	int		fd;
-
-	if (path != NULL) {
-		if ((fd = open(path, O_WRONLY | O_NOFOLLOW | O_CLOEXEC)) != -1) {
-			memset(zero, 0, sizeof(zero));
-			if (fstat(fd, &sb) == 0 && sb.st_size <= (off_t)
-			    sizeof(zero))
-				(void)write(fd, zero, (size_t)sb.st_size);
-			(void)fsync(fd);
-			close(fd);
-		}
-		(void)unlink(path);
-	}
-	(void)rmdir(dir);
-}
-
 static int
 zfs3(struct work *w, const char *a, const char *b, const char *c,
     const char *d, const char **errp)
@@ -168,27 +112,25 @@ zfs3(struct work *w, const char *a, const char *b, const char *c,
 	return (0);
 }
 
-/* Loaded from a file: zfs load-key -L file://path dataset. */
+/*
+ * zfs verb dataset, the key on its standard input: what a key asked for
+ * at a prompt is read from when it is no terminal.
+ */
 static int
-load_with(struct work *w, const char *ds, const char *key, const char **errp)
+zfs_keyed(struct work *w, const char *verb, const char *ds, const char *key,
+    const char **errp)
 {
-	const char	*path;
-	char		 dir[MAXPATHLEN];
-	int		 rc;
 
-	if ((path = key_file(w, key, dir, sizeof(dir), errp)) == NULL)
-		return (-1);
-	rc = zfs3(w, "load-key", "-L", wfmt(w, "file://%s", path), ds, errp);
-	key_gone(path, dir);
-	return (rc);
+	exec_set_stdin(key, strlen(key));
+	return (zfs3(w, verb, ds, NULL, NULL, errp));
 }
 
 void
 do_zfs_key(struct work *w, const struct arc_zfs_key_req *rq,
     struct arc_zfs_key_rsp *rsp)
 {
-	const char	*e, *path;
-	char		 loc[MAXPATHLEN], status[64], format[64], dir[MAXPATHLEN];
+	const char	*e;
+	char		 loc[MAXPATHLEN], status[64], format[64];
 	bool		 has_key, has_new;
 
 	has_key = rq->zfs_key != NULL && rq->zfs_key[0] != '\0';
@@ -226,32 +168,17 @@ do_zfs_key(struct work *w, const struct arc_zfs_key_req *rq,
 			    "first";
 			return;
 		}
-		if (load_with(w, rq->zfs_dataset, rq->zfs_key, &rsp->error) !=
-		    0)
+		if (zfs_keyed(w, "load-key", rq->zfs_dataset, rq->zfs_key,
+		    &rsp->error) != 0)
 			return;
 	} else if (!has_new) {
 		rsp->error = wfmt(w, "%s's key is loaded already",
 		    rq->zfs_dataset);
 		return;
 	}
-	if (has_new) {
-		if ((path = key_file(w, rq->zfs_new_key, dir, sizeof(dir),
-		    &rsp->error)) == NULL)
-			return;
-		if (zfs3(w, "change-key", "-o", wfmt(w, "keylocation=file://%s",
-		    path), rq->zfs_dataset, &rsp->error) != 0) {
-			key_gone(path, dir);
-			return;
-		}
-		key_gone(path, dir);
-		/* Asked for at a prompt again, as it was. */
-		if (zfs3(w, "set", "keylocation=prompt", rq->zfs_dataset, NULL,
-		    &e) != 0) {
-			rsp->error = wfmt(w, "the key is changed, but its "
-			    "keylocation is left at a file that is gone: zfs "
-			    "set keylocation=prompt %s: %s", rq->zfs_dataset, e);
-			return;
-		}
-	}
+	/* Its keylocation stays prompt: the new key read as the old. */
+	if (has_new && zfs_keyed(w, "change-key", rq->zfs_dataset,
+	    rq->zfs_new_key, &rsp->error) != 0)
+		return;
 	rsp->ok = true;
 }

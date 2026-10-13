@@ -283,7 +283,8 @@ read_entry(struct work *w, int dfd, const char *dir, const char *name,
 	}
 	if (!S_ISREG(sb.st_mode) || sb.st_size > CERT_MAX)
 		return (NULL);
-	if ((fd = openat(dfd, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)) == -1)
+	if ((fd = openat(dfd, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK |
+	    O_CLOEXEC)) == -1)
 		return (NULL);
 	buf = wmalloc(w, (size_t)sb.st_size + 1);
 	n = read(fd, buf, (size_t)sb.st_size);

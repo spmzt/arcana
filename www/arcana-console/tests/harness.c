@@ -637,9 +637,8 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "send*) cat zsend.data ;;\n"
 	    "'get -H -o value keylocation,keystatus,keyformat tank/vault') "
 	    "printf 'prompt\\nunavailable\\npassphrase\\n' ;;\n"
-	    /* What zfs read: the key's file, there while it reads. */
-	    "'load-key -L file://'*) echo \"key=$(cat \"${3#file://}\")\" >> "
-	    "storage.log ;;\n"
+	    /* What zfs read: the key, on its standard input. */
+	    "'load-key tank/vault') echo \"key=$(cat)\" >> storage.log ;;\n"
 	    "'receive -u tank/fail') cat > /dev/null; echo \"cannot receive "
 	    "new filesystem stream: destination 'tank/fail' exists\" >&2; "
 	    "exit 1 ;;\n"
