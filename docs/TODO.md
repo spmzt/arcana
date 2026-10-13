@@ -494,8 +494,6 @@ Written and tested with stand-ins, never run for real:
 - A jail's share of the CPUs and its memory from rctl_get_racct(2):
   the test VM's kernel has kern.racct.enable off, and turning it on
   needs a reboot; what is read when it is off was run for real.
-- Loading and unloading a kernel module for real: reading the kernel
-  is real, kldload(8) and kldunload(8) are stand-ins in the tests.
 - The switch to SCTP from the page, and SCTP between two machines:
   the API was run for real, between a console and an agent on one
   machine.
@@ -523,6 +521,10 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- A kernel module loaded and unloaded for real (2026-10-13, the lab
+  VM, as root): if_disc by the kmod job, listed with its references,
+  disc0 made and destroyed with it, unloaded, and the kernel itself
+  refused before anything ran.
 - WireGuard against the real wg(8), in a vnet jail (2026-10-13): wg0
   made with its address, given a key and a port (init), a peer with
   an endpoint, IPv4 and IPv6 allowed-ips and a keepalive, read back
