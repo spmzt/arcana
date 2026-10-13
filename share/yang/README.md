@@ -5,8 +5,10 @@ The IETF and IANA modules Arcana is to implement or build on
 0.2.1), as published: each extracted from its RFC between `<CODE
 BEGINS>` and `<CODE ENDS>`, or taken from the IANA YANG parameters
 registry for the modules IANA maintains (`iana-*`, current revisions
-as of 2026-10-13) and for the dependencies the named RFCs did not
-carry. Nothing here is edited; a deviation, when Arcana needs one, is a
+as of 2026-10-13), for the dependencies the named RFCs did not carry,
+and for `ietf-yang-types` and `ietf-inet-types` at RFC 9911's revision
+(2025-12-22, which replaces RFC 6991's and against which their IETF SID
+ranges are registered). Nothing here is edited; a deviation, when Arcana needs one, is a
 module of its own.
 
 `lint.sh` compiles every module with `yanglint` (net/libyang3 3.13.6),
@@ -35,7 +37,7 @@ implemented (`yanglint -i`), as an implementation of them will.
 | `ietf-i2nsf-ike@2021-07-14.yang` | module | RFC 9061 |
 | `ietf-i2nsf-ikec@2021-07-14.yang` | module | RFC 9061 |
 | `ietf-i2nsf-ikeless@2021-07-14.yang` | module | RFC 9061 |
-| `ietf-inet-types@2013-07-15.yang` | module | RFC 6991 |
+| `ietf-inet-types@2025-12-22.yang` | module | IANA, RFC 9911 |
 | `ietf-interfaces@2018-02-20.yang` | module | RFC 8343 |
 | `ietf-ip@2018-02-22.yang` | module | RFC 8344 |
 | `ietf-ipsec-iptfs@2023-01-31.yang` | module | RFC 9348 |
@@ -72,4 +74,4 @@ implemented (`yanglint -i`), as an implementation of them will.
 | `ietf-yang-push@2019-09-09.yang` | module | RFC 8641 |
 | `ietf-yang-schema-mount@2019-01-14.yang` | module | RFC 8528 |
 | `ietf-yang-structure-ext@2020-06-17.yang` | module | RFC 8791 |
-| `ietf-yang-types@2013-07-15.yang` | module | RFC 6991 |
+| `ietf-yang-types@2025-12-22.yang` | module | IANA, RFC 9911 |
