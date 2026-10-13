@@ -2913,6 +2913,30 @@ ATF_TC_BODY(services, tc)
 	ATF_CHECK_STREQ("tank/data", jstr(&r, "data.datasets.1.name"));
 	ATF_CHECK_STREQ("8000000", jstr(&r, "data.datasets.1.quota"));
 	resp_free(&r);
+	/* A jail's: what its own zfs sees, by jexec; one that does not
+	 * run has none; and of a jail, datasets and snapshots only. */
+	snprintf(path, sizeof(path), "%.*s/storage/datasets?jail=gw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("tank/data", jstr(&r, "data.datasets.1.name"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^jexec 4 .*zfs list -Hp -t filesystem,"
+	    "volume' jexec.log") == 0);
+	snprintf(path, sizeof(path), "%.*s/storage/datasets?jail=web",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "error") != NULL && strstr(jstr(&r, "error"),
+	    "not running") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/storage/pools?jail=gw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_STREQ("of a jail, its datasets and snapshots only", jstr(&r,
+	    "error"));
+	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/storage/snapshots?filter=tank/data",
 	    (int)(strlen(base) - strlen("/services")), base);
 	http("GET", path, NULL, &r);

@@ -2050,6 +2050,7 @@ connected:
 		sgq.has_storage_kind = true;
 		sgq.storage_kind = c->action;
 		sgq.net_filter = c->jail[0] != '\0' ? c->jail : NULL;
+		sgq.jail = c->scope[0] != '\0' ? c->scope : NULL;
 		if ((error = arc_storage(&cl, &sgq, &sgr)) != 0)
 			goto rpcfail;
 		ok = sgr->ok;
@@ -3284,7 +3285,7 @@ api_storage(struct http_request *req)
 	for (q = c->jail; *q != '\0'; q++)
 		if (!isalnum((unsigned char)*q) && strchr("_.:/-", *q) == NULL)
 			break;
-	if (i == nitems(kinds) || *q != '\0') {
+	if (i == nitems(kinds) || *q != '\0' || !pick_scope(req, c)) {
 		kore_free(c->sname);
 		kore_free(c->uri);
 		kore_free(c->peer);

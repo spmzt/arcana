@@ -532,7 +532,8 @@ datasets(struct work *w, bool snaps, const char *filter,
 		argv[n++] = (char *)(uintptr_t)filter;
 	}
 	argv[n] = NULL;
-	if (run_exec_max(w, argv, &res, ARC_MAX_JSON) != 0) {
+	/* In a jail: its own zfs, which sees what was given to it. */
+	if (run_exec_max(w, scope_jexec(w, argv), &res, ARC_MAX_JSON) != 0) {
 		rsp->error = wtext(w, exec_error(w, &res, "zfs"));
 		return (0);
 	}

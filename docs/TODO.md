@@ -401,7 +401,9 @@
   newfs_msdos done too, verified on memory disks.  A self-test: only
   NVMe has one in the base system (nvmecontrol selftest; ATA and SCSI
   need smartctl, a package), and the lab has no NVMe disk to try it
-  on: left until one is there.)
+  on: left until one is there.  A jail's datasets on its page done
+  too: the storage read with jail, its own zfs list by jexec; verified
+  with a dataset given to a vnet jail on a pool of a memory disk.)
 - To look at (2026-10-06): the test VM (FreeBSD 16-CURRENT, labvm)
   stopped answering, and had to be restarted, right after `ifconfig
   bridge0 maxaddr 500` was run by the agent on a bridge it had just
