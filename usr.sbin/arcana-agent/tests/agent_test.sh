@@ -4738,6 +4738,16 @@ EOS
 	# A pool that is not there is not one to make anything in.
 	atf_check -s exit:1 -o match:'there is no pool nopool' "$JGC" -c "$SOCK" jailconf make web3 web2.conf nopool/jails/web3 tank/jails/base@15.0 clone /usr/jails/web3
 	atf_check -o not-match:'destroy -r nopool' -o not-match:'create' cat zfs.log
+	# A made jail's file changed: read back first, the one before kept;
+	# one of another jail refused, the file left; none is no jail made.
+	printf '.include "%s/jail.conf";\nwww {\n\tdevfs_ruleset = 5;\n\tip4.addr = "lo0|127.0.0.9";\n\t.include "%s/jail.conf.d/certbot.inc";\n}\n' "$d" "$d" > www2.conf
+	atf_check -o match:'done +jail edit www$' "$JGC" -c "$SOCK" jailconf edit www www2.conf
+	atf_check cmp -s www2.conf "$d/jail.conf.d/www.conf"
+	atf_check cmp -s www.conf "$d/jail.conf.d/www.conf.arcana.bak"
+	atf_check -s exit:1 -o match:'the file defines mail, not the one jail www' "$JGC" -c "$SOCK" jailconf edit www mail.conf
+	atf_check cmp -s www2.conf "$d/jail.conf.d/www.conf"
+	atf_check -s exit:1 -o match:'nosuch.conf: No such file' "$JGC" -c "$SOCK" jailconf edit nosuch www2.conf
+	test -e "$d/jail.conf.d/nosuch.conf" && atf_fail "edit made a jail"
 	# The template kept while a jail includes it.
 	atf_check -s exit:1 -o match:'certbot.inc is included by www.conf: kept' "$JGC" -c "$SOCK" jailconf untemplate certbot
 	# Checked before queued: names, datasets, the copy, the path.

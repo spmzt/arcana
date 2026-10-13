@@ -184,7 +184,8 @@ usage(void)
 	    "    kmod [load | unload module]\n"
 	    "    jailconf make jail file [dataset snapshot clone|send path] "
 	    "[start]\n"
-	    "    jailconf remove jail [dataset] | defaults file | files\n"
+	    "    jailconf edit jail file | remove jail [dataset] |\n"
+	    "        defaults file | files\n"
 	    "    jailconf template name file | untemplate name\n"
 	    "    neigh add address lladdr [temp] | delete address\n"
 	    "    cert [list] | add name file | remove name | trust file |\n"
@@ -2283,6 +2284,7 @@ cmd_cert(struct arc_client *cl, int argc, char **argv)
 
 /*
  * jailconf make jail file [dataset snapshot clone|send path] [start]
+ * jailconf edit jail file
  * jailconf remove jail [dataset]
  * jailconf defaults file
  * jailconf template name file | untemplate name
@@ -2327,6 +2329,9 @@ cmd_jailconf(struct arc_client *cl, int argc, char **argv)
 			sp.start = true;
 		else if (argc == 5 || argc == 9)
 			usage();
+	} else if (strcmp(argv[1], "edit") == 0 && argc == 4) {
+		sp.jail = argv[2];
+		sp.text = slurp(argv[3]);
 	} else if (strcmp(argv[1], "remove") == 0 && (argc == 3 || argc ==
 	    4)) {
 		sp.jail = argv[2];

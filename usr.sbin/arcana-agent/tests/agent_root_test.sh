@@ -631,6 +631,15 @@ jail_make_body()
 	atf_check -o inline:"the base\n" cat "$r/arcw-jm2/marker"
 	atf_check -o inline:"$r/arcw-jm1 arcw-jm1.example.org\n" jls -j arcw-jm1 path host.hostname
 	atf_check -o inline:"$r/arcw-jm2 arcw-jm2.example.org\n" jls -j arcw-jm2 path host.hostname
+	# A running jail's file changed: the rest taken, its path kept.
+	printf '.include "%s/jail.conf";\narcw-jm1 {\n\tdevfs_ruleset = 4;\n\tallow.raw_sockets;\n}\n' "$d" > e1.conf
+	atf_check -o match:'done +jail edit arcw-jm1$' \
+	    "$JGC" -c "$SOCK" jailconf edit arcw-jm1 e1.conf
+	atf_check cmp -s e1.conf "$d/jail.conf.d/arcw-jm1.conf"
+	printf '.include "%s/jail.conf";\narcw-jm1 {\n\tpath = "/elsewhere";\n}\n' "$d" > e2.conf
+	atf_check -s exit:1 -o match:"arcw-jm1 runs with its root at $r/arcw-jm1: stop it" \
+	    "$JGC" -c "$SOCK" jailconf edit arcw-jm1 e2.conf
+	atf_check cmp -s e1.conf "$d/jail.conf.d/arcw-jm1.conf"
 	# A host with no dataset for its jails yet: the one above made, not
 	# mounted of its own; a jail refused takes it away again.
 	printf '.include "%s/jail.conf";\narcw-jm3 {\n}\n' "$d" > arcw-jm3.conf

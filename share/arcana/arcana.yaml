@@ -286,7 +286,10 @@ definitions:
           the base jail's snapshot, by zfs clone (copy clone) or zfs
           send | zfs recv (copy send, a copy of its own), mounted at
           path; with start, the jail is started.  What fails undoes
-          what was done.  remove stops the jail, takes its file away,
+          what was done.  edit writes a made jail's file anew, text
+          its whole content, read back the same way first, the file
+          before kept beside it; a running jail keeps its path and takes
+          the rest when restarted.  remove stops the jail, takes its file away,
           and with dataset destroys that dataset when it is mounted at
           the jail's path.  defaults writes text as /etc/jail.conf,
           the defaults every jail file includes, the file before kept
