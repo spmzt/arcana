@@ -497,9 +497,9 @@ Written and tested with stand-ins, never run for real:
 - A jail's share of the CPUs and its memory from rctl_get_racct(2):
   the test VM's kernel has kern.racct.enable off, and turning it on
   needs a reboot; what is read when it is off was run for real.
-- The switch to SCTP from the page, and SCTP between two machines:
-  the API was run for real, between a console and an agent on one
-  machine.
+- The switch to SCTP from the page: the API was run for real, between
+  a console and an agent on one machine.  (SCTP between two network
+  stacks, in the verified list.)
 - For the user to say (2026-10-13): BIRD that stops answering while a
   safe change waits (run for real: birdc down) leaves the unconfirmed
   file in place, as bird.c says it should ("one that died is not
@@ -525,6 +525,11 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- SCTP between two network stacks (2026-10-13): the agent in one vnet
+  jail and arcanactl in another (both rooted at /, nothing installed
+  in either), an epair between them; over sctp://, mutual TLS, the
+  agent named the session sctp from the other jail's address and its
+  kernel held the association; TCP to the same listener too.
 - User certificates against the real sshd (2026-10-13, the lab jail
   arcsub1, its own lo0 in a vnet): a CA's public key given by
   `arcanactl -j arcsub1 sshd user-cas`, a user's key signed by it, and
