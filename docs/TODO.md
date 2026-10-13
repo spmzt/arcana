@@ -139,9 +139,7 @@
   deltas (cblink sid_test), YANG-CBOR's tags under CBL_CTX_YANG_TAGS,
   the cblink module and its .sid file (cblink share/yang), and the
   frame sizes (docs/notes/cblink-v2-frame-sizes.md: version 2 is 43 %
-  of version 1 as one reply, 52 to 54 % as a dump). The cblink
-  commits wait to be pushed to spmzt/cblink and the submodule moved
-  to them. Done too: 0.2, libyang 3 (the corpus in share/yang, 51
+  of version 1 as one reply, 52 to 54 % as a dump). Done too: 0.2, libyang 3 (the corpus in share/yang, 51
   modules compiled; tools/yangwalk in cblink walking 5075 nodes as
   yanglint does, and the five extensions read through its plugins);
   0.4.1, ng_netflow exports v5 and v9 only. Waiting: 0.3, BIRD with
@@ -149,7 +147,10 @@
   install; 0.5, the SID block (share/yang/SIDS.md), for the user to
   decide: an IANA mega-range request as planned, or a PEN, which RFC
   9997 (July 2026) gives SID ranges with no request, 32-bit ones (5-byte
-  keys) for a PEN below 100 000; 0.6, the decisions.
+  keys) for a PEN below 100 000; 0.6, the decisions. Y-1 under way in
+  cblink: 1.1.1 to 1.1.3, cblink-gen's YANG front end on libyang (built
+  when libyang is there), its own schema model with resolved types,
+  checked against yanglint on the corpus.
 - To decide (the user's): whether the security policies move to MEF
   138's model (Security Function Policies each with Block, Allow and
   Quarantine lists, No-match, Duration; PDNS and DLP added), and which
