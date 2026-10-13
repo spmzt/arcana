@@ -487,21 +487,18 @@ Written and tested with stand-ins, never run for real:
 - A vnet jail's network. Run for real, against the jail `gateway` of
   one host: its interfaces, routes, route lookup and BIRD read; an
   address added and removed; an interface brought up; a new epair
-  given, taken back and destroyed. Not run for real: anything kept
-  (the jail's own `rc.conf`, `vnet.interface` in `jail.conf`), BIRD's
-  configuration written in a jail, safe mode in a jail, and the map with a real jail as a node (the browser test tells
-  the page that a jail runs).
+  given, taken back and destroyed. Not run for real: `vnet.interface`
+  kept in `jail.conf`, and the map with a real jail as a node (the
+  browser test tells the page that a jail runs).
 - A jail's share of the CPUs and its memory from rctl_get_racct(2):
   the test VM's kernel has kern.racct.enable off, and turning it on
   needs a reboot; what is read when it is off was run for real.
 - The switch to SCTP from the page, and SCTP between two machines:
   the API was run for real, between a console and an agent on one
   machine.
-- BIRD's safe mode and what is done when BIRD stops answering, against
-  a real BIRD: the replies looked for are those in BIRD's source, 2.19
-  and 3.3 (`cmd_reconfig_msg()`), and the tests use a stand-in that
-  says them, dies or refuses on demand. `show route` was parsed from
-  the format in `nest/rt-show.c`.
+- What is done when BIRD stops answering, against a real BIRD: the
+  tests use a stand-in that dies or refuses on demand (BIRD's safe
+  mode itself was run for real, below).
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.
@@ -521,6 +518,15 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- A jail's own rc.conf and safe mode in a jail, for real (2026-10-13,
+  a vnet jail): an address kept as ifconfig_lo0_alias0 in the jail's
+  rc.conf by sysrc -R and taken out again; an address added in safe
+  mode, left unconfirmed, and undone after the 2 s it was given.
+- BIRD's configuration written in a jail and its safe mode, against
+  BIRD 3.3.2 (2026-10-13, a vnet jail): a file put in place and BIRD
+  told (its new route there); one BIRD refuses said in BIRD's words
+  and not put in place; one in safe mode left unconfirmed, taken back
+  (the route gone, the file as it was).
 - A kernel module loaded and unloaded for real (2026-10-13, the lab
   VM, as root): if_disc by the kmod job, listed with its references,
   disc0 made and destroyed with it, unloaded, and the kernel itself
