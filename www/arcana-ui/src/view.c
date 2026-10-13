@@ -1458,6 +1458,7 @@ static const struct {
 	{ SET_TOKENS, "tokens", "API tokens" },
 	{ SET_KEYS, "keys", "Sign-in keys" },
 	{ SET_CONSOLE, "console", "Console" },
+	{ SET_CA, "ca", "Certificate authority" },
 	{ SET_WEBCONF, "webconf", "web.conf" },
 	{ SET_NEWS, "news", "What's new" },
 };
@@ -1882,6 +1883,9 @@ view_settings(struct html *h)
 		break;
 	case SET_NEWS:
 		set_news(h);
+		break;
+	case SET_CA:
+		set_ca(h);
 		break;
 	default:
 		set_look(h);

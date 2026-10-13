@@ -327,8 +327,16 @@
     checked to be trusted still; agent_tls_test:renew, a change of CA
     and an intermediate.  The console renewing a host done too: the
     host's Summary, Certificate, with Renew; console_test:enrol renews
-    a host over mutual TLS.  Next: the CA panel and the change of CA
-    across the hosts.)
+    a host over mutual TLS.  The CA panel done too: Settings,
+    Certificate authority; the next CA made, imported with its chain
+    (the console an intermediate CA) or requested from another; rolled
+    out, the console switching only once every host was renewed (a
+    host that does not answer would be lost to it), and finished;
+    console_test:enrol changes the CA for another and for an
+    intermediate under a root of its own, an unreachable host holding
+    the switch back.  A host enrolled during a change is given both
+    roots and a certificate from the CA before: rolling out again
+    renews it, and finishing waits for it.)
   - A session's lifetime set in Settings. (Done 2026-10-12: idle
     minutes and the longest, in hours.)
   - LDAP for the console's sign-in.

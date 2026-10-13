@@ -720,6 +720,50 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/KernelData" }
+  /api/ca:
+    get:
+      tags: [settings]
+      summary: The console's CA, the next one, and the change's state
+      description: own (the console's own CA, not web.conf's tls block),
+        trusted (each certificate of the CA file, subject, issuer,
+        not_after, sha256, root), console (its own certificate), next
+        (chain, the next CA up to its root, once staged), request (a
+        request made here for another CA to sign) and state (phase
+        staged, rolling, switched or finished; running; error; hosts,
+        each host's name, step renewed, finished or failed, and error).
+      responses:
+        "200":
+          description: the CA
+    post:
+      tags: [settings]
+      summary: The console's CA changed for another
+      description: action make (cn) makes the next CA, self-signed;
+        request (cn) a key here and a request for another CA to sign as
+        an intermediate CA; import (cert, the CA then the CAs above it up
+        to the root, and key, or none for the request made here) stages
+        it; discard drops it. rollout has the console trust both, each
+        host trust both and get a certificate from the next one, then
+        the console take the next one's certificate, only when every
+        host was renewed unless force; run again for the hosts that did
+        not answer. finish has each host and then the console trust the
+        next one alone; hosts not renewed are left unless force. rollout
+        and finish run on by themselves; state.running says while.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action: { type: string, enum: [make, request, import, discard, rollout, finish] }
+                cn: { type: string }
+                cert: { type: string }
+                key: { type: string }
+                force: { type: boolean }
+      responses:
+        "200":
+          description: the CA as GET says it
+        "409":
+          description: what stands in the way
   /api/servers/{server}/tls:
     get:
       tags: [servers]

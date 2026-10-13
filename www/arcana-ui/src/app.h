@@ -759,7 +759,13 @@ void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
 /* view.c: the settings' tabs. */
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
-    SET_WEBCONF, SET_NEWS };
+    SET_WEBCONF, SET_NEWS, SET_CA };
+/* ca.c: Settings, Certificate authority. */
+void		 ca_load(void);
+void		 ca_tick(double);
+void		 set_ca(struct html *);
+bool		 ca_form(const char *, const ucl_object_t *);
+bool		 ca_action(const char *, const char *, const char *);
 int		 settab_of(const char *);
 const char	*settab_arg(int);
 /* sdwan.c: the SD-WAN services the console keeps. */
