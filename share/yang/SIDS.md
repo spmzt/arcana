@@ -15,6 +15,13 @@ Arcana uses and where they come from (step 0.5.1).
   `ietf-netconf-acm` 1250, `ietf-sid-file` 1300, `ietf-interfaces` 1500,
   `ietf-ip` 1600, `ietf-system` 1700, `iana-if-type` 1800 (IANA's "IETF
   YANG-SID Ranges", 2026-10-13).
+- IANA publishes the ranges, not always the `.sid` files. For
+  `ietf-sid-file` it has none, so cblink's
+  `share/yang/ietf-sid-file@2024-07-31.sid` numbers it as RFC 9595
+  Appendix B says (`cblink-gen -a`): 1300 the module, 1301 the
+  `sid-file` structure, 1302 to 1317 its nodes in path order. GET-SID's
+  YANG-CBOR is keyed by those; if IANA ever publishes other numbers,
+  they replace these.
 - Every other module Arcana speaks, its own and the IETF modules that
   have no IETF range yet, takes SIDs from Arcana's block. No
   interoperation with another SID-keyed protocol is claimed for those
