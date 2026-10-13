@@ -482,17 +482,14 @@ Written and tested with stand-ins, never run for real:
   about when a host is moved, and the drawing is as large as its room.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
-- WireGuard and BIRD against the real wg(8), wg-quick(8) and birdc(8):
-  the tests use stand-ins. The format of `wg show all dump` is the one
-  wg(8) documents; BIRD is not installed on the machine this was written
-  on, and what birdc prints was written from its documentation.
+- wg-quick(8): the tests use stand-ins (wg(8) and birdc(8) were run
+  for real, below).
 - A vnet jail's network. Run for real, against the jail `gateway` of
   one host: its interfaces, routes, route lookup and BIRD read; an
   address added and removed; an interface brought up; a new epair
   given, taken back and destroyed. Not run for real: anything kept
   (the jail's own `rc.conf`, `vnet.interface` in `jail.conf`), BIRD's
-  configuration written in a jail, WireGuard in a jail, safe mode in a
-  jail, and the map with a real jail as a node (the browser test tells
+  configuration written in a jail, safe mode in a jail, and the map with a real jail as a node (the browser test tells
   the page that a jail runs).
 - A jail's share of the CPUs and its memory from rctl_get_racct(2):
   the test VM's kernel has kern.racct.enable off, and turning it on
@@ -525,6 +522,15 @@ Written and tested with stand-ins, never run for real:
 ## Verified for real
 
 What was once in the list above, and when it was run:
+
+- WireGuard against the real wg(8), in a vnet jail (2026-10-13): wg0
+  made with its address, given a key and a port (init), a peer with
+  an endpoint, IPv4 and IPv6 allowed-ips and a keepalive, read back
+  through `wg show all dump` as wg(8) printed it, and taken away.
+- BIRD 3.3.2 against the real birdc(8), in a vnet jail (2026-10-13):
+  device, direct, kernel, static, BFD, OSPF and BGP protocols each read
+  with its state and info (BGP start/Active, OSPF Alone), and `show
+  route` parsed with its type, protocol, since and preference.
 
 - SD-WAN's probes (2026-10-10, the root test): the loopback pinged
   every 50 ms, up with its samples (a tenth of a millisecond each
