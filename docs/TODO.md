@@ -150,9 +150,16 @@
   decide: an IANA mega-range request as planned, or a PEN, which RFC
   9997 (July 2026) gives SID ranges with no request, 32-bit ones (5-byte
   keys) for a PEN below 100 000; 0.6, the decisions. Y-1 under way in
-  cblink: 1.1.1 to 1.1.3, cblink-gen's YANG front end on libyang (built
+  cblink: 1.1.1 to 1.1.5, cblink-gen's YANG front end on libyang (built
   when libyang is there), its own schema model with resolved types,
-  checked against yanglint on the corpus. As each operation is
+  features, deviations and the five extensions, checked against
+  yanglint on the corpus; 1.3, XPath-lite, and what goes beyond it
+  refused; 1.4, .sid files read, verified (empty input and output
+  too, as RFC 9595 Appendix B says), numbered by -a in its order, and
+  written in YANG-CBOR as GET-SID will answer them (ietf-sid-file's
+  own SIDs computed: IANA published no .sid file for its range); 1.5,
+  YANG patterns as POSIX EREs in libcblink, \p{N} narrower than XSD's
+  and the rarer categories refused. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
