@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "app.h"
 
@@ -49,6 +50,14 @@ static struct {
 	char		 error[300];
 	double		 fetched;
 } tr;
+
+static struct {
+	char		 sid[9];
+	ucl_object_t	*o;		/* the agent's tls status */
+	bool		 loading;
+	bool		 busy;		/* a renewal on its way */
+	char		 error[300];
+} tc;
 
 static const char *const trees[] = { "kern.", "vm.", "vfs.", "net.", "hw.",
     "security.", "kstat.", "dev.", "debug.", "machdep.", "user.", "compat." };
@@ -599,6 +608,135 @@ view_safe(struct html *h, struct server *s)
 	    "</form></section>");
 }
 
+static void
+tls_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	char	*sid;
+	bool	 renew;
+
+	sid = arg;
+	renew = sid[0] == '+';
+	if (strcmp(sid + (renew ? 1 : 0), tc.sid) != 0) {
+		free(sid);
+		return;
+	}
+	free(sid);
+	tc.loading = false;
+	tc.busy = false;
+	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+		snprintf(tc.error, sizeof(tc.error), "%s", jstr(o, "error") !=
+		    NULL ? jstr(o, "error") : jstr(o, "error.message") != NULL ?
+		    jstr(o, "error.message") : err != NULL ? err : "no answer");
+		if (renew)
+			toast(true, "Not renewed: %s", tc.error);
+		return;
+	}
+	tc.error[0] = '\0';
+	if (tc.o != NULL)
+		ucl_object_unref(tc.o);
+	tc.o = ucl_object_copy(jget(o, "data"));
+	if (renew)
+		toast(false, "Renewed: the host is reached with its new "
+		    "certificate");
+}
+
+static void
+tls_fetch(struct server *s, bool renew)
+{
+	char	url[96], *arg;
+
+	if (tc.loading && strcmp(tc.sid, s->id) == 0)
+		return;
+	if (strcmp(tc.sid, s->id) != 0) {
+		if (tc.o != NULL)
+			ucl_object_unref(tc.o);
+		tc.o = NULL;
+		tc.error[0] = '\0';
+	}
+	snprintf(tc.sid, sizeof(tc.sid), "%s", s->id);
+	tc.loading = true;
+	tc.busy = renew;
+	snprintf(url, sizeof(url), "/api/servers/%s/tls", s->id);
+	if (asprintf(&arg, "%s%s", renew ? "+" : "", s->id) == -1)
+		abort();
+	api(renew ? "POST" : "GET", url, renew ? "{}" : NULL, tls_cb, arg);
+}
+
+static void
+day_of(char *buf, size_t len, int64_t t)
+{
+	struct tm	tm;
+	time_t		tt;
+
+	tt = (time_t)t;
+	gmtime_r(&tt, &tm);
+	strftime(buf, len, "%Y-%m-%d", &tm);
+}
+
+/*
+ * The host's own certificate, the one it answers the console with: who
+ * signed it, until when, the CAs it trusts; renewed from the console's
+ * CA, the key made on the host.
+ */
+void
+view_tlscert(struct html *h, struct server *s)
+{
+	const ucl_object_t	*c, *x;
+	ucl_object_iter_t	 it;
+	char			 d[16];
+	int64_t			 left;
+
+	if (strcmp(tc.sid, s->id) != 0 && app.online)
+		tls_fetch(s, false);
+	h_raw(h, "<section class=\"transport tlscert\">");
+	box_head(h, "tlscert", "h3");
+	h_raw(h, "Certificate</h3>");
+	if (box_shut("tlscert")) {
+		h_raw(h, "</section>");
+		return;
+	}
+	if (tc.error[0] != '\0') {
+		h_raw(h, "<p class=\"dim\">");
+		h_txt(h, tc.error);
+		h_raw(h, "</p>");
+	}
+	if ((c = jget(tc.o, "cert")) == NULL) {
+		h_raw(h, tc.loading ? "<p class=\"dim\">Reading…</p>" : "");
+		h_raw(h, "</section>");
+		return;
+	}
+	left = (jint(c, "not_after", 0) - (int64_t)(arc_now() / 1000)) /
+	    86400;
+	day_of(d, sizeof(d), jint(c, "not_after", 0));
+	h_raw(h, "<p class=\"dim\">What the agent answers the console with, "
+	    "over mutual TLS: its key was made on the host and never left "
+	    "it. Renewing makes a new key there, signs a request for it with "
+	    "the console's CA and puts it in place; the agent reads it again "
+	    "without a restart, and keeps the files before beside.</p>"
+	    "<dl class=\"tlsinfo\"><dt>Subject</dt><dd class=\"mono\">");
+	h_txt(h, jstr(c, "subject"));
+	h_raw(h, "</dd><dt>Issuer</dt><dd class=\"mono\">");
+	h_txt(h, jstr(c, "issuer"));
+	h_fmt(h, "</dd><dt>Valid to</dt><dd>%s <span class=\"chip%s\">%lld "
+	    "days</span></dd>", d, left < 30 ? " warn" : "", (long long)left);
+	it = NULL;
+	while ((x = ucl_object_iterate(jget(c, "chain"), &it, true)) != NULL) {
+		h_raw(h, "<dt>Through</dt><dd class=\"mono\">");
+		h_txt(h, jstr(x, "subject"));
+		h_raw(h, "</dd>");
+	}
+	it = NULL;
+	while ((x = ucl_object_iterate(jget(tc.o, "ca"), &it, true)) != NULL) {
+		day_of(d, sizeof(d), jint(x, "not_after", 0));
+		h_raw(h, "<dt>Trusts</dt><dd class=\"mono\">");
+		h_txt(h, jstr(x, "subject"));
+		h_fmt(h, " <small class=\"dim\">to %s</small></dd>", d);
+	}
+	h_fmt(h, "</dl><div class=\"toolbar\"><button class=\"ghost small\" "
+	    "data-act=\"tr-renew\"%s>%s</button></div></section>", tc.busy ?
+	    " disabled" : "", tc.busy ? "Renewing…" : "Renew");
+}
+
 /* The pane of the summary: listeners, the console's way in, sessions. */
 void
 view_transport(struct html *h, struct server *s)
@@ -756,7 +894,8 @@ sysctl_action(const char *act, const char *arg, const char *value)
 	char		 url[96], body[64], text[400];
 
 	if (strncmp(act, "sy-", 3) != 0 && strncmp(act, "tr-", 3) != 0 &&
-	    strcmp(act, "do-tr-switch") != 0)
+	    strcmp(act, "do-tr-switch") != 0 && strcmp(act, "do-tr-renew") !=
+	    0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
@@ -774,6 +913,16 @@ sysctl_action(const char *act, const char *arg, const char *value)
 			snprintf(sy.prefix, sizeof(sy.prefix), "%s", arg);
 			refresh_sysctl(s, true);
 		}
+	} else if (strcmp(act, "tr-renew") == 0) {
+		snprintf(text, sizeof(text), "A new key is made on %s and a "
+		    "certificate for it signed by the console's CA. The host "
+		    "takes it only if it still trusts the console's own "
+		    "certificate afterwards; connections open now keep the old "
+		    "one.", s->name);
+		confirm("Renew the host's certificate", text, "Renew", false,
+		    "", "do-tr-renew", "", "");
+	} else if (strcmp(act, "do-tr-renew") == 0) {
+		tls_fetch(s, true);
 	} else if (strcmp(act, "tr-retry") == 0) {
 		tr.busy = true;
 		tr.loading = false;

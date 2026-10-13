@@ -290,6 +290,61 @@ out:
 	return (rc);
 }
 
+/*
+ * A certificate for a host's request, as enrolment makes one: for host,
+ * whatever the request's subject says, from the console's CA.  PEM, to
+ * free; NULL with why in err.  Any thread.
+ */
+char *
+pki_sign_host(const char *csrpem, const char *host, char *err, size_t errlen)
+{
+	X509_REQ	*csr;
+	X509		*ca, *cert;
+	EVP_PKEY	*cakey, *key;
+	BIO		*b;
+	char		 san[300], *s;
+	unsigned char	 a[16];
+
+	s = NULL;
+	csr = NULL;
+	ca = cert = NULL;
+	cakey = key = NULL;
+	if (cfg.tls_ca_key == NULL) {
+		snprintf(err, errlen, "the console has no CA key to sign with "
+		    "(web.conf's tls block names none)");
+		return (NULL);
+	}
+	if (csrpem == NULL || (b = BIO_new_mem_buf(csrpem, -1)) == NULL) {
+		snprintf(err, errlen, "no certificate request");
+		return (NULL);
+	}
+	csr = PEM_read_bio_X509_REQ(b, NULL, NULL, NULL);
+	BIO_free(b);
+	if (csr == NULL || (key = X509_REQ_get_pubkey(csr)) == NULL ||
+	    X509_REQ_verify(csr, key) != 1 || (EVP_PKEY_get_base_id(key) !=
+	    EVP_PKEY_EC && EVP_PKEY_get_base_id(key) != EVP_PKEY_ED25519)) {
+		snprintf(err, errlen, "the host's request does not check out");
+		goto out;
+	}
+	if ((ca = read_cert(cfg.tls_ca)) == NULL || (cakey =
+	    read_key(cfg.tls_ca_key)) == NULL) {
+		snprintf(err, errlen, "cannot read the CA");
+		goto out;
+	}
+	snprintf(san, sizeof(san), "%s:%s", inet_pton(AF_INET, host, a) == 1 ||
+	    inet_pton(AF_INET6, host, a) == 1 ? "IP" : "DNS", host);
+	if ((cert = cert_new(key, host, ca, cakey, san, CERT_DAYS)) == NULL ||
+	    (s = pem_string(cert)) == NULL)
+		snprintf(err, errlen, "cannot sign: %s", ssl_err());
+out:
+	X509_REQ_free(csr);
+	X509_free(ca);
+	X509_free(cert);
+	EVP_PKEY_free(cakey);
+	EVP_PKEY_free(key);
+	return (s);
+}
+
 /* A host name (letters, digits, '.', '-') or an IP address. */
 static bool
 valid_host(const char *s)

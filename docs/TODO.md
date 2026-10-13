@@ -325,8 +325,10 @@
     there and never sent, the certificate for it and the CAs installed
     and read again by cblink, the asking console's own certificate
     checked to be trusted still; agent_tls_test:renew, a change of CA
-    and an intermediate.  Next: the console renewing a host, then the
-    CA panel and the change of CA across the hosts.)
+    and an intermediate.  The console renewing a host done too: the
+    host's Summary, Certificate, with Renew; console_test:enrol renews
+    a host over mutual TLS.  Next: the CA panel and the change of CA
+    across the hosts.)
   - A session's lifetime set in Settings. (Done 2026-10-12: idle
     minutes and the longest, in hours.)
   - LDAP for the console's sign-in.
