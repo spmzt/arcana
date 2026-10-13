@@ -538,37 +538,56 @@ users(struct work *w, struct pwent **vp)
 	return (n);
 }
 
+/* A path with no part that is empty, . or .. after its first /. */
+static bool
+plain_path(const char *p)
+{
+	const char	*e;
+	size_t		 n;
+
+	if (*p == '/')
+		p++;
+	if (*p == '\0')
+		return (true);
+	for (; ; p = e + 1) {
+		e = p + strcspn(p, "/");
+		n = (size_t)(e - p);
+		if (n == 0 || (n == 1 && p[0] == '.') || (n == 2 && p[0] ==
+		    '.' && p[1] == '.'))
+			return (false);
+		if (*e == '\0')
+			return (true);
+	}
+}
+
 /* The user's authorized_keys, by AuthorizedKeysFile's first. */
 static const char *
 akeys_path(struct work *w, const struct pwent *u, const ucl_object_t *set)
 {
 	const char	*f, *s;
 	char		*out;
-	size_t		 o, len;
+	size_t		 len;
 
 	f = first(set, "authorizedkeysfile");
 	if (f == NULL || f[0] == '\0' || strcasecmp(f, "none") == 0)
 		f = ".ssh/authorized_keys";
 	len = strcspn(f, " \t");
-	out = wmalloc(w, len * 64 + strlen(u->home) + 2);
-	o = 0;
-	if (f[0] != '/' && f[0] != '%') {
-		o = (size_t)sprintf(out, "%s/", u->home);
-	}
-	for (s = f; (size_t)(s - f) < len; s++) {
+	/* What a jail's passwd and sshd say is the jail's: the path is
+	 * made a piece at a time, as long as it comes out. */
+	out = f[0] != '/' && f[0] != '%' ? wfmt(w, "%s/", u->home) : wstrdup(w, "");
+	for (s = f; (size_t)(s - f) < len && strlen(out) < MAXPATHLEN; s++) {
 		if (*s == '%' && (size_t)(s - f) + 1 < len) {
 			s++;
 			if (*s == 'h')
-				o += (size_t)sprintf(out + o, "%s", u->home);
+				out = wfmt(w, "%s%s", out, u->home);
 			else if (*s == 'u')
-				o += (size_t)sprintf(out + o, "%s", u->name);
+				out = wfmt(w, "%s%s", out, u->name);
 			else if (*s == '%')
-				out[o++] = '%';
+				out = wfmt(w, "%s%%", out);
 		} else
-			out[o++] = *s;
+			out = wfmt(w, "%s%c", out, *s);
 	}
-	out[o] = '\0';
-	return (out);
+	return (strlen(out) < MAXPATHLEN ? out : NULL);
 }
 
 /* --- the read -------------------------------------------------------- */
@@ -637,9 +656,11 @@ do_ssh(struct work *w, struct arc_ssh_rsp *rsp)
 		ucl_object_insert_key(u, ucl_object_fromstring(pw[i].shell),
 		    "shell", 0, false);
 		p = akeys_path(w, &pw[i], set);
-		ucl_object_insert_key(u, ucl_object_fromstring(p), "keys_file",
-		    0, false);
-		text = scope_slurp(w, at(w, p), NULL);
+		ucl_object_insert_key(u, ucl_object_fromstring(p != NULL ? p :
+		    ""), "keys_file", 0, false);
+		/* Only a plain path is read: no part of it .. or . */
+		text = p != NULL && p[0] == '/' && plain_path(p) ?
+		    scope_slurp(w, at(w, p), NULL) : NULL;
 		ucl_object_insert_key(u, keys_of(w, text), "keys", 0, false);
 		ucl_array_append(ul, u);
 	}
@@ -763,6 +784,10 @@ ssh_check(const struct arc_job_spec *sp)
 		if (sp->text == NULL || strstr(sp->text, "PRIVATE KEY") == NULL)
 			return ("ssh: the CA's private key, as ssh-keygen wrote "
 			    "it");
+		/* None would be a certificate for any name at all. */
+		if (sp->names.n == 0)
+			return ("ssh: the names clients reach it by, one at "
+			    "least: a certificate for none is good for any");
 		for (i = 0; i < sp->names.n; i++)
 			if (!word_ok(sp->names.v[i], "._-*"))
 				return ("ssh: a principal is a host's name");
@@ -963,9 +988,12 @@ authorize(struct work *w, const struct arc_job_spec *sp, bool add,
 	set = settings(w, &why);
 	path = akeys_path(w, &pw[i], set);
 	ucl_object_unref(set);
-	if (strncmp(path, pw[i].home, strlen(pw[i].home)) != 0 ||
-	    path[strlen(pw[i].home)] != '/') {
-		*errp = wfmt(w, "ssh: %s is not in %s's home", path, sp->user);
+	if (path == NULL || pw[i].home[0] != '/' || strncmp(path, pw[i].home,
+	    strlen(pw[i].home)) != 0 || path[strlen(pw[i].home)] != '/' ||
+	    !plain_path(pw[i].home) || !plain_path(path + strlen(
+	    pw[i].home))) {
+		*errp = wfmt(w, "ssh: %s's keys file is not a path in their "
+		    "home", sp->user);
 		return (-1);
 	}
 	name = strrchr(path, '/') + 1;
@@ -992,7 +1020,7 @@ authorize(struct work *w, const struct arc_job_spec *sp, bool add,
 			return (-1);
 		}
 		dfd = openat(hfd, dir, O_RDONLY | O_DIRECTORY | O_NOFOLLOW |
-		    O_CLOEXEC);
+		    O_CLOEXEC | O_RESOLVE_BENEATH);
 		close(hfd);
 		if (dfd == -1) {
 			*errp = wfmt(w, "ssh: %s/%s: %s", pw[i].home, dir,
@@ -1006,23 +1034,37 @@ authorize(struct work *w, const struct arc_job_spec *sp, bool add,
 		*errp = wfmt(w, "ssh: %s is not %s's", path, sp->user);
 		return (-1);
 	}
-	/* What is there now, read without a link. */
+	/*
+	 * What is there now: read without a link, and not blocking on a
+	 * FIFO; a file with links of another name (a hard link to one the
+	 * user cannot read) or of another's is left alone.
+	 */
 	text = NULL;
 	len = 0;
 	{
 		int	fd;
 
-		if ((fd = openat(dfd, name, O_RDONLY | O_NOFOLLOW |
+		if ((fd = openat(dfd, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK |
 		    O_CLOEXEC)) != -1) {
-			if (fstat(fd, &sb) == 0 && S_ISREG(sb.st_mode) &&
-			    sb.st_size <= 1024 * 1024) {
-				text = wmalloc(w, (size_t)sb.st_size + 1);
-				len = (size_t)read(fd, text, (size_t)sb.st_size);
-				if (len > (size_t)sb.st_size)
-					len = 0;
-				text[len] = '\0';
+			if (fstat(fd, &sb) != 0 || !S_ISREG(sb.st_mode) ||
+			    sb.st_nlink != 1 || (sb.st_uid != pw[i].uid &&
+			    sb.st_uid != 0) || sb.st_size > 1024 * 1024) {
+				close(fd);
+				close(dfd);
+				*errp = wfmt(w, "ssh: %s is not a file of %s's "
+				    "alone: left as it is", path, sp->user);
+				return (-1);
 			}
+			text = wmalloc(w, (size_t)sb.st_size + 1);
+			len = (size_t)read(fd, text, (size_t)sb.st_size);
+			if (len > (size_t)sb.st_size)
+				len = 0;
+			text[len] = '\0';
 			close(fd);
+		} else if (errno != ENOENT) {
+			close(dfd);
+			*errp = wfmt(w, "ssh: %s: %s", path, strerror(errno));
+			return (-1);
 		}
 	}
 	if (text == NULL)
@@ -1101,7 +1143,8 @@ slurp_host(struct work *w, const char *path, size_t *lenp)
 	ssize_t		 n;
 	int		 fd;
 
-	if ((fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)) == -1)
+	if ((fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK |
+	    O_CLOEXEC)) == -1)
 		return (NULL);
 	if (fstat(fd, &sb) == -1 || !S_ISREG(sb.st_mode) || sb.st_size >
 	    TEXT_MAX) {
@@ -1147,9 +1190,15 @@ tmp_gone(struct work *w, const char *dir, const char *ca, int nkeys)
 	int		fd, i;
 
 	if ((fd = open(ca, O_WRONLY | O_NOFOLLOW | O_CLOEXEC)) != -1) {
+		off_t	left;
+		ssize_t	wr;
+
 		memset(zero, 0, sizeof(zero));
-		if (fstat(fd, &sb) == 0 && sb.st_size <= (off_t)sizeof(zero))
-			(void)write(fd, zero, (size_t)sb.st_size);
+		if (fstat(fd, &sb) == 0)
+			for (left = sb.st_size; left > 0; left -= wr)
+				if ((wr = write(fd, zero, (size_t)MIN(left,
+				    (off_t)sizeof(zero)))) <= 0)
+					break;
 		(void)fsync(fd);
 		close(fd);
 	}
@@ -1195,11 +1244,15 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (-1);
 	}
 	ca = wfmt(w, "%s/ca", dir);
+	/* A copy of its own, with its last line ended, zeroed after:
+	 * not by wfmt, whose own copy is not. */
 	len = strlen(sp->text);
-	text = wfmt(w, "%s%s", sp->text, len > 0 && sp->text[len - 1] != '\n' ?
-	    "\n" : "");
-	rc = put_tmp(ca, text, strlen(text));
-	explicit_bzero(text, strlen(text));
+	text = wmalloc(w, len + 2);
+	memcpy(text, sp->text, len);
+	if (len == 0 || text[len - 1] != '\n')
+		text[len++] = '\n';
+	rc = put_tmp(ca, text, len);
+	explicit_bzero(text, len);
 	if (rc != 0) {
 		*errp = wfmt(w, "%s: %s", ca, strerror(errno));
 		(void)rmdir(dir);
@@ -1309,8 +1362,14 @@ do_ssh_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		return (authorize(w, sp, true, errp));
 	if (strcmp(sp->verb, "unauthorize") == 0)
 		return (authorize(w, sp, false, errp));
-	if (strcmp(sp->verb, "sign") == 0)
-		return (sign(w, sp, errp));
+	if (strcmp(sp->verb, "sign") == 0) {
+		int	rc;
+
+		rc = sign(w, sp, errp);
+		/* The CA's key is not kept with the job, which is. */
+		explicit_bzero((char *)(uintptr_t)sp->text, strlen(sp->text));
+		return (rc);
+	}
 	if ((text = scope_slurp(w, at(w, SSHD_CONFIG), NULL)) == NULL) {
 		*errp = wfmt(w, "%s: %s", SSHD_CONFIG, strerror(errno));
 		return (-1);

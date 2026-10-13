@@ -4787,6 +4787,10 @@ ndp -s fe80::1%em0 00:11:22:33:44:77
 	    "$JGC" -c "$SOCK" neigh add 192.0.2.7 00:11:22
 	atf_check -s exit:1 -e match:'an IPv4 or IPv6 address' -o ignore \
 	    "$JGC" -c "$SOCK" neigh add host.example 00:11:22:33:44:55
+	# A zone is an interface's name: nothing for sh to read in rc.conf.
+	atf_check -s exit:1 -e match:'an IPv4 or IPv6 address' -o ignore \
+	    "$JGC" -p -c "$SOCK" neigh add 'fe80::1%";id>x;"' 00:11:22:33:44:55
+	test -e x && atf_fail "ran"
 	atf_check -s exit:1 -e match:'not kept for a boot' -o ignore \
 	    "$JGC" -p -c "$SOCK" neigh add 192.0.2.8 00:11:22:33:44:88 temp
 }
@@ -4994,6 +4998,8 @@ EOT
 	grep -qF "\"ca\":\"$cafp\"" list || atf_fail "the CA"
 	atf_check -s exit:1 -e match:"the CA's private key" -o ignore \
 	    "$JGC" -c "$SOCK" sshd sign ca.pub
+	atf_check -s exit:1 -e match:'good for any' -o ignore \
+	    "$JGC" -c "$SOCK" sshd sign ca
 	# In safe mode, unconfirmed: the file before it back.
 	cp $R/etc/ssh/sshd_config before
 	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sshd set PasswordAuthentication no
@@ -5006,6 +5012,32 @@ EOT
 	atf_check -o match:'not confirmed within 2 s: undone' -s exit:1 \
 	    "$JGC" -c "$SOCK" job 13
 	atf_check -o file:before cat $R/etc/ssh/sshd_config
+	# What passwd and sshd say is the host's or a jail's, not the
+	# agent's to trust: a long home in a keys file of %h four times
+	# read without harm; a keys file outside the home by .. refused;
+	# a keys file of another name too (a hard link) left alone.
+	c=$(printf '%0200d' 0)
+	long=/home/$c/$c/$c/$c
+	mkdir -p "$R$long"
+	printf 'mallory:*:%d:%d:M:%s:/bin/sh\nroot2:*:%d:%d:R:/:/bin/sh\n' \
+	    "$(id -u)" "$(id -g)" "$long" "$(id -u)" "$(id -g)" >> $R/etc/passwd
+	# Before any Match, where sshd -T reads it.
+	{ printf 'AuthorizedKeysFile %%h%%h%%h%%h\n'; cat $R/etc/ssh/sshd_config; } > c.tmp
+	mv c.tmp $R/etc/ssh/sshd_config
+	atf_check -o match:'"name":"mallory"' "$JGC" -c "$SOCK" sshd
+	atf_check -o match:'"name":"alice"' "$JGC" -c "$SOCK" sshd
+	sed -i '' '/^AuthorizedKeysFile/d' $R/etc/ssh/sshd_config
+	{ printf 'AuthorizedKeysFile ../authorized_keys\n'; cat $R/etc/ssh/sshd_config; } > c.tmp
+	mv c.tmp $R/etc/ssh/sshd_config
+	atf_check -s exit:1 -o match:'not a path in their home' \
+	    "$JGC" -c "$SOCK" sshd authorize root2 alice_key.pub
+	sed -i '' '/^AuthorizedKeysFile/d' $R/etc/ssh/sshd_config
+	echo 'secret of another' > secret
+	rm -f $R/home/alice/.ssh/authorized_keys
+	ln secret $R/home/alice/.ssh/authorized_keys
+	atf_check -s exit:1 -o match:'not a file of alice.s alone' \
+	    "$JGC" -c "$SOCK" sshd authorize alice alice_key.pub
+	atf_check -o inline:'secret of another\n' cat secret
 }
 sshd_cleanup()
 {

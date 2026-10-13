@@ -78,6 +78,22 @@ run_exec(struct work *w, char *const argv[], struct execres *res)
 static _Thread_local char	*exec_home;
 
 /*
+ * What the next program run by this thread reads on its standard input,
+ * through a pipe: a key, which no file and no argument list holds.  Once
+ * only; /dev/null otherwise.
+ */
+static _Thread_local const char	*exec_in;
+static _Thread_local size_t	 exec_inlen;
+
+void
+exec_set_stdin(const char *text, size_t len)
+{
+
+	exec_in = text;
+	exec_inlen = len;
+}
+
+/*
  * What the programs this thread runs print is kept out of the trace,
  * while this is set: it has keys in it, and a trace is read far away.
  */
@@ -123,10 +139,18 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	size_t				 i;
 	time_t				 deadline;
 	pid_t				 pid;
-	int				 op[2], ep[2], status, rc, step, n;
+	int				 op[2], ep[2], ip[2], status, rc, step,
+					 n;
 	bool				 exited;
+	const char			*in;
+	size_t				 inlen, off;
+	ssize_t				 wr;
 
 	argv = scope_argv(w, argv);
+	in = exec_in;
+	inlen = exec_inlen;
+	exec_in = NULL;
+	exec_inlen = 0;
 
 	memset(res, 0, sizeof(*res));
 	cmdline = wvis(w, argv[0]);
@@ -141,9 +165,15 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	eout.max = ARC_MAX_OUTPUT;
 	if (pipe2(op, O_CLOEXEC) == -1 || pipe2(ep, O_CLOEXEC) == -1)
 		err(1, "pipe2");
+	ip[0] = ip[1] = -1;
+	if (in != NULL && pipe2(ip, O_CLOEXEC) == -1)
+		err(1, "pipe2");
 	posix_spawn_file_actions_init(&fa);
-	posix_spawn_file_actions_addopen(&fa, STDIN_FILENO, "/dev/null",
-	    O_RDONLY, 0);
+	if (in != NULL)
+		posix_spawn_file_actions_adddup2(&fa, ip[0], STDIN_FILENO);
+	else
+		posix_spawn_file_actions_addopen(&fa, STDIN_FILENO,
+		    "/dev/null", O_RDONLY, 0);
 	posix_spawn_file_actions_adddup2(&fa, op[1], STDOUT_FILENO);
 	posix_spawn_file_actions_adddup2(&fa, ep[1], STDERR_FILENO);
 	/* The daemon keeps its stop signals blocked; a program does not. */
@@ -161,6 +191,15 @@ run_exec_max(struct work *w, char *const argv[], struct execres *res,
 	posix_spawn_file_actions_destroy(&fa);
 	close(op[1]);
 	close(ep[1]);
+	if (in != NULL) {
+		/* Small, a key: it fits the pipe, and is written whole
+		 * before the program's output is read. */
+		close(ip[0]);
+		for (off = 0; rc == 0 && off < inlen; off += (size_t)wr)
+			if ((wr = write(ip[1], in + off, inlen - off)) <= 0)
+				break;
+		close(ip[1]);
+	}
 	if (rc != 0) {
 		close(op[0]);
 		close(ep[0]);

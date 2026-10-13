@@ -658,8 +658,11 @@ jobs_submit(struct server *s, struct queued *q, int n)
 		snprintf(op->sid, sizeof(op->sid), "%s", s->id);
 		op->what = q[i].what;
 		snprintf(op->target, sizeof(op->target), "%s", q[i].target);
-		/* Kept as it was sent, for when it fails and is tried again. */
-		op->again = q[i].json != NULL ? strdup(q[i].json) : NULL;
+		/* Kept as it was sent, for when it fails and is tried again:
+		 * but not one with a key in it, which is kept nowhere. */
+		op->again = q[i].json != NULL && strstr(q[i].json,
+		    "PRIVATE KEY") == NULL && strstr(q[i].json,
+		    "\"preshared_key\"") == NULL ? strdup(q[i].json) : NULL;
 		sub->ops[sub->nops++] = op->id;
 		if (i == 0) {
 			app.trace_op = op->id;

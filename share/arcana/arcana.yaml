@@ -2991,11 +2991,10 @@ operations:
     auth: true
     doc: |
       The key of an encrypted dataset whose keylocation is prompt, as
-      it is typed: with zfs-key, loaded (zfs load-key, from a file
-      only root reads while zfs reads it); with zfs-new-key, changed
-      (zfs change-key), its keylocation prompt again after, and loaded
-      first with zfs-key when it is not.  A key is in no job, no trace
-      and no log.
+      it is typed: with zfs-key, loaded (zfs load-key, which reads it
+      on its standard input, through a pipe); with zfs-new-key, changed
+      (zfs change-key, the same), and loaded first with zfs-key when it
+      is not.  A key is on no disk, in no job, no trace and no log.
     do:
       request:
         attributes:

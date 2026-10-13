@@ -454,8 +454,9 @@ scope_slurp(struct work *w, const char *path, size_t *lenp)
 
 	if ((dfd = scope_open_dir(w, path, &base)) == -1)
 		return (NULL);
-	fd = openat(dfd, base, O_RDONLY | O_CLOEXEC | (w->jail != NULL ?
-	    O_NOFOLLOW : 0));
+	/* Not blocking: a FIFO in its place is not waited on. */
+	fd = openat(dfd, base, O_RDONLY | O_NONBLOCK | O_CLOEXEC | (w->jail !=
+	    NULL ? O_NOFOLLOW : 0));
 	e = errno;
 	close(dfd);
 	errno = e;

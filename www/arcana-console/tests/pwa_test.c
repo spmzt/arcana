@@ -2930,8 +2930,7 @@ part_storage(void)
 	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
 	    "textContent.includes('The key is loaded'))", 10);
 	ATF_CHECK(system("grep -qx 'key=correct horse battery' storage.log && "
-	    "grep -q '^zfs load-key -L file://.*/key tank/vault$' storage.log")
-	    == 0);
+	    "grep -qx 'zfs load-key tank/vault' storage.log") == 0);
 	ATF_CHECK(system("test -z \"$(ls -A tools/tmp)\"") == 0);
 	ATF_CHECK(js_true("![...document.querySelectorAll('.dock .op')].some("
 	    "o => o.textContent.includes('correct horse'))"));
