@@ -1106,9 +1106,7 @@ jail_page(struct html *h)
 		if (tl < jl || strstr(t, app.jail) == NULL)
 			continue;
 		h_fmt(h, "<li class=\"op o-%s\" data-act=\"trace\" "
-		    "data-arg=\"%d\">", app.ops[i].state == OP_RUNNING ?
-		    "running" : app.ops[i].state == OP_OK ? "ok" : "failed",
-		    app.ops[i].id);
+		    "data-arg=\"%d\">", op_class(&app.ops[i]), app.ops[i].id);
 		h_raw(h, "<i class=\"led\"></i>");
 		h_txt(h, t);
 		h_raw(h, "</li>");
@@ -1139,8 +1137,7 @@ dock(struct html *h)
 	for (i = 0; !app.dock_open && i < app.nops && i < 6; i++) {
 		o = &app.ops[i];
 		h_fmt(h, "<span class=\"last o-%s%s\" data-act=\"trace\" "
-		    "data-arg=\"%d\"", o->state == OP_RUNNING ? "running" :
-		    o->state == OP_OK ? "ok" : "failed", app.dock_open &&
+		    "data-arg=\"%d\"", op_class(o), app.dock_open &&
 		    o->id == app.trace_op ? " selected" : "", o->id);
 		h_attr(h, "title", o->state == OP_FAILED && o->error[0] !=
 		    '\0' ? o->error : o->title);
@@ -1149,7 +1146,7 @@ dock(struct html *h)
 		h_raw(h, "</b><small>");
 		h_txt(h, o->server);
 		if (o->state == OP_RUNNING)
-			h_raw(h, " · running");
+			h_raw(h, o->live ? " · live" : " · running");
 		else {
 			fmt_dur(dur, sizeof(dur), (int64_t)((o->finished -
 			    o->started) * 1000));
@@ -1192,9 +1189,8 @@ dock(struct html *h)
 			o = &app.ops[i];
 			h_fmt(h, "<li class=\"op o-%s%s\" data-act=\"trace\" "
 			    "data-arg=\"%d\"><i class=\"led\"></i>",
-			    o->state == OP_RUNNING ? "running" :
-			    o->state == OP_OK ? "ok" : "failed",
-			    o->id == app.trace_op ? " selected" : "", o->id);
+			    op_class(o), o->id == app.trace_op ? " selected" :
+			    "", o->id);
 			{
 				time_t		when = (time_t)(o->started / 1000);
 				struct tm	tm;
@@ -1212,6 +1208,8 @@ dock(struct html *h)
 			if (o->job > 0)
 				h_fmt(h, " · job %lld%s", o->job, o->waiting ?
 				    ", host away, it runs on there" : "");
+			else if (o->live && o->state == OP_RUNNING)
+				h_raw(h, " · live");
 			h_raw(h, "</span>");
 			if (o->state != OP_RUNNING) {
 				fmt_dur(dur, sizeof(dur), (int64_t)

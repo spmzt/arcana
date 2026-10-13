@@ -293,6 +293,7 @@ struct op {
 	char		 url[200];
 	char		 stage[64];	/* a job's state on its host */
 	bool		 await;	/* the next request made is its */
+	bool		 live;	/* on the console's socket, its steps told */
 };
 
 enum {
@@ -503,6 +504,11 @@ struct server	*cur_server(void);
 struct jailui	*jailui(struct server *, const char *);
 const ucl_object_t *find_jail(const struct server *, const char *);
 struct op	*op_find(int);
+/* live.c */
+void		 live_read(const char *, const char *, const char *, int,
+		    api_cb *, void *);
+void		 live_stream(const ucl_object_t *);
+const char	*op_class(const struct op *);
 struct op	*op_begin(const char *, const char *);
 void		 op_end(struct op *, bool, const char *);
 void		 confirm(const char *, const char *, const char *, bool,

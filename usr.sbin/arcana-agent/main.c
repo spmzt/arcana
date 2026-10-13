@@ -600,6 +600,7 @@ main(int argc, char *argv[])
 		fatal(pfh, "registering the %s family: %s", ARC_FAMILY_NAME,
 		    strerror(error));
 	event_family(fam);
+	trace_family(fam);
 	if ((error = cbl_loop_new(ctx, &loop)) != 0)
 		fatal(pfh, "cbl_loop_new: %s", strerror(error));
 	for (i = 0; i < nl; i++) {

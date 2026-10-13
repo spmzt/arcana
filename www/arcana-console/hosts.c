@@ -132,6 +132,9 @@ struct call {
 	bool			 has_pos;
 	uint32_t		 lines;		/* log: at most */
 	bool			 fresh;		/* a connection of its own, not kept */
+	/* A live read: each step the host tells as it runs, as JSON. */
+	void			(*on_step)(const char *, void *);
+	void			*step_arg;
 	bool			 moved;		/* transport switch: it answered */
 	char			*json;		/* the reply, from the thread */
 	int			 status;
@@ -218,11 +221,24 @@ uri_host(const char *uri, char *buf, size_t len)
 #define	POOL_PER_HOST	4
 #define	POOL_IDLE_US	(90 * 1000000ULL)
 
+/*
+ * A connection live reads run on (hosts_read_live()): subscribed to the
+ * host's steps once, when made, and told which call is on it, so that
+ * each step the host tells goes to that call's page.  Only live reads
+ * take these, and they take no other: the host tells its steps to a
+ * connection that subscribed, which no other read wants to hear.
+ */
+struct tellbox {
+	struct call	*c;		/* the call on it now, or NULL */
+	cbl_sub		*sub;		/* NULL: the agent has no steps */
+};
+
 struct pooled {
 	char		*uri;
 	char		*peer;
 	cbl_conn	*conn;
 	cbl_tls		*tls;
+	struct tellbox	*box;		/* a live read's; NULL for the rest */
 	uint16_t	 family;
 	uint32_t	 version;
 	uint32_t	 groups[ARC_MCGRP_COUNT];	/* the family's, resolved */
@@ -409,11 +425,13 @@ pooled_close(struct pooled *p)
 
 	cbl_conn_free(p->conn);
 	cbl_tls_free(p->tls);
+	free(p->box);		/* its subscription went with the connection */
 	free(p->uri);
 	free(p->peer);
 }
 
-static bool	pool_take_own(const char *, const char *, struct pooled *);
+static bool	pool_take_own(const char *, const char *, bool,
+		    struct pooled *);
 static const char *hosts_dial(const char *, const char *, cbl_conn **,
 		    cbl_tls **, struct arc_client *);
 
@@ -671,19 +689,23 @@ pool_drop(cbl_conn *conn, cbl_tls *tls)
 	cbl_tls_free(tls);
 }
 
-/* An idle connection to uri, if one is there and still good. */
+/*
+ * An idle connection to uri, if one is there and still good: a live
+ * read's when live, another's when not.
+ */
 static bool
-pool_take(const char *uri, const char *peer, struct pooled *out)
+pool_take(const char *uri, const char *peer, bool live, struct pooled *out)
 {
 
 	if (is_sctp(uri))
 		return (shared_take(uri, peer, out));
-	return (pool_take_own(uri, peer, out));
+	return (pool_take_own(uri, peer, live, out));
 }
 
 /* The same, of the connections that are not shared. */
 static bool
-pool_take_own(const char *uri, const char *peer, struct pooled *out)
+pool_take_own(const char *uri, const char *peer, bool live,
+    struct pooled *out)
 {
 	struct pollfd	pfd;
 	uint64_t	now;
@@ -697,7 +719,7 @@ pool_take_own(const char *uri, const char *peer, struct pooled *out)
 		bool	mine, dead;
 
 		mine = !found && strcmp(pool[i].uri, uri) == 0 && same(
-		    pool[i].peer, peer);
+		    pool[i].peer, peer) && (pool[i].box != NULL) == live;
 		dead = now - pool[i].since > POOL_IDLE_US ||
 		    !cbl_conn_is_open(pool[i].conn);
 		if (!dead && mine) {
@@ -724,12 +746,13 @@ pool_take_own(const char *uri, const char *peer, struct pooled *out)
 /* Back for the next request; closed when there are enough already. */
 static void
 pool_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
-    const struct arc_client *cl)
+    const struct arc_client *cl, struct tellbox *box)
 {
 	struct pooled	p;
 	int		i, n;
 
 	if (is_sctp(uri)) {
+		free(box);
 		if (!shared_give(uri, peer, conn, tls, cl)) {
 			cbl_conn_free(conn);
 			cbl_tls_free(tls);
@@ -740,6 +763,7 @@ pool_give(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 	memset(&p, 0, sizeof(p));
 	p.conn = conn;
 	p.tls = tls;
+	p.box = box;
 	p.family = cl->family;
 	p.version = cl->version;
 	memcpy(p.groups, cl->groups, sizeof(p.groups));
@@ -798,7 +822,7 @@ hosts_connect(const char *uri, const char *peer, cbl_conn **connp,
 	*connp = NULL;
 	*tlsp = NULL;
 	/* Not a shared one: see above. */
-	if (pool_take_own(uri, peer, &kept)) {
+	if (pool_take_own(uri, peer, false, &kept)) {
 		free(kept.uri);
 		free(kept.peer);
 		cl->conn = kept.conn;
@@ -875,7 +899,7 @@ hosts_release(const char *uri, const char *peer, cbl_conn *conn, cbl_tls *tls,
 	arc_client_fini(cl);
 	/* A dump's own SCTP association may be the shared one after. */
 	if (good && cbl_conn_is_open(conn))
-		pool_give(uri, peer, conn, tls, cl);
+		pool_give(uri, peer, conn, tls, cl, NULL);
 	else
 		pool_drop(conn, tls);
 }
@@ -1083,6 +1107,58 @@ step_object(int id, int parent, const char *kind, const char *label,
 }
 
 /*
+ * A step of the daemon's, as the trace has it: under the console's
+ * three (the API call, the session check, the cblink request), its id
+ * three more than the daemon's, the same live and in the whole trace.
+ */
+static ucl_object_t *
+agent_step(const struct arc_step *v)
+{
+	ucl_object_t	*o;
+
+	o = step_object((int)v->id + 3, v->parent < 0 ? 2 : v->parent + 3,
+	    v->kind < nitems(kind_names) ? kind_names[v->kind] : "lib",
+	    v->label, v->detail, true, v->duration_us);
+	/* step_object() put one already: replaced, not a second key, which
+	 * UCL keeps as an array and JSON cannot have. */
+	ucl_object_replace_key(o, ucl_object_fromstring(v->status <
+	    nitems(status_names) ? status_names[v->status] : "incomplete"),
+	    "status", 0, true);
+	if (v->argv.n > 0) {
+		put(o, "argv", strs(v->argv.v, v->argv.n));
+		put(o, "exit", ucl_object_fromint(v->exit));
+		put(o, "output", output(&v->output));
+		put(o, "error_output", output(&v->error_output));
+	}
+	return (o);
+}
+
+/*
+ * A step the host tells while a live read runs: on the reading thread,
+ * inside its request, which is the box's call.
+ */
+static void
+step_rx(const struct arc_step_ntf *ntf, void *arg)
+{
+	struct tellbox	*box = arg;
+	ucl_object_t	*o;
+	unsigned char	*text;
+	size_t		 i;
+
+	if (box->c == NULL || box->c->on_step == NULL)
+		return;
+	for (i = 0; i < ntf->trace.n; i++) {
+		o = agent_step(&ntf->trace.v[i]);
+		if ((text = ucl_object_emit(o, UCL_EMIT_JSON_COMPACT)) !=
+		    NULL) {
+			box->c->on_step((const char *)text, box->c->step_arg);
+			free(text);
+		}
+		ucl_object_unref(o);
+	}
+}
+
+/*
  * The console's steps (the API call, the session check, the cblink
  * request) with the daemon's trace under the request.
  */
@@ -1090,7 +1166,7 @@ static ucl_object_t *
 trace_object(struct call *c, const struct arc_step *v, size_t n,
     const char *calldetail, bool callok, uint64_t callus)
 {
-	ucl_object_t	*a, *o;
+	ucl_object_t	*a;
 	const char	*fn;
 	char		 label[64];
 	size_t		 i;
@@ -1145,24 +1221,8 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 		    "WebAuthn session cookie", true, c->auth_us));
 	ucl_array_append(a, step_object(2, 0, "lib", label, calldetail,
 	    callok, callus));
-	for (i = 0; i < n; i++) {
-		o = step_object((int)i + 3, v[i].parent < 0 ? 2 :
-		    v[i].parent + 3, v[i].kind < nitems(kind_names) ?
-		    kind_names[v[i].kind] : "lib", v[i].label, v[i].detail,
-		    true, v[i].duration_us);
-		/* step_object() put one already: replaced, not a second key,
-		 * which UCL keeps as an array and JSON cannot have. */
-		ucl_object_replace_key(o, ucl_object_fromstring(v[i].status <
-		    nitems(status_names) ? status_names[v[i].status] :
-		    "incomplete"), "status", 0, true);
-		if (v[i].argv.n > 0) {
-			put(o, "argv", strs(v[i].argv.v, v[i].argv.n));
-			put(o, "exit", ucl_object_fromint(v[i].exit));
-			put(o, "output", output(&v[i].output));
-			put(o, "error_output", output(&v[i].error_output));
-		}
-		ucl_array_append(a, o);
-	}
+	for (i = 0; i < n; i++)
+		ucl_array_append(a, agent_step(&v[i]));
 	return (a);
 }
 
@@ -1447,6 +1507,7 @@ call_run(struct kore_task *t)
 	struct arc_fw_trace_req	 ftq;
 	struct arc_fw_trace_rsp	*ftr;
 	struct pooled		 kept;
+	struct tellbox		*box;
 	struct arc_storage_req	 sgq;
 	struct arc_storage_rsp	*sgr;
 	struct arc_fstab_req	 fsq;
@@ -1568,14 +1629,20 @@ call_run(struct kore_task *t)
 	bin = NULL;
 	msg = NULL;
 	local = strncmp(c->uri, "unix:", 5) == 0;
+	/* Live over SCTP's shared association: no, its trace comes whole. */
+	if (is_sctp(c->uri))
+		c->on_step = NULL;
+	box = NULL;
 	t1 = now_us();
 connect:
 	memset(&cl, 0, sizeof(cl));
 	/* One kept from before, when there is one. */
 	if (!c->fresh && !again && (is_sctp(c->uri) ? shared_wait(c->uri,
-	    c->peer, &kept) : pool_take(c->uri, c->peer, &kept))) {
+	    c->peer, &kept) : pool_take(c->uri, c->peer, c->on_step != NULL,
+	    &kept))) {
 		conn = kept.conn;
 		tls = kept.tls;
+		box = kept.box;
 		free(kept.uri);
 		free(kept.peer);
 		cl.conn = conn;
@@ -1628,6 +1695,18 @@ connect:
 		making_done(c->uri, c->peer);
 	}
 connected:
+	/* A live read's connection hears the host's steps from now on. */
+	if (c->on_step != NULL && box == NULL) {
+		static const struct arc_steps_handlers sh = { .step = step_rx };
+
+		/* libc's: the pool frees it, from any thread.  Without
+		 * it, the read goes on, its steps untold. */
+		if ((box = calloc(1, sizeof(*box))) != NULL &&
+		    cl.groups[ARC_MCGRP_STEPS] != 0)
+			(void)arc_steps_subscribe(&cl, &sh, box, &box->sub);
+	}
+	if (box != NULL)
+		box->c = c;
 
 	switch (c->op) {
 	case OP_HELLO:
@@ -2757,11 +2836,13 @@ done:
 	 * refused what was asked, which says nothing against the
 	 * connection.  Not after an update, which restarts the agent.
 	 */
+	if (box != NULL)
+		box->c = NULL;
 	if (cl.conn != NULL && !c->fresh && c->op != OP_AGENT_UPDATE &&
 	    c->op != OP_CONSOLE_UPDATE && (c->status == 200 || cl.err !=
 	    NULL) && cbl_conn_is_open(conn)) {
 		arc_client_fini(&cl);
-		pool_give(c->uri, c->peer, conn, tls, &cl);
+		pool_give(c->uri, c->peer, conn, tls, &cl, box);
 		return (KORE_RESULT_OK);
 	}
 	if (cl.conn != NULL)
@@ -2770,6 +2851,8 @@ done:
 		pool_drop(conn, tls);
 	else
 		cbl_tls_free(tls);
+	/* The connection, and with it the subscription, is gone. */
+	free(box);
 	return (KORE_RESULT_OK);
 }
 
@@ -4662,7 +4745,8 @@ self_call(struct call *c, const char *uri, const char *peer,
 	c->peer = peer != NULL && peer[0] != '\0' ? kore_strdup(peer) : NULL;
 	c->sname = kore_strdup(name != NULL ? name : uri);
 	c->t0 = now_us();
-	snprintf(c->route, sizeof(c->route), "workflow %s", what);
+	if (c->route[0] == '\0')
+		snprintf(c->route, sizeof(c->route), "workflow %s", what);
 	(void)call_run(&c->task);
 	json = c->json;
 	c->json = NULL;
@@ -4776,6 +4860,36 @@ hosts_read(const char *uri, const char *peer, const char *name,
 	c->op = reads[i].op;
 	c->reads = true;
 	c->installed = reads[i].op == OP_PACKAGES;
+	return (self_call(c, uri, peer, name, what, status));
+}
+
+/*
+ * A read a page asks on its socket (stream.c), answered as GET
+ * /api/servers/<id>/<what> is, with each step the host tells as it
+ * runs given to on_step first, as the trace has it: jails, services.
+ * NULL when what is none of them.
+ */
+char *
+hosts_read_live(const char *sid, const char *uri, const char *peer,
+    const char *name, const char *what, void (*on_step)(const char *,
+    void *), void *arg, int *status)
+{
+	struct call	*c;
+	enum op		 op;
+
+	if (strcmp(what, "jails") == 0)
+		op = OP_LIST;
+	else if (strcmp(what, "services") == 0)
+		op = OP_SERVICES;
+	else
+		return (NULL);
+	c = kore_calloc(1, sizeof(*c));
+	c->op = op;
+	c->reads = true;
+	snprintf(c->sid, sizeof(c->sid), "%s", sid);
+	snprintf(c->route, sizeof(c->route), "socket: %s", what);
+	c->on_step = on_step;
+	c->step_arg = arg;
 	return (self_call(c, uri, peer, name, what, status));
 }
 

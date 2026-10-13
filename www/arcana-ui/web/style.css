@@ -1814,6 +1814,9 @@ table.nhgroups td.num { text-align: right; }
 
 .o-running { --c: var(--amber); }
 .o-running .led { animation: blink .7s steps(2) infinite; }
+/* On the console's socket, told as it goes: live, not pending. */
+.o-live { --c: var(--teal); }
+.o-live .led { animation: pulse 1.2s ease-in-out infinite; }
 .o-ok { --c: var(--cyan); }
 .o-failed { --c: var(--red); }
 
