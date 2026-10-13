@@ -132,6 +132,13 @@
   generator (D-3), L3NM where it and MEF 70.2 overlap (D-4), STAMP
   for the probes (D-8), no compatibility with the v1 family or `/api`
   (D-9, D-10), BIRD for FlowSpec. Open: D-5 to D-7, D-11, D-12.
+  Done (2026-10-13): Y-0 0.1, the body decoder: YANG-CBOR by SID
+  deltas (cblink sid_test), YANG-CBOR's tags under CBL_CTX_YANG_TAGS,
+  the cblink module and its .sid file (cblink share/yang), and the
+  frame sizes (docs/notes/cblink-v2-frame-sizes.md: version 2 is 43 %
+  of version 1 as one reply, 52 to 54 % as a dump). The cblink
+  commits wait to be pushed to spmzt/cblink and the submodule moved
+  to them. Next, for the user to start: 0.2.
 - To decide (the user's): whether the security policies move to MEF
   138's model (Security Function Policies each with Block, Allow and
   Quarantine lists, No-match, Duration; PDNS and DLP added), and which
