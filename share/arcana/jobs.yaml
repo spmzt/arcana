@@ -357,5 +357,5 @@ kinds:
     title: The base system's sshd: its banner, settings, keys and host certificates
     needs: verb
     uses: jail path args text user safe
-    values: verb=banner|set|authorize|unauthorize|sign
+    values: verb=banner|set|authorize|unauthorize|sign|user-cas
     destroys: verb=unauthorize

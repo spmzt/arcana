@@ -135,7 +135,7 @@ start|onestart)	touch "running.\$name"; echo "Starting \$name." ;;
 stop)		rm -f "running.\$name"; echo "Stopping \$name." ;;
 restart)	[ -f slow ] && sleep 2
 		touch "running.\$name"; echo "Restarting \$name." ;;
-reload)		echo "Reloading \$name." ;;
+reload|onereload)	echo "Reloading \$name." ;;
 describe)	echo "The \$name daemon." ;;
 extracommands)	echo "reload configtest" ;;
 *)		echo "fake-service: \$*" >&2; exit 2 ;;
@@ -5045,6 +5045,26 @@ EOT
 	atf_check -s exit:1 -o match:'not a file of alice.s alone' \
 	    "$JGC" -c "$SOCK" sshd authorize alice alice_key.pub
 	atf_check -o inline:'secret of another\n' cat secret
+	# The CAs whose user certificates sshd takes.
+	{ echo '# the lab CA'; cat ca.pub; } > cas.txt
+	atf_check -o match:'done +sshd user-cas$' \
+	    "$JGC" -c "$SOCK" sshd user-cas cas.txt
+	atf_check -o file:cas.txt cat $R/etc/ssh/trusted_user_ca_keys
+	atf_check -o match:'^TrustedUserCAKeys /etc/ssh/trusted_user_ca_keys$' \
+	    cat $R/etc/ssh/sshd_config
+	atf_check -o save:list "$JGC" -c "$SOCK" sshd
+	grep -qF "\"user_cas\":[{\"type\":\"ssh-ed25519\",\"fingerprint\":\"$cafp\"" list ||
+	    atf_fail "the user CA"
+	grep -qF '"user_cas_text":"# the lab CA' list || atf_fail "its text"
+	# A certificate is not a CA's key, nor is a private one.
+	atf_check -s exit:1 -o match:"not a CA's public key" "$JGC" -c "$SOCK" \
+	    sshd user-cas $R/etc/ssh/ssh_host_ed25519_key-cert.pub
+	atf_check -s exit:1 -e match:'not a private one' -o ignore \
+	    "$JGC" -c "$SOCK" sshd user-cas ca
+	atf_check -o file:cas.txt cat $R/etc/ssh/trusted_user_ca_keys
+	# None: the line goes.
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sshd user-cas -
+	atf_check -o not-match:'TrustedUserCAKeys' cat $R/etc/ssh/sshd_config
 }
 sshd_cleanup()
 {

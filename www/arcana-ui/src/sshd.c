@@ -244,6 +244,11 @@ view_ssh(struct html *h, struct server *s)
 		{ "Shell", "shell", false }, { "Keys file", "keys_file", false },
 		{ "Keys", "n", true }, { "", NULL, false },
 	};
+	static const struct tcol ccols[] = {
+		{ "Type", "type", false }, { "Bits", "bits", true },
+		{ "Fingerprint", "fingerprint", false }, { "Comment", "comment",
+		false },
+	};
 	static const struct tcol kcols[] = {
 		{ "User", "user", false }, { "Type", "type", false },
 		{ "Fingerprint", "fingerprint", false }, { "Comment", "comment",
@@ -330,6 +335,44 @@ view_ssh(struct html *h, struct server *s)
 	    "Save the banner</button> <small class=\"dim\">kept as "
 	    "<code>/etc/ssh/banner</code>; empty, there is none</small></div>"
 	    "</form>");
+
+	/* The CAs whose user certificates are taken. */
+	h_raw(h, "<h3>User certificates</h3><p class=\"dim\">Users sign in "
+	    "with a certificate one of these CA keys signed "
+	    "(<code>TrustedUserCAKeys</code>), made with <code>ssh-keygen -s "
+	    "ca -I id -n user</code>; the certificate's principals are the "
+	    "names it signs in as.</p><table class=\"net ssh-cas\">");
+	tbl_head(h, "ssh-cas", ccols, 4, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("ssh-cas", jget(sh.data, "user_cas"), ccols, 4,
+	    app.filter);
+	for (n = 0; (r = rows[n]) != NULL; n++) {
+		h_raw(h, "<tr><td>");
+		h_txt(h, jstr(r, "type"));
+		if (jint(r, "bits", 0) > 0)
+			h_fmt(h, "</td><td>%lld</td><td class=\"mono fp\">",
+			    (long long)jint(r, "bits", 0));
+		else
+			h_raw(h, "</td><td>—</td><td class=\"mono fp\">");
+		h_txt(h, jstr(r, "fingerprint"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(r, "comment") != NULL ? jstr(r, "comment") : "");
+		h_raw(h, "</td></tr>");
+	}
+	if (n == 0)
+		h_raw(h, "<tr><td colspan=\"4\" class=\"dim\">None: no user "
+		    "certificate is taken.</td></tr>");
+	free(rows);
+	h_raw(h, "</tbody></table><form data-form=\"ssh-cas\" class=\""
+	    "ssh-banner\"><textarea name=\"text\" rows=\"3\" class=\"mono\" "
+	    "spellcheck=\"false\" placeholder=\"The CAs' public keys, one a "
+	    "line: ssh-ed25519 AAAA… ca\">");
+	if (jstr(sh.data, "user_cas_text") != NULL)
+		h_txt(h, jstr(sh.data, "user_cas_text"));
+	h_raw(h, "</textarea><div class=\"row\"><button class=\"primary small\">"
+	    "Save the CA keys</button> <small class=\"dim\">kept as "
+	    "<code>/etc/ssh/trusted_user_ca_keys</code>; empty, none is "
+	    "trusted</small></div></form>");
 
 	/* Host keys. */
 	h_raw(h, "<h3>Host keys <button class=\"ghost small\" data-act=\""
@@ -552,6 +595,13 @@ ssh_form(const char *form, const ucl_object_t *f)
 			free(line);
 		} else
 			ssh_job(s, "banner", NULL, NULL, t, NULL, "banner");
+	} else if (strcmp(form, "ssh-cas") == 0) {
+		t = jstr(f, "text") != NULL ? jstr(f, "text") : "";
+		if (strstr(t, "PRIVATE KEY") != NULL) {
+			toast(true, "The CAs' public keys, not a private one");
+			return (true);
+		}
+		ssh_job(s, "user-cas", NULL, NULL, t, NULL, "user CA keys");
 	} else if (strcmp(form, "ssh-sign") == 0) {
 		t = jstr(f, "key") != NULL ? jstr(f, "key") : "";
 		if (strstr(t, "PRIVATE KEY") == NULL) {

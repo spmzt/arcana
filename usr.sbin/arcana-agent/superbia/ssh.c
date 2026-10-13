@@ -44,6 +44,7 @@
 #define	SSHD_CONFIG	SSH_DIR "/sshd_config"
 #define	BEFORE		"sshd_config.arcana-before"
 #define	BANNER		SSH_DIR "/banner"
+#define	USER_CAS	SSH_DIR "/trusted_user_ca_keys"
 #define	TEXT_MAX	(64 * 1024)
 
 /* What is read of sshd -T, and what may be set from here. */
@@ -667,9 +668,13 @@ do_ssh(struct work *w, struct arc_ssh_rsp *rsp)
 	ucl_object_insert_key(top, ul, "users", 0, false);
 	/* The CA keys whose user certificates are taken. */
 	if ((p = first(set, "trustedusercakeys")) != NULL && strcasecmp(p,
-	    "none") != 0 && (text = scope_slurp(w, at(w, p), NULL)) != NULL)
+	    "none") != 0 && (text = scope_slurp(w, at(w, p), &n)) != NULL) {
 		ucl_object_insert_key(top, keys_of(w, text), "user_cas", 0,
 		    false);
+		if (n <= TEXT_MAX)
+			ucl_object_insert_key(top, ucl_object_fromlstring(text,
+			    n), "user_cas_text", 0, false);
+	}
 	ucl_object_insert_key(top, set, "settings", 0, false);
 	json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
 	rsp->json = json != NULL ? wtext(w, wstrdup(w, json)) : NULL;
@@ -735,11 +740,18 @@ ssh_check(const struct arc_job_spec *sp)
 	int	k;
 
 	if (sp->verb == NULL)
-		return ("ssh: a verb, banner, set, authorize, unauthorize or "
-		    "sign");
+		return ("ssh: a verb, banner, user-cas, set, authorize, "
+		    "unauthorize or sign");
 	if (strcmp(sp->verb, "banner") == 0) {
 		if (sp->text != NULL && strlen(sp->text) > TEXT_MAX)
 			return ("ssh: a banner of 64 KiB at most");
+		return (NULL);
+	}
+	if (strcmp(sp->verb, "user-cas") == 0) {
+		if (sp->text != NULL && strlen(sp->text) > TEXT_MAX)
+			return ("ssh: the CA keys, 64 KiB at most");
+		if (sp->text != NULL && strstr(sp->text, "PRIVATE KEY") != NULL)
+			return ("ssh: the CAs' public keys, not a private one");
 		return (NULL);
 	}
 	if (strcmp(sp->verb, "set") == 0) {
@@ -793,7 +805,8 @@ ssh_check(const struct arc_job_spec *sp)
 				return ("ssh: a principal is a host's name");
 		return (NULL);
 	}
-	return ("ssh: a verb, banner, set, authorize, unauthorize or sign");
+	return ("ssh: a verb, banner, user-cas, set, authorize, unauthorize "
+	    "or sign");
 }
 
 /*
@@ -857,7 +870,10 @@ conf_edit(struct work *w, const char *text, const char *key,
 	return (out);
 }
 
-/* sshd reloaded where it runs; one that does not is left. */
+/*
+ * sshd reloaded where it runs, enabled in rc.conf or not (reload alone
+ * says it cannot and exits 0); one that does not run is left.
+ */
 static int
 reload(struct work *w, const char **errp)
 {
@@ -866,14 +882,14 @@ reload(struct work *w, const char **errp)
 
 	argv[0] = (char *)(uintptr_t)opts.service_bin;
 	argv[1] = (char *)(uintptr_t)"sshd";
-	argv[2] = (char *)(uintptr_t)"reload";
+	argv[2] = (char *)(uintptr_t)"onereload";
 	argv[3] = NULL;
 	if (run_exec(w, scope_jexec(w, argv), &res) == 0)
 		return (0);
 	if ((res.err != NULL && strstr(res.err, "not running") != NULL) ||
 	    (res.out != NULL && strstr(res.out, "not running") != NULL))
 		return (0);
-	*errp = wtext(w, exec_error(w, &res, "service sshd reload"));
+	*errp = wtext(w, exec_error(w, &res, "service sshd onereload"));
 	return (-1);
 }
 
@@ -928,6 +944,9 @@ ssh_undo(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	if (strcmp(sp->verb, "banner") == 0)
 		(void)scope_rename(w, at(w, BANNER), "banner.arcana-before",
 		    "banner");
+	if (strcmp(sp->verb, "user-cas") == 0)
+		(void)scope_rename(w, at(w, USER_CAS),
+		    "trusted_user_ca_keys.arcana-before", "trusted_user_ca_keys");
 	return (reload(w, errp));
 }
 
@@ -1349,6 +1368,62 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	return (conf_put(w, text, errp));
 }
 
+/*
+ * The CA keys whose user certificates sshd takes: each line a public
+ * key, a comment or blank; none, the TrustedUserCAKeys line taken away.
+ */
+static int
+user_cas(struct work *w, const char *text, const char *conf,
+    const char **errp)
+{
+	ucl_object_t	*k;
+	const char	*l, *e;
+	char		*line;
+	int		 nkeys;
+
+	if (text == NULL || text[strspn(text, " \t\r\n")] == '\0')
+		return (conf_put(w, conf_edit(w, conf, "TrustedUserCAKeys",
+		    NULL, false), errp));
+	nkeys = 0;
+	for (l = text; *l != '\0'; l = *e != '\0' ? e + 1 : e) {
+		e = l + strcspn(l, "\n");
+		line = wstrndup(w, l, (size_t)(e - l));
+		if (line[strspn(line, " \t\r")] == '\0' || line[strspn(line,
+		    " \t")] == '#')
+			continue;
+		k = key_obj(w, line);
+		if (k == NULL || ucl_object_lookup(k, "options") != NULL ||
+		    ucl_object_lookup(k, "certificate") != NULL ||
+		    strstr(ucl_object_tostring(ucl_object_lookup(k, "type")),
+		    "-cert-") != NULL) {
+			if (k != NULL)
+				ucl_object_unref(k);
+			*errp = wfmt(w, "not a CA's public key: %.60s", line);
+			return (-1);
+		}
+		ucl_object_unref(k);
+		nkeys++;
+	}
+	if (nkeys == 0) {
+		*errp = "no key among the lines";
+		return (-1);
+	}
+	if (text[strlen(text) - 1] != '\n')
+		text = wfmt(w, "%s\n", text);
+	if (scope_replace(w, at(w, USER_CAS), text, strlen(text), 0644,
+	    "trusted_user_ca_keys.arcana-before") != 0) {
+		*errp = wfmt(w, "%s: %s", USER_CAS, strerror(errno));
+		return (-1);
+	}
+	if (conf_put(w, conf_edit(w, conf, "TrustedUserCAKeys", USER_CAS,
+	    false), errp) != 0) {
+		(void)scope_rename(w, at(w, USER_CAS),
+		    "trusted_user_ca_keys.arcana-before", "trusted_user_ca_keys");
+		return (-1);
+	}
+	return (0);
+}
+
 int
 do_ssh_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 {
@@ -1374,6 +1449,8 @@ do_ssh_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		*errp = wfmt(w, "%s: %s", SSHD_CONFIG, strerror(errno));
 		return (-1);
 	}
+	if (strcmp(sp->verb, "user-cas") == 0)
+		return (user_cas(w, sp->text, text, errp));
 	if (strcmp(sp->verb, "banner") == 0) {
 		if (sp->text == NULL || sp->text[0] == '\0')
 			text = conf_edit(w, text, "Banner", "none", false);

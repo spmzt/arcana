@@ -193,7 +193,7 @@ usage(void)
 	    "    zfskey [-n] dataset\n"
 	    "    sshd [list] | banner file | set Setting [value ...] |\n"
 	    "        authorize user keyfile | unauthorize user fingerprint |\n"
-	    "        sign ca-key-file [principal ...]\n"
+	    "        sign ca-key-file [principal ...] | user-cas file\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
 	    "    sysctl [name | start of a name]\n"
@@ -2181,7 +2181,7 @@ cmd_capture(struct arc_client *cl, int argc, char **argv)
 /*
  * sshd [list] | banner file | set Setting [value ...] | authorize user
  * keyfile | unauthorize user fingerprint | sign ca-key-file [principal
- * ...]: the base system's sshd, of the host or of -j's jail; a change is
+ * ...] | user-cas file: the base system's sshd, of the host or of -j's jail; a change is
  * a job, and with -s undone unless confirmed.
  */
 static int
@@ -2211,7 +2211,8 @@ cmd_sshd(struct arc_client *cl, int argc, char **argv)
 	sp.has_kind = true;
 	sp.kind = ARC_JOB_KIND_SSH;
 	sp.verb = argv[1];
-	if (argc == 3 && strcmp(argv[1], "banner") == 0)
+	if (argc == 3 && (strcmp(argv[1], "banner") == 0 || strcmp(argv[1],
+	    "user-cas") == 0))
 		sp.text = strcmp(argv[2], "-") == 0 ? "" : slurp(argv[2]);
 	else if (argc >= 3 && strcmp(argv[1], "set") == 0) {
 		sp.path = argv[2];
