@@ -312,8 +312,8 @@ What changes:
   SIDs from a mega-range Arcana asks IANA for (RFC 9595 §7, Expert
   Review); until then a self-chosen block above 2^40, with the
   recorded risk that IANA later assigns those modules differently
-  and Arcana keeps its numbers (no CORECONF interoperation is
-  claimed).
+  and Arcana keeps its numbers (no interoperation with other
+  SID-keyed protocols is claimed).
 - **Validation.** A static table engine in libcblink (today's
   `cbl_policy` grown up: types, ranges, lengths, patterns, enums,
   bits, identity derivation, union, mandatory, min/max-elements,
