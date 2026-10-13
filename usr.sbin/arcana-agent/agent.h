@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.106.0"
+#define	ARCANA_AGENT_VERSION	"0.107.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -606,6 +606,8 @@ int		 route_socket(void);
 int		 helper_netlink(int);
 int		 jail_jid_name(int, char *, size_t, char *, size_t);
 int		 jail_next(int);
+/* ira/jailwatch.c: jail-state events, from EVFILT_JAIL */
+void		 jail_watch_start(void);
 int		 pcb_helper(int, char **);
 int		 pcb_list(FILE *, bool, int);
 int		 helper_lines(struct work *, const char *, size_t,

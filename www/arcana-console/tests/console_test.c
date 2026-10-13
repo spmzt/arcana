@@ -3503,6 +3503,9 @@ ca_change(const char *path, const char *body)
 	EXPECT(&r, 200);
 	resp_free(&r);
 	ca_wait(&r);
+	if (jstr(&r, "state.phase") == NULL || strcmp(jstr(&r, "state.phase"),
+	    "switched") != 0)
+		(void)system("tail -30 kore.out >&2");
 	ATF_CHECK_MSG(jstr(&r, "state.phase") != NULL && strcmp(jstr(&r,
 	    "state.phase"), "switched") == 0, "%s", r.body);
 	resp_free(&r);
@@ -3516,7 +3519,7 @@ ca_change(const char *path, const char *body)
 	ca_wait(&r);
 	ATF_CHECK_MSG(jstr(&r, "state.phase") != NULL && strcmp(jstr(&r,
 	    "state.phase"), "finished") == 0, "%s", r.body);
-	ATF_CHECK(jstr(&r, "next") == NULL);
+	ATF_CHECK_MSG(jstr(&r, "next") == NULL, "%s", r.body);
 	resp_free(&r);
 	http("GET", path, NULL, &r);
 	EXPECT(&r, 200);

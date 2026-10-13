@@ -2483,7 +2483,9 @@ operations:
       500, each t, seq, rule, action, src, dst, iface, comment) and
       "proxy" (each instance's name, fib, mode, running and ca, its
       certificate) too.  job, with id, title, ok and error, when a
-      job ends.
+      job ends.  jail-state, with jail, state (running or stopped) and
+      jid, when a jail is made or removed, as kqueue(2)'s EVFILT_JAIL
+      tells it.
     do:
       request:
         attributes:

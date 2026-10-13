@@ -20,8 +20,8 @@
  *
  * A workflow runs by hand, every so many seconds, or on events: those
  * the console sees itself (a host that stopped answering, host-down;
- * that answers again, host-up; a jail whose state changed, jail-state)
- * and those the host tells (threshold, kmsg, link and the rest), each
+ * that answers again, host-up) and those the host tells (a jail made
+ * or removed, jail-state; threshold, kmsg, link and the rest), each
  * with what it must match.  One that runs by itself may hold a step
  * that destroys (jobs.yaml's destroys) only when it says so.
  *
@@ -1611,9 +1611,6 @@ struct watched {
 	uint64_t	 last;		/* the newest event seen */
 	bool		 known;		/* last is what it says */
 	bool		 down;
-	/* The scheduler's: a jail whose state changed. */
-	bool		 jails_known;
-	ucl_object_t	*jails;		/* name: state, as last seen */
 	/* Between the two. */
 	atomic_bool	 running;	/* its thread is there */
 	atomic_bool	 stop;		/* no workflow waits on it now */
@@ -1928,59 +1925,6 @@ sub_keep(struct watched *x)
 	pthread_detach(tid);
 }
 
-/* A jail whose state is not what it was: jail-state, read each tick. */
-static void
-watch_jails(const ucl_object_t *wfs, struct watched *x)
-{
-	struct hostref		 h;
-	ucl_object_t		*ans, *now;
-	const ucl_object_t	*j, *was;
-	ucl_object_iter_t	 it;
-	char			*json;
-	int			 status;
-
-	if (!ref_get(x->sid, &h))
-		return;
-	json = hosts_read(h.uri, h.peer, h.name, "jails", &status);
-	ans = parse(json);
-	free(json);
-	if (status != 200 || ans == NULL) {
-		if (ans != NULL)
-			ucl_object_unref(ans);
-		return;
-	}
-	now = ucl_object_typed_new(UCL_OBJECT);
-	it = NULL;
-	while ((j = ucl_object_iterate(ucl_object_lookup(ans, "jails"), &it,
-	    true)) != NULL) {
-		const char	*name = ucl_str(j, "name");
-		const char	*st = ucl_str(j, "state");
-
-		if (name == NULL || st == NULL)
-			continue;
-		put(now, name, ucl_object_fromstring(st));
-		was = x->jails != NULL ? ucl_object_lookup(x->jails, name) :
-		    NULL;
-		if (x->jails_known && (was == NULL || strcmp(
-		    ucl_object_tostring_forced(was), st) != 0)) {
-			ucl_object_t	*d = ucl_object_typed_new(UCL_OBJECT);
-
-			put(d, "jail", ucl_object_fromstring(name));
-			put(d, "state", ucl_object_fromstring(st));
-			if (was != NULL)
-				put(d, "was", ucl_object_fromstring(
-				    ucl_object_tostring_forced(was)));
-			fire(wfs, x->sid, "jail-state", d);
-			ucl_object_unref(d);
-		}
-	}
-	if (x->jails != NULL)
-		ucl_object_unref(x->jails);
-	x->jails = now;
-	x->jails_known = true;
-	ucl_object_unref(ans);
-}
-
 /* When the workflow last ran by its interval, as every.json keeps it. */
 static time_t
 every_last(const char *id)
@@ -2011,8 +1955,8 @@ static void *
 scheduler(void *arg __unused)
 {
 	ucl_object_t		*top;
-	const ucl_object_t	*w, *h, *on;
-	ucl_object_iter_t	 it, hit, oit;
+	const ucl_object_t	*w, *h;
+	ucl_object_iter_t	 it, hit;
 	struct {
 		char	id[9];
 		time_t	last;
@@ -2022,7 +1966,6 @@ scheduler(void *arg __unused)
 	time_t			 now, t;
 	const char		*why;
 	char			 sids[256][9];
-	bool			 sjails[256];
 	int			 nsids, s, i;
 
 	ndue = 0;
@@ -2074,18 +2017,9 @@ scheduler(void *arg __unused)
 					if (strcmp(sids[s],
 					    ucl_object_tostring_forced(h)) == 0)
 						break;
-				if (s == nsids && nsids < 256) {
-					snprintf(sids[nsids], sizeof(sids[0]),
+				if (s == nsids && nsids < 256)
+					snprintf(sids[nsids++], sizeof(sids[0]),
 					    "%s", ucl_object_tostring_forced(h));
-					sjails[nsids++] = false;
-				}
-				oit = NULL;
-				while ((on = ucl_object_iterate(
-				    ucl_object_lookup(w, "on"), &oit, true)) !=
-				    NULL)
-					if (strcmp(ucl_str(on, "event"),
-					    "jail-state") == 0)
-						sjails[s] = true;
 			}
 		}
 		/* Each host waited on is subscribed to; the others not. */
@@ -2100,9 +2034,6 @@ scheduler(void *arg __unused)
 			if ((x = watched_of(sids[s])) == NULL)
 				continue;
 			sub_keep(x);
-			if (sjails[s])
-				watch_jails(ucl_object_lookup(top, "workflows"),
-				    x);
 		}
 		ucl_object_unref(top);
 	}
