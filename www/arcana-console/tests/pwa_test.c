@@ -5092,6 +5092,13 @@ part_routes(void)
 	wait_js("document.querySelector('section.dock.open')", 5);
 	ATF_CHECK(js_true("![...document.querySelectorAll('.dock [data-act="
 	    "trace]')].some(t => t.textContent.includes('list jails'))"));
+	/* Opening a host does ask for its jails: a task, even with a
+	 * periodic read of them on its way. */
+	run("document.querySelector('.tree [data-act=select-devices]')"
+	    ".click()");
+	click_when("table.devices tr[data-act=select-server]", 10);
+	wait_js("[...document.querySelectorAll('.dock [data-act=trace]')]"
+	    ".some(t => t.textContent.includes('list jails'))", 20);
 	go("/#/usage");
 	run("window.before = 1; location.reload();");
 	wait_js("window.before === undefined && location.hash === '#/usage' && "

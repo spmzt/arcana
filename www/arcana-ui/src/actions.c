@@ -1089,8 +1089,9 @@ jails_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 }
 
 /*
- * Fetch the jails of a server.  A refresh the user asked for goes into
- * the activity log with its trace; the periodic ones do not.
+ * Fetch the jails of a server.  A read the user asked for (opening the
+ * host or its Jails tab, Refresh) is a task with its trace, even with a
+ * periodic one on its way; the periodic ones are not.
  */
 void
 refresh_jails(struct server *s, bool user)
@@ -1099,7 +1100,7 @@ refresh_jails(struct server *s, bool user)
 	struct op	*op;
 	char		 url[128], title[160];
 
-	if (!app.online || s->loading)
+	if (!app.online || (s->loading && !user))
 		return;
 	s->loading = true;
 	c = ctx_new();
