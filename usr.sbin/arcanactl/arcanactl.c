@@ -214,6 +214,7 @@ usage(void)
 	    "    bridge name trunk member vlan-list [untagged-vlan]\n"
 	    "    bridge name vlanfilter on | off\n"
 	    "    bridge name flag member [-]flag\n"
+	    "    bridge name deladdr address | static member address | flush\n"
 	    "    bridge name set option value\n"
 	    "    bridge name ifset member option value\n"
 	    "    geneve name create | set option value ...\n"

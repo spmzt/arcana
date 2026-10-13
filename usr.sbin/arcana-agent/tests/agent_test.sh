@@ -3464,6 +3464,22 @@ EOS
 	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 deletem tap9
 	atf_check -o match:'^ifconfig_bridge0="iftagged epair5a 30-40"$' \
 	    cat rc.conf
+	# Addresses: one set behind a member, kept until it is set again or
+	# taken away; one learned forgotten; what was learned flushed.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 static em1 02:00:00:00:00:aa
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 static tap3 02:00:00:00:00:bb
+	atf_check -o match:'^bridge0 static tap3 02:00:00:00:00:bb$' tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 static epair5a 02:00:00:00:00:AA
+	atf_check -o match:'^ifconfig_bridge0="iftagged epair5a 30-40 static tap3 02:00:00:00:00:bb static epair5a 02:00:00:00:00:AA"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 deladdr 02:00:00:00:00:bb
+	atf_check -o match:'^bridge0 deladdr 02:00:00:00:00:bb$' tail -1 ifconfig.log
+	atf_check -o match:'^ifconfig_bridge0="iftagged epair5a 30-40 static epair5a 02:00:00:00:00:AA"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" bridge bridge0 flush
+	atf_check -o match:'^bridge0 flush$' tail -1 ifconfig.log
+	atf_check -s exit:1 -e match:'six bytes of hex' -o ignore \
+	    "$JGC" -c "$SOCK" bridge bridge0 static em1 02:00:00
 	# Every word is checked before anything runs.
 	: > ifconfig.log
 	for bad in "access epair5a 5000" "access epair5a" "trunk em1 10-5" \

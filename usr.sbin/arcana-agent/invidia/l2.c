@@ -531,6 +531,18 @@ static const struct {
 	{ "ifmaxaddr", 0, 1000000 },
 };
 
+/* Six bytes of hex, : between them. */
+static bool
+mac_ok(const char *s)
+{
+	unsigned int	b[6];
+	char		end;
+
+	return (s != NULL && strlen(s) <= 17 && sscanf(s,
+	    "%2x:%2x:%2x:%2x:%2x:%2x%c", &b[0], &b[1], &b[2], &b[3], &b[4],
+	    &b[5], &end) == 6);
+}
+
 /*
  * The words ifconfig is given after the bridge's name, for the job; or
  * NULL and why not.  n is how many there are.
@@ -575,6 +587,25 @@ bridge_words(const struct arc_job_spec *sp, const char **out, int *np)
 			out[n++] = "-ifuntagged";
 			out[n++] = a[0];
 		}
+	} else if (strcmp(verb, "deladdr") == 0 && na == 1) {
+		/* An address it learned, or one set, forgotten. */
+		if (!mac_ok(a[0]))
+			return ("an address is six bytes of hex, "
+			    "00:11:22:33:44:55");
+		out[n++] = "deladdr";
+		out[n++] = a[0];
+	} else if (strcmp(verb, "static") == 0 && na == 2 && ifname_ok(a[0])) {
+		/* An address kept behind a member, never learned again
+		 * elsewhere. */
+		if (!mac_ok(a[1]))
+			return ("an address is six bytes of hex, "
+			    "00:11:22:33:44:55");
+		out[n++] = "static";
+		out[n++] = a[0];
+		out[n++] = a[1];
+	} else if (strcmp(verb, "flush") == 0 && na == 0) {
+		/* What it learned, not what was set. */
+		out[n++] = "flush";
 	} else if (strcmp(verb, "vlanfilter") == 0 && na == 1 && (strcmp(a[0],
 	    "on") == 0 || strcmp(a[0], "off") == 0)) {
 		out[n++] = a[0][1] == 'n' ? "vlanfilter" : "-vlanfilter";
@@ -814,7 +845,8 @@ keep(struct work *w, const char *ifname, const char **add, int nadd,
 		{ "timeout", 1, false }, { "defuntagged", 1, false },
 		{ "ifpriority", 2, true }, { "ifpathcost", 2, true },
 		{ "ifmaxaddr", 2, true }, { "ifvlanproto", 2, true },
-		{ "geneveportrange", 2, false },
+		{ "geneveportrange", 2, false }, { "static", 2, false },
+		{ "deladdr", 1, false }, { "flush", 0, false },
 	};
 	const char	*cur, *var, *e, *base, *out[256], *tok[256];
 	char		*copy, *p, *t;
@@ -860,6 +892,18 @@ keep(struct work *w, const char *ifname, const char **add, int nadd,
 		for (j = 0; j < nadd && !drop; j++) {
 			const char *nb = add[j] + (add[j][0] == '-');
 
+			/* A static address: gone when it is set again, or
+			 * taken away; others are left. */
+			if (strcmp(base, "static") == 0) {
+				if (i + 2 < ntok && ((strcmp(add[j], "static") ==
+				    0 && j + 2 < nadd && strcasecmp(add[j + 2],
+				    tok[i + 2]) == 0) || (strcmp(add[j],
+				    "deladdr") == 0 && j + 1 < nadd &&
+				    strcasecmp(add[j + 1], tok[i + 2]) == 0)))
+					drop = true;
+				continue;
+			}
+
 			/* add[] is words and their values, one after another:
 			 * only a word of ifconfig's can match one. */
 			if (strcmp(nb, base) != 0 && !(strcmp(base, "addm") ==
@@ -894,7 +938,8 @@ keep(struct work *w, const char *ifname, const char **add, int nadd,
 				args = 1;
 		}
 		if (strcmp(add[j], "deletem") != 0 && add[j][0] != '-' &&
-		    strncmp(add[j], "geneveflush", 11) != 0)
+		    strncmp(add[j], "geneveflush", 11) != 0 && strcmp(add[j],
+		    "deladdr") != 0 && strcmp(add[j], "flush") != 0)
 			for (i = 0; i <= args && j + i < nadd && nout < 250;
 			    i++)
 				out[nout++] = add[j + i];
