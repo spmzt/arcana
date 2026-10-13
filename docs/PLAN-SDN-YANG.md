@@ -78,7 +78,7 @@ RFC 8309's three models and RFC 8969's three tiers, placed:
 |---|---|
 | DAL | YANG modules the agent implements: `ietf-interfaces`, `ietf-ip`, `ietf-routing` with v4ur/v6ur and the RA submodule, `ietf-network-instance` (one instance per FIB), `ietf-logical-network-element` (one per vnet jail, its root a schema mount), `ietf-access-control-list` with RFC 9899 (compiled to ipfw), `ietf-i2nsf-ikeless` and `-ike` (RFC 9061, setkey/PF_KEY and strongSwan), `ietf-alarms` (faults), `ietf-yang-library`, `ietf-netconf-acm`, `ietf-subscribed-notifications` and `ietf-yang-push`; and Arcana modules for what the IETF has no model of: jails, rc.d services and rc.conf, pkg, ZFS and GEOM, sysctl, kernel modules, jobs and traces, processes, logs, probes, dummynet (the NRP), BIRD, WireGuard, netgraph, plugins |
 | Wire | cblink 2: the same 24-byte frame, mTLS over TCP or SCTP, do/dump/notify/stream and credit; the body one RFC 9254 YANG-CBOR map keyed by RFC 9595 SIDs; the framework items (`error`, `credit`, `hello`, `close`, `notification`) `sx:structure`s of a `cblink` YANG module |
-| Operations | `GET` (do and dump; CORECONF's FETCH spread over MULTI frames), `EDIT` (YANG Patch with instance-identifier targets; merge, replace, create, delete, remove, insert, move; rollback-on-error), `RPC` (rpcs and actions), `GET-SID`; subscriptions as push streams |
+| Operations | `GET` (do and dump, one instance per MULTI frame), `EDIT` (YANG Patch with instance-identifier targets; merge, replace, create, delete, remove, insert, move; rollback-on-error), `RPC` (rpcs and actions), `GET-SID`; subscriptions as push streams |
 | Datastores | `running` = the configuration files (rc.conf, jail.conf, loader.conf, sysctl.conf, rtadvd.conf, the kept ipfw rules, swanctl conf.d); `intended` = running; `candidate` optional, with confirmed commit = today's `job-confirm`; `arcana:live` a dynamic datastore for what is changed in the kernel and not persisted (today's `address live`); `operational` = the kernel, with origin |
 | CAL | an `arcana-steer` module: the steering state (candidates, chosen, reasons) and the events that change it, read and written by the console and by the agent's local failover, carried on a stream of its own |
 | NBI | RESTCONF (RFC 8040) with JSON (RFC 7951) over Kore, YANG Patch, `ietf-restconf-monitoring` streams as SSE, YANG-Push with the RESTCONF binding; `application/yang-data+cbor` passed through for the PWA; the fleet as `arcana-fleet:hosts/host[name]/root`, an inline schema mount per host |
@@ -100,38 +100,36 @@ absolute SIDs and whose framework items are YANG structures of a
 holding the YANG item under one positive key beside today's negative
 framework keys, keeps version 1 bit-compatible but runs two decoders
 in series and leaves the framework untyped. Recommendation: version
-2; version 1 frames stay valid for the legacy families during the
-migration (the header's `version` field exists for this). Tags 4
-(decimal64) and 43–47 (union discriminators, absolute SID) are
-allowed; indefinite lengths stay forbidden, as CORECONF does.
+2 (the header's `version` field exists for this); with D-9, version 1
+is not kept. Tags 4 (decimal64) and 43–47 (union discriminators,
+absolute SID) are allowed; indefinite lengths stay forbidden, which
+RFC 9254 §3 lets a protocol do.
 
 **D-2 Replacing the protocol altogether.** cblink 2 as above, versus
 NETCONF or RESTCONF on every agent (standard tooling reaches every
 host; but an HTTP or SSH server in the root daemon, a second auth
 layer, and nothing of cblink's streams and notifications), versus
-CORECONF over CoAP (the closest design to cblink 2, but a CoAP stack
-and DTLS instead of TLS, and no implementation in C exists anywhere).
-Recommendation: cblink 2 on the southbound, RESTCONF only on the
+management over CoAP with YANG-CBOR (close to cblink 2 in spirit,
+but a CoAP stack and DTLS instead of TLS, no RFC defining it yet, and
+no implementation in C anywhere). Recommendation: cblink 2 on the southbound, RESTCONF only on the
 console. The console is then the one place standard tools talk to,
 which is also RFC 8309's picture.
 
-**D-3 The YANG compiler.** cblink-gen must understand YANG 1.1.
-(a) A parser and schema compiler in C of our own, 12–15 k lines,
-10–14 weeks, bounded by a strict profile (it rejects what it does not
-implement) and cross-checked in CI against `pyang -f tree` and
-`yanglint`: no dependency, the same schema model and XPath parser
-serve the runtime validator, a `yanglint`-lite for Arcana's modules.
-(b) libyang 3.13.6 (ports, pinned: upstream is at 5.x/6.x) linked
-into cblink-gen at build time, ~2.5 k lines of glue, 3–4 weeks: the
-reference implementation, but a build dependency on pcre2 and libyang
-for Arcana's developers (not for users: generated C is committed).
-(c) A pyang plugin writing an intermediate file cblink-gen reads: 3
-weeks, Python in the developers' build, a second schema language to
-keep. Recommendation: (a), decided at the end of Y-0 on a two-week
-parser prototype; (b) is the schedule fallback and shares the
-emitter, so swapping later costs little. The runtime needs its own
-C evaluator in every case (no YANG-CBOR or SID implementation exists
-in C: libyang's pull request is unmerged).
+**D-3 The YANG compiler: decided 2026-10-13, libyang.** cblink-gen
+links `net/libyang3` (3.13.6 in ports, BSD-3; pinned to the 3.x API,
+upstream is at 5.x/6.x) at build time and walks its compiled schema
+(`lys_parse_*`, `lysc_node`, resolved types with their ranges,
+patterns and enums, `when`/`must` text, deviations and features
+applied): ~2.5 k lines of glue instead of a 12–15 k-line compiler of
+our own, 8–10 weeks saved. It is a build dependency for Arcana's
+developers only: the generated C is committed, as `cbl_ctrl_gen.c` is
+today, so a user building Arcana needs nothing beyond the base
+toolchain. The alternatives were a compiler of our own (no
+dependency, the most work, the most risk) and a pyang plugin (Python
+in the build, a second intermediate language). What stays ours
+either way: the SID tooling (libyang has none), the XPath-lite parser
+and evaluator for the runtime, and the YANG-CBOR encoder and decoder
+(no implementation exists in C anywhere).
 
 **D-4 The MEF 70.2 document.** (a) Keep it as the source of truth and
 derive L3NM, SAP, VN and PM as read-only views: no migration, the
@@ -147,9 +145,14 @@ the MEF vocabulary stays the user's vocabulary in the page, L3NM is
 what is stored and exchanged.
 
 **D-5 RFC 4364 on FreeBSD.** L3NM's route distinguishers and route
-targets presume MPLS VPNs. FreeBSD has no MPLS (the GSoC branch needs
-an ABI bump; not before 17), and net/bird3 does not build `l3vpn` or
-`evpn`. Options: (a) RD/RT as bookkeeping; membership by per-service
+targets presume MPLS VPNs. FreeBSD has no MPLS forwarding (the GSoC
+branch needs an ABI bump; not before 17). BIRD itself has had the
+`l3vpn` protocol since 2.14 (RFC 4364 and 4659, in 3.x too) and
+EVPN over VXLAN tunnels since 2.19, but the `net/bird3` port's
+protocol options are BFD, Babel, BMP, BGP, MRT, OSPF, Pipe, RAdv, RIP
+and RPKI, so `--with-protocols` leaves `l3vpn` out: a one-line port
+change adds it. EVPN's data plane in BIRD is the Linux bridge FDB over
+netlink, which FreeBSD's netlink does not offer. Options: (a) RD/RT as bookkeeping; membership by per-service
 tunnels and a per-FIB BIRD session per edge pair, as today, O(VPN ×
 PE²) sessions; (b) one BGP session per edge pair carrying all VPNs as
 `vpn4`/`vpn6` routes with fake labels and a VXLAN VNI per VPN as the
@@ -180,26 +183,28 @@ the engine, features advertised accordingly, the unmappable fields
 refused with an extended ack; a pf backend of the same module later
 if wanted.
 
-**D-8 Probes.** STAMP sender and reflector in the agent (standard
-`pm-source`, one-way delay with NTP, loss per direction with the
-direct-measurement TLV, DSCP echo; a reflector per service FIB on UDP
-862; ~1 k lines) versus ICMP only (works today, against anything, no
-standard label, RTT/2). Recommendation: STAMP between Arcana edges,
-ICMP for foreign targets, one probe model with a `kind`; both report
-through RFC 9375 with `pm-source-stamp` or `arcana:pm-source-icmp`.
+**D-8 Probes: decided 2026-10-13, STAMP.** A STAMP sender and
+reflector in the agent (RFC 8762 and 8972: a registered `pm-source`,
+one-way delay with NTP, loss per direction with the direct-measurement
+TLV, DSCP echo; a reflector per service FIB on UDP 862; ~1 k lines).
+ICMP echo stays only for targets that are not Arcana edges, reported
+under an Arcana `pm-source` identity. No implementation in C exists
+to port: the open-source ones found (cerfcast/teaparty, the
+`stamp-suite` crate) are Rust; they serve as interoperation peers in
+the lab.
 
-**D-9 Coexistence.** Run the `arcana` v1 family and cblink 2 side by
-side for one release cycle (mixed fleets keep working; the agent
-registers both, the console prefers 2 when a host has it) versus a
-flag day (less code, breaks a fleet updated host by host).
-Recommendation: side by side until Y-4 ends, then v1 frozen and
-removed in Y-5. `agent-update` carries the agents across.
+**D-9 Coexistence: decided 2026-10-13, none.** cblink 2 replaces the
+`arcana` v1 family outright; agent and console of one release speak
+only version 2. A fleet is carried across by `agent-update` from the
+last v1 console before the console itself is updated, and the two
+never mix. Nothing in libcblink keeps the v1 body decoder, the
+attribute policies or the YAML spec language.
 
-**D-10 The northbound.** RESTCONF replacing `/api` (one surface;
-breaks the Android app, `arcanactl`'s console paths and token users
-once) versus RESTCONF beside `/api` for a cycle. Recommendation:
-beside, with `/api` frozen when RESTCONF covers it and removed one
-release later; the PWA moves first.
+**D-10 The northbound: decided 2026-10-13, RESTCONF replaces
+`/api`.** One surface. The PWA, `arcanactl` and the Android app move
+in the same release; the WebAuthn ceremonies and the enrolment
+endpoints, which RESTCONF has no place for, stay as Arcana's own
+resources beside `/restconf` (see Y-4).
 
 **D-11 The ACP's routing.** RFC 8994 requires RPL (no FreeBSD
 implementation; the profile is a few thousand lines of our own)
@@ -236,11 +241,13 @@ What changes:
   cannot keep cblink's negative framework keys: a `v4ur:destination-
   prefix` under `rt:route` or an `ni:bind-ni-name` under
   `if:interface` is a negative delta. Framework data moves into
-  structures of a `cblink` module: `error` (`ietf-coreconf`'s
-  structure, SID 1024, augmented with `errno` and `cookie`), `credit`,
-  `hello` (limits, implementation, yang-library content-id), `close`,
-  `notification` (`event-time`, `event` anydata), `warning`. `PATH`
-  becomes `error-data-node`, an instance-identifier, the same array
+  `sx:structure`s (RFC 8791) of a `cblink` module: `error`, with the
+  fields of RFC 8040's `errors` (`error-type`, `error-tag`,
+  `error-app-tag`, `error-path` as an instance-identifier,
+  `error-message`, `error-info`) plus `errno` and `cookie`; `credit`;
+  `hello` (limits, implementation, yang-library content-id); `close`;
+  `notification` (`event-time`, `event` anydata, the shape of RFC
+  8040 §6.4); `warning`. `PATH` becomes `error-path`, the same array
   shape as today; `MISS_TYPE` becomes `error-tag missing-element`.
   FreeBSD errno numbering survives as a leaf.
 - **Types.** `flag` becomes `empty` (null on the wire); `flags`
@@ -254,16 +261,16 @@ What changes:
   datastore protocol; legacy numbers stay valid and are never reused.
   `cmd` within family 1: `GET` (do for one node, dump for a list or
   many targets: one MULTI frame per instance `{[SID, keys]: entry}`,
-  which is CORECONF's `yang-instances` sequence spread over frames;
-  parameters datastore, targets, depth, fields, with-defaults,
-  with-origin), `EDIT` (a `cblink:edit` structure shaped like RFC
+  each frame self-contained; parameters datastore, targets, depth,
+  fields, with-defaults, with-origin), `EDIT` (a `cblink:edit` structure shaped like RFC
   8072's YANG Patch with instance-identifier targets; the console
   converts api-path strings), `RPC` (`{SID(rpc): input}` →
   `{SID(rpc): output}`; actions keyed `{[SID(action), keys...]:
-  input}`), `GET-SID` (the module's `ietf-sid-file` structure, so a
-  generic client can decode what an agent speaks). Commit, cancel,
-  discard and a connection-scoped lock are rpcs of a
-  `cblink-datastore` module behind the `candidate` feature.
+  input}`), `GET-SID` (the module's `ietf-sid-file` structure of RFC
+  9595, so a generic client can decode what an agent speaks). Commit,
+  cancel, discard and a connection-scoped lock are rpcs of a
+  `cblink-datastore` module behind the `candidate` feature, with the
+  semantics of RFC 6241's.
 - **Unknown nodes.** Ignored on reads of operational data from a
   newer peer (forward compatibility, as today); refused in edits
   (`unknown-element`), as every YANG protocol does.
@@ -294,9 +301,9 @@ What changes:
   `status obsolete`, a module revision adds items at the end of its
   range. Module revision replaces the family version; the library's
   `content-id` is the capability hash. IETF modules with IANA SIDs
-  (coreconf 1000, yang-types 1100, inet-types 1150, crypt-hash 1200,
-  netconf-acm 1250, sid-file 1300, interfaces 1500, ip 1600, system
-  1700, iana-if-type 1800) use them; the others (routing, v4ur, v6ur,
+  (RFC 9595's initial allocations: yang-types 1100, inet-types 1150,
+  crypt-hash 1200, netconf-acm 1250, sid-file 1300, interfaces 1500,
+  ip 1600, system 1700, iana-if-type 1800) use them; the others (routing, v4ur, v6ur,
   network-instance, logical-network-element, yang-library,
   datastores, origin, schema-mount, subscribed-notifications,
   yang-push, yang-patch, restconf, restconf-monitoring,
@@ -348,8 +355,8 @@ step containing steps) become a flat list with a parent leafref.
 
 ## The generator
 
-cblink-gen reads YANG modules and `.sid` files and writes, per
-module set: C structs (`has_` flags, arrays for lists and leaf-lists,
+cblink-gen has libyang parse and compile the YANG modules (D-3),
+reads the `.sid` files itself, and writes, per module set: C structs (`has_` flags, arrays for lists and leaf-lists,
 union variants, `cbl_bytes` for binary and bits), schema tables (node
 kind, delta, type, constraints, children, keys, when/must expression
 ids, defaults, config, mandatory, min/max, ordered-by, identity
@@ -359,19 +366,15 @@ prototypes, notification helpers, subscription helpers, the Markdown
 and RFC 8340 tree diagrams, and updated `.sid` files (missing items
 assigned in RFC 9595 §6 order only with `--assign`; a schema item
 without a SID is otherwise a build error). It reads `.sid` JSON with
-base libucl. It verifies: imports and prefixes with revisions,
-typedef restriction inheritance, groupings with `refine` and
-uses-scoped `augment`, `augment` on containers, lists, choices, cases,
-rpc input/output and notifications with `when`, `choice`/`case`
-shorthand and `default`, `deviation` (not-supported, add, replace,
-delete), `feature`/`if-feature` expressions with pruning,
-identities with several bases, config inheritance, `mandatory`,
-`status`, `ordered-by`, `unique`, `action` and `notification` in data,
-`anydata`, submodules, YANG 1.0 modules (netconf-acm), the extensions
-`sx:structure`, `sx:augment-structure`, `yangmnt:mount-point`,
-`nacm:default-deny-*`, `sn:subscription-state-notification`. It
-rejects what the profile excludes with a diagnostic naming the
-statement.
+base libucl. libyang resolves imports, typedef inheritance, groupings,
+augments, choice shorthand, deviations, features, identities, config
+inheritance and submodules; cblink-gen walks the compiled tree and
+reads the extensions it needs (`sx:structure`,
+`sx:augment-structure`, `yangmnt:mount-point`, `nacm:default-deny-*`,
+`sn:subscription-state-notification`), parses every `when`, `must`
+and `path` with the XPath-lite parser and rejects what the profile
+excludes with a diagnostic naming the statement, so that the runtime
+never meets an expression it cannot evaluate.
 
 ## The agent as a YANG device
 
@@ -479,8 +482,8 @@ within XPath-lite, and uses identities for open sets.
   queue weight, buffer, DSCP class) plus a tunnel set; the console's
   admission ledger refuses what does not fit; isolation offered in
   tiers (shared weight, dedicated queue and tunnel, dedicated WAN
-  interface), never claimed as hard. The TEAS slice service YANG is a
-  northbound view when it is an RFC.
+  interface), never claimed as hard. An IETF slice service model
+  becomes a northbound view if and when one is an RFC.
 - **DetNet (RFC 8655, 9938, 8578).** Claimed as a DetNet-IP
   forwarding sub-layer with engineering bounds, no PREOF: per-flow
   dummynet queues from an RFC 9016 traffic specification, a `prio`
@@ -490,8 +493,8 @@ within XPath-lite, and uses identities for open sets.
   nines, failover); band B engineered; band C refused.
 - **CATS (RFC 10053).** Services with a CS-ID (an anycast address or a
   VIP with `fwd`), instances = jails, contact instances = jail
-  addresses, C-SMA = the agent's normalised score (versioned Arcana
-  function until the metrics draft is an RFC), C-NMA = probes and
+  addresses, C-SMA = the agent's normalised score (a versioned Arcana
+  function until the IETF publishes one), C-NMA = probes and
   counters, C-PS = the console writing candidate sets and agents
   re-ranking locally, affinity by ipfw dynamic state. An
   `arcana-cats` module aligned with the RFC's terms.
@@ -529,7 +532,7 @@ kernel work, which Arcana does not do.
 
 | Area | Not realisable on FreeBSD, and why |
 |---|---|
-| MPLS and segment routing (9181, 9182, 9732, 9543, 9938, 7426's PCEP, 9899 `mpls-values`, 10053 SRv6 paths) | no MPLS or SRv6 forwarding in the kernel (GSoC branch, not before 17); net/bird3 does not build l3vpn/evpn; FRR on FreeBSD has no MPLS, LDP, SR or VRF |
+| MPLS and segment routing (9181, 9182, 9732, 9543, 9938, 7426's PCEP, 9899 `mpls-values`, 10053 SRv6 paths) | no MPLS or SRv6 forwarding in the kernel (GSoC branch, not before 17); BIRD's `l3vpn` exists but the port omits it (a port option adds it) and its labels have no kernel to go to; BIRD's EVPN data plane is Linux's bridge netlink; FRR on FreeBSD has no MPLS, LDP, SR or VRF |
 | RFC 4364 as an operational object (9182 RD/RT, `auto-assigned-rd`, VPN SAFIs; 8955 SAFI 134) | follows from the above; bookkeeping only (D-5) |
 | L2 services: pseudowires, VPLS, EVPN, VXLAN bgp-mode, L2TPv3, `vxlan` with several static unicast peers on one interface (9181, 9182) | no LDP or EVPN; vxlan(4) has one `vxlanremote`; approximation under Arcana identities with vxlan + if_bridge only |
 | IS-IS, S-BFD, OSPF sham links, `max-lsa`, RIP holddown, TCP-AO, IPv6 site-of-origin, BGP warning-threshold, native as-override, IPv6 router-id (9182) | BIRD lacks them; FreeBSD has no TCP-AO |
@@ -560,36 +563,42 @@ reviewed, bumps the agent and console versions, updates ARCHITECTURE,
 the openapi document and the book, and is run on the lab where it
 says L.
 
-### Y-0 Spike (3 weeks)
+### Y-0 Spike (2 weeks)
 
 - **0.1 Body decoder.** G: SID-delta keys, tags 4 and 43–47, the
   `cblink` structures, hand-written SID tables for `ietf-interfaces`;
   encode and decode an `interfaces` dump; measure frame sizes against
   v1.
-- **0.2 Parser prototype.** G: a YANG 1.1 lexer and parser over the
-  module corpus (the IETF modules named above plus ietf-vpn-common
-  and ietf-l3vpn-ntw, the largest); two weeks; the evidence for D-3.
-- **0.3 BIRD VPN spike.** L: `net/bird3` 3.4.0 with an `mpls` domain
-  and `vpn4` tables on two jails without kernel MPLS; whether routes
-  are exchanged and labels allocated; the evidence for D-5(b).
+- **0.2 libyang spike.** G: the module corpus (the IETF modules named
+  above plus ietf-vpn-common and ietf-l3vpn-ntw, the largest)
+  compiled with libyang 3.13.6 and `yanglint`; what the compiled tree
+  gives for resolved types, `when`/`must` text, deviations and
+  features; the extension plugins needed.
+- **0.3 BIRD VPN spike.** L: `net/bird3` 3.4.0 built with `l3vpn`
+  added to its protocol options, an `mpls` domain and `vpn4` tables
+  on two jails without kernel MPLS; whether routes are exchanged and
+  labels allocated; the evidence for D-5(b).
 - **0.4 ng_netflow and pflow.** L: what `ng_netflow` exports on
-  15.x/16 (v5, v9, IPFIX?); the evidence for the telemetry choice.
+  15.x/16 (v5, v9; IPFIX is the user's own item in TODO.md); the
+  evidence for the telemetry choice.
 - **0.5 IANA.** D: request a SID mega-range (RFC 9595 §7); choose the
   provisional block.
-- **0.6 Decisions.** D-1 to D-3 taken; D-4 to D-12 recorded with their
+- **0.6 Decisions.** D-4 to D-7, D-11 and D-12 recorded with their
   dates in this plan.
 
-### Y-1 The generator and the wire (14 weeks)
+### Y-1 The generator and the wire (8 weeks)
 
 Depends on Y-0.
 
-- **1.1 Lexer and parser.** G: RFC 7950 §14 ABNF, string forms,
-  submodules, extension statements, YANG 1.0 and 1.1. ~1.5 k lines.
-- **1.2 Schema compiler.** G: imports and prefixes, typedef
-  inheritance, groupings with refine and uses-augment, augment on
-  every target with `when`, choice/case, deviations, features,
-  identities, config and mandatory rules, schema-node-id resolution,
-  diagnostics; the profile's refusals. ~5–6 k lines. The risk item.
+- **1.1 libyang front end.** G: cblink-gen linked with libyang at
+  build time (`CBLINK_GEN_LIBYANG` in `cblink.mk`, found in
+  `${LOCALBASE}`); the compiled-schema walk into cblink-gen's own
+  schema model; extension plugins for the five extensions; the
+  profile's refusals with diagnostics. ~2.5 k lines.
+- **1.2 Build.** G, D: `net/libyang3` a build dependency of cblink's
+  generator and of `make check`'s cross-checks, not of the installed
+  programs; the port's `BUILD_DEPENDS`; the generated files committed
+  as today.
 - **1.3 XPath-lite parser.** G: shared by generator and runtime.
   ~1.2 k.
 - **1.4 SID tooling.** G: `.sid` read and write with libucl,
@@ -603,21 +612,22 @@ Depends on Y-0.
   `gen_md.c`. ~5–6 k.
 - **1.7 libcblink wire 2.** G: `cbl_decode`, `cbl_attr`, `cbl_policy`,
   `cbl_msg`, `cbl_frame`, `cbl_stream` credit frames; the `cblink`
-  module's structures; version 1 and 2 side by side; `ctrl`
-  regenerated from `cblink-ctrl.yang`. ~3 k changed.
+  module's structures; the version 1 body decoder, attribute policies
+  and the YAML spec reader removed (D-9); `ctrl` regenerated from
+  `cblink-ctrl.yang`. ~3 k changed.
 - **1.8 Static validator.** G: the table engine building an instance
   tree. Part of 1.7's rewrite; the evaluator comes in Y-2.
 - **1.9 `ietf-interfaces` and `arcana-interfaces`.** A: collectors
   from getifaddrs, if_data, ioctls, netlink; rtsock events. ~2.5 k.
 - **1.10 `ietf-ip`.** A: addresses, neighbours, nd6 flags, lifetimes,
   the global sysctls with origin `system`, the deviations. ~2 k.
-- **1.11 First GET.** A, C: the agent registers family 1 beside
-  `arcana`; `GET` and dump of operational interfaces and addresses;
-  the console reads them through a thin translator and shows them on
-  the Network tab in place of `netstat --libxo json`. L: on the lab,
-  every interface type Arcana makes.
+- **1.11 First GET.** A, C: on a branch until Y-3 lands (D-9: no
+  coexistence on `main`), `GET` and dump of operational interfaces
+  and addresses; the console reads them through a thin translator
+  and shows them on the Network tab in place of `netstat --libxo
+  json`. L: on the lab, every interface type Arcana makes.
 - **1.12 Tests.** G: a generator corpus (every IETF module above,
-  pathological cases), decoder fuzzers with tags, `pyang -f tree`
+  pathological cases), decoder fuzzers with tags, `yanglint` tree
   cross-check in CI. D: GENERATOR.md, SPEC-FORMAT.md replaced by
   YANG.md, WIRE-FORMAT.md version 2.
 
@@ -686,10 +696,14 @@ Depends on Y-2.
   the events; the agent's local failover writes it, the console reads
   and writes it; a stream of its own, an SCTP stream of its own.
 - **3.6 arcanactl.** C: reads and writes YANG paths (`arcanactl get
-  /ietf-interfaces:interfaces`), libxo output unchanged for the old
-  verbs during coexistence.
+  /ietf-interfaces:interfaces`) with libxo output; the old verbs go
+  with the old family.
 - **3.7 Tests.** every former operation's test rewritten against the
   module; the root suite on real jails.
+- **3.8 The switch.** A, C: the branch of 1.11 merged; one release
+  with agent and console speaking only cblink 2; the previous release
+  is the last that `agent-update` sends from a v1 console, and the
+  book says to update the agents before the console.
 
 ### Y-4 RESTCONF and the service models (16 weeks)
 
@@ -702,8 +716,13 @@ Depends on Y-3.
 - **4.3 The fleet mount.** C: `arcana-fleet`, per-host SID and library
   cache, proxying, YANG-Push fan-out and relay, NACM identity. ~1.5 k.
 - **4.4 The console's own datastore.** C: `arcana-console` served by
-  RESTCONF from the libucl files; `/api` paths mapped one by one and
-  frozen.
+  RESTCONF from the libucl files; `/api` removed (D-10). What RESTCONF
+  has no place for stays as Arcana's own resources beside it: the
+  WebAuthn ceremonies (`/auth/register`, `/auth/login`, their
+  `begin` and `finish`), logout, `assetlinks.json`, enrolment by
+  token (`/enrol`), and health. The Android app's logins use those
+  and its data calls move to `/restconf`; it is updated in the same
+  release (its WebAuthn origin and `assetlinks.json` are unchanged).
 - **4.5 `ietf-vpn-common` and `ietf-l3vpn-ntw`.** C: stored as the
   service (D-4), the Arcana augmentations (policy map, application
   flows, breakout, security policies, probes, steering criteria, the
@@ -741,10 +760,11 @@ Depends on Y-3; independent of Y-4.
   the TLVs of RFC 8972 (extra padding, location, timestamp
   information from `ntp_gettime`, class of service, direct
   measurement from ipfw counters, HMAC with libcrypto), authenticated
-  mode by default on plain tunnels; `arcana-probe` config shaped
-  after the expired `ietf-stamp` draft, state after RFC 9375. ~1 k.
-  L: dummynet `plr` and `delay` seen in the metrics; interoperation
-  with a TWAMP Light reflector.
+  mode by default on plain tunnels; an `arcana-stamp` module of our
+  own for the sessions (no RFC defines a STAMP YANG model), the
+  results in RFC 9375's shape. ~1 k. L: dummynet `plr` and `delay`
+  seen in the metrics; interoperation with a TWAMP Light reflector and
+  with one of the open-source STAMP implementations.
 - **5.2 Percentiles and intervals.** A: raw samples kept per
   measurement interval (default 60 s), three percentiles, loss as
   count and decimal percentage, microsecond units, per-class sessions
@@ -797,7 +817,10 @@ Depends on Y-3; independent of Y-4 and Y-5.
   BGP, OSPF, RIP and BFD authentication and customer encryption
   profiles, mapped to BIRD passwords, setkey tcp-md5 SAs and swanctl
   secrets; write-only leaves.
-- **6.5 FlowSpec.** A, C: BIRD per-service `flow4`/`flow6` channels
+- **6.5 FlowSpec.** A, C: BIRD, chosen for its netlink integration
+  and because the routing stays in one daemon (ExaBGP was weighed:
+  it speaks BGP from Python with no FIB of its own, and would be a
+  second daemon beside BIRD). Per-service `flow4`/`flow6` channels
   with `validate on`, the agent polling `show route table ... all`
   (1 s when channels exist), the RFC 8955 §5.1 ordering with the
   reference Python as the oracle, the ipfw translation of all 13
@@ -809,8 +832,10 @@ Depends on Y-3; independent of Y-4 and Y-5.
   flowspec as static routes with extended communities on the route
   reflector. L: drop, mark, refib round trips; a UNI eBGP stand-in
   accepted for its own prefix and refused for a foreign one.
-- **6.6 D-5(b) if 0.3 succeeded.** C, A: `vpn4`/`vpn6` between edges
-  with fake labels and a VXLAN VNI per VPN; RD/RT become operational.
+- **6.6 D-5(b) if 0.3 succeeded.** C, A: the port option for
+  `l3vpn`; `vpn4`/`vpn6` between edges with labels BIRD allocates
+  but the kernel never sees, and a VXLAN VNI per VPN as the
+  encapsulation; RD/RT become operational.
 - **6.7 Phase close.** L, D.
 
 ### Y-7 The frameworks (16 weeks)
@@ -828,8 +853,8 @@ Depends on Y-4 and Y-5.
 - **7.2 Slices.** C: SDP placement per UNI (VLAN or 5-tuple),
   connectivity constructs P2P/P2MP/A2A mapped to NRPs, SLOs evaluated
   from PM, availability with period and maximum single outage,
-  rejection with alternatives. The TEAS slice YANG as a view when
-  published.
+  rejection with alternatives; an IETF slice service model as a view
+  if one is published.
 - **7.3 DetNet-f.** A, C: RFC 9016 traffic specification → per-flow
   queue and policer, `prio` tier, tick raised, console-owned explicit
   routes per FIB with a reconvergence policy, capability honesty
@@ -873,9 +898,9 @@ Depends on Y-4 and Y-5.
   option of the device emulator), a UDP sequence generator, the RFC
   8456 tests with RFC 8455's terms and units, run before 3.4 and
   after, and nightly at a larger scale; the not-applicable list.
-- **8.2 Legacy removal.** G, A, C: the `arcana` v1 family and `/api`
-  removed one release after Y-4 froze them; `agent-update` carries
-  the last v1 agents across.
+- **8.2 Migration notes.** D: UPDATING.md on the two flag days (the
+  agent's in Y-3, the console API's in Y-4), and what a fleet on an
+  older release does first.
 - **8.3 Conformance.** D: per RFC, the features advertised, the
   deviations, the refused nodes and the cannot-map list, in the
   book's conformance chapter and in `ietf-yang-library`.
@@ -887,8 +912,8 @@ Depends on Y-4 and Y-5.
 
 | Phase | Weeks | Needs | Delivers |
 |---|---|---|---|
-| Y-0 | 3 | — | the three decisions, four spikes |
-| Y-1 | 14 | Y-0 | generator, wire 2, interfaces and ip readable |
+| Y-0 | 2 | — | the spikes, the remaining decisions |
+| Y-1 | 8 | Y-0 | generator on libyang, wire 2, interfaces and ip readable |
 | Y-2 | 16 | Y-1 | datastores, edits, routing, FIBs, jails as LNEs |
 | Y-3 | 14 | Y-2 | every operation as YANG, subscriptions, NACM, event-driven console |
 | Y-4 | 16 | Y-3 | RESTCONF, L3NM/SAP/VN, the PWA on RESTCONF |
@@ -898,23 +923,23 @@ Depends on Y-4 and Y-5.
 | Y-8 | 6 | Y-4 | benchmarks, removal, conformance, second console |
 
 Y-4, Y-5 and Y-6 are independent and can run in parallel. One
-engineer: 109 weeks in sequence, about 25 months. Two: Y-1 and Y-2
+engineer: 102 weeks in sequence, about 23 months. Two: Y-1 and Y-2
 split as generator-and-libcblink against agent-datastores (one
-engineer's critical path through Y-3 is ~44 weeks), then Y-4
-against Y-5 and Y-6, then Y-7 shared: about 15 months. Estimated
-lines: 58–68 k of C new or rewritten (cblink is 20.7 k today, ~8 k
+engineer's critical path through Y-3 is ~38 weeks), then Y-4
+against Y-5 and Y-6, then Y-7 shared: about 14 months. Estimated
+lines: 48–56 k of C new or rewritten (cblink is 20.7 k today, ~8 k
 survive; the agent 38 k, the console 25 k, the page 41 k, of which
 the operation handlers and the SD-WAN JSON paths are rewritten),
-2.5–3 k of YANG for Arcana's modules. Confidence medium: the schema
-compiler's corners (1.2) and the configuration files' round trip
-(2.3) are where it would overrun.
+2.5–3 k of YANG for Arcana's modules. Confidence medium: the
+configuration files' round trip (2.3) and the XPath-lite evaluator
+(2.2) are where it would overrun.
 
 ## Risks
 
-- The compiler's corners: mitigated by the profile (refuse what is
-  not implemented), the module corpus bound to what Arcana needs, and
-  `pyang`/`yanglint` cross-checks in CI; D-3's fallback is libyang at
-  build time with the same emitter.
+- libyang's API: pinned to 3.x (upstream moved to 5.x and 6.x); the
+  port is kept at a version cblink-gen builds with, and the generated
+  files are committed so a libyang change never breaks a user's
+  build.
 - XPath semantics: generation-time subset check; property tests
   against libyang.
 - rc.conf fidelity: Arcana-managed values kept in `rc.conf.d`
@@ -958,8 +983,9 @@ refers to it), 9347 (AGGFRAG), 8990 and 8995 (GRASP and BRSKI, as far
 as 8994 depends on them), 7950, 7951, 9254, 9595, 8040, 8072, 8342,
 8525, 8528, 8341, 8639, 8641, 8791, 8343, 8344, 8349, 8529, 8530,
 8632, 9016, 9633 (DetNet YANG, referenced), 8177 (key chains,
-referenced), and draft-ietf-core-comi (CORECONF). The notes behind
-this plan, one file per RFC with the full tree diagrams, the
-node-by-node FreeBSD mapping, the cannot-map lists and the open
-decisions, are kept with the session that wrote it and can be added
-to the tree under `docs/notes/` if wanted.
+referenced), 6241 (NETCONF, for the edit and commit semantics). The
+plan relies on RFCs only; where a note under `docs/notes/` cites an
+Internet-Draft, that is context, not a dependency. The notes, one
+file per RFC with the full tree diagrams, the node-by-node FreeBSD
+mapping, the cannot-map lists and the open decisions, are in
+[notes/](notes/README.md).

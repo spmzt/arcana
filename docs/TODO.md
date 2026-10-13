@@ -122,6 +122,15 @@
   there: Mplify 117.1 takes its Security Functions from MEF 138, which
   replaces MEF 88, and none of them has intrusion detection (ids is
   Arcana's own, mislabelled MEF 88's until now).  SASE-5 closed.
+- For the user to do (2026-10-13): IPFIX export in ng_netflow(4),
+  which exports NetFlow v5 and v9 only; pflow(4) has IPFIX but serves
+  pf. docs/PLAN-SDN-YANG.md's flow telemetry (5.6) waits on it or
+  takes v9.
+- The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
+  under docs/notes/. Decided 2026-10-13: libyang for the generator
+  (D-3), STAMP for the probes (D-8), no compatibility with the v1
+  family or `/api` (D-9, D-10), BIRD for FlowSpec. Open: D-4 to D-7,
+  D-11, D-12.
 - To decide (the user's): whether the security policies move to MEF
   138's model (Security Function Policies each with Block, Allow and
   Quarantine lists, No-match, Duration; PDNS and DLP added), and which
