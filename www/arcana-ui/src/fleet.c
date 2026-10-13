@@ -458,6 +458,7 @@ view_devices(struct html *h)
 		{ "FreeBSD", "release", false }, { "Jails running", "running",
 		true }, { "Jails", "jails", true }, { "CPU %", "cpu", true },
 		{ "Memory %", "mem", true }, { "ZFS %", "zfs", true },
+		{ "", NULL, false },
 	};
 	struct server		*s;
 	ucl_object_t		*arr, *o;
@@ -510,9 +511,9 @@ view_devices(struct html *h)
 	    "autocomplete=\"off\" spellcheck=\"false\"");
 	h_attr(h, "value", app.filter);
 	h_raw(h, "></div><table class=\"net devices\">");
-	tbl_head(h, "devices", cols, 10, 0);
+	tbl_head(h, "devices", cols, 11, 0);
 	h_raw(h, "<tbody>");
-	rows = tbl_rows("devices", arr, cols, 10, app.filter);
+	rows = tbl_rows("devices", arr, cols, 11, app.filter);
 	for (k = 0; (r = rows[k]) != NULL; k++) {
 		h_raw(h, "<tr class=\"pick\" data-act=\"select-server\"");
 		h_attr(h, "data-arg", jstr(r, "id"));
@@ -536,10 +537,14 @@ view_devices(struct html *h)
 			    0), (long long)jint(r, "zfs", 0));
 		else
 			h_raw(h, "<td>—</td><td>—</td><td>—</td>");
-		h_raw(h, "</tr>");
+		h_raw(h, "<td class=\"acts\"><button class=\"icon del\" "
+		    "data-act=\"delete-server\" title=\"Remove it from the "
+		    "console\"");
+		h_attr(h, "data-arg", jstr(r, "id"));
+		h_raw(h, ">×</button></td></tr>");
 	}
 	if (k == 0)
-		h_raw(h, "<tr><td colspan=\"10\" class=\"dim\">No host matches."
+		h_raw(h, "<tr><td colspan=\"11\" class=\"dim\">No host matches."
 		    "</td></tr>");
 	free(rows);
 	h_raw(h, "</tbody></table>");

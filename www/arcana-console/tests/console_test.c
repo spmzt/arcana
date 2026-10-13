@@ -3428,7 +3428,106 @@ ATF_TC_BODY(mtls, tc)
 	resp_free(&r);
 }
 
-CONSOLE_TC(enrol, "The console's own CA, and a host joining with "
+/* A file's text, malloc(3)ed. */
+static char *
+slurp_file(const char *path)
+{
+	FILE	*fp;
+	char	*buf;
+	size_t	 n;
+
+	ATF_REQUIRE((fp = fopen(path, "r")) != NULL);
+	ATF_REQUIRE((buf = calloc(1, 65537)) != NULL);
+	n = fread(buf, 1, 65536, fp);
+	fclose(fp);
+	buf[n] = '\0';
+	return (buf);
+}
+
+/* s as a JSON string, its quotes and newlines escaped. */
+static char *
+json_quote_test(const char *s)
+{
+	char	*out, *o;
+
+	ATF_REQUIRE((out = malloc(strlen(s) * 2 + 3)) != NULL);
+	o = out;
+	*o++ = '"';
+	for (; *s != '\0'; s++) {
+		if (*s == '\n') {
+			*o++ = '\\';
+			*o++ = 'n';
+		} else if (*s == '"' || *s == '\\') {
+			*o++ = '\\';
+			*o++ = *s;
+		} else
+			*o++ = *s;
+	}
+	*o++ = '"';
+	*o = '\0';
+	return (out);
+}
+
+/* The CA's state once the thread is done with it. */
+static void
+ca_wait(struct resp *r)
+{
+	int	i;
+
+	for (i = 0; i < 200; i++) {
+		http("GET", "/api/ca", NULL, r);
+		if (r->status == 200 && jstr(r, "state.running") != NULL &&
+		    strcmp(jstr(r, "state.running"), "false") == 0)
+			return;
+		resp_free(r);
+		usleep(100000);
+	}
+	atf_tc_fail("the CA's change did not end");
+}
+
+/*
+ * The next CA staged by body, rolled out and finished, the host of
+ * jails path reached at each step.
+ */
+static void
+ca_change(const char *path, const char *body)
+{
+	struct resp	r;
+
+	http("POST", "/api/ca", body, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("staged", jstr(&r, "state.phase"));
+	ATF_CHECK(jstr(&r, "next.chain.0.subject") != NULL);
+	resp_free(&r);
+	http("POST", "/api/ca", "{\"action\":\"rollout\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ca_wait(&r);
+	if (jstr(&r, "state.phase") == NULL || strcmp(jstr(&r, "state.phase"),
+	    "switched") != 0)
+		(void)system("tail -30 kore.out >&2");
+	ATF_CHECK_MSG(jstr(&r, "state.phase") != NULL && strcmp(jstr(&r,
+	    "state.phase"), "switched") == 0, "%s", r.body);
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
+	resp_free(&r);
+	http("POST", "/api/ca", "{\"action\":\"finish\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ca_wait(&r);
+	ATF_CHECK_MSG(jstr(&r, "state.phase") != NULL && strcmp(jstr(&r,
+	    "state.phase"), "finished") == 0, "%s", r.body);
+	ATF_CHECK_MSG(jstr(&r, "next") == NULL, "%s", r.body);
+	resp_free(&r);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
+	resp_free(&r);
+}
+
+CONSOLE_TC(enrol, "The console's own CA, a host's certificate renewed, the CA changed for another and for an intermediate across the hosts, and a host joining with "
     "arcana-enrol(8)")
 ATF_TC_BODY(enrol, tc)
 {
@@ -3567,6 +3666,166 @@ ATF_TC_BODY(enrol, tc)
 	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
 	ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "mutual TLS") != NULL,
 	    "%s", jstr(&r, "trace.2.detail"));
+	resp_free(&r);
+
+	/* A host's certificate may reach hosts, but asks nothing of them
+	 * as the console does: refused by the agent. */
+	ATF_CHECK(system("openssl x509 -in host/host.pem -noout -ext "
+	    "extendedKeyUsage,subjectAltName | grep -q 'TLS Web Client "
+	    "Authentication' && openssl x509 -in host/host.pem -noout -ext "
+	    "subjectAltName | grep -q 'URI:urn:arcana:role:agent' && openssl "
+	    "x509 -in data/console.pem -noout -ext subjectAltName | grep -q "
+	    "'URI:urn:arcana:role:console'") == 0);
+	snprintf(body, sizeof(body), "%s -c tcp://127.0.0.1:%d -A data/ca.pem "
+	    "-C host/host.pem -K host/host.key hello 2>&1 | grep -q "
+	    "'ermission denied'", locate(tc, "../../../usr.sbin/arcanactl/"
+	    "arcanactl", "arcanactl", "/usr/local/sbin/arcanactl"), jport);
+	ATF_CHECK(system(body) == 0);
+	/* Its certificate renewed from here: a key made there, signed
+	 * here, taken there, and the host reached with it. */
+	{
+		char	tpath[96], first[128];
+
+		snprintf(tpath, sizeof(tpath), "%.*s/tls", (int)(strlen(path) -
+		    6), path);
+		http("GET", tpath, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("CN=arcana CA", jstr(&r, "data.cert.issuer"));
+		snprintf(first, sizeof(first), "%s", jstr(&r,
+		    "data.cert.sha256") != NULL ? jstr(&r, "data.cert.sha256") :
+		    "");
+		resp_free(&r);
+		http("POST", tpath, "{}", &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(jstr(&r, "ok") != NULL && strcmp(jstr(&r, "ok"),
+		    "true") == 0, "%s", r.body);
+		ATF_CHECK(jstr(&r, "data.cert.sha256") != NULL && strcmp(jstr(&r,
+		    "data.cert.sha256"), first) != 0);
+		ATF_CHECK_STREQ("CN=127.0.0.1", jstr(&r, "data.cert.subject"));
+		resp_free(&r);
+		ATF_CHECK(access("host/host.pem.before", F_OK) == 0);
+		ATF_CHECK(access("host/host.key.next", F_OK) != 0);
+		i = 0;
+		argv[i++] = (char *)(uintptr_t)"/usr/bin/openssl";
+		argv[i++] = (char *)(uintptr_t)"verify";
+		argv[i++] = (char *)(uintptr_t)"-CAfile";
+		argv[i++] = (char *)(uintptr_t)"data/ca.pem";
+		argv[i++] = (char *)(uintptr_t)"host/host.pem";
+		argv[i] = NULL;
+		ATF_CHECK_MSG(run_prog(argv), "the renewed one does not verify");
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
+		resp_free(&r);
+	}
+
+	/*
+	 * The CA changed for another: made here, rolled out (the host
+	 * trusts both and is given a certificate from the new one, the
+	 * console takes the new one's), finished (the old one trusted no
+	 * more); then the console as an intermediate CA under a root of
+	 * its own, from a request made here.
+	 */
+	/* A host that does not answer: the console does not switch, for
+	 * that host would be lost to it; once it is gone, it does. */
+	http("POST", "/api/servers", "{\"name\":\"gone\",\"uri\":"
+	    "\"tcp://127.0.0.1:1\"}", &r);
+	EXPECT(&r, 200);
+	snprintf(tok, sizeof(tok), "/api/servers/%s", jstr(&r,
+	    "servers.1.name") != NULL && strcmp(jstr(&r, "servers.1.name"),
+	    "gone") == 0 ? jstr(&r, "servers.1.id") : jstr(&r, "servers.0.id"));
+	resp_free(&r);
+	http("POST", "/api/ca", "{\"action\":\"make\",\"cn\":\"arcana CA "
+	    "2\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/ca", "{\"action\":\"rollout\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ca_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "state.phase"), "rolling") == 0 &&
+	    strstr(jstr(&r, "state.error"), "1 host not renewed") != NULL,
+	    "%s", r.body);
+	resp_free(&r);
+	http("POST", "/api/ca", "{\"action\":\"finish\"}", &r);
+	EXPECT(&r, 409);
+	resp_free(&r);
+	http("DELETE", tok, NULL, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/ca", "{\"action\":\"rollout\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ca_wait(&r);
+	ATF_CHECK_MSG(strcmp(jstr(&r, "state.phase"), "switched") == 0, "%s",
+	    r.body);
+	resp_free(&r);
+	http("POST", "/api/ca", "{\"action\":\"finish\"}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	ca_wait(&r);
+	ATF_CHECK_STREQ("finished", jstr(&r, "state.phase"));
+	resp_free(&r);
+	ATF_CHECK(system("openssl x509 -in host/ca.pem -noout -subject | grep "
+	    "-q 'CN *= *arcana CA 2' && [ $(grep -c 'BEGIN CERT' host/ca.pem) "
+	    "= 1 ]") == 0);
+	/* The console's certificate from before is trusted no more. */
+	snprintf(body, sizeof(body), "%s -c tcp://127.0.0.1:%d -A data/ca.pem "
+	    "-C data/console.pem.before -K data/console.key.before hello "
+	    ">/dev/null 2>&1", locate(tc, "../../../usr.sbin/arcanactl/"
+	    "arcanactl", "arcanactl", "/usr/local/sbin/arcanactl"), jport);
+	ATF_CHECK(system(body) != 0);
+	snprintf(body, sizeof(body), "%s -c tcp://127.0.0.1:%d -A data/ca.pem "
+	    "-C data/console.pem -K data/console.key hello >/dev/null 2>&1",
+	    locate(tc, "../../../usr.sbin/arcanactl/arcanactl", "arcanactl",
+	    "/usr/local/sbin/arcanactl"), jport);
+	ATF_CHECK(system(body) == 0);
+	/* An intermediate: the request made here, signed by a root. */
+	http("POST", "/api/ca", "{\"action\":\"request\",\"cn\":\"arcana "
+	    "sub\"}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK(jstr(&r, "request") != NULL && strstr(jstr(&r, "request"),
+	    "CERTIFICATE REQUEST") != NULL);
+	resp_free(&r);
+	ATF_REQUIRE(system("openssl req -x509 -newkey ec -pkeyopt "
+	    "ec_paramgen_curve:P-256 -nodes -keyout root.key -out root.pem "
+	    "-days 2 -subj /CN=lab-root -addext basicConstraints=critical,"
+	    "CA:TRUE -addext keyUsage=critical,keyCertSign >/dev/null 2>&1 && "
+	    "printf 'basicConstraints=critical,CA:TRUE,pathlen:0\\nkeyUsage="
+	    "critical,keyCertSign,cRLSign\\n' > sub.ext && openssl x509 -req "
+	    "-in data/ca-next/request.csr -CA root.pem -CAkey root.key "
+	    "-CAcreateserial -days 2 -extfile sub.ext -out sub.pem >/dev/null "
+	    "2>&1 && cat sub.pem root.pem > subchain.pem") == 0);
+	/* Without its root it is refused. */
+	{
+		char	*sub, *chain, *q, *bodyb;
+
+		sub = slurp_file("sub.pem");
+		chain = slurp_file("subchain.pem");
+		q = json_quote_test(sub);
+		ATF_REQUIRE(asprintf(&bodyb, "{\"action\":\"import\",\"cert\":"
+		    "%s}", q) != -1);
+		http("POST", "/api/ca", bodyb, &r);
+		EXPECT(&r, 409);
+		ATF_CHECK(strstr(r.body, "does not reach a root") != NULL);
+		resp_free(&r);
+		free(q);
+		free(bodyb);
+		q = json_quote_test(chain);
+		ATF_REQUIRE(asprintf(&bodyb, "{\"action\":\"import\",\"cert\":"
+		    "%s}", q) != -1);
+		ca_change(path, bodyb);
+		free(q);
+		free(bodyb);
+		free(sub);
+		free(chain);
+	}
+	ATF_CHECK(system("openssl x509 -in host/ca.pem -noout -subject | grep "
+	    "-q 'CN *= *lab-root' && openssl verify -CAfile root.pem "
+	    "-untrusted host/host.pem host/host.pem >/dev/null 2>&1") == 0);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
 	resp_free(&r);
 }
 

@@ -568,6 +568,7 @@ main(int argc, char *argv[])
 		    cbl_tls_set_ca(tls, cafile, NULL) != 0)
 			errx(1, "TLS: %s", tls != NULL ? cbl_tls_errstr(tls) :
 			    "cbl_tls_new failed");
+		tls_files_init(tls, cafile, certfile, keyfile);
 	}
 
 	/*
@@ -595,7 +596,7 @@ main(int argc, char *argv[])
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_ATTRS, MAX_ATTRS);
 	if ((error = transport_watch(ctx)) != 0)
 		fatal(pfh, "cbl_ctx_set_conn_cbs: %s", strerror(error));
-	if ((error = arc_register(ctx, NULL, &fam)) != 0)
+	if ((error = admit_register(ctx, &fam)) != 0)
 		fatal(pfh, "registering the %s family: %s", ARC_FAMILY_NAME,
 		    strerror(error));
 	event_family(fam);
@@ -637,6 +638,7 @@ main(int argc, char *argv[])
 	sdwan_ids_start();
 	kmsg_start();
 	route_watch_start();
+	jail_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);
 	stop_loop = loop;
 	stop_pfh = pfh;

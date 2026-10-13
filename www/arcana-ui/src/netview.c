@@ -646,8 +646,10 @@ view_network(struct html *h, struct server *s)
 	int			 i, n, shown;
 	bool			 mine, plug, nh;
 
+	/* What was read for this view: another's is not drawn as it. */
 	mine = app.net.data != NULL && strcmp(app.net.sid, s->id) == 0 &&
-	    strcmp(app.net.jail, net_scope()) == 0;
+	    strcmp(app.net.jail, net_scope()) == 0 && app.net.data_kind ==
+	    (int)app.net.kind;
 	/*
 	 * A plugin's view stands by itself: it is a tab of its own, and
 	 * what the base system has is not offered beside it.

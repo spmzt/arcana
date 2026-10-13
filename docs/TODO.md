@@ -122,6 +122,16 @@
   there: Mplify 117.1 takes its Security Functions from MEF 138, which
   replaces MEF 88, and none of them has intrusion detection (ids is
   Arcana's own, mislabelled MEF 88's until now).  SASE-5 closed.
+- For the user to do (2026-10-13): IPFIX export in ng_netflow(4),
+  which exports NetFlow v5 and v9 only; pflow(4) has IPFIX but serves
+  pf. docs/PLAN-SDN-YANG.md's flow telemetry (5.6) waits on it or
+  takes v9.
+- The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
+  under docs/notes/. Decided 2026-10-13: wire version 2 (D-1), cblink
+  2 south and RESTCONF on the console only (D-2), libyang for the
+  generator (D-3), L3NM where it and MEF 70.2 overlap (D-4), STAMP
+  for the probes (D-8), no compatibility with the v1 family or `/api`
+  (D-9, D-10), BIRD for FlowSpec. Open: D-5 to D-7, D-11, D-12.
 - To decide (the user's): whether the security policies move to MEF
   138's model (Security Function Policies each with Block, Allow and
   Quarantine lists, No-match, Duration; PDNS and DLP added), and which
@@ -197,8 +207,10 @@
   every.json across restarts; each host waited on subscribed to, a
   thread each, its events running what they begin as they come and
   what was missed read when it answers again, host-down known when
-  the connection drops. jail-state is still a read of the jails at
-  each tick: the agent tells no event of a jail's state.
+  the connection drops. jail-state is the agent's event now
+  (2026-10-13): EVFILT_JAIL tells it of each jail made and removed,
+  and the console no longer reads the jails each tick for it
+  (agent_root_test:lifecycle).
 - 2026-10-12: a vnet jail's plugins looked for as the jail sees its
   files: a child of the agent attaches to the jail and asks there, so
   that a link inside it (a /usr/local leading to /opt/local) leads
@@ -320,7 +332,23 @@
     suite passed twice.
   - The console's CA: one imported, or made and self-signed from the
     panel, given to each agent and trusted there; the console as a CA
-    and as an intermediate CA under another.
+    and as an intermediate CA under another.  (2026-10-13, the agent's
+    side: the tls call, its own files renewed while it runs, a key made
+    there and never sent, the certificate for it and the CAs installed
+    and read again by cblink, the asking console's own certificate
+    checked to be trusted still; agent_tls_test:renew, a change of CA
+    and an intermediate.  The console renewing a host done too: the
+    host's Summary, Certificate, with Renew; console_test:enrol renews
+    a host over mutual TLS.  The CA panel done too: Settings,
+    Certificate authority; the next CA made, imported with its chain
+    (the console an intermediate CA) or requested from another; rolled
+    out, the console switching only once every host was renewed (a
+    host that does not answer would be lost to it), and finished;
+    console_test:enrol changes the CA for another and for an
+    intermediate under a root of its own, an unreachable host holding
+    the switch back.  A host enrolled during a change is given both
+    roots and a certificate from the CA before: rolling out again
+    renews it, and finishing waits for it.)
   - A session's lifetime set in Settings. (Done 2026-10-12: idle
     minutes and the longest, in hours.)
   - LDAP for the console's sign-in.
@@ -346,9 +374,9 @@
     and pools.
   - A Devices page of its own, a table of the hosts (sorted and
     filtered), the rail's host list moved there. (The page done
-    2026-10-12.  The rail's list not moved yet: it is the way to each
-    host's jails, so what the rail keeps after (the open host and its
-    jails?) is the user's to say.)
+    2026-10-12.  The side bar's hosts and jails taken away 2026-10-13,
+    as the user asked: hosts are opened from Devices or All hosts, a
+    host's jails from its Jails tab, a host taken off by × on Devices.)
   - To ask the user what is meant: MSS clamping "on transports" (the
     SD-WAN tunnels by ipfw tcp-setmss, an interface's, or the agent's
     links?), labels on interfaces (a console-side tag, or the
@@ -449,7 +477,14 @@
   - Certificates with a role. An agent's is for a server only, and an
     agent takes any peer the CA signed for the console: agents that
     call each other need certificates that can, and an agent must let
-    only the console's ask for anything but the mesh.
+    only the console's ask for anything but the mesh.  (Done
+    2026-10-13: a host's certificate is for a client too and says
+    URI:urn:arcana:role:agent, the console's urn:arcana:role:console;
+    an agent refuses every command to a peer of the agent role, the
+    generated table registered behind a look at the peer.  Hosts
+    enrolled before have the old certificate until renewed.  Not
+    covered: joining the events group, which cblink admits below the
+    handlers; to be closed in cblink when the mesh comes.)
   - Arcana's DNCP profile: over cblink on SCTP with DTLS, its own TLVs
     (an agent's name and mesh addresses, when it last heard the
     console), SCTP's heartbeats instead of keep-alives.

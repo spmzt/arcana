@@ -61,7 +61,6 @@ void		 arc_loc_set(const char *, int);
 char		*arc_hostname(void);
 char		*arc_origin(void);
 int		 arc_fx_get(void);
-int		 arc_tree_room(void);
 int		 arc_open_get(const char *);
 void		 arc_open_set(const char *, int);
 int		 arc_queue_get(void);
@@ -208,6 +207,7 @@ struct netview {
 	char		 sid[9];	/* the server it came from */
 	char		 jail[256];	/* and the vnet jail of it, or "" */
 	ucl_object_t	*data;		/* the reply, or NULL */
+	int		 data_kind;	/* the netkind it was read for */
 	double		 fetched;
 	bool		 loading;
 	char		 error[256];	int		 sort;		/* column sorted by, or -1 */
@@ -253,7 +253,6 @@ struct server {
 	bool		 jobs_loading;
 	double		 restart_until;	/* ms: its agent is restarting after an update; 0 none */
 	double		 restart_asked;	/* ms: when it was last asked how it is */
-	bool		 tree_all;	/* every jail in the tree, room or not */
 	ucl_object_t	*services;	/* last good services reply */
 	double		 services_fetched;
 	bool		 services_loading;
@@ -736,6 +735,7 @@ void		 view_sysctl(struct html *, struct server *);
 bool		 sysctl_form(const char *, const ucl_object_t *);
 bool		 sysctl_action(const char *, const char *, const char *);
 void		 view_safe(struct html *, struct server *);
+void		 view_tlscert(struct html *, struct server *);
 void		 servers_cb(int, const ucl_object_t *, const char *, void *);
 struct plugin_pkg {
 	const char	*plugin, *title, *program, *package;
@@ -758,7 +758,13 @@ void		 view_workflows(struct html *);
 bool		 workflows_action(const char *, const char *, const char *);
 /* view.c: the settings' tabs. */
 enum { SET_LOOK, SET_NOTIFY, SET_TOKENS, SET_KEYS, SET_CONSOLE,
-    SET_WEBCONF, SET_NEWS };
+    SET_WEBCONF, SET_NEWS, SET_CA };
+/* ca.c: Settings, Certificate authority. */
+void		 ca_load(void);
+void		 ca_tick(double);
+void		 set_ca(struct html *);
+bool		 ca_form(const char *, const ucl_object_t *);
+bool		 ca_action(const char *, const char *, const char *);
 int		 settab_of(const char *);
 const char	*settab_arg(int);
 /* sdwan.c: the SD-WAN services the console keeps. */

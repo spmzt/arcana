@@ -444,6 +444,7 @@ tick(void *arg)
 			bird_tick(now);
 		if (app.online) {
 			transport_tick(now);
+			ca_tick(now);
 			net_live_tick(now);
 			firewall_tick(now);
 			procs_tick(now);
@@ -578,7 +579,8 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
-	    jailmk_form(form, f) || neigh_form(form, f) || carp_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
+	    jailmk_form(form, f) || neigh_form(form, f) || carp_form(form, f) ||
+	    ca_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
@@ -848,7 +850,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    jailmk_action(act, arg, value) || neigh_action(act, arg, value) ||
-	    carp_action(act, arg, value) ||
+	    carp_action(act, arg, value) || ca_action(act, arg, value) ||
 	    certs_action(act, arg, value) || ssh_action(act, arg, value) ||
 	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
@@ -862,14 +864,10 @@ dispatch(const char *act, const char *arg, const char *value)
 	    tbl_action(act, arg, value))
 		return;
 	if (strcmp(act, "fold") == 0) {
+		/* A box shut or opened by its head (box_head()). */
 		arc_open_set(arg, !arc_open_get(arg));
-	} else if (strcmp(act, "tree-more") == 0) {
-		for (i = 0; i < app.nservers; i++)
-			if (strcmp(app.servers[i].id, arg) == 0)
-				app.servers[i].tree_all =
-				    !app.servers[i].tree_all;
 	} else if (strcmp(act, "resize") == 0) {
-		/* Only drawn again: the tree fits itself to its room. */
+		/* Only drawn again. */
 	} else if (strcmp(act, "select-server") == 0) {
 		app.rail_open = false;
 		for (i = 0; i < app.nservers; i++)

@@ -2,14 +2,14 @@ PROG=		arcana-agent
 # The Agent itself, then what it does by Archive (docs/NAMING.md).
 SRCS=		main.c handlers.c work.c
 # Superbia: identity, configuration, what is true of the host.
-SRCS+=		certs.c ssh.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c l2.c ipfw.c
+SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c l2.c ipfw.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		routes.c scope.c sdwan.c vnet.c
 # Luxuria: what is not FreeBSD's own, the plugins.
 SRCS+=		bird.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c wireguard.c
 # Ira: action and execution.
-SRCS+=		build.c exec.c jail.c jails.c jobs.c lifecycle.c jailmake.c packages.c \
+SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c packages.c \
 		services.c update.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \

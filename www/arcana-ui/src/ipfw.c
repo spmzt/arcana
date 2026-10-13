@@ -534,7 +534,7 @@ firewall_rail(struct html *h)
 		h_raw(h, "<div class=\"scrim rail-scrim\" data-act=\"rail-toggle\"></div>");
 	h_fmt(h, "<aside class=\"rail fwrail%s\"><div class=\"rail-head\">"
 	    "<button class=\"ghost small back\" data-act=\"fw-rail\" title=\""
-	    "Back to the hosts and their jails\">‹ Hosts</button><span class="
+	    "Back to the side bar's pages\">‹ Back</button><span class="
 	    "\"label\">Firewall</span></div><ul class=\"tree\">",
 	    app.rail_open ? " open" : "");
 	h_fmt(h, "<li class=\"titem host-of fw%s\" data-act=\"fw-jail\" "
