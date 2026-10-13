@@ -4115,7 +4115,7 @@ EOS
 	# The programs the daemon has no option for, in a directory of
 	# their own: what they are told is logged, what they say is canned.
 	mkdir tools
-	for p in newfs growfs swapon swapoff; do
+	for p in newfs newfs_msdos growfs swapon swapoff; do
 		printf '#!/bin/sh\necho "%s $*" >> %s/storage.log\nexit 0\n' "$p" "$(pwd)" > tools/$p
 	done
 	printf '#!/bin/sh\n[ "$1" = /dev/ada0p3 ] && echo ufs && exit 0\nexit 1\n' > tools/fstyp
@@ -4170,6 +4170,10 @@ EOS
 	# A file system made on a partition: not on one that has one, is
 	# a pool's, or is not a device; and one grown.
 	atf_check -o match:'done +newfs -U -L data /dev/ada0p4$' "$JGC" -c "$SOCK" gpart newfs ada0p4 data
+	# FAT, its label in capitals, eleven at most; refused as newfs is.
+	atf_check -o match:'done +newfs_msdos -L USB_KEY /dev/ada0p4$' "$JGC" -c "$SOCK" gpart newfs-msdos ada0p4 usb_key
+	atf_check -s exit:1 -e match:'FAT label is 11' -o ignore "$JGC" -c "$SOCK" gpart newfs-msdos ada0p4 far_too_long_label
+	atf_check -s exit:1 -o match:'has a file system on it \(ufs\)' "$JGC" -c "$SOCK" gpart newfs-msdos ada0p3
 	atf_check -s exit:1 -o match:'has a file system on it \(ufs\)' "$JGC" -c "$SOCK" gpart newfs ada0p3
 	atf_check -o match:'done +newfs -U /dev/ada0p3$' "$JGC" -c "$SOCK" gpart newfs -f ada0p3
 	atf_check -s exit:1 -o match:'ada1p1 is a device of a pool' "$JGC" -c "$SOCK" gpart newfs -f ada1p1

@@ -296,7 +296,7 @@ kinds:
     title: A partition table or partition
     needs: verb args
     uses: force
-    destroys: verb=destroy|delete|newfs
+    destroys: verb=destroy|delete|newfs|newfs-msdos
   - kind: cam
     title: camcontrol
     needs: verb args
