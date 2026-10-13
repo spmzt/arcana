@@ -44,6 +44,18 @@ reply_json(struct http_request *req, int status, ucl_object_t *o)
 	return (KORE_RESULT_OK);
 }
 
+/*
+ * An /api/ path the console does not have (routes.conf's last route):
+ * a JSON 404 like every other error, not Kore's page.
+ */
+int
+api_not_found(struct http_request *req)
+{
+
+	return (reply_error(req, 404, "not-found", "no such route: %s",
+	    req->path));
+}
+
 /* {"error": {"code": "...", "message": "..."}} */
 int
 reply_error(struct http_request *req, int status, const char *code,
@@ -209,6 +221,7 @@ api_health(struct http_request *req)
 {
 	ucl_object_t	*o;
 	const char	*build;
+	bool		 known;
 
 	config_refresh();
 	o = ucl_object_typed_new(UCL_OBJECT);
@@ -226,12 +239,14 @@ api_health(struct http_request *req)
 		    "agent_version", 0, false);
 	/*
 	 * Where a host can be asked to build it from: for those who are
-	 * logged in, as a repository's address may say more than its name.
+	 * logged in or hold an API token, as a repository's address may
+	 * say more than its name.
 	 */
-	if (cfg.agent_source != NULL && session_valid(req))
+	known = session_valid(req) || token_kind(req) != TOKEN_NONE;
+	if (cfg.agent_source != NULL && known)
 		ucl_object_insert_key(o, ucl_object_fromstring(
 		    cfg.agent_source), "agent_source", 0, false);
-	if (cfg.agent_ref != NULL && session_valid(req))
+	if (cfg.agent_ref != NULL && known)
 		ucl_object_insert_key(o, ucl_object_fromstring(cfg.agent_ref),
 		    "agent_ref", 0, false);
 	return (reply_json(req, 200, o));

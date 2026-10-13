@@ -271,6 +271,15 @@ ATF_TC_BODY(unauthenticated, tc)
 	http("GET", "/", NULL, &r);
 	EXPECT(&r, 200);
 	resp_free(&r);
+	/* An /api/ path the console does not have: a JSON 404. */
+	http("GET", "/api/servers/0123abcd/tls-old", NULL, &r);
+	EXPECT(&r, 404);
+	ATF_CHECK_STREQ("not-found", jstr(&r, "error.code"));
+	resp_free(&r);
+	http("POST", "/api/nowhere", "{}", &r);
+	EXPECT(&r, 404);
+	ATF_CHECK_STREQ("not-found", jstr(&r, "error.code"));
+	resp_free(&r);
 	ATF_CHECK_EQ(0, access("data/setup-token", R_OK));
 }
 

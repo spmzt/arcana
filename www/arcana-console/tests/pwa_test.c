@@ -1682,6 +1682,43 @@ part_nettab(void)
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
 	    "t.textContent.includes('lo0: set'))", 20);
 	ATF_CHECK(system("grep -q '^lo0 mtu 9000$' ifconfig.log") == 0);
+	/*
+	 * A task that waits says what it asked and where it is: the
+	 * request held back here, then the job's readings, to see each
+	 * stage.
+	 */
+	run("window.hold = { jobs: true, poll: false }; const of3 = window."
+	    "fetch; window.fetch = function (u, o) { const s = String(u); "
+	    "const wait = k => new Promise(r => { const t = setInterval(() => "
+	    "{ if (!window.hold[k]) { clearInterval(t); r(); } }, 50); }); "
+	    "if (o && o.method === 'POST' && s.endsWith('/jobs') && "
+	    "window.hold.jobs) return wait('jobs').then(() => of3.call(this, "
+	    "u, o)); if (/\\/jobs\\/[0-9]+$/.test(s) && window.hold.poll) "
+	    "return wait('poll').then(() => of3.call(this, u, o)); return "
+	    "of3.call(this, u, o); };");
+	run("document.querySelector('tr[data-if=lo0] button[data-act=if-edit]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=if-set]')", 5);
+	run("const f = document.querySelector('form[data-form=if-set]'); "
+	    "f.mtu.value = '16384'; f.persist.checked = false; "
+	    "f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	wait_js("document.querySelector('.dock.open .pending-graph') && "
+	    "document.querySelector('.pending-graph').textContent.includes("
+	    "'POST /api/servers/') && document.querySelector('.pending-graph')"
+	    ".textContent.includes('waiting for the answer') && document."
+	    "querySelector('.pending-graph .node.k-lib.st-incomplete')", 10);
+	shot("5a-task-sent");
+	run("window.hold.poll = true; window.hold.jobs = false;");
+	wait_js("document.querySelector('.pending-graph') && document."
+	    "querySelector('.pending-graph').textContent.includes('job #') && "
+	    "document.querySelector('.pending-graph .node.k-daemon."
+	    "st-incomplete') && document.querySelector('.pending-graph .node."
+	    "k-api.st-ok')", 10);
+	shot("5b-task-waiting");
+	run("window.hold.poll = false;");
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].filter(t => "
+	    "t.textContent.includes('lo0: set')).length >= 2", 20);
 	run("document.querySelector('.dock > header').click()");
 
 	/* Netgraph: the nodes as a graph, with the hooks that join them. */
@@ -5042,6 +5079,19 @@ part_routes(void)
 	wait_js("window.before === undefined && document.querySelector("
 	    "'.jail-page h1') && document.querySelector('.jail-page h1')"
 	    ".textContent === 'cache'", 30);
+	/* Opened on Settings: the hosts are read in the background, and
+	 * no task says so (it was one for the first host, not asked). */
+	go("/#/settings/update");
+	run("window.before = 1; location.reload();");
+	wait_js("window.before === undefined && document.querySelector("
+	    "'button[data-act=set-tab][data-arg=update].on') && document."
+	    "querySelector('.upd')", 30);
+	usleep(1500000);
+	run("document.querySelector('section.dock:not(.open) header[data-act="
+	    "dock]')?.click()");
+	wait_js("document.querySelector('section.dock.open')", 5);
+	ATF_CHECK(js_true("![...document.querySelectorAll('.dock [data-act="
+	    "trace]')].some(t => t.textContent.includes('list jails'))"));
 	go("/#/usage");
 	run("window.before = 1; location.reload();");
 	wait_js("window.before === undefined && location.hash === '#/usage' && "

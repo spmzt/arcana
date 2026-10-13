@@ -152,7 +152,10 @@
   keys) for a PEN below 100 000; 0.6, the decisions. Y-1 under way in
   cblink: 1.1.1 to 1.1.3, cblink-gen's YANG front end on libyang (built
   when libyang is there), its own schema model with resolved types,
-  checked against yanglint on the corpus.
+  checked against yanglint on the corpus. As each operation is
+  converted to YANG (the user, 2026-10-13: with each conversion, not
+  after all of them), its task's { } Schema panel shows its YANG model
+  beside the CBOR schema.
 - To decide (the user's): whether the security policies move to MEF
   138's model (Security Function Policies each with Block, Allow and
   Quarantine lists, No-match, Duration; PDNS and DLP added), and which
