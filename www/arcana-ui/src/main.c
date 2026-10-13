@@ -1400,6 +1400,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 		close_service();
 		topo_lookup_clear();
+		if ((s = cur_server()) != NULL)
+			refresh_jail_datasets(s, app.jail);
 	} else if (strcmp(act, "peek-jail") == 0) {
 		/* From a graph, the fleet's or a host's: the jail in a box
 		 * over the page, which stays the page it is. */

@@ -2144,12 +2144,14 @@ operations:
     doc: |
       The host's storage, as a JSON object, of the kind asked for.  More
       datasets or snapshots than a reply carries come as the first of
-      them, with total and truncated.
+      them, with total and truncated.  With jail, the datasets or the
+      snapshots that jail's own zfs list sees: those given to it.
     do:
       request:
         attributes:
           - storage-kind
           - net-filter
+          - jail
         required:
           - storage-kind
       reply:

@@ -2876,6 +2876,8 @@ cmd_storage(struct arc_client *cl, int argc, char **argv)
 	req.has_storage_kind = true;
 	req.storage_kind = (uint8_t)i;
 	req.net_filter = argc == 3 ? argv[2] : NULL;
+	/* -j: what that jail's own zfs sees. */
+	req.jail = netjail;
 	if ((error = arc_storage(cl, &req, &rsp)) != 0)
 		fail(cl, error, "storage");
 	if (rsp->json != NULL)

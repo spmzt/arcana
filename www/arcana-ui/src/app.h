@@ -739,6 +739,9 @@ void		 refresh_transport(struct server *, bool, bool);
 void		 transport_tick(double);
 void		 view_transport(struct html *, struct server *);
 void		 refresh_storage(struct server *, bool);
+void		 refresh_jail_datasets(struct server *, const char *);
+void		 view_jail_datasets(struct html *, struct server *,
+		    const ucl_object_t *);
 void		 view_storage(struct html *, struct server *);
 /* workflow.c: the workflows, their editor and their runs. */
 void		 workflows_open(void);

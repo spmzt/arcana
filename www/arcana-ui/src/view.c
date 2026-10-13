@@ -1253,6 +1253,7 @@ jail_page(struct html *h)
 		h_attr(h, "data-arg", jstr(j, "name"));
 		h_raw(h, ">Open it in the Network tab</button></p>");
 	}
+	view_jail_datasets(h, s, j);
 
 	if (ucl_array_size(jget(j, "params")) > 0) {
 		h_raw(h, "<h4>Configuration <span class=\"dim\">as jail(8) "

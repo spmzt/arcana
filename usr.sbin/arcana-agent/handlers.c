@@ -581,7 +581,14 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "storage");
 		memset(&stg, 0, sizeof(sr));
-		do_storage(&w, j->action, j->source, &stg);
+		/* A jail's: what its own zfs sees, the datasets given it. */
+		if (j->jail != NULL && j->action != ARC_STORAGE_KIND_DATASETS &&
+		    j->action != ARC_STORAGE_KIND_SNAPSHOTS) {
+			stg.has_ok = true;
+			stg.error = "of a jail, its datasets and snapshots only";
+		} else if (scope_enter_jail(&w, j->jail, &stg.error, false) ==
+		    0)
+			do_storage(&w, j->action, j->source, &stg);
 		ok = stg.ok;
 		error = stg.error;
 		step_end(&w, root, ok, NULL);
@@ -1673,6 +1680,13 @@ arc_storage_doit(cbl_req *req, const struct arc_storage_req *rq,
 	j->req = req;
 	j->cmd = ARC_CMD_STORAGE;
 	j->action = rq->storage_kind;
+	if (rq->jail != NULL && rq->jail[0] != '\0') {
+		if (!valid_jail(rq->jail)) {
+			free(j);
+			return (reject(req, "invalid jail name"));
+		}
+		j->jail = xstrdup(rq->jail);
+	}
 	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
 	    xstrdup(rq->net_filter) : NULL;
 	return (start(j));

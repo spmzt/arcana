@@ -2465,3 +2465,110 @@ storage_action(const char *act, const char *arg, const char *value)
 	}
 	return (true);
 }
+
+/* ---- A jail's own datasets, on its page ------------------------------ */
+
+static struct {
+	char		 sid[9];
+	char		 jail[256];
+	ucl_object_t	*data;
+	bool		 loading;
+	char		 error[300];
+} jd;
+
+static void
+jail_ds_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	jd.loading = false;
+	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+		snprintf(jd.error, sizeof(jd.error), "%s", jstr(o, "error") !=
+		    NULL ? jstr(o, "error") : err != NULL ? err : "no answer");
+		return;
+	}
+	jd.error[0] = '\0';
+	if (jd.data != NULL)
+		ucl_object_unref(jd.data);
+	jd.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+}
+
+/* What the jail's own zfs sees: the datasets given to it. */
+void
+refresh_jail_datasets(struct server *s, const char *jail)
+{
+	char	url[400];
+
+	if (!app.online || jd.loading)
+		return;
+	if (strcmp(jd.sid, s->id) != 0 || strcmp(jd.jail, jail) != 0) {
+		if (jd.data != NULL)
+			ucl_object_unref(jd.data);
+		jd.data = NULL;
+		jd.error[0] = '\0';
+	}
+	snprintf(jd.sid, sizeof(jd.sid), "%s", s->id);
+	snprintf(jd.jail, sizeof(jd.jail), "%s", jail);
+	jd.loading = true;
+	snprintf(url, sizeof(url), "/api/servers/%s/storage/datasets?jail=%s",
+	    s->id, jail);
+	api("GET", url, NULL, jail_ds_cb, NULL);
+}
+
+void
+view_jail_datasets(struct html *h, struct server *s, const ucl_object_t *j)
+{
+	static const struct tcol cols[] = {
+		{ "Dataset", "name", false }, { "Used", "used", true },
+		{ "Available", "avail", true }, { "Mounted at", "mountpoint",
+		false }, { "", NULL, false },
+	};
+	const ucl_object_t	**rows, *d;
+	char			 buf[32];
+	int			 n;
+
+	/* Only one that runs has a zfs of its own to ask. */
+	if (jstr(j, "state") == NULL || strcmp(jstr(j, "state"), "running") !=
+	    0 || strcmp(jd.sid, s->id) != 0 || strcmp(jd.jail, app.jail) != 0)
+		return;
+	if (jd.error[0] != '\0' || (jd.data != NULL && ucl_array_size(jget(
+	    jd.data, "datasets")) == 0))
+		return;
+	h_raw(h, "<h4>Datasets <span class=\"dim\">as the jail's own zfs "
+	    "sees them: those given to it (zfs jail)</span></h4>");
+	if (jd.data == NULL) {
+		h_raw(h, "<div class=\"loader\"></div>");
+		return;
+	}
+	h_raw(h, "<table class=\"net jail-ds\">");
+	tbl_head(h, "jail-ds", cols, 5, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("jail-ds", jget(jd.data, "datasets"), cols, 5, NULL);
+	for (n = 0; (d = rows[n]) != NULL; n++) {
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, jstr(d, "name"));
+		h_raw(h, "</b>");
+		if (jstr(d, "jailed") != NULL && strcmp(jstr(d, "jailed"), "on") ==
+		    0)
+			h_raw(h, " <span class=\"chip\" title=\"Given to it: it "
+			    "manages it as its own\">its own</span>");
+		h_raw(h, "</td><td>");
+		size(buf, sizeof(buf), jint(d, "used", 0));
+		h_txt(h, buf);
+		h_raw(h, "</td><td>");
+		size(buf, sizeof(buf), jint(d, "avail", 0));
+		h_txt(h, buf);
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(d, "mountpoint") != NULL ? jstr(d, "mountpoint") :
+		    "");
+		if (jstr(d, "mounted") != NULL && strcmp(jstr(d, "mounted"),
+		    "yes") != 0)
+			h_raw(h, " <small class=\"dim\">not mounted</small>");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"ghost small\" "
+		    "data-act=\"st-snapshot\"");
+		h_attr(h, "data-arg", jstr(d, "name"));
+		h_raw(h, ">Snapshot</button></td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table>");
+}
