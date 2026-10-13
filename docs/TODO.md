@@ -297,9 +297,10 @@
   their datasets at their paths, the base untouched; a removal with a
   dataset not the jail's refused with the jail left running (found
   there: it was stopped before the dataset was asked about), then each
-  taken away with its own.  Not yet: changing a made jail's file from
-  the page (it is made and taken away; its block is edited as any
-  jail's is).  The datasets above a jail's that are not there are made
+  taken away with its own.  A made jail's file changed from the page
+  (2026-10-13: jail-conf edit, read back by jail -e first, the one
+  before kept; a running jail keeps its path; verified as root on the
+  memory disk's pool, agent_root_test:jail_make).  The datasets above a jail's that are not there are made
   (canmount=off), and taken away again when the make fails; a pool is
   never made nor taken away.  The IPFW tab's Load the current file
   verified in a jail with its own rc.conf and script (the lab's

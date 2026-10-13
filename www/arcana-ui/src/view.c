@@ -1987,6 +1987,7 @@ modal(struct html *h)
 	case MODAL_JAIL_FILES:
 	case MODAL_JAIL_TEMPLATE:
 	case MODAL_JAIL_REMOVE:
+	case MODAL_JAIL_FILE:
 		if (!jailmk_modal(h))
 			return;
 		break;
@@ -2356,6 +2357,7 @@ modal(struct html *h)
 			break;
 		case MODAL_JAIL_DEFAULTS:
 		case MODAL_JAIL_TEMPLATE:
+		case MODAL_JAIL_FILE:
 			h_raw(h, "<button class=\"primary\">Write it</button>");
 			break;
 		case MODAL_JAIL_REMOVE:

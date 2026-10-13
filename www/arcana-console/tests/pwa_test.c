@@ -196,15 +196,16 @@ run(const char *script)
 
 /*
  * Waited for and clicked in one step: the page may be drawn anew between
- * a wait and a click of their own, and the click then finds nothing.
+ * a wait and a click of their own, and the click then finds nothing.  A
+ * disabled button is waited on: a click on it does nothing.
  */
 static void
 click_when(const char *sel, int seconds)
 {
 	char	expr[512];
 
-	snprintf(expr, sizeof(expr), "(b => b ? (b.click(), true) : false)("
-	    "document.querySelector(\"%s\"))", sel);
+	snprintf(expr, sizeof(expr), "(b => b && !b.disabled ? (b.click(), "
+	    "true) : false)(document.querySelector(\"%s\"))", sel);
 	wait_js(expr, seconds);
 }
 
@@ -1186,6 +1187,22 @@ part_hosts(void)
 	    "\"lo0|127.0.0.9\";' etc/jail.conf.d/www.conf && grep -Eq '\\.include "
 	    "\"/.*/etc/jail\\.conf\\.d/certbot\\.inc\";' etc/jail.conf.d/www.conf") ==
 	    0);
+	/* Its file changed from the page, read back first. */
+	run("document.querySelector('button[data-act=jm-files]').click()");
+	click_when("button[data-act=jm-file-edit][data-arg=www]", 10);
+	wait_js("document.querySelector('form[data-form=jm-file] textarea') && "
+	    "document.querySelector('form[data-form=jm-file] textarea').value"
+	    ".includes('www {')", 10);
+	run("const f = document.querySelector('form[data-form=jm-file]'); "
+	    "f.text.value = f.text.value.replace('devfs_ruleset = 4;', "
+	    "'devfs_ruleset = 5;'); f.requestSubmit();");
+	click_when("button[data-act=queue-run]", 5);
+	for (i = 0; i < 100 && system("grep -q 'devfs_ruleset = 5;' "
+	    "etc/jail.conf.d/www.conf") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q 'devfs_ruleset = 5;' etc/jail.conf.d/www.conf "
+	    "&& grep -q 'devfs_ruleset = 4;' etc/jail.conf.d/www.conf.arcana.bak")
+	    == 0);
 	/* Taken away again, its file kept beside. */
 	run("document.querySelector('button[data-act=jm-files]').click()");
 	wait_js("document.querySelector('button[data-act=jm-rm][data-arg=www]')",
