@@ -1092,10 +1092,82 @@ authorize(struct work *w, const struct arc_job_spec *sp, bool add,
 	return (0);
 }
 
+/* A file of the host's own, whole: one of the signing's directory. */
+static char *
+slurp_host(struct work *w, const char *path, size_t *lenp)
+{
+	struct stat	 sb;
+	char		*buf;
+	ssize_t		 n;
+	int		 fd;
+
+	if ((fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)) == -1)
+		return (NULL);
+	if (fstat(fd, &sb) == -1 || !S_ISREG(sb.st_mode) || sb.st_size >
+	    TEXT_MAX) {
+		close(fd);
+		return (NULL);
+	}
+	buf = wmalloc(w, (size_t)sb.st_size + 1);
+	n = read(fd, buf, (size_t)sb.st_size);
+	close(fd);
+	if (n != sb.st_size)
+		return (NULL);
+	buf[n] = '\0';
+	*lenp = (size_t)n;
+	return (buf);
+}
+
+/* A file of dir, written whole, root's alone. */
+static int
+put_tmp(const char *path, const char *text, size_t len)
+{
+	int	fd, e;
+
+	if ((fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
+	    O_CLOEXEC, 0600)) == -1)
+		return (-1);
+	if (write(fd, text, len) != (ssize_t)len) {
+		e = errno;
+		close(fd);
+		(void)unlink(path);
+		errno = e;
+		return (-1);
+	}
+	close(fd);
+	return (0);
+}
+
+/* The CA key's file overwritten and taken away, and the rest of dir. */
+static void
+tmp_gone(struct work *w, const char *dir, const char *ca, int nkeys)
+{
+	struct stat	sb;
+	char		zero[4096];
+	int		fd, i;
+
+	if ((fd = open(ca, O_WRONLY | O_NOFOLLOW | O_CLOEXEC)) != -1) {
+		memset(zero, 0, sizeof(zero));
+		if (fstat(fd, &sb) == 0 && sb.st_size <= (off_t)sizeof(zero))
+			(void)write(fd, zero, (size_t)sb.st_size);
+		(void)fsync(fd);
+		close(fd);
+	}
+	(void)unlink(ca);
+	for (i = 0; i < nkeys; i++) {
+		(void)unlink(wfmt(w, "%s/k%d.pub", dir, i));
+		(void)unlink(wfmt(w, "%s/k%d-cert.pub", dir, i));
+	}
+	(void)rmdir(dir);
+}
+
 /*
  * Each host key signed by the CA key given, its certificate beside it,
- * and sshd told of each (HostCertificate).  The key is in /etc/ssh only
- * while ssh-keygen reads it.
+ * and sshd told of each (HostCertificate).  The signing is the host's,
+ * in a directory of /tmp only root reads: the CA's key is there only
+ * while ssh-keygen reads it, and never in a jail, whose root could
+ * read it there; of a jail, only its public host keys come out, and
+ * only their certificates go in.
  */
 static int
 sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
@@ -1104,26 +1176,35 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	ucl_object_t		*set;
 	const ucl_object_t	*v;
 	ucl_object_iter_t	 it;
-	const char		*why, *prog, *caf, *ca, *id, *p, *pr;
-	char			*argv[16], *text, host[MAXHOSTNAMELEN];
+	const char		*why, *prog, *ca, *id, *p, *pr, *pub, *cert;
+	char			*argv[16], *text, host[MAXHOSTNAMELEN],
+				 dir[MAXPATHLEN];
 	size_t			 i, len;
-	int			 n, rc, signed_;
+	int			 n, rc, signed_, k;
 
 	if ((prog = tool(w, "ssh-keygen")) == NULL) {
 		*errp = "there is no ssh-keygen here";
 		return (-1);
 	}
-	ca = wfmt(w, ".arcana-ca.%08x", arc4random());
-	caf = at(w, wfmt(w, "%s/%s", SSH_DIR, ca));
+	snprintf(dir, sizeof(dir), "%s/tmp", opts.tools_dir != NULL ?
+	    opts.tools_dir : "");
+	(void)mkdir(dir, 0755);
+	strlcat(dir, "/.arcana-sign.XXXXXXXX", sizeof(dir));
+	if (mkdtemp(dir) == NULL) {
+		*errp = wfmt(w, "%s: %s", dir, strerror(errno));
+		return (-1);
+	}
+	ca = wfmt(w, "%s/ca", dir);
 	len = strlen(sp->text);
 	text = wfmt(w, "%s%s", sp->text, len > 0 && sp->text[len - 1] != '\n' ?
 	    "\n" : "");
-	if (scope_replace(w, caf, text, strlen(text), 0600, NULL) != 0) {
-		explicit_bzero(text, strlen(text));
-		*errp = wfmt(w, "%s: %s", SSH_DIR, strerror(errno));
+	rc = put_tmp(ca, text, strlen(text));
+	explicit_bzero(text, strlen(text));
+	if (rc != 0) {
+		*errp = wfmt(w, "%s: %s", ca, strerror(errno));
+		(void)rmdir(dir);
 		return (-1);
 	}
-	explicit_bzero(text, strlen(text));
 	if (w->jail != NULL)
 		id = w->jail;
 	else {
@@ -1135,19 +1216,28 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		pr = pr == NULL ? sp->names.v[i] : wfmt(w, "%s,%s", pr,
 		    sp->names.v[i]);
 	set = settings(w, &why);
-	signed_ = 0;
+	signed_ = k = 0;
 	rc = 0;
 	it = NULL;
 	while (rc == 0 && (v = ucl_object_iterate(ucl_object_lookup(set,
 	    "hostkey"), &it, true)) != NULL) {
 		p = ucl_object_tostring(v);
-		if (scope_slurp(w, at(w, wfmt(w, "%s.pub", p)), NULL) == NULL)
+		if ((text = scope_slurp(w, at(w, wfmt(w, "%s.pub", p)), &len)) ==
+		    NULL)
 			continue;
+		pub = wfmt(w, "%s/k%d.pub", dir, k);
+		cert = wfmt(w, "%s/k%d-cert.pub", dir, k);
+		k++;
+		if (put_tmp(pub, text, len) != 0) {
+			*errp = wfmt(w, "%s: %s", pub, strerror(errno));
+			rc = -1;
+			break;
+		}
 		n = 0;
 		argv[n++] = (char *)(uintptr_t)prog;
 		argv[n++] = (char *)(uintptr_t)"-q";
 		argv[n++] = (char *)(uintptr_t)"-s";
-		argv[n++] = (char *)(uintptr_t)caf;
+		argv[n++] = (char *)(uintptr_t)ca;
 		argv[n++] = (char *)(uintptr_t)"-I";
 		argv[n++] = (char *)(uintptr_t)wfmt(w, "arcana:%s", id);
 		argv[n++] = (char *)(uintptr_t)"-h";
@@ -1157,17 +1247,26 @@ sign(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		}
 		argv[n++] = (char *)(uintptr_t)"-V";
 		argv[n++] = (char *)(uintptr_t)"+52w";
-		argv[n++] = (char *)(uintptr_t)at(w, wfmt(w, "%s.pub", p));
+		argv[n++] = (char *)(uintptr_t)pub;
 		argv[n] = NULL;
-		if (run_exec(w, scope_jexec(w, argv), &res) != 0) {
+		/* The host's ssh-keygen: run_exec puts it in no jail. */
+		if (run_exec(w, argv, &res) != 0) {
 			*errp = res.errlen > 0 ? wfmt(w, "ssh-keygen: %s",
 			    wstrndup(w, res.err, strcspn(res.err, "\r\n"))) :
 			    wtext(w, exec_error(w, &res, "ssh-keygen"));
 			rc = -1;
-		} else
-			signed_++;
+			break;
+		}
+		if ((text = slurp_host(w, cert, &len)) == NULL ||
+		    scope_replace(w, at(w, wfmt(w, "%s-cert.pub", p)), text,
+		    len, 0644, NULL) != 0) {
+			*errp = wfmt(w, "%s-cert.pub: %s", p, strerror(errno));
+			rc = -1;
+			break;
+		}
+		signed_++;
 	}
-	(void)scope_rename(w, caf, ca, NULL);
+	tmp_gone(w, dir, ca, k);
 	if (rc != 0) {
 		ucl_object_unref(set);
 		return (-1);

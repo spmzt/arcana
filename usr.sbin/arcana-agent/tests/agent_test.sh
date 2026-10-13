@@ -4987,6 +4987,7 @@ EOT
 	atf_check -o match:'^HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub$' \
 	    cat $R/etc/ssh/sshd_config
 	ls -a $R/etc/ssh | grep -q arcana-ca && atf_fail "the CA key was left"
+	test -z "$(ls -A tools/tmp 2>/dev/null)" || atf_fail "the signing left $(ls -A tools/tmp)"
 	atf_check -o save:list -o match:'"principals":\["lab.example"\]' \
 	    -o match:'"kind":"host"' -o match:'"certificate_used":true' \
 	    "$JGC" -c "$SOCK" sshd
