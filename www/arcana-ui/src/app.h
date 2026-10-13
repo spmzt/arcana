@@ -288,6 +288,11 @@ struct op {
 	int		 what;		/* JOB_*: what to refresh when done */
 	char		*again;		/* a job as it was sent, to send again */
 	char		 target[256];	/* the jail or service */
+	/* What it asked, and where it is while it waits (graph.c). */
+	char		 method[8];
+	char		 url[200];
+	char		 stage[64];	/* a job's state on its host */
+	bool		 await;	/* the next request made is its */
 };
 
 enum {

@@ -40,6 +40,7 @@ static bool	has_exec(const ucl_object_t *);
 static void	step_details(struct html *, const ucl_object_t *);
 static void	raw(struct html *, const struct op *);
 static void	lines(struct html *, const char *, const char *, int);
+static void	pending(struct html *, const struct op *);
 
 /* Depth-first: a leaf takes the next row, a parent its first child's. */
 static void
@@ -200,6 +201,90 @@ raw(struct html *h, const struct op *o)
 	h_raw(h, "</div></div>");
 }
 
+/* One node of a graph drawn here, not from a trace. */
+static void
+pnode(struct html *h, int col, const char *kind, bool done,
+    const char *label, const char *detail, const char *right)
+{
+
+	h_fmt(h, "<div class=\"node k-%s st-%s\" style=\"left:%dpx;top:%dpx"
+	    "\"", kind, done ? "ok" : "incomplete", PAD + col * (NODE_W +
+	    GAP_X), PAD);
+	h_attr(h, "title", label);
+	h_fmt(h, "><div class=\"nh\"><span class=\"kind\">%s</span>"
+	    "<span class=\"dur\">", kind);
+	h_txt(h, right);
+	h_raw(h, "</span></div><div class=\"nl\">");
+	h_txt(h, label);
+	h_raw(h, "</div><div class=\"nd\">");
+	h_txt(h, detail);
+	h_raw(h, "</div></div>");
+}
+
+/*
+ * A task with no trace yet: what it asked, and where it is, from what
+ * the page knows.  The request, then the console asking the host, then,
+ * for a job, the job on the host in the state it last said; the stage
+ * it waits at is drawn as one still running.
+ */
+static void
+pending(struct html *h, const struct op *o)
+{
+	ucl_object_t	*j = NULL;
+	char		 req[240], what[160], ask[96], dur[32];
+	int		 cols, w, i, x, y;
+	bool		 sent, onhost;
+
+	snprintf(req, sizeof(req), "%s %s", o->method[0] != '\0' ?
+	    o->method : "request", o->url[0] != '\0' ? o->url :
+	    "to the console");
+	/* What a job asks: its kind and what it is for. */
+	what[0] = '\0';
+	if (o->again != NULL && (j = json_parse(o->again)) != NULL) {
+		snprintf(what, sizeof(what), "%s%s%s%s%s", jstr(j, "kind") !=
+		    NULL ? jstr(j, "kind") : "", jstr(j, "jail") != NULL ?
+		    " in " : "", jstr(j, "jail") != NULL ? jstr(j, "jail") :
+		    "", jstr(j, "name") != NULL ? " · " : "", jstr(j, "name")
+		    != NULL ? jstr(j, "name") : "");
+		ucl_object_unref(j);
+	}
+	if (what[0] == '\0')
+		snprintf(what, sizeof(what), "%s", o->title);
+	sent = o->job > 0;
+	onhost = sent && o->stage[0] != '\0' && strcmp(o->stage,
+	    "accepted") != 0;
+	cols = sent ? 3 : 2;
+	w = PAD * 2 + cols * (NODE_W + GAP_X) - GAP_X;
+	fmt_dur(dur, sizeof(dur), (int64_t)((arc_now() - o->started) * 1000));
+	h_fmt(h, "<div class=\"graph-scroll\"><div class=\"graph pending-"
+	    "graph\" style=\"width:%dpx;height:%dpx\"><svg class=\"edges\" "
+	    "width=\"%d\" height=\"%d\" aria-hidden=\"true\">", w, PAD * 2 +
+	    NODE_H, w, PAD * 2 + NODE_H);
+	for (i = 1; i < cols; i++) {
+		x = PAD + i * (NODE_W + GAP_X);
+		y = PAD + NODE_H / 2;
+		h_fmt(h, "<path class=\"e-%s\" d=\"M%d %d L%d %d\"/>",
+		    i == 1 ? (sent ? "ok" : "incomplete") : onhost ? "ok" :
+		    "incomplete", x - GAP_X, y, x, y);
+	}
+	h_raw(h, "</svg>");
+	pnode(h, 0, "api", sent, req, what, sent ? "sent" : dur);
+	snprintf(ask, sizeof(ask), "the console asks %s", o->server);
+	if (!sent)
+		pnode(h, 1, "lib", false, ask, "waiting for the answer…", dur);
+	else {
+		char job[48];
+
+		snprintf(job, sizeof(job), "job #%lld", o->job);
+		pnode(h, 1, "lib", true, ask, job, "accepted");
+		pnode(h, 2, "daemon", false, o->waiting ? "the host does not "
+		    "answer" : o->stage[0] == '\0' || !onhost ? "waiting to "
+		    "begin…" : o->stage, o->waiting ? "the job runs on; read "
+		    "again soon" : job, dur);
+	}
+	h_raw(h, "</div></div>");
+}
+
 /*
  * The trace pane for o; with o NULL, the raw output of app.raw_op for
  * the modal.
@@ -249,14 +334,11 @@ view_trace(struct html *h, const struct op *o)
 	}
 
 	if (o->trace == NULL) {
-		h_raw(h, o->state == OP_RUNNING ? "<div class=\"graph "
-		    "pending\"><div class=\"node k-api ghostnode\" "
-		    "style=\"left:12px;top:12px\"><div class=\"nl\">"
-		    "request</div></div><div class=\"node k-lib ghostnode\" "
-		    "style=\"left:284px;top:12px\"><div class=\"nl\">"
-		    "waiting for the host…</div></div></div>" :
-		    "<p class=\"dim\">No trace: the request did not get an "
-		    "answer.</p>");
+		if (o->state == OP_RUNNING)
+			pending(h, o);
+		else
+			h_raw(h, "<p class=\"dim\">No trace: the request did not "
+			    "get an answer.</p>");
 		h_raw(h, "</div>");
 		return;
 	}

@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.171.0"
+#define	ARCW_VERSION		"0.172.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -109,6 +109,7 @@ int		 store_save(const char *, const ucl_object_t *);
 
 /* api.c: HTTP plumbing shared by the handlers. */
 int		 reply_json(struct http_request *, int, ucl_object_t *);
+int		 api_not_found(struct http_request *);
 int		 reply_error(struct http_request *, int, const char *,
 		    const char *, ...) __printflike(4, 5);
 ucl_object_t	*read_json(struct http_request *);

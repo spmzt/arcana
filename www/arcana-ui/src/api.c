@@ -73,6 +73,16 @@ api(const char *method, const char *url, const char *body, api_cb *cb,
 	p->cb = cb;
 	p->arg = arg;
 	id = p->id;
+	/*
+	 * A task is made just before the request that does it: the first
+	 * request after is its, said in its graph while it waits.
+	 */
+	if (app.nops > 0 && app.ops[0].await) {
+		snprintf(app.ops[0].method, sizeof(app.ops[0].method), "%s",
+		    method);
+		snprintf(app.ops[0].url, sizeof(app.ops[0].url), "%s", url);
+		app.ops[0].await = false;
+	}
 	arc_http(id, method, url, body);
 	return (id);
 }
