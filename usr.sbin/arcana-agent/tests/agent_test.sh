@@ -3719,6 +3719,20 @@ observe_body()
 	sleep 4
 	atf_check -o save:h2.json "$JGC" -c "$SOCK" history
 	atf_check -o inline:'2\n' sh -c "grep -o '\[[0-9][0-9,.]*\]' h2.json | wc -l | tr -d ' '"
+	# The kernel's messages, refused to one not root, say what lets it.
+	if [ "$(id -u)" != 0 ] && [ "$(sysctl -n security.bsd.unprivileged_read_msgbuf)" = 0 ]; then
+		atf_check -s exit:1 -e match:'unprivileged_read_msgbuf=1' -o ignore \
+		    "$JGC" -c "$SOCK" log @dmesg
+	fi
+	# All there: the older are thinned, not dropped; the newest half
+	# keeps every look, the oldest are further apart.
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 8
+	sleep 14
+	atf_check -o save:h3.json "$JGC" -c "$SOCK" history
+	grep -o '\[[0-9][0-9]*,' h3.json | tr -d '[,' > t3
+	atf_check -o inline:'8\n' sh -c "wc -l < t3 | tr -d ' '"
+	atf_check -o inline:'ok\n' awk 'NR > 1 { g[NR - 1] = $1 - p } { p = $1 }
+	    END { print (g[1] >= 2 && g[7] <= 2 && g[1] > g[7]) ? "ok" : "gaps " g[1] " " g[7] }' t3
 	atf_check -o match:'"step":60,"keep":0,"bytes":0,' -o match:'"samples":\[\]' \
 	    "$JGC" -c "$SOCK" history set 60 0
 	sleep 2

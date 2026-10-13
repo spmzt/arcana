@@ -21,7 +21,8 @@
  * its limit, either way.
  *
  * How often it looks and how many looks it keeps is set by whoever
- * manages the host, and kept in a file for the next start; with none
+ * manages the host, and kept in a file for the next start; when they
+ * are all there, the older are thinned rather than dropped (thin()); with none
  * kept nothing is sampled and no memory is held.  A sample is a time
  * and a row of floats, as wide as there are interfaces and disks, so
  * what is held is known: it is said with the samples.
@@ -73,6 +74,7 @@ struct dev {
 };
 
 static void	thresholds(const float *);
+static void	thin(void);
 static void	rules_check(const float *);
 
 /* A limit of one device or jail: an event when it is crossed. */
@@ -371,12 +373,8 @@ look(void)
 			freeifaddrs(ifa0);
 		return;
 	}
-	if (nrows == hist_keep) {
-		memmove(times, times + 1, (nrows - 1) * sizeof(*times));
-		memmove(rows, rows + width, (nrows - 1) * width *
-		    sizeof(*rows));
-		nrows--;
-	}
+	if (nrows == hist_keep)
+		thin();
 	row = rows + nrows * width;
 	memset(row, 0, width * sizeof(*row));
 	total = idle = 0;
@@ -447,6 +445,56 @@ look(void)
 	pthread_mutex_unlock(&hist_lock);
 	if (ifa0 != NULL)
 		freeifaddrs(ifa0);
+}
+
+/*
+ * Room for one more, the older thinned rather than dropped.  A look
+ * stands for the time since the one before it; of the older half, the
+ * two closest together after the oldest become one, at the later's
+ * time, each figure the mean of theirs weighed by the time each stood
+ * for.  The newer half keeps every look, the older are fewer and
+ * further apart the older they are, and the same rows reach further
+ * back: until they are HIST_THIN steps apart, when the oldest goes.
+ */
+#define	HIST_THIN	64
+
+static void
+thin(void)
+{
+	float	*a, *b;
+	double	 gap, best_gap, wa, wb;
+	size_t	 half, i, best, c;
+
+	half = nrows / 2;
+	best = SIZE_MAX;
+	best_gap = 0;
+	for (i = 1; i + 1 < half; i++) {
+		gap = times[i + 1] - times[i];
+		if (best == SIZE_MAX || gap < best_gap) {
+			best = i;
+			best_gap = gap;
+		}
+	}
+	if (best == SIZE_MAX || best_gap >= (double)HIST_THIN * hist_step) {
+		/* Too few to thin, or thin enough: the oldest goes. */
+		memmove(times, times + 1, (nrows - 1) * sizeof(*times));
+		memmove(rows, rows + width, (nrows - 1) * width *
+		    sizeof(*rows));
+		nrows--;
+		return;
+	}
+	wa = times[best] - times[best - 1];
+	wb = best_gap;
+	if (wa <= 0 || wb <= 0)
+		wa = wb = 1;
+	a = rows + best * width;
+	b = a + width;
+	for (c = 0; c < width; c++)
+		b[c] = (float)((a[c] * wa + b[c] * wb) / (wa + wb));
+	memmove(times + best, times + best + 1, (nrows - best - 1) *
+	    sizeof(*times));
+	memmove(a, b, (nrows - best - 1) * width * sizeof(*rows));
+	nrows--;
 }
 
 /* The column of a device or a jail by its name, or -1. */

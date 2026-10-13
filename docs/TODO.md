@@ -426,6 +426,8 @@
 - Gula, further: older samples thinned instead of dropped; dmesg for
   an agent that is not root, which the kernel refuses unless
   security.bsd.unprivileged_read_msgbuf is on.
+  (Done 2026-10-13: the older half thinned, the oldest kept until the
+  older half is 64 looks apart; a refused dmesg says what lets it.)
 - The mesh: agents joined by SCTP associations, each to at least a
   configured number of others (2 unless set), so that the console
   reaches an agent it has lost through one it still has. SCTP only,
