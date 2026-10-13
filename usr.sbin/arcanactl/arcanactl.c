@@ -195,6 +195,7 @@ usage(void)
 	    "        untrust file | rehash\n"
 	    "    capture [source packets seconds [filter ...]]\n"
 	    "    zfskey [-n] dataset\n"
+	    "    tls [status] | csr | install certfile|- [cafile]\n"
 	    "    sshd [list] | banner file | set Setting [value ...] |\n"
 	    "        authorize user keyfile | unauthorize user fingerprint |\n"
 	    "        sign ca-key-file [principal ...] | user-cas file\n"
@@ -2181,6 +2182,44 @@ cmd_zfskey(struct arc_client *cl, int argc, char **argv)
 }
 
 /*
+ * tls [status] | csr | install certfile|- [cafile]: the agent's own TLS
+ * files: what they are, a new key and a request for it (the key stays
+ * there), and a certificate for that key with the CAs to trust, or the
+ * CAs alone.  Over TLS, -C is the certificate the agent checks it still
+ * trusts afterwards.
+ */
+static int
+cmd_tls(struct arc_client *cl, int argc, char **argv, const char *mine)
+{
+	struct arc_tls_req	 rq;
+	struct arc_tls_rsp	*rs;
+	int			 error;
+
+	memset(&rq, 0, sizeof(rq));
+	if (argc == 1 || (argc == 2 && strcmp(argv[1], "status") == 0))
+		rq.tls_verb = "status";
+	else if (argc == 2 && strcmp(argv[1], "csr") == 0)
+		rq.tls_verb = "csr";
+	else if ((argc == 3 || argc == 4) && strcmp(argv[1], "install") == 0) {
+		rq.tls_verb = "install";
+		rq.tls_cert = strcmp(argv[2], "-") == 0 ? NULL : slurp(argv[2]);
+		rq.tls_ca = argc == 4 ? slurp(argv[3]) : NULL;
+		rq.tls_peer = mine != NULL ? slurp(mine) : NULL;
+	} else
+		usage();
+	if ((error = arc_tls(cl, &rq, &rs)) != 0)
+		fail(cl, error, "tls");
+	if (rs->json != NULL)
+		xo_emit("{:json/%s}\n", rs->json);
+	else if (rs->error != NULL)
+		warnx("%s", rs->error);
+	emit_trace(rs->trace.v, rs->trace.n);
+	error = rs->ok ? 0 : 1;
+	arc_tls_rsp_free(rs);
+	return (error);
+}
+
+/*
  * capture [source packets seconds [filter ...]]: packets taken with
  * tcpdump off an interface or a tap, of the host or of -j's jail; with
  * nothing, the sources there are.
@@ -3807,6 +3846,8 @@ main(int argc, char *argv[])
 		rc = cmd_sshd(&cl, argc, argv);
 	else if (strcmp(argv[0], "capture") == 0)
 		rc = cmd_capture(&cl, argc, argv);
+	else if (strcmp(argv[0], "tls") == 0)
+		rc = cmd_tls(&cl, argc, argv, certfile);
 	else if (strcmp(argv[0], "zfskey") == 0)
 		rc = cmd_zfskey(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)

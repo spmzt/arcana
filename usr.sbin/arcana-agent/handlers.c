@@ -318,6 +318,7 @@ worker(void *arg)
 	struct arc_capture_req	 capq;
 	struct arc_capture_rsp	 capr;
 	struct arc_zfs_key_rsp	 zkr;
+	struct arc_tls_rsp	 tlr;
 	struct arc_transport_rsp tpr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
@@ -670,6 +671,41 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &zkr.trace.v, &zkr.trace.n);
 		rc = arc_zfs_key_reply(j->req, &zkr);
+		break;
+	case ARC_CMD_TLS:
+		/* The verb in sha256, the PEMs in source, ref and host_keys. */
+		what = wfmt(&w, "tls %s", j->sha256);
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&tlr, 0, sizeof(tlr));
+		{
+			const cbl_peer	*pe;
+			uint8_t		 fp[64];
+			size_t		 fplen;
+			bool		 have;
+
+			fplen = sizeof(fp);
+			pe = cbl_req_peer(j->req);
+			have = pe != NULL && (cbl_peer_flags(pe) &
+			    CBL_PEER_AUTHENTICATED) != 0 &&
+			    cbl_peer_fingerprint(pe, "sha256", fp, &fplen) == 0 &&
+			    fplen == 32;
+			pthread_mutex_lock(&change_lock);
+			if (strcmp(j->sha256, "status") == 0 || change_note("%s",
+			    what))
+				do_tls(&w, j->sha256, j->source, j->ref, j->host_keys,
+				    have ? fp : NULL, &tlr);
+			else
+				tlr.error = STOPPING;
+			if (strcmp(j->sha256, "status") != 0)
+				change_note(NULL);
+			pthread_mutex_unlock(&change_lock);
+		}
+		ok = tlr.ok;
+		error = tlr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &tlr.trace.v, &tlr.trace.n);
+		rc = arc_tls_reply(j->req, &tlr);
 		break;
 	case ARC_CMD_CAPTURE:
 		what = wfmt(&w, "capture %s%s%s", j->ref != NULL ? j->ref :
@@ -1999,6 +2035,22 @@ arc_zfs_key_doit(cbl_req *req, const struct arc_zfs_key_req *rq,
 	j->sha256 = xstrdup(rq->zfs_dataset);
 	j->source = rq->zfs_key != NULL ? xstrdup(rq->zfs_key) : NULL;
 	j->ref = rq->zfs_new_key != NULL ? xstrdup(rq->zfs_new_key) : NULL;
+	return (start(j));
+}
+
+int
+arc_tls_doit(cbl_req *req, const struct arc_tls_req *rq, void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_TLS;
+	j->sha256 = xstrdup(rq->tls_verb);
+	j->source = rq->tls_cert != NULL ? xstrdup(rq->tls_cert) : NULL;
+	j->ref = rq->tls_ca != NULL ? xstrdup(rq->tls_ca) : NULL;
+	j->host_keys = rq->tls_peer != NULL ? xstrdup(rq->tls_peer) : NULL;
 	return (start(j));
 }
 

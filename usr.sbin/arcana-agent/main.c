@@ -568,6 +568,7 @@ main(int argc, char *argv[])
 		    cbl_tls_set_ca(tls, cafile, NULL) != 0)
 			errx(1, "TLS: %s", tls != NULL ? cbl_tls_errstr(tls) :
 			    "cbl_tls_new failed");
+		tls_files_init(tls, cafile, certfile, keyfile);
 	}
 
 	/*
