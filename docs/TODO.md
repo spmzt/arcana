@@ -487,18 +487,21 @@ Written and tested with stand-ins, never run for real:
 - A vnet jail's network. Run for real, against the jail `gateway` of
   one host: its interfaces, routes, route lookup and BIRD read; an
   address added and removed; an interface brought up; a new epair
-  given, taken back and destroyed. Not run for real: `vnet.interface`
-  kept in `jail.conf`, and the map with a real jail as a node (the
-  browser test tells the page that a jail runs).
+  given, taken back and destroyed. Not run for real: the map with a
+  real jail as a node (the browser test tells the page that a jail
+  runs).
 - A jail's share of the CPUs and its memory from rctl_get_racct(2):
   the test VM's kernel has kern.racct.enable off, and turning it on
   needs a reboot; what is read when it is off was run for real.
 - The switch to SCTP from the page, and SCTP between two machines:
   the API was run for real, between a console and an agent on one
   machine.
-- What is done when BIRD stops answering, against a real BIRD: the
-  tests use a stand-in that dies or refuses on demand (BIRD's safe
-  mode itself was run for real, below).
+- For the user to say (2026-10-13): BIRD that stops answering while a
+  safe change waits (run for real: birdc down) leaves the unconfirmed
+  file in place, as bird.c says it should ("one that died is not
+  undone after"), so BIRD's next start reads a change nobody
+  confirmed.  Safe mode's word is that an unconfirmed change is taken
+  back: put the file back there too?
 - Firefox: the console is tested in headless Chromium only.
 - The install offer on a real phone: Chrome's prompt on Android, the
   wording for Safari on iOS and for Firefox.
@@ -518,6 +521,15 @@ Written and tested with stand-ins, never run for real:
 
 What was once in the list above, and when it was run:
 
+- An interface given to a jail and kept (2026-10-13, a lab jail of a
+  jail.conf of its own): vnet.interface = "epair2b" written into the
+  jail's block, read back by jail(8), and taken out when the interface
+  was taken back.
+- BIRD not answering, against BIRD 3.3.2 (2026-10-13, a vnet jail):
+  the read says so in birdc's words; a configuration written is put in
+  place once it parses, and said to be read when BIRD is started; one
+  in safe mode when BIRD stops answering is left in place (see the
+  question above).
 - A jail's own rc.conf and safe mode in a jail, for real (2026-10-13,
   a vnet jail): an address kept as ifconfig_lo0_alias0 in the jail's
   rc.conf by sysrc -R and taken out again; an address added in safe
