@@ -736,6 +736,7 @@ void		 view_sysctl(struct html *, struct server *);
 bool		 sysctl_form(const char *, const ucl_object_t *);
 bool		 sysctl_action(const char *, const char *, const char *);
 void		 view_safe(struct html *, struct server *);
+void		 view_tlscert(struct html *, struct server *);
 void		 servers_cb(int, const ucl_object_t *, const char *, void *);
 struct plugin_pkg {
 	const char	*plugin, *title, *program, *package;

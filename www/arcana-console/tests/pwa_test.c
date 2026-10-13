@@ -155,7 +155,9 @@ js_true(const char *expr)
 	char		 script[2048];
 	bool		 t;
 
-	snprintf(script, sizeof(script), "return !!(%s);", expr);
+	/* What is not there yet throws: that is false, not an error. */
+	snprintf(script, sizeof(script), "try { return !!(%s); } catch (e) "
+	    "{ return false; }", expr);
 	v = js(script);
 	t = v != NULL && ucl_object_toboolean(v);
 	if (v != NULL)
@@ -3893,6 +3895,10 @@ part_firewall(void)
 	    "li.up').length === 1 && document.querySelector('.transport "
 	    "ul.listeners li.up .chip')"));
 	shot("1e-transport");
+	/* Its certificate: a local socket has none, and says so. */
+	wait_js("document.querySelector('section.tlscert') && document."
+	    "querySelector('section.tlscert').textContent.includes('local "
+	    "socket only')", 20);
 
 	/*
 	 * The host's rollback timer, beside it: saved, said, and the

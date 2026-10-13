@@ -72,6 +72,7 @@ enum op {
 	OP_SSH,
 	OP_CAPTURE,
 	OP_ZFS_KEY,
+	OP_TLS,
 	OP_STORAGE,
 	OP_FSTAB,
 	OP_IPFW_RULES,
@@ -109,6 +110,7 @@ struct call {
 	bool			 dry_run;	/* pkg-upgrade */
 	bool			 from_rc;	/* ipfw-rules: the file rc.conf names */
 	bool			 anyos;		/* pkg-upgrade: IGNORE_OSVERSION */
+	bool			 renew;		/* tls: a new certificate */
 	bool			 installed;	/* packages: those installed */
 	uint8_t			 pkg_ip;	/* packages: pkg -4, -6, or 0 */
 	char			**names;	/* pkg-upgrade: packages */
@@ -134,6 +136,67 @@ struct call {
 	char			*json;		/* the reply, from the thread */
 	int			 status;
 };
+
+/* An agent's JSON, parsed; NULL when it is not. */
+static ucl_object_t *
+parse_json(const char *json)
+{
+	struct ucl_parser	*p;
+	ucl_object_t		*o;
+
+	if (json == NULL)
+		return (NULL);
+	o = NULL;
+	p = ucl_parser_new(UCL_PARSER_NO_IMPLICIT_ARRAYS |
+	    UCL_PARSER_DISABLE_MACRO | UCL_PARSER_NO_TIME);
+	if (ucl_parser_add_string(p, json, 0))
+		o = ucl_parser_get_object(p);
+	ucl_parser_free(p);
+	return (o);
+}
+
+/* A small file's text, malloc(3)ed; NULL when it cannot be read. */
+static char *
+file_text(const char *path)
+{
+	FILE	*fp;
+	char	*buf;
+	size_t	 n;
+
+	if (path == NULL || (fp = fopen(path, "r")) == NULL)
+		return (NULL);
+	if ((buf = calloc(1, 65537)) == NULL) {
+		fclose(fp);
+		return (NULL);
+	}
+	n = fread(buf, 1, 65536, fp);
+	fclose(fp);
+	if (n == 0 || n == 65536) {
+		free(buf);
+		return (NULL);
+	}
+	return (buf);
+}
+
+/* The host of tcp://host:port, sctp://[v6]:port: what it is reached by. */
+static const char *
+uri_host(const char *uri, char *buf, size_t len)
+{
+	const char	*h, *e;
+
+	h = strstr(uri, "://");
+	h = h != NULL ? h + 3 : uri;
+	if (*h == '[') {
+		h++;
+		e = strchr(h, ']');
+	} else
+		e = strrchr(h, ':');
+	if (e == NULL)
+		e = h + strlen(h);
+	snprintf(buf, len, "%.*s", (int)(e - h), h);
+	return (buf);
+}
+
 
 /*
  * The connections to the agents, kept open between requests: a request
@@ -1039,7 +1102,7 @@ trace_object(struct call *c, const struct arc_step *v, size_t n,
 	    c->op == OP_SERVICE_ACTION ? "arc_service_action" :
 	    c->op == OP_NETWORK ? "arc_network" : c->op == OP_STORAGE ?
 	    "arc_storage" : c->op == OP_FSTAB ? "arc_fstab" : c->op ==
-	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TRANSPORT ? "arc_transport" :
+	    OP_KERNEL ? "arc_kernel" : c->op == OP_JAIL_FILES ? "arc_jail_files" : c->op == OP_CERTS ? "arc_certs" : c->op == OP_SSH ? "arc_ssh" : c->op == OP_CAPTURE ? "arc_capture" : c->op == OP_ZFS_KEY ? "arc_zfs_key" : c->op == OP_TLS ? "arc_tls" : c->op == OP_TRANSPORT ? "arc_transport" :
 	    c->op == OP_IPFW_RULES ? "arc_ipfw_rules" :
 	    c->op == OP_PROCESSES ? "arc_processes" : c->op == OP_LOG ?
 	    "arc_log" : c->op == OP_HISTORY ? "arc_history" : c->op ==
@@ -1367,6 +1430,8 @@ call_run(struct kore_task *t)
 	struct arc_capture_rsp	*capr;
 	struct arc_zfs_key_req	 zkq;
 	struct arc_zfs_key_rsp	*zkr;
+	struct arc_tls_req	 tlq;
+	struct arc_tls_rsp	*tlr;
 	struct arc_transport_req tpq;
 	struct arc_transport_rsp *tpr;
 	struct arc_sysctl_req	 syq;
@@ -1476,6 +1541,7 @@ call_run(struct kore_task *t)
 	sshr = NULL;
 	capr = NULL;
 	zkr = NULL;
+	tlr = NULL;
 	tpr = NULL;
 	syr = NULL;
 	prr = NULL;
@@ -2290,6 +2356,55 @@ connected:
 		steps = cer->trace.v;
 		nsteps = cer->trace.n;
 		break;
+	case OP_TLS:
+		/*
+		 * Renewed: a key made on the host and a request for it, the
+		 * request signed here, the certificate sent back with the
+		 * console's own, which the host checks it still trusts.
+		 */
+		memset(&tlq, 0, sizeof(tlq));
+		tlq.tls_verb = c->renew ? "csr" : "status";
+		if ((error = arc_tls(&cl, &tlq, &tlr)) != 0)
+			goto rpcfail;
+		ok = tlr->ok;
+		if (ok && c->renew) {
+			char		 why[300], hostb[300], *pem, *mine;
+			const char	*req_pem;
+			ucl_object_t	*cj;
+
+			cj = parse_json(tlr->json);
+			req_pem = cj != NULL ? ucl_str(cj, "csr") : NULL;
+			pem = pki_sign_host(req_pem, uri_host(c->uri, hostb,
+			    sizeof(hostb)), why, sizeof(why));
+			if (cj != NULL)
+				ucl_object_unref(cj);
+			mine = pem != NULL ? file_text(cfg.tls_cert) : NULL;
+			arc_tls_rsp_free(tlr);
+			tlr = NULL;
+			if (pem == NULL || mine == NULL) {
+				ok = false;
+				put_str(top, "error", pem == NULL ? why :
+				    "cannot read the console's own certificate");
+				free(pem);
+				break;
+			}
+			memset(&tlq, 0, sizeof(tlq));
+			tlq.tls_verb = "install";
+			tlq.tls_cert = pem;
+			tlq.tls_peer = mine;
+			error = arc_tls(&cl, &tlq, &tlr);
+			free(pem);
+			free(mine);
+			if (error != 0)
+				goto rpcfail;
+			ok = tlr->ok;
+		}
+		put_str(top, "error", tlr->error);
+		if (tlr->json != NULL && (e = parse_json(tlr->json)) != NULL)
+			put(top, "data", e);
+		steps = tlr->trace.v;
+		nsteps = tlr->trace.n;
+		break;
 	case OP_ZFS_KEY:
 		memset(&zkq, 0, sizeof(zkq));
 		zkq.zfs_dataset = c->text;
@@ -2590,6 +2705,8 @@ done:
 		arc_capture_rsp_free(capr);
 	if (zkr != NULL)
 		arc_zfs_key_rsp_free(zkr);
+	if (tlr != NULL)
+		arc_tls_rsp_free(tlr);
 	if (tpr != NULL)
 		arc_transport_rsp_free(tpr);
 	if (syr != NULL)
@@ -2672,7 +2789,8 @@ call_new(struct http_request *req, enum op op)
 	if (!guard(req, op == OP_ACTION || op == OP_ADDRESS ||
 	    op == OP_SERVICE_ACTION || op == OP_PKG_UPGRADE ||
 	    op == OP_JOB_SUBMIT || op == OP_JOB_CANCEL || op == OP_CAPTURE ||
-	    op == OP_ZFS_KEY ||
+	    op == OP_ZFS_KEY || (op == OP_TLS && req->method ==
+	    HTTP_METHOD_POST) ||
 	    op == OP_AGENT_UPDATE || op == OP_AGENT_BUILD ||
 	    op == OP_CONSOLE_UPDATE ||
 	    ((op == OP_SERVICE_CONFIG || op == OP_TRANSPORT || op ==
@@ -3844,6 +3962,23 @@ api_zfs_key(struct http_request *req)
 		return (reply_error(req, 400, "invalid", "a dataset, and a key "
 		    "to load or a new one, 512 characters at most"));
 	}
+	return (call_start(req, c));
+}
+
+/*
+ * GET /api/servers/<id>/tls: the host's own certificate, its chain and
+ * the CAs it trusts; POST: renewed, from the console's CA.
+ */
+int
+api_tls(struct http_request *req)
+{
+	struct call	*c;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, OP_TLS)) == NULL)
+		return (KORE_RESULT_OK);
+	c->renew = req->method == HTTP_METHOD_POST;
 	return (call_start(req, c));
 }
 

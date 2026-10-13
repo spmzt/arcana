@@ -720,6 +720,33 @@ paths:
                   - type: object
                     properties:
                       data: { $ref: "#/components/schemas/KernelData" }
+  /api/servers/{server}/tls:
+    get:
+      tags: [servers]
+      summary: The host's own TLS certificate and the CAs it trusts
+      description: Under data. cert (subject, issuer, not_before,
+        not_after, sha256, and chain, the CAs sent after it), ca (each
+        CA the agent trusts, the same fields) and pending (a key waiting
+        for its certificate). A host reached by a local socket has none.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
+    post:
+      tags: [servers]
+      summary: The host's certificate renewed from the console's CA
+      description: The agent makes a new key, which never leaves the
+        host, and a request for it; the console signs it for the host it
+        reaches it by and sends it back with its own certificate; the
+        agent takes it only when that one is still trusted, keeps the
+        files before beside, and reads them again without a restart.
+        data is the status afterwards.
+      parameters:
+        - $ref: "#/components/parameters/server"
+      responses:
+        "200":
+          description: ok and data, or error
   /api/stream:
     get:
       tags: [servers]

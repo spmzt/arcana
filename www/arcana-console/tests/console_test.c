@@ -3428,7 +3428,7 @@ ATF_TC_BODY(mtls, tc)
 	resp_free(&r);
 }
 
-CONSOLE_TC(enrol, "The console's own CA, and a host joining with "
+CONSOLE_TC(enrol, "The console's own CA, a host's certificate renewed, and a host joining with "
     "arcana-enrol(8)")
 ATF_TC_BODY(enrol, tc)
 {
@@ -3568,6 +3568,44 @@ ATF_TC_BODY(enrol, tc)
 	ATF_CHECK_MSG(strstr(jstr(&r, "trace.2.detail"), "mutual TLS") != NULL,
 	    "%s", jstr(&r, "trace.2.detail"));
 	resp_free(&r);
+
+	/* Its certificate renewed from here: a key made there, signed
+	 * here, taken there, and the host reached with it. */
+	{
+		char	tpath[96], first[128];
+
+		snprintf(tpath, sizeof(tpath), "%.*s/tls", (int)(strlen(path) -
+		    6), path);
+		http("GET", tpath, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("CN=arcana CA", jstr(&r, "data.cert.issuer"));
+		snprintf(first, sizeof(first), "%s", jstr(&r,
+		    "data.cert.sha256") != NULL ? jstr(&r, "data.cert.sha256") :
+		    "");
+		resp_free(&r);
+		http("POST", tpath, "{}", &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_MSG(jstr(&r, "ok") != NULL && strcmp(jstr(&r, "ok"),
+		    "true") == 0, "%s", r.body);
+		ATF_CHECK(jstr(&r, "data.cert.sha256") != NULL && strcmp(jstr(&r,
+		    "data.cert.sha256"), first) != 0);
+		ATF_CHECK_STREQ("CN=127.0.0.1", jstr(&r, "data.cert.subject"));
+		resp_free(&r);
+		ATF_CHECK(access("host/host.pem.before", F_OK) == 0);
+		ATF_CHECK(access("host/host.key.next", F_OK) != 0);
+		i = 0;
+		argv[i++] = (char *)(uintptr_t)"/usr/bin/openssl";
+		argv[i++] = (char *)(uintptr_t)"verify";
+		argv[i++] = (char *)(uintptr_t)"-CAfile";
+		argv[i++] = (char *)(uintptr_t)"data/ca.pem";
+		argv[i++] = (char *)(uintptr_t)"host/host.pem";
+		argv[i] = NULL;
+		ATF_CHECK_MSG(run_prog(argv), "the renewed one does not verify");
+		http("GET", path, NULL, &r);
+		EXPECT(&r, 200);
+		ATF_CHECK_STREQ("10.0.0.10", jail_str(&r, "web", "ip4.0"));
+		resp_free(&r);
+	}
 }
 
 /* A service as MEF 70.2 says one, with two edges: @A and @B are them. */
