@@ -127,10 +127,11 @@
   pf. docs/PLAN-SDN-YANG.md's flow telemetry (5.6) waits on it or
   takes v9.
 - The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
-  under docs/notes/. Decided 2026-10-13: libyang for the generator
-  (D-3), STAMP for the probes (D-8), no compatibility with the v1
-  family or `/api` (D-9, D-10), BIRD for FlowSpec. Open: D-4 to D-7,
-  D-11, D-12.
+  under docs/notes/. Decided 2026-10-13: wire version 2 (D-1), cblink
+  2 south and RESTCONF on the console only (D-2), libyang for the
+  generator (D-3), L3NM where it and MEF 70.2 overlap (D-4), STAMP
+  for the probes (D-8), no compatibility with the v1 family or `/api`
+  (D-9, D-10), BIRD for FlowSpec. Open: D-5 to D-7, D-11, D-12.
 - To decide (the user's): whether the security policies move to MEF
   138's model (Security Function Policies each with Block, Allow and
   Quarantine lists, No-match, Duration; PDNS and DLP added), and which

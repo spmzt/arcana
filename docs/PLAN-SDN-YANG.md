@@ -93,8 +93,8 @@ RFC 8309's three models and RFC 8969's three tiers, placed:
 Each with the options, the trade-off and the recommendation. D-1 to
 D-3 gate Phase Y-1; the rest gate the phase named.
 
-**D-1 The wire.** Keep cblink's frame and carry YANG-CBOR in the
-body. The body becomes one YANG-CBOR map whose top-level keys are
+**D-1 The wire: decided 2026-10-13, version 2.** Keep cblink's frame
+and carry YANG-CBOR in the body. The body becomes one YANG-CBOR map whose top-level keys are
 absolute SIDs and whose framework items are YANG structures of a
 `cblink` module (wire version 2). The alternative, a wrapper map
 holding the YANG item under one positive key beside today's negative
@@ -105,7 +105,8 @@ is not kept. Tags 4 (decimal64) and 43–47 (union discriminators,
 absolute SID) are allowed; indefinite lengths stay forbidden, which
 RFC 9254 §3 lets a protocol do.
 
-**D-2 Replacing the protocol altogether.** cblink 2 as above, versus
+**D-2 Replacing the protocol altogether: decided 2026-10-13, cblink
+2 south, RESTCONF on the console only.** cblink 2 as above, versus
 NETCONF or RESTCONF on every agent (standard tooling reaches every
 host; but an HTTP or SSH server in the root daemon, a second auth
 layer, and nothing of cblink's streams and notifications), versus
@@ -131,7 +132,13 @@ either way: the SID tooling (libyang has none), the XPath-lite parser
 and evaluator for the runtime, and the YANG-CBOR encoder and decoder
 (no implementation exists in C anywhere).
 
-**D-4 The MEF 70.2 document.** (a) Keep it as the source of truth and
+**D-4 The MEF 70.2 document: decided 2026-10-13, L3NM wherever the
+two overlap.** RFC 9182 is what is stored and exchanged; MEF 70.2's
+terms are kept only for what L3NM has no node for (application flows,
+the policy map, performance criteria, breakout, security policies,
+the tunnel virtual connections), as Arcana augmentations of L3NM,
+and the MEF document survives as an import and export format. The
+options weighed: (a) Keep it as the source of truth and
 derive L3NM, SAP, VN and PM as read-only views: no migration, the
 book stands, but the IETF models are decorative and two schemas are
 maintained forever. (b) Make L3NM + SAP (+ the Arcana augmentations)
@@ -420,7 +427,31 @@ within XPath-lite, and uses identities for open sets.
   base64, `[null]` for empty, bits names, enum names, identityref
   `mod:name`, instance-identifier strings, union by canonical form,
   origin as `@` annotations). Subscriptions whose filter spans hosts
-  fan out and merge.
+  fan out and merge. RESTCONF never reaches a host itself: the path
+  of one request is
+
+  ```
+  PUT /restconf/data/arcana-fleet:hosts/host=web1/root/ietf-ip:...
+      /interface=em0/ipv4/address=192.0.2.1  {"prefix-length": 24}
+   console: session or token → NACM user; api-path → the host web1,
+            then the remainder parsed against web1's yang-library;
+            JSON → CBOR by web1's SID tables (RFC 7951 → 9254)
+   cblink 2 to web1 over mTLS (the ACP's ULA first, later):
+     EDIT {cblink:edit: [{operation: replace,
+                          target: [SID(ip:address), "em0", "192.0.2.1"],
+                          value: {Δprefix-length: 24}}]}  datastore running
+   agent:   NACM check; validate the resulting tree (types, when,
+            must, leafref); render rc.conf's ifconfig_em0 line;
+            SIOCAIFADDR; operational now shows the address with
+            origin intended; ack, or an error structure
+   console: 204 No Content, or the error-tag mapped to an HTTP
+            status per RFC 8040 §7 with ietf-restconf:errors
+  ```
+
+  The agent is the only process that touches the kernel and the
+  files; the console is the only one that speaks HTTP. A reading
+  (`GET`) runs the same way with a cblink dump, one instance per
+  frame, streamed back as JSON.
 - **NACM.** The console maps WebAuthn users and API tokens to NACM
   users and passes the identity per connection (one agent connection
   per console user) to a console the agent trusts by certificate;
@@ -583,7 +614,7 @@ says L.
   evidence for the telemetry choice.
 - **0.5 IANA.** D: request a SID mega-range (RFC 9595 §7); choose the
   provisional block.
-- **0.6 Decisions.** D-4 to D-7, D-11 and D-12 recorded with their
+- **0.6 Decisions.** D-5 to D-7, D-11 and D-12 recorded with their
   dates in this plan.
 
 ### Y-1 The generator and the wire (8 weeks)
