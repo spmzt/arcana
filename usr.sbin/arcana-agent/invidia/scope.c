@@ -125,6 +125,15 @@ scope_argv(struct work *w, char *const argv[])
 
 	if (w->jail == NULL)
 		return (argv);
+	/*
+	 * run_exec() scopes what it runs itself: one scoped already by its
+	 * caller is left as it is, not told the jail twice.
+	 */
+	if (argv[0] != NULL && argv[1] != NULL && ((strcmp(argv[1], "-j") ==
+	    0 && (argv[0] == opts.ifconfig_bin || argv[0] == opts.netstat_bin ||
+	    argv[0] == opts.ngctl_bin)) || (strcmp(argv[1], "-R") == 0 &&
+	    argv[0] == opts.sysrc_bin)))
+		return (argv);
 	for (n = 0; argv[n] != NULL; n++)
 		;
 	v = wcalloc(w, n + 4, sizeof(*v));

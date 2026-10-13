@@ -418,6 +418,11 @@
   no way to read it from userland (no sysctl as vxlan has, no dump
   through netlink); once it does, shown as a bridge's addresses are.
   A learned address of a bridge deleted, and a static one added.
+  (Done 2026-10-13: deladdr, static and flush, static kept in rc.conf;
+  verified in a vnet jail.  Found there: run_exec scopes what it runs,
+  so a caller that scoped ifconfig too gave it -j twice, and a bridge
+  in a jail could be neither read nor changed: scope_argv leaves what
+  is scoped already.)
 - Gula, further: older samples thinned instead of dropped; dmesg for
   an agent that is not root, which the kernel refuses unless
   security.bsd.unprivileged_read_msgbuf is on.

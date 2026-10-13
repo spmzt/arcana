@@ -76,6 +76,7 @@ bridge_more(struct html *h, const ucl_object_t *b, const char *name)
 	static const struct tcol cols[] = {
 		{ "Address", "mac", false }, { "VLAN", "vlan", true },
 		{ "Behind", "member", false }, { "Expires in", "expire", true },
+		{ "", NULL, false },
 	};
 	static const struct {
 		const char	*name, *label, *hint;
@@ -124,10 +125,37 @@ bridge_more(struct html *h, const ucl_object_t *b, const char *name)
 	h_fmt(h, "<span>Addresses learned</span><span class=\"chip dim\">%lld"
 	    "</span></h5>", (long long)jint(b, "learned_total", 0));
 	if (!box_shut(key)) {
+		/* One set by hand, behind a member: never learned elsewhere. */
+		h_raw(h, "<form data-form=\"br-static\" class=\"gn-set\"><input "
+		    "type=\"hidden\" name=\"bridge\"");
+		h_attr(h, "value", name);
+		h_raw(h, "><label>Address<input name=\"mac\" spellcheck=\"false\" "
+		    "autocomplete=\"off\" placeholder=\"00:11:22:33:44:55\">"
+		    "</label><label>Behind<select name=\"member\">");
+		{
+			const ucl_object_t	*m;
+			ucl_object_iter_t	 mit;
+
+			mit = NULL;
+			while ((m = ucl_object_iterate(jget(b, "members"), &mit,
+			    true)) != NULL) {
+				h_raw(h, "<option>");
+				h_txt(h, jstr(m, "name"));
+				h_raw(h, "</option>");
+			}
+		}
+		h_raw(h, "</select></label><label class=\"toggle\"><input type=\""
+		    "checkbox\" name=\"persist\"><span>keep in rc.conf</span>"
+		    "</label><button class=\"small\">Set it</button><button "
+		    "type=\"button\" class=\"ghost small\" data-act=\""
+		    "br-flush\"");
+		h_attr(h, "data-arg", name);
+		h_raw(h, " title=\"ifconfig flush: what it learned, not what "
+		    "was set\">Forget what it learned</button></form>");
 		h_raw(h, "<table class=\"net brmac\">");
-		tbl_head(h, key, cols, 4, 0);
+		tbl_head(h, key, cols, 5, 0);
 		h_raw(h, "<tbody>");
-		rows = tbl_rows(key, jget(b, "learned"), cols, 4, app.filter);
+		rows = tbl_rows(key, jget(b, "learned"), cols, 5, app.filter);
 		for (r = 0; (o = rows[r]) != NULL; r++) {
 			h_raw(h, "<tr><td class=\"mono\"><b>");
 			h_txt(h, jstr(o, "mac"));
@@ -144,10 +172,16 @@ bridge_more(struct html *h, const ucl_object_t *b, const char *name)
 			    "expire", 0));
 			h_raw(h, "</td><td class=\"dim\">");
 			h_txt(h, buf);
-			h_raw(h, "</td></tr>");
+			h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" "
+			    "data-act=\"br-deladdr\" title=\"Forgotten: learned "
+			    "again when a frame comes from it, unless it was set "
+			    "\"");
+			h_attr(h, "data-arg", name);
+			h_attr(h, "data-value", jstr(o, "mac"));
+			h_raw(h, ">×</button></td></tr>");
 		}
 		if (r == 0)
-			h_raw(h, "<tr><td colspan=\"4\" class=\"dim\">None "
+			h_raw(h, "<tr><td colspan=\"5\" class=\"dim\">None "
 			    "yet: a bridge learns an address when a frame "
 			    "comes from it.</td></tr>");
 		free(rows);
@@ -583,10 +617,27 @@ l2_form(const char *form, const ucl_object_t *f)
 	bool		 new;
 
 	if (strcmp(form, "br-port") != 0 && strcmp(form, "br-add") != 0 &&
-	    strcmp(form, "gn-set") != 0 && strcmp(form, "br-set") != 0)
+	    strcmp(form, "gn-set") != 0 && strcmp(form, "br-set") != 0 &&
+	    strcmp(form, "br-static") != 0)
 		return (false);
 	if ((s = cur_server()) == NULL)
 		return (true);
+	if (strcmp(form, "br-static") == 0) {
+		const char	*mac, *mem;
+
+		name = jstr(f, "bridge") != NULL ? jstr(f, "bridge") : "";
+		mac = jstr(f, "mac") != NULL ? jstr(f, "mac") : "";
+		mem = jstr(f, "member") != NULL ? jstr(f, "member") : "";
+		if (!word_ok(name, "._") || !word_ok(mem, "._") || strlen(mac) !=
+		    17 || !word_ok(mac, ":")) {
+			toast(true, "An address, 00:11:22:33:44:55, behind a "
+			    "member");
+			return (true);
+		}
+		snprintf(args, sizeof(args), "\"%s\",\"%s\"", mem, mac);
+		l2_job(s, "bridge", name, "static", args, jbool(f, "persist"));
+		return (true);
+	}
 	if (strcmp(form, "br-set") == 0) {
 		static const char *const bo[] = { "proto", "priority",
 		    "hellotime", "fwddelay", "maxage", "holdcnt", "maxaddr",
@@ -751,6 +802,13 @@ l2_action(const char *act, const char *arg, const char *value)
 			l2.geneve[0] = '\0';
 		else
 			snprintf(l2.geneve, sizeof(l2.geneve), "%s", arg);
+	} else if (strcmp(act, "br-deladdr") == 0 && word_ok(arg, "._") &&
+	    word_ok(value, ":")) {
+		/* Kept too: a static one goes from rc.conf with it. */
+		snprintf(args, sizeof(args), "\"%s\"", value);
+		l2_job(s, "bridge", arg, "deladdr", args, true);
+	} else if (strcmp(act, "br-flush") == 0 && word_ok(arg, "._")) {
+		l2_job(s, "bridge", arg, "flush", "", false);
 	} else if (strcmp(act, "gn-flush") == 0 && word_ok(arg, "")) {
 		l2_job(s, "geneve", arg, "flush", "\"all\"", false);
 	}
