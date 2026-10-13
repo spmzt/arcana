@@ -173,7 +173,16 @@
   written in YANG-CBOR as GET-SID will answer them (ietf-sid-file's
   own SIDs computed: IANA published no .sid file for its range); 1.5,
   YANG patterns as POSIX EREs in libcblink, \p{N} narrower than XSD's
-  and the rarer categories refused. As each operation is
+  and the rarer categories refused; 1.6, the emitter: C structs (-m h),
+  the schema tables with the identity closure, the features, the SID
+  table and each node's children found by delta, dense where their
+  SIDs follow one another (-m schema, cbl_schema.h), one YANG-CBOR
+  codec in libcblink with a builder and a parser for each struct, a
+  server's handler table (-m server), RFC 8340 tree diagrams equal to
+  yanglint's and Markdown (-m tree, md); the kv example in YANG
+  (cblink examples/kvy).  Arcana's corpus, 51 modules: 4312 nodes and
+  804 identities in the tables, 8406 round trips through YANG-CBOR all
+  the same bytes (cblink tools/yangwalk/tablecheck.sh). As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
