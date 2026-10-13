@@ -310,13 +310,13 @@
   - Mail notifications of faults, jobs and runs. (Done 2026-10-12:
     Settings, Notifications, By mail; one worker reads each host's
     events, the agent's job ends among them now, and the console's
-    host's sendmail(8) sends them, twenty an hour at most.)  Not
-    understood yet: with web.conf's mail_tick at 1 s in every test's
-    console, the page tests that wait on a safe job (lo0 add in
-    pwa_nettab, and four others) failed about one run in two, the job
-    left waiting to be confirmed; at the default 15 s, and with the
-    thread gone, they pass.  The thread then did nothing but wake.
-    Only the mail test sets 1 s now; worth finding why.
+    host's sendmail(8) sends them, twenty an hour at most.)  The page
+    tests that failed with mail_tick at 1 s (2026-10-13): the page
+    tests waited for a button and clicked it in two calls, and a page
+    drawn anew between them left the click on nothing (a safe job
+    never confirmed, the queue never run).  They wait and click in one
+    call now (click_when); with 1 s in every test's console the whole
+    suite passed twice.
   - The console's CA: one imported, or made and self-signed from the
     panel, given to each agent and trusted there; the console as a CA
     and as an intermediate CA under another.
@@ -375,8 +375,9 @@
     address or all; prefixes and ports in a mask still by ipfw's
     words.)
   - Flaky under the whole suite's load (2026-10-12): agent_test:observe
-    expects "samples":[] before the sampler's first look, and under
-    load the sampler is there first.  It passes alone.
+    expected "samples":[] after the last sample, and under load the
+    sampler looked again first.  (Done 2026-10-13: what comes after
+    the last is checked to be only newer.)
   - Every table exported as CSV. (Done 2026-10-12: ⤓ in every
     table's head, the rows as shown.)
   - Prefix lists kept by the console and used on any host.

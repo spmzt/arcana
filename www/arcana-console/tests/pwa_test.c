@@ -194,6 +194,20 @@ run(const char *script)
 		ucl_object_unref(v);
 }
 
+/*
+ * Waited for and clicked in one step: the page may be drawn anew between
+ * a wait and a click of their own, and the click then finds nothing.
+ */
+static void
+click_when(const char *sel, int seconds)
+{
+	char	expr[512];
+
+	snprintf(expr, sizeof(expr), "(b => b ? (b.click(), true) : false)("
+	    "document.querySelector(\"%s\"))", sel);
+	wait_js(expr, seconds);
+}
+
 static double
 js_num(const char *expr)
 {
@@ -465,8 +479,7 @@ prologue(const atf_tc_t *tc, int nservers)
 	wait_js("document.querySelector('.tree .titem.server.selected') && "
 	    "document.querySelector('.tiles .tile')", 20);
 	/* Its jails unfolded in the tree, as the cases find them. */
-	wait_js("document.querySelector('.tree button[data-act=fold]')", 20);
-	run("document.querySelector('.tree button[data-act=fold]').click()");
+	click_when(".tree button[data-act=fold]", 20);
 	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 4",
 	    5);
 	if (nservers == 1)
@@ -682,8 +695,7 @@ part_shell(void)
 
 	/* Log out, and in again with the key. */
 	run("document.querySelector('button[data-act=logout]').click()");
-	wait_js("document.querySelector('button[data-act=login]')", 10);
-	run("document.querySelector('button[data-act=login]').click()");
+	click_when("button[data-act=login]", 10);
 	wait_js("document.querySelector('.shell')", 20);
 
 	/* The shell works offline and says the data needs the network. */
@@ -737,8 +749,7 @@ part_hosts(void)
 	fprintf(fp, "cache {\n\tpath = \"/jails/cache\";\n\tip4.addr = "
 	    "10.0.0.30;\n}\n");
 	fclose(fp);
-	wait_js("document.querySelector('button[data-act=add-server]')", 10);
-	run("document.querySelector('button[data-act=add-server]').click()");
+	click_when("button[data-act=add-server]", 10);
 	wait_js("document.querySelector('form[data-form=add-server]')", 5);
 	snprintf(script, sizeof(script), "const f = document.querySelector("
 	    "'form[data-form=add-server]'); f.name.value = 'lab'; f.uri.value "
@@ -875,8 +886,7 @@ part_hosts(void)
 	    "location.hash.startsWith('#/hosts/')", 10);
 	run("document.querySelector('.tree .titem.fleet[data-act=select-fleet]')"
 	    ".click()");
-	wait_js("document.querySelector('.hosts .hostcard')", 10);
-	run("document.querySelector('.hosts .hostcard').click()");
+	click_when(".hosts .hostcard", 10);
 	wait_js("document.querySelector('.tree .titem.server.selected')", 5);
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
 	wait_js("document.querySelector('#j-web.s-stopped')", 20);
@@ -898,7 +908,7 @@ part_hosts(void)
 	run("document.querySelector('#j-web button[data-act=start]').click()");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	ATF_CHECK(js_true("document.querySelector('#j-web.s-stopped')"));
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	/* The dock opened with the queue, so the task is in its list, not
 	 * the strip along the header (that one shows while it is closed). */
 	wait_js("document.querySelector('.dock.open ol.ops .op.o-ok') && "
@@ -1052,8 +1062,7 @@ part_hosts(void)
 	    "package')", 5);
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^clean -ay$' pkg.log "
 	    "2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -1068,8 +1077,7 @@ part_hosts(void)
 	    "'letters, digits')", 5);
 	run("const f = document.querySelector('form[data-form=pkg-install]'); "
 	    "f.names.value = 'strongswan  wireguard-tools'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q 'install -y strongswan "
 	    "wireguard-tools$' pkg.log 2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -1094,8 +1102,7 @@ part_hosts(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("document.querySelector('form[data-form=confirm]') && "
 	    "document.querySelector('.modal').textContent.includes("
 	    "'Packages for a newer FreeBSD') && document.querySelector("
@@ -1103,8 +1110,7 @@ part_hosts(void)
 	shot("6b-osversion");
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^-6 -o IGNORE_OSVERSION=yes "
 	    "upgrade -y$' pkg.log 2>/dev/null && ! [ -s pending ]") != 0; i++)
 		usleep(100000);
@@ -1144,8 +1150,7 @@ part_hosts(void)
 	 * then taken away; the defaults written, the file before kept.
 	 */
 	run("document.querySelector('.tree .titem.server').click()");
-	wait_js("document.querySelector('button.tab[data-arg=jails]')", 10);
-	run("document.querySelector('button.tab[data-arg=jails]').click()");
+	click_when("button.tab[data-arg=jails]", 10);
 	wait_js("document.querySelector('button[data-act=jm-new]')", 10);
 	run("document.querySelector('button[data-act=jm-files]').click()");
 	wait_js("document.querySelector('form[data-form=jm-files] button"
@@ -1155,8 +1160,7 @@ part_hosts(void)
 	run("const f = document.querySelector('form[data-form=jm-template]'); "
 	    "f.name.value = 'certbot'; f.text.value = 'allow.raw_sockets;\\n'; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && access("etc/jail.conf.d/certbot.inc", F_OK) !=
 	    0; i++)
 		usleep(100000);
@@ -1171,8 +1175,7 @@ part_hosts(void)
 	    "f.ruleset.value = '4'; f.sysvsem.checked = true; "
 	    "f.tpl_certbot.checked = true; f.start.checked = false; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && access("etc/jail.conf.d/www.conf", F_OK) != 0;
 	    i++)
 		usleep(100000);
@@ -1192,8 +1195,7 @@ part_hosts(void)
 	wait_js("document.querySelector('form[data-form=jm-remove]')", 5);
 	run("document.querySelector('form[data-form=jm-remove]')"
 	    ".requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && access("etc/jail.conf.d/www.conf", F_OK) == 0;
 	    i++)
 		usleep(100000);
@@ -1207,8 +1209,7 @@ part_hosts(void)
 	    ".path.value === '/jails/$name'"));
 	run("const f = document.querySelector('form[data-form=jm-defaults]'); "
 	    "f.domain.value = 'example.org'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && system("grep -q 'host.domainname = "
 	    "\"example.org\";' etc/jail.conf") != 0; i++)
 		usleep(100000);
@@ -1267,8 +1268,7 @@ part_nettab(void)
 	run("const f = document.querySelector('form[data-form=neigh]'); "
 	    "f.address.value = '10.0.0.9'; f.lladdr.value = "
 	    "'02:00:00:00:00:09'; f.temp.checked = true; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && system("grep -qx 'arp -s 10.0.0.9 "
 	    "02:00:00:00:00:09 temp' neigh.log") != 0; i++)
 		usleep(100000);
@@ -1277,10 +1277,8 @@ part_nettab(void)
 	run("document.querySelector('.dock > header').click()");
 	run("document.querySelector('button[data-act=neigh-delete][data-arg="
 	    "\"10.0.0.2\"]').click()");
-	wait_js("document.querySelector('.modal button.danger')", 5);
-	run("document.querySelector('.modal button.danger').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when(".modal button.danger", 5);
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && system("grep -qx 'arp -d 10.0.0.2' neigh.log") !=
 	    0; i++)
 		usleep(100000);
@@ -1298,8 +1296,7 @@ part_nettab(void)
 	run("const f = document.querySelector('form[data-form=span-port]'); "
 	    "f.bridge.value = 'bridge0'; f.port.value = 'em2'; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && system("grep -qx 'bridge0 span em2' "
 	    "ifconfig.log") != 0; i++)
 		usleep(100000);
@@ -1307,14 +1304,14 @@ part_nettab(void)
 	run("document.querySelector('.dock > header').click()");
 	run("const f = document.querySelector('form[data-form=span-rule]'); "
 	    "f.num.value = '150'; f.proto.value = 'icmp'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && system("grep -q 'add 150 count log logdst bpf "
 	    "icmp from any to any' ipfw.log 2>/dev/null") != 0; i++)
 		usleep(100000);
 	ATF_CHECK(system("grep -q 'add 150 count log logdst bpf icmp from any "
 	    "to any' ipfw.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelector('form[data-form=span-capture]')", 10);
 	run("const f = document.querySelector('form[data-form=span-capture]'); "
 	    "f.source.value = 'ipfw150'; f.filter.value = 'icmp and host "
 	    "10.0.0.2'; f.packets.value = '5'; f.seconds.value = '3'; "
@@ -1398,8 +1395,7 @@ part_nettab(void)
 	wait_js("document.querySelector('.netsect svg.topo')", 20);
 	run("window.fetch = window.fetchH;");
 	run("document.querySelector('li[data-act=select-server]').click()");
-	wait_js("document.querySelector('button.tab[data-arg=network]')", 10);
-	run("document.querySelector('button.tab[data-arg=network]').click()");
+	click_when("button.tab[data-arg=network]", 10);
 	wait_js("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]')", 10);
 	run("document.querySelector('button[data-act=net-kind]"
@@ -1437,8 +1433,7 @@ part_nettab(void)
 	wait_js("document.querySelector('form[data-form=if-address]')", 5);
 	run("const f = document.querySelector('form[data-form=if-address]'); "
 	    "f.address.value = '10.9.0.7/24'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('lo0: add 10.9.0.7/24: done'))", 20);
 	ATF_CHECK(system("grep -q '^lo0 inet 10.9.0.7/24 alias$' ifconfig.log")
@@ -1464,8 +1459,7 @@ part_nettab(void)
 	run("const f = document.querySelector('form[data-form=if-address]'); "
 	    "f.address.value = '127.0.0.2/8'; f.persist.checked = false; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('lo0: remove 127.0.0.1: done'))", 20);
 	ATF_CHECK(system("grep -n 'lo0 inet 127.0.0.2/8 alias\\|lo0 inet "
@@ -1477,8 +1471,7 @@ part_nettab(void)
 	 * queued, and run with route(8). */
 	run("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=routes]').click()");
-	wait_js("document.querySelector('button[data-act=route-add]')", 10);
-	run("document.querySelector('button[data-act=route-add]').click()");
+	click_when("button[data-act=route-add]", 10);
 	wait_js("document.querySelector('form[data-form=route]')", 5);
 	/* On a phone a dialog is a sheet from the bottom, its fields one
 	 * under the other and as wide as it; a tap above it closes it. */
@@ -1501,8 +1494,7 @@ part_nettab(void)
 	    "'10.0.0.1'; f.metric.value = '5'; f.weight.value = '20'; "
 	    "f.source.value = '10.0.0.9'; f.fib.value = '2'; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('route add 10.88.0.0/16 via 10.0.0.1: "
 	    "done'))", 20);
@@ -1555,8 +1547,7 @@ part_nettab(void)
 	run("const f = document.querySelector('form[data-form=if-set]'); "
 	    "f.mtu.value = '9000'; f.persist.checked = false; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('lo0: set: done'))", 20);
 	ATF_CHECK(system("grep -q '^lo0 mtu 9000$' ifconfig.log") == 0);
@@ -1770,8 +1761,7 @@ part_nettab(void)
 	run("localStorage.removeItem('arc_theme')");
 	run("delete document.documentElement.dataset.theme");
 	run("document.querySelector('li[data-act=select-fleet]').click()");
-	wait_js("document.querySelector('.hosts .hostcard')", 10);
-	run("document.querySelector('.hosts .hostcard').click()");
+	click_when(".hosts .hostcard", 10);
 	phone(false);
 
 }
@@ -1815,8 +1805,7 @@ part_plugins(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')"
 	    ".requestSubmit()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("document.querySelector('.svc[data-arg=sshd] button"
 	    "[disabled]')", 10);
 	run("document.querySelectorAll('.tree .titem.server')[0].click()");
@@ -1860,8 +1849,7 @@ part_plugins(void)
 	wait_js("document.querySelector('form[data-form=if-address]')", 5);
 	run("const f = document.querySelector('form[data-form=if-address]'); "
 	    "f.address.value = '10.99.0.7/24'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('gw: epair1b: add 10.99.0.7/24: done'))",
 	    20);
@@ -1880,8 +1868,7 @@ part_plugins(void)
 	shot("7h-vnet-give");
 	run("document.querySelector('form[data-form=if-vnet]')."
 	    "requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('give epair to gw'))", 20);
 	for (i = 0; i < 100 && system("grep -q '^epair create$' ifconfig.log")
@@ -1896,8 +1883,7 @@ part_plugins(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')"
 	    ".requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('take epair1b back from gw: done'))", 20);
 	ATF_CHECK(system("grep -q '^epair1b -vnet 4$' ifconfig.log") == 0);
@@ -1979,8 +1965,7 @@ part_plugins(void)
 	run("const f = document.querySelector('form[data-form=wg-init]'); "
 	    "f.port.value = '51820'; f.persist.checked = false; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("document.querySelector('.pane.wg code.key') && document."
 	    "querySelector('.pane.wg code.key').textContent.startsWith('HIgo')",
 	    20);
@@ -1992,8 +1977,7 @@ part_plugins(void)
 	    "f.endpoint.value = '192.0.2.9:51820'; f.allowed.value = "
 	    "'10.9.9.2/32, fd00::2/128'; f.persist.checked = false; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("document.querySelector('.pane.wg button[data-act=wg-unpeer]')",
 	    20);
 	ATF_CHECK(system("grep -q '^set wg0 peer xTIBA5rboUvnH4htodjb6e697QjLER"
@@ -2016,8 +2000,7 @@ part_plugins(void)
 	run("const f = document.querySelector('form[data-form=wg-peer]'); "
 	    "f.keepalive.value = '25'; f.persist.checked = false; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && system("grep -q 'persistent-keepalive 25$' "
 	    "wg.log") != 0; i++)
 		usleep(100000);
@@ -2048,8 +2031,7 @@ part_plugins(void)
 	    "0.0.0.0/0, ::/0') && wc.includes('PersistentKeepalive = 25') && "
 	    "document.querySelector('form[data-form=wg-conf] a[download="
 	    "\"phone.conf\"]') !== null"));
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && system("grep -q 'allowed-ips 10.9.9.3/32$' "
 	    "wg.log") != 0; i++)
 		usleep(100000);
@@ -2075,8 +2057,7 @@ part_plugins(void)
 	    "f.requestSubmit();");
 	wait_js("document.querySelector('form[data-form=wg-conf] pre.wg-conf')",
 	    10);
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	{
 		ucl_object_t	*rk = js("return window.rk;");
 		char		 cmd[300];
@@ -2112,8 +2093,7 @@ part_plugins(void)
 	    "includes('no key yet')"));
 	run("document.querySelector('.pane.ipsec button[data-act=ipsec-init]')"
 	    ".click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("document.querySelector('.pane.ipsec code.key.pub')", 20);
 	run("window.pub = document.querySelector('.pane.ipsec code.key.pub')"
 	    ".textContent; document.querySelector('.pane.ipsec button"
@@ -2139,8 +2119,7 @@ part_plugins(void)
 	phone(false);
 	run("const f = document.querySelector('form[data-form=ipsec-conn]'); "
 	    "f.reqid.value = ''; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("document.querySelector('table.ipsec tbody tr.up') && "
 	    "document.querySelector('table.ipsec').textContent.includes("
 	    "'TRANSPORT')", 20);
@@ -2173,8 +2152,7 @@ part_plugins(void)
 	run("const f = document.querySelector('form[data-form=ipsec-child]'); "
 	    "f.child.value = 'lan'; f.local_ts.value = '10.1.0.0/24'; "
 	    "f.remote_ts.value = '10.2.0.0/24'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q 'local_ts = 10.1.0.0/24' "
 	    "swanctl/conf.d/arcana-to-lab2.conf 2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -2189,8 +2167,7 @@ part_plugins(void)
 	run("[...document.querySelectorAll('table.ipsec td .child')].find(c => "
 	    "c.textContent.includes('lan')).querySelector('button[data-act="
 	    "ipsec-unchild]').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("![...document.querySelectorAll('table.ipsec td .child')]."
 	    "some(c => c.textContent.includes('lan'))", 20);
 	/* The form offers the certificate and the CA as ways to know the
@@ -2214,8 +2191,7 @@ part_plugins(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("!document.querySelector('table.ipsec')", 20);
 	run("document.querySelector('button.tab.plugin[data-arg=bird]')"
 	    ".click()");
@@ -2230,8 +2206,7 @@ part_plugins(void)
 	run("[...document.querySelectorAll('table.bird button[data-act="
 	    "bird-verb][data-arg=reload]')].find(b => b.dataset.value === "
 	    "'bgp_core').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('bird reload bgp_core: done'))", 20);
 	ATF_CHECK(system("grep -q '^reload bgp_core$' birdc.log") == 0);
@@ -2470,8 +2445,7 @@ part_certs(void)
 	run("document.querySelector('button[data-act=cert-add]').click()");
 	wait_js("document.querySelector('form[data-form=cert-add]')", 5);
 	run(js);
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('table.certs tbody tr')].some("
 	    "r => r.textContent.includes('Arcana mine CA') && r.textContent"
 	    ".includes('/usr/local/share/certs/trusted/mine.pem'))", 20);
@@ -2480,10 +2454,8 @@ part_certs(void)
 	/* Distrusted, and trusted again. */
 	run("document.querySelector('button[data-act=cert-untrust][data-arg="
 	    "\"root.0\"]').click()");
-	wait_js("document.querySelector('.modal button.danger')", 5);
-	run("document.querySelector('.modal button.danger').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when(".modal button.danger", 5);
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && access("tools/certroot/usr/local/share/certs/"
 	    "untrusted/root.0.pem", F_OK) != 0; i++)
 		usleep(100000);
@@ -2494,8 +2466,7 @@ part_certs(void)
 	    "r => r.textContent.includes('Arcana root CA') && r.querySelector("
 	    "'button[data-act=cert-trust]'))", 20);
 	run("document.querySelector('button[data-act=cert-trust]').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 100 && access("tools/certroot/usr/local/share/certs/"
 	    "untrusted/root.0.pem", F_OK) == 0; i++)
 		usleep(100000);
@@ -2561,8 +2532,7 @@ part_ssh(void)
 	wait_js("document.querySelector('form[data-form=ssh-set] select')", 5);
 	run("const f = document.querySelector('form[data-form=ssh-set]'); "
 	    "f.value.value = 'prohibit-password'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('table.ssh-set tbody tr')]"
 	    ".some(r => r.textContent.includes('prohibit-password'))", 20);
 	ATF_CHECK(system("grep -qx 'PermitRootLogin prohibit-password' "
@@ -2571,8 +2541,7 @@ part_ssh(void)
 	/* The banner. */
 	run("const f = document.querySelector('form[data-form=ssh-banner]'); "
 	    "f.text.value = 'Authorised use only.'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	/* The file first, then sshd_config naming it. */
 	for (i = 0; i < 100 && system("grep -qx 'Banner /etc/ssh/banner' "
 	    "tools/sshroot/etc/ssh/sshd_config") != 0; i++)
@@ -2589,16 +2558,13 @@ part_ssh(void)
 	    "[data-form=ssh-key]'); f.key.value = '%s'; f.requestSubmit();",
 	    key);
 	run(js);
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('table.ssh-keys tbody tr')]"
 	    ".some(r => r.textContent.includes('alice@lab'))", 20);
 	run("document.querySelector('.dock > header').click()");
 	run("document.querySelector('button[data-act=ssh-key-del]').click()");
-	wait_js("document.querySelector('.modal button.danger')", 5);
-	run("document.querySelector('.modal button.danger').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when(".modal button.danger", 5);
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("![...document.querySelectorAll('table.ssh-keys tbody tr')]"
 	    ".some(r => r.textContent.includes('alice@lab'))", 20);
 	ATF_CHECK(system("test ! -s tools/sshroot/home/alice/.ssh/"
@@ -2612,8 +2578,7 @@ part_ssh(void)
 	    "[data-form=ssh-sign]'); f.key.value = '%s'; f.principals.value = "
 	    "'lab.example lab'; f.requestSubmit();", key);
 	run(js);
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('table.ssh-hk tbody tr')]"
 	    ".some(r => r.textContent.includes('for lab.example lab'))", 20);
 	ATF_CHECK(system("grep -qx 'HostCertificate /etc/ssh/"
@@ -2659,8 +2624,7 @@ part_storage(void)
 	shot("7j-storage-pools");
 	run("[...document.querySelectorAll('section.pool button[data-act="
 	    "st-zpool]')].find(b => b.dataset.arg === 'scrub').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('zpool scrub tank: done'))", 20);
 	ATF_CHECK(system("grep -q '^zpool scrub tank$' storage.log") == 0);
@@ -2674,8 +2638,7 @@ part_storage(void)
 	    "f.name.value = 'lab'; f.layout.value = 'mirror'; f.devices.value "
 	    "= 'ada8p1 ada9p1'; f.mountpoint.value = '/srv/lab'; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('zpool create lab mirror ada8p1 ada9p1 "
 	    "mountpoint=/srv/lab: done'))", 20);
@@ -2689,8 +2652,7 @@ part_storage(void)
 	    "[data-arg=spare]')", 10);
 	shot("7j-storage-import");
 	run("document.querySelector('.modal li[data-act=st-import]').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('zpool import spare: done'))", 20);
 	run("document.querySelector('.dock > header').click()");
@@ -2704,8 +2666,7 @@ part_storage(void)
 	    "[name=device]')", 5);
 	run("const f = document.querySelector('form[data-form=st-vdev-replace]"
 	    "'); f.device.value = 'ada6p1'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('zpool replace tank ada2p1 ada6p1: done'))",
 	    20);
@@ -2751,8 +2712,7 @@ part_storage(void)
 	run("const f = document.querySelector('form[data-form=st-snapshot]'); "
 	    "f.name.value = 'before'; f.recursive.checked = true; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('zfs snapshot tank/data@before: done'))",
 	    20);
@@ -2774,8 +2734,7 @@ part_storage(void)
 	    "input')"));
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('zfs destroy tank/data@a: done'))", 20);
 	ATF_CHECK(system("grep -q '^zfs destroy tank/data@a$' storage.log") ==
@@ -2796,8 +2755,7 @@ part_storage(void)
 	    "!document.querySelector('form[data-form=confirm] input')", 5);
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("[ $(grep -c '^zfs destroy tank/data@' "
 	    "storage.log) -ge 3 ]") != 0; i++)
 		usleep(50000);
@@ -2819,8 +2777,7 @@ part_storage(void)
 	    "!document.querySelector('form[data-form=confirm] input')", 5);
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('zfs resnapshot tank/data@b: done'))", 20);
 	ATF_CHECK(system("grep -A2 '^zfs snapshot tank/data@b.resnap$' "
@@ -2868,8 +2825,7 @@ part_storage(void)
 	    "includes('not the newest of their dataset are left')", 5);
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("[ $(grep -c '^zfs rename "
 	    "tank/data@b.resnap tank/data@b$' storage.log) -ge 2 ]") != 0; i++)
 		usleep(50000);
@@ -2903,8 +2859,7 @@ part_storage(void)
 	    "[data-act=st-key][data-arg=load-key]')", 20);
 	run("document.querySelector('tr[data-ds=\"tank/data\"] button"
 	    "[data-act=st-key]').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^zfs load-key tank/data$' "
 	    "storage.log 2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -2940,8 +2895,7 @@ part_storage(void)
 	    "name]')", 5);
 	run("const f = document.querySelector('form[data-form=st-ask]'); "
 	    "f.name.value = 'web'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^zfs jail web tank/data$' "
 	    "storage.log 2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -2975,8 +2929,7 @@ part_storage(void)
 	    "fstab.arcana-old") == 0);
 	run("document.querySelector('table.fstab tr[data-fs=\"/mnt/web\"] "
 	    "button[data-act=st-mount]').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('mount /mnt/web: done'))", 20);
 	ATF_CHECK(system("grep -q '^mount -F .*/fstab /mnt/web$' storage.log")
@@ -3003,8 +2956,7 @@ part_storage(void)
 	run("const f = document.querySelector('form[data-form=kmod-load]'); "
 	    "f.name.value = 'if_disc'; f.persist.checked = true; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('kldload if_disc: done'))", 20);
 	ATF_CHECK(system("grep -q '^kldload -n if_disc$' kld.log && grep -q "
@@ -3023,8 +2975,7 @@ part_storage(void)
 	    "const i = f.querySelector('input'); i.value = window.kld; "
 	    "i.dispatchEvent(new Event('input', { bubbles: true })); "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('kldunload ' + window.kld + ': done'))",
 	    20);
@@ -3113,8 +3064,7 @@ part_storage(void)
 	    "input[name=persist]').checked", 5);
 	run("const f = document.querySelector('form[data-form=sy-set]'); "
 	    "f.value.value = '8192'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('sysctl kern.ipc.somaxconn=8192: done'))",
 	    20);
@@ -3456,8 +3406,7 @@ part_firewall(void)
 	run("const f = document.querySelector('form[data-form=fw-add]'); "
 	    "f.num.value = '1500'; f.rule.value = 'allow tcp from any to me6 "
 	    "8443 in'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('ipfw add 1500') && t.textContent."
 	    "includes('done'))", 20);
@@ -3491,8 +3440,7 @@ part_firewall(void)
 	run("const f = document.querySelector('form[data-form=fw-edit]'); "
 	    "f.rule.value = 'allow tcp from any to me6 2222 in via \"wg[0-1]\"'; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('ipfw 1001 changed: 1001 allow tcp from any "
 	    "to me6 2222') && t.textContent.includes('done'))", 20);
@@ -3534,8 +3482,7 @@ part_firewall(void)
 	/* That file loaded as the kept rules' text, not kept until Keep. */
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"-3\"]')."
 	    "click()");
-	wait_js("document.querySelector('button[data-act=fw-load-rc]')", 10);
-	run("document.querySelector('button[data-act=fw-load-rc]').click()");
+	click_when("button[data-act=fw-load-rc]", 10);
 	wait_js("document.querySelector('form[data-form=fw-text] textarea')"
 	    ".value === '# left out, applying does it: -f flush\\nadd 100 "
 	    "allow ip from any to any via lo0\\n' && document.querySelector("
@@ -3580,8 +3527,7 @@ part_firewall(void)
 	    ".includes('T46')", 10);
 	run("const f = document.querySelector('form[data-form=fw-entry]'); "
 	    "f.key.value = '198.51.100.0/24'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^ipfw -q table T46 add "
 	    "198.51.100.0/24$' ipfw.log 2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -3629,8 +3575,7 @@ part_firewall(void)
 	    "f.num.value = '7'; f.what.value = 'em0'; f.deny_in.checked = "
 	    "true; f.redirects.value = 'tcp 10.0.0.5:80 8080\\nudp "
 	    "10.0.0.6:53 53'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^nat 7 config' ipfw.rules "
 	    "2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -3667,8 +3612,7 @@ part_firewall(void)
 	run("const f = document.querySelector('form[data-form=fw-qos]'); "
 	    "f.num.value = '3'; f.bw.value = '20'; f.delay.value = '15'; "
 	    "f.plr.value = '1'; f.mask.value = 'src'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	/* ipfw first, then the kept line. */
 	for (i = 0; i < 200 && system("grep -q '^pipe 3 config' ipfw.rules "
 	    "2>/dev/null") != 0; i++)
@@ -3684,8 +3628,7 @@ part_firewall(void)
 	    "bw]')", 5);
 	run("const f = document.querySelector('form[data-form=fw-qos]'); "
 	    "f.num.value = '3'; f.bw.value = '30'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^pipe 3 config bw 30' "
 	    "ipfw.rules 2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -3701,8 +3644,7 @@ part_firewall(void)
 	    "f.num.value = '3'; f.type.value = 'fq_codel'; f.mask.value = "
 	    "'src'; f.target.value = '5'; f.interval.value = '100'; "
 	    "f.ecn.checked = true; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^sched 3 config' ipfw.rules "
 	    "2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -3718,8 +3660,7 @@ part_firewall(void)
 	run("const f = document.querySelector('form[data-form=fw-qos]'); "
 	    "f.num.value = '4'; f.weight.value = '20'; f.mask.value = 'dst'; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^ipfw -q queue 4 config' "
 	    "ipfw.log 2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -3734,8 +3675,7 @@ part_firewall(void)
 	    "f.num.value = '5000'; f.target.value = 'pipe 1'; f.proto.value = "
 	    "'tcp'; f.port.value = '443'; f.dir.value = 'out'; f.via.value = "
 	    "'em0'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q 'add 5000 pipe 1' ipfw.log "
 	    "2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -3746,10 +3686,8 @@ part_firewall(void)
 	/* Taken away, and out of the kept rules. */
 	run("document.querySelector('button[data-act=fw-qos-del][data-arg="
 	    "pipe][data-value=\"1\"]').click()");
-	wait_js("document.querySelector('.modal button.danger')", 5);
-	run("document.querySelector('.modal button.danger').click()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when(".modal button.danger", 5);
+	click_when("button[data-act=queue-run]", 5);
 	for (i = 0; i < 200 && system("grep -q '^ipfw -q pipe 1 delete' "
 	    "ipfw.log 2>/dev/null") != 0; i++)
 		usleep(50000);
@@ -3776,8 +3714,7 @@ part_firewall(void)
 	run("document.querySelector('button[data-act=fw-apply]').click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('ipfw apply') && t.textContent.includes("
 	    "'done'))", 40);
@@ -3825,8 +3762,7 @@ part_firewall(void)
 	run("const f = document.querySelector('form[data-form=br-port]'); "
 	    "f.mode.value = 'access'; f.untagged.value = '30'; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('bridge0 access') && t.textContent."
 	    "includes('done'))", 20);
@@ -3853,8 +3789,7 @@ part_firewall(void)
 	    "f.name.value = 'geneve9'; f.mode.value = 'l3'; f.id.value = '9'; "
 	    "f.local.value = '192.0.2.1'; f.group.value = '239.0.0.9'; "
 	    "f.dev.value = 'em0'; f.ttl.value = 'inherit'; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('geneve9 create') && t.textContent."
 	    "includes('done'))", 20);
@@ -3976,8 +3911,7 @@ part_flows(void)
 	    "'pkg-install' && document.querySelector('input[data-arg=\"text:"
 	    "params.0.default\"]').value === 'bird3'", 10);
 	run("document.querySelector('button[data-act=wf-back]').click()");
-	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
-	run("document.querySelector('button[data-act=wf-new]').click()");
+	click_when("button[data-act=wf-new]", 10);
 	wait_js("document.querySelector('select[data-input=wf-kind]') && "
 	    "document.querySelector('select[data-input=wf-kind]').options."
 	    "length > 25", 10);
@@ -4073,16 +4007,14 @@ part_flows(void)
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	ATF_CHECK(js_true("document.querySelector('ul.wfruns li.done')"));
 	run("document.querySelector('li.titem.server').click()");
-	wait_js("document.querySelector('button.tab[data-arg=services]')", 10);
-	run("document.querySelector('button.tab[data-arg=services]').click()");
+	click_when("button.tab[data-arg=services]", 10);
 	wait_js("document.querySelector('button[data-act=svc][data-value="
 	    "restart]')", 10);
 	run("document.querySelector('button[data-act=svc][data-value=restart]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
-	wait_js("document.querySelector('button[data-act=queue-to-wf]')", 5);
-	run("document.querySelector('button[data-act=queue-to-wf]').click()");
+	click_when("button[data-act=queue-to-wf]", 5);
 	wait_js("document.querySelector('li.wfedstep select[data-input="
 	    "wf-kind]') && document.querySelector('li.wfedstep select[data-"
 	    "input=wf-kind]').value === 'service-action' && document."
@@ -4700,8 +4632,7 @@ part_netsect(void)
 	 * would have the second end's name already. */
 	run("const f = document.querySelector('form[data-form=tunnel]'); "
 	    "f.persist.checked = false; f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	wait_js("[...document.querySelectorAll('.toast')].filter(t => "
 	    "t.textContent.includes('create gif0')).length >= 1", 20);
 	for (int k = 0; k < 100 && system("test \"$(grep -c '^gif0 inet "
@@ -4730,12 +4661,11 @@ part_netsect(void)
 	    "f.type.value = 'wg'; f.inner_a.value = '10.254.0.1/30'; "
 	    "f.inner_b.value = '10.254.0.2/30'; f.persist.checked = false; "
 	    "f.requestSubmit();");
-	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	/* The peers are queued once the keys are read: run them too. */
 	wait_js("[...document.querySelectorAll('.toast')].some(t => "
 	    "t.textContent.includes('Queued: wg0: wireguard peer'))", 40);
-	run("document.querySelector('button[data-act=queue-run]').click()");
+	click_when("button[data-act=queue-run]", 5);
 	for (int k = 0; k < 150 && system("grep -q 'allowed-ips 10.254.0.2/32$'"
 	    " wg.log 2>/dev/null && grep -q 'allowed-ips 10.254.0.1/32$' "
 	    "wg.log") != 0; k++)
@@ -4774,8 +4704,7 @@ part_netsect(void)
 	    "walk(j); return new Response(JSON.stringify(j), { status: "
 	    "r.status, headers: r.headers }); }) : r);");
 	run("document.querySelector('li[data-act=select-server]').click()");
-	wait_js("document.querySelector('button[data-act=refresh]')", 10);
-	run("document.querySelector('button[data-act=refresh]').click()");
+	click_when("button[data-act=refresh]", 10);
 	wait_js("[...document.querySelectorAll('.tree .titem.leaf')].some(l => "
 	    "l.dataset.arg === 'gw' && l.classList.contains('s-running'))", 15);
 	/* In the fleet's graph the one that runs is there, and none of

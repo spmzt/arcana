@@ -3693,7 +3693,14 @@ observe_body()
 		print (gsub(/,/, "", s) + 1 == 9 + 2 * nn + 2 * nd) ? "ok" : "width " nn " " nd
 	}' h.json
 	last=$(sed -E 's/.*\[([0-9]+),[^]]*\]\]\}.*/\1/' h.json)
-	atf_check -o match:'"samples":\[\]' "$JGC" -c "$SOCK" history "$last"
+	# The sampler may have looked again since; what comes is only that.
+	atf_check -o save:after.json "$JGC" -c "$SOCK" history "$last"
+	atf_check -o inline:'ok\n' awk -v last="$last" '{
+		match($0, /"samples":\[.*\]/); s = substr($0, RSTART + 11, RLENGTH - 12)
+		n = split(s, a, /\],?\[?/); ok = 1
+		for (i = 1; i <= n; i++) { sub(/^\[/, "", a[i]); split(a[i], f, ","); if (a[i] != "" && f[1] + 0 <= last) ok = 0 }
+		print ok ? "ok" : "old " s
+	}' after.json
 	# How it samples is set, and written down for the next start: fewer
 	# kept are the newest; none kept is no sampling and no memory.
 	# A limit crossed is an event, once, until it is crossed back; told
