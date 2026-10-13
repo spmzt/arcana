@@ -5043,8 +5043,15 @@ EOT
 	atf_check -o match:'"source":"ipfw150","filter":"icmp and host 10.0.0.2","packets":1,"limit":5,"seconds":3' \
 	    -o match:'"pcap":"UENBUERBVEE="' -o match:'"bytes":8' -o match:'ICMP echo request' \
 	    "$JGC" -c "$SOCK" capture ipfw150 5 3 icmp and host 10.0.0.2
-	atf_check -o match:'^tcpdump -n -U -i ipfw150 -c 5 -w .*/tmp/\.arcana-capture\.[0-9a-f]*/c\.pcap icmp and host 10\.0\.0\.2$' \
+	atf_check -o match:'^tcpdump -n -U -i ipfw150 -c 5 -w .*/tmp/\.arcana-capture\.[0-9a-f]*/c\.pcap -- icmp and host 10\.0\.0\.2$' \
 	    cat tcpdump.log
+	# No word of the filter is an option of tcpdump's, which runs as
+	# root: -w a file, -z a command.
+	: > tcpdump.log
+	atf_check -o ignore "$JGC" -c "$SOCK" capture em0 1 1 -w /etc/owned -z /bin/sh
+	atf_check -o match:' -w .*/c\.pcap -- -w /etc/owned -z /bin/sh$' cat tcpdump.log
+	atf_check -s exit:1 -e match:"an interface or a tap's name" -o ignore \
+	    "$JGC" -c "$SOCK" capture -z 1 1
 	test -z "$(ls -A tools/tmp)" || atf_fail "left behind: $(ls -A tools/tmp)"
 	atf_check -s exit:1 -e match:'No such device exists' -o ignore \
 	    "$JGC" -c "$SOCK" capture gone0 5 3
