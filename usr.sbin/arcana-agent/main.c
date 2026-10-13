@@ -596,7 +596,7 @@ main(int argc, char *argv[])
 	(void)cbl_ctx_set_limit(ctx, CBL_LIM_MAX_ATTRS, MAX_ATTRS);
 	if ((error = transport_watch(ctx)) != 0)
 		fatal(pfh, "cbl_ctx_set_conn_cbs: %s", strerror(error));
-	if ((error = arc_register(ctx, NULL, &fam)) != 0)
+	if ((error = admit_register(ctx, &fam)) != 0)
 		fatal(pfh, "registering the %s family: %s", ARC_FAMILY_NAME,
 		    strerror(error));
 	event_family(fam);

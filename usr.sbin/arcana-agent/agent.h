@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.105.0"
+#define	ARCANA_AGENT_VERSION	"0.106.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -551,6 +551,9 @@ const char	*ipfw_unadd(struct work *, const struct arc_job_spec *);
 int		 transport_watch(cbl_ctx *);
 void		 transport_add(const char *, cbl_listener *);
 void		 transport_init(cbl_ctx *, cbl_loop *, cbl_tls *);
+/* superbia/admit.c: only the console asks */
+bool		 peer_is_host(const cbl_peer *);
+int		 admit_register(cbl_ctx *, cbl_family **);
 /* superbia/tlsfiles.c: the agent's own TLS files renewed */
 void		 tls_files_init(cbl_tls *, const char *, const char *,
 		    const char *);

@@ -145,12 +145,23 @@ cert_new(EVP_PKEY *key, const char *cn, X509 *issuer, EVP_PKEY *ikey,
 		    add_ext(x, issuer, NID_key_usage,
 		    "critical,digitalSignature") == 0 &&
 		    add_ext(x, issuer, NID_ext_key_usage, san != NULL ?
-		    "serverAuth" : "clientAuth") == 0 &&
+		    "serverAuth,clientAuth" : "clientAuth") == 0 &&
 		    add_ext(x, issuer, NID_authority_key_identifier,
 		    "keyid:always") == 0;
-		if (san != NULL)
+		/*
+		 * Its role: a host's may reach other hosts (the mesh) but
+		 * not ask them as the console does; they tell it by this.
+		 */
+		if (san != NULL) {
+			char	sanr[400];
+
+			snprintf(sanr, sizeof(sanr), "%s,URI:urn:arcana:role:agent",
+			    san);
 			ok = ok && add_ext(x, issuer, NID_subject_alt_name,
-			    san) == 0;
+			    sanr) == 0;
+		} else
+			ok = ok && add_ext(x, issuer, NID_subject_alt_name,
+			    "URI:urn:arcana:role:console") == 0;
 	}
 	ok = ok && add_ext(x, issuer, NID_subject_key_identifier, "hash") == 0;
 	ok = ok && X509_sign(x, issuer != NULL ? ikey : key, EVP_sha256()) > 0;

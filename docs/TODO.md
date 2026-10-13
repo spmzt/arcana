@@ -465,7 +465,14 @@
   - Certificates with a role. An agent's is for a server only, and an
     agent takes any peer the CA signed for the console: agents that
     call each other need certificates that can, and an agent must let
-    only the console's ask for anything but the mesh.
+    only the console's ask for anything but the mesh.  (Done
+    2026-10-13: a host's certificate is for a client too and says
+    URI:urn:arcana:role:agent, the console's urn:arcana:role:console;
+    an agent refuses every command to a peer of the agent role, the
+    generated table registered behind a look at the peer.  Hosts
+    enrolled before have the old certificate until renewed.  Not
+    covered: joining the events group, which cblink admits below the
+    handlers; to be closed in cblink when the mesh comes.)
   - Arcana's DNCP profile: over cblink on SCTP with DTLS, its own TLVs
     (an agent's name and mesh addresses, when it last heard the
     console), SCTP's heartbeats instead of keep-alives.

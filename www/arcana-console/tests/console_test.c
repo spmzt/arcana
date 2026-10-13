@@ -3665,6 +3665,19 @@ ATF_TC_BODY(enrol, tc)
 	    "%s", jstr(&r, "trace.2.detail"));
 	resp_free(&r);
 
+	/* A host's certificate may reach hosts, but asks nothing of them
+	 * as the console does: refused by the agent. */
+	ATF_CHECK(system("openssl x509 -in host/host.pem -noout -ext "
+	    "extendedKeyUsage,subjectAltName | grep -q 'TLS Web Client "
+	    "Authentication' && openssl x509 -in host/host.pem -noout -ext "
+	    "subjectAltName | grep -q 'URI:urn:arcana:role:agent' && openssl "
+	    "x509 -in data/console.pem -noout -ext subjectAltName | grep -q "
+	    "'URI:urn:arcana:role:console'") == 0);
+	snprintf(body, sizeof(body), "%s -c tcp://127.0.0.1:%d -A data/ca.pem "
+	    "-C host/host.pem -K host/host.key hello 2>&1 | grep -q "
+	    "'ermission denied'", locate(tc, "../../../usr.sbin/arcanactl/"
+	    "arcanactl", "arcanactl", "/usr/local/sbin/arcanactl"), jport);
+	ATF_CHECK(system(body) == 0);
 	/* Its certificate renewed from here: a key made there, signed
 	 * here, taken there, and the host reached with it. */
 	{
