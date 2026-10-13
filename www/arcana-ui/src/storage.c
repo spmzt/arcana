@@ -1530,7 +1530,12 @@ storage_modal(struct html *h)
 			    "the datasets under it, their snapshots and "
 			    "properties</span></label>");
 		if (sg.ask == A_NEWFS)
-			h_raw(h, "<label class=\"toggle\"><input type=\""
+			h_raw(h, "<label>File system<select name=\"fs\"><option "
+			    "value=\"ufs\">UFS, with soft updates (newfs -U)"
+			    "</option><option value=\"msdos\">FAT, for other "
+			    "systems too (newfs_msdos: FAT32, or FAT16 when it "
+			    "is small)</option></select>"
+			    "</label><label class=\"toggle\"><input type=\""
 			    "checkbox\" name=\"force\"><span>Though it has a "
 			    "file system on it already</span></label>");
 		return (true);
@@ -1915,9 +1920,17 @@ storage_form(const char *form, const ucl_object_t *f)
 				    "letters, digits and _ . -");
 				return (true);
 			}
-			sjob(s, "gpart", "newfs", jbool(f, "force") ?
-			    ",\"force\":true" : "", sg.target, 2, sg.target,
-			    name);
+			if (jstr(f, "fs") != NULL && strcmp(jstr(f, "fs"),
+			    "msdos") == 0 && strlen(name) > 11) {
+				snprintf(app.modal_error,
+				    sizeof(app.modal_error), "A FAT label is "
+				    "11 characters at most");
+				return (true);
+			}
+			sjob(s, "gpart", jstr(f, "fs") != NULL && strcmp(jstr(f,
+			    "fs"), "msdos") == 0 ? "newfs-msdos" : "newfs",
+			    jbool(f, "force") ? ",\"force\":true" : "",
+			    sg.target, 2, sg.target, name);
 		} else {
 			if (strncmp(name, "/dev/", 5) != 0 || !name_ok(name +
 			    5, "_./-")) {

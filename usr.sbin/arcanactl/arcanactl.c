@@ -231,6 +231,7 @@ usage(void)
 	    "    zfs jail | unjail dataset jail\n"
 	    "    zfs replicate [-r] snapshot new-dataset [since-snapshot]\n"
 	    "    gpart newfs [-f] partition [label]\n"
+	    "    gpart newfs-msdos [-f] partition [label]\n"
 	    "    gpart growfs partition\n"
 	    "    swapon | swapoff device\n"
 	    "    storage snapshots [dataset]\n"
