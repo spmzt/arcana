@@ -1313,8 +1313,18 @@ A step never leaves `main` unbuildable; where a step would, it says
   and PUT of a setting.
 - 4.4.2 C: the WebAuthn ceremonies, logout, `assetlinks.json`, enrol
   and health moved beside `/restconf`; `/api` removed; check: the
-  console tests rewritten; the Android app's paths updated in its
-  repository in step.
+  console tests rewritten.
+- 4.4.3 (the app's repository, spmzt/arcana-apk): the Android app
+  reimplemented as a RESTCONF client: WebAuthn and the token QR code
+  as today, then every read a `GET` on `/restconf/data/...` with
+  `fields` and `depth`, every change a `PATCH` or `PUT`, every action
+  a `POST` on `/restconf/operations/...`, events and job traces by
+  SSE subscriptions, errors from `ietf-restconf:errors`, and the
+  forms it shows generated from each host's `ietf-yang-library` the
+  way the page's are (4.8.3), so a new module needs no app release;
+  `application/yang-data+cbor` where the app prefers CBOR. Briefed
+  from this plan when 4.1 lands; check: the app against the lab's
+  console.
 - 4.5.1 C: `ietf-vpn-common` and `ietf-l3vpn-ntw` stored as the
   service; check: RFC 9182's Appendix A example accepted.
 - 4.5.2 C: the Arcana augmentations of L3NM: application flows, the
