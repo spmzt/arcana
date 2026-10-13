@@ -1326,7 +1326,7 @@ part_nettab(void)
 	ATF_CHECK(js_true("document.querySelector('.span-sum').textContent."
 	    "includes('2 packets from ipfw150')"));
 	ATF_CHECK(system("grep -q 'tcpdump -n -U -i ipfw150 -c 5 -w .*/c.pcap "
-	    "icmp and host 10.0.0.2$' tcpdump.log") == 0);
+	    "-- icmp and host 10.0.0.2$' tcpdump.log") == 0);
 	/* Nothing left behind. */
 	ATF_CHECK(system("test -z \"$(ls -A tools/tmp)\"") == 0);
 	run("document.querySelector('button[data-act=span-save]').click()");

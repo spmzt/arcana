@@ -44,7 +44,7 @@ source_ok(const char *s)
 {
 	size_t	i;
 
-	if (s == NULL || s[0] == '\0' || strlen(s) >= IFNAMSIZ)
+	if (s == NULL || s[0] == '\0' || s[0] == '-' || strlen(s) >= IFNAMSIZ)
 		return (false);
 	for (i = 0; s[i] != '\0'; i++)
 		if (!(s[i] >= 'a' && s[i] <= 'z') && !(s[i] >= 'A' && s[i] <=
@@ -149,7 +149,12 @@ do_capture(struct work *w, const struct arc_capture_req *rq,
 	argv[n++] = wfmt(w, "%d", packets);
 	argv[n++] = (char *)(uintptr_t)"-w";
 	argv[n++] = (char *)(uintptr_t)path;
-	/* The filter's words, each an argument: no shell between. */
+	/*
+	 * The filter's words, each an argument, no shell between; and after
+	 * "--", so that none of them is taken for an option of tcpdump's
+	 * (-w a file, -z a command), which runs as root.
+	 */
+	argv[n++] = (char *)(uintptr_t)"--";
 	for (f = rq->net_filter != NULL ? rq->net_filter : ""; *f != '\0' &&
 	    n < 60; f = e) {
 		f += strspn(f, " \t");
