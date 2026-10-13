@@ -532,7 +532,8 @@ datasets(struct work *w, bool snaps, const char *filter,
 		argv[n++] = (char *)(uintptr_t)filter;
 	}
 	argv[n] = NULL;
-	if (run_exec_max(w, argv, &res, ARC_MAX_JSON) != 0) {
+	/* In a jail: its own zfs, which sees what was given to it. */
+	if (run_exec_max(w, scope_jexec(w, argv), &res, ARC_MAX_JSON) != 0) {
 		rsp->error = wtext(w, exec_error(w, &res, "zfs"));
 		return (0);
 	}
@@ -1232,7 +1233,8 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 		 * size: newfs(8) and growfs(8) of UFS.  What is on the
 		 * partition is looked at before it is run.
 		 */
-		if ((strcmp(verb, "newfs") == 0 && (na == 1 || na == 2)) ||
+		if (((strcmp(verb, "newfs") == 0 || strcmp(verb,
+		    "newfs-msdos") == 0) && (na == 1 || na == 2)) ||
 		    (strcmp(verb, "growfs") == 0 && na == 1)) {
 			const char	*bin;
 
@@ -1241,12 +1243,33 @@ storage_argv(struct work *w, const struct arc_job_spec *sp, const char **errp)
 			if (na == 2 && a[1][0] != '\0' && !word_ok(a[1], "_.-",
 			    32))
 				goto label;
-			if ((bin = tool(w, verb)) == NULL) {
+			if ((bin = tool(w, strcmp(verb, "newfs-msdos") == 0 ?
+			    "newfs_msdos" : verb)) == NULL) {
 				*errp = wfmt(w, "the host has no %s", verb);
 				return (NULL);
 			}
 			ARG(bin);
-			if (verb[0] == 'n') {
+			if (strcmp(verb, "newfs-msdos") == 0) {
+				/* FAT, for what other systems read too, of
+				 * the type its size allows (FAT32 needs 65525
+				 * clusters); a label of 11 at most, in
+				 * capitals. */
+				if (na == 2 && strlen(a[1]) > 11) {
+					*errp = "a FAT label is 11 characters at "
+					    "most";
+					return (NULL);
+				}
+				if (na == 2 && a[1][0] != '\0') {
+					char	*u;
+
+					u = wstrdup(w, a[1]);
+					for (char *c = u; *c != '\0'; c++)
+						*c = (char)toupper((unsigned char)
+						    *c);
+					ARG("-L");
+					ARG(u);
+				}
+			} else if (verb[0] == 'n') {
 				ARG("-U");
 				if (na == 2 && a[1][0] != '\0') {
 					ARG("-L");
@@ -1577,9 +1600,9 @@ do_storage_job(struct work *w, const struct arc_job_spec *sp,
 	if (sp->kind == ARC_JOB_KIND_ZFS && strcmp(sp->verb, "resnapshot") ==
 	    0)
 		return (resnapshot(w, sp->names.v[0], sp->recursive, errp));
-	if (sp->kind == ARC_JOB_KIND_GPART && sp->verb != NULL && strcmp(
-	    sp->verb, "newfs") == 0 && (*errp = newfs_wrong(w, sp->names.v[0],
-	    sp->force)) != NULL)
+	if (sp->kind == ARC_JOB_KIND_GPART && sp->verb != NULL && (strcmp(
+	    sp->verb, "newfs") == 0 || strcmp(sp->verb, "newfs-msdos") == 0) &&
+	    (*errp = newfs_wrong(w, sp->names.v[0], sp->force)) != NULL)
 		return (-1);
 	if (run_exec(w, v, &res) != 0) {
 		*errp = wtext(w, exec_error(w, &res, strrchr(v[0], '/') !=

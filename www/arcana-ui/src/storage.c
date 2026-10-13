@@ -26,7 +26,7 @@ enum {
 	SM_NONE, SM_SNAPSHOT, SM_DATASET, SM_PROPS, SM_CLONE, SM_PART_ADD,
 	SM_PART_LABEL, SM_PART_RESIZE, SM_SCHEME, SM_FSTAB, SM_POOL_NEW,
 	SM_POOL_ADD, SM_POOL_IMPORT, SM_VDEV_REPLACE, SM_VDEV_ATTACH,
-	SM_ASK,
+	SM_ASK, SM_KEY,
 };
 /* What the box that asks for one word is asked for. */
 enum { A_JAIL, A_UNJAIL, A_REPLICATE, A_NEWFS, A_SWAPON };
@@ -589,7 +589,20 @@ view_datasets(struct html *h)
 			    strcmp(jstr(d, "mounted"), "yes") == 0 ?
 			    "Unmount" : "Mount");
 		}
-		if (enc) {
+		/* A key asked for at a prompt: typed here, and changed. */
+		if (enc && jstr(d, "keylocation") != NULL && strcmp(jstr(d,
+		    "keylocation"), "prompt") == 0) {
+			h_fmt(h, "<button class=\"ghost small\" data-act=\""
+			    "st-typekey\" data-arg=\"%s\"", locked ? "load" :
+			    "change");
+			h_attr(h, "data-value", name);
+			h_fmt(h, " title=\"%s\">%s</button>", locked ? "Its key "
+			    "is asked for at a prompt: type it" : "A new key, "
+			    "asked for at a prompt as this one is", locked ?
+			    "Type the key" : "Change key");
+		}
+		if (enc && !(locked && jstr(d, "keylocation") != NULL &&
+		    strcmp(jstr(d, "keylocation"), "prompt") == 0)) {
 			h_fmt(h, "<button class=\"ghost small\" data-act=\""
 			    "st-key\" data-arg=\"%s\"", locked ? "load-key" :
 			    "unload-key");
@@ -1517,9 +1530,37 @@ storage_modal(struct html *h)
 			    "the datasets under it, their snapshots and "
 			    "properties</span></label>");
 		if (sg.ask == A_NEWFS)
-			h_raw(h, "<label class=\"toggle\"><input type=\""
+			h_raw(h, "<label>File system<select name=\"fs\"><option "
+			    "value=\"ufs\">UFS, with soft updates (newfs -U)"
+			    "</option><option value=\"msdos\">FAT, for other "
+			    "systems too (newfs_msdos: FAT32, or FAT16 when it "
+			    "is small)</option></select>"
+			    "</label><label class=\"toggle\"><input type=\""
 			    "checkbox\" name=\"force\"><span>Though it has a "
 			    "file system on it already</span></label>");
+		return (true);
+	case SM_KEY:
+		h_raw(h, "<form data-form=\"st-typekey\"><h2>");
+		h_raw(h, strcmp(sg.part, "load") == 0 ? "The key of " :
+		    "A new key for ");
+		h_txt(h, sg.target);
+		h_raw(h, "</h2><p>Sent to the host once, given to <code>zfs");
+		h_raw(h, strcmp(sg.part, "load") == 0 ? " load-key" :
+		    " change-key");
+		h_raw(h, "</code> in a file only root reads while zfs reads it, "
+		    "and kept nowhere: not by the console, not in a job. A "
+		    "passphrase is 8 characters at least; a hex key, 64 hex "
+		    "digits.</p>");
+		if (strcmp(sg.part, "load") == 0)
+			h_raw(h, "<label>Key<input type=\"password\" name=\"key\" "
+			    "autocomplete=\"off\" autofocus></label>");
+		else
+			h_raw(h, "<label>New key<input type=\"password\" name=\""
+			    "new_key\" autocomplete=\"new-password\" autofocus>"
+			    "</label><label>New key, again<input type=\""
+			    "password\" name=\"again\" autocomplete=\""
+			    "new-password\"></label><p class=\"dim\">It is asked "
+			    "for at a prompt after, as now.</p>");
 		return (true);
 	case SM_SNAPSHOT:
 		t = time(NULL);
@@ -1735,7 +1776,8 @@ storage_modal_buttons(struct html *h)
 	    " disabled" : "", sg.modal == SM_ASK ? (sg.ask == A_JAIL ? "Give" :
 	    sg.ask == A_UNJAIL ? "Take back" : sg.ask == A_REPLICATE ?
 	    "Replicate" : sg.ask == A_NEWFS ? "Make it" : "Swap on") :
-	    sg.modal == SM_SNAPSHOT ? "Snapshot" :
+	    sg.modal == SM_SNAPSHOT ? "Snapshot" : sg.modal == SM_KEY ?
+	    (strcmp(sg.part, "load") == 0 ? "Load" : "Change") :
 	    sg.modal == SM_VDEV_REPLACE ? "Replace" : sg.modal ==
 	    SM_VDEV_ATTACH ? "Mirror" : sg.modal == SM_POOL_ADD ? "Add" :
 	    sg.modal == SM_POOL_NEW ? "Create" :
@@ -1765,6 +1807,62 @@ prop_words(char *text, const char **v, int max)
 		v[n++] = line;
 	}
 	return (n);
+}
+
+static void
+typekey_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct server	*s;
+
+	(void)arg;
+	sg.saving = false;
+	if (status == 200 && jbool(o, "ok")) {
+		toast(false, "%s", strcmp(sg.part, "load") == 0 ? "The key is "
+		    "loaded" : "The key is changed");
+		app.modal = MODAL_NONE;
+		if ((s = cur_server()) != NULL)
+			refresh_storage(s, true);
+		return;
+	}
+	snprintf(app.modal_error, sizeof(app.modal_error), "%s", jstr(o,
+	    "error") != NULL ? jstr(o, "error") : jstr(o, "error.message") !=
+	    NULL ? jstr(o, "error.message") : err != NULL ? err : "failed");
+}
+
+/* The key typed, straight to the host: not a job, which is kept. */
+static bool
+typekey_form(struct server *s, const ucl_object_t *f)
+{
+	const char	*k, *n, *a;
+	char		*qd, *qk, *body, url[96];
+
+	k = jstr(f, "key") != NULL ? jstr(f, "key") : "";
+	n = jstr(f, "new_key") != NULL ? jstr(f, "new_key") : "";
+	a = jstr(f, "again") != NULL ? jstr(f, "again") : "";
+	if (strcmp(sg.part, "load") == 0 ? k[0] == '\0' : n[0] == '\0') {
+		snprintf(app.modal_error, sizeof(app.modal_error), "The key");
+		return (true);
+	}
+	if (strcmp(sg.part, "load") != 0 && strcmp(n, a) != 0) {
+		snprintf(app.modal_error, sizeof(app.modal_error), "The new key "
+		    "is not the same twice");
+		return (true);
+	}
+	qd = json_quote(sg.target);
+	qk = json_quote(strcmp(sg.part, "load") == 0 ? k : n);
+	if (asprintf(&body, "{\"dataset\":%s,\"%s\":%s}", qd, strcmp(sg.part,
+	    "load") == 0 ? "key" : "new_key", qk) == -1)
+		abort();
+	explicit_bzero(qk, strlen(qk));
+	free(qd);
+	free(qk);
+	snprintf(url, sizeof(url), "/api/servers/%s/zfs/key", s->id);
+	sg.saving = true;
+	app.modal_error[0] = '\0';
+	api("POST", url, body, typekey_cb, NULL);
+	explicit_bzero(body, strlen(body));
+	free(body);
+	return (true);
 }
 
 bool
@@ -1822,9 +1920,17 @@ storage_form(const char *form, const ucl_object_t *f)
 				    "letters, digits and _ . -");
 				return (true);
 			}
-			sjob(s, "gpart", "newfs", jbool(f, "force") ?
-			    ",\"force\":true" : "", sg.target, 2, sg.target,
-			    name);
+			if (jstr(f, "fs") != NULL && strcmp(jstr(f, "fs"),
+			    "msdos") == 0 && strlen(name) > 11) {
+				snprintf(app.modal_error,
+				    sizeof(app.modal_error), "A FAT label is "
+				    "11 characters at most");
+				return (true);
+			}
+			sjob(s, "gpart", jstr(f, "fs") != NULL && strcmp(jstr(f,
+			    "fs"), "msdos") == 0 ? "newfs-msdos" : "newfs",
+			    jbool(f, "force") ? ",\"force\":true" : "",
+			    sg.target, 2, sg.target, name);
 		} else {
 			if (strncmp(name, "/dev/", 5) != 0 || !name_ok(name +
 			    5, "_./-")) {
@@ -1838,6 +1944,8 @@ storage_form(const char *form, const ucl_object_t *f)
 		app.modal = MODAL_NONE;
 		return (true);
 	}
+	if (strcmp(form, "st-typekey") == 0)
+		return (typekey_form(s, f));
 	if (strcmp(form, "st-snapshot") == 0) {
 		if (!name_ok(name, "_.:-")) {
 			snprintf(app.modal_error, sizeof(app.modal_error),
@@ -2054,6 +2162,9 @@ storage_action(const char *act, const char *arg, const char *value)
 		    A_REPLICATE : strcmp(arg, "newfs") == 0 ? A_NEWFS :
 		    A_SWAPON;
 		box(SM_ASK, value, "");
+	} else if (strcmp(act, "st-typekey") == 0) {
+		box(SM_KEY, value, strcmp(arg, "load") == 0 ? "load" :
+		    "change");
 	} else if (strcmp(act, "st-key") == 0 && (strcmp(arg, "load-key") ==
 	    0 || strcmp(arg, "unload-key") == 0)) {
 		/* Its key is read where keylocation says, never typed here. */
@@ -2353,4 +2464,111 @@ storage_action(const char *act, const char *arg, const char *value)
 		sjob(s, "cam", "rescan", "", "cam", 0);
 	}
 	return (true);
+}
+
+/* ---- A jail's own datasets, on its page ------------------------------ */
+
+static struct {
+	char		 sid[9];
+	char		 jail[256];
+	ucl_object_t	*data;
+	bool		 loading;
+	char		 error[300];
+} jd;
+
+static void
+jail_ds_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	(void)arg;
+	jd.loading = false;
+	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+		snprintf(jd.error, sizeof(jd.error), "%s", jstr(o, "error") !=
+		    NULL ? jstr(o, "error") : err != NULL ? err : "no answer");
+		return;
+	}
+	jd.error[0] = '\0';
+	if (jd.data != NULL)
+		ucl_object_unref(jd.data);
+	jd.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+}
+
+/* What the jail's own zfs sees: the datasets given to it. */
+void
+refresh_jail_datasets(struct server *s, const char *jail)
+{
+	char	url[400];
+
+	if (!app.online || jd.loading)
+		return;
+	if (strcmp(jd.sid, s->id) != 0 || strcmp(jd.jail, jail) != 0) {
+		if (jd.data != NULL)
+			ucl_object_unref(jd.data);
+		jd.data = NULL;
+		jd.error[0] = '\0';
+	}
+	snprintf(jd.sid, sizeof(jd.sid), "%s", s->id);
+	snprintf(jd.jail, sizeof(jd.jail), "%s", jail);
+	jd.loading = true;
+	snprintf(url, sizeof(url), "/api/servers/%s/storage/datasets?jail=%s",
+	    s->id, jail);
+	api("GET", url, NULL, jail_ds_cb, NULL);
+}
+
+void
+view_jail_datasets(struct html *h, struct server *s, const ucl_object_t *j)
+{
+	static const struct tcol cols[] = {
+		{ "Dataset", "name", false }, { "Used", "used", true },
+		{ "Available", "avail", true }, { "Mounted at", "mountpoint",
+		false }, { "", NULL, false },
+	};
+	const ucl_object_t	**rows, *d;
+	char			 buf[32];
+	int			 n;
+
+	/* Only one that runs has a zfs of its own to ask. */
+	if (jstr(j, "state") == NULL || strcmp(jstr(j, "state"), "running") !=
+	    0 || strcmp(jd.sid, s->id) != 0 || strcmp(jd.jail, app.jail) != 0)
+		return;
+	if (jd.error[0] != '\0' || (jd.data != NULL && ucl_array_size(jget(
+	    jd.data, "datasets")) == 0))
+		return;
+	h_raw(h, "<h4>Datasets <span class=\"dim\">as the jail's own zfs "
+	    "sees them: those given to it (zfs jail)</span></h4>");
+	if (jd.data == NULL) {
+		h_raw(h, "<div class=\"loader\"></div>");
+		return;
+	}
+	h_raw(h, "<table class=\"net jail-ds\">");
+	tbl_head(h, "jail-ds", cols, 5, 0);
+	h_raw(h, "<tbody>");
+	rows = tbl_rows("jail-ds", jget(jd.data, "datasets"), cols, 5, NULL);
+	for (n = 0; (d = rows[n]) != NULL; n++) {
+		h_raw(h, "<tr><td><b>");
+		h_txt(h, jstr(d, "name"));
+		h_raw(h, "</b>");
+		if (jstr(d, "jailed") != NULL && strcmp(jstr(d, "jailed"), "on") ==
+		    0)
+			h_raw(h, " <span class=\"chip\" title=\"Given to it: it "
+			    "manages it as its own\">its own</span>");
+		h_raw(h, "</td><td>");
+		size(buf, sizeof(buf), jint(d, "used", 0));
+		h_txt(h, buf);
+		h_raw(h, "</td><td>");
+		size(buf, sizeof(buf), jint(d, "avail", 0));
+		h_txt(h, buf);
+		h_raw(h, "</td><td class=\"mono\">");
+		h_txt(h, jstr(d, "mountpoint") != NULL ? jstr(d, "mountpoint") :
+		    "");
+		if (jstr(d, "mounted") != NULL && strcmp(jstr(d, "mounted"),
+		    "yes") != 0)
+			h_raw(h, " <small class=\"dim\">not mounted</small>");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"ghost small\" "
+		    "data-act=\"st-snapshot\"");
+		h_attr(h, "data-arg", jstr(d, "name"));
+		h_raw(h, ">Snapshot</button></td></tr>");
+	}
+	free(rows);
+	h_raw(h, "</tbody></table>");
 }

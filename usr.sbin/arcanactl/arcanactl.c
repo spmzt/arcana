@@ -17,6 +17,7 @@
 #include <poll.h>
 #include <sha256.h>
 #include <stdbool.h>
+#include <readpassphrase.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -186,6 +187,13 @@ usage(void)
 	    "    jailconf remove jail [dataset] | defaults file | files\n"
 	    "    jailconf template name file | untemplate name\n"
 	    "    neigh add address lladdr [temp] | delete address\n"
+	    "    cert [list] | add name file | remove name | trust file |\n"
+	    "        untrust file | rehash\n"
+	    "    capture [source packets seconds [filter ...]]\n"
+	    "    zfskey [-n] dataset\n"
+	    "    sshd [list] | banner file | set Setting [value ...] |\n"
+	    "        authorize user keyfile | unauthorize user fingerprint |\n"
+	    "        sign ca-key-file [principal ...]\n"
 	    "    ntp server ... | remove\n"
 	    "    rtadvd interface prefix [dns ...] | interface remove\n"
 	    "    sysctl [name | start of a name]\n"
@@ -206,6 +214,7 @@ usage(void)
 	    "    bridge name trunk member vlan-list [untagged-vlan]\n"
 	    "    bridge name vlanfilter on | off\n"
 	    "    bridge name flag member [-]flag\n"
+	    "    bridge name deladdr address | static member address | flush\n"
 	    "    bridge name set option value\n"
 	    "    bridge name ifset member option value\n"
 	    "    geneve name create | set option value ...\n"
@@ -223,6 +232,7 @@ usage(void)
 	    "    zfs jail | unjail dataset jail\n"
 	    "    zfs replicate [-r] snapshot new-dataset [since-snapshot]\n"
 	    "    gpart newfs [-f] partition [label]\n"
+	    "    gpart newfs-msdos [-f] partition [label]\n"
 	    "    gpart growfs partition\n"
 	    "    swapon | swapoff device\n"
 	    "    storage snapshots [dataset]\n"
@@ -2052,6 +2062,224 @@ cmd_neigh(struct arc_client *cl, int argc, char **argv)
 	return (submit(cl, &sp));
 }
 
+/* A key, at a prompt that does not show it, or a line of the input. */
+static char *
+key_read(const char *prompt, char *buf, size_t len)
+{
+
+	if (isatty(STDIN_FILENO))
+		return (readpassphrase(prompt, buf, len, RPP_REQUIRE_TTY));
+	if (fgets(buf, (int)len, stdin) == NULL)
+		return (NULL);
+	buf[strcspn(buf, "\r\n")] = '\0';
+	return (buf);
+}
+
+/*
+ * zfskey [-n] dataset: the key of an encrypted dataset asked for at a
+ * prompt, typed: loaded; with -n changed, the key it has first (when it
+ * is not loaded) and the new one.  At a terminal it is asked for; else
+ * a line of the input each.
+ */
+static int
+cmd_zfskey(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_zfs_key_req	 rq;
+	struct arc_zfs_key_rsp	*rs;
+	char			 key[513], nkey[513], again[513];
+	bool			 change;
+	int			 error;
+
+	change = argc == 3 && strcmp(argv[1], "-n") == 0;
+	if (argc != 2 && !change)
+		usage();
+	memset(&rq, 0, sizeof(rq));
+	rq.zfs_dataset = argv[argc - 1];
+	if (key_read(change ? "Key now (empty when it is loaded): " : "Key: ",
+	    key, sizeof(key)) == NULL)
+		errx(1, "no key");
+	rq.zfs_key = key[0] != '\0' ? key : NULL;
+	if (change) {
+		if (key_read("New key: ", nkey, sizeof(nkey)) == NULL)
+			errx(1, "no new key");
+		if (isatty(STDIN_FILENO)) {
+			if (key_read("New key, again: ", again, sizeof(again)) ==
+			    NULL || strcmp(again, nkey) != 0)
+				errx(1, "the new keys differ");
+			explicit_bzero(again, sizeof(again));
+		}
+		rq.zfs_new_key = nkey;
+	}
+	error = arc_zfs_key(cl, &rq, &rs);
+	explicit_bzero(key, sizeof(key));
+	if (change)
+		explicit_bzero(nkey, sizeof(nkey));
+	if (error != 0)
+		fail(cl, error, "zfs key");
+	if (!rs->ok && rs->error != NULL)
+		warnx("%s", rs->error);
+	emit_trace(rs->trace.v, rs->trace.n);
+	error = rs->ok ? 0 : 1;
+	arc_zfs_key_rsp_free(rs);
+	return (error);
+}
+
+/*
+ * capture [source packets seconds [filter ...]]: packets taken with
+ * tcpdump off an interface or a tap, of the host or of -j's jail; with
+ * nothing, the sources there are.
+ */
+static int
+cmd_capture(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_capture_req	 rq;
+	struct arc_capture_rsp	*rs;
+	const char		*errstr;
+	char			*f;
+	size_t			 len;
+	int			 i, error;
+
+	memset(&rq, 0, sizeof(rq));
+	rq.jail = netjail;
+	f = NULL;
+	if (argc != 1) {
+		if (argc < 4)
+			usage();
+		rq.interface = argv[1];
+		rq.has_packets = true;
+		rq.packets = (uint32_t)strtonum(argv[2], 1, 500, &errstr);
+		if (errstr != NULL)
+			errx(2, "packets %s: %s", argv[2], errstr);
+		rq.has_seconds = true;
+		rq.seconds = (uint32_t)strtonum(argv[3], 1, 60, &errstr);
+		if (errstr != NULL)
+			errx(2, "seconds %s: %s", argv[3], errstr);
+		for (len = 1, i = 4; i < argc; i++)
+			len += strlen(argv[i]) + 1;
+		if ((f = calloc(1, len)) == NULL)
+			err(1, "calloc");
+		for (i = 4; i < argc; i++) {
+			if (i > 4)
+				strlcat(f, " ", len);
+			strlcat(f, argv[i], len);
+		}
+		rq.net_filter = f;
+	}
+	if ((error = arc_capture(cl, &rq, &rs)) != 0)
+		fail(cl, error, "capture");
+	if (rs->json != NULL)
+		xo_emit("{:json/%s}\n", rs->json);
+	else if (rs->error != NULL)
+		warnx("%s", rs->error);
+	emit_trace(rs->trace.v, rs->trace.n);
+	error = rs->ok ? 0 : 1;
+	arc_capture_rsp_free(rs);
+	free(f);
+	return (error);
+}
+
+/*
+ * sshd [list] | banner file | set Setting [value ...] | authorize user
+ * keyfile | unauthorize user fingerprint | sign ca-key-file [principal
+ * ...]: the base system's sshd, of the host or of -j's jail; a change is
+ * a job, and with -s undone unless confirmed.
+ */
+static int
+cmd_sshd(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_ssh_req	 rq;
+	struct arc_ssh_rsp	*rs;
+	char			*t;
+	int			 error;
+
+	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
+		memset(&rq, 0, sizeof(rq));
+		rq.jail = netjail;
+		if ((error = arc_ssh(cl, &rq, &rs)) != 0)
+			fail(cl, error, "sshd");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		else if (rs->error != NULL)
+			warnx("%s", rs->error);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_ssh_rsp_free(rs);
+		return (error);
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_SSH;
+	sp.verb = argv[1];
+	if (argc == 3 && strcmp(argv[1], "banner") == 0)
+		sp.text = strcmp(argv[2], "-") == 0 ? "" : slurp(argv[2]);
+	else if (argc >= 3 && strcmp(argv[1], "set") == 0) {
+		sp.path = argv[2];
+		sp.names.v = (const char **)(uintptr_t)&argv[3];
+		sp.names.n = (size_t)argc - 3;
+	} else if (argc == 4 && strcmp(argv[1], "authorize") == 0) {
+		sp.user = argv[2];
+		t = slurp(argv[3]);
+		t[strcspn(t, "\n")] = '\0';
+		sp.text = t;
+	} else if (argc == 4 && strcmp(argv[1], "unauthorize") == 0) {
+		sp.user = argv[2];
+		sp.text = argv[3];
+	} else if (argc >= 3 && strcmp(argv[1], "sign") == 0) {
+		sp.text = slurp(argv[2]);
+		sp.names.v = (const char **)(uintptr_t)&argv[3];
+		sp.names.n = (size_t)argc - 3;
+	} else
+		usage();
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
+/*
+ * cert [list] | add name file | remove name | trust file | untrust file |
+ * rehash: the certificates OpenSSL trusts, of the host or of -j's jail;
+ * a change is a job.
+ */
+static int
+cmd_cert(struct arc_client *cl, int argc, char **argv)
+{
+	struct arc_job_spec	 sp;
+	struct arc_certs_req	 rq;
+	struct arc_certs_rsp	*rs;
+	int			 error;
+
+	if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
+		memset(&rq, 0, sizeof(rq));
+		rq.jail = netjail;
+		if ((error = arc_certs(cl, &rq, &rs)) != 0)
+			fail(cl, error, "certs");
+		if (rs->json != NULL)
+			xo_emit("{:json/%s}\n", rs->json);
+		else if (rs->error != NULL)
+			warnx("%s", rs->error);
+		emit_trace(rs->trace.v, rs->trace.n);
+		error = rs->ok ? 0 : 1;
+		arc_certs_rsp_free(rs);
+		return (error);
+	}
+	memset(&sp, 0, sizeof(sp));
+	sp.has_kind = true;
+	sp.kind = ARC_JOB_KIND_CERT;
+	sp.verb = argv[1];
+	if (argc == 4 && strcmp(argv[1], "add") == 0) {
+		sp.path = argv[2];
+		sp.text = slurp(argv[3]);
+	} else if (argc == 3 && (strcmp(argv[1], "remove") == 0 ||
+	    strcmp(argv[1], "trust") == 0 || strcmp(argv[1], "untrust") == 0))
+		sp.path = argv[2];
+	else if (argc != 2 || strcmp(argv[1], "rehash") != 0)
+		usage();
+	sp.safe = safe;
+	sp.jail = netjail;
+	return (submit(cl, &sp));
+}
+
 /*
  * jailconf make jail file [dataset snapshot clone|send path] [start]
  * jailconf remove jail [dataset]
@@ -2649,6 +2877,8 @@ cmd_storage(struct arc_client *cl, int argc, char **argv)
 	req.has_storage_kind = true;
 	req.storage_kind = (uint8_t)i;
 	req.net_filter = argc == 3 ? argv[2] : NULL;
+	/* -j: what that jail's own zfs sees. */
+	req.jail = netjail;
 	if ((error = arc_storage(cl, &req, &rsp)) != 0)
 		fail(cl, error, "storage");
 	if (rsp->json != NULL)
@@ -3508,6 +3738,14 @@ main(int argc, char *argv[])
 		rc = cmd_jailconf(&cl, argc, argv);
 	else if (strcmp(argv[0], "neigh") == 0)
 		rc = cmd_neigh(&cl, argc, argv);
+	else if (strcmp(argv[0], "cert") == 0)
+		rc = cmd_cert(&cl, argc, argv);
+	else if (strcmp(argv[0], "sshd") == 0)
+		rc = cmd_sshd(&cl, argc, argv);
+	else if (strcmp(argv[0], "capture") == 0)
+		rc = cmd_capture(&cl, argc, argv);
+	else if (strcmp(argv[0], "zfskey") == 0)
+		rc = cmd_zfskey(&cl, argc, argv);
 	else if (strcmp(argv[0], "sysctl") == 0)
 		rc = cmd_sysctl(&cl, argc, argv);
 	else if (strcmp(argv[0], "ps") == 0 || strcmp(argv[0], "signal") == 0 ||

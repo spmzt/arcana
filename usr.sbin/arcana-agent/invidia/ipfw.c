@@ -249,6 +249,216 @@ ipfw(struct work *w, const char **errp, int quiet, ...)
 	return (0);
 }
 
+/* --- dummynet, read ---------------------------------------------------- */
+
+/* "10.000 Mbit/s" as bits a second; 0 for no limit. */
+static int64_t
+dn_bw(const char *s)
+{
+	double	v;
+	char	unit[16];
+
+	if (sscanf(s, "%lf %15s", &v, unit) != 2)
+		return (0);
+	if (strncmp(unit, "Gbit", 4) == 0)
+		v *= 1e9;
+	else if (strncmp(unit, "Mbit", 4) == 0)
+		v *= 1e6;
+	else if (strncmp(unit, "Kbit", 4) == 0)
+		v *= 1e3;
+	return ((int64_t)(v + .5));
+}
+
+/* A mask of 32 bits as its prefix's length, -1 when it is none. */
+static int
+dn_prefix(unsigned long m)
+{
+	int	n;
+
+	for (n = 0; n < 32 && (m & (0x80000000UL >> n)) != 0; n++)
+		;
+	return ((m << n & 0xffffffffUL) == 0 ? n : -1);
+}
+
+/* "mask:  0x00 0xffffff00/0x0000 -> 0x00000000/0x0000" */
+static ucl_object_t *
+dn_mask(const char *line)
+{
+	ucl_object_t	*m;
+	unsigned long	 proto, src, sp, dst, dp;
+
+	if (sscanf(line, " mask: 0x%lx 0x%lx/0x%lx -> 0x%lx/0x%lx", &proto,
+	    &src, &sp, &dst, &dp) != 5)
+		return (NULL);
+	m = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(m, ucl_object_fromint(dn_prefix(src)), "src",
+	    0, false);
+	ucl_object_insert_key(m, ucl_object_fromint(dn_prefix(dst)), "dst",
+	    0, false);
+	ucl_object_insert_key(m, ucl_object_fromint((int64_t)sp), "src_port",
+	    0, false);
+	ucl_object_insert_key(m, ucl_object_fromint((int64_t)dp), "dst_port",
+	    0, false);
+	ucl_object_insert_key(m, ucl_object_fromint((int64_t)proto), "proto",
+	    0, false);
+	return (m);
+}
+
+/* "00001:  10.000 Mbit/s   20 ms burst 0": a link's figures, into o. */
+static bool
+dn_link(const char *line, ucl_object_t *o)
+{
+	const char	*p, *ms;
+	char		*end;
+	long		 num;
+
+	num = strtol(line, &end, 10);
+	if (end == line || *end != ':')
+		return (false);
+	p = end + 1;
+	p += strspn(p, " ");
+	ucl_object_insert_key(o, ucl_object_fromint(num), "num", 0, false);
+	if (strncmp(p, "unlimited", 9) == 0)
+		ucl_object_insert_key(o, ucl_object_fromint(0), "bw", 0, false);
+	else
+		ucl_object_insert_key(o, ucl_object_fromint(dn_bw(p)), "bw", 0,
+		    false);
+	if ((ms = strstr(p, " ms")) != NULL) {
+		while (ms > p && ms[-1] >= '0' && ms[-1] <= '9')
+			ms--;
+		ucl_object_insert_key(o, ucl_object_fromint(strtol(ms, NULL,
+		    10)), "delay", 0, false);
+	}
+	if ((ms = strstr(p, "burst ")) != NULL)
+		ucl_object_insert_key(o, ucl_object_fromint(strtoll(ms + 6,
+		    NULL, 10)), "burst", 0, false);
+	return (true);
+}
+
+/* "q00001  50 sl.plr 0.01 0 flows (64 buckets) sched 1 weight 10 ...":
+ * a flowset's figures, into o. */
+static void
+dn_flowset(const char *line, ucl_object_t *o)
+{
+	const char	*p;
+
+	p = line + 1 + strspn(line + 1, "0123456789");
+	p += strspn(p, " ");
+	if (strstr(p, " KB") != NULL && strstr(p, " KB") < strstr(p, "flows"))
+		ucl_object_insert_key(o, ucl_object_fromint(strtol(p, NULL,
+		    10) * 1024), "bytes", 0, false);
+	else
+		ucl_object_insert_key(o, ucl_object_fromint(strtol(p, NULL,
+		    10)), "slots", 0, false);
+	if ((p = strstr(line, "plr ")) != NULL)
+		ucl_object_insert_key(o, ucl_object_fromdouble(strtod(p + 4,
+		    NULL)), "plr", 0, false);
+	if ((p = strstr(line, " sched ")) != NULL)
+		ucl_object_insert_key(o, ucl_object_fromint(strtol(p + 7, NULL,
+		    10)), "sched", 0, false);
+	if ((p = strstr(line, " weight ")) != NULL)
+		ucl_object_insert_key(o, ucl_object_fromint(strtol(p + 8, NULL,
+		    10)), "weight", 0, false);
+	if ((p = strstr(line, " pri ")) != NULL)
+		ucl_object_insert_key(o, ucl_object_fromint(strtol(p + 5, NULL,
+		    10)), "pri", 0, false);
+}
+
+/*
+ * The pipes, schedulers and queues of dummynet, as objects: ipfw pipe,
+ * sched and queue show, read.  A pipe's own scheduler and queue (65536
+ * and on) are its own, not shown apart.
+ */
+static ucl_object_t *
+dn_read(struct work *w)
+{
+	static const char *const kinds[] = { "pipe", "sched", "queue" };
+	struct execres	 res;
+	ucl_object_t	*top, *arr, *cur, *m;
+	char		*argv[4], *text, *p, *line, *t;
+	size_t		 k;
+
+	top = ucl_object_typed_new(UCL_OBJECT);
+	for (k = 0; k < nitems(kinds); k++) {
+		arr = ucl_object_typed_new(UCL_ARRAY);
+		argv[0] = (char *)(uintptr_t)opts.ipfw_bin;
+		argv[1] = (char *)(uintptr_t)kinds[k];
+		argv[2] = (char *)(uintptr_t)"show";
+		argv[3] = NULL;
+		cur = NULL;
+		if (run_exec(w, scope_argv(w, argv), &res) == 0 && res.out !=
+		    NULL) {
+			text = wstrndup(w, res.out, res.outlen);
+			p = text;
+			while ((line = strsep(&p, "\n")) != NULL) {
+				t = line + strspn(line, " \t");
+				if (k < 2 && line[0] >= '0' && line[0] <= '9') {
+					cur = ucl_object_typed_new(UCL_OBJECT);
+					if (!dn_link(line, cur)) {
+						ucl_object_unref(cur);
+						cur = NULL;
+						continue;
+					}
+					ucl_array_append(arr, cur);
+				} else if (k == 2 && line[0] == 'q') {
+					cur = ucl_object_typed_new(UCL_OBJECT);
+					ucl_object_insert_key(cur,
+					    ucl_object_fromint(strtol(line + 1,
+					    NULL, 10)), "num", 0, false);
+					dn_flowset(line, cur);
+					ucl_array_append(arr, cur);
+				} else if (cur == NULL)
+					continue;
+				else if (k == 0 && line[0] == 'q')
+					dn_flowset(line, cur);
+				else if (k == 1 && strncmp(t, "sched ", 6) == 0) {
+					t = strstr(t, " type ");
+					if (t != NULL)
+						ucl_object_insert_key(cur,
+						    ucl_object_fromlstring(t + 6,
+						    strcspn(t + 6, " ")), "type",
+						    0, false);
+				} else if (strncmp(t, "mask:", 5) == 0) {
+					if ((m = dn_mask(t)) != NULL)
+						ucl_object_insert_key(cur, m,
+						    "mask", 0, true);
+				} else if (k == 1 && strncmp(t, "Children "
+				    "flowsets:", 18) == 0) {
+					ucl_object_t	*ch;
+					char		*q, *e;
+
+					ch = ucl_object_typed_new(UCL_ARRAY);
+					for (q = t + 18; *q != '\0'; q = e) {
+						long	v;
+
+						v = strtol(q, &e, 10);
+						if (e == q)
+							break;
+						ucl_array_append(ch,
+						    ucl_object_fromint(v));
+					}
+					ucl_object_insert_key(cur, ch,
+					    "queues", 0, true);
+				} else if (strncmp(t, "RED ", 4) == 0 ||
+				    strncmp(t, "GRED ", 5) == 0)
+					ucl_object_insert_key(cur,
+					    ucl_object_fromstring(t), "red", 0,
+					    true);
+				else if (k == 1 && line[0] == ' ' &&
+				    isupper((unsigned char)t[0]) && strncmp(t,
+				    "Children", 8) != 0)
+					/* FQ_CODEL target 5ms ...: its own. */
+					ucl_object_insert_key(cur,
+					    ucl_object_fromstring(t), "params", 0,
+					    true);
+			}
+		}
+		ucl_object_insert_key(top, arr, k == 0 ? "pipes" : k == 1 ?
+		    "scheds" : "queues", 0, false);
+	}
+	return (top);
+}
+
 /* {"loaded","enabled","rules":[...],"tables","nat","kept","other",...} */
 int
 do_ipfw(struct work *w, struct arc_network_rsp *rsp)
@@ -457,6 +667,10 @@ do_ipfw(struct work *w, struct arc_network_rsp *rsp)
 				    line));
 	}
 	ucl_object_insert_key(top, arr, "pipes", 0, false);
+	/* And as objects, for QoS by forms. */
+	if (loaded && (kmod_loaded("dummynet") || strcmp(opts.ipfw_bin,
+	    "/sbin/ipfw") != 0))
+		ucl_object_insert_key(top, dn_read(w), "qos", 0, false);
 	/* Whether a rule with log writes a line to the security log. */
 	{
 		int	vb;
@@ -1139,12 +1353,37 @@ kept_line(struct work *w, const char *line, const char **errp)
 	old = file_read(w, &len);
 	if (old == NULL)
 		old = wstrdup(w, "");
-	p = wstrdup(w, old);
-	while ((l = strsep(&p, "\n")) != NULL)
-		if (strcmp(l + strspn(l, " \t"), line) == 0) {
-			pthread_mutex_unlock(&file_lock);
-			return (0);
+	/*
+	 * An object configured again ("pipe 1 config ..."): its line
+	 * before, which the kept file would do after the new one, goes.
+	 */
+	{
+		char	k[32], n[32], c[16], *nl, *keep;
+		size_t	klen;
+
+		klen = 0;
+		if (sscanf(line, "%31s %31s %15s", k, n, c) == 3 &&
+		    strcmp(c, "config") == 0)
+			klen = strlen(k) + strlen(n) + strlen(c) + 3;
+		keep = wcalloc(w, len + 1, 1);
+		p = wstrdup(w, old);
+		while ((l = strsep(&p, "\n")) != NULL) {
+			if (strcmp(l + strspn(l, " \t"), line) == 0) {
+				pthread_mutex_unlock(&file_lock);
+				return (0);
+			}
+			nl = l + strspn(l, " \t");
+			if (klen > 0 && strncmp(nl, wfmt(w, "%s %s %s ", k, n,
+			    c), klen) == 0)
+				continue;
+			if (p != NULL || l[0] != '\0') {
+				strlcat(keep, l, len + 1);
+				if (p != NULL)
+					strlcat(keep, "\n", len + 1);
+			}
 		}
+		old = keep;
+	}
 	/* Before the rules: a rule may name what the line makes. */
 	out = wfmt(w, "%s\n%s", line, old);
 	rc = file_write(w, out, strlen(out), errp);
@@ -1405,6 +1644,19 @@ do_ipfw_job(struct work *w, const struct arc_job_spec *sp, bool *heldp,
 			*errp = scope_missing(w, &res, "ipfw", NULL);
 			if (*errp == NULL)
 				*errp = wtext(w, exec_error(w, &res, "ipfw"));
+			return (-1);
+		}
+		/* dummynet says "x is invalid parameter" (on standard
+		 * output, with -q too), leaves it out and exits 0: what it
+		 * says is its failure. */
+		if ((strcmp(verb, "pipe") == 0 || strcmp(verb, "sched") == 0 ||
+		    strcmp(verb, "queue") == 0) && (res.outlen > 0 ||
+		    res.errlen > 0)) {
+			const char	*said;
+
+			said = res.outlen > 0 ? res.out : res.err;
+			*errp = wtext(w, wfmt(w, "ipfw %s: %s", verb, wstrndup(w,
+			    said, strcspn(said, "\n"))));
 			return (-1);
 		}
 		/* Undone: so are the kept lines it had made. */

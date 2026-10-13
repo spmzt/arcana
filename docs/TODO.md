@@ -307,7 +307,16 @@
 - Asked for on 2026-10-11, each a task of its own, in no order yet:
   - Users and groups, roles (RBAC) and tenants in the console: who
     sees and changes which hosts and services.
-  - Mail notifications of faults, jobs and runs.
+  - Mail notifications of faults, jobs and runs. (Done 2026-10-12:
+    Settings, Notifications, By mail; one worker reads each host's
+    events, the agent's job ends among them now, and the console's
+    host's sendmail(8) sends them, twenty an hour at most.)  Not
+    understood yet: with web.conf's mail_tick at 1 s in every test's
+    console, the page tests that wait on a safe job (lo0 add in
+    pwa_nettab, and four others) failed about one run in two, the job
+    left waiting to be confirmed; at the default 15 s, and with the
+    thread gone, they pass.  The thread then did nothing but wake.
+    Only the mail test sets 1 s now; worth finding why.
   - The console's CA: one imported, or made and self-signed from the
     panel, given to each agent and trusted there; the console as a CA
     and as an intermediate CA under another.
@@ -317,6 +326,10 @@
   - The base system's ssh, further: the banner, the users let in,
     authorized keys, host keys and their fingerprints, host keys
     signed by a CA key.
+    (Done 2026-10-12: the SSH tab, of a host or a jail; sshd -T read,
+    each change read by sshd -t first and kept beside, undone in safe
+    mode; verified with the real sshd and ssh-keygen in a lab jail.
+    Not yet: TrustedUserCAKeys (user certificates) set from the page.)
   - IDS/IPS by Snort, a plugin (luxuria) as before: Snort and its
     rules updated and configured from the panel.
   - The console clustered; disaster recovery across console clusters.
@@ -334,12 +347,19 @@
     links?), labels on interfaces (a console-side tag, or the
     interface's description?), prefix lists (used by what: ipfw
     tables, BIRD filters, SD-WAN zones?), IGMP and MLD (what to set).
-  - A certificates tab per host, by certctl and OpenSSL.
+  - A certificates tab per host, by certctl and OpenSSL. (Done
+    2026-10-12: trusted and untrusted, read with OpenSSL; a CA given,
+    one distrusted and trusted again, kept where certctl rehash finds
+    them; a jail's too.  Verified with the real certctl in a lab jail.)
   - Configuration templates: a host's setup exported to one and a
     template applied to a host; YAML where the standard allows,
     UCL otherwise.
   - A span tab: traffic mirrored by a BPF interface, or by ipfw rules
     with BPF.
+    (Done 2026-10-12: Network, Span: a bridge's span ports; rules with
+    log logdst bpf, each a tap ipfw<n> (FreeBSD 16), made and listed;
+    capture by tcpdump from any of them, the lines and the pcap.
+    Verified in a vnet jail with devfs's bpf unhidden.)
   - Labels on interfaces, for the UCS they carry.
   - BIRD's OSPF, BFD and BGP each a tab of its own, with forms.
   - IGMP and MLD configured.
@@ -349,6 +369,14 @@
   - MSS clamping on transports.
   - QoS on ipfw by forms: pipes, schedulers, queues, their masks and
     the rules that use them, beyond what SD-WAN makes.
+    (Done 2026-10-12: the Firewall tab's QoS; dummynet read as
+    objects, each made, changed and taken away by a form and kept as
+    one line; a rule that sends to a pipe or queue.  Masks are each
+    address or all; prefixes and ports in a mask still by ipfw's
+    words.)
+  - Flaky under the whole suite's load (2026-10-12): agent_test:observe
+    expects "samples":[] before the sampler's first look, and under
+    load the sampler is there first.  It passes alone.
   - Every table exported as CSV. (Done 2026-10-12: ⤓ in every
     table's head, the rows as shown.)
   - Prefix lists kept by the console and used on any host.
@@ -368,6 +396,14 @@
   a dataset whose keylocation is prompt, without it being kept in a
   job; a key changed; file systems other than UFS made; a disk's
   self-test started; a vnet jail's datasets from the jail's own page.
+  (A key typed and a key changed done 2026-10-12: zfs-key, a call
+  and not a job, verified as root on a pool of a memory disk.  FAT by
+  newfs_msdos done too, verified on memory disks.  A self-test: only
+  NVMe has one in the base system (nvmecontrol selftest; ATA and SCSI
+  need smartctl, a package), and the lab has no NVMe disk to try it
+  on: left until one is there.  A jail's datasets on its page done
+  too: the storage read with jail, its own zfs list by jexec; verified
+  with a dataset given to a vnet jail on a pool of a memory disk.)
 - To look at (2026-10-06): the test VM (FreeBSD 16-CURRENT, labvm)
   stopped answering, and had to be restarted, right after `ifconfig
   bridge0 maxaddr 500` was run by the agent on a bridge it had just
@@ -382,9 +418,16 @@
   no way to read it from userland (no sysctl as vxlan has, no dump
   through netlink); once it does, shown as a bridge's addresses are.
   A learned address of a bridge deleted, and a static one added.
+  (Done 2026-10-13: deladdr, static and flush, static kept in rc.conf;
+  verified in a vnet jail.  Found there: run_exec scopes what it runs,
+  so a caller that scoped ifconfig too gave it -j twice, and a bridge
+  in a jail could be neither read nor changed: scope_argv leaves what
+  is scoped already.)
 - Gula, further: older samples thinned instead of dropped; dmesg for
   an agent that is not root, which the kernel refuses unless
   security.bsd.unprivileged_read_msgbuf is on.
+  (Done 2026-10-13: the older half thinned, the oldest kept until the
+  older half is 64 looks apart; a refused dmesg says what lets it.)
 - The mesh: agents joined by SCTP associations, each to at least a
   configured number of others (2 unless set), so that the console
   reaches an agent it has lost through one it still has. SCTP only,
@@ -439,17 +482,14 @@ Written and tested with stand-ins, never run for real:
   about when a host is moved, and the drawing is as large as its room.
 - The network map with real tunnels between real hosts: the test has two
   names for one agent, so its links are the networks they share.
-- WireGuard and BIRD against the real wg(8), wg-quick(8) and birdc(8):
-  the tests use stand-ins. The format of `wg show all dump` is the one
-  wg(8) documents; BIRD is not installed on the machine this was written
-  on, and what birdc prints was written from its documentation.
+- wg-quick(8): the tests use stand-ins (wg(8) and birdc(8) were run
+  for real, below).
 - A vnet jail's network. Run for real, against the jail `gateway` of
   one host: its interfaces, routes, route lookup and BIRD read; an
   address added and removed; an interface brought up; a new epair
   given, taken back and destroyed. Not run for real: anything kept
   (the jail's own `rc.conf`, `vnet.interface` in `jail.conf`), BIRD's
-  configuration written in a jail, WireGuard in a jail, safe mode in a
-  jail, and the map with a real jail as a node (the browser test tells
+  configuration written in a jail, safe mode in a jail, and the map with a real jail as a node (the browser test tells
   the page that a jail runs).
 - A jail's share of the CPUs and its memory from rctl_get_racct(2):
   the test VM's kernel has kern.racct.enable off, and turning it on
@@ -482,6 +522,15 @@ Written and tested with stand-ins, never run for real:
 ## Verified for real
 
 What was once in the list above, and when it was run:
+
+- WireGuard against the real wg(8), in a vnet jail (2026-10-13): wg0
+  made with its address, given a key and a port (init), a peer with
+  an endpoint, IPv4 and IPv6 allowed-ips and a keepalive, read back
+  through `wg show all dump` as wg(8) printed it, and taken away.
+- BIRD 3.3.2 against the real birdc(8), in a vnet jail (2026-10-13):
+  device, direct, kernel, static, BFD, OSPF and BGP protocols each read
+  with its state and info (BGP start/Active, OSPF Alone), and `show
+  route` parsed with its type, protocol, since and preference.
 
 - SD-WAN's probes (2026-10-10, the root test): the loopback pinged
   every 50 ms, up with its samples (a tenth of a millisecond each

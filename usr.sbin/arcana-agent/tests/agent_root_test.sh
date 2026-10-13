@@ -672,6 +672,59 @@ jail_make_cleanup()
 	true
 }
 
+atf_test_case zfs_key cleanup
+zfs_key_head()
+{
+	atf_set "descr" "A dataset's key typed: loaded, changed, kept nowhere, on a pool of a memory disk"
+	atf_set "require.user" "root"
+}
+zfs_key_body()
+{
+	zpool list arcw_zk >/dev/null 2>&1 && atf_skip "a pool arcw_zk is there already"
+	md=$(mdconfig -a -t swap -s 128m) || atf_skip "no memory disk"
+	echo "$md" > md
+	atf_check zpool create -O mountpoint=none arcw_zk "$md"
+	echo 'first passphrase' | atf_check zfs create -o encryption=on \
+	    -o keyformat=passphrase -o keylocation=prompt -o mountpoint=none \
+	    arcw_zk/enc
+	atf_check zfs unload-key arcw_zk/enc
+	atf_check -o inline:'unavailable\n' zfs get -H -o value keystatus arcw_zk/enc
+	start_daemon
+	# A wrong one: zfs's own words, nothing loaded.
+	echo 'not the key' | atf_check -s exit:1 -e match:'[Ii]ncorrect key' -o ignore \
+	    "$JGC" -c "$SOCK" zfskey arcw_zk/enc
+	echo 'first passphrase' | atf_check -o ignore "$JGC" -c "$SOCK" zfskey arcw_zk/enc
+	atf_check -o inline:'available\n' zfs get -H -o value keystatus arcw_zk/enc
+	echo 'first passphrase' | atf_check -s exit:1 -e match:'loaded already' -o ignore \
+	    "$JGC" -c "$SOCK" zfskey arcw_zk/enc
+	# Changed, and asked for at a prompt again.
+	printf '\nsecond passphrase\n' | atf_check -o ignore "$JGC" -c "$SOCK" zfskey -n arcw_zk/enc
+	atf_check -o inline:'prompt\n' zfs get -H -o value keylocation arcw_zk/enc
+	atf_check zfs unload-key arcw_zk/enc
+	echo 'first passphrase' | atf_check -s exit:1 -e match:'[Ii]ncorrect key' -o ignore \
+	    "$JGC" -c "$SOCK" zfskey arcw_zk/enc
+	# Not loaded: the key now first, then the new one.
+	printf 'second passphrase\nthird passphrase\n' | atf_check -o ignore \
+	    "$JGC" -c "$SOCK" zfskey -n arcw_zk/enc
+	atf_check zfs unload-key arcw_zk/enc
+	echo 'third passphrase' | atf_check -o ignore "$JGC" -c "$SOCK" zfskey arcw_zk/enc
+	# Too short; and no key left anywhere, nor in what was said.
+	printf '\nshort\n' | atf_check -s exit:1 -e match:'8 characters at least' -o ignore \
+	    "$JGC" -c "$SOCK" zfskey -n arcw_zk/enc
+	ls -a /tmp | grep -q '^\.arcana-key\.' && atf_fail "a key file was left"
+	grep -Eq '(first|second|third) passphrase' daemon.out && atf_fail "a key in the log"
+	true
+}
+zfs_key_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	if [ -f md ]; then
+		zpool destroy -f arcw_zk >/dev/null 2>&1
+		mdconfig -d -u "$(cat md)" >/dev/null 2>&1
+	fi
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case lifecycle
@@ -686,4 +739,5 @@ atf_init_test_cases()
 	atf_add_test_case sdwan_probe
 	atf_add_test_case sdwan_record
 	atf_add_test_case jail_make
+	atf_add_test_case zfs_key
 }

@@ -188,6 +188,9 @@ fields:
   - field: temporary
     type: bool
     label: Ages out
+  - field: user
+    type: text
+    label: User
 
 kinds:
   - kind: jail-action
@@ -293,7 +296,7 @@ kinds:
     title: A partition table or partition
     needs: verb args
     uses: force
-    destroys: verb=destroy|delete|newfs
+    destroys: verb=destroy|delete|newfs|newfs-msdos
   - kind: cam
     title: camcontrol
     needs: verb args
@@ -344,3 +347,15 @@ kinds:
     uses: jail lladdr temporary live persist
     values: verb=add|delete
     destroys: verb=delete
+  - kind: cert
+    title: A certificate OpenSSL trusts, added, taken away, trusted or not
+    needs: verb
+    uses: jail path text
+    values: verb=add|remove|trust|untrust|rehash
+    destroys: verb=remove
+  - kind: ssh
+    title: The base system's sshd: its banner, settings, keys and host certificates
+    needs: verb
+    uses: jail path args text user safe
+    values: verb=banner|set|authorize|unauthorize|sign
+    destroys: verb=unauthorize

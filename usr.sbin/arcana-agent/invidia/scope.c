@@ -83,8 +83,9 @@ scope_enter_jail(struct work *w, const char *jail, const char **errp,
 	argv[5] = (char *)(uintptr_t)"path";
 	argv[6] = NULL;
 	if (run_exec(w, argv, &res) != 0 || res.out == NULL) {
-		*errp = wfmt(w, "the jail %s is not running: its network is "
-		    "there only while it runs", jail);
+		*errp = vnet ? wfmt(w, "the jail %s is not running: its "
+		    "network is there only while it runs", jail) : wfmt(w,
+		    "the jail %s is not running", jail);
 		return (-1);
 	}
 	line = wstrndup(w, res.out, strcspn(res.out, "\n"));
@@ -123,6 +124,15 @@ scope_argv(struct work *w, char *const argv[])
 	size_t	  n, i, k;
 
 	if (w->jail == NULL)
+		return (argv);
+	/*
+	 * run_exec() scopes what it runs itself: one scoped already by its
+	 * caller is left as it is, not told the jail twice.
+	 */
+	if (argv[0] != NULL && argv[1] != NULL && ((strcmp(argv[1], "-j") ==
+	    0 && (argv[0] == opts.ifconfig_bin || argv[0] == opts.netstat_bin ||
+	    argv[0] == opts.ngctl_bin)) || (strcmp(argv[1], "-R") == 0 &&
+	    argv[0] == opts.sysrc_bin)))
 		return (argv);
 	for (n = 0; argv[n] != NULL; n++)
 		;

@@ -24,6 +24,8 @@
 #include <syslog.h>
 #include <time.h>
 
+#include <ucl.h>
+
 #include "agent.h"
 
 #define	JOBS_KEPT	64	/* finished jobs remembered */
@@ -169,6 +171,18 @@ title_of(const struct arc_job_spec *sp)
 		    sp->names.v[0] : "", sp->names.n > 1 ? " " : "",
 		    sp->names.n > 1 ? sp->names.v[1] : "");
 		break;
+	case ARC_JOB_KIND_SSH:
+		rc = asprintf(&t, "sshd %s%s%s%s%s", sp->verb,
+		    strcmp(sp->verb, "set") == 0 && sp->path != NULL ? " " : "",
+		    strcmp(sp->verb, "set") == 0 && sp->path != NULL ? sp->path :
+		    "", sp->user != NULL ? " of " : "", sp->user != NULL ?
+		    sp->user : "");
+		break;
+	case ARC_JOB_KIND_CERT:
+		rc = asprintf(&t, "certificate %s%s%s", sp->verb, sp->path !=
+		    NULL && strcmp(sp->verb, "rehash") != 0 ? " " : "", sp->path !=
+		    NULL && strcmp(sp->verb, "rehash") != 0 ? sp->path : "");
+		break;
 	case ARC_JOB_KIND_NEIGHBOUR:
 		rc = asprintf(&t, "neighbour %s %s%s%s%s%s", sp->verb,
 		    sp->address, sp->lladdr != NULL && strcmp(sp->verb, "add") ==
@@ -270,7 +284,9 @@ title_of(const struct arc_job_spec *sp)
 	if (rc == -1)
 		err(1, "asprintf");
 	/* A change to a jail's network says whose it is. */
-	if (scoped(sp) && sp->jail != NULL && sp->jail[0] != '\0') {
+	if ((scoped(sp) || sp->kind == ARC_JOB_KIND_CERT ||
+	    sp->kind == ARC_JOB_KIND_SSH) && sp->jail != NULL &&
+	    sp->jail[0] != '\0') {
 		in = t;
 		if (asprintf(&t, "%s: %s", sp->jail, in) == -1)
 			err(1, "asprintf");
@@ -317,6 +333,14 @@ spec_copy(struct arc_job_spec *d, const struct arc_job_spec *s)
 	d->remote_cert = xdup(s->remote_cert);
 	d->remote_ca = xdup(s->remote_ca);
 	d->addressing = xdup(s->addressing);
+	d->dataset = xdup(s->dataset);
+	d->snapshot = xdup(s->snapshot);
+	d->copy = xdup(s->copy);
+	d->path = xdup(s->path);
+	d->text = xdup(s->text);
+	d->preshared_key = xdup(s->preshared_key);
+	d->lladdr = xdup(s->lladdr);
+	d->user = xdup(s->user);
 	d->variables.v = NULL;
 	d->names.v = NULL;
 	if (s->variables.n > 0) {
@@ -379,6 +403,21 @@ job_free(struct qjob *j)
 	free((char *)(uintptr_t)j->spec.remote_cert);
 	free((char *)(uintptr_t)j->spec.remote_ca);
 	free((char *)(uintptr_t)j->spec.addressing);
+	free((char *)(uintptr_t)j->spec.dataset);
+	free((char *)(uintptr_t)j->spec.snapshot);
+	free((char *)(uintptr_t)j->spec.copy);
+	free((char *)(uintptr_t)j->spec.path);
+	/* A key may ride in either: not left in freed memory. */
+	if (j->spec.text != NULL)
+		explicit_bzero((char *)(uintptr_t)j->spec.text,
+		    strlen(j->spec.text));
+	free((char *)(uintptr_t)j->spec.text);
+	if (j->spec.preshared_key != NULL)
+		explicit_bzero((char *)(uintptr_t)j->spec.preshared_key,
+		    strlen(j->spec.preshared_key));
+	free((char *)(uintptr_t)j->spec.preshared_key);
+	free((char *)(uintptr_t)j->spec.lladdr);
+	free((char *)(uintptr_t)j->spec.user);
 	free(j->title);
 	free(j->peer);
 	work_free(&j->w);
@@ -679,6 +718,9 @@ undo(struct qjob *j)
 	case ARC_JOB_KIND_NTP:
 		rc = do_ntp(&j->w, NULL, 0, true, sp->persist, &e);
 		break;
+	case ARC_JOB_KIND_SSH:
+		rc = ssh_undo(&j->w, sp, &e);
+		break;
 	case ARC_JOB_KIND_RTADVD:
 		rc = do_rtadvd(&j->w, sp->interface, NULL, 0, true, sp->persist,
 		    &e);
@@ -895,6 +937,18 @@ run(struct qjob *j)
 		error = NULL;
 		ok = do_neigh(&j->w, sp, &error) == 0;
 		break;
+	case ARC_JOB_KIND_SSH:
+		/* As a certificate: any jail's. */
+		error = NULL;
+		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
+		    do_ssh_job(&j->w, sp, &error) == 0;
+		break;
+	case ARC_JOB_KIND_CERT:
+		/* Any jail's: its files, not its network. */
+		error = NULL;
+		ok = scope_enter_jail(&j->w, sp->jail, &error, false) == 0 &&
+		    do_cert(&j->w, sp, &error) == 0;
+		break;
 	case ARC_JOB_KIND_BIRD:
 		error = NULL;
 		ok = do_bird_verb(&j->w, sp->verb, sp->names.v, sp->names.n,
@@ -1023,6 +1077,27 @@ run(struct qjob *j)
 	logmsg(ok ? LOG_INFO : LOG_NOTICE, "%s: job %ju: %s: %s", j->peer,
 	    (uintmax_t)j->id, j->title, ok ? "ok" : error != NULL ? error :
 	    "failed");
+	{
+		ucl_object_t	*e;
+		char		*js;
+
+		/* An event too, for whoever is told of them (mail). */
+		e = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(e, ucl_object_fromint((int64_t)j->id),
+		    "id", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(j->title),
+		    "title", 0, false);
+		ucl_object_insert_key(e, ucl_object_frombool(ok), "ok", 0,
+		    false);
+		if (!ok)
+			ucl_object_insert_key(e, ucl_object_fromstring(error !=
+			    NULL ? error : "failed"), "error", 0, false);
+		if ((js = (char *)ucl_object_emit(e, UCL_EMIT_JSON_COMPACT)) !=
+		    NULL)
+			event_add("job", "%s", js);
+		free(js);
+		ucl_object_unref(e);
+	}
 	pthread_mutex_lock(&jobs_lock);
 	j->ok = ok;
 	j->error = error;

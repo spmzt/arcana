@@ -302,6 +302,30 @@ definitions:
           kept for a boot as a pair of rc.conf's static_arp_pairs or
           static_ndp_pairs, and with live too it is set now.  In the
           jail whose network it is when jail names one.
+      - name: cert
+        doc: |
+          A certificate OpenSSL trusts, with certctl(8): verb add puts the
+          PEM certificate text in ${LOCALBASE}/share/certs/trusted as
+          path, remove takes one of those away, untrust puts a copy of
+          path of /etc/ssl/certs in ${LOCALBASE}/share/certs/untrusted,
+          trust takes the copies of path of /etc/ssl/untrusted away from
+          there; each then certctl rehash, which rehash alone is.
+      - name: ssh
+        doc: |
+          The base system's sshd(8): verb banner writes text as
+          /etc/ssh/banner and names it Banner (no text: Banner none);
+          set puts the setting path with names as its values (none: the
+          line taken away), of AllowUsers, AllowGroups, DenyUsers,
+          DenyGroups, PermitRootLogin, PasswordAuthentication,
+          KbdInteractiveAuthentication, PubkeyAuthentication,
+          X11Forwarding, MaxAuthTries and Port; sign signs each host key
+          with the CA private key in text (names its principals) for 52
+          weeks and names each certificate HostCertificate.  Each is read
+          by sshd -t first, the file before kept beside it
+          (sshd_config.arcana-before) and put back in safe mode, and sshd
+          reloaded.  authorize adds the key line text to user's
+          authorized_keys, unauthorize takes away the key whose
+          fingerprint text is.  In jail's when jail names one.
   - name: job-state
     type: enum
     entries:
@@ -389,7 +413,14 @@ definitions:
           "enabled"; "rules", each with its number, set, counters and
           text, and whether its set is disabled; "tables", each with
           its name, type, count and the first of its entries (key,
-          value); "nat" and "pipes", as ipfw shows them; "verbose";
+          value); "nat" and "pipes", as ipfw shows them; "qos", the
+          pipes, schedulers and queues of dummynet as objects: "pipes"
+          (num, bw in bits a second, 0 for none, delay ms, burst,
+          slots or bytes, plr, mask), "scheds" (num, bw, delay, type,
+          mask, queues, the queues that feed it, and params) and
+          "queues" (num, sched, weight, pri, slots or bytes, plr, mask,
+          red), a mask with src and dst, prefix lengths, the ports and
+          proto; "verbose";
           "kept", the rules of the kept file each with its number and
           text, "other" its lines that are not rules, "path" where it
           is and "rc" what rc.conf says of the firewall.
@@ -928,6 +959,23 @@ attribute-sets:
         checks:
           min: 10
           max: 3600
+      - name: zfs-dataset
+        type: text
+        doc: For zfs-key, the encrypted dataset.
+        checks:
+          max-len: 255
+      - name: zfs-key
+        type: text
+        doc: |
+          For zfs-key, the dataset's key as it is typed: a passphrase,
+          or 64 hex digits for keyformat hex.
+        checks:
+          max-len: 512
+      - name: zfs-new-key
+        type: text
+        doc: For zfs-key, the key it is to have from now on.
+        checks:
+          max-len: 512
 
 
   - name: host
@@ -1389,12 +1437,16 @@ attribute-sets:
           max-len: 8
       - name: path
         type: text
-        doc: For jail-conf, the jail's root, its dataset's mountpoint.
+        doc: |
+          For jail-conf, the jail's root, its dataset's mountpoint; for
+          cert, the certificate's file name.
         checks:
           max-len: 1024
       - name: text
         type: text
-        doc: For jail-conf, a file's whole content.
+        doc: |
+          For jail-conf, a file's whole content; for cert add, the
+          certificate as PEM.
         checks:
           max-len: 65536
       - name: start
@@ -1416,6 +1468,11 @@ attribute-sets:
       - name: temporary
         type: flag
         doc: For neighbour add, one that ages out as the others do.
+      - name: user
+        type: text
+        doc: For ssh authorize and unauthorize, the user whose keys.
+        checks:
+          max-len: 32
 
   - name: job
     attributes:
@@ -2087,12 +2144,14 @@ operations:
     doc: |
       The host's storage, as a JSON object, of the kind asked for.  More
       datasets or snapshots than a reply carries come as the first of
-      them, with total and truncated.
+      them, with total and truncated.  With jail, the datasets or the
+      snapshots that jail's own zfs list sees: those given to it.
     do:
       request:
         attributes:
           - storage-kind
           - net-filter
+          - jail
         required:
           - storage-kind
       reply:
@@ -2374,7 +2433,8 @@ operations:
       is chosen), "record" (count, the day's; seq; last, the latest
       500, each t, seq, rule, action, src, dst, iface, comment) and
       "proxy" (each instance's name, fib, mode, running and ca, its
-      certificate) too.
+      certificate) too.  job, with id, title, ok and error, when a
+      job ends.
     do:
       request:
         attributes:
@@ -2847,6 +2907,107 @@ operations:
           - ok
           - error
           - json
+          - trace
+
+  - name: certs
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The certificates OpenSSL trusts, of the host or of jail, as a JSON
+      object: "trusted", each of /etc/ssl/certs, and "untrusted", each of
+      /etc/ssl/untrusted, with its "file", "subject", "cn", "org",
+      "country", "issuer", "not_before" and "not_after" (seconds of the
+      epoch), "sha256", "key", "ca", "self_signed", and "local", the
+      path of the copy of it the host was given, when it was; and
+      "localbase", "added_dir", "distrusted_dir", "certctl" (whether
+      there is one) and "now".
+    do:
+      request:
+        attributes:
+          - jail
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: ssh
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The base system's sshd, of the host or of jail, as a JSON object:
+      "settings", what sshd -T says of those that matter here, each key
+      an array of values ("settings_from_file" says why they are the
+      file's instead); "banner_text"; "host_keys", each with its "path",
+      "type", "bits", "fingerprint", "comment" and its "certificate"
+      ("kind", "id", "principals", "valid_after", "valid_before", -1 for
+      forever, "ca", the signing key's fingerprint) and whether
+      "certificate_used"; "users", those who may sign in, each with
+      "name", "uid", "home", "shell", "keys_file" and "keys" (each
+      "type", "fingerprint", "bits", "comment", "options"); "user_cas";
+      "before_kept".
+    do:
+      request:
+        attributes:
+          - jail
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: capture
+    attribute-set: arcana
+    auth: true
+    doc: |
+      Packets taken with tcpdump(1) off interface, of the host or of
+      jail's own network (vnet): an interface, a bridge's span port, or
+      a bpf(4) tap, as ipfw's per-rule ipfw<number> of a rule with log
+      (logdst bpf).  net-filter is a pcap-filter(7) expression; packets
+      (50, 500 at most) or seconds (10, 60 at most), whichever ends
+      first.  json: "source", "filter", "lines" (tcpdump -n -tttt's,
+      one a packet), "packets", "limit", "seconds", "timed_out",
+      "bytes" and "pcap", the capture as a pcap file in base64.
+      Without interface, "sources", what tcpdump -D lists.
+    do:
+      request:
+        attributes:
+          - jail
+          - interface
+          - net-filter
+          - seconds
+          - packets
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
+          - trace
+
+  - name: zfs-key
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The key of an encrypted dataset whose keylocation is prompt, as
+      it is typed: with zfs-key, loaded (zfs load-key, from a file
+      only root reads while zfs reads it); with zfs-new-key, changed
+      (zfs change-key), its keylocation prompt again after, and loaded
+      first with zfs-key when it is not.  A key is in no job, no trace
+      and no log.
+    do:
+      request:
+        attributes:
+          - zfs-dataset
+          - zfs-key
+          - zfs-new-key
+        required:
+          - zfs-dataset
+      reply:
+        attributes:
+          - ok
+          - error
           - trace
 
 mcast-groups:

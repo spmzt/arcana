@@ -107,7 +107,9 @@ static const char *const tabnames[] = {
 	[TAB_SERVICES] = "services", [TAB_NETWORK] = "network",
 	[TAB_FIREWALL] = "firewall", [TAB_PACKAGES] = "packages",
 	[TAB_STORAGE] = "storage", [TAB_KERNEL] = "kernel",
-	[TAB_SYSCTL] = "sysctl", [TAB_PROCESSES] = "processes",
+	[TAB_SYSCTL] = "sysctl", [TAB_CERTS] = "certificates",
+	[TAB_SSH] = "ssh",
+	[TAB_PROCESSES] = "processes",
 	[TAB_LOG] = "log", [TAB_JOBS] = "jobs",
 };
 
@@ -576,7 +578,7 @@ static void
 submit(const char *form, const ucl_object_t *f)
 {
 	if (topo_form(form, f) || bird_form(form, f) || vpn_form(form, f) ||
-	    jailmk_form(form, f) || neigh_form(form, f) ||
+	    jailmk_form(form, f) || neigh_form(form, f) || certs_form(form, f) || ssh_form(form, f) || span_form(form, f) ||
 	    ipsec_form(form, f) || workflows_form(form, f) || sdwan_form(form, f) ||
 	    kernel_form(form, f) || storage_form(form, f) ||
 	    sysctl_form(form, f) || procs_form(form, f) || logs_form(form, f) || usage_form(form, f) ||
@@ -811,7 +813,9 @@ submit_form(const char *form, const ucl_object_t *f)
 				agent_build(&app.servers[i], jstr(app.build_reply,
 				    "host_keys"), app.build_console);
 	} else if (strcmp(form, "settings") == 0) {
-		save_settings(f);
+		save_settings(f, false);
+	} else if (strcmp(form, "settings-mail") == 0) {
+		save_settings(f, true);
 	} else if (strcmp(form, "agent-update") == 0) {
 		app.modal = MODAL_NONE;
 		for (i = 0; i < app.nservers; i++) {
@@ -844,6 +848,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
 	    bird_action(act, arg, value) || vpn_action(act, arg, value) ||
 	    jailmk_action(act, arg, value) || neigh_action(act, arg, value) ||
+	    certs_action(act, arg, value) || ssh_action(act, arg, value) ||
+	    span_action(act, arg, value) ||
 	    ipsec_action(act, arg, value) || workflows_action(act, arg, value) ||
 	    sdwan_action(act, arg, value) ||
 	    kernel_action(act, arg, value) || storage_action(act, arg, value) ||
@@ -880,6 +886,10 @@ dispatch(const char *act, const char *arg, const char *value)
 				refresh_services(s, true);
 			if (app.tab == TAB_KERNEL)
 				refresh_kernel(s, false);
+			if (app.tab == TAB_CERTS)
+				refresh_certs(s, false);
+			if (app.tab == TAB_SSH)
+				refresh_ssh(s, false);
 			if (app.tab == TAB_SYSCTL)
 				refresh_sysctl(s, false);
 			if (app.tab == TAB_PROCESSES)
@@ -929,6 +939,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "packages") == 0 ? TAB_PACKAGES :
 		    strcmp(arg, "kernel") == 0 ? TAB_KERNEL :
 		    strcmp(arg, "sysctl") == 0 ? TAB_SYSCTL :
+		    strcmp(arg, "certificates") == 0 ? TAB_CERTS :
+		    strcmp(arg, "ssh") == 0 ? TAB_SSH :
 		    strcmp(arg, "processes") == 0 ? TAB_PROCESSES :
 		    strcmp(arg, "log") == 0 ? TAB_LOG :
 		    strcmp(arg, "firewall") == 0 ? TAB_FIREWALL :
@@ -941,6 +953,10 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_jobs(s);
 		if (app.tab == TAB_KERNEL)
 			refresh_kernel(s, true);
+		if (app.tab == TAB_CERTS)
+			refresh_certs(s, false);
+		if (app.tab == TAB_SSH)
+			refresh_ssh(s, false);
 		if (app.tab == TAB_SYSCTL)
 			refresh_sysctl(s, false);
 		if (app.tab == TAB_PROCESSES)
@@ -1173,7 +1189,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "neighbours") == 0 ? NET_NEIGHBOURS :
 		    strcmp(arg, "wireguard") == 0 ? NET_WIREGUARD :
 		    strcmp(arg, "bird") == 0 ? NET_BIRD :
-		    strcmp(arg, "ipsec") == 0 ? NET_IPSEC : NET_ROUTES;
+		    strcmp(arg, "ipsec") == 0 ? NET_IPSEC :
+		    strcmp(arg, "span") == 0 ? NET_SPAN : NET_ROUTES;
 		if (app.net.kind == NET_INTERFACES)
 			topo_poll(s);
 		app.net.loading = false;
@@ -1383,6 +1400,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		snprintf(app.jail, sizeof(app.jail), "%s", arg);
 		close_service();
 		topo_lookup_clear();
+		if ((s = cur_server()) != NULL)
+			refresh_jail_datasets(s, app.jail);
 	} else if (strcmp(act, "peek-jail") == 0) {
 		/* From a graph, the fleet's or a host's: the jail in a box
 		 * over the page, which stays the page it is. */
@@ -1417,7 +1436,10 @@ dispatch(const char *act, const char *arg, const char *value)
 		} else if (app.tab == TAB_NETWORK) {
 			app.net.loading = false;
 			refresh_network(s, true);
-		} else if (app.tab == TAB_KERNEL) {
+		} else if (app.tab == TAB_SSH) {
+			refresh_ssh(s, true);
+		} else if (app.tab == TAB_CERTS) {
+			refresh_certs(s, true);		} else if (app.tab == TAB_KERNEL) {
 			refresh_kernel(s, true);
 		} else if (app.tab == TAB_SYSCTL) {
 			refresh_sysctl(s, true);
@@ -1621,6 +1643,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		if (app.settab == SET_NEWS && !app.notes_busy && (app.notes ==
 		    NULL || strcmp(app.notes_for, "console") != 0))
 			notes_load("console", app.version, NULL, false);
+	} else if (strcmp(act, "mail-test") == 0) {
+		mail_test();
 	} else if (strcmp(act, "notes-reload") == 0) {
 		notes_load("console", app.version, NULL, true);
 		app.modal_error[0] = '\0';

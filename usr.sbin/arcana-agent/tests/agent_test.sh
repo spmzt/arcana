@@ -3464,6 +3464,22 @@ EOS
 	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 deletem tap9
 	atf_check -o match:'^ifconfig_bridge0="iftagged epair5a 30-40"$' \
 	    cat rc.conf
+	# Addresses: one set behind a member, kept until it is set again or
+	# taken away; one learned forgotten; what was learned flushed.
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 static em1 02:00:00:00:00:aa
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 static tap3 02:00:00:00:00:bb
+	atf_check -o match:'^bridge0 static tap3 02:00:00:00:00:bb$' tail -1 ifconfig.log
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 static epair5a 02:00:00:00:00:AA
+	atf_check -o match:'^ifconfig_bridge0="iftagged epair5a 30-40 static tap3 02:00:00:00:00:bb static epair5a 02:00:00:00:00:AA"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -p -c "$SOCK" bridge bridge0 deladdr 02:00:00:00:00:bb
+	atf_check -o match:'^bridge0 deladdr 02:00:00:00:00:bb$' tail -1 ifconfig.log
+	atf_check -o match:'^ifconfig_bridge0="iftagged epair5a 30-40 static epair5a 02:00:00:00:00:AA"$' \
+	    cat rc.conf
+	atf_check -o ignore "$JGC" -c "$SOCK" bridge bridge0 flush
+	atf_check -o match:'^bridge0 flush$' tail -1 ifconfig.log
+	atf_check -s exit:1 -e match:'six bytes of hex' -o ignore \
+	    "$JGC" -c "$SOCK" bridge bridge0 static em1 02:00:00
 	# Every word is checked before anything runs.
 	: > ifconfig.log
 	for bad in "access epair5a 5000" "access epair5a" "trunk em1 10-5" \
@@ -3703,6 +3719,20 @@ observe_body()
 	sleep 4
 	atf_check -o save:h2.json "$JGC" -c "$SOCK" history
 	atf_check -o inline:'2\n' sh -c "grep -o '\[[0-9][0-9,.]*\]' h2.json | wc -l | tr -d ' '"
+	# The kernel's messages, refused to one not root, say what lets it.
+	if [ "$(id -u)" != 0 ] && [ "$(sysctl -n security.bsd.unprivileged_read_msgbuf)" = 0 ]; then
+		atf_check -s exit:1 -e match:'unprivileged_read_msgbuf=1' -o ignore \
+		    "$JGC" -c "$SOCK" log @dmesg
+	fi
+	# All there: the older are thinned, not dropped; the newest half
+	# keeps every look, the oldest are further apart.
+	atf_check -o ignore "$JGC" -c "$SOCK" history set 1 8
+	sleep 14
+	atf_check -o save:h3.json "$JGC" -c "$SOCK" history
+	grep -o '\[[0-9][0-9]*,' h3.json | tr -d '[,' > t3
+	atf_check -o inline:'8\n' sh -c "wc -l < t3 | tr -d ' '"
+	atf_check -o inline:'ok\n' awk 'NR > 1 { g[NR - 1] = $1 - p } { p = $1 }
+	    END { print (g[1] >= 2 && g[7] <= 2 && g[1] > g[7]) ? "ok" : "gaps " g[1] " " g[7] }' t3
 	atf_check -o match:'"step":60,"keep":0,"bytes":0,' -o match:'"samples":\[\]' \
 	    "$JGC" -c "$SOCK" history set 60 0
 	sleep 2
@@ -4115,7 +4145,7 @@ EOS
 	# The programs the daemon has no option for, in a directory of
 	# their own: what they are told is logged, what they say is canned.
 	mkdir tools
-	for p in newfs growfs swapon swapoff; do
+	for p in newfs newfs_msdos growfs swapon swapoff; do
 		printf '#!/bin/sh\necho "%s $*" >> %s/storage.log\nexit 0\n' "$p" "$(pwd)" > tools/$p
 	done
 	printf '#!/bin/sh\n[ "$1" = /dev/ada0p3 ] && echo ufs && exit 0\nexit 1\n' > tools/fstyp
@@ -4170,6 +4200,10 @@ EOS
 	# A file system made on a partition: not on one that has one, is
 	# a pool's, or is not a device; and one grown.
 	atf_check -o match:'done +newfs -U -L data /dev/ada0p4$' "$JGC" -c "$SOCK" gpart newfs ada0p4 data
+	# FAT, its label in capitals, eleven at most; refused as newfs is.
+	atf_check -o match:'done +newfs_msdos -L USB_KEY /dev/ada0p4$' "$JGC" -c "$SOCK" gpart newfs-msdos ada0p4 usb_key
+	atf_check -s exit:1 -e match:'FAT label is 11' -o ignore "$JGC" -c "$SOCK" gpart newfs-msdos ada0p4 far_too_long_label
+	atf_check -s exit:1 -o match:'has a file system on it \(ufs\)' "$JGC" -c "$SOCK" gpart newfs-msdos ada0p3
 	atf_check -s exit:1 -o match:'has a file system on it \(ufs\)' "$JGC" -c "$SOCK" gpart newfs ada0p3
 	atf_check -o match:'done +newfs -U /dev/ada0p3$' "$JGC" -c "$SOCK" gpart newfs -f ada0p3
 	atf_check -s exit:1 -o match:'ada1p1 is a device of a pool' "$JGC" -c "$SOCK" gpart newfs -f ada1p1
@@ -4761,6 +4795,268 @@ neighbours_cleanup()
 	stop_daemon
 }
 
+atf_test_case certs cleanup
+certs_head()
+{
+	atf_set "descr" "The certificates OpenSSL trusts, read with OpenSSL; added, distrusted and trusted again where certctl rehash keeps them"
+}
+certs_body()
+{
+	R=$(pwd)/tools/certroot
+	mkdir -p tools $R/usr/share/certs/trusted
+	# certctl rehash as it is: the store made again from FreeBSD's own,
+	# those given, and those not to be trusted, by fingerprint.
+	cat > tools/certctl <<EOT
+#!/bin/sh
+echo "certctl \$*" >> $(pwd)/certctl.log
+R=\$2
+fp() { openssl x509 -noout -fingerprint -sha256 -in "\$1" | tr -d ' '; }
+rm -rf \$R/etc/ssl/certs \$R/etc/ssl/untrusted
+mkdir -p \$R/etc/ssl/certs \$R/etc/ssl/untrusted
+bad=
+for f in \$R/usr/local/share/certs/untrusted/*; do
+	[ -f "\$f" ] || continue
+	bad="\$bad \$(fp \$f)"
+	cp \$f \$R/etc/ssl/untrusted/\$(basename \$f .pem)
+done
+for f in \$R/usr/share/certs/trusted/* \$R/usr/local/share/certs/trusted/*; do
+	[ -f "\$f" ] || continue
+	case "\$bad" in *\$(fp \$f)*) continue ;; esac
+	cp \$f \$R/etc/ssl/certs/\$(basename \$f .pem).0
+done
+EOT
+	chmod +x tools/certctl
+	for n in root added; do
+		openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 \
+		    -nodes -keyout $n.key -out $n.pem -days 30 \
+		    -subj "/O=Arcana/CN=Arcana $n CA" 2>/dev/null ||
+		    atf_fail "openssl req"
+	done
+	cp root.pem $R/usr/share/certs/trusted/root.pem
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o match:'done +certificate rehash$' "$JGC" -c "$SOCK" cert rehash
+	atf_check -o inline:"certctl -D $R rehash\n" cat certctl.log
+	# Read with OpenSSL: who, its key, when it ends; FreeBSD's own.
+	atf_check -o save:list "$JGC" -c "$SOCK" cert
+	atf_check -o match:'"file":"root.0"' -o match:'"cn":"Arcana root CA"' \
+	    -o match:'"org":"Arcana"' -o match:'"key":"EC prime256v1"' \
+	    -o match:'"self_signed":true' -o match:'"not_after":[0-9]{10}' \
+	    -o match:'"untrusted":\[\]' -o not-match:'"local"' cat list
+	# Given one: kept where rehash finds it, the certificate alone.
+	cat added.key >> added.pem
+	atf_check -s exit:1 -e match:'no key with it' -o ignore \
+	    "$JGC" -c "$SOCK" cert add added added.pem
+	openssl x509 -in added.pem -out added.pem
+	atf_check -o match:'done +certificate add added$' \
+	    "$JGC" -c "$SOCK" cert add added added.pem
+	atf_check -o match:'BEGIN CERTIFICATE' -o not-match:'PRIVATE' \
+	    cat $R/usr/local/share/certs/trusted/added.pem
+	atf_check -o match:'"cn":"Arcana added CA"[^}]*"local":"/usr/local/share/certs/trusted/added.pem"' \
+	    "$JGC" -c "$SOCK" cert
+	# FreeBSD's own not trusted: a copy among the untrusted.
+	atf_check -o match:'done +certificate untrust root.0$' \
+	    "$JGC" -c "$SOCK" cert untrust root.0
+	test -f $R/usr/local/share/certs/untrusted/root.0.pem || atf_fail "no copy"
+	atf_check -o match:'"untrusted":\[\{"file":"root.0"[^]]*"local":"/usr/local/share/certs/untrusted/root.0.pem"' \
+	    -o not-match:'"trusted":\[[^]]*Arcana root' "$JGC" -c "$SOCK" cert
+	# Trusted again: the copy taken away.
+	atf_check -o match:'done +certificate trust root.0$' \
+	    "$JGC" -c "$SOCK" cert trust root.0
+	test -f $R/usr/local/share/certs/untrusted/root.0.pem && atf_fail "copy kept"
+	atf_check -o match:'"untrusted":\[\]' -o match:'"cn":"Arcana root CA"' \
+	    "$JGC" -c "$SOCK" cert
+	# One FreeBSD itself does not trust is not trusted again here.
+	cp root.pem $R/etc/ssl/untrusted/other.0
+	atf_check -s exit:1 -o match:'failed +certificate trust other.0: other.0 is untrusted by FreeBSD itself' \
+	    "$JGC" -c "$SOCK" cert trust other.0
+	atf_check -o match:'done +certificate remove added.pem$' \
+	    "$JGC" -c "$SOCK" cert remove added.pem
+	atf_check -o not-match:'Arcana added' "$JGC" -c "$SOCK" cert
+	atf_check -s exit:1 -o match:'was not given to this host' \
+	    "$JGC" -c "$SOCK" cert remove added.pem
+	atf_check -s exit:1 -e match:'letters, digits' -o ignore \
+	    "$JGC" -c "$SOCK" cert untrust ../root.0
+	echo nothing > junk.pem
+	atf_check -s exit:1 -e match:'no PEM certificate' -o ignore \
+	    "$JGC" -c "$SOCK" cert add junk junk.pem
+}
+certs_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case sshd cleanup
+sshd_head()
+{
+	atf_set "descr" "The base system's sshd: its settings, banner, host keys and their certificates, and the keys users sign in with"
+}
+sshd_body()
+{
+	R=$(pwd)/tools/sshroot
+	mkdir -p tools $R/etc/ssh $R/root $R/home/alice
+	# sshd -t refuses what says BAD; -T is the file's settings.
+	cat > tools/sshd <<'EOT'
+#!/bin/sh
+case "$1" in
+-t)	if grep -q BAD "$3"; then
+		echo "$3 line 1: Bad configuration option: BAD" >&2
+		exit 255
+	fi
+	exit 0 ;;
+-T)	awk '!/^[ \t]*#/ && NF > 1 { if (tolower($1) == "match") exit;
+	    k = tolower($1); $1 = ""; sub(/^ /, ""); print k, $0 }' "$3"
+	grep -qi '^hostkey' "$3" ||
+	    echo "hostkey /etc/ssh/ssh_host_ed25519_key"
+	exit 0 ;;
+esac
+exit 1
+EOT
+	chmod +x tools/sshd
+	ln -s "$(which ssh-keygen)" tools/ssh-keygen
+	printf 'PermitRootLogin no\nPasswordAuthentication yes\nMatch User nobody\n\tPasswordAuthentication no\n' \
+	    > $R/etc/ssh/sshd_config
+	printf 'root:*:0:0:Charlie &:/root:/bin/sh\nalice:*:%d:%d:Alice:/home/alice:/bin/sh\ndaemon:*:1:1::/root:/usr/sbin/nologin\n' \
+	    "$(id -u)" "$(id -g)" > $R/etc/passwd
+	ssh-keygen -q -t ed25519 -N '' -C host -f $R/etc/ssh/ssh_host_ed25519_key
+	ssh-keygen -q -t ed25519 -N '' -C alice@lab -f alice_key
+	ssh-keygen -q -t ed25519 -N '' -C lab-ca -f ca
+	hostfp=$(ssh-keygen -lf $R/etc/ssh/ssh_host_ed25519_key.pub | awk '{print $2}')
+	alicefp=$(ssh-keygen -lf alice_key.pub | awk '{print $2}')
+	cafp=$(ssh-keygen -lf ca.pub | awk '{print $2}')
+	DAEMON_ARGS="-2 $(pwd)/tools -w 2"
+	start_daemon
+	# Read: its settings, its host key's fingerprint, who signs in.
+	atf_check -o save:list "$JGC" -c "$SOCK" sshd
+	atf_check -o match:'"permitrootlogin":\["no"\]' -o match:'"bits":256' \
+	    -o match:'"name":"alice"' -o match:'"name":"root"' \
+	    -o not-match:'"name":"daemon"' cat list
+	grep -qF "\"fingerprint\":\"$hostfp\"" list || atf_fail "host key"
+	# A setting: read by sshd -t, before the first Match, the file kept.
+	atf_check -o match:'done +sshd set PermitRootLogin$' \
+	    "$JGC" -c "$SOCK" sshd set PermitRootLogin prohibit-password
+	atf_check -o inline:'PermitRootLogin prohibit-password\nPasswordAuthentication yes\nMatch User nobody\n\tPasswordAuthentication no\n' \
+	    cat $R/etc/ssh/sshd_config
+	test -f $R/etc/ssh/sshd_config.arcana-before || atf_fail "not kept"
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sshd set AllowUsers alice 'bob@10.*'
+	atf_check -o match:'^AllowUsers alice bob@10\.\*$' cat $R/etc/ssh/sshd_config
+	atf_check -o match:'done' "$JGC" -c "$SOCK" sshd set AllowUsers
+	atf_check -o not-match:'AllowUsers' cat $R/etc/ssh/sshd_config
+	atf_check -s exit:1 -e match:'a value it takes' -o ignore \
+	    "$JGC" -c "$SOCK" sshd set PermitRootLogin maybe
+	atf_check -s exit:1 -e match:'set is of AllowUsers' -o ignore \
+	    "$JGC" -c "$SOCK" sshd set ForceCommand /bin/sh
+	# What sshd -t refuses is not put in place.
+	atf_check -s exit:1 -o match:'sshd -t: .*Bad configuration option: BAD' \
+	    "$JGC" -c "$SOCK" sshd set AllowUsers BAD
+	atf_check -o not-match:'BAD' cat $R/etc/ssh/sshd_config
+	# The banner.
+	echo 'Authorised use only.' > banner.txt
+	atf_check -o match:'done +sshd banner$' "$JGC" -c "$SOCK" sshd banner banner.txt
+	atf_check -o inline:'Authorised use only.\n' cat $R/etc/ssh/banner
+	atf_check -o match:'^Banner /etc/ssh/banner$' cat $R/etc/ssh/sshd_config
+	atf_check -o match:'"banner_text":"Authorised use only.\\n"' \
+	    "$JGC" -c "$SOCK" sshd
+	# A key of alice's: her own .ssh, hers alone.
+	atf_check -o match:'done +sshd authorize of alice$' \
+	    "$JGC" -c "$SOCK" sshd authorize alice alice_key.pub
+	atf_check -o match:'^-rw------- ' ls -l $R/home/alice/.ssh/authorized_keys
+	atf_check -o match:'^drwx------ ' ls -ld $R/home/alice/.ssh
+	atf_check -o save:list "$JGC" -c "$SOCK" sshd
+	grep -qF "\"keys\":[{\"type\":\"ssh-ed25519\",\"fingerprint\":\"$alicefp\",\"comment\":\"alice@lab\"" list ||
+	    atf_fail "alice's key"
+	atf_check -s exit:1 -o match:'has that key already' \
+	    "$JGC" -c "$SOCK" sshd authorize alice alice_key.pub
+	atf_check -s exit:1 -o match:'daemon is no user who signs in here' \
+	    "$JGC" -c "$SOCK" sshd authorize daemon alice_key.pub
+	atf_check -o match:'done +sshd unauthorize of alice$' \
+	    "$JGC" -c "$SOCK" sshd unauthorize alice "$alicefp"
+	atf_check -o empty cat $R/home/alice/.ssh/authorized_keys
+	atf_check -s exit:1 -o match:'has no key' \
+	    "$JGC" -c "$SOCK" sshd unauthorize alice "$alicefp"
+	# A link where .ssh is: not followed.
+	mkdir -p $R/home/eve elsewhere
+	printf 'eve:*:%d:%d:Eve:/home/eve:/bin/sh\n' "$(id -u)" "$(id -g)" >> $R/etc/passwd
+	ln -s $(pwd)/elsewhere $R/home/eve/.ssh
+	atf_check -s exit:1 -o match:'sshd authorize of eve: ' \
+	    "$JGC" -c "$SOCK" sshd authorize eve alice_key.pub
+	test -e elsewhere/authorized_keys && atf_fail "written through a link"
+	# The host key signed by the CA: its certificate, and sshd told.
+	atf_check -o match:'done +sshd sign$' "$JGC" -c "$SOCK" sshd sign ca lab.example
+	test -f $R/etc/ssh/ssh_host_ed25519_key-cert.pub || atf_fail "no certificate"
+	atf_check -o match:'^HostCertificate /etc/ssh/ssh_host_ed25519_key-cert.pub$' \
+	    cat $R/etc/ssh/sshd_config
+	ls -a $R/etc/ssh | grep -q arcana-ca && atf_fail "the CA key was left"
+	atf_check -o save:list -o match:'"principals":\["lab.example"\]' \
+	    -o match:'"kind":"host"' -o match:'"certificate_used":true' \
+	    "$JGC" -c "$SOCK" sshd
+	grep -qF "\"ca\":\"$cafp\"" list || atf_fail "the CA"
+	atf_check -s exit:1 -e match:"the CA's private key" -o ignore \
+	    "$JGC" -c "$SOCK" sshd sign ca.pub
+	# In safe mode, unconfirmed: the file before it back.
+	cp $R/etc/ssh/sshd_config before
+	atf_check -o match:'queued' "$JGC" -q -s -c "$SOCK" sshd set PasswordAuthentication no
+	sleep 1
+	for i in $(seq 1 100); do
+		"$JGC" -c "$SOCK" jobs | grep -q 'unconfirmed\|queued\|running' ||
+		    break
+		sleep 0.1
+	done
+	atf_check -o match:'not confirmed within 2 s: undone' -s exit:1 \
+	    "$JGC" -c "$SOCK" job 13
+	atf_check -o file:before cat $R/etc/ssh/sshd_config
+}
+sshd_cleanup()
+{
+	stop_daemon
+}
+
+atf_test_case capture cleanup
+capture_head()
+{
+	atf_set "descr" "Packets taken with tcpdump off an interface or a tap: the sources, the lines and the pcap, nothing left behind"
+}
+capture_body()
+{
+	mkdir -p tools/tmp
+	printf '#!/bin/sh\nshift\nexec "$@"\n' > tools/timeout
+	cat > tools/tcpdump <<'EOT'
+#!/bin/sh
+echo "tcpdump $*" >> tcpdump.log
+case "$1" in
+-D)	printf '1.em0 [Up, Running]\n2.ipfw150 [Up]\n' ;;
+-n)	if [ "$2" = -tttt ]; then
+		printf '2026-10-12 10:00:00.000001 IP 10.0.0.2 > 10.0.0.1: ICMP echo request\n'
+		exit 0
+	fi
+	while [ $# -gt 0 ]; do
+		[ "$1" = -w ] && printf PCAPDATA > "$2"
+		[ "$1" = -i ] && [ "$2" = gone0 ] && { echo "tcpdump: gone0: No such device exists" >&2; exit 1; }
+		shift
+	done ;;
+esac
+EOT
+	chmod +x tools/timeout tools/tcpdump
+	DAEMON_ARGS="-2 $(pwd)/tools"
+	start_daemon
+	atf_check -o inline:'{"sources":["em0","ipfw150"]}\n' "$JGC" -c "$SOCK" capture
+	atf_check -o match:'"source":"ipfw150","filter":"icmp and host 10.0.0.2","packets":1,"limit":5,"seconds":3' \
+	    -o match:'"pcap":"UENBUERBVEE="' -o match:'"bytes":8' -o match:'ICMP echo request' \
+	    "$JGC" -c "$SOCK" capture ipfw150 5 3 icmp and host 10.0.0.2
+	atf_check -o match:'^tcpdump -n -U -i ipfw150 -c 5 -w .*/tmp/\.arcana-capture\.[0-9a-f]*/c\.pcap icmp and host 10\.0\.0\.2$' \
+	    cat tcpdump.log
+	test -z "$(ls -A tools/tmp)" || atf_fail "left behind: $(ls -A tools/tmp)"
+	atf_check -s exit:1 -e match:'No such device exists' -o ignore \
+	    "$JGC" -c "$SOCK" capture gone0 5 3
+	test -z "$(ls -A tools/tmp)" || atf_fail "left behind after a failure"
+	atf_check -s exit:1 -e match:"an interface or a tap's name" -o ignore \
+	    "$JGC" -c "$SOCK" capture 'em0;x' 5 3
+}
+capture_cleanup()
+{
+	stop_daemon
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case ntp
@@ -4771,6 +5067,9 @@ atf_init_test_cases()
 	atf_add_test_case sdwan
 	atf_add_test_case jail_conf
 	atf_add_test_case neighbours
+	atf_add_test_case certs
+	atf_add_test_case sshd
+	atf_add_test_case capture
 	atf_add_test_case vpn
 	atf_add_test_case vnet
 	atf_add_test_case traceroute

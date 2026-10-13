@@ -558,6 +558,23 @@ part_shell(void)
 	    ".click()");
 	wait_js("document.querySelector('ul.devices').textContent.includes("
 	    "'No device yet')", 10);
+	/* By mail: its settings here, and none of them under Console. */
+	wait_js("document.querySelector('form[data-form=settings-mail] "
+	    "input[name=mail_to]')", 10);
+	run("const f = document.querySelector('form[data-form=settings-mail]');"
+	    " f.mail_to.value = 'ops@example.org'; f.mail_faults.value = "
+	    "'Critical'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('Settings saved'))", 10);
+	ATF_CHECK(system("grep -q 'ops@example.org' data/settings.json && "
+	    "grep -q '\"mail_faults\": *\"Critical\"' data/settings.json") ==
+	    0);
+	run("document.querySelector('button[data-act=mail-test]').click()");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('A test mail went to ops@example.org'))",
+	    10);
+	ATF_CHECK(system("grep -qx 'To: ops@example.org' mail.out") == 0);
+	shot("0b-mail");
 	/*
 	 * What is typed in a field stays there when the page is drawn
 	 * again under it: the key's path typed first is still there when
@@ -567,6 +584,8 @@ part_shell(void)
 	    "console]').click()");
 	wait_js("document.querySelector('form[data-form=settings] "
 	    "input[name=agent_source]')", 10);
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=settings] "
+	    "input[name=mail_to]')"));
 	run("const f = document.querySelector('form[data-form=settings]'); "
 	    "f.agent_ssh_key.value = '/usr/local/etc/arcana/id_ed25519'; "
 	    "f.update_check.checked = !f.update_check.checked; "
@@ -584,8 +603,10 @@ part_shell(void)
 	    "f.update_check.checked = !f.update_check.checked; "
 	    "f.agent_source.value = 'git@git.example.org:me/arcana.git'; "
 	    "f.requestSubmit();");
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('Settings saved'))", 10);
+	/* The mail's "Settings saved" may still be up: the file says. */
+	for (i = 0; i < 100 && system("grep -q '/usr/local/etc/arcana/"
+	    "id_ed25519' data/settings.json") != 0; i++)
+		usleep(100000);
 	ATF_CHECK(system("grep -q '/usr/local/etc/arcana/id_ed25519' "
 	    "data/settings.json") == 0);
 	/* The keys that sign in, a tab of their own. */
@@ -1265,6 +1286,51 @@ part_nettab(void)
 		usleep(100000);
 	ATF_CHECK(system("grep -qx 'arp -d 10.0.0.2' neigh.log") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Span: a bridge's span port, a rule mirrored to its own tap, and
+	 * packets taken off that tap, with their pcap to save.
+	 */
+	run("document.querySelector('button[data-act=net-kind][data-arg=span]')"
+	    ".click()");
+	wait_js("document.querySelector('form[data-form=span-port]') && "
+	    "document.querySelector('#span-sources option[value=ipfw150]')",
+	    20);
+	run("const f = document.querySelector('form[data-form=span-port]'); "
+	    "f.bridge.value = 'bridge0'; f.port.value = 'em2'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -qx 'bridge0 span em2' "
+	    "ifconfig.log") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'bridge0 span em2' ifconfig.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("const f = document.querySelector('form[data-form=span-rule]'); "
+	    "f.num.value = '150'; f.proto.value = 'icmp'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && system("grep -q 'add 150 count log logdst bpf "
+	    "icmp from any to any' ipfw.log 2>/dev/null") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -q 'add 150 count log logdst bpf icmp from any "
+	    "to any' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("const f = document.querySelector('form[data-form=span-capture]'); "
+	    "f.source.value = 'ipfw150'; f.filter.value = 'icmp and host "
+	    "10.0.0.2'; f.packets.value = '5'; f.seconds.value = '3'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('pre.span-lines') && document."
+	    "querySelector('pre.span-lines').textContent.includes('ICMP echo "
+	    "reply') && document.querySelector('button[data-act=span-save]')",
+	    20);
+	ATF_CHECK(js_true("document.querySelector('.span-sum').textContent."
+	    "includes('2 packets from ipfw150')"));
+	ATF_CHECK(system("grep -q 'tcpdump -n -U -i ipfw150 -c 5 -w .*/c.pcap "
+	    "icmp and host 10.0.0.2$' tcpdump.log") == 0);
+	/* Nothing left behind. */
+	ATF_CHECK(system("test -z \"$(ls -A tools/tmp)\"") == 0);
+	run("document.querySelector('button[data-act=span-save]').click()");
+	shot("7q-span");
 	/* The nexthop groups, as netstat -O has them, under Nexthops:
 	 * each next hop a line of its own, with its share. */
 	ATF_CHECK(js_true("!document.querySelector('nav.sub button[data-act="
@@ -2357,6 +2423,213 @@ part_plugins(void)
 
 }
 
+/*
+ * The certificates OpenSSL trusts: read with OpenSSL, one ending soon
+ * said; one given to the host, one distrusted and trusted again.
+ */
+static void
+part_certs(void)
+{
+	char	 js[8192], pem[4096], *p, *q;
+	FILE	*f;
+	size_t	 n;
+	int	 i;
+
+	ATF_REQUIRE(system("R=tools/certroot; mkdir -p $R/usr/share/certs/"
+	    "trusted && for n in root:400 soon:10 mine:400; do openssl req "
+	    "-x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout "
+	    "${n%:*}.key -out ${n%:*}.pem -days ${n#*:} -subj \"/O=Arcana/"
+	    "CN=Arcana ${n%:*} CA\" 2>/dev/null || exit 1; done; cp root.pem "
+	    "soon.pem $R/usr/share/certs/trusted/ && tools/certctl -D $R "
+	    "rehash") == 0);
+	run("document.querySelector('button.tab[data-arg=certificates]')"
+	    ".click()");
+	wait_js("location.hash.endsWith('/certificates') && [...document."
+	    "querySelectorAll('table.certs tbody tr')].some(r => r.textContent"
+	    ".includes('Arcana root CA') && r.textContent.includes('EC "
+	    "prime256v1'))", 20);
+	ATF_CHECK(js_true("document.querySelector('.chip.warn').textContent"
+	    ".includes('1 ends within 30 days') && [...document."
+	    "querySelectorAll('table.certs td.warn')].length === 1"));
+	/* One given: its PEM pasted, a key never. */
+	ATF_REQUIRE((f = fopen("mine.pem", "r")) != NULL);
+	n = fread(pem, 1, sizeof(pem) - 1, f);
+	fclose(f);
+	pem[n] = '\0';
+	q = js + snprintf(js, sizeof(js), "const f = document.querySelector("
+	    "'form[data-form=cert-add]'); f.name.value = 'mine'; f.pem.value "
+	    "= '");
+	for (p = pem; *p != '\0'; p++) {
+		if (*p == '\n') {
+			*q++ = '\\';
+			*q++ = 'n';
+		} else
+			*q++ = *p;
+	}
+	snprintf(q, sizeof(js) - (size_t)(q - js), "'; f.requestSubmit();");
+	run("document.querySelector('button[data-act=cert-add]').click()");
+	wait_js("document.querySelector('form[data-form=cert-add]')", 5);
+	run(js);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('table.certs tbody tr')].some("
+	    "r => r.textContent.includes('Arcana mine CA') && r.textContent"
+	    ".includes('/usr/local/share/certs/trusted/mine.pem'))", 20);
+	run("document.querySelector('.dock > header').click()");
+	shot("9-certificates");
+	/* Distrusted, and trusted again. */
+	run("document.querySelector('button[data-act=cert-untrust][data-arg="
+	    "\"root.0\"]').click()");
+	wait_js("document.querySelector('.modal button.danger')", 5);
+	run("document.querySelector('.modal button.danger').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("tools/certroot/usr/local/share/certs/"
+	    "untrusted/root.0.pem", F_OK) != 0; i++)
+		usleep(100000);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=certs-show][data-arg="
+	    "untrusted]').click()");
+	wait_js("[...document.querySelectorAll('table.certs tbody tr')].some("
+	    "r => r.textContent.includes('Arcana root CA') && r.querySelector("
+	    "'button[data-act=cert-trust]'))", 20);
+	run("document.querySelector('button[data-act=cert-trust]').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 100 && access("tools/certroot/usr/local/share/certs/"
+	    "untrusted/root.0.pem", F_OK) == 0; i++)
+		usleep(100000);
+	ATF_CHECK(access("tools/certroot/usr/local/share/certs/untrusted/"
+	    "root.0.pem", F_OK) != 0);
+	run("document.querySelector('.dock > header').click()");
+	wait_js("document.querySelectorAll('table.certs tbody tr td.dim')"
+	    ".length === 1", 20);
+}
+
+/* A file's text as a JavaScript string's, between single quotes. */
+static void
+js_text(char *out, size_t len, const char *path)
+{
+	FILE	*f;
+	size_t	 o;
+	int	 c;
+
+	ATF_REQUIRE((f = fopen(path, "r")) != NULL);
+	for (o = 0; o + 3 < len && (c = fgetc(f)) != EOF; ) {
+		if (c == '\n') {
+			out[o++] = '\\';
+			out[o++] = 'n';
+		} else if (c == '\'' || c == '\\') {
+			out[o++] = '\\';
+			out[o++] = (char)c;
+		} else
+			out[o++] = (char)c;
+	}
+	out[o] = '\0';
+	fclose(f);
+}
+
+/*
+ * The base system's sshd: a setting changed, the banner, a user's key
+ * added and taken away, the host key signed by a CA's.
+ */
+static void
+part_ssh(void)
+{
+	char	 key[4096], js[8192];
+	int	 i;
+
+	ATF_REQUIRE(system("R=tools/sshroot; mkdir -p $R/etc/ssh $R/root "
+	    "$R/home/alice && printf 'PermitRootLogin no\\nPasswordAuthentication"
+	    " yes\\n' > $R/etc/ssh/sshd_config && printf 'root:*:0:0::/root:"
+	    "/bin/sh\\nalice:*:%d:%d:Alice:/home/alice:/bin/sh\\n' $(id -u) "
+	    "$(id -g) > $R/etc/passwd && ssh-keygen -q -t ed25519 -N '' -C host "
+	    "-f $R/etc/ssh/ssh_host_ed25519_key && ssh-keygen -q -t ed25519 -N "
+	    "'' -C alice@lab -f alice_key && ssh-keygen -q -t ed25519 -N '' -C "
+	    "lab-ca -f lab_ca") == 0);
+	run("document.querySelector('button.tab[data-arg=ssh]').click()");
+	wait_js("location.hash.endsWith('/ssh') && [...document."
+	    "querySelectorAll('table.ssh-set tbody tr')].some(r => r."
+	    "textContent.includes('PermitRootLogin') && r.textContent."
+	    "includes('no'))", 20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.ssh-hk tbody "
+	    "tr')].some(r => r.textContent.includes('ssh-ed25519') && r."
+	    "textContent.includes('SHA256:'))"));
+	/* A setting, from what it takes. */
+	run("document.querySelector('button[data-act=ssh-set][data-arg="
+	    "PermitRootLogin]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-set] select')", 5);
+	run("const f = document.querySelector('form[data-form=ssh-set]'); "
+	    "f.value.value = 'prohibit-password'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('table.ssh-set tbody tr')]"
+	    ".some(r => r.textContent.includes('prohibit-password'))", 20);
+	ATF_CHECK(system("grep -qx 'PermitRootLogin prohibit-password' "
+	    "tools/sshroot/etc/ssh/sshd_config") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* The banner. */
+	run("const f = document.querySelector('form[data-form=ssh-banner]'); "
+	    "f.text.value = 'Authorised use only.'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	/* The file first, then sshd_config naming it. */
+	for (i = 0; i < 100 && system("grep -qx 'Banner /etc/ssh/banner' "
+	    "tools/sshroot/etc/ssh/sshd_config") != 0; i++)
+		usleep(100000);
+	ATF_CHECK(system("grep -qx 'Authorised use only.' "
+	    "tools/sshroot/etc/ssh/banner") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* alice's key, added and taken away. */
+	js_text(key, sizeof(key), "alice_key.pub");
+	run("document.querySelector('button[data-act=ssh-key-add][data-arg="
+	    "alice]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-key]')", 5);
+	snprintf(js, sizeof(js), "const f = document.querySelector('form"
+	    "[data-form=ssh-key]'); f.key.value = '%s'; f.requestSubmit();",
+	    key);
+	run(js);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('table.ssh-keys tbody tr')]"
+	    ".some(r => r.textContent.includes('alice@lab'))", 20);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=ssh-key-del]').click()");
+	wait_js("document.querySelector('.modal button.danger')", 5);
+	run("document.querySelector('.modal button.danger').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("![...document.querySelectorAll('table.ssh-keys tbody tr')]"
+	    ".some(r => r.textContent.includes('alice@lab'))", 20);
+	ATF_CHECK(system("test ! -s tools/sshroot/home/alice/.ssh/"
+	    "authorized_keys") == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* The host key signed: the CA's key given once. */
+	js_text(key, sizeof(key), "lab_ca");
+	run("document.querySelector('button[data-act=ssh-sign]').click()");
+	wait_js("document.querySelector('form[data-form=ssh-sign]')", 5);
+	snprintf(js, sizeof(js), "const f = document.querySelector('form"
+	    "[data-form=ssh-sign]'); f.key.value = '%s'; f.principals.value = "
+	    "'lab.example lab'; f.requestSubmit();", key);
+	run(js);
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	wait_js("[...document.querySelectorAll('table.ssh-hk tbody tr')]"
+	    ".some(r => r.textContent.includes('for lab.example lab'))", 20);
+	ATF_CHECK(system("grep -qx 'HostCertificate /etc/ssh/"
+	    "ssh_host_ed25519_key-cert.pub' tools/sshroot/etc/ssh/sshd_config")
+	    == 0);
+	ATF_CHECK(system("ls -a tools/sshroot/etc/ssh | grep -q arcana-ca") !=
+	    0);
+	run("document.querySelector('.dock > header').click()");
+	/* Nothing wider than the page. */
+	ATF_CHECK(js_true("document.querySelector('.stage').scrollWidth <= "
+	    "document.querySelector('.stage').clientWidth + 1"));
+	shot("9b-ssh");
+	run("document.querySelector('table.ssh-hk').scrollIntoView()");
+	shot("9c-ssh-keys");
+}
+
 static void
 part_storage(void)
 {
@@ -2470,7 +2743,7 @@ part_storage(void)
 	run("const i = document.getElementById('filter'); i.value = ''; "
 	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
 	wait_js("document.querySelectorAll('table.datasets tbody tr').length "
-	    "=== 3", 5);
+	    "=== 4", 5);
 	run("document.querySelector('table.datasets tr[data-ds=\"tank/data\"] "
 	    "button[data-act=st-snapshot]').click()");
 	wait_js("document.querySelector('form[data-form=st-snapshot] input"
@@ -2637,6 +2910,31 @@ part_storage(void)
 		usleep(50000);
 	ATF_CHECK(system("grep -q '^zfs load-key tank/data$' storage.log") ==
 	    0);
+	run("document.querySelector('.dock > header').click()");
+	/*
+	 * One asked for at a prompt: typed, straight to the host, in no
+	 * job; zfs reads it from a file that is gone after.
+	 */
+	ATF_CHECK(js_true("!document.querySelector('tr[data-ds=\"tank/vault\"] "
+	    "button[data-act=st-key]')"));
+	run("document.querySelector('tr[data-ds=\"tank/vault\"] button"
+	    "[data-act=st-typekey][data-arg=load]').click()");
+	wait_js("document.querySelector('form[data-form=st-typekey] input"
+	    "[type=password][name=key]')", 5);
+	run("const f = document.querySelector('form[data-form=st-typekey]'); "
+	    "f.key.value = 'short'; f.requestSubmit();");
+	wait_js("document.querySelector('.modal').textContent.includes("
+	    "'8 characters at least')", 10);
+	run("const f = document.querySelector('form[data-form=st-typekey]'); "
+	    "f.key.value = 'correct horse battery'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => t."
+	    "textContent.includes('The key is loaded'))", 10);
+	ATF_CHECK(system("grep -qx 'key=correct horse battery' storage.log && "
+	    "grep -q '^zfs load-key -L file://.*/key tank/vault$' storage.log")
+	    == 0);
+	ATF_CHECK(system("test -z \"$(ls -A tools/tmp)\"") == 0);
+	ATF_CHECK(js_true("![...document.querySelectorAll('.dock .op')].some("
+	    "o => o.textContent.includes('correct horse'))"));
 	run("document.querySelector('tr[data-ds=\"tank/data\"] button"
 	    "[data-act=st-ask][data-arg=jail]').click()");
 	wait_js("document.querySelector('form[data-form=st-ask] input[name="
@@ -3064,7 +3362,8 @@ part_storage(void)
 	    "'section.ucard .ujails')"));
 	run("document.querySelector('section.ucard .uname').click()");
 	wait_js("document.querySelector('button.tab[data-arg=log].on')", 5);
-
+	part_certs();
+	part_ssh();
 }
 
 static void
@@ -3341,23 +3640,122 @@ part_firewall(void)
 	    "10.0.0.6:53 53$' ipfw.log && grep -q '^nat 7 config if em0 "
 	    "same_ports deny_in' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
-	run("const f = document.querySelector('form[data-form=fw-pipe]'); "
+	shot("7o-firewall-objects");
+	/*
+	 * QoS: dummynet's pipes, schedulers and queues read as what they
+	 * are; a pipe, a queue and a rule that sends to it, by forms.
+	 */
+	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
+	    "\"-9\"]').click()");
+	wait_js("[...document.querySelectorAll('table.qos-pipes tbody tr')]"
+	    ".some(r => r.textContent.includes('10 Mbit/s') && r.textContent"
+	    ".includes('1%') && r.textContent.includes('each destination "
+	    "address'))", 10);
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.qos-scheds "
+	    "tbody tr')].some(r => r.textContent.includes('WF2Q+') && r."
+	    "textContent.includes('each source /24'))"));
+	ATF_CHECK(js_true("[...document.querySelectorAll('table.qos-queues "
+	    "tbody tr')].some(r => r.cells[2].textContent === '30')"));
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "pipe]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] input[name="
+	    "bw]')", 5);
+	/* What is not a number is said, and nothing is done. */
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '3'; f.bw.value = 'fast'; f.requestSubmit();");
+	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	    "t.textContent.includes('are numbers'))", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
 	    "f.num.value = '3'; f.bw.value = '20'; f.delay.value = '15'; "
 	    "f.plr.value = '1'; f.mask.value = 'src'; f.requestSubmit();");
 	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
 	run("document.querySelector('button[data-act=queue-run]').click()");
-	for (i = 0; i < 200 && system("grep -q '^ipfw -q pipe 3 config' "
-	    "ipfw.log 2>/dev/null") != 0; i++)
+	/* ipfw first, then the kept line. */
+	for (i = 0; i < 200 && system("grep -q '^pipe 3 config' ipfw.rules "
+	    "2>/dev/null") != 0; i++)
 		usleep(50000);
 	ATF_CHECK(system("grep -q '^ipfw -q pipe 3 config bw 20Mbit/s delay "
-	    "15 plr 0.01 mask src-ip 0xffffffff$' ipfw.log") == 0);
+	    "15 plr 0.01 mask src-ip 0xffffffff$' ipfw.log && grep -q '^pipe 3 "
+	    "config bw 20Mbit/s' ipfw.rules") == 0);
 	run("document.querySelector('.dock > header').click()");
-	/* What is not a number is said, and nothing is done. */
-	run("const f = document.querySelector('form[data-form=fw-pipe]'); "
-	    "f.num.value = '3'; f.bw.value = 'fast'; f.requestSubmit();");
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('are numbers'))", 5);
-	shot("7o-firewall-objects");
+	/* Configured again: one line of it kept, the new. */
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "pipe]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] input[name="
+	    "bw]')", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '3'; f.bw.value = '30'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^pipe 3 config bw 30' "
+	    "ipfw.rules 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("test $(grep -c '^pipe 3 config' ipfw.rules) = 1") ==
+	    0);
+	run("document.querySelector('.dock > header').click()");
+	/* A scheduler: its mask before its type, as ipfw takes it. */
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "sched]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] select[name="
+	    "type]')", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '3'; f.type.value = 'fq_codel'; f.mask.value = "
+	    "'src'; f.target.value = '5'; f.interval.value = '100'; "
+	    "f.ecn.checked = true; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^sched 3 config' ipfw.rules "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q sched 3 config pipe 3 mask src-ip "
+	    "0xffffffff type fq_codel target 5ms interval 100ms ecn$' ipfw.log")
+	    == 0);
+	run("document.querySelector('.dock > header').click()");
+	/* A queue on scheduler 1, and a rule that sends to it. */
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "queue]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] select[name="
+	    "sched]')", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '4'; f.weight.value = '20'; f.mask.value = 'dst'; "
+	    "f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^ipfw -q queue 4 config' "
+	    "ipfw.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q queue 4 config sched 1 weight 20 "
+	    "mask dst-ip 0xffffffff$' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	run("document.querySelector('button[data-act=fw-qos-new][data-arg="
+	    "rule]').click()");
+	wait_js("document.querySelector('form[data-form=fw-qos] select[name="
+	    "target]')", 5);
+	run("const f = document.querySelector('form[data-form=fw-qos]'); "
+	    "f.num.value = '5000'; f.target.value = 'pipe 1'; f.proto.value = "
+	    "'tcp'; f.port.value = '443'; f.dir.value = 'out'; f.via.value = "
+	    "'em0'; f.requestSubmit();");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q 'add 5000 pipe 1' ipfw.log "
+	    "2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q 'add 5000 pipe 1 tcp from any to any "
+	    "dst-port 443 out via em0' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
+	shot("7p-firewall-qos");
+	/* Taken away, and out of the kept rules. */
+	run("document.querySelector('button[data-act=fw-qos-del][data-arg="
+	    "pipe][data-value=\"1\"]').click()");
+	wait_js("document.querySelector('.modal button.danger')", 5);
+	run("document.querySelector('.modal button.danger').click()");
+	wait_js("document.querySelector('button[data-act=queue-run]')", 5);
+	run("document.querySelector('button[data-act=queue-run]').click()");
+	for (i = 0; i < 200 && system("grep -q '^ipfw -q pipe 1 delete' "
+	    "ipfw.log 2>/dev/null") != 0; i++)
+		usleep(50000);
+	ATF_CHECK(system("grep -q '^ipfw -q pipe 1 delete' ipfw.log") == 0);
+	run("document.querySelector('.dock > header').click()");
 	run("document.querySelector('.fwrail li[data-act=fw-sect][data-arg="
 	    "\"-8\"]').click()");
 	wait_js("document.querySelector('.stage').textContent.includes("

@@ -47,6 +47,7 @@ char		*arc_store_get(const char *);
 void		 arc_store_set(const char *, const char *);
 char		*arc_theme_get(void);
 void		 arc_theme_set(const char *);
+void		 arc_save_b64(const char *, const char *, const char *);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
@@ -157,6 +158,8 @@ enum tab {
 	TAB_STORAGE,
 	TAB_KERNEL,
 	TAB_SYSCTL,
+	TAB_CERTS,
+	TAB_SSH,
 	TAB_PROCESSES,
 	TAB_LOG,
 	TAB_JOBS,
@@ -191,6 +194,7 @@ enum netkind {
 	NET_NHGROUPS,
 	NET_NEIGHBOURS,
 	NET_IPSEC,
+	NET_SPAN,		/* bridges' span ports, taps, capture */
 };
 /* A plugin's view: a tab of its own on a host that has it. */
 #define	NET_PLUGIN(k)	((k) == NET_WIREGUARD || (k) == NET_BIRD ||	\
@@ -299,6 +303,8 @@ enum {
 	JOB_FIREWALL,
 	JOB_STORAGE,
 	JOB_PROCESS,
+	JOB_CERTS,
+	JOB_SSH,
 };
 
 /* A change held back to be sent with others as one batch. */
@@ -339,6 +345,11 @@ enum modal {
 	MODAL_JAIL_TEMPLATE,
 	MODAL_JAIL_REMOVE,
 	MODAL_NEIGH,
+	MODAL_CERT_ADD,
+	MODAL_SSH_SET,
+	MODAL_SSH_SIGN,
+	MODAL_SSH_KEY,
+	MODAL_FW_QOS,
 	MODAL_BIRD_PROTO,
 	MODAL_BIRD_BLOCK,
 	MODAL_BIRD_RPKI,
@@ -537,7 +548,8 @@ void		 load_push(void);
 void		 load_tokens(void);
 void		 token_new(void);
 void		 token_del(const char *);
-void		 save_settings(const ucl_object_t *);
+void		 save_settings(const ucl_object_t *, bool);
+void		 mail_test(void);
 void		 load_schema(void);
 const char	*schema_op(const ucl_object_t *);
 void		 view_schema(struct html *, const char *);
@@ -642,6 +654,8 @@ void		 tbl_set(const char *, int, bool);
 int		 tbl_col(const char *, bool *);
 bool		 tbl_action(const char *, const char *, const char *);
 void		 refresh_kernel(struct server *, bool);
+void		 refresh_certs(struct server *, bool);
+void		 refresh_ssh(struct server *, bool);
 void		 apidoc_open(void);
 void		 view_apidoc(struct html *);
 bool		 apidoc_action(const char *, const char *, const char *);
@@ -655,6 +669,12 @@ void		 firewall_tick(double);
 void		 view_firewall(struct html *, struct server *);
 bool		 firewall_form(const char *, const ucl_object_t *);
 bool		 firewall_action(const char *, const char *, const char *);
+bool		 firewall_qos_modal(struct html *);
+/* span.c: traffic mirrored, and taken. */
+void		 span_refresh(struct server *);
+void		 view_span(struct html *, struct server *);
+bool		 span_form(const char *, const ucl_object_t *);
+bool		 span_action(const char *, const char *, const char *);
 void		 view_bridges(struct html *, struct server *,
 		    const ucl_object_t *);
 void		 view_geneve(struct html *, struct server *,
@@ -719,6 +739,9 @@ void		 refresh_transport(struct server *, bool, bool);
 void		 transport_tick(double);
 void		 view_transport(struct html *, struct server *);
 void		 refresh_storage(struct server *, bool);
+void		 refresh_jail_datasets(struct server *, const char *);
+void		 view_jail_datasets(struct html *, struct server *,
+		    const ucl_object_t *);
 void		 view_storage(struct html *, struct server *);
 /* workflow.c: the workflows, their editor and their runs. */
 void		 workflows_open(void);
@@ -745,6 +768,16 @@ void		 storage_modal_buttons(struct html *);
 bool		 storage_form(const char *, const ucl_object_t *);
 bool		 storage_action(const char *, const char *, const char *);
 void		 view_kernel(struct html *, struct server *);
+/* certs.c: the certificates OpenSSL trusts, of a host or a jail. */
+void		 view_certs(struct html *, struct server *);
+bool		 certs_modal(struct html *);
+bool		 certs_form(const char *, const ucl_object_t *);
+bool		 certs_action(const char *, const char *, const char *);
+/* sshd.c: the base system's sshd, of a host or a jail. */
+void		 view_ssh(struct html *, struct server *);
+bool		 ssh_modal(struct html *);
+bool		 ssh_form(const char *, const ucl_object_t *);
+bool		 ssh_action(const char *, const char *, const char *);
 bool		 kernel_form(const char *, const ucl_object_t *);
 bool		 kernel_action(const char *, const char *, const char *);
 void		 topo_poll_host(struct server *);

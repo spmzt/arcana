@@ -1850,6 +1850,78 @@ ATF_TC_BODY(settings, tc)
 	resp_free(&r);
 }
 
+CONSOLE_TC(mail, "Faults, jobs and runs mailed by sendmail(8), as the "
+    "settings say")
+ATF_TC_BODY(mail, tc)
+{
+	struct authn	a;
+	struct resp	r;
+	char		cwd[MAXPATHLEN], body[MAXPATHLEN], path[160];
+	int		i;
+
+	ATF_REQUIRE(getcwd(cwd, sizeof(cwd)) != NULL);
+	/* The hosts' events read each second, not each fifteen. */
+	snprintf(harness_webconf, sizeof(harness_webconf), "mail_tick = 1;\n");
+	start(tc, 0, NULL);
+	enrol(&a);
+	snprintf(body, sizeof(body), "{\"name\":\"here\",\"uri\":\"unix:%s/"
+	    "jgd.sock\"}", cwd);
+	http("POST", "/api/servers", body, &r);
+	EXPECT(&r, 200);
+	snprintf(path, sizeof(path), "/api/servers/%s/jobs", jstr(&r,
+	    "servers.0.id"));
+	resp_free(&r);
+	/* No one to mail to: said so. */
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 502);
+	ATF_CHECK_STREQ("no address to mail to", jstr(&r, "error.message"));
+	resp_free(&r);
+	/* Addresses only, nothing a header could be made of. */
+	http("POST", "/api/settings", "{\"set\":{\"mail_to\":\"ops\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"mail_to\":\"ops@example.org"
+	    "\\nBcc: x@example.org\"}}", &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"mail_jobs\":\"some\"}}",
+	    &r);
+	EXPECT(&r, 400);
+	resp_free(&r);
+	http("POST", "/api/settings", "{\"set\":{\"mail_to\":\"ops@example.org,"
+	    " noc@example.org\",\"mail_jobs\":\"failed\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	http("POST", "/api/settings/mail-test", "{}", &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("ops@example.org, noc@example.org", jstr(&r, "to"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -qx 'ARGS -t -i' mail.out && grep -qx 'To: "
+	    "ops@example.org, noc@example.org' mail.out && grep -qx 'Subject: "
+	    "Arcana: a test' mail.out && grep -q '^From: Arcana <arcana@' "
+	    "mail.out && grep -qx 'Auto-Submitted: auto-generated' mail.out")
+	    == 0);
+	/* The host's events read from here on: a job failed is mailed,
+	 * one done is not. */
+	sleep(3);
+	http("POST", path, "{\"jobs\":[{\"kind\":\"cert\",\"verb\":"
+	    "\"rehash\"},{\"kind\":\"cert\",\"verb\":\"trust\",\"path\":"
+	    "\"nosuch.0\"}]}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	for (i = 0; i < 150 && system("grep -q 'failed: certificate trust "
+	    "nosuch.0' mail.out") != 0; i++)
+		usleep(100000);
+	ATF_CHECK_MSG(system("grep -q '^Subject: Arcana: [0-9:]* here: job "
+	    "[0-9]* failed: certificate trust nosuch.0' mail.out") == 0,
+	    "no mail of the job");
+	ATF_CHECK(system("grep -q 'certificate rehash' mail.out") != 0);
+	/* None: nothing more. */
+	http("POST", "/api/settings", "{\"set\":{\"mail_to\":\"\"}}", &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+}
+
 CONSOLE_TC(services, "Services listed, acted on and configured through "
     "service(8) and sysrc(8)")
 ATF_TC_BODY(services, tc)
@@ -2840,6 +2912,30 @@ ATF_TC_BODY(services, tc)
 	EXPECT(&r, 200);
 	ATF_CHECK_STREQ("tank/data", jstr(&r, "data.datasets.1.name"));
 	ATF_CHECK_STREQ("8000000", jstr(&r, "data.datasets.1.quota"));
+	resp_free(&r);
+	/* A jail's: what its own zfs sees, by jexec; one that does not
+	 * run has none; and of a jail, datasets and snapshots only. */
+	snprintf(path, sizeof(path), "%.*s/storage/datasets?jail=gw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	EXPECT(&r, 200);
+	ATF_CHECK_STREQ("true", jstr(&r, "ok"));
+	ATF_CHECK_STREQ("tank/data", jstr(&r, "data.datasets.1.name"));
+	resp_free(&r);
+	ATF_CHECK(system("grep -q '^jexec 4 .*zfs list -Hp -t filesystem,"
+	    "volume' jexec.log") == 0);
+	snprintf(path, sizeof(path), "%.*s/storage/datasets?jail=web",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_STREQ("false", jstr(&r, "ok"));
+	ATF_CHECK(jstr(&r, "error") != NULL && strstr(jstr(&r, "error"),
+	    "not running") != NULL);
+	resp_free(&r);
+	snprintf(path, sizeof(path), "%.*s/storage/pools?jail=gw",
+	    (int)(strlen(base) - strlen("/services")), base);
+	http("GET", path, NULL, &r);
+	ATF_CHECK_STREQ("of a jail, its datasets and snapshots only", jstr(&r,
+	    "error"));
 	resp_free(&r);
 	snprintf(path, sizeof(path), "%.*s/storage/snapshots?filter=tank/data",
 	    (int)(strlen(base) - strlen("/services")), base);
@@ -4778,6 +4874,7 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, agent_build);
 	ATF_TP_ADD_TC(tp, update_notes);
 	ATF_TP_ADD_TC(tp, settings);
+	ATF_TP_ADD_TC(tp, mail);
 	ATF_TP_ADD_TC(tp, local_agent);
 	ATF_TP_ADD_TC(tp, local_same);
 	ATF_TP_ADD_TC(tp, local_absent);

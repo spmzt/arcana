@@ -389,8 +389,11 @@ line(struct html *h, const struct uhost *u, int f, double t1, double top,
 			x = PW * (1 - (t1 - T(u, k)[F_T]) / span);
 			y = value(u, k, f) / top;
 			y = PH - (PH - 2) * (y > 1 ? 1 : y < 0 ? 0 : y);
+			/* A gap the host was away: wider than the looks
+			 * around it, which further back are thinned. */
 			if (open && T(u, k)[F_T] - T(u, k - 1)[F_T] > 4 *
-			    (u->step > 0 ? u->step : 5)) {
+			    fmax(u->step > 0 ? u->step : 5, k >= 2 ?
+			    T(u, k - 1)[F_T] - T(u, k - 2)[F_T] : 0)) {
 				if (i == 0)
 					h_fmt(h, "L%.1f %d Z ", px, PH);
 				open = false;
@@ -706,6 +709,9 @@ view_usage(struct html *h)
 				t1 = T(u, u->n - 1)[F_T];
 			if (window == 0 && u->step * u->keep > span)
 				span = u->step * u->keep;
+			/* Thinned, the oldest look is further back. */
+			if (window == 0 && t1 - T(u, 0)[F_T] > span)
+				span = t1 - T(u, 0)[F_T];
 		}
 	if (span <= 0)
 		span = 900;

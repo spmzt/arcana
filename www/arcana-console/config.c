@@ -48,7 +48,11 @@ get(const ucl_object_t *top, const char *path, const char *def)
  * Without tls, the console runs its own CA from datadir (pki.c).  With
  * it, tls.ca_key names the CA's key when the console is to enrol hosts.
  * update_check = false stops the release checks; update_url names
- * another feed in GitHub's releases/latest shape.
+ * another feed in GitHub's releases/latest shape.  sendmail names what
+ * mail goes out by (/usr/sbin/sendmail), mail_tick the seconds between
+ * reads of the hosts' events for it (15); mail_to, mail_from,
+ * mail_faults, mail_jobs, mail_runs and mail_limits what Settings
+ * starts from.
  *
  *	android { package = "..."; fingerprints = [ "AB:CD:..." ]; }
  *
@@ -93,6 +97,18 @@ config_load(const char *path)
 	cfg.agent_source = get(top, "agent_source", NULL);
 	cfg.agent_ref = get(top, "agent_ref", NULL);
 	cfg.agent_ssh_key = get(top, "agent_ssh_key", NULL);
+	cfg.sendmail = get(top, "sendmail", "/usr/sbin/sendmail");
+	/* What Settings shows as web.conf's; the settings' own checks. */
+	cfg.mail_to = get(top, "mail_to", "");
+	cfg.mail_from = get(top, "mail_from", "");
+	cfg.mail_faults = get(top, "mail_faults", "Major");
+	cfg.mail_jobs = get(top, "mail_jobs", "failed");
+	cfg.mail_runs = get(top, "mail_runs", "failed");
+	o = ucl_object_lookup(top, "mail_limits");
+	cfg.mail_limits = o == NULL || ucl_object_toboolean(o);
+	o = ucl_object_lookup(top, "mail_tick");
+	cfg.mail_tick = o != NULL && ucl_object_toint(o) >= 1 &&
+	    ucl_object_toint(o) <= 3600 ? (int)ucl_object_toint(o) : 15;
 	/* Empty says: do not look for an agent beside the console. */
 	cfg.local_agent = get(top, "local_agent", ARCW_LOCAL_AGENT);
 	if (cfg.local_agent != NULL && cfg.local_agent[0] == '\0')

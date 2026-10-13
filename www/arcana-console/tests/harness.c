@@ -477,6 +477,18 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "kindex: 1, type: addr\\n' ;;\n"
 	    "'table T46 list') printf -- '--- table(T46), set(0) ---\\n"
 	    "10.0.0.0/8 0\\n192.0.2.0/24 0\\n' ;;\n"
+	    /* dummynet, as a FreeBSD 16 lab printed it. */
+	    "'pipe show') printf '00001:  10.000 Mbit/s   20 ms burst 0 \\n"
+	    "q131073  30 sl.plr 0.010000 0 flows (1 buckets) sched 65537 "
+	    "weight 0 lmax 0 pri 0 droptail\\n sched 65537 type FIFO flags "
+	    "0x1 64 buckets 0 active\\n    mask:  0x00 0x00000000/0x0000 -> "
+	    "0xffffffff/0x0000\\n' ;;\n"
+	    "'sched show') printf '00001:  10.000 Mbit/s   20 ms burst 0 \\n"
+	    " sched 1 type WF2Q+ flags 0x1 64 buckets 0 active\\n    mask:  "
+	    "0x00 0xffffff00/0x0000 -> 0x00000000/0x0000\\n   Children "
+	    "flowsets: 2 \\n' ;;\n"
+	    "'queue show') printf 'q00002  50 sl. 0 flows (1 buckets) sched 1 "
+	    "weight 30 lmax 0 pri 0 droptail\\n' ;;\n"
 	    "'-D show') printf '01001      7      560 (298s) STATE tcp "
 	    "2001:db8::9 51234 <-> 2001:db8::1 22 :default\\n06101     12"
 	    "     1440 (3s) STATE udp 10.0.0.5 5353 <-> 10.0.0.1 53 :default"
@@ -609,6 +621,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf 'tank/data\\tfilesystem\\t4000000\\t9000000\\t4000000\\t"
 	    "/tank/data\\tlz4\\t2.00\\t8000000\\t0\\tyes\\ton\\t-\\t-\\toff\\t"
 	    "aes-256-gcm\\tunavailable\\tfile:///k\\toff\\n'"
+	    /* One whose key is asked for at a prompt. */
+	    "\nprintf 'tank/vault\\tfilesystem\\t2000000\\t9000000\\t2000000\\t"
+	    "/tank/vault\\tlz4\\t1.00\\t0\\t0\\tno\\ton\\t-\\t-\\toff\\t"
+	    "aes-256-gcm\\tunavailable\\tprompt\\toff\\n'"
 	    "\nprintf 'tank/vol\\tvolume\\t100000\\t9000000\\t100000\\t-\\toff"
 	    "\\t1.00\\t-\\t0\\t-\\t-\\ttank/data@a\\t1048576\\toff\\toff\\t-\\tnone"
 	    "\\toff\\n' ;;\n"
@@ -619,6 +635,11 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "printf 'tank/data@a\\ntank/data@b\\n' ;;\n"
 	    /* A snapshot sent: what zsend.data has; received into a file. */
 	    "send*) cat zsend.data ;;\n"
+	    "'get -H -o value keylocation,keystatus,keyformat tank/vault') "
+	    "printf 'prompt\\nunavailable\\npassphrase\\n' ;;\n"
+	    /* What zfs read: the key's file, there while it reads. */
+	    "'load-key -L file://'*) echo \"key=$(cat \"${3#file://}\")\" >> "
+	    "storage.log ;;\n"
 	    "'receive -u tank/fail') cat > /dev/null; echo \"cannot receive "
 	    "new filesystem stream: destination 'tank/fail' exists\" >&2; "
 	    "exit 1 ;;\n"
@@ -688,11 +709,49 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	put("tools/suricata", "#!/bin/sh\necho \"suricata $*\" >> squid.log\n"
 	    "[ \"$1\" = -T ] && exit 0\n"
 	    "sleep 60 > /dev/null 2>&1 &\necho $! > \"$4\"\nexit 0\n");
+	/* tcpdump(1): its sources, a capture written, and read back;
+	 * timeout(1) leaves it be. */
+	ATF_REQUIRE(mkdir("tools/tmp", 0755) == 0 || errno == EEXIST);
+	put("tools/timeout", "#!/bin/sh\nshift\nexec \"$@\"\n");
+	put("tools/tcpdump", "#!/bin/sh\necho \"tcpdump $*\" >> tcpdump.log\n"
+	    "case \"$1\" in\n-D) printf '1.em1 [Up, Running]\\n2.ipfw150 [Up]"
+	    "\\n' ;;\n-n) [ \"$2\" = -tttt ] && { printf '2026-10-12 10:00:00."
+	    "000001 IP 10.0.0.2 > 10.0.0.1: ICMP echo request, id 1, seq 0, "
+	    "length 64\\n2026-10-12 10:00:00.000090 IP 10.0.0.1 > 10.0.0.2: "
+	    "ICMP echo reply, id 1, seq 0, length 64\\n'; exit 0; }\n"
+	    "while [ $# -gt 0 ]; do [ \"$1\" = -w ] && printf 'PCAPDATA' > "
+	    "\"$2\"; shift; done ;;\nesac\nexit 0\n");
+	ATF_REQUIRE(chmod("tools/timeout", 0755) == 0 && chmod("tools/tcpdump",
+	    0755) == 0);
 	/* arp(8) and ndp(8), told what to set. */
 	put("tools/arp", "#!/bin/sh\necho \"arp $*\" >> neigh.log\n");
 	put("tools/ndp", "#!/bin/sh\necho \"ndp $*\" >> neigh.log\n");
 	ATF_REQUIRE(chmod("tools/arp", 0755) == 0 && chmod("tools/ndp", 0755)
 	    == 0);
+	/* certctl rehash as it is: the store made again from FreeBSD's own,
+	 * those given, and those not to be trusted, by fingerprint. */
+	put("tools/certctl", "#!/bin/sh\necho \"certctl $*\" >> certctl.log\n"
+	    "R=$2\nfp() { openssl x509 -noout -fingerprint -sha256 -in \"$1\" | "
+	    "tr -d ' '; }\nrm -rf $R/etc/ssl/certs $R/etc/ssl/untrusted\n"
+	    "mkdir -p $R/etc/ssl/certs $R/etc/ssl/untrusted\nbad=\n"
+	    "for f in $R/usr/local/share/certs/untrusted/*; do\n"
+	    "\t[ -f \"$f\" ] || continue\n\tbad=\"$bad $(fp $f)\"\n"
+	    "\tcp $f $R/etc/ssl/untrusted/$(basename $f .pem)\ndone\n"
+	    "for f in $R/usr/share/certs/trusted/* "
+	    "$R/usr/local/share/certs/trusted/*; do\n\t[ -f \"$f\" ] || "
+	    "continue\n\tcase \"$bad\" in *$(fp $f)*) continue ;; esac\n"
+	    "\tcp $f $R/etc/ssl/certs/$(basename $f .pem).0\ndone\n");
+	ATF_REQUIRE(chmod("tools/certctl", 0755) == 0);
+	/* sshd: -t refuses what says BAD, -T is the file's settings. */
+	put("tools/sshd", "#!/bin/sh\ncase \"$1\" in\n-t)\tgrep -q BAD \"$3\" "
+	    "&& { echo \"$3: Bad configuration option: BAD\" >&2; exit 255; }"
+	    "\n\texit 0 ;;\n-T)\tawk '!/^[ \\t]*#/ && NF > 1 { if (tolower($1)"
+	    " == \"match\") exit; k = tolower($1); $1 = \"\"; sub(/^ /, \"\"); "
+	    "print k, $0 }' \"$3\"\n\tgrep -qi '^hostkey' \"$3\" || echo "
+	    "\"hostkey /etc/ssh/ssh_host_ed25519_key\"\n\texit 0 ;;\nesac\n"
+	    "exit 1\n");
+	ATF_REQUIRE(chmod("tools/sshd", 0755) == 0);
+	put("tools/ssh-keygen", "#!/bin/sh\nexec /usr/bin/ssh-keygen \"$@\"\n");
 	put("tools/growfs", "#!/bin/sh\necho \"growfs $*\" >> storage.log\n");
 	put("tools/swapon", "#!/bin/sh\necho \"swapon $*\" >> storage.log\n");
 	put("tools/swapoff", "#!/bin/sh\necho \"swapoff $*\" >> storage.log\n");
@@ -809,10 +868,17 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 		snprintf(local, sizeof(local), harness_local_agent ?
 		    "local_agent = \"unix:%s/jgd.sock\";\n" :
 		    "local_agent = \"\";\n", cwd);
+	/* Mail goes into mail.out. */
+	snprintf(buf, sizeof(buf), "#!/bin/sh\n{ echo \"ARGS $*\"; cat; echo "
+	    "--END--; } >> %s/mail.out\n", cwd);
+	ATF_REQUIRE(mkdir("tools", 0755) == 0 || errno == EEXIST);
+	put("tools/sendmail", buf);
+	ATF_REQUIRE(chmod("tools/sendmail", 0755) == 0);
 	snprintf(buf, sizeof(buf), "rp_id = \"%s\";\norigin = \"%s\";\n"
 	    "datadir = \"%s/data\";\ncookie_secure = false;\n"
-	    "agent_binary = \"%s\";\n%s%s", RP_ID, harness_origin, cwd, send,
-	    local, harness_webconf);
+	    "agent_binary = \"%s\";\nsendmail = \"%s/tools/sendmail\";\n"
+	    "%s%s", RP_ID, harness_origin, cwd, send, cwd, local,
+	    harness_webconf);
 	put("web.conf", buf);
 	if (port != 0)
 		snprintf(listen, sizeof(listen), "bind 127.0.0.1 %d", port);

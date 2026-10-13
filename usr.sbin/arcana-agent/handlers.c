@@ -313,6 +313,11 @@ worker(void *arg)
 	struct arc_stats_rsp	 str;
 	struct arc_kernel_rsp	 kr;
 	struct arc_jail_files_rsp jfr;
+	struct arc_certs_rsp	 cer;
+	struct arc_ssh_rsp	 sshr;
+	struct arc_capture_req	 capq;
+	struct arc_capture_rsp	 capr;
+	struct arc_zfs_key_rsp	 zkr;
 	struct arc_transport_rsp tpr;
 	struct arc_ipfw_rules_req irq;
 	struct arc_ipfw_rules_rsp irr;
@@ -576,7 +581,14 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
 		    "storage");
 		memset(&stg, 0, sizeof(sr));
-		do_storage(&w, j->action, j->source, &stg);
+		/* A jail's: what its own zfs sees, the datasets given it. */
+		if (j->jail != NULL && j->action != ARC_STORAGE_KIND_DATASETS &&
+		    j->action != ARC_STORAGE_KIND_SNAPSHOTS) {
+			stg.has_ok = true;
+			stg.error = "of a jail, its datasets and snapshots only";
+		} else if (scope_enter_jail(&w, j->jail, &stg.error, false) ==
+		    0)
+			do_storage(&w, j->action, j->source, &stg);
 		ok = stg.ok;
 		error = stg.error;
 		step_end(&w, root, ok, NULL);
@@ -611,6 +623,90 @@ worker(void *arg)
 		step_end(&w, root, ok, NULL);
 		trace_steps(&w, &fr.trace.v, &fr.trace.n);
 		rc = arc_fstab_reply(j->req, &fr);
+		break;
+	case ARC_CMD_CERTS:
+		what = j->jail != NULL ? wfmt(&w, "certificates of %s", j->jail) :
+		    "certificates";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&cer, 0, sizeof(cer));
+		cer.has_ok = true;
+		if (scope_enter_jail(&w, j->jail, &cer.error, false) == 0)
+			do_certs(&w, &cer);
+		ok = cer.ok;
+		error = cer.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &cer.trace.v, &cer.trace.n);
+		rc = arc_certs_reply(j->req, &cer);
+		break;
+	case ARC_CMD_ZFS_KEY:
+		/* The keys ride in source and ref: in nothing logged. */
+		what = wfmt(&w, "zfs key of %s", j->sha256);
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&zkr, 0, sizeof(zkr));
+		zkr.has_ok = true;
+		{
+			struct arc_zfs_key_req	zq;
+
+			memset(&zq, 0, sizeof(zq));
+			zq.zfs_dataset = j->sha256;
+			zq.zfs_key = j->source;
+			zq.zfs_new_key = j->ref;
+			pthread_mutex_lock(&change_lock);
+			if (change_note("%s", what))
+				do_zfs_key(&w, &zq, &zkr);
+			else
+				zkr.error = STOPPING;
+			change_note(NULL);
+			pthread_mutex_unlock(&change_lock);
+		}
+		if (j->source != NULL)
+			explicit_bzero(j->source, strlen(j->source));
+		if (j->ref != NULL)
+			explicit_bzero(j->ref, strlen(j->ref));
+		ok = zkr.ok;
+		error = zkr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &zkr.trace.v, &zkr.trace.n);
+		rc = arc_zfs_key_reply(j->req, &zkr);
+		break;
+	case ARC_CMD_CAPTURE:
+		what = wfmt(&w, "capture %s%s%s", j->ref != NULL ? j->ref :
+		    "sources", j->jail != NULL ? " in " : "", j->jail != NULL ?
+		    j->jail : "");
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&capq, 0, sizeof(capq));
+		memset(&capr, 0, sizeof(capr));
+		capr.has_ok = true;
+		capq.interface = j->ref;
+		capq.net_filter = j->sha256;
+		capq.has_seconds = j->fib > 0;
+		capq.seconds = j->fib;
+		capq.has_packets = j->offset > 0;
+		capq.packets = j->offset;
+		if (scope_enter(&w, j->jail, &capr.error) == 0)
+			do_capture(&w, &capq, &capr);
+		ok = capr.ok;
+		error = capr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &capr.trace.v, &capr.trace.n);
+		rc = arc_capture_reply(j->req, &capr);
+		break;
+	case ARC_CMD_SSH:
+		what = j->jail != NULL ? wfmt(&w, "sshd of %s", j->jail) : "sshd";
+		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent",
+		    "%s", what);
+		memset(&sshr, 0, sizeof(sshr));
+		sshr.has_ok = true;
+		if (scope_enter_jail(&w, j->jail, &sshr.error, false) == 0)
+			do_ssh(&w, &sshr);
+		ok = sshr.ok;
+		error = sshr.error;
+		step_end(&w, root, ok, NULL);
+		trace_steps(&w, &sshr.trace.v, &sshr.trace.n);
+		rc = arc_ssh_reply(j->req, &sshr);
 		break;
 	case ARC_CMD_JAIL_FILES:
 		what = "jail files";
@@ -1584,6 +1680,13 @@ arc_storage_doit(cbl_req *req, const struct arc_storage_req *rq,
 	j->req = req;
 	j->cmd = ARC_CMD_STORAGE;
 	j->action = rq->storage_kind;
+	if (rq->jail != NULL && rq->jail[0] != '\0') {
+		if (!valid_jail(rq->jail)) {
+			free(j);
+			return (reject(req, "invalid jail name"));
+		}
+		j->jail = xstrdup(rq->jail);
+	}
 	j->source = rq->net_filter != NULL && rq->net_filter[0] != '\0' ?
 	    xstrdup(rq->net_filter) : NULL;
 	return (start(j));
@@ -1867,6 +1970,79 @@ arc_kernel_doit(cbl_req *req, void *arg __unused)
 }
 
 int
+arc_certs_doit(cbl_req *req, const struct arc_certs_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_CERTS;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
+arc_zfs_key_doit(cbl_req *req, const struct arc_zfs_key_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_ZFS_KEY;
+	j->sha256 = xstrdup(rq->zfs_dataset);
+	j->source = rq->zfs_key != NULL ? xstrdup(rq->zfs_key) : NULL;
+	j->ref = rq->zfs_new_key != NULL ? xstrdup(rq->zfs_new_key) : NULL;
+	return (start(j));
+}
+
+int
+arc_capture_doit(cbl_req *req, const struct arc_capture_req *rq,
+    void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_CAPTURE;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	/* The source rides in ref, the filter in sha256. */
+	j->ref = rq->interface != NULL && rq->interface[0] != '\0' ?
+	    xstrdup(rq->interface) : NULL;
+	j->sha256 = rq->net_filter != NULL ? xstrdup(rq->net_filter) : NULL;
+	/* As fw-trace's: seconds in fib, packets in offset. */
+	j->fib = rq->has_seconds ? rq->seconds : 0;
+	j->offset = rq->has_packets ? rq->packets : 0;
+	return (start(j));
+}
+
+int
+arc_ssh_doit(cbl_req *req, const struct arc_ssh_req *rq, void *arg __unused)
+{
+	struct job	*j;
+
+	if (rq->jail != NULL && rq->jail[0] != '\0' && !valid_jail(rq->jail))
+		return (reject(req, "invalid jail name"));
+	if ((j = calloc(1, sizeof(*j))) == NULL)
+		return (ENOMEM);
+	j->req = req;
+	j->cmd = ARC_CMD_SSH;
+	j->jail = rq->jail != NULL && rq->jail[0] != '\0' ? xstrdup(rq->jail) :
+	    NULL;
+	return (start(j));
+}
+
+int
 arc_jail_files_doit(cbl_req *req, void *arg __unused)
 {
 	struct job	*j;
@@ -1952,7 +2128,7 @@ check_spec(const struct arc_job_spec *sp)
 	const char	*e;
 	size_t		 i;
 
-	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_NEIGHBOUR)
+	if (!sp->has_kind || sp->kind > ARC_JOB_KIND_SSH)
 		return ("a job needs a kind");
 	/* For what changes a network, jail is the jail whose it is. */
 	if (sp->kind >= ARC_JOB_KIND_IF_ADDRESS && sp->jail != NULL &&
@@ -2136,6 +2312,10 @@ check_spec(const struct arc_job_spec *sp)
 		return (jail_conf_check(sp));
 	case ARC_JOB_KIND_NEIGHBOUR:
 		return (neigh_check(sp));
+	case ARC_JOB_KIND_CERT:
+		return (cert_check(sp));
+	case ARC_JOB_KIND_SSH:
+		return (ssh_check(sp));
 	case ARC_JOB_KIND_WIREGUARD:
 		if (sp->safe)
 			return ("wireguard changes are not undone: not in "
