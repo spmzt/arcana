@@ -467,28 +467,13 @@ hostbar(struct html *h, struct server *s)
 		h_raw(h, "</span>");
 	}
 	h_raw(h, "</div></div>");
-	/* What is done to Arcana itself on this host: apart, at the right. */
+	/* Updating its agent, and the console, is on Devices and in
+	 * Settings, Update: with every host's in one place. */
 	h_raw(h, "<div class=\"host-actions\">");
 	if (host != NULL && agent_outdated(s)) {
-		h_raw(h, "<button class=\"small primary\" "
-		    "data-act=\"agent-update\"");
-		h_attr(h, "data-arg", s->id);
-		h_raw(h, " title=\"Send this host the console's "
-		    "arcana-agent\">Update agent</button>");
-	}
-	if (host != NULL && app.agent_source[0] != '\0') {
-		h_raw(h, "<button class=\"ghost small\" "
-		    "data-act=\"agent-build\"");
-		h_attr(h, "title", app.agent_source);
-		h_raw(h, ">Build agent here</button>");
-		/* The console's own update: on the host it runs on, which
-		 * is the one reached by a local socket. */
-		if (strncmp(s->uri, "unix:", 5) == 0) {
-			h_raw(h, "<button class=\"ghost small\" "
-			    "data-act=\"console-update\"");
-			h_attr(h, "title", app.agent_source);
-			h_raw(h, ">Update console</button>");
-		}
+		h_raw(h, "<button class=\"ghost small\" data-act=\"select-devices\" "
+		    "title=\"This host runs another arcana-agent than the "
+		    "console has: update it on Devices\">Agent behind</button>");
 	}
 	h_raw(h, "</div><div class=\"freshness\">");
 	if (s->list != NULL) {
@@ -1292,6 +1277,7 @@ static const struct {
 	{ SET_TOKENS, "tokens", "API tokens" },
 	{ SET_KEYS, "keys", "Sign-in keys" },
 	{ SET_CONSOLE, "console", "Console" },
+	{ SET_UPDATE, "update", "Update" },
 	{ SET_CA, "ca", "Certificate authority" },
 	{ SET_WEBCONF, "webconf", "web.conf" },
 	{ SET_NEWS, "news", "What's new" },
@@ -1409,12 +1395,16 @@ set_tokens(struct html *h)
 	ucl_object_iter_t	 it;
 	int			 n;
 
-	h_raw(h, "<p class=\"dim\">For a program to read what the console "
-	    "says, with <code>Authorization: Bearer</code>: the hosts, their "
-	    "jails, network, storage and logs, the workflows and their runs, "
-	    "SD-WAN, and the rest, and nothing that changes them, nor this "
-	    "console's settings, sign-in or enrolment. Its value is shown "
-	    "once, when it is made.</p>");
+	h_raw(h, "<p class=\"dim\">For a program to use the console, with "
+	    "<code>Authorization: Bearer</code>. A <b>read</b> token reads "
+	    "what the console says: the hosts, their jails, network, storage "
+	    "and logs, the workflows and their runs, SD-WAN, and the rest. A "
+	    "<b>write</b> token also changes them, as a signed-in user does: "
+	    "jobs on the hosts, updates of the agents and the console; what "
+	    "it does is audited under its name. Neither reaches this "
+	    "console's settings, sign-in, push or enrolment, nor makes "
+	    "tokens or changes the CA. Its value is shown once, when it is "
+	    "made.</p>");
 	if (app.token_value[0] != '\0') {
 		h_raw(h, "<div class=\"notice info\"><b>Copy it now: it is not "
 		    "shown again.</b><pre class=\"out token\">");
@@ -1436,7 +1426,11 @@ set_tokens(struct html *h)
 		fmt_age(used, sizeof(used), (double)jint(k, "last", 0) * 1000);
 		h_raw(h, "<li><span class=\"name\">");
 		h_txt(h, jstr(k, "name"));
-		h_raw(h, "</span><span class=\"dim\">made ");
+		h_fmt(h, "</span><span class=\"chip%s\">%s</span>"
+		    "<span class=\"dim\">made ", jstr(k, "kind") != NULL &&
+		    strcmp(jstr(k, "kind"), "write") == 0 ? " warn" : "",
+		    jstr(k, "kind") != NULL && strcmp(jstr(k, "kind"),
+		    "write") == 0 ? "write" : "read");
 		h_txt(h, made);
 		h_raw(h, " · ");
 		if (jint(k, "last", 0) > 0) {
@@ -1455,7 +1449,12 @@ set_tokens(struct html *h)
 	    "token-name\" spellcheck=\"false\" autocomplete=\"off\" "
 	    "maxlength=\"64\" placeholder=\"what will use it\"");
 	h_attr(h, "value", app.token_name);
-	h_raw(h, "><button type=\"button\" class=\"small\" data-act=\""
+	h_fmt(h, "><select data-input=\"token-kind\" title=\"What it may "
+	    "do\"><option value=\"read\"%s>Reads</option><option value=\""
+	    "write\"%s>Reads and writes</option></select>",
+	    app.token_write ? "" : " selected", app.token_write ? " selected" :
+	    "");
+	h_raw(h, "<button type=\"button\" class=\"small\" data-act=\""
 	    "token-new\">Make a token</button></div>");
 }
 
@@ -1675,6 +1674,88 @@ set_news(struct html *h)
 	notes_block(h, false);
 }
 
+/*
+ * Updating Arcana in one place: the console, built and installed from
+ * its repository on the host it runs on, and the agents, sent the
+ * console's arcana-agent; each host's agent is on Devices too.
+ */
+static void
+set_update(struct html *h)
+{
+	struct server	*s, *self = NULL;
+	int		 i, behind = 0, down = 0;
+
+	for (i = 0; i < app.nservers; i++) {
+		s = &app.servers[i];
+		/* The console's own host: the one reached by a local
+		 * socket. */
+		if (self == NULL && strncmp(s->uri, "unix:", 5) == 0)
+			self = s;
+		if (agent_outdated(s))
+			behind++;
+		if (s->failed)
+			down++;
+	}
+
+	h_raw(h, "<div class=\"upd\"><h3>Console</h3><p>Arcana console <b>");
+	h_txt(h, app.version[0] != '\0' ? app.version : "?");
+	h_raw(h, "</b>");
+	if (app.agent_source[0] == '\0') {
+		h_raw(h, ". No repository is set to update it from: set it on "
+		    "the <a href=\"#\" data-act=\"set-tab\" data-arg=\"console\""
+		    ">Console</a> tab.</p>");
+	} else {
+		h_raw(h, ", from <code>");
+		h_txt(h, app.agent_source);
+		h_raw(h, "</code>. An update clones it on the console's host, "
+		    "builds all of Arcana there and installs it: the console, "
+		    "this page and the agent; the console restarts and this "
+		    "page reconnects.</p>");
+		if (self != NULL) {
+			h_raw(h, "<div class=\"actions\"><button class=\"primary"
+			    "\" data-act=\"console-update\"");
+			h_attr(h, "data-arg", self->id);
+			h_raw(h, ">Update console</button><button class=\"ghost"
+			    "\" data-act=\"agent-build\"");
+			h_attr(h, "data-arg", self->id);
+			h_raw(h, " title=\"Build arcana-agent on the console's "
+			    "host without installing anything, for the agents"
+			    "\">Build the agent only</button><button class=\""
+			    "ghost\" data-act=\"notes-reload\">Read the "
+			    "repository again</button></div>");
+		} else
+			h_raw(h, "<p class=\"warn\">The console's own host is not "
+			    "among the hosts (none is reached by a local "
+			    "socket), so it cannot be updated from here.</p>");
+		h_raw(h, "<h4>What an update brings</h4>");
+		notes_block(h, true);
+	}
+	h_raw(h, "</div><div class=\"upd\"><h3>Agents</h3><p>");
+	if (app.agent_version[0] != '\0') {
+		h_raw(h, "The console sends arcana-agent <b>");
+		h_txt(h, app.agent_version);
+		h_raw(h, "</b>. ");
+	} else
+		h_raw(h, "The console has no arcana-agent of its own to send: "
+		    "build one first. ");
+	if (behind > 0)
+		h_fmt(h, "%d of %d host%s run%s another version.", behind,
+		    app.nservers, app.nservers == 1 ? "" : "s",
+		    behind == 1 ? "s" : "");
+	else
+		h_fmt(h, "Every host that answers runs it.");
+	if (down > 0)
+		h_fmt(h, " %d do%s not answer.", down, down == 1 ? "es" : "");
+	h_raw(h, "</p><div class=\"actions\">");
+	if (behind > 0)
+		h_fmt(h, "<button class=\"primary\" data-act=\"agent-update\" "
+		    "title=\"Send the console's arcana-agent to the hosts that "
+		    "run another version\">Update %d agent%s</button>", behind,
+		    behind == 1 ? "" : "s");
+	h_raw(h, "<button class=\"ghost\" data-act=\"select-devices\">Each host's "
+	    "agent on Devices</button></div></div>");
+}
+
 static void
 view_settings(struct html *h)
 {
@@ -1717,6 +1798,9 @@ view_settings(struct html *h)
 		break;
 	case SET_NEWS:
 		set_news(h);
+		break;
+	case SET_UPDATE:
+		set_update(h);
 		break;
 	case SET_CA:
 		set_ca(h);

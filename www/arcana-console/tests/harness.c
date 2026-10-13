@@ -376,7 +376,10 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 	    "2>/dev/null || echo 1111111111111111111111111111111111111111)\"; "
 	    "exit 0; }\n"
 	    /* The log clone: made bare, fetched, read from ./log and ./tags. */
-	    "[ \"$1\" = -C ] && [ \"$3\" = fetch ] && exit 0\n"
+	    "[ \"$1\" = -C ] && [ \"$3\" = config ] && exit 0\n"
+	    "[ \"$1\" = -C ] && [ \"$3\" = fetch ] && { [ -f fetch-fails ] && "
+	    "{ echo 'No ED25519 host key is known for git.example.org and you "
+	    "have requested strict checking.' >&2; exit 128; }; exit 0; }\n"
 	    "[ \"$1\" = -C ] && [ \"$3\" = log ] && { cat commits 2>/dev/null; "
 	    "exit 0; }\n"
 	    "[ \"$1\" = -C ] && [ \"$3\" = for-each-ref ] && { cat tags "

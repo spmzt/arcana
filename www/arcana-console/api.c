@@ -115,16 +115,30 @@ guard(struct http_request *req, bool mutate)
 	config_refresh();
 	if (!session_valid(req)) {
 		/*
-		 * A read-only API token (tokens.c): to read, never to
-		 * change anything, nor to read the console's own settings,
-		 * sign-in, push or the keys that let a host join.
+		 * An API token (tokens.c): a read one to read, a write one
+		 * to change things too; neither to the console's own
+		 * settings, sign-in, push or the keys that let a host join,
+		 * nor, for a change, to the tokens or the CA.  A bearer
+		 * token is not sent by a browser by itself: no CSRF checks.
 		 */
-		if (!mutate && token_readable(req->path) && token_valid(req))
-			return (true);
-		reply_error(req, 401, "unauthenticated", mutate &&
-		    token_valid(req) ? "an API token reads only" :
-		    "log in first");
-		return (false);
+		switch (token_kind(req)) {
+		case TOKEN_WRITE:
+			if (mutate ? token_writable(req->path) :
+			    token_readable(req->path))
+				return (true);
+			reply_error(req, 403, "token", "an API token may not "
+			    "%s this", mutate ? "change" : "read");
+			return (false);
+		case TOKEN_READ:
+			if (!mutate && token_readable(req->path))
+				return (true);
+			reply_error(req, 401, "unauthenticated", mutate ?
+			    "an API token reads only" : "log in first");
+			return (false);
+		default:
+			reply_error(req, 401, "unauthenticated", "log in first");
+			return (false);
+		}
 	}
 	if (!mutate)
 		return (true);

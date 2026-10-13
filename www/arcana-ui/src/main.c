@@ -1561,6 +1561,19 @@ dispatch(const char *act, const char *arg, const char *value)
 		    "do-delete-server", arg, "");
 	} else if (strcmp(act, "do-delete-server") == 0) {
 		delete_server(arg);
+	} else if ((strcmp(act, "agent-build") == 0 ||
+	    strcmp(act, "console-update") == 0) && arg[0] != '\0' &&
+	    (s == NULL || strcmp(s->id, arg) != 0)) {
+		/* From Devices or Settings: the host named, not the one
+		 * selected. */
+		for (i = 0; i < app.nservers; i++)
+			if (strcmp(app.servers[i].id, arg) == 0) {
+				int keep = app.sel;
+
+				app.sel = i;
+				dispatch(act, arg, value);
+				app.sel = keep;
+			}
 	} else if (strcmp(act, "agent-build") == 0 && s != NULL) {
 		char body[512];
 
@@ -1640,8 +1653,9 @@ dispatch(const char *act, const char *arg, const char *value)
 			app.settab = SET_KEYS;
 		else if (strcmp(act, "set-tab") == 0)
 			app.settab = settab_of(arg);
-		if (app.settab == SET_NEWS && !app.notes_busy && (app.notes ==
-		    NULL || strcmp(app.notes_for, "console") != 0))
+		if ((app.settab == SET_NEWS || app.settab == SET_UPDATE) &&
+		    !app.notes_busy && (app.notes == NULL ||
+		    strcmp(app.notes_for, "console") != 0))
 			notes_load("console", app.version, NULL, false);
 	} else if (strcmp(act, "mail-test") == 0) {
 		mail_test();
@@ -1650,6 +1664,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.modal_error[0] = '\0';
 		/* A token's value is shown once: not again on another tab. */
 		app.token_value[0] = '\0';
+	} else if (strcmp(act, "input:token-kind") == 0) {
+		app.token_write = strcmp(value, "write") == 0;
 	} else if (strcmp(act, "input:token-name") == 0) {
 		snprintf(app.token_name, sizeof(app.token_name), "%s", value);
 	} else if (strcmp(act, "token-new") == 0) {

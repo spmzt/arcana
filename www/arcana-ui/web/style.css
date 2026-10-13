@@ -3125,6 +3125,9 @@ label.fib {
 }
 label.fib input { width: 3.2rem; }
 td.acts { white-space: nowrap; }
+/* Devices: a long address cut short, whole in its title. */
+table.devices td.addr { max-width: 11rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+table.devices td.warn { white-space: nowrap; }
 td.acts button + button { margin-left: .3rem; }
 form .two {
 	display: grid;

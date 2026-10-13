@@ -447,7 +447,8 @@ view_jobs(struct html *h, struct server *s)
  * The hosts as a table: each its name and address, its state, its
  * agent's version and the release of FreeBSD it runs, its jails, and
  * how busy it is now; sorted and filtered like every table, a row
- * opening the host.
+ * opening the host.  Updating the agents is here: each host's in its
+ * row, all that are behind at once at the top.
  */
 void
 view_devices(struct html *h)
@@ -463,7 +464,7 @@ view_devices(struct html *h)
 	struct server		*s;
 	ucl_object_t		*arr, *o;
 	const ucl_object_t	**rows, *r;
-	int			 i, k;
+	int			 i, k, behind = 0;
 
 	arr = ucl_object_typed_new(UCL_ARRAY);
 	for (i = 0; i < app.nservers; i++) {
@@ -477,6 +478,11 @@ view_devices(struct html *h)
 		    false);
 		ucl_object_insert_key(o, ucl_object_fromstring(s->failed ? "down" :
 		    s->list != NULL ? "up" : "unknown"), "state", 0, false);
+		if (agent_outdated(s)) {
+			ucl_object_insert_key(o, ucl_object_frombool(true),
+			    "behind", 0, false);
+			behind++;
+		}
 		if (s->list != NULL && jstr(s->list, "host.version") != NULL)
 			ucl_object_insert_key(o, ucl_object_fromstring(jstr(
 			    s->list, "host.version")), "version", 0, false);
@@ -501,11 +507,24 @@ view_devices(struct html *h)
 	}
 	h_raw(h, "<section class=\"hostbar\"><div class=\"host-id\"><h1>Devices"
 	    "</h1><div class=\"facts\">");
-	h_fmt(h, "<span>%d host%s</span></div></div><div class=\"pane-actions\">"
-	    "<button class=\"ghost small\" data-act=\"enrol\">Enrol a host"
-	    "</button><button class=\"ghost small\" data-act=\"add-server\">"
-	    "Add a server</button></div></section>", app.nservers,
-	    app.nservers == 1 ? "" : "s");
+	h_fmt(h, "<span>%d host%s</span>", app.nservers, app.nservers == 1 ?
+	    "" : "s");
+	if (app.agent_version[0] != '\0') {
+		h_raw(h, "<span>the console sends arcana-agent ");
+		h_txt(h, app.agent_version);
+		h_raw(h, "</span>");
+	}
+	h_raw(h, "</div></div><div class=\"pane-actions\">");
+	/* Updating the agents: every host behind at once, or each one in
+	 * its row. */
+	if (behind > 0)
+		h_fmt(h, "<button class=\"small primary\" data-act=\""
+		    "agent-update\" title=\"Send the console's arcana-agent to "
+		    "the hosts that run another version\">Update %d agent%s"
+		    "</button>", behind, behind == 1 ? "" : "s");
+	h_raw(h, "<button class=\"ghost small\" data-act=\"enrol\">Enrol a "
+	    "host</button><button class=\"ghost small\" data-act=\""
+	    "add-server\">Add a server</button></div></section>");
 	h_raw(h, "<div class=\"toolbar\"><input class=\"filter\" id=\"filter\" "
 	    "data-input=\"filter\" placeholder=\"Filter hosts\" "
 	    "autocomplete=\"off\" spellcheck=\"false\"");
@@ -519,11 +538,25 @@ view_devices(struct html *h)
 		h_attr(h, "data-arg", jstr(r, "id"));
 		h_raw(h, "><td><b>");
 		h_txt(h, jstr(r, "name"));
-		h_raw(h, "</b></td><td class=\"mono\">");
+		h_raw(h, "</b></td><td class=\"mono addr\"");
+		h_attr(h, "title", jstr(r, "uri"));
+		h_raw(h, ">");
 		h_txt(h, jstr(r, "uri"));
-		h_fmt(h, "</td><td><span class=\"chip st-%s\">%s</span></td><td>",
+		h_fmt(h, "</td><td><span class=\"chip st-%s\">%s</span></td><td",
 		    jstr(r, "state"), jstr(r, "state"));
+		if (jbool(r, "behind"))
+			h_raw(h, " class=\"warn\" title=\"Not the arcana-agent "
+			    "this console sends: another build, or another "
+			    "version\"");
+		h_raw(h, ">");
 		h_txt(h, jstr(r, "version") != NULL ? jstr(r, "version") : "—");
+		if (jbool(r, "behind")) {
+			h_raw(h, " <button class=\"small primary\" data-act=\""
+			    "agent-update\" title=\"Send this host the "
+			    "console's arcana-agent\"");
+			h_attr(h, "data-arg", jstr(r, "id"));
+			h_raw(h, ">Update</button>");
+		}
 		h_raw(h, "</td><td>");
 		h_txt(h, jstr(r, "release") != NULL ? jstr(r, "release") : "—");
 		if (jget(r, "jails") != NULL)
@@ -537,7 +570,16 @@ view_devices(struct html *h)
 			    0), (long long)jint(r, "zfs", 0));
 		else
 			h_raw(h, "<td>—</td><td>—</td><td>—</td>");
-		h_raw(h, "<td class=\"acts\"><button class=\"icon del\" "
+		h_raw(h, "<td class=\"acts\">");
+		if (app.agent_source[0] != '\0' && strcmp(jstr(r, "state"),
+		    "up") == 0) {
+			h_raw(h, "<button class=\"ghost small\" data-act=\""
+			    "agent-build\" title=\"Build arcana-agent on this "
+			    "host from the repository, without installing it\"");
+			h_attr(h, "data-arg", jstr(r, "id"));
+			h_raw(h, ">Build</button>");
+		}
+		h_raw(h, "<button class=\"icon del\" "
 		    "data-act=\"delete-server\" title=\"Remove it from the "
 		    "console\"");
 		h_attr(h, "data-arg", jstr(r, "id"));
