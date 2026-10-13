@@ -197,8 +197,10 @@
   every.json across restarts; each host waited on subscribed to, a
   thread each, its events running what they begin as they come and
   what was missed read when it answers again, host-down known when
-  the connection drops. jail-state is still a read of the jails at
-  each tick: the agent tells no event of a jail's state.
+  the connection drops. jail-state is the agent's event now
+  (2026-10-13): EVFILT_JAIL tells it of each jail made and removed,
+  and the console no longer reads the jails each tick for it
+  (agent_root_test:lifecycle).
 - 2026-10-12: a vnet jail's plugins looked for as the jail sees its
   files: a child of the agent attaches to the jail and asks there, so
   that a link inside it (a /usr/local leading to /opt/local) leads

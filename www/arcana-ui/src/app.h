@@ -208,6 +208,7 @@ struct netview {
 	char		 sid[9];	/* the server it came from */
 	char		 jail[256];	/* and the vnet jail of it, or "" */
 	ucl_object_t	*data;		/* the reply, or NULL */
+	int		 data_kind;	/* the netkind it was read for */
 	double		 fetched;
 	bool		 loading;
 	char		 error[256];	int		 sort;		/* column sorted by, or -1 */

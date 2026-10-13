@@ -1708,6 +1708,7 @@ network_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			if (app.net.data != NULL)
 				ucl_object_unref(app.net.data);
 			app.net.data = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+			app.net.data_kind = c->net_kind;
 			app.net.fetched = arc_now();
 			app.net.error[0] = '\0';
 		} else
@@ -1822,10 +1823,14 @@ ns_start(struct server *s)
 	snprintf(ns.sid, sizeof(ns.sid), "%s", s->id);
 	snprintf(ns.jail, sizeof(ns.jail), "%s", app.net.jail);
 	ns.target = ns_shape(ns.kind, &ns.arr);
-	/* Shown as it fills when there is nothing to show yet. */
-	ns.swap = app.net.data != NULL;
-	if (!ns.swap)
+	/* Shown as it fills when there is nothing of its own to show yet. */
+	ns.swap = app.net.data != NULL && app.net.data_kind == ns.kind;
+	if (!ns.swap) {
+		if (app.net.data != NULL)
+			ucl_object_unref(app.net.data);
 		app.net.data = ucl_object_ref(ns.target);
+		app.net.data_kind = ns.kind;
+	}
 	snprintf(msg, sizeof(msg), "{\"id\":%d,\"server\":\"%s\",\"what\":"
 	    "\"%s\",\"family\":\"%s\",\"fib\":%d,\"jail\":\"%s\","
 	    "\"filter\":\"%s\"}", ns.id, s->id, ns.kind == NET_ROUTES ?
@@ -1881,6 +1886,7 @@ network_stream(const ucl_object_t *o)
 				if (app.net.data != NULL)
 					ucl_object_unref(app.net.data);
 				app.net.data = ucl_object_ref(ns.target);
+				app.net.data_kind = ns.kind;
 			}
 		}
 	}
@@ -1913,8 +1919,13 @@ refresh_network(struct server *s, bool user)
 		app.net.loading = false;
 		return;
 	}
+	/*
+	 * Another host's or jail's: what is shown goes.  The same one read
+	 * again while a read is on its way keeps it: a form drawn from it
+	 * (a bridge, an interface to choose) would lose its choices.
+	 */
 	if (strcmp(app.net.sid, s->id) != 0 || strcmp(app.net.jail,
-	    net_scope()) != 0 || app.net.loading) {
+	    net_scope()) != 0) {
 		if (app.net.data != NULL)
 			ucl_object_unref(app.net.data);
 		app.net.data = NULL;

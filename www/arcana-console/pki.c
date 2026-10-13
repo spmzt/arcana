@@ -1324,6 +1324,9 @@ rollout_run(void *arg)
 			state_set(st, "phase", "switched");
 		free(merged);
 		free(cur);
+	} else {
+		snprintf(why, sizeof(why), "%s: %s", nca, strerror(errno));
+		state_set(st, "error", why);
 	}
 	/* New connections, with the console's new certificate. */
 	for (i = 0; i < n; i++)

@@ -401,7 +401,7 @@ static void
 setup_token_init(void)
 {
 	uint8_t	 raw[32];
-	char	 path[MAXPATHLEN];
+	char	 path[MAXPATHLEN], tmp[MAXPATHLEN];
 	FILE	*fp;
 	int	 fd, i;
 
@@ -422,9 +422,14 @@ setup_token_init(void)
 	arc4random_buf(raw, sizeof(raw));
 	for (i = 0; i < 32; i++)
 		snprintf(setup_token + i * 2, 3, "%02x", raw[i]);
-	if ((fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0600)) == -1 ||
-	    dprintf(fd, "%s\n", setup_token) < 0 || close(fd) == -1) {
+	/* Whole or not at all: whoever reads it never finds it empty. */
+	snprintf(tmp, sizeof(tmp), "%s.XXXXXX", path);
+	if ((fd = mkstemp(tmp)) == -1 || fchmod(fd, 0600) == -1 ||
+	    dprintf(fd, "%s\n", setup_token) < 0 || close(fd) == -1 ||
+	    rename(tmp, path) == -1) {
 		kore_log(LOG_ERR, "%s: %s", path, strerror(errno));
+		if (fd != -1)
+			(void)unlink(tmp);
 		return;
 	}
 	kore_log(LOG_NOTICE, "no security key registered yet: the setup "

@@ -102,6 +102,15 @@ lifecycle_body()
 	atf_check -o save:kill.out "$JGC" -t -c "$SOCK" kill "$JAIL"
 	atf_check -o match:'\[syscall\] jail_remove\(2\)' cat kill.out
 	atf_check -s exit:1 sh -c "grep '\[exec\]' kill.out | grep -v ' -e '"
+	# Each coming and going was an event as it happened (EVFILT_JAIL).
+	sleep 0.5
+	atf_check -o save:ev.json "$JGC" -c "$SOCK" events
+	atf_check -o match:"\"kind\":\"jail-state\",\"data\":\\{\"jail\":\"$JAIL\",\"state\":\"running\",\"jid\":[0-9]+\\}" \
+	    -o match:"\"kind\":\"jail-state\",\"data\":\\{\"jail\":\"$JAIL\",\"state\":\"stopped\"" \
+	    cat ev.json
+	# Four starts (start, restart, start again) and as many ends.
+	atf_check -o inline:'3\n' sh -c "grep -o '\"state\":\"running\"' ev.json | wc -l | tr -d ' '"
+	atf_check -o inline:'3\n' sh -c "grep -o '\"state\":\"stopped\"' ev.json | wc -l | tr -d ' '"
 }
 lifecycle_cleanup()
 {

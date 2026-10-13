@@ -21,6 +21,10 @@ static struct {
 	char	ifname[32];	/* the vhid changed, or "" a new one */
 	int	vhid;
 	int	version;
+	/* The interfaces offered, as they were when the box opened: the
+	 * network shown may be read again meanwhile. */
+	char	ifs[64][32];
+	int	nifs;
 } cp;
 
 /* A carp job in the network shown; key is never kept by the page. */
@@ -206,16 +210,35 @@ view_carp(struct html *h, struct server *s, const ucl_object_t *data)
 	h_raw(h, "</tbody></table>");
 }
 
-bool
-carp_modal(struct html *h)
+/* The interfaces to offer, from the interfaces read for this view. */
+static void
+carp_ifs(void)
 {
 	const ucl_object_t	*i;
 	ucl_object_iter_t	 it;
+
+	if (app.net.data_kind != NET_CARP)
+		return;
+	it = NULL;
+	while (cp.nifs < 64 && (i = ucl_object_iterate(jget(app.net.data,
+	    "data.interfaces"), &it, true)) != NULL)
+		if (jstr(i, "name") != NULL && strncmp(jstr(i, "name"), "lo",
+		    2) != 0)
+			snprintf(cp.ifs[cp.nifs++], sizeof(cp.ifs[0]), "%s",
+			    jstr(i, "name"));
+}
+
+bool
+carp_modal(struct html *h)
+{
 	bool			 isnew;
+	int			 k;
 
 	if (app.modal != MODAL_CARP)
 		return (false);
 	isnew = cp.ifname[0] == '\0';
+	if (isnew && cp.nifs == 0)
+		carp_ifs();
 	h_raw(h, "<form data-form=\"carp\"><h2>");
 	if (isnew)
 		h_raw(h, "An address shared with carp(4)");
@@ -231,16 +254,11 @@ carp_modal(struct html *h)
 	h_raw(h, "</p>");
 	if (isnew) {
 		h_raw(h, "<label>Interface<select name=\"ifname\">");
-		it = NULL;
-		while ((i = ucl_object_iterate(jget(app.net.data,
-		    "data.interfaces"), &it, true)) != NULL) {
-			if (jstr(i, "name") == NULL || strncmp(jstr(i, "name"),
-			    "lo", 2) == 0)
-				continue;
+		for (k = 0; k < cp.nifs; k++) {
 			h_raw(h, "<option");
-			h_attr(h, "value", jstr(i, "name"));
+			h_attr(h, "value", cp.ifs[k]);
 			h_raw(h, ">");
-			h_txt(h, jstr(i, "name"));
+			h_txt(h, cp.ifs[k]);
 			h_raw(h, "</option>");
 		}
 		h_raw(h, "</select></label><label>Address<input name=\"address\" "
@@ -356,6 +374,8 @@ carp_action(const char *act, const char *arg, const char *value)
 		(void)sscanf(value, "%d %d", &vhid, &ver);
 	if (strcmp(act, "carp-add") == 0) {
 		cp.ifname[0] = '\0';
+		cp.nifs = 0;
+		carp_ifs();
 		app.modal = MODAL_CARP;
 	} else if (strcmp(act, "carp-edit") == 0) {
 		snprintf(cp.ifname, sizeof(cp.ifname), "%s", arg);

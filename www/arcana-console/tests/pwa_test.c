@@ -1549,8 +1549,8 @@ part_nettab(void)
 	    "f.address.value = '127.0.0.2/8'; f.persist.checked = false; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('lo0: remove 127.0.0.1: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('lo0: remove 127.0.0.1'))", 20);
 	ATF_CHECK(system("grep -n 'lo0 inet 127.0.0.2/8 alias\\|lo0 inet "
 	    "127.0.0.1 -alias' ifconfig.log | sed 's/:.*inet / /' | tr '\\n' "
 	    "' ' | grep -q '127.0.0.2/8 alias .*127.0.0.1 -alias'") == 0);
@@ -1584,9 +1584,8 @@ part_nettab(void)
 	    "f.source.value = '10.0.0.9'; f.fib.value = '2'; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('route add 10.88.0.0/16 via 10.0.0.1: "
-	    "done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('route "
+	    "add 10.88.0.0/16 via 10.0.0.1'))", 20);
 	ATF_CHECK(system("grep -q '^0 route-add 10.88.0.0/16 10.0.0.1 - 2 5 "
 	    "20 10.0.0.9$' route.log") == 0);
 	run("document.querySelector('.dock > header').click()");
@@ -1637,8 +1636,8 @@ part_nettab(void)
 	    "f.mtu.value = '9000'; f.persist.checked = false; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('lo0: set: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('lo0: set'))", 20);
 	ATF_CHECK(system("grep -q '^lo0 mtu 9000$' ifconfig.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
@@ -1903,8 +1902,8 @@ part_plugins(void)
 	    "'.svc[data-arg=sshd] button[data-value=restart]')", 20);
 	ATF_CHECK_MSG(!js_true("document.querySelector('.svc[data-arg=sshd] "
 	    "button[disabled]')"), "sshd on lab is held by lab2's action");
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('service sshd restart: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('service sshd restart'))", 20);
 	(void)unlink("slow");
 	run("document.querySelector('.dock > header').click()");
 
@@ -1939,9 +1938,8 @@ part_plugins(void)
 	run("const f = document.querySelector('form[data-form=if-address]'); "
 	    "f.address.value = '10.99.0.7/24'; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('gw: epair1b: add 10.99.0.7/24: done'))",
-	    20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('gw: "
+	    "epair1b: add 10.99.0.7/24'))", 20);
 	ATF_CHECK(system("grep -q '^-j 4 epair1b inet 10.99.0.7/24 alias$' "
 	    "ifconfig.log && grep -q '10.99.0.7/24' jroot/etc/rc.conf && "
 	    "! grep -q 10.99.0.7 rc.conf") == 0);
@@ -1973,8 +1971,8 @@ part_plugins(void)
 	run("document.querySelector('form[data-form=confirm]')"
 	    ".requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('take epair1b back from gw: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('take epair1b back from gw'))", 20);
 	ATF_CHECK(system("grep -q '^epair1b -vnet 4$' ifconfig.log") == 0);
 	wait_js("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=routes]')", 20);
@@ -2296,8 +2294,8 @@ part_plugins(void)
 	    "bird-verb][data-arg=reload]')].find(b => b.dataset.value === "
 	    "'bgp_core').click()");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('bird reload bgp_core: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('bird reload bgp_core'))", 20);
 	ATF_CHECK(system("grep -q '^reload bgp_core$' birdc.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 	/*
@@ -2729,8 +2727,8 @@ part_storage(void)
 	run("[...document.querySelectorAll('section.pool button[data-act="
 	    "st-zpool]')].find(b => b.dataset.arg === 'scrub').click()");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('zpool scrub tank: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('zpool scrub tank'))", 20);
 	ATF_CHECK(system("grep -q '^zpool scrub tank$' storage.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 	/* A pool made of two devices that mirror each other; one found
@@ -2743,9 +2741,9 @@ part_storage(void)
 	    "= 'ada8p1 ada9p1'; f.mountpoint.value = '/srv/lab'; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
 	    "t.textContent.includes('zpool create lab mirror ada8p1 ada9p1 "
-	    "mountpoint=/srv/lab: done'))", 20);
+	    "mountpoint=/srv/lab'))", 20);
 	ATF_CHECK(system("grep -q '^zpool create -m /srv/lab lab mirror ada8p1 "
 	    "ada9p1$' storage.log") == 0);
 	run("document.querySelector('.dock > header').click()");
@@ -2757,8 +2755,8 @@ part_storage(void)
 	shot("7j-storage-import");
 	run("document.querySelector('.modal li[data-act=st-import]').click()");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('zpool import spare: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('zpool import spare'))", 20);
 	run("document.querySelector('.dock > header').click()");
 	/* A device replaced, by the one named. */
 	wait_js("document.querySelector('table.vdevs button[data-act=st-vdev]"
@@ -2771,9 +2769,8 @@ part_storage(void)
 	run("const f = document.querySelector('form[data-form=st-vdev-replace]"
 	    "'); f.device.value = 'ada6p1'; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('zpool replace tank ada2p1 ada6p1: done'))",
-	    20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('zpool "
+	    "replace tank ada2p1 ada6p1'))", 20);
 	ATF_CHECK(system("grep -q '^zpool replace tank ada2p1 ada6p1$' "
 	    "storage.log") == 0);
 	run("document.querySelector('.dock > header').click()");
@@ -2817,9 +2814,8 @@ part_storage(void)
 	    "f.name.value = 'before'; f.recursive.checked = true; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('zfs snapshot tank/data@before: done'))",
-	    20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('zfs "
+	    "snapshot tank/data@before'))", 20);
 	ATF_CHECK(system("grep -q '^zfs snapshot -r tank/data@before$' "
 	    "storage.log") == 0);
 	run("document.querySelector('.dock > header').click()");
@@ -2839,8 +2835,8 @@ part_storage(void)
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('zfs destroy tank/data@a: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('zfs destroy tank/data@a'))", 20);
 	ATF_CHECK(system("grep -q '^zfs destroy tank/data@a$' storage.log") ==
 	    0);
 	run("document.querySelector('.dock > header').click()");
@@ -2882,8 +2878,8 @@ part_storage(void)
 	run("document.querySelector('form[data-form=confirm]')."
 	    "requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('zfs resnapshot tank/data@b: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('zfs resnapshot tank/data@b'))", 20);
 	ATF_CHECK(system("grep -A2 '^zfs snapshot tank/data@b.resnap$' "
 	    "storage.log | tr '\\n' '|' | grep -q '^zfs snapshot "
 	    "tank/data@b.resnap|zfs destroy tank/data@b|zfs rename "
@@ -3034,8 +3030,8 @@ part_storage(void)
 	run("document.querySelector('table.fstab tr[data-fs=\"/mnt/web\"] "
 	    "button[data-act=st-mount]').click()");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('mount /mnt/web: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('mount /mnt/web'))", 20);
 	ATF_CHECK(system("grep -q '^mount -F .*/fstab /mnt/web$' storage.log")
 	    == 0);
 	run("document.querySelector('.dock > header').click()");
@@ -3061,8 +3057,8 @@ part_storage(void)
 	    "f.name.value = 'if_disc'; f.persist.checked = true; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('kldload if_disc: done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('kldload if_disc'))", 20);
 	ATF_CHECK(system("grep -q '^kldload -n if_disc$' kld.log && grep -q "
 	    "'^kld_list=\"if_disc\"$' rc.conf") == 0);
 	/* Kept, and not in this kernel: said.  A module hardly ever
@@ -3080,9 +3076,8 @@ part_storage(void)
 	    "i.dispatchEvent(new Event('input', { bubbles: true })); "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('kldunload ' + window.kld + ': done'))",
-	    20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('kldunload "
+	    "' + window.kld + ''))", 20);
 	ATF_CHECK(system("grep -q '^kldunload ' kld.log") == 0);
 	run("document.querySelector('.dock > header').click()");
 
@@ -3094,8 +3089,8 @@ part_storage(void)
 	wait_js("document.querySelectorAll('table.sysctl tbody tr').length > "
 	    "20 && [...document.querySelectorAll('table.sysctl tbody tr b')]."
 	    "some(b => b.textContent === 'kern.ostype')", 20);
-	ATF_CHECK(js_true("document.querySelector('.sy-kept').textContent."
-	    "includes('kern.ipc.somaxconn=')"));
+	wait_js("document.querySelector('.sy-kept').textContent."
+	    "includes('kern.ipc.somaxconn=')", 10);
 	/* Sorted by a column, as every table is. */
 	run("document.querySelector('table.sysctl th[data-act=t-sort]')."
 	    "click()");
@@ -3169,9 +3164,8 @@ part_storage(void)
 	run("const f = document.querySelector('form[data-form=sy-set]'); "
 	    "f.value.value = '8192'; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('sysctl kern.ipc.somaxconn=8192: done'))",
-	    20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('sysctl "
+	    "kern.ipc.somaxconn=8192'))", 20);
 	ATF_CHECK(system("grep -q '^sysctl kern.ipc.somaxconn=8192$' kld.log "
 	    "&& grep -q '^kern.ipc.somaxconn=8192$' sysctl.conf") == 0);
 	run("document.querySelector('.dock > header').click()");
@@ -3511,9 +3505,8 @@ part_firewall(void)
 	    "f.num.value = '1500'; f.rule.value = 'allow tcp from any to me6 "
 	    "8443 in'; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('ipfw add 1500') && t.textContent."
-	    "includes('done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('ipfw "
+	    "add 1500'))", 20);
 	ATF_CHECK(system("grep -q '^ipfw -q add 1500 allow tcp from any to me6 "
 	    "8443 in$' ipfw.log && grep -q '^add 01500 allow tcp from any to "
 	    "me6 8443 in$' ipfw.rules") == 0);
@@ -3545,9 +3538,8 @@ part_firewall(void)
 	    "f.rule.value = 'allow tcp from any to me6 2222 in via \"wg[0-1]\"'; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('ipfw 1001 changed: 1001 allow tcp from any "
-	    "to me6 2222') && t.textContent.includes('done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('ipfw "
+	    "1001 changed: 1001 allow tcp from any to me6 2222'))", 20);
 	ATF_CHECK(system("grep -n '' ipfw.log | grep -A9 'ipfw -q -n add 1001 "
 	    "allow tcp from any to me6 2222 in via wg\\[0-1\\]$' | grep -q "
 	    "'ipfw -q delete 1001$' && grep -q '^ipfw -q add 1001 allow tcp from "
@@ -3819,9 +3811,8 @@ part_firewall(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('ipfw apply') && t.textContent.includes("
-	    "'done'))", 40);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('ipfw "
+	    "apply'))", 40);
 	ATF_CHECK(system("grep -q '^ipfw -q set disable 1$' ipfw.log && [ "
 	    "\"$(grep -c 'set swap 0 1' ipfw.log)\" = 1 ] && grep -q '^ipfw "
 	    "-q -f delete set 1$' ipfw.log && grep -q '^add 01500 set 1 allow' "
@@ -3867,9 +3858,8 @@ part_firewall(void)
 	    "f.mode.value = 'access'; f.untagged.value = '30'; "
 	    "f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('bridge0 access') && t.textContent."
-	    "includes('done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('bridge0 "
+	    "access'))", 20);
 	ATF_CHECK(system("grep -q '^bridge0 ifuntagged em1 30 iftagged em1 "
 	    "none$' ifconfig.log") == 0);
 	run("document.querySelector('.dock > header').click()");
@@ -3894,9 +3884,8 @@ part_firewall(void)
 	    "f.local.value = '192.0.2.1'; f.group.value = '239.0.0.9'; "
 	    "f.dev.value = 'em0'; f.ttl.value = 'inherit'; f.requestSubmit();");
 	click_when("button[data-act=queue-run]", 5);
-	wait_js("[...document.querySelectorAll('.toast')].some(t => "
-	    "t.textContent.includes('geneve9 create') && t.textContent."
-	    "includes('done'))", 20);
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => t.textContent.includes('geneve9 "
+	    "create'))", 20);
 	ATF_CHECK(system("grep -q '^geneve9 create genevemode l3 geneveid 9 "
 	    "genevelocal 192.0.2.1 genevegroup 239.0.0.9 genevedev em0 "
 	    "genevettl inherit genevelearn -genevedscpinherit "
