@@ -864,14 +864,10 @@ dispatch(const char *act, const char *arg, const char *value)
 	    tbl_action(act, arg, value))
 		return;
 	if (strcmp(act, "fold") == 0) {
+		/* A box shut or opened by its head (box_head()). */
 		arc_open_set(arg, !arc_open_get(arg));
-	} else if (strcmp(act, "tree-more") == 0) {
-		for (i = 0; i < app.nservers; i++)
-			if (strcmp(app.servers[i].id, arg) == 0)
-				app.servers[i].tree_all =
-				    !app.servers[i].tree_all;
 	} else if (strcmp(act, "resize") == 0) {
-		/* Only drawn again: the tree fits itself to its room. */
+		/* Only drawn again. */
 	} else if (strcmp(act, "select-server") == 0) {
 		app.rail_open = false;
 		for (i = 0; i < app.nservers; i++)

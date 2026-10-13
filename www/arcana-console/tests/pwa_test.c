@@ -211,6 +211,46 @@ click_when(const char *sel, int seconds)
 	wait_js(expr, seconds);
 }
 
+/* A jail's page, from its host's Jails tab. */
+static void	host_open(const char *);
+
+static void
+jail_open(const char *host, const char *jail)
+{
+	char	sel[128], expr[256];
+
+	host_open(host);
+	click_when("button.tab[data-arg=jails]", 10);
+	snprintf(sel, sizeof(sel), "#j-%s", jail);
+	click_when(sel, 20);
+	snprintf(expr, sizeof(expr), "document.querySelector('.jail-page h1') "
+	    "&& document.querySelector('.jail-page h1').textContent === '%s'",
+	    jail);
+	wait_js(expr, 10);
+}
+
+/* A host opened from Devices, by its name in the console. */
+static void
+host_open(const char *name)
+{
+	char	expr[512];
+
+	click_when("li[data-act=select-devices]", 10);
+	/* NULL: the first. */
+	if (name == NULL) {
+		click_when("table.devices tr.pick", 10);
+		wait_js("document.querySelector('.hostbar[data-server]')", 10);
+		return;
+	}
+	snprintf(expr, sizeof(expr), "(r => r ? (r.click(), true) : false)("
+	    "[...document.querySelectorAll('table.devices tr.pick')].find(t => "
+	    "t.querySelector('b').textContent === '%s'))", name);
+	wait_js(expr, 10);
+	snprintf(expr, sizeof(expr), "document.querySelector('.hostbar"
+	    "[data-server=\"%s\"]')", name);
+	wait_js(expr, 10);
+}
+
 static double
 js_num(const char *expr)
 {
@@ -479,12 +519,8 @@ prologue(const atf_tc_t *tc, int nservers)
 	    "'form[data-form=add-server]'); f.name.value = 'lab'; f.uri.value "
 	    "= 'unix:%s/jgd.sock'; f.requestSubmit();", cwd);
 	run(script);
-	wait_js("document.querySelector('.tree .titem.server.selected') && "
+	wait_js("document.querySelector('.hostbar[data-server=lab]') && "
 	    "document.querySelector('.tiles .tile')", 20);
-	/* Its jails unfolded in the tree, as the cases find them. */
-	click_when(".tree button[data-act=fold]", 20);
-	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 4",
-	    5);
 	if (nservers == 1)
 		return;
 	ATF_REQUIRE(symlink("jgd.sock", "jgd2.sock") == 0);
@@ -494,13 +530,9 @@ prologue(const atf_tc_t *tc, int nservers)
 	    "'form[data-form=add-server]'); f.name.value = 'lab2'; f.uri.value "
 	    "= 'unix:%s/jgd2.sock'; f.requestSubmit();", cwd);
 	run(script);
-	wait_js("document.querySelector('.tree .titem.server.selected .name') "
-	    "&& document.querySelector('.tree .titem.server.selected .name')"
-	    ".textContent === 'lab2'", 20);
-	run("document.querySelector('li[data-act=select-server]').click()");
-	wait_js("document.querySelector('.tree .titem.server.selected .name')"
-	    ".textContent === 'lab' && document.querySelector('.tiles .tile')",
-	    10);
+	wait_js("document.querySelector('.hostbar[data-server=lab2]')", 20);
+	host_open("lab");
+	wait_js("document.querySelector('.tiles .tile')", 10);
 }
 
 static void
@@ -789,38 +821,12 @@ part_hosts(void)
 	    "= 'unix:%s/jgd.sock'; f.requestSubmit();", cwd);
 	run(script);
 	/* The new host is selected: its summary, with usage and a graph
-	 * of its jails; the tree has the host and the jails under it. */
-	wait_js("document.querySelector('.tree .titem.server.selected')", 20);
+	 * of its jails; the side bar has the fleet's views, not the hosts,
+	 * which are on Devices. */
+	wait_js("document.querySelector('.hostbar[data-server=lab]')", 20);
 	wait_js("document.querySelector('.topo .tnode.s-stopped')", 20);
-	/* Its jails are folded away until asked for; the choice is kept. */
-	ATF_CHECK(!js_true("document.querySelector('.tree .titem.leaf')"));
-	run("document.querySelector('.tree button[data-act=fold]').click()");
-	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 4 "
-	    "&& localStorage.getItem('arc_open').includes('\"')", 5);
-	run("document.querySelector('.tree button[data-act=fold]').click()");
-	wait_js("!document.querySelector('.tree .titem.leaf') && "
-	    "localStorage.getItem('arc_open') === '[]'", 5);
-	run("document.querySelector('.tree button[data-act=fold]').click()");
-	wait_js("document.querySelectorAll('.tree .titem.leaf').length === 4",
-	    5);
-	ATF_CHECK(!js_true("document.querySelector('.tree .titem.more')"));
-	/* With no room under the hosts, a row stands for the rest and
-	 * shows them when asked. */
-	ucl_object_unref(wd("POST", "/session/window/rect",
-	    "{\"width\":1280,\"height\":330}"));
-	wait_js("document.querySelector('.tree .titem.more') && "
-	    "document.querySelectorAll('.tree .titem.leaf:not(.more)').length "
-	    "=== 1", 5);
-	shot("1a-tree-more");
-	run("document.querySelector('.tree .titem.more').click()");
-	wait_js("document.querySelectorAll('.tree .titem.leaf:not(.more)')."
-	    "length === 4 && document.querySelector('.tree .titem.more')."
-	    "textContent.includes('fewer')", 5);
-	run("document.querySelector('.tree .titem.more').click()");
-	ucl_object_unref(wd("POST", "/session/window/rect",
-	    "{\"width\":1280,\"height\":800}"));
-	wait_js("!document.querySelector('.tree .titem.more') && "
-	    "document.querySelectorAll('.tree .titem.leaf').length === 4", 5);
+	ATF_CHECK(!js_true("document.querySelector('.rail .titem.server') || "
+	    "document.querySelector('.rail .titem.leaf')"));
 	ATF_CHECK(js_true("document.querySelector('.tiles .tile')"));
 	shot("1-host-summary");
 	/* The host runs another build of arcana-agent than the console
@@ -915,12 +921,12 @@ part_hosts(void)
 	    ".length >= 1", 5);
 	shot("2b-devices");
 	run("document.querySelector('table.devices tbody tr.pick').click()");
-	wait_js("document.querySelector('.tree .titem.server.selected') && "
+	wait_js("document.querySelector('.hostbar[data-server]') && "
 	    "location.hash.startsWith('#/hosts/')", 10);
 	run("document.querySelector('.tree .titem.fleet[data-act=select-fleet]')"
 	    ".click()");
 	click_when(".hosts .hostcard", 10);
-	wait_js("document.querySelector('.tree .titem.server.selected')", 5);
+	wait_js("document.querySelector('.hostbar[data-server]')", 5);
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
 	wait_js("document.querySelector('#j-web.s-stopped')", 20);
 	ATF_CHECK(js_true("document.querySelector('#j-db')"));
@@ -1012,7 +1018,8 @@ part_hosts(void)
 	run("document.querySelector('#j-db').click()");
 	wait_js("document.querySelector('.jail-page')", 5);
 	shot("4-jail-page");
-	ATF_CHECK(js_true("document.querySelector('.tree .titem.leaf.selected')"));
+	ATF_CHECK(js_true("document.querySelector('.jail-page h1').textContent "
+	    "=== 'db'"));
 	run("document.querySelector('.jail-page button[data-act=address-add]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=address]')", 5);
@@ -1182,7 +1189,7 @@ part_hosts(void)
 	 * includes the defaults and the template, read back by jail(8),
 	 * then taken away; the defaults written, the file before kept.
 	 */
-	run("document.querySelector('.tree .titem.server').click()");
+	host_open("lab");
 	click_when("button.tab[data-arg=jails]", 10);
 	wait_js("document.querySelector('button[data-act=jm-new]')", 10);
 	run("document.querySelector('button[data-act=jm-files]').click()");
@@ -1482,7 +1489,7 @@ part_nettab(void)
 	    ".click()");
 	wait_js("document.querySelector('.netsect svg.topo')", 20);
 	run("window.fetch = window.fetchH;");
-	run("document.querySelector('li[data-act=select-server]').click()");
+	host_open(NULL);
 	click_when("button.tab[data-arg=network]", 10);
 	wait_js("document.querySelector('button[data-act=net-kind]"
 	    "[data-arg=interfaces]')", 10);
@@ -1880,9 +1887,7 @@ part_plugins(void)
 	    "'form[data-form=add-server]'); f.name.value = 'lab2'; f.uri.value "
 	    "= 'unix:%s/jgd2.sock'; f.requestSubmit();", cwd);
 	run(script);
-	wait_js("document.querySelector('.tree .titem.server.selected .name') "
-	    "&& document.querySelector('.tree .titem.server.selected .name')"
-	    ".textContent === 'lab2'", 20);
+	wait_js("document.querySelector('.hostbar[data-server=lab2]')", 20);
 	ATF_REQUIRE((fp = fopen("slow", "w")) != NULL);
 	fclose(fp);
 	run("document.querySelector('button.tab[data-arg=services]').click()");
@@ -1896,10 +1901,10 @@ part_plugins(void)
 	click_when("button[data-act=queue-run]", 5);
 	wait_js("document.querySelector('.svc[data-arg=sshd] button"
 	    "[disabled]')", 10);
-	run("document.querySelectorAll('.tree .titem.server')[0].click()");
-	wait_js("document.querySelector('.tree .titem.server.selected .name')"
-	    ".textContent === 'lab' && document.querySelector("
-	    "'.svc[data-arg=sshd] button[data-value=restart]')", 20);
+	host_open("lab");
+	click_when("button.tab[data-arg=services]", 10);
+	wait_js("document.querySelector('.svc[data-arg=sshd] button"
+	    "[data-value=restart]')", 20);
 	ATF_CHECK_MSG(!js_true("document.querySelector('.svc[data-arg=sshd] "
 	    "button[disabled]')"), "sshd on lab is held by lab2's action");
 	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
@@ -1913,12 +1918,7 @@ part_plugins(void)
 	 * read through the host; a change made there is made in the jail,
 	 * and kept in the jail's own rc.conf.
 	 */
-	run("const m = document.querySelector('.tree .titem.more'); if (m && "
-	    "!m.textContent.includes('fewer')) m.click();");
-	wait_js("[...document.querySelectorAll('.tree .titem.leaf')].some(l => "
-	    "l.dataset.arg === 'gw')", 10);
-	run("[...document.querySelectorAll('.tree .titem.leaf')].find(l => "
-	    "l.dataset.arg === 'gw').click()");
+	jail_open("lab", "gw");
 	wait_js("document.querySelector('.jail-page .jail-net button[data-act="
 	    "jail-net]')", 20);
 	ATF_CHECK(js_true("!document.querySelector('.jail-page table.ifaces')"));
@@ -1989,7 +1989,7 @@ part_plugins(void)
 	    "true}));");
 	wait_js("!document.querySelector('select[data-input=net-jail]') && "
 	    "document.querySelector('button[data-act=route-add]')", 10);
-	run("document.querySelector('li[data-act=select-server]').click()");
+	host_open(NULL);
 	wait_js("document.querySelector('button.tab[data-arg=network]')", 10);
 
 	/*
@@ -3441,7 +3441,7 @@ part_firewall(void)
 	ATF_CHECK(js_true("document.querySelector('button.switch.on[data-act="
 	    "fw-onoff]') && document.querySelector('.fw-count').textContent."
 	    "includes('7 rules now') && !document.querySelector('.tree "
-	    ".titem.server')"));
+	    "[data-act=select-devices]')"));
 	shot("7o-firewall-layout");
 	run("document.querySelector('.fwrail .titem.fw[data-arg=\"10\"]')."
 	    "click()");
@@ -3803,8 +3803,8 @@ part_firewall(void)
 	/* Back to the hosts, and to the layout again. */
 	run("document.querySelector('.fwrail button[data-act=fw-rail]')."
 	    "click()");
-	wait_js("document.querySelector('.tree .titem.server') && document."
-	    "querySelector('.fwbar button[data-act=fw-rail]')", 5);
+	wait_js("document.querySelector('.tree [data-act=select-devices]') && "
+	    "document.querySelector('.fwbar button[data-act=fw-rail]')", 5);
 	run("document.querySelector('.fwbar button[data-act=fw-rail]').click()");
 	wait_js("document.querySelector('.fwrail .titem.fw')", 5);
 	run("document.querySelector('button[data-act=fw-apply]').click()");
@@ -4103,7 +4103,7 @@ part_flows(void)
 	/* What waits in the queue, kept as one. */
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	ATF_CHECK(js_true("document.querySelector('ul.wfruns li.done')"));
-	run("document.querySelector('li.titem.server').click()");
+	host_open(NULL);
 	click_when("button.tab[data-arg=services]", 10);
 	wait_js("document.querySelector('button[data-act=svc][data-value="
 	    "restart]')", 10);
@@ -4149,7 +4149,7 @@ part_flows(void)
 	    "getAttribute('href') === '/openapi.yaml'"));
 	run("const i = document.querySelector('#filter'); i.value = ''; "
 	    "i.dispatchEvent(new Event('input', { bubbles: true }));");
-	run("document.querySelector('.tree .titem.server').click()");
+	host_open(NULL);
 	wait_js("document.querySelector('button.tab[data-arg=summary]')", 10);
 
 	/*
@@ -4158,9 +4158,8 @@ part_flows(void)
 	 * kept, and then in the overview and the service's own tables.
 	 */
 	/* The agent on the console's own host, by its socket, is told
-	 * apart in the tree and on its page. */
-	ATF_CHECK(js_true("[...document.querySelectorAll('.tree .titem.server "
-	    ".chip.here')].length === 2"));
+	 * apart on its page. */
+	ATF_CHECK(js_true("document.querySelector('.hostbar .chip.here')"));
 	run("document.querySelector('li[data-act=select-sdwan]').click()");
 	wait_js("document.querySelector('section.sdwan .sd-block') && "
 	    "document.querySelector('section.sdwan').textContent.includes("
@@ -4800,10 +4799,10 @@ part_netsect(void)
 	    "v) v.state = 'running'; Object.values(v).forEach(walk); } }; "
 	    "walk(j); return new Response(JSON.stringify(j), { status: "
 	    "r.status, headers: r.headers }); }) : r);");
-	run("document.querySelector('li[data-act=select-server]').click()");
+	host_open(NULL);
 	click_when("button[data-act=refresh]", 10);
-	wait_js("[...document.querySelectorAll('.tree .titem.leaf')].some(l => "
-	    "l.dataset.arg === 'gw' && l.classList.contains('s-running'))", 15);
+	click_when("button.tab[data-arg=jails]", 10);
+	wait_js("document.querySelector('#j-gw.s-running')", 15);
 	/* In the fleet's graph the one that runs is there, and none of
 	 * the stopped; it opens over the page. */
 	run("document.querySelector('.tree .titem.fleet').click()");
@@ -4845,10 +4844,12 @@ part_netsect(void)
 	 * lab's em1; and by em0 to fe80::1, which lab2 has on its loopback
 	 * alone, as every host does: no host of the fleet is that one.
 	 */
-	run("window.fetchL = window.fetch; const ids = {}; document."
-	    "querySelectorAll('li.titem.server').forEach(l => ids[l."
-	    "querySelector('.name').textContent.trim()] = l.dataset.arg); "
-	    "window.labIds = ids; const A = (f, a, p) => ({ family: f, "
+	run("window.labIds = null; fetch('/api/servers').then(r => r.json())"
+	    ".then(j => { const ids = {}; j.servers.forEach(v => ids[v.name] = "
+	    "v.id); window.labIds = ids; });");
+	wait_js("window.labIds && window.labIds.lab2", 10);
+	run("window.fetchL = window.fetch; const ids = window.labIds; "
+	    "const A = (f, a, p) => ({ family: f, "
 	    "address: a, prefixlen: p }), I = (n, ad) => ({ name: n, up: "
 	    "true, mtu: 1500, addresses: ad, ibytes: 0, obytes: 0 }); "
 	    "const ifs = { lab: [I('lo0', [A('inet6', 'fe80::1%lo0', 64)]), "
@@ -4933,7 +4934,7 @@ part_netsect(void)
 	usleep(500000);
 	shot("m11-network");
 	phone(false);
-	run("document.querySelector('li[data-act=select-server]').click()");
+	host_open(NULL);
 	wait_js("document.querySelector('button.tab[data-arg=jails]')", 10);
 
 }
@@ -4975,9 +4976,8 @@ part_routes(void)
 	    id);
 	wait_js(expr, 5);
 
-	/* A jail from the tree. */
-	run("document.querySelector('.tree li[data-act=open-jail]"
-	    "[data-arg=cache]').click()");
+	/* A jail from its host's Jails tab. */
+	click_when("#j-cache", 10);
 	snprintf(expr, sizeof(expr), "location.hash === "
 	    "'#/hosts/%s/jails/cache'", id);
 	wait_js(expr, 5);
@@ -5004,8 +5004,8 @@ part_routes(void)
 	go(path);
 	run("window.before = 1; location.reload();");
 	wait_js("window.before === undefined && document.querySelector("
-	    "'.tree .titem.leaf.selected') && document.querySelector("
-	    "'.tree .titem.leaf.selected').dataset.arg === 'cache'", 30);
+	    "'.jail-page h1') && document.querySelector('.jail-page h1')"
+	    ".textContent === 'cache'", 30);
 	go("/#/usage");
 	run("window.before = 1; location.reload();");
 	wait_js("window.before === undefined && location.hash === '#/usage' && "
