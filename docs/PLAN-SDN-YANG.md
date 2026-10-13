@@ -818,6 +818,14 @@ Depends on Y-3; independent of Y-4.
 - **5.6 Flow telemetry.** A: `ng_netflow` per service FIB (by 0.4's
   result), sampling, per-zone; BMP from BIRD to the console; the
   console's compact time-series store with retention per class.
+  0.4's result (2026-10-13, 16-CURRENT): `ng_netflow` exports
+  NetFlow v5 on its `export` hook and v9 on `export9`, both at once,
+  and nothing else; IPFIX stays the TODO item. An expired flow waits
+  in a partly filled datagram until it fills (30 records for v5, some
+  1400 bytes for v9) or the node shuts down, so a quiet service's
+  flows can wait without bound: 5.6 needs a flush on a timer, from the
+  agent (a `flush` message the node does not have, so a kernel change
+  the user decides) or by rebuilding the export hook, or accepts it.
 - **5.7 Phase close.** L, D: the measurement chapter; TODO's verified
   list.
 
@@ -986,7 +994,10 @@ A step never leaves `main` unbuildable; where a step would, it says
   BIRD filter; check: a ping across; the result written to D-5.
 - 0.4.1 L: `ng_netflow` with `ng_ksocket` to `nfdump`/`nfcapd`; check:
   the version in the records on 15.x and on 16; the result written to
-  the TODO item and to 5.6.
+  the TODO item and to 5.6. Done 2026-10-13 on 16-CURRENT, with a
+  listener of a few lines for the collector (nfdump is not installed)
+  and the node between two eiface(4) interfaces: v5 and v9, no IPFIX.
+  15.x not run: no 15.x host in the lab.
 - 0.5.1 D: the IANA request for a SID mega-range sent; the provisional
   block (2^40) recorded in `share/yang/SIDS.md`.
 - 0.6.1 D: D-5, D-6, D-7, D-11, D-12 taken or deferred, dated here.
@@ -1419,8 +1430,8 @@ A step never leaves `main` unbuildable; where a step would, it says
 - 5.5.4 A: the in-band variant through STAMP's direct-measurement TLV
   for steering; check: steering on loss without the console.
 - 5.5.5 L: three jails, loss on one tunnel localised to its cluster.
-- 5.6.1 A: `ng_netflow` per service FIB with sampling (v9 or IPFIX by
-  0.4's result); check: records at a collector jail.
+- 5.6.1 A: `ng_netflow` per service FIB with sampling (v9, by 0.4's
+  result: no IPFIX); check: records at a collector jail.
 - 5.6.2 C: BMP from BIRD to the console; check: a session's updates
   seen.
 - 5.6.3 C: a compact time-series store with retention per class;

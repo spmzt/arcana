@@ -123,9 +123,12 @@
   replaces MEF 88, and none of them has intrusion detection (ids is
   Arcana's own, mislabelled MEF 88's until now).  SASE-5 closed.
 - For the user to do (2026-10-13): IPFIX export in ng_netflow(4),
-  which exports NetFlow v5 and v9 only; pflow(4) has IPFIX but serves
-  pf. docs/PLAN-SDN-YANG.md's flow telemetry (5.6) waits on it or
-  takes v9.
+  which exports NetFlow v5 and v9 only (seen on the lab, 16-CURRENT,
+  2026-10-13: both hooks at once, nothing else); pflow(4) has IPFIX
+  but serves pf. docs/PLAN-SDN-YANG.md's flow telemetry (5.6) waits on
+  it or takes v9. Also seen: an expired flow waits in a partly filled
+  export datagram until it fills or the node shuts down, with no timer
+  to send it; a flush would be part of the same kernel work.
 - The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
   under docs/notes/. Decided 2026-10-13: wire version 2 (D-1), cblink
   2 south and RESTCONF on the console only (D-2), libyang for the
