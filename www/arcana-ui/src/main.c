@@ -879,7 +879,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.net_jail[0] = '\0';
 		close_service();
 		if ((s = cur_server()) != NULL) {
-			refresh_jails(s, false);
+			/* Opening a host asks for its jails: a task. */
+			refresh_jails(s, true);
 			refresh_stats(s);
 			if (app.tab == TAB_SERVICES && s->services == NULL)
 				refresh_services(s, true);
@@ -948,6 +949,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		    strcmp(arg, "jobs") == 0 ? TAB_JOBS : TAB_SUMMARY;
 		app.node = NODE_HOST;
 		app.jail[0] = '\0';
+		if (app.tab == TAB_JAILS)
+			refresh_jails(s, true);
 		if (app.tab == TAB_JOBS)
 			refresh_jobs(s);
 		if (app.tab == TAB_KERNEL)
