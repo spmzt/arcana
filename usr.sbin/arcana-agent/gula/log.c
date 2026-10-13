@@ -359,8 +359,13 @@ special(struct work *w, const char *name, const char *filter, bool from,
 		    "kern.msgbuf");
 		len = 0;
 		if (sysctlbyname("kern.msgbuf", NULL, &len, NULL, 0) == -1) {
-			rsp->error = wfmt(w, "kern.msgbuf: %s", strerror(
-			    errno));
+			/* Not root: the kernel says no, unless it is let. */
+			rsp->error = errno == EPERM && geteuid() != 0 ?
+			    "kern.msgbuf: the kernel's messages are root's: arcana-agent "
+			    "runs as another, and is let read them by sysctl "
+			    "security.bsd.unprivileged_read_msgbuf=1 (in "
+			    "/etc/sysctl.conf to keep)" : wfmt(w,
+			    "kern.msgbuf: %s", strerror(errno));
 			step_end(w, step, false, "%s", strerror(errno));
 			return (0);
 		}
