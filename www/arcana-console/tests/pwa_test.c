@@ -1323,8 +1323,11 @@ part_nettab(void)
 		    "f.address.value = '192.0.2.77/24'; f.vhid.value = '9'; "
 		    "f.advskew.value = '20'; f.key.value = 'labkey';");
 		shot("7p2-carp");
-		run("document.querySelector('form[data-form=carp]')"
-		    ".requestSubmit();");
+		/* Filled again with the submit: the page may draw it anew. */
+		run("const f = document.querySelector('form[data-form=carp]'); "
+		    "f.address.value = '192.0.2.77/24'; f.vhid.value = '9'; "
+		    "f.advskew.value = '20'; f.key.value = 'labkey'; "
+		    "f.requestSubmit();");
 		click_when("button[data-act=queue-run]", 5);
 		snprintf(cmd, sizeof(cmd), "grep -qx '%s inet 192.0.2.77/24 vhid 9 "
 		    "alias' ifconfig.log", ifn);

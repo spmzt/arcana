@@ -138,6 +138,100 @@ mtls_cleanup()
 	stop_daemon
 }
 
+# sign CA CSR OUT: a server certificate for 127.0.0.1 from the request.
+sign()
+{
+	printf 'subjectAltName=IP:127.0.0.1\nextendedKeyUsage=serverAuth\n' \
+	    > srv.ext
+	openssl x509 -req -in "$2" -CA "$1.pem" -CAkey "$1.key" \
+	    -CAcreateserial -days 2 -extfile srv.ext -out "$3" \
+	    >/dev/null 2>&1 || atf_fail "openssl: cannot sign $2"
+}
+
+# The request of the agent's csr reply, as PEM.
+csr_of()
+{
+	sed -E 's/.*"csr":"([^"]*)".*/\1/' "$1" | sed 's|\\/|/|g' |
+	    awk '{ gsub(/\\n/, "\n"); printf "%s", $0 }'
+}
+
+atf_test_case renew cleanup
+renew_head()
+{
+	atf_set "descr" "The agent's own TLS files renewed while it runs: a key made there, its certificate taken, the CAs changed over to another one and to an intermediate, never so that the console asking is locked out"
+	atf_set "require.progs" "openssl"
+}
+renew_body()
+{
+	start_daemon
+	URI="tcp://127.0.0.1:$PORT"
+	C1="-A ca.pem -C client.pem -K client.key"
+	sha() { openssl x509 -in "$1" -noout -fingerprint -sha256 | sed 's/.*=//'; }
+	atf_check -o save:st.json "$JGC" -c "$URI" $C1 tls
+	atf_check -o match:'"subject":"CN=server","issuer":"CN=ca"' \
+	    -o match:'"pending":false' cat st.json
+	# A key made there, never sent; the request for it signed here.
+	atf_check -o save:csr.json "$JGC" -c "$URI" $C1 tls csr
+	csr_of csr.json > new.csr
+	atf_check -o match:'CN *= *server' openssl req -in new.csr -noout -subject
+	test -f server.key.next || atf_fail "no key waiting"
+	atf_check -o match:'^-rw------- ' ls -l server.key.next
+	atf_check -o not-match:'PRIVATE' cat csr.json
+	sign ca new.csr new.pem
+	# One not for that key is refused, the files as they were.
+	atf_check -s exit:1 -e match:'not for the key that waits' -o ignore \
+	    "$JGC" -c "$URI" $C1 tls install server.pem
+	atf_check -o save:st2.json "$JGC" -c "$URI" $C1 tls install new.pem
+	grep -q "\"sha256\":\"$(sha new.pem)\"" st2.json || atf_fail "not installed"
+	test -f server.pem.before || atf_fail "the certificate before was not kept"
+	test -f server.key.next && atf_fail "the waiting key stayed"
+	# New connections are served with it.
+	echo | openssl s_client -connect "127.0.0.1:$PORT" -CAfile ca.pem \
+	    -cert client.pem -key client.key 2>/dev/null |
+	    openssl x509 -noout -fingerprint -sha256 | sed 's/.*=//' > served
+	atf_check -o inline:"$(sha new.pem)\n" cat served
+	# Another CA: not trusted alone while the console's is of the first.
+	ca ca2
+	cert ca2 client2 "DNS:console" clientAuth
+	atf_check -s exit:1 -e match:'would not be trusted any more' -o ignore \
+	    "$JGC" -c "$URI" $C1 tls install - ca2.pem
+	atf_check -o match:'Host:' "$JGC" -c "$URI" $C1 hello
+	# Both, then the new one's console, then the new one alone.
+	cat ca.pem ca2.pem > both.pem
+	atf_check -o match:'"subject":"CN=ca2"' "$JGC" -c "$URI" $C1 tls install - both.pem
+	C2="-A ca.pem -C client2.pem -K client2.key"
+	atf_check -o match:'Host:' "$JGC" -c "$URI" $C2 hello
+	atf_check -o save:csr2.json "$JGC" -c "$URI" $C2 tls csr
+	csr_of csr2.json > new2.csr
+	sign ca2 new2.csr new2.pem
+	atf_check -o ignore "$JGC" -c "$URI" $C2 tls install new2.pem ca2.pem
+	atf_check -o match:'Host:' "$JGC" -c "$URI" -A ca2.pem -C client2.pem -K client2.key hello
+	atf_check -s exit:1 -e not-empty -o ignore "$JGC" -c "$URI" $C1 hello
+	# Under an intermediate: the chain sent after the certificate.
+	openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+	    -keyout inter.key -out inter.csr -subj /CN=inter >/dev/null 2>&1
+	printf 'basicConstraints=critical,CA:TRUE\nkeyUsage=critical,keyCertSign\n' > inter.ext
+	openssl x509 -req -in inter.csr -CA ca2.pem -CAkey ca2.key \
+	    -CAcreateserial -days 2 -extfile inter.ext -out inter.pem >/dev/null 2>&1
+	C3="-A ca2.pem -C client2.pem -K client2.key"
+	atf_check -o save:csr3.json "$JGC" -c "$URI" $C3 tls csr
+	csr_of csr3.json > new3.csr
+	sign inter new3.csr leaf3.pem
+	cat leaf3.pem inter.pem > new3.pem
+	atf_check -o match:'"chain":\[\{"subject":"CN=inter","issuer":"CN=ca2"' \
+	    "$JGC" -c "$URI" $C3 tls install new3.pem
+	atf_check -o match:'Host:' "$JGC" -c "$URI" $C3 hello
+	# Leaf alone, without its intermediate: does not verify, refused.
+	atf_check -o ignore "$JGC" -c "$URI" $C3 tls csr
+	atf_check -s exit:1 -e match:'not for the key that waits|does not verify' -o ignore \
+	    "$JGC" -c "$URI" $C3 tls install leaf3.pem
+	atf_check -o match:'Host:' "$JGC" -c "$URI" $C3 hello
+}
+renew_cleanup()
+{
+	stop_daemon
+}
+
 atf_test_case tls_files
 tls_files_head()
 {
@@ -163,4 +257,5 @@ atf_init_test_cases()
 {
 	atf_add_test_case tls_files
 	atf_add_test_case mtls
+	atf_add_test_case renew
 }

@@ -998,6 +998,33 @@ attribute-sets:
         doc: For zfs-key, the key it is to have from now on.
         checks:
           max-len: 512
+      - name: tls-verb
+        type: text
+        doc: For tls, status, csr or install.
+        checks:
+          max-len: 16
+      - name: tls-cert
+        type: text
+        doc: |
+          For tls install, the host's new certificate as PEM, the
+          intermediate CAs after it.
+        checks:
+          max-len: 32768
+      - name: tls-ca
+        type: text
+        doc: |
+          For tls install, the CAs the host is to trust from now on, as
+          PEM, one after the other.
+        checks:
+          max-len: 65536
+      - name: tls-peer
+        type: text
+        doc: |
+          For tls install, the asking console's own certificate as PEM,
+          its intermediate CAs after it: the host takes the change only
+          when that one is still trusted afterwards.
+        checks:
+          max-len: 32768
 
 
   - name: host
@@ -3029,6 +3056,40 @@ operations:
         attributes:
           - ok
           - error
+          - trace
+
+  - name: tls
+    attribute-set: arcana
+    auth: true
+    doc: |
+      The host's own TLS files, those of -A, -C and -K, renewed without
+      a restart.  status: a JSON object of "cert" (its "subject",
+      "issuer", "not_before", "not_after", "sha256" and "chain", the
+      CAs sent after it), "ca" (each trusted CA, the same fields) and
+      "pending" (whether a key waits for its certificate).  csr: a new
+      EC P-256 key made beside the host's key (.next, 0600), never
+      sent, and a certificate request for it, "csr" of the JSON.
+      install: with tls-cert, a certificate for that waiting key, which
+      becomes the host's with it; with tls-ca, the CAs to trust; either
+      or both, the files before kept beside (.before), then read again
+      for the connections made from now on (open ones keep theirs).
+      tls-peer must be the asking console's own certificate, and it
+      must still be trusted with what is installed: nothing locks the
+      console out.  What fails puts the files back.
+    do:
+      request:
+        attributes:
+          - tls-verb
+          - tls-cert
+          - tls-ca
+          - tls-peer
+        required:
+          - tls-verb
+      reply:
+        attributes:
+          - ok
+          - error
+          - json
           - trace
 
 mcast-groups:
