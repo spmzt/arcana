@@ -808,8 +808,57 @@ zfs_key_cleanup()
 	true
 }
 
+# ietf-interfaces' layers (PLAN-SDN-YANG 1.9.2): a vlan on a lagg of two
+# ports, a bridge of two members, all made here of epairs and destroyed.
+atf_test_case yang_layers cleanup
+yang_layers_head()
+{
+	atf_set "descr" "ietf-interfaces' layers: a vlan on a lagg on two" \
+	    "ports, a bridge on two members"
+	atf_set "require.user" "root"
+}
+yang_layers_body()
+{
+	e1=$(ifconfig epair create) && echo "$e1" >> made
+	e2=$(ifconfig epair create) && echo "$e2" >> made
+	p1=${e1%a}b
+	p2=${e2%a}b
+	lg=$(ifconfig lagg create) && echo "$lg" >> made
+	atf_check ifconfig "$lg" laggproto failover laggport "$e1" \
+	    laggport "$e2" up
+	vl=$(ifconfig vlan create vlan 42 vlandev "$lg") && echo "$vl" >> made
+	br=$(ifconfig bridge create) && echo "$br" >> made
+	atf_check ifconfig "$br" addm "$p1" addm "$p2" up
+	atf_check -o save:y "$(atf_get_srcdir)/ycollect" interfaces
+	atf_check -o match:" lower=$lg higher=- *\$" grep "^$vl " y
+	# A leaf-list the system orders: the members in either order.
+	atf_check -o match:" lower=($e1,$e2|$e2,$e1) higher=$vl *\$" \
+	    grep "^$lg " y
+	atf_check -o match:" lower=- higher=$lg *\$" grep "^$e1 " y
+	atf_check -o match:" lower=- higher=$lg *\$" grep "^$e2 " y
+	atf_check -o match:" lower=($p1,$p2|$p2,$p1) higher=- *\$" \
+	    grep "^$br " y
+	atf_check -o match:" lower=- higher=$br *\$" grep "^$p1 " y
+	atf_check -o match:" lower=- higher=$br *\$" grep "^$p2 " y
+	# A lagg's port is the Ethernet it was; the lagg the aggregate.
+	atf_check -o match:" type=ethernetCsmacd " grep "^$e1 " y
+	atf_check -o match:" type=ieee8023adLag " grep "^$lg " y
+	atf_check -o match:" type=l2vlan " grep "^$vl " y
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 y
+}
+yang_layers_cleanup()
+{
+	# What was made, the last first: the vlan and bridge, the lagg,
+	# then the epairs (destroying an a end takes its b end too).
+	[ -f made ] && tail -r made | while read -r i; do
+		ifconfig "$i" destroy >/dev/null 2>&1
+	done
+	true
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case yang_layers
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases

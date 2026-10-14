@@ -18,7 +18,16 @@
  *   count from ifi_epoch (uptime, so kern.boottime after it is their
  *   discontinuity-time);
  * - its flags: IFF_UP is enabled and admin-status;
- * - its description: SIOCGIFDESCR, as ifconfig(8) shows it.
+ * - its description: SIOCGIFDESCR, as ifconfig(8) shows it;
+ * - its layers (PLAN-SDN-YANG 1.9.2), lower-layer-if and the other end's
+ *   higher-layer-if: a vlan's parent (SIOCGETVLAN), a lagg's ports
+ *   (SIOCGLAGG), a bridge's members (SIOCGDRVSPEC, BRDGGIFS), as
+ *   ifconfig(8) asks them.  if_type does not tell a lagg: it stays
+ *   IFT_ETHER and its ports become IFT_IEEE8023ADLAG (if_lagg.c).  So
+ *   SIOCGLAGG, which only lagg answers, is asked of every Ethernet and
+ *   InfiniBand interface, and one that answers is IANA's ieee8023adLag,
+ *   the aggregate; SIOCGETVLAN of an l2vlan and of a lagg's port, which
+ *   may be a vlan; a port that is not is the ethernetCsmacd it was.
  *
  * oper-status is the link state where the driver knows it: up, down, or
  * down for an interface that is not up; where it does not (a loopback,
@@ -37,8 +46,11 @@
 #include <sys/time.h>
 
 #include <net/if.h>
+#include <net/if_bridgevar.h>
 #include <net/if_dl.h>
+#include <net/if_lagg.h>
 #include <net/if_types.h>
+#include <net/if_vlan_var.h>
 
 #include <errno.h>
 #include <ifaddrs.h>
@@ -232,6 +244,131 @@ one(struct ietf_interfaces_interfaces_interface *e, const struct ifaddrs *ifa,
 	return (0);
 }
 
+/* An interface layered on another: hi on lo. */
+struct layer {
+	char	hi[IFNAMSIZ];
+	char	lo[IFNAMSIZ];
+};
+
+struct layers {
+	struct layer	*v;
+	size_t		 n;
+};
+
+static void
+layer_add(struct layers *l, const char *hi, const char *lo)
+{
+	struct layer *v;
+
+	if (lo[0] == '\0' ||
+	    (v = reallocarray(l->v, l->n + 1, sizeof(*v))) == NULL)
+		return;
+	l->v = v;
+	strlcpy(v[l->n].hi, hi, sizeof(v[l->n].hi));
+	strlcpy(v[l->n].lo, lo, sizeof(v[l->n].lo));
+	l->n++;
+}
+
+/*
+ * What interface name of type ift is on, by the ioctl its kind answers;
+ * the iana-if-type identity it is, where if_type does not say, or NULL.
+ */
+static const char *
+layers_of(struct layers *l, int s, const char *name, uint8_t ift)
+{
+
+	if (s == -1)
+		return (NULL);
+	if (ift == IFT_ETHER || ift == IFT_INFINIBAND) {
+		struct lagg_reqport rp[LAGG_MAX_PORTS];
+		struct lagg_reqall ra;
+
+		memset(&ra, 0, sizeof(ra));
+		strlcpy(ra.ra_ifname, name, sizeof(ra.ra_ifname));
+		ra.ra_size = sizeof(rp);
+		ra.ra_port = rp;
+		if (ioctl(s, SIOCGLAGG, &ra) != 0)
+			return (NULL);
+		for (int i = 0; i < ra.ra_ports && i < LAGG_MAX_PORTS; i++)
+			layer_add(l, name, rp[i].rp_portname);
+		return ("ieee8023adLag");
+	} else if (ift == IFT_L2VLAN || ift == IFT_IEEE8023ADLAG) {
+		struct vlanreq vr;
+		struct ifreq ifr;
+
+		memset(&ifr, 0, sizeof(ifr));
+		memset(&vr, 0, sizeof(vr));
+		strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
+		ifr.ifr_data = (caddr_t)&vr;
+		if (ioctl(s, SIOCGETVLAN, &ifr) == 0) {
+			layer_add(l, name, vr.vlr_parent);
+			return ("l2vlan");
+		}
+		return (ift == IFT_IEEE8023ADLAG ? "ethernetCsmacd" : NULL);
+	} else if (ift == IFT_BRIDGE) {
+		struct ifbreq *br = NULL, *nbr;
+		struct ifbifconf bc;
+		struct ifdrv d;
+		size_t len = 16 * sizeof(*br);
+
+		/* Grown until the members fit, as libifconfig does. */
+		for (;; len *= 2) {
+			if ((nbr = realloc(br, len)) == NULL)
+				break;
+			br = nbr;
+			memset(&d, 0, sizeof(d));
+			bc.ifbic_len = len;
+			bc.ifbic_req = br;
+			strlcpy(d.ifd_name, name, sizeof(d.ifd_name));
+			d.ifd_cmd = BRDGGIFS;
+			d.ifd_len = sizeof(bc);
+			d.ifd_data = &bc;
+			if (ioctl(s, SIOCGDRVSPEC, &d) != 0)
+				break;
+			if (bc.ifbic_len + sizeof(*br) < len) {
+				for (size_t i = 0;
+				    i < bc.ifbic_len / sizeof(*br); i++)
+					layer_add(l, name, br[i].ifbr_ifsname);
+				break;
+			}
+		}
+		free(br);
+	}
+	return (NULL);
+}
+
+/*
+ * The interfaces name is on (lower) or under (!lower), those the list
+ * has, by the list's own strings.
+ */
+static int
+layer_names(const struct layers *l, const char *name, bool lower,
+    const struct ietf_interfaces_interfaces_interface *v, size_t n,
+    size_t *outn, const char *const **outv, cbl_yarena *a)
+{
+	const char **names;
+	size_t k = 0;
+
+	if ((names = cbl_yarena_alloc(a, (l->n + 1) * sizeof(*names))) ==
+	    NULL)
+		return (ENOMEM);
+	for (size_t i = 0; i < l->n; i++) {
+		const char *self = lower ? l->v[i].hi : l->v[i].lo;
+		const char *other = lower ? l->v[i].lo : l->v[i].hi;
+
+		if (strcmp(self, name) != 0)
+			continue;
+		for (size_t j = 0; j < n; j++)
+			if (strcmp(v[j].name, other) == 0) {
+				names[k++] = v[j].name;
+				break;
+			}
+	}
+	*outn = k;
+	*outv = names;
+	return (0);
+}
+
 /*
  * Whether an interface of that name is listed already.  Names are the
  * list's key, one an entry.  FreeBSD checks them when an interface is
@@ -255,6 +392,8 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 {
 	struct ietf_interfaces_interfaces_interface *v;
 	struct ietf_interfaces_interfaces *ifs;
+	struct layers lay = { NULL, 0 };
+	const char *kind;
 	struct ifaddrs *ifa0, *ifa;
 	struct timeval boot;
 	size_t n = 0, len = sizeof(boot);
@@ -278,8 +417,21 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 		if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != AF_LINK ||
 		    named(v, n, ifa->ifa_name))
 			continue;
-		error = one(&v[n++], ifa, s, &boot, a);
+		if ((error = one(&v[n], ifa, s, &boot, a)) == 0 &&
+		    ifa->ifa_data != NULL &&
+		    (kind = layers_of(&lay, s, ifa->ifa_name,
+		    ((const struct if_data *)ifa->ifa_data)->ifi_type)) !=
+		    NULL && (v[n].type = iftype_sid(kind)) != 0)
+			v[n].has_type = true;
+		n++;
 	}
+	for (size_t i = 0; i < n && error == 0; i++)
+		if ((error = layer_names(&lay, v[i].name, true, v, n,
+		    &v[i].lower_layer_if.n, &v[i].lower_layer_if.v, a)) == 0)
+			error = layer_names(&lay, v[i].name, false, v, n,
+			    &v[i].higher_layer_if.n, &v[i].higher_layer_if.v,
+			    a);
+	free(lay.v);
 	if (s != -1)
 		close(s);
 	freeifaddrs(ifa0);
