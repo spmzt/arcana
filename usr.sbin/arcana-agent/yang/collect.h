@@ -31,6 +31,12 @@ int	yip_interfaces(struct ietf_interfaces_interfaces_interface *v,
  * routes, with v4ur's and v6ur's leaves (invidia/yrt.c).
  */
 int	yrt_routing(struct ietf_routing *data, int fib, cbl_yarena *a);
+/* The RIB's active-route action: the route in's address goes by in
+ * FIB fib; none, out without a route. */
+int	yrt_active_route(int fib,
+	    const struct ietf_routing_routing_ribs_rib_active_route_input *in,
+	    cbl_yarena *a,
+	    struct ietf_routing_routing_ribs_rib_active_route_output *out);
 
 /*
  * rc.conf's static routes, as rc.d/routing installs them, and
