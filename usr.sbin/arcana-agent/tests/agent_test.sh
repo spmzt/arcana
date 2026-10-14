@@ -5866,6 +5866,49 @@ EOF
 	atf_check cmp frag frag1
 }
 
+atf_test_case yang_origins
+yang_origins_head()
+{
+	atf_set "descr" "a route's source-protocol by its netlink(4) origin:" \
+	    "RFC 8349's static and direct, a routing protocol's own" \
+	    "module's identity (OSPF and RIP by the family), else" \
+	    "arcana-routing's"
+}
+yang_origins_body()
+{
+	cat > want <<'EOF'
+0 - arcana-routing:other arcana-routing:other
+0 gw arcana-routing:other arcana-routing:other
+1 - arcana-routing:redirect arcana-routing:redirect
+1 gw arcana-routing:redirect arcana-routing:redirect
+2 - ietf-routing:direct ietf-routing:direct
+2 gw arcana-routing:kernel arcana-routing:kernel
+3 - ietf-routing:static ietf-routing:static
+3 gw ietf-routing:static ietf-routing:static
+4 - ietf-routing:static ietf-routing:static
+4 gw ietf-routing:static ietf-routing:static
+9 - arcana-routing:router-advertisement arcana-routing:router-advertisement
+9 gw arcana-routing:router-advertisement arcana-routing:router-advertisement
+11 - arcana-routing:zebra arcana-routing:zebra
+11 gw arcana-routing:zebra arcana-routing:zebra
+12 - arcana-routing:bird arcana-routing:bird
+12 gw arcana-routing:bird arcana-routing:bird
+16 - arcana-routing:dhcp arcana-routing:dhcp
+16 gw arcana-routing:dhcp arcana-routing:dhcp
+42 - ietf-babel:babel ietf-babel:babel
+42 gw ietf-babel:babel ietf-babel:babel
+186 - ietf-bgp:bgp ietf-bgp:bgp
+186 gw ietf-bgp:bgp ietf-bgp:bgp
+187 - ietf-isis:isis ietf-isis:isis
+187 gw ietf-isis:isis ietf-isis:isis
+188 - ietf-ospf:ospfv2 ietf-ospf:ospfv3
+188 gw ietf-ospf:ospfv2 ietf-ospf:ospfv3
+189 - ietf-rip:ripv2 ietf-rip:ripng
+189 gw ietf-rip:ripv2 ietf-rip:ripng
+EOF
+	atf_check -o file:want "$(atf_get_srcdir)/ycollect" origins
+}
+
 atf_test_case yang_routes
 yang_routes_head()
 {
@@ -6184,6 +6227,7 @@ atf_init_test_cases()
 {
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
+	atf_add_test_case yang_origins
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_jails

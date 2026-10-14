@@ -32,6 +32,10 @@
  *	ycollect watch fib secs	routes', each with its last-updated (- for
  *				none), after secs of route events heard
  *				and noted as the daemon notes them
+ *	ycollect origins	each netlink(4) origin's source-protocol,
+ *				a line: the RTPROT_ number, with a gateway
+ *				or not (gw, -), and the identity, module:name,
+ *				of an IPv4 route, then of an IPv6 one
  *	ycollect active fib addr	the RIB's active-route action for addr,
  *				its route a line as routes' (none: "none");
  *				and its output through YANG-CBOR and back
@@ -529,6 +533,29 @@ main(int argc, char **argv)
 			err(1, "cbl_yarena_new");
 		active(atoi(argv[2]), argv[3], a);
 		cbl_yarena_free(a);
+		return (0);
+	}
+	if (argc == 2 && strcmp(argv[1], "origins") == 0) {
+		static const uint8_t protos[] = { RTPROT_UNSPEC,
+		    RTPROT_REDIRECT, RTPROT_KERNEL, RTPROT_BOOT,
+		    RTPROT_STATIC, RTPROT_RA, RTPROT_ZEBRA, RTPROT_BIRD,
+		    RTPROT_DHCP, RTPROT_BABEL, RTPROT_BGP, RTPROT_ISIS,
+		    RTPROT_OSPF, RTPROT_RIP };
+
+		for (size_t i = 0; i < nitems(protos); i++)
+			for (int gw = 0; gw < 2; gw++) {
+				printf("%u %s", protos[i], gw ? "gw" : "-");
+				for (int v6 = 0; v6 < 2; v6++) {
+					const struct cbl_yident *id =
+					    cbl_yschema_ident(&ymodel_schema,
+					    yrt_origin(protos[i], gw, v6));
+
+					printf(" %s:%s", id != NULL ?
+					    id->module->name : "-", id != NULL ?
+					    id->name : "-");
+				}
+				printf("\n");
+			}
 		return (0);
 	}
 	if (argc == 3 && strcmp(argv[1], "routes") == 0) {

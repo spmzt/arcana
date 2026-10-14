@@ -69,6 +69,10 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		arcana-jobs@2026-10-14 arcana-storage@2026-10-14 \
 		arcana-sysctl@2026-10-14 arcana-kernel@2026-10-14 \
 		arcana-processes@2026-10-14
+# Modules only imported whose identities are used, their .sid files'
+# alone: the routing protocols', whose identities name a route's origin.
+YANG_IMPORTS=	ietf-ospf@2022-10-19 ietf-rip@2020-02-20 ietf-isis@2022-10-19 \
+		ietf-babel@2024-10-10 ietf-bgp@2026-08-14 ietf-bfd-types@2022-09-22
 # ietf-routing's multiple-ribs: a FIB each (setfib(1)).
 YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
@@ -95,6 +99,7 @@ regen-yang: .PHONY
 	    ${YANG_OUT}/yjobs_spec.c
 	cd ${YANG_DIR} && ${CBLINK_GEN} -m h,schema -b ymodel \
 	    -o ${YANG_OUT} ${YANG_FEATS} ${YANG_MODS:@m@-s ${m}.sid@} \
+	    ${YANG_IMPORTS:@m@-s ${m}.sid@} \
 	    ${YANG_MODS:S/$/.yang/}
 
 # make check's: the committed files are what the modules make now, by
