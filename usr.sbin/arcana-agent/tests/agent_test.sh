@@ -2915,7 +2915,8 @@ fi
 for a; do last=\$a; done
 case " \$* " in *" --branch chatty "*) jot 400 | sed 's/^/remote: line /' >&2; exit 128 ;; esac
 case " \$* " in *" --branch nope "*) printf "Cloning into 'x'...\nfatal: no such branch\nfatal: Could not read from remote repository.\n\nPlease make sure you have the correct access rights\nand the repository exists.\n" >&2; exit 128 ;; esac
-mkdir -p "\$last/lib/libjailconf" "\$last/usr.sbin/arcana-agent"
+mkdir -p "\$last/lib/libjailconf" "\$last/lib/libvarconf" "\$last/usr.sbin/arcana-agent" "\$last/cblink/share/cblink"
+touch "\$last/cblink/share/cblink/cblink.mk"
 echo "\$*" > "\$last/CLONED"
 EOS
 	cat > fake-make <<EOS
@@ -2950,6 +2951,12 @@ EOS
 	    "$JGC" -t -c "$SOCK" agent-build -o built https://example.org/arcana.git main
 	atf_check cmp -s "$JGD" built
 	atf_check test -x built
+	# cblink (the submodule: cblink-gen makes arcana.h) and the
+	# libraries the agent links, before it, in that order.
+	atf_check -o inline:'cblink-build\nlibjailconf\nlibvarconf\narcana-agent\n' \
+	    sh -c "grep -v -e '^HOME=' -e '-V .OBJDIR' made | sed -n \
+	    -e 's,.* cblink-build\$,cblink-build,p' -e 's,.*/lib/\\(lib[a-z]*\\) .*,\\1,p' \
+	    -e 's,.*/usr.sbin/arcana-agent .*,arcana-agent,p'"
 	# What was built is said by its commit, and the head of the
 	# repository is asked without cloning or building anything.
 	atf_check -o match:'^Commit: +1111111111111111111111111111111111111111$' \

@@ -4297,6 +4297,11 @@ part_flows(void)
 	/* What waits in the queue, kept as one. */
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	ATF_CHECK(js_true("document.querySelector('ul.wfruns li.done')"));
+	/* Opened again from the list of runs: drawn, not a loader. */
+	run("document.querySelector('ul.wfruns li.done').click()");
+	wait_js("document.querySelector('.wfgraph button.wfstep') && "
+	    "!document.querySelector('.loader')", 10);
+	run("document.querySelector('button[data-act=wf-back]').click()");
 	host_open(NULL);
 	click_when("button.tab[data-arg=services]", 10);
 	wait_js("document.querySelector('button[data-act=svc][data-value="
