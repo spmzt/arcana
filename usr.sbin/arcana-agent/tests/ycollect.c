@@ -13,7 +13,8 @@
  *	ycollect arcif		arcana-interfaces', and the standard leaves
  *				for what it once had (frame= max-frame-size,
  *				mac= and bia= ethernet-like's, peer=
- *				peer-interface): key=value, '-' for none,
+ *				peer-interface, vlan= the tag, parent,
+ *				tag type and priority): key=value, '-' for none,
  *				lists joined by '+', bits in hex
  *	ycollect ip		ietf-ip's: v4= and v6= the addresses,
  *				address/length:origin[:status] joined by
@@ -133,10 +134,23 @@ arcif(const struct ietf_interfaces_interfaces_interface *e)
 		printf(" options=%jx capabilities=%jx",
 		    bitsval(&e->arcif_capabilities),
 		    bitsval(&e->arcif_capabilities_supported));
-	if (e->arcif_vlan != NULL)
-		printf(" vlan=%d,%s,%#x,%d", e->arcif_vlan->vlan_id,
-		    str(e->arcif_vlan->parent), e->arcif_vlan->protocol,
-		    e->arcif_vlan->pcp);
+	if (e->if_ext_encapsulation != NULL &&
+	    e->if_ext_encapsulation->if_vlan_dot1q_vlan != NULL) {
+		const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan
+		    *dv = e->if_ext_encapsulation->if_vlan_dot1q_vlan;
+		const struct cbl_yident *tt = dv->outer_tag != NULL ?
+		    cbl_yschema_ident(&ymodel_schema,
+		    dv->outer_tag->tag_type) : NULL;
+
+		printf(" vlan=%d,%s,%s,", dv->outer_tag != NULL ?
+		    dv->outer_tag->vlan_id : 0,
+		    str(e->if_ext_parent_interface), tt != NULL ? tt->name :
+		    "-");
+		if (dv->has_arcif_pcp)
+			printf("%d", dv->arcif_pcp);
+		else
+			printf("-");
+	}
 	if (e->arcif_lagg != NULL) {
 		printf(" lagg=%s,%jx,", e->arcif_lagg->has_protocol ?
 		    lagg_proto[e->arcif_lagg->protocol] : "-",

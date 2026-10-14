@@ -11,6 +11,21 @@ module arcana-interfaces {
   import iana-if-type {
     prefix ianaift;
   }
+  import ietf-if-extensions {
+    prefix if-ext;
+    reference
+      "draft-ietf-netmod-intf-ext-yang: Common Interface Extension YANG
+       Data Models";
+  }
+  import ietf-if-vlan-encapsulation {
+    prefix if-vlan;
+    reference
+      "draft-ietf-netmod-sub-intf-vlan-model: Sub-interface VLAN YANG
+       Data Models";
+  }
+  import ieee802-dot1q-types {
+    prefix dot1q-types;
+  }
 
   organization
     "Arcana";
@@ -37,7 +52,12 @@ module arcana-interfaces {
        bind-ni-name (RFC 8529): the instance whose FIB it is, none for
        FIB 0;
      - an epair(4) end's other end is ietf-if-extensions'
-       peer-interface.
+       peer-interface;
+     - a vlan(4)'s tag (ifconfig(8) vlan, vlanproto) is
+       ietf-if-vlan-encapsulation's outer-tag, c-vlan for 802.1Q and
+       s-vlan for 802.1ad, its parent (vlandev) ietf-if-extensions'
+       parent-interface; a tag the model cannot hold (0, 4095) is not
+       there.
 
      Each leaf names the FreeBSD facility it is read from and written
      to.  A list or leaf-list the system orders is in the order the
@@ -380,47 +400,6 @@ module arcana-interfaces {
            'mode' and the mode.";
       }
     }
-    container vlan {
-      when "derived-from-or-self(../if:type, 'ianaift:l2vlan')";
-      description
-        "A vlan(4): SIOCGETVLAN, SIOCSETVLAN.";
-      leaf vlan-id {
-        type uint16 {
-          range "0..4095";
-        }
-        description
-          "Its tag: ifconfig(8) vlan.";
-      }
-      leaf parent {
-        type if:interface-ref;
-        description
-          "The interface it is on: ifconfig(8) vlandev.";
-      }
-      leaf protocol {
-        type enumeration {
-          enum ieee802-1q {
-            value 33024;
-            description
-              "802.1Q, ETHERTYPE_VLAN.";
-          }
-          enum ieee802-1ad {
-            value 34984;
-            description
-              "802.1ad, ETHERTYPE_QINQ.";
-          }
-        }
-        description
-          "The tag's EtherType: ifconfig(8) vlanproto.";
-      }
-      leaf pcp {
-        type uint8 {
-          range "0..7";
-        }
-        description
-          "The priority it sends with: SIOCGVLANPCP, ifconfig(8)
-           vlanpcp.";
-      }
-    }
     container lagg {
       when "derived-from-or-self(../if:type, 'ianaift:ieee8023adLag')";
       description
@@ -595,6 +574,18 @@ module arcana-interfaces {
          driver-name.  Where one has, it is ietf-if-extensions'
          peer-interface (two interfaces may share a name, one back from
          a vnet jail, and the list has the first only).";
+    }
+  }
+
+  augment "/if:interfaces/if:interface/if-ext:encapsulation/"
+        + "if-ext:encaps-type/if-vlan:dot1q-vlan/if-vlan:dot1q-vlan" {
+    description
+      "What a vlan(4) has beyond its tag.";
+    leaf pcp {
+      type dot1q-types:priority-type;
+      description
+        "The priority it sends with in its tag: SIOCGVLANPCP,
+         SIOCSVLANPCP, ifconfig(8) vlanpcp.";
     }
   }
 }

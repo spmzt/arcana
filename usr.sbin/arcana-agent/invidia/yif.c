@@ -118,19 +118,27 @@ static const struct {
 /* arcif:capabilities' positions: IFCAP_B_* up to GENEVE_HWTSO. */
 #define	YCAP_NBITS	37
 
-/* An iana-if-type identity's SID, by its name; 0: none. */
+/* An identity's SID, by its module and name; 0: none. */
 static uint64_t
-iftype_sid(const char *name)
+ident_sid(const char *mod, const char *name)
 {
 
 	for (uint32_t i = 0; i < ymodel_schema.nident; i++) {
 		const struct cbl_yident *id = &ymodel_schema.ident[i];
 
 		if (strcmp(id->name, name) == 0 &&
-		    strcmp(id->module->name, "iana-if-type") == 0)
+		    strcmp(id->module->name, mod) == 0)
 			return (id->sid);
 	}
 	return (0);
+}
+
+/* An iana-if-type identity's SID, by its name; 0: none. */
+static uint64_t
+iftype_sid(const char *name)
+{
+
+	return (ident_sid("iana-if-type", name));
 }
 
 static uint64_t
@@ -698,11 +706,20 @@ lagg(yif *e, struct layers *l, int s, cbl_yarena *a)
 	return (0);
 }
 
-/* A vlan: its tag, parent, protocol and priority; ENOENT: not one. */
+/*
+ * A vlan, as ietf-if-vlan-encapsulation has it: its tag the outer one,
+ * of 802.1Q (c-vlan) or 802.1ad (s-vlan), a tag it cannot hold (0,
+ * 4095) none; its parent ietf-if-extensions'; its priority
+ * arcana-interfaces'.  ENOENT: not one.
+ */
 static int
 vlan(yif *e, struct layers *l, int s, cbl_yarena *a)
 {
-	struct ietf_interfaces_interfaces_interface_arcif_vlan *vl;
+	struct ietf_interfaces_interfaces_interface_if_ext_encapsulation *en;
+	struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan
+	    *dv;
+	struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag
+	    *ot;
 	struct vlanreq vr;
 	struct ifreq ifr;
 
@@ -711,26 +728,33 @@ vlan(yif *e, struct layers *l, int s, cbl_yarena *a)
 	ifr.ifr_data = (caddr_t)&vr;
 	if (ioctl(s, SIOCGETVLAN, &ifr) != 0)
 		return (ENOENT);
-	if ((vl = cbl_yarena_alloc(a, sizeof(*vl))) == NULL)
+	if ((en = cbl_yarena_alloc(a, sizeof(*en))) == NULL ||
+	    (dv = cbl_yarena_alloc(a, sizeof(*dv))) == NULL)
 		return (ENOMEM);
-	if (vr.vlr_tag <= 4095) {
-		vl->has_vlan_id = true;
-		vl->vlan_id = vr.vlr_tag;
+	if (vr.vlr_tag >= 1 && vr.vlr_tag <= 4094 &&
+	    (vr.vlr_proto == ETHERTYPE_VLAN || vr.vlr_proto == ETHERTYPE_QINQ)) {
+		if ((ot = cbl_yarena_alloc(a, sizeof(*ot))) == NULL)
+			return (ENOMEM);
+		ot->has_vlan_id = true;
+		ot->vlan_id = vr.vlr_tag;
+		ot->tag_type = ident_sid("ieee802-dot1q-types",
+		    vr.vlr_proto == ETHERTYPE_VLAN ? "c-vlan" : "s-vlan");
+		ot->has_tag_type = ot->tag_type != 0;
+		dv->outer_tag = ot;
 	}
 	if (vr.vlr_parent[0] != '\0' &&
-	    (vl->parent = astrdup(a, vr.vlr_parent)) == NULL)
+	    (e->if_ext_parent_interface = astrdup(a, vr.vlr_parent)) == NULL)
 		return (ENOMEM);
-	if (vr.vlr_proto == ETHERTYPE_VLAN || vr.vlr_proto == ETHERTYPE_QINQ) {
-		vl->has_protocol = true;
-		vl->protocol = vr.vlr_proto;
-	}
 	ifreq_for(&ifr, e->name);
 	if (ioctl(s, SIOCGVLANPCP, &ifr) == 0 && ifr.ifr_vlan_pcp <= 7) {
-		vl->has_pcp = true;
-		vl->pcp = ifr.ifr_vlan_pcp;
+		dv->has_arcif_pcp = true;
+		dv->arcif_pcp = ifr.ifr_vlan_pcp;
 	}
+	en->encaps_type =
+	    IETF_INTERFACES_INTERFACES_INTERFACE_IF_EXT_ENCAPSULATION_ENCAPS_TYPE_DOT1Q_VLAN;
+	en->if_vlan_dot1q_vlan = dv;
 	layer_add(l, e->name, vr.vlr_parent);
-	e->arcif_vlan = vl;
+	e->if_ext_encapsulation = en;
 	return (0);
 }
 
