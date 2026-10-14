@@ -74,7 +74,10 @@ repeating one epair entry, the size of a jail host:
   never bounds the table: version 1's single reply of a 200-interface
   host is already 9 % of it, and the agent refuses a reply past 4 MiB
   of JSON.
-- **The block a module's SIDs come from matters.** A key into the 2^40
+- **The block a module's SIDs come from matters.** (Since 2026-10-14
+  Arcana's and cblink's SIDs are in RFC 9595's experimental range,
+  60 000 to 99 999: such a key is 3 bytes, and the figures here for
+  the 2^40 block are those of its day.) A key into the 2^40
   block is 9 bytes; Arcana's one augmented leaf per interface costs 7
   bytes over a near one, 3 to 4 % of the dump. Every Arcana augment of an
   IETF list pays it per entry. When the SID mega-range is asked for

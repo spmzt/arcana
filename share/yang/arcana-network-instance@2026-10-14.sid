@@ -3,7 +3,7 @@
     "module-name": "arcana-network-instance",
     "module-revision": "2026-10-14",
     "sid-file-version": 1,
-    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 1900, 100.",
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 61 900, 100.",
     "dependency-revision": [
       {
         "module-name": "ietf-network-instance",
@@ -12,7 +12,7 @@
     ],
     "assignment-range": [
       {
-        "entry-point": "1099511629676",
+        "entry-point": "61900",
         "size": "100"
       }
     ],
@@ -20,12 +20,12 @@
       {
         "namespace": "module",
         "identifier": "arcana-network-instance",
-        "sid": "1099511629676"
+        "sid": "61900"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:network-instances/network-instance/arcana-network-instance:fib",
-        "sid": "1099511629677"
+        "sid": "61901"
       }
     ]
   }

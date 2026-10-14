@@ -3,7 +3,7 @@
     "module-name": "ietf-logical-network-element",
     "module-revision": "2019-01-25",
     "sid-file-version": 1,
-    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 2000, 100; RFC 8530 has no IETF range.",
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 000, 100; RFC 8530 has no IETF range.",
     "dependency-revision": [
       {
         "module-name": "ietf-interfaces",
@@ -16,7 +16,7 @@
     ],
     "assignment-range": [
       {
-        "entry-point": "1099511629776",
+        "entry-point": "62000",
         "size": "100"
       }
     ],
@@ -24,62 +24,62 @@
       {
         "namespace": "module",
         "identifier": "ietf-logical-network-element",
-        "sid": "1099511629776"
+        "sid": "62000"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-logical-network-element:bind-lne-name",
-        "sid": "1099511629777"
+        "sid": "62001"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:bind-lne-name-failed",
-        "sid": "1099511629778"
+        "sid": "62002"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:bind-lne-name-failed/bind-lne-name",
-        "sid": "1099511629779"
+        "sid": "62003"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:bind-lne-name-failed/error-info",
-        "sid": "1099511629780"
+        "sid": "62004"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:bind-lne-name-failed/name",
-        "sid": "1099511629781"
+        "sid": "62005"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:logical-network-elements",
-        "sid": "1099511629782"
+        "sid": "62006"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:logical-network-elements/logical-network-element",
-        "sid": "1099511629783"
+        "sid": "62007"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:logical-network-elements/logical-network-element/description",
-        "sid": "1099511629784"
+        "sid": "62008"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:logical-network-elements/logical-network-element/managed",
-        "sid": "1099511629785"
+        "sid": "62009"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:logical-network-elements/logical-network-element/name",
-        "sid": "1099511629786"
+        "sid": "62010"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-logical-network-element:logical-network-elements/logical-network-element/root",
-        "sid": "1099511629787"
+        "sid": "62011"
       }
     ]
   }

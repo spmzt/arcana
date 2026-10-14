@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-routing",
     "module-revision": "2026-10-14",
-    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 1700, 100.",
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 61 700, 100.",
     "dependency-revision": [
       {
         "module-name": "ietf-routing",
@@ -11,7 +11,7 @@
     ],
     "assignment-range": [
       {
-        "entry-point": "1099511629476",
+        "entry-point": "61700",
         "size": "100"
       }
     ],
@@ -19,72 +19,72 @@
       {
         "namespace": "module",
         "identifier": "arcana-routing",
-        "sid": "1099511629476"
+        "sid": "61700"
       },
       {
         "namespace": "identity",
         "identifier": "babel",
-        "sid": "1099511629477"
+        "sid": "61701"
       },
       {
         "namespace": "identity",
         "identifier": "bgp",
-        "sid": "1099511629478"
+        "sid": "61702"
       },
       {
         "namespace": "identity",
         "identifier": "bird",
-        "sid": "1099511629479"
+        "sid": "61703"
       },
       {
         "namespace": "identity",
         "identifier": "dhcp",
-        "sid": "1099511629480"
+        "sid": "61704"
       },
       {
         "namespace": "identity",
         "identifier": "freebsd-origin",
-        "sid": "1099511629481"
+        "sid": "61705"
       },
       {
         "namespace": "identity",
         "identifier": "isis",
-        "sid": "1099511629482"
+        "sid": "61706"
       },
       {
         "namespace": "identity",
         "identifier": "kernel",
-        "sid": "1099511629483"
+        "sid": "61707"
       },
       {
         "namespace": "identity",
         "identifier": "ospf",
-        "sid": "1099511629484"
+        "sid": "61708"
       },
       {
         "namespace": "identity",
         "identifier": "other",
-        "sid": "1099511629485"
+        "sid": "61709"
       },
       {
         "namespace": "identity",
         "identifier": "redirect",
-        "sid": "1099511629486"
+        "sid": "61710"
       },
       {
         "namespace": "identity",
         "identifier": "rip",
-        "sid": "1099511629487"
+        "sid": "61711"
       },
       {
         "namespace": "identity",
         "identifier": "router-advertisement",
-        "sid": "1099511629488"
+        "sid": "61712"
       },
       {
         "namespace": "identity",
         "identifier": "zebra",
-        "sid": "1099511629489"
+        "sid": "61713"
       }
     ]
   }
