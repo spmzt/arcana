@@ -62,6 +62,9 @@ CHECK_JOBS?=	12
 # for targets named on the command line.
 check: .PHONY
 	@${MAKE} -j${CHECK_JOBS} -C ${.CURDIR} all
+.if ${CBLINK_SUBMODULE} == "yes"
+	@${MAKE} -C ${.CURDIR}/usr.sbin/arcana-agent check-yang
+.endif
 	@mkdir -p "$${HOME}/.kyua/logs" "$${HOME}/.kyua/store"
 	@rc=0; pids=""; \
 	for d in ${TESTDIRS}; do \

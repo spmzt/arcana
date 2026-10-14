@@ -10,7 +10,7 @@ PROGS=		ycollect
 SRCS.ycollect=	ycollect.c yif.c ymodel_schema.c
 .PATH:		${.CURDIR}/../invidia ${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang ${CBLINK_CFLAGS}
-LDADD.ycollect+=	${CBLINK_LIBS}
+LDADD.ycollect+=	${CBLINK_LIBS} -lnv
 MAN=
 
 # No mtree(8) hierarchy outside the tree: create the directory first.

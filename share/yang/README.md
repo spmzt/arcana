@@ -75,3 +75,23 @@ implemented (`yanglint -i`), as an implementation of them will.
 | `ietf-yang-schema-mount@2019-01-14.yang` | module | RFC 8528 |
 | `ietf-yang-structure-ext@2020-06-17.yang` | module | RFC 8791 |
 | `ietf-yang-types@2025-12-22.yang` | module | IANA, RFC 9911 |
+
+## Arcana's own modules
+
+What FreeBSD has beyond the published modules, as Arcana's own modules
+(PLAN-SDN-YANG's "The agent as a YANG device"). Each leaf names the
+FreeBSD facility it is read from and written to. Their SIDs are in
+Arcana's provisional block (SIDS.md), their `.sid` files beside them.
+
+| File | | What |
+|---|---|---|
+| `arcana-interfaces@2026-10-14.yang` | module | augments `ietf-interfaces`: driver name, MTU, Ethernet and hardware addresses, groups, FIB and tunnel FIB, capabilities, media; vlan(4), lagg(4), bridge(4) and epair(4) |
+
+The `.sid` files of the IETF and IANA modules the agent fills
+(`ietf-interfaces`, `ietf-ip`, `iana-if-type`, `ietf-yang-types`,
+`ietf-inet-types`) are Arcana's too: IANA registers their ranges and
+publishes no file, so they are numbered here (SIDS.md).
+
+The agent's C structures and tables of the modules it fills are
+committed in `usr.sbin/arcana-agent/yang/`; `make regen-yang` there
+remakes them and `make check` fails when they are not what it makes.

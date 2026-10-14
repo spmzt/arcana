@@ -193,9 +193,16 @@
   attributes, policies, parsers and YAML generator removed, the examples
   and tests in YANG, the docs (YANG.md, GENERATOR.md, WIRE-FORMAT.md
   version 2). 1.8.1, the static validator (RFC 7950 within one tree,
-  run on every EDIT and rpc input) and defaults. Next: 1.9 and 1.10, the
-  collectors, and 1.11, the first GET, on an arcana branch with cblink
-  v2. As each operation is
+  run on every EDIT and rpc input) and defaults. Done on arcana main
+  (cblink main's emitter): 1.9.1, ietf-interfaces' operational state
+  collected (invidia/yif.c), equal to ifconfig and netstat -i; 1.9.2,
+  the layers from vlan, lagg and bridge; 1.9.3, the arcana-interfaces
+  augment (share/yang), equal to ifconfig -m -D and read back from each
+  kind the jobs make; the IETF modules' .sid files numbered in IANA's
+  ranges, IANA publishing none. For the user: the CORECONF draft's
+  examples number some ietf-interfaces items otherwise (SIDS.md). Next:
+  1.9.4, rtsock events; 1.10, ietf-ip; 1.11, the first GET, on an
+  arcana branch with cblink v2. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
