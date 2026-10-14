@@ -5291,6 +5291,41 @@ EOF
 	atf_check -o file:want sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
 }
 
+atf_test_case yang_jobs
+yang_jobs_head()
+{
+	atf_set "descr" "the jobs as arcana-jobs has them (PLAN-SDN-YANG" \
+	    "3.1.4): the trace a flat list naming parents, through YANG-CBOR" \
+	    "and back; a submit's changes, five kinds, made the job-specs" \
+	    "the queue takes (made from jobs.yaml), a change of no kind" \
+	    "refused"
+}
+yang_jobs_body()
+{
+	cat > want <<'EOF'
+activity=- stopping=0
+job 41 kind=0 state=2 ok=yes title=restart web created=1760400000 started=yes finished=yes peer=console
+  step 0 parent=-1 kind=0 status=0 label=arcana-agent detail=restart web duration=yes argv=0 exit=- output=0
+  step 1 parent=0 kind=4 status=0 label=jail(8) detail=- duration=- argv=5 exit=yes output=13
+job 42 kind=4 state=0 ok=- title=upgrade packages created=1760400003 started=- finished=- peer=console
+yang-cbor 211 bytes, the same back
+kinds jail-action=0 service-config=3 ipsec=27 pkg-install=28 if-state=6
+restart is 2
+spec kind=0 jail=web action=yes service=- service_action=- interface=- verb=- ipsec_mode=- start_action=- reqid=- persist=0 up=- safe=0 names=0 variables=0
+  action 2
+spec kind=3 jail=- action=- service=sshd service_action=- interface=- verb=- ipsec_mode=- start_action=- reqid=- persist=0 up=- safe=0 names=0 variables=2
+  variable sshd_flags=-o UseDNS=no
+  variable sshd_program unset
+spec kind=27 jail=- action=- service=- service_action=- interface=- verb=conn ipsec_mode=transport start_action=trap reqid=yes persist=1 up=- safe=0 names=0 variables=0
+spec kind=28 jail=web action=- service=- service_action=- interface=- verb=- ipsec_mode=- start_action=- reqid=- persist=0 up=- safe=0 names=2 variables=0
+  name curl
+  name git
+spec kind=6 jail=- action=- service=- service_action=- interface=epair0a verb=- ipsec_mode=- start_action=- reqid=- persist=0 up=no safe=1 names=0 variables=0
+no kind: Invalid argument, change 5
+EOF
+	atf_check -o file:want "$(atf_get_srcdir)/yjobs"
+}
+
 atf_test_case yang_packages
 yang_packages_head()
 {
@@ -5986,6 +6021,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_jails
+	atf_add_test_case yang_jobs
 	atf_add_test_case yang_packages
 	atf_add_test_case yang_services
 	atf_add_test_case yang_lne

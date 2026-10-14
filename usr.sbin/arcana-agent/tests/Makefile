@@ -19,6 +19,13 @@ SRCS.yjails=	yjails_test.c yjails.c ymodel_schema.c
 CFLAGS.yjails_test.c+=	-I${.OBJDIR}/..
 CFLAGS.yjails.c+=	-I${.OBJDIR}/..
 LDADD.yjails+=	${CBLINK_LIBS}
+# yjobs: the jobs as arcana-jobs has them, a submit's changes as specs.
+PROGS+=		yjobs
+SRCS.yjobs=	yjobs_test.c yjobs.c yjobs_spec.c ymodel_schema.c
+CFLAGS.yjobs_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yjobs.c+=	-I${.OBJDIR}/..
+CFLAGS.yjobs_spec.c+=	-I${.OBJDIR}/..
+LDADD.yjobs+=	${CBLINK_LIBS}
 # ypackages: the packages operations' replies as arcana-packages has
 # them.
 PROGS+=		ypackages

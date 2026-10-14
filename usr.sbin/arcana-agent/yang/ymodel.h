@@ -151,6 +151,55 @@ struct arcana_packages_packages_upgrade_output_package;
 struct arcana_packages_packages_upgrade_output;
 struct arcana_packages_packages;
 struct arcana_packages;
+struct arcana_jobs_jobs_job_step;
+struct arcana_jobs_jobs_job_cancel_input;
+struct arcana_jobs_jobs_job_cancel_output;
+struct arcana_jobs_jobs_job_confirm_input;
+struct arcana_jobs_jobs_job_confirm_output;
+struct arcana_jobs_jobs_job;
+struct arcana_jobs_jobs;
+struct arcana_jobs;
+struct arcana_jobs_submit_input_change_jail_action;
+struct arcana_jobs_submit_input_change_address;
+struct arcana_jobs_submit_input_change_service_action;
+struct arcana_jobs_submit_input_change_service_config_set;
+struct arcana_jobs_submit_input_change_service_config;
+struct arcana_jobs_submit_input_change_pkg_upgrade;
+struct arcana_jobs_submit_input_change_if_address;
+struct arcana_jobs_submit_input_change_if_state;
+struct arcana_jobs_submit_input_change_route;
+struct arcana_jobs_submit_input_change_if_set;
+struct arcana_jobs_submit_input_change_if_create;
+struct arcana_jobs_submit_input_change_if_destroy;
+struct arcana_jobs_submit_input_change_netgraph;
+struct arcana_jobs_submit_input_change_wireguard;
+struct arcana_jobs_submit_input_change_bird;
+struct arcana_jobs_submit_input_change_if_vnet;
+struct arcana_jobs_submit_input_change_kmod;
+struct arcana_jobs_submit_input_change_ntp;
+struct arcana_jobs_submit_input_change_rtadvd;
+struct arcana_jobs_submit_input_change_ipsec_sa;
+struct arcana_jobs_submit_input_change_zfs;
+struct arcana_jobs_submit_input_change_zpool;
+struct arcana_jobs_submit_input_change_mount;
+struct arcana_jobs_submit_input_change_gpart;
+struct arcana_jobs_submit_input_change_cam;
+struct arcana_jobs_submit_input_change_sysctl;
+struct arcana_jobs_submit_input_change_ipfw;
+struct arcana_jobs_submit_input_change_bridge;
+struct arcana_jobs_submit_input_change_geneve;
+struct arcana_jobs_submit_input_change_process;
+struct arcana_jobs_submit_input_change_pkg_clean;
+struct arcana_jobs_submit_input_change_ipsec;
+struct arcana_jobs_submit_input_change_pkg_install;
+struct arcana_jobs_submit_input_change_jail_conf;
+struct arcana_jobs_submit_input_change_carp;
+struct arcana_jobs_submit_input_change_neighbour;
+struct arcana_jobs_submit_input_change_cert;
+struct arcana_jobs_submit_input_change_ssh;
+struct arcana_jobs_submit_input_change;
+struct arcana_jobs_submit_input;
+struct arcana_jobs_submit_output;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -596,6 +645,245 @@ enum arcana_packages_packages_upgrade_input_ip_version {
 	ARCANA_PACKAGES_PACKAGES_UPGRADE_INPUT_IP_VERSION_ANY = 0,
 	ARCANA_PACKAGES_PACKAGES_UPGRADE_INPUT_IP_VERSION_IPV4 = 4,
 	ARCANA_PACKAGES_PACKAGES_UPGRADE_INPUT_IP_VERSION_IPV6 = 6,
+};
+
+enum arcana_jobs_jobs_job_kind {
+	ARCANA_JOBS_JOBS_JOB_KIND_JAIL_ACTION = 0,
+	ARCANA_JOBS_JOBS_JOB_KIND_ADDRESS = 1,
+	ARCANA_JOBS_JOBS_JOB_KIND_SERVICE_ACTION = 2,
+	ARCANA_JOBS_JOBS_JOB_KIND_SERVICE_CONFIG = 3,
+	ARCANA_JOBS_JOBS_JOB_KIND_PKG_UPGRADE = 4,
+	ARCANA_JOBS_JOBS_JOB_KIND_IF_ADDRESS = 5,
+	ARCANA_JOBS_JOBS_JOB_KIND_IF_STATE = 6,
+	ARCANA_JOBS_JOBS_JOB_KIND_ROUTE = 7,
+	ARCANA_JOBS_JOBS_JOB_KIND_IF_SET = 8,
+	ARCANA_JOBS_JOBS_JOB_KIND_IF_CREATE = 9,
+	ARCANA_JOBS_JOBS_JOB_KIND_IF_DESTROY = 10,
+	ARCANA_JOBS_JOBS_JOB_KIND_NETGRAPH = 11,
+	ARCANA_JOBS_JOBS_JOB_KIND_WIREGUARD = 12,
+	ARCANA_JOBS_JOBS_JOB_KIND_BIRD = 13,
+	ARCANA_JOBS_JOBS_JOB_KIND_IF_VNET = 14,
+	ARCANA_JOBS_JOBS_JOB_KIND_KMOD = 15,
+	ARCANA_JOBS_JOBS_JOB_KIND_ZFS = 16,
+	ARCANA_JOBS_JOBS_JOB_KIND_ZPOOL = 17,
+	ARCANA_JOBS_JOBS_JOB_KIND_MOUNT = 18,
+	ARCANA_JOBS_JOBS_JOB_KIND_GPART = 19,
+	ARCANA_JOBS_JOBS_JOB_KIND_CAM = 20,
+	ARCANA_JOBS_JOBS_JOB_KIND_SYSCTL = 21,
+	ARCANA_JOBS_JOBS_JOB_KIND_IPFW = 22,
+	ARCANA_JOBS_JOBS_JOB_KIND_BRIDGE = 23,
+	ARCANA_JOBS_JOBS_JOB_KIND_GENEVE = 24,
+	ARCANA_JOBS_JOBS_JOB_KIND_PROCESS = 25,
+	ARCANA_JOBS_JOBS_JOB_KIND_PKG_CLEAN = 26,
+	ARCANA_JOBS_JOBS_JOB_KIND_IPSEC = 27,
+	ARCANA_JOBS_JOBS_JOB_KIND_PKG_INSTALL = 28,
+	ARCANA_JOBS_JOBS_JOB_KIND_NTP = 29,
+	ARCANA_JOBS_JOBS_JOB_KIND_RTADVD = 30,
+	ARCANA_JOBS_JOBS_JOB_KIND_IPSEC_SA = 31,
+	ARCANA_JOBS_JOBS_JOB_KIND_JAIL_CONF = 32,
+	ARCANA_JOBS_JOBS_JOB_KIND_NEIGHBOUR = 33,
+	ARCANA_JOBS_JOBS_JOB_KIND_CERT = 34,
+	ARCANA_JOBS_JOBS_JOB_KIND_SSH = 35,
+	ARCANA_JOBS_JOBS_JOB_KIND_CARP = 36,
+};
+
+enum arcana_jobs_jobs_job_state {
+	ARCANA_JOBS_JOBS_JOB_STATE_QUEUED = 0,
+	ARCANA_JOBS_JOBS_JOB_STATE_RUNNING = 1,
+	ARCANA_JOBS_JOBS_JOB_STATE_DONE = 2,
+	ARCANA_JOBS_JOBS_JOB_STATE_CANCELLED = 3,
+	ARCANA_JOBS_JOBS_JOB_STATE_UNCONFIRMED = 4,
+};
+
+enum arcana_jobs_jobs_job_step_kind {
+	ARCANA_JOBS_JOBS_JOB_STEP_KIND_DAEMON = 0,
+	ARCANA_JOBS_JOBS_JOB_STEP_KIND_LIB = 1,
+	ARCANA_JOBS_JOBS_JOB_STEP_KIND_SYSCALL = 2,
+	ARCANA_JOBS_JOBS_JOB_STEP_KIND_FILE = 3,
+	ARCANA_JOBS_JOBS_JOB_STEP_KIND_EXEC = 4,
+};
+
+enum arcana_jobs_jobs_job_step_status {
+	ARCANA_JOBS_JOBS_JOB_STEP_STATUS_OK = 0,
+	ARCANA_JOBS_JOBS_JOB_STEP_STATUS_FAILED = 1,
+	ARCANA_JOBS_JOBS_JOB_STEP_STATUS_INCOMPLETE = 2,
+};
+
+enum arcana_jobs_jobs_job_cancel_output_state {
+	ARCANA_JOBS_JOBS_JOB_CANCEL_OUTPUT_STATE_QUEUED = 0,
+	ARCANA_JOBS_JOBS_JOB_CANCEL_OUTPUT_STATE_RUNNING = 1,
+	ARCANA_JOBS_JOBS_JOB_CANCEL_OUTPUT_STATE_DONE = 2,
+	ARCANA_JOBS_JOBS_JOB_CANCEL_OUTPUT_STATE_CANCELLED = 3,
+	ARCANA_JOBS_JOBS_JOB_CANCEL_OUTPUT_STATE_UNCONFIRMED = 4,
+};
+
+enum arcana_jobs_jobs_job_confirm_output_state {
+	ARCANA_JOBS_JOBS_JOB_CONFIRM_OUTPUT_STATE_QUEUED = 0,
+	ARCANA_JOBS_JOBS_JOB_CONFIRM_OUTPUT_STATE_RUNNING = 1,
+	ARCANA_JOBS_JOBS_JOB_CONFIRM_OUTPUT_STATE_DONE = 2,
+	ARCANA_JOBS_JOBS_JOB_CONFIRM_OUTPUT_STATE_CANCELLED = 3,
+	ARCANA_JOBS_JOBS_JOB_CONFIRM_OUTPUT_STATE_UNCONFIRMED = 4,
+};
+
+enum arcana_jobs_submit_input_change_kind {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_NONE = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_JAIL_ACTION,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_ADDRESS,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SERVICE_ACTION,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SERVICE_CONFIG,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_PKG_UPGRADE,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IF_ADDRESS,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IF_STATE,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_ROUTE,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IF_SET,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IF_CREATE,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IF_DESTROY,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_NETGRAPH,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_WIREGUARD,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_BIRD,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IF_VNET,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_KMOD,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_NTP,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_RTADVD,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IPSEC_SA,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_ZFS,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_ZPOOL,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_MOUNT,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_GPART,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_CAM,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SYSCTL,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IPFW,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_BRIDGE,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_GENEVE,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_PROCESS,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_PKG_CLEAN,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_IPSEC,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_PKG_INSTALL,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_JAIL_CONF,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_CARP,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_NEIGHBOUR,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_CERT,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KIND_SSH,
+};
+
+enum arcana_jobs_submit_input_change_jail_action_action {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_ACTION_ACTION_START = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_ACTION_ACTION_STOP = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_ACTION_ACTION_RESTART = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_ACTION_ACTION_KILL = 3,
+};
+
+enum arcana_jobs_submit_input_change_service_action_action {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SERVICE_ACTION_ACTION_START = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SERVICE_ACTION_ACTION_STOP = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SERVICE_ACTION_ACTION_RESTART = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SERVICE_ACTION_ACTION_RELOAD = 3,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SERVICE_ACTION_ACTION_ENABLE = 4,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SERVICE_ACTION_ACTION_DISABLE = 5,
+};
+
+enum arcana_jobs_submit_input_change_netgraph_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_NETGRAPH_VERB_MKPEER = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_NETGRAPH_VERB_CONNECT = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_NETGRAPH_VERB_RMHOOK = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_NETGRAPH_VERB_SHUTDOWN = 3,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_NETGRAPH_VERB_NAME = 4,
+};
+
+enum arcana_jobs_submit_input_change_wireguard_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_WIREGUARD_VERB_INIT = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_WIREGUARD_VERB_PEER = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_WIREGUARD_VERB_UNPEER = 2,
+};
+
+enum arcana_jobs_submit_input_change_bird_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_BIRD_VERB_ENABLE = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_BIRD_VERB_DISABLE = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_BIRD_VERB_RESTART = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_BIRD_VERB_RELOAD = 3,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_BIRD_VERB_CONFIGURE = 4,
+};
+
+enum arcana_jobs_submit_input_change_kmod_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KMOD_VERB_LOAD = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_KMOD_VERB_UNLOAD = 1,
+};
+
+enum arcana_jobs_submit_input_change_ipsec_sa_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_SA_VERB_KEY = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_SA_VERB_SET = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_SA_VERB_DERIVE = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_SA_VERB_COMMIT = 3,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_SA_VERB_CLEAR = 4,
+};
+
+enum arcana_jobs_submit_input_change_process_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_PROCESS_VERB_SIGNAL = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_PROCESS_VERB_RENICE = 1,
+};
+
+enum arcana_jobs_submit_input_change_ipsec_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_VERB_INIT = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_VERB_START = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_VERB_CONN = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_VERB_UNCONN = 3,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_VERB_CHILD = 4,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_VERB_UNCHILD = 5,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_VERB_UP = 6,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_VERB_DOWN = 7,
+};
+
+enum arcana_jobs_submit_input_change_ipsec_ipsec_mode {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_IPSEC_MODE_TUNNEL = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_IPSEC_MODE_TRANSPORT = 1,
+};
+
+enum arcana_jobs_submit_input_change_ipsec_start_action {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_START_ACTION_START = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_START_ACTION_TRAP = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_IPSEC_START_ACTION_NONE = 2,
+};
+
+enum arcana_jobs_submit_input_change_jail_conf_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_CONF_VERB_MAKE = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_CONF_VERB_REMOVE = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_CONF_VERB_DEFAULTS = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_CONF_VERB_TEMPLATE = 3,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_CONF_VERB_UNTEMPLATE = 4,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_CONF_VERB_EDIT = 5,
+};
+
+enum arcana_jobs_submit_input_change_jail_conf_copy {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_CONF_COPY_CLONE = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_JAIL_CONF_COPY_SEND = 1,
+};
+
+enum arcana_jobs_submit_input_change_carp_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_CARP_VERB_ADD = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_CARP_VERB_SET = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_CARP_VERB_REMOVE = 2,
+};
+
+enum arcana_jobs_submit_input_change_neighbour_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_NEIGHBOUR_VERB_ADD = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_NEIGHBOUR_VERB_DELETE = 1,
+};
+
+enum arcana_jobs_submit_input_change_cert_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_CERT_VERB_ADD = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_CERT_VERB_REMOVE = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_CERT_VERB_TRUST = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_CERT_VERB_UNTRUST = 3,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_CERT_VERB_REHASH = 4,
+};
+
+enum arcana_jobs_submit_input_change_ssh_verb {
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_BANNER = 0,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_SET = 1,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_AUTHORIZE = 2,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_UNAUTHORIZE = 3,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_SIGN = 4,
+	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_USER_CAS = 5,
 };
 
 /* container */
@@ -1969,6 +2257,648 @@ struct arcana_packages {
 	const struct arcana_packages_packages	*packages;
 };
 
+/* list entry */
+struct arcana_jobs_jobs_job_step {
+	uint32_t	 id;
+	bool			 has_parent;
+	int32_t		 parent;
+	bool			 has_kind;
+	enum arcana_jobs_jobs_job_step_kind	 kind;
+	const char	*label;
+	const char	*detail;
+	bool			 has_status;
+	enum arcana_jobs_jobs_job_step_status	 status;
+	bool			 has_duration;
+	uint64_t	 duration;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 argv;
+	bool			 has_exit;
+	int32_t		 exit;
+	struct cbl_bytes	 output;
+	struct cbl_bytes	 error_output;
+};
+
+/* input */
+struct arcana_jobs_jobs_job_cancel_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_jobs_jobs_job_cancel_output {
+	bool			 has_state;
+	enum arcana_jobs_jobs_job_cancel_output_state	 state;
+};
+
+/* input */
+struct arcana_jobs_jobs_job_confirm_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_jobs_jobs_job_confirm_output {
+	bool			 has_state;
+	enum arcana_jobs_jobs_job_confirm_output_state	 state;
+};
+
+/* list entry */
+struct arcana_jobs_jobs_job {
+	uint64_t	 id;
+	bool			 has_kind;
+	enum arcana_jobs_jobs_job_kind	 kind;
+	const char	*title;
+	bool			 has_state;
+	enum arcana_jobs_jobs_job_state	 state;
+	bool			 has_ok;
+	bool		 ok;
+	const char	*error;
+	bool			 has_created;
+	int64_t		 created;
+	bool			 has_started;
+	int64_t		 started;
+	bool			 has_finished;
+	int64_t		 finished;
+	const char	*peer;
+	bool			 has_confirm_by;
+	int64_t		 confirm_by;
+	struct {
+		size_t		 n;
+		const struct arcana_jobs_jobs_job_step	*v;
+	}			 step;
+};
+
+/* container */
+struct arcana_jobs_jobs {
+	const char	*activity;
+	bool			 has_since;
+	int64_t		 since;
+	bool			 has_stopping;
+	bool		 stopping;
+	struct {
+		size_t		 n;
+		const struct arcana_jobs_jobs_job	*v;
+	}			 job;
+};
+
+/* data */
+struct arcana_jobs {
+	const struct arcana_jobs_jobs	*jobs;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_jail_action {
+	const char	*jail;
+	bool			 has_action;
+	enum arcana_jobs_submit_input_change_jail_action_action	 action;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_address {
+	const char	*jail;
+	const char	*address;
+	const char	*interface;
+	bool			 has_remove;
+	bool		 remove;
+	bool			 has_live;
+	bool		 live;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_service_action {
+	const char	*service;
+	bool			 has_action;
+	enum arcana_jobs_submit_input_change_service_action_action	 action;
+};
+
+/* list entry */
+struct arcana_jobs_submit_input_change_service_config_set {
+	const char	*name;
+	const char	*value;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_service_config {
+	const char	*service;
+	struct {
+		size_t		 n;
+		const struct arcana_jobs_submit_input_change_service_config_set	*v;
+	}			 set;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 unset;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_pkg_upgrade {
+	const char	*jail;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 packages;
+	bool			 has_force;
+	bool		 force;
+	bool			 has_pkg_ip;
+	uint32_t	 pkg_ip;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_if_address {
+	const char	*interface;
+	const char	*address;
+	const char	*jail;
+	bool			 has_remove;
+	bool		 remove;
+	bool			 has_live;
+	bool		 live;
+	bool			 has_persist;
+	bool		 persist;
+	bool			 has_safe;
+	bool		 safe;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_if_state {
+	const char	*interface;
+	bool			 has_up;
+	bool		 up;
+	const char	*jail;
+	bool			 has_persist;
+	bool		 persist;
+	bool			 has_safe;
+	bool		 safe;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_route {
+	const char	*destination;
+	const char	*jail;
+	const char	*gateway;
+	bool			 has_remove;
+	bool		 remove;
+	bool			 has_fib;
+	uint32_t	 fib;
+	bool			 has_metric;
+	uint32_t	 metric;
+	bool			 has_weight;
+	uint32_t	 weight;
+	const char	*source;
+	bool			 has_persist;
+	bool		 persist;
+	bool			 has_safe;
+	bool		 safe;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_if_set {
+	const char	*interface;
+	const char	*jail;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	const char	*description;
+	bool			 has_fib;
+	uint32_t	 fib;
+	bool			 has_tunnelfib;
+	uint32_t	 tunnelfib;
+	bool			 has_persist;
+	bool		 persist;
+	bool			 has_safe;
+	bool		 safe;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_if_create {
+	const char	*interface;
+	const char	*jail;
+	const char	*tunnel_local;
+	const char	*tunnel_remote;
+	const char	*address;
+	const char	*destination;
+	const char	*description;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	bool			 has_fib;
+	uint32_t	 fib;
+	bool			 has_tunnelfib;
+	uint32_t	 tunnelfib;
+	bool			 has_id;
+	uint32_t	 id;
+	const char	*parent;
+	bool			 has_reqid;
+	uint32_t	 reqid;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_if_destroy {
+	const char	*interface;
+	const char	*jail;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_netgraph {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_netgraph_verb	 verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*jail;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_wireguard {
+	const char	*interface;
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_wireguard_verb	 verb;
+	const char	*jail;
+	const char	*peer;
+	const char	*endpoint;
+	const char	*allowed_ips;
+	bool			 has_keepalive;
+	uint32_t	 keepalive;
+	bool			 has_listen_port;
+	uint32_t	 listen_port;
+	bool			 has_persist;
+	bool		 persist;
+	const char	*preshared_key;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_bird {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_bird_verb	 verb;
+	const char	*jail;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_if_vnet {
+	const char	*interface;
+	const char	*jail;
+	bool			 has_remove;
+	bool		 remove;
+	const char	*parent;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_kmod {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_kmod_verb	 verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_ntp {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_remove;
+	bool		 remove;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_rtadvd {
+	const char	*interface;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_remove;
+	bool		 remove;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_ipsec_sa {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_ipsec_sa_verb	 verb;
+	const char	*interface;
+	bool			 has_reqid;
+	uint32_t	 reqid;
+	const char	*tunnel_local;
+	const char	*tunnel_remote;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_zfs {
+	const char	*verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_recursive;
+	bool		 recursive;
+	bool			 has_force;
+	bool		 force;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_zpool {
+	const char	*verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_force;
+	bool		 force;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_mount {
+	const char	*verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_force;
+	bool		 force;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_gpart {
+	const char	*verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_force;
+	bool		 force;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_cam {
+	const char	*verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_sysctl {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_ipfw {
+	const char	*verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*jail;
+	bool			 has_persist;
+	bool		 persist;
+	bool			 has_safe;
+	bool		 safe;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_bridge {
+	const char	*verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*jail;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_geneve {
+	const char	*verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*jail;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_process {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_process_verb	 verb;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_pkg_clean {
+	const char	*jail;
+	bool			 has_force;
+	bool		 force;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_ipsec {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_ipsec_verb	 verb;
+	const char	*jail;
+	const char	*conn;
+	const char	*child;
+	const char	*tunnel_local;
+	const char	*tunnel_remote;
+	bool			 has_ipsec_mode;
+	enum arcana_jobs_submit_input_change_ipsec_ipsec_mode	 ipsec_mode;
+	const char	*pubkey;
+	const char	*local_cert;
+	const char	*remote_cert;
+	const char	*remote_ca;
+	const char	*local_ts;
+	const char	*remote_ts;
+	bool			 has_reqid;
+	uint32_t	 reqid;
+	bool			 has_start_action;
+	enum arcana_jobs_submit_input_change_ipsec_start_action	 start_action;
+	const char	*local_id;
+	const char	*remote_id;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_pkg_install {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 packages;
+	const char	*jail;
+	bool			 has_force;
+	bool		 force;
+	bool			 has_pkg_ip;
+	uint32_t	 pkg_ip;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_jail_conf {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_jail_conf_verb	 verb;
+	const char	*jail;
+	const char	*dataset;
+	const char	*snapshot;
+	bool			 has_copy;
+	enum arcana_jobs_submit_input_change_jail_conf_copy	 copy;
+	const char	*path;
+	const char	*text;
+	bool			 has_start;
+	bool		 start;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_carp {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_carp_verb	 verb;
+	const char	*interface;
+	const char	*jail;
+	const char	*address;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*preshared_key;
+	bool			 has_persist;
+	bool		 persist;
+	bool			 has_safe;
+	bool		 safe;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_neighbour {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_neighbour_verb	 verb;
+	const char	*address;
+	const char	*jail;
+	const char	*lladdr;
+	bool			 has_temporary;
+	bool		 temporary;
+	bool			 has_live;
+	bool		 live;
+	bool			 has_persist;
+	bool		 persist;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_cert {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_cert_verb	 verb;
+	const char	*jail;
+	const char	*path;
+	const char	*text;
+};
+
+/* container, presence */
+struct arcana_jobs_submit_input_change_ssh {
+	bool			 has_verb;
+	enum arcana_jobs_submit_input_change_ssh_verb	 verb;
+	const char	*jail;
+	const char	*path;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	const char	*text;
+	const char	*user;
+	bool			 has_safe;
+	bool		 safe;
+};
+
+/* list entry */
+struct arcana_jobs_submit_input_change {
+	enum arcana_jobs_submit_input_change_kind	 kind;	/* the case given */
+	const struct arcana_jobs_submit_input_change_jail_action	*jail_action;
+	const struct arcana_jobs_submit_input_change_address	*address;
+	const struct arcana_jobs_submit_input_change_service_action	*service_action;
+	const struct arcana_jobs_submit_input_change_service_config	*service_config;
+	const struct arcana_jobs_submit_input_change_pkg_upgrade	*pkg_upgrade;
+	const struct arcana_jobs_submit_input_change_if_address	*if_address;
+	const struct arcana_jobs_submit_input_change_if_state	*if_state;
+	const struct arcana_jobs_submit_input_change_route	*route;
+	const struct arcana_jobs_submit_input_change_if_set	*if_set;
+	const struct arcana_jobs_submit_input_change_if_create	*if_create;
+	const struct arcana_jobs_submit_input_change_if_destroy	*if_destroy;
+	const struct arcana_jobs_submit_input_change_netgraph	*netgraph;
+	const struct arcana_jobs_submit_input_change_wireguard	*wireguard;
+	const struct arcana_jobs_submit_input_change_bird	*bird;
+	const struct arcana_jobs_submit_input_change_if_vnet	*if_vnet;
+	const struct arcana_jobs_submit_input_change_kmod	*kmod;
+	const struct arcana_jobs_submit_input_change_ntp	*ntp;
+	const struct arcana_jobs_submit_input_change_rtadvd	*rtadvd;
+	const struct arcana_jobs_submit_input_change_ipsec_sa	*ipsec_sa;
+	const struct arcana_jobs_submit_input_change_zfs	*zfs;
+	const struct arcana_jobs_submit_input_change_zpool	*zpool;
+	const struct arcana_jobs_submit_input_change_mount	*mount;
+	const struct arcana_jobs_submit_input_change_gpart	*gpart;
+	const struct arcana_jobs_submit_input_change_cam	*cam;
+	const struct arcana_jobs_submit_input_change_sysctl	*sysctl;
+	const struct arcana_jobs_submit_input_change_ipfw	*ipfw;
+	const struct arcana_jobs_submit_input_change_bridge	*bridge;
+	const struct arcana_jobs_submit_input_change_geneve	*geneve;
+	const struct arcana_jobs_submit_input_change_process	*process;
+	const struct arcana_jobs_submit_input_change_pkg_clean	*pkg_clean;
+	const struct arcana_jobs_submit_input_change_ipsec	*ipsec;
+	const struct arcana_jobs_submit_input_change_pkg_install	*pkg_install;
+	const struct arcana_jobs_submit_input_change_jail_conf	*jail_conf;
+	const struct arcana_jobs_submit_input_change_carp	*carp;
+	const struct arcana_jobs_submit_input_change_neighbour	*neighbour;
+	const struct arcana_jobs_submit_input_change_cert	*cert;
+	const struct arcana_jobs_submit_input_change_ssh	*ssh;
+};
+
+/* input */
+struct arcana_jobs_submit_input {
+	struct {
+		size_t		 n;
+		const struct arcana_jobs_submit_input_change	*v;
+	}			 change;
+};
+
+/* output */
+struct arcana_jobs_submit_output {
+	struct {
+		size_t		 n;
+		const uint64_t	 *v;
+	}			 id;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -2481,6 +3411,198 @@ int	arcana_packages_packages_encode(const struct arcana_packages_packages *,
 	    struct cbl_ybuf *);
 int	arcana_packages_packages_decode(const void *, size_t, struct arcana_packages_packages *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_jobs_job_step_encode(const struct arcana_jobs_jobs_job_step *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_jobs_job_step_decode(const void *, size_t, struct arcana_jobs_jobs_job_step *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_jobs_job_cancel_input_encode(const struct arcana_jobs_jobs_job_cancel_input *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_jobs_job_cancel_input_decode(const void *, size_t, struct arcana_jobs_jobs_job_cancel_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_jobs_job_cancel_output_encode(const struct arcana_jobs_jobs_job_cancel_output *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_jobs_job_cancel_output_decode(const void *, size_t, struct arcana_jobs_jobs_job_cancel_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_jobs_job_confirm_input_encode(const struct arcana_jobs_jobs_job_confirm_input *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_jobs_job_confirm_input_decode(const void *, size_t, struct arcana_jobs_jobs_job_confirm_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_jobs_job_confirm_output_encode(const struct arcana_jobs_jobs_job_confirm_output *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_jobs_job_confirm_output_decode(const void *, size_t, struct arcana_jobs_jobs_job_confirm_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_jobs_job_encode(const struct arcana_jobs_jobs_job *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_jobs_job_decode(const void *, size_t, struct arcana_jobs_jobs_job *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_jobs_encode(const struct arcana_jobs_jobs *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_jobs_decode(const void *, size_t, struct arcana_jobs_jobs *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_jail_action_encode(const struct arcana_jobs_submit_input_change_jail_action *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_jail_action_decode(const void *, size_t, struct arcana_jobs_submit_input_change_jail_action *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_address_encode(const struct arcana_jobs_submit_input_change_address *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_address_decode(const void *, size_t, struct arcana_jobs_submit_input_change_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_service_action_encode(const struct arcana_jobs_submit_input_change_service_action *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_service_action_decode(const void *, size_t, struct arcana_jobs_submit_input_change_service_action *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_service_config_set_encode(const struct arcana_jobs_submit_input_change_service_config_set *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_service_config_set_decode(const void *, size_t, struct arcana_jobs_submit_input_change_service_config_set *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_service_config_encode(const struct arcana_jobs_submit_input_change_service_config *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_service_config_decode(const void *, size_t, struct arcana_jobs_submit_input_change_service_config *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_pkg_upgrade_encode(const struct arcana_jobs_submit_input_change_pkg_upgrade *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_pkg_upgrade_decode(const void *, size_t, struct arcana_jobs_submit_input_change_pkg_upgrade *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_if_address_encode(const struct arcana_jobs_submit_input_change_if_address *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_if_address_decode(const void *, size_t, struct arcana_jobs_submit_input_change_if_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_if_state_encode(const struct arcana_jobs_submit_input_change_if_state *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_if_state_decode(const void *, size_t, struct arcana_jobs_submit_input_change_if_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_route_encode(const struct arcana_jobs_submit_input_change_route *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_route_decode(const void *, size_t, struct arcana_jobs_submit_input_change_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_if_set_encode(const struct arcana_jobs_submit_input_change_if_set *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_if_set_decode(const void *, size_t, struct arcana_jobs_submit_input_change_if_set *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_if_create_encode(const struct arcana_jobs_submit_input_change_if_create *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_if_create_decode(const void *, size_t, struct arcana_jobs_submit_input_change_if_create *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_if_destroy_encode(const struct arcana_jobs_submit_input_change_if_destroy *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_if_destroy_decode(const void *, size_t, struct arcana_jobs_submit_input_change_if_destroy *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_netgraph_encode(const struct arcana_jobs_submit_input_change_netgraph *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_netgraph_decode(const void *, size_t, struct arcana_jobs_submit_input_change_netgraph *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_wireguard_encode(const struct arcana_jobs_submit_input_change_wireguard *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_wireguard_decode(const void *, size_t, struct arcana_jobs_submit_input_change_wireguard *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_bird_encode(const struct arcana_jobs_submit_input_change_bird *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_bird_decode(const void *, size_t, struct arcana_jobs_submit_input_change_bird *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_if_vnet_encode(const struct arcana_jobs_submit_input_change_if_vnet *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_if_vnet_decode(const void *, size_t, struct arcana_jobs_submit_input_change_if_vnet *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_kmod_encode(const struct arcana_jobs_submit_input_change_kmod *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_kmod_decode(const void *, size_t, struct arcana_jobs_submit_input_change_kmod *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_ntp_encode(const struct arcana_jobs_submit_input_change_ntp *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_ntp_decode(const void *, size_t, struct arcana_jobs_submit_input_change_ntp *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_rtadvd_encode(const struct arcana_jobs_submit_input_change_rtadvd *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_rtadvd_decode(const void *, size_t, struct arcana_jobs_submit_input_change_rtadvd *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_ipsec_sa_encode(const struct arcana_jobs_submit_input_change_ipsec_sa *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_ipsec_sa_decode(const void *, size_t, struct arcana_jobs_submit_input_change_ipsec_sa *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_zfs_encode(const struct arcana_jobs_submit_input_change_zfs *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_zfs_decode(const void *, size_t, struct arcana_jobs_submit_input_change_zfs *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_zpool_encode(const struct arcana_jobs_submit_input_change_zpool *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_zpool_decode(const void *, size_t, struct arcana_jobs_submit_input_change_zpool *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_mount_encode(const struct arcana_jobs_submit_input_change_mount *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_mount_decode(const void *, size_t, struct arcana_jobs_submit_input_change_mount *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_gpart_encode(const struct arcana_jobs_submit_input_change_gpart *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_gpart_decode(const void *, size_t, struct arcana_jobs_submit_input_change_gpart *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_cam_encode(const struct arcana_jobs_submit_input_change_cam *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_cam_decode(const void *, size_t, struct arcana_jobs_submit_input_change_cam *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_sysctl_encode(const struct arcana_jobs_submit_input_change_sysctl *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_sysctl_decode(const void *, size_t, struct arcana_jobs_submit_input_change_sysctl *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_ipfw_encode(const struct arcana_jobs_submit_input_change_ipfw *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_ipfw_decode(const void *, size_t, struct arcana_jobs_submit_input_change_ipfw *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_bridge_encode(const struct arcana_jobs_submit_input_change_bridge *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_bridge_decode(const void *, size_t, struct arcana_jobs_submit_input_change_bridge *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_geneve_encode(const struct arcana_jobs_submit_input_change_geneve *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_geneve_decode(const void *, size_t, struct arcana_jobs_submit_input_change_geneve *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_process_encode(const struct arcana_jobs_submit_input_change_process *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_process_decode(const void *, size_t, struct arcana_jobs_submit_input_change_process *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_pkg_clean_encode(const struct arcana_jobs_submit_input_change_pkg_clean *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_pkg_clean_decode(const void *, size_t, struct arcana_jobs_submit_input_change_pkg_clean *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_ipsec_encode(const struct arcana_jobs_submit_input_change_ipsec *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_ipsec_decode(const void *, size_t, struct arcana_jobs_submit_input_change_ipsec *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_pkg_install_encode(const struct arcana_jobs_submit_input_change_pkg_install *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_pkg_install_decode(const void *, size_t, struct arcana_jobs_submit_input_change_pkg_install *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_jail_conf_encode(const struct arcana_jobs_submit_input_change_jail_conf *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_jail_conf_decode(const void *, size_t, struct arcana_jobs_submit_input_change_jail_conf *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_carp_encode(const struct arcana_jobs_submit_input_change_carp *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_carp_decode(const void *, size_t, struct arcana_jobs_submit_input_change_carp *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_neighbour_encode(const struct arcana_jobs_submit_input_change_neighbour *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_neighbour_decode(const void *, size_t, struct arcana_jobs_submit_input_change_neighbour *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_cert_encode(const struct arcana_jobs_submit_input_change_cert *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_cert_decode(const void *, size_t, struct arcana_jobs_submit_input_change_cert *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_ssh_encode(const struct arcana_jobs_submit_input_change_ssh *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_ssh_decode(const void *, size_t, struct arcana_jobs_submit_input_change_ssh *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_change_encode(const struct arcana_jobs_submit_input_change *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_change_decode(const void *, size_t, struct arcana_jobs_submit_input_change *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_input_encode(const struct arcana_jobs_submit_input *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_input_decode(const void *, size_t, struct arcana_jobs_submit_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jobs_submit_output_encode(const struct arcana_jobs_submit_output *,
+	    struct cbl_ybuf *);
+int	arcana_jobs_submit_output_decode(const void *, size_t, struct arcana_jobs_submit_output *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -2551,5 +3673,14 @@ int	arcana_packages_packages_refresh_action(cbl_req *, const struct cbl_bytes *,
 int	arcana_packages_packages_upgrade_action(cbl_req *, const struct cbl_bytes *,
 	    const struct arcana_packages_packages_upgrade_input *,
 	    struct arcana_packages_packages_upgrade_output *, cbl_yarena *);
+int	arcana_jobs_jobs_get(cbl_req *, struct arcana_jobs *, cbl_yarena *);
+int	arcana_jobs_jobs_job_cancel_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jobs_jobs_job_cancel_input *,
+	    struct arcana_jobs_jobs_job_cancel_output *, cbl_yarena *);
+int	arcana_jobs_jobs_job_confirm_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jobs_jobs_job_confirm_input *,
+	    struct arcana_jobs_jobs_job_confirm_output *, cbl_yarena *);
+int	arcana_jobs_submit_rpc(cbl_req *, const struct arcana_jobs_submit_input *,
+	    struct arcana_jobs_submit_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

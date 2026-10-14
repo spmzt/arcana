@@ -1,0 +1,285 @@
+module arcana-jobs {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-jobs";
+  prefix arcjob;
+
+  include arcana-jobs-kinds {
+    revision-date 2026-10-14;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The agent's jobs: the changes it is given, queued and run one
+     after another in the order given, whether or not the client stays,
+     their outcomes kept; each with its trace, the steps it took, a
+     flat list each naming its parent.  A change a safe-mode job made
+     waits, unconfirmed, for confirm, and is undone without it in time.
+
+     The kinds of change are arcana-jobs-kinds's, made from
+     share/arcana/jobs.yaml.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.4.";
+  }
+
+  typedef job-state {
+    type enumeration {
+      enum queued {
+        value 0;
+        description
+          "Waiting its turn.";
+      }
+      enum running {
+        value 1;
+        description
+          "Being done.";
+      }
+      enum done {
+        value 2;
+        description
+          "Finished; ok says how.";
+      }
+      enum cancelled {
+        value 3;
+        description
+          "Taken out of the queue before it ran.";
+      }
+      enum unconfirmed {
+        value 4;
+        description
+          "The change is made and waits for confirm; without it in
+           time, it is undone.";
+      }
+    }
+    description
+      "Where a job is.";
+  }
+
+  container jobs {
+    config false;
+    description
+      "The queued, running and recent jobs.";
+    leaf activity {
+      type string;
+      description
+        "What the agent does now that is not a job: a request a client
+         waits for, which holds up changes as a job does.";
+    }
+    leaf since {
+      type int64;
+      units "seconds";
+      description
+        "When it began, in seconds since the Epoch.";
+    }
+    leaf stopping {
+      type boolean;
+      description
+        "Whether the agent is stopping: no job is taken.";
+    }
+    list job {
+      key "id";
+      description
+        "A job.";
+      leaf id {
+        type uint64;
+        description
+          "Its number, the agent's.";
+      }
+      leaf kind {
+        type job-kind;
+        description
+          "Its kind.";
+      }
+      leaf title {
+        type string;
+        description
+          "What it does, in words.";
+      }
+      leaf state {
+        type job-state;
+        description
+          "Where it is.";
+      }
+      leaf ok {
+        type boolean;
+        description
+          "Done: whether it succeeded.";
+      }
+      leaf error {
+        type string;
+        description
+          "Done and failed: why.";
+      }
+      leaf created {
+        type int64;
+        units "seconds";
+        description
+          "When it was queued, in seconds since the Epoch.";
+      }
+      leaf started {
+        type int64;
+        units "seconds";
+        description
+          "When it began.";
+      }
+      leaf finished {
+        type int64;
+        units "seconds";
+        description
+          "When it ended.";
+      }
+      leaf peer {
+        type string;
+        description
+          "Who gave it.";
+      }
+      leaf confirm-by {
+        type int64;
+        units "seconds";
+        description
+          "Unconfirmed: when it is undone without confirm.";
+      }
+      list step {
+        key "id";
+        description
+          "A step of its trace, in the order taken; each names its
+           parent, the tree in a flat list.";
+        leaf id {
+          type uint32;
+          description
+            "Its number in the trace.";
+        }
+        leaf parent {
+          type int32 {
+            range "-1..max";
+          }
+          description
+            "The step it is part of; -1, the root.";
+        }
+        leaf kind {
+          type enumeration {
+            enum daemon {
+              value 0;
+            }
+            enum lib {
+              value 1;
+            }
+            enum syscall {
+              value 2;
+            }
+            enum file {
+              value 3;
+            }
+            enum exec {
+              value 4;
+            }
+          }
+          description
+            "What it was: the agent's own, a library's call, a system
+             call, a file read or written, a program run.";
+        }
+        leaf label {
+          type string;
+          description
+            "What it was, named.";
+        }
+        leaf detail {
+          type string;
+          description
+            "What it was, said.";
+        }
+        leaf status {
+          type enumeration {
+            enum ok {
+              value 0;
+            }
+            enum failed {
+              value 1;
+            }
+            enum incomplete {
+              value 2;
+            }
+          }
+          description
+            "How it went.";
+        }
+        leaf duration {
+          type uint64;
+          units "microseconds";
+          description
+            "How long it took.";
+        }
+        leaf-list argv {
+          type string;
+          ordered-by user;
+          description
+            "A program run: its arguments.";
+        }
+        leaf exit {
+          type int32;
+          description
+            "A program run: its exit status.";
+        }
+        leaf output {
+          type binary;
+          description
+            "A program run: what it wrote to its standard output.";
+        }
+        leaf error-output {
+          type binary;
+          description
+            "And to its standard error.";
+        }
+      }
+      action cancel {
+        description
+          "A job not yet started taken out of the queue.";
+        output {
+          leaf state {
+            type job-state;
+            description
+              "Where it is now.";
+          }
+        }
+      }
+      action confirm {
+        description
+          "An unconfirmed job's change kept: that the request arrived
+           is the point, the client still reaches the host.";
+        output {
+          leaf state {
+            type job-state;
+            description
+              "Where it is now.";
+          }
+        }
+      }
+    }
+  }
+
+  rpc submit {
+    description
+      "Changes queued, to run in the order given.";
+    input {
+      list change {
+        min-elements 1;
+        description
+          "A change.";
+        uses change;
+      }
+    }
+    output {
+      leaf-list id {
+        type uint64;
+        description
+          "The jobs queued, in the order given.";
+      }
+    }
+  }
+}

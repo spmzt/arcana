@@ -1,0 +1,1381 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-jobs",
+    "module-revision": "2026-10-14",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 400, 1 000.",
+    "assignment-range": [
+      {
+        "entry-point": "62400",
+        "size": "1000"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-jobs",
+        "sid": "62400"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs",
+        "sid": "62401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/activity",
+        "sid": "62402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job",
+        "sid": "62403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/cancel",
+        "sid": "62404"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/cancel/input",
+        "sid": "62405"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/cancel/output",
+        "sid": "62406"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/cancel/output/state",
+        "sid": "62407"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/confirm",
+        "sid": "62408"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/confirm-by",
+        "sid": "62409"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/confirm/input",
+        "sid": "62410"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/confirm/output",
+        "sid": "62411"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/confirm/output/state",
+        "sid": "62412"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/created",
+        "sid": "62413"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/error",
+        "sid": "62414"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/finished",
+        "sid": "62415"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/id",
+        "sid": "62416"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/kind",
+        "sid": "62417"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/ok",
+        "sid": "62418"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/peer",
+        "sid": "62419"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/started",
+        "sid": "62420"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/state",
+        "sid": "62421"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step",
+        "sid": "62422"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/argv",
+        "sid": "62423"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/detail",
+        "sid": "62424"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/duration",
+        "sid": "62425"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/error-output",
+        "sid": "62426"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/exit",
+        "sid": "62427"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/id",
+        "sid": "62428"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/kind",
+        "sid": "62429"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/label",
+        "sid": "62430"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/output",
+        "sid": "62431"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/parent",
+        "sid": "62432"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/step/status",
+        "sid": "62433"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/job/title",
+        "sid": "62434"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/since",
+        "sid": "62435"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:jobs/stopping",
+        "sid": "62436"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit",
+        "sid": "62437"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input",
+        "sid": "62438"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change",
+        "sid": "62439"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/address",
+        "sid": "62440"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/address/address",
+        "sid": "62441"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/address/interface",
+        "sid": "62442"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/address/jail",
+        "sid": "62443"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/address/live",
+        "sid": "62444"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/address/persist",
+        "sid": "62445"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/address/remove",
+        "sid": "62446"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bird",
+        "sid": "62447"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bird/args",
+        "sid": "62448"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bird/jail",
+        "sid": "62449"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bird/verb",
+        "sid": "62450"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bridge",
+        "sid": "62451"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bridge/args",
+        "sid": "62452"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bridge/jail",
+        "sid": "62453"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bridge/persist",
+        "sid": "62454"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/bridge/verb",
+        "sid": "62455"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/cam",
+        "sid": "62456"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/cam/args",
+        "sid": "62457"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/cam/verb",
+        "sid": "62458"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/carp",
+        "sid": "62459"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/carp/address",
+        "sid": "62460"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/carp/args",
+        "sid": "62461"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/carp/interface",
+        "sid": "62462"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/carp/jail",
+        "sid": "62463"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/carp/persist",
+        "sid": "62464"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/carp/preshared-key",
+        "sid": "62465"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/carp/safe",
+        "sid": "62466"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/carp/verb",
+        "sid": "62467"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/cert",
+        "sid": "62468"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/cert/jail",
+        "sid": "62469"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/cert/path",
+        "sid": "62470"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/cert/text",
+        "sid": "62471"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/cert/verb",
+        "sid": "62472"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/geneve",
+        "sid": "62473"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/geneve/args",
+        "sid": "62474"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/geneve/jail",
+        "sid": "62475"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/geneve/persist",
+        "sid": "62476"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/geneve/verb",
+        "sid": "62477"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/gpart",
+        "sid": "62478"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/gpart/args",
+        "sid": "62479"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/gpart/force",
+        "sid": "62480"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/gpart/verb",
+        "sid": "62481"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-address",
+        "sid": "62482"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-address/address",
+        "sid": "62483"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-address/interface",
+        "sid": "62484"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-address/jail",
+        "sid": "62485"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-address/live",
+        "sid": "62486"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-address/persist",
+        "sid": "62487"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-address/remove",
+        "sid": "62488"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-address/safe",
+        "sid": "62489"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create",
+        "sid": "62490"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/address",
+        "sid": "62491"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/description",
+        "sid": "62492"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/destination",
+        "sid": "62493"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/fib",
+        "sid": "62494"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/id",
+        "sid": "62495"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/interface",
+        "sid": "62496"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/jail",
+        "sid": "62497"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/mtu",
+        "sid": "62498"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/parent",
+        "sid": "62499"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/persist",
+        "sid": "62500"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/reqid",
+        "sid": "62501"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/tunnel-local",
+        "sid": "62502"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/tunnel-remote",
+        "sid": "62503"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-create/tunnelfib",
+        "sid": "62504"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-destroy",
+        "sid": "62505"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-destroy/interface",
+        "sid": "62506"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-destroy/jail",
+        "sid": "62507"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-destroy/persist",
+        "sid": "62508"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-set",
+        "sid": "62509"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-set/description",
+        "sid": "62510"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-set/fib",
+        "sid": "62511"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-set/interface",
+        "sid": "62512"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-set/jail",
+        "sid": "62513"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-set/mtu",
+        "sid": "62514"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-set/persist",
+        "sid": "62515"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-set/safe",
+        "sid": "62516"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-set/tunnelfib",
+        "sid": "62517"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-state",
+        "sid": "62518"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-state/interface",
+        "sid": "62519"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-state/jail",
+        "sid": "62520"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-state/persist",
+        "sid": "62521"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-state/safe",
+        "sid": "62522"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-state/up",
+        "sid": "62523"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-vnet",
+        "sid": "62524"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-vnet/interface",
+        "sid": "62525"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-vnet/jail",
+        "sid": "62526"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-vnet/parent",
+        "sid": "62527"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-vnet/persist",
+        "sid": "62528"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/if-vnet/remove",
+        "sid": "62529"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipfw",
+        "sid": "62530"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipfw/args",
+        "sid": "62531"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipfw/jail",
+        "sid": "62532"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipfw/persist",
+        "sid": "62533"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipfw/safe",
+        "sid": "62534"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipfw/verb",
+        "sid": "62535"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec",
+        "sid": "62536"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec-sa",
+        "sid": "62537"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec-sa/args",
+        "sid": "62538"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec-sa/interface",
+        "sid": "62539"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec-sa/reqid",
+        "sid": "62540"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec-sa/tunnel-local",
+        "sid": "62541"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec-sa/tunnel-remote",
+        "sid": "62542"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec-sa/verb",
+        "sid": "62543"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/child",
+        "sid": "62544"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/conn",
+        "sid": "62545"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/ipsec-mode",
+        "sid": "62546"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/jail",
+        "sid": "62547"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/local-cert",
+        "sid": "62548"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/local-id",
+        "sid": "62549"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/local-ts",
+        "sid": "62550"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/persist",
+        "sid": "62551"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/pubkey",
+        "sid": "62552"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/remote-ca",
+        "sid": "62553"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/remote-cert",
+        "sid": "62554"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/remote-id",
+        "sid": "62555"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/remote-ts",
+        "sid": "62556"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/reqid",
+        "sid": "62557"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/start-action",
+        "sid": "62558"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/tunnel-local",
+        "sid": "62559"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/tunnel-remote",
+        "sid": "62560"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ipsec/verb",
+        "sid": "62561"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-action",
+        "sid": "62562"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-action/action",
+        "sid": "62563"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-action/jail",
+        "sid": "62564"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf",
+        "sid": "62565"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf/args",
+        "sid": "62566"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf/copy",
+        "sid": "62567"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf/dataset",
+        "sid": "62568"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf/jail",
+        "sid": "62569"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf/path",
+        "sid": "62570"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf/snapshot",
+        "sid": "62571"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf/start",
+        "sid": "62572"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf/text",
+        "sid": "62573"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/jail-conf/verb",
+        "sid": "62574"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/kmod",
+        "sid": "62575"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/kmod/args",
+        "sid": "62576"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/kmod/persist",
+        "sid": "62577"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/kmod/verb",
+        "sid": "62578"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/mount",
+        "sid": "62579"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/mount/args",
+        "sid": "62580"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/mount/force",
+        "sid": "62581"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/mount/verb",
+        "sid": "62582"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/neighbour",
+        "sid": "62583"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/neighbour/address",
+        "sid": "62584"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/neighbour/jail",
+        "sid": "62585"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/neighbour/live",
+        "sid": "62586"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/neighbour/lladdr",
+        "sid": "62587"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/neighbour/persist",
+        "sid": "62588"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/neighbour/temporary",
+        "sid": "62589"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/neighbour/verb",
+        "sid": "62590"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/netgraph",
+        "sid": "62591"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/netgraph/args",
+        "sid": "62592"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/netgraph/jail",
+        "sid": "62593"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/netgraph/verb",
+        "sid": "62594"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ntp",
+        "sid": "62595"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ntp/args",
+        "sid": "62596"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ntp/persist",
+        "sid": "62597"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ntp/remove",
+        "sid": "62598"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-clean",
+        "sid": "62599"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-clean/force",
+        "sid": "62600"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-clean/jail",
+        "sid": "62601"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-install",
+        "sid": "62602"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-install/force",
+        "sid": "62603"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-install/jail",
+        "sid": "62604"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-install/packages",
+        "sid": "62605"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-install/pkg-ip",
+        "sid": "62606"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-upgrade",
+        "sid": "62607"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-upgrade/force",
+        "sid": "62608"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-upgrade/jail",
+        "sid": "62609"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-upgrade/packages",
+        "sid": "62610"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/pkg-upgrade/pkg-ip",
+        "sid": "62611"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/process",
+        "sid": "62612"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/process/args",
+        "sid": "62613"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/process/verb",
+        "sid": "62614"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route",
+        "sid": "62615"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/destination",
+        "sid": "62616"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/fib",
+        "sid": "62617"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/gateway",
+        "sid": "62618"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/jail",
+        "sid": "62619"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/metric",
+        "sid": "62620"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/persist",
+        "sid": "62621"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/remove",
+        "sid": "62622"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/safe",
+        "sid": "62623"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/source",
+        "sid": "62624"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/route/weight",
+        "sid": "62625"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/rtadvd",
+        "sid": "62626"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/rtadvd/args",
+        "sid": "62627"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/rtadvd/interface",
+        "sid": "62628"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/rtadvd/persist",
+        "sid": "62629"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/rtadvd/remove",
+        "sid": "62630"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/service-action",
+        "sid": "62631"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/service-action/action",
+        "sid": "62632"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/service-action/service",
+        "sid": "62633"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/service-config",
+        "sid": "62634"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/service-config/service",
+        "sid": "62635"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/service-config/set",
+        "sid": "62636"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/service-config/set/name",
+        "sid": "62637"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/service-config/set/value",
+        "sid": "62638"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/service-config/unset",
+        "sid": "62639"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ssh",
+        "sid": "62640"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ssh/args",
+        "sid": "62641"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ssh/jail",
+        "sid": "62642"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ssh/path",
+        "sid": "62643"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ssh/safe",
+        "sid": "62644"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ssh/text",
+        "sid": "62645"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ssh/user",
+        "sid": "62646"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/ssh/verb",
+        "sid": "62647"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/sysctl",
+        "sid": "62648"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/sysctl/args",
+        "sid": "62649"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/sysctl/persist",
+        "sid": "62650"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard",
+        "sid": "62651"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/allowed-ips",
+        "sid": "62652"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/endpoint",
+        "sid": "62653"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/interface",
+        "sid": "62654"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/jail",
+        "sid": "62655"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/keepalive",
+        "sid": "62656"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/listen-port",
+        "sid": "62657"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/peer",
+        "sid": "62658"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/persist",
+        "sid": "62659"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/preshared-key",
+        "sid": "62660"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/wireguard/verb",
+        "sid": "62661"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/zfs",
+        "sid": "62662"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/zfs/args",
+        "sid": "62663"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/zfs/force",
+        "sid": "62664"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/zfs/recursive",
+        "sid": "62665"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/zfs/verb",
+        "sid": "62666"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/zpool",
+        "sid": "62667"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/zpool/args",
+        "sid": "62668"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/zpool/force",
+        "sid": "62669"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/input/change/zpool/verb",
+        "sid": "62670"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/output",
+        "sid": "62671"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jobs:submit/output/id",
+        "sid": "62672"
+      }
+    ]
+  }
+}

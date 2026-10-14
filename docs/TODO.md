@@ -376,8 +376,18 @@
   repository has, the host's and a running jail's (an augment of
   arcana-jails's jail, the same grouping); refresh and upgrade as
   actions (ira/ypackages.c, packages.c; yang_packages). The upgrade
-  runs as the operation does, not yet as a job: arcana-jobs, 3.1.4,
-  next, and the rest of 3.1 in turn; 2.8,
+  runs as the operation does, not yet as a job. 3.1.4: job-submit,
+  jobs, job, job-cancel, job-confirm converted to share/yang/arcana-jobs
+  (62 400, 1 000 for the kinds to come): the queue, each job's trace as
+  a flat list of steps naming their parents (as the page already
+  builds its tree), submit an rpc, cancel and confirm actions; the
+  kinds of change are the submodule arcana-jobs-kinds, made from
+  share/arcana/jobs.yaml by jobs.awk (out=yang), and yjobs_spec(), a
+  change made the job-spec the queue takes, too (out=yspec, by
+  arcana.h's members), both committed and held by check-yang;
+  ira/yjobs.c (yang_jobs: five kinds of change, the trace). 1.11's
+  submit runs check_spec() and cuts_off() as job-submit does. Next:
+  3.1.5, arcana-storage, and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model

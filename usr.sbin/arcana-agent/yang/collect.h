@@ -127,6 +127,22 @@ int	ypackages_upgrade(struct work *w, const char *jail,
 	    const char **errp);
 
 /*
+ * arcana-jobs (ira/yjobs.c, yang/yjobs_spec.c): yjobs_from() jobs as the
+ * module has them, each with its trace, a flat list of steps; yjobs_spec()
+ * one change of a submit made a job-spec (made from jobs.yaml);
+ * yjobs_specs() all of them, *bad the one refused.
+ */
+struct arc_job;
+struct arc_job_spec;
+int	yjobs_from(const struct arc_job *v, size_t n, const char *activity,
+	    int64_t since, bool stopping, cbl_yarena *a,
+	    struct arcana_jobs *out);
+int	yjobs_spec(const struct arcana_jobs_submit_input_change *in,
+	    cbl_yarena *a, struct arc_job_spec *sp);
+int	yjobs_specs(const struct arcana_jobs_submit_input *in, cbl_yarena *a,
+	    const struct arc_job_spec **out, size_t *n, size_t *bad);
+
+/*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
  * them (invidia/ylne.c).
  */
