@@ -1051,6 +1051,61 @@ yang_ip_body()
 	atf_check ifconfig "$e" inet6 ifdisabled
 	atf_check -o match:" ipv6=off,1500\$" sh -c "\"$y\" ip | grep '^$e '"
 }
+atf_test_case yang_ecmp cleanup
+yang_ecmp_head()
+{
+	atf_set "descr" "ietf-routing's next-hop-list (PLAN-SDN-YANG" \
+	    "2.4.2): a prefix with two gateways, IPv4 and IPv6, in a vnet" \
+	    "jail's FIB"
+	atf_set "require.user" "root"
+}
+yang_ecmp_body()
+{
+	local y="$(atf_get_srcdir)/ycollect" e=epair74a b=epair74b
+
+	[ "$(sysctl -n net.route.multipath 2>/dev/null)" = 1 ] ||
+	    atf_skip "no multipath routes (net.route.multipath)"
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair74 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check jexec "$YJAIL" ifconfig "$b" inet 192.0.2.10/24 up
+	atf_check jexec "$YJAIL" ifconfig "$b" inet6 2001:db8:74::10/64 \
+	    no_dad
+	for g in 1 2; do
+		atf_check -o ignore jexec "$YJAIL" route add -net \
+		    198.51.100.0/24 192.0.2.$g
+		atf_check -o ignore jexec "$YJAIL" route add -inet6 -net \
+		    2001:db8:75::/48 2001:db8:74::$g
+	done
+	atf_check -o save:r jexec "$YJAIL" "$y" routes 0
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+	    tail -1 r
+	# One route, two next hops of its next-hop-list, the interface and
+	# the gateway each; a static route's.
+	atf_check -o inline:"inet 198.51.100.0/24 192.0.2.1 $b - static multipath
+inet 198.51.100.0/24 192.0.2.2 $b - static multipath
+inet6 2001:db8:75::/48 2001:db8:74::1 $b - static multipath
+inet6 2001:db8:75::/48 2001:db8:74::2 $b - static multipath
+" sh -c "grep ' multipath\$' r | sort"
+	# One gateway left: a simple next hop again.
+	atf_check -o ignore jexec "$YJAIL" route delete -net 198.51.100.0/24 \
+	    192.0.2.2
+	atf_check -o save:r2 jexec "$YJAIL" "$y" routes 0
+	atf_check -o inline:"inet 198.51.100.0/24 192.0.2.1 $b - static -
+" sh -c "grep '^inet 198\.51\.100\.0/24 ' r2"
+}
+yang_ecmp_cleanup()
+{
+	# Out of the vnet jail first: it is not removed with one inside.
+	ifconfig epair74b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 yang_ip_cleanup()
 {
 	# Out of the vnet jail first: it is not removed with one inside.
@@ -1066,6 +1121,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_kinds
 	atf_add_test_case yang_events
 	atf_add_test_case yang_ip
+	atf_add_test_case yang_ecmp
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases
