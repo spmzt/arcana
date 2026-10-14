@@ -19,4 +19,19 @@ for f in $mains; do
 	n=$((n + 1))
 done
 yanglint -i -p . $mains
-echo "$n modules compiled, alone and together ($(yanglint --version))"
+# Arcana's deviations hold: what FreeBSD sets for the whole host is no
+# configuration of one interface.
+d=$(mktemp -d)
+trap 'rm -rf "$d"' EXIT
+t=$d/ip.json
+echo '{"ietf-interfaces:interfaces":{"interface":[{"name":"em0","type":"iana-if-type:ethernetCsmacd","ietf-ip:ipv4":{"forwarding":true}}]}}' > "$t"
+yanglint -i -p . -t config ietf-interfaces@2018-02-20.yang \
+    iana-if-type@2026-03-17.yang ietf-ip@2018-02-22.yang "$t" >/dev/null ||
+    { echo "lint.sh: ietf-ip refuses its own forwarding" >&2; exit 1; }
+if yanglint -i -p . -t config ietf-interfaces@2018-02-20.yang \
+    iana-if-type@2026-03-17.yang ietf-ip@2018-02-22.yang \
+    arcana-ip-deviations@2026-10-14.yang "$t" >/dev/null 2>&1; then
+	echo "lint.sh: arcana-ip-deviations does not hold" >&2
+	exit 1
+fi
+echo "$n modules compiled, alone and together ($(yanglint --version)); deviations hold"

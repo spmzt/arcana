@@ -1045,6 +1045,9 @@ yang_ip_body()
 	    -o match:"^$e inet6 2001:db8:79::2 $bll dynamic - (reachable|stale|delay|probe)\$" \
 	    -o not-match:"^$e inet 169\.254\.7\.5 " \
 	    -o not-match:"^$e inet6 2001:db8:79::1 " cat nb
+	# RAs' addresses are the interface's own to make.
+	atf_check ifconfig "$e" inet6 accept_rtadv
+	atf_check -o match:" global=1\$" sh -c "\"$y\" ipsys | grep '^$e '"
 	atf_check ifconfig "$e" inet6 ifdisabled
 	atf_check -o match:" ipv6=off,1500\$" sh -c "\"$y\" ip | grep '^$e '"
 }

@@ -1,0 +1,116 @@
+module arcana-ip-deviations {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-ip-deviations";
+  prefix arcipd;
+
+  import ietf-interfaces {
+    prefix if;
+    reference
+      "RFC 8343: A YANG Data Model for Interface Management";
+  }
+  import ietf-ip {
+    prefix ip;
+    reference
+      "RFC 8344: A YANG Data Model for IP Management";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "Where FreeBSD's IPv4 and IPv6 differ from ietf-ip (RFC 8344).
+
+     What ietf-ip sets per interface, FreeBSD sets for the whole host
+     by sysctl(8): forwarding, DAD's probes, and temporary addresses
+     (RFC 4941).  Their leaves report the host's value on every
+     interface, with origin system (RFC 8342), and cannot be written
+     per interface.  Nor can IPv4 be turned off on one interface, nor
+     an MTU set for one family: the link MTU is arcana-interfaces'
+     mtu, for both.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 1.10.3.";
+  }
+
+  deviation "/if:interfaces/if:interface/ip:ipv4/ip:enabled" {
+    description
+      "FreeBSD has no per-interface IPv4 switch: IPv4 is there where
+       an address is.";
+    deviate add {
+      config false;
+    }
+  }
+
+  deviation "/if:interfaces/if:interface/ip:ipv4/ip:forwarding" {
+    description
+      "The host's: sysctl net.inet.ip.forwarding.";
+    deviate add {
+      config false;
+    }
+  }
+
+  deviation "/if:interfaces/if:interface/ip:ipv4/ip:mtu" {
+    description
+      "The link MTU, arcana-interfaces' mtu, for both families.";
+    deviate add {
+      config false;
+    }
+  }
+
+  deviation "/if:interfaces/if:interface/ip:ipv6/ip:forwarding" {
+    description
+      "The host's: sysctl net.inet6.ip6.forwarding.";
+    deviate add {
+      config false;
+    }
+  }
+
+  deviation "/if:interfaces/if:interface/ip:ipv6/ip:mtu" {
+    description
+      "The link MTU, arcana-interfaces' mtu, for both families, or
+       the lower one an RA sets.";
+    deviate add {
+      config false;
+    }
+  }
+
+  deviation "/if:interfaces/if:interface/ip:ipv6/"
+          + "ip:dup-addr-detect-transmits" {
+    description
+      "The host's: sysctl net.inet6.ip6.dad_count.";
+    deviate add {
+      config false;
+    }
+  }
+
+  deviation "/if:interfaces/if:interface/ip:ipv6/ip:autoconf/"
+          + "ip:create-temporary-addresses" {
+    description
+      "The host's: sysctl net.inet6.ip6.use_tempaddr.";
+    deviate add {
+      config false;
+    }
+  }
+
+  deviation "/if:interfaces/if:interface/ip:ipv6/ip:autoconf/"
+          + "ip:temporary-valid-lifetime" {
+    description
+      "The host's: sysctl net.inet6.ip6.tempvltime.";
+    deviate add {
+      config false;
+    }
+  }
+
+  deviation "/if:interfaces/if:interface/ip:ipv6/ip:autoconf/"
+          + "ip:temporary-preferred-lifetime" {
+    description
+      "The host's: sysctl net.inet6.ip6.temppltime.";
+    deviate add {
+      config false;
+    }
+  }
+}

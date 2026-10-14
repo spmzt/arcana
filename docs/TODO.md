@@ -201,11 +201,15 @@
   kind the jobs make; 1.9.4, the netlink watch tells an interface made,
   changed, renamed and destroyed (no kernel event for a description,
   FIB, group, link address, media, capabilities or a kind's settings:
-  3.2.3 must tell or poll them); the IETF modules' .sid files numbered
-  in IANA's ranges, IANA publishing none. For the user: the CORECONF draft's
+  3.2.3 must tell or poll them); 1.10, ietf-ip: each interface's
+  addresses with origin and status, its neighbours (equal to ifconfig,
+  ndp -i, arp -an and ndp -an), the host's sysctls on each with the
+  deviation module arcana-ip-deviations making them config false
+  (lint.sh checks it holds); their origin system (RFC 8342) waits for
+  the YANG-CBOR codec's metadata, with the datastores (Y-2); the IETF
+  modules' .sid files numbered in IANA's ranges, IANA publishing none. For the user: the CORECONF draft's
   examples number some ietf-interfaces items otherwise (SIDS.md). Next:
-  1.10, ietf-ip; 1.11, the first GET, on an arcana branch with cblink
-  v2. As each operation is
+  1.11, the first GET, on an arcana branch with cblink v2. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

@@ -5419,6 +5419,25 @@ EOF
 	comm -23 nb.both nb > nb.missing
 	comm -23 nb nb.either > nb.extra
 	atf_check -o empty cat nb.missing nb.extra
+
+	# What the host sets for every interface (arcana-ip-deviations): its
+	# sysctls, on each with IPv4 or IPv6; RAs' addresses the interface's
+	# own flag, as ndp -i shows it.
+	atf_check -o save:sys "$(atf_get_srcdir)/ycollect" ipsys
+	f4=$(sysctl -n net.inet.ip.forwarding)
+	f6=$(sysctl -n net.inet6.ip6.forwarding)
+	sys6="dad=$(sysctl -n net.inet6.ip6.dad_count) temp=$(sysctl -n net.inet6.ip6.use_tempaddr) tvl=$(sysctl -n net.inet6.ip6.tempvltime) tpl=$(sysctl -n net.inet6.ip6.temppltime)"
+	for i in $(ifconfig -l | tr ' ' '\n' | sort | uniq -u); do
+		v4=-; v6=-; s6="dad=- temp=- tvl=- tpl=-"; g=-
+		ifconfig "$i" | grep -q '^	inet ' && v4=$f4
+		if ifconfig "$i" | grep -q '^	nd6 '; then
+			v6=$f6; s6=$sys6
+			ndp -i "$i" | grep -q '^Flags:.* accept_rtadv' && g=1 || g=0
+		fi
+		echo "$i fwd4=$v4 fwd6=$v6 $s6 global=$g" > exp
+		grep "^$i " sys > got
+		cmp -s exp got || atf_fail "$i: the host says $(cat exp), the collector $(cat got)"
+	done
 }
 
 atf_init_test_cases()

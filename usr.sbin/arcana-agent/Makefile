@@ -49,11 +49,12 @@ arcana_agent.sh: arcana_agent.in
 # ymodel_schema.c are made of.
 YANG_DIR=	${.CURDIR}/../../share/yang
 YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
-		ietf-ip@2018-02-22 iana-if-type@2026-03-17 \
-		ietf-yang-types@2025-12-22 ietf-inet-types@2025-12-22
+		ietf-ip@2018-02-22 arcana-ip-deviations@2026-10-14 \
+		iana-if-type@2026-03-17 ietf-yang-types@2025-12-22 \
+		ietf-inet-types@2025-12-22
 YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
-		-F ietf-ip:ipv6-privacy-autoconf -F iana-if-type: \
-		-F ietf-yang-types: -F ietf-inet-types:
+		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
+		-F iana-if-type: -F ietf-yang-types: -F ietf-inet-types:
 YANG_OUT?=	${.CURDIR}/yang
 regen-yang: .PHONY
 	cd ${YANG_DIR} && ${CBLINK_GEN} -m h,schema -b ymodel \

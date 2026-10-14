@@ -8,8 +8,9 @@
  * arcana-interfaces: 0 nodes, 0 types, 80 bytes
  * iana-if-type: 0 nodes, 0 types, 80 bytes
  * ietf-ip: 0 nodes, 0 types, 179 bytes
+ * arcana-ip-deviations: 0 nodes, 0 types, 80 bytes
  * in all, 160 nodes (children found 18 dense, 7 by a table, 3 by a search),
- * 39 types, 5 expressions, 306 identities, 59046 bytes
+ * 39 types, 5 expressions, 306 identities, 59126 bytes
  */
 
 #include <stdbool.h>
@@ -28,6 +29,7 @@ static const struct cbl_ymodule m10;
 static const struct cbl_ymodule m11;
 static const struct cbl_ymodule m12;
 static const struct cbl_ymodule m13;
+static const struct cbl_ymodule m14;
 static const struct cbl_ychoice c0;
 static const struct cbl_ychoice c1;
 static const struct cbl_ynode n0;
@@ -1067,7 +1069,6 @@ static const struct cbl_ynode n35 = {
 	.sid = UINT64_C(1635),
 	.name = "enabled",
 	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, enabled),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, has_enabled),
 	.type = &t2,
@@ -1081,7 +1082,6 @@ static const struct cbl_ynode n36 = {
 	.sid = UINT64_C(1636),
 	.name = "forwarding",
 	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, forwarding),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, has_forwarding),
 	.type = &t2,
@@ -1094,7 +1094,6 @@ static const struct cbl_ynode n37 = {
 	.sid = UINT64_C(1637),
 	.name = "mtu",
 	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, mtu),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv4, has_mtu),
 	.type = &t15,
@@ -1256,7 +1255,6 @@ static const struct cbl_ynode n50 = {
 	.sid = UINT64_C(1650),
 	.name = "create-temporary-addresses",
 	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, create_temporary_addresses),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, has_create_temporary_addresses),
 	.type = &t2,
@@ -1270,7 +1268,6 @@ static const struct cbl_ynode n51 = {
 	.sid = UINT64_C(1651),
 	.name = "temporary-preferred-lifetime",
 	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, temporary_preferred_lifetime),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, has_temporary_preferred_lifetime),
 	.type = &t10,
@@ -1285,7 +1282,6 @@ static const struct cbl_ynode n52 = {
 	.sid = UINT64_C(1652),
 	.name = "temporary-valid-lifetime",
 	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, temporary_valid_lifetime),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf, has_temporary_valid_lifetime),
 	.type = &t10,
@@ -1317,7 +1313,6 @@ static const struct cbl_ynode n53 = {
 	.sid = UINT64_C(1653),
 	.name = "dup-addr-detect-transmits",
 	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, dup_addr_detect_transmits),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, has_dup_addr_detect_transmits),
 	.type = &t10,
@@ -1345,7 +1340,6 @@ static const struct cbl_ynode n55 = {
 	.sid = UINT64_C(1655),
 	.name = "forwarding",
 	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, forwarding),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, has_forwarding),
 	.type = &t2,
@@ -1358,7 +1352,6 @@ static const struct cbl_ynode n56 = {
 	.sid = UINT64_C(1656),
 	.name = "mtu",
 	.kind = CBL_YN_LEAF,
-	.flags = 0x1,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, mtu),
 	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_ip_ipv6, has_mtu),
 	.type = &t20,
@@ -3280,6 +3273,15 @@ static const struct cbl_ymodule m13 = {
 	.feature = m13_f,
 };
 
+static const struct cbl_ymodule m14 = {
+	.schema = &ymodel_schema,
+	.name = "arcana-ip-deviations",
+	.revision = "2026-10-14",
+	.ns = "urn:arcana:yang:arcana-ip-deviations",
+	.prefix = "arcipd",
+	.sid = UINT64_C(1099511628976),
+};
+
 static const struct cbl_ymodule *const mods[] = {
 	&m5,
 	&m6,
@@ -3287,6 +3289,7 @@ static const struct cbl_ymodule *const mods[] = {
 	&m11,
 	&m12,
 	&m13,
+	&m14,
 };
 
 static const struct cbl_ynode *const nodes[] = {
@@ -3329,7 +3332,7 @@ static const char *const xpaths[] = {
 
 extern const struct cbl_yschema ymodel_schema;
 const struct cbl_yschema ymodel_schema = {
-	.nmod = 6,
+	.nmod = 7,
 	.nxpath = 5,
 	.nident = 306,
 	.nnode = 160,
