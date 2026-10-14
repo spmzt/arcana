@@ -506,6 +506,38 @@ kmsg_cleanup()
 	true
 }
 
+atf_test_case crash_event cleanup
+crash_event_head()
+{
+	atf_set "descr" "a process the kernel ends by a signal that dumps" \
+	    "core is an event, crash, with its name, jail and signal"
+	atf_set "require.user" "root"
+}
+crash_event_body()
+{
+	[ "$(sysctl -n kern.logsigexit)" = 1 ] ||
+	    atf_skip "kern.logsigexit is off: the kernel says no crash"
+	start_daemon
+	# The agent's first read of the buffer is what came before it.
+	sleep 2
+	# A stand-in of its own name crashes; no core is left (ulimit).
+	cp /bin/sh ./arccrash
+	./arccrash -c 'ulimit -c 0; kill -SEGV $$' || true
+	for i in $(seq 1 50); do
+		"$JGC" -c "$SOCK" events > ev.out 2>/dev/null
+		grep -q '"process":"arccrash"' ev.out && break
+		sleep 0.2
+	done
+	atf_check -o match:'"kind":"crash"' \
+	    -o match:'"process":"arccrash","jid":0,"jail":"","uid":0,"signal":11,"core":false' \
+	    cat ev.out
+}
+crash_event_cleanup()
+{
+	[ -f daemon.pid ] && kill "$(cat daemon.pid)" 2>/dev/null
+	true
+}
+
 atf_test_case sdwan_probe cleanup
 sdwan_probe_head()
 {
@@ -1624,6 +1656,7 @@ atf_init_test_cases()
 	atf_add_test_case fw_trace
 	atf_add_test_case resnapshot
 	atf_add_test_case kmsg
+	atf_add_test_case crash_event
 	atf_add_test_case sdwan_probe
 	atf_add_test_case sdwan_record
 	atf_add_test_case jail_make

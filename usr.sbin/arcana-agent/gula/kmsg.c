@@ -13,6 +13,12 @@
  * as a file is by its position, none missed and none twice; and each
  * is an event (kind kmsg) the moment it is seen.
  *
+ * A program that crashed is an event of its own (kind crash): the line
+ * the kernel writes for a process ended by a signal that dumps core,
+ * SIGSEGV, SIGABRT, SIGBUS and their kin (kern.logsigexit, on unless
+ * set off), "pid 812 (nginx), jid 0, uid 80: exited on signal 11 (core
+ * dumped)", taken apart: the process's name, its jail, the signal.
+ *
  * A line not finished yet is left for the next read.  When the end of
  * the last read is no longer there (more was written in a second than
  * the ring holds, or it was cleared), all of it is taken as new.
@@ -29,6 +35,8 @@
 #include <syslog.h>
 #include <time.h>
 #include <unistd.h>
+
+#include <jail.h>
 
 #include "agent.h"
 
@@ -97,6 +105,36 @@ find_tail(const char *buf, size_t len)
 	return (found);
 }
 
+/* A process's crash, as the kernel says it: an event of its own. */
+static void
+crash(const char *text)
+{
+	char	 comm[MAXCOMLEN + 2], *jname;
+	int	 pid, jid, uid, sig, n;
+	bool	 core;
+
+	n = 0;
+	if (sscanf(text, "pid %d (%" __XSTRING(MAXCOMLEN) "[^)]), jid %d, "
+	    "uid %d: exited on signal %d%n", &pid, comm, &jid, &uid, &sig,
+	    &n) != 5 || n == 0)
+		return;
+	core = strncmp(text + n, " (core dumped)", 14) == 0;
+	/* A name of the jail's, when it still has one. */
+	jname = jid > 0 ? jail_getname(jid) : NULL;
+	/* A process's name is the kernel's: no quote or backslash in it
+	 * is taken. */
+	if (strpbrk(comm, "\"\\") != NULL || (jname != NULL &&
+	    strpbrk(jname, "\"\\") != NULL)) {
+		free(jname);
+		return;
+	}
+	event_add("crash", "{\"pid\":%d,\"process\":\"%s\",\"jid\":%d,"
+	    "\"jail\":\"%s\",\"uid\":%d,\"signal\":%d,\"core\":%s}", pid,
+	    comm, jid, jname != NULL ? jname : "", uid, sig, core ? "true" :
+	    "false");
+	free(jname);
+}
+
 /* One line more: kept, numbered, and an event if events are wanted. */
 static void
 add_line(const char *s, size_t n, time_t t, int *events, int *more)
@@ -125,6 +163,7 @@ add_line(const char *s, size_t n, time_t t, int *events, int *more)
 	km_count++;
 	if (events == NULL)
 		return;
+	crash(text);
 	if (*events >= KMSG_EVENTS) {
 		(*more)++;
 		return;

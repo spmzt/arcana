@@ -1323,6 +1323,47 @@ ATF_TC_BODY(workflows, tc)
 	ATF_CHECK_MSG(i < 200, "no run begun by the threshold");
 	ATF_CHECK(strstr(r.body, "\"what\":\"mem\"") != NULL);
 	resp_free(&r);
+	/*
+	 * A program that crashes (the kernel's line, kern.logsigexit):
+	 * matched by a parameter's default, as the service-crash template
+	 * does; the workflow waiting on another program is not begun.
+	 */
+	snprintf(body, sizeof(body), "{\"name\":\"on crash\",\"hosts\":"
+	    "[\"%s\"],\"params\":[{\"name\":\"process\",\"default\":"
+	    "\"arccrash\"}],\"on\":[{\"event\":\"crash\",\"match\":{"
+	    "\"process\":\"${param.process}\",\"jid\":\"0\"}}],\"steps\":"
+	    "[{\"id\":\"s\",\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	snprintf(body, sizeof(body), "{\"name\":\"on another crash\","
+	    "\"hosts\":[\"%s\"],\"params\":[{\"name\":\"process\","
+	    "\"default\":\"nginx\"}],\"on\":[{\"event\":\"crash\","
+	    "\"match\":{\"process\":\"${param.process}\"}}],\"steps\":"
+	    "[{\"id\":\"s\",\"read\":\"hello\"}]}", sid);
+	http("POST", "/api/workflows", body, &r);
+	EXPECT(&r, 200);
+	resp_free(&r);
+	if (system("[ \"$(sysctl -n kern.logsigexit)\" = 1 ] && "
+	    "[ \"$(sysctl -n security.bsd.unprivileged_read_msgbuf)\" = 1 ]")
+	    == 0) {
+		ATF_REQUIRE(system("cp /bin/sh arccrash && ./arccrash -c "
+		    "'ulimit -c 0; kill -SEGV $$'; true") == 0);
+		for (i = 0; i < 200; i++) {
+			http("GET", "/api/runs", NULL, &r);
+			if (strstr(r.body, "\"event crash\"") != NULL)
+				break;
+			resp_free(&r);
+			usleep(100000);
+		}
+		ATF_CHECK_MSG(i < 200, "no run begun by the crash");
+		ATF_CHECK(strstr(r.body, "\"process\":\"arccrash\"") !=
+		    NULL);
+		ATF_CHECK(strstr(r.body, "\"name\":\"on crash\"") != NULL);
+		ATF_CHECK(strstr(r.body, "\"name\":\"on another crash\"") ==
+		    NULL);
+		resp_free(&r);
+	}
 	ATF_REQUIRE(system("kill $(cat arcana-agent.pid)") == 0);
 	for (i = 0; i < 200; i++) {
 		http("GET", "/api/runs", NULL, &r);
