@@ -27,9 +27,22 @@ struct ietf_interfaces_interfaces_interface_arcif_lagg;
 struct ietf_interfaces_interfaces_interface_arcif_bridge_member;
 struct ietf_interfaces_interfaces_interface_arcif_bridge;
 struct ietf_interfaces_interfaces_interface_arcif_epair;
+struct ietf_interfaces_interfaces_interface_ip_ipv4_address;
+struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor;
+struct ietf_interfaces_interfaces_interface_ip_ipv4;
+struct ietf_interfaces_interfaces_interface_ip_ipv6_address;
+struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor;
+struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf;
+struct ietf_interfaces_interfaces_interface_ip_ipv6;
 struct ietf_interfaces_interfaces_interface;
 struct ietf_interfaces_interfaces;
 struct ietf_interfaces_interfaces_state_interface_statistics;
+struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address;
+struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor;
+struct ietf_interfaces_interfaces_state_interface_ip_ipv4;
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address;
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor;
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6;
 struct ietf_interfaces_interfaces_state_interface;
 struct ietf_interfaces_interfaces_state;
 struct ietf_interfaces;
@@ -199,6 +212,59 @@ enum ietf_interfaces_interfaces_interface_arcif_bridge_member_stp_role {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_BACKUP = 4,
 };
 
+enum ietf_interfaces_interfaces_interface_ip_ipv4_address_subnet {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_ADDRESS_SUBNET_NONE = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_ADDRESS_SUBNET_PREFIX_LENGTH,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_ADDRESS_SUBNET_NETMASK,
+};
+
+enum ietf_interfaces_interfaces_interface_ip_ipv4_address_origin {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_OTHER = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_STATIC = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_DHCP = 2,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_LINK_LAYER = 3,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_RANDOM = 4,
+};
+
+enum ietf_interfaces_interfaces_interface_ip_ipv4_neighbor_origin {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_NEIGHBOR_ORIGIN_OTHER = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_NEIGHBOR_ORIGIN_STATIC = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV4_NEIGHBOR_ORIGIN_DYNAMIC = 2,
+};
+
+enum ietf_interfaces_interfaces_interface_ip_ipv6_address_origin {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_OTHER = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_STATIC = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_DHCP = 2,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_LINK_LAYER = 3,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_RANDOM = 4,
+};
+
+enum ietf_interfaces_interfaces_interface_ip_ipv6_address_status {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_STATUS_PREFERRED = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_STATUS_DEPRECATED = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_STATUS_INVALID = 2,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_STATUS_INACCESSIBLE = 3,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_STATUS_UNKNOWN = 4,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_STATUS_TENTATIVE = 5,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_STATUS_DUPLICATE = 6,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_ADDRESS_STATUS_OPTIMISTIC = 7,
+};
+
+enum ietf_interfaces_interfaces_interface_ip_ipv6_neighbor_origin {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_NEIGHBOR_ORIGIN_OTHER = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_NEIGHBOR_ORIGIN_STATIC = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_NEIGHBOR_ORIGIN_DYNAMIC = 2,
+};
+
+enum ietf_interfaces_interfaces_interface_ip_ipv6_neighbor_state {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_NEIGHBOR_STATE_INCOMPLETE = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_NEIGHBOR_STATE_REACHABLE = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_NEIGHBOR_STATE_STALE = 2,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_NEIGHBOR_STATE_DELAY = 3,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_NEIGHBOR_STATE_PROBE = 4,
+};
+
 enum ietf_interfaces_interfaces_state_interface_admin_status {
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_ADMIN_STATUS_UP = 1,
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_ADMIN_STATUS_DOWN = 2,
@@ -213,6 +279,59 @@ enum ietf_interfaces_interfaces_state_interface_oper_status {
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_OPER_STATUS_DORMANT = 5,
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_OPER_STATUS_NOT_PRESENT = 6,
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_OPER_STATUS_LOWER_LAYER_DOWN = 7,
+};
+
+enum ietf_interfaces_interfaces_state_interface_ip_ipv4_address_subnet {
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_ADDRESS_SUBNET_NONE = 0,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_ADDRESS_SUBNET_PREFIX_LENGTH,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_ADDRESS_SUBNET_NETMASK,
+};
+
+enum ietf_interfaces_interfaces_state_interface_ip_ipv4_address_origin {
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_OTHER = 0,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_STATIC = 1,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_DHCP = 2,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_LINK_LAYER = 3,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_ADDRESS_ORIGIN_RANDOM = 4,
+};
+
+enum ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor_origin {
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_NEIGHBOR_ORIGIN_OTHER = 0,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_NEIGHBOR_ORIGIN_STATIC = 1,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV4_NEIGHBOR_ORIGIN_DYNAMIC = 2,
+};
+
+enum ietf_interfaces_interfaces_state_interface_ip_ipv6_address_origin {
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_OTHER = 0,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_STATIC = 1,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_DHCP = 2,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_LINK_LAYER = 3,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_ORIGIN_RANDOM = 4,
+};
+
+enum ietf_interfaces_interfaces_state_interface_ip_ipv6_address_status {
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_STATUS_PREFERRED = 0,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_STATUS_DEPRECATED = 1,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_STATUS_INVALID = 2,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_STATUS_INACCESSIBLE = 3,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_STATUS_UNKNOWN = 4,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_STATUS_TENTATIVE = 5,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_STATUS_DUPLICATE = 6,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_ADDRESS_STATUS_OPTIMISTIC = 7,
+};
+
+enum ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_origin {
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_ORIGIN_OTHER = 0,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_ORIGIN_STATIC = 1,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_ORIGIN_DYNAMIC = 2,
+};
+
+enum ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_state {
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_INCOMPLETE = 0,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_REACHABLE = 1,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_STALE = 2,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_DELAY = 3,
+	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_PROBE = 4,
 };
 
 /* container */
@@ -342,6 +461,97 @@ struct ietf_interfaces_interfaces_interface_arcif_epair {
 };
 
 /* list entry */
+struct ietf_interfaces_interfaces_interface_ip_ipv4_address {
+	const char	*ip;
+	enum ietf_interfaces_interfaces_interface_ip_ipv4_address_subnet	 subnet;	/* the case given */
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	bool			 has_origin;
+	enum ietf_interfaces_interfaces_interface_ip_ipv4_address_origin	 origin;
+};
+
+/* list entry */
+struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor {
+	const char	*ip;
+	const char	*link_layer_address;
+	bool			 has_origin;
+	enum ietf_interfaces_interfaces_interface_ip_ipv4_neighbor_origin	 origin;
+};
+
+/* container, presence */
+struct ietf_interfaces_interfaces_interface_ip_ipv4 {
+	bool			 has_enabled;
+	bool		 enabled;
+	bool			 has_forwarding;
+	bool		 forwarding;
+	bool			 has_mtu;
+	uint16_t	 mtu;
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_interface_ip_ipv4_address	*v;
+	}			 address;
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor	*v;
+	}			 neighbor;
+};
+
+/* list entry */
+struct ietf_interfaces_interfaces_interface_ip_ipv6_address {
+	const char	*ip;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	bool			 has_origin;
+	enum ietf_interfaces_interfaces_interface_ip_ipv6_address_origin	 origin;
+	bool			 has_status;
+	enum ietf_interfaces_interfaces_interface_ip_ipv6_address_status	 status;
+};
+
+/* list entry */
+struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor {
+	const char	*ip;
+	const char	*link_layer_address;
+	bool			 has_origin;
+	enum ietf_interfaces_interfaces_interface_ip_ipv6_neighbor_origin	 origin;
+	bool		 is_router;
+	bool			 has_state;
+	enum ietf_interfaces_interfaces_interface_ip_ipv6_neighbor_state	 state;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf {
+	bool			 has_create_global_addresses;
+	bool		 create_global_addresses;
+	bool			 has_create_temporary_addresses;
+	bool		 create_temporary_addresses;
+	bool			 has_temporary_valid_lifetime;
+	uint32_t	 temporary_valid_lifetime;
+	bool			 has_temporary_preferred_lifetime;
+	uint32_t	 temporary_preferred_lifetime;
+};
+
+/* container, presence */
+struct ietf_interfaces_interfaces_interface_ip_ipv6 {
+	bool			 has_enabled;
+	bool		 enabled;
+	bool			 has_forwarding;
+	bool		 forwarding;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_interface_ip_ipv6_address	*v;
+	}			 address;
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor	*v;
+	}			 neighbor;
+	bool			 has_dup_addr_detect_transmits;
+	uint32_t	 dup_addr_detect_transmits;
+	const struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf	*autoconf;
+};
+
+/* list entry */
 struct ietf_interfaces_interfaces_interface {
 	const char	*name;
 	const char	*description;
@@ -390,6 +600,8 @@ struct ietf_interfaces_interfaces_interface {
 	const struct ietf_interfaces_interfaces_interface_arcif_lagg	*arcif_lagg;
 	const struct ietf_interfaces_interfaces_interface_arcif_bridge	*arcif_bridge;
 	const struct ietf_interfaces_interfaces_interface_arcif_epair	*arcif_epair;
+	const struct ietf_interfaces_interfaces_interface_ip_ipv4	*ip_ipv4;
+	const struct ietf_interfaces_interfaces_interface_ip_ipv6	*ip_ipv6;
 };
 
 /* container */
@@ -432,6 +644,78 @@ struct ietf_interfaces_interfaces_state_interface_statistics {
 };
 
 /* list entry */
+struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address {
+	const char	*ip;
+	enum ietf_interfaces_interfaces_state_interface_ip_ipv4_address_subnet	 subnet;	/* the case given */
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	bool			 has_origin;
+	enum ietf_interfaces_interfaces_state_interface_ip_ipv4_address_origin	 origin;
+};
+
+/* list entry */
+struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor {
+	const char	*ip;
+	const char	*link_layer_address;
+	bool			 has_origin;
+	enum ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor_origin	 origin;
+};
+
+/* container, presence */
+struct ietf_interfaces_interfaces_state_interface_ip_ipv4 {
+	bool			 has_forwarding;
+	bool		 forwarding;
+	bool			 has_mtu;
+	uint16_t	 mtu;
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address	*v;
+	}			 address;
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor	*v;
+	}			 neighbor;
+};
+
+/* list entry */
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address {
+	const char	*ip;
+	bool			 has_prefix_length;
+	uint8_t		 prefix_length;
+	bool			 has_origin;
+	enum ietf_interfaces_interfaces_state_interface_ip_ipv6_address_origin	 origin;
+	bool			 has_status;
+	enum ietf_interfaces_interfaces_state_interface_ip_ipv6_address_status	 status;
+};
+
+/* list entry */
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor {
+	const char	*ip;
+	const char	*link_layer_address;
+	bool			 has_origin;
+	enum ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_origin	 origin;
+	bool		 is_router;
+	bool			 has_state;
+	enum ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_state	 state;
+};
+
+/* container, presence */
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6 {
+	bool			 has_forwarding;
+	bool		 forwarding;
+	bool			 has_mtu;
+	uint32_t	 mtu;
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address	*v;
+	}			 address;
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor	*v;
+	}			 neighbor;
+};
+
+/* list entry */
 struct ietf_interfaces_interfaces_state_interface {
 	const char	*name;
 	bool			 has_type;
@@ -455,6 +739,8 @@ struct ietf_interfaces_interfaces_state_interface {
 	bool			 has_speed;
 	uint64_t	 speed;
 	const struct ietf_interfaces_interfaces_state_interface_statistics	*statistics;
+	const struct ietf_interfaces_interfaces_state_interface_ip_ipv4	*ip_ipv4;
+	const struct ietf_interfaces_interfaces_state_interface_ip_ipv6	*ip_ipv6;
 };
 
 /* container */
@@ -515,6 +801,34 @@ int	ietf_interfaces_interfaces_interface_arcif_epair_encode(const struct ietf_in
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_epair_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_epair *,
 	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv4_address_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv4_address *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv4_address_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv4_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv4_neighbor_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv4_neighbor_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv4_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv4 *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv4_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv4 *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_address_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_address *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_address_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv6_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_neighbor_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_neighbor_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_autoconf_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_autoconf_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6 *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv6 *,
+	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_encode(const struct ietf_interfaces_interfaces_interface *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface *,
@@ -526,6 +840,30 @@ int	ietf_interfaces_interfaces_decode(const void *, size_t, struct ietf_interfac
 int	ietf_interfaces_interfaces_state_interface_statistics_encode(const struct ietf_interfaces_interfaces_state_interface_statistics *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_state_interface_statistics_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_statistics *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv4_address_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv4_address_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv4_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv4_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv4 *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv4_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv4 *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_address_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_address_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6 *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv6 *,
 	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_state_interface_encode(const struct ietf_interfaces_interfaces_state_interface *,
 	    struct cbl_ybuf *);

@@ -7,7 +7,7 @@ ATF_TESTS_SH=	agent_test \
 
 # ycollect: what the YANG collectors find, for agent_test.sh.
 PROGS=		ycollect
-SRCS.ycollect=	ycollect.c yif.c ymodel_schema.c
+SRCS.ycollect=	ycollect.c yif.c yip.c ymodel_schema.c
 .PATH:		${.CURDIR}/../invidia ${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang ${CBLINK_CFLAGS}
 LDADD.ycollect+=	${CBLINK_LIBS} -lnv

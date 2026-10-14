@@ -12,6 +12,9 @@
  *	ycollect interfaces	ietf-interfaces' leaves
  *	ycollect arcif		arcana-interfaces': key=value, '-' for none,
  *				lists joined by '+', bits in hex
+ *	ycollect ip		ietf-ip's: v4= and v6= the addresses,
+ *				address/length:origin[:status] joined by
+ *				'+', ipv6= on/off and its MTU
  */
 
 #include <err.h>
@@ -129,6 +132,42 @@ arcif(const struct ietf_interfaces_interfaces_interface *e)
 	printf("\n");
 }
 
+static const char *const origin[] = { "other", "static", "dhcp",
+    "link-layer", "random" };
+static const char *const v6status[] = { "preferred", "deprecated",
+    "invalid", "inaccessible", "unknown", "tentative", "duplicate",
+    "optimistic" };
+
+static void
+ip(const struct ietf_interfaces_interfaces_interface *e)
+{
+	const struct ietf_interfaces_interfaces_interface_ip_ipv4 *v4 =
+	    e->ip_ipv4;
+	const struct ietf_interfaces_interfaces_interface_ip_ipv6 *v6 =
+	    e->ip_ipv6;
+
+	printf("%s v4=", e->name);
+	if (v4 == NULL || v4->address.n == 0)
+		printf("-");
+	for (size_t i = 0; v4 != NULL && i < v4->address.n; i++)
+		printf("%s%s/%d:%s", i > 0 ? "+" : "", v4->address.v[i].ip,
+		    v4->address.v[i].prefix_length,
+		    origin[v4->address.v[i].origin]);
+	printf(" v6=");
+	if (v6 == NULL || v6->address.n == 0)
+		printf("-");
+	for (size_t i = 0; v6 != NULL && i < v6->address.n; i++)
+		printf("%s%s/%d:%s:%s", i > 0 ? "+" : "", v6->address.v[i].ip,
+		    v6->address.v[i].prefix_length,
+		    origin[v6->address.v[i].origin],
+		    v6status[v6->address.v[i].status]);
+	if (v6 != NULL)
+		printf(" ipv6=%s,%u", v6->enabled ? "on" : "off", v6->mtu);
+	else
+		printf(" ipv6=-");
+	printf("\n");
+}
+
 static const char *const admin[] = { "?", "up", "down", "testing" };
 static const char *const oper[] = { "?", "up", "down", "testing", "unknown",
     "dormant", "not-present", "lower-layer-down" };
@@ -173,8 +212,8 @@ main(int argc, char **argv)
 	int error;
 
 	if (argc != 2 || (strcmp(argv[1], "interfaces") != 0 &&
-	    strcmp(argv[1], "arcif") != 0)) {
-		fprintf(stderr, "usage: ycollect interfaces | arcif\n");
+	    strcmp(argv[1], "arcif") != 0 && strcmp(argv[1], "ip") != 0)) {
+		fprintf(stderr, "usage: ycollect interfaces | arcif | ip\n");
 		return (2);
 	}
 	if ((a = cbl_yarena_new()) == NULL)
@@ -187,6 +226,10 @@ main(int argc, char **argv)
 
 		if (strcmp(argv[1], "arcif") == 0) {
 			arcif(e);
+			continue;
+		}
+		if (strcmp(argv[1], "ip") == 0) {
+			ip(e);
 			continue;
 		}
 		const struct cbl_yident *t = e->has_type ?
