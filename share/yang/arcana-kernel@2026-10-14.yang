@@ -1,0 +1,193 @@
+module arcana-kernel {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-kernel";
+  prefix arckern;
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's kernel: the files linked into it and the modules each
+     holds (kldstat(8), kldnext(2)), those of the module path not
+     loaded, what rc.conf(5)'s kld_list loads at boot (its
+     configuration), and where its memory went (its map, malloc(9)
+     types, uma(9) zones, libmemstat).";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.6.";
+  }
+
+  typedef bytes {
+    type uint64;
+    units "bytes";
+    description
+      "A size.";
+  }
+
+  container kernel {
+    description
+      "The kernel.";
+    leaf-list kept {
+      type string;
+      ordered-by user;
+      description
+        "The modules rc.conf's kld_list loads at boot, in its order.";
+    }
+    list file {
+      key "id";
+      config false;
+      description
+        "A file linked into the kernel.";
+      leaf id {
+        type uint32;
+        description
+          "Its id.";
+      }
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf path {
+        type string;
+        description
+          "Where it was read from.";
+      }
+      leaf refs {
+        type uint32;
+        description
+          "The references to it.";
+      }
+      leaf size {
+        type bytes;
+        description
+          "Its size.";
+      }
+      leaf address {
+        type string;
+        description
+          "Where it is, in hex.";
+      }
+      leaf-list module {
+        type string;
+        description
+          "The modules it holds.";
+      }
+      action unload {
+        description
+          "kldunload(8).";
+      }
+    }
+    leaf-list available {
+      type string;
+      config false;
+      description
+        "The modules of the module path that are not loaded.";
+    }
+    container memory {
+      config false;
+      description
+        "Where the kernel's memory went.";
+      leaf files {
+        type bytes;
+        description
+          "What the files linked take.";
+      }
+      leaf kmem-size {
+        type bytes;
+        description
+          "vm.kmem_size.";
+      }
+      leaf kmem-map-size {
+        type bytes;
+        description
+          "What of the kernel's map is used.";
+      }
+      leaf kmem-map-free {
+        type bytes;
+        description
+          "What is free.";
+      }
+      leaf malloc-total {
+        type bytes;
+        description
+          "What malloc(9) holds in all.";
+      }
+      list malloc {
+        description
+          "The largest malloc(9) types; a name may be two's.";
+        leaf name {
+          type string;
+          description
+            "The type.";
+        }
+        leaf bytes {
+          type bytes;
+          description
+            "What it holds.";
+        }
+        leaf count {
+          type uint64;
+          description
+            "Its allocations now.";
+        }
+        leaf requests {
+          type uint64;
+          description
+            "Its allocations ever.";
+        }
+      }
+      list zone {
+        description
+          "The largest uma(9) zones.";
+        leaf name {
+          type string;
+          description
+            "The zone.";
+        }
+        leaf bytes {
+          type bytes;
+          description
+            "What it holds.";
+        }
+        leaf count {
+          type uint64;
+          description
+            "Its items in use.";
+        }
+        leaf free {
+          type uint64;
+          description
+            "Its items free.";
+        }
+        leaf size {
+          type bytes;
+          description
+            "An item's size.";
+        }
+        leaf requests {
+          type uint64;
+          description
+            "Its allocations ever.";
+        }
+      }
+    }
+  }
+
+  rpc load {
+    description
+      "kldload(8) of a module.";
+    input {
+      leaf name {
+        type string;
+        mandatory true;
+        description
+          "The module.";
+      }
+    }
+  }
+}

@@ -17,85 +17,11 @@
 #include <string.h>
 
 #include <arcana.h>
-#include <ucl.h>
 
 #include "collect.h"
+#include "yjson.h"
 
 typedef struct arcana_storage_storage ystorage;
-
-/* A string of o's, the arena's; NULL: none. */
-static const char *
-s(cbl_yarena *a, const ucl_object_t *o, const char *key)
-{
-	const ucl_object_t *v = ucl_object_lookup(o, key);
-	const char *t;
-	size_t len;
-	char *p;
-
-	if (v == NULL || ucl_object_type(v) != UCL_STRING ||
-	    (t = ucl_object_tostring(v)) == NULL)
-		return (NULL);
-	len = strlen(t) + 1;
-	if ((p = cbl_yarena_alloc(a, len)) != NULL)
-		memcpy(p, t, len);
-	return (p);
-}
-
-/* A number of o's; false: none. */
-static bool
-n(const ucl_object_t *o, const char *key, int64_t *v)
-{
-	const ucl_object_t *x = ucl_object_lookup(o, key);
-
-	if (x == NULL || (ucl_object_type(x) != UCL_INT &&
-	    ucl_object_type(x) != UCL_FLOAT))
-		return (false);
-	*v = ucl_object_toint(x);
-	return (true);
-}
-
-#define	NUM(o, key, y, f)	do {					\
-	int64_t v_;							\
-									\
-	if (((y)->has_##f = n((o), (key), &v_)))			\
-		(y)->f = (__typeof__((y)->f))v_;			\
-} while (0)
-
-/* "yes", "on": true; "no", "off": false; else none. */
-static bool
-yes(const ucl_object_t *o, const char *key, bool *has)
-{
-	const ucl_object_t *x = ucl_object_lookup(o, key);
-	const char *t;
-
-	*has = false;
-	if (x == NULL)
-		return (false);
-	if (ucl_object_type(x) == UCL_BOOLEAN) {
-		*has = true;
-		return (ucl_object_toboolean(x));
-	}
-	if ((t = ucl_object_tostring(x)) == NULL)
-		return (false);
-	if (strcmp(t, "yes") == 0 || strcmp(t, "on") == 0) {
-		*has = true;
-		return (true);
-	}
-	if (strcmp(t, "no") == 0 || strcmp(t, "off") == 0)
-		*has = true;
-	return (false);
-}
-
-static size_t
-count(const ucl_object_t *arr)
-{
-
-	return (arr != NULL && ucl_object_type(arr) == UCL_ARRAY ?
-	    arr->len : 0);
-}
-
-#define	EACH(arr, it, e)	\
-	for ((it) = NULL; ((e) = ucl_object_iterate((arr), &(it), true)) != NULL;)
 
 static int
 disks(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
@@ -105,42 +31,42 @@ disks(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 	ucl_object_iter_t it, pit;
 	size_t i = 0;
 
-	if (count(arr) == 0)
+	if (yj_count(arr) == 0)
 		return (0);
-	if ((v = cbl_yarena_alloc(a, count(arr) * sizeof(*v))) == NULL)
+	if ((v = cbl_yarena_alloc(a, yj_count(arr) * sizeof(*v))) == NULL)
 		return (ENOMEM);
-	EACH(arr, it, d) {
+	YJ_EACH(arr, it, d) {
 		struct arcana_storage_storage_disk *y = &v[i++];
 		struct arcana_storage_storage_disk_partition *pv = NULL;
 		const ucl_object_t *parts = ucl_object_lookup(d, "parts");
 		size_t k = 0;
 
 		memset(y, 0, sizeof(*y));
-		y->name = s(a, d, "name");
-		NUM(d, "size", y, size);
-		NUM(d, "sectorsize", y, sectorsize);
-		y->ident = s(a, d, "ident");
-		y->descr = s(a, d, "descr");
-		y->rotation = s(a, d, "rotation");
-		y->cam = s(a, d, "cam");
-		y->scheme = s(a, d, "scheme");
-		NUM(d, "first", y, first);
-		NUM(d, "last", y, last);
-		if (count(parts) > 0 && (pv = cbl_yarena_alloc(a, count(parts) *
+		y->name = yj_str(a, d, "name");
+		YJ_NUM(d, "size", y, size);
+		YJ_NUM(d, "sectorsize", y, sectorsize);
+		y->ident = yj_str(a, d, "ident");
+		y->descr = yj_str(a, d, "descr");
+		y->rotation = yj_str(a, d, "rotation");
+		y->cam = yj_str(a, d, "cam");
+		y->scheme = yj_str(a, d, "scheme");
+		YJ_NUM(d, "first", y, first);
+		YJ_NUM(d, "last", y, last);
+		if (yj_count(parts) > 0 && (pv = cbl_yarena_alloc(a, yj_count(parts) *
 		    sizeof(*pv))) == NULL)
 			return (ENOMEM);
-		EACH(parts, pit, p) {
+		YJ_EACH(parts, pit, p) {
 			struct arcana_storage_storage_disk_partition *q =
 			    &pv[k++];
 
 			memset(q, 0, sizeof(*q));
-			q->name = s(a, p, "name");
-			NUM(p, "index", q, index);
-			NUM(p, "size", q, size);
-			q->type = s(a, p, "type");
-			q->label = s(a, p, "label");
-			NUM(p, "start", q, start);
-			NUM(p, "end", q, end);
+			q->name = yj_str(a, p, "name");
+			YJ_NUM(p, "index", q, index);
+			YJ_NUM(p, "size", q, size);
+			q->type = yj_str(a, p, "type");
+			q->label = yj_str(a, p, "label");
+			YJ_NUM(p, "start", q, start);
+			YJ_NUM(p, "end", q, end);
 		}
 		y->partition.n = k;
 		y->partition.v = pv;
@@ -159,14 +85,14 @@ health(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 	ucl_object_iter_t it;
 	size_t nd = st->disk.n;
 
-	if ((v = cbl_yarena_alloc(a, (nd + count(arr) + 1) * sizeof(*v))) ==
+	if ((v = cbl_yarena_alloc(a, (nd + yj_count(arr) + 1) * sizeof(*v))) ==
 	    NULL)
 		return (ENOMEM);
 	if (nd > 0)
 		memcpy(v, st->disk.v, nd * sizeof(*v));
-	EACH(arr, it, d) {
+	YJ_EACH(arr, it, d) {
 		struct arcana_storage_storage_disk_health *h;
-		const char *name = s(a, d, "name");
+		const char *name = yj_str(a, d, "name");
 		size_t k;
 		bool has;
 
@@ -181,24 +107,24 @@ health(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 		if ((h = cbl_yarena_alloc(a, sizeof(*h))) == NULL)
 			return (ENOMEM);
 		memset(h, 0, sizeof(*h));
-		h->by = s(a, d, "by");
-		h->ok = yes(d, "ok", &has);
+		h->by = yj_str(a, d, "by");
+		h->ok = yj_yes(d, "ok", &has);
 		h->has_ok = has;
-		NUM(d, "temperature", h, temperature);
-		NUM(d, "power_on_hours", h, power_on_hours);
-		NUM(d, "power_cycles", h, power_cycles);
-		NUM(d, "used_pct", h, used_pct);
-		NUM(d, "spare_pct", h, spare_pct);
-		NUM(d, "media_errors", h, media_errors);
-		NUM(d, "unsafe_shutdowns", h, unsafe_shutdowns);
-		NUM(d, "reallocated", h, reallocated);
-		NUM(d, "pending", h, pending);
-		NUM(d, "uncorrectable", h, uncorrectable);
-		NUM(d, "crc_errors", h, crc_errors);
-		NUM(d, "wear_level", h, wear_level);
-		NUM(d, "life_left", h, life_left);
-		NUM(d, "media_wearout", h, media_wearout);
-		h->note = s(a, d, "note");
+		YJ_NUM(d, "temperature", h, temperature);
+		YJ_NUM(d, "power_on_hours", h, power_on_hours);
+		YJ_NUM(d, "power_cycles", h, power_cycles);
+		YJ_NUM(d, "used_pct", h, used_pct);
+		YJ_NUM(d, "spare_pct", h, spare_pct);
+		YJ_NUM(d, "media_errors", h, media_errors);
+		YJ_NUM(d, "unsafe_shutdowns", h, unsafe_shutdowns);
+		YJ_NUM(d, "reallocated", h, reallocated);
+		YJ_NUM(d, "pending", h, pending);
+		YJ_NUM(d, "uncorrectable", h, uncorrectable);
+		YJ_NUM(d, "crc_errors", h, crc_errors);
+		YJ_NUM(d, "wear_level", h, wear_level);
+		YJ_NUM(d, "life_left", h, life_left);
+		YJ_NUM(d, "media_wearout", h, media_wearout);
+		h->note = yj_str(a, d, "note");
 		v[k].health = h;
 	}
 	st->disk.n = nd;
@@ -214,45 +140,45 @@ pools(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 	ucl_object_iter_t it, vit;
 	size_t i = 0;
 
-	if (count(arr) == 0)
+	if (yj_count(arr) == 0)
 		return (0);
-	if ((v = cbl_yarena_alloc(a, count(arr) * sizeof(*v))) == NULL)
+	if ((v = cbl_yarena_alloc(a, yj_count(arr) * sizeof(*v))) == NULL)
 		return (ENOMEM);
-	EACH(arr, it, p) {
+	YJ_EACH(arr, it, p) {
 		struct arcana_storage_storage_pool *y = &v[i++];
 		struct arcana_storage_storage_pool_vdev *dv = NULL;
 		const ucl_object_t *vd = ucl_object_lookup(p, "vdevs");
 		size_t k = 0;
 
 		memset(y, 0, sizeof(*y));
-		y->name = s(a, p, "name");
-		NUM(p, "size", y, size);
-		NUM(p, "alloc", y, alloc);
-		NUM(p, "free", y, free);
-		NUM(p, "frag", y, frag);
-		NUM(p, "cap", y, cap);
-		y->dedup = s(a, p, "dedup");
-		y->health = s(a, p, "health");
-		y->state = s(a, p, "state");
-		y->status = s(a, p, "status");
-		y->action = s(a, p, "action");
-		y->scan = s(a, p, "scan");
-		y->errors = s(a, p, "errors");
-		y->see = s(a, p, "see");
-		if (count(vd) > 0 && (dv = cbl_yarena_alloc(a, count(vd) *
+		y->name = yj_str(a, p, "name");
+		YJ_NUM(p, "size", y, size);
+		YJ_NUM(p, "alloc", y, alloc);
+		YJ_NUM(p, "free", y, free);
+		YJ_NUM(p, "frag", y, frag);
+		YJ_NUM(p, "cap", y, cap);
+		y->dedup = yj_str(a, p, "dedup");
+		y->health = yj_str(a, p, "health");
+		y->state = yj_str(a, p, "state");
+		y->status = yj_str(a, p, "status");
+		y->action = yj_str(a, p, "action");
+		y->scan = yj_str(a, p, "scan");
+		y->errors = yj_str(a, p, "errors");
+		y->see = yj_str(a, p, "see");
+		if (yj_count(vd) > 0 && (dv = cbl_yarena_alloc(a, yj_count(vd) *
 		    sizeof(*dv))) == NULL)
 			return (ENOMEM);
-		EACH(vd, vit, d) {
+		YJ_EACH(vd, vit, d) {
 			struct arcana_storage_storage_pool_vdev *q = &dv[k++];
 
 			memset(q, 0, sizeof(*q));
-			q->name = s(a, d, "name");
-			NUM(d, "depth", q, depth);
-			q->state = s(a, d, "state");
-			q->read = s(a, d, "read");
-			q->write = s(a, d, "write");
-			q->cksum = s(a, d, "cksum");
-			q->note = s(a, d, "note");
+			q->name = yj_str(a, d, "name");
+			YJ_NUM(d, "depth", q, depth);
+			q->state = yj_str(a, d, "state");
+			q->read = yj_str(a, d, "read");
+			q->write = yj_str(a, d, "write");
+			q->cksum = yj_str(a, d, "cksum");
+			q->note = yj_str(a, d, "note");
 		}
 		y->vdev.n = k;
 		y->vdev.v = dv;
@@ -270,16 +196,16 @@ importable(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 	ucl_object_iter_t it;
 	size_t i = 0;
 
-	if (count(arr) == 0)
+	if (yj_count(arr) == 0)
 		return (0);
-	if ((v = cbl_yarena_alloc(a, count(arr) * sizeof(*v))) == NULL)
+	if ((v = cbl_yarena_alloc(a, yj_count(arr) * sizeof(*v))) == NULL)
 		return (ENOMEM);
-	EACH(arr, it, p) {
+	YJ_EACH(arr, it, p) {
 		memset(&v[i], 0, sizeof(v[i]));
-		v[i].id = s(a, p, "id");
-		v[i].name = s(a, p, "name");
-		v[i].state = s(a, p, "state");
-		v[i++].status = s(a, p, "status");
+		v[i].id = yj_str(a, p, "id");
+		v[i].name = yj_str(a, p, "name");
+		v[i].state = yj_str(a, p, "state");
+		v[i++].status = yj_str(a, p, "status");
 	}
 	st->importable.n = i;
 	st->importable.v = v;
@@ -313,33 +239,33 @@ datasets(const ucl_object_t *top, cbl_yarena *a, ystorage *st,
 
 	if ((st->has_datasets_total = truncated))
 		st->datasets_total = total;
-	if (count(arr) == 0)
+	if (yj_count(arr) == 0)
 		return (0);
-	if ((v = cbl_yarena_alloc(a, count(arr) * sizeof(*v))) == NULL)
+	if ((v = cbl_yarena_alloc(a, yj_count(arr) * sizeof(*v))) == NULL)
 		return (ENOMEM);
-	EACH(arr, it, d) {
+	YJ_EACH(arr, it, d) {
 		struct arcana_storage_storage_dataset *y = &v[i++];
 		const char *t;
 		bool has;
 
 		memset(y, 0, sizeof(*y));
-		y->name = s(a, d, "name");
-		if ((t = s(a, d, "type")) != NULL) {
+		y->name = yj_str(a, d, "name");
+		if ((t = yj_str(a, d, "type")) != NULL) {
 			y->has_type = strcmp(t, "filesystem") == 0 ||
 			    strcmp(t, "volume") == 0;
 			y->type = strcmp(t, "volume") == 0 ?
 			    ARCANA_STORAGE_STORAGE_DATASET_TYPE_VOLUME :
 			    ARCANA_STORAGE_STORAGE_DATASET_TYPE_FILESYSTEM;
 		}
-		NUM(d, "used", y, used);
-		NUM(d, "avail", y, avail);
-		NUM(d, "refer", y, refer);
-		NUM(d, "quota", y, quota);
-		NUM(d, "reservation", y, reservation);
-		y->mountpoint = s(a, d, "mountpoint");
-		y->mounted = yes(d, "mounted", &has);
+		YJ_NUM(d, "used", y, used);
+		YJ_NUM(d, "avail", y, avail);
+		YJ_NUM(d, "refer", y, refer);
+		YJ_NUM(d, "quota", y, quota);
+		YJ_NUM(d, "reservation", y, reservation);
+		y->mountpoint = yj_str(a, d, "mountpoint");
+		y->mounted = yj_yes(d, "mounted", &has);
 		y->has_mounted = has;
-		if ((t = s(a, d, "canmount")) != NULL) {
+		if ((t = yj_str(a, d, "canmount")) != NULL) {
 			y->has_canmount = true;
 			y->canmount = strcmp(t, "off") == 0 ?
 			    ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_OFF :
@@ -347,15 +273,15 @@ datasets(const ucl_object_t *top, cbl_yarena *a, ystorage *st,
 			    ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_NOAUTO :
 			    ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_ON;
 		}
-		y->compression = s(a, d, "compression");
-		y->has_ratio = hundredths(s(a, d, "ratio"), &y->ratio);
-		y->readonly = yes(d, "readonly", &has);
+		y->compression = yj_str(a, d, "compression");
+		y->has_ratio = hundredths(yj_str(a, d, "ratio"), &y->ratio);
+		y->readonly = yj_yes(d, "readonly", &has);
 		y->has_readonly = has;
-		y->encryption = s(a, d, "encryption");
-		y->keylocation = s(a, d, "keylocation");
-		y->jailed = yes(d, "jailed", &has);
+		y->encryption = yj_str(a, d, "encryption");
+		y->keylocation = yj_str(a, d, "keylocation");
+		y->jailed = yj_yes(d, "jailed", &has);
 		y->has_jailed = has;
-		y->origin = s(a, d, "origin");
+		y->origin = yj_str(a, d, "origin");
 	}
 	st->dataset.n = i;
 	st->dataset.v = v;
@@ -373,18 +299,18 @@ snapshots(const ucl_object_t *top, cbl_yarena *a, ystorage *st,
 
 	if ((st->has_snapshots_total = truncated))
 		st->snapshots_total = total;
-	if (count(arr) == 0)
+	if (yj_count(arr) == 0)
 		return (0);
-	if ((v = cbl_yarena_alloc(a, count(arr) * sizeof(*v))) == NULL)
+	if ((v = cbl_yarena_alloc(a, yj_count(arr) * sizeof(*v))) == NULL)
 		return (ENOMEM);
-	EACH(arr, it, d) {
+	YJ_EACH(arr, it, d) {
 		struct arcana_storage_storage_snapshot *y = &v[i++];
 
 		memset(y, 0, sizeof(*y));
-		y->name = s(a, d, "name");
-		NUM(d, "used", y, used);
-		NUM(d, "refer", y, refer);
-		NUM(d, "creation", y, creation);
+		y->name = yj_str(a, d, "name");
+		YJ_NUM(d, "used", y, used);
+		YJ_NUM(d, "refer", y, refer);
+		YJ_NUM(d, "creation", y, creation);
 	}
 	st->snapshot.n = i;
 	st->snapshot.v = v;
@@ -403,27 +329,27 @@ mounts(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 	size_t i;
 
 	arr = ucl_object_lookup(top, "mounts");
-	if (count(arr) > 0 && (mv = cbl_yarena_alloc(a, count(arr) *
+	if (yj_count(arr) > 0 && (mv = cbl_yarena_alloc(a, yj_count(arr) *
 	    sizeof(*mv))) == NULL)
 		return (ENOMEM);
 	i = 0;
-	EACH(arr, it, d) {
+	YJ_EACH(arr, it, d) {
 		struct arcana_storage_storage_mount *y = &mv[i++];
 
 		memset(y, 0, sizeof(*y));
-		y->from = s(a, d, "from");
-		y->on = s(a, d, "on");
-		y->type = s(a, d, "type");
-		y->options = s(a, d, "options");
-		NUM(d, "size", y, size);
-		NUM(d, "used", y, used);
-		NUM(d, "avail", y, avail);
+		y->from = yj_str(a, d, "from");
+		y->on = yj_str(a, d, "on");
+		y->type = yj_str(a, d, "type");
+		y->options = yj_str(a, d, "options");
+		YJ_NUM(d, "size", y, size);
+		YJ_NUM(d, "used", y, used);
+		YJ_NUM(d, "avail", y, avail);
 	}
 	st->mount.n = i;
 	st->mount.v = mv;
 	arr = ucl_object_lookup(top, "fstab");
 	if ((fs = cbl_yarena_alloc(a, sizeof(*fs))) == NULL ||
-	    (count(arr) > 0 && (fv = cbl_yarena_alloc(a, count(arr) *
+	    (yj_count(arr) > 0 && (fv = cbl_yarena_alloc(a, yj_count(arr) *
 	    sizeof(*fv))) == NULL))
 		return (ENOMEM);
 	if (st->fstab != NULL)
@@ -431,36 +357,36 @@ mounts(const ucl_object_t *top, cbl_yarena *a, ystorage *st)
 	else
 		memset(fs, 0, sizeof(*fs));
 	i = 0;
-	EACH(arr, it, d) {
+	YJ_EACH(arr, it, d) {
 		struct arcana_storage_storage_fstab_entry *y = &fv[i++];
 		bool has;
 
 		memset(y, 0, sizeof(*y));
-		y->spec = s(a, d, "spec");
-		y->file = s(a, d, "file");
-		y->vfstype = s(a, d, "vfstype");
-		y->mntops = s(a, d, "mntops");
-		y->type = s(a, d, "type");
-		NUM(d, "freq", y, freq);
-		NUM(d, "passno", y, passno);
-		y->mounted = yes(d, "mounted", &has);
+		y->spec = yj_str(a, d, "spec");
+		y->file = yj_str(a, d, "file");
+		y->vfstype = yj_str(a, d, "vfstype");
+		y->mntops = yj_str(a, d, "mntops");
+		y->type = yj_str(a, d, "type");
+		YJ_NUM(d, "freq", y, freq);
+		YJ_NUM(d, "passno", y, passno);
+		y->mounted = yj_yes(d, "mounted", &has);
 		y->has_mounted = has;
 	}
 	fs->entry.n = i;
 	fs->entry.v = fv;
 	st->fstab = fs;
 	arr = ucl_object_lookup(top, "swap");
-	if (count(arr) > 0 && (sv = cbl_yarena_alloc(a, count(arr) *
+	if (yj_count(arr) > 0 && (sv = cbl_yarena_alloc(a, yj_count(arr) *
 	    sizeof(*sv))) == NULL)
 		return (ENOMEM);
 	i = 0;
-	EACH(arr, it, d) {
+	YJ_EACH(arr, it, d) {
 		struct arcana_storage_storage_swap *y = &sv[i++];
 
 		memset(y, 0, sizeof(*y));
-		y->device = s(a, d, "device");
-		NUM(d, "size", y, size);
-		NUM(d, "used", y, used);
+		y->device = yj_str(a, d, "device");
+		YJ_NUM(d, "size", y, size);
+		YJ_NUM(d, "used", y, used);
 	}
 	st->swap.n = i;
 	st->swap.v = sv;
@@ -476,18 +402,11 @@ int
 ystorage_from_json(int kind, const char *json, uint64_t total,
     bool truncated, cbl_yarena *a, struct arcana_storage_storage *st)
 {
-	struct ucl_parser *p;
 	ucl_object_t *top;
 	int error;
 
-	if (json == NULL || (p = ucl_parser_new(UCL_PARSER_NO_TIME)) == NULL)
+	if ((top = yj_parse(json)) == NULL)
 		return (EINVAL);
-	if (!ucl_parser_add_string(p, json, 0) ||
-	    (top = ucl_parser_get_object(p)) == NULL) {
-		ucl_parser_free(p);
-		return (EINVAL);
-	}
-	ucl_parser_free(p);
 	switch (kind) {
 	case ARC_STORAGE_KIND_DISKS:
 		error = disks(top, a, st);

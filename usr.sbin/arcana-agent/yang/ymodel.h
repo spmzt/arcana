@@ -226,6 +226,20 @@ struct arcana_storage_storage;
 struct arcana_storage;
 struct arcana_storage_receive_input;
 struct arcana_storage_receive_output;
+struct arcana_sysctl_sysctl_kept;
+struct arcana_sysctl_sysctl_value;
+struct arcana_sysctl_sysctl;
+struct arcana_sysctl;
+struct arcana_kernel_kernel_file_unload_input;
+struct arcana_kernel_kernel_file_unload_output;
+struct arcana_kernel_kernel_file;
+struct arcana_kernel_kernel_memory_malloc;
+struct arcana_kernel_kernel_memory_zone;
+struct arcana_kernel_kernel_memory;
+struct arcana_kernel_kernel;
+struct arcana_kernel;
+struct arcana_kernel_load_input;
+struct arcana_kernel_load_output;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -3256,6 +3270,147 @@ struct arcana_storage_receive_output {
 	char			 _empty;	/* nothing in it */
 };
 
+/* list entry */
+struct arcana_sysctl_sysctl_kept {
+	const char	*name;
+	const char	*value;
+};
+
+/* list entry */
+struct arcana_sysctl_sysctl_value {
+	const char	*name;
+	const char	*value;
+	const char	*type;
+	bool			 has_writable;
+	bool		 writable;
+	const char	*description;
+};
+
+/* container */
+struct arcana_sysctl_sysctl {
+	struct {
+		size_t		 n;
+		const struct arcana_sysctl_sysctl_kept	*v;
+	}			 kept;
+	bool			 has_total;
+	uint64_t	 total;
+	struct {
+		size_t		 n;
+		const struct arcana_sysctl_sysctl_value	*v;
+	}			 value;
+};
+
+/* data */
+struct arcana_sysctl {
+	const struct arcana_sysctl_sysctl	*sysctl;
+};
+
+/* input */
+struct arcana_kernel_kernel_file_unload_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_kernel_kernel_file_unload_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct arcana_kernel_kernel_file {
+	uint32_t	 id;
+	const char	*name;
+	const char	*path;
+	bool			 has_refs;
+	uint32_t	 refs;
+	bool			 has_size;
+	uint64_t	 size;
+	const char	*address;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 module;
+};
+
+/* list entry */
+struct arcana_kernel_kernel_memory_malloc {
+	const char	*name;
+	bool			 has_bytes;
+	uint64_t	 bytes;
+	bool			 has_count;
+	uint64_t	 count;
+	bool			 has_requests;
+	uint64_t	 requests;
+};
+
+/* list entry */
+struct arcana_kernel_kernel_memory_zone {
+	const char	*name;
+	bool			 has_bytes;
+	uint64_t	 bytes;
+	bool			 has_count;
+	uint64_t	 count;
+	bool			 has_free;
+	uint64_t	 free;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_requests;
+	uint64_t	 requests;
+};
+
+/* container */
+struct arcana_kernel_kernel_memory {
+	bool			 has_files;
+	uint64_t	 files;
+	bool			 has_kmem_size;
+	uint64_t	 kmem_size;
+	bool			 has_kmem_map_size;
+	uint64_t	 kmem_map_size;
+	bool			 has_kmem_map_free;
+	uint64_t	 kmem_map_free;
+	bool			 has_malloc_total;
+	uint64_t	 malloc_total;
+	struct {
+		size_t		 n;
+		const struct arcana_kernel_kernel_memory_malloc	*v;
+	}			 malloc;
+	struct {
+		size_t		 n;
+		const struct arcana_kernel_kernel_memory_zone	*v;
+	}			 zone;
+};
+
+/* container */
+struct arcana_kernel_kernel {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 kept;
+	struct {
+		size_t		 n;
+		const struct arcana_kernel_kernel_file	*v;
+	}			 file;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 available;
+	const struct arcana_kernel_kernel_memory	*memory;
+};
+
+/* data */
+struct arcana_kernel {
+	const struct arcana_kernel_kernel	*kernel;
+};
+
+/* input */
+struct arcana_kernel_load_input {
+	const char	*name;
+};
+
+/* output */
+struct arcana_kernel_load_output {
+	char			 _empty;	/* nothing in it */
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -4060,6 +4215,54 @@ int	arcana_storage_receive_output_encode(const struct arcana_storage_receive_out
 	    struct cbl_ybuf *);
 int	arcana_storage_receive_output_decode(const void *, size_t, struct arcana_storage_receive_output *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_sysctl_sysctl_kept_encode(const struct arcana_sysctl_sysctl_kept *,
+	    struct cbl_ybuf *);
+int	arcana_sysctl_sysctl_kept_decode(const void *, size_t, struct arcana_sysctl_sysctl_kept *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sysctl_sysctl_value_encode(const struct arcana_sysctl_sysctl_value *,
+	    struct cbl_ybuf *);
+int	arcana_sysctl_sysctl_value_decode(const void *, size_t, struct arcana_sysctl_sysctl_value *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sysctl_sysctl_encode(const struct arcana_sysctl_sysctl *,
+	    struct cbl_ybuf *);
+int	arcana_sysctl_sysctl_decode(const void *, size_t, struct arcana_sysctl_sysctl *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_file_unload_input_encode(const struct arcana_kernel_kernel_file_unload_input *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_file_unload_input_decode(const void *, size_t, struct arcana_kernel_kernel_file_unload_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_file_unload_output_encode(const struct arcana_kernel_kernel_file_unload_output *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_file_unload_output_decode(const void *, size_t, struct arcana_kernel_kernel_file_unload_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_file_encode(const struct arcana_kernel_kernel_file *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_file_decode(const void *, size_t, struct arcana_kernel_kernel_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_memory_malloc_encode(const struct arcana_kernel_kernel_memory_malloc *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_memory_malloc_decode(const void *, size_t, struct arcana_kernel_kernel_memory_malloc *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_memory_zone_encode(const struct arcana_kernel_kernel_memory_zone *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_memory_zone_decode(const void *, size_t, struct arcana_kernel_kernel_memory_zone *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_memory_encode(const struct arcana_kernel_kernel_memory *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_memory_decode(const void *, size_t, struct arcana_kernel_kernel_memory *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_encode(const struct arcana_kernel_kernel *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_decode(const void *, size_t, struct arcana_kernel_kernel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_load_input_encode(const struct arcana_kernel_load_input *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_load_input_decode(const void *, size_t, struct arcana_kernel_load_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_load_output_encode(const struct arcana_kernel_load_output *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_load_output_decode(const void *, size_t, struct arcana_kernel_load_output *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -4157,5 +4360,16 @@ int	arcana_storage_storage_fstab_replace_action(cbl_req *, const struct cbl_byte
 	    struct arcana_storage_storage_fstab_replace_output *, cbl_yarena *);
 int	arcana_storage_receive_rpc(cbl_req *, const struct arcana_storage_receive_input *,
 	    struct arcana_storage_receive_output *, cbl_yarena *);
+int	arcana_sysctl_sysctl_get(cbl_req *, struct arcana_sysctl *, cbl_yarena *);
+int	arcana_sysctl_sysctl_edit(cbl_req *, const struct arcana_sysctl *,
+	    const struct arcana_sysctl *);
+int	arcana_kernel_kernel_get(cbl_req *, struct arcana_kernel *, cbl_yarena *);
+int	arcana_kernel_kernel_edit(cbl_req *, const struct arcana_kernel *,
+	    const struct arcana_kernel *);
+int	arcana_kernel_kernel_file_unload_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_kernel_kernel_file_unload_input *,
+	    struct arcana_kernel_kernel_file_unload_output *, cbl_yarena *);
+int	arcana_kernel_load_rpc(cbl_req *, const struct arcana_kernel_load_input *,
+	    struct arcana_kernel_load_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

@@ -1,0 +1,76 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-sysctl",
+    "module-revision": "2026-10-14",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 63 600, 100.",
+    "assignment-range": [
+      {
+        "entry-point": "63600",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-sysctl",
+        "sid": "63600"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl",
+        "sid": "63601"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/kept",
+        "sid": "63602"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/kept/name",
+        "sid": "63603"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/kept/value",
+        "sid": "63604"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/total",
+        "sid": "63605"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/value",
+        "sid": "63606"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/value/description",
+        "sid": "63607"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/value/name",
+        "sid": "63608"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/value/type",
+        "sid": "63609"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/value/value",
+        "sid": "63610"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-sysctl:sysctl/value/writable",
+        "sid": "63611"
+      }
+    ]
+  }
+}

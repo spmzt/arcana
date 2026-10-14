@@ -21,8 +21,10 @@
  * arcana-packages: 29 nodes, 0 types, 4786 bytes
  * arcana-jobs: 272 nodes, 24 types, 51008 bytes
  * arcana-storage: 143 nodes, 2 types, 23626 bytes
- * in all, 920 nodes (children found 151 dense, 29 by a table, 23 by a search),
- * 95 types, 34 expressions, 328 identities, 208012 bytes
+ * arcana-sysctl: 11 nodes, 1 types, 2038 bytes
+ * arcana-kernel: 36 nodes, 0 types, 5852 bytes
+ * in all, 967 nodes (children found 158 dense, 31 by a table, 25 by a search),
+ * 96 types, 34 expressions, 328 identities, 216278 bytes
  */
 
 #include <stdbool.h>
@@ -54,6 +56,8 @@ static const struct cbl_ymodule m23;
 static const struct cbl_ymodule m24;
 static const struct cbl_ymodule m25;
 static const struct cbl_ymodule m26;
+static const struct cbl_ymodule m27;
+static const struct cbl_ymodule m28;
 static const struct cbl_ychoice c0;
 static const struct cbl_ychoice c1;
 static const struct cbl_ychoice c2;
@@ -986,6 +990,53 @@ static const struct cbl_ynode n916;
 static const struct cbl_ynode n917;
 static const struct cbl_ynode n918;
 static const struct cbl_ynode n919;
+static const struct cbl_ynode n920;
+static const struct cbl_ynode n921;
+static const struct cbl_ynode n922;
+static const struct cbl_ynode n923;
+static const struct cbl_ynode n924;
+static const struct cbl_ynode n925;
+static const struct cbl_ynode n926;
+static const struct cbl_ynode n927;
+static const struct cbl_ynode n928;
+static const struct cbl_ynode n929;
+static const struct cbl_ynode n930;
+static const struct cbl_ynode n931;
+static const struct cbl_ynode n932;
+static const struct cbl_ynode n933;
+static const struct cbl_ynode n934;
+static const struct cbl_ynode n935;
+static const struct cbl_ynode n936;
+static const struct cbl_ynode n937;
+static const struct cbl_ynode n938;
+static const struct cbl_ynode n939;
+static const struct cbl_ynode n940;
+static const struct cbl_ynode n941;
+static const struct cbl_ynode n942;
+static const struct cbl_ynode n943;
+static const struct cbl_ynode n944;
+static const struct cbl_ynode n945;
+static const struct cbl_ynode n946;
+static const struct cbl_ynode n947;
+static const struct cbl_ynode n948;
+static const struct cbl_ynode n949;
+static const struct cbl_ynode n950;
+static const struct cbl_ynode n951;
+static const struct cbl_ynode n952;
+static const struct cbl_ynode n953;
+static const struct cbl_ynode n954;
+static const struct cbl_ynode n955;
+static const struct cbl_ynode n956;
+static const struct cbl_ynode n957;
+static const struct cbl_ynode n958;
+static const struct cbl_ynode n959;
+static const struct cbl_ynode n960;
+static const struct cbl_ynode n961;
+static const struct cbl_ynode n962;
+static const struct cbl_ynode n963;
+static const struct cbl_ynode n964;
+static const struct cbl_ynode n965;
+static const struct cbl_ynode n966;
 
 static const struct cbl_yitem t0_i[] = {
 	{ "up", INT64_C(1) },
@@ -2139,6 +2190,17 @@ static const struct cbl_ytype t94 = {
 	.path = -1,
 	.nitems = 2,
 	.items = t94_i,
+};
+
+static const struct cbl_ypattern t95_p[] = {
+	{ "[A-Za-z0-9_%.-]+", "^([A-Za-z0-9_%.-]+)$", false, NULL, NULL },
+};
+static const struct cbl_ytype t95 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.npatterns = 1,
+	.patterns = t95_p,
 };
 
 static const uint16_t n1_p[] = {
@@ -13983,6 +14045,581 @@ static const struct cbl_ynode n916 = {
 	.module = &m26,
 };
 
+static const struct cbl_ynode n922 = {
+	.sid = UINT64_C(63603),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct arcana_sysctl_sysctl_kept, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t95,
+	.module = &m27,
+};
+
+static const struct cbl_ynode n923 = {
+	.sid = UINT64_C(63604),
+	.name = "value",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x3,
+	.off = offsetof(struct arcana_sysctl_sysctl_kept, value),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m27,
+};
+
+static const struct cbl_ynode *const n921_c[] = {
+	&n922, &n923
+};
+static const uint32_t n921_k[] = { 0 };
+static const struct cbl_ynode n921 = {
+	.sid = UINT64_C(63602),
+	.name = "kept",
+	.kind = CBL_YN_LIST,
+	.flags = 0x11,
+	.off = offsetof(struct arcana_sysctl_sysctl, kept),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_sysctl_sysctl_kept),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n921_c,
+	.nkeys = 1,
+	.keys = n921_k,
+	.module = &m27,
+};
+
+static const struct cbl_ynode n924 = {
+	.sid = UINT64_C(63605),
+	.name = "total",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_sysctl_sysctl, total),
+	.hoff = offsetof(struct arcana_sysctl_sysctl, has_total),
+	.type = &t9,
+	.module = &m27,
+};
+
+static const struct cbl_ynode n926 = {
+	.sid = UINT64_C(63607),
+	.name = "description",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_sysctl_sysctl_value, description),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m27,
+};
+
+static const struct cbl_ynode n927 = {
+	.sid = UINT64_C(63608),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x4,
+	.off = offsetof(struct arcana_sysctl_sysctl_value, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m27,
+};
+
+static const struct cbl_ynode n928 = {
+	.sid = UINT64_C(63609),
+	.name = "type",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_sysctl_sysctl_value, type),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m27,
+};
+
+static const struct cbl_ynode n929 = {
+	.sid = UINT64_C(63610),
+	.name = "value",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_sysctl_sysctl_value, value),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m27,
+};
+
+static const struct cbl_ynode n930 = {
+	.sid = UINT64_C(63611),
+	.name = "writable",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_sysctl_sysctl_value, writable),
+	.hoff = offsetof(struct arcana_sysctl_sysctl_value, has_writable),
+	.type = &t2,
+	.module = &m27,
+};
+
+static const struct cbl_ynode *const n925_c[] = {
+	&n926, &n927, &n928, &n929, &n930
+};
+static const uint32_t n925_k[] = { 1 };
+static const struct cbl_ynode n925 = {
+	.sid = UINT64_C(63606),
+	.name = "value",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_sysctl_sysctl, value),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_sysctl_sysctl_value),
+	.nmap = 5,
+	.nchild = 5,
+	.child = n925_c,
+	.nkeys = 1,
+	.keys = n925_k,
+	.module = &m27,
+};
+
+static const struct cbl_ynode *const n920_c[] = {
+	&n921, &n924, &n925
+};
+static const struct cbl_ynode n920 = {
+	.sid = UINT64_C(63601),
+	.name = "sysctl",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct arcana_sysctl, sysctl),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_sysctl_sysctl),
+	.nchild = 3,
+	.child = n920_c,
+	.module = &m27,
+};
+
+static const uint16_t n931_p[] = {
+	1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 4
+};
+static const struct cbl_ynode n932 = {
+	.sid = UINT64_C(63702),
+	.name = "available",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_kernel_kernel, available),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n934 = {
+	.sid = UINT64_C(63704),
+	.name = "address",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_file, address),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n935 = {
+	.sid = UINT64_C(63705),
+	.name = "id",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x4,
+	.off = offsetof(struct arcana_kernel_kernel_file, id),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t10,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n936 = {
+	.sid = UINT64_C(63706),
+	.name = "module",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_kernel_kernel_file, module),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n937 = {
+	.sid = UINT64_C(63707),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_file, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n938 = {
+	.sid = UINT64_C(63708),
+	.name = "path",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_file, path),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n939 = {
+	.sid = UINT64_C(63709),
+	.name = "refs",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_file, refs),
+	.hoff = offsetof(struct arcana_kernel_kernel_file, has_refs),
+	.type = &t10,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n940 = {
+	.sid = UINT64_C(63710),
+	.name = "size",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_file, size),
+	.hoff = offsetof(struct arcana_kernel_kernel_file, has_size),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m28,
+};
+
+static const struct cbl_ynode n942 = {
+	.sid = UINT64_C(63712),
+	.name = "input",
+	.kind = CBL_YN_INPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_kernel_kernel_file_unload_input),
+	.module = &m28,
+};
+
+static const struct cbl_ynode n943 = {
+	.sid = UINT64_C(63713),
+	.name = "output",
+	.kind = CBL_YN_OUTPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_kernel_kernel_file_unload_output),
+	.module = &m28,
+};
+
+static const struct cbl_ynode *const n941_c[] = {
+	&n942, &n943
+};
+static const struct cbl_ynode n941 = {
+	.sid = UINT64_C(63711),
+	.name = "unload",
+	.kind = CBL_YN_ACTION,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.nmap = 2,
+	.nchild = 2,
+	.child = n941_c,
+	.module = &m28,
+};
+
+static const struct cbl_ynode *const n933_c[] = {
+	&n934, &n935, &n936, &n937, &n938, &n939,
+	&n940, &n941
+};
+static const uint32_t n933_k[] = { 1 };
+static const struct cbl_ynode n933 = {
+	.sid = UINT64_C(63703),
+	.name = "file",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_kernel_kernel, file),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_kernel_kernel_file),
+	.nmap = 8,
+	.nchild = 8,
+	.child = n933_c,
+	.nkeys = 1,
+	.keys = n933_k,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n944 = {
+	.sid = UINT64_C(63714),
+	.name = "kept",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x11,
+	.off = offsetof(struct arcana_kernel_kernel, kept),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m28,
+};
+
+static const uint16_t n945_p[] = {
+	1, 2, 3, 4, 5, 6, 0, 0, 0, 0, 7
+};
+static const struct cbl_ynode n946 = {
+	.sid = UINT64_C(63716),
+	.name = "files",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory, files),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_files),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m28,
+};
+
+static const struct cbl_ynode n947 = {
+	.sid = UINT64_C(63717),
+	.name = "kmem-map-free",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory, kmem_map_free),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_kmem_map_free),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m28,
+};
+
+static const struct cbl_ynode n948 = {
+	.sid = UINT64_C(63718),
+	.name = "kmem-map-size",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory, kmem_map_size),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_kmem_map_size),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m28,
+};
+
+static const struct cbl_ynode n949 = {
+	.sid = UINT64_C(63719),
+	.name = "kmem-size",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory, kmem_size),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_kmem_size),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m28,
+};
+
+static const struct cbl_ynode n951 = {
+	.sid = UINT64_C(63722),
+	.name = "bytes",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_malloc, bytes),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory_malloc, has_bytes),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m28,
+};
+
+static const struct cbl_ynode n952 = {
+	.sid = UINT64_C(63723),
+	.name = "count",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_malloc, count),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory_malloc, has_count),
+	.type = &t9,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n953 = {
+	.sid = UINT64_C(63724),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_malloc, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n954 = {
+	.sid = UINT64_C(63725),
+	.name = "requests",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_malloc, requests),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory_malloc, has_requests),
+	.type = &t9,
+	.module = &m28,
+};
+
+static const struct cbl_ynode *const n950_c[] = {
+	&n951, &n952, &n953, &n954
+};
+static const struct cbl_ynode n950 = {
+	.sid = UINT64_C(63720),
+	.name = "malloc",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_kernel_kernel_memory, malloc),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_kernel_kernel_memory_malloc),
+	.nmap = 4,
+	.nchild = 4,
+	.child = n950_c,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n955 = {
+	.sid = UINT64_C(63721),
+	.name = "malloc-total",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory, malloc_total),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory, has_malloc_total),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m28,
+};
+
+static const struct cbl_ynode n957 = {
+	.sid = UINT64_C(63727),
+	.name = "bytes",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_zone, bytes),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_bytes),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m28,
+};
+
+static const struct cbl_ynode n958 = {
+	.sid = UINT64_C(63728),
+	.name = "count",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_zone, count),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_count),
+	.type = &t9,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n959 = {
+	.sid = UINT64_C(63729),
+	.name = "free",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_zone, free),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_free),
+	.type = &t9,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n960 = {
+	.sid = UINT64_C(63730),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_zone, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n961 = {
+	.sid = UINT64_C(63731),
+	.name = "requests",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_zone, requests),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_requests),
+	.type = &t9,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n962 = {
+	.sid = UINT64_C(63732),
+	.name = "size",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_kernel_kernel_memory_zone, size),
+	.hoff = offsetof(struct arcana_kernel_kernel_memory_zone, has_size),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m28,
+};
+
+static const struct cbl_ynode *const n956_c[] = {
+	&n957, &n958, &n959, &n960, &n961, &n962
+};
+static const struct cbl_ynode n956 = {
+	.sid = UINT64_C(63726),
+	.name = "zone",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_kernel_kernel_memory, zone),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_kernel_kernel_memory_zone),
+	.nmap = 6,
+	.nchild = 6,
+	.child = n956_c,
+	.module = &m28,
+};
+
+static const struct cbl_ynode *const n945_c[] = {
+	&n946, &n947, &n948, &n949, &n950, &n955,
+	&n956
+};
+static const struct cbl_ynode n945 = {
+	.sid = UINT64_C(63715),
+	.name = "memory",
+	.kind = CBL_YN_CONTAINER,
+	.off = offsetof(struct arcana_kernel_kernel, memory),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_kernel_kernel_memory),
+	.nmap = 11,
+	.map = n945_p,
+	.nchild = 7,
+	.child = n945_c,
+	.module = &m28,
+};
+
+static const struct cbl_ynode *const n931_c[] = {
+	&n932, &n933, &n944, &n945
+};
+static const struct cbl_ynode n931 = {
+	.sid = UINT64_C(63701),
+	.name = "kernel",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct arcana_kernel, kernel),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_kernel_kernel),
+	.nmap = 14,
+	.map = n931_p,
+	.nchild = 4,
+	.child = n931_c,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n965 = {
+	.sid = UINT64_C(63735),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x2,
+	.off = offsetof(struct arcana_kernel_load_input, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m28,
+};
+
+static const struct cbl_ynode *const n964_c[] = {
+	&n965
+};
+static const struct cbl_ynode n964 = {
+	.sid = UINT64_C(63734),
+	.name = "input",
+	.kind = CBL_YN_INPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_kernel_load_input),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n964_c,
+	.module = &m28,
+};
+
+static const struct cbl_ynode n966 = {
+	.sid = UINT64_C(63736),
+	.name = "output",
+	.kind = CBL_YN_OUTPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_kernel_load_output),
+	.module = &m28,
+};
+
+static const struct cbl_ynode *const n963_c[] = {
+	&n964, &n966
+};
+static const struct cbl_ynode n963 = {
+	.sid = UINT64_C(63733),
+	.name = "load",
+	.kind = CBL_YN_RPC,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.nchild = 2,
+	.child = n963_c,
+	.module = &m28,
+};
+
 static const uint64_t i0_d[] = {
 	UINT64_C(1801), UINT64_C(1802), UINT64_C(1803), UINT64_C(1804),
 	UINT64_C(1805), UINT64_C(1806), UINT64_C(1807), UINT64_C(1808),
@@ -14742,6 +15379,36 @@ static const struct cbl_ymodule m26 = {
 	.top = m26_t,
 };
 
+static const struct cbl_ynode *const m27_t[] = {
+	&n920
+};
+static const struct cbl_ymodule m27 = {
+	.schema = &ymodel_schema,
+	.name = "arcana-sysctl",
+	.revision = "2026-10-14",
+	.ns = "urn:arcana:yang:arcana-sysctl",
+	.prefix = "arcsys",
+	.sid = UINT64_C(63600),
+	.size = sizeof(struct arcana_sysctl),
+	.ntop = 1,
+	.top = m27_t,
+};
+
+static const struct cbl_ynode *const m28_t[] = {
+	&n931, &n963
+};
+static const struct cbl_ymodule m28 = {
+	.schema = &ymodel_schema,
+	.name = "arcana-kernel",
+	.revision = "2026-10-14",
+	.ns = "urn:arcana:yang:arcana-kernel",
+	.prefix = "arckern",
+	.sid = UINT64_C(63700),
+	.size = sizeof(struct arcana_kernel),
+	.ntop = 2,
+	.top = m28_t,
+};
+
 static const struct cbl_ymodule *const mods[] = {
 	&m5,
 	&m6,
@@ -14762,6 +15429,8 @@ static const struct cbl_ymodule *const mods[] = {
 	&m24,
 	&m25,
 	&m26,
+	&m27,
+	&m28,
 };
 
 static const struct cbl_ynode *const nodes[] = {
@@ -14918,7 +15587,15 @@ static const struct cbl_ynode *const nodes[] = {
 	&n896, &n897, &n898, &n899, &n900, &n901,
 	&n902, &n903, &n904, &n905, &n906, &n907,
 	&n908, &n909, &n910, &n911, &n912, &n913,
-	&n914, &n915
+	&n914, &n915, &n920, &n921, &n922, &n923,
+	&n924, &n925, &n926, &n927, &n928, &n929,
+	&n930, &n931, &n932, &n933, &n934, &n935,
+	&n936, &n937, &n938, &n939, &n940, &n941,
+	&n942, &n943, &n944, &n945, &n946, &n947,
+	&n948, &n949, &n950, &n955, &n951, &n952,
+	&n953, &n954, &n956, &n957, &n958, &n959,
+	&n960, &n961, &n962, &n963, &n964, &n965,
+	&n966
 };
 
 static const char *const xpaths[] = {
@@ -14960,10 +15637,10 @@ static const char *const xpaths[] = {
 
 extern const struct cbl_yschema ymodel_schema;
 const struct cbl_yschema ymodel_schema = {
-	.nmod = 19,
+	.nmod = 21,
 	.nxpath = 34,
 	.nident = 328,
-	.nnode = 920,
+	.nnode = 967,
 	.mod = mods,
 	.node = nodes,
 	.xpath = xpaths,
@@ -18182,5 +18859,197 @@ arcana_storage_receive_output_decode(const void *data, size_t len, struct arcana
 
 	memset(p, 0, sizeof(*p));
 	return (cbl_ydecode(&n919, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_sysctl_sysctl_encode(const struct arcana_sysctl_sysctl *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n920, p, b));
+}
+
+int
+arcana_sysctl_sysctl_decode(const void *data, size_t len, struct arcana_sysctl_sysctl *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n920, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_sysctl_sysctl_kept_encode(const struct arcana_sysctl_sysctl_kept *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n921, p, b));
+}
+
+int
+arcana_sysctl_sysctl_kept_decode(const void *data, size_t len, struct arcana_sysctl_sysctl_kept *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n921, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_sysctl_sysctl_value_encode(const struct arcana_sysctl_sysctl_value *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n925, p, b));
+}
+
+int
+arcana_sysctl_sysctl_value_decode(const void *data, size_t len, struct arcana_sysctl_sysctl_value *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n925, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_kernel_kernel_encode(const struct arcana_kernel_kernel *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n931, p, b));
+}
+
+int
+arcana_kernel_kernel_decode(const void *data, size_t len, struct arcana_kernel_kernel *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n931, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_kernel_kernel_file_encode(const struct arcana_kernel_kernel_file *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n933, p, b));
+}
+
+int
+arcana_kernel_kernel_file_decode(const void *data, size_t len, struct arcana_kernel_kernel_file *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n933, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_kernel_kernel_file_unload_input_encode(const struct arcana_kernel_kernel_file_unload_input *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n942, p, b));
+}
+
+int
+arcana_kernel_kernel_file_unload_input_decode(const void *data, size_t len, struct arcana_kernel_kernel_file_unload_input *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n942, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_kernel_kernel_file_unload_output_encode(const struct arcana_kernel_kernel_file_unload_output *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n943, p, b));
+}
+
+int
+arcana_kernel_kernel_file_unload_output_decode(const void *data, size_t len, struct arcana_kernel_kernel_file_unload_output *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n943, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_kernel_kernel_memory_encode(const struct arcana_kernel_kernel_memory *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n945, p, b));
+}
+
+int
+arcana_kernel_kernel_memory_decode(const void *data, size_t len, struct arcana_kernel_kernel_memory *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n945, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_kernel_kernel_memory_malloc_encode(const struct arcana_kernel_kernel_memory_malloc *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n950, p, b));
+}
+
+int
+arcana_kernel_kernel_memory_malloc_decode(const void *data, size_t len, struct arcana_kernel_kernel_memory_malloc *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n950, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_kernel_kernel_memory_zone_encode(const struct arcana_kernel_kernel_memory_zone *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n956, p, b));
+}
+
+int
+arcana_kernel_kernel_memory_zone_decode(const void *data, size_t len, struct arcana_kernel_kernel_memory_zone *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n956, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_kernel_load_input_encode(const struct arcana_kernel_load_input *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n964, p, b));
+}
+
+int
+arcana_kernel_load_input_decode(const void *data, size_t len, struct arcana_kernel_load_input *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n964, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_kernel_load_output_encode(const struct arcana_kernel_load_output *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n966, p, b));
+}
+
+int
+arcana_kernel_load_output_decode(const void *data, size_t len, struct arcana_kernel_load_output *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n966, data, len, p, a, flags, why, whylen));
 }
 

@@ -154,6 +154,21 @@ int	ystorage_fstab(const char *text, const char *sha256, cbl_yarena *a,
 	    struct arcana_storage_storage *st);
 
 /*
+ * arcana-sysctl and arcana-kernel (superbia/ysystem.c): the sysctl and
+ * kernel operations' JSON as the modules have them; their configuration
+ * written in place: sysctl.conf's settings (f: VC_SYSCTL), rc.conf's
+ * kld_list (f: VC_SH).
+ */
+int	ysysctl_from_json(const char *json, uint64_t total, bool truncated,
+	    cbl_yarena *a, struct arcana_sysctl_sysctl *out);
+int	ykernel_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_kernel_kernel *out);
+int	ysysctl_conf_write(struct vc_file *f,
+	    const struct arcana_sysctl_sysctl *want, char *err, size_t errlen);
+int	ykernel_kld_write(struct vc_file *f,
+	    const struct arcana_kernel_kernel *want, char *err, size_t errlen);
+
+/*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
  * them (invidia/ylne.c).
  */
