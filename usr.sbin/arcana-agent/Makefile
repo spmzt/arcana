@@ -34,6 +34,10 @@ CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
 LDADD+=		-ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthread -lcrypto ${UCL_LIBS}
+# Every symbol bound when the agent starts (ld(1) -z now): with a
+# libcblink older than the agent, it stops there, rtld(1) saying what
+# is missing, not at the first call to it, detached, its stderr closed.
+LDFLAGS+=	-Wl,-z,now
 
 # The rc.d(8) script.
 FILESGROUPS+=	RC

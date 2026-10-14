@@ -648,6 +648,13 @@ main(int argc, char *argv[])
 	(void)pthread_detach(tid);
 
 	error = cbl_loop_run(loop);
+	/* Asked to stop, or the loop failed: said either way, as a
+	 * detached agent that ends silently leaves nothing to go on. */
+	if (error != 0)
+		logmsg(LOG_ERR, "the loop failed: %s; exiting",
+		    strerror(error));
+	else
+		logmsg(LOG_NOTICE, "stopped");
 
 	for (i = 0; i < nl; i++)
 		cbl_listener_free(ls[i]);
