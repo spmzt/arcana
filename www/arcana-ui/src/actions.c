@@ -2265,6 +2265,7 @@ status_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	app.setup_required = jbool(o, "setup_required");
+	app.by_token = jbool(o, "by_token");
 	origin_check(jstr(o, "origin"), jstr(o, "rp_id"));
 	if (jbool(o, "authenticated")) {
 		app.screen = SCREEN_CONSOLE;
@@ -2289,6 +2290,7 @@ auth_done_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	app.auth_busy = false;
 	if (status == 200 && jbool(o, "authenticated")) {
+		app.by_token = jbool(o, "by_token");
 		app.screen = SCREEN_CONSOLE;
 		app.auth_error[0] = '\0';
 		app.setup_required = false;
@@ -2329,6 +2331,28 @@ login_begin_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	opts = emit(o);
 	webauthn(false, opts, login_assert_cb, NULL);
 	free(opts);
+}
+
+/*
+ * Signed in with a write token, for one with no security key at hand:
+ * the console opens a session that may do what the token may.
+ */
+void
+login_token(const char *token)
+{
+	char	*q, *body;
+
+	if (app.auth_busy)
+		return;
+	app.auth_busy = true;
+	app.auth_error[0] = '\0';
+	q = json_quote(token);
+	if (asprintf(&body, "{\"token\":%s}", q) == -1)
+		abort();
+	free(q);
+	api("POST", "/api/auth/login/token", body, auth_done_cb, NULL);
+	explicit_bzero(body, strlen(body));
+	free(body);
 }
 
 /* With passkey, the authenticator picks the credential itself. */

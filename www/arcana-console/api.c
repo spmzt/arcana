@@ -152,6 +152,14 @@ guard(struct http_request *req, bool mutate)
 			return (false);
 		}
 	}
+	/* Opened with a write token: what the token may, no more. */
+	if (session_by_token(req) && !(mutate ? token_writable(req->path) :
+	    token_readable(req->path))) {
+		reply_error(req, 403, "token", "a session opened with an API "
+		    "token may not %s this: sign in with a security key",
+		    mutate ? "change" : "read");
+		return (false);
+	}
 	if (!mutate)
 		return (true);
 	if (!http_request_header(req, "x-arcana", &v) ||

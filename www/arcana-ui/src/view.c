@@ -1780,6 +1780,10 @@ view_settings(struct html *h)
 		    settabs[i].tab ? " on" : "", settabs[i].arg,
 		    settabs[i].title);
 	h_raw(h, "</nav><div class=\"set-body\">");
+	if (app.by_token)
+		h_raw(h, "<div class=\"notice warn\">Signed in with an API "
+		    "token: the console's settings, its keys, tokens and CA "
+		    "are changed by one signed in with a security key.</div>");
 	if (app.modal_error[0] != '\0' && app.modal == MODAL_NONE) {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, app.modal_error);
@@ -2492,6 +2496,18 @@ auth_screen(struct html *h)
 		h_fmt(h, "<button class=\"ghost\" data-act=\"login-passkey\"%s "
 		    "title=\"A passkey on this device, or on a phone nearby\">"
 		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
+		/* No key at hand: an API token that writes. */
+		h_fmt(h, "<details class=\"login-token\"><summary>Sign in with "
+		    "an API token</summary><form data-form=\"login-token\">"
+		    "<input type=\"password\" name=\"token\" required "
+		    "autocomplete=\"off\" spellcheck=\"false\" placeholder="
+		    "\"arcw_…\"><button class=\"ghost\"%s>Sign in</button>"
+		    "</form><p class=\"dim\">A write token, made under Settings, "
+		    "API tokens. Signed in with it, the console does what the "
+		    "token may: not its settings, sign-in, tokens or CA, which "
+		    "need a security key; deleted, the token signs out every "
+		    "session it opened.</p></details>", app.auth_busy ?
+		    " disabled" : "");
 	}
 	install_offer(h);
 	if (app.origin_error[0] != '\0') {

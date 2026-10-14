@@ -442,6 +442,7 @@ struct app {
 	char		 origin_error[400];	/* opened at the wrong address */
 	char		 console_origin[256];	/* web.conf's origin, as told */
 	bool		 auth_busy;
+	bool		 by_token;	/* signed in with an API token */
 
 	struct server	 servers[MAX_SERVERS];
 	int		 nservers;
@@ -603,6 +604,7 @@ void		 check_health(void);
 void		 check_update(void);
 void		 auth_status(void);
 void		 login(bool);
+void		 login_token(const char *);
 void		 enrol(const char *, const char *);
 void		 add_key(const char *);
 void		 logout(void);

@@ -60,6 +60,7 @@ struct session {
 	time_t		last;
 	bool		used;
 	char		who[64];	/* the key it was opened with */
+	char		tok[17];	/* the API token it was, its id; "" a key */
 };
 
 static ucl_object_t	*creds;		/* the credentials document */
@@ -94,7 +95,8 @@ static bool	 verify_sig(int, const uint8_t *, size_t, const uint8_t *,
 static bool	 key_matches(int, const uint8_t *, size_t);
 static ucl_object_t *cred_list(void);
 static const ucl_object_t *cred_find(const char *);
-static void	 session_start(struct http_request *, const char *);
+static void	 session_start(struct http_request *, const char *,
+		    const char *);
 static void	 sessions_save(void);
 static void	 sessions_load(void);
 static void	 setup_token_init(void);
@@ -482,6 +484,8 @@ sessions_save(void)
 		put(e, "created", ucl_object_fromint(sessions[i].created));
 		put(e, "last", ucl_object_fromint(sessions[i].last));
 		put(e, "who", ucl_object_fromstring(sessions[i].who));
+		if (sessions[i].tok[0] != '\0')
+			put(e, "token", ucl_object_fromstring(sessions[i].tok));
 		ucl_array_append(a, e);
 	}
 	put(o, "sessions", a);
@@ -525,6 +529,9 @@ sessions_load(void)
 		snprintf(s->who, sizeof(s->who), "%s", ucl_object_lookup(e, "who")
 		    != NULL ? ucl_object_tostring_forced(ucl_object_lookup(e,
 		    "who")) : "");
+		snprintf(s->tok, sizeof(s->tok), "%s", ucl_object_lookup(e,
+		    "token") != NULL ? ucl_object_tostring_forced(
+		    ucl_object_lookup(e, "token")) : "");
 		if (k < 32 || s->created > now || now - s->last > cfg.session_idle ||
 		    now - s->created > cfg.session_max) {
 			memset(s, 0, sizeof(*s));
@@ -536,27 +543,50 @@ sessions_load(void)
 	ucl_object_unref(o);
 }
 
-bool
-session_valid(struct http_request *req)
+/* The request's session, valid or not; NULL: none. */
+static struct session *
+session_of(struct http_request *req)
 {
-	struct session	*s;
 	uint8_t		 h[32];
 	char		*cookie;
-	time_t		 now;
 	int		 i;
 
 	http_populate_cookies(req);
 	if (!http_request_cookie(req, SESSION_COOKIE, &cookie) ||
 	    strlen(cookie) != 64)
-		return (false);
+		return (NULL);
 	sha256(cookie, strlen(cookie), h);
+	for (i = 0; i < SESSIONS; i++)
+		if (sessions[i].used && memcmp(sessions[i].hash, h,
+		    sizeof(h)) == 0)
+			return (&sessions[i]);
+	return (NULL);
+}
+
+/*
+ * Whether the request's session was opened with an API token: it may
+ * then do what the token may, no more (guard()).
+ */
+bool
+session_by_token(struct http_request *req)
+{
+	struct session	*s;
+
+	return ((s = session_of(req)) != NULL && s->tok[0] != '\0');
+}
+
+bool
+session_valid(struct http_request *req)
+{
+	struct session	*s;
+	time_t		 now;
+
 	now = time(NULL);
-	for (i = 0; i < SESSIONS; i++) {
-		s = &sessions[i];
-		if (!s->used || memcmp(s->hash, h, sizeof(h)) != 0)
-			continue;
+	if ((s = session_of(req)) != NULL) {
+		/* Its token deleted, the session it opened ends with it. */
 		if (now - s->last > cfg.session_idle ||
-		    now - s->created > cfg.session_max) {
+		    now - s->created > cfg.session_max || (s->tok[0] != '\0' &&
+		    !token_alive(s->tok))) {
 			memset(s, 0, sizeof(*s));
 			sessions_save();
 			return (false);
@@ -597,9 +627,9 @@ session_who(struct http_request *req)
 }
 
 /* A new session in a cookie only the console can read, opened by the
- * key named who. */
+ * key named who, or by the API token of id tok. */
 static void
-session_start(struct http_request *req, const char *who)
+session_start(struct http_request *req, const char *who, const char *tok)
 {
 	struct session	*s, *old;
 	uint8_t		 raw[32];
@@ -624,6 +654,7 @@ session_start(struct http_request *req, const char *who)
 	s->created = s->last = time(NULL);
 	s->used = true;
 	snprintf(s->who, sizeof(s->who), "%s", who != NULL ? who : "");
+	snprintf(s->tok, sizeof(s->tok), "%s", tok != NULL ? tok : "");
 	snprintf(cookie, sizeof(cookie), "%s=%s; Path=/; HttpOnly; "
 	    "SameSite=Strict; Max-Age=%d%s", SESSION_COOKIE, token,
 	    cfg.session_max, cfg.cookie_secure ? "; Secure" : "");
@@ -633,12 +664,16 @@ session_start(struct http_request *req, const char *who)
 }
 
 static int
-status_reply(struct http_request *req, bool authenticated)
+status_reply_as(struct http_request *req, bool authenticated, bool by_token)
 {
 	ucl_object_t	*o;
 
 	o = ucl_object_typed_new(UCL_OBJECT);
 	put(o, "authenticated", ucl_object_frombool(authenticated));
+	/* Opened with an API token: the page does not offer what it may
+	 * not do. */
+	if (authenticated && by_token)
+		put(o, "by_token", ucl_object_frombool(true));
 	put(o, "setup_required", ucl_object_frombool(
 	    ucl_array_size(cred_list()) == 0));
 	put(o, "rp_id", ucl_object_fromstring(cfg.rp_id));
@@ -646,6 +681,14 @@ status_reply(struct http_request *req, bool authenticated)
 	 * asked: the page says so when they do not match. */
 	put(o, "origin", ucl_object_fromstring(cfg.origin));
 	return (reply_json(req, 200, o));
+}
+
+static int
+status_reply(struct http_request *req, bool authenticated)
+{
+
+	return (status_reply_as(req, authenticated, authenticated &&
+	    session_by_token(req)));
 }
 
 int
@@ -825,7 +868,7 @@ api_register_finish(struct http_request *req)
 	kore_log(LOG_NOTICE, "registered security key \"%s\"",
 	    ucl_str(c, "name"));
 	setup_token_init();
-	session_start(req, ucl_str(c, "name"));
+	session_start(req, ucl_str(c, "name"), NULL);
 	status = 200;
 out:
 	kore_free(cd);
@@ -944,7 +987,7 @@ api_login_finish(struct http_request *req)
 	ucl_object_replace_key((ucl_object_t *)(uintptr_t)c,
 	    ucl_object_fromint(time(NULL)), "last_used", 0, true);
 	(void)store_save(CREDENTIALS, creds);
-	session_start(req, ucl_str(c, "name"));
+	session_start(req, ucl_str(c, "name"), NULL);
 	kore_log(LOG_NOTICE, "login with \"%s\"", ucl_str(c, "name"));
 out:
 	kore_free(cd);
@@ -958,6 +1001,42 @@ out:
 		return (reply_error(req, 401, "login", "%s", err));
 	}
 	return (status_reply(req, true));
+}
+
+/*
+ * POST /api/auth/login/token {"token": "arcw_..."}: signed in with a
+ * write token, for one with no security key at hand.  The session may
+ * do what the token may and no more: not the console's settings,
+ * sign-in, push, enrolment, tokens or CA; it ends when the token is
+ * deleted.  A read token does not sign in.
+ */
+int
+api_login_token(struct http_request *req)
+{
+	ucl_object_t	*body;
+	const char	*v, *name;
+	char		 id[17], who[96];
+
+	if (req->method != HTTP_METHOD_POST)
+		return (reply_error(req, 405, "method", "POST"));
+	if ((body = read_json(req)) == NULL)
+		return (reply_error(req, 400, "bad_request", "expected a JSON "
+		    "object"));
+	v = ucl_str(body, "token");
+	name = v != NULL ? token_login(v, id, sizeof(id)) : NULL;
+	if (name == NULL) {
+		ucl_object_unref(body);
+		kore_log(LOG_NOTICE, "login with a token refused");
+		return (reply_error(req, 401, "login", "not a write token of "
+		    "this console's: a read token does not sign in, and a "
+		    "deleted one opens nothing"));
+	}
+	snprintf(who, sizeof(who), "API token %s", name);
+	session_start(req, who, id);
+	kore_log(LOG_NOTICE, "login with %s", who);
+	ucl_object_unref(body);
+	/* Its cookie is only on its way: said so here. */
+	return (status_reply_as(req, true, true));
 }
 
 int

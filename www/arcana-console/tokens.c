@@ -234,6 +234,45 @@ token_kind(struct http_request *req)
 	return (t->write ? TOKEN_WRITE : TOKEN_READ);
 }
 
+/*
+ * A write token typed to sign in with (auth.c): its name, and its id
+ * into id; NULL when it is not one of ours, or reads only.
+ */
+const char *
+token_login(const char *v, char *id, size_t idlen)
+{
+	uint8_t	 h[32];
+	int	 i;
+
+	if (strncmp(v, TOKEN_WPREFIX, strlen(TOKEN_WPREFIX)) != 0 ||
+	    strlen(v) != strlen(TOKEN_WPREFIX) + 64)
+		return (NULL);
+	tokens_load();
+	digest(v, h);
+	for (i = 0; i < ntokens; i++)
+		if (tokens[i].write && memcmp(tokens[i].hash, h, sizeof(h)) ==
+		    0) {
+			snprintf(id, idlen, "%s", tokens[i].id);
+			tokens[i].last = time(NULL);
+			(void)tokens_save();
+			return (tokens[i].name);
+		}
+	return (NULL);
+}
+
+/* Whether the write token of id is still there. */
+bool
+token_alive(const char *id)
+{
+	int	i;
+
+	tokens_load();
+	for (i = 0; i < ntokens; i++)
+		if (tokens[i].write && strcmp(tokens[i].id, id) == 0)
+			return (true);
+	return (false);
+}
+
 /* Who a write token's request is, for the audit trail; NULL else. */
 const char *
 token_who(struct http_request *req)

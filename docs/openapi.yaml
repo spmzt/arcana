@@ -231,6 +231,32 @@ paths:
         "400": { $ref: "#/components/responses/Error" }
         "401": { $ref: "#/components/responses/Error" }
 
+  /api/auth/login/token:
+    post:
+      tags: [auth]
+      summary: Log in with a write API token
+      description: |
+        For one with no security key at hand: a write token (arcw_)
+        opens a session that may do what the token may and no more:
+        not the console's settings, sign-in, push, enrolment, tokens or
+        CA.  The token deleted, every session it opened ends.  A read
+        token does not sign in.  The status says by_token.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200":
+          $ref: "#/components/responses/AuthStatus"
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+
   /api/auth/logout:
     post:
       tags: [auth]
