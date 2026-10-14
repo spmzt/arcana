@@ -54,6 +54,7 @@
 #include <unistd.h>
 
 #include "agent.h"
+#include "rtimes.h"
 
 /*
  * The interfaces of a jail's network by their index, as its own socket
@@ -808,6 +809,18 @@ watch_route(struct watched *wd, struct nlmsghdr *hdr, bool gone)
 	time_t		 now;
 
 	now = time(NULL);
+	/* When it changed, for last-updated: the host's routes, every one,
+	 * the storm too. */
+	if (wd->jid == 0) {
+		struct snl_parsed_route p = { 0 };
+		char prefix[INET6_ADDRSTRLEN + 8];
+
+		if (snl_parse_nlmsg(&wd->ss, hdr, &snl_rtm_route_parser, &p)) {
+			rt_prefix(prefix, sizeof(prefix), p.rta_dst,
+			    p.rtm_family, p.rtm_dst_len);
+			rt_touched(p.rta_table, prefix, now, gone);
+		}
+	}
 	if (now != wd->second) {
 		if (wd->left > 0) {
 			snprintf(left, sizeof(left), "{\"changed\":%u}",

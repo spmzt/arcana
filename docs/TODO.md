@@ -282,8 +282,13 @@
   vnet jail, FIB 1 too. 2.4.5: the RIBs' active-route action,
   yrt_active_route(), the route an address goes by as route(8)'s get
   asks netlink (the longest match), held to route -n get for the
-  loopback, addresses out and every address of the host's own. Next:
-  2.4.6, route events. As each operation is
+  loopback, addresses out and every address of the host's own. 2.4.6:
+  route events were netlink's already (nlroute.c, every FIB on one
+  socket); each now notes its route's time (invidia/rtimes.c), the
+  RIBs' last-updated, none for a route not seen to change; held to a
+  route added in a vnet jail while heard (yang_route_times). 2.4 done.
+  Next: 2.5.1, rtadvd.conf and the router advertisement submodule. As
+  each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

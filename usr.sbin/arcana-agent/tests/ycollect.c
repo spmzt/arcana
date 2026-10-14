@@ -27,10 +27,15 @@
  *				gateway, the interface, the special next
  *				hop (- for none each), the source protocol,
  *				and multipath for one of a next-hop-list
+ *	ycollect watch fib secs	routes', each with its last-updated (- for
+ *				none), after secs of route events heard
+ *				and noted as the daemon notes them
  *	ycollect active fib addr	the RIB's active-route action for addr,
  *				its route a line as routes' (none: "none");
  *				and its output through YANG-CBOR and back
  */
+
+#include <sys/param.h>
 
 #include <err.h>
 #include <stdio.h>
@@ -38,6 +43,16 @@
 #include <string.h>
 
 #include "collect.h"
+#include "rtimes.h"
+
+#include <sys/socket.h>
+#include <poll.h>
+#include <time.h>
+#include <netlink/netlink.h>
+#include <netlink/netlink_route.h>
+#include <netlink/netlink_snl.h>
+#include <netlink/netlink_snl_route.h>
+#include <netlink/netlink_snl_route_parsers.h>
 
 static const char *const lagg_proto[] = { "none", "roundrobin", "failover",
     "loadbalance", "lacp", "broadcast" };
@@ -259,6 +274,51 @@ names(const char *what, size_t n, const char *const *v)
 static const char *const special[] = { "blackhole", "unreachable",
     "prohibit", "receive" };
 
+static bool with_times;
+
+/* Route events for secs, noted as nlroute.c's watcher notes them. */
+static void
+watch(int secs)
+{
+	static const int groups[] = { RTNLGRP_IPV4_ROUTE,
+	    RTNLGRP_IPV6_ROUTE };
+	struct snl_state ss;
+	struct nlmsghdr *hdr;
+	time_t end = time(NULL) + secs;
+
+	if (!snl_init(&ss, NETLINK_ROUTE))
+		err(1, "snl_init");
+	for (size_t i = 0; i < nitems(groups); i++)
+		if (setsockopt(ss.fd, SOL_NETLINK, NETLINK_ADD_MEMBERSHIP,
+		    &groups[i], sizeof(groups[i])) == -1)
+			err(1, "NETLINK_ADD_MEMBERSHIP");
+	printf("watching\n");
+	fflush(stdout);
+	while (time(NULL) < end) {
+		struct pollfd pfd = { .fd = ss.fd, .events = POLLIN };
+
+		if (poll(&pfd, 1, 200) <= 0)
+			continue;
+		if ((hdr = snl_read_message(&ss)) == NULL)
+			continue;
+		if (hdr->nlmsg_type == NL_RTM_NEWROUTE ||
+		    hdr->nlmsg_type == NL_RTM_DELROUTE) {
+			struct snl_parsed_route p = { 0 };
+			char prefix[64];
+
+			if (snl_parse_nlmsg(&ss, hdr, &snl_rtm_route_parser,
+			    &p)) {
+				rt_prefix(prefix, sizeof(prefix), p.rta_dst,
+				    p.rtm_family, p.rtm_dst_len);
+				rt_touched(p.rta_table, prefix, time(NULL),
+				    hdr->nlmsg_type == NL_RTM_DELROUTE);
+			}
+		}
+		snl_clear_lb(&ss);
+	}
+	snl_free(&ss);
+}
+
 static void
 routes(int fib, cbl_yarena *a)
 {
@@ -291,22 +351,25 @@ routes(int fib, cbl_yarena *a)
 					const struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop
 					    *m = &nh->next_hop_list->next_hop.v[k];
 
-					printf("%s %s %s %s - %s multipath\n",
+					printf("%s %s %s %s - %s multipath%s%s\n",
 					    af, dst,
 					    str(i == 0 ? m->v4ur_address :
 					    m->v6ur_address),
 					    str(m->outgoing_interface),
-					    p != NULL ? p->name : "-");
+					    p != NULL ? p->name : "-",
+					    with_times ? " " : "", with_times ?
+					    str(r->last_updated) : "");
 				}
 				continue;
 			}
-			printf("%s %s %s %s %s %s -\n", af, dst, str(i == 0 ?
-			    nh->v4ur_next_hop_address :
+			printf("%s %s %s %s %s %s -%s%s\n", af, dst, str(i ==
+			    0 ? nh->v4ur_next_hop_address :
 			    nh->v6ur_next_hop_address),
 			    str(nh->outgoing_interface),
 			    nh->has_special_next_hop ?
 			    special[nh->special_next_hop] : "-",
-			    p != NULL ? p->name : "-");
+			    p != NULL ? p->name : "-", with_times ? " " : "",
+			    with_times ? str(r->last_updated) : "");
 		}
 	}
 	if (ietf_routing_routing_encode(data.routing, &b1) != 0)
@@ -412,6 +475,15 @@ main(int argc, char **argv)
 	cbl_yarena *a;
 	int error;
 
+	if (argc == 4 && strcmp(argv[1], "watch") == 0) {
+		if ((a = cbl_yarena_new()) == NULL)
+			err(1, "cbl_yarena_new");
+		watch(atoi(argv[3]));
+		with_times = true;
+		routes(atoi(argv[2]), a);
+		cbl_yarena_free(a);
+		return (0);
+	}
 	if (argc == 4 && strcmp(argv[1], "active") == 0) {
 		if ((a = cbl_yarena_new()) == NULL)
 			err(1, "cbl_yarena_new");

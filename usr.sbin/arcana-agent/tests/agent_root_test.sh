@@ -1182,6 +1182,51 @@ inet6 ::/0 fe80::1%$b $b - static -
 		atf_check jexec "$YJAIL" "$y" -a 1 "$PWD/fib.conf" "$PWD/none.conf"
 	fi
 }
+atf_test_case yang_route_times cleanup
+yang_route_times_head()
+{
+	atf_set "descr" "ietf-routing's last-updated (PLAN-SDN-YANG 2.4.6):" \
+	    "a route added while route events are heard has the time, one" \
+	    "not seen to change none"
+	atf_set "require.user" "root"
+}
+yang_route_times_body()
+{
+	local c="$(atf_get_srcdir)/ycollect" e=epair72a b=epair72b
+
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair72 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check jexec "$YJAIL" ifconfig "$b" inet 192.0.2.5/24 up
+	jexec "$YJAIL" "$c" watch 0 4 > out &
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		grep -q '^watching$' out 2>/dev/null && break
+		sleep 0.2
+	done
+	before=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	atf_check -o ignore jexec "$YJAIL" route add -net 198.51.100.0/24 \
+	    192.0.2.1
+	after=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	wait
+	t=$(awk '$2 == "198.51.100.0/24" { print $8 }' out)
+	[ -n "$t" ] && [ "$t" != - ] || { cat out; atf_fail \
+	    "198.51.100.0/24: no last-updated"; }
+	# The same format sorts as the times do: within the add.
+	[ ! "$t" \< "$before" ] && [ ! "$t" \> "$after" ] ||
+	    atf_fail "last-updated $t, not between $before and $after"
+	atf_check -o inline:"-\n" awk '$2 == "192.0.2.0/24" { print $8 }' out
+}
+yang_route_times_cleanup()
+{
+	ifconfig epair72b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 yang_static_apply_cleanup()
 {
 	ifconfig epair73b -vnet "$YJAIL" >/dev/null 2>&1
@@ -1216,6 +1261,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_ip
 	atf_add_test_case yang_ecmp
 	atf_add_test_case yang_static_apply
+	atf_add_test_case yang_route_times
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases
