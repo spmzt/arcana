@@ -57,7 +57,13 @@ module arcana-interfaces {
        ietf-if-vlan-encapsulation's outer-tag, c-vlan for 802.1Q and
        s-vlan for 802.1ad, its parent (vlandev) ietf-if-extensions'
        parent-interface; a tag the model cannot hold (0, 4095) is not
-       there.
+       there;
+     - an Ethernet's medium, as far as IEEE 802.3 has it, is
+       ieee802-ethernet-interface's: auto-negotiation (autoselect),
+       duplex (full-duplex, half-duplex), the PMD (the active subtype's
+       IEEE 802.3 PMD type, other where IEEE names none); the media
+       words below, any interface's with a medium, are ifconfig(8)'s
+       own.
 
      Each leaf names the FreeBSD facility it is read from and written
      to.  A list or leaf-list the system orders is in the order the
@@ -334,28 +340,6 @@ module arcana-interfaces {
       description
         "Its medium, where the driver has one: SIOCGIFXMEDIA, as
          ifconfig(8) shows it.";
-      leaf type {
-        config false;
-        type enumeration {
-          enum ethernet {
-            value 32;
-            description
-              "IFM_ETHER.";
-          }
-          enum ieee80211 {
-            value 128;
-            description
-              "IFM_IEEE80211.";
-          }
-          enum atm {
-            value 160;
-            description
-              "IFM_ATM.";
-          }
-        }
-        description
-          "The kind of medium, IFM_TYPE().";
-      }
       container current {
         description
           "The medium set: SIOCSIFMEDIA, ifconfig(8) media, mediaopt,

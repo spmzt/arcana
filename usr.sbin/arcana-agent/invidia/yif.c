@@ -74,6 +74,7 @@
 #include <net/if_types.h>
 #include <net/if_vlan_var.h>
 
+#include <ctype.h>
 #include <errno.h>
 #include <ifaddrs.h>
 #include <stdio.h>
@@ -519,8 +520,6 @@ media(yif *e, int s, cbl_yarena *a)
 	    (cur = cbl_yarena_alloc(a, sizeof(*cur))) == NULL ||
 	    (act = cbl_yarena_alloc(a, sizeof(*act))) == NULL)
 		return (ENOMEM);
-	md->has_type = true;
-	md->type = IFM_TYPE(ifmr.ifm_current);
 	if ((error = mword(ifmr.ifm_current, &w, a)) != 0)
 		return (error);
 	MWORD_TO(cur, w);
@@ -596,6 +595,124 @@ is_type(const yif *e, const char *name)
 }
 
 /*
+ * An IEEE 802.3 PMD type's identity by FreeBSD's name of a medium, as
+ * <net/if_media.h> gives it ("1000baseT", "10Gbase-SR", "25GBase-CR1"):
+ * the speed, "BASE-" and the rest in capitals, 5000 5G, a lane count of
+ * 1 dropped where IEEE names none; 0: IEEE names none.
+ */
+uint64_t
+yif_pmd(const char *subtype)
+{
+	char name[64], rest[32], speed[16];
+	size_t n = 0, k;
+	const char *p = subtype;
+	uint64_t sid;
+
+	while ((*p >= '0' && *p <= '9') || *p == '.')
+		if (n < sizeof(speed) - 2)
+			speed[n++] = *p++;
+		else
+			return (0);
+	if (n == 0)
+		return (0);
+	speed[n] = '\0';
+	if (*p == 'G' || *p == 'g' || *p == 'M' || *p == 'm') {
+		speed[n++] = (char)toupper((unsigned char)*p++);
+		speed[n] = '\0';
+	} else if (strcmp(speed, "5000") == 0)
+		strlcpy(speed, "5G", sizeof(speed));
+	if (strncasecmp(p, "base", 4) != 0)
+		return (0);
+	p += 4;
+	if (*p == '-')
+		p++;
+	for (k = 0; *p != '\0' && *p != '/' && k < sizeof(rest) - 1; p++)
+		rest[k++] = (char)toupper((unsigned char)*p);
+	rest[k] = '\0';
+	snprintf(name, sizeof(name), "pmd-type-%sBASE-%s", speed, rest);
+	if ((sid = ident_sid("ieee802-ethernet-phy-type", name)) != 0 ||
+	    k < 2 || rest[k - 1] != '1')
+		return (sid);
+	name[strlen(name) - 1] = '\0';
+	return (ident_sid("ieee802-ethernet-phy-type", name));
+}
+
+/*
+ * An Ethernet's medium as IEEE 802.3's ieee802-ethernet-interface has
+ * it: auto-negotiation where autoselect is offered, enabled when set,
+ * complete with a carrier, else unknown; the duplex and the PMD type of
+ * the medium active.
+ */
+static int
+eth_media(yif *e, int s, cbl_yarena *a)
+{
+	struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet *eth;
+	struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation
+	    *an = NULL;
+	struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities
+	    *cap;
+	struct ifmediareq ifmr;
+	const char *sub;
+	bool autosel = false;
+	int *list;
+
+	memset(&ifmr, 0, sizeof(ifmr));
+	strlcpy(ifmr.ifm_name, e->name, sizeof(ifmr.ifm_name));
+	if ((ioctl(s, SIOCGIFXMEDIA, &ifmr) != 0 &&
+	    ioctl(s, SIOCGIFMEDIA, &ifmr) != 0) ||
+	    IFM_TYPE(ifmr.ifm_current) != IFM_ETHER)
+		return (0);
+	if (ifmr.ifm_count > 0 &&
+	    (list = calloc(ifmr.ifm_count, sizeof(*list))) != NULL) {
+		ifmr.ifm_ulist = list;
+		if (ioctl(s, SIOCGIFXMEDIA, &ifmr) == 0 ||
+		    ioctl(s, SIOCGIFMEDIA, &ifmr) == 0)
+			for (int i = 0; i < ifmr.ifm_count; i++)
+				if (IFM_SUBTYPE(list[i]) == IFM_AUTO)
+					autosel = true;
+		free(list);
+		ifmr.ifm_ulist = NULL;
+	}
+	if ((eth = cbl_yarena_alloc(a, sizeof(*eth))) == NULL ||
+	    (cap = cbl_yarena_alloc(a, sizeof(*cap))) == NULL ||
+	    (autosel && (an = cbl_yarena_alloc(a, sizeof(*an))) == NULL))
+		return (ENOMEM);
+	cap->has_auto_negotiation = true;
+	cap->auto_negotiation = autosel;
+	eth->capabilities = cap;
+	if (an != NULL) {
+		an->has_enable = true;
+		an->enable = IFM_SUBTYPE(ifmr.ifm_current) == IFM_AUTO;
+		if (an->enable) {
+			an->has_negotiation_status = true;
+			an->negotiation_status =
+			    (ifmr.ifm_status & (IFM_AVALID | IFM_ACTIVE)) ==
+			    (IFM_AVALID | IFM_ACTIVE) ?
+			    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_COMPLETE :
+			    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_UNKNOWN;
+		}
+		eth->auto_negotiation = an;
+	}
+	eth->has_duplex = true;
+	eth->duplex = (ifmr.ifm_active & IFM_FDX) != 0 ?
+	    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_FULL :
+	    (ifmr.ifm_active & IFM_HDX) != 0 ?
+	    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_HALF :
+	    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_UNKNOWN;
+	sub = ifm_name(ifm_eth_sub, IFM_SUBTYPE(ifmr.ifm_active));
+	if (IFM_SUBTYPE(ifmr.ifm_active) == IFM_AUTO ||
+	    IFM_SUBTYPE(ifmr.ifm_active) == IFM_NONE || sub == NULL)
+		eth->pmd_type = ident_sid("ieee802-ethernet-phy-type",
+		    "pmd-type-unknown");
+	else if ((eth->pmd_type = yif_pmd(sub)) == 0)
+		eth->pmd_type = ident_sid("ieee802-ethernet-phy-type",
+		    "pmd-type-other");
+	eth->has_pmd_type = eth->pmd_type != 0;
+	e->ieee802_eth_if_ethernet = eth;
+	return (0);
+}
+
+/*
  * Once its type is known: ietf-if-ethernet-like's addresses, of an
  * Ethernet or a lagg with a 6-octet address, the hardware's where it
  * has one apart; ietf-if-extensions' max-frame-size, of those, a vlan
@@ -609,7 +726,10 @@ ether_parts(yif *e, int s, const struct sockaddr_dl *sdl,
 	bool ether = is_type(e, "ethernetCsmacd") ||
 	    is_type(e, "ieee8023adLag"), vlan = is_type(e, "l2vlan");
 	struct ifreq ifr;
+	int error;
 
+	if (is_type(e, "ethernetCsmacd") && (error = eth_media(e, s, a)) != 0)
+		return (error);
 	if (ether && sdl->sdl_alen == ETHER_ADDR_LEN) {
 		if ((el = cbl_yarena_alloc(a, sizeof(*el))) == NULL)
 			return (ENOMEM);

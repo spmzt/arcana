@@ -14,7 +14,9 @@
  *				for what it once had (frame= max-frame-size,
  *				mac= and bia= ethernet-like's, peer=
  *				peer-interface, vlan= the tag, parent,
- *				tag type and priority): key=value, '-' for none,
+ *				tag type and priority, eth= IEEE 802.3's
+ *				auto-negotiation, duplex and PMD type):
+ *				key=value, '-' for none,
  *				lists joined by '+', bits in hex
  *	ycollect ip		ietf-ip's: v4= and v6= the addresses,
  *				address/length:origin[:status] joined by
@@ -37,6 +39,8 @@
  *	ycollect watch fib secs	routes', each with its last-updated (- for
  *				none), after secs of route events heard
  *				and noted as the daemon notes them
+ *	ycollect pmd name ...	each medium's IEEE 802.3 PMD type, a line:
+ *				the name, the identity (- for none)
  *	ycollect origins	each netlink(4) origin's source-protocol,
  *				a line: the RTPROT_ number, with a gateway
  *				or not (gw, -), and the identity, module:name,
@@ -168,6 +172,27 @@ arcif(const struct ietf_interfaces_interfaces_interface *e)
 			printf("%s%s:%jx", i > 0 ? "+" : "",
 			    e->arcif_bridge->member.v[i].name,
 			    bitsval(&e->arcif_bridge->member.v[i].flags));
+	}
+	if (e->ieee802_eth_if_ethernet != NULL) {
+		const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet
+		    *eth = e->ieee802_eth_if_ethernet;
+		const struct cbl_yident *pmd = eth->has_pmd_type ?
+		    cbl_yschema_ident(&ymodel_schema, eth->pmd_type) : NULL;
+		static const char *const dup[] = { "full", "half", "unknown" };
+		static const char *const neg[] = { "in-progress", "complete",
+		    "failed", "unknown", "no-negotiation" };
+
+		printf(" eth=");
+		if (eth->auto_negotiation == NULL)
+			printf("-");
+		else if (!eth->auto_negotiation->enable)
+			printf("fixed");
+		else
+			printf("auto:%s", eth->auto_negotiation->
+			    has_negotiation_status ? neg[eth->auto_negotiation->
+			    negotiation_status] : "-");
+		printf(",%s,%s", eth->has_duplex ? dup[eth->duplex] : "-",
+		    pmd != NULL ? pmd->name + strlen("pmd-type-") : "-");
 	}
 	if (e->if_ext_peer_interface != NULL)
 		printf(" peer=%s", e->if_ext_peer_interface);
@@ -555,6 +580,15 @@ main(int argc, char **argv)
 			err(1, "cbl_yarena_new");
 		active(atoi(argv[2]), argv[3], a);
 		cbl_yarena_free(a);
+		return (0);
+	}
+	if (argc >= 2 && strcmp(argv[1], "pmd") == 0) {
+		for (int i = 2; i < argc; i++) {
+			const struct cbl_yident *id = cbl_yschema_ident(
+			    &ymodel_schema, yif_pmd(argv[i]));
+
+			printf("%s %s\n", argv[i], id != NULL ? id->name : "-");
+		}
 		return (0);
 	}
 	if (argc == 2 && strcmp(argv[1], "origins") == 0) {

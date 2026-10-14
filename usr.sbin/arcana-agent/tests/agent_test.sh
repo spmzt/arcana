@@ -5866,6 +5866,31 @@ EOF
 	atf_check cmp frag frag1
 }
 
+atf_test_case yang_pmd
+yang_pmd_head()
+{
+	atf_set "descr" "a medium's IEEE 802.3 PMD type, by the name" \
+	    "<net/if_media.h> gives it: IEEE's, none where IEEE names none"
+}
+yang_pmd_body()
+{
+	cat > want <<'EOF'
+1000baseT pmd-type-1000BASE-T
+10Gbase-SR pmd-type-10GBASE-SR
+25GBase-CR1 pmd-type-25GBASE-CR
+5000Base-T pmd-type-5GBASE-T
+2500Base-T -
+10base5/AUI -
+10baseT/UTP pmd-type-10BASE-T
+100GBase-SR4 pmd-type-100GBASE-SR4
+10BASE-T1S pmd-type-10BASE-T1S
+autoselect -
+EOF
+	atf_check -o file:want "$(atf_get_srcdir)/ycollect" pmd 1000baseT \
+	    10Gbase-SR 25GBase-CR1 5000Base-T 2500Base-T 10base5/AUI \
+	    10baseT/UTP 100GBase-SR4 10BASE-T1S autoselect
+}
+
 atf_test_case yang_origins
 yang_origins_head()
 {
@@ -6073,7 +6098,7 @@ EOF
 	cat > mine.awk <<'EOF'
 {
 	sub(/^[^ ]+ /, "")
-	gsub(/ (vlan|lagg|bridge|peer)=[^ ]*/, "")
+	gsub(/ (vlan|lagg|bridge|peer|eth)=[^ ]*/, "")
 	split($0, f, " ")
 	for (i in f)
 		if (f[i] ~ /^mac=/)
@@ -6098,6 +6123,47 @@ EOF
 		ifconfig -m -D "$i" | awk -v type="$t" -f ifc.awk > exp
 		grep "^$i " a | awk -f mine.awk > got
 		cmp -s exp got || atf_fail "$i: ifconfig says $(cat exp), the collector $(cat got)"
+	done
+
+	# IEEE 802.3's view of an Ethernet's medium beside ifconfig's:
+	# auto-negotiation where autoselect is offered (on when set,
+	# complete with a carrier), the active medium's duplex, its PMD
+	# type for the media named here (any other's, "*", not checked).
+	cat > eth.awk <<'EOF'
+$1 == "status:" { st = $2 }
+$1 == "media:" {
+	m = $0; sub(/^[ \t]*media: [^ ]+ /, "", m)
+	split(m, w, " "); cur = w[1]
+	act = m
+	if (index(m, "(") > 0) { sub(/^[^(]*\(/, "", act); sub(/\).*$/, "", act) }
+	split(act, aw, " "); asub = aw[1]
+}
+sup && $1 == "media" && $2 == "autoselect" { auto = 1 }
+/supported media:/ { sup = 1 }
+END {
+	if (m == "") exit
+	an = cur == "autoselect" ? "auto:" (st == "active" ? "complete" : \
+	    "unknown") : auto ? "fixed" : "-"
+	d = act ~ /full-duplex/ ? "full" : act ~ /half-duplex/ ? "half" : \
+	    "unknown"
+	p = "*"
+	if (asub == "autoselect" || asub == "none") p = "unknown"
+	else if (asub == "10Gbase-T") p = "10GBASE-T"
+	else if (asub == "1000baseT") p = "1000BASE-T"
+	else if (asub == "100baseTX") p = "100BASE-TX"
+	else if (asub == "10baseT/UTP") p = "10BASE-T"
+	printf "%s,%s,%s\n", an, d, p
+}
+EOF
+	for i in $(ifconfig -l | tr ' ' '\n' | sort | uniq -u); do
+		grep -q "^$i .* type=ethernetCsmacd " ifs || continue
+		want=$(ifconfig -m "$i" | awk -f eth.awk)
+		got=$(grep "^$i " a | sed -n 's/.* eth=\([^ ]*\).*/\1/p')
+		[ -z "$want" ] && [ -z "$got" ] && continue
+		case "$got" in
+		"$want"|"${want%,\*}",*) ;;
+		*) atf_fail "$i: ifconfig says $want, the collector eth=$got" ;;
+		esac
 	done
 
 	# ietf-ip beside ifconfig and ndp -i: the addresses with their
@@ -6239,6 +6305,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_origins
+	atf_add_test_case yang_pmd
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_jails
