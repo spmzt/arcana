@@ -15,10 +15,41 @@ Arcana uses and where they come from (step 0.5.1).
   `ietf-netconf-acm` 1250, `ietf-sid-file` 1300, `ietf-interfaces` 1500,
   `ietf-ip` 1600, `ietf-system` 1700, `iana-if-type` 1800 (IANA's "IETF
   YANG-SID Ranges", 2026-10-13).
+- IANA publishes the ranges, not always the `.sid` files. For
+  `ietf-sid-file` it has none, so cblink's
+  `share/yang/ietf-sid-file@2024-07-31.sid` numbers it as RFC 9595
+  Appendix B says (`cblink-gen -a`): 1300 the module, 1301 the
+  `sid-file` structure, 1302 to 1317 its nodes in path order. GET-SID's
+  YANG-CBOR is keyed by those; if IANA ever publishes other numbers,
+  they replace these.
 - Every other module Arcana speaks, its own and the IETF modules that
   have no IETF range yet, takes SIDs from Arcana's block. No
   interoperation with another SID-keyed protocol is claimed for those
   until they have numbers of their own.
+
+## The IETF ranges, numbered here
+
+IANA's registry gives ranges and publishes no `.sid` file for them
+("IETF YANG-SID Modules: no registrations"), so Arcana numbers each
+module in its range as RFC 9595 Appendix B says (`cblink-gen -a`), as
+for `ietf-sid-file`:
+
+| Module | Range | Size | `.sid` file |
+|---|---:|---:|---|
+| `ietf-yang-types@2025-12-22` | 1100 | 50 | `ietf-yang-types@2025-12-22.sid` (1 used) |
+| `ietf-inet-types@2025-12-22` | 1150 | 50 | `ietf-inet-types@2025-12-22.sid` (1 used) |
+| `ietf-interfaces@2018-02-20` | 1500 | 100 | `ietf-interfaces@2018-02-20.sid` (62 used) |
+| `ietf-ip@2018-02-22` | 1600 | 100 | `ietf-ip@2018-02-22.sid` (63 used) |
+| `iana-if-type@2026-03-17` | 1800 | 400 | `iana-if-type@2026-03-17.sid` (306 used) |
+
+**To decide (the user's):** the CORECONF draft's examples number
+`/ietf-interfaces:interfaces/interface` 1533, as here, but its
+children otherwise (`description` 1534, `name` 1537, `type` 1538) and
+`ethernetCsmacd` 1880, where these files have 1535, 1542, 1561 and
+1893: the draft's are those of files made for the modules' 2014
+revisions, extended since, which are not published where they can be
+fetched. Interoperating with a CORECONF peer would need those files;
+Arcana claims no such interoperation yet.
 
 ## The block
 
@@ -27,7 +58,19 @@ itself, as the plan says, until it holds one by registration.
 
 | Range | Size | Module | `.sid` file |
 |---|---:|---|---|
-| 2^40 + 0 | 100 | `cblink` | `cblink/share/yang/cblink@2026-10-13.sid` (48 used) |
+| 2^40 + 0 | 100 | `cblink`, the framework's structures | `cblink/share/yang/cblink@2026-10-13.sid` (50 used) |
+| 2^40 + 100 | 100 | `kv`, cblink's example | `cblink/examples/kv/kv@2026-10-13.sid` (22 used) |
+| 2^40 + 200 | 100 | `cblink-ctrl`, the control family | `cblink/share/yang/cblink-ctrl@2026-10-13.sid` (47 used) |
+| 2^40 + 300 | 100 | `echo`, cblink's example | `cblink/examples/echo/echo@2026-10-13.sid` (7 used) |
+| 2^40 + 400 | 100 | `stream`, cblink's example | `cblink/examples/stream/stream@2026-10-13.sid` (5 used) |
+| 2^40 + 500 | 100 | `notify`, cblink's example | `cblink/examples/notify/notify@2026-10-13.sid` (4 used) |
+| 2^40 + 1000 | 200 | `arcana-interfaces` | `share/yang/arcana-interfaces@2026-10-14.sid` (46 used) |
+
+cblink's modules take 2^40 to 2^40 + 999; Arcana's own follow from
+2^40 + 1000. cblink's own test modules (`shapes` from 2^40 + 100 000,
+`rules` from 2^40 + 200 000) number themselves for its tests and are
+never on a wire. cblink's paths are its branch v2, which arcana takes
+at the switch.
 
 ## To decide: a registered block
 

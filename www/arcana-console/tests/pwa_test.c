@@ -1083,6 +1083,29 @@ part_hosts(void)
 	wait_js("document.querySelector('.services .svc').dataset.arg === "
 	    "'sshd'", 5);
 	shot("6-services");
+	/*
+	 * A read asked for goes over the console's socket: its task says
+	 * live, not running, and draws each step as the host takes it,
+	 * the program that runs now in its box before the answer comes;
+	 * the services shown stay while it is read again.
+	 */
+	put("hold.status", "");
+	run("document.querySelector('button[data-act=refresh]').click()");
+	run("document.querySelector('section.dock:not(.open) header[data-act="
+	    "dock]')?.click()");
+	wait_js("[...document.querySelectorAll('.dock .op.o-live')].some(t => "
+	    "t.textContent.includes('list services')) && document."
+	    "querySelector('.dock.open .trace.o-live .node.k-exec."
+	    "st-incomplete') && document.querySelectorAll('.services .svc')"
+	    ".length === 2", 20);
+	ATF_CHECK(js_true("[...document.querySelectorAll('.dock.open .trace "
+	    ".node.k-exec')].some(n => n.textContent.includes('status'))"));
+	shot("6a-services-live");
+	(void)unlink("hold.status");
+	wait_js("[...document.querySelectorAll('.dock .op.o-ok')].some(t => "
+	    "t.textContent.includes('list services')) && !document."
+	    "querySelector('.dock .op.o-live')", 20);
+	run("document.querySelector('.dock > header').click()");
 
 	/*
 	 * A reading that takes its time is waited for once: leaving its
@@ -5092,6 +5115,13 @@ part_routes(void)
 	wait_js("document.querySelector('section.dock.open')", 5);
 	ATF_CHECK(js_true("![...document.querySelectorAll('.dock [data-act="
 	    "trace]')].some(t => t.textContent.includes('list jails'))"));
+	/* Opening a host does ask for its jails: a task, even with a
+	 * periodic read of them on its way. */
+	run("document.querySelector('.tree [data-act=select-devices]')"
+	    ".click()");
+	click_when("table.devices tr[data-act=select-server]", 10);
+	wait_js("[...document.querySelectorAll('.dock [data-act=trace]')]"
+	    ".some(t => t.textContent.includes('list jails'))", 20);
 	go("/#/usage");
 	run("window.before = 1; location.reload();");
 	wait_js("window.before === undefined && location.hash === '#/usage' && "

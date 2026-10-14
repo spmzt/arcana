@@ -31,6 +31,16 @@
  *
  * what is events too: the host's events as they happen, which do not
  * end (follow.c).
+ *
+ * And what is read: a read the page would make with GET, done here so
+ * that its steps reach the page while the host takes them,
+ *
+ *	{"id": 9, "server": "<id>", "what": "read", "read": "services"}
+ *
+ * answered with any number of {"id": 9, "step": {...}}, each step of the
+ * trace as it begins and again as it ends (its id that of the whole
+ * trace), then {"id": 9, "status": 200, "reply": {...}}, what GET
+ * /api/servers/<id>/services answers.  read is jails or services.
  */
 
 #include <sys/param.h>
@@ -62,6 +72,8 @@ struct stream {
 	char			*peer;
 	char			 filter[201];
 	uint8_t			 kind;		/* ARC_NET_KIND_*, or 255 for sysctl */
+	char			 read[16];	/* a read's: jails, services */
+	char			*name;		/* a read's: the server's name */
 	uint8_t			 family;
 	uint32_t		 fib;
 	char			 jail[256];
@@ -312,6 +324,43 @@ open_parts(struct stream *s, struct arc_client *cl, struct reader *r,
 	    &reader_cbs, r, sp));
 }
 
+/* A step of a read, as the host tells it: to the page at once. */
+static void
+read_step(const char *json, void *arg)
+{
+	struct stream	*s = arg;
+
+	if (!atomic_load(&s->stop))
+		say(&s->task, "{\"id\":%ju,\"step\":%s}", (uintmax_t)s->id,
+		    json);
+}
+
+/* In a task thread: a read, its steps as they come, then its answer. */
+static int
+read_run(struct kore_task *t)
+{
+	struct stream	*s;
+	char		*json;
+	int		 status;
+
+	s = (struct stream *)t;
+	json = hosts_read_live(s->sid, s->uri, s->peer, s->name, s->read,
+	    read_step, s, &status);
+	if (atomic_load(&s->stop))
+		;
+	else if (json == NULL)
+		say(t, "{\"id\":%ju,\"error\":\"the host does not answer\"}",
+		    (uintmax_t)s->id);
+	else if (strlen(json) + 64 > STREAM_PART)
+		say(t, "{\"id\":%ju,\"error\":\"too large for the socket: "
+		    "read it with GET\"}", (uintmax_t)s->id);
+	else
+		say(t, "{\"id\":%ju,\"status\":%d,\"reply\":%s}",
+		    (uintmax_t)s->id, status, json);
+	free(json);
+	return (KORE_RESULT_OK);
+}
+
 /* In a task thread: the host's parts, as they come, into the channel. */
 static int
 stream_run(struct kore_task *t)
@@ -418,6 +467,7 @@ stream_free(struct stream *s)
 	kore_task_destroy(&s->task);
 	kore_free(s->uri);
 	kore_free(s->peer);
+	kore_free(s->name);
 	kore_free(s);
 }
 
@@ -518,6 +568,39 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 			refuse(c, id, "no such server");
 		else if ((why = follow_start(c, id, sv)) != NULL)
 			refuse(c, id, why);
+		ucl_object_unref(o);
+		return;
+	}
+	if (sid != NULL && what != NULL && strcmp(what, "read") == 0) {
+		const char	*rd = ucl_str(o, "read");
+
+		if (rd == NULL || (strcmp(rd, "jails") != 0 &&
+		    strcmp(rd, "services") != 0))
+			refuse(c, id, "read is jails or services");
+		else if ((sv = server_find(sid)) == NULL)
+			refuse(c, id, "no such server");
+		else if (nstreams >= STREAMS_MAX)
+			refuse(c, id, "too much is being read at once: try "
+			    "again");
+		else {
+			if (part == NULL)
+				part = kore_malloc(STREAM_PART);
+			s = kore_calloc(1, sizeof(*s));
+			s->c = c;
+			s->id = id;
+			atomic_init(&s->stop, false);
+			strlcpy(s->sid, sv->id, sizeof(s->sid));
+			strlcpy(s->read, rd, sizeof(s->read));
+			s->uri = kore_strdup(sv->uri);
+			s->peer = sv->peer_name != NULL ?
+			    kore_strdup(sv->peer_name) : NULL;
+			s->name = kore_strdup(sv->name);
+			LIST_INSERT_HEAD(&streams, s, list);
+			nstreams++;
+			kore_task_create(&s->task, read_run);
+			kore_task_bind_callback(&s->task, stream_ready);
+			kore_task_run(&s->task);
+		}
 		ucl_object_unref(o);
 		return;
 	}

@@ -3094,10 +3094,30 @@ operations:
           - json
           - trace
 
+  - name: step
+    attribute-set: arcana
+    mcgrp: steps
+    doc: |
+      A step of what a request of the peer's own does, told while the
+      request runs: when the step begins (status incomplete, a program's
+      command line as its label) and again when it ends, with its status,
+      duration, exit and output.  Sent on the connection that made the
+      request, and only when it subscribed to steps; the reply carries
+      the whole trace as ever.  trace holds the one step, its id its
+      place in the trace.
+    event:
+      attributes:
+        - trace
+
 mcast-groups:
   - name: events
     auth: true
     doc: The host's events, each as it happens (event).
+  - name: steps
+    auth: true
+    doc: |
+      The steps of the peer's own requests as they run (step), on its
+      own connection only.
 
 streams:
   - name: network-parts

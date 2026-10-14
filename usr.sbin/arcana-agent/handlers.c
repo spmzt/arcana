@@ -346,6 +346,7 @@ worker(void *arg)
 
 	j = arg;
 	work_init(&w);
+	trace_tell(&w, j->req);
 	restart = console = false;
 	switch (j->cmd) {
 	case ARC_CMD_LIST:

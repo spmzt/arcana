@@ -129,6 +129,20 @@
   it or takes v9. Also seen: an expired flow waits in a partly filled
   export datagram until it fills or the node shuts down, with no timer
   to send it; a flush would be part of the same kernel work.
+- The panel as live as it gets, without getting in the way (the user,
+  2026-10-13; the order agreed): (1) a task's steps told as the host
+  takes them, over the console's socket: done for the jails and the
+  services read (console 0.173.0, agent 0.108.0: the agent's steps
+  group, told on the asking connection only); the other reads move
+  over one by one. A task on the socket says live, not running, and
+  blinks so; one that stays live, a tab that follows its host, stays
+  in the list as live. (2) Every tab live: what was read stays shown,
+  with how old it is, and is replaced in place when a new read
+  completes, never blanked, keeping the sort, filter, scroll, picked
+  row and an edit under way. (3) Pushed where FreeBSD tells of a
+  change (the routing socket's RTM_IFINFO and RTM_NEWADDR, kqueue's
+  EVFILT_VNODE on rc.conf and EVFILT_PROC, zpool events, the
+  jail-state events there are), polled gently where it does not.
 - The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
   under docs/notes/. Decided 2026-10-13: wire version 2 (D-1), cblink
   2 south and RESTCONF on the console only (D-2), libyang for the
@@ -150,9 +164,48 @@
   decide: an IANA mega-range request as planned, or a PEN, which RFC
   9997 (July 2026) gives SID ranges with no request, 32-bit ones (5-byte
   keys) for a PEN below 100 000; 0.6, the decisions. Y-1 under way in
-  cblink: 1.1.1 to 1.1.3, cblink-gen's YANG front end on libyang (built
+  cblink: 1.1.1 to 1.1.5, cblink-gen's YANG front end on libyang (built
   when libyang is there), its own schema model with resolved types,
-  checked against yanglint on the corpus. As each operation is
+  features, deviations and the five extensions, checked against
+  yanglint on the corpus; 1.3, XPath-lite, and what goes beyond it
+  refused; 1.4, .sid files read, verified (empty input and output
+  too, as RFC 9595 Appendix B says), numbered by -a in its order, and
+  written in YANG-CBOR as GET-SID will answer them (ietf-sid-file's
+  own SIDs computed: IANA published no .sid file for its range); 1.5,
+  YANG patterns as POSIX EREs in libcblink, \p{N} narrower than XSD's
+  and the rarer categories refused; 1.6, the emitter: C structs (-m h),
+  the schema tables with the identity closure, the features, the SID
+  table and each node's children found by delta, dense where their
+  SIDs follow one another (-m schema, cbl_schema.h), one YANG-CBOR
+  codec in libcblink with a builder and a parser for each struct, a
+  server's handler table (-m server), RFC 8340 tree diagrams equal to
+  yanglint's and Markdown (-m tree, md); the kv example in YANG
+  (cblink examples/kvy).  Arcana's corpus, 51 modules: 4312 nodes and
+  804 identities in the tables, 8406 round trips through YANG-CBOR all
+  the same bytes (cblink tools/yangwalk/tablecheck.sh). Done on cblink's
+  branch v2 (2026-10-14; arcana stays on cblink main until the switch,
+  3.8): 1.7, wire version 2 (version 1 refused), the body by SIDs, the
+  cblink module's structures in place of the negative keys (error,
+  credit, close, hello, notification), an rpc's input and output keyed
+  from its SID; family 1 "cblink.yang" serving a program's YANG handlers
+  in CORECONF's shape (GET and dump, EDIT all or nothing, RPC, NOTIFY,
+  GET-SID); the control family as the module cblink-ctrl; version 1's
+  attributes, policies, parsers and YAML generator removed, the examples
+  and tests in YANG, the docs (YANG.md, GENERATOR.md, WIRE-FORMAT.md
+  version 2). 1.8.1, the static validator (RFC 7950 within one tree,
+  run on every EDIT and rpc input) and defaults. Done on arcana main
+  (cblink main's emitter): 1.9.1, ietf-interfaces' operational state
+  collected (invidia/yif.c), equal to ifconfig and netstat -i; 1.9.2,
+  the layers from vlan, lagg and bridge; 1.9.3, the arcana-interfaces
+  augment (share/yang), equal to ifconfig -m -D and read back from each
+  kind the jobs make; 1.9.4, the netlink watch tells an interface made,
+  changed, renamed and destroyed (no kernel event for a description,
+  FIB, group, link address, media, capabilities or a kind's settings:
+  3.2.3 must tell or poll them); the IETF modules' .sid files numbered
+  in IANA's ranges, IANA publishing none. For the user: the CORECONF draft's
+  examples number some ietf-interfaces items otherwise (SIDS.md). Next:
+  1.10, ietf-ip; 1.11, the first GET, on an arcana branch with cblink
+  v2. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

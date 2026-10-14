@@ -304,8 +304,7 @@ view_trace(struct html *h, const struct op *o)
 		return;
 	}
 	h_fmt(h, "<div class=\"trace o-%s\"><header><i class=\"led\"></i>"
-	    "<h3>", o->state == OP_RUNNING ? "running" : o->state == OP_OK ?
-	    "ok" : "failed");
+	    "<h3>", op_class(o));
 	h_txt(h, o->title);
 	h_raw(h, "</h3><span class=\"dim\">");
 	h_txt(h, o->server);

@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.107.2"
+#define	ARCANA_AGENT_VERSION	"0.112.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -185,6 +185,8 @@ struct work {
 	 * this work into another reads it under it.
 	 */
 	pthread_mutex_t	 lock;
+	/* The peer told each step as it begins and ends, or NULL. */
+	cbl_conn	*tell;
 };
 
 void		 work_init(struct work *);
@@ -207,6 +209,8 @@ void		 step_exec(struct work *, int, char *const [], int,
 void		 trace_steps(struct work *, const struct arc_step **, size_t *);
 void		 trace_copy(struct work *, struct work *,
 		    const struct arc_step **, size_t *);
+void		 trace_family(cbl_family *);
+void		 trace_tell(struct work *, cbl_req *);
 uint64_t	 now_us(void);
 
 /* ira/exec.c: run a program without a shell, capturing its output. */

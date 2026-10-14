@@ -1,0 +1,20 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-inet-types",
+    "module-revision": "2025-12-22",
+    "description": "IANA range 1150 (50), IETF YANG-SID Ranges; IANA publishes no .sid file: numbered as RFC 9595 Appendix B says (cblink-gen -a).",
+    "assignment-range": [
+      {
+        "entry-point": "1150",
+        "size": "50"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-inet-types",
+        "sid": "1150"
+      }
+    ]
+  }
+}

@@ -827,6 +827,14 @@ paths:
         agent's events group); lost true when some went past a page
         too slow for them, to read them with GET events; error when
         the host is gone. Until stop, or the socket closes.
+        what read, with read jails or services, is that GET of the
+        server done here so that its steps reach the page while the
+        host takes them: any number of messages with step, a step of
+        the trace as it begins and again as it ends (its id that of
+        the whole trace; the console's connection subscribes to the
+        agent's steps group, which the agent tells on that connection
+        only), then one with status and reply, what the GET answers;
+        or one with error, and the page reads it with GET.
       responses:
         "101":
           description: Switching to the WebSocket protocol

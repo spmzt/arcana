@@ -1,0 +1,259 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-interfaces",
+    "module-revision": "2026-10-14",
+    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 1000, 200.",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "iana-if-type",
+        "module-revision": "2026-03-17"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "1099511628776",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-interfaces",
+        "sid": "1099511628776"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge",
+        "sid": "1099511628777"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member",
+        "sid": "1099511628778"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/flags",
+        "sid": "1099511628779"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/name",
+        "sid": "1099511628780"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/path-cost",
+        "sid": "1099511628781"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/port-number",
+        "sid": "1099511628782"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/priority",
+        "sid": "1099511628783"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/stp-role",
+        "sid": "1099511628784"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/stp-state",
+        "sid": "1099511628785"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:capabilities",
+        "sid": "1099511628786"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:capabilities-supported",
+        "sid": "1099511628787"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:driver-name",
+        "sid": "1099511628788"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:epair",
+        "sid": "1099511628789"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:epair/peer",
+        "sid": "1099511628790"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:epair/peer-vnet",
+        "sid": "1099511628791"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:ether",
+        "sid": "1099511628792"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:fib",
+        "sid": "1099511628793"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:group",
+        "sid": "1099511628794"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:hw-address",
+        "sid": "1099511628795"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg",
+        "sid": "1099511628796"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/hash",
+        "sid": "1099511628797"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/port",
+        "sid": "1099511628798"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/port/flags",
+        "sid": "1099511628799"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/port/name",
+        "sid": "1099511628800"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/port/priority",
+        "sid": "1099511628801"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/protocol",
+        "sid": "1099511628802"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media",
+        "sid": "1099511628803"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/active",
+        "sid": "1099511628804"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/active/mode",
+        "sid": "1099511628805"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/active/option",
+        "sid": "1099511628806"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/active/subtype",
+        "sid": "1099511628807"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/current",
+        "sid": "1099511628808"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/current/mode",
+        "sid": "1099511628809"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/current/option",
+        "sid": "1099511628810"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/current/subtype",
+        "sid": "1099511628811"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/status",
+        "sid": "1099511628812"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/supported",
+        "sid": "1099511628813"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/type",
+        "sid": "1099511628814"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:mtu",
+        "sid": "1099511628815"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:tunnel-fib",
+        "sid": "1099511628816"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan",
+        "sid": "1099511628817"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan/parent",
+        "sid": "1099511628818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan/pcp",
+        "sid": "1099511628819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan/protocol",
+        "sid": "1099511628820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan/vlan-id",
+        "sid": "1099511628821"
+      }
+    ]
+  }
+}

@@ -808,8 +808,246 @@ zfs_key_cleanup()
 	true
 }
 
+# ietf-interfaces' layers (PLAN-SDN-YANG 1.9.2): a vlan on a lagg of two
+# ports, a bridge of two members, all made here of epairs and destroyed.
+atf_test_case yang_layers cleanup
+yang_layers_head()
+{
+	atf_set "descr" "ietf-interfaces' layers: a vlan on a lagg on two" \
+	    "ports, a bridge on two members"
+	atf_set "require.user" "root"
+}
+yang_layers_body()
+{
+	e1=$(ifconfig epair create) && echo "$e1" >> made
+	e2=$(ifconfig epair create) && echo "$e2" >> made
+	p1=${e1%a}b
+	p2=${e2%a}b
+	lg=$(ifconfig lagg create) && echo "$lg" >> made
+	atf_check ifconfig "$lg" laggproto failover laggport "$e1" \
+	    laggport "$e2" up
+	vl=$(ifconfig vlan create vlan 42 vlandev "$lg") && echo "$vl" >> made
+	br=$(ifconfig bridge create) && echo "$br" >> made
+	atf_check ifconfig "$br" addm "$p1" addm "$p2" up
+	atf_check -o save:y "$(atf_get_srcdir)/ycollect" interfaces
+	atf_check -o match:" lower=$lg higher=- *\$" grep "^$vl " y
+	# A leaf-list the system orders: the members in either order.
+	atf_check -o match:" lower=($e1,$e2|$e2,$e1) higher=$vl *\$" \
+	    grep "^$lg " y
+	atf_check -o match:" lower=- higher=$lg *\$" grep "^$e1 " y
+	atf_check -o match:" lower=- higher=$lg *\$" grep "^$e2 " y
+	atf_check -o match:" lower=($p1,$p2|$p2,$p1) higher=- *\$" \
+	    grep "^$br " y
+	atf_check -o match:" lower=- higher=$br *\$" grep "^$p1 " y
+	atf_check -o match:" lower=- higher=$br *\$" grep "^$p2 " y
+	# A lagg's port is the Ethernet it was; the lagg the aggregate.
+	atf_check -o match:" type=ethernetCsmacd " grep "^$e1 " y
+	atf_check -o match:" type=ieee8023adLag " grep "^$lg " y
+	atf_check -o match:" type=l2vlan " grep "^$vl " y
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 y
+}
+yang_layers_cleanup()
+{
+	# What was made, the last first: the vlan and bridge, the lagg,
+	# then the epairs (destroying an a end takes its b end too).
+	[ -f made ] && tail -r made | while read -r i; do
+		ifconfig "$i" destroy >/dev/null 2>&1
+	done
+	true
+}
+
+# arcana-interfaces (PLAN-SDN-YANG 1.9.3): each kind of interface the
+# agent's jobs make, read back.  What no job sets (a lagg's ports, a
+# vlan's priority, STP on a bridge's member) ifconfig does.
+YJAIL=arcana-ytest
+atf_test_case yang_kinds cleanup
+yang_kinds_head()
+{
+	atf_set "descr" "arcana-interfaces reads back what the agent's jobs" \
+	    "made: a vlan on a lagg, a bridge, a gif's tunnel FIB, an MTU" \
+	    "and a FIB, an epair whose other end is in a vnet jail"
+	atf_set "require.user" "root"
+}
+yang_kinds_body()
+{
+	local y="$(atf_get_srcdir)/ycollect"
+
+	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "net.fibs is 1"
+	for i in epair77a epair78a epair79a vlan77 lagg77 bridge77 gif77; do
+		ifconfig "$i" >/dev/null 2>&1 && atf_skip "$i exists"
+	done
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	start_daemon
+	touch made
+	for e in epair77 epair78 epair79; do
+		atf_check -o ignore "$JGC" -c "$SOCK" interface "$e" create
+		echo "${e}a" >> made
+	done
+	atf_check -o ignore "$JGC" -c "$SOCK" interface epair77a mtu 1400
+	atf_check -o ignore "$JGC" -c "$SOCK" interface epair77a fib 1
+	atf_check -o ignore "$JGC" -c "$SOCK" interface lagg77 create
+	echo lagg77 >> made
+	atf_check ifconfig lagg77 laggproto loadbalance lagghash l3,l4 \
+	    laggport epair78a
+	atf_check -o ignore "$JGC" -c "$SOCK" interface vlan77 create id 77 \
+	    parent lagg77
+	echo vlan77 >> made
+	atf_check ifconfig vlan77 vlanpcp 5
+	atf_check -o ignore "$JGC" -c "$SOCK" interface bridge77 create \
+	    parent epair77b
+	echo bridge77 >> made
+	atf_check ifconfig bridge77 stp epair77b
+	atf_check -o ignore "$JGC" -c "$SOCK" interface gif77 create tunnel \
+	    192.0.2.77 192.0.2.78 tunnelfib 1
+	echo gif77 >> made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check -o ignore "$JGC" -c "$SOCK" interface epair79b give "$YJAIL"
+
+	atf_check -o save:a "$y" arcif
+	atf_check -o save:i "$y" interfaces
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 a
+	atf_check -o match:' mtu=1400 .* fib=1 .* epair=epair77b,here' \
+	    grep '^epair77a ' a
+	atf_check -o match:' epair=epair77a,here' grep '^epair77b ' a
+	atf_check -o match:' epair=-,vnet' grep '^epair79a ' a
+	atf_check -o match:' tunnelfib=1 ' grep '^gif77 ' a
+	atf_check -o match:' type=tunnel ' grep '^gif77 ' i
+	# loadbalance, hashing l3 and l4 (bits 1 and 2); the port's state
+	# is the kernel's.
+	atf_check -o match:' lagg=loadbalance,6,epair78a:[0-9a-f]+' \
+	    grep '^lagg77 ' a
+	atf_check -o match:' vlan=77,lagg77,0x8100,5' grep '^vlan77 ' a
+	# A member's flags are those ifconfig shows.
+	flags=$(ifconfig bridge77 | sed -n 's/.*member: epair77b flags=\([0-9a-f]*\)<.*/\1/p')
+	[ -n "$flags" ] || atf_fail "ifconfig shows no member epair77b"
+	atf_check -o match:" bridge=epair77b:$flags( |\$)" grep '^bridge77 ' a
+	atf_check -o match:" bridge=epair77b:[0-9a-f]*[4-7]( |\$)" \
+	    grep '^bridge77 ' a
+}
+yang_kinds_cleanup()
+{
+	cleanup
+	# Out of the vnet jail first: it is not removed with one inside.
+	ifconfig epair79b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && tail -r made | while read -r i; do
+		ifconfig "$i" destroy >/dev/null 2>&1
+	done
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
+# The events ietf-interfaces' list changes by (PLAN-SDN-YANG 1.9.4),
+# netlink(4)'s RTNLGRP_LINK as the agent watches it: an interface made,
+# changed, renamed (gone by its old name, come by its new one) and
+# destroyed, the collector's list agreeing after each.
+atf_test_case yang_events cleanup
+yang_events_head()
+{
+	atf_set "descr" "an interface made, changed, renamed and destroyed:" \
+	    "each a link event, and the collector's list as it says"
+	atf_set "require.user" "root"
+}
+yang_events_body()
+{
+	local y="$(atf_get_srcdir)/ycollect"
+
+	for i in epair76a epair76b yev76; do
+		ifconfig "$i" >/dev/null 2>&1 && atf_skip "$i exists"
+	done
+	start_daemon
+	last=$("$JGC" -c "$SOCK" events | sed -E 's/^\{"last":([0-9]+).*/\1/')
+	atf_check -o ignore ifconfig epair76 create
+	echo epair76a > made
+	atf_check ifconfig epair76a mtu 1400 up
+	echo yev76 >> made
+	atf_check -o inline:'yev76\n' ifconfig epair76a name yev76
+	atf_check -o save:y "$y" interfaces
+	atf_check -o match:'^yev76 index=[0-9]+ admin=up ' grep '^yev76 ' y
+	atf_check -s exit:1 grep '^epair76a ' y
+	atf_check ifconfig yev76 destroy
+	atf_check -o save:y2 "$y" interfaces
+	atf_check -s exit:1 grep -E '^(yev76|epair76b) ' y2
+	sleep 0.5
+	atf_check -o save:ev "$JGC" -c "$SOCK" events "$last"
+	atf_check -o match:'"kind":"link","data":\{"interface":"epair76a","up":false' \
+	    -o match:'"kind":"link","data":\{"interface":"epair76a","up":true,"carrier":true,"mtu":1400' \
+	    -o match:'"kind":"link-del","data":\{"interface":"epair76a"' \
+	    -o match:'"kind":"link","data":\{"interface":"yev76"' \
+	    -o match:'"kind":"link-del","data":\{"interface":"yev76"' \
+	    -o match:'"kind":"link-del","data":\{"interface":"epair76b"' cat ev
+}
+yang_events_cleanup()
+{
+	cleanup
+	# By either name: renamed or not when the case stopped.
+	[ -f made ] && while read -r i; do
+		ifconfig "$i" destroy >/dev/null 2>&1
+	done < made
+	true
+}
+
+# ietf-ip's origins and statuses (PLAN-SDN-YANG 1.10.1) on a lab epair:
+# deprecated, autoconfigured from the link address or not, link-local,
+# IPv4 link-local, a duplicate DAD finds against the other end in a vnet
+# jail, and IPv6 turned off.  (dhcp needs a server base has not.)
+atf_test_case yang_ip cleanup
+yang_ip_head()
+{
+	atf_set "descr" "ietf-ip's origins and statuses: deprecated," \
+	    "autoconf by EUI-64 or not, link-local, 169.254/16, duplicate," \
+	    "IPv6 off"
+	atf_set "require.user" "root"
+}
+yang_ip_body()
+{
+	local y="$(atf_get_srcdir)/ycollect" e=epair75a b=epair75b
+
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair75 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check ifconfig "$e" up
+	atf_check jexec "$YJAIL" ifconfig "$b" inet6 2001:db8:78::1/64 up
+	atf_check ifconfig "$e" inet6 2001:db8:75::1/64 deprecated
+	atf_check ifconfig "$e" inet6 2001:db8:76::/64 eui64 autoconf
+	atf_check ifconfig "$e" inet6 2001:db8:77::5/64 autoconf
+	atf_check ifconfig "$e" inet 169.254.7.5/16
+	sleep 1
+	atf_check ifconfig "$e" inet6 2001:db8:78::1/64
+	# DAD: a probe a second (net.inet6.ip6.dad_count), then its verdict.
+	for i in 1 2 3 4 5 6; do
+		ifconfig "$e" | grep -q '2001:db8:78::1 .*duplicated' && break
+		sleep 1
+	done
+	atf_check -o save:ip "$y" ip
+	atf_check -o save:addrs sh -c "grep '^$e ' ip | tr '+ ' '\n\n'"
+	atf_check -o match:'^v4=169\.254\.7\.5/16:random$' \
+	    -o match:'^v6=2001:db8:75::1/64:static:deprecated$' \
+	    -o match:'^fe80::[0-9a-f:]+/64:link-layer:preferred$' \
+	    -o match:'^2001:db8:76:0:[0-9a-f:]+/64:link-layer:preferred$' \
+	    -o match:'^2001:db8:77::5/64:random:preferred$' \
+	    -o match:'^2001:db8:78::1/64:static:duplicate$' \
+	    -o match:'^ipv6=on,1500$' cat addrs
+	atf_check ifconfig "$e" inet6 ifdisabled
+	atf_check -o match:" ipv6=off,1500\$" sh -c "\"$y\" ip | grep '^$e '"
+}
+yang_ip_cleanup()
+{
+	# Out of the vnet jail first: it is not removed with one inside.
+	ifconfig epair75b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case yang_layers
+	atf_add_test_case yang_kinds
+	atf_add_test_case yang_events
+	atf_add_test_case yang_ip
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases

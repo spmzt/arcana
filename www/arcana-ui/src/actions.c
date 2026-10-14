@@ -382,8 +382,12 @@ op_done(struct op *o, bool ok, const ucl_object_t *reply, const char *err)
 		/* And to the other devices that asked to be told. */
 		arc_push_send(ok ? "Arcana: done" : "Arcana: failed", body);
 	}
-	if (reply != NULL && (t = jget(reply, "trace")) != NULL)
+	if (reply != NULL && (t = jget(reply, "trace")) != NULL) {
+		/* The whole trace, in place of the steps told live. */
+		if (o->trace != NULL)
+			ucl_object_unref(o->trace);
 		o->trace = ucl_object_ref((ucl_object_t *)(uintptr_t)t);
+	}
 	if (err != NULL)
 		snprintf(o->error, sizeof(o->error), "%s", err);
 }
@@ -1089,8 +1093,9 @@ jails_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 }
 
 /*
- * Fetch the jails of a server.  A refresh the user asked for goes into
- * the activity log with its trace; the periodic ones do not.
+ * Fetch the jails of a server.  A read the user asked for (opening the
+ * host or its Jails tab, Refresh) is a task with its trace, even with a
+ * periodic one on its way; the periodic ones are not.
  */
 void
 refresh_jails(struct server *s, bool user)
@@ -1099,18 +1104,21 @@ refresh_jails(struct server *s, bool user)
 	struct op	*op;
 	char		 url[128], title[160];
 
-	if (!app.online || s->loading)
+	if (!app.online || (s->loading && !user))
 		return;
 	s->loading = true;
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	c->user = user;
+	snprintf(url, sizeof(url), "/api/servers/%s/jails", s->id);
+	/* Asked for: a task, its steps drawn as the host takes them. */
 	if (user) {
 		snprintf(title, sizeof(title), "list jails");
 		op = op_new(title, s->name);
 		c->op = op->id;
+		live_read(s->id, "jails", url, c->op, jails_cb, c);
+		return;
 	}
-	snprintf(url, sizeof(url), "/api/servers/%s/jails", s->id);
 	op_wait(c->op, api("GET", url, NULL, jails_cb, c));
 }
 
@@ -1183,12 +1191,14 @@ refresh_services(struct server *s, bool user)
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	c->user = user;
+	snprintf(url, sizeof(url), "/api/servers/%s/services", s->id);
 	if (user) {
 		op = op_new("list services", s->name);
 		c->op = op->id;
 		app.trace_op = op->id;
+		live_read(s->id, "services", url, c->op, services_cb, c);
+		return;
 	}
-	snprintf(url, sizeof(url), "/api/servers/%s/services", s->id);
 	op_wait(c->op, api("GET", url, NULL, services_cb, c));
 }
 

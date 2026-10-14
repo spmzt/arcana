@@ -6,7 +6,9 @@
 
 /*
  * Gula: what a request did, step by step, with what each program it ran
- * printed.  Every reply carries it; a job's is read while the job runs.
+ * printed.  Every reply carries it; a job's is read while the job runs;
+ * a peer that subscribed to steps is told each step of its own requests
+ * as it begins and as it ends, on its connection.
  */
 
 #include <sys/types.h>
@@ -20,6 +22,10 @@
 #include <wchar.h>
 
 #include "agent.h"
+
+static cbl_family	*tell_family;
+
+static void	tell(struct work *, int);
 
 uint64_t
 now_us(void)
@@ -71,6 +77,7 @@ step_begin(struct work *w, uint8_t kind, const char *label,
 		w->stack[w->depth++] = w->nsteps;
 	idx = w->nsteps++;
 	pthread_mutex_unlock(&w->lock);
+	tell(w, idx);
 	return (idx);
 }
 
@@ -110,6 +117,7 @@ step_end(struct work *w, int idx, bool ok, const char *fmt, ...)
 			break;
 		}
 	pthread_mutex_unlock(&w->lock);
+	tell(w, idx);
 }
 
 /* Attach what a program was run with and what it printed. */
@@ -141,6 +149,50 @@ step_exec(struct work *w, int idx, char *const argv[], int status,
 	pthread_mutex_unlock(&w->lock);
 }
 
+/*
+ * Step s, the trace's i-th, in the shape the family's replies carry it,
+ * allocated from dst; with copy, its strings too, as from another work.
+ */
+static void
+step_fill(struct work *dst, const struct step *s, int i, bool copy,
+    struct arc_step *v)
+{
+	const char	**av;
+	size_t		 k;
+
+	v->has_id = true;
+	v->id = (uint32_t)i;
+	v->has_parent = true;
+	v->parent = s->parent;
+	v->has_kind = true;
+	v->kind = s->kind;
+	v->label = wtext(dst, copy ? wstrdup(dst, s->label) : s->label);
+	v->detail = wtext(dst, copy ? wstrdup(dst, s->detail) : s->detail);
+	v->has_status = true;
+	v->status = !s->done ? ARC_STEP_STATUS_INCOMPLETE :
+	    s->ok ? ARC_STEP_STATUS_OK : ARC_STEP_STATUS_FAILED;
+	v->has_duration_us = s->done;
+	v->duration_us = s->dur;
+	if (s->kind == ARC_STEP_KIND_EXEC && s->argv != NULL) {
+		av = s->argv;
+		if (copy) {
+			av = wcalloc(dst, s->argc + 1, sizeof(*av));
+			for (k = 0; k < s->argc; k++)
+				av[k] = wstrdup(dst, s->argv[k]);
+		}
+		v->argv.n = s->argc;
+		v->argv.v = av;
+		v->has_exit = true;
+		v->exit = s->status;
+		v->output.p = s->out == NULL ? "" : copy ?
+		    wstrndup(dst, s->out, s->outlen) : s->out;
+		v->output.len = s->outlen;
+		v->error_output.p = s->err == NULL ? "" : copy ?
+		    wstrndup(dst, s->err, s->errlen) : s->err;
+		v->error_output.len = s->errlen;
+	}
+}
+
 /* The trace in the shape the family's replies carry it. */
 void
 trace_steps(struct work *w, const struct arc_step **vp, size_t *np)
@@ -159,9 +211,6 @@ trace_copy(struct work *dst, struct work *src, const struct arc_step **vp,
     size_t *np)
 {
 	struct arc_step	*v;
-	struct step	*s;
-	const char	**av;
-	size_t		 k;
 	int		 i, n;
 	bool		 copy;
 
@@ -169,43 +218,63 @@ trace_copy(struct work *dst, struct work *src, const struct arc_step **vp,
 	pthread_mutex_lock(&src->lock);
 	n = src->nsteps;
 	v = wcalloc(dst, (size_t)n + 1, sizeof(*v));
-	for (i = 0; i < n; i++) {
-		s = &src->steps[i];
-		v[i].has_id = true;
-		v[i].id = (uint32_t)i;
-		v[i].has_parent = true;
-		v[i].parent = s->parent;
-		v[i].has_kind = true;
-		v[i].kind = s->kind;
-		v[i].label = wtext(dst, copy ? wstrdup(dst, s->label) :
-		    s->label);
-		v[i].detail = wtext(dst, copy ? wstrdup(dst, s->detail) :
-		    s->detail);
-		v[i].has_status = true;
-		v[i].status = !s->done ? ARC_STEP_STATUS_INCOMPLETE :
-		    s->ok ? ARC_STEP_STATUS_OK : ARC_STEP_STATUS_FAILED;
-		v[i].has_duration_us = s->done;
-		v[i].duration_us = s->dur;
-		if (s->kind == ARC_STEP_KIND_EXEC && s->argv != NULL) {
-			av = s->argv;
-			if (copy) {
-				av = wcalloc(dst, s->argc + 1, sizeof(*av));
-				for (k = 0; k < s->argc; k++)
-					av[k] = wstrdup(dst, s->argv[k]);
-			}
-			v[i].argv.n = s->argc;
-			v[i].argv.v = av;
-			v[i].has_exit = true;
-			v[i].exit = s->status;
-			v[i].output.p = s->out == NULL ? "" : copy ?
-			    wstrndup(dst, s->out, s->outlen) : s->out;
-			v[i].output.len = s->outlen;
-			v[i].error_output.p = s->err == NULL ? "" : copy ?
-			    wstrndup(dst, s->err, s->errlen) : s->err;
-			v[i].error_output.len = s->errlen;
-		}
-	}
+	for (i = 0; i < n; i++)
+		step_fill(dst, &src->steps[i], i, copy, &v[i]);
 	pthread_mutex_unlock(&src->lock);
 	*vp = v;
 	*np = (size_t)n;
+}
+
+/* The family the steps are told in; set once, before any request. */
+void
+trace_family(cbl_family *fam)
+{
+
+	tell_family = fam;
+}
+
+/*
+ * The request's steps are told to the peer that made it, as they begin
+ * and end, when it subscribed to steps; else nothing is.
+ */
+void
+trace_tell(struct work *w, cbl_req *req)
+{
+	cbl_conn	*conn;
+
+	conn = req != NULL ? cbl_req_conn(req) : NULL;
+	if (conn != NULL && tell_family != NULL &&
+	    cbl_conn_subscribed(conn, tell_family, ARC_MCGRP_STEPS))
+		w->tell = conn;
+}
+
+/*
+ * Tell the peer about step idx as it is now.  Only the work's own
+ * thread changes its steps, and this runs on it: the step is read
+ * without copying, and what it holds stays while the message is made.
+ */
+static void
+tell(struct work *w, int idx)
+{
+	struct arc_step_ntf	 ntf;
+	struct arc_step		 v;
+	cbl_msg			*msg;
+
+	if (w->tell == NULL || idx < 0)
+		return;
+	memset(&v, 0, sizeof(v));
+	pthread_mutex_lock(&w->lock);
+	step_fill(w, &w->steps[idx], idx, false, &v);
+	pthread_mutex_unlock(&w->lock);
+	memset(&ntf, 0, sizeof(ntf));
+	ntf.trace.n = 1;
+	ntf.trace.v = &v;
+	if (cbl_notify_msg_new(tell_family, ARC_CMD_STEP, &msg) != 0)
+		return;
+	if (arc_step_ntf_put_fields(msg, &ntf) != 0) {
+		cbl_msg_free(msg);
+		return;
+	}
+	/* A peer that is gone, or too slow, misses it: the reply has it. */
+	(void)cbl_conn_notify(w->tell, tell_family, ARC_MCGRP_STEPS, msg);
 }

@@ -5190,8 +5190,203 @@ capture_cleanup()
 	stop_daemon
 }
 
+# The ietf-interfaces collector (yang/collect.h) beside what ifconfig(8)
+# and netstat(1) -i say of the same interfaces.
+atf_test_case yang_interfaces
+yang_interfaces_head()
+{
+	atf_set "descr" "ietf-interfaces as collected agrees with ifconfig" \
+	    "and netstat -i: names, up, index, address, counters"
+}
+yang_interfaces_body()
+{
+	netstat -i -n -b -W > before
+	atf_check -o save:y "$(atf_get_srcdir)/ycollect" interfaces
+	netstat -i -n -b -W > after
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+	    tail -1 y
+	sed '$d' y > ifs
+	# Each name once: two interfaces may share one (yif.c).
+	ifconfig -l | tr ' ' '\n' | sort -u > names
+	awk '{ print $1 }' ifs | sort > got
+	atf_check cmp names got
+	ifconfig -u -l | tr ' ' '\n' | sort -u > up
+	awk '/ admin=up / { print $1 }' ifs | sort > gotup
+	atf_check cmp up gotup
+	# netstat's Link# line, the first of a name: index, address, bytes.
+	awk '
+	FNR == 1 { f++ }
+	f < 3 && $3 ~ /^<Link#/ {
+		n = $1; sub(/\*$/, "", n)
+		if ((f, n) in seen) next
+		seen[f, n] = 1
+		idx = $3; gsub(/[^0-9]/, "", idx)
+		if (f == 1) {
+			index_of[n] = idx
+			addr[n] = $4 ~ /:/ ? $4 : "-"
+			ib0[n] = $8; ob0[n] = $11
+		} else {
+			ib1[n] = $8; ob1[n] = $11
+		}
+		next
+	}
+	f == 3 {
+		n = $1
+		split($0, kv, " ")
+		for (i in kv) {
+			split(kv[i], p, "=")
+			v[p[1]] = p[2]
+		}
+		if (v["index"] != index_of[n] || v["phys"] != addr[n] ||
+		    v["in-octets"] + 0 < ib0[n] + 0 ||
+		    v["in-octets"] + 0 > ib1[n] + 0 ||
+		    v["out-octets"] + 0 < ob0[n] + 0 ||
+		    v["out-octets"] + 0 > ob1[n] + 0) {
+			printf "%s: %s, netstat says index %s address %s " \
+			    "in %s..%s out %s..%s\n", n, $0, index_of[n], \
+			    addr[n], ib0[n], ib1[n], ob0[n], ob1[n]
+			bad = 1
+		}
+	}
+	END { exit bad }' before after ifs || atf_fail "the collector and netstat differ"
+
+	# arcana-interfaces beside ifconfig -m -D, as ifconfig shows it:
+	# no hwaddr when it is the link address, no fib when 0.
+	atf_check -o save:a "$(atf_get_srcdir)/ycollect" arcif
+	cat > ifc.awk <<'EOF'
+NR == 1 { for (i = 1; i < NF; i++) if ($i == "mtu") mtu = $(i + 1) }
+$1 ~ /^options=/ { o = $1; sub(/^options=/, "", o); sub(/<.*/, "", o) }
+$1 ~ /^capabilities=/ { c = $1; sub(/^capabilities=/, "", c); sub(/<.*/, "", c) }
+$1 == "ether" { ether = $2 }
+$1 == "hwaddr" { hw = $2 }
+$1 == "groups:" { g = $2; for (i = 3; i <= NF; i++) g = g "+" $i }
+$1 == "fib:" { fib = $2 }
+$1 == "tunnelfib:" { tfib = " tunnelfib=" $2 }
+$1 == "drivername:" { drv = $2 }
+$1 == "status:" { st = $0; sub(/^[ \t]*status: /, "", st); gsub(/ /, "-", st) }
+$1 == "media:" { m = $0; sub(/^[ \t]*media: [^ ]+ /, "", m) }
+sup && $1 == "media" { s = $0; sub(/^[ \t]*media /, "", s); sp = sp (sp == "" ? "" : "+") s }
+/supported media:/ { sup = 1 }
+END {
+	printf "drv=%s mtu=%s ether=%s hw=%s groups=%s fib=%s%s options=%s " \
+	    "capabilities=%s", drv, mtu, ether ? ether : "-", hw ? hw : "-",
+	    g ? g : "-", fib ? fib : 0, tfib, o, c
+	if (m != "")
+		printf " status=%s media=%s supported=%s", st ? st : "-", m,
+		    sp ? sp : "-"
+	printf "\n"
+}
+EOF
+	# Ours: the kinds' parts left to agent_root_test, hw as ifconfig
+	# hides it, a medium unchanged by autoselect without "(...)".
+	cat > mine.awk <<'EOF'
+{
+	sub(/^[^ ]+ /, "")
+	gsub(/ (vlan|lagg|bridge|epair)=[^ ]*/, "")
+	split($0, f, " ")
+	for (i in f)
+		if (f[i] ~ /^ether=/)
+			ether = substr(f[i], 7)
+	if (ether != "-")
+		sub(" hw=" ether, " hw=-")
+	sub(/ fib=0 tunnelfib=0/, " fib=0")
+	if (match($0, / media=.* \(/)) {
+		cur = substr($0, RSTART + 7, RLENGTH - 9)
+		rest = substr($0, RSTART + RLENGTH)
+		act = substr(rest, 1, index(rest, ") supported=") - 1)
+		if (act == cur)
+			sub(/ \([^)]*\) supported=/, " supported=")
+	}
+	print
+}
+EOF
+	# A name two interfaces share is ifconfig's to choose: left out.
+	for i in $(ifconfig -l | tr ' ' '\n' | sort | uniq -u); do
+		ifconfig -m -D "$i" | awk -f ifc.awk > exp
+		grep "^$i " a | awk -f mine.awk > got
+		cmp -s exp got || atf_fail "$i: ifconfig says $(cat exp), the collector $(cat got)"
+	done
+
+	# ietf-ip beside ifconfig and ndp -i: the addresses with their
+	# prefix lengths and IPv6 status, IPv6 on or off and its MTU, the
+	# origins by class (a link-local one ll, an autoconfigured or
+	# temporary one auto, the rest static; dhcp counts as static).
+	atf_check -o save:ip "$(atf_get_srcdir)/ycollect" ip
+	cat > ifip.awk <<'EOF'
+function bits(h,  n, d) {
+	n = 0
+	for (h = substr(h, 3); h != ""; h = substr(h, 2)) {
+		d = index("0123456789abcdef", substr(h, 1, 1)) - 1
+		n += (d >= 8) + (d % 8 >= 4) + (d % 4 >= 2) + (d % 2)
+	}
+	return n
+}
+NR == 1 { for (i = 1; i < NF; i++) if ($i == "mtu") mtu = $(i + 1) }
+$1 == "inet" {
+	o = $2 ~ /^169\.254\./ ? "random" : "static"
+	v4 = v4 (v4 == "" ? "" : "+") $2 "/" bits($4) ":" o
+}
+$1 == "inet6" {
+	a = $2; sub(/%.*/, "", a)
+	st = "preferred"; o = a ~ /^fe80:/ ? "ll" : "static"
+	for (i = 3; i <= NF; i++) {
+		if ($i == "prefixlen") len = $(i + 1)
+		if ($i == "duplicated") st = "duplicate"
+		else if ($i == "tentative" && st != "duplicate") st = "tentative"
+		else if ($i == "detached" && st == "preferred") st = "inaccessible"
+		else if ($i == "deprecated" && st == "preferred") st = "deprecated"
+		if ($i == "autoconf" || $i == "temporary") o = "auto"
+	}
+	v6 = v6 (v6 == "" ? "" : "+") a "/" len ":" o ":" st
+}
+$1 == "nd6" { nd = $2 ~ /IFDISABLED/ ? "off" : "on" }
+$1 ~ /^linkmtu=/ { lm = $1; sub(/^linkmtu=/, "", lm); sub(/,$/, "", lm) }
+END {
+	if (nd != "" && lm + 0 > 0 && lm + 0 < mtu + 0)
+		mtu = lm
+	printf "v4=%s v6=%s ipv6=%s\n", v4 ? v4 : "-", v6 ? v6 : "-",
+	    nd ? nd "," mtu : "-"
+}
+EOF
+	cat > myip.awk <<'EOF'
+{
+	sub(/^[^ ]+ /, "")
+	gsub(/:dhcp/, ":static")
+	n = split($0, f, " ")
+	for (k = 1; k <= n; k++) {
+		if (f[k] !~ /^v6=/ || f[k] == "v6=-")
+			continue
+		m = split(substr(f[k], 4), a, "+")
+		f[k] = "v6="
+		for (j = 1; j <= m; j++) {
+			split(a[j], p, ":")
+			# An address has colons: origin and status are the last two.
+			c = split(a[j], q, ":")
+			o = q[c - 1]; st = q[c]
+			ad = substr(a[j], 1, length(a[j]) - length(o) - length(st) - 2)
+			if (ad ~ /^fe80:/ && (o == "link-layer" || o == "other"))
+				o = "ll"
+			else if (o == "link-layer" || o == "random")
+				o = "auto"
+			f[k] = f[k] (j > 1 ? "+" : "") ad ":" o ":" st
+		}
+	}
+	out = f[1]
+	for (k = 2; k <= n; k++)
+		out = out " " f[k]
+	print out
+}
+EOF
+	for i in $(ifconfig -l | tr ' ' '\n' | sort | uniq -u); do
+		{ ifconfig "$i"; ndp -i "$i" 2>/dev/null; } | awk -f ifip.awk > exp
+		grep "^$i " ip | awk -f myip.awk > got
+		cmp -s exp got || atf_fail "$i: ifconfig says $(cat exp), the collector $(cat got)"
+	done
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case yang_interfaces
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd
 	atf_add_test_case ipsec_sa
