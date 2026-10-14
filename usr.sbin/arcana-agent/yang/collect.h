@@ -80,6 +80,26 @@ int	yni_read(const struct vc_file *f, int nfibs, cbl_yarena *a,
 int	yni_write(struct vc_file *f, int nfibs,
 	    const struct ietf_network_instance_network_instances *ni,
 	    char *err, size_t errlen);
+/*
+ * bind-ni-name: yni_bind() each of the n interfaces', its address
+ * families' too, from its FIB; yni_fib() the FIB of the instance named
+ * name, -1 for none; yni_rc_fib() the "fib N" words of rc.conf f's
+ * ifconfig_<if>; yni_bind_apply() ifname bound to name (v4, v6 its
+ * families' if given), by SIOCSIFFIB and in f if not NULL; refused,
+ * *fail says why as RFC 8529's bind-ni-name-failed.
+ */
+int	yni_bind(struct ietf_interfaces_interfaces_interface *v, size_t n,
+	    const struct ietf_network_instance_network_instances *ni,
+	    cbl_yarena *a);
+int	yni_fib(const struct ietf_network_instance_network_instances *ni,
+	    const char *name);
+int	yni_rc_fib(struct vc_file *f, const char *ifname, int fib, char *err,
+	    size_t errlen);
+int	yni_bind_apply(const char *ifname, const char *name, const char *v4,
+	    const char *v6,
+	    const struct ietf_network_instance_network_instances *ni,
+	    struct vc_file *f, cbl_yarena *a,
+	    const struct ietf_network_instance_bind_ni_name_failed **fail);
 
 /*
  * rtadvd.conf and an interface's ipv6-router-advertisements (RFC 8349's

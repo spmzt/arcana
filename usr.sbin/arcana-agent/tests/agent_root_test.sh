@@ -1255,6 +1255,62 @@ yang_ni_cleanup()
 	true
 }
 
+atf_test_case yang_ni_bind cleanup
+yang_ni_bind_head()
+{
+	atf_set "descr" "bind-ni-name (PLAN-SDN-YANG 2.6.3): ifconfig's fib" \
+	    "read back as the instance's name, a name applied by SIOCSIFFIB" \
+	    "and kept in rc.conf, bind-ni-name-failed; a vnet jail's epair"
+	atf_set "require.user" "root"
+}
+yang_ni_bind_body()
+{
+	local y="$(atf_get_srcdir)/yni" e=epair72a b=epair72b
+
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair72 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check -o ignore jexec "$YJAIL" sysctl net.fibs=4
+	atf_check jexec "$YJAIL" ifconfig "$b" inet 192.0.2.5/24 up
+	printf 'fib2_name="blue"\n' > fibs.conf
+	printf 'ifconfig_%s="inet 192.0.2.5/24"\n' "$b" > rc.conf
+	# ifconfig fib 2, read back: FIB 2's name, its families' too.
+	atf_check jexec "$YJAIL" ifconfig "$b" fib 2
+	atf_check -o inline:"$b 2 blue blue blue
+back $b blue
+yang-cbor the same back
+" jexec "$YJAIL" "$y" -i "$PWD/fibs.conf"
+	# A name applied: the kernel's, rc.conf's.
+	atf_check jexec "$YJAIL" "$y" -b "$b" fib3 "$PWD/fibs.conf" \
+	    "$PWD/rc.conf"
+	atf_check -o match:'fib: 3$' jexec "$YJAIL" ifconfig "$b"
+	atf_check -o inline:"ifconfig_$b=\"inet 192.0.2.5/24 fib 3\"\n" \
+	    cat rc.conf
+	# Refused, nothing changed: no such instance, a family apart.
+	atf_check -s exit:1 \
+	    -o inline:"failed $b: nosuch: no such network instance\n" \
+	    jexec "$YJAIL" "$y" -b "$b" nosuch "$PWD/fibs.conf" "$PWD/rc.conf"
+	atf_check -s exit:1 -o inline:"failed $b: blue: FreeBSD binds an interface, both its address families, not one alone\n" \
+	    jexec "$YJAIL" "$y" -b "$b" -4 fib1 blue "$PWD/fibs.conf"
+	atf_check -o match:'fib: 3$' jexec "$YJAIL" ifconfig "$b"
+	atf_check -o match:'fib 3' cat rc.conf
+	# None: FIB 0, the word out.
+	atf_check jexec "$YJAIL" "$y" -b "$b" - "$PWD/fibs.conf" \
+	    "$PWD/rc.conf"
+	atf_check -o not-match:'fib:' jexec "$YJAIL" ifconfig "$b"
+	atf_check -o inline:"ifconfig_$b=\"inet 192.0.2.5/24\"\n" cat rc.conf
+}
+yang_ni_bind_cleanup()
+{
+	ifconfig epair72b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 atf_test_case yang_rtadv cleanup
 yang_rtadv_head()
 {
@@ -1351,6 +1407,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_route_times
 	atf_add_test_case yang_rtadv
 	atf_add_test_case yang_ni
+	atf_add_test_case yang_ni_bind
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases

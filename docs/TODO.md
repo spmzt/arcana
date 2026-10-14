@@ -305,9 +305,16 @@
   arcana-network-instance's deviations (no VSI or VV root, a FIB cannot
   be disabled; lint.sh holds them) leave ietf-network-instance's file
   whole. Held to the host's net.fibs and fibs.conf cases (yang_ni_conf)
-  and a vnet jail raised to net.fibs=4 (yang_ni). Next: 2.6.3,
-  bind-ni-name; 2.6.2 is a mount, after 1.11. As each operation
-  is
+  and a vnet jail raised to net.fibs=4 (yang_ni). 2.6.3:
+  bind-ni-name, the interface's and its address families' alike (an
+  interface is bound, not a family): read from its FIB (SIOCGIFFIB),
+  applied by SIOCSIFFIB and kept as the fib words of rc.conf's
+  ifconfig_<if>, undone if that fails; refused as bind-ni-name-failed
+  says (no such instance, a family apart, the kernel's error). Held to
+  rc.conf cases (yang_ni_rc) and an epair in a vnet jail: ifconfig fib
+  read back, a name applied, refusals, unbound (yang_ni_bind). Next:
+  2.6.4, net.fibs in loader.conf and the reboot flag; 2.6.2 is a
+  mount, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

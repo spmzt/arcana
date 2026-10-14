@@ -5340,6 +5340,36 @@ yang-cbor 60 bytes, the same back
 	atf_check cmp was fibs.conf
 }
 
+atf_test_case yang_ni_rc
+yang_ni_rc_head()
+{
+	atf_set "descr" "bind-ni-name kept in rc.conf (PLAN-SDN-YANG 2.6.3):" \
+	    "the fib words of ifconfig_<if> set, replaced, taken out"
+}
+yang_ni_rc_body()
+{
+	local y="$(atf_get_srcdir)/yni"
+
+	cat > rc.conf <<'EOF'
+ifconfig_em0="inet 192.0.2.1/24 fib 2 up"
+ifconfig_lo1="fib 3"
+ifconfig_vlan0_10="inet 198.51.100.1/24"
+ifconfig_em1="$x"
+EOF
+	atf_check "$y" -r em0 3 rc.conf
+	atf_check "$y" -r lo1 0 rc.conf
+	atf_check "$y" -r vlan0.10 2 rc.conf
+	atf_check "$y" -r igb0 0 rc.conf
+	atf_check "$y" -r igb1 5 rc.conf
+	atf_check -s exit:1 -e inline:"yni: ifconfig_em1: not settled by reading the file\n" \
+	    "$y" -r em1 2 rc.conf
+	atf_check -o inline:'ifconfig_em0="inet 192.0.2.1/24 fib 3 up"
+ifconfig_vlan0_10="inet 198.51.100.1/24 fib 2"
+ifconfig_em1="$x"
+ifconfig_igb1="fib 5"
+' cat rc.conf
+}
+
 atf_test_case yang_rtadv_conf
 yang_rtadv_conf_head()
 {
@@ -5802,6 +5832,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_ni_conf
+	atf_add_test_case yang_ni_rc
 	atf_add_test_case yang_active_route
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd
