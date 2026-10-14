@@ -38,11 +38,12 @@ module arcana-network-instance {
     case fib {
       leaf fib {
         type uint16 {
-          range "1..65535";
+          range "1..65534";
         }
         description
           "The FIB's number: setfib(1)'s, route(8)'s -fib, ifconfig(8)'s
-           fib.  Below net.fibs.";
+           fib.  Below net.fibs; the kernel has at most RT_MAXFIBS
+           (65535, route_var.h), FIB 0 the host's.";
       }
     }
   }

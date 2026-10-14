@@ -77,6 +77,11 @@ int	yni_nfibs(void);
 int	yni_read(const struct vc_file *f, int nfibs, cbl_yarena *a,
 	    const struct ietf_network_instance_network_instances **out,
 	    struct yunread **u, size_t *nu);
+/* net.fibs raised to the FIBs ni asks for, live and in loader.conf lf;
+ * *nfibs as many as there are, or will be; *reboot: at the next boot. */
+int	yni_grow(struct vc_file *lf, int *nfibs,
+	    const struct ietf_network_instance_network_instances *ni,
+	    bool *reboot, char *err, size_t errlen);
 int	yni_write(struct vc_file *f, int nfibs,
 	    const struct ietf_network_instance_network_instances *ni,
 	    char *err, size_t errlen);

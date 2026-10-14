@@ -1249,6 +1249,37 @@ fib3 3 -
 yang-cbor 59 bytes, the same back
 " jexec "$YJAIL" "$y" "$PWD/fibs.conf"
 }
+atf_test_case yang_ni_grow cleanup
+yang_ni_grow_head()
+{
+	atf_set "descr" "an instance past the last FIB (PLAN-SDN-YANG 2.6.4):" \
+	    "net.fibs raised live and kept in loader.conf; a vnet jail's"
+	atf_set "require.user" "root"
+}
+yang_ni_grow_body()
+{
+	local y="$(atf_get_srcdir)/yni" n
+
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	# A new vnet has the boot's; the instance asked for is past it.
+	n=$(jexec "$YJAIL" sysctl -n net.fibs)
+	: > loader.conf
+	: > fibs.conf
+	echo "$((n + 2)) far" > in
+	atf_check -o inline:"net.fibs $((n + 3)) live\n" \
+	    jexec "$YJAIL" sh -c "'$y' -w -l '$PWD/loader.conf' '$PWD/fibs.conf' < '$PWD/in'"
+	atf_check -o inline:"$((n + 3))\n" jexec "$YJAIL" sysctl -n net.fibs
+	atf_check -o inline:"net.fibs=\"$((n + 3))\"\n" cat loader.conf
+	atf_check -o match:"^far $((n + 2)) -$" \
+	    jexec "$YJAIL" "$y" "$PWD/fibs.conf"
+}
+yang_ni_grow_cleanup()
+{
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 yang_ni_cleanup()
 {
 	jail -r "$YJAIL" >/dev/null 2>&1
@@ -1408,6 +1439,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_rtadv
 	atf_add_test_case yang_ni
 	atf_add_test_case yang_ni_bind
+	atf_add_test_case yang_ni_grow
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases

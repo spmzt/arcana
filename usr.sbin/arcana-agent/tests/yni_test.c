@@ -14,9 +14,12 @@
  *					cannot be read so; the tree through
  *					YANG-CBOR and back.  conf - for none;
  *					nfibs net.fibs unless given
- *	yni -n nfibs -w conf		instances read from stdin, a line
+ *	yni [-n nfibs] -w [-l loader.conf] conf
+ *					instances read from stdin, a line
  *					each, "fib name [description]",
- *					written into conf
+ *					written into conf; with -l, net.fibs
+ *					raised to them first: "net.fibs N
+ *					live", or "... reboot required"
  *	yni -i conf			each interface not in FIB 0: its name,
  *					FIB, bind-ni-name, its ipv4's and
  *					ipv6's (- for none); the interfaces
@@ -82,11 +85,11 @@ main(int argc, char **argv)
 	cbl_yarena *a;
 	char why[256];
 	bool write = false, ifs = false, rc = false;
-	const char *bind = NULL, *v4 = NULL, *v6 = NULL;
+	const char *bind = NULL, *v4 = NULL, *v6 = NULL, *loader = NULL;
 	int ch, nfibs = -1, error;
 	size_t nu;
 
-	while ((ch = getopt(argc, argv, "4:6:b:in:rw")) != -1)
+	while ((ch = getopt(argc, argv, "4:6:b:il:n:rw")) != -1)
 		switch (ch) {
 		case '4':
 			v4 = optarg;
@@ -99,6 +102,9 @@ main(int argc, char **argv)
 			break;
 		case 'i':
 			ifs = true;
+			break;
+		case 'l':
+			loader = optarg;
 			break;
 		case 'n':
 			nfibs = atoi(optarg);
@@ -204,6 +210,20 @@ main(int argc, char **argv)
 		in.network_instance.v = v;
 		if (fp == NULL)
 			errx(2, "-w needs a file");
+		if (loader != NULL) {
+			struct vc_file lf;
+			bool reboot;
+
+			if (vc_read(&lf, VC_LOADER, loader, why,
+			    sizeof(why)) == -1)
+				errx(1, "%s", why);
+			if (yni_grow(&lf, &nfibs, &in, &reboot, why,
+			    sizeof(why)) != 0 ||
+			    vc_write(&lf, loader, 0644, why, sizeof(why)) == -1)
+				errx(1, "%s", why);
+			printf("net.fibs %d %s\n", nfibs, reboot ?
+			    "reboot required" : "live");
+		}
 		if (yni_write(fp, nfibs, &in, why, sizeof(why)) != 0)
 			errx(1, "%s", why);
 		if (vc_write(fp, argv[0], 0644, why, sizeof(why)) == -1)
