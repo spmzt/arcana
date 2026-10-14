@@ -249,8 +249,15 @@
   for a service listed as it reads them (rc_conf_files, as rc.conf may
   name more; rc.conf.d/<service> of /etc and of local_startup's
   directories), Arcana's fragment not among them, and a variable any of
-  them sets refused, the file and line said. Next: 2.3.3, loader.conf,
-  sysctl.conf and rtadvd.conf. As each operation is
+  them sets refused, the file and line said. 2.3.3: loader.conf and
+  sysctl.conf as libvarconf's dialects, each read as what reads it
+  reads it (the loader's config.lua, run under flua in the test, agrees
+  on /boot/defaults/loader.conf and every edge; sysctl(8)'s comments
+  and quotes, from sysctl.c), and rtadvd.conf as records of
+  capabilities, read as rtadvd(8)'s advcap.c reads them (compiled into
+  the test from /usr/src: every getter of every capability agrees),
+  values set in place, an edit that would not read back refused. Next:
+  2.3.4, running assembled from the files. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

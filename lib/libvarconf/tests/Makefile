@@ -4,20 +4,22 @@ TESTSDIR=	${TESTSBASE}/arcana/libvarconf
 ATF_TESTS_C=	varconf_test
 
 # The fixtures, compiled in: the suite runs from the object directory.
-FIXTURES=	defaults.conf edge.conf host.conf
+FIXTURES=	defaults.conf edge.conf host.conf loader-defaults.conf \
+		loader-edge.conf sysctl-edge.conf rtadvd-man.conf \
+		rtadvd-edge.conf
 SRCS.varconf_test=	varconf_test.c fixtures.c
 CLEANFILES+=	fixtures.c
 fixtures.c: ${FIXTURES:S,^,${.CURDIR}/fixtures/,}
 	@(echo '#include <stddef.h>'; \
 	echo '#include "fixtures.h"'; \
 	for f in ${FIXTURES}; do \
-	    n=$$(basename $$f .conf); \
+	    n=$$(basename $$f .conf | tr - _); \
 	    file2c "static const char fx_$$n[] = {" ',0};' \
 	        < ${.CURDIR}/fixtures/$$f; \
 	done; \
 	echo 'const struct fixture fixtures[] = {'; \
 	for f in ${FIXTURES}; do \
-	    n=$$(basename $$f .conf); \
+	    n=$$(basename $$f .conf | tr - _); \
 	    echo "	{ \"$$f\", fx_$$n, sizeof(fx_$$n) - 1 },"; \
 	done; \
 	echo '	{ NULL, NULL, 0 }'; \

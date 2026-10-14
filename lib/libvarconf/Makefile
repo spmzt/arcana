@@ -3,7 +3,7 @@
 
 LIB=		varconf
 INTERNALLIB=
-SRCS=		varconf.c
+SRCS=		varconf.c capconf.c
 
 .include "${.CURDIR}/../../share/mk/arcana.mk"
 
