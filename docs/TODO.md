@@ -229,7 +229,14 @@
   nothing by an undo log; RFC 8072's insert and move), the difference
   of two trees as such an edit, and references (leafrefs' targets and
   nodes' parents now in the tables; instance-identifiers read from
-  YANG-CBOR). Next: 2.2, the XPath-lite evaluator. As each operation is
+  YANG-CBOR). And 2.2, the XPath-lite evaluator (cbl_xp_eval(): the
+  tables' expressions by module, every function XPath-lite has; when and
+  must over a tree, a default under a false when not in use; subtree and
+  XPath filters, RFC 6241's examples; NACM's paths; schema mount's
+  parent references), held to libyang's on the corpus (xpdiff, none
+  differing but where libyang departs from the RFCs: deref() of a
+  dangling leafref, substring() below 1, number("infinity")), its work
+  bounded against a client's filter, and fuzzed. Next: 2.3. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
