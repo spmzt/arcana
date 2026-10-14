@@ -331,9 +331,14 @@
   needed, the kernel tells: ira/jailwatch.c's EVFILT_JAIL jail-state
   events (agent 0.107.0) now watch each jail for children of its own
   too, so a jail made in a jail, an LNE in an LNE, is told
-  (jail_events_nested); before, only the host's children were. Next:
-  2.8, yang-library, after 1.11; then the Y-3 items main can carry. As
-  each operation is
+  (jail_events_nested); before, only the host's children were. On
+  cblink v2 (2026-10-14): main's .sid fix for deviations carried over
+  (v2 had the -F one already); 2.3.10's tree side,
+  cbl_dtree_with_defaults(): RFC 6243's report-all, trim and explicit,
+  held to its Appendix A's examples (yfilter_test rfc6243);
+  report-all-tagged waits on the codec's metadata, as with-origin
+  (2.3.9) does. Next: 2.8, yang-library, after 1.11; then the Y-3 items
+  main can carry. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
