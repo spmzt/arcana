@@ -124,6 +124,18 @@ struct arcana_jails_jails_jail_kill_output;
 struct arcana_jails_jails_jail;
 struct arcana_jails_jails;
 struct arcana_jails;
+struct arcana_services_services_service_variable;
+struct arcana_services_services_service_start_input;
+struct arcana_services_services_service_start_output;
+struct arcana_services_services_service_stop_input;
+struct arcana_services_services_service_stop_output;
+struct arcana_services_services_service_restart_input;
+struct arcana_services_services_service_restart_output;
+struct arcana_services_services_service_reload_input;
+struct arcana_services_services_service_reload_output;
+struct arcana_services_services_service;
+struct arcana_services_services;
+struct arcana_services;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -1676,6 +1688,104 @@ struct arcana_jails {
 	const struct arcana_jails_jails	*jails;
 };
 
+/* list entry */
+struct arcana_services_services_service_variable {
+	const char	*name;
+	const char	*value;
+};
+
+/* input */
+struct arcana_services_services_service_start_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_services_services_service_start_output {
+	bool			 has_running;
+	bool		 running;
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*status;
+};
+
+/* input */
+struct arcana_services_services_service_stop_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_services_services_service_stop_output {
+	bool			 has_running;
+	bool		 running;
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*status;
+};
+
+/* input */
+struct arcana_services_services_service_restart_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_services_services_service_restart_output {
+	bool			 has_running;
+	bool		 running;
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*status;
+};
+
+/* input */
+struct arcana_services_services_service_reload_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_services_services_service_reload_output {
+	bool			 has_running;
+	bool		 running;
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*status;
+};
+
+/* list entry */
+struct arcana_services_services_service {
+	const char	*name;
+	bool			 has_enabled;
+	bool		 enabled;
+	struct {
+		size_t		 n;
+		const struct arcana_services_services_service_variable	*v;
+	}			 variable;
+	const char	*path;
+	const char	*rcvar;
+	bool			 has_running;
+	bool		 running;
+	bool			 has_pid;
+	uint32_t	 pid;
+	const char	*status;
+	const char	*description;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 command;
+};
+
+/* container */
+struct arcana_services_services {
+	struct {
+		size_t		 n;
+		const struct arcana_services_services_service	*v;
+	}			 service;
+};
+
+/* data */
+struct arcana_services {
+	const struct arcana_services_services	*services;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -2088,6 +2198,50 @@ int	arcana_jails_jails_encode(const struct arcana_jails_jails *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_decode(const void *, size_t, struct arcana_jails_jails *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_variable_encode(const struct arcana_services_services_service_variable *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_variable_decode(const void *, size_t, struct arcana_services_services_service_variable *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_start_input_encode(const struct arcana_services_services_service_start_input *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_start_input_decode(const void *, size_t, struct arcana_services_services_service_start_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_start_output_encode(const struct arcana_services_services_service_start_output *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_start_output_decode(const void *, size_t, struct arcana_services_services_service_start_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_stop_input_encode(const struct arcana_services_services_service_stop_input *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_stop_input_decode(const void *, size_t, struct arcana_services_services_service_stop_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_stop_output_encode(const struct arcana_services_services_service_stop_output *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_stop_output_decode(const void *, size_t, struct arcana_services_services_service_stop_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_restart_input_encode(const struct arcana_services_services_service_restart_input *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_restart_input_decode(const void *, size_t, struct arcana_services_services_service_restart_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_restart_output_encode(const struct arcana_services_services_service_restart_output *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_restart_output_decode(const void *, size_t, struct arcana_services_services_service_restart_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_reload_input_encode(const struct arcana_services_services_service_reload_input *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_reload_input_decode(const void *, size_t, struct arcana_services_services_service_reload_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_reload_output_encode(const struct arcana_services_services_service_reload_output *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_reload_output_decode(const void *, size_t, struct arcana_services_services_service_reload_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_service_encode(const struct arcana_services_services_service *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_service_decode(const void *, size_t, struct arcana_services_services_service *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_services_services_encode(const struct arcana_services_services *,
+	    struct cbl_ybuf *);
+int	arcana_services_services_decode(const void *, size_t, struct arcana_services_services *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -2130,5 +2284,20 @@ int	arcana_jails_jails_jail_restart_action(cbl_req *, const struct cbl_bytes *,
 int	arcana_jails_jails_jail_kill_action(cbl_req *, const struct cbl_bytes *,
 	    const struct arcana_jails_jails_jail_kill_input *,
 	    struct arcana_jails_jails_jail_kill_output *, cbl_yarena *);
+int	arcana_services_services_get(cbl_req *, struct arcana_services *, cbl_yarena *);
+int	arcana_services_services_edit(cbl_req *, const struct arcana_services *,
+	    const struct arcana_services *);
+int	arcana_services_services_service_start_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_services_services_service_start_input *,
+	    struct arcana_services_services_service_start_output *, cbl_yarena *);
+int	arcana_services_services_service_stop_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_services_services_service_stop_input *,
+	    struct arcana_services_services_service_stop_output *, cbl_yarena *);
+int	arcana_services_services_service_restart_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_services_services_service_restart_input *,
+	    struct arcana_services_services_service_restart_output *, cbl_yarena *);
+int	arcana_services_services_service_reload_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_services_services_service_reload_input *,
+	    struct arcana_services_services_service_reload_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

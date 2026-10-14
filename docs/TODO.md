@@ -360,8 +360,18 @@
   arcana-host (3.1.9), the trace with arcana-jobs (3.1.4); served at
   1.11. The task's { } Schema panel shows a converted operation's
   module beside its CBOR, a tab each (share/arcana/yang-ops, yang.json
-  made by the build with cblink-gen -m tree; pwa_routes). Next:
-  3.1.2, arcana-services, and the rest of 3.1 in turn; 2.8,
+  made by the build with cblink-gen -m tree; pwa_routes; the trees
+  committed in www/arcana-ui/yang, as the agent's tables are, the build
+  needing no libyang). 3.1.2: services, service-action and
+  service-config converted to share/yang/arcana-services (62 200): the
+  rc.d scripts, enabled and their rc.conf variables as configuration,
+  running, pid, status, description, extra commands as state; start,
+  stop, restart, reload as actions (enable and disable are the enabled
+  leaf); ira/yservices.c from do_services()'s and do_service_config()'s
+  replies, yservices_diff() a configuration wanted into what
+  service-action and service-config take (its rcvar refused as a
+  variable), yservices_apply() doing it (yang_services). Next: 3.1.3,
+  arcana-packages, and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model

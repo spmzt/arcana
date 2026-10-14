@@ -1,0 +1,211 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-services",
+    "module-revision": "2026-10-14",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 200, 100.",
+    "assignment-range": [
+      {
+        "entry-point": "62200",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-services",
+        "sid": "62200"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services",
+        "sid": "62201"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service",
+        "sid": "62202"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/command",
+        "sid": "62203"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/description",
+        "sid": "62204"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/enabled",
+        "sid": "62205"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/name",
+        "sid": "62206"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/path",
+        "sid": "62207"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/pid",
+        "sid": "62208"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/rcvar",
+        "sid": "62209"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/reload",
+        "sid": "62210"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/reload/input",
+        "sid": "62211"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/reload/output",
+        "sid": "62212"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/reload/output/pid",
+        "sid": "62213"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/reload/output/running",
+        "sid": "62214"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/reload/output/status",
+        "sid": "62215"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/restart",
+        "sid": "62216"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/restart/input",
+        "sid": "62217"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/restart/output",
+        "sid": "62218"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/restart/output/pid",
+        "sid": "62219"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/restart/output/running",
+        "sid": "62220"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/restart/output/status",
+        "sid": "62221"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/running",
+        "sid": "62222"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/start",
+        "sid": "62223"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/start/input",
+        "sid": "62224"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/start/output",
+        "sid": "62225"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/start/output/pid",
+        "sid": "62226"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/start/output/running",
+        "sid": "62227"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/start/output/status",
+        "sid": "62228"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/status",
+        "sid": "62229"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/stop",
+        "sid": "62230"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/stop/input",
+        "sid": "62231"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/stop/output",
+        "sid": "62232"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/stop/output/pid",
+        "sid": "62233"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/stop/output/running",
+        "sid": "62234"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/stop/output/status",
+        "sid": "62235"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/variable",
+        "sid": "62236"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/variable/name",
+        "sid": "62237"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-services:services/service/variable/value",
+        "sid": "62238"
+      }
+    ]
+  }
+}

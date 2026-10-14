@@ -1,0 +1,35 @@
+module: arcana-services
+  +--rw services
+     +--rw service* [name]
+        +--rw name           string
+        +--rw enabled?       boolean
+        +--rw variable* [name]
+        |  +--rw name     string
+        |  +--rw value?   string
+        +--ro path?          string
+        +--ro rcvar?         string
+        +--ro running?       boolean
+        +--ro pid?           uint32
+        +--ro status?        string
+        +--ro description?   string
+        +--ro command*       string
+        +---x start
+        |  +--ro output
+        |     +--ro running?   boolean
+        |     +--ro pid?       uint32
+        |     +--ro status?    string
+        +---x stop
+        |  +--ro output
+        |     +--ro running?   boolean
+        |     +--ro pid?       uint32
+        |     +--ro status?    string
+        +---x restart
+        |  +--ro output
+        |     +--ro running?   boolean
+        |     +--ro pid?       uint32
+        |     +--ro status?    string
+        +---x reload
+           +--ro output
+              +--ro running?   boolean
+              +--ro pid?       uint32
+              +--ro status?    string
