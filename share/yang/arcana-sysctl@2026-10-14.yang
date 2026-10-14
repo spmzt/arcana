@@ -1,0 +1,83 @@
+module arcana-sysctl {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-sysctl";
+  prefix arcsys;
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's kernel state, sysctl(3): the values as sysctl(8) prints
+     them, and what sysctl.conf(5) sets at boot, its configuration,
+     written in place, every other line kept (libvarconf, read as
+     sysctl(8)'s parsefile() reads it).";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.6.";
+  }
+
+  container sysctl {
+    description
+      "The kernel's state.";
+    list kept {
+      key "name";
+      ordered-by user;
+      description
+        "A setting of sysctl.conf(5), set at boot in its order.";
+      leaf name {
+        type string {
+          pattern '[A-Za-z0-9_%.-]+';
+        }
+        description
+          "The variable.";
+      }
+      leaf value {
+        type string;
+        mandatory true;
+        description
+          "Its value, as sysctl(8) takes it.";
+      }
+    }
+    leaf total {
+      type uint64;
+      config false;
+      description
+        "How many values there are, when fewer are listed.";
+    }
+    list value {
+      key "name";
+      config false;
+      description
+        "A value of the kernel's, where the tree was asked from.";
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf value {
+        type string;
+        description
+          "Its value, as sysctl(8) prints it.";
+      }
+      leaf type {
+        type string;
+        description
+          "Its kind: integer, string, opaque, ...";
+      }
+      leaf writable {
+        type boolean;
+        description
+          "Whether it can be set.";
+      }
+      leaf description {
+        type string;
+        description
+          "What it is said to be (sysctl -d).";
+      }
+    }
+  }
+}

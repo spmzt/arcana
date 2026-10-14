@@ -19,9 +19,18 @@ SRCS.yjails=	yjails_test.c yjails.c ymodel_schema.c
 CFLAGS.yjails_test.c+=	-I${.OBJDIR}/..
 CFLAGS.yjails.c+=	-I${.OBJDIR}/..
 LDADD.yjails+=	${CBLINK_LIBS}
+# ysystem: the sysctl and kernel operations' replies as arcana-sysctl
+# and arcana-kernel have them, their configuration written.
+PROGS+=		ysystem
+SRCS.ysystem=	ysystem_test.c ysystem.c yjson.c ymodel_schema.c
+CFLAGS.ysystem_test.c+=	-I${.OBJDIR}/..
+CFLAGS.ysystem.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.ysystem+=	${CBLINK_LIBS} ${UCL_LIBS} \
+		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
 # ystorage: the storage operation's replies as arcana-storage has them.
 PROGS+=		ystorage
-SRCS.ystorage=	ystorage_test.c ystorage.c ymodel_schema.c
+SRCS.ystorage=	ystorage_test.c ystorage.c yjson.c ymodel_schema.c
+CFLAGS.yjson.c+=	${UCL_CFLAGS}
 CFLAGS.ystorage_test.c+=	-I${.OBJDIR}/..
 CFLAGS.ystorage.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.ystorage+=	${CBLINK_LIBS} ${UCL_LIBS}
@@ -58,7 +67,7 @@ CFLAGS+=	-I${.CURDIR}/../../../lib/libvarconf
 LDADD.yrcroutes+=	${CBLINK_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
 .PATH:		${.CURDIR}/../invidia ${.CURDIR}/../ira ${.CURDIR}/../acedia \
-		${.CURDIR}/../yang
+		${.CURDIR}/../superbia ${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang -I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
 LDADD.ycollect+=	${CBLINK_LIBS} -ljail -lnv
 MAN=

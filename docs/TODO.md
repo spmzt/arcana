@@ -397,8 +397,15 @@
   actions, receive an rpc, their bytes the request's stream
   (yang_storage; held too on this VM's own storage by hand: 17 KB,
   the same back). The storage changes stay jobs (zfs, zpool, mount,
-  gpart, cam). Next: 3.1.6, arcana-sysctl and arcana-kernel, and the
-  rest of 3.1 in turn; 2.8,
+  gpart, cam). 3.1.6: sysctl, sysctl-parts and kernel converted to
+  share/yang/arcana-sysctl (63 600: sysctl.conf's settings as
+  configuration, the values as state) and arcana-kernel (63 700:
+  kld_list as configuration, the files, modules, memory as state, load
+  and unload); superbia/ysystem.c reads the JSON back (yang/yjson.c, now
+  ystorage's too) and writes the configuration in place by libvarconf:
+  sysctl.conf's settings set, appended, taken out, comments kept;
+  kld_list made or taken out (yang_system). Next: 3.1.7, processes,
+  log, history, events, and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model

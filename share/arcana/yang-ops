@@ -19,3 +19,6 @@ fstab	arcana-storage@2026-10-14
 zfs-send	arcana-storage@2026-10-14
 zfs-receive	arcana-storage@2026-10-14
 zfs-key	arcana-storage@2026-10-14
+sysctl	arcana-sysctl@2026-10-14
+sysctl-parts	arcana-sysctl@2026-10-14
+kernel	arcana-kernel@2026-10-14

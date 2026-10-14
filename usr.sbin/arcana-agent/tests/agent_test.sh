@@ -5291,6 +5291,70 @@ EOF
 	atf_check -o file:want sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
 }
 
+atf_test_case yang_system
+yang_system_head()
+{
+	atf_set "descr" "the sysctl and kernel operations' replies as" \
+	    "arcana-sysctl and arcana-kernel have them (PLAN-SDN-YANG" \
+	    "3.1.6), through YANG-CBOR and back; their configuration" \
+	    "written in place: sysctl.conf's settings, rc.conf's kld_list"
+}
+yang_system_body()
+{
+	local y="$(atf_get_srcdir)/ysystem"
+
+	cat > sysctl.json <<'EOF'
+{"values":[{"name":"net.inet.ip.forwarding","value":"1","type":"integer","rw":true,"descr":"Enable IP forwarding between interfaces"},{"name":"kern.ostype","value":"FreeBSD","type":"string","rw":false,"descr":"Operating system type"}],"kept":[{"name":"net.inet.ip.forwarding","value":"1"},{"name":"kern.randompid","value":"1"}]}
+EOF
+	cat > kernel.json <<'EOF'
+{"files":[{"id":1,"name":"kernel","path":"/boot/kernel/kernel","refs":40,"size":34855640,"address":"0xffffffff80200000","modules":["if_lo","netlink"]},{"id":5,"name":"if_wg.ko","path":"/boot/kernel/if_wg.ko","refs":1,"size":86016,"address":"0xffffffff82a10000","modules":["wg"]}],"available":["aac","accf_data"],"kept":["if_wg","pf"],"memory":{"files":80888740,"kmem_size":25140678656,"kmem_map_size":7734583296,"kmem_map_free":17406095360,"malloc_total":632946880,"malloc":[{"name":"solaris","bytes":493063792,"count":1289305,"requests":550597237},{"name":"solaris","bytes":22530688,"count":446466,"requests":453687}],"zones":[{"name":"mbuf_cluster","bytes":2048000,"count":1000,"free":24,"size":2048,"requests":99999}]}}
+EOF
+	cat > want <<'EOF'
+total 900
+value net.inet.ip.forwarding=1 type=integer writable=yes description=Enable IP forwarding between interfaces
+value kern.ostype=FreeBSD type=string writable=no description=Operating system type
+kept net.inet.ip.forwarding=1
+kept kern.randompid=1
+yang-cbor 194 bytes, the same back
+EOF
+	atf_check -o file:want "$y" sysctl sysctl.json 900
+	cat > want <<'EOF'
+file 1 kernel path=/boot/kernel/kernel refs=40 size=34855640 address=0xffffffff80200000 modules=if_lo,netlink
+file 5 if_wg.ko path=/boot/kernel/if_wg.ko refs=1 size=86016 address=0xffffffff82a10000 modules=wg
+available aac
+available accf_data
+kept if_wg
+kept pf
+memory files=80888740 kmem-size=25140678656 map-size=7734583296 map-free=17406095360 malloc-total=632946880
+malloc solaris bytes=493063792 count=1289305 requests=550597237
+malloc solaris bytes=22530688 count=446466 requests=453687
+zone mbuf_cluster bytes=2048000 free=24 size=2048
+yang-cbor 318 bytes, the same back
+EOF
+	atf_check -o file:want "$y" kernel kernel.json
+	# sysctl.conf: one changed in place, its comment kept; one no longer
+	# wanted taken out; one new appended.
+	printf '# Kept.\nnet.inet.ip.forwarding=1\nkern.randompid=1   # pids at random\nsecurity.bsd.see_other_uids=0\n' > sysctl.conf
+	atf_check "$y" -s sysctl.conf net.inet.ip.forwarding=0 \
+	    kern.randompid=1 vfs.zfs.arc_max=4294967296
+	atf_check -o inline:'# Kept.
+net.inet.ip.forwarding=0
+kern.randompid=1   # pids at random
+vfs.zfs.arc_max=4294967296
+' cat sysctl.conf
+	# kld_list: made, then none and taken out; the rest as it was.
+	printf 'hostname="lab"\nkld_list="if_wg pf"\nsshd_enable="YES"\n' > rc.conf
+	atf_check "$y" -k rc.conf if_wg pf dummynet
+	atf_check -o inline:'hostname="lab"
+kld_list="if_wg pf dummynet"
+sshd_enable="YES"
+' cat rc.conf
+	atf_check "$y" -k rc.conf
+	atf_check -o inline:'hostname="lab"
+sshd_enable="YES"
+' cat rc.conf
+}
+
 atf_test_case yang_storage
 yang_storage_head()
 {
@@ -6088,6 +6152,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_jails
+	atf_add_test_case yang_system
 	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs
 	atf_add_test_case yang_packages
