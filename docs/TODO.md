@@ -148,7 +148,13 @@
   2 south and RESTCONF on the console only (D-2), libyang for the
   generator (D-3), L3NM where it and MEF 70.2 overlap (D-4), STAMP
   for the probes (D-8), no compatibility with the v1 family or `/api`
-  (D-9, D-10), BIRD for FlowSpec. Open: D-5 to D-7, D-11, D-12.
+  (D-9, D-10), BIRD for FlowSpec, ipfw the ACL engine (D-7, the
+  user's). Open: D-5, D-6, D-11, D-12. Before each conversion, the
+  standard models of its area: docs/notes/standard-models.md (RFC 7317
+  and 8348 for the host, 9640 to 9645 for keys and servers, 9742 for
+  syslog, 9129, 8695, 9647, 9314 for BIRD's protocols, 8532 and 8533
+  for traceroute, the drafts for BGP, QoS, STAMP; none for processes,
+  history, WireGuard, netgraph, capture).
   Done (2026-10-13): Y-0 0.1, the body decoder: YANG-CBOR by SID
   deltas (cblink sid_test), YANG-CBOR's tags under CBL_CTX_YANG_TAGS,
   the cblink module and its .sid file (cblink share/yang), and the

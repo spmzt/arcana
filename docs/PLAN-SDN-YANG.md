@@ -199,7 +199,8 @@ jail when the service needs multicast, DHCP, NAT or its own firewall.
 Both are modelled already: FIB = `ietf-network-instance`, jail =
 `ietf-logical-network-element`.
 
-**D-7 The ACL engine.** ipfw (already driven, tables, dummynet for
+**D-7 The ACL engine: decided, ipfw** (the user's; recorded
+2026-10-14).  ipfw (already driven, tables, dummynet for
 rate-limit, divert, `call`/`return`, fib and jail matches; cannot
 match ICMP code, ECN, TCP ECE/CWR/AE, payload) versus pf (anchors
 give named ordered ACLs, `tos`, ICMP code, E/W flags; no dummynet
@@ -725,6 +726,10 @@ Depends on Y-1.
 
 Depends on Y-2.
 
+- **Before each conversion:** the standard models for its area,
+  docs/notes/standard-models.md (2026-10-14): an RFC's module used as
+  it is with Arcana's augments, a working-group draft's followed, an
+  Arcana module only where none exists.
 - **3.1 The Arcana modules.** A: `arcana-jails`, `-services`,
   `-packages`, `-jobs`, `-storage`, `-sysctl`, `-kernel`,
   `-processes`, `-log`, `-history`, `-events`, `-bird`, `-wireguard`,
