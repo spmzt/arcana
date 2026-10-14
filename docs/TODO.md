@@ -274,8 +274,12 @@
   (name:interface kept in the description), defaultrouter, the _fib<N>
   and IPv6 variants; route(8)'s arguments the model holds (-net, -host,
   masks, -iface, -ifp, -blackhole, -reject, -fib), routes of one prefix
-  a next-hop-list; the rest unread, said why. Next: 2.4.4, static
-  routes applied to the kernel. As each operation is
+  a next-hop-list; the rest unread, said why. 2.4.4: rcr_apply() makes
+  a FIB's static routes the kernel's by netlink as route(8) does
+  (RTM_NEWROUTE with NLM_F_APPEND, a list's hops a multipath route;
+  RTA_TABLE; RTPROT_STATIC), what changed only, all undone if one fails;
+  agent_root_test's yang_static_apply holds it to route -n get in a
+  vnet jail, FIB 1 too. Next: 2.4.5, active-route. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

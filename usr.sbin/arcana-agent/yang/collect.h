@@ -50,6 +50,12 @@ int	rcr_read(const struct vc_file *files, size_t nfiles, int fib,
 	    cbl_yarena *a,
 	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes **out,
 	    struct rcr_unread **u, size_t *nu);
+/* FIB fib's static routes made new's, the kernel's as old applied
+ * them: by netlink(4), what was done undone on failure. */
+int	rcr_apply(int fib,
+	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *old,
+	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *new,
+	    char *err, size_t errlen);
 int	rcr_write(struct vc_file *f, int fib,
 	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *sr,
 	    char *err, size_t errlen);

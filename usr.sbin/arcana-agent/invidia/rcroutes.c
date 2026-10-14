@@ -32,8 +32,16 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 
+#include <net/if.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+
+#include <netlink/netlink.h>
+#include <netlink/netlink_route.h>
+#include <netlink/netlink_snl.h>
+#include <netlink/netlink_snl_route.h>
+/* RTF_*, as netlink(4) has them with <net/route.h>'s. */
+#include <netlink/netlink_snl_route_compat.h>
 
 #include <ctype.h>
 #include <errno.h>
@@ -795,4 +803,243 @@ rcr_write(struct vc_file *f, int fib, const ysr *sr, char *err,
 	    (const yr4 *)(const void *)sr->v6ur_ipv6->route.v : NULL,
 	    sr->v6ur_ipv6 != NULL ? sr->v6ur_ipv6->route.n : 0, err,
 	    errlen));
+}
+
+/*
+ * Applying: a FIB's static routes made the kernel's, by netlink(4) as
+ * route(8) does it (PLAN-SDN-YANG 2.4.4).  A hop is a route's prefix
+ * and one of its next hops: a gateway address (a link-local one's zone
+ * its interface), an interface, both, or blackhole or unreachable.
+ */
+struct hop {
+	int		 af;
+	char		 prefix[INET6_ADDRSTRLEN + 8];
+	char		 gw[INET6_ADDRSTRLEN + IF_NAMESIZE + 2];
+	char		 ifn[IF_NAMESIZE];
+	int		 special;		/* -1 none */
+};
+
+static size_t
+hops_of(const ysr *sr, struct hop *v, size_t max)
+{
+	size_t n = 0;
+
+	for (int f = 0; f < 2; f++) {
+		const yr4 *rv = f == 0 ? (sr != NULL && sr->v4ur_ipv4 != NULL ?
+		    sr->v4ur_ipv4->route.v : NULL) : (sr != NULL &&
+		    sr->v6ur_ipv6 != NULL ? (const yr4 *)(const void *)
+		    sr->v6ur_ipv6->route.v : NULL);
+		size_t nr = f == 0 ? (rv != NULL ? sr->v4ur_ipv4->route.n : 0) :
+		    (rv != NULL ? sr->v6ur_ipv6->route.n : 0);
+
+		for (size_t i = 0; i < nr; i++) {
+			const ynh4 *nh = rv[i].next_hop;
+			size_t k, m = nh->next_hop_list != NULL ?
+			    nh->next_hop_list->next_hop.n : 1;
+
+			for (k = 0; k < m && n < max; k++, n++) {
+				const char *gw = nh->next_hop_list != NULL ?
+				    nh->next_hop_list->next_hop.v[k].
+				    next_hop_address : nh->next_hop_address;
+				const char *ifn = nh->next_hop_list != NULL ?
+				    nh->next_hop_list->next_hop.v[k].
+				    outgoing_interface : nh->outgoing_interface;
+
+				memset(&v[n], 0, sizeof(v[n]));
+				v[n].af = f == 0 ? AF_INET : AF_INET6;
+				strlcpy(v[n].prefix, rv[i].destination_prefix,
+				    sizeof(v[n].prefix));
+				if (gw != NULL)
+					strlcpy(v[n].gw, gw, sizeof(v[n].gw));
+				if (ifn != NULL)
+					strlcpy(v[n].ifn, ifn, sizeof(v[n].ifn));
+				v[n].special = nh->has_special_next_hop &&
+				    nh->next_hop_list == NULL ?
+				    (int)nh->special_next_hop : -1;
+			}
+		}
+	}
+	return (n);
+}
+
+static bool
+hop_eq(const struct hop *a, const struct hop *b)
+{
+
+	return (a->af == b->af && strcmp(a->prefix, b->prefix) == 0 &&
+	    strcmp(a->gw, b->gw) == 0 && strcmp(a->ifn, b->ifn) == 0 &&
+	    a->special == b->special);
+}
+
+/* An address, a link-local one's "%zone" its scope, into ss. */
+static int
+sockaddr_of(int af, const char *s, struct sockaddr_storage *ss,
+    uint32_t *scope)
+{
+	char buf[INET6_ADDRSTRLEN + IF_NAMESIZE + 2], *zone;
+
+	memset(ss, 0, sizeof(*ss));
+	*scope = 0;
+	strlcpy(buf, s, sizeof(buf));
+	if ((zone = strchr(buf, '%')) != NULL)
+		*zone++ = '\0';
+	if (af == AF_INET) {
+		struct sockaddr_in *sin = (struct sockaddr_in *)ss;
+
+		sin->sin_family = AF_INET;
+		sin->sin_len = sizeof(*sin);
+		return (inet_pton(AF_INET, buf, &sin->sin_addr) == 1 ? 0 :
+		    EINVAL);
+	} else {
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)ss;
+
+		sin6->sin6_family = AF_INET6;
+		sin6->sin6_len = sizeof(*sin6);
+		if (inet_pton(AF_INET6, buf, &sin6->sin6_addr) != 1)
+			return (EINVAL);
+		if (zone != NULL && (*scope = if_nametoindex(zone)) == 0)
+			return (ENXIO);
+		sin6->sin6_scope_id = *scope;
+		return (0);
+	}
+}
+
+/* A hop added (NLM_F_APPEND: another gateway of the prefix a path
+ * more) or deleted, as route(8) asks netlink(4). */
+static int
+hop_do(struct snl_state *ss, const struct hop *h, int fib, bool add,
+    char *err, size_t errlen)
+{
+	struct sockaddr_storage dst, gw;
+	struct snl_errmsg_data e = { 0 };
+	struct snl_writer nw;
+	struct nlmsghdr *hdr;
+	struct rtmsg *rtm;
+	char prefix[sizeof(h->prefix)], *slash;
+	uint32_t scope = 0, gscope = 0, oif = 0;
+	int error;
+
+	strlcpy(prefix, h->prefix, sizeof(prefix));
+	if ((slash = strchr(prefix, '/')) == NULL)
+		return (EINVAL);
+	*slash = '\0';
+	if ((error = sockaddr_of(h->af, prefix, &dst, &scope)) != 0)
+		return (error);
+	snl_init_writer(ss, &nw);
+	hdr = snl_create_msg_request(&nw, add ? RTM_NEWROUTE : RTM_DELROUTE);
+	if (add)
+		hdr->nlmsg_flags |= NLM_F_CREATE | NLM_F_APPEND;
+	rtm = snl_reserve_msg_object(&nw, struct rtmsg);
+	rtm->rtm_family = h->af;
+	rtm->rtm_protocol = RTPROT_STATIC;
+	rtm->rtm_dst_len = atoi(slash + 1);
+	rtm->rtm_type = h->special == NH4(SPECIAL_NEXT_HOP_BLACKHOLE) ?
+	    RTN_BLACKHOLE : h->special == NH4(SPECIAL_NEXT_HOP_UNREACHABLE) ?
+	    RTN_PROHIBIT : RTN_UNICAST;
+	snl_add_msg_attr_ip(&nw, RTA_DST, (struct sockaddr *)&dst);
+	snl_add_msg_attr_u32(&nw, RTA_TABLE, (uint32_t)fib);
+	/* A blackhole or reject route's gateway: the loopback, as route(8)
+	 * and rc.conf's give it ("127.0.0.1 -blackhole"). */
+	if (h->gw[0] != '\0' || h->special >= 0) {
+		if ((error = sockaddr_of(h->af, h->gw[0] != '\0' ? h->gw :
+		    h->af == AF_INET ? "127.0.0.1" : "::1", &gw,
+		    &gscope)) != 0)
+			return (error);
+		snl_add_msg_attr_ip(&nw, RTA_GATEWAY, (struct sockaddr *)&gw);
+		oif = gscope;
+	}
+	if (h->ifn[0] != '\0' && (oif = if_nametoindex(h->ifn)) == 0) {
+		snprintf(err, errlen, "%s: no interface %s", h->prefix,
+		    h->ifn);
+		return (ENXIO);
+	}
+	if (oif != 0)
+		snl_add_msg_attr_u32(&nw, RTA_OIF, oif);
+	if (add)
+		snl_add_msg_attr_u32(&nw, NL_RTA_RTFLAGS, RTF_STATIC |
+		    (h->gw[0] != '\0' || h->special >= 0 ? RTF_GATEWAY : 0) |
+		    (h->special == NH4(SPECIAL_NEXT_HOP_BLACKHOLE) ?
+		    RTF_BLACKHOLE : 0) |
+		    (h->special == NH4(SPECIAL_NEXT_HOP_UNREACHABLE) ?
+		    RTF_REJECT : 0));
+	if ((hdr = snl_finalize_msg(&nw)) == NULL ||
+	    !snl_send_message(ss, hdr))
+		return (ENOMEM);
+	if (!snl_read_reply_code(ss, hdr->nlmsg_seq, &e)) {
+		snprintf(err, errlen, "%s %s%s%s%s: %s", add ? "add" : "delete",
+		    h->prefix, h->gw[0] != '\0' ? " via " : "", h->gw,
+		    h->ifn[0] != '\0' ? " dev" : "", e.error_str != NULL ?
+		    e.error_str : strerror(e.error != 0 ? e.error : EIO));
+		return (e.error != 0 ? e.error : EIO);
+	}
+	return (0);
+}
+
+#define	APPLY_MAX	1024
+
+/*
+ * FIB fib's static routes made new's from old's, the kernel's as old
+ * applied them: hops of old not in new deleted, then new's not in old
+ * added; what was done undone if one fails.  0, or an errno and err.
+ */
+int
+rcr_apply(int fib, const ysr *old, const ysr *new, char *err, size_t errlen)
+{
+	struct hop *ov = NULL, *nv = NULL;
+	struct snl_state ss;
+	size_t no, nn, ndel = 0, nadd = 0;
+	size_t *del = NULL, *add = NULL;
+	int error = 0;
+
+	if ((ov = calloc(APPLY_MAX, sizeof(*ov))) == NULL ||
+	    (nv = calloc(APPLY_MAX, sizeof(*nv))) == NULL ||
+	    (del = calloc(APPLY_MAX, sizeof(*del))) == NULL ||
+	    (add = calloc(APPLY_MAX, sizeof(*add))) == NULL) {
+		free(ov);
+		free(nv);
+		free(del);
+		return (ENOMEM);
+	}
+	no = hops_of(old, ov, APPLY_MAX);
+	nn = hops_of(new, nv, APPLY_MAX);
+	if (!snl_init(&ss, NETLINK_ROUTE)) {
+		error = errno != 0 ? errno : EIO;
+		goto out;
+	}
+	for (size_t i = 0; i < no && error == 0; i++) {
+		bool keep = false;
+
+		for (size_t k = 0; k < nn && !keep; k++)
+			keep = hop_eq(&ov[i], &nv[k]);
+		if (!keep && (error = hop_do(&ss, &ov[i], fib, false, err,
+		    errlen)) == 0)
+			del[ndel++] = i;
+	}
+	for (size_t i = 0; i < nn && error == 0; i++) {
+		bool had = false;
+
+		for (size_t k = 0; k < no && !had; k++)
+			had = hop_eq(&nv[i], &ov[k]);
+		if (!had && (error = hop_do(&ss, &nv[i], fib, true, err,
+		    errlen)) == 0)
+			add[nadd++] = i;
+	}
+	if (error != 0) {
+		char ignore[128];
+
+		/* Undone, the other way round. */
+		while (nadd > 0)
+			(void)hop_do(&ss, &nv[add[--nadd]], fib, false, ignore,
+			    sizeof(ignore));
+		while (ndel > 0)
+			(void)hop_do(&ss, &ov[del[--ndel]], fib, true, ignore,
+			    sizeof(ignore));
+	}
+	snl_free(&ss);
+out:
+	free(ov);
+	free(nv);
+	free(del);
+	free(add);
+	return (error);
 }
