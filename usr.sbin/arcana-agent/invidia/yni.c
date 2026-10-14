@@ -22,6 +22,12 @@
  * the file has that cannot be read so is said, not guessed: the
  * variable and why.
  *
+ * An instance asked for past the last FIB grows them (2.6.4): net.fibs
+ * raised live, as the kernel allows (route_tables.c's sysctl_fibs: more,
+ * never fewer), and kept in loader.conf for the next boot, where the
+ * kernel makes them; a kernel that will not grow them live gets them
+ * at the next boot: a reboot is required, and the caller is told.
+ *
  * An interface is bound to the instance whose FIB is its own (ifconfig
  * fib, SIOCSIFFIB, PLAN-SDN-YANG 2.6.3), none in FIB 0, the host's; so
  * are its addresses, of both families: FreeBSD binds an interface, not
@@ -50,6 +56,7 @@
 typedef struct ietf_network_instance_network_instances_network_instance
     yni;
 
+#define	RT_MAXFIBS	65535		/* the kernel's, route_var.h */
 #define	NI_TYPE(x)	IETF_NETWORK_INSTANCE_NETWORK_INSTANCES_NETWORK_INSTANCE_NI_TYPE_##x
 #define	ROOT_TYPE(x)	IETF_NETWORK_INSTANCE_NETWORK_INSTANCES_NETWORK_INSTANCE_ROOT_TYPE_##x
 
@@ -225,6 +232,93 @@ yni_read(const struct vc_file *f, int nfibs, cbl_yarena *a,
 	return (0);
 }
 
+/* What ni cannot be, said in err; the FIBs below nfibs. */
+static int
+check(const struct ietf_network_instance_network_instances *ni, int nfibs,
+    char *err, size_t errlen)
+{
+	size_t n = ni != NULL ? ni->network_instance.n : 0;
+	const yni *v = n > 0 ? ni->network_instance.v : NULL;
+
+	for (size_t i = 0; i < n; i++) {
+		const char *why;
+
+		if (v[i].ni_type != NI_TYPE(FIB) || !v[i].has_arcni_fib) {
+			snprintf(err, errlen, "%s: no FIB", v[i].name);
+			return (-1);
+		}
+		if (v[i].arcni_fib >= RT_MAXFIBS) {
+			snprintf(err, errlen, "%s: FIB %u, the kernel has at "
+			    "most %d", v[i].name, v[i].arcni_fib, RT_MAXFIBS);
+			return (-1);
+		}
+		if (v[i].arcni_fib >= nfibs) {
+			snprintf(err, errlen, "%s: FIB %u, net.fibs is %d",
+			    v[i].name, v[i].arcni_fib, nfibs);
+			return (-1);
+		}
+		if (v[i].has_enabled && !v[i].enabled) {
+			snprintf(err, errlen, "%s: a FIB cannot be disabled",
+			    v[i].name);
+			return (-1);
+		}
+		if ((why = bad_name(v[i].name, v[i].arcni_fib)) != NULL) {
+			snprintf(err, errlen, "%s: %s", v[i].name, why);
+			return (-1);
+		}
+		for (size_t k = 0; k < i; k++)
+			if (v[k].arcni_fib == v[i].arcni_fib) {
+				snprintf(err, errlen, "%s, %s: FIB %u twice",
+				    v[k].name, v[i].name, v[i].arcni_fib);
+				return (-1);
+			}
+	}
+	return (0);
+}
+
+/*
+ * The FIBs ni asks for, net.fibs raised to them: live (sysctl), and in
+ * loader.conf lf, unless it has as many already.  *nfibs: as many as
+ * there are now, or will be; *reboot: not live, at the next boot.
+ */
+int
+yni_grow(struct vc_file *lf, int *nfibs,
+    const struct ietf_network_instance_network_instances *ni, bool *reboot,
+    char *err, size_t errlen)
+{
+	const struct vc_assign *as;
+	unsigned int want = (unsigned int)*nfibs;
+	char num[16];
+
+	*reboot = false;
+	/* Nothing grown for what is refused after. */
+	if (check(ni, RT_MAXFIBS, err, errlen) != 0)
+		return (EINVAL);
+	for (size_t i = 0; ni != NULL && i < ni->network_instance.n; i++)
+		if (ni->network_instance.v[i].has_arcni_fib &&
+		    ni->network_instance.v[i].arcni_fib >= want)
+			want = ni->network_instance.v[i].arcni_fib + 1u;
+	if (want <= (unsigned int)*nfibs)
+		return (0);
+	/* Kept first: a live raise cannot be taken back. */
+	if ((as = vc_get(lf, "net.fibs")) != NULL && !vc_settled(lf,
+	    "net.fibs")) {
+		snprintf(err, errlen, "loader.conf's net.fibs: not settled by "
+		    "reading the file");
+		return (EINVAL);
+	}
+	if (as == NULL || as->value == NULL ||
+	    strtoul(as->value, NULL, 10) < want) {
+		snprintf(num, sizeof(num), "%u", want);
+		if (vc_set(lf, "net.fibs", num, err, errlen) == -1)
+			return (errno);
+	}
+	if (sysctlbyname("net.fibs", NULL, NULL, &want, sizeof(want)) == -1)
+		*reboot = true;
+	*nfibs = (int)want;
+	return (0);
+}
+
 /*
  * ni's names and descriptions into fibs.conf f: each instance's FIB its
  * fib leaf's, below nfibs; the name fibN, or none, the variable taken
@@ -238,34 +332,8 @@ yni_write(struct vc_file *f, int nfibs,
 	size_t n = ni != NULL ? ni->network_instance.n : 0;
 	const yni *v = n > 0 ? ni->network_instance.v : NULL;
 
-	for (size_t i = 0; i < n; i++) {
-		const char *why;
-
-		if (v[i].ni_type != NI_TYPE(FIB) || !v[i].has_arcni_fib) {
-			snprintf(err, errlen, "%s: no FIB", v[i].name);
-			return (EINVAL);
-		}
-		if (v[i].arcni_fib >= nfibs) {
-			snprintf(err, errlen, "%s: FIB %u, net.fibs is %d",
-			    v[i].name, v[i].arcni_fib, nfibs);
-			return (EINVAL);
-		}
-		if (v[i].has_enabled && !v[i].enabled) {
-			snprintf(err, errlen, "%s: a FIB cannot be disabled",
-			    v[i].name);
-			return (EINVAL);
-		}
-		if ((why = bad_name(v[i].name, v[i].arcni_fib)) != NULL) {
-			snprintf(err, errlen, "%s: %s", v[i].name, why);
-			return (EINVAL);
-		}
-		for (size_t k = 0; k < i; k++)
-			if (v[k].arcni_fib == v[i].arcni_fib) {
-				snprintf(err, errlen, "%s, %s: FIB %u twice",
-				    v[k].name, v[i].name, v[i].arcni_fib);
-				return (EINVAL);
-			}
-	}
+	if (check(ni, nfibs, err, errlen) != 0)
+		return (EINVAL);
 	for (int fib = 1; fib < nfibs; fib++) {
 		const yni *e = NULL;
 		char name[32], def[16];

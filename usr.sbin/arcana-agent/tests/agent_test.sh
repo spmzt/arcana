@@ -5340,6 +5340,50 @@ yang-cbor 60 bytes, the same back
 	atf_check cmp was fibs.conf
 }
 
+atf_test_case yang_ni_grow
+yang_ni_grow_head()
+{
+	atf_set "descr" "an instance past the last FIB (PLAN-SDN-YANG 2.6.4):" \
+	    "net.fibs kept in loader.conf; not raised live, unprivileged," \
+	    "so a reboot required"
+	# Never root: a live raise of the host's net.fibs is for good.
+	atf_set "require.user" "unprivileged"
+}
+yang_ni_grow_body()
+{
+	local y="$(atf_get_srcdir)/yni"
+
+	cat > loader.conf <<'EOF'
+# The kernel's tables.
+net.fibs="2"
+EOF
+	: > fibs.conf
+	printf '1 blue\n5 far\n' > in
+	atf_check -o inline:"net.fibs 6 reboot required\n" \
+	    sh -c "'$y' -n 3 -w -l loader.conf fibs.conf < in"
+	atf_check -o inline:'# The kernel'"'"'s tables.
+net.fibs="6"
+' cat loader.conf
+	atf_check -o inline:'fib1_name="blue"
+fib5_name="far"
+' cat fibs.conf
+	# As many already: loader.conf as it was.
+	printf '2 red\n' > in
+	atf_check -o inline:"net.fibs 3 live\n" \
+	    sh -c "'$y' -n 3 -w -l loader.conf fibs.conf < in"
+	atf_check -o match:'^net.fibs="6"$' cat loader.conf
+	# Refused, nothing grown: one FIB twice, past the kernel's.
+	cp loader.conf was
+	printf '7 red\n7 blue\n' > in
+	atf_check -s exit:1 -e inline:"yni: red, blue: FIB 7 twice\n" \
+	    sh -c "'$y' -n 3 -w -l loader.conf fibs.conf < in"
+	printf '65535 top\n' > in
+	atf_check -s exit:1 \
+	    -e inline:"yni: top: FIB 65535, the kernel has at most 65535\n" \
+	    sh -c "'$y' -n 3 -w -l loader.conf fibs.conf < in"
+	atf_check cmp was loader.conf
+}
+
 atf_test_case yang_ni_rc
 yang_ni_rc_head()
 {
@@ -5833,6 +5877,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_ni_conf
 	atf_add_test_case yang_ni_rc
+	atf_add_test_case yang_ni_grow
 	atf_add_test_case yang_active_route
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd

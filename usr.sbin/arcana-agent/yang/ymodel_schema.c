@@ -1057,7 +1057,7 @@ static const struct cbl_ytype t54 = {
 };
 
 static const struct cbl_yrange t55_r[] = {
-	{ .min.u = UINT64_C(1), .max.u = UINT64_C(65535) },
+	{ .min.u = UINT64_C(1), .max.u = UINT64_C(65534) },
 };
 static const struct cbl_ytype t55 = {
 	.kind = CBL_YT_UINT16,

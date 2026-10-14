@@ -312,9 +312,16 @@
   ifconfig_<if>, undone if that fails; refused as bind-ni-name-failed
   says (no such instance, a family apart, the kernel's error). Held to
   rc.conf cases (yang_ni_rc) and an epair in a vnet jail: ifconfig fib
-  read back, a name applied, refusals, unbound (yang_ni_bind). Next:
-  2.6.4, net.fibs in loader.conf and the reboot flag; 2.6.2 is a
-  mount, after 1.11. As each operation is
+  read back, a name applied, refusals, unbound (yang_ni_bind). 2.6.4:
+  net.fibs grows live, never shrinks (route_tables.c's sysctl_fibs), so
+  an instance past the last FIB raises it live and loader.conf keeps
+  it (yni_grow, checked before anything grows), the reboot flag only
+  where the kernel will not grow it; FIBs at most RT_MAXFIBS (65535,
+  the fib leaf 1..65534). Held to loader.conf cases unprivileged (no
+  live raise: reboot required; yang_ni_grow) and a vnet jail's net.fibs
+  raised live (yang_ni_grow, root). 2.6.2 (the vrf-root mount) and
+  parent-reference wait on 1.11. Next: 2.7.1, the LNE list from
+  jail_get. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
