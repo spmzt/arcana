@@ -15,10 +15,15 @@ command -v yanglint >/dev/null || { echo "lint.sh: no yanglint (net/libyang3)" >
 mains=$(grep -l '^module ' *.yang)
 n=0
 for f in $mains; do
-	yanglint -i -p . "$f" || { echo "lint.sh: $f does not compile" >&2; exit 1; }
+	# A module whose own features need TLS's (RFC 9645's client,
+	# by ietf-syslog): those of ietf-tls-common, all of them, as an
+	# implementation of TLS 1.2 and 1.3 would have.
+	yanglint -i -p . "$f" 2>/dev/null ||
+	    yanglint -i -p . -F 'ietf-tls-common:*' ietf-tls-common@2024-10-10.yang "$f" ||
+	    { echo "lint.sh: $f does not compile" >&2; exit 1; }
 	n=$((n + 1))
 done
-yanglint -i -p . $mains
+yanglint -i -p . -F 'ietf-tls-common:*' $mains
 # Arcana's deviations hold: what FreeBSD sets for the whole host is no
 # configuration of one interface.
 d=$(mktemp -d)

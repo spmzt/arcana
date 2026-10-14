@@ -27,6 +27,13 @@ CFLAGS.ysystem_test.c+=	-I${.OBJDIR}/..
 CFLAGS.ysystem.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.ysystem+=	${CBLINK_LIBS} ${UCL_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
+# ylog: the log operation's replies as arcana-log has them, and
+# syslog.conf as ietf-syslog.
+PROGS+=		ylog
+SRCS.ylog=	ylog_test.c ylog.c yjson.c ymodel_schema.c
+CFLAGS.ylog_test.c+=	-I${.OBJDIR}/..
+CFLAGS.ylog.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.ylog+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yprocs: the processes operation's replies as arcana-processes has them.
 PROGS+=		yprocs
 SRCS.yprocs=	yprocs_test.c yprocs.c yjson.c ymodel_schema.c

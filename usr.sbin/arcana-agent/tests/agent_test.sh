@@ -5362,6 +5362,112 @@ sshd_enable="YES"
 ' cat rc.conf
 }
 
+atf_test_case yang_log
+yang_log_head()
+{
+	atf_set "descr" "the log operation's replies as arcana-log has" \
+	    "them (PLAN-SDN-YANG 3.1.7), a line's facility and severity" \
+	    "ietf-syslog's; syslog.conf and newsyslog.conf as ietf-syslog," \
+	    "what it cannot hold said; through YANG-CBOR and back"
+}
+yang_log_body()
+{
+	local y="$(atf_get_srcdir)/ylog"
+
+	cat > files.json <<'EOF'
+{"name":"messages","files":[{"name":"auth.log","size":4120,"mtime":1791990000},{"name":"messages","size":88211,"mtime":1791995110},{"name":"messages.0.bz2","size":9100,"mtime":1791900000,"packed":true}],"lines":[],"size":88211,"position":88211}
+EOF
+	cat > want <<'EOF'
+directory /var/log
+file auth.log size=4120 modified=2026-10-14T15:00:00Z packed=-
+file messages size=88211 modified=2026-10-14T16:25:10Z packed=-
+file messages.0.bz2 size=9100 modified=2026-10-13T14:00:00Z packed=yes
+yang-cbor 134 bytes, the same back
+EOF
+	atf_check -o file:want "$y" files files.json
+	# syslogd -v's "facility.level": security is RFC 5424's audit.
+	cat > read.json <<'EOF'
+{"name":"messages","lines":[{"time":"Oct 14 12:00:01","level":"auth.info","host":"labvm","tag":"sshd","pid":"812","text":"Accepted publickey for root"},{"time":"Oct 14 12:00:02","level":"security.warn","host":"labvm","tag":"kernel","text":"ipfw: 100 Deny"},{"time":"Oct 14 12:00:03","host":"labvm","text":"-- MARK --"},{"text":"a line of no form"}],"size":88211,"position":88211,"rotated":true}
+EOF
+	cat > want <<'EOF'
+name messages size=88211 position=88211 rotated=yes
+line time=Oct 14 12:00:01 host=labvm facility=auth severity=info tag=sshd pid=812 seq=-1 seen=- text=Accepted publickey for root
+line time=Oct 14 12:00:02 host=labvm facility=audit severity=warning tag=kernel pid=- seq=-1 seen=- text=ipfw: 100 Deny
+line time=Oct 14 12:00:03 host=labvm facility=- severity=- tag=- pid=- seq=-1 seen=- text=-- MARK --
+line time=- host=- facility=- severity=- tag=- pid=- seq=-1 seen=- text=a line of no form
+yang-cbor 215 bytes, the same back
+EOF
+	atf_check -o file:want "$y" read read.json
+	cat > dmesg.json <<'EOF'
+{"name":"@dmesg","lines":[{"seq":41,"text":"em0: link state changed to UP"},{"seq":42,"seen":1791995110,"text":"epair0a: Ethernet address: 02:00:00:00:00:0a"}],"position":42}
+EOF
+	atf_check -o match:'^line .* seq=42 seen=2026-10-14T16:25:10Z ' \
+	    -o match:'same back' "$y" read dmesg.json
+
+	mkdir syslog.d
+	cat > syslog.conf <<'EOF'
+*.err;kern.warning;auth.notice;mail.crit		/dev/console
+*.notice;authpriv.none;kern.debug;lpr.info;mail.crit;news.err	/var/log/messages
+security.*					/var/log/security
+auth.info;authpriv.info				/var/log/auth.log
+mail.info					/var/log/maillog
+cron.*						-/var/log/cron
+*.=debug					/var/log/debug.log
+local0.*					@logs.example.net:5514
+local1.*					@[2001:db8::1]
+local5.*					@192.0.2.9
+!-devd
+daemon.info					/var/run/rc.log
+!*
+*.emerg						*
+local2.<info					/var/log/l2
+local3.*					|exec /usr/bin/logger
+mark.*						/var/log/marks
+:msg, contains, "x"				/var/log/x
+include	syslog.d
+EOF
+	echo 'devd.* /var/log/devd.log' > syslog.d/devd.conf
+	echo 'local4.*;local4.!debug /var/log/l4' > syslog.d/l4.conf
+	echo 'local6.info /var/log/l6' > syslog.d/l6.txt
+	cat > newsyslog.conf <<'EOF'
+# logfilename          [owner:group]    mode count size when  flags [/pid_file] [sig_num]
+/var/log/auth.log			600  7	   1000	@0101T JC
+/var/log/messages	root:wheel	644  5	   1000	*	JC
+/var/log/security			600  10	   100	*     JC
+/var/log/cron				600  3	   100	*     JC
+/var/log/debug.log			600  7	   *	24    JC
+/var/log/maillog			640  7	   *	$D0  JC
+EOF
+	# The file's selectors in order; newsyslog's KiB in MiB rounded
+	# up, its hours in minutes; a block, a pipe, users told, '<' and
+	# '!', mark, a property filter, a name no facility's, newsyslog's
+	# time of day: said, none guessed.  An include's .conf files only.
+	cat > want <<'EOF'
+console all.error kern.warning auth.notice mail.critical
+file file:/var/log/messages files=5 size=1 rollover=-1 all.notice authpriv.none kern.debug lpr.info mail.critical news.error
+file file:/var/log/security files=10 size=1 rollover=-1 audit.all
+file file:/var/log/auth.log files=7 size=1 rollover=-1 auth.info authpriv.info
+file file:/var/log/maillog files=7 size=-1 rollover=-1 mail.info
+file file:/var/log/cron files=3 size=1 rollover=-1 cron.all
+file file:/var/log/debug.log files=7 size=-1 rollover=1440 all.=debug
+remote logs.example.net udp name logs.example.net port=5514 local0.all
+remote 2001:db8::1 udp ipv6 2001:db8::1 port=-1 local1.all
+remote 192.0.2.9 udp ipv4 192.0.2.9 port=-1 local5.all
+unread syslog.conf:12: in a block of one program or host: ietf-syslog has no such selector
+unread syslog.conf:14: users or everyone told: ietf-syslog has no such action
+unread syslog.conf:15: a level compared by '<', '>' or '!': ietf-syslog's selectors compare equal, or that level and above
+unread syslog.conf:16: a pipe to a program: ietf-syslog has no such action
+unread syslog.conf:17: facility mark, syslogd's own marks, is none of RFC 5424's
+unread syslog.conf:18: a property filter: ietf-syslog selects by facility and severity
+unread syslog.d/devd.conf:1: a facility syslog has no name for
+unread syslog.d/l4.conf:1: a level compared by '<', '>' or '!': ietf-syslog's selectors compare equal, or that level and above
+unread newsyslog.conf:2: turned over at a time of day (@, $): ietf-syslog's rollover is an interval
+unread newsyslog.conf:7: turned over at a time of day (@, $): ietf-syslog's rollover is an interval
+yang-cbor 683 bytes, the same back
+EOF
+	atf_check -o file:want "$y" conf syslog.conf newsyslog.conf
+}
+
 atf_test_case yang_processes
 yang_processes_head()
 {
@@ -6363,6 +6469,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_jails
 	atf_add_test_case yang_system
 	atf_add_test_case yang_processes
+	atf_add_test_case yang_log
 	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs
 	atf_add_test_case yang_packages

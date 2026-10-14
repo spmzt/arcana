@@ -44,6 +44,7 @@ origin.
 | `iana-if-type@2026-03-17.yang` | module | IANA registry |
 | `iana-ipv6-ext-types@2025-12-22.yang` | module | IANA registry |
 | `iana-routing-types@2025-09-03.yang` | module | IANA registry |
+| `iana-tls-cipher-suite-algs@2024-10-16.yang` | module | IANA registry, RFC 9645; `ietf-tls-common`'s import |
 | `ieee802-dot1ax-linkagg@2025-09-30.yang` | module | IEEE Std 802.1AX (YangModels/yang, standard/ieee/published/802.1) |
 | `ieee802-dot1ax-types@2025-09-30.yang` | module | IEEE Std 802.1AX (YangModels/yang, standard/ieee/published/802.1) |
 | `ieee802-dot1q-bridge@2023-10-26.yang` | module | IEEE Std 802.1Q (YangModels/yang, standard/ieee/published/802.1) |
@@ -71,6 +72,7 @@ origin.
 | `ietf-bgp-types@2026-08-14.yang` | module | draft-ietf-idr-bgp-model |
 | `ietf-bgp@2026-08-14.yang` | module | draft-ietf-idr-bgp-model |
 | `ietf-crypto-types@2024-10-10.yang` | module | RFC 9640 |
+| `ietf-keystore@2024-10-10.yang` | module | RFC 9642; `ietf-syslog`'s TLS import |
 | `ietf-datastores@2018-02-14.yang` | module | RFC 8342 |
 | `ietf-ethertypes@2019-03-04.yang` | module | RFC 8519 |
 | `ietf-i2nsf-ike@2021-07-14.yang` | module | RFC 9061 |
@@ -110,11 +112,15 @@ origin.
 | `ietf-routing@2018-03-13.yang` | module | RFC 8349 |
 | `ietf-sap-ntw@2023-06-20.yang` | module | RFC 9408 |
 | `ietf-sid-file@2024-07-31.yang` | module | RFC 9595 |
+| `ietf-syslog@2025-04-30.yang` | module | RFC 9742; syslog.conf(5) and newsyslog.conf(5) read as it (gula/ylog.c) |
 | `ietf-subscribed-notifications@2019-09-09.yang` | module | RFC 8639 |
 | `ietf-tcp-common@2024-10-10.yang` | module | RFC 9643 |
 | `ietf-tcp@2024-10-10.yang` | module | RFC 9648 |
 | `ietf-te-topology@2020-08-06.yang` | module | IANA, RFC 8795 |
 | `ietf-te-types@2020-06-10.yang` | module | IANA, RFC 8776 |
+| `ietf-tls-client@2024-10-10.yang` | module | RFC 9645; `ietf-syslog`'s TLS transport |
+| `ietf-tls-common@2024-10-10.yang` | module | RFC 9645 |
+| `ietf-truststore@2024-10-10.yang` | module | RFC 9641 |
 | `ietf-vn@2025-03-27.yang` | module | IANA, RFC 9731 |
 | `ietf-vpn-common@2022-02-11.yang` | module | RFC 9181 |
 | `ietf-yang-library@2019-01-04.yang` | module | RFC 8525 |
@@ -144,6 +150,7 @@ Arcana's provisional block (SIDS.md), their `.sid` files beside them.
 | `arcana-jails@2026-10-14.yang` | module | FreeBSD's jails (jail(8), jail(2)): those jail.conf(5) defines, as jail(8) -e resolves them, and those running, as jail_get(2) gives them; start, stop, restart, kill as actions; a vnet jail's logical network element (RFC 8530); the list and action operations of arcana.yaml converted (Y-3) |
 | `arcana-sysctl@2026-10-14.yang` | module | FreeBSD's kernel state, sysctl(3): sysctl.conf(5)'s settings as configuration (written in place), the values with their kind, whether writable and what they are said to be as state; the sysctl and sysctl-parts operations of arcana.yaml converted (Y-3) |
 | `arcana-processes@2026-10-14.yang` | module | FreeBSD's processes (kvm_getprocs(3), libprocstat(3)) in OpenConfig's shape: `openconfig-procmon`'s list, augmented with what FreeBSD has besides (parent, user, jail, run state, wait channel, nice, priority, threads, CPU time and the decayed share, blocks read and written), one process's files and threads, the jails' totals; signal (kill(2)) and renice (setpriority(2)) actions; the processes operation of arcana.yaml converted (Y-3) |
+| `arcana-log@2026-10-14.yang` | module | what FreeBSD's syslogd(8) wrote, read: the log directory's files (newsyslog(8)'s packed ones too) and a read's lines, followed by position; the kernel's message buffer as @dmesg; each line's facility and severity as `ietf-syslog`'s, where syslogd -v wrote them; the log operation of arcana.yaml converted (Y-3); how syslogd writes is `ietf-syslog` itself |
 | `arcana-kernel@2026-10-14.yang` | module | FreeBSD's kernel: rc.conf's kld_list as configuration; the files linked and their modules, those available, its memory (malloc(9) types, uma(9) zones) as state; load an rpc, unload an action; the kernel operation of arcana.yaml converted (Y-3) |
 | `arcana-storage@2026-10-14.yang` | module | FreeBSD's storage: GEOM's disks and partitions, each with its health (nvmecontrol, smartctl), the ZFS pools with their vdevs and those importable, datasets and snapshots, the mounts, fstab(5)'s text and entries, the swap; a dataset's key loaded, unloaded, changed, fstab replaced, a snapshot sent, one received, as actions; the storage, fstab, zfs-send, zfs-receive and zfs-key operations of arcana.yaml converted (Y-3) |
 | `arcana-jobs@2026-10-14.yang` | module | the agent's jobs: the queue, each job's trace as a flat list of steps naming their parents; submit (an rpc), cancel and confirm (actions); the job-submit, jobs, job, job-cancel and job-confirm operations of arcana.yaml converted (Y-3) |
