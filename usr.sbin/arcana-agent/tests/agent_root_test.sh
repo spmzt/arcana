@@ -939,10 +939,14 @@ yang_kinds_body()
 	atf_check -o save:a "$y" arcif
 	atf_check -o save:i "$y" interfaces
 	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 a
-	atf_check -o match:' mtu=1400 .* fib=1 .* epair=epair77b,here' \
+	# The MTU as ietf-if-extensions' max-frame-size: 1400, an Ethernet
+	# header and FCS, and a tag (epair has VLAN_MTU); the other end as
+	# its peer-interface; the FIB as RFC 8529's bind-ni-name.
+	atf_check -o match:' frame=1422 .* peer=epair77b( |$)' \
 	    grep '^epair77a ' a
-	atf_check -o match:' epair=epair77a,here' grep '^epair77b ' a
-	atf_check -o match:' epair=-,vnet' grep '^epair79a ' a
+	atf_check -o match:' peer=epair77a( |$)' grep '^epair77b ' a
+	atf_check -o match:' peer=vnet( |$)' grep '^epair79a ' a
+	atf_check -o match:'^epair77a 1 fib1 ' "$(atf_get_srcdir)/yni" -i -
 	atf_check -o match:' tunnelfib=1 ' grep '^gif77 ' a
 	atf_check -o match:' type=tunnel ' grep '^gif77 ' i
 	# loadbalance, hashing l3 and l4 (bits 1 and 2); the port's state
