@@ -27,6 +27,7 @@ beforeinstall: .PHONY
 .endif
 
 SUBDIR=		lib/libjailconf \
+		lib/libvarconf \
 		usr.sbin/jailconf \
 		usr.sbin/arcana-enrol \
 		usr.sbin/arcana-agent \
@@ -44,6 +45,7 @@ all_subdir_${_d}: cblink-build
 .endif
 
 TESTDIRS=	lib/libjailconf/tests \
+		lib/libvarconf/tests \
 		usr.sbin/jailconf/tests \
 		usr.sbin/arcana-agent/tests
 .if ${MK_CONSOLE} != "no"

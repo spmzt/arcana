@@ -41,6 +41,7 @@ static char	 kore_path[MAXPATHLEN];
 static void	 terminate(const char *);
 /* The console sends another build of arcana-agent than the host runs. */
 bool		 harness_other_agent;
+bool		 harness_newer_agent;
 /* The agent beside the console is looked for, as outside the tests. */
 bool		 harness_local_agent;
 /* web.conf's local_agent is the test's own line. */
@@ -863,6 +864,15 @@ start(const atf_tc_t *tc, int port, const char *webroot)
 		snprintf(buf, sizeof(buf), "cp '%s' '%s' && printf x >> '%s'",
 		    jgd, send, send);
 		ATF_REQUIRE(system(buf) == 0);
+	}
+	if (harness_newer_agent) {
+		/* A later version: the program, saying another with -V. */
+		snprintf(send, sizeof(send), "%s/newer-agent", cwd);
+		snprintf(buf, sizeof(buf), "#!/bin/sh\n[ \"$1\" = -V ] && "
+		    "{ echo 'arcana-agent 999.0.0'; exit 0; }\nexec '%s' "
+		    "\"$@\"\n", jgd);
+		put("newer-agent", buf);
+		ATF_REQUIRE(chmod("newer-agent", 0755) == 0);
 	}
 	/* None, unless a test is about it or names one itself. */
 	if (harness_webconf_only_local)

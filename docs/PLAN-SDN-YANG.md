@@ -1124,6 +1124,9 @@ A step never leaves `main` unbuildable; where a step would, it says
   `is-router`, state; check: equals `arp -an`, `ndp -an`.
 - 1.10.3 A: the global sysctls with origin `system` and the deviation
   module `arcana-ip-deviations`; check: `yanglint` with deviations.
+  Done (2026-10-14) but the origin: an annotation (RFC 8342, RFC 7952)
+  the codec does not carry yet; it comes with 2.1's
+  instance tree, which keeps each node's origin.
 - 1.11.1 A, branch: family 1 registered with `GET` and dump for
   interfaces and ip; check: `arcanactl` (a `get` verb) dumps them.
 - 1.11.2 C, branch: a translator from the dump to the Network tab's

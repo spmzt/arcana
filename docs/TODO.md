@@ -201,11 +201,63 @@
   kind the jobs make; 1.9.4, the netlink watch tells an interface made,
   changed, renamed and destroyed (no kernel event for a description,
   FIB, group, link address, media, capabilities or a kind's settings:
-  3.2.3 must tell or poll them); the IETF modules' .sid files numbered
-  in IANA's ranges, IANA publishing none. For the user: the CORECONF draft's
-  examples number some ietf-interfaces items otherwise (SIDS.md). Next:
-  1.10, ietf-ip; 1.11, the first GET, on an arcana branch with cblink
-  v2. As each operation is
+  3.2.3 must tell or poll them); 1.10, ietf-ip: each interface's
+  addresses with origin and status, its neighbours (equal to ifconfig,
+  ndp -i, arp -an and ndp -an), the host's sysctls on each with the
+  deviation module arcana-ip-deviations making them config false
+  (lint.sh checks it holds); their origin system (RFC 8342) waits for
+  the YANG-CBOR codec's metadata, with the datastores (Y-2); the IETF
+  modules' .sid files numbered in IANA's ranges, IANA publishing none. For the user: the CORECONF draft's
+  examples number some ietf-interfaces items otherwise (SIDS.md). Done
+  on cblink v2: 1.12.1, the corpus test (51 IETF and IANA modules: each
+  tree as yanglint draws it with the same features, all their tables
+  compiled and round-tripped), and libyang3 in its CI; 1.12.2,
+  fuzz_ycodec (YANG-CBOR into every struct of shapes, round trips and
+  the validator), which found cbl_ydecode() not zeroing the struct it
+  documents zeroing; 1.12.3 came with 1.7. Next: 1.11, the first GET,
+  on an arcana branch with cblink v2. For the user (2026-10-14): that
+  branch builds only once the agent and console speak cblink 2, which
+  has no v1; how it carries the 60 operations of arcana.yaml until Y-3
+  converts them is not in the plan. Either an interim module made
+  mechanically from arcana.yaml, an rpc an operation with its
+  attributes (the JSON blobs as strings), so the branch runs at once and
+  Y-3 replaces it a module at a time; or Y-3's conversions first, 1.11
+  after. Meanwhile Y-2's cblink side goes on. Done on cblink v2
+  (2026-10-14): 2.1, the instance tree (<cbl_data.h>: nodes of the
+  tables, keys by an index, defaults on demand and made, to and from
+  the structs and YANG-CBOR), its edits (RFC 6241's operations, all or
+  nothing by an undo log; RFC 8072's insert and move), the difference
+  of two trees as such an edit, and references (leafrefs' targets and
+  nodes' parents now in the tables; instance-identifiers read from
+  YANG-CBOR). And 2.2, the XPath-lite evaluator (cbl_xp_eval(): the
+  tables' expressions by module, every function XPath-lite has; when and
+  must over a tree, a default under a false when not in use; subtree and
+  XPath filters, RFC 6241's examples; NACM's paths; schema mount's
+  parent references), held to libyang's on the corpus (xpdiff, none
+  differing but where libyang departs from the RFCs: deref() of a
+  dangling leafref, substring() from below 0, number("infinity")), its
+  work bounded against a client's filter, and fuzzed. On the Arcana
+  side, 2.3.1: lib/libvarconf reads and changes rc.conf and rc.conf.d
+  in place, every other byte kept (the defaults' rc.conf, a host's and
+  sh(1)'s edge cases read and written byte for byte, each value as
+  sh(1) gives it; what reading cannot settle, an expansion, an if, a
+  function, a command's environment, said so and edits of it refused),
+  and gives the fragment Arcana owns, rc.conf.d/<service>/arcana,
+  refused where rc.conf.d/<service> is the user's file; the agent
+  still edits rc.conf through sysrc(8) until 2.3.5 renders the
+  fragments. 2.3.2, the conflict rule: the user's files rc(8) reads
+  for a service listed as it reads them (rc_conf_files, as rc.conf may
+  name more; rc.conf.d/<service> of /etc and of local_startup's
+  directories), Arcana's fragment not among them, and a variable any of
+  them sets refused, the file and line said. 2.3.3: loader.conf and
+  sysctl.conf as libvarconf's dialects, each read as what reads it
+  reads it (the loader's config.lua, run under flua in the test, agrees
+  on /boot/defaults/loader.conf and every edge; sysctl(8)'s comments
+  and quotes, from sysctl.c), and rtadvd.conf as records of
+  capabilities, read as rtadvd(8)'s advcap.c reads them (compiled into
+  the test from /usr/src: every getter of every capability agrees),
+  values set in place, an edit that would not read back refused. Next:
+  2.3.4, running assembled from the files. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

@@ -456,7 +456,7 @@ prologue(const atf_tc_t *tc, int nservers)
 	    "webroot", "/usr/local/www/arcana-console"));
 	if (access(web, R_OK) == -1)
 		atf_tc_skip("no built PWA at %s", web);
-	harness_other_agent = true;
+	harness_newer_agent = true;
 	/* A copy of the shell, for the test of its update to change. */
 	snprintf(script, sizeof(script), "cp -R '%s' www-copy", web);
 	ATF_REQUIRE(system(script) == 0);
@@ -843,9 +843,10 @@ part_hosts(void)
 	ATF_CHECK(js_true("document.querySelector('.tiles .tile')"));
 	shot("1-host-summary");
 	/*
-	 * The host runs another build of arcana-agent than the console
-	 * has: its bar says so and leads to Devices, where each host's
-	 * agent is updated, here without a restart.
+	 * The host runs an older arcana-agent than the console has: its
+	 * bar says so and leads to Devices, where each host's agent is
+	 * updated, here without a restart.  (Another build of the same
+	 * version is not older: the console_test's other-agent.)
 	 */
 	click_when(".hostbar button[data-act=select-devices]", 10);
 	wait_js("document.querySelector('table.devices td.warn')", 10);

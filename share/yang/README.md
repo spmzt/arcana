@@ -12,7 +12,7 @@ ranges are registered). Nothing here is edited; a deviation, when Arcana needs o
 module of its own.
 
 `lint.sh` compiles every module with `yanglint` (net/libyang3 3.13.6),
-alone and all together. It is a developer's check: building Arcana does
+alone and all together, and checks that Arcana's deviations hold. It is a developer's check: building Arcana does
 not need libyang (D-3), only regenerating the C code from these will.
 
 `ietf-ipv6-router-advertisements` is a submodule of
@@ -86,6 +86,7 @@ Arcana's provisional block (SIDS.md), their `.sid` files beside them.
 | File | | What |
 |---|---|---|
 | `arcana-interfaces@2026-10-14.yang` | module | augments `ietf-interfaces`: driver name, MTU, Ethernet and hardware addresses, groups, FIB and tunnel FIB, capabilities, media; vlan(4), lagg(4), bridge(4) and epair(4) |
+| `arcana-ip-deviations@2026-10-14.yang` | module | deviates `ietf-ip`: forwarding, DAD's probes and temporary addresses are the host's sysctls, IPv4 cannot be turned off on one interface, one MTU for both families: config false |
 
 The `.sid` files of the IETF and IANA modules the agent fills
 (`ietf-interfaces`, `ietf-ip`, `iana-if-type`, `ietf-yang-types`,
