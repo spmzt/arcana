@@ -27,6 +27,30 @@ Arcana uses and where they come from (step 0.5.1).
   interoperation with another SID-keyed protocol is claimed for those
   until they have numbers of their own.
 
+## The IETF ranges, numbered here
+
+IANA's registry gives ranges and publishes no `.sid` file for them
+("IETF YANG-SID Modules: no registrations"), so Arcana numbers each
+module in its range as RFC 9595 Appendix B says (`cblink-gen -a`), as
+for `ietf-sid-file`:
+
+| Module | Range | Size | `.sid` file |
+|---|---:|---:|---|
+| `ietf-yang-types@2025-12-22` | 1100 | 50 | `ietf-yang-types@2025-12-22.sid` (1 used) |
+| `ietf-inet-types@2025-12-22` | 1150 | 50 | `ietf-inet-types@2025-12-22.sid` (1 used) |
+| `ietf-interfaces@2018-02-20` | 1500 | 100 | `ietf-interfaces@2018-02-20.sid` (62 used) |
+| `ietf-ip@2018-02-22` | 1600 | 100 | `ietf-ip@2018-02-22.sid` (63 used) |
+| `iana-if-type@2026-03-17` | 1800 | 400 | `iana-if-type@2026-03-17.sid` (306 used) |
+
+**To decide (the user's):** the CORECONF draft's examples number
+`/ietf-interfaces:interfaces/interface` 1533, as here, but its
+children otherwise (`description` 1534, `name` 1537, `type` 1538) and
+`ethernetCsmacd` 1880, where these files have 1535, 1542, 1561 and
+1893: the draft's are those of files made for the modules' 2014
+revisions, extended since, which are not published where they can be
+fetched. Interoperating with a CORECONF peer would need those files;
+Arcana claims no such interoperation yet.
+
 ## The block
 
 **Provisional: from 2^40 (1 099 511 627 776)**, a block Arcana chose

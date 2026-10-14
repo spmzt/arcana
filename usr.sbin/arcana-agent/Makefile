@@ -5,7 +5,11 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c l2.c ipfw.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
-		routes.c scope.c sdwan.c vnet.c
+		routes.c scope.c sdwan.c vnet.c yif.c
+# The IETF modules the collectors fill (PLAN-SDN-YANG 1.9): cblink-gen's
+# structs and tables of share/yang's modules, committed, so that building
+# needs no libyang; "make regen-yang" refreshes them.
+SRCS+=		ymodel_schema.c
 # Luxuria: what is not FreeBSD's own, the plugins.
 SRCS+=		bird.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c wireguard.c
 # Ira: action and execution.
@@ -17,8 +21,8 @@ SRCS+=		record.c \
 		history.c events.c faults.c kmsg.c probe.c
 .PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
 		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula \
-		${.CURDIR}/luxuria
-CFLAGS+=	-I${.CURDIR}
+		${.CURDIR}/luxuria ${.CURDIR}/yang
+CFLAGS+=	-I${.CURDIR} -I${.CURDIR}/yang
 MAN=		arcana-agent.8
 
 .include "${.CURDIR}/../../share/mk/arcana.mk"
@@ -40,6 +44,18 @@ RCMODE=		0555
 CLEANFILES+=	arcana_agent.sh
 arcana_agent.sh: arcana_agent.in
 	sed -e 's|%%PREFIX%%|${PREFIX}|g' ${.ALLSRC} > ${.TARGET}
+
+# The modules, their features, their .sid files: what ymodel.h and
+# ymodel_schema.c are made of.
+YANG_DIR=	${.CURDIR}/../../share/yang
+YANG_MODS=	ietf-interfaces@2018-02-20 iana-if-type@2026-03-17 \
+		ietf-yang-types@2025-12-22
+YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F iana-if-type: \
+		-F ietf-yang-types:
+regen-yang: .PHONY
+	cd ${YANG_DIR} && ${CBLINK_GEN} -m h,schema -b ymodel \
+	    -o ${.CURDIR}/yang ${YANG_FEATS} ${YANG_MODS:S/^/-s /:S/$/.sid/} \
+	    ${YANG_MODS:S/$/.yang/}
 
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests

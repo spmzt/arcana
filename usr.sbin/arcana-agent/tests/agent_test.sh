@@ -5190,8 +5190,70 @@ capture_cleanup()
 	stop_daemon
 }
 
+# The ietf-interfaces collector (yang/collect.h) beside what ifconfig(8)
+# and netstat(1) -i say of the same interfaces.
+atf_test_case yang_interfaces
+yang_interfaces_head()
+{
+	atf_set "descr" "ietf-interfaces as collected agrees with ifconfig" \
+	    "and netstat -i: names, up, index, address, counters"
+}
+yang_interfaces_body()
+{
+	netstat -i -n -b -W > before
+	atf_check -o save:y "$(atf_get_srcdir)/ycollect" interfaces
+	netstat -i -n -b -W > after
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+	    tail -1 y
+	sed '$d' y > ifs
+	# Each name once: two interfaces may share one (yif.c).
+	ifconfig -l | tr ' ' '\n' | sort -u > names
+	awk '{ print $1 }' ifs | sort > got
+	atf_check cmp names got
+	ifconfig -u -l | tr ' ' '\n' | sort -u > up
+	awk '/ admin=up / { print $1 }' ifs | sort > gotup
+	atf_check cmp up gotup
+	# netstat's Link# line, the first of a name: index, address, bytes.
+	awk '
+	FNR == 1 { f++ }
+	f < 3 && $3 ~ /^<Link#/ {
+		n = $1; sub(/\*$/, "", n)
+		if ((f, n) in seen) next
+		seen[f, n] = 1
+		idx = $3; gsub(/[^0-9]/, "", idx)
+		if (f == 1) {
+			index_of[n] = idx
+			addr[n] = $4 ~ /:/ ? $4 : "-"
+			ib0[n] = $8; ob0[n] = $11
+		} else {
+			ib1[n] = $8; ob1[n] = $11
+		}
+		next
+	}
+	f == 3 {
+		n = $1
+		split($0, kv, " ")
+		for (i in kv) {
+			split(kv[i], p, "=")
+			v[p[1]] = p[2]
+		}
+		if (v["index"] != index_of[n] || v["phys"] != addr[n] ||
+		    v["in-octets"] + 0 < ib0[n] + 0 ||
+		    v["in-octets"] + 0 > ib1[n] + 0 ||
+		    v["out-octets"] + 0 < ob0[n] + 0 ||
+		    v["out-octets"] + 0 > ob1[n] + 0) {
+			printf "%s: %s, netstat says index %s address %s " \
+			    "in %s..%s out %s..%s\n", n, $0, index_of[n], \
+			    addr[n], ib0[n], ib1[n], ob0[n], ob1[n]
+			bad = 1
+		}
+	}
+	END { exit bad }' before after ifs || atf_fail "the collector and netstat differ"
+}
+
 atf_init_test_cases()
 {
+	atf_add_test_case yang_interfaces
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd
 	atf_add_test_case ipsec_sa
