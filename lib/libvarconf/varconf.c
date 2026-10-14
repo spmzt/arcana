@@ -403,6 +403,32 @@ add(struct lex *l, const char *name, size_t nlen, char *value,
 	return (0);
 }
 
+/* An assignment of a line dialect: one a line, alone on it. */
+static int
+vc_add(struct vc_file *f, char *name, char *value, unsigned flags,
+    size_t off, int line, size_t voff, size_t vend, size_t soff,
+    size_t send)
+{
+	struct vc_assign *na, *a;
+
+	if ((na = reallocarray(f->a, f->na + 1, sizeof(*na))) == NULL)
+		return (-1);
+	f->a = na;
+	a = &f->a[f->na++];
+	memset(a, 0, sizeof(*a));
+	a->name = name;
+	a->value = value;
+	a->flags = flags;
+	a->line = line;
+	a->off = off;
+	a->voff = voff;
+	a->vend = vend;
+	a->soff = soff;
+	a->send = send;
+	a->nstmt = 1;
+	return (0);
+}
+
 /* The keywords a compound command opens and closes with. */
 static int
 keyword_depth(const char *w)
@@ -636,6 +662,246 @@ line(struct lex *l)
 	return (other_line(l, soff));
 }
 
+/*
+ * loader.conf, as the loader's config.lua reads it (config.parse()): a
+ * line at a time, blanks around; a comment; NAME = VALUE, VALUE a
+ * "string" without quotes in it or a word, then blanks or a comment;
+ * anything else malformed, skipped.  NAME is a letter or a digit, then
+ * those, "_", "." or "-".  A value is processEnvVar()'s (\c is c, $name
+ * and ${name} expand), but a module's _load (made upper case), _name,
+ * _type, _flags, _before, _after and _error, which are taken as they
+ * are; exec="..." runs a command.
+ */
+static const char *const loader_module[] = { "_load", "_name", "_type",
+    "_flags", "_before", "_after", "_error" };
+
+static bool
+lspace(int c)
+{
+
+	return (c == ' ' || c == '\t' || c == '\r' || c == '\v' || c == '\f');
+}
+
+static bool
+lalnum(int c)
+{
+
+	return (c >= 0 && c < 0x80 && isalnum(c));
+}
+
+static bool
+lword(int c, bool first)
+{
+
+	return (lalnum(c) || c == '-' || (!first && (c == '_' || c == '.')));
+}
+
+/* The suffix of a module's line it has, or -1. */
+static int
+loader_suffix(const char *name, size_t n)
+{
+
+	for (size_t i = 0; i < nitems(loader_module); i++) {
+		size_t k = strlen(loader_module[i]);
+
+		if (n > k && memcmp(name + n - k, loader_module[i], k) == 0)
+			return ((int)i);
+	}
+	return (-1);
+}
+
+static int
+loader_line(struct vc_file *f, size_t s, size_t eol, int line)
+{
+	const char *t = f->text;
+	size_t i = s, n0, n1, v0, v1, c0, c1;
+	struct buf v = { 0 };
+	unsigned flags = 0;
+	char *name;
+	int suffix;
+
+	while (i < eol && lspace(t[i]))
+		i++;
+	if (i == eol || t[i] == '#')
+		return (0);
+	n0 = i;
+	while (i < eol && (lalnum(t[i]) || t[i] == '_' || t[i] == '.' ||
+	    t[i] == '-'))
+		i++;
+	n1 = i;
+	while (i < eol && lspace(t[i]))
+		i++;
+	if (n1 == n0 || i == eol || t[i] != '=')
+		return (0);		/* malformed: skipped */
+	suffix = loader_suffix(t + n0, n1 - n0);
+	/* Not a module's line: a variable's name starts with one. */
+	if (suffix == -1 && !lalnum(t[n0]))
+		return (0);
+	for (i++; i < eol && lspace(t[i]); i++)
+		;
+	v0 = i;
+	if (i < eol && t[i] == '"') {
+		for (i++; i < eol && t[i] != '"'; i++)
+			;
+		if (i == eol)
+			return (0);
+		c0 = v0 + 1;
+		c1 = i++;
+	} else {
+		if (i == eol || !lword((unsigned char)t[i], true))
+			return (0);
+		for (i++; i < eol && lword((unsigned char)t[i], false); i++)
+			;
+		c0 = v0;
+		c1 = i;
+	}
+	v1 = i;
+	while (i < eol && lspace(t[i]))
+		i++;
+	if (i < eol && t[i] != '#')
+		return (0);
+	if ((name = strndup(t + n0, n1 - n0)) == NULL)
+		return (-1);
+	if (strcmp(name, "exec") == 0)
+		flags = VC_OPAQUE;
+	else if (suffix != -1) {
+		for (size_t k = c0; k < c1; k++)
+			if (b_putc(&v, suffix == 0 ? (char)toupper(
+			    (unsigned char)t[k]) : t[k]) == -1)
+				goto bad;
+	} else {
+		for (size_t k = c0; k < c1 && flags == 0; k++) {
+			if (t[k] == '\\') {
+				/* At the end: an error, the line not set. */
+				if (k + 1 == c1)
+					flags = VC_OPAQUE;
+				else if (b_putc(&v, t[++k]) == -1)
+					goto bad;
+			} else if (t[k] == '$')
+				flags = k + 1 == c1 ? VC_OPAQUE : VC_COMPUTED;
+			else if (b_putc(&v, t[k]) == -1)
+				goto bad;
+		}
+	}
+	if (flags != 0) {
+		free(v.s);
+		v.s = NULL;
+	} else if (v.s == NULL && (v.s = strdup("")) == NULL)
+		goto bad;
+	if (vc_add(f, name, v.s, flags, n0, line, v0, v1, s, eol) == -1) {
+		free(name);
+		free(v.s);
+		return (-1);
+	}
+	return (0);
+bad:
+	free(name);
+	free(v.s);
+	return (-1);
+}
+
+/*
+ * sysctl.conf, as sysctl(8)'s parsefile() and parse() read it: a line
+ * at a time, cut at its first "#" not after a backslash, or after the
+ * quote that closes one opened before it; trimmed; split at its first
+ * "=" or ":", the name trimmed; of the value a leading quote dropped,
+ * and the last character if it is the same.  Nothing is escaped.
+ */
+#define	VC_SYSCTL_LINE	1024		/* BUFSIZ: what fgets(3) reads */
+
+static int
+sysctl_line(struct vc_file *f, size_t s, size_t eol, int line, char *err,
+    size_t errlen)
+{
+	const char *t = f->text, *pq, *pdq, *p;
+	size_t cut = eol, b, e, d, n1, v0;
+	char *name, *value;
+
+	if (eol - s + 1 >= VC_SYSCTL_LINE) {
+		fail(err, errlen, "line %d: longer than sysctl(8) reads",
+		    line);
+		errno = EINVAL;
+		return (-1);
+	}
+	pq = memchr(t + s, '\'', eol - s);
+	pdq = memchr(t + s, '"', eol - s);
+	for (p = t + s; (p = memchr(p, '#', (size_t)(t + eol - p))) !=
+	    NULL; p++) {
+		if (pq != NULL && p > pq) {
+			p = memchr(pq + 1, '\'', (size_t)(t + eol - pq - 1));
+			if (p != NULL)
+				cut = (size_t)(p - t) + 1;
+			break;
+		} else if (pdq != NULL && p > pdq) {
+			p = memchr(pdq + 1, '"', (size_t)(t + eol - pdq - 1));
+			if (p != NULL)
+				cut = (size_t)(p - t) + 1;
+			break;
+		} else if (p == t + s || p[-1] != '\\') {
+			cut = (size_t)(p - t);
+			break;
+		}
+	}
+	for (e = cut; e > s && isspace((unsigned char)t[e - 1]); e--)
+		;
+	for (b = s; b < e && isspace((unsigned char)t[b]); b++)
+		;
+	if (b == e)
+		return (0);
+	for (d = b; d < e && t[d] != '=' && t[d] != ':'; d++)
+		;
+	if (d == e)
+		return (0);		/* a name alone: read, not set */
+	for (n1 = d; n1 > b && isspace((unsigned char)t[n1 - 1]); n1--)
+		;
+	for (v0 = d + 1; v0 < e && isspace((unsigned char)t[v0]); v0++)
+		;
+	if (n1 == b)
+		return (0);
+	if (v0 < e && (t[v0] == '"' || t[v0] == '\'')) {
+		size_t c1 = e - v0 >= 2 && t[e - 1] == t[v0] ? e - 1 : e;
+
+		value = v0 + 1 <= c1 ? strndup(t + v0 + 1, c1 - v0 - 1) :
+		    strdup("");
+	} else
+		value = strndup(t + v0, e - v0);
+	if (value == NULL || (name = strndup(t + b, n1 - b)) == NULL) {
+		free(value);
+		return (-1);
+	}
+	if (vc_add(f, name, value, 0, b, line, v0, e, s, eol) == -1) {
+		free(name);
+		free(value);
+		return (-1);
+	}
+	return (0);
+}
+
+/* A file of lines, each read by the dialect's line(). */
+static int
+lines(struct vc_file *f, char *err, size_t errlen)
+{
+	size_t s = 0;
+	int line = 1, rc;
+
+	while (s < f->len) {
+		const char *nl = memchr(f->text + s, '\n', f->len - s);
+		size_t eol = nl != NULL ? (size_t)(nl - f->text) : f->len;
+		size_t send = nl != NULL ? eol + 1 : eol;
+
+		rc = f->dialect == VC_LOADER ? loader_line(f, s, eol, line) :
+		    sysctl_line(f, s, eol, line, err, errlen);
+		if (rc == -1)
+			return (-1);
+		/* A line's end is past its newline. */
+		if (f->na > 0 && f->a[f->na - 1].soff == s)
+			f->a[f->na - 1].send = send;
+		s = send;
+		line++;
+	}
+	return (0);
+}
+
 int
 vc_parse(struct vc_file *f, enum vc_dialect d, const char *text, size_t len,
     char *err, size_t errlen)
@@ -645,7 +911,7 @@ vc_parse(struct vc_file *f, enum vc_dialect d, const char *text, size_t len,
 
 	memset(f, 0, sizeof(*f));
 	f->dialect = d;
-	if (d != VC_SH) {
+	if (d != VC_SH && d != VC_LOADER && d != VC_SYSCTL) {
 		fail(err, errlen, "a dialect not known");
 		errno = EINVAL;
 		return (-1);
@@ -660,6 +926,13 @@ vc_parse(struct vc_file *f, enum vc_dialect d, const char *text, size_t len,
 		vc_free(f);
 		errno = EINVAL;
 		return (-1);
+	}
+	if (d != VC_SH) {
+		if (lines(f, err, errlen) == -1) {
+			vc_free(f);
+			return (-1);
+		}
+		return (0);
 	}
 	memset(&l, 0, sizeof(l));
 	l.s = f->text;
@@ -750,11 +1023,33 @@ vc_name_ok(enum vc_dialect d, const char *s)
 {
 	size_t n;
 
-	if (d != VC_SH || s == NULL || !name_start((unsigned char)*s))
+	if (s == NULL || *s == '\0')
 		return (false);
-	for (n = 0; s[n] != '\0'; n++)
-		if (!name_char((unsigned char)s[n]))
+	for (n = 0; s[n] != '\0'; n++) {
+		int c = (unsigned char)s[n];
+
+		switch (d) {
+		case VC_SH:
+			if (n == 0 ? !name_start(c) : !name_char(c))
+				return (false);
+			break;
+		case VC_LOADER:
+			if (!lalnum(c) && (n == 0 || (c != '_' && c != '.' &&
+			    c != '-')))
+				return (false);
+			break;
+		case VC_SYSCTL:
+			if (!lalnum(c) && c != '_' && (n == 0 || (c != '.' &&
+			    c != '%' && c != '-')))
+				return (false);
+			break;
+		default:
 			return (false);
+		}
+	}
+	/* exec is the loader's command, not a variable. */
+	if (d == VC_LOADER && strcmp(s, "exec") == 0)
+		return (false);
 	return (n <= VC_MAX_NAME);
 }
 
@@ -845,10 +1140,85 @@ quoted(struct buf *b, const char *v, char was)
 	return (b_putc(b, '"'));
 }
 
-/* The file's text with bytes [s, e) replaced by r; and parsed again. */
+/*
+ * A value in a dialect's quoting, as was's (its old quote, or 0 for a
+ * bare word) where it can be.  -1, EINVAL and err: one it cannot hold.
+ */
+static int
+render(enum vc_dialect d, const char *name, const char *v, char was,
+    struct buf *b, char *err, size_t errlen)
+{
+	size_t n = strlen(v);
+	bool word;
+	char q;
+
+	switch (d) {
+	case VC_SH:
+		return (quoted(b, v, was));
+	case VC_LOADER:
+		if (strchr(v, '"') != NULL) {
+			fail(err, errlen, "%s: loader.conf cannot hold a \" in a "
+			    "value", name);
+			errno = EINVAL;
+			return (-1);
+		}
+		word = n > 0 && lword((unsigned char)v[0], true);
+		for (size_t i = 1; word && i < n; i++)
+			word = lword((unsigned char)v[i], false);
+		if (was == 0 && word)
+			return (b_puts(b, v, n));
+		if (b_putc(b, '"') == -1)
+			return (-1);
+		for (size_t i = 0; i < n; i++)
+			/* A module's line is taken as it is. */
+			if ((loader_suffix(name, strlen(name)) == -1 &&
+			    (v[i] == '\\' || v[i] == '$') &&
+			    b_putc(b, '\\') == -1) || b_putc(b, v[i]) == -1)
+				return (-1);
+		return (b_putc(b, '"'));
+	case VC_SYSCTL:
+		if (was == 0 && n > 0 && !isspace((unsigned char)v[0]) &&
+		    !isspace((unsigned char)v[n - 1]) && v[0] != '"' &&
+		    v[0] != '\'' && strchr(v, '#') == NULL)
+			return (b_puts(b, v, n));
+		q = was != 0 ? was : '"';
+		if (strchr(v, q) != NULL)
+			q = q == '"' ? '\'' : '"';
+		if (strchr(v, q) != NULL) {
+			fail(err, errlen, "%s: sysctl.conf cannot hold both "
+			    "quotes in a value it must quote", name);
+			errno = EINVAL;
+			return (-1);
+		}
+		if (b_putc(b, q) == -1 || b_puts(b, v, n) == -1)
+			return (-1);
+		return (b_putc(b, q));
+	default:
+		errno = EINVAL;
+		return (-1);
+	}
+}
+
+/* What a dialect reads a value set as: loader.conf's _load upper. */
+static bool
+reads_as(enum vc_dialect d, const char *name, const char *got,
+    const char *want)
+{
+
+	if (got == NULL)
+		return (false);
+	if (d == VC_LOADER && loader_suffix(name, strlen(name)) == 0)
+		return (strcasecmp(got, want) == 0);
+	return (strcmp(got, want) == 0);
+}
+
+/*
+ * The file's text with bytes [s, e) replaced by r; and parsed again.
+ * An edit of name's value to want: it must read back so, or is not made.
+ */
 static int
 splice(struct vc_file *f, size_t s, size_t e, const char *r, size_t rlen,
-    char *err, size_t errlen)
+    const char *name, const char *want, char *err, size_t errlen)
 {
 	struct vc_file nf;
 	char *t;
@@ -865,6 +1235,15 @@ splice(struct vc_file *f, size_t s, size_t e, const char *r, size_t rlen,
 	free(t);
 	if (rc == -1)
 		return (-1);
+	/* An edit of a value: it reads back as given, or is not made. */
+	if (name != NULL && !reads_as(nf.dialect, name, vc_get(&nf, name) !=
+	    NULL ? vc_get(&nf, name)->value : NULL, want)) {
+		fail(err, errlen, "%s: its value would not read back as given",
+		    name);
+		vc_free(&nf);
+		errno = EINVAL;
+		return (-1);
+	}
 	vc_free(f);
 	*f = nf;
 	return (0);
@@ -912,7 +1291,8 @@ vc_set(struct vc_file *f, const char *name, const char *value, char *err,
 		if ((was != '"' && was != '\'') || a->vend - a->voff < 2 ||
 		    f->text[a->vend - 1] != was)
 			was = 0;
-		if (quoted(&b, value, was) == -1) {
+		if (render(f->dialect, name, value, was, &b, err,
+		    errlen) == -1) {
 			free(b.s);
 			return (-1);
 		}
@@ -922,18 +1302,21 @@ vc_set(struct vc_file *f, const char *name, const char *value, char *err,
 			free(b.s);
 			return (0);
 		}
-		rc = splice(f, a->voff, a->vend, b.s, b.len, err, errlen);
+		rc = splice(f, a->voff, a->vend, b.s, b.len, name, value, err,
+		    errlen);
 		free(b.s);
 		return (rc);
 	}
+	/* A new line: sh(1) and the loader's quoted, sysctl(8)'s bare. */
 	if ((f->len > 0 && f->text[f->len - 1] != '\n' &&
 	    b_putc(&b, '\n') == -1) || b_puts(&b, name, strlen(name)) == -1 ||
-	    b_putc(&b, '=') == -1 || quoted(&b, value, '"') == -1 ||
+	    b_putc(&b, '=') == -1 || render(f->dialect, name, value,
+	    f->dialect == VC_SYSCTL ? 0 : '"', &b, err, errlen) == -1 ||
 	    b_putc(&b, '\n') == -1) {
 		free(b.s);
 		return (-1);
 	}
-	rc = splice(f, f->len, f->len, b.s, b.len, err, errlen);
+	rc = splice(f, f->len, f->len, b.s, b.len, name, value, err, errlen);
 	free(b.s);
 	return (rc);
 }
@@ -969,7 +1352,7 @@ vc_unset(struct vc_file *f, const char *name, char *err, size_t errlen)
 			    f->text[e] == '\t' || f->text[e] == ';'))
 				e++;
 		}
-		if (splice(f, s, e, "", 0, err, errlen) == -1)
+		if (splice(f, s, e, "", 0, NULL, NULL, err, errlen) == -1)
 			return (-1);
 	}
 }

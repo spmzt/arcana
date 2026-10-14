@@ -6,7 +6,9 @@
 
 /*
  * libvarconf: files of variable assignments read and changed in place,
- * every other byte, comments and layout included, left as it was.
+ * every other byte, comments and layout included, left as it was:
+ * rc.conf and rc.conf.d (sh(1)), loader.conf (the loader's), sysctl.conf
+ * (sysctl(8)'s), each read as what reads it reads it.
  * rc.conf(5) and the rc.conf.d fragments rc(8) reads are sh(1) itself:
  * a variable's value is what sh(1) would give it, read with its
  * quoting rules, and what sh(1) would not settle by reading alone (an
@@ -23,6 +25,8 @@
 
 enum vc_dialect {
 	VC_SH,				/* rc.conf, rc.conf.d */
+	VC_LOADER,			/* loader.conf, loader.conf.d */
+	VC_SYSCTL,			/* sysctl.conf, sysctl.conf.local */
 };
 
 /* An assignment's value is not a literal: an expansion in it. */
@@ -53,6 +57,37 @@ struct vc_file {
 	size_t		 na;
 };
 
+/*
+ * rtadvd.conf(5): records of capabilities, as rtadvd(8)'s advcap.c reads
+ * them (capconf.c).
+ */
+struct vc_cap {
+	char		*name;
+	char		 type;		/* '#', '=', '@', or 0: a flag */
+	char		*value;		/* a number in decimal, a string */
+	size_t		 off, end;	/* the field's bytes, its ":" not */
+	/* Inside a string before it: tskip() splits one at each ":", so
+	 * rtadvd(8) looks in it for a field, but it is no field to edit. */
+	bool		 inner;
+};
+
+struct vc_record {
+	char		**names;
+	size_t		 nnames;
+	struct vc_cap	*caps;
+	size_t		 ncaps;
+	char		*tc;		/* a last tc=: the record it brings */
+	int		 line;
+	size_t		 off, end;	/* its lines, the last newline in */
+};
+
+struct vc_capfile {
+	char		*text;
+	size_t		 len;
+	struct vc_record *r;
+	size_t		 nr;
+};
+
 __BEGIN_DECLS
 int		 vc_parse(struct vc_file *, enum vc_dialect, const char *,
 		    size_t, char *, size_t);
@@ -72,6 +107,24 @@ int		 vc_rcd_path(const char *, const char *, const char *, char *,
 int		 vc_rc_files(const char *, const char *, const char *,
 		    const char *, char ***, size_t *, char *, size_t);
 void		 vc_rc_files_free(char **, size_t);
+int		 vc_cap_parse(struct vc_capfile *, const char *, size_t, char *,
+		    size_t);
+int		 vc_cap_read(struct vc_capfile *, const char *, char *, size_t);
+void		 vc_cap_free(struct vc_capfile *);
+const struct vc_record *vc_cap_record(const struct vc_capfile *,
+		    const char *);
+const struct vc_cap *vc_cap_get(const struct vc_capfile *, const char *,
+		    const char *, char);
+int		 vc_cap_set(struct vc_capfile *, const char *, const char *,
+		    char, const char *, char *, size_t);
+int		 vc_cap_unset(struct vc_capfile *, const char *, const char *,
+		    char *, size_t);
+int		 vc_cap_add_record(struct vc_capfile *, const char *,
+		    const char *const *, size_t, char *, size_t);
+int		 vc_cap_remove_record(struct vc_capfile *, const char *,
+		    char *, size_t);
+int		 vc_cap_write(const struct vc_capfile *, const char *, mode_t,
+		    char *, size_t);
 int		 vc_conflict(char *const *, size_t, const char *, char *,
 		    size_t);
 __END_DECLS
