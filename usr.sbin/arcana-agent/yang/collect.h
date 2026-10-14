@@ -16,7 +16,14 @@
 
 #include "ymodel.h"
 
-/* ietf-interfaces (RFC 8343): /interfaces, operational (invidia/yif.c). */
+/*
+ * ietf-interfaces (RFC 8343): /interfaces, operational (invidia/yif.c),
+ * with the modules that augment it: arcana-interfaces, ietf-ip.
+ */
 int	yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a);
+
+/* ietf-ip (RFC 8344): the n interfaces' ipv4 and ipv6 (invidia/yip.c). */
+int	yip_interfaces(struct ietf_interfaces_interfaces_interface *v,
+	    size_t n, cbl_yarena *a);
 
 #endif /* !_ARCANA_COLLECT_H_ */

@@ -5306,6 +5306,82 @@ EOF
 		grep "^$i " a | awk -f mine.awk > got
 		cmp -s exp got || atf_fail "$i: ifconfig says $(cat exp), the collector $(cat got)"
 	done
+
+	# ietf-ip beside ifconfig and ndp -i: the addresses with their
+	# prefix lengths and IPv6 status, IPv6 on or off and its MTU, the
+	# origins by class (a link-local one ll, an autoconfigured or
+	# temporary one auto, the rest static; dhcp counts as static).
+	atf_check -o save:ip "$(atf_get_srcdir)/ycollect" ip
+	cat > ifip.awk <<'EOF'
+function bits(h,  n, d) {
+	n = 0
+	for (h = substr(h, 3); h != ""; h = substr(h, 2)) {
+		d = index("0123456789abcdef", substr(h, 1, 1)) - 1
+		n += (d >= 8) + (d % 8 >= 4) + (d % 4 >= 2) + (d % 2)
+	}
+	return n
+}
+NR == 1 { for (i = 1; i < NF; i++) if ($i == "mtu") mtu = $(i + 1) }
+$1 == "inet" {
+	o = $2 ~ /^169\.254\./ ? "random" : "static"
+	v4 = v4 (v4 == "" ? "" : "+") $2 "/" bits($4) ":" o
+}
+$1 == "inet6" {
+	a = $2; sub(/%.*/, "", a)
+	st = "preferred"; o = a ~ /^fe80:/ ? "ll" : "static"
+	for (i = 3; i <= NF; i++) {
+		if ($i == "prefixlen") len = $(i + 1)
+		if ($i == "duplicated") st = "duplicate"
+		else if ($i == "tentative" && st != "duplicate") st = "tentative"
+		else if ($i == "detached" && st == "preferred") st = "inaccessible"
+		else if ($i == "deprecated" && st == "preferred") st = "deprecated"
+		if ($i == "autoconf" || $i == "temporary") o = "auto"
+	}
+	v6 = v6 (v6 == "" ? "" : "+") a "/" len ":" o ":" st
+}
+$1 == "nd6" { nd = $2 ~ /IFDISABLED/ ? "off" : "on" }
+$1 ~ /^linkmtu=/ { lm = $1; sub(/^linkmtu=/, "", lm); sub(/,$/, "", lm) }
+END {
+	if (nd != "" && lm + 0 > 0 && lm + 0 < mtu + 0)
+		mtu = lm
+	printf "v4=%s v6=%s ipv6=%s\n", v4 ? v4 : "-", v6 ? v6 : "-",
+	    nd ? nd "," mtu : "-"
+}
+EOF
+	cat > myip.awk <<'EOF'
+{
+	sub(/^[^ ]+ /, "")
+	gsub(/:dhcp/, ":static")
+	n = split($0, f, " ")
+	for (k = 1; k <= n; k++) {
+		if (f[k] !~ /^v6=/ || f[k] == "v6=-")
+			continue
+		m = split(substr(f[k], 4), a, "+")
+		f[k] = "v6="
+		for (j = 1; j <= m; j++) {
+			split(a[j], p, ":")
+			# An address has colons: origin and status are the last two.
+			c = split(a[j], q, ":")
+			o = q[c - 1]; st = q[c]
+			ad = substr(a[j], 1, length(a[j]) - length(o) - length(st) - 2)
+			if (ad ~ /^fe80:/ && (o == "link-layer" || o == "other"))
+				o = "ll"
+			else if (o == "link-layer" || o == "random")
+				o = "auto"
+			f[k] = f[k] (j > 1 ? "+" : "") ad ":" o ":" st
+		}
+	}
+	out = f[1]
+	for (k = 2; k <= n; k++)
+		out = out " " f[k]
+	print out
+}
+EOF
+	for i in $(ifconfig -l | tr ' ' '\n' | sort | uniq -u); do
+		{ ifconfig "$i"; ndp -i "$i" 2>/dev/null; } | awk -f ifip.awk > exp
+		grep "^$i " ip | awk -f myip.awk > got
+		cmp -s exp got || atf_fail "$i: ifconfig says $(cat exp), the collector $(cat got)"
+	done
 }
 
 atf_init_test_cases()

@@ -32,7 +32,8 @@
  *   description in the module says: the driver name, MTU, Ethernet and
  *   hardware addresses, groups, FIBs, capabilities, media, and the parts
  *   of a vlan, a lagg, a bridge and an epair, the first three from the
- *   ioctls that tell their layers.
+ *   ioctls that tell their layers;
+ * - and ietf-ip's ipv4 and ipv6, in invidia/yip.c.
  *
  * oper-status is the link state where the driver knows it: up, down, or
  * down for an interface that is not up; where it does not (a loopback,
@@ -960,6 +961,9 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 	free(dn);
 	close(s);
 	freeifaddrs(ifa0);
+	/* What ietf-ip adds to each (invidia/yip.c). */
+	if (error == 0)
+		error = yip_interfaces(v, n, a);
 	if (error != 0)
 		return (error);
 	ifs->interface.n = n;

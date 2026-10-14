@@ -986,11 +986,68 @@ yang_events_cleanup()
 	true
 }
 
+# ietf-ip's origins and statuses (PLAN-SDN-YANG 1.10.1) on a lab epair:
+# deprecated, autoconfigured from the link address or not, link-local,
+# IPv4 link-local, a duplicate DAD finds against the other end in a vnet
+# jail, and IPv6 turned off.  (dhcp needs a server base has not.)
+atf_test_case yang_ip cleanup
+yang_ip_head()
+{
+	atf_set "descr" "ietf-ip's origins and statuses: deprecated," \
+	    "autoconf by EUI-64 or not, link-local, 169.254/16, duplicate," \
+	    "IPv6 off"
+	atf_set "require.user" "root"
+}
+yang_ip_body()
+{
+	local y="$(atf_get_srcdir)/ycollect" e=epair75a b=epair75b
+
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair75 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check ifconfig "$e" up
+	atf_check jexec "$YJAIL" ifconfig "$b" inet6 2001:db8:78::1/64 up
+	atf_check ifconfig "$e" inet6 2001:db8:75::1/64 deprecated
+	atf_check ifconfig "$e" inet6 2001:db8:76::/64 eui64 autoconf
+	atf_check ifconfig "$e" inet6 2001:db8:77::5/64 autoconf
+	atf_check ifconfig "$e" inet 169.254.7.5/16
+	sleep 1
+	atf_check ifconfig "$e" inet6 2001:db8:78::1/64
+	# DAD: a probe a second (net.inet6.ip6.dad_count), then its verdict.
+	for i in 1 2 3 4 5 6; do
+		ifconfig "$e" | grep -q '2001:db8:78::1 .*duplicated' && break
+		sleep 1
+	done
+	atf_check -o save:ip "$y" ip
+	atf_check -o save:addrs sh -c "grep '^$e ' ip | tr '+ ' '\n\n'"
+	atf_check -o match:'^v4=169\.254\.7\.5/16:random$' \
+	    -o match:'^v6=2001:db8:75::1/64:static:deprecated$' \
+	    -o match:'^fe80::[0-9a-f:]+/64:link-layer:preferred$' \
+	    -o match:'^2001:db8:76:0:[0-9a-f:]+/64:link-layer:preferred$' \
+	    -o match:'^2001:db8:77::5/64:random:preferred$' \
+	    -o match:'^2001:db8:78::1/64:static:duplicate$' \
+	    -o match:'^ipv6=on,1500$' cat addrs
+	atf_check ifconfig "$e" inet6 ifdisabled
+	atf_check -o match:" ipv6=off,1500\$" sh -c "\"$y\" ip | grep '^$e '"
+}
+yang_ip_cleanup()
+{
+	# Out of the vnet jail first: it is not removed with one inside.
+	ifconfig epair75b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case yang_layers
 	atf_add_test_case yang_kinds
 	atf_add_test_case yang_events
+	atf_add_test_case yang_ip
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases
