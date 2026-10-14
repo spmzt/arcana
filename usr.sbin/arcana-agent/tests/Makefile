@@ -8,6 +8,11 @@ ATF_TESTS_SH=	agent_test \
 # ycollect: what the YANG collectors find, for agent_test.sh.
 PROGS=		ycollect
 SRCS.ycollect=	ycollect.c yif.c yip.c yrt.c rtimes.c ymodel_schema.c
+# yrtadv: rtadvd.conf as the router advertisement submodule has it.
+PROGS+=		yrtadv
+SRCS.yrtadv=	yrtadv.c rtadv.c ymodel_schema.c
+LDADD.yrtadv+=	${CBLINK_LIBS} \
+		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
 # yrcroutes: rc.conf's static routes as ietf-routing has them.
 PROGS+=		yrcroutes
 SRCS.yrcroutes=	yrcroutes.c rcroutes.c ymodel_schema.c

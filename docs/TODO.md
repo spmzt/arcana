@@ -287,8 +287,16 @@
   socket); each now notes its route's time (invidia/rtimes.c), the
   RIBs' last-updated, none for a route not seen to change; held to a
   route added in a vnet jail while heard (yang_route_times). 2.4 done.
-  Next: 2.5.1, rtadvd.conf and the router advertisement submodule. As
-  each operation is
+  2.5.1: rtadvd.conf as RFC 8349's router advertisement submodule, both
+  ways (invidia/rtadv.c on libvarconf's capconf: config.c's fields, tc=
+  followed, a leaf edited its field alone, written before tc=; a
+  no-advertise prefix refused, rtadvd(8) has only noifprefix);
+  send-advertisements stays rc.conf's rtadvd_interfaces. Held to
+  rtadvd.conf(5)'s examples (yang_rtadv_conf) and to a lab rtadvd in a
+  vnet jail, edited then rtadvctl reload, rtadvctl show telling the new
+  interval (yang_rtadv). The running datastore's use of it waits on
+  1.11. Next: 2.6.1, network instances from net.fibs. As each operation
+  is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
