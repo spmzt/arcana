@@ -64,10 +64,13 @@ itself, as the plan says, until it holds one by registration.
 | 2^40 + 300 | 100 | `echo`, cblink's example | `cblink/examples/echo/echo@2026-10-13.sid` (7 used) |
 | 2^40 + 400 | 100 | `stream`, cblink's example | `cblink/examples/stream/stream@2026-10-13.sid` (5 used) |
 | 2^40 + 500 | 100 | `notify`, cblink's example | `cblink/examples/notify/notify@2026-10-13.sid` (4 used) |
+| 2^40 + 1000 | 200 | `arcana-interfaces` | `share/yang/arcana-interfaces@2026-10-14.sid` (46 used) |
 
-cblink's own test modules (`shapes` from 2^40 + 100 000, `rules` from
-2^40 + 200 000) number themselves for its tests and are never on a wire.
-The paths are cblink's branch v2, which arcana takes at the switch.
+cblink's modules take 2^40 to 2^40 + 999; Arcana's own follow from
+2^40 + 1000. cblink's own test modules (`shapes` from 2^40 + 100 000,
+`rules` from 2^40 + 200 000) number themselves for its tests and are
+never on a wire. cblink's paths are its branch v2, which arcana takes
+at the switch.
 
 ## To decide: a registered block
 

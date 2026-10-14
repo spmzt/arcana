@@ -1,0 +1,623 @@
+module arcana-interfaces {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-interfaces";
+  prefix arcif;
+
+  import ietf-interfaces {
+    prefix if;
+    reference
+      "RFC 8343: A YANG Data Model for Interface Management";
+  }
+  import iana-if-type {
+    prefix ianaift;
+  }
+  import ietf-yang-types {
+    prefix yang;
+    reference
+      "RFC 9911: Common YANG Data Types";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "What FreeBSD's interfaces have beyond RFC 8343, as ifconfig(8)
+     shows and sets it: the link MTU, the Ethernet address, media,
+     groups, the FIB, capabilities, and the parts of a vlan(4), a
+     bridge(4), a lagg(4) and an epair(4).
+
+     Each leaf names the FreeBSD facility it is read from and written
+     to.  A list or leaf-list the system orders is in the order the
+     kernel gives.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 1.9.3.";
+  }
+
+  typedef capabilities {
+    type bits {
+      bit rxcsum {
+        position 0;
+      }
+      bit txcsum {
+        position 1;
+      }
+      bit netcons {
+        position 2;
+      }
+      bit vlan-mtu {
+        position 3;
+      }
+      bit vlan-hwtagging {
+        position 4;
+      }
+      bit jumbo-mtu {
+        position 5;
+      }
+      bit polling {
+        position 6;
+      }
+      bit vlan-hwcsum {
+        position 7;
+      }
+      bit tso4 {
+        position 8;
+      }
+      bit tso6 {
+        position 9;
+      }
+      bit lro {
+        position 10;
+      }
+      bit wol-ucast {
+        position 11;
+      }
+      bit wol-mcast {
+        position 12;
+      }
+      bit wol-magic {
+        position 13;
+      }
+      bit toe4 {
+        position 14;
+      }
+      bit toe6 {
+        position 15;
+      }
+      bit vlan-hwfilter {
+        position 16;
+      }
+      bit nv {
+        position 17;
+      }
+      bit vlan-hwtso {
+        position 18;
+      }
+      bit linkstate {
+        position 19;
+      }
+      bit netmap {
+        position 20;
+      }
+      bit rxcsum-ipv6 {
+        position 21;
+      }
+      bit txcsum-ipv6 {
+        position 22;
+      }
+      bit hwstats {
+        position 23;
+      }
+      bit txrtlmt {
+        position 24;
+      }
+      bit hwrxtstmp {
+        position 25;
+      }
+      bit mextpg {
+        position 26;
+      }
+      bit txtls4 {
+        position 27;
+      }
+      bit txtls6 {
+        position 28;
+      }
+      bit vxlan-hwcsum {
+        position 29;
+      }
+      bit vxlan-hwtso {
+        position 30;
+      }
+      bit txtls-rtlmt {
+        position 31;
+      }
+      bit rxtls4 {
+        position 32;
+      }
+      bit rxtls6 {
+        position 33;
+      }
+      bit ipsec {
+        position 34;
+      }
+      bit geneve-hwcsum {
+        position 35;
+      }
+      bit geneve-hwtso {
+        position 36;
+      }
+    }
+    description
+      "An interface's capabilities: each bit the IFCAP_B_* of
+       <net/if.h> at its position, named as <net/if_strings.h> names
+       it, in lower case with '-' for '_'.  Those from 32 are
+       if_capabilities2, read by SIOCGIFCAPNV.";
+  }
+
+  grouping media-word {
+    description
+      "A medium as ifconfig(8)'s media, mediaopt and mode take it.";
+    leaf subtype {
+      type string;
+      description
+        "The subtype's name in <net/if_media.h>'s descriptions, as
+         ifconfig(8) shows it: 'autoselect', '1000baseT', '10Gbase-T'.";
+    }
+    leaf-list option {
+      type string;
+      description
+        "Its options' names: 'full-duplex', 'flowcontrol'.";
+    }
+    leaf mode {
+      type string;
+      description
+        "An IEEE 802.11 medium's mode: '11a', '11g', '11ng'.";
+    }
+  }
+
+  grouping bridge-member-flags {
+    description
+      "A bridge member's flags, struct ifbreq's ifbr_ifsflags.";
+    leaf flags {
+      type bits {
+        bit learning {
+          position 0;
+          description
+            "IFBIF_LEARNING: ifconfig(8) learn.";
+        }
+        bit discover {
+          position 1;
+          description
+            "IFBIF_DISCOVER: ifconfig(8) discover.";
+        }
+        bit stp {
+          position 2;
+          description
+            "IFBIF_STP: ifconfig(8) stp.";
+        }
+        bit span {
+          position 3;
+          description
+            "IFBIF_SPAN: a span port, ifconfig(8) span.";
+        }
+        bit sticky {
+          position 4;
+          description
+            "IFBIF_STICKY: ifconfig(8) sticky.";
+        }
+        bit edge {
+          position 5;
+          description
+            "IFBIF_BSTP_EDGE: the port is an edge port.";
+        }
+        bit autoedge {
+          position 6;
+          description
+            "IFBIF_BSTP_AUTOEDGE: ifconfig(8) autoedge.";
+        }
+        bit ptp {
+          position 7;
+          description
+            "IFBIF_BSTP_PTP: the link is point to point.";
+        }
+        bit autoptp {
+          position 8;
+          description
+            "IFBIF_BSTP_AUTOPTP: ifconfig(8) autoptp.";
+        }
+        bit admin-edge {
+          position 9;
+          description
+            "IFBIF_BSTP_ADMEDGE: ifconfig(8) edge.";
+        }
+        bit admin-cost {
+          position 10;
+          description
+            "IFBIF_BSTP_ADMCOST: the path cost set by ifconfig(8)
+             ifpathcost.";
+        }
+        bit private {
+          position 11;
+          description
+            "IFBIF_PRIVATE: ifconfig(8) private.";
+        }
+        bit qinq {
+          position 12;
+          description
+            "IFBIF_QINQ: ifconfig(8) qinq.";
+        }
+      }
+      description
+        "The member's flags.";
+    }
+  }
+
+  augment "/if:interfaces/if:interface" {
+    description
+      "FreeBSD's own parts of an interface.";
+    leaf driver-name {
+      config false;
+      type string;
+      description
+        "The name the driver gave it, which a rename does not change:
+         sysctl net.link.generic.ifdata.<index>.drivername, as
+         ifconfig(8) -D shows it.";
+    }
+    leaf mtu {
+      type uint32;
+      description
+        "The link MTU: SIOCGIFMTU, SIOCSIFMTU, ifconfig(8) mtu.";
+    }
+    leaf ether {
+      type yang:mac-address;
+      description
+        "The Ethernet address it sends from: SIOCSIFLLADDR, ifconfig(8)
+         ether; present for an interface with a 6-octet link-layer
+         address.";
+    }
+    leaf hw-address {
+      config false;
+      type yang:mac-address;
+      description
+        "The address the hardware came with: SIOCGHWADDR, as
+         ifconfig(8) shows it as hwaddr.";
+    }
+    leaf-list group {
+      type string {
+        length "1..15";
+        pattern '.*[^0-9]';
+      }
+      description
+        "The groups it is in: SIOCGIFGROUP, ifconfig(8) group, among
+         them those the kernel puts it in (a cloned interface's
+         driver's), but 'all', which every interface is in.  A group's
+         name does not end in a digit.";
+    }
+    leaf fib {
+      type uint32;
+      description
+        "The FIB its traffic in is routed by: SIOCGIFFIB, SIOCSIFFIB,
+         ifconfig(8) fib.";
+    }
+    leaf tunnel-fib {
+      type uint32;
+      description
+        "A tunnel's FIB for its outer packets: SIOCGTUNFIB,
+         SIOCSTUNFIB, ifconfig(8) tunnelfib.";
+    }
+    leaf capabilities {
+      type capabilities;
+      description
+        "The capabilities enabled: SIOCGIFCAP's ifr_curcap,
+         SIOCGIFCAPNV, ifconfig(8)'s options.";
+    }
+    leaf capabilities-supported {
+      config false;
+      type capabilities;
+      description
+        "The capabilities the driver has: SIOCGIFCAP's ifr_reqcap,
+         ifconfig(8) -m's capabilities.";
+    }
+    container media {
+      description
+        "Its medium, where the driver has one: SIOCGIFXMEDIA, as
+         ifconfig(8) shows it.";
+      leaf type {
+        config false;
+        type enumeration {
+          enum ethernet {
+            value 32;
+            description
+              "IFM_ETHER.";
+          }
+          enum ieee80211 {
+            value 128;
+            description
+              "IFM_IEEE80211.";
+          }
+          enum atm {
+            value 160;
+            description
+              "IFM_ATM.";
+          }
+        }
+        description
+          "The kind of medium, IFM_TYPE().";
+      }
+      container current {
+        description
+          "The medium set: SIOCSIFMEDIA, ifconfig(8) media, mediaopt,
+           mode.";
+        uses media-word;
+      }
+      container active {
+        config false;
+        description
+          "The medium in use, as autoselect chose it.";
+        uses media-word;
+      }
+      leaf status {
+        config false;
+        type enumeration {
+          enum active {
+            description
+              "IFM_ACTIVE: a carrier.";
+          }
+          enum no-carrier {
+            description
+              "No IFM_ACTIVE.";
+          }
+          enum associated {
+            description
+              "An IEEE 802.11 station, IFM_ACTIVE: associated.";
+          }
+          enum running {
+            description
+              "An IEEE 802.11 interface in another mode, IFM_ACTIVE.";
+          }
+        }
+        description
+          "The link's status, where the driver knows it (IFM_AVALID).";
+      }
+      leaf-list supported {
+        config false;
+        type string;
+        description
+          "The media the driver offers, each as ifconfig(8) -m lists
+           it: the subtype, then 'mediaopt' and the options, then
+           'mode' and the mode.";
+      }
+    }
+    container vlan {
+      when "derived-from-or-self(../if:type, 'ianaift:l2vlan')";
+      description
+        "A vlan(4): SIOCGETVLAN, SIOCSETVLAN.";
+      leaf vlan-id {
+        type uint16 {
+          range "0..4095";
+        }
+        description
+          "Its tag: ifconfig(8) vlan.";
+      }
+      leaf parent {
+        type if:interface-ref;
+        description
+          "The interface it is on: ifconfig(8) vlandev.";
+      }
+      leaf protocol {
+        type enumeration {
+          enum ieee802-1q {
+            value 33024;
+            description
+              "802.1Q, ETHERTYPE_VLAN.";
+          }
+          enum ieee802-1ad {
+            value 34984;
+            description
+              "802.1ad, ETHERTYPE_QINQ.";
+          }
+        }
+        description
+          "The tag's EtherType: ifconfig(8) vlanproto.";
+      }
+      leaf pcp {
+        type uint8 {
+          range "0..7";
+        }
+        description
+          "The priority it sends with: SIOCGVLANPCP, ifconfig(8)
+           vlanpcp.";
+      }
+    }
+    container lagg {
+      when "derived-from-or-self(../if:type, 'ianaift:ieee8023adLag')";
+      description
+        "A lagg(4): SIOCGLAGG, SIOCSLAGG.";
+      leaf protocol {
+        type enumeration {
+          enum none {
+            value 0;
+          }
+          enum roundrobin {
+            value 1;
+          }
+          enum failover {
+            value 2;
+          }
+          enum loadbalance {
+            value 3;
+          }
+          enum lacp {
+            value 4;
+          }
+          enum broadcast {
+            value 5;
+          }
+        }
+        description
+          "Its protocol, LAGG_PROTO_*: ifconfig(8) laggproto.";
+      }
+      leaf hash {
+        type bits {
+          bit l2 {
+            position 0;
+          }
+          bit l3 {
+            position 1;
+          }
+          bit l4 {
+            position 2;
+          }
+        }
+        description
+          "The headers its flows are hashed by, LAGG_F_HASHL*:
+           SIOCGLAGGFLAGS, ifconfig(8) lagghash.";
+      }
+      list port {
+        key "name";
+        description
+          "Its ports: ifconfig(8) laggport.";
+        leaf name {
+          type if:interface-ref;
+          description
+            "The port.";
+        }
+        leaf priority {
+          config false;
+          type uint32;
+          description
+            "Its priority, rp_prio.";
+        }
+        leaf flags {
+          config false;
+          type bits {
+            bit master {
+              position 0;
+            }
+            bit stack {
+              position 1;
+            }
+            bit active {
+              position 2;
+            }
+            bit collecting {
+              position 3;
+            }
+            bit distributing {
+              position 4;
+            }
+          }
+          description
+            "Its state, LAGG_PORT_*.";
+        }
+      }
+    }
+    container bridge {
+      when "derived-from-or-self(../if:type, 'ianaift:bridge')";
+      description
+        "A bridge(4): SIOCGDRVSPEC and SIOCSDRVSPEC.";
+      list member {
+        key "name";
+        description
+          "Its members: BRDGGIFS, ifconfig(8) addm.";
+        leaf name {
+          type if:interface-ref;
+          description
+            "The member.";
+        }
+        uses bridge-member-flags;
+        leaf path-cost {
+          type uint32;
+          description
+            "Its STP path cost: ifconfig(8) ifpathcost.";
+        }
+        leaf priority {
+          type uint8;
+          description
+            "Its STP priority: ifconfig(8) ifpriority.";
+        }
+        leaf port-number {
+          config false;
+          type uint8;
+          description
+            "Its port number.";
+        }
+        leaf stp-state {
+          config false;
+          type enumeration {
+            enum disabled {
+              value 0;
+            }
+            enum listening {
+              value 1;
+            }
+            enum learning {
+              value 2;
+            }
+            enum forwarding {
+              value 3;
+            }
+            enum blocking {
+              value 4;
+            }
+            enum discarding {
+              value 5;
+            }
+          }
+          description
+            "Its spanning tree state, BSTP_IFSTATE_*.";
+        }
+        leaf stp-role {
+          config false;
+          type enumeration {
+            enum disabled {
+              value 0;
+            }
+            enum root {
+              value 1;
+            }
+            enum designated {
+              value 2;
+            }
+            enum alternate {
+              value 3;
+            }
+            enum backup {
+              value 4;
+            }
+          }
+          description
+            "Its spanning tree role, BSTP_ROLE_*.";
+        }
+      }
+    }
+    container epair {
+      presence
+        "An epair(4) end.";
+      config false;
+      description
+        "An end of an epair(4).  The kernel tells no other end, but
+         the two have one driver-name, 'epair' and the pair's unit,
+         whatever they are called and wherever they are.";
+      leaf peer {
+        type if:interface-ref;
+        description
+          "The other end, where the list has it: the interface of the
+           same driver-name.  Two interfaces may share a name (one
+           back from a vnet jail), and the list has the first only.";
+      }
+      leaf peer-vnet {
+        type boolean;
+        description
+          "Whether the other end is in another network stack, a vnet
+           jail's, where ifconfig(8) vnet moved it: no interface here
+           has its driver-name.";
+      }
+    }
+  }
+}

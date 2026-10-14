@@ -856,9 +856,90 @@ yang_layers_cleanup()
 	true
 }
 
+# arcana-interfaces (PLAN-SDN-YANG 1.9.3): each kind of interface the
+# agent's jobs make, read back.  What no job sets (a lagg's ports, a
+# vlan's priority, STP on a bridge's member) ifconfig does.
+YJAIL=arcana-ytest
+atf_test_case yang_kinds cleanup
+yang_kinds_head()
+{
+	atf_set "descr" "arcana-interfaces reads back what the agent's jobs" \
+	    "made: a vlan on a lagg, a bridge, a gif's tunnel FIB, an MTU" \
+	    "and a FIB, an epair whose other end is in a vnet jail"
+	atf_set "require.user" "root"
+}
+yang_kinds_body()
+{
+	local y="$(atf_get_srcdir)/ycollect"
+
+	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "net.fibs is 1"
+	for i in epair77a epair78a epair79a vlan77 lagg77 bridge77 gif77; do
+		ifconfig "$i" >/dev/null 2>&1 && atf_skip "$i exists"
+	done
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	start_daemon
+	touch made
+	for e in epair77 epair78 epair79; do
+		atf_check -o ignore "$JGC" -c "$SOCK" interface "$e" create
+		echo "${e}a" >> made
+	done
+	atf_check -o ignore "$JGC" -c "$SOCK" interface epair77a mtu 1400
+	atf_check -o ignore "$JGC" -c "$SOCK" interface epair77a fib 1
+	atf_check -o ignore "$JGC" -c "$SOCK" interface lagg77 create
+	echo lagg77 >> made
+	atf_check ifconfig lagg77 laggproto loadbalance lagghash l3,l4 \
+	    laggport epair78a
+	atf_check -o ignore "$JGC" -c "$SOCK" interface vlan77 create id 77 \
+	    parent lagg77
+	echo vlan77 >> made
+	atf_check ifconfig vlan77 vlanpcp 5
+	atf_check -o ignore "$JGC" -c "$SOCK" interface bridge77 create \
+	    parent epair77b
+	echo bridge77 >> made
+	atf_check ifconfig bridge77 stp epair77b
+	atf_check -o ignore "$JGC" -c "$SOCK" interface gif77 create tunnel \
+	    192.0.2.77 192.0.2.78 tunnelfib 1
+	echo gif77 >> made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check -o ignore "$JGC" -c "$SOCK" interface epair79b give "$YJAIL"
+
+	atf_check -o save:a "$y" arcif
+	atf_check -o save:i "$y" interfaces
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 a
+	atf_check -o match:' mtu=1400 .* fib=1 .* epair=epair77b,here' \
+	    grep '^epair77a ' a
+	atf_check -o match:' epair=epair77a,here' grep '^epair77b ' a
+	atf_check -o match:' epair=-,vnet' grep '^epair79a ' a
+	atf_check -o match:' tunnelfib=1 ' grep '^gif77 ' a
+	atf_check -o match:' type=tunnel ' grep '^gif77 ' i
+	# loadbalance, hashing l3 and l4 (bits 1 and 2); the port's state
+	# is the kernel's.
+	atf_check -o match:' lagg=loadbalance,6,epair78a:[0-9a-f]+' \
+	    grep '^lagg77 ' a
+	atf_check -o match:' vlan=77,lagg77,0x8100,5' grep '^vlan77 ' a
+	# A member's flags are those ifconfig shows.
+	flags=$(ifconfig bridge77 | sed -n 's/.*member: epair77b flags=\([0-9a-f]*\)<.*/\1/p')
+	[ -n "$flags" ] || atf_fail "ifconfig shows no member epair77b"
+	atf_check -o match:" bridge=epair77b:$flags( |\$)" grep '^bridge77 ' a
+	atf_check -o match:" bridge=epair77b:[0-9a-f]*[4-7]( |\$)" \
+	    grep '^bridge77 ' a
+}
+yang_kinds_cleanup()
+{
+	cleanup
+	# Out of the vnet jail first: it is not removed with one inside.
+	ifconfig epair79b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && tail -r made | while read -r i; do
+		ifconfig "$i" destroy >/dev/null 2>&1
+	done
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case yang_layers
+	atf_add_test_case yang_kinds
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases

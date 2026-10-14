@@ -33,7 +33,7 @@ CBLINK_PARTS=	h,c,server
 CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
-LDADD+=		-ljail -lgeom -lmemstat -lprocstat -ldevstat -lutil -lpthread -lcrypto ${UCL_LIBS}
+LDADD+=		-ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthread -lcrypto ${UCL_LIBS}
 
 # The rc.d(8) script.
 FILESGROUPS+=	RC
@@ -48,14 +48,28 @@ arcana_agent.sh: arcana_agent.in
 # The modules, their features, their .sid files: what ymodel.h and
 # ymodel_schema.c are made of.
 YANG_DIR=	${.CURDIR}/../../share/yang
-YANG_MODS=	ietf-interfaces@2018-02-20 iana-if-type@2026-03-17 \
-		ietf-yang-types@2025-12-22
-YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F iana-if-type: \
-		-F ietf-yang-types:
+YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
+		iana-if-type@2026-03-17 ietf-yang-types@2025-12-22
+YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
+		-F iana-if-type: -F ietf-yang-types:
+YANG_OUT?=	${.CURDIR}/yang
 regen-yang: .PHONY
 	cd ${YANG_DIR} && ${CBLINK_GEN} -m h,schema -b ymodel \
-	    -o ${.CURDIR}/yang ${YANG_FEATS} ${YANG_MODS:S/^/-s /:S/$/.sid/} \
+	    -o ${YANG_OUT} ${YANG_FEATS} ${YANG_MODS:@m@-s ${m}.sid@} \
 	    ${YANG_MODS:S/$/.yang/}
+
+# make check's: the committed files are what the modules make now, by
+# the generator of the cblink submodule (another may write them
+# otherwise).
+check-yang: .PHONY
+	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && \
+	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" >/dev/null && \
+	    for f in ymodel.h ymodel_schema.c; do \
+		cmp -s "$$t/$$f" ${.CURDIR}/yang/$$f || { echo \
+		    "usr.sbin/arcana-agent: yang/$$f is not what make regen-yang makes" >&2; \
+		    exit 1; }; \
+	    done; \
+	    echo "usr.sbin/arcana-agent: yang/ is what make regen-yang makes"
 
 HAS_TESTS=
 SUBDIR.${MK_TESTS}+= tests

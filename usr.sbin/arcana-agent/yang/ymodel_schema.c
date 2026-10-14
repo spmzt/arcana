@@ -3,10 +3,11 @@
  *
  * The schema tables (cbl_schema.h):
  * ietf-yang-types: 0 nodes, 0 types, 80 bytes
- * ietf-interfaces: 57 nodes, 13 types, 12184 bytes
+ * ietf-interfaces: 102 nodes, 28 types, 23630 bytes
+ * arcana-interfaces: 0 nodes, 0 types, 80 bytes
  * iana-if-type: 0 nodes, 0 types, 80 bytes
- * in all, 57 nodes (children found 4 dense, 2 by a table, 0 by a search),
- * 13 types, 2 expressions, 306 identities, 33134 bytes
+ * in all, 102 nodes (children found 11 dense, 3 by a table, 1 by a search),
+ * 28 types, 5 expressions, 306 identities, 45020 bytes
  */
 
 #include <stdbool.h>
@@ -22,6 +23,7 @@
 static const struct cbl_ymodule m6;
 static const struct cbl_ymodule m10;
 static const struct cbl_ymodule m11;
+static const struct cbl_ymodule m12;
 static const struct cbl_ynode n0;
 static const struct cbl_ynode n1;
 static const struct cbl_ynode n2;
@@ -79,6 +81,51 @@ static const struct cbl_ynode n53;
 static const struct cbl_ynode n54;
 static const struct cbl_ynode n55;
 static const struct cbl_ynode n56;
+static const struct cbl_ynode n57;
+static const struct cbl_ynode n58;
+static const struct cbl_ynode n59;
+static const struct cbl_ynode n60;
+static const struct cbl_ynode n61;
+static const struct cbl_ynode n62;
+static const struct cbl_ynode n63;
+static const struct cbl_ynode n64;
+static const struct cbl_ynode n65;
+static const struct cbl_ynode n66;
+static const struct cbl_ynode n67;
+static const struct cbl_ynode n68;
+static const struct cbl_ynode n69;
+static const struct cbl_ynode n70;
+static const struct cbl_ynode n71;
+static const struct cbl_ynode n72;
+static const struct cbl_ynode n73;
+static const struct cbl_ynode n74;
+static const struct cbl_ynode n75;
+static const struct cbl_ynode n76;
+static const struct cbl_ynode n77;
+static const struct cbl_ynode n78;
+static const struct cbl_ynode n79;
+static const struct cbl_ynode n80;
+static const struct cbl_ynode n81;
+static const struct cbl_ynode n82;
+static const struct cbl_ynode n83;
+static const struct cbl_ynode n84;
+static const struct cbl_ynode n85;
+static const struct cbl_ynode n86;
+static const struct cbl_ynode n87;
+static const struct cbl_ynode n88;
+static const struct cbl_ynode n89;
+static const struct cbl_ynode n90;
+static const struct cbl_ynode n91;
+static const struct cbl_ynode n92;
+static const struct cbl_ynode n93;
+static const struct cbl_ynode n94;
+static const struct cbl_ynode n95;
+static const struct cbl_ynode n96;
+static const struct cbl_ynode n97;
+static const struct cbl_ynode n98;
+static const struct cbl_ynode n99;
+static const struct cbl_ynode n100;
+static const struct cbl_ynode n101;
 
 static const struct cbl_yitem t0_i[] = {
 	{ "up", INT64_C(1) },
@@ -194,11 +241,247 @@ static const struct cbl_ytype t11 = {
 	.bases = t11_b,
 };
 
+static const struct cbl_yitem t12_i[] = {
+	{ "learning", INT64_C(0) },
+	{ "discover", INT64_C(1) },
+	{ "stp", INT64_C(2) },
+	{ "span", INT64_C(3) },
+	{ "sticky", INT64_C(4) },
+	{ "edge", INT64_C(5) },
+	{ "autoedge", INT64_C(6) },
+	{ "ptp", INT64_C(7) },
+	{ "autoptp", INT64_C(8) },
+	{ "admin-edge", INT64_C(9) },
+	{ "admin-cost", INT64_C(10) },
+	{ "private", INT64_C(11) },
+	{ "qinq", INT64_C(12) },
+};
 static const struct cbl_ytype t12 = {
+	.kind = CBL_YT_BITS,
+	.csize = sizeof(struct cbl_bytes),
+	.path = -1,
+	.nitems = 13,
+	.items = t12_i,
+};
+
+static const struct cbl_ytype t13 = {
+	.kind = CBL_YT_UINT8,
+	.csize = sizeof(uint8_t),
+	.path = -1,
+};
+
+static const struct cbl_yitem t14_i[] = {
+	{ "disabled", INT64_C(0) },
+	{ "root", INT64_C(1) },
+	{ "designated", INT64_C(2) },
+	{ "alternate", INT64_C(3) },
+	{ "backup", INT64_C(4) },
+};
+static const struct cbl_ytype t14 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_bridge_member_stp_role),
+	.path = -1,
+	.nitems = 5,
+	.items = t14_i,
+};
+
+static const struct cbl_yitem t15_i[] = {
+	{ "disabled", INT64_C(0) },
+	{ "listening", INT64_C(1) },
+	{ "learning", INT64_C(2) },
+	{ "forwarding", INT64_C(3) },
+	{ "blocking", INT64_C(4) },
+	{ "discarding", INT64_C(5) },
+};
+static const struct cbl_ytype t15 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_bridge_member_stp_state),
+	.path = -1,
+	.nitems = 6,
+	.items = t15_i,
+};
+
+static const struct cbl_yitem t16_i[] = {
+	{ "rxcsum", INT64_C(0) },
+	{ "txcsum", INT64_C(1) },
+	{ "netcons", INT64_C(2) },
+	{ "vlan-mtu", INT64_C(3) },
+	{ "vlan-hwtagging", INT64_C(4) },
+	{ "jumbo-mtu", INT64_C(5) },
+	{ "polling", INT64_C(6) },
+	{ "vlan-hwcsum", INT64_C(7) },
+	{ "tso4", INT64_C(8) },
+	{ "tso6", INT64_C(9) },
+	{ "lro", INT64_C(10) },
+	{ "wol-ucast", INT64_C(11) },
+	{ "wol-mcast", INT64_C(12) },
+	{ "wol-magic", INT64_C(13) },
+	{ "toe4", INT64_C(14) },
+	{ "toe6", INT64_C(15) },
+	{ "vlan-hwfilter", INT64_C(16) },
+	{ "nv", INT64_C(17) },
+	{ "vlan-hwtso", INT64_C(18) },
+	{ "linkstate", INT64_C(19) },
+	{ "netmap", INT64_C(20) },
+	{ "rxcsum-ipv6", INT64_C(21) },
+	{ "txcsum-ipv6", INT64_C(22) },
+	{ "hwstats", INT64_C(23) },
+	{ "txrtlmt", INT64_C(24) },
+	{ "hwrxtstmp", INT64_C(25) },
+	{ "mextpg", INT64_C(26) },
+	{ "txtls4", INT64_C(27) },
+	{ "txtls6", INT64_C(28) },
+	{ "vxlan-hwcsum", INT64_C(29) },
+	{ "vxlan-hwtso", INT64_C(30) },
+	{ "txtls-rtlmt", INT64_C(31) },
+	{ "rxtls4", INT64_C(32) },
+	{ "rxtls6", INT64_C(33) },
+	{ "ipsec", INT64_C(34) },
+	{ "geneve-hwcsum", INT64_C(35) },
+	{ "geneve-hwtso", INT64_C(36) },
+};
+static const struct cbl_ytype t16 = {
+	.kind = CBL_YT_BITS,
+	.csize = sizeof(struct cbl_bytes),
+	.path = -1,
+	.nitems = 37,
+	.items = t16_i,
+};
+
+static const struct cbl_ypattern t17_p[] = {
+	{ "[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5}", "^([0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5})$", false, NULL, NULL },
+};
+static const struct cbl_ytype t17 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.npatterns = 1,
+	.patterns = t17_p,
+};
+
+static const struct cbl_yrange t18_l[] = {
+	{ .min.u = UINT64_C(1), .max.u = UINT64_C(15) },
+};
+static const struct cbl_ypattern t18_p[] = {
+	{ ".*[^0-9]", "^([^\n\015]*[^0-9])$", false, NULL, NULL },
+};
+static const struct cbl_ytype t18 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.length = { t18_l, 1, NULL, NULL },
+	.npatterns = 1,
+	.patterns = t18_p,
+};
+
+static const struct cbl_yitem t19_i[] = {
+	{ "l2", INT64_C(0) },
+	{ "l3", INT64_C(1) },
+	{ "l4", INT64_C(2) },
+};
+static const struct cbl_ytype t19 = {
+	.kind = CBL_YT_BITS,
+	.csize = sizeof(struct cbl_bytes),
+	.path = -1,
+	.nitems = 3,
+	.items = t19_i,
+};
+
+static const struct cbl_yitem t20_i[] = {
+	{ "master", INT64_C(0) },
+	{ "stack", INT64_C(1) },
+	{ "active", INT64_C(2) },
+	{ "collecting", INT64_C(3) },
+	{ "distributing", INT64_C(4) },
+};
+static const struct cbl_ytype t20 = {
+	.kind = CBL_YT_BITS,
+	.csize = sizeof(struct cbl_bytes),
+	.path = -1,
+	.nitems = 5,
+	.items = t20_i,
+};
+
+static const struct cbl_yitem t21_i[] = {
+	{ "none", INT64_C(0) },
+	{ "roundrobin", INT64_C(1) },
+	{ "failover", INT64_C(2) },
+	{ "loadbalance", INT64_C(3) },
+	{ "lacp", INT64_C(4) },
+	{ "broadcast", INT64_C(5) },
+};
+static const struct cbl_ytype t21 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_lagg_protocol),
+	.path = -1,
+	.nitems = 6,
+	.items = t21_i,
+};
+
+static const struct cbl_yitem t22_i[] = {
+	{ "active", INT64_C(0) },
+	{ "no-carrier", INT64_C(1) },
+	{ "associated", INT64_C(2) },
+	{ "running", INT64_C(3) },
+};
+static const struct cbl_ytype t22 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_media_status),
+	.path = -1,
+	.nitems = 4,
+	.items = t22_i,
+};
+
+static const struct cbl_yitem t23_i[] = {
+	{ "ethernet", INT64_C(32) },
+	{ "ieee80211", INT64_C(128) },
+	{ "atm", INT64_C(160) },
+};
+static const struct cbl_ytype t23 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_media_type),
+	.path = -1,
+	.nitems = 3,
+	.items = t23_i,
+};
+
+static const struct cbl_yrange t24_r[] = {
+	{ .min.u = UINT64_C(0), .max.u = UINT64_C(7) },
+};
+static const struct cbl_ytype t24 = {
+	.kind = CBL_YT_UINT8,
+	.csize = sizeof(uint8_t),
+	.path = -1,
+	.range = { t24_r, 1, NULL, NULL },
+};
+
+static const struct cbl_yitem t25_i[] = {
+	{ "ieee802-1q", INT64_C(33024) },
+	{ "ieee802-1ad", INT64_C(34984) },
+};
+static const struct cbl_ytype t25 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum ietf_interfaces_interfaces_interface_arcif_vlan_protocol),
+	.path = -1,
+	.nitems = 2,
+	.items = t25_i,
+};
+
+static const struct cbl_yrange t26_r[] = {
+	{ .min.u = UINT64_C(0), .max.u = UINT64_C(4095) },
+};
+static const struct cbl_ytype t26 = {
+	.kind = CBL_YT_UINT16,
+	.csize = sizeof(uint16_t),
+	.path = -1,
+	.range = { t26_r, 1, NULL, NULL },
+};
+
+static const struct cbl_ytype t27 = {
 	.kind = CBL_YT_STRING,
 	.csize = sizeof(const char *),
 	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
-	.path = 1,
+	.path = 4,
 };
 
 static const uint16_t n1_p[] = {
@@ -509,10 +792,571 @@ static const struct cbl_ynode n29 = {
 	.module = &m10,
 };
 
+static const struct cbl_ynode n32 = {
+	.sid = UINT64_C(1099511628779),
+	.name = "flags",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, flags),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t12,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n33 = {
+	.sid = UINT64_C(1099511628780),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t3,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n34 = {
+	.sid = UINT64_C(1099511628781),
+	.name = "path-cost",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, path_cost),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, has_path_cost),
+	.type = &t10,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n35 = {
+	.sid = UINT64_C(1099511628782),
+	.name = "port-number",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, port_number),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, has_port_number),
+	.type = &t13,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n36 = {
+	.sid = UINT64_C(1099511628783),
+	.name = "priority",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, priority),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, has_priority),
+	.type = &t13,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n37 = {
+	.sid = UINT64_C(1099511628784),
+	.name = "stp-role",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, stp_role),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, has_stp_role),
+	.type = &t14,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n38 = {
+	.sid = UINT64_C(1099511628785),
+	.name = "stp-state",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, stp_state),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, has_stp_state),
+	.type = &t15,
+	.module = &m11,
+};
+
+static const struct cbl_ynode *const n31_c[] = {
+	&n32, &n33, &n34, &n35, &n36, &n37,
+	&n38
+};
+static const uint32_t n31_k[] = { 1 };
+static const struct cbl_ynode n31 = {
+	.sid = UINT64_C(1099511628778),
+	.name = "member",
+	.kind = CBL_YN_LIST,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge, member),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member),
+	.nmap = 7,
+	.nchild = 7,
+	.child = n31_c,
+	.nkeys = 1,
+	.keys = n31_k,
+	.module = &m11,
+};
+
+static const struct cbl_ynode *const n30_c[] = {
+	&n31
+};
+static const struct cbl_ywhen n30_w[] = {
+	{ 1, CBL_YWC_SELF },
+};
+static const struct cbl_ynode n30 = {
+	.sid = UINT64_C(1099511628777),
+	.name = "bridge",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_bridge),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_bridge),
+	.nmap = 1,
+	.nchild = 1,
+	.child = n30_c,
+	.nwhen = 1,
+	.when = n30_w,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n39 = {
+	.sid = UINT64_C(1099511628786),
+	.name = "capabilities",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_capabilities),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t16,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n40 = {
+	.sid = UINT64_C(1099511628787),
+	.name = "capabilities-supported",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_capabilities_supported),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t16,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n41 = {
+	.sid = UINT64_C(1099511628788),
+	.name = "driver-name",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_driver_name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n43 = {
+	.sid = UINT64_C(1099511628790),
+	.name = "peer",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_epair, peer),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t3,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n44 = {
+	.sid = UINT64_C(1099511628791),
+	.name = "peer-vnet",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_epair, peer_vnet),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_epair, has_peer_vnet),
+	.type = &t2,
+	.module = &m11,
+};
+
+static const struct cbl_ynode *const n42_c[] = {
+	&n43, &n44
+};
+static const struct cbl_ynode n42 = {
+	.sid = UINT64_C(1099511628789),
+	.name = "epair",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x8,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_epair),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_epair),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n42_c,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n45 = {
+	.sid = UINT64_C(1099511628792),
+	.name = "ether",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_ether),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t17,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n46 = {
+	.sid = UINT64_C(1099511628793),
+	.name = "fib",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_fib),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface, has_arcif_fib),
+	.type = &t10,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n47 = {
+	.sid = UINT64_C(1099511628794),
+	.name = "group",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_group),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t18,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n48 = {
+	.sid = UINT64_C(1099511628795),
+	.name = "hw-address",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_hw_address),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t17,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n50 = {
+	.sid = UINT64_C(1099511628797),
+	.name = "hash",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg, hash),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t19,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n52 = {
+	.sid = UINT64_C(1099511628799),
+	.name = "flags",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg_port, flags),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t20,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n53 = {
+	.sid = UINT64_C(1099511628800),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x5,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg_port, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t3,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n54 = {
+	.sid = UINT64_C(1099511628801),
+	.name = "priority",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg_port, priority),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg_port, has_priority),
+	.type = &t10,
+	.module = &m11,
+};
+
+static const struct cbl_ynode *const n51_c[] = {
+	&n52, &n53, &n54
+};
+static const uint32_t n51_k[] = { 1 };
+static const struct cbl_ynode n51 = {
+	.sid = UINT64_C(1099511628798),
+	.name = "port",
+	.kind = CBL_YN_LIST,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg, port),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_lagg_port),
+	.nmap = 3,
+	.nchild = 3,
+	.child = n51_c,
+	.nkeys = 1,
+	.keys = n51_k,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n55 = {
+	.sid = UINT64_C(1099511628802),
+	.name = "protocol",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg, protocol),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg, has_protocol),
+	.type = &t21,
+	.module = &m11,
+};
+
+static const struct cbl_ynode *const n49_c[] = {
+	&n50, &n51, &n55
+};
+static const struct cbl_ywhen n49_w[] = {
+	{ 2, CBL_YWC_SELF },
+};
+static const struct cbl_ynode n49 = {
+	.sid = UINT64_C(1099511628796),
+	.name = "lagg",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_lagg),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_lagg),
+	.nchild = 3,
+	.child = n49_c,
+	.nwhen = 1,
+	.when = n49_w,
+	.module = &m11,
+};
+
+static const uint16_t n56_p[] = {
+	1, 0, 0, 0, 2, 0, 0, 0, 3, 4, 5
+};
+static const struct cbl_ynode n58 = {
+	.sid = UINT64_C(1099511628805),
+	.name = "mode",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media_active, mode),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n59 = {
+	.sid = UINT64_C(1099511628806),
+	.name = "option",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media_active, option),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n60 = {
+	.sid = UINT64_C(1099511628807),
+	.name = "subtype",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media_active, subtype),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m11,
+};
+
+static const struct cbl_ynode *const n57_c[] = {
+	&n58, &n59, &n60
+};
+static const struct cbl_ynode n57 = {
+	.sid = UINT64_C(1099511628804),
+	.name = "active",
+	.kind = CBL_YN_CONTAINER,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, active),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_media_active),
+	.nmap = 3,
+	.nchild = 3,
+	.child = n57_c,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n62 = {
+	.sid = UINT64_C(1099511628809),
+	.name = "mode",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media_current, mode),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n63 = {
+	.sid = UINT64_C(1099511628810),
+	.name = "option",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media_current, option),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n64 = {
+	.sid = UINT64_C(1099511628811),
+	.name = "subtype",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media_current, subtype),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m11,
+};
+
+static const struct cbl_ynode *const n61_c[] = {
+	&n62, &n63, &n64
+};
+static const struct cbl_ynode n61 = {
+	.sid = UINT64_C(1099511628808),
+	.name = "current",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, current),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_media_current),
+	.nmap = 3,
+	.nchild = 3,
+	.child = n61_c,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n65 = {
+	.sid = UINT64_C(1099511628812),
+	.name = "status",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, status),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, has_status),
+	.type = &t22,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n66 = {
+	.sid = UINT64_C(1099511628813),
+	.name = "supported",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, supported),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n67 = {
+	.sid = UINT64_C(1099511628814),
+	.name = "type",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, type),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, has_type),
+	.type = &t23,
+	.module = &m11,
+};
+
+static const struct cbl_ynode *const n56_c[] = {
+	&n57, &n61, &n65, &n66, &n67
+};
+static const struct cbl_ynode n56 = {
+	.sid = UINT64_C(1099511628803),
+	.name = "media",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_media),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_media),
+	.nmap = 11,
+	.map = n56_p,
+	.nchild = 5,
+	.child = n56_c,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n68 = {
+	.sid = UINT64_C(1099511628815),
+	.name = "mtu",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_mtu),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface, has_arcif_mtu),
+	.type = &t10,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n69 = {
+	.sid = UINT64_C(1099511628816),
+	.name = "tunnel-fib",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_tunnel_fib),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface, has_arcif_tunnel_fib),
+	.type = &t10,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n71 = {
+	.sid = UINT64_C(1099511628818),
+	.name = "parent",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, parent),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t3,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n72 = {
+	.sid = UINT64_C(1099511628819),
+	.name = "pcp",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, pcp),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, has_pcp),
+	.type = &t24,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n73 = {
+	.sid = UINT64_C(1099511628820),
+	.name = "protocol",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, protocol),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, has_protocol),
+	.type = &t25,
+	.module = &m11,
+};
+
+static const struct cbl_ynode n74 = {
+	.sid = UINT64_C(1099511628821),
+	.name = "vlan-id",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, vlan_id),
+	.hoff = offsetof(struct ietf_interfaces_interfaces_interface_arcif_vlan, has_vlan_id),
+	.type = &t26,
+	.module = &m11,
+};
+
+static const struct cbl_ynode *const n70_c[] = {
+	&n71, &n72, &n73, &n74
+};
+static const struct cbl_ywhen n70_w[] = {
+	{ 3, CBL_YWC_SELF },
+};
+static const struct cbl_ynode n70 = {
+	.sid = UINT64_C(1099511628817),
+	.name = "vlan",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_vlan),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct ietf_interfaces_interfaces_interface_arcif_vlan),
+	.nmap = 4,
+	.nchild = 4,
+	.child = n70_c,
+	.nwhen = 1,
+	.when = n70_w,
+	.module = &m11,
+};
+
 static const struct cbl_ynode *const n1_c[] = {
 	&n2, &n3, &n4, &n5, &n6, &n7,
 	&n8, &n9, &n10, &n11, &n12, &n13,
-	&n14, &n29
+	&n14, &n29, &n30, &n39, &n40, &n41,
+	&n42, &n45, &n46, &n47, &n48, &n49,
+	&n56, &n68, &n69, &n70
 };
 static const uint32_t n1_k[] = { 8 };
 static const struct cbl_ynode n1 = {
@@ -525,7 +1369,7 @@ static const struct cbl_ynode n1 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_interface),
 	.nmap = 28,
 	.map = n1_p,
-	.nchild = 14,
+	.nchild = 28,
 	.child = n1_c,
 	.nkeys = 1,
 	.keys = n1_k,
@@ -549,11 +1393,11 @@ static const struct cbl_ynode n0 = {
 	.module = &m10,
 };
 
-static const uint16_t n31_p[] = {
+static const uint16_t n76_p[] = {
 	1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 11
 };
-static const struct cbl_ynode n32 = {
+static const struct cbl_ynode n77 = {
 	.sid = UINT64_C(1508),
 	.name = "admin-status",
 	.kind = CBL_YN_LEAF,
@@ -564,18 +1408,18 @@ static const struct cbl_ynode n32 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n33 = {
+static const struct cbl_ynode n78 = {
 	.sid = UINT64_C(1509),
 	.name = "higher-layer-if",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x30,
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface, higher_layer_if),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t12,
+	.type = &t27,
 	.module = &m10,
 };
 
-static const struct cbl_ynode n34 = {
+static const struct cbl_ynode n79 = {
 	.sid = UINT64_C(1510),
 	.name = "if-index",
 	.kind = CBL_YN_LEAF,
@@ -586,7 +1430,7 @@ static const struct cbl_ynode n34 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n35 = {
+static const struct cbl_ynode n80 = {
 	.sid = UINT64_C(1511),
 	.name = "last-change",
 	.kind = CBL_YN_LEAF,
@@ -597,18 +1441,18 @@ static const struct cbl_ynode n35 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n36 = {
+static const struct cbl_ynode n81 = {
 	.sid = UINT64_C(1512),
 	.name = "lower-layer-if",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x30,
 	.off = offsetof(struct ietf_interfaces_interfaces_state_interface, lower_layer_if),
 	.hoff = CBL_YOFF_NONE,
-	.type = &t12,
+	.type = &t27,
 	.module = &m10,
 };
 
-static const struct cbl_ynode n37 = {
+static const struct cbl_ynode n82 = {
 	.sid = UINT64_C(1513),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
@@ -619,7 +1463,7 @@ static const struct cbl_ynode n37 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n38 = {
+static const struct cbl_ynode n83 = {
 	.sid = UINT64_C(1514),
 	.name = "oper-status",
 	.kind = CBL_YN_LEAF,
@@ -630,7 +1474,7 @@ static const struct cbl_ynode n38 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n39 = {
+static const struct cbl_ynode n84 = {
 	.sid = UINT64_C(1515),
 	.name = "phys-address",
 	.kind = CBL_YN_LEAF,
@@ -641,7 +1485,7 @@ static const struct cbl_ynode n39 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n40 = {
+static const struct cbl_ynode n85 = {
 	.sid = UINT64_C(1516),
 	.name = "speed",
 	.kind = CBL_YN_LEAF,
@@ -653,7 +1497,7 @@ static const struct cbl_ynode n40 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n42 = {
+static const struct cbl_ynode n87 = {
 	.sid = UINT64_C(1518),
 	.name = "discontinuity-time",
 	.kind = CBL_YN_LEAF,
@@ -664,7 +1508,7 @@ static const struct cbl_ynode n42 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n43 = {
+static const struct cbl_ynode n88 = {
 	.sid = UINT64_C(1519),
 	.name = "in-broadcast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -675,7 +1519,7 @@ static const struct cbl_ynode n43 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n44 = {
+static const struct cbl_ynode n89 = {
 	.sid = UINT64_C(1520),
 	.name = "in-discards",
 	.kind = CBL_YN_LEAF,
@@ -686,7 +1530,7 @@ static const struct cbl_ynode n44 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n45 = {
+static const struct cbl_ynode n90 = {
 	.sid = UINT64_C(1521),
 	.name = "in-errors",
 	.kind = CBL_YN_LEAF,
@@ -697,7 +1541,7 @@ static const struct cbl_ynode n45 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n46 = {
+static const struct cbl_ynode n91 = {
 	.sid = UINT64_C(1522),
 	.name = "in-multicast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -708,7 +1552,7 @@ static const struct cbl_ynode n46 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n47 = {
+static const struct cbl_ynode n92 = {
 	.sid = UINT64_C(1523),
 	.name = "in-octets",
 	.kind = CBL_YN_LEAF,
@@ -719,7 +1563,7 @@ static const struct cbl_ynode n47 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n48 = {
+static const struct cbl_ynode n93 = {
 	.sid = UINT64_C(1524),
 	.name = "in-unicast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -730,7 +1574,7 @@ static const struct cbl_ynode n48 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n49 = {
+static const struct cbl_ynode n94 = {
 	.sid = UINT64_C(1525),
 	.name = "in-unknown-protos",
 	.kind = CBL_YN_LEAF,
@@ -741,7 +1585,7 @@ static const struct cbl_ynode n49 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n50 = {
+static const struct cbl_ynode n95 = {
 	.sid = UINT64_C(1526),
 	.name = "out-broadcast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -752,7 +1596,7 @@ static const struct cbl_ynode n50 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n51 = {
+static const struct cbl_ynode n96 = {
 	.sid = UINT64_C(1527),
 	.name = "out-discards",
 	.kind = CBL_YN_LEAF,
@@ -763,7 +1607,7 @@ static const struct cbl_ynode n51 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n52 = {
+static const struct cbl_ynode n97 = {
 	.sid = UINT64_C(1528),
 	.name = "out-errors",
 	.kind = CBL_YN_LEAF,
@@ -774,7 +1618,7 @@ static const struct cbl_ynode n52 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n53 = {
+static const struct cbl_ynode n98 = {
 	.sid = UINT64_C(1529),
 	.name = "out-multicast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -785,7 +1629,7 @@ static const struct cbl_ynode n53 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n54 = {
+static const struct cbl_ynode n99 = {
 	.sid = UINT64_C(1530),
 	.name = "out-octets",
 	.kind = CBL_YN_LEAF,
@@ -796,7 +1640,7 @@ static const struct cbl_ynode n54 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode n55 = {
+static const struct cbl_ynode n100 = {
 	.sid = UINT64_C(1531),
 	.name = "out-unicast-pkts",
 	.kind = CBL_YN_LEAF,
@@ -807,12 +1651,12 @@ static const struct cbl_ynode n55 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode *const n41_c[] = {
-	&n42, &n43, &n44, &n45, &n46, &n47,
-	&n48, &n49, &n50, &n51, &n52, &n53,
-	&n54, &n55
+static const struct cbl_ynode *const n86_c[] = {
+	&n87, &n88, &n89, &n90, &n91, &n92,
+	&n93, &n94, &n95, &n96, &n97, &n98,
+	&n99, &n100
 };
-static const struct cbl_ynode n41 = {
+static const struct cbl_ynode n86 = {
 	.sid = UINT64_C(1517),
 	.name = "statistics",
 	.kind = CBL_YN_CONTAINER,
@@ -822,11 +1666,11 @@ static const struct cbl_ynode n41 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface_statistics),
 	.nmap = 14,
 	.nchild = 14,
-	.child = n41_c,
+	.child = n86_c,
 	.module = &m10,
 };
 
-static const struct cbl_ynode n56 = {
+static const struct cbl_ynode n101 = {
 	.sid = UINT64_C(1532),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
@@ -837,12 +1681,12 @@ static const struct cbl_ynode n56 = {
 	.module = &m10,
 };
 
-static const struct cbl_ynode *const n31_c[] = {
-	&n32, &n33, &n34, &n35, &n36, &n37,
-	&n38, &n39, &n40, &n41, &n56
+static const struct cbl_ynode *const n76_c[] = {
+	&n77, &n78, &n79, &n80, &n81, &n82,
+	&n83, &n84, &n85, &n86, &n101
 };
-static const uint32_t n31_k[] = { 5 };
-static const struct cbl_ynode n31 = {
+static const uint32_t n76_k[] = { 5 };
+static const struct cbl_ynode n76 = {
 	.sid = UINT64_C(1507),
 	.name = "interface",
 	.kind = CBL_YN_LIST,
@@ -851,18 +1695,18 @@ static const struct cbl_ynode n31 = {
 	.hoff = CBL_YOFF_NONE,
 	.size = sizeof(struct ietf_interfaces_interfaces_state_interface),
 	.nmap = 25,
-	.map = n31_p,
+	.map = n76_p,
 	.nchild = 11,
-	.child = n31_c,
+	.child = n76_c,
 	.nkeys = 1,
-	.keys = n31_k,
+	.keys = n76_k,
 	.module = &m10,
 };
 
-static const struct cbl_ynode *const n30_c[] = {
-	&n31
+static const struct cbl_ynode *const n75_c[] = {
+	&n76
 };
-static const struct cbl_ynode n30 = {
+static const struct cbl_ynode n75 = {
 	.sid = UINT64_C(1506),
 	.name = "interfaces-state",
 	.kind = CBL_YN_CONTAINER,
@@ -872,7 +1716,7 @@ static const struct cbl_ynode n30 = {
 	.size = sizeof(struct ietf_interfaces_interfaces_state),
 	.nmap = 1,
 	.nchild = 1,
-	.child = n30_c,
+	.child = n75_c,
 	.module = &m10,
 };
 
@@ -1035,311 +1879,311 @@ static const uint64_t i133_d[] = {
 };
 static const struct cbl_yident idents[] = {
 	{ UINT64_C(1501), "interface-type", &m10, 0x0, 305, i0_d },
-	{ UINT64_C(1801), "a12MppSwitch", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1802), "aal2", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1803), "aal5", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1804), "actelisMetaLOOP", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1805), "adsl", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1806), "adsl2", &m11, 0x20, 0, NULL },
-	{ UINT64_C(1807), "adsl2plus", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1808), "aflane8023", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1809), "aflane8025", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1810), "aluELP", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1811), "aluEpon", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1812), "aluEponLogicalLink", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1813), "aluEponOnu", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1814), "aluEponPhysicalUni", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1815), "aluGponOnu", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1816), "aluGponPhysicalUni", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1817), "arap", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1818), "arcnet", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1819), "arcnetPlus", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1820), "async", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1821), "atm", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1822), "atmDxi", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1823), "atmFuni", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1824), "atmIma", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1825), "atmLogical", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1826), "atmRadio", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1827), "atmSubInterface", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1828), "atmVciEndPt", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1829), "atmVirtual", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1830), "atmbond", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1831), "aviciOpticalEther", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1832), "ax25", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1833), "basicISDN", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1834), "bgppolicyaccounting", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1835), "bits", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1836), "bridge", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1837), "bsc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1838), "cableDownstreamRfPort", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1839), "capwapDot11Bss", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1840), "capwapDot11Profile", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1841), "capwapWtpVirtualRadio", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1842), "cblVectaStar", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1843), "cctEmul", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1844), "ces", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1845), "channel", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1846), "ciscoISLvlan", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1847), "cnr", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1848), "coffee", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1849), "compositeLink", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1850), "cpri", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1851), "dcn", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1852), "ddnX25", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1853), "digitalPowerline", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1854), "digitalWrapperOverheadChannel", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1855), "dlsw", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1856), "docsCableDownstream", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1857), "docsCableMCmtsDownstream", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1858), "docsCableMaclayer", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1859), "docsCableNdf", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1860), "docsCableNdr", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1861), "docsCableScte25d1FwdOob", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1862), "docsCableScte25d1RetOob", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1863), "docsCableScte25d2MacOob", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1864), "docsCableScte55d1FwdOob", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1865), "docsCableScte55d1RetOob", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1866), "docsCableScte55d2DsOob", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1867), "docsCableScte55d2UsOob", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1868), "docsCableUpstream", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1869), "docsCableUpstreamChannel", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1870), "docsCableUpstreamRfPort", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1871), "docsOfdmDownstream", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1872), "docsOfdmaUpstream", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1873), "ds0", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1874), "ds0Bundle", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1875), "ds1", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1876), "ds1FDL", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1877), "ds3", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1878), "dtm", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1879), "dvbAsiIn", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1880), "dvbAsiOut", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1881), "dvbRccDownstream", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1882), "dvbRccMacLayer", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1883), "dvbRccUpstream", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1884), "dvbRcsMacLayer", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1885), "dvbRcsTdma", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1886), "dvbTdm", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1887), "e1", &m11, 0x40, 0, NULL },
-	{ UINT64_C(1888), "econet", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1889), "eon", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1890), "eplrs", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1891), "escon", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1892), "ethernet3Mbit", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1893), "ethernetCsmacd", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1894), "fast", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1895), "fastEther", &m11, 0x20, 0, NULL },
-	{ UINT64_C(1896), "fastEtherFX", &m11, 0x20, 0, NULL },
-	{ UINT64_C(1897), "fastdsl", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1898), "fcipLink", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1899), "fddi", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1900), "fibreChannel", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1901), "frDlciEndPt", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1902), "frForward", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1903), "frameRelay", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1904), "frameRelayInterconnect", &m11, 0x40, 0, NULL },
-	{ UINT64_C(1905), "frameRelayMPI", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1906), "frameRelayService", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1907), "frf16MfrBundle", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1908), "g703at2mb", &m11, 0x40, 0, NULL },
-	{ UINT64_C(1909), "g703at64k", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1910), "g9981", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1911), "g9982", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1912), "g9983", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1913), "gfast", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1914), "gfp", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1915), "ghn", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1916), "gigabitEthernet", &m11, 0x20, 0, NULL },
-	{ UINT64_C(1917), "gpon", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1918), "gr303IDT", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1919), "gr303RDT", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1920), "gtp", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1921), "h323Gatekeeper", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1922), "h323Proxy", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1923), "hdh1822", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1924), "hdlc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1925), "hdsl2", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1926), "hiperlan2", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1927), "hippi", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1928), "hippiInterface", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1929), "homepna", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1930), "hostPad", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1931), "hssi", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1932), "hyperchannel", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1933), "iana-interface-type", &m11, 0x0, 304, i133_d },
-	{ UINT64_C(1934), "ibm370parChan", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1935), "idsl", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1936), "ieee1394", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1937), "ieee19061nanocom", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1938), "ieee80211", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1939), "ieee80212", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1940), "ieee802154", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1941), "ieee80216WMAN", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1942), "ieee8021axDrni", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1943), "ieee8023adLag", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1944), "if-gsn", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1945), "ifPwType", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1946), "ifVfiType", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1947), "ilan", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1948), "imt", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1949), "infiniband", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1950), "interleave", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1951), "ip", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1952), "ipForward", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1953), "ipOverAtm", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1954), "ipOverCdlc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1955), "ipOverClaw", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1956), "ipSwitch", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1957), "isdn", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1958), "isdns", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1959), "isdnu", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1960), "iso88022llc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1961), "iso88023Csmacd", &m11, 0x20, 0, NULL },
-	{ UINT64_C(1962), "iso88024TokenBus", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1963), "iso88025CRFPInt", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1964), "iso88025Dtr", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1965), "iso88025Fiber", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1966), "iso88025TokenRing", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1967), "iso88026Man", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1968), "isup", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1969), "l2vlan", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1970), "l3ipvlan", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1971), "l3ipxvlan", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1972), "lapb", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1973), "lapd", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1974), "lapf", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1975), "linegroup", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1976), "lmp", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1977), "localTalk", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1978), "lora", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1979), "lorawan", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1980), "macSecControlledIF", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1981), "macSecUncontrolledIF", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1982), "mediaMailOverIp", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1983), "mfSigLink", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1984), "microwaveCarrierTermination", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1985), "microwaveRadioLinkTerminal", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1986), "miox25", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1987), "mocaVersion1", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1988), "modem", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1989), "mpc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1990), "mpegTransport", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1991), "mpls", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1992), "mplsTunnel", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1993), "msdsl", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1994), "mvl", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1995), "myrinet", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1996), "nfas", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1997), "nsip", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1998), "omni", &m11, 0x0, 0, NULL },
-	{ UINT64_C(1999), "opticalChannel", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2000), "opticalChannelGroup", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2001), "opticalTransport", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2002), "other", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2003), "otnOdu", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2004), "otnOduc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2005), "otnOtsi", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2006), "otnOtsig", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2007), "otnOtu", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2008), "otnOtuc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2009), "p2pOverLan", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2010), "para", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2011), "pdnEtherLoop1", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2012), "pdnEtherLoop2", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2013), "pip", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2014), "plc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2015), "pon155", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2016), "pon622", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2017), "pos", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2018), "ppp", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2019), "pppMultilinkBundle", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2020), "primaryISDN", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2021), "propAtm", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2022), "propBWAp2Mp", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2023), "propCnls", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2024), "propDocsWirelessDownstream", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2025), "propDocsWirelessMaclayer", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2026), "propDocsWirelessUpstream", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2027), "propMultiplexor", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2028), "propPointToPointSerial", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2029), "propVirtual", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2030), "propWirelessP2P", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2031), "proteon10Mbit", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2032), "proteon80Mbit", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2033), "ptm", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2034), "q2931", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2035), "qam", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2036), "qllc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2037), "radioMAC", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2038), "radsl", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2039), "reachDSL", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2040), "regular1822", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2041), "rfc1483", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2042), "rfc877x25", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2043), "roe", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2044), "rpr", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2045), "rs232", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2046), "rsrb", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2047), "sdci", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2048), "sdlc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2049), "sdsl", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2050), "shdsl", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2051), "sip", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2052), "sipSig", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2053), "sipTg", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2054), "sixToFour", &m11, 0x20, 0, NULL },
-	{ UINT64_C(2055), "slip", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2056), "smdsDxi", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2057), "smdsIcip", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2058), "softwareLoopback", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2059), "sonet", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2060), "sonetOverheadChannel", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2061), "sonetPath", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2062), "sonetVT", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2063), "srp", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2064), "ss7SigLink", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2065), "stackToStack", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2066), "starLan", &m11, 0x20, 0, NULL },
-	{ UINT64_C(2067), "tdlc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2068), "teLink", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2069), "termPad", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2070), "tr008", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2071), "transpHdlc", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2072), "tunnel", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2073), "ultra", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2074), "usb", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2075), "v11", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2076), "v35", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2077), "v36", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2078), "v37", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2079), "vdsl", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2080), "vdsl2", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2081), "virtualIpAddress", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2082), "virtualTg", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2083), "vmwareNicTeam", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2084), "vmwareVirtualNic", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2085), "voiceDID", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2086), "voiceEBS", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2087), "voiceEM", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2088), "voiceEMFGD", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2089), "voiceEncap", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2090), "voiceFGDEANA", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2091), "voiceFGDOS", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2092), "voiceFXO", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2093), "voiceFXS", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2094), "voiceOverAtm", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2095), "voiceOverCable", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2096), "voiceOverFrameRelay", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2097), "voiceOverIp", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2098), "wwanPP", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2099), "wwanPP2", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2100), "x213", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2101), "x25huntGroup", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2102), "x25mlp", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2103), "x25ple", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2104), "x86Laps", &m11, 0x0, 0, NULL },
-	{ UINT64_C(2105), "xboxWireless", &m11, 0x0, 0, NULL },
+	{ UINT64_C(1801), "a12MppSwitch", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1802), "aal2", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1803), "aal5", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1804), "actelisMetaLOOP", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1805), "adsl", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1806), "adsl2", &m12, 0x20, 0, NULL },
+	{ UINT64_C(1807), "adsl2plus", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1808), "aflane8023", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1809), "aflane8025", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1810), "aluELP", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1811), "aluEpon", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1812), "aluEponLogicalLink", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1813), "aluEponOnu", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1814), "aluEponPhysicalUni", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1815), "aluGponOnu", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1816), "aluGponPhysicalUni", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1817), "arap", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1818), "arcnet", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1819), "arcnetPlus", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1820), "async", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1821), "atm", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1822), "atmDxi", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1823), "atmFuni", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1824), "atmIma", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1825), "atmLogical", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1826), "atmRadio", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1827), "atmSubInterface", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1828), "atmVciEndPt", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1829), "atmVirtual", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1830), "atmbond", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1831), "aviciOpticalEther", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1832), "ax25", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1833), "basicISDN", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1834), "bgppolicyaccounting", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1835), "bits", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1836), "bridge", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1837), "bsc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1838), "cableDownstreamRfPort", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1839), "capwapDot11Bss", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1840), "capwapDot11Profile", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1841), "capwapWtpVirtualRadio", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1842), "cblVectaStar", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1843), "cctEmul", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1844), "ces", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1845), "channel", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1846), "ciscoISLvlan", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1847), "cnr", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1848), "coffee", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1849), "compositeLink", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1850), "cpri", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1851), "dcn", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1852), "ddnX25", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1853), "digitalPowerline", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1854), "digitalWrapperOverheadChannel", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1855), "dlsw", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1856), "docsCableDownstream", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1857), "docsCableMCmtsDownstream", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1858), "docsCableMaclayer", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1859), "docsCableNdf", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1860), "docsCableNdr", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1861), "docsCableScte25d1FwdOob", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1862), "docsCableScte25d1RetOob", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1863), "docsCableScte25d2MacOob", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1864), "docsCableScte55d1FwdOob", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1865), "docsCableScte55d1RetOob", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1866), "docsCableScte55d2DsOob", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1867), "docsCableScte55d2UsOob", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1868), "docsCableUpstream", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1869), "docsCableUpstreamChannel", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1870), "docsCableUpstreamRfPort", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1871), "docsOfdmDownstream", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1872), "docsOfdmaUpstream", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1873), "ds0", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1874), "ds0Bundle", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1875), "ds1", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1876), "ds1FDL", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1877), "ds3", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1878), "dtm", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1879), "dvbAsiIn", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1880), "dvbAsiOut", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1881), "dvbRccDownstream", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1882), "dvbRccMacLayer", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1883), "dvbRccUpstream", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1884), "dvbRcsMacLayer", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1885), "dvbRcsTdma", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1886), "dvbTdm", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1887), "e1", &m12, 0x40, 0, NULL },
+	{ UINT64_C(1888), "econet", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1889), "eon", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1890), "eplrs", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1891), "escon", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1892), "ethernet3Mbit", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1893), "ethernetCsmacd", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1894), "fast", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1895), "fastEther", &m12, 0x20, 0, NULL },
+	{ UINT64_C(1896), "fastEtherFX", &m12, 0x20, 0, NULL },
+	{ UINT64_C(1897), "fastdsl", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1898), "fcipLink", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1899), "fddi", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1900), "fibreChannel", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1901), "frDlciEndPt", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1902), "frForward", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1903), "frameRelay", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1904), "frameRelayInterconnect", &m12, 0x40, 0, NULL },
+	{ UINT64_C(1905), "frameRelayMPI", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1906), "frameRelayService", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1907), "frf16MfrBundle", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1908), "g703at2mb", &m12, 0x40, 0, NULL },
+	{ UINT64_C(1909), "g703at64k", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1910), "g9981", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1911), "g9982", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1912), "g9983", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1913), "gfast", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1914), "gfp", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1915), "ghn", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1916), "gigabitEthernet", &m12, 0x20, 0, NULL },
+	{ UINT64_C(1917), "gpon", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1918), "gr303IDT", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1919), "gr303RDT", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1920), "gtp", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1921), "h323Gatekeeper", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1922), "h323Proxy", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1923), "hdh1822", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1924), "hdlc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1925), "hdsl2", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1926), "hiperlan2", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1927), "hippi", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1928), "hippiInterface", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1929), "homepna", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1930), "hostPad", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1931), "hssi", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1932), "hyperchannel", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1933), "iana-interface-type", &m12, 0x0, 304, i133_d },
+	{ UINT64_C(1934), "ibm370parChan", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1935), "idsl", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1936), "ieee1394", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1937), "ieee19061nanocom", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1938), "ieee80211", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1939), "ieee80212", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1940), "ieee802154", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1941), "ieee80216WMAN", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1942), "ieee8021axDrni", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1943), "ieee8023adLag", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1944), "if-gsn", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1945), "ifPwType", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1946), "ifVfiType", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1947), "ilan", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1948), "imt", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1949), "infiniband", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1950), "interleave", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1951), "ip", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1952), "ipForward", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1953), "ipOverAtm", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1954), "ipOverCdlc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1955), "ipOverClaw", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1956), "ipSwitch", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1957), "isdn", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1958), "isdns", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1959), "isdnu", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1960), "iso88022llc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1961), "iso88023Csmacd", &m12, 0x20, 0, NULL },
+	{ UINT64_C(1962), "iso88024TokenBus", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1963), "iso88025CRFPInt", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1964), "iso88025Dtr", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1965), "iso88025Fiber", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1966), "iso88025TokenRing", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1967), "iso88026Man", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1968), "isup", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1969), "l2vlan", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1970), "l3ipvlan", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1971), "l3ipxvlan", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1972), "lapb", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1973), "lapd", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1974), "lapf", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1975), "linegroup", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1976), "lmp", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1977), "localTalk", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1978), "lora", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1979), "lorawan", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1980), "macSecControlledIF", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1981), "macSecUncontrolledIF", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1982), "mediaMailOverIp", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1983), "mfSigLink", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1984), "microwaveCarrierTermination", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1985), "microwaveRadioLinkTerminal", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1986), "miox25", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1987), "mocaVersion1", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1988), "modem", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1989), "mpc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1990), "mpegTransport", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1991), "mpls", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1992), "mplsTunnel", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1993), "msdsl", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1994), "mvl", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1995), "myrinet", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1996), "nfas", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1997), "nsip", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1998), "omni", &m12, 0x0, 0, NULL },
+	{ UINT64_C(1999), "opticalChannel", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2000), "opticalChannelGroup", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2001), "opticalTransport", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2002), "other", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2003), "otnOdu", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2004), "otnOduc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2005), "otnOtsi", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2006), "otnOtsig", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2007), "otnOtu", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2008), "otnOtuc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2009), "p2pOverLan", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2010), "para", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2011), "pdnEtherLoop1", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2012), "pdnEtherLoop2", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2013), "pip", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2014), "plc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2015), "pon155", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2016), "pon622", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2017), "pos", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2018), "ppp", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2019), "pppMultilinkBundle", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2020), "primaryISDN", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2021), "propAtm", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2022), "propBWAp2Mp", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2023), "propCnls", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2024), "propDocsWirelessDownstream", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2025), "propDocsWirelessMaclayer", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2026), "propDocsWirelessUpstream", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2027), "propMultiplexor", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2028), "propPointToPointSerial", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2029), "propVirtual", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2030), "propWirelessP2P", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2031), "proteon10Mbit", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2032), "proteon80Mbit", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2033), "ptm", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2034), "q2931", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2035), "qam", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2036), "qllc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2037), "radioMAC", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2038), "radsl", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2039), "reachDSL", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2040), "regular1822", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2041), "rfc1483", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2042), "rfc877x25", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2043), "roe", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2044), "rpr", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2045), "rs232", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2046), "rsrb", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2047), "sdci", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2048), "sdlc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2049), "sdsl", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2050), "shdsl", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2051), "sip", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2052), "sipSig", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2053), "sipTg", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2054), "sixToFour", &m12, 0x20, 0, NULL },
+	{ UINT64_C(2055), "slip", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2056), "smdsDxi", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2057), "smdsIcip", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2058), "softwareLoopback", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2059), "sonet", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2060), "sonetOverheadChannel", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2061), "sonetPath", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2062), "sonetVT", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2063), "srp", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2064), "ss7SigLink", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2065), "stackToStack", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2066), "starLan", &m12, 0x20, 0, NULL },
+	{ UINT64_C(2067), "tdlc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2068), "teLink", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2069), "termPad", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2070), "tr008", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2071), "transpHdlc", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2072), "tunnel", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2073), "ultra", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2074), "usb", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2075), "v11", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2076), "v35", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2077), "v36", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2078), "v37", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2079), "vdsl", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2080), "vdsl2", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2081), "virtualIpAddress", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2082), "virtualTg", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2083), "vmwareNicTeam", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2084), "vmwareVirtualNic", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2085), "voiceDID", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2086), "voiceEBS", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2087), "voiceEM", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2088), "voiceEMFGD", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2089), "voiceEncap", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2090), "voiceFGDEANA", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2091), "voiceFGDOS", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2092), "voiceFXO", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2093), "voiceFXS", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2094), "voiceOverAtm", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2095), "voiceOverCable", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2096), "voiceOverFrameRelay", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2097), "voiceOverIp", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2098), "wwanPP", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2099), "wwanPP2", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2100), "x213", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2101), "x25huntGroup", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2102), "x25mlp", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2103), "x25ple", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2104), "x86Laps", &m12, 0x0, 0, NULL },
+	{ UINT64_C(2105), "xboxWireless", &m12, 0x0, 0, NULL },
 	{ 0, NULL, NULL, 0, 0, NULL },
 };
 
@@ -1353,7 +2197,7 @@ static const struct cbl_ymodule m6 = {
 };
 
 static const struct cbl_ynode *const m10_t[] = {
-	&n0, &n30
+	&n0, &n75
 };
 static const struct cbl_yfeature m10_f[] = {
 	{ UINT64_C(1502), "arbitrary-names", true },
@@ -1376,6 +2220,15 @@ static const struct cbl_ymodule m10 = {
 
 static const struct cbl_ymodule m11 = {
 	.schema = &ymodel_schema,
+	.name = "arcana-interfaces",
+	.revision = "2026-10-14",
+	.ns = "urn:arcana:yang:arcana-interfaces",
+	.prefix = "arcif",
+	.sid = UINT64_C(1099511628776),
+};
+
+static const struct cbl_ymodule m12 = {
+	.schema = &ymodel_schema,
 	.name = "iana-if-type",
 	.revision = "2026-03-17",
 	.ns = "urn:ietf:params:xml:ns:yang:iana-if-type",
@@ -1387,32 +2240,43 @@ static const struct cbl_ymodule *const mods[] = {
 	&m6,
 	&m10,
 	&m11,
+	&m12,
 };
 
 static const struct cbl_ynode *const nodes[] = {
-	&n0, &n30, &n31, &n32, &n33, &n34,
-	&n35, &n36, &n37, &n38, &n39, &n40,
-	&n41, &n42, &n43, &n44, &n45, &n46,
-	&n47, &n48, &n49, &n50, &n51, &n52,
-	&n53, &n54, &n55, &n56, &n1, &n2,
+	&n0, &n75, &n76, &n77, &n78, &n79,
+	&n80, &n81, &n82, &n83, &n84, &n85,
+	&n86, &n87, &n88, &n89, &n90, &n91,
+	&n92, &n93, &n94, &n95, &n96, &n97,
+	&n98, &n99, &n100, &n101, &n1, &n2,
 	&n3, &n4, &n5, &n6, &n7, &n8,
 	&n9, &n10, &n11, &n12, &n13, &n14,
 	&n15, &n16, &n17, &n18, &n19, &n20,
 	&n21, &n22, &n23, &n24, &n25, &n26,
-	&n27, &n28, &n29
+	&n27, &n28, &n29, &n30, &n31, &n32,
+	&n33, &n34, &n35, &n36, &n37, &n38,
+	&n39, &n40, &n41, &n42, &n43, &n44,
+	&n45, &n46, &n47, &n48, &n49, &n50,
+	&n51, &n52, &n53, &n54, &n55, &n56,
+	&n57, &n58, &n59, &n60, &n61, &n62,
+	&n63, &n64, &n65, &n66, &n67, &n68,
+	&n69, &n70, &n71, &n72, &n73, &n74
 };
 
 static const char *const xpaths[] = {
 	"/if:interfaces/if:interface/if:name",
+	"derived-from-or-self(../if:type, 'ianaift:bridge')",
+	"derived-from-or-self(../if:type, 'ianaift:ieee8023adLag')",
+	"derived-from-or-self(../if:type, 'ianaift:l2vlan')",
 	"/if:interfaces-state/if:interface/if:name",
 };
 
 extern const struct cbl_yschema ymodel_schema;
 const struct cbl_yschema ymodel_schema = {
-	.nmod = 3,
-	.nxpath = 2,
+	.nmod = 4,
+	.nxpath = 5,
 	.nident = 306,
-	.nnode = 57,
+	.nnode = 102,
 	.mod = mods,
 	.node = nodes,
 	.xpath = xpaths,
@@ -1468,14 +2332,14 @@ ietf_interfaces_interfaces_interface_statistics_decode(const void *data, size_t 
 }
 
 int
-ietf_interfaces_interfaces_state_encode(const struct ietf_interfaces_interfaces_state *p, struct cbl_ybuf *b)
+ietf_interfaces_interfaces_interface_arcif_bridge_encode(const struct ietf_interfaces_interfaces_interface_arcif_bridge *p, struct cbl_ybuf *b)
 {
 
 	return (cbl_yencode(&n30, p, b));
 }
 
 int
-ietf_interfaces_interfaces_state_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_state *p,
+ietf_interfaces_interfaces_interface_arcif_bridge_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_bridge *p,
     cbl_yarena *a, int flags, char *why, size_t whylen)
 {
 
@@ -1484,14 +2348,14 @@ ietf_interfaces_interfaces_state_decode(const void *data, size_t len, struct iet
 }
 
 int
-ietf_interfaces_interfaces_state_interface_encode(const struct ietf_interfaces_interfaces_state_interface *p, struct cbl_ybuf *b)
+ietf_interfaces_interfaces_interface_arcif_bridge_member_encode(const struct ietf_interfaces_interfaces_interface_arcif_bridge_member *p, struct cbl_ybuf *b)
 {
 
 	return (cbl_yencode(&n31, p, b));
 }
 
 int
-ietf_interfaces_interfaces_state_interface_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_state_interface *p,
+ietf_interfaces_interfaces_interface_arcif_bridge_member_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_bridge_member *p,
     cbl_yarena *a, int flags, char *why, size_t whylen)
 {
 
@@ -1500,10 +2364,154 @@ ietf_interfaces_interfaces_state_interface_decode(const void *data, size_t len, 
 }
 
 int
+ietf_interfaces_interfaces_interface_arcif_epair_encode(const struct ietf_interfaces_interfaces_interface_arcif_epair *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n42, p, b));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_epair_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_epair *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n42, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_lagg_encode(const struct ietf_interfaces_interfaces_interface_arcif_lagg *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n49, p, b));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_lagg_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_lagg *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n49, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_lagg_port_encode(const struct ietf_interfaces_interfaces_interface_arcif_lagg_port *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n51, p, b));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_lagg_port_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_lagg_port *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n51, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_media_encode(const struct ietf_interfaces_interfaces_interface_arcif_media *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n56, p, b));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_media_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_media *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n56, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_media_active_encode(const struct ietf_interfaces_interfaces_interface_arcif_media_active *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n57, p, b));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_media_active_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_media_active *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n57, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_media_current_encode(const struct ietf_interfaces_interfaces_interface_arcif_media_current *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n61, p, b));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_media_current_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_media_current *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n61, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_vlan_encode(const struct ietf_interfaces_interfaces_interface_arcif_vlan *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n70, p, b));
+}
+
+int
+ietf_interfaces_interfaces_interface_arcif_vlan_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_interface_arcif_vlan *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n70, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_state_encode(const struct ietf_interfaces_interfaces_state *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n75, p, b));
+}
+
+int
+ietf_interfaces_interfaces_state_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_state *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n75, data, len, p, a, flags, why, whylen));
+}
+
+int
+ietf_interfaces_interfaces_state_interface_encode(const struct ietf_interfaces_interfaces_state_interface *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n76, p, b));
+}
+
+int
+ietf_interfaces_interfaces_state_interface_decode(const void *data, size_t len, struct ietf_interfaces_interfaces_state_interface *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n76, data, len, p, a, flags, why, whylen));
+}
+
+int
 ietf_interfaces_interfaces_state_interface_statistics_encode(const struct ietf_interfaces_interfaces_state_interface_statistics *p, struct cbl_ybuf *b)
 {
 
-	return (cbl_yencode(&n41, p, b));
+	return (cbl_yencode(&n86, p, b));
 }
 
 int
@@ -1512,6 +2520,6 @@ ietf_interfaces_interfaces_state_interface_statistics_decode(const void *data, s
 {
 
 	memset(p, 0, sizeof(*p));
-	return (cbl_ydecode(&n41, data, len, p, a, flags, why, whylen));
+	return (cbl_ydecode(&n86, data, len, p, a, flags, why, whylen));
 }
 
