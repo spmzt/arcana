@@ -1,0 +1,32 @@
+module: arcana-packages
+  +--ro packages
+     +--ro package* [name]
+     |  +--ro name         string
+     |  +--ro installed?   string
+     |  +--ro available?   string
+     |  +--ro automatic?   boolean
+     |  +--ro comment?     string
+     |  +--ro size?        uint64
+     |  +--ro origin?      string
+     +---x refresh
+     |  +---w input
+     |     +---w ip-version?   ip-version
+     +---x upgrade
+        +---w input
+        |  +---w name*               string
+        |  +---w dry-run?            boolean
+        |  +---w ignore-osversion?   boolean
+        |  +---w ip-version?         ip-version
+        +--ro output
+           +--ro upgraded?   uint32
+           +--ro package* [name]
+              +--ro name         string
+              +--ro installed?   string
+              +--ro available?   string
+              +--ro automatic?   boolean
+              +--ro comment?     string
+              +--ro size?        uint64
+              +--ro origin?      string
+
+  augment /arcj:jails/arcj:jail:
+    +---u packages

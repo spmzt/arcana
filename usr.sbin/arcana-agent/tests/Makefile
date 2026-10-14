@@ -19,6 +19,13 @@ SRCS.yjails=	yjails_test.c yjails.c ymodel_schema.c
 CFLAGS.yjails_test.c+=	-I${.OBJDIR}/..
 CFLAGS.yjails.c+=	-I${.OBJDIR}/..
 LDADD.yjails+=	${CBLINK_LIBS}
+# ypackages: the packages operations' replies as arcana-packages has
+# them.
+PROGS+=		ypackages
+SRCS.ypackages=	ypackages_test.c ypackages.c ymodel_schema.c
+CFLAGS.ypackages_test.c+=	-I${.OBJDIR}/..
+CFLAGS.ypackages.c+=	-I${.OBJDIR}/..
+LDADD.ypackages+=	${CBLINK_LIBS}
 # yservices: the services operations' replies as arcana-services has
 # them.
 PROGS+=		yservices

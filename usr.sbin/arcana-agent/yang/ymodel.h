@@ -113,6 +113,13 @@ struct ietf_logical_network_element;
 struct ietf_logical_network_element_bind_lne_name_failed;
 struct arcana_jails_jails_conf_error;
 struct arcana_jails_jails_jail_param;
+struct arcana_jails_jails_jail_arcpkg_packages_package;
+struct arcana_jails_jails_jail_arcpkg_packages_refresh_input;
+struct arcana_jails_jails_jail_arcpkg_packages_refresh_output;
+struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input;
+struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package;
+struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output;
+struct arcana_jails_jails_jail_arcpkg_packages;
 struct arcana_jails_jails_jail_start_input;
 struct arcana_jails_jails_jail_start_output;
 struct arcana_jails_jails_jail_stop_input;
@@ -136,6 +143,14 @@ struct arcana_services_services_service_reload_output;
 struct arcana_services_services_service;
 struct arcana_services_services;
 struct arcana_services;
+struct arcana_packages_packages_package;
+struct arcana_packages_packages_refresh_input;
+struct arcana_packages_packages_refresh_output;
+struct arcana_packages_packages_upgrade_input;
+struct arcana_packages_packages_upgrade_output_package;
+struct arcana_packages_packages_upgrade_output;
+struct arcana_packages_packages;
+struct arcana_packages;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -531,6 +546,18 @@ enum arcana_jails_jails_jail_state {
 	ARCANA_JAILS_JAILS_JAIL_STATE_ABSENT = 3,
 };
 
+enum arcana_jails_jails_jail_arcpkg_packages_refresh_input_ip_version {
+	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_REFRESH_INPUT_IP_VERSION_ANY = 0,
+	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_REFRESH_INPUT_IP_VERSION_IPV4 = 4,
+	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_REFRESH_INPUT_IP_VERSION_IPV6 = 6,
+};
+
+enum arcana_jails_jails_jail_arcpkg_packages_upgrade_input_ip_version {
+	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_UPGRADE_INPUT_IP_VERSION_ANY = 0,
+	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_UPGRADE_INPUT_IP_VERSION_IPV4 = 4,
+	ARCANA_JAILS_JAILS_JAIL_ARCPKG_PACKAGES_UPGRADE_INPUT_IP_VERSION_IPV6 = 6,
+};
+
 enum arcana_jails_jails_jail_start_output_state {
 	ARCANA_JAILS_JAILS_JAIL_START_OUTPUT_STATE_RUNNING = 0,
 	ARCANA_JAILS_JAILS_JAIL_START_OUTPUT_STATE_STOPPED = 1,
@@ -557,6 +584,18 @@ enum arcana_jails_jails_jail_kill_output_state {
 	ARCANA_JAILS_JAILS_JAIL_KILL_OUTPUT_STATE_STOPPED = 1,
 	ARCANA_JAILS_JAILS_JAIL_KILL_OUTPUT_STATE_DYING = 2,
 	ARCANA_JAILS_JAILS_JAIL_KILL_OUTPUT_STATE_ABSENT = 3,
+};
+
+enum arcana_packages_packages_refresh_input_ip_version {
+	ARCANA_PACKAGES_PACKAGES_REFRESH_INPUT_IP_VERSION_ANY = 0,
+	ARCANA_PACKAGES_PACKAGES_REFRESH_INPUT_IP_VERSION_IPV4 = 4,
+	ARCANA_PACKAGES_PACKAGES_REFRESH_INPUT_IP_VERSION_IPV6 = 6,
+};
+
+enum arcana_packages_packages_upgrade_input_ip_version {
+	ARCANA_PACKAGES_PACKAGES_UPGRADE_INPUT_IP_VERSION_ANY = 0,
+	ARCANA_PACKAGES_PACKAGES_UPGRADE_INPUT_IP_VERSION_IPV4 = 4,
+	ARCANA_PACKAGES_PACKAGES_UPGRADE_INPUT_IP_VERSION_IPV6 = 6,
 };
 
 /* container */
@@ -1566,6 +1605,75 @@ struct arcana_jails_jails_jail_param {
 	}			 value;
 };
 
+/* list entry */
+struct arcana_jails_jails_jail_arcpkg_packages_package {
+	const char	*name;
+	const char	*installed;
+	const char	*available;
+	bool			 has_automatic;
+	bool		 automatic;
+	const char	*comment;
+	bool			 has_size;
+	uint64_t	 size;
+	const char	*origin;
+};
+
+/* input */
+struct arcana_jails_jails_jail_arcpkg_packages_refresh_input {
+	bool			 has_ip_version;
+	enum arcana_jails_jails_jail_arcpkg_packages_refresh_input_ip_version	 ip_version;
+};
+
+/* output */
+struct arcana_jails_jails_jail_arcpkg_packages_refresh_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* input */
+struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 name;
+	bool			 has_dry_run;
+	bool		 dry_run;
+	bool			 has_ignore_osversion;
+	bool		 ignore_osversion;
+	bool			 has_ip_version;
+	enum arcana_jails_jails_jail_arcpkg_packages_upgrade_input_ip_version	 ip_version;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package {
+	const char	*name;
+	const char	*installed;
+	const char	*available;
+	bool			 has_automatic;
+	bool		 automatic;
+	const char	*comment;
+	bool			 has_size;
+	uint64_t	 size;
+	const char	*origin;
+};
+
+/* output */
+struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output {
+	bool			 has_upgraded;
+	uint32_t	 upgraded;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package	*v;
+	}			 package;
+};
+
+/* container */
+struct arcana_jails_jails_jail_arcpkg_packages {
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_arcpkg_packages_package	*v;
+	}			 package;
+};
+
 /* input */
 struct arcana_jails_jails_jail_start_input {
 	char			 _empty;	/* nothing in it */
@@ -1665,6 +1773,7 @@ struct arcana_jails_jails_jail {
 		const char	*const	*v;
 	}			 plugin;
 	const char	*lne;
+	const struct arcana_jails_jails_jail_arcpkg_packages	*arcpkg_packages;
 };
 
 /* container */
@@ -1784,6 +1893,80 @@ struct arcana_services_services {
 /* data */
 struct arcana_services {
 	const struct arcana_services_services	*services;
+};
+
+/* list entry */
+struct arcana_packages_packages_package {
+	const char	*name;
+	const char	*installed;
+	const char	*available;
+	bool			 has_automatic;
+	bool		 automatic;
+	const char	*comment;
+	bool			 has_size;
+	uint64_t	 size;
+	const char	*origin;
+};
+
+/* input */
+struct arcana_packages_packages_refresh_input {
+	bool			 has_ip_version;
+	enum arcana_packages_packages_refresh_input_ip_version	 ip_version;
+};
+
+/* output */
+struct arcana_packages_packages_refresh_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* input */
+struct arcana_packages_packages_upgrade_input {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 name;
+	bool			 has_dry_run;
+	bool		 dry_run;
+	bool			 has_ignore_osversion;
+	bool		 ignore_osversion;
+	bool			 has_ip_version;
+	enum arcana_packages_packages_upgrade_input_ip_version	 ip_version;
+};
+
+/* list entry */
+struct arcana_packages_packages_upgrade_output_package {
+	const char	*name;
+	const char	*installed;
+	const char	*available;
+	bool			 has_automatic;
+	bool		 automatic;
+	const char	*comment;
+	bool			 has_size;
+	uint64_t	 size;
+	const char	*origin;
+};
+
+/* output */
+struct arcana_packages_packages_upgrade_output {
+	bool			 has_upgraded;
+	uint32_t	 upgraded;
+	struct {
+		size_t		 n;
+		const struct arcana_packages_packages_upgrade_output_package	*v;
+	}			 package;
+};
+
+/* container */
+struct arcana_packages_packages {
+	struct {
+		size_t		 n;
+		const struct arcana_packages_packages_package	*v;
+	}			 package;
+};
+
+/* data */
+struct arcana_packages {
+	const struct arcana_packages_packages	*packages;
 };
 
 /*
@@ -2158,6 +2341,34 @@ int	arcana_jails_jails_jail_param_encode(const struct arcana_jails_jails_jail_pa
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_param_decode(const void *, size_t, struct arcana_jails_jails_jail_param *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcpkg_packages_package_encode(const struct arcana_jails_jails_jail_arcpkg_packages_package *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcpkg_packages_package_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages_package *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcpkg_packages_refresh_input_encode(const struct arcana_jails_jails_jail_arcpkg_packages_refresh_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcpkg_packages_refresh_input_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages_refresh_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcpkg_packages_refresh_output_encode(const struct arcana_jails_jails_jail_arcpkg_packages_refresh_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcpkg_packages_refresh_output_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages_refresh_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcpkg_packages_upgrade_input_encode(const struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcpkg_packages_upgrade_input_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package_encode(const struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output_package *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcpkg_packages_upgrade_output_encode(const struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcpkg_packages_upgrade_output_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_arcpkg_packages_encode(const struct arcana_jails_jails_jail_arcpkg_packages *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_arcpkg_packages_decode(const void *, size_t, struct arcana_jails_jails_jail_arcpkg_packages *,
+	    cbl_yarena *, int, char *, size_t);
 int	arcana_jails_jails_jail_start_input_encode(const struct arcana_jails_jails_jail_start_input *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_jail_start_input_decode(const void *, size_t, struct arcana_jails_jails_jail_start_input *,
@@ -2242,6 +2453,34 @@ int	arcana_services_services_encode(const struct arcana_services_services *,
 	    struct cbl_ybuf *);
 int	arcana_services_services_decode(const void *, size_t, struct arcana_services_services *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_packages_packages_package_encode(const struct arcana_packages_packages_package *,
+	    struct cbl_ybuf *);
+int	arcana_packages_packages_package_decode(const void *, size_t, struct arcana_packages_packages_package *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_packages_packages_refresh_input_encode(const struct arcana_packages_packages_refresh_input *,
+	    struct cbl_ybuf *);
+int	arcana_packages_packages_refresh_input_decode(const void *, size_t, struct arcana_packages_packages_refresh_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_packages_packages_refresh_output_encode(const struct arcana_packages_packages_refresh_output *,
+	    struct cbl_ybuf *);
+int	arcana_packages_packages_refresh_output_decode(const void *, size_t, struct arcana_packages_packages_refresh_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_packages_packages_upgrade_input_encode(const struct arcana_packages_packages_upgrade_input *,
+	    struct cbl_ybuf *);
+int	arcana_packages_packages_upgrade_input_decode(const void *, size_t, struct arcana_packages_packages_upgrade_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_packages_packages_upgrade_output_package_encode(const struct arcana_packages_packages_upgrade_output_package *,
+	    struct cbl_ybuf *);
+int	arcana_packages_packages_upgrade_output_package_decode(const void *, size_t, struct arcana_packages_packages_upgrade_output_package *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_packages_packages_upgrade_output_encode(const struct arcana_packages_packages_upgrade_output *,
+	    struct cbl_ybuf *);
+int	arcana_packages_packages_upgrade_output_decode(const void *, size_t, struct arcana_packages_packages_upgrade_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_packages_packages_encode(const struct arcana_packages_packages *,
+	    struct cbl_ybuf *);
+int	arcana_packages_packages_decode(const void *, size_t, struct arcana_packages_packages *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -2272,6 +2511,12 @@ int	ietf_logical_network_element_logical_network_elements_edit(cbl_req *, const 
 int	ietf_logical_network_element_bind_lne_name_failed_notification(const struct ietf_logical_network_element_bind_lne_name_failed *,
 	    struct cbl_ybuf *);
 int	arcana_jails_jails_get(cbl_req *, struct arcana_jails *, cbl_yarena *);
+int	arcana_jails_jails_jail_arcpkg_packages_refresh_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_arcpkg_packages_refresh_input *,
+	    struct arcana_jails_jails_jail_arcpkg_packages_refresh_output *, cbl_yarena *);
+int	arcana_jails_jails_jail_arcpkg_packages_upgrade_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_arcpkg_packages_upgrade_input *,
+	    struct arcana_jails_jails_jail_arcpkg_packages_upgrade_output *, cbl_yarena *);
 int	arcana_jails_jails_jail_start_action(cbl_req *, const struct cbl_bytes *,
 	    const struct arcana_jails_jails_jail_start_input *,
 	    struct arcana_jails_jails_jail_start_output *, cbl_yarena *);
@@ -2299,5 +2544,12 @@ int	arcana_services_services_service_restart_action(cbl_req *, const struct cbl_
 int	arcana_services_services_service_reload_action(cbl_req *, const struct cbl_bytes *,
 	    const struct arcana_services_services_service_reload_input *,
 	    struct arcana_services_services_service_reload_output *, cbl_yarena *);
+int	arcana_packages_packages_get(cbl_req *, struct arcana_packages *, cbl_yarena *);
+int	arcana_packages_packages_refresh_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_packages_packages_refresh_input *,
+	    struct arcana_packages_packages_refresh_output *, cbl_yarena *);
+int	arcana_packages_packages_upgrade_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_packages_packages_upgrade_input *,
+	    struct arcana_packages_packages_upgrade_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */
