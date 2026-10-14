@@ -105,6 +105,28 @@ int	yservices_apply(struct work *w, const char *name, int enable,
 	    const struct arc_variable *vars, size_t nvars, const char **errp);
 
 /*
+ * arcana-packages (ira/ypackages.c, ira/packages.c), the host's or a
+ * jail's alike (a jail's structs have the host's layout):
+ * ypackages_from() pkg-installed's reply, each with its newer version
+ * from the outdated reply (NULL: not asked); ypackages_upgraded()
+ * pkg-upgrade's reply as the upgrade action's output; the refresh and
+ * upgrade actions, as the operations do them.
+ */
+struct arc_packages_rsp;
+struct arc_pkg_upgrade_rsp;
+int	ypackages_from(const struct arc_packages_rsp *installed,
+	    const struct arc_packages_rsp *outdated, cbl_yarena *a,
+	    struct arcana_packages_packages *out);
+int	ypackages_upgraded(const struct arc_pkg_upgrade_rsp *rsp,
+	    cbl_yarena *a, struct arcana_packages_packages_upgrade_output *out);
+int	ypackages_refresh(struct work *w, const char *jail, uint8_t ip,
+	    const char **errp);
+int	ypackages_upgrade(struct work *w, const char *jail,
+	    const struct arcana_packages_packages_upgrade_input *in,
+	    cbl_yarena *a, struct arcana_packages_packages_upgrade_output *out,
+	    const char **errp);
+
+/*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
  * them (invidia/ylne.c).
  */

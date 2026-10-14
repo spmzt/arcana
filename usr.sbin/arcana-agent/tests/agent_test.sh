@@ -5291,6 +5291,37 @@ EOF
 	atf_check -o file:want sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
 }
 
+atf_test_case yang_packages
+yang_packages_head()
+{
+	atf_set "descr" "the packages operations' replies as arcana-packages" \
+	    "has them (PLAN-SDN-YANG 3.1.3): installed and outdated merged," \
+	    "the host's and a jail's through YANG-CBOR and back, an" \
+	    "upgrade's output"
+}
+yang_packages_body()
+{
+	cat > want <<'EOF'
+host bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
+host curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
+host git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
+host vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
+host yang-cbor 225 bytes, the same back
+back bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
+back curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
+back git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
+back vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
+jail yang-cbor 236 bytes, the same back
+web bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
+web curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
+web git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
+web vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
+upgraded 1
+upgrade curl installed=8.16.0 available=8.17.0 automatic=- size=- origin=- comment=-
+EOF
+	atf_check -o file:want "$(atf_get_srcdir)/ypackages"
+}
+
 atf_test_case yang_services
 yang_services_head()
 {
@@ -5955,6 +5986,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_jails
+	atf_add_test_case yang_packages
 	atf_add_test_case yang_services
 	atf_add_test_case yang_lne
 	atf_add_test_case yang_ni_conf

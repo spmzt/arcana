@@ -370,8 +370,14 @@
   leaf); ira/yservices.c from do_services()'s and do_service_config()'s
   replies, yservices_diff() a configuration wanted into what
   service-action and service-config take (its rcvar refused as a
-  variable), yservices_apply() doing it (yang_services). Next: 3.1.3,
-  arcana-packages, and the rest of 3.1 in turn; 2.8,
+  variable), yservices_apply() doing it (yang_services). 3.1.3:
+  packages and pkg-upgrade converted to share/yang/arcana-packages
+  (62 300): the packages installed, each with the newer version the
+  repository has, the host's and a running jail's (an augment of
+  arcana-jails's jail, the same grouping); refresh and upgrade as
+  actions (ira/ypackages.c, packages.c; yang_packages). The upgrade
+  runs as the operation does, not yet as a job: arcana-jobs, 3.1.4,
+  next, and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
