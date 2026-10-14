@@ -5,8 +5,8 @@
  */
 
 /*
- * The YANG collectors (PLAN-SDN-YANG 1.9, 1.10, 2.4): the host's state as the
- * IETF modules model it, into the structs cblink-gen made of them
+ * The YANG collectors (PLAN-SDN-YANG 1.9, 1.10, 2.4): the host's state as
+ * the IETF modules model it, into the structs cblink-gen made of them
  * (ymodel.h, ymodel_schema.c, from share/yang).  What a collector
  * allocates is the arena's.  0, or an errno.
  */
@@ -31,5 +31,27 @@ int	yip_interfaces(struct ietf_interfaces_interfaces_interface *v,
  * routes, with v4ur's and v6ur's leaves (invidia/yrt.c).
  */
 int	yrt_routing(struct ietf_routing *data, int fib, cbl_yarena *a);
+
+/*
+ * rc.conf's static routes, as rc.d/routing installs them, and
+ * ietf-routing's static control-plane-protocol (invidia/rcroutes.c).
+ * rcr_read(): FIB fib's of the files rc(8) reads, in its order; what
+ * the model cannot hold, or reading cannot tell, in *u (malloc'd), the
+ * variable and why.  rcr_write(): sr's into fragment f, Arcana's, what
+ * it wrote there before replaced; err says what is refused.
+ */
+struct vc_file;
+struct rcr_unread {
+	const char	*var;
+	const char	*why;
+};
+
+int	rcr_read(const struct vc_file *files, size_t nfiles, int fib,
+	    cbl_yarena *a,
+	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes **out,
+	    struct rcr_unread **u, size_t *nu);
+int	rcr_write(struct vc_file *f, int fib,
+	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *sr,
+	    char *err, size_t errlen);
 
 #endif /* !_ARCANA_COLLECT_H_ */
