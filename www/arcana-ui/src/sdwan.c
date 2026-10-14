@@ -43,6 +43,13 @@ static void	 text_field(struct html *, const char *, const char *, const char *,
 		    const char *, const char *);
 static ucl_object_t *list_of(const char *);
 static const ucl_object_t *swvc_shown(void);
+static int	 count_change(const char *);
+static void	 view_guide(struct html *, bool);
+static char	*routes_text(const ucl_object_t *);
+static void	 communities_text(const ucl_object_t *, char *, size_t);
+static ucl_object_t *communities_of(const char *);
+static const ucl_object_t *edge_unlinked(void);
+static void	 plan_load(void);
 static void	 paths_load(void);
 static void	 plan_load(void);
 static void	 send(const char *, bool);
@@ -59,6 +66,8 @@ static void	 put_int(ucl_object_t *, const char *, const char *);
 static struct {
 	int		 tab;
 	ucl_object_t	*doc;		/* /api/sdwan */
+	bool		 blocked;	/* the box open waits for something
+					 * else first: no button to keep it */
 	char		*text;		/* the Document tab's box */
 	char		 swvc[72];	/* the service shown */
 	char		 error[600];
@@ -87,6 +96,7 @@ static struct {
 	char		 edit2[80];	/* what it belongs to: an end point, a zone */
 	char		 link_host[9];
 	char		 link_if[32];
+	bool		 ep_remote;	/* the end point form: a remote one */
 	ucl_object_t	*ifs;		/* the link host's interfaces */
 	bool		 ifs_loading;
 	bool		 show_kept;	/* the Edges tab shows what stays too */
@@ -1173,18 +1183,168 @@ view_dashboard(struct html *h)
 			i++;
 		}
 		h_raw(h, "</svg></div></div>");
-	} else
-		h_raw(h, "<div class=\"sd-block sd-start\"><h3>Start here</h3><ol>"
-		    "<li><b>Underlays</b>: the carriers the edges reach each "
-		    "other over, public or private, and the tunnel each "
-		    "carries.</li><li><b>Edges</b>: the FreeBSD hosts, and the "
-		    "interface each has on each underlay.</li><li><b>A service"
-		    "</b>: its UNIs, zones, application flows and policies.</li>"
-		    "<li><b>Edges, Apply</b>: the console plans what each host "
-		    "is to have and makes it.</li></ol><p class=\"dim\">The "
-		    "example in <b>Document</b> has all four, written for the "
-		    "first two hosts.</p></div>");
+	}
 	view_overview(h);
+}
+
+/* Whether the box open waits for something else first. */
+bool
+sdwan_blocked(void)
+{
+
+	return (sd.blocked);
+}
+
+/* ---- The way through: what to make, and in which order -------------- */
+
+/*
+ * The steps of an SD-WAN, as MEF 70.2 builds one: the underlays, the
+ * edges and their links on them, then a service with its end points,
+ * zones, application flows and policies, then the plan deployed.  Each
+ * step is done when the document has it; the first not done is the one
+ * to take, and its button opens its form.
+ */
+enum gstep { G_UCS, G_EDGES, G_LINKS, G_SWVC, G_EPS, G_ZONES, G_FLOWS,
+    G_POLICIES, G_DEPLOY, G_N };
+
+static const struct {
+	const char	*key;		/* sd-go's argument */
+	const char	*title;
+	const char	*what;		/* in plain words */
+	const char	*add;		/* its button */
+} gsteps[G_N] = {
+	[G_UCS] = { "ucs", "Underlays", "The networks the edges reach each "
+	    "other over: the Internet, an MPLS VPN, LTE. Each says whether "
+	    "it is public and which tunnel it carries.", "+ underlay" },
+	[G_EDGES] = { "edge", "Edges", "The FreeBSD hosts that carry the "
+	    "service: each stands between a subscriber's network and the "
+	    "underlays.", "+ edge" },
+	[G_LINKS] = { "link", "WAN links", "Where each edge meets each "
+	    "underlay: its interface there, the address and the gateway. "
+	    "Tunnels run between links on the same underlay.", "+ WAN link" },
+	[G_SWVC] = { "service", "A service", "One SD-WAN for one subscriber "
+	    "(an SWVC): which underlays it may use, and its own routing "
+	    "table on each edge.", "+ service" },
+	[G_EPS] = { "ep", "End points", "Where the subscriber's network "
+	    "plugs into the service: an interface of an edge (a UNI) and "
+	    "its addresses.", "+ end point" },
+	[G_ZONES] = { "zone", "Zones", "Groups of the subscriber's "
+	    "addresses, by prefix: 'office' as 10.1.0.0/16. What a zone may "
+	    "reach is said by its policies.", "+ zone" },
+	[G_FLOWS] = { "flow", "Applications", "The traffic the policies "
+	    "tell apart, by port, protocol, DSCP or application: 'voice' as "
+	    "UDP 5060.", "+ application" },
+	[G_POLICIES] = { "policy", "Policies", "How an application is "
+	    "carried: encrypted or not, over which underlays, with what "
+	    "delay and loss at most, and whether it may go straight to the "
+	    "Internet.", "+ policy" },
+	[G_DEPLOY] = { "deploy", "Deploy", "The console plans what each "
+	    "edge is to have, shows every change, and makes it when you "
+	    "say so.", "Review and deploy" },
+};
+
+/* The first edge with no WAN link yet, or NULL. */
+static const ucl_object_t *
+edge_unlinked(void)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+
+	it = NULL;
+	while ((e = ucl_object_iterate(jget(sd.doc, "edges"), &it, true)) !=
+	    NULL)
+		if (ucl_array_size(jget(e, "ucs_end_points")) == 0)
+			return (e);
+	return (NULL);
+}
+
+static bool
+gstep_done(enum gstep g)
+{
+	const ucl_object_t	*sw = swvc_shown();
+	int			 todo;
+
+	switch (g) {
+	case G_UCS:
+		return (ucl_array_size(jget(sd.doc, "ucs")) > 0);
+	case G_EDGES:
+		return (ucl_array_size(jget(sd.doc, "edges")) > 0);
+	case G_LINKS:
+		return (gstep_done(G_EDGES) && edge_unlinked() == NULL);
+	case G_SWVC:
+		return (sw != NULL);
+	case G_EPS:
+		return (sw != NULL && ucl_array_size(jget(sw, "end_points")) >
+		    0 && ucl_array_size(jget(sw, "ucs")) > 0);
+	case G_ZONES:
+		return (sw != NULL && ucl_array_size(jget(sw, "zones")) > 0);
+	case G_FLOWS:
+		return (sw != NULL && ucl_array_size(jget(sw, "flows")) > 0);
+	case G_POLICIES:
+		return (sw != NULL && ucl_array_size(jget(sw, "policies")) > 0);
+	case G_DEPLOY:
+		if (sd.plan == NULL || sd.plan_error[0] != '\0')
+			return (false);
+		todo = count_change("make") + count_change("remake") +
+		    count_change("unmake");
+		return (todo == 0 && count_change("keep") > 0);
+	case G_N:
+		break;
+	}
+	return (false);
+}
+
+/*
+ * The steps, as a row of them: done, the one to take now, and those
+ * after it.  full: each said in words, on the dashboard; else a line of
+ * them above a tab, until all are done.
+ */
+static void
+view_guide(struct html *h, bool full)
+{
+	int	 g, next = -1;
+
+	for (g = 0; g < G_N && next < 0; g++)
+		if (!gstep_done((enum gstep)g))
+			next = g;
+	if (next < 0)
+		return;
+	h_fmt(h, "<div class=\"sd-guide%s\"><div class=\"sd-guide-head\">"
+	    "<h3>Setting up an SD-WAN</h3><span class=\"dim\">step %d of %d"
+	    "</span></div>", full ? " full" : "", next + 1, G_N);
+	h_raw(h, "<ol>");
+	for (g = 0; g < G_N; g++) {
+		const char *st = gstep_done((enum gstep)g) ? "done" : g == next ?
+		    "now" : "later";
+
+		h_fmt(h, "<li class=\"g-%s\"><span class=\"g-num\">%s</span>"
+		    "<div class=\"g-body\"><b>", st, strcmp(st, "done") == 0 ?
+		    "✓" : "");
+		h_txt(h, gsteps[g].title);
+		h_raw(h, "</b>");
+		if (full || g == next) {
+			h_raw(h, "<p>");
+			h_txt(h, gsteps[g].what);
+			h_raw(h, "</p>");
+		}
+		if (g == next) {
+			h_raw(h, "<button class=\"primary small\" data-act=\""
+			    "sd-go\"");
+			h_attr(h, "data-arg", gsteps[g].key);
+			h_raw(h, ">");
+			h_txt(h, gsteps[g].add);
+			h_raw(h, "</button>");
+		}
+		h_raw(h, "</div></li>");
+	}
+	h_raw(h, "</ol>");
+	if (full)
+		h_raw(h, "<p class=\"dim\">Each step is kept as you go, checked "
+		    "as far as it goes; nothing changes on a host until you "
+		    "deploy, and each change is shown first. The example in "
+		    "<b>Document</b> has every step, written for the first two "
+		    "hosts.</p>");
+	h_raw(h, "</div>");
 }
 
 static void
@@ -1381,9 +1541,10 @@ view_overview(struct html *h)
 		    ucl_array_size(jget(sw, "policies")) : 0);
 	}
 	if (n == 0)
-		h_raw(h, "<tr><td colspan=\"7\" class=\"dim\">None yet. Write "
-		    "one in <b>Document</b>, or start from the example there."
-		    "</td></tr>");
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"7\">None yet. "
+		    "<button class=\"ghost small\" data-act=\"sd-go\" "
+		    "data-arg=\"service\">+ service</button> or start from the "
+		    "example in <b>Document</b>.</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 }
 
@@ -1442,31 +1603,43 @@ view_service(struct html *h)
 	ucl_object_iter_t	 it, mit;
 	int			 n;
 
-	h_raw(h, "<div class=\"toolbar\"><label class=\"inline\">Service "
-	    "<select data-input=\"sd-swvc\">");
-	it = NULL;
-	while ((v = ucl_object_iterate(jget(sd.doc, "swvcs"), &it, true)) !=
-	    NULL) {
-		h_raw(h, "<option");
-		h_attr(h, "value", jstr(v, "id"));
-		if (strcmp(jstr(v, "id"), sd.swvc) == 0)
-			h_raw(h, " selected");
-		h_raw(h, ">");
-		h_txt(h, jstr(v, "id"));
-		h_raw(h, "</option>");
-	}
-	h_raw(h, "</select></label><button class=\"ghost small\" data-act=\""
-	    "sd-swvc-add\">+ service</button>");
+	view_guide(h, false);
 	if ((sw = swvc_shown()) == NULL) {
-		h_raw(h, "</div><p class=\"dim\">No service yet: add one, then "
-		    "its end points, zones, flows and policies.</p>");
 		if (sd.error[0] != '\0') {
 			h_raw(h, "<div class=\"notice bad\">");
 			h_txt(h, sd.error);
 			h_raw(h, "</div>");
 		}
+		h_raw(h, "<div class=\"empty\"><h2>No service yet</h2><p>A "
+		    "service is one SD-WAN for one subscriber: the underlays "
+		    "it may use, where its networks plug in, and how each of "
+		    "their applications is carried.</p><button class=\"primary"
+		    "\" data-act=\"sd-swvc-add\">+ service</button></div>");
 		return;
 	}
+	h_raw(h, "<div class=\"toolbar\">");
+	if (ucl_array_size(jget(sd.doc, "swvcs")) > 1) {
+		h_raw(h, "<label class=\"inline\">Service <select data-input="
+		    "\"sd-swvc\">");
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "swvcs"), &it,
+		    true)) != NULL) {
+			h_raw(h, "<option");
+			h_attr(h, "value", jstr(v, "id"));
+			if (strcmp(jstr(v, "id"), jstr(sw, "id")) == 0)
+				h_raw(h, " selected");
+			h_raw(h, ">");
+			h_txt(h, jstr(v, "id"));
+			h_raw(h, "</option>");
+		}
+		h_raw(h, "</select></label>");
+	} else {
+		h_raw(h, "<h3 class=\"inline\">Service ");
+		h_txt(h, jstr(sw, "id"));
+		h_raw(h, "</h3>");
+	}
+	h_raw(h, "<button class=\"ghost small\" data-act=\"sd-swvc-add\">+ "
+	    "service</button>");
 	h_raw(h, "<button class=\"icon\" data-act=\"sd-swvc-edit\" title=\""
 	    "Change the service\"");
 	h_attr(h, "data-arg", jstr(sw, "id"));
@@ -1586,6 +1759,10 @@ map:
 		h_attr(h, "data-arg", jstr(e, "id"));
 		h_raw(h, ">×</button></td></tr>");
 	}
+	if (ucl_array_size(jget(sw, "end_points")) == 0)
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"8\">No end point yet: where the subscriber's network plugs in, an interface of an edge and its addresses. "
+		    "<button class=\"ghost small\" data-act=\"sd-ep-add\">+ end point</button>"
+		    "</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 
 	/* Zones. */
@@ -1637,6 +1814,10 @@ map:
 		h_attr(h, "data-arg", jstr(v, "name"));
 		h_raw(h, ">×</button></td></tr>");
 	}
+	if (ucl_array_size(jget(sw, "zones")) == 0)
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"4\">No zone yet: a group of the subscriber's addresses, by prefix, whose applications the policies carry. "
+		    "<button class=\"ghost small\" data-act=\"sd-zone-add\">+ zone</button>"
+		    "</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 
 	/* Application flows, in the order they are matched. */
@@ -1663,6 +1844,10 @@ map:
 		h_attr(h, "data-arg", jstr(v, "name"));
 		h_raw(h, ">×</button></td></tr>");
 	}
+	if (ucl_array_size(jget(sw, "flows")) == 0)
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"5\">No application yet: traffic named by port, protocol, DSCP or application, for the policies to tell apart. "
+		    "<button class=\"ghost small\" data-act=\"sd-flow-add\">+ application</button>"
+		    "</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 
 	/* Policies. */
@@ -1690,55 +1875,82 @@ map:
 		h_attr(h, "data-arg", jstr(v, "name"));
 		h_raw(h, ">×</button></td></tr>");
 	}
+	if (ucl_array_size(jget(sw, "policies")) == 0)
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"4\">No policy yet: how an application is carried, encrypted or not, over which underlays, how fast and how well. "
+		    "<button class=\"ghost small\" data-act=\"sd-policy-add\">+ policy</button>"
+		    "</td></tr>");
 	h_raw(h, "</tbody></table></div>");
 
-	/* Virtual topologies and rate limiters, when there are any. */
-	if (jget(sw, "topologies") != NULL && ucl_array_size(jget(sw,
-	    "topologies")) > 0) {
-		h_raw(h, "<div class=\"sd-block\"><h3>Virtual topologies <small "
-		    "class=\"dim\">§9.6; Swvc, all to all, is always there"
-		    "</small></h3><table class=\"net sd\"><thead><tr><th>Name</th>"
-		    "<th>Type</th><th>End points</th></tr></thead><tbody>");
-		it = NULL;
-		while ((v = ucl_object_iterate(jget(sw, "topologies"), &it,
-		    true)) != NULL) {
-			h_raw(h, "<tr><td class=\"mono\">");
-			h_txt(h, jstr(v, "name"));
-			h_raw(h, "</td><td>");
-			h_txt(h, jstr(v, "type"));
-			h_raw(h, "</td><td>");
-			if (jget(v, "roots") != NULL) {
-				h_raw(h, "roots ");
-				joined(h, jget(v, "roots"), "—");
-				h_raw(h, "; leaves ");
-				joined(h, jget(v, "leaves"), "—");
-			} else
-				joined(h, jget(v, "end_points"), "—");
-			h_raw(h, "</td></tr>");
-		}
-		h_raw(h, "</tbody></table></div>");
+	/* Virtual topologies and rate limiters. */
+	h_raw(h, "<div class=\"sd-block\"><h3>Virtual topologies <small class="
+	    "\"dim\">which end points may reach which, §9.6; Swvc, all to "
+	    "all, is always there</small><span class=\"pane-actions\"><button "
+	    "class=\"ghost small\" data-act=\"sd-topo-add\">+ topology"
+	    "</button></span></h3><table class=\"net sd\"><thead><tr><th>Name"
+	    "</th><th>Type</th><th>End points</th><th></th></tr></thead>"
+	    "<tbody>");
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sw, "topologies"), &it, true)) !=
+	    NULL) {
+		h_raw(h, "<tr><td class=\"mono\">");
+		h_txt(h, jstr(v, "name"));
+		h_raw(h, "</td><td>");
+		h_txt(h, jstr(v, "type"));
+		h_raw(h, "</td><td>");
+		if (jget(v, "roots") != NULL) {
+			h_raw(h, "roots ");
+			joined(h, jget(v, "roots"), "—");
+			h_raw(h, "; leaves ");
+			joined(h, jget(v, "leaves"), "—");
+		} else
+			joined(h, jget(v, "end_points"), "—");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" "
+		    "data-act=\"sd-topo-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-topo-del\" title=\"Take it away\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">×</button></td></tr>");
 	}
-	if (jget(sw, "rate_limiters") != NULL && ucl_array_size(jget(sw,
-	    "rate_limiters")) > 0) {
-		h_raw(h, "<div class=\"sd-block\"><h3>Rate limiters <small "
-		    "class=\"dim\">shared per end point, §9.9</small></h3>"
-		    "<table class=\"net sd\"><thead><tr><th>Name</th><th>Commit"
-		    "</th><th>Limit</th></tr></thead><tbody>");
-		it = NULL;
-		while ((v = ucl_object_iterate(jget(sw, "rate_limiters"), &it,
-		    true)) != NULL) {
-			h_raw(h, "<tr><td class=\"mono\">");
-			h_txt(h, jstr(v, "name"));
-			h_raw(h, "</td><td>");
-			h_txt(h, bits(jint(v, "commit", 0)));
-			h_raw(h, "</td><td>");
-			h_txt(h, jget(v, "limit") != NULL && ucl_object_type(
-			    jget(v, "limit")) == UCL_INT ? bits(jint(v, "limit",
-			    0)) : "none");
-			h_raw(h, "</td></tr>");
-		}
-		h_raw(h, "</tbody></table></div>");
+	if (ucl_array_size(jget(sw, "topologies")) == 0)
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"4\">None: every "
+		    "end point reaches every other. A topology lets some reach "
+		    "only some, a hub and its spokes. <button class=\"ghost "
+		    "small\" data-act=\"sd-topo-add\">+ topology</button></td>"
+		    "</tr>");
+	h_raw(h, "</tbody></table></div>");
+	h_raw(h, "<div class=\"sd-block\"><h3>Rate limiters <small class=\""
+	    "dim\">bandwidth shared by the applications whose policy names "
+	    "it, at each end point, §9.9</small><span class=\"pane-actions\">"
+	    "<button class=\"ghost small\" data-act=\"sd-lim-add\">+ rate "
+	    "limiter</button></span></h3><table class=\"net sd\"><thead><tr>"
+	    "<th>Name</th><th>Committed</th><th>At most</th><th></th></tr>"
+	    "</thead><tbody>");
+	it = NULL;
+	while ((v = ucl_object_iterate(jget(sw, "rate_limiters"), &it, true)) !=
+	    NULL) {
+		h_raw(h, "<tr><td class=\"mono\">");
+		h_txt(h, jstr(v, "name"));
+		h_raw(h, "</td><td>");
+		h_txt(h, bits(jint(v, "commit", 0)));
+		h_raw(h, "</td><td>");
+		h_txt(h, jget(v, "limit") != NULL && ucl_object_type(jget(v,
+		    "limit")) == UCL_INT ? bits(jint(v, "limit", 0)) : "none");
+		h_raw(h, "</td><td class=\"acts\"><button class=\"icon\" "
+		    "data-act=\"sd-lim-edit\" title=\"Change it\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">&#9998;</button><button class=\"icon\" data-act=\""
+		    "sd-lim-del\" title=\"Take it away\"");
+		h_attr(h, "data-arg", jstr(v, "name"));
+		h_raw(h, ">×</button></td></tr>");
 	}
+	if (ucl_array_size(jget(sw, "rate_limiters")) == 0)
+		h_raw(h, "<tr class=\"empty-row\"><td colspan=\"4\">None. A "
+		    "policy may give its applications a bandwidth of their own, "
+		    "or name a rate limiter they share. <button class=\"ghost "
+		    "small\" data-act=\"sd-lim-add\">+ rate limiter</button>"
+		    "</td></tr>");
+	h_raw(h, "</tbody></table></div>");
 }
 
 /* ---- The edges -------------------------------------------------------- */
@@ -2032,6 +2244,7 @@ view_edges(struct html *h)
 	}
 	todo = sd.plan != NULL ? count_change("make") + count_change(
 	    "remake") + count_change("unmake") : 0;
+	view_guide(h, false);
 	view_needs(h, true);
 	h_fmt(h, "<div class=\"toolbar\"><button class=\"primary small\" "
 	    "data-act=\"sd-apply-ask\"%s title=\"Make on the edges what the "
@@ -3424,24 +3637,29 @@ view_security(struct html *h)
 	char			 age[32];
 	int			 n;
 
-	h_raw(h, "<div class=\"toolbar\"><label class=\"inline\">Service "
-	    "<select data-input=\"sd-swvc\">");
-	it = NULL;
-	while ((v = ucl_object_iterate(jget(sd.doc, "swvcs"), &it, true)) !=
-	    NULL) {
-		h_raw(h, "<option");
-		h_attr(h, "value", jstr(v, "id"));
-		if (strcmp(jstr(v, "id"), sd.swvc) == 0)
-			h_raw(h, " selected");
-		h_raw(h, ">");
-		h_txt(h, jstr(v, "id"));
-		h_raw(h, "</option>");
-	}
-	h_raw(h, "</select></label></div>");
 	if ((sw = swvc_shown()) == NULL) {
-		h_raw(h, "<p class=\"dim\">No service yet: the Services tab adds "
-		    "one.</p>");
+		h_raw(h, "<div class=\"empty\"><h2>No service yet</h2><p>The "
+		    "security policies are a service's: what its networks may "
+		    "reach, which names they may look up, what is scanned. Add "
+		    "a service first.</p><button class=\"primary\" data-act=\""
+		    "sd-go\" data-arg=\"service\">+ service</button></div>");
 		return;
+	}
+	if (ucl_array_size(jget(sd.doc, "swvcs")) > 1) {
+		h_raw(h, "<div class=\"toolbar\"><label class=\"inline\">"
+		    "Service <select data-input=\"sd-swvc\">");
+		it = NULL;
+		while ((v = ucl_object_iterate(jget(sd.doc, "swvcs"), &it,
+		    true)) != NULL) {
+			h_raw(h, "<option");
+			h_attr(h, "value", jstr(v, "id"));
+			if (strcmp(jstr(v, "id"), jstr(sw, "id")) == 0)
+				h_raw(h, " selected");
+			h_raw(h, ">");
+			h_txt(h, jstr(v, "id"));
+			h_raw(h, "</option>");
+		}
+		h_raw(h, "</select></label></div>");
 	}
 	view_zt(h, sw);
 	h_raw(h, "<h2 class=\"sd-sect\">Security Functions</h2>");
@@ -3821,8 +4039,15 @@ view_document(struct html *h)
 	    "sd-example\" title=\"A service with two edges, written out, to "
 	    "be made your own before it is kept\">Start from an example"
 	    "</button><button type=\"button\" class=\"ghost small\" "
-	    "data-act=\"sd-revert\">Back to the kept one</button></div>"
-	    "</form>", sd.busy ? " disabled" : "", sd.busy ? " disabled" : "");
+	    "data-act=\"sd-revert\">Back to the kept one</button>"
+	    "<span class=\"sep\"></span><button type=\"button\" class=\""
+	    "ghost small\" data-act=\"sd-export\" title=\"The kept one as "
+	    "a JSON file, to keep elsewhere or to start another from\">"
+	    "Export</button><label class=\"button ghost small\" title=\"A "
+	    "document from a file, put in the box: check it, then keep it\">"
+	    "Import<input type=\"file\" accept=\"application/json,.json\" "
+	    "data-file=\"sd-import\" hidden></label></div></form>",
+	    sd.busy ? " disabled" : "", sd.busy ? " disabled" : "");
 }
 
 void
@@ -3869,6 +4094,8 @@ view_sdwan(struct html *h)
 	else if (sd.tab == SD_DOCUMENT)
 		view_document(h);
 	else {
+		/* Not set up yet: the way through first. */
+		view_guide(h, true);
 		view_needs(h, false);
 		view_dashboard(h);
 	}
@@ -3959,6 +4186,7 @@ sdwan_modal(struct html *h)
 	char			 buf[120];
 	int			 i, n;
 
+	sd.blocked = false;
 	if (sdwan_modal_service(h))
 		return (true);
 	if (app.modal == MODAL_SD_UCS) {
@@ -4016,10 +4244,21 @@ sdwan_modal(struct html *h)
 		    "type=\"checkbox\" name=\"esn\" value=\"1\"%s> Extended "
 		    "sequence numbers (ESN)</label><label class=\"toggle\"><input "
 		    "type=\"checkbox\" name=\"encap\" value=\"1\"%s> ESP in UDP, "
-		    "port 4500 (through NAT)</label></div></div></fieldset>", t ==
+		    "port 4500 (through NAT)</label></div></div>", t ==
 		    NULL || jget(t, "esn") == NULL || jbool(t, "esn") ? " checked" :
 		    "", t == NULL || jget(t, "encap") == NULL || jbool(t, "encap")
 		    ? " checked" : "");
+		{
+			char	lt[32];
+
+			snprintf(lt, sizeof(lt), "%lld", (long long)jint(t,
+			    "lifetime", 0));
+			text_field(h, "Keys turned every, seconds", "lifetime",
+			    jint(t, "lifetime", 0) > 0 ? lt : "", "86400", "120 "
+			    "seconds to a year; both ends turn them at the half "
+			    "of it.");
+		}
+		h_raw(h, "</fieldset>");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_EDGE) {
@@ -4033,25 +4272,62 @@ sdwan_modal(struct html *h)
 		    "type=\"hidden\" name=\"was\"", e != NULL ? "An edge, changed" :
 		    "An edge");
 		h_attr(h, "value", sd.edit);
-		h_raw(h, "><label>Host<select name=\"host\" autofocus>");
-		n = 0;
-		for (i = 0; i < app.nservers; i++) {
-			if (e == NULL && edge_by(app.servers[i].id) != NULL)
-				continue;
-			if (e != NULL && strcmp(app.servers[i].id, sd.edit) != 0)
-				continue;
-			option(h, app.servers[i].id, app.servers[i].name, NULL);
-			n++;
+		h_raw(h, ">");
+		for (i = n = 0; i < app.nservers; i++)
+			if ((e == NULL && edge_by(app.servers[i].id) == NULL) ||
+			    (e != NULL && strcmp(app.servers[i].id, sd.edit) == 0))
+				n++;
+		if (n == 0) {
+			sd.blocked = true;
+			h_raw(h, "<div class=\"notice\">Every host the console has "
+			    "is an edge already. A host joins the console from "
+			    "<b>Devices</b>, + host, with arcana-agent on it.</div>");
+		} else {
+			h_raw(h, "<label>Host<select name=\"host\" autofocus>");
+			for (i = 0; i < app.nservers; i++) {
+				if (e == NULL && edge_by(app.servers[i].id) != NULL)
+					continue;
+				if (e != NULL && strcmp(app.servers[i].id, sd.edit) !=
+				    0)
+					continue;
+				option(h, app.servers[i].id, app.servers[i].name,
+				    NULL);
+			}
+			h_raw(h, "</select></label>");
 		}
-		h_raw(h, "</select>");
-		if (n == 0)
-			h_raw(h, "<small>Every host the console has is an edge "
-			    "already.</small>");
-		h_raw(h, "</label>");
+		/* Rarely set: folded, open only when it is. */
+		h_raw(h, "<details class=\"sd-more\"");
+		if (e != NULL && ucl_array_size(jget(e, "ntp")) > 0)
+			h_raw(h, " open");
+		h_raw(h, "><summary>Advanced</summary>");
 		text_field(h, "NTP servers", "ntp", e != NULL ? csv(jget(e, "ntp"),
-		    ntp, sizeof(ntp)) : "", "0.freebsd.pool.ntp.org", "With "
-		    "commas; the edge keeps time by them (ntpd), so faults line "
-		    "up and keys turn together. Empty: as the host is.");
+		    ntp, sizeof(ntp)) : "", "0.freebsd.pool.ntp.org", "Only if "
+		    "the host does not keep time already: the edge's clock "
+		    "lines up faults and key turns with the other edges "
+		    "(ntpd). Empty: the host as it is.");
+		h_raw(h, "</details>");
+		/* What it does to the host, before anything is done. */
+		h_raw(h, "<details class=\"sd-effects\"" );
+		if (e == NULL)
+			h_raw(h, " open");
+		h_raw(h, "><summary>What this changes on the host</summary><ul>"
+		    "<li>IP forwarding turned on, for IPv4 and IPv6 (<code>"
+		    "net.inet.ip.forwarding</code>, <code>net.inet6.ip6."
+		    "forwarding</code>), kept in <code>/etc/sysctl.conf</code>."
+		    "</li><li>With NTP servers: <code>ntpd</code>(8) set to them, "
+		    "in <code>/etc/ntp.conf</code> and <code>rc.conf</code>."
+		    "</li><li>Each WAN link: its interface addressed by DHCP "
+		    "(<code>dhclient</code>) or SLAAC (<code>rtsol</code>) "
+		    "where it says so, put in its own routing table (<code>"
+		    "ifconfig fib</code>) where it has one, BIRD for its BGP or "
+		    "OSPF.</li><li>Once a service uses it: more routing tables "
+		    "(<code>net.fibs</code>), the service's tunnels (gre(4), "
+		    "gif(4), geneve(4), wg(4), ipsec(4)) in its table, its "
+		    "routes, <code>ipfw</code>(8) rules in set 30, and BIRD, "
+		    "strongSwan, local-unbound, Squid or Suricata as the "
+		    "service asks.</li></ul><p>Nothing changes until you <b>"
+		    "Deploy</b>, and each change is listed first. What the "
+		    "console made it can take away again.</p></details>");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_LINK) {
@@ -4067,7 +4343,16 @@ sdwan_modal(struct html *h)
 		h_attr(h, "value", sd.link_host);
 		h_raw(h, "><input type=\"hidden\" name=\"was\"");
 		h_attr(h, "value", sd.edit);
-		h_raw(h, "><div class=\"two\"><label>Underlay<select name=\"ucs\">");
+		h_raw(h, ">");
+		if (ucl_array_size(jget(sd.doc, "ucs")) == 0) {
+			sd.blocked = true;
+			h_raw(h, "<div class=\"notice\">No underlay yet: a WAN "
+			    "link is an edge's interface on one. <button class="
+			    "\"ghost small\" data-act=\"sd-ucs-add\">+ underlay"
+			    "</button></div>");
+			return (true);
+		}
+		h_raw(h, "<div class=\"two\"><label>Underlay<select name=\"ucs\">");
 		it = NULL;
 		while ((u = ucl_object_iterate(jget(sd.doc, "ucs"), &it, true)) !=
 		    NULL)
@@ -4180,6 +4465,39 @@ sdwan_modal(struct html *h)
 			    0));
 			text_field(h, "OSPF area", "ospf_area", os != NULL ? nb : "",
 			    "0", "Set, OSPF with the underlay on the interface.");
+			h_raw(h, "</div><div class=\"two\"><label>BGP family<select "
+			    "name=\"bgp_fam\">");
+			option(h, "both", "IPv4 and IPv6", jstr(bg, "family"));
+			option(h, "ipv4", "IPv4", jstr(bg, "family"));
+			option(h, "ipv6", "IPv6", jstr(bg, "family"));
+			h_raw(h, "</select></label>");
+			snprintf(nb, sizeof(nb), "%lld", (long long)jint(bg,
+			    "hold_time", 0));
+			text_field(h, "BGP hold time, seconds", "bgp_hold", jint(bg,
+			    "hold_time", 0) > 0 ? nb : "", "90", NULL);
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(nb, sizeof(nb), "%lld", (long long)jint(bg,
+			    "distance", 0));
+			text_field(h, "BGP distance", "bgp_dist", jint(bg, "distance",
+			    0) > 0 ? nb : "", "20", "1 to 255: how much its routes "
+			    "are believed against others.");
+			communities_text(jget(bg, "communities"), lb3, sizeof(lb3));
+			text_field(h, "BGP communities", "bgp_comm", lb3,
+			    "65000:100", "as:value, by commas.");
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(nb, sizeof(nb), "%lld", (long long)jint(os, "cost",
+			    0));
+			text_field(h, "OSPF cost", "ospf_cost", jint(os, "cost", 0) >
+			    0 ? nb : "", "10", NULL);
+			snprintf(nb, sizeof(nb), "%lld", (long long)jint(os, "hello",
+			    0));
+			text_field(h, "OSPF hello, seconds", "ospf_hello", jint(os,
+			    "hello", 0) > 0 ? nb : "", "10", NULL);
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(nb, sizeof(nb), "%lld", (long long)jint(os, "dead",
+			    0));
+			text_field(h, "OSPF dead, seconds", "ospf_dead", jint(os,
+			    "dead", 0) > 0 ? nb : "", "40", NULL);
 			h_raw(h, "</div></fieldset>");
 		}
 		return (true);
@@ -4450,10 +4768,151 @@ sdwan_modal_service(struct html *h)
 		text_field(h, "Damping, intervals in a row", "tca_damping", buf,
 		    "1", NULL);
 		h_raw(h, "</div></fieldset>");
+		{
+			const ucl_object_t	*imp = jget(o, "importance"), *pb =
+			    jget(o, "probe"), *iv = jget(o, "intervals");
+			char			 lb[400];
+			static const struct {
+				const char	*key, *label, *ph, *help;
+			} probes[] = {
+				{ "interval", "Probe every, ms", "1000", NULL },
+				{ "size", "Probe size, bytes", "64", NULL },
+				{ "dscp", "Probe DSCP", "0", "As the traffic it "
+				    "stands for: 46 for voice." },
+				{ "timeout", "A reply waited for, ms", "1000", NULL },
+				{ "down", "Down after so many missed", "3", NULL },
+				{ "up", "Up after so many replies", "3", NULL },
+				{ "history", "Samples kept", "3600", NULL },
+				{ "report", "Reported every so many intervals",
+				    "1", NULL },
+			};
+
+			h_raw(h, "<details class=\"sd-more\"><summary>Application "
+			    "groups, importance, probes and timers</summary>");
+			h_raw(h, "<div class=\"two\">");
+			text_field(h, "Application groups", "groups", csv(jget(o,
+			    "groups"), lb, sizeof(lb)), "voip, web", "Names that "
+			    "group applications, by commas; a rule may name a "
+			    "group (§9.13).");
+			h_raw(h, "</div><div class=\"two\">");
+			text_field(h, "Importance levels", "imp_levels", csv(jget(
+			    imp, "levels"), lb, sizeof(lb)), "high, normal, low",
+			    "From the most important, by commas: a policy names "
+			    "one, and the more important is carried first when "
+			    "bandwidth is short (§9.11).");
+			text_field(h, "Importance by default", "imp_default", jstr(
+			    imp, "default"), "normal", NULL);
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(jget(o,
+			    "bfd"), "multiplier", 3));
+			text_field(h, "BFD: missed before down", "bfd_mult", buf,
+			    "3", "2 to 10.");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(iv,
+			    "arrival", 100));
+			text_field(h, "A sample arrives within, ms", "iv_arrival",
+			    buf, "100", "Shorter than the evaluation interval "
+			    "(§9.7).");
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(iv, "ir",
+			    500));
+			text_field(h, "Information rate interval, ms", "iv_ir", buf,
+			    "500", "1000 at most.");
+			h_raw(h, "</div><fieldset><legend>The probes on the "
+			    "tunnels <small class=\"dim\">STAMP-like, the agent's "
+			    "own; empty: as the agent has them</small></legend>"
+			    "<div class=\"two\">");
+			for (i = 0; i < (int)nitems(probes); i++) {
+				char	name[24];
+
+				snprintf(name, sizeof(name), "pb_%s", probes[i].key);
+				snprintf(buf, sizeof(buf), "%lld", (long long)jint(pb,
+				    probes[i].key, 0));
+				text_field(h, probes[i].label, name, jget(pb,
+				    probes[i].key) != NULL ? buf : "", probes[i].ph,
+				    probes[i].help);
+				if (i % 2 == 1 && i + 1 < (int)nitems(probes))
+					h_raw(h, "</div><div class=\"two\">");
+			}
+			h_raw(h, "</div></fieldset></details>");
+		}
 		return (true);
 	}
 	if (sw == NULL)
 		return (false);
+	if (app.modal == MODAL_SD_LIMITER) {
+		o = sd.edit[0] != '\0' ? jfind(jget(sw, "rate_limiters"), "name",
+		    sd.edit) : NULL;
+		h_fmt(h, "<form data-form=\"sd-lim\"><h2>%s</h2><p>A bandwidth "
+		    "the applications whose policy names it share at each end "
+		    "point (§9.9): what they are promised, and what they may "
+		    "take at most when there is room (dummynet(4) pipes on the "
+		    "edges).</p><input type=\"hidden\" name=\"was\"", o != NULL ?
+		    "A rate limiter, changed" : "A rate limiter");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, ">");
+		text_field(h, "Name", "name", jstr(o, "name"), "bulk", NULL);
+		h_raw(h, "<div class=\"two\">");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(o, "commit", 0));
+		text_field(h, "Committed, bits per second", "commit", o != NULL ?
+		    buf : "", "10000000", "What they always have.");
+		snprintf(buf, sizeof(buf), "%lld", (long long)jint(o, "limit", 0));
+		text_field(h, "At most, bits per second", "limit", o != NULL &&
+		    ucl_object_type(jget(o, "limit")) == UCL_INT ? buf : "",
+		    "none", "As much as there is, if empty.");
+		h_raw(h, "</div>");
+		return (true);
+	}
+	if (app.modal == MODAL_SD_TOPO) {
+		const ucl_object_t	*ep;
+
+		o = sd.edit[0] != '\0' ? jfind(jget(sw, "topologies"), "name",
+		    sd.edit) : NULL;
+		h_fmt(h, "<form data-form=\"sd-topo\"><h2>%s</h2><p>Which end "
+		    "points reach which (§9.6): all those in it reach each "
+		    "other; with roots, a root reaches every leaf and a leaf "
+		    "only the roots, a hub and its spokes. A policy names the "
+		    "topology its applications keep to.</p><input type=\"hidden"
+		    "\" name=\"was\"", o != NULL ? "A topology, changed" :
+		    "A topology");
+		h_attr(h, "value", sd.edit);
+		h_raw(h, ">");
+		if (ucl_array_size(jget(sw, "end_points")) < 2) {
+			sd.blocked = true;
+			h_raw(h, "<div class=\"notice\">A topology is of two end "
+			    "points at least: the service has fewer. <button "
+			    "class=\"ghost small\" data-act=\"sd-ep-add\">+ end "
+			    "point</button></div>");
+			return (true);
+		}
+		text_field(h, "Name", "name", jstr(o, "name"), "hub", NULL);
+		h_raw(h, "<table class=\"net sd\"><thead><tr><th>End point</th>"
+		    "<th>In it</th></tr></thead><tbody>");
+		it = NULL;
+		n = 0;
+		while ((ep = ucl_object_iterate(jget(sw, "end_points"), &it,
+		    true)) != NULL) {
+			const char	*role = jfind_str(jget(o, "roots"), jstr(ep,
+			    "id")) ? "root" : jfind_str(jget(o, "leaves"),
+			    jstr(ep, "id")) ? "leaf" : jfind_str(jget(o,
+			    "end_points"), jstr(ep, "id")) ? "member" : "";
+
+			h_raw(h, "<tr><td class=\"mono\">");
+			h_txt(h, jstr(ep, "id"));
+			h_raw(h, "</td><td>");
+			h_fmt(h, "<input type=\"hidden\" name=\"ep_%d\"", n);
+			h_attr(h, "value", jstr(ep, "id"));
+			h_fmt(h, "><select name=\"role_%d\">", n++);
+			option(h, "", "not in it", role);
+			option(h, "member", "in it: reaches all the others",
+			    role);
+			option(h, "root", "a root: reaches every leaf", role);
+			option(h, "leaf", "a leaf: reaches the roots alone",
+			    role);
+			h_raw(h, "</select></td></tr>");
+		}
+		h_raw(h, "</tbody></table>");
+		return (true);
+	}
 	if (app.modal == MODAL_SD_ZONE) {
 		o = sd.edit[0] != '\0' ? jfind(jget(sw, "zones"), "name", sd.edit)
 		    : NULL;
@@ -4494,8 +4953,29 @@ sdwan_modal_service(struct html *h)
 		    "Someone reaching a service from afar, by WireGuard, at one of "
 		    "its remote end points (SASE-3): a console user, by the name "
 		    "of their sign-in key, or a name of its own. The key pair is "
-		    "made here, and the configuration shown once.</p>"
-		    "<label>At<select name=\"at\">");
+		    "made here, and the configuration shown once.</p>");
+		{
+			bool	any = false;
+
+			sit = NULL;
+			while ((s2 = ucl_object_iterate(jget(sd.doc, "swvcs"),
+			    &sit, true)) != NULL) {
+				eit = NULL;
+				while ((e2 = ucl_object_iterate(jget(s2,
+				    "end_points"), &eit, true)) != NULL)
+					if (jget(e2, "remote") != NULL)
+						any = true;
+			}
+			if (!any) {
+				sd.blocked = true;
+				h_raw(h, "<div class=\"notice\">No remote end point "
+				    "yet: one is where people reach a service from "
+				    "afar, a WireGuard interface of an edge. Add one "
+				    "to a service, under <b>End points</b>.</div>");
+				return (true);
+			}
+		}
+		h_raw(h, "<label>At<select name=\"at\">");
 		sit = NULL;
 		while ((s2 = ucl_object_iterate(jget(sd.doc, "swvcs"), &sit, true))
 		    != NULL) {
@@ -4750,7 +5230,22 @@ sdwan_modal_service(struct html *h)
 		text_field(h, "To prefixes", "dst", crit_text(cr, jget(cr, "dav6")
 		    != NULL ? "dav6" : "dav4", buf, sizeof(buf)), "10.2.0.0/24",
 		    NULL);
+		h_raw(h, "</div><details class=\"sd-more\"");
+		if (jget(cr, "sdav4") != NULL || jget(cr, "sdav6") != NULL ||
+		    jget(cr, "sdport") != NULL || jget(cr, "ethertype") != NULL)
+			h_raw(h, " open");
+		h_raw(h, "><summary>Either way, and by EtherType</summary><div "
+		    "class=\"two\">");
+		text_field(h, "From or to prefixes", "both", crit_text(cr, jget(cr,
+		    "sdav6") != NULL ? "sdav6" : "sdav4", buf, sizeof(buf)),
+		    "10.9.0.0/16", "Traffic of these, whichever way it goes.");
+		text_field(h, "From or to ports", "sdport", crit_text(cr,
+		    "sdport", buf, sizeof(buf)), "5060", NULL);
 		h_raw(h, "</div>");
+		text_field(h, "EtherType", "ethertype", crit_text(cr, "ethertype",
+		    buf, sizeof(buf)), "0x88cc", "Frames of another protocol than "
+		    "IP, by number.");
+		h_raw(h, "</details>");
 		return (true);
 	}
 	if (app.modal == MODAL_SD_POLICY) {
@@ -4813,6 +5308,14 @@ sdwan_modal_service(struct html *h)
 			option(h, "discard", "discard: the flow is dropped leaving "
 			    "by the UNI (R85)", jstr(cr, "egress-block"));
 			h_raw(h, "</select></label>");
+			h_raw(h, "<label>Security policy<select name=\"af-security-egress\">");
+			option(h, "", "none", jstr(cr, "af-security-egress"));
+			it = NULL;
+			while ((m = ucl_object_iterate(jget(sw, "security_policies"), &it,
+			    true)) != NULL)
+				option(h, jstr(m, "name"), jstr(m, "name"), jstr(cr, "af-security-egress"));
+			h_raw(h, "</select><small>What it is let through, under <b>"
+			    "Security</b> (MEF 88).</small></label>");
 			return (true);
 		}
 		h_raw(h, "<div class=\"two\">");
@@ -4892,7 +5395,43 @@ sdwan_modal_service(struct html *h)
 		    ucl_object_type(v) == UCL_OBJECT && jget(v, "limit") != NULL &&
 		    ucl_object_type(jget(v, "limit")) == UCL_INT ? buf : "", "",
 		    "At most; empty for none.");
-		h_raw(h, "</div></fieldset>");
+		h_raw(h, "</div></fieldset><div class=\"two\">");
+		h_raw(h, "<label>Keeps to the topology<select name=\"topology\">");
+		option(h, "", "Swvc: every end point", jstr(cr,
+		    "virtual-topology"));
+		it = NULL;
+		while ((m = ucl_object_iterate(jget(sw, "topologies"), &it, true)) !=
+		    NULL)
+			option(h, jstr(m, "name"), jstr(m, "name"), jstr(cr,
+			    "virtual-topology"));
+		h_raw(h, "</select><small>The end points its flows may go between "
+		    "(§9.6).</small></label>");
+		h_raw(h, "<label>Security policy<select name=\"af-security-ingress\">");
+		option(h, "", "none", jstr(cr, "af-security-ingress"));
+		it = NULL;
+		while ((m = ucl_object_iterate(jget(sw, "security_policies"), &it,
+		    true)) != NULL)
+			option(h, jstr(m, "name"), jstr(m, "name"), jstr(cr, "af-security-ingress"));
+		h_raw(h, "</select><small>What it is let through, under <b>"
+		    "Security</b> (MEF 88).</small></label>");
+		h_raw(h, "</div>");
+		{
+			const ucl_object_t	*sc;
+			char			 sec[300];
+			size_t			 so = 0;
+
+			sec[0] = '\0';
+			it = NULL;
+			while ((sc = ucl_object_iterate(jget(jget(cr, "performance"),
+			    "secondary"), &it, true)) != NULL && so < sizeof(sec))
+				so += (size_t)snprintf(sec + so, sizeof(sec) - so,
+				    "%s%s %g", so > 0 ? ", " : "", jstr(sc, "metric") !=
+				    NULL ? jstr(sc, "metric") : "", jnum(sc,
+				    "threshold", 0));
+			text_field(h, "Also at most", "secondary", sec, "loss 0.01, "
+			    "ipdv 10", "Other metrics a tunnel is to meet, each a "
+			    "metric and its threshold, by commas (§9.12.2.9).");
+		}
 		return (true);
 	}
 	if (app.modal == MODAL_SD_EP) {
@@ -4906,7 +5445,16 @@ sdwan_modal_service(struct html *h)
 		    "for them.</p><input type=\"hidden\" name=\"was\"", o != NULL ?
 		    "An end point, changed" : "An end point");
 		h_attr(h, "value", sd.edit);
-		h_raw(h, "><div class=\"two\">");
+		h_raw(h, ">");
+		if (ucl_array_size(jget(sd.doc, "edges")) == 0) {
+			sd.blocked = true;
+			h_raw(h, "<div class=\"notice\">No edge yet: an end point "
+			    "is an interface of one. <button class=\"ghost small"
+			    "\" data-act=\"sd-go\" data-arg=\"edge\">+ edge"
+			    "</button></div>");
+			return (true);
+		}
+		h_raw(h, "<div class=\"two\">");
 		text_field(h, "Id", "id", jstr(o, "id"), "hq", NULL);
 		h_raw(h, "<label>Edge<select name=\"edge\" data-input=\"sd-ep-edge"
 		    "\">");
@@ -4915,7 +5463,41 @@ sdwan_modal_service(struct html *h)
 		    != NULL)
 			option(h, jstr(e, "server"), host_name(jstr(e, "server")),
 			    sd.link_host[0] != '\0' ? sd.link_host : jstr(o, "edge"));
-		h_raw(h, "</select></label></div><div class=\"two\">");
+		h_raw(h, "</select></label></div>");
+		h_raw(h, "<label>What plugs in here<select name=\"kind\" "
+		    "data-input=\"sd-ep-kind\">");
+		option(h, "uni", "The subscriber's network: an interface of the "
+		    "edge (a UNI)", sd.ep_remote ? "remote" : "uni");
+		option(h, "remote", "People from afar: a WireGuard interface (a "
+		    "remote end point)", sd.ep_remote ? "remote" : "uni");
+		h_raw(h, "</select></label>");
+		if (sd.ep_remote) {
+			const ucl_object_t	*r = jget(o, "remote");
+
+			h_raw(h, "<div class=\"two\">");
+			text_field(h, "WireGuard interface", "rif", jstr(r,
+			    "interface"), "wg10", "Made on the edge, in the "
+			    "service's routing table (wg(4)).");
+			text_field(h, "Their addresses from", "rprefix", jstr(r,
+			    "prefix"), "100.65.0.0/24", "One address an identity, "
+			    "kept for it; /30 or larger.");
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(r,
+			    "port", 0));
+			text_field(h, "UDP port", "rport", jint(r, "port", 0) > 0 ?
+			    buf : "", "51820", NULL);
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(r,
+			    "reauth", 0) / 3600);
+			text_field(h, "Authorised for, hours", "rauth", jint(r,
+			    "reauth", 0) > 0 ? buf : "", "720", "After it, an "
+			    "identity's peer goes until it is issued again; an "
+			    "hour to a year. Empty: it does not lapse.");
+			h_raw(h, "</div><p class=\"dim\">Who may come in is issued "
+			    "under <b>Identities</b>, each with a zone and a key "
+			    "pair of its own.</p>");
+			return (true);
+		}
+		h_raw(h, "<div class=\"two\">");
 		ifn = sd.link_if[0] != '\0' ? sd.link_if : jstr(u, "interface");
 		h_raw(h, "<label>Interface");
 		if (sd.ifs_loading)
@@ -4982,6 +5564,8 @@ sdwan_modal_service(struct html *h)
 		    jstr(v, "mode"));
 		option(h, "dhcp", "DHCPv6: given by the edge (dnsmasq)", jstr(v,
 		    "mode"));
+		option(h, "ll-only", "Link-local only: no subnet", jstr(v,
+		    "mode"));
 		h_raw(h, "</select><small>SLAAC by the base system's rtadvd, a "
 		    "/64; DHCPv6 by dnsmasq, the hosts told to ask by its "
 		    "advertisements.</small></label>");
@@ -4997,6 +5581,92 @@ sdwan_modal_service(struct html *h)
 		    v) == UCL_OBJECT ? jstr(v, "public_prefix") : "", "198.51.100.0/"
 		    "30", "For breakout: the hosts are translated to its first "
 		    "address, by ipfw nat (§10.5). Empty: none.");
+		{
+			const ucl_object_t	*bgp = jget(u, "bgp"), *ospf = jget(u,
+			    "ospf");
+			char			*rt;
+			char			 nb[400], cm[400];
+
+			h_raw(h, "<details class=\"sd-more\"");
+			if (jget(u, "routes") != NULL || bgp != NULL || ospf != NULL ||
+			    jget(u, "max_frame") != NULL)
+				h_raw(h, " open");
+			h_raw(h, "><summary>Routes behind it, BGP, OSPF, and more"
+			    "</summary>");
+			v = jget(o, "nat");
+			text_field(h, "Not translated", "natx", v != NULL &&
+			    ucl_object_type(v) == UCL_OBJECT ? csv(jget(v,
+			    "exceptions"), nb, sizeof(nb)) : "", "10.0.0.0/8",
+			    "Destinations reached without NAT, by commas.");
+			rt = routes_text(jget(u, "routes"));
+			h_raw(h, "<label>Static routes<textarea name=\"routes\" "
+			    "rows=\"3\" class=\"mono\" spellcheck=\"false\" "
+			    "placeholder=\"10.2.0.0/16 10.1.0.254\">");
+			h_txt(h, rt);
+			free(rt);
+			h_raw(h, "</textarea><small>The subscriber's networks behind "
+			    "a router of theirs at this UNI: a line each, the "
+			    "prefix, the next hop, and a distance if it is to be "
+			    "(§11.6.1).</small></label>");
+			h_raw(h, "<fieldset><legend>BGP with the subscriber <small "
+			    "class=\"dim\">§11.6.2, by BIRD; empty: none</small>"
+			    "</legend><div class=\"two\">");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(bgp,
+			    "as", 0));
+			text_field(h, "Their AS", "bgp_as", bgp != NULL ? buf : "",
+			    "65010", NULL);
+			text_field(h, "Their addresses", "bgp_nb", csv(jget(bgp,
+			    "neighbors"), nb, sizeof(nb)), "10.1.0.2", "At the UNI, "
+			    "by commas.");
+			h_raw(h, "</div><div class=\"two\"><label>Family<select "
+			    "name=\"bgp_fam\">");
+			option(h, "both", "IPv4 and IPv6", jstr(bgp, "family"));
+			option(h, "ipv4", "IPv4", jstr(bgp, "family"));
+			option(h, "ipv6", "IPv6", jstr(bgp, "family"));
+			h_raw(h, "</select></label>");
+			text_field(h, "Password (TCP MD5)", "bgp_pw", jstr(bgp,
+			    "password"), "", NULL);
+			h_raw(h, "</div><div class=\"two\">");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(bgp,
+			    "hold_time", 0));
+			text_field(h, "Hold time, seconds", "bgp_hold", jint(bgp,
+			    "hold_time", 0) > 0 ? buf : "", "90", NULL);
+			communities_text(jget(bgp, "communities"), cm, sizeof(cm));
+			text_field(h, "Communities", "bgp_comm", cm, "65000:100",
+			    "Put on the routes learned, by commas.");
+			h_raw(h, "</div></fieldset><fieldset><legend>OSPF with the "
+			    "subscriber <small class=\"dim\">§11.6.3, by BIRD; "
+			    "empty area: none</small></legend><div class=\"two\">");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(ospf,
+			    "area", 0));
+			text_field(h, "Area", "ospf_area", ospf != NULL ? buf : "",
+			    "0", "0 the backbone.");
+			h_raw(h, "<label>Family<select name=\"ospf_fam\">");
+			option(h, "ipv4", "IPv4 (OSPFv2)", jstr(ospf, "family"));
+			option(h, "ipv6", "IPv6 (OSPFv3)", jstr(ospf, "family"));
+			option(h, "both", "Both", jstr(ospf, "family"));
+			h_raw(h, "</select></label></div><div class=\"two\">");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(ospf,
+			    "cost", 0));
+			text_field(h, "Cost", "ospf_cost", jint(ospf, "cost", 0) > 0
+			    ? buf : "", "10", NULL);
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(ospf,
+			    "hello", 0));
+			text_field(h, "Hello, seconds", "ospf_hello", jint(ospf,
+			    "hello", 0) > 0 ? buf : "", "10", NULL);
+			h_raw(h, "</div></fieldset><div class=\"two\">");
+			snprintf(buf, sizeof(buf), "%lld", (long long)jint(u,
+			    "max_frame", 0));
+			text_field(h, "Largest frame, bytes", "mf", jint(u,
+			    "max_frame", 0) > 0 ? buf : "", "1522", "1522 or more "
+			    "(R126). Empty: the interface's own.");
+			v = jget(o, "availability");
+			snprintf(buf, sizeof(buf), "%g", v != NULL ?
+			    ucl_object_todouble(v) : 0.0);
+			text_field(h, "Availability promised, %", "avail", v != NULL ?
+			    buf : "", "99.9", NULL);
+			h_raw(h, "</div></details>");
+		}
 		return (true);
 	}
 	if (app.modal == MODAL_SD_MAP) {
@@ -5023,7 +5693,23 @@ sdwan_modal_service(struct html *h)
 		h_attr(h, "value", sd.edit2);
 		h_raw(h, "><input type=\"hidden\" name=\"was\"");
 		h_attr(h, "value", sd.edit);
-		h_raw(h, "><div class=\"two\">");
+		h_raw(h, ">");
+		if ((!zone_wide && ucl_array_size(jget(sw, "zones")) == 0) ||
+		    (ucl_array_size(jget(sw, "flows")) == 0 &&
+		    ucl_array_size(jget(sw, "groups")) == 0)) {
+			sd.blocked = true;
+			h_raw(h, "<div class=\"notice\">A rule is of a zone's "
+			    "applications: the service has no ");
+			h_raw(h, !zone_wide && ucl_array_size(jget(sw, "zones")) ==
+			    0 ? "zone" : "application");
+			h_raw(h, " yet. <button class=\"ghost small\" data-act=\"");
+			h_raw(h, !zone_wide && ucl_array_size(jget(sw, "zones")) ==
+			    0 ? "sd-zone-add\">+ zone" : "sd-flow-add\">+ "
+			    "application");
+			h_raw(h, "</button></div>");
+			return (true);
+		}
+		h_raw(h, "<div class=\"two\">");
 		if (!zone_wide) {
 			h_raw(h, "<label>Zone<select name=\"zone\">");
 			it = NULL;
@@ -5031,6 +5717,8 @@ sdwan_modal_service(struct html *h)
 			    != NULL)
 				option(h, jstr(v, "name"), jstr(v, "name"), jstr(m,
 				    "zone"));
+			option(h, "Internet", "Internet: what comes in from it",
+			    jstr(m, "zone"));
 			h_raw(h, "</select></label>");
 		}
 		h_raw(h, "<label>Flow or group<select name=\"app\">");
@@ -5127,6 +5815,7 @@ sd_forms(const char *form, const ucl_object_t *f)
 			    "esn")), "esn", 0, false);
 			ucl_object_insert_key(t, ucl_object_frombool(checked(f,
 			    "encap")), "encap", 0, false);
+			put_int(t, "lifetime", jstr(f, "lifetime"));
 		} else if (checked(f, "ipsec") && (jstr(f, "kind") == NULL ||
 		    strcmp(jstr(f, "kind"), "wg") != 0))
 			ucl_object_insert_key(t, ucl_object_frombool(true), "ipsec",
@@ -5272,8 +5961,17 @@ sd_forms(const char *form, const ucl_object_t *f)
 
 			if ((v = jstr(f, "bgp_as")) != NULL && v[0] != '\0') {
 				bg = ucl_object_typed_new(UCL_OBJECT);
-				put_str(bg, "family", "both");
+				put_str(bg, "family", jstr(f, "bgp_fam") != NULL &&
+				    jstr(f, "bgp_fam")[0] != '\0' ? jstr(f,
+				    "bgp_fam") : "both");
 				put_int(bg, "as", v);
+				put_int(bg, "hold_time", jstr(f, "bgp_hold"));
+				put_int(bg, "distance", jstr(f, "bgp_dist"));
+				if (jstr(f, "bgp_comm") != NULL && jstr(f,
+				    "bgp_comm")[0] != '\0')
+					ucl_object_insert_key(bg, communities_of(
+					    jstr(f, "bgp_comm")), "communities", 0,
+					    false);
 				if ((v = jstr(f, "bgp_neighbors")) != NULL && v[0] !=
 				    '\0')
 					ucl_object_insert_key(bg, list_of(v), "neighbors",
@@ -5287,6 +5985,9 @@ sd_forms(const char *form, const ucl_object_t *f)
 				bg = ucl_object_typed_new(UCL_OBJECT);
 				put_str(bg, "family", "both");
 				put_int(bg, "area", v);
+				put_int(bg, "cost", jstr(f, "ospf_cost"));
+				put_int(bg, "hello", jstr(f, "ospf_hello"));
+				put_int(bg, "dead", jstr(f, "ospf_dead"));
 				ucl_object_insert_key(rt, bg, "ospf", 0, false);
 			}
 			if (ucl_object_iterate(rt, &(ucl_object_iter_t){ NULL }, true)
@@ -5382,12 +6083,174 @@ put_list(ucl_object_t *o, const char *key, const char *v)
 }
 
 
+/* A UNI's static routes as lines: "prefix next-hop [distance]". */
+static char *
+routes_text(const ucl_object_t *routes)
+{
+	const ucl_object_t	*r;
+	ucl_object_iter_t	 it;
+	struct html		 b;
+
+	memset(&b, 0, sizeof(b));
+	it = NULL;
+	while ((r = ucl_object_iterate(routes, &it, true)) != NULL) {
+		h_fmt(&b, "%s %s", jstr(r, "prefix") != NULL ? jstr(r,
+		    "prefix") : "", jstr(r, "next_hop") != NULL ? jstr(r,
+		    "next_hop") : "");
+		if (jget(r, "distance") != NULL)
+			h_fmt(&b, " %lld", (long long)jint(r, "distance", 0));
+		h_raw(&b, "\n");
+	}
+	return (b.s != NULL ? h_take(&b) : strdup(""));
+}
+
+static ucl_object_t *
+routes_of(const char *text)
+{
+	ucl_object_t	*arr, *r;
+	char		*copy, *p, *line, *w[3];
+	int		 n;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	if (text == NULL)
+		return (arr);
+	p = copy = strdup(text);
+	while ((line = strsep(&p, "\n")) != NULL) {
+		for (n = 0; n < 3 && (w[n] = strsep(&line, " \t")) != NULL; )
+			if (w[n][0] != '\0')
+				n++;
+		if (n < 2)
+			continue;
+		r = ucl_object_typed_new(UCL_OBJECT);
+		put_str(r, "prefix", w[0]);
+		put_str(r, "next_hop", w[1]);
+		if (n == 3)
+			put_int(r, "distance", w[2]);
+		ucl_array_append(arr, r);
+	}
+	free(copy);
+	return (arr);
+}
+
+/* BGP communities as "as:value, ...", and back as [[as, value], ...]. */
+static void
+communities_text(const ucl_object_t *c, char *buf, size_t len)
+{
+	const ucl_object_t	*e;
+	ucl_object_iter_t	 it;
+	size_t			 o = 0;
+
+	buf[0] = '\0';
+	it = NULL;
+	while ((e = ucl_object_iterate(c, &it, true)) != NULL && o < len)
+		o += (size_t)snprintf(buf + o, len - o, "%s%lld:%lld", o > 0 ?
+		    ", " : "", (long long)ucl_object_toint(ucl_array_find_index(
+		    e, 0)), (long long)ucl_object_toint(ucl_array_find_index(e,
+		    1)));
+}
+
+static ucl_object_t *
+communities_of(const char *text)
+{
+	const ucl_object_t	*e;
+	ucl_object_t		*words, *arr, *pair;
+	ucl_object_iter_t	 it;
+	const char		*w, *c;
+
+	arr = ucl_object_typed_new(UCL_ARRAY);
+	words = list_of(text);
+	it = NULL;
+	while ((e = ucl_object_iterate(words, &it, true)) != NULL) {
+		w = ucl_object_tostring(e);
+		if ((c = strchr(w, ':')) == NULL)
+			continue;
+		pair = ucl_object_typed_new(UCL_ARRAY);
+		ucl_array_append(pair, ucl_object_fromint(strtoll(w, NULL, 10)));
+		ucl_array_append(pair, ucl_object_fromint(strtoll(c + 1, NULL,
+		    10)));
+		ucl_array_append(arr, pair);
+	}
+	ucl_object_unref(words);
+	return (arr);
+}
+
+/* A rate limiter's or a topology's form, into the service. */
+static bool
+sd_small_forms(const char *form, const ucl_object_t *f)
+{
+	ucl_object_t	*doc, *sw, *o, *eps, *roots, *leaves;
+	const char	*was, *id, *role;
+	char		 name[24];
+	int		 i;
+
+	if (sd.doc == NULL)
+		return (true);
+	if (jstr(f, "name") == NULL || jstr(f, "name")[0] == '\0') {
+		snprintf(app.modal_error, sizeof(app.modal_error), "It has a "
+		    "name");
+		return (true);
+	}
+	was = jstr(f, "was") != NULL ? jstr(f, "was") : "";
+	doc = ucl_object_copy(sd.doc);
+	if ((sw = swvc_mut(doc)) == NULL) {
+		ucl_object_unref(doc);
+		return (true);
+	}
+	o = ucl_object_typed_new(UCL_OBJECT);
+	put_str(o, "name", jstr(f, "name"));
+	if (strcmp(form, "sd-lim") == 0) {
+		put_int(o, "commit", jstr(f, "commit") != NULL && jstr(f,
+		    "commit")[0] != '\0' ? jstr(f, "commit") : "0");
+		if (jstr(f, "limit") != NULL && jstr(f, "limit")[0] != '\0')
+			put_int(o, "limit", jstr(f, "limit"));
+		else
+			ucl_object_insert_key(o, ucl_object_typed_new(UCL_NULL),
+			    "limit", 0, false);
+		list_put(sw, "rate_limiters", "name", was, o);
+	} else {
+		eps = ucl_object_typed_new(UCL_ARRAY);
+		roots = ucl_object_typed_new(UCL_ARRAY);
+		leaves = ucl_object_typed_new(UCL_ARRAY);
+		for (i = 0; i < 256; i++) {
+			snprintf(name, sizeof(name), "ep_%d", i);
+			if ((id = jstr(f, name)) == NULL)
+				break;
+			snprintf(name, sizeof(name), "role_%d", i);
+			role = jstr(f, name) != NULL ? jstr(f, name) : "";
+			if (role[0] != '\0')
+				ucl_array_append(strcmp(role, "member") == 0 ?
+				    eps : strcmp(role, "root") == 0 ? roots :
+				    leaves, ucl_object_fromstring(id));
+		}
+		/* With roots or leaves, rooted; the members are leaves. */
+		if (ucl_array_size(roots) > 0 || ucl_array_size(leaves) > 0) {
+			ucl_object_t	*e;
+
+			while ((e = ucl_array_pop_first(eps)) != NULL)
+				ucl_array_append(leaves, e);
+			put_str(o, "type", "rooted-multipoint");
+			ucl_object_insert_key(o, roots, "roots", 0, false);
+			ucl_object_insert_key(o, leaves, "leaves", 0, false);
+			ucl_object_unref(eps);
+		} else {
+			put_str(o, "type", "multipoint-to-multipoint");
+			ucl_object_insert_key(o, eps, "end_points", 0, false);
+			ucl_object_unref(roots);
+			ucl_object_unref(leaves);
+		}
+		list_put(sw, "topologies", "name", was, o);
+	}
+	app.modal = MODAL_NONE;
+	doc_send(doc);
+	return (true);
+}
+
 /* The service's parts: the forms' answers into the document. */
 static bool
 sd_service_forms(const char *form, const ucl_object_t *f)
 {
 	ucl_object_t		*doc, *sw, *o, *cr, *t, *u, *arr;
-	const ucl_object_t	*old, *ocr;
+	const ucl_object_t	*old;
 	const char		*was, *v;
 	char			 name[32], buf[160];
 	int			 i;
@@ -5441,6 +6304,8 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		lists_send(jstr(f, "was"), lf);
 		return (true);
 	}
+	if (strcmp(form, "sd-lim") == 0 || strcmp(form, "sd-topo") == 0)
+		return (sd_small_forms(form, f));
 	if (strcmp(form, "sd-swvc") != 0 && strcmp(form, "sd-zone") != 0 &&
 	    strcmp(form, "sd-flow") != 0 && strcmp(form, "sd-policy") != 0 &&
 	    strcmp(form, "sd-ep") != 0 && strcmp(form, "sd-map") != 0 &&
@@ -5547,9 +6412,39 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			put_int(t, "interval", jstr(f, "bfd_interval") != NULL &&
 			    jstr(f, "bfd_interval")[0] != '\0' ? jstr(f,
 			    "bfd_interval") : "200");
-			ucl_object_insert_key(t, ucl_object_fromint(3), "multiplier",
-			    0, false);
+			put_int(t, "multiplier", jstr(f, "bfd_mult") != NULL &&
+			    jstr(f, "bfd_mult")[0] != '\0' ? jstr(f, "bfd_mult") :
+			    "3");
 			ucl_object_insert_key(o, t, "bfd", 0, false);
+		}
+		/* What is folded under "more". */
+		(void)ucl_object_delete_key(o, "groups");
+		(void)ucl_object_delete_key(o, "importance");
+		(void)ucl_object_delete_key(o, "probe");
+		put_list(o, "groups", jstr(f, "groups"));
+		if (jstr(f, "imp_levels") != NULL && jstr(f, "imp_levels")[0] !=
+		    '\0') {
+			t = ucl_object_typed_new(UCL_OBJECT);
+			put_list(t, "levels", jstr(f, "imp_levels"));
+			put_str(t, "default", jstr(f, "imp_default"));
+			ucl_object_insert_key(o, t, "importance", 0, false);
+		}
+		{
+			static const char *const pk[] = { "interval", "size",
+			    "dscp", "timeout", "down", "up", "history", "report" };
+			char	 name[24];
+			size_t	 k;
+
+			t = ucl_object_typed_new(UCL_OBJECT);
+			for (k = 0; k < nitems(pk); k++) {
+				snprintf(name, sizeof(name), "pb_%s", pk[k]);
+				put_int(t, pk[k], jstr(f, name));
+			}
+			if (ucl_object_iterate(t, &(ucl_object_iter_t){ NULL },
+			    true) != NULL)
+				ucl_object_insert_key(o, t, "probe", 0, false);
+			else
+				ucl_object_unref(t);
 		}
 		if ((jstr(f, "tca_delay") != NULL && jstr(f, "tca_delay")[0] !=
 		    '\0') || (jstr(f, "tca_ipdv") != NULL && jstr(f, "tca_ipdv")[0]
@@ -5570,6 +6465,15 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		(void)ucl_object_delete_key(t, "eval");
 		put_int(t, "eval", jstr(f, "eval") != NULL && jstr(f, "eval")[0] !=
 		    '\0' ? jstr(f, "eval") : "1000");
+		if (jstr(f, "iv_arrival") != NULL && jstr(f, "iv_arrival")[0] !=
+		    '\0') {
+			(void)ucl_object_delete_key(t, "arrival");
+			put_int(t, "arrival", jstr(f, "iv_arrival"));
+		}
+		if (jstr(f, "iv_ir") != NULL && jstr(f, "iv_ir")[0] != '\0') {
+			(void)ucl_object_delete_key(t, "ir");
+			put_int(t, "ir", jstr(f, "iv_ir"));
+		}
 		if (jget(t, "arrival") == NULL)
 			ucl_object_insert_key(t, ucl_object_fromint(100), "arrival",
 			    0, false);
@@ -5749,11 +6653,18 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			put_list(cr, "sport", jstr(f, "sport"));
 			put_list(cr, v6 ? "sav6" : "sav4", jstr(f, "src"));
 			put_list(cr, v6 ? "dav6" : "dav4", jstr(f, "dst"));
+			put_list(cr, jstr(f, "both") != NULL && strchr(jstr(f,
+			    "both"), ':') != NULL ? "sdav6" : "sdav4", jstr(f,
+			    "both"));
+			put_list(cr, "sdport", jstr(f, "sdport"));
+			put_list(cr, "ethertype", jstr(f, "ethertype"));
 			if (ucl_object_lookup(cr, "appid") == NULL && jget(cr, "dscp")
 			    == NULL && jget(cr, v6 ? "nextheadv6" : "protv4") == NULL
 			    && jget(cr, "dport") == NULL && jget(cr, "sport") == NULL
 			    && jget(cr, v6 ? "sav6" : "sav4") == NULL && jget(cr, v6 ?
-			    "dav6" : "dav4") == NULL) {
+			    "dav6" : "dav4") == NULL && jget(cr, "sdav4") == NULL &&
+			    jget(cr, "sdav6") == NULL && jget(cr, "sdport") ==
+			    NULL && jget(cr, "ethertype") == NULL) {
 				snprintf(app.modal_error, sizeof(app.modal_error),
 				    "A flow matches something: an application, a "
 				    "DSCP, a protocol, ports or prefixes, or "
@@ -5778,7 +6689,6 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			return (true);
 		}
 		old = jfind(jget(sw, "policies"), "name", was);
-		ocr = jget(old, "criteria");
 		o = ucl_object_typed_new(UCL_OBJECT);
 		put_str(o, "name", jstr(f, "name"));
 		put_str(o, "direction", jstr(f, "direction") != NULL ? jstr(f,
@@ -5787,9 +6697,8 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		if (jstr(f, "direction") != NULL && strcmp(jstr(f, "direction"),
 		    "egress") == 0) {
 			put_str(cr, "egress-block", jstr(f, "egress-block"));
-			if (jstr(ocr, "af-security-egress") != NULL)
-				put_str(cr, "af-security-egress", jstr(ocr,
-				    "af-security-egress"));
+			put_str(cr, "af-security-egress", jstr(f,
+			    "af-security-egress"));
 		} else {
 			for (i = 0; picks[i] != NULL; i++)
 				put_str(cr, picks[i], jstr(f, picks[i]));
@@ -5824,18 +6733,38 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 				put_num(pr, "ceiling", jstr(f, "ceiling"));
 				put_num(pr, "remediation", jstr(f, "remediation"));
 				ucl_object_insert_key(pf, pr, "primary", 0, false);
-				if (jget(jget(ocr, "performance"), "secondary") != NULL)
-					ucl_object_insert_key(pf, ucl_object_copy(jget(
-					    jget(ocr, "performance"), "secondary")),
-					    "secondary", 0, false);
+				if (jstr(f, "secondary") != NULL && jstr(f,
+				    "secondary")[0] != '\0') {
+					ucl_object_t		*sa, *words, *one;
+					const ucl_object_t	*wv;
+					ucl_object_iter_t	 wit;
+					char			 met[16];
+					double			 th;
+
+					sa = ucl_object_typed_new(UCL_ARRAY);
+					words = list_of(jstr(f, "secondary"));
+					wit = NULL;
+					while ((wv = ucl_object_iterate(words, &wit,
+					    true)) != NULL)
+						if (sscanf(ucl_object_tostring(wv),
+						    "%15s %lf", met, &th) == 2) {
+							one = ucl_object_typed_new(
+							    UCL_OBJECT);
+							put_str(one, "metric", met);
+							ucl_object_insert_key(one,
+							    ucl_object_fromdouble(th),
+							    "threshold", 0, false);
+							ucl_array_append(sa, one);
+						}
+					ucl_object_unref(words);
+					ucl_object_insert_key(pf, sa, "secondary", 0,
+					    false);
+				}
 				ucl_object_insert_key(cr, pf, "performance", 0, false);
 			}
-			if (jstr(ocr, "virtual-topology") != NULL)
-				put_str(cr, "virtual-topology", jstr(ocr,
-				    "virtual-topology"));
-			if (jstr(ocr, "af-security-ingress") != NULL)
-				put_str(cr, "af-security-ingress", jstr(ocr,
-				    "af-security-ingress"));
+			put_str(cr, "virtual-topology", jstr(f, "topology"));
+			put_str(cr, "af-security-ingress", jstr(f,
+			    "af-security-ingress"));
 		}
 		ucl_object_insert_key(o, cr, "criteria", 0, false);
 		list_put(sw, "policies", "name", was, o);
@@ -5854,16 +6783,74 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 		(void)ucl_object_delete_key(o, "id");
 		(void)ucl_object_delete_key(o, "edge");
 		(void)ucl_object_delete_key(o, "nat");
+		(void)ucl_object_delete_key(o, "availability");
 		put_str(o, "id", jstr(f, "id"));
 		put_str(o, "edge", jstr(f, "edge"));
+		if (jstr(f, "kind") != NULL && strcmp(jstr(f, "kind"), "remote") ==
+		    0) {
+			/* Its identities stay as they were issued. */
+			t = jget(old, "remote") != NULL ? ucl_object_copy(jget(old,
+			    "remote")) : ucl_object_typed_new(UCL_OBJECT);
+			for (i = 0; i < 4; i++) {
+				static const char *const keys[] = { "interface",
+				    "prefix", "port", "reauth" };
+
+				(void)ucl_object_delete_key(t, keys[i]);
+			}
+			put_str(t, "interface", jstr(f, "rif"));
+			put_str(t, "prefix", jstr(f, "rprefix"));
+			put_int(t, "port", jstr(f, "rport"));
+			if (jstr(f, "rauth") != NULL && jstr(f, "rauth")[0] != '\0')
+				ucl_object_insert_key(t, ucl_object_fromint(strtoll(
+				    jstr(f, "rauth"), NULL, 10) * 3600), "reauth", 0,
+				    false);
+			(void)ucl_object_delete_key(o, "uni");
+			(void)ucl_object_delete_key(o, "remote");
+			ucl_object_insert_key(o, t, "remote", 0, false);
+			if (jget(o, "policy_map") == NULL)
+				ucl_object_insert_key(o, ucl_object_typed_new(
+				    UCL_ARRAY), "policy_map", 0, false);
+			list_put(sw, "end_points", "id", was, o);
+			goto kept;
+		}
+		(void)ucl_object_delete_key(o, "remote");
+		put_num(o, "availability", jstr(f, "avail"));
 		u = jget(old, "uni") != NULL ? ucl_object_copy(jget(old, "uni")) :
 		    ucl_object_typed_new(UCL_OBJECT);
 		(void)ucl_object_delete_key(o, "uni");
-		for (i = 0; i < 5; i++) {
+		for (i = 0; i < 9; i++) {
 			static const char *const keys[] = { "id", "interface",
-			    "vlan", "ipv4", "ipv6" };
+			    "vlan", "ipv4", "ipv6", "routes", "bgp", "ospf",
+			    "max_frame" };
 
 			(void)ucl_object_delete_key(u, keys[i]);
+		}
+		put_int(u, "max_frame", jstr(f, "mf"));
+		if (jstr(f, "routes") != NULL && strspn(jstr(f, "routes"),
+		    " \t\n") != strlen(jstr(f, "routes")))
+			ucl_object_insert_key(u, routes_of(jstr(f, "routes")),
+			    "routes", 0, false);
+		if (jstr(f, "bgp_as") != NULL && jstr(f, "bgp_as")[0] != '\0') {
+			t = ucl_object_typed_new(UCL_OBJECT);
+			put_str(t, "family", jstr(f, "bgp_fam"));
+			put_int(t, "as", jstr(f, "bgp_as"));
+			put_list(t, "neighbors", jstr(f, "bgp_nb"));
+			put_str(t, "password", jstr(f, "bgp_pw"));
+			put_int(t, "hold_time", jstr(f, "bgp_hold"));
+			if (jstr(f, "bgp_comm") != NULL && jstr(f, "bgp_comm")[0] !=
+			    '\0')
+				ucl_object_insert_key(t, communities_of(jstr(f,
+				    "bgp_comm")), "communities", 0, false);
+			ucl_object_insert_key(u, t, "bgp", 0, false);
+		}
+		if (jstr(f, "ospf_area") != NULL && jstr(f, "ospf_area")[0] !=
+		    '\0') {
+			t = ucl_object_typed_new(UCL_OBJECT);
+			put_str(t, "family", jstr(f, "ospf_fam"));
+			put_int(t, "area", jstr(f, "ospf_area"));
+			put_int(t, "cost", jstr(f, "ospf_cost"));
+			put_int(t, "hello", jstr(f, "ospf_hello"));
+			ucl_object_insert_key(u, t, "ospf", 0, false);
 		}
 		snprintf(buf, sizeof(buf), "uni-%s", jstr(f, "id"));
 		put_str(u, "id", jstr(old != NULL ? jget(old, "uni") : NULL, "id")
@@ -5877,7 +6864,10 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			    "l6";
 
 			t = ucl_object_typed_new(UCL_OBJECT);
-			if (jstr(f, pk) != NULL && jstr(f, pk)[0] != '\0') {
+			if (i == 1 && jstr(f, mk) != NULL && strcmp(jstr(f, mk),
+			    "ll-only") == 0)
+				put_str(t, "mode", "ll-only");
+			else if (jstr(f, pk) != NULL && jstr(f, pk)[0] != '\0') {
 				put_str(t, "mode", jstr(f, mk) != NULL && jstr(f, mk)[0]
 				    != '\0' ? jstr(f, mk) : "static");
 				put_str(t, "prefix", jstr(f, pk));
@@ -5905,12 +6895,15 @@ sd_service_forms(const char *form, const ucl_object_t *f)
 			t = ucl_object_typed_new(UCL_OBJECT);
 			put_str(t, "ip_version", "ipv4");
 			put_str(t, "public_prefix", jstr(f, "nat"));
+			put_list(t, "exceptions", jstr(f, "natx"));
 			ucl_object_insert_key(o, t, "nat", 0, false);
 		}
 		if (jget(o, "policy_map") == NULL)
 			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
 			    "policy_map", 0, false);
 		list_put(sw, "end_points", "id", was, o);
+kept:
+		;
 	} else {
 		/* A rule: at an end point ("e<id>") or of a zone ("z<name>"). */
 		const char	*owner = jstr(f, "owner");
@@ -5998,7 +6991,8 @@ sd_service_remove(const char *what, const char *arg, const char *value)
 		list = strcmp(what, "zone") == 0 ? "zones" : strcmp(what, "flow")
 		    == 0 ? "flows" : strcmp(what, "policy") == 0 ? "policies" :
 		    strcmp(what, "secpol") == 0 ? "security_policies" :
-		    "end_points";
+		    strcmp(what, "lim") == 0 ? "rate_limiters" : strcmp(what,
+		    "topo") == 0 ? "topologies" : "end_points";
 		key = strcmp(what, "ep") == 0 ? "id" : "name";
 		arr = (ucl_object_t *)(uintptr_t)jget(sw, list);
 	}
@@ -6246,6 +7240,41 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sdwan_open();
 		return (true);
 	}
+	if (strcmp(act, "sd-go") == 0) {
+		/* A step of the way through: its tab, and its form. */
+		const ucl_object_t	*e;
+
+		if (strcmp(arg, "ucs") == 0 || strcmp(arg, "edge") == 0) {
+			sd.tab = SD_OVERVIEW;
+			return (sdwan_action(strcmp(arg, "ucs") == 0 ?
+			    "sd-ucs-add" : "sd-edge-add", "", ""));
+		}
+		if (strcmp(arg, "link") == 0 && (e = edge_unlinked()) != NULL) {
+			sd.tab = SD_OVERVIEW;
+			return (sdwan_action("sd-link-add", jstr(e, "server"),
+			    ""));
+		}
+		if (strcmp(arg, "deploy") == 0) {
+			sd.tab = SD_EDGES;
+			plan_load();
+			return (true);
+		}
+		sd.tab = SD_SERVICES;
+		if (strcmp(arg, "service") == 0)
+			return (sdwan_action("sd-swvc-add", "", ""));
+		if (strcmp(arg, "ep") == 0)
+			return (sdwan_action(ucl_array_size(jget(swvc_shown(),
+			    "ucs")) == 0 ? "sd-swvc-edit" : "sd-ep-add",
+			    jstr(swvc_shown(), "id") != NULL ? jstr(swvc_shown(),
+			    "id") : "", ""));
+		if (strcmp(arg, "zone") == 0)
+			return (sdwan_action("sd-zone-add", "", ""));
+		if (strcmp(arg, "flow") == 0)
+			return (sdwan_action("sd-flow-add", "", ""));
+		if (strcmp(arg, "policy") == 0)
+			return (sdwan_action("sd-policy-add", "", ""));
+		return (true);
+	}
 	if (strcmp(act, "sd-ucs-add") == 0 || strcmp(act, "sd-ucs-edit") == 0) {
 		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act,
 		    "sd-ucs-edit") == 0 ? arg : "");
@@ -6287,6 +7316,10 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		snprintf(sd.edit2, sizeof(sd.edit2), "%s", value);
 		return (true);
 	}
+	if (strcmp(act, "input:sd-ep-kind") == 0) {
+		sd.ep_remote = strcmp(value, "remote") == 0;
+		return (true);
+	}
 	if (strcmp(act, "input:sd-ep-edge") == 0) {
 		char	url[96];
 
@@ -6298,6 +7331,34 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		sd.ifs_loading = true;
 		snprintf(url, sizeof(url), "/api/servers/%s/net/interfaces", value);
 		api("GET", url, NULL, ifs_cb, NULL);
+		return (true);
+	}
+	/* A rate limiter or a virtual topology of the service. */
+	if (strcmp(act, "sd-lim-add") == 0 || strcmp(act, "sd-lim-edit") == 0 ||
+	    strcmp(act, "sd-topo-add") == 0 || strcmp(act, "sd-topo-edit") ==
+	    0) {
+		snprintf(sd.edit, sizeof(sd.edit), "%s", strstr(act, "-edit") !=
+		    NULL ? arg : "");
+		app.modal = strncmp(act, "sd-lim", 6) == 0 ? MODAL_SD_LIMITER :
+		    MODAL_SD_TOPO;
+		app.modal_error[0] = '\0';
+		return (true);
+	}
+	if (strcmp(act, "sd-lim-del") == 0 || strcmp(act, "sd-topo-del") == 0) {
+		char	body[300], daction[40];
+
+		snprintf(daction, sizeof(daction), "do-%s", act);
+		snprintf(body, sizeof(body), "%s goes out of the document; a "
+		    "policy that names it will not pass the check until it is "
+		    "changed. Nothing is made or unmade until Deploy.", arg);
+		confirm("Take it away", body, "Take away", true, "", daction,
+		    arg, "");
+		return (true);
+	}
+	if (strcmp(act, "do-sd-lim-del") == 0 || strcmp(act, "do-sd-topo-del") ==
+	    0) {
+		sd_service_remove(strstr(act, "lim") != NULL ? "lim" : "topo",
+		    arg, value);
 		return (true);
 	}
 	/* The service's parts: a form each, a word before taking one away. */
@@ -6338,6 +7399,8 @@ sdwan_action(const char *act, const char *arg, const char *value)
 
 				if (host != NULL)
 					sdwan_action("input:sd-ep-edge", "", host);
+				sd.ep_remote = ep != NULL && jget(ep, "remote") !=
+				    NULL;
 			}
 			return (true);
 		}
@@ -6420,7 +7483,8 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strncmp(act, "sd-", 3) != 0 && strcmp(act, "input:sd-swvc") != 0 &&
-	    strcmp(act, "do-sd-apply-fresh") != 0)
+	    strcmp(act, "do-sd-apply-fresh") != 0 && strcmp(act,
+	    "file:sd-import") != 0)
 		return (false);
 	if (strcmp(act, "sd-tab") == 0) {
 		sd.tab = strcmp(arg, "services") == 0 ? SD_SERVICES :
@@ -6454,6 +7518,34 @@ sdwan_action(const char *act, const char *arg, const char *value)
 		snprintf(sd.record_filter, sizeof(sd.record_filter), "%s", value);
 	else if (strcmp(act, "sd-example") == 0)
 		example();
+	else if (strcmp(act, "sd-export") == 0 && sd.doc != NULL) {
+		char	*json, name[64];
+
+		/* As it is kept, written for people to read. */
+		json = pretty(sd.doc);
+		snprintf(name, sizeof(name), "sdwan-v%lld.json", (long long)jint(
+		    sd.doc, "version", 0));
+		arc_save_text(name, "application/json", json != NULL ? json : "{}");
+		free(json);
+	} else if (strcmp(act, "file:sd-import") == 0) {
+		ucl_object_t	*o;
+
+		/* Read and laid out, not kept: Check, then Keep. */
+		sd.error[0] = sd.note[0] = '\0';
+		o = value[0] != '\0' ? json_parse(value) : NULL;
+		if (o == NULL || ucl_object_type(o) != UCL_OBJECT)
+			snprintf(sd.error, sizeof(sd.error), "%s: not a JSON "
+			    "document (or larger than 4 MiB)", arg);
+		else {
+			free(sd.text);
+			sd.text = pretty(o);
+			snprintf(sd.note, sizeof(sd.note), "Read from %s and put "
+			    "in the box, not kept yet: Check it, then Keep.", arg);
+		}
+		if (o != NULL)
+			ucl_object_unref(o);
+		sd.tab = SD_DOCUMENT;
+	}
 	else if (strcmp(act, "sd-list-add") == 0 || strcmp(act, "sd-list-edit")
 	    == 0) {
 		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act, "sd-list-edit")

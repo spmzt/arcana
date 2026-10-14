@@ -1122,9 +1122,13 @@ part_hosts(void)
 	    "{ echo '#!/bin/sh'; echo 'sleep 3'; echo 'exec ./fake-pkg.fast "
 	    "\"$@\"'; } > fake-pkg.slow && chmod +x fake-pkg.slow && "
 	    "mv fake-pkg.slow fake-pkg") == 0);
+	/* Asked with GET, or over the console's socket. */
 	run("window.pkgAsked = 0; const of = window.fetch; window.fetch = "
 	    "function (u, o) { if (String(u).includes('/packages')) "
-	    "window.pkgAsked++; return of.call(this, u, o); };");
+	    "window.pkgAsked++; return of.call(this, u, o); }; const os = "
+	    "WebSocket.prototype.send; WebSocket.prototype.send = function "
+	    "(m) { if (String(m).includes('\"read\":\"packages')) "
+	    "window.pkgAsked++; return os.call(this, m); };");
 	run("document.querySelector('button.tab[data-arg=packages]').click()");
 	wait_js("window.pkgAsked === 1", 5);
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
@@ -3148,6 +3152,11 @@ part_storage(void)
 	    "kernel] button[data-act=kmod-unload]') && document.querySelector("
 	    "'.facts.kmem').textContent.includes('kernel memory in use') && "
 	    "document.querySelectorAll('#kmods option').length > 0"));
+	/* Opened, the tab's read is a task, told live over the socket,
+	 * and the tab says how old what it shows is. */
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('read the kernel')) && document."
+	    "querySelector('.toolbar .tally.fresh')", 20);
 	shot("7i-kernel");
 	run("document.querySelector('button[data-act=kmem][data-arg=zones]')"
 	    ".click()");
@@ -3240,10 +3249,10 @@ part_storage(void)
 	 */
 	run("document.querySelector('button[data-act=sy-tree][data-arg=\"\"]')"
 	    ".click()");
-	wait_js("document.querySelector('.toolbar .age').textContent."
+	wait_js("document.querySelector('.toolbar .fresh').textContent."
 	    "includes('so far') || /[0-9]+ more/.test(document.querySelector("
 	    "'.stage').textContent)", 20);
-	wait_js("!document.querySelector('.toolbar .age').textContent."
+	wait_js("!document.querySelector('.toolbar .fresh').textContent."
 	    "includes('reading') && (m => m && parseInt(m[1], 10) > 3600)("
 	    "/([0-9]+) more/.exec(document.querySelector('.stage')."
 	    "textContent))", 60);
@@ -3269,6 +3278,20 @@ part_storage(void)
 	ATF_CHECK(system("grep -q '^sysctl kern.ipc.somaxconn=8192$' kld.log "
 	    "&& grep -q '^kern.ipc.somaxconn=8192$' sysctl.conf") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Changed on the host by somebody else, sysctl.conf is read again
+	 * by itself: the agent is told by the kernel (EVFILT_VNODE), and
+	 * says so to the page following the host's events; nothing is
+	 * clicked, and no task is made of it.
+	 */
+	run("window.opsBefore = document.querySelector('.dock [data-act="
+	    "trace]').dataset.arg");
+	ATF_REQUIRE(system("echo 'kern.maxfiles=4321' >> sysctl.conf") == 0);
+	wait_js("document.querySelector('.sy-kept').textContent."
+	    "includes('kern.maxfiles=4321')", 20);
+	ATF_CHECK(js_true("document.querySelector('.dock [data-act=trace]')."
+	    "dataset.arg === window.opsBefore"));
+	shot("7j-sysctl-pushed");
 
 	/*
 	 * What runs: in the order of what each uses; one picked is given
@@ -3666,9 +3689,13 @@ part_firewall(void)
 	ATF_REQUIRE(system("printf -- '-f flush\\nadd 100 allow ip from any "
 	    "to any via lo0\\n' > host.rules && printf 'firewall_type=\"%s/"
 	    "host.rules\"\\n' \"$(pwd)\" >> rc.conf") == 0);
+	/* Read with GET, or over the console's socket. */
 	run("window.fwn = 0; window.fetch1 = window.fetch; window.fetch = "
 	    "function (u, o) { if (String(u).includes('/net/ipfw')) window.fwn"
-	    "++; return window.fetch1(u, o); };");
+	    "++; return window.fetch1(u, o); }; const os = WebSocket.prototype."
+	    "send; WebSocket.prototype.send = function (m) { if (String(m)."
+	    "includes('\"read\":\"net/ipfw')) window.fwn++; return os.call("
+	    "this, m); };");
 	wait_js("window.fwn >= 2", 15);
 	run("window.fetch = window.fetch1;");
 	/* A state pressed leads to the rule that made it. */
@@ -4086,16 +4113,46 @@ part_flows(void)
 	 */
 	run("document.querySelector('li.titem.wfnode').click()");
 	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
-	/* A template: Arcana kept up to date, its four steps Arcana's own,
-	 * each after the check only when its head is newer. */
+	{
+		/* What a page's input does: its value, then the event. */
+		static const char set[] = "window.setf = (sel, v) => { const e = "
+		    "document.querySelector(sel); if (e.type === 'checkbox') "
+		    "e.checked = v; else e.value = v; e.dispatchEvent(new Event("
+		    "'input', { bubbles: true })); };";
+		/* A drag in the drawing, as a pointer does it: from the
+		 * middle of one thing to the middle of another. */
+		static const char drag[] = "window.svgdrag = (from, to) => { "
+		    "document.querySelector(to).scrollIntoView({ block: 'center' "
+		    "}); const a = document.querySelector(from).getBoundingClientRect(),"
+		    " b = document.querySelector(to).getBoundingClientRect(), "
+		    "ax = a.left + a.width / 2, ay = a.top + a.height / 2, bx = "
+		    "b.left + b.width / 2, by = b.top + b.height / 2, o = { bubbles:"
+		    " true, pointerId: 7, button: 0 }; document.querySelector("
+		    "from).dispatchEvent(new PointerEvent('pointerdown', { ...o, "
+		    "clientX: ax, clientY: ay })); document.dispatchEvent(new "
+		    "PointerEvent('pointermove', { ...o, clientX: ax + 9, clientY: "
+		    "ay + 9 })); document.dispatchEvent(new PointerEvent("
+		    "'pointermove', { ...o, clientX: bx, clientY: by })); "
+		    "document.dispatchEvent(new PointerEvent('pointerup', { ...o, "
+		    "clientX: bx, clientY: by })); };";
+
+		run(set);
+		run(drag);
+	}
+	/*
+	 * A template: Arcana kept up to date, drawn: what starts it (every
+	 * hour), its four steps Arcana's own, each after the check only if
+	 * its head is newer, said in words.
+	 */
 	run("const t = document.querySelector('select[data-input=wf-template]'"
 	    "); t.value = 'arcana-update'; t.dispatchEvent(new Event('input', "
 	    "{ bubbles: true }));");
-	wait_js("document.querySelectorAll('li.wfedstep').length === 4 && "
-	    "[...document.querySelectorAll('select[data-input=wf-type]')].map("
-	    "s => s.value).join() === 'arcana:check,arcana:build,arcana:agents,"
-	    "arcana:console' && document.querySelectorAll('li.wfedstep "
-	    ".wfwhen').length === 3", 10);
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.arcana')."
+	    "length === 4 && document.querySelectorAll('svg.wfdraw g.wfnode "
+	    "text.c').length === 3 && document.querySelector('svg.wfdraw "
+	    "g.wfnode.trig').textContent.includes('every 1 hour')", 10);
+	ATF_CHECK(js_true("document.querySelector('svg.wfdraw g.wfnode text.c')"
+	    ".textContent.includes('what check answered: new is true')"));
 	shot("9-workflow-template");
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
@@ -4103,24 +4160,47 @@ part_flows(void)
 	run("const t = document.querySelector('select[data-input=wf-template]'"
 	    "); t.value = 'plugin-install'; t.dispatchEvent(new Event('input', "
 	    "{ bubbles: true }));");
-	wait_js("document.querySelectorAll('li.wfedstep').length === 1 && "
-	    "document.querySelector('select[data-input=wf-kind]').value === "
-	    "'pkg-install' && document.querySelector('input[data-arg=\"text:"
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.job').length "
+	    "=== 1 && document.querySelector('input[data-arg=\"text:"
 	    "params.0.default\"]').value === 'bird3'", 10);
+	run("document.querySelector('svg.wfdraw g.wfnode.job').dispatchEvent("
+	    "new PointerEvent('pointerdown', { bubbles: true, pointerId: 3, "
+	    "button: 0 })); document.dispatchEvent(new PointerEvent("
+	    "'pointerup', { bubbles: true, pointerId: 3 }));");
+	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]')"
+	    "?.value === 'pkg-install'", 10);
 	run("document.querySelector('button[data-act=wf-back]').click()");
+	/* What starts one, in words: a jail stops, which jail asked. */
 	click_when("button[data-act=wf-new]", 10);
-	wait_js("document.querySelector('select[data-input=wf-kind]') && "
-	    "document.querySelector('select[data-input=wf-kind]').options."
-	    "length > 25", 10);
-	{
-		/* What a page's input does: its value, then the event. */
-		static const char set[] = "window.setf = (sel, v) => { const e = "
-		    "document.querySelector(sel); if (e.type === 'checkbox') "
-		    "e.checked = v; else e.value = v; e.dispatchEvent(new Event("
-		    "'input', { bubbles: true })); };";
-
-		run(set);
-	}
+	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]') "
+	    "&& document.querySelector('.wfpanel select[data-input=wf-kind]')."
+	    "options.length > 25", 10);
+	run("svgdrag('svg.wfdraw g.wfnode.trig rect', 'svg.wfdraw g.wfnode."
+	    "trig rect')");
+	run("document.querySelector('svg.wfdraw g.wfnode.trig').dispatchEvent("
+	    "new PointerEvent('pointerdown', { bubbles: true, pointerId: 4, "
+	    "button: 0 })); document.dispatchEvent(new PointerEvent("
+	    "'pointerup', { bubbles: true, pointerId: 4 }));");
+	wait_js("document.querySelector('button[data-act=wf-on-add]')", 5);
+	run("document.querySelector('button[data-act=wf-on-add]').click()");
+	wait_js("document.querySelector('select[data-input=wf-on-kind]')", 5);
+	run("setf('select[data-input=wf-on-kind]', 'jail-stopped')");
+	wait_js("document.querySelector('input[data-arg=\"text:on.0.match."
+	    "jail\"]')", 5);
+	run("setf('input[data-arg=\"text:on.0.match.jail\"]', 'web')");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.trig')."
+	    "textContent.includes('when a jail stops: web')", 5);
+	shot("9-workflow-trigger");
+	/* Not on it after all: by hand. */
+	run("document.querySelector('button[data-act=wf-on-del]').click()");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.trig')."
+	    "textContent.includes('by hand')", 5);
+	run("document.querySelector('svg.wfdraw g.wfnode.job').dispatchEvent("
+	    "new PointerEvent('pointerdown', { bubbles: true, pointerId: 5, "
+	    "button: 0 })); document.dispatchEvent(new PointerEvent("
+	    "'pointerup', { bubbles: true, pointerId: 5 }));");
+	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]')",
+	    5);
 	run("setf('input[data-arg=\"text:name\"]', 'restart a service')");
 	run("document.querySelector('button[data-act=wf-param-add]').click()");
 	wait_js("document.querySelector('input[data-arg=\"text:params.0.name\"]')",
@@ -4135,7 +4215,8 @@ part_flows(void)
 	run("setf('input[data-arg=\"text:steps.0.job.service\"]', "
 	    "'${param.svc}'); setf('select[data-arg=\"text:steps.0.job."
 	    "action\"]', 'restart')");
-	/* Only when the jail web is stopped, as a read of the jails says. */
+	/* Only if the jail web is stopped, as a read of the jails says,
+	 * said back in words. */
 	run("document.querySelector('input[data-act=wf-when]').click()");
 	wait_js("document.querySelector('select[data-input=wf-when-of]')", 5);
 	run("setf('select[data-input=wf-when-of]', 'read:jails'); "
@@ -4143,36 +4224,49 @@ part_flows(void)
 	    "'jails[name=web].state'); setf('select[data-arg=\"text:steps.0."
 	    "when.op\"]', 'eq'); setf('input[data-arg=\"text:steps.0.when."
 	    "value\"]', 'stopped')");
-	/* A second step: a read of the host. */
-	run("document.querySelector('button[data-act=wf-step-add]').click()");
-	wait_js("document.querySelectorAll('li.wfedstep').length === 2", 5);
-	run("setf('select[data-input=wf-type][data-arg=\"1\"]', 'read:hello')");
+	wait_js("document.querySelector('.wfsays').textContent.includes("
+	    "\"the host's jails: jails[name=web].state is stopped\") && [..."
+	    "document.querySelectorAll('select[data-arg=\"text:steps.0.when."
+	    "op\"] option')].map(o => o.textContent).includes('is more than')",
+	    5);
+	/* A second step, dragged from the palette onto the drawing below
+	 * the first. */
+	run("const it = [...document.querySelectorAll('.wfpalette li')].find("
+	    "l => l.dataset.arg === 'read:hello'), z = document.querySelector("
+	    "'.wfcanvas'), n = document.querySelector('svg.wfdraw g.wfnode."
+	    "job').getBoundingClientRect(), dt = new DataTransfer(); it."
+	    "dispatchEvent(new DragEvent('dragstart', { bubbles: true, "
+	    "dataTransfer: dt })); z.dispatchEvent(new DragEvent('dragover', "
+	    "{ bubbles: true, cancelable: true, dataTransfer: dt })); z."
+	    "dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: "
+	    "true, dataTransfer: dt, clientX: n.left + 20, clientY: n.bottom + "
+	    "90 })); it.dispatchEvent(new DragEvent('dragend', { bubbles: "
+	    "true, dataTransfer: dt }));");
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.read').length "
+	    "=== 1 && document.querySelector('.wfpanel select[data-input="
+	    "wf-type][data-arg=\"1\"]')?.value === 'read:hello'", 5);
 	/*
-	 * Steps dragged by their number to another place: the read put
+	 * Steps dragged to another place in the drawing: the read put
 	 * first, and back again.
 	 */
-	run("window.dragto = (from, to, where) => { const g = document."
-	    "querySelector('li.wfedstep[data-arg=\"' + from + '\"] .grip'), "
-	    "t = document.querySelector('li.wfedstep[data-arg=\"' + to + "
-	    "'\"]'), b = t.getBoundingClientRect(), dt = new DataTransfer(), "
-	    "y = where === 'before' ? b.top + 2 : b.bottom - 2; g.dispatchEvent("
-	    "new DragEvent('dragstart', { bubbles: true, dataTransfer: dt })); "
-	    "t.dispatchEvent(new DragEvent('dragover', { bubbles: true, "
-	    "cancelable: true, dataTransfer: dt, clientY: y })); t.dispatchEvent("
-	    "new DragEvent('drop', { bubbles: true, cancelable: true, "
-	    "dataTransfer: dt, clientY: y })); g.dispatchEvent(new DragEvent("
-	    "'dragend', { bubbles: true, dataTransfer: dt })); };");
-	run("dragto(1, 0, 'before')");
-	wait_js("document.querySelector('select[data-input=wf-type][data-arg="
-	    "\"0\"]').value === 'read:hello'", 5);
-	run("dragto(1, 0, 'before')");
-	wait_js("document.querySelector('select[data-input=wf-type][data-arg="
-	    "\"1\"]').value === 'read:hello' && document.querySelector("
-	    "'input[data-arg=\"text:steps.0.job.service\"]').value === "
-	    "'${param.svc}'", 5);
-	/* On a failure of the first, on at the second: drawn as a jump. */
+	run("svgdrag('svg.wfdraw g.wfnode[data-arg=\"1\"] rect', 'svg.wfdraw "
+	    "g.wfnode.trig rect')");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode[data-arg=\"0\"]')"
+	    ".classList.contains('read')", 5);
+	run("svgdrag('svg.wfdraw g.wfnode[data-arg=\"0\"] rect', 'svg.wfdraw "
+	    "g.wfnode.end rect')");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode[data-arg=\"1\"]')"
+	    ".classList.contains('read')", 5);
+	/* A failure of the first, drawn to the end: the host's run stops;
+	 * then on at the second, as the panel says it. */
+	run("svgdrag('svg.wfdraw circle.port.fail[data-arg=\"f:0\"]', "
+	    "'svg.wfdraw g.wfnode.end rect')");
+	wait_js("document.querySelector('.wfpanel select[data-arg=\"text:"
+	    "steps.0.on_fail\"]')?.value === 'stop' && document."
+	    "querySelector('svg.wfdraw path.wffail')", 5);
 	run("setf('select[data-arg=\"text:steps.0.on_fail\"]', document."
-	    "querySelector('input[data-arg=\"text:steps.1.id\"]').value)");
+	    "querySelector('select[data-arg=\"text:steps.0.on_fail\"] option:"
+	    "last-child').value)");
 	shot("9a-workflow-edit");
 	run("document.querySelector('button[data-act=wf-save]').click()");
 	wait_js("document.querySelector('ul.wflist button[data-act=wf-run]') "
@@ -4212,11 +4306,9 @@ part_flows(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	click_when("button[data-act=queue-to-wf]", 5);
-	wait_js("document.querySelector('li.wfedstep select[data-input="
-	    "wf-kind]') && document.querySelector('li.wfedstep select[data-"
-	    "input=wf-kind]').value === 'service-action' && document."
-	    "querySelector('input[data-arg=\"text:name\"]').value === 'From "
-	    "the queue'", 10);
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.job') && "
+	    "document.querySelector('input[data-arg=\"text:name\"]').value "
+	    "=== 'From the queue'", 10);
 	shot("9c-workflow-queue");
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	run("document.querySelector('button[data-act=queue-clear]').click()");
@@ -4266,6 +4358,57 @@ part_flows(void)
 	    "'None yet')", 20);
 	ATF_CHECK(js_true("document.querySelector('.crumb.place').textContent "
 	    "=== 'SD-WAN'"));
+	/*
+	 * The way through, step by step: the step to take now lit, its
+	 * button opening its form; each kept as it is made, a service with
+	 * nothing in it yet among them; what an edge changes on its host
+	 * said before it is added.
+	 */
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('Underlays')", 10);
+	shot("9-sdwan-guide");
+	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]"
+	    "')", 5);
+	run("const f = document.querySelector('form[data-form=sd-ucs]'); "
+	    "f.id.value = 'net'; f.type.value = 'public'; f.kind.value = "
+	    "'gre'; f.requestSubmit();");
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('Edges')", 20);
+	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sd-edge] details."
+	    "sd-effects[open]')?.textContent.includes('net.inet.ip."
+	    "forwarding')", 5);
+	shot("9-sdwan-guide-edge");
+	run("document.querySelector('form[data-form=sd-edge]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('WAN links')", 20);
+	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sd-link] "
+	    "select[name=interface] option')", 15);
+	run("document.querySelector('form[data-form=sd-link]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('A service')", 20);
+	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sd-swvc] input[name="
+	    "id]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-swvc]'); "
+	    "f.id.value = 'trial'; f.requestSubmit();");
+	/* Kept with no end point, zone or application yet: each table says
+	 * so, with its button, and the next step is the end points. */
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('End points') && document.querySelectorAll('section."
+	    "sdwan tr.empty-row').length === 6", 20);
+	ATF_CHECK(js_true("!document.querySelector('select[data-input="
+	    "sd-swvc]')"));
+	shot("9-sdwan-guide-service");
+	ATF_CHECK(system("grep -q '\"trial\"' data/sdwan.json") == 0);
 	run("document.querySelector('button[data-act=sd-tab][data-arg="
 	    "document]').click()");
 	wait_js("document.querySelector('form[data-form=sd-doc] textarea')", 10);
@@ -4295,8 +4438,8 @@ part_flows(void)
 	    "\"rules\": [\"alert tcp any any -> any 80 (sid:1000001; rev:1;)\"]}}}');");
 	run("document.querySelector('form[data-form=sd-doc] button[value="
 	    "keep]').click()");
-	wait_js("(document.querySelector('section.sdwan .notice') || {})."
-	    "textContent?.includes('version 1')", 20);
+	wait_js("/version [0-9]+/.test((document.querySelector('section."
+	    "sdwan .notice') || {}).textContent)", 20);
 	run("document.querySelector('button[data-act=sd-tab][data-arg="
 	    "overview]').click()");
 	wait_js("[...document.querySelectorAll('section.sdwan table.sd')]"
@@ -4374,7 +4517,8 @@ part_flows(void)
 	run("document.querySelector('button[data-act=sd-swvc]').click()");
 	wait_js("[...document.querySelectorAll('section.sdwan h3')].some(h => "
 	    "h.textContent.startsWith('End points')) && document."
-	    "querySelector('select[data-input=sd-swvc]')", 10);
+	    "querySelector('section.sdwan h3.inline')?.textContent."
+	    "includes('office')", 10);
 	ATF_CHECK(js_true("document.querySelector('section.sdwan').textContent"
 	    ".includes('10.10.0.0/24')"));
 	shot("9-sdwan-service");
@@ -4447,6 +4591,47 @@ part_flows(void)
 	    "includes('DHCP'))", 20);
 	ATF_CHECK(system("grep -q dhcp data/sdwan.json && grep -q 10.10.0.0/28 "
 	    "data/sdwan.json && grep -q '\"2h\"' data/sdwan.json") == 0);
+	/*
+	 * What was JSON alone, by forms too: a rate limiter, a topology of
+	 * a root and a leaf; and a document read from a file into the box,
+	 * laid out, not kept until it is.
+	 */
+	run("document.querySelector('button[data-act=sd-lim-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-lim] input[name="
+	    "name]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-lim]'); "
+	    "f.name.value = 'bulk'; f.commit.value = '1000000'; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-lim]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('bulk'))", 20);
+	run("document.querySelector('button[data-act=sd-topo-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-topo] select[name="
+	    "role_1]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-topo]'); "
+	    "f.name.value = 'hub'; f.role_0.value = 'root'; f.role_1.value = "
+	    "'leaf'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-topo]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('hub') && r.textContent."
+	    "includes('rooted-multipoint'))", 20);
+	ATF_CHECK(system("grep -q '\"rate_limiters\"' data/sdwan.json && "
+	    "grep -q rooted-multipoint data/sdwan.json") == 0);
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "document]').click()");
+	wait_js("document.querySelector('input[data-file=sd-import]')", 10);
+	run("const dt = new DataTransfer(); dt.items.add(new File(["
+	    "'{\"ucs\":[],\"edges\":[],\"swvcs\":[]}'], 'empty.json', "
+	    "{ type: 'application/json' })); const i = document."
+	    "querySelector('input[data-file=sd-import]'); i.files = dt.files; "
+	    "i.dispatchEvent(new Event('change', { bubbles: true }));");
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')"
+	    ".value.includes('\"swvcs\": [') && document.querySelector("
+	    "'section.sdwan .notice').textContent.includes('empty.json')", 10);
+	shot("9-sdwan-imported");
+	run("document.querySelector('button[data-act=sd-revert]').click()");
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "services]').click()");
 	/*
 	 * Edges: the tunnels and what each edge is to have; applied, each
 	 * step done, and then nothing left to do.

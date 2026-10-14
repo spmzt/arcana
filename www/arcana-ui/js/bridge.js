@@ -218,6 +218,29 @@ addToLibrary({
 			if (e.key === "Escape")
 				act("escape", "", "");
 		});
+		/* A file picked in [data-file]: its text given to the page,
+		 * as file:<what> with the file's name; the field emptied, so
+		 * that the same file can be picked again. */
+		document.addEventListener("change", function (e) {
+			var t = e.target, f, r;
+
+			if (t.type !== "file" || !t.dataset || !t.dataset.file ||
+			    t.files.length === 0)
+				return;
+			f = t.files[0];
+			if (f.size > 4 * 1024 * 1024) {
+				act("file:" + t.dataset.file, f.name, "");
+				t.value = "";
+				return;
+			}
+			r = new FileReader();
+			r.onload = function () {
+				act("file:" + t.dataset.file, f.name,
+				    String(r.result));
+				t.value = "";
+			};
+			r.readAsText(f);
+		});
 
 		/*
 		 * Rows put in another order by dragging: a row with
@@ -287,6 +310,50 @@ addToLibrary({
 		});
 
 		/*
+		 * What is taken from a palette, [data-palette] with its
+		 * data-arg, and dropped on a drawing in [data-dropzone]:
+		 * the page hears <zone>-drop with what it was and where in
+		 * the drawing, "x,y".
+		 */
+		var palette = null;
+
+		document.addEventListener("dragstart", function (e) {
+			var t = e.target.closest ? e.target.closest(
+			    "[data-palette]") : null;
+
+			if (t === null)
+				return;
+			palette = t.dataset.arg || "";
+			e.dataTransfer.effectAllowed = "copy";
+			e.dataTransfer.setData("text/plain", palette);
+		});
+		document.addEventListener("dragover", function (e) {
+			if (palette !== null && e.target.closest &&
+			    e.target.closest("[data-dropzone]") !== null) {
+				e.preventDefault();
+				e.dataTransfer.dropEffect = "copy";
+			}
+		});
+		document.addEventListener("drop", function (e) {
+			var z, svg, m, p, what = palette;
+
+			palette = null;
+			if (what === null || !e.target.closest ||
+			    (z = e.target.closest("[data-dropzone]")) === null)
+				return;
+			e.preventDefault();
+			svg = z.querySelector("svg");
+			m = svg !== null ? svg.getScreenCTM() : null;
+			p = m !== null ? new DOMPoint(e.clientX, e.clientY)
+			    .matrixTransform(m.inverse()) : { x: 0, y: 0 };
+			act(z.dataset.dropzone + "-drop", what,
+			    p.x.toFixed(1) + "," + p.y.toFixed(1));
+		});
+		document.addEventListener("dragend", function () {
+			palette = null;
+		});
+
+		/*
 		 * Things dragged inside a drawing: an element with data-drag
 		 * names what it is, and the page hears of it as
 		 * <name>-start where it was taken hold of, <name>-move
@@ -321,8 +388,8 @@ addToLibrary({
 			if (drag !== null)
 				return;
 			drag = { name: t.dataset.drag, arg: t.dataset.arg || "",
-			    svg: svg, x: e.clientX, y: e.clientY, moved: false,
-			    last: null, frame: 0, id: e.pointerId };
+			    svg: svg, svgid: svg.id, x: e.clientX, y: e.clientY,
+			    moved: false, last: null, frame: 0, id: e.pointerId };
 			/*
 			 * The pointer is the drawing's until let go: over
 			 * the panels, outside the window, it still moves
@@ -357,8 +424,11 @@ addToLibrary({
 						return;
 					drag.frame = 0;
 					if (!document.contains(drag.svg))
-						drag.svg = document.querySelector(
-						    "svg.topo") || drag.svg;
+						drag.svg = (drag.svgid &&
+						    document.getElementById(
+						    drag.svgid)) || document.
+						    querySelector("svg.topo") ||
+						    drag.svg;
 					act(drag.name + "-move", drag.arg,
 					    where(drag.last));
 				});
@@ -376,7 +446,9 @@ addToLibrary({
 				return;
 			}
 			if (!document.contains(d.svg))
-				d.svg = document.querySelector("svg.topo") || d.svg;
+				d.svg = (d.svgid && document.getElementById(
+				    d.svgid)) || document.querySelector(
+				    "svg.topo") || d.svg;
 			drag = d;
 			el = document.elementFromPoint(e.clientX, e.clientY);
 			on = el && el.closest ? el.closest("[data-drop]") : null;
@@ -1113,6 +1185,21 @@ addToLibrary({
 	arc_theme_get__deps: ["$arcStr"],
 	arc_theme_get: function () {
 		return (arcStr(document.documentElement.dataset.theme || ""));
+	},
+	/* A text saved as a file: a document as JSON, to keep. */
+	arc_save_text__deps: ["$UTF8ToString"],
+	arc_save_text: function (namep, typep, textp) {
+		var url, a;
+
+		url = URL.createObjectURL(new Blob([UTF8ToString(textp)], {
+		    type: UTF8ToString(typep) }));
+		a = document.createElement("a");
+		a.href = url;
+		a.download = UTF8ToString(namep);
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
 	},
 	/* A file made of base64, saved: a capture's pcap. */
 	arc_save_b64__deps: ["$UTF8ToString"],

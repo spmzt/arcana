@@ -130,19 +130,33 @@
   export datagram until it fills or the node shuts down, with no timer
   to send it; a flush would be part of the same kernel work.
 - The panel as live as it gets, without getting in the way (the user,
-  2026-10-13; the order agreed): (1) a task's steps told as the host
-  takes them, over the console's socket: done for the jails and the
-  services read (console 0.173.0, agent 0.108.0: the agent's steps
-  group, told on the asking connection only); the other reads move
-  over one by one. A task on the socket says live, not running, and
-  blinks so; one that stays live, a tab that follows its host, stays
-  in the list as live. (2) Every tab live: what was read stays shown,
-  with how old it is, and is replaced in place when a new read
-  completes, never blanked, keeping the sort, filter, scroll, picked
-  row and an edit under way. (3) Pushed where FreeBSD tells of a
-  change (the routing socket's RTM_IFINFO and RTM_NEWADDR, kqueue's
-  EVFILT_VNODE on rc.conf and EVFILT_PROC, zpool events, the
-  jail-state events there are), polled gently where it does not.
+  2026-10-13; the order agreed), done 2026-10-14 (agent 0.115.0,
+  console 0.174.0): (1) every read of a host's the user asks for, by
+  opening a tab or Refresh, is a task told live over the console's
+  socket, its steps drawn as the host takes them (the console takes
+  any host read there, hosts.c's hreads, each GET's setup shared);
+  what the page reads by itself, a timer or an event, is no task.
+  (2) What a tab shows stays until a new read replaces it, with how
+  old it is and a breathing dot while it is read again (live.c's
+  fresh()); a failed read leaves it, the error beside; a network
+  kind chosen again shows its last read at once; BIRD's open box
+  follows its part by name; ticked packages keep their ids.  (3) The
+  agent tells what changes (gula/hostwatch.c): the base system's
+  configuration files (EVFILT_VNODE), processes come and gone
+  (EVFILT_PROC, its own left out), ZFS and disks (devd(8)); with
+  netlink's and the jails' events, the page of the open host reads
+  the tab they concern again by itself, and the tabs nothing tells of
+  every minute or two while shown (agent_test:host_watch,
+  agent_root_test:devd_watch, pwa_test's sysctl.conf pushed).
+- The console's UI/UX the user found confusing (2026-10-14), done:
+  SD-WAN set up by the steps' guide, kept a step at a time (an edge
+  or a service unfinished is kept, not deployed), what an edge changes
+  said first, NTP under Advanced, empty states for every list, forms
+  for what was JSON alone, the document exported and imported as a
+  file (console 0.175.0); workflows drawn and edited as a graph: steps
+  dragged from a palette, moved by dragging, what follows and where a
+  failure goes drawn from their ports, triggers and conditions in
+  words, a workflow exported and imported as a file (console 0.176.0).
 - The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
   under docs/notes/. Decided 2026-10-13: wire version 2 (D-1), cblink
   2 south and RESTCONF on the console only (D-2), libyang for the
@@ -155,11 +169,17 @@
   syslog, 9129, 8695, 9647, 9314 for BIRD's protocols, 8532 and 8533
   for traceroute, the drafts for BGP, QoS, STAMP; none for processes,
   history, WireGuard, netgraph, capture; YangModels/yang checked too).
-  To rework, found by that check: arcana-interfaces's vlan, lagg,
-  bridge and media augments onto IEEE 802.1Q (ieee802-dot1q-bridge,
-  -vlan-bridge, -rstp), 802.1AX (ieee802-dot1ax-linkagg), 802.3
-  (ieee802-ethernet-interface) and ietf-if-vlan-encapsulation; the
-  disks of arcana-storage also as ietf-hardware's components.
+  Reworked (2026-10-14, agent 0.114.22 to 0.114.27; the user: "convert
+  all arcana duplicate work to existing one"): a route's BGP, OSPF,
+  IS-IS, RIP and Babel origin their modules' identities; the MTU
+  ietf-ip's and ietf-if-extensions' max-frame-size, the Ethernet
+  addresses ietf-if-ethernet-like's, the FIB bind-ni-name alone, an
+  epair's peer ietf-if-extensions', a vlan ietf-if-vlan-encapsulation's,
+  an Ethernet's medium IEEE 802.3's, a lagg IEEE 802.1AX's, a bridge
+  IEEE 802.1Q's with RSTP; arcana-interfaces keeps FreeBSD's own (yif.c,
+  yang_kinds, yang_interfaces, yang_origins, yang_pmd). Modules now come
+  from the user's clone of YangModels/yang (~/code/yang). Still to do:
+  the disks of arcana-storage also as ietf-hardware's components (3.1.9).
   Done (2026-10-13): Y-0 0.1, the body decoder: YANG-CBOR by SID
   deltas (cblink sid_test), YANG-CBOR's tags under CBL_CTX_YANG_TAGS,
   the cblink module and its .sid file (cblink share/yang), and the

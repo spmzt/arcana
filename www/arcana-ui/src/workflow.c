@@ -40,6 +40,14 @@ static struct {
 	char		 run_wf[16];	/* the one asked to run */
 	char		 error[300];
 	char		 load_error[300];	/* the lists could not be read */
+	/* The editor: what is picked, -2 what starts it, -1 nothing; a
+	 * step being dragged, a line being drawn from a port. */
+	int		 sel;
+	char		 pal_filter[32];
+	int		 dragging;
+	double		 drag_y;
+	char		 linking[16];
+	double		 link_x0, link_y0, link_x, link_y;
 	double		 at;
 	bool		 loading;
 	/* The runs in the activity bar: each a task until it ends. */
@@ -49,7 +57,7 @@ static struct {
 	}		 watched[16];
 	int		 nwatched;
 	double		 watched_at;
-} wf;
+} wf = { .sel = -2, .dragging = -1 };
 
 static void	runs_watch(void);
 
@@ -568,7 +576,10 @@ view_list(struct html *h)
 		h_txt(h, templates[n].title);
 		h_raw(h, "</option>");
 	}
-	h_raw(h, "</select>");
+	h_raw(h, "</select><label class=\"button ghost small\" title=\"A "
+	    "workflow from a JSON file, opened to be looked over and saved\">"
+	    "Import<input type=\"file\" accept=\"application/json,.json\" "
+	    "data-file=\"wf-import\" hidden></label>");
 	if (app.nbatch > 0)
 		h_fmt(h, "<button class=\"ghost small\" data-act=\"queue-to-wf\" "
 		    "title=\"What waits in the queue, kept as a workflow\">The "
@@ -957,6 +968,27 @@ static const char *const reads[] = { "hello", "jails", "services", "stats",
     "events", "history", "packages" };
 static const char *const ops[] = { "eq", "ne", "contains", "gt", "lt",
     "exists", "missing" };
+/* The same, as a person says them. */
+static const char *const op_words[] = { "is", "is not", "contains",
+    "is more than", "is less than", "is there", "is not there" };
+
+static void	when_text(char *, size_t, const ucl_object_t *);
+
+/* Whether needle is in hay, whatever the case. */
+static bool
+ci_has(const char *hay, const char *needle)
+{
+	size_t	i, n = strlen(needle);
+
+	for (; hay != NULL && *hay != '\0'; hay++) {
+		for (i = 0; i < n && hay[i] != '\0' && (hay[i] | 0x20) ==
+		    (needle[i] | 0x20); i++)
+			;
+		if (i == n)
+			return (true);
+	}
+	return (n == 0);
+}
 
 static void
 view_step(struct html *h, const ucl_object_t *st, int i, int n)
@@ -969,11 +1001,8 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 	int			 j;
 
 	job = jget(st, "job");
-	/* Dragged by its number to another place among the steps. */
-	h_fmt(h, "<li class=\"wfedstep\" data-reorder=\"wf-step\" data-arg="
-	    "\"%d\"><div class=\"wfedhead\"><span class=\"num grip\" "
-	    "draggable=\"true\" title=\"Drag it to another place among the "
-	    "steps\">%d</span>", i, i + 1);
+	h_fmt(h, "<li class=\"wfedstep\"><div class=\"wfedhead\"><span class="
+	    "\"num\">%d</span>", i + 1);
 	snprintf(path, sizeof(path), "steps.%d.id", i);
 	input(h, "text", path, jstr(st, "id"), "its id");
 	snprintf(path, sizeof(path), "steps.%d.name", i);
@@ -991,10 +1020,8 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 		    strcmp(jstr(st, "arcana"), arcana_steps[r].what) == 0 ?
 		    " selected" : "", arcana_steps[r].title);
 	h_fmt(h, "</select><span class=\"acts\"><button class=\"icon\" "
-	    "data-act=\"wf-step-up\" data-arg=\"%d\" title=\"Earlier\"%s>↑"
-	    "</button><button class=\"icon\" data-act=\"wf-step-del\" "
-	    "data-arg=\"%d\" title=\"Take it away\">×</button></span></div>",
-	    i, i == 0 ? " disabled" : "", i);
+	    "data-act=\"wf-step-del\" data-arg=\"%d\" title=\"Take the step "
+	    "away\">×</button></span></div>", i);
 	for (r = 0; jstr(st, "arcana") != NULL && r < nitems(arcana_steps);
 	    r++)
 		if (strcmp(jstr(st, "arcana"), arcana_steps[r].what) == 0) {
@@ -1036,14 +1063,14 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 	/* Its condition, if it has one. */
 	when = jget(st, "when");
 	h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
-	    "data-act=\"wf-when\" data-arg=\"%d\"%s><span>Only when…</span>"
-	    "</label>", i, when != NULL ? " checked" : "");
+	    "data-act=\"wf-when\" data-arg=\"%d\"%s><span>Only if something "
+	    "is so</span></label>", i, when != NULL ? " checked" : "");
 	if (when != NULL) {
-		h_fmt(h, "<div class=\"wfwhen\"><select data-input=\"wf-when-of\" "
-		    "data-arg=\"%d\">", i);
+		h_fmt(h, "<div class=\"wfwhen\"><label>Look at<select data-input="
+		    "\"wf-when-of\" data-arg=\"%d\">", i);
 		for (r = 0; r < nitems(reads); r++)
-			h_fmt(h, "<option value=\"read:%s\"%s>a read of %s, "
-			    "then</option>", reads[r], jstr(when, "read") !=
+			h_fmt(h, "<option value=\"read:%s\"%s>the host's %s, read "
+			    "first</option>", reads[r], jstr(when, "read") !=
 			    NULL && strcmp(jstr(when, "read"), reads[r]) == 0 ?
 			    " selected" : "", reads[r]);
 		for (j = 0; j < i; j++) {
@@ -1056,32 +1083,43 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 			if (jstr(when, "step") != NULL && jstr(o, "id") != NULL &&
 			    strcmp(jstr(when, "step"), jstr(o, "id")) == 0)
 				h_raw(h, " selected");
-			h_raw(h, ">what ");
+			h_raw(h, ">what step ");
 			h_txt(h, jstr(o, "id"));
 			h_raw(h, " answered</option>");
 		}
-		h_raw(h, "</select>");
+		h_raw(h, "</select></label><label>At");
 		snprintf(path, sizeof(path), "steps.%d.when.path", i);
 		input(h, "text", path, jstr(when, "path"),
-		    "where: jails[name=web].state");
+		    "jails[name=web].state");
+		h_raw(h, "<small>A path in the answer: a name, a list's entry by "
+		    "a field (<code>jails[name=web]</code>), then a name in it."
+		    "</small></label><div class=\"wfrow\">");
 		h_fmt(h, "<select data-input=\"wf\" data-arg=\"text:steps.%d."
 		    "when.op\">", i);
 		for (r = 0; r < nitems(ops); r++)
-			h_fmt(h, "<option%s>%s</option>", jstr(when, "op") !=
-			    NULL && strcmp(jstr(when, "op"), ops[r]) == 0 ?
-			    " selected" : "", ops[r]);
+			h_fmt(h, "<option value=\"%s\"%s>%s</option>", ops[r],
+			    jstr(when, "op") != NULL && strcmp(jstr(when, "op"),
+			    ops[r]) == 0 ? " selected" : "", op_words[r]);
 		h_raw(h, "</select>");
-		snprintf(path, sizeof(path), "steps.%d.when.value", i);
-		input(h, "text", path, jstr(when, "value"), "what");
+		if (jstr(when, "op") == NULL || (strcmp(jstr(when, "op"),
+		    "exists") != 0 && strcmp(jstr(when, "op"), "missing") !=
+		    0)) {
+			snprintf(path, sizeof(path), "steps.%d.when.value", i);
+			input(h, "text", path, jstr(when, "value"), "running");
+		}
 		h_raw(h, "</div>");
+		when_text(buf, sizeof(buf), when);
+		h_raw(h, "<p class=\"wfsays\">Runs only if ");
+		h_txt(h, buf);
+		h_raw(h, ".</p></div>");
 	}
 	/* What follows a failure. */
 	of = jstr(st, "on_fail") != NULL ? jstr(st, "on_fail") : "stop";
-	h_fmt(h, "<label>When it fails<select data-input=\"wf\" data-arg=\""
+	h_fmt(h, "<label>If it fails<select data-input=\"wf\" data-arg=\""
 	    "text:steps.%d.on_fail\"><option value=\"stop\"%s>the host's run "
-	    "stops</option><option value=\"continue\"%s>the run goes on"
-	    "</option>", i, strcmp(of, "stop") == 0 ? " selected" : "",
-	    strcmp(of, "continue") == 0 ? " selected" : "");
+	    "stops there</option><option value=\"continue\"%s>the next step "
+	    "runs all the same</option>", i, strcmp(of, "stop") == 0 ?
+	    " selected" : "", strcmp(of, "continue") == 0 ? " selected" : "");
 	for (j = i + 1; j < n; j++) {
 		o = ucl_array_find_index(jget(wf.draft, "steps"), (unsigned int)
 		    j);
@@ -1089,11 +1127,515 @@ view_step(struct html *h, const ucl_object_t *st, int i, int n)
 		h_attr(h, "value", jstr(o, "id"));
 		if (jstr(o, "id") != NULL && strcmp(of, jstr(o, "id")) == 0)
 			h_raw(h, " selected");
-		h_raw(h, ">on at ");
+		h_raw(h, ">step ");
 		h_txt(h, jstr(o, "id"));
-		h_raw(h, "</option>");
+		h_raw(h, " runs next</option>");
 	}
-	h_raw(h, "</select></label></li>");
+	h_raw(h, "</select><small>Or draw it, from the step's red port to "
+	    "where it goes.</small></label></li>");
+}
+
+/* ---- The editor, a drawing ------------------------------------------ */
+
+/*
+ * A workflow drawn as it runs: what starts it at the top, its steps
+ * below in the order they run, an arrow from each to the next, and from
+ * each a red one to where a failure goes: the end (the host's run
+ * stops), the next (it goes on), or a later step.  Steps are taken from
+ * the palette at the left and dropped where they are to go; a step is
+ * dragged to another place; an arrow is drawn from a step's port to the
+ * step it is to lead to.  What is picked is changed at the right, in
+ * words.
+ */
+#define	G_X	30		/* the nodes' left */
+#define	G_W	300		/* a node's width */
+#define	G_H	62		/* and height */
+#define	G_GAP	42		/* between two */
+#define	G_TOP	16
+
+/* The y of the top of node k: -1 the triggers, n the end. */
+static double
+g_y(int k)
+{
+
+	return (G_TOP + (double)(k + 1) * (G_H + G_GAP));
+}
+
+/* The place among the steps a y is nearest to, 0 to n (after all). */
+static int
+g_place(double y, int n)
+{
+	int	k;
+
+	k = (int)((y - G_TOP - (G_H + G_GAP)) / (G_H + G_GAP) + 0.5);
+	return (k < 0 ? 0 : k > n ? n : k);
+}
+
+/* What happens on an event, in words, as a trigger is picked by. */
+static const struct evk {
+	const char	*key;
+	const char	*words;
+	const char	*kind;		/* the event's; NULL: its own, typed */
+	const char	*mkey, *mval;	/* a match that tells it apart */
+	const char	*param;		/* a match it may be narrowed by */
+	const char	*plabel;
+} evkinds[] = {
+	{ "host-down", "a host stops answering", "host-down", NULL, NULL,
+	    NULL, NULL },
+	{ "host-up", "a host answers again", "host-up", NULL, NULL, NULL,
+	    NULL },
+	{ "jail-stopped", "a jail stops", "jail-state", "state", "stopped",
+	    "jail", "Which jail (any, if empty)" },
+	{ "jail-running", "a jail starts", "jail-state", "state", "running",
+	    "jail", "Which jail (any, if empty)" },
+	{ "threshold", "a figure crosses its limit", "threshold", NULL, NULL,
+	    "what", "Which (cpu, mem, swap, net, disk; any, if empty)" },
+	{ "procs", "processes start or end", "procs", NULL, NULL, NULL,
+	    NULL },
+	{ "conf", "a configuration file changes", "conf", NULL, NULL, "file",
+	    "Which (/etc/rc.conf; any, if empty)" },
+	{ "link", "an interface changes: up, down, its MTU", "link", NULL,
+	    NULL, "interface", "Which interface (any, if empty)" },
+	{ "link-del", "an interface goes away", "link-del", NULL, NULL,
+	    "interface", "Which interface (any, if empty)" },
+	{ "address-add", "an address is given", "address-add", NULL, NULL,
+	    "interface", "On which interface (any, if empty)" },
+	{ "address-del", "an address is taken away", "address-del", NULL,
+	    NULL, "interface", "On which interface (any, if empty)" },
+	{ "route-add", "a route is added", "route-add", NULL, NULL, NULL,
+	    NULL },
+	{ "route-del", "a route is taken away", "route-del", NULL, NULL,
+	    NULL, NULL },
+	{ "zfs", "ZFS says something of a pool", "zfs", NULL, NULL, "pool",
+	    "Which pool (any, if empty)" },
+	{ "device-created", "a disk comes", "device", "state", "created",
+	    "cdev", "Which disk (any, if empty)" },
+	{ "device-destroyed", "a disk goes", "device", "state", "destroyed",
+	    "cdev", "Which disk (any, if empty)" },
+	{ "kmsg", "the kernel says something", "kmsg", NULL, NULL, NULL,
+	    NULL },
+	{ "job", "a job ends", "job", NULL, NULL, NULL, NULL },
+	{ "sdwan-tunnel", "an SD-WAN tunnel goes up or down", "sdwan-tunnel",
+	    NULL, NULL, NULL, NULL },
+	{ "sdwan-fault", "an SD-WAN fault is raised or cleared",
+	    "sdwan-fault", NULL, NULL, NULL, NULL },
+	{ "custom", "something else, by its kind", NULL, NULL, NULL, NULL,
+	    NULL },
+};
+
+/* The words of a trigger: which of evkinds it is. */
+static const struct evk *
+evk_of(const ucl_object_t *on)
+{
+	const char	*ev = jstr(on, "event");
+	size_t		 i;
+
+	for (i = 0; ev != NULL && i < nitems(evkinds); i++) {
+		if (evkinds[i].kind == NULL || strcmp(evkinds[i].kind, ev) != 0)
+			continue;
+		if (evkinds[i].mkey != NULL && (jstr(jget(on, "match"),
+		    evkinds[i].mkey) == NULL || strcmp(jstr(jget(on, "match"),
+		    evkinds[i].mkey), evkinds[i].mval) != 0))
+			continue;
+		return (&evkinds[i]);
+	}
+	return (&evkinds[nitems(evkinds) - 1]);
+}
+
+/* Seconds as the editor says them: a number of a unit. */
+static const struct {
+	const char	*name;
+	long long	 s;
+} units[] = { { "weeks", 604800 }, { "days", 86400 }, { "hours", 3600 },
+    { "minutes", 60 } };
+
+static int
+unit_of(long long s)
+{
+	size_t	i;
+
+	for (i = 0; i < nitems(units); i++)
+		if (s >= units[i].s && s % units[i].s == 0)
+			return ((int)i);
+	return ((int)nitems(units) - 1);
+}
+
+/* What starts it, in words, a line each. */
+static void
+g_triggers_text(struct html *h, const ucl_object_t *d)
+{
+	const ucl_object_t	*on, *m;
+	ucl_object_iter_t	 it;
+	const struct evk	*k;
+	long long		 every = jint(d, "every", 0);
+	int			 u;
+
+	if (every > 0) {
+		u = unit_of(every);
+		h_fmt(h, "<tspan x=\"%d\" dy=\"15\">every %lld %s</tspan>",
+		    G_X + 12, every / units[u].s, every / units[u].s == 1 ?
+		    (const char *[]){ "week", "day", "hour", "minute" }[u] :
+		    units[u].name);
+	}
+	it = NULL;
+	while ((on = ucl_object_iterate(jget(d, "on"), &it, true)) != NULL) {
+		k = evk_of(on);
+		h_fmt(h, "<tspan x=\"%d\" dy=\"15\">when ", G_X + 12);
+		h_txt(h, k->kind != NULL ? k->words : jstr(on, "event"));
+		if (k->param != NULL && (m = jget(jget(on, "match"), k->param))
+		    != NULL) {
+			h_raw(h, ": ");
+			h_txt(h, ucl_object_tostring_forced(m));
+		}
+		h_raw(h, "</tspan>");
+	}
+	if (every == 0 && ucl_array_size(jget(d, "on")) == 0)
+		h_fmt(h, "<tspan x=\"%d\" dy=\"15\">by hand</tspan>", G_X + 12);
+}
+
+/* The title of a step, in words. */
+static void
+step_title(char *buf, size_t len, const ucl_object_t *st)
+{
+	const ucl_object_t	*k;
+	size_t			 r;
+
+	if (jstr(st, "name") != NULL && jstr(st, "name")[0] != '\0') {
+		snprintf(buf, len, "%s", jstr(st, "name"));
+		return;
+	}
+	if (jstr(st, "read") != NULL) {
+		snprintf(buf, len, "read the host's %s", jstr(st, "read"));
+		return;
+	}
+	for (r = 0; jstr(st, "arcana") != NULL && r < nitems(arcana_steps); r++)
+		if (strcmp(jstr(st, "arcana"), arcana_steps[r].what) == 0) {
+			snprintf(buf, len, "Arcana: %s", arcana_steps[r].title);
+			return;
+		}
+	k = kind_of(jstr(jget(st, "job"), "kind"));
+	snprintf(buf, len, "%s", k != NULL && jstr(k, "title") != NULL ?
+	    jstr(k, "title") : jstr(jget(st, "job"), "kind") != NULL ? jstr(
+	    jget(st, "job"), "kind") : "a job, its kind not chosen");
+}
+
+
+/* A condition, in words: "the host's jails: jails[name=web].state is
+ * running", "what a answered: new is true". */
+static void
+when_text(char *buf, size_t len, const ucl_object_t *w)
+{
+	const char	*op = jstr(w, "op"), *path = jstr(w, "path"), *val =
+			    jstr(w, "value");
+	size_t		 r;
+
+	for (r = 0; op != NULL && r < nitems(ops); r++)
+		if (strcmp(op, ops[r]) == 0)
+			break;
+	if (op == NULL || r == nitems(ops))
+		r = 0;
+	if (jstr(w, "step") != NULL)
+		snprintf(buf, len, "what %s answered: ", jstr(w, "step"));
+	else
+		snprintf(buf, len, "the host's %s: ", jstr(w, "read") != NULL ?
+		    jstr(w, "read") : "hello");
+	strlcat(buf, path != NULL && path[0] != '\0' ? path : "it", len);
+	strlcat(buf, " ", len);
+	strlcat(buf, op_words[r], len);
+	if (r < 5 && val != NULL) {
+		strlcat(buf, " ", len);
+		strlcat(buf, val, len);
+	}
+}
+
+/* The step of id, its place; -1: none. */
+static int
+step_at(const char *id)
+{
+	const ucl_object_t	*s;
+	ucl_object_iter_t	 it;
+	int			 i = 0;
+
+	it = NULL;
+	while (id != NULL && (s = ucl_object_iterate(jget(wf.draft, "steps"),
+	    &it, true)) != NULL) {
+		if (jstr(s, "id") != NULL && strcmp(jstr(s, "id"), id) == 0)
+			return (i);
+		i++;
+	}
+	return (-1);
+}
+
+/* A failure that goes back, or to itself, cannot: it stops instead. */
+static void
+fails_forward(void)
+{
+	ucl_object_t	*s;
+	ucl_object_iter_t it;
+	const char	*of;
+	int		 i = 0, j;
+
+	it = NULL;
+	while ((s = (ucl_object_t *)(uintptr_t)ucl_object_iterate(jget(
+	    wf.draft, "steps"), &it, true)) != NULL) {
+		of = jstr(s, "on_fail");
+		if (of != NULL && strcmp(of, "stop") != 0 && strcmp(of,
+		    "continue") != 0 && ((j = step_at(of)) <= i)) {
+			(void)ucl_object_delete_key(s, "on_fail");
+			if (j >= 0)
+				toast(true, "Step %s fails on to %s no longer: it "
+				    "comes before it now, and a failure goes "
+				    "only forward", jstr(s, "id"), of);
+		}
+		i++;
+	}
+}
+
+static void
+view_graph(struct html *h)
+{
+	const ucl_object_t	*d = wf.draft, *st;
+	ucl_object_iter_t	 it;
+	char			 title[200], w[300];
+	const char		*of;
+	double			 y, ty, x1, bend;
+	int			 n, i, j, ntr;
+
+	n = (int)ucl_array_size(jget(d, "steps"));
+	ntr = (jint(d, "every", 0) > 0) + (int)ucl_array_size(jget(d, "on"));
+	if (ntr == 0)
+		ntr = 1;
+	h_fmt(h, "<div class=\"wfcanvas\" data-dropzone=\"wf-canvas\"><svg "
+	    "id=\"wfgraph\" class=\"wfdraw\" viewBox=\"0 0 470 %.0f\" "
+	    "width=\"470\" height=\"%.0f\"><defs><marker id=\"wfa\" "
+	    "viewBox=\"0 0 10 10\" refX=\"9\" refY=\"5\" markerWidth=\"7\" "
+	    "markerHeight=\"7\" orient=\"auto-start-reverse\"><path d=\"M0 0L10 "
+	    "5L0 10z\"/></marker><marker id=\"wfr\" viewBox=\"0 0 10 10\" "
+	    "refX=\"9\" refY=\"5\" markerWidth=\"7\" markerHeight=\"7\" "
+	    "orient=\"auto-start-reverse\" class=\"fail\"><path d=\"M0 0L10 "
+	    "5L0 10z\"/></marker></defs>", g_y(n) + G_H + 30, g_y(n) + G_H +
+	    30);
+	/* What follows each, straight down. */
+	for (i = -1; i < n; i++)
+		h_fmt(h, "<line class=\"wfthen\" x1=\"%d\" y1=\"%.0f\" x2=\"%d\" "
+		    "y2=\"%.0f\" marker-end=\"url(#wfa)\"/>", G_X + G_W / 2,
+		    g_y(i) + G_H, G_X + G_W / 2, g_y(i + 1) - 2);
+	/* Where each failure goes: around, at the right. */
+	i = 0;
+	it = NULL;
+	while ((st = ucl_object_iterate(jget(d, "steps"), &it, true)) != NULL) {
+		of = jstr(st, "on_fail") != NULL ? jstr(st, "on_fail") : "stop";
+		j = strcmp(of, "stop") == 0 ? n : strcmp(of, "continue") == 0 ?
+		    i + 1 : step_at(of);
+		if (j > i) {
+			y = g_y(i) + G_H / 2;
+			ty = g_y(j) + (j == n ? 18 : G_H / 2);
+			x1 = j == n ? G_X + G_W / 2 + 70 : G_X + G_W;
+			bend = G_X + G_W + 30 + 10 * (j - i);
+			h_fmt(h, "<path class=\"wffail\" d=\"M%d %.0f C%.0f %.0f "
+			    "%.0f %.0f %.0f %.0f\" marker-end=\"url(#wfr)\"/>",
+			    G_X + G_W, y, bend, y, bend, ty, x1 + 2, ty);
+		}
+		i++;
+	}
+	/* What starts it. */
+	y = g_y(-1);
+	h_fmt(h, "<g class=\"wfnode trig%s\" data-drag=\"wf-node\" data-arg="
+	    "\"t\" data-drop=\"t\"><rect x=\"%d\" y=\"%.0f\" width=\"%d\" "
+	    "height=\"%d\" rx=\"10\"/><text class=\"k\" x=\"%d\" y=\"%.0f\">"
+	    "STARTS</text><text x=\"%d\" y=\"%.0f\">", wf.sel == -2 ? " sel" :
+	    "", G_X, y, G_W, G_H, G_X + 12, y + 16, G_X + 12, y + 18);
+	g_triggers_text(h, d);
+	h_raw(h, "</text></g>");
+	/* Each step. */
+	i = 0;
+	it = NULL;
+	while ((st = ucl_object_iterate(jget(d, "steps"), &it, true)) != NULL) {
+		y = g_y(i);
+		step_title(title, sizeof(title), st);
+		h_fmt(h, "<g class=\"wfnode%s%s\" data-drag=\"wf-node\" "
+		    "data-arg=\"%d\" data-drop=\"s:%d\"><rect x=\"%d\" y=\"%.0f\" "
+		    "width=\"%d\" height=\"%d\" rx=\"6\"/><text class=\"k\" x=\"%d\" "
+		    "y=\"%.0f\">%d · %s</text><text class=\"t\" x=\"%d\" y=\"%.0f\">",
+		    wf.sel == i ? " sel" : "", jget(st, "job") != NULL ? " job" :
+		    jstr(st, "read") != NULL ? " read" : " arcana", i, i, G_X, y,
+		    G_W, G_H, G_X + 12, y + 16, i + 1, jget(st, "job") != NULL ?
+		    "JOB" : jstr(st, "read") != NULL ? "READ" : "ARCANA", G_X + 12,
+		    y + 34);
+		h_fit(h, title, 38);
+		h_raw(h, "</text>");
+		if (jget(st, "when") != NULL) {
+			when_text(w, sizeof(w), jget(st, "when"));
+			h_fmt(h, "<text class=\"c\" x=\"%d\" y=\"%.0f\">only if ",
+			    G_X + 12, y + 52);
+			h_fit(h, w, 40);
+			h_raw(h, "</text>");
+		}
+		/* Its ports: the next, below; the failure's, at the right. */
+		h_fmt(h, "<circle class=\"port next\" cx=\"%d\" cy=\"%.0f\" r=\"6\" "
+		    "data-drag=\"wf-link\" data-arg=\"n:%d\"><title>Draw to the "
+		    "step that is to come right after this one</title></circle>"
+		    "<circle class=\"port fail\" cx=\"%d\" cy=\"%.0f\" r=\"6\" "
+		    "data-drag=\"wf-link\" data-arg=\"f:%d\"><title>Draw to where "
+		    "a failure of this step goes: the end, or a later step"
+		    "</title></circle></g>", G_X + G_W / 2, y + G_H, i, G_X + G_W,
+		    y + G_H / 2, i);
+		i++;
+	}
+	/* The end. */
+	y = g_y(n);
+	h_fmt(h, "<g class=\"wfnode end\" data-drop=\"end\"><rect x=\"%d\" "
+	    "y=\"%.0f\" width=\"140\" height=\"36\" rx=\"18\"/><text x=\"%d\" "
+	    "y=\"%.0f\">END</text></g>", G_X + G_W / 2 - 70, y, G_X + G_W / 2 -
+	    16, y + 23);
+	/* A step on its way to another place, a line being drawn. */
+	if (wf.dragging >= 0)
+		h_fmt(h, "<line class=\"wfdrop\" x1=\"%d\" y1=\"%.0f\" x2=\"%d\" "
+		    "y2=\"%.0f\"/>", G_X - 10, g_y(g_place(wf.drag_y, n)) -
+		    G_GAP / 2, G_X + G_W + 10, g_y(g_place(wf.drag_y, n)) -
+		    G_GAP / 2);
+	if (wf.linking[0] != '\0')
+		h_fmt(h, "<line class=\"wflinking %s\" x1=\"%.0f\" y1=\"%.0f\" "
+		    "x2=\"%.0f\" y2=\"%.0f\"/>", wf.linking[0] == 'f' ? "fail" :
+		    "then", wf.link_x0, wf.link_y0, wf.link_x, wf.link_y);
+	h_raw(h, "</svg>");
+	if (n == 0)
+		h_raw(h, "<p class=\"wfhint-empty\">Drag a step here from the "
+		    "left, or click one there.</p>");
+	h_raw(h, "</div>");
+}
+
+/* The palette: what a step can be, to be dragged onto the drawing. */
+static void
+view_palette(struct html *h)
+{
+	const ucl_object_t	*k;
+	ucl_object_iter_t	 it;
+	size_t			 r;
+	char			 arg[96];
+
+	h_raw(h, "<aside class=\"wfpalette\"><input class=\"filter\" "
+	    "data-input=\"wf-pal-filter\" placeholder=\"Find a step\" "
+	    "autocomplete=\"off\" spellcheck=\"false\"");
+	h_attr(h, "value", wf.pal_filter);
+	h_raw(h, "><h5>Read the host</h5><ul>");
+	for (r = 0; r < nitems(reads); r++) {
+		if (wf.pal_filter[0] != '\0' && !ci_has(reads[r],
+		    wf.pal_filter))
+			continue;
+		snprintf(arg, sizeof(arg), "read:%s", reads[r]);
+		h_raw(h, "<li draggable=\"true\" data-palette=\"wf\" data-act=\""
+		    "wf-pal-add\" class=\"read\"");
+		h_attr(h, "data-arg", arg);
+		h_raw(h, ">its ");
+		h_txt(h, reads[r]);
+		h_raw(h, "</li>");
+	}
+	h_raw(h, "</ul><h5>Do</h5><ul>");
+	it = NULL;
+	while ((k = ucl_object_iterate(jget(wf.jobs, "kinds"), &it, true)) !=
+	    NULL) {
+		if (wf.pal_filter[0] != '\0' && !ci_has(jstr(k, "title"),
+		    wf.pal_filter) && !ci_has(jstr(k, "kind"), wf.pal_filter))
+			continue;
+		snprintf(arg, sizeof(arg), "job:%s", jstr(k, "kind"));
+		h_raw(h, "<li draggable=\"true\" data-palette=\"wf\" data-act=\""
+		    "wf-pal-add\" class=\"job\"");
+		h_attr(h, "data-arg", arg);
+		h_attr(h, "title", jstr(k, "kind"));
+		h_raw(h, ">");
+		h_txt(h, jstr(k, "title") != NULL ? jstr(k, "title") : jstr(k,
+		    "kind"));
+		h_raw(h, "</li>");
+	}
+	h_raw(h, "</ul><h5>Arcana</h5><ul>");
+	for (r = 0; r < nitems(arcana_steps); r++) {
+		if (wf.pal_filter[0] != '\0' && !ci_has(arcana_steps[r].title,
+		    wf.pal_filter))
+			continue;
+		snprintf(arg, sizeof(arg), "arcana:%s", arcana_steps[r].what);
+		h_raw(h, "<li draggable=\"true\" data-palette=\"wf\" data-act=\""
+		    "wf-pal-add\" class=\"arcana\"");
+		h_attr(h, "data-arg", arg);
+		h_raw(h, ">");
+		h_txt(h, arcana_steps[r].title);
+		h_raw(h, "</li>");
+	}
+	h_raw(h, "</ul></aside>");
+}
+
+/* What starts it, as forms in words: the panel of the top node. */
+static void
+view_triggers(struct html *h)
+{
+	const ucl_object_t	*d = wf.draft, *on;
+	const struct evk	*k;
+	ucl_object_iter_t	 it;
+	char			 path[64], buf[32];
+	long long		 every = jint(d, "every", 0);
+	size_t			 r;
+	int			 i, u;
+
+	h_raw(h, "<h4>What starts it</h4><p class=\"dim\">It can always be "
+	    "run by hand, with <b>Run</b>. Besides:</p>");
+	u = unit_of(every > 0 ? every : 3600);
+	h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" data-act=\""
+	    "wf-every-on\"%s><span>On a schedule</span></label>", every > 0 ?
+	    " checked" : "");
+	if (every > 0) {
+		h_raw(h, "<div class=\"wfrow\">every ");
+		snprintf(buf, sizeof(buf), "%lld", every / units[u].s);
+		h_raw(h, "<input type=\"number\" min=\"1\" data-input=\""
+		    "wf-every-n\"");
+		h_attr(h, "value", buf);
+		h_raw(h, "><select data-input=\"wf-every-unit\">");
+		for (r = 0; r < nitems(units); r++)
+			h_fmt(h, "<option value=\"%zu\"%s>%s</option>", r, (int)r ==
+			    u ? " selected" : "", units[r].name);
+		h_raw(h, "</select></div><p class=\"dim\">A minute at least; "
+		    "counted from when the console starts.</p>");
+	}
+	h_raw(h, "<h5>When something happens on a host</h5><ul class=\"wfon\">");
+	i = 0;
+	it = NULL;
+	while ((on = ucl_object_iterate(jget(d, "on"), &it, true)) != NULL) {
+		k = evk_of(on);
+		h_fmt(h, "<li><div class=\"wfrow\">when <select data-input=\""
+		    "wf-on-kind\" data-arg=\"%d\">", i);
+		for (r = 0; r < nitems(evkinds); r++)
+			h_fmt(h, "<option value=\"%s\"%s>%s</option>",
+			    evkinds[r].key, &evkinds[r] == k ? " selected" : "",
+			    evkinds[r].words);
+		h_fmt(h, "</select><button class=\"icon\" data-act=\"wf-on-del\" "
+		    "data-arg=\"%d\" title=\"Not on this\">×</button></div>", i);
+		if (k->kind == NULL) {
+			snprintf(path, sizeof(path), "on.%d.event", i);
+			h_raw(h, "<label>Its kind");
+			input(h, "text", path, jstr(on, "event"), "as the host "
+			    "tells it");
+			h_raw(h, "</label>");
+		}
+		if (k->param != NULL) {
+			snprintf(path, sizeof(path), "on.%d.match.%s", i,
+			    k->param);
+			h_raw(h, "<label>");
+			h_txt(h, k->plabel);
+			input(h, "text", path, jstr(jget(on, "match"), k->param),
+			    "any");
+			h_raw(h, "</label>");
+		}
+		h_raw(h, "</li>");
+		i++;
+	}
+	h_raw(h, "</ul><button class=\"ghost small\" data-act=\"wf-on-add\">"
+	    "+ when something happens</button><p class=\"dim\">On each, the "
+	    "steps run on the host it happened on, among those it runs on; "
+	    "<code>${event.jail}</code> and the like name what it was of."
+	    "</p><label class=\"toggle\"><input type=\"checkbox\" data-input="
+	    "\"wf\" data-arg=\"bool:destructive\"");
+	h_raw(h, jbool(d, "destructive") ? " checked" : "");
+	h_raw(h, "><span>It may destroy by itself <em>a step that destroys "
+	    "runs on a schedule or an event only so</em></span></label>");
 }
 
 static void
@@ -1109,14 +1651,16 @@ view_edit(struct html *h)
 	h_raw(h, "<div class=\"toolbar\"><button class=\"ghost small\" "
 	    "data-act=\"wf-back\">‹ Workflows</button><h3>");
 	h_raw(h, jstr(d, "id") != NULL ? "Change the workflow" : "A workflow");
-	h_raw(h, "</h3><button class=\"small\" data-act=\"wf-save\">Save"
-	    "</button></div>");
+	h_raw(h, "</h3><button class=\"ghost small\" data-act=\"wf-export\" "
+	    "title=\"As a JSON file, laid out, to keep or to start another "
+	    "from\">Export</button><button class=\"small\" data-act=\""
+	    "wf-save\">Save</button></div>");
 	if (wf.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, wf.error);
 		h_raw(h, "</div>");
 	}
-	h_raw(h, "<div class=\"wfedit\"><label>Name");
+	h_raw(h, "<div class=\"wfedit wfmeta\"><label>Name");
 	input(h, "text", "name", jstr(d, "name"), "restart a service");
 	h_raw(h, "</label><fieldset class=\"wfhosts\"><legend>Hosts it runs on"
 	    "</legend>");
@@ -1149,56 +1693,25 @@ view_edit(struct html *h)
 	}
 	h_raw(h, "</ul><button class=\"ghost small\" data-act=\"wf-param-add\">"
 	    "+ parameter</button></fieldset>");
-	h_raw(h, "<h4 class=\"family\">Steps</h4><ol class=\"wfsteps\">");
+	h_raw(h, "</div><div class=\"wfeditor\">");
+	view_palette(h);
+	view_graph(h);
+	h_raw(h, "<aside class=\"wfpanel\">");
 	n = (int)ucl_array_size(jget(d, "steps"));
-	i = 0;
-	it = NULL;
-	while ((st = ucl_object_iterate(jget(d, "steps"), &it, true)) != NULL)
-		view_step(h, st, i++, n);
-	h_raw(h, "</ol><button class=\"ghost small\" data-act=\"wf-step-add\">"
-	    "+ step</button>");
-	/* By itself. */
-	h_raw(h, "<fieldset><legend>By itself</legend><label>Every, seconds");
-	snprintf(buf, sizeof(buf), "%lld", (long long)jint(d, "every", 0));
-	input(h, "num", "every", jint(d, "every", 0) > 0 ? buf : NULL,
-	    "0: not at an interval; 60 at least");
-	h_raw(h, "</label><ul class=\"wfon\">");
-	i = 0;
-	it = NULL;
-	while ((on = ucl_object_iterate(jget(d, "on"), &it, true)) != NULL) {
-		const ucl_object_t	*m;
-		ucl_object_iter_t	 mit;
-		size_t			 len;
-
-		h_raw(h, "<li>On");
-		snprintf(path, sizeof(path), "on.%d.event", i);
-		input(h, "text", path, jstr(on, "event"), "host-down, host-up, "
-		    "jail-state, threshold, kmsg…");
-		buf[0] = '\0';
-		len = 0;
-		mit = NULL;
-		while ((m = ucl_object_iterate(jget(on, "match"), &mit, true)) !=
-		    NULL && len < sizeof(buf) - 2) {
-			len += (size_t)snprintf(buf + len, sizeof(buf) - len,
-			    "%s%s=%s", len > 0 ? "\n" : "", ucl_object_key(m),
-			    ucl_object_tostring_forced(m));
-			if (len >= sizeof(buf))
-				len = sizeof(buf) - 1;
-		}
-		h_fmt(h, "<textarea data-input=\"wf\" data-arg=\"map:on.%d.match\" "
-		    "rows=\"2\" spellcheck=\"false\" placeholder=\"what it must "
-		    "match: what=mem\">", i);
-		h_txt(h, buf);
-		h_fmt(h, "</textarea><button class=\"icon\" data-act=\""
-		    "wf-on-del\" data-arg=\"%d\">×</button></li>", i++);
-	}
-	h_raw(h, "</ul><button class=\"ghost small\" data-act=\"wf-on-add\">+ "
-	    "event</button><label class=\"toggle\"><input type=\"checkbox\" "
-	    "data-input=\"wf\" data-arg=\"bool:destructive\"");
-	h_raw(h, jbool(d, "destructive") ? " checked" : "");
-	h_raw(h, "><span>It may destroy, by itself <em>a step that destroys "
-	    "runs at an interval or on an event only so</em></span></label>"
-	    "</fieldset></div>");
+	if (wf.sel == -2)
+		view_triggers(h);
+	else if (wf.sel >= 0 && wf.sel < n) {
+		h_raw(h, "<ol class=\"wfsteps one\">");
+		view_step(h, ucl_array_find_index(jget(d, "steps"), (unsigned
+		    int)wf.sel), wf.sel, n);
+		h_raw(h, "</ol>");
+	} else
+		h_raw(h, "<p class=\"dim\">Pick a step, or what starts it, to "
+		    "change it.</p>");
+	h_raw(h, "</aside></div>");
+	(void)st;
+	(void)on;
+	(void)buf;
 }
 
 void
@@ -1483,6 +1996,248 @@ step_move(int from, int to)
 		ucl_array_append(a, rest[--nr]);
 }
 
+/* A new step of a palette's kind ("job:pkg-upgrade", "read:jails",
+ * "arcana:check"), put at place k among the steps. */
+static void
+step_new(const char *what, int k)
+{
+	ucl_object_t	*st, *a;
+	char		 id[16];
+	int		 n;
+
+	st = ucl_object_typed_new(UCL_OBJECT);
+	new_step_id(id, sizeof(id));
+	ucl_object_insert_key(st, ucl_object_fromstring(id), "id", 0, true);
+	if (strncmp(what, "read:", 5) == 0)
+		ucl_object_insert_key(st, ucl_object_fromstring(what + 5),
+		    "read", 0, true);
+	else if (strncmp(what, "arcana:", 7) == 0)
+		ucl_object_insert_key(st, ucl_object_fromstring(what + 7),
+		    "arcana", 0, true);
+	else {
+		a = ucl_object_typed_new(UCL_OBJECT);
+		if (strncmp(what, "job:", 4) == 0 && what[4] != '\0')
+			ucl_object_insert_key(a, ucl_object_fromstring(what + 4),
+			    "kind", 0, true);
+		ucl_object_insert_key(st, a, "job", 0, true);
+	}
+	a = arr_at("steps");
+	n = (int)ucl_array_size(a);
+	if (n >= WF_EDIT_STEPS) {
+		ucl_object_unref(st);
+		toast(true, "A workflow has %d steps at most", WF_EDIT_STEPS);
+		return;
+	}
+	ucl_array_append(a, st);
+	if (k >= 0 && k < n)
+		step_move(n, k);
+	wf.sel = k >= 0 && k < n ? k : n;
+}
+
+/* "x,y,cx,cy,k[,drop]": where in the drawing, and what it was let go on. */
+static const char *
+drag_at(const char *v, double *x, double *y)
+{
+	const char	*p = v;
+	int		 c;
+
+	*x = *y = 0;
+	(void)sscanf(v, "%lf,%lf", x, y);
+	for (c = 0; c < 5 && p != NULL; c++)
+		if ((p = strchr(p, ',')) != NULL)
+			p++;
+	return (p != NULL ? p : "");
+}
+
+/* What the drawing and the triggers' forms do; false: not theirs. */
+static bool
+wf_graph_action(const char *act, const char *arg, const char *value)
+{
+	ucl_object_t		*on, *m;
+	const ucl_object_t	*st;
+	const char		*drop;
+	double			 x, y;
+	long long		 every;
+	size_t			 r;
+	int			 i, j, n, u;
+
+	n = (int)ucl_array_size(jget(wf.draft, "steps"));
+	if (strcmp(act, "input:wf-pal-filter") == 0) {
+		snprintf(wf.pal_filter, sizeof(wf.pal_filter), "%s", value);
+		return (true);
+	}
+	if (strcmp(act, "wf-pal-add") == 0) {
+		step_new(arg, -1);
+		return (true);
+	}
+	if (strcmp(act, "wf-canvas-drop") == 0) {
+		(void)drag_at(value, &x, &y);
+		step_new(arg, g_place(y, n));
+		return (true);
+	}
+	if (strcmp(act, "wf-node-click") == 0) {
+		wf.sel = strcmp(arg, "t") == 0 ? -2 : atoi(arg);
+		return (true);
+	}
+	if (strcmp(act, "wf-node-start") == 0) {
+		wf.dragging = strcmp(arg, "t") == 0 ? -1 : atoi(arg);
+		(void)drag_at(value, &x, &wf.drag_y);
+		return (true);
+	}
+	if (strcmp(act, "wf-node-move") == 0) {
+		(void)drag_at(value, &x, &wf.drag_y);
+		return (true);
+	}
+	if (strcmp(act, "wf-node-end") == 0) {
+		i = wf.dragging;
+		wf.dragging = -1;
+		if (i < 0 || i >= n)
+			return (true);
+		(void)drag_at(value, &x, &y);
+		j = g_place(y, n);
+		/* Put before the one at j: after taking it out, one less
+		 * when it was before. */
+		if (j > i)
+			j--;
+		if (j != i) {
+			step_move(i, j);
+			fails_forward();
+		}
+		wf.sel = j;
+		return (true);
+	}
+	if (strcmp(act, "wf-link-start") == 0) {
+		i = atoi(arg + 2);
+		snprintf(wf.linking, sizeof(wf.linking), "%s", arg);
+		wf.link_x0 = arg[0] == 'f' ? G_X + G_W : G_X + G_W / 2;
+		wf.link_y0 = arg[0] == 'f' ? g_y(i) + G_H / 2 : g_y(i) + G_H;
+		wf.link_x = wf.link_x0;
+		wf.link_y = wf.link_y0;
+		return (true);
+	}
+	if (strcmp(act, "wf-link-move") == 0) {
+		(void)drag_at(value, &wf.link_x, &wf.link_y);
+		return (true);
+	}
+	if (strcmp(act, "wf-link-click") == 0) {
+		wf.sel = atoi(arg + 2);
+		return (true);
+	}
+	if (strcmp(act, "wf-link-end") == 0) {
+		wf.linking[0] = '\0';
+		i = atoi(arg + 2);
+		drop = drag_at(value, &x, &y);
+		if (i < 0 || i >= n)
+			return (true);
+		j = strncmp(drop, "s:", 2) == 0 ? atoi(drop + 2) : strcmp(drop,
+		    "end") == 0 ? n : -1;
+		if (arg[0] == 'f') {
+			char	path[48];
+
+			snprintf(path, sizeof(path), "steps.%d.on_fail", i);
+			if (j < 0)
+				return (true);
+			if (j <= i) {
+				toast(true, "A failure goes on only to a later "
+				    "step, or to the end");
+				return (true);
+			}
+			st = ucl_array_find_index(jget(wf.draft, "steps"),
+			    (unsigned int)j);
+			set_path(path, ucl_object_fromstring(j == n ? "stop" :
+			    j == i + 1 ? "continue" : jstr(st, "id")));
+			wf.sel = i;
+			return (true);
+		}
+		/* The step j to come right after i. */
+		if (j < 0 || j >= n || j == i || j == i + 1)
+			return (true);
+		step_move(j, j > i ? i + 1 : i);
+		fails_forward();
+		wf.sel = j > i ? i + 1 : i;
+		return (true);
+	}
+	if (strcmp(act, "wf-every-on") == 0) {
+		set_path("every", jint(wf.draft, "every", 0) > 0 ? NULL :
+		    ucl_object_fromint(3600));
+		return (true);
+	}
+	if (strcmp(act, "input:wf-every-n") == 0 || strcmp(act,
+	    "input:wf-every-unit") == 0) {
+		every = jint(wf.draft, "every", 3600);
+		u = unit_of(every);
+		if (act[14] == 'n') {
+			if (strtoll(value, NULL, 10) > 0)
+				every = strtoll(value, NULL, 10) * units[u].s;
+		} else {
+			r = (size_t)strtoul(value, NULL, 10);
+			if (r < nitems(units))
+				every = every / units[u].s * units[r].s;
+		}
+		set_path("every", ucl_object_fromint(every < 60 ? 60 : every));
+		return (true);
+	}
+	if (strcmp(act, "input:wf-on-kind") == 0) {
+		i = atoi(arg);
+		on = (ucl_object_t *)(uintptr_t)ucl_array_find_index(jget(
+		    wf.draft, "on"), (unsigned int)i);
+		for (r = 0; on != NULL && r < nitems(evkinds); r++) {
+			if (strcmp(evkinds[r].key, value) != 0)
+				continue;
+			(void)ucl_object_delete_key(on, "event");
+			(void)ucl_object_delete_key(on, "match");
+			ucl_object_insert_key(on, ucl_object_fromstring(
+			    evkinds[r].kind != NULL ? evkinds[r].kind : ""),
+			    "event", 0, true);
+			m = ucl_object_typed_new(UCL_OBJECT);
+			if (evkinds[r].mkey != NULL)
+				ucl_object_insert_key(m, ucl_object_fromstring(
+				    evkinds[r].mval), evkinds[r].mkey, 0, true);
+			ucl_object_insert_key(on, m, "match", 0, true);
+		}
+		return (true);
+	}
+	if (strcmp(act, "wf-export") == 0 && wf.draft != NULL) {
+		char	*json, name[96], *p;
+
+		json = (char *)ucl_object_emit(wf.draft, UCL_EMIT_JSON);
+		snprintf(name, sizeof(name), "workflow-%s.json", jstr(wf.draft,
+		    "name") != NULL ? jstr(wf.draft, "name") : "new");
+		for (p = name; *p != '\0'; p++)
+			if (*p == ' ' || *p == '/')
+				*p = '-';
+		arc_save_text(name, "application/json", json != NULL ? json :
+		    "{}");
+		free(json);
+		return (true);
+	}
+	if (strcmp(act, "file:wf-import") == 0) {
+		ucl_object_t	*o;
+
+		o = value[0] != '\0' ? json_parse(value) : NULL;
+		if (o == NULL || ucl_object_type(o) != UCL_OBJECT) {
+			toast(true, "%s: not a workflow as JSON", arg);
+			if (o != NULL)
+				ucl_object_unref(o);
+			return (true);
+		}
+		/* Another one of its own once saved, not the one it was. */
+		(void)ucl_object_delete_key(o, "id");
+		if (ucl_object_lookup(o, "steps") == NULL)
+			ucl_object_insert_key(o, ucl_object_typed_new(UCL_ARRAY),
+			    "steps", 0, true);
+		if (wf.draft != NULL)
+			ucl_object_unref(wf.draft);
+		wf.draft = o;
+		wf.error[0] = '\0';
+		wf.mode = WM_EDIT;
+		wf.sel = -2;
+		toast(false, "Read from %s: look it over, then Save", arg);
+		return (true);
+	}
+	return (false);
+}
+
 bool
 workflows_action(const char *act, const char *arg, const char *value)
 {
@@ -1497,9 +2252,12 @@ workflows_action(const char *act, const char *arg, const char *value)
 		return (true);
 	}
 	if (strncmp(act, "wf-", 3) != 0 && strncmp(act, "input:wf", 8) != 0 &&
-	    strncmp(act, "do-wf-", 6) != 0 && strcmp(act, "queue-to-wf") != 0)
+	    strncmp(act, "do-wf-", 6) != 0 && strcmp(act, "queue-to-wf") != 0 &&
+	    strcmp(act, "file:wf-import") != 0)
 		return (false);
 	i = atoi(arg);
+	if (wf_graph_action(act, arg, value))
+		return (true);
 	if (strcmp(act, "input:wf") == 0)
 		draft_input(arg, value);
 	else if (strcmp(act, "input:wf-kind") == 0) {
@@ -1553,10 +2311,12 @@ workflows_action(const char *act, const char *arg, const char *value)
 		draft_new();
 		wf.error[0] = '\0';
 		wf.mode = WM_EDIT;
+		wf.sel = 0;
 	} else if (strcmp(act, "input:wf-template") == 0) {
 		if (draft_template(value)) {
 			wf.error[0] = '\0';
 			wf.mode = WM_EDIT;
+			wf.sel = -2;
 		}
 	} else if (strcmp(act, "queue-to-wf") == 0) {
 		if (app.node != NODE_WORKFLOWS)
@@ -1572,6 +2332,7 @@ workflows_action(const char *act, const char *arg, const char *value)
 		wf.draft = ucl_object_copy(w);
 		wf.error[0] = '\0';
 		wf.mode = WM_EDIT;
+		wf.sel = -2;
 	} else if (strcmp(act, "wf-reload") == 0) {
 		wf.load_error[0] = '\0';
 		wf_load();
@@ -1635,6 +2396,10 @@ workflows_action(const char *act, const char *arg, const char *value)
 		if ((o = (ucl_object_t *)(uintptr_t)ucl_array_find_index(a,
 		    (unsigned int)i)) != NULL)
 			ucl_object_unref(ucl_array_delete(a, o));
+		if (act[3] == 's') {
+			fails_forward();
+			wf.sel = -2;
+		}
 	} else if (strcmp(act, "wf-step-add") == 0) {
 		st = ucl_object_typed_new(UCL_OBJECT);
 		new_step_id(id, sizeof(id));

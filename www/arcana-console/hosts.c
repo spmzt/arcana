@@ -339,8 +339,20 @@ static void	 call_free_vars(struct call *);
 static ucl_object_t *job_object(struct call *, const struct arc_job *, bool,
 		    uint64_t);
 static const char *spec_from_json(const ucl_object_t *, struct arc_job_spec *);
-static bool	 query_param(struct http_request *, const char *, char *,
-		    size_t);
+/*
+ * What a read is asked by: the path and query string of a GET, or of a
+ * read on the console's socket (stream.c) as the GET would have them.
+ */
+struct rq {
+	const char	*path;		/* /api/servers/<id>/... */
+	const char	*query;		/* the query string, or NULL */
+};
+#define	RQ_OF(req)	(&(struct rq){ (req)->path, (req)->query_string })
+typedef const char *read_setup(struct call *, const struct rq *);
+
+static bool	 rq_param(const struct rq *, const char *, char *, size_t);
+static bool	 rq_u64(const struct rq *, const char *, uint64_t, uint64_t *);
+static int	 read_route(struct http_request *, enum op, read_setup *);
 static void	 spec_free(struct arc_job_spec *);
 static char	*jdup(const ucl_object_t *, const char *);
 static ucl_object_t *step_object(int, int, const char *, const char *,
@@ -2914,6 +2926,29 @@ call_start(struct http_request *req, struct call *c)
 	return (KORE_RESULT_RETRY);
 }
 
+/*
+ * A GET of a host's read: its call set up by setup from the path and
+ * query, as a read on the console's socket is too (hosts_read_live()),
+ * then run; refused when setup says why.
+ */
+static int
+read_route(struct http_request *req, enum op op, read_setup *setup)
+{
+	struct call	*c;
+	const char	*why;
+
+	if (req->hdlr_extra != NULL)
+		return (call_finish(req));
+	if ((c = call_new(req, op)) == NULL)
+		return (KORE_RESULT_OK);
+	if (setup != NULL && (why = setup(c, RQ_OF(req))) != NULL) {
+		call_release(c);
+		kore_free(c);
+		return (reply_error(req, 400, "invalid", "%s", why));
+	}
+	return (call_start(req, c));
+}
+
 /* Called again by Kore until the task is done, then replies. */
 static int
 call_finish(struct http_request *req)
@@ -2992,13 +3027,8 @@ call_release(struct call *c)
 int
 api_services(struct http_request *req)
 {
-	struct call	*c;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_SERVICES)) == NULL)
-		return (KORE_RESULT_OK);
-	return (call_start(req, c));
+	return (read_route(req, OP_SERVICES, NULL));
 }
 
 /* POST /api/servers/<id>/services/<name>/action {"action": "restart"} */
@@ -3163,28 +3193,26 @@ api_service_config(struct http_request *req)
 int
 api_hello(struct http_request *req)
 {
-	struct call	*c;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_HELLO)) == NULL)
-		return (KORE_RESULT_OK);
-	return (call_start(req, c));
+	return (read_route(req, OP_HELLO, NULL));
 }
 
 /* GET /api/servers/<id>/jails[?config_only=1] */
+static const char *
+setup_jails(struct call *c, const struct rq *q)
+{
+	char	v[8];
+
+	c->config_only = rq_param(q, "config_only", v, sizeof(v)) &&
+	    strcmp(v, "1") == 0;
+	return (NULL);
+}
+
 int
 api_jails(struct http_request *req)
 {
-	struct call	*c;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_LIST)) == NULL)
-		return (KORE_RESULT_OK);
-	c->config_only = req->query_string != NULL &&
-	    strstr(req->query_string, "config_only=1") != NULL;
-	return (call_start(req, c));
+	return (read_route(req, OP_LIST, setup_jails));
 }
 
 /* POST /api/servers/<id>/jails/<jail>/action {"action": "start"} */
@@ -3267,11 +3295,11 @@ api_address(struct http_request *req)
  * False when it is no name of a jail.
  */
 static bool
-pick_scope(struct http_request *req, struct call *c)
+pick_scope(const struct rq *q, struct call *c)
 {
 	const char	*p;
 
-	if (!query_param(req, "jail", c->scope, sizeof(c->scope)))
+	if (!rq_param(q, "jail", c->scope, sizeof(c->scope)))
 		return (true);
 	for (p = c->scope; *p != '\0'; p++)
 		if (!isalnum((unsigned char)*p) && strchr("_.-", *p) == NULL)
@@ -3281,15 +3309,80 @@ pick_scope(struct http_request *req, struct call *c)
 
 /* ?fib=N into the call; false when it is not a number of a table. */
 static bool
-pick_fib(struct http_request *req, struct call *c)
+pick_fib(const struct rq *q, struct call *c)
 {
 	const char	*errstr;
 	char		 buf[16];
 
-	if (!query_param(req, "fib", buf, sizeof(buf)) || buf[0] == '\0')
+	if (!rq_param(q, "fib", buf, sizeof(buf)) || buf[0] == '\0')
 		return (true);
 	c->fib = (uint32_t)strtonum(buf, 0, 65535, &errstr);
 	return (errstr == NULL);
+}
+
+static const char *
+setup_network(struct call *c, const struct rq *q)
+{
+	const char	*p;
+	char		 kind[16], off[16];
+	size_t		 i;
+
+	if (!capture_path(q->path, 5, kind, sizeof(kind)))
+		kind[0] = '\0';
+	if (strcmp(kind, "lookup") == 0 || strcmp(kind, "traceroute") == 0) {
+		c->op = strcmp(kind, "lookup") == 0 ? OP_ROUTE_LOOKUP :
+		    OP_TRACEROUTE;
+		/* An address is hex digits, dots and colons: no escaping. */
+		(void)rq_param(q, "to", c->address, sizeof(c->address));
+		if (c->address[0] == '\0' || c->address[strspn(c->address,
+		    "0123456789abcdefABCDEF.:")] != '\0' || !pick_fib(q, c) ||
+		    !pick_scope(q, c))
+			return ("to is an IPv4 or IPv6 address, fib a number");
+		return (NULL);
+	}
+	for (i = 0; i < nitems(net_kind_names); i++)
+		if (net_kind_names[i] != NULL && strcmp(kind,
+		    net_kind_names[i]) == 0)
+			break;
+	if (i == nitems(net_kind_names) || !pick_fib(q, c) ||
+	    !pick_scope(q, c))
+		return ("kind is one of routes, nexthops, nhgroups, "
+		    "connections, sockets, interfaces, netgraph, wireguard, "
+		    "bird, bird-routes, bridges, geneve, ipfw, neighbours, "
+		    "ipsec, lookup; fib a number");
+	c->action = (uint8_t)i;
+	/* Read on in a table too large for one reply. */
+	if (rq_param(q, "offset", off, sizeof(off)) && off[0] != '\0') {
+		const char	*errstr;
+
+		c->offset = (uint32_t)strtonum(off, 0, 100000000, &errstr);
+		if (errstr != NULL)
+			c->offset = 0;
+	}
+	c->family = ARC_NET_FAMILY_ALL;
+	if (q->query != NULL) {
+		if (strstr(q->query, "family=inet6") != NULL)
+			c->family = ARC_NET_FAMILY_INET6;
+		else if (strstr(q->query, "family=inet") != NULL)
+			c->family = ARC_NET_FAMILY_INET;
+	}
+	/*
+	 * ?filter=text searches the routes on the host.  It is taken as
+	 * it is, so only what needs no escaping in a URL is taken.
+	 */
+	if (rq_param(q, "filter", c->jail, sizeof(c->jail))) {
+		/* BIRD's routes are asked for in words, with , between. */
+		for (p = c->jail; *p != '\0'; p++)
+			if (*p == ',' && c->action == ARC_NET_KIND_BIRD_ROUTES)
+				c->jail[p - c->jail] = ' ';
+			else if (!isalnum((unsigned char)*p) && strchr(".:/_-",
+			    *p) == NULL)
+				break;
+		if (*p != '\0' || strlen(c->jail) > 128)
+			return ("the text to search for is letters, digits "
+			    "and . : / _ -");
+	}
+	return (NULL);
 }
 
 /*
@@ -3300,91 +3393,8 @@ pick_fib(struct http_request *req, struct call *c)
 int
 api_network(struct http_request *req)
 {
-	struct call	*c;
-	const char	*q;
-	char		 kind[16];
-	size_t		 i;
-	bool		 lookup;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	lookup = capture(req, 5, kind, sizeof(kind)) && (strcmp(kind,
-	    "lookup") == 0 || strcmp(kind, "traceroute") == 0);
-	if ((c = call_new(req, !lookup ? OP_NETWORK : strcmp(kind,
-	    "lookup") == 0 ? OP_ROUTE_LOOKUP : OP_TRACEROUTE)) == NULL)
-		return (KORE_RESULT_OK);
-	if (lookup) {
-		/* An address is hex digits, dots and colons: no escaping. */
-		(void)query_param(req, "to", c->address, sizeof(c->address));
-		if (c->address[0] == '\0' || c->address[strspn(c->address,
-		    "0123456789abcdefABCDEF.:")] != '\0' || !pick_fib(req, c) ||
-		    !pick_scope(req, c)) {
-			kore_free(c->sname);
-			kore_free(c->uri);
-			kore_free(c->peer);
-			kore_free(c);
-			return (reply_error(req, 400, "invalid", "to is an "
-			    "IPv4 or IPv6 address, fib a number"));
-		}
-		return (call_start(req, c));
-	}
-	for (i = 0; i < nitems(net_kind_names); i++)
-		if (strcmp(kind, net_kind_names[i]) == 0)
-			break;
-	if (i == nitems(net_kind_names) || !pick_fib(req, c) ||
-	    !pick_scope(req, c)) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
-		return (reply_error(req, 400, "invalid", "kind is one of "
-		    "routes, nexthops, nhgroups, connections, sockets, interfaces, "
-		    "netgraph, wireguard, bird, bird-routes, bridges, geneve, "
-		    "ipfw, neighbours, ipsec, lookup; fib a number"));
-	}
-	c->action = (uint8_t)i;
-	/* Read on in a table too large for one reply. */
-	{
-		const char	*errstr;
-		char		 off[16];
-
-		if (query_param(req, "offset", off, sizeof(off)) && off[0] !=
-		    '\0') {
-			c->offset = (uint32_t)strtonum(off, 0, 100000000,
-			    &errstr);
-			if (errstr != NULL)
-				c->offset = 0;
-		}
-	}
-	c->family = ARC_NET_FAMILY_ALL;
-	if (req->query_string != NULL) {
-		if (strstr(req->query_string, "family=inet6") != NULL)
-			c->family = ARC_NET_FAMILY_INET6;
-		else if (strstr(req->query_string, "family=inet") != NULL)
-			c->family = ARC_NET_FAMILY_INET;
-	}
-	/*
-	 * ?filter=text searches the routes on the host.  It is taken as
-	 * it is, so only what needs no escaping in a URL is taken.
-	 */
-	if (query_param(req, "filter", c->jail, sizeof(c->jail))) {
-		/* BIRD's routes are asked for in words, with , between. */
-		for (q = c->jail; *q != '\0'; q++)
-			if (*q == ',' && c->action == ARC_NET_KIND_BIRD_ROUTES)
-				c->jail[q - c->jail] = ' ';
-			else if (!isalnum((unsigned char)*q) && strchr(".:/_-",
-			    *q) == NULL)
-				break;
-		if (*q != '\0' || strlen(c->jail) > 128) {
-			kore_free(c->sname);
-			kore_free(c->uri);
-			kore_free(c->peer);
-			kore_free(c);
-			return (reply_error(req, 400, "invalid", "the text to "
-			    "search for is letters, digits and . : / _ -"));
-		}
-	}
-	return (call_start(req, c));
+	return (read_route(req, OP_NETWORK, setup_network));
 }
 
 /* A path of a configuration file: nothing a URL or a shell reads into. */
@@ -3407,6 +3417,18 @@ conf_path_ok(const char *s)
  * sha256 being that of the text it was made from; with check, only
  * have it parsed.
  */
+static const char *
+setup_bird_config(struct call *c, const struct rq *q)
+{
+
+	(void)rq_param(q, "path", c->jail, sizeof(c->jail));
+	if ((c->jail[0] != '\0' && !conf_path_ok(c->jail)) ||
+	    !pick_scope(q, c))
+		return ("path is a whole path of letters, digits and . _ / -; "
+		    "jail is a jail's name");
+	return (NULL);
+}
+
 int
 api_bird_config(struct http_request *req)
 {
@@ -3415,16 +3437,14 @@ api_bird_config(struct http_request *req)
 	const char	*s;
 	bool		 bad;
 
+	if (req->method == HTTP_METHOD_GET)
+		return (read_route(req, OP_BIRD_CONFIG, setup_bird_config));
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_BIRD_CONFIG)) == NULL)
 		return (KORE_RESULT_OK);
 	bad = false;
-	if (req->method == HTTP_METHOD_GET) {
-		(void)query_param(req, "path", c->jail, sizeof(c->jail));
-		bad = (c->jail[0] != '\0' && !conf_path_ok(c->jail)) ||
-		    !pick_scope(req, c);
-	} else if ((body = read_json(req)) == NULL)
+	if ((body = read_json(req)) == NULL)
 		bad = true;
 	else {
 		if ((s = ucl_str(body, "path")) != NULL && s[0] != '\0') {
@@ -3465,38 +3485,34 @@ api_bird_config(struct http_request *req)
 
 /* GET /api/servers/<id>/stats */
 /* GET /api/servers/<id>/storage/<kind>[?filter=dataset]. */
-int
-api_storage(struct http_request *req)
+static const char *
+setup_storage(struct call *c, const struct rq *q)
 {
 	static const char *const kinds[] = { "disks", "pools", "datasets",
 	    "snapshots", "mounts", "importable", "health" };
-	struct call	*c;
-	const char	*kind, *q;
+	const char	*kind, *p;
 	size_t		 i;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_STORAGE)) == NULL)
-		return (KORE_RESULT_OK);
-	kind = strrchr(req->path, '/') + 1;
+	kind = strrchr(q->path, '/') + 1;
 	for (i = 0; i < nitems(kinds); i++)
 		if (strcmp(kind, kinds[i]) == 0)
 			break;
-	(void)query_param(req, "filter", c->jail, sizeof(c->jail));
-	for (q = c->jail; *q != '\0'; q++)
-		if (!isalnum((unsigned char)*q) && strchr("_.:/-", *q) == NULL)
+	(void)rq_param(q, "filter", c->jail, sizeof(c->jail));
+	for (p = c->jail; *p != '\0'; p++)
+		if (!isalnum((unsigned char)*p) && strchr("_.:/-", *p) == NULL)
 			break;
-	if (i == nitems(kinds) || *q != '\0' || !pick_scope(req, c)) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
-		return (reply_error(req, 400, "invalid", "kind is one of "
-		    "disks, pools, datasets, snapshots, mounts; a dataset is "
-		    "letters, digits and _ . : / -"));
-	}
+	if (i == nitems(kinds) || *p != '\0' || !pick_scope(q, c))
+		return ("kind is one of disks, pools, datasets, snapshots, "
+		    "mounts; a dataset is letters, digits and _ . : / -");
 	c->action = (uint8_t)i;
-	return (call_start(req, c));
+	return (NULL);
+}
+
+int
+api_storage(struct http_request *req)
+{
+
+	return (read_route(req, OP_STORAGE, setup_storage));
 }
 
 /*
@@ -3506,6 +3522,19 @@ api_storage(struct http_request *req)
  * written ("rc_file" is that file).  POST {"text", "sha256", "check"}:
  * put the text in their place, once ipfw has nothing against it.
  */
+static const char *
+setup_ipfw_rules(struct call *c, const struct rq *q)
+{
+	char	from[8];
+
+	if (!pick_scope(q, c))
+		return ("jail is a jail's name");
+	if (rq_param(q, "from", from, sizeof(from)) &&
+	    !(c->from_rc = strcmp(from, "rc") == 0))
+		return ("from is rc");
+	return (NULL);
+}
+
 int
 api_ipfw_rules(struct http_request *req)
 {
@@ -3514,20 +3543,14 @@ api_ipfw_rules(struct http_request *req)
 	const char	*s;
 	bool		 bad;
 
+	if (req->method == HTTP_METHOD_GET)
+		return (read_route(req, OP_IPFW_RULES, setup_ipfw_rules));
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_IPFW_RULES)) == NULL)
 		return (KORE_RESULT_OK);
-	bad = !pick_scope(req, c);
-	if (!bad && req->method == HTTP_METHOD_GET) {
-		char	from[8];
-
-		if (query_param(req, "from", from, sizeof(from))) {
-			c->from_rc = strcmp(from, "rc") == 0;
-			bad = !c->from_rc;
-		}
-	}
-	if (!bad && req->method != HTTP_METHOD_GET) {
+	bad = !pick_scope(RQ_OF(req), c);
+	if (!bad) {
 		if ((body = read_json(req)) == NULL)
 			bad = true;
 		else {
@@ -3566,12 +3589,14 @@ api_fstab(struct http_request *req)
 	const char	*s;
 	bool		 bad;
 
+	if (req->method == HTTP_METHOD_GET)
+		return (read_route(req, OP_FSTAB, NULL));
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_FSTAB)) == NULL)
 		return (KORE_RESULT_OK);
 	bad = false;
-	if (req->method != HTTP_METHOD_GET) {
+	{
 		if ((body = read_json(req)) == NULL)
 			bad = true;
 		else {
@@ -3608,12 +3633,13 @@ api_transport(struct http_request *req)
 	struct call	*c;
 	ucl_object_t	*body;
 
+	if (req->method == HTTP_METHOD_GET)
+		return (read_route(req, OP_TRANSPORT, NULL));
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_TRANSPORT)) == NULL)
 		return (KORE_RESULT_OK);
-	if (req->method != HTTP_METHOD_GET && (body = read_json(req)) !=
-	    NULL) {
+	if ((body = read_json(req)) != NULL) {
 		c->retry = ucl_flag(body, "retry");
 		ucl_object_unref(body);
 	}
@@ -3682,65 +3708,71 @@ api_transport_switch(struct http_request *req)
 
 /* A number of the query, when it is there and is one. */
 static bool
-query_u64(struct http_request *req, const char *name, uint64_t max,
-    uint64_t *v)
+rq_u64(const struct rq *q, const char *name, uint64_t max, uint64_t *v)
 {
 	const char	*errstr;
 	char		 buf[24];
 
-	if (!query_param(req, name, buf, sizeof(buf)) || buf[0] == '\0')
+	if (!rq_param(q, name, buf, sizeof(buf)) || buf[0] == '\0')
 		return (false);
 	*v = (uint64_t)strtonum(buf, 0, (long long)max, &errstr);
 	return (errstr == NULL);
 }
 
+static bool
+query_u64(struct http_request *req, const char *name, uint64_t max,
+    uint64_t *v)
+{
+
+	return (rq_u64(RQ_OF(req), name, max, v));
+}
+
 /* GET /api/servers/<id>/processes[?jail=name]: what runs there. */
+static const char *
+setup_processes(struct call *c, const struct rq *q)
+{
+	uint64_t	v;
+
+	(void)rq_param(q, "jail", c->scope, sizeof(c->scope));
+	if (rq_u64(q, "pid", 99999, &v))
+		c->fib = (uint32_t)v;
+	return (NULL);
+}
+
 int
 api_processes(struct http_request *req)
 {
-	struct call	*c;
-	uint64_t	 v;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_PROCESSES)) == NULL)
-		return (KORE_RESULT_OK);
-	(void)query_param(req, "jail", c->scope, sizeof(c->scope));
-	if (query_u64(req, "pid", 99999, &v))
-		c->fib = (uint32_t)v;
-	return (call_start(req, c));
+	return (read_route(req, OP_PROCESSES, setup_processes));
 }
 
 /*
  * GET /api/servers/<id>/log[?name=file][&filter=text][&position=n]
  * [&lines=n]: the end of a log, or what came after position.
  */
+static const char *
+setup_log(struct call *c, const struct rq *q)
+{
+	uint64_t	v;
+
+	(void)rq_param(q, "name", c->logname, sizeof(c->logname));
+	(void)rq_param(q, "jail", c->scope, sizeof(c->scope));
+	/* The text may be any: it comes escaped, as a URL has it. */
+	if (rq_param(q, "filter", c->jail, sizeof(c->jail)) &&
+	    (!http_argument_urldecode(c->jail, 1) || strlen(c->jail) > 128))
+		return ("the text looked for is at most 128 bytes, escaped as "
+		    "a URL has it");
+	c->has_pos = rq_u64(q, "position", INT64_MAX, &c->pos);
+	if (rq_u64(q, "lines", 5000, &v))
+		c->lines = (uint32_t)v;
+	return (NULL);
+}
+
 int
 api_log(struct http_request *req)
 {
-	struct call	*c;
-	uint64_t	 v;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_LOG)) == NULL)
-		return (KORE_RESULT_OK);
-	(void)query_param(req, "name", c->logname, sizeof(c->logname));
-	(void)query_param(req, "jail", c->scope, sizeof(c->scope));
-	/* The text may be any: it comes escaped, as a URL has it. */
-	if (query_param(req, "filter", c->jail, sizeof(c->jail)) &&
-	    (!http_argument_urldecode(c->jail, 1) || strlen(c->jail) > 128)) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
-		return (reply_error(req, 400, "invalid", "the text looked "
-		    "for is at most 128 bytes, escaped as a URL has it"));
-	}
-	c->has_pos = query_u64(req, "position", INT64_MAX, &c->pos);
-	if (query_u64(req, "lines", 5000, &v))
-		c->lines = (uint32_t)v;
-	return (call_start(req, c));
+	return (read_route(req, OP_LOG, setup_log));
 }
 
 /*
@@ -3748,6 +3780,15 @@ api_log(struct http_request *req)
  * POST {"step": seconds, "keep": samples}: how its agent samples it
  * from now on; the reply is as the GET's.
  */
+/* ?after=N: what comes after the position N. */
+static const char *
+setup_after(struct call *c, const struct rq *q)
+{
+
+	c->has_pos = rq_u64(q, "after", INT64_MAX, &c->pos);
+	return (NULL);
+}
+
 int
 api_history(struct http_request *req)
 {
@@ -3755,13 +3796,12 @@ api_history(struct http_request *req)
 	ucl_object_t	*body;
 	int64_t		 step, keep;
 
+	if (req->method == HTTP_METHOD_GET)
+		return (read_route(req, OP_HISTORY, setup_after));
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_HISTORY)) == NULL)
 		return (KORE_RESULT_OK);
-	c->has_pos = query_u64(req, "after", INT64_MAX, &c->pos);
-	if (req->method == HTTP_METHOD_GET)
-		return (call_start(req, c));
 	body = read_json(req);
 	step = body != NULL ? ucl_object_toint(ucl_object_lookup(body,
 	    "step")) : 0;
@@ -3813,14 +3853,8 @@ api_history(struct http_request *req)
 int
 api_events(struct http_request *req)
 {
-	struct call	*c;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_EVENTS)) == NULL)
-		return (KORE_RESULT_OK);
-	c->has_pos = query_u64(req, "after", INT64_MAX, &c->pos);
-	return (call_start(req, c));
+	return (read_route(req, OP_EVENTS, setup_after));
 }
 
 /*
@@ -3828,57 +3862,48 @@ api_events(struct http_request *req)
  * [&jail=j]: packets of an address followed through the firewall by
  * the kernel, for a few seconds.
  */
+static const char *
+setup_fw_trace(struct call *c, const struct rq *q)
+{
+	uint64_t	v;
+
+	/* An address is hex digits, dots and colons: no escaping. */
+	(void)rq_param(q, "address", c->address, sizeof(c->address));
+	if (c->address[0] == '\0' || c->address[strspn(c->address,
+	    "0123456789abcdefABCDEF.:")] != '\0' || !pick_scope(q, c))
+		return ("address is an IPv4 or IPv6 address");
+	if (rq_u64(q, "seconds", 60, &v))
+		c->fib = (uint32_t)v;
+	c->has_pos = rq_u64(q, "packets", 1000, &c->pos);
+	return (NULL);
+}
+
 int
 api_fw_trace(struct http_request *req)
 {
-	struct call	*c;
-	uint64_t	 v;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_FW_TRACE)) == NULL)
-		return (KORE_RESULT_OK);
-	/* An address is hex digits, dots and colons: no escaping. */
-	(void)query_param(req, "address", c->address, sizeof(c->address));
-	if (c->address[0] == '\0' || c->address[strspn(c->address,
-	    "0123456789abcdefABCDEF.:")] != '\0' || !pick_scope(req, c)) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
-		return (reply_error(req, 400, "invalid", "address is an IPv4 "
-		    "or IPv6 address"));
-	}
-	if (query_u64(req, "seconds", 60, &v))
-		c->fib = (uint32_t)v;
-	c->has_pos = query_u64(req, "packets", 1000, &c->pos);
-	return (call_start(req, c));
+	return (read_route(req, OP_FW_TRACE, setup_fw_trace));
 }
 
 /* GET /api/servers/<id>/sysctl[?filter=name]: the kernel's state. */
+static const char *
+setup_sysctl(struct call *c, const struct rq *q)
+{
+	const char	*p;
+
+	(void)rq_param(q, "filter", c->jail, sizeof(c->jail));
+	for (p = c->jail; *p != '\0'; p++)
+		if (!isalnum((unsigned char)*p) && strchr("._-%", *p) == NULL)
+			return ("a sysctl is named with letters, digits and "
+			    ". _ - %");
+	return (NULL);
+}
+
 int
 api_sysctl(struct http_request *req)
 {
-	struct call	*c;
-	const char	*q;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_SYSCTL)) == NULL)
-		return (KORE_RESULT_OK);
-	(void)query_param(req, "filter", c->jail, sizeof(c->jail));
-	for (q = c->jail; *q != '\0'; q++)
-		if (!isalnum((unsigned char)*q) && strchr("._-%", *q) == NULL)
-			break;
-	if (*q != '\0') {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
-		return (reply_error(req, 400, "invalid", "a sysctl is named "
-		    "with letters, digits and . _ - %%"));
-	}
-	return (call_start(req, c));
+	return (read_route(req, OP_SYSCTL, setup_sysctl));
 }
 
 /* GET /api/servers/<id>/jails/files: the jails' defaults, templates and
@@ -3886,56 +3911,33 @@ api_sysctl(struct http_request *req)
 int
 api_jail_files(struct http_request *req)
 {
-	struct call	*c;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_JAIL_FILES)) == NULL)
-		return (KORE_RESULT_OK);
-	return (call_start(req, c));
+	return (read_route(req, OP_JAIL_FILES, NULL));
 }
 
 /* GET /api/servers/<id>/certs[?jail=]: the certificates OpenSSL trusts
  * there. */
+/* ?jail=name: the jail it is read in. */
+static const char *
+setup_scope(struct call *c, const struct rq *q)
+{
+
+	return (pick_scope(q, c) ? NULL : "jail is a jail's name");
+}
+
 int
 api_certs(struct http_request *req)
 {
-	struct call	*c;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_CERTS)) == NULL)
-		return (KORE_RESULT_OK);
-	if (!pick_scope(req, c)) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
-		return (reply_error(req, 400, "invalid", "jail is a jail's "
-		    "name"));
-	}
-	return (call_start(req, c));
+	return (read_route(req, OP_CERTS, setup_scope));
 }
 
 /* GET /api/servers/<id>/ssh[?jail=]: the base system's sshd there. */
 int
 api_ssh(struct http_request *req)
 {
-	struct call	*c;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_SSH)) == NULL)
-		return (KORE_RESULT_OK);
-	if (!pick_scope(req, c)) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
-		return (reply_error(req, 400, "invalid", "jail is a jail's "
-		    "name"));
-	}
-	return (call_start(req, c));
+	return (read_route(req, OP_SSH, setup_scope));
 }
 
 /*
@@ -3957,7 +3959,7 @@ api_capture(struct http_request *req)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_CAPTURE)) == NULL)
 		return (KORE_RESULT_OK);
-	bad = !pick_scope(req, c) || (body = read_json(req)) == NULL;
+	bad = !pick_scope(RQ_OF(req), c) || (body = read_json(req)) == NULL;
 	if (!bad) {
 		if ((s = ucl_str(body, "source")) != NULL) {
 			if (strlen(s) >= 16 || s[strspn(s, "abcdefghijklmnopq"
@@ -4057,11 +4059,13 @@ api_tls(struct http_request *req)
 {
 	struct call	*c;
 
+	if (req->method == HTTP_METHOD_GET)
+		return (read_route(req, OP_TLS, NULL));
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
 	if ((c = call_new(req, OP_TLS)) == NULL)
 		return (KORE_RESULT_OK);
-	c->renew = req->method == HTTP_METHOD_POST;
+	c->renew = true;
 	return (call_start(req, c));
 }
 
@@ -4069,43 +4073,33 @@ api_tls(struct http_request *req)
 int
 api_kernel(struct http_request *req)
 {
-	struct call	*c;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_KERNEL)) == NULL)
-		return (KORE_RESULT_OK);
-	return (call_start(req, c));
+	return (read_route(req, OP_KERNEL, NULL));
 }
 
 int
 api_stats(struct http_request *req)
 {
-	struct call	*c;
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_STATS)) == NULL)
-		return (KORE_RESULT_OK);
-	return (call_start(req, c));
+	return (read_route(req, OP_STATS, NULL));
 }
 
 /* A query string parameter's value, raw (no %-decoding needed here). */
 static bool
-query_param(struct http_request *req, const char *name, char *buf, size_t len)
+rq_param(const struct rq *q, const char *name, char *buf, size_t len)
 {
-	const char	*q, *e;
+	const char	*p, *e;
 	size_t		 nl;
 
 	buf[0] = '\0';
 	nl = strlen(name);
-	for (q = req->query_string; q != NULL && *q != '\0'; q = e != NULL ?
-	    e + 1 : NULL) {
-		e = strchr(q, '&');
-		if (strncmp(q, name, nl) == 0 && q[nl] == '=') {
+	for (p = q->query; p != NULL && *p != '\0'; p = e != NULL ? e + 1 :
+	    NULL) {
+		e = strchr(p, '&');
+		if (strncmp(p, name, nl) == 0 && p[nl] == '=') {
 			snprintf(buf, len, "%.*s", (int)(e != NULL ?
-			    (size_t)(e - q) - nl - 1 : strlen(q + nl + 1)),
-			    q + nl + 1);
+			    (size_t)(e - p) - nl - 1 : strlen(p + nl + 1)),
+			    p + nl + 1);
 			return (true);
 		}
 	}
@@ -4127,31 +4121,26 @@ pick_jail(struct call *c, const char *name)
 }
 
 /* GET /api/servers/<id>/packages[?jail=<name>&refresh=1] */
+static const char *
+setup_packages(struct call *c, const struct rq *q)
+{
+	char	jail[256], v[8];
+
+	(void)rq_param(q, "jail", jail, sizeof(jail));
+	c->refresh = rq_param(q, "refresh", v, sizeof(v)) &&
+	    strcmp(v, "1") == 0;
+	c->installed = rq_param(q, "installed", v, sizeof(v)) &&
+	    strcmp(v, "1") == 0;
+	c->pkg_ip = rq_param(q, "ip", v, sizeof(v)) ? (uint8_t)(strcmp(v,
+	    "4") == 0 ? 4 : strcmp(v, "6") == 0 ? 6 : 0) : 0;
+	return (pick_jail(c, jail) ? NULL : "bad jail name");
+}
+
 int
 api_packages(struct http_request *req)
 {
-	struct call	*c;
-	char		 jail[256], v[8];
 
-	if (req->hdlr_extra != NULL)
-		return (call_finish(req));
-	if ((c = call_new(req, OP_PACKAGES)) == NULL)
-		return (KORE_RESULT_OK);
-	query_param(req, "jail", jail, sizeof(jail));
-	c->refresh = query_param(req, "refresh", v, sizeof(v)) &&
-	    strcmp(v, "1") == 0;
-	c->installed = query_param(req, "installed", v, sizeof(v)) &&
-	    strcmp(v, "1") == 0;
-	c->pkg_ip = query_param(req, "ip", v, sizeof(v)) ? (uint8_t)(strcmp(v,
-	    "4") == 0 ? 4 : strcmp(v, "6") == 0 ? 6 : 0) : 0;
-	if (!pick_jail(c, jail)) {
-		kore_free(c->sname);
-		kore_free(c->uri);
-		kore_free(c->peer);
-		kore_free(c);
-		return (reply_error(req, 400, "invalid", "bad jail name"));
-	}
-	return (call_start(req, c));
+	return (read_route(req, OP_PACKAGES, setup_packages));
 }
 
 /*
@@ -4674,13 +4663,12 @@ api_jobs(struct http_request *req)
 	const char		*e;
 	size_t			 n;
 
+	if (req->method != HTTP_METHOD_POST)
+		return (read_route(req, OP_JOBS, NULL));
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
-	if ((c = call_new(req, req->method == HTTP_METHOD_POST ?
-	    OP_JOB_SUBMIT : OP_JOBS)) == NULL)
+	if ((c = call_new(req, OP_JOB_SUBMIT)) == NULL)
 		return (KORE_RESULT_OK);
-	if (req->method != HTTP_METHOD_POST)
-		return (call_start(req, c));
 	e = NULL;
 	body = read_json(req);
 	a = body != NULL ? ucl_object_lookup(body, "jobs") : NULL;
@@ -4708,16 +4696,28 @@ api_jobs(struct http_request *req)
 }
 
 /* GET /api/servers/<id>/jobs/<n>: a job with its trace; DELETE: cancel. */
+static const char *
+setup_job(struct call *c, const struct rq *q)
+{
+	char	id[24];
+
+	if (!capture_path(q->path, 5, id, sizeof(id)))
+		return ("bad job number");
+	c->jobid = strtoull(id, NULL, 10);
+	return (NULL);
+}
+
 int
 api_job(struct http_request *req)
 {
 	struct call	*c;
 	char		 id[24];
 
+	if (req->method != HTTP_METHOD_DELETE)
+		return (read_route(req, OP_JOB, setup_job));
 	if (req->hdlr_extra != NULL)
 		return (call_finish(req));
-	if ((c = call_new(req, req->method == HTTP_METHOD_DELETE ?
-	    OP_JOB_CANCEL : OP_JOB)) == NULL)
+	if ((c = call_new(req, OP_JOB_CANCEL)) == NULL)
 		return (KORE_RESULT_OK);
 	if (!capture(req, 5, id, sizeof(id))) {
 		kore_free(c->sname);
@@ -4864,33 +4864,119 @@ hosts_read(const char *uri, const char *peer, const char *name,
 }
 
 /*
- * A read a page asks on its socket (stream.c), answered as GET
- * /api/servers/<id>/<what> is, with each step the host tells as it
- * runs given to on_step first, as the trace has it: jails, services.
- * NULL when what is none of them.
+ * The reads of a host the console's socket takes (stream.c), each as
+ * its GET: the path after /api/servers/<id>/, exactly or, ending in '/',
+ * as its first segments.
+ */
+static const struct hread {
+	const char	*path;
+	enum op		 op;
+	read_setup	*setup;
+} hreads[] = {
+	{ "hello", OP_HELLO, NULL },
+	{ "jails", OP_LIST, setup_jails },
+	{ "jails/files", OP_JAIL_FILES, NULL },
+	{ "services", OP_SERVICES, NULL },
+	{ "packages", OP_PACKAGES, setup_packages },
+	{ "net/", OP_NETWORK, setup_network },
+	{ "bird/config", OP_BIRD_CONFIG, setup_bird_config },
+	{ "storage/", OP_STORAGE, setup_storage },
+	{ "fstab", OP_FSTAB, NULL },
+	{ "ipfw/rules", OP_IPFW_RULES, setup_ipfw_rules },
+	{ "processes", OP_PROCESSES, setup_processes },
+	{ "log", OP_LOG, setup_log },
+	{ "history", OP_HISTORY, setup_after },
+	{ "events", OP_EVENTS, setup_after },
+	{ "sysctl", OP_SYSCTL, setup_sysctl },
+	{ "certs", OP_CERTS, setup_scope },
+	{ "ssh", OP_SSH, setup_scope },
+	{ "kernel", OP_KERNEL, NULL },
+	{ "stats", OP_STATS, NULL },
+	{ "tls", OP_TLS, NULL },
+	{ "transport", OP_TRANSPORT, NULL },
+	{ "jobs", OP_JOBS, NULL },
+	{ "jobs/", OP_JOB, setup_job },
+};
+
+/* Whether read names one of the reads the socket takes. */
+bool
+hosts_read_known(const char *read)
+{
+	size_t	i, n;
+
+	n = strcspn(read, "?");
+	for (i = 0; i < nitems(hreads); i++) {
+		size_t	l = strlen(hreads[i].path);
+
+		if (hreads[i].path[l - 1] == '/' ? n > l &&
+		    strncmp(read, hreads[i].path, l) == 0 &&
+		    memchr(read + l, '/', n - l) == NULL :
+		    n == l && strncmp(read, hreads[i].path, l) == 0)
+			return (true);
+	}
+	return (false);
+}
+
+/*
+ * A read of a host, what GET /api/servers/<sid>/<read> answers (read
+ * is that path's tail and its query), each step of its trace given to
+ * on_step as the host takes it; NULL when the host did not answer.  A
+ * read it does not take, or one its setup refuses, is answered 400.
  */
 char *
 hosts_read_live(const char *sid, const char *uri, const char *peer,
-    const char *name, const char *what, void (*on_step)(const char *,
+    const char *name, const char *read, void (*on_step)(const char *,
     void *), void *arg, int *status)
 {
-	struct call	*c;
-	enum op		 op;
+	const struct hread	*h;
+	struct call		*c;
+	struct rq		 q;
+	ucl_object_t		*top, *e;
+	const char		*why, *qm;
+	char			 path[256];
+	size_t			 i, n, l;
+	char			*json;
 
-	if (strcmp(what, "jails") == 0)
-		op = OP_LIST;
-	else if (strcmp(what, "services") == 0)
-		op = OP_SERVICES;
-	else
-		return (NULL);
+	n = strcspn(read, "?");
+	for (i = 0, h = NULL; i < nitems(hreads) && h == NULL; i++) {
+		l = strlen(hreads[i].path);
+		if (hreads[i].path[l - 1] == '/' ? n > l &&
+		    strncmp(read, hreads[i].path, l) == 0 &&
+		    memchr(read + l, '/', n - l) == NULL :
+		    n == l && strncmp(read, hreads[i].path, l) == 0)
+			h = &hreads[i];
+	}
 	c = kore_calloc(1, sizeof(*c));
-	c->op = op;
+	c->op = h != NULL ? h->op : OP_HELLO;
 	c->reads = true;
 	snprintf(c->sid, sizeof(c->sid), "%s", sid);
-	snprintf(c->route, sizeof(c->route), "socket: %s", what);
+	snprintf(path, sizeof(path), "/api/servers/%s/%.*s", sid, (int)n,
+	    read);
+	qm = read[n] == '?' ? read + n + 1 : NULL;
+	q.path = path;
+	q.query = qm;
+	why = h == NULL ? "not a read of a host the socket takes" :
+	    h->setup != NULL ? h->setup(c, &q) : NULL;
+	if (why != NULL) {
+		call_release(c);
+		kore_free(c);
+		top = ucl_object_typed_new(UCL_OBJECT);
+		e = ucl_object_typed_new(UCL_OBJECT);
+		ucl_object_insert_key(e, ucl_object_fromstring("invalid"),
+		    "code", 0, false);
+		ucl_object_insert_key(e, ucl_object_fromstring(why),
+		    "message", 0, false);
+		ucl_object_insert_key(top, e, "error", 0, false);
+		json = (char *)ucl_object_emit(top, UCL_EMIT_JSON_COMPACT);
+		ucl_object_unref(top);
+		*status = 400;
+		return (json);
+	}
+	snprintf(c->route, sizeof(c->route), "socket: %.*s", (int)n, read);
 	c->on_step = on_step;
 	c->step_arg = arg;
-	return (self_call(c, uri, peer, name, what, status));
+	return (self_call(c, uri, peer, name, path + strlen("/api/servers/") +
+	    strlen(sid) + 1, status));
 }
 
 /*

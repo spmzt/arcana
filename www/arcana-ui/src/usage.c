@@ -22,7 +22,6 @@
 
 #include "app.h"
 
-#define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
 
 #define	USAGE_EVERY	5000	/* ms between two looks */
 #define	NF		9	/* what a sample begins with */

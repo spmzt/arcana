@@ -14,7 +14,10 @@
  *				for what it once had (frame= max-frame-size,
  *				mac= and bia= ethernet-like's, peer=
  *				peer-interface, vlan= the tag, parent,
- *				tag type and priority, eth= IEEE 802.3's
+ *				tag type and priority, lagg= and aggport=
+ *				IEEE 802.1AX's and FreeBSD's, bport= and
+ *				rstp= IEEE 802.1Q's and FreeBSD's, eth= IEEE
+ *				802.3's
  *				auto-negotiation, duplex and PMD type):
  *				key=value, '-' for none,
  *				lists joined by '+', bits in hex
@@ -39,6 +42,13 @@
  *	ycollect watch fib secs	routes', each with its last-updated (- for
  *				none), after secs of route events heard
  *				and noted as the daemon notes them
+ *	ycollect linkagg	IEEE 802.1AX's linkagg: a key group a line,
+ *				its system's address and priority, its lags
+ *				and aggports; the tree through YANG-CBOR and
+ *				back
+ *	ycollect bridges	IEEE 802.1Q's bridges: one a line, its
+ *				address, type, component's type and ports;
+ *				the tree through YANG-CBOR and back
  *	ycollect pmd name ...	each medium's IEEE 802.3 PMD type, a line:
  *				the name, the identity (- for none)
  *	ycollect origins	each netlink(4) origin's source-protocol,
@@ -155,23 +165,49 @@ arcif(const struct ietf_interfaces_interfaces_interface *e)
 		else
 			printf("-");
 	}
-	if (e->arcif_lagg != NULL) {
-		printf(" lagg=%s,%jx,", e->arcif_lagg->has_protocol ?
-		    lagg_proto[e->arcif_lagg->protocol] : "-",
-		    bitsval(&e->arcif_lagg->hash));
-		for (size_t i = 0; i < e->arcif_lagg->port.n; i++)
-			printf("%s%s:%jx", i > 0 ? "+" : "",
-			    e->arcif_lagg->port.v[i].name,
-			    bitsval(&e->arcif_lagg->port.v[i].flags));
+	if (e->dot1ax_lag != NULL) {
+		printf(" lagg=%s,%jx,%s", e->dot1ax_lag->has_arcif_protocol ?
+		    lagg_proto[e->dot1ax_lag->arcif_protocol] : "-",
+		    bitsval(&e->dot1ax_lag->arcif_hash),
+		    str(e->dot1ax_lag->mac_address));
+		if (e->dot1ax_lag->lacp != NULL)
+			printf(",key=%u", e->dot1ax_lag->lacp->actor_oper_key);
 	}
-	if (e->arcif_bridge != NULL) {
-		printf(" bridge=");
-		if (e->arcif_bridge->member.n == 0)
-			printf("-");
-		for (size_t i = 0; i < e->arcif_bridge->member.n; i++)
-			printf("%s%s:%jx", i > 0 ? "+" : "",
-			    e->arcif_bridge->member.v[i].name,
-			    bitsval(&e->arcif_bridge->member.v[i].flags));
+	if (e->dot1ax_aggport != NULL) {
+		const struct ietf_interfaces_interfaces_interface_dot1ax_aggport
+		    *ap = e->dot1ax_aggport;
+
+		printf(" aggport=%s,%u:%jx", ap->key_group_name,
+		    ap->arcif_priority, bitsval(&ap->arcif_flags));
+		if (ap->lacp != NULL)
+			printf(",port=%u,state=%jx", ap->actor_port_number,
+			    bitsval(&ap->lacp->actor_oper_state));
+	}
+	if (e->dot1q_bridge_port != NULL) {
+		const struct ietf_interfaces_interfaces_interface_dot1q_bridge_port
+		    *bp = e->dot1q_bridge_port;
+		const struct ietf_interfaces_interfaces_interface_dot1q_bridge_port_rstp_bridge_rstp
+		    *rs = bp->rstp_bridge_rstp;
+		static const char *const p2p[] = { "-", "force-true",
+		    "force-false", "auto" };
+		static const char *const state[] = { "-", "discarding",
+		    "learning", "forwarding" };
+		static const char *const role[] = { "-", "disabled", "root",
+		    "designated", "alternate", "backup" };
+
+		printf(" bport=%s,%u,%s/%s,%jx", bp->bridge_name,
+		    bp->port_number, p2p[bp->admin_point_to_point],
+		    bp->oper_point_to_point ? "on" : "off",
+		    bitsval(&bp->arcif_flags));
+		if (rs != NULL)
+			printf(" rstp=%s,%s,%u/%u/%u,%u/%s,edge=%d/%d/%d",
+			    rs->has_port_state ? state[rs->port_state] : "-",
+			    rs->has_port_role ? role[rs->port_role] : "-",
+			    rs->port_id->port_priority,
+			    rs->port_id->port_number, rs->port_id->port_id,
+			    rs->port_path_cost, rs->has_fix_port_path_cost ?
+			    "fixed" : "auto", rs->admin_edge_port,
+			    rs->oper_edge_port, rs->auto_edge_port);
 	}
 	if (e->ieee802_eth_if_ethernet != NULL) {
 		const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet
@@ -580,6 +616,83 @@ main(int argc, char **argv)
 			err(1, "cbl_yarena_new");
 		active(atoi(argv[2]), argv[3], a);
 		cbl_yarena_free(a);
+		return (0);
+	}
+	if (argc == 2 && strcmp(argv[1], "linkagg") == 0) {
+		struct ieee802_dot1ax_linkagg la;
+		struct ieee802_dot1ax_linkagg_linkagg back;
+		struct cbl_ybuf b1 = { 0 }, b2 = { 0 };
+		char why[256];
+
+		if ((a = cbl_yarena_new()) == NULL)
+			err(1, "cbl_yarena_new");
+		if ((error = yif_interfaces(&data, a)) != 0 ||
+		    (error = yif_linkagg(data.interfaces->interface.v,
+		    data.interfaces->interface.n, a, &la)) != 0)
+			errc(1, error, "yif_linkagg");
+		for (size_t i = 0; i < la.linkagg->key_group.n; i++) {
+			const struct ieee802_dot1ax_linkagg_linkagg_key_group
+			    *k = &la.linkagg->key_group.v[i];
+			const struct ieee802_dot1ax_linkagg_linkagg_agg_system
+			    *sy = &la.linkagg->agg_system.v[i];
+
+			printf("%s system=%s,%s,", k->name, sy->name,
+			    str(sy->actor_system));
+			if (sy->has_actor_system_priority)
+				printf("%u", sy->actor_system_priority);
+			else
+				printf("-");
+			printf(" lags=");
+			joined(k->lags.n, k->lags.v);
+			printf(" aggports=");
+			joined(k->aggports.n, k->aggports.v);
+			printf("\n");
+		}
+		if (ieee802_dot1ax_linkagg_linkagg_encode(la.linkagg, &b1) != 0 ||
+		    ieee802_dot1ax_linkagg_linkagg_decode(b1.p, b1.len, &back,
+		    a, CBL_YD_STRICT, why, sizeof(why)) != 0 ||
+		    ieee802_dot1ax_linkagg_linkagg_encode(&back, &b2) != 0)
+			errx(1, "the round trip: %s", why);
+		printf("yang-cbor %zu bytes, %s\n", b1.len, b1.len == b2.len &&
+		    memcmp(b1.p, b2.p, b1.len) == 0 ? "the same back" :
+		    "not the same");
+		return (0);
+	}
+	if (argc == 2 && strcmp(argv[1], "bridges") == 0) {
+		struct ieee802_dot1q_bridge bd;
+		struct ieee802_dot1q_bridge_bridges back;
+		struct cbl_ybuf b1 = { 0 }, b2 = { 0 };
+		char why[256];
+
+		if ((a = cbl_yarena_new()) == NULL)
+			err(1, "cbl_yarena_new");
+		if ((error = yif_interfaces(&data, a)) != 0 ||
+		    (error = yif_bridges(data.interfaces->interface.v,
+		    data.interfaces->interface.n, a, &bd)) != 0)
+			errc(1, error, "yif_bridges");
+		for (size_t i = 0; i < bd.bridges->bridge.n; i++) {
+			const struct ieee802_dot1q_bridge_bridges_bridge *b =
+			    &bd.bridges->bridge.v[i];
+			const struct ieee802_dot1q_bridge_bridges_bridge_component
+			    *c = &b->component.v[0];
+			const struct cbl_yident *bt = cbl_yschema_ident(
+			    &ymodel_schema, b->bridge_type), *ct =
+			    cbl_yschema_ident(&ymodel_schema, c->type);
+
+			printf("%s address=%s type=%s component=%s,%s ports=",
+			    b->name, str(b->address), bt != NULL ? bt->name :
+			    "-", c->name, ct != NULL ? ct->name : "-");
+			joined(c->bridge_port.n, c->bridge_port.v);
+			printf("\n");
+		}
+		if (ieee802_dot1q_bridge_bridges_encode(bd.bridges, &b1) != 0 ||
+		    ieee802_dot1q_bridge_bridges_decode(b1.p, b1.len, &back, a,
+		    CBL_YD_STRICT, why, sizeof(why)) != 0 ||
+		    ieee802_dot1q_bridge_bridges_encode(&back, &b2) != 0)
+			errx(1, "the round trip: %s", why);
+		printf("yang-cbor %zu bytes, %s\n", b1.len, b1.len == b2.len &&
+		    memcmp(b1.p, b2.p, b1.len) == 0 ? "the same back" :
+		    "not the same");
 		return (0);
 	}
 	if (argc >= 2 && strcmp(argv[1], "pmd") == 0) {

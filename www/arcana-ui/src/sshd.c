@@ -50,6 +50,7 @@ static struct {
 	char		 sid[9];
 	char		 jail[256];
 	ucl_object_t	*data;
+	double		 fetched;	/* when data came */
 	bool		 loading;
 	char		 error[300];
 	char		 set[40];	/* the setting being changed */
@@ -78,14 +79,16 @@ ssh_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (sh.data != NULL)
 		ucl_object_unref(sh.data);
 	sh.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	sh.fetched = arc_now();
 }
 
 void
 refresh_ssh(struct server *s, bool again)
 {
-	char	url[400];
+	char	path[300];
 
-	if (!app.online || sh.loading)
+	/* One for this host on its way is waited for, not another's. */
+	if (!app.online || (sh.loading && strcmp(sh.sid, s->id) == 0))
 		return;
 	if (strcmp(sh.sid, s->id) != 0) {
 		if (sh.data != NULL)
@@ -97,9 +100,9 @@ refresh_ssh(struct server *s, bool again)
 		return;
 	snprintf(sh.sid, sizeof(sh.sid), "%s", s->id);
 	sh.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/ssh%s%s", s->id,
-	    sh.jail[0] != '\0' ? "?jail=" : "", sh.jail);
-	api("GET", url, NULL, ssh_cb, strdup(s->id));
+	snprintf(path, sizeof(path), "ssh%s%s", sh.jail[0] != '\0' ?
+	    "?jail=" : "", sh.jail);
+	host_read(s, path, "read sshd", true, ssh_cb, strdup(s->id));
 }
 
 /* A job: verb, and each of the rest only when it is given. */
@@ -266,8 +269,12 @@ view_ssh(struct html *h, struct server *s)
 	h_raw(h, "<input class=\"filter\" id=\"filter\" data-input=\"filter\" "
 	    "placeholder=\"Filter\" autocomplete=\"off\" spellcheck=\"false\"");
 	h_attr(h, "value", app.filter);
-	h_raw(h, "></div>");
-	if (sh.error[0] != '\0') {
+	h_raw(h, ">");
+	if (sh.data != NULL && strcmp(sh.sid, s->id) == 0)
+		fresh(h, sh.fetched, sh.loading, sh.error);
+	h_raw(h, "</div>");
+	if (sh.error[0] != '\0' && (sh.data == NULL || strcmp(sh.sid,
+	    s->id) != 0)) {
 		h_raw(h, "<p class=\"error\">");
 		h_txt(h, sh.error);
 		h_raw(h, "</p>");

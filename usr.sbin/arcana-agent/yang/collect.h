@@ -22,6 +22,18 @@
  */
 int	yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a);
 /*
+ * IEEE 802.1AX's linkagg (ieee802-dot1ax-linkagg) of the n interfaces v
+ * yif_interfaces() listed: each lagg's aggregation system and key group.
+ */
+int	yif_linkagg(const struct ietf_interfaces_interfaces_interface *v,
+	    size_t n, cbl_yarena *a, struct ieee802_dot1ax_linkagg *data);
+/*
+ * IEEE 802.1Q's bridges (ieee802-dot1q-bridge) of the n interfaces v
+ * yif_interfaces() listed: each bridge(4), its component and ports.
+ */
+int	yif_bridges(const struct ietf_interfaces_interfaces_interface *v,
+	    size_t n, cbl_yarena *a, struct ieee802_dot1q_bridge *data);
+/*
  * The IEEE 802.3 PMD type's identity (its SID) of a medium FreeBSD
  * names so ("1000baseT"); 0: IEEE names none.
  */

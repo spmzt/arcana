@@ -982,6 +982,13 @@ jail_page(struct html *h)
 	int			 i, k;
 
 	s = cur_server();
+	/* The host's jails not read yet: they are being read. */
+	if (s != NULL && s->list == NULL && app.jail[0] != '\0') {
+		h_raw(h, s->failed ? "<div class=\"empty\"><h2>Not read</h2>"
+		    "<p>The host's jails could not be read.</p></div>" :
+		    "<div class=\"empty\"><div class=\"loader\"></div></div>");
+		return;
+	}
 	if (app.jail[0] == '\0' || s == NULL ||
 	    (j = find_jail(s, app.jail)) == NULL) {
 		h_raw(h, "<div class=\"empty\"><h2>No such jail</h2><p>It is "
@@ -1225,7 +1232,7 @@ dock(struct html *h)
 				    "</button>", o->id);
 			if (o->state != OP_RUNNING)
 				;
-			else if (o->job > 0 || o->req != 0)
+			else if (o->job > 0 || o->req != 0 || o->live)
 				h_fmt(h, "<button class=\"icon\" "
 				    "data-act=\"op-cancel\" data-arg=\"%d\" "
 				    "title=\"%s\">×</button>", o->id, o->job > 0 ?
@@ -1773,6 +1780,10 @@ view_settings(struct html *h)
 		    settabs[i].tab ? " on" : "", settabs[i].arg,
 		    settabs[i].title);
 	h_raw(h, "</nav><div class=\"set-body\">");
+	if (app.by_token)
+		h_raw(h, "<div class=\"notice warn\">Signed in with an API "
+		    "token: the console's settings, its keys, tokens and CA "
+		    "are changed by one signed in with a security key.</div>");
 	if (app.modal_error[0] != '\0' && app.modal == MODAL_NONE) {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, app.modal_error);
@@ -1948,6 +1959,8 @@ modal(struct html *h)
 	case MODAL_SD_POLICY:
 	case MODAL_SD_EP:
 	case MODAL_SD_MAP:
+	case MODAL_SD_LIMITER:
+	case MODAL_SD_TOPO:
 	case MODAL_SD_SECPOL:
 	case MODAL_SD_LIST:
 	case MODAL_SD_IDENTITY:
@@ -2263,10 +2276,15 @@ modal(struct html *h)
 		case MODAL_SD_POLICY:
 		case MODAL_SD_EP:
 		case MODAL_SD_MAP:
-			h_raw(h, "<button class=\"primary\">Keep</button>");
+		case MODAL_SD_LIMITER:
+		case MODAL_SD_TOPO:
+			if (!sdwan_blocked())
+				h_raw(h, "<button class=\"primary\">Keep</button>");
 			break;
 		case MODAL_SD_EDGE:
-			h_raw(h, "<button class=\"primary\">Add the edge</button>");
+			if (!sdwan_blocked())
+				h_raw(h, "<button class=\"primary\">Add the edge"
+				    "</button>");
 			break;
 		case MODAL_WG_PEER:
 		case MODAL_IPSEC_CONN:
@@ -2478,6 +2496,18 @@ auth_screen(struct html *h)
 		h_fmt(h, "<button class=\"ghost\" data-act=\"login-passkey\"%s "
 		    "title=\"A passkey on this device, or on a phone nearby\">"
 		    "Use a passkey</button>", app.auth_busy ? " disabled" : "");
+		/* No key at hand: an API token that writes. */
+		h_fmt(h, "<details class=\"login-token\"><summary>Sign in with "
+		    "an API token</summary><form data-form=\"login-token\">"
+		    "<input type=\"password\" name=\"token\" required "
+		    "autocomplete=\"off\" spellcheck=\"false\" placeholder="
+		    "\"arcw_…\"><button class=\"ghost\"%s>Sign in</button>"
+		    "</form><p class=\"dim\">A write token, made under Settings, "
+		    "API tokens. Signed in with it, the console does what the "
+		    "token may: not its settings, sign-in, tokens or CA, which "
+		    "need a security key; deleted, the token signs out every "
+		    "session it opened.</p></details>", app.auth_busy ?
+		    " disabled" : "");
 	}
 	install_offer(h);
 	if (app.origin_error[0] != '\0') {
@@ -3157,8 +3187,13 @@ view_packages(struct html *h, struct server *s)
 		if (jstr(p, "name") == NULL)
 			continue;
 		snprintf(fname, sizeof(fname), "p:%s", jstr(p, "name"));
+		/* By its id, a ticked box stays with its package when the
+		 * list is read again or sorted. */
 		h_raw(h, "<tr><td><input type=\"checkbox\"");
 		h_attr(h, "name", fname);
+		h_fmt(h, " id=\"pkgsel-");
+		h_txt(h, jstr(p, "name"));
+		h_raw(h, "\"");
 		h_raw(h, "></td><td>");
 		h_txt(h, jstr(p, "name"));
 		h_raw(h, "</td><td>");

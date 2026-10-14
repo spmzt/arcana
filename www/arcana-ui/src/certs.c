@@ -24,6 +24,7 @@ static struct {
 	char		 sid[9];
 	char		 jail[256];	/* whose: "" for the host */
 	ucl_object_t	*data;
+	double		 fetched;	/* when data came */
 	bool		 loading;
 	bool		 untrusted;	/* the list shown */
 	char		 error[300];
@@ -51,15 +52,17 @@ certs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (ct.data != NULL)
 		ucl_object_unref(ct.data);
 	ct.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	ct.fetched = arc_now();
 }
 
 /* Read the certificates again, or the first time for this host. */
 void
 refresh_certs(struct server *s, bool again)
 {
-	char	url[400];
+	char	path[300];
 
-	if (!app.online || ct.loading)
+	/* One for this host on its way is waited for, not another's. */
+	if (!app.online || (ct.loading && strcmp(ct.sid, s->id) == 0))
 		return;
 	if (strcmp(ct.sid, s->id) != 0) {
 		if (ct.data != NULL)
@@ -71,9 +74,9 @@ refresh_certs(struct server *s, bool again)
 		return;
 	snprintf(ct.sid, sizeof(ct.sid), "%s", s->id);
 	ct.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/certs%s%s", s->id,
-	    ct.jail[0] != '\0' ? "?jail=" : "", ct.jail);
-	api("GET", url, NULL, certs_cb, strdup(s->id));
+	snprintf(path, sizeof(path), "certs%s%s", ct.jail[0] != '\0' ?
+	    "?jail=" : "", ct.jail);
+	host_read(s, path, "read the certificates", true, certs_cb, strdup(s->id));
 }
 
 static void
@@ -189,8 +192,11 @@ view_certs(struct html *h, struct server *s)
 	    "placeholder=\"Filter certificates\" autocomplete=\"off\" "
 	    "spellcheck=\"false\"");
 	h_attr(h, "value", app.filter);
-	h_raw(h, "></div>");
-	if (ct.error[0] != '\0') {
+	h_raw(h, ">");
+	if (mine)
+		fresh(h, ct.fetched, ct.loading, ct.error);
+	h_raw(h, "</div>");
+	if (ct.error[0] != '\0' && !mine) {
 		h_raw(h, "<p class=\"error\">");
 		h_txt(h, ct.error);
 		h_raw(h, "</p>");

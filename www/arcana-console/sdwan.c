@@ -1307,8 +1307,8 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 				    "(Mplify 119 R5, R6)"));
 		}
 	}
-	/* SWVC List of UCSs (§9.3). */
-	if (!names(c, ucl_object_lookup(sw, "ucs"), "ucs", false))
+	/* SWVC List of UCSs (§9.3): none yet while it is being made. */
+	if (!names(c, ucl_object_lookup(sw, "ucs"), "ucs", true))
 		return (false);
 	it = NULL;
 	while ((v = ucl_object_iterate(ucl_object_lookup(sw, "ucs"), &it,
@@ -1335,7 +1335,7 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 		return (false);
 	if (in_names(ucl_object_lookup(sw, "groups"), "None"))
 		return (fail(c, "groups: None is not a name (R89)"));
-	if (!objects(c, ucl_object_lookup(sw, "flows"), "flows", "name", false,
+	if (!objects(c, ucl_object_lookup(sw, "flows"), "flows", "name", true,
 	    NULL, "R91"))
 		return (false);
 	it = NULL;
@@ -1458,7 +1458,7 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 	}
 	/* SWVC List of Policies (§9.12). */
 	if (!objects(c, ucl_object_lookup(sw, "policies"), "policies", "name",
-	    false, NULL, "R32"))
+	    true, NULL, "R32"))
 		return (false);
 	it = NULL;
 	while ((p = ucl_object_iterate(ucl_object_lookup(sw, "policies"), &it,
@@ -1474,7 +1474,7 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 	c->where[base] = '\0';
 	/* SWVC List of Zones (§9.5). */
 	if (!objects(c, ucl_object_lookup(sw, "zones"), "zones", "name",
-	    false, NULL, "R19"))
+	    true, NULL, "R19"))
 		return (false);
 	nz = 0;
 	defaults = 0;
@@ -1547,7 +1547,7 @@ swvc(struct ck *c, const ucl_object_t *doc, const ucl_object_t *sw,
 	c->where[base] = '\0';
 	/* SWVC List of SWVC End Points (§9.2, §10). */
 	if (!objects(c, ucl_object_lookup(sw, "end_points"), "end_points",
-	    "id", false, seen_ep, "R101"))
+	    "id", true, seen_ep, "R101"))
 		return (false);
 	it = NULL;
 	while ((ep = ucl_object_iterate(ucl_object_lookup(sw, "end_points"),
@@ -2096,7 +2096,7 @@ check(const ucl_object_t *doc, struct ck *c)
 				break;
 		}
 		if (!objects(c, ucl_object_lookup(v, "ucs_end_points"),
-		    "ucs_end_points", "id", false, seen_ucsep, "R176")) {
+		    "ucs_end_points", "id", true, seen_ucsep, "R176")) {
 			ok = false;
 			break;
 		}
@@ -2312,6 +2312,52 @@ sdwan_store(ucl_object_t *doc, char *why, size_t len)
 	}
 	pthread_mutex_unlock(&sd_lock);
 	return (0);
+}
+
+/*
+ * A document is kept a step at a time, as the page makes it: a service
+ * with no UCS, AFS, policy, zone or end point yet, an edge with no WAN
+ * link yet, each checked as far as it goes.  What MEF 70.2 needs of a
+ * service it does not have yet keeps it from being deployed: the
+ * document deployed is a copy without it, notes saying why.
+ */
+static const char *const sw_needs[][2] = {
+	{ "ucs", "UCS" }, { "flows", "application flow" },
+	{ "policies", "policy" }, { "zones", "zone" },
+	{ "end_points", "end point" },
+};
+
+ucl_object_t *
+sdwan_ready(const ucl_object_t *doc, ucl_object_t *notes)
+{
+	const ucl_object_t	*sw;
+	ucl_object_t		*out, *keep;
+	ucl_object_iter_t	 it;
+	char			 note[300];
+	size_t			 i;
+
+	out = ucl_object_copy(doc);
+	keep = ucl_object_typed_new(UCL_ARRAY);
+	it = NULL;
+	while ((sw = ucl_object_iterate(ucl_object_lookup(doc, "swvcs"), &it,
+	    true)) != NULL) {
+		for (i = 0; i < nitems(sw_needs); i++)
+			if (ucl_array_size(ucl_object_lookup(sw,
+			    sw_needs[i][0])) == 0)
+				break;
+		if (i == nitems(sw_needs)) {
+			ucl_array_append(keep, ucl_object_copy(sw));
+			continue;
+		}
+		snprintf(note, sizeof(note), "service %s is not deployed: it "
+		    "has no %s yet", str(sw, "id") != NULL ? str(sw, "id") :
+		    "?", sw_needs[i][1]);
+		if (notes != NULL)
+			ucl_array_append(notes, ucl_object_fromstring(note));
+	}
+	(void)ucl_object_delete_key(out, "swvcs");
+	ucl_object_insert_key(out, keep, "swvcs", 0, false);
+	return (out);
 }
 
 bool

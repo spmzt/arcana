@@ -906,7 +906,8 @@ yang_kinds_body()
 	local y="$(atf_get_srcdir)/ycollect"
 
 	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "net.fibs is 1"
-	for i in epair77a epair78a epair79a vlan77 vlan78 lagg77 bridge77 gif77; do
+	for i in epair77a epair78a epair79a epair80a vlan77 vlan78 lagg77 lagg78 \
+	    bridge77 gif77; do
 		ifconfig "$i" >/dev/null 2>&1 && atf_skip "$i exists"
 	done
 	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
@@ -922,6 +923,11 @@ yang_kinds_body()
 	echo lagg77 >> made
 	atf_check ifconfig lagg77 laggproto loadbalance lagghash l3,l4 \
 	    laggport epair78a
+	atf_check -o ignore ifconfig epair80 create
+	echo epair80a >> made
+	atf_check -o ignore ifconfig lagg78 create
+	echo lagg78 >> made
+	atf_check ifconfig lagg78 laggproto lacp laggport epair80a
 	atf_check -o ignore "$JGC" -c "$SOCK" interface vlan77 create id 77 \
 	    parent lagg77
 	echo vlan77 >> made
@@ -952,20 +958,68 @@ yang_kinds_body()
 	atf_check -o match:'^epair77a 1 fib1 ' "$(atf_get_srcdir)/yni" -i -
 	atf_check -o match:' tunnelfib=1 ' grep '^gif77 ' a
 	atf_check -o match:' type=tunnel ' grep '^gif77 ' i
-	# loadbalance, hashing l3 and l4 (bits 1 and 2); the port's state
-	# is the kernel's.
-	atf_check -o match:' lagg=loadbalance,6,epair78a:[0-9a-f]+' \
+	# IEEE 802.1AX's: each lagg a key group and system of its name, its
+	# lag and its port's aggport naming it; FreeBSD's loadbalance,
+	# hashing l3 and l4 (bits 1 and 2); with LACP the port's number and
+	# state, the system's priority.
+	atf_check -o match:' lagg=loadbalance,6,[0-9A-F-]{17}( |$)' \
 	    grep '^lagg77 ' a
+	atf_check -o match:' aggport=lagg77,[0-9]+:[0-9a-f]+( |$)' \
+	    grep '^epair78a ' a
+	atf_check -o match:' lagg=lacp,[0-9a-f]+,[0-9A-F-]{17},key=[0-9]+' \
+	    grep '^lagg78 ' a
+	# The port's actor state: ifconfig's, LACP_STATE_* bits one
+	# position on in IEEE's lacp-state (lacp-activity is position 1).
+	st=$(ifconfig -v lagg78 | sed -n 's/.*laggport: epair80a .*state=\([0-9a-f]*\)<.*/\1/p')
+	[ -n "$st" ] || atf_fail "ifconfig shows no LACP state for epair80a"
+	st=$(printf '%x' $((0x$st << 1)))
+	atf_check -o match:" aggport=lagg78,[0-9]+:[0-9a-f]+,port=[0-9]+,state=$st( |\$)" \
+	    grep '^epair80a ' a
+	atf_check -o save:la "$y" linkagg
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 la
+	atf_check -o match:'^lagg77 system=lagg77,[0-9A-F-]{17},- lags=lagg77 aggports=epair78a$' \
+	    grep '^lagg77 ' la
+	atf_check -o match:'^lagg78 system=lagg78,[0-9A-F-]{17},[0-9]+ lags=lagg78 aggports=epair80a$' \
+	    grep '^lagg78 ' la
 	# ietf-if-vlan-encapsulation's outer tag, an 802.1Q one c-vlan; the
 	# parent ietf-if-extensions'; the priority arcana-interfaces'.
 	atf_check -o match:' vlan=77,lagg77,c-vlan,5' grep '^vlan77 ' a
 	atf_check -o match:' vlan=78,epair79a,s-vlan,0' grep '^vlan78 ' a
-	# A member's flags are those ifconfig shows.
-	flags=$(ifconfig bridge77 | sed -n 's/.*member: epair77b flags=\([0-9a-f]*\)<.*/\1/p')
-	[ -n "$flags" ] || atf_fail "ifconfig shows no member epair77b"
-	atf_check -o match:" bridge=epair77b:$flags( |\$)" grep '^bridge77 ' a
-	atf_check -o match:" bridge=epair77b:[0-9a-f]*[4-7]( |\$)" \
-	    grep '^bridge77 ' a
+	# IEEE 802.1Q's: the bridge, its one VLAN-unaware component and its
+	# port; the member's bridge-port and, its STP on, RSTP's port, each
+	# as ifconfig shows the member: flags (FreeBSD's own the learn,
+	# discover, span, sticky, private and qinq ones), port, priority
+	# (IEEE's a sixteenth of it), path cost, role and state (RSTP's:
+	# disabled, listening and blocking discarding).
+	atf_check -o save:br "$y" bridges
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 br
+	atf_check -o match:'^bridge77 address=[0-9A-F-]{17} type=customer-vlan-bridge component=bridge77,d-bridge-component ports=epair77b$' \
+	    grep '^bridge77 ' br
+	ifconfig bridge77 | awk '
+	$1 == "member:" { m = $2 == "epair77b"; if (m) { f = $3; sub(/^flags=/, "", f); sub(/<.*/, "", f) } next }
+	!m { next }
+	{ for (i = 1; i < NF; i++) {
+		if ($i == "port") port = $(i + 1)
+		if ($i == "priority") prio = $(i + 1)
+		if ($i == "cost") cost = $(i + 1)
+		if ($i == "role") role = $(i + 1)
+		if ($i == "state") state = $(i + 1)
+	} }
+	END { print f, port, prio, cost, role, state }' > member
+	read -r f port prio cost role state < member
+	[ -n "$f" ] || atf_fail "ifconfig shows no member epair77b"
+	f=$((0x$f))
+	[ $((f & 0x100)) -ne 0 ] && p2p=auto ||
+	    { [ $((f & 0x80)) -ne 0 ] && p2p=force-true || p2p=force-false; }
+	[ $((f & 0x80)) -ne 0 ] && ptp=on || ptp=off
+	own=$(printf '%x' $((f & 0x181b)))
+	atf_check -o match:" bport=bridge77,$port,$p2p/$ptp,$own( |\$)" \
+	    grep '^epair77b ' a
+	[ $((f & 0x4)) -ne 0 ] || atf_fail "ifconfig stp did not turn STP on"
+	case "$state" in learning|forwarding) ;; *) state=discarding ;; esac
+	[ $((f & 0x400)) -ne 0 ] && fixed=fixed || fixed=auto
+	atf_check -o match:" rstp=$state,$role,$((prio >> 4))/$port/$(((prio >> 4) << 12 | port)),$cost/$fixed,edge=$(((f >> 9) & 1))/$(((f >> 5) & 1))/$(((f >> 6) & 1))( |\$)" \
+	    grep '^epair77b ' a
 }
 yang_kinds_cleanup()
 {
@@ -1503,9 +1557,52 @@ yang_ip_cleanup()
 	true
 }
 
+# devd(8)'s notifications, as events (gula/hostwatch.c): a disk's node
+# made and destroyed, and ZFS's of a pool, on a memory disk of the lab.
+atf_test_case devd_watch cleanup
+devd_watch_head()
+{
+	atf_set "descr" "a memory disk made and destroyed, a pool made on it" \
+	    "and exported: each told by devd(8), each an event"
+	atf_set "require.user" "root"
+}
+devd_watch_body()
+{
+	[ -S /var/run/devd.seqpacket.pipe ] || atf_skip "devd(8) is not running"
+	zpool list arcw_hw >/dev/null 2>&1 && atf_skip "a pool arcw_hw is there already"
+	start_daemon
+	"$JGC" -c "$SOCK" events -f > follow.out 2>&1 &
+	echo $! > follow.pid
+	sleep 1.2
+	md=$(mdconfig -a -t swap -s 128m) || atf_skip "no memory disk"
+	echo "$md" > md
+	atf_check zpool create -O mountpoint=none arcw_hw "$md"
+	sleep 1.5
+	atf_check zpool export arcw_hw
+	atf_check mdconfig -d -u "$md"
+	rm md
+	sleep 1.5
+	kill "$(cat follow.pid)"
+	atf_check -o match:"\"kind\":\"device\",\"data\":\\{\"cdev\":\"$md\",\"state\":\"created\"\\}" \
+	    -o match:"\"kind\":\"device\",\"data\":\\{\"cdev\":\"$md\",\"state\":\"destroyed\"\\}" \
+	    -o match:'"kind":"zfs","data":\{"type":"[a-z_]+","pool":"arcw_hw"\}' \
+	    cat follow.out
+}
+devd_watch_cleanup()
+{
+	[ -f follow.pid ] && kill "$(cat follow.pid)" 2>/dev/null
+	cleanup
+	if [ -f md ]; then
+		zpool destroy -f arcw_hw >/dev/null 2>&1
+		mdconfig -d -u "$(cat md)" >/dev/null 2>&1
+	fi
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case yang_layers
+	atf_add_test_case devd_watch
 	atf_add_test_case yang_kinds
 	atf_add_test_case yang_events
 	atf_add_test_case yang_ip

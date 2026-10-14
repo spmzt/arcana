@@ -17,6 +17,10 @@
 
 #include <ucl.h>
 
+#ifndef nitems
+#define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
+#endif
+
 #define	APP_NAME		"Arcana"
 #define	MAX_SERVERS		64
 #define	MAX_OPS			40
@@ -48,6 +52,7 @@ void		 arc_store_set(const char *, const char *);
 char		*arc_theme_get(void);
 void		 arc_theme_set(const char *);
 void		 arc_save_b64(const char *, const char *, const char *);
+void		 arc_save_text(const char *, const char *, const char *);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
@@ -210,7 +215,15 @@ struct netview {
 	int		 data_kind;	/* the netkind it was read for */
 	double		 fetched;
 	bool		 loading;
-	char		 error[256];	int		 sort;		/* column sorted by, or -1 */
+	char		 error[256];
+	/* The last of each kind read of this host or jail, shown at once
+	 * when its kind is chosen again, while it is read anew. */
+	struct {
+		ucl_object_t	*data;
+		int		 family;
+		double		 fetched;
+	}		 cache[NET_CARP + 1];
+	int		 sort;		/* column sorted by, or -1 */
 	bool		 sort_desc;
 	char		 host_filter[129]; /* routes: searched for on the host */
 	bool		 paused;	/* connections, sockets: not read again by themselves */
@@ -290,7 +303,7 @@ struct op {
 	char		 target[256];	/* the jail or service */
 	/* What it asked, and where it is while it waits (graph.c). */
 	char		 method[8];
-	char		 url[200];
+	char		 url[400];
 	char		 stage[64];	/* a job's state on its host */
 	bool		 await;	/* the next request made is its */
 	bool		 live;	/* on the console's socket, its steps told */
@@ -377,6 +390,8 @@ enum modal {
 	MODAL_SD_POLICY,
 	MODAL_SD_EP,
 	MODAL_SD_MAP,
+	MODAL_SD_LIMITER,
+	MODAL_SD_TOPO,
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -427,6 +442,7 @@ struct app {
 	char		 origin_error[400];	/* opened at the wrong address */
 	char		 console_origin[256];	/* web.conf's origin, as told */
 	bool		 auth_busy;
+	bool		 by_token;	/* signed in with an API token */
 
 	struct server	 servers[MAX_SERVERS];
 	int		 nservers;
@@ -439,6 +455,8 @@ struct app {
 	char		 filter[64];
 	enum node	 node;		/* what the tree has selected */
 	enum tab	 tab;		/* of the selected server */
+	bool		 quiet;		/* the reads asked now are the page's own
+					 * (a timer, an event): no task */
 	char		 service[65];	/* open in the drawer, or "" */
 	ucl_object_t	*svc_config;	/* the open service's config reply */
 	bool		 svc_loading;
@@ -509,6 +527,11 @@ struct jailui	*jailui(struct server *, const char *);
 const ucl_object_t *find_jail(const struct server *, const char *);
 struct op	*op_find(int);
 /* live.c */
+void		 fresh(struct html *, double, bool, const char *);
+void		 live_tick(double);
+void		 live_cancel(int);
+void		 host_read(const struct server *, const char *, const char *,
+		    bool, api_cb *, void *);
 void		 live_read(const char *, const char *, const char *, int,
 		    api_cb *, void *);
 void		 live_stream(const ucl_object_t *);
@@ -581,6 +604,7 @@ void		 check_health(void);
 void		 check_update(void);
 void		 auth_status(void);
 void		 login(bool);
+void		 login_token(const char *);
 void		 enrol(const char *, const char *);
 void		 add_key(const char *);
 void		 logout(void);
@@ -707,6 +731,7 @@ bool		 l2_action(const char *, const char *, const char *);
 /* procs.c, logs.c, usage.c: what runs, what was written, how busy. */
 void		 refresh_procs(struct server *, bool);
 void		 procs_tick(double);
+void		 procs_poke(void);
 void		 view_procs(struct html *, struct server *);
 bool		 procs_form(const char *, const ucl_object_t *);
 bool		 procs_action(const char *, const char *, const char *);
@@ -763,6 +788,7 @@ void		 refresh_transport(struct server *, bool, bool);
 void		 transport_tick(double);
 void		 view_transport(struct html *, struct server *);
 void		 refresh_storage(struct server *, bool);
+void		 storage_due(const struct server *);
 void		 refresh_jail_datasets(struct server *, const char *);
 void		 view_jail_datasets(struct html *, struct server *,
 		    const ucl_object_t *);
@@ -790,6 +816,7 @@ void		 view_sdwan(struct html *);
 bool		 sdwan_action(const char *, const char *, const char *);
 bool		 sdwan_form(const char *, const ucl_object_t *);
 bool		 sdwan_modal(struct html *);
+bool		 sdwan_blocked(void);
 bool		 workflows_form(const char *, const ucl_object_t *);
 bool		 workflows_modal(struct html *);
 void		 storage_tick(double);

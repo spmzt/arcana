@@ -975,6 +975,28 @@ label {
 	color: var(--cyan);
 }
 
+/* What a tab shows, and how old it is: being read again, a dot that
+ * breathes beside the age; the last read failed, amber. */
+.tally.fresh {
+	white-space: nowrap;
+}
+
+.tally.fresh.reading::before {
+	content: "";
+	display: inline-block;
+	width: .45rem;
+	height: .45rem;
+	margin-right: .35rem;
+	border-radius: 50%;
+	background: var(--teal, var(--cyan));
+	vertical-align: middle;
+	animation: breathe 1.2s ease-in-out infinite;
+}
+
+.tally.fresh.is-stale {
+	color: var(--amber);
+}
+
 .sorts {
 	display: flex;
 	align-items: center;
@@ -4011,6 +4033,56 @@ li.wfedstep.drop-after { box-shadow: 0 3px 0 var(--cyan); }
 .wffields { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .4rem .7rem; }
 .wffields label em, .wfedit label em { font-style: normal; color: var(--amber); font-size: .7rem; }
 .wfwhen { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; padding-left: 1.4rem; }
+
+/* The editor: a palette of steps, the workflow drawn, what is picked. */
+.wfmeta { margin-bottom: .8rem; }
+.wfeditor { display: grid; grid-template-columns: 14rem minmax(0, 1fr) 22rem; gap: 1rem; align-items: start; }
+.wfpalette { border: 1px solid var(--line); padding: .5rem; max-height: 70vh; overflow-y: auto; position: sticky; top: 0; }
+.wfpalette h5 { margin: .7rem 0 .3rem; font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; color: var(--dim); }
+.wfpalette ul { list-style: none; margin: 0; padding: 0; }
+.wfpalette li { padding: .3rem .5rem; margin-bottom: .2rem; border: 1px solid var(--line); border-left: 3px solid var(--cyan); font-size: .78rem; cursor: grab; user-select: none; }
+.wfpalette li:hover { border-color: var(--cyan); }
+.wfpalette li.read { border-left-color: var(--teal, var(--cyan)); }
+.wfpalette li.arcana { border-left-color: var(--amber); }
+.wfpalette input.filter { width: 100%; max-width: none; }
+.wfcanvas { border: 1px dashed var(--line); min-height: 20rem; overflow: auto; position: relative; }
+.wfcanvas .wfhint-empty { position: absolute; left: 2rem; top: 9rem; color: var(--dim); font-size: .85rem; }
+svg.wfdraw { display: block; touch-action: none; width: 100%; max-width: 470px; height: auto; }
+svg.wfdraw .wfnode rect { fill: var(--panel); stroke: var(--line-2); stroke-width: 1; }
+svg.wfdraw .wfnode { cursor: grab; }
+svg.wfdraw .wfnode.sel rect { stroke: var(--cyan); stroke-width: 2; }
+svg.wfdraw .wfnode.trig rect { fill: rgba(var(--accent-rgb), .07); }
+svg.wfdraw .wfnode.end rect { fill: transparent; stroke-dasharray: 4 3; }
+svg.wfdraw .wfnode text { fill: var(--fg); font-size: 13px; }
+svg.wfdraw .wfnode text.k { fill: var(--dim); font-size: 10px; letter-spacing: .12em; }
+svg.wfdraw .wfnode text.c { fill: var(--amber); font-size: 11px; }
+svg.wfdraw .wfnode.trig text { font-size: 12px; }
+svg.wfdraw line.wfthen { stroke: var(--line-2); stroke-width: 1.5; }
+svg.wfdraw path.wffail { fill: none; stroke: var(--red); stroke-width: 1.3; stroke-dasharray: 5 3; opacity: .8; }
+svg.wfdraw marker path { fill: var(--line-2); }
+svg.wfdraw marker.fail path { fill: var(--red); }
+svg.wfdraw circle.port { fill: var(--panel); stroke-width: 2; cursor: crosshair; }
+svg.wfdraw circle.port.next { stroke: var(--cyan); }
+svg.wfdraw circle.port.fail { stroke: var(--red); }
+svg.wfdraw circle.port:hover { r: 8; }
+svg.wfdraw line.wfdrop { stroke: var(--cyan); stroke-width: 3; }
+svg.wfdraw line.wflinking { stroke-width: 2; stroke-dasharray: 4 3; }
+svg.wfdraw line.wflinking.fail { stroke: var(--red); }
+svg.wfdraw line.wflinking.then { stroke: var(--cyan); }
+.wfpanel { border: 1px solid var(--line); padding: .7rem .8rem; position: sticky; top: 0; max-height: 80vh; overflow-y: auto; }
+.wfpanel h4 { margin: 0 0 .3rem; }
+.wfpanel h5 { margin: .9rem 0 .3rem; font-size: .8rem; }
+.wfpanel .wfsteps.one { list-style: none; padding: 0; margin: 0; }
+.wfpanel .wfedhead > input, .wfpanel .wfedhead > select { flex: 1 1 7rem; min-width: 0; }
+.wfpanel .wfwhen { padding-left: 0; flex-direction: column; align-items: stretch; }
+.wfrow { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.wfrow input[type=number] { width: 5rem; }
+.wfsays { margin: .3rem 0 0; font-size: .78rem; color: var(--amber); }
+.wfon { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: .5rem; }
+@media (max-width: 1100px) {
+	.wfeditor { grid-template-columns: 1fr; }
+	.wfpalette, .wfpanel { position: static; max-height: none; }
+}
 @media (max-width: 620px) {
 	.wfrow .wfhost { width: 5rem; }
 	.wffields { grid-template-columns: minmax(0, 1fr); }
@@ -4475,8 +4547,46 @@ table.net.sd .chip { margin: 0 .25rem .2rem 0; }
 table.net.sd .crit { display: inline-block; margin: 0 .6rem .15rem 0; }
 table.net.sd .crit b { font-weight: 500; color: var(--fg-2); }
 table.net.sd .pmap { white-space: nowrap; }
+/* The way through an SD-WAN: the steps in order, the one to take now
+ * lit, each done ticked; on a tab, a line of them above it. */
+.sd-guide { border: 1px solid var(--line); padding: .8rem 1rem; margin: 0 0 1.2rem; background: rgba(var(--cyan-rgb, 0, 200, 255), .03); }
+.sd-guide-head { display: flex; align-items: baseline; gap: .8rem; }
+.sd-guide-head h3 { margin: 0 0 .6rem; font-size: .95rem; }
+.sd-guide ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: .4rem; }
+.sd-guide li { display: flex; gap: .5rem; align-items: flex-start; padding: .35rem .6rem; border: 1px solid var(--line); font-size: .8rem; color: var(--dim); }
+.sd-guide li .g-num { flex: none; width: 1.2rem; height: 1.2rem; border-radius: 50%; border: 1px solid var(--line); display: inline-flex; align-items: center; justify-content: center; font-size: .7rem; counter-increment: gstep; }
+.sd-guide ol { counter-reset: gstep; }
+.sd-guide li .g-num:empty::before { content: counter(gstep); }
+.sd-guide li.g-done { color: var(--fg-2); }
+.sd-guide li.g-done .g-num { border-color: var(--green, #3fb950); color: var(--green, #3fb950); }
+.sd-guide li.g-now { color: var(--fg); border-color: var(--cyan); flex: 1 1 18rem; }
+.sd-guide li.g-now .g-num { border-color: var(--cyan); color: var(--cyan); }
+.sd-guide li p { margin: .2rem 0 .45rem; color: var(--dim); max-width: 34rem; }
+.sd-guide.full ol { flex-direction: column; }
+.sd-guide.full li { flex: none; }
+.sd-guide > p { margin: .6rem 0 0; font-size: .78rem; }
+.sdwan h3.inline { display: inline-block; margin: 0 .6rem 0 0; font-size: 1rem; }
+table.net tr.empty-row td { color: var(--dim); padding: .7rem .6rem; }
+table.net tr.empty-row button { margin-left: .4rem; }
+.sd-effects { margin: .8rem 0 0; border: 1px solid var(--line); padding: .5rem .75rem; font-size: .8rem; }
+.sd-effects summary { cursor: pointer; color: var(--fg-2); }
+/* What is rarely set, folded under a form's other fields. */
+details.sd-more { margin: .7rem 0 0; border-top: 1px solid var(--line); padding-top: .5rem; }
+details.sd-more > summary { cursor: pointer; color: var(--fg-2); font-size: .8rem; margin-bottom: .4rem; }
+.sd-effects ul { margin: .5rem 0 .3rem 1.1rem; padding: 0; line-height: 1.5; }
+.sd-effects p { margin: .3rem 0 0; color: var(--dim); }
 .sd-doc textarea { width: 100%; min-height: 24rem; font-size: .8rem; tab-size: 4; }
+/* The sign-in with an API token, folded under the keys'. */
+details.login-token { margin-top: 1rem; font-size: .8rem; }
+details.login-token summary { cursor: pointer; color: var(--fg-2); }
+details.login-token form { display: flex; gap: .5rem; margin-top: .6rem; }
+details.login-token input { flex: 1; min-width: 0; }
+details.login-token p { margin: .5rem 0 0; font-size: .75rem; }
 .sd-doc .actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .5rem; }
+/* A file to pick, drawn as the buttons beside it are. */
+label.button { display: inline-flex; align-items: center; cursor: pointer; border: 1px solid var(--line-2); border-radius: 2px; padding: .25rem .6rem; font-size: .72rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; color: var(--fg-2); margin: 0; }
+label.button:hover { border-color: var(--cyan); }
+.sd-doc .actions .sep { flex: 1; }
 @media (max-width: 720px) {
 	table.net.sd .pmap { white-space: normal; }
 	.sd-doc textarea { min-height: 60vh; }

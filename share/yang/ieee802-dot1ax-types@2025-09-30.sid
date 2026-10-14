@@ -1,0 +1,146 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ieee802-dot1ax-types",
+    "module-revision": "2025-09-30",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "assignment-range": [
+      {
+        "entry-point": "69200",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ieee802-dot1ax-types",
+        "sid": "69200"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "c-vids-map",
+        "sid": "69201"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "c-vids-nomap",
+        "sid": "69202"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "distribution-algorithm",
+        "sid": "69203"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "flow-hash-map",
+        "sid": "69204"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "flow-hash-nomap",
+        "sid": "69205"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "i-sids-map",
+        "sid": "69206"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "i-sids-nomap",
+        "sid": "69207"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "link-map-patterns",
+        "sid": "69208"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "one-plus-n",
+        "sid": "69209"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "s-vids-map",
+        "sid": "69210"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "s-vids-nomap",
+        "sid": "69211"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "service-map-patterns",
+        "sid": "69212"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "te-sids-map",
+        "sid": "69213"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "te-sids-nomap",
+        "sid": "69214"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "two-plus-n",
+        "sid": "69215"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "unspecified",
+        "sid": "69216"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "basic-link-maps",
+        "sid": "69217"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "c-vid-dist-alg",
+        "sid": "69218"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "cscd",
+        "sid": "69219"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "dwc",
+        "sid": "69220"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "flow-hash-dist-alg",
+        "sid": "69221"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "i-sid-dist-alg",
+        "sid": "69222"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "s-vid-dist-alg",
+        "sid": "69223"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "sid-map",
+        "sid": "69224"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "te-sid-dist-alg",
+        "sid": "69225"
+      }
+    ]
+  }
+}

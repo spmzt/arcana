@@ -68,9 +68,10 @@ kernel_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 void
 refresh_kernel(struct server *s, bool again)
 {
-	char	url[96];
 
-	if (!app.online || kn.loading)
+	/* One for this host on its way is waited for; another host's is
+	 * not, its answer goes unread. */
+	if (!app.online || (kn.loading && strcmp(kn.sid, s->id) == 0))
 		return;
 	if (strcmp(kn.sid, s->id) != 0) {
 		if (kn.data != NULL)
@@ -81,8 +82,8 @@ refresh_kernel(struct server *s, bool again)
 		return;
 	snprintf(kn.sid, sizeof(kn.sid), "%s", s->id);
 	kn.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/kernel", s->id);
-	api("GET", url, NULL, kernel_cb, strdup(s->id));
+	host_read(s, "kernel", "read the kernel", true, kernel_cb,
+	    strdup(s->id));
 }
 
 static bool
@@ -146,7 +147,7 @@ view_kernel(struct html *h, struct server *s)
 	const ucl_object_t	**rows, *o, *m, *mem;
 	ucl_object_iter_t	 it, mit;
 	const char		*name;
-	char			 buf[32], age[32], base[80];
+	char			 buf[32], base[80];
 	int64_t			 used, top;
 	bool			 mine, first;
 	int			 n, shown, r;
@@ -171,12 +172,8 @@ view_kernel(struct html *h, struct server *s)
 	    "autocomplete=\"off\" spellcheck=\"false\"");
 	h_attr(h, "value", app.filter);
 	h_raw(h, ">");
-	if (mine) {
-		fmt_age(age, sizeof(age), kn.fetched);
-		h_raw(h, "<span class=\"tally\">");
-		h_txt(h, age);
-		h_raw(h, "</span>");
-	}
+	if (mine)
+		fresh(h, kn.fetched, kn.loading, kn.error);
 	h_raw(h, "</div>");
 	if (kn.error[0] != '\0' && strcmp(kn.sid, s->id) == 0) {
 		h_raw(h, "<div class=\"notice bad\">");

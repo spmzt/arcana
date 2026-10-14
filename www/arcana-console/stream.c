@@ -40,7 +40,9 @@
  * answered with any number of {"id": 9, "step": {...}}, each step of the
  * trace as it begins and again as it ends (its id that of the whole
  * trace), then {"id": 9, "status": 200, "reply": {...}}, what GET
- * /api/servers/<id>/services answers.  read is jails or services.
+ * /api/servers/<id>/services answers.  read is the path after
+ * /api/servers/<id>/ of any read of a host's (hosts.c's hreads), its
+ * query string with it: "net/routes?fib=1", "storage/pools".
  */
 
 #include <sys/param.h>
@@ -72,7 +74,7 @@ struct stream {
 	char			*peer;
 	char			 filter[201];
 	uint8_t			 kind;		/* ARC_NET_KIND_*, or 255 for sysctl */
-	char			 read[16];	/* a read's: jails, services */
+	char			 read[256];	/* a read's: its path and query */
 	char			*name;		/* a read's: the server's name */
 	uint8_t			 family;
 	uint32_t		 fib;
@@ -574,9 +576,10 @@ stream_message(struct connection *c, u_int8_t op, void *data, size_t len)
 	if (sid != NULL && what != NULL && strcmp(what, "read") == 0) {
 		const char	*rd = ucl_str(o, "read");
 
-		if (rd == NULL || (strcmp(rd, "jails") != 0 &&
-		    strcmp(rd, "services") != 0))
-			refuse(c, id, "read is jails or services");
+		if (rd == NULL || strlen(rd) >= sizeof(s->read) ||
+		    !hosts_read_known(rd))
+			refuse(c, id, "read is the path of a read of a host's, "
+			    "after /api/servers/<id>/");
 		else if ((sv = server_find(sid)) == NULL)
 			refuse(c, id, "no such server");
 		else if (nstreams >= STREAMS_MAX)
