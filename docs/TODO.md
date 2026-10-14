@@ -337,7 +337,14 @@
   cbl_dtree_with_defaults(): RFC 6243's report-all, trim and explicit,
   held to its Appendix A's examples (yfilter_test rfc6243);
   report-all-tagged waits on the codec's metadata, as with-origin
-  (2.3.9) does. Next: 2.8, yang-library, after 1.11; then the Y-3 items
+  (2.3.9) does; it ran clean under ASan. For the user: how YANG-CBOR
+  carries RFC 7952 annotations (origin, with-defaults' default). RFC
+  9254 says nothing; the one proposal, draft-ietf-core-yang-metadata-00
+  (CORE WG, March 2026), expired 2026-09-15 with no successor: a
+  tagged array [metadata map, value] in place of a node's value, under
+  a CBOR tag it only proposes (109, unassigned), and a .sid namespace
+  "annotation" (4) beside RFC 9595's. Follow it with 109 held as
+  provisional, or keep origin out of the wire until a standard. Next: 2.8, yang-library, after 1.11; then the Y-3 items
   main can carry. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
