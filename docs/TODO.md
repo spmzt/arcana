@@ -222,7 +222,14 @@
   mechanically from arcana.yaml, an rpc an operation with its
   attributes (the JSON blobs as strings), so the branch runs at once and
   Y-3 replaces it a module at a time; or Y-3's conversions first, 1.11
-  after. Meanwhile Y-2's cblink side (2.1, 2.2) goes on. As each operation is
+  after. Meanwhile Y-2's cblink side goes on. Done on cblink v2
+  (2026-10-14): 2.1, the instance tree (<cbl_data.h>: nodes of the
+  tables, keys by an index, defaults on demand and made, to and from
+  the structs and YANG-CBOR), its edits (RFC 6241's operations, all or
+  nothing by an undo log; RFC 8072's insert and move), the difference
+  of two trees as such an edit, and references (leafrefs' targets and
+  nodes' parents now in the tables; instance-identifiers read from
+  YANG-CBOR). Next: 2.2, the XPath-lite evaluator. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
