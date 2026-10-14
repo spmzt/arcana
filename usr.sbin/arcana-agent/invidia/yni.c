@@ -21,16 +21,27 @@
  * of printable characters; one of the form fibM is FIB M's alone.  What
  * the file has that cannot be read so is said, not guessed: the
  * variable and why.
+ *
+ * An interface is bound to the instance whose FIB is its own (ifconfig
+ * fib, SIOCSIFFIB, PLAN-SDN-YANG 2.6.3), none in FIB 0, the host's; so
+ * are its addresses, of both families: FreeBSD binds an interface, not
+ * an address family, and refuses a family bound apart.
  */
 
 #include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <sys/sockio.h>
 #include <sys/sysctl.h>
+
+#include <net/if.h>
 
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "cbl_schema.h"
 #include "collect.h"
@@ -276,5 +287,207 @@ yni_write(struct vc_file *f, int nfibs,
 		} else if (vc_unset(f, name, err, errlen) == -1)
 			return (errno);
 	}
+	return (0);
+}
+
+typedef struct ietf_interfaces_interfaces_interface yif;
+typedef struct ietf_network_instance_bind_ni_name_failed yfailed;
+
+/* The FIB of the instance named name; -1: none such. */
+int
+yni_fib(const struct ietf_network_instance_network_instances *ni,
+    const char *name)
+{
+
+	for (size_t i = 0; ni != NULL && i < ni->network_instance.n; i++)
+		if (strcmp(ni->network_instance.v[i].name, name) == 0)
+			return (ni->network_instance.v[i].arcni_fib);
+	return (-1);
+}
+
+static const char *
+name_of(const struct ietf_network_instance_network_instances *ni, int fib)
+{
+
+	for (size_t i = 0; ni != NULL && i < ni->network_instance.n; i++)
+		if (ni->network_instance.v[i].arcni_fib == fib)
+			return (ni->network_instance.v[i].name);
+	return (NULL);
+}
+
+int
+yni_bind(yif *v, size_t n,
+    const struct ietf_network_instance_network_instances *ni, cbl_yarena *a)
+{
+
+	for (size_t i = 0; i < n; i++) {
+		const char *name;
+
+		if (!v[i].has_arcif_fib || v[i].arcif_fib == 0 ||
+		    (name = name_of(ni, (int)v[i].arcif_fib)) == NULL)
+			continue;
+		v[i].ni_bind_ni_name = name;
+		if (v[i].ip_ipv4 != NULL) {
+			struct ietf_interfaces_interfaces_interface_ip_ipv4 *c;
+
+			if ((c = cbl_yarena_alloc(a, sizeof(*c))) == NULL)
+				return (ENOMEM);
+			*c = *v[i].ip_ipv4;
+			c->ni_bind_ni_name = name;
+			v[i].ip_ipv4 = c;
+		}
+		if (v[i].ip_ipv6 != NULL) {
+			struct ietf_interfaces_interfaces_interface_ip_ipv6 *c;
+
+			if ((c = cbl_yarena_alloc(a, sizeof(*c))) == NULL)
+				return (ENOMEM);
+			*c = *v[i].ip_ipv6;
+			c->ni_bind_ni_name = name;
+			v[i].ip_ipv6 = c;
+		}
+	}
+	return (0);
+}
+
+/*
+ * rc.conf's ifconfig_<if>, the word pair "fib N" in it made fib's: set,
+ * or, for 0, taken out (the variable too, were it nothing else); the
+ * other words as they were.  rc.conf names an interface with '.', '-',
+ * '/' and '+' made '_', as network.subr's ifconfig_up does.
+ */
+int
+yni_rc_fib(struct vc_file *f, const char *ifname, int fib, char *err,
+    size_t errlen)
+{
+	char var[IFNAMSIZ + 16], val[1024], *p, *w, *copy;
+	const struct vc_assign *as;
+	bool done = false;
+	size_t len = 0;
+
+	snprintf(var, sizeof(var), "ifconfig_%s", ifname);
+	for (p = var + strlen("ifconfig_"); *p != '\0'; p++)
+		if (strchr(".-/+", *p) != NULL)
+			*p = '_';
+	val[0] = '\0';
+	if ((as = vc_get(f, var)) != NULL) {
+		if (!vc_settled(f, var) || as->value == NULL) {
+			snprintf(err, errlen, "%s: not settled by reading the "
+			    "file", var);
+			errno = EINVAL;
+			return (-1);
+		}
+		if ((copy = strdup(as->value)) == NULL)
+			return (-1);
+		/* The words, "fib N" replaced or dropped. */
+		for (p = copy; (w = strsep(&p, " \t")) != NULL;) {
+			const char *put = w;
+			char num[16];
+
+			if (*w == '\0')
+				continue;
+			if (strcmp(w, "fib") == 0) {
+				while (p != NULL && (*p == ' ' || *p == '\t'))
+					p++;
+				(void)strsep(&p, " \t");
+				if (fib == 0 || done)
+					continue;
+				snprintf(num, sizeof(num), "fib %d", fib);
+				put = num;
+				done = true;
+			}
+			len = strlcat(val, len > 0 ? " " : "", sizeof(val));
+			len = strlcat(val, put, sizeof(val));
+		}
+		free(copy);
+	}
+	if (fib != 0 && !done) {
+		char num[16];
+
+		snprintf(num, sizeof(num), "fib %d", fib);
+		len = strlcat(val, len > 0 ? " " : "", sizeof(val));
+		len = strlcat(val, num, sizeof(val));
+	}
+	if (len >= sizeof(val)) {
+		snprintf(err, errlen, "%s: too long", var);
+		errno = EINVAL;
+		return (-1);
+	}
+	if (val[0] == '\0')
+		return (as != NULL ? vc_unset(f, var, err, errlen) : 0);
+	return (vc_set(f, var, val, err, errlen));
+}
+
+static int
+failed(cbl_yarena *a, const char *ifname, const char *name,
+    const char *why, const yfailed **out)
+{
+	struct ietf_network_instance_bind_ni_name_failed_interface *i;
+	yfailed *fl;
+
+	if ((fl = cbl_yarena_alloc(a, sizeof(*fl))) == NULL ||
+	    (i = cbl_yarena_alloc(a, sizeof(*i))) == NULL)
+		return (ENOMEM);
+	memset(fl, 0, sizeof(*fl));
+	i->bind_ni_name = astrdup(a, name);
+	fl->name = astrdup(a, ifname);
+	fl->interface = i;
+	fl->error_info = astrdup(a, why);
+	*out = fl;
+	return (0);
+}
+
+/*
+ * Interface ifname bound to the instance named name ("" or NULL: none,
+ * FIB 0), by SIOCSIFFIB, and kept in rc.conf f if f is not NULL; v4 and
+ * v6, its address families' bind-ni-name if given, are name too.  What
+ * cannot be done: 0, *fail the bind-ni-name-failed notification
+ * (RFC 8529) saying why, nothing changed.
+ */
+int
+yni_bind_apply(const char *ifname, const char *name, const char *v4,
+    const char *v6, const struct ietf_network_instance_network_instances *ni,
+    struct vc_file *f, cbl_yarena *a, const yfailed **fail)
+{
+	struct ifreq ifr;
+	char why[256];
+	int fib = 0, s, old;
+
+	*fail = NULL;
+	if (name == NULL)
+		name = "";
+	if ((v4 != NULL && strcmp(v4, name) != 0) ||
+	    (v6 != NULL && strcmp(v6, name) != 0))
+		return (failed(a, ifname, name, "FreeBSD binds an interface, "
+		    "both its address families, not one alone", fail));
+	if (name[0] != '\0' && (fib = yni_fib(ni, name)) == -1)
+		return (failed(a, ifname, name, "no such network instance",
+		    fail));
+	memset(&ifr, 0, sizeof(ifr));
+	if (strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name)) >=
+	    sizeof(ifr.ifr_name))
+		return (failed(a, ifname, name, "no such interface", fail));
+	if ((s = socket(AF_LOCAL, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
+		return (errno);
+	if (ioctl(s, SIOCGIFFIB, &ifr) == -1) {
+		snprintf(why, sizeof(why), "%s", errno == ENXIO ?
+		    "no such interface" : strerror(errno));
+		close(s);
+		return (failed(a, ifname, name, why, fail));
+	}
+	old = ifr.ifr_fib;
+	ifr.ifr_fib = fib;
+	if (ioctl(s, SIOCSIFFIB, &ifr) == -1) {
+		snprintf(why, sizeof(why), "SIOCSIFFIB: %s", strerror(errno));
+		close(s);
+		return (failed(a, ifname, name, why, fail));
+	}
+	/* Kept; else the kernel's undone. */
+	if (f != NULL && yni_rc_fib(f, ifname, fib, why, sizeof(why)) == -1) {
+		ifr.ifr_fib = old;
+		(void)ioctl(s, SIOCSIFFIB, &ifr);
+		close(s);
+		return (failed(a, ifname, name, why, fail));
+	}
+	close(s);
 	return (0);
 }

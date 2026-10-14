@@ -10,8 +10,8 @@ PROGS=		ycollect
 SRCS.ycollect=	ycollect.c yif.c yip.c yrt.c rtimes.c ymodel_schema.c
 # yni: FIBs as network instances, names in fibs.conf.
 PROGS+=		yni
-SRCS.yni=	yni_test.c yni.c ymodel_schema.c
-LDADD.yni+=	${CBLINK_LIBS} \
+SRCS.yni=	yni_test.c yni.c yif.c yip.c ymodel_schema.c
+LDADD.yni+=	${CBLINK_LIBS} -lnv \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
 # yrtadv: rtadvd.conf as the router advertisement submodule has it.
 PROGS+=		yrtadv
