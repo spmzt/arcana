@@ -72,7 +72,7 @@ readall(struct vc_file *files, size_t n, int fib, cbl_yarena *a, bool print)
 {
 	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes
 	    *sr;
-	struct rcr_unread *u;
+	struct yunread *u;
 	size_t nu;
 	int error;
 

@@ -87,12 +87,17 @@ Arcana's provisional block (SIDS.md), their `.sid` files beside them.
 |---|---|---|
 | `arcana-interfaces@2026-10-14.yang` | module | augments `ietf-interfaces`: driver name, MTU, Ethernet and hardware addresses, groups, FIB and tunnel FIB, capabilities, media; vlan(4), lagg(4), bridge(4) and epair(4) |
 | `arcana-ip-deviations@2026-10-14.yang` | module | deviates `ietf-ip`: forwarding, DAD's probes and temporary addresses are the host's sysctls, IPv4 cannot be turned off on one interface, one MTU for both families: config false |
+| `arcana-network-instance@2026-10-14.yang` | module | FreeBSD's FIBs (setfib(2), `net.fibs`) as `ietf-network-instance`'s: a `fib` case with the FIB's number; a FIB cannot be disabled, and there is no VSI or VV root (an if_bridge(4) is an interface) |
 | `arcana-routing@2026-10-14.yang` | module | identities for `ietf-routing`'s `source-protocol`: a route's origin as FreeBSD's netlink(4) says it (`rtm_protocol`), where RFC 8349 has none |
 
 The `.sid` files of the IETF and IANA modules the agent fills
 (`ietf-interfaces`, `ietf-ip`, `iana-if-type`, `ietf-yang-types`,
 `ietf-inet-types`) are Arcana's too: IANA registers their ranges and
-publishes no file, so they are numbered here (SIDS.md).
+publishes no file, so they are numbered here (SIDS.md). So are those
+of the ones with no IETF range (`ietf-routing`, its address families,
+`ietf-network-instance`), from Arcana's block. A module's file numbers
+every item of it, whatever another module deviates:
+`arcana-network-instance` takes `vsi-root` away, its number stays.
 
 The agent's C structures and tables of the modules it fills are
 committed in `usr.sbin/arcana-agent/yang/`; `make regen-yang` there

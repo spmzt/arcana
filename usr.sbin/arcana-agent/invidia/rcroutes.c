@@ -328,10 +328,10 @@ rd_free(struct rd *v, size_t n)
 }
 
 static int
-unread(cbl_yarena *a, struct rcr_unread **u, size_t *nu, const char *var,
+unread(cbl_yarena *a, struct yunread **u, size_t *nu, const char *var,
     const char *why)
 {
-	struct rcr_unread *nv;
+	struct yunread *nv;
 
 	if ((nv = reallocarray(*u, *nu + 1, sizeof(*nv))) == NULL)
 		return (ENOMEM);
@@ -345,7 +345,7 @@ unread(cbl_yarena *a, struct rcr_unread **u, size_t *nu, const char *var,
 /* One family's routes of FIB fib, read; put together by prefix. */
 static int
 family(const struct vc_file *files, size_t nfiles, int fib, int af,
-    cbl_yarena *a, const yr4 **outv, size_t *outn, struct rcr_unread **u,
+    cbl_yarena *a, const yr4 **outv, size_t *outn, struct yunread **u,
     size_t *nu)
 {
 	const char *pre = af == AF_INET ? "" : "ipv6_";
@@ -552,7 +552,7 @@ family(const struct vc_file *files, size_t nfiles, int fib, int af,
 
 int
 rcr_read(const struct vc_file *files, size_t nfiles, int fib,
-    cbl_yarena *a, const ysr **out, struct rcr_unread **u, size_t *nu)
+    cbl_yarena *a, const ysr **out, struct yunread **u, size_t *nu)
 {
 	struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4
 	    *v4;

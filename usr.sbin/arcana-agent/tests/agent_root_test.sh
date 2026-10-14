@@ -1227,6 +1227,34 @@ yang_route_times_cleanup()
 	true
 }
 
+atf_test_case yang_ni cleanup
+yang_ni_head()
+{
+	atf_set "descr" "network instances on a host with net.fibs=4" \
+	    "(PLAN-SDN-YANG 2.6.1): a vnet jail's, raised to 4"
+	atf_set "require.user" "root"
+}
+yang_ni_body()
+{
+	local y="$(atf_get_srcdir)/yni"
+
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check -o ignore jexec "$YJAIL" sysctl net.fibs=4
+	printf 'fib2_name="blue"\nfib2_description="the blue one"\n' > \
+	    fibs.conf
+	atf_check -o inline:"fib1 1 -
+blue 2 the blue one
+fib3 3 -
+yang-cbor 59 bytes, the same back
+" jexec "$YJAIL" "$y" "$PWD/fibs.conf"
+}
+yang_ni_cleanup()
+{
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 atf_test_case yang_rtadv cleanup
 yang_rtadv_head()
 {
@@ -1322,6 +1350,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_static_apply
 	atf_add_test_case yang_route_times
 	atf_add_test_case yang_rtadv
+	atf_add_test_case yang_ni
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases
