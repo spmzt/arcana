@@ -5291,6 +5291,172 @@ EOF
 	atf_check -o file:want sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
 }
 
+atf_test_case yang_system
+yang_system_head()
+{
+	atf_set "descr" "the sysctl and kernel operations' replies as" \
+	    "arcana-sysctl and arcana-kernel have them (PLAN-SDN-YANG" \
+	    "3.1.6), through YANG-CBOR and back; their configuration" \
+	    "written in place: sysctl.conf's settings, rc.conf's kld_list"
+}
+yang_system_body()
+{
+	local y="$(atf_get_srcdir)/ysystem"
+
+	cat > sysctl.json <<'EOF'
+{"values":[{"name":"net.inet.ip.forwarding","value":"1","type":"integer","rw":true,"descr":"Enable IP forwarding between interfaces"},{"name":"kern.ostype","value":"FreeBSD","type":"string","rw":false,"descr":"Operating system type"}],"kept":[{"name":"net.inet.ip.forwarding","value":"1"},{"name":"kern.randompid","value":"1"}]}
+EOF
+	cat > kernel.json <<'EOF'
+{"files":[{"id":1,"name":"kernel","path":"/boot/kernel/kernel","refs":40,"size":34855640,"address":"0xffffffff80200000","modules":["if_lo","netlink"]},{"id":5,"name":"if_wg.ko","path":"/boot/kernel/if_wg.ko","refs":1,"size":86016,"address":"0xffffffff82a10000","modules":["wg"]}],"available":["aac","accf_data"],"kept":["if_wg","pf"],"memory":{"files":80888740,"kmem_size":25140678656,"kmem_map_size":7734583296,"kmem_map_free":17406095360,"malloc_total":632946880,"malloc":[{"name":"solaris","bytes":493063792,"count":1289305,"requests":550597237},{"name":"solaris","bytes":22530688,"count":446466,"requests":453687}],"zones":[{"name":"mbuf_cluster","bytes":2048000,"count":1000,"free":24,"size":2048,"requests":99999}]}}
+EOF
+	cat > want <<'EOF'
+total 900
+value net.inet.ip.forwarding=1 type=integer writable=yes description=Enable IP forwarding between interfaces
+value kern.ostype=FreeBSD type=string writable=no description=Operating system type
+kept net.inet.ip.forwarding=1
+kept kern.randompid=1
+yang-cbor 194 bytes, the same back
+EOF
+	atf_check -o file:want "$y" sysctl sysctl.json 900
+	cat > want <<'EOF'
+file 1 kernel path=/boot/kernel/kernel refs=40 size=34855640 address=0xffffffff80200000 modules=if_lo,netlink
+file 5 if_wg.ko path=/boot/kernel/if_wg.ko refs=1 size=86016 address=0xffffffff82a10000 modules=wg
+available aac
+available accf_data
+kept if_wg
+kept pf
+memory files=80888740 kmem-size=25140678656 map-size=7734583296 map-free=17406095360 malloc-total=632946880
+malloc solaris bytes=493063792 count=1289305 requests=550597237
+malloc solaris bytes=22530688 count=446466 requests=453687
+zone mbuf_cluster bytes=2048000 free=24 size=2048
+yang-cbor 318 bytes, the same back
+EOF
+	atf_check -o file:want "$y" kernel kernel.json
+	# sysctl.conf: one changed in place, its comment kept; one no longer
+	# wanted taken out; one new appended.
+	printf '# Kept.\nnet.inet.ip.forwarding=1\nkern.randompid=1   # pids at random\nsecurity.bsd.see_other_uids=0\n' > sysctl.conf
+	atf_check "$y" -s sysctl.conf net.inet.ip.forwarding=0 \
+	    kern.randompid=1 vfs.zfs.arc_max=4294967296
+	atf_check -o inline:'# Kept.
+net.inet.ip.forwarding=0
+kern.randompid=1   # pids at random
+vfs.zfs.arc_max=4294967296
+' cat sysctl.conf
+	# kld_list: made, then none and taken out; the rest as it was.
+	printf 'hostname="lab"\nkld_list="if_wg pf"\nsshd_enable="YES"\n' > rc.conf
+	atf_check "$y" -k rc.conf if_wg pf dummynet
+	atf_check -o inline:'hostname="lab"
+kld_list="if_wg pf dummynet"
+sshd_enable="YES"
+' cat rc.conf
+	atf_check "$y" -k rc.conf
+	atf_check -o inline:'hostname="lab"
+sshd_enable="YES"
+' cat rc.conf
+}
+
+atf_test_case yang_processes
+yang_processes_head()
+{
+	atf_set "descr" "the processes operation's replies as" \
+	    "arcana-processes has them (PLAN-SDN-YANG 3.1.7), OpenConfig" \
+	    "procmon's shape with FreeBSD's besides: one process's files" \
+	    "and threads on its entry, through YANG-CBOR and back"
+}
+yang_processes_body()
+{
+	local y="$(atf_get_srcdir)/yprocs"
+
+	cat > ps.json <<'EOF'
+{"processes":[{"pid":812,"ppid":1,"user":"root","jid":0,"state":"sleep","wait":"select","nice":0,"pri":20,"threads":1,"rss":9437184,"size":14680064,"time":1.27,"wcpu":0.05,"cpu":0.0,"in":12,"out":3,"io":0.0,"start":1791990000,"comm":"sshd","args":"/usr/sbin/sshd -D"},{"pid":4100,"ppid":4099,"user":"www","jid":3,"jail":"web","state":"run","nice":-5,"pri":52,"threads":4,"rss":104857600,"size":209715200,"time":3600.5,"wcpu":151.25,"cpu":180.4,"in":0,"out":0,"io":2.5,"start":1791995110,"comm":"nginx","args":"nginx: worker process"}],"jails":[{"jid":3,"name":"web","procs":5,"threads":9,"cpu":180.4,"wcpu":151.25,"rss":130000000}],"ncpu":4,"elapsed":0.25}
+EOF
+	cat > one.json <<'EOF'
+{"pid":812,"comm":"sshd","files":[{"use":"cwd","type":"file","path":"/","mode":"r"},{"fd":3,"type":"socket","proto":"TCP","local":"192.0.2.1:22","remote":"198.51.100.7:51000","mode":"rw"}],"threads":[{"tid":100812,"name":"sshd","state":"sleep","wait":"select","pri":20,"wcpu":0.05,"time":1.27,"cpu":0}]}
+EOF
+	# The args split on blanks; OpenConfig's utilization at most 100,
+	# the exact share in cpu; start in nanoseconds.
+	cat > want <<'EOF'
+ncpu 4 elapsed 0.25
+process 812 name=sshd args=/usr/sbin/sshd|-D start=1791990000000000000 util=0 memory=9437184 ppid=1 user=root jail=0/- state=sleep wait=select nice=0 pri=20 threads=1 size=14680064 time=1.27 cpu=0.00 wcpu=0.05 in=12 out=3 io=0.00
+  file use=cwd type=file path=/ proto=- local=- remote=- mode=r
+  file fd=3 type=socket path=- proto=TCP local=192.0.2.1:22 remote=198.51.100.7:51000 mode=rw
+  thread 100812 name=sshd state=sleep wait=select pri=20 wcpu=0.05 time=1.27
+process 4100 name=nginx args=nginx:|worker|process start=1791995110000000000 util=100 memory=104857600 ppid=4099 user=www jail=3/web state=run wait=- nice=-5 pri=52 threads=4 size=209715200 time=3600.50 cpu=180.40 wcpu=151.25 in=0 out=0 io=2.50
+jail 3 web procs=5 threads=9 cpu=180.40 wcpu=151.25 rss=130000000
+yang-cbor 411 bytes, the same back
+EOF
+	atf_check -o file:want "$y" ps.json one.json
+	# Without the detail, no files or threads.
+	atf_check -o not-match:'^  ' "$y" ps.json
+}
+
+atf_test_case yang_storage
+yang_storage_head()
+{
+	atf_set "descr" "the storage operation's replies as arcana-storage" \
+	    "has them (PLAN-SDN-YANG 3.1.5): each kind's JSON in typed" \
+	    "lists, health on its disks, a truncated list's total, through" \
+	    "YANG-CBOR and back"
+}
+yang_storage_body()
+{
+	local y="$(atf_get_srcdir)/ystorage"
+
+	cat > disks.json <<'EOF'
+{"disks":[{"name":"ada0","size":500107862016,"sectorsize":512,"ident":"S3Z9NB0K000001","descr":"Samsung SSD 860 EVO 500GB","rotation":"0","scheme":"GPT","first":40,"last":976773127,"parts":[{"name":"ada0p1","size":524288,"index":1,"type":"freebsd-boot","label":"gptboot0","start":40,"end":1063},{"name":"ada0p2","size":499582287872,"index":2,"type":"freebsd-zfs","label":"zfs0","start":2048,"end":975769599}]},{"name":"nda0","size":1000204886016,"sectorsize":512,"rotation":"0"}]}
+EOF
+	cat > health.json <<'EOF'
+{"disks":[{"name":"ada0","by":"smartctl","ok":true,"temperature":34,"power_on_hours":12345,"power_cycles":210,"reallocated":0,"pending":0},{"name":"nda0","by":"nvmecontrol","ok":true,"temperature":41,"used_pct":3,"spare_pct":100},{"name":"da9","note":"smartmontools is not installed"}]}
+EOF
+	cat > pools.json <<'EOF'
+{"pools":[{"name":"tank","size":499289948160,"alloc":120259084288,"free":379030863872,"frag":12,"cap":24,"dedup":"1.00","health":"DEGRADED","state":"DEGRADED","status":"One or more devices has been removed.","action":"Online the device using zpool online.","scan":"scrub repaired 0B in 00:10:02 with 0 errors","errors":"No known data errors","vdevs":[{"name":"tank","depth":0,"state":"DEGRADED","read":"0","write":"0","cksum":"0"},{"name":"mirror-0","depth":1,"state":"DEGRADED","read":"0","write":"0","cksum":"0"},{"name":"ada0p2","depth":2,"state":"ONLINE","read":"0","write":"0","cksum":"0"},{"name":"ada1p2","depth":2,"state":"REMOVED","read":"0","write":"0","cksum":"0","note":"was /dev/ada1p2"}]}]}
+EOF
+	cat > importable.json <<'EOF'
+{"importable":[{"id":"1234567890123456789","name":"backup","state":"ONLINE","status":""}]}
+EOF
+	cat > datasets.json <<'EOF'
+{"datasets":[{"name":"tank","type":"filesystem","used":120259084288,"avail":363034263552,"refer":98304,"mountpoint":"/tank","compression":"lz4","ratio":"2.05","quota":0,"reservation":0,"mounted":"yes","canmount":"on","readonly":"off","encryption":"off","keylocation":"none","jailed":"off"},{"name":"tank/vm/disk0","type":"volume","used":21474836480,"avail":363034263552,"refer":8589934592,"mountpoint":"-","compression":"zstd","ratio":"1.10","quota":0,"reservation":0,"mounted":"-","canmount":"noauto","readonly":"on","encryption":"aes-256-gcm","keylocation":"prompt","jailed":"on","origin":"tank/vm/base@gold"}]}
+EOF
+	cat > snapshots.json <<'EOF'
+{"snapshots":[{"name":"tank@daily-2026-10-14","used":1048576,"refer":98304,"creation":1791936000}]}
+EOF
+	cat > mounts.json <<'EOF'
+{"mounts":[{"from":"tank","on":"/tank","type":"zfs","options":"local, nfsv4acls","size":363034361856,"used":98304,"avail":363034263552},{"from":"198.51.100.7:/export","on":"/mnt/export","type":"nfs","options":"","size":1099511627776,"used":549755813888,"avail":549755813888}],"fstab":[{"spec":"/dev/ada0p3","file":"none","vfstype":"swap","mntops":"sw","type":"sw","freq":0,"passno":0,"mounted":true},{"spec":"198.51.100.7:/export","file":"/mnt/export","vfstype":"nfs","mntops":"rw,nfsv4","type":"rw","freq":0,"passno":0,"mounted":true}],"swap":[{"device":"/dev/ada0p3","size":4294967296,"used":0}]}
+EOF
+	"$y" disks=disks.json pools=pools.json importable=importable.json \
+	    total=40 datasets=datasets.json snapshots=snapshots.json \
+	    mounts=mounts.json health=health.json > out
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' cat out
+	sed -n '1,/^yang-cbor/p' out | sed '$d' > first
+	atf_check -o file:first sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
+	cat > want <<'EOF'
+disk ada0 size=500107862016 sectorsize=512 ident=S3Z9NB0K000001 descr=Samsung SSD 860 EVO 500GB rotation=0 scheme=GPT first=40 last=976773127
+  partition ada0p1 index=1 size=524288 type=freebsd-boot label=gptboot0 start=40 end=1063
+  partition ada0p2 index=2 size=499582287872 type=freebsd-zfs label=zfs0 start=2048 end=975769599
+  health by=smartctl ok=yes temperature=34 power-on-hours=12345 reallocated=yes note=-
+disk nda0 size=1000204886016 sectorsize=512 ident=- descr=- rotation=0 scheme=- first=0 last=0
+  health by=nvmecontrol ok=yes temperature=41 power-on-hours=0 reallocated=- note=-
+disk da9 size=0 sectorsize=0 ident=- descr=- rotation=- scheme=- first=0 last=0
+  health by=- ok=- temperature=0 power-on-hours=0 reallocated=- note=smartmontools is not installed
+pool tank size=499289948160 alloc=120259084288 free=379030863872 frag=12 cap=24 dedup=1.00 health=DEGRADED state=DEGRADED status=One or more devices has been removed. scan=scrub repaired 0B in 00:10:02 with 0 errors errors=No known data errors
+  vdev tank depth=0 state=DEGRADED read=0 write=0 cksum=0 note=-
+  vdev mirror-0 depth=1 state=DEGRADED read=0 write=0 cksum=0 note=-
+  vdev ada0p2 depth=2 state=ONLINE read=0 write=0 cksum=0 note=-
+  vdev ada1p2 depth=2 state=REMOVED read=0 write=0 cksum=0 note=was /dev/ada1p2
+importable 1234567890123456789 name=backup state=ONLINE
+datasets-total 40
+dataset tank type=filesystem used=120259084288 avail=363034263552 refer=98304 quota=0 mountpoint=/tank mounted=yes canmount=on compression=lz4 ratio=205 readonly=no encryption=off keylocation=none jailed=no origin=-
+dataset tank/vm/disk0 type=volume used=21474836480 avail=363034263552 refer=8589934592 quota=0 mountpoint=- mounted=- canmount=noauto compression=zstd ratio=110 readonly=yes encryption=aes-256-gcm keylocation=prompt jailed=yes origin=tank/vm/base@gold
+snapshot tank@daily-2026-10-14 used=1048576 refer=98304 creation=1791936000
+mount tank on=/tank type=zfs options=local, nfsv4acls size=363034361856
+mount 198.51.100.7:/export on=/mnt/export type=nfs options= size=1099511627776
+fstab /dev/ada0p3 file=none vfstype=swap mntops=sw type=sw freq=0 passno=0 mounted=yes
+fstab 198.51.100.7:/export file=/mnt/export vfstype=nfs mntops=rw,nfsv4 type=rw freq=0 passno=0 mounted=yes
+swap /dev/ada0p3 size=4294967296 used=0
+EOF
+	atf_check -o file:want cat first
+}
+
 atf_test_case yang_jobs
 yang_jobs_head()
 {
@@ -5700,6 +5866,74 @@ EOF
 	atf_check cmp frag frag1
 }
 
+atf_test_case yang_pmd
+yang_pmd_head()
+{
+	atf_set "descr" "a medium's IEEE 802.3 PMD type, by the name" \
+	    "<net/if_media.h> gives it: IEEE's, none where IEEE names none"
+}
+yang_pmd_body()
+{
+	cat > want <<'EOF'
+1000baseT pmd-type-1000BASE-T
+10Gbase-SR pmd-type-10GBASE-SR
+25GBase-CR1 pmd-type-25GBASE-CR
+5000Base-T pmd-type-5GBASE-T
+2500Base-T -
+10base5/AUI -
+10baseT/UTP pmd-type-10BASE-T
+100GBase-SR4 pmd-type-100GBASE-SR4
+10BASE-T1S pmd-type-10BASE-T1S
+autoselect -
+EOF
+	atf_check -o file:want "$(atf_get_srcdir)/ycollect" pmd 1000baseT \
+	    10Gbase-SR 25GBase-CR1 5000Base-T 2500Base-T 10base5/AUI \
+	    10baseT/UTP 100GBase-SR4 10BASE-T1S autoselect
+}
+
+atf_test_case yang_origins
+yang_origins_head()
+{
+	atf_set "descr" "a route's source-protocol by its netlink(4) origin:" \
+	    "RFC 8349's static and direct, a routing protocol's own" \
+	    "module's identity (OSPF and RIP by the family), else" \
+	    "arcana-routing's"
+}
+yang_origins_body()
+{
+	cat > want <<'EOF'
+0 - arcana-routing:other arcana-routing:other
+0 gw arcana-routing:other arcana-routing:other
+1 - arcana-routing:redirect arcana-routing:redirect
+1 gw arcana-routing:redirect arcana-routing:redirect
+2 - ietf-routing:direct ietf-routing:direct
+2 gw arcana-routing:kernel arcana-routing:kernel
+3 - ietf-routing:static ietf-routing:static
+3 gw ietf-routing:static ietf-routing:static
+4 - ietf-routing:static ietf-routing:static
+4 gw ietf-routing:static ietf-routing:static
+9 - arcana-routing:router-advertisement arcana-routing:router-advertisement
+9 gw arcana-routing:router-advertisement arcana-routing:router-advertisement
+11 - arcana-routing:zebra arcana-routing:zebra
+11 gw arcana-routing:zebra arcana-routing:zebra
+12 - arcana-routing:bird arcana-routing:bird
+12 gw arcana-routing:bird arcana-routing:bird
+16 - arcana-routing:dhcp arcana-routing:dhcp
+16 gw arcana-routing:dhcp arcana-routing:dhcp
+42 - ietf-babel:babel ietf-babel:babel
+42 gw ietf-babel:babel ietf-babel:babel
+186 - ietf-bgp:bgp ietf-bgp:bgp
+186 gw ietf-bgp:bgp ietf-bgp:bgp
+187 - ietf-isis:isis ietf-isis:isis
+187 gw ietf-isis:isis ietf-isis:isis
+188 - ietf-ospf:ospfv2 ietf-ospf:ospfv3
+188 gw ietf-ospf:ospfv2 ietf-ospf:ospfv3
+189 - ietf-rip:ripv2 ietf-rip:ripng
+189 gw ietf-rip:ripv2 ietf-rip:ripng
+EOF
+	atf_check -o file:want "$(atf_get_srcdir)/ycollect" origins
+}
+
 atf_test_case yang_routes
 yang_routes_head()
 {
@@ -5824,46 +6058,54 @@ yang_interfaces_body()
 	}
 	END { exit bad }' before after ifs || atf_fail "the collector and netstat differ"
 
-	# arcana-interfaces beside ifconfig -m -D, as ifconfig shows it:
-	# no hwaddr when it is the link address, no fib when 0.
+	# arcana-interfaces, and the standard leaves for what it once had,
+	# beside ifconfig -m -D, as ifconfig shows it: max-frame-size the
+	# MTU with an Ethernet header and FCS, and a tag of a vlan or where
+	# VLAN_MTU is on; ethernet-like's addresses of an Ethernet or a
+	# lagg, no hwaddr when it is the link address; no tunnelfib when 0.
 	atf_check -o save:a "$(atf_get_srcdir)/ycollect" arcif
 	cat > ifc.awk <<'EOF'
 NR == 1 { for (i = 1; i < NF; i++) if ($i == "mtu") mtu = $(i + 1) }
-$1 ~ /^options=/ { o = $1; sub(/^options=/, "", o); sub(/<.*/, "", o) }
+$1 ~ /^options=/ { o = $1; sub(/^options=/, "", o); on = o; sub(/<.*/, "", o) }
 $1 ~ /^capabilities=/ { c = $1; sub(/^capabilities=/, "", c); sub(/<.*/, "", c) }
 $1 == "ether" { ether = $2 }
 $1 == "hwaddr" { hw = $2 }
 $1 == "groups:" { g = $2; for (i = 3; i <= NF; i++) g = g "+" $i }
-$1 == "fib:" { fib = $2 }
-$1 == "tunnelfib:" { tfib = " tunnelfib=" $2 }
+$1 == "tunnelfib:" && $2 != 0 { tfib = " tunnelfib=" $2 }
 $1 == "drivername:" { drv = $2 }
 $1 == "status:" { st = $0; sub(/^[ \t]*status: /, "", st); gsub(/ /, "-", st) }
 $1 == "media:" { m = $0; sub(/^[ \t]*media: [^ ]+ /, "", m) }
 sup && $1 == "media" { s = $0; sub(/^[ \t]*media /, "", s); sp = sp (sp == "" ? "" : "+") s }
 /supported media:/ { sup = 1 }
 END {
-	printf "drv=%s mtu=%s ether=%s hw=%s groups=%s fib=%s%s options=%s " \
-	    "capabilities=%s", drv, mtu, ether ? ether : "-", hw ? hw : "-",
-	    g ? g : "-", fib ? fib : 0, tfib, o, c
+	eth = type == "ethernetCsmacd" || type == "ieee8023adLag"
+	printf "drv=%s", drv
+	if (eth || type == "l2vlan" || type == "bridge")
+		printf " frame=%d", mtu + 18 + \
+		    (type == "l2vlan" || on ~ /[<,]VLAN_MTU[,>]/ ? 4 : 0)
+	if (eth && ether)
+		printf " mac=%s bia=%s", ether, hw ? hw : "-"
+	printf " groups=%s%s options=%s capabilities=%s", g ? g : "-", tfib,
+	    o, c
 	if (m != "")
 		printf " status=%s media=%s supported=%s", st ? st : "-", m,
 		    sp ? sp : "-"
 	printf "\n"
 }
 EOF
-	# Ours: the kinds' parts left to agent_root_test, hw as ifconfig
+	# Ours: the kinds' parts left to agent_root_test, bia as ifconfig
 	# hides it, a medium unchanged by autoselect without "(...)".
 	cat > mine.awk <<'EOF'
 {
 	sub(/^[^ ]+ /, "")
-	gsub(/ (vlan|lagg|bridge|epair)=[^ ]*/, "")
+	gsub(/ (vlan|lagg|bridge|peer|eth)=[^ ]*/, "")
 	split($0, f, " ")
 	for (i in f)
-		if (f[i] ~ /^ether=/)
-			ether = substr(f[i], 7)
-	if (ether != "-")
-		sub(" hw=" ether, " hw=-")
-	sub(/ fib=0 tunnelfib=0/, " fib=0")
+		if (f[i] ~ /^mac=/)
+			mac = substr(f[i], 5)
+	if (mac != "")
+		sub(" bia=" mac, " bia=-")
+	sub(/ tunnelfib=0 /, " ")
 	if (match($0, / media=.* \(/)) {
 		cur = substr($0, RSTART + 7, RLENGTH - 9)
 		rest = substr($0, RSTART + RLENGTH)
@@ -5876,9 +6118,52 @@ EOF
 EOF
 	# A name two interfaces share is ifconfig's to choose: left out.
 	for i in $(ifconfig -l | tr ' ' '\n' | sort | uniq -u); do
-		ifconfig -m -D "$i" | awk -f ifc.awk > exp
+		t=$(awk -v i="$i" '$1 == i { for (k = 2; k <= NF; k++)
+		    if ($k ~ /^type=/) print substr($k, 6) }' ifs)
+		ifconfig -m -D "$i" | awk -v type="$t" -f ifc.awk > exp
 		grep "^$i " a | awk -f mine.awk > got
 		cmp -s exp got || atf_fail "$i: ifconfig says $(cat exp), the collector $(cat got)"
+	done
+
+	# IEEE 802.3's view of an Ethernet's medium beside ifconfig's:
+	# auto-negotiation where autoselect is offered (on when set,
+	# complete with a carrier), the active medium's duplex, its PMD
+	# type for the media named here (any other's, "*", not checked).
+	cat > eth.awk <<'EOF'
+$1 == "status:" { st = $2 }
+$1 == "media:" {
+	m = $0; sub(/^[ \t]*media: [^ ]+ /, "", m)
+	split(m, w, " "); cur = w[1]
+	act = m
+	if (index(m, "(") > 0) { sub(/^[^(]*\(/, "", act); sub(/\).*$/, "", act) }
+	split(act, aw, " "); asub = aw[1]
+}
+sup && $1 == "media" && $2 == "autoselect" { auto = 1 }
+/supported media:/ { sup = 1 }
+END {
+	if (m == "") exit
+	an = cur == "autoselect" ? "auto:" (st == "active" ? "complete" : \
+	    "unknown") : auto ? "fixed" : "-"
+	d = act ~ /full-duplex/ ? "full" : act ~ /half-duplex/ ? "half" : \
+	    "unknown"
+	p = "*"
+	if (asub == "autoselect" || asub == "none") p = "unknown"
+	else if (asub == "10Gbase-T") p = "10GBASE-T"
+	else if (asub == "1000baseT") p = "1000BASE-T"
+	else if (asub == "100baseTX") p = "100BASE-TX"
+	else if (asub == "10baseT/UTP") p = "10BASE-T"
+	printf "%s,%s,%s\n", an, d, p
+}
+EOF
+	for i in $(ifconfig -l | tr ' ' '\n' | sort | uniq -u); do
+		grep -q "^$i .* type=ethernetCsmacd " ifs || continue
+		want=$(ifconfig -m "$i" | awk -f eth.awk)
+		got=$(grep "^$i " a | sed -n 's/.* eth=\([^ ]*\).*/\1/p')
+		[ -z "$want" ] && [ -z "$got" ] && continue
+		case "$got" in
+		"$want"|"${want%,\*}",*) ;;
+		*) atf_fail "$i: ifconfig says $want, the collector eth=$got" ;;
+		esac
 	done
 
 	# ietf-ip beside ifconfig and ndp -i: the addresses with their
@@ -5916,9 +6201,10 @@ $1 == "inet6" {
 $1 == "nd6" { nd = $2 ~ /IFDISABLED/ ? "off" : "on" }
 $1 ~ /^linkmtu=/ { lm = $1; sub(/^linkmtu=/, "", lm); sub(/,$/, "", lm) }
 END {
+	m4 = v4 ? " mtu4=" mtu : ""
 	if (nd != "" && lm + 0 > 0 && lm + 0 < mtu + 0)
 		mtu = lm
-	printf "v4=%s v6=%s ipv6=%s\n", v4 ? v4 : "-", v6 ? v6 : "-",
+	printf "v4=%s%s v6=%s ipv6=%s\n", v4 ? v4 : "-", m4, v6 ? v6 : "-",
 	    nd ? nd "," mtu : "-"
 }
 EOF
@@ -6018,9 +6304,14 @@ atf_init_test_cases()
 {
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
+	atf_add_test_case yang_origins
+	atf_add_test_case yang_pmd
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_jails
+	atf_add_test_case yang_system
+	atf_add_test_case yang_processes
+	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs
 	atf_add_test_case yang_packages
 	atf_add_test_case yang_services

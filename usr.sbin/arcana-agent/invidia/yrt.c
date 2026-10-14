@@ -20,7 +20,9 @@
  *   a link-local one with its zone.
  * - source-protocol: from the route's origin (rtm_protocol): static, or
  *   the kernel's own without a gateway, an interface's network, direct;
- *   the others arcana-routing's identities.
+ *   OSPF's, RIP's, IS-IS's, Babel's and BGP's their modules' identities
+ *   (ietf-ospf, ietf-rip, ietf-isis, ietf-babel, ietf-bgp); the others
+ *   arcana-routing's.
  * - active: every route netlink dumps is in the FIB, used.
  * - last-updated: when a route event last told of it (rtimes.c); the
  *   kernel keeps no such time, so none for a route not seen to change.
@@ -78,9 +80,13 @@ ident(const char *mod, const char *name)
 	return (0);
 }
 
-/* rtm_protocol's identity: arcana-routing's, RFC 8349's two. */
-static uint64_t
-origin(uint8_t proto, bool gateway)
+/*
+ * rtm_protocol's identity: RFC 8349's two, a routing protocol's own
+ * module's (OSPF and RIP by the version that carries the family, v6:
+ * an IPv6 route), else arcana-routing's.
+ */
+uint64_t
+yrt_origin(uint8_t proto, bool gateway, bool v6)
 {
 	static const struct {
 		uint8_t		 proto;
@@ -91,11 +97,6 @@ origin(uint8_t proto, bool gateway)
 		{ RTPROT_DHCP, "dhcp" },
 		{ RTPROT_ZEBRA, "zebra" },
 		{ RTPROT_BIRD, "bird" },
-		{ RTPROT_BGP, "bgp" },
-		{ RTPROT_OSPF, "ospf" },
-		{ RTPROT_ISIS, "isis" },
-		{ RTPROT_RIP, "rip" },
-		{ RTPROT_BABEL, "babel" },
 	};
 
 	if (proto == RTPROT_STATIC || proto == RTPROT_BOOT)
@@ -103,6 +104,16 @@ origin(uint8_t proto, bool gateway)
 	if (proto == RTPROT_KERNEL)
 		return (gateway ? ident("arcana-routing", "kernel") :
 		    ident("ietf-routing", "direct"));
+	if (proto == RTPROT_OSPF)
+		return (ident("ietf-ospf", v6 ? "ospfv3" : "ospfv2"));
+	if (proto == RTPROT_RIP)
+		return (ident("ietf-rip", v6 ? "ripng" : "ripv2"));
+	if (proto == RTPROT_ISIS)
+		return (ident("ietf-isis", "isis"));
+	if (proto == RTPROT_BABEL)
+		return (ident("ietf-babel", "babel"));
+	if (proto == RTPROT_BGP)
+		return (ident("ietf-bgp", "bgp"));
 	for (size_t i = 0; i < nitems(names); i++)
 		if (names[i].proto == proto)
 			return (ident("arcana-routing", names[i].name));
@@ -209,8 +220,8 @@ route(cbl_yarena *a, int fib, const struct snl_parsed_route *p, yroute *r)
 	    p->rta_gw->sa_family == AF_INET6);
 	r->active = true;
 	r->has_source_protocol = true;
-	r->source_protocol = origin(p->rtm_protocol, gw ||
-	    p->rta_multipath.count > 0);
+	r->source_protocol = yrt_origin(p->rtm_protocol, gw ||
+	    p->rta_multipath.count > 0, v6);
 	if (p->rta_multipath.count > 0) {
 		struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list
 		    *l;

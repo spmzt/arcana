@@ -1,0 +1,201 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-kernel",
+    "module-revision": "2026-10-14",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 63 700, 100.",
+    "assignment-range": [
+      {
+        "entry-point": "63700",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-kernel",
+        "sid": "63700"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel",
+        "sid": "63701"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/available",
+        "sid": "63702"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file",
+        "sid": "63703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/address",
+        "sid": "63704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/id",
+        "sid": "63705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/module",
+        "sid": "63706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/name",
+        "sid": "63707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/path",
+        "sid": "63708"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/refs",
+        "sid": "63709"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/size",
+        "sid": "63710"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/unload",
+        "sid": "63711"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/unload/input",
+        "sid": "63712"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/file/unload/output",
+        "sid": "63713"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/kept",
+        "sid": "63714"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory",
+        "sid": "63715"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/files",
+        "sid": "63716"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/kmem-map-free",
+        "sid": "63717"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/kmem-map-size",
+        "sid": "63718"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/kmem-size",
+        "sid": "63719"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/malloc",
+        "sid": "63720"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/malloc-total",
+        "sid": "63721"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/malloc/bytes",
+        "sid": "63722"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/malloc/count",
+        "sid": "63723"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/malloc/name",
+        "sid": "63724"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/malloc/requests",
+        "sid": "63725"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/zone",
+        "sid": "63726"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/zone/bytes",
+        "sid": "63727"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/zone/count",
+        "sid": "63728"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/zone/free",
+        "sid": "63729"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/zone/name",
+        "sid": "63730"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/zone/requests",
+        "sid": "63731"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:kernel/memory/zone/size",
+        "sid": "63732"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:load",
+        "sid": "63733"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:load/input",
+        "sid": "63734"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:load/input/name",
+        "sid": "63735"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-kernel:load/output",
+        "sid": "63736"
+      }
+    ]
+  }
+}

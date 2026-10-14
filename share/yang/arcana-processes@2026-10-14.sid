@@ -1,0 +1,357 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-processes",
+    "module-revision": "2026-10-14",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 63 800, 100.",
+    "dependency-revision": [
+      {
+        "module-name": "openconfig-procmon",
+        "module-revision": "2019-03-15"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "63800",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-processes",
+        "sid": "63800"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes",
+        "sid": "63801"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/elapsed",
+        "sid": "63802"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/jail",
+        "sid": "63803"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/jail/cpu",
+        "sid": "63804"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/jail/jid",
+        "sid": "63805"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/jail/name",
+        "sid": "63806"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/jail/procs",
+        "sid": "63807"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/jail/rss",
+        "sid": "63808"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/jail/threads",
+        "sid": "63809"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/jail/wcpu",
+        "sid": "63810"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/ncpu",
+        "sid": "63811"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process",
+        "sid": "63812"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/file",
+        "sid": "63813"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/file/fd",
+        "sid": "63814"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/file/local",
+        "sid": "63815"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/file/mode",
+        "sid": "63816"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/file/path",
+        "sid": "63817"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/file/proto",
+        "sid": "63818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/file/remote",
+        "sid": "63819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/file/type",
+        "sid": "63820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/file/use",
+        "sid": "63821"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/pid",
+        "sid": "63822"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/renice",
+        "sid": "63823"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/renice/input",
+        "sid": "63824"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/renice/input/nice",
+        "sid": "63825"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/renice/input/start-time",
+        "sid": "63826"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/renice/output",
+        "sid": "63827"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/signal",
+        "sid": "63828"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/signal/input",
+        "sid": "63829"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/signal/input/signal",
+        "sid": "63830"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/signal/input/start-time",
+        "sid": "63831"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/signal/output",
+        "sid": "63832"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state",
+        "sid": "63833"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/args",
+        "sid": "63834"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/blocks-in",
+        "sid": "63835"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/blocks-out",
+        "sid": "63836"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/cpu",
+        "sid": "63837"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/cpu-time",
+        "sid": "63838"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/cpu-usage-system",
+        "sid": "63839"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/cpu-usage-user",
+        "sid": "63840"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/cpu-utilization",
+        "sid": "63841"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/io",
+        "sid": "63842"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/jail",
+        "sid": "63843"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/jid",
+        "sid": "63844"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/memory-usage",
+        "sid": "63845"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/memory-utilization",
+        "sid": "63846"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/name",
+        "sid": "63847"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/nice",
+        "sid": "63848"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/pid",
+        "sid": "63849"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/ppid",
+        "sid": "63850"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/priority",
+        "sid": "63851"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/run-state",
+        "sid": "63852"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/size",
+        "sid": "63853"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/start-time",
+        "sid": "63854"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/threads",
+        "sid": "63855"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/user",
+        "sid": "63856"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/wait",
+        "sid": "63857"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/state/wcpu",
+        "sid": "63858"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/thread",
+        "sid": "63859"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/thread/cpu-time",
+        "sid": "63860"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/thread/name",
+        "sid": "63861"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/thread/priority",
+        "sid": "63862"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/thread/run-state",
+        "sid": "63863"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/thread/tid",
+        "sid": "63864"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/thread/wait",
+        "sid": "63865"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-processes:processes/process/thread/wcpu",
+        "sid": "63866"
+      }
+    ]
+  }
+}

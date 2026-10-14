@@ -10,11 +10,18 @@
  * the tree through YANG-CBOR and back, the same bytes.
  *
  *	ycollect interfaces	ietf-interfaces' leaves
- *	ycollect arcif		arcana-interfaces': key=value, '-' for none,
+ *	ycollect arcif		arcana-interfaces', and the standard leaves
+ *				for what it once had (frame= max-frame-size,
+ *				mac= and bia= ethernet-like's, peer=
+ *				peer-interface, vlan= the tag, parent,
+ *				tag type and priority, eth= IEEE 802.3's
+ *				auto-negotiation, duplex and PMD type):
+ *				key=value, '-' for none,
  *				lists joined by '+', bits in hex
  *	ycollect ip		ietf-ip's: v4= and v6= the addresses,
  *				address/length:origin[:status] joined by
- *				'+', ipv6= on/off and its MTU
+ *				'+', mtu4= ipv4's MTU (the link's), ipv6=
+ *				on/off and its MTU
  *	ycollect ipsys		ietf-ip's host-wide leaves, an interface a
  *				line: fwd4= fwd6= dad= temp= tvl= tpl=
  *				global= (- where absent)
@@ -32,6 +39,12 @@
  *	ycollect watch fib secs	routes', each with its last-updated (- for
  *				none), after secs of route events heard
  *				and noted as the daemon notes them
+ *	ycollect pmd name ...	each medium's IEEE 802.3 PMD type, a line:
+ *				the name, the identity (- for none)
+ *	ycollect origins	each netlink(4) origin's source-protocol,
+ *				a line: the RTPROT_ number, with a gateway
+ *				or not (gw, -), and the identity, module:name,
+ *				of an IPv4 route, then of an IPv6 one
  *	ycollect active fib addr	the RIB's active-route action for addr,
  *				its route a line as routes' (none: "none");
  *				and its output through YANG-CBOR and back
@@ -111,23 +124,37 @@ arcif(const struct ietf_interfaces_interfaces_interface *e)
 	const struct ietf_interfaces_interfaces_interface_arcif_media *md;
 
 	printf("%s drv=%s", e->name, str(e->arcif_driver_name));
-	if (e->has_arcif_mtu)
-		printf(" mtu=%u", e->arcif_mtu);
-	printf(" ether=%s hw=%s groups=", str(e->arcif_ether),
-	    str(e->arcif_hw_address));
+	if (e->has_if_ext_max_frame_size)
+		printf(" frame=%u", e->if_ext_max_frame_size);
+	if (e->ethlike_ethernet_like != NULL)
+		printf(" mac=%s bia=%s",
+		    str(e->ethlike_ethernet_like->mac_address),
+		    str(e->ethlike_ethernet_like->bia_mac_address));
+	printf(" groups=");
 	joined(e->arcif_group.n, e->arcif_group.v);
-	if (e->has_arcif_fib)
-		printf(" fib=%u", e->arcif_fib);
 	if (e->has_arcif_tunnel_fib)
 		printf(" tunnelfib=%u", e->arcif_tunnel_fib);
 	if (e->arcif_capabilities.p != NULL)
 		printf(" options=%jx capabilities=%jx",
 		    bitsval(&e->arcif_capabilities),
 		    bitsval(&e->arcif_capabilities_supported));
-	if (e->arcif_vlan != NULL)
-		printf(" vlan=%d,%s,%#x,%d", e->arcif_vlan->vlan_id,
-		    str(e->arcif_vlan->parent), e->arcif_vlan->protocol,
-		    e->arcif_vlan->pcp);
+	if (e->if_ext_encapsulation != NULL &&
+	    e->if_ext_encapsulation->if_vlan_dot1q_vlan != NULL) {
+		const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan
+		    *dv = e->if_ext_encapsulation->if_vlan_dot1q_vlan;
+		const struct cbl_yident *tt = dv->outer_tag != NULL ?
+		    cbl_yschema_ident(&ymodel_schema,
+		    dv->outer_tag->tag_type) : NULL;
+
+		printf(" vlan=%d,%s,%s,", dv->outer_tag != NULL ?
+		    dv->outer_tag->vlan_id : 0,
+		    str(e->if_ext_parent_interface), tt != NULL ? tt->name :
+		    "-");
+		if (dv->has_arcif_pcp)
+			printf("%d", dv->arcif_pcp);
+		else
+			printf("-");
+	}
 	if (e->arcif_lagg != NULL) {
 		printf(" lagg=%s,%jx,", e->arcif_lagg->has_protocol ?
 		    lagg_proto[e->arcif_lagg->protocol] : "-",
@@ -146,9 +173,31 @@ arcif(const struct ietf_interfaces_interfaces_interface *e)
 			    e->arcif_bridge->member.v[i].name,
 			    bitsval(&e->arcif_bridge->member.v[i].flags));
 	}
-	if (e->arcif_epair != NULL)
-		printf(" epair=%s,%s", str(e->arcif_epair->peer),
-		    e->arcif_epair->peer_vnet ? "vnet" : "here");
+	if (e->ieee802_eth_if_ethernet != NULL) {
+		const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet
+		    *eth = e->ieee802_eth_if_ethernet;
+		const struct cbl_yident *pmd = eth->has_pmd_type ?
+		    cbl_yschema_ident(&ymodel_schema, eth->pmd_type) : NULL;
+		static const char *const dup[] = { "full", "half", "unknown" };
+		static const char *const neg[] = { "in-progress", "complete",
+		    "failed", "unknown", "no-negotiation" };
+
+		printf(" eth=");
+		if (eth->auto_negotiation == NULL)
+			printf("-");
+		else if (!eth->auto_negotiation->enable)
+			printf("fixed");
+		else
+			printf("auto:%s", eth->auto_negotiation->
+			    has_negotiation_status ? neg[eth->auto_negotiation->
+			    negotiation_status] : "-");
+		printf(",%s,%s", eth->has_duplex ? dup[eth->duplex] : "-",
+		    pmd != NULL ? pmd->name + strlen("pmd-type-") : "-");
+	}
+	if (e->if_ext_peer_interface != NULL)
+		printf(" peer=%s", e->if_ext_peer_interface);
+	if (e->has_arcif_peer_vnet && e->arcif_peer_vnet)
+		printf(" peer=vnet");
 	/* Last, as it has spaces: what ifconfig(8)'s media and status say. */
 	if ((md = e->arcif_media) != NULL) {
 		printf(" status=%s media=", md->has_status ?
@@ -185,6 +234,8 @@ ip(const struct ietf_interfaces_interfaces_interface *e)
 		printf("%s%s/%d:%s", i > 0 ? "+" : "", v4->address.v[i].ip,
 		    v4->address.v[i].prefix_length,
 		    origin[v4->address.v[i].origin]);
+	if (v4 != NULL && v4->has_mtu)
+		printf(" mtu4=%u", v4->mtu);
 	printf(" v6=");
 	if (v6 == NULL || v6->address.n == 0)
 		printf("-");
@@ -529,6 +580,38 @@ main(int argc, char **argv)
 			err(1, "cbl_yarena_new");
 		active(atoi(argv[2]), argv[3], a);
 		cbl_yarena_free(a);
+		return (0);
+	}
+	if (argc >= 2 && strcmp(argv[1], "pmd") == 0) {
+		for (int i = 2; i < argc; i++) {
+			const struct cbl_yident *id = cbl_yschema_ident(
+			    &ymodel_schema, yif_pmd(argv[i]));
+
+			printf("%s %s\n", argv[i], id != NULL ? id->name : "-");
+		}
+		return (0);
+	}
+	if (argc == 2 && strcmp(argv[1], "origins") == 0) {
+		static const uint8_t protos[] = { RTPROT_UNSPEC,
+		    RTPROT_REDIRECT, RTPROT_KERNEL, RTPROT_BOOT,
+		    RTPROT_STATIC, RTPROT_RA, RTPROT_ZEBRA, RTPROT_BIRD,
+		    RTPROT_DHCP, RTPROT_BABEL, RTPROT_BGP, RTPROT_ISIS,
+		    RTPROT_OSPF, RTPROT_RIP };
+
+		for (size_t i = 0; i < nitems(protos); i++)
+			for (int gw = 0; gw < 2; gw++) {
+				printf("%u %s", protos[i], gw ? "gw" : "-");
+				for (int v6 = 0; v6 < 2; v6++) {
+					const struct cbl_yident *id =
+					    cbl_yschema_ident(&ymodel_schema,
+					    yrt_origin(protos[i], gw, v6));
+
+					printf(" %s:%s", id != NULL ?
+					    id->module->name : "-", id != NULL ?
+					    id->name : "-");
+				}
+				printf("\n");
+			}
 		return (0);
 	}
 	if (argc == 3 && strcmp(argv[1], "routes") == 0) {

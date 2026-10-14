@@ -1,0 +1,210 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-if-extensions",
+    "module-revision": "2025-08-07",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "iana-if-type",
+        "module-revision": "2026-03-17"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "68300",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-if-extensions",
+        "sid": "68300"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "connector",
+        "sid": "68301"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "data-link",
+        "sid": "68302"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "forwarding-mode",
+        "sid": "68303"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "internal",
+        "sid": "68304"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "line",
+        "sid": "68305"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "loopback",
+        "sid": "68306"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "network",
+        "sid": "68307"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "physical",
+        "sid": "68308"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "dampening",
+        "sid": "68309"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "link-flap-suppression",
+        "sid": "68310"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "loopback",
+        "sid": "68311"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "max-frame-size",
+        "sid": "68312"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "peer-interface",
+        "sid": "68313"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "sub-interfaces",
+        "sid": "68314"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:dampening",
+        "sid": "68315"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:dampening/half-life",
+        "sid": "68316"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:dampening/max-suppress-time",
+        "sid": "68317"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:dampening/penalty",
+        "sid": "68318"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:dampening/reuse",
+        "sid": "68319"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:dampening/suppress",
+        "sid": "68320"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:dampening/suppressed",
+        "sid": "68321"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:dampening/time-remaining",
+        "sid": "68322"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:encapsulation",
+        "sid": "68323"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:forwarding-mode",
+        "sid": "68324"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:link-flap-suppression",
+        "sid": "68325"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:link-flap-suppression/carrier-transitions",
+        "sid": "68326"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:link-flap-suppression/down",
+        "sid": "68327"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:link-flap-suppression/timer-running",
+        "sid": "68328"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:link-flap-suppression/up",
+        "sid": "68329"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:loopback",
+        "sid": "68330"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:max-frame-size",
+        "sid": "68331"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:parent-interface",
+        "sid": "68332"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:peer-interface",
+        "sid": "68333"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-extensions:in-discard-overflows",
+        "sid": "68334"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-extensions:in-discard-unknown-encaps",
+        "sid": "68335"
+      }
+    ]
+  }
+}

@@ -29,10 +29,19 @@
  *   the aggregate; SIOCGETVLAN of an l2vlan and of a lagg's port, which
  *   may be a vlan; a port that is not is the ethernetCsmacd it was;
  * - what arcana-interfaces adds (PLAN-SDN-YANG 1.9.3), each leaf as its
- *   description in the module says: the driver name, MTU, Ethernet and
- *   hardware addresses, groups, FIBs, capabilities, media, and the parts
- *   of a vlan, a lagg, a bridge and an epair, the first three from the
- *   ioctls that tell their layers;
+ *   description in the module says: the driver name, groups, the tunnel
+ *   FIB, capabilities, media, and the parts of a vlan, a lagg and a
+ *   bridge, from the ioctls that tell their layers; an epair end's other
+ *   in a vnet;
+ * - the standard models' leaves for what arcana-interfaces once had:
+ *   ietf-if-ethernet-like's Ethernet addresses (SIOCGHWADDR the
+ *   hardware's), of the interfaces it applies to (ethernetCsmacd,
+ *   ieee8023adLag); ietf-if-extensions' max-frame-size, an Ethernet
+ *   frame of the MTU: header and frame check sequence, and a VLAN tag
+ *   where one may be carried (a vlan, or an interface with vlanmtu on:
+ *   a vlan on it keeps its MTU); and its peer-interface, an epair end's
+ *   other; the FIB is RFC 8529's bind-ni-name (yni.c), the MTU ietf-ip's
+ *   (yip.c);
  * - and ietf-ip's ipv4 and ipv6, in invidia/yip.c.
  *
  * oper-status is the link state where the driver knows it: up, down, or
@@ -65,6 +74,7 @@
 #include <net/if_types.h>
 #include <net/if_vlan_var.h>
 
+#include <ctype.h>
 #include <errno.h>
 #include <ifaddrs.h>
 #include <stdio.h>
@@ -109,19 +119,27 @@ static const struct {
 /* arcif:capabilities' positions: IFCAP_B_* up to GENEVE_HWTSO. */
 #define	YCAP_NBITS	37
 
-/* An iana-if-type identity's SID, by its name; 0: none. */
+/* An identity's SID, by its module and name; 0: none. */
 static uint64_t
-iftype_sid(const char *name)
+ident_sid(const char *mod, const char *name)
 {
 
 	for (uint32_t i = 0; i < ymodel_schema.nident; i++) {
 		const struct cbl_yident *id = &ymodel_schema.ident[i];
 
 		if (strcmp(id->name, name) == 0 &&
-		    strcmp(id->module->name, "iana-if-type") == 0)
+		    strcmp(id->module->name, mod) == 0)
 			return (id->sid);
 	}
 	return (0);
+}
+
+/* An iana-if-type identity's SID, by its name; 0: none. */
+static uint64_t
+iftype_sid(const char *name)
+{
+
+	return (ident_sid("iana-if-type", name));
 }
 
 static uint64_t
@@ -502,8 +520,6 @@ media(yif *e, int s, cbl_yarena *a)
 	    (cur = cbl_yarena_alloc(a, sizeof(*cur))) == NULL ||
 	    (act = cbl_yarena_alloc(a, sizeof(*act))) == NULL)
 		return (ENOMEM);
-	md->has_type = true;
-	md->type = IFM_TYPE(ifmr.ifm_current);
 	if ((error = mword(ifmr.ifm_current, &w, a)) != 0)
 		return (error);
 	MWORD_TO(cur, w);
@@ -551,8 +567,7 @@ media(yif *e, int s, cbl_yarena *a)
 
 /* The parts every interface may have. */
 static int
-link_parts(yif *e, int s, const struct sockaddr_dl *sdl,
-    const struct if_data *d, const char *drv, cbl_yarena *a)
+link_parts(yif *e, int s, const char *drv, cbl_yarena *a)
 {
 	struct ifreq ifr;
 	int error;
@@ -560,25 +575,6 @@ link_parts(yif *e, int s, const struct sockaddr_dl *sdl,
 	if (drv[0] != '\0' &&
 	    (e->arcif_driver_name = astrdup(a, drv)) == NULL)
 		return (ENOMEM);
-	if (d != NULL) {
-		e->has_arcif_mtu = true;
-		e->arcif_mtu = d->ifi_mtu;
-	}
-	if (sdl->sdl_alen == ETHER_ADDR_LEN) {
-		e->arcif_ether = e->phys_address;
-		ifreq_for(&ifr, e->name);
-		if (ioctl(s, SIOCGHWADDR, &ifr) == 0 &&
-		    memcmp(ifr.ifr_addr.sa_data, "\0\0\0\0\0\0",
-		    ETHER_ADDR_LEN) != 0)
-			e->arcif_hw_address = hexaddr(a,
-			    (const uint8_t *)ifr.ifr_addr.sa_data,
-			    ETHER_ADDR_LEN);
-	}
-	ifreq_for(&ifr, e->name);
-	if (ioctl(s, SIOCGIFFIB, &ifr) == 0) {
-		e->has_arcif_fib = true;
-		e->arcif_fib = ifr.ifr_fib;
-	}
 	ifreq_for(&ifr, e->name);
 	if (ioctl(s, SIOCGTUNFIB, &ifr) == 0) {
 		e->has_arcif_tunnel_fib = true;
@@ -588,6 +584,174 @@ link_parts(yif *e, int s, const struct sockaddr_dl *sdl,
 	    (error = capabilities(e, s, a)) != 0)
 		return (error);
 	return (media(e, s, a));
+}
+
+/* Whether the interface's type is the iana-if-type identity named. */
+static bool
+is_type(const yif *e, const char *name)
+{
+
+	return (e->has_type && e->type == iftype_sid(name));
+}
+
+/*
+ * An IEEE 802.3 PMD type's identity by FreeBSD's name of a medium, as
+ * <net/if_media.h> gives it ("1000baseT", "10Gbase-SR", "25GBase-CR1"):
+ * the speed, "BASE-" and the rest in capitals, 5000 5G, a lane count of
+ * 1 dropped where IEEE names none; 0: IEEE names none.
+ */
+uint64_t
+yif_pmd(const char *subtype)
+{
+	char name[64], rest[32], speed[16];
+	size_t n = 0, k;
+	const char *p = subtype;
+	uint64_t sid;
+
+	while ((*p >= '0' && *p <= '9') || *p == '.')
+		if (n < sizeof(speed) - 2)
+			speed[n++] = *p++;
+		else
+			return (0);
+	if (n == 0)
+		return (0);
+	speed[n] = '\0';
+	if (*p == 'G' || *p == 'g' || *p == 'M' || *p == 'm') {
+		speed[n++] = (char)toupper((unsigned char)*p++);
+		speed[n] = '\0';
+	} else if (strcmp(speed, "5000") == 0)
+		strlcpy(speed, "5G", sizeof(speed));
+	if (strncasecmp(p, "base", 4) != 0)
+		return (0);
+	p += 4;
+	if (*p == '-')
+		p++;
+	for (k = 0; *p != '\0' && *p != '/' && k < sizeof(rest) - 1; p++)
+		rest[k++] = (char)toupper((unsigned char)*p);
+	rest[k] = '\0';
+	snprintf(name, sizeof(name), "pmd-type-%sBASE-%s", speed, rest);
+	if ((sid = ident_sid("ieee802-ethernet-phy-type", name)) != 0 ||
+	    k < 2 || rest[k - 1] != '1')
+		return (sid);
+	name[strlen(name) - 1] = '\0';
+	return (ident_sid("ieee802-ethernet-phy-type", name));
+}
+
+/*
+ * An Ethernet's medium as IEEE 802.3's ieee802-ethernet-interface has
+ * it: auto-negotiation where autoselect is offered, enabled when set,
+ * complete with a carrier, else unknown; the duplex and the PMD type of
+ * the medium active.
+ */
+static int
+eth_media(yif *e, int s, cbl_yarena *a)
+{
+	struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet *eth;
+	struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation
+	    *an = NULL;
+	struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities
+	    *cap;
+	struct ifmediareq ifmr;
+	const char *sub;
+	bool autosel = false;
+	int *list;
+
+	memset(&ifmr, 0, sizeof(ifmr));
+	strlcpy(ifmr.ifm_name, e->name, sizeof(ifmr.ifm_name));
+	if ((ioctl(s, SIOCGIFXMEDIA, &ifmr) != 0 &&
+	    ioctl(s, SIOCGIFMEDIA, &ifmr) != 0) ||
+	    IFM_TYPE(ifmr.ifm_current) != IFM_ETHER)
+		return (0);
+	if (ifmr.ifm_count > 0 &&
+	    (list = calloc(ifmr.ifm_count, sizeof(*list))) != NULL) {
+		ifmr.ifm_ulist = list;
+		if (ioctl(s, SIOCGIFXMEDIA, &ifmr) == 0 ||
+		    ioctl(s, SIOCGIFMEDIA, &ifmr) == 0)
+			for (int i = 0; i < ifmr.ifm_count; i++)
+				if (IFM_SUBTYPE(list[i]) == IFM_AUTO)
+					autosel = true;
+		free(list);
+		ifmr.ifm_ulist = NULL;
+	}
+	if ((eth = cbl_yarena_alloc(a, sizeof(*eth))) == NULL ||
+	    (cap = cbl_yarena_alloc(a, sizeof(*cap))) == NULL ||
+	    (autosel && (an = cbl_yarena_alloc(a, sizeof(*an))) == NULL))
+		return (ENOMEM);
+	cap->has_auto_negotiation = true;
+	cap->auto_negotiation = autosel;
+	eth->capabilities = cap;
+	if (an != NULL) {
+		an->has_enable = true;
+		an->enable = IFM_SUBTYPE(ifmr.ifm_current) == IFM_AUTO;
+		if (an->enable) {
+			an->has_negotiation_status = true;
+			an->negotiation_status =
+			    (ifmr.ifm_status & (IFM_AVALID | IFM_ACTIVE)) ==
+			    (IFM_AVALID | IFM_ACTIVE) ?
+			    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_COMPLETE :
+			    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_UNKNOWN;
+		}
+		eth->auto_negotiation = an;
+	}
+	eth->has_duplex = true;
+	eth->duplex = (ifmr.ifm_active & IFM_FDX) != 0 ?
+	    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_FULL :
+	    (ifmr.ifm_active & IFM_HDX) != 0 ?
+	    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_HALF :
+	    IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_UNKNOWN;
+	sub = ifm_name(ifm_eth_sub, IFM_SUBTYPE(ifmr.ifm_active));
+	if (IFM_SUBTYPE(ifmr.ifm_active) == IFM_AUTO ||
+	    IFM_SUBTYPE(ifmr.ifm_active) == IFM_NONE || sub == NULL)
+		eth->pmd_type = ident_sid("ieee802-ethernet-phy-type",
+		    "pmd-type-unknown");
+	else if ((eth->pmd_type = yif_pmd(sub)) == 0)
+		eth->pmd_type = ident_sid("ieee802-ethernet-phy-type",
+		    "pmd-type-other");
+	eth->has_pmd_type = eth->pmd_type != 0;
+	e->ieee802_eth_if_ethernet = eth;
+	return (0);
+}
+
+/*
+ * Once its type is known: ietf-if-ethernet-like's addresses, of an
+ * Ethernet or a lagg with a 6-octet address, the hardware's where it
+ * has one apart; ietf-if-extensions' max-frame-size, of those, a vlan
+ * and a bridge.
+ */
+static int
+ether_parts(yif *e, int s, const struct sockaddr_dl *sdl,
+    const struct if_data *d, cbl_yarena *a)
+{
+	struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *el;
+	bool ether = is_type(e, "ethernetCsmacd") ||
+	    is_type(e, "ieee8023adLag"), vlan = is_type(e, "l2vlan");
+	struct ifreq ifr;
+	int error;
+
+	if (is_type(e, "ethernetCsmacd") && (error = eth_media(e, s, a)) != 0)
+		return (error);
+	if (ether && sdl->sdl_alen == ETHER_ADDR_LEN) {
+		if ((el = cbl_yarena_alloc(a, sizeof(*el))) == NULL)
+			return (ENOMEM);
+		el->mac_address = e->phys_address;
+		ifreq_for(&ifr, e->name);
+		if (ioctl(s, SIOCGHWADDR, &ifr) == 0 &&
+		    memcmp(ifr.ifr_addr.sa_data, "\0\0\0\0\0\0",
+		    ETHER_ADDR_LEN) != 0)
+			el->bia_mac_address = hexaddr(a,
+			    (const uint8_t *)ifr.ifr_addr.sa_data,
+			    ETHER_ADDR_LEN);
+		e->ethlike_ethernet_like = el;
+	}
+	if (d != NULL && (ether || vlan || is_type(e, "bridge"))) {
+		ifreq_for(&ifr, e->name);
+		e->has_if_ext_max_frame_size = true;
+		e->if_ext_max_frame_size = d->ifi_mtu + ETHER_HDR_LEN +
+		    ETHER_CRC_LEN + (vlan || (ioctl(s, SIOCGIFCAP, &ifr) ==
+		    0 && (ifr.ifr_curcap & IFCAP_VLAN_MTU) != 0) ?
+		    ETHER_VLAN_ENCAP_LEN : 0);
+	}
+	return (0);
 }
 
 /*
@@ -662,11 +826,20 @@ lagg(yif *e, struct layers *l, int s, cbl_yarena *a)
 	return (0);
 }
 
-/* A vlan: its tag, parent, protocol and priority; ENOENT: not one. */
+/*
+ * A vlan, as ietf-if-vlan-encapsulation has it: its tag the outer one,
+ * of 802.1Q (c-vlan) or 802.1ad (s-vlan), a tag it cannot hold (0,
+ * 4095) none; its parent ietf-if-extensions'; its priority
+ * arcana-interfaces'.  ENOENT: not one.
+ */
 static int
 vlan(yif *e, struct layers *l, int s, cbl_yarena *a)
 {
-	struct ietf_interfaces_interfaces_interface_arcif_vlan *vl;
+	struct ietf_interfaces_interfaces_interface_if_ext_encapsulation *en;
+	struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan
+	    *dv;
+	struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag
+	    *ot;
 	struct vlanreq vr;
 	struct ifreq ifr;
 
@@ -675,26 +848,33 @@ vlan(yif *e, struct layers *l, int s, cbl_yarena *a)
 	ifr.ifr_data = (caddr_t)&vr;
 	if (ioctl(s, SIOCGETVLAN, &ifr) != 0)
 		return (ENOENT);
-	if ((vl = cbl_yarena_alloc(a, sizeof(*vl))) == NULL)
+	if ((en = cbl_yarena_alloc(a, sizeof(*en))) == NULL ||
+	    (dv = cbl_yarena_alloc(a, sizeof(*dv))) == NULL)
 		return (ENOMEM);
-	if (vr.vlr_tag <= 4095) {
-		vl->has_vlan_id = true;
-		vl->vlan_id = vr.vlr_tag;
+	if (vr.vlr_tag >= 1 && vr.vlr_tag <= 4094 &&
+	    (vr.vlr_proto == ETHERTYPE_VLAN || vr.vlr_proto == ETHERTYPE_QINQ)) {
+		if ((ot = cbl_yarena_alloc(a, sizeof(*ot))) == NULL)
+			return (ENOMEM);
+		ot->has_vlan_id = true;
+		ot->vlan_id = vr.vlr_tag;
+		ot->tag_type = ident_sid("ieee802-dot1q-types",
+		    vr.vlr_proto == ETHERTYPE_VLAN ? "c-vlan" : "s-vlan");
+		ot->has_tag_type = ot->tag_type != 0;
+		dv->outer_tag = ot;
 	}
 	if (vr.vlr_parent[0] != '\0' &&
-	    (vl->parent = astrdup(a, vr.vlr_parent)) == NULL)
+	    (e->if_ext_parent_interface = astrdup(a, vr.vlr_parent)) == NULL)
 		return (ENOMEM);
-	if (vr.vlr_proto == ETHERTYPE_VLAN || vr.vlr_proto == ETHERTYPE_QINQ) {
-		vl->has_protocol = true;
-		vl->protocol = vr.vlr_proto;
-	}
 	ifreq_for(&ifr, e->name);
 	if (ioctl(s, SIOCGVLANPCP, &ifr) == 0 && ifr.ifr_vlan_pcp <= 7) {
-		vl->has_pcp = true;
-		vl->pcp = ifr.ifr_vlan_pcp;
+		dv->has_arcif_pcp = true;
+		dv->arcif_pcp = ifr.ifr_vlan_pcp;
 	}
+	en->encaps_type =
+	    IETF_INTERFACES_INTERFACES_INTERFACE_IF_EXT_ENCAPSULATION_ENCAPS_TYPE_DOT1Q_VLAN;
+	en->if_vlan_dot1q_vlan = dv;
 	layer_add(l, e->name, vr.vlr_parent);
-	e->arcif_vlan = vl;
+	e->if_ext_encapsulation = en;
 	return (0);
 }
 
@@ -853,28 +1033,23 @@ drv_name(int index, char *buf, size_t size)
  * one driver name ('epair' and the pair's unit), which a rename does not
  * change.  No other of it here, the other end is in another vnet.
  */
-static int
-epair(yif *e, const struct drvname *dn, size_t ndn, cbl_yarena *a)
+static void
+epair(yif *e, const struct drvname *dn, size_t ndn)
 {
-	struct ietf_interfaces_interfaces_interface_arcif_epair *ep;
 	const char *drv = e->arcif_driver_name;
 
 	if (drv == NULL || strncmp(drv, "epair", 5) != 0 || drv[5] == '\0' ||
 	    strspn(drv + 5, "0123456789") != strlen(drv + 5))
-		return (0);
-	if ((ep = cbl_yarena_alloc(a, sizeof(*ep))) == NULL)
-		return (ENOMEM);
-	ep->has_peer_vnet = true;
-	ep->peer_vnet = true;
+		return;
+	e->has_arcif_peer_vnet = true;
+	e->arcif_peer_vnet = true;
 	for (size_t i = 0; i < ndn; i++)
 		if (dn[i].index != e->if_index &&
 		    strcmp(dn[i].drv, drv) == 0) {
-			ep->peer = dn[i].listed;
-			ep->peer_vnet = false;
+			e->if_ext_peer_interface = dn[i].listed;
+			e->arcif_peer_vnet = false;
 			break;
 		}
-	e->arcif_epair = ep;
-	return (0);
 }
 
 /*
@@ -941,22 +1116,24 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 		}
 		d = ifa->ifa_data;
 		if ((error = one(&v[n], ifa, s, &boot, a)) == 0 &&
-		    (error = link_parts(&v[n], s, (const void *)ifa->ifa_addr,
-		    d, dn[ndn].drv, a)) == 0 && d != NULL &&
+		    (error = link_parts(&v[n], s, dn[ndn].drv, a)) == 0 &&
+		    d != NULL &&
 		    (error = kind_of(&v[n], &lay, s, d->ifi_type, &kind,
 		    a)) == 0 && kind != NULL &&
 		    (v[n].type = iftype_sid(kind)) != 0)
 			v[n].has_type = true;
+		if (error == 0)
+			error = ether_parts(&v[n], s,
+			    (const void *)ifa->ifa_addr, d, a);
 		dn[ndn++].listed = v[n++].name;
 	}
 	for (size_t i = 0; i < n && error == 0; i++)
 		if ((error = layer_names(&lay, v[i].name, true, v, n,
-		    &v[i].lower_layer_if.n, &v[i].lower_layer_if.v, a)) != 0 ||
+		    &v[i].lower_layer_if.n, &v[i].lower_layer_if.v, a)) == 0 &&
 		    (error = layer_names(&lay, v[i].name, false, v, n,
 		    &v[i].higher_layer_if.n, &v[i].higher_layer_if.v,
-		    a)) != 0 ||
-		    (error = epair(&v[i], dn, ndn, a)) != 0)
-			break;
+		    a)) == 0)
+			epair(&v[i], dn, ndn);
 	free(lay.v);
 	free(dn);
 	close(s);

@@ -199,7 +199,8 @@ jail when the service needs multicast, DHCP, NAT or its own firewall.
 Both are modelled already: FIB = `ietf-network-instance`, jail =
 `ietf-logical-network-element`.
 
-**D-7 The ACL engine.** ipfw (already driven, tables, dummynet for
+**D-7 The ACL engine: decided, ipfw** (the user's; recorded
+2026-10-14).  ipfw (already driven, tables, dummynet for
 rate-limit, divert, `call`/`return`, fib and jail matches; cannot
 match ICMP code, ECN, TCP ECE/CWR/AE, payload) versus pf (anchors
 give named ordered ACLs, `tos`, ICMP code, E/W flags; no dummynet
@@ -409,7 +410,7 @@ never meets an expression it cannot evaluate.
 | Module | FreeBSD realisation (operational source; config sink) | Deviations and features |
 |---|---|---|
 | `ietf-interfaces` | getifaddrs(3), `if_data` counters, SIOCGIFFLAGS/MEDIA/DESCR, vlan/bridge/lagg ioctls for layering, netlink RTM_GETLINK; sinks rc.conf `ifconfig_<if>`, `cloned_interfaces`, SIOCIFCREATE2, SIOCSIFFLAGS; events from rtsock RTM_IFINFO/IFANNOUNCE or netlink groups | broadcast counters omitted (if_data merges them into multicast); `link-up-down-trap-enable` not supported; features `if-mib`, `pre-provisioning` (interfaces moved into jails) |
-| `arcana-interfaces` (augment) | vlan id and parent, bridge members and STP flags, lagg proto and ports, epair peer and vnet, link MTU, `ether`, media, groups, fib (→ `bind-ni-name`), capability bits | |
+| `arcana-interfaces` (augment) | FreeBSD's own beside the standard models (2026-10-14): driver, groups, tunnel FIB, capability bits, media words, epair's peer in a vnet, vlan PCP, lagg's FreeBSD protocols and hash, bridge members' FreeBSD flags; the MTU `ietf-ip`'s and `ietf-if-extensions`' max-frame-size, `ether` `ietf-if-ethernet-like`'s, fib `bind-ni-name`, epair's peer `ietf-if-extensions`', vlan `ietf-if-vlan-encapsulation`'s, lagg IEEE 802.1AX's, bridge IEEE 802.1Q's, media IEEE 802.3's | |
 | `ietf-ip` | AF_INET/INET6 ifaddrs, SIOCAIFADDR(_IN6)/SIOCDIFADDR, ARP/ND caches by sysctl NET_RT_FLAGS or netlink RTM_GETNEIGH, `SIOCGIFINFO_IN6` flags, address lifetimes; sinks rc.conf `ifconfig_<if>`, `_alias<n>`, `_ipv6`, `static_arp_pairs`, `static_ndp_pairs` | `forwarding`, `dup-addr-detect-transmits`, temporary addresses are host-global sysctls: reported with origin `system`, per-interface writes refused by a deviation; one MTU for both families |
 | `ietf-routing`, `ietf-ipv4-unicast-routing`, `ietf-ipv6-unicast-routing`, RA submodule | NET_RT_DUMP per FIB or netlink RTM_GETROUTE with RTA_TABLE; RTF_STATIC/LOCAL/PINNED → source-protocol; RTF_BLACKHOLE/REJECT → special next hops; ECMP via RTA_MULTIPATH; `active-route` by RTM_GET; sinks rc.conf `defaultrouter`, `static_routes`, `route_<name>`, `ipv6_*`, and the kernel by rtsock or netlink; RA: rtadvd.conf and `rtadvctl reload` | `router-id` not at the host root; `prohibit` next hop unsupported; `last-updated` tracked by the agent from events; `multiple-ribs` off at the root: other FIBs are network instances |
 | `ietf-network-instance` | one instance per FIB 1..`net.fibs`−1 named by the agent (names kept in `/usr/local/etc/arcana/fibs.conf`), `vrf-root` a shared-schema mount of routing, v4ur, v6ur and yang-library; `bind-ni-name` ↔ SIOCGIFFIB/SIOCSIFFIB and rc.conf `fib N` | creation raises `net.fibs` live (it grows, never shrinks) and keeps it in loader.conf; a reboot-required flag where the kernel will not grow it; per-AF binding equals the interface's; no `vsi-root` (if_bridge is an interface) |
@@ -725,6 +726,10 @@ Depends on Y-1.
 
 Depends on Y-2.
 
+- **Before each conversion:** the standard models for its area,
+  docs/notes/standard-models.md (2026-10-14): an RFC's module used as
+  it is with Arcana's augments, a working-group draft's followed, an
+  Arcana module only where none exists.
 - **3.1 The Arcana modules.** A: `arcana-jails`, `-services`,
   `-packages`, `-jobs`, `-storage`, `-sysctl`, `-kernel`,
   `-processes`, `-log`, `-history`, `-events`, `-bird`, `-wireguard`,
@@ -1259,8 +1264,9 @@ A step never leaves `main` unbuildable; where a step would, it says
   root ZFS test.
 - 3.1.6 A: `arcana-sysctl` (`running` ↔ sysctl.conf, operational from
   sysctl(3)); `arcana-kernel` (modules, `kld_list`); check: tests.
-- 3.1.7 A: `arcana-processes`, `arcana-log`, `arcana-history`,
-  `arcana-events` (numbered, replayable); check: tests.
+- 3.1.7 A: `arcana-processes` (on `openconfig-procmon`; done),
+  `arcana-log`, `arcana-history`, `arcana-events` (numbered,
+  replayable); check: tests.
 - 3.1.8 A: `arcana-bird`, `arcana-wireguard`, `arcana-netgraph`,
   `arcana-plugins`; check: the plugin tests.
 - 3.1.9 A: `arcana-host` (facts, router-id, role, capabilities),

@@ -246,11 +246,11 @@ main(int argc, char **argv)
 			errc(1, error, "yni_bind");
 		v = data.interfaces->interface.v;
 		for (size_t i = 0; i < n; i++) {
-			if (!v[i].has_arcif_fib || v[i].arcif_fib == 0)
+			if (v[i].ni_bind_ni_name == NULL)
 				continue;
-			printf("%s %u %s %s %s\n", v[i].name, v[i].arcif_fib,
-			    v[i].ni_bind_ni_name != NULL ?
-			    v[i].ni_bind_ni_name : "-",
+			printf("%s %d %s %s %s\n", v[i].name,
+			    yni_fib(ni, v[i].ni_bind_ni_name),
+			    v[i].ni_bind_ni_name,
 			    v[i].ip_ipv4 != NULL &&
 			    v[i].ip_ipv4->ni_bind_ni_name != NULL ?
 			    v[i].ip_ipv4->ni_bind_ni_name : "-",

@@ -2,11 +2,11 @@ PROG=		arcana-agent
 # The Agent itself, then what it does by Archive (docs/NAMING.md).
 SRCS=		main.c handlers.c work.c
 # Superbia: identity, configuration, what is true of the host.
-SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c l2.c ipfw.c
+SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c ysystem.c l2.c ipfw.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		rcroutes.c routes.c rtadv.c rtimes.c scope.c sdwan.c vnet.c \
-		yif.c yip.c yjobs_spec.c ylne.c yni.c yrt.c
+		yif.c yip.c yjobs_spec.c yjson.c ylne.c yni.c yrt.c
 # The IETF modules the collectors fill (PLAN-SDN-YANG 1.9): cblink-gen's
 # structs and tables of share/yang's modules, committed, so that building
 # needs no libyang; "make regen-yang" refreshes them.
@@ -18,7 +18,7 @@ SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c 
 		services.c update.c yjails.c yjobs.c ypackages.c yservices.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \
-		pools.c storage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
+		pools.c storage.c ystorage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c yprocs.c log.c \
 		history.c events.c faults.c kmsg.c probe.c
 .PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
 		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula \
@@ -57,6 +57,9 @@ arcana_agent.sh: arcana_agent.in
 # ymodel_schema.c are made of.
 YANG_DIR=	${.CURDIR}/../../share/yang
 YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
+		ietf-if-extensions@2025-08-07 ietf-if-ethernet-like@2026-06-19 \
+		ietf-if-vlan-encapsulation@2026-07-06 \
+		ieee802-ethernet-interface@2025-09-10 \
 		ietf-ip@2018-02-22 arcana-ip-deviations@2026-10-14 \
 		iana-if-type@2026-03-17 ietf-yang-types@2025-12-22 \
 		ietf-inet-types@2025-12-22 ietf-routing@2018-03-13 \
@@ -66,16 +69,29 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		arcana-network-instance@2026-10-14 \
 		ietf-logical-network-element@2019-01-25 arcana-jails@2026-10-14 \
 		arcana-services@2026-10-14 arcana-packages@2026-10-14 \
-		arcana-jobs@2026-10-14
+		arcana-jobs@2026-10-14 arcana-storage@2026-10-14 \
+		arcana-sysctl@2026-10-14 arcana-kernel@2026-10-14 \
+		arcana-processes@2026-10-14
+# Modules only imported whose identities are used, their .sid files'
+# alone: the routing protocols', whose identities name a route's origin;
+# IEEE 802.1Q's types, a VLAN tag's; IEEE 802.3's PHY and PMD types.
+YANG_IMPORTS=	ietf-ospf@2022-10-19 ietf-rip@2020-02-20 ietf-isis@2022-10-19 \
+		ietf-babel@2024-10-10 ietf-bgp@2026-08-14 ietf-bfd-types@2022-09-22 \
+		ieee802-dot1q-types@2023-10-26 ieee802-ethernet-phy-type@2025-09-10
 # ietf-routing's multiple-ribs: a FIB each (setfib(1)).
 YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
+		-F ietf-if-extensions:max-frame-size,peer-interface,sub-interfaces \
+		-F ietf-if-ethernet-like:configurable-mac-address \
+		-F ietf-if-vlan-encapsulation: -F ieee802-ethernet-interface: \
 		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
 		-F iana-if-type: -F ietf-yang-types: -F ietf-inet-types: \
 		-F ietf-routing:multiple-ribs -F ietf-ipv4-unicast-routing: \
 		-F ietf-ipv6-unicast-routing: -F arcana-routing: \
 		-F ietf-network-instance: -F arcana-network-instance: \
 		-F ietf-logical-network-element: -F arcana-jails: \
-		-F arcana-services: -F arcana-packages: -F arcana-jobs:
+		-F arcana-services: -F arcana-packages: -F arcana-jobs: \
+		-F arcana-storage: -F arcana-sysctl: -F arcana-kernel: \
+		-F arcana-processes:
 YANG_OUT?=	${.CURDIR}/yang
 # The kinds of job, made from share/arcana/jobs.yaml as the console's
 # forms are: arcana-jobs's submodule, and yjobs_spec(), a change of it
@@ -91,6 +107,7 @@ regen-yang: .PHONY
 	    ${YANG_OUT}/yjobs_spec.c
 	cd ${YANG_DIR} && ${CBLINK_GEN} -m h,schema -b ymodel \
 	    -o ${YANG_OUT} ${YANG_FEATS} ${YANG_MODS:@m@-s ${m}.sid@} \
+	    ${YANG_IMPORTS:@m@-s ${m}.sid@} \
 	    ${YANG_MODS:S/$/.yang/}
 
 # make check's: the committed files are what the modules make now, by

@@ -1,0 +1,557 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-babel",
+    "module-revision": "2024-10-10",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "ietf-routing",
+        "module-revision": "2018-03-13"
+      },
+      {
+        "module-name": "ietf-crypto-types",
+        "module-revision": "2024-10-10"
+      },
+      {
+        "module-name": "ietf-netconf-acm",
+        "module-revision": "2018-02-14"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "67000",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-babel",
+        "sid": "67000"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "babel",
+        "sid": "67001"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "blake2s",
+        "sid": "67002"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "dtls-cert-types",
+        "sid": "67003"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "etx",
+        "sid": "67004"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "hmac-sha256",
+        "sid": "67005"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "mac-algorithms",
+        "sid": "67006"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "metric-comp-algorithms",
+        "sid": "67007"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "raw-public-key",
+        "sid": "67008"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "two-out-of-three",
+        "sid": "67009"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "x-509",
+        "sid": "67010"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "blake2s-supported",
+        "sid": "67011"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "dtls-supported",
+        "sid": "67012"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "etx-supported",
+        "sid": "67013"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "hmac-sha256-supported",
+        "sid": "67014"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "mac-supported",
+        "sid": "67015"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "raw-public-key-supported",
+        "sid": "67016"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "two-out-of-three-supported",
+        "sid": "67017"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "x-509-supported",
+        "sid": "67018"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel",
+        "sid": "67019"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/constants",
+        "sid": "67020"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/constants/mcast-group",
+        "sid": "67021"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/constants/udp-port",
+        "sid": "67022"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/dtls",
+        "sid": "67023"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/dtls/certs",
+        "sid": "67024"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/dtls/certs/algorithm",
+        "sid": "67025"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/dtls/certs/name",
+        "sid": "67026"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/dtls/certs/private-key",
+        "sid": "67027"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/dtls/certs/type",
+        "sid": "67028"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/dtls/certs/value",
+        "sid": "67029"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/dtls/default-apply",
+        "sid": "67030"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/dtls/name",
+        "sid": "67031"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/enable",
+        "sid": "67032"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces",
+        "sid": "67033"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/dtls-cached-info",
+        "sid": "67034"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/dtls-cert-prefer",
+        "sid": "67035"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/dtls-certs",
+        "sid": "67036"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/dtls-enable",
+        "sid": "67037"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/enable",
+        "sid": "67038"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/mac-enable",
+        "sid": "67039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/mac-key-sets",
+        "sid": "67040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/mac-verify",
+        "sid": "67041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/mcast-hello-interval",
+        "sid": "67042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/mcast-hello-seqno",
+        "sid": "67043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/metric-algorithm",
+        "sid": "67044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects",
+        "sid": "67045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/cost",
+        "sid": "67046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/exp-mcast-hello-seqno",
+        "sid": "67047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/exp-ucast-hello-seqno",
+        "sid": "67048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/hello-mcast-history",
+        "sid": "67049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/hello-ucast-history",
+        "sid": "67050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/neighbor-address",
+        "sid": "67051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/rxcost",
+        "sid": "67052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/txcost",
+        "sid": "67053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/ucast-hello-interval",
+        "sid": "67054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/neighbor-objects/ucast-hello-seqno",
+        "sid": "67055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/packet-log",
+        "sid": "67056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/packet-log-enable",
+        "sid": "67057"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/reference",
+        "sid": "67058"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/split-horizon",
+        "sid": "67059"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics",
+        "sid": "67060"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/discontinuity-time",
+        "sid": "67061"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/received-packets",
+        "sid": "67062"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/reset",
+        "sid": "67063"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/reset/input",
+        "sid": "67064"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/reset/input/reset-at",
+        "sid": "67065"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/reset/output",
+        "sid": "67066"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/reset/output/reset-finished-at",
+        "sid": "67067"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/sent-ihu",
+        "sid": "67068"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/sent-mcast-hello",
+        "sid": "67069"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/sent-mcast-update",
+        "sid": "67070"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/sent-ucast-hello",
+        "sid": "67071"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/statistics/sent-ucast-update",
+        "sid": "67072"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/interfaces/update-interval",
+        "sid": "67073"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set",
+        "sid": "67074"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/default-apply",
+        "sid": "67075"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys",
+        "sid": "67076"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/algorithm",
+        "sid": "67077"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/name",
+        "sid": "67078"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/test",
+        "sid": "67079"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/test/input",
+        "sid": "67080"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/test/input/mac",
+        "sid": "67081"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/test/input/test-string",
+        "sid": "67082"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/test/output",
+        "sid": "67083"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/test/output/indication",
+        "sid": "67084"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/use-send",
+        "sid": "67085"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/use-verify",
+        "sid": "67086"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/keys/value",
+        "sid": "67087"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/mac-key-set/name",
+        "sid": "67088"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/router-id",
+        "sid": "67089"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes",
+        "sid": "67090"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes/calculated-metric",
+        "sid": "67091"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes/feasible",
+        "sid": "67092"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes/neighbor",
+        "sid": "67093"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes/next-hop",
+        "sid": "67094"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes/prefix",
+        "sid": "67095"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes/received-metric",
+        "sid": "67096"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes/router-id",
+        "sid": "67097"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes/selected",
+        "sid": "67098"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/routes/seqno",
+        "sid": "67099"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/seqno",
+        "sid": "67100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/statistics-enabled",
+        "sid": "67101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-babel:babel/version",
+        "sid": "67102"
+      }
+    ]
+  }
+}

@@ -21,6 +21,11 @@
  * with the modules that augment it: arcana-interfaces, ietf-ip.
  */
 int	yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a);
+/*
+ * The IEEE 802.3 PMD type's identity (its SID) of a medium FreeBSD
+ * names so ("1000baseT"); 0: IEEE names none.
+ */
+uint64_t yif_pmd(const char *subtype);
 
 /* ietf-ip (RFC 8344): the n interfaces' ipv4 and ipv6 (invidia/yip.c). */
 int	yip_interfaces(struct ietf_interfaces_interfaces_interface *v,
@@ -31,6 +36,11 @@ int	yip_interfaces(struct ietf_interfaces_interfaces_interface *v,
  * routes, with v4ur's and v6ur's leaves (invidia/yrt.c).
  */
 int	yrt_routing(struct ietf_routing *data, int fib, cbl_yarena *a);
+/*
+ * A route's source-protocol, the identity's SID, by its netlink(4)
+ * origin (rtm_protocol), whether it has a gateway, and its family.
+ */
+uint64_t yrt_origin(uint8_t proto, bool gateway, bool v6);
 /* The RIB's active-route action: the route in's address goes by in
  * FIB fib; none, out without a route. */
 int	yrt_active_route(int fib,
@@ -141,6 +151,47 @@ int	yjobs_spec(const struct arcana_jobs_submit_input_change *in,
 	    cbl_yarena *a, struct arc_job_spec *sp);
 int	yjobs_specs(const struct arcana_jobs_submit_input *in, cbl_yarena *a,
 	    const struct arc_job_spec **out, size_t *n, size_t *bad);
+
+/*
+ * arcana-storage (acedia/ystorage.c): ystorage_from_json() the storage
+ * operation's reply of a kind (ARC_STORAGE_KIND_*) put in st, the other
+ * kinds' parts kept, health's on its disks; ystorage_fstab() fstab(5)'s
+ * text and SHA-256, the fstab operation's.
+ */
+int	ystorage_from_json(int kind, const char *json, uint64_t total,
+	    bool truncated, cbl_yarena *a, struct arcana_storage_storage *st);
+int	ystorage_fstab(const char *text, const char *sha256, cbl_yarena *a,
+	    struct arcana_storage_storage *st);
+
+/*
+ * arcana-sysctl and arcana-kernel (superbia/ysystem.c): the sysctl and
+ * kernel operations' JSON as the modules have them; their configuration
+ * written in place: sysctl.conf's settings (f: VC_SYSCTL), rc.conf's
+ * kld_list (f: VC_SH).
+ */
+int	ysysctl_from_json(const char *json, uint64_t total, bool truncated,
+	    cbl_yarena *a, struct arcana_sysctl_sysctl *out);
+int	ykernel_from_json(const char *json, cbl_yarena *a,
+	    struct arcana_kernel_kernel *out);
+int	ysysctl_conf_write(struct vc_file *f,
+	    const struct arcana_sysctl_sysctl *want, char *err, size_t errlen);
+int	ykernel_kld_write(struct vc_file *f,
+	    const struct arcana_kernel_kernel *want, char *err, size_t errlen);
+
+/*
+ * arcana-processes (gula/yprocs.c): the processes operation's JSON in
+ * OpenConfig procmon's shape with FreeBSD's besides; detail, the reply
+ * for one pid (NULL: none), its files and threads put on its entry.
+ */
+int	yprocs_from_json(const char *json, const char *detail, cbl_yarena *a,
+	    struct arcana_processes_processes *out);
+/*
+ * Its signal and renice actions (gula/procs.c): verb "signal" or
+ * "renice", arg the signal or nice value, start the start-time read
+ * (nanoseconds; 0, none).
+ */
+int	yprocs_action(struct work *w, uint64_t pid, const char *verb,
+	    const char *arg, uint64_t start, const char **errp);
 
 /*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists

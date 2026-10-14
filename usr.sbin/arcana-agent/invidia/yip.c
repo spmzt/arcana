@@ -95,6 +95,7 @@ struct ifip {
 	yif		*e;
 	uint8_t		 lladdr[ETHER_ADDR_LEN];
 	bool		 havell;
+	uint32_t	 mtu;		/* the link's, if_data's; 0: none */
 	size_t		 n4, n6;
 	yv4		*v4;
 	yv6		*v6;
@@ -511,7 +512,7 @@ v6_on(struct ifip *ip, int s6, const struct hostip *h, cbl_yarena *a)
 	v6->autoconf = ac;
 	v6->has_enabled = true;
 	v6->enabled = (nd.ndi.flags & ND6_IFF_IFDISABLED) == 0;
-	mtu = ip->e->has_arcif_mtu ? ip->e->arcif_mtu : 0;
+	mtu = ip->mtu;
 	if (nd.ndi.linkmtu != 0 && (mtu == 0 || nd.ndi.linkmtu < mtu))
 		mtu = nd.ndi.linkmtu;
 	if (mtu != 0) {
@@ -541,9 +542,9 @@ v4_on(struct ifip *ip, const struct hostip *h, cbl_yarena *a)
 	v4->enabled = true;
 	v4->has_forwarding = h->has_fwd4;
 	v4->forwarding = h->fwd4;
-	if (ip->e->has_arcif_mtu) {
+	if (ip->mtu != 0) {
 		v4->has_mtu = true;
-		v4->mtu = (uint16_t)MIN(ip->e->arcif_mtu, UINT16_MAX);
+		v4->mtu = (uint16_t)MIN(ip->mtu, UINT16_MAX);
 	}
 	v4->address.n = ip->n4;
 	v4->address.v = ip->v4;
@@ -586,6 +587,9 @@ yip_interfaces(yif *v, size_t n, cbl_yarena *a)
 				memcpy(cur->lladdr, LLADDR(sdl), ETHER_ADDR_LEN);
 				cur->havell = true;
 			}
+			if (cur != NULL && ifa->ifa_data != NULL)
+				cur->mtu = ((const struct if_data *)
+				    ifa->ifa_data)->ifi_mtu;
 			break;
 		case AF_INET:
 			if (cur != NULL)

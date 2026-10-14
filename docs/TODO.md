@@ -148,7 +148,18 @@
   2 south and RESTCONF on the console only (D-2), libyang for the
   generator (D-3), L3NM where it and MEF 70.2 overlap (D-4), STAMP
   for the probes (D-8), no compatibility with the v1 family or `/api`
-  (D-9, D-10), BIRD for FlowSpec. Open: D-5 to D-7, D-11, D-12.
+  (D-9, D-10), BIRD for FlowSpec, ipfw the ACL engine (D-7, the
+  user's). Open: D-5, D-6, D-11, D-12. Before each conversion, the
+  standard models of its area: docs/notes/standard-models.md (RFC 7317
+  and 8348 for the host, 9640 to 9645 for keys and servers, 9742 for
+  syslog, 9129, 8695, 9647, 9314 for BIRD's protocols, 8532 and 8533
+  for traceroute, the drafts for BGP, QoS, STAMP; none for processes,
+  history, WireGuard, netgraph, capture; YangModels/yang checked too).
+  To rework, found by that check: arcana-interfaces's vlan, lagg,
+  bridge and media augments onto IEEE 802.1Q (ieee802-dot1q-bridge,
+  -vlan-bridge, -rstp), 802.1AX (ieee802-dot1ax-linkagg), 802.3
+  (ieee802-ethernet-interface) and ietf-if-vlan-encapsulation; the
+  disks of arcana-storage also as ietf-hardware's components.
   Done (2026-10-13): Y-0 0.1, the body decoder: YANG-CBOR by SID
   deltas (cblink sid_test), YANG-CBOR's tags under CBL_CTX_YANG_TAGS,
   the cblink module and its .sid file (cblink share/yang), and the
@@ -386,8 +397,35 @@
   change made the job-spec the queue takes, too (out=yspec, by
   arcana.h's members), both committed and held by check-yang;
   ira/yjobs.c (yang_jobs: five kinds of change, the trace). 1.11's
-  submit runs check_spec() and cuts_off() as job-submit does. Next:
-  3.1.5, arcana-storage, and the rest of 3.1 in turn; 2.8,
+  submit runs check_spec() and cuts_off() as job-submit does. 3.1.5:
+  storage, fstab, zfs-send, zfs-receive, zfs-key converted to
+  share/yang/arcana-storage (63 400): typed lists where the storage
+  operation gave a JSON object per kind (acedia/ystorage.c reads each
+  back: disks with partitions and their health, pools with vdevs and
+  state lines, importable pools, datasets with typed properties and
+  snapshots, a truncated list's total, mounts, fstab's entries and
+  text, swap); load-key, unload-key, change-key, fstab replace, send as
+  actions, receive an rpc, their bytes the request's stream
+  (yang_storage; held too on this VM's own storage by hand: 17 KB,
+  the same back). The storage changes stay jobs (zfs, zpool, mount,
+  gpart, cam). 3.1.6: sysctl, sysctl-parts and kernel converted to
+  share/yang/arcana-sysctl (63 600: sysctl.conf's settings as
+  configuration, the values as state) and arcana-kernel (63 700:
+  kld_list as configuration, the files, modules, memory as state, load
+  and unload); superbia/ysystem.c reads the JSON back (yang/yjson.c, now
+  ystorage's too) and writes the configuration in place by libvarconf:
+  sysctl.conf's settings set, appended, taken out, comments kept;
+  kld_list made or taken out (yang_system). 3.1.7, processes:
+  share/yang/arcana-processes (63 800) uses OpenConfig's
+  openconfig-procmon grouping (found in YANG Catalog: the list keyed by
+  pid, name, args, start-time, CPU utilization, memory; its imports
+  vendored as published) and augments it with FreeBSD's (ppid, user,
+  jail, run state, wait channel, nice, priority, threads, CPU time and
+  WCPU, blocks), one process's files and threads, the jails' totals;
+  signal and renice actions are the proc job's, a start-time guarding
+  against a pid given to another (gula/yprocs.c, yang_processes).
+  Next: 3.1.7's log (ietf-syslog for syslog.conf), history, events
+  (faults as ietf-alarms), and the rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model

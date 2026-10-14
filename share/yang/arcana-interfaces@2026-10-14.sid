@@ -2,6 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-interfaces",
     "module-revision": "2026-10-14",
+    "sid-file-version": 2,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 61 000, 200.",
     "dependency-revision": [
       {
@@ -13,8 +14,16 @@
         "module-revision": "2026-03-17"
       },
       {
-        "module-name": "ietf-yang-types",
-        "module-revision": "2025-12-22"
+        "module-name": "ietf-if-extensions",
+        "module-revision": "2025-08-07"
+      },
+      {
+        "module-name": "ietf-if-vlan-encapsulation",
+        "module-revision": "2026-07-06"
+      },
+      {
+        "module-name": "ieee802-dot1q-types",
+        "module-revision": "2023-10-26"
       }
     ],
     "assignment-range": [
@@ -92,26 +101,31 @@
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:epair",
+        "status": "obsolete",
         "sid": "61013"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:epair/peer",
+        "status": "obsolete",
         "sid": "61014"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:epair/peer-vnet",
+        "status": "obsolete",
         "sid": "61015"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:ether",
+        "status": "obsolete",
         "sid": "61016"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:fib",
+        "status": "obsolete",
         "sid": "61017"
       },
       {
@@ -122,6 +136,7 @@
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:hw-address",
+        "status": "obsolete",
         "sid": "61019"
       },
       {
@@ -217,11 +232,13 @@
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/type",
-        "sid": "61038"
+        "sid": "61038",
+        "status": "obsolete"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:mtu",
+        "status": "obsolete",
         "sid": "61039"
       },
       {
@@ -232,27 +249,42 @@
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan",
+        "status": "obsolete",
         "sid": "61041"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan/parent",
+        "status": "obsolete",
         "sid": "61042"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan/pcp",
+        "status": "obsolete",
         "sid": "61043"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan/protocol",
+        "status": "obsolete",
         "sid": "61044"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:vlan/vlan-id",
+        "status": "obsolete",
         "sid": "61045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:peer-vnet",
+        "sid": "61046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:encapsulation/ietf-if-vlan-encapsulation:dot1q-vlan/arcana-interfaces:pcp",
+        "sid": "61047"
       }
     ]
   }

@@ -24,12 +24,14 @@
       {
         "namespace": "identity",
         "identifier": "babel",
-        "sid": "61701"
+        "sid": "61701",
+        "status": "obsolete"
       },
       {
         "namespace": "identity",
         "identifier": "bgp",
-        "sid": "61702"
+        "sid": "61702",
+        "status": "obsolete"
       },
       {
         "namespace": "identity",
@@ -49,7 +51,8 @@
       {
         "namespace": "identity",
         "identifier": "isis",
-        "sid": "61706"
+        "sid": "61706",
+        "status": "obsolete"
       },
       {
         "namespace": "identity",
@@ -59,7 +62,8 @@
       {
         "namespace": "identity",
         "identifier": "ospf",
-        "sid": "61708"
+        "sid": "61708",
+        "status": "obsolete"
       },
       {
         "namespace": "identity",
@@ -74,7 +78,8 @@
       {
         "namespace": "identity",
         "identifier": "rip",
-        "sid": "61711"
+        "sid": "61711",
+        "status": "obsolete"
       },
       {
         "namespace": "identity",

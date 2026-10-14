@@ -1,0 +1,844 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-rip",
+    "module-revision": "2020-02-20",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "ietf-ip",
+        "module-revision": "2018-02-22"
+      },
+      {
+        "module-name": "ietf-routing",
+        "module-revision": "2018-03-13"
+      },
+      {
+        "module-name": "ietf-key-chain",
+        "module-revision": "2017-06-15"
+      },
+      {
+        "module-name": "ietf-bfd-types",
+        "module-revision": "2022-09-22"
+      },
+      {
+        "module-name": "ietf-ospf",
+        "module-revision": "2022-10-19"
+      },
+      {
+        "module-name": "ietf-isis",
+        "module-revision": "2022-10-19"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "65800",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-rip",
+        "sid": "65800"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "rip",
+        "sid": "65801"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ripng",
+        "sid": "65802"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ripv2",
+        "sid": "65803"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "bfd",
+        "sid": "65804"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "explicit-neighbors",
+        "sid": "65805"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "global-statistics",
+        "sid": "65806"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "interface-statistics",
+        "sid": "65807"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-rip:clear-rip-route",
+        "sid": "65808"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-rip:clear-rip-route/input",
+        "sid": "65809"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-rip:clear-rip-route/input/rip-instance",
+        "sid": "65810"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-rip:clear-rip-route/output",
+        "sid": "65811"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip",
+        "sid": "65812"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/default-metric",
+        "sid": "65813"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/distance",
+        "sid": "65814"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/distribute-list",
+        "sid": "65815"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/distribute-list/direction",
+        "sid": "65816"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/distribute-list/if-name",
+        "sid": "65817"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/distribute-list/prefix-set-name",
+        "sid": "65818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces",
+        "sid": "65819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface",
+        "sid": "65820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/authentication",
+        "sid": "65821"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/authentication/crypto-algorithm",
+        "sid": "65822"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/authentication/key",
+        "sid": "65823"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/authentication/key-chain",
+        "sid": "65824"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/bfd",
+        "sid": "65825"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/bfd/enabled",
+        "sid": "65826"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/cost",
+        "sid": "65827"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/interface",
+        "sid": "65828"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/neighbors",
+        "sid": "65829"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/neighbors/neighbor",
+        "sid": "65830"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/neighbors/neighbor/address",
+        "sid": "65831"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/next-full-update",
+        "sid": "65832"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/no-listen",
+        "sid": "65833"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/oper-status",
+        "sid": "65834"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/originate-default-route",
+        "sid": "65835"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/originate-default-route/enabled",
+        "sid": "65836"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/originate-default-route/route-policy",
+        "sid": "65837"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/passive",
+        "sid": "65838"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/split-horizon",
+        "sid": "65839"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/statistics",
+        "sid": "65840"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/statistics/bad-packets-rcvd",
+        "sid": "65841"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/statistics/bad-routes-rcvd",
+        "sid": "65842"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/statistics/discontinuity-time",
+        "sid": "65843"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/statistics/updates-sent",
+        "sid": "65844"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/summary-address",
+        "sid": "65845"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/summary-address/address",
+        "sid": "65846"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/summary-address/metric",
+        "sid": "65847"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/timers",
+        "sid": "65848"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/timers/flush-interval",
+        "sid": "65849"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/timers/holddown-interval",
+        "sid": "65850"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/timers/invalid-interval",
+        "sid": "65851"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/timers/update-interval",
+        "sid": "65852"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/interfaces/interface/valid-address",
+        "sid": "65853"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4",
+        "sid": "65854"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/neighbors",
+        "sid": "65855"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/neighbors/neighbor",
+        "sid": "65856"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/neighbors/neighbor/bad-packets-rcvd",
+        "sid": "65857"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/neighbors/neighbor/bad-routes-rcvd",
+        "sid": "65858"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/neighbors/neighbor/ipv4-address",
+        "sid": "65859"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/neighbors/neighbor/last-update",
+        "sid": "65860"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes",
+        "sid": "65861"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route",
+        "sid": "65862"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/deleted",
+        "sid": "65863"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/expire-time",
+        "sid": "65864"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/flush-expire-before-holddown",
+        "sid": "65865"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/holddown",
+        "sid": "65866"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/inactive",
+        "sid": "65867"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/interface",
+        "sid": "65868"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/ipv4-prefix",
+        "sid": "65869"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/metric",
+        "sid": "65870"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/need-triggered-update",
+        "sid": "65871"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/next-hop",
+        "sid": "65872"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/redistributed",
+        "sid": "65873"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv4/routes/route/route-type",
+        "sid": "65874"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6",
+        "sid": "65875"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/neighbors",
+        "sid": "65876"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/neighbors/neighbor",
+        "sid": "65877"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/neighbors/neighbor/bad-packets-rcvd",
+        "sid": "65878"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/neighbors/neighbor/bad-routes-rcvd",
+        "sid": "65879"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/neighbors/neighbor/ipv6-address",
+        "sid": "65880"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/neighbors/neighbor/last-update",
+        "sid": "65881"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes",
+        "sid": "65882"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route",
+        "sid": "65883"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/deleted",
+        "sid": "65884"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/expire-time",
+        "sid": "65885"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/flush-expire-before-holddown",
+        "sid": "65886"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/holddown",
+        "sid": "65887"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/inactive",
+        "sid": "65888"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/interface",
+        "sid": "65889"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/ipv6-prefix",
+        "sid": "65890"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/metric",
+        "sid": "65891"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/need-triggered-update",
+        "sid": "65892"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/next-hop",
+        "sid": "65893"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/redistributed",
+        "sid": "65894"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/ipv6/routes/route/route-type",
+        "sid": "65895"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/maximum-paths",
+        "sid": "65896"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/next-triggered-update",
+        "sid": "65897"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/num-of-routes",
+        "sid": "65898"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/originate-default-route",
+        "sid": "65899"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/originate-default-route/enabled",
+        "sid": "65900"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/originate-default-route/route-policy",
+        "sid": "65901"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/output-delay",
+        "sid": "65902"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute",
+        "sid": "65903"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/bgp",
+        "sid": "65904"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/bgp/asn",
+        "sid": "65905"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/bgp/metric",
+        "sid": "65906"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/bgp/route-policy",
+        "sid": "65907"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/cg-nat",
+        "sid": "65908"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/cg-nat/metric",
+        "sid": "65909"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/cg-nat/route-policy",
+        "sid": "65910"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/connected",
+        "sid": "65911"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/connected/metric",
+        "sid": "65912"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/connected/route-policy",
+        "sid": "65913"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ipsec",
+        "sid": "65914"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ipsec/metric",
+        "sid": "65915"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ipsec/route-policy",
+        "sid": "65916"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/isis",
+        "sid": "65917"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/isis/instance",
+        "sid": "65918"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/isis/level",
+        "sid": "65919"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/isis/metric",
+        "sid": "65920"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/isis/route-policy",
+        "sid": "65921"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/nat",
+        "sid": "65922"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/nat/metric",
+        "sid": "65923"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/nat/route-policy",
+        "sid": "65924"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv2",
+        "sid": "65925"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv2/instance",
+        "sid": "65926"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv2/metric",
+        "sid": "65927"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv2/route-policy",
+        "sid": "65928"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv2/route-type",
+        "sid": "65929"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv3",
+        "sid": "65930"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv3/instance",
+        "sid": "65931"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv3/metric",
+        "sid": "65932"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv3/route-policy",
+        "sid": "65933"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ospfv3/route-type",
+        "sid": "65934"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ripng",
+        "sid": "65935"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ripng/instance",
+        "sid": "65936"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ripng/metric",
+        "sid": "65937"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ripng/route-policy",
+        "sid": "65938"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ripv2",
+        "sid": "65939"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ripv2/instance",
+        "sid": "65940"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ripv2/metric",
+        "sid": "65941"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/ripv2/route-policy",
+        "sid": "65942"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/static",
+        "sid": "65943"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/static/metric",
+        "sid": "65944"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/redistribute/static/route-policy",
+        "sid": "65945"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/statistics",
+        "sid": "65946"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/statistics/discontinuity-time",
+        "sid": "65947"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/statistics/requests-rcvd",
+        "sid": "65948"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/statistics/requests-sent",
+        "sid": "65949"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/statistics/responses-rcvd",
+        "sid": "65950"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/statistics/responses-sent",
+        "sid": "65951"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/timers",
+        "sid": "65952"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/timers/flush-interval",
+        "sid": "65953"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/timers/holddown-interval",
+        "sid": "65954"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/timers/invalid-interval",
+        "sid": "65955"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/timers/update-interval",
+        "sid": "65956"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/ietf-rip:rip/triggered-update-threshold",
+        "sid": "65957"
+      }
+    ]
+  }
+}

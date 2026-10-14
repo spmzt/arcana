@@ -387,19 +387,27 @@ int
 yni_bind(yif *v, size_t n,
     const struct ietf_network_instance_network_instances *ni, cbl_yarena *a)
 {
+	struct ifreq ifr;
+	int s;
 
+	if ((s = socket(AF_LOCAL, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
+		return (errno);
 	for (size_t i = 0; i < n; i++) {
 		const char *name;
 
-		if (!v[i].has_arcif_fib || v[i].arcif_fib == 0 ||
-		    (name = name_of(ni, (int)v[i].arcif_fib)) == NULL)
+		memset(&ifr, 0, sizeof(ifr));
+		strlcpy(ifr.ifr_name, v[i].name, sizeof(ifr.ifr_name));
+		if (ioctl(s, SIOCGIFFIB, &ifr) != 0 || ifr.ifr_fib == 0 ||
+		    (name = name_of(ni, (int)ifr.ifr_fib)) == NULL)
 			continue;
 		v[i].ni_bind_ni_name = name;
 		if (v[i].ip_ipv4 != NULL) {
 			struct ietf_interfaces_interfaces_interface_ip_ipv4 *c;
 
-			if ((c = cbl_yarena_alloc(a, sizeof(*c))) == NULL)
+			if ((c = cbl_yarena_alloc(a, sizeof(*c))) == NULL) {
+				close(s);
 				return (ENOMEM);
+			}
 			*c = *v[i].ip_ipv4;
 			c->ni_bind_ni_name = name;
 			v[i].ip_ipv4 = c;
@@ -407,13 +415,16 @@ yni_bind(yif *v, size_t n,
 		if (v[i].ip_ipv6 != NULL) {
 			struct ietf_interfaces_interfaces_interface_ip_ipv6 *c;
 
-			if ((c = cbl_yarena_alloc(a, sizeof(*c))) == NULL)
+			if ((c = cbl_yarena_alloc(a, sizeof(*c))) == NULL) {
+				close(s);
 				return (ENOMEM);
+			}
 			*c = *v[i].ip_ipv6;
 			c->ni_bind_ni_name = name;
 			v[i].ip_ipv6 = c;
 		}
 	}
+	close(s);
 	return (0);
 }
 

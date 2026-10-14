@@ -1,0 +1,160 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-if-ethernet-like",
+    "module-revision": "2026-06-19",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "iana-if-type",
+        "module-revision": "2026-03-17"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "68400",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-if-ethernet-like",
+        "sid": "68400"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "configurable-mac-address",
+        "sid": "68401"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-ethernet-like:ethernet-like",
+        "sid": "68402"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-ethernet-like:ethernet-like/bia-mac-address",
+        "sid": "68403"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-ethernet-like:ethernet-like/mac-address",
+        "sid": "68404"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-discard-unknown-dest-mac-pkts",
+        "sid": "68405"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-1024-to-1518-octets",
+        "sid": "68406"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-128-to-255-octets",
+        "sid": "68407"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-1519-to-2047-octets",
+        "sid": "68408"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-2048-to-4095-octets",
+        "sid": "68409"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-256-to-511-octets",
+        "sid": "68410"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-4096-to-8191-octets",
+        "sid": "68411"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-512-to-1023-octets",
+        "sid": "68412"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-64-octets",
+        "sid": "68413"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-65-to-127-octets",
+        "sid": "68414"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:in-pkts-8192-to-max-octets",
+        "sid": "68415"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-1024-to-1518-octets",
+        "sid": "68416"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-128-to-255-octets",
+        "sid": "68417"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-1519-to-2047-octets",
+        "sid": "68418"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-2048-to-4095-octets",
+        "sid": "68419"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-256-to-511-octets",
+        "sid": "68420"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-4096-to-8191-octets",
+        "sid": "68421"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-512-to-1023-octets",
+        "sid": "68422"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-64-octets",
+        "sid": "68423"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-65-to-127-octets",
+        "sid": "68424"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ietf-if-ethernet-like:out-pkts-8192-to-max-octets",
+        "sid": "68425"
+      }
+    ]
+  }
+}

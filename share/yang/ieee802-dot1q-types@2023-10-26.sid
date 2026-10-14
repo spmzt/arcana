@@ -1,0 +1,77 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ieee802-dot1q-types",
+    "module-revision": "2023-10-26",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "68600",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ieee802-dot1q-types",
+        "sid": "68600"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "asynchronous-traffic-shaping",
+        "sid": "68601"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "c-vlan",
+        "sid": "68602"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "credit-based-shaper",
+        "sid": "68603"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "dot1q-vlan-type",
+        "sid": "68604"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "enhanced-transmission-selection",
+        "sid": "68605"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "s-vlan",
+        "sid": "68606"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "strict-priority",
+        "sid": "68607"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "transmission-selection-algorithm",
+        "sid": "68608"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "type-of-operation",
+        "sid": "68609"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "vendor-specific",
+        "sid": "68610"
+      }
+    ]
+  }
+}

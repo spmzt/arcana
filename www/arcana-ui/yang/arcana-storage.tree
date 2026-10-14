@@ -1,0 +1,140 @@
+module: arcana-storage
+  +--ro storage
+     +--ro disk* [name]
+     |  +--ro name          string
+     |  +--ro size?         bytes
+     |  +--ro sectorsize?   uint32
+     |  +--ro ident?        string
+     |  +--ro descr?        string
+     |  +--ro rotation?     string
+     |  +--ro cam?          string
+     |  +--ro scheme?       string
+     |  +--ro first?        uint64
+     |  +--ro last?         uint64
+     |  +--ro partition* [name]
+     |  |  +--ro name     string
+     |  |  +--ro index?   uint32
+     |  |  +--ro size?    bytes
+     |  |  +--ro type?    string
+     |  |  +--ro label?   string
+     |  |  +--ro start?   uint64
+     |  |  +--ro end?     uint64
+     |  +--ro health
+     |     +--ro by?                 string
+     |     +--ro ok?                 boolean
+     |     +--ro temperature?        int32
+     |     +--ro power-on-hours?     uint64
+     |     +--ro power-cycles?       uint64
+     |     +--ro used-pct?           uint32
+     |     +--ro spare-pct?          uint32
+     |     +--ro media-errors?       uint64
+     |     +--ro unsafe-shutdowns?   uint64
+     |     +--ro reallocated?        uint64
+     |     +--ro pending?            uint64
+     |     +--ro uncorrectable?      uint64
+     |     +--ro crc-errors?         uint64
+     |     +--ro wear-level?         uint64
+     |     +--ro life-left?          uint64
+     |     +--ro media-wearout?      uint64
+     |     +--ro note?               string
+     +--ro pool* [name]
+     |  +--ro name      string
+     |  +--ro size?     bytes
+     |  +--ro alloc?    bytes
+     |  +--ro free?     bytes
+     |  +--ro frag?     uint32
+     |  +--ro cap?      uint32
+     |  +--ro dedup?    string
+     |  +--ro health?   string
+     |  +--ro state?    string
+     |  +--ro status?   string
+     |  +--ro action?   string
+     |  +--ro scan?     string
+     |  +--ro errors?   string
+     |  +--ro see?      string
+     |  +--ro vdev*
+     |     +--ro name?    string
+     |     +--ro depth?   uint32
+     |     +--ro state?   string
+     |     +--ro read?    string
+     |     +--ro write?   string
+     |     +--ro cksum?   string
+     |     +--ro note?    string
+     +--ro importable* [id]
+     |  +--ro id        string
+     |  +--ro name?     string
+     |  +--ro state?    string
+     |  +--ro status?   string
+     +--ro datasets-total?    uint64
+     +--ro dataset* [name]
+     |  +--ro name           string
+     |  +--ro type?          enumeration
+     |  +--ro used?          bytes
+     |  +--ro avail?         bytes
+     |  +--ro refer?         bytes
+     |  +--ro quota?         bytes
+     |  +--ro reservation?   bytes
+     |  +--ro mountpoint?    string
+     |  +--ro mounted?       boolean
+     |  +--ro canmount?      enumeration
+     |  +--ro compression?   string
+     |  +--ro ratio?         decimal64
+     |  +--ro readonly?      boolean
+     |  +--ro encryption?    string
+     |  +--ro keylocation?   string
+     |  +--ro jailed?        boolean
+     |  +--ro origin?        string
+     |  +---x load-key
+     |  |  +---w input
+     |  |     +---w key    string
+     |  +---x unload-key
+     |  +---x change-key
+     |     +---w input
+     |        +---w key?       string
+     |        +---w new-key    string
+     +--ro snapshots-total?   uint64
+     +--ro snapshot* [name]
+     |  +--ro name        string
+     |  +--ro used?       bytes
+     |  +--ro refer?      bytes
+     |  +--ro creation?   int64
+     |  +---x send
+     |     +---w input
+     |        +---w from?        string
+     |        +---w recursive?   boolean
+     +--ro mount*
+     |  +--ro from?      string
+     |  +--ro on?        string
+     |  +--ro type?      string
+     |  +--ro options?   string
+     |  +--ro size?      bytes
+     |  +--ro used?      bytes
+     |  +--ro avail?     bytes
+     +--ro fstab
+     |  +--ro text?      string
+     |  +--ro sha256?    string
+     |  +--ro entry*
+     |  |  +--ro spec?      string
+     |  |  +--ro file?      string
+     |  |  +--ro vfstype?   string
+     |  |  +--ro mntops?    string
+     |  |  +--ro type?      string
+     |  |  +--ro freq?      int32
+     |  |  +--ro passno?    int32
+     |  |  +--ro mounted?   boolean
+     |  +---x replace
+     |     +---w input
+     |     |  +---w text       string
+     |     |  +---w sha256     string
+     |     |  +---w dry-run?   boolean
+     |     +--ro output
+     |        +--ro sha256?   string
+     +--ro swap* [device]
+        +--ro device    string
+        +--ro size?     bytes
+        +--ro used?     bytes
+
+  rpcs:
+    +---x receive
+       +---w input
+          +---w dataset    string

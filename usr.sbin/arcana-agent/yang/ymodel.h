@@ -21,12 +21,24 @@ struct ietf_interfaces_interfaces_interface_statistics;
 struct ietf_interfaces_interfaces_interface_arcif_media_current;
 struct ietf_interfaces_interfaces_interface_arcif_media_active;
 struct ietf_interfaces_interfaces_interface_arcif_media;
-struct ietf_interfaces_interfaces_interface_arcif_vlan;
 struct ietf_interfaces_interfaces_interface_arcif_lagg_port;
 struct ietf_interfaces_interfaces_interface_arcif_lagg;
 struct ietf_interfaces_interfaces_interface_arcif_bridge_member;
 struct ietf_interfaces_interfaces_interface_arcif_bridge;
-struct ietf_interfaces_interfaces_interface_arcif_epair;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet;
+struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like;
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag;
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag;
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan;
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation;
 struct ietf_interfaces_interfaces_interface_ip_ipv4_address;
 struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor;
 struct ietf_interfaces_interfaces_interface_ip_ipv4;
@@ -200,6 +212,57 @@ struct arcana_jobs_submit_input_change_ssh;
 struct arcana_jobs_submit_input_change;
 struct arcana_jobs_submit_input;
 struct arcana_jobs_submit_output;
+struct arcana_storage_storage_disk_partition;
+struct arcana_storage_storage_disk_health;
+struct arcana_storage_storage_disk;
+struct arcana_storage_storage_pool_vdev;
+struct arcana_storage_storage_pool;
+struct arcana_storage_storage_importable;
+struct arcana_storage_storage_dataset_load_key_input;
+struct arcana_storage_storage_dataset_load_key_output;
+struct arcana_storage_storage_dataset_unload_key_input;
+struct arcana_storage_storage_dataset_unload_key_output;
+struct arcana_storage_storage_dataset_change_key_input;
+struct arcana_storage_storage_dataset_change_key_output;
+struct arcana_storage_storage_dataset;
+struct arcana_storage_storage_snapshot_send_input;
+struct arcana_storage_storage_snapshot_send_output;
+struct arcana_storage_storage_snapshot;
+struct arcana_storage_storage_mount;
+struct arcana_storage_storage_fstab_entry;
+struct arcana_storage_storage_fstab_replace_input;
+struct arcana_storage_storage_fstab_replace_output;
+struct arcana_storage_storage_fstab;
+struct arcana_storage_storage_swap;
+struct arcana_storage_storage;
+struct arcana_storage;
+struct arcana_storage_receive_input;
+struct arcana_storage_receive_output;
+struct arcana_sysctl_sysctl_kept;
+struct arcana_sysctl_sysctl_value;
+struct arcana_sysctl_sysctl;
+struct arcana_sysctl;
+struct arcana_kernel_kernel_file_unload_input;
+struct arcana_kernel_kernel_file_unload_output;
+struct arcana_kernel_kernel_file;
+struct arcana_kernel_kernel_memory_malloc;
+struct arcana_kernel_kernel_memory_zone;
+struct arcana_kernel_kernel_memory;
+struct arcana_kernel_kernel;
+struct arcana_kernel;
+struct arcana_kernel_load_input;
+struct arcana_kernel_load_output;
+struct arcana_processes_processes_process_state;
+struct arcana_processes_processes_process_file;
+struct arcana_processes_processes_process_thread;
+struct arcana_processes_processes_process_signal_input;
+struct arcana_processes_processes_process_signal_output;
+struct arcana_processes_processes_process_renice_input;
+struct arcana_processes_processes_process_renice_output;
+struct arcana_processes_processes_process;
+struct arcana_processes_processes_jail;
+struct arcana_processes_processes;
+struct arcana_processes;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -298,22 +361,11 @@ enum ietf_interfaces_interfaces_interface_oper_status {
 #define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_CAPABILITIES_SUPPORTED_GENEVE_HWCSUM	35u
 #define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_CAPABILITIES_SUPPORTED_GENEVE_HWTSO	36u
 
-enum ietf_interfaces_interfaces_interface_arcif_media_type {
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_TYPE_ETHERNET = 32,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_TYPE_IEEE80211 = 128,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_TYPE_ATM = 160,
-};
-
 enum ietf_interfaces_interfaces_interface_arcif_media_status {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_STATUS_ACTIVE = 0,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_STATUS_NO_CARRIER = 1,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_STATUS_ASSOCIATED = 2,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_STATUS_RUNNING = 3,
-};
-
-enum ietf_interfaces_interfaces_interface_arcif_vlan_protocol {
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_VLAN_PROTOCOL_IEEE802_1Q = 33024,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_VLAN_PROTOCOL_IEEE802_1AD = 34984,
 };
 
 enum ietf_interfaces_interfaces_interface_arcif_lagg_protocol {
@@ -364,6 +416,25 @@ enum ietf_interfaces_interfaces_interface_arcif_bridge_member_stp_role {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_DESIGNATED = 2,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_ALTERNATE = 3,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_BACKUP = 4,
+};
+
+enum ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_negotiation_status {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_IN_PROGRESS = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_COMPLETE = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_FAILED = 2,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_UNKNOWN = 3,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_NO_NEGOTIATION = 4,
+};
+
+enum ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_duplex {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_FULL = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_HALF = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_UNKNOWN = 2,
+};
+
+enum ietf_interfaces_interfaces_interface_if_ext_encapsulation_encaps_type {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IF_EXT_ENCAPSULATION_ENCAPS_TYPE_NONE = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IF_EXT_ENCAPSULATION_ENCAPS_TYPE_DOT1Q_VLAN,
 };
 
 enum ietf_interfaces_interfaces_interface_ip_ipv4_address_subnet {
@@ -886,6 +957,17 @@ enum arcana_jobs_submit_input_change_ssh_verb {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_USER_CAS = 5,
 };
 
+enum arcana_storage_storage_dataset_type {
+	ARCANA_STORAGE_STORAGE_DATASET_TYPE_FILESYSTEM = 0,
+	ARCANA_STORAGE_STORAGE_DATASET_TYPE_VOLUME = 1,
+};
+
+enum arcana_storage_storage_dataset_canmount {
+	ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_ON = 0,
+	ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_OFF = 1,
+	ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_NOAUTO = 2,
+};
+
 /* container */
 struct ietf_interfaces_interfaces_interface_statistics {
 	const char	*discontinuity_time;
@@ -915,6 +997,52 @@ struct ietf_interfaces_interfaces_interface_statistics {
 	uint32_t	 out_discards;
 	bool			 has_out_errors;
 	uint32_t	 out_errors;
+	bool			 has_ethlike_in_discard_unknown_dest_mac_pkts;
+	uint64_t	 ethlike_in_discard_unknown_dest_mac_pkts;
+	bool			 has_ethlike_in_pkts_64_octets;
+	uint64_t	 ethlike_in_pkts_64_octets;
+	bool			 has_ethlike_in_pkts_65_to_127_octets;
+	uint64_t	 ethlike_in_pkts_65_to_127_octets;
+	bool			 has_ethlike_in_pkts_128_to_255_octets;
+	uint64_t	 ethlike_in_pkts_128_to_255_octets;
+	bool			 has_ethlike_in_pkts_256_to_511_octets;
+	uint64_t	 ethlike_in_pkts_256_to_511_octets;
+	bool			 has_ethlike_in_pkts_512_to_1023_octets;
+	uint64_t	 ethlike_in_pkts_512_to_1023_octets;
+	bool			 has_ethlike_in_pkts_1024_to_1518_octets;
+	uint64_t	 ethlike_in_pkts_1024_to_1518_octets;
+	bool			 has_ethlike_in_pkts_1519_to_2047_octets;
+	uint64_t	 ethlike_in_pkts_1519_to_2047_octets;
+	bool			 has_ethlike_in_pkts_2048_to_4095_octets;
+	uint64_t	 ethlike_in_pkts_2048_to_4095_octets;
+	bool			 has_ethlike_in_pkts_4096_to_8191_octets;
+	uint64_t	 ethlike_in_pkts_4096_to_8191_octets;
+	bool			 has_ethlike_in_pkts_8192_to_max_octets;
+	uint64_t	 ethlike_in_pkts_8192_to_max_octets;
+	bool			 has_ethlike_out_pkts_64_octets;
+	uint64_t	 ethlike_out_pkts_64_octets;
+	bool			 has_ethlike_out_pkts_65_to_127_octets;
+	uint64_t	 ethlike_out_pkts_65_to_127_octets;
+	bool			 has_ethlike_out_pkts_128_to_255_octets;
+	uint64_t	 ethlike_out_pkts_128_to_255_octets;
+	bool			 has_ethlike_out_pkts_256_to_511_octets;
+	uint64_t	 ethlike_out_pkts_256_to_511_octets;
+	bool			 has_ethlike_out_pkts_512_to_1023_octets;
+	uint64_t	 ethlike_out_pkts_512_to_1023_octets;
+	bool			 has_ethlike_out_pkts_1024_to_1518_octets;
+	uint64_t	 ethlike_out_pkts_1024_to_1518_octets;
+	bool			 has_ethlike_out_pkts_1519_to_2047_octets;
+	uint64_t	 ethlike_out_pkts_1519_to_2047_octets;
+	bool			 has_ethlike_out_pkts_2048_to_4095_octets;
+	uint64_t	 ethlike_out_pkts_2048_to_4095_octets;
+	bool			 has_ethlike_out_pkts_4096_to_8191_octets;
+	uint64_t	 ethlike_out_pkts_4096_to_8191_octets;
+	bool			 has_ethlike_out_pkts_8192_to_max_octets;
+	uint64_t	 ethlike_out_pkts_8192_to_max_octets;
+	bool			 has_if_ext_in_discard_overflows;
+	uint64_t	 if_ext_in_discard_overflows;
+	bool			 has_if_ext_in_discard_unknown_encaps;
+	uint64_t	 if_ext_in_discard_unknown_encaps;
 };
 
 /* container */
@@ -939,8 +1067,6 @@ struct ietf_interfaces_interfaces_interface_arcif_media_active {
 
 /* container */
 struct ietf_interfaces_interfaces_interface_arcif_media {
-	bool			 has_type;
-	enum ietf_interfaces_interfaces_interface_arcif_media_type	 type;
 	const struct ietf_interfaces_interfaces_interface_arcif_media_current	*current;
 	const struct ietf_interfaces_interfaces_interface_arcif_media_active	*active;
 	bool			 has_status;
@@ -949,17 +1075,6 @@ struct ietf_interfaces_interfaces_interface_arcif_media {
 		size_t		 n;
 		const char	*const	*v;
 	}			 supported;
-};
-
-/* container */
-struct ietf_interfaces_interfaces_interface_arcif_vlan {
-	bool			 has_vlan_id;
-	uint16_t	 vlan_id;
-	const char	*parent;
-	bool			 has_protocol;
-	enum ietf_interfaces_interfaces_interface_arcif_vlan_protocol	 protocol;
-	bool			 has_pcp;
-	uint8_t		 pcp;
 };
 
 /* list entry */
@@ -1006,10 +1121,147 @@ struct ietf_interfaces_interfaces_interface_arcif_bridge {
 };
 
 /* container, presence */
-struct ietf_interfaces_interfaces_interface_arcif_epair {
-	const char	*peer;
-	bool			 has_peer_vnet;
-	bool		 peer_vnet;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation {
+	bool			 has_enable;
+	bool		 enable;
+	bool			 has_negotiation_status;
+	enum ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_negotiation_status	 negotiation_status;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control {
+	bool			 has_force_flow_control;
+	bool		 force_flow_control;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities {
+	bool			 has_auto_negotiation;
+	bool		 auto_negotiation;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame {
+	bool			 has_in_total_frames;
+	uint64_t	 in_total_frames;
+	bool			 has_in_total_octets;
+	uint64_t	 in_total_octets;
+	bool			 has_in_frames;
+	uint64_t	 in_frames;
+	bool			 has_in_multicast_frames;
+	uint64_t	 in_multicast_frames;
+	bool			 has_in_broadcast_frames;
+	uint64_t	 in_broadcast_frames;
+	bool			 has_in_error_fcs_frames;
+	uint64_t	 in_error_fcs_frames;
+	bool			 has_in_error_undersize_frames;
+	uint64_t	 in_error_undersize_frames;
+	bool			 has_in_error_oversize_frames;
+	uint64_t	 in_error_oversize_frames;
+	bool			 has_in_error_mac_internal_frames;
+	uint64_t	 in_error_mac_internal_frames;
+	bool			 has_out_frames;
+	uint64_t	 out_frames;
+	bool			 has_out_multicast_frames;
+	uint64_t	 out_multicast_frames;
+	bool			 has_out_broadcast_frames;
+	uint64_t	 out_broadcast_frames;
+	bool			 has_out_error_mac_internal_frames;
+	uint64_t	 out_error_mac_internal_frames;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi {
+	bool			 has_in_lpi_transitions;
+	uint64_t	 in_lpi_transitions;
+	bool			 has_in_lpi_time;
+	int64_t		 in_lpi_time;	/* decimal64, 6 fraction digits */
+	bool			 has_out_lpi_transitions;
+	uint64_t	 out_lpi_transitions;
+	bool			 has_out_lpi_time;
+	int64_t		 out_lpi_time;	/* decimal64, 6 fraction digits */
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy {
+	bool			 has_in_error_symbol;
+	uint64_t	 in_error_symbol;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi	*lpi;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control {
+	bool			 has_in_frames_mac_control_unknown;
+	uint64_t	 in_frames_mac_control_unknown;
+	bool			 has_in_frames_mac_control_extension;
+	uint64_t	 in_frames_mac_control_extension;
+	bool			 has_out_frames_mac_control_extension;
+	uint64_t	 out_frames_mac_control_extension;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics {
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame	*frame;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy	*phy;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control	*mac_control;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet {
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation	*auto_negotiation;
+	bool			 has_phy_type;
+	uint64_t	 phy_type;	/* identityref: a SID */
+	bool			 has_pmd_type;
+	uint64_t	 pmd_type;	/* identityref: a SID */
+	bool			 has_duplex;
+	enum ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_duplex	 duplex;
+	bool			 has_speed;
+	int64_t		 speed;	/* decimal64, 3 fraction digits */
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control	*flow_control;
+	bool			 has_max_frame_length;
+	uint16_t	 max_frame_length;
+	bool			 has_mac_control_extension_control;
+	bool		 mac_control_extension_control;
+	bool			 has_frame_limit_slow_protocol;
+	uint64_t	 frame_limit_slow_protocol;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities	*capabilities;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics	*statistics;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like {
+	const char	*mac_address;
+	const char	*bia_mac_address;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag {
+	bool			 has_tag_type;
+	uint64_t	 tag_type;	/* identityref: a SID */
+	bool			 has_vlan_id;
+	uint16_t	 vlan_id;
+};
+
+/* container, presence */
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag {
+	bool			 has_tag_type;
+	uint64_t	 tag_type;	/* identityref: a SID */
+	bool			 has_vlan_id;
+	uint16_t	 vlan_id;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan {
+	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag	*outer_tag;
+	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag	*second_tag;
+	bool			 has_arcif_pcp;
+	uint8_t		 arcif_pcp;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation {
+	enum ietf_interfaces_interfaces_interface_if_ext_encapsulation_encaps_type	 encaps_type;	/* the case given */
+	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan	*if_vlan_dot1q_vlan;
 };
 
 /* list entry */
@@ -1184,25 +1436,28 @@ struct ietf_interfaces_interfaces_interface {
 	uint64_t	 speed;
 	const struct ietf_interfaces_interfaces_interface_statistics	*statistics;
 	const char	*arcif_driver_name;
-	bool			 has_arcif_mtu;
-	uint32_t	 arcif_mtu;
-	const char	*arcif_ether;
-	const char	*arcif_hw_address;
 	struct {
 		size_t		 n;
 		const char	*const	*v;
 	}			 arcif_group;
-	bool			 has_arcif_fib;
-	uint32_t	 arcif_fib;
 	bool			 has_arcif_tunnel_fib;
 	uint32_t	 arcif_tunnel_fib;
 	struct cbl_bytes	 arcif_capabilities;
 	struct cbl_bytes	 arcif_capabilities_supported;
 	const struct ietf_interfaces_interfaces_interface_arcif_media	*arcif_media;
-	const struct ietf_interfaces_interfaces_interface_arcif_vlan	*arcif_vlan;
 	const struct ietf_interfaces_interfaces_interface_arcif_lagg	*arcif_lagg;
 	const struct ietf_interfaces_interfaces_interface_arcif_bridge	*arcif_bridge;
-	const struct ietf_interfaces_interfaces_interface_arcif_epair	*arcif_epair;
+	bool			 has_arcif_peer_vnet;
+	bool		 arcif_peer_vnet;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet	*ieee802_eth_if_ethernet;
+	const struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like	*ethlike_ethernet_like;
+	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation	*if_ext_encapsulation;
+	bool			 has_if_ext_max_frame_size;
+	uint32_t	 if_ext_max_frame_size;
+	bool			 has_if_ext_forwarding_mode;
+	uint64_t	 if_ext_forwarding_mode;	/* identityref: a SID */
+	const char	*if_ext_peer_interface;
+	const char	*if_ext_parent_interface;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv4	*ip_ipv4;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv6	*ip_ipv6;
 	const char	*lne_bind_lne_name;
@@ -2899,6 +3154,621 @@ struct arcana_jobs_submit_output {
 	}			 id;
 };
 
+/* list entry */
+struct arcana_storage_storage_disk_partition {
+	const char	*name;
+	bool			 has_index;
+	uint32_t	 index;
+	bool			 has_size;
+	uint64_t	 size;
+	const char	*type;
+	const char	*label;
+	bool			 has_start;
+	uint64_t	 start;
+	bool			 has_end;
+	uint64_t	 end;
+};
+
+/* container */
+struct arcana_storage_storage_disk_health {
+	const char	*by;
+	bool			 has_ok;
+	bool		 ok;
+	bool			 has_temperature;
+	int32_t		 temperature;
+	bool			 has_power_on_hours;
+	uint64_t	 power_on_hours;
+	bool			 has_power_cycles;
+	uint64_t	 power_cycles;
+	bool			 has_used_pct;
+	uint32_t	 used_pct;
+	bool			 has_spare_pct;
+	uint32_t	 spare_pct;
+	bool			 has_media_errors;
+	uint64_t	 media_errors;
+	bool			 has_unsafe_shutdowns;
+	uint64_t	 unsafe_shutdowns;
+	bool			 has_reallocated;
+	uint64_t	 reallocated;
+	bool			 has_pending;
+	uint64_t	 pending;
+	bool			 has_uncorrectable;
+	uint64_t	 uncorrectable;
+	bool			 has_crc_errors;
+	uint64_t	 crc_errors;
+	bool			 has_wear_level;
+	uint64_t	 wear_level;
+	bool			 has_life_left;
+	uint64_t	 life_left;
+	bool			 has_media_wearout;
+	uint64_t	 media_wearout;
+	const char	*note;
+};
+
+/* list entry */
+struct arcana_storage_storage_disk {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_sectorsize;
+	uint32_t	 sectorsize;
+	const char	*ident;
+	const char	*descr;
+	const char	*rotation;
+	const char	*cam;
+	const char	*scheme;
+	bool			 has_first;
+	uint64_t	 first;
+	bool			 has_last;
+	uint64_t	 last;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_disk_partition	*v;
+	}			 partition;
+	const struct arcana_storage_storage_disk_health	*health;
+};
+
+/* list entry */
+struct arcana_storage_storage_pool_vdev {
+	const char	*name;
+	bool			 has_depth;
+	uint32_t	 depth;
+	const char	*state;
+	const char	*read;
+	const char	*write;
+	const char	*cksum;
+	const char	*note;
+};
+
+/* list entry */
+struct arcana_storage_storage_pool {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_alloc;
+	uint64_t	 alloc;
+	bool			 has_free;
+	uint64_t	 free;
+	bool			 has_frag;
+	uint32_t	 frag;
+	bool			 has_cap;
+	uint32_t	 cap;
+	const char	*dedup;
+	const char	*health;
+	const char	*state;
+	const char	*status;
+	const char	*action;
+	const char	*scan;
+	const char	*errors;
+	const char	*see;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_pool_vdev	*v;
+	}			 vdev;
+};
+
+/* list entry */
+struct arcana_storage_storage_importable {
+	const char	*id;
+	const char	*name;
+	const char	*state;
+	const char	*status;
+};
+
+/* input */
+struct arcana_storage_storage_dataset_load_key_input {
+	const char	*key;
+};
+
+/* output */
+struct arcana_storage_storage_dataset_load_key_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* input */
+struct arcana_storage_storage_dataset_unload_key_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_storage_storage_dataset_unload_key_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* input */
+struct arcana_storage_storage_dataset_change_key_input {
+	const char	*key;
+	const char	*new_key;
+};
+
+/* output */
+struct arcana_storage_storage_dataset_change_key_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct arcana_storage_storage_dataset {
+	const char	*name;
+	bool			 has_type;
+	enum arcana_storage_storage_dataset_type	 type;
+	bool			 has_used;
+	uint64_t	 used;
+	bool			 has_avail;
+	uint64_t	 avail;
+	bool			 has_refer;
+	uint64_t	 refer;
+	bool			 has_quota;
+	uint64_t	 quota;
+	bool			 has_reservation;
+	uint64_t	 reservation;
+	const char	*mountpoint;
+	bool			 has_mounted;
+	bool		 mounted;
+	bool			 has_canmount;
+	enum arcana_storage_storage_dataset_canmount	 canmount;
+	const char	*compression;
+	bool			 has_ratio;
+	int64_t		 ratio;	/* decimal64, 2 fraction digits */
+	bool			 has_readonly;
+	bool		 readonly;
+	const char	*encryption;
+	const char	*keylocation;
+	bool			 has_jailed;
+	bool		 jailed;
+	const char	*origin;
+};
+
+/* input */
+struct arcana_storage_storage_snapshot_send_input {
+	const char	*from;
+	bool			 has_recursive;
+	bool		 recursive;
+};
+
+/* output */
+struct arcana_storage_storage_snapshot_send_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct arcana_storage_storage_snapshot {
+	const char	*name;
+	bool			 has_used;
+	uint64_t	 used;
+	bool			 has_refer;
+	uint64_t	 refer;
+	bool			 has_creation;
+	int64_t		 creation;
+};
+
+/* list entry */
+struct arcana_storage_storage_mount {
+	const char	*from;
+	const char	*on;
+	const char	*type;
+	const char	*options;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_used;
+	uint64_t	 used;
+	bool			 has_avail;
+	uint64_t	 avail;
+};
+
+/* list entry */
+struct arcana_storage_storage_fstab_entry {
+	const char	*spec;
+	const char	*file;
+	const char	*vfstype;
+	const char	*mntops;
+	const char	*type;
+	bool			 has_freq;
+	int32_t		 freq;
+	bool			 has_passno;
+	int32_t		 passno;
+	bool			 has_mounted;
+	bool		 mounted;
+};
+
+/* input */
+struct arcana_storage_storage_fstab_replace_input {
+	const char	*text;
+	const char	*sha256;
+	bool			 has_dry_run;
+	bool		 dry_run;
+};
+
+/* output */
+struct arcana_storage_storage_fstab_replace_output {
+	const char	*sha256;
+};
+
+/* container */
+struct arcana_storage_storage_fstab {
+	const char	*text;
+	const char	*sha256;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_fstab_entry	*v;
+	}			 entry;
+};
+
+/* list entry */
+struct arcana_storage_storage_swap {
+	const char	*device;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_used;
+	uint64_t	 used;
+};
+
+/* container */
+struct arcana_storage_storage {
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_disk	*v;
+	}			 disk;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_pool	*v;
+	}			 pool;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_importable	*v;
+	}			 importable;
+	bool			 has_datasets_total;
+	uint64_t	 datasets_total;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_dataset	*v;
+	}			 dataset;
+	bool			 has_snapshots_total;
+	uint64_t	 snapshots_total;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_snapshot	*v;
+	}			 snapshot;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_mount	*v;
+	}			 mount;
+	const struct arcana_storage_storage_fstab	*fstab;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_swap	*v;
+	}			 swap;
+};
+
+/* data */
+struct arcana_storage {
+	const struct arcana_storage_storage	*storage;
+};
+
+/* input */
+struct arcana_storage_receive_input {
+	const char	*dataset;
+};
+
+/* output */
+struct arcana_storage_receive_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct arcana_sysctl_sysctl_kept {
+	const char	*name;
+	const char	*value;
+};
+
+/* list entry */
+struct arcana_sysctl_sysctl_value {
+	const char	*name;
+	const char	*value;
+	const char	*type;
+	bool			 has_writable;
+	bool		 writable;
+	const char	*description;
+};
+
+/* container */
+struct arcana_sysctl_sysctl {
+	struct {
+		size_t		 n;
+		const struct arcana_sysctl_sysctl_kept	*v;
+	}			 kept;
+	bool			 has_total;
+	uint64_t	 total;
+	struct {
+		size_t		 n;
+		const struct arcana_sysctl_sysctl_value	*v;
+	}			 value;
+};
+
+/* data */
+struct arcana_sysctl {
+	const struct arcana_sysctl_sysctl	*sysctl;
+};
+
+/* input */
+struct arcana_kernel_kernel_file_unload_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_kernel_kernel_file_unload_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct arcana_kernel_kernel_file {
+	uint32_t	 id;
+	const char	*name;
+	const char	*path;
+	bool			 has_refs;
+	uint32_t	 refs;
+	bool			 has_size;
+	uint64_t	 size;
+	const char	*address;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 module;
+};
+
+/* list entry */
+struct arcana_kernel_kernel_memory_malloc {
+	const char	*name;
+	bool			 has_bytes;
+	uint64_t	 bytes;
+	bool			 has_count;
+	uint64_t	 count;
+	bool			 has_requests;
+	uint64_t	 requests;
+};
+
+/* list entry */
+struct arcana_kernel_kernel_memory_zone {
+	const char	*name;
+	bool			 has_bytes;
+	uint64_t	 bytes;
+	bool			 has_count;
+	uint64_t	 count;
+	bool			 has_free;
+	uint64_t	 free;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_requests;
+	uint64_t	 requests;
+};
+
+/* container */
+struct arcana_kernel_kernel_memory {
+	bool			 has_files;
+	uint64_t	 files;
+	bool			 has_kmem_size;
+	uint64_t	 kmem_size;
+	bool			 has_kmem_map_size;
+	uint64_t	 kmem_map_size;
+	bool			 has_kmem_map_free;
+	uint64_t	 kmem_map_free;
+	bool			 has_malloc_total;
+	uint64_t	 malloc_total;
+	struct {
+		size_t		 n;
+		const struct arcana_kernel_kernel_memory_malloc	*v;
+	}			 malloc;
+	struct {
+		size_t		 n;
+		const struct arcana_kernel_kernel_memory_zone	*v;
+	}			 zone;
+};
+
+/* container */
+struct arcana_kernel_kernel {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 kept;
+	struct {
+		size_t		 n;
+		const struct arcana_kernel_kernel_file	*v;
+	}			 file;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 available;
+	const struct arcana_kernel_kernel_memory	*memory;
+};
+
+/* data */
+struct arcana_kernel {
+	const struct arcana_kernel_kernel	*kernel;
+};
+
+/* input */
+struct arcana_kernel_load_input {
+	const char	*name;
+};
+
+/* output */
+struct arcana_kernel_load_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* container */
+struct arcana_processes_processes_process_state {
+	bool			 has_pid;
+	uint64_t	 pid;
+	const char	*name;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 args;
+	bool			 has_start_time;
+	uint64_t	 start_time;
+	bool			 has_cpu_usage_user;
+	uint64_t	 cpu_usage_user;
+	bool			 has_cpu_usage_system;
+	uint64_t	 cpu_usage_system;
+	bool			 has_cpu_utilization;
+	uint8_t		 cpu_utilization;
+	bool			 has_memory_usage;
+	uint64_t	 memory_usage;
+	bool			 has_memory_utilization;
+	uint8_t		 memory_utilization;
+	bool			 has_ppid;
+	uint64_t	 ppid;
+	const char	*user;
+	bool			 has_jid;
+	uint32_t	 jid;
+	const char	*jail;
+	const char	*run_state;
+	const char	*wait;
+	bool			 has_nice;
+	int32_t		 nice;
+	bool			 has_priority;
+	int32_t		 priority;
+	bool			 has_threads;
+	uint32_t	 threads;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_cpu_time;
+	int64_t		 cpu_time;	/* decimal64, 2 fraction digits */
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 2 fraction digits */
+	bool			 has_wcpu;
+	int64_t		 wcpu;	/* decimal64, 2 fraction digits */
+	bool			 has_blocks_in;
+	uint64_t	 blocks_in;
+	bool			 has_blocks_out;
+	uint64_t	 blocks_out;
+	bool			 has_io;
+	int64_t		 io;	/* decimal64, 2 fraction digits */
+};
+
+/* list entry */
+struct arcana_processes_processes_process_file {
+	bool			 has_fd;
+	int32_t		 fd;
+	const char	*use;
+	const char	*type;
+	const char	*path;
+	const char	*proto;
+	const char	*local;
+	const char	*remote;
+	const char	*mode;
+};
+
+/* list entry */
+struct arcana_processes_processes_process_thread {
+	uint64_t	 tid;
+	const char	*name;
+	const char	*run_state;
+	const char	*wait;
+	bool			 has_priority;
+	int32_t		 priority;
+	bool			 has_wcpu;
+	int64_t		 wcpu;	/* decimal64, 2 fraction digits */
+	bool			 has_cpu_time;
+	int64_t		 cpu_time;	/* decimal64, 2 fraction digits */
+};
+
+/* input */
+struct arcana_processes_processes_process_signal_input {
+	const char	*signal;
+	bool			 has_start_time;
+	uint64_t	 start_time;
+};
+
+/* output */
+struct arcana_processes_processes_process_signal_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* input */
+struct arcana_processes_processes_process_renice_input {
+	bool			 has_nice;
+	int32_t		 nice;
+	bool			 has_start_time;
+	uint64_t	 start_time;
+};
+
+/* output */
+struct arcana_processes_processes_process_renice_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct arcana_processes_processes_process {
+	uint64_t	 pid;
+	const struct arcana_processes_processes_process_state	*state;
+	struct {
+		size_t		 n;
+		const struct arcana_processes_processes_process_file	*v;
+	}			 file;
+	struct {
+		size_t		 n;
+		const struct arcana_processes_processes_process_thread	*v;
+	}			 thread;
+};
+
+/* list entry */
+struct arcana_processes_processes_jail {
+	uint32_t	 jid;
+	const char	*name;
+	bool			 has_procs;
+	uint32_t	 procs;
+	bool			 has_threads;
+	uint32_t	 threads;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 2 fraction digits */
+	bool			 has_wcpu;
+	int64_t		 wcpu;	/* decimal64, 2 fraction digits */
+	bool			 has_rss;
+	uint64_t	 rss;
+};
+
+/* container */
+struct arcana_processes_processes {
+	struct {
+		size_t		 n;
+		const struct arcana_processes_processes_process	*v;
+	}			 process;
+	bool			 has_ncpu;
+	uint32_t	 ncpu;
+	bool			 has_elapsed;
+	int64_t		 elapsed;	/* decimal64, 2 fraction digits */
+	struct {
+		size_t		 n;
+		const struct arcana_processes_processes_jail	*v;
+	}			 jail;
+};
+
+/* data */
+struct arcana_processes {
+	const struct arcana_processes_processes	*processes;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -2919,10 +3789,6 @@ int	ietf_interfaces_interfaces_interface_arcif_media_encode(const struct ietf_in
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_media_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_media *,
 	    cbl_yarena *, int, char *, size_t);
-int	ietf_interfaces_interfaces_interface_arcif_vlan_encode(const struct ietf_interfaces_interfaces_interface_arcif_vlan *,
-	    struct cbl_ybuf *);
-int	ietf_interfaces_interfaces_interface_arcif_vlan_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_vlan *,
-	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_arcif_lagg_port_encode(const struct ietf_interfaces_interfaces_interface_arcif_lagg_port *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_lagg_port_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_lagg_port *,
@@ -2939,9 +3805,61 @@ int	ietf_interfaces_interfaces_interface_arcif_bridge_encode(const struct ietf_i
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_bridge_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_bridge *,
 	    cbl_yarena *, int, char *, size_t);
-int	ietf_interfaces_interfaces_interface_arcif_epair_encode(const struct ietf_interfaces_interfaces_interface_arcif_epair *,
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation *,
 	    struct cbl_ybuf *);
-int	ietf_interfaces_interfaces_interface_arcif_epair_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_epair *,
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ethlike_ethernet_like_encode(const struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ethlike_ethernet_like_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_if_ext_encapsulation *,
 	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_ip_ipv4_address_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv4_address *,
 	    struct cbl_ybuf *);
@@ -3603,6 +4521,194 @@ int	arcana_jobs_submit_output_encode(const struct arcana_jobs_submit_output *,
 	    struct cbl_ybuf *);
 int	arcana_jobs_submit_output_decode(const void *, size_t, struct arcana_jobs_submit_output *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_disk_partition_encode(const struct arcana_storage_storage_disk_partition *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_disk_partition_decode(const void *, size_t, struct arcana_storage_storage_disk_partition *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_disk_health_encode(const struct arcana_storage_storage_disk_health *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_disk_health_decode(const void *, size_t, struct arcana_storage_storage_disk_health *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_disk_encode(const struct arcana_storage_storage_disk *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_disk_decode(const void *, size_t, struct arcana_storage_storage_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_pool_vdev_encode(const struct arcana_storage_storage_pool_vdev *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_pool_vdev_decode(const void *, size_t, struct arcana_storage_storage_pool_vdev *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_pool_encode(const struct arcana_storage_storage_pool *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_pool_decode(const void *, size_t, struct arcana_storage_storage_pool *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_importable_encode(const struct arcana_storage_storage_importable *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_importable_decode(const void *, size_t, struct arcana_storage_storage_importable *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_load_key_input_encode(const struct arcana_storage_storage_dataset_load_key_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_load_key_input_decode(const void *, size_t, struct arcana_storage_storage_dataset_load_key_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_load_key_output_encode(const struct arcana_storage_storage_dataset_load_key_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_load_key_output_decode(const void *, size_t, struct arcana_storage_storage_dataset_load_key_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_unload_key_input_encode(const struct arcana_storage_storage_dataset_unload_key_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_unload_key_input_decode(const void *, size_t, struct arcana_storage_storage_dataset_unload_key_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_unload_key_output_encode(const struct arcana_storage_storage_dataset_unload_key_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_unload_key_output_decode(const void *, size_t, struct arcana_storage_storage_dataset_unload_key_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_change_key_input_encode(const struct arcana_storage_storage_dataset_change_key_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_change_key_input_decode(const void *, size_t, struct arcana_storage_storage_dataset_change_key_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_change_key_output_encode(const struct arcana_storage_storage_dataset_change_key_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_change_key_output_decode(const void *, size_t, struct arcana_storage_storage_dataset_change_key_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_encode(const struct arcana_storage_storage_dataset *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_decode(const void *, size_t, struct arcana_storage_storage_dataset *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_snapshot_send_input_encode(const struct arcana_storage_storage_snapshot_send_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_snapshot_send_input_decode(const void *, size_t, struct arcana_storage_storage_snapshot_send_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_snapshot_send_output_encode(const struct arcana_storage_storage_snapshot_send_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_snapshot_send_output_decode(const void *, size_t, struct arcana_storage_storage_snapshot_send_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_snapshot_encode(const struct arcana_storage_storage_snapshot *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_snapshot_decode(const void *, size_t, struct arcana_storage_storage_snapshot *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_mount_encode(const struct arcana_storage_storage_mount *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_mount_decode(const void *, size_t, struct arcana_storage_storage_mount *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_fstab_entry_encode(const struct arcana_storage_storage_fstab_entry *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_fstab_entry_decode(const void *, size_t, struct arcana_storage_storage_fstab_entry *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_fstab_replace_input_encode(const struct arcana_storage_storage_fstab_replace_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_fstab_replace_input_decode(const void *, size_t, struct arcana_storage_storage_fstab_replace_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_fstab_replace_output_encode(const struct arcana_storage_storage_fstab_replace_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_fstab_replace_output_decode(const void *, size_t, struct arcana_storage_storage_fstab_replace_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_fstab_encode(const struct arcana_storage_storage_fstab *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_fstab_decode(const void *, size_t, struct arcana_storage_storage_fstab *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_swap_encode(const struct arcana_storage_storage_swap *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_swap_decode(const void *, size_t, struct arcana_storage_storage_swap *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_encode(const struct arcana_storage_storage *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_decode(const void *, size_t, struct arcana_storage_storage *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_receive_input_encode(const struct arcana_storage_receive_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_receive_input_decode(const void *, size_t, struct arcana_storage_receive_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_receive_output_encode(const struct arcana_storage_receive_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_receive_output_decode(const void *, size_t, struct arcana_storage_receive_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sysctl_sysctl_kept_encode(const struct arcana_sysctl_sysctl_kept *,
+	    struct cbl_ybuf *);
+int	arcana_sysctl_sysctl_kept_decode(const void *, size_t, struct arcana_sysctl_sysctl_kept *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sysctl_sysctl_value_encode(const struct arcana_sysctl_sysctl_value *,
+	    struct cbl_ybuf *);
+int	arcana_sysctl_sysctl_value_decode(const void *, size_t, struct arcana_sysctl_sysctl_value *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_sysctl_sysctl_encode(const struct arcana_sysctl_sysctl *,
+	    struct cbl_ybuf *);
+int	arcana_sysctl_sysctl_decode(const void *, size_t, struct arcana_sysctl_sysctl *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_file_unload_input_encode(const struct arcana_kernel_kernel_file_unload_input *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_file_unload_input_decode(const void *, size_t, struct arcana_kernel_kernel_file_unload_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_file_unload_output_encode(const struct arcana_kernel_kernel_file_unload_output *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_file_unload_output_decode(const void *, size_t, struct arcana_kernel_kernel_file_unload_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_file_encode(const struct arcana_kernel_kernel_file *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_file_decode(const void *, size_t, struct arcana_kernel_kernel_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_memory_malloc_encode(const struct arcana_kernel_kernel_memory_malloc *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_memory_malloc_decode(const void *, size_t, struct arcana_kernel_kernel_memory_malloc *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_memory_zone_encode(const struct arcana_kernel_kernel_memory_zone *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_memory_zone_decode(const void *, size_t, struct arcana_kernel_kernel_memory_zone *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_memory_encode(const struct arcana_kernel_kernel_memory *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_memory_decode(const void *, size_t, struct arcana_kernel_kernel_memory *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_kernel_encode(const struct arcana_kernel_kernel *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_kernel_decode(const void *, size_t, struct arcana_kernel_kernel *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_load_input_encode(const struct arcana_kernel_load_input *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_load_input_decode(const void *, size_t, struct arcana_kernel_load_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_kernel_load_output_encode(const struct arcana_kernel_load_output *,
+	    struct cbl_ybuf *);
+int	arcana_kernel_load_output_decode(const void *, size_t, struct arcana_kernel_load_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_state_encode(const struct arcana_processes_processes_process_state *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_state_decode(const void *, size_t, struct arcana_processes_processes_process_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_file_encode(const struct arcana_processes_processes_process_file *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_file_decode(const void *, size_t, struct arcana_processes_processes_process_file *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_thread_encode(const struct arcana_processes_processes_process_thread *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_thread_decode(const void *, size_t, struct arcana_processes_processes_process_thread *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_signal_input_encode(const struct arcana_processes_processes_process_signal_input *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_signal_input_decode(const void *, size_t, struct arcana_processes_processes_process_signal_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_signal_output_encode(const struct arcana_processes_processes_process_signal_output *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_signal_output_decode(const void *, size_t, struct arcana_processes_processes_process_signal_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_renice_input_encode(const struct arcana_processes_processes_process_renice_input *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_renice_input_decode(const void *, size_t, struct arcana_processes_processes_process_renice_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_renice_output_encode(const struct arcana_processes_processes_process_renice_output *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_renice_output_decode(const void *, size_t, struct arcana_processes_processes_process_renice_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_process_encode(const struct arcana_processes_processes_process *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_process_decode(const void *, size_t, struct arcana_processes_processes_process *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_jail_encode(const struct arcana_processes_processes_jail *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_jail_decode(const void *, size_t, struct arcana_processes_processes_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_processes_processes_encode(const struct arcana_processes_processes *,
+	    struct cbl_ybuf *);
+int	arcana_processes_processes_decode(const void *, size_t, struct arcana_processes_processes *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -3682,5 +4788,43 @@ int	arcana_jobs_jobs_job_confirm_action(cbl_req *, const struct cbl_bytes *,
 	    struct arcana_jobs_jobs_job_confirm_output *, cbl_yarena *);
 int	arcana_jobs_submit_rpc(cbl_req *, const struct arcana_jobs_submit_input *,
 	    struct arcana_jobs_submit_output *, cbl_yarena *);
+int	arcana_storage_storage_get(cbl_req *, struct arcana_storage *, cbl_yarena *);
+int	arcana_storage_storage_dataset_load_key_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_dataset_load_key_input *,
+	    struct arcana_storage_storage_dataset_load_key_output *, cbl_yarena *);
+int	arcana_storage_storage_dataset_unload_key_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_dataset_unload_key_input *,
+	    struct arcana_storage_storage_dataset_unload_key_output *, cbl_yarena *);
+int	arcana_storage_storage_dataset_change_key_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_dataset_change_key_input *,
+	    struct arcana_storage_storage_dataset_change_key_output *, cbl_yarena *);
+int	arcana_storage_storage_snapshot_send_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_snapshot_send_input *,
+	    struct arcana_storage_storage_snapshot_send_output *, cbl_yarena *);
+int	arcana_storage_storage_fstab_replace_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_fstab_replace_input *,
+	    struct arcana_storage_storage_fstab_replace_output *, cbl_yarena *);
+int	arcana_storage_receive_rpc(cbl_req *, const struct arcana_storage_receive_input *,
+	    struct arcana_storage_receive_output *, cbl_yarena *);
+int	arcana_sysctl_sysctl_get(cbl_req *, struct arcana_sysctl *, cbl_yarena *);
+int	arcana_sysctl_sysctl_edit(cbl_req *, const struct arcana_sysctl *,
+	    const struct arcana_sysctl *);
+int	arcana_kernel_kernel_get(cbl_req *, struct arcana_kernel *, cbl_yarena *);
+int	arcana_kernel_kernel_edit(cbl_req *, const struct arcana_kernel *,
+	    const struct arcana_kernel *);
+int	arcana_kernel_kernel_file_unload_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_kernel_kernel_file_unload_input *,
+	    struct arcana_kernel_kernel_file_unload_output *, cbl_yarena *);
+int	arcana_kernel_load_rpc(cbl_req *, const struct arcana_kernel_load_input *,
+	    struct arcana_kernel_load_output *, cbl_yarena *);
+int	arcana_processes_processes_get(cbl_req *, struct arcana_processes *, cbl_yarena *);
+int	arcana_processes_processes_edit(cbl_req *, const struct arcana_processes *,
+	    const struct arcana_processes *);
+int	arcana_processes_processes_process_signal_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_processes_processes_process_signal_input *,
+	    struct arcana_processes_processes_process_signal_output *, cbl_yarena *);
+int	arcana_processes_processes_process_renice_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_processes_processes_process_renice_input *,
+	    struct arcana_processes_processes_process_renice_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

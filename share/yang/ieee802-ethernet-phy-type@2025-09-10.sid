@@ -1,0 +1,1281 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ieee802-ethernet-phy-type",
+    "module-revision": "2025-09-10",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "assignment-range": [
+      {
+        "entry-point": "68800",
+        "size": "300"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ieee802-ethernet-phy-type",
+        "sid": "68800"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type",
+        "sid": "68801"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-1000BASE-H",
+        "sid": "68802"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-1000BASE-T",
+        "sid": "68803"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-1000BASE-T1",
+        "sid": "68804"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-1000BASE-X",
+        "sid": "68805"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-100BASE-T1",
+        "sid": "68806"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-100BASE-X",
+        "sid": "68807"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-100GBASE-P",
+        "sid": "68808"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-100GBASE-R",
+        "sid": "68809"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10BASE-T",
+        "sid": "68810"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10BASE-T1L",
+        "sid": "68811"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10BASE-T1S",
+        "sid": "68812"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10G-1GBASE-PRX",
+        "sid": "68813"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10G-2p5GGBASE-SP",
+        "sid": "68814"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10GBASE-PR",
+        "sid": "68815"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10GBASE-R",
+        "sid": "68816"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10GBASE-SP",
+        "sid": "68817"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10GBASE-T",
+        "sid": "68818"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10GBASE-T1",
+        "sid": "68819"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10GBASE-X",
+        "sid": "68820"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-10GPASS-XR",
+        "sid": "68821"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-2.5GBASE-T",
+        "sid": "68822"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-2.5GBASE-T1",
+        "sid": "68823"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-2.5GBASE-X",
+        "sid": "68824"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-200GBASE-R",
+        "sid": "68825"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-25G-10GBASE-PQ",
+        "sid": "68826"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-25GBASE-PQ",
+        "sid": "68827"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-25GBASE-R",
+        "sid": "68828"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-25GBASE-T",
+        "sid": "68829"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-400GBASE-R",
+        "sid": "68830"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-40GBASE-R",
+        "sid": "68831"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-40GBASE-T",
+        "sid": "68832"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-50G-10GBASE-PQ",
+        "sid": "68833"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-50G-25GBASE-PQ",
+        "sid": "68834"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-50GBASE-PQ",
+        "sid": "68835"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-50GBASE-R",
+        "sid": "68836"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-5GBASE-R",
+        "sid": "68837"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-5GBASE-T",
+        "sid": "68838"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-5GBASE-T1",
+        "sid": "68839"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-800GBASE-R",
+        "sid": "68840"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-none",
+        "sid": "68841"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-other",
+        "sid": "68842"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "phy-type-unknown",
+        "sid": "68843"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type",
+        "sid": "68844"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-BX10D",
+        "sid": "68845"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-BX10U",
+        "sid": "68846"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-KX",
+        "sid": "68847"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-LX",
+        "sid": "68848"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-LX10",
+        "sid": "68849"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-PX10-D",
+        "sid": "68850"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-PX10-U",
+        "sid": "68851"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-PX20-D",
+        "sid": "68852"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-PX20-U",
+        "sid": "68853"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-PX30-D",
+        "sid": "68854"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-PX30-U",
+        "sid": "68855"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-PX40-D",
+        "sid": "68856"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-PX40-U",
+        "sid": "68857"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-RHA",
+        "sid": "68858"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-RHB",
+        "sid": "68859"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-RHC",
+        "sid": "68860"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-SX",
+        "sid": "68861"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-T",
+        "sid": "68862"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-T1",
+        "sid": "68863"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-1000BASE-X",
+        "sid": "68864"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100BASE-BX10D",
+        "sid": "68865"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100BASE-BX10U",
+        "sid": "68866"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100BASE-FX",
+        "sid": "68867"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100BASE-LX10",
+        "sid": "68868"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100BASE-T1",
+        "sid": "68869"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100BASE-TX",
+        "sid": "68870"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-CR1",
+        "sid": "68871"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-CR10",
+        "sid": "68872"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-CR2",
+        "sid": "68873"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-CR4",
+        "sid": "68874"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-DR",
+        "sid": "68875"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-ER4",
+        "sid": "68876"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-FR1",
+        "sid": "68877"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-KP4",
+        "sid": "68878"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-KR2",
+        "sid": "68879"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-KR4",
+        "sid": "68880"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-LR1",
+        "sid": "68881"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-LR4",
+        "sid": "68882"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-R",
+        "sid": "68883"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-SR1",
+        "sid": "68884"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-SR10",
+        "sid": "68885"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-SR2",
+        "sid": "68886"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-SR4",
+        "sid": "68887"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-VR1",
+        "sid": "68888"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-100GBASE-ZR",
+        "sid": "68889"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10BASE-T",
+        "sid": "68890"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10BASE-T1L",
+        "sid": "68891"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10BASE-T1S",
+        "sid": "68892"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10BASE-T1SMD",
+        "sid": "68893"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-1GBASE-PRX-D1",
+        "sid": "68894"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-1GBASE-PRX-D2",
+        "sid": "68895"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-1GBASE-PRX-D3",
+        "sid": "68896"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-1GBASE-PRX-D4",
+        "sid": "68897"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-1GBASE-PRX-U1",
+        "sid": "68898"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-1GBASE-PRX-U2",
+        "sid": "68899"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-1GBASE-PRX-U3",
+        "sid": "68900"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-1GBASE-PRX-U4",
+        "sid": "68901"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-2p5GGBASE-SP1-Dx",
+        "sid": "68902"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10G-2p5GGBASE-SP1-Uxy",
+        "sid": "68903"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-BR10-D",
+        "sid": "68904"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-BR10-U",
+        "sid": "68905"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-BR20-D",
+        "sid": "68906"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-BR20-U",
+        "sid": "68907"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-BR40-D",
+        "sid": "68908"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-BR40-U",
+        "sid": "68909"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-CX4",
+        "sid": "68910"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-ER",
+        "sid": "68911"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-EW",
+        "sid": "68912"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-KR",
+        "sid": "68913"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-KX4",
+        "sid": "68914"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-LR",
+        "sid": "68915"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-LRM",
+        "sid": "68916"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-LW",
+        "sid": "68917"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-LX4",
+        "sid": "68918"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-PR-D1",
+        "sid": "68919"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-PR-D2",
+        "sid": "68920"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-PR-D3",
+        "sid": "68921"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-PR-D4",
+        "sid": "68922"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-PR-U1",
+        "sid": "68923"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-PR-U3",
+        "sid": "68924"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-PR-U4",
+        "sid": "68925"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-R",
+        "sid": "68926"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-SP",
+        "sid": "68927"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-SR",
+        "sid": "68928"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-SW",
+        "sid": "68929"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-T",
+        "sid": "68930"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-T1",
+        "sid": "68931"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GBASE-X",
+        "sid": "68932"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-10GPASS-XR",
+        "sid": "68933"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-2.5GBASE-KX",
+        "sid": "68934"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-2.5GBASE-T",
+        "sid": "68935"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-2.5GBASE-T1",
+        "sid": "68936"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-2.5GBASE-X",
+        "sid": "68937"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-CR2",
+        "sid": "68938"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-CR4",
+        "sid": "68939"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-DR4",
+        "sid": "68940"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-ER4",
+        "sid": "68941"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-FR4",
+        "sid": "68942"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-KR2",
+        "sid": "68943"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-KR4",
+        "sid": "68944"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-LR4",
+        "sid": "68945"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-R",
+        "sid": "68946"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-SR2",
+        "sid": "68947"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-SR4",
+        "sid": "68948"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-200GBASE-VR2",
+        "sid": "68949"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25G-10GBASE-PQG-D2",
+        "sid": "68950"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25G-10GBASE-PQG-D3",
+        "sid": "68951"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25G-10GBASE-PQG-U2",
+        "sid": "68952"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25G-10GBASE-PQG-U3",
+        "sid": "68953"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25G-10GBASE-PQX-D2",
+        "sid": "68954"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25G-10GBASE-PQX-D3",
+        "sid": "68955"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25G-10GBASE-PQX-U2",
+        "sid": "68956"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25G-10GBASE-PQX-U3",
+        "sid": "68957"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-BR10-D",
+        "sid": "68958"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-BR10-U",
+        "sid": "68959"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-BR20-D",
+        "sid": "68960"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-BR20-U",
+        "sid": "68961"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-BR40-D",
+        "sid": "68962"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-BR40-U",
+        "sid": "68963"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-CR",
+        "sid": "68964"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-CR-S",
+        "sid": "68965"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-ER",
+        "sid": "68966"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-KR",
+        "sid": "68967"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-KR-S",
+        "sid": "68968"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-LR",
+        "sid": "68969"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-PQG-D2",
+        "sid": "68970"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-PQG-D3",
+        "sid": "68971"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-PQG-U2",
+        "sid": "68972"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-PQG-U3",
+        "sid": "68973"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-PQX-D2",
+        "sid": "68974"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-PQX-D3",
+        "sid": "68975"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-PQX-U2",
+        "sid": "68976"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-PQX-U3",
+        "sid": "68977"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-R",
+        "sid": "68978"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-SR",
+        "sid": "68979"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-25GBASE-T",
+        "sid": "68980"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-DR4",
+        "sid": "68981"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-DR4-2",
+        "sid": "68982"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-ER8",
+        "sid": "68983"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-FR4",
+        "sid": "68984"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-FR8",
+        "sid": "68985"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-LR4-6",
+        "sid": "68986"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-LR8",
+        "sid": "68987"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-R",
+        "sid": "68988"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-SR16",
+        "sid": "68989"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-SR4",
+        "sid": "68990"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-SR4d2",
+        "sid": "68991"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-SR8",
+        "sid": "68992"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-400GBASE-VR4",
+        "sid": "68993"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-40GBASE-CR4",
+        "sid": "68994"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-40GBASE-ER4",
+        "sid": "68995"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-40GBASE-FR",
+        "sid": "68996"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-40GBASE-KR4",
+        "sid": "68997"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-40GBASE-LR4",
+        "sid": "68998"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-40GBASE-R",
+        "sid": "68999"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-40GBASE-SR4",
+        "sid": "69000"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-40GBASE-T",
+        "sid": "69001"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-10GBASE-PQG-D2",
+        "sid": "69002"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-10GBASE-PQG-D3",
+        "sid": "69003"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-10GBASE-PQG-U2",
+        "sid": "69004"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-10GBASE-PQG-U3",
+        "sid": "69005"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-10GBASE-PQX-D2",
+        "sid": "69006"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-10GBASE-PQX-D3",
+        "sid": "69007"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-10GBASE-PQX-U2",
+        "sid": "69008"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-10GBASE-PQX-U3",
+        "sid": "69009"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-25GBASE-PQG-D2",
+        "sid": "69010"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-25GBASE-PQG-D3",
+        "sid": "69011"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-25GBASE-PQG-U2",
+        "sid": "69012"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-25GBASE-PQG-U3",
+        "sid": "69013"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-25GBASE-PQX-D2",
+        "sid": "69014"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-25GBASE-PQX-D3",
+        "sid": "69015"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-25GBASE-PQX-U2",
+        "sid": "69016"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50G-25GBASE-PQX-U3",
+        "sid": "69017"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-BR10-D",
+        "sid": "69018"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-BR10-U",
+        "sid": "69019"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-BR20-D",
+        "sid": "69020"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-BR20-U",
+        "sid": "69021"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-BR40-D",
+        "sid": "69022"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-BR40-U",
+        "sid": "69023"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-CR",
+        "sid": "69024"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-ER",
+        "sid": "69025"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-FR",
+        "sid": "69026"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-KR",
+        "sid": "69027"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-LR",
+        "sid": "69028"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-PQG-D2",
+        "sid": "69029"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-PQG-D3",
+        "sid": "69030"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-PQG-U2",
+        "sid": "69031"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-PQG-U3",
+        "sid": "69032"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-PQX-D2",
+        "sid": "69033"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-PQX-D3",
+        "sid": "69034"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-PQX-U2",
+        "sid": "69035"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-PQX-U3",
+        "sid": "69036"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-R",
+        "sid": "69037"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-50GBASE-SR",
+        "sid": "69038"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-5GBASE-KR",
+        "sid": "69039"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-5GBASE-R",
+        "sid": "69040"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-5GBASE-T",
+        "sid": "69041"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-5GBASE-T1",
+        "sid": "69042"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-800GBASE-CR8",
+        "sid": "69043"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-800GBASE-DR8",
+        "sid": "69044"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-800GBASE-DR8-2",
+        "sid": "69045"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-800GBASE-KR8",
+        "sid": "69046"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-800GBASE-R",
+        "sid": "69047"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-800GBASE-SR8",
+        "sid": "69048"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-800GBASE-VR8",
+        "sid": "69049"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-global",
+        "sid": "69050"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-other",
+        "sid": "69051"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "pmd-type-unknown",
+        "sid": "69052"
+      }
+    ]
+  }
+}

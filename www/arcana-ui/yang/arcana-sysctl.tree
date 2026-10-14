@@ -1,0 +1,12 @@
+module: arcana-sysctl
+  +--rw sysctl
+     +--rw kept* [name]
+     |  +--rw name     string
+     |  +--rw value    string
+     +--ro total?   uint64
+     +--ro value* [name]
+        +--ro name           string
+        +--ro value?         string
+        +--ro type?          string
+        +--ro writable?      boolean
+        +--ro description?   string

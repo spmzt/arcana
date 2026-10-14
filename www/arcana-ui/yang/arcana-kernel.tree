@@ -1,0 +1,36 @@
+module: arcana-kernel
+  +--rw kernel
+     +--rw kept*        string
+     +--ro file* [id]
+     |  +--ro id         uint32
+     |  +--ro name?      string
+     |  +--ro path?      string
+     |  +--ro refs?      uint32
+     |  +--ro size?      bytes
+     |  +--ro address?   string
+     |  +--ro module*    string
+     |  +---x unload
+     +--ro available*   string
+     +--ro memory
+        +--ro files?           bytes
+        +--ro kmem-size?       bytes
+        +--ro kmem-map-size?   bytes
+        +--ro kmem-map-free?   bytes
+        +--ro malloc-total?    bytes
+        +--ro malloc*
+        |  +--ro name?       string
+        |  +--ro bytes?      bytes
+        |  +--ro count?      uint64
+        |  +--ro requests?   uint64
+        +--ro zone*
+           +--ro name?       string
+           +--ro bytes?      bytes
+           +--ro count?      uint64
+           +--ro free?       uint64
+           +--ro size?       bytes
+           +--ro requests?   uint64
+
+  rpcs:
+    +---x load
+       +---w input
+          +---w name    string
