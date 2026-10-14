@@ -2537,21 +2537,56 @@ op_cancel(struct op *op)
 		arc_http_abort(op->req);
 }
 
+/* Dotted versions compared number by number: <0, 0, >0. */
+static int
+version_cmp(const char *a, const char *b)
+{
+	char	*ea, *eb;
+
+	for (;;) {
+		unsigned long x = strtoul(a, &ea, 10);
+		unsigned long y = strtoul(b, &eb, 10);
+
+		if (x != y)
+			return (x < y ? -1 : 1);
+		if (*ea != '.' || *eb != '.')
+			return ((*ea == '.') - (*eb == '.'));
+		a = ea + 1;
+		b = eb + 1;
+	}
+}
+
 /*
- * The host answers with an arcana-agent that is not the one the console
- * would send: another build, told by its SHA-256, since two builds can
- * carry one version.  A console with no arcana-agent to send has
- * nothing to offer.
+ * The host runs an older arcana-agent than the one the console would
+ * send.  By version: every change of the agent has its own, so a
+ * version is a program, whoever built it, and an agent built on the
+ * host by hand is not out of date for being another build; a newer one
+ * is not offered the console's older.  By build, its SHA-256, only where
+ * the console or the host has no version to tell.  A console with no
+ * arcana-agent to send has nothing to offer.
  */
 bool
 agent_outdated(const struct server *s)
 {
-	const char	*b;
+	const char	*b, *v;
 
 	if (app.agent_build[0] == '\0' || s->list == NULL || s->failed)
 		return (false);
+	if (app.agent_version[0] != '\0' &&
+	    (v = jstr(s->list, "host.version")) != NULL)
+		return (version_cmp(v, app.agent_version) < 0);
 	return ((b = jstr(s->list, "host.build")) == NULL ||
 	    strcmp(b, app.agent_build) != 0);
+}
+
+/* The host runs the very build the console sends: an update took. */
+static bool
+agent_sent_runs(const struct server *s)
+{
+	const char	*b;
+
+	return (s->list != NULL && !s->failed && (b = jstr(s->list,
+	    "host.build")) != NULL && strcmp(b, app.agent_build) == 0);
 }
 
 static void
@@ -2604,8 +2639,7 @@ agent_restarts(double now)
 		s = &app.servers[i];
 		if (s->restart_until == 0)
 			continue;
-		if (s->list != NULL && !s->failed && !agent_outdated(s) &&
-		    now - s->restart_asked > 500) {
+		if (agent_sent_runs(s) && now - s->restart_asked > 500) {
 			s->restart_until = 0;
 			toast(false, "%s now runs arcana-agent %s", s->name,
 			    jstr(s->list, "host.version") != NULL ? jstr(s->list,

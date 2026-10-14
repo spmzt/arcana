@@ -271,6 +271,25 @@ changes_current(struct work *w, time_t *sincep)
 	return (s);
 }
 
+/*
+ * What holds the change lock, a job too, and for how long: for a request
+ * that does not wait for it.
+ */
+static const char *
+change_busy(struct work *w)
+{
+	const char	*s;
+	time_t		 since;
+
+	pthread_mutex_lock(&note_lock);
+	since = note_since;
+	s = wfmt(w, "a change is under way on the host (%s, for %jd s): try "
+	    "again when it ends", note[0] != '\0' ? note : "a job",
+	    (intmax_t)(time(NULL) - since));
+	pthread_mutex_unlock(&note_lock);
+	return (s);
+}
+
 /* The change under way and the jobs that wait, to the log. */
 void
 changes_log(int pri)
@@ -1049,17 +1068,26 @@ worker(void *arg)
 		root = step_begin(&w, ARC_STEP_KIND_DAEMON, "arcana-agent", "%s",
 		    what);
 		memset(&aur, 0, sizeof(aur));
-		/* Not while a job changes the host: a restart would cut
-		 * it short. */
-		pthread_mutex_lock(&change_lock);
-		if (change_note("%s", what))
-			do_agent_update(&w, j->binary, j->binlen, j->sha256, &aur);
-		else {
+		/*
+		 * Not while a job changes the host: a restart would cut it
+		 * short.  Nor after it, unasked: a safe change waits for its
+		 * confirmation holding the lock, a package upgrade takes
+		 * minutes, and the console would wait on, not told why.
+		 */
+		if (pthread_mutex_trylock(&change_lock) != 0) {
 			aur.has_ok = true;
-			aur.error = STOPPING;
+			aur.error = change_busy(&w);
+		} else {
+			if (change_note("%s", what))
+				do_agent_update(&w, j->binary, j->binlen,
+				    j->sha256, &aur);
+			else {
+				aur.has_ok = true;
+				aur.error = STOPPING;
+			}
+			(void)change_note(NULL);
+			pthread_mutex_unlock(&change_lock);
 		}
-		(void)change_note(NULL);
-		pthread_mutex_unlock(&change_lock);
 		ok = aur.ok;
 		error = aur.error;
 		restart = ok && j->restart;
