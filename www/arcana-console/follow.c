@@ -222,10 +222,12 @@ follow_tick(void *arg, u_int64_t now)
 		if (atomic_load(&f->ended))
 			follow_free(f);
 	}
-	if (LIST_EMPTY(&follows)) {
-		kore_timer_remove(ticker);
-		ticker = NULL;
-	}
+	/*
+	 * The ticker stays, follows or none: a timer taken out in its own
+	 * callback is freed under kore_timer_run(), which puts it back in
+	 * the list after (the worker died of it when the agent of a page
+	 * following its events restarted, an update's).
+	 */
 }
 
 /* A page's ask for a host's events; NULL, or why it is refused. */

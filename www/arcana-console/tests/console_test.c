@@ -1257,6 +1257,39 @@ ATF_TC_BODY(workflows, tc)
 	ATF_CHECK_STREQ("skipped", jstr(&r, "hosts.0.steps.3.state"));
 	resp_free(&r);
 	ATF_CHECK(system("! grep -q clone git.log") == 0);
+	/*
+	 * A run whose worker dies under it: once one is there again, the
+	 * run, its host and the step that was running are said to be
+	 * interrupted, and why; the steps after it were not run.
+	 */
+	ATF_REQUIRE(system("touch slow") == 0);
+	http("POST", path, "{}", &r);
+	EXPECT(&r, 200);
+	snprintf(run, sizeof(run), "%s", jstr(&r, "run"));
+	resp_free(&r);
+	sleep(2);
+	ATF_REQUIRE(system("kill -9 $(sed -n 's/.*wrk 1\\] log=\\[started "
+	    "(#\\([0-9]*\\).*/\\1/p' kore.out | tail -1)") == 0);
+	(void)unlink("slow");
+	for (i = 0; i < 100; i++) {
+		snprintf(body, sizeof(body), "/api/runs/%s", run);
+		r.status = 0;
+		http("GET", body, NULL, &r);
+		if (r.status == 200 && jstr(&r, "state") != NULL &&
+		    strcmp(jstr(&r, "state"), "interrupted") == 0)
+			break;
+		resp_free(&r);
+		usleep(100000);
+	}
+	ATF_REQUIRE_MSG(i < 100, "the run was not said to be interrupted");
+	ATF_CHECK_STREQ("interrupted", jstr(&r, "hosts.0.state"));
+	ATF_CHECK_STREQ("interrupted", jstr(&r, "hosts.0.steps.0.state"));
+	ATF_CHECK(jstr(&r, "hosts.0.steps.0.detail") != NULL && strstr(jstr(
+	    &r, "hosts.0.steps.0.detail"), "the console stopped") != NULL);
+	ATF_CHECK_STREQ("not run", jstr(&r, "hosts.0.steps.1.state"));
+	resp_free(&r);
+	/* What a run whose worker died is not, the console's end. */
+	ATF_REQUIRE(system("sed -i '' '/exited with status/d' kore.out") == 0);
 
 	/*
 	 * At an interval, counted from when it last ran by it, which a
@@ -1364,7 +1397,36 @@ ATF_TC_BODY(workflows, tc)
 		    NULL);
 		resp_free(&r);
 	}
-	ATF_REQUIRE(system("kill $(cat arcana-agent.pid)") == 0);
+	/*
+	 * A page following the host's events when the agent goes, as an
+	 * update restarts it: told, and the worker lives on (a timer was
+	 * taken out in its own callback, and the worker died of it).
+	 */
+	{
+		char	ask[200], *m;
+		int	ws, k;
+
+		ws = ws_open("/api/stream");
+		snprintf(ask, sizeof(ask), "{\"id\":5,\"server\":\"%s\","
+		    "\"what\":\"events\"}", sid);
+		ws_send(ws, ask);
+		sleep(1);
+		ATF_REQUIRE(system("kill $(cat arcana-agent.pid)") == 0);
+		/* Events it told before it went, then why it is over. */
+		for (k = 0; k < 50 && (m = ws_recv(ws)) != NULL; k++) {
+			bool	over = strstr(m, "\"id\":5,\"error\":") != NULL;
+
+			free(m);
+			if (over)
+				break;
+		}
+		ATF_CHECK_MSG(k < 50 && m != NULL, "no error after %d", k);
+		close(ws);
+		/* Its follow gone: the ticker runs on, with none. */
+		sleep(1);
+		ATF_CHECK(system("! grep -q 'exited with status' kore.out") ==
+		    0);
+	}
 	for (i = 0; i < 200; i++) {
 		http("GET", "/api/runs", NULL, &r);
 		if (strstr(r.body, "\"event host-down\"") != NULL)

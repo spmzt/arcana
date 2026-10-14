@@ -2076,6 +2076,43 @@ refs_tick(void *arg __unused, uint64_t now __unused)
  * few seconds; runs a restart cut said to be interrupted; and the one
  * worker that takes the lock watches for what runs by itself.
  */
+/*
+ * A run a restart cut: its hosts and steps that were running said to
+ * be interrupted, why with them; those not yet begun not run.
+ */
+static void
+run_cut(ucl_object_t *run)
+{
+	const ucl_object_t	*h, *st;
+	ucl_object_iter_t	 hit, sit;
+
+	hit = NULL;
+	while ((h = ucl_object_iterate(ucl_object_lookup(run, "hosts"), &hit,
+	    true)) != NULL) {
+		if (ucl_str(h, "state") != NULL && strcmp(ucl_str(h, "state"),
+		    "running") == 0)
+			put((ucl_object_t *)(uintptr_t)h, "state",
+			    ucl_object_fromstring("interrupted"));
+		sit = NULL;
+		while ((st = ucl_object_iterate(ucl_object_lookup(h, "steps"),
+		    &sit, true)) != NULL) {
+			if (ucl_str(st, "state") == NULL)
+				continue;
+			if (strcmp(ucl_str(st, "state"), "running") == 0) {
+				put((ucl_object_t *)(uintptr_t)st, "state",
+				    ucl_object_fromstring("interrupted"));
+				put((ucl_object_t *)(uintptr_t)st, "detail",
+				    ucl_object_fromstring("the console stopped "
+				    "while it ran (restarted, or its worker "
+				    "died): what it did on the hosts is not "
+				    "known; look at them, or run it again"));
+			} else if (strcmp(ucl_str(st, "state"), "pending") == 0)
+				put((ucl_object_t *)(uintptr_t)st, "state",
+				    ucl_object_fromstring("not run"));
+		}
+	}
+}
+
 void
 workflows_init(void)
 {
@@ -2108,6 +2145,7 @@ workflows_init(void)
 			    "state"), "running") == 0) {
 				put(o, "state", ucl_object_fromstring(
 				    "interrupted"));
+				run_cut(o);
 				changed = true;
 			}
 		if (changed)
@@ -2338,6 +2376,8 @@ api_runs(struct http_request *req)
 		    NULL) {
 			put(full, "state", ucl_object_copy(ucl_object_lookup(
 			    one, "state")));
+			if (strcmp(ucl_str(full, "state"), "interrupted") == 0)
+				run_cut(full);
 			one = full;
 		} else
 			one = ucl_object_ref(one);

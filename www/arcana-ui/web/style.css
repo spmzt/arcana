@@ -3992,7 +3992,7 @@ ul.wfruns li.failed .led, ul.wfruns li.interrupted .led { background: var(--red)
 ul.wfruns li.running .led { background: var(--cyan); }
 ul.wfruns li.cancelled .led { background: var(--dim); }
 .chip.done { border-color: var(--green); }
-.chip.failed { border-color: var(--red); }
+.chip.failed, .chip.interrupted { border-color: var(--red); }
 .chip.running { border-color: var(--cyan); }
 .wfgraph { display: flex; flex-direction: column; gap: .7rem; overflow-x: auto; padding: .3rem 0 1rem; }
 .wfrow { display: grid; align-items: center; justify-content: start; gap: .35rem; }
@@ -4009,7 +4009,7 @@ button.wfstep b { font-size: .8rem; color: var(--fg); }
 button.wfstep small { font-size: .68rem; color: var(--dim); }
 button.wfstep small.jump { color: var(--amber); }
 button.wfstep.done { border-color: var(--green); }
-button.wfstep.failed { border-color: var(--red); }
+button.wfstep.failed, button.wfstep.interrupted { border-color: var(--red); }
 button.wfstep.running { border-color: var(--cyan); box-shadow: 0 0 10px rgba(var(--accent-rgb), .35); }
 button.wfstep.skipped, button.wfstep.not.run, button.wfstep.pending { opacity: .55; border-style: dashed; }
 button.wfstep.cancelled { opacity: .55; }
