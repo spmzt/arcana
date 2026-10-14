@@ -16,6 +16,8 @@
  *					"unread var: why" each
  *	yrcroutes -w fib out file ...	the same, written to fragment out
  *					(made), read back from it alone
+ *	yrcroutes -a fib old new	FIB fib's routes made the kernel's
+ *					new file's, from old file's
  */
 
 #include <err.h>
@@ -96,6 +98,20 @@ main(int argc, char **argv)
 	const char *out = NULL;
 	int fib, first;
 
+	if (argc == 5 && strcmp(argv[1], "-a") == 0) {
+		struct vc_file of, nf;
+
+		if ((a = cbl_yarena_new()) == NULL)
+			err(1, "cbl_yarena_new");
+		if (vc_read(&of, VC_SH, argv[3], why, sizeof(why)) == -1 ||
+		    vc_read(&nf, VC_SH, argv[4], why, sizeof(why)) == -1)
+			errx(1, "%s", why);
+		fib = atoi(argv[2]);
+		if (rcr_apply(fib, readall(&of, 1, fib, a, false),
+		    readall(&nf, 1, fib, a, false), why, sizeof(why)) != 0)
+			errx(1, "%s", why);
+		return (0);
+	}
 	if (argc > 1 && strcmp(argv[1], "-w") == 0) {
 		if (argc < 5)
 			errx(2, "usage: yrcroutes -w fib out file ...");
