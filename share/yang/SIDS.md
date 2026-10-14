@@ -85,6 +85,7 @@ bytes on the wire, where it was 9.
 | 62 200 | 100 | `arcana-services` | `share/yang/arcana-services@2026-10-14.sid` (39 used) |
 | 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (59 used) |
 | 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (273 used; room for the kinds to come) |
+| 63 400 | 200 | `arcana-storage` | `share/yang/arcana-storage@2026-10-14.sid` (144 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

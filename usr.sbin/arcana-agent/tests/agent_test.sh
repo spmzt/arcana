@@ -5291,6 +5291,73 @@ EOF
 	atf_check -o file:want sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
 }
 
+atf_test_case yang_storage
+yang_storage_head()
+{
+	atf_set "descr" "the storage operation's replies as arcana-storage" \
+	    "has them (PLAN-SDN-YANG 3.1.5): each kind's JSON in typed" \
+	    "lists, health on its disks, a truncated list's total, through" \
+	    "YANG-CBOR and back"
+}
+yang_storage_body()
+{
+	local y="$(atf_get_srcdir)/ystorage"
+
+	cat > disks.json <<'EOF'
+{"disks":[{"name":"ada0","size":500107862016,"sectorsize":512,"ident":"S3Z9NB0K000001","descr":"Samsung SSD 860 EVO 500GB","rotation":"0","scheme":"GPT","first":40,"last":976773127,"parts":[{"name":"ada0p1","size":524288,"index":1,"type":"freebsd-boot","label":"gptboot0","start":40,"end":1063},{"name":"ada0p2","size":499582287872,"index":2,"type":"freebsd-zfs","label":"zfs0","start":2048,"end":975769599}]},{"name":"nda0","size":1000204886016,"sectorsize":512,"rotation":"0"}]}
+EOF
+	cat > health.json <<'EOF'
+{"disks":[{"name":"ada0","by":"smartctl","ok":true,"temperature":34,"power_on_hours":12345,"power_cycles":210,"reallocated":0,"pending":0},{"name":"nda0","by":"nvmecontrol","ok":true,"temperature":41,"used_pct":3,"spare_pct":100},{"name":"da9","note":"smartmontools is not installed"}]}
+EOF
+	cat > pools.json <<'EOF'
+{"pools":[{"name":"tank","size":499289948160,"alloc":120259084288,"free":379030863872,"frag":12,"cap":24,"dedup":"1.00","health":"DEGRADED","state":"DEGRADED","status":"One or more devices has been removed.","action":"Online the device using zpool online.","scan":"scrub repaired 0B in 00:10:02 with 0 errors","errors":"No known data errors","vdevs":[{"name":"tank","depth":0,"state":"DEGRADED","read":"0","write":"0","cksum":"0"},{"name":"mirror-0","depth":1,"state":"DEGRADED","read":"0","write":"0","cksum":"0"},{"name":"ada0p2","depth":2,"state":"ONLINE","read":"0","write":"0","cksum":"0"},{"name":"ada1p2","depth":2,"state":"REMOVED","read":"0","write":"0","cksum":"0","note":"was /dev/ada1p2"}]}]}
+EOF
+	cat > importable.json <<'EOF'
+{"importable":[{"id":"1234567890123456789","name":"backup","state":"ONLINE","status":""}]}
+EOF
+	cat > datasets.json <<'EOF'
+{"datasets":[{"name":"tank","type":"filesystem","used":120259084288,"avail":363034263552,"refer":98304,"mountpoint":"/tank","compression":"lz4","ratio":"2.05","quota":0,"reservation":0,"mounted":"yes","canmount":"on","readonly":"off","encryption":"off","keylocation":"none","jailed":"off"},{"name":"tank/vm/disk0","type":"volume","used":21474836480,"avail":363034263552,"refer":8589934592,"mountpoint":"-","compression":"zstd","ratio":"1.10","quota":0,"reservation":0,"mounted":"-","canmount":"noauto","readonly":"on","encryption":"aes-256-gcm","keylocation":"prompt","jailed":"on","origin":"tank/vm/base@gold"}]}
+EOF
+	cat > snapshots.json <<'EOF'
+{"snapshots":[{"name":"tank@daily-2026-10-14","used":1048576,"refer":98304,"creation":1791936000}]}
+EOF
+	cat > mounts.json <<'EOF'
+{"mounts":[{"from":"tank","on":"/tank","type":"zfs","options":"local, nfsv4acls","size":363034361856,"used":98304,"avail":363034263552},{"from":"198.51.100.7:/export","on":"/mnt/export","type":"nfs","options":"","size":1099511627776,"used":549755813888,"avail":549755813888}],"fstab":[{"spec":"/dev/ada0p3","file":"none","vfstype":"swap","mntops":"sw","type":"sw","freq":0,"passno":0,"mounted":true},{"spec":"198.51.100.7:/export","file":"/mnt/export","vfstype":"nfs","mntops":"rw,nfsv4","type":"rw","freq":0,"passno":0,"mounted":true}],"swap":[{"device":"/dev/ada0p3","size":4294967296,"used":0}]}
+EOF
+	"$y" disks=disks.json pools=pools.json importable=importable.json \
+	    total=40 datasets=datasets.json snapshots=snapshots.json \
+	    mounts=mounts.json health=health.json > out
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' cat out
+	sed -n '1,/^yang-cbor/p' out | sed '$d' > first
+	atf_check -o file:first sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
+	cat > want <<'EOF'
+disk ada0 size=500107862016 sectorsize=512 ident=S3Z9NB0K000001 descr=Samsung SSD 860 EVO 500GB rotation=0 scheme=GPT first=40 last=976773127
+  partition ada0p1 index=1 size=524288 type=freebsd-boot label=gptboot0 start=40 end=1063
+  partition ada0p2 index=2 size=499582287872 type=freebsd-zfs label=zfs0 start=2048 end=975769599
+  health by=smartctl ok=yes temperature=34 power-on-hours=12345 reallocated=yes note=-
+disk nda0 size=1000204886016 sectorsize=512 ident=- descr=- rotation=0 scheme=- first=0 last=0
+  health by=nvmecontrol ok=yes temperature=41 power-on-hours=0 reallocated=- note=-
+disk da9 size=0 sectorsize=0 ident=- descr=- rotation=- scheme=- first=0 last=0
+  health by=- ok=- temperature=0 power-on-hours=0 reallocated=- note=smartmontools is not installed
+pool tank size=499289948160 alloc=120259084288 free=379030863872 frag=12 cap=24 dedup=1.00 health=DEGRADED state=DEGRADED status=One or more devices has been removed. scan=scrub repaired 0B in 00:10:02 with 0 errors errors=No known data errors
+  vdev tank depth=0 state=DEGRADED read=0 write=0 cksum=0 note=-
+  vdev mirror-0 depth=1 state=DEGRADED read=0 write=0 cksum=0 note=-
+  vdev ada0p2 depth=2 state=ONLINE read=0 write=0 cksum=0 note=-
+  vdev ada1p2 depth=2 state=REMOVED read=0 write=0 cksum=0 note=was /dev/ada1p2
+importable 1234567890123456789 name=backup state=ONLINE
+datasets-total 40
+dataset tank type=filesystem used=120259084288 avail=363034263552 refer=98304 quota=0 mountpoint=/tank mounted=yes canmount=on compression=lz4 ratio=205 readonly=no encryption=off keylocation=none jailed=no origin=-
+dataset tank/vm/disk0 type=volume used=21474836480 avail=363034263552 refer=8589934592 quota=0 mountpoint=- mounted=- canmount=noauto compression=zstd ratio=110 readonly=yes encryption=aes-256-gcm keylocation=prompt jailed=yes origin=tank/vm/base@gold
+snapshot tank@daily-2026-10-14 used=1048576 refer=98304 creation=1791936000
+mount tank on=/tank type=zfs options=local, nfsv4acls size=363034361856
+mount 198.51.100.7:/export on=/mnt/export type=nfs options= size=1099511627776
+fstab /dev/ada0p3 file=none vfstype=swap mntops=sw type=sw freq=0 passno=0 mounted=yes
+fstab 198.51.100.7:/export file=/mnt/export vfstype=nfs mntops=rw,nfsv4 type=rw freq=0 passno=0 mounted=yes
+swap /dev/ada0p3 size=4294967296 used=0
+EOF
+	atf_check -o file:want cat first
+}
+
 atf_test_case yang_jobs
 yang_jobs_head()
 {
@@ -6021,6 +6088,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_jails
+	atf_add_test_case yang_storage
 	atf_add_test_case yang_jobs
 	atf_add_test_case yang_packages
 	atf_add_test_case yang_services

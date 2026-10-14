@@ -1,0 +1,724 @@
+module arcana-storage {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-storage";
+  prefix arcsto;
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's storage: the disks and their partitions as GEOM has them
+     (kern.geom.confxml, gpart(8)), what camcontrol(8) says each is and
+     how each says it is (nvmecontrol(8), or smartctl of smartmontools);
+     the ZFS pools (zpool(8)), with their vdevs, and those that could be
+     imported; the datasets and snapshots (zfs(8)); what is mounted
+     (getfsstat(2)), what fstab(5) says to mount, the swap (swapinfo).
+
+     Its changes are jobs (arcana-jobs's zfs, zpool, mount, gpart, cam
+     kinds), but for the actions here: a dataset's key loaded,
+     unloaded or changed, fstab(5)'s text put in place, and a snapshot
+     sent or one received, the bytes riding the request's stream.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.5.";
+  }
+
+  typedef bytes {
+    type uint64;
+    units "bytes";
+    description
+      "A size.";
+  }
+
+  container storage {
+    config false;
+    description
+      "The host's storage.";
+    list disk {
+      key "name";
+      description
+        "A disk, GEOM's.";
+      leaf name {
+        type string;
+        description
+          "Its provider (ada0, nda0, vtbd0, ...).";
+      }
+      leaf size {
+        type bytes;
+        description
+          "Its size.";
+      }
+      leaf sectorsize {
+        type uint32;
+        units "bytes";
+        description
+          "Its sector.";
+      }
+      leaf ident {
+        type string;
+        description
+          "Its serial number, as GEOM has it.";
+      }
+      leaf descr {
+        type string;
+        description
+          "What it says it is.";
+      }
+      leaf rotation {
+        type string;
+        description
+          "Its rotation rate, or unknown, or 0 for a solid-state one.";
+      }
+      leaf cam {
+        type string;
+        description
+          "What camcontrol(8) says of it.";
+      }
+      leaf scheme {
+        type string;
+        description
+          "Its partitioning scheme (GPT, MBR, ...).";
+      }
+      leaf first {
+        type uint64;
+        description
+          "The first sector partitions may use.";
+      }
+      leaf last {
+        type uint64;
+        description
+          "The last.";
+      }
+      list partition {
+        key "name";
+        description
+          "A partition of it.";
+        leaf name {
+          type string;
+          description
+            "Its provider (vtbd0p1, ...).";
+        }
+        leaf index {
+          type uint32;
+          description
+            "Its number in the table.";
+        }
+        leaf size {
+          type bytes;
+          description
+            "Its size.";
+        }
+        leaf type {
+          type string;
+          description
+            "Its type (freebsd-zfs, efi, ...).";
+        }
+        leaf label {
+          type string;
+          description
+            "Its label.";
+        }
+        leaf start {
+          type uint64;
+          description
+            "Its first sector.";
+        }
+        leaf end {
+          type uint64;
+          description
+            "Its last.";
+        }
+      }
+      container health {
+        description
+          "How it says it is.";
+        leaf by {
+          type string;
+          description
+            "The program that asked it: nvmecontrol, smartctl.";
+        }
+        leaf ok {
+          type boolean;
+          description
+            "Whether it says it is well.";
+        }
+        leaf temperature {
+          type int32;
+          units "Celsius";
+          description
+            "Its temperature.";
+        }
+        leaf power-on-hours {
+          type uint64;
+          description
+            "The hours it has been on.";
+        }
+        leaf power-cycles {
+          type uint64;
+          description
+            "How many times it was turned on.";
+        }
+        leaf used-pct {
+          type uint32;
+          units "percent";
+          description
+            "An NVMe disk: how much of its life it has used.";
+        }
+        leaf spare-pct {
+          type uint32;
+          units "percent";
+          description
+            "An NVMe disk: its spare left.";
+        }
+        leaf media-errors {
+          type uint64;
+          description
+            "An NVMe disk: its media errors.";
+        }
+        leaf unsafe-shutdowns {
+          type uint64;
+          description
+            "An NVMe disk: how often it lost power unwarned.";
+        }
+        leaf reallocated {
+          type uint64;
+          description
+            "SMART attribute 5, raw.";
+        }
+        leaf pending {
+          type uint64;
+          description
+            "SMART attribute 197, raw.";
+        }
+        leaf uncorrectable {
+          type uint64;
+          description
+            "SMART attribute 198, raw.";
+        }
+        leaf crc-errors {
+          type uint64;
+          description
+            "SMART attribute 199, raw.";
+        }
+        leaf wear-level {
+          type uint64;
+          description
+            "SMART attribute 177, raw.";
+        }
+        leaf life-left {
+          type uint64;
+          description
+            "SMART attribute 231, raw.";
+        }
+        leaf media-wearout {
+          type uint64;
+          description
+            "SMART attribute 233, raw.";
+        }
+        leaf note {
+          type string;
+          description
+            "Why it was not asked.";
+        }
+      }
+    }
+    list pool {
+      key "name";
+      description
+        "An imported ZFS pool.";
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf size {
+        type bytes;
+        description
+          "Its size.";
+      }
+      leaf alloc {
+        type bytes;
+        description
+          "What is used of it.";
+      }
+      leaf free {
+        type bytes;
+        description
+          "What is not.";
+      }
+      leaf frag {
+        type uint32;
+        units "percent";
+        description
+          "Its free space's fragmentation.";
+      }
+      leaf cap {
+        type uint32;
+        units "percent";
+        description
+          "How full it is.";
+      }
+      leaf dedup {
+        type string;
+        description
+          "Its deduplication ratio, as zpool prints it.";
+      }
+      leaf health {
+        type string;
+        description
+          "ONLINE, DEGRADED, FAULTED, ...";
+      }
+      leaf state {
+        type string;
+        description
+          "zpool status's state line.";
+      }
+      leaf status {
+        type string;
+        description
+          "Its status line, when it has one.";
+      }
+      leaf action {
+        type string;
+        description
+          "Its action line.";
+      }
+      leaf scan {
+        type string;
+        description
+          "Its scan line: the last scrub or resilver.";
+      }
+      leaf errors {
+        type string;
+        description
+          "Its errors line.";
+      }
+      leaf see {
+        type string;
+        description
+          "Its see line.";
+      }
+      list vdev {
+        description
+          "Its devices, in zpool status's order, each at its depth.";
+        leaf name {
+          type string;
+          description
+            "The device, or the vdev (mirror-0, raidz1-0, ...).";
+        }
+        leaf depth {
+          type uint32;
+          description
+            "Its depth: 0 the pool, 1 under it, ...";
+        }
+        leaf state {
+          type string;
+          description
+            "Its state.";
+        }
+        leaf read {
+          type string;
+          description
+            "Its read errors, as zpool prints them.";
+        }
+        leaf write {
+          type string;
+          description
+            "Its write errors.";
+        }
+        leaf cksum {
+          type string;
+          description
+            "Its checksum errors.";
+        }
+        leaf note {
+          type string;
+          description
+            "What zpool says beside it.";
+        }
+      }
+    }
+    list importable {
+      key "id";
+      description
+        "A pool zpool import finds on the host's devices, not imported.";
+      leaf id {
+        type string;
+        description
+          "Its guid.";
+      }
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf state {
+        type string;
+        description
+          "Its state.";
+      }
+      leaf status {
+        type string;
+        description
+          "Its status line.";
+      }
+    }
+    leaf datasets-total {
+      type uint64;
+      description
+        "How many datasets there are, when fewer are listed.";
+    }
+    list dataset {
+      key "name";
+      description
+        "A ZFS file system or volume.";
+      leaf name {
+        type string;
+        description
+          "Its name.";
+      }
+      leaf type {
+        type enumeration {
+          enum filesystem;
+          enum volume;
+        }
+        description
+          "What it is.";
+      }
+      leaf used {
+        type bytes;
+        description
+          "What it and its children take.";
+      }
+      leaf avail {
+        type bytes;
+        description
+          "What it may still take.";
+      }
+      leaf refer {
+        type bytes;
+        description
+          "What it refers to.";
+      }
+      leaf quota {
+        type bytes;
+        description
+          "Its quota; 0 none.";
+      }
+      leaf reservation {
+        type bytes;
+        description
+          "Its reservation; 0 none.";
+      }
+      leaf mountpoint {
+        type string;
+        description
+          "Its mountpoint property.";
+      }
+      leaf mounted {
+        type boolean;
+        description
+          "Whether it is mounted.";
+      }
+      leaf canmount {
+        type enumeration {
+          enum on;
+          enum off;
+          enum noauto;
+        }
+        description
+          "Its canmount property.";
+      }
+      leaf compression {
+        type string;
+        description
+          "Its compression property.";
+      }
+      leaf ratio {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        description
+          "Its compression ratio.";
+      }
+      leaf readonly {
+        type boolean;
+        description
+          "Its readonly property.";
+      }
+      leaf encryption {
+        type string;
+        description
+          "Its encryption property: off, or the cipher.";
+      }
+      leaf keylocation {
+        type string;
+        description
+          "Where its key is read from: none, prompt, a URI.";
+      }
+      leaf jailed {
+        type boolean;
+        description
+          "Whether it is given to a jail.";
+      }
+      leaf origin {
+        type string;
+        description
+          "The snapshot a clone was made of.";
+      }
+      action load-key {
+        description
+          "zfs load-key, the key on its standard input: on no disk, in
+           no job, no trace, no log.";
+        input {
+          leaf key {
+            type string;
+            mandatory true;
+            description
+              "The key, as it is typed.";
+          }
+        }
+      }
+      action unload-key {
+        description
+          "zfs unload-key.";
+      }
+      action change-key {
+        description
+          "zfs change-key, loaded first with key where it is not.";
+        input {
+          leaf key {
+            type string;
+            description
+              "The key now, where it is not loaded.";
+          }
+          leaf new-key {
+            type string;
+            mandatory true;
+            description
+              "The new key.";
+          }
+        }
+      }
+    }
+    leaf snapshots-total {
+      type uint64;
+      description
+        "How many snapshots there are, when fewer are listed.";
+    }
+    list snapshot {
+      key "name";
+      description
+        "A ZFS snapshot, the newest first.";
+      leaf name {
+        type string;
+        description
+          "Its name, dataset@snapshot.";
+      }
+      leaf used {
+        type bytes;
+        description
+          "What only it holds.";
+      }
+      leaf refer {
+        type bytes;
+        description
+          "What it refers to.";
+      }
+      leaf creation {
+        type int64;
+        units "seconds";
+        description
+          "When it was made, in seconds since the Epoch.";
+      }
+      action send {
+        description
+          "zfs send of it, its bytes the request's stream, each data
+           message the next; half-closed when send ended well.";
+        input {
+          leaf from {
+            type string;
+            description
+              "A snapshot of the same dataset: only what changed since
+               it (zfs send -i).";
+          }
+          leaf recursive {
+            type boolean;
+            default "false";
+            description
+              "The datasets under it too (-R).";
+          }
+        }
+      }
+    }
+    list mount {
+      description
+        "What is mounted.";
+      leaf from {
+        type string;
+        description
+          "What is mounted.";
+      }
+      leaf on {
+        type string;
+        description
+          "Where.";
+      }
+      leaf type {
+        type string;
+        description
+          "Its file system (zfs, ufs, devfs, ...).";
+      }
+      leaf options {
+        type string;
+        description
+          "Its options, as mount(8) prints them.";
+      }
+      leaf size {
+        type bytes;
+        description
+          "Its size.";
+      }
+      leaf used {
+        type bytes;
+        description
+          "What is used of it.";
+      }
+      leaf avail {
+        type bytes;
+        description
+          "What is free.";
+      }
+    }
+    container fstab {
+      description
+        "fstab(5).";
+      leaf text {
+        type string;
+        description
+          "Its text.";
+      }
+      leaf sha256 {
+        type string;
+        description
+          "The SHA-256 of its text, in hex.";
+      }
+      list entry {
+        description
+          "Its entries, in its order.";
+        leaf spec {
+          type string;
+          description
+            "The device (fs_spec).";
+        }
+        leaf file {
+          type string;
+          description
+            "Where it is mounted (fs_file).";
+        }
+        leaf vfstype {
+          type string;
+          description
+            "Its file system (fs_vfstype).";
+        }
+        leaf mntops {
+          type string;
+          description
+            "Its options (fs_mntops).";
+        }
+        leaf type {
+          type string;
+          description
+            "rw, ro, sw, xx (fs_type).";
+        }
+        leaf freq {
+          type int32;
+          description
+            "dump(8)'s (fs_freq).";
+        }
+        leaf passno {
+          type int32;
+          description
+            "fsck(8)'s order (fs_passno).";
+        }
+        leaf mounted {
+          type boolean;
+          description
+            "Whether it is mounted now.";
+        }
+      }
+      action replace {
+        description
+          "A new text put in its place: it has to be an fstab, sha256
+           that of the text it was made from; the one before is kept
+           beside it.";
+        input {
+          leaf text {
+            type string;
+            mandatory true;
+            description
+              "The new text.";
+          }
+          leaf sha256 {
+            type string;
+            mandatory true;
+            description
+              "The SHA-256 of the text it was made from.";
+          }
+          leaf dry-run {
+            type boolean;
+            default "false";
+            description
+              "Only checked.";
+          }
+        }
+        output {
+          leaf sha256 {
+            type string;
+            description
+              "The SHA-256 of the text now.";
+          }
+        }
+      }
+    }
+    list swap {
+      key "device";
+      description
+        "A swap device.";
+      leaf device {
+        type string;
+        description
+          "The device.";
+      }
+      leaf size {
+        type bytes;
+        description
+          "Its size.";
+      }
+      leaf used {
+        type bytes;
+        description
+          "What is used of it.";
+      }
+    }
+  }
+
+  rpc receive {
+    description
+      "zfs receive -u into the dataset named, the bytes the request's
+       stream, given to receive only as fast as it reads them; never
+       over a dataset (no -F), nor into a pool's own.";
+    input {
+      leaf dataset {
+        type string;
+        mandatory true;
+        description
+          "The dataset made.";
+      }
+    }
+  }
+}

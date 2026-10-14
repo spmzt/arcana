@@ -386,8 +386,19 @@
   change made the job-spec the queue takes, too (out=yspec, by
   arcana.h's members), both committed and held by check-yang;
   ira/yjobs.c (yang_jobs: five kinds of change, the trace). 1.11's
-  submit runs check_spec() and cuts_off() as job-submit does. Next:
-  3.1.5, arcana-storage, and the rest of 3.1 in turn; 2.8,
+  submit runs check_spec() and cuts_off() as job-submit does. 3.1.5:
+  storage, fstab, zfs-send, zfs-receive, zfs-key converted to
+  share/yang/arcana-storage (63 400): typed lists where the storage
+  operation gave a JSON object per kind (acedia/ystorage.c reads each
+  back: disks with partitions and their health, pools with vdevs and
+  state lines, importable pools, datasets with typed properties and
+  snapshots, a truncated list's total, mounts, fstab's entries and
+  text, swap); load-key, unload-key, change-key, fstab replace, send as
+  actions, receive an rpc, their bytes the request's stream
+  (yang_storage; held too on this VM's own storage by hand: 17 KB,
+  the same back). The storage changes stay jobs (zfs, zpool, mount,
+  gpart, cam). Next: 3.1.6, arcana-sysctl and arcana-kernel, and the
+  rest of 3.1 in turn; 2.8,
   yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
