@@ -1109,7 +1109,15 @@ A step never leaves `main` unbuildable; where a step would, it says
   mtu, ether, media, groups, fib, capabilities; check: each type made
   by the existing jobs reads back.
 - 1.9.4 A: rtsock events (RTM_IFINFO, IFANNOUNCE) into the event
-  sources; check: an interface created and destroyed seen.
+  sources; check: an interface created and destroyed seen.  Found
+  (2026-10-14): the agent's netlink(4) watch (RTNLGRP_LINK, the host's
+  and each vnet jail's) has them: made, flags, MTU, link state,
+  renamed (gone by the old name, come by the new), destroyed.  The
+  kernel announces nothing, on netlink or rtsock, for a description,
+  a FIB, a group, a link-layer address (iflladdr_event is not
+  netlink's), media, capabilities, or a vlan's, lagg's or bridge's
+  settings: for 3.2.3's on-change, those are told by the agent's own
+  jobs that change them, or polled.
 - 1.10.1 A: `ietf-ip` addresses v4/v6 with origin and status; check:
   equals `ifconfig`.
 - 1.10.2 A: neighbours from NET_RT_FLAGS RTF_LLINFO (v4 and v6),
