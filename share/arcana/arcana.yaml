@@ -2486,7 +2486,10 @@ operations:
       job ends.  jail-state, with jail, state (running or stopped) and
       jid, when a jail is made or removed, the host's or one made in a
       jail (its name parent.child), as kqueue(2)'s EVFILT_JAIL tells
-      it.
+      it.  crash, with pid, process (its name), jid, jail (its name,
+      empty for the host's), uid, signal and core (whether it dumped
+      one), when the kernel says a process died of a signal that
+      dumps core (kern.logsigexit).
     do:
       request:
         attributes:

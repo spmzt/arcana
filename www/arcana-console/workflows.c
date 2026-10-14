@@ -22,7 +22,8 @@
  * the console sees itself (a host that stopped answering, host-down;
  * that answers again, host-up) and those the host tells (a jail made
  * or removed, jail-state; threshold, kmsg, link and the rest), each
- * with what it must match.  One that runs by itself may hold a step
+ * with what it must match, a value of which may be ${param.NAME}, that
+ * parameter's default.  One that runs by itself may hold a step
  * that destroys (jobs.yaml's destroys) only when it says so.
  *
  *	GET    /api/workflows		the workflows
@@ -1642,21 +1643,44 @@ watched_of(const char *sid)
 	return (x);
 }
 
-/* Does an event match a trigger: its name, and each of match's? */
+/*
+ * Does an event match a trigger: its name, and each of match's?  A
+ * value ${param.NAME} is that parameter's default, the run's to be: an
+ * empty one matches any.
+ */
 static bool
-matches(const ucl_object_t *on, const char *kind, const ucl_object_t *data)
+matches(const ucl_object_t *wf, const ucl_object_t *on, const char *kind,
+    const ucl_object_t *data)
 {
-	const ucl_object_t	*m, *v;
-	ucl_object_iter_t	 it;
+	const ucl_object_t	*m, *v, *p;
+	ucl_object_iter_t	 it, pit;
+	const char		*want;
+	size_t			 len;
 
 	if (strcmp(ucl_str(on, "event"), kind) != 0)
 		return (false);
 	it = NULL;
 	while ((m = ucl_object_iterate(ucl_object_lookup(on, "match"), &it,
 	    true)) != NULL) {
+		want = ucl_object_tostring_forced(m);
+		len = strlen(want);
+		if (strncmp(want, "${param.", 8) == 0 && len > 9 &&
+		    want[len - 1] == '}') {
+			pit = NULL;
+			while ((p = ucl_object_iterate(ucl_object_lookup(wf,
+			    "params"), &pit, true)) != NULL)
+				if (ucl_str(p, "name") != NULL && strlen(ucl_str(p,
+				    "name")) == len - 9 && strncmp(ucl_str(p,
+				    "name"), want + 8, len - 9) == 0)
+					break;
+			want = p != NULL && ucl_str(p, "default") != NULL ?
+			    ucl_str(p, "default") : "";
+			if (want[0] == '\0')
+				continue;
+		}
 		v = ucl_object_lookup(data, ucl_object_key(m));
-		if (v == NULL || strcmp(ucl_object_tostring_forced(v),
-		    ucl_object_tostring_forced(m)) != 0)
+		if (v == NULL || strcmp(ucl_object_tostring_forced(v), want) !=
+		    0)
 			return (false);
 	}
 	return (true);
@@ -1687,7 +1711,7 @@ fire(const ucl_object_t *wfs, const char *sid, const char *kind,
 		oit = NULL;
 		while ((on = ucl_object_iterate(ucl_object_lookup(w, "on"),
 		    &oit, true)) != NULL) {
-			if (!matches(on, kind, data))
+			if (!matches(w, on, kind, data))
 				continue;
 			hosts = ucl_object_typed_new(UCL_ARRAY);
 			ucl_array_append(hosts, ucl_object_fromstring(sid));

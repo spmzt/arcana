@@ -4170,6 +4170,17 @@ part_flows(void)
 	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]')"
 	    "?.value === 'pkg-install'", 10);
 	run("document.querySelector('button[data-act=wf-back]').click()");
+	/* A service restarted when it crashes: the trigger in words. */
+	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
+	run("const t = document.querySelector('select[data-input=wf-template]'"
+	    "); t.value = 'service-crash'; t.dispatchEvent(new Event('input', "
+	    "{ bubbles: true }));");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.trig') && "
+	    "document.querySelector('svg.wfdraw g.wfnode.trig').textContent."
+	    "includes('when a program crashes: ${param.process}') && "
+	    "document.querySelectorAll('svg.wfdraw g.wfnode.job').length === 1",
+	    10);
+	run("document.querySelector('button[data-act=wf-back]').click()");
 	/* What starts one, in words: a jail stops, which jail asked. */
 	click_when("button[data-act=wf-new]", 10);
 	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]') "

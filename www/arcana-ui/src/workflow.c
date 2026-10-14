@@ -496,6 +496,23 @@ static const struct {
 	    "plugin's package (bird3, wireguard-tools, strongswan, squid)\", "
 	    "\"job\": {\"kind\": \"pkg-install\", \"packages\": "
 	    "[\"${param.package}\"]}}]}" },
+	/*
+	 * The kernel says when a program dies of a signal that dumps core
+	 * (kern.logsigexit); the agent tells it as crash, with the
+	 * process's name and its jail (jid 0: the host's own, as services
+	 * are).  The name a process goes by is not always its service's
+	 * (postgresql's is postgres): asked for apart, the same at first.
+	 */
+	{ "service-crash", "A service restarted when it crashes",
+	    "{\"name\": \"Service restarted when it crashes\", \"hosts\": "
+	    "[\"${LOCAL}\"], \"params\": [{\"name\": \"service\", "
+	    "\"default\": \"nginx\"}, {\"name\": \"process\", \"default\": "
+	    "\"nginx\"}], \"on\": [{\"event\": \"crash\", \"match\": "
+	    "{\"process\": \"${param.process}\", \"jid\": \"0\"}}], "
+	    "\"steps\": [{\"id\": \"restart\", \"name\": \"Restart the "
+	    "service\", \"job\": {\"kind\": \"service-action\", "
+	    "\"service\": \"${param.service}\", \"action\": "
+	    "\"restart\"}}]}" },
 	{ "service-back", "A service restarted when its host answers again",
 	    "{\"name\": \"Service back with its host\", \"hosts\": "
 	    "[\"${LOCAL}\"], \"params\": [{\"name\": \"service\", "
@@ -1192,6 +1209,8 @@ static const struct evk {
 	    "jail", "Which jail (any, if empty)" },
 	{ "threshold", "a figure crosses its limit", "threshold", NULL, NULL,
 	    "what", "Which (cpu, mem, swap, net, disk; any, if empty)" },
+	{ "crash", "a program crashes", "crash", NULL, NULL, "process",
+	    "Which program, by its process's name (any, if empty)" },
 	{ "procs", "processes start or end", "procs", NULL, NULL, NULL,
 	    NULL },
 	{ "conf", "a configuration file changes", "conf", NULL, NULL, "file",
