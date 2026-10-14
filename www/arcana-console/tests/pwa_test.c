@@ -4169,6 +4169,23 @@ part_flows(void)
 	    "'pointerup', { bubbles: true, pointerId: 3 }));");
 	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]')"
 	    "?.value === 'pkg-install'", 10);
+	/* Saved as YAML, and read back from it: the same workflow. */
+	run("window.arcSaved = null; document.querySelector('button[data-act="
+	    "wf-export][data-arg=yaml]').click()");
+	wait_js("window.arcSaved && window.arcSaved.name === "
+	    "'workflow-Plugin-installed.yaml' && window.arcSaved.text."
+	    "includes('\\nparams:\\n  - name: package\\n    default: "
+	    "bird3\\n')", 10);
+	run("document.querySelector('button[data-act=wf-back]').click()");
+	wait_js("document.querySelector('input[data-file=wf-import]')", 10);
+	run("const dt = new DataTransfer(); dt.items.add(new File(["
+	    "window.arcSaved.text.replace('bird3', 'squid')], 'w.yaml', "
+	    "{ type: 'application/yaml' })); const i = document.querySelector("
+	    "'input[data-file=wf-import]'); i.files = dt.files; "
+	    "i.dispatchEvent(new Event('change', { bubbles: true }));");
+	wait_js("document.querySelector('input[data-arg=\"text:params.0."
+	    "default\"]')?.value === 'squid' && document.querySelectorAll("
+	    "'svg.wfdraw g.wfnode.job').length === 1", 10);
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	/* A service restarted when it crashes: the trigger in words. */
 	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
@@ -4317,6 +4334,22 @@ part_flows(void)
 	click_when("button.tab[data-arg=services]", 10);
 	wait_js("document.querySelector('button[data-act=svc][data-value="
 	    "restart]')", 10);
+	/*
+	 * The tab exported: what it read, the data without its trace, as
+	 * YAML, then as JSON.
+	 */
+	run("window.arcSaved = null; document.querySelector('nav.tabs "
+	    ".tabexport button[data-arg=yaml]').click()");
+	wait_js("window.arcSaved && window.arcSaved.name.match(/-services-"
+	    "[0-9]{8}-[0-9]{4}\\.yaml$/) && window.arcSaved.type === "
+	    "'application/yaml' && window.arcSaved.text.startsWith('---\\n"
+	    "arcana: tab\\n') && window.arcSaved.text.includes('\\nreads:"
+	    "\\n  services:\\n') && window.arcSaved.text.includes('sshd') "
+	    "&& !window.arcSaved.text.includes('trace')", 10);
+	run("document.querySelector('nav.tabs .tabexport button[data-arg="
+	    "json]').click()");
+	wait_js("window.arcSaved.name.endsWith('.json') && JSON.parse("
+	    "window.arcSaved.text).reads.services !== undefined", 10);
 	run("document.querySelector('button[data-act=svc][data-value=restart]')"
 	    ".click()");
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
@@ -4660,6 +4693,15 @@ part_flows(void)
 	    ".value.includes('\"swvcs\": [') && document.querySelector("
 	    "'section.sdwan .notice').textContent.includes('empty.json')", 10);
 	shot("9-sdwan-imported");
+	/* As YAML too: put in the box as JSON. */
+	run("const dt = new DataTransfer(); dt.items.add(new File(["
+	    "'# by hand\\nucs: []\\nedges: []\\nswvcs:\\n  - id: yamlsvc\\n'"
+	    "], 'svc.yaml', { type: 'application/yaml' })); const i = "
+	    "document.querySelector('input[data-file=sd-import]'); i.files = "
+	    "dt.files; i.dispatchEvent(new Event('change', { bubbles: true }));");
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')"
+	    ".value.includes('\"id\": \"yamlsvc\"') && document.querySelector("
+	    "'section.sdwan .notice').textContent.includes('svc.yaml')", 10);
 	run("document.querySelector('button[data-act=sd-revert]').click()");
 	run("document.querySelector('button[data-act=sd-tab][data-arg="
 	    "services]').click()");

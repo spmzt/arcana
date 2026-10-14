@@ -3274,6 +3274,8 @@ nav.tabs .tab.plugin:first-of-type, nav.tabs .tab:not(.plugin) + .tab.plugin { m
 nav.tabs .tab.plugin::before { content: "◆ "; font-size: .6em; vertical-align: .15em; opacity: .7; }
 /* A plugin not installed on the host or a jail of it: there, dimmer. */
 nav.tabs .tab.plugin.missing { opacity: .55; }
+/* A tab's Export, at the end of its bar. */
+nav.tabs .tabexport { margin-left: auto; display: inline-flex; align-items: center; gap: .3rem; font-size: .72rem; color: var(--dim); white-space: nowrap; }
 nav.tabs .tab.plugin.missing::before { content: "◇ "; }
 .plugin-missing p { max-width: 38rem; }
 .plugin-missing button.primary { margin-top: .4rem; }

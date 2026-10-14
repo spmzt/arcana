@@ -8,6 +8,8 @@
 EMCC?=		emcc
 # JSON: base's libucl, compiled to wasm from the source tree.
 LIBUCL_SRC?=	/usr/src/contrib/libucl
+# YAML: base's libyaml (its private library's source), the same way.
+LIBYAML_SRC?=	/usr/src/contrib/libyaml
 # emcc links at -O2 and above only with its JS optimizer's npm modules
 # (acorn); the FreeBSD package lacks them.  The C is -O2 either way.
 EMLDOPT?=	-O1
@@ -16,16 +18,19 @@ WWWDIR?=	${PREFIX}/www/arcana-console
 DIST=		${.OBJDIR}/dist
 
 APP_SRCS=	main.c actions.c ca.c carp.c api.c apidoc.c bird.c ecmp.c mtr.c fleet.c ipfw.c l2.c kernel.c storage.c sysctl.c procs.c logs.c usage.c tbl.c topo.c vpn.c jailmk.c certs.c sshd.c span.c ipsec.c workflow.c sdwan.c graph.c html.c json.c netview.c \
-		schema.c view.c live.c
+		schema.c view.c live.c yaml.c export.c
 UCL_SRCS=	ucl_emitter_streamline.c ucl_emitter_utils.c ucl_emitter.c \
 		ucl_hash.c ucl_msgpack.c ucl_parser.c ucl_schema.c ucl_sexp.c \
 		ucl_util.c
+YAML_SRCS=	api.c dumper.c emitter.c loader.c parser.c reader.c scanner.c \
+		writer.c
 
 # -Werror covers emcc's own warnings too: the emscripten package can
 # expect another LLVM major than the llvm-devel it depends on, and only
 # a clean cache (a port build, a container) runs that check.
 EMCFLAGS=	-O2 -std=gnu17 -Wall -Wextra -Wno-unused-parameter \
 		-Werror -Wno-version-check -I${LIBUCL_SRC}/include \
+		-I${LIBYAML_SRC}/include \
 		-I${.CURDIR}/vendor/qrcodegen
 UCLFLAGS=	-O2 -w -I${LIBUCL_SRC}/include -I${LIBUCL_SRC}/src \
 		-I${LIBUCL_SRC}/uthash -I${LIBUCL_SRC}/klib
@@ -55,6 +60,16 @@ ${.OBJDIR}/${_s:R}.wo: ${.CURDIR}/src/${_s} ${.CURDIR}/src/app.h
 OBJS+=		${.OBJDIR}/${_s:R}.wo
 ${.OBJDIR}/${_s:R}.wo: ${LIBUCL_SRC}/src/${_s}
 	${EMCC} ${UCLFLAGS} -c ${LIBUCL_SRC}/src/${_s} -o ${.TARGET}
+.endfor
+# libyaml's api.c and the panel's would have one object: its are
+# yaml-*.wo.  The defines are lib/libyaml's.
+YAMLFLAGS=	-O2 -w -I${LIBYAML_SRC}/include -I${LIBYAML_SRC}/src \
+		-DYAML_VERSION_STRING=\"0.2.5\" -DYAML_VERSION_MAJOR=0 \
+		-DYAML_VERSION_MINOR=2 -DYAML_VERSION_PATCH=5
+.for _s in ${YAML_SRCS}
+OBJS+=		${.OBJDIR}/yaml-${_s:R}.wo
+${.OBJDIR}/yaml-${_s:R}.wo: ${LIBYAML_SRC}/src/${_s}
+	${EMCC} ${YAMLFLAGS} -c ${LIBYAML_SRC}/src/${_s} -o ${.TARGET}
 .endfor
 
 # Project Nayuki's QR code generator, unmodified (vendor/README).

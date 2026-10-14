@@ -831,6 +831,10 @@ stage(struct html *h)
 			    "base system's" : "A plugin, not installed here: "
 			    "open it to install its package", plugins[t].title);
 		}
+		if (app.tab != TAB_JOBS)
+			export_bar(h, plug ? (const char *[]){ "wireguard",
+			    "bird", "ipsec" }[app.net.kind == NET_WIREGUARD ? 0 :
+			    app.net.kind == NET_BIRD ? 1 : 2] : tabs[app.tab].arg);
 		h_raw(h, "</nav>");
 	}
 	if (app.tab == TAB_SUMMARY) {
