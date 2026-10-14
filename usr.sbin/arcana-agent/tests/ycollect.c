@@ -14,7 +14,8 @@
  *				for what it once had (frame= max-frame-size,
  *				mac= and bia= ethernet-like's, peer=
  *				peer-interface, vlan= the tag, parent,
- *				tag type and priority, eth= IEEE 802.3's
+ *				tag type and priority, lagg= and aggport=
+ *				IEEE 802.1AX's and FreeBSD's, eth= IEEE 802.3's
  *				auto-negotiation, duplex and PMD type):
  *				key=value, '-' for none,
  *				lists joined by '+', bits in hex
@@ -39,6 +40,10 @@
  *	ycollect watch fib secs	routes', each with its last-updated (- for
  *				none), after secs of route events heard
  *				and noted as the daemon notes them
+ *	ycollect linkagg	IEEE 802.1AX's linkagg: a key group a line,
+ *				its system's address and priority, its lags
+ *				and aggports; the tree through YANG-CBOR and
+ *				back
  *	ycollect pmd name ...	each medium's IEEE 802.3 PMD type, a line:
  *				the name, the identity (- for none)
  *	ycollect origins	each netlink(4) origin's source-protocol,
@@ -155,14 +160,23 @@ arcif(const struct ietf_interfaces_interfaces_interface *e)
 		else
 			printf("-");
 	}
-	if (e->arcif_lagg != NULL) {
-		printf(" lagg=%s,%jx,", e->arcif_lagg->has_protocol ?
-		    lagg_proto[e->arcif_lagg->protocol] : "-",
-		    bitsval(&e->arcif_lagg->hash));
-		for (size_t i = 0; i < e->arcif_lagg->port.n; i++)
-			printf("%s%s:%jx", i > 0 ? "+" : "",
-			    e->arcif_lagg->port.v[i].name,
-			    bitsval(&e->arcif_lagg->port.v[i].flags));
+	if (e->dot1ax_lag != NULL) {
+		printf(" lagg=%s,%jx,%s", e->dot1ax_lag->has_arcif_protocol ?
+		    lagg_proto[e->dot1ax_lag->arcif_protocol] : "-",
+		    bitsval(&e->dot1ax_lag->arcif_hash),
+		    str(e->dot1ax_lag->mac_address));
+		if (e->dot1ax_lag->lacp != NULL)
+			printf(",key=%u", e->dot1ax_lag->lacp->actor_oper_key);
+	}
+	if (e->dot1ax_aggport != NULL) {
+		const struct ietf_interfaces_interfaces_interface_dot1ax_aggport
+		    *ap = e->dot1ax_aggport;
+
+		printf(" aggport=%s,%u:%jx", ap->key_group_name,
+		    ap->arcif_priority, bitsval(&ap->arcif_flags));
+		if (ap->lacp != NULL)
+			printf(",port=%u,state=%jx", ap->actor_port_number,
+			    bitsval(&ap->lacp->actor_oper_state));
 	}
 	if (e->arcif_bridge != NULL) {
 		printf(" bridge=");
@@ -580,6 +594,46 @@ main(int argc, char **argv)
 			err(1, "cbl_yarena_new");
 		active(atoi(argv[2]), argv[3], a);
 		cbl_yarena_free(a);
+		return (0);
+	}
+	if (argc == 2 && strcmp(argv[1], "linkagg") == 0) {
+		struct ieee802_dot1ax_linkagg la;
+		struct ieee802_dot1ax_linkagg_linkagg back;
+		struct cbl_ybuf b1 = { 0 }, b2 = { 0 };
+		char why[256];
+
+		if ((a = cbl_yarena_new()) == NULL)
+			err(1, "cbl_yarena_new");
+		if ((error = yif_interfaces(&data, a)) != 0 ||
+		    (error = yif_linkagg(data.interfaces->interface.v,
+		    data.interfaces->interface.n, a, &la)) != 0)
+			errc(1, error, "yif_linkagg");
+		for (size_t i = 0; i < la.linkagg->key_group.n; i++) {
+			const struct ieee802_dot1ax_linkagg_linkagg_key_group
+			    *k = &la.linkagg->key_group.v[i];
+			const struct ieee802_dot1ax_linkagg_linkagg_agg_system
+			    *sy = &la.linkagg->agg_system.v[i];
+
+			printf("%s system=%s,%s,", k->name, sy->name,
+			    str(sy->actor_system));
+			if (sy->has_actor_system_priority)
+				printf("%u", sy->actor_system_priority);
+			else
+				printf("-");
+			printf(" lags=");
+			joined(k->lags.n, k->lags.v);
+			printf(" aggports=");
+			joined(k->aggports.n, k->aggports.v);
+			printf("\n");
+		}
+		if (ieee802_dot1ax_linkagg_linkagg_encode(la.linkagg, &b1) != 0 ||
+		    ieee802_dot1ax_linkagg_linkagg_decode(b1.p, b1.len, &back,
+		    a, CBL_YD_STRICT, why, sizeof(why)) != 0 ||
+		    ieee802_dot1ax_linkagg_linkagg_encode(&back, &b2) != 0)
+			errx(1, "the round trip: %s", why);
+		printf("yang-cbor %zu bytes, %s\n", b1.len, b1.len == b2.len &&
+		    memcmp(b1.p, b2.p, b1.len) == 0 ? "the same back" :
+		    "not the same");
 		return (0);
 	}
 	if (argc >= 2 && strcmp(argv[1], "pmd") == 0) {

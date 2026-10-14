@@ -1,0 +1,463 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ieee802-dot1ax-linkagg",
+    "module-revision": "2025-09-30",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ieee802-dot1ax-types",
+        "module-revision": "2025-09-30"
+      },
+      {
+        "module-name": "ieee802-types",
+        "module-revision": "2023-10-22"
+      },
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "iana-if-type",
+        "module-revision": "2026-03-17"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "69100",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ieee802-dot1ax-linkagg",
+        "sid": "69100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg",
+        "sid": "69101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/agg-system",
+        "sid": "69102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/agg-system/actor-system",
+        "sid": "69103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/agg-system/actor-system-priority",
+        "sid": "69104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/agg-system/name",
+        "sid": "69105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group",
+        "sid": "69106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/actor-admin-key",
+        "sid": "69107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/actor-admin-state",
+        "sid": "69108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/actor-protocol-da",
+        "sid": "69109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/agg-system-name",
+        "sid": "69110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/aggports",
+        "sid": "69111"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/collector-max-delay",
+        "sid": "69112"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd",
+        "sid": "69113"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-link-digest",
+        "sid": "69114"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-link-map",
+        "sid": "69115"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-link-map/cid-list",
+        "sid": "69116"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-link-map/cid-list/cid",
+        "sid": "69117"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-link-map/cid-list/link-numbers",
+        "sid": "69118"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-link-map/pattern",
+        "sid": "69119"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-service-digest",
+        "sid": "69120"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-service-map",
+        "sid": "69121"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-service-map/cid-list",
+        "sid": "69122"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-service-map/cid-list/cid",
+        "sid": "69123"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-service-map/cid-list/service-ids",
+        "sid": "69124"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-conv-service-map/pattern",
+        "sid": "69125"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/cscd/admin-discard-wrong-conv",
+        "sid": "69126"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/lags",
+        "sid": "69127"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/name",
+        "sid": "69128"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/partner-admin-system",
+        "sid": "69129"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/partner-admin-system-priority",
+        "sid": "69130"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1ax-linkagg:linkagg/key-group/port-algorithm",
+        "sid": "69131"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport",
+        "sid": "69132"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/actor-port-number",
+        "sid": "69133"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/actor-port-priority",
+        "sid": "69134"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/cscd",
+        "sid": "69135"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/cscd/admin-link-number",
+        "sid": "69136"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/cscd/link-number",
+        "sid": "69137"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/cscd/partner-link-number",
+        "sid": "69138"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/key-group-name",
+        "sid": "69139"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp",
+        "sid": "69140"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/actor-lacp-version",
+        "sid": "69141"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/actor-oper-key",
+        "sid": "69142"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/actor-oper-state",
+        "sid": "69143"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/aggregate-or-individual",
+        "sid": "69144"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/partner-lacp-version",
+        "sid": "69145"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/partner-oper-key",
+        "sid": "69146"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/partner-oper-port",
+        "sid": "69147"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/partner-oper-port-priority",
+        "sid": "69148"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/partner-oper-state",
+        "sid": "69149"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/partner-oper-system",
+        "sid": "69150"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/partner-oper-system-priority",
+        "sid": "69151"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/lacp/wtr-waiting",
+        "sid": "69152"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/partner-admin-key",
+        "sid": "69153"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/partner-admin-port",
+        "sid": "69154"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/partner-admin-port-priority",
+        "sid": "69155"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/partner-admin-state",
+        "sid": "69156"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/wtr-revertive",
+        "sid": "69157"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/wtr-time",
+        "sid": "69158"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag",
+        "sid": "69159"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/cscd",
+        "sid": "69160"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/cscd/active-lag-links",
+        "sid": "69161"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/cscd/discard-wrong-conversation",
+        "sid": "69162"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/cscd/partner-conv-link-digest",
+        "sid": "69163"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/cscd/partner-conv-service-digest",
+        "sid": "69164"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/cscd/partner-port-algorithm",
+        "sid": "69165"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/key-group-name",
+        "sid": "69166"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/lacp",
+        "sid": "69167"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/lacp/actor-oper-key",
+        "sid": "69168"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/lacp/aggregate-or-individual",
+        "sid": "69169"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/lacp/partner-oper-key",
+        "sid": "69170"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/lacp/partner-system",
+        "sid": "69171"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/lacp/partner-system-priority",
+        "sid": "69172"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/mac-address",
+        "sid": "69173"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:aggport-stats",
+        "sid": "69174"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:aggport-stats/illegal-rx",
+        "sid": "69175"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:aggport-stats/lacp-pdu-rx",
+        "sid": "69176"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:aggport-stats/lacp-pdu-tx",
+        "sid": "69177"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:aggport-stats/marker-pdu-rx",
+        "sid": "69178"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:aggport-stats/marker-pdu-tx",
+        "sid": "69179"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:aggport-stats/marker-response-pdu-rx",
+        "sid": "69180"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:aggport-stats/marker-response-pdu-tx",
+        "sid": "69181"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:aggport-stats/unknown-rx",
+        "sid": "69182"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:lag-stats",
+        "sid": "69183"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/statistics/ieee802-dot1ax-linkagg:lag-stats/unknown-protocol-frames",
+        "sid": "69184"
+      }
+    ]
+  }
+}

@@ -72,7 +72,7 @@ bytes on the wire, where it was 9.
 | 60 300 | 100 | `echo`, cblink's example | `cblink/examples/echo/echo@2026-10-13.sid` (7 used) |
 | 60 400 | 100 | `stream`, cblink's example | `cblink/examples/stream/stream@2026-10-13.sid` (5 used) |
 | 60 500 | 100 | `notify`, cblink's example | `cblink/examples/notify/notify@2026-10-13.sid` (4 used) |
-| 61 000 | 200 | `arcana-interfaces` | `share/yang/arcana-interfaces@2026-10-14.sid` (48 used, 13 obsolete: mtu, ether, hw-address, fib, epair and its two, vlan and its four, media's type, now the standard models') |
+| 61 000 | 200 | `arcana-interfaces` | `share/yang/arcana-interfaces@2026-10-14.sid` (52 used, 20 obsolete: mtu, ether, hw-address, fib, epair and its two, vlan and its four, media's type, lagg and its six, now the standard models') |
 | 61 200 | 100 | `arcana-ip-deviations` | `share/yang/arcana-ip-deviations@2026-10-14.sid` (1 used) |
 | 61 300 | 200 | `ietf-routing@2018-03-13` (no IETF range) | `share/yang/ietf-routing@2018-03-13.sid` (89 used) |
 | 61 500 | 100 | `ietf-ipv4-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv4-unicast-routing@2018-03-13.sid` (29 used) |
@@ -101,6 +101,9 @@ bytes on the wire, where it was 9.
 | 68 600 | 100 | `ieee802-dot1q-types@2023-10-26`, IEEE 802.1Q (no SIDs of IEEE's; its identities used) | `share/yang/ieee802-dot1q-types@2023-10-26.sid` (11 used) |
 | 68 700 | 100 | `ieee802-ethernet-interface@2025-09-10`, IEEE 802.3 | `share/yang/ieee802-ethernet-interface@2025-09-10.sid` (63 used) |
 | 68 800 | 300 | `ieee802-ethernet-phy-type@2025-09-10`, IEEE 802.3 (its PHY and PMD identities used) | `share/yang/ieee802-ethernet-phy-type@2025-09-10.sid` (253 used) |
+| 69 100 | 100 | `ieee802-dot1ax-linkagg@2025-09-30`, IEEE 802.1AX | `share/yang/ieee802-dot1ax-linkagg@2025-09-30.sid` (85 used) |
+| 69 200 | 100 | `ieee802-dot1ax-types@2025-09-30`, IEEE 802.1AX (its identities used) | `share/yang/ieee802-dot1ax-types@2025-09-30.sid` (26 used) |
+| 69 300 | 100 | `arcana-ieee802-deviations` | `share/yang/arcana-ieee802-deviations@2026-10-14.sid` (1 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,
