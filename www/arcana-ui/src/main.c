@@ -438,6 +438,8 @@ tick(void *arg)
 		ops_save();
 		jobs_poll();
 		agent_restarts(now);
+		/* What the page reads by itself is no task of the user's. */
+		app.quiet = true;
 		if (app.visible && app.online)
 			topo_tick(now);
 		if (app.online)
@@ -455,7 +457,9 @@ tick(void *arg)
 			storage_tick(now);
 			workflows_tick(now);
 			sdwan_tick(now);
+			live_tick(now);
 		}
+		app.quiet = false;
 	}
 	if (app.screen == SCREEN_CONSOLE && app.online &&
 	    now - last_update > UPDATE_MS) {
@@ -845,6 +849,7 @@ dispatch(const char *act, const char *arg, const char *value)
 	struct server		*s;
 	char			 body[512];
 	int			 i;
+	bool			 replug = false;
 
 	s = cur_server();
 	if (topo_action(act, arg, value) || ng_action(act, arg, value) ||
@@ -929,8 +934,8 @@ dispatch(const char *act, const char *arg, const char *value)
 					    sizeof(app.net_jail), "%s", w);
 			}
 			app.net.sort = -1;
-			app.net.loading = false;
-			app.net.sid[0] = '\0';
+			/* Read again; what was read of it is shown meanwhile. */
+			replug = true;
 		}
 		app.tab = strcmp(arg, "services") == 0 ? TAB_SERVICES :
 		    strcmp(arg, "network") == 0 || strcmp(arg, "wireguard") ==
@@ -974,7 +979,8 @@ dispatch(const char *act, const char *arg, const char *value)
 			refresh_services(s, true);
 		/* What is on its way for this host is waited for, not asked
 		 * for again; what is here is shown. */
-		if (app.tab == TAB_NETWORK && strcmp(app.net.sid, s->id) != 0)
+		if (app.tab == TAB_NETWORK && (replug || strcmp(app.net.sid,
+		    s->id) != 0))
 			refresh_network(s, true);
 		else if (app.tab == TAB_NETWORK && app.net.data == NULL &&
 		    !app.net.loading)
@@ -1433,6 +1439,8 @@ dispatch(const char *act, const char *arg, const char *value)
 	} else if (strcmp(act, "open-job") == 0 && s != NULL) {
 		open_job(s, atoll(arg), value);
 	} else if (strcmp(act, "refresh") == 0 && s != NULL) {
+		int	before = app.nextop;
+
 		if (app.tab == TAB_SERVICES) {
 			s->services_loading = false;
 			refresh_services(s, true);
@@ -1442,7 +1450,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		} else if (app.tab == TAB_SSH) {
 			refresh_ssh(s, true);
 		} else if (app.tab == TAB_CERTS) {
-			refresh_certs(s, true);		} else if (app.tab == TAB_KERNEL) {
+			refresh_certs(s, true);
+		} else if (app.tab == TAB_KERNEL) {
 			refresh_kernel(s, true);
 		} else if (app.tab == TAB_SYSCTL) {
 			refresh_sysctl(s, true);
@@ -1461,7 +1470,9 @@ dispatch(const char *act, const char *arg, const char *value)
 			s->loading = false;
 			refresh_jails(s, true);
 		}
-		app.trace_op = app.nops > 0 ? app.ops[0].id : -1;
+		/* The task it made, if it made one, is the one followed. */
+		if (app.nextop != before && app.nops > 0)
+			app.trace_op = app.ops[0].id;
 	} else if (strcmp(act, "open-svc") == 0) {
 		close_service();
 		snprintf(app.service, sizeof(app.service), "%s", arg);

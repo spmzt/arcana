@@ -47,6 +47,7 @@ static struct {
 	bool		 kernel;	/* the kernel's own are shown too */
 	char		 error[300];
 	double		 fetched;
+	double		 asked;		/* when it was last read, or tried */
 	long long	 open;		/* the process picked, or 0 */
 	ucl_object_t	*detail;	/* more of it: files and threads */
 	long long	 detail_of;
@@ -124,7 +125,6 @@ procs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(sid);
 	pr.loading = false;
-	pr.fetched = arc_now();
 	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
 		snprintf(pr.error, sizeof(pr.error), "%s", status == 200 &&
 		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
@@ -135,15 +135,17 @@ procs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	if (pr.data != NULL)
 		ucl_object_unref(pr.data);
 	pr.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
+	pr.fetched = arc_now();
 }
 
 /* Read what runs on the host; again asks though it is here already. */
 void
 refresh_procs(struct server *s, bool again)
 {
-	char	url[400];
+	char	path[300];
 
-	if (!app.online || pr.loading)
+	/* One for this host on its way is waited for, not another's. */
+	if (!app.online || (pr.loading && strcmp(pr.sid, s->id) == 0))
 		return;
 	if (strcmp(pr.sid, s->id) != 0) {
 		if (pr.data != NULL)
@@ -156,12 +158,19 @@ refresh_procs(struct server *s, bool again)
 		return;
 	snprintf(pr.sid, sizeof(pr.sid), "%s", s->id);
 	pr.loading = true;
-	if (pr.jail[0] != '\0')
-		snprintf(url, sizeof(url), "/api/servers/%s/processes?jail=%s",
-		    s->id, pr.jail);
-	else
-		snprintf(url, sizeof(url), "/api/servers/%s/processes", s->id);
-	api("GET", url, NULL, procs_cb, strdup(s->id));
+	pr.asked = arc_now();
+	snprintf(path, sizeof(path), "processes%s%s", pr.jail[0] != '\0' ?
+	    "?jail=" : "", pr.jail);
+	host_read(s, path, "read the processes", true, procs_cb,
+	    strdup(s->id));
+}
+
+/* The host says processes came or went: read at the next tick. */
+void
+procs_poke(void)
+{
+
+	pr.asked = 0;
 }
 
 /* What runs changes by itself: read again while it is shown. */
@@ -172,7 +181,7 @@ procs_tick(double now)
 
 	if (app.node != NODE_HOST || app.tab != TAB_PROCESSES || pr.paused ||
 	    !app.visible || pr.loading || (s = cur_server()) == NULL ||
-	    strcmp(pr.sid, s->id) != 0 || now - pr.fetched < PROCS_EVERY)
+	    strcmp(pr.sid, s->id) != 0 || now - pr.asked < PROCS_EVERY)
 		return;
 	/* Not under somebody who is choosing what to do to one. */
 	if (app.modal != MODAL_NONE || pr.open != 0)
@@ -352,7 +361,7 @@ view_procs(struct html *h, struct server *s)
 	};
 	const ucl_object_t	**rows, *o, *j;
 	ucl_object_iter_t	  it;
-	char			  buf[32], age[32];
+	char			  buf[32];
 	double			  cpu, rss;
 	long long		  thr;
 	size_t			  i;
@@ -394,13 +403,10 @@ view_procs(struct html *h, struct server *s)
 	    "placeholder=\"Filter rows\" autocomplete=\"off\" spellcheck=\""
 	    "false\"");
 	h_attr(h, "value", app.filter);
-	h_raw(h, "><span class=\"age\">");
-	if (mine) {
-		fmt_age(age, sizeof(age), pr.fetched);
-		h_txt(h, age);
-	} else if (pr.loading)
-		h_raw(h, "reading…");
-	h_fmt(h, "</span><button class=\"ghost small live%s\" data-act=\""
+	h_raw(h, ">");
+	if (mine)
+		fresh(h, pr.fetched, pr.loading, pr.error);
+	h_fmt(h, "<button class=\"ghost small live%s\" data-act=\""
 	    "ps-live\" title=\"Read again every three seconds while this is "
 	    "shown, and no process is picked\"><span class=\"led\"></span>Live</button><button class=\""
 	    "icon\" data-act=\"refresh\" title=\"Read again\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4\"/></svg></button>"

@@ -975,6 +975,28 @@ label {
 	color: var(--cyan);
 }
 
+/* What a tab shows, and how old it is: being read again, a dot that
+ * breathes beside the age; the last read failed, amber. */
+.tally.fresh {
+	white-space: nowrap;
+}
+
+.tally.fresh.reading::before {
+	content: "";
+	display: inline-block;
+	width: .45rem;
+	height: .45rem;
+	margin-right: .35rem;
+	border-radius: 50%;
+	background: var(--teal, var(--cyan));
+	vertical-align: middle;
+	animation: breathe 1.2s ease-in-out infinite;
+}
+
+.tally.fresh.is-stale {
+	color: var(--amber);
+}
+
 .sorts {
 	display: flex;
 	align-items: center;

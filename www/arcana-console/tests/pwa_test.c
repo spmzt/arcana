@@ -1122,9 +1122,13 @@ part_hosts(void)
 	    "{ echo '#!/bin/sh'; echo 'sleep 3'; echo 'exec ./fake-pkg.fast "
 	    "\"$@\"'; } > fake-pkg.slow && chmod +x fake-pkg.slow && "
 	    "mv fake-pkg.slow fake-pkg") == 0);
+	/* Asked with GET, or over the console's socket. */
 	run("window.pkgAsked = 0; const of = window.fetch; window.fetch = "
 	    "function (u, o) { if (String(u).includes('/packages')) "
-	    "window.pkgAsked++; return of.call(this, u, o); };");
+	    "window.pkgAsked++; return of.call(this, u, o); }; const os = "
+	    "WebSocket.prototype.send; WebSocket.prototype.send = function "
+	    "(m) { if (String(m).includes('\"read\":\"packages')) "
+	    "window.pkgAsked++; return os.call(this, m); };");
 	run("document.querySelector('button.tab[data-arg=packages]').click()");
 	wait_js("window.pkgAsked === 1", 5);
 	run("document.querySelector('button.tab[data-arg=jails]').click()");
@@ -3148,6 +3152,11 @@ part_storage(void)
 	    "kernel] button[data-act=kmod-unload]') && document.querySelector("
 	    "'.facts.kmem').textContent.includes('kernel memory in use') && "
 	    "document.querySelectorAll('#kmods option').length > 0"));
+	/* Opened, the tab's read is a task, told live over the socket,
+	 * and the tab says how old what it shows is. */
+	wait_js("[...document.querySelectorAll('.dock .o-ok')].some(t => "
+	    "t.textContent.includes('read the kernel')) && document."
+	    "querySelector('.toolbar .tally.fresh')", 20);
 	shot("7i-kernel");
 	run("document.querySelector('button[data-act=kmem][data-arg=zones]')"
 	    ".click()");
@@ -3240,10 +3249,10 @@ part_storage(void)
 	 */
 	run("document.querySelector('button[data-act=sy-tree][data-arg=\"\"]')"
 	    ".click()");
-	wait_js("document.querySelector('.toolbar .age').textContent."
+	wait_js("document.querySelector('.toolbar .fresh').textContent."
 	    "includes('so far') || /[0-9]+ more/.test(document.querySelector("
 	    "'.stage').textContent)", 20);
-	wait_js("!document.querySelector('.toolbar .age').textContent."
+	wait_js("!document.querySelector('.toolbar .fresh').textContent."
 	    "includes('reading') && (m => m && parseInt(m[1], 10) > 3600)("
 	    "/([0-9]+) more/.exec(document.querySelector('.stage')."
 	    "textContent))", 60);
@@ -3269,6 +3278,20 @@ part_storage(void)
 	ATF_CHECK(system("grep -q '^sysctl kern.ipc.somaxconn=8192$' kld.log "
 	    "&& grep -q '^kern.ipc.somaxconn=8192$' sysctl.conf") == 0);
 	run("document.querySelector('.dock > header').click()");
+	/*
+	 * Changed on the host by somebody else, sysctl.conf is read again
+	 * by itself: the agent is told by the kernel (EVFILT_VNODE), and
+	 * says so to the page following the host's events; nothing is
+	 * clicked, and no task is made of it.
+	 */
+	run("window.opsBefore = document.querySelector('.dock [data-act="
+	    "trace]').dataset.arg");
+	ATF_REQUIRE(system("echo 'kern.maxfiles=4321' >> sysctl.conf") == 0);
+	wait_js("document.querySelector('.sy-kept').textContent."
+	    "includes('kern.maxfiles=4321')", 20);
+	ATF_CHECK(js_true("document.querySelector('.dock [data-act=trace]')."
+	    "dataset.arg === window.opsBefore"));
+	shot("7j-sysctl-pushed");
 
 	/*
 	 * What runs: in the order of what each uses; one picked is given
@@ -3666,9 +3689,13 @@ part_firewall(void)
 	ATF_REQUIRE(system("printf -- '-f flush\\nadd 100 allow ip from any "
 	    "to any via lo0\\n' > host.rules && printf 'firewall_type=\"%s/"
 	    "host.rules\"\\n' \"$(pwd)\" >> rc.conf") == 0);
+	/* Read with GET, or over the console's socket. */
 	run("window.fwn = 0; window.fetch1 = window.fetch; window.fetch = "
 	    "function (u, o) { if (String(u).includes('/net/ipfw')) window.fwn"
-	    "++; return window.fetch1(u, o); };");
+	    "++; return window.fetch1(u, o); }; const os = WebSocket.prototype."
+	    "send; WebSocket.prototype.send = function (m) { if (String(m)."
+	    "includes('\"read\":\"net/ipfw')) window.fwn++; return os.call("
+	    "this, m); };");
 	wait_js("window.fwn >= 2", 15);
 	run("window.fetch = window.fetch1;");
 	/* A state pressed leads to the rule that made it. */

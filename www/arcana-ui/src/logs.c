@@ -53,6 +53,7 @@ static struct {
 	bool		 rotated;
 	char		 error[300];
 	double		 fetched;
+	double		 asked;		/* when it was last read, or tried */
 } lg;
 
 static ucl_object_t	*event_line(const ucl_object_t *);
@@ -209,7 +210,6 @@ logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	}
 	free(sid);
 	lg.loading = false;
-	lg.fetched = arc_now();
 	if (status != 200 || !jbool(o, "ok") || (d = jget(o, "data")) ==
 	    NULL) {
 		snprintf(lg.error, sizeof(lg.error), "%s", status == 200 &&
@@ -218,6 +218,7 @@ logs_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		return;
 	}
 	lg.error[0] = '\0';
+	lg.fetched = arc_now();
 	/* A file turned over is read from its start: what was is old. */
 	if (!lg.following || jbool(d, "rotated")) {
 		if (lg.lines != NULL)
@@ -287,20 +288,20 @@ logs_read(struct server *s, bool follow)
 		follow = false;
 	snprintf(lg.sid, sizeof(lg.sid), "%s", s->id);
 	lg.loading = true;
+	lg.asked = arc_now();
 	lg.following = follow;
 	if (!follow)
 		lg.seq = 0;
 	memset(&u, 0, sizeof(u));
 	if (strcmp(lg.name, EVENTS) == 0) {
-		h_fmt(&u, "/api/servers/%s/events?after=%lld", s->id, follow ?
-		    lg.position : 0LL);
+		h_fmt(&u, "events?after=%lld", follow ? lg.position : 0LL);
 		url = h_take(&u);
-		api("GET", url, NULL, logs_cb, strdup(s->id));
+		host_read(s, url, "read the events", !follow, logs_cb,
+		    strdup(s->id));
 		free(url);
 		return;
 	}
-	h_fmt(&u, "/api/servers/%s/log?lines=%d", s->id, follow ? LOGS_MAX :
-	    lg.want);
+	h_fmt(&u, "log?lines=%d", follow ? LOGS_MAX : lg.want);
 	if (lg.name[0] != '\0')
 		h_fmt(&u, "&name=%s", lg.name);
 	if (lg.jail[0] != '\0')
@@ -314,7 +315,8 @@ logs_read(struct server *s, bool follow)
 	if (follow)
 		h_fmt(&u, "&position=%lld", lg.position);
 	url = h_take(&u);
-	api("GET", url, NULL, logs_cb, strdup(s->id));
+	/* Followed, it is read on by itself: no task. */
+	host_read(s, url, "read the log", !follow, logs_cb, strdup(s->id));
 	free(url);
 }
 
@@ -348,7 +350,7 @@ logs_tick(double now)
 		ev_start(s);
 	if (app.node != NODE_HOST || app.tab != TAB_LOG || lg.paused ||
 	    !app.visible || lg.loading || s == NULL ||
-	    strcmp(lg.sid, s->id) != 0 || now - lg.fetched < LOGS_EVERY ||
+	    strcmp(lg.sid, s->id) != 0 || now - lg.asked < LOGS_EVERY ||
 	    ev.on)
 		return;
 	logs_read(s, true);
@@ -504,14 +506,10 @@ view_logs(struct html *h, struct server *s)
 	    "placeholder=\"Filter rows\" autocomplete=\"off\" spellcheck=\""
 	    "false\"");
 	h_attr(h, "value", app.filter);
-	h_raw(h, "><span class=\"age\">");
-	if (lg.loading && !lg.following)
-		h_raw(h, "reading…");
-	else if (mine) {
-		fmt_age(buf, sizeof(buf), lg.fetched);
-		h_txt(h, buf);
-	}
-	h_fmt(h, "</span><button class=\"ghost small live%s\" data-act=\""
+	h_raw(h, ">");
+	if (mine)
+		fresh(h, lg.fetched, lg.loading && !lg.following, lg.error);
+	h_fmt(h, "<button class=\"ghost small live%s\" data-act=\""
 	    "lg-live\" title=\"Follow the log: what is written is read every "
 	    "three seconds while this is shown\"><span class=\"led\"></span>"
 	    "Live</button><button class=\"icon\" data-act=\"refresh\" title="

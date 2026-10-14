@@ -130,19 +130,24 @@
   export datagram until it fills or the node shuts down, with no timer
   to send it; a flush would be part of the same kernel work.
 - The panel as live as it gets, without getting in the way (the user,
-  2026-10-13; the order agreed): (1) a task's steps told as the host
-  takes them, over the console's socket: done for the jails and the
-  services read (console 0.173.0, agent 0.108.0: the agent's steps
-  group, told on the asking connection only); the other reads move
-  over one by one. A task on the socket says live, not running, and
-  blinks so; one that stays live, a tab that follows its host, stays
-  in the list as live. (2) Every tab live: what was read stays shown,
-  with how old it is, and is replaced in place when a new read
-  completes, never blanked, keeping the sort, filter, scroll, picked
-  row and an edit under way. (3) Pushed where FreeBSD tells of a
-  change (the routing socket's RTM_IFINFO and RTM_NEWADDR, kqueue's
-  EVFILT_VNODE on rc.conf and EVFILT_PROC, zpool events, the
-  jail-state events there are), polled gently where it does not.
+  2026-10-13; the order agreed), done 2026-10-14 (agent 0.115.0,
+  console 0.174.0): (1) every read of a host's the user asks for, by
+  opening a tab or Refresh, is a task told live over the console's
+  socket, its steps drawn as the host takes them (the console takes
+  any host read there, hosts.c's hreads, each GET's setup shared);
+  what the page reads by itself, a timer or an event, is no task.
+  (2) What a tab shows stays until a new read replaces it, with how
+  old it is and a breathing dot while it is read again (live.c's
+  fresh()); a failed read leaves it, the error beside; a network
+  kind chosen again shows its last read at once; BIRD's open box
+  follows its part by name; ticked packages keep their ids.  (3) The
+  agent tells what changes (gula/hostwatch.c): the base system's
+  configuration files (EVFILT_VNODE), processes come and gone
+  (EVFILT_PROC, its own left out), ZFS and disks (devd(8)); with
+  netlink's and the jails' events, the page of the open host reads
+  the tab they concern again by itself, and the tabs nothing tells of
+  every minute or two while shown (agent_test:host_watch,
+  agent_root_test:devd_watch, pwa_test's sysctl.conf pushed).
 - The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
   under docs/notes/. Decided 2026-10-13: wire version 2 (D-1), cblink
   2 south and RESTCONF on the console only (D-2), libyang for the

@@ -640,6 +640,7 @@ main(int argc, char *argv[])
 	kmsg_start();
 	route_watch_start();
 	jail_watch_start();
+	host_watch_start();
 	logmsg(LOG_INFO, "version %s ready", ARCANA_AGENT_VERSION);
 	stop_loop = loop;
 	stop_pfh = pfh;

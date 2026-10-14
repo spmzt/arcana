@@ -982,6 +982,13 @@ jail_page(struct html *h)
 	int			 i, k;
 
 	s = cur_server();
+	/* The host's jails not read yet: they are being read. */
+	if (s != NULL && s->list == NULL && app.jail[0] != '\0') {
+		h_raw(h, s->failed ? "<div class=\"empty\"><h2>Not read</h2>"
+		    "<p>The host's jails could not be read.</p></div>" :
+		    "<div class=\"empty\"><div class=\"loader\"></div></div>");
+		return;
+	}
 	if (app.jail[0] == '\0' || s == NULL ||
 	    (j = find_jail(s, app.jail)) == NULL) {
 		h_raw(h, "<div class=\"empty\"><h2>No such jail</h2><p>It is "
@@ -1225,7 +1232,7 @@ dock(struct html *h)
 				    "</button>", o->id);
 			if (o->state != OP_RUNNING)
 				;
-			else if (o->job > 0 || o->req != 0)
+			else if (o->job > 0 || o->req != 0 || o->live)
 				h_fmt(h, "<button class=\"icon\" "
 				    "data-act=\"op-cancel\" data-arg=\"%d\" "
 				    "title=\"%s\">×</button>", o->id, o->job > 0 ?
@@ -3157,8 +3164,13 @@ view_packages(struct html *h, struct server *s)
 		if (jstr(p, "name") == NULL)
 			continue;
 		snprintf(fname, sizeof(fname), "p:%s", jstr(p, "name"));
+		/* By its id, a ticked box stays with its package when the
+		 * list is read again or sorted. */
 		h_raw(h, "<tr><td><input type=\"checkbox\"");
 		h_attr(h, "name", fname);
+		h_fmt(h, " id=\"pkgsel-");
+		h_txt(h, jstr(p, "name"));
+		h_raw(h, "\"");
 		h_raw(h, "></td><td>");
 		h_txt(h, jstr(p, "name"));
 		h_raw(h, "</td><td>");

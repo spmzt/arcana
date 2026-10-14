@@ -24,7 +24,6 @@
 #include "app.h"
 
 #ifndef nitems
-#define	nitems(x)	(sizeof(x) / sizeof((x)[0]))
 #endif
 
 static const struct sect {
@@ -390,7 +389,8 @@ refresh_firewall(struct server *s, bool again)
 {
 	char	url[400];
 
-	if (!app.online || fw.loading)
+	/* One for this host on its way is waited for, not another's. */
+	if (!app.online || (fw.loading && strcmp(fw.sid, s->id) == 0))
 		return;
 	if (strcmp(fw.sid, s->id) != 0) {
 		fw.jail[0] = '\0';
@@ -412,9 +412,9 @@ refresh_firewall(struct server *s, bool again)
 		return;
 	snprintf(fw.sid, sizeof(fw.sid), "%s", s->id);
 	fw.loading = true;
-	snprintf(url, sizeof(url), "/api/servers/%s/net/ipfw%s%s", s->id,
-	    fw.jail[0] != '\0' ? "?jail=" : "", fw.jail);
-	api("GET", url, NULL, fw_cb, strdup(s->id));
+	snprintf(url, sizeof(url), "net/ipfw%s%s", fw.jail[0] != '\0' ?
+	    "?jail=" : "", fw.jail);
+	host_read(s, url, "read the firewall", true, fw_cb, strdup(s->id));
 }
 
 static int
@@ -1422,16 +1422,16 @@ ktrace_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	(void)arg;
 	fw.k_loading = false;
-	if (fw.k_data != NULL)
-		ucl_object_unref(fw.k_data);
-	fw.k_data = NULL;
 	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+		/* What was shown stays, the error beside it. */
 		snprintf(fw.k_error, sizeof(fw.k_error), "%s", status == 200 &&
 		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
 		    err : "no answer");
 		return;
 	}
 	fw.k_error[0] = '\0';
+	if (fw.k_data != NULL)
+		ucl_object_unref(fw.k_data);
 	fw.k_data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
 }
 
@@ -1527,16 +1527,16 @@ fwlog_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	(void)arg;
 	fw.log_loading = false;
-	if (fw.log != NULL)
-		ucl_object_unref(fw.log);
-	fw.log = NULL;
 	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL) {
+		/* What was shown stays, the error beside it. */
 		snprintf(fw.log_error, sizeof(fw.log_error), "%s", status ==
 		    200 && jstr(o, "error") != NULL ? jstr(o, "error") : err !=
 		    NULL ? err : "no answer");
 		return;
 	}
 	fw.log_error[0] = '\0';
+	if (fw.log != NULL)
+		ucl_object_unref(fw.log);
 	fw.log = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o, "data"));
 }
 
@@ -2687,7 +2687,7 @@ view_firewall(struct html *h, struct server *s)
 	ucl_object_t			 *arr;
 	const struct sect		 *sc;
 	const char			 *kt;
-	char				  age[32], buf[32];
+	char				  buf[32];
 	size_t				  i;
 	bool				  mine, loaded, on;
 	int				  r, n, next;
@@ -2738,14 +2738,10 @@ view_firewall(struct html *h, struct server *s)
 	    "placeholder=\"Filter rows\" autocomplete=\"off\" spellcheck=\""
 	    "false\"");
 	h_attr(h, "value", app.filter);
-	h_raw(h, "><span class=\"age\">");
-	if (fw.loading && strcmp(fw.sid, s->id) == 0)
-		h_raw(h, "reading…");
-	else if (mine) {
-		fmt_age(age, sizeof(age), fw.fetched);
-		h_txt(h, age);
-	}
-	h_raw(h, "</span><button class=\"icon\" data-act=\"refresh\" title=\""
+	h_raw(h, ">");
+	if (mine)
+		fresh(h, fw.fetched, fw.loading, fw.error);
+	h_raw(h, "<button class=\"icon\" data-act=\"refresh\" title=\""
 	    "Read again\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4\"/></svg></button></div>");
 	if (strcmp(fw.sid, s->id) == 0 && fw.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");

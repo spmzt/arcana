@@ -1557,9 +1557,52 @@ yang_ip_cleanup()
 	true
 }
 
+# devd(8)'s notifications, as events (gula/hostwatch.c): a disk's node
+# made and destroyed, and ZFS's of a pool, on a memory disk of the lab.
+atf_test_case devd_watch cleanup
+devd_watch_head()
+{
+	atf_set "descr" "a memory disk made and destroyed, a pool made on it" \
+	    "and exported: each told by devd(8), each an event"
+	atf_set "require.user" "root"
+}
+devd_watch_body()
+{
+	[ -S /var/run/devd.seqpacket.pipe ] || atf_skip "devd(8) is not running"
+	zpool list arcw_hw >/dev/null 2>&1 && atf_skip "a pool arcw_hw is there already"
+	start_daemon
+	"$JGC" -c "$SOCK" events -f > follow.out 2>&1 &
+	echo $! > follow.pid
+	sleep 1.2
+	md=$(mdconfig -a -t swap -s 128m) || atf_skip "no memory disk"
+	echo "$md" > md
+	atf_check zpool create -O mountpoint=none arcw_hw "$md"
+	sleep 1.5
+	atf_check zpool export arcw_hw
+	atf_check mdconfig -d -u "$md"
+	rm md
+	sleep 1.5
+	kill "$(cat follow.pid)"
+	atf_check -o match:"\"kind\":\"device\",\"data\":\\{\"cdev\":\"$md\",\"state\":\"created\"\\}" \
+	    -o match:"\"kind\":\"device\",\"data\":\\{\"cdev\":\"$md\",\"state\":\"destroyed\"\\}" \
+	    -o match:'"kind":"zfs","data":\{"type":"[a-z_]+","pool":"arcw_hw"\}' \
+	    cat follow.out
+}
+devd_watch_cleanup()
+{
+	[ -f follow.pid ] && kill "$(cat follow.pid)" 2>/dev/null
+	cleanup
+	if [ -f md ]; then
+		zpool destroy -f arcw_hw >/dev/null 2>&1
+		mdconfig -d -u "$(cat md)" >/dev/null 2>&1
+	fi
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case yang_layers
+	atf_add_test_case devd_watch
 	atf_add_test_case yang_kinds
 	atf_add_test_case yang_events
 	atf_add_test_case yang_ip

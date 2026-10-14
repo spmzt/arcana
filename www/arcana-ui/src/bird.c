@@ -74,6 +74,7 @@ static struct {
 	char		 jail[256];
 	char		 words[200];	/* what was asked, with , between */
 	ucl_object_t	*data;
+	double		 fetched;
 	bool		 loading;
 	char		 error[300];
 } br;
@@ -124,7 +125,7 @@ word(const char *p, char *buf, size_t len)
  * that ends it, outside any braces, brackets, strings and comments.
  */
 static void
-blocks(void)
+blocks_parse(void)
 {
 	struct block	*b;
 	const char	*t, *p, *q;
@@ -204,6 +205,30 @@ block_find(const char *kind, const char *name)
 		    name) == 0)
 			return (i);
 	return (-1);
+}
+
+/*
+ * The parts of the text read again.  The one an open box edits is
+ * found again by its kind and name, wherever it is now: the file may
+ * have been changed meanwhile, and a part elsewhere is not to be
+ * written over.  Gone from it, the box says so.
+ */
+static void
+blocks(void)
+{
+	char	kind[16], name[64];
+	bool	editing = bd.edit >= 0 && bd.edit < bd.nb;
+
+	if (editing) {
+		snprintf(kind, sizeof(kind), "%s", bd.b[bd.edit].kind);
+		snprintf(name, sizeof(name), "%s", bd.b[bd.edit].name);
+	}
+	blocks_parse();
+	if (editing && (bd.edit = block_find(kind, name)) < 0 &&
+	    app.modal != MODAL_NONE)
+		snprintf(app.modal_error, sizeof(app.modal_error), "%s %s is "
+		    "no longer in the file: it was changed meanwhile. Close "
+		    "this and open it again.", kind, name);
 }
 
 /* The text of a part; free() it. */
@@ -836,17 +861,19 @@ routes_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 
 	(void)arg;
 	br.loading = false;
-	if (br.data != NULL)
-		ucl_object_unref(br.data);
-	br.data = NULL;
 	br.error[0] = '\0';
+	/* A failed read leaves what was shown, the error above it. */
 	if (status != 200 || !jbool(o, "ok") || jget(o, "data") == NULL)
 		snprintf(br.error, sizeof(br.error), "%s", status == 200 &&
 		    jstr(o, "error") != NULL ? jstr(o, "error") : err != NULL ?
 		    err : "no answer");
-	else
+	else {
+		if (br.data != NULL)
+			ucl_object_unref(br.data);
 		br.data = ucl_object_ref((ucl_object_t *)(uintptr_t)jget(o,
 		    "data"));
+		br.fetched = arc_now();
+	}
 }
 
 /* Ask for the routes words name: birdc's own, with , between them. */
@@ -855,6 +882,13 @@ routes_ask(struct server *s, const char *words)
 {
 	char	url[640];
 
+	/* Something else asked: the routes of the last are not its. */
+	if (strcmp(br.sid, s->id) != 0 || strcmp(br.jail, net_scope()) != 0 ||
+	    strcmp(br.words, words) != 0) {
+		if (br.data != NULL)
+			ucl_object_unref(br.data);
+		br.data = NULL;
+	}
 	snprintf(br.sid, sizeof(br.sid), "%s", s->id);
 	snprintf(br.jail, sizeof(br.jail), "%s", net_scope());
 	snprintf(br.words, sizeof(br.words), "%s", words);
@@ -922,16 +956,19 @@ routes_view(struct html *h, struct server *s, const ucl_object_t *data)
 	    "class=\"ghost small\">Show</button></form>");
 	if (!mine)
 		return;
-	if (br.loading) {
+	if (br.loading && br.data == NULL) {
 		h_raw(h, "<div class=\"empty small\"><div class=\"loader\">"
 		    "</div></div>");
 		return;
 	}
+	if (br.data != NULL)
+		fresh(h, br.fetched, br.loading, br.error);
 	if (br.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
 		h_txt(h, br.error);
 		h_raw(h, "</div>");
-		return;
+		if (br.data == NULL)
+			return;
 	}
 	if (br.data == NULL)
 		return;

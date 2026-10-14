@@ -439,6 +439,8 @@ job_finished(struct op *op, bool ok, const char *err)
 		refresh_jobs(s);
 	if (op->what == JOB_WATCH)
 		return;
+	/* What a job changed is read again by the page: no tasks. */
+	app.quiet = true;
 	switch (op->what) {
 	case JOB_JAIL:
 	case JOB_ADDRESS:
@@ -516,6 +518,7 @@ job_finished(struct op *op, bool ok, const char *err)
 			osversion_ask(err, false);
 		break;
 	}
+	app.quiet = false;
 	toast(!ok, "%s: %s", op->title, ok ? "done" : err != NULL ? err :
 	    "failed");
 }
@@ -1109,7 +1112,7 @@ refresh_jails(struct server *s, bool user)
 	s->loading = true;
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
-	c->user = user;
+	c->user = user = user && !app.quiet;
 	snprintf(url, sizeof(url), "/api/servers/%s/jails", s->id);
 	/* Asked for: a task, its steps drawn as the host takes them. */
 	if (user) {
@@ -1120,6 +1123,59 @@ refresh_jails(struct server *s, bool user)
 		return;
 	}
 	op_wait(c->op, api("GET", url, NULL, jails_cb, c));
+}
+
+/* A tab's read asked for: its task, then what the tab does with it. */
+struct hread {
+	int	 op;
+	api_cb	*cb;
+	void	*arg;
+};
+
+static void
+hread_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+	struct hread	 h = *(struct hread *)arg;
+	const char	*e;
+	bool		 ok;
+
+	free(arg);
+	e = err != NULL ? err : jstr(o, "error.message") != NULL ?
+	    jstr(o, "error.message") : jstr(o, "error");
+	ok = status == 200 && e == NULL && (jget(o, "ok") == NULL ||
+	    jbool(o, "ok"));
+	op_done(op_find(h.op), ok, o, ok ? NULL : e != NULL ? e :
+	    "no answer from the console");
+	h.cb(status, o, err, h.arg);
+}
+
+/*
+ * A read of host s's for a tab: read is the path after
+ * /api/servers/<id>/, with its query.  One the user asked for (opening
+ * the tab, Refresh) is a task called title, its steps drawn as the host
+ * takes them over the console's socket; the others, as a tab reads on
+ * by itself, are a plain GET and no task.
+ */
+void
+host_read(const struct server *s, const char *read, const char *title,
+    bool user, api_cb *cb, void *arg)
+{
+	struct hread	*h;
+	struct op	*op;
+	char		 url[400];
+
+	snprintf(url, sizeof(url), "/api/servers/%s/%s", s->id, read);
+	if (!user || app.quiet) {
+		api("GET", url, NULL, cb, arg);
+		return;
+	}
+	if ((h = calloc(1, sizeof(*h))) == NULL)
+		abort();
+	op = op_new(title, s->name);
+	h->op = op->id;
+	h->cb = cb;
+	h->arg = arg;
+	live_read(s->id, read, url, op->id, hread_cb, h);
 }
 
 /* start, stop, restart or kill a jail of the selected server: a job. */
@@ -1190,7 +1246,7 @@ refresh_services(struct server *s, bool user)
 	s->services_loading = true;
 	c = ctx_new();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
-	c->user = user;
+	c->user = user = user && !app.quiet;
 	snprintf(url, sizeof(url), "/api/servers/%s/services", s->id);
 	if (user) {
 		op = op_new("list services", s->name);
@@ -1551,15 +1607,21 @@ refresh_packages(struct server *s, bool refresh)
 	    1 ? "pkg update, " : "", app.pkg.mode == 0 ? "installed packages" :
 	    "pending packages", app.pkg.jail[0] != '\0' ? " of jail " : "");
 	strlcat(title, app.pkg.jail, sizeof(title));
-	op = op_new(title, s->name);
-	c->op = op->id;
-	app.trace_op = op->id;
 	/* The installed are the host's own: the repository is not asked. */
 	snprintf(url, sizeof(url), "/api/servers/%s/packages?jail=%s%s%s%s",
 	    s->id, url_word(app.pkg.jail) ? app.pkg.jail : "",
 	    app.pkg.mode == 0 ? "&installed=1" : refresh ? "&refresh=1" : "",
 	    app.pkg.ip == 4 ? "&ip=4" : app.pkg.ip == 6 ? "&ip=6" : "", "");
-	op_wait(c->op, api("GET", url, NULL, packages_cb, c));
+	/* Read again by the page itself (after an upgrade): no task. */
+	if (app.quiet) {
+		api("GET", url, NULL, packages_cb, c);
+		return;
+	}
+	op = op_new(title, s->name);
+	c->op = op->id;
+	app.trace_op = op->id;
+	live_read(s->id, url + strlen("/api/servers/") + strlen(s->id) + 1,
+	    url, c->op, packages_cb, c);
 }
 
 /* pkg upgrade of the named packages (JSON array text), or of all. */
@@ -1739,6 +1801,17 @@ network_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 			app.net.data_kind = c->net_kind;
 			app.net.fetched = arc_now();
 			app.net.error[0] = '\0';
+			if ((size_t)c->net_kind < nitems(app.net.cache)) {
+				if (app.net.cache[c->net_kind].data != NULL)
+					ucl_object_unref(
+					    app.net.cache[c->net_kind].data);
+				app.net.cache[c->net_kind].data =
+				    ucl_object_ref(app.net.data);
+				app.net.cache[c->net_kind].family =
+				    c->op_family;
+				app.net.cache[c->net_kind].fetched =
+				    app.net.fetched;
+			}
 		} else
 			snprintf(app.net.error, sizeof(app.net.error), "%s",
 			    err != NULL ? err : "no answer from the console");
@@ -1958,6 +2031,22 @@ refresh_network(struct server *s, bool user)
 			ucl_object_unref(app.net.data);
 		app.net.data = NULL;
 		app.net.error[0] = '\0';
+		for (size_t k = 0; k < nitems(app.net.cache); k++) {
+			if (app.net.cache[k].data != NULL)
+				ucl_object_unref(app.net.cache[k].data);
+			app.net.cache[k].data = NULL;
+		}
+	} else if (app.net.data_kind != (int)app.net.kind &&
+	    app.net.kind < nitems(app.net.cache) &&
+	    app.net.cache[app.net.kind].data != NULL &&
+	    app.net.cache[app.net.kind].family == app.net.family) {
+		/* Another kind again: the last of it, while it is read. */
+		if (app.net.data != NULL)
+			ucl_object_unref(app.net.data);
+		app.net.data = ucl_object_ref(app.net.cache[app.net.kind].data);
+		app.net.data_kind = (int)app.net.kind;
+		app.net.fetched = app.net.cache[app.net.kind].fetched;
+		app.net.error[0] = '\0';
 	}
 	snprintf(app.net.sid, sizeof(app.net.sid), "%s", s->id);
 	snprintf(app.net.jail, sizeof(app.net.jail), "%s", net_scope());
@@ -1975,7 +2064,7 @@ refresh_network(struct server *s, bool user)
 	c->net_kind = (int)app.net.kind;
 	c->op_family = app.net.family;
 	snprintf(c->jail, sizeof(c->jail), "%s", app.net.jail);
-	c->user = user;
+	c->user = user = user && !app.quiet;
 	if (user) {
 		snprintf(title, sizeof(title), "net %s%s", kinds[app.net.kind],
 		    app.net.family == 4 ? " inet" : app.net.family == 6 ?
@@ -1994,7 +2083,13 @@ refresh_network(struct server *s, bool user)
 	    NET_ROUTES && app.net.host_filter[0] != '\0' ? "&filter=" : "",
 	    app.net.kind == NET_ROUTES ? app.net.host_filter : "", fib,
 	    c0jail);
-	op_wait(c->op, api("GET", url, NULL, network_cb, c));
+	if (user) {
+		/* Asked for: its steps drawn as the host takes them. */
+		live_read(s->id, url + strlen("/api/servers/") +
+		    strlen(s->id) + 1, url, c->op, network_cb, c);
+		return;
+	}
+	api("GET", url, NULL, network_cb, c);
 }
 
 static void
@@ -2533,7 +2628,9 @@ op_cancel(struct op *op)
 		api("DELETE", url, NULL, job_cancel_cb, c);
 		return;
 	}
-	if (op->req != 0)
+	if (op->live)
+		live_cancel(op->id);
+	else if (op->req != 0)
 		arc_http_abort(op->req);
 }
 

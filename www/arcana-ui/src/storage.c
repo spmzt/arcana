@@ -41,6 +41,7 @@ static struct {
 	int		 kind;
 	ucl_object_t	*data[SK_N];
 	bool		 loading[SK_N];
+	bool		 due[SK_N];	/* changed since read: read again when shown */
 	bool		 cut[SK_N];	/* more than a reply carried */
 	char		 error[SK_N][300];
 	double		 fetched[SK_N];
@@ -199,7 +200,7 @@ void
 refresh_storage(struct server *s, bool again)
 {
 	struct sctx	*c;
-	char		 url[400];
+	char		 url[400], title[64];
 	int		 k;
 
 	if (!app.online)
@@ -218,19 +219,35 @@ refresh_storage(struct server *s, bool again)
 		snprintf(sg.sid, sizeof(sg.sid), "%s", s->id);
 	}
 	k = sg.kind;
-	if (sg.loading[k] || (!again && (sg.data[k] != NULL ||
+	if (sg.loading[k] || (!again && !sg.due[k] && (sg.data[k] != NULL ||
 	    sg.error[k][0] != '\0')))
 		return;
 	sg.loading[k] = true;
+	sg.due[k] = false;
 	if ((c = calloc(1, sizeof(*c))) == NULL)
 		abort();
 	snprintf(c->sid, sizeof(c->sid), "%s", s->id);
 	c->kind = k;
 	snprintf(c->of, sizeof(c->of), "%s", sg.of);
-	snprintf(url, sizeof(url), "/api/servers/%s/storage/%s%s%s", s->id,
-	    kind_arg[k], k == SK_SNAPSHOTS && sg.of[0] != '\0' ? "?filter=" :
-	    "", k == SK_SNAPSHOTS ? sg.of : "");
-	api("GET", url, NULL, storage_cb, c);
+	snprintf(url, sizeof(url), "storage/%s%s%s", kind_arg[k], k ==
+	    SK_SNAPSHOTS && sg.of[0] != '\0' ? "?filter=" : "", k ==
+	    SK_SNAPSHOTS ? sg.of : "");
+	snprintf(title, sizeof(title), "read the %s", kind_arg[k]);
+	host_read(s, url, title, true, storage_cb, c);
+}
+
+/*
+ * The host's storage changed (a pool's or a disk's event): each kind is
+ * read again when it is shown, the one shown at once by the caller.
+ */
+void
+storage_due(const struct server *s)
+{
+
+	if (strcmp(sg.sid, s->id) != 0)
+		return;
+	for (int k = 0; k < SK_N; k++)
+		sg.due[k] = true;
 }
 
 /* A job of storage: kind, verb, flags as JSON members, then the words. */
@@ -1340,7 +1357,6 @@ transfer_start(struct server *s, const char *to, const char *snap,
 void
 view_storage(struct html *h, struct server *s)
 {
-	char	age[32];
 	int	k;
 	bool	mine;
 
@@ -1370,12 +1386,8 @@ view_storage(struct html *h, struct server *s)
 	    "placeholder=\"Filter\" autocomplete=\"off\" spellcheck=\"false\"");
 	h_attr(h, "value", app.filter);
 	h_raw(h, ">");
-	if (mine) {
-		fmt_age(age, sizeof(age), sg.fetched[k]);
-		h_raw(h, "<span class=\"tally\">");
-		h_txt(h, age);
-		h_raw(h, "</span>");
-	}
+	if (mine)
+		fresh(h, sg.fetched[k], sg.loading[k], sg.error[k]);
 	h_raw(h, "</div>");
 	view_transfers(h, s);
 	if (sg.error[k][0] != '\0' && strcmp(sg.sid, s->id) == 0) {

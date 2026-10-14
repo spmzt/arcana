@@ -176,10 +176,18 @@ guard(struct http_request *req, bool mutate)
 bool
 capture(struct http_request *req, int idx, char *buf, size_t len)
 {
+
+	return (capture_path(req->path, idx, buf, len));
+}
+
+/* Path segment idx of path, as capture() takes it of a request's. */
+bool
+capture_path(const char *path, int idx, char *buf, size_t len)
+{
 	const char	*p, *e;
 	size_t		 n;
 
-	for (p = req->path; idx > 0; idx--) {
+	for (p = path; idx > 0; idx--) {
 		if (*p != '/')
 			return (false);
 		e = strchrnul(p + 1, '/');
