@@ -31,6 +31,11 @@ module arcana-interfaces {
     reference
       "IEEE Std 802.1AX: Link Aggregation";
   }
+  import ieee802-dot1q-bridge {
+    prefix dot1q;
+    reference
+      "IEEE Std 802.1Q: Bridges and Bridged Networks";
+  }
 
   organization
     "Arcana";
@@ -75,7 +80,19 @@ module arcana-interfaces {
        with LACP's state where its protocol is lacp (SIOCGLAGG's
        lacp_opreq: the system's priority and address, the keys, the
        ports' numbers, priorities and states); its protocol, hash, and
-       a port's priority and flags, FreeBSD's own, are below.
+       a port's priority and flags, FreeBSD's own, are below;
+     - a bridge(4) is IEEE 802.1Q's (ieee802-dot1q-bridge): a bridge of
+       its name and address, a customer VLAN bridge of one component,
+       VLAN-unaware (d-bridge-component) or with vlanfilter a C-VLAN
+       component, its members (BRDGGIFS) its bridge ports; a member's
+       port number and point-to-point state (ptp, autoptp) its
+       bridge-port's, and where ifconfig(8) stp turned the spanning
+       tree on, ieee802-dot1q-rstp-bridge's rstp: its state and role
+       (BSTP_IFSTATE_*, BSTP_ROLE_*; disabled, listening and blocking
+       are RSTP's discarding), its port identifier (FreeBSD's priority
+       0 to 240 IEEE's 0 to 15), its path cost (ifpathcost the fixed
+       one), its edge (edge, autoedge); a member's other flags,
+       FreeBSD's own, are below.
 
      Each leaf names the FreeBSD facility it is read from and written
      to.  A list or leaf-list the system orders is in the order the
@@ -230,83 +247,6 @@ module arcana-interfaces {
     }
   }
 
-  grouping bridge-member-flags {
-    description
-      "A bridge member's flags, struct ifbreq's ifbr_ifsflags.";
-    leaf flags {
-      type bits {
-        bit learning {
-          position 0;
-          description
-            "IFBIF_LEARNING: ifconfig(8) learn.";
-        }
-        bit discover {
-          position 1;
-          description
-            "IFBIF_DISCOVER: ifconfig(8) discover.";
-        }
-        bit stp {
-          position 2;
-          description
-            "IFBIF_STP: ifconfig(8) stp.";
-        }
-        bit span {
-          position 3;
-          description
-            "IFBIF_SPAN: a span port, ifconfig(8) span.";
-        }
-        bit sticky {
-          position 4;
-          description
-            "IFBIF_STICKY: ifconfig(8) sticky.";
-        }
-        bit edge {
-          position 5;
-          description
-            "IFBIF_BSTP_EDGE: the port is an edge port.";
-        }
-        bit autoedge {
-          position 6;
-          description
-            "IFBIF_BSTP_AUTOEDGE: ifconfig(8) autoedge.";
-        }
-        bit ptp {
-          position 7;
-          description
-            "IFBIF_BSTP_PTP: the link is point to point.";
-        }
-        bit autoptp {
-          position 8;
-          description
-            "IFBIF_BSTP_AUTOPTP: ifconfig(8) autoptp.";
-        }
-        bit admin-edge {
-          position 9;
-          description
-            "IFBIF_BSTP_ADMEDGE: ifconfig(8) edge.";
-        }
-        bit admin-cost {
-          position 10;
-          description
-            "IFBIF_BSTP_ADMCOST: the path cost set by ifconfig(8)
-             ifpathcost.";
-        }
-        bit private {
-          position 11;
-          description
-            "IFBIF_PRIVATE: ifconfig(8) private.";
-        }
-        bit qinq {
-          position 12;
-          description
-            "IFBIF_QINQ: ifconfig(8) qinq.";
-        }
-      }
-      description
-        "The member's flags.";
-    }
-  }
-
   augment "/if:interfaces/if:interface" {
     description
       "FreeBSD's own parts of an interface.";
@@ -394,85 +334,6 @@ module arcana-interfaces {
           "The media the driver offers, each as ifconfig(8) -m lists
            it: the subtype, then 'mediaopt' and the options, then
            'mode' and the mode.";
-      }
-    }
-    container bridge {
-      when "derived-from-or-self(../if:type, 'ianaift:bridge')";
-      description
-        "A bridge(4): SIOCGDRVSPEC and SIOCSDRVSPEC.";
-      list member {
-        key "name";
-        description
-          "Its members: BRDGGIFS, ifconfig(8) addm.";
-        leaf name {
-          type if:interface-ref;
-          description
-            "The member.";
-        }
-        uses bridge-member-flags;
-        leaf path-cost {
-          type uint32;
-          description
-            "Its STP path cost: ifconfig(8) ifpathcost.";
-        }
-        leaf priority {
-          type uint8;
-          description
-            "Its STP priority: ifconfig(8) ifpriority.";
-        }
-        leaf port-number {
-          config false;
-          type uint8;
-          description
-            "Its port number.";
-        }
-        leaf stp-state {
-          config false;
-          type enumeration {
-            enum disabled {
-              value 0;
-            }
-            enum listening {
-              value 1;
-            }
-            enum learning {
-              value 2;
-            }
-            enum forwarding {
-              value 3;
-            }
-            enum blocking {
-              value 4;
-            }
-            enum discarding {
-              value 5;
-            }
-          }
-          description
-            "Its spanning tree state, BSTP_IFSTATE_*.";
-        }
-        leaf stp-role {
-          config false;
-          type enumeration {
-            enum disabled {
-              value 0;
-            }
-            enum root {
-              value 1;
-            }
-            enum designated {
-              value 2;
-            }
-            enum alternate {
-              value 3;
-            }
-            enum backup {
-              value 4;
-            }
-          }
-          description
-            "Its spanning tree role, BSTP_ROLE_*.";
-        }
       }
     }
     leaf peer-vnet {
@@ -565,6 +426,49 @@ module arcana-interfaces {
       }
       description
         "Its state, LAGG_PORT_*, under every protocol.";
+    }
+  }
+
+  augment "/if:interfaces/if:interface/dot1q:bridge-port" {
+    description
+      "What a bridge(4) member has beyond IEEE 802.1Q.";
+    leaf flags {
+      config false;
+      type bits {
+        bit learning {
+          position 0;
+          description
+            "IFBIF_LEARNING: ifconfig(8) learn.";
+        }
+        bit discover {
+          position 1;
+          description
+            "IFBIF_DISCOVER: ifconfig(8) discover.";
+        }
+        bit span {
+          position 3;
+          description
+            "IFBIF_SPAN: a span port, ifconfig(8) span.";
+        }
+        bit sticky {
+          position 4;
+          description
+            "IFBIF_STICKY: ifconfig(8) sticky.";
+        }
+        bit private {
+          position 11;
+          description
+            "IFBIF_PRIVATE: ifconfig(8) private.";
+        }
+        bit qinq {
+          position 12;
+          description
+            "IFBIF_QINQ: ifconfig(8) qinq.";
+        }
+      }
+      description
+        "Its flags IEEE 802.1Q has no leaf for: struct ifbreq's
+         ifbr_ifsflags, at its positions.";
     }
   }
 

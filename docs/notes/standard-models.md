@@ -18,7 +18,8 @@ where nothing exists.
 | Faults, alarms | `ietf-alarms`, RFC 8632 (in share/yang) | RFC | the SD-WAN faults (Mplify 119) and the events that are faults as alarms (3.1.7, 3.1.12) |
 | Processes | `openconfig-procmon` (OpenConfig, Apache-2.0): pid, name, args, start time, CPU time and share, memory | OpenConfig | `arcana-processes` uses its grouping (procmon-processes-top) and augments it with FreeBSD's (jail, user, state, threads, priority) |
 | Events, history | none (an `history` module of an expired SFC draft is unrelated) | - | `arcana-events`, `arcana-history` |
-| Schedules (workflows' times) | `draft-ietf-netmod-schedule-yang` | WG draft | the workflows' schedules, when converted, by its groupings |
+| Schedules (workflows' times) | `ietf-schedule`, RFC 9922 | RFC | the workflows' schedules, when converted, by its groupings |
+| YANG data in files (import, export, defaults) | `ietf-yang-instance-data`, RFC 9195 | RFC | the console's JSON templates (SD-WAN, workflows) as instance data |
 | NTP | `ietf-ntp`, RFC 9249 | RFC | the ntp job kind's configuration and ntpd's state |
 | Keys, certificates, trust anchors | `ietf-crypto-types` RFC 9640, `ietf-truststore` RFC 9641, `ietf-keystore` RFC 9642 | RFC | certs (the CA, trust) through them |
 | SSH, TLS, TCP servers and clients | `ietf-ssh-server` RFC 9644, `ietf-tls-server` RFC 9645, `ietf-tcp-server` RFC 9643 | RFC | ssh (sshd), tls, transport (cblink's listeners) through their groupings |
@@ -60,10 +61,20 @@ the SD-WAN service models (`ietf-sdwan-svc`, `ietf-sdwan-vpn-svc`), the
 QoS, STAMP, NAT, DHCP, tunnel, VLAN and ECA modules above are, and
 nothing for WireGuard, netgraph, processes or capture.
 
-**Found late, to be reworked:** arcana-interfaces (1.9.3) models
-vlan(4), lagg(4), if_bridge(4) and the media in its own augments, where
-IEEE 802.1Q, 802.1AX, 802.3 and the VLAN sub-interface draft already
-do: those parts move to them (docs/TODO.md).
+**Found late, reworked 2026-10-14** (the user: "convert all arcana
+duplicate work to existing one"): arcana-interfaces (1.9.3) modelled
+the MTU, the Ethernet addresses, the FIB, an epair's peer, vlan(4),
+lagg(4), if_bridge(4) and the media in its own augments; they are now
+`ietf-ip`'s and `ietf-if-extensions`' (MTU, frame, peer, parent),
+`ietf-if-ethernet-like`'s, RFC 8529's bind-ni-name,
+`ietf-if-vlan-encapsulation`'s, IEEE 802.1AX's, IEEE 802.1Q's with
+RSTP, and IEEE 802.3's, arcana-interfaces keeping FreeBSD's own beside
+them. arcana-routing's BGP, OSPF, IS-IS, RIP and Babel identities are
+their modules'. Also checked since: [YANG Catalog](https://www.yangcatalog.org/)
+and the user's clone of YangModels/yang (~/code/yang), the source of
+every module vendored since; `ietf-schedule` is now RFC 9922 and
+`ietf-yang-instance-data` (RFC 9195) is the file format for the
+console's templates.
 
 Sources: [RFC 7317](https://www.rfc-editor.org/rfc/rfc7317), [RFC 8348](https://www.rfc-editor.org/rfc/rfc8348.html),
 [draft-ietf-ivy-network-inventory-software](https://datatracker.ietf.org/doc/html/draft-wzwb-ivy-network-inventory-software-02),

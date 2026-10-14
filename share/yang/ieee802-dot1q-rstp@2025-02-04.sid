@@ -1,0 +1,20 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ieee802-dot1q-rstp",
+    "module-revision": "2025-02-04",
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "assignment-range": [
+      {
+        "entry-point": "69700",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ieee802-dot1q-rstp",
+        "sid": "69700"
+      }
+    ]
+  }
+}

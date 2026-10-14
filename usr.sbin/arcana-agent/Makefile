@@ -60,7 +60,8 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-if-extensions@2025-08-07 ietf-if-ethernet-like@2026-06-19 \
 		ietf-if-vlan-encapsulation@2026-07-06 \
 		ieee802-ethernet-interface@2025-09-10 \
-		ieee802-dot1ax-linkagg@2025-09-30 \
+		ieee802-dot1ax-linkagg@2025-09-30 ieee802-dot1q-bridge@2023-10-26 \
+		ieee802-dot1q-rstp-bridge@2025-02-04 \
 		arcana-ieee802-deviations@2026-10-14 \
 		ietf-ip@2018-02-22 arcana-ip-deviations@2026-10-14 \
 		iana-if-type@2026-03-17 ietf-yang-types@2025-12-22 \
@@ -88,6 +89,7 @@ YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-if-ethernet-like:configurable-mac-address \
 		-F ietf-if-vlan-encapsulation: -F ieee802-ethernet-interface: \
 		-F ieee802-dot1ax-linkagg: -F arcana-ieee802-deviations: \
+		-F ieee802-dot1q-bridge: -F ieee802-dot1q-rstp-bridge: \
 		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
 		-F iana-if-type: -F ietf-yang-types: -F ietf-inet-types: \
 		-F ietf-routing:multiple-ribs -F ietf-ipv4-unicast-routing: \

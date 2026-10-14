@@ -6098,7 +6098,7 @@ EOF
 	cat > mine.awk <<'EOF'
 {
 	sub(/^[^ ]+ /, "")
-	gsub(/ (vlan|lagg|aggport|bridge|peer|eth)=[^ ]*/, "")
+	gsub(/ (vlan|lagg|aggport|bport|rstp|peer|eth)=[^ ]*/, "")
 	split($0, f, " ")
 	for (i in f)
 		if (f[i] ~ /^mac=/)

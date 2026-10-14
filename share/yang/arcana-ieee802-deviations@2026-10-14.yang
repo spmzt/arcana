@@ -14,8 +14,8 @@ module arcana-ieee802-deviations {
   contact
     "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
   description
-    "Where FreeBSD's link aggregation (lagg(4)) and bridges (if_bridge(4))
-     differ from IEEE 802.1AX's and 802.1Q's models.
+    "Where FreeBSD differs from the IEEE 802 models: its link
+     aggregation (lagg(4)) from IEEE 802.1AX's.
 
      FreeBSD's LACP keeps no administrative key: each port's key is
      derived from its speed (lacp_compose_key()), so a key group has

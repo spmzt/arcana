@@ -155,11 +155,17 @@
   syslog, 9129, 8695, 9647, 9314 for BIRD's protocols, 8532 and 8533
   for traceroute, the drafts for BGP, QoS, STAMP; none for processes,
   history, WireGuard, netgraph, capture; YangModels/yang checked too).
-  To rework, found by that check: arcana-interfaces's vlan, lagg,
-  bridge and media augments onto IEEE 802.1Q (ieee802-dot1q-bridge,
-  -vlan-bridge, -rstp), 802.1AX (ieee802-dot1ax-linkagg), 802.3
-  (ieee802-ethernet-interface) and ietf-if-vlan-encapsulation; the
-  disks of arcana-storage also as ietf-hardware's components.
+  Reworked (2026-10-14, agent 0.114.22 to 0.114.27; the user: "convert
+  all arcana duplicate work to existing one"): a route's BGP, OSPF,
+  IS-IS, RIP and Babel origin their modules' identities; the MTU
+  ietf-ip's and ietf-if-extensions' max-frame-size, the Ethernet
+  addresses ietf-if-ethernet-like's, the FIB bind-ni-name alone, an
+  epair's peer ietf-if-extensions', a vlan ietf-if-vlan-encapsulation's,
+  an Ethernet's medium IEEE 802.3's, a lagg IEEE 802.1AX's, a bridge
+  IEEE 802.1Q's with RSTP; arcana-interfaces keeps FreeBSD's own (yif.c,
+  yang_kinds, yang_interfaces, yang_origins, yang_pmd). Modules now come
+  from the user's clone of YangModels/yang (~/code/yang). Still to do:
+  the disks of arcana-storage also as ietf-hardware's components (3.1.9).
   Done (2026-10-13): Y-0 0.1, the body decoder: YANG-CBOR by SID
   deltas (cblink sid_test), YANG-CBOR's tags under CBL_CTX_YANG_TAGS,
   the cblink module and its .sid file (cblink share/yang), and the

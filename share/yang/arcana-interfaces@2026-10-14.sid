@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-interfaces",
     "module-revision": "2026-10-14",
-    "sid-file-version": 3,
+    "sid-file-version": 4,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 61 000, 200.",
     "dependency-revision": [
       {
@@ -28,6 +28,10 @@
       {
         "module-name": "ieee802-dot1ax-linkagg",
         "module-revision": "2025-09-30"
+      },
+      {
+        "module-name": "ieee802-dot1q-bridge",
+        "module-revision": "2023-10-26"
       }
     ],
     "assignment-range": [
@@ -45,46 +49,55 @@
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge",
+        "status": "obsolete",
         "sid": "61001"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member",
+        "status": "obsolete",
         "sid": "61002"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/flags",
+        "status": "obsolete",
         "sid": "61003"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/name",
+        "status": "obsolete",
         "sid": "61004"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/path-cost",
+        "status": "obsolete",
         "sid": "61005"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/port-number",
+        "status": "obsolete",
         "sid": "61006"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/priority",
+        "status": "obsolete",
         "sid": "61007"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/stp-role",
+        "status": "obsolete",
         "sid": "61008"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:bridge/member/stp-state",
+        "status": "obsolete",
         "sid": "61009"
       },
       {
@@ -316,6 +329,11 @@
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/arcana-interfaces:protocol",
         "sid": "61051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/arcana-interfaces:flags",
+        "sid": "61052"
       }
     ]
   }
