@@ -1227,6 +1227,65 @@ yang_route_times_cleanup()
 	true
 }
 
+atf_test_case yang_rtadv cleanup
+yang_rtadv_head()
+{
+	atf_set "descr" "rtadvd.conf edited as the router advertisement" \
+	    "submodule, rtadvctl reload, rtadvctl show (PLAN-SDN-YANG 2.5.1)," \
+	    "a lab rtadvd in a vnet jail"
+	atf_set "require.user" "root"
+}
+yang_rtadv_body()
+{
+	local y="$(atf_get_srcdir)/yrtadv" e=epair71a b=epair71b
+
+	# rtadvctl(8) has its socket at one place: none of the host's.
+	pgrep -x rtadvd >/dev/null && atf_skip "rtadvd runs here"
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair71 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check jexec "$YJAIL" ifconfig "$b" inet6 2001:db8:71::1/64 up \
+	    no_dad
+	atf_check -o ignore jexec "$YJAIL" sysctl net.inet6.ip6.forwarding=1
+	cat > rtadvd.conf <<EOF
+$b:\\
+	:maxinterval#600:mininterval#200:rltime#1800:\\
+	:addr="2001:db8:71::":prefixlen#64:
+EOF
+	atf_check jexec "$YJAIL" rtadvd -c "$PWD/rtadvd.conf" \
+	    -p "$PWD/rtadvd.pid" -s "$b"
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		jexec "$YJAIL" rtadvctl show "$b" 2>/dev/null | \
+		    grep -q 'MaxAdvInterval' && break
+		sleep 0.5
+	done
+	atf_check -o match:'MinAdvInterval/MaxAdvInterval: 3m20s/10m' \
+	    jexec "$YJAIL" rtadvctl show "$b"
+	# Edited as the submodule's max-rtr-adv-interval, reloaded: rtadvd
+	# advertises by it.
+	atf_check "$y" -m rtadvd.conf "$b" 300
+	atf_check -o match:'maxinterval#300' cat rtadvd.conf
+	atf_check jexec "$YJAIL" rtadvctl reload "$b"
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		jexec "$YJAIL" rtadvctl show "$b" | grep -q '/5m$' && break
+		sleep 0.5
+	done
+	atf_check -o match:'MinAdvInterval/MaxAdvInterval: 3m20s/5m' \
+	    jexec "$YJAIL" rtadvctl show "$b"
+}
+yang_rtadv_cleanup()
+{
+	[ -f rtadvd.pid ] && kill "$(cat rtadvd.pid)" >/dev/null 2>&1
+	sleep 0.5
+	ifconfig epair71b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 yang_static_apply_cleanup()
 {
 	ifconfig epair73b -vnet "$YJAIL" >/dev/null 2>&1
@@ -1262,6 +1321,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_ecmp
 	atf_add_test_case yang_static_apply
 	atf_add_test_case yang_route_times
+	atf_add_test_case yang_rtadv
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases

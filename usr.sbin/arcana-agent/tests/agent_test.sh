@@ -5261,6 +5261,68 @@ EOF
 	done < addrs
 }
 
+atf_test_case yang_rtadv_conf
+yang_rtadv_conf_head()
+{
+	atf_set "descr" "rtadvd.conf as RFC 8349's router advertisement" \
+	    "submodule (PLAN-SDN-YANG 2.5.1): read through tc=, an edit of" \
+	    "one leaf alone, written and read back"
+}
+yang_rtadv_conf_body()
+{
+	local y="$(atf_get_srcdir)/yrtadv"
+
+	# rtadvd.conf(5)'s examples.
+	cat > rtadvd.conf <<'EOF'
+ne0:\
+	:rltime#0:
+default:\
+	:chlim#64:raflags#0:rltime#1800:rtime#0:retrans#0:\
+	:pinfoflags="la":vltime#2592000:pltime#604800:mtu#0:
+ef1:\
+	:addr="2001:db8:ffff:1000::":prefixlen#64:tc=default:
+wlan0:\
+	:addr="2001:db8:ffff:1000::":prefixlen#48:pinfoflags="l":\
+	:addr0="2001:db8:1::":vltime0#3600:pltime0#1800:raflags="mo":
+EOF
+	atf_check -o inline:"managed-flag=0
+other-config-flag=0
+link-mtu=0
+reachable-time=0
+retrans-timer=0
+cur-hop-limit=64
+default-lifetime=1800
+prefix 2001:db8:ffff:1000::/64 1 1 2592000 604800
+" "$y" rtadvd.conf ef1
+	atf_check -o inline:"managed-flag=1
+other-config-flag=1
+prefix 2001:db8:ffff:1000::/48 1 0 2592000 604800
+prefix 2001:db8:1::/64 1 1 3600 1800
+" "$y" rtadvd.conf wlan0
+	atf_check -o inline:"default-lifetime=0\n" "$y" rtadvd.conf ne0
+	atf_check -o inline:"none\n" "$y" rtadvd.conf nothere
+	# One leaf edited: its field alone changes.
+	cp rtadvd.conf was
+	atf_check "$y" -m rtadvd.conf wlan0 300
+	atf_check -s exit:1 -o inline:"10c10
+< 	:addr0=\"2001:db8:1::\":vltime0#3600:pltime0#1800:raflags=\"mo\":
+---
+> 	:addr0=\"2001:db8:1::\":vltime0#3600:pltime0#1800:raflags=\"mo\":maxinterval#300:
+" diff was rtadvd.conf
+	atf_check -o match:'^max-rtr-adv-interval=300$' "$y" rtadvd.conf wlan0
+	# A record with tc=: what default brings stays default's.
+	cp rtadvd.conf was2
+	atf_check "$y" -m rtadvd.conf ef1 450
+	atf_check -s exit:1 -o inline:"7c7
+< 	:addr=\"2001:db8:ffff:1000::\":prefixlen#64:tc=default:
+---
+> 	:addr=\"2001:db8:ffff:1000::\":prefixlen#64:maxinterval#450:tc=default:
+" diff was2 rtadvd.conf
+	# Written to another file and read back: the same.
+	"$y" was wlan0 > want
+	atf_check -o file:want "$y" -w was wlan0 out
+}
+
 atf_test_case yang_rc_routes
 yang_rc_routes_head()
 {
@@ -5659,6 +5721,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_rc_routes
+	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_active_route
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd

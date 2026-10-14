@@ -66,4 +66,18 @@ int	rcr_write(struct vc_file *f, int fib,
 	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *sr,
 	    char *err, size_t errlen);
 
+/*
+ * rtadvd.conf and an interface's ipv6-router-advertisements (RFC 8349's
+ * submodule), invidia/rtadv.c.  rtadv_read(): the interface's record,
+ * tc= followed (none: *out NULL).  rtadv_write(): ra into the record's
+ * own fields, the record made if not there; err says what is refused.
+ */
+struct vc_capfile;
+int	rtadv_read(const struct vc_capfile *f, const char *ifname,
+	    cbl_yarena *a,
+	    const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements **out);
+int	rtadv_write(struct vc_capfile *f, const char *ifname,
+	    const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements *ra,
+	    char *err, size_t errlen);
+
 #endif /* !_ARCANA_COLLECT_H_ */
