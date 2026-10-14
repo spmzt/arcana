@@ -12,11 +12,12 @@ where nothing exists.
 | Area | Standard | Status | Arcana |
 |---|---|---|---|
 | Host facts: hostname, platform (os-name, os-release, machine), clock, boot time, users, DNS resolver, restart, shutdown | `ietf-system`, RFC 7317 | RFC | 3.1.9 uses it; `arcana-host` only augments it (role, router-id, capabilities, plugins) |
-| Hardware inventory: CPUs, memory, disks (class storage-drive), sensors (temperatures) | `ietf-hardware`, RFC 8348 | RFC | 3.1.9 fills it; the disks of `arcana-storage` (3.1.5) are also its components, serial and model as RFC 8348 has them |
+| Hardware inventory: CPUs, memory, disks (class storage-drive), sensors (temperatures) | `ietf-hardware`, RFC 8348; `bbf-hardware-storage-drives` (BBF TR-383, ratified: a drive's transfer rates and data read and written) | RFC; BBF | 3.1.9 fills it; the disks of `arcana-storage` (3.1.5) are also its components, serial and model as RFC 8348 has them, BBF's drive counters where FreeBSD has them (devstat), the SMART health an Arcana augment of the component |
 | Software inventory (packages, the OS) | `draft-ietf-ivy-network-inventory-software` | WG draft | `arcana-packages` (3.1.3) stays; aligned with the draft's names when it is an RFC |
-| Logging configuration (syslog.conf actions) | `ietf-syslog`, RFC 9742 | RFC | syslog.conf as `ietf-syslog` (3.1.7); the log operation's reading of the logs is `arcana-log`, which RFC 9742 does not cover |
+| Logging configuration (syslog.conf actions) | `ietf-syslog`, RFC 9742; `openconfig-system-logging` beside it | RFC; OpenConfig | syslog.conf as `ietf-syslog` (3.1.7); the log operation's reading of the logs is `arcana-log`, which neither covers |
 | Faults, alarms | `ietf-alarms`, RFC 8632 (in share/yang) | RFC | the SD-WAN faults (Mplify 119) and the events that are faults as alarms (3.1.7, 3.1.12) |
-| Events, history, processes | none | - | `arcana-events`, `arcana-history`, `arcana-processes` |
+| Processes | `openconfig-procmon` (OpenConfig, Apache-2.0): pid, name, args, start time, CPU time and share, memory | OpenConfig | `arcana-processes` uses its grouping (procmon-processes-top) and augments it with FreeBSD's (jail, user, state, threads, priority) |
+| Events, history | none (an `history` module of an expired SFC draft is unrelated) | - | `arcana-events`, `arcana-history` |
 | Schedules (workflows' times) | `draft-ietf-netmod-schedule-yang` | WG draft | the workflows' schedules, when converted, by its groupings |
 | NTP | `ietf-ntp`, RFC 9249 | RFC | the ntp job kind's configuration and ntpd's state |
 | Keys, certificates, trust anchors | `ietf-crypto-types` RFC 9640, `ietf-truststore` RFC 9641, `ietf-keystore` RFC 9642 | RFC | certs (the CA, trust) through them |
@@ -27,7 +28,7 @@ where nothing exists.
 | OSPF, RIP, Babel, BFD | RFC 9129, RFC 8695, RFC 9647, RFC 9314 | RFC | bird-config's protocols (3.1.8) as these, BIRD the engine |
 | BGP | `draft-ietf-idr-bgp-model` (-21, August 2026) | WG draft | 3.1.8 follows it |
 | Ping, traceroute | `ietf-connectionless-oam`, `-methods`, RFC 8532, RFC 8533 | RFC | traceroute (3.1.11) as RFC 8533's traceroute rpc |
-| Active measurement (probes) | STAMP: `draft-ietf-ippm-stamp-yang`; TWAMP: RFC 8913 | WG draft; RFC | the probes (3.1.11) as STAMP's, D-8 having chosen STAMP |
+| Active measurement (probes) | STAMP: `draft-ietf-ippm-stamp-yang` (`ietf-stamp`); TWAMP: `ietf-twamp`, RFC 8913; `openconfig-probes` | WG draft; RFC; OpenConfig | the probes (3.1.11) as STAMP's, D-8 having chosen STAMP |
 | Network topology | `ietf-network`, `-topology`, RFC 8345 (in share/yang) | RFC | the mesh and the topology view |
 | SD-WAN | MEF 70.2 publishes no YANG; `draft-sun-opsawg-sdwan-service-model` (individual, expired) | none usable | `arcana-sdwan` (3.1.12) by MEF 70.2's attributes; L3NM where they overlap (D-4) |
 | NAT (ipfw nat, the SD-WAN breakout) | `ietf-nat`, RFC 8512 | RFC | NAT through it |
@@ -44,7 +45,13 @@ where nothing exists.
 | WireGuard, netgraph, packet capture, plugins | none | - | Arcana's own |
 | Jails, services, sysctl, the kernel | none (a vnet jail's network is RFC 8530's LNE) | - | Arcana's own (3.1.1, 3.1.2, 3.1.6) |
 
-Also checked: [YangModels/yang](https://github.com/YangModels/yang)
+Also checked: [YANG Catalog](https://www.yangcatalog.org/) (the user's
+pointer), its api/search/modules, 28 724 modules of every
+organization: OpenConfig's procmon, system-logging, probes,
+platform-storage and -software, BBF's storage drives, RFC 8913's TWAMP
+are from there; the SD-WAN service modules are an individual draft of
+2019 (draft-sun-opsawg-sdwan-service-model-03, "initial"), stale.
+And [YangModels/yang](https://github.com/YangModels/yang)
 (the user's pointer): its standard/ietf, standard/ieee (802.1Q, 802.1AX,
 802.3, 802.1AB, 802.1X), standard/mef (MEF's public models are Carrier
 Ethernet's, Legato, CFM, SOAM: no SD-WAN) and the 1 367 modules
