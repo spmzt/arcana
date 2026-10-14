@@ -111,6 +111,18 @@ int64_t		 jint(const ucl_object_t *, const char *, int64_t);
 double		 jnum(const ucl_object_t *, const char *, double);
 bool		 jbool(const ucl_object_t *, const char *);
 char		*json_quote(const char *);
+/* yaml.c: YAML written and read. */
+char		*yaml_emit(const ucl_object_t *);
+ucl_object_t	*yaml_parse(const char *, char *, size_t);
+/* export.c: a tab's reads kept and exported; documents as JSON or YAML. */
+void		 export_where(int *, int *);
+void		 export_note(const char *, int, int, const ucl_object_t *);
+int		 export_count(void);
+void		 export_bar(struct html *, const char *);
+bool		 export_action(const char *, const char *, const char *);
+char		*data_emit(const ucl_object_t *, bool);
+ucl_object_t	*data_parse(const char *, char *, size_t);
+void		 export_save(const char *, const ucl_object_t *, bool);
 
 /* api.c: requests to the console's API with a callback each. */
 typedef void	 api_cb(int, const ucl_object_t *, const char *, void *);

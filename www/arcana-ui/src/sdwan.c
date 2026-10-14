@@ -4042,12 +4042,16 @@ view_document(struct html *h)
 	    "</button><button type=\"button\" class=\"ghost small\" "
 	    "data-act=\"sd-revert\">Back to the kept one</button>"
 	    "<span class=\"sep\"></span><button type=\"button\" class=\""
-	    "ghost small\" data-act=\"sd-export\" title=\"The kept one as "
-	    "a JSON file, to keep elsewhere or to start another from\">"
-	    "Export</button><label class=\"button ghost small\" title=\"A "
-	    "document from a file, put in the box: check it, then keep it\">"
-	    "Import<input type=\"file\" accept=\"application/json,.json\" "
-	    "data-file=\"sd-import\" hidden></label></div></form>",
+	    "ghost small\" data-act=\"sd-export\" data-arg=\"json\" title=\""
+	    "The kept one as a JSON file, to keep elsewhere or to start "
+	    "another from\">Export JSON</button><button type=\"button\" "
+	    "class=\"ghost small\" data-act=\"sd-export\" data-arg=\"yaml\" "
+	    "title=\"The kept one as a YAML file\">YAML</button><label class="
+	    "\"button ghost small\" title=\"A document from a JSON or YAML "
+	    "file, put in the box as JSON: check it, then keep it\">Import"
+	    "<input type=\"file\" accept=\"application/json,.json,"
+	    "application/yaml,.yaml,.yml\" data-file=\"sd-import\" hidden>"
+	    "</label></div></form>",
 	    sd.busy ? " disabled" : "", sd.busy ? " disabled" : "");
 }
 
@@ -7091,12 +7095,13 @@ send(const char *text, bool keep)
 	ucl_object_t	*o;
 	unsigned char	*json;
 
-	if ((o = json_parse(text)) == NULL || ucl_object_type(o) !=
-	    UCL_OBJECT) {
+	/* What is in the box: JSON, or YAML pasted in. */
+	if ((o = data_parse(text, sd.error, sizeof(sd.error))) == NULL ||
+	    ucl_object_type(o) != UCL_OBJECT) {
 		if (o != NULL)
 			ucl_object_unref(o);
-		snprintf(sd.error, sizeof(sd.error), "It is not JSON, or not an "
-		    "object.");
+		snprintf(sd.error, sizeof(sd.error), "It is not JSON or YAML, "
+		    "or not an object.");
 		sd.note[0] = '\0';
 		return;
 	}
@@ -7535,23 +7540,22 @@ sdwan_action(const char *act, const char *arg, const char *value)
 	else if (strcmp(act, "sd-example") == 0)
 		example();
 	else if (strcmp(act, "sd-export") == 0 && sd.doc != NULL) {
-		char	*json, name[64];
+		char	name[64];
 
 		/* As it is kept, written for people to read. */
-		json = pretty(sd.doc);
-		snprintf(name, sizeof(name), "sdwan-v%lld.json", (long long)jint(
+		snprintf(name, sizeof(name), "sdwan-v%lld", (long long)jint(
 		    sd.doc, "version", 0));
-		arc_save_text(name, "application/json", json != NULL ? json : "{}");
-		free(json);
+		export_save(name, sd.doc, strcmp(arg, "yaml") == 0);
 	} else if (strcmp(act, "file:sd-import") == 0) {
 		ucl_object_t	*o;
 
 		/* Read and laid out, not kept: Check, then Keep. */
 		sd.error[0] = sd.note[0] = '\0';
-		o = value[0] != '\0' ? json_parse(value) : NULL;
+		o = value[0] != '\0' ? data_parse(value, sd.error,
+		    sizeof(sd.error)) : NULL;
 		if (o == NULL || ucl_object_type(o) != UCL_OBJECT)
-			snprintf(sd.error, sizeof(sd.error), "%s: not a JSON "
-			    "document (or larger than 4 MiB)", arg);
+			snprintf(sd.error, sizeof(sd.error), "%s: not a JSON or "
+			    "YAML document (or larger than 4 MiB)", arg);
 		else {
 			free(sd.text);
 			sd.text = pretty(o);
