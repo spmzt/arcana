@@ -1030,6 +1030,21 @@ yang_ip_body()
 	    -o match:'^2001:db8:77::5/64:random:preferred$' \
 	    -o match:'^2001:db8:78::1/64:static:duplicate$' \
 	    -o match:'^ipv6=on,1500$' cat addrs
+	# Neighbours (1.10.2): set by hand, static, no state; one learnt,
+	# dynamic, its link address the other end's; the host's own, none.
+	atf_check arp -s 169.254.7.9 02:00:00:00:75:09
+	atf_check -o ignore ndp -s 2001:db8:75::9 02:00:00:00:75:0a
+	atf_check jexec "$YJAIL" ifconfig "$b" inet6 2001:db8:79::2/64
+	atf_check ifconfig "$e" inet6 2001:db8:79::1/64
+	sleep 2
+	atf_check -o ignore ping6 -c 1 -t 5 2001:db8:79::2
+	bll=$(jexec "$YJAIL" ifconfig "$b" ether | awk '$1 == "ether" { print $2 }')
+	atf_check -o save:nb "$y" nb
+	atf_check -o match:"^$e inet 169\.254\.7\.9 02:00:00:00:75:09 static\$" \
+	    -o match:"^$e inet6 2001:db8:75::9 02:00:00:00:75:0a static - -\$" \
+	    -o match:"^$e inet6 2001:db8:79::2 $bll dynamic - (reachable|stale|delay|probe)\$" \
+	    -o not-match:"^$e inet 169\.254\.7\.5 " \
+	    -o not-match:"^$e inet6 2001:db8:79::1 " cat nb
 	atf_check ifconfig "$e" inet6 ifdisabled
 	atf_check -o match:" ipv6=off,1500\$" sh -c "\"$y\" ip | grep '^$e '"
 }

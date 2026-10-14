@@ -5382,6 +5382,43 @@ EOF
 		grep "^$i " ip | awk -f myip.awk > got
 		cmp -s exp got || atf_fail "$i: ifconfig says $(cat exp), the collector $(cat got)"
 	done
+
+	# The neighbours beside arp -an and ndp -an, less the host's own
+	# addresses, which they list too, and those unresolved: what both
+	# readings, before and after, have the collector has, and what it
+	# has one of them has.
+	ifconfig -a | awk '$1 == "inet" || $1 == "inet6" { a = $2;
+	    sub(/%.*/, "", a); print a }' > own
+	cat > nbs.sh <<'EOF'
+arp -an | awk -v own=own '
+BEGIN { while ((getline a < own) > 0) mine[a] = 1 }
+$4 != "(incomplete)" {
+	ip = $2; gsub(/[()]/, "", ip)
+	if (ip in mine) next
+	print $6, "inet", ip, $4, ($7 == "permanent" ? "static" : "dynamic")
+}'
+ndp -an | awk -v own=own '
+BEGIN { while ((getline a < own) > 0) mine[a] = 1
+	st["R"] = "reachable"; st["S"] = "stale"; st["D"] = "delay"
+	st["P"] = "probe"; st["I"] = "incomplete" }
+NR > 1 && $2 != "(incomplete)" {
+	ip = $1; sub(/%.*/, "", ip)
+	if (ip in mine) next
+	perm = $4 == "permanent"
+	print $3, "inet6", ip, $2, (perm ? "static" : "dynamic"),
+	    ($6 ~ /R/ ? "router" : "-"), (perm || !($5 in st) ? "-" : st[$5])
+}'
+EOF
+	sh nbs.sh | sort > nb.before
+	atf_check -o save:nb "$(atf_get_srcdir)/ycollect" nb
+	sh nbs.sh | sort > nb.after
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 nb
+	sed '$d' nb | sort -o nb
+	comm -12 nb.before nb.after > nb.both
+	sort -u nb.before nb.after > nb.either
+	comm -23 nb.both nb > nb.missing
+	comm -23 nb nb.either > nb.extra
+	atf_check -o empty cat nb.missing nb.extra
 }
 
 atf_init_test_cases()
