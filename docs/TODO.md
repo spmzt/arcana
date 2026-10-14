@@ -182,7 +182,20 @@
   yanglint's and Markdown (-m tree, md); the kv example in YANG
   (cblink examples/kvy).  Arcana's corpus, 51 modules: 4312 nodes and
   804 identities in the tables, 8406 round trips through YANG-CBOR all
-  the same bytes (cblink tools/yangwalk/tablecheck.sh). As each operation is
+  the same bytes (cblink tools/yangwalk/tablecheck.sh). Done on cblink's
+  branch v2 (2026-10-14; arcana stays on cblink main until the switch,
+  3.8): 1.7, wire version 2 (version 1 refused), the body by SIDs, the
+  cblink module's structures in place of the negative keys (error,
+  credit, close, hello, notification), an rpc's input and output keyed
+  from its SID; family 1 "cblink.yang" serving a program's YANG handlers
+  in CORECONF's shape (GET and dump, EDIT all or nothing, RPC, NOTIFY,
+  GET-SID); the control family as the module cblink-ctrl; version 1's
+  attributes, policies, parsers and YAML generator removed, the examples
+  and tests in YANG, the docs (YANG.md, GENERATOR.md, WIRE-FORMAT.md
+  version 2). 1.8.1, the static validator (RFC 7950 within one tree,
+  run on every EDIT and rpc input) and defaults. Next: 1.9 and 1.10, the
+  collectors, and 1.11, the first GET, on an arcana branch with cblink
+  v2. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

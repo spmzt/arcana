@@ -34,8 +34,16 @@ itself, as the plan says, until it holds one by registration.
 
 | Range | Size | Module | `.sid` file |
 |---|---:|---|---|
-| 2^40 + 0 | 100 | `cblink` | `cblink/share/yang/cblink@2026-10-13.sid` (48 used) |
-| 2^40 + 100 | 100 | `kv`, cblink's example in YANG | `cblink/examples/kvy/kv@2026-10-13.sid` (22 used) |
+| 2^40 + 0 | 100 | `cblink`, the framework's structures | `cblink/share/yang/cblink@2026-10-13.sid` (50 used) |
+| 2^40 + 100 | 100 | `kv`, cblink's example | `cblink/examples/kv/kv@2026-10-13.sid` (22 used) |
+| 2^40 + 200 | 100 | `cblink-ctrl`, the control family | `cblink/share/yang/cblink-ctrl@2026-10-13.sid` (47 used) |
+| 2^40 + 300 | 100 | `echo`, cblink's example | `cblink/examples/echo/echo@2026-10-13.sid` (7 used) |
+| 2^40 + 400 | 100 | `stream`, cblink's example | `cblink/examples/stream/stream@2026-10-13.sid` (5 used) |
+| 2^40 + 500 | 100 | `notify`, cblink's example | `cblink/examples/notify/notify@2026-10-13.sid` (4 used) |
+
+cblink's own test modules (`shapes` from 2^40 + 100 000, `rules` from
+2^40 + 200 000) number themselves for its tests and are never on a wire.
+The paths are cblink's branch v2, which arcana takes at the switch.
 
 ## To decide: a registered block
 
