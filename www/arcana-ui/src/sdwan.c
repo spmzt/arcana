@@ -97,6 +97,7 @@ static struct {
 	char		 link_host[9];
 	char		 link_if[32];
 	bool		 ep_remote;	/* the end point form: a remote one */
+	char		 ucs_kind[8];	/* the underlay form: its tunnel's kind */
 	ucl_object_t	*ifs;		/* the link host's interfaces */
 	bool		 ifs_loading;
 	bool		 show_kept;	/* the Edges tab shows what stays too */
@@ -4215,7 +4216,7 @@ sdwan_modal(struct html *h)
 		option(h, "usage-based", "by usage", jstr(u, "billing"));
 		option(h, "other", "other", jstr(u, "billing"));
 		h_raw(h, "</select></label></div><div class=\"two\"><label>Tunnel "
-		    "over it<select name=\"kind\">");
+		    "over it<select name=\"kind\" data-input=\"sd-ucs-kind\">");
 		option(h, "gre", "gre: gre(4), IP in IP with a key", jstr(t,
 		    "kind") != NULL ? jstr(t, "kind") : "gre");
 		option(h, "gif", "gif: gif(4), IP in IP", jstr(t, "kind"));
@@ -4225,14 +4226,21 @@ sdwan_modal(struct html *h)
 		    "kind"));
 		option(h, "uswe", "uswe: Mplify 119, IPsec keyed by the edges",
 		    jstr(t, "kind"));
-		h_fmt(h, "</select></label><label class=\"toggle\"><input type=\""
-		    "checkbox\" name=\"ipsec\" value=\"1\"%s> IPsec IKEv2 under "
-		    "it, by strongSwan<small>Required on a public underlay by "
-		    "a policy that says so; not for wg or uswe.</small></label>"
-		    "</div>", t != NULL && jbool(t, "ipsec") ? " checked" : "");
+		h_raw(h, "</select></label>");
+		/* wg and uswe encrypt by themselves: no IPsec under them. */
+		if (strcmp(sd.ucs_kind, "wg") != 0 && strcmp(sd.ucs_kind,
+		    "uswe") != 0)
+			h_fmt(h, "<label class=\"toggle\"><input type=\"checkbox\" "
+			    "name=\"ipsec\" value=\"1\"%s> IPsec IKEv2 under it, "
+			    "by strongSwan<small>Required on a public underlay by "
+			    "a policy that says so.</small></label>", t != NULL &&
+			    jbool(t, "ipsec") ? " checked" : "");
+		h_raw(h, "</div>");
+		if (strcmp(sd.ucs_kind, "uswe") != 0)
+			return (true);
 		/* A USWE tunnel's SAs: the base system's ipsec(4) and
 		 * setkey, the keys made and derived by the agents. */
-		h_raw(h, "<fieldset><legend>uswe only <small class=\"dim\">an "
+		h_raw(h, "<fieldset><legend>uswe <small class=\"dim\">an "
 		    "ipsec(4) interface each end, ESP in tunnel mode, the keys "
 		    "derived by the two agents from a pair each (Mplify 119 "
 		    "§10)</small></legend><div class=\"two\"><label>Algorithms"
@@ -7275,9 +7283,17 @@ sdwan_action(const char *act, const char *arg, const char *value)
 			return (sdwan_action("sd-policy-add", "", ""));
 		return (true);
 	}
+	if (strcmp(act, "input:sd-ucs-kind") == 0) {
+		snprintf(sd.ucs_kind, sizeof(sd.ucs_kind), "%s", value);
+		return (true);
+	}
 	if (strcmp(act, "sd-ucs-add") == 0 || strcmp(act, "sd-ucs-edit") == 0) {
 		snprintf(sd.edit, sizeof(sd.edit), "%s", strcmp(act,
 		    "sd-ucs-edit") == 0 ? arg : "");
+		/* What the form shows besides follows the tunnel's kind. */
+		snprintf(sd.ucs_kind, sizeof(sd.ucs_kind), "%s", jstr(jget(
+		    ucs_by(sd.edit), "tunnel"), "kind") != NULL ? jstr(jget(
+		    ucs_by(sd.edit), "tunnel"), "kind") : "gre");
 		app.modal = MODAL_SD_UCS;
 		app.modal_error[0] = '\0';
 		return (true);

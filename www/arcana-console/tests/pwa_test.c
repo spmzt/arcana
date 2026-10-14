@@ -4323,7 +4323,7 @@ part_flows(void)
 	    20);
 	run("document.querySelector('button[data-act=api-tag][data-arg=auth]')"
 	    ".click()");
-	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 12",
+	wait_js("document.querySelectorAll('ul.apiops li.apiop').length === 13",
 	    5);
 	run("document.querySelector('button[data-act=api-tag][data-arg=\"\"]')"
 	    ".click()");
@@ -4371,6 +4371,21 @@ part_flows(void)
 	    "click()");
 	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]"
 	    "')", 5);
+	/* uswe's own settings only when the tunnel is uswe. */
+	ATF_CHECK(js_true("!document.querySelector('form[data-form=sd-ucs] "
+	    "input[name=lifetime]') && document.querySelector('form[data-form="
+	    "sd-ucs] input[name=ipsec]')"));
+	run("const k = document.querySelector('form[data-form=sd-ucs] select["
+	    "name=kind]'); k.value = 'uswe'; k.dispatchEvent(new Event('input',"
+	    " { bubbles: true }));");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name="
+	    "lifetime]') && !document.querySelector('form[data-form=sd-ucs] "
+	    "input[name=ipsec]')", 5);
+	run("const k = document.querySelector('form[data-form=sd-ucs] select["
+	    "name=kind]'); k.value = 'gre'; k.dispatchEvent(new Event('input',"
+	    " { bubbles: true }));");
+	wait_js("!document.querySelector('form[data-form=sd-ucs] input[name="
+	    "lifetime]')", 5);
 	run("const f = document.querySelector('form[data-form=sd-ucs]'); "
 	    "f.id.value = 'net'; f.type.value = 'public'; f.kind.value = "
 	    "'gre'; f.requestSubmit();");
