@@ -198,11 +198,14 @@
   collected (invidia/yif.c), equal to ifconfig and netstat -i; 1.9.2,
   the layers from vlan, lagg and bridge; 1.9.3, the arcana-interfaces
   augment (share/yang), equal to ifconfig -m -D and read back from each
-  kind the jobs make; the IETF modules' .sid files numbered in IANA's
-  ranges, IANA publishing none. For the user: the CORECONF draft's
+  kind the jobs make; 1.9.4, the netlink watch tells an interface made,
+  changed, renamed and destroyed (no kernel event for a description,
+  FIB, group, link address, media, capabilities or a kind's settings:
+  3.2.3 must tell or poll them); the IETF modules' .sid files numbered
+  in IANA's ranges, IANA publishing none. For the user: the CORECONF draft's
   examples number some ietf-interfaces items otherwise (SIDS.md). Next:
-  1.9.4, rtsock events; 1.10, ietf-ip; 1.11, the first GET, on an
-  arcana branch with cblink v2. As each operation is
+  1.10, ietf-ip; 1.11, the first GET, on an arcana branch with cblink
+  v2. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

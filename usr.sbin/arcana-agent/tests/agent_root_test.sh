@@ -936,10 +936,61 @@ yang_kinds_cleanup()
 	true
 }
 
+# The events ietf-interfaces' list changes by (PLAN-SDN-YANG 1.9.4),
+# netlink(4)'s RTNLGRP_LINK as the agent watches it: an interface made,
+# changed, renamed (gone by its old name, come by its new one) and
+# destroyed, the collector's list agreeing after each.
+atf_test_case yang_events cleanup
+yang_events_head()
+{
+	atf_set "descr" "an interface made, changed, renamed and destroyed:" \
+	    "each a link event, and the collector's list as it says"
+	atf_set "require.user" "root"
+}
+yang_events_body()
+{
+	local y="$(atf_get_srcdir)/ycollect"
+
+	for i in epair76a epair76b yev76; do
+		ifconfig "$i" >/dev/null 2>&1 && atf_skip "$i exists"
+	done
+	start_daemon
+	last=$("$JGC" -c "$SOCK" events | sed -E 's/^\{"last":([0-9]+).*/\1/')
+	atf_check -o ignore ifconfig epair76 create
+	echo epair76a > made
+	atf_check ifconfig epair76a mtu 1400 up
+	echo yev76 >> made
+	atf_check -o inline:'yev76\n' ifconfig epair76a name yev76
+	atf_check -o save:y "$y" interfaces
+	atf_check -o match:'^yev76 index=[0-9]+ admin=up ' grep '^yev76 ' y
+	atf_check -s exit:1 grep '^epair76a ' y
+	atf_check ifconfig yev76 destroy
+	atf_check -o save:y2 "$y" interfaces
+	atf_check -s exit:1 grep -E '^(yev76|epair76b) ' y2
+	sleep 0.5
+	atf_check -o save:ev "$JGC" -c "$SOCK" events "$last"
+	atf_check -o match:'"kind":"link","data":\{"interface":"epair76a","up":false' \
+	    -o match:'"kind":"link","data":\{"interface":"epair76a","up":true,"carrier":true,"mtu":1400' \
+	    -o match:'"kind":"link-del","data":\{"interface":"epair76a"' \
+	    -o match:'"kind":"link","data":\{"interface":"yev76"' \
+	    -o match:'"kind":"link-del","data":\{"interface":"yev76"' \
+	    -o match:'"kind":"link-del","data":\{"interface":"epair76b"' cat ev
+}
+yang_events_cleanup()
+{
+	cleanup
+	# By either name: renamed or not when the case stopped.
+	[ -f made ] && while read -r i; do
+		ifconfig "$i" destroy >/dev/null 2>&1
+	done < made
+	true
+}
+
 atf_init_test_cases()
 {
 	atf_add_test_case yang_layers
 	atf_add_test_case yang_kinds
+	atf_add_test_case yang_events
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases
