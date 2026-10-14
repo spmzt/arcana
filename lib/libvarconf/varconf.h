@@ -69,6 +69,11 @@ int		 vc_write(const struct vc_file *, const char *, mode_t, char *,
 		    size_t);
 int		 vc_rcd_path(const char *, const char *, const char *, char *,
 		    size_t, char *, size_t);
+int		 vc_rc_files(const char *, const char *, const char *,
+		    const char *, char ***, size_t *, char *, size_t);
+void		 vc_rc_files_free(char **, size_t);
+int		 vc_conflict(char *const *, size_t, const char *, char *,
+		    size_t);
 __END_DECLS
 
 #endif /* !_VARCONF_H_ */

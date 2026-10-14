@@ -245,7 +245,12 @@
   and gives the fragment Arcana owns, rc.conf.d/<service>/arcana,
   refused where rc.conf.d/<service> is the user's file; the agent
   still edits rc.conf through sysrc(8) until 2.3.5 renders the
-  fragments. Next: 2.3.2, the conflict rule. As each operation is
+  fragments. 2.3.2, the conflict rule: the user's files rc(8) reads
+  for a service listed as it reads them (rc_conf_files, as rc.conf may
+  name more; rc.conf.d/<service> of /etc and of local_startup's
+  directories), Arcana's fragment not among them, and a variable any of
+  them sets refused, the file and line said. Next: 2.3.3, loader.conf,
+  sysctl.conf and rtadvd.conf. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
