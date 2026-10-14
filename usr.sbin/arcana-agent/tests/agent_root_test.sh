@@ -1227,6 +1227,39 @@ yang_route_times_cleanup()
 	true
 }
 
+atf_test_case yang_lne cleanup
+yang_lne_head()
+{
+	atf_set "descr" "logical network elements (PLAN-SDN-YANG 2.7.1): a" \
+	    "vnet jail is one, a jail sharing the host's stack is not; as" \
+	    "jls says"
+	atf_set "require.user" "root"
+}
+yang_lne_body()
+{
+	local c="$(atf_get_srcdir)/ycollect"
+
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	jls -j "${YJAIL}2" >/dev/null 2>&1 &&
+	    atf_skip "a jail named ${YJAIL}2 exists"
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check -o ignore jail -c name="${YJAIL}2" path=/ persist
+	atf_check -o match:"^$YJAIL managed\$" -o not-match:"^${YJAIL}2 " \
+	    "$c" lne
+	# jls's vnet parameter: new for a stack of its own.
+	jls -n name vnet | sed -n 's/^name=\(.*\) vnet=new$/\1 managed/p' | \
+	    sort > want
+	"$c" lne | grep -v '^yang-cbor' | sort > got
+	atf_check -o inline:"$YJAIL managed\n" grep "^$YJAIL " want
+	atf_check cmp want got
+}
+yang_lne_cleanup()
+{
+	jail -r "${YJAIL}2" >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 atf_test_case yang_ni cleanup
 yang_ni_head()
 {
@@ -1437,6 +1470,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_static_apply
 	atf_add_test_case yang_route_times
 	atf_add_test_case yang_rtadv
+	atf_add_test_case yang_lne
 	atf_add_test_case yang_ni
 	atf_add_test_case yang_ni_bind
 	atf_add_test_case yang_ni_grow

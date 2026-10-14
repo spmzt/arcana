@@ -106,6 +106,11 @@ struct ietf_network_instance_bind_ni_name_failed_interface;
 struct ietf_network_instance_bind_ni_name_failed_ipv4;
 struct ietf_network_instance_bind_ni_name_failed_ipv6;
 struct ietf_network_instance_bind_ni_name_failed;
+struct ietf_logical_network_element_logical_network_elements_logical_network_element_root;
+struct ietf_logical_network_element_logical_network_elements_logical_network_element;
+struct ietf_logical_network_element_logical_network_elements;
+struct ietf_logical_network_element;
+struct ietf_logical_network_element_bind_lne_name_failed;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -813,6 +818,7 @@ struct ietf_interfaces_interfaces_interface {
 	const struct ietf_interfaces_interfaces_interface_arcif_epair	*arcif_epair;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv4	*ip_ipv4;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv6	*ip_ipv6;
+	const char	*lne_bind_lne_name;
 	const char	*ni_bind_ni_name;
 };
 
@@ -1451,6 +1457,40 @@ struct ietf_network_instance_bind_ni_name_failed {
 	const char	*error_info;
 };
 
+/* container */
+struct ietf_logical_network_element_logical_network_elements_logical_network_element_root {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct ietf_logical_network_element_logical_network_elements_logical_network_element {
+	const char	*name;
+	bool			 has_managed;
+	bool		 managed;
+	const char	*description;
+	const struct ietf_logical_network_element_logical_network_elements_logical_network_element_root	*root;
+};
+
+/* container */
+struct ietf_logical_network_element_logical_network_elements {
+	struct {
+		size_t		 n;
+		const struct ietf_logical_network_element_logical_network_elements_logical_network_element	*v;
+	}			 logical_network_element;
+};
+
+/* data */
+struct ietf_logical_network_element {
+	const struct ietf_logical_network_element_logical_network_elements	*logical_network_elements;
+};
+
+/* notification */
+struct ietf_logical_network_element_bind_lne_name_failed {
+	const char	*name;
+	const char	*bind_lne_name;
+	const char	*error_info;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -1799,6 +1839,22 @@ int	ietf_network_instance_bind_ni_name_failed_encode(const struct ietf_network_i
 	    struct cbl_ybuf *);
 int	ietf_network_instance_bind_ni_name_failed_decode(const void *, size_t, struct ietf_network_instance_bind_ni_name_failed *,
 	    cbl_yarena *, int, char *, size_t);
+int	ietf_logical_network_element_logical_network_elements_logical_network_element_root_encode(const struct ietf_logical_network_element_logical_network_elements_logical_network_element_root *,
+	    struct cbl_ybuf *);
+int	ietf_logical_network_element_logical_network_elements_logical_network_element_root_decode(const void *, size_t, struct ietf_logical_network_element_logical_network_elements_logical_network_element_root *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_logical_network_element_logical_network_elements_logical_network_element_encode(const struct ietf_logical_network_element_logical_network_elements_logical_network_element *,
+	    struct cbl_ybuf *);
+int	ietf_logical_network_element_logical_network_elements_logical_network_element_decode(const void *, size_t, struct ietf_logical_network_element_logical_network_elements_logical_network_element *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_logical_network_element_logical_network_elements_encode(const struct ietf_logical_network_element_logical_network_elements *,
+	    struct cbl_ybuf *);
+int	ietf_logical_network_element_logical_network_elements_decode(const void *, size_t, struct ietf_logical_network_element_logical_network_elements *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_logical_network_element_bind_lne_name_failed_encode(const struct ietf_logical_network_element_bind_lne_name_failed *,
+	    struct cbl_ybuf *);
+int	ietf_logical_network_element_bind_lne_name_failed_decode(const void *, size_t, struct ietf_logical_network_element_bind_lne_name_failed *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -1822,6 +1878,11 @@ int	ietf_network_instance_network_instances_get(cbl_req *, struct ietf_network_i
 int	ietf_network_instance_network_instances_edit(cbl_req *, const struct ietf_network_instance *,
 	    const struct ietf_network_instance *);
 int	ietf_network_instance_bind_ni_name_failed_notification(const struct ietf_network_instance_bind_ni_name_failed *,
+	    struct cbl_ybuf *);
+int	ietf_logical_network_element_logical_network_elements_get(cbl_req *, struct ietf_logical_network_element *, cbl_yarena *);
+int	ietf_logical_network_element_logical_network_elements_edit(cbl_req *, const struct ietf_logical_network_element *,
+	    const struct ietf_logical_network_element *);
+int	ietf_logical_network_element_bind_lne_name_failed_notification(const struct ietf_logical_network_element_bind_lne_name_failed *,
 	    struct cbl_ybuf *);
 
 #endif /* !_YMODEL_H_ */

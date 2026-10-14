@@ -95,7 +95,8 @@ The `.sid` files of the IETF and IANA modules the agent fills
 `ietf-inet-types`) are Arcana's too: IANA registers their ranges and
 publishes no file, so they are numbered here (SIDS.md). So are those
 of the ones with no IETF range (`ietf-routing`, its address families,
-`ietf-network-instance`), from Arcana's block. A module's file numbers
+`ietf-network-instance`, `ietf-logical-network-element`), from
+Arcana's block. A module's file numbers
 every item of it, whatever another module deviates:
 `arcana-network-instance` takes `vsi-root` away, its number stays.
 
