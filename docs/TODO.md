@@ -256,8 +256,72 @@
   and quotes, from sysctl.c), and rtadvd.conf as records of
   capabilities, read as rtadvd(8)'s advcap.c reads them (compiled into
   the test from /usr/src: every getter of every capability agrees),
-  values set in place, an edit that would not read back refused. Next:
-  2.3.4, running assembled from the files. As each operation is
+  values set in place, an edit that would not read back refused.
+  2.3.4 on need cblink v2's instance tree, so the 1.11 branch. 2.4.1:
+  ietf-routing's RIBs, a FIB's ipv4-master and ipv6-master as netlink
+  dumps them (invidia/yrt.c), every route's next hop (a next-hop-list
+  for a multipath one; blackhole, unreachable for a reject route,
+  receive for the host's own), its source-protocol from netlink's
+  rtm_protocol (arcana-routing's identities where RFC 8349 has none);
+  agent_test's yang_routes holds every FIB to netstat -rn. ietf-routing
+  and the unicast modules have no IETF SID range: Arcana's block,
+  2^40 + 1300 to 1799 (SIDS.md). 2.4.2: a multipath route's next hops
+  as its next-hop-list, held to a vnet jail's prefix with two gateways,
+  IPv4 and IPv6 (agent_root_test's yang_ecmp). 2.4.3: rc.conf's
+  static routes as rc.d/routing installs them, read into ietf-routing's
+  static control-plane-protocol and written to a fragment Arcana owns
+  (invidia/rcroutes.c, with libvarconf): static_routes and route_<name>
+  (name:interface kept in the description), defaultrouter, the _fib<N>
+  and IPv6 variants; route(8)'s arguments the model holds (-net, -host,
+  masks, -iface, -ifp, -blackhole, -reject, -fib), routes of one prefix
+  a next-hop-list; the rest unread, said why. 2.4.4: rcr_apply() makes
+  a FIB's static routes the kernel's by netlink as route(8) does
+  (RTM_NEWROUTE with NLM_F_APPEND, a list's hops a multipath route;
+  RTA_TABLE; RTPROT_STATIC), what changed only, all undone if one fails;
+  agent_root_test's yang_static_apply holds it to route -n get in a
+  vnet jail, FIB 1 too. 2.4.5: the RIBs' active-route action,
+  yrt_active_route(), the route an address goes by as route(8)'s get
+  asks netlink (the longest match), held to route -n get for the
+  loopback, addresses out and every address of the host's own. 2.4.6:
+  route events were netlink's already (nlroute.c, every FIB on one
+  socket); each now notes its route's time (invidia/rtimes.c), the
+  RIBs' last-updated, none for a route not seen to change; held to a
+  route added in a vnet jail while heard (yang_route_times). 2.4 done.
+  2.5.1: rtadvd.conf as RFC 8349's router advertisement submodule, both
+  ways (invidia/rtadv.c on libvarconf's capconf: config.c's fields, tc=
+  followed, a leaf edited its field alone, written before tc=; a
+  no-advertise prefix refused, rtadvd(8) has only noifprefix);
+  send-advertisements stays rc.conf's rtadvd_interfaces. Held to
+  rtadvd.conf(5)'s examples (yang_rtadv_conf) and to a lab rtadvd in a
+  vnet jail, edited then rtadvctl reload, rtadvctl show telling the new
+  interval (yang_rtadv). The running datastore's use of it waits on
+  1.11. 2.6.1: FIBs 1 to net.fibs - 1 as RFC 8529's network instances
+  (invidia/yni.c), each a VRF of arcana-network-instance's fib case
+  (2^40 + 1900; ietf-network-instance 2^40 + 1800), named fibN or as
+  fibs.conf names it (fibN_name, fibN_description: sh(1), libvarconf),
+  what cannot be read so said; written back, refused where a FIB is not
+  there, a name is another's, one FIB twice. cblink-gen numbers a
+  module's .sid file against the module alone, so that
+  arcana-network-instance's deviations (no VSI or VV root, a FIB cannot
+  be disabled; lint.sh holds them) leave ietf-network-instance's file
+  whole. Held to the host's net.fibs and fibs.conf cases (yang_ni_conf)
+  and a vnet jail raised to net.fibs=4 (yang_ni). 2.6.3:
+  bind-ni-name, the interface's and its address families' alike (an
+  interface is bound, not a family): read from its FIB (SIOCGIFFIB),
+  applied by SIOCSIFFIB and kept as the fib words of rc.conf's
+  ifconfig_<if>, undone if that fails; refused as bind-ni-name-failed
+  says (no such instance, a family apart, the kernel's error). Held to
+  rc.conf cases (yang_ni_rc) and an epair in a vnet jail: ifconfig fib
+  read back, a name applied, refusals, unbound (yang_ni_bind). 2.6.4:
+  net.fibs grows live, never shrinks (route_tables.c's sysctl_fibs), so
+  an instance past the last FIB raises it live and loader.conf keeps
+  it (yni_grow, checked before anything grows), the reboot flag only
+  where the kernel will not grow it; FIBs at most RT_MAXFIBS (65535,
+  the fib leaf 1..65534). Held to loader.conf cases unprivileged (no
+  live raise: reboot required; yang_ni_grow) and a vnet jail's net.fibs
+  raised live (yang_ni_grow, root). 2.6.2 (the vrf-root mount) and
+  parent-reference wait on 1.11. Next: 2.7.1, the LNE list from
+  jail_get. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

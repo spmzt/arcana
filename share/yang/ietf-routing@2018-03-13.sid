@@ -1,0 +1,470 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-routing",
+    "module-revision": "2018-03-13",
+    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 1300, 200.",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "1099511629076",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-routing",
+        "sid": "1099511629076"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "address-family",
+        "sid": "1099511629077"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "control-plane-protocol",
+        "sid": "1099511629078"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "direct",
+        "sid": "1099511629079"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ipv4",
+        "sid": "1099511629080"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ipv6",
+        "sid": "1099511629081"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "routing-protocol",
+        "sid": "1099511629082"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "static",
+        "sid": "1099511629083"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "multiple-ribs",
+        "sid": "1099511629084"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "router-id",
+        "sid": "1099511629085"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing",
+        "sid": "1099511629086"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state",
+        "sid": "1099511629087"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/control-plane-protocols",
+        "sid": "1099511629088"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/control-plane-protocols/control-plane-protocol",
+        "sid": "1099511629089"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/control-plane-protocols/control-plane-protocol/name",
+        "sid": "1099511629090"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/control-plane-protocols/control-plane-protocol/type",
+        "sid": "1099511629091"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/interfaces",
+        "sid": "1099511629092"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/interfaces/interface",
+        "sid": "1099511629093"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs",
+        "sid": "1099511629094"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib",
+        "sid": "1099511629095"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route",
+        "sid": "1099511629096"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/input",
+        "sid": "1099511629097"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output",
+        "sid": "1099511629098"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route",
+        "sid": "1099511629099"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/active",
+        "sid": "1099511629100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/last-updated",
+        "sid": "1099511629101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop",
+        "sid": "1099511629102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop/next-hop-list",
+        "sid": "1099511629103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop/next-hop-list/next-hop",
+        "sid": "1099511629104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop/next-hop-list/next-hop/outgoing-interface",
+        "sid": "1099511629105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop/outgoing-interface",
+        "sid": "1099511629106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop/special-next-hop",
+        "sid": "1099511629107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/source-protocol",
+        "sid": "1099511629108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/address-family",
+        "sid": "1099511629109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/default-rib",
+        "sid": "1099511629110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/name",
+        "sid": "1099511629111"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes",
+        "sid": "1099511629112"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route",
+        "sid": "1099511629113"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/active",
+        "sid": "1099511629114"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/last-updated",
+        "sid": "1099511629115"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop",
+        "sid": "1099511629116"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop/next-hop-list",
+        "sid": "1099511629117"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop/next-hop-list/next-hop",
+        "sid": "1099511629118"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop/next-hop-list/next-hop/outgoing-interface",
+        "sid": "1099511629119"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop/outgoing-interface",
+        "sid": "1099511629120"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop/special-next-hop",
+        "sid": "1099511629121"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/route-preference",
+        "sid": "1099511629122"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/source-protocol",
+        "sid": "1099511629123"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/router-id",
+        "sid": "1099511629124"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols",
+        "sid": "1099511629125"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol",
+        "sid": "1099511629126"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/description",
+        "sid": "1099511629127"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/name",
+        "sid": "1099511629128"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes",
+        "sid": "1099511629129"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/type",
+        "sid": "1099511629130"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/interfaces",
+        "sid": "1099511629131"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/interfaces/interface",
+        "sid": "1099511629132"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs",
+        "sid": "1099511629133"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib",
+        "sid": "1099511629134"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route",
+        "sid": "1099511629135"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/input",
+        "sid": "1099511629136"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output",
+        "sid": "1099511629137"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route",
+        "sid": "1099511629138"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/active",
+        "sid": "1099511629139"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/last-updated",
+        "sid": "1099511629140"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop",
+        "sid": "1099511629141"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop/next-hop-list",
+        "sid": "1099511629142"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop/next-hop-list/next-hop",
+        "sid": "1099511629143"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop/next-hop-list/next-hop/outgoing-interface",
+        "sid": "1099511629144"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop/outgoing-interface",
+        "sid": "1099511629145"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop/special-next-hop",
+        "sid": "1099511629146"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/source-protocol",
+        "sid": "1099511629147"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/address-family",
+        "sid": "1099511629148"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/default-rib",
+        "sid": "1099511629149"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/description",
+        "sid": "1099511629150"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/name",
+        "sid": "1099511629151"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes",
+        "sid": "1099511629152"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route",
+        "sid": "1099511629153"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/active",
+        "sid": "1099511629154"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/last-updated",
+        "sid": "1099511629155"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop",
+        "sid": "1099511629156"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop/next-hop-list",
+        "sid": "1099511629157"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop/next-hop-list/next-hop",
+        "sid": "1099511629158"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop/next-hop-list/next-hop/outgoing-interface",
+        "sid": "1099511629159"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop/outgoing-interface",
+        "sid": "1099511629160"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop/special-next-hop",
+        "sid": "1099511629161"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/route-preference",
+        "sid": "1099511629162"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/source-protocol",
+        "sid": "1099511629163"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/router-id",
+        "sid": "1099511629164"
+      }
+    ]
+  }
+}

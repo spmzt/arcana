@@ -7,9 +7,25 @@ ATF_TESTS_SH=	agent_test \
 
 # ycollect: what the YANG collectors find, for agent_test.sh.
 PROGS=		ycollect
-SRCS.ycollect=	ycollect.c yif.c yip.c ymodel_schema.c
+SRCS.ycollect=	ycollect.c yif.c yip.c yrt.c rtimes.c ymodel_schema.c
+# yni: FIBs as network instances, names in fibs.conf.
+PROGS+=		yni
+SRCS.yni=	yni_test.c yni.c yif.c yip.c ymodel_schema.c
+LDADD.yni+=	${CBLINK_LIBS} -lnv \
+		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
+# yrtadv: rtadvd.conf as the router advertisement submodule has it.
+PROGS+=		yrtadv
+SRCS.yrtadv=	yrtadv.c rtadv.c ymodel_schema.c
+LDADD.yrtadv+=	${CBLINK_LIBS} \
+		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
+# yrcroutes: rc.conf's static routes as ietf-routing has them.
+PROGS+=		yrcroutes
+SRCS.yrcroutes=	yrcroutes.c rcroutes.c ymodel_schema.c
+CFLAGS+=	-I${.CURDIR}/../../../lib/libvarconf
+LDADD.yrcroutes+=	${CBLINK_LIBS} \
+		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
 .PATH:		${.CURDIR}/../invidia ${.CURDIR}/../yang
-CFLAGS+=	-I${.CURDIR}/../yang ${CBLINK_CFLAGS}
+CFLAGS+=	-I${.CURDIR}/../yang -I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
 LDADD.ycollect+=	${CBLINK_LIBS} -lnv
 MAN=
 

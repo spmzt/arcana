@@ -34,4 +34,26 @@ if yanglint -i -p . -t config ietf-interfaces@2018-02-20.yang \
 	echo "lint.sh: arcana-ip-deviations does not hold" >&2
 	exit 1
 fi
+# arcana-network-instance's: a FIB cannot be disabled; an instance has no
+# VSI root.  libyang keeps no empty mount point without schema-mount data,
+# so each instance is refused for its root too: what is checked is the
+# deviation's own word, there with the module and not without.
+ni="ietf-interfaces@2018-02-20.yang ietf-ip@2018-02-22.yang ietf-network-instance@2019-01-21.yang"
+echo '{"ietf-network-instance:network-instances":{"network-instance":[{"name":"blue","enabled":false,"vsi-root":{}}]}}' > "$d/ni.json"
+with=$(yanglint -i -p . -t config $ni arcana-network-instance@2026-10-14.yang \
+    "$d/ni.json" 2>&1 || true)
+without=$(yanglint -i -p . -t config $ni "$d/ni.json" 2>&1 || true)
+case $with in
+*'"vsi-root" not found'*) ;;
+*) echo "lint.sh: arcana-network-instance leaves vsi-root" >&2; exit 1 ;;
+esac
+case $without in
+*'"vsi-root" not found'*) echo "lint.sh: no vsi-root without arcana-network-instance" >&2; exit 1 ;;
+esac
+echo '{"ietf-network-instance:network-instances":{"network-instance":[{"name":"blue","enabled":false,"vrf-root":{}}]}}' > "$d/ni.json"
+case $(yanglint -i -p . -t config $ni arcana-network-instance@2026-10-14.yang \
+    "$d/ni.json" 2>&1 || true) in
+*'a FIB cannot be disabled'*) ;;
+*) echo "lint.sh: arcana-network-instance lets a FIB be disabled" >&2; exit 1 ;;
+esac
 echo "$n modules compiled, alone and together ($(yanglint --version)); deviations hold"

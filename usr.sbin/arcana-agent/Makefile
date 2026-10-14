@@ -5,7 +5,8 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c l2.c ipfw.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
-		routes.c scope.c sdwan.c vnet.c yif.c yip.c
+		rcroutes.c routes.c rtadv.c rtimes.c scope.c sdwan.c vnet.c \
+		yif.c yip.c yni.c yrt.c
 # The IETF modules the collectors fill (PLAN-SDN-YANG 1.9): cblink-gen's
 # structs and tables of share/yang's modules, committed, so that building
 # needs no libyang; "make regen-yang" refreshes them.
@@ -32,6 +33,9 @@ CBLINK_PARTS=	h,c,server
 
 CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
+LDADD+=		${.OBJDIR}/../../lib/libvarconf/libvarconf_pie.a
+DPADD+=		${.OBJDIR}/../../lib/libvarconf/libvarconf_pie.a
+CFLAGS+=	-I${.CURDIR}/../../lib/libvarconf
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
 LDADD+=		-ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthread -lcrypto ${UCL_LIBS}
 # Every symbol bound when the agent starts (ld(1) -z now): with a
@@ -55,10 +59,18 @@ YANG_DIR=	${.CURDIR}/../../share/yang
 YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-ip@2018-02-22 arcana-ip-deviations@2026-10-14 \
 		iana-if-type@2026-03-17 ietf-yang-types@2025-12-22 \
-		ietf-inet-types@2025-12-22
+		ietf-inet-types@2025-12-22 ietf-routing@2018-03-13 \
+		ietf-ipv4-unicast-routing@2018-03-13 \
+		ietf-ipv6-unicast-routing@2018-03-13 arcana-routing@2026-10-14 \
+		ietf-network-instance@2019-01-21 \
+		arcana-network-instance@2026-10-14
+# ietf-routing's multiple-ribs: a FIB each (setfib(1)).
 YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
-		-F iana-if-type: -F ietf-yang-types: -F ietf-inet-types:
+		-F iana-if-type: -F ietf-yang-types: -F ietf-inet-types: \
+		-F ietf-routing:multiple-ribs -F ietf-ipv4-unicast-routing: \
+		-F ietf-ipv6-unicast-routing: -F arcana-routing: \
+		-F ietf-network-instance: -F arcana-network-instance:
 YANG_OUT?=	${.CURDIR}/yang
 regen-yang: .PHONY
 	cd ${YANG_DIR} && ${CBLINK_GEN} -m h,schema -b ymodel \

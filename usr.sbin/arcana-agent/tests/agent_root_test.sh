@@ -1051,6 +1051,373 @@ yang_ip_body()
 	atf_check ifconfig "$e" inet6 ifdisabled
 	atf_check -o match:" ipv6=off,1500\$" sh -c "\"$y\" ip | grep '^$e '"
 }
+atf_test_case yang_ecmp cleanup
+yang_ecmp_head()
+{
+	atf_set "descr" "ietf-routing's next-hop-list (PLAN-SDN-YANG" \
+	    "2.4.2): a prefix with two gateways, IPv4 and IPv6, in a vnet" \
+	    "jail's FIB"
+	atf_set "require.user" "root"
+}
+yang_ecmp_body()
+{
+	local y="$(atf_get_srcdir)/ycollect" e=epair74a b=epair74b
+
+	[ "$(sysctl -n net.route.multipath 2>/dev/null)" = 1 ] ||
+	    atf_skip "no multipath routes (net.route.multipath)"
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair74 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check jexec "$YJAIL" ifconfig "$b" inet 192.0.2.10/24 up
+	atf_check jexec "$YJAIL" ifconfig "$b" inet6 2001:db8:74::10/64 \
+	    no_dad
+	for g in 1 2; do
+		atf_check -o ignore jexec "$YJAIL" route add -net \
+		    198.51.100.0/24 192.0.2.$g
+		atf_check -o ignore jexec "$YJAIL" route add -inet6 -net \
+		    2001:db8:75::/48 2001:db8:74::$g
+	done
+	atf_check -o save:r jexec "$YJAIL" "$y" routes 0
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+	    tail -1 r
+	# One route, two next hops of its next-hop-list, the interface and
+	# the gateway each; a static route's.
+	atf_check -o inline:"inet 198.51.100.0/24 192.0.2.1 $b - static multipath
+inet 198.51.100.0/24 192.0.2.2 $b - static multipath
+inet6 2001:db8:75::/48 2001:db8:74::1 $b - static multipath
+inet6 2001:db8:75::/48 2001:db8:74::2 $b - static multipath
+" sh -c "grep ' multipath\$' r | sort"
+	# One gateway left: a simple next hop again.
+	atf_check -o ignore jexec "$YJAIL" route delete -net 198.51.100.0/24 \
+	    192.0.2.2
+	atf_check -o save:r2 jexec "$YJAIL" "$y" routes 0
+	atf_check -o inline:"inet 198.51.100.0/24 192.0.2.1 $b - static -
+" sh -c "grep '^inet 198\.51\.100\.0/24 ' r2"
+}
+atf_test_case yang_static_apply cleanup
+yang_static_apply_head()
+{
+	atf_set "descr" "rc.conf's static routes made a vnet jail's FIBs'" \
+	    "by netlink (PLAN-SDN-YANG 2.4.4), undone, and undone on a" \
+	    "failure"
+	atf_set "require.user" "root"
+}
+yang_static_apply_body()
+{
+	local y="$(atf_get_srcdir)/yrcroutes" c="$(atf_get_srcdir)/ycollect"
+	local e=epair73a b=epair73b
+
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair73 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	# A host's loopback, which a blackhole or reject route goes by.
+	atf_check jexec "$YJAIL" ifconfig lo0 inet 127.0.0.1/8 up
+	atf_check jexec "$YJAIL" ifconfig lo0 inet6 ::1/128
+	atf_check jexec "$YJAIL" ifconfig "$b" inet 192.0.2.5/24 up
+	atf_check jexec "$YJAIL" ifconfig "$b" inet6 2001:db8:73::5/64 no_dad
+	: > "$PWD/none.conf"
+	cat > routes.conf <<EOF
+defaultrouter="192.0.2.254"
+static_routes="a e1 e2 bh rj ifr"
+route_a="-net 10.2.0.0/16 192.0.2.10"
+route_e1="-net 10.8.0.0/24 192.0.2.21"
+route_e2="-net 10.8.0.0/24 192.0.2.22"
+route_bh="-net 203.0.113.0/24 127.0.0.1 -blackhole"
+route_rj="-host 203.0.113.9 127.0.0.1 -reject"
+route_ifr="-net 10.9.0.0/24 -iface $b"
+ipv6_static_routes="v6a"
+ipv6_route_v6a="2001:db8:1::/48 2001:db8:73::1"
+ipv6_defaultrouter="fe80::1%$b"
+EOF
+	atf_check jexec "$YJAIL" "$y" -a 0 "$PWD/none.conf" "$PWD/routes.conf"
+	atf_check -o save:r jexec "$YJAIL" "$c" routes 0
+	atf_check -o inline:"inet 0.0.0.0/0 192.0.2.254 $b - static -
+inet 10.2.0.0/16 192.0.2.10 $b - static -
+inet 10.8.0.0/24 192.0.2.21 $b - static multipath
+inet 10.8.0.0/24 192.0.2.22 $b - static multipath
+inet 10.9.0.0/24 - $b - static -
+inet 203.0.113.0/24 - - blackhole static -
+inet 203.0.113.9/32 - - unreachable static -
+inet6 2001:db8:1::/48 2001:db8:73::1 $b - static -
+inet6 ::/0 fe80::1%$b $b - static -
+" sh -c "grep ' static ' r | grep -v ' receive ' | LC_ALL=C sort"
+	# route(8)'s own word on two of them.
+	atf_check -o match:'gateway: 192\.0\.2\.10' \
+	    -o match:'flags: <UP,GATEWAY,DONE,STATIC>' \
+	    jexec "$YJAIL" route -n get 10.2.3.4
+	atf_check -o match:'flags: <UP,DONE,STATIC,BLACKHOLE>' \
+	    jexec "$YJAIL" route -n get 203.0.113.1
+	# A route changed: only it.
+	sed 's/192\.0\.2\.10"/192.0.2.11"/' routes.conf > "$PWD/routes2.conf"
+	atf_check jexec "$YJAIL" "$y" -a 0 "$PWD/routes.conf" "$PWD/routes2.conf"
+	atf_check -o match:'gateway: 192\.0\.2\.11' \
+	    jexec "$YJAIL" route -n get 10.2.3.4
+	# All taken away: none left.
+	atf_check jexec "$YJAIL" "$y" -a 0 "$PWD/routes2.conf" "$PWD/none.conf"
+	atf_check -o empty sh -c "jexec '$YJAIL' '$c' routes 0 | \
+	    grep ' static ' | grep -v ' receive ' || true"
+	# One that fails, its interface not there: none of them stays.
+	printf 'static_routes="a z"\nroute_a="-net 10.2.0.0/16 192.0.2.10"\nroute_z="-net 10.3.0.0/16 -iface nosuch0"\n' > "$PWD/bad.conf"
+	atf_check -s exit:1 -e match:'no interface nosuch0' \
+	    jexec "$YJAIL" "$y" -a 0 "$PWD/none.conf" "$PWD/bad.conf"
+	atf_check -s not-exit:0 -o ignore -e ignore \
+	    jexec "$YJAIL" route -n get 10.2.3.4
+	# Another FIB's, with -fib: there, not in FIB 0.  net.fibs is the
+	# jail's own (its vnet's), raised for it there.
+	if jexec "$YJAIL" sysctl net.fibs=2 >/dev/null 2>&1; then
+		# By the interface: 192.0.2.0/24 is FIB 0's alone
+		# (net.add_addr_allfibs), no gateway in it reached from 1.
+		printf 'static_routes="f"\nroute_f="-net 10.5.0.0/24 -iface %s -fib 1"\n' "$b" > fib.conf
+		atf_check jexec "$YJAIL" "$y" -a 1 "$PWD/none.conf" "$PWD/fib.conf"
+		atf_check -o match:"interface: $b" \
+		    jexec "$YJAIL" route -n get -fib 1 10.5.0.1
+		atf_check -s not-exit:0 -o ignore -e ignore \
+		    jexec "$YJAIL" route -n get 10.5.0.1
+		atf_check jexec "$YJAIL" "$y" -a 1 "$PWD/fib.conf" "$PWD/none.conf"
+	fi
+}
+atf_test_case yang_route_times cleanup
+yang_route_times_head()
+{
+	atf_set "descr" "ietf-routing's last-updated (PLAN-SDN-YANG 2.4.6):" \
+	    "a route added while route events are heard has the time, one" \
+	    "not seen to change none"
+	atf_set "require.user" "root"
+}
+yang_route_times_body()
+{
+	local c="$(atf_get_srcdir)/ycollect" e=epair72a b=epair72b
+
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair72 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check jexec "$YJAIL" ifconfig "$b" inet 192.0.2.5/24 up
+	jexec "$YJAIL" "$c" watch 0 4 > out &
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		grep -q '^watching$' out 2>/dev/null && break
+		sleep 0.2
+	done
+	before=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	atf_check -o ignore jexec "$YJAIL" route add -net 198.51.100.0/24 \
+	    192.0.2.1
+	after=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+	wait
+	t=$(awk '$2 == "198.51.100.0/24" { print $8 }' out)
+	[ -n "$t" ] && [ "$t" != - ] || { cat out; atf_fail \
+	    "198.51.100.0/24: no last-updated"; }
+	# The same format sorts as the times do: within the add.
+	[ ! "$t" \< "$before" ] && [ ! "$t" \> "$after" ] ||
+	    atf_fail "last-updated $t, not between $before and $after"
+	atf_check -o inline:"-\n" awk '$2 == "192.0.2.0/24" { print $8 }' out
+}
+yang_route_times_cleanup()
+{
+	ifconfig epair72b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
+atf_test_case yang_ni cleanup
+yang_ni_head()
+{
+	atf_set "descr" "network instances on a host with net.fibs=4" \
+	    "(PLAN-SDN-YANG 2.6.1): a vnet jail's, raised to 4"
+	atf_set "require.user" "root"
+}
+yang_ni_body()
+{
+	local y="$(atf_get_srcdir)/yni"
+
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check -o ignore jexec "$YJAIL" sysctl net.fibs=4
+	printf 'fib2_name="blue"\nfib2_description="the blue one"\n' > \
+	    fibs.conf
+	atf_check -o inline:"fib1 1 -
+blue 2 the blue one
+fib3 3 -
+yang-cbor 59 bytes, the same back
+" jexec "$YJAIL" "$y" "$PWD/fibs.conf"
+}
+atf_test_case yang_ni_grow cleanup
+yang_ni_grow_head()
+{
+	atf_set "descr" "an instance past the last FIB (PLAN-SDN-YANG 2.6.4):" \
+	    "net.fibs raised live and kept in loader.conf; a vnet jail's"
+	atf_set "require.user" "root"
+}
+yang_ni_grow_body()
+{
+	local y="$(atf_get_srcdir)/yni" n
+
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	# A new vnet has the boot's; the instance asked for is past it.
+	n=$(jexec "$YJAIL" sysctl -n net.fibs)
+	: > loader.conf
+	: > fibs.conf
+	echo "$((n + 2)) far" > in
+	atf_check -o inline:"net.fibs $((n + 3)) live\n" \
+	    jexec "$YJAIL" sh -c "'$y' -w -l '$PWD/loader.conf' '$PWD/fibs.conf' < '$PWD/in'"
+	atf_check -o inline:"$((n + 3))\n" jexec "$YJAIL" sysctl -n net.fibs
+	atf_check -o inline:"net.fibs=\"$((n + 3))\"\n" cat loader.conf
+	atf_check -o match:"^far $((n + 2)) -$" \
+	    jexec "$YJAIL" "$y" "$PWD/fibs.conf"
+}
+yang_ni_grow_cleanup()
+{
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
+yang_ni_cleanup()
+{
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
+atf_test_case yang_ni_bind cleanup
+yang_ni_bind_head()
+{
+	atf_set "descr" "bind-ni-name (PLAN-SDN-YANG 2.6.3): ifconfig's fib" \
+	    "read back as the instance's name, a name applied by SIOCSIFFIB" \
+	    "and kept in rc.conf, bind-ni-name-failed; a vnet jail's epair"
+	atf_set "require.user" "root"
+}
+yang_ni_bind_body()
+{
+	local y="$(atf_get_srcdir)/yni" e=epair72a b=epair72b
+
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair72 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check -o ignore jexec "$YJAIL" sysctl net.fibs=4
+	atf_check jexec "$YJAIL" ifconfig "$b" inet 192.0.2.5/24 up
+	printf 'fib2_name="blue"\n' > fibs.conf
+	printf 'ifconfig_%s="inet 192.0.2.5/24"\n' "$b" > rc.conf
+	# ifconfig fib 2, read back: FIB 2's name, its families' too.
+	atf_check jexec "$YJAIL" ifconfig "$b" fib 2
+	atf_check -o inline:"$b 2 blue blue blue
+back $b blue
+yang-cbor the same back
+" jexec "$YJAIL" "$y" -i "$PWD/fibs.conf"
+	# A name applied: the kernel's, rc.conf's.
+	atf_check jexec "$YJAIL" "$y" -b "$b" fib3 "$PWD/fibs.conf" \
+	    "$PWD/rc.conf"
+	atf_check -o match:'fib: 3$' jexec "$YJAIL" ifconfig "$b"
+	atf_check -o inline:"ifconfig_$b=\"inet 192.0.2.5/24 fib 3\"\n" \
+	    cat rc.conf
+	# Refused, nothing changed: no such instance, a family apart.
+	atf_check -s exit:1 \
+	    -o inline:"failed $b: nosuch: no such network instance\n" \
+	    jexec "$YJAIL" "$y" -b "$b" nosuch "$PWD/fibs.conf" "$PWD/rc.conf"
+	atf_check -s exit:1 -o inline:"failed $b: blue: FreeBSD binds an interface, both its address families, not one alone\n" \
+	    jexec "$YJAIL" "$y" -b "$b" -4 fib1 blue "$PWD/fibs.conf"
+	atf_check -o match:'fib: 3$' jexec "$YJAIL" ifconfig "$b"
+	atf_check -o match:'fib 3' cat rc.conf
+	# None: FIB 0, the word out.
+	atf_check jexec "$YJAIL" "$y" -b "$b" - "$PWD/fibs.conf" \
+	    "$PWD/rc.conf"
+	atf_check -o not-match:'fib:' jexec "$YJAIL" ifconfig "$b"
+	atf_check -o inline:"ifconfig_$b=\"inet 192.0.2.5/24\"\n" cat rc.conf
+}
+yang_ni_bind_cleanup()
+{
+	ifconfig epair72b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
+atf_test_case yang_rtadv cleanup
+yang_rtadv_head()
+{
+	atf_set "descr" "rtadvd.conf edited as the router advertisement" \
+	    "submodule, rtadvctl reload, rtadvctl show (PLAN-SDN-YANG 2.5.1)," \
+	    "a lab rtadvd in a vnet jail"
+	atf_set "require.user" "root"
+}
+yang_rtadv_body()
+{
+	local y="$(atf_get_srcdir)/yrtadv" e=epair71a b=epair71b
+
+	# rtadvctl(8) has its socket at one place: none of the host's.
+	pgrep -x rtadvd >/dev/null && atf_skip "rtadvd runs here"
+	ifconfig "$e" >/dev/null 2>&1 && atf_skip "$e exists"
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore ifconfig epair71 create
+	echo "$e" > made
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check ifconfig "$b" vnet "$YJAIL"
+	atf_check jexec "$YJAIL" ifconfig "$b" inet6 2001:db8:71::1/64 up \
+	    no_dad
+	atf_check -o ignore jexec "$YJAIL" sysctl net.inet6.ip6.forwarding=1
+	cat > rtadvd.conf <<EOF
+$b:\\
+	:maxinterval#600:mininterval#200:rltime#1800:\\
+	:addr="2001:db8:71::":prefixlen#64:
+EOF
+	atf_check jexec "$YJAIL" rtadvd -c "$PWD/rtadvd.conf" \
+	    -p "$PWD/rtadvd.pid" -s "$b"
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		jexec "$YJAIL" rtadvctl show "$b" 2>/dev/null | \
+		    grep -q 'MaxAdvInterval' && break
+		sleep 0.5
+	done
+	atf_check -o match:'MinAdvInterval/MaxAdvInterval: 3m20s/10m' \
+	    jexec "$YJAIL" rtadvctl show "$b"
+	# Edited as the submodule's max-rtr-adv-interval, reloaded: rtadvd
+	# advertises by it.
+	atf_check "$y" -m rtadvd.conf "$b" 300
+	atf_check -o match:'maxinterval#300' cat rtadvd.conf
+	atf_check jexec "$YJAIL" rtadvctl reload "$b"
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		jexec "$YJAIL" rtadvctl show "$b" | grep -q '/5m$' && break
+		sleep 0.5
+	done
+	atf_check -o match:'MinAdvInterval/MaxAdvInterval: 3m20s/5m' \
+	    jexec "$YJAIL" rtadvctl show "$b"
+}
+yang_rtadv_cleanup()
+{
+	[ -f rtadvd.pid ] && kill "$(cat rtadvd.pid)" >/dev/null 2>&1
+	sleep 0.5
+	ifconfig epair71b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
+yang_static_apply_cleanup()
+{
+	ifconfig epair73b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
+yang_ecmp_cleanup()
+{
+	# Out of the vnet jail first: it is not removed with one inside.
+	ifconfig epair74b -vnet "$YJAIL" >/dev/null 2>&1
+	[ -f made ] && ifconfig "$(cat made)" destroy >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 yang_ip_cleanup()
 {
 	# Out of the vnet jail first: it is not removed with one inside.
@@ -1066,6 +1433,13 @@ atf_init_test_cases()
 	atf_add_test_case yang_kinds
 	atf_add_test_case yang_events
 	atf_add_test_case yang_ip
+	atf_add_test_case yang_ecmp
+	atf_add_test_case yang_static_apply
+	atf_add_test_case yang_route_times
+	atf_add_test_case yang_rtadv
+	atf_add_test_case yang_ni
+	atf_add_test_case yang_ni_bind
+	atf_add_test_case yang_ni_grow
 	atf_add_test_case lifecycle
 	atf_add_test_case live_address
 	atf_add_test_case aliases

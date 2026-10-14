@@ -5192,6 +5192,435 @@ capture_cleanup()
 
 # The ietf-interfaces collector (yang/collect.h) beside what ifconfig(8)
 # and netstat(1) -i say of the same interfaces.
+atf_test_case yang_active_route
+yang_active_route_head()
+{
+	atf_set "descr" "ietf-routing's active-route action (PLAN-SDN-YANG" \
+	    "2.4.5): the route an address goes by, as route -n get finds it"
+}
+yang_active_route_body()
+{
+	# route -n get's answer as ycollect writes it: af, the destination
+	# with its mask's length (none: a host's), the gateway (link#N,
+	# none: -), the interface, the special next hop (-: none).
+	cat > get.awk <<'EOF'
+function hexv(s,    v, k) {
+	v = 0
+	for (k = 1; k <= length(s); k++)
+		v = v * 16 + index("0123456789abcdef", substr(tolower(s), k, 1)) - 1
+	return v
+}
+function bits(x,    n) {
+	n = 0
+	while (x > 0) { n += x % 2; x = int(x / 2) }
+	return n
+}
+$1 == "destination:" { d = $2 }
+$1 == "mask:" { m = $2 }
+$1 == "gateway:" { g = $2 }
+$1 == "interface:" { i = $2 }
+$1 == "flags:" { f = $2 }
+END {
+	if (d == "") { print "none"; exit }
+	af = d ~ /:/ ? "inet6" : "inet"
+	sub(/%.*/, "", d)
+	if (m == "")
+		len = af == "inet" ? 32 : 128
+	else {
+		len = 0
+		n = split(m, o, af == "inet" ? "." : ":")
+		for (k = 1; k <= n; k++)
+			if (o[k] != "")
+				len += bits(af == "inet" ? o[k] + 0 : hexv(o[k]))
+	}
+	if (g == "" || g ~ /^link#/) g = "-"
+	sp = "-"
+	if (f ~ /BLACKHOLE/) sp = "blackhole"
+	else if (f ~ /REJECT/) sp = "unreachable"
+	else if (f ~ /HOST/ && f !~ /GATEWAY/ && i ~ /^lo/) sp = "receive"
+	if (sp != "-") { i = "-"; g = "-" }
+	print af, d "/" len, g, i, sp
+}
+EOF
+	# Somewhere out, the loopback, and every address of the host's.
+	{
+		echo 127.0.0.1 ::1 192.0.2.77 2001:db8::77 198.51.100.1
+		ifconfig -a | awk '$1 == "inet" || $1 == "inet6" { print $2 }'
+	} | tr ' ' '\n' | sort -u > addrs
+	while read -r x; do
+		[ -z "$x" ] && continue
+		fam=-inet; case "$x" in *:*) fam=-inet6;; esac
+		route -n get "$fam" "$x" 2>/dev/null | awk -f get.awk > want
+		atf_check -o save:got "$(atf_get_srcdir)/ycollect" active 0 "$x"
+		atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+		    tail -1 got
+		head -1 got | awk '{ print $1, $2, $3, $4, $5 }' | \
+		    sed 's/^none.*/none/' > got1
+		cmp -s want got1 || { echo "$x:"; cat want got1; atf_fail \
+		    "$x: the action and route -n get differ"; }
+	done < addrs
+}
+
+atf_test_case yang_ni_conf
+yang_ni_conf_head()
+{
+	atf_set "descr" "FIBs as RFC 8529's network instances (PLAN-SDN-YANG" \
+	    "2.6.1): one each from FIB 1 to net.fibs - 1, fibs.conf's names" \
+	    "and descriptions read and written, what cannot be said"
+}
+yang_ni_conf_body()
+{
+	local y="$(atf_get_srcdir)/yni" n i
+
+	# This host's: FIB 1 to net.fibs - 1, fibN each.
+	n=$(sysctl -n net.fibs)
+	: > want
+	i=1
+	while [ "$i" -lt "$n" ]; do
+		echo "fib$i $i -" >> want
+		i=$((i + 1))
+	done
+	echo "yang-cbor" >> want
+	atf_check -o file:want sh -c "'$y' - | sed 's/^yang-cbor.*/yang-cbor/'"
+	cat > fibs.conf <<'EOF'
+# The names of the FIBs.
+fib2_name="blue"
+fib2_description="the blue customer's"
+fib3_name="fib1"
+fib1_name="$x"
+fib9_name=far
+fib0_name=host
+EOF
+	atf_check -o inline:"fib1 1 -
+blue 2 the blue customer's
+fib3 3 -
+unread fib1_name: not settled by reading the file
+unread fib3_name: another FIB's name
+unread fib9_name: no such FIB: net.fibs is fewer
+unread fib0_name: FIB 0 is the host's, not an instance
+yang-cbor 66 bytes, the same back
+" "$y" -n 4 fibs.conf
+	# One name given two FIBs: the first's.
+	printf 'fib1_name=blue\nfib2_name=blue\n' > two.conf
+	atf_check -o inline:"blue 1 -
+fib2 2 -
+unread fib2_name: another FIB's name
+yang-cbor 31 bytes, the same back
+" "$y" -n 3 two.conf
+	# Written: names and descriptions set, those of FIBs not given
+	# taken out, the rest of the file as it was.
+	printf '2 red\n3 green the green one\n' > in
+	atf_check sh -c "'$y' -n 4 -w fibs.conf < in"
+	atf_check -o inline:'# The names of the FIBs.
+fib2_name="red"
+fib3_name="green"
+fib9_name=far
+fib0_name=host
+fib3_description="the green one"
+' cat fibs.conf
+	atf_check -o inline:"fib1 1 -
+red 2 -
+green 3 the green one
+unread fib9_name: no such FIB: net.fibs is fewer
+unread fib0_name: FIB 0 is the host's, not an instance
+yang-cbor 60 bytes, the same back
+" "$y" -n 4 fibs.conf
+	# Refused, the file as it was: a FIB there is not, another's name,
+	# one FIB twice.
+	cp fibs.conf was
+	printf '5 red\n' > in
+	atf_check -s exit:1 -e inline:"yni: red: FIB 5, net.fibs is 4\n" \
+	    sh -c "'$y' -n 4 -w fibs.conf < in"
+	printf '2 fib3\n' > in
+	atf_check -s exit:1 -e inline:"yni: fib3: another FIB's name\n" \
+	    sh -c "'$y' -n 4 -w fibs.conf < in"
+	printf '2 red\n2 blue\n' > in
+	atf_check -s exit:1 -e inline:"yni: red, blue: FIB 2 twice\n" \
+	    sh -c "'$y' -n 4 -w fibs.conf < in"
+	atf_check cmp was fibs.conf
+}
+
+atf_test_case yang_ni_grow
+yang_ni_grow_head()
+{
+	atf_set "descr" "an instance past the last FIB (PLAN-SDN-YANG 2.6.4):" \
+	    "net.fibs kept in loader.conf; not raised live, unprivileged," \
+	    "so a reboot required"
+	# Never root: a live raise of the host's net.fibs is for good.
+	atf_set "require.user" "unprivileged"
+}
+yang_ni_grow_body()
+{
+	local y="$(atf_get_srcdir)/yni"
+
+	cat > loader.conf <<'EOF'
+# The kernel's tables.
+net.fibs="2"
+EOF
+	: > fibs.conf
+	printf '1 blue\n5 far\n' > in
+	atf_check -o inline:"net.fibs 6 reboot required\n" \
+	    sh -c "'$y' -n 3 -w -l loader.conf fibs.conf < in"
+	atf_check -o inline:'# The kernel'"'"'s tables.
+net.fibs="6"
+' cat loader.conf
+	atf_check -o inline:'fib1_name="blue"
+fib5_name="far"
+' cat fibs.conf
+	# As many already: loader.conf as it was.
+	printf '2 red\n' > in
+	atf_check -o inline:"net.fibs 3 live\n" \
+	    sh -c "'$y' -n 3 -w -l loader.conf fibs.conf < in"
+	atf_check -o match:'^net.fibs="6"$' cat loader.conf
+	# Refused, nothing grown: one FIB twice, past the kernel's.
+	cp loader.conf was
+	printf '7 red\n7 blue\n' > in
+	atf_check -s exit:1 -e inline:"yni: red, blue: FIB 7 twice\n" \
+	    sh -c "'$y' -n 3 -w -l loader.conf fibs.conf < in"
+	printf '65535 top\n' > in
+	atf_check -s exit:1 \
+	    -e inline:"yni: top: FIB 65535, the kernel has at most 65535\n" \
+	    sh -c "'$y' -n 3 -w -l loader.conf fibs.conf < in"
+	atf_check cmp was loader.conf
+}
+
+atf_test_case yang_ni_rc
+yang_ni_rc_head()
+{
+	atf_set "descr" "bind-ni-name kept in rc.conf (PLAN-SDN-YANG 2.6.3):" \
+	    "the fib words of ifconfig_<if> set, replaced, taken out"
+}
+yang_ni_rc_body()
+{
+	local y="$(atf_get_srcdir)/yni"
+
+	cat > rc.conf <<'EOF'
+ifconfig_em0="inet 192.0.2.1/24 fib 2 up"
+ifconfig_lo1="fib 3"
+ifconfig_vlan0_10="inet 198.51.100.1/24"
+ifconfig_em1="$x"
+EOF
+	atf_check "$y" -r em0 3 rc.conf
+	atf_check "$y" -r lo1 0 rc.conf
+	atf_check "$y" -r vlan0.10 2 rc.conf
+	atf_check "$y" -r igb0 0 rc.conf
+	atf_check "$y" -r igb1 5 rc.conf
+	atf_check -s exit:1 -e inline:"yni: ifconfig_em1: not settled by reading the file\n" \
+	    "$y" -r em1 2 rc.conf
+	atf_check -o inline:'ifconfig_em0="inet 192.0.2.1/24 fib 3 up"
+ifconfig_vlan0_10="inet 198.51.100.1/24 fib 2"
+ifconfig_em1="$x"
+ifconfig_igb1="fib 5"
+' cat rc.conf
+}
+
+atf_test_case yang_rtadv_conf
+yang_rtadv_conf_head()
+{
+	atf_set "descr" "rtadvd.conf as RFC 8349's router advertisement" \
+	    "submodule (PLAN-SDN-YANG 2.5.1): read through tc=, an edit of" \
+	    "one leaf alone, written and read back"
+}
+yang_rtadv_conf_body()
+{
+	local y="$(atf_get_srcdir)/yrtadv"
+
+	# rtadvd.conf(5)'s examples.
+	cat > rtadvd.conf <<'EOF'
+ne0:\
+	:rltime#0:
+default:\
+	:chlim#64:raflags#0:rltime#1800:rtime#0:retrans#0:\
+	:pinfoflags="la":vltime#2592000:pltime#604800:mtu#0:
+ef1:\
+	:addr="2001:db8:ffff:1000::":prefixlen#64:tc=default:
+wlan0:\
+	:addr="2001:db8:ffff:1000::":prefixlen#48:pinfoflags="l":\
+	:addr0="2001:db8:1::":vltime0#3600:pltime0#1800:raflags="mo":
+EOF
+	atf_check -o inline:"managed-flag=0
+other-config-flag=0
+link-mtu=0
+reachable-time=0
+retrans-timer=0
+cur-hop-limit=64
+default-lifetime=1800
+prefix 2001:db8:ffff:1000::/64 1 1 2592000 604800
+" "$y" rtadvd.conf ef1
+	atf_check -o inline:"managed-flag=1
+other-config-flag=1
+prefix 2001:db8:ffff:1000::/48 1 0 2592000 604800
+prefix 2001:db8:1::/64 1 1 3600 1800
+" "$y" rtadvd.conf wlan0
+	atf_check -o inline:"default-lifetime=0\n" "$y" rtadvd.conf ne0
+	atf_check -o inline:"none\n" "$y" rtadvd.conf nothere
+	# One leaf edited: its field alone changes.
+	cp rtadvd.conf was
+	atf_check "$y" -m rtadvd.conf wlan0 300
+	atf_check -s exit:1 -o inline:"10c10
+< 	:addr0=\"2001:db8:1::\":vltime0#3600:pltime0#1800:raflags=\"mo\":
+---
+> 	:addr0=\"2001:db8:1::\":vltime0#3600:pltime0#1800:raflags=\"mo\":maxinterval#300:
+" diff was rtadvd.conf
+	atf_check -o match:'^max-rtr-adv-interval=300$' "$y" rtadvd.conf wlan0
+	# A record with tc=: what default brings stays default's.
+	cp rtadvd.conf was2
+	atf_check "$y" -m rtadvd.conf ef1 450
+	atf_check -s exit:1 -o inline:"7c7
+< 	:addr=\"2001:db8:ffff:1000::\":prefixlen#64:tc=default:
+---
+> 	:addr=\"2001:db8:ffff:1000::\":prefixlen#64:maxinterval#450:tc=default:
+" diff was2 rtadvd.conf
+	# Written to another file and read back: the same.
+	"$y" was wlan0 > want
+	atf_check -o file:want "$y" -w was wlan0 out
+}
+
+atf_test_case yang_rc_routes
+yang_rc_routes_head()
+{
+	atf_set "descr" "rc.conf's static routes as ietf-routing's static" \
+	    "control-plane-protocol (PLAN-SDN-YANG 2.4.3), read and written" \
+	    "back to a fragment"
+}
+yang_rc_routes_body()
+{
+	local y="$(atf_get_srcdir)/yrcroutes"
+
+	# Every form rc.d/routing takes; what the model cannot hold, or
+	# reading not tell, unread.
+	cat > rc.conf <<'EOF'
+hostname="gw"
+defaultrouter="192.0.2.254"
+ipv6_defaultrouter="fe80::1%em0"
+defaultrouter_fib1="198.51.100.1"
+static_routes="lan2 lan3 tun:wg0 ecmp1 ecmp2 bh rej mtu calc dup1 dup2 missing fib1 cls"
+route_lan2="-net 10.2.0.0/16 192.0.2.10"
+route_lan3="-net 10.3.0.0 -netmask 255.255.0.0 192.0.2.11"
+route_tun="-net 10.9.0.0/24 -iface wg0"
+route_ecmp1="-net 10.8.0.0/24 192.0.2.21"
+route_ecmp2="-net 10.8.0.0/24 192.0.2.22 -ifp em1"
+route_bh="-net 203.0.113.0/24 127.0.0.1 -blackhole"
+route_rej="-host 203.0.113.9 127.0.0.1 -reject"
+route_mtu="-net 10.7.0.0/24 192.0.2.1 -mtu 1400"
+route_calc="-net ${x} 192.0.2.1"
+route_dup1="-host 10.6.0.1 192.0.2.30"
+route_dup2="10.6.0.1 192.0.2.30"
+route_fib1="-net 10.5.0.0/24 192.0.2.40 -fib 1"
+route_cls="-net 10.4.0.0 192.0.2.2"
+ipv6_static_routes="v6a v6b"
+ipv6_route_v6a="2001:db8:1::/48 2001:db8::1"
+ipv6_route_v6b="-net 2001:db8:2:: -prefixlen 64 -iface em1"
+EOF
+	# A later file's wins: rc.conf.local's.
+	printf 'ipv6_route_v6a="2001:db8:1::/48 2001:db8::2"\n' > rc.conf.local
+	cat > want0 <<'EOF'
+inet 10.2.0.0/16 192.0.2.10 - - -
+inet 10.3.0.0/16 192.0.2.11 - - -
+inet 10.9.0.0/24 - wg0 - rc.conf: only with wg0
+inet 10.8.0.0/24 192.0.2.21 - - -
+inet 10.8.0.0/24 192.0.2.22 em1 - -
+inet 203.0.113.0/24 - - blackhole -
+inet 203.0.113.9/32 - - unreachable -
+inet 10.6.0.1/32 192.0.2.30 - - -
+inet 0.0.0.0/0 192.0.2.254 - - -
+inet6 2001:db8:1::/48 2001:db8::2 - - -
+inet6 2001:db8:2::/64 - em1 - -
+inet6 ::/0 fe80::1%em0 - - -
+EOF
+	cat > unread0 <<'EOF'
+unread route_mtu: a route(8) option the model has no leaf for
+unread route_calc: not a value reading tells
+unread route_missing: not set
+unread route_cls: a network without its length
+unread route_dup2: the same prefix and gateway as another
+EOF
+	cat want0 unread0 > all0
+	atf_check -o file:all0 "$y" 0 rc.conf rc.conf.local
+	# FIB 1's: its own route, its default router.
+	atf_check -o match:'^inet 10\.5\.0\.0/24 192\.0\.2\.40 - - -$' \
+	    -o match:'^inet 0\.0\.0\.0/0 198\.51\.100\.1 - - -$' \
+	    -o not-match:'10\.2\.0\.0' "$y" 1 rc.conf rc.conf.local
+	# Written to a fragment and read back from it: the same routes,
+	# nothing unread; and sh(1) reads the fragment.
+	atf_check -o file:want0 "$y" -w 0 frag rc.conf rc.conf.local
+	atf_check -o match:'^static_routes=".*arc_10_9_0_0_24:wg0' cat frag
+	atf_check -o match:'^-net 10\.8\.0\.0/24 192\.0\.2\.22 -ifp em1$' \
+	    sh -c '. ./frag; echo "$route_arc_10_8_0_0_24_2"'
+	atf_check -o inline:"192.0.2.254 fe80::1%em0\n" \
+	    sh -c '. ./frag; echo "$defaultrouter $ipv6_defaultrouter"'
+	# Written again, the same: what was there replaced, not added to.
+	cp frag frag1
+	atf_check -o file:want0 "$y" -w 0 frag rc.conf rc.conf.local
+	atf_check cmp frag frag1
+}
+
+atf_test_case yang_routes
+yang_routes_head()
+{
+	atf_set "descr" "ietf-routing's RIBs (PLAN-SDN-YANG 2.4.1): every" \
+	    "FIB's routes as netstat -rn shows them, through YANG-CBOR" \
+	    "and back"
+}
+yang_routes_body()
+{
+	# netstat(1)'s routes as ycollect writes them: af, prefix ("default"
+	# /0, a host /32 or /128, no zone), gateway (link#N -), interface,
+	# the special next hop (B blackhole, R unreachable, a host route to
+	# lo without a gateway receive; none then an interface), and the
+	# protocol its flags say (S static, no G direct, else any).
+	cat > rt.awk <<'EOF'
+/^Internet:/ { af = "inet"; next }
+/^Internet6:/ { af = "inet6"; next }
+af == "" || $1 == "Destination" || NF < 4 { next }
+{
+	d = $1; g = $2; fl = $3; i = $4
+	if (d == "default")
+		d = af == "inet" ? "0.0.0.0/0" : "::/0"
+	z = d; sub(/%[^\/]*/, "", z); d = z
+	if (d !~ /\//)
+		d = d (af == "inet" ? "/32" : "/128")
+	if (g ~ /^link#/)
+		g = "-"
+	sp = "-"
+	if (fl ~ /B/) sp = "blackhole"
+	else if (fl ~ /R/) sp = "unreachable"
+	else if (fl ~ /H/ && fl !~ /G/ && i ~ /^lo/) sp = "receive"
+	if (sp != "-")
+		i = "-"
+	p = fl ~ /S/ ? "static" : fl !~ /G/ ? "direct" : "*"
+	print af, d, g, i, sp, p
+}
+EOF
+	nfibs=$(sysctl -n net.fibs)
+	f=0
+	while [ "$f" -lt "$nfibs" ]; do
+		netstat -rn -F "$f" | awk -f rt.awk | sort > before
+		atf_check -o save:r "$(atf_get_srcdir)/ycollect" routes "$f"
+		netstat -rn -F "$f" | awk -f rt.awk | sort > after
+		atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+		    tail -1 r
+		sed '$d' r | sort > got
+		# A "*" protocol: any, a gateway's the kernel's or a daemon's.
+		for w in before after; do
+			awk 'NR == FNR { want[FNR] = $0; n = FNR; next }
+			{ got[FNR] = $0; m = FNR }
+			END {
+				if (n != m) exit 1
+				for (k = 1; k <= n; k++) {
+					split(want[k], a); split(got[k], b)
+					for (j = 1; j <= 5; j++)
+						if (a[j] != b[j]) exit 1
+					if (a[6] != "*" && a[6] != b[6]) exit 1
+				}
+			}' "$w" got && break
+			[ "$w" = after ] && { diff -u before got; atf_fail \
+			    "FIB $f: the collector and netstat differ"; }
+		done
+		f=$((f + 1))
+	done
+}
+
 atf_test_case yang_interfaces
 yang_interfaces_head()
 {
@@ -5443,6 +5872,13 @@ EOF
 atf_init_test_cases()
 {
 	atf_add_test_case yang_interfaces
+	atf_add_test_case yang_routes
+	atf_add_test_case yang_rc_routes
+	atf_add_test_case yang_rtadv_conf
+	atf_add_test_case yang_ni_conf
+	atf_add_test_case yang_ni_rc
+	atf_add_test_case yang_ni_grow
+	atf_add_test_case yang_active_route
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd
 	atf_add_test_case ipsec_sa

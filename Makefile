@@ -36,7 +36,7 @@ SUBDIR.${MK_CONSOLE}+= www/arcana-ui \
 		www/arcana-console
 SUBDIR.${MK_TESTS}+= tests
 SUBDIR_DEPEND_usr.sbin/jailconf=	lib/libjailconf
-SUBDIR_DEPEND_usr.sbin/arcana-agent=	lib/libjailconf
+SUBDIR_DEPEND_usr.sbin/arcana-agent=	lib/libjailconf lib/libvarconf
 
 .if ${CBLINK_SUBMODULE} == "yes"
 .for _d in ${SUBDIR} ${SUBDIR.yes}
