@@ -5192,6 +5192,75 @@ capture_cleanup()
 
 # The ietf-interfaces collector (yang/collect.h) beside what ifconfig(8)
 # and netstat(1) -i say of the same interfaces.
+atf_test_case yang_active_route
+yang_active_route_head()
+{
+	atf_set "descr" "ietf-routing's active-route action (PLAN-SDN-YANG" \
+	    "2.4.5): the route an address goes by, as route -n get finds it"
+}
+yang_active_route_body()
+{
+	# route -n get's answer as ycollect writes it: af, the destination
+	# with its mask's length (none: a host's), the gateway (link#N,
+	# none: -), the interface, the special next hop (-: none).
+	cat > get.awk <<'EOF'
+function hexv(s,    v, k) {
+	v = 0
+	for (k = 1; k <= length(s); k++)
+		v = v * 16 + index("0123456789abcdef", substr(tolower(s), k, 1)) - 1
+	return v
+}
+function bits(x,    n) {
+	n = 0
+	while (x > 0) { n += x % 2; x = int(x / 2) }
+	return n
+}
+$1 == "destination:" { d = $2 }
+$1 == "mask:" { m = $2 }
+$1 == "gateway:" { g = $2 }
+$1 == "interface:" { i = $2 }
+$1 == "flags:" { f = $2 }
+END {
+	if (d == "") { print "none"; exit }
+	af = d ~ /:/ ? "inet6" : "inet"
+	sub(/%.*/, "", d)
+	if (m == "")
+		len = af == "inet" ? 32 : 128
+	else {
+		len = 0
+		n = split(m, o, af == "inet" ? "." : ":")
+		for (k = 1; k <= n; k++)
+			if (o[k] != "")
+				len += bits(af == "inet" ? o[k] + 0 : hexv(o[k]))
+	}
+	if (g == "" || g ~ /^link#/) g = "-"
+	sp = "-"
+	if (f ~ /BLACKHOLE/) sp = "blackhole"
+	else if (f ~ /REJECT/) sp = "unreachable"
+	else if (f ~ /HOST/ && f !~ /GATEWAY/ && i ~ /^lo/) sp = "receive"
+	if (sp != "-") { i = "-"; g = "-" }
+	print af, d "/" len, g, i, sp
+}
+EOF
+	# Somewhere out, the loopback, and every address of the host's.
+	{
+		echo 127.0.0.1 ::1 192.0.2.77 2001:db8::77 198.51.100.1
+		ifconfig -a | awk '$1 == "inet" || $1 == "inet6" { print $2 }'
+	} | tr ' ' '\n' | sort -u > addrs
+	while read -r x; do
+		[ -z "$x" ] && continue
+		fam=-inet; case "$x" in *:*) fam=-inet6;; esac
+		route -n get "$fam" "$x" 2>/dev/null | awk -f get.awk > want
+		atf_check -o save:got "$(atf_get_srcdir)/ycollect" active 0 "$x"
+		atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+		    tail -1 got
+		head -1 got | awk '{ print $1, $2, $3, $4, $5 }' | \
+		    sed 's/^none.*/none/' > got1
+		cmp -s want got1 || { echo "$x:"; cat want got1; atf_fail \
+		    "$x: the action and route -n get differ"; }
+	done < addrs
+}
+
 atf_test_case yang_rc_routes
 yang_rc_routes_head()
 {
@@ -5590,6 +5659,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_rc_routes
+	atf_add_test_case yang_active_route
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd
 	atf_add_test_case ipsec_sa

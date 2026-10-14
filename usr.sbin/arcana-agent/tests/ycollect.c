@@ -27,6 +27,9 @@
  *				gateway, the interface, the special next
  *				hop (- for none each), the source protocol,
  *				and multipath for one of a next-hop-list
+ *	ycollect active fib addr	the RIB's active-route action for addr,
+ *				its route a line as routes' (none: "none");
+ *				and its output through YANG-CBOR and back
  */
 
 #include <err.h>
@@ -320,6 +323,69 @@ routes(int fib, cbl_yarena *a)
 }
 
 static void
+active(int fib, const char *addr, cbl_yarena *a)
+{
+	struct ietf_routing_routing_ribs_rib_active_route_input in = { 0 };
+	struct ietf_routing_routing_ribs_rib_active_route_output out, back;
+	struct cbl_ybuf b1 = { 0 }, b2 = { 0 };
+	const struct ietf_routing_routing_ribs_rib_active_route_output_route
+	    *r;
+	char why[256];
+	bool v6 = strchr(addr, ':') != NULL;
+	int error;
+
+	if (v6)
+		in.v6ur_destination_address = addr;
+	else
+		in.v4ur_destination_address = addr;
+	if ((error = yrt_active_route(fib, &in, a, &out)) != 0)
+		errc(1, error, "yrt_active_route");
+	if ((r = out.route) == NULL)
+		printf("none\n");
+	else {
+		const struct cbl_yident *p = cbl_yschema_ident(&ymodel_schema,
+		    r->source_protocol);
+		const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop
+		    *nh = r->next_hop;
+
+		if (nh->next_hop_list != NULL)
+			for (size_t k = 0; k < nh->next_hop_list->next_hop.n;
+			    k++)
+				printf("%s %s %s %s - %s multipath\n",
+				    v6 ? "inet6" : "inet", v6 ?
+				    r->v6ur_destination_prefix :
+				    r->v4ur_destination_prefix, str(v6 ?
+				    nh->next_hop_list->next_hop.v[k].v6ur_next_hop_address :
+				    nh->next_hop_list->next_hop.v[k].v4ur_next_hop_address),
+				    str(nh->next_hop_list->next_hop.v[k].outgoing_interface),
+				    p != NULL ? p->name : "-");
+		else
+			printf("%s %s %s %s %s %s -\n", v6 ? "inet6" : "inet",
+			    v6 ? r->v6ur_destination_prefix :
+			    r->v4ur_destination_prefix, str(v6 ?
+			    nh->v6ur_next_hop_address :
+			    nh->v4ur_next_hop_address),
+			    str(nh->outgoing_interface),
+			    nh->has_special_next_hop ?
+			    special[nh->special_next_hop] : "-",
+			    p != NULL ? p->name : "-");
+	}
+	if (ietf_routing_routing_ribs_rib_active_route_output_encode(&out,
+	    &b1) != 0)
+		errx(1, "encode");
+	if (ietf_routing_routing_ribs_rib_active_route_output_decode(b1.p,
+	    b1.len, &back, a, CBL_YD_STRICT, why, sizeof(why)) != 0)
+		errx(1, "decode: %s", why);
+	if (ietf_routing_routing_ribs_rib_active_route_output_encode(&back,
+	    &b2) != 0)
+		errx(1, "encode again");
+	printf("yang-cbor %zu bytes, %s\n", b1.len, b1.len == b2.len &&
+	    memcmp(b1.p, b2.p, b1.len) == 0 ? "the same back" : "not the same");
+	cbl_ybuf_free(&b1);
+	cbl_ybuf_free(&b2);
+}
+
+static void
 roundtrip(const struct ietf_interfaces_interfaces *ifs, cbl_yarena *a)
 {
 	struct ietf_interfaces_interfaces back;
@@ -346,6 +412,13 @@ main(int argc, char **argv)
 	cbl_yarena *a;
 	int error;
 
+	if (argc == 4 && strcmp(argv[1], "active") == 0) {
+		if ((a = cbl_yarena_new()) == NULL)
+			err(1, "cbl_yarena_new");
+		active(atoi(argv[2]), argv[3], a);
+		cbl_yarena_free(a);
+		return (0);
+	}
 	if (argc == 3 && strcmp(argv[1], "routes") == 0) {
 		if ((a = cbl_yarena_new()) == NULL)
 			err(1, "cbl_yarena_new");

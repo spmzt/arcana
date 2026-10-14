@@ -23,6 +23,10 @@
  *   the others arcana-routing's identities.
  * - active: every route netlink dumps is in the FIB, used.
  * - route-preference and last-updated: FreeBSD has neither.
+ *
+ * The RIB's active-route action (2.4.5): the route a destination
+ * address goes by, as route(8)'s get asks netlink(4) for it
+ * (RTM_GETROUTE of the address, the longest match), the same leaves.
  */
 
 #include <sys/types.h>
@@ -354,5 +358,103 @@ yrt_routing(struct ietf_routing *data, int fib, cbl_yarena *a)
 	ribs->rib.v = v;
 	rt->ribs = ribs;
 	data->routing = rt;
+	return (0);
+}
+
+/* The action's route and the RIB's: one layout but the preference. */
+_Static_assert(sizeof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop) ==
+    sizeof(ynh), "active-route's next hop differs from a route's");
+
+int
+yrt_active_route(int fib,
+    const struct ietf_routing_routing_ribs_rib_active_route_input *in,
+    cbl_yarena *a, struct ietf_routing_routing_ribs_rib_active_route_output *out)
+{
+	struct ietf_routing_routing_ribs_rib_active_route_output_route *o;
+	struct sockaddr_storage dst;
+	struct snl_errmsg_data e = { 0 };
+	struct snl_parsed_route p = { 0 };
+	struct snl_writer nw;
+	struct snl_state ss;
+	struct nlmsghdr *hdr;
+	struct rtmsg *rtm;
+	char buf[INET6_ADDRSTRLEN + IF_NAMESIZE + 2], *zone;
+	const char *addrs = in->v4ur_destination_address != NULL ?
+	    in->v4ur_destination_address : in->v6ur_destination_address;
+	int af = in->v4ur_destination_address != NULL ? AF_INET : AF_INET6;
+	uint32_t scope = 0;
+	yroute r;
+	int error;
+
+	memset(out, 0, sizeof(*out));
+	if (addrs == NULL)
+		return (EINVAL);
+	memset(&dst, 0, sizeof(dst));
+	strlcpy(buf, addrs, sizeof(buf));
+	if ((zone = strchr(buf, '%')) != NULL) {
+		*zone++ = '\0';
+		if (af != AF_INET6 || (scope = if_nametoindex(zone)) == 0)
+			return (EINVAL);
+	}
+	if (af == AF_INET) {
+		struct sockaddr_in *sin = (struct sockaddr_in *)&dst;
+
+		sin->sin_family = AF_INET;
+		sin->sin_len = sizeof(*sin);
+		if (inet_pton(AF_INET, buf, &sin->sin_addr) != 1)
+			return (EINVAL);
+	} else {
+		struct sockaddr_in6 *sin6 = (struct sockaddr_in6 *)&dst;
+
+		sin6->sin6_family = AF_INET6;
+		sin6->sin6_len = sizeof(*sin6);
+		sin6->sin6_scope_id = scope;
+		if (inet_pton(AF_INET6, buf, &sin6->sin6_addr) != 1)
+			return (EINVAL);
+	}
+	if (!snl_init(&ss, NETLINK_ROUTE))
+		return (errno != 0 ? errno : EIO);
+	snl_init_writer(&ss, &nw);
+	hdr = snl_create_msg_request(&nw, RTM_GETROUTE);
+	rtm = snl_reserve_msg_object(&nw, struct rtmsg);
+	rtm->rtm_family = af;
+	snl_add_msg_attr_ip(&nw, RTA_DST, (struct sockaddr *)&dst);
+	snl_add_msg_attr_u32(&nw, RTA_TABLE, (uint32_t)fib);
+	if (scope != 0)
+		snl_add_msg_attr_u32(&nw, RTA_OIF, scope);
+	if ((hdr = snl_finalize_msg(&nw)) == NULL ||
+	    !snl_send_message(&ss, hdr)) {
+		snl_free(&ss);
+		return (ENOMEM);
+	}
+	if ((hdr = snl_read_reply(&ss, hdr->nlmsg_seq)) == NULL) {
+		snl_free(&ss);
+		return (EIO);
+	}
+	if (hdr->nlmsg_type != RTM_NEWROUTE) {
+		/* None: ESRCH, an output without a route. */
+		error = snl_parse_errmsg(&ss, hdr, &e) ? e.error : EIO;
+		snl_free(&ss);
+		return (error == ESRCH ? 0 : error != 0 ? error : EIO);
+	}
+	if (!snl_parse_nlmsg(&ss, hdr, &snl_rtm_route_parser, &p)) {
+		snl_free(&ss);
+		return (EIO);
+	}
+	memset(&r, 0, sizeof(r));
+	error = route(a, &p, &r);
+	snl_free(&ss);
+	if (error != 0)
+		return (error);
+	if ((o = cbl_yarena_alloc(a, sizeof(*o))) == NULL)
+		return (ENOMEM);
+	memset(o, 0, sizeof(*o));
+	o->next_hop = (const void *)r.next_hop;
+	o->has_source_protocol = r.has_source_protocol;
+	o->source_protocol = r.source_protocol;
+	o->active = r.active;
+	o->v4ur_destination_prefix = r.v4ur_destination_prefix;
+	o->v6ur_destination_prefix = r.v6ur_destination_prefix;
+	out->route = o;
 	return (0);
 }

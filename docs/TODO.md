@@ -279,7 +279,11 @@
   (RTM_NEWROUTE with NLM_F_APPEND, a list's hops a multipath route;
   RTA_TABLE; RTPROT_STATIC), what changed only, all undone if one fails;
   agent_root_test's yang_static_apply holds it to route -n get in a
-  vnet jail, FIB 1 too. Next: 2.4.5, active-route. As each operation is
+  vnet jail, FIB 1 too. 2.4.5: the RIBs' active-route action,
+  yrt_active_route(), the route an address goes by as route(8)'s get
+  asks netlink (the longest match), held to route -n get for the
+  loopback, addresses out and every address of the host's own. Next:
+  2.4.6, route events. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
