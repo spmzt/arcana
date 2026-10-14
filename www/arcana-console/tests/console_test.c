@@ -1586,6 +1586,72 @@ ATF_TC_BODY(tokens, tc)
 		http_bearer("POST", "/api/ca", wtok, "{\"action\":\"make\"}", &r);
 		EXPECT(&r, 403);
 		resp_free(&r);
+		/*
+		 * Signed in on the web with it: a session that may do what
+		 * the token may, no more; a read token does not sign in;
+		 * deleted, the token ends the session it opened.
+		 */
+		{
+			char	saved[sizeof(cookie)], tbody[128];
+
+			strlcpy(saved, cookie, sizeof(saved));
+			cookie[0] = '\0';
+			http("POST", "/api/auth/login/token", "{\"token\":\""
+			    "arcw_0000000000000000000000000000000000000000000000"
+			    "000000000000000000\"}", &r);
+			EXPECT(&r, 401);
+			resp_free(&r);
+			snprintf(tbody, sizeof(tbody), "{\"token\":\"%s\"}", token);
+			http("POST", "/api/auth/login/token", tbody, &r);
+			EXPECT(&r, 401);
+			resp_free(&r);
+			snprintf(tbody, sizeof(tbody), "{\"token\":\"%s\"}", wtok);
+			http("POST", "/api/auth/login/token", tbody, &r);
+			EXPECT(&r, 200);
+			ATF_CHECK(strstr(r.body, "\"by_token\":true") != NULL);
+			resp_free(&r);
+			ATF_REQUIRE(cookie[0] != '\0');
+			http("GET", "/api/auth/status", NULL, &r);
+			ATF_CHECK(strstr(r.body, "\"authenticated\":true") !=
+			    NULL && strstr(r.body, "\"by_token\":true") != NULL);
+			resp_free(&r);
+			http("GET", "/api/servers", NULL, &r);
+			EXPECT(&r, 200);
+			resp_free(&r);
+			http("POST", "/api/sdwan/check", "{}", &r);
+			ATF_CHECK_MSG(r.status != 401 && r.status != 403,
+			    "%d %s", r.status, r.body);
+			resp_free(&r);
+			http("POST", "/api/tokens", "{\"name\":\"more\"}", &r);
+			EXPECT(&r, 403);
+			ATF_CHECK(strstr(r.body, "security key") != NULL);
+			resp_free(&r);
+			http("GET", "/api/settings", NULL, &r);
+			EXPECT(&r, 403);
+			resp_free(&r);
+			/* The token deleted, by a key's session. */
+			{
+				char	tsess[sizeof(cookie)], tid[24];
+
+				strlcpy(tsess, cookie, sizeof(tsess));
+				strlcpy(cookie, saved, sizeof(cookie));
+				http("GET", "/api/tokens", NULL, &r);
+				EXPECT(&r, 200);
+				ATF_REQUIRE(jstr(&r, "tokens.1.id") != NULL);
+				snprintf(tid, sizeof(tid), "%s", jstr(&r,
+				    "tokens.1.id"));
+				resp_free(&r);
+				snprintf(tbody, sizeof(tbody), "/api/tokens/%s", tid);
+				http("DELETE", tbody, NULL, &r);
+				EXPECT(&r, 200);
+				resp_free(&r);
+				strlcpy(cookie, tsess, sizeof(cookie));
+				http("GET", "/api/servers", NULL, &r);
+				EXPECT(&r, 401);
+				resp_free(&r);
+			}
+			strlcpy(cookie, saved, sizeof(cookie));
+		}
 	}
 	http("POST", "/api/tokens", "{\"name\":\"x\",\"kind\":\"root\"}",
 	    &r);

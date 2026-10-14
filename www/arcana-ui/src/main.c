@@ -651,6 +651,8 @@ submit_form(const char *form, const ucl_object_t *f)
 		free(b.s);
 		app.modal = MODAL_NONE;
 		job_send(cur_server(), q, title, JOB_PACKAGES, app.pkg.jail);
+	} else if (strcmp(form, "login-token") == 0) {
+		login_token(jstr(f, "token") != NULL ? jstr(f, "token") : "");
 	} else if (strcmp(form, "enrol") == 0) {
 		enrol(jstr(f, "token") != NULL ? jstr(f, "token") : "",
 		    jstr(f, "name") != NULL ? jstr(f, "name") : "");
