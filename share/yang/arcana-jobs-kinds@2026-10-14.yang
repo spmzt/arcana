@@ -1,0 +1,1567 @@
+submodule arcana-jobs-kinds {
+  yang-version 1.1;
+  belongs-to arcana-jobs {
+    prefix arcjob;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The kinds of job, a change each: made from share/arcana/jobs.yaml
+     by share/arcana/jobs.awk (out=yang), not to be edited.  A kind
+     is a case, its fields leaves: those it needs mandatory, those
+     whose values jobs.yaml lists an enumeration.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.4.";
+  }
+
+  typedef job-kind {
+    type enumeration {
+      enum jail-action {
+        value 0;
+      }
+      enum address {
+        value 1;
+      }
+      enum service-action {
+        value 2;
+      }
+      enum service-config {
+        value 3;
+      }
+      enum pkg-upgrade {
+        value 4;
+      }
+      enum if-address {
+        value 5;
+      }
+      enum if-state {
+        value 6;
+      }
+      enum route {
+        value 7;
+      }
+      enum if-set {
+        value 8;
+      }
+      enum if-create {
+        value 9;
+      }
+      enum if-destroy {
+        value 10;
+      }
+      enum netgraph {
+        value 11;
+      }
+      enum wireguard {
+        value 12;
+      }
+      enum bird {
+        value 13;
+      }
+      enum if-vnet {
+        value 14;
+      }
+      enum kmod {
+        value 15;
+      }
+      enum zfs {
+        value 16;
+      }
+      enum zpool {
+        value 17;
+      }
+      enum mount {
+        value 18;
+      }
+      enum gpart {
+        value 19;
+      }
+      enum cam {
+        value 20;
+      }
+      enum sysctl {
+        value 21;
+      }
+      enum ipfw {
+        value 22;
+      }
+      enum bridge {
+        value 23;
+      }
+      enum geneve {
+        value 24;
+      }
+      enum process {
+        value 25;
+      }
+      enum pkg-clean {
+        value 26;
+      }
+      enum ipsec {
+        value 27;
+      }
+      enum pkg-install {
+        value 28;
+      }
+      enum ntp {
+        value 29;
+      }
+      enum rtadvd {
+        value 30;
+      }
+      enum ipsec-sa {
+        value 31;
+      }
+      enum jail-conf {
+        value 32;
+      }
+      enum neighbour {
+        value 33;
+      }
+      enum cert {
+        value 34;
+      }
+      enum ssh {
+        value 35;
+      }
+      enum carp {
+        value 36;
+      }
+    }
+    description
+      "A kind of job, by its number in arcana.yaml's job-kind.";
+  }
+
+  grouping change {
+    description
+      "A change: one kind of job, and what it is given.";
+    choice kind {
+      mandatory true;
+      description
+        "The kind of job.";
+      case jail-action {
+        container jail-action {
+          presence
+            "This kind of job.";
+          description
+            "A jail started, stopped, restarted or killed";
+          leaf jail {
+            type string;
+            mandatory true;
+            description
+              "Jail";
+          }
+          leaf action {
+            type enumeration {
+              enum start;
+              enum stop;
+              enum restart;
+              enum kill;
+            }
+            mandatory true;
+            description
+              "Action";
+          }
+        }
+      }
+      case address {
+        container address {
+          presence
+            "This kind of job.";
+          description
+            "An address of a jail";
+          leaf jail {
+            type string;
+            mandatory true;
+            description
+              "Jail";
+          }
+          leaf address {
+            type string;
+            mandatory true;
+            description
+              "Address";
+          }
+          leaf interface {
+            type string;
+            description
+              "Interface";
+          }
+          leaf remove {
+            type boolean;
+            description
+              "Remove";
+          }
+          leaf live {
+            type boolean;
+            description
+              "Live";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case service-action {
+        container service-action {
+          presence
+            "This kind of job.";
+          description
+            "A service started, stopped, reloaded, enabled or disabled";
+          leaf service {
+            type string;
+            mandatory true;
+            description
+              "Service";
+          }
+          leaf action {
+            type enumeration {
+              enum start;
+              enum stop;
+              enum restart;
+              enum reload;
+              enum enable;
+              enum disable;
+            }
+            mandatory true;
+            description
+              "Action";
+          }
+        }
+      }
+      case service-config {
+        container service-config {
+          presence
+            "This kind of job.";
+          description
+            "A service's variables in rc.conf";
+          leaf service {
+            type string;
+            mandatory true;
+            description
+              "Service";
+          }
+          list set {
+            key "name";
+            description
+              "Variables to set";
+            leaf name {
+              type string;
+              description
+                "The variable.";
+            }
+            leaf value {
+              type string;
+              description
+                "Its value.";
+            }
+          }
+          leaf-list unset {
+            type string;
+            ordered-by user;
+            description
+              "Variables to unset";
+          }
+        }
+      }
+      case pkg-upgrade {
+        container pkg-upgrade {
+          presence
+            "This kind of job.";
+          description
+            "Packages upgraded";
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf-list packages {
+            type string;
+            ordered-by user;
+            description
+              "Packages";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
+          }
+          leaf pkg-ip {
+            type uint32;
+            description
+              "pkg over IPv4 (4) or IPv6 (6)";
+          }
+        }
+      }
+      case if-address {
+        container if-address {
+          presence
+            "This kind of job.";
+          description
+            "An interface's address added or taken off";
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf address {
+            type string;
+            mandatory true;
+            description
+              "Address";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf remove {
+            type boolean;
+            description
+              "Remove";
+          }
+          leaf live {
+            type boolean;
+            description
+              "Live";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
+        }
+      }
+      case if-state {
+        container if-state {
+          presence
+            "This kind of job.";
+          description
+            "An interface brought up or down";
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf up {
+            type boolean;
+            mandatory true;
+            description
+              "Up";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
+        }
+      }
+      case route {
+        container route {
+          presence
+            "This kind of job.";
+          description
+            "A static route added or deleted";
+          leaf destination {
+            type string;
+            mandatory true;
+            description
+              "Destination";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf gateway {
+            type string;
+            description
+              "Gateway";
+          }
+          leaf remove {
+            type boolean;
+            description
+              "Remove";
+          }
+          leaf fib {
+            type uint32;
+            description
+              "Routing table";
+          }
+          leaf metric {
+            type uint32;
+            description
+              "Metric";
+          }
+          leaf weight {
+            type uint32;
+            description
+              "Weight";
+          }
+          leaf source {
+            type string;
+            description
+              "Source address";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
+        }
+      }
+      case if-set {
+        container if-set {
+          presence
+            "This kind of job.";
+          description
+            "An interface's MTU, description, routing tables or addressing";
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf mtu {
+            type uint32;
+            description
+              "MTU";
+          }
+          leaf description {
+            type string;
+            description
+              "Description";
+          }
+          leaf fib {
+            type uint32;
+            description
+              "Routing table";
+          }
+          leaf tunnelfib {
+            type uint32;
+            description
+              "Routing table of the tunnel's outer packets";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
+        }
+      }
+      case if-create {
+        container if-create {
+          presence
+            "This kind of job.";
+          description
+            "An interface made";
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf tunnel-local {
+            type string;
+            description
+              "Tunnel, this end";
+          }
+          leaf tunnel-remote {
+            type string;
+            description
+              "Tunnel, the far end";
+          }
+          leaf address {
+            type string;
+            description
+              "Address";
+          }
+          leaf destination {
+            type string;
+            description
+              "Destination";
+          }
+          leaf description {
+            type string;
+            description
+              "Description";
+          }
+          leaf mtu {
+            type uint32;
+            description
+              "MTU";
+          }
+          leaf fib {
+            type uint32;
+            description
+              "Routing table";
+          }
+          leaf tunnelfib {
+            type uint32;
+            description
+              "Routing table of the tunnel's outer packets";
+          }
+          leaf id {
+            type uint32;
+            description
+              "Tag or identifier";
+          }
+          leaf parent {
+            type string;
+            description
+              "Parent interface";
+          }
+          leaf reqid {
+            type uint32;
+            description
+              "reqid";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case if-destroy {
+        container if-destroy {
+          presence
+            "This kind of job.";
+          description
+            "An interface destroyed (destroys: always)";
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case netgraph {
+        container netgraph {
+          presence
+            "This kind of job.";
+          description
+            "The netgraph graph changed (destroys: verb=rmhook|shutdown)";
+          leaf verb {
+            type enumeration {
+              enum mkpeer;
+              enum connect;
+              enum rmhook;
+              enum shutdown;
+              enum name;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+        }
+      }
+      case wireguard {
+        container wireguard {
+          presence
+            "This kind of job.";
+          description
+            "A WireGuard interface's key or peers";
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf verb {
+            type enumeration {
+              enum init;
+              enum peer;
+              enum unpeer;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf peer {
+            type string;
+            description
+              "Peer key";
+          }
+          leaf endpoint {
+            type string;
+            description
+              "Endpoint";
+          }
+          leaf allowed-ips {
+            type string;
+            description
+              "Allowed addresses";
+          }
+          leaf keepalive {
+            type uint32;
+            description
+              "Keepalive, seconds";
+          }
+          leaf listen-port {
+            type uint32;
+            description
+              "Port";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+          leaf preshared-key {
+            type string;
+            description
+              "Preshared key";
+          }
+        }
+      }
+      case bird {
+        container bird {
+          presence
+            "This kind of job.";
+          description
+            "BIRD told something";
+          leaf verb {
+            type enumeration {
+              enum enable;
+              enum disable;
+              enum restart;
+              enum reload;
+              enum configure;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+        }
+      }
+      case if-vnet {
+        container if-vnet {
+          presence
+            "This kind of job.";
+          description
+            "An interface given to a jail, or taken back";
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf jail {
+            type string;
+            mandatory true;
+            description
+              "Jail";
+          }
+          leaf remove {
+            type boolean;
+            description
+              "Remove";
+          }
+          leaf parent {
+            type string;
+            description
+              "Parent interface";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case kmod {
+        container kmod {
+          presence
+            "This kind of job.";
+          description
+            "A kernel module loaded or unloaded";
+          leaf verb {
+            type enumeration {
+              enum load;
+              enum unload;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case ntp {
+        container ntp {
+          presence
+            "This kind of job.";
+          description
+            "The NTP servers the host keeps time by (destroys: remove)";
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf remove {
+            type boolean;
+            description
+              "Remove";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case rtadvd {
+        container rtadvd {
+          presence
+            "This kind of job.";
+          description
+            "Router advertisements on an interface, for SLAAC (destroys: remove)";
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf remove {
+            type boolean;
+            description
+              "Remove";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case ipsec-sa {
+        container ipsec-sa {
+          presence
+            "This kind of job.";
+          description
+            "Manually keyed IPsec security associations (destroys: verb=clear)";
+          leaf verb {
+            type enumeration {
+              enum key;
+              enum set;
+              enum derive;
+              enum commit;
+              enum clear;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf reqid {
+            type uint32;
+            description
+              "reqid";
+          }
+          leaf tunnel-local {
+            type string;
+            description
+              "Tunnel, this end";
+          }
+          leaf tunnel-remote {
+            type string;
+            description
+              "Tunnel, the far end";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+        }
+      }
+      case zfs {
+        container zfs {
+          presence
+            "This kind of job.";
+          description
+            "zfs (destroys: verb=destroy|rollback)";
+          leaf verb {
+            type string;
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf recursive {
+            type boolean;
+            description
+              "Recursive";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
+          }
+        }
+      }
+      case zpool {
+        container zpool {
+          presence
+            "This kind of job.";
+          description
+            "zpool (destroys: verb=destroy|export|offline|detach|remove|replace|labelclear)";
+          leaf verb {
+            type string;
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
+          }
+        }
+      }
+      case mount {
+        container mount {
+          presence
+            "This kind of job.";
+          description
+            "A file system mounted, unmounted or swapped on";
+          leaf verb {
+            type string;
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
+          }
+        }
+      }
+      case gpart {
+        container gpart {
+          presence
+            "This kind of job.";
+          description
+            "A partition table or partition (destroys: verb=destroy|delete|newfs|newfs-msdos)";
+          leaf verb {
+            type string;
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
+          }
+        }
+      }
+      case cam {
+        container cam {
+          presence
+            "This kind of job.";
+          description
+            "camcontrol";
+          leaf verb {
+            type string;
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+        }
+      }
+      case sysctl {
+        container sysctl {
+          presence
+            "This kind of job.";
+          description
+            "A sysctl set";
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case ipfw {
+        container ipfw {
+          presence
+            "This kind of job.";
+          description
+            "The firewall (destroys: verb=delete|flush|replace)";
+          leaf verb {
+            type string;
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
+        }
+      }
+      case bridge {
+        container bridge {
+          presence
+            "This kind of job.";
+          description
+            "A bridge";
+          leaf verb {
+            type string;
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case geneve {
+        container geneve {
+          presence
+            "This kind of job.";
+          description
+            "A geneve tunnel";
+          leaf verb {
+            type string;
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case process {
+        container process {
+          presence
+            "This kind of job.";
+          description
+            "A process signalled or reniced (destroys: verb=signal)";
+          leaf verb {
+            type enumeration {
+              enum signal;
+              enum renice;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+        }
+      }
+      case pkg-clean {
+        container pkg-clean {
+          presence
+            "This kind of job.";
+          description
+            "The package cache cleaned";
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
+          }
+        }
+      }
+      case ipsec {
+        container ipsec {
+          presence
+            "This kind of job.";
+          description
+            "IPsec, strongSwan (destroys: verb=unconn|unchild)";
+          leaf verb {
+            type enumeration {
+              enum init;
+              enum start;
+              enum conn;
+              enum unconn;
+              enum child;
+              enum unchild;
+              enum up;
+              enum down;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf conn {
+            type string;
+            description
+              "Connection";
+          }
+          leaf child {
+            type string;
+            description
+              "Child";
+          }
+          leaf tunnel-local {
+            type string;
+            description
+              "Tunnel, this end";
+          }
+          leaf tunnel-remote {
+            type string;
+            description
+              "Tunnel, the far end";
+          }
+          leaf ipsec-mode {
+            type enumeration {
+              enum tunnel;
+              enum transport;
+            }
+            description
+              "Mode";
+          }
+          leaf pubkey {
+            type string;
+            description
+              "Peer's public key";
+          }
+          leaf local-cert {
+            type string;
+            description
+              "This host's certificate (x509)";
+          }
+          leaf remote-cert {
+            type string;
+            description
+              "The peer's certificate (x509)";
+          }
+          leaf remote-ca {
+            type string;
+            description
+              "The peer's CA (x509ca)";
+          }
+          leaf local-ts {
+            type string;
+            description
+              "This side's traffic";
+          }
+          leaf remote-ts {
+            type string;
+            description
+              "The peer's traffic";
+          }
+          leaf reqid {
+            type uint32;
+            description
+              "reqid";
+          }
+          leaf start-action {
+            type enumeration {
+              enum start;
+              enum trap;
+              enum none;
+            }
+            description
+              "Started";
+          }
+          leaf local-id {
+            type string;
+            description
+              "This side's identity";
+          }
+          leaf remote-id {
+            type string;
+            description
+              "The peer's identity";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case pkg-install {
+        container pkg-install {
+          presence
+            "This kind of job.";
+          description
+            "Packages installed";
+          leaf-list packages {
+            type string;
+            ordered-by user;
+            description
+              "Packages";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf force {
+            type boolean;
+            description
+              "Force";
+          }
+          leaf pkg-ip {
+            type uint32;
+            description
+              "pkg over IPv4 (4) or IPv6 (6)";
+          }
+        }
+      }
+      case jail-conf {
+        container jail-conf {
+          presence
+            "This kind of job.";
+          description
+            "A jail made, removed; the jails' defaults or a template (destroys: verb=remove|untemplate)";
+          leaf verb {
+            type enumeration {
+              enum make;
+              enum remove;
+              enum defaults;
+              enum template;
+              enum untemplate;
+              enum edit;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf dataset {
+            type string;
+            description
+              "Dataset";
+          }
+          leaf snapshot {
+            type string;
+            description
+              "Base snapshot";
+          }
+          leaf copy {
+            type enumeration {
+              enum clone;
+              enum send;
+            }
+            description
+              "Copied by";
+          }
+          leaf path {
+            type string;
+            description
+              "Path";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+          leaf start {
+            type boolean;
+            description
+              "Started once made";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+        }
+      }
+      case carp {
+        container carp {
+          presence
+            "This kind of job.";
+          description
+            "A carp(4) address shared with other hosts, its vhid set, or taken away (destroys: verb=remove)";
+          leaf verb {
+            type enumeration {
+              enum add;
+              enum set;
+              enum remove;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf interface {
+            type string;
+            mandatory true;
+            description
+              "Interface";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf address {
+            type string;
+            description
+              "Address";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf preshared-key {
+            type string;
+            description
+              "Preshared key";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
+        }
+      }
+      case neighbour {
+        container neighbour {
+          presence
+            "This kind of job.";
+          description
+            "An ARP or NDP neighbour set by hand, or taken away (destroys: verb=delete)";
+          leaf verb {
+            type enumeration {
+              enum add;
+              enum delete;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf address {
+            type string;
+            mandatory true;
+            description
+              "Address";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf lladdr {
+            type string;
+            description
+              "Link address";
+          }
+          leaf temporary {
+            type boolean;
+            description
+              "Ages out";
+          }
+          leaf live {
+            type boolean;
+            description
+              "Live";
+          }
+          leaf persist {
+            type boolean;
+            description
+              "Kept for a boot";
+          }
+        }
+      }
+      case cert {
+        container cert {
+          presence
+            "This kind of job.";
+          description
+            "A certificate OpenSSL trusts, added, taken away, trusted or not (destroys: verb=remove)";
+          leaf verb {
+            type enumeration {
+              enum add;
+              enum remove;
+              enum trust;
+              enum untrust;
+              enum rehash;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf path {
+            type string;
+            description
+              "Path";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+        }
+      }
+      case ssh {
+        container ssh {
+          presence
+            "This kind of job.";
+          description
+            "The base system's sshd: its banner, settings, keys and host certificates (destroys: verb=unauthorize)";
+          leaf verb {
+            type enumeration {
+              enum banner;
+              enum set;
+              enum authorize;
+              enum unauthorize;
+              enum sign;
+              enum user-cas;
+            }
+            mandatory true;
+            description
+              "Verb";
+          }
+          leaf jail {
+            type string;
+            description
+              "Jail";
+          }
+          leaf path {
+            type string;
+            description
+              "Path";
+          }
+          leaf-list args {
+            type string;
+            ordered-by user;
+            description
+              "Arguments";
+          }
+          leaf text {
+            type string;
+            description
+              "The file";
+          }
+          leaf user {
+            type string;
+            description
+              "User";
+          }
+          leaf safe {
+            type boolean;
+            description
+              "Safe, undone unless confirmed";
+          }
+        }
+      }
+    }
+  }
+}

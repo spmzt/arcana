@@ -6,7 +6,7 @@ SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c n
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		rcroutes.c routes.c rtadv.c rtimes.c scope.c sdwan.c vnet.c \
-		yif.c yip.c ylne.c yni.c yrt.c
+		yif.c yip.c yjobs_spec.c ylne.c yni.c yrt.c
 # The IETF modules the collectors fill (PLAN-SDN-YANG 1.9): cblink-gen's
 # structs and tables of share/yang's modules, committed, so that building
 # needs no libyang; "make regen-yang" refreshes them.
@@ -15,7 +15,7 @@ SRCS+=		ymodel_schema.c
 SRCS+=		bird.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c wireguard.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c packages.c \
-		services.c update.c yjails.c ypackages.c yservices.c
+		services.c update.c yjails.c yjobs.c ypackages.c yservices.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \
 		pools.c storage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
@@ -65,7 +65,8 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-network-instance@2019-01-21 \
 		arcana-network-instance@2026-10-14 \
 		ietf-logical-network-element@2019-01-25 arcana-jails@2026-10-14 \
-		arcana-services@2026-10-14 arcana-packages@2026-10-14
+		arcana-services@2026-10-14 arcana-packages@2026-10-14 \
+		arcana-jobs@2026-10-14
 # ietf-routing's multiple-ribs: a FIB each (setfib(1)).
 YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
@@ -74,9 +75,20 @@ YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-ipv6-unicast-routing: -F arcana-routing: \
 		-F ietf-network-instance: -F arcana-network-instance: \
 		-F ietf-logical-network-element: -F arcana-jails: \
-		-F arcana-services: -F arcana-packages:
+		-F arcana-services: -F arcana-packages: -F arcana-jobs:
 YANG_OUT?=	${.CURDIR}/yang
+# The kinds of job, made from share/arcana/jobs.yaml as the console's
+# forms are: arcana-jobs's submodule, and yjobs_spec(), a change of it
+# made the job-spec the queue takes (by arcana.h, the family's header).
+JOBS_AWK=	awk -f ${.CURDIR}/../../share/arcana/jobs.awk \
+		${.CURDIR}/../../share/arcana/arcana.yaml \
+		${.CURDIR}/../../share/arcana/jobs.yaml
+YANG_KINDS_OUT?=	${YANG_DIR}
 regen-yang: .PHONY
+	${JOBS_AWK:S/^awk/awk -v out=yang/} > \
+	    ${YANG_KINDS_OUT}/arcana-jobs-kinds@2026-10-14.yang
+	${JOBS_AWK:S/^awk/awk -v out=yspec/} ${.OBJDIR}/arcana.h > \
+	    ${YANG_OUT}/yjobs_spec.c
 	cd ${YANG_DIR} && ${CBLINK_GEN} -m h,schema -b ymodel \
 	    -o ${YANG_OUT} ${YANG_FEATS} ${YANG_MODS:@m@-s ${m}.sid@} \
 	    ${YANG_MODS:S/$/.yang/}
@@ -86,12 +98,17 @@ regen-yang: .PHONY
 # otherwise).
 check-yang: .PHONY
 	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && \
-	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" >/dev/null && \
-	    for f in ymodel.h ymodel_schema.c; do \
+	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" \
+	    YANG_KINDS_OUT="$$t" >/dev/null && \
+	    for f in ymodel.h ymodel_schema.c yjobs_spec.c; do \
 		cmp -s "$$t/$$f" ${.CURDIR}/yang/$$f || { echo \
 		    "usr.sbin/arcana-agent: yang/$$f is not what make regen-yang makes" >&2; \
 		    exit 1; }; \
 	    done; \
+	    f=arcana-jobs-kinds@2026-10-14.yang; \
+	    cmp -s "$$t/$$f" ${YANG_DIR}/$$f || { echo \
+		"share/yang/$$f is not what make regen-yang makes" >&2; \
+		exit 1; }; \
 	    echo "usr.sbin/arcana-agent: yang/ is what make regen-yang makes"
 
 HAS_TESTS=
