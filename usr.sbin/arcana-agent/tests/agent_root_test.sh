@@ -117,6 +117,39 @@ lifecycle_cleanup()
 	cleanup
 }
 
+atf_test_case jail_events_nested cleanup
+jail_events_nested_head()
+{
+	atf_set "descr" "a jail made inside another, an LNE in an LNE, is an" \
+	    "event when made and when removed (EVFILT_JAIL; PLAN-SDN-YANG" \
+	    "2.7.5)"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+jail_events_nested_body()
+{
+	start_daemon
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist \
+	    children.max=1
+	atf_check -o ignore jexec "$YJAIL" jail -c name=inner path=/ persist
+	atf_check -o ignore jls -j "$YJAIL.inner"
+	atf_check -o ignore jexec "$YJAIL" jail -r inner
+	atf_check -o ignore jail -r "$YJAIL"
+	sleep 0.5
+	atf_check -o save:ev.json "$JGC" -c "$SOCK" events
+	for j in "$YJAIL" "$YJAIL.inner"; do
+		for st in running stopped; do
+			atf_check -o inline:"$j $st 1\n" sh -c "echo $j $st \$(grep -o '\"jail\":\"$j\",\"state\":\"$st\"' ev.json | wc -l | tr -d ' ')"
+		done
+	done
+}
+jail_events_nested_cleanup()
+{
+	jail -r "$YJAIL" >/dev/null 2>&1
+	cleanup
+}
+
 atf_test_case live_address cleanup
 live_address_head()
 {
@@ -1475,6 +1508,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_ni_bind
 	atf_add_test_case yang_ni_grow
 	atf_add_test_case lifecycle
+	atf_add_test_case jail_events_nested
 	atf_add_test_case live_address
 	atf_add_test_case aliases
 	atf_add_test_case routes

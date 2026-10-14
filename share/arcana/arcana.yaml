@@ -2484,8 +2484,9 @@ operations:
       "proxy" (each instance's name, fib, mode, running and ca, its
       certificate) too.  job, with id, title, ok and error, when a
       job ends.  jail-state, with jail, state (running or stopped) and
-      jid, when a jail is made or removed, as kqueue(2)'s EVFILT_JAIL
-      tells it.
+      jid, when a jail is made or removed, the host's or one made in a
+      jail (its name parent.child), as kqueue(2)'s EVFILT_JAIL tells
+      it.
     do:
       request:
         attributes:
