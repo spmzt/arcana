@@ -87,6 +87,7 @@ Arcana's provisional block (SIDS.md), their `.sid` files beside them.
 |---|---|---|
 | `arcana-interfaces@2026-10-14.yang` | module | augments `ietf-interfaces`: driver name, MTU, Ethernet and hardware addresses, groups, FIB and tunnel FIB, capabilities, media; vlan(4), lagg(4), bridge(4) and epair(4) |
 | `arcana-ip-deviations@2026-10-14.yang` | module | deviates `ietf-ip`: forwarding, DAD's probes and temporary addresses are the host's sysctls, IPv4 cannot be turned off on one interface, one MTU for both families: config false |
+| `arcana-routing@2026-10-14.yang` | module | identities for `ietf-routing`'s `source-protocol`: a route's origin as FreeBSD's netlink(4) says it (`rtm_protocol`), where RFC 8349 has none |
 
 The `.sid` files of the IETF and IANA modules the agent fills
 (`ietf-interfaces`, `ietf-ip`, `iana-if-type`, `ietf-yang-types`,

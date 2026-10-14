@@ -1,0 +1,170 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-ipv4-unicast-routing",
+    "module-revision": "2018-03-13",
+    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 1500, 100.",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-routing",
+        "module-revision": "2018-03-13"
+      },
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "1099511629276",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-ipv4-unicast-routing",
+        "sid": "1099511629276"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ipv4-unicast",
+        "sid": "1099511629277"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/input/ietf-ipv4-unicast-routing:destination-address",
+        "sid": "1099511629278"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/ietf-ipv4-unicast-routing:destination-prefix",
+        "sid": "1099511629279"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop/ietf-ipv4-unicast-routing:next-hop-address",
+        "sid": "1099511629280"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop/next-hop-list/next-hop/ietf-ipv4-unicast-routing:next-hop-address",
+        "sid": "1099511629281"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/ietf-ipv4-unicast-routing:destination-prefix",
+        "sid": "1099511629282"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop/ietf-ipv4-unicast-routing:next-hop-address",
+        "sid": "1099511629283"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop/next-hop-list/next-hop/ietf-ipv4-unicast-routing:address",
+        "sid": "1099511629284"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4",
+        "sid": "1099511629285"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route",
+        "sid": "1099511629286"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/description",
+        "sid": "1099511629287"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/destination-prefix",
+        "sid": "1099511629288"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/next-hop",
+        "sid": "1099511629289"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/next-hop/next-hop-address",
+        "sid": "1099511629290"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/next-hop/next-hop-list",
+        "sid": "1099511629291"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/next-hop/next-hop-list/next-hop",
+        "sid": "1099511629292"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/next-hop/next-hop-list/next-hop/index",
+        "sid": "1099511629293"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/next-hop/next-hop-list/next-hop/next-hop-address",
+        "sid": "1099511629294"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/next-hop/next-hop-list/next-hop/outgoing-interface",
+        "sid": "1099511629295"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/next-hop/outgoing-interface",
+        "sid": "1099511629296"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv4-unicast-routing:ipv4/route/next-hop/special-next-hop",
+        "sid": "1099511629297"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/input/ietf-ipv4-unicast-routing:destination-address",
+        "sid": "1099511629298"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/ietf-ipv4-unicast-routing:destination-prefix",
+        "sid": "1099511629299"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop/ietf-ipv4-unicast-routing:next-hop-address",
+        "sid": "1099511629300"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop/next-hop-list/next-hop/ietf-ipv4-unicast-routing:next-hop-address",
+        "sid": "1099511629301"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/ietf-ipv4-unicast-routing:destination-prefix",
+        "sid": "1099511629302"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop/ietf-ipv4-unicast-routing:next-hop-address",
+        "sid": "1099511629303"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop/next-hop-list/next-hop/ietf-ipv4-unicast-routing:address",
+        "sid": "1099511629304"
+      }
+    ]
+  }
+}

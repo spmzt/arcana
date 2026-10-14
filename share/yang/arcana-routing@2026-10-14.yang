@@ -1,0 +1,114 @@
+module arcana-routing {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-routing";
+  prefix arcrt;
+
+  import ietf-routing {
+    prefix rt;
+    reference
+      "RFC 8349: A YANG Data Model for Routing Management (NMDA
+       Version)";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "The sources of FreeBSD's routes that ietf-routing (RFC 8349) has
+     no identity for.
+
+     A route's source-protocol is the origin netlink(4) gives it
+     (rtm_protocol, RTPROT_* in <netlink/route/route.h>): the one the
+     program that added it said, over netlink, or else what the
+     kernel guesses from its flags (RTF_STATIC: static; RTF_PROTO1:
+     zebra; the kernel's own otherwise).  Static ones are rt:static;
+     the kernel's own without a gateway, an interface's network, are
+     rt:direct; the others are these.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 2.4.1.";
+  }
+
+  identity freebsd-origin {
+    base rt:routing-protocol;
+    description
+      "A route's origin as FreeBSD's netlink(4) says it.";
+  }
+
+  identity redirect {
+    base freebsd-origin;
+    description
+      "An ICMP redirect (RTPROT_REDIRECT).";
+  }
+
+  identity kernel {
+    base freebsd-origin;
+    description
+      "The kernel's own, with a gateway (RTPROT_KERNEL).";
+  }
+
+  identity router-advertisement {
+    base freebsd-origin;
+    description
+      "A router advertisement's (RTPROT_RA): rtsold(8)'s.";
+  }
+
+  identity dhcp {
+    base freebsd-origin;
+    description
+      "A DHCP client's (RTPROT_DHCP).";
+  }
+
+  identity zebra {
+    base freebsd-origin;
+    description
+      "Zebra's (RTPROT_ZEBRA), or one flagged RTF_PROTO1 by another
+       daemon over the routing socket.";
+  }
+
+  identity bird {
+    base freebsd-origin;
+    description
+      "BIRD's (RTPROT_BIRD).";
+  }
+
+  identity bgp {
+    base freebsd-origin;
+    description
+      "BGP's (RTPROT_BGP).";
+  }
+
+  identity ospf {
+    base freebsd-origin;
+    description
+      "OSPF's (RTPROT_OSPF).";
+  }
+
+  identity isis {
+    base freebsd-origin;
+    description
+      "IS-IS's (RTPROT_ISIS).";
+  }
+
+  identity rip {
+    base freebsd-origin;
+    description
+      "RIP's (RTPROT_RIP).";
+  }
+
+  identity babel {
+    base freebsd-origin;
+    description
+      "Babel's (RTPROT_BABEL).";
+  }
+
+  identity other {
+    base freebsd-origin;
+    description
+      "Another origin netlink(4) names, or none it names.";
+  }
+}

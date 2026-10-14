@@ -66,6 +66,10 @@ itself, as the plan says, until it holds one by registration.
 | 2^40 + 500 | 100 | `notify`, cblink's example | `cblink/examples/notify/notify@2026-10-13.sid` (4 used) |
 | 2^40 + 1000 | 200 | `arcana-interfaces` | `share/yang/arcana-interfaces@2026-10-14.sid` (46 used) |
 | 2^40 + 1200 | 100 | `arcana-ip-deviations` | `share/yang/arcana-ip-deviations@2026-10-14.sid` (1 used) |
+| 2^40 + 1300 | 200 | `ietf-routing@2018-03-13` (no IETF range) | `share/yang/ietf-routing@2018-03-13.sid` (89 used) |
+| 2^40 + 1500 | 100 | `ietf-ipv4-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv4-unicast-routing@2018-03-13.sid` (29 used) |
+| 2^40 + 1600 | 100 | `ietf-ipv6-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv6-unicast-routing@2018-03-13.sid` (66 used) |
+| 2^40 + 1700 | 100 | `arcana-routing` | `share/yang/arcana-routing@2026-10-14.sid` (14 used) |
 
 cblink's modules take 2^40 to 2^40 + 999; Arcana's own follow from
 2^40 + 1000. cblink's own test modules (`shapes` from 2^40 + 100 000,
