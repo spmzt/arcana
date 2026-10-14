@@ -5192,6 +5192,85 @@ capture_cleanup()
 
 # The ietf-interfaces collector (yang/collect.h) beside what ifconfig(8)
 # and netstat(1) -i say of the same interfaces.
+atf_test_case yang_rc_routes
+yang_rc_routes_head()
+{
+	atf_set "descr" "rc.conf's static routes as ietf-routing's static" \
+	    "control-plane-protocol (PLAN-SDN-YANG 2.4.3), read and written" \
+	    "back to a fragment"
+}
+yang_rc_routes_body()
+{
+	local y="$(atf_get_srcdir)/yrcroutes"
+
+	# Every form rc.d/routing takes; what the model cannot hold, or
+	# reading not tell, unread.
+	cat > rc.conf <<'EOF'
+hostname="gw"
+defaultrouter="192.0.2.254"
+ipv6_defaultrouter="fe80::1%em0"
+defaultrouter_fib1="198.51.100.1"
+static_routes="lan2 lan3 tun:wg0 ecmp1 ecmp2 bh rej mtu calc dup1 dup2 missing fib1 cls"
+route_lan2="-net 10.2.0.0/16 192.0.2.10"
+route_lan3="-net 10.3.0.0 -netmask 255.255.0.0 192.0.2.11"
+route_tun="-net 10.9.0.0/24 -iface wg0"
+route_ecmp1="-net 10.8.0.0/24 192.0.2.21"
+route_ecmp2="-net 10.8.0.0/24 192.0.2.22 -ifp em1"
+route_bh="-net 203.0.113.0/24 127.0.0.1 -blackhole"
+route_rej="-host 203.0.113.9 127.0.0.1 -reject"
+route_mtu="-net 10.7.0.0/24 192.0.2.1 -mtu 1400"
+route_calc="-net ${x} 192.0.2.1"
+route_dup1="-host 10.6.0.1 192.0.2.30"
+route_dup2="10.6.0.1 192.0.2.30"
+route_fib1="-net 10.5.0.0/24 192.0.2.40 -fib 1"
+route_cls="-net 10.4.0.0 192.0.2.2"
+ipv6_static_routes="v6a v6b"
+ipv6_route_v6a="2001:db8:1::/48 2001:db8::1"
+ipv6_route_v6b="-net 2001:db8:2:: -prefixlen 64 -iface em1"
+EOF
+	# A later file's wins: rc.conf.local's.
+	printf 'ipv6_route_v6a="2001:db8:1::/48 2001:db8::2"\n' > rc.conf.local
+	cat > want0 <<'EOF'
+inet 10.2.0.0/16 192.0.2.10 - - -
+inet 10.3.0.0/16 192.0.2.11 - - -
+inet 10.9.0.0/24 - wg0 - rc.conf: only with wg0
+inet 10.8.0.0/24 192.0.2.21 - - -
+inet 10.8.0.0/24 192.0.2.22 em1 - -
+inet 203.0.113.0/24 - - blackhole -
+inet 203.0.113.9/32 - - unreachable -
+inet 10.6.0.1/32 192.0.2.30 - - -
+inet 0.0.0.0/0 192.0.2.254 - - -
+inet6 2001:db8:1::/48 2001:db8::2 - - -
+inet6 2001:db8:2::/64 - em1 - -
+inet6 ::/0 fe80::1%em0 - - -
+EOF
+	cat > unread0 <<'EOF'
+unread route_mtu: a route(8) option the model has no leaf for
+unread route_calc: not a value reading tells
+unread route_missing: not set
+unread route_cls: a network without its length
+unread route_dup2: the same prefix and gateway as another
+EOF
+	cat want0 unread0 > all0
+	atf_check -o file:all0 "$y" 0 rc.conf rc.conf.local
+	# FIB 1's: its own route, its default router.
+	atf_check -o match:'^inet 10\.5\.0\.0/24 192\.0\.2\.40 - - -$' \
+	    -o match:'^inet 0\.0\.0\.0/0 198\.51\.100\.1 - - -$' \
+	    -o not-match:'10\.2\.0\.0' "$y" 1 rc.conf rc.conf.local
+	# Written to a fragment and read back from it: the same routes,
+	# nothing unread; and sh(1) reads the fragment.
+	atf_check -o file:want0 "$y" -w 0 frag rc.conf rc.conf.local
+	atf_check -o match:'^static_routes=".*arc_10_9_0_0_24:wg0' cat frag
+	atf_check -o match:'^-net 10\.8\.0\.0/24 192\.0\.2\.22 -ifp em1$' \
+	    sh -c '. ./frag; echo "$route_arc_10_8_0_0_24_2"'
+	atf_check -o inline:"192.0.2.254 fe80::1%em0\n" \
+	    sh -c '. ./frag; echo "$defaultrouter $ipv6_defaultrouter"'
+	# Written again, the same: what was there replaced, not added to.
+	cp frag frag1
+	atf_check -o file:want0 "$y" -w 0 frag rc.conf rc.conf.local
+	atf_check cmp frag frag1
+}
+
 atf_test_case yang_routes
 yang_routes_head()
 {
@@ -5510,6 +5589,7 @@ atf_init_test_cases()
 {
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
+	atf_add_test_case yang_rc_routes
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd
 	atf_add_test_case ipsec_sa

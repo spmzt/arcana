@@ -5,7 +5,7 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c l2.c ipfw.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
-		routes.c scope.c sdwan.c vnet.c yif.c yip.c yrt.c
+		rcroutes.c routes.c scope.c sdwan.c vnet.c yif.c yip.c yrt.c
 # The IETF modules the collectors fill (PLAN-SDN-YANG 1.9): cblink-gen's
 # structs and tables of share/yang's modules, committed, so that building
 # needs no libyang; "make regen-yang" refreshes them.
@@ -32,6 +32,9 @@ CBLINK_PARTS=	h,c,server
 
 CFLAGS+=	${JAILCONF_CFLAGS} ${UCL_CFLAGS}
 LDADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
+LDADD+=		${.OBJDIR}/../../lib/libvarconf/libvarconf_pie.a
+DPADD+=		${.OBJDIR}/../../lib/libvarconf/libvarconf_pie.a
+CFLAGS+=	-I${.CURDIR}/../../lib/libvarconf
 DPADD+=		${.OBJDIR}/../../lib/libjailconf/libjailconf_pie.a
 LDADD+=		-ljail -lgeom -lmemstat -lprocstat -ldevstat -lnv -lutil -lpthread -lcrypto ${UCL_LIBS}
 # Every symbol bound when the agent starts (ld(1) -z now): with a
