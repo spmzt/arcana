@@ -9,6 +9,9 @@
  * CBOR maps keyed by attribute number, written the way CDDL writes
  * them, with the attribute sets they nest.  The schema is the family's
  * own (share/arcana/arcana.yaml), made into schema.json by the build.
+ * Beside it, for an operation converted to YANG (PLAN-SDN-YANG Y-3,
+ * share/arcana/yang-ops), the module it is now, as its RFC 8340 tree
+ * (yang.json).
  */
 
 #include <stdio.h>
@@ -36,14 +39,56 @@ schema_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 		app.schema_failed = true;
 }
 
+static void
+yang_cb(int status, const ucl_object_t *o, const char *err, void *arg)
+{
+
+	app.yang_loading = false;
+	if (status == 200 && o != NULL && jget(o, "ops") != NULL)
+		app.yang = ucl_object_ref((ucl_object_t *)(uintptr_t)o);
+	else
+		app.yang_failed = true;
+}
+
 void
 load_schema(void)
 {
 
+	if (app.yang == NULL && !app.yang_loading && !app.yang_failed) {
+		app.yang_loading = true;
+		api("GET", "/yang.json", NULL, yang_cb, NULL);
+	}
 	if (app.schema != NULL || app.schema_loading || app.schema_failed)
 		return;
 	app.schema_loading = true;
 	api("GET", "/schema.json", NULL, schema_cb, NULL);
+}
+
+/* Operation op's YANG model, if it has been converted to one. */
+static const ucl_object_t *
+yang_of(const char *op)
+{
+	char key[96];
+
+	if (op == NULL || app.yang == NULL)
+		return (NULL);
+	snprintf(key, sizeof(key), "ops.%s", op);
+	return (jget(app.yang, key));
+}
+
+static void
+view_yang(struct html *h, const ucl_object_t *o)
+{
+
+	h_raw(h, "<div class=\"schema\"><h4>YANG model <span class=\"dim\">");
+	h_txt(h, jstr(o, "module"));
+	h_raw(h, "@");
+	h_txt(h, jstr(o, "revision"));
+	h_raw(h, "</span></h4><pre class=\"cddl\">");
+	h_txt(h, jstr(o, "tree"));
+	h_raw(h, "</pre><p class=\"dim note\">The tree as RFC 8340 draws it: "
+	    "rw configuration, ro state, x an action, * a list or "
+	    "leaf-list, ? what may be absent.</p></div>");
 }
 
 /*
@@ -192,11 +237,23 @@ set_block(struct html *h, const char *name, const char **seen, int *nseen)
 void
 view_schema(struct html *h, const char *op)
 {
-	const ucl_object_t	*o, *set;
+	const ucl_object_t	*o, *set, *y;
 	const char		*seen[MAX_SETS];
 	char			 key[96];
 	int			 nseen, i;
 
+	/* Converted to YANG: the module beside the CBOR, a tab each. */
+	if ((y = yang_of(op)) != NULL) {
+		h_fmt(h, "<nav class=\"tabs schema-tabs\"><button class=\"tab%s\" "
+		    "data-act=\"schema-tab\" data-arg=\"cbor\">CBOR</button>"
+		    "<button class=\"tab%s\" data-act=\"schema-tab\" "
+		    "data-arg=\"yang\">YANG</button></nav>", app.schema_yang ?
+		    "" : " on", app.schema_yang ? " on" : "");
+		if (app.schema_yang) {
+			view_yang(h, y);
+			return;
+		}
+	}
 	h_raw(h, "<div class=\"schema\"><h4>CBOR schema");
 	if (app.schema == NULL) {
 		load_schema();

@@ -67,6 +67,19 @@ int	rcr_write(struct vc_file *f, int fib,
 	    char *err, size_t errlen);
 
 /*
+ * arcana-jails (ira/yjails.c): yjails_from_list() the list operation's
+ * reply as the module has it, its strings rsp's; yjails_action() one of
+ * its actions (ARC_ACTION_*), as the action operation does it, the jail
+ * after it: -1 and *errp, not done.
+ */
+struct arc_list_rsp;
+struct work;
+int	yjails_from_list(const struct arc_list_rsp *rsp, cbl_yarena *a,
+	    struct arcana_jails *out);
+int	yjails_action(struct work *w, const char *name, uint8_t action,
+	    uint8_t *state, bool *has_jid, uint32_t *jid, const char **errp);
+
+/*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
  * them (invidia/ylne.c).
  */

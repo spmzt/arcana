@@ -13,6 +13,12 @@ PROGS+=		yni
 SRCS.yni=	yni_test.c yni.c yif.c yip.c ymodel_schema.c
 LDADD.yni+=	${CBLINK_LIBS} -lnv \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
+# yjails: the list operation's reply as arcana-jails has it.
+PROGS+=		yjails
+SRCS.yjails=	yjails_test.c yjails.c ymodel_schema.c
+CFLAGS.yjails_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yjails.c+=	-I${.OBJDIR}/..
+LDADD.yjails+=	${CBLINK_LIBS}
 # yrtadv: rtadvd.conf as the router advertisement submodule has it.
 PROGS+=		yrtadv
 SRCS.yrtadv=	yrtadv.c rtadv.c ymodel_schema.c
@@ -24,7 +30,7 @@ SRCS.yrcroutes=	yrcroutes.c rcroutes.c ymodel_schema.c
 CFLAGS+=	-I${.CURDIR}/../../../lib/libvarconf
 LDADD.yrcroutes+=	${CBLINK_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
-.PATH:		${.CURDIR}/../invidia ${.CURDIR}/../yang
+.PATH:		${.CURDIR}/../invidia ${.CURDIR}/../ira ${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang -I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
 LDADD.ycollect+=	${CBLINK_LIBS} -ljail -lnv
 MAN=

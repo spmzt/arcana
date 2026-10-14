@@ -101,6 +101,16 @@ ${DIST}/schema.json: ${ARC_TOP}/share/arcana/arcana.yaml \
 	${CBLINK_GEN} -m md -o ${.OBJDIR} ${ARC_TOP}/share/arcana/arcana.yaml
 	awk -f ${.CURDIR}/tools/schema.awk ${.OBJDIR}/arcana.md > ${.TARGET}
 
+# The YANG model of each operation converted to YANG (share/arcana/
+# yang-ops), shown beside its CBOR schema: the module's RFC 8340 tree.
+YANG_SRC!=	ls ${ARC_TOP}/share/yang/*.yang
+${DIST}/yang.json: ${ARC_TOP}/share/arcana/yang-ops ${.CURDIR}/tools/yang.sh \
+    ${YANG_SRC}
+	mkdir -p ${DIST}
+	sh ${.CURDIR}/tools/yang.sh ${CBLINK_GEN} ${ARC_TOP}/share/yang \
+	    ${ARC_TOP}/share/arcana/yang-ops ${.OBJDIR}/yang-trees > ${.TARGET}.tmp
+	mv ${.TARGET}.tmp ${.TARGET}
+
 # The console's API as it is documented, for the API page: the document
 # itself, and what the page shows of it.
 ${DIST}/openapi.yaml: ${ARC_TOP}/docs/openapi.yaml
@@ -113,7 +123,7 @@ ${DIST}/openapi.json: ${ARC_TOP}/docs/openapi.yaml \
 	    ${.TARGET}
 
 SHELL_FILES=	${STATIC:S,^,${DIST}/,} ${DIST}/arcana.js ${DIST}/schema.json \
-		${DIST}/jobs.json \
+		${DIST}/yang.json ${DIST}/jobs.json \
 		${DIST}/openapi.json ${DIST}/openapi.yaml \
 		${DIST}/morphdom-umd.min.js ${FONTS:S,^,${DIST}/fonts/,} \
 		${ICONS:S,^,${DIST}/icons/,}
@@ -145,6 +155,7 @@ install: .PHONY
 	    sw.js; do ${INSTALL} -m 0444 $$f ${DESTDIR}${WWWDIR}/$$f; done
 
 clean: .PHONY
-	rm -rf ${OBJS} ${MKICON} ${DIST} ${.OBJDIR}/arcana.md
+	rm -rf ${OBJS} ${MKICON} ${DIST} ${.OBJDIR}/arcana.md \
+	    ${.OBJDIR}/yang-trees
 
 .include <bsd.obj.mk>

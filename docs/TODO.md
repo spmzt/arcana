@@ -350,8 +350,19 @@
   2026-10-14: RFC 9595's experimental range for now (SIDS.md), cblink
   60 000 up, Arcana 61 000 up, each module where it was in the 2^40
   block; cblink main 340d4aa and v2 b140fed. And Y-3's conversions
-  before 1.11 (the user, 2026-10-14). Next: 2.8, yang-library, after 1.11; then the Y-3 items
-  main can carry. As each operation is
+  before 1.11 (the user, 2026-10-14). 3.1.1: arcana.yaml's list and
+  action converted to share/yang/arcana-jails (62 100): the jails,
+  configured and running, every field the list reply has, a vnet jail's
+  lne, start/stop/restart/kill as actions; ira/yjails.c makes the
+  module's data from do_list()'s reply and the actions are
+  do_action()'s (lifecycle.c), one source for both (yang_jails holds
+  every field, the YANG-CBOR round trip). The host's facts go with
+  arcana-host (3.1.9), the trace with arcana-jobs (3.1.4); served at
+  1.11. The task's { } Schema panel shows a converted operation's
+  module beside its CBOR, a tab each (share/arcana/yang-ops, yang.json
+  made by the build with cblink-gen -m tree; pwa_routes). Next:
+  3.1.2, arcana-services, and the rest of 3.1 in turn; 2.8,
+  yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

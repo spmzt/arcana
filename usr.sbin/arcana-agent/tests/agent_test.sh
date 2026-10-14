@@ -5261,6 +5261,36 @@ EOF
 	done < addrs
 }
 
+atf_test_case yang_jails
+yang_jails_head()
+{
+	atf_set "descr" "the list operation's reply as arcana-jails has it" \
+	    "(PLAN-SDN-YANG 3.1.1): every field, a running vnet jail's lne," \
+	    "the cpu share in hundredths, through YANG-CBOR and back"
+}
+yang_jails_body()
+{
+	cat > want <<'EOF'
+scope /etc/jail.conf
+scope /etc/jail.conf.d/web.conf
+conf-error /etc/jail.conf.d/bad.conf: line 3: syntax error
+jail web state=0 jid=yes configured=1 scope=/etc/jail.conf.d/web.conf hostname=web.example path=/jails/web vnet=1 osrelease=15.0-RELEASE persist=yes securelevel=yes nproc=yes rss=yes cpu=yes interface=lo1 lne=web
+  jid 7 nproc 12 rss 81920 cpu 346 securelevel 2
+  ip4 lo1|192.0.2.10/24
+  ip6 2001:db8::10
+  param allow.raw_sockets 1
+  param persist
+  plugin bird
+  plugin wireguard
+jail db state=1 jid=- configured=1 scope=/etc/jail.conf hostname=- path=/jails/db vnet=1 osrelease=- persist=- securelevel=- nproc=- rss=- cpu=- interface=- lne=-
+EOF
+	"$(atf_get_srcdir)/yjails" > out
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' cat out
+	# Converted, and read back from YANG-CBOR, the same.
+	atf_check -o file:want sh -c "sed -n '1,/^yang-cbor/p' out | sed '\$d'"
+	atf_check -o file:want sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
+}
+
 atf_test_case yang_lne
 yang_lne_head()
 {
@@ -5889,6 +5919,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
+	atf_add_test_case yang_jails
 	atf_add_test_case yang_lne
 	atf_add_test_case yang_ni_conf
 	atf_add_test_case yang_ni_rc
