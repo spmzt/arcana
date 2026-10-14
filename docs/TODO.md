@@ -148,6 +148,15 @@
   the tab they concern again by itself, and the tabs nothing tells of
   every minute or two while shown (agent_test:host_watch,
   agent_root_test:devd_watch, pwa_test's sysctl.conf pushed).
+- The console's UI/UX the user found confusing (2026-10-14), done:
+  SD-WAN set up by the steps' guide, kept a step at a time (an edge
+  or a service unfinished is kept, not deployed), what an edge changes
+  said first, NTP under Advanced, empty states for every list, forms
+  for what was JSON alone, the document exported and imported as a
+  file (console 0.175.0); workflows drawn and edited as a graph: steps
+  dragged from a palette, moved by dragging, what follows and where a
+  failure goes drawn from their ports, triggers and conditions in
+  words, a workflow exported and imported as a file (console 0.176.0).
 - The SDN and YANG redesign: docs/PLAN-SDN-YANG.md, with its notes
   under docs/notes/. Decided 2026-10-13: wire version 2 (D-1), cblink
   2 south and RESTCONF on the console only (D-2), libyang for the
