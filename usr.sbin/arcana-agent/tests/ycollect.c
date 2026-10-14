@@ -23,6 +23,18 @@ static const char *const admin[] = { "?", "up", "down", "testing" };
 static const char *const oper[] = { "?", "up", "down", "testing", "unknown",
     "dormant", "not-present", "lower-layer-down" };
 
+/* A leaf-list of names, comma-separated; "-" for none. */
+static void
+names(const char *what, size_t n, const char *const *v)
+{
+
+	printf(" %s=", what);
+	if (n == 0)
+		printf("-");
+	for (size_t i = 0; i < n; i++)
+		printf("%s%s", i > 0 ? "," : "", v[i]);
+}
+
 static void
 roundtrip(const struct ietf_interfaces_interfaces *ifs, cbl_yarena *a)
 {
@@ -65,12 +77,15 @@ main(int argc, char **argv)
 		    cbl_yschema_ident(&ymodel_schema, e->type) : NULL;
 
 		printf("%s index=%d admin=%s oper=%s type=%s phys=%s "
-		    "in-octets=%ju out-octets=%ju\n", e->name, e->if_index,
+		    "in-octets=%ju out-octets=%ju", e->name, e->if_index,
 		    admin[e->admin_status], oper[e->oper_status],
 		    t != NULL ? t->name : "-",
 		    e->phys_address != NULL ? e->phys_address : "-",
 		    (uintmax_t)e->statistics->in_octets,
 		    (uintmax_t)e->statistics->out_octets);
+		names("lower", e->lower_layer_if.n, e->lower_layer_if.v);
+		names("higher", e->higher_layer_if.n, e->higher_layer_if.v);
+		printf("\n");
 	}
 	roundtrip(data.interfaces, a);
 	cbl_yarena_free(a);
