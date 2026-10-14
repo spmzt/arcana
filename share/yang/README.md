@@ -46,6 +46,9 @@ origin.
 | `iana-routing-types@2025-09-03.yang` | module | IANA registry |
 | `ieee802-dot1ax-linkagg@2025-09-30.yang` | module | IEEE Std 802.1AX (YangModels/yang, standard/ieee/published/802.1) |
 | `ieee802-dot1ax-types@2025-09-30.yang` | module | IEEE Std 802.1AX (YangModels/yang, standard/ieee/published/802.1) |
+| `ieee802-dot1q-bridge@2023-10-26.yang` | module | IEEE Std 802.1Q (YangModels/yang, standard/ieee/published/802.1) |
+| `ieee802-dot1q-rstp-bridge@2025-02-04.yang` | module | IEEE Std 802.1Q (YangModels/yang, standard/ieee/published/802.1) |
+| `ieee802-dot1q-rstp@2025-02-04.yang` | module | IEEE Std 802.1Q (YangModels/yang, standard/ieee/published/802.1) |
 | `ieee802-dot1q-types@2023-10-26.yang` | module | IEEE Std 802.1Q (YangModels/yang, standard/ieee/published/802.1) |
 | `ieee802-ethernet-interface@2025-09-10.yang` | module | IEEE Std 802.3 (YangModels/yang, standard/ieee/published/802.3) |
 | `ieee802-ethernet-phy-type@2025-09-10.yang` | module | IEEE Std 802.3 (YangModels/yang, standard/ieee/published/802.3) |
@@ -135,7 +138,7 @@ Arcana's provisional block (SIDS.md), their `.sid` files beside them.
 
 | File | | What |
 |---|---|---|
-| `arcana-interfaces@2026-10-14.yang` | module | augments `ietf-interfaces`: driver name, groups, tunnel FIB, capabilities, media; a vlan(4)'s priority, a lagg(4)'s protocol, hash and ports' priorities and flags, bridge(4); an epair(4) end's other in a vnet. What a standard has is the standard's: the MTU `ietf-ip`'s ipv4 mtu (and `ietf-if-extensions`' max-frame-size), the Ethernet addresses `ietf-if-ethernet-like`'s, the FIB RFC 8529's bind-ni-name, an epair's other end `ietf-if-extensions`' peer-interface, a vlan's tag `ietf-if-vlan-encapsulation`'s outer-tag and its parent `ietf-if-extensions`' parent-interface, an Ethernet's auto-negotiation, duplex and PMD IEEE 802.3's `ieee802-ethernet-interface`, a lagg IEEE 802.1AX's `ieee802-dot1ax-linkagg` (a key group and system each, LACP's state) |
+| `arcana-interfaces@2026-10-14.yang` | module | augments `ietf-interfaces`: driver name, groups, tunnel FIB, capabilities, media; a vlan(4)'s priority, a lagg(4)'s protocol, hash and ports' priorities and flags, a bridge(4) member's own flags; an epair(4) end's other in a vnet. What a standard has is the standard's: the MTU `ietf-ip`'s ipv4 mtu (and `ietf-if-extensions`' max-frame-size), the Ethernet addresses `ietf-if-ethernet-like`'s, the FIB RFC 8529's bind-ni-name, an epair's other end `ietf-if-extensions`' peer-interface, a vlan's tag `ietf-if-vlan-encapsulation`'s outer-tag and its parent `ietf-if-extensions`' parent-interface, an Ethernet's auto-negotiation, duplex and PMD IEEE 802.3's `ieee802-ethernet-interface`, a lagg IEEE 802.1AX's `ieee802-dot1ax-linkagg` (a key group and system each, LACP's state), a bridge IEEE 802.1Q's `ieee802-dot1q-bridge` and its members' RSTP `ieee802-dot1q-rstp-bridge`'s |
 | `arcana-ieee802-deviations@2026-10-14.yang` | module | deviates IEEE 802.1AX's `ieee802-dot1ax-linkagg`: FreeBSD's LACP keeps no administrative key (each port's is derived from its speed), so a key group's actor-admin-key is not mandatory |
 | `arcana-ip-deviations@2026-10-14.yang` | module | deviates `ietf-ip`: forwarding, DAD's probes and temporary addresses are the host's sysctls, IPv4 cannot be turned off on one interface, one MTU for both families, ipv4's (the link's), so ipv6's is config false |
 | `arcana-jails@2026-10-14.yang` | module | FreeBSD's jails (jail(8), jail(2)): those jail.conf(5) defines, as jail(8) -e resolves them, and those running, as jail_get(2) gives them; start, stop, restart, kill as actions; a vnet jail's logical network element (RFC 8530); the list and action operations of arcana.yaml converted (Y-3) |

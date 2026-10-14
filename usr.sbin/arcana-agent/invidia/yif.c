@@ -208,6 +208,21 @@ ieeemac(cbl_yarena *a, const uint8_t *p)
 	return (s);
 }
 
+/* A yang:phys-address of six octets as an ieee:mac-address; NULL: not. */
+static char *
+ieeephys(cbl_yarena *a, const char *phys)
+{
+	unsigned int o[ETHER_ADDR_LEN];
+	uint8_t mac[ETHER_ADDR_LEN];
+
+	if (phys == NULL || sscanf(phys, "%x:%x:%x:%x:%x:%x", &o[0], &o[1],
+	    &o[2], &o[3], &o[4], &o[5]) != ETHER_ADDR_LEN)
+		return (NULL);
+	for (size_t i = 0; i < ETHER_ADDR_LEN; i++)
+		mac[i] = (uint8_t)o[i];
+	return (ieeemac(a, mac));
+}
+
 /* yang:phys-address: the octets in hex, a colon between. */
 static char *
 hexaddr(cbl_yarena *a, const uint8_t *p, size_t len)
@@ -783,16 +798,36 @@ struct layers {
 	size_t		 n;
 };
 
-/* A lagg port's aggport, for the port's entry once all are listed. */
-struct aggport {
+/*
+ * A lagg port's aggport, a bridge member's bridge-port, for the port's
+ * entry once all are listed.
+ */
+struct port {
 	char		 port[IFNAMSIZ];
 	const struct ietf_interfaces_interfaces_interface_dot1ax_aggport *ap;
+	const struct ietf_interfaces_interfaces_interface_dot1q_bridge_port *bp;
 };
 
-struct aggports {
-	struct aggport	*v;
+struct ports {
+	struct port	*v;
 	size_t		 n;
 };
+
+static int
+port_add(struct ports *pp, const char *name,
+    const struct ietf_interfaces_interfaces_interface_dot1ax_aggport *ap,
+    const struct ietf_interfaces_interfaces_interface_dot1q_bridge_port *bp)
+{
+	struct port *v;
+
+	if ((v = reallocarray(pp->v, pp->n + 1, sizeof(*v))) == NULL)
+		return (ENOMEM);
+	pp->v = v;
+	strlcpy(v[pp->n].port, name, sizeof(v[pp->n].port));
+	v[pp->n].ap = ap;
+	v[pp->n++].bp = bp;
+	return (0);
+}
 
 static void
 layer_add(struct layers *l, const char *hi, const char *lo)
@@ -817,7 +852,7 @@ layer_add(struct layers *l, const char *hi, const char *lo)
  * a port's priority and flags, arcana-interfaces'.  ENOENT: not one.
  */
 static int
-lagg(yif *e, struct layers *l, struct aggports *ag, int s, cbl_yarena *a)
+lagg(yif *e, struct layers *l, struct ports *pp, int s, cbl_yarena *a)
 {
 	struct ietf_interfaces_interfaces_interface_dot1ax_lag *lg;
 	struct ietf_interfaces_interfaces_interface_dot1ax_lag_lacp *ll;
@@ -826,7 +861,6 @@ lagg(yif *e, struct layers *l, struct aggports *ag, int s, cbl_yarena *a)
 	struct lagg_reqport rp[LAGG_MAX_PORTS];
 	struct lagg_reqflags rf;
 	struct lagg_reqall ra;
-	struct aggport *nv;
 	bool lacp;
 	int n;
 
@@ -842,17 +876,7 @@ lagg(yif *e, struct layers *l, struct aggports *ag, int s, cbl_yarena *a)
 		return (ENOMEM);
 	lg->key_group_name = e->name;
 	/* The aggregator's address: the lagg's own. */
-	if (e->phys_address != NULL) {
-		uint8_t mac[ETHER_ADDR_LEN];
-		unsigned int o[ETHER_ADDR_LEN];
-
-		if (sscanf(e->phys_address, "%x:%x:%x:%x:%x:%x", &o[0], &o[1],
-		    &o[2], &o[3], &o[4], &o[5]) == ETHER_ADDR_LEN) {
-			for (size_t i = 0; i < ETHER_ADDR_LEN; i++)
-				mac[i] = (uint8_t)o[i];
-			lg->mac_address = ieeemac(a, mac);
-		}
-	}
+	lg->mac_address = ieeephys(a, e->phys_address);
 	if (ra.ra_proto < LAGG_PROTO_MAX) {
 		lg->has_arcif_protocol = true;
 		lg->arcif_protocol = ra.ra_proto;
@@ -875,13 +899,9 @@ lagg(yif *e, struct layers *l, struct aggports *ag, int s, cbl_yarena *a)
 		ll->partner_oper_key = o->partner_key;
 		lg->lacp = ll;
 	}
-	if (n > 0 && (nv = reallocarray(ag->v, ag->n + n, sizeof(*nv))) ==
-	    NULL)
-		return (ENOMEM);
-	else if (n > 0)
-		ag->v = nv;
 	for (int i = 0; i < n; i++) {
-		if ((ap = cbl_yarena_alloc(a, sizeof(*ap))) == NULL)
+		if ((ap = cbl_yarena_alloc(a, sizeof(*ap))) == NULL ||
+		    port_add(pp, rp[i].rp_portname, ap, NULL) != 0)
 			return (ENOMEM);
 		ap->key_group_name = e->name;
 		ap->has_arcif_priority = true;
@@ -913,9 +933,6 @@ lagg(yif *e, struct layers *l, struct aggports *ag, int s, cbl_yarena *a)
 			    (uint64_t)o->partner_state << 1);
 			ap->lacp = pl;
 		}
-		strlcpy(ag->v[ag->n].port, rp[i].rp_portname,
-		    sizeof(ag->v[ag->n].port));
-		ag->v[ag->n++].ap = ap;
 		layer_add(l, e->name, rp[i].rp_portname);
 	}
 	e->dot1ax_lag = lg;
@@ -1055,12 +1072,21 @@ vlan(yif *e, struct layers *l, int s, cbl_yarena *a)
 	return (0);
 }
 
-/* A bridge's members: their flags, and their STP's where it runs. */
+/*
+ * A bridge's members, as IEEE 802.1Q has them: each a bridge port of
+ * the bridge's one component, its number and point-to-point state, kept
+ * in pp for the member's entry; where its spanning tree is on, RSTP's
+ * state, role, identifier, cost and edge.  Its other flags
+ * arcana-interfaces'.
+ */
 static int
-bridge(yif *e, struct layers *l, int s, cbl_yarena *a)
+bridge(yif *e, struct layers *l, struct ports *pp, int s, cbl_yarena *a)
 {
-	struct ietf_interfaces_interfaces_interface_arcif_bridge *bg;
-	struct ietf_interfaces_interfaces_interface_arcif_bridge_member *mv;
+	struct ietf_interfaces_interfaces_interface_dot1q_bridge_port *bp;
+	struct ietf_interfaces_interfaces_interface_dot1q_bridge_port_rstp_bridge_rstp
+	    *rs;
+	struct ietf_interfaces_interfaces_interface_dot1q_bridge_port_rstp_bridge_rstp_port_id
+	    *pid;
 	struct ifbreq *br = NULL, *nbr;
 	struct ifbifconf bc;
 	struct ifdrv d;
@@ -1090,38 +1116,160 @@ bridge(yif *e, struct layers *l, int s, cbl_yarena *a)
 			break;
 		}
 	}
-	if ((bg = cbl_yarena_alloc(a, sizeof(*bg))) == NULL ||
-	    (mv = cbl_yarena_alloc(a, n * sizeof(*mv))) == NULL) {
-		free(br);
-		return (ENOMEM);
-	}
 	for (size_t i = 0; i < n && error == 0; i++) {
-		if ((mv[i].name = astrdup(a, br[i].ifbr_ifsname)) == NULL) {
+		uint32_t f = br[i].ifbr_ifsflags;
+
+		if ((bp = cbl_yarena_alloc(a, sizeof(*bp))) == NULL ||
+		    port_add(pp, br[i].ifbr_ifsname, NULL, bp) != 0) {
 			error = ENOMEM;
 			break;
 		}
-		mv[i].flags = bits(a, br[i].ifbr_ifsflags & 0x1fff);
-		mv[i].has_path_cost = true;
-		mv[i].path_cost = br[i].ifbr_path_cost;
-		mv[i].has_priority = true;
-		mv[i].priority = br[i].ifbr_priority;
-		mv[i].has_port_number = true;
-		mv[i].port_number = br[i].ifbr_portno;
-		if ((br[i].ifbr_ifsflags & IFBIF_STP) != 0) {
-			mv[i].has_stp_state =
-			    br[i].ifbr_state <= BSTP_IFSTATE_DISCARDING;
-			mv[i].stp_state = br[i].ifbr_state;
-			mv[i].has_stp_role =
-			    br[i].ifbr_role <= BSTP_ROLE_BACKUP;
-			mv[i].stp_role = br[i].ifbr_role;
+		bp->bridge_name = e->name;
+		bp->component_name = e->name;
+		if (br[i].ifbr_portno != 0) {
+			bp->has_port_number = true;
+			bp->port_number = br[i].ifbr_portno;
+		}
+		bp->has_admin_point_to_point = true;
+		bp->admin_point_to_point = (f & IFBIF_BSTP_AUTOPTP) != 0 ?
+		    IETF_INTERFACES_INTERFACES_INTERFACE_DOT1Q_BRIDGE_PORT_ADMIN_POINT_TO_POINT_AUTO :
+		    (f & IFBIF_BSTP_PTP) != 0 ?
+		    IETF_INTERFACES_INTERFACES_INTERFACE_DOT1Q_BRIDGE_PORT_ADMIN_POINT_TO_POINT_FORCE_TRUE :
+		    IETF_INTERFACES_INTERFACES_INTERFACE_DOT1Q_BRIDGE_PORT_ADMIN_POINT_TO_POINT_FORCE_FALSE;
+		bp->has_oper_point_to_point = true;
+		bp->oper_point_to_point = (f & IFBIF_BSTP_PTP) != 0;
+		bp->arcif_flags = bits(a, f & (IFBIF_LEARNING | IFBIF_DISCOVER |
+		    IFBIF_SPAN | IFBIF_STICKY | IFBIF_PRIVATE | IFBIF_QINQ));
+		if ((f & IFBIF_STP) != 0) {
+			if ((rs = cbl_yarena_alloc(a, sizeof(*rs))) == NULL ||
+			    (pid = cbl_yarena_alloc(a, sizeof(*pid))) == NULL) {
+				error = ENOMEM;
+				break;
+			}
+			/* RSTP's: disabled, listening, blocking discard. */
+			rs->has_port_state = true;
+			rs->port_state = br[i].ifbr_state ==
+			    BSTP_IFSTATE_LEARNING ?
+			    IETF_INTERFACES_INTERFACES_INTERFACE_DOT1Q_BRIDGE_PORT_RSTP_BRIDGE_RSTP_PORT_STATE_LEARNING :
+			    br[i].ifbr_state == BSTP_IFSTATE_FORWARDING ?
+			    IETF_INTERFACES_INTERFACES_INTERFACE_DOT1Q_BRIDGE_PORT_RSTP_BRIDGE_RSTP_PORT_STATE_FORWARDING :
+			    IETF_INTERFACES_INTERFACES_INTERFACE_DOT1Q_BRIDGE_PORT_RSTP_BRIDGE_RSTP_PORT_STATE_DISCARDING;
+			if (br[i].ifbr_role <= BSTP_ROLE_BACKUP) {
+				rs->has_port_role = true;
+				rs->port_role = br[i].ifbr_role + 1;
+			}
+			pid->has_port_priority = true;
+			pid->port_priority = br[i].ifbr_priority >> 4;
+			pid->has_port_number = true;
+			pid->port_number = br[i].ifbr_portno;
+			pid->has_port_id = true;
+			pid->port_id = (uint16_t)((br[i].ifbr_priority >> 4) << 12 |
+			    (br[i].ifbr_portno & 0xfff));
+			rs->port_id = pid;
+			if (br[i].ifbr_path_cost >= 1) {
+				rs->has_port_path_cost = true;
+				rs->port_path_cost = br[i].ifbr_path_cost;
+			}
+			if ((f & IFBIF_BSTP_ADMCOST) != 0) {
+				rs->has_fix_port_path_cost = true;
+				rs->fix_port_path_cost = br[i].ifbr_path_cost;
+			}
+			rs->has_admin_edge_port = true;
+			rs->admin_edge_port = (f & IFBIF_BSTP_ADMEDGE) != 0;
+			rs->has_oper_edge_port = true;
+			rs->oper_edge_port = (f & IFBIF_BSTP_EDGE) != 0;
+			rs->has_auto_edge_port = true;
+			rs->auto_edge_port = (f & IFBIF_BSTP_AUTOEDGE) != 0;
+			bp->rstp_bridge_rstp = rs;
 		}
 		layer_add(l, e->name, br[i].ifbr_ifsname);
 	}
 	free(br);
-	bg->member.n = n;
-	bg->member.v = mv;
-	e->arcif_bridge = bg;
 	return (error);
+}
+
+/*
+ * IEEE 802.1Q's bridges of the interfaces v (yif_interfaces()'): each
+ * bridge(4) a customer VLAN bridge of its name and address, of one
+ * component of its name, VLAN-unaware or, with vlanfilter (BRDGGFLAGS),
+ * a C-VLAN component, its bridge ports the members whose bridge-port
+ * names it.
+ */
+int
+yif_bridges(const struct ietf_interfaces_interfaces_interface *v, size_t n,
+    cbl_yarena *a, struct ieee802_dot1q_bridge *data)
+{
+	struct ieee802_dot1q_bridge_bridges *bs;
+	struct ieee802_dot1q_bridge_bridges_bridge *bv = NULL;
+	struct ieee802_dot1q_bridge_bridges_bridge_component *cv;
+	struct ifbrparam param;
+	struct ifdrv d;
+	size_t nb = 0, k = 0;
+	int s;
+
+	for (size_t i = 0; i < n; i++)
+		nb += is_type(&v[i], "bridge");
+	if ((bs = cbl_yarena_alloc(a, sizeof(*bs))) == NULL ||
+	    (nb > 0 && (bv = cbl_yarena_alloc(a, nb * sizeof(*bv))) == NULL))
+		return (ENOMEM);
+	if ((s = socket(AF_LOCAL, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
+		return (errno);
+	for (size_t i = 0; i < n && nb > 0; i++) {
+		const char **ports;
+		size_t np = 0;
+
+		if (!is_type(&v[i], "bridge"))
+			continue;
+		for (size_t j = 0; j < n; j++)
+			np += v[j].dot1q_bridge_port != NULL &&
+			    strcmp(v[j].dot1q_bridge_port->bridge_name,
+			    v[i].name) == 0;
+		if ((cv = cbl_yarena_alloc(a, sizeof(*cv))) == NULL ||
+		    (ports = cbl_yarena_alloc(a, (np + 1) * sizeof(*ports))) ==
+		    NULL) {
+			close(s);
+			return (ENOMEM);
+		}
+		np = 0;
+		for (size_t j = 0; j < n; j++)
+			if (v[j].dot1q_bridge_port != NULL &&
+			    strcmp(v[j].dot1q_bridge_port->bridge_name,
+			    v[i].name) == 0)
+				ports[np++] = v[j].name;
+		memset(&param, 0, sizeof(param));
+		memset(&d, 0, sizeof(d));
+		strlcpy(d.ifd_name, v[i].name, sizeof(d.ifd_name));
+		d.ifd_cmd = BRDGGFLAGS;
+		d.ifd_len = sizeof(param);
+		d.ifd_data = &param;
+		cv->name = v[i].name;
+		cv->type = ident_sid("ieee802-dot1q-bridge",
+		    ioctl(s, SIOCGDRVSPEC, &d) == 0 &&
+		    (param.ifbrp_flags & IFBRF_VLANFILTER) != 0 ?
+		    "c-vlan-component" : "d-bridge-component");
+		cv->has_type = cv->type != 0;
+		cv->has_ports = true;
+		cv->ports = (uint16_t)np;
+		cv->bridge_port.n = np;
+		cv->bridge_port.v = ports;
+		bv[k].name = v[i].name;
+		bv[k].address = ieeephys(a, v[i].phys_address);
+		bv[k].bridge_type = ident_sid("ieee802-dot1q-bridge",
+		    "customer-vlan-bridge");
+		bv[k].has_bridge_type = bv[k].bridge_type != 0;
+		bv[k].has_ports = true;
+		bv[k].ports = (uint16_t)np;
+		bv[k].has_components = true;
+		bv[k].components = 1;
+		bv[k].component.n = 1;
+		bv[k].component.v = cv;
+		k++;
+	}
+	close(s);
+	bs->bridge.n = k;
+	bs->bridge.v = bv;
+	data->bridges = bs;
+	return (0);
 }
 
 /*
@@ -1130,14 +1278,14 @@ bridge(yif *e, struct layers *l, int s, cbl_yarena *a)
  * if_type does not say, else NULL.
  */
 static int
-kind_of(yif *e, struct layers *l, struct aggports *ag, int s, uint8_t ift,
+kind_of(yif *e, struct layers *l, struct ports *pp, int s, uint8_t ift,
     const char **kindp, cbl_yarena *a)
 {
 	int error;
 
 	*kindp = NULL;
 	if (ift == IFT_ETHER || ift == IFT_INFINIBAND) {
-		if ((error = lagg(e, l, ag, s, a)) == 0)
+		if ((error = lagg(e, l, pp, s, a)) == 0)
 			*kindp = "ieee8023adLag";
 	} else if (ift == IFT_L2VLAN || ift == IFT_IEEE8023ADLAG) {
 		if ((error = vlan(e, l, s, a)) == 0)
@@ -1145,7 +1293,7 @@ kind_of(yif *e, struct layers *l, struct aggports *ag, int s, uint8_t ift,
 		else if (ift == IFT_IEEE8023ADLAG)
 			*kindp = "ethernetCsmacd";
 	} else if (ift == IFT_BRIDGE)
-		error = bridge(e, l, s, a);
+		error = bridge(e, l, pp, s, a);
 	else
 		error = 0;
 	return (error == ENOENT ? 0 : error);
@@ -1251,7 +1399,7 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 {
 	struct ietf_interfaces_interfaces *ifs;
 	struct layers lay = { NULL, 0 };
-	struct aggports ag = { NULL, 0 };
+	struct ports pp = { NULL, 0 };
 	struct ifaddrs *ifa0, *ifa;
 	const struct if_data *d;
 	struct drvname *dn = NULL;
@@ -1296,7 +1444,7 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 		if ((error = one(&v[n], ifa, s, &boot, a)) == 0 &&
 		    (error = link_parts(&v[n], s, dn[ndn].drv, a)) == 0 &&
 		    d != NULL &&
-		    (error = kind_of(&v[n], &lay, &ag, s, d->ifi_type, &kind,
+		    (error = kind_of(&v[n], &lay, &pp, s, d->ifi_type, &kind,
 		    a)) == 0 && kind != NULL &&
 		    (v[n].type = iftype_sid(kind)) != 0)
 			v[n].has_type = true;
@@ -1312,14 +1460,20 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 		    &v[i].higher_layer_if.n, &v[i].higher_layer_if.v,
 		    a)) == 0)
 			epair(&v[i], dn, ndn);
-	/* Each lagg port's aggport on its entry, the first of its name. */
-	for (size_t i = 0; i < ag.n; i++)
+	/*
+	 * Each lagg port's aggport and bridge member's bridge-port on its
+	 * entry, the first of its name.
+	 */
+	for (size_t i = 0; i < pp.n; i++)
 		for (size_t j = 0; j < n; j++)
-			if (strcmp(v[j].name, ag.v[i].port) == 0) {
-				v[j].dot1ax_aggport = ag.v[i].ap;
+			if (strcmp(v[j].name, pp.v[i].port) == 0) {
+				if (pp.v[i].ap != NULL)
+					v[j].dot1ax_aggport = pp.v[i].ap;
+				if (pp.v[i].bp != NULL)
+					v[j].dot1q_bridge_port = pp.v[i].bp;
 				break;
 			}
-	free(ag.v);
+	free(pp.v);
 	free(lay.v);
 	free(dn);
 	close(s);

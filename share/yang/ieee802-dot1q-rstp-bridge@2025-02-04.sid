@@ -1,0 +1,320 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ieee802-dot1q-rstp-bridge",
+    "module-revision": "2025-02-04",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "ieee802-dot1q-bridge",
+        "module-revision": "2023-10-26"
+      },
+      {
+        "module-name": "ieee802-dot1q-rstp",
+        "module-revision": "2025-02-04"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "69800",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ieee802-dot1q-rstp-bridge",
+        "sid": "69800"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp",
+        "sid": "69801"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/bridge-forward-delay",
+        "sid": "69802"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/bridge-id",
+        "sid": "69803"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/bridge-id/bridge-address",
+        "sid": "69804"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/bridge-id/bridge-id",
+        "sid": "69805"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/bridge-id/bridge-priority",
+        "sid": "69806"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/bridge-id/system-id-extension",
+        "sid": "69807"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/bridge-max-age",
+        "sid": "69808"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/force-protocol-version",
+        "sid": "69809"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/forward-delay",
+        "sid": "69810"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/hello-time",
+        "sid": "69811"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/last-topology-change",
+        "sid": "69812"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/max-age",
+        "sid": "69813"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/root-id",
+        "sid": "69814"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/root-id/bridge-address",
+        "sid": "69815"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/root-id/bridge-id",
+        "sid": "69816"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/root-id/bridge-priority",
+        "sid": "69817"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/root-id/system-id-extension",
+        "sid": "69818"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/root-path-cost",
+        "sid": "69819"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/root-port",
+        "sid": "69820"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ieee802-dot1q-bridge:bridges/bridge/component/ieee802-dot1q-rstp-bridge:rstp/tx-hold-count",
+        "sid": "69821"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp",
+        "sid": "69822"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/admin-bridge-port-enabled",
+        "sid": "69823"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/admin-edge-port",
+        "sid": "69824"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/auto-edge-port",
+        "sid": "69825"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-bridge-id",
+        "sid": "69826"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-bridge-id/bridge-address",
+        "sid": "69827"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-bridge-id/bridge-id",
+        "sid": "69828"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-bridge-id/bridge-priority",
+        "sid": "69829"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-bridge-id/system-id-extension",
+        "sid": "69830"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-port-id",
+        "sid": "69831"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-port-id/port-id",
+        "sid": "69832"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-port-id/port-number",
+        "sid": "69833"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-port-id/port-priority",
+        "sid": "69834"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/designated-protocol-version",
+        "sid": "69835"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/disputed-port",
+        "sid": "69836"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/fix-port-path-cost",
+        "sid": "69837"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/isolate-port",
+        "sid": "69838"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/oper-edge-port",
+        "sid": "69839"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-id",
+        "sid": "69840"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-id/port-id",
+        "sid": "69841"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-id/port-number",
+        "sid": "69842"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-id/port-priority",
+        "sid": "69843"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-path-cost",
+        "sid": "69844"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-protocol-migration-check",
+        "sid": "69845"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-protocol-migration-check/input",
+        "sid": "69846"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-protocol-migration-check/output",
+        "sid": "69847"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-role",
+        "sid": "69848"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/port-state",
+        "sid": "69849"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/restricted-role",
+        "sid": "69850"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/restricted-tcn",
+        "sid": "69851"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/root-id",
+        "sid": "69852"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/root-id/bridge-address",
+        "sid": "69853"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/root-id/bridge-id",
+        "sid": "69854"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/root-id/bridge-priority",
+        "sid": "69855"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/root-id/system-id-extension",
+        "sid": "69856"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1q-bridge:bridge-port/ieee802-dot1q-rstp-bridge:rstp/root-path-cost",
+        "sid": "69857"
+      }
+    ]
+  }
+}

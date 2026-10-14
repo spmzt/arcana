@@ -985,12 +985,41 @@ yang_kinds_body()
 	# parent ietf-if-extensions'; the priority arcana-interfaces'.
 	atf_check -o match:' vlan=77,lagg77,c-vlan,5' grep '^vlan77 ' a
 	atf_check -o match:' vlan=78,epair79a,s-vlan,0' grep '^vlan78 ' a
-	# A member's flags are those ifconfig shows.
-	flags=$(ifconfig bridge77 | sed -n 's/.*member: epair77b flags=\([0-9a-f]*\)<.*/\1/p')
-	[ -n "$flags" ] || atf_fail "ifconfig shows no member epair77b"
-	atf_check -o match:" bridge=epair77b:$flags( |\$)" grep '^bridge77 ' a
-	atf_check -o match:" bridge=epair77b:[0-9a-f]*[4-7]( |\$)" \
-	    grep '^bridge77 ' a
+	# IEEE 802.1Q's: the bridge, its one VLAN-unaware component and its
+	# port; the member's bridge-port and, its STP on, RSTP's port, each
+	# as ifconfig shows the member: flags (FreeBSD's own the learn,
+	# discover, span, sticky, private and qinq ones), port, priority
+	# (IEEE's a sixteenth of it), path cost, role and state (RSTP's:
+	# disabled, listening and blocking discarding).
+	atf_check -o save:br "$y" bridges
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' tail -1 br
+	atf_check -o match:'^bridge77 address=[0-9A-F-]{17} type=customer-vlan-bridge component=bridge77,d-bridge-component ports=epair77b$' \
+	    grep '^bridge77 ' br
+	ifconfig bridge77 | awk '
+	$1 == "member:" { m = $2 == "epair77b"; if (m) { f = $3; sub(/^flags=/, "", f); sub(/<.*/, "", f) } next }
+	!m { next }
+	{ for (i = 1; i < NF; i++) {
+		if ($i == "port") port = $(i + 1)
+		if ($i == "priority") prio = $(i + 1)
+		if ($i == "cost") cost = $(i + 1)
+		if ($i == "role") role = $(i + 1)
+		if ($i == "state") state = $(i + 1)
+	} }
+	END { print f, port, prio, cost, role, state }' > member
+	read -r f port prio cost role state < member
+	[ -n "$f" ] || atf_fail "ifconfig shows no member epair77b"
+	f=$((0x$f))
+	[ $((f & 0x100)) -ne 0 ] && p2p=auto ||
+	    { [ $((f & 0x80)) -ne 0 ] && p2p=force-true || p2p=force-false; }
+	[ $((f & 0x80)) -ne 0 ] && ptp=on || ptp=off
+	own=$(printf '%x' $((f & 0x181b)))
+	atf_check -o match:" bport=bridge77,$port,$p2p/$ptp,$own( |\$)" \
+	    grep '^epair77b ' a
+	[ $((f & 0x4)) -ne 0 ] || atf_fail "ifconfig stp did not turn STP on"
+	case "$state" in learning|forwarding) ;; *) state=discarding ;; esac
+	[ $((f & 0x400)) -ne 0 ] && fixed=fixed || fixed=auto
+	atf_check -o match:" rstp=$state,$role,$((prio >> 4))/$port/$(((prio >> 4) << 12 | port)),$cost/$fixed,edge=$(((f >> 9) & 1))/$(((f >> 5) & 1))/$(((f >> 6) & 1))( |\$)" \
+	    grep '^epair77b ' a
 }
 yang_kinds_cleanup()
 {
