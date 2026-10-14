@@ -21,12 +21,14 @@ struct ietf_interfaces_interfaces_interface_statistics;
 struct ietf_interfaces_interfaces_interface_arcif_media_current;
 struct ietf_interfaces_interfaces_interface_arcif_media_active;
 struct ietf_interfaces_interfaces_interface_arcif_media;
-struct ietf_interfaces_interfaces_interface_arcif_vlan;
 struct ietf_interfaces_interfaces_interface_arcif_lagg_port;
 struct ietf_interfaces_interfaces_interface_arcif_lagg;
 struct ietf_interfaces_interfaces_interface_arcif_bridge_member;
 struct ietf_interfaces_interfaces_interface_arcif_bridge;
 struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like;
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag;
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag;
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan;
 struct ietf_interfaces_interfaces_interface_if_ext_encapsulation;
 struct ietf_interfaces_interfaces_interface_ip_ipv4_address;
 struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor;
@@ -363,11 +365,6 @@ enum ietf_interfaces_interfaces_interface_arcif_media_status {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_STATUS_RUNNING = 3,
 };
 
-enum ietf_interfaces_interfaces_interface_arcif_vlan_protocol {
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_VLAN_PROTOCOL_IEEE802_1Q = 33024,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_VLAN_PROTOCOL_IEEE802_1AD = 34984,
-};
-
 enum ietf_interfaces_interfaces_interface_arcif_lagg_protocol {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PROTOCOL_NONE = 0,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PROTOCOL_ROUNDROBIN = 1,
@@ -420,6 +417,7 @@ enum ietf_interfaces_interfaces_interface_arcif_bridge_member_stp_role {
 
 enum ietf_interfaces_interfaces_interface_if_ext_encapsulation_encaps_type {
 	IETF_INTERFACES_INTERFACES_INTERFACE_IF_EXT_ENCAPSULATION_ENCAPS_TYPE_NONE = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IF_EXT_ENCAPSULATION_ENCAPS_TYPE_DOT1Q_VLAN,
 };
 
 enum ietf_interfaces_interfaces_interface_ip_ipv4_address_subnet {
@@ -1026,6 +1024,8 @@ struct ietf_interfaces_interfaces_interface_statistics {
 	uint64_t	 ethlike_out_pkts_8192_to_max_octets;
 	bool			 has_if_ext_in_discard_overflows;
 	uint64_t	 if_ext_in_discard_overflows;
+	bool			 has_if_ext_in_discard_unknown_encaps;
+	uint64_t	 if_ext_in_discard_unknown_encaps;
 };
 
 /* container */
@@ -1060,17 +1060,6 @@ struct ietf_interfaces_interfaces_interface_arcif_media {
 		size_t		 n;
 		const char	*const	*v;
 	}			 supported;
-};
-
-/* container */
-struct ietf_interfaces_interfaces_interface_arcif_vlan {
-	bool			 has_vlan_id;
-	uint16_t	 vlan_id;
-	const char	*parent;
-	bool			 has_protocol;
-	enum ietf_interfaces_interfaces_interface_arcif_vlan_protocol	 protocol;
-	bool			 has_pcp;
-	uint8_t		 pcp;
 };
 
 /* list entry */
@@ -1123,8 +1112,33 @@ struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like {
 };
 
 /* container */
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag {
+	bool			 has_tag_type;
+	uint64_t	 tag_type;	/* identityref: a SID */
+	bool			 has_vlan_id;
+	uint16_t	 vlan_id;
+};
+
+/* container, presence */
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag {
+	bool			 has_tag_type;
+	uint64_t	 tag_type;	/* identityref: a SID */
+	bool			 has_vlan_id;
+	uint16_t	 vlan_id;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan {
+	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag	*outer_tag;
+	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag	*second_tag;
+	bool			 has_arcif_pcp;
+	uint8_t		 arcif_pcp;
+};
+
+/* container */
 struct ietf_interfaces_interfaces_interface_if_ext_encapsulation {
 	enum ietf_interfaces_interfaces_interface_if_ext_encapsulation_encaps_type	 encaps_type;	/* the case given */
+	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan	*if_vlan_dot1q_vlan;
 };
 
 /* list entry */
@@ -1308,7 +1322,6 @@ struct ietf_interfaces_interfaces_interface {
 	struct cbl_bytes	 arcif_capabilities;
 	struct cbl_bytes	 arcif_capabilities_supported;
 	const struct ietf_interfaces_interfaces_interface_arcif_media	*arcif_media;
-	const struct ietf_interfaces_interfaces_interface_arcif_vlan	*arcif_vlan;
 	const struct ietf_interfaces_interfaces_interface_arcif_lagg	*arcif_lagg;
 	const struct ietf_interfaces_interfaces_interface_arcif_bridge	*arcif_bridge;
 	bool			 has_arcif_peer_vnet;
@@ -1320,6 +1333,7 @@ struct ietf_interfaces_interfaces_interface {
 	bool			 has_if_ext_forwarding_mode;
 	uint64_t	 if_ext_forwarding_mode;	/* identityref: a SID */
 	const char	*if_ext_peer_interface;
+	const char	*if_ext_parent_interface;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv4	*ip_ipv4;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv6	*ip_ipv6;
 	const char	*lne_bind_lne_name;
@@ -3651,10 +3665,6 @@ int	ietf_interfaces_interfaces_interface_arcif_media_encode(const struct ietf_in
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_media_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_media *,
 	    cbl_yarena *, int, char *, size_t);
-int	ietf_interfaces_interfaces_interface_arcif_vlan_encode(const struct ietf_interfaces_interfaces_interface_arcif_vlan *,
-	    struct cbl_ybuf *);
-int	ietf_interfaces_interfaces_interface_arcif_vlan_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_vlan *,
-	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_arcif_lagg_port_encode(const struct ietf_interfaces_interfaces_interface_arcif_lagg_port *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_lagg_port_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_lagg_port *,
@@ -3674,6 +3684,18 @@ int	ietf_interfaces_interfaces_interface_arcif_bridge_decode(const void *, size_
 int	ietf_interfaces_interfaces_interface_ethlike_ethernet_like_encode(const struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_ethlike_ethernet_like_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan *,
 	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_if_ext_encapsulation_encode(const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation *,
 	    struct cbl_ybuf *);

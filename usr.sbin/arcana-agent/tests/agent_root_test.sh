@@ -906,7 +906,7 @@ yang_kinds_body()
 	local y="$(atf_get_srcdir)/ycollect"
 
 	[ "$(sysctl -n net.fibs)" -ge 2 ] || atf_skip "net.fibs is 1"
-	for i in epair77a epair78a epair79a vlan77 lagg77 bridge77 gif77; do
+	for i in epair77a epair78a epair79a vlan77 vlan78 lagg77 bridge77 gif77; do
 		ifconfig "$i" >/dev/null 2>&1 && atf_skip "$i exists"
 	done
 	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
@@ -926,6 +926,9 @@ yang_kinds_body()
 	    parent lagg77
 	echo vlan77 >> made
 	atf_check ifconfig vlan77 vlanpcp 5
+	atf_check -o ignore ifconfig vlan78 create vlan 78 vlandev epair79a \
+	    vlanproto 802.1ad
+	echo vlan78 >> made
 	atf_check -o ignore "$JGC" -c "$SOCK" interface bridge77 create \
 	    parent epair77b
 	echo bridge77 >> made
@@ -953,7 +956,10 @@ yang_kinds_body()
 	# is the kernel's.
 	atf_check -o match:' lagg=loadbalance,6,epair78a:[0-9a-f]+' \
 	    grep '^lagg77 ' a
-	atf_check -o match:' vlan=77,lagg77,0x8100,5' grep '^vlan77 ' a
+	# ietf-if-vlan-encapsulation's outer tag, an 802.1Q one c-vlan; the
+	# parent ietf-if-extensions'; the priority arcana-interfaces'.
+	atf_check -o match:' vlan=77,lagg77,c-vlan,5' grep '^vlan77 ' a
+	atf_check -o match:' vlan=78,epair79a,s-vlan,0' grep '^vlan78 ' a
 	# A member's flags are those ifconfig shows.
 	flags=$(ifconfig bridge77 | sed -n 's/.*member: epair77b flags=\([0-9a-f]*\)<.*/\1/p')
 	[ -n "$flags" ] || atf_fail "ifconfig shows no member epair77b"
