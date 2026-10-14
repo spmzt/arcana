@@ -1,0 +1,30 @@
+module: arcana-log
+  +--ro logs
+     +--ro directory?   string
+     +--ro file* [name]
+     |  +--ro name        string
+     |  +--ro size?       uint64
+     |  +--ro modified?   yang:date-and-time
+     |  +--ro packed?     boolean
+     +---x read
+        +---w input
+        |  +---w name?       string
+        |  +---w jail?       string
+        |  +---w lines?      uint16
+        |  +---w position?   uint64
+        |  +---w filter?     string
+        +--ro output
+           +--ro name?       string
+           +--ro size?       uint64
+           +--ro position?   uint64
+           +--ro rotated?    boolean
+           +--ro line*
+              +--ro time?       string
+              +--ro host?       string
+              +--ro facility?   identityref
+              +--ro severity?   syslog:syslog-severity
+              +--ro tag?        string
+              +--ro pid?        string
+              +--ro text?       string
+              +--ro sequence?   uint64
+              +--ro seen?       yang:date-and-time

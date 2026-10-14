@@ -1,0 +1,579 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ietf-syslog",
+    "module-revision": "2025-04-30",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-inet-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "ietf-tls-client",
+        "module-revision": "2024-10-10"
+      },
+      {
+        "module-name": "ietf-crypto-types",
+        "module-revision": "2024-10-10"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "70000",
+        "size": "200"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ietf-syslog",
+        "sid": "70000"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "action",
+        "sid": "70001"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "audit",
+        "sid": "70002"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "auth",
+        "sid": "70003"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "authpriv",
+        "sid": "70004"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "block",
+        "sid": "70005"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "console",
+        "sid": "70006"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "cron",
+        "sid": "70007"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "cron2",
+        "sid": "70008"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "daemon",
+        "sid": "70009"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ftp",
+        "sid": "70010"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "kern",
+        "sid": "70011"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local0",
+        "sid": "70012"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local1",
+        "sid": "70013"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local2",
+        "sid": "70014"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local3",
+        "sid": "70015"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local4",
+        "sid": "70016"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local5",
+        "sid": "70017"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local6",
+        "sid": "70018"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "local7",
+        "sid": "70019"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "log",
+        "sid": "70020"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "lpr",
+        "sid": "70021"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "mail",
+        "sid": "70022"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "news",
+        "sid": "70023"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ntp",
+        "sid": "70024"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "stop",
+        "sid": "70025"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "syslog",
+        "sid": "70026"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "syslog-facility",
+        "sid": "70027"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "user",
+        "sid": "70028"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "uucp",
+        "sid": "70029"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "console-action",
+        "sid": "70030"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "file-action",
+        "sid": "70031"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "file-limit-duration",
+        "sid": "70032"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "file-limit-size",
+        "sid": "70033"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "remote-action",
+        "sid": "70034"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "remote-source-interface",
+        "sid": "70035"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "select-adv-compare",
+        "sid": "70036"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "select-match",
+        "sid": "70037"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "signed-messages",
+        "sid": "70038"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "structured-data",
+        "sid": "70039"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog",
+        "sid": "70040"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions",
+        "sid": "70041"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/console",
+        "sid": "70042"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/console/filter",
+        "sid": "70043"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/console/filter/facility-list",
+        "sid": "70044"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/console/filter/facility-list/advanced-compare",
+        "sid": "70045"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/console/filter/facility-list/advanced-compare/action",
+        "sid": "70046"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/console/filter/facility-list/advanced-compare/compare",
+        "sid": "70047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/console/filter/facility-list/facility",
+        "sid": "70048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/console/filter/facility-list/severity",
+        "sid": "70049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/console/pattern-match",
+        "sid": "70050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file",
+        "sid": "70051"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file",
+        "sid": "70052"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/file-rotation",
+        "sid": "70053"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/file-rotation/max-file-size",
+        "sid": "70054"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/file-rotation/number-of-files",
+        "sid": "70055"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/file-rotation/retention",
+        "sid": "70056"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/file-rotation/rollover",
+        "sid": "70057"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/filter",
+        "sid": "70058"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/filter/facility-list",
+        "sid": "70059"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/filter/facility-list/advanced-compare",
+        "sid": "70060"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/filter/facility-list/advanced-compare/action",
+        "sid": "70061"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/filter/facility-list/advanced-compare/compare",
+        "sid": "70062"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/filter/facility-list/facility",
+        "sid": "70063"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/filter/facility-list/severity",
+        "sid": "70064"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/name",
+        "sid": "70065"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/pattern-match",
+        "sid": "70066"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/file/log-file/structured-data",
+        "sid": "70067"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote",
+        "sid": "70068"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination",
+        "sid": "70069"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/facility-override",
+        "sid": "70070"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/filter",
+        "sid": "70071"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/filter/facility-list",
+        "sid": "70072"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/filter/facility-list/advanced-compare",
+        "sid": "70073"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/filter/facility-list/advanced-compare/action",
+        "sid": "70074"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/filter/facility-list/advanced-compare/compare",
+        "sid": "70075"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/filter/facility-list/facility",
+        "sid": "70076"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/filter/facility-list/severity",
+        "sid": "70077"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/name",
+        "sid": "70078"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/pattern-match",
+        "sid": "70079"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing",
+        "sid": "70080"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers",
+        "sid": "70081"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-initial-repeat",
+        "sid": "70082"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-resend-count",
+        "sid": "70083"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-resend-delay",
+        "sid": "70084"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-signer",
+        "sid": "70085"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-signer/cert",
+        "sid": "70086"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-signer/cert/cert-data",
+        "sid": "70087"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-signer/cert/private-key-format",
+        "sid": "70088"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-signer/cert/public-key",
+        "sid": "70089"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-signer/cert/public-key-format",
+        "sid": "70090"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-signer/hash-algorithm",
+        "sid": "70091"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/cert-signer/name",
+        "sid": "70092"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/sig-max-delay",
+        "sid": "70093"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/sig-number-resends",
+        "sid": "70094"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/sig-resend-count",
+        "sid": "70095"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/signing/cert-signers/sig-resend-delay",
+        "sid": "70096"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/source-interface",
+        "sid": "70097"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/structured-data",
+        "sid": "70098"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/tls",
+        "sid": "70099"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/tls/tls",
+        "sid": "70100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/tls/tls/address",
+        "sid": "70101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/tls/tls/client-identity",
+        "sid": "70102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/tls/tls/port",
+        "sid": "70103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/tls/tls/server-authentication",
+        "sid": "70104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/udp",
+        "sid": "70105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/udp/udp",
+        "sid": "70106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/udp/udp/address",
+        "sid": "70107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-syslog:syslog/actions/remote/destination/udp/udp/port",
+        "sid": "70108"
+      }
+    ]
+  }
+}
