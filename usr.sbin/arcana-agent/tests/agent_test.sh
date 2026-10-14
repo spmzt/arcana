@@ -5261,6 +5261,85 @@ EOF
 	done < addrs
 }
 
+atf_test_case yang_ni_conf
+yang_ni_conf_head()
+{
+	atf_set "descr" "FIBs as RFC 8529's network instances (PLAN-SDN-YANG" \
+	    "2.6.1): one each from FIB 1 to net.fibs - 1, fibs.conf's names" \
+	    "and descriptions read and written, what cannot be said"
+}
+yang_ni_conf_body()
+{
+	local y="$(atf_get_srcdir)/yni" n i
+
+	# This host's: FIB 1 to net.fibs - 1, fibN each.
+	n=$(sysctl -n net.fibs)
+	: > want
+	i=1
+	while [ "$i" -lt "$n" ]; do
+		echo "fib$i $i -" >> want
+		i=$((i + 1))
+	done
+	echo "yang-cbor" >> want
+	atf_check -o file:want sh -c "'$y' - | sed 's/^yang-cbor.*/yang-cbor/'"
+	cat > fibs.conf <<'EOF'
+# The names of the FIBs.
+fib2_name="blue"
+fib2_description="the blue customer's"
+fib3_name="fib1"
+fib1_name="$x"
+fib9_name=far
+fib0_name=host
+EOF
+	atf_check -o inline:"fib1 1 -
+blue 2 the blue customer's
+fib3 3 -
+unread fib1_name: not settled by reading the file
+unread fib3_name: another FIB's name
+unread fib9_name: no such FIB: net.fibs is fewer
+unread fib0_name: FIB 0 is the host's, not an instance
+yang-cbor 66 bytes, the same back
+" "$y" -n 4 fibs.conf
+	# One name given two FIBs: the first's.
+	printf 'fib1_name=blue\nfib2_name=blue\n' > two.conf
+	atf_check -o inline:"blue 1 -
+fib2 2 -
+unread fib2_name: another FIB's name
+yang-cbor 31 bytes, the same back
+" "$y" -n 3 two.conf
+	# Written: names and descriptions set, those of FIBs not given
+	# taken out, the rest of the file as it was.
+	printf '2 red\n3 green the green one\n' > in
+	atf_check sh -c "'$y' -n 4 -w fibs.conf < in"
+	atf_check -o inline:'# The names of the FIBs.
+fib2_name="red"
+fib3_name="green"
+fib9_name=far
+fib0_name=host
+fib3_description="the green one"
+' cat fibs.conf
+	atf_check -o inline:"fib1 1 -
+red 2 -
+green 3 the green one
+unread fib9_name: no such FIB: net.fibs is fewer
+unread fib0_name: FIB 0 is the host's, not an instance
+yang-cbor 60 bytes, the same back
+" "$y" -n 4 fibs.conf
+	# Refused, the file as it was: a FIB there is not, another's name,
+	# one FIB twice.
+	cp fibs.conf was
+	printf '5 red\n' > in
+	atf_check -s exit:1 -e inline:"yni: red: FIB 5, net.fibs is 4\n" \
+	    sh -c "'$y' -n 4 -w fibs.conf < in"
+	printf '2 fib3\n' > in
+	atf_check -s exit:1 -e inline:"yni: fib3: another FIB's name\n" \
+	    sh -c "'$y' -n 4 -w fibs.conf < in"
+	printf '2 red\n2 blue\n' > in
+	atf_check -s exit:1 -e inline:"yni: red, blue: FIB 2 twice\n" \
+	    sh -c "'$y' -n 4 -w fibs.conf < in"
+	atf_check cmp was fibs.conf
+}
+
 atf_test_case yang_rtadv_conf
 yang_rtadv_conf_head()
 {
@@ -5722,6 +5801,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
+	atf_add_test_case yang_ni_conf
 	atf_add_test_case yang_active_route
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd

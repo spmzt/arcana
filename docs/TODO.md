@@ -295,7 +295,18 @@
   rtadvd.conf(5)'s examples (yang_rtadv_conf) and to a lab rtadvd in a
   vnet jail, edited then rtadvctl reload, rtadvctl show telling the new
   interval (yang_rtadv). The running datastore's use of it waits on
-  1.11. Next: 2.6.1, network instances from net.fibs. As each operation
+  1.11. 2.6.1: FIBs 1 to net.fibs - 1 as RFC 8529's network instances
+  (invidia/yni.c), each a VRF of arcana-network-instance's fib case
+  (2^40 + 1900; ietf-network-instance 2^40 + 1800), named fibN or as
+  fibs.conf names it (fibN_name, fibN_description: sh(1), libvarconf),
+  what cannot be read so said; written back, refused where a FIB is not
+  there, a name is another's, one FIB twice. cblink-gen numbers a
+  module's .sid file against the module alone, so that
+  arcana-network-instance's deviations (no VSI or VV root, a FIB cannot
+  be disabled; lint.sh holds them) leave ietf-network-instance's file
+  whole. Held to the host's net.fibs and fibs.conf cases (yang_ni_conf)
+  and a vnet jail raised to net.fibs=4 (yang_ni). Next: 2.6.3,
+  bind-ni-name; 2.6.2 is a mount, after 1.11. As each operation
   is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model

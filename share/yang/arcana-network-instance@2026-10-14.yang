@@ -1,0 +1,73 @@
+module arcana-network-instance {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-network-instance";
+  prefix arcni;
+
+  import ietf-network-instance {
+    prefix ni;
+    reference
+      "RFC 8529: YANG Data Model for Network Instances";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's network instances: its FIBs (setfib(2), net.fibs).
+
+     A FIB has a number and no name; the kernel makes net.fibs of them
+     at boot, numbered from 0, and none after.  FIB 0 is the host's
+     own, ietf-routing's at the top; each other one is a network
+     instance, named fibN unless given a name, which Arcana keeps in
+     fibs.conf with its description.  Every instance is a VRF: its
+     interfaces are those whose FIB it is (ifconfig fib, SIOCSIFFIB),
+     its routes its FIB's.  An if_bridge(4) is an interface, not an
+     instance: there is no VSI or VV root.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 2.6.1.";
+  }
+
+  augment "/ni:network-instances/ni:network-instance/ni:ni-type" {
+    description
+      "A FIB as a network instance.";
+    case fib {
+      leaf fib {
+        type uint16 {
+          range "1..65535";
+        }
+        description
+          "The FIB's number: setfib(1)'s, route(8)'s -fib, ifconfig(8)'s
+           fib.  Below net.fibs.";
+      }
+    }
+  }
+
+  deviation "/ni:network-instances/ni:network-instance/ni:enabled" {
+    description
+      "A FIB is there from boot to shutdown: it cannot be disabled.";
+    deviate add {
+      must ". = 'true'" {
+        error-message "a FIB cannot be disabled";
+      }
+    }
+  }
+
+  deviation "/ni:network-instances/ni:network-instance/ni:root-type/"
+          + "ni:vsi-root" {
+    description
+      "An if_bridge(4) is an interface, not an instance.";
+    deviate not-supported;
+  }
+
+  deviation "/ni:network-instances/ni:network-instance/ni:root-type/"
+          + "ni:vv-root" {
+    description
+      "FreeBSD has no instance that is both.";
+    deviate not-supported;
+  }
+}

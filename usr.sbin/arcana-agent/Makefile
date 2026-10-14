@@ -6,7 +6,7 @@ SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c n
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
 		rcroutes.c routes.c rtadv.c rtimes.c scope.c sdwan.c vnet.c \
-		yif.c yip.c yrt.c
+		yif.c yip.c yni.c yrt.c
 # The IETF modules the collectors fill (PLAN-SDN-YANG 1.9): cblink-gen's
 # structs and tables of share/yang's modules, committed, so that building
 # needs no libyang; "make regen-yang" refreshes them.
@@ -61,13 +61,16 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		iana-if-type@2026-03-17 ietf-yang-types@2025-12-22 \
 		ietf-inet-types@2025-12-22 ietf-routing@2018-03-13 \
 		ietf-ipv4-unicast-routing@2018-03-13 \
-		ietf-ipv6-unicast-routing@2018-03-13 arcana-routing@2026-10-14
+		ietf-ipv6-unicast-routing@2018-03-13 arcana-routing@2026-10-14 \
+		ietf-network-instance@2019-01-21 \
+		arcana-network-instance@2026-10-14
 # ietf-routing's multiple-ribs: a FIB each (setfib(1)).
 YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
 		-F iana-if-type: -F ietf-yang-types: -F ietf-inet-types: \
 		-F ietf-routing:multiple-ribs -F ietf-ipv4-unicast-routing: \
-		-F ietf-ipv6-unicast-routing: -F arcana-routing:
+		-F ietf-ipv6-unicast-routing: -F arcana-routing: \
+		-F ietf-network-instance: -F arcana-network-instance:
 YANG_OUT?=	${.CURDIR}/yang
 regen-yang: .PHONY
 	cd ${YANG_DIR} && ${CBLINK_GEN} -m h,schema -b ymodel \

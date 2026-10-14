@@ -47,7 +47,7 @@ int	yrt_active_route(int fib,
  * it wrote there before replaced; err says what is refused.
  */
 struct vc_file;
-struct rcr_unread {
+struct yunread {
 	const char	*var;
 	const char	*why;
 };
@@ -55,7 +55,7 @@ struct rcr_unread {
 int	rcr_read(const struct vc_file *files, size_t nfiles, int fib,
 	    cbl_yarena *a,
 	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes **out,
-	    struct rcr_unread **u, size_t *nu);
+	    struct yunread **u, size_t *nu);
 /* FIB fib's static routes made new's, the kernel's as old applied
  * them: by netlink(4), what was done undone on failure. */
 int	rcr_apply(int fib,
@@ -64,6 +64,21 @@ int	rcr_apply(int fib,
 	    char *err, size_t errlen);
 int	rcr_write(struct vc_file *f, int fib,
 	    const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *sr,
+	    char *err, size_t errlen);
+
+/*
+ * FreeBSD's FIBs as RFC 8529's network instances, invidia/yni.c: FIB 1
+ * to net.fibs - 1, named and described in fibs.conf f (NULL: none).
+ * yni_nfibs(): net.fibs, this vnet's.  yni_read(): the instances, what
+ * f has that cannot be read so in *u.  yni_write(): ni's names and
+ * descriptions into f; err says what is refused.
+ */
+int	yni_nfibs(void);
+int	yni_read(const struct vc_file *f, int nfibs, cbl_yarena *a,
+	    const struct ietf_network_instance_network_instances **out,
+	    struct yunread **u, size_t *nu);
+int	yni_write(struct vc_file *f, int nfibs,
+	    const struct ietf_network_instance_network_instances *ni,
 	    char *err, size_t errlen);
 
 /*

@@ -98,6 +98,14 @@ struct ietf_routing_routing_state_ribs_rib;
 struct ietf_routing_routing_state_ribs;
 struct ietf_routing_routing_state;
 struct ietf_routing;
+struct ietf_network_instance_network_instances_network_instance_vrf_root;
+struct ietf_network_instance_network_instances_network_instance;
+struct ietf_network_instance_network_instances;
+struct ietf_network_instance;
+struct ietf_network_instance_bind_ni_name_failed_interface;
+struct ietf_network_instance_bind_ni_name_failed_ipv4;
+struct ietf_network_instance_bind_ni_name_failed_ipv6;
+struct ietf_network_instance_bind_ni_name_failed;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -476,6 +484,16 @@ enum ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_spec
 	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_RECEIVE = 3,
 };
 
+enum ietf_network_instance_network_instances_network_instance_ni_type {
+	IETF_NETWORK_INSTANCE_NETWORK_INSTANCES_NETWORK_INSTANCE_NI_TYPE_NONE = 0,
+	IETF_NETWORK_INSTANCE_NETWORK_INSTANCES_NETWORK_INSTANCE_NI_TYPE_FIB,
+};
+
+enum ietf_network_instance_network_instances_network_instance_root_type {
+	IETF_NETWORK_INSTANCE_NETWORK_INSTANCES_NETWORK_INSTANCE_ROOT_TYPE_NONE = 0,
+	IETF_NETWORK_INSTANCE_NETWORK_INSTANCES_NETWORK_INSTANCE_ROOT_TYPE_VRF_ROOT,
+};
+
 /* container */
 struct ietf_interfaces_interfaces_interface_statistics {
 	const char	*discontinuity_time;
@@ -636,6 +654,7 @@ struct ietf_interfaces_interfaces_interface_ip_ipv4 {
 		size_t		 n;
 		const struct ietf_interfaces_interfaces_interface_ip_ipv4_neighbor	*v;
 	}			 neighbor;
+	const char	*ni_bind_ni_name;
 };
 
 /* list entry */
@@ -740,6 +759,7 @@ struct ietf_interfaces_interfaces_interface_ip_ipv6 {
 	uint32_t	 dup_addr_detect_transmits;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf	*autoconf;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements	*v6ur_ipv6_router_advertisements;
+	const char	*ni_bind_ni_name;
 };
 
 /* list entry */
@@ -793,6 +813,7 @@ struct ietf_interfaces_interfaces_interface {
 	const struct ietf_interfaces_interfaces_interface_arcif_epair	*arcif_epair;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv4	*ip_ipv4;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv6	*ip_ipv6;
+	const char	*ni_bind_ni_name;
 };
 
 /* container */
@@ -1375,6 +1396,61 @@ struct ietf_routing {
 	const struct ietf_routing_routing_state	*routing_state;
 };
 
+/* container */
+struct ietf_network_instance_network_instances_network_instance_vrf_root {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct ietf_network_instance_network_instances_network_instance {
+	const char	*name;
+	bool			 has_enabled;
+	bool		 enabled;
+	const char	*description;
+	enum ietf_network_instance_network_instances_network_instance_ni_type	 ni_type;	/* the case given */
+	bool			 has_arcni_fib;
+	uint16_t	 arcni_fib;
+	enum ietf_network_instance_network_instances_network_instance_root_type	 root_type;	/* the case given */
+	const struct ietf_network_instance_network_instances_network_instance_vrf_root	*vrf_root;
+};
+
+/* container */
+struct ietf_network_instance_network_instances {
+	struct {
+		size_t		 n;
+		const struct ietf_network_instance_network_instances_network_instance	*v;
+	}			 network_instance;
+};
+
+/* data */
+struct ietf_network_instance {
+	const struct ietf_network_instance_network_instances	*network_instances;
+};
+
+/* container */
+struct ietf_network_instance_bind_ni_name_failed_interface {
+	const char	*bind_ni_name;
+};
+
+/* container */
+struct ietf_network_instance_bind_ni_name_failed_ipv4 {
+	const char	*bind_ni_name;
+};
+
+/* container */
+struct ietf_network_instance_bind_ni_name_failed_ipv6 {
+	const char	*bind_ni_name;
+};
+
+/* notification */
+struct ietf_network_instance_bind_ni_name_failed {
+	const char	*name;
+	const struct ietf_network_instance_bind_ni_name_failed_interface	*interface;
+	const struct ietf_network_instance_bind_ni_name_failed_ipv4	*ipv4;
+	const struct ietf_network_instance_bind_ni_name_failed_ipv6	*ipv6;
+	const char	*error_info;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -1695,6 +1771,34 @@ int	ietf_routing_routing_state_encode(const struct ietf_routing_routing_state *,
 	    struct cbl_ybuf *);
 int	ietf_routing_routing_state_decode(const void *, size_t, struct ietf_routing_routing_state *,
 	    cbl_yarena *, int, char *, size_t);
+int	ietf_network_instance_network_instances_network_instance_vrf_root_encode(const struct ietf_network_instance_network_instances_network_instance_vrf_root *,
+	    struct cbl_ybuf *);
+int	ietf_network_instance_network_instances_network_instance_vrf_root_decode(const void *, size_t, struct ietf_network_instance_network_instances_network_instance_vrf_root *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_network_instance_network_instances_network_instance_encode(const struct ietf_network_instance_network_instances_network_instance *,
+	    struct cbl_ybuf *);
+int	ietf_network_instance_network_instances_network_instance_decode(const void *, size_t, struct ietf_network_instance_network_instances_network_instance *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_network_instance_network_instances_encode(const struct ietf_network_instance_network_instances *,
+	    struct cbl_ybuf *);
+int	ietf_network_instance_network_instances_decode(const void *, size_t, struct ietf_network_instance_network_instances *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_network_instance_bind_ni_name_failed_interface_encode(const struct ietf_network_instance_bind_ni_name_failed_interface *,
+	    struct cbl_ybuf *);
+int	ietf_network_instance_bind_ni_name_failed_interface_decode(const void *, size_t, struct ietf_network_instance_bind_ni_name_failed_interface *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_network_instance_bind_ni_name_failed_ipv4_encode(const struct ietf_network_instance_bind_ni_name_failed_ipv4 *,
+	    struct cbl_ybuf *);
+int	ietf_network_instance_bind_ni_name_failed_ipv4_decode(const void *, size_t, struct ietf_network_instance_bind_ni_name_failed_ipv4 *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_network_instance_bind_ni_name_failed_ipv6_encode(const struct ietf_network_instance_bind_ni_name_failed_ipv6 *,
+	    struct cbl_ybuf *);
+int	ietf_network_instance_bind_ni_name_failed_ipv6_decode(const void *, size_t, struct ietf_network_instance_bind_ni_name_failed_ipv6 *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_network_instance_bind_ni_name_failed_encode(const struct ietf_network_instance_bind_ni_name_failed *,
+	    struct cbl_ybuf *);
+int	ietf_network_instance_bind_ni_name_failed_decode(const void *, size_t, struct ietf_network_instance_bind_ni_name_failed *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -1714,5 +1818,10 @@ int	ietf_routing_routing_state_get(cbl_req *, struct ietf_routing *, cbl_yarena 
 int	ietf_routing_routing_state_ribs_rib_active_route_action(cbl_req *, const struct cbl_bytes *,
 	    const struct ietf_routing_routing_state_ribs_rib_active_route_input *,
 	    struct ietf_routing_routing_state_ribs_rib_active_route_output *, cbl_yarena *);
+int	ietf_network_instance_network_instances_get(cbl_req *, struct ietf_network_instance *, cbl_yarena *);
+int	ietf_network_instance_network_instances_edit(cbl_req *, const struct ietf_network_instance *,
+	    const struct ietf_network_instance *);
+int	ietf_network_instance_bind_ni_name_failed_notification(const struct ietf_network_instance_bind_ni_name_failed *,
+	    struct cbl_ybuf *);
 
 #endif /* !_YMODEL_H_ */
