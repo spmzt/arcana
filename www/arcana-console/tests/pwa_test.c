@@ -1038,6 +1038,9 @@ part_hosts(void)
 	    "t.includes('command') && t.includes('request = {') && "
 	    "t.includes('reply = {') && t.includes('=> uint') && "
 	    "t.includes('; id'); })()"));
+	/* A job's operation is not one converted to YANG: no model. */
+	ATF_CHECK(js_true("![...document.querySelectorAll('.schema h4')]."
+	    "some(h => h.textContent.includes('YANG model'))"));
 	shot("3c-schema");
 	run("document.querySelector('.trace button[data-act=schema]').click()");
 	wait_js("!document.querySelector('.step-pane')", 5);
@@ -5123,6 +5126,26 @@ part_routes(void)
 	click_when("table.devices tr[data-act=select-server]", 10);
 	wait_js("[...document.querySelectorAll('.dock [data-act=trace]')]"
 	    ".some(t => t.textContent.includes('list jails'))", 20);
+	/* list is converted to YANG: its task shows arcana-jails beside
+	 * its CBOR schema, as RFC 8340 draws the module (PLAN-SDN-YANG
+	 * 3.1.1). */
+	run("[...document.querySelectorAll('.dock [data-act=trace]')].find(t "
+	    "=> t.textContent.includes('list jails')).click()");
+	/* Its CBOR first, what is on the wire today; the module a tab. */
+	click_when(".schema-tabs button[data-arg=yang]", 10);
+	wait_js("[...document.querySelectorAll('.schema h4')].some(h => "
+	    "h.textContent.includes('YANG model'))", 10);
+	ATF_CHECK(js_true("(() => { const s = [...document.querySelectorAll("
+	    "'.schema')].find(x => x.querySelector('h4').textContent."
+	    "includes('YANG model')); const t = s.textContent; return "
+	    "t.includes('arcana-jails@2026-10-14') && "
+	    "t.includes('module: arcana-jails') && t.includes('+---x start') "
+	    "&& t.includes('+--ro jail* [name]'); })()"));
+	shot("3d-yang");
+	run("document.querySelector('.schema-tabs button[data-arg=cbor]')."
+	    "click()");
+	wait_js("[...document.querySelectorAll('.schema h4')].some(h => "
+	    "h.textContent.includes('CBOR schema'))", 5);
 	go("/#/usage");
 	run("window.before = 1; location.reload();");
 	wait_js("window.before === undefined && location.hash === '#/usage' && "

@@ -5261,6 +5261,151 @@ EOF
 	done < addrs
 }
 
+atf_test_case yang_jails
+yang_jails_head()
+{
+	atf_set "descr" "the list operation's reply as arcana-jails has it" \
+	    "(PLAN-SDN-YANG 3.1.1): every field, a running vnet jail's lne," \
+	    "the cpu share in hundredths, through YANG-CBOR and back"
+}
+yang_jails_body()
+{
+	cat > want <<'EOF'
+scope /etc/jail.conf
+scope /etc/jail.conf.d/web.conf
+conf-error /etc/jail.conf.d/bad.conf: line 3: syntax error
+jail web state=0 jid=yes configured=1 scope=/etc/jail.conf.d/web.conf hostname=web.example path=/jails/web vnet=1 osrelease=15.0-RELEASE persist=yes securelevel=yes nproc=yes rss=yes cpu=yes interface=lo1 lne=web
+  jid 7 nproc 12 rss 81920 cpu 346 securelevel 2
+  ip4 lo1|192.0.2.10/24
+  ip6 2001:db8::10
+  param allow.raw_sockets 1
+  param persist
+  plugin bird
+  plugin wireguard
+jail db state=1 jid=- configured=1 scope=/etc/jail.conf hostname=- path=/jails/db vnet=1 osrelease=- persist=- securelevel=- nproc=- rss=- cpu=- interface=- lne=-
+EOF
+	"$(atf_get_srcdir)/yjails" > out
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' cat out
+	# Converted, and read back from YANG-CBOR, the same.
+	atf_check -o file:want sh -c "sed -n '1,/^yang-cbor/p' out | sed '\$d'"
+	atf_check -o file:want sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
+}
+
+atf_test_case yang_jobs
+yang_jobs_head()
+{
+	atf_set "descr" "the jobs as arcana-jobs has them (PLAN-SDN-YANG" \
+	    "3.1.4): the trace a flat list naming parents, through YANG-CBOR" \
+	    "and back; a submit's changes, five kinds, made the job-specs" \
+	    "the queue takes (made from jobs.yaml), a change of no kind" \
+	    "refused"
+}
+yang_jobs_body()
+{
+	cat > want <<'EOF'
+activity=- stopping=0
+job 41 kind=0 state=2 ok=yes title=restart web created=1760400000 started=yes finished=yes peer=console
+  step 0 parent=-1 kind=0 status=0 label=arcana-agent detail=restart web duration=yes argv=0 exit=- output=0
+  step 1 parent=0 kind=4 status=0 label=jail(8) detail=- duration=- argv=5 exit=yes output=13
+job 42 kind=4 state=0 ok=- title=upgrade packages created=1760400003 started=- finished=- peer=console
+yang-cbor 211 bytes, the same back
+kinds jail-action=0 service-config=3 ipsec=27 pkg-install=28 if-state=6
+restart is 2
+spec kind=0 jail=web action=yes service=- service_action=- interface=- verb=- ipsec_mode=- start_action=- reqid=- persist=0 up=- safe=0 names=0 variables=0
+  action 2
+spec kind=3 jail=- action=- service=sshd service_action=- interface=- verb=- ipsec_mode=- start_action=- reqid=- persist=0 up=- safe=0 names=0 variables=2
+  variable sshd_flags=-o UseDNS=no
+  variable sshd_program unset
+spec kind=27 jail=- action=- service=- service_action=- interface=- verb=conn ipsec_mode=transport start_action=trap reqid=yes persist=1 up=- safe=0 names=0 variables=0
+spec kind=28 jail=web action=- service=- service_action=- interface=- verb=- ipsec_mode=- start_action=- reqid=- persist=0 up=- safe=0 names=2 variables=0
+  name curl
+  name git
+spec kind=6 jail=- action=- service=- service_action=- interface=epair0a verb=- ipsec_mode=- start_action=- reqid=- persist=0 up=no safe=1 names=0 variables=0
+no kind: Invalid argument, change 5
+EOF
+	atf_check -o file:want "$(atf_get_srcdir)/yjobs"
+}
+
+atf_test_case yang_packages
+yang_packages_head()
+{
+	atf_set "descr" "the packages operations' replies as arcana-packages" \
+	    "has them (PLAN-SDN-YANG 3.1.3): installed and outdated merged," \
+	    "the host's and a jail's through YANG-CBOR and back, an" \
+	    "upgrade's output"
+}
+yang_packages_body()
+{
+	cat > want <<'EOF'
+host bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
+host curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
+host git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
+host vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
+host yang-cbor 225 bytes, the same back
+back bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
+back curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
+back git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
+back vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
+jail yang-cbor 236 bytes, the same back
+web bash installed=5.3.3 available=- automatic=no size=yes origin=shells/bash comment=GNU Project's Bourne Again SHell
+web curl installed=8.16.0 available=8.17.0 automatic=yes size=yes origin=ftp/curl comment=Command line tool and library for transferring data with URLs
+web git installed=2.51.0 available=- automatic=no size=- origin=devel/git comment=-
+web vim installed=9.1.1 available=9.1.2 automatic=- size=- origin=- comment=-
+upgraded 1
+upgrade curl installed=8.16.0 available=8.17.0 automatic=- size=- origin=- comment=-
+EOF
+	atf_check -o file:want "$(atf_get_srcdir)/ypackages"
+}
+
+atf_test_case yang_services
+yang_services_head()
+{
+	atf_set "descr" "the services operations' replies as arcana-services" \
+	    "has them (PLAN-SDN-YANG 3.1.2), through YANG-CBOR and back; a" \
+	    "configuration wanted made into service-action and" \
+	    "service-config's terms"
+}
+yang_services_body()
+{
+	cat > want <<'EOF'
+service sshd enabled=yes path=/etc/rc.d/sshd rcvar=sshd_enable running=yes pid=yes status=sshd is running as pid 812. description=Secure Shell Daemon
+  variable sshd_flags=-o UseDNS=no
+  variable sshd_program=/usr/sbin/sshd
+  command configtest
+  command keygen
+  command reload
+service ntpd enabled=no path=/etc/rc.d/ntpd rcvar=ntpd_enable running=- pid=- status=- description=-
+service bird enabled=yes path=/usr/local/etc/rc.d/bird rcvar=bird_enable running=no pid=- status=bird is not running. description=-
+EOF
+	cat > diffs <<'EOF'
+changed: set sshd_flags=-o UseDNS=yes set sshd_rsa_enable=NO
+the same: nothing
+disabled, one gone: disable unset sshd_program
+its rcvar: refused (Invalid argument)
+another: refused (Invalid argument)
+new: enable
+EOF
+	"$(atf_get_srcdir)/yservices" > out
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' cat out
+	atf_check -o file:want sh -c "sed -n '1,/^yang-cbor/p' out | sed '\$d'"
+	atf_check -o file:want sh -c "sed -n '/^-- back\$/,/^changed:/p' out | sed '1d;\$d'"
+	atf_check -o file:diffs sh -c "sed -n '/^changed:/,\$p' out"
+}
+
+atf_test_case yang_lne
+yang_lne_head()
+{
+	atf_set "descr" "the vnet jails as RFC 8530's logical network" \
+	    "elements (PLAN-SDN-YANG 2.7.1): as jls(8) lists them"
+}
+yang_lne_body()
+{
+	jls -n name vnet | sed -n 's/^name=\(.*\) vnet=new$/\1 managed/p' \
+	    > want
+	echo "yang-cbor the same back" >> want
+	atf_check -o file:want "$(atf_get_srcdir)/ycollect" lne
+}
+
 atf_test_case yang_ni_conf
 yang_ni_conf_head()
 {
@@ -5875,6 +6020,11 @@ atf_init_test_cases()
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
+	atf_add_test_case yang_jails
+	atf_add_test_case yang_jobs
+	atf_add_test_case yang_packages
+	atf_add_test_case yang_services
+	atf_add_test_case yang_lne
 	atf_add_test_case yang_ni_conf
 	atf_add_test_case yang_ni_rc
 	atf_add_test_case yang_ni_grow

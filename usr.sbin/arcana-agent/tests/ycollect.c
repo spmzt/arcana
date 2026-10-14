@@ -27,6 +27,8 @@
  *				gateway, the interface, the special next
  *				hop (- for none each), the source protocol,
  *				and multipath for one of a next-hop-list
+ *	ycollect lne		the logical network elements, a name a
+ *				line, and managed or not
  *	ycollect watch fib secs	routes', each with its last-updated (- for
  *				none), after secs of route events heard
  *				and noted as the daemon notes them
@@ -274,6 +276,37 @@ names(const char *what, size_t n, const char *const *v)
 static const char *const special[] = { "blackhole", "unreachable",
     "prohibit", "receive" };
 
+/* RFC 8530's: the vnet jails. */
+static void
+lne(cbl_yarena *a)
+{
+	const struct ietf_logical_network_element_logical_network_elements *l;
+	struct ietf_logical_network_element_logical_network_elements back;
+	struct cbl_ybuf b1 = { 0 }, b2 = { 0 };
+	char why[256];
+	int error;
+
+	if ((error = ylne_elements(a, &l)) != 0)
+		errc(1, error, "ylne_elements");
+	for (size_t i = 0; i < l->logical_network_element.n; i++)
+		printf("%s %s\n", l->logical_network_element.v[i].name,
+		    l->logical_network_element.v[i].managed ? "managed" :
+		    "unmanaged");
+	if (ietf_logical_network_element_logical_network_elements_encode(l,
+	    &b1) != 0)
+		errx(1, "encode");
+	if (ietf_logical_network_element_logical_network_elements_decode(b1.p,
+	    b1.len, &back, a, CBL_YD_STRICT, why, sizeof(why)) != 0)
+		errx(1, "decode: %s", why);
+	if (ietf_logical_network_element_logical_network_elements_encode(&back,
+	    &b2) != 0)
+		errx(1, "encode again");
+	printf("yang-cbor %s\n", b1.len == b2.len &&
+	    memcmp(b1.p, b2.p, b1.len) == 0 ? "the same back" : "not the same");
+	cbl_ybuf_free(&b1);
+	cbl_ybuf_free(&b2);
+}
+
 static bool with_times;
 
 /* Route events for secs, noted as nlroute.c's watcher notes them. */
@@ -475,6 +508,13 @@ main(int argc, char **argv)
 	cbl_yarena *a;
 	int error;
 
+	if (argc == 2 && strcmp(argv[1], "lne") == 0) {
+		if ((a = cbl_yarena_new()) == NULL)
+			err(1, "cbl_yarena_new");
+		lne(a);
+		cbl_yarena_free(a);
+		return (0);
+	}
 	if (argc == 4 && strcmp(argv[1], "watch") == 0) {
 		if ((a = cbl_yarena_new()) == NULL)
 			err(1, "cbl_yarena_new");

@@ -23,7 +23,7 @@ Arcana uses and where they come from (step 0.5.1).
   YANG-CBOR is keyed by those; if IANA ever publishes other numbers,
   they replace these.
 - Every other module Arcana speaks, its own and the IETF modules that
-  have no IETF range yet, takes SIDs from Arcana's block. No
+  have no IETF range yet, takes SIDs from Arcana's block, below. No
   interoperation with another SID-keyed protocol is claimed for those
   until they have numbers of their own.
 
@@ -53,36 +53,50 @@ Arcana claims no such interoperation yet.
 
 ## The block
 
-**Provisional: from 2^40 (1 099 511 627 776)**, a block Arcana chose
-itself, as the plan says, until it holds one by registration.
+**For now: RFC 9595's range for experimental use, 60 000 to 99 999**
+(section 6.4.2, IANA policy "Experimental Use"), the user's decision of
+2026-10-14: free, needing no request. Its SIDs are not globally unique,
+so RFC 9595 says they are for no operational deployment: a peer that
+speaks another module numbered in the same range would read our items
+as its own. Arcana claims no such interoperation; a registered block
+replaces this one before it does (below). The modules kept their places
+in the provisional block Arcana chose first, from 2^40: 2^40 + X became
+60 000 + X. Below 65 536, a top-level key or an identity's SID is 3
+bytes on the wire, where it was 9.
 
 | Range | Size | Module | `.sid` file |
 |---|---:|---|---|
-| 2^40 + 0 | 100 | `cblink`, the framework's structures | `cblink/share/yang/cblink@2026-10-13.sid` (50 used) |
-| 2^40 + 100 | 100 | `kv`, cblink's example | `cblink/examples/kv/kv@2026-10-13.sid` (22 used) |
-| 2^40 + 200 | 100 | `cblink-ctrl`, the control family | `cblink/share/yang/cblink-ctrl@2026-10-13.sid` (47 used) |
-| 2^40 + 300 | 100 | `echo`, cblink's example | `cblink/examples/echo/echo@2026-10-13.sid` (7 used) |
-| 2^40 + 400 | 100 | `stream`, cblink's example | `cblink/examples/stream/stream@2026-10-13.sid` (5 used) |
-| 2^40 + 500 | 100 | `notify`, cblink's example | `cblink/examples/notify/notify@2026-10-13.sid` (4 used) |
-| 2^40 + 1000 | 200 | `arcana-interfaces` | `share/yang/arcana-interfaces@2026-10-14.sid` (46 used) |
-| 2^40 + 1200 | 100 | `arcana-ip-deviations` | `share/yang/arcana-ip-deviations@2026-10-14.sid` (1 used) |
-| 2^40 + 1300 | 200 | `ietf-routing@2018-03-13` (no IETF range) | `share/yang/ietf-routing@2018-03-13.sid` (89 used) |
-| 2^40 + 1500 | 100 | `ietf-ipv4-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv4-unicast-routing@2018-03-13.sid` (29 used) |
-| 2^40 + 1600 | 100 | `ietf-ipv6-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv6-unicast-routing@2018-03-13.sid` (66 used) |
-| 2^40 + 1700 | 100 | `arcana-routing` | `share/yang/arcana-routing@2026-10-14.sid` (14 used) |
-| 2^40 + 1800 | 100 | `ietf-network-instance@2019-01-21` (no IETF range) | `share/yang/ietf-network-instance@2019-01-21.sid` (21 used) |
-| 2^40 + 1900 | 100 | `arcana-network-instance` | `share/yang/arcana-network-instance@2026-10-14.sid` (2 used) |
+| 60 000 | 100 | `cblink`, the framework's structures | `cblink/share/yang/cblink@2026-10-13.sid` (50 used) |
+| 60 100 | 100 | `kv`, cblink's example | `cblink/examples/kv/kv@2026-10-13.sid` (22 used) |
+| 60 200 | 100 | `cblink-ctrl`, the control family | `cblink/share/yang/cblink-ctrl@2026-10-13.sid` (47 used) |
+| 60 300 | 100 | `echo`, cblink's example | `cblink/examples/echo/echo@2026-10-13.sid` (7 used) |
+| 60 400 | 100 | `stream`, cblink's example | `cblink/examples/stream/stream@2026-10-13.sid` (5 used) |
+| 60 500 | 100 | `notify`, cblink's example | `cblink/examples/notify/notify@2026-10-13.sid` (4 used) |
+| 61 000 | 200 | `arcana-interfaces` | `share/yang/arcana-interfaces@2026-10-14.sid` (46 used) |
+| 61 200 | 100 | `arcana-ip-deviations` | `share/yang/arcana-ip-deviations@2026-10-14.sid` (1 used) |
+| 61 300 | 200 | `ietf-routing@2018-03-13` (no IETF range) | `share/yang/ietf-routing@2018-03-13.sid` (89 used) |
+| 61 500 | 100 | `ietf-ipv4-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv4-unicast-routing@2018-03-13.sid` (29 used) |
+| 61 600 | 100 | `ietf-ipv6-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv6-unicast-routing@2018-03-13.sid` (66 used) |
+| 61 700 | 100 | `arcana-routing` | `share/yang/arcana-routing@2026-10-14.sid` (14 used) |
+| 61 800 | 100 | `ietf-network-instance@2019-01-21` (no IETF range) | `share/yang/ietf-network-instance@2019-01-21.sid` (21 used) |
+| 61 900 | 100 | `arcana-network-instance` | `share/yang/arcana-network-instance@2026-10-14.sid` (2 used) |
+| 62 000 | 100 | `ietf-logical-network-element@2019-01-25` (no IETF range) | `share/yang/ietf-logical-network-element@2019-01-25.sid` (12 used) |
+| 62 100 | 100 | `arcana-jails` | `share/yang/arcana-jails@2026-10-14.sid` (51 used) |
+| 62 200 | 100 | `arcana-services` | `share/yang/arcana-services@2026-10-14.sid` (39 used) |
+| 62 300 | 100 | `arcana-packages` | `share/yang/arcana-packages@2026-10-14.sid` (59 used) |
+| 62 400 | 1 000 | `arcana-jobs`, its submodule `arcana-jobs-kinds` | `share/yang/arcana-jobs@2026-10-14.sid` (273 used; room for the kinds to come) |
 
-cblink's modules take 2^40 to 2^40 + 999; Arcana's own follow from
-2^40 + 1000. cblink's own test modules (`shapes` from 2^40 + 100 000,
-`rules` from 2^40 + 200 000) number themselves for its tests and are
-never on a wire. cblink's paths are its branch v2, which arcana takes
-at the switch.
+cblink's modules take 60 000 to 60 999; Arcana's own follow from
+61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,
+`rules` from 2^40 + 200 000, the annotation examples at
+draft-ietf-core-yang-metadata's 61 600 to 61 631) number themselves for
+its tests and are never on a wire.
 
-## To decide: a registered block
+## Later: a registered block
 
-The plan's step 0.5.1 asks IANA for a SID mega-range (RFC 9595 §7,
-Expert Review). Two things learnt since:
+What replaces the experimental range once Arcana interoperates with
+another SID-keyed peer. The plan's step 0.5.1 asks IANA for a SID
+mega-range (RFC 9595 §7, Expert Review). Two things learnt since:
 
 - **RFC 9997** (July 2026) gives every holder of an IANA Private
   Enterprise Number (PEN) SID ranges with no request: SIDs 3pp ppp

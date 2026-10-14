@@ -338,7 +338,10 @@ What changes:
   Review); until then a self-chosen block above 2^40, with the
   recorded risk that IANA later assigns those modules differently
   and Arcana keeps its numbers (no interoperation with other
-  SID-keyed protocols is claimed).
+  SID-keyed protocols is claimed). Decided 2026-10-14: for now RFC
+  9595's range for experimental use (60 000 to 99 999), each module
+  where it was, 2^40 + X now 60 000 + X; a registered block (a
+  mega-range, or a PEN's ranges by RFC 9997) later.
 - **Validation.** A static table engine in libcblink (today's
   `cbl_policy` grown up: types, ranges, lengths, patterns, enums,
   bits, identity derivation, union, mandatory, min/max-elements,
@@ -1018,7 +1021,8 @@ A step never leaves `main` unbuildable; where a step would, it says
   and the node between two eiface(4) interfaces: v5 and v9, no IPFIX.
   15.x not run: no 15.x host in the lab.
 - 0.5.1 D: the IANA request for a SID mega-range sent; the provisional
-  block (2^40) recorded in `share/yang/SIDS.md`.
+  block (2^40) recorded in `share/yang/SIDS.md`. Taken 2026-10-14: RFC
+  9595's experimental range for now, no request sent.
 - 0.6.1 D: D-5, D-6, D-7, D-11, D-12 taken or deferred, dated here.
 
 ### Y-1

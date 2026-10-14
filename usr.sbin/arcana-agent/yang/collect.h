@@ -67,6 +67,89 @@ int	rcr_write(struct vc_file *f, int fib,
 	    char *err, size_t errlen);
 
 /*
+ * arcana-jails (ira/yjails.c): yjails_from_list() the list operation's
+ * reply as the module has it, its strings rsp's; yjails_action() one of
+ * its actions (ARC_ACTION_*), as the action operation does it, the jail
+ * after it: -1 and *errp, not done.
+ */
+struct arc_list_rsp;
+struct work;
+int	yjails_from_list(const struct arc_list_rsp *rsp, cbl_yarena *a,
+	    struct arcana_jails *out);
+int	yjails_action(struct work *w, const char *name, uint8_t action,
+	    uint8_t *state, bool *has_jid, uint32_t *jid, const char **errp);
+
+/*
+ * arcana-services (ira/yservices.c, ira/services.c): yservices_from()
+ * the services operation's reply as the module has it, each service with
+ * its service-config reply where one is given; yservices_diff() what
+ * makes have's configuration want's, as service-action (*enable) and
+ * service-config (*vars) take it; yservices_action() one of its actions
+ * (ARC_SERVICE_ACTION_START to _RELOAD); yservices_apply() what
+ * yservices_diff() said, done.
+ */
+struct arc_services_rsp;
+struct arc_service_config_rsp;
+struct arc_variable;
+int	yservices_from(const struct arc_services_rsp *list,
+	    const struct arc_service_config_rsp *const *cfg, size_t ncfg,
+	    cbl_yarena *a, struct arcana_services *out);
+int	yservices_diff(const struct arcana_services_services_service *have,
+	    const struct arcana_services_services_service *want,
+	    cbl_yarena *a, int *enable, struct arc_variable **vars,
+	    size_t *nvars);
+int	yservices_action(struct work *w, const char *name, uint8_t action,
+	    bool *running, bool *has_pid, uint32_t *pid, const char **status,
+	    const char **errp);
+int	yservices_apply(struct work *w, const char *name, int enable,
+	    const struct arc_variable *vars, size_t nvars, const char **errp);
+
+/*
+ * arcana-packages (ira/ypackages.c, ira/packages.c), the host's or a
+ * jail's alike (a jail's structs have the host's layout):
+ * ypackages_from() pkg-installed's reply, each with its newer version
+ * from the outdated reply (NULL: not asked); ypackages_upgraded()
+ * pkg-upgrade's reply as the upgrade action's output; the refresh and
+ * upgrade actions, as the operations do them.
+ */
+struct arc_packages_rsp;
+struct arc_pkg_upgrade_rsp;
+int	ypackages_from(const struct arc_packages_rsp *installed,
+	    const struct arc_packages_rsp *outdated, cbl_yarena *a,
+	    struct arcana_packages_packages *out);
+int	ypackages_upgraded(const struct arc_pkg_upgrade_rsp *rsp,
+	    cbl_yarena *a, struct arcana_packages_packages_upgrade_output *out);
+int	ypackages_refresh(struct work *w, const char *jail, uint8_t ip,
+	    const char **errp);
+int	ypackages_upgrade(struct work *w, const char *jail,
+	    const struct arcana_packages_packages_upgrade_input *in,
+	    cbl_yarena *a, struct arcana_packages_packages_upgrade_output *out,
+	    const char **errp);
+
+/*
+ * arcana-jobs (ira/yjobs.c, yang/yjobs_spec.c): yjobs_from() jobs as the
+ * module has them, each with its trace, a flat list of steps; yjobs_spec()
+ * one change of a submit made a job-spec (made from jobs.yaml);
+ * yjobs_specs() all of them, *bad the one refused.
+ */
+struct arc_job;
+struct arc_job_spec;
+int	yjobs_from(const struct arc_job *v, size_t n, const char *activity,
+	    int64_t since, bool stopping, cbl_yarena *a,
+	    struct arcana_jobs *out);
+int	yjobs_spec(const struct arcana_jobs_submit_input_change *in,
+	    cbl_yarena *a, struct arc_job_spec *sp);
+int	yjobs_specs(const struct arcana_jobs_submit_input *in, cbl_yarena *a,
+	    const struct arc_job_spec **out, size_t *n, size_t *bad);
+
+/*
+ * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
+ * them (invidia/ylne.c).
+ */
+int	ylne_elements(cbl_yarena *a,
+	    const struct ietf_logical_network_element_logical_network_elements **out);
+
+/*
  * FreeBSD's FIBs as RFC 8529's network instances, invidia/yni.c: FIB 1
  * to net.fibs - 1, named and described in fibs.conf f (NULL: none).
  * yni_nfibs(): net.fibs, this vnet's.  yni_read(): the instances, what

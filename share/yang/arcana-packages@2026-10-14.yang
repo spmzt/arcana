@@ -1,0 +1,174 @@
+module arcana-packages {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-packages";
+  prefix arcpkg;
+
+  import arcana-jails {
+    prefix arcj;
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's packages (pkg(8)): those installed on the host, or in a
+     running jail, as pkg's own database has them (pkg query), each
+     with the version its repository has where that is newer (pkg
+     version -vRl '<'); the catalogue refreshed (pkg update) and
+     packages upgraded (pkg upgrade) as actions.
+
+     A jail's packages are the jail's: arcana-jails's jail has them.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.3.";
+  }
+
+  typedef ip-version {
+    type enumeration {
+      enum any {
+        value 0;
+        description
+          "pkg's own choice.";
+      }
+      enum ipv4 {
+        value 4;
+        description
+          "pkg -4.";
+      }
+      enum ipv6 {
+        value 6;
+        description
+          "pkg -6.";
+      }
+    }
+    description
+      "How pkg reaches its repository.";
+  }
+
+  grouping package {
+    description
+      "A package.";
+    leaf name {
+      type string;
+      description
+        "Its name (pkg's name, without its version).";
+    }
+    leaf installed {
+      type string;
+      description
+        "The version installed.";
+    }
+    leaf available {
+      type string;
+      description
+        "A newer version the repository has, when it was asked.";
+    }
+    leaf automatic {
+      type boolean;
+      description
+        "Whether it came as another's dependency (pkg's automatic
+         flag).";
+    }
+    leaf comment {
+      type string;
+      description
+        "Its one-line description.";
+    }
+    leaf size {
+      type uint64;
+      units "bytes";
+      description
+        "What it takes installed.";
+    }
+    leaf origin {
+      type string;
+      description
+        "Its port, category/name.";
+    }
+  }
+
+  grouping packages {
+    description
+      "The packages of a host or of a jail, and what is done to them.";
+    container packages {
+      config false;
+      description
+        "Its packages.";
+      list package {
+        key "name";
+        description
+          "An installed package.";
+        uses package;
+      }
+      action refresh {
+        description
+          "pkg update: the repository's catalogue read again, and what
+           it has newer.";
+        input {
+          leaf ip-version {
+            type ip-version;
+            default "any";
+            description
+              "How the repository is reached.";
+          }
+        }
+      }
+      action upgrade {
+        description
+          "pkg upgrade -y, of the packages named or of all.";
+        input {
+          leaf-list name {
+            type string;
+            description
+              "The packages; none, all of them.";
+          }
+          leaf dry-run {
+            type boolean;
+            default "false";
+            description
+              "Only what pkg would do (pkg upgrade -n).";
+          }
+          leaf ignore-osversion {
+            type boolean;
+            default "false";
+            description
+              "Packages built for a newer FreeBSD too
+               (IGNORE_OSVERSION).";
+          }
+          leaf ip-version {
+            type ip-version;
+            default "any";
+            description
+              "How the repository is reached.";
+          }
+        }
+        output {
+          leaf upgraded {
+            type uint32;
+            description
+              "How many were upgraded, or would be.";
+          }
+          list package {
+            key "name";
+            description
+              "Those upgraded, or that would be: the version before,
+               and the one after as available.";
+            uses package;
+          }
+        }
+      }
+    }
+  }
+
+  uses packages;
+
+  augment "/arcj:jails/arcj:jail" {
+    description
+      "A running jail's packages.";
+    uses packages;
+  }
+}

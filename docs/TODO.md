@@ -265,7 +265,7 @@
   rtm_protocol (arcana-routing's identities where RFC 8349 has none);
   agent_test's yang_routes holds every FIB to netstat -rn. ietf-routing
   and the unicast modules have no IETF SID range: Arcana's block,
-  2^40 + 1300 to 1799 (SIDS.md). 2.4.2: a multipath route's next hops
+  61 300 to 61 799 (SIDS.md; 2^40 + 1300 to 1799 then). 2.4.2: a multipath route's next hops
   as its next-hop-list, held to a vnet jail's prefix with two gateways,
   IPv4 and IPv6 (agent_root_test's yang_ecmp). 2.4.3: rc.conf's
   static routes as rc.d/routing installs them, read into ietf-routing's
@@ -297,7 +297,7 @@
   interval (yang_rtadv). The running datastore's use of it waits on
   1.11. 2.6.1: FIBs 1 to net.fibs - 1 as RFC 8529's network instances
   (invidia/yni.c), each a VRF of arcana-network-instance's fib case
-  (2^40 + 1900; ietf-network-instance 2^40 + 1800), named fibN or as
+  (61 900; ietf-network-instance 61 800), named fibN or as
   fibs.conf names it (fibN_name, fibN_description: sh(1), libvarconf),
   what cannot be read so said; written back, refused where a FIB is not
   there, a name is another's, one FIB twice. cblink-gen numbers a
@@ -320,8 +320,75 @@
   the fib leaf 1..65534). Held to loader.conf cases unprivileged (no
   live raise: reboot required; yang_ni_grow) and a vnet jail's net.fibs
   raised live (yang_ni_grow, root). 2.6.2 (the vrf-root mount) and
-  parent-reference wait on 1.11. Next: 2.7.1, the LNE list from
-  jail_get. As each operation is
+  parent-reference wait on 1.11. 2.7.1: the vnet jails as RFC 8530's
+  logical network elements (invidia/ylne.c: jail_getv(3) by lastjid,
+  vnet = new, dying ones out as jls(8) leaves them; managed),
+  ietf-logical-network-element from Arcana's block (62 000). Held
+  to jls -n name vnet (yang_lne) and to a vnet jail beside one sharing
+  the host's stack (yang_lne, root). 2.7.2 to 2.7.4 (the attached
+  helper, the root mount, bind-lne-name's moves) need the mount and
+  cblink 2 inside the jail, after 1.11. 2.7.5: no jail.conf hooks are
+  needed, the kernel tells: ira/jailwatch.c's EVFILT_JAIL jail-state
+  events (agent 0.107.0) now watch each jail for children of its own
+  too, so a jail made in a jail, an LNE in an LNE, is told
+  (jail_events_nested); before, only the host's children were. On
+  cblink v2 (2026-10-14): main's .sid fix for deviations carried over
+  (v2 had the -F one already); 2.3.10's tree side,
+  cbl_dtree_with_defaults(): RFC 6243's report-all, trim and explicit,
+  held to its Appendix A's examples (yfilter_test rfc6243);
+  report-all-tagged waits on the codec's metadata, as with-origin
+  (2.3.9) does; it ran clean under ASan. For the user: how YANG-CBOR
+  carries RFC 7952 annotations (origin, with-defaults' default). RFC
+  9254 says nothing; the one proposal, draft-ietf-core-yang-metadata-00
+  (CORE WG, March 2026), expired 2026-09-15 with no successor: a
+  tagged array [metadata map, value] in place of a node's value, under
+  a CBOR tag it only proposes (109, unassigned), and a .sid namespace
+  "annotation" (4) beside RFC 9595's. Followed (the user, 2026-10-14):
+  cblink v2 0bde490, 109 held as provisional, the draft's Figures 2 and
+  4 to 7 written byte for byte (ymeta_test); the draft's discussion is
+  with its own agent session. The SID block, the user's decision of
+  2026-10-14: RFC 9595's experimental range for now (SIDS.md), cblink
+  60 000 up, Arcana 61 000 up, each module where it was in the 2^40
+  block; cblink main 340d4aa and v2 b140fed. And Y-3's conversions
+  before 1.11 (the user, 2026-10-14). 3.1.1: arcana.yaml's list and
+  action converted to share/yang/arcana-jails (62 100): the jails,
+  configured and running, every field the list reply has, a vnet jail's
+  lne, start/stop/restart/kill as actions; ira/yjails.c makes the
+  module's data from do_list()'s reply and the actions are
+  do_action()'s (lifecycle.c), one source for both (yang_jails holds
+  every field, the YANG-CBOR round trip). The host's facts go with
+  arcana-host (3.1.9), the trace with arcana-jobs (3.1.4); served at
+  1.11. The task's { } Schema panel shows a converted operation's
+  module beside its CBOR, a tab each (share/arcana/yang-ops, yang.json
+  made by the build with cblink-gen -m tree; pwa_routes; the trees
+  committed in www/arcana-ui/yang, as the agent's tables are, the build
+  needing no libyang). 3.1.2: services, service-action and
+  service-config converted to share/yang/arcana-services (62 200): the
+  rc.d scripts, enabled and their rc.conf variables as configuration,
+  running, pid, status, description, extra commands as state; start,
+  stop, restart, reload as actions (enable and disable are the enabled
+  leaf); ira/yservices.c from do_services()'s and do_service_config()'s
+  replies, yservices_diff() a configuration wanted into what
+  service-action and service-config take (its rcvar refused as a
+  variable), yservices_apply() doing it (yang_services). 3.1.3:
+  packages and pkg-upgrade converted to share/yang/arcana-packages
+  (62 300): the packages installed, each with the newer version the
+  repository has, the host's and a running jail's (an augment of
+  arcana-jails's jail, the same grouping); refresh and upgrade as
+  actions (ira/ypackages.c, packages.c; yang_packages). The upgrade
+  runs as the operation does, not yet as a job. 3.1.4: job-submit,
+  jobs, job, job-cancel, job-confirm converted to share/yang/arcana-jobs
+  (62 400, 1 000 for the kinds to come): the queue, each job's trace as
+  a flat list of steps naming their parents (as the page already
+  builds its tree), submit an rpc, cancel and confirm actions; the
+  kinds of change are the submodule arcana-jobs-kinds, made from
+  share/arcana/jobs.yaml by jobs.awk (out=yang), and yjobs_spec(), a
+  change made the job-spec the queue takes, too (out=yspec, by
+  arcana.h's members), both committed and held by check-yang;
+  ira/yjobs.c (yang_jobs: five kinds of change, the trace). 1.11's
+  submit runs check_spec() and cuts_off() as job-submit does. Next:
+  3.1.5, arcana-storage, and the rest of 3.1 in turn; 2.8,
+  yang-library, after 1.11. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

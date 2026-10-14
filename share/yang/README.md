@@ -87,6 +87,11 @@ Arcana's provisional block (SIDS.md), their `.sid` files beside them.
 |---|---|---|
 | `arcana-interfaces@2026-10-14.yang` | module | augments `ietf-interfaces`: driver name, MTU, Ethernet and hardware addresses, groups, FIB and tunnel FIB, capabilities, media; vlan(4), lagg(4), bridge(4) and epair(4) |
 | `arcana-ip-deviations@2026-10-14.yang` | module | deviates `ietf-ip`: forwarding, DAD's probes and temporary addresses are the host's sysctls, IPv4 cannot be turned off on one interface, one MTU for both families: config false |
+| `arcana-jails@2026-10-14.yang` | module | FreeBSD's jails (jail(8), jail(2)): those jail.conf(5) defines, as jail(8) -e resolves them, and those running, as jail_get(2) gives them; start, stop, restart, kill as actions; a vnet jail's logical network element (RFC 8530); the list and action operations of arcana.yaml converted (Y-3) |
+| `arcana-jobs@2026-10-14.yang` | module | the agent's jobs: the queue, each job's trace as a flat list of steps naming their parents; submit (an rpc), cancel and confirm (actions); the job-submit, jobs, job, job-cancel and job-confirm operations of arcana.yaml converted (Y-3) |
+| `arcana-jobs-kinds@2026-10-14.yang` | submodule | of arcana-jobs: the kinds of job, a change each, made from share/arcana/jobs.yaml by jobs.awk (out=yang), not to be edited; `make regen-yang` in usr.sbin/arcana-agent remakes it |
+| `arcana-packages@2026-10-14.yang` | module | FreeBSD's packages (pkg(8)), the host's and, by an augment of arcana-jails, a running jail's: those installed (pkg query) with the newer version the repository has (pkg version -vRl '<'); refresh (pkg update) and upgrade (pkg upgrade) as actions; the packages and pkg-upgrade operations of arcana.yaml converted (Y-3) |
+| `arcana-services@2026-10-14.yang` | module | FreeBSD's services: the rc.d scripts of rc(8), each enabled by its rcvar and set by its other rc.conf variables (configuration, as sysrc(8) has it), running or not (service(8) status); start, stop, restart, reload as actions; the services, service-action and service-config operations of arcana.yaml converted (Y-3) |
 | `arcana-network-instance@2026-10-14.yang` | module | FreeBSD's FIBs (setfib(2), `net.fibs`) as `ietf-network-instance`'s: a `fib` case with the FIB's number; a FIB cannot be disabled, and there is no VSI or VV root (an if_bridge(4) is an interface) |
 | `arcana-routing@2026-10-14.yang` | module | identities for `ietf-routing`'s `source-protocol`: a route's origin as FreeBSD's netlink(4) says it (`rtm_protocol`), where RFC 8349 has none |
 
@@ -95,7 +100,8 @@ The `.sid` files of the IETF and IANA modules the agent fills
 `ietf-inet-types`) are Arcana's too: IANA registers their ranges and
 publishes no file, so they are numbered here (SIDS.md). So are those
 of the ones with no IETF range (`ietf-routing`, its address families,
-`ietf-network-instance`), from Arcana's block. A module's file numbers
+`ietf-network-instance`, `ietf-logical-network-element`), from
+Arcana's block. A module's file numbers
 every item of it, whatever another module deviates:
 `arcana-network-instance` takes `vsi-root` away, its number stays.
 

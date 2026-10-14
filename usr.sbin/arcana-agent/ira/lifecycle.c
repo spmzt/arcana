@@ -36,6 +36,7 @@
 
 #include "jailconf.h"
 #include "agent.h"
+#include "collect.h"
 
 static int	cmp_jail(const void *, const void *);
 static void	drop_aliases(struct work *, const struct jinfo *,
@@ -247,5 +248,29 @@ do_action(struct work *w, const char *name, uint8_t action,
 		rsp->error = wtext(w, exec_error(w, &res, "jail"));
 out:
 	rsp->result = jail_current(w, name, &conf);
+	return (0);
+}
+
+/*
+ * An action of arcana-jails's (ARC_ACTION_*: start, stop, restart, kill) on
+ * jail name, done as the action operation does it; the jail after it
+ * into *state and *jid (*has_jid: it runs).  -1 and *errp: not done.
+ */
+int
+yjails_action(struct work *w, const char *name, uint8_t action,
+    uint8_t *state, bool *has_jid, uint32_t *jid, const char **errp)
+{
+	struct arc_action_rsp ar;
+
+	memset(&ar, 0, sizeof(ar));
+	do_action(w, name, action, &ar);
+	if (!ar.ok) {
+		*errp = ar.error != NULL ? ar.error : "the action failed";
+		return (-1);
+	}
+	*state = ar.result != NULL && ar.result->has_state ?
+	    ar.result->state : ARC_JAIL_STATE_ABSENT;
+	*has_jid = ar.result != NULL && ar.result->has_jid;
+	*jid = *has_jid ? ar.result->jid : 0;
 	return (0);
 }

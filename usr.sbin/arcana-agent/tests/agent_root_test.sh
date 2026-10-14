@@ -117,6 +117,39 @@ lifecycle_cleanup()
 	cleanup
 }
 
+atf_test_case jail_events_nested cleanup
+jail_events_nested_head()
+{
+	atf_set "descr" "a jail made inside another, an LNE in an LNE, is an" \
+	    "event when made and when removed (EVFILT_JAIL; PLAN-SDN-YANG" \
+	    "2.7.5)"
+	atf_set "require.user" "root"
+	atf_set "is.exclusive" "true"
+}
+jail_events_nested_body()
+{
+	start_daemon
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist \
+	    children.max=1
+	atf_check -o ignore jexec "$YJAIL" jail -c name=inner path=/ persist
+	atf_check -o ignore jls -j "$YJAIL.inner"
+	atf_check -o ignore jexec "$YJAIL" jail -r inner
+	atf_check -o ignore jail -r "$YJAIL"
+	sleep 0.5
+	atf_check -o save:ev.json "$JGC" -c "$SOCK" events
+	for j in "$YJAIL" "$YJAIL.inner"; do
+		for st in running stopped; do
+			atf_check -o inline:"$j $st 1\n" sh -c "echo $j $st \$(grep -o '\"jail\":\"$j\",\"state\":\"$st\"' ev.json | wc -l | tr -d ' ')"
+		done
+	done
+}
+jail_events_nested_cleanup()
+{
+	jail -r "$YJAIL" >/dev/null 2>&1
+	cleanup
+}
+
 atf_test_case live_address cleanup
 live_address_head()
 {
@@ -1227,6 +1260,39 @@ yang_route_times_cleanup()
 	true
 }
 
+atf_test_case yang_lne cleanup
+yang_lne_head()
+{
+	atf_set "descr" "logical network elements (PLAN-SDN-YANG 2.7.1): a" \
+	    "vnet jail is one, a jail sharing the host's stack is not; as" \
+	    "jls says"
+	atf_set "require.user" "root"
+}
+yang_lne_body()
+{
+	local c="$(atf_get_srcdir)/ycollect"
+
+	jls -j "$YJAIL" >/dev/null 2>&1 && atf_skip "a jail named $YJAIL exists"
+	jls -j "${YJAIL}2" >/dev/null 2>&1 &&
+	    atf_skip "a jail named ${YJAIL}2 exists"
+	atf_check -o ignore jail -c name="$YJAIL" path=/ vnet persist
+	atf_check -o ignore jail -c name="${YJAIL}2" path=/ persist
+	atf_check -o match:"^$YJAIL managed\$" -o not-match:"^${YJAIL}2 " \
+	    "$c" lne
+	# jls's vnet parameter: new for a stack of its own.
+	jls -n name vnet | sed -n 's/^name=\(.*\) vnet=new$/\1 managed/p' | \
+	    sort > want
+	"$c" lne | grep -v '^yang-cbor' | sort > got
+	atf_check -o inline:"$YJAIL managed\n" grep "^$YJAIL " want
+	atf_check cmp want got
+}
+yang_lne_cleanup()
+{
+	jail -r "${YJAIL}2" >/dev/null 2>&1
+	jail -r "$YJAIL" >/dev/null 2>&1
+	true
+}
+
 atf_test_case yang_ni cleanup
 yang_ni_head()
 {
@@ -1437,10 +1503,12 @@ atf_init_test_cases()
 	atf_add_test_case yang_static_apply
 	atf_add_test_case yang_route_times
 	atf_add_test_case yang_rtadv
+	atf_add_test_case yang_lne
 	atf_add_test_case yang_ni
 	atf_add_test_case yang_ni_bind
 	atf_add_test_case yang_ni_grow
 	atf_add_test_case lifecycle
+	atf_add_test_case jail_events_nested
 	atf_add_test_case live_address
 	atf_add_test_case aliases
 	atf_add_test_case routes

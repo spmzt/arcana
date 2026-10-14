@@ -2841,7 +2841,8 @@ components:
                   cleared); sdwan-security, seq, rule, action, src, dst,
                   iface, comment; job, a job that ended: id, title, ok, and
                   error when not ok (agent 0.91.0 and later); jail-state,
-                  a jail made or removed, told by the kernel (kqueue's
+                  a jail made or removed, in a jail too (named
+                  parent.child), told by the kernel (kqueue's
                   EVFILT_JAIL): jail (its name), state (running or
                   stopped) and jid (agent 0.107.0 and later).
 

@@ -7,12 +7,39 @@ ATF_TESTS_SH=	agent_test \
 
 # ycollect: what the YANG collectors find, for agent_test.sh.
 PROGS=		ycollect
-SRCS.ycollect=	ycollect.c yif.c yip.c yrt.c rtimes.c ymodel_schema.c
+SRCS.ycollect=	ycollect.c yif.c yip.c ylne.c yrt.c rtimes.c ymodel_schema.c
 # yni: FIBs as network instances, names in fibs.conf.
 PROGS+=		yni
 SRCS.yni=	yni_test.c yni.c yif.c yip.c ymodel_schema.c
 LDADD.yni+=	${CBLINK_LIBS} -lnv \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
+# yjails: the list operation's reply as arcana-jails has it.
+PROGS+=		yjails
+SRCS.yjails=	yjails_test.c yjails.c ymodel_schema.c
+CFLAGS.yjails_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yjails.c+=	-I${.OBJDIR}/..
+LDADD.yjails+=	${CBLINK_LIBS}
+# yjobs: the jobs as arcana-jobs has them, a submit's changes as specs.
+PROGS+=		yjobs
+SRCS.yjobs=	yjobs_test.c yjobs.c yjobs_spec.c ymodel_schema.c
+CFLAGS.yjobs_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yjobs.c+=	-I${.OBJDIR}/..
+CFLAGS.yjobs_spec.c+=	-I${.OBJDIR}/..
+LDADD.yjobs+=	${CBLINK_LIBS}
+# ypackages: the packages operations' replies as arcana-packages has
+# them.
+PROGS+=		ypackages
+SRCS.ypackages=	ypackages_test.c ypackages.c ymodel_schema.c
+CFLAGS.ypackages_test.c+=	-I${.OBJDIR}/..
+CFLAGS.ypackages.c+=	-I${.OBJDIR}/..
+LDADD.ypackages+=	${CBLINK_LIBS}
+# yservices: the services operations' replies as arcana-services has
+# them.
+PROGS+=		yservices
+SRCS.yservices=	yservices_test.c yservices.c ymodel_schema.c
+CFLAGS.yservices_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yservices.c+=	-I${.OBJDIR}/..
+LDADD.yservices+=	${CBLINK_LIBS}
 # yrtadv: rtadvd.conf as the router advertisement submodule has it.
 PROGS+=		yrtadv
 SRCS.yrtadv=	yrtadv.c rtadv.c ymodel_schema.c
@@ -24,9 +51,9 @@ SRCS.yrcroutes=	yrcroutes.c rcroutes.c ymodel_schema.c
 CFLAGS+=	-I${.CURDIR}/../../../lib/libvarconf
 LDADD.yrcroutes+=	${CBLINK_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
-.PATH:		${.CURDIR}/../invidia ${.CURDIR}/../yang
+.PATH:		${.CURDIR}/../invidia ${.CURDIR}/../ira ${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang -I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
-LDADD.ycollect+=	${CBLINK_LIBS} -lnv
+LDADD.ycollect+=	${CBLINK_LIBS} -ljail -lnv
 MAN=
 
 # No mtree(8) hierarchy outside the tree: create the directory first.

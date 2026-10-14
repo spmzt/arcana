@@ -6,10 +6,13 @@
 
 /*
  * Ira: every jail's coming and going, told by the kernel (kqueue(2)'s
- * EVFILT_JAIL): a jail made is a child of the host's, NOTE_JAIL_CHILD
- * with its number; each is then watched for NOTE_JAIL_REMOVE.  Each is
- * an event, jail-state, with the jail's name and "running" or
- * "stopped", as it happens: nothing has to look again to see it.
+ * EVFILT_JAIL): a jail made is a child of the host's or of another
+ * jail, NOTE_JAIL_CHILD with its number; each is then watched for
+ * NOTE_JAIL_REMOVE, and for children of its own: a jail in a jail, a
+ * logical network element in another (PLAN-SDN-YANG 2.7.5), is told as
+ * one of the host's is.  Each is an event, jail-state, with the jail's
+ * name and "running" or "stopped", as it happens: nothing has to look
+ * again to see it.
  */
 
 #include <sys/param.h>
@@ -73,7 +76,8 @@ watch(int kq, int jid, bool tell)
 	}
 	w->jid = jid;
 	w->name = name;
-	EV_SET(&ev, jid, EVFILT_JAIL, EV_ADD, NOTE_JAIL_REMOVE, 0, w);
+	EV_SET(&ev, jid, EVFILT_JAIL, EV_ADD, NOTE_JAIL_REMOVE |
+	    NOTE_JAIL_CHILD, 0, w);
 	if (kevent(kq, &ev, 1, NULL, 0, NULL) == -1) {
 		/* Gone already. */
 		free(w->name);
@@ -123,18 +127,16 @@ watcher(void *arg __unused)
 		}
 		if (ev.filter != EVFILT_JAIL)
 			continue;
-		if (ev.udata == NULL) {
-			/* Made: which one, unless several were. */
-			if ((ev.fflags & NOTE_JAIL_CHILD) == 0)
-				continue;
+		/* Made, the host's child or a jail's: which one, unless
+		 * several were. */
+		if ((ev.fflags & NOTE_JAIL_CHILD) != 0) {
 			if (ev.data != 0 && (ev.fflags & NOTE_JAIL_MULTI) == 0)
 				watch(kq, (int)ev.data, true);
 			else
 				watch_all(kq, true);
-			continue;
 		}
-		w = ev.udata;
-		if ((ev.fflags & NOTE_JAIL_REMOVE) == 0)
+		if ((w = ev.udata) == NULL ||
+		    (ev.fflags & NOTE_JAIL_REMOVE) == 0)
 			continue;
 		told(w->name, w->jid, "stopped");
 		LIST_REMOVE(w, list);

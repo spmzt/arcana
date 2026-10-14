@@ -2086,6 +2086,9 @@ html.fx .node.st-incomplete { animation: breathe 1.2s ease-in-out infinite; }
 	background: rgba(var(--surface-rgb), .6);
 }
 .schema h4 { margin: 0 0 .4rem; font-size: .8rem; }
+/* An operation converted to YANG: its CBOR and its module, a tab each. */
+.step-pane .schema-tabs { margin: 0 0 .4rem; }
+.step-pane .schema-tabs .tab { font-size: .75rem; padding: .25rem .6rem; }
 .schema h4 .dim, .schema p { font-size: .7rem; font-weight: 400; }
 .schema p { margin: .2rem 0 .5rem; }
 .schema pre.cddl {

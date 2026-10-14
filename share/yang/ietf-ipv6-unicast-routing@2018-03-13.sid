@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "ietf-ipv6-unicast-routing",
     "module-revision": "2018-03-13",
-    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 1600, 100.",
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 61 600, 100.",
     "dependency-revision": [
       {
         "module-name": "ietf-routing",
@@ -15,7 +15,7 @@
     ],
     "assignment-range": [
       {
-        "entry-point": "1099511629376",
+        "entry-point": "61600",
         "size": "100"
       }
     ],
@@ -23,332 +23,332 @@
       {
         "namespace": "module",
         "identifier": "ietf-ipv6-unicast-routing",
-        "sid": "1099511629376"
+        "sid": "61600"
       },
       {
         "namespace": "identity",
         "identifier": "ipv6-unicast",
-        "sid": "1099511629377"
+        "sid": "61601"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements",
-        "sid": "1099511629378"
+        "sid": "61602"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/cur-hop-limit",
-        "sid": "1099511629379"
+        "sid": "61603"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/default-lifetime",
-        "sid": "1099511629380"
+        "sid": "61604"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/link-mtu",
-        "sid": "1099511629381"
+        "sid": "61605"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/managed-flag",
-        "sid": "1099511629382"
+        "sid": "61606"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/max-rtr-adv-interval",
-        "sid": "1099511629383"
+        "sid": "61607"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/min-rtr-adv-interval",
-        "sid": "1099511629384"
+        "sid": "61608"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/other-config-flag",
-        "sid": "1099511629385"
+        "sid": "61609"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list",
-        "sid": "1099511629386"
+        "sid": "61610"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix",
-        "sid": "1099511629387"
+        "sid": "61611"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/autonomous-flag",
-        "sid": "1099511629388"
+        "sid": "61612"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/on-link-flag",
-        "sid": "1099511629389"
+        "sid": "61613"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/preferred-lifetime",
-        "sid": "1099511629390"
+        "sid": "61614"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/prefix-spec",
-        "sid": "1099511629391"
+        "sid": "61615"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/valid-lifetime",
-        "sid": "1099511629392"
+        "sid": "61616"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/reachable-time",
-        "sid": "1099511629393"
+        "sid": "61617"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/retrans-timer",
-        "sid": "1099511629394"
+        "sid": "61618"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces-state/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/send-advertisements",
-        "sid": "1099511629395"
+        "sid": "61619"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements",
-        "sid": "1099511629396"
+        "sid": "61620"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/cur-hop-limit",
-        "sid": "1099511629397"
+        "sid": "61621"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/default-lifetime",
-        "sid": "1099511629398"
+        "sid": "61622"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/link-mtu",
-        "sid": "1099511629399"
+        "sid": "61623"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/managed-flag",
-        "sid": "1099511629400"
+        "sid": "61624"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/max-rtr-adv-interval",
-        "sid": "1099511629401"
+        "sid": "61625"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/min-rtr-adv-interval",
-        "sid": "1099511629402"
+        "sid": "61626"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/other-config-flag",
-        "sid": "1099511629403"
+        "sid": "61627"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list",
-        "sid": "1099511629404"
+        "sid": "61628"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix",
-        "sid": "1099511629405"
+        "sid": "61629"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/autonomous-flag",
-        "sid": "1099511629406"
+        "sid": "61630"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/no-advertise",
-        "sid": "1099511629407"
+        "sid": "61631"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/on-link-flag",
-        "sid": "1099511629408"
+        "sid": "61632"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/preferred-lifetime",
-        "sid": "1099511629409"
+        "sid": "61633"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/prefix-spec",
-        "sid": "1099511629410"
+        "sid": "61634"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/prefix-list/prefix/valid-lifetime",
-        "sid": "1099511629411"
+        "sid": "61635"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/reachable-time",
-        "sid": "1099511629412"
+        "sid": "61636"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/retrans-timer",
-        "sid": "1099511629413"
+        "sid": "61637"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-ipv6-unicast-routing:ipv6-router-advertisements/send-advertisements",
-        "sid": "1099511629414"
+        "sid": "61638"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/input/ietf-ipv6-unicast-routing:destination-address",
-        "sid": "1099511629415"
+        "sid": "61639"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/ietf-ipv6-unicast-routing:destination-prefix",
-        "sid": "1099511629416"
+        "sid": "61640"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop/ietf-ipv6-unicast-routing:next-hop-address",
-        "sid": "1099511629417"
+        "sid": "61641"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing-state/ribs/rib/active-route/output/route/next-hop/next-hop-list/next-hop/ietf-ipv6-unicast-routing:next-hop-address",
-        "sid": "1099511629418"
+        "sid": "61642"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/ietf-ipv6-unicast-routing:destination-prefix",
-        "sid": "1099511629419"
+        "sid": "61643"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop/ietf-ipv6-unicast-routing:next-hop-address",
-        "sid": "1099511629420"
+        "sid": "61644"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing-state/ribs/rib/routes/route/next-hop/next-hop-list/next-hop/ietf-ipv6-unicast-routing:address",
-        "sid": "1099511629421"
+        "sid": "61645"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6",
-        "sid": "1099511629422"
+        "sid": "61646"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route",
-        "sid": "1099511629423"
+        "sid": "61647"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/description",
-        "sid": "1099511629424"
+        "sid": "61648"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/destination-prefix",
-        "sid": "1099511629425"
+        "sid": "61649"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/next-hop",
-        "sid": "1099511629426"
+        "sid": "61650"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/next-hop/next-hop-address",
-        "sid": "1099511629427"
+        "sid": "61651"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/next-hop/next-hop-list",
-        "sid": "1099511629428"
+        "sid": "61652"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/next-hop/next-hop-list/next-hop",
-        "sid": "1099511629429"
+        "sid": "61653"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/next-hop/next-hop-list/next-hop/index",
-        "sid": "1099511629430"
+        "sid": "61654"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/next-hop/next-hop-list/next-hop/next-hop-address",
-        "sid": "1099511629431"
+        "sid": "61655"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/next-hop/next-hop-list/next-hop/outgoing-interface",
-        "sid": "1099511629432"
+        "sid": "61656"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/next-hop/outgoing-interface",
-        "sid": "1099511629433"
+        "sid": "61657"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/control-plane-protocols/control-plane-protocol/static-routes/ietf-ipv6-unicast-routing:ipv6/route/next-hop/special-next-hop",
-        "sid": "1099511629434"
+        "sid": "61658"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/ribs/rib/active-route/input/ietf-ipv6-unicast-routing:destination-address",
-        "sid": "1099511629435"
+        "sid": "61659"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/ietf-ipv6-unicast-routing:destination-prefix",
-        "sid": "1099511629436"
+        "sid": "61660"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop/ietf-ipv6-unicast-routing:next-hop-address",
-        "sid": "1099511629437"
+        "sid": "61661"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/ribs/rib/active-route/output/route/next-hop/next-hop-list/next-hop/ietf-ipv6-unicast-routing:next-hop-address",
-        "sid": "1099511629438"
+        "sid": "61662"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/ribs/rib/routes/route/ietf-ipv6-unicast-routing:destination-prefix",
-        "sid": "1099511629439"
+        "sid": "61663"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop/ietf-ipv6-unicast-routing:next-hop-address",
-        "sid": "1099511629440"
+        "sid": "61664"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-routing:routing/ribs/rib/routes/route/next-hop/next-hop-list/next-hop/ietf-ipv6-unicast-routing:address",
-        "sid": "1099511629441"
+        "sid": "61665"
       }
     ]
   }

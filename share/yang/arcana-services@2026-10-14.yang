@@ -1,0 +1,144 @@
+module arcana-services {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-services";
+  prefix arcsvc;
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's services: the rc.d scripts of rc(8) (/etc/rc.d and
+     /usr/local/etc/rc.d), each enabled by its rcvar in rc.conf(5) and
+     set by its other rc.conf variables, as service(8) and sysrc(8)
+     see them; and what is done to one, started, stopped, restarted or
+     reloaded (service(8)).
+
+     A service is there because its script is: an entry names a script
+     the host has.  Its configuration is rc.conf's, changed in place,
+     every other line kept; its state is what the script says.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.2.";
+  }
+
+  grouping now {
+    description
+      "What the script's status command says of the service.";
+    leaf running {
+      type boolean;
+      config false;
+      description
+        "Whether it runs (service <name> status); absent when not
+         asked.";
+    }
+    leaf pid {
+      type uint32;
+      config false;
+      description
+        "Its process, while it runs.";
+    }
+    leaf status {
+      type string;
+      config false;
+      description
+        "The status line, as the script printed it.";
+    }
+  }
+
+  container services {
+    description
+      "The host's rc.d scripts.";
+    list service {
+      key "name";
+      description
+        "An rc.d script.";
+      leaf name {
+        type string {
+          pattern '[A-Za-z0-9_][A-Za-z0-9_.-]*';
+        }
+        description
+          "The script's name, as service(8) takes it.";
+      }
+      leaf enabled {
+        type boolean;
+        description
+          "Its rcvar, YES or NO in rc.conf (sysrc(8)).";
+      }
+      list variable {
+        key "name";
+        description
+          "One of its rc.conf variables (name_flags, name_program,
+           ...), as sysrc(8) reads it; one set, written in place.";
+        leaf name {
+          type string {
+            pattern '[A-Za-z_][A-Za-z0-9_]*';
+          }
+          description
+            "The variable.";
+        }
+        leaf value {
+          type string;
+          description
+            "Its value.";
+        }
+      }
+      leaf path {
+        type string;
+        config false;
+        description
+          "The script, in /etc/rc.d or /usr/local/etc/rc.d.";
+      }
+      leaf rcvar {
+        type string;
+        config false;
+        description
+          "The rc.conf variable that enables it, if it has one.";
+      }
+      uses now;
+      leaf description {
+        type string;
+        config false;
+        description
+          "What the script says of itself (service describe).";
+      }
+      leaf-list command {
+        type string;
+        config false;
+        description
+          "The script's extra commands (service extracommands).";
+      }
+      action start {
+        description
+          "service <name> start.";
+        output {
+          uses now;
+        }
+      }
+      action stop {
+        description
+          "service <name> stop.";
+        output {
+          uses now;
+        }
+      }
+      action restart {
+        description
+          "service <name> restart.";
+        output {
+          uses now;
+        }
+      }
+      action reload {
+        description
+          "service <name> reload.";
+        output {
+          uses now;
+        }
+      }
+    }
+  }
+}

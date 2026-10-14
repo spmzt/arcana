@@ -101,6 +101,32 @@ ${DIST}/schema.json: ${ARC_TOP}/share/arcana/arcana.yaml \
 	${CBLINK_GEN} -m md -o ${.OBJDIR} ${ARC_TOP}/share/arcana/arcana.yaml
 	awk -f ${.CURDIR}/tools/schema.awk ${.OBJDIR}/arcana.md > ${.TARGET}
 
+# The YANG model of each operation converted to YANG (share/arcana/
+# yang-ops), shown beside its CBOR schema: the module's RFC 8340 tree.
+# The trees are committed in yang/, as the agent's tables are: building
+# needs no libyang, only "make regen-yang" does, and make check fails
+# when they are not what it makes.
+YANG_TREES!=	ls ${.CURDIR}/yang/*.tree 2>/dev/null || true
+${DIST}/yang.json: ${ARC_TOP}/share/arcana/yang-ops ${.CURDIR}/tools/yang.sh \
+    ${YANG_TREES}
+	mkdir -p ${DIST}
+	sh ${.CURDIR}/tools/yang.sh json ${ARC_TOP}/share/arcana/yang-ops \
+	    ${.CURDIR}/yang > ${.TARGET}.tmp
+	mv ${.TARGET}.tmp ${.TARGET}
+YANG_OUT?=	${.CURDIR}/yang
+regen-yang: .PHONY
+	sh ${.CURDIR}/tools/yang.sh trees ${CBLINK_GEN} ${ARC_TOP}/share/yang \
+	    ${ARC_TOP}/share/arcana/yang-ops ${YANG_OUT}
+check-yang: .PHONY
+	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && \
+	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" >/dev/null && \
+	    for f in $$(cd "$$t" && ls); do \
+		cmp -s "$$t/$$f" ${.CURDIR}/yang/$$f || { echo \
+		    "www/arcana-ui: yang/$$f is not what make regen-yang makes" >&2; \
+		    exit 1; }; \
+	    done; \
+	    echo "www/arcana-ui: yang/ is what make regen-yang makes"
+
 # The console's API as it is documented, for the API page: the document
 # itself, and what the page shows of it.
 ${DIST}/openapi.yaml: ${ARC_TOP}/docs/openapi.yaml
@@ -113,7 +139,7 @@ ${DIST}/openapi.json: ${ARC_TOP}/docs/openapi.yaml \
 	    ${.TARGET}
 
 SHELL_FILES=	${STATIC:S,^,${DIST}/,} ${DIST}/arcana.js ${DIST}/schema.json \
-		${DIST}/jobs.json \
+		${DIST}/yang.json ${DIST}/jobs.json \
 		${DIST}/openapi.json ${DIST}/openapi.yaml \
 		${DIST}/morphdom-umd.min.js ${FONTS:S,^,${DIST}/fonts/,} \
 		${ICONS:S,^,${DIST}/icons/,}

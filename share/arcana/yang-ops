@@ -1,0 +1,16 @@
+# The operations of arcana.yaml converted to YANG (PLAN-SDN-YANG Y-3),
+# and the module each is now: an operation's task shows the module's
+# tree (RFC 8340) beside its CBOR schema.  One a line: operation, then
+# module@revision, a module of share/yang.
+list	arcana-jails@2026-10-14
+action	arcana-jails@2026-10-14
+services	arcana-services@2026-10-14
+service-action	arcana-services@2026-10-14
+service-config	arcana-services@2026-10-14
+packages	arcana-packages@2026-10-14
+pkg-upgrade	arcana-packages@2026-10-14
+job-submit	arcana-jobs@2026-10-14
+jobs	arcana-jobs@2026-10-14
+job	arcana-jobs@2026-10-14
+job-cancel	arcana-jobs@2026-10-14
+job-confirm	arcana-jobs@2026-10-14
