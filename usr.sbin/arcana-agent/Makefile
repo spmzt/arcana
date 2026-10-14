@@ -59,6 +59,7 @@ YANG_DIR=	${.CURDIR}/../../share/yang
 YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-if-extensions@2025-08-07 ietf-if-ethernet-like@2026-06-19 \
 		ietf-if-vlan-encapsulation@2026-07-06 \
+		ieee802-ethernet-interface@2025-09-10 \
 		ietf-ip@2018-02-22 arcana-ip-deviations@2026-10-14 \
 		iana-if-type@2026-03-17 ietf-yang-types@2025-12-22 \
 		ietf-inet-types@2025-12-22 ietf-routing@2018-03-13 \
@@ -73,15 +74,15 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		arcana-processes@2026-10-14
 # Modules only imported whose identities are used, their .sid files'
 # alone: the routing protocols', whose identities name a route's origin;
-# IEEE 802.1Q's types, a VLAN tag's.
+# IEEE 802.1Q's types, a VLAN tag's; IEEE 802.3's PHY and PMD types.
 YANG_IMPORTS=	ietf-ospf@2022-10-19 ietf-rip@2020-02-20 ietf-isis@2022-10-19 \
 		ietf-babel@2024-10-10 ietf-bgp@2026-08-14 ietf-bfd-types@2022-09-22 \
-		ieee802-dot1q-types@2023-10-26
+		ieee802-dot1q-types@2023-10-26 ieee802-ethernet-phy-type@2025-09-10
 # ietf-routing's multiple-ribs: a FIB each (setfib(1)).
 YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-if-extensions:max-frame-size,peer-interface,sub-interfaces \
 		-F ietf-if-ethernet-like:configurable-mac-address \
-		-F ietf-if-vlan-encapsulation: \
+		-F ietf-if-vlan-encapsulation: -F ieee802-ethernet-interface: \
 		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
 		-F iana-if-type: -F ietf-yang-types: -F ietf-inet-types: \
 		-F ietf-routing:multiple-ribs -F ietf-ipv4-unicast-routing: \

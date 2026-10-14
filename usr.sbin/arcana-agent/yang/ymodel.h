@@ -25,6 +25,15 @@ struct ietf_interfaces_interfaces_interface_arcif_lagg_port;
 struct ietf_interfaces_interfaces_interface_arcif_lagg;
 struct ietf_interfaces_interfaces_interface_arcif_bridge_member;
 struct ietf_interfaces_interfaces_interface_arcif_bridge;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics;
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet;
 struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like;
 struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_outer_tag;
 struct ietf_interfaces_interfaces_interface_if_ext_encapsulation_if_vlan_dot1q_vlan_second_tag;
@@ -352,12 +361,6 @@ enum ietf_interfaces_interfaces_interface_oper_status {
 #define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_CAPABILITIES_SUPPORTED_GENEVE_HWCSUM	35u
 #define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_CAPABILITIES_SUPPORTED_GENEVE_HWTSO	36u
 
-enum ietf_interfaces_interfaces_interface_arcif_media_type {
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_TYPE_ETHERNET = 32,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_TYPE_IEEE80211 = 128,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_TYPE_ATM = 160,
-};
-
 enum ietf_interfaces_interfaces_interface_arcif_media_status {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_STATUS_ACTIVE = 0,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_STATUS_NO_CARRIER = 1,
@@ -413,6 +416,20 @@ enum ietf_interfaces_interfaces_interface_arcif_bridge_member_stp_role {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_DESIGNATED = 2,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_ALTERNATE = 3,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_BACKUP = 4,
+};
+
+enum ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_negotiation_status {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_IN_PROGRESS = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_COMPLETE = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_FAILED = 2,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_UNKNOWN = 3,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_NO_NEGOTIATION = 4,
+};
+
+enum ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_duplex {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_FULL = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_HALF = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_DUPLEX_UNKNOWN = 2,
 };
 
 enum ietf_interfaces_interfaces_interface_if_ext_encapsulation_encaps_type {
@@ -1050,8 +1067,6 @@ struct ietf_interfaces_interfaces_interface_arcif_media_active {
 
 /* container */
 struct ietf_interfaces_interfaces_interface_arcif_media {
-	bool			 has_type;
-	enum ietf_interfaces_interfaces_interface_arcif_media_type	 type;
 	const struct ietf_interfaces_interfaces_interface_arcif_media_current	*current;
 	const struct ietf_interfaces_interfaces_interface_arcif_media_active	*active;
 	bool			 has_status;
@@ -1103,6 +1118,114 @@ struct ietf_interfaces_interfaces_interface_arcif_bridge {
 		size_t		 n;
 		const struct ietf_interfaces_interfaces_interface_arcif_bridge_member	*v;
 	}			 member;
+};
+
+/* container, presence */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation {
+	bool			 has_enable;
+	bool		 enable;
+	bool			 has_negotiation_status;
+	enum ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_negotiation_status	 negotiation_status;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control {
+	bool			 has_force_flow_control;
+	bool		 force_flow_control;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities {
+	bool			 has_auto_negotiation;
+	bool		 auto_negotiation;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame {
+	bool			 has_in_total_frames;
+	uint64_t	 in_total_frames;
+	bool			 has_in_total_octets;
+	uint64_t	 in_total_octets;
+	bool			 has_in_frames;
+	uint64_t	 in_frames;
+	bool			 has_in_multicast_frames;
+	uint64_t	 in_multicast_frames;
+	bool			 has_in_broadcast_frames;
+	uint64_t	 in_broadcast_frames;
+	bool			 has_in_error_fcs_frames;
+	uint64_t	 in_error_fcs_frames;
+	bool			 has_in_error_undersize_frames;
+	uint64_t	 in_error_undersize_frames;
+	bool			 has_in_error_oversize_frames;
+	uint64_t	 in_error_oversize_frames;
+	bool			 has_in_error_mac_internal_frames;
+	uint64_t	 in_error_mac_internal_frames;
+	bool			 has_out_frames;
+	uint64_t	 out_frames;
+	bool			 has_out_multicast_frames;
+	uint64_t	 out_multicast_frames;
+	bool			 has_out_broadcast_frames;
+	uint64_t	 out_broadcast_frames;
+	bool			 has_out_error_mac_internal_frames;
+	uint64_t	 out_error_mac_internal_frames;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi {
+	bool			 has_in_lpi_transitions;
+	uint64_t	 in_lpi_transitions;
+	bool			 has_in_lpi_time;
+	int64_t		 in_lpi_time;	/* decimal64, 6 fraction digits */
+	bool			 has_out_lpi_transitions;
+	uint64_t	 out_lpi_transitions;
+	bool			 has_out_lpi_time;
+	int64_t		 out_lpi_time;	/* decimal64, 6 fraction digits */
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy {
+	bool			 has_in_error_symbol;
+	uint64_t	 in_error_symbol;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi	*lpi;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control {
+	bool			 has_in_frames_mac_control_unknown;
+	uint64_t	 in_frames_mac_control_unknown;
+	bool			 has_in_frames_mac_control_extension;
+	uint64_t	 in_frames_mac_control_extension;
+	bool			 has_out_frames_mac_control_extension;
+	uint64_t	 out_frames_mac_control_extension;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics {
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame	*frame;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy	*phy;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control	*mac_control;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet {
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation	*auto_negotiation;
+	bool			 has_phy_type;
+	uint64_t	 phy_type;	/* identityref: a SID */
+	bool			 has_pmd_type;
+	uint64_t	 pmd_type;	/* identityref: a SID */
+	bool			 has_duplex;
+	enum ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_duplex	 duplex;
+	bool			 has_speed;
+	int64_t		 speed;	/* decimal64, 3 fraction digits */
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control	*flow_control;
+	bool			 has_max_frame_length;
+	uint16_t	 max_frame_length;
+	bool			 has_mac_control_extension_control;
+	bool		 mac_control_extension_control;
+	bool			 has_frame_limit_slow_protocol;
+	uint64_t	 frame_limit_slow_protocol;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities	*capabilities;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics	*statistics;
 };
 
 /* container */
@@ -1326,6 +1449,7 @@ struct ietf_interfaces_interfaces_interface {
 	const struct ietf_interfaces_interfaces_interface_arcif_bridge	*arcif_bridge;
 	bool			 has_arcif_peer_vnet;
 	bool		 arcif_peer_vnet;
+	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet	*ieee802_eth_if_ethernet;
 	const struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like	*ethlike_ethernet_like;
 	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation	*if_ext_encapsulation;
 	bool			 has_if_ext_max_frame_size;
@@ -3680,6 +3804,42 @@ int	ietf_interfaces_interfaces_interface_arcif_bridge_member_decode(const void *
 int	ietf_interfaces_interfaces_interface_arcif_bridge_encode(const struct ietf_interfaces_interfaces_interface_arcif_bridge *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_bridge_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_bridge *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_frame *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_lpi *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_phy *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_mac_control *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_statistics *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet *,
 	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_ethlike_ethernet_like_encode(const struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like *,
 	    struct cbl_ybuf *);

@@ -1,0 +1,349 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "ieee802-ethernet-interface",
+    "module-revision": "2025-09-10",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md).",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-yang-types",
+        "module-revision": "2025-12-22"
+      },
+      {
+        "module-name": "iana-if-type",
+        "module-revision": "2026-03-17"
+      },
+      {
+        "module-name": "ietf-interfaces",
+        "module-revision": "2018-02-20"
+      },
+      {
+        "module-name": "ieee802-ethernet-phy-type",
+        "module-revision": "2025-09-10"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "68700",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "ieee802-ethernet-interface",
+        "sid": "68700"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "ethernet-pause",
+        "sid": "68701"
+      },
+      {
+        "namespace": "feature",
+        "identifier": "ethernet-pfc",
+        "sid": "68702"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet",
+        "sid": "68703"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/auto-negotiation",
+        "sid": "68704"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/auto-negotiation/enable",
+        "sid": "68705"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/auto-negotiation/negotiation-status",
+        "sid": "68706"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/capabilities",
+        "sid": "68707"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/capabilities/auto-negotiation",
+        "sid": "68708"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/duplex",
+        "sid": "68709"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/ethernet-pause",
+        "sid": "68710"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/ethernet-pause/control-and-status",
+        "sid": "68711"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/ethernet-pause/control-and-status/link-delay-allowance",
+        "sid": "68712"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/ethernet-pause/control-and-status/pause-admin-control",
+        "sid": "68713"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/ethernet-pause/control-and-status/pause-oper-status",
+        "sid": "68714"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/ethernet-pause/control-and-status/pfc-enable-status",
+        "sid": "68715"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/ethernet-pause/statistics",
+        "sid": "68716"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/ethernet-pause/statistics/in-frames-pause",
+        "sid": "68717"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/ethernet-pause/statistics/out-frames-pause",
+        "sid": "68718"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control",
+        "sid": "68719"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/force-flow-control",
+        "sid": "68720"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pause",
+        "sid": "68721"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pause/direction",
+        "sid": "68722"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pause/statistics",
+        "sid": "68723"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pause/statistics/in-frames-pause",
+        "sid": "68724"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pause/statistics/out-frames-pause",
+        "sid": "68725"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pfc",
+        "sid": "68726"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pfc/enable",
+        "sid": "68727"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pfc/statistics",
+        "sid": "68728"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pfc/statistics/in-frames-pfc",
+        "sid": "68729"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/flow-control/pfc/statistics/out-frames-pfc",
+        "sid": "68730"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/frame-limit-slow-protocol",
+        "sid": "68731"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/mac-control-extension-control",
+        "sid": "68732"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/max-frame-length",
+        "sid": "68733"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/phy-type",
+        "sid": "68734"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/pmd-type",
+        "sid": "68735"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/speed",
+        "sid": "68736"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics",
+        "sid": "68737"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame",
+        "sid": "68738"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/in-broadcast-frames",
+        "sid": "68739"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/in-error-fcs-frames",
+        "sid": "68740"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/in-error-mac-internal-frames",
+        "sid": "68741"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/in-error-oversize-frames",
+        "sid": "68742"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/in-error-undersize-frames",
+        "sid": "68743"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/in-frames",
+        "sid": "68744"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/in-multicast-frames",
+        "sid": "68745"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/in-total-frames",
+        "sid": "68746"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/in-total-octets",
+        "sid": "68747"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/out-broadcast-frames",
+        "sid": "68748"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/out-error-mac-internal-frames",
+        "sid": "68749"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/out-frames",
+        "sid": "68750"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/frame/out-multicast-frames",
+        "sid": "68751"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/mac-control",
+        "sid": "68752"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/mac-control/in-frames-mac-control-extension",
+        "sid": "68753"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/mac-control/in-frames-mac-control-unknown",
+        "sid": "68754"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/mac-control/out-frames-mac-control-extension",
+        "sid": "68755"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/phy",
+        "sid": "68756"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/phy/in-error-symbol",
+        "sid": "68757"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/phy/lpi",
+        "sid": "68758"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/phy/lpi/in-lpi-time",
+        "sid": "68759"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/phy/lpi/in-lpi-transitions",
+        "sid": "68760"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/phy/lpi/out-lpi-time",
+        "sid": "68761"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-ethernet-interface:ethernet/statistics/phy/lpi/out-lpi-transitions",
+        "sid": "68762"
+      }
+    ]
+  }
+}

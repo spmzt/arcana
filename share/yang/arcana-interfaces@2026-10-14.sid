@@ -232,7 +232,8 @@
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/type",
-        "sid": "61038"
+        "sid": "61038",
+        "status": "obsolete"
       },
       {
         "namespace": "data",

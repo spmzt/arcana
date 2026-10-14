@@ -21,6 +21,11 @@
  * with the modules that augment it: arcana-interfaces, ietf-ip.
  */
 int	yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a);
+/*
+ * The IEEE 802.3 PMD type's identity (its SID) of a medium FreeBSD
+ * names so ("1000baseT"); 0: IEEE names none.
+ */
+uint64_t yif_pmd(const char *subtype);
 
 /* ietf-ip (RFC 8344): the n interfaces' ipv4 and ipv6 (invidia/yip.c). */
 int	yip_interfaces(struct ietf_interfaces_interfaces_interface *v,
