@@ -1038,7 +1038,7 @@ static const struct cbl_ytype t51 = {
 	.patterns = t51_p,
 };
 
-static const uint64_t t52_b[] = { UINT64_C(1099511629078) };
+static const uint64_t t52_b[] = { UINT64_C(61302) };
 static const struct cbl_ytype t52 = {
 	.kind = CBL_YT_IDENTITYREF,
 	.csize = sizeof(uint64_t),
@@ -1047,7 +1047,7 @@ static const struct cbl_ytype t52 = {
 	.bases = t52_b,
 };
 
-static const uint64_t t53_b[] = { UINT64_C(1099511629082) };
+static const uint64_t t53_b[] = { UINT64_C(61306) };
 static const struct cbl_ytype t53 = {
 	.kind = CBL_YT_IDENTITYREF,
 	.csize = sizeof(uint64_t),
@@ -1056,7 +1056,7 @@ static const struct cbl_ytype t53 = {
 	.bases = t53_b,
 };
 
-static const uint64_t t54_b[] = { UINT64_C(1099511629077) };
+static const uint64_t t54_b[] = { UINT64_C(61301) };
 static const struct cbl_ytype t54 = {
 	.kind = CBL_YT_IDENTITYREF,
 	.csize = sizeof(uint64_t),
@@ -1586,7 +1586,7 @@ static const struct cbl_ynode n38 = {
 };
 
 static const struct cbl_ynode n42 = {
-	.sid = UINT64_C(1099511629577),
+	.sid = UINT64_C(61801),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -1879,7 +1879,7 @@ static const uint16_t n64_p[] = {
 	10, 11
 };
 static const struct cbl_ynode n65 = {
-	.sid = UINT64_C(1099511629397),
+	.sid = UINT64_C(61621),
 	.name = "cur-hop-limit",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -1890,7 +1890,7 @@ static const struct cbl_ynode n65 = {
 };
 
 static const struct cbl_ynode n66 = {
-	.sid = UINT64_C(1099511629398),
+	.sid = UINT64_C(61622),
 	.name = "default-lifetime",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -1903,7 +1903,7 @@ static const struct cbl_ynode n66 = {
 
 static const char *const n67_d[] = { "0" };
 static const struct cbl_ynode n67 = {
-	.sid = UINT64_C(1099511629399),
+	.sid = UINT64_C(61623),
 	.name = "link-mtu",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -1917,7 +1917,7 @@ static const struct cbl_ynode n67 = {
 
 static const char *const n68_d[] = { "false" };
 static const struct cbl_ynode n68 = {
-	.sid = UINT64_C(1099511629400),
+	.sid = UINT64_C(61624),
 	.name = "managed-flag",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -1931,7 +1931,7 @@ static const struct cbl_ynode n68 = {
 
 static const char *const n69_d[] = { "600" };
 static const struct cbl_ynode n69 = {
-	.sid = UINT64_C(1099511629401),
+	.sid = UINT64_C(61625),
 	.name = "max-rtr-adv-interval",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -1948,7 +1948,7 @@ static const struct cbl_ymust n70_m[] = {
 	{ 2, NULL, NULL },
 };
 static const struct cbl_ynode n70 = {
-	.sid = UINT64_C(1099511629402),
+	.sid = UINT64_C(61626),
 	.name = "min-rtr-adv-interval",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -1963,7 +1963,7 @@ static const struct cbl_ynode n70 = {
 
 static const char *const n71_d[] = { "false" };
 static const struct cbl_ynode n71 = {
-	.sid = UINT64_C(1099511629403),
+	.sid = UINT64_C(61627),
 	.name = "other-config-flag",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -1989,7 +1989,7 @@ static const struct cbl_ychoice c1 = {
 };
 
 static const struct cbl_ynode n74 = {
-	.sid = UINT64_C(1099511629406),
+	.sid = UINT64_C(61630),
 	.name = "autonomous-flag",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2004,7 +2004,7 @@ static const struct cbl_ynode n74 = {
 };
 
 static const struct cbl_ynode n75 = {
-	.sid = UINT64_C(1099511629407),
+	.sid = UINT64_C(61631),
 	.name = "no-advertise",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2018,7 +2018,7 @@ static const struct cbl_ynode n75 = {
 
 static const char *const n76_d[] = { "true" };
 static const struct cbl_ynode n76 = {
-	.sid = UINT64_C(1099511629408),
+	.sid = UINT64_C(61632),
 	.name = "on-link-flag",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2037,7 +2037,7 @@ static const struct cbl_ymust n77_m[] = {
 };
 static const char *const n77_d[] = { "604800" };
 static const struct cbl_ynode n77 = {
-	.sid = UINT64_C(1099511629409),
+	.sid = UINT64_C(61633),
 	.name = "preferred-lifetime",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2055,7 +2055,7 @@ static const struct cbl_ynode n77 = {
 };
 
 static const struct cbl_ynode n78 = {
-	.sid = UINT64_C(1099511629410),
+	.sid = UINT64_C(61634),
 	.name = "prefix-spec",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
@@ -2067,7 +2067,7 @@ static const struct cbl_ynode n78 = {
 
 static const char *const n79_d[] = { "2592000" };
 static const struct cbl_ynode n79 = {
-	.sid = UINT64_C(1099511629411),
+	.sid = UINT64_C(61635),
 	.name = "valid-lifetime",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2087,7 +2087,7 @@ static const struct cbl_ynode *const n73_c[] = {
 };
 static const uint32_t n73_k[] = { 4 };
 static const struct cbl_ynode n73 = {
-	.sid = UINT64_C(1099511629405),
+	.sid = UINT64_C(61629),
 	.name = "prefix",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -2106,7 +2106,7 @@ static const struct cbl_ynode *const n72_c[] = {
 	&n73
 };
 static const struct cbl_ynode n72 = {
-	.sid = UINT64_C(1099511629404),
+	.sid = UINT64_C(61628),
 	.name = "prefix-list",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -2121,7 +2121,7 @@ static const struct cbl_ynode n72 = {
 
 static const char *const n80_d[] = { "0" };
 static const struct cbl_ynode n80 = {
-	.sid = UINT64_C(1099511629412),
+	.sid = UINT64_C(61636),
 	.name = "reachable-time",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2136,7 +2136,7 @@ static const struct cbl_ynode n80 = {
 
 static const char *const n81_d[] = { "0" };
 static const struct cbl_ynode n81 = {
-	.sid = UINT64_C(1099511629413),
+	.sid = UINT64_C(61637),
 	.name = "retrans-timer",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2151,7 +2151,7 @@ static const struct cbl_ynode n81 = {
 
 static const char *const n82_d[] = { "false" };
 static const struct cbl_ynode n82 = {
-	.sid = UINT64_C(1099511629414),
+	.sid = UINT64_C(61638),
 	.name = "send-advertisements",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2168,7 +2168,7 @@ static const struct cbl_ynode *const n64_c[] = {
 	&n71, &n72, &n80, &n81, &n82
 };
 static const struct cbl_ynode n64 = {
-	.sid = UINT64_C(1099511629396),
+	.sid = UINT64_C(61620),
 	.name = "ipv6-router-advertisements",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -2183,7 +2183,7 @@ static const struct cbl_ynode n64 = {
 };
 
 static const struct cbl_ynode n83 = {
-	.sid = UINT64_C(1099511629578),
+	.sid = UINT64_C(61802),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2213,7 +2213,7 @@ static const struct cbl_ynode n43 = {
 };
 
 static const struct cbl_ynode n86 = {
-	.sid = UINT64_C(1099511628779),
+	.sid = UINT64_C(61003),
 	.name = "flags",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2224,7 +2224,7 @@ static const struct cbl_ynode n86 = {
 };
 
 static const struct cbl_ynode n87 = {
-	.sid = UINT64_C(1099511628780),
+	.sid = UINT64_C(61004),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
@@ -2235,7 +2235,7 @@ static const struct cbl_ynode n87 = {
 };
 
 static const struct cbl_ynode n88 = {
-	.sid = UINT64_C(1099511628781),
+	.sid = UINT64_C(61005),
 	.name = "path-cost",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2246,7 +2246,7 @@ static const struct cbl_ynode n88 = {
 };
 
 static const struct cbl_ynode n89 = {
-	.sid = UINT64_C(1099511628782),
+	.sid = UINT64_C(61006),
 	.name = "port-number",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, port_number),
@@ -2256,7 +2256,7 @@ static const struct cbl_ynode n89 = {
 };
 
 static const struct cbl_ynode n90 = {
-	.sid = UINT64_C(1099511628783),
+	.sid = UINT64_C(61007),
 	.name = "priority",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2267,7 +2267,7 @@ static const struct cbl_ynode n90 = {
 };
 
 static const struct cbl_ynode n91 = {
-	.sid = UINT64_C(1099511628784),
+	.sid = UINT64_C(61008),
 	.name = "stp-role",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, stp_role),
@@ -2277,7 +2277,7 @@ static const struct cbl_ynode n91 = {
 };
 
 static const struct cbl_ynode n92 = {
-	.sid = UINT64_C(1099511628785),
+	.sid = UINT64_C(61009),
 	.name = "stp-state",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_bridge_member, stp_state),
@@ -2292,7 +2292,7 @@ static const struct cbl_ynode *const n85_c[] = {
 };
 static const uint32_t n85_k[] = { 1 };
 static const struct cbl_ynode n85 = {
-	.sid = UINT64_C(1099511628778),
+	.sid = UINT64_C(61002),
 	.name = "member",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -2314,7 +2314,7 @@ static const struct cbl_ywhen n84_w[] = {
 	{ 4, CBL_YWC_SELF },
 };
 static const struct cbl_ynode n84 = {
-	.sid = UINT64_C(1099511628777),
+	.sid = UINT64_C(61001),
 	.name = "bridge",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -2330,7 +2330,7 @@ static const struct cbl_ynode n84 = {
 };
 
 static const struct cbl_ynode n93 = {
-	.sid = UINT64_C(1099511628786),
+	.sid = UINT64_C(61010),
 	.name = "capabilities",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2341,7 +2341,7 @@ static const struct cbl_ynode n93 = {
 };
 
 static const struct cbl_ynode n94 = {
-	.sid = UINT64_C(1099511628787),
+	.sid = UINT64_C(61011),
 	.name = "capabilities-supported",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_capabilities_supported),
@@ -2351,7 +2351,7 @@ static const struct cbl_ynode n94 = {
 };
 
 static const struct cbl_ynode n95 = {
-	.sid = UINT64_C(1099511628788),
+	.sid = UINT64_C(61012),
 	.name = "driver-name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_driver_name),
@@ -2361,7 +2361,7 @@ static const struct cbl_ynode n95 = {
 };
 
 static const struct cbl_ynode n97 = {
-	.sid = UINT64_C(1099511628790),
+	.sid = UINT64_C(61014),
 	.name = "peer",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_epair, peer),
@@ -2371,7 +2371,7 @@ static const struct cbl_ynode n97 = {
 };
 
 static const struct cbl_ynode n98 = {
-	.sid = UINT64_C(1099511628791),
+	.sid = UINT64_C(61015),
 	.name = "peer-vnet",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_epair, peer_vnet),
@@ -2384,7 +2384,7 @@ static const struct cbl_ynode *const n96_c[] = {
 	&n97, &n98
 };
 static const struct cbl_ynode n96 = {
-	.sid = UINT64_C(1099511628789),
+	.sid = UINT64_C(61013),
 	.name = "epair",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x8,
@@ -2398,7 +2398,7 @@ static const struct cbl_ynode n96 = {
 };
 
 static const struct cbl_ynode n99 = {
-	.sid = UINT64_C(1099511628792),
+	.sid = UINT64_C(61016),
 	.name = "ether",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2409,7 +2409,7 @@ static const struct cbl_ynode n99 = {
 };
 
 static const struct cbl_ynode n100 = {
-	.sid = UINT64_C(1099511628793),
+	.sid = UINT64_C(61017),
 	.name = "fib",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2420,7 +2420,7 @@ static const struct cbl_ynode n100 = {
 };
 
 static const struct cbl_ynode n101 = {
-	.sid = UINT64_C(1099511628794),
+	.sid = UINT64_C(61018),
 	.name = "group",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x1,
@@ -2431,7 +2431,7 @@ static const struct cbl_ynode n101 = {
 };
 
 static const struct cbl_ynode n102 = {
-	.sid = UINT64_C(1099511628795),
+	.sid = UINT64_C(61019),
 	.name = "hw-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface, arcif_hw_address),
@@ -2441,7 +2441,7 @@ static const struct cbl_ynode n102 = {
 };
 
 static const struct cbl_ynode n104 = {
-	.sid = UINT64_C(1099511628797),
+	.sid = UINT64_C(61021),
 	.name = "hash",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2452,7 +2452,7 @@ static const struct cbl_ynode n104 = {
 };
 
 static const struct cbl_ynode n106 = {
-	.sid = UINT64_C(1099511628799),
+	.sid = UINT64_C(61023),
 	.name = "flags",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg_port, flags),
@@ -2462,7 +2462,7 @@ static const struct cbl_ynode n106 = {
 };
 
 static const struct cbl_ynode n107 = {
-	.sid = UINT64_C(1099511628800),
+	.sid = UINT64_C(61024),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
@@ -2473,7 +2473,7 @@ static const struct cbl_ynode n107 = {
 };
 
 static const struct cbl_ynode n108 = {
-	.sid = UINT64_C(1099511628801),
+	.sid = UINT64_C(61025),
 	.name = "priority",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_lagg_port, priority),
@@ -2487,7 +2487,7 @@ static const struct cbl_ynode *const n105_c[] = {
 };
 static const uint32_t n105_k[] = { 1 };
 static const struct cbl_ynode n105 = {
-	.sid = UINT64_C(1099511628798),
+	.sid = UINT64_C(61022),
 	.name = "port",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -2503,7 +2503,7 @@ static const struct cbl_ynode n105 = {
 };
 
 static const struct cbl_ynode n109 = {
-	.sid = UINT64_C(1099511628802),
+	.sid = UINT64_C(61026),
 	.name = "protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2520,7 +2520,7 @@ static const struct cbl_ywhen n103_w[] = {
 	{ 5, CBL_YWC_SELF },
 };
 static const struct cbl_ynode n103 = {
-	.sid = UINT64_C(1099511628796),
+	.sid = UINT64_C(61020),
 	.name = "lagg",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -2538,7 +2538,7 @@ static const uint16_t n110_p[] = {
 	1, 0, 0, 0, 2, 0, 0, 0, 3, 4, 5
 };
 static const struct cbl_ynode n112 = {
-	.sid = UINT64_C(1099511628805),
+	.sid = UINT64_C(61029),
 	.name = "mode",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media_active, mode),
@@ -2548,7 +2548,7 @@ static const struct cbl_ynode n112 = {
 };
 
 static const struct cbl_ynode n113 = {
-	.sid = UINT64_C(1099511628806),
+	.sid = UINT64_C(61030),
 	.name = "option",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x10,
@@ -2559,7 +2559,7 @@ static const struct cbl_ynode n113 = {
 };
 
 static const struct cbl_ynode n114 = {
-	.sid = UINT64_C(1099511628807),
+	.sid = UINT64_C(61031),
 	.name = "subtype",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media_active, subtype),
@@ -2572,7 +2572,7 @@ static const struct cbl_ynode *const n111_c[] = {
 	&n112, &n113, &n114
 };
 static const struct cbl_ynode n111 = {
-	.sid = UINT64_C(1099511628804),
+	.sid = UINT64_C(61028),
 	.name = "active",
 	.kind = CBL_YN_CONTAINER,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, active),
@@ -2585,7 +2585,7 @@ static const struct cbl_ynode n111 = {
 };
 
 static const struct cbl_ynode n116 = {
-	.sid = UINT64_C(1099511628809),
+	.sid = UINT64_C(61033),
 	.name = "mode",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2596,7 +2596,7 @@ static const struct cbl_ynode n116 = {
 };
 
 static const struct cbl_ynode n117 = {
-	.sid = UINT64_C(1099511628810),
+	.sid = UINT64_C(61034),
 	.name = "option",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x1,
@@ -2607,7 +2607,7 @@ static const struct cbl_ynode n117 = {
 };
 
 static const struct cbl_ynode n118 = {
-	.sid = UINT64_C(1099511628811),
+	.sid = UINT64_C(61035),
 	.name = "subtype",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2621,7 +2621,7 @@ static const struct cbl_ynode *const n115_c[] = {
 	&n116, &n117, &n118
 };
 static const struct cbl_ynode n115 = {
-	.sid = UINT64_C(1099511628808),
+	.sid = UINT64_C(61032),
 	.name = "current",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -2635,7 +2635,7 @@ static const struct cbl_ynode n115 = {
 };
 
 static const struct cbl_ynode n119 = {
-	.sid = UINT64_C(1099511628812),
+	.sid = UINT64_C(61036),
 	.name = "status",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, status),
@@ -2645,7 +2645,7 @@ static const struct cbl_ynode n119 = {
 };
 
 static const struct cbl_ynode n120 = {
-	.sid = UINT64_C(1099511628813),
+	.sid = UINT64_C(61037),
 	.name = "supported",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x10,
@@ -2656,7 +2656,7 @@ static const struct cbl_ynode n120 = {
 };
 
 static const struct cbl_ynode n121 = {
-	.sid = UINT64_C(1099511628814),
+	.sid = UINT64_C(61038),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_interfaces_interfaces_interface_arcif_media, type),
@@ -2669,7 +2669,7 @@ static const struct cbl_ynode *const n110_c[] = {
 	&n111, &n115, &n119, &n120, &n121
 };
 static const struct cbl_ynode n110 = {
-	.sid = UINT64_C(1099511628803),
+	.sid = UINT64_C(61027),
 	.name = "media",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -2684,7 +2684,7 @@ static const struct cbl_ynode n110 = {
 };
 
 static const struct cbl_ynode n122 = {
-	.sid = UINT64_C(1099511628815),
+	.sid = UINT64_C(61039),
 	.name = "mtu",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2695,7 +2695,7 @@ static const struct cbl_ynode n122 = {
 };
 
 static const struct cbl_ynode n123 = {
-	.sid = UINT64_C(1099511628816),
+	.sid = UINT64_C(61040),
 	.name = "tunnel-fib",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2706,7 +2706,7 @@ static const struct cbl_ynode n123 = {
 };
 
 static const struct cbl_ynode n125 = {
-	.sid = UINT64_C(1099511628818),
+	.sid = UINT64_C(61042),
 	.name = "parent",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2717,7 +2717,7 @@ static const struct cbl_ynode n125 = {
 };
 
 static const struct cbl_ynode n126 = {
-	.sid = UINT64_C(1099511628819),
+	.sid = UINT64_C(61043),
 	.name = "pcp",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2728,7 +2728,7 @@ static const struct cbl_ynode n126 = {
 };
 
 static const struct cbl_ynode n127 = {
-	.sid = UINT64_C(1099511628820),
+	.sid = UINT64_C(61044),
 	.name = "protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2739,7 +2739,7 @@ static const struct cbl_ynode n127 = {
 };
 
 static const struct cbl_ynode n128 = {
-	.sid = UINT64_C(1099511628821),
+	.sid = UINT64_C(61045),
 	.name = "vlan-id",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2756,7 +2756,7 @@ static const struct cbl_ywhen n124_w[] = {
 	{ 6, CBL_YWC_SELF },
 };
 static const struct cbl_ynode n124 = {
-	.sid = UINT64_C(1099511628817),
+	.sid = UINT64_C(61041),
 	.name = "vlan",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -2772,7 +2772,7 @@ static const struct cbl_ynode n124 = {
 };
 
 static const struct cbl_ynode n129 = {
-	.sid = UINT64_C(1099511629579),
+	.sid = UINT64_C(61803),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -2783,7 +2783,7 @@ static const struct cbl_ynode n129 = {
 };
 
 static const struct cbl_ynode n130 = {
-	.sid = UINT64_C(1099511629777),
+	.sid = UINT64_C(62001),
 	.name = "bind-lne-name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -3465,7 +3465,7 @@ static const uint16_t n183_p[] = {
 	11
 };
 static const struct cbl_ynode n184 = {
-	.sid = UINT64_C(1099511629379),
+	.sid = UINT64_C(61603),
 	.name = "cur-hop-limit",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3476,7 +3476,7 @@ static const struct cbl_ynode n184 = {
 };
 
 static const struct cbl_ynode n185 = {
-	.sid = UINT64_C(1099511629380),
+	.sid = UINT64_C(61604),
 	.name = "default-lifetime",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3488,7 +3488,7 @@ static const struct cbl_ynode n185 = {
 };
 
 static const struct cbl_ynode n186 = {
-	.sid = UINT64_C(1099511629381),
+	.sid = UINT64_C(61605),
 	.name = "link-mtu",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3499,7 +3499,7 @@ static const struct cbl_ynode n186 = {
 };
 
 static const struct cbl_ynode n187 = {
-	.sid = UINT64_C(1099511629382),
+	.sid = UINT64_C(61606),
 	.name = "managed-flag",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3510,7 +3510,7 @@ static const struct cbl_ynode n187 = {
 };
 
 static const struct cbl_ynode n188 = {
-	.sid = UINT64_C(1099511629383),
+	.sid = UINT64_C(61607),
 	.name = "max-rtr-adv-interval",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3522,7 +3522,7 @@ static const struct cbl_ynode n188 = {
 };
 
 static const struct cbl_ynode n189 = {
-	.sid = UINT64_C(1099511629384),
+	.sid = UINT64_C(61608),
 	.name = "min-rtr-adv-interval",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3534,7 +3534,7 @@ static const struct cbl_ynode n189 = {
 };
 
 static const struct cbl_ynode n190 = {
-	.sid = UINT64_C(1099511629385),
+	.sid = UINT64_C(61609),
 	.name = "other-config-flag",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3545,7 +3545,7 @@ static const struct cbl_ynode n190 = {
 };
 
 static const struct cbl_ynode n193 = {
-	.sid = UINT64_C(1099511629388),
+	.sid = UINT64_C(61612),
 	.name = "autonomous-flag",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3556,7 +3556,7 @@ static const struct cbl_ynode n193 = {
 };
 
 static const struct cbl_ynode n194 = {
-	.sid = UINT64_C(1099511629389),
+	.sid = UINT64_C(61613),
 	.name = "on-link-flag",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3567,7 +3567,7 @@ static const struct cbl_ynode n194 = {
 };
 
 static const struct cbl_ynode n195 = {
-	.sid = UINT64_C(1099511629390),
+	.sid = UINT64_C(61614),
 	.name = "preferred-lifetime",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3579,7 +3579,7 @@ static const struct cbl_ynode n195 = {
 };
 
 static const struct cbl_ynode n196 = {
-	.sid = UINT64_C(1099511629391),
+	.sid = UINT64_C(61615),
 	.name = "prefix-spec",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x44,
@@ -3590,7 +3590,7 @@ static const struct cbl_ynode n196 = {
 };
 
 static const struct cbl_ynode n197 = {
-	.sid = UINT64_C(1099511629392),
+	.sid = UINT64_C(61616),
 	.name = "valid-lifetime",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3606,7 +3606,7 @@ static const struct cbl_ynode *const n192_c[] = {
 };
 static const uint32_t n192_k[] = { 3 };
 static const struct cbl_ynode n192 = {
-	.sid = UINT64_C(1099511629387),
+	.sid = UINT64_C(61611),
 	.name = "prefix",
 	.kind = CBL_YN_LIST,
 	.flags = 0x50,
@@ -3625,7 +3625,7 @@ static const struct cbl_ynode *const n191_c[] = {
 	&n192
 };
 static const struct cbl_ynode n191 = {
-	.sid = UINT64_C(1099511629386),
+	.sid = UINT64_C(61610),
 	.name = "prefix-list",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x40,
@@ -3639,7 +3639,7 @@ static const struct cbl_ynode n191 = {
 };
 
 static const struct cbl_ynode n198 = {
-	.sid = UINT64_C(1099511629393),
+	.sid = UINT64_C(61617),
 	.name = "reachable-time",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3651,7 +3651,7 @@ static const struct cbl_ynode n198 = {
 };
 
 static const struct cbl_ynode n199 = {
-	.sid = UINT64_C(1099511629394),
+	.sid = UINT64_C(61618),
 	.name = "retrans-timer",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3663,7 +3663,7 @@ static const struct cbl_ynode n199 = {
 };
 
 static const struct cbl_ynode n200 = {
-	.sid = UINT64_C(1099511629395),
+	.sid = UINT64_C(61619),
 	.name = "send-advertisements",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -3678,7 +3678,7 @@ static const struct cbl_ynode *const n183_c[] = {
 	&n190, &n191, &n198, &n199, &n200
 };
 static const struct cbl_ynode n183 = {
-	.sid = UINT64_C(1099511629378),
+	.sid = UINT64_C(61602),
 	.name = "ipv6-router-advertisements",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x40,
@@ -3751,7 +3751,7 @@ static const struct cbl_ynode n131 = {
 };
 
 static const struct cbl_ynode n204 = {
-	.sid = UINT64_C(1099511629127),
+	.sid = UINT64_C(61351),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -3762,7 +3762,7 @@ static const struct cbl_ynode n204 = {
 };
 
 static const struct cbl_ynode n205 = {
-	.sid = UINT64_C(1099511629128),
+	.sid = UINT64_C(61352),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
@@ -3773,7 +3773,7 @@ static const struct cbl_ynode n205 = {
 };
 
 static const struct cbl_ynode n209 = {
-	.sid = UINT64_C(1099511629287),
+	.sid = UINT64_C(61511),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -3784,7 +3784,7 @@ static const struct cbl_ynode n209 = {
 };
 
 static const struct cbl_ynode n210 = {
-	.sid = UINT64_C(1099511629288),
+	.sid = UINT64_C(61512),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x7,
@@ -3812,7 +3812,7 @@ static const struct cbl_ychoice c3 = {
 };
 
 static const struct cbl_ynode n212 = {
-	.sid = UINT64_C(1099511629290),
+	.sid = UINT64_C(61514),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -3825,7 +3825,7 @@ static const struct cbl_ynode n212 = {
 };
 
 static const struct cbl_ynode n215 = {
-	.sid = UINT64_C(1099511629293),
+	.sid = UINT64_C(61517),
 	.name = "index",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
@@ -3836,7 +3836,7 @@ static const struct cbl_ynode n215 = {
 };
 
 static const struct cbl_ynode n216 = {
-	.sid = UINT64_C(1099511629294),
+	.sid = UINT64_C(61518),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -3847,7 +3847,7 @@ static const struct cbl_ynode n216 = {
 };
 
 static const struct cbl_ynode n217 = {
-	.sid = UINT64_C(1099511629295),
+	.sid = UINT64_C(61519),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -3862,7 +3862,7 @@ static const struct cbl_ynode *const n214_c[] = {
 };
 static const uint32_t n214_k[] = { 0 };
 static const struct cbl_ynode n214 = {
-	.sid = UINT64_C(1099511629292),
+	.sid = UINT64_C(61516),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -3881,7 +3881,7 @@ static const struct cbl_ynode *const n213_c[] = {
 	&n214
 };
 static const struct cbl_ynode n213 = {
-	.sid = UINT64_C(1099511629291),
+	.sid = UINT64_C(61515),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -3897,7 +3897,7 @@ static const struct cbl_ynode n213 = {
 };
 
 static const struct cbl_ynode n218 = {
-	.sid = UINT64_C(1099511629296),
+	.sid = UINT64_C(61520),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -3910,7 +3910,7 @@ static const struct cbl_ynode n218 = {
 };
 
 static const struct cbl_ynode n219 = {
-	.sid = UINT64_C(1099511629297),
+	.sid = UINT64_C(61521),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -3926,7 +3926,7 @@ static const struct cbl_ynode *const n211_c[] = {
 	&n212, &n213, &n218, &n219
 };
 static const struct cbl_ynode n211 = {
-	.sid = UINT64_C(1099511629289),
+	.sid = UINT64_C(61513),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x3,
@@ -3945,7 +3945,7 @@ static const struct cbl_ynode *const n208_c[] = {
 };
 static const uint32_t n208_k[] = { 1 };
 static const struct cbl_ynode n208 = {
-	.sid = UINT64_C(1099511629286),
+	.sid = UINT64_C(61510),
 	.name = "route",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -3964,7 +3964,7 @@ static const struct cbl_ynode *const n207_c[] = {
 	&n208
 };
 static const struct cbl_ynode n207 = {
-	.sid = UINT64_C(1099511629285),
+	.sid = UINT64_C(61509),
 	.name = "ipv4",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -3978,7 +3978,7 @@ static const struct cbl_ynode n207 = {
 };
 
 static const struct cbl_ynode n222 = {
-	.sid = UINT64_C(1099511629424),
+	.sid = UINT64_C(61648),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -3989,7 +3989,7 @@ static const struct cbl_ynode n222 = {
 };
 
 static const struct cbl_ynode n223 = {
-	.sid = UINT64_C(1099511629425),
+	.sid = UINT64_C(61649),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x7,
@@ -4017,7 +4017,7 @@ static const struct cbl_ychoice c4 = {
 };
 
 static const struct cbl_ynode n225 = {
-	.sid = UINT64_C(1099511629427),
+	.sid = UINT64_C(61651),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -4030,7 +4030,7 @@ static const struct cbl_ynode n225 = {
 };
 
 static const struct cbl_ynode n228 = {
-	.sid = UINT64_C(1099511629430),
+	.sid = UINT64_C(61654),
 	.name = "index",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
@@ -4041,7 +4041,7 @@ static const struct cbl_ynode n228 = {
 };
 
 static const struct cbl_ynode n229 = {
-	.sid = UINT64_C(1099511629431),
+	.sid = UINT64_C(61655),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -4052,7 +4052,7 @@ static const struct cbl_ynode n229 = {
 };
 
 static const struct cbl_ynode n230 = {
-	.sid = UINT64_C(1099511629432),
+	.sid = UINT64_C(61656),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -4067,7 +4067,7 @@ static const struct cbl_ynode *const n227_c[] = {
 };
 static const uint32_t n227_k[] = { 0 };
 static const struct cbl_ynode n227 = {
-	.sid = UINT64_C(1099511629429),
+	.sid = UINT64_C(61653),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -4086,7 +4086,7 @@ static const struct cbl_ynode *const n226_c[] = {
 	&n227
 };
 static const struct cbl_ynode n226 = {
-	.sid = UINT64_C(1099511629428),
+	.sid = UINT64_C(61652),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -4102,7 +4102,7 @@ static const struct cbl_ynode n226 = {
 };
 
 static const struct cbl_ynode n231 = {
-	.sid = UINT64_C(1099511629433),
+	.sid = UINT64_C(61657),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -4115,7 +4115,7 @@ static const struct cbl_ynode n231 = {
 };
 
 static const struct cbl_ynode n232 = {
-	.sid = UINT64_C(1099511629434),
+	.sid = UINT64_C(61658),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -4131,7 +4131,7 @@ static const struct cbl_ynode *const n224_c[] = {
 	&n225, &n226, &n231, &n232
 };
 static const struct cbl_ynode n224 = {
-	.sid = UINT64_C(1099511629426),
+	.sid = UINT64_C(61650),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x3,
@@ -4150,7 +4150,7 @@ static const struct cbl_ynode *const n221_c[] = {
 };
 static const uint32_t n221_k[] = { 1 };
 static const struct cbl_ynode n221 = {
-	.sid = UINT64_C(1099511629423),
+	.sid = UINT64_C(61647),
 	.name = "route",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -4169,7 +4169,7 @@ static const struct cbl_ynode *const n220_c[] = {
 	&n221
 };
 static const struct cbl_ynode n220 = {
-	.sid = UINT64_C(1099511629422),
+	.sid = UINT64_C(61646),
 	.name = "ipv6",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -4189,7 +4189,7 @@ static const struct cbl_ywhen n206_w[] = {
 	{ 9, CBL_YWC_SELF },
 };
 static const struct cbl_ynode n206 = {
-	.sid = UINT64_C(1099511629129),
+	.sid = UINT64_C(61353),
 	.name = "static-routes",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -4205,7 +4205,7 @@ static const struct cbl_ynode n206 = {
 };
 
 static const struct cbl_ynode n233 = {
-	.sid = UINT64_C(1099511629130),
+	.sid = UINT64_C(61354),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
@@ -4220,7 +4220,7 @@ static const struct cbl_ynode *const n203_c[] = {
 };
 static const uint32_t n203_k[] = { 3, 1 };
 static const struct cbl_ynode n203 = {
-	.sid = UINT64_C(1099511629126),
+	.sid = UINT64_C(61350),
 	.name = "control-plane-protocol",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -4239,7 +4239,7 @@ static const struct cbl_ynode *const n202_c[] = {
 	&n203
 };
 static const struct cbl_ynode n202 = {
-	.sid = UINT64_C(1099511629125),
+	.sid = UINT64_C(61349),
 	.name = "control-plane-protocols",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -4253,7 +4253,7 @@ static const struct cbl_ynode n202 = {
 };
 
 static const struct cbl_ynode n235 = {
-	.sid = UINT64_C(1099511629132),
+	.sid = UINT64_C(61356),
 	.name = "interface",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x10,
@@ -4267,7 +4267,7 @@ static const struct cbl_ynode *const n234_c[] = {
 	&n235
 };
 static const struct cbl_ynode n234 = {
-	.sid = UINT64_C(1099511629131),
+	.sid = UINT64_C(61355),
 	.name = "interfaces",
 	.kind = CBL_YN_CONTAINER,
 	.off = offsetof(struct ietf_routing_routing, interfaces),
@@ -4287,7 +4287,7 @@ static const struct cbl_ywhen n240_w[] = {
 	{ 10, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n240 = {
-	.sid = UINT64_C(1099511629298),
+	.sid = UINT64_C(61522),
 	.name = "destination-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_input, v4ur_destination_address),
@@ -4302,7 +4302,7 @@ static const struct cbl_ywhen n241_w[] = {
 	{ 11, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n241 = {
-	.sid = UINT64_C(1099511629435),
+	.sid = UINT64_C(61659),
 	.name = "destination-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_input, v6ur_destination_address),
@@ -4317,7 +4317,7 @@ static const struct cbl_ynode *const n239_c[] = {
 	&n240, &n241
 };
 static const struct cbl_ynode n239 = {
-	.sid = UINT64_C(1099511629136),
+	.sid = UINT64_C(61360),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.off = CBL_YOFF_NONE,
@@ -4333,7 +4333,7 @@ static const uint16_t n243_p[] = {
 	1, 2, 3, 0, 0, 0, 0, 0, 4
 };
 static const struct cbl_ynode n244 = {
-	.sid = UINT64_C(1099511629139),
+	.sid = UINT64_C(61363),
 	.name = "active",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route, active),
@@ -4343,7 +4343,7 @@ static const struct cbl_ynode n244 = {
 };
 
 static const struct cbl_ynode n245 = {
-	.sid = UINT64_C(1099511629140),
+	.sid = UINT64_C(61364),
 	.name = "last-updated",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route, last_updated),
@@ -4353,7 +4353,7 @@ static const struct cbl_ynode n245 = {
 };
 
 static const struct cbl_ynode n249 = {
-	.sid = UINT64_C(1099511629144),
+	.sid = UINT64_C(61368),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop, outgoing_interface),
@@ -4366,7 +4366,7 @@ static const struct cbl_ywhen n250_w[] = {
 	{ 12, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n250 = {
-	.sid = UINT64_C(1099511629301),
+	.sid = UINT64_C(61525),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop, v4ur_next_hop_address),
@@ -4381,7 +4381,7 @@ static const struct cbl_ywhen n251_w[] = {
 	{ 13, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n251 = {
-	.sid = UINT64_C(1099511629438),
+	.sid = UINT64_C(61662),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop, v6ur_next_hop_address),
@@ -4396,7 +4396,7 @@ static const struct cbl_ynode *const n248_c[] = {
 	&n249, &n250, &n251
 };
 static const struct cbl_ynode n248 = {
-	.sid = UINT64_C(1099511629143),
+	.sid = UINT64_C(61367),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
 	.flags = 0x10,
@@ -4427,7 +4427,7 @@ static const struct cbl_ychoice c5 = {
 };
 
 static const struct cbl_ynode n247 = {
-	.sid = UINT64_C(1099511629142),
+	.sid = UINT64_C(61366),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop, next_hop_list),
@@ -4442,7 +4442,7 @@ static const struct cbl_ynode n247 = {
 };
 
 static const struct cbl_ynode n252 = {
-	.sid = UINT64_C(1099511629145),
+	.sid = UINT64_C(61369),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop, outgoing_interface),
@@ -4454,7 +4454,7 @@ static const struct cbl_ynode n252 = {
 };
 
 static const struct cbl_ynode n253 = {
-	.sid = UINT64_C(1099511629146),
+	.sid = UINT64_C(61370),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop, special_next_hop),
@@ -4469,7 +4469,7 @@ static const struct cbl_ywhen n254_w[] = {
 	{ 14, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n254 = {
-	.sid = UINT64_C(1099511629300),
+	.sid = UINT64_C(61524),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop, v4ur_next_hop_address),
@@ -4486,7 +4486,7 @@ static const struct cbl_ywhen n255_w[] = {
 	{ 15, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n255 = {
-	.sid = UINT64_C(1099511629437),
+	.sid = UINT64_C(61661),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop, v6ur_next_hop_address),
@@ -4503,7 +4503,7 @@ static const struct cbl_ynode *const n246_c[] = {
 	&n247, &n252, &n253, &n254, &n255
 };
 static const struct cbl_ynode n246 = {
-	.sid = UINT64_C(1099511629141),
+	.sid = UINT64_C(61365),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x2,
@@ -4516,7 +4516,7 @@ static const struct cbl_ynode n246 = {
 };
 
 static const struct cbl_ynode n256 = {
-	.sid = UINT64_C(1099511629147),
+	.sid = UINT64_C(61371),
 	.name = "source-protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
@@ -4530,7 +4530,7 @@ static const struct cbl_ywhen n257_w[] = {
 	{ 16, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n257 = {
-	.sid = UINT64_C(1099511629299),
+	.sid = UINT64_C(61523),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route, v4ur_destination_prefix),
@@ -4545,7 +4545,7 @@ static const struct cbl_ywhen n258_w[] = {
 	{ 17, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n258 = {
-	.sid = UINT64_C(1099511629436),
+	.sid = UINT64_C(61660),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_active_route_output_route, v6ur_destination_prefix),
@@ -4560,7 +4560,7 @@ static const struct cbl_ynode *const n243_c[] = {
 	&n244, &n245, &n246, &n256, &n257, &n258
 };
 static const struct cbl_ynode n243 = {
-	.sid = UINT64_C(1099511629138),
+	.sid = UINT64_C(61362),
 	.name = "route",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x2,
@@ -4578,7 +4578,7 @@ static const struct cbl_ynode *const n242_c[] = {
 	&n243
 };
 static const struct cbl_ynode n242 = {
-	.sid = UINT64_C(1099511629137),
+	.sid = UINT64_C(61361),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.off = CBL_YOFF_NONE,
@@ -4594,7 +4594,7 @@ static const struct cbl_ynode *const n238_c[] = {
 	&n239, &n242
 };
 static const struct cbl_ynode n238 = {
-	.sid = UINT64_C(1099511629135),
+	.sid = UINT64_C(61359),
 	.name = "active-route",
 	.kind = CBL_YN_ACTION,
 	.off = CBL_YOFF_NONE,
@@ -4606,7 +4606,7 @@ static const struct cbl_ynode n238 = {
 };
 
 static const struct cbl_ynode n259 = {
-	.sid = UINT64_C(1099511629148),
+	.sid = UINT64_C(61372),
 	.name = "address-family",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x3,
@@ -4618,7 +4618,7 @@ static const struct cbl_ynode n259 = {
 
 static const char *const n260_d[] = { "true" };
 static const struct cbl_ynode n260 = {
-	.sid = UINT64_C(1099511629149),
+	.sid = UINT64_C(61373),
 	.name = "default-rib",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib, default_rib),
@@ -4630,7 +4630,7 @@ static const struct cbl_ynode n260 = {
 };
 
 static const struct cbl_ynode n261 = {
-	.sid = UINT64_C(1099511629150),
+	.sid = UINT64_C(61374),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -4641,7 +4641,7 @@ static const struct cbl_ynode n261 = {
 };
 
 static const struct cbl_ynode n262 = {
-	.sid = UINT64_C(1099511629151),
+	.sid = UINT64_C(61375),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
@@ -4655,7 +4655,7 @@ static const uint16_t n264_p[] = {
 	1, 2, 3, 0, 0, 0, 0, 0, 4, 5
 };
 static const struct cbl_ynode n265 = {
-	.sid = UINT64_C(1099511629154),
+	.sid = UINT64_C(61378),
 	.name = "active",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, active),
@@ -4665,7 +4665,7 @@ static const struct cbl_ynode n265 = {
 };
 
 static const struct cbl_ynode n266 = {
-	.sid = UINT64_C(1099511629155),
+	.sid = UINT64_C(61379),
 	.name = "last-updated",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, last_updated),
@@ -4675,7 +4675,7 @@ static const struct cbl_ynode n266 = {
 };
 
 static const struct cbl_ynode n270 = {
-	.sid = UINT64_C(1099511629159),
+	.sid = UINT64_C(61383),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop, outgoing_interface),
@@ -4688,7 +4688,7 @@ static const struct cbl_ywhen n271_w[] = {
 	{ 12, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n271 = {
-	.sid = UINT64_C(1099511629304),
+	.sid = UINT64_C(61528),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop, v4ur_address),
@@ -4703,7 +4703,7 @@ static const struct cbl_ywhen n272_w[] = {
 	{ 13, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n272 = {
-	.sid = UINT64_C(1099511629441),
+	.sid = UINT64_C(61665),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop, v6ur_address),
@@ -4718,7 +4718,7 @@ static const struct cbl_ynode *const n269_c[] = {
 	&n270, &n271, &n272
 };
 static const struct cbl_ynode n269 = {
-	.sid = UINT64_C(1099511629158),
+	.sid = UINT64_C(61382),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
 	.flags = 0x10,
@@ -4749,7 +4749,7 @@ static const struct cbl_ychoice c6 = {
 };
 
 static const struct cbl_ynode n268 = {
-	.sid = UINT64_C(1099511629157),
+	.sid = UINT64_C(61381),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop, next_hop_list),
@@ -4764,7 +4764,7 @@ static const struct cbl_ynode n268 = {
 };
 
 static const struct cbl_ynode n273 = {
-	.sid = UINT64_C(1099511629160),
+	.sid = UINT64_C(61384),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop, outgoing_interface),
@@ -4776,7 +4776,7 @@ static const struct cbl_ynode n273 = {
 };
 
 static const struct cbl_ynode n274 = {
-	.sid = UINT64_C(1099511629161),
+	.sid = UINT64_C(61385),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop, special_next_hop),
@@ -4791,7 +4791,7 @@ static const struct cbl_ywhen n275_w[] = {
 	{ 14, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n275 = {
-	.sid = UINT64_C(1099511629303),
+	.sid = UINT64_C(61527),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop, v4ur_next_hop_address),
@@ -4808,7 +4808,7 @@ static const struct cbl_ywhen n276_w[] = {
 	{ 15, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n276 = {
-	.sid = UINT64_C(1099511629440),
+	.sid = UINT64_C(61664),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route_next_hop, v6ur_next_hop_address),
@@ -4825,7 +4825,7 @@ static const struct cbl_ynode *const n267_c[] = {
 	&n268, &n273, &n274, &n275, &n276
 };
 static const struct cbl_ynode n267 = {
-	.sid = UINT64_C(1099511629156),
+	.sid = UINT64_C(61380),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x2,
@@ -4838,7 +4838,7 @@ static const struct cbl_ynode n267 = {
 };
 
 static const struct cbl_ynode n277 = {
-	.sid = UINT64_C(1099511629162),
+	.sid = UINT64_C(61386),
 	.name = "route-preference",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, route_preference),
@@ -4848,7 +4848,7 @@ static const struct cbl_ynode n277 = {
 };
 
 static const struct cbl_ynode n278 = {
-	.sid = UINT64_C(1099511629163),
+	.sid = UINT64_C(61387),
 	.name = "source-protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
@@ -4862,7 +4862,7 @@ static const struct cbl_ywhen n279_w[] = {
 	{ 16, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n279 = {
-	.sid = UINT64_C(1099511629302),
+	.sid = UINT64_C(61526),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, v4ur_destination_prefix),
@@ -4877,7 +4877,7 @@ static const struct cbl_ywhen n280_w[] = {
 	{ 17, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n280 = {
-	.sid = UINT64_C(1099511629439),
+	.sid = UINT64_C(61663),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib_routes_route, v6ur_destination_prefix),
@@ -4893,7 +4893,7 @@ static const struct cbl_ynode *const n264_c[] = {
 	&n280
 };
 static const struct cbl_ynode n264 = {
-	.sid = UINT64_C(1099511629153),
+	.sid = UINT64_C(61377),
 	.name = "route",
 	.kind = CBL_YN_LIST,
 	.flags = 0x10,
@@ -4911,7 +4911,7 @@ static const struct cbl_ynode *const n263_c[] = {
 	&n264
 };
 static const struct cbl_ynode n263 = {
-	.sid = UINT64_C(1099511629152),
+	.sid = UINT64_C(61376),
 	.name = "routes",
 	.kind = CBL_YN_CONTAINER,
 	.off = offsetof(struct ietf_routing_routing_ribs_rib, routes),
@@ -4928,7 +4928,7 @@ static const struct cbl_ynode *const n237_c[] = {
 };
 static const uint32_t n237_k[] = { 4 };
 static const struct cbl_ynode n237 = {
-	.sid = UINT64_C(1099511629134),
+	.sid = UINT64_C(61358),
 	.name = "rib",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -4948,7 +4948,7 @@ static const struct cbl_ynode *const n236_c[] = {
 	&n237
 };
 static const struct cbl_ynode n236 = {
-	.sid = UINT64_C(1099511629133),
+	.sid = UINT64_C(61357),
 	.name = "ribs",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -4965,7 +4965,7 @@ static const struct cbl_ynode *const n201_c[] = {
 	&n202, &n234, &n236
 };
 static const struct cbl_ynode n201 = {
-	.sid = UINT64_C(1099511629086),
+	.sid = UINT64_C(61310),
 	.name = "routing",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -4983,7 +4983,7 @@ static const uint16_t n281_p[] = {
 	0, 0, 0, 0, 4
 };
 static const struct cbl_ynode n284 = {
-	.sid = UINT64_C(1099511629090),
+	.sid = UINT64_C(61314),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x44,
@@ -4994,7 +4994,7 @@ static const struct cbl_ynode n284 = {
 };
 
 static const struct cbl_ynode n285 = {
-	.sid = UINT64_C(1099511629091),
+	.sid = UINT64_C(61315),
 	.name = "type",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x44,
@@ -5009,7 +5009,7 @@ static const struct cbl_ynode *const n283_c[] = {
 };
 static const uint32_t n283_k[] = { 1, 0 };
 static const struct cbl_ynode n283 = {
-	.sid = UINT64_C(1099511629089),
+	.sid = UINT64_C(61313),
 	.name = "control-plane-protocol",
 	.kind = CBL_YN_LIST,
 	.flags = 0x50,
@@ -5028,7 +5028,7 @@ static const struct cbl_ynode *const n282_c[] = {
 	&n283
 };
 static const struct cbl_ynode n282 = {
-	.sid = UINT64_C(1099511629088),
+	.sid = UINT64_C(61312),
 	.name = "control-plane-protocols",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x40,
@@ -5042,7 +5042,7 @@ static const struct cbl_ynode n282 = {
 };
 
 static const struct cbl_ynode n287 = {
-	.sid = UINT64_C(1099511629093),
+	.sid = UINT64_C(61317),
 	.name = "interface",
 	.kind = CBL_YN_LEAFLIST,
 	.flags = 0x50,
@@ -5056,7 +5056,7 @@ static const struct cbl_ynode *const n286_c[] = {
 	&n287
 };
 static const struct cbl_ynode n286 = {
-	.sid = UINT64_C(1099511629092),
+	.sid = UINT64_C(61316),
 	.name = "interfaces",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x40,
@@ -5077,7 +5077,7 @@ static const struct cbl_ywhen n292_w[] = {
 	{ 18, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n292 = {
-	.sid = UINT64_C(1099511629278),
+	.sid = UINT64_C(61502),
 	.name = "destination-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5093,7 +5093,7 @@ static const struct cbl_ywhen n293_w[] = {
 	{ 19, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n293 = {
-	.sid = UINT64_C(1099511629415),
+	.sid = UINT64_C(61639),
 	.name = "destination-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5109,7 +5109,7 @@ static const struct cbl_ynode *const n291_c[] = {
 	&n292, &n293
 };
 static const struct cbl_ynode n291 = {
-	.sid = UINT64_C(1099511629097),
+	.sid = UINT64_C(61321),
 	.name = "input",
 	.kind = CBL_YN_INPUT,
 	.flags = 0x40,
@@ -5126,7 +5126,7 @@ static const uint16_t n295_p[] = {
 	1, 2, 3, 0, 0, 0, 0, 0, 4
 };
 static const struct cbl_ynode n296 = {
-	.sid = UINT64_C(1099511629100),
+	.sid = UINT64_C(61324),
 	.name = "active",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5137,7 +5137,7 @@ static const struct cbl_ynode n296 = {
 };
 
 static const struct cbl_ynode n297 = {
-	.sid = UINT64_C(1099511629101),
+	.sid = UINT64_C(61325),
 	.name = "last-updated",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5148,7 +5148,7 @@ static const struct cbl_ynode n297 = {
 };
 
 static const struct cbl_ynode n301 = {
-	.sid = UINT64_C(1099511629105),
+	.sid = UINT64_C(61329),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5162,7 +5162,7 @@ static const struct cbl_ywhen n302_w[] = {
 	{ 20, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n302 = {
-	.sid = UINT64_C(1099511629281),
+	.sid = UINT64_C(61505),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5178,7 +5178,7 @@ static const struct cbl_ywhen n303_w[] = {
 	{ 21, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n303 = {
-	.sid = UINT64_C(1099511629418),
+	.sid = UINT64_C(61642),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5194,7 +5194,7 @@ static const struct cbl_ynode *const n300_c[] = {
 	&n301, &n302, &n303
 };
 static const struct cbl_ynode n300 = {
-	.sid = UINT64_C(1099511629104),
+	.sid = UINT64_C(61328),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
 	.flags = 0x50,
@@ -5225,7 +5225,7 @@ static const struct cbl_ychoice c7 = {
 };
 
 static const struct cbl_ynode n299 = {
-	.sid = UINT64_C(1099511629103),
+	.sid = UINT64_C(61327),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x40,
@@ -5241,7 +5241,7 @@ static const struct cbl_ynode n299 = {
 };
 
 static const struct cbl_ynode n304 = {
-	.sid = UINT64_C(1099511629106),
+	.sid = UINT64_C(61330),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5254,7 +5254,7 @@ static const struct cbl_ynode n304 = {
 };
 
 static const struct cbl_ynode n305 = {
-	.sid = UINT64_C(1099511629107),
+	.sid = UINT64_C(61331),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5270,7 +5270,7 @@ static const struct cbl_ywhen n306_w[] = {
 	{ 22, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n306 = {
-	.sid = UINT64_C(1099511629280),
+	.sid = UINT64_C(61504),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5288,7 +5288,7 @@ static const struct cbl_ywhen n307_w[] = {
 	{ 23, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n307 = {
-	.sid = UINT64_C(1099511629417),
+	.sid = UINT64_C(61641),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5306,7 +5306,7 @@ static const struct cbl_ynode *const n298_c[] = {
 	&n299, &n304, &n305, &n306, &n307
 };
 static const struct cbl_ynode n298 = {
-	.sid = UINT64_C(1099511629102),
+	.sid = UINT64_C(61326),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x42,
@@ -5319,7 +5319,7 @@ static const struct cbl_ynode n298 = {
 };
 
 static const struct cbl_ynode n308 = {
-	.sid = UINT64_C(1099511629108),
+	.sid = UINT64_C(61332),
 	.name = "source-protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x42,
@@ -5333,7 +5333,7 @@ static const struct cbl_ywhen n309_w[] = {
 	{ 24, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n309 = {
-	.sid = UINT64_C(1099511629279),
+	.sid = UINT64_C(61503),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5349,7 +5349,7 @@ static const struct cbl_ywhen n310_w[] = {
 	{ 25, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n310 = {
-	.sid = UINT64_C(1099511629416),
+	.sid = UINT64_C(61640),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5365,7 +5365,7 @@ static const struct cbl_ynode *const n295_c[] = {
 	&n296, &n297, &n298, &n308, &n309, &n310
 };
 static const struct cbl_ynode n295 = {
-	.sid = UINT64_C(1099511629099),
+	.sid = UINT64_C(61323),
 	.name = "route",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x42,
@@ -5383,7 +5383,7 @@ static const struct cbl_ynode *const n294_c[] = {
 	&n295
 };
 static const struct cbl_ynode n294 = {
-	.sid = UINT64_C(1099511629098),
+	.sid = UINT64_C(61322),
 	.name = "output",
 	.kind = CBL_YN_OUTPUT,
 	.flags = 0x40,
@@ -5400,7 +5400,7 @@ static const struct cbl_ynode *const n290_c[] = {
 	&n291, &n294
 };
 static const struct cbl_ynode n290 = {
-	.sid = UINT64_C(1099511629096),
+	.sid = UINT64_C(61320),
 	.name = "active-route",
 	.kind = CBL_YN_ACTION,
 	.flags = 0x40,
@@ -5413,7 +5413,7 @@ static const struct cbl_ynode n290 = {
 };
 
 static const struct cbl_ynode n311 = {
-	.sid = UINT64_C(1099511629109),
+	.sid = UINT64_C(61333),
 	.name = "address-family",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x42,
@@ -5425,7 +5425,7 @@ static const struct cbl_ynode n311 = {
 
 static const char *const n312_d[] = { "true" };
 static const struct cbl_ynode n312 = {
-	.sid = UINT64_C(1099511629110),
+	.sid = UINT64_C(61334),
 	.name = "default-rib",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5438,7 +5438,7 @@ static const struct cbl_ynode n312 = {
 };
 
 static const struct cbl_ynode n313 = {
-	.sid = UINT64_C(1099511629111),
+	.sid = UINT64_C(61335),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x44,
@@ -5452,7 +5452,7 @@ static const uint16_t n315_p[] = {
 	1, 2, 3, 0, 0, 0, 0, 0, 4, 5
 };
 static const struct cbl_ynode n316 = {
-	.sid = UINT64_C(1099511629114),
+	.sid = UINT64_C(61338),
 	.name = "active",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5463,7 +5463,7 @@ static const struct cbl_ynode n316 = {
 };
 
 static const struct cbl_ynode n317 = {
-	.sid = UINT64_C(1099511629115),
+	.sid = UINT64_C(61339),
 	.name = "last-updated",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5474,7 +5474,7 @@ static const struct cbl_ynode n317 = {
 };
 
 static const struct cbl_ynode n321 = {
-	.sid = UINT64_C(1099511629119),
+	.sid = UINT64_C(61343),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5488,7 +5488,7 @@ static const struct cbl_ywhen n322_w[] = {
 	{ 26, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n322 = {
-	.sid = UINT64_C(1099511629284),
+	.sid = UINT64_C(61508),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5504,7 +5504,7 @@ static const struct cbl_ywhen n323_w[] = {
 	{ 21, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n323 = {
-	.sid = UINT64_C(1099511629421),
+	.sid = UINT64_C(61645),
 	.name = "address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5520,7 +5520,7 @@ static const struct cbl_ynode *const n320_c[] = {
 	&n321, &n322, &n323
 };
 static const struct cbl_ynode n320 = {
-	.sid = UINT64_C(1099511629118),
+	.sid = UINT64_C(61342),
 	.name = "next-hop",
 	.kind = CBL_YN_LIST,
 	.flags = 0x50,
@@ -5551,7 +5551,7 @@ static const struct cbl_ychoice c8 = {
 };
 
 static const struct cbl_ynode n319 = {
-	.sid = UINT64_C(1099511629117),
+	.sid = UINT64_C(61341),
 	.name = "next-hop-list",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x40,
@@ -5567,7 +5567,7 @@ static const struct cbl_ynode n319 = {
 };
 
 static const struct cbl_ynode n324 = {
-	.sid = UINT64_C(1099511629120),
+	.sid = UINT64_C(61344),
 	.name = "outgoing-interface",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5580,7 +5580,7 @@ static const struct cbl_ynode n324 = {
 };
 
 static const struct cbl_ynode n325 = {
-	.sid = UINT64_C(1099511629121),
+	.sid = UINT64_C(61345),
 	.name = "special-next-hop",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5596,7 +5596,7 @@ static const struct cbl_ywhen n326_w[] = {
 	{ 27, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n326 = {
-	.sid = UINT64_C(1099511629283),
+	.sid = UINT64_C(61507),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5614,7 +5614,7 @@ static const struct cbl_ywhen n327_w[] = {
 	{ 23, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n327 = {
-	.sid = UINT64_C(1099511629420),
+	.sid = UINT64_C(61644),
 	.name = "next-hop-address",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5632,7 +5632,7 @@ static const struct cbl_ynode *const n318_c[] = {
 	&n319, &n324, &n325, &n326, &n327
 };
 static const struct cbl_ynode n318 = {
-	.sid = UINT64_C(1099511629116),
+	.sid = UINT64_C(61340),
 	.name = "next-hop",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x42,
@@ -5645,7 +5645,7 @@ static const struct cbl_ynode n318 = {
 };
 
 static const struct cbl_ynode n328 = {
-	.sid = UINT64_C(1099511629122),
+	.sid = UINT64_C(61346),
 	.name = "route-preference",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5656,7 +5656,7 @@ static const struct cbl_ynode n328 = {
 };
 
 static const struct cbl_ynode n329 = {
-	.sid = UINT64_C(1099511629123),
+	.sid = UINT64_C(61347),
 	.name = "source-protocol",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x42,
@@ -5670,7 +5670,7 @@ static const struct cbl_ywhen n330_w[] = {
 	{ 16, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n330 = {
-	.sid = UINT64_C(1099511629282),
+	.sid = UINT64_C(61506),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5686,7 +5686,7 @@ static const struct cbl_ywhen n331_w[] = {
 	{ 25, CBL_YWC_PARENT },
 };
 static const struct cbl_ynode n331 = {
-	.sid = UINT64_C(1099511629419),
+	.sid = UINT64_C(61643),
 	.name = "destination-prefix",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5703,7 +5703,7 @@ static const struct cbl_ynode *const n315_c[] = {
 	&n331
 };
 static const struct cbl_ynode n315 = {
-	.sid = UINT64_C(1099511629113),
+	.sid = UINT64_C(61337),
 	.name = "route",
 	.kind = CBL_YN_LIST,
 	.flags = 0x50,
@@ -5721,7 +5721,7 @@ static const struct cbl_ynode *const n314_c[] = {
 	&n315
 };
 static const struct cbl_ynode n314 = {
-	.sid = UINT64_C(1099511629112),
+	.sid = UINT64_C(61336),
 	.name = "routes",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x40,
@@ -5739,7 +5739,7 @@ static const struct cbl_ynode *const n289_c[] = {
 };
 static const uint32_t n289_k[] = { 3 };
 static const struct cbl_ynode n289 = {
-	.sid = UINT64_C(1099511629095),
+	.sid = UINT64_C(61319),
 	.name = "rib",
 	.kind = CBL_YN_LIST,
 	.flags = 0x52,
@@ -5760,7 +5760,7 @@ static const struct cbl_ynode *const n288_c[] = {
 	&n289
 };
 static const struct cbl_ynode n288 = {
-	.sid = UINT64_C(1099511629094),
+	.sid = UINT64_C(61318),
 	.name = "ribs",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x42,
@@ -5774,7 +5774,7 @@ static const struct cbl_ynode n288 = {
 };
 
 static const struct cbl_ynode n332 = {
-	.sid = UINT64_C(1099511629124),
+	.sid = UINT64_C(61348),
 	.name = "router-id",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x40,
@@ -5788,7 +5788,7 @@ static const struct cbl_ynode *const n281_c[] = {
 	&n282, &n286, &n288, &n332
 };
 static const struct cbl_ynode n281 = {
-	.sid = UINT64_C(1099511629087),
+	.sid = UINT64_C(61311),
 	.name = "routing-state",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x42,
@@ -5803,7 +5803,7 @@ static const struct cbl_ynode n281 = {
 };
 
 static const struct cbl_ynode n335 = {
-	.sid = UINT64_C(1099511629591),
+	.sid = UINT64_C(61815),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -5818,7 +5818,7 @@ static const struct cbl_ymust n336_m[] = {
 };
 static const char *const n336_d[] = { "true" };
 static const struct cbl_ynode n336 = {
-	.sid = UINT64_C(1099511629592),
+	.sid = UINT64_C(61816),
 	.name = "enabled",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -5833,7 +5833,7 @@ static const struct cbl_ynode n336 = {
 };
 
 static const struct cbl_ynode n337 = {
-	.sid = UINT64_C(1099511629593),
+	.sid = UINT64_C(61817),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x7,
@@ -5856,7 +5856,7 @@ static const struct cbl_ychoice c9 = {
 };
 
 static const struct cbl_ynode n338 = {
-	.sid = UINT64_C(1099511629594),
+	.sid = UINT64_C(61818),
 	.name = "vrf-root",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -5880,7 +5880,7 @@ static const struct cbl_ychoice c10 = {
 };
 
 static const struct cbl_ynode n339 = {
-	.sid = UINT64_C(1099511629677),
+	.sid = UINT64_C(61901),
 	.name = "fib",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -5897,7 +5897,7 @@ static const struct cbl_ynode *const n334_c[] = {
 };
 static const uint32_t n334_k[] = { 2 };
 static const struct cbl_ynode n334 = {
-	.sid = UINT64_C(1099511629590),
+	.sid = UINT64_C(61814),
 	.name = "network-instance",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -5916,7 +5916,7 @@ static const struct cbl_ynode *const n333_c[] = {
 	&n334
 };
 static const struct cbl_ynode n333 = {
-	.sid = UINT64_C(1099511629589),
+	.sid = UINT64_C(61813),
 	.name = "network-instances",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -5933,7 +5933,7 @@ static const uint16_t n340_p[] = {
 	1, 2, 0, 3, 0, 4, 0, 5
 };
 static const struct cbl_ynode n341 = {
-	.sid = UINT64_C(1099511629581),
+	.sid = UINT64_C(61805),
 	.name = "error-info",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed, error_info),
@@ -5943,7 +5943,7 @@ static const struct cbl_ynode n341 = {
 };
 
 static const struct cbl_ynode n343 = {
-	.sid = UINT64_C(1099511629583),
+	.sid = UINT64_C(61807),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed_interface, bind_ni_name),
@@ -5956,7 +5956,7 @@ static const struct cbl_ynode *const n342_c[] = {
 	&n343
 };
 static const struct cbl_ynode n342 = {
-	.sid = UINT64_C(1099511629582),
+	.sid = UINT64_C(61806),
 	.name = "interface",
 	.kind = CBL_YN_CONTAINER,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed, interface),
@@ -5969,7 +5969,7 @@ static const struct cbl_ynode n342 = {
 };
 
 static const struct cbl_ynode n345 = {
-	.sid = UINT64_C(1099511629585),
+	.sid = UINT64_C(61809),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed_ipv4, bind_ni_name),
@@ -5982,7 +5982,7 @@ static const struct cbl_ynode *const n344_c[] = {
 	&n345
 };
 static const struct cbl_ynode n344 = {
-	.sid = UINT64_C(1099511629584),
+	.sid = UINT64_C(61808),
 	.name = "ipv4",
 	.kind = CBL_YN_CONTAINER,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed, ipv4),
@@ -5995,7 +5995,7 @@ static const struct cbl_ynode n344 = {
 };
 
 static const struct cbl_ynode n347 = {
-	.sid = UINT64_C(1099511629587),
+	.sid = UINT64_C(61811),
 	.name = "bind-ni-name",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed_ipv6, bind_ni_name),
@@ -6008,7 +6008,7 @@ static const struct cbl_ynode *const n346_c[] = {
 	&n347
 };
 static const struct cbl_ynode n346 = {
-	.sid = UINT64_C(1099511629586),
+	.sid = UINT64_C(61810),
 	.name = "ipv6",
 	.kind = CBL_YN_CONTAINER,
 	.off = offsetof(struct ietf_network_instance_bind_ni_name_failed, ipv6),
@@ -6021,7 +6021,7 @@ static const struct cbl_ynode n346 = {
 };
 
 static const struct cbl_ynode n348 = {
-	.sid = UINT64_C(1099511629588),
+	.sid = UINT64_C(61812),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
@@ -6035,7 +6035,7 @@ static const struct cbl_ynode *const n340_c[] = {
 	&n341, &n342, &n344, &n346, &n348
 };
 static const struct cbl_ynode n340 = {
-	.sid = UINT64_C(1099511629580),
+	.sid = UINT64_C(61804),
 	.name = "bind-ni-name-failed",
 	.kind = CBL_YN_NOTIF,
 	.off = CBL_YOFF_NONE,
@@ -6049,7 +6049,7 @@ static const struct cbl_ynode n340 = {
 };
 
 static const struct cbl_ynode n351 = {
-	.sid = UINT64_C(1099511629784),
+	.sid = UINT64_C(62008),
 	.name = "description",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -6061,7 +6061,7 @@ static const struct cbl_ynode n351 = {
 
 static const char *const n352_d[] = { "true" };
 static const struct cbl_ynode n352 = {
-	.sid = UINT64_C(1099511629785),
+	.sid = UINT64_C(62009),
 	.name = "managed",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x1,
@@ -6074,7 +6074,7 @@ static const struct cbl_ynode n352 = {
 };
 
 static const struct cbl_ynode n353 = {
-	.sid = UINT64_C(1099511629786),
+	.sid = UINT64_C(62010),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x5,
@@ -6085,7 +6085,7 @@ static const struct cbl_ynode n353 = {
 };
 
 static const struct cbl_ynode n354 = {
-	.sid = UINT64_C(1099511629787),
+	.sid = UINT64_C(62011),
 	.name = "root",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -6100,7 +6100,7 @@ static const struct cbl_ynode *const n350_c[] = {
 };
 static const uint32_t n350_k[] = { 2 };
 static const struct cbl_ynode n350 = {
-	.sid = UINT64_C(1099511629783),
+	.sid = UINT64_C(62007),
 	.name = "logical-network-element",
 	.kind = CBL_YN_LIST,
 	.flags = 0x1,
@@ -6119,7 +6119,7 @@ static const struct cbl_ynode *const n349_c[] = {
 	&n350
 };
 static const struct cbl_ynode n349 = {
-	.sid = UINT64_C(1099511629782),
+	.sid = UINT64_C(62006),
 	.name = "logical-network-elements",
 	.kind = CBL_YN_CONTAINER,
 	.flags = 0x1,
@@ -6133,7 +6133,7 @@ static const struct cbl_ynode n349 = {
 };
 
 static const struct cbl_ynode n356 = {
-	.sid = UINT64_C(1099511629779),
+	.sid = UINT64_C(62003),
 	.name = "bind-lne-name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
@@ -6144,7 +6144,7 @@ static const struct cbl_ynode n356 = {
 };
 
 static const struct cbl_ynode n357 = {
-	.sid = UINT64_C(1099511629780),
+	.sid = UINT64_C(62004),
 	.name = "error-info",
 	.kind = CBL_YN_LEAF,
 	.off = offsetof(struct ietf_logical_network_element_bind_lne_name_failed, error_info),
@@ -6154,7 +6154,7 @@ static const struct cbl_ynode n357 = {
 };
 
 static const struct cbl_ynode n358 = {
-	.sid = UINT64_C(1099511629781),
+	.sid = UINT64_C(62005),
 	.name = "name",
 	.kind = CBL_YN_LEAF,
 	.flags = 0x2,
@@ -6168,7 +6168,7 @@ static const struct cbl_ynode *const n355_c[] = {
 	&n356, &n357, &n358
 };
 static const struct cbl_ynode n355 = {
-	.sid = UINT64_C(1099511629778),
+	.sid = UINT64_C(62002),
 	.name = "bind-lne-name-failed",
 	.kind = CBL_YN_NOTIF,
 	.off = CBL_YOFF_NONE,
@@ -6338,30 +6338,30 @@ static const uint64_t i133_d[] = {
 	UINT64_C(2102), UINT64_C(2103), UINT64_C(2104), UINT64_C(2105)
 };
 static const uint64_t i306_d[] = {
-	UINT64_C(1099511629080), UINT64_C(1099511629081), UINT64_C(1099511629277), UINT64_C(1099511629377)
+	UINT64_C(61304), UINT64_C(61305), UINT64_C(61501), UINT64_C(61601)
 };
 static const uint64_t i307_d[] = {
-	UINT64_C(1099511629079), UINT64_C(1099511629082), UINT64_C(1099511629083), UINT64_C(1099511629477),
-	UINT64_C(1099511629478), UINT64_C(1099511629479), UINT64_C(1099511629480), UINT64_C(1099511629481),
-	UINT64_C(1099511629482), UINT64_C(1099511629483), UINT64_C(1099511629484), UINT64_C(1099511629485),
-	UINT64_C(1099511629486), UINT64_C(1099511629487), UINT64_C(1099511629488), UINT64_C(1099511629489)
+	UINT64_C(61303), UINT64_C(61306), UINT64_C(61307), UINT64_C(61701),
+	UINT64_C(61702), UINT64_C(61703), UINT64_C(61704), UINT64_C(61705),
+	UINT64_C(61706), UINT64_C(61707), UINT64_C(61708), UINT64_C(61709),
+	UINT64_C(61710), UINT64_C(61711), UINT64_C(61712), UINT64_C(61713)
 };
 static const uint64_t i309_d[] = {
-	UINT64_C(1099511629277)
+	UINT64_C(61501)
 };
 static const uint64_t i310_d[] = {
-	UINT64_C(1099511629377)
+	UINT64_C(61601)
 };
 static const uint64_t i311_d[] = {
-	UINT64_C(1099511629079), UINT64_C(1099511629083), UINT64_C(1099511629477), UINT64_C(1099511629478),
-	UINT64_C(1099511629479), UINT64_C(1099511629480), UINT64_C(1099511629481), UINT64_C(1099511629482),
-	UINT64_C(1099511629483), UINT64_C(1099511629484), UINT64_C(1099511629485), UINT64_C(1099511629486),
-	UINT64_C(1099511629487), UINT64_C(1099511629488), UINT64_C(1099511629489)
+	UINT64_C(61303), UINT64_C(61307), UINT64_C(61701), UINT64_C(61702),
+	UINT64_C(61703), UINT64_C(61704), UINT64_C(61705), UINT64_C(61706),
+	UINT64_C(61707), UINT64_C(61708), UINT64_C(61709), UINT64_C(61710),
+	UINT64_C(61711), UINT64_C(61712), UINT64_C(61713)
 };
 static const uint64_t i319_d[] = {
-	UINT64_C(1099511629477), UINT64_C(1099511629478), UINT64_C(1099511629479), UINT64_C(1099511629480),
-	UINT64_C(1099511629482), UINT64_C(1099511629483), UINT64_C(1099511629484), UINT64_C(1099511629485),
-	UINT64_C(1099511629486), UINT64_C(1099511629487), UINT64_C(1099511629488), UINT64_C(1099511629489)
+	UINT64_C(61701), UINT64_C(61702), UINT64_C(61703), UINT64_C(61704),
+	UINT64_C(61706), UINT64_C(61707), UINT64_C(61708), UINT64_C(61709),
+	UINT64_C(61710), UINT64_C(61711), UINT64_C(61712), UINT64_C(61713)
 };
 static const struct cbl_yident idents[] = {
 	{ UINT64_C(1501), "interface-type", &m10, 0x0, 305, i0_d },
@@ -6670,28 +6670,28 @@ static const struct cbl_yident idents[] = {
 	{ UINT64_C(2103), "x25ple", &m12, 0x0, 0, NULL },
 	{ UINT64_C(2104), "x86Laps", &m12, 0x0, 0, NULL },
 	{ UINT64_C(2105), "xboxWireless", &m12, 0x0, 0, NULL },
-	{ UINT64_C(1099511629077), "address-family", &m15, 0x0, 4, i306_d },
-	{ UINT64_C(1099511629078), "control-plane-protocol", &m15, 0x0, 16, i307_d },
-	{ UINT64_C(1099511629079), "direct", &m15, 0x0, 0, NULL },
-	{ UINT64_C(1099511629080), "ipv4", &m15, 0x0, 1, i309_d },
-	{ UINT64_C(1099511629081), "ipv6", &m15, 0x0, 1, i310_d },
-	{ UINT64_C(1099511629082), "routing-protocol", &m15, 0x0, 15, i311_d },
-	{ UINT64_C(1099511629083), "static", &m15, 0x0, 0, NULL },
-	{ UINT64_C(1099511629277), "ipv4-unicast", &m16, 0x0, 0, NULL },
-	{ UINT64_C(1099511629377), "ipv6-unicast", &m17, 0x0, 0, NULL },
-	{ UINT64_C(1099511629477), "babel", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629478), "bgp", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629479), "bird", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629480), "dhcp", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629481), "freebsd-origin", &m18, 0x0, 12, i319_d },
-	{ UINT64_C(1099511629482), "isis", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629483), "kernel", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629484), "ospf", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629485), "other", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629486), "redirect", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629487), "rip", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629488), "router-advertisement", &m18, 0x0, 0, NULL },
-	{ UINT64_C(1099511629489), "zebra", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61301), "address-family", &m15, 0x0, 4, i306_d },
+	{ UINT64_C(61302), "control-plane-protocol", &m15, 0x0, 16, i307_d },
+	{ UINT64_C(61303), "direct", &m15, 0x0, 0, NULL },
+	{ UINT64_C(61304), "ipv4", &m15, 0x0, 1, i309_d },
+	{ UINT64_C(61305), "ipv6", &m15, 0x0, 1, i310_d },
+	{ UINT64_C(61306), "routing-protocol", &m15, 0x0, 15, i311_d },
+	{ UINT64_C(61307), "static", &m15, 0x0, 0, NULL },
+	{ UINT64_C(61501), "ipv4-unicast", &m16, 0x0, 0, NULL },
+	{ UINT64_C(61601), "ipv6-unicast", &m17, 0x0, 0, NULL },
+	{ UINT64_C(61701), "babel", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61702), "bgp", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61703), "bird", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61704), "dhcp", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61705), "freebsd-origin", &m18, 0x0, 12, i319_d },
+	{ UINT64_C(61706), "isis", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61707), "kernel", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61708), "ospf", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61709), "other", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61710), "redirect", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61711), "rip", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61712), "router-advertisement", &m18, 0x0, 0, NULL },
+	{ UINT64_C(61713), "zebra", &m18, 0x0, 0, NULL },
 	{ 0, NULL, NULL, 0, 0, NULL },
 };
 
@@ -6741,7 +6741,7 @@ static const struct cbl_ymodule m11 = {
 	.revision = "2026-10-14",
 	.ns = "urn:arcana:yang:arcana-interfaces",
 	.prefix = "arcif",
-	.sid = UINT64_C(1099511628776),
+	.sid = UINT64_C(61000),
 };
 
 static const struct cbl_ymodule m12 = {
@@ -6774,15 +6774,15 @@ static const struct cbl_ymodule m14 = {
 	.revision = "2026-10-14",
 	.ns = "urn:arcana:yang:arcana-ip-deviations",
 	.prefix = "arcipd",
-	.sid = UINT64_C(1099511628976),
+	.sid = UINT64_C(61200),
 };
 
 static const struct cbl_ynode *const m15_t[] = {
 	&n201, &n281
 };
 static const struct cbl_yfeature m15_f[] = {
-	{ UINT64_C(1099511629084), "multiple-ribs", true },
-	{ UINT64_C(1099511629085), "router-id", false },
+	{ UINT64_C(61308), "multiple-ribs", true },
+	{ UINT64_C(61309), "router-id", false },
 };
 static const struct cbl_ymodule m15 = {
 	.schema = &ymodel_schema,
@@ -6790,7 +6790,7 @@ static const struct cbl_ymodule m15 = {
 	.revision = "2018-03-13",
 	.ns = "urn:ietf:params:xml:ns:yang:ietf-routing",
 	.prefix = "rt",
-	.sid = UINT64_C(1099511629076),
+	.sid = UINT64_C(61300),
 	.size = sizeof(struct ietf_routing),
 	.ntop = 2,
 	.top = m15_t,
@@ -6804,7 +6804,7 @@ static const struct cbl_ymodule m16 = {
 	.revision = "2018-03-13",
 	.ns = "urn:ietf:params:xml:ns:yang:ietf-ipv4-unicast-routing",
 	.prefix = "v4ur",
-	.sid = UINT64_C(1099511629276),
+	.sid = UINT64_C(61500),
 };
 
 static const struct cbl_ymodule m17 = {
@@ -6813,7 +6813,7 @@ static const struct cbl_ymodule m17 = {
 	.revision = "2018-03-13",
 	.ns = "urn:ietf:params:xml:ns:yang:ietf-ipv6-unicast-routing",
 	.prefix = "v6ur",
-	.sid = UINT64_C(1099511629376),
+	.sid = UINT64_C(61600),
 };
 
 static const struct cbl_ymodule m18 = {
@@ -6822,7 +6822,7 @@ static const struct cbl_ymodule m18 = {
 	.revision = "2026-10-14",
 	.ns = "urn:arcana:yang:arcana-routing",
 	.prefix = "arcrt",
-	.sid = UINT64_C(1099511629476),
+	.sid = UINT64_C(61700),
 };
 
 static const struct cbl_ynode *const m19_t[] = {
@@ -6834,7 +6834,7 @@ static const struct cbl_ymodule m19 = {
 	.revision = "2019-01-21",
 	.ns = "urn:ietf:params:xml:ns:yang:ietf-network-instance",
 	.prefix = "ni",
-	.sid = UINT64_C(1099511629576),
+	.sid = UINT64_C(61800),
 	.size = sizeof(struct ietf_network_instance),
 	.ntop = 2,
 	.top = m19_t,
@@ -6846,7 +6846,7 @@ static const struct cbl_ymodule m20 = {
 	.revision = "2026-10-14",
 	.ns = "urn:arcana:yang:arcana-network-instance",
 	.prefix = "arcni",
-	.sid = UINT64_C(1099511629676),
+	.sid = UINT64_C(61900),
 };
 
 static const struct cbl_ynode *const m21_t[] = {
@@ -6858,7 +6858,7 @@ static const struct cbl_ymodule m21 = {
 	.revision = "2019-01-25",
 	.ns = "urn:ietf:params:xml:ns:yang:ietf-logical-network-element",
 	.prefix = "lne",
-	.sid = UINT64_C(1099511629776),
+	.sid = UINT64_C(62000),
 	.size = sizeof(struct ietf_logical_network_element),
 	.ntop = 2,
 	.top = m21_t,

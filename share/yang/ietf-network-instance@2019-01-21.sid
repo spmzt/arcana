@@ -3,7 +3,7 @@
     "module-name": "ietf-network-instance",
     "module-revision": "2019-01-21",
     "sid-file-version": 1,
-    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 1800, 100; RFC 8529 has no IETF range.",
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 61 800, 100; RFC 8529 has no IETF range.",
     "dependency-revision": [
       {
         "module-name": "ietf-interfaces",
@@ -20,7 +20,7 @@
     ],
     "assignment-range": [
       {
-        "entry-point": "1099511629576",
+        "entry-point": "61800",
         "size": "100"
       }
     ],
@@ -28,107 +28,107 @@
       {
         "namespace": "module",
         "identifier": "ietf-network-instance",
-        "sid": "1099511629576"
+        "sid": "61800"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv4/ietf-network-instance:bind-ni-name",
-        "sid": "1099511629577"
+        "sid": "61801"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-ip:ipv6/ietf-network-instance:bind-ni-name",
-        "sid": "1099511629578"
+        "sid": "61802"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-network-instance:bind-ni-name",
-        "sid": "1099511629579"
+        "sid": "61803"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:bind-ni-name-failed",
-        "sid": "1099511629580"
+        "sid": "61804"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:bind-ni-name-failed/error-info",
-        "sid": "1099511629581"
+        "sid": "61805"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:bind-ni-name-failed/interface",
-        "sid": "1099511629582"
+        "sid": "61806"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:bind-ni-name-failed/interface/bind-ni-name",
-        "sid": "1099511629583"
+        "sid": "61807"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:bind-ni-name-failed/ipv4",
-        "sid": "1099511629584"
+        "sid": "61808"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:bind-ni-name-failed/ipv4/bind-ni-name",
-        "sid": "1099511629585"
+        "sid": "61809"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:bind-ni-name-failed/ipv6",
-        "sid": "1099511629586"
+        "sid": "61810"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:bind-ni-name-failed/ipv6/bind-ni-name",
-        "sid": "1099511629587"
+        "sid": "61811"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:bind-ni-name-failed/name",
-        "sid": "1099511629588"
+        "sid": "61812"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:network-instances",
-        "sid": "1099511629589"
+        "sid": "61813"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:network-instances/network-instance",
-        "sid": "1099511629590"
+        "sid": "61814"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:network-instances/network-instance/description",
-        "sid": "1099511629591"
+        "sid": "61815"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:network-instances/network-instance/enabled",
-        "sid": "1099511629592"
+        "sid": "61816"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:network-instances/network-instance/name",
-        "sid": "1099511629593"
+        "sid": "61817"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:network-instances/network-instance/vrf-root",
-        "sid": "1099511629594"
+        "sid": "61818"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:network-instances/network-instance/vsi-root",
-        "sid": "1099511629595"
+        "sid": "61819"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-network-instance:network-instances/network-instance/vv-root",
-        "sid": "1099511629596"
+        "sid": "61820"
       }
     ]
   }

@@ -265,7 +265,7 @@
   rtm_protocol (arcana-routing's identities where RFC 8349 has none);
   agent_test's yang_routes holds every FIB to netstat -rn. ietf-routing
   and the unicast modules have no IETF SID range: Arcana's block,
-  2^40 + 1300 to 1799 (SIDS.md). 2.4.2: a multipath route's next hops
+  61 300 to 61 799 (SIDS.md; 2^40 + 1300 to 1799 then). 2.4.2: a multipath route's next hops
   as its next-hop-list, held to a vnet jail's prefix with two gateways,
   IPv4 and IPv6 (agent_root_test's yang_ecmp). 2.4.3: rc.conf's
   static routes as rc.d/routing installs them, read into ietf-routing's
@@ -297,7 +297,7 @@
   interval (yang_rtadv). The running datastore's use of it waits on
   1.11. 2.6.1: FIBs 1 to net.fibs - 1 as RFC 8529's network instances
   (invidia/yni.c), each a VRF of arcana-network-instance's fib case
-  (2^40 + 1900; ietf-network-instance 2^40 + 1800), named fibN or as
+  (61 900; ietf-network-instance 61 800), named fibN or as
   fibs.conf names it (fibN_name, fibN_description: sh(1), libvarconf),
   what cannot be read so said; written back, refused where a FIB is not
   there, a name is another's, one FIB twice. cblink-gen numbers a
@@ -323,7 +323,7 @@
   parent-reference wait on 1.11. 2.7.1: the vnet jails as RFC 8530's
   logical network elements (invidia/ylne.c: jail_getv(3) by lastjid,
   vnet = new, dying ones out as jls(8) leaves them; managed),
-  ietf-logical-network-element from Arcana's block (2^40 + 2000). Held
+  ietf-logical-network-element from Arcana's block (62 000). Held
   to jls -n name vnet (yang_lne) and to a vnet jail beside one sharing
   the host's stack (yang_lne, root). 2.7.2 to 2.7.4 (the attached
   helper, the root mount, bind-lne-name's moves) need the mount and
@@ -343,8 +343,14 @@
   (CORE WG, March 2026), expired 2026-09-15 with no successor: a
   tagged array [metadata map, value] in place of a node's value, under
   a CBOR tag it only proposes (109, unassigned), and a .sid namespace
-  "annotation" (4) beside RFC 9595's. Follow it with 109 held as
-  provisional, or keep origin out of the wire until a standard. Next: 2.8, yang-library, after 1.11; then the Y-3 items
+  "annotation" (4) beside RFC 9595's. Followed (the user, 2026-10-14):
+  cblink v2 0bde490, 109 held as provisional, the draft's Figures 2 and
+  4 to 7 written byte for byte (ymeta_test); the draft's discussion is
+  with its own agent session. The SID block, the user's decision of
+  2026-10-14: RFC 9595's experimental range for now (SIDS.md), cblink
+  60 000 up, Arcana 61 000 up, each module where it was in the 2^40
+  block; cblink main 340d4aa and v2 b140fed. And Y-3's conversions
+  before 1.11 (the user, 2026-10-14). Next: 2.8, yang-library, after 1.11; then the Y-3 items
   main can carry. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model

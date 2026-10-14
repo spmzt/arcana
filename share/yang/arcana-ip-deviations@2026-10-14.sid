@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-ip-deviations",
     "module-revision": "2026-10-14",
-    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 1200, 100.",
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 61 200, 100.",
     "dependency-revision": [
       {
         "module-name": "ietf-interfaces",
@@ -15,7 +15,7 @@
     ],
     "assignment-range": [
       {
-        "entry-point": "1099511628976",
+        "entry-point": "61200",
         "size": "100"
       }
     ],
@@ -23,7 +23,7 @@
       {
         "namespace": "module",
         "identifier": "arcana-ip-deviations",
-        "sid": "1099511628976"
+        "sid": "61200"
       }
     ]
   }
