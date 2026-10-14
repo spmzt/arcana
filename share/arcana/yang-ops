@@ -14,3 +14,8 @@ jobs	arcana-jobs@2026-10-14
 job	arcana-jobs@2026-10-14
 job-cancel	arcana-jobs@2026-10-14
 job-confirm	arcana-jobs@2026-10-14
+storage	arcana-storage@2026-10-14
+fstab	arcana-storage@2026-10-14
+zfs-send	arcana-storage@2026-10-14
+zfs-receive	arcana-storage@2026-10-14
+zfs-key	arcana-storage@2026-10-14

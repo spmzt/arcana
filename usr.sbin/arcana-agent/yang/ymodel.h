@@ -200,6 +200,32 @@ struct arcana_jobs_submit_input_change_ssh;
 struct arcana_jobs_submit_input_change;
 struct arcana_jobs_submit_input;
 struct arcana_jobs_submit_output;
+struct arcana_storage_storage_disk_partition;
+struct arcana_storage_storage_disk_health;
+struct arcana_storage_storage_disk;
+struct arcana_storage_storage_pool_vdev;
+struct arcana_storage_storage_pool;
+struct arcana_storage_storage_importable;
+struct arcana_storage_storage_dataset_load_key_input;
+struct arcana_storage_storage_dataset_load_key_output;
+struct arcana_storage_storage_dataset_unload_key_input;
+struct arcana_storage_storage_dataset_unload_key_output;
+struct arcana_storage_storage_dataset_change_key_input;
+struct arcana_storage_storage_dataset_change_key_output;
+struct arcana_storage_storage_dataset;
+struct arcana_storage_storage_snapshot_send_input;
+struct arcana_storage_storage_snapshot_send_output;
+struct arcana_storage_storage_snapshot;
+struct arcana_storage_storage_mount;
+struct arcana_storage_storage_fstab_entry;
+struct arcana_storage_storage_fstab_replace_input;
+struct arcana_storage_storage_fstab_replace_output;
+struct arcana_storage_storage_fstab;
+struct arcana_storage_storage_swap;
+struct arcana_storage_storage;
+struct arcana_storage;
+struct arcana_storage_receive_input;
+struct arcana_storage_receive_output;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -884,6 +910,17 @@ enum arcana_jobs_submit_input_change_ssh_verb {
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_UNAUTHORIZE = 3,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_SIGN = 4,
 	ARCANA_JOBS_SUBMIT_INPUT_CHANGE_SSH_VERB_USER_CAS = 5,
+};
+
+enum arcana_storage_storage_dataset_type {
+	ARCANA_STORAGE_STORAGE_DATASET_TYPE_FILESYSTEM = 0,
+	ARCANA_STORAGE_STORAGE_DATASET_TYPE_VOLUME = 1,
+};
+
+enum arcana_storage_storage_dataset_canmount {
+	ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_ON = 0,
+	ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_OFF = 1,
+	ARCANA_STORAGE_STORAGE_DATASET_CANMOUNT_NOAUTO = 2,
 };
 
 /* container */
@@ -2899,6 +2936,326 @@ struct arcana_jobs_submit_output {
 	}			 id;
 };
 
+/* list entry */
+struct arcana_storage_storage_disk_partition {
+	const char	*name;
+	bool			 has_index;
+	uint32_t	 index;
+	bool			 has_size;
+	uint64_t	 size;
+	const char	*type;
+	const char	*label;
+	bool			 has_start;
+	uint64_t	 start;
+	bool			 has_end;
+	uint64_t	 end;
+};
+
+/* container */
+struct arcana_storage_storage_disk_health {
+	const char	*by;
+	bool			 has_ok;
+	bool		 ok;
+	bool			 has_temperature;
+	int32_t		 temperature;
+	bool			 has_power_on_hours;
+	uint64_t	 power_on_hours;
+	bool			 has_power_cycles;
+	uint64_t	 power_cycles;
+	bool			 has_used_pct;
+	uint32_t	 used_pct;
+	bool			 has_spare_pct;
+	uint32_t	 spare_pct;
+	bool			 has_media_errors;
+	uint64_t	 media_errors;
+	bool			 has_unsafe_shutdowns;
+	uint64_t	 unsafe_shutdowns;
+	bool			 has_reallocated;
+	uint64_t	 reallocated;
+	bool			 has_pending;
+	uint64_t	 pending;
+	bool			 has_uncorrectable;
+	uint64_t	 uncorrectable;
+	bool			 has_crc_errors;
+	uint64_t	 crc_errors;
+	bool			 has_wear_level;
+	uint64_t	 wear_level;
+	bool			 has_life_left;
+	uint64_t	 life_left;
+	bool			 has_media_wearout;
+	uint64_t	 media_wearout;
+	const char	*note;
+};
+
+/* list entry */
+struct arcana_storage_storage_disk {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_sectorsize;
+	uint32_t	 sectorsize;
+	const char	*ident;
+	const char	*descr;
+	const char	*rotation;
+	const char	*cam;
+	const char	*scheme;
+	bool			 has_first;
+	uint64_t	 first;
+	bool			 has_last;
+	uint64_t	 last;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_disk_partition	*v;
+	}			 partition;
+	const struct arcana_storage_storage_disk_health	*health;
+};
+
+/* list entry */
+struct arcana_storage_storage_pool_vdev {
+	const char	*name;
+	bool			 has_depth;
+	uint32_t	 depth;
+	const char	*state;
+	const char	*read;
+	const char	*write;
+	const char	*cksum;
+	const char	*note;
+};
+
+/* list entry */
+struct arcana_storage_storage_pool {
+	const char	*name;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_alloc;
+	uint64_t	 alloc;
+	bool			 has_free;
+	uint64_t	 free;
+	bool			 has_frag;
+	uint32_t	 frag;
+	bool			 has_cap;
+	uint32_t	 cap;
+	const char	*dedup;
+	const char	*health;
+	const char	*state;
+	const char	*status;
+	const char	*action;
+	const char	*scan;
+	const char	*errors;
+	const char	*see;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_pool_vdev	*v;
+	}			 vdev;
+};
+
+/* list entry */
+struct arcana_storage_storage_importable {
+	const char	*id;
+	const char	*name;
+	const char	*state;
+	const char	*status;
+};
+
+/* input */
+struct arcana_storage_storage_dataset_load_key_input {
+	const char	*key;
+};
+
+/* output */
+struct arcana_storage_storage_dataset_load_key_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* input */
+struct arcana_storage_storage_dataset_unload_key_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_storage_storage_dataset_unload_key_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* input */
+struct arcana_storage_storage_dataset_change_key_input {
+	const char	*key;
+	const char	*new_key;
+};
+
+/* output */
+struct arcana_storage_storage_dataset_change_key_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct arcana_storage_storage_dataset {
+	const char	*name;
+	bool			 has_type;
+	enum arcana_storage_storage_dataset_type	 type;
+	bool			 has_used;
+	uint64_t	 used;
+	bool			 has_avail;
+	uint64_t	 avail;
+	bool			 has_refer;
+	uint64_t	 refer;
+	bool			 has_quota;
+	uint64_t	 quota;
+	bool			 has_reservation;
+	uint64_t	 reservation;
+	const char	*mountpoint;
+	bool			 has_mounted;
+	bool		 mounted;
+	bool			 has_canmount;
+	enum arcana_storage_storage_dataset_canmount	 canmount;
+	const char	*compression;
+	bool			 has_ratio;
+	int64_t		 ratio;	/* decimal64, 2 fraction digits */
+	bool			 has_readonly;
+	bool		 readonly;
+	const char	*encryption;
+	const char	*keylocation;
+	bool			 has_jailed;
+	bool		 jailed;
+	const char	*origin;
+};
+
+/* input */
+struct arcana_storage_storage_snapshot_send_input {
+	const char	*from;
+	bool			 has_recursive;
+	bool		 recursive;
+};
+
+/* output */
+struct arcana_storage_storage_snapshot_send_output {
+	char			 _empty;	/* nothing in it */
+};
+
+/* list entry */
+struct arcana_storage_storage_snapshot {
+	const char	*name;
+	bool			 has_used;
+	uint64_t	 used;
+	bool			 has_refer;
+	uint64_t	 refer;
+	bool			 has_creation;
+	int64_t		 creation;
+};
+
+/* list entry */
+struct arcana_storage_storage_mount {
+	const char	*from;
+	const char	*on;
+	const char	*type;
+	const char	*options;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_used;
+	uint64_t	 used;
+	bool			 has_avail;
+	uint64_t	 avail;
+};
+
+/* list entry */
+struct arcana_storage_storage_fstab_entry {
+	const char	*spec;
+	const char	*file;
+	const char	*vfstype;
+	const char	*mntops;
+	const char	*type;
+	bool			 has_freq;
+	int32_t		 freq;
+	bool			 has_passno;
+	int32_t		 passno;
+	bool			 has_mounted;
+	bool		 mounted;
+};
+
+/* input */
+struct arcana_storage_storage_fstab_replace_input {
+	const char	*text;
+	const char	*sha256;
+	bool			 has_dry_run;
+	bool		 dry_run;
+};
+
+/* output */
+struct arcana_storage_storage_fstab_replace_output {
+	const char	*sha256;
+};
+
+/* container */
+struct arcana_storage_storage_fstab {
+	const char	*text;
+	const char	*sha256;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_fstab_entry	*v;
+	}			 entry;
+};
+
+/* list entry */
+struct arcana_storage_storage_swap {
+	const char	*device;
+	bool			 has_size;
+	uint64_t	 size;
+	bool			 has_used;
+	uint64_t	 used;
+};
+
+/* container */
+struct arcana_storage_storage {
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_disk	*v;
+	}			 disk;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_pool	*v;
+	}			 pool;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_importable	*v;
+	}			 importable;
+	bool			 has_datasets_total;
+	uint64_t	 datasets_total;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_dataset	*v;
+	}			 dataset;
+	bool			 has_snapshots_total;
+	uint64_t	 snapshots_total;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_snapshot	*v;
+	}			 snapshot;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_mount	*v;
+	}			 mount;
+	const struct arcana_storage_storage_fstab	*fstab;
+	struct {
+		size_t		 n;
+		const struct arcana_storage_storage_swap	*v;
+	}			 swap;
+};
+
+/* data */
+struct arcana_storage {
+	const struct arcana_storage_storage	*storage;
+};
+
+/* input */
+struct arcana_storage_receive_input {
+	const char	*dataset;
+};
+
+/* output */
+struct arcana_storage_receive_output {
+	char			 _empty;	/* nothing in it */
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -3603,6 +3960,106 @@ int	arcana_jobs_submit_output_encode(const struct arcana_jobs_submit_output *,
 	    struct cbl_ybuf *);
 int	arcana_jobs_submit_output_decode(const void *, size_t, struct arcana_jobs_submit_output *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_disk_partition_encode(const struct arcana_storage_storage_disk_partition *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_disk_partition_decode(const void *, size_t, struct arcana_storage_storage_disk_partition *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_disk_health_encode(const struct arcana_storage_storage_disk_health *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_disk_health_decode(const void *, size_t, struct arcana_storage_storage_disk_health *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_disk_encode(const struct arcana_storage_storage_disk *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_disk_decode(const void *, size_t, struct arcana_storage_storage_disk *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_pool_vdev_encode(const struct arcana_storage_storage_pool_vdev *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_pool_vdev_decode(const void *, size_t, struct arcana_storage_storage_pool_vdev *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_pool_encode(const struct arcana_storage_storage_pool *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_pool_decode(const void *, size_t, struct arcana_storage_storage_pool *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_importable_encode(const struct arcana_storage_storage_importable *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_importable_decode(const void *, size_t, struct arcana_storage_storage_importable *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_load_key_input_encode(const struct arcana_storage_storage_dataset_load_key_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_load_key_input_decode(const void *, size_t, struct arcana_storage_storage_dataset_load_key_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_load_key_output_encode(const struct arcana_storage_storage_dataset_load_key_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_load_key_output_decode(const void *, size_t, struct arcana_storage_storage_dataset_load_key_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_unload_key_input_encode(const struct arcana_storage_storage_dataset_unload_key_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_unload_key_input_decode(const void *, size_t, struct arcana_storage_storage_dataset_unload_key_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_unload_key_output_encode(const struct arcana_storage_storage_dataset_unload_key_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_unload_key_output_decode(const void *, size_t, struct arcana_storage_storage_dataset_unload_key_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_change_key_input_encode(const struct arcana_storage_storage_dataset_change_key_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_change_key_input_decode(const void *, size_t, struct arcana_storage_storage_dataset_change_key_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_change_key_output_encode(const struct arcana_storage_storage_dataset_change_key_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_change_key_output_decode(const void *, size_t, struct arcana_storage_storage_dataset_change_key_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_dataset_encode(const struct arcana_storage_storage_dataset *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_dataset_decode(const void *, size_t, struct arcana_storage_storage_dataset *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_snapshot_send_input_encode(const struct arcana_storage_storage_snapshot_send_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_snapshot_send_input_decode(const void *, size_t, struct arcana_storage_storage_snapshot_send_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_snapshot_send_output_encode(const struct arcana_storage_storage_snapshot_send_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_snapshot_send_output_decode(const void *, size_t, struct arcana_storage_storage_snapshot_send_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_snapshot_encode(const struct arcana_storage_storage_snapshot *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_snapshot_decode(const void *, size_t, struct arcana_storage_storage_snapshot *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_mount_encode(const struct arcana_storage_storage_mount *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_mount_decode(const void *, size_t, struct arcana_storage_storage_mount *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_fstab_entry_encode(const struct arcana_storage_storage_fstab_entry *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_fstab_entry_decode(const void *, size_t, struct arcana_storage_storage_fstab_entry *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_fstab_replace_input_encode(const struct arcana_storage_storage_fstab_replace_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_fstab_replace_input_decode(const void *, size_t, struct arcana_storage_storage_fstab_replace_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_fstab_replace_output_encode(const struct arcana_storage_storage_fstab_replace_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_fstab_replace_output_decode(const void *, size_t, struct arcana_storage_storage_fstab_replace_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_fstab_encode(const struct arcana_storage_storage_fstab *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_fstab_decode(const void *, size_t, struct arcana_storage_storage_fstab *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_swap_encode(const struct arcana_storage_storage_swap *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_swap_decode(const void *, size_t, struct arcana_storage_storage_swap *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_storage_encode(const struct arcana_storage_storage *,
+	    struct cbl_ybuf *);
+int	arcana_storage_storage_decode(const void *, size_t, struct arcana_storage_storage *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_receive_input_encode(const struct arcana_storage_receive_input *,
+	    struct cbl_ybuf *);
+int	arcana_storage_receive_input_decode(const void *, size_t, struct arcana_storage_receive_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_storage_receive_output_encode(const struct arcana_storage_receive_output *,
+	    struct cbl_ybuf *);
+int	arcana_storage_receive_output_decode(const void *, size_t, struct arcana_storage_receive_output *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -3682,5 +4139,23 @@ int	arcana_jobs_jobs_job_confirm_action(cbl_req *, const struct cbl_bytes *,
 	    struct arcana_jobs_jobs_job_confirm_output *, cbl_yarena *);
 int	arcana_jobs_submit_rpc(cbl_req *, const struct arcana_jobs_submit_input *,
 	    struct arcana_jobs_submit_output *, cbl_yarena *);
+int	arcana_storage_storage_get(cbl_req *, struct arcana_storage *, cbl_yarena *);
+int	arcana_storage_storage_dataset_load_key_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_dataset_load_key_input *,
+	    struct arcana_storage_storage_dataset_load_key_output *, cbl_yarena *);
+int	arcana_storage_storage_dataset_unload_key_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_dataset_unload_key_input *,
+	    struct arcana_storage_storage_dataset_unload_key_output *, cbl_yarena *);
+int	arcana_storage_storage_dataset_change_key_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_dataset_change_key_input *,
+	    struct arcana_storage_storage_dataset_change_key_output *, cbl_yarena *);
+int	arcana_storage_storage_snapshot_send_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_snapshot_send_input *,
+	    struct arcana_storage_storage_snapshot_send_output *, cbl_yarena *);
+int	arcana_storage_storage_fstab_replace_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_storage_storage_fstab_replace_input *,
+	    struct arcana_storage_storage_fstab_replace_output *, cbl_yarena *);
+int	arcana_storage_receive_rpc(cbl_req *, const struct arcana_storage_receive_input *,
+	    struct arcana_storage_receive_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

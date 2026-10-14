@@ -143,6 +143,17 @@ int	yjobs_specs(const struct arcana_jobs_submit_input *in, cbl_yarena *a,
 	    const struct arc_job_spec **out, size_t *n, size_t *bad);
 
 /*
+ * arcana-storage (acedia/ystorage.c): ystorage_from_json() the storage
+ * operation's reply of a kind (ARC_STORAGE_KIND_*) put in st, the other
+ * kinds' parts kept, health's on its disks; ystorage_fstab() fstab(5)'s
+ * text and SHA-256, the fstab operation's.
+ */
+int	ystorage_from_json(int kind, const char *json, uint64_t total,
+	    bool truncated, cbl_yarena *a, struct arcana_storage_storage *st);
+int	ystorage_fstab(const char *text, const char *sha256, cbl_yarena *a,
+	    struct arcana_storage_storage *st);
+
+/*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
  * them (invidia/ylne.c).
  */

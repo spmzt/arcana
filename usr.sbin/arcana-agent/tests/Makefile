@@ -19,6 +19,12 @@ SRCS.yjails=	yjails_test.c yjails.c ymodel_schema.c
 CFLAGS.yjails_test.c+=	-I${.OBJDIR}/..
 CFLAGS.yjails.c+=	-I${.OBJDIR}/..
 LDADD.yjails+=	${CBLINK_LIBS}
+# ystorage: the storage operation's replies as arcana-storage has them.
+PROGS+=		ystorage
+SRCS.ystorage=	ystorage_test.c ystorage.c ymodel_schema.c
+CFLAGS.ystorage_test.c+=	-I${.OBJDIR}/..
+CFLAGS.ystorage.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.ystorage+=	${CBLINK_LIBS} ${UCL_LIBS}
 # yjobs: the jobs as arcana-jobs has them, a submit's changes as specs.
 PROGS+=		yjobs
 SRCS.yjobs=	yjobs_test.c yjobs.c yjobs_spec.c ymodel_schema.c
@@ -51,7 +57,8 @@ SRCS.yrcroutes=	yrcroutes.c rcroutes.c ymodel_schema.c
 CFLAGS+=	-I${.CURDIR}/../../../lib/libvarconf
 LDADD.yrcroutes+=	${CBLINK_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
-.PATH:		${.CURDIR}/../invidia ${.CURDIR}/../ira ${.CURDIR}/../yang
+.PATH:		${.CURDIR}/../invidia ${.CURDIR}/../ira ${.CURDIR}/../acedia \
+		${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang -I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
 LDADD.ycollect+=	${CBLINK_LIBS} -ljail -lnv
 MAN=
