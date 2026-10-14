@@ -88,6 +88,7 @@ bytes on the wire, where it was 9.
 | 63 400 | 200 | `arcana-storage` | `share/yang/arcana-storage@2026-10-14.sid` (144 used) |
 | 63 600 | 100 | `arcana-sysctl` | `share/yang/arcana-sysctl@2026-10-14.sid` (12 used) |
 | 63 700 | 100 | `arcana-kernel` | `share/yang/arcana-kernel@2026-10-14.sid` (37 used) |
+| 63 800 | 100 | `arcana-processes`, `openconfig-procmon`'s grouping used in it | `share/yang/arcana-processes@2026-10-14.sid` (66 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

@@ -23,8 +23,9 @@
  * arcana-storage: 143 nodes, 2 types, 23626 bytes
  * arcana-sysctl: 11 nodes, 1 types, 2038 bytes
  * arcana-kernel: 36 nodes, 0 types, 5852 bytes
- * in all, 967 nodes (children found 158 dense, 31 by a table, 25 by a search),
- * 96 types, 34 expressions, 328 identities, 216278 bytes
+ * arcana-processes: 66 nodes, 3 types, 11120 bytes
+ * in all, 1033 nodes (children found 164 dense, 33 by a table, 27 by a search),
+ * 99 types, 35 expressions, 328 identities, 227926 bytes
  */
 
 #include <stdbool.h>
@@ -58,6 +59,7 @@ static const struct cbl_ymodule m25;
 static const struct cbl_ymodule m26;
 static const struct cbl_ymodule m27;
 static const struct cbl_ymodule m28;
+static const struct cbl_ymodule m29;
 static const struct cbl_ychoice c0;
 static const struct cbl_ychoice c1;
 static const struct cbl_ychoice c2;
@@ -1037,6 +1039,72 @@ static const struct cbl_ynode n963;
 static const struct cbl_ynode n964;
 static const struct cbl_ynode n965;
 static const struct cbl_ynode n966;
+static const struct cbl_ynode n967;
+static const struct cbl_ynode n968;
+static const struct cbl_ynode n969;
+static const struct cbl_ynode n970;
+static const struct cbl_ynode n971;
+static const struct cbl_ynode n972;
+static const struct cbl_ynode n973;
+static const struct cbl_ynode n974;
+static const struct cbl_ynode n975;
+static const struct cbl_ynode n976;
+static const struct cbl_ynode n977;
+static const struct cbl_ynode n978;
+static const struct cbl_ynode n979;
+static const struct cbl_ynode n980;
+static const struct cbl_ynode n981;
+static const struct cbl_ynode n982;
+static const struct cbl_ynode n983;
+static const struct cbl_ynode n984;
+static const struct cbl_ynode n985;
+static const struct cbl_ynode n986;
+static const struct cbl_ynode n987;
+static const struct cbl_ynode n988;
+static const struct cbl_ynode n989;
+static const struct cbl_ynode n990;
+static const struct cbl_ynode n991;
+static const struct cbl_ynode n992;
+static const struct cbl_ynode n993;
+static const struct cbl_ynode n994;
+static const struct cbl_ynode n995;
+static const struct cbl_ynode n996;
+static const struct cbl_ynode n997;
+static const struct cbl_ynode n998;
+static const struct cbl_ynode n999;
+static const struct cbl_ynode n1000;
+static const struct cbl_ynode n1001;
+static const struct cbl_ynode n1002;
+static const struct cbl_ynode n1003;
+static const struct cbl_ynode n1004;
+static const struct cbl_ynode n1005;
+static const struct cbl_ynode n1006;
+static const struct cbl_ynode n1007;
+static const struct cbl_ynode n1008;
+static const struct cbl_ynode n1009;
+static const struct cbl_ynode n1010;
+static const struct cbl_ynode n1011;
+static const struct cbl_ynode n1012;
+static const struct cbl_ynode n1013;
+static const struct cbl_ynode n1014;
+static const struct cbl_ynode n1015;
+static const struct cbl_ynode n1016;
+static const struct cbl_ynode n1017;
+static const struct cbl_ynode n1018;
+static const struct cbl_ynode n1019;
+static const struct cbl_ynode n1020;
+static const struct cbl_ynode n1021;
+static const struct cbl_ynode n1022;
+static const struct cbl_ynode n1023;
+static const struct cbl_ynode n1024;
+static const struct cbl_ynode n1025;
+static const struct cbl_ynode n1026;
+static const struct cbl_ynode n1027;
+static const struct cbl_ynode n1028;
+static const struct cbl_ynode n1029;
+static const struct cbl_ynode n1030;
+static const struct cbl_ynode n1031;
+static const struct cbl_ynode n1032;
 
 static const struct cbl_yitem t0_i[] = {
 	{ "up", INT64_C(1) },
@@ -2201,6 +2269,33 @@ static const struct cbl_ytype t95 = {
 	.path = -1,
 	.npatterns = 1,
 	.patterns = t95_p,
+};
+
+static const struct cbl_ytype t96 = {
+	.kind = CBL_YT_UINT64,
+	.csize = sizeof(uint64_t),
+	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
+	.path = 34,
+};
+
+static const struct cbl_yrange t97_r[] = {
+	{ .min.i = INT64_C(-20), .max.i = INT64_C(20) },
+};
+static const struct cbl_ytype t97 = {
+	.kind = CBL_YT_INT32,
+	.csize = sizeof(int32_t),
+	.path = -1,
+	.range = { t97_r, 1, NULL, NULL },
+};
+
+static const struct cbl_yrange t98_r[] = {
+	{ .min.u = UINT64_C(0), .max.u = UINT64_C(100) },
+};
+static const struct cbl_ytype t98 = {
+	.kind = CBL_YT_UINT8,
+	.csize = sizeof(uint8_t),
+	.path = -1,
+	.range = { t98_r, 1, NULL, NULL },
 };
 
 static const uint16_t n1_p[] = {
@@ -14620,6 +14715,775 @@ static const struct cbl_ynode n963 = {
 	.module = &m28,
 };
 
+static const uint16_t n967_p[] = {
+	1, 2, 0, 0, 0, 0, 0, 0, 0, 3, 4
+};
+static const struct cbl_ynode n968 = {
+	.sid = UINT64_C(63802),
+	.name = "elapsed",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes, elapsed),
+	.hoff = offsetof(struct arcana_processes_processes, has_elapsed),
+	.type = &t61,
+	.units = "seconds",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n970 = {
+	.sid = UINT64_C(63804),
+	.name = "cpu",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_jail, cpu),
+	.hoff = offsetof(struct arcana_processes_processes_jail, has_cpu),
+	.type = &t61,
+	.units = "percent",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n971 = {
+	.sid = UINT64_C(63805),
+	.name = "jid",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x4,
+	.off = offsetof(struct arcana_processes_processes_jail, jid),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t10,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n972 = {
+	.sid = UINT64_C(63806),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_jail, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n973 = {
+	.sid = UINT64_C(63807),
+	.name = "procs",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_jail, procs),
+	.hoff = offsetof(struct arcana_processes_processes_jail, has_procs),
+	.type = &t10,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n974 = {
+	.sid = UINT64_C(63808),
+	.name = "rss",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_jail, rss),
+	.hoff = offsetof(struct arcana_processes_processes_jail, has_rss),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n975 = {
+	.sid = UINT64_C(63809),
+	.name = "threads",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_jail, threads),
+	.hoff = offsetof(struct arcana_processes_processes_jail, has_threads),
+	.type = &t10,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n976 = {
+	.sid = UINT64_C(63810),
+	.name = "wcpu",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_jail, wcpu),
+	.hoff = offsetof(struct arcana_processes_processes_jail, has_wcpu),
+	.type = &t61,
+	.units = "percent",
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n969_c[] = {
+	&n970, &n971, &n972, &n973, &n974, &n975,
+	&n976
+};
+static const uint32_t n969_k[] = { 1 };
+static const struct cbl_ynode n969 = {
+	.sid = UINT64_C(63803),
+	.name = "jail",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_processes_processes, jail),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes_jail),
+	.nmap = 7,
+	.nchild = 7,
+	.child = n969_c,
+	.nkeys = 1,
+	.keys = n969_k,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n977 = {
+	.sid = UINT64_C(63811),
+	.name = "ncpu",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes, ncpu),
+	.hoff = offsetof(struct arcana_processes_processes, has_ncpu),
+	.type = &t10,
+	.module = &m29,
+};
+
+static const uint16_t n978_p[] = {
+	1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 0, 0, 0, 0, 4,
+	0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6
+};
+static const struct cbl_ynode n980 = {
+	.sid = UINT64_C(63814),
+	.name = "fd",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_file, fd),
+	.hoff = offsetof(struct arcana_processes_processes_process_file, has_fd),
+	.type = &t65,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n981 = {
+	.sid = UINT64_C(63815),
+	.name = "local",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_file, local),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n982 = {
+	.sid = UINT64_C(63816),
+	.name = "mode",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_file, mode),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n983 = {
+	.sid = UINT64_C(63817),
+	.name = "path",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_file, path),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n984 = {
+	.sid = UINT64_C(63818),
+	.name = "proto",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_file, proto),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n985 = {
+	.sid = UINT64_C(63819),
+	.name = "remote",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_file, remote),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n986 = {
+	.sid = UINT64_C(63820),
+	.name = "type",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_file, type),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n987 = {
+	.sid = UINT64_C(63821),
+	.name = "use",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_file, use),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n979_c[] = {
+	&n980, &n981, &n982, &n983, &n984, &n985,
+	&n986, &n987
+};
+static const struct cbl_ynode n979 = {
+	.sid = UINT64_C(63813),
+	.name = "file",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_processes_processes_process, file),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes_process_file),
+	.nmap = 8,
+	.nchild = 8,
+	.child = n979_c,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n988 = {
+	.sid = UINT64_C(63822),
+	.name = "pid",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x4,
+	.off = offsetof(struct arcana_processes_processes_process, pid),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t96,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n991 = {
+	.sid = UINT64_C(63825),
+	.name = "nice",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x2,
+	.off = offsetof(struct arcana_processes_processes_process_renice_input, nice),
+	.hoff = offsetof(struct arcana_processes_processes_process_renice_input, has_nice),
+	.type = &t97,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n992 = {
+	.sid = UINT64_C(63826),
+	.name = "start-time",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_renice_input, start_time),
+	.hoff = offsetof(struct arcana_processes_processes_process_renice_input, has_start_time),
+	.type = &t9,
+	.units = "nanoseconds",
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n990_c[] = {
+	&n991, &n992
+};
+static const struct cbl_ynode n990 = {
+	.sid = UINT64_C(63824),
+	.name = "input",
+	.kind = CBL_YN_INPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes_process_renice_input),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n990_c,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n993 = {
+	.sid = UINT64_C(63827),
+	.name = "output",
+	.kind = CBL_YN_OUTPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes_process_renice_output),
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n989_c[] = {
+	&n990, &n993
+};
+static const struct cbl_ynode n989 = {
+	.sid = UINT64_C(63823),
+	.name = "renice",
+	.kind = CBL_YN_ACTION,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.nchild = 2,
+	.child = n989_c,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n996 = {
+	.sid = UINT64_C(63830),
+	.name = "signal",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x2,
+	.off = offsetof(struct arcana_processes_processes_process_signal_input, signal),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n997 = {
+	.sid = UINT64_C(63831),
+	.name = "start-time",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_signal_input, start_time),
+	.hoff = offsetof(struct arcana_processes_processes_process_signal_input, has_start_time),
+	.type = &t9,
+	.units = "nanoseconds",
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n995_c[] = {
+	&n996, &n997
+};
+static const struct cbl_ynode n995 = {
+	.sid = UINT64_C(63829),
+	.name = "input",
+	.kind = CBL_YN_INPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes_process_signal_input),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n995_c,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n998 = {
+	.sid = UINT64_C(63832),
+	.name = "output",
+	.kind = CBL_YN_OUTPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes_process_signal_output),
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n994_c[] = {
+	&n995, &n998
+};
+static const struct cbl_ynode n994 = {
+	.sid = UINT64_C(63828),
+	.name = "signal",
+	.kind = CBL_YN_ACTION,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.nchild = 2,
+	.child = n994_c,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1000 = {
+	.sid = UINT64_C(63834),
+	.name = "args",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_processes_processes_process_state, args),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1001 = {
+	.sid = UINT64_C(63835),
+	.name = "blocks-in",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, blocks_in),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_blocks_in),
+	.type = &t9,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1002 = {
+	.sid = UINT64_C(63836),
+	.name = "blocks-out",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, blocks_out),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_blocks_out),
+	.type = &t9,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1003 = {
+	.sid = UINT64_C(63837),
+	.name = "cpu",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, cpu),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu),
+	.type = &t61,
+	.units = "percent",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1004 = {
+	.sid = UINT64_C(63838),
+	.name = "cpu-time",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, cpu_time),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu_time),
+	.type = &t61,
+	.units = "seconds",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1005 = {
+	.sid = UINT64_C(63839),
+	.name = "cpu-usage-system",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, cpu_usage_system),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu_usage_system),
+	.type = &t9,
+	.units = "nanoseconds",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1006 = {
+	.sid = UINT64_C(63840),
+	.name = "cpu-usage-user",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, cpu_usage_user),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu_usage_user),
+	.type = &t9,
+	.units = "nanoseconds",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1007 = {
+	.sid = UINT64_C(63841),
+	.name = "cpu-utilization",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, cpu_utilization),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_cpu_utilization),
+	.type = &t98,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1008 = {
+	.sid = UINT64_C(63842),
+	.name = "io",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, io),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_io),
+	.type = &t61,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1009 = {
+	.sid = UINT64_C(63843),
+	.name = "jail",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, jail),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1010 = {
+	.sid = UINT64_C(63844),
+	.name = "jid",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, jid),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_jid),
+	.type = &t10,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1011 = {
+	.sid = UINT64_C(63845),
+	.name = "memory-usage",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, memory_usage),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_memory_usage),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1012 = {
+	.sid = UINT64_C(63846),
+	.name = "memory-utilization",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, memory_utilization),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_memory_utilization),
+	.type = &t98,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1013 = {
+	.sid = UINT64_C(63847),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1014 = {
+	.sid = UINT64_C(63848),
+	.name = "nice",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, nice),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_nice),
+	.type = &t65,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1015 = {
+	.sid = UINT64_C(63849),
+	.name = "pid",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, pid),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_pid),
+	.type = &t9,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1016 = {
+	.sid = UINT64_C(63850),
+	.name = "ppid",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, ppid),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_ppid),
+	.type = &t9,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1017 = {
+	.sid = UINT64_C(63851),
+	.name = "priority",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, priority),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_priority),
+	.type = &t65,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1018 = {
+	.sid = UINT64_C(63852),
+	.name = "run-state",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, run_state),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1019 = {
+	.sid = UINT64_C(63853),
+	.name = "size",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, size),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_size),
+	.type = &t9,
+	.units = "bytes",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1020 = {
+	.sid = UINT64_C(63854),
+	.name = "start-time",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, start_time),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_start_time),
+	.type = &t9,
+	.units = "nanoseconds",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1021 = {
+	.sid = UINT64_C(63855),
+	.name = "threads",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, threads),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_threads),
+	.type = &t10,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1022 = {
+	.sid = UINT64_C(63856),
+	.name = "user",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, user),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1023 = {
+	.sid = UINT64_C(63857),
+	.name = "wait",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, wait),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1024 = {
+	.sid = UINT64_C(63858),
+	.name = "wcpu",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_state, wcpu),
+	.hoff = offsetof(struct arcana_processes_processes_process_state, has_wcpu),
+	.type = &t61,
+	.units = "percent",
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n999_c[] = {
+	&n1000, &n1001, &n1002, &n1003, &n1004, &n1005,
+	&n1006, &n1007, &n1008, &n1009, &n1010, &n1011,
+	&n1012, &n1013, &n1014, &n1015, &n1016, &n1017,
+	&n1018, &n1019, &n1020, &n1021, &n1022, &n1023,
+	&n1024
+};
+static const struct cbl_ynode n999 = {
+	.sid = UINT64_C(63833),
+	.name = "state",
+	.kind = CBL_YN_CONTAINER,
+	.off = offsetof(struct arcana_processes_processes_process, state),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes_process_state),
+	.nmap = 25,
+	.nchild = 25,
+	.child = n999_c,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1026 = {
+	.sid = UINT64_C(63860),
+	.name = "cpu-time",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_thread, cpu_time),
+	.hoff = offsetof(struct arcana_processes_processes_process_thread, has_cpu_time),
+	.type = &t61,
+	.units = "seconds",
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1027 = {
+	.sid = UINT64_C(63861),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_thread, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1028 = {
+	.sid = UINT64_C(63862),
+	.name = "priority",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_thread, priority),
+	.hoff = offsetof(struct arcana_processes_processes_process_thread, has_priority),
+	.type = &t65,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1029 = {
+	.sid = UINT64_C(63863),
+	.name = "run-state",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_thread, run_state),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1030 = {
+	.sid = UINT64_C(63864),
+	.name = "tid",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x4,
+	.off = offsetof(struct arcana_processes_processes_process_thread, tid),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t9,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1031 = {
+	.sid = UINT64_C(63865),
+	.name = "wait",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_thread, wait),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m29,
+};
+
+static const struct cbl_ynode n1032 = {
+	.sid = UINT64_C(63866),
+	.name = "wcpu",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_processes_processes_process_thread, wcpu),
+	.hoff = offsetof(struct arcana_processes_processes_process_thread, has_wcpu),
+	.type = &t61,
+	.units = "percent",
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n1025_c[] = {
+	&n1026, &n1027, &n1028, &n1029, &n1030, &n1031,
+	&n1032
+};
+static const uint32_t n1025_k[] = { 4 };
+static const struct cbl_ynode n1025 = {
+	.sid = UINT64_C(63859),
+	.name = "thread",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_processes_processes_process, thread),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes_process_thread),
+	.nmap = 7,
+	.nchild = 7,
+	.child = n1025_c,
+	.nkeys = 1,
+	.keys = n1025_k,
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n978_c[] = {
+	&n979, &n988, &n989, &n994, &n999, &n1025
+};
+static const uint32_t n978_k[] = { 1 };
+static const struct cbl_ynode n978 = {
+	.sid = UINT64_C(63812),
+	.name = "process",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_processes_processes, process),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes_process),
+	.nmap = 47,
+	.map = n978_p,
+	.nchild = 6,
+	.child = n978_c,
+	.nkeys = 1,
+	.keys = n978_k,
+	.module = &m29,
+};
+
+static const struct cbl_ynode *const n967_c[] = {
+	&n968, &n969, &n977, &n978
+};
+static const struct cbl_ynode n967 = {
+	.sid = UINT64_C(63801),
+	.name = "processes",
+	.kind = CBL_YN_CONTAINER,
+	.flags = 0x1,
+	.off = offsetof(struct arcana_processes, processes),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_processes_processes),
+	.nmap = 11,
+	.map = n967_p,
+	.nchild = 4,
+	.child = n967_c,
+	.module = &m29,
+};
+
 static const uint64_t i0_d[] = {
 	UINT64_C(1801), UINT64_C(1802), UINT64_C(1803), UINT64_C(1804),
 	UINT64_C(1805), UINT64_C(1806), UINT64_C(1807), UINT64_C(1808),
@@ -15409,6 +16273,21 @@ static const struct cbl_ymodule m28 = {
 	.top = m28_t,
 };
 
+static const struct cbl_ynode *const m29_t[] = {
+	&n967
+};
+static const struct cbl_ymodule m29 = {
+	.schema = &ymodel_schema,
+	.name = "arcana-processes",
+	.revision = "2026-10-14",
+	.ns = "urn:arcana:yang:arcana-processes",
+	.prefix = "arcproc",
+	.sid = UINT64_C(63800),
+	.size = sizeof(struct arcana_processes),
+	.ntop = 1,
+	.top = m29_t,
+};
+
 static const struct cbl_ymodule *const mods[] = {
 	&m5,
 	&m6,
@@ -15431,6 +16310,7 @@ static const struct cbl_ymodule *const mods[] = {
 	&m26,
 	&m27,
 	&m28,
+	&m29,
 };
 
 static const struct cbl_ynode *const nodes[] = {
@@ -15595,7 +16475,18 @@ static const struct cbl_ynode *const nodes[] = {
 	&n948, &n949, &n950, &n955, &n951, &n952,
 	&n953, &n954, &n956, &n957, &n958, &n959,
 	&n960, &n961, &n962, &n963, &n964, &n965,
-	&n966
+	&n966, &n967, &n968, &n969, &n970, &n971,
+	&n972, &n973, &n974, &n975, &n976, &n977,
+	&n978, &n979, &n980, &n981, &n982, &n983,
+	&n984, &n985, &n986, &n987, &n988, &n989,
+	&n990, &n991, &n992, &n993, &n994, &n995,
+	&n996, &n997, &n998, &n999, &n1000, &n1001,
+	&n1002, &n1003, &n1004, &n1005, &n1006, &n1007,
+	&n1008, &n1009, &n1010, &n1011, &n1012, &n1013,
+	&n1014, &n1015, &n1016, &n1017, &n1018, &n1019,
+	&n1020, &n1021, &n1022, &n1023, &n1024, &n1025,
+	&n1026, &n1027, &n1028, &n1029, &n1030, &n1031,
+	&n1032
 };
 
 static const char *const xpaths[] = {
@@ -15633,14 +16524,15 @@ static const char *const xpaths[] = {
 	"/if:interfaces/if:interface/ip:ipv6/ni:bind-ni-name",
 	"/if:interfaces/if:interface/lne:bind-lne-name",
 	"/lne:logical-network-elements/lne:logical-network-element/lne:name",
+	"../state/pid",
 };
 
 extern const struct cbl_yschema ymodel_schema;
 const struct cbl_yschema ymodel_schema = {
-	.nmod = 21,
-	.nxpath = 34,
+	.nmod = 22,
+	.nxpath = 35,
 	.nident = 328,
-	.nnode = 967,
+	.nnode = 1033,
 	.mod = mods,
 	.node = nodes,
 	.xpath = xpaths,
@@ -19051,5 +19943,165 @@ arcana_kernel_load_output_decode(const void *data, size_t len, struct arcana_ker
 
 	memset(p, 0, sizeof(*p));
 	return (cbl_ydecode(&n966, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_encode(const struct arcana_processes_processes *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n967, p, b));
+}
+
+int
+arcana_processes_processes_decode(const void *data, size_t len, struct arcana_processes_processes *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n967, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_jail_encode(const struct arcana_processes_processes_jail *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n969, p, b));
+}
+
+int
+arcana_processes_processes_jail_decode(const void *data, size_t len, struct arcana_processes_processes_jail *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n969, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_process_encode(const struct arcana_processes_processes_process *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n978, p, b));
+}
+
+int
+arcana_processes_processes_process_decode(const void *data, size_t len, struct arcana_processes_processes_process *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n978, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_process_file_encode(const struct arcana_processes_processes_process_file *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n979, p, b));
+}
+
+int
+arcana_processes_processes_process_file_decode(const void *data, size_t len, struct arcana_processes_processes_process_file *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n979, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_process_renice_input_encode(const struct arcana_processes_processes_process_renice_input *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n990, p, b));
+}
+
+int
+arcana_processes_processes_process_renice_input_decode(const void *data, size_t len, struct arcana_processes_processes_process_renice_input *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n990, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_process_renice_output_encode(const struct arcana_processes_processes_process_renice_output *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n993, p, b));
+}
+
+int
+arcana_processes_processes_process_renice_output_decode(const void *data, size_t len, struct arcana_processes_processes_process_renice_output *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n993, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_process_signal_input_encode(const struct arcana_processes_processes_process_signal_input *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n995, p, b));
+}
+
+int
+arcana_processes_processes_process_signal_input_decode(const void *data, size_t len, struct arcana_processes_processes_process_signal_input *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n995, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_process_signal_output_encode(const struct arcana_processes_processes_process_signal_output *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n998, p, b));
+}
+
+int
+arcana_processes_processes_process_signal_output_decode(const void *data, size_t len, struct arcana_processes_processes_process_signal_output *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n998, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_process_state_encode(const struct arcana_processes_processes_process_state *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n999, p, b));
+}
+
+int
+arcana_processes_processes_process_state_decode(const void *data, size_t len, struct arcana_processes_processes_process_state *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n999, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_processes_processes_process_thread_encode(const struct arcana_processes_processes_process_thread *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n1025, p, b));
+}
+
+int
+arcana_processes_processes_process_thread_decode(const void *data, size_t len, struct arcana_processes_processes_process_thread *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n1025, data, len, p, a, flags, why, whylen));
 }
 

@@ -27,6 +27,12 @@ CFLAGS.ysystem_test.c+=	-I${.OBJDIR}/..
 CFLAGS.ysystem.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
 LDADD.ysystem+=	${CBLINK_LIBS} ${UCL_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
+# yprocs: the processes operation's replies as arcana-processes has them.
+PROGS+=		yprocs
+SRCS.yprocs=	yprocs_test.c yprocs.c yjson.c ymodel_schema.c
+CFLAGS.yprocs_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yprocs.c+=	-I${.OBJDIR}/.. ${UCL_CFLAGS}
+LDADD.yprocs+=	${CBLINK_LIBS} ${UCL_LIBS}
 # ystorage: the storage operation's replies as arcana-storage has them.
 PROGS+=		ystorage
 SRCS.ystorage=	ystorage_test.c ystorage.c yjson.c ymodel_schema.c
@@ -67,7 +73,7 @@ CFLAGS+=	-I${.CURDIR}/../../../lib/libvarconf
 LDADD.yrcroutes+=	${CBLINK_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
 .PATH:		${.CURDIR}/../invidia ${.CURDIR}/../ira ${.CURDIR}/../acedia \
-		${.CURDIR}/../superbia ${.CURDIR}/../yang
+		${.CURDIR}/../superbia ${.CURDIR}/../gula ${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang -I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
 LDADD.ycollect+=	${CBLINK_LIBS} -ljail -lnv
 MAN=

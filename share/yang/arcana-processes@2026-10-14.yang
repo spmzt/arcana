@@ -1,0 +1,343 @@
+module arcana-processes {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-processes";
+  prefix arcproc;
+
+  import openconfig-procmon {
+    prefix oc-proc;
+    reference
+      "OpenConfig's process monitoring (openconfig-procmon,
+       revision 2019-03-15).";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's processes (kvm_getprocs(3), libprocstat(3)), in the shape
+     OpenConfig gives them (openconfig-procmon: a list keyed by pid,
+     each with its name, arguments, start time, CPU share and memory),
+     with what FreeBSD has besides: its parent, user, jail, run state
+     and wait channel, nice, priority, threads, size, CPU time, the
+     kernel's decayed CPU share (top(1)'s WCPU), blocks read and
+     written; one process's files and threads; the jails' totals.
+     Signalled or reniced by actions.
+
+     A process's args are kvm_getargv(3)'s, which the operation joins
+     with blanks: split on them again, an argument with a blank in it
+     is two.  OpenConfig's cpu-utilization is a percentage of one CPU,
+     at most 100; cpu here is the exact share, past 100 on several
+     CPUs.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.7.";
+  }
+
+  grouping same-process {
+    description
+      "The process as it was read, so that another given its pid since
+       is not the one acted on.";
+    leaf start-time {
+      type uint64;
+      units "nanoseconds";
+      description
+        "Its start-time as read (whole seconds count): refused if the
+         pid's process started at another time.";
+    }
+  }
+
+  uses oc-proc:procmon-processes-top {
+    augment "processes" {
+      description
+        "The jails' totals, and how the CPU shares were taken.";
+      leaf ncpu {
+        type uint32;
+        config false;
+        description
+          "The host's CPUs.";
+      }
+      leaf elapsed {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        units "seconds";
+        config false;
+        description
+          "The seconds between the two looks cpu was taken over.";
+      }
+      list jail {
+        key "jid";
+        config false;
+        description
+          "A jail's processes added up.";
+        leaf jid {
+          type uint32;
+          description
+            "Its number; 0, the host.";
+        }
+        leaf name {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf procs {
+          type uint32;
+          description
+            "Its processes.";
+        }
+        leaf threads {
+          type uint32;
+          description
+            "Their threads.";
+        }
+        leaf cpu {
+          type decimal64 {
+            fraction-digits 2;
+          }
+          units "percent";
+          description
+            "Their share of one CPU, between the looks.";
+        }
+        leaf wcpu {
+          type decimal64 {
+            fraction-digits 2;
+          }
+          units "percent";
+          description
+            "The kernel's decayed share.";
+        }
+        leaf rss {
+          type uint64;
+          units "bytes";
+          description
+            "Their resident memory.";
+        }
+      }
+    }
+    augment "processes/process/state" {
+      description
+        "What FreeBSD has of a process besides.";
+      leaf ppid {
+        type uint64;
+        description
+          "Its parent.";
+      }
+      leaf user {
+        type string;
+        description
+          "Its user.";
+      }
+      leaf jid {
+        type uint32;
+        description
+          "Its jail's number; 0, the host.";
+      }
+      leaf jail {
+        type string;
+        description
+          "Its jail's name.";
+      }
+      leaf run-state {
+        type string;
+        description
+          "run, sleep, stop, zomb, idle, lock, wait.";
+      }
+      leaf wait {
+        type string;
+        description
+          "What it sleeps on (its wait channel).";
+      }
+      leaf nice {
+        type int32;
+        description
+          "Its nice value.";
+      }
+      leaf priority {
+        type int32;
+        description
+          "Its priority.";
+      }
+      leaf threads {
+        type uint32;
+        description
+          "Its threads.";
+      }
+      leaf size {
+        type uint64;
+        units "bytes";
+        description
+          "Its virtual size.";
+      }
+      leaf cpu-time {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        units "seconds";
+        description
+          "The CPU it has used.";
+      }
+      leaf cpu {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        units "percent";
+        description
+          "Its share of one CPU between the two looks.";
+      }
+      leaf wcpu {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        units "percent";
+        description
+          "The kernel's decayed share (top(1)'s WCPU).";
+      }
+      leaf blocks-in {
+        type uint64;
+        description
+          "Blocks it has read.";
+      }
+      leaf blocks-out {
+        type uint64;
+        description
+          "Blocks it has written.";
+      }
+      leaf io {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        description
+          "Blocks a second, between the looks.";
+      }
+    }
+    augment "processes/process" {
+      description
+        "One process asked for: its files and threads; and what is done
+         to a process.";
+      list file {
+        config false;
+        description
+          "A file it has open, or uses (procstat_getfiles(3)).";
+        leaf fd {
+          type int32;
+          description
+            "Its descriptor; absent for one of use.";
+        }
+        leaf use {
+          type string;
+          description
+            "cwd, root, text, mapped, other.";
+        }
+        leaf type {
+          type string;
+          description
+            "file, fifo, socket, pipe, tty, kqueue, mqueue, other.";
+        }
+        leaf path {
+          type string;
+          description
+            "Its path, where known.";
+        }
+        leaf proto {
+          type string;
+          description
+            "A socket's protocol.";
+        }
+        leaf local {
+          type string;
+          description
+            "A socket's local address.";
+        }
+        leaf remote {
+          type string;
+          description
+            "A socket's peer.";
+        }
+        leaf mode {
+          type string;
+          description
+            "r, w, rw.";
+        }
+      }
+      list thread {
+        key "tid";
+        config false;
+        description
+          "One of its threads.";
+        leaf tid {
+          type uint64;
+          description
+            "Its id.";
+        }
+        leaf name {
+          type string;
+          description
+            "Its name.";
+        }
+        leaf run-state {
+          type string;
+          description
+            "Its state.";
+        }
+        leaf wait {
+          type string;
+          description
+            "What it sleeps on.";
+        }
+        leaf priority {
+          type int32;
+          description
+            "Its priority.";
+        }
+        leaf wcpu {
+          type decimal64 {
+            fraction-digits 2;
+          }
+          units "percent";
+          description
+            "The kernel's decayed share.";
+        }
+        leaf cpu-time {
+          type decimal64 {
+            fraction-digits 2;
+          }
+          units "seconds";
+          description
+            "The CPU it has used.";
+        }
+      }
+      action signal {
+        description
+          "kill(2): a signal sent.";
+        input {
+          leaf signal {
+            type string;
+            mandatory true;
+            description
+              "Its name (TERM, HUP, KILL, ...) or number.";
+          }
+          uses same-process;
+        }
+      }
+      action renice {
+        description
+          "setpriority(2): its nice value changed.";
+        input {
+          leaf nice {
+            type int32 {
+              range "-20..20";
+            }
+            mandatory true;
+            description
+              "The new nice value.";
+          }
+          uses same-process;
+        }
+      }
+    }
+  }
+}

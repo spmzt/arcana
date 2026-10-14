@@ -37,6 +37,7 @@
 #include <unistd.h>
 
 #include "agent.h"
+#include "collect.h"
 
 #define	PROCS_STALE	15	/* s, after which a look is no measure */
 #define	PROCS_ARGS	300	/* of one command line, and no more */
@@ -567,6 +568,28 @@ do_proc_job(struct work *w, const struct arc_job_spec *sp, const char **errp)
 	}
 	step_end(w, step, true, NULL);
 	return (0);
+}
+
+/*
+ * arcana-processes's signal and renice actions (verb "signal" or
+ * "renice"), arg the signal or the nice value; start, the start-time it
+ * was read with in nanoseconds, 0 none: the proc job's.
+ */
+int
+yprocs_action(struct work *w, uint64_t pid, const char *verb,
+    const char *arg, uint64_t start, const char **errp)
+{
+	struct arc_job_spec	 sp;
+	const char		*names[3];
+
+	memset(&sp, 0, sizeof(sp));
+	sp.verb = verb;
+	names[0] = wfmt(w, "%ju", (uintmax_t)pid);
+	names[1] = arg;
+	names[2] = wfmt(w, "%ju", (uintmax_t)(start / 1000000000u));
+	sp.names.v = names;
+	sp.names.n = start != 0 ? 3 : 2;
+	return (do_proc_job(w, &sp, errp));
 }
 
 /* A socket's address as text, or the family's name. */

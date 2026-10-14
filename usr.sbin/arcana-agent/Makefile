@@ -18,7 +18,7 @@ SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c 
 		services.c update.c yjails.c yjobs.c ypackages.c yservices.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \
-		pools.c storage.c ystorage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
+		pools.c storage.c ystorage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c yprocs.c log.c \
 		history.c events.c faults.c kmsg.c probe.c
 .PATH:		${.CURDIR}/superbia ${.CURDIR}/invidia ${.CURDIR}/ira \
 		${.CURDIR}/acedia ${.CURDIR}/avaritia ${.CURDIR}/gula \
@@ -67,7 +67,8 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-logical-network-element@2019-01-25 arcana-jails@2026-10-14 \
 		arcana-services@2026-10-14 arcana-packages@2026-10-14 \
 		arcana-jobs@2026-10-14 arcana-storage@2026-10-14 \
-		arcana-sysctl@2026-10-14 arcana-kernel@2026-10-14
+		arcana-sysctl@2026-10-14 arcana-kernel@2026-10-14 \
+		arcana-processes@2026-10-14
 # ietf-routing's multiple-ribs: a FIB each (setfib(1)).
 YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
@@ -77,7 +78,8 @@ YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-network-instance: -F arcana-network-instance: \
 		-F ietf-logical-network-element: -F arcana-jails: \
 		-F arcana-services: -F arcana-packages: -F arcana-jobs: \
-		-F arcana-storage: -F arcana-sysctl: -F arcana-kernel:
+		-F arcana-storage: -F arcana-sysctl: -F arcana-kernel: \
+		-F arcana-processes:
 YANG_OUT?=	${.CURDIR}/yang
 # The kinds of job, made from share/arcana/jobs.yaml as the console's
 # forms are: arcana-jobs's submodule, and yjobs_spec(), a change of it

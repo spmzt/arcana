@@ -1,0 +1,65 @@
+module: arcana-processes
+  +--rw processes
+     +--ro process* [pid]
+     |  +--ro pid       -> ../state/pid
+     |  +--ro state
+     |  |  +--ro pid?                  uint64
+     |  |  +--ro name?                 string
+     |  |  +--ro args*                 string
+     |  |  +--ro start-time?           oc-types:timeticks64
+     |  |  +--ro cpu-usage-user?       oc-yang:counter64
+     |  |  +--ro cpu-usage-system?     oc-yang:counter64
+     |  |  +--ro cpu-utilization?      oc-types:percentage
+     |  |  +--ro memory-usage?         uint64
+     |  |  +--ro memory-utilization?   oc-types:percentage
+     |  |  +--ro ppid?                 uint64
+     |  |  +--ro user?                 string
+     |  |  +--ro jid?                  uint32
+     |  |  +--ro jail?                 string
+     |  |  +--ro run-state?            string
+     |  |  +--ro wait?                 string
+     |  |  +--ro nice?                 int32
+     |  |  +--ro priority?             int32
+     |  |  +--ro threads?              uint32
+     |  |  +--ro size?                 uint64
+     |  |  +--ro cpu-time?             decimal64
+     |  |  +--ro cpu?                  decimal64
+     |  |  +--ro wcpu?                 decimal64
+     |  |  +--ro blocks-in?            uint64
+     |  |  +--ro blocks-out?           uint64
+     |  |  +--ro io?                   decimal64
+     |  +--ro file*
+     |  |  +--ro fd?       int32
+     |  |  +--ro use?      string
+     |  |  +--ro type?     string
+     |  |  +--ro path?     string
+     |  |  +--ro proto?    string
+     |  |  +--ro local?    string
+     |  |  +--ro remote?   string
+     |  |  +--ro mode?     string
+     |  +--ro thread* [tid]
+     |  |  +--ro tid          uint64
+     |  |  +--ro name?        string
+     |  |  +--ro run-state?   string
+     |  |  +--ro wait?        string
+     |  |  +--ro priority?    int32
+     |  |  +--ro wcpu?        decimal64
+     |  |  +--ro cpu-time?    decimal64
+     |  +---x signal
+     |  |  +---w input
+     |  |     +---w signal        string
+     |  |     +---w start-time?   uint64
+     |  +---x renice
+     |     +---w input
+     |        +---w nice          int32
+     |        +---w start-time?   uint64
+     +--ro ncpu?      uint32
+     +--ro elapsed?   decimal64
+     +--ro jail* [jid]
+        +--ro jid        uint32
+        +--ro name?      string
+        +--ro procs?     uint32
+        +--ro threads?   uint32
+        +--ro cpu?       decimal64
+        +--ro wcpu?      decimal64
+        +--ro rss?       uint64
