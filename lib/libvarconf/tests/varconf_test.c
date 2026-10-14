@@ -458,6 +458,118 @@ ATF_TC_BODY(rcd, tc)
 	ATF_CHECK_EQ(EINVAL, errno);
 }
 
+static void
+puts_file(const char *path, const char *text)
+{
+
+	put(path, text, strlen(text));
+}
+
+/* The files of r's netif, as vc_rc_files() lists them, one a line. */
+static char *
+netif_files(char *err, size_t errlen, int *rc)
+{
+	char **paths, *out = NULL;
+	size_t n, len = 0;
+	FILE *fp;
+
+	*rc = vc_rc_files("r", "/usr/local", "netif", "arcana", &paths, &n,
+	    err, errlen);
+	if (*rc == -1)
+		return (NULL);
+	ATF_REQUIRE((fp = open_memstream(&out, &len)) != NULL);
+	for (size_t i = 0; i < n; i++)
+		fprintf(fp, "%s\n", paths[i]);
+	fclose(fp);
+	vc_rc_files_free(paths, n);
+	return (out);
+}
+
+static void
+conflict(const char *name, const char *where)
+{
+	char **paths, err[256];
+	size_t n;
+	int rc;
+
+	ATF_REQUIRE_MSG(vc_rc_files("r", "/usr/local", "netif", "arcana",
+	    &paths, &n, err, sizeof(err)) == 0, "%s", err);
+	rc = vc_conflict(paths, n, name, err, sizeof(err));
+	if (where == NULL)
+		ATF_CHECK_MSG(rc == 0, "%s: %s", name, err);
+	else {
+		ATF_CHECK_EQ_MSG(-1, rc, "%s", name);
+		ATF_CHECK_EQ(EEXIST, errno);
+		ATF_CHECK_MSG(strstr(err, where) != NULL, "%s: %s", name,
+		    err);
+	}
+	vc_rc_files_free(paths, n);
+}
+
+/*
+ * The conflict rule: the user's files of a service, as rc(8) reads
+ * them, Arcana's fragment not among them; a variable any sets, refused.
+ */
+ATF_TC_WITHOUT_HEAD(conflicts);
+ATF_TC_BODY(conflicts, tc)
+{
+	const struct fixture *d = fixture("defaults.conf");
+	char err[256], *files;
+	int rc;
+
+	ATF_REQUIRE_EQ(0, system("mkdir -p r/etc/defaults "
+	    "r/etc/rc.conf.d/netif r/usr/local/etc/rc.conf.d r/opt"));
+	put("r/etc/defaults/rc.conf", d->text, d->len);
+	puts_file("r/etc/rc.conf", "hostname=gw\n"
+	    "ifconfig_em1=\"inet 192.0.2.1/24\"\n"
+	    "rc_conf_files=\"/etc/rc.conf /etc/rc.conf.local "
+	    "/etc/rc.conf.extra\"\n"
+	    "env_x=1 true\n");
+	puts_file("r/etc/rc.conf.local", "ifconfig_em2=up\n");
+	puts_file("r/etc/rc.conf.extra", "\n\nifconfig_em3=up\n");
+	puts_file("r/etc/rc.conf.d/netif/arcana", "ifconfig_em9=up\n");
+	puts_file("r/etc/rc.conf.d/netif/zz-user", "ifconfig_em4=up\n");
+	puts_file("r/etc/rc.conf.d/netif/.hidden", "ifconfig_em6=up\n");
+	puts_file("r/etc/rc.conf.d/routing", "ifconfig_em7=up\n");
+	puts_file("r/usr/local/etc/rc.conf.d/netif", "ifconfig_em5=up\n");
+
+	files = netif_files(err, sizeof(err), &rc);
+	ATF_REQUIRE_MSG(rc == 0, "%s", err);
+	ATF_CHECK_STREQ("r/etc/rc.conf\nr/etc/rc.conf.local\n"
+	    "r/etc/rc.conf.extra\nr/etc/rc.conf.d/netif/zz-user\n"
+	    "r/usr/local/etc/rc.conf.d/netif\n", files);
+	free(files);
+	conflict("ifconfig_em1", "r/etc/rc.conf sets it too, line 2");
+	conflict("ifconfig_em2", "r/etc/rc.conf.local sets it too, line 1");
+	conflict("ifconfig_em3", "r/etc/rc.conf.extra sets it too, line 3");
+	conflict("ifconfig_em4", "netif/zz-user sets it too");
+	conflict("ifconfig_em5", "r/usr/local/etc/rc.conf.d/netif sets");
+	/* A command's environment, a dot file, another service's, ours. */
+	conflict("env_x", "line 4");
+	conflict("ifconfig_em6", NULL);
+	conflict("ifconfig_em7", NULL);
+	conflict("ifconfig_em9", NULL);
+
+	/* local_startup set: its directories, not localbase's. */
+	puts_file("r/etc/rc.conf", "local_startup=\"/opt/rc.d\"\n");
+	puts_file("r/opt/x", "");
+	ATF_REQUIRE_EQ(0, system("mkdir -p r/opt/rc.conf.d/netif"));
+	puts_file("r/opt/rc.conf.d/netif/a", "ifconfig_em8=up\n");
+	files = netif_files(err, sizeof(err), &rc);
+	ATF_REQUIRE_MSG(rc == 0, "%s", err);
+	ATF_CHECK_STREQ("r/etc/rc.conf\nr/etc/rc.conf.local\n"
+	    "r/etc/rc.conf.d/netif/zz-user\nr/opt/rc.conf.d/netif/a\n",
+	    files);
+	free(files);
+	conflict("ifconfig_em8", "r/opt/rc.conf.d/netif/a");
+
+	/* A list reading does not settle: the files cannot be told. */
+	puts_file("r/etc/rc.conf", "rc_conf_files=\"${x} /etc/rc.conf\"\n");
+	ATF_CHECK(netif_files(err, sizeof(err), &rc) == NULL);
+	ATF_CHECK_EQ(-1, rc);
+	ATF_CHECK_MSG(strstr(err, "cannot be told") != NULL, "%s", err);
+}
+
 ATF_TP_ADD_TCS(tp)
 {
 
@@ -467,5 +579,6 @@ ATF_TP_ADD_TCS(tp)
 	ATF_TP_ADD_TC(tp, edits_edge);
 	ATF_TP_ADD_TC(tp, errors);
 	ATF_TP_ADD_TC(tp, rcd);
+	ATF_TP_ADD_TC(tp, conflicts);
 	return (atf_no_error());
 }

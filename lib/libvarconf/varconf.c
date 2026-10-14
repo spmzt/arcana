@@ -24,6 +24,7 @@
 #include <sys/stat.h>
 
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
@@ -1069,6 +1070,297 @@ vc_rcd_path(const char *etc, const char *svc, const char *owner, char *path,
 	if (mkdir(dir, 0755) == -1 && errno != EEXIST) {
 		fail(err, errlen, "mkdir %s: %s", dir, strerror(errno));
 		return (-1);
+	}
+	return (0);
+}
+
+/*
+ * The files a list of paths adds, each once, under root.
+ */
+struct plist {
+	char	**v;
+	size_t	 n;
+};
+
+static bool
+pl_has(const struct plist *p, const char *s)
+{
+
+	for (size_t i = 0; i < p->n; i++)
+		if (strcmp(p->v[i], s) == 0)
+			return (true);
+	return (false);
+}
+
+static int
+pl_add(struct plist *p, const char *root, const char *path)
+{
+	char buf[MAXPATHLEN], **v;
+
+	if (snprintf(buf, sizeof(buf), "%s%s", root, path) >=
+	    (int)sizeof(buf)) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
+	if (pl_has(p, buf))
+		return (0);
+	if ((v = reallocarray(p->v, p->n + 1, sizeof(*v))) == NULL)
+		return (-1);
+	p->v = v;
+	if ((p->v[p->n] = strdup(buf)) == NULL)
+		return (-1);
+	p->n++;
+	return (0);
+}
+
+void
+vc_rc_files_free(char **paths, size_t n)
+{
+
+	for (size_t i = 0; i < n; i++)
+		free(paths[i]);
+	free(paths);
+}
+
+/*
+ * A list variable's value as the files read so far leave it (the last
+ * assignment of it, in the files' order): dflt if none sets it; NULL,
+ * err said, if one sets it in a way reading does not settle.
+ */
+static const char *
+list_var(struct vc_file *files, size_t n, const char *name, const char *dflt,
+    char *err, size_t errlen)
+{
+	const char *v = dflt;
+
+	for (size_t i = 0; i < n; i++) {
+		const struct vc_assign *a = vc_get(&files[i], name);
+
+		if (a == NULL)
+			continue;
+		if (!vc_settled(&files[i], name)) {
+			fail(err, errlen, "%s: set where reading does not "
+			    "tell its value (line %d): the files rc(8) reads "
+			    "cannot be told", name, a->line);
+			errno = EINVAL;
+			return (NULL);
+		}
+		v = a->value;
+	}
+	return (v);
+}
+
+/* Each word of a list, under root, read if it is there. */
+static int
+read_list(const char *root, const char *list, struct plist *seen,
+    struct vc_file **files, size_t *nfiles, char *err, size_t errlen)
+{
+	char *copy, *p, *w;
+	int rc = 0;
+
+	if ((copy = strdup(list)) == NULL)
+		return (-1);
+	for (p = copy; rc == 0 && (w = strsep(&p, " \t")) != NULL; ) {
+		struct vc_file *nf;
+		size_t was = seen->n;
+
+		if (*w == '\0')
+			continue;
+		if ((rc = pl_add(seen, root, w)) == -1 || seen->n == was ||
+		    access(seen->v[seen->n - 1], R_OK) == -1)
+			continue;
+		if ((nf = reallocarray(*files, *nfiles + 1,
+		    sizeof(*nf))) == NULL) {
+			rc = -1;
+			break;
+		}
+		*files = nf;
+		if ((rc = vc_read(&nf[*nfiles], VC_SH, seen->v[seen->n - 1],
+		    err, errlen)) == 0)
+			(*nfiles)++;
+	}
+	free(copy);
+	return (rc);
+}
+
+static int
+by_name(const void *a, const void *b)
+{
+
+	return (strcmp(*(char *const *)a, *(char *const *)b));
+}
+
+/* rc.conf.d/svc of a directory: the file, or the directory's files. */
+static int
+rcd_files(struct plist *out, const char *root, const char *base,
+    const char *svc, const char *skip)
+{
+	char path[MAXPATHLEN], **names = NULL;
+	struct dirent *de;
+	struct stat sb;
+	size_t n = 0;
+	DIR *d;
+	int rc = 0;
+
+	if (snprintf(path, sizeof(path), "%s/rc.conf.d/%s", base, svc) >=
+	    (int)sizeof(path)) {
+		errno = ENAMETOOLONG;
+		return (-1);
+	}
+	{
+		char full[MAXPATHLEN];
+
+		snprintf(full, sizeof(full), "%s%s", root, path);
+		if (stat(full, &sb) == -1)
+			return (0);
+		if (S_ISREG(sb.st_mode))
+			return (pl_add(out, root, path));
+		if (!S_ISDIR(sb.st_mode) || (d = opendir(full)) == NULL)
+			return (0);
+	}
+	/* As sh(1)'s "*": no dot files, in order. */
+	while ((de = readdir(d)) != NULL) {
+		char **v;
+
+		if (de->d_name[0] == '.')
+			continue;
+		if ((v = reallocarray(names, n + 1, sizeof(*v))) == NULL ||
+		    (v[n] = strdup(de->d_name)) == NULL) {
+			free(v != NULL ? v : names);
+			closedir(d);
+			return (-1);
+		}
+		names = v;
+		n++;
+	}
+	closedir(d);
+	qsort(names, n, sizeof(*names), by_name);
+	for (size_t i = 0; i < n; i++) {
+		char f[MAXPATHLEN], full[MAXPATHLEN];
+
+		snprintf(f, sizeof(f), "%s/%s", path, names[i]);
+		snprintf(full, sizeof(full), "%s%s", root, f);
+		if (rc == 0 && (skip == NULL || strcmp(f, skip) != 0) &&
+		    stat(full, &sb) == 0 && S_ISREG(sb.st_mode))
+			rc = pl_add(out, root, f);
+		free(names[i]);
+	}
+	free(names);
+	return (rc);
+}
+
+/*
+ * The user's files rc(8) reads for service svc, in its order, owner's
+ * fragment (/etc/rc.conf.d/svc/owner) not among them; each path under
+ * root ("" for the system).  load_rc_config reads /etc/defaults/rc.conf,
+ * which is not the user's; its rc_conf_files, then those any of them
+ * names anew (source_rc_confs reads them twice); and the rc.conf.d/svc,
+ * file or directory, of /etc and of each local_startup directory less
+ * its "/rc.d", local_startup ${localbase}/etc/rc.d unless the files set
+ * it.  Refused where reading does not settle a list it needs.
+ */
+int
+vc_rc_files(const char *root, const char *localbase, const char *svc,
+    const char *owner, char ***paths, size_t *npaths, char *err,
+    size_t errlen)
+{
+	struct plist seen = { 0 }, out = { 0 };
+	struct vc_file *files = NULL, dflt;
+	char path[MAXPATHLEN], skip[MAXPATHLEN], ls[MAXPATHLEN];
+	const char *list, *startup;
+	size_t nfiles = 0;
+	char *copy = NULL, *p, *w;
+	int rc = -1;
+
+	*paths = NULL;
+	*npaths = 0;
+	if (!vc_name_ok(VC_SH, svc) || !vc_name_ok(VC_SH, owner)) {
+		fail(err, errlen, "%s/%s: not a service's or an owner's name",
+		    svc, owner);
+		errno = EINVAL;
+		return (-1);
+	}
+	snprintf(path, sizeof(path), "%s/etc/defaults/rc.conf", root);
+	if (vc_read(&dflt, VC_SH, path, err, errlen) == -1)
+		return (-1);
+	if ((list = list_var(&dflt, 1, "rc_conf_files",
+	    "/etc/rc.conf /etc/rc.conf.local", err, errlen)) == NULL ||
+	    read_list(root, list, &seen, &files, &nfiles, err, errlen) == -1)
+		goto out;
+	/* Again, as rc_conf_files may now name others. */
+	if ((list = list_var(files, nfiles, "rc_conf_files", list, err,
+	    errlen)) == NULL ||
+	    read_list(root, list, &seen, &files, &nfiles, err, errlen) == -1)
+		goto out;
+	/* The rc_conf_files read, in order: their paths. */
+	for (size_t i = 0; i < seen.n; i++)
+		if (access(seen.v[i], R_OK) == 0 &&
+		    pl_add(&out, "", seen.v[i]) == -1)
+			goto out;
+	snprintf(ls, sizeof(ls), "%s/etc/rc.d", localbase);
+	if ((startup = list_var(files, nfiles, "local_startup", ls, err,
+	    errlen)) == NULL)
+		goto out;
+	snprintf(skip, sizeof(skip), "/etc/rc.conf.d/%s/%s", svc, owner);
+	if (rcd_files(&out, root, "/etc", svc, skip) == -1 ||
+	    (copy = strdup(startup)) == NULL)
+		goto out;
+	for (p = copy; (w = strsep(&p, " \t")) != NULL; ) {
+		size_t len = strlen(w);
+
+		if (len == 0)
+			continue;
+		if (len >= 5 && strcmp(w + len - 5, "/rc.d") == 0)
+			w[len - 5] = '\0';
+		if (strcmp(w, "/etc") != 0 &&
+		    rcd_files(&out, root, w, svc, NULL) == -1)
+			goto out;
+	}
+	*paths = out.v;
+	*npaths = out.n;
+	memset(&out, 0, sizeof(out));
+	rc = 0;
+out:
+	if (rc == -1 && err != NULL && err[0] == '\0')
+		fail(err, errlen, "%s", strerror(errno));
+	free(copy);
+	vc_rc_files_free(seen.v, seen.n);
+	vc_rc_files_free(out.v, out.n);
+	for (size_t i = 0; i < nfiles; i++)
+		vc_free(&files[i]);
+	free(files);
+	vc_free(&dflt);
+	return (rc);
+}
+
+/*
+ * Whether one of the user's files sets name, as the conflict rule asks
+ * (PLAN-SDN-YANG 2.3.2): a fragment's variable another file of the
+ * service sets too is read one way by the service and another by those
+ * that read rc.conf alone.  Any assignment counts, conditional or
+ * opaque ones too.  -1, EEXIST, the file and line said; 0: none.
+ */
+int
+vc_conflict(char *const *paths, size_t n, const char *name, char *err,
+    size_t errlen)
+{
+
+	for (size_t i = 0; i < n; i++) {
+		struct vc_file f;
+
+		if (vc_read(&f, VC_SH, paths[i], err, errlen) == -1)
+			return (-1);
+		for (size_t j = 0; j < f.na; j++)
+			if (strcmp(f.a[j].name, name) == 0) {
+				fail(err, errlen, "%s: %s sets it too, line "
+				    "%d: remove it there to keep it here, or "
+				    "the two are read differently", name,
+				    paths[i], f.a[j].line);
+				vc_free(&f);
+				errno = EEXIST;
+				return (-1);
+			}
+		vc_free(&f);
 	}
 	return (0);
 }
