@@ -154,7 +154,12 @@
   and 8348 for the host, 9640 to 9645 for keys and servers, 9742 for
   syslog, 9129, 8695, 9647, 9314 for BIRD's protocols, 8532 and 8533
   for traceroute, the drafts for BGP, QoS, STAMP; none for processes,
-  history, WireGuard, netgraph, capture).
+  history, WireGuard, netgraph, capture; YangModels/yang checked too).
+  To rework, found by that check: arcana-interfaces's vlan, lagg,
+  bridge and media augments onto IEEE 802.1Q (ieee802-dot1q-bridge,
+  -vlan-bridge, -rstp), 802.1AX (ieee802-dot1ax-linkagg), 802.3
+  (ieee802-ethernet-interface) and ietf-if-vlan-encapsulation; the
+  disks of arcana-storage also as ietf-hardware's components.
   Done (2026-10-13): Y-0 0.1, the body decoder: YANG-CBOR by SID
   deltas (cblink sid_test), YANG-CBOR's tags under CBL_CTX_YANG_TAGS,
   the cblink module and its .sid file (cblink share/yang), and the
