@@ -5,7 +5,8 @@ SRCS=		main.c handlers.c work.c
 SRCS+=		admit.c certs.c ssh.c tlsfiles.c confedit.c confread.c host.c kernel.c ntp.c rtadvd.c sysctl.c transport.c l2.c ipfw.c
 # Invidia: the network.
 SRCS+=		sa.c address.c interfaces.c netgraph.c network.c netdump.c nlroute.c neigh.c carp.c capture.c parts.c pcb.c rcconf.c \
-		rcroutes.c routes.c scope.c sdwan.c vnet.c yif.c yip.c yrt.c
+		rcroutes.c routes.c rtimes.c scope.c sdwan.c vnet.c yif.c yip.c \
+		yrt.c
 # The IETF modules the collectors fill (PLAN-SDN-YANG 1.9): cblink-gen's
 # structs and tables of share/yang's modules, committed, so that building
 # needs no libyang; "make regen-yang" refreshes them.

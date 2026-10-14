@@ -22,7 +22,9 @@
  *   the kernel's own without a gateway, an interface's network, direct;
  *   the others arcana-routing's identities.
  * - active: every route netlink dumps is in the FIB, used.
- * - route-preference and last-updated: FreeBSD has neither.
+ * - last-updated: when a route event last told of it (rtimes.c); the
+ *   kernel keeps no such time, so none for a route not seen to change.
+ * - route-preference: FreeBSD has none.
  *
  * The RIB's active-route action (2.4.5): the route a destination
  * address goes by, as route(8)'s get asks netlink(4) for it
@@ -51,6 +53,7 @@
 
 #include "cbl_schema.h"
 #include "collect.h"
+#include "rtimes.h"
 
 typedef struct ietf_routing_routing_ribs_rib yrib;
 typedef struct ietf_routing_routing_ribs_rib_routes_route yroute;
@@ -170,7 +173,7 @@ loopback(uint32_t ifindex)
 
 /* A route as the RIB has it: its prefix and next hops, into r. */
 static int
-route(cbl_yarena *a, const struct snl_parsed_route *p, yroute *r)
+route(cbl_yarena *a, int fib, const struct snl_parsed_route *p, yroute *r)
 {
 	char buf[INET6_ADDRSTRLEN + 8];
 	const char *dst;
@@ -191,6 +194,17 @@ route(cbl_yarena *a, const struct snl_parsed_route *p, yroute *r)
 		r->v6ur_destination_prefix = astrdup(a, buf);
 	else
 		r->v4ur_destination_prefix = astrdup(a, buf);
+	{
+		time_t when;
+		struct tm tm;
+		char t[32];
+
+		/* yang:date-and-time, in UTC. */
+		if (rt_last((uint32_t)fib, buf, &when) &&
+		    gmtime_r(&when, &tm) != NULL &&
+		    strftime(t, sizeof(t), "%Y-%m-%dT%H:%M:%SZ", &tm) > 0)
+			r->last_updated = astrdup(a, t);
+	}
 	gw = p->rta_gw != NULL && (p->rta_gw->sa_family == AF_INET ||
 	    p->rta_gw->sa_family == AF_INET6);
 	r->active = true;
@@ -302,7 +316,7 @@ dump(cbl_yarena *a, int fib, int af, yrib *rib)
 			v = nv;
 		}
 		memset(&v[n], 0, sizeof(v[n]));
-		if ((error = route(a, &p, &v[n])) == 0)
+		if ((error = route(a, fib, &p, &v[n])) == 0)
 			n++;
 		snl_clear_lb(&ss);
 	}
@@ -442,7 +456,7 @@ yrt_active_route(int fib,
 		return (EIO);
 	}
 	memset(&r, 0, sizeof(r));
-	error = route(a, &p, &r);
+	error = route(a, fib, &p, &r);
 	snl_free(&ss);
 	if (error != 0)
 		return (error);
@@ -453,6 +467,7 @@ yrt_active_route(int fib,
 	o->has_source_protocol = r.has_source_protocol;
 	o->source_protocol = r.source_protocol;
 	o->active = r.active;
+	o->last_updated = r.last_updated;
 	o->v4ur_destination_prefix = r.v4ur_destination_prefix;
 	o->v6ur_destination_prefix = r.v6ur_destination_prefix;
 	out->route = o;
