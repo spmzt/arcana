@@ -2,7 +2,7 @@
   "ietf-sid-file:sid-file": {
     "module-name": "arcana-interfaces",
     "module-revision": "2026-10-14",
-    "sid-file-version": 2,
+    "sid-file-version": 3,
     "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 61 000, 200.",
     "dependency-revision": [
       {
@@ -24,6 +24,10 @@
       {
         "module-name": "ieee802-dot1q-types",
         "module-revision": "2023-10-26"
+      },
+      {
+        "module-name": "ieee802-dot1ax-linkagg",
+        "module-revision": "2025-09-30"
       }
     ],
     "assignment-range": [
@@ -142,36 +146,43 @@
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg",
+        "status": "obsolete",
         "sid": "61020"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/hash",
+        "status": "obsolete",
         "sid": "61021"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/port",
+        "status": "obsolete",
         "sid": "61022"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/port/flags",
+        "status": "obsolete",
         "sid": "61023"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/port/name",
+        "status": "obsolete",
         "sid": "61024"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/port/priority",
+        "status": "obsolete",
         "sid": "61025"
       },
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:lagg/protocol",
+        "status": "obsolete",
         "sid": "61026"
       },
       {
@@ -232,8 +243,8 @@
       {
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/arcana-interfaces:media/type",
-        "sid": "61038",
-        "status": "obsolete"
+        "status": "obsolete",
+        "sid": "61038"
       },
       {
         "namespace": "data",
@@ -285,6 +296,26 @@
         "namespace": "data",
         "identifier": "/ietf-interfaces:interfaces/interface/ietf-if-extensions:encapsulation/ietf-if-vlan-encapsulation:dot1q-vlan/arcana-interfaces:pcp",
         "sid": "61047"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/arcana-interfaces:flags",
+        "sid": "61048"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:aggport/arcana-interfaces:priority",
+        "sid": "61049"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/arcana-interfaces:hash",
+        "sid": "61050"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/ietf-interfaces:interfaces/interface/ieee802-dot1ax-linkagg:lag/arcana-interfaces:protocol",
+        "sid": "61051"
       }
     ]
   }

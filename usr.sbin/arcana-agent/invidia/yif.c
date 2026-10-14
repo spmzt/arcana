@@ -194,6 +194,20 @@ datetime(cbl_yarena *a, time_t sec, long usec)
 	return (astrdup(a, buf));
 }
 
+/* ieee:mac-address: the octets in hex, upper case, a hyphen between. */
+static char *
+ieeemac(cbl_yarena *a, const uint8_t *p)
+{
+	char *s;
+
+	if ((s = cbl_yarena_alloc(a, ETHER_ADDR_LEN * 3)) == NULL)
+		return (NULL);
+	for (size_t i = 0; i < ETHER_ADDR_LEN; i++)
+		snprintf(s + i * 3, 4, "%02X%s", p[i],
+		    i + 1 < ETHER_ADDR_LEN ? "-" : "");
+	return (s);
+}
+
 /* yang:phys-address: the octets in hex, a colon between. */
 static char *
 hexaddr(cbl_yarena *a, const uint8_t *p, size_t len)
@@ -769,6 +783,17 @@ struct layers {
 	size_t		 n;
 };
 
+/* A lagg port's aggport, for the port's entry once all are listed. */
+struct aggport {
+	char		 port[IFNAMSIZ];
+	const struct ietf_interfaces_interfaces_interface_dot1ax_aggport *ap;
+};
+
+struct aggports {
+	struct aggport	*v;
+	size_t		 n;
+};
+
 static void
 layer_add(struct layers *l, const char *hi, const char *lo)
 {
@@ -783,15 +808,26 @@ layer_add(struct layers *l, const char *hi, const char *lo)
 	l->n++;
 }
 
-/* A lagg: its protocol, hash and ports; ENOENT: not one. */
+/*
+ * A lagg, as IEEE 802.1AX has it: its lag, naming the key group of its
+ * own name, its address, and with LACP the keys and partner of its
+ * lacp_opreq; each port's aggport, kept in ag for the port's entry, with
+ * LACP its number, priority, keys and states (FreeBSD's LACP_STATE_*
+ * bits are IEEE's lacp-state's, one position on).  Its protocol and hash,
+ * a port's priority and flags, arcana-interfaces'.  ENOENT: not one.
+ */
 static int
-lagg(yif *e, struct layers *l, int s, cbl_yarena *a)
+lagg(yif *e, struct layers *l, struct aggports *ag, int s, cbl_yarena *a)
 {
-	struct ietf_interfaces_interfaces_interface_arcif_lagg *lg;
-	struct ietf_interfaces_interfaces_interface_arcif_lagg_port *pv;
+	struct ietf_interfaces_interfaces_interface_dot1ax_lag *lg;
+	struct ietf_interfaces_interfaces_interface_dot1ax_lag_lacp *ll;
+	struct ietf_interfaces_interfaces_interface_dot1ax_aggport *ap;
+	struct ietf_interfaces_interfaces_interface_dot1ax_aggport_lacp *pl;
 	struct lagg_reqport rp[LAGG_MAX_PORTS];
 	struct lagg_reqflags rf;
 	struct lagg_reqall ra;
+	struct aggport *nv;
+	bool lacp;
 	int n;
 
 	memset(&ra, 0, sizeof(ra));
@@ -801,28 +837,169 @@ lagg(yif *e, struct layers *l, int s, cbl_yarena *a)
 	if (ioctl(s, SIOCGLAGG, &ra) != 0)
 		return (ENOENT);
 	n = MIN(ra.ra_ports, LAGG_MAX_PORTS);
-	if ((lg = cbl_yarena_alloc(a, sizeof(*lg))) == NULL ||
-	    (pv = cbl_yarena_alloc(a, n * sizeof(*pv))) == NULL)
+	lacp = ra.ra_proto == LAGG_PROTO_LACP;
+	if ((lg = cbl_yarena_alloc(a, sizeof(*lg))) == NULL)
 		return (ENOMEM);
+	lg->key_group_name = e->name;
+	/* The aggregator's address: the lagg's own. */
+	if (e->phys_address != NULL) {
+		uint8_t mac[ETHER_ADDR_LEN];
+		unsigned int o[ETHER_ADDR_LEN];
+
+		if (sscanf(e->phys_address, "%x:%x:%x:%x:%x:%x", &o[0], &o[1],
+		    &o[2], &o[3], &o[4], &o[5]) == ETHER_ADDR_LEN) {
+			for (size_t i = 0; i < ETHER_ADDR_LEN; i++)
+				mac[i] = (uint8_t)o[i];
+			lg->mac_address = ieeemac(a, mac);
+		}
+	}
 	if (ra.ra_proto < LAGG_PROTO_MAX) {
-		lg->has_protocol = true;
-		lg->protocol = ra.ra_proto;
+		lg->has_arcif_protocol = true;
+		lg->arcif_protocol = ra.ra_proto;
 	}
 	memset(&rf, 0, sizeof(rf));
 	strlcpy(rf.rf_ifname, e->name, sizeof(rf.rf_ifname));
 	if (ioctl(s, SIOCGLAGGFLAGS, &rf) == 0)
-		lg->hash = bits(a, rf.rf_flags & LAGG_F_HASHMASK);
-	for (int i = 0; i < n; i++) {
-		if ((pv[i].name = astrdup(a, rp[i].rp_portname)) == NULL)
+		lg->arcif_hash = bits(a, rf.rf_flags & LAGG_F_HASHMASK);
+	if (lacp) {
+		const struct lacp_opreq *o = &ra.ra_lacpreq;
+
+		if ((ll = cbl_yarena_alloc(a, sizeof(*ll))) == NULL)
 			return (ENOMEM);
-		pv[i].has_priority = true;
-		pv[i].priority = rp[i].rp_prio;
-		pv[i].flags = bits(a, rp[i].rp_flags & 0x1f);
+		ll->has_actor_oper_key = true;
+		ll->actor_oper_key = o->actor_key;
+		ll->partner_system = ieeemac(a, o->partner_mac);
+		ll->has_partner_system_priority = true;
+		ll->partner_system_priority = o->partner_prio;
+		ll->has_partner_oper_key = true;
+		ll->partner_oper_key = o->partner_key;
+		lg->lacp = ll;
+	}
+	if (n > 0 && (nv = reallocarray(ag->v, ag->n + n, sizeof(*nv))) ==
+	    NULL)
+		return (ENOMEM);
+	else if (n > 0)
+		ag->v = nv;
+	for (int i = 0; i < n; i++) {
+		if ((ap = cbl_yarena_alloc(a, sizeof(*ap))) == NULL)
+			return (ENOMEM);
+		ap->key_group_name = e->name;
+		ap->has_arcif_priority = true;
+		ap->arcif_priority = rp[i].rp_prio;
+		ap->arcif_flags = bits(a, rp[i].rp_flags & 0x1f);
+		if (lacp) {
+			const struct lacp_opreq *o = &rp[i].rp_psc.rpsc_lacp;
+
+			if ((pl = cbl_yarena_alloc(a, sizeof(*pl))) == NULL)
+				return (ENOMEM);
+			ap->has_actor_port_number = true;
+			ap->actor_port_number = o->actor_portno;
+			ap->has_actor_port_priority = true;
+			ap->actor_port_priority = o->actor_portprio;
+			pl->has_actor_oper_key = true;
+			pl->actor_oper_key = o->actor_key;
+			pl->actor_oper_state = bits(a,
+			    (uint64_t)o->actor_state << 1);
+			pl->has_partner_oper_system_priority = true;
+			pl->partner_oper_system_priority = o->partner_prio;
+			pl->partner_oper_system = ieeemac(a, o->partner_mac);
+			pl->has_partner_oper_key = true;
+			pl->partner_oper_key = o->partner_key;
+			pl->has_partner_oper_port = true;
+			pl->partner_oper_port = o->partner_portno;
+			pl->has_partner_oper_port_priority = true;
+			pl->partner_oper_port_priority = o->partner_portprio;
+			pl->partner_oper_state = bits(a,
+			    (uint64_t)o->partner_state << 1);
+			ap->lacp = pl;
+		}
+		strlcpy(ag->v[ag->n].port, rp[i].rp_portname,
+		    sizeof(ag->v[ag->n].port));
+		ag->v[ag->n++].ap = ap;
 		layer_add(l, e->name, rp[i].rp_portname);
 	}
-	lg->port.n = n;
-	lg->port.v = pv;
-	e->arcif_lagg = lg;
+	e->dot1ax_lag = lg;
+	return (0);
+}
+
+/*
+ * IEEE 802.1AX's linkagg of the interfaces v (yif_interfaces()'): a
+ * lagg's aggregation system, its LACP address and priority (SIOCGLAGG)
+ * or else the lagg's own address, and its key group, of its name, the
+ * lagg and the ports whose aggport names it.
+ */
+int
+yif_linkagg(const struct ietf_interfaces_interfaces_interface *v, size_t n,
+    cbl_yarena *a, struct ieee802_dot1ax_linkagg *data)
+{
+	struct ieee802_dot1ax_linkagg_linkagg *la;
+	struct ieee802_dot1ax_linkagg_linkagg_agg_system *sv;
+	struct ieee802_dot1ax_linkagg_linkagg_key_group *kv;
+	struct lagg_reqall ra;
+	size_t nl = 0, k = 0;
+	int s;
+
+	for (size_t i = 0; i < n; i++)
+		nl += v[i].dot1ax_lag != NULL;
+	if ((la = cbl_yarena_alloc(a, sizeof(*la))) == NULL ||
+	    (nl > 0 && ((sv = cbl_yarena_alloc(a, nl * sizeof(*sv))) == NULL ||
+	    (kv = cbl_yarena_alloc(a, nl * sizeof(*kv))) == NULL)))
+		return (ENOMEM);
+	if (nl == 0) {
+		data->linkagg = la;
+		return (0);
+	}
+	if ((s = socket(AF_LOCAL, SOCK_DGRAM | SOCK_CLOEXEC, 0)) == -1)
+		return (errno);
+	for (size_t i = 0; i < n; i++) {
+		const struct ietf_interfaces_interfaces_interface_dot1ax_lag *lg =
+		    v[i].dot1ax_lag;
+		const char **lags, **ports;
+		size_t np = 0;
+
+		if (lg == NULL)
+			continue;
+		for (size_t j = 0; j < n; j++)
+			np += v[j].dot1ax_aggport != NULL &&
+			    strcmp(v[j].dot1ax_aggport->key_group_name,
+			    v[i].name) == 0;
+		if ((lags = cbl_yarena_alloc(a, sizeof(*lags))) == NULL ||
+		    (ports = cbl_yarena_alloc(a, (np + 1) *
+		    sizeof(*ports))) == NULL) {
+			close(s);
+			return (ENOMEM);
+		}
+		np = 0;
+		for (size_t j = 0; j < n; j++)
+			if (v[j].dot1ax_aggport != NULL &&
+			    strcmp(v[j].dot1ax_aggport->key_group_name,
+			    v[i].name) == 0)
+				ports[np++] = v[j].name;
+		sv[k].name = v[i].name;
+		sv[k].actor_system = lg->mac_address;
+		memset(&ra, 0, sizeof(ra));
+		strlcpy(ra.ra_ifname, v[i].name, sizeof(ra.ra_ifname));
+		if (ioctl(s, SIOCGLAGG, &ra) == 0 &&
+		    ra.ra_proto == LAGG_PROTO_LACP) {
+			sv[k].actor_system = ieeemac(a,
+			    ra.ra_lacpreq.actor_mac);
+			sv[k].has_actor_system_priority = true;
+			sv[k].actor_system_priority = ra.ra_lacpreq.actor_prio;
+		}
+		lags[0] = v[i].name;
+		kv[k].name = v[i].name;
+		kv[k].agg_system_name = v[i].name;
+		kv[k].lags.n = 1;
+		kv[k].lags.v = lags;
+		kv[k].aggports.n = np;
+		kv[k].aggports.v = ports;
+		k++;
+	}
+	close(s);
+	la->agg_system.n = la->key_group.n = k;
+	la->agg_system.v = sv;
+	la->key_group.v = kv;
+	data->linkagg = la;
 	return (0);
 }
 
@@ -953,14 +1130,14 @@ bridge(yif *e, struct layers *l, int s, cbl_yarena *a)
  * if_type does not say, else NULL.
  */
 static int
-kind_of(yif *e, struct layers *l, int s, uint8_t ift, const char **kindp,
-    cbl_yarena *a)
+kind_of(yif *e, struct layers *l, struct aggports *ag, int s, uint8_t ift,
+    const char **kindp, cbl_yarena *a)
 {
 	int error;
 
 	*kindp = NULL;
 	if (ift == IFT_ETHER || ift == IFT_INFINIBAND) {
-		if ((error = lagg(e, l, s, a)) == 0)
+		if ((error = lagg(e, l, ag, s, a)) == 0)
 			*kindp = "ieee8023adLag";
 	} else if (ift == IFT_L2VLAN || ift == IFT_IEEE8023ADLAG) {
 		if ((error = vlan(e, l, s, a)) == 0)
@@ -1074,6 +1251,7 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 {
 	struct ietf_interfaces_interfaces *ifs;
 	struct layers lay = { NULL, 0 };
+	struct aggports ag = { NULL, 0 };
 	struct ifaddrs *ifa0, *ifa;
 	const struct if_data *d;
 	struct drvname *dn = NULL;
@@ -1118,7 +1296,7 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 		if ((error = one(&v[n], ifa, s, &boot, a)) == 0 &&
 		    (error = link_parts(&v[n], s, dn[ndn].drv, a)) == 0 &&
 		    d != NULL &&
-		    (error = kind_of(&v[n], &lay, s, d->ifi_type, &kind,
+		    (error = kind_of(&v[n], &lay, &ag, s, d->ifi_type, &kind,
 		    a)) == 0 && kind != NULL &&
 		    (v[n].type = iftype_sid(kind)) != 0)
 			v[n].has_type = true;
@@ -1134,6 +1312,14 @@ yif_interfaces(struct ietf_interfaces *data, cbl_yarena *a)
 		    &v[i].higher_layer_if.n, &v[i].higher_layer_if.v,
 		    a)) == 0)
 			epair(&v[i], dn, ndn);
+	/* Each lagg port's aggport on its entry, the first of its name. */
+	for (size_t i = 0; i < ag.n; i++)
+		for (size_t j = 0; j < n; j++)
+			if (strcmp(v[j].name, ag.v[i].port) == 0) {
+				v[j].dot1ax_aggport = ag.v[i].ap;
+				break;
+			}
+	free(ag.v);
 	free(lay.v);
 	free(dn);
 	close(s);

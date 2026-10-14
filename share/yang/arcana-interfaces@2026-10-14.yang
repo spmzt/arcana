@@ -26,6 +26,11 @@ module arcana-interfaces {
   import ieee802-dot1q-types {
     prefix dot1q-types;
   }
+  import ieee802-dot1ax-linkagg {
+    prefix dot1ax;
+    reference
+      "IEEE Std 802.1AX: Link Aggregation";
+  }
 
   organization
     "Arcana";
@@ -63,7 +68,14 @@ module arcana-interfaces {
        duplex (full-duplex, half-duplex), the PMD (the active subtype's
        IEEE 802.3 PMD type, other where IEEE names none); the media
        words below, any interface's with a medium, are ifconfig(8)'s
-       own.
+       own;
+     - a lagg(4) is IEEE 802.1AX's (ieee802-dot1ax-linkagg): a key
+       group and an aggregation system each, named as it is, its
+       interface's lag and each port's aggport naming the key group,
+       with LACP's state where its protocol is lacp (SIOCGLAGG's
+       lacp_opreq: the system's priority and address, the keys, the
+       ports' numbers, priorities and states); its protocol, hash, and
+       a port's priority and flags, FreeBSD's own, are below.
 
      Each leaf names the FreeBSD facility it is read from and written
      to.  A list or leaf-list the system orders is in the order the
@@ -384,89 +396,6 @@ module arcana-interfaces {
            'mode' and the mode.";
       }
     }
-    container lagg {
-      when "derived-from-or-self(../if:type, 'ianaift:ieee8023adLag')";
-      description
-        "A lagg(4): SIOCGLAGG, SIOCSLAGG.";
-      leaf protocol {
-        type enumeration {
-          enum none {
-            value 0;
-          }
-          enum roundrobin {
-            value 1;
-          }
-          enum failover {
-            value 2;
-          }
-          enum loadbalance {
-            value 3;
-          }
-          enum lacp {
-            value 4;
-          }
-          enum broadcast {
-            value 5;
-          }
-        }
-        description
-          "Its protocol, LAGG_PROTO_*: ifconfig(8) laggproto.";
-      }
-      leaf hash {
-        type bits {
-          bit l2 {
-            position 0;
-          }
-          bit l3 {
-            position 1;
-          }
-          bit l4 {
-            position 2;
-          }
-        }
-        description
-          "The headers its flows are hashed by, LAGG_F_HASHL*:
-           SIOCGLAGGFLAGS, ifconfig(8) lagghash.";
-      }
-      list port {
-        key "name";
-        description
-          "Its ports: ifconfig(8) laggport.";
-        leaf name {
-          type if:interface-ref;
-          description
-            "The port.";
-        }
-        leaf priority {
-          config false;
-          type uint32;
-          description
-            "Its priority, rp_prio.";
-        }
-        leaf flags {
-          config false;
-          type bits {
-            bit master {
-              position 0;
-            }
-            bit stack {
-              position 1;
-            }
-            bit active {
-              position 2;
-            }
-            bit collecting {
-              position 3;
-            }
-            bit distributing {
-              position 4;
-            }
-          }
-          description
-            "Its state, LAGG_PORT_*.";
-        }
-      }
-    }
     container bridge {
       when "derived-from-or-self(../if:type, 'ianaift:bridge')";
       description
@@ -558,6 +487,84 @@ module arcana-interfaces {
          driver-name.  Where one has, it is ietf-if-extensions'
          peer-interface (two interfaces may share a name, one back from
          a vnet jail, and the list has the first only).";
+    }
+  }
+
+  augment "/if:interfaces/if:interface/dot1ax:lag" {
+    description
+      "What a lagg(4) has beyond IEEE 802.1AX: SIOCGLAGG, SIOCSLAGG.";
+    leaf protocol {
+      type enumeration {
+        enum none {
+          value 0;
+        }
+        enum roundrobin {
+          value 1;
+        }
+        enum failover {
+          value 2;
+        }
+        enum loadbalance {
+          value 3;
+        }
+        enum lacp {
+          value 4;
+        }
+        enum broadcast {
+          value 5;
+        }
+      }
+      description
+        "Its protocol, LAGG_PROTO_*: ifconfig(8) laggproto.";
+    }
+    leaf hash {
+      type bits {
+        bit l2 {
+          position 0;
+        }
+        bit l3 {
+          position 1;
+        }
+        bit l4 {
+          position 2;
+        }
+      }
+      description
+        "The headers its flows are hashed by, LAGG_F_HASHL*:
+         SIOCGLAGGFLAGS, ifconfig(8) lagghash.";
+    }
+  }
+
+  augment "/if:interfaces/if:interface/dot1ax:aggport" {
+    description
+      "What a lagg(4)'s port has beyond IEEE 802.1AX.";
+    leaf priority {
+      config false;
+      type uint32;
+      description
+        "Its priority among the ports, rp_prio: failover's order.";
+    }
+    leaf flags {
+      config false;
+      type bits {
+        bit master {
+          position 0;
+        }
+        bit stack {
+          position 1;
+        }
+        bit active {
+          position 2;
+        }
+        bit collecting {
+          position 3;
+        }
+        bit distributing {
+          position 4;
+        }
+      }
+      description
+        "Its state, LAGG_PORT_*, under every protocol.";
     }
   }
 

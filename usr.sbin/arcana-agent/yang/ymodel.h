@@ -17,14 +17,18 @@ extern const struct cbl_yschema ymodel_schema;
 /* The server's handler table, base_server.c (-m server). */
 extern const struct cbl_yserver ymodel_server;
 
+struct ietf_interfaces_interfaces_interface_statistics_dot1ax_lag_stats;
+struct ietf_interfaces_interfaces_interface_statistics_dot1ax_aggport_stats;
 struct ietf_interfaces_interfaces_interface_statistics;
 struct ietf_interfaces_interfaces_interface_arcif_media_current;
 struct ietf_interfaces_interfaces_interface_arcif_media_active;
 struct ietf_interfaces_interfaces_interface_arcif_media;
-struct ietf_interfaces_interfaces_interface_arcif_lagg_port;
-struct ietf_interfaces_interfaces_interface_arcif_lagg;
 struct ietf_interfaces_interfaces_interface_arcif_bridge_member;
 struct ietf_interfaces_interfaces_interface_arcif_bridge;
+struct ietf_interfaces_interfaces_interface_dot1ax_lag_lacp;
+struct ietf_interfaces_interfaces_interface_dot1ax_lag;
+struct ietf_interfaces_interfaces_interface_dot1ax_aggport_lacp;
+struct ietf_interfaces_interfaces_interface_dot1ax_aggport;
 struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation;
 struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_flow_control;
 struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_capabilities;
@@ -64,6 +68,10 @@ struct ietf_interfaces_interfaces_state_interface_ip_ipv6;
 struct ietf_interfaces_interfaces_state_interface;
 struct ietf_interfaces_interfaces_state;
 struct ietf_interfaces;
+struct ieee802_dot1ax_linkagg_linkagg_agg_system;
+struct ieee802_dot1ax_linkagg_linkagg_key_group;
+struct ieee802_dot1ax_linkagg_linkagg;
+struct ieee802_dot1ax_linkagg;
 struct ietf_routing_routing_interfaces;
 struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop;
 struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list;
@@ -368,25 +376,6 @@ enum ietf_interfaces_interfaces_interface_arcif_media_status {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_MEDIA_STATUS_RUNNING = 3,
 };
 
-enum ietf_interfaces_interfaces_interface_arcif_lagg_protocol {
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PROTOCOL_NONE = 0,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PROTOCOL_ROUNDROBIN = 1,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PROTOCOL_FAILOVER = 2,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PROTOCOL_LOADBALANCE = 3,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PROTOCOL_LACP = 4,
-	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PROTOCOL_BROADCAST = 5,
-};
-
-#define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_HASH_L2	0u
-#define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_HASH_L3	1u
-#define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_HASH_L4	2u
-
-#define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PORT_FLAGS_MASTER	0u
-#define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PORT_FLAGS_STACK	1u
-#define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PORT_FLAGS_ACTIVE	2u
-#define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PORT_FLAGS_COLLECTING	3u
-#define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_LAGG_PORT_FLAGS_DISTRIBUTING	4u
-
 #define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_FLAGS_LEARNING	0u
 #define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_FLAGS_DISCOVER	1u
 #define	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_FLAGS_STP	2u
@@ -417,6 +406,48 @@ enum ietf_interfaces_interfaces_interface_arcif_bridge_member_stp_role {
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_ALTERNATE = 3,
 	IETF_INTERFACES_INTERFACES_INTERFACE_ARCIF_BRIDGE_MEMBER_STP_ROLE_BACKUP = 4,
 };
+
+enum ietf_interfaces_interfaces_interface_dot1ax_lag_arcif_protocol {
+	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_LAG_ARCIF_PROTOCOL_NONE = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_LAG_ARCIF_PROTOCOL_ROUNDROBIN = 1,
+	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_LAG_ARCIF_PROTOCOL_FAILOVER = 2,
+	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_LAG_ARCIF_PROTOCOL_LOADBALANCE = 3,
+	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_LAG_ARCIF_PROTOCOL_LACP = 4,
+	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_LAG_ARCIF_PROTOCOL_BROADCAST = 5,
+};
+
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_LAG_ARCIF_HASH_L2	0u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_LAG_ARCIF_HASH_L3	1u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_LAG_ARCIF_HASH_L4	2u
+
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_PARTNER_ADMIN_STATE_LACP_ACTIVITY	1u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_PARTNER_ADMIN_STATE_LACP_TIMEOUT	2u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_PARTNER_ADMIN_STATE_AGGREGATION	3u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_PARTNER_ADMIN_STATE_SYNCHRONIZATION	4u
+
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_ACTOR_OPER_STATE_LACP_ACTIVITY	1u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_ACTOR_OPER_STATE_LACP_TIMEOUT	2u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_ACTOR_OPER_STATE_AGGREGATION	3u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_ACTOR_OPER_STATE_SYNCHRONIZATION	4u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_ACTOR_OPER_STATE_COLLECTING	5u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_ACTOR_OPER_STATE_DISTRIBUTING	6u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_ACTOR_OPER_STATE_DEFAULTED	7u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_ACTOR_OPER_STATE_EXPIRED	8u
+
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_PARTNER_OPER_STATE_LACP_ACTIVITY	1u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_PARTNER_OPER_STATE_LACP_TIMEOUT	2u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_PARTNER_OPER_STATE_AGGREGATION	3u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_PARTNER_OPER_STATE_SYNCHRONIZATION	4u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_PARTNER_OPER_STATE_COLLECTING	5u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_PARTNER_OPER_STATE_DISTRIBUTING	6u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_PARTNER_OPER_STATE_DEFAULTED	7u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_LACP_PARTNER_OPER_STATE_EXPIRED	8u
+
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_ARCIF_FLAGS_MASTER	0u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_ARCIF_FLAGS_STACK	1u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_ARCIF_FLAGS_ACTIVE	2u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_ARCIF_FLAGS_COLLECTING	3u
+#define	IETF_INTERFACES_INTERFACES_INTERFACE_DOT1AX_AGGPORT_ARCIF_FLAGS_DISTRIBUTING	4u
 
 enum ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_negotiation_status {
 	IETF_INTERFACES_INTERFACES_INTERFACE_IEEE802_ETH_IF_ETHERNET_AUTO_NEGOTIATION_NEGOTIATION_STATUS_IN_PROGRESS = 0,
@@ -564,6 +595,17 @@ enum ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_state {
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_DELAY = 3,
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_PROBE = 4,
 };
+
+enum ieee802_dot1ax_linkagg_linkagg_key_group_actor_protocol_da {
+	IEEE802_DOT1AX_LINKAGG_LINKAGG_KEY_GROUP_ACTOR_PROTOCOL_DA_NEAREST_CUSTOMER_BRIDGE = 0,
+	IEEE802_DOT1AX_LINKAGG_LINKAGG_KEY_GROUP_ACTOR_PROTOCOL_DA_SLOW_PROTOCOLS_MULTICAST = 1,
+	IEEE802_DOT1AX_LINKAGG_LINKAGG_KEY_GROUP_ACTOR_PROTOCOL_DA_NEAREST_NON_TPMR_BRIDGE = 2,
+	IEEE802_DOT1AX_LINKAGG_LINKAGG_KEY_GROUP_ACTOR_PROTOCOL_DA_NEAREST_BRIDGE = 3,
+};
+
+#define	IEEE802_DOT1AX_LINKAGG_LINKAGG_KEY_GROUP_ACTOR_ADMIN_STATE_LACP_ACTIVITY	1u
+#define	IEEE802_DOT1AX_LINKAGG_LINKAGG_KEY_GROUP_ACTOR_ADMIN_STATE_LACP_TIMEOUT	2u
+#define	IEEE802_DOT1AX_LINKAGG_LINKAGG_KEY_GROUP_ACTOR_ADMIN_STATE_AGGREGATION	3u
 
 enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_options {
 	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V4UR_IPV4_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NONE = 0,
@@ -969,6 +1011,32 @@ enum arcana_storage_storage_dataset_canmount {
 };
 
 /* container */
+struct ietf_interfaces_interfaces_interface_statistics_dot1ax_lag_stats {
+	bool			 has_unknown_protocol_frames;
+	uint64_t	 unknown_protocol_frames;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_statistics_dot1ax_aggport_stats {
+	bool			 has_lacp_pdu_rx;
+	uint64_t	 lacp_pdu_rx;
+	bool			 has_marker_pdu_rx;
+	uint64_t	 marker_pdu_rx;
+	bool			 has_marker_response_pdu_rx;
+	uint64_t	 marker_response_pdu_rx;
+	bool			 has_unknown_rx;
+	uint64_t	 unknown_rx;
+	bool			 has_illegal_rx;
+	uint64_t	 illegal_rx;
+	bool			 has_lacp_pdu_tx;
+	uint64_t	 lacp_pdu_tx;
+	bool			 has_marker_pdu_tx;
+	uint64_t	 marker_pdu_tx;
+	bool			 has_marker_response_pdu_tx;
+	uint64_t	 marker_response_pdu_tx;
+};
+
+/* container */
 struct ietf_interfaces_interfaces_interface_statistics {
 	const char	*discontinuity_time;
 	bool			 has_in_octets;
@@ -997,6 +1065,8 @@ struct ietf_interfaces_interfaces_interface_statistics {
 	uint32_t	 out_discards;
 	bool			 has_out_errors;
 	uint32_t	 out_errors;
+	const struct ietf_interfaces_interfaces_interface_statistics_dot1ax_lag_stats	*dot1ax_lag_stats;
+	const struct ietf_interfaces_interfaces_interface_statistics_dot1ax_aggport_stats	*dot1ax_aggport_stats;
 	bool			 has_ethlike_in_discard_unknown_dest_mac_pkts;
 	uint64_t	 ethlike_in_discard_unknown_dest_mac_pkts;
 	bool			 has_ethlike_in_pkts_64_octets;
@@ -1078,25 +1148,6 @@ struct ietf_interfaces_interfaces_interface_arcif_media {
 };
 
 /* list entry */
-struct ietf_interfaces_interfaces_interface_arcif_lagg_port {
-	const char	*name;
-	bool			 has_priority;
-	uint32_t	 priority;
-	struct cbl_bytes	 flags;
-};
-
-/* container */
-struct ietf_interfaces_interfaces_interface_arcif_lagg {
-	bool			 has_protocol;
-	enum ietf_interfaces_interfaces_interface_arcif_lagg_protocol	 protocol;
-	struct cbl_bytes	 hash;
-	struct {
-		size_t		 n;
-		const struct ietf_interfaces_interfaces_interface_arcif_lagg_port	*v;
-	}			 port;
-};
-
-/* list entry */
 struct ietf_interfaces_interfaces_interface_arcif_bridge_member {
 	const char	*name;
 	struct cbl_bytes	 flags;
@@ -1118,6 +1169,78 @@ struct ietf_interfaces_interfaces_interface_arcif_bridge {
 		size_t		 n;
 		const struct ietf_interfaces_interfaces_interface_arcif_bridge_member	*v;
 	}			 member;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_dot1ax_lag_lacp {
+	bool			 has_actor_oper_key;
+	uint16_t	 actor_oper_key;
+	const char	*partner_system;
+	bool			 has_partner_system_priority;
+	uint16_t	 partner_system_priority;
+	bool			 has_partner_oper_key;
+	uint16_t	 partner_oper_key;
+	bool			 has_aggregate_or_individual;
+	bool		 aggregate_or_individual;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_dot1ax_lag {
+	const char	*key_group_name;
+	const char	*mac_address;
+	const struct ietf_interfaces_interfaces_interface_dot1ax_lag_lacp	*lacp;
+	bool			 has_arcif_protocol;
+	enum ietf_interfaces_interfaces_interface_dot1ax_lag_arcif_protocol	 arcif_protocol;
+	struct cbl_bytes	 arcif_hash;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_dot1ax_aggport_lacp {
+	bool			 has_actor_lacp_version;
+	uint8_t		 actor_lacp_version;
+	bool			 has_actor_oper_key;
+	uint16_t	 actor_oper_key;
+	struct cbl_bytes	 actor_oper_state;
+	bool			 has_partner_lacp_version;
+	uint8_t		 partner_lacp_version;
+	bool			 has_partner_oper_system_priority;
+	uint16_t	 partner_oper_system_priority;
+	const char	*partner_oper_system;
+	bool			 has_partner_oper_key;
+	uint16_t	 partner_oper_key;
+	bool			 has_partner_oper_port;
+	uint16_t	 partner_oper_port;
+	bool			 has_partner_oper_port_priority;
+	uint16_t	 partner_oper_port_priority;
+	struct cbl_bytes	 partner_oper_state;
+	bool			 has_aggregate_or_individual;
+	bool		 aggregate_or_individual;
+	bool			 has_wtr_waiting;
+	bool		 wtr_waiting;
+};
+
+/* container, presence */
+struct ietf_interfaces_interfaces_interface_dot1ax_aggport {
+	const char	*key_group_name;
+	bool			 has_actor_port_number;
+	uint16_t	 actor_port_number;
+	bool			 has_actor_port_priority;
+	uint16_t	 actor_port_priority;
+	bool			 has_partner_admin_key;
+	uint16_t	 partner_admin_key;
+	bool			 has_partner_admin_port;
+	uint16_t	 partner_admin_port;
+	bool			 has_partner_admin_port_priority;
+	uint16_t	 partner_admin_port_priority;
+	struct cbl_bytes	 partner_admin_state;
+	bool			 has_wtr_time;
+	uint16_t	 wtr_time;
+	bool			 has_wtr_revertive;
+	bool		 wtr_revertive;
+	const struct ietf_interfaces_interfaces_interface_dot1ax_aggport_lacp	*lacp;
+	bool			 has_arcif_priority;
+	uint32_t	 arcif_priority;
+	struct cbl_bytes	 arcif_flags;
 };
 
 /* container, presence */
@@ -1445,19 +1568,20 @@ struct ietf_interfaces_interfaces_interface {
 	struct cbl_bytes	 arcif_capabilities;
 	struct cbl_bytes	 arcif_capabilities_supported;
 	const struct ietf_interfaces_interfaces_interface_arcif_media	*arcif_media;
-	const struct ietf_interfaces_interfaces_interface_arcif_lagg	*arcif_lagg;
 	const struct ietf_interfaces_interfaces_interface_arcif_bridge	*arcif_bridge;
 	bool			 has_arcif_peer_vnet;
 	bool		 arcif_peer_vnet;
+	const struct ietf_interfaces_interfaces_interface_dot1ax_lag	*dot1ax_lag;
+	const struct ietf_interfaces_interfaces_interface_dot1ax_aggport	*dot1ax_aggport;
 	const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet	*ieee802_eth_if_ethernet;
 	const struct ietf_interfaces_interfaces_interface_ethlike_ethernet_like	*ethlike_ethernet_like;
+	const char	*if_ext_parent_interface;
 	const struct ietf_interfaces_interfaces_interface_if_ext_encapsulation	*if_ext_encapsulation;
 	bool			 has_if_ext_max_frame_size;
 	uint32_t	 if_ext_max_frame_size;
 	bool			 has_if_ext_forwarding_mode;
 	uint64_t	 if_ext_forwarding_mode;	/* identityref: a SID */
 	const char	*if_ext_peer_interface;
-	const char	*if_ext_parent_interface;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv4	*ip_ipv4;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv6	*ip_ipv6;
 	const char	*lne_bind_lne_name;
@@ -1662,6 +1786,57 @@ struct ietf_interfaces_interfaces_state {
 struct ietf_interfaces {
 	const struct ietf_interfaces_interfaces	*interfaces;
 	const struct ietf_interfaces_interfaces_state	*interfaces_state;
+};
+
+/* list entry */
+struct ieee802_dot1ax_linkagg_linkagg_agg_system {
+	const char	*name;
+	const char	*actor_system;
+	bool			 has_actor_system_priority;
+	uint16_t	 actor_system_priority;
+};
+
+/* list entry */
+struct ieee802_dot1ax_linkagg_linkagg_key_group {
+	const char	*name;
+	bool			 has_actor_admin_key;
+	uint16_t	 actor_admin_key;
+	const char	*agg_system_name;
+	bool			 has_actor_protocol_da;
+	enum ieee802_dot1ax_linkagg_linkagg_key_group_actor_protocol_da	 actor_protocol_da;
+	bool			 has_collector_max_delay;
+	uint16_t	 collector_max_delay;
+	struct cbl_bytes	 actor_admin_state;
+	const char	*partner_admin_system;
+	bool			 has_partner_admin_system_priority;
+	uint16_t	 partner_admin_system_priority;
+	bool			 has_port_algorithm;
+	uint64_t	 port_algorithm;	/* identityref: a SID */
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 lags;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 aggports;
+};
+
+/* container */
+struct ieee802_dot1ax_linkagg_linkagg {
+	struct {
+		size_t		 n;
+		const struct ieee802_dot1ax_linkagg_linkagg_agg_system	*v;
+	}			 agg_system;
+	struct {
+		size_t		 n;
+		const struct ieee802_dot1ax_linkagg_linkagg_key_group	*v;
+	}			 key_group;
+};
+
+/* data */
+struct ieee802_dot1ax_linkagg {
+	const struct ieee802_dot1ax_linkagg_linkagg	*linkagg;
 };
 
 /* container */
@@ -3773,6 +3948,14 @@ struct arcana_processes {
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
  */
+int	ietf_interfaces_interfaces_interface_statistics_dot1ax_lag_stats_encode(const struct ietf_interfaces_interfaces_interface_statistics_dot1ax_lag_stats *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_statistics_dot1ax_lag_stats_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_statistics_dot1ax_lag_stats *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_statistics_dot1ax_aggport_stats_encode(const struct ietf_interfaces_interfaces_interface_statistics_dot1ax_aggport_stats *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_statistics_dot1ax_aggport_stats_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_statistics_dot1ax_aggport_stats *,
+	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_statistics_encode(const struct ietf_interfaces_interfaces_interface_statistics *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_statistics_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_statistics *,
@@ -3789,14 +3972,6 @@ int	ietf_interfaces_interfaces_interface_arcif_media_encode(const struct ietf_in
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_media_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_media *,
 	    cbl_yarena *, int, char *, size_t);
-int	ietf_interfaces_interfaces_interface_arcif_lagg_port_encode(const struct ietf_interfaces_interfaces_interface_arcif_lagg_port *,
-	    struct cbl_ybuf *);
-int	ietf_interfaces_interfaces_interface_arcif_lagg_port_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_lagg_port *,
-	    cbl_yarena *, int, char *, size_t);
-int	ietf_interfaces_interfaces_interface_arcif_lagg_encode(const struct ietf_interfaces_interfaces_interface_arcif_lagg *,
-	    struct cbl_ybuf *);
-int	ietf_interfaces_interfaces_interface_arcif_lagg_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_lagg *,
-	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_arcif_bridge_member_encode(const struct ietf_interfaces_interfaces_interface_arcif_bridge_member *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_bridge_member_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_bridge_member *,
@@ -3804,6 +3979,22 @@ int	ietf_interfaces_interfaces_interface_arcif_bridge_member_decode(const void *
 int	ietf_interfaces_interfaces_interface_arcif_bridge_encode(const struct ietf_interfaces_interfaces_interface_arcif_bridge *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_arcif_bridge_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_arcif_bridge *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_dot1ax_lag_lacp_encode(const struct ietf_interfaces_interfaces_interface_dot1ax_lag_lacp *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_dot1ax_lag_lacp_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_dot1ax_lag_lacp *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_dot1ax_lag_encode(const struct ietf_interfaces_interfaces_interface_dot1ax_lag *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_dot1ax_lag_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_dot1ax_lag *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_dot1ax_aggport_lacp_encode(const struct ietf_interfaces_interfaces_interface_dot1ax_aggport_lacp *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_dot1ax_aggport_lacp_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_dot1ax_aggport_lacp *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_dot1ax_aggport_encode(const struct ietf_interfaces_interfaces_interface_dot1ax_aggport *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_dot1ax_aggport_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_dot1ax_aggport *,
 	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation_encode(const struct ietf_interfaces_interfaces_interface_ieee802_eth_if_ethernet_auto_negotiation *,
 	    struct cbl_ybuf *);
@@ -3956,6 +4147,18 @@ int	ietf_interfaces_interfaces_state_interface_decode(const void *, size_t, stru
 int	ietf_interfaces_interfaces_state_encode(const struct ietf_interfaces_interfaces_state *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_state_decode(const void *, size_t, struct ietf_interfaces_interfaces_state *,
+	    cbl_yarena *, int, char *, size_t);
+int	ieee802_dot1ax_linkagg_linkagg_agg_system_encode(const struct ieee802_dot1ax_linkagg_linkagg_agg_system *,
+	    struct cbl_ybuf *);
+int	ieee802_dot1ax_linkagg_linkagg_agg_system_decode(const void *, size_t, struct ieee802_dot1ax_linkagg_linkagg_agg_system *,
+	    cbl_yarena *, int, char *, size_t);
+int	ieee802_dot1ax_linkagg_linkagg_key_group_encode(const struct ieee802_dot1ax_linkagg_linkagg_key_group *,
+	    struct cbl_ybuf *);
+int	ieee802_dot1ax_linkagg_linkagg_key_group_decode(const void *, size_t, struct ieee802_dot1ax_linkagg_linkagg_key_group *,
+	    cbl_yarena *, int, char *, size_t);
+int	ieee802_dot1ax_linkagg_linkagg_encode(const struct ieee802_dot1ax_linkagg_linkagg *,
+	    struct cbl_ybuf *);
+int	ieee802_dot1ax_linkagg_linkagg_decode(const void *, size_t, struct ieee802_dot1ax_linkagg_linkagg *,
 	    cbl_yarena *, int, char *, size_t);
 int	ietf_routing_routing_interfaces_encode(const struct ietf_routing_routing_interfaces *,
 	    struct cbl_ybuf *);
@@ -4718,6 +4921,9 @@ int	ietf_interfaces_interfaces_get(cbl_req *, struct ietf_interfaces *, cbl_yare
 int	ietf_interfaces_interfaces_edit(cbl_req *, const struct ietf_interfaces *,
 	    const struct ietf_interfaces *);
 int	ietf_interfaces_interfaces_state_get(cbl_req *, struct ietf_interfaces *, cbl_yarena *);
+int	ieee802_dot1ax_linkagg_linkagg_get(cbl_req *, struct ieee802_dot1ax_linkagg *, cbl_yarena *);
+int	ieee802_dot1ax_linkagg_linkagg_edit(cbl_req *, const struct ieee802_dot1ax_linkagg *,
+	    const struct ieee802_dot1ax_linkagg *);
 int	ietf_routing_routing_get(cbl_req *, struct ietf_routing *, cbl_yarena *);
 int	ietf_routing_routing_edit(cbl_req *, const struct ietf_routing *,
 	    const struct ietf_routing *);

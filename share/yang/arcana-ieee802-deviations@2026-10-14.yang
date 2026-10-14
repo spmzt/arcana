@@ -1,0 +1,39 @@
+module arcana-ieee802-deviations {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-ieee802-deviations";
+  prefix arcieee;
+
+  import ieee802-dot1ax-linkagg {
+    prefix dot1ax;
+    reference
+      "IEEE Std 802.1AX: Link Aggregation";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "Where FreeBSD's link aggregation (lagg(4)) and bridges (if_bridge(4))
+     differ from IEEE 802.1AX's and 802.1Q's models.
+
+     FreeBSD's LACP keeps no administrative key: each port's key is
+     derived from its speed (lacp_compose_key()), so a key group has
+     none.";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/notes/standard-models.md: the duplicates converted.";
+  }
+
+  deviation "/dot1ax:linkagg/dot1ax:key-group/dot1ax:actor-admin-key" {
+    description
+      "No administrative key: the operational one each port derives
+       is its aggport's actor-oper-key.";
+    deviate replace {
+      mandatory false;
+    }
+  }
+}
