@@ -20,7 +20,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCANA_AGENT_VERSION	"0.114.27"
+#define	ARCANA_AGENT_VERSION	"0.115.0"
 
 #define	PATH_JAIL_CONF		"/etc/jail.conf"
 #define	PATH_JAIL_CONF_D	"/etc/jail.conf.d"
@@ -465,6 +465,7 @@ struct kmsg_line {
 	char		*text;
 };
 void		 kmsg_start(void);
+void		 host_watch_start(void);
 bool		 kmsg_lines(struct work *, uint64_t, const char *, uint32_t,
 		    struct kmsg_line **, size_t *, uint64_t *);
 void		 history_save(void);

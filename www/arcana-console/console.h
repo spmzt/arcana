@@ -25,7 +25,7 @@
  * to the sources is never picked up. */
 #include <arcana.h>
 
-#define	ARCW_VERSION		"0.173.12"
+#define	ARCW_VERSION		"0.174.0"
 #define	ARCW_LOCAL_AGENT	"unix:/var/run/arcana-agent.sock"
 #define	ARCW_CONF		"/usr/local/etc/arcana/web.conf"
 #define	ARCW_RELEASES		"https://api.github.com/repos/spmzt/arcana/releases/latest"
@@ -140,6 +140,7 @@ void		 thread_log(int, const char *, ...) __printflike(2, 3);
 int		 api_transfers(struct http_request *);
 void		 transfers_init(void);
 bool		 capture(struct http_request *, int, char *, size_t);
+bool		 capture_path(const char *, int, char *, size_t);
 const char	*ucl_str(const ucl_object_t *, const char *);
 bool		 ucl_flag(const ucl_object_t *, const char *);
 
@@ -191,6 +192,7 @@ char		*hosts_arcana(const char *, const char *, const char *,
 		    const char *, int *);
 char		*hosts_read(const char *, const char *, const char *,
 		    const char *, int *);
+bool		 hosts_read_known(const char *);
 char		*hosts_read_live(const char *, const char *, const char *,
 		    const char *, const char *, void (*)(const char *, void *),
 		    void *, int *);

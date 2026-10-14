@@ -5891,6 +5891,50 @@ EOF
 	    10baseT/UTP 100GBase-SR4 10BASE-T1S autoselect
 }
 
+atf_test_case host_watch cleanup
+host_watch_head()
+{
+	atf_set "descr" "what changes on the host, told as the kernel tells" \
+	    "it: a configuration file written or replaced (EVFILT_VNODE)," \
+	    "processes started and gone (EVFILT_PROC), each kind once a second"
+}
+host_watch_body()
+{
+	# jail.conf in a directory of its own, where nothing else changes.
+	mkdir q
+	echo '# jails' > q/jail.conf
+	DAEMON_ARGS="-f $(pwd)/q/jail.conf"
+	start_daemon
+	"$JGC" -c "$SOCK" events -f > follow.out 2>&1 &
+	echo $! > follow.pid
+	sleep 1.2
+	# Written in place, then replaced as sysrc(8) and editors do.
+	echo '# one' >> q/jail.conf
+	sleep 1.5
+	cp q/jail.conf jail.conf.new
+	echo '# two' >> jail.conf.new
+	mv jail.conf.new q/jail.conf
+	sleep 1.5
+	pat="\"kind\":\"conf\",\"data\":{\"file\":\"$(pwd)/q/jail.conf\"}"
+	n=$(grep -c "$pat" follow.out)
+	[ "$n" -ge 2 ] || atf_fail "$n events of jail.conf written and replaced"
+	# And grown again, by truncate -c, which leaves the directory as
+	# it is (no O_CREAT): the new file is the one watched.
+	truncate -c -s +1 q/jail.conf
+	sleep 1.5
+	kill "$(cat follow.pid)"
+	[ "$(grep -c "$pat" follow.out)" -gt "$n" ] ||
+	    atf_fail "the file put in its place is not watched"
+	# The sleeps and cp above are this shell's, not the agent's.
+	atf_check -o match:'"kind":"procs","data":\{"started":[1-9][0-9]*,"exited":[0-9]+\}' \
+	    cat follow.out
+}
+host_watch_cleanup()
+{
+	[ -f follow.pid ] && kill "$(cat follow.pid)" 2>/dev/null
+	stop_daemon
+}
+
 atf_test_case yang_origins
 yang_origins_head()
 {
@@ -6305,6 +6349,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_interfaces
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_origins
+	atf_add_test_case host_watch
 	atf_add_test_case yang_pmd
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf

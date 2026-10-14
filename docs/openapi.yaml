@@ -827,8 +827,12 @@ paths:
         agent's events group); lost true when some went past a page
         too slow for them, to read them with GET events; error when
         the host is gone. Until stop, or the socket closes.
-        what read, with read jails or services, is that GET of the
-        server done here so that its steps reach the page while the
+        what read, with read the path of a GET of the server's after
+        /api/servers/{server}/ and its query (jails, services,
+        packages, net/routes?fib=1, storage/pools, processes, log,
+        sysctl, kernel, certs, ssh, ipfw/rules, bird/config, jobs,
+        and the other reads of a host), is that GET of the server
+        done here so that its steps reach the page while the
         host takes them: any number of messages with step, a step of
         the trace as it begins and again as it ends (its id that of
         the whole trace; the console's connection subscribes to the
@@ -1084,8 +1088,15 @@ paths:
         neigh and neigh-del (a neighbour, as net/neighbours has one),
         threshold (what, value, limit, over, and name for an
         interface's, disk's or jail's) when a figure of the history
-        crosses its limit, kmsg (a kernel message), and sdwan-tunnel,
-        sdwan-fault and sdwan-security from the SD-WAN edge; EventsData
+        crosses its limit, kmsg (a kernel message), jail-state (jail,
+        state running or stopped, jid), job (a job of the queue ended),
+        conf (file: a configuration file of the base system written or
+        replaced, EVFILT_VNODE), procs (started, exited: processes
+        that came and went in a second, those the agent started left
+        out, EVFILT_PROC), zfs (type, pool: devd(8)'s ZFS
+        notifications), device (cdev, state created or destroyed: a
+        disk's node, devd(8)'s DEVFS), and sdwan-tunnel, sdwan-fault
+        and sdwan-security from the SD-WAN edge; EventsData
         says what each carries. The rest are the kernel's netlink(4)
         messages of the host's own network, and of each vnet jail's,
         which have jail, its name.

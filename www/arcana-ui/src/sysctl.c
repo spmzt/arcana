@@ -29,6 +29,8 @@
 static struct {
 	char		 sid[9];
 	ucl_object_t	*data;
+	ucl_object_t	*next;		/* the same part read again, coming in
+					 * parts, while data is still shown */
 	bool		 loading;
 	char		 error[300];
 	double		 fetched;
@@ -111,8 +113,10 @@ kept_cb(int status, const ucl_object_t *o, const char *err, void *arg)
 	key = arg;
 	if (strncmp(key, sy.sid, strlen(sy.sid)) == 0 && status == 200 &&
 	    sy.data != NULL && !sy.nostream && jget(o, "data.kept") != NULL) {
-		ucl_object_delete_key(sy.data, "kept");
-		ucl_object_insert_key(sy.data, ucl_object_ref(jget(o,
+		ucl_object_t	*to = sy.next != NULL ? sy.next : sy.data;
+
+		ucl_object_delete_key(to, "kept");
+		ucl_object_insert_key(to, ucl_object_ref(jget(o,
 		    "data.kept")), "kept", 0, false);
 	}
 	free(key);
@@ -135,8 +139,12 @@ refresh_sysctl(struct server *s, bool again)
 		if (sy.data != NULL)
 			ucl_object_unref(sy.data);
 		sy.data = NULL;
+		if (sy.next != NULL)
+			ucl_object_unref(sy.next);
+		sy.next = NULL;
 		sy.error[0] = '\0';
 		sy.edit[0] = '\0';
+		sy.fetched = 0;
 	} else if (!again && strcmp(sy.asked, sy.prefix) == 0 && (sy.data !=
 	    NULL || sy.error[0] != '\0'))
 		return;
@@ -145,9 +153,9 @@ refresh_sysctl(struct server *s, bool again)
 	if (asprintf(&key, "%s %s", s->id, sy.prefix) == -1)
 		abort();
 	if (sy.nostream) {
-		snprintf(url, sizeof(url), "/api/servers/%s/sysctl%s%s", s->id,
-		    sy.prefix[0] != '\0' ? "?filter=" : "", sy.prefix);
-		api("GET", url, NULL, sysctl_cb, key);
+		snprintf(url, sizeof(url), "sysctl%s%s", sy.prefix[0] != '\0' ?
+		    "?filter=" : "", sy.prefix);
+		host_read(s, url, "read the sysctls", true, sysctl_cb, key);
 		return;
 	}
 	/*
@@ -160,11 +168,20 @@ refresh_sysctl(struct server *s, bool again)
 		    sy.stream);
 		arc_stream_send(msg);
 	}
-	if (sy.data != NULL)
-		ucl_object_unref(sy.data);
-	sy.data = ucl_object_typed_new(UCL_OBJECT);
-	ucl_object_insert_key(sy.data, ucl_object_typed_new(UCL_ARRAY),
+	if (sy.next != NULL)
+		ucl_object_unref(sy.next);
+	sy.next = ucl_object_typed_new(UCL_OBJECT);
+	ucl_object_insert_key(sy.next, ucl_object_typed_new(UCL_ARRAY),
 	    "values", 0, false);
+	/* The same part read again: what is shown stays until it is
+	 * all here.  Another part is shown as it comes. */
+	if (sy.data == NULL || strcmp(sy.asked, sy.prefix) != 0) {
+		if (sy.data != NULL)
+			ucl_object_unref(sy.data);
+		sy.data = sy.next;
+		sy.next = NULL;
+		sy.fetched = 0;
+	}
 	snprintf(sy.asked, sizeof(sy.asked), "%s", sy.prefix);
 	sy.error[0] = '\0';
 	sy.truncated = false;
@@ -192,6 +209,9 @@ sysctl_stream(const ucl_object_t *o)
 		if (sy.streaming) {
 			sy.streaming = sy.loading = false;
 			sy.nostream = true;
+			if (sy.next != NULL)
+				ucl_object_unref(sy.next);
+			sy.next = NULL;
 			if ((s = cur_server()) != NULL && strcmp(s->id,
 			    sy.sid) == 0)
 				refresh_sysctl(s, true);
@@ -200,17 +220,31 @@ sysctl_stream(const ucl_object_t *o)
 	}
 	if (!sy.streaming || jint(o, "id", -1) != sy.stream || sy.data == NULL)
 		return;
-	vals = (ucl_object_t *)(uintptr_t)jget(sy.data, "values");
+	vals = (ucl_object_t *)(uintptr_t)jget(sy.next != NULL ? sy.next :
+	    sy.data, "values");
 	it = NULL;
 	while ((r = ucl_object_iterate(jget(o, "rows"), &it, true)) != NULL)
 		ucl_array_append(vals, ucl_object_ref(r));
-	sy.fetched = arc_now();
+	if (sy.next == NULL)
+		sy.fetched = arc_now();
 	if (jbool(o, "done") || jstr(o, "error") != NULL) {
 		sy.streaming = sy.loading = false;
-		sy.total = (int64_t)ucl_array_size(vals);
-		if (jstr(o, "error") != NULL)
+		if (jstr(o, "error") != NULL) {
 			snprintf(sy.error, sizeof(sy.error), "%s", jstr(o,
 			    "error"));
+			/* What was shown stays. */
+			if (sy.next != NULL)
+				ucl_object_unref(sy.next);
+			sy.next = NULL;
+			return;
+		}
+		if (sy.next != NULL) {
+			ucl_object_unref(sy.data);
+			sy.data = sy.next;
+			sy.next = NULL;
+		}
+		sy.fetched = arc_now();
+		sy.total = (int64_t)ucl_array_size(vals);
 	}
 }
 
@@ -270,19 +304,15 @@ view_sysctl(struct html *h, struct server *s)
 	    "placeholder=\"Filter rows\" autocomplete=\"off\" spellcheck=\""
 	    "false\"");
 	h_attr(h, "value", app.filter);
-	h_raw(h, "><span class=\"age\">");
-	if (sy.streaming && strcmp(sy.sid, s->id) == 0)
-		h_fmt(h, "reading… %d so far", (int)ucl_array_size(jget(
-		    sy.data, "values")));
-	else if (sy.loading && strcmp(sy.sid, s->id) == 0)
-		h_raw(h, "reading…");
-	else if (mine) {
-		char	age[32];
-
-		fmt_age(age, sizeof(age), sy.fetched);
-		h_txt(h, age);
-	}
-	h_raw(h, "</span><button class=\"icon\" data-act=\"refresh\" title=\""
+	h_raw(h, ">");
+	/* A part coming in for the first time says how much has come. */
+	if (sy.streaming && sy.next == NULL && strcmp(sy.sid, s->id) == 0)
+		h_fmt(h, "<span class=\"tally fresh reading\">reading, %d so "
+		    "far</span>", (int)ucl_array_size(jget(sy.data, "values")));
+	else if (mine || (sy.loading && strcmp(sy.sid, s->id) == 0))
+		fresh(h, sy.fetched, sy.loading && strcmp(sy.sid, s->id) == 0,
+		    strcmp(sy.sid, s->id) == 0 ? sy.error : NULL);
+	h_raw(h, "<button class=\"icon\" data-act=\"refresh\" title=\""
 	    "Read again\"><svg class=\"ti\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M20 12a8 8 0 1 1-2.3-5.7M20 4v4h-4\"/></svg></button></div>");
 	if (strcmp(sy.sid, s->id) == 0 && sy.error[0] != '\0') {
 		h_raw(h, "<div class=\"notice bad\">");
