@@ -208,8 +208,21 @@
   (lint.sh checks it holds); their origin system (RFC 8342) waits for
   the YANG-CBOR codec's metadata, with the datastores (Y-2); the IETF
   modules' .sid files numbered in IANA's ranges, IANA publishing none. For the user: the CORECONF draft's
-  examples number some ietf-interfaces items otherwise (SIDS.md). Next:
-  1.11, the first GET, on an arcana branch with cblink v2. As each operation is
+  examples number some ietf-interfaces items otherwise (SIDS.md). Done
+  on cblink v2: 1.12.1, the corpus test (51 IETF and IANA modules: each
+  tree as yanglint draws it with the same features, all their tables
+  compiled and round-tripped), and libyang3 in its CI; 1.12.2,
+  fuzz_ycodec (YANG-CBOR into every struct of shapes, round trips and
+  the validator), which found cbl_ydecode() not zeroing the struct it
+  documents zeroing; 1.12.3 came with 1.7. Next: 1.11, the first GET,
+  on an arcana branch with cblink v2. For the user (2026-10-14): that
+  branch builds only once the agent and console speak cblink 2, which
+  has no v1; how it carries the 60 operations of arcana.yaml until Y-3
+  converts them is not in the plan. Either an interim module made
+  mechanically from arcana.yaml, an rpc an operation with its
+  attributes (the JSON blobs as strings), so the branch runs at once and
+  Y-3 replaces it a module at a time; or Y-3's conversions first, 1.11
+  after. Meanwhile Y-2's cblink side (2.1, 2.2) goes on. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
