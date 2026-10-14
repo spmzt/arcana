@@ -80,6 +80,31 @@ int	yjails_action(struct work *w, const char *name, uint8_t action,
 	    uint8_t *state, bool *has_jid, uint32_t *jid, const char **errp);
 
 /*
+ * arcana-services (ira/yservices.c, ira/services.c): yservices_from()
+ * the services operation's reply as the module has it, each service with
+ * its service-config reply where one is given; yservices_diff() what
+ * makes have's configuration want's, as service-action (*enable) and
+ * service-config (*vars) take it; yservices_action() one of its actions
+ * (ARC_SERVICE_ACTION_START to _RELOAD); yservices_apply() what
+ * yservices_diff() said, done.
+ */
+struct arc_services_rsp;
+struct arc_service_config_rsp;
+struct arc_variable;
+int	yservices_from(const struct arc_services_rsp *list,
+	    const struct arc_service_config_rsp *const *cfg, size_t ncfg,
+	    cbl_yarena *a, struct arcana_services *out);
+int	yservices_diff(const struct arcana_services_services_service *have,
+	    const struct arcana_services_services_service *want,
+	    cbl_yarena *a, int *enable, struct arc_variable **vars,
+	    size_t *nvars);
+int	yservices_action(struct work *w, const char *name, uint8_t action,
+	    bool *running, bool *has_pid, uint32_t *pid, const char **status,
+	    const char **errp);
+int	yservices_apply(struct work *w, const char *name, int enable,
+	    const struct arc_variable *vars, size_t nvars, const char **errp);
+
+/*
  * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
  * them (invidia/ylne.c).
  */

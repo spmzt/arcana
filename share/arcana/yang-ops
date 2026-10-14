@@ -4,3 +4,6 @@
 # module@revision, a module of share/yang.
 list	arcana-jails@2026-10-14
 action	arcana-jails@2026-10-14
+services	arcana-services@2026-10-14
+service-action	arcana-services@2026-10-14
+service-config	arcana-services@2026-10-14

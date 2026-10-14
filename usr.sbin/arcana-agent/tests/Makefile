@@ -19,6 +19,13 @@ SRCS.yjails=	yjails_test.c yjails.c ymodel_schema.c
 CFLAGS.yjails_test.c+=	-I${.OBJDIR}/..
 CFLAGS.yjails.c+=	-I${.OBJDIR}/..
 LDADD.yjails+=	${CBLINK_LIBS}
+# yservices: the services operations' replies as arcana-services has
+# them.
+PROGS+=		yservices
+SRCS.yservices=	yservices_test.c yservices.c ymodel_schema.c
+CFLAGS.yservices_test.c+=	-I${.OBJDIR}/..
+CFLAGS.yservices.c+=	-I${.OBJDIR}/..
+LDADD.yservices+=	${CBLINK_LIBS}
 # yrtadv: rtadvd.conf as the router advertisement submodule has it.
 PROGS+=		yrtadv
 SRCS.yrtadv=	yrtadv.c rtadv.c ymodel_schema.c

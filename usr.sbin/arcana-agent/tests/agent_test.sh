@@ -5291,6 +5291,41 @@ EOF
 	atf_check -o file:want sh -c "sed -n '/^-- back\$/,\$p' out | sed 1d"
 }
 
+atf_test_case yang_services
+yang_services_head()
+{
+	atf_set "descr" "the services operations' replies as arcana-services" \
+	    "has them (PLAN-SDN-YANG 3.1.2), through YANG-CBOR and back; a" \
+	    "configuration wanted made into service-action and" \
+	    "service-config's terms"
+}
+yang_services_body()
+{
+	cat > want <<'EOF'
+service sshd enabled=yes path=/etc/rc.d/sshd rcvar=sshd_enable running=yes pid=yes status=sshd is running as pid 812. description=Secure Shell Daemon
+  variable sshd_flags=-o UseDNS=no
+  variable sshd_program=/usr/sbin/sshd
+  command configtest
+  command keygen
+  command reload
+service ntpd enabled=no path=/etc/rc.d/ntpd rcvar=ntpd_enable running=- pid=- status=- description=-
+service bird enabled=yes path=/usr/local/etc/rc.d/bird rcvar=bird_enable running=no pid=- status=bird is not running. description=-
+EOF
+	cat > diffs <<'EOF'
+changed: set sshd_flags=-o UseDNS=yes set sshd_rsa_enable=NO
+the same: nothing
+disabled, one gone: disable unset sshd_program
+its rcvar: refused (Invalid argument)
+another: refused (Invalid argument)
+new: enable
+EOF
+	"$(atf_get_srcdir)/yservices" > out
+	atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' cat out
+	atf_check -o file:want sh -c "sed -n '1,/^yang-cbor/p' out | sed '\$d'"
+	atf_check -o file:want sh -c "sed -n '/^-- back\$/,/^changed:/p' out | sed '1d;\$d'"
+	atf_check -o file:diffs sh -c "sed -n '/^changed:/,\$p' out"
+}
+
 atf_test_case yang_lne
 yang_lne_head()
 {
@@ -5920,6 +5955,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
 	atf_add_test_case yang_jails
+	atf_add_test_case yang_services
 	atf_add_test_case yang_lne
 	atf_add_test_case yang_ni_conf
 	atf_add_test_case yang_ni_rc
