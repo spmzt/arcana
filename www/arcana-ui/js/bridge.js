@@ -218,6 +218,29 @@ addToLibrary({
 			if (e.key === "Escape")
 				act("escape", "", "");
 		});
+		/* A file picked in [data-file]: its text given to the page,
+		 * as file:<what> with the file's name; the field emptied, so
+		 * that the same file can be picked again. */
+		document.addEventListener("change", function (e) {
+			var t = e.target, f, r;
+
+			if (t.type !== "file" || !t.dataset || !t.dataset.file ||
+			    t.files.length === 0)
+				return;
+			f = t.files[0];
+			if (f.size > 4 * 1024 * 1024) {
+				act("file:" + t.dataset.file, f.name, "");
+				t.value = "";
+				return;
+			}
+			r = new FileReader();
+			r.onload = function () {
+				act("file:" + t.dataset.file, f.name,
+				    String(r.result));
+				t.value = "";
+			};
+			r.readAsText(f);
+		});
 
 		/*
 		 * Rows put in another order by dragging: a row with
@@ -1113,6 +1136,21 @@ addToLibrary({
 	arc_theme_get__deps: ["$arcStr"],
 	arc_theme_get: function () {
 		return (arcStr(document.documentElement.dataset.theme || ""));
+	},
+	/* A text saved as a file: a document as JSON, to keep. */
+	arc_save_text__deps: ["$UTF8ToString"],
+	arc_save_text: function (namep, typep, textp) {
+		var url, a;
+
+		url = URL.createObjectURL(new Blob([UTF8ToString(textp)], {
+		    type: UTF8ToString(typep) }));
+		a = document.createElement("a");
+		a.href = url;
+		a.download = UTF8ToString(namep);
+		document.body.appendChild(a);
+		a.click();
+		a.remove();
+		setTimeout(function () { URL.revokeObjectURL(url); }, 10000);
 	},
 	/* A file made of base64, saved: a capture's pcap. */
 	arc_save_b64__deps: ["$UTF8ToString"],

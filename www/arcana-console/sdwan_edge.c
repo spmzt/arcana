@@ -359,6 +359,7 @@ struct plan {
 	ucl_object_t		*tunnels;	/* the tunnels, both ends */
 	ucl_object_t		*used;		/* the allocations they have */
 	ucl_object_t		*notes;		/* what the plan leaves out, and why */
+	ucl_object_t		*ready;		/* the document deployed, its own */
 	ucl_object_t		*learned;	/* sid/ifname: the host's address */
 	char			 why[300];
 };
@@ -4870,13 +4871,15 @@ plan_build(struct plan *pl, const ucl_object_t *doc, const ucl_object_t *st)
 	int			 far;
 
 	memset(pl, 0, sizeof(*pl));
+	pl->notes = ucl_object_typed_new(UCL_ARRAY);
+	/* What is deployed: the services complete (sdwan_ready()). */
+	doc = pl->ready = sdwan_ready(doc, pl->notes);
 	pl->doc = doc;
 	pl->alloc = ucl_object_copy(ucl_object_lookup(st, "alloc"));
 	pl->edges = ucl_object_typed_new(UCL_OBJECT);
 	pl->tunnels = ucl_object_typed_new(UCL_ARRAY);
 	pl->lists = lists_kept();
 	pl->used = ucl_object_typed_new(UCL_OBJECT);
-	pl->notes = ucl_object_typed_new(UCL_ARRAY);
 	pl->learned = ucl_object_typed_new(UCL_OBJECT);
 	/* The hosts as they are reached now: a UCS end point's address may
 	 * be asked of its host (ucs_address). */
@@ -5348,6 +5351,8 @@ plan_free(struct plan *pl)
 		ucl_object_unref(pl->notes);
 	if (pl->learned != NULL)
 		ucl_object_unref(pl->learned);
+	if (pl->ready != NULL)
+		ucl_object_unref(pl->ready);
 	memset(pl, 0, sizeof(*pl));
 }
 

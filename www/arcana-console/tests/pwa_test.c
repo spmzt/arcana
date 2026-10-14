@@ -4293,6 +4293,57 @@ part_flows(void)
 	    "'None yet')", 20);
 	ATF_CHECK(js_true("document.querySelector('.crumb.place').textContent "
 	    "=== 'SD-WAN'"));
+	/*
+	 * The way through, step by step: the step to take now lit, its
+	 * button opening its form; each kept as it is made, a service with
+	 * nothing in it yet among them; what an edge changes on its host
+	 * said before it is added.
+	 */
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('Underlays')", 10);
+	shot("9-sdwan-guide");
+	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sd-ucs] input[name=id]"
+	    "')", 5);
+	run("const f = document.querySelector('form[data-form=sd-ucs]'); "
+	    "f.id.value = 'net'; f.type.value = 'public'; f.kind.value = "
+	    "'gre'; f.requestSubmit();");
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('Edges')", 20);
+	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sd-edge] details."
+	    "sd-effects[open]')?.textContent.includes('net.inet.ip."
+	    "forwarding')", 5);
+	shot("9-sdwan-guide-edge");
+	run("document.querySelector('form[data-form=sd-edge]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('WAN links')", 20);
+	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sd-link] "
+	    "select[name=interface] option')", 15);
+	run("document.querySelector('form[data-form=sd-link]')."
+	    "requestSubmit();");
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('A service')", 20);
+	run("document.querySelector('.sd-guide button[data-act=sd-go]')."
+	    "click()");
+	wait_js("document.querySelector('form[data-form=sd-swvc] input[name="
+	    "id]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-swvc]'); "
+	    "f.id.value = 'trial'; f.requestSubmit();");
+	/* Kept with no end point, zone or application yet: each table says
+	 * so, with its button, and the next step is the end points. */
+	wait_js("document.querySelector('.sd-guide li.g-now')?.textContent."
+	    "includes('End points') && document.querySelectorAll('section."
+	    "sdwan tr.empty-row').length === 6", 20);
+	ATF_CHECK(js_true("!document.querySelector('select[data-input="
+	    "sd-swvc]')"));
+	shot("9-sdwan-guide-service");
+	ATF_CHECK(system("grep -q '\"trial\"' data/sdwan.json") == 0);
 	run("document.querySelector('button[data-act=sd-tab][data-arg="
 	    "document]').click()");
 	wait_js("document.querySelector('form[data-form=sd-doc] textarea')", 10);
@@ -4322,8 +4373,8 @@ part_flows(void)
 	    "\"rules\": [\"alert tcp any any -> any 80 (sid:1000001; rev:1;)\"]}}}');");
 	run("document.querySelector('form[data-form=sd-doc] button[value="
 	    "keep]').click()");
-	wait_js("(document.querySelector('section.sdwan .notice') || {})."
-	    "textContent?.includes('version 1')", 20);
+	wait_js("/version [0-9]+/.test((document.querySelector('section."
+	    "sdwan .notice') || {}).textContent)", 20);
 	run("document.querySelector('button[data-act=sd-tab][data-arg="
 	    "overview]').click()");
 	wait_js("[...document.querySelectorAll('section.sdwan table.sd')]"
@@ -4401,7 +4452,8 @@ part_flows(void)
 	run("document.querySelector('button[data-act=sd-swvc]').click()");
 	wait_js("[...document.querySelectorAll('section.sdwan h3')].some(h => "
 	    "h.textContent.startsWith('End points')) && document."
-	    "querySelector('select[data-input=sd-swvc]')", 10);
+	    "querySelector('section.sdwan h3.inline')?.textContent."
+	    "includes('office')", 10);
 	ATF_CHECK(js_true("document.querySelector('section.sdwan').textContent"
 	    ".includes('10.10.0.0/24')"));
 	shot("9-sdwan-service");
@@ -4474,6 +4526,47 @@ part_flows(void)
 	    "includes('DHCP'))", 20);
 	ATF_CHECK(system("grep -q dhcp data/sdwan.json && grep -q 10.10.0.0/28 "
 	    "data/sdwan.json && grep -q '\"2h\"' data/sdwan.json") == 0);
+	/*
+	 * What was JSON alone, by forms too: a rate limiter, a topology of
+	 * a root and a leaf; and a document read from a file into the box,
+	 * laid out, not kept until it is.
+	 */
+	run("document.querySelector('button[data-act=sd-lim-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-lim] input[name="
+	    "name]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-lim]'); "
+	    "f.name.value = 'bulk'; f.commit.value = '1000000'; "
+	    "f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-lim]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('bulk'))", 20);
+	run("document.querySelector('button[data-act=sd-topo-add]').click()");
+	wait_js("document.querySelector('form[data-form=sd-topo] select[name="
+	    "role_1]')", 5);
+	run("const f = document.querySelector('form[data-form=sd-topo]'); "
+	    "f.name.value = 'hub'; f.role_0.value = 'root'; f.role_1.value = "
+	    "'leaf'; f.requestSubmit();");
+	wait_js("!document.querySelector('form[data-form=sd-topo]') && [..."
+	    "document.querySelectorAll('section.sdwan table.sd tbody tr')]"
+	    ".some(r => r.textContent.includes('hub') && r.textContent."
+	    "includes('rooted-multipoint'))", 20);
+	ATF_CHECK(system("grep -q '\"rate_limiters\"' data/sdwan.json && "
+	    "grep -q rooted-multipoint data/sdwan.json") == 0);
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "document]').click()");
+	wait_js("document.querySelector('input[data-file=sd-import]')", 10);
+	run("const dt = new DataTransfer(); dt.items.add(new File(["
+	    "'{\"ucs\":[],\"edges\":[],\"swvcs\":[]}'], 'empty.json', "
+	    "{ type: 'application/json' })); const i = document."
+	    "querySelector('input[data-file=sd-import]'); i.files = dt.files; "
+	    "i.dispatchEvent(new Event('change', { bubbles: true }));");
+	wait_js("document.querySelector('form[data-form=sd-doc] textarea')"
+	    ".value.includes('\"swvcs\": [') && document.querySelector("
+	    "'section.sdwan .notice').textContent.includes('empty.json')", 10);
+	shot("9-sdwan-imported");
+	run("document.querySelector('button[data-act=sd-revert]').click()");
+	run("document.querySelector('button[data-act=sd-tab][data-arg="
+	    "services]').click()");
 	/*
 	 * Edges: the tunnels and what each edge is to have; applied, each
 	 * step done, and then nothing left to do.
