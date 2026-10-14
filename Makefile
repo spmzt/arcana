@@ -66,6 +66,7 @@ check: .PHONY
 	@${MAKE} -j${CHECK_JOBS} -C ${.CURDIR} all
 .if ${CBLINK_SUBMODULE} == "yes"
 	@${MAKE} -C ${.CURDIR}/usr.sbin/arcana-agent check-yang
+	@${MAKE} -C ${.CURDIR}/www/arcana-ui check-yang
 .endif
 	@mkdir -p "$${HOME}/.kyua/logs" "$${HOME}/.kyua/store"
 	@rc=0; pids=""; \

@@ -1,0 +1,47 @@
+module: arcana-jails
+  +--ro jails
+     +--ro scope*        string
+     +--ro conf-error*
+     |  +--ro scope?     string
+     |  +--ro message?   string
+     +--ro jail* [name]
+        +--ro name           string
+        +--ro state?         jail-state
+        +--ro jid?           uint32
+        +--ro configured?    boolean
+        +--ro scope?         string
+        +--ro hostname?      string
+        +--ro path?          string
+        +--ro ip4*           string
+        +--ro ip6*           string
+        +--ro vnet?          boolean
+        +--ro osrelease?     string
+        +--ro persist?       boolean
+        +--ro securelevel?   int32
+        +--ro parent?        uint32
+        +--ro children?      uint32
+        +--ro nproc?         uint32
+        +--ro rss?           uint64
+        +--ro cpu?           decimal64
+        +--ro interface?     string
+        +--ro param* [name]
+        |  +--ro name     string
+        |  +--ro value*   string
+        +--ro plugin*        string
+        +--ro lne?           -> /lne:logical-network-elements/lne:logical-network-element/lne:name
+        +---x start
+        |  +--ro output
+        |     +--ro state?   jail-state
+        |     +--ro jid?     uint32
+        +---x stop
+        |  +--ro output
+        |     +--ro state?   jail-state
+        |     +--ro jid?     uint32
+        +---x restart
+        |  +--ro output
+        |     +--ro state?   jail-state
+        |     +--ro jid?     uint32
+        +---x kill
+           +--ro output
+              +--ro state?   jail-state
+              +--ro jid?     uint32

@@ -103,13 +103,29 @@ ${DIST}/schema.json: ${ARC_TOP}/share/arcana/arcana.yaml \
 
 # The YANG model of each operation converted to YANG (share/arcana/
 # yang-ops), shown beside its CBOR schema: the module's RFC 8340 tree.
-YANG_SRC!=	ls ${ARC_TOP}/share/yang/*.yang
+# The trees are committed in yang/, as the agent's tables are: building
+# needs no libyang, only "make regen-yang" does, and make check fails
+# when they are not what it makes.
+YANG_TREES!=	ls ${.CURDIR}/yang/*.tree 2>/dev/null || true
 ${DIST}/yang.json: ${ARC_TOP}/share/arcana/yang-ops ${.CURDIR}/tools/yang.sh \
-    ${YANG_SRC}
+    ${YANG_TREES}
 	mkdir -p ${DIST}
-	sh ${.CURDIR}/tools/yang.sh ${CBLINK_GEN} ${ARC_TOP}/share/yang \
-	    ${ARC_TOP}/share/arcana/yang-ops ${.OBJDIR}/yang-trees > ${.TARGET}.tmp
+	sh ${.CURDIR}/tools/yang.sh json ${ARC_TOP}/share/arcana/yang-ops \
+	    ${.CURDIR}/yang > ${.TARGET}.tmp
 	mv ${.TARGET}.tmp ${.TARGET}
+YANG_OUT?=	${.CURDIR}/yang
+regen-yang: .PHONY
+	sh ${.CURDIR}/tools/yang.sh trees ${CBLINK_GEN} ${ARC_TOP}/share/yang \
+	    ${ARC_TOP}/share/arcana/yang-ops ${YANG_OUT}
+check-yang: .PHONY
+	@t=$$(mktemp -d) && trap 'rm -rf "$$t"' EXIT && \
+	    ${MAKE} -C ${.CURDIR} regen-yang YANG_OUT="$$t" >/dev/null && \
+	    for f in $$(cd "$$t" && ls); do \
+		cmp -s "$$t/$$f" ${.CURDIR}/yang/$$f || { echo \
+		    "www/arcana-ui: yang/$$f is not what make regen-yang makes" >&2; \
+		    exit 1; }; \
+	    done; \
+	    echo "www/arcana-ui: yang/ is what make regen-yang makes"
 
 # The console's API as it is documented, for the API page: the document
 # itself, and what the page shows of it.
@@ -155,7 +171,6 @@ install: .PHONY
 	    sw.js; do ${INSTALL} -m 0444 $$f ${DESTDIR}${WWWDIR}/$$f; done
 
 clean: .PHONY
-	rm -rf ${OBJS} ${MKICON} ${DIST} ${.OBJDIR}/arcana.md \
-	    ${.OBJDIR}/yang-trees
+	rm -rf ${OBJS} ${MKICON} ${DIST} ${.OBJDIR}/arcana.md
 
 .include <bsd.obj.mk>
