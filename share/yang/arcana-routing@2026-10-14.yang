@@ -9,6 +9,33 @@ module arcana-routing {
       "RFC 8349: A YANG Data Model for Routing Management (NMDA
        Version)";
   }
+  import ietf-ospf {
+    prefix ospf;
+    reference
+      "RFC 9129: YANG Data Model for the OSPF Protocol";
+  }
+  import ietf-rip {
+    prefix rip;
+    reference
+      "RFC 8695: A YANG Data Model for the Routing Information
+       Protocol (RIP)";
+  }
+  import ietf-isis {
+    prefix isis;
+    reference
+      "RFC 9130: YANG Data Model for the IS-IS Protocol";
+  }
+  import ietf-babel {
+    prefix babel;
+    reference
+      "RFC 9647: A YANG Data Model for the Babel Routing Protocol";
+  }
+  import ietf-bgp {
+    prefix bgp;
+    reference
+      "draft-ietf-idr-bgp-model: YANG Model for Border Gateway
+       Protocol (BGP-4), its revision 2026-08-14";
+  }
 
   organization
     "Arcana";
@@ -24,7 +51,11 @@ module arcana-routing {
      kernel guesses from its flags (RTF_STATIC: static; RTF_PROTO1:
      zebra; the kernel's own otherwise).  Static ones are rt:static;
      the kernel's own without a gateway, an interface's network, are
-     rt:direct; the others are these.";
+     rt:direct; a routing protocol's are its module's identity:
+     RTPROT_OSPF ospf:ospfv2 for an IPv4 route, ospf:ospfv3 for an
+     IPv6 one; RTPROT_RIP rip:ripv2 and rip:ripng likewise;
+     RTPROT_ISIS isis:isis; RTPROT_BABEL babel:babel; RTPROT_BGP
+     bgp:bgp; the others are these.";
 
   revision 2026-10-14 {
     description
@@ -74,36 +105,6 @@ module arcana-routing {
     base freebsd-origin;
     description
       "BIRD's (RTPROT_BIRD).";
-  }
-
-  identity bgp {
-    base freebsd-origin;
-    description
-      "BGP's (RTPROT_BGP).";
-  }
-
-  identity ospf {
-    base freebsd-origin;
-    description
-      "OSPF's (RTPROT_OSPF).";
-  }
-
-  identity isis {
-    base freebsd-origin;
-    description
-      "IS-IS's (RTPROT_ISIS).";
-  }
-
-  identity rip {
-    base freebsd-origin;
-    description
-      "RIP's (RTPROT_RIP).";
-  }
-
-  identity babel {
-    base freebsd-origin;
-    description
-      "Babel's (RTPROT_BABEL).";
   }
 
   identity other {

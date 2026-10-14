@@ -77,7 +77,7 @@ bytes on the wire, where it was 9.
 | 61 300 | 200 | `ietf-routing@2018-03-13` (no IETF range) | `share/yang/ietf-routing@2018-03-13.sid` (89 used) |
 | 61 500 | 100 | `ietf-ipv4-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv4-unicast-routing@2018-03-13.sid` (29 used) |
 | 61 600 | 100 | `ietf-ipv6-unicast-routing@2018-03-13` (no IETF range) | `share/yang/ietf-ipv6-unicast-routing@2018-03-13.sid` (66 used) |
-| 61 700 | 100 | `arcana-routing` | `share/yang/arcana-routing@2026-10-14.sid` (14 used) |
+| 61 700 | 100 | `arcana-routing` | `share/yang/arcana-routing@2026-10-14.sid` (14 used, 5 obsolete: its bgp, ospf, isis, rip and babel, now their modules') |
 | 61 800 | 100 | `ietf-network-instance@2019-01-21` (no IETF range) | `share/yang/ietf-network-instance@2019-01-21.sid` (21 used) |
 | 61 900 | 100 | `arcana-network-instance` | `share/yang/arcana-network-instance@2026-10-14.sid` (2 used) |
 | 62 000 | 100 | `ietf-logical-network-element@2019-01-25` (no IETF range) | `share/yang/ietf-logical-network-element@2019-01-25.sid` (12 used) |
@@ -89,6 +89,12 @@ bytes on the wire, where it was 9.
 | 63 600 | 100 | `arcana-sysctl` | `share/yang/arcana-sysctl@2026-10-14.sid` (12 used) |
 | 63 700 | 100 | `arcana-kernel` | `share/yang/arcana-kernel@2026-10-14.sid` (37 used) |
 | 63 800 | 100 | `arcana-processes`, `openconfig-procmon`'s grouping used in it | `share/yang/arcana-processes@2026-10-14.sid` (66 used) |
+| 63 900 | 1 900 | `ietf-ospf@2022-10-19` (no IETF range; its identities used) | `share/yang/ietf-ospf@2022-10-19.sid` (1 725 used) |
+| 65 800 | 200 | `ietf-rip@2020-02-20` (no IETF range; its identities used) | `share/yang/ietf-rip@2020-02-20.sid` (158 used) |
+| 66 000 | 1 000 | `ietf-isis@2022-10-19` (no IETF range; its identities used) | `share/yang/ietf-isis@2022-10-19.sid` (821 used) |
+| 67 000 | 200 | `ietf-babel@2024-10-10` (no IETF range; its identities used) | `share/yang/ietf-babel@2024-10-10.sid` (103 used) |
+| 67 200 | 1 000 | `ietf-bgp@2026-08-14`, draft-ietf-idr-bgp-model (its identities used) | `share/yang/ietf-bgp@2026-08-14.sid` (830 used) |
+| 68 200 | 100 | `ietf-bfd-types@2022-09-22` (no IETF range; bfdv1 is a routing protocol) | `share/yang/ietf-bfd-types@2022-09-22.sid` (15 used) |
 
 cblink's modules take 60 000 to 60 999; Arcana's own follow from
 61 000. cblink's own test modules (`shapes` from 2^40 + 100 000,

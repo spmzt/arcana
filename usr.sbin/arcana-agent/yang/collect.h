@@ -31,6 +31,11 @@ int	yip_interfaces(struct ietf_interfaces_interfaces_interface *v,
  * routes, with v4ur's and v6ur's leaves (invidia/yrt.c).
  */
 int	yrt_routing(struct ietf_routing *data, int fib, cbl_yarena *a);
+/*
+ * A route's source-protocol, the identity's SID, by its netlink(4)
+ * origin (rtm_protocol), whether it has a gateway, and its family.
+ */
+uint64_t yrt_origin(uint8_t proto, bool gateway, bool v6);
 /* The RIB's active-route action: the route in's address goes by in
  * FIB fib; none, out without a route. */
 int	yrt_active_route(int fib,
