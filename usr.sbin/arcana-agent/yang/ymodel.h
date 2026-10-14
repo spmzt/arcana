@@ -33,6 +33,9 @@ struct ietf_interfaces_interfaces_interface_ip_ipv4;
 struct ietf_interfaces_interfaces_interface_ip_ipv6_address;
 struct ietf_interfaces_interfaces_interface_ip_ipv6_neighbor;
 struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf;
+struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix;
+struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list;
+struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements;
 struct ietf_interfaces_interfaces_interface_ip_ipv6;
 struct ietf_interfaces_interfaces_interface;
 struct ietf_interfaces_interfaces;
@@ -42,10 +45,59 @@ struct ietf_interfaces_interfaces_state_interface_ip_ipv4_neighbor;
 struct ietf_interfaces_interfaces_state_interface_ip_ipv4;
 struct ietf_interfaces_interfaces_state_interface_ip_ipv6_address;
 struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor;
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix;
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list;
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements;
 struct ietf_interfaces_interfaces_state_interface_ip_ipv6;
 struct ietf_interfaces_interfaces_state_interface;
 struct ietf_interfaces_interfaces_state;
 struct ietf_interfaces;
+struct ietf_routing_routing_interfaces;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes;
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol;
+struct ietf_routing_routing_control_plane_protocols;
+struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop;
+struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list;
+struct ietf_routing_routing_ribs_rib_routes_route_next_hop;
+struct ietf_routing_routing_ribs_rib_routes_route;
+struct ietf_routing_routing_ribs_rib_routes;
+struct ietf_routing_routing_ribs_rib_active_route_input;
+struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop;
+struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list;
+struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop;
+struct ietf_routing_routing_ribs_rib_active_route_output_route;
+struct ietf_routing_routing_ribs_rib_active_route_output;
+struct ietf_routing_routing_ribs_rib;
+struct ietf_routing_routing_ribs;
+struct ietf_routing_routing;
+struct ietf_routing_routing_state_interfaces;
+struct ietf_routing_routing_state_control_plane_protocols_control_plane_protocol;
+struct ietf_routing_routing_state_control_plane_protocols;
+struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop;
+struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list;
+struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop;
+struct ietf_routing_routing_state_ribs_rib_routes_route;
+struct ietf_routing_routing_state_ribs_rib_routes;
+struct ietf_routing_routing_state_ribs_rib_active_route_input;
+struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop;
+struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list;
+struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop;
+struct ietf_routing_routing_state_ribs_rib_active_route_output_route;
+struct ietf_routing_routing_state_ribs_rib_active_route_output;
+struct ietf_routing_routing_state_ribs_rib;
+struct ietf_routing_routing_state_ribs;
+struct ietf_routing_routing_state;
+struct ietf_routing;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -265,6 +317,12 @@ enum ietf_interfaces_interfaces_interface_ip_ipv6_neighbor_state {
 	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_NEIGHBOR_STATE_PROBE = 4,
 };
 
+enum ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix_control_adv_prefixes {
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_V6UR_IPV6_ROUTER_ADVERTISEMENTS_PREFIX_LIST_PREFIX_CONTROL_ADV_PREFIXES_NONE = 0,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_V6UR_IPV6_ROUTER_ADVERTISEMENTS_PREFIX_LIST_PREFIX_CONTROL_ADV_PREFIXES_NO_ADVERTISE,
+	IETF_INTERFACES_INTERFACES_INTERFACE_IP_IPV6_V6UR_IPV6_ROUTER_ADVERTISEMENTS_PREFIX_LIST_PREFIX_CONTROL_ADV_PREFIXES_ADVERTISE,
+};
+
 enum ietf_interfaces_interfaces_state_interface_admin_status {
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_ADMIN_STATUS_UP = 1,
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_ADMIN_STATUS_DOWN = 2,
@@ -332,6 +390,90 @@ enum ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_state {
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_STALE = 2,
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_DELAY = 3,
 	IETF_INTERFACES_INTERFACES_STATE_INTERFACE_IP_IPV6_NEIGHBOR_STATE_PROBE = 4,
+};
+
+enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_options {
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V4UR_IPV4_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NONE = 0,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V4UR_IPV4_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SIMPLE_NEXT_HOP,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V4UR_IPV4_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SPECIAL_NEXT_HOP,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V4UR_IPV4_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NEXT_HOP_LIST,
+};
+
+enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_special_next_hop {
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V4UR_IPV4_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_BLACKHOLE = 0,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V4UR_IPV4_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_UNREACHABLE = 1,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V4UR_IPV4_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_PROHIBIT = 2,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V4UR_IPV4_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_RECEIVE = 3,
+};
+
+enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_options {
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V6UR_IPV6_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NONE = 0,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V6UR_IPV6_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SIMPLE_NEXT_HOP,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V6UR_IPV6_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SPECIAL_NEXT_HOP,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V6UR_IPV6_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NEXT_HOP_LIST,
+};
+
+enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_special_next_hop {
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V6UR_IPV6_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_BLACKHOLE = 0,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V6UR_IPV6_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_UNREACHABLE = 1,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V6UR_IPV6_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_PROHIBIT = 2,
+	IETF_ROUTING_ROUTING_CONTROL_PLANE_PROTOCOLS_CONTROL_PLANE_PROTOCOL_STATIC_ROUTES_V6UR_IPV6_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_RECEIVE = 3,
+};
+
+enum ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_options {
+	IETF_ROUTING_ROUTING_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NONE = 0,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SIMPLE_NEXT_HOP,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SPECIAL_NEXT_HOP,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NEXT_HOP_LIST,
+};
+
+enum ietf_routing_routing_ribs_rib_routes_route_next_hop_special_next_hop {
+	IETF_ROUTING_ROUTING_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_BLACKHOLE = 0,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_UNREACHABLE = 1,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_PROHIBIT = 2,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_RECEIVE = 3,
+};
+
+enum ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_options {
+	IETF_ROUTING_ROUTING_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NONE = 0,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SIMPLE_NEXT_HOP,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SPECIAL_NEXT_HOP,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NEXT_HOP_LIST,
+};
+
+enum ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_special_next_hop {
+	IETF_ROUTING_ROUTING_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_BLACKHOLE = 0,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_UNREACHABLE = 1,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_PROHIBIT = 2,
+	IETF_ROUTING_ROUTING_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_RECEIVE = 3,
+};
+
+enum ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_options {
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NONE = 0,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SIMPLE_NEXT_HOP,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SPECIAL_NEXT_HOP,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NEXT_HOP_LIST,
+};
+
+enum ietf_routing_routing_state_ribs_rib_routes_route_next_hop_special_next_hop {
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_BLACKHOLE = 0,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_UNREACHABLE = 1,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_PROHIBIT = 2,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ROUTES_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_RECEIVE = 3,
+};
+
+enum ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_options {
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NONE = 0,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SIMPLE_NEXT_HOP,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_SPECIAL_NEXT_HOP,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_NEXT_HOP_OPTIONS_NEXT_HOP_LIST,
+};
+
+enum ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_special_next_hop {
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_BLACKHOLE = 0,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_UNREACHABLE = 1,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_PROHIBIT = 2,
+	IETF_ROUTING_ROUTING_STATE_RIBS_RIB_ACTIVE_ROUTE_OUTPUT_ROUTE_NEXT_HOP_SPECIAL_NEXT_HOP_RECEIVE = 3,
 };
 
 /* container */
@@ -530,6 +672,54 @@ struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf {
 	uint32_t	 temporary_preferred_lifetime;
 };
 
+/* list entry */
+struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix {
+	const char	*prefix_spec;
+	enum ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix_control_adv_prefixes	 control_adv_prefixes;	/* the case given */
+	bool		 no_advertise;
+	bool			 has_valid_lifetime;
+	uint32_t	 valid_lifetime;
+	bool			 has_on_link_flag;
+	bool		 on_link_flag;
+	bool			 has_preferred_lifetime;
+	uint32_t	 preferred_lifetime;
+	bool			 has_autonomous_flag;
+	bool		 autonomous_flag;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list {
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix	*v;
+	}			 prefix;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements {
+	bool			 has_send_advertisements;
+	bool		 send_advertisements;
+	bool			 has_max_rtr_adv_interval;
+	uint16_t	 max_rtr_adv_interval;
+	bool			 has_min_rtr_adv_interval;
+	uint16_t	 min_rtr_adv_interval;
+	bool			 has_managed_flag;
+	bool		 managed_flag;
+	bool			 has_other_config_flag;
+	bool		 other_config_flag;
+	bool			 has_link_mtu;
+	uint32_t	 link_mtu;
+	bool			 has_reachable_time;
+	uint32_t	 reachable_time;
+	bool			 has_retrans_timer;
+	uint32_t	 retrans_timer;
+	bool			 has_cur_hop_limit;
+	uint8_t		 cur_hop_limit;
+	bool			 has_default_lifetime;
+	uint16_t	 default_lifetime;
+	const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list	*prefix_list;
+};
+
 /* container, presence */
 struct ietf_interfaces_interfaces_interface_ip_ipv6 {
 	bool			 has_enabled;
@@ -549,6 +739,7 @@ struct ietf_interfaces_interfaces_interface_ip_ipv6 {
 	bool			 has_dup_addr_detect_transmits;
 	uint32_t	 dup_addr_detect_transmits;
 	const struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf	*autoconf;
+	const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements	*v6ur_ipv6_router_advertisements;
 };
 
 /* list entry */
@@ -699,6 +890,52 @@ struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor {
 	enum ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_state	 state;
 };
 
+/* list entry */
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix {
+	const char	*prefix_spec;
+	bool			 has_valid_lifetime;
+	uint32_t	 valid_lifetime;
+	bool			 has_on_link_flag;
+	bool		 on_link_flag;
+	bool			 has_preferred_lifetime;
+	uint32_t	 preferred_lifetime;
+	bool			 has_autonomous_flag;
+	bool		 autonomous_flag;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list {
+	struct {
+		size_t		 n;
+		const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix	*v;
+	}			 prefix;
+};
+
+/* container */
+struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements {
+	bool			 has_send_advertisements;
+	bool		 send_advertisements;
+	bool			 has_max_rtr_adv_interval;
+	uint16_t	 max_rtr_adv_interval;
+	bool			 has_min_rtr_adv_interval;
+	uint16_t	 min_rtr_adv_interval;
+	bool			 has_managed_flag;
+	bool		 managed_flag;
+	bool			 has_other_config_flag;
+	bool		 other_config_flag;
+	bool			 has_link_mtu;
+	uint32_t	 link_mtu;
+	bool			 has_reachable_time;
+	uint32_t	 reachable_time;
+	bool			 has_retrans_timer;
+	uint32_t	 retrans_timer;
+	bool			 has_cur_hop_limit;
+	uint8_t		 cur_hop_limit;
+	bool			 has_default_lifetime;
+	uint16_t	 default_lifetime;
+	const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list	*prefix_list;
+};
+
 /* container, presence */
 struct ietf_interfaces_interfaces_state_interface_ip_ipv6 {
 	bool			 has_forwarding;
@@ -713,6 +950,7 @@ struct ietf_interfaces_interfaces_state_interface_ip_ipv6 {
 		size_t		 n;
 		const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor	*v;
 	}			 neighbor;
+	const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements	*v6ur_ipv6_router_advertisements;
 };
 
 /* list entry */
@@ -755,6 +993,386 @@ struct ietf_interfaces_interfaces_state {
 struct ietf_interfaces {
 	const struct ietf_interfaces_interfaces	*interfaces;
 	const struct ietf_interfaces_interfaces_state	*interfaces_state;
+};
+
+/* container */
+struct ietf_routing_routing_interfaces {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 interface;
+};
+
+/* list entry */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop {
+	const char	*index;
+	const char	*outgoing_interface;
+	const char	*next_hop_address;
+};
+
+/* container */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop	*v;
+	}			 next_hop;
+};
+
+/* container */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop {
+	enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_options	 next_hop_options;	/* the case given */
+	const char	*outgoing_interface;
+	const char	*next_hop_address;
+	bool			 has_special_next_hop;
+	enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_special_next_hop	 special_next_hop;
+	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list	*next_hop_list;
+};
+
+/* list entry */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route {
+	const char	*destination_prefix;
+	const char	*description;
+	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop	*next_hop;
+};
+
+/* container */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4 {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route	*v;
+	}			 route;
+};
+
+/* list entry */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop {
+	const char	*index;
+	const char	*outgoing_interface;
+	const char	*next_hop_address;
+};
+
+/* container */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop	*v;
+	}			 next_hop;
+};
+
+/* container */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop {
+	enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_options	 next_hop_options;	/* the case given */
+	const char	*outgoing_interface;
+	const char	*next_hop_address;
+	bool			 has_special_next_hop;
+	enum ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_special_next_hop	 special_next_hop;
+	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list	*next_hop_list;
+};
+
+/* list entry */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route {
+	const char	*destination_prefix;
+	const char	*description;
+	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop	*next_hop;
+};
+
+/* container */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6 {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route	*v;
+	}			 route;
+};
+
+/* container */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes {
+	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4	*v4ur_ipv4;
+	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6	*v6ur_ipv6;
+};
+
+/* list entry */
+struct ietf_routing_routing_control_plane_protocols_control_plane_protocol {
+	uint64_t	 type;	/* identityref: a SID */
+	const char	*name;
+	const char	*description;
+	const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes	*static_routes;
+};
+
+/* container */
+struct ietf_routing_routing_control_plane_protocols {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol	*v;
+	}			 control_plane_protocol;
+};
+
+/* list entry */
+struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop {
+	const char	*outgoing_interface;
+	const char	*v4ur_address;
+	const char	*v6ur_address;
+};
+
+/* container */
+struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop	*v;
+	}			 next_hop;
+};
+
+/* container */
+struct ietf_routing_routing_ribs_rib_routes_route_next_hop {
+	enum ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_options	 next_hop_options;	/* the case given */
+	const char	*outgoing_interface;
+	const char	*v4ur_next_hop_address;
+	const char	*v6ur_next_hop_address;
+	bool			 has_special_next_hop;
+	enum ietf_routing_routing_ribs_rib_routes_route_next_hop_special_next_hop	 special_next_hop;
+	const struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list	*next_hop_list;
+};
+
+/* list entry */
+struct ietf_routing_routing_ribs_rib_routes_route {
+	bool			 has_route_preference;
+	uint32_t	 route_preference;
+	const struct ietf_routing_routing_ribs_rib_routes_route_next_hop	*next_hop;
+	bool			 has_source_protocol;
+	uint64_t	 source_protocol;	/* identityref: a SID */
+	bool		 active;
+	const char	*last_updated;
+	const char	*v4ur_destination_prefix;
+	const char	*v6ur_destination_prefix;
+};
+
+/* container */
+struct ietf_routing_routing_ribs_rib_routes {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_ribs_rib_routes_route	*v;
+	}			 route;
+};
+
+/* input */
+struct ietf_routing_routing_ribs_rib_active_route_input {
+	const char	*v4ur_destination_address;
+	const char	*v6ur_destination_address;
+};
+
+/* list entry */
+struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop {
+	const char	*outgoing_interface;
+	const char	*v4ur_next_hop_address;
+	const char	*v6ur_next_hop_address;
+};
+
+/* container */
+struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop	*v;
+	}			 next_hop;
+};
+
+/* container */
+struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop {
+	enum ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_options	 next_hop_options;	/* the case given */
+	const char	*outgoing_interface;
+	const char	*v4ur_next_hop_address;
+	const char	*v6ur_next_hop_address;
+	bool			 has_special_next_hop;
+	enum ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_special_next_hop	 special_next_hop;
+	const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list	*next_hop_list;
+};
+
+/* container */
+struct ietf_routing_routing_ribs_rib_active_route_output_route {
+	const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop	*next_hop;
+	bool			 has_source_protocol;
+	uint64_t	 source_protocol;	/* identityref: a SID */
+	bool		 active;
+	const char	*last_updated;
+	const char	*v4ur_destination_prefix;
+	const char	*v6ur_destination_prefix;
+};
+
+/* output */
+struct ietf_routing_routing_ribs_rib_active_route_output {
+	const struct ietf_routing_routing_ribs_rib_active_route_output_route	*route;
+};
+
+/* list entry */
+struct ietf_routing_routing_ribs_rib {
+	const char	*name;
+	bool			 has_address_family;
+	uint64_t	 address_family;	/* identityref: a SID */
+	bool			 has_default_rib;
+	bool		 default_rib;
+	const struct ietf_routing_routing_ribs_rib_routes	*routes;
+	const char	*description;
+};
+
+/* container */
+struct ietf_routing_routing_ribs {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_ribs_rib	*v;
+	}			 rib;
+};
+
+/* container */
+struct ietf_routing_routing {
+	const struct ietf_routing_routing_interfaces	*interfaces;
+	const struct ietf_routing_routing_control_plane_protocols	*control_plane_protocols;
+	const struct ietf_routing_routing_ribs	*ribs;
+};
+
+/* container */
+struct ietf_routing_routing_state_interfaces {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 interface;
+};
+
+/* list entry */
+struct ietf_routing_routing_state_control_plane_protocols_control_plane_protocol {
+	uint64_t	 type;	/* identityref: a SID */
+	const char	*name;
+};
+
+/* container */
+struct ietf_routing_routing_state_control_plane_protocols {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_state_control_plane_protocols_control_plane_protocol	*v;
+	}			 control_plane_protocol;
+};
+
+/* list entry */
+struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop {
+	const char	*outgoing_interface;
+	const char	*v4ur_address;
+	const char	*v6ur_address;
+};
+
+/* container */
+struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop	*v;
+	}			 next_hop;
+};
+
+/* container */
+struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop {
+	enum ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_options	 next_hop_options;	/* the case given */
+	const char	*outgoing_interface;
+	const char	*v4ur_next_hop_address;
+	const char	*v6ur_next_hop_address;
+	bool			 has_special_next_hop;
+	enum ietf_routing_routing_state_ribs_rib_routes_route_next_hop_special_next_hop	 special_next_hop;
+	const struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list	*next_hop_list;
+};
+
+/* list entry */
+struct ietf_routing_routing_state_ribs_rib_routes_route {
+	bool			 has_route_preference;
+	uint32_t	 route_preference;
+	const struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop	*next_hop;
+	bool			 has_source_protocol;
+	uint64_t	 source_protocol;	/* identityref: a SID */
+	bool		 active;
+	const char	*last_updated;
+	const char	*v4ur_destination_prefix;
+	const char	*v6ur_destination_prefix;
+};
+
+/* container */
+struct ietf_routing_routing_state_ribs_rib_routes {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_state_ribs_rib_routes_route	*v;
+	}			 route;
+};
+
+/* input */
+struct ietf_routing_routing_state_ribs_rib_active_route_input {
+	const char	*v4ur_destination_address;
+	const char	*v6ur_destination_address;
+};
+
+/* list entry */
+struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop {
+	const char	*outgoing_interface;
+	const char	*v4ur_next_hop_address;
+	const char	*v6ur_next_hop_address;
+};
+
+/* container */
+struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop	*v;
+	}			 next_hop;
+};
+
+/* container */
+struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop {
+	enum ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_options	 next_hop_options;	/* the case given */
+	const char	*outgoing_interface;
+	const char	*v4ur_next_hop_address;
+	const char	*v6ur_next_hop_address;
+	bool			 has_special_next_hop;
+	enum ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_special_next_hop	 special_next_hop;
+	const struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list	*next_hop_list;
+};
+
+/* container */
+struct ietf_routing_routing_state_ribs_rib_active_route_output_route {
+	const struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop	*next_hop;
+	bool			 has_source_protocol;
+	uint64_t	 source_protocol;	/* identityref: a SID */
+	bool		 active;
+	const char	*last_updated;
+	const char	*v4ur_destination_prefix;
+	const char	*v6ur_destination_prefix;
+};
+
+/* output */
+struct ietf_routing_routing_state_ribs_rib_active_route_output {
+	const struct ietf_routing_routing_state_ribs_rib_active_route_output_route	*route;
+};
+
+/* list entry */
+struct ietf_routing_routing_state_ribs_rib {
+	const char	*name;
+	bool			 has_address_family;
+	uint64_t	 address_family;	/* identityref: a SID */
+	bool			 has_default_rib;
+	bool		 default_rib;
+	const struct ietf_routing_routing_state_ribs_rib_routes	*routes;
+};
+
+/* container */
+struct ietf_routing_routing_state_ribs {
+	struct {
+		size_t		 n;
+		const struct ietf_routing_routing_state_ribs_rib	*v;
+	}			 rib;
+};
+
+/* container */
+struct ietf_routing_routing_state {
+	const char	*router_id;
+	const struct ietf_routing_routing_state_interfaces	*interfaces;
+	const struct ietf_routing_routing_state_control_plane_protocols	*control_plane_protocols;
+	const struct ietf_routing_routing_state_ribs	*ribs;
+};
+
+/* data */
+struct ietf_routing {
+	const struct ietf_routing_routing	*routing;
+	const struct ietf_routing_routing_state	*routing_state;
 };
 
 /*
@@ -825,6 +1443,18 @@ int	ietf_interfaces_interfaces_interface_ip_ipv6_autoconf_encode(const struct ie
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_ip_ipv6_autoconf_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv6_autoconf *,
 	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv6_v6ur_ipv6_router_advertisements *,
+	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_interface_ip_ipv6_encode(const struct ietf_interfaces_interfaces_interface_ip_ipv6 *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_interface_ip_ipv6_decode(const void *, size_t, struct ietf_interfaces_interfaces_interface_ip_ipv6 *,
@@ -861,6 +1491,18 @@ int	ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_encode(const str
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv6_neighbor *,
 	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_prefix *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_prefix_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements *,
+	    struct cbl_ybuf *);
+int	ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv6_v6ur_ipv6_router_advertisements *,
+	    cbl_yarena *, int, char *, size_t);
 int	ietf_interfaces_interfaces_state_interface_ip_ipv6_encode(const struct ietf_interfaces_interfaces_state_interface_ip_ipv6 *,
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_state_interface_ip_ipv6_decode(const void *, size_t, struct ietf_interfaces_interfaces_state_interface_ip_ipv6 *,
@@ -873,6 +1515,186 @@ int	ietf_interfaces_interfaces_state_encode(const struct ietf_interfaces_interfa
 	    struct cbl_ybuf *);
 int	ietf_interfaces_interfaces_state_decode(const void *, size_t, struct ietf_interfaces_interfaces_state *,
 	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_interfaces_encode(const struct ietf_routing_routing_interfaces *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_interfaces_decode(const void *, size_t, struct ietf_routing_routing_interfaces *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_next_hop_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4 *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v4ur_ipv4 *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_next_hop_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6 *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_v6ur_ipv6 *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol_static_routes *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_encode(const struct ietf_routing_routing_control_plane_protocols_control_plane_protocol *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_control_plane_protocol_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols_control_plane_protocol *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_control_plane_protocols_encode(const struct ietf_routing_routing_control_plane_protocols *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_control_plane_protocols_decode(const void *, size_t, struct ietf_routing_routing_control_plane_protocols *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_routes_route_next_hop_encode(const struct ietf_routing_routing_ribs_rib_routes_route_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_routes_route_next_hop_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_routes_route_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_routes_route_encode(const struct ietf_routing_routing_ribs_rib_routes_route *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_routes_route_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_routes_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_routes_encode(const struct ietf_routing_routing_ribs_rib_routes *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_routes_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_routes *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_active_route_input_encode(const struct ietf_routing_routing_ribs_rib_active_route_input *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_active_route_input_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_active_route_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_next_hop_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_encode(const struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_active_route_output_route_next_hop_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_active_route_output_route_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_active_route_output_route_encode(const struct ietf_routing_routing_ribs_rib_active_route_output_route *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_active_route_output_route_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_active_route_output_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_active_route_output_encode(const struct ietf_routing_routing_ribs_rib_active_route_output *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_active_route_output_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib_active_route_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_rib_encode(const struct ietf_routing_routing_ribs_rib *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_rib_decode(const void *, size_t, struct ietf_routing_routing_ribs_rib *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_ribs_encode(const struct ietf_routing_routing_ribs *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_ribs_decode(const void *, size_t, struct ietf_routing_routing_ribs *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_encode(const struct ietf_routing_routing *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_decode(const void *, size_t, struct ietf_routing_routing *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_interfaces_encode(const struct ietf_routing_routing_state_interfaces *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_interfaces_decode(const void *, size_t, struct ietf_routing_routing_state_interfaces *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_control_plane_protocols_control_plane_protocol_encode(const struct ietf_routing_routing_state_control_plane_protocols_control_plane_protocol *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_control_plane_protocols_control_plane_protocol_decode(const void *, size_t, struct ietf_routing_routing_state_control_plane_protocols_control_plane_protocol *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_control_plane_protocols_encode(const struct ietf_routing_routing_state_control_plane_protocols *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_control_plane_protocols_decode(const void *, size_t, struct ietf_routing_routing_state_control_plane_protocols *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop_next_hop_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_routes_route_next_hop_encode(const struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_routes_route_next_hop_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_routes_route_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_routes_route_encode(const struct ietf_routing_routing_state_ribs_rib_routes_route *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_routes_route_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_routes_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_routes_encode(const struct ietf_routing_routing_state_ribs_rib_routes *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_routes_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_routes *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_active_route_input_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_input *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_active_route_input_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_active_route_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_next_hop_list *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_active_route_output_route_next_hop *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_route_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output_route *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_route_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_active_route_output_route *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_encode(const struct ietf_routing_routing_state_ribs_rib_active_route_output *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_active_route_output_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib_active_route_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_rib_encode(const struct ietf_routing_routing_state_ribs_rib *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_rib_decode(const void *, size_t, struct ietf_routing_routing_state_ribs_rib *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_ribs_encode(const struct ietf_routing_routing_state_ribs *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_ribs_decode(const void *, size_t, struct ietf_routing_routing_state_ribs *,
+	    cbl_yarena *, int, char *, size_t);
+int	ietf_routing_routing_state_encode(const struct ietf_routing_routing_state *,
+	    struct cbl_ybuf *);
+int	ietf_routing_routing_state_decode(const void *, size_t, struct ietf_routing_routing_state *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -882,5 +1704,15 @@ int	ietf_interfaces_interfaces_get(cbl_req *, struct ietf_interfaces *, cbl_yare
 int	ietf_interfaces_interfaces_edit(cbl_req *, const struct ietf_interfaces *,
 	    const struct ietf_interfaces *);
 int	ietf_interfaces_interfaces_state_get(cbl_req *, struct ietf_interfaces *, cbl_yarena *);
+int	ietf_routing_routing_get(cbl_req *, struct ietf_routing *, cbl_yarena *);
+int	ietf_routing_routing_edit(cbl_req *, const struct ietf_routing *,
+	    const struct ietf_routing *);
+int	ietf_routing_routing_ribs_rib_active_route_action(cbl_req *, const struct cbl_bytes *,
+	    const struct ietf_routing_routing_ribs_rib_active_route_input *,
+	    struct ietf_routing_routing_ribs_rib_active_route_output *, cbl_yarena *);
+int	ietf_routing_routing_state_get(cbl_req *, struct ietf_routing *, cbl_yarena *);
+int	ietf_routing_routing_state_ribs_rib_active_route_action(cbl_req *, const struct cbl_bytes *,
+	    const struct ietf_routing_routing_state_ribs_rib_active_route_input *,
+	    struct ietf_routing_routing_state_ribs_rib_active_route_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

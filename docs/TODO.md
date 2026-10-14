@@ -256,8 +256,16 @@
   and quotes, from sysctl.c), and rtadvd.conf as records of
   capabilities, read as rtadvd(8)'s advcap.c reads them (compiled into
   the test from /usr/src: every getter of every capability agrees),
-  values set in place, an edit that would not read back refused. Next:
-  2.3.4, running assembled from the files. As each operation is
+  values set in place, an edit that would not read back refused.
+  2.3.4 on need cblink v2's instance tree, so the 1.11 branch. 2.4.1:
+  ietf-routing's RIBs, a FIB's ipv4-master and ipv6-master as netlink
+  dumps them (invidia/yrt.c), every route's next hop (a next-hop-list
+  for a multipath one; blackhole, unreachable for a reject route,
+  receive for the host's own), its source-protocol from netlink's
+  rtm_protocol (arcana-routing's identities where RFC 8349 has none);
+  agent_test's yang_routes holds every FIB to netstat -rn. ietf-routing
+  and the unicast modules have no IETF SID range: Arcana's block,
+  2^40 + 1300 to 1799 (SIDS.md). Next: 2.4.2, ECMP. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

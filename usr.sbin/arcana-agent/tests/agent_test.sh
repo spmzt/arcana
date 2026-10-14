@@ -5192,6 +5192,72 @@ capture_cleanup()
 
 # The ietf-interfaces collector (yang/collect.h) beside what ifconfig(8)
 # and netstat(1) -i say of the same interfaces.
+atf_test_case yang_routes
+yang_routes_head()
+{
+	atf_set "descr" "ietf-routing's RIBs (PLAN-SDN-YANG 2.4.1): every" \
+	    "FIB's routes as netstat -rn shows them, through YANG-CBOR" \
+	    "and back"
+}
+yang_routes_body()
+{
+	# netstat(1)'s routes as ycollect writes them: af, prefix ("default"
+	# /0, a host /32 or /128, no zone), gateway (link#N -), interface,
+	# the special next hop (B blackhole, R unreachable, a host route to
+	# lo without a gateway receive; none then an interface), and the
+	# protocol its flags say (S static, no G direct, else any).
+	cat > rt.awk <<'EOF'
+/^Internet:/ { af = "inet"; next }
+/^Internet6:/ { af = "inet6"; next }
+af == "" || $1 == "Destination" || NF < 4 { next }
+{
+	d = $1; g = $2; fl = $3; i = $4
+	if (d == "default")
+		d = af == "inet" ? "0.0.0.0/0" : "::/0"
+	z = d; sub(/%[^\/]*/, "", z); d = z
+	if (d !~ /\//)
+		d = d (af == "inet" ? "/32" : "/128")
+	if (g ~ /^link#/)
+		g = "-"
+	sp = "-"
+	if (fl ~ /B/) sp = "blackhole"
+	else if (fl ~ /R/) sp = "unreachable"
+	else if (fl ~ /H/ && fl !~ /G/ && i ~ /^lo/) sp = "receive"
+	if (sp != "-")
+		i = "-"
+	p = fl ~ /S/ ? "static" : fl !~ /G/ ? "direct" : "*"
+	print af, d, g, i, sp, p
+}
+EOF
+	nfibs=$(sysctl -n net.fibs)
+	f=0
+	while [ "$f" -lt "$nfibs" ]; do
+		netstat -rn -F "$f" | awk -f rt.awk | sort > before
+		atf_check -o save:r "$(atf_get_srcdir)/ycollect" routes "$f"
+		netstat -rn -F "$f" | awk -f rt.awk | sort > after
+		atf_check -o match:'^yang-cbor [0-9]+ bytes, the same back$' \
+		    tail -1 r
+		sed '$d' r | sort > got
+		# A "*" protocol: any, a gateway's the kernel's or a daemon's.
+		for w in before after; do
+			awk 'NR == FNR { want[FNR] = $0; n = FNR; next }
+			{ got[FNR] = $0; m = FNR }
+			END {
+				if (n != m) exit 1
+				for (k = 1; k <= n; k++) {
+					split(want[k], a); split(got[k], b)
+					for (j = 1; j <= 5; j++)
+						if (a[j] != b[j]) exit 1
+					if (a[6] != "*" && a[6] != b[6]) exit 1
+				}
+			}' "$w" got && break
+			[ "$w" = after ] && { diff -u before got; atf_fail \
+			    "FIB $f: the collector and netstat differ"; }
+		done
+		f=$((f + 1))
+	done
+}
+
 atf_test_case yang_interfaces
 yang_interfaces_head()
 {
@@ -5443,6 +5509,7 @@ EOF
 atf_init_test_cases()
 {
 	atf_add_test_case yang_interfaces
+	atf_add_test_case yang_routes
 	atf_add_test_case ntp
 	atf_add_test_case rtadvd
 	atf_add_test_case ipsec_sa

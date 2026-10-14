@@ -1,0 +1,91 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-routing",
+    "module-revision": "2026-10-14",
+    "description": "Arcana's provisional block (share/yang/SIDS.md): 2^40 + 1700, 100.",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-routing",
+        "module-revision": "2018-03-13"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "1099511629476",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-routing",
+        "sid": "1099511629476"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "babel",
+        "sid": "1099511629477"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "bgp",
+        "sid": "1099511629478"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "bird",
+        "sid": "1099511629479"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "dhcp",
+        "sid": "1099511629480"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "freebsd-origin",
+        "sid": "1099511629481"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "isis",
+        "sid": "1099511629482"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "kernel",
+        "sid": "1099511629483"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "ospf",
+        "sid": "1099511629484"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "other",
+        "sid": "1099511629485"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "redirect",
+        "sid": "1099511629486"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "rip",
+        "sid": "1099511629487"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "router-advertisement",
+        "sid": "1099511629488"
+      },
+      {
+        "namespace": "identity",
+        "identifier": "zebra",
+        "sid": "1099511629489"
+      }
+    ]
+  }
+}

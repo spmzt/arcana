@@ -22,6 +22,10 @@
  *				interface, inet or inet6, the address, the
  *				link-layer address, the origin; an inet6
  *				one's router or -, and state or -
+ *	ycollect routes fib	ietf-routing's routes of FIB fib, a next
+ *				hop a line: inet or inet6, the prefix, the
+ *				gateway, the interface, the special next
+ *				hop (- for none each), the source protocol
  */
 
 #include <err.h>
@@ -248,6 +252,71 @@ names(const char *what, size_t n, const char *const *v)
 		printf("%s%s", i > 0 ? "," : "", v[i]);
 }
 
+static const char *const special[] = { "blackhole", "unreachable",
+    "prohibit", "receive" };
+
+static void
+routes(int fib, cbl_yarena *a)
+{
+	struct ietf_routing data = { 0 };
+	struct ietf_routing_routing back;
+	struct cbl_ybuf b1 = { 0 }, b2 = { 0 };
+	char why[256];
+	int error;
+
+	if ((error = yrt_routing(&data, fib, a)) != 0)
+		errc(1, error, "yrt_routing");
+	for (size_t i = 0; i < data.routing->ribs->rib.n; i++) {
+		const struct ietf_routing_routing_ribs_rib *rib =
+		    &data.routing->ribs->rib.v[i];
+
+		for (size_t j = 0; j < rib->routes->route.n; j++) {
+			const struct ietf_routing_routing_ribs_rib_routes_route
+			    *r = &rib->routes->route.v[j];
+			const struct ietf_routing_routing_ribs_rib_routes_route_next_hop
+			    *nh = r->next_hop;
+			const struct cbl_yident *p = cbl_yschema_ident(
+			    &ymodel_schema, r->source_protocol);
+			const char *af = i == 0 ? "inet" : "inet6";
+			const char *dst = i == 0 ? r->v4ur_destination_prefix :
+			    r->v6ur_destination_prefix;
+
+			if (nh->next_hop_list != NULL) {
+				for (size_t k = 0; k < nh->next_hop_list->
+				    next_hop.n; k++) {
+					const struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop
+					    *m = &nh->next_hop_list->next_hop.v[k];
+
+					printf("%s %s %s %s - %s\n", af, dst,
+					    str(i == 0 ? m->v4ur_address :
+					    m->v6ur_address),
+					    str(m->outgoing_interface),
+					    p != NULL ? p->name : "-");
+				}
+				continue;
+			}
+			printf("%s %s %s %s %s %s\n", af, dst, str(i == 0 ?
+			    nh->v4ur_next_hop_address :
+			    nh->v6ur_next_hop_address),
+			    str(nh->outgoing_interface),
+			    nh->has_special_next_hop ?
+			    special[nh->special_next_hop] : "-",
+			    p != NULL ? p->name : "-");
+		}
+	}
+	if (ietf_routing_routing_encode(data.routing, &b1) != 0)
+		errx(1, "encode");
+	if (ietf_routing_routing_decode(b1.p, b1.len, &back, a, CBL_YD_STRICT,
+	    why, sizeof(why)) != 0)
+		errx(1, "decode: %s", why);
+	if (ietf_routing_routing_encode(&back, &b2) != 0)
+		errx(1, "encode again");
+	printf("yang-cbor %zu bytes, %s\n", b1.len, b1.len == b2.len &&
+	    memcmp(b1.p, b2.p, b1.len) == 0 ? "the same back" : "not the same");
+	cbl_ybuf_free(&b1);
+	cbl_ybuf_free(&b2);
+}
+
 static void
 roundtrip(const struct ietf_interfaces_interfaces *ifs, cbl_yarena *a)
 {
@@ -275,11 +344,18 @@ main(int argc, char **argv)
 	cbl_yarena *a;
 	int error;
 
+	if (argc == 3 && strcmp(argv[1], "routes") == 0) {
+		if ((a = cbl_yarena_new()) == NULL)
+			err(1, "cbl_yarena_new");
+		routes(atoi(argv[2]), a);
+		cbl_yarena_free(a);
+		return (0);
+	}
 	if (argc != 2 || (strcmp(argv[1], "interfaces") != 0 &&
 	    strcmp(argv[1], "arcif") != 0 && strcmp(argv[1], "ip") != 0 &&
 	    strcmp(argv[1], "nb") != 0 && strcmp(argv[1], "ipsys") != 0)) {
-		fprintf(stderr,
-		    "usage: ycollect interfaces | arcif | ip | ipsys | nb\n");
+		fprintf(stderr, "usage: ycollect interfaces | arcif | ip | "
+		    "ipsys | nb | routes fib\n");
 		return (2);
 	}
 	if ((a = cbl_yarena_new()) == NULL)
