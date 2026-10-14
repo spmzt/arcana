@@ -16,8 +16,9 @@
  * ietf-network-instance: 16 nodes, 4 types, 3456 bytes
  * arcana-network-instance: 0 nodes, 0 types, 80 bytes
  * ietf-logical-network-element: 10 nodes, 1 types, 1875 bytes
- * in all, 359 nodes (children found 63 dense, 19 by a table, 8 by a search),
- * 61 types, 33 expressions, 328 identities, 103432 bytes
+ * arcana-jails: 50 nodes, 5 types, 8840 bytes
+ * in all, 409 nodes (children found 73 dense, 20 by a table, 9 by a search),
+ * 66 types, 34 expressions, 328 identities, 112672 bytes
  */
 
 #include <stdbool.h>
@@ -44,6 +45,7 @@ static const struct cbl_ymodule m18;
 static const struct cbl_ymodule m19;
 static const struct cbl_ymodule m20;
 static const struct cbl_ymodule m21;
+static const struct cbl_ymodule m22;
 static const struct cbl_ychoice c0;
 static const struct cbl_ychoice c1;
 static const struct cbl_ychoice c2;
@@ -414,6 +416,56 @@ static const struct cbl_ynode n355;
 static const struct cbl_ynode n356;
 static const struct cbl_ynode n357;
 static const struct cbl_ynode n358;
+static const struct cbl_ynode n359;
+static const struct cbl_ynode n360;
+static const struct cbl_ynode n361;
+static const struct cbl_ynode n362;
+static const struct cbl_ynode n363;
+static const struct cbl_ynode n364;
+static const struct cbl_ynode n365;
+static const struct cbl_ynode n366;
+static const struct cbl_ynode n367;
+static const struct cbl_ynode n368;
+static const struct cbl_ynode n369;
+static const struct cbl_ynode n370;
+static const struct cbl_ynode n371;
+static const struct cbl_ynode n372;
+static const struct cbl_ynode n373;
+static const struct cbl_ynode n374;
+static const struct cbl_ynode n375;
+static const struct cbl_ynode n376;
+static const struct cbl_ynode n377;
+static const struct cbl_ynode n378;
+static const struct cbl_ynode n379;
+static const struct cbl_ynode n380;
+static const struct cbl_ynode n381;
+static const struct cbl_ynode n382;
+static const struct cbl_ynode n383;
+static const struct cbl_ynode n384;
+static const struct cbl_ynode n385;
+static const struct cbl_ynode n386;
+static const struct cbl_ynode n387;
+static const struct cbl_ynode n388;
+static const struct cbl_ynode n389;
+static const struct cbl_ynode n390;
+static const struct cbl_ynode n391;
+static const struct cbl_ynode n392;
+static const struct cbl_ynode n393;
+static const struct cbl_ynode n394;
+static const struct cbl_ynode n395;
+static const struct cbl_ynode n396;
+static const struct cbl_ynode n397;
+static const struct cbl_ynode n398;
+static const struct cbl_ynode n399;
+static const struct cbl_ynode n400;
+static const struct cbl_ynode n401;
+static const struct cbl_ynode n402;
+static const struct cbl_ynode n403;
+static const struct cbl_ynode n404;
+static const struct cbl_ynode n405;
+static const struct cbl_ynode n406;
+static const struct cbl_ynode n407;
+static const struct cbl_ynode n408;
 
 static const struct cbl_yitem t0_i[] = {
 	{ "up", INT64_C(1) },
@@ -1112,6 +1164,50 @@ static const struct cbl_ytype t60 = {
 	.csize = sizeof(const char *),
 	.flags = CBL_YTF_LEAFREF | CBL_YTF_REQUIRE,
 	.path = 32,
+};
+
+static const struct cbl_ytype t61 = {
+	.kind = CBL_YT_DECIMAL64,
+	.csize = sizeof(int64_t),
+	.fdigits = 2,
+	.path = -1,
+};
+
+static const struct cbl_yitem t62_i[] = {
+	{ "running", INT64_C(0) },
+	{ "stopped", INT64_C(1) },
+	{ "dying", INT64_C(2) },
+	{ "absent", INT64_C(3) },
+};
+static const struct cbl_ytype t62 = {
+	.kind = CBL_YT_ENUMERATION,
+	.csize = sizeof(enum arcana_jails_jails_jail_kill_output_state),
+	.path = -1,
+	.nitems = 4,
+	.items = t62_i,
+};
+
+static const struct cbl_ytype t63 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.flags = CBL_YTF_LEAFREF,
+	.path = 33,
+};
+
+static const struct cbl_yrange t64_l[] = {
+	{ .min.u = UINT64_C(1), .max.u = UINT64_C(255) },
+};
+static const struct cbl_ytype t64 = {
+	.kind = CBL_YT_STRING,
+	.csize = sizeof(const char *),
+	.path = -1,
+	.length = { t64_l, 1, NULL, NULL },
+};
+
+static const struct cbl_ytype t65 = {
+	.kind = CBL_YT_INT32,
+	.csize = sizeof(int32_t),
+	.path = -1,
 };
 
 static const uint16_t n1_p[] = {
@@ -6180,6 +6276,601 @@ static const struct cbl_ynode n355 = {
 	.module = &m21,
 };
 
+static const struct cbl_ynode n361 = {
+	.sid = UINT64_C(62103),
+	.name = "message",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_conf_error, message),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n362 = {
+	.sid = UINT64_C(62104),
+	.name = "scope",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_conf_error, scope),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n360_c[] = {
+	&n361, &n362
+};
+static const struct cbl_ynode n360 = {
+	.sid = UINT64_C(62102),
+	.name = "conf-error",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_jails_jails, conf_error),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_conf_error),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n360_c,
+	.module = &m22,
+};
+
+static const uint16_t n363_p[] = {
+	1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 0, 0, 0, 10, 11, 12,
+	13, 14, 0, 0, 15, 16, 17, 18, 19, 0, 0, 0, 0, 20, 21, 22,
+	23, 0, 0, 0, 0, 24, 25, 0, 0, 0, 0, 26
+};
+static const struct cbl_ynode n364 = {
+	.sid = UINT64_C(62106),
+	.name = "children",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, children),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_children),
+	.type = &t10,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n365 = {
+	.sid = UINT64_C(62107),
+	.name = "configured",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, configured),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_configured),
+	.type = &t2,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n366 = {
+	.sid = UINT64_C(62108),
+	.name = "cpu",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, cpu),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_cpu),
+	.type = &t61,
+	.units = "percent",
+	.module = &m22,
+};
+
+static const struct cbl_ynode n367 = {
+	.sid = UINT64_C(62109),
+	.name = "hostname",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, hostname),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n368 = {
+	.sid = UINT64_C(62110),
+	.name = "interface",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, interface),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n369 = {
+	.sid = UINT64_C(62111),
+	.name = "ip4",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_jails_jails_jail, ip4),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n370 = {
+	.sid = UINT64_C(62112),
+	.name = "ip6",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_jails_jails_jail, ip6),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n371 = {
+	.sid = UINT64_C(62113),
+	.name = "jid",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, jid),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_jid),
+	.type = &t10,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n373 = {
+	.sid = UINT64_C(62115),
+	.name = "input",
+	.kind = CBL_YN_INPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail_kill_input),
+	.module = &m22,
+};
+
+static const struct cbl_ynode n375 = {
+	.sid = UINT64_C(62117),
+	.name = "jid",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail_kill_output, jid),
+	.hoff = offsetof(struct arcana_jails_jails_jail_kill_output, has_jid),
+	.type = &t10,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n376 = {
+	.sid = UINT64_C(62118),
+	.name = "state",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail_kill_output, state),
+	.hoff = offsetof(struct arcana_jails_jails_jail_kill_output, has_state),
+	.type = &t62,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n374_c[] = {
+	&n375, &n376
+};
+static const struct cbl_ynode n374 = {
+	.sid = UINT64_C(62116),
+	.name = "output",
+	.kind = CBL_YN_OUTPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail_kill_output),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n374_c,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n372_c[] = {
+	&n373, &n374
+};
+static const struct cbl_ynode n372 = {
+	.sid = UINT64_C(62114),
+	.name = "kill",
+	.kind = CBL_YN_ACTION,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.nmap = 2,
+	.nchild = 2,
+	.child = n372_c,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n377 = {
+	.sid = UINT64_C(62119),
+	.name = "lne",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, lne),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t63,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n378 = {
+	.sid = UINT64_C(62120),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x4,
+	.off = offsetof(struct arcana_jails_jails_jail, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t64,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n379 = {
+	.sid = UINT64_C(62121),
+	.name = "nproc",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, nproc),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_nproc),
+	.type = &t10,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n380 = {
+	.sid = UINT64_C(62122),
+	.name = "osrelease",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, osrelease),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n382 = {
+	.sid = UINT64_C(62124),
+	.name = "name",
+	.kind = CBL_YN_LEAF,
+	.flags = 0x4,
+	.off = offsetof(struct arcana_jails_jails_jail_param, name),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n383 = {
+	.sid = UINT64_C(62125),
+	.name = "value",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_jails_jails_jail_param, value),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n381_c[] = {
+	&n382, &n383
+};
+static const uint32_t n381_k[] = { 0 };
+static const struct cbl_ynode n381 = {
+	.sid = UINT64_C(62123),
+	.name = "param",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_jails_jails_jail, param),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail_param),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n381_c,
+	.nkeys = 1,
+	.keys = n381_k,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n384 = {
+	.sid = UINT64_C(62126),
+	.name = "parent",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, parent),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_parent),
+	.type = &t10,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n385 = {
+	.sid = UINT64_C(62127),
+	.name = "path",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, path),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n386 = {
+	.sid = UINT64_C(62128),
+	.name = "persist",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, persist),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_persist),
+	.type = &t2,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n387 = {
+	.sid = UINT64_C(62129),
+	.name = "plugin",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_jails_jails_jail, plugin),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n389 = {
+	.sid = UINT64_C(62131),
+	.name = "input",
+	.kind = CBL_YN_INPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail_restart_input),
+	.module = &m22,
+};
+
+static const struct cbl_ynode n391 = {
+	.sid = UINT64_C(62133),
+	.name = "jid",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail_restart_output, jid),
+	.hoff = offsetof(struct arcana_jails_jails_jail_restart_output, has_jid),
+	.type = &t10,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n392 = {
+	.sid = UINT64_C(62134),
+	.name = "state",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail_restart_output, state),
+	.hoff = offsetof(struct arcana_jails_jails_jail_restart_output, has_state),
+	.type = &t62,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n390_c[] = {
+	&n391, &n392
+};
+static const struct cbl_ynode n390 = {
+	.sid = UINT64_C(62132),
+	.name = "output",
+	.kind = CBL_YN_OUTPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail_restart_output),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n390_c,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n388_c[] = {
+	&n389, &n390
+};
+static const struct cbl_ynode n388 = {
+	.sid = UINT64_C(62130),
+	.name = "restart",
+	.kind = CBL_YN_ACTION,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.nmap = 2,
+	.nchild = 2,
+	.child = n388_c,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n393 = {
+	.sid = UINT64_C(62135),
+	.name = "rss",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, rss),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_rss),
+	.type = &t9,
+	.units = "kibibytes",
+	.module = &m22,
+};
+
+static const struct cbl_ynode n394 = {
+	.sid = UINT64_C(62136),
+	.name = "scope",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, scope),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n395 = {
+	.sid = UINT64_C(62137),
+	.name = "securelevel",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, securelevel),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_securelevel),
+	.type = &t65,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n397 = {
+	.sid = UINT64_C(62139),
+	.name = "input",
+	.kind = CBL_YN_INPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail_start_input),
+	.module = &m22,
+};
+
+static const struct cbl_ynode n399 = {
+	.sid = UINT64_C(62141),
+	.name = "jid",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail_start_output, jid),
+	.hoff = offsetof(struct arcana_jails_jails_jail_start_output, has_jid),
+	.type = &t10,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n400 = {
+	.sid = UINT64_C(62142),
+	.name = "state",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail_start_output, state),
+	.hoff = offsetof(struct arcana_jails_jails_jail_start_output, has_state),
+	.type = &t62,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n398_c[] = {
+	&n399, &n400
+};
+static const struct cbl_ynode n398 = {
+	.sid = UINT64_C(62140),
+	.name = "output",
+	.kind = CBL_YN_OUTPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail_start_output),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n398_c,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n396_c[] = {
+	&n397, &n398
+};
+static const struct cbl_ynode n396 = {
+	.sid = UINT64_C(62138),
+	.name = "start",
+	.kind = CBL_YN_ACTION,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.nmap = 2,
+	.nchild = 2,
+	.child = n396_c,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n401 = {
+	.sid = UINT64_C(62143),
+	.name = "state",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, state),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_state),
+	.type = &t62,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n403 = {
+	.sid = UINT64_C(62145),
+	.name = "input",
+	.kind = CBL_YN_INPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail_stop_input),
+	.module = &m22,
+};
+
+static const struct cbl_ynode n405 = {
+	.sid = UINT64_C(62147),
+	.name = "jid",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail_stop_output, jid),
+	.hoff = offsetof(struct arcana_jails_jails_jail_stop_output, has_jid),
+	.type = &t10,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n406 = {
+	.sid = UINT64_C(62148),
+	.name = "state",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail_stop_output, state),
+	.hoff = offsetof(struct arcana_jails_jails_jail_stop_output, has_state),
+	.type = &t62,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n404_c[] = {
+	&n405, &n406
+};
+static const struct cbl_ynode n404 = {
+	.sid = UINT64_C(62146),
+	.name = "output",
+	.kind = CBL_YN_OUTPUT,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail_stop_output),
+	.nmap = 2,
+	.nchild = 2,
+	.child = n404_c,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n402_c[] = {
+	&n403, &n404
+};
+static const struct cbl_ynode n402 = {
+	.sid = UINT64_C(62144),
+	.name = "stop",
+	.kind = CBL_YN_ACTION,
+	.off = CBL_YOFF_NONE,
+	.hoff = CBL_YOFF_NONE,
+	.nmap = 2,
+	.nchild = 2,
+	.child = n402_c,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n407 = {
+	.sid = UINT64_C(62149),
+	.name = "vnet",
+	.kind = CBL_YN_LEAF,
+	.off = offsetof(struct arcana_jails_jails_jail, vnet),
+	.hoff = offsetof(struct arcana_jails_jails_jail, has_vnet),
+	.type = &t2,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n363_c[] = {
+	&n364, &n365, &n366, &n367, &n368, &n369,
+	&n370, &n371, &n372, &n377, &n378, &n379,
+	&n380, &n381, &n384, &n385, &n386, &n387,
+	&n388, &n393, &n394, &n395, &n396, &n401,
+	&n402, &n407
+};
+static const uint32_t n363_k[] = { 10 };
+static const struct cbl_ynode n363 = {
+	.sid = UINT64_C(62105),
+	.name = "jail",
+	.kind = CBL_YN_LIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_jails_jails, jail),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails_jail),
+	.nmap = 44,
+	.map = n363_p,
+	.nchild = 26,
+	.child = n363_c,
+	.nkeys = 1,
+	.keys = n363_k,
+	.module = &m22,
+};
+
+static const struct cbl_ynode n408 = {
+	.sid = UINT64_C(62150),
+	.name = "scope",
+	.kind = CBL_YN_LEAFLIST,
+	.flags = 0x10,
+	.off = offsetof(struct arcana_jails_jails, scope),
+	.hoff = CBL_YOFF_NONE,
+	.type = &t1,
+	.module = &m22,
+};
+
+static const struct cbl_ynode *const n359_c[] = {
+	&n360, &n363, &n408
+};
+static const struct cbl_ynode n359 = {
+	.sid = UINT64_C(62101),
+	.name = "jails",
+	.kind = CBL_YN_CONTAINER,
+	.off = offsetof(struct arcana_jails, jails),
+	.hoff = CBL_YOFF_NONE,
+	.size = sizeof(struct arcana_jails_jails),
+	.nchild = 3,
+	.child = n359_c,
+	.module = &m22,
+};
+
 static const uint64_t i0_d[] = {
 	UINT64_C(1801), UINT64_C(1802), UINT64_C(1803), UINT64_C(1804),
 	UINT64_C(1805), UINT64_C(1806), UINT64_C(1807), UINT64_C(1808),
@@ -6864,6 +7555,21 @@ static const struct cbl_ymodule m21 = {
 	.top = m21_t,
 };
 
+static const struct cbl_ynode *const m22_t[] = {
+	&n359
+};
+static const struct cbl_ymodule m22 = {
+	.schema = &ymodel_schema,
+	.name = "arcana-jails",
+	.revision = "2026-10-14",
+	.ns = "urn:arcana:yang:arcana-jails",
+	.prefix = "arcj",
+	.sid = UINT64_C(62100),
+	.size = sizeof(struct arcana_jails),
+	.ntop = 1,
+	.top = m22_t,
+};
+
 static const struct cbl_ymodule *const mods[] = {
 	&m5,
 	&m6,
@@ -6879,6 +7585,7 @@ static const struct cbl_ymodule *const mods[] = {
 	&m19,
 	&m20,
 	&m21,
+	&m22,
 };
 
 static const struct cbl_ynode *const nodes[] = {
@@ -6941,7 +7648,16 @@ static const struct cbl_ynode *const nodes[] = {
 	&n344, &n345, &n346, &n347, &n348, &n333,
 	&n334, &n335, &n336, &n337, &n338, &n339,
 	&n130, &n355, &n356, &n357, &n358, &n349,
-	&n350, &n351, &n352, &n353, &n354
+	&n350, &n351, &n352, &n353, &n354, &n359,
+	&n360, &n361, &n362, &n363, &n364, &n365,
+	&n366, &n367, &n368, &n369, &n370, &n371,
+	&n372, &n373, &n374, &n375, &n376, &n377,
+	&n378, &n379, &n380, &n381, &n382, &n383,
+	&n384, &n385, &n386, &n387, &n388, &n389,
+	&n390, &n391, &n392, &n393, &n394, &n395,
+	&n396, &n397, &n398, &n399, &n400, &n401,
+	&n402, &n403, &n404, &n405, &n406, &n407,
+	&n408
 };
 
 static const char *const xpaths[] = {
@@ -6978,14 +7694,15 @@ static const char *const xpaths[] = {
 	"/if:interfaces/if:interface/ip:ipv4/ni:bind-ni-name",
 	"/if:interfaces/if:interface/ip:ipv6/ni:bind-ni-name",
 	"/if:interfaces/if:interface/lne:bind-lne-name",
+	"/lne:logical-network-elements/lne:logical-network-element/lne:name",
 };
 
 extern const struct cbl_yschema ymodel_schema;
 const struct cbl_yschema ymodel_schema = {
-	.nmod = 14,
-	.nxpath = 33,
+	.nmod = 15,
+	.nxpath = 34,
 	.nident = 328,
-	.nnode = 359,
+	.nnode = 409,
 	.mod = mods,
 	.node = nodes,
 	.xpath = xpaths,
@@ -8444,5 +9161,197 @@ ietf_logical_network_element_bind_lne_name_failed_notification(const struct ietf
 {
 
 	return (cbl_yencode_sid(&n355, p, b));
+}
+
+int
+arcana_jails_jails_encode(const struct arcana_jails_jails *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n359, p, b));
+}
+
+int
+arcana_jails_jails_decode(const void *data, size_t len, struct arcana_jails_jails *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n359, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_conf_error_encode(const struct arcana_jails_jails_conf_error *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n360, p, b));
+}
+
+int
+arcana_jails_jails_conf_error_decode(const void *data, size_t len, struct arcana_jails_jails_conf_error *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n360, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_encode(const struct arcana_jails_jails_jail *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n363, p, b));
+}
+
+int
+arcana_jails_jails_jail_decode(const void *data, size_t len, struct arcana_jails_jails_jail *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n363, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_kill_input_encode(const struct arcana_jails_jails_jail_kill_input *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n373, p, b));
+}
+
+int
+arcana_jails_jails_jail_kill_input_decode(const void *data, size_t len, struct arcana_jails_jails_jail_kill_input *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n373, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_kill_output_encode(const struct arcana_jails_jails_jail_kill_output *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n374, p, b));
+}
+
+int
+arcana_jails_jails_jail_kill_output_decode(const void *data, size_t len, struct arcana_jails_jails_jail_kill_output *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n374, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_param_encode(const struct arcana_jails_jails_jail_param *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n381, p, b));
+}
+
+int
+arcana_jails_jails_jail_param_decode(const void *data, size_t len, struct arcana_jails_jails_jail_param *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n381, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_restart_input_encode(const struct arcana_jails_jails_jail_restart_input *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n389, p, b));
+}
+
+int
+arcana_jails_jails_jail_restart_input_decode(const void *data, size_t len, struct arcana_jails_jails_jail_restart_input *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n389, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_restart_output_encode(const struct arcana_jails_jails_jail_restart_output *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n390, p, b));
+}
+
+int
+arcana_jails_jails_jail_restart_output_decode(const void *data, size_t len, struct arcana_jails_jails_jail_restart_output *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n390, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_start_input_encode(const struct arcana_jails_jails_jail_start_input *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n397, p, b));
+}
+
+int
+arcana_jails_jails_jail_start_input_decode(const void *data, size_t len, struct arcana_jails_jails_jail_start_input *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n397, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_start_output_encode(const struct arcana_jails_jails_jail_start_output *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n398, p, b));
+}
+
+int
+arcana_jails_jails_jail_start_output_decode(const void *data, size_t len, struct arcana_jails_jails_jail_start_output *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n398, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_stop_input_encode(const struct arcana_jails_jails_jail_stop_input *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n403, p, b));
+}
+
+int
+arcana_jails_jails_jail_stop_input_decode(const void *data, size_t len, struct arcana_jails_jails_jail_stop_input *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n403, data, len, p, a, flags, why, whylen));
+}
+
+int
+arcana_jails_jails_jail_stop_output_encode(const struct arcana_jails_jails_jail_stop_output *p, struct cbl_ybuf *b)
+{
+
+	return (cbl_yencode(&n404, p, b));
+}
+
+int
+arcana_jails_jails_jail_stop_output_decode(const void *data, size_t len, struct arcana_jails_jails_jail_stop_output *p,
+    cbl_yarena *a, int flags, char *why, size_t whylen)
+{
+
+	memset(p, 0, sizeof(*p));
+	return (cbl_ydecode(&n404, data, len, p, a, flags, why, whylen));
 }
 

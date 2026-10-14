@@ -111,6 +111,19 @@ struct ietf_logical_network_element_logical_network_elements_logical_network_ele
 struct ietf_logical_network_element_logical_network_elements;
 struct ietf_logical_network_element;
 struct ietf_logical_network_element_bind_lne_name_failed;
+struct arcana_jails_jails_conf_error;
+struct arcana_jails_jails_jail_param;
+struct arcana_jails_jails_jail_start_input;
+struct arcana_jails_jails_jail_start_output;
+struct arcana_jails_jails_jail_stop_input;
+struct arcana_jails_jails_jail_stop_output;
+struct arcana_jails_jails_jail_restart_input;
+struct arcana_jails_jails_jail_restart_output;
+struct arcana_jails_jails_jail_kill_input;
+struct arcana_jails_jails_jail_kill_output;
+struct arcana_jails_jails_jail;
+struct arcana_jails_jails;
+struct arcana_jails;
 
 enum ietf_interfaces_interfaces_interface_link_up_down_trap_enable {
 	IETF_INTERFACES_INTERFACES_INTERFACE_LINK_UP_DOWN_TRAP_ENABLE_ENABLED = 1,
@@ -497,6 +510,41 @@ enum ietf_network_instance_network_instances_network_instance_ni_type {
 enum ietf_network_instance_network_instances_network_instance_root_type {
 	IETF_NETWORK_INSTANCE_NETWORK_INSTANCES_NETWORK_INSTANCE_ROOT_TYPE_NONE = 0,
 	IETF_NETWORK_INSTANCE_NETWORK_INSTANCES_NETWORK_INSTANCE_ROOT_TYPE_VRF_ROOT,
+};
+
+enum arcana_jails_jails_jail_state {
+	ARCANA_JAILS_JAILS_JAIL_STATE_RUNNING = 0,
+	ARCANA_JAILS_JAILS_JAIL_STATE_STOPPED = 1,
+	ARCANA_JAILS_JAILS_JAIL_STATE_DYING = 2,
+	ARCANA_JAILS_JAILS_JAIL_STATE_ABSENT = 3,
+};
+
+enum arcana_jails_jails_jail_start_output_state {
+	ARCANA_JAILS_JAILS_JAIL_START_OUTPUT_STATE_RUNNING = 0,
+	ARCANA_JAILS_JAILS_JAIL_START_OUTPUT_STATE_STOPPED = 1,
+	ARCANA_JAILS_JAILS_JAIL_START_OUTPUT_STATE_DYING = 2,
+	ARCANA_JAILS_JAILS_JAIL_START_OUTPUT_STATE_ABSENT = 3,
+};
+
+enum arcana_jails_jails_jail_stop_output_state {
+	ARCANA_JAILS_JAILS_JAIL_STOP_OUTPUT_STATE_RUNNING = 0,
+	ARCANA_JAILS_JAILS_JAIL_STOP_OUTPUT_STATE_STOPPED = 1,
+	ARCANA_JAILS_JAILS_JAIL_STOP_OUTPUT_STATE_DYING = 2,
+	ARCANA_JAILS_JAILS_JAIL_STOP_OUTPUT_STATE_ABSENT = 3,
+};
+
+enum arcana_jails_jails_jail_restart_output_state {
+	ARCANA_JAILS_JAILS_JAIL_RESTART_OUTPUT_STATE_RUNNING = 0,
+	ARCANA_JAILS_JAILS_JAIL_RESTART_OUTPUT_STATE_STOPPED = 1,
+	ARCANA_JAILS_JAILS_JAIL_RESTART_OUTPUT_STATE_DYING = 2,
+	ARCANA_JAILS_JAILS_JAIL_RESTART_OUTPUT_STATE_ABSENT = 3,
+};
+
+enum arcana_jails_jails_jail_kill_output_state {
+	ARCANA_JAILS_JAILS_JAIL_KILL_OUTPUT_STATE_RUNNING = 0,
+	ARCANA_JAILS_JAILS_JAIL_KILL_OUTPUT_STATE_STOPPED = 1,
+	ARCANA_JAILS_JAILS_JAIL_KILL_OUTPUT_STATE_DYING = 2,
+	ARCANA_JAILS_JAILS_JAIL_KILL_OUTPUT_STATE_ABSENT = 3,
 };
 
 /* container */
@@ -1491,6 +1539,143 @@ struct ietf_logical_network_element_bind_lne_name_failed {
 	const char	*error_info;
 };
 
+/* list entry */
+struct arcana_jails_jails_conf_error {
+	const char	*scope;
+	const char	*message;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail_param {
+	const char	*name;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 value;
+};
+
+/* input */
+struct arcana_jails_jails_jail_start_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_jails_jails_jail_start_output {
+	bool			 has_state;
+	enum arcana_jails_jails_jail_start_output_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* input */
+struct arcana_jails_jails_jail_stop_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_jails_jails_jail_stop_output {
+	bool			 has_state;
+	enum arcana_jails_jails_jail_stop_output_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* input */
+struct arcana_jails_jails_jail_restart_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_jails_jails_jail_restart_output {
+	bool			 has_state;
+	enum arcana_jails_jails_jail_restart_output_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* input */
+struct arcana_jails_jails_jail_kill_input {
+	char			 _empty;	/* nothing in it */
+};
+
+/* output */
+struct arcana_jails_jails_jail_kill_output {
+	bool			 has_state;
+	enum arcana_jails_jails_jail_kill_output_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+};
+
+/* list entry */
+struct arcana_jails_jails_jail {
+	const char	*name;
+	bool			 has_state;
+	enum arcana_jails_jails_jail_state	 state;
+	bool			 has_jid;
+	uint32_t	 jid;
+	bool			 has_configured;
+	bool		 configured;
+	const char	*scope;
+	const char	*hostname;
+	const char	*path;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 ip4;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 ip6;
+	bool			 has_vnet;
+	bool		 vnet;
+	const char	*osrelease;
+	bool			 has_persist;
+	bool		 persist;
+	bool			 has_securelevel;
+	int32_t		 securelevel;
+	bool			 has_parent;
+	uint32_t	 parent;
+	bool			 has_children;
+	uint32_t	 children;
+	bool			 has_nproc;
+	uint32_t	 nproc;
+	bool			 has_rss;
+	uint64_t	 rss;
+	bool			 has_cpu;
+	int64_t		 cpu;	/* decimal64, 2 fraction digits */
+	const char	*interface;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail_param	*v;
+	}			 param;
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 plugin;
+	const char	*lne;
+};
+
+/* container */
+struct arcana_jails_jails {
+	struct {
+		size_t		 n;
+		const char	*const	*v;
+	}			 scope;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_conf_error	*v;
+	}			 conf_error;
+	struct {
+		size_t		 n;
+		const struct arcana_jails_jails_jail	*v;
+	}			 jail;
+};
+
+/* data */
+struct arcana_jails {
+	const struct arcana_jails_jails	*jails;
+};
+
 /*
  * Each struct's value in YANG-CBOR (RFC 9254) and back: cbl_yencode(),
  * cbl_ydecode() with its node (base_schema.c).
@@ -1855,6 +2040,54 @@ int	ietf_logical_network_element_bind_lne_name_failed_encode(const struct ietf_l
 	    struct cbl_ybuf *);
 int	ietf_logical_network_element_bind_lne_name_failed_decode(const void *, size_t, struct ietf_logical_network_element_bind_lne_name_failed *,
 	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_conf_error_encode(const struct arcana_jails_jails_conf_error *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_conf_error_decode(const void *, size_t, struct arcana_jails_jails_conf_error *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_param_encode(const struct arcana_jails_jails_jail_param *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_param_decode(const void *, size_t, struct arcana_jails_jails_jail_param *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_start_input_encode(const struct arcana_jails_jails_jail_start_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_start_input_decode(const void *, size_t, struct arcana_jails_jails_jail_start_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_start_output_encode(const struct arcana_jails_jails_jail_start_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_start_output_decode(const void *, size_t, struct arcana_jails_jails_jail_start_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_stop_input_encode(const struct arcana_jails_jails_jail_stop_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_stop_input_decode(const void *, size_t, struct arcana_jails_jails_jail_stop_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_stop_output_encode(const struct arcana_jails_jails_jail_stop_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_stop_output_decode(const void *, size_t, struct arcana_jails_jails_jail_stop_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_restart_input_encode(const struct arcana_jails_jails_jail_restart_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_restart_input_decode(const void *, size_t, struct arcana_jails_jails_jail_restart_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_restart_output_encode(const struct arcana_jails_jails_jail_restart_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_restart_output_decode(const void *, size_t, struct arcana_jails_jails_jail_restart_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_kill_input_encode(const struct arcana_jails_jails_jail_kill_input *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_kill_input_decode(const void *, size_t, struct arcana_jails_jails_jail_kill_input *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_kill_output_encode(const struct arcana_jails_jails_jail_kill_output *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_kill_output_decode(const void *, size_t, struct arcana_jails_jails_jail_kill_output *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_jail_encode(const struct arcana_jails_jails_jail *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_jail_decode(const void *, size_t, struct arcana_jails_jails_jail *,
+	    cbl_yarena *, int, char *, size_t);
+int	arcana_jails_jails_encode(const struct arcana_jails_jails *,
+	    struct cbl_ybuf *);
+int	arcana_jails_jails_decode(const void *, size_t, struct arcana_jails_jails *,
+	    cbl_yarena *, int, char *, size_t);
 
 /*
  * A server's handlers (-m server, cbl_schema.h): the program defines
@@ -1884,5 +2117,18 @@ int	ietf_logical_network_element_logical_network_elements_edit(cbl_req *, const 
 	    const struct ietf_logical_network_element *);
 int	ietf_logical_network_element_bind_lne_name_failed_notification(const struct ietf_logical_network_element_bind_lne_name_failed *,
 	    struct cbl_ybuf *);
+int	arcana_jails_jails_get(cbl_req *, struct arcana_jails *, cbl_yarena *);
+int	arcana_jails_jails_jail_start_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_start_input *,
+	    struct arcana_jails_jails_jail_start_output *, cbl_yarena *);
+int	arcana_jails_jails_jail_stop_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_stop_input *,
+	    struct arcana_jails_jails_jail_stop_output *, cbl_yarena *);
+int	arcana_jails_jails_jail_restart_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_restart_input *,
+	    struct arcana_jails_jails_jail_restart_output *, cbl_yarena *);
+int	arcana_jails_jails_jail_kill_action(cbl_req *, const struct cbl_bytes *,
+	    const struct arcana_jails_jails_jail_kill_input *,
+	    struct arcana_jails_jails_jail_kill_output *, cbl_yarena *);
 
 #endif /* !_YMODEL_H_ */

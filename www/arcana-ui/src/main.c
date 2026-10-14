@@ -1531,6 +1531,8 @@ dispatch(const char *act, const char *arg, const char *value)
 		app.dock_open = true;
 	} else if (strcmp(act, "schema") == 0) {
 		app.trace_schema = !app.trace_schema;
+	} else if (strcmp(act, "schema-tab") == 0) {
+		app.schema_yang = strcmp(arg, "yang") == 0;
 	} else if (strcmp(act, "op-retry") == 0) {
 		op_retry(atoi(arg));
 	} else if (strcmp(act, "op-cancel") == 0) {

@@ -15,7 +15,7 @@ SRCS+=		ymodel_schema.c
 SRCS+=		bird.c ipsec.c plugins.c sdbird.c sddhcp.c sddns.c sdproxy.c sdids.c wireguard.c
 # Ira: action and execution.
 SRCS+=		build.c exec.c jail.c jails.c jailwatch.c jobs.c lifecycle.c jailmake.c packages.c \
-		services.c update.c
+		services.c update.c yjails.c
 # Acedia: storage.  Avaritia: resources.  Gula: observation.
 SRCS+=		record.c \
 		pools.c storage.c zfskey.c xfer.c health.c resources.c stats.c trace.c procs.c log.c \
@@ -64,7 +64,7 @@ YANG_MODS=	ietf-interfaces@2018-02-20 arcana-interfaces@2026-10-14 \
 		ietf-ipv6-unicast-routing@2018-03-13 arcana-routing@2026-10-14 \
 		ietf-network-instance@2019-01-21 \
 		arcana-network-instance@2026-10-14 \
-		ietf-logical-network-element@2019-01-25
+		ietf-logical-network-element@2019-01-25 arcana-jails@2026-10-14
 # ietf-routing's multiple-ribs: a FIB each (setfib(1)).
 YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-ip:ipv6-privacy-autoconf -F arcana-ip-deviations: \
@@ -72,7 +72,7 @@ YANG_FEATS=	-F ietf-interfaces:if-mib,arbitrary-names -F arcana-interfaces: \
 		-F ietf-routing:multiple-ribs -F ietf-ipv4-unicast-routing: \
 		-F ietf-ipv6-unicast-routing: -F arcana-routing: \
 		-F ietf-network-instance: -F arcana-network-instance: \
-		-F ietf-logical-network-element:
+		-F ietf-logical-network-element: -F arcana-jails:
 YANG_OUT?=	${.CURDIR}/yang
 regen-yang: .PHONY
 	cd ${YANG_DIR} && ${CBLINK_GEN} -m h,schema -b ymodel \

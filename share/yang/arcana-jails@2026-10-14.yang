@@ -1,0 +1,275 @@
+module arcana-jails {
+  yang-version 1.1;
+  namespace "urn:arcana:yang:arcana-jails";
+  prefix arcj;
+
+  import ietf-logical-network-element {
+    prefix lne;
+    reference
+      "RFC 8530: YANG Model for Logical Network Elements";
+  }
+
+  organization
+    "Arcana";
+  contact
+    "Pouria Mousavizadeh Tehrani <pouria@FreeBSD.org>";
+  description
+    "FreeBSD's jails (jail(8), jail(2)): those jail.conf(5) and the
+     files in jail.conf.d define, as jail(8) -e resolves them, and
+     those running, as jail_get(2) gives them (jls(8)); and what is
+     done to one: started, stopped, restarted (jail(8) -c, -r, -rc,
+     with the configuration's scripts) or killed (jail_remove(2),
+     without them).
+
+     A jail with a vnet of its own (jail(8)'s vnet) is also a logical
+     network element (RFC 8530): lne names it.
+
+     These are state: a jail's configuration is its configuration
+     file's, which Arcana edits in place (libjailconf).";
+
+  revision 2026-10-14 {
+    description
+      "Initial revision.";
+    reference
+      "Arcana docs/PLAN-SDN-YANG.md step 3.1.1.";
+  }
+
+  typedef jail-state {
+    type enumeration {
+      enum running {
+        value 0;
+        description
+          "jail_get(2) finds it, not dying.";
+      }
+      enum stopped {
+        value 1;
+        description
+          "Configured, not running.";
+      }
+      enum dying {
+        value 2;
+        description
+          "Removed, its last references not yet gone (jls(8) -d).";
+      }
+      enum absent {
+        value 3;
+        description
+          "Neither configured nor running.";
+      }
+    }
+    description
+      "Where a jail is in its life.";
+  }
+
+  grouping after {
+    description
+      "The jail as it is after an action.";
+    leaf state {
+      type jail-state;
+      description
+        "Its state.";
+    }
+    leaf jid {
+      type uint32;
+      description
+        "Its number, while it runs.";
+    }
+  }
+
+  container jails {
+    config false;
+    description
+      "The host's jails.";
+    leaf-list scope {
+      type string;
+      description
+        "The configuration files jail(8) is run with (-f):
+         /etc/jail.conf and those of /etc/jail.conf.d.";
+    }
+    list conf-error {
+      description
+        "A configuration file jail(8) could not read, and why.";
+      leaf scope {
+        type string;
+        description
+          "The file.";
+      }
+      leaf message {
+        type string;
+        description
+          "What jail(8) said of it.";
+      }
+    }
+    list jail {
+      key "name";
+      description
+        "A jail, configured or running or both.";
+      leaf name {
+        type string {
+          length "1..255";
+        }
+        description
+          "Its name (jail(8)'s name; a child's parent.child).";
+      }
+      leaf state {
+        type jail-state;
+        description
+          "Where it is in its life.";
+      }
+      leaf jid {
+        type uint32;
+        description
+          "Its number (jid), while it runs.";
+      }
+      leaf configured {
+        type boolean;
+        description
+          "Whether a configuration file defines it.";
+      }
+      leaf scope {
+        type string;
+        description
+          "The configuration file that defines it.";
+      }
+      leaf hostname {
+        type string;
+        description
+          "host.hostname.";
+      }
+      leaf path {
+        type string;
+        description
+          "Its root directory (path).";
+      }
+      leaf-list ip4 {
+        type string;
+        ordered-by user;
+        description
+          "ip4.addr, as jail(8) has each: an address, with an
+           interface and a prefix length where given.";
+      }
+      leaf-list ip6 {
+        type string;
+        ordered-by user;
+        description
+          "ip6.addr, as ip4.";
+      }
+      leaf vnet {
+        type boolean;
+        description
+          "Whether it has a network stack of its own (vnet = new).";
+      }
+      leaf osrelease {
+        type string;
+        description
+          "The release it says it is (osrelease).";
+      }
+      leaf persist {
+        type boolean;
+        description
+          "Whether it stays without processes (persist).";
+      }
+      leaf securelevel {
+        type int32;
+        description
+          "Its securelevel (securelevel(7)).";
+      }
+      leaf parent {
+        type uint32;
+        description
+          "The jid of the jail it is in; 0, the host.";
+      }
+      leaf children {
+        type uint32;
+        description
+          "How many jails it has in it now.";
+      }
+      leaf nproc {
+        type uint32;
+        description
+          "Its processes now.";
+      }
+      leaf rss {
+        type uint64;
+        units "kibibytes";
+        description
+          "Their resident memory, kinfo_proc's ki_rssize summed.";
+      }
+      leaf cpu {
+        type decimal64 {
+          fraction-digits 2;
+        }
+        units "percent";
+        description
+          "Their share of one CPU, kinfo_proc's ki_pctcpu summed.";
+      }
+      leaf interface {
+        type string;
+        description
+          "interface: the one its addresses are added to.";
+      }
+      list param {
+        key "name";
+        description
+          "Every parameter its configuration gives it, as jail(8) -e
+           resolves them (variables expanded, += appended).";
+        leaf name {
+          type string;
+          description
+            "The parameter, as jail(8) names it.";
+        }
+        leaf-list value {
+          type string;
+          ordered-by user;
+          description
+            "Its values; none for a boolean set.";
+        }
+      }
+      leaf-list plugin {
+        type string;
+        description
+          "Of a running jail with a network of its own: the plugins it
+           has, as a host's, by the programs installed in it.";
+      }
+      leaf lne {
+        type leafref {
+          path "/lne:logical-network-elements/lne:logical-network-element"
+             + "/lne:name";
+          require-instance false;
+        }
+        description
+          "The logical network element it is, with a vnet of its own.";
+      }
+      action start {
+        description
+          "jail(8) -c with its configuration: its exec.prestart,
+           exec.start and the rest run.";
+        output {
+          uses after;
+        }
+      }
+      action stop {
+        description
+          "jail(8) -r: its exec.stop and the rest run, then
+           jail_remove(2).";
+        output {
+          uses after;
+        }
+      }
+      action restart {
+        description
+          "jail(8) -rc.";
+        output {
+          uses after;
+        }
+      }
+      action kill {
+        description
+          "jail_remove(2), without its stop scripts.";
+        output {
+          uses after;
+        }
+      }
+    }
+  }
+}

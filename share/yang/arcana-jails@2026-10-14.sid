@@ -1,0 +1,277 @@
+{
+  "ietf-sid-file:sid-file": {
+    "module-name": "arcana-jails",
+    "module-revision": "2026-10-14",
+    "sid-file-version": 1,
+    "description": "RFC 9595's experimental range, for now (share/yang/SIDS.md): 62 100, 100.",
+    "dependency-revision": [
+      {
+        "module-name": "ietf-logical-network-element",
+        "module-revision": "2019-01-25"
+      }
+    ],
+    "assignment-range": [
+      {
+        "entry-point": "62100",
+        "size": "100"
+      }
+    ],
+    "item": [
+      {
+        "namespace": "module",
+        "identifier": "arcana-jails",
+        "sid": "62100"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails",
+        "sid": "62101"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/conf-error",
+        "sid": "62102"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/conf-error/message",
+        "sid": "62103"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/conf-error/scope",
+        "sid": "62104"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail",
+        "sid": "62105"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/children",
+        "sid": "62106"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/configured",
+        "sid": "62107"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/cpu",
+        "sid": "62108"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/hostname",
+        "sid": "62109"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/interface",
+        "sid": "62110"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/ip4",
+        "sid": "62111"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/ip6",
+        "sid": "62112"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/jid",
+        "sid": "62113"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/kill",
+        "sid": "62114"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/kill/input",
+        "sid": "62115"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/kill/output",
+        "sid": "62116"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/kill/output/jid",
+        "sid": "62117"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/kill/output/state",
+        "sid": "62118"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/lne",
+        "sid": "62119"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/name",
+        "sid": "62120"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/nproc",
+        "sid": "62121"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/osrelease",
+        "sid": "62122"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/param",
+        "sid": "62123"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/param/name",
+        "sid": "62124"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/param/value",
+        "sid": "62125"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/parent",
+        "sid": "62126"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/path",
+        "sid": "62127"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/persist",
+        "sid": "62128"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/plugin",
+        "sid": "62129"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/restart",
+        "sid": "62130"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/restart/input",
+        "sid": "62131"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/restart/output",
+        "sid": "62132"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/restart/output/jid",
+        "sid": "62133"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/restart/output/state",
+        "sid": "62134"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/rss",
+        "sid": "62135"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/scope",
+        "sid": "62136"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/securelevel",
+        "sid": "62137"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/start",
+        "sid": "62138"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/start/input",
+        "sid": "62139"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/start/output",
+        "sid": "62140"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/start/output/jid",
+        "sid": "62141"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/start/output/state",
+        "sid": "62142"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/state",
+        "sid": "62143"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/stop",
+        "sid": "62144"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/stop/input",
+        "sid": "62145"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/stop/output",
+        "sid": "62146"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/stop/output/jid",
+        "sid": "62147"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/stop/output/state",
+        "sid": "62148"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/jail/vnet",
+        "sid": "62149"
+      },
+      {
+        "namespace": "data",
+        "identifier": "/arcana-jails:jails/scope",
+        "sid": "62150"
+      }
+    ]
+  }
+}
