@@ -52,6 +52,7 @@ void		 arc_store_set(const char *, const char *);
 char		*arc_theme_get(void);
 void		 arc_theme_set(const char *);
 void		 arc_save_b64(const char *, const char *, const char *);
+void		 arc_save_text(const char *, const char *, const char *);
 void		 arc_webauthn(int, int, const char *);
 void		 arc_sw_register(void);
 double		 arc_now(void);
@@ -389,6 +390,8 @@ enum modal {
 	MODAL_SD_POLICY,
 	MODAL_SD_EP,
 	MODAL_SD_MAP,
+	MODAL_SD_LIMITER,
+	MODAL_SD_TOPO,
 	MODAL_PKG_INSTALL,
 	MODAL_WF_RUN,
 	MODAL_IF_VNET,
@@ -811,6 +814,7 @@ void		 view_sdwan(struct html *);
 bool		 sdwan_action(const char *, const char *, const char *);
 bool		 sdwan_form(const char *, const ucl_object_t *);
 bool		 sdwan_modal(struct html *);
+bool		 sdwan_blocked(void);
 bool		 workflows_form(const char *, const ucl_object_t *);
 bool		 workflows_modal(struct html *);
 void		 storage_tick(double);

@@ -1955,6 +1955,8 @@ modal(struct html *h)
 	case MODAL_SD_POLICY:
 	case MODAL_SD_EP:
 	case MODAL_SD_MAP:
+	case MODAL_SD_LIMITER:
+	case MODAL_SD_TOPO:
 	case MODAL_SD_SECPOL:
 	case MODAL_SD_LIST:
 	case MODAL_SD_IDENTITY:
@@ -2270,10 +2272,15 @@ modal(struct html *h)
 		case MODAL_SD_POLICY:
 		case MODAL_SD_EP:
 		case MODAL_SD_MAP:
-			h_raw(h, "<button class=\"primary\">Keep</button>");
+		case MODAL_SD_LIMITER:
+		case MODAL_SD_TOPO:
+			if (!sdwan_blocked())
+				h_raw(h, "<button class=\"primary\">Keep</button>");
 			break;
 		case MODAL_SD_EDGE:
-			h_raw(h, "<button class=\"primary\">Add the edge</button>");
+			if (!sdwan_blocked())
+				h_raw(h, "<button class=\"primary\">Add the edge"
+				    "</button>");
 			break;
 		case MODAL_WG_PEER:
 		case MODAL_IPSEC_CONN:
