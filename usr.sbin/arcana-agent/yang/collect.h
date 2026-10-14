@@ -67,6 +67,13 @@ int	rcr_write(struct vc_file *f, int fib,
 	    char *err, size_t errlen);
 
 /*
+ * RFC 8530's logical network elements: the vnet jails, as jls(8) lists
+ * them (invidia/ylne.c).
+ */
+int	ylne_elements(cbl_yarena *a,
+	    const struct ietf_logical_network_element_logical_network_elements **out);
+
+/*
  * FreeBSD's FIBs as RFC 8529's network instances, invidia/yni.c: FIB 1
  * to net.fibs - 1, named and described in fibs.conf f (NULL: none).
  * yni_nfibs(): net.fibs, this vnet's.  yni_read(): the instances, what

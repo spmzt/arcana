@@ -5261,6 +5261,20 @@ EOF
 	done < addrs
 }
 
+atf_test_case yang_lne
+yang_lne_head()
+{
+	atf_set "descr" "the vnet jails as RFC 8530's logical network" \
+	    "elements (PLAN-SDN-YANG 2.7.1): as jls(8) lists them"
+}
+yang_lne_body()
+{
+	jls -n name vnet | sed -n 's/^name=\(.*\) vnet=new$/\1 managed/p' \
+	    > want
+	echo "yang-cbor the same back" >> want
+	atf_check -o file:want "$(atf_get_srcdir)/ycollect" lne
+}
+
 atf_test_case yang_ni_conf
 yang_ni_conf_head()
 {
@@ -5875,6 +5889,7 @@ atf_init_test_cases()
 	atf_add_test_case yang_routes
 	atf_add_test_case yang_rc_routes
 	atf_add_test_case yang_rtadv_conf
+	atf_add_test_case yang_lne
 	atf_add_test_case yang_ni_conf
 	atf_add_test_case yang_ni_rc
 	atf_add_test_case yang_ni_grow

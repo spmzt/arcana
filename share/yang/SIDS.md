@@ -72,6 +72,7 @@ itself, as the plan says, until it holds one by registration.
 | 2^40 + 1700 | 100 | `arcana-routing` | `share/yang/arcana-routing@2026-10-14.sid` (14 used) |
 | 2^40 + 1800 | 100 | `ietf-network-instance@2019-01-21` (no IETF range) | `share/yang/ietf-network-instance@2019-01-21.sid` (21 used) |
 | 2^40 + 1900 | 100 | `arcana-network-instance` | `share/yang/arcana-network-instance@2026-10-14.sid` (2 used) |
+| 2^40 + 2000 | 100 | `ietf-logical-network-element@2019-01-25` (no IETF range) | `share/yang/ietf-logical-network-element@2019-01-25.sid` (12 used) |
 
 cblink's modules take 2^40 to 2^40 + 999; Arcana's own follow from
 2^40 + 1000. cblink's own test modules (`shapes` from 2^40 + 100 000,

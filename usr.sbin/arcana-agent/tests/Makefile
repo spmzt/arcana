@@ -7,7 +7,7 @@ ATF_TESTS_SH=	agent_test \
 
 # ycollect: what the YANG collectors find, for agent_test.sh.
 PROGS=		ycollect
-SRCS.ycollect=	ycollect.c yif.c yip.c yrt.c rtimes.c ymodel_schema.c
+SRCS.ycollect=	ycollect.c yif.c yip.c ylne.c yrt.c rtimes.c ymodel_schema.c
 # yni: FIBs as network instances, names in fibs.conf.
 PROGS+=		yni
 SRCS.yni=	yni_test.c yni.c yif.c yip.c ymodel_schema.c
@@ -26,7 +26,7 @@ LDADD.yrcroutes+=	${CBLINK_LIBS} \
 		${.OBJDIR}/../../../lib/libvarconf/libvarconf_pie.a
 .PATH:		${.CURDIR}/../invidia ${.CURDIR}/../yang
 CFLAGS+=	-I${.CURDIR}/../yang -I${.CURDIR}/../invidia ${CBLINK_CFLAGS}
-LDADD.ycollect+=	${CBLINK_LIBS} -lnv
+LDADD.ycollect+=	${CBLINK_LIBS} -ljail -lnv
 MAN=
 
 # No mtree(8) hierarchy outside the tree: create the directory first.

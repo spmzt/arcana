@@ -320,8 +320,15 @@
   the fib leaf 1..65534). Held to loader.conf cases unprivileged (no
   live raise: reboot required; yang_ni_grow) and a vnet jail's net.fibs
   raised live (yang_ni_grow, root). 2.6.2 (the vrf-root mount) and
-  parent-reference wait on 1.11. Next: 2.7.1, the LNE list from
-  jail_get. As each operation is
+  parent-reference wait on 1.11. 2.7.1: the vnet jails as RFC 8530's
+  logical network elements (invidia/ylne.c: jail_getv(3) by lastjid,
+  vnet = new, dying ones out as jls(8) leaves them; managed),
+  ietf-logical-network-element from Arcana's block (2^40 + 2000). Held
+  to jls -n name vnet (yang_lne) and to a vnet jail beside one sharing
+  the host's stack (yang_lne, root). 2.7.2 to 2.7.4 (the attached
+  helper, the root mount, bind-lne-name's moves) need the mount and
+  cblink 2 inside the jail, after 1.11; 2.7.5, the jail.conf hooks,
+  next. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.
