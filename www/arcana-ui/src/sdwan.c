@@ -4295,10 +4295,17 @@ sdwan_modal(struct html *h)
 			}
 			h_raw(h, "</select></label>");
 		}
+		/* Rarely set: folded, open only when it is. */
+		h_raw(h, "<details class=\"sd-more\"");
+		if (e != NULL && ucl_array_size(jget(e, "ntp")) > 0)
+			h_raw(h, " open");
+		h_raw(h, "><summary>Advanced</summary>");
 		text_field(h, "NTP servers", "ntp", e != NULL ? csv(jget(e, "ntp"),
-		    ntp, sizeof(ntp)) : "", "0.freebsd.pool.ntp.org", "With "
-		    "commas; the edge keeps time by them (ntpd), so faults line "
-		    "up and keys turn together. Empty: as the host is.");
+		    ntp, sizeof(ntp)) : "", "0.freebsd.pool.ntp.org", "Only if "
+		    "the host does not keep time already: the edge's clock "
+		    "lines up faults and key turns with the other edges "
+		    "(ntpd). Empty: the host as it is.");
+		h_raw(h, "</details>");
 		/* What it does to the host, before anything is done. */
 		h_raw(h, "<details class=\"sd-effects\"" );
 		if (e == NULL)

@@ -4113,16 +4113,46 @@ part_flows(void)
 	 */
 	run("document.querySelector('li.titem.wfnode').click()");
 	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
-	/* A template: Arcana kept up to date, its four steps Arcana's own,
-	 * each after the check only when its head is newer. */
+	{
+		/* What a page's input does: its value, then the event. */
+		static const char set[] = "window.setf = (sel, v) => { const e = "
+		    "document.querySelector(sel); if (e.type === 'checkbox') "
+		    "e.checked = v; else e.value = v; e.dispatchEvent(new Event("
+		    "'input', { bubbles: true })); };";
+		/* A drag in the drawing, as a pointer does it: from the
+		 * middle of one thing to the middle of another. */
+		static const char drag[] = "window.svgdrag = (from, to) => { "
+		    "document.querySelector(to).scrollIntoView({ block: 'center' "
+		    "}); const a = document.querySelector(from).getBoundingClientRect(),"
+		    " b = document.querySelector(to).getBoundingClientRect(), "
+		    "ax = a.left + a.width / 2, ay = a.top + a.height / 2, bx = "
+		    "b.left + b.width / 2, by = b.top + b.height / 2, o = { bubbles:"
+		    " true, pointerId: 7, button: 0 }; document.querySelector("
+		    "from).dispatchEvent(new PointerEvent('pointerdown', { ...o, "
+		    "clientX: ax, clientY: ay })); document.dispatchEvent(new "
+		    "PointerEvent('pointermove', { ...o, clientX: ax + 9, clientY: "
+		    "ay + 9 })); document.dispatchEvent(new PointerEvent("
+		    "'pointermove', { ...o, clientX: bx, clientY: by })); "
+		    "document.dispatchEvent(new PointerEvent('pointerup', { ...o, "
+		    "clientX: bx, clientY: by })); };";
+
+		run(set);
+		run(drag);
+	}
+	/*
+	 * A template: Arcana kept up to date, drawn: what starts it (every
+	 * hour), its four steps Arcana's own, each after the check only if
+	 * its head is newer, said in words.
+	 */
 	run("const t = document.querySelector('select[data-input=wf-template]'"
 	    "); t.value = 'arcana-update'; t.dispatchEvent(new Event('input', "
 	    "{ bubbles: true }));");
-	wait_js("document.querySelectorAll('li.wfedstep').length === 4 && "
-	    "[...document.querySelectorAll('select[data-input=wf-type]')].map("
-	    "s => s.value).join() === 'arcana:check,arcana:build,arcana:agents,"
-	    "arcana:console' && document.querySelectorAll('li.wfedstep "
-	    ".wfwhen').length === 3", 10);
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.arcana')."
+	    "length === 4 && document.querySelectorAll('svg.wfdraw g.wfnode "
+	    "text.c').length === 3 && document.querySelector('svg.wfdraw "
+	    "g.wfnode.trig').textContent.includes('every 1 hour')", 10);
+	ATF_CHECK(js_true("document.querySelector('svg.wfdraw g.wfnode text.c')"
+	    ".textContent.includes('what check answered: new is true')"));
 	shot("9-workflow-template");
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	wait_js("document.querySelector('button[data-act=wf-new]')", 10);
@@ -4130,24 +4160,47 @@ part_flows(void)
 	run("const t = document.querySelector('select[data-input=wf-template]'"
 	    "); t.value = 'plugin-install'; t.dispatchEvent(new Event('input', "
 	    "{ bubbles: true }));");
-	wait_js("document.querySelectorAll('li.wfedstep').length === 1 && "
-	    "document.querySelector('select[data-input=wf-kind]').value === "
-	    "'pkg-install' && document.querySelector('input[data-arg=\"text:"
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.job').length "
+	    "=== 1 && document.querySelector('input[data-arg=\"text:"
 	    "params.0.default\"]').value === 'bird3'", 10);
+	run("document.querySelector('svg.wfdraw g.wfnode.job').dispatchEvent("
+	    "new PointerEvent('pointerdown', { bubbles: true, pointerId: 3, "
+	    "button: 0 })); document.dispatchEvent(new PointerEvent("
+	    "'pointerup', { bubbles: true, pointerId: 3 }));");
+	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]')"
+	    "?.value === 'pkg-install'", 10);
 	run("document.querySelector('button[data-act=wf-back]').click()");
+	/* What starts one, in words: a jail stops, which jail asked. */
 	click_when("button[data-act=wf-new]", 10);
-	wait_js("document.querySelector('select[data-input=wf-kind]') && "
-	    "document.querySelector('select[data-input=wf-kind]').options."
-	    "length > 25", 10);
-	{
-		/* What a page's input does: its value, then the event. */
-		static const char set[] = "window.setf = (sel, v) => { const e = "
-		    "document.querySelector(sel); if (e.type === 'checkbox') "
-		    "e.checked = v; else e.value = v; e.dispatchEvent(new Event("
-		    "'input', { bubbles: true })); };";
-
-		run(set);
-	}
+	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]') "
+	    "&& document.querySelector('.wfpanel select[data-input=wf-kind]')."
+	    "options.length > 25", 10);
+	run("svgdrag('svg.wfdraw g.wfnode.trig rect', 'svg.wfdraw g.wfnode."
+	    "trig rect')");
+	run("document.querySelector('svg.wfdraw g.wfnode.trig').dispatchEvent("
+	    "new PointerEvent('pointerdown', { bubbles: true, pointerId: 4, "
+	    "button: 0 })); document.dispatchEvent(new PointerEvent("
+	    "'pointerup', { bubbles: true, pointerId: 4 }));");
+	wait_js("document.querySelector('button[data-act=wf-on-add]')", 5);
+	run("document.querySelector('button[data-act=wf-on-add]').click()");
+	wait_js("document.querySelector('select[data-input=wf-on-kind]')", 5);
+	run("setf('select[data-input=wf-on-kind]', 'jail-stopped')");
+	wait_js("document.querySelector('input[data-arg=\"text:on.0.match."
+	    "jail\"]')", 5);
+	run("setf('input[data-arg=\"text:on.0.match.jail\"]', 'web')");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.trig')."
+	    "textContent.includes('when a jail stops: web')", 5);
+	shot("9-workflow-trigger");
+	/* Not on it after all: by hand. */
+	run("document.querySelector('button[data-act=wf-on-del]').click()");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.trig')."
+	    "textContent.includes('by hand')", 5);
+	run("document.querySelector('svg.wfdraw g.wfnode.job').dispatchEvent("
+	    "new PointerEvent('pointerdown', { bubbles: true, pointerId: 5, "
+	    "button: 0 })); document.dispatchEvent(new PointerEvent("
+	    "'pointerup', { bubbles: true, pointerId: 5 }));");
+	wait_js("document.querySelector('.wfpanel select[data-input=wf-kind]')",
+	    5);
 	run("setf('input[data-arg=\"text:name\"]', 'restart a service')");
 	run("document.querySelector('button[data-act=wf-param-add]').click()");
 	wait_js("document.querySelector('input[data-arg=\"text:params.0.name\"]')",
@@ -4162,7 +4215,8 @@ part_flows(void)
 	run("setf('input[data-arg=\"text:steps.0.job.service\"]', "
 	    "'${param.svc}'); setf('select[data-arg=\"text:steps.0.job."
 	    "action\"]', 'restart')");
-	/* Only when the jail web is stopped, as a read of the jails says. */
+	/* Only if the jail web is stopped, as a read of the jails says,
+	 * said back in words. */
 	run("document.querySelector('input[data-act=wf-when]').click()");
 	wait_js("document.querySelector('select[data-input=wf-when-of]')", 5);
 	run("setf('select[data-input=wf-when-of]', 'read:jails'); "
@@ -4170,36 +4224,49 @@ part_flows(void)
 	    "'jails[name=web].state'); setf('select[data-arg=\"text:steps.0."
 	    "when.op\"]', 'eq'); setf('input[data-arg=\"text:steps.0.when."
 	    "value\"]', 'stopped')");
-	/* A second step: a read of the host. */
-	run("document.querySelector('button[data-act=wf-step-add]').click()");
-	wait_js("document.querySelectorAll('li.wfedstep').length === 2", 5);
-	run("setf('select[data-input=wf-type][data-arg=\"1\"]', 'read:hello')");
+	wait_js("document.querySelector('.wfsays').textContent.includes("
+	    "\"the host's jails: jails[name=web].state is stopped\") && [..."
+	    "document.querySelectorAll('select[data-arg=\"text:steps.0.when."
+	    "op\"] option')].map(o => o.textContent).includes('is more than')",
+	    5);
+	/* A second step, dragged from the palette onto the drawing below
+	 * the first. */
+	run("const it = [...document.querySelectorAll('.wfpalette li')].find("
+	    "l => l.dataset.arg === 'read:hello'), z = document.querySelector("
+	    "'.wfcanvas'), n = document.querySelector('svg.wfdraw g.wfnode."
+	    "job').getBoundingClientRect(), dt = new DataTransfer(); it."
+	    "dispatchEvent(new DragEvent('dragstart', { bubbles: true, "
+	    "dataTransfer: dt })); z.dispatchEvent(new DragEvent('dragover', "
+	    "{ bubbles: true, cancelable: true, dataTransfer: dt })); z."
+	    "dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: "
+	    "true, dataTransfer: dt, clientX: n.left + 20, clientY: n.bottom + "
+	    "90 })); it.dispatchEvent(new DragEvent('dragend', { bubbles: "
+	    "true, dataTransfer: dt }));");
+	wait_js("document.querySelectorAll('svg.wfdraw g.wfnode.read').length "
+	    "=== 1 && document.querySelector('.wfpanel select[data-input="
+	    "wf-type][data-arg=\"1\"]')?.value === 'read:hello'", 5);
 	/*
-	 * Steps dragged by their number to another place: the read put
+	 * Steps dragged to another place in the drawing: the read put
 	 * first, and back again.
 	 */
-	run("window.dragto = (from, to, where) => { const g = document."
-	    "querySelector('li.wfedstep[data-arg=\"' + from + '\"] .grip'), "
-	    "t = document.querySelector('li.wfedstep[data-arg=\"' + to + "
-	    "'\"]'), b = t.getBoundingClientRect(), dt = new DataTransfer(), "
-	    "y = where === 'before' ? b.top + 2 : b.bottom - 2; g.dispatchEvent("
-	    "new DragEvent('dragstart', { bubbles: true, dataTransfer: dt })); "
-	    "t.dispatchEvent(new DragEvent('dragover', { bubbles: true, "
-	    "cancelable: true, dataTransfer: dt, clientY: y })); t.dispatchEvent("
-	    "new DragEvent('drop', { bubbles: true, cancelable: true, "
-	    "dataTransfer: dt, clientY: y })); g.dispatchEvent(new DragEvent("
-	    "'dragend', { bubbles: true, dataTransfer: dt })); };");
-	run("dragto(1, 0, 'before')");
-	wait_js("document.querySelector('select[data-input=wf-type][data-arg="
-	    "\"0\"]').value === 'read:hello'", 5);
-	run("dragto(1, 0, 'before')");
-	wait_js("document.querySelector('select[data-input=wf-type][data-arg="
-	    "\"1\"]').value === 'read:hello' && document.querySelector("
-	    "'input[data-arg=\"text:steps.0.job.service\"]').value === "
-	    "'${param.svc}'", 5);
-	/* On a failure of the first, on at the second: drawn as a jump. */
+	run("svgdrag('svg.wfdraw g.wfnode[data-arg=\"1\"] rect', 'svg.wfdraw "
+	    "g.wfnode.trig rect')");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode[data-arg=\"0\"]')"
+	    ".classList.contains('read')", 5);
+	run("svgdrag('svg.wfdraw g.wfnode[data-arg=\"0\"] rect', 'svg.wfdraw "
+	    "g.wfnode.end rect')");
+	wait_js("document.querySelector('svg.wfdraw g.wfnode[data-arg=\"1\"]')"
+	    ".classList.contains('read')", 5);
+	/* A failure of the first, drawn to the end: the host's run stops;
+	 * then on at the second, as the panel says it. */
+	run("svgdrag('svg.wfdraw circle.port.fail[data-arg=\"f:0\"]', "
+	    "'svg.wfdraw g.wfnode.end rect')");
+	wait_js("document.querySelector('.wfpanel select[data-arg=\"text:"
+	    "steps.0.on_fail\"]')?.value === 'stop' && document."
+	    "querySelector('svg.wfdraw path.wffail')", 5);
 	run("setf('select[data-arg=\"text:steps.0.on_fail\"]', document."
-	    "querySelector('input[data-arg=\"text:steps.1.id\"]').value)");
+	    "querySelector('select[data-arg=\"text:steps.0.on_fail\"] option:"
+	    "last-child').value)");
 	shot("9a-workflow-edit");
 	run("document.querySelector('button[data-act=wf-save]').click()");
 	wait_js("document.querySelector('ul.wflist button[data-act=wf-run]') "
@@ -4239,11 +4306,9 @@ part_flows(void)
 	wait_js("document.querySelector('form[data-form=confirm]')", 5);
 	run("document.querySelector('form[data-form=confirm]').requestSubmit()");
 	click_when("button[data-act=queue-to-wf]", 5);
-	wait_js("document.querySelector('li.wfedstep select[data-input="
-	    "wf-kind]') && document.querySelector('li.wfedstep select[data-"
-	    "input=wf-kind]').value === 'service-action' && document."
-	    "querySelector('input[data-arg=\"text:name\"]').value === 'From "
-	    "the queue'", 10);
+	wait_js("document.querySelector('svg.wfdraw g.wfnode.job') && "
+	    "document.querySelector('input[data-arg=\"text:name\"]').value "
+	    "=== 'From the queue'", 10);
 	shot("9c-workflow-queue");
 	run("document.querySelector('button[data-act=wf-back]').click()");
 	run("document.querySelector('button[data-act=queue-clear]').click()");
