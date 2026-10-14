@@ -265,7 +265,10 @@
   rtm_protocol (arcana-routing's identities where RFC 8349 has none);
   agent_test's yang_routes holds every FIB to netstat -rn. ietf-routing
   and the unicast modules have no IETF SID range: Arcana's block,
-  2^40 + 1300 to 1799 (SIDS.md). Next: 2.4.2, ECMP. As each operation is
+  2^40 + 1300 to 1799 (SIDS.md). 2.4.2: a multipath route's next hops
+  as its next-hop-list, held to a vnet jail's prefix with two gateways,
+  IPv4 and IPv6 (agent_root_test's yang_ecmp). Next: 2.4.3, static
+  routes in running and rc.conf. As each operation is
   converted to YANG (the user, 2026-10-13: with each conversion, not
   after all of them), its task's { } Schema panel shows its YANG model
   beside the CBOR schema.

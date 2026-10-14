@@ -25,7 +25,8 @@
  *	ycollect routes fib	ietf-routing's routes of FIB fib, a next
  *				hop a line: inet or inet6, the prefix, the
  *				gateway, the interface, the special next
- *				hop (- for none each), the source protocol
+ *				hop (- for none each), the source protocol,
+ *				and multipath for one of a next-hop-list
  */
 
 #include <err.h>
@@ -287,7 +288,8 @@ routes(int fib, cbl_yarena *a)
 					const struct ietf_routing_routing_ribs_rib_routes_route_next_hop_next_hop_list_next_hop
 					    *m = &nh->next_hop_list->next_hop.v[k];
 
-					printf("%s %s %s %s - %s\n", af, dst,
+					printf("%s %s %s %s - %s multipath\n",
+					    af, dst,
 					    str(i == 0 ? m->v4ur_address :
 					    m->v6ur_address),
 					    str(m->outgoing_interface),
@@ -295,7 +297,7 @@ routes(int fib, cbl_yarena *a)
 				}
 				continue;
 			}
-			printf("%s %s %s %s %s %s\n", af, dst, str(i == 0 ?
+			printf("%s %s %s %s %s %s -\n", af, dst, str(i == 0 ?
 			    nh->v4ur_next_hop_address :
 			    nh->v6ur_next_hop_address),
 			    str(nh->outgoing_interface),
